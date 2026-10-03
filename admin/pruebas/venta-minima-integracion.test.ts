@@ -123,6 +123,7 @@ interface Entrada {
   /** La lectura del comprobante (`Interpretar lectura`). */ lectura?: J;
   /** Las respuestas de Graph a los avisos armados; por omisión todos salen bien. */ envio?: (armados: J[]) => J[];
   /** Cuánto se adelanta el reloj antes de este turno. */ despues?: number;
+  /** El carrito del catálogo web (cuerpo ya validado por `Carga de entrada`): el turno entra como `type: 'carrito'`. */ carrito?: J;
 }
 interface Salida {
   descartado: boolean; t: J; d: J; p: J; cfg: J; avisos: J[]; armados: J[]; enviados: J[]; mensajes: J[]; tiempoMs: number;
@@ -148,9 +149,15 @@ function turno(m: Mundo, e: Entrada = {}): Salida {
   const globales = { $getWorkflowStaticData: () => m.g, Date: relojFijo(m.ahora) };
   const correr = (nodo: string, entradas: J[], refs: Referencias): J[] => ejecutar(CODIGO[nodo]!, entradas, refs, globales);
 
-  const [carga] = correr('carga-de-entrada', [evento], {}) as [J];
+  let [carga] = correr('carga-de-entrada', [evento], {}) as [J];
+  // El carrito web no es un mensaje de WhatsApp: llega por su propio webhook y `Carga de entrada` lo deja como un mensaje sintético
+  // con `carritoWeb: true` (la validación del cuerpo se prueba en las suites del catálogo; acá se parte del resultado).
+  if (e.carrito) {
+    carga = { ...carga, carritoWeb: true, messages: [{ from, id: `carrito:${e.carrito['pedidoId']}`, timestamp: String(Math.floor(m.ahora / 1000)), type: 'carrito', carrito: e.carrito }] };
+  }
   const [cfg] = correr('config-del-negocio', [{ statusCode: m.codigoPanel, body: m.codigoPanel === 200 ? m.panel : {} }], { 'Config base': m.base, 'Carga de entrada': carga }) as [J];
   const refs: Referencias = { 'Carga de entrada': carga, 'Config base': m.base, 'Config del negocio': cfg };
+  if (e.carrito) refs['Traer configuración'] = { statusCode: m.codigoPanel, body: m.codigoPanel === 200 ? m.panel : {} };
   const entrada = correr('interpretar-entrada', [{}], refs);
   const vacio: Salida = { descartado: true, t: {}, d: {}, p: {}, cfg, avisos: [], armados: [], enviados: [], mensajes: [], tiempoMs: 0 };
   if (!entrada.length) return { ...vacio, tiempoMs: performance.now() - ini };
@@ -1067,5 +1074,176 @@ describe('las tres copias de la red de prohibidas y las expresiones regulares', 
       // `(.*)*`, `([a-z]+)+`. Los grupos con un separador obligatorio, como `\d+(?:[.,]\d+)*`, no son ambiguos y no entran.
       expect(sinComentarios, nombre).not.toMatch(/\((?:\?:)?(?:\\[sSwWdD]|\.|\[[^\]\n]*\])[*+][^()\n]*\)[*+]/);
     }
+  });
+});
+
+// =================================================================================================
+// COBRO SIMULADO (piloto de Q'Taco), de punta a punta con las seis librerías reales: el servidor manda `cobroSimulado` (sin
+// `cobroReal`), «Config base» lo habilita con la imagen de demostración, y la foto es el comprobante de la prueba SIN cotejo.
+// =================================================================================================
+describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso de PRUEBA y cierre sin monto', () => {
+  const URL_SIM = 'https://almacen.ejemplo.test/demo/qr-demo.png';
+  const BASE_SIM: J = { ...BASE, cobroSimuladoActivo: true, qrSimuladoUrl: URL_SIM };
+  /** El panel en simulado: `cobroSimulado` (objeto), sin `cobroReal`, y si hay un QR esperando, su pedido. */
+  const conSimulado = (pendiente?: { pedido: string; monto: number }): J => panel({
+    cobroSimulado: {},
+    cobro: { activo: false, pendiente: !!pendiente, monto: pendiente?.monto ?? null, pedido: pendiente?.pedido ?? null },
+  });
+  const simulando = (): { m: Mundo; ref: string; qr: Salida } => {
+    const m = crear({ base: BASE_SIM, panel: conSimulado() });
+    hastaResumen(m);
+    const qr = turno(m, { boton: 'p|confirmar' });
+    const ref = String(clientes(qr)[0]!['referencia']);
+    m.panel = conSimulado({ pedido: ref, monto: 55 });
+    return { m, ref, qr };
+  };
+  const foto = (m: Mundo, e: Entrada = {}): Salida => turno(m, { tipo: 'image', mediaId: 'media-9', ...e });
+
+  it('el pedido confirmado manda el QR de prueba: la imagen de «Config base», el pie con «SIMULADO» y el cobro abierto con el monto del código', () => {
+    const { m, qr } = simulando();
+    const img = clientes(qr)[0]!;
+    expect(qr.cfg['cobro']).toMatchObject({ activo: false, modo: 'simulado', qrUrl: URL_SIM });
+    expect(img['payload']).toMatchObject({ type: 'image', image: { link: URL_SIM } });
+    expect(img).toMatchObject({ evento: 'qr_enviado', monto: 55 });
+    expect(cuerpoDe(img)).toContain('SIMULADO');
+    expect(cuerpoDe(img)).toContain('no cobra');
+    expect(cuerpoDe(img)).not.toContain('Escanea el QR con la app de tu banco');
+    expect(errores(qr).filter((x) => x.startsWith('qr_rechazado'))).toEqual([]);
+    expect(qr.p['ruta']).toBe('pedido:qr_simulado');
+    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+    expect(estadoDe(m)['pedido']).toMatchObject({ simulado: true });
+  });
+
+  it('la foto es el comprobante simulado: no se baja ni se lee ni se coteja; el cliente lee «SIMULADO»; el aviso dice PRUEBA; el cierre es `registro` sin monto', () => {
+    const { m, ref } = simulando();
+    turno(m, { from: AV1, texto: 'hola' }); // la ventana de completo está abierta: sale también el detalle
+    const s = foto(m);
+    expect(s.t).toMatchObject({ esComprobante: false, comprobanteSimulado: true }); // `¿Bajar medio?` no la baja: no hay lectura ni Gemini
+    expect(s.d['accion']).toBe('comprobante');
+    expect(s.p['ruta']).toBe('comprobante:simulado');
+    // El cliente
+    const texto = cuerpos(s).join('\n');
+    expect(texto).toContain('SIMULADO');
+    expect(texto).toMatch(/pas[ée] tu pedido al restaurante como pedido de PRUEBA/);
+    expect(texto).not.toMatch(PROHIBIDAS);
+    expect(texto).not.toMatch(/pago (acreditado|verificado)|recibimos tu pago|los datos coinciden/i);
+    // El restaurante: plantilla con PRUEBA, detalle de PRUEBA y NUNCA la imagen del comprobante ni «revisen el pago»
+    const completo = plantillas(s).find((a) => a['para'] === AV1)!;
+    const ps = params(completo);
+    expect(ps[0]).toMatch(/^PRUEBA · /);
+    expect(ps[1]).toMatch(/\(SIMULADO\)$/);
+    expect(ps[3]).toMatch(/PRUEBA.*SIMULADO/);
+    const detalle = cuerpoDe(s.armados.find((a) => a['para'] === AV1 && a['clase'] === 'detalle')!);
+    expect(detalle).toMatch(/^PEDIDO DE PRUEBA/);
+    expect(detalle).toContain('el cobro fue SIMULADO');
+    expect(detalle).not.toMatch(/Revisen el pago/i);
+    expect(s.armados.some((a) => a['clase'] === 'imagen')).toBe(false);
+    for (const a of s.armados) expect(JSON.stringify(a['payload']), 'el id del medio no viaja').not.toContain('media-9');
+    // El cierre: `registro` de la referencia del pedido, sin monto, rotulado de PRUEBA
+    const cierre = s.mensajes[0]!['cierre'] as J;
+    expect(cierre).toMatchObject({ tipo: 'registro', referencia: ref });
+    expect(cierre['detalle']).toMatch(/^PRUEBA · cobro SIMULADO/);
+    expect(cierre).not.toHaveProperty('monto');
+    expect(estadoDe(m)['paso']).toBe('menu');
+    expect(sdDe(m)['pedidos'][ref]).toMatchObject({ resultado: 'simulado', simulado: true });
+  });
+
+  it('en simulado el servidor de cobro y la lectura NUNCA se consultan: aunque la foto llegue ilegible o sin medio, es el comprobante de la prueba', () => {
+    const a = simulando();
+    const sinMedio = turno(a.m, { tipo: 'image', mediaId: '' }); // sin id: un comprobante real no sería tal; el simulado sí
+    expect(sinMedio.p['ruta']).toBe('comprobante:simulado');
+    const b = simulando();
+    const ilegible = foto(b.m, { lectura: undefined }); // ningún `Interpretar lectura` corrió: no hay «sin cotejar» ni «ilegible»
+    expect(ilegible.p['ruta']).toBe('comprobante:simulado');
+    expect(['sin_cotejo', 'ilegible', 'cuadra', 'no_cuadra'].some((r) => String(ilegible.p['ruta']).endsWith(r))).toBe(false);
+  });
+
+  it('una segunda foto del mismo pedido es «ya tengo el comprobante»: sin aviso, sin cierre y sin segundo pedido guardado', () => {
+    const { m, ref } = simulando();
+    foto(m);
+    m.panel = conSimulado({ pedido: ref, monto: 55 }); // el servidor sigue viendo el QR pendiente (el cierre `registro` no lo cierra)
+    const s = foto(m);
+    expect(s.p['ruta']).toBe('comprobante:ya_cotejado');
+    expect(s.armados).toEqual([]);
+    expect(s.mensajes[0]!['cierre']).toBeNull();
+    expect(cuerpos(s).join('\n')).toMatch(/^Ya tengo el comprobante de tu pedido #/);
+    expect(Object.keys(sdDe(m)['pedidos'])).toEqual([ref]);
+  });
+
+  it('una foto después de «Cancelar pedido» no se toma por comprobante: ni aviso ni cierre', () => {
+    const { m, ref } = simulando();
+    turno(m, { boton: 'q|cancelar' });
+    m.panel = conSimulado({ pedido: ref, monto: 55 });
+    const s = foto(m);
+    expect(s.armados).toEqual([]);
+    expect(s.mensajes[0]!['cierre']).toBeNull();
+    expect(cuerpos(s).join('\n')).toContain('no tienes ninguno pendiente');
+    expect(sdDe(m)['pedidos'][ref]['resultado']).not.toBe('simulado');
+  });
+
+  it('EXCLUSIÓN de punta a punta: con el cobro REAL del servidor y la «Config base» simulada, el pie es el real y no hay «SIMULADO»', () => {
+    const m = crear({ base: BASE_SIM, panel: { ...conCobro(), cobroSimulado: {} } });
+    hastaResumen(m);
+    const c = turno(m, { boton: 'p|confirmar' });
+    expect(c.cfg['cobro']).toMatchObject({ activo: true, modo: 'real', qrUrl: QR });
+    expect(clientes(c)[0]!['payload']).toMatchObject({ type: 'image', image: { link: QR } });
+    expect(cuerpoDe(clientes(c)[0]!)).toContain('Total a pagar por QR: 55 Bs');
+    // (el titular de la cuenta del fixture se llama «Titular de Prueba SRL»: «prueba» sola no es un rótulo; el del simulado es «PRUEBA ·»)
+    expect(cuerpoDe(clientes(c)[0]!)).not.toMatch(/simulad|demostraci|PRUEBA ·/i);
+    expect(c.p['ruta']).toBe('pedido:qr');
+    expect(estadoDe(m)['pedido']).toMatchObject({ simulado: false });
+    // y su comprobante SÍ se coteja (la rama simulada no se toma)
+    const ref = String(clientes(c)[0]!['referencia']);
+    m.panel = { ...conCobro({ pedido: ref, monto: 55 }), cobroSimulado: {} };
+    const f = foto(m, { cotejo: { statusCode: 200, body: { resultado: 'cuadra' } } });
+    expect(f.t['esComprobante']).toBe(true);
+    expect(f.p['ruta']).toBe('comprobante:cuadra');
+  });
+
+  it('sin las dos claves de «Config base», o con una mal, el panel simulado deja el plan B (sin QR): nunca una imagen de prueba por accidente', () => {
+    const casos: J[] = [BASE, { ...BASE, cobroSimuladoActivo: true }, { ...BASE, qrSimuladoUrl: URL_SIM },
+      { ...BASE_SIM, cobroSimuladoActivo: 'true' }, { ...BASE_SIM, qrSimuladoUrl: 'http://almacen.ejemplo.test/qr.png' }];
+    for (const base of casos) {
+      const m = crear({ base, panel: conSimulado() });
+      hastaResumen(m);
+      const c = turno(m, { boton: 'p|confirmar' });
+      expect(c.cfg['cobro'], JSON.stringify(base)).toMatchObject({ activo: false, modo: 'apagado' });
+      expect(c.p['ruta'], JSON.stringify(base)).toBe('pedido:sin_qr');
+      expect(clientes(c).every((j) => j['payload'].type !== 'image')).toBe(true);
+    }
+  });
+
+  it('los textos del recorrido simulado pasan la red de palabras prohibidas', () => {
+    const { m, qr } = simulando();
+    const todos = [...cuerpos(qr), ...cuerpos(turno(m, { texto: 'ya pagué' })), ...cuerpos(foto(m))];
+    expect(todos.length).toBeGreaterThanOrEqual(3);
+    for (const t of todos) expect(t, t).not.toMatch(PROHIBIDAS);
+  });
+
+  describe('el pedido que llega de la página (`cat_…`)', () => {
+    const CAT = 'cat_k1a2b3c4_9f8e7d6c';
+    const carrito = (extra: J = {}): J => ({
+      pedidoId: CAT, tenantId: 'tenant-de-prueba', accion: 'responder', ventanaAbierta: true, fichaCompartida: false, moneda: 'Bs',
+      total: 55, costoEnvio: 0, entrega: 'retiro', direccion: '', nota: '', descartados: 0, itemsTotal: 1,
+      items: [{ id: 'i1', nombre: 'Orden de 3 tacos de birria', cantidad: 1, subtotal: 55 }], ...extra,
+    });
+
+    it('el cobro, la referencia del cierre y el pedido guardado usan el `cat_…` aunque el cobro sea simulado', () => {
+      const m = crear({ base: BASE_SIM, panel: conSimulado() });
+      const r = turno(m, { tipo: 'text', carrito: carrito() });
+      expect(r.d['accion']).toBe('carrito');
+      expect(estadoDe(m)['pedidoWeb']).toMatchObject({ id: CAT });
+      const q = turno(m, { boton: 'p|confirmar' });
+      const img = clientes(q)[0]!;
+      expect(img).toMatchObject({ evento: 'qr_enviado', referencia: CAT, monto: 55 });
+      expect(cuerpoDe(img)).toContain('SIMULADO');
+      expect(estadoDe(m)['pedido']).toMatchObject({ pedidoId: CAT, simulado: true });
+      m.panel = conSimulado({ pedido: CAT, monto: 55 });
+      const f = foto(m);
+      expect(f.p['ruta']).toBe('comprobante:simulado');
+      expect(f.mensajes[0]!['cierre']).toMatchObject({ tipo: 'registro', referencia: CAT });
+      expect(f.mensajes[0]!['cierre']).not.toHaveProperty('monto');
+      expect(Object.keys(sdDe(m)['pedidos'])).toEqual([CAT]);
+    });
   });
 });
