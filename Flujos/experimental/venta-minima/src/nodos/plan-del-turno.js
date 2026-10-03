@@ -457,6 +457,8 @@ function aConsulta(clave) {
 }
 
 function aPromo() {
+  // Con un comprobante en espera, el texto de una campaña NO saca del cobro: se recuerda el comprobante (el paso y el pedido se conservan).
+  if (en.paso === 'esperando_comprobante' && en.pedido) return aRecordatorio();
   const carta = cartaDelNegocio();
   const ficha = prFicha(d.campana, carta, ahora);
   const tx = ficha ? prTexto(ficha, cfg) : null;

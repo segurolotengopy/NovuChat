@@ -127,9 +127,11 @@ if (idBoton) {
   const enComp = paso === 'esperando_comprobante';
   const enPedido = paso.indexOf('pedido') === 0;
   const esDePedido = (b.tipo === 'm' && p0 === 'pedido') || ['g', 'f', 'e', 'p'].indexOf(b.tipo) >= 0;
-  if (esDePedido && pedidosOn && cerrado()) return salir('fuera_de_horario');
+  // Con un comprobante en espera el boton de pedido no saca del cobro (cae abajo en el recordatorio), ni siquiera con el local cerrado.
+  if (esDePedido && pedidosOn && !enComp && cerrado()) return salir('fuera_de_horario');
 
-  // «Menú» vale siempre: muestra el menú y no borra nada. Los demás `m|*` valen salvo con un comprobante en espera.
+  // «Menú» (`m|menu`) es valido en todo paso, pero con un comprobante en espera NO sale del cobro: muestra el recordatorio (`Plan del turno`: `aMenu`).
+  // Los demás `m|*` valen salvo con un comprobante en espera.
   if (b.tipo === 'm' && p0 === 'menu') return salir('menu', { boton: b, motivo: 'boton_menu' });
   if (b.tipo === 'm' && !enComp) {
     if (p0 === 'pedido' && pedidosOn) return salir('carta', { boton: b });

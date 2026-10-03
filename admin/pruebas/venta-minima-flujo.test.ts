@@ -4174,6 +4174,34 @@ describe('esperando_comprobante: «menú» y la derivación conservan el paso y 
     expect(t.mensajes.length).toBeGreaterThan(0);
   });
 
+  it('el texto de una campaña con un QR en espera NO saca del cobro: recordatorio, mismo paso y mismo pedido (menor 5 de la revisión del PR #382)', () => {
+    const e = conQrEnEspera();
+    const t = e.c.escribe(TEXTO_DUO);
+    expect(cuerpos(t)[0]).toContain(`#${e.codigo}`);
+    expect(titulosDe(t.mensajes[0]!)).toEqual(['Reenviar QR', 'Cancelar pedido']);
+    expect(t.avisos).toHaveLength(0);
+    sigueEsperando(e);
+    // NEGANDO: sin un comprobante en espera, la campaña sí muestra su promo y pasa al menú.
+    const libre = armarPedido({ ventana: 5 });
+    expect(cuerpos(libre.c.escribe(TEXTO_DUO)).join(' ')).toMatch(/Promo Dúo/);
+    expect(estadoDe(libre.w.mundo)['paso']).toBe('menu');
+  });
+
+  it('el botón de pedido con el local CERRADO y un QR en espera NO responde «fuera de horario»: recordatorio, mismo paso; «Cancelar pedido» sigue valiendo', () => {
+    const e = conQrEnEspera();
+    const t = e.c.turno(mBoton('m|pedido', 'Hacer un pedido'), { avanzarMin: 14 * 60 }); // 00:00 del día siguiente: cerrado (08:00-23:00)
+    expect(cuerpos(t).join(' ')).not.toContain('no estamos tomando pedidos');
+    expect(cuerpos(t)[0]).toContain(`#${e.codigo}`);
+    sigueEsperando(e);
+    e.c.toca('q|cancelar', 'Cancelar pedido');
+    expect(estadoDe(e.w.mundo)['paso']).toBe('menu');
+    // NEGANDO: sin comprobante en espera y con el local cerrado, el botón sí responde «fuera de horario».
+    const libre = armarPedido({ ventana: 5 });
+    libre.c.escribe('menú');
+    const cerrado = libre.c.turno(mBoton('m|pedido', 'Hacer un pedido'), { avanzarMin: 14 * 60 });
+    expect(cuerpos(cerrado).join(' ')).toContain('no estamos tomando pedidos');
+  });
+
   it('contraprueba: sin un comprobante en espera, «menú» sí pasa al menú y la derivación sí deja el paso en `menu` (nada cambió fuera del cobro)', () => {
     const r = armarPedido({ ventana: 5 });
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
