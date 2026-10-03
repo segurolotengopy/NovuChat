@@ -671,9 +671,12 @@ for n in nuevo["nodes"]:
             config_dif.append((n["name"], campo,
                                len(cv.get(campo, "")), len(cn.get(campo, ""))))
 
-    for meta in ("onError", "maxTries", "waitBetweenTries"):
-        if n.get(meta) is not None and par.get(meta) != n.get(meta):
-            cambiados.append((n["name"], meta, par.get(meta), n.get(meta)))
+    # En AMBOS sentidos (uno que solo tiene el vivo, --aplicar lo borraria),
+    # con None y False como iguales. Se informa nodo y propiedad, nunca valor.
+    for meta in ("onError", "maxTries", "waitBetweenTries", "continueOnFail"):
+        a_, b_ = par.get(meta), n.get(meta)
+        if a_ != b_ and not (a_ in (None, False) and b_ in (None, False)):
+            props_dif.append((n["name"], meta))
 
 if perdidos:
     print(f"\n  {A}El flujo vivo no tiene esto explicito, y el origen si:{FIN}")
@@ -762,11 +765,27 @@ sv_, sn_ = vivo.get("settings") or {}, nuevo.get("settings") or {}
 claves_set = sorted(k for k in sn_ if sv_.get(k) != sn_.get(k))
 if claves_set:
     estructura.append(("(settings del flujo)", "claves distintas: " + ", ".join(claves_set)))
-# Claves de settings que solo tiene el vivo: --aplicar las borraria. Se ignoran
-# las que n8n agrega por defecto.
-SETTINGS_DE_N8N = {"callerPolicy", "availableInMCP", "saveManualExecutions", "saveExecutionProgress",
-                   "saveDataErrorExecution", "saveDataSuccessExecution", "binaryMode", "callerIds"}
-solo_set = sorted(k for k in sv_ if k not in sn_ and k not in SETTINGS_DE_N8N)
+# Claves de settings que solo tiene el vivo: --aplicar las borraria. Se ignora
+# una clave SOLO si el vivo tiene el valor por defecto de n8n 2.36.5; con
+# cualquier otro valor (p. ej. saveDataErrorExecution "none") cambia el
+# comportamiento y cuenta. Se informa el nombre de la clave, nunca el valor.
+# Origen de los defectos (npm pack de n8n@2.36.5 y n8n-workflow@2.36.3):
+#  - saveDataErrorExecution, saveDataSuccessExecution, saveManualExecutions y
+#    saveExecutionProgress: «DEFAULT» = usar el valor de la instancia
+#    (n8n-workflow, interfaces.d.ts, IWorkflowSettings y WorkflowSettings).
+#  - callerPolicy: «workflowsFromSameOwner» (n8n/dist/modules/mcp/tools/
+#    workflow-builder/workflow-operations.js: «Defaults to ...»).
+#  - binaryMode: «separate» (n8n-workflow, constants.js, BINARY_MODE_SEPARATE).
+#  - availableInMCP: false (opcional, desactivado por defecto).
+# callerIds no tiene defecto comprobable: si el vivo lo trae, cuenta.
+SETTINGS_DEFECTO_N8N = {
+    "saveDataErrorExecution": "DEFAULT", "saveDataSuccessExecution": "DEFAULT",
+    "saveManualExecutions": "DEFAULT", "saveExecutionProgress": "DEFAULT",
+    "callerPolicy": "workflowsFromSameOwner", "binaryMode": "separate", "availableInMCP": False,
+}
+solo_set = sorted(k for k in sv_ if k not in sn_
+                  and not (k in SETTINGS_DEFECTO_N8N and type(sv_[k]) is type(SETTINGS_DEFECTO_N8N[k])
+                           and sv_[k] == SETTINGS_DEFECTO_N8N[k]))
 if solo_set:
     estructura.append(("(settings del flujo)", "claves solo en el vivo, --aplicar las borraria: " + ", ".join(solo_set)))
 
