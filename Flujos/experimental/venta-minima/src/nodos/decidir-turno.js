@@ -19,6 +19,9 @@
 // `identidad` (la identidad se revisa primero); 6) «menu», «cancelar»… → `menu`; 7) en
 // `inicio` o `menu`, consulta fija; 8) por paso; 9) pedido fuera de horario.
 //
+// EL CARRITO DEL CATÁLOGO WEB (`tipo: 'carrito'`) no es un mensaje de WhatsApp: se decide antes que todo lo demás, en
+// `decidirCarrito` (ventana cerrada, panel sin respuesta, otro comercio, pedidos apagados, local cerrado, QR pendiente).
+//
 // LIBRERÍAS QUE LLAMA (contrato §4.2; en la suite van dobles mínimos):
 //   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmEstadoBase, vmLeerEstado, vmLeerBoton, vmNorm,
 //     vmLinea, vmRecorte, vmTextoDeGemini, vmHorario, vmAbierto.
@@ -79,6 +82,9 @@ const salir = (accion, extra) => [{ json: Object.assign({
 // (o llegó una imagen que `Interpretar entrada` marcó como comprobante pero la lectura o el
 // cotejo no corrieron: `Plan del turno` lo trata como «sin cotejar», nunca como «cuadra»).
 if (vmNodo('Cotejar en el servidor') || t.esComprobante === true) return salir('comprobante');
+
+// --- 1b. El carrito del catalogo web (no es un mensaje de WhatsApp: decide `decidirCarrito`, mas abajo) ----
+if (t.tipo === 'carrito') return decidirCarrito();
 
 // --- 2. Medios -------------------------------------------------------------------------
 if (t.tipo === 'audio') {
@@ -178,6 +184,48 @@ if (paso.indexOf('pedido') === 0) return extraerPedido();
 if (pedidosOn && quierePedir) return extraerPedido();
 if (reservasOn && quiereReservar) return extraerReserva();
 return salir('menu');
+
+// ---------------------------------------------------------------------------------------------
+// EL CARRITO DEL CATALOGO WEB (`tipo === 'carrito'`, que solo produce `Carga de entrada` cuando corrio «Carrito del catálogo»).
+// El servidor ya escribio el pedido en la consola y recalculo los precios; aca solo se decide si el flujo contesta y como.
+// `carrito_*` en `motivo` = no se contesta nada (`Plan del turno` sale sin mensajes, sin aviso y sin tocar el estado):
+//   1. ventana de 24 h cerrada (la calculo el servidor): fuera de ella Meta solo acepta una plantilla aprobada y no hay una
+//      para esto; no sale nada y el pedido sigue en la consola (el Demo B tampoco manda plantilla);
+//   2. el panel no contesto: no hay carta con que armar nada, se pasa con el local (aviso + boton);
+//   3. el tenant del carrito no es el del panel de ESTE numero: no es de este comercio, no se contesta;
+//   4. pedidos apagados: no hay nada que tomar;
+//   5. local cerrado: fuera de horario (como un pedido por texto);
+//   6. con un QR esperando comprobante: el carrito se ignora y se recuerda el comprobante;
+//   7. si no, `carrito`: `Plan del turno` arma el pedido desde la carta y sigue con el paso que corresponda.
+function decidirCarrito() {
+  const c = t.carrito && typeof t.carrito === 'object' ? t.carrito : {};
+  if (c.ventanaAbierta !== true) return salir('carrito', { motivo: 'carrito_ventana_cerrada' });
+  if (cfg.panelSinRespuesta === true) return salir('transferir', { motivo: 'carrito del catálogo sin respuesta del panel' });
+  if (!mismoTexto(c.tenantId, tenantDelPanel())) return salir('carrito', { motivo: 'carrito_otro_tenant' });
+  if (!pedidosOn) return salir('carrito', { motivo: 'carrito_sin_pedidos' });
+  if (cerrado()) return salir('fuera_de_horario');
+  if (previo.paso === 'esperando_comprobante') return salir('recordatorio_comprobante');
+  return salir('carrito');
+}
+
+// El tenant que dijo el panel para este numero (`Traer configuración`): vacio si el panel no contesto con uno.
+function tenantDelPanel() {
+  const r = vmPrimero('Traer configuración') || {};
+  let b = r.body;
+  if (typeof b === 'string') { try { b = JSON.parse(b); } catch (e) { b = null; } }
+  return Number(r.statusCode) === 200 && b && typeof b === 'object' && typeof b.tenantId === 'string' ? b.tenantId : '';
+}
+
+// Igualdad de dos textos sin salida temprana; dos vacios NO son iguales (sin tenant no hay a quien atribuir el carrito).
+function mismoTexto(a, b) {
+  const x = String(a === undefined || a === null ? '' : a);
+  const y = String(b === undefined || b === null ? '' : b);
+  if (!x || !y) return false;
+  let d = x.length === y.length ? 0 : 1;
+  const n = Math.max(x.length, y.length);
+  for (let i = 0; i < n; i++) d |= (x.charCodeAt(i) || 0) ^ (y.charCodeAt(i) || 0);
+  return d === 0;
+}
 
 // ---------------------------------------------------------------------------------------------
 function estadoBase() {
