@@ -11,6 +11,8 @@
 # tubería sin imprimirse jamás. Diseño y porqués: docs/staging/DISENO.md.
 #
 #   ./scripts/preparar-staging.sh <fase> --proyecto <id-staging> [--aplicar]
+#       [--sitio-catalogo <id>]   id del segundo sitio de Hosting; por omisión
+#                                 <proyecto>-catalogo (único en todo Firebase)
 #
 #   Fases, en el orden en que hay que correrlas (docs/staging/DISENO.md §8):
 #     apis        habilita las APIs que el despliegue usa
@@ -22,6 +24,8 @@
 #                 que producción; el binding del Environment `staging`
 #     secretos    los 25 secretos que las Functions declaran, con valores
 #                 aleatorios, y su secretAccessor para sa-functions
+#     sitio       el SEGUNDO sitio de Hosting de staging (T-37: la página pública del
+#                 catálogo, otro origen que la consola). Va ANTES de `github`
 #     storage     el rol del agente de Storage (DESPUÉS de crear el bucket a mano)
 #     invocadores roles/run.invoker para allUsers en cada Function HTTP o
 #                 callable desplegada (DESPUÉS del primer despliegue; idempotente)
@@ -43,24 +47,31 @@ cd "$(dirname "$0")/.." || exit 1
 
 FASE="${1:-}"; shift || true
 if [[ "$FASE" == "-h" || "$FASE" == "--help" || -z "$FASE" ]]; then
-  sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'; exit 0
+  sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'; exit 0
 fi
-P=""; APLICAR=0; SIN_STORAGE=0
+P=""; APLICAR=0; SIN_STORAGE=0; SITIO_CAT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --proyecto)    P="${2:?--proyecto necesita el ID}"; shift 2 ;;
     --proyecto=*)  P="${1#*=}"; shift ;;
     --aplicar)     APLICAR=1; shift ;;
     --sin-storage) SIN_STORAGE=1; shift ;;
-    -h|--help)     sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --sitio-catalogo)   SITIO_CAT="${2:?--sitio-catalogo necesita el id}"; shift 2 ;;
+    --sitio-catalogo=*) SITIO_CAT="${1#*=}"; shift ;;
+    -h|--help)     sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opción desconocida: $1" >&2; exit 2 ;;
   esac
 done
 case "$FASE" in
-  apis|firestore|app|wif|cuentas|secretos|storage|invocadores|github|verificar) ;;
-  *) echo "Uso: $0 <apis|firestore|app|wif|cuentas|secretos|storage|invocadores|github|verificar> --proyecto <id> [--aplicar]" >&2; exit 2 ;;
+  apis|firestore|app|wif|cuentas|secretos|sitio|storage|invocadores|github|verificar) ;;
+  *) echo "Uso: $0 <apis|firestore|app|wif|cuentas|secretos|sitio|storage|invocadores|github|verificar> --proyecto <id> [--aplicar] [--sitio-catalogo <id>]" >&2; exit 2 ;;
 esac
 [[ "$P" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ --proyecto: ID de proyecto de Google Cloud inválido" >&2; exit 2; }
+# T-37: la página pública del catálogo vive en un segundo sitio de Hosting. Su id
+# es único en todo Firebase; por omisión, el del proyecto más «-catalogo».
+SITIO_CAT="${SITIO_CAT:-${P}-catalogo}"
+[[ "$SITIO_CAT" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ && "$SITIO_CAT" != "$P" ]] \
+  || { echo "✗ --sitio-catalogo: id de sitio de Hosting inválido, o igual al sitio de la consola (el del proyecto)" >&2; exit 2; }
 
 export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"
 unset CLOUDSDK_ACTIVE_CONFIG_NAME
@@ -69,6 +80,7 @@ REGION="us-east1"
 SA_DEPLOY="sa-deploy-staging@${P}.iam.gserviceaccount.com"
 SA_FUNCTIONS="sa-functions@${P}.iam.gserviceaccount.com"
 URL_STAGING="https://${P}.web.app"
+URL_CATALOGO="https://${SITIO_CAT}.web.app"   # SITIO_PUBLICO de staging: NUNCA la de la consola (T-37)
 
 V=$'\e[32m'; A=$'\e[33m'; X=$'\e[31m'; F=$'\e[0m'
 titulo() { printf '\n%s== %s ==%s\n' "$A" "$*" "$F"; }
@@ -303,6 +315,24 @@ invocables() {
     --format='value(name.basename())' | tr 'A-Z' 'a-z'
 }
 
+fase_sitio() {
+  titulo "Segundo sitio de Hosting (T-37): $SITIO_CAT en $P"
+  # La página pública del catálogo tiene su propio sitio, con otro origen que la
+  # consola. El CLI de firebase de esta máquina tiene guardada OTRA cuenta que no
+  # es dueña de los proyectos: se usa su configuración propia y las credenciales
+  # aisladas de gcloud (nunca `firebase login` ni `logout`). Procedimiento
+  # completo y porqués: docs/produccion/sitio-publico-catalogo.md.
+  local cfg="${FB_CFG:-${TMPDIR:-/tmp}/fbcfg-staging}"
+  local fb=(env "XDG_CONFIG_HOME=$cfg" "GOOGLE_APPLICATION_CREDENTIALS=$CLOUDSDK_CONFIG/application_default_credentials.json" npx --yes firebase-tools@15.28.1)
+  # En seco NO se consulta nada (el encabezado promete que no ejecuta): solo
+  # con --aplicar se mira si el sitio ya existe, para ser idempotente.
+  if (( APLICAR )); then mkdir -p "$cfg"; fi
+  if (( APLICAR )) && "${fb[@]}" hosting:sites:get "$SITIO_CAT" --project "$P" >/dev/null 2>&1; then
+    nota "el sitio $SITIO_CAT ya existe en $P: nada que crear"; return
+  fi
+  correr "crear el sitio $SITIO_CAT" -- "${fb[@]}" hosting:sites:create "$SITIO_CAT" --project "$P" --non-interactive
+}
+
 fase_invocadores() {
   titulo "Invocadores: allUsers en las Functions HTTP y callables de $P"
   # Por qué existe (26/09/2026): el primer despliegue a staging se hizo en lotes
@@ -329,7 +359,11 @@ fase_github() {
   correr "secreto GCP_WIF_PROVIDER (Environment staging)" -- gh secret set GCP_WIF_PROVIDER --env staging --repo "$REPO" \
     --body "projects/${num}/locations/global/workloadIdentityPools/github/providers/novuchat"
   correr "secreto GCP_SA_DEPLOY_STAGING (Environment staging)" -- gh secret set GCP_SA_DEPLOY_STAGING --env staging --repo "$REPO" --body "$SA_DEPLOY"
-  correr "SITIO_PUBLICO (Environment staging)" -- gh variable set SITIO_PUBLICO --env staging --repo "$REPO" --body "$URL_STAGING"
+  # T-37: SITIO_PUBLICO es la dirección del SEGUNDO sitio, no la de la consola
+  # (el despliegue de staging rechaza el origen de la consola), y el despliegue
+  # necesita el id de ese sitio para resolver el destino `catalogo`.
+  correr "SITIO_PUBLICO (Environment staging): el sitio público del catálogo" -- gh variable set SITIO_PUBLICO --env staging --repo "$REPO" --body "$URL_CATALOGO"
+  correr "HOSTING_SITIO_CATALOGO (Environment staging)" -- gh variable set HOSTING_SITIO_CATALOGO --env staging --repo "$REPO" --body "$SITIO_CAT"
   local solo="hosting,firestore:rules,firestore:indexes,functions,storage"
   (( SIN_STORAGE )) && solo="hosting,firestore:rules,firestore:indexes,functions"
   correr "FIREBASE_DEPLOY_ONLY (Environment staging)" -- gh variable set FIREBASE_DEPLOY_ONLY --env staging --repo "$REPO" --body "$solo"

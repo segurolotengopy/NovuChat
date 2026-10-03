@@ -41,7 +41,10 @@
 #            FIREBASE_SITE_ID, FIREBASE_PREVIEW ('true' para canales de PR),
 #            HOSTING_SITIO_CATALOGO (id del SEGUNDO sitio de Hosting, el de la
 #            página pública del catálogo, T-37; repositorio = producción,
-#            Environment `staging` = staging)
+#            Environment `staging` = staging),
+#            HOSTING_DOMINIO_CATALOGO (opcional: dominios propios de ese sitio,
+#            solo hosts separados por comas; sin ella solo vale
+#            <HOSTING_SITIO_CATALOGO>.web.app o .firebaseapp.com)
 #
 # ALCANCE DE LAS VARIABLES (2026-09-25). Las del repositorio son las de
 # PRODUCCIÓN (VITE_*, SITIO_PUBLICO, FIREBASE_DEPLOY_ONLY, ...). El Environment
@@ -1303,6 +1306,7 @@ jobs:
           URL_PROD: ${{ vars.PROD_URL }}
           SITIO_PUBLICO: ${{ vars.SITIO_PUBLICO }}
           SITIO_CATALOGO: ${{ vars.HOSTING_SITIO_CATALOGO }}
+          DOMINIOS_CATALOGO: ${{ vars.HOSTING_DOMINIO_CATALOGO }}
           BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
         run: |
@@ -1321,10 +1325,13 @@ jobs:
             echo "::error::VITE_FIREBASE_STORAGE_BUCKET no es un bucket del proyecto de staging (falta en el Environment)."; fallos=1
           fi
           # T-37: la página pública del catálogo es un SEGUNDO sitio de Hosting.
-          # Sin su identificador (variable del Environment `staging`, sin caer
-          # al valor de producción) `firebase deploy --only hosting` no sabe
-          # dónde publicarla; y nunca puede ser el sitio de la consola ni su
-          # enlace apuntar al origen de la consola.
+          # Sin su identificador `firebase deploy --only hosting` no sabe dónde
+          # publicarla; y nunca puede ser el sitio de la consola ni su enlace
+          # apuntar a un origen donde responda la consola. OJO: `vars.` de un
+          # Environment hereda el valor del REPOSITORIO si el Environment no lo
+          # define, así que aquí no se puede saber si HOSTING_SITIO_CATALOGO es
+          # el de staging; eso lo comprueba el paso de despliegue consultando a
+          # Firebase si el sitio existe EN el proyecto de staging.
           if [[ "$SOLO" == *hosting* ]]; then
             if [[ -z "$SITIO_CATALOGO" ]]; then
               echo "::error::Falta HOSTING_SITIO_CATALOGO en el Environment 'staging' (el segundo sitio de Hosting, T-37)."; fallos=1
@@ -1333,8 +1340,12 @@ jobs:
             elif [[ "$SITIO_CATALOGO" == "$PROYECTO" ]]; then
               echo "::error::HOSTING_SITIO_CATALOGO es el sitio de la consola: la página pública necesita OTRO sitio (T-37)."; fallos=1
             fi
-            if [[ -n "$SITIO_PUBLICO" && "${SITIO_PUBLICO%/}" == "${URL_STAGING%/}" ]]; then
-              echo "::error::SITIO_PUBLICO es el origen de la consola (STAGING_URL): el enlace del catálogo tiene que apuntar al segundo sitio (T-37)."; fallos=1
+            # La dirección del catálogo: el host del sitio público o un dominio
+            # propio declarado, y nunca un host donde responda la consola
+            # (<proyecto>.web.app y .firebaseapp.com incluidos). Ver el script.
+            if [[ -n "$SITIO_CATALOGO" ]]; then
+              SITIO_CONSOLA="$PROYECTO" URL_CONSOLA="$URL_STAGING" \
+                bash "$GITHUB_WORKSPACE/scripts/comprobar-origen-catalogo.sh" || fallos=1
             fi
           fi
           exit "$fallos"
@@ -1362,6 +1373,13 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
+
+      # L-3 (revisión de seguridad de #381): el paquete público se REVERIFICA acá,
+      # después de descargarlo, y no solo en `construir`. Entre un job y otro hay
+      # un artefacto que viaja; lo que se publica es lo que llegó, y tiene que
+      # seguir sin el SDK de Firebase ni la entrada de la consola.
+      - name: Sitio público del catálogo — el paquete descargado no trae código de sesión
+        run: node scripts/modulos/catalogo-web/verificar-sitio-publico.mjs
 
       - name: firebase-tools (la versión fijada)
         # Faltaba: el job nunca había corrido hasta el 26/09 y el primer
@@ -1515,6 +1533,13 @@ jobs:
           # y no lleva identificadores). La consola de staging es el sitio por
           # defecto del proyecto, que se llama como él.
           if [[ "$SOLO" == *hosting* ]]; then
+            # `vars.HOSTING_SITIO_CATALOGO` hereda el del repositorio (producción)
+            # si el Environment `staging` no lo define: se comprueba contra
+            # Firebase que el sitio EXISTA EN ESTE PROYECTO, y de paso que esté
+            # bien escrito. Solo lectura.
+            if ! firebase hosting:sites:get "$SITIO_CATALOGO" --project "$PROYECTO" >/dev/null; then
+              echo "::error::El sitio de Hosting '$SITIO_CATALOGO' no existe en el proyecto de staging: ¿falta HOSTING_SITIO_CATALOGO en el Environment 'staging' (y cayó al valor del repositorio) o está mal escrito? Cree el sitio: docs/produccion/sitio-publico-catalogo.md §3.2."; exit 1
+            fi
             firebase target:apply hosting consola "$PROYECTO" --project "$PROYECTO"
             firebase target:apply hosting catalogo "$SITIO_CATALOGO" --project "$PROYECTO"
           fi
@@ -1625,7 +1650,13 @@ jobs:
           # del catálogo no existe en dev.
           if [[ "$SOLO" == *hosting* ]]; then
             firebase target:apply hosting consola "$PROYECTO" --project "$PROYECTO"
-            SOLO="${SOLO//hosting/hosting:consola}"
+            # Solo el elemento EXACTO `hosting` de la lista separada por comas;
+            # un valor ya calificado (`hosting:consola`) no se toca.
+            IFS=',' read -r -a partes <<< "$SOLO"
+            for i in "${!partes[@]}"; do
+              [[ "${partes[$i]}" == "hosting" ]] && partes[i]="hosting:consola"
+            done
+            SOLO="$(IFS=,; echo "${partes[*]}")"
           fi
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
             --message "dev ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
@@ -1823,6 +1854,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # L-3 (revisión de seguridad de #381): el paquete público se REVERIFICA acá,
+      # después de descargarlo, y no solo en `construir`. Entre un job y otro hay
+      # un artefacto que viaja; lo que se publica es lo que llegó, y tiene que
+      # seguir sin el SDK de Firebase ni la entrada de la consola.
+      - name: Sitio público del catálogo — el paquete descargado no trae código de sesión
+        run: node scripts/modulos/catalogo-web/verificar-sitio-publico.mjs
+
       - name: Conservar copia de la versión actual (canal "previa" para rollback)
         # Clona el contenido en vivo a un canal de vista previa de larga
         # duración. Si el health check posterior falla, el paso "Rollback de
@@ -1906,6 +1944,9 @@ jobs:
           # catálogo, el de HOSTING_SITIO_CATALOGO.
           SITIO_CONSOLA: ${{ vars.FIREBASE_SITE_ID || vars.GCP_PROJECT_ID_PROD }}
           SITIO_CATALOGO: ${{ vars.HOSTING_SITIO_CATALOGO }}
+          # Dominios propios del sitio público (solo hosts, separados por comas).
+          # Opcional: sin ella solo vale <HOSTING_SITIO_CATALOGO>.web.app o .firebaseapp.com.
+          DOMINIOS_CATALOGO: ${{ vars.HOSTING_DOMINIO_CATALOGO }}
           # Ver el bloque «LA FACTURA MÍNIMA» más abajo. Vacía por defecto: la
           # protección de firebase-tools queda puesta salvo que se la levante a
           # propósito para un despliegue concreto.
@@ -1967,8 +2008,20 @@ jobs:
               || { echo "::error::vars.HOSTING_SITIO_CATALOGO no tiene forma de identificador de sitio de Hosting."; exit 1; }
             [[ "$SITIO_CATALOGO" != "$SITIO_CONSOLA" ]] \
               || { echo "::error::vars.HOSTING_SITIO_CATALOGO es el sitio de la consola: la página pública necesita OTRO sitio (T-37)."; exit 1; }
-            [[ -n "${URL_PROD:-}" && "${SITIO_PUBLICO%/}" != "${URL_PROD%/}" ]] \
-              || { echo "::error::vars.SITIO_PUBLICO es el origen de la consola (o PROD_URL falta): el enlace del catálogo tiene que apuntar al segundo sitio (T-37)."; exit 1; }
+            [[ -n "${URL_PROD:-}" ]] \
+              || { echo "::error::Falta vars.PROD_URL (la compuerta de T-37 compara contra el host de la consola)."; exit 1; }
+            # La consola responde en PROD_URL Y en <sitio>.web.app y
+            # <sitio>.firebaseapp.com (y en los del proyecto): se compara el HOST
+            # normalizado, no la cadena. Solo vale el sitio público declarado o un
+            # dominio propio listado en HOSTING_DOMINIO_CATALOGO.
+            SITIO_PUBLICO="$SITIO_PUBLICO" SITIO_CATALOGO="$SITIO_CATALOGO" SITIO_CONSOLA="$SITIO_CONSOLA" \
+              PROYECTO="$PROYECTO" URL_CONSOLA="$URL_PROD" DOMINIOS_CATALOGO="${DOMINIOS_CATALOGO:-}" \
+              bash "$GITHUB_WORKSPACE/scripts/comprobar-origen-catalogo.sh" || exit 1
+            # El sitio tiene que EXISTIR en el proyecto (y estar bien escrito).
+            # Solo lectura.
+            if ! firebase hosting:sites:get "$SITIO_CATALOGO" --project "$PROYECTO" >/dev/null; then
+              echo "::error::El sitio de Hosting '$SITIO_CATALOGO' no existe en el proyecto de producción (o está mal escrito en vars.HOSTING_SITIO_CATALOGO). Cree el sitio: docs/produccion/sitio-publico-catalogo.md §3.3."; exit 1
+            fi
             firebase target:apply hosting consola "$SITIO_CONSOLA" --project "$PROYECTO"
             firebase target:apply hosting catalogo "$SITIO_CATALOGO" --project "$PROYECTO"
           fi
@@ -2060,6 +2113,27 @@ jobs:
           done
           echo "ok=false" >> "$GITHUB_OUTPUT"
           echo "::error::Producción no responde 200 tras 10 intentos"
+
+      # T-37: el sitio público del catálogo también se verifica, de solo lectura.
+      # Hace fallar el job si la página no sirve con la política esperada, si la
+      # consola aparece en ese origen o si el paquete trae el SDK de Firebase. Va
+      # después del health check de la consola y solo si éste pasó (si falló, el
+      # rollback de abajo ya se ocupa). Corre aunque la consola esté bien: un
+      # sitio público roto no lo detecta ningún otro paso.
+      - name: Humo del sitio público del catálogo (solo lectura)
+        if: steps.salud.outputs.ok == 'true'
+        timeout-minutes: 8
+        working-directory: ${{ github.workspace }}
+        env:
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
+          SITIO_PUBLICO_URL: ${{ vars.SITIO_PUBLICO }}
+          CONSOLA_URL: ${{ vars.PROD_URL }}
+        run: |
+          set -euo pipefail
+          if [[ "$SOLO" != *hosting* ]]; then
+            echo "Este despliegue no incluye hosting: no se verifica el sitio público."; exit 0
+          fi
+          ./scripts/humo-sitio-publico.sh
 
       - name: Rollback de hosting (clonar canal "previa" sobre live)
         if: steps.salud.outputs.ok == 'false'

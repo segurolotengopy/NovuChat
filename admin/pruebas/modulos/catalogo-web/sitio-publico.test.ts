@@ -15,9 +15,11 @@
  * `scripts/modulos/catalogo-web/verificar-sitio-publico.mjs`, que corre en el job `construir`).
  */
 import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { closeSync, fstatSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const ADMIN = resolve(aqui, '../../..');
@@ -77,6 +79,10 @@ describe('firebase.json: dos sitios de Hosting con orígenes distintos', () => {
       expect(p.hosting['catalogo']?.[0]).not.toBe(p.hosting['consola']?.[0]);
     }
     expect(JSON.stringify(rc)).toMatch(/\$\{HOSTING_SITIO_CATALOGO/);
+    // El sitio de la consola se nombra como lo hace el workflow (`FIREBASE_SITE_ID`,
+    // o el id del proyecto): una variable que el CI no conoce sería un marcador muerto.
+    expect(JSON.stringify(rc)).toContain('${FIREBASE_SITE_ID}');
+    expect(JSON.stringify(rc)).not.toContain('HOSTING_SITIO_CONSOLA');
     // Claves y valores son marcadores `${...}`, nunca un identificador.
     for (const [proyecto, t] of Object.entries(rc.targets)) {
       expect(proyecto).toMatch(/^\$\{[A-Z_]+\}$/);
@@ -283,18 +289,18 @@ describe('el paquete público no puede arrastrar la consola ni el SDK de Firebas
   });
 });
 
-describe('la compilación: dos paquetes, y el modo llega a la consola', () => {
+describe('la compilación: dos paquetes', () => {
   const paquete = JSON.parse(leer('web/package.json')) as { scripts: Record<string, string> };
 
-  it('`build` compila el catálogo y LA CONSOLA AL FINAL', () => {
+  it('`build` compila el catálogo y la consola', () => {
     const orden = paquete.scripts['build'] ?? '';
     expect(orden).toContain('vite build --config vite.catalogo.config.ts');
-    // El CI llama `web:build -- --mode <ambiente>` y pnpm agrega esos argumentos
-    // al FINAL del script: tienen que caer en la compilación de la consola, la
-    // que lee las VITE_* del ambiente. Si alguien reordena, el modo se lo lleva
-    // la del catálogo y la consola compila con el modo equivocado.
     expect(orden.trim().endsWith('&& vite build')).toBe(true);
-    expect(orden.indexOf('vite.catalogo.config.ts')).toBeLessThan(orden.lastIndexOf('vite build'));
+    // NO se afirma nada sobre `--mode`: el CI llama `web:build -- --mode <ambiente>`,
+    // pnpm lo convierte en `vite build -- --mode <ambiente>` y lo que va después de
+    // `--` Vite lo ignora (medido el 03/10/2026: el paquete no lleva el modo). Lo que
+    // distingue a staging de producción son las variables `VITE_*`, que llegan por el
+    // entorno de cada job, no por el modo.
   });
 
   it('dist-catalogo está ignorado por git', () => {
@@ -355,9 +361,28 @@ describe('el despliegue publica los dos sitios y se niega a juntarlos', () => {
       expect(j).toMatch(/HOSTING_SITIO_CATALOGO es el sitio de la consola/);
     });
 
-    it(`${desplegar}: falla si el enlace del catálogo sigue siendo el origen de la consola`, () => {
+    it(`${desplegar}: la dirección del catálogo pasa por la compuerta de host (comprobar-origen-catalogo.sh)`, () => {
       const j = job(desplegar);
-      expect(j).toMatch(/SITIO_PUBLICO es el origen de la consola/);
+      expect(j).toContain('scripts/comprobar-origen-catalogo.sh');
+      expect(j).toContain('vars.HOSTING_DOMINIO_CATALOGO');
+      // Se compara contra el host de la consola Y contra los del proyecto, no solo contra PROD_URL/STAGING_URL.
+      expect(j).toMatch(/URL_CONSOLA="\$URL_(PROD|STAGING)"/);
+    });
+
+    it(`${desplegar}: reverifica el paquete público descargado, antes de publicar (L-3)`, () => {
+      const j = job(desplegar);
+      const verif = j.indexOf('node scripts/modulos/catalogo-web/verificar-sitio-publico.mjs');
+      expect(verif, 'sin reverificación tras la descarga').toBeGreaterThan(-1);
+      expect(verif).toBeGreaterThan(j.indexOf(`name: dist-catalogo-${desplegar === 'desplegar-staging' ? 'staging' : 'production'}`));
+      expect(verif).toBeLessThan(j.indexOf('target:apply hosting catalogo'));
+    });
+
+    it(`${desplegar}: comprueba en Firebase que el sitio exista en ESTE proyecto, antes de resolver los destinos`, () => {
+      const j = job(desplegar);
+      const get = j.indexOf('firebase hosting:sites:get "$SITIO_CATALOGO" --project "$PROYECTO"');
+      expect(get).toBeGreaterThan(-1);
+      expect(get).toBeLessThan(j.indexOf('target:apply hosting catalogo'));
+      expect(j).toMatch(/no existe en el proyecto de (staging|producción)/);
     });
 
     it(`${desplegar}: resuelve los destinos ANTES de publicar`, () => {
@@ -375,6 +400,60 @@ describe('el despliegue publica los dos sitios y se niega a juntarlos', () => {
   it('dev y el canal de PR publican solo la consola (no tienen segundo sitio)', () => {
     expect(job('desplegar-dev')).toContain('hosting:consola');
     expect(job('previsualizar')).toContain('--only consola');
+  });
+
+  it('dev reemplaza SOLO el elemento exacto `hosting` de la lista (el código real del workflow, ejecutado)', () => {
+    const j = job('desplegar-dev');
+    const i = j.indexOf("IFS=',' read -r -a partes");
+    const f = j.indexOf('SOLO="$(IFS=,; echo "${partes[*]}")"');
+    expect(i).toBeGreaterThan(-1);
+    expect(f).toBeGreaterThan(i);
+    const trozo = j.slice(i, f) + 'SOLO="$(IFS=,; echo "${partes[*]}")"\nprintf "%s" "$SOLO"';
+    const corre = (solo: string) => {
+      const r = spawnSync('bash', ['-c', trozo], {
+        encoding: 'utf8',
+        env: entornoDelEmulador(undefined, { SOLO: solo }),
+      });
+      expect(r.status, r.stderr).toBe(0);
+      return r.stdout;
+    };
+    expect(corre('hosting,firestore:rules,firestore:indexes')).toBe('hosting:consola,firestore:rules,firestore:indexes');
+    expect(corre('hosting')).toBe('hosting:consola');
+    // Un valor ya calificado, o un nombre que solo CONTIENE «hosting», no se toca.
+    expect(corre('hosting:consola,functions')).toBe('hosting:consola,functions');
+    expect(corre('hosting:catalogo')).toBe('hosting:catalogo');
+    expect(corre('functions,webhosting')).toBe('functions,webhosting');
+  });
+
+  it('producción corre el humo del sitio público tras el health check, de solo lectura y haciendo fallar el job', () => {
+    const j = job('desplegar-produccion');
+    const humo = j.indexOf('./scripts/humo-sitio-publico.sh');
+    expect(humo).toBeGreaterThan(-1);
+    expect(humo).toBeGreaterThan(j.indexOf('id: salud'));
+    const paso = j.slice(j.lastIndexOf('- name:', humo), humo + 40);
+    expect(paso).toContain("if: steps.salud.outputs.ok == 'true'");
+    expect(paso).toContain('SITIO_PUBLICO_URL: ${{ vars.SITIO_PUBLICO }}');
+    expect(paso).toContain('CONSOLA_URL: ${{ vars.PROD_URL }}');
+    expect(paso).not.toContain('continue-on-error');
+    expect(paso).toContain('timeout-minutes');
+  });
+
+  it('preparar-staging.sh ya no carga la dirección de la consola como SITIO_PUBLICO y crea el segundo sitio', () => {
+    const t = readFileSync(join(ADMIN, '..', 'scripts/preparar-staging.sh'), 'utf8');
+    expect(t).not.toMatch(/SITIO_PUBLICO[^\n]*"\$URL_STAGING"/);
+    expect(t).toMatch(/SITIO_PUBLICO[^\n]*"\$URL_CATALOGO"/);
+    expect(t).toContain('HOSTING_SITIO_CATALOGO');
+    expect(t).toContain('hosting:sites:create');
+    expect(t).toContain('fase_sitio()');
+  });
+
+  it('la consola no deja huérfano el estilo del marco, y la vista previa explica la falta de dirección', () => {
+    expect(leer('web/src/central/estilos/estilos.css')).not.toContain('.marco-catalogo');
+    const c = leer('web/src/modulos/productos/Catalogo.tsx');
+    expect(c).not.toMatch(/<iframe\s/); // el elemento, no la mención en el comentario
+    expect(c).toContain('dirección del sitio');
+    expect(c).toContain('Avise a NovuChat');
+    expect(leer('web/src/modulos/catalogo-web/publico/montar.tsx')).not.toContain('validada por `main.tsx`');
   });
 
   it('el humo de staging recibe la dirección del sitio público y la mira', () => {
@@ -408,5 +487,79 @@ describe('el despliegue publica los dos sitios y se niega a juntarlos', () => {
     expect(humo).toContain('frame-ancestors');
     expect(humo).toContain('identitytoolkit');
     expect(humo).toContain('FICHA_DE_PRUEBA');
+  });
+});
+
+/**
+ * LA COMPUERTA DE LA DIRECCIÓN DEL CATÁLOGO, ejecutada (no solo leída).
+ *
+ * La consola responde en su dominio propio (PROD_URL) y TAMBIÉN en
+ * `<sitio>.web.app` y `<sitio>.firebaseapp.com`, y en los del proyecto: comparar
+ * `SITIO_PUBLICO` solo con `PROD_URL` dejaba pasar esos. Es un script de bash sin
+ * red ni credenciales; se lanza con el entorno de las suites (hijos-hermeticos).
+ */
+describe('comprobar-origen-catalogo.sh: SITIO_PUBLICO no puede ser un origen de la consola', () => {
+  const script = join(ADMIN, '..', 'scripts/comprobar-origen-catalogo.sh');
+  const BASE: Record<string, string> = {
+    SITIO_CATALOGO: 'cat-sitio',
+    SITIO_CONSOLA: 'consola-sitio',
+    PROYECTO: 'proyecto-id',
+    URL_CONSOLA: 'https://consola.ejemplo.test',
+    DOMINIOS_CATALOGO: '',
+    SITIO_PUBLICO: '',
+  };
+  const corre = (publico: string, extra: Record<string, string> = {}) => {
+    const r = spawnSync('bash', [script], {
+      encoding: 'utf8',
+      env: entornoDelEmulador(undefined, { ...BASE, ...extra, SITIO_PUBLICO: publico }),
+    });
+    return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
+  };
+
+  it('acepta el sitio público declarado, con mayúsculas, ruta, puerto o punto final', () => {
+    for (const u of [
+      'https://cat-sitio.web.app',
+      'https://CAT-SITIO.WEB.APP/c/abc?x=1#y',
+      'https://cat-sitio.firebaseapp.com:443/',
+      'https://cat-sitio.web.app./',
+    ]) expect(corre(u).codigo, u).toBe(0);
+  });
+
+  it('acepta un dominio propio SOLO si está declarado aparte', () => {
+    expect(corre('https://catalogo.ejemplo.test').codigo).toBe(1);
+    expect(corre('https://catalogo.ejemplo.test', { DOMINIOS_CATALOGO: 'catalogo.ejemplo.test' }).codigo).toBe(0);
+    expect(corre('https://CATALOGO.ejemplo.test/c/x', { DOMINIOS_CATALOGO: 'otro.ejemplo.test, Catalogo.Ejemplo.Test' }).codigo).toBe(0);
+  });
+
+  it('NEGANDO: rechaza todos los hosts donde responde la consola', () => {
+    for (const u of [
+      'https://consola-sitio.web.app',                // el sitio de la consola
+      'https://CONSOLA-SITIO.firebaseapp.com/c/x',
+      'https://proyecto-id.web.app',                  // el sitio por defecto del proyecto
+      'https://proyecto-id.firebaseapp.com./',
+      'https://consola.ejemplo.test',                 // PROD_URL
+      'https://Consola.Ejemplo.Test:8443/ruta?x#y',   // PROD_URL con otra forma
+      ['https://usuario', 'consola-sitio.web.app/'].join('@'), // con usuario delante: el host sigue siendo el de la consola (armado así: el saneo toma «a@b.c» por un correo)
+    ]) {
+      const r = corre(u);
+      expect(r.codigo, u).toBe(1);
+      expect(r.salida, u).toContain('un host de la consola');
+    }
+  });
+
+  it('NEGANDO: el host de la consola se rechaza aunque esté en la lista de dominios propios', () => {
+    expect(corre('https://consola.ejemplo.test', { DOMINIOS_CATALOGO: 'consola.ejemplo.test' }).codigo).toBe(1);
+    expect(corre('https://proyecto-id.web.app', { DOMINIOS_CATALOGO: 'proyecto-id.web.app' }).codigo).toBe(1);
+  });
+
+  it('NEGANDO: rechaza lo que no es https, está vacío, o es otro host (incluido uno que solo CONTIENE el nuestro)', () => {
+    for (const u of [
+      '', 'http://cat-sitio.web.app', 'cat-sitio.web.app', 'https://otro.web.app',
+      'https://cat-sitio.web.app.malo.test', 'https://malo.test/cat-sitio.web.app',
+    ]) expect(corre(u).codigo, u).toBe(1);
+  });
+
+  it('sin el id del sitio del catálogo no hay con qué comparar: sale 2', () => {
+    expect(corre('https://cat-sitio.web.app', { SITIO_CATALOGO: '' }).codigo).toBe(2);
   });
 });

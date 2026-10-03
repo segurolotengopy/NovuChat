@@ -371,7 +371,9 @@ excepción que se AGREGÓ, y conviene decir qué cuesta:
 
 `scripts/probar-csp.mjs` aplica **el bloque que corresponde a cada ruta**, no solo
 el general: probar `/c/<ficha>` con la política de la consola diría que todo está
-bien y estaría probando la página equivocada.
+bien y estaría probando la página equivocada. (Desde T-37 `/c/<ficha>` ya no es de
+la consola: este script sirve el sitio `consola` y la página pública se prueba con
+`scripts/datos/catalogo-demo.mjs`, que lee el bloque del sitio `catalogo`.)
 
 ### Fragilidad conocida, dicha por adelantado
 

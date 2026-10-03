@@ -13,7 +13,7 @@
     },
     "${GCP_PROJECT_ID}": {
       "hosting": {
-        "consola": ["${HOSTING_SITIO_CONSOLA}"],
+        "consola": ["${FIREBASE_SITE_ID}"],
         "catalogo": ["${HOSTING_SITIO_CATALOGO}"]
       }
     }

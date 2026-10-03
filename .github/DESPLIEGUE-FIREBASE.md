@@ -233,8 +233,13 @@ del proyecto de producción. Lo que hay:
   - **`HOSTING_SITIO_CATALOGO`** (nueva): el sitio de la página pública. En
     producción es una variable del repositorio; en staging, del Environment
     `staging`. **El despliegue falla a propósito** si falta, si coincide con el
-    de la consola, o si `SITIO_PUBLICO` es el origen de la consola (`PROD_URL` /
-    `STAGING_URL`). `SITIO_PUBLICO` pasa a ser la dirección de ese segundo sitio.
+    de la consola, si el sitio no existe en el proyecto (`hosting:sites:get`), o
+    si el host de `SITIO_PUBLICO` no es `<sitio>.web.app`, `<sitio>.firebaseapp.com`
+    o un dominio de **`HOSTING_DOMINIO_CATALOGO`** (variable opcional, hosts
+    separados por comas), o es uno donde responde la consola
+    (`scripts/comprobar-origen-catalogo.sh`). `SITIO_PUBLICO` pasa a ser la
+    dirección de ese segundo sitio. Tras el health check, producción corre
+    `scripts/humo-sitio-publico.sh` (solo lectura) y falla el job si no pasa.
   - El ambiente `dev` y el canal de PR publican solo la consola
     (`hosting:consola`, `--only consola`).
   - Procedimiento de operación, con los comandos exactos:

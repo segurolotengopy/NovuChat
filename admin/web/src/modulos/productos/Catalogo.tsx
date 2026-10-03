@@ -1782,8 +1782,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items, usados, limite, unidad }
  * SE ABRE EN OTRA PESTAÑA, no en un marco (T-37, `admin/SEGURIDAD.md`): la
  * página pública está en un sitio de Hosting con otro origen que la consola, y
  * enmarcarla exigiría que ambas políticas de seguridad nombraran la dirección de
- * la otra. (Antes iba en un marco del ancho de un teléfono; `.marco-catalogo` en
- * `estilos.css` quedó sin uso.)
+ * la otra. (Antes iba en un marco del ancho de un teléfono.)
  */
 function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boolean }) {
   const [catalogoWebActivo, setCatalogoWebActivo] = useState<boolean | null>(null);
@@ -1807,8 +1806,14 @@ function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boole
       const r = await httpsCallable<{ tenantId: string }, { url: string }>(
         funciones, 'vistaPreviaCatalogo')({ tenantId });
       setUrl(r.data.url);
-    } catch {
-      setError('No se pudo abrir la vista previa. Intente en un momento.');
+    } catch (e) {
+      // El servidor dice «Falta configurar la dirección del sitio» cuando falta
+      // SITIO_PUBLICO (T-37): reintentar no lo arregla, y «intente en un momento»
+      // le haría perder tiempo al comercio. Se le dice qué pasa y a quién avisar.
+      const mensaje = (e as { message?: unknown }).message;
+      setError(typeof mensaje === 'string' && mensaje.includes('dirección del sitio')
+        ? 'La dirección pública del catálogo todavía no está configurada, así que no se puede abrir la vista previa ni mandar enlaces a los clientes. Avise a NovuChat.'
+        : 'No se pudo abrir la vista previa. Intente en un momento.');
     } finally {
       setPidiendo(false);
     }
