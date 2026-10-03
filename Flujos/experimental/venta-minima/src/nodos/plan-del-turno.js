@@ -835,8 +835,13 @@ function aRecordatorio() {
   if (!ped) return derivar('esperando comprobante sin pedido en el flujo');
   // El texto lo decide EL PEDIDO (`ped.simulado`, fijado al mandar su QR), no el modo vigente: un pedido real nunca se rotula «SIMULADO».
   const sim = ped.simulado === true;
+  // H3: Meta puede aceptar `image.link` y fallar DESPUES (estado `failed` asincrono) y el respaldo en texto no cubre ese fallo: el recordatorio
+  // simulado lleva el enlace de la imagen (ya validado como https) para que el cliente la abra. Solo con el modo simulado vigente y un QR
+  // utilizable; nunca el QR del cobro real.
+  const cobroVigente = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
+  const enlaceQr = sim && cobroVigente.modo === 'simulado' && cbHayQr(cobroVigente) ? ' Si no ves el QR, ábrelo aquí: ' + String(cobroVigente.qrUrl).trim() : '';
   const cuerpo = sim
-    ? 'Estoy esperando el comprobante SIMULADO de tu pedido #' + ped.codigo + ' (es una prueba: no se paga nada). Envíame aquí cualquier foto, o usa los botones.'
+    ? 'Estoy esperando el comprobante SIMULADO de tu pedido #' + ped.codigo + ' (es una prueba: no se paga nada). Envíame aquí cualquier foto, o usa los botones.' + enlaceQr
     : 'Estoy esperando el comprobante de tu pedido #' + ped.codigo + '. Envíame aquí la foto o el PDF, o usa los botones.';
   mensajes = [{ tipo: 'botones',
     cuerpo: cuerpo,

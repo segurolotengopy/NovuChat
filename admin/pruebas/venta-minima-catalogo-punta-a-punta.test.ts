@@ -518,3 +518,19 @@ describe('un pedido SIMULADO con el cobro real encendido y una solicitud pendien
   });
 });
 
+describe('el recordatorio SIMULADO sale de punta a punta con el enlace del QR (H3), en un solo mensaje y sin pasar por la red de palabras', () => {
+  it('«¿ya llegó?» con un QR simulado pendiente: UN mensaje que trae «Si no ves el QR, ábrelo aquí» y el enlace, y Meta lo recibe', () => {
+    const w = crear();
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), cobroReal: undefined, cobro: { activo: false }, cobroSimulado: {} } });
+    turno(w, texto('hola'));
+    w.estado.extraccion = { lineas: [{ producto: 'tacos de birria', cantidad: 4, forma: 'unidad', detalle: '' }], entrega: 'recojo', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+    const resumen = turno(w, texto('quiero 4 tacos de birria'));
+    turno(w, boton(idDeBoton(resumen, 'Confirmar pedido'), 'Confirmar pedido'));
+    const t = turno(w, texto('¿ya llegó?'));
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes[0]!.ok).toBe(true);
+    expect(t.mensajes[0]!.cuerpo).toContain('SIMULADO');
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Si no ves el QR, ábrelo aquí: https:\/\/\S+/);
+  });
+});
+

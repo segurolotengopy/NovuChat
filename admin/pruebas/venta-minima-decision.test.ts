@@ -1378,6 +1378,23 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     expect(registrar(turno(normal, { texto: '¿ya llegó?' })).p!['mensajes'][0]['cuerpo']).toContain('SIMULADO');
   });
 
+  it('H3: el recordatorio SIMULADO lleva «Si no ves el QR, ábrelo aquí» con el enlace validado; el real nunca lo lleva ni el enlace del QR simulado cambia de pedido', () => {
+    const sim = enEsperaSim();
+    const r = registrar(turno(sim, { texto: '¿ya llegó?' }));
+    expect(r.p!['mensajes'][0]['cuerpo']).toContain(`Si no ves el QR, ábrelo aquí: ${QR}`);
+    expect(r.p!['mensajes'].length).toBe(1); // sin mensajes extra
+    // NEGANDO: un pedido real no lleva el enlace; un pedido simulado con el modo ya cambiado a real tampoco (no se filtra el QR real).
+    const real = enEsperaReal();
+    expect(registrar(turno(real, { texto: '¿ya llegó?' })).p!['mensajes'][0]['cuerpo']).not.toContain('Si no ves el QR');
+    const cambiado = enEsperaSim();
+    cambiado.cfg['cobro'] = CFG_QR.cobro;
+    expect(registrar(turno(cambiado, { texto: '¿ya llegó?' })).p!['mensajes'][0]['cuerpo']).not.toContain('Si no ves el QR');
+    // un enlace inseguro (http) tampoco se manda
+    const malo = enEsperaSim();
+    malo.cfg['cobro'] = { ...CFG_SIM.cobro, qrUrl: 'http://qr.ejemplo.invalid/x.png' };
+    expect(registrar(turno(malo, { texto: '¿ya llegó?' })).p!['mensajes'][0]['cuerpo']).not.toContain('http://');
+  });
+
   it('«Reenviar QR» en simulado manda la imagen con el pie «SIMULADO» y sin `qr_enviado`', () => {
     const m = enEsperaSim();
     const q = registrar(turno(m, { boton: 'q|reenviar' }));

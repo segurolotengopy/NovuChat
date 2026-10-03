@@ -515,6 +515,12 @@ CLAUDE.md: el rótulo va **impreso en la imagen** y en el **pie**, la respuesta 
 dibujar el QR desde `cargaUtil`, **sin rótulo**. Registrar `qr-demo.png` como QR real dejaría un cobro real sin rótulo: está prohibido. La imagen
 rotulada solo viaja por `qrSimuladoUrl`.
 
+**Qué se verifica con un teléfono ANTES de abrir el piloto (H3).** Meta puede aceptar `image.link` y fallar después (estado `failed` asíncrono,
+sin id de error en la respuesta del envío) y el respaldo en texto no cubre ese fallo. Mitigación sin mensajes extra: el recordatorio del
+comprobante simulado lleva «Si no ves el QR, ábrelo aquí: <enlace>» (el enlace de `qrSimuladoUrl`, ya validado como https; solo con el modo
+simulado vigente). Lo que NO se puede probar sin red y queda para un teléfono real antes de abrir: que Meta descargue la imagen de
+`raw.githubusercontent.com` y que el cliente la vea.
+
 **Pasar a cobro real sin tocar código:** el administrador registra su QR en la consola, `activar-cobro-real.mjs` lo enciende y desde ese momento
 el servidor manda `cobroReal` y el flujo ya está en real. Como limpieza: `modoCobro: real`, quitar las dos claves, reconstruir y republicar.
 Encender el real sin pruebas abiertas: un QR simulado pendiente se cotejaría contra la cuenta real y daría `no_cuadra`.
