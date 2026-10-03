@@ -853,6 +853,106 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     expect(sin.status).toBe(1);
     expect(sin.stderr).toContain('retención');
   });
+
+  // COBRO SIMULADO (piloto de Q'Taco, 03/10/2026). Cada caso se prueba NEGANDO: la copia sin tocar da 0 y la alterada da 1 con SU mensaje.
+  it('--verificar FALLA si el cobro simulado trae otra imagen, un booleano que no lo es, una sola clave o un modo que no corresponde', () => {
+    const URL_OK = 'https://raw.githubusercontent.com/segurolotengopy/NovuChat/v0.11.0/Demo-Recursos/qr-demo.png';
+    expect(verificarEnCopia(() => undefined).status, 'la copia sin tocar').toBe(0);
+    // La referencia de «Config base» de Q'Taco es el cobro simulado, con la imagen exacta.
+    const base = configBase(QTACO);
+    expect(base['cobroSimuladoActivo']).toBe(true);
+    expect(base['qrSimuladoUrl']).toBe(URL_OK);
+    const datosDe = (mutar: (cb: J, d: J) => void) => verificarEnCopia((_vm, datos) => editarDatos(datos, 'qtaco.json', (d) => mutar(d['configBase'], d)));
+    // 1. La imagen: solo la del repositorio, en una etiqueta de versión.
+    const imagenes: [string, string][] = [
+      ['otro anfitrión', URL_OK.replace('raw.githubusercontent.com', 'imagenes.ejemplo.invalid')],
+      ['otro repositorio', URL_OK.replace('segurolotengopy/NovuChat', 'otro/Repo')],
+      ['rama main en lugar de la etiqueta', URL_OK.replace('v0.11.0', 'main')],
+      ['otra imagen del mismo repositorio', URL_OK.replace('qr-demo.png', 'otra.png')],
+      ['http', URL_OK.replace('https', 'http')],
+      ['con puerto', URL_OK.replace('.com/', '.com:8443/')],
+      ['con consulta', `${URL_OK}?x=1`],
+      ['marcador', 'REEMPLAZAR_URL_QR_SIMULADO'],
+      ['vacía', ''],
+    ];
+    for (const [nombre, url] of imagenes) {
+      const r = datosDe((cb) => { cb['qrSimuladoUrl'] = url; });
+      expect(r.status, nombre).toBe(1);
+      expect(r.stderr, nombre).toContain('qrSimuladoUrl no es la imagen rotulada permitida');
+    }
+    // 2. El interruptor es el booleano `true`: ni texto, ni número, ni `false`, ni ausente.
+    for (const [nombre, valor] of [['texto «true»', 'true'], ['número 1', 1], ['false', false]] as [string, unknown][]) {
+      const r = datosDe((cb) => { cb['cobroSimuladoActivo'] = valor; });
+      expect(r.status, nombre).toBe(1);
+      expect(r.stderr, nombre).toContain('cobroSimuladoActivo = true (booleano)');
+    }
+    // 3. Solo una de las dos claves (con `modoCobro: simulado` cada una exige a la otra).
+    const sinUrl = datosDe((cb) => { delete cb['qrSimuladoUrl']; });
+    expect(sinUrl.status).toBe(1);
+    expect(sinUrl.stderr).toContain('qrSimuladoUrl no es la imagen rotulada permitida');
+    const sinActivo = datosDe((cb) => { delete cb['cobroSimuladoActivo']; });
+    expect(sinActivo.status).toBe(1);
+    expect(sinActivo.stderr).toContain('cobroSimuladoActivo = true (booleano)');
+    // 4. Los modos son excluyentes: con `real` o `sin_qr` las claves no pueden existir (y sin ellas, esos modos construyen).
+    for (const modo of ['real', 'sin_qr']) {
+      const conClaves = datosDe((_cb, d) => { d['modoCobro'] = modo; });
+      expect(conClaves.status, modo).toBe(1);
+      expect(conClaves.stderr, modo).toContain(`modoCobro «${modo}» no admite cobroSimuladoActivo ni qrSimuladoUrl`);
+      // Solo una de las dos claves, con otro modo: también falla.
+      const unaSola = datosDe((cb, d) => { d['modoCobro'] = modo; delete cb['qrSimuladoUrl']; });
+      expect(unaSola.status, `${modo} con una clave`).toBe(1);
+      expect(unaSola.stderr, `${modo} con una clave`).toContain('no admite cobroSimuladoActivo ni qrSimuladoUrl');
+    }
+    // 5. `modoCobro` es obligatorio y de la lista cerrada.
+    for (const [nombre, valor] of [['ausente', undefined], ['vacío', ''], ['mayúsculas', 'Simulado'], ['otro', 'demo']] as [string, unknown][]) {
+      const r = datosDe((_cb, d) => { if (valor === undefined) delete d['modoCobro']; else d['modoCobro'] = valor; });
+      expect(r.status, `modoCobro ${nombre}`).toBe(1);
+      expect(r.stderr, `modoCobro ${nombre}`).toContain('«modoCobro» debe ser simulado, real, sin_qr');
+    }
+    // 6. Los archivos que heredan de `qtaco.json` cuentan con lo heredado: quitarle el modo a uno que hereda las claves falla igual.
+    const heredero = verificarEnCopia((_vm, datos) => editarDatos(datos, 'ensayo.json', (d) => { d['modoCobro'] = 'sin_qr'; }));
+    expect(heredero.status).toBe(1);
+    expect(heredero.stderr).toContain('ensayo.json');
+    expect(heredero.stderr).toContain('no admite cobroSimuladoActivo ni qrSimuladoUrl');
+    // 7. El JSON VERSIONADO editado a mano (aunque los datos estén bien) también falla, con el mensaje de la guardia.
+    const enJson = (mutar: (asig: J[]) => void) => verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
+      const set = f.nodes.find((n) => n.name === 'Config base') as NonNullable<(typeof f.nodes)[number]>;
+      mutar(set.parameters['assignments'].assignments as J[]);
+    }));
+    const asignada = (asig: J[], nombre: string): J => asig.find((a) => a['name'] === nombre) as J;
+    const aMano: [string, (asig: J[]) => void, string][] = [
+      ['URL cambiada a mano', (a) => { asignada(a, 'qrSimuladoUrl')['value'] = URL_OK.replace('v0.11.0', 'main'); }, 'qrSimuladoUrl no es la imagen rotulada permitida'],
+      ['URL de otro anfitrión', (a) => { asignada(a, 'qrSimuladoUrl')['value'] = 'https://imagenes.ejemplo.invalid/qr.png'; }, 'qrSimuladoUrl no es la imagen rotulada permitida'],
+      ['interruptor como texto', (a) => { const x = asignada(a, 'cobroSimuladoActivo'); x['type'] = 'string'; x['value'] = 'true'; }, 'cobroSimuladoActivo debe ser el booleano true'],
+      ['interruptor en false', (a) => { asignada(a, 'cobroSimuladoActivo')['value'] = false; }, 'cobroSimuladoActivo debe ser el booleano true'],
+      ['sin la URL', (a) => { a.splice(a.findIndex((x) => x['name'] === 'qrSimuladoUrl'), 1); }, 'solo una de cobroSimuladoActivo / qrSimuladoUrl'],
+      ['sin el interruptor', (a) => { a.splice(a.findIndex((x) => x['name'] === 'cobroSimuladoActivo'), 1); }, 'solo una de cobroSimuladoActivo / qrSimuladoUrl'],
+    ];
+    for (const [nombre, mutar, mensaje] of aMano) {
+      const r = enJson(mutar);
+      expect(r.status, nombre).toBe(1);
+      expect(r.stderr, nombre).toContain(mensaje);
+    }
+    // 8. Los datos dicen «sin_qr» (sin las claves) pero el JSON versionado todavía trae el cobro simulado: la guardia lo atrapa.
+    const dicenOtroModo = verificarEnCopia((_vm, datos) => editarDatos(datos, 'qtaco.json', (d) => {
+      d['modoCobro'] = 'sin_qr';
+      delete d['configBase']['cobroSimuladoActivo'];
+      delete d['configBase']['qrSimuladoUrl'];
+    }));
+    expect(dicenOtroModo.status).toBe(1);
+    expect(dicenOtroModo.stderr).toContain('trae el cobro simulado y los datos dicen modoCobro «sin_qr»');
+    // Negativo: el camino de vuelta al plan B (modo sin_qr, sin las claves, reconstruido) verifica en 0 y NO trae el cobro simulado.
+    const planB = verificarEnCopia((vm, datos) => {
+      editarDatos(datos, 'qtaco.json', (d) => {
+        d['modoCobro'] = 'sin_qr';
+        delete d['configBase']['cobroSimuladoActivo'];
+        delete d['configBase']['qrSimuladoUrl'];
+      });
+      const construido = spawnSync(process.execPath, [join(vm, 'construir.mjs')], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+      if (construido.status !== 0) throw new Error(construido.stderr);
+    });
+    expect(planB.status, planB.stderr).toBe(0);
+  });
 });
 
 // =====================================================================================================
@@ -4197,5 +4297,172 @@ describe('excluidos de punta a punta: «jamaica shot», «limonada con tequila»
       const { t } = pedir(lineas, dicho);
       expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido')), dicho).toBe(true);
     }
+  });
+});
+
+// =====================================================================================================
+// 5.7. COBRO SIMULADO (piloto de Q'Taco, 03/10/2026): el QR de demostración, sin cotejo, con «PRUEBA» y sin monto
+// =====================================================================================================
+// El JSON armado, con el n8n de mentira y las librerías y los nodos REALES. El servidor decide el modo (manda `cobroSimulado` y nunca
+// `cobroReal`) y «Config base» de Q'Taco lo habilita con `cobroSimuladoActivo` y `qrSimuladoUrl`. Prohibición 3 de CLAUDE.md: el
+// rótulo va en la imagen (versionada) Y en el pie, la respuesta dice «SIMULADO» y nunca presenta el pago como un hecho.
+describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simulado, sin cotejo ni lectura', () => {
+  const URL_SIMULADO = 'https://raw.githubusercontent.com/segurolotengopy/NovuChat/v0.11.0/Demo-Recursos/qr-demo.png';
+  const SIMULADO: J = { cobroSimulado: {} };
+  const conPendiente = (pedido: string, monto: number): J => ({ cobroSimulado: {}, cobro: { activo: false, pendiente: true, monto, pedido } });
+  const LEIDOS = ['Obtener URL del medio', 'Descargar medio', 'Leer comprobante (imagen)', 'Leer comprobante (PDF)', 'Cotejar en el servidor'];
+  const REDES = /pago (acreditado|verificado)|recibimos tu pago|pago confirmado|verificad|acreditad/i;
+
+  /** Pedido confirmado con el cobro simulado y una foto o un PDF como comprobante. */
+  function pedidoSimulado(op: OpPedido = {}, archivo: 'imagen' | 'documento' = 'imagen') {
+    const r = armarPedido({ cobro: false, panelExtra: SIMULADO, ventana: 5, ...op });
+    const qr = confirmarPedido(r);
+    const abierto = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado');
+    const ref = String(abierto?.['referencia'] ?? '');
+    const total = Number(abierto?.['monto']);
+    r.w.estado.panel = panel(conPendiente(ref, total));
+    const comp = archivo === 'imagen' ? r.c.imagen('media-9') : r.c.documento();
+    return { ...r, qr, ref, total, comp };
+  }
+  const nombresDeLaPlantilla = (f: Flujo): string[] => f.nodes.map((n) => n.name).sort();
+
+  it('el cliente recibe el QR de la imagen rotulada con «SIMULADO» y «no cobra» en el pie, y el servidor abre la solicitud', () => {
+    const r = armarPedido({ cobro: false, panelExtra: SIMULADO, ventana: 5 });
+    const qr = confirmarPedido(r);
+    const imagen = qr.mensajes[0] as NonNullable<(typeof qr.mensajes)[number]>;
+    expect(imagen.payload['type']).toBe('image');
+    expect(imagen.payload['image']?.link).toBe(URL_SIMULADO);
+    const pie = String(imagen.payload['image']?.caption);
+    expect(pie).toMatch(/SIMULADO/);
+    expect(pie).toMatch(/no cobra/i);
+    expect(pie).not.toMatch(/Escanea el QR con la app de tu banco/i);
+    expect(pie).not.toMatch(/Q TACO|Banco Ejemplo/);
+    expect(pie.length).toBeLessThanOrEqual(1024);
+    expect(PROHIBIDAS.test(pie)).toBe(false);
+    const evento = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as J;
+    expect(evento['referencia']).toMatch(/^ped-/);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
+    expect(qr.avisos).toHaveLength(0); // al restaurante todavía no: falta la foto
+    // Negativo: el QR real (el servidor manda `cobroReal`) NO lleva la leyenda de prueba ni la imagen de demostración.
+    const real = confirmarPedido(armarPedido({ ventana: 5 }));
+    expect(real.mensajes[0]?.payload['image']?.link).toBe(QR_URL);
+    expect(String(real.mensajes[0]?.payload['image']?.caption)).not.toMatch(/simulad|prueba|demostraci/i);
+  });
+
+  it('cualquier foto (o PDF) se acepta como comprobante simulado: no se baja, no se lee, no se coteja', () => {
+    for (const archivo of ['imagen', 'documento'] as const) {
+      const p = pedidoSimulado({}, archivo);
+      for (const n of LEIDOS) expect(p.comp.ejecutados.has(n), `${archivo}: ${n}`).toBe(false);
+      expect(p.comp.llamadas.cotejo, archivo).toHaveLength(0);
+      expect(p.comp.llamadas.extraer, archivo).toHaveLength(0);
+      expect(p.w.mundo.llamadas.cotejo, archivo).toHaveLength(0);
+      const texto = cuerpos(p.comp).join('\n');
+      expect(texto, archivo).toMatch(/SIMULADO/);
+      expect(texto, archivo).toMatch(/prueba/i);
+      expect(REDES.test(todoElTexto(p.comp)), archivo).toBe(false);
+      expect(PROHIBIDAS.test(texto), archivo).toBe(false);
+    }
+    // Negativo: con cobro REAL la misma foto SÍ se baja, se lee y se coteja (los dos modos no se mezclan).
+    const real = pedidoConComprobante({ ventana: 5 });
+    for (const n of ['Obtener URL del medio', 'Leer comprobante (imagen)', 'Cotejar en el servidor']) expect(real.comp.ejecutados.has(n), `real: ${n}`).toBe(true);
+  });
+
+  it('el aviso al restaurante dice PRUEBA y SIMULADO; el cierre es `registro`, sin monto, y no es una venta', () => {
+    const p = pedidoSimulado();
+    const avisos = p.comp.avisos.map((a) => `${a.cuerpo}\n${parametrosDe(a).join(' ')}`).join('\n');
+    expect(avisos).toMatch(/PRUEBA/);
+    expect(avisos).toMatch(/SIMULADO/);
+    expect(avisos).not.toMatch(/Revisen el pago en su banco|datos coinciden|NO coinciden/);
+    expect(REDES.test(avisos)).toBe(false);
+    expect(p.comp.avisos.some((a) => a.tipo === 'image')).toBe(false); // sin imagen del comprobante: no se bajó
+    expect(p.comp.llamadas.cierre).toHaveLength(1);
+    const cierre = p.comp.llamadas.cierre[0] as J;
+    expect(cierre['tipo']).toBe('registro');
+    expect(Object.keys(cierre)).not.toContain('monto');
+    expect(cierre['referencia']).toBe(p.ref);
+    expect(String(cierre['detalle'])).toMatch(/^PRUEBA/);
+    // Negativo: con cobro real el cierre lo escribe el servidor al cotejar (el flujo no manda un cierre `registro` por el comprobante).
+    const real = pedidoConComprobante({ ventana: 5 });
+    expect(real.comp.llamadas.cierre.some((c) => c['tipo'] === 'registro')).toBe(false);
+  });
+
+  it('el pedido queda guardado como de prueba, y un segundo comprobante no repite el aviso ni el cierre (idempotencia, T8)', () => {
+    const p = pedidoSimulado();
+    const guardado = pedidosGuardados(p.w.mundo).find((x) => x['pedidoId'] === p.ref) as J;
+    expect(guardado['resultado']).toBe('simulado');
+    expect(guardado['simulado']).toBe(true);
+    const segunda = p.c.imagen('media-10');
+    expect(segunda.avisos).toHaveLength(0);
+    expect(segunda.llamadas.cierre).toHaveLength(0);
+    for (const n of LEIDOS) expect(segunda.ejecutados.has(n), n).toBe(false);
+    expect(cuerpos(segunda).join('\n')).toMatch(/Ya tengo el comprobante/);
+    expect(REDES.test(todoElTexto(segunda))).toBe(false);
+  });
+
+  it('una foto sin QR pendiente, o tras cancelar el pedido, NO es un comprobante: no avisa ni cierra', () => {
+    const w = crear({ panel: panel(SIMULADO) });
+    const sinPedido = con(w).imagen('media-5');
+    expect(sinPedido.avisos).toHaveLength(0);
+    expect(sinPedido.llamadas.cierre).toHaveLength(0);
+    // Con el servidor sin solicitud pendiente: sigue siendo una imagen cualquiera, aunque el cliente tenga un pedido en pantalla.
+    const r = armarPedido({ cobro: false, panelExtra: SIMULADO, ventana: 5 });
+    const qr = confirmarPedido(r);
+    const cancela = r.c.toca(idDeBoton(r.c.escribe('¿ya llegó?'), 'Cancelar pedido'), 'Cancelar pedido');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+    expect(cancela.avisos).toHaveLength(0);
+    const ref = String(qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')?.['referencia']);
+    r.w.estado.panel = panel(conPendiente(ref, 84)); // el servidor todavía la tiene pendiente (24 h)
+    const foto = r.c.imagen('media-9');
+    expect(foto.avisos).toHaveLength(0);
+    expect(foto.llamadas.cierre).toHaveLength(0);
+    for (const n of LEIDOS) expect(foto.ejecutados.has(n), n).toBe(false);
+  });
+
+  it('con el cobro real presente el real manda, aunque «Config base» habilite el simulado; sin la habilitación, plan B', () => {
+    // El servidor manda las dos cosas: gana el real (imagen del comercio, sin leyenda de prueba) y la foto se coteja.
+    const ambos = pedidoConComprobante({ ventana: 5, panelExtra: SIMULADO });
+    expect(ambos.qr.mensajes[0]?.payload['image']?.link).toBe(QR_URL);
+    expect(String(ambos.qr.mensajes[0]?.payload['image']?.caption)).not.toMatch(/simulad|prueba|demostraci/i);
+    expect(ambos.comp.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    // (El interruptor como TEXTO no se prueba en el recorrido: n8n lo convertiría por su tipo `boolean`; lo atrapan las guardas de `--verificar`.)
+    // Control: con la habilitación completa y el mismo panel, el simulado SÍ sale (sin esto, los casos de abajo no distinguen nada).
+    expect(confirmarPedido(armarPedido({ cobro: false, panelExtra: SIMULADO, ventana: 5 })).mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO);
+    // Sin la habilitación de «Config base» (interruptor falso, URL http o vacía), el servidor puede mandar `cobroSimulado`: plan B.
+    const casos: [string, J][] = [
+      ['interruptor en false', { cobroSimuladoActivo: false }],
+      ['URL http', { qrSimuladoUrl: URL_SIMULADO.replace('https', 'http') }],
+      ['URL vacía', { qrSimuladoUrl: '' }],
+    ];
+    for (const [nombre, config] of casos) {
+      const r = armarPedido({ cobro: false, panelExtra: SIMULADO, config, ventana: 5 });
+      const t = confirmarPedido(r);
+      expect(t.mensajes.some((m) => m.tipo === 'image'), nombre).toBe(false);
+      expect(cuerpos(t)[0], nombre).toMatch(/El pago lo coordinas con ellos/);
+      expect(t.llamadas.ingesta.some((x) => x['evento'] === 'qr_enviado'), nombre).toBe(false);
+    }
+    // Y sin `cobroSimulado` del servidor (el Demo A, de agenda) tampoco: plan B, aunque «Config base» lo habilite.
+    const sinServidor = confirmarPedido(armarPedido({ cobro: false, ventana: 5 }));
+    expect(sinServidor.mensajes.some((m) => m.tipo === 'image')).toBe(false);
+    expect(cuerpos(sinServidor)[0]).toMatch(/El pago lo coordinas con ellos/);
+  });
+
+  it('cuesta lo mismo que el cobro real en el mismo guion: la misma cantidad de mensajes al cliente', () => {
+    const contarCliente = (p: { resumen: ResultadoTurno; qr: ResultadoTurno; comp: ResultadoTurno }): number => p.resumen.mensajes.length + p.qr.mensajes.length + p.comp.mensajes.length;
+    const sim = pedidoSimulado();
+    const real = pedidoConComprobante({ ventana: 5 });
+    expect(contarCliente(sim)).toBe(contarCliente(real));
+    expect(contarCliente(sim)).toBe(3);
+    expect(sim.qr.mensajes[0]?.payload['image']?.link).toBe(URL_SIMULADO); // es el QR de prueba, no el plan B que también da 3
+  });
+
+  it('el JSON de Q\'Taco sigue en 50 nodos o menos y trae el cobro simulado habilitado con la imagen permitida; ningún otro JSON cambia la forma de la plantilla', () => {
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(50);
+    const base = configBase(QTACO);
+    expect(base['cobroSimuladoActivo']).toBe(true);
+    expect(base['qrSimuladoUrl']).toBe(URL_SIMULADO);
+    // La plantilla no se toca: ningún nodo nuevo, y todo nombre del JSON de producción sale de ella.
+    const deLaPlantilla = new Set(nombresDeLaPlantilla(PLANTILLA));
+    for (const n of QTACO.nodes) expect(deLaPlantilla.has(n.name), n.name).toBe(true);
+    expect(QTACO.nodes.some((n) => /simulad/i.test(n.name))).toBe(false); // el simulado no agrega nodos
   });
 });
