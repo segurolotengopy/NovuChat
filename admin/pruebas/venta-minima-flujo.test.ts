@@ -392,6 +392,36 @@ const ESCENARIOS: Record<string, () => Esc> = {
   },
   'imagen sin cobro pendiente': () => { const w = crear(); con(w).imagen('media-5'); return { w }; },
   'ubicación compartida': () => { const w = crear(); con(w).ubicacion(); return { w }; },
+  // El ensayo del 03/10 (un solo teléfono: la recepción es el remitente, así que los textos salen SIN botón de enlace).
+  'ensayo: excluido, imagen, sugerencia, falla del modelo, reserva cruzada': () => {
+    const w = crear({
+      panel: panel({ operacion: { horarioAtencion: 'todos los días de 8 a 23', moneda: 'BOB', numeroRecepcion: CLIENTE, prefijosPermitidos: ['591'] } }),
+      config: { respaldoNumeroRecepcion: CLIENTE },
+    });
+    const c = con(w);
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('helado', 1)]);
+    c.escribe('quiero un helado');
+    c.imagen('media-5');
+    w.estado.extraccion = EX([ln('Coca-Cola', 1)]);
+    c.escribe('una coca');
+    w.estado.extraccion = null;
+    c.audio();
+    w.estado.extraccion = RESERVA_OK;
+    c.escribe('quiero reservar una mesa');
+    c.escribe('menú');
+    return { w };
+  },
+  'pedido guardado, reserva cruzada y pedido retomado': () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.estado.extraccion = RESERVA_OK;
+    r.c.escribe('quiero reservar una mesa');
+    r.c.toca('r|enviar', 'Enviar solicitud');
+    r.c.escribe('carta');
+    return { w: r.w };
+  },
+  'audio sin leer y sticker': () => { const w = crear({ dobles: { 'Transcribir audio': () => ({}) } }); const c = con(w); c.audio(); c.turno({ type: 'contacts', contacts: [] }); return { w }; },
 };
 
 const turnosDe = (e: Esc): Turno[] => e.w.turnos;
@@ -1058,6 +1088,7 @@ describe('no negociable 2: ningún texto presenta lo no verificado como un hecho
     const w = crear({ dobles: { 'Traer configuración': () => ({ statusCode: 409, body: { mensajeCortesia: 'Tu pago confirmado, gracias' } }) } });
     const t = con(w).escribe('hola');
     expect(todoElTexto(t)).not.toMatch(/confirmad/i);
+    // Este aviso fijo no pasa por la conversación (`Decidir turno`): no ofrece «menú» y conserva el texto genérico de siempre.
     expect(cuerpos(t)[0]).toContain('Eso lo ve directamente el restaurante');
     expect(t.avisos).toHaveLength(0);
     // El negativo: un texto de cortesía sano pasa tal cual.
@@ -1182,7 +1213,7 @@ describe('no negociable 3: «pasé tu pedido al restaurante» solo si un aviso s
         expect(t.ejecutados.has('Aviso de respaldo'), nombre).toBe(false);
         expect(t.avisos.some((a) => a.respaldo), nombre).toBe(false);
         expect(t.avisos.every((a) => !a.ok), nombre).toBe(true);
-        expect(cuerpos(t).join('\n'), nombre).toMatch(/No pude (pasarle|hacer llegar)|Eso lo ve directamente el restaurante/);
+        expect(cuerpos(t).join('\n'), nombre).toMatch(/No pude (pasarle|hacer llegar)|Esto prefiero que lo vea una persona del restaurante/);
         expect(cuerpos(t).join('\n'), nombre).not.toMatch(/ya pas[eé]|llegó al restaurante/i);
         expect(tieneEnlace(t), nombre).toBe(true);
       }
@@ -1352,7 +1383,7 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     const r = armarReserva({ ventana: 5 });
     expect(cuerpos(r.resumen)[0]).toContain('viernes 9 de octubre a las 20:00');
     expect(cuerpos(r.resumen)[0]).toContain('4 personas');
-    expect(titulosDe(r.resumen.mensajes[0] as NonNullable<(typeof r.resumen.mensajes)[number]>)).toEqual(['Enviar solicitud', 'Corregir']);
+    expect(titulosDe(r.resumen.mensajes[0] as NonNullable<(typeof r.resumen.mensajes)[number]>)).toEqual(['Enviar solicitud', 'Corregir', 'Menú']);
     const enviada = enviarReserva(r);
     expect(todoElTexto(r.resumen) + todoElTexto(enviada)).not.toMatch(/confirmad/i);
     expect(plantillasA(enviada, AV1)).toHaveLength(1);
@@ -1466,7 +1497,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     }
     const cuarta = hacer('21:00');
     expect(cuarta.avisos).toHaveLength(0);
-    expect(cuerpos(cuarta)[0]).toContain('Por hoy ya recibimos todas las solicitudes de reserva');
+    expect(cuerpos(cuarta)[0]).toContain('Por hoy ya no puedo tomar más solicitudes de reserva');
     expect(tieneEnlace(cuarta)).toBe(true);
     // El negativo: otro teléfono, el mismo día, sí puede reservar.
     const otro = con(w, OTRO, 'Luis Mamani');
@@ -1486,7 +1517,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       w.estado.extraccion = { ...RESERVA_OK, hora: `${18 + i}:00` };
       c.escribe('quiero reservar');
       const t = c.toca('r|enviar', 'Enviar solicitud');
-      expect(cuerpos(t)[0], `intento ${i + 1}`).not.toContain('Por hoy ya recibimos');
+      expect(cuerpos(t)[0], `intento ${i + 1}`).not.toContain('Por hoy ya no puedo tomar');
     }
   });
 
@@ -1530,13 +1561,13 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
   it('una campaña vencida (el servidor no la manda) → menú normal, sin ficha', () => {
     const w = crear({ panel: panel({ campanas: [] }) });
     const t = con(w).escribe(TEXTO_DUO);
-    expect(cuerpos(t)[0]).toContain('¿Qué quieres hacer?');
+    expect(cuerpos(t)[0]).toContain('¿Qué te gustaría hacer?');
     expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido', 'Reservar mesa']);
     // Una campaña vigente SÍ da la ficha, y una vencida que el servidor mandara por error, no.
     const viva = con(crear()).escribe(TEXTO_DUO);
     expect(cuerpos(viva)[0]).toMatch(/Promo Dúo/);
     const vencida = crear({ panel: panel({ campanas: [campanaVigente('vieja', TEXTO_DUO, AHORA - 10 * DIA, AHORA - 2 * DIA)] }) });
-    expect(cuerpos(con(vencida).escribe(TEXTO_DUO))[0]).toContain('¿Qué quieres hacer?');
+    expect(cuerpos(con(vencida).escribe(TEXTO_DUO))[0]).toContain('¿Qué te gustaría hacer?');
   });
 });
 
@@ -1549,8 +1580,11 @@ describe('menú y promoción', () => {
     const w = crear();
     const t = con(w).escribe('hola');
     expect(t.mensajes).toHaveLength(1);
-    expect(cuerpos(t)[0]).toBe("¡Hola! Soy Taqui, el asistente virtual de Q'Taco. ¿Qué quieres hacer?");
-    expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>)).toEqual(['Hacer un pedido', 'Reservar mesa']);
+    expect(cuerpos(t)[0]).toBe("¡Hola! 👋 Soy Taqui, el asistente virtual de Q'Taco. ¿Qué te gustaría hacer?");
+    // Con una campaña vigente el menú ofrece «Promociones»; el menú no lleva el botón «Menú» (ya es el menú).
+    expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Promociones']);
+    const sinCampana = con(crear({ panel: panel({ campanas: [] }) })).escribe('hola');
+    expect(titulosDe(sinCampana.mensajes[0] as NonNullable<(typeof sinCampana.mensajes)[number]>)).toEqual(['Hacer un pedido', 'Reservar mesa']);
     expect(t.llamadas.ingesta.map((x) => x['direccion'])).toEqual(['entrante', 'saliente']);
     expect(t.avisos).toHaveLength(0);
     expect(t.llamadas.extraer).toHaveLength(0);
@@ -1610,7 +1644,7 @@ describe('pedido', () => {
     expect(cuerpos(r.resumen)[0]).toContain('1 orden de 3 (55 Bs)');
     expect(cuerpos(r.resumen)[0]).toContain('3 sueltos (63 Bs)');
     expect(cuerpos(r.resumen)[0]).not.toMatch(/Total/);
-    expect(titulosDe(r.resumen.mensajes[0] as NonNullable<(typeof r.resumen.mensajes)[number]>)).toEqual(['Orden', 'Sueltos']);
+    expect(titulosDe(r.resumen.mensajes[0] as NonNullable<(typeof r.resumen.mensajes)[number]>)).toEqual(['Orden', 'Sueltos', 'Menú']);
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido');
     expect(r.resumen.avisos).toHaveLength(0);
     const orden = r.c.toca(idDeBoton(r.resumen, 'Orden'), 'Orden');
@@ -1625,7 +1659,7 @@ describe('pedido', () => {
     expect(cuerpos(resumenDe([ln('tacos de birria', 2, 'orden')])).join('\n')).toContain('Total de la comida: 110 Bs.');
     const cuatro = resumenDe([ln('tacos de birria', 4)]);
     expect(cuerpos(cuatro).join('\n')).toContain('Total de la comida: 84 Bs.');
-    expect(titulosDe(cuatro.mensajes[0] as NonNullable<(typeof cuatro.mensajes)[number]>)).toEqual(['Confirmar pedido', 'Cambiar algo']);
+    expect(titulosDe(cuatro.mensajes[0] as NonNullable<(typeof cuatro.mensajes)[number]>)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Menú']);
     const seis = cuerpos(resumenDe([ln('tacos de birria', 6)]))[0] ?? '';
     expect(seis).toContain('110 Bs');
     expect(seis).toContain('126 Bs');
@@ -1633,7 +1667,7 @@ describe('pedido', () => {
 
   it('un producto que no está en la carta → «No encuentro…», con sugerencias o pidiendo que lo escriba como figura; sin total ni aviso', () => {
     const t = resumenDe([ln('pizza hawaiana', 1)]);
-    expect(cuerpos(t).join('\n')).toMatch(/No encuentro «pizza hawaiana» en la carta/);
+    expect(cuerpos(t).join('\n')).toMatch(/No (encuentro|encontré) «pizza hawaiana» en la carta/);
     expect(cuerpos(t).join('\n')).not.toMatch(/Total/);
     expect(t.avisos).toHaveLength(0);
     // Una entrada vecina sí sugiere.
@@ -1664,10 +1698,10 @@ describe('pedido', () => {
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
   });
 
-  it('fuera de horario → «Ahora no estamos tomando pedidos», sin carrito y sin llamar al modelo; con el horario abierto, sí', () => {
+  it('fuera de horario → «Por ahora no estamos tomando pedidos», sin carrito y sin llamar al modelo; con el horario abierto, sí', () => {
     const w = crear({ config: { horario: HORARIO_SIN_LUNES } });
     const t = con(w).escribe('quiero pedir unos tacos');
-    expect(cuerpos(t)[0]).toMatch(/Ahora no estamos tomando pedidos/);
+    expect(cuerpos(t)[0]).toMatch(/Por ahora no estamos tomando pedidos/);
     expect(t.llamadas.extraer).toHaveLength(0);
     expect(((estadoDe(w.mundo)['carrito'] ?? []) as unknown[]).length).toBe(0);
     expect(t.avisos).toHaveLength(0);
@@ -1677,7 +1711,7 @@ describe('pedido', () => {
     expect(con(abierto).escribe('quiero pedir unos tacos').llamadas.extraer).toHaveLength(1);
     // Los botones viejos de un pedido tampoco saltan el horario.
     const cerrado = crear({ config: { horario: HORARIO_SIN_LUNES } });
-    expect(cuerpos(con(cerrado).toca('g|pedir|promo', 'Pedir la promo'))[0]).toMatch(/Ahora no estamos tomando pedidos/);
+    expect(cuerpos(con(cerrado).toca('g|pedir|promo', 'Pedir la promo'))[0]).toMatch(/Por ahora no estamos tomando pedidos/);
   });
 
   it('«Cambiar algo» reinicia el carrito', () => {
@@ -1717,7 +1751,7 @@ describe('pedido', () => {
       expect(t.llamadas.extraer).toHaveLength(0);
       expect(tieneEnlace(t)).toBe(true);
       expect(plantillasA(t, AV1)).toHaveLength(1); // el aviso de la derivación
-      expect(cuerpos(t)[0]).toBe('Eso lo ve directamente el restaurante. Toca el botón para escribirles.');
+      expect(cuerpos(t)[0]).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
     }
   });
 
@@ -1762,13 +1796,13 @@ describe('pedido', () => {
     const t = con(w).audio();
     expect(t.ejecutados.has('Descargar medio')).toBe(false);
     expect(t.ejecutados.has('Transcribir audio')).toBe(false);
-    expect(cuerpos(t)[0]).toBe('No pude entender ese mensaje. ¿Me lo escribes?');
+    expect(cuerpos(t)[0]).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?');
     // Negativo: el de 719.999 sí se procesa.
     const chico = crear({ dobles: { 'Obtener URL del medio': () => ({ url: 'https://medios.ejemplo.invalid/m', mime_type: 'audio/ogg', file_size: 719_999 }) } });
     expect(con(chico).audio().ejecutados.has('Transcribir audio')).toBe(true);
     // Si la transcripción falla, tampoco hay un error técnico.
     const falla = crear({ dobles: { 'Transcribir audio': () => ({ error: { message: 'sin saldo' } }) } });
-    expect(cuerpos(con(falla).audio())[0]).toBe('No pude entender ese mensaje. ¿Me lo escribes?');
+    expect(cuerpos(con(falla).audio())[0]).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?');
   });
 
   // A3. El token de Meta viaja con la descarga del medio: solo por https, sin seguir redirecciones, y con un id de forma conocida.
@@ -1778,7 +1812,7 @@ describe('pedido', () => {
       const t = con(w).audio();
       expect(t.ejecutados.has('Descargar medio'), url).toBe(false);
       expect(t.ejecutados.has('Transcribir audio'), url).toBe(false);
-      expect(cuerpos(t)[0], url).toBe('No pude entender ese mensaje. ¿Me lo escribes?');
+      expect(cuerpos(t)[0], url).toBe('No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?');
     }
     expect(con(crear()).audio().ejecutados.has('Descargar medio')).toBe(true);
     // Lo mismo para un comprobante: con una URL http no hay descarga, ni lectura, ni cotejo.
@@ -1824,7 +1858,10 @@ describe('carta', () => {
     expect(texto).toContain('Por delivery no enviamos bebidas.');
     w.estado.extraccion = EX([ln('michelada', 2)]);
     const t = c.escribe('quiero 2 micheladas');
-    expect(cuerpos(t).join('\n')).toMatch(/No encuentro «michelada»/);
+    // Es un producto EXCLUIDO a propósito: su texto amable (no «no lo encuentro»), con la carta a un toque y sin aviso al restaurante.
+    expect(cuerpos(t).join('\n')).toMatch(/«Michelada» no está disponible para pedir por WhatsApp/);
+    expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>)).toEqual(['Ver la carta', 'Menú']);
+    expect(t.avisos).toHaveLength(0);
     // Negativo: sin áreas excluidas, la michelada sí está en la carta.
     const todo = crear({ config: { areasExcluidas: '' } });
     const cc = con(todo);
@@ -1863,7 +1900,8 @@ describe('carta', () => {
       c.toca('m|pedido', 'Hacer un pedido');
       w.estado.extraccion = EX([ln(nombre, 1)]);
       const t = c.escribe(`quiero ${nombre}`);
-      expect(cuerpos(t).join('\n'), id).toMatch(/No encuentro/);
+      expect(cuerpos(t).join('\n'), id).toMatch(/no está disponible para pedir por WhatsApp/);
+      expect(t.avisos, id).toHaveLength(0);
       expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido')), id).toBe(false);
     }
     // Negativo: con las áreas viejas («Cócteles», «Cervezas», «Helados») solo se excluía la cerveza: el resto se vendía.
@@ -2020,7 +2058,7 @@ describe('cobro', () => {
     confirmarPedido(r);
     const recuerdo = r.c.escribe('¿ya llegó?');
     expect(cuerpos(recuerdo)[0]).toMatch(/Estoy esperando el comprobante de tu pedido #\w+/);
-    expect(recuerdo.mensajes.flatMap(titulosDe)).toEqual(['Reenviar QR', 'Cancelar pedido']);
+    expect(recuerdo.mensajes.flatMap(titulosDe)).toEqual(['Reenviar QR', 'Cancelar pedido', 'Menú']);
     expect(recuerdo.avisos).toHaveLength(0);
     const reenvio = r.c.toca(idDeBoton(recuerdo, 'Reenviar QR'), 'Reenviar QR');
     expect(reenvio.llamadas.ingesta.some((x) => x['evento'] === 'qr_enviado')).toBe(false); // el servidor ya abrió ese cobro
@@ -2067,7 +2105,7 @@ describe('cobro', () => {
     expect(t.avisos).toHaveLength(0);
     expect(t.llamadas.cierre).toHaveLength(0);
     expect(cuerpos(t).join('\n')).toMatch(/[Ii]magen/);
-    expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido', 'Reservar mesa']);
+    expect(t.mensajes.flatMap(titulosDe)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Menú']);
     // El texto reportado no es el contenido de la imagen.
     expect((t.llamadas.ingesta[0] as J)['texto']).toBe('(imagen) el cliente envió una foto');
     // Con pie de foto: se procesa como ese texto.
@@ -2221,7 +2259,7 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     expect(estadoDe(w.mundo, CLIENTE)['paso']).toBe('pedido_confirmar');
     const t = b.escribe('hola');
     expect(estadoDe(w.mundo, OTRO)['paso']).toBe('menu');
-    expect(cuerpos(t)[0]).toContain('¿Qué quieres hacer?');
+    expect(cuerpos(t)[0]).toContain('¿Qué te gustaría hacer?');
     expect(((estadoDe(w.mundo, OTRO)['carrito'] ?? []) as unknown[]).length).toBe(0);
     // El «Confirmar pedido» de B (que no tiene pedido) no confirma el de A.
     const viejo = b.toca('p|confirmar', 'Confirmar pedido');
@@ -2257,7 +2295,7 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     expect(b.avisos.length).toBeGreaterThan(0);
     expect(b.llamadas.extraer).toHaveLength(0);
     // Negativo: con la atención normal, el menú.
-    expect(cuerpos(con(crear()).escribe('hola'))[0]).toContain('¿Qué quieres hacer?');
+    expect(cuerpos(con(crear()).escribe('hola'))[0]).toContain('¿Qué te gustaría hacer?');
   });
 
   it('tipos de mensaje sin contenido (sticker, reacción) no cuestan una respuesta; un contacto o un video, sí una respuesta cortés', () => {
@@ -2266,7 +2304,7 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     silencio(c.turno({ type: 'sticker', sticker: { id: 'st-1' } }));
     silencio(c.turno({ type: 'reaction', reaction: { emoji: '👍' } }));
     const contacto = c.turno({ type: 'contacts', contacts: [{ name: { formatted_name: 'X' } }] });
-    expect(cuerpos(contacto)[0]).toBe('No pude entender ese mensaje. ¿Me lo escribes?');
+    expect(cuerpos(contacto)[0]).toBe('No pude entender bien ese mensaje 😅. ¿Me lo escribes?');
     expect(contacto.avisos).toHaveLength(0);
   });
 });
@@ -2680,7 +2718,7 @@ describe('mensajes por conversación: los números que declara DISENO.md', () =>
   it('COSTO: cuando el personal del restaurante escribe para abrir su ventana recibe el menú (+1 mensaje) y el servidor lo cuenta como una conversación', () => {
     const w = crear();
     const t = con(w, AV1, 'Ana Duran').escribe('hola');
-    expect(cuerpos(t)[0]).toContain('¿Qué quieres hacer?'); // recibe el menú como cualquier cliente: 1 mensaje saliente
+    expect(cuerpos(t)[0]).toContain('¿Qué te gustaría hacer?'); // recibe el menú como cualquier cliente: 1 mensaje saliente
     expect(t.mensajes).toHaveLength(1);
     // Se reporta el entrante y el saliente: la ingesta abre la ventana y cuenta la conversación (se factura como una más).
     expect(t.llamadas.ingesta.map((x) => x['direccion'])).toEqual(['entrante', 'saliente']);
@@ -3103,6 +3141,373 @@ describe('B0: claves estables por pedido (doble toque simulado desde el mismo es
 // =====================================================================================================
 // ENSAYO EN EL DEMO A: `venta-minima.ensayo-demo-a.json` (entrada `trigger`, credenciales del Demo A por nombre)
 // =====================================================================================================
+// =====================================================================================================
+// REGRESIÓN DEL ENSAYO DEL 03/10 EN EL DEMO A (capturas en CLIENTES/QTACO/pruebas-ensayo-2026-10-03/)
+// =====================================================================================================
+// Un pedido por audio se derivó al restaurante y desde ahí TODO recibió «Eso lo ve directamente el restaurante.» (un helado,
+// una reserva, una imagen): la derivación no cambiaba el paso y cada mensaje volvía a derivar. Andres: «no vuelve al menú, no
+// acepta pedidos cruzados, no es amable». La configuración del ensayo: UN teléfono (el del cliente es el de recepción), así que
+// los textos con botón de enlace salen SIN botón (el texto lo dice con «menú», sin nombrar un botón que no existe).
+describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos se cruzan con las reservas y nada se borra de paso', () => {
+  const AUDIO_DEL_ENSAYO = 'tres tacos de birria y una Coca-Cola';
+  const RESERVA_VACIA: J = { personas: 0, fecha: '', hora: '', zona: '', nombre: '', celebracion: '', requerimiento: '' };
+  /** El mundo del ensayo: recepción igual al remitente y el audio del ensayo. */
+  const ensayo = (op: OpcionesDeLaPrueba = {}) => crear({
+    panel: panel({ operacion: { horarioAtencion: 'todos los días de 8 a 23', moneda: 'BOB', numeroRecepcion: CLIENTE, prefijosPermitidos: ['591'] } }),
+    config: { respaldoNumeroRecepcion: CLIENTE },
+    dobles: { 'Transcribir audio': () => ({ content: { parts: [{ text: AUDIO_DEL_ENSAYO }] } }) },
+    ...op,
+  });
+  const titulosDelPrimero = (t: ResultadoTurno): string[] => titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>);
+  const TEXTO_SIN_BOTON = 'Esto prefiero que lo vea una persona del restaurante 🙂. Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+
+  it('la conversación de las capturas: hola, carta, audio, helado, imagen, reserva, menú y de nuevo el pedido; ningún turno se derivó', () => {
+    const w = ensayo();
+    const c = con(w);
+    // 1. «hola» → el menú, amable y con sus botones (y «Promociones» porque hay una campaña vigente).
+    const hola = c.escribe('hola');
+    expect(cuerpos(hola)[0]).toBe("¡Hola! 👋 Soy Taqui, el asistente virtual de Q'Taco. ¿Qué te gustaría hacer?");
+    expect(titulosDelPrimero(hola)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Promociones']);
+    // 2. [Hacer un pedido] → la carta.
+    const carta = c.toca('m|pedido', 'Hacer un pedido');
+    expect(cuerpos(carta)[0]).toContain('Esta es nuestra carta');
+    // 3. el audio del ensayo → «orden o sueltos» + una nota con la sugerencia «Gaseosas» (Coca-Cola no está en la carta), sin avisos.
+    w.estado.extraccion = EX([ln('Tacos de Birria', 3), ln('Coca-Cola', 1)]);
+    const audio = c.audio();
+    expect(audio.llamadas.extraer).toHaveLength(1);
+    const q = cuerpos(audio).join('\n');
+    expect(q).toContain('Gaseosas');
+    expect(q).toMatch(/1 orden de 3 \(55 Bs\)/);
+    expect(q).toMatch(/3 sueltos \(63 Bs\)/);
+    expect(titulosDelPrimero(audio)).toEqual(['Orden', 'Sueltos', 'Menú']);
+    expect(audio.avisos).toHaveLength(0);
+    expect(estadoDe(w.mundo)['pendiente']).toHaveLength(1);
+    // 4. «quiero un helado» (una de las cosas excluidas a propósito) → el texto de excluido con la carta a un toque; NO se deriva.
+    w.estado.extraccion = EX([ln('helado', 1)], { entrega: '' }); // el modelo no oyó ninguna entrega
+    const helado = c.escribe('quiero un helado');
+    expect(cuerpos(helado)[0]).toMatch(/no está disponible para pedir por WhatsApp/);
+    expect(titulosDelPrimero(helado)).toEqual(['Ver la carta', 'Menú']);
+    expect(helado.avisos).toHaveLength(0);
+    expect(cuerpos(helado).join('\n')).not.toMatch(/Eso lo ve directamente/);
+    expect(estadoDe(w.mundo)['pendiente']).toHaveLength(1); // la pregunta orden/unidad sigue pendiente
+    // 5. una imagen sin comprobante pendiente → texto amable con botones (no «Recibí tu imagen»).
+    const imagen = c.imagen('media-5');
+    expect(cuerpos(imagen)[0]).toBe('¡Gracias por la imagen! Por aquí solo leo comprobantes de un pedido con QR, y ahora no tienes ninguno pendiente. ¿Qué te gustaría hacer?');
+    expect(titulosDelPrimero(imagen)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Menú']);
+    expect(imagen.avisos).toHaveLength(0);
+    // 6. «¿puedo hacer una reserva?» en medio del pedido → la pregunta de la reserva, y el pedido sigue en el estado.
+    w.estado.extraccion = RESERVA_VACIA;
+    const reserva = c.escribe('puedo hacer una reserva?');
+    expect(cuerpos(reserva)[0]).toMatch(/solicitud de reserva/);
+    expect(reserva.avisos).toHaveLength(0);
+    expect(estadoDe(w.mundo)['paso']).toBe('reserva');
+    expect(estadoDe(w.mundo)['pendiente']).toHaveLength(1);
+    // 7. «menú» → el menú, sin borrar nada.
+    const menu = c.escribe('menú');
+    expect(cuerpos(menu)[0]).toContain('¿Qué te gustaría hacer?');
+    expect(estadoDe(w.mundo)['paso']).toBe('menu');
+    expect(estadoDe(w.mundo)['pendiente']).toHaveLength(1);
+    // 8. [Hacer un pedido] → la carta otra vez, y la pregunta del pedido sigue ahí.
+    const otra = c.toca('m|pedido', 'Hacer un pedido');
+    expect(cuerpos(otra)[0]).toContain('Esta es nuestra carta');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido');
+    expect(estadoDe(w.mundo)['pendiente']).toHaveLength(1);
+    // En todo el recorrido ningún turno avisó al restaurante ni derivó.
+    for (const t of w.turnos) {
+      expect(t.t.avisos, t.etiqueta).toHaveLength(0);
+      expect(todoElTexto(t.t), t.etiqueta).not.toMatch(/Eso lo ve directamente|Esto prefiero que lo vea/);
+    }
+  });
+
+  it('con un pedido ya armado: «reserva» lo deja guardado («Guardé tu pedido…»), «carta» lo retoma y la reserva enviada no lo borra', () => {
+    const w = ensayo();
+    const c = con(w);
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: 'recojo' });
+    const resumen = c.escribe('quiero 4 tacos de birria para recoger');
+    expect(cuerpos(resumen).join('\n')).toContain('Total de la comida: 84 Bs.');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
+    // Se cruza con una reserva: el carrito queda donde estaba y se avisa UNA vez.
+    w.estado.extraccion = RESERVA_OK;
+    const res = c.escribe('quiero reservar una mesa');
+    expect(cuerpos(res)[0]).toMatch(/^Guardé tu pedido \(4 productos\)\. Cuando termines la reserva, escribe «carta» para seguir con el pedido\./);
+    expect(titulosDelPrimero(res)).toEqual(['Enviar solicitud', 'Corregir', 'Menú']);
+    expect(estadoDe(w.mundo)['paso']).toBe('reserva_confirmar');
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
+    expect(estadoDe(w.mundo)['carritoGuardado']).toBe(4);
+    // La reserva se envía: se limpia la reserva, NO el carrito.
+    abrirVentanas(w);
+    const enviada = c.toca('r|enviar', 'Enviar solicitud');
+    expect(enviada.avisos.length).toBeGreaterThan(0);
+    expect(estadoDe(w.mundo)['reserva']).toBeNull();
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
+    // «carta» retoma el pedido: la carta con la nota de que sigue guardado.
+    const retoma = c.escribe('carta');
+    expect(cuerpos(retoma)[0]).toMatch(/^Tu pedido sigue guardado \(4 productos\)\.\n\nEsta es nuestra carta/);
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido');
+    expect(estadoDe(w.mundo)['carritoGuardado']).toBe(0);
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
+    // Y desde ahí se llega al resumen y se confirma con el total de siempre.
+    w.estado.extraccion = EX([], { entrega: 'recojo' });
+    expect(cuerpos(c.escribe('para recoger')).join('\n')).toContain('Total de la comida: 84 Bs.');
+  });
+
+  it('al revés: de una reserva a un pedido («quiero pedir…») sin perder la reserva a medias', () => {
+    const w = ensayo();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = { ...RESERVA_VACIA, personas: 4 };
+    c.toca('m|reserva', 'Reservar mesa');
+    const parcial = c.escribe('somos 4');
+    expect(estadoDe(w.mundo)['paso']).toBe('reserva');
+    expect(estadoDe(w.mundo)['reserva']).toMatchObject({ personas: 4 });
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: 'recojo' });
+    const pedido = c.escribe('mejor quiero pedir 4 tacos de birria para recoger');
+    expect(pedido.llamadas.extraer).toHaveLength(1);
+    expect(cuerpos(pedido).join('\n')).toContain('Total de la comida: 84 Bs.');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(estadoDe(w.mundo)['reserva']).toMatchObject({ personas: 4 }); // la reserva a medias sigue ahí
+    expect(parcial.avisos).toHaveLength(0);
+  });
+
+  it('palabras globales en cualquier paso: «menú», «hola», «carta» y «reserva» responden donde sea (nunca la misma pregunta de antes)', () => {
+    const w = ensayo();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: 'recojo' });
+    c.toca('m|pedido', 'Hacer un pedido');
+    c.escribe('quiero 4 tacos de birria para recoger');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
+    // «hola» y «menú» en el resumen: el menú, sin extraer nada y sin borrar el carrito.
+    for (const palabra of ['hola', 'menú', 'Menu', 'volver', 'inicio']) {
+      const t = c.escribe(palabra);
+      expect(cuerpos(t)[0], palabra).toContain('¿Qué te gustaría hacer?');
+      expect(t.llamadas.extraer, palabra).toHaveLength(0);
+      expect(estadoDe(w.mundo)['carrito'], palabra).toHaveLength(1);
+    }
+    // «carta» y «¿qué tienen?» → la carta (con la nota del pedido guardado); «reserva» → la reserva.
+    for (const palabra of ['carta', 'ver la carta', 'qué tienen']) {
+      expect(cuerpos(c.escribe(palabra))[0], palabra).toMatch(/^Tu pedido sigue guardado[\s\S]*Esta es nuestra carta/);
+    }
+    // Negativo: un pedido que nombra la carta («tres tacos de la carta») NO es pedir la carta: se extrae.
+    w.estado.extraccion = EX([ln('nachos', 1)]);
+    const conCarta = c.escribe('quiero un nachos de la carta');
+    expect(conCarta.llamadas.extraer).toHaveLength(1);
+    w.estado.extraccion = RESERVA_VACIA;
+    expect(cuerpos(c.escribe('quiero una mesa'))[0]).toMatch(/Guardé tu pedido/);
+    expect(estadoDe(w.mundo)['paso']).toBe('reserva');
+  });
+
+  it('con un comprobante en espera solo «menú» funciona: lo demás recibe el recordatorio, y el pedido sigue esperando su comprobante', () => {
+    const r = armarPedido({ ventana: 5 });
+    const qr = confirmarPedido(r);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
+    const abierto = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado');
+    // Con un QR pendiente: «carta», «reserva», «cancelar» y los botones del menú no hacen nada nuevo (recordatorio).
+    for (const palabra of ['carta', 'quiero reservar una mesa', 'cancelar', 'cancelar pedido', 'hola gracias']) {
+      const t = r.c.escribe(palabra);
+      expect(cuerpos(t)[0], palabra).toMatch(/Estoy esperando el comprobante/);
+      expect(t.llamadas.extraer, palabra).toHaveLength(0);
+      expect(estadoDe(r.w.mundo)['paso'], palabra).toBe('esperando_comprobante');
+    }
+    for (const id of ['m|pedido', 'm|reserva', 'm|promos']) {
+      expect(cuerpos(r.c.toca(id))[0], id).toMatch(/Estoy esperando el comprobante/);
+    }
+    // «menú» sí: muestra el menú y el pedido NO se descarta (sigue en el estado y en `sd.pedidos`).
+    const menu = r.c.escribe('menú');
+    expect(cuerpos(menu)[0]).toContain('¿Qué te gustaría hacer?');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+    expect(estadoDe(r.w.mundo)['pedido']).not.toBeNull();
+    expect(pedidosGuardados(r.w.mundo)).toHaveLength(1);
+    // El comprobante que llega después se coteja y se avisa igual (la pantalla de cobro del servidor sigue abierta).
+    r.w.estado.panel = panel({ ...conCobroPendiente(String(abierto?.['referencia']), Number(abierto?.['monto'])) });
+    const comp = r.c.imagen('media-9');
+    expect((comp.resumen as J)['resumen'].ruta).toBe('comprobante:cuadra');
+    expect(plantillasA(comp, AV1).length + detallesA(comp, AV1).length).toBeGreaterThan(0);
+    expect(estadoDe(r.w.mundo)['pedido']).toBeNull();
+  });
+
+  it('«cancelar» limpia solo lo que se está haciendo; «empezar de nuevo», todo', () => {
+    const w = ensayo();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: 'recojo' });
+    c.toca('m|pedido', 'Hacer un pedido');
+    c.escribe('quiero 4 tacos de birria para recoger');
+    w.estado.extraccion = RESERVA_VACIA;
+    c.escribe('quiero reservar una mesa');
+    expect(estadoDe(w.mundo)['paso']).toBe('reserva');
+    // En la reserva, «cancelar» cancela la reserva y el pedido guardado se queda.
+    c.escribe('cancelar');
+    expect(estadoDe(w.mundo)['reserva']).toBeNull();
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
+    expect(estadoDe(w.mundo)['paso']).toBe('menu');
+    // «cancelar pedido» limpia el pedido; sin nada más, «empezar de nuevo» deja todo vacío.
+    c.escribe('cancelar pedido');
+    expect(estadoDe(w.mundo)['carrito']).toEqual([]);
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: 'recojo' });
+    c.escribe('quiero 4 tacos de birria para recoger');
+    w.estado.extraccion = RESERVA_VACIA;
+    c.escribe('quiero reservar una mesa');
+    c.escribe('empezar de nuevo');
+    expect(estadoDe(w.mundo)['carrito']).toEqual([]);
+    expect(estadoDe(w.mundo)['reserva']).toBeNull();
+  });
+
+  it('derivar deja el paso en `menu` y NO borra el carrito: el siguiente mensaje se atiende de nuevo (no más bucle de «Eso lo ve el restaurante»)', () => {
+    const w = ensayo();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: 'recojo' });
+    c.toca('m|pedido', 'Hacer un pedido');
+    c.escribe('quiero 4 tacos de birria para recoger');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
+    const pide = c.escribe('quiero hablar con una persona');
+    // Con la recepción igual al remitente no hay botón: el texto lo dice y manda a «menú» sin nombrar un botón que no existe.
+    expect(tieneEnlace(pide)).toBe(false);
+    expect(cuerpos(pide)[0]).toBe(TEXTO_SIN_BOTON);
+    expect(cuerpos(pide)[0]).not.toMatch(/Escribir al local|bot[oó]n/i);
+    expect(plantillasA(pide, AV1)).toHaveLength(1);
+    expect(estadoDe(w.mundo)['paso']).toBe('menu'); // negativo: NO queda en `pedido*`
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
+    // El siguiente mensaje no vuelve a derivar: sigue el flujo normal (aquí, el menú).
+    const sigue = c.escribe('buenas tardes');
+    expect(cuerpos(sigue)[0]).toContain('¿Qué te gustaría hacer?');
+    expect(sigue.avisos).toHaveLength(0);
+    // Y escribir «menú» y retomar el pedido funciona.
+    expect(cuerpos(c.toca('m|pedido', 'Hacer un pedido'))[0]).toMatch(/^Tu pedido sigue guardado \(4 productos\)/);
+  });
+
+  it('variante: `Extraer` en error deriva UNA sola vez, y el turno siguiente («quiero un helado») ya no deriva ni llama al modelo', () => {
+    const w = ensayo();
+    const c = con(w);
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = null; // el modelo falla (como el 03/10)
+    const falla = c.audio();
+    expect(cuerpos(falla)[0]).toBe(TEXTO_SIN_BOTON);
+    expect(plantillasA(falla, AV1)).toHaveLength(1);
+    expect(estadoDe(w.mundo)['paso']).toBe('menu');
+    const helado = c.escribe('quiero un helado');
+    expect(helado.llamadas.extraer).toHaveLength(0);
+    expect(helado.avisos).toHaveLength(0);
+    expect(cuerpos(helado).join('\n')).not.toMatch(/Esto prefiero que lo vea|Eso lo ve directamente/);
+    expect(cuerpos(helado)[0]).toContain('¿Qué te gustaría hacer?');
+    // Y una reserva pedida después de la falla también se atiende.
+    w.estado.extraccion = RESERVA_VACIA;
+    expect(cuerpos(c.escribe('puedo hacer una reserva?'))[0]).toMatch(/solicitud de reserva/);
+  });
+
+  it('el nombre se comparte: el del pedido completa la reserva y el de la reserva completa el pedido', () => {
+    const a = armarPedido({ perfil: 'Ana Gómez', entrega: 'delivery', extra: { nombre: 'Lucía Roca' } });
+    expect(estadoDe(a.w.mundo)['entrega']).toMatchObject({ nombre: 'Lucía Roca' });
+    a.w.estado.extraccion = { ...RESERVA_OK, nombre: '' };
+    const res = a.c.escribe('quiero reservar una mesa');
+    expect(estadoDe(a.w.mundo)['reserva']).toMatchObject({ nombre: 'Lucía Roca' });
+    expect(cuerpos(res).join('\n')).toContain('Lucía Roca');
+    // Al revés: una reserva con nombre completa el del pedido (sin nombre ya dado).
+    const w = ensayo();
+    const c = con(w, CLIENTE, 'Ana Gómez');
+    c.escribe('hola');
+    w.estado.extraccion = { ...RESERVA_OK, nombre: 'Mateo Rojas' };
+    c.escribe('quiero reservar una mesa');
+    expect(estadoDe(w.mundo)['entrega']).toMatchObject({ nombre: 'Mateo Rojas' });
+  });
+
+  it('«Agregar <producto>» (la sugerencia de lo que no está en la carta) SUMA al carrito que ya hay', () => {
+    const w = ensayo();
+    const c = con(w);
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('Coca-Cola', 2)]);
+    const no = c.escribe('dos Coca-Cola');
+    expect(cuerpos(no)[0]).toMatch(/Gaseosas/);
+    expect(titulosDelPrimero(no)).toEqual(['Agregar Gaseosas', 'Ver la carta', 'Menú']);
+    expect(no.avisos).toHaveLength(0);
+    expect(estadoDe(w.mundo)['carrito']).toEqual([]); // la sugerencia NO se agrega sola
+    const si = c.toca(idDeBoton(no, 'Agregar Gaseosas'), 'Agregar Gaseosas');
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
+    expect(estadoDe(w.mundo)['carrito']?.[0]).toMatchObject({ nombre: 'Gaseosas', cantidad: 2 });
+    expect(cuerpos(si).join('\n')).toMatch(/delivery|recoger|Total/i);
+    // Otro toque del mismo botón suma otra vez (el cliente lo pidió), y uno con un producto que no existe no suma nada.
+    c.toca('g|agregar|no-existe|1', 'Agregar');
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
+  });
+
+  it('«Pedir la promo» suma al carrito en curso (ya no lo reinicia)', () => {
+    const w = ensayo();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('nachos', 1)], { entrega: 'recojo' });
+    c.toca('m|pedido', 'Hacer un pedido');
+    c.escribe('quiero unos nachos para recoger');
+    const ficha = c.escribe(TEXTO_DUO);
+    c.toca(idDeBoton(ficha, 'Pedir la promo'), 'Pedir la promo');
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(2);
+  });
+
+  it('«Promociones» (solo con campaña vigente) muestra la ficha, y «Menú» (`m|menu`) vuelve al menú desde cualquier paso sin borrar nada', () => {
+    const w = ensayo();
+    const c = con(w);
+    c.escribe('hola');
+    const promos = c.toca('m|promos', 'Promociones');
+    expect(cuerpos(promos)[0]).toContain('Promo Dúo');
+    expect(titulosDelPrimero(promos)).toEqual(['Pedir la promo', 'Reservar mesa', 'Ver la carta']);
+    // Sin campaña vigente el botón no existe: uno viejo no muestra nada de promociones.
+    const sin = ensayo({ panel: panel({ campanas: [], operacion: { horarioAtencion: 'todos los días de 8 a 23', moneda: 'BOB', numeroRecepcion: CLIENTE, prefijosPermitidos: ['591'] } }) });
+    expect(titulosDelPrimero(con(sin).escribe('hola'))).toEqual(['Hacer un pedido', 'Reservar mesa']);
+    expect(cuerpos(con(sin).toca('m|promos', 'Promociones'))[0]).toContain('no tengo promociones');
+    // «Menú» desde un resumen de pedido.
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: 'recojo' });
+    c.toca('m|pedido', 'Hacer un pedido');
+    c.escribe('quiero 4 tacos de birria para recoger');
+    const menu = c.toca('m|menu', 'Menú');
+    expect(cuerpos(menu)[0]).toContain('¿Qué te gustaría hacer?');
+    expect(estadoDe(w.mundo)['paso']).toBe('menu');
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
+  });
+
+  it('`nivelEmojis`: «ninguno» quita los emojis de todos los textos nuevos; «pocos» deja a lo sumo uno por mensaje', () => {
+    const emoji = /\p{Extended_Pictographic}/u;
+    const sin = ensayo({ panel: panel({ voz: { nombreAsistente: 'Taqui', nivelEmojis: 'ninguno' }, operacion: { horarioAtencion: 'todos los días de 8 a 23', moneda: 'BOB', numeroRecepcion: CLIENTE, prefijosPermitidos: ['591'] } }) });
+    const cs = con(sin);
+    cs.escribe('hola');
+    cs.toca('m|pedido', 'Hacer un pedido');
+    sin.estado.extraccion = EX([ln('helado', 1)]);
+    const turnos = [cs.escribe('hola'), cs.escribe('quiero un helado'), cs.imagen('media-5'), cs.audio(), cs.escribe('quiero hablar con una persona')];
+    for (const t of turnos) expect(cuerpos(t).join('\n')).not.toMatch(emoji);
+    const poco = ensayo();
+    const cp = con(poco);
+    cp.escribe('hola');
+    poco.estado.extraccion = EX([ln('helado', 1)]);
+    cp.toca('m|pedido', 'Hacer un pedido');
+    for (const t of [cp.escribe('hola'), cp.escribe('quiero un helado'), cp.escribe('quiero hablar con una persona')]) {
+      for (const m of t.mensajes) expect((m.cuerpo.match(/\p{Extended_Pictographic}/gu) ?? []).length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('todo mensaje interactivo de la conversación lleva «Menú» si cabe, sin agregar mensajes (el menú mismo y los de tres botones, no)', () => {
+    for (const nombre of ['menú', 'carta', 'orden o unidades', 'cambiar algo', 'pedido sin QR (plan B) con recojo', 'consulta fija: dirección', 'imagen sin cobro pendiente']) {
+      const { w } = ESCENARIOS[nombre]!();
+      for (const turno of w.turnos) {
+        for (const m of turno.t.mensajes) {
+          const bs = botonesDe(m);
+          if (!bs.length) continue;
+          const conMenu = bs.some((b) => b.id === 'm|menu');
+          if (nombre === 'menú' && turno.etiqueta === 'text') expect(conMenu, `${nombre}: el menú mismo no lleva «Menú»`).toBe(false);
+          else if (bs.length < 3) expect(conMenu, `${nombre}: ${m.cuerpo.slice(0, 40)}`).toBe(true);
+          expect(bs.length, nombre).toBeLessThanOrEqual(3);
+        }
+      }
+    }
+    // El costo: los mensajes por conversación del recorrido de siempre no cambian (el botón «Menú» no agrega mensajes).
+    const w = ensayo();
+    const c = con(w);
+    expect(c.escribe('hola').mensajes).toHaveLength(1);
+  });
+});
+
 describe('ensayo en el Demo A: la variante `trigger` con las credenciales del Demo A', () => {
   const DEMO_A = leer('venta-minima.ensayo-demo-a.json');
   const DEMO_A_VIVO = JSON.parse(readFileSync(join(AQUI, '../../Flujos/demo-a-agendamiento.json'), 'utf8')) as Flujo;
