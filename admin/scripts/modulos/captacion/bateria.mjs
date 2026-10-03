@@ -19,7 +19,10 @@
 //              modelo. NO lee ninguna clave. Es el modo de esta rama: la corrida
 //              real la autoriza Andres, porque gasta cuota y dinero.
 // --antes <sha> corre tambien la version de ese commit (su prompt Y su codigo)
-//              con los mismos casos, para comparar.
+//              con los mismos casos, para comparar. ATENCION: ESO EJECUTA EL
+//              CODIGO DE ESE COMMIT (los Code del JSON de ese momento, con
+//              `new Function`): solo se usa con un commit de este repositorio en
+//              el que se confia. El valor se valida (7 a 40 hexadecimales).
 // --n          corridas por caso (3 por defecto).
 // --casos      ids separados por coma (todos por defecto).
 // --env, --vertex, --locacion: la lectura de la clave es la de
@@ -45,6 +48,10 @@ const arg = (n, d = null) => { const i = process.argv.indexOf(n); return i > -1 
 const SECO = process.argv.includes('--seco');
 const N = Math.max(1, Number(arg('--n', '3')));
 const ANTES = arg('--antes');
+if (ANTES !== null && !/^[0-9a-f]{7,40}$/.test(ANTES)) {
+  console.error('✗ --antes debe ser un sha de 7 a 40 caracteres hexadecimales (minusculas).');
+  process.exit(2);
+}
 const FLUJO = arg('--flujo', 'Flujos/novuchat-onboarding.json');
 const SOLO = arg('--casos') ? arg('--casos').split(',').map((x) => x.trim()) : null;
 const VERTEX = arg('--vertex');
@@ -86,7 +93,7 @@ if (!SECO) {
 }
 
 // --- El flujo: el de ahora y, si se pide, el de un commit --------------------
-const leerFlujo = (sha) => JSON.parse(sha ? execFileSync('git', ['show', `${sha}:${FLUJO}`], { maxBuffer: 256 * 1024 * 1024 }).toString()
+const leerFlujo = (sha) => JSON.parse(sha ? execFileSync('git', ['show', '--end-of-options', `${sha}:${FLUJO}`], { maxBuffer: 256 * 1024 * 1024 }).toString()
   : readFileSync(FLUJO, 'utf8'));
 const datos = JSON.parse(readFileSync(join(RAIZ, 'admin/scripts/datos/captacion-novuchat.json'), 'utf8'));
 const { casos } = JSON.parse(readFileSync(join(aqui, 'bateria-casos.json'), 'utf8'));
