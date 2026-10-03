@@ -15,6 +15,7 @@
     "horarioAtencion": "Horario de prueba: todos los días de 9:00 a 23:30",
     "horario": "lun=09:00-23:30,mar=09:00-23:30,mie=09:00-23:30,jue=09:00-23:30,vie=09:00-23:30,sab=09:00-23:30,dom=09:00-23:30",
     "destinatariosAviso": "completo:REEMPLAZAR_NUMERO_AVISO_ENSAYO",
+    "avisarAlPropioNumero": true,
     "plantillaPedido": "",
     "plantillaReserva": "",
     "plantillaDerivacion": ""

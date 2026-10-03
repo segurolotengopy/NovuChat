@@ -12,7 +12,8 @@
 //     aviso de pedido o de comprobante (`topePedidosHora`, def. 6) del mismo teléfono dentro de la hora. Las marcas
 //     las escribe `Armar mensajes`, y solo si el aviso salió (por hecho): un aviso que falló NO cuenta, así que el
 //     siguiente intento sí se hace. Un tope en 0 significa «ninguno»: no se arma ese aviso;
-//   - mandar un aviso al propio número de quien escribe (lo excluye `avDestinatarios`).
+//   - mandar un aviso al propio número de quien escribe (lo excluye `avDestinatarios`), salvo con el interruptor SOLO DE ENSAYO
+//     `avisarAlPropioNumero` (true exacto, solo en `ensayo-demo-a.json`; ver `construir.mjs`).
 //
 // Cada ítem lleva su `clase` (`plantilla`, `detalle` o `imagen`, la que pone `avPlan`): `Armar mensajes`
 // cuenta «el aviso salió» solo con el `wamid` de una plantilla o de un detalle, nunca con la imagen.
@@ -104,7 +105,7 @@ if (AA_armar && AA_sd && !avDentroDelTopeDiario(AA_sd, AA_AHORA, aaTope(AA_CFG.t
 if (AA_armar && !AA_sd) AA_errores.push('sin_datos_estaticos: no se pudo comprobar el tope de avisos');
 if (AA_armar) {
   try {
-    AA_destinatarios = avDestinatarios(AA_CFG.destinatariosAviso, AA_FROM, AA_CFG.prefijosPermitidos || '591') || [];
+    AA_destinatarios = avDestinatarios(AA_CFG.destinatariosAviso, AA_FROM, AA_CFG.prefijosPermitidos || '591', AA_CFG.avisarAlPropioNumero === true) || [];
   } catch (e) {
     AA_destinatarios = [];
     AA_errores.push('destinatarios_ilegibles: ' + String(e && e.message).slice(0, 80));

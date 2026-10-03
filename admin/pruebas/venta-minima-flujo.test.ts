@@ -3270,6 +3270,59 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     expect(r.stderr).toContain('venta-minima.ensayo-demo-a.json');
   });
 
+  // ---- el interruptor de ensayo y su guardia de construcción
+  const editarArchivoDeDatos = (datos: string, archivo: string, f: (d: J) => void): void => {
+    const ruta = join(datos, archivo);
+    const d = JSON.parse(readFileSync(ruta, 'utf8')) as J;
+    f(d);
+    writeFileSync(ruta, JSON.stringify(d, null, 2) + '\n');
+  };
+  const conClave = (d: J): void => { d['configBase'] = { ...(d['configBase'] as J ?? {}), avisarAlPropioNumero: true }; };
+  const asignacionesDe = (f: Flujo): string[] => ((nodo(f, 'Config base').parameters['assignments'] as { assignments: J[] }).assignments).map((x) => String(x['name']));
+
+  it('SOLO `venta-minima.ensayo-demo-a.json` lleva `avisarAlPropioNumero` en «Config base»: ni el de producción de Q\'Taco ni el de prueba', () => {
+    expect(asignacionesDe(DEMO_A)).toContain('avisarAlPropioNumero');
+    expect((nodo(DEMO_A, 'Config base').parameters['assignments'] as { assignments: J[] }).assignments.find((x) => x['name'] === 'avisarAlPropioNumero')).toMatchObject({ type: 'boolean', value: true });
+    for (const f of [QTACO, PRUEBA]) expect(asignacionesDe(f)).not.toContain('avisarAlPropioNumero');
+    // Los datos tampoco: ni `qtaco.json` ni `ensayo.json` la traen.
+    for (const archivo of ['qtaco.json', 'ensayo.json']) expect(readFileSync(join(AQUI, '../scripts/datos/venta-minima', archivo), 'utf8')).not.toContain('avisarAlPropioNumero');
+  });
+
+  it('construir.mjs FALLA si la clave aparece en cualquier archivo de datos que no sea `ensayo-demo-a.json` (ni heredada de `qtaco.json`)', () => {
+    for (const archivo of ['qtaco.json', 'ensayo.json']) {
+      const r = enCopia((_vm, datos) => editarArchivoDeDatos(datos, archivo, conClave));
+      expect(r.status, archivo).not.toBe(0);
+      expect(r.stderr, archivo).toContain('interruptor solo de ensayo');
+      expect(r.stderr, archivo).toContain(archivo);
+    }
+    // Un tenant nuevo (cualquier otro nombre) tampoco.
+    const nuevo = enCopia((_vm, datos) => writeFileSync(join(datos, 'otro-cliente.json'), JSON.stringify({ hereda: 'qtaco', nombreFlujo: 'Otro', entrada: 'receptor', configBase: { avisarAlPropioNumero: true } })));
+    expect(nuevo.status).not.toBe(0);
+    expect(nuevo.stderr).toContain('otro-cliente.json');
+    // Negativo: la clave en `ensayo-demo-a.json` es lo permitido; sin ella (y sin tocar los JSON) el archivo versionado difiere y se avisa.
+    expect(enCopia(() => undefined, ['--verificar']).status).toBe(0);
+    const sinClave = enCopia((_vm, datos) => editarArchivoDeDatos(datos, 'ensayo-demo-a.json', (d) => { delete (d['configBase'] as J)['avisarAlPropioNumero']; }), ['--verificar']);
+    expect(sinClave.status).toBe(1);
+    expect(sinClave.stderr).toContain('venta-minima.ensayo-demo-a.json');
+  });
+
+  it('`--verificar` FALLA si un JSON de producción o de prueba trae la clave en «Config base» (aunque alguien la agregue a mano al versionado)', () => {
+    for (const archivo of ['venta-minima.qtaco.json', 'venta-minima.prueba.json']) {
+      const r = enCopia((vm) => {
+        const ruta = join(vm, archivo);
+        const f = JSON.parse(readFileSync(ruta, 'utf8')) as Flujo;
+        (nodo(f, 'Config base').parameters['assignments'] as { assignments: J[] }).assignments.push({ id: 'cb_avisarAlPropioNumero', name: 'avisarAlPropioNumero', type: 'boolean', value: true });
+        writeFileSync(ruta, JSON.stringify(f, null, 2) + '\n');
+      }, ['--verificar']);
+      expect(r.status, archivo).toBe(1);
+      expect(r.stderr, archivo).toContain(archivo);
+      expect(r.stderr, archivo).toContain('interruptor solo de ensayo');
+    }
+    // Negativo: el código de los nodos nombra la clave para leerla (en TODOS los JSON) y eso no es el dato: el verificado real sale 0.
+    expect(JSON.stringify(QTACO)).toContain('avisarAlPropioNumero');
+    expect(enCopia(() => undefined, ['--verificar']).status).toBe(0);
+  });
+
   // ---- un turno de punta a punta, por la forma del Trigger (el `value` de Meta en la raíz)
   /** Lo que entrega el WhatsApp Trigger de n8n: el `value` de Meta, sin `body` ni cabeceras del receptor. */
   const valorDeTrigger = (from: string, mensaje: Mensaje, perfil = 'Carlos Pérez'): J => ({
@@ -3279,11 +3332,28 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     messages: [{ from, id: idEntrante(), timestamp: '1', ...mensaje }],
   });
   /** El mundo de la variante, con los dos marcadores reemplazados por teléfonos sintéticos (el restaurante es AV1) y SIN tocar las plantillas (vacías). */
-  function mundoDemoA(op: { restaurante?: string } = {}) {
+  /** El flujo de ensayo SIN la clave del interruptor (como un JSON de producción): la regla de siempre, nunca al propio número. */
+  const sinInterruptor = (): Flujo => {
+    const f = JSON.parse(JSON.stringify(DEMO_A)) as Flujo;
+    const asig = nodo(f, 'Config base').parameters['assignments'] as { assignments: J[] };
+    asig.assignments = asig.assignments.filter((x) => x['name'] !== 'avisarAlPropioNumero');
+    return f;
+  };
+  /** `interruptor`: `'ausente'` quita la clave; cualquier otro valor la reemplaza (sin él, la del JSON: `true`). */
+  function mundoDemoA(op: { restaurante?: string; interruptor?: unknown } = {}) {
     const restaurante = op.restaurante ?? AV1;
+    // Con un valor raro, la asignación de «Config base» cambia de TIPO como lo haría quien lo escribiera (n8n es estricto con el tipo).
+    const flujo = op.interruptor === 'ausente' ? sinInterruptor() : (JSON.parse(JSON.stringify(DEMO_A)) as Flujo);
+    if (op.interruptor !== undefined && op.interruptor !== 'ausente' && typeof op.interruptor !== 'boolean') {
+      const asig = (nodo(flujo, 'Config base').parameters['assignments'] as { assignments: J[] }).assignments.find((x) => x['name'] === 'avisarAlPropioNumero') as J;
+      asig['type'] = typeof op.interruptor === 'string' ? 'string' : typeof op.interruptor === 'number' ? 'number' : 'object';
+    }
     const w = crear({
-      flujo: DEMO_A,
-      config: { destinatariosAviso: `completo:${restaurante}`, respaldoNumeroRecepcion: restaurante, horario: HORARIO_TODOS },
+      flujo,
+      config: {
+        destinatariosAviso: `completo:${restaurante}`, respaldoNumeroRecepcion: restaurante, horario: HORARIO_TODOS,
+        ...(op.interruptor === undefined || op.interruptor === 'ausente' ? {} : { avisarAlPropioNumero: op.interruptor }),
+      },
     });
     const turno = (from: string, m: Mensaje, avanzarMin?: number): ResultadoTurno => {
       const t = w.mundo.turno(valorDeTrigger(from, m), avanzarMin === undefined ? {} : { avanzarMin });
@@ -3293,8 +3363,9 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     return { w, restaurante, turno };
   }
   /** Un pedido sin QR (el comercio no tiene cobro) hasta el toque en «Confirmar pedido». `ventanaMin: null` = el restaurante nunca escribió. */
-  function pedidoEnDemoA(op: { restaurante?: string; cliente?: string; ventanaMin?: number | null } = {}) {
-    const m = mundoDemoA({ restaurante: op.restaurante });
+  function pedidoEnDemoA(op: { restaurante?: string; cliente?: string; ventanaMin?: number | null; interruptor?: unknown; fallan?: string[] } = {}) {
+    const m = mundoDemoA({ restaurante: op.restaurante, interruptor: op.interruptor });
+    for (const n of op.fallan ?? []) m.w.fallan.add(n);
     const cliente = op.cliente ?? CLIENTE;
     // El restaurante escribe primero: eso abre SU ventana de 24 horas.
     if (op.ventanaMin !== null && cliente !== m.restaurante) m.turno(m.restaurante, mTexto('hola'));
@@ -3342,15 +3413,66 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     expect(cuerpos(vieja.confirmar).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
   });
 
-  it('si el destinatario del aviso es el mismo `from`, no hay aviso (`avUnificar` lo descarta): el cliente no puede ser también el restaurante', () => {
-    const p = pedidoEnDemoA({ restaurante: CLIENTE, cliente: CLIENTE });
+  it('SIN el interruptor (un JSON de producción), si el destinatario del aviso es el mismo `from`, no hay aviso (`avUnificar` lo descarta): un empleado que pide no se avisa a sí mismo', () => {
+    const p = pedidoEnDemoA({ restaurante: CLIENTE, cliente: CLIENTE, interruptor: 'ausente' });
     expect(p.confirmar.fallo).toBeNull();
     expect(p.confirmar.avisos).toHaveLength(0);
     expect(p.confirmar.ejecutados.has('Enviar aviso')).toBe(false);
     expect(cuerpos(p.confirmar).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
     expect((p.confirmar.resumen as J)['resumen'].errores.join(' ')).toContain('sin_destinatarios_de_aviso');
-    // Negativo: con dos teléfonos distintos sí hay aviso.
-    expect(pedidoEnDemoA({ ventanaMin: 5 }).confirmar.avisos.length).toBeGreaterThan(0);
+    // Negativo: con dos teléfonos distintos sí hay aviso, también sin el interruptor.
+    expect(pedidoEnDemoA({ ventanaMin: 5, interruptor: 'ausente' }).confirmar.avisos.length).toBeGreaterThan(0);
+  });
+
+  it('CON el interruptor `avisarAlPropioNumero` (el JSON de ensayo): un solo teléfono hace de cliente y de restaurante, y el aviso sale en texto libre por la ventana que su propio mensaje abrió', () => {
+    expect(configBase(DEMO_A)['avisarAlPropioNumero']).toBe(true);
+    const p = pedidoEnDemoA({ restaurante: CLIENTE, cliente: CLIENTE });
+    expect(p.confirmar.fallo).toBeNull();
+    expect(plantillasA(p.confirmar, CLIENTE)).toHaveLength(0); // sin plantillas: no existen en el Demo A
+    const detalle = detallesA(p.confirmar, CLIENTE);
+    expect(detalle).toHaveLength(1);
+    expect(detalle[0]?.ok).toBe(true);
+    expect(detalle[0]?.cuerpo).toMatch(/birria/i);
+    // Un wamid REAL de Meta (no un `wamid.SIMULADO-…`): solo con eso el cliente lee «pasé tu pedido».
+    const wamid = String(((detalle[0]?.respuesta as J)['messages'] as J[])[0]?.['id']);
+    expect(wamid).toMatch(/^wamid\./);
+    expect(wamid).not.toMatch(/SIMULADO/i);
+    expect(cuerpos(p.confirmar).join('\n')).toMatch(/pasé tu pedido #\w+ al restaurante/);
+    expect((p.confirmar.resumen as J)['resumen'].avisoSalio).toBe(true);
+    // El resto de los filtros sigue: ningún aviso a otro número, y solo uno.
+    expect(p.confirmar.avisos.every((a) => a.a === CLIENTE)).toBe(true);
+    expect(p.confirmar.avisos).toHaveLength(1);
+  });
+
+  it('CON el interruptor pero con Meta rechazando el aviso: el cliente NO lee «pasé tu pedido» (lo dice el hecho, no la clave)', () => {
+    const p = pedidoEnDemoA({ restaurante: CLIENTE, cliente: CLIENTE, fallan: ['Enviar aviso', 'Aviso de respaldo'] });
+    expect(p.confirmar.fallo).toBeNull();
+    expect((p.confirmar.resumen as J)['resumen'].avisoSalio).toBe(false);
+    expect(cuerpos(p.confirmar).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
+    expect(cuerpos(p.confirmar).join('\n')).not.toMatch(/pasé tu pedido/i);
+  });
+
+  it('el interruptor solo vale con `true` (o «true»): «false», «0», vacío, un objeto, un número o cualquier otro texto = falso, y el propio número se descarta', () => {
+    for (const valor of ['false', '0', '', 'no', 'TRUE ', 'yes', 1, 0, {}, [], null]) {
+      const p = pedidoEnDemoA({ restaurante: CLIENTE, cliente: CLIENTE, interruptor: valor });
+      expect(p.confirmar.avisos, JSON.stringify(valor)).toHaveLength(0);
+      expect((p.confirmar.resumen as J)['resumen'].errores.join(' '), JSON.stringify(valor)).toContain('sin_destinatarios_de_aviso');
+    }
+    // Negativo: `true` y el texto «true» sí lo encienden (así llega de «Config base»).
+    for (const valor of [true, 'true']) {
+      expect(pedidoEnDemoA({ restaurante: CLIENTE, cliente: CLIENTE, interruptor: valor }).confirmar.avisos, JSON.stringify(valor)).toHaveLength(1);
+    }
+  });
+
+  it('el interruptor lo lee solo «Config base»: el panel de la consola no lo puede encender ni apagar', () => {
+    const w = crear({ flujo: sinInterruptor(), panel: panel({ avisarAlPropioNumero: true, operacion: { horarioAtencion: 'x', moneda: 'BOB', numeroRecepcion: REC, prefijosPermitidos: ['591'], avisarAlPropioNumero: true } }),
+      config: { destinatariosAviso: `completo:${CLIENTE}`, horario: HORARIO_TODOS } });
+    const t = w.mundo.turno(valorDeTrigger(CLIENTE, mTexto('hola')));
+    expect(t.fallo).toBeNull();
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const resumen = w.mundo.turno(valorDeTrigger(CLIENTE, mTexto('quiero 4 tacos de birria')));
+    const confirmar = w.mundo.turno(valorDeTrigger(CLIENTE, mBoton(idDeBoton(resumen, 'Confirmar pedido'), 'Confirmar pedido')));
+    expect(confirmar.avisos).toHaveLength(0);
   });
 
   it('un mensaje de otra línea (`phone_number_id` distinto del configurado) no recorre el flujo, y un acuse de estado se descarta', () => {
