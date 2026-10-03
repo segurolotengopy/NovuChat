@@ -1386,3 +1386,86 @@ describe('M1: el tope diario de avisos respeta el 0', () => {
     expect(L.avPlan('pedido', pedido(), CSV, CFG, sdCon(), AHORA).items.length).toBeGreaterThan(0);
   });
 });
+
+describe('notaPedido: la nota del cliente desde la página del catálogo llega al restaurante (completo y cocina)', () => {
+  const NOTA = 'sin cilantro, salsa aparte y tocar el timbre dos veces';
+  const cerrada = (datos: J) => L.avArmar('pedido', datos, CSV, CFG, sdCon(), AHORA);
+  const conVentana = (datos: J) => L.avArmar('pedido', datos, CSV, CFG, abierta(), AHORA);
+
+  it('con ventana abierta, el detalle de completo y de cocina trae «Nota del cliente» después de los ítems y antes del total', () => {
+    const items = conVentana(pedido({ notaPedido: NOTA }));
+    for (const tel of [ANDRES, SILVANA]) {
+      const c = cuerpo(items, tel);
+      expect(c, tel).toContain(`Nota del cliente: «${NOTA}»`);
+      expect(c.indexOf('Nota del cliente'), tel).toBeLessThan(c.indexOf('Total de la comida'));
+      expect(c.indexOf('Nota del cliente'), tel).toBeGreaterThan(c.indexOf('Queso fundido con chorizo'));
+    }
+  });
+  it('con ventana cerrada, la variable 3 de la plantilla la lleva en los dos roles, y los ítems siguen', () => {
+    const items = cerrada(pedido({ notaPedido: NOTA }));
+    const completo = params(plantillaDe(items, ANDRES))[2]!;
+    const cocina = params(plantillaDe(items, SILVANA))[2]!;
+    expect(completo).toContain(`nota: ${NOTA}`);
+    expect(cocina).toContain(`nota: ${NOTA}`);
+    for (const v of [completo, cocina]) { expect(v.length).toBeLessThanOrEqual(500); expect(v).toContain(ITEMS_PEDIDO); }
+  });
+  it('NEGANDO: sin nota (ausente, vacía, solo espacios o que no es texto) no sale ninguna línea ni segmento', () => {
+    for (const n of [undefined, null, '', '   ', '\n\t', 5, {}, []]) {
+      const sin = conVentana(pedido({ notaPedido: n }));
+      const sinVar = cerrada(pedido({ notaPedido: n }));
+      for (const tel of [ANDRES, SILVANA]) expect(cuerpo(sin, tel), JSON.stringify(n)).not.toContain('Nota del cliente');
+      for (const tel of [ANDRES, SILVANA]) expect(params(plantillaDe(sinVar, tel))[2], JSON.stringify(n)).not.toContain('nota:');
+    }
+  });
+  it('NEGANDO: cocina no recibe teléfono ni números largos de la nota; completo sí los conserva', () => {
+    const hostil = `llámame al 71234567 o a la cuenta ${CUENTA}, sin cebolla`;
+    const items = conVentana(pedido({ notaPedido: hostil }));
+    const cocina = cuerpo(items, SILVANA);
+    expect(cocina).toContain('Nota del cliente');
+    expect(cocina).toContain('sin cebolla');
+    expect(cocina).not.toMatch(/\d{7,}/);
+    expect(cocina).not.toContain('71234567');
+    expect(cuerpo(items, ANDRES)).toContain('71234567');
+    const cerradas = cerrada(pedido({ notaPedido: hostil }));
+    expect(params(plantillaDe(cerradas, SILVANA))[2]).not.toMatch(/\d{7,}/);
+    // y el rol cocina sigue sin teléfono ni dirección del cliente
+    for (const t of textosDe(plantillaDe(cerradas, SILVANA)).concat(cocina)) {
+      expect(t).not.toContain(CLIENTE);
+      expect(t).not.toContain(DIRECCION);
+    }
+  });
+  it('NEGANDO: respeta la red de prohibidas, sin enlaces ni marcas de formato ni saltos de línea', () => {
+    const hostil = 'ya lo estamos preparando, pago acreditado, entra a http://malo.test/x *negrita* {x} <b>';
+    for (const items of [conVentana(pedido({ notaPedido: hostil })), cerrada(pedido({ notaPedido: hostil }))]) {
+      for (const it of items) {
+        for (const t of textosDe(it)) {
+          expect(t).not.toMatch(VM_PROHIBIDAS);
+          expect(t).not.toMatch(/https?:|malo\.test/i);
+        }
+      }
+    }
+    const v = params(plantillaDe(cerrada(pedido({ notaPedido: 'línea uno\nlínea dos\r\n\tlínea tres' })), ANDRES))[2]!;
+    expect(v).not.toMatch(/[\r\n\t]/);
+    expect(v).toContain('línea uno · línea dos · línea tres');
+  });
+  it('NEGANDO: la nota tiene tope (300 en el detalle, 100 en la variable) y los ítems de la plantilla no se pierden', () => {
+    const larga = 'abc '.repeat(200);
+    const c = cuerpo(conVentana(pedido({ notaPedido: larga })), ANDRES);
+    const linea = c.split('\n').find((l) => l.startsWith('Nota del cliente'))!;
+    expect(linea.length).toBeLessThanOrEqual('Nota del cliente: «'.length + 300 + 1);
+    const v = params(plantillaDe(cerrada(pedido({ notaPedido: larga })), ANDRES))[2]!;
+    expect(v.length).toBeLessThanOrEqual(500);
+    expect(v).toContain(ITEMS_PEDIDO);
+    expect(v.split(' · ').find((x) => x.startsWith('nota: '))!.length).toBeLessThanOrEqual('nota: '.length + 100);
+  });
+  it('la nota no se muestra en una reserva ni en una consulta (solo en pedido y comprobante)', () => {
+    const r = L.avArmar('reserva', reserva({ notaPedido: NOTA }), CSV, CFG, abierta(), AHORA);
+    expect(r.flatMap(textosDe).join('\n')).not.toContain(NOTA);
+    const dv = L.avArmar('transferencia', { codigo: 'T1', nombre: 'Ana Pérez', telefono: CLIENTE, notaPedido: NOTA }, CSV, CFG, abierta(), AHORA);
+    expect(dv.flatMap(textosDe).join('\n')).not.toContain(NOTA);
+  });
+  it('un comprobante con nota también la lleva', () => {
+    const items = L.avArmar('comprobante', pedido({ notaPedido: NOTA }), CSV, CFG, abierta(), AHORA);
+    expect(cuerpo(items, SILVANA)).toContain(`Nota del cliente: «${NOTA}»`);
+  });
+});

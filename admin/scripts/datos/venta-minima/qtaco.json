@@ -28,6 +28,7 @@
     "reservasActivo": true,
     "promosActivo": true,
     "areasExcluidas": "cocteleria,cervezas,postres",
+    "palabrasExcluidas": "helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica",
     "areasSinDelivery": "Bebidas",
     "horario": "REEMPLAZAR_HORARIO_PEDIDOS_QTACO",
     "zonasReserva": "salón,terraza",

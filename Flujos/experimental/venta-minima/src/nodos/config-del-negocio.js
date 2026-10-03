@@ -11,7 +11,8 @@
 // reemplazar cuenta como vacio.
 //
 // LO QUE LLEGA COMO LO PIDE EL CONTRATO (§4.3 y ajustes):
-//   - `areasExcluidas`, `areasSinDelivery`, `zonasReserva`: ARREGLOS (vienen como CSV);
+//   - `areasExcluidas`, `palabrasExcluidas`, `areasSinDelivery`, `zonasReserva`: ARREGLOS (vienen como CSV);
+//     `palabrasExcluidas` (lo que el negocio NO vende por WhatsApp: «helado», «cerveza»…) solo se lee de «Config base»;
 //   - `horario`: el CSV crudo («lun=12:00-22:00,…»); lo convierte `vmHorario`;
 //   - `prefijosPermitidos` y `destinatariosAviso`: CSV (los consumen `vmPrefijoPermitido` y `avDestinatarios`);
 //   - `plantilla*`, `idioma*`, `formaPlantilla*` y `orden*` (`plantillaPedido`, `idiomaPlantillaPedido`, `ordenPedido`…): se
@@ -93,6 +94,8 @@ const deBaseDeReglas = {
   reservasActivo: verdadero(base.reservasActivo),
   promosActivo: verdadero(base.promosActivo),
   areasExcluidas: vmLista(base.areasExcluidas),
+  // Solo de «Config base» (como `areasExcluidas`): ni el panel ni la consola la tocan. Ausente = sin lista.
+  palabrasExcluidas: vmLista(base.palabrasExcluidas),
   areasSinDelivery: vmLista(base.areasSinDelivery),
   zonasReserva: vmLista(base.zonasReserva),
   horario: horarioBase,

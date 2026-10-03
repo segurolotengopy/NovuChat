@@ -54,7 +54,7 @@ const NOMBRES = [
   'vmTextoDeGemini', 'vmJsonDeGemini', 'vmTextoSeguro', 'vmSd', 'vmEstadoBase', 'vmLeerEstado', 'vmEscribirEstado',
   'vmBarrer', 'vmYaVisto', 'vmMarcarVisto', 'vmAtencion', 'vmPrefijoPermitido', 'vmIdDeBoton', 'vmLeerBoton',
   'vmCodigoCorto', 'vmHuella', 'vmIdEstable', 'vmFechaLocal', 'vmHoraLocal', 'vmDiaSemana', 'vmMsLocal', 'vmFechaLegible', 'vmTablaDeDias',
-  'vmHorario', 'vmAbierto', 'VM_PROHIBIDAS', 'vmCanon', 'vmSinProhibidas',
+  'vmHorario', 'vmAbierto', 'vmHorarioLegible', 'VM_PROHIBIDAS', 'vmCanon', 'vmSinProhibidas',
 ] as const;
 type Lib = Record<(typeof NOMBRES)[number], Fn>;
 
@@ -632,6 +632,57 @@ describe('comun.js: horario', () => {
 });
 
 // ================================================================================================
+describe('comun.js: el horario de dos tramos de Q\'Taco (lunes a viernes 12:00-16:00 y 18:00-22:00; sábado y domingo 12:00-22:00)', () => {
+  const QT = 'lun=12:00-16:00/18:00-22:00,mar=12:00-16:00/18:00-22:00,mie=12:00-16:00/18:00-22:00,jue=12:00-16:00/18:00-22:00,vie=12:00-16:00/18:00-22:00,sab=12:00-22:00,dom=12:00-22:00';
+  // Hora local de La Paz (UTC-4) de un día de octubre de 2026: 5 = lunes, 9 = viernes, 10 = sábado, 11 = domingo.
+  const en = (dia: number, h: number, m = 0): number => Date.UTC(2026, 9, dia, h + 4, m);
+  it('vmHorario lo entiende: dos tramos de lunes a viernes y uno el fin de semana', () => {
+    const h = L.vmHorario(QT);
+    for (const d of ['lun', 'mar', 'mie', 'jue', 'vie']) expect(h[d], d).toEqual([{ desde: '12:00', hasta: '16:00' }, { desde: '18:00', hasta: '22:00' }]);
+    for (const d of ['sab', 'dom']) expect(h[d], d).toEqual([{ desde: '12:00', hasta: '22:00' }]);
+  });
+  it('entre semana: abierto en cada tramo y CERRADO en el hueco de 16:00 a 18:00 (bordes incluidos)', () => {
+    for (const dia of [5, 6, 7, 8, 9]) {
+      for (const [h, m] of [[12, 0], [15, 59], [18, 0], [21, 59]] as const) expect(L.vmAbierto(QT, en(dia, h, m)).abierto, `${dia} ${h}:${m}`).toBe(true);
+      for (const [h, m] of [[11, 59], [16, 0], [16, 1], [17, 0], [17, 59], [22, 0], [23, 0]] as const) expect(L.vmAbierto(QT, en(dia, h, m)).abierto, `${dia} ${h}:${m}`).toBe(false);
+    }
+  });
+  it('sábado y domingo no tienen hueco: a las 17:00 está abierto, a las 22:00 no', () => {
+    for (const dia of [10, 11]) {
+      expect(L.vmAbierto(QT, en(dia, 17)).abierto, String(dia)).toBe(true);
+      expect(L.vmAbierto(QT, en(dia, 12)).abierto, String(dia)).toBe(true);
+      expect(L.vmAbierto(QT, en(dia, 11, 59)).abierto, String(dia)).toBe(false);
+      expect(L.vmAbierto(QT, en(dia, 22)).abierto, String(dia)).toBe(false);
+    }
+    expect(L.vmAbierto(QT, en(10, 17)).hoyCerrado).toBe(false);
+  });
+  it('NEGANDO: un tramo mal formado, pisado o pegado con otro separador NO se entiende (null), y con eso no se bloquea ningún pedido', () => {
+    for (const mal of [
+      'lun=12:00-16:00/18:00-22', 'lun=12:00-16:00/', 'lun=12:00-16:00//18:00-22:00', 'lun=12:00-16:00/18:00', 'lun=12:00-18:00/16:00-22:00',
+      'lun=12:00-16:00/15:00-22:00', 'lun=12:00-16:00 y 18:00-22:00', 'lun=12:00-16:00;18:00-22:00', 'lun=12:00-16:00,18:00-22:00',
+      'lun=16:00-12:00/18:00-22:00', 'lun=12:00-16:00/22:00-18:00',
+    ]) {
+      expect(L.vmHorario(mal), mal).toBeNull();
+      expect(L.vmAbierto(mal, en(5, 17)), mal).toEqual({ abierto: true, hoyCerrado: false, sinHorario: true });
+    }
+  });
+  it('los tramos escritos en otro orden dan el mismo horario', () => {
+    expect(L.vmHorario('lun=18:00-22:00/12:00-16:00')).toEqual(L.vmHorario('lun=12:00-16:00/18:00-22:00'));
+  });
+  it('vmHorarioLegible: el texto en palabras, juntando los días seguidos que abren igual', () => {
+    expect(L.vmHorarioLegible(QT)).toBe('lunes a viernes de 12:00 a 16:00 y de 18:00 a 22:00; sábado y domingo de 12:00 a 22:00');
+    expect(L.vmHorarioLegible('lun=12:00-22:00,mar=12:00-22:00,mie=12:00-22:00,jue=12:00-22:00,vie=12:00-23:00,sab=12:00-23:00,dom=cerrado'))
+      .toBe('lunes a jueves de 12:00 a 22:00; viernes y sábado de 12:00 a 23:00; domingo cerrado');
+    expect(L.vmHorarioLegible('lun=09:00-13:00')).toBe('lunes de 09:00 a 13:00; martes a domingo cerrado');
+    expect(L.vmHorarioLegible(L.vmHorario(QT))).toBe(L.vmHorarioLegible(QT)); // también con el objeto convertido
+  });
+  it('vmHorarioLegible: lo que no se entiende da texto vacío, y el texto no trae palabras prohibidas', () => {
+    for (const m of ['', null, undefined, 5, 'lun=12:00-16:00/18:00-22', 'xyz=1']) expect(L.vmHorarioLegible(m), String(m)).toBe('');
+    expect(L.vmHorarioLegible(QT)).not.toMatch(L.VM_PROHIBIDAS as unknown as RegExp);
+  });
+});
+
+// ================================================================================================
 describe('Carga de entrada: las cuatro formas', () => {
   const correr = (entradas: J[], refs: Referencias = {}): J[] => correrNodo('carga-de-entrada', entradas, refs);
   const msgs = (s: J[]): J[] => s[0]!['messages'] as J[];
@@ -1010,6 +1061,25 @@ describe('Config del negocio', () => {
     const vacio = ok(PANEL, { base: {} });
     for (const k of ['areasExcluidas', 'areasSinDelivery', 'zonasReserva']) expect(vacio[k], k).toEqual([]);
     expect(ok(PANEL, { base: { zonasReserva: ['salón', 'jardín'] } })['zonasReserva']).toEqual(['salón', 'jardín']);
+  });
+  it('palabrasExcluidas sale como ARREGLO y SOLO de «Config base»: la clave del panel o de la consola no pasa', () => {
+    const lista = 'helado, cerveza ,bebida alcoholica,REEMPLAZAR_X,cerveza';
+    expect(ok(PANEL, { base: { ...BASE, palabrasExcluidas: lista } })['palabrasExcluidas']).toEqual(['helado', 'cerveza', 'bebida alcoholica']);
+    // ausente o vacía = sin lista
+    expect(ok(PANEL)['palabrasExcluidas']).toEqual([]);
+    expect(ok(PANEL, { base: { ...BASE, palabrasExcluidas: '' } })['palabrasExcluidas']).toEqual([]);
+    expect(ok(PANEL, { base: { ...BASE, palabrasExcluidas: 'REEMPLAZAR_PALABRAS_QTACO' } })['palabrasExcluidas']).toEqual([]);
+    // el panel intenta ponerla (en cada sección y en la raíz): no pasa ni pisa la de «Config base»
+    const hostil: J = {
+      ...PANEL, palabrasExcluidas: 'pizza', datosDelNegocio: { ...(PANEL['datosDelNegocio'] as J), palabrasExcluidas: 'pizza' },
+      operacion: { ...(PANEL['operacion'] as J), palabrasExcluidas: 'pizza' }, venta: { ...(PANEL['venta'] as J), palabrasExcluidas: 'pizza' },
+      voz: { ...(PANEL['voz'] as J), palabrasExcluidas: ['pizza'] },
+    };
+    expect(ok(hostil)['palabrasExcluidas']).toEqual([]);
+    expect(ok(hostil, { base: { ...BASE, palabrasExcluidas: 'helado' } })['palabrasExcluidas']).toEqual(['helado']);
+    // y con el panel suspendido o sin respuesta, la lista de «Config base» sigue ahí (lo que no se vende por WhatsApp no depende del panel)
+    expect(correr({ statusCode: 500, body: {} }, { base: { ...BASE, palabrasExcluidas: 'helado' } })['palabrasExcluidas']).toEqual(['helado']);
+    expect(correr({ statusCode: 409, body: {} }, { base: { ...BASE, palabrasExcluidas: 'helado' } })['palabrasExcluidas']).toEqual(['helado']);
   });
   it('`horario` queda como CSV crudo, y `prefijosPermitidos` y `destinatariosAviso` como CSV', () => {
     const c = ok();
