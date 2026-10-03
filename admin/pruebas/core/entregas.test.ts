@@ -82,15 +82,32 @@ export const esProgramado = (f: Flujo): boolean => f.nodes.some((n) => n.type.en
 // Texto de los nodos
 // ---------------------------------------------------------------------------
 
-const tipo = (n: Nodo): string => n.type.split('.').pop() ?? '';
+/** El tipo de nodo sin paquete; las variantes «herramienta» del agente se leen como el nodo que envuelven. */
+const tipo = (n: Nodo): string => {
+  const t = n.type.split('.').pop() ?? '';
+  if (t === 'httpRequestTool' || t === 'toolHttpRequest') return 'httpRequest';
+  return t === 'whatsAppTool' ? 'whatsApp' : t;
+};
 const esCode = (n: Nodo): boolean => tipo(n) === 'code';
 const esIf = (n: Nodo): boolean => tipo(n) === 'if';
 /** El JavaScript del Code SIN comentarios: un comentario que nombra un nodo o cita `messages[0].id` no es código que lo haga. */
 const codigo = (n: Nodo): string => (esCode(n) ? tokenizar(String(n.parameters['jsCode'] ?? '')).sinComentarios : '');
 const texto = (n: Nodo): string => JSON.stringify(n.parameters ?? {});
 
-/** Lo que un nodo mira del resultado de un envío: `messages[0].id` o un código de estado. */
-export const leeWamid = (s: string): boolean => /messages[\s\S]{0,80}\[0\][\s\S]{0,40}\bid\b/.test(s) || /statusCode/.test(s);
+/**
+ * Lo que un nodo mira del resultado de un envío, de verdad: un `statusCode` dentro de una comparación, o
+ * `messages[0].id` dentro de una condición o junto a un `throw`. Citarlos, copiarlos a un campo o
+ * mencionarlos sin decidir nada con ellos no es mirar (sondas C, D y J de la revisión de `seguridad`).
+ */
+export const leeWamid = (s: string): boolean => {
+  if (/statusCode\W{0,12}(?:>=?|<=?|===?|!==?|!=|==)|(?:>=?|<=?|===?|!==?|!=|==)\W{0,12}statusCode|statusCode\s*\)\s*(?:>=?|<=?|===?|!==?)/.test(s)) return true;
+  const re = /messages[\s\S]{0,80}\[0\][\s\S]{0,40}\bid\b/g;
+  for (let m = re.exec(s); m; m = re.exec(s)) {
+    const ventana = s.slice(Math.max(0, m.index - 100), m.index + m[0].length + 100);
+    if (/\bif\b|\bthrow\b|&&|!==?|===?|[^?]\?[^?.:]|\bfilter\b|!!|\bleftValue\b/.test(ventana)) return true;
+  }
+  return false;
+};
 const leeId = (n: Nodo): boolean => (esCode(n) ? leeWamid(codigo(n)) : esIf(n) && leeWamid(texto(n)));
 
 // ---------------------------------------------------------------------------
@@ -190,17 +207,59 @@ function predecesores(f: Flujo, hacia: string): { de: string; salida: number }[]
 
 export type Clase = 'texto' | 'imagen' | 'boton' | 'plantilla' | 'ubicacion' | 'dinamico';
 
-/** Un envío de WhatsApp: HTTP POST a `/messages`, o el nodo whatsApp que no es de medios. */
+/**
+ * Un envío de WhatsApp: HTTP POST a `/messages` (también como herramienta del agente), o el nodo whatsApp que no es
+ * de medios. En el nodo whatsApp la operación por defecto es `sendTemplate`: sin `operation` también envía.
+ */
 export function esEnvio(n: Nodo): boolean {
   const p = n.parameters ?? {};
   if (tipo(n) === 'httpRequest') return String(p['method'] ?? '').toUpperCase() === 'POST' && String(p['url'] ?? '').includes('/messages');
-  if (tipo(n) === 'whatsApp') return p['resource'] !== 'media' && ['send', 'sendTemplate', 'sendAndWait'].includes(String(p['operation'] ?? ''));
+  if (tipo(n) === 'whatsApp') {
+    if (String(p['resource'] ?? 'message') !== 'message') return false;
+    return ['send', 'sendTemplate', 'sendAndWait'].includes(String(p['operation'] ?? 'sendTemplate'));
+  }
   return false;
 }
 
-export function clase(n: Nodo): Clase {
+/**
+ * Lo que sale por el camino de FALLO de un envío: por la salida de error si es `continueErrorOutput`; detrás de un
+ * IF o Code que lee el id o `error` si es `continueRegularOutput`. Un texto colgado de la salida de ÉXITO, o de un
+ * nodo que no decide nada, no es un camino de fallo (sondas A y B de la revisión de `seguridad`).
+ */
+export function alcanceDeFallo(f: Flujo, n: Nodo): Set<string> {
+  let inicio: string[] = [];
+  if (n.onError === 'continueErrorOutput') inicio = salidasDe(f, n.name)[1] ?? [];
+  else if (n.onError === 'continueRegularOutput') {
+    inicio = sucesores(f, n.name).filter((s) => {
+      const x = porNombre(f, s);
+      return !!x && (esCode(x) || esIf(x)) && (leeId(x) || /error/.test(esCode(x) ? codigo(x) : texto(x)));
+    });
+  }
+  const vistos = new Set<string>(inicio);
+  const pendientes = [...inicio];
+  while (pendientes.length) {
+    for (const s of sucesores(f, pendientes.pop() as string)) { if (!vistos.has(s)) { vistos.add(s); pendientes.push(s); } }
+  }
+  return vistos;
+}
+
+/** ¿Se llega a `n` por el camino de fallo de OTRO envío? Es lo que hace «de respaldo» a un envío de cuerpo dinámico. */
+const esRespaldoDeOtro = (f: Flujo, n: Nodo): boolean =>
+  f.nodes.some((e) => e !== n && esEnvio(e) && alcanceDeFallo(f, e).has(n.name));
+
+export function clase(n: Nodo, f?: Flujo): Clase {
   const p = n.parameters ?? {};
-  if (tipo(n) === 'whatsApp') return p['operation'] === 'sendTemplate' ? 'plantilla' : 'texto';
+  if (tipo(n) === 'whatsApp') {
+    const op = String(p['operation'] ?? 'sendTemplate');
+    if (op === 'sendTemplate') return 'plantilla';
+    if (op === 'sendAndWait') return 'boton';
+    switch (String(p['messageType'] ?? 'text')) {
+      case 'text': return 'texto';
+      case 'location': return 'ubicacion';
+      case 'image': case 'audio': case 'document': case 'video': case 'sticker': return 'imagen';
+      default: return 'dinamico';
+    }
+  }
   const t = texto(n);
   if (t.includes('cta_url')) return 'boton';
   const m = /(?<!\w)type\\*["']?\s*:\s*\\*["'](\w+)/.exec(t);
@@ -210,28 +269,46 @@ export function clase(n: Nodo): Clase {
     case 'location': return 'ubicacion';
     case 'template': return 'plantilla';
     case 'interactive': return 'boton';
-    // El cuerpo viene armado por otro nodo (`$json.cuerpoMeta`): no se ve qué es. Por convención
-    // del repositorio, un envío «de respaldo» es siempre el texto de último recurso.
-    default: return /respaldo/i.test(n.name) ? 'texto' : 'dinamico';
+    // El cuerpo viene armado por otro nodo (`$json.cuerpoMeta`): no se ve qué es. Un envío «de respaldo» es el
+    // texto de último recurso SOLO si se llega a él desde la salida de fallo de otro envío (sonda H): el nombre
+    // solo no basta.
+    default: return /respaldo/i.test(n.name) && f && esRespaldoDeOtro(f, n) ? 'texto' : 'dinamico';
   }
 }
 
 const ES_NEGOCIO = /^(Avisar |Aviso |Enviar aviso$)/;
+const NOMBRA_NEGOCIO = /numeroDue|numeroRecep|doctor/i;
+/** El DESTINATARIO manda sobre el nombre del nodo (sonda G); el nombre solo decide si el cuerpo viene armado (sin `to`). */
 export function destino(n: Nodo): 'cliente' | 'negocio' {
-  if (ES_NEGOCIO.test(n.name)) return 'negocio';
-  // Solo el DESTINATARIO cuenta: el botón «Enviar contacto» lleva el número de recepción en el
-  // cuerpo y se lo manda al cliente.
   const p = n.parameters ?? {};
   const para = tipo(n) === 'whatsApp' ? String(p['recipientPhoneNumber'] ?? '') : (/\bto\s*:\s*([^,\n]+)/.exec(String(p['jsonBody'] ?? ''))?.[1] ?? '');
-  return /numeroDueno|numeroRecepcion|doctor/.test(para) ? 'negocio' : 'cliente';
+  if (para) return NOMBRA_NEGOCIO.test(para) ? 'negocio' : 'cliente';
+  return ES_NEGOCIO.test(n.name) ? 'negocio' : 'cliente';
 }
 
 const enviosDe = (f: Flujo): Nodo[] => f.nodes.filter(esEnvio);
 
-/** ¿Algún Code nombra a `nombre` entre comillas (`$('…')`, `'…'`) y lee el id? */
-const sumideroDe = (f: Flujo, nombre: string): Nodo[] =>
-  f.nodes.filter((c) => esCode(c) && leeWamid(codigo(c))
-    && [`'${nombre}'`, `"${nombre}"`, `\`${nombre}\``].some((q) => codigo(c).includes(q)));
+function antecesores(f: Flujo, n: string): Set<string> {
+  const vistos = new Set<string>();
+  const pendientes = [n];
+  while (pendientes.length) {
+    for (const { de } of predecesores(f, pendientes.pop() as string)) { if (!vistos.has(de)) { vistos.add(de); pendientes.push(de); } }
+  }
+  return vistos;
+}
+
+/** ¿`c` corre después del envío `n`: se llega a él desde el envío, o cuelga de un antecesor del envío sin serlo? */
+function esPosterior(f: Flujo, n: string, c: string): boolean {
+  if (alcanza(f, n).has(c)) return true;
+  const ant = antecesores(f, n);
+  return !ant.has(c) && [...ant].some((a) => alcanza(f, a).has(c));
+}
+
+/** Los Code que nombran al envío entre comillas, leen el id y corren DESPUÉS de él (sondas C y D). */
+const sumideroDe = (f: Flujo, n: Nodo): Nodo[] =>
+  f.nodes.filter((c) => esCode(c) && c !== n && leeWamid(codigo(c))
+    && [`'${n.name}'`, `"${n.name}"`, `\`${n.name}\``].some((q) => codigo(c).includes(q))
+    && esPosterior(f, n.name, c.name));
 
 export type Verificacion = 'salida-de-error' | 'verificador-inmediato' | 'sumidero-por-nombre' | 'ruidoso';
 
@@ -251,14 +328,14 @@ export function verificacion(f: Flujo, n: Nodo): Verificacion | null {
       if (resto.length && resto.every((x) => (esCode(x) || esIf(x)) && leeId(x))) return 'verificador-inmediato';
     }
   }
-  if (sumideroDe(f, n.name).length) return 'sumidero-por-nombre';
-  if (esRuidoso(n)) return 'ruidoso';
+  if (sumideroDe(f, n).length) return 'sumidero-por-nombre';
+  if (esRuidoso(f, n)) return 'ruidoso';
   return null;
 }
 
 /** «Ruidoso»: si el texto falla, n8n detiene la ejecución con error (el comportamiento por defecto). */
-function esRuidoso(n: Nodo): boolean {
-  return (n.onError === undefined || n.onError === 'stopWorkflow') && clase(n) === 'texto';
+function esRuidoso(f: Flujo, n: Nodo): boolean {
+  return (n.onError === undefined || n.onError === 'stopWorkflow') && clase(n, f) === 'texto';
 }
 
 // ---------------------------------------------------------------------------
@@ -268,19 +345,18 @@ function esRuidoso(n: Nodo): boolean {
 export interface Violacion { regla: number; nodo: string; detalle: string }
 
 const enviosClienteTexto = (f: Flujo, nombres: Iterable<string>): string[] =>
-  [...nombres].filter((s) => { const x = porNombre(f, s); return !!x && esEnvio(x) && destino(x) === 'cliente' && clase(x) === 'texto'; });
+  [...nombres].filter((s) => { const x = porNombre(f, s); return !!x && esEnvio(x) && destino(x) === 'cliente' && clase(x, f) === 'texto'; });
 
-/** Regla 2 para un envío al cliente: ¿tiene camino de fallo al cliente? */
+/** Regla 2 para un envío al cliente: ¿tiene camino de fallo al cliente? Se mira SOLO lo que cuelga de su camino de fallo. */
 export function cumpleRegla2(f: Flujo, n: Nodo): boolean {
-  const desde = alcanza(f, n.name);
+  const desde = alcanceDeFallo(f, n);
   desde.delete(n.name);
   if (enviosClienteTexto(f, desde).length) return true;
-  if (clase(n) !== 'texto') return false;
-  if (esRuidoso(n)) return true;
-  const verificadores = [...new Set([...desde, ...sumideroDe(f, n.name).map((c) => c.name)])]
-    .map((s) => porNombre(f, s)).filter((x): x is Nodo => !!x && esCode(x) && (leeId(x) || sumideroDe(f, n.name).includes(x)));
+  if (clase(n, f) !== 'texto') return false;
+  if (esRuidoso(f, n)) return true;
+  const verificadores = [...[...desde].map((s) => porNombre(f, s)).filter((x): x is Nodo => !!x && esCode(x) && leeId(x)), ...sumideroDe(f, n)];
   if (verificadores.some((c) => /\bthrow\b/.test(codigo(c)))) return true;
-  return [...desde].some((s) => { const x = porNombre(f, s); return !!x && texto(x).includes('envio_fallido') && (esEnvio(x) ? false : true); });
+  return [...desde].some((s) => { const x = porNombre(f, s); return !!x && !esEnvio(x) && texto(x).includes('envio_fallido'); });
 }
 
 const esIngestaSaliente = (n: Nodo): boolean =>
@@ -347,7 +423,7 @@ export function violaciones(f: Flujo): Violacion[] {
       v.push({ regla: 1, nodo: n.name, detalle: `«${n.name}» (${n.onError ?? 'sin onError'}) no tiene verificación: ni salida de error conectada, ni verificador del id, ni sumidero que lo nombre, ni es un texto que corta con error` });
     }
     if (conversacional && destino(n) === 'cliente' && !cumpleRegla2(f, n)) {
-      v.push({ regla: 2, nodo: n.name, detalle: `«${n.name}» (${clase(n)}) no tiene camino de fallo al cliente: ${clase(n) === 'texto' ? 'su texto no corta con error, no hay otro texto al cliente, ni throw, ni envio_fallido' : 'desde él no se alcanza otro envío de texto al cliente'}` });
+      v.push({ regla: 2, nodo: n.name, detalle: `«${n.name}» (${clase(n, f)}) no tiene camino de fallo al cliente: ${clase(n, f) === 'texto' ? 'su texto no corta con error, no hay otro texto al cliente, ni throw, ni envio_fallido' : 'desde él no se alcanza otro envío de texto al cliente'}` });
     }
   }
 
@@ -372,7 +448,7 @@ export function violaciones(f: Flujo): Violacion[] {
   }
 
   // 5
-  const imagenesOk = envios.filter((e) => clase(e) === 'imagen' && destino(e) === 'cliente' && cumpleRegla2(f, e)).map((e) => e.name);
+  const imagenesOk = envios.filter((e) => clase(e, f) === 'imagen' && destino(e) === 'cliente' && cumpleRegla2(f, e)).map((e) => e.name);
   for (const c of codes) {
     const { literales } = tokenizar(String(c.parameters['jsCode'] ?? ''));
     for (const { id, re } of ANUNCIOS_CODIGO) {
@@ -401,12 +477,22 @@ export function violaciones(f: Flujo): Violacion[] {
       if (!re.test(prompt)) continue;
       const alcanceOk = (nodos: Nodo[]) => nodos.length > 0 && nodos.every((x) => cumpleRegla2(f, x));
       const clientes = envios.filter((e) => destino(e) === 'cliente');
-      const mecanismo = mec === 'qr' ? clientes.filter((e) => clase(e) === 'imagen')
-        : mec === 'contacto' ? clientes.filter((e) => clase(e) === 'boton')
+      const mecanismo = mec === 'qr' ? clientes.filter((e) => clase(e, f) === 'imagen')
+        : mec === 'contacto' ? clientes.filter((e) => clase(e, f) === 'boton')
           : envios.filter((e) => destino(e) === 'negocio').filter((e) => [...alcanza(f, e.name)].some((s) => enviosClienteTexto(f, [s]).length));
       const ok = mec === 'aviso' ? mecanismo.length > 0 : alcanceOk(mecanismo);
       const quien = mec === 'aviso' ? 'ningún aviso al negocio del que dependa el texto al cliente (R4)' : (mecanismo.map((m) => m.name).join(', ') || 'no existe');
       if (!ok) v.push({ regla: 6, nodo: `${a.name}::${id}`, detalle: `el prompt de «${a.name}» anuncia «${id}» y su mecanismo no cumple la regla 2 (${quien})` });
+    }
+  }
+
+  // 7. Un nodo que habla con Graph y que esta suite no sabe clasificar como envío: una puerta lateral que ninguna
+  // regla vería (sondas I, K y L). Las lecturas (GET) son de medios y perfil: no envían.
+  for (const n of f.nodes) {
+    const url = String((n.parameters ?? {})['url'] ?? '');
+    const metodo = String((n.parameters ?? {})['method'] ?? 'GET').toUpperCase();
+    if (url.includes('graph.facebook') && metodo !== 'GET' && !esEnvio(n)) {
+      v.push({ regla: 7, nodo: n.name, detalle: `«${n.name}» (${n.type}, ${metodo}) escribe en Graph y esta suite no lo clasifica como envío` });
     }
   }
   return v;
@@ -414,123 +500,258 @@ export function violaciones(f: Flujo): Violacion[] {
 
 export const clave = (archivo: string, regla: number, nodo: string): string => `${archivo}#${regla}#${nodo}`;
 
+export interface Excepcion { porque: string; vence: string }
+
+/** La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
+export const ALTA_DE_EXCEPCIONES = '2026-10-03';
+/** Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
+export const TOPE_DE_EXCEPCIONES = 60;
+
 /**
- * `archivo#regla#nodo` → «por qué; qué PR o hecho la cierra». EMPIEZA con cada
+ * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
  * violación real que encontró la suite el 03/10/2026.
  */
-export const EXCEPCIONES: Record<string, string> = {
-  'agendamiento-seguimientos.json#1#Enviar texto':
-    'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
-  'agendamiento-seguimientos.json#1#Enviar plantilla':
-    'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
-  'agendamiento-seguimientos.json#3#Reportar seguimiento (saliente)::Enviar texto':
-    'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
-  'agendamiento-seguimientos.json#3#Reportar seguimiento (saliente)::Enviar plantilla':
-    'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
-  'bellido-agendamiento.json#1#Enviar ubicación':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#2#Enviar ubicación':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#1#Enviar contacto':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#2#Enviar contacto':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#2#Enviar QR de la seña':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#1#Redes del doctor':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#2#Redes del doctor':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#1#Avisar al doctor (texto)':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#3#Reportar redes (saliente)::Redes del doctor':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#5#Procesar respuesta::aviso':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'bellido-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano':
-    'flujo A de Bellido, descartado el 01/10 (corre B); D9: o se retira el JSON o esta excepción queda declarada; la cierra el retiro de bellido-agendamiento.json',
-  'demo-a-agendamiento.json#1#Enviar ubicación':
-    '«Enviar contacto/ubicación» (continueErrorOutput) con la salida de error sin conectar: el texto dice «toca el botón» y no hay botón; la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#2#Enviar ubicación':
-    'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#1#Enviar contacto':
-    '«Enviar contacto/ubicación» (continueErrorOutput) con la salida de error sin conectar: el texto dice «toca el botón» y no hay botón; la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#2#Enviar contacto':
-    'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#2#Enviar QR de la seña':
-    'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación':
-    'el reporte saliente cuelga del envío sin puerta que lea el id; la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto':
-    'el reporte saliente cuelga del envío sin puerta que lea el id; la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#5#Procesar respuesta::aviso':
-    '«Un humano tomará el chat» sale antes de que el aviso a recepción salga y no depende de él (R4); la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::a-continuacion-llega':
-    'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano':
-    'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::le-pasas-el-contacto':
-    'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo':
-    'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
-  'demo-b-venta-cobro.json#1#Avisar al dueño':
-    'falla callada del aviso en pedido, cobro y uso extendido: el único verificador (Marcar aviso de transferencia) actúa solo para la transferencia; la cierra PR-4 (Demo B resto)',
-  'demo-b-venta-cobro.json#2#Enviar QR de cobro':
-    'caso del 03/10: si Meta rechaza la imagen del QR, el cliente no recibe nada (la falla va solo a «QR no enviado» → aviso al dueño); también el reenvío del QR; la cierra PR-0 (Demo B QR no enviado)',
-  'demo-b-venta-cobro.json#5#Procesar respuesta::aviso':
-    '«le aviso» / «ya le avisé» se dice en el mismo texto antes de que el aviso salga y sin depender de él (R4); la cierra PR-4 (Demo B resto)',
-  'demo-b-venta-cobro.json#5#Respuesta del cobro::aviso':
-    '«le aviso» / «ya le avisé» se dice en el mismo texto antes de que el aviso salga y sin depender de él (R4); la cierra PR-4 (Demo B resto)',
-  'experimental/agenda-minima/agenda-minima.v0.json#1#Enviar a WhatsApp':
-    'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
-  'experimental/agenda-minima/agenda-minima.v0.json#1#Enviar respaldo':
-    'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
-  'experimental/agenda-minima/agenda-minima.v0.json#2#Enviar respaldo':
-    'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
-  'experimental/agenda-minima/agenda-minima.v0.json#3#Reportar mensaje (saliente)::Enviar respaldo':
-    'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
-  'experimental/agenda-minima/agenda-minima.v0.json#3#Reportar mensaje (saliente)::Enviar a WhatsApp':
-    'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
-  'experimental/agenda-minima/agenda-minima.v0.json#5#Config del negocio::aviso':
-    'Bellido B: «Ya le avisé al doctor» sale en la misma tanda que la plantilla de emergencia y no depende de que salga (gravedad alta, emergencia clínica); D4 con el doctor; la cierra PR-6 (Bellido B, ventana 2 a 3)',
-  'experimental/agenda-minima/agenda-minima.v0.json#5#Armar mensajes::aviso':
-    'Bellido B: «Ya le avisé al doctor» sale en la misma tanda que la plantilla de emergencia y no depende de que salga (gravedad alta, emergencia clínica); D4 con el doctor; la cierra PR-6 (Bellido B, ventana 2 a 3)',
-  'experimental/venta-minima/venta-minima.ensayo-demo-a.json#2#Enviar respaldo':
-    'Q\'Taco: cumple R2 y R4 pero «Enviar respaldo» es el último recurso y no termina en error visible ni reporta envio_fallido (D11); la cierra PR-7 (Q\'Taco, ventana y ensayo; D3)',
-  'experimental/venta-minima/venta-minima.qtaco.json#2#Enviar respaldo':
-    'Q\'Taco: cumple R2 y R4 pero «Enviar respaldo» es el último recurso y no termina en error visible ni reporta envio_fallido (D11); la cierra PR-7 (Q\'Taco, ventana y ensayo; D3)',
-  'novuchat-onboarding.json#3#Reportar mensaje (saliente)':
-    'el reporte saliente de captación no manda idMeta: el servidor no puede contar solo lo entregado; la cierra PR-3a (captación manda idMeta)',
-  'novuchat-onboarding.json#5#Traspaso a un asesor::aviso':
-    'captación: «Ya le pasé tus datos» sale antes del aviso a NovuChat y no depende de él (R4); la cierra PR-8 (captación R4, después del traspaso)',
-  'platinum-agendamiento.json#1#Enviar ubicación':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#2#Enviar ubicación':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#1#Enviar contacto':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#2#Enviar contacto':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#2#Enviar QR de la seña':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#5#Procesar respuesta::aviso':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::a-continuacion-llega':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::le-pasas-el-contacto':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo':
-    'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta F3b, que lo reconstruye sobre el core; la cierra PR-5 aplicado a Platinum o F3b',
+export const EXCEPCIONES: Record<string, Excepcion> = {
+  'bellido-agendamiento.json#1#Enviar interactivo': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#2#Enviar interactivo': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#1#Avisar al doctor (plantilla)': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#3#Reportar interactivo (saliente)::Enviar interactivo': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'agendamiento-seguimientos.json#1#Enviar texto': {
+    porque: 'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
+    vence: '2027-01-01',
+  },
+  'agendamiento-seguimientos.json#1#Enviar plantilla': {
+    porque: 'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
+    vence: '2027-01-01',
+  },
+  'agendamiento-seguimientos.json#3#Reportar seguimiento (saliente)::Enviar texto': {
+    porque: 'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
+    vence: '2027-01-01',
+  },
+  'agendamiento-seguimientos.json#3#Reportar seguimiento (saliente)::Enviar plantilla': {
+    porque: 'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#1#Enviar ubicación': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#2#Enviar ubicación': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#1#Enviar contacto': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#2#Enviar contacto': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#2#Enviar QR de la seña': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#1#Redes del doctor': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#2#Redes del doctor': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#1#Avisar al doctor (texto)': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#3#Reportar redes (saliente)::Redes del doctor': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#5#Procesar respuesta::aviso': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'bellido-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano': {
+    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#1#Enviar ubicación': {
+    porque: '«Enviar contacto/ubicación» (continueErrorOutput) con la salida de error sin conectar: el texto dice «toca el botón» y no hay botón; la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#2#Enviar ubicación': {
+    porque: 'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#1#Enviar contacto': {
+    porque: '«Enviar contacto/ubicación» (continueErrorOutput) con la salida de error sin conectar: el texto dice «toca el botón» y no hay botón; la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#2#Enviar contacto': {
+    porque: 'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#2#Enviar QR de la seña': {
+    porque: 'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación': {
+    porque: 'el reporte saliente cuelga del envío sin puerta que lea el id; la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto': {
+    porque: 'el reporte saliente cuelga del envío sin puerta que lea el id; la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#5#Procesar respuesta::aviso': {
+    porque: '«Un humano tomará el chat» sale antes de que el aviso a recepción salga y no depende de él (R4); la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#6#AI Agent (Sofía)::a-continuacion-llega': {
+    porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano': {
+    porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#6#AI Agent (Sofía)::le-pasas-el-contacto': {
+    porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-a-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo': {
+    porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
+    vence: '2027-01-01',
+  },
+  'demo-b-venta-cobro.json#1#Avisar al dueño': {
+    porque: 'falla callada del aviso en pedido, cobro y uso extendido: el único verificador (Marcar aviso de transferencia) actúa solo para la transferencia; la cierra PR-4 (Demo B resto)',
+    vence: '2027-01-01',
+  },
+  'demo-b-venta-cobro.json#2#Enviar QR de cobro': {
+    porque: 'caso del 03/10: si Meta rechaza la imagen del QR, el cliente no recibe nada (la falla va solo a «QR no enviado» → aviso al dueño); también el reenvío del QR; la cierra PR-0 (Demo B QR no enviado)',
+    vence: '2027-01-01',
+  },
+  'demo-b-venta-cobro.json#5#Procesar respuesta::aviso': {
+    porque: '«le aviso» / «ya le avisé» se dice en el mismo texto antes de que el aviso salga y sin depender de él (R4); la cierra PR-4 (Demo B resto)',
+    vence: '2027-01-01',
+  },
+  'demo-b-venta-cobro.json#5#Respuesta del cobro::aviso': {
+    porque: '«le aviso» / «ya le avisé» se dice en el mismo texto antes de que el aviso salga y sin depender de él (R4); la cierra PR-4 (Demo B resto)',
+    vence: '2027-01-01',
+  },
+  'experimental/agenda-minima/agenda-minima.v0.json#1#Enviar a WhatsApp': {
+    porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
+    vence: '2027-01-01',
+  },
+  'experimental/agenda-minima/agenda-minima.v0.json#1#Enviar respaldo': {
+    porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
+    vence: '2027-01-01',
+  },
+  'experimental/agenda-minima/agenda-minima.v0.json#2#Enviar respaldo': {
+    porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
+    vence: '2027-01-01',
+  },
+  'experimental/agenda-minima/agenda-minima.v0.json#3#Reportar mensaje (saliente)::Enviar respaldo': {
+    porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
+    vence: '2027-01-01',
+  },
+  'experimental/agenda-minima/agenda-minima.v0.json#3#Reportar mensaje (saliente)::Enviar a WhatsApp': {
+    porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
+    vence: '2027-01-01',
+  },
+  'experimental/agenda-minima/agenda-minima.v0.json#5#Config del negocio::aviso': {
+    porque: 'Bellido B: «Ya le avisé al doctor» sale en la misma tanda que la plantilla de emergencia y no depende de que salga (gravedad alta, emergencia clínica); D4 con el doctor; la cierra PR-6 (Bellido B, ventana 2 a 3)',
+    vence: '2027-01-01',
+  },
+  'experimental/agenda-minima/agenda-minima.v0.json#5#Armar mensajes::aviso': {
+    porque: 'Bellido B: «Ya le avisé al doctor» sale en la misma tanda que la plantilla de emergencia y no depende de que salga (gravedad alta, emergencia clínica); D4 con el doctor; la cierra PR-6 (Bellido B, ventana 2 a 3)',
+    vence: '2027-01-01',
+  },
+  'experimental/venta-minima/venta-minima.ensayo-demo-a.json#2#Enviar respaldo': {
+    porque: 'Q\'Taco: cumple R2 y R4 pero «Enviar respaldo» es el último recurso y no termina en error visible ni reporta envio_fallido (D11); la cierra PR-7 (Q\'Taco, ventana y ensayo; D3)',
+    vence: '2027-01-01',
+  },
+  'experimental/venta-minima/venta-minima.qtaco.json#2#Enviar respaldo': {
+    porque: 'Q\'Taco: cumple R2 y R4 pero «Enviar respaldo» es el último recurso y no termina en error visible ni reporta envio_fallido (D11); la cierra PR-7 (Q\'Taco, ventana y ensayo; D3)',
+    vence: '2027-01-01',
+  },
+  'novuchat-onboarding.json#3#Reportar mensaje (saliente)': {
+    porque: 'el reporte saliente de captación no manda idMeta: el servidor no puede contar solo lo entregado; la cierra PR-3 (parte a: captación manda idMeta)',
+    vence: '2027-01-01',
+  },
+  'novuchat-onboarding.json#5#Traspaso a un asesor::aviso': {
+    porque: 'captación: «Ya le pasé tus datos» sale antes del aviso a NovuChat y no depende de él (R4); la cierra PR-8 (captación R4, después del traspaso)',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#1#Enviar ubicación': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#2#Enviar ubicación': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#1#Enviar contacto': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#2#Enviar contacto': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#2#Enviar QR de la seña': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#5#Procesar respuesta::aviso': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#6#AI Agent (Sofía)::a-continuacion-llega': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#6#AI Agent (Sofía)::le-pasas-el-contacto': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
+  'platinum-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo': {
+    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
+    vence: '2027-01-01',
+  },
 };
 
 
@@ -549,18 +770,25 @@ const nodoDeClave = (regla: string, nodo: string): string[] => (regla === '3' ? 
  */
 export function problemasDeExcepciones(
   hoy: Map<string, Violacion[]>,
-  excepciones: Record<string, string>,
+  excepciones: Record<string, Excepcion>,
   existeNodo: (archivo: string, nodo: string) => boolean,
+  ahora: Date = new Date(),
+  alta: string = ALTA_DE_EXCEPCIONES,
 ): string[] {
   const p: string[] = [];
-  for (const [k, porque] of Object.entries(excepciones)) {
+  const limite = new Date(`${alta}T00:00:00Z`).getTime() + 90 * 86_400_000;
+  for (const [k, { porque, vence }] of Object.entries(excepciones)) {
     const [archivo = '', regla = '', ...resto] = k.split('#');
     const nodo = resto.join('#');
     const vivas = hoy.get(archivo);
     if (!vivas) { p.push(`${k}: nombra un archivo que no existe`); continue; }
     if (!nodoDeClave(regla, nodo).every((n) => existeNodo(archivo, n))) { p.push(`${k}: nombra un nodo que no existe`); continue; }
     if (!vivas.some((x) => String(x.regla) === regla && x.nodo === nodo)) p.push(`${k}: VENCIDA, el flujo ya la cumple; hay que borrarla`);
-    if (!/PR-\d|F3b|retir/.test(porque)) p.push(`${k}: no dice qué PR o hecho la cierra`);
+    if (!/\bPR-\d+\b/.test(porque)) p.push(`${k}: no dice qué PR la cierra (PR-N)`);
+    const t = /^\d{4}-\d{2}-\d{2}$/.test(vence) ? new Date(`${vence}T00:00:00Z`).getTime() : NaN;
+    if (Number.isNaN(t)) p.push(`${k}: «vence» no es una fecha AAAA-MM-DD`);
+    else if (t > limite) p.push(`${k}: vence ${vence}, a más de 90 días del alta (${alta})`);
+    else if (ahora.getTime() > t) p.push(`${k}: VENCIÓ el ${vence}: o se cierra el PR que la quita, o se renueva con una decisión de Andres`);
   }
   return p;
 }
@@ -593,8 +821,12 @@ describe('Entregas: los flujos del disco', () => {
     expect(sin.map((x) => `regla ${x.regla}: ${x.detalle}`), `${archivo}:\n  - ${sin.map((x) => x.detalle).join('\n  - ')}`).toEqual([]);
   });
 
-  it('ninguna excepción está vencida, nombra algo que no existe o carece de motivo', () => {
+  it('ninguna excepción está vencida, nombra algo que no existe, carece de PR o de fecha, o pasó su fecha', () => {
     expect(problemasDeExcepciones(HOY, EXCEPCIONES, existeNodo)).toEqual([]);
+  });
+
+  it('el mapa de excepciones solo puede bajar', () => {
+    expect(Object.keys(EXCEPCIONES).length).toBeLessThanOrEqual(TOPE_DE_EXCEPCIONES);
   });
 });
 
@@ -635,7 +867,10 @@ const reglasDe = (f: Flujo): string[] => violaciones(f).map((x) => `${x.regla}:$
 const ID = '(($json.messages || [])[0] || {}).id';
 const LEE_ID = `const ok = !!${ID}; if (!ok) throw new Error('Meta no devolvió messages[0].id');`;
 
-/** Réplica mínima de Venta mínima: primero lo del cliente, el id decide, el respaldo termina en error visible. */
+/**
+ * Réplica mínima del DISEÑO OBJETIVO de Venta mínima: el id decide, y el respaldo termina en error visible
+ * (`Entrega fallida`). No es lo que corre hoy en Q'Taco, que todavía no tiene ese último recurso (PR-7).
+ */
 const ventaMinima = (): Flujo => mem([
   code('Armar mensajes', 'return $input.all();'),
   envioDinamico('Enviar a WhatsApp', 'continueRegularOutput'),
@@ -788,13 +1023,158 @@ describe('Entregas: contrapruebas (cada una falla nombrando el nodo)', () => {
     expect(reglasDe(bien).filter((r) => r.startsWith('6:'))).toEqual([]);
   });
 
-  it('excepciones: una vencida, una sobre un nodo o un archivo que no existe, y una sin motivo, fallan', () => {
+  it('excepciones: vencida, inexistente, sin PR, sin fecha, a más de 90 días o pasada de fecha, fallan', () => {
     const hoy = new Map([['a.json', [{ regla: 2, nodo: 'Enviar QR', detalle: 'x' }]]]);
     const existe = (_a: string, n: string) => n === 'Enviar QR';
-    expect(problemasDeExcepciones(hoy, { 'a.json#2#Enviar QR': 'falla; la cierra PR-5' }, existe)).toEqual([]);
-    expect(problemasDeExcepciones(hoy, { 'a.json#1#Enviar QR': 'falla; la cierra PR-5' }, existe)).toEqual([expect.stringContaining('VENCIDA')]);
-    expect(problemasDeExcepciones(hoy, { 'b.json#2#Enviar QR': 'falla; la cierra PR-5' }, existe)).toEqual([expect.stringContaining('archivo que no existe')]);
-    expect(problemasDeExcepciones(hoy, { 'a.json#2#Otro': 'falla; la cierra PR-5' }, existe)).toEqual([expect.stringContaining('nodo que no existe')]);
-    expect(problemasDeExcepciones(hoy, { 'a.json#2#Enviar QR': 'porque sí' }, existe)).toEqual([expect.stringContaining('qué PR')]);
+    const ok = { porque: 'falla; la cierra PR-5', vence: '2026-12-31' };
+    const antes = new Date('2026-10-04T00:00:00Z');
+    const prob = (k: string, e: { porque: string; vence: string }, ahora = antes) => problemasDeExcepciones(hoy, { [k]: e }, existe, ahora);
+    expect(prob('a.json#2#Enviar QR', ok)).toEqual([]);
+    expect(prob('a.json#1#Enviar QR', ok)).toEqual([expect.stringContaining('VENCIDA')]);
+    expect(prob('b.json#2#Enviar QR', ok)).toEqual([expect.stringContaining('archivo que no existe')]);
+    expect(prob('a.json#2#Otro', ok)).toEqual([expect.stringContaining('nodo que no existe')]);
+    for (const porque of ['porque sí', 'se retira el JSON', 'la cierra PR-3a', 'la cierra F3b']) {
+      expect(prob('a.json#2#Enviar QR', { ...ok, porque }), porque).toEqual([expect.stringContaining('qué PR')]);
+    }
+    expect(prob('a.json#2#Enviar QR', { ...ok, vence: 'pronto' })).toEqual([expect.stringContaining('AAAA-MM-DD')]);
+    expect(prob('a.json#2#Enviar QR', { ...ok, vence: '2027-01-02' })).toEqual([expect.stringContaining('más de 90 días')]);
+    expect(prob('a.json#2#Enviar QR', { ...ok, vence: '2027-01-01' })).toEqual([]);
+    // Al pasar la fecha, la suite falla: una excepción no es un cheque en blanco.
+    expect(prob('a.json#2#Enviar QR', ok, new Date('2027-01-01T00:00:00Z'))).toEqual([expect.stringContaining('VENCIÓ')]);
+  });
+
+  it('regla 2, sonda A: la réplica del 03/10 con un «Responder al cliente» colgado de la salida de ÉXITO sigue fallando', () => {
+    const f = mem([
+      envioHttp('Enviar QR de cobro', 'image', 'continueErrorOutput'), clienteWa('Responder al cliente'),
+      code('QR no enviado', 'return $input.all();'), avisoWa('Avisar al dueño'),
+    ], [['Enviar QR de cobro', 'Responder al cliente', 0], ['Enviar QR de cobro', 'QR no enviado', 1], ['QR no enviado', 'Avisar al dueño']]);
+    expect(reglasDe(f)).toContain('2:Enviar QR de cobro');
+  });
+
+  it('regla 2, sonda B: imagen con la salida de error a un NoOp y la de éxito a un texto al cliente falla', () => {
+    const f = mem([envioHttp('Enviar QR', 'image', 'continueErrorOutput'), nodoMem('Nada', 'noOp'), clienteWa('Responder al cliente')],
+      [['Enviar QR', 'Responder al cliente', 0], ['Enviar QR', 'Nada', 1]]);
+    expect(reglasDe(f)).toContain('2:Enviar QR');
+  });
+
+  it('regla 2: con continueRegularOutput el texto de respaldo tiene que estar detrás de un IF o Code que lea el id o error', () => {
+    const colgado = mem([envioDinamico('Enviar a WhatsApp', 'continueRegularOutput'), envioHttp('Enviar respaldo', 'text', 'continueRegularOutput')],
+      [['Enviar a WhatsApp', 'Enviar respaldo']]);
+    expect(reglasDe(colgado)).toContain('2:Enviar a WhatsApp');
+  });
+
+  it('LOW-1, sondas E y F: el nodo WhatsApp se clasifica por messageType y sin operation es sendTemplate', () => {
+    const imagen = nodoMem('Enviar foto', 'whatsApp', { operation: 'send', messageType: 'image', recipientPhoneNumber: '={{ $json.from }}' });
+    expect(esEnvio(imagen)).toBe(true);
+    expect(clase(imagen)).toBe('imagen');
+    expect(reglasDe(mem([imagen], []))).toContain('2:Enviar foto'); // una imagen sin texto de respaldo
+    for (const parametros of [{ recipientPhoneNumber: '={{ $json.from }}' }, { resource: 'message', recipientPhoneNumber: '={{ $json.from }}' }]) {
+      const plantilla = nodoMem('Enviar plantilla', 'whatsApp', parametros);
+      expect(esEnvio(plantilla), JSON.stringify(parametros)).toBe(true);
+      expect(clase(plantilla)).toBe('plantilla');
+    }
+    expect(esEnvio(nodoMem('Bajar medio', 'whatsApp', { resource: 'media', operation: 'mediaUrlGet' }))).toBe(false);
+  });
+
+  it('LOW-2, sondas C, D y J: citar statusCode o copiar el id sin decidir nada NO es leerlo', () => {
+    expect(leeWamid("const s = $json.statusCode; return [{ json: { s } }];")).toBe(false);
+    expect(leeWamid("return [{ json: { idMeta: String((($json.messages || [])[0] || {}).id || '') } }];")).toBe(false);
+    expect(leeWamid('if (Number($json.statusCode) >= 400) throw new Error("x");')).toBe(true);
+    expect(leeWamid("if (!(($json.messages || [])[0] || {}).id) throw new Error('x');")).toBe(true);
+    const f = mem([envioHttp('Enviar texto', 'text', 'continueRegularOutput'), code('Copia', "return [{ json: { s: $json.statusCode, idMeta: (($json.messages || [])[0] || {}).id } }];"), reporte('Reportar mensaje (saliente)')],
+      [['Enviar texto', 'Copia'], ['Copia', 'Reportar mensaje (saliente)']]);
+    expect(reglasDe(f)).toEqual(expect.arrayContaining(['1:Enviar texto', '3:Reportar mensaje (saliente)::Enviar texto']));
+  });
+
+  it('LOW-2: un sumidero que nombra al envío pero no corre después de él (otra rama sin antecesor común) no cuenta', () => {
+    const lee = "const a = $('Enviar texto').first().json; if (Number(a.statusCode) >= 400) throw new Error('x'); return [];";
+    const ajeno = mem([envioHttp('Enviar texto', 'text', 'continueRegularOutput'), code('Sumidero ajeno', lee)], []);
+    expect(reglasDe(ajeno)).toContain('1:Enviar texto');
+    const hermano = mem([code('Salida', 'return $input.all();'), envioHttp('Enviar texto', 'text', 'continueRegularOutput'), code('Confirmar envío', lee)],
+      [['Salida', 'Enviar texto'], ['Salida', 'Confirmar envío']]);
+    expect(reglasDe(hermano)).not.toContain('1:Enviar texto');
+  });
+
+  it('LOW-3, sonda G: el destinatario manda sobre el nombre del nodo', () => {
+    expect(destino(envioHttp('Avisar al cliente', 'text', undefined, '$json.from'))).toBe('cliente');
+    expect(destino(envioHttp('Enviar texto', 'text', undefined, '$json.numeroDuenoPrueba'))).toBe('negocio');
+    expect(destino(envioDinamico('Aviso de respaldo'))).toBe('negocio'); // sin `to` a la vista, decide el nombre
+    expect(destino(nodoMem('Avisar a recepción', 'whatsApp', { operation: 'send', recipientPhoneNumber: '={{ $json.from }}' }))).toBe('cliente');
+  });
+
+  it('LOW-3, sonda H: «respaldo» en el nombre solo cuenta si se llega desde la salida de fallo de otro envío', () => {
+    const suelto = mem([envioDinamico('Enviar respaldo', 'continueRegularOutput')], []);
+    expect(clase(suelto.nodes[0] as Nodo, suelto)).toBe('dinamico');
+    expect(clase(ventaMinima().nodes.find((n) => n.name === 'Enviar respaldo') as Nodo)).toBe('texto'); // explícito, sin grafo
+    const conExito = mem([envioDinamico('Enviar a WhatsApp', 'continueRegularOutput'), envioDinamico('Enviar respaldo', 'continueRegularOutput')], [['Enviar a WhatsApp', 'Enviar respaldo']]);
+    expect(clase(conExito.nodes[1] as Nodo, conExito)).toBe('dinamico'); // colgado del éxito
+    const conFallo = mem([envioDinamico('Enviar a WhatsApp', 'continueErrorOutput'), envioDinamico('Enviar respaldo', 'continueRegularOutput')], [['Enviar a WhatsApp', 'Enviar respaldo', 1]]);
+    expect(clase(conFallo.nodes[1] as Nodo, conFallo)).toBe('texto');
+  });
+
+  it('LOW-4, sondas I, K y L: las herramientas del agente son envíos, y un nodo con graph.facebook que no se clasifica falla', () => {
+    const tool = (type: string, p: Record<string, unknown>): Nodo => ({ name: 'Herramienta', type, parameters: p });
+    expect(esEnvio(tool('n8n-nodes-base.httpRequestTool', { method: 'POST', url: `=${GRAPH}` }))).toBe(true);
+    expect(esEnvio(tool('@n8n/n8n-nodes-langchain.toolHttpRequest', { method: 'POST', url: `=${GRAPH}` }))).toBe(true);
+    expect(esEnvio(tool('n8n-nodes-base.whatsAppTool', { operation: 'send' }))).toBe(true);
+    // Un POST a Graph cuya URL no dice `/messages` (armada con una expresión) no se puede clasificar: falla.
+    const raro = mem([tool('n8n-nodes-base.httpRequest', { method: 'POST', url: "=https://graph.facebook.com/v26.0/{{ $json.phoneNumberId }}/{{ $json.ruta }}" })], []);
+    expect(reglasDe(raro)).toEqual(['7:Herramienta']);
+    // Las lecturas (GET) no envían.
+    expect(reglasDe(mem([tool('n8n-nodes-base.httpRequest', { url: 'https://graph.facebook.com/v26.0/123' })], []))).toEqual([]);
+  });
+
+  it('LOW-5: un verificador que «solo actúa si corrió» otro nodo no cubre un envío con dos orígenes', () => {
+    const solo = "const c = $('Aviso de transferencia').isExecuted; const id = (($input.first().json.messages || [])[0] || {}).id; if (c && !id) throw new Error('x'); return $input.all();";
+    const base = (origenes: string[]) => mem([
+      code('Origen 1', 'return [];'), code('Origen 2', 'return [];'), avisoWa('Avisar al dueño'), code('Marcar', solo),
+    ].map((n) => (n.name === 'Avisar al dueño' ? { ...n, onError: 'continueRegularOutput' } : n)),
+    [...origenes.map((o): Arista => [o, 'Avisar al dueño']), ['Avisar al dueño', 'Marcar']]);
+    expect(reglasDe(base(['Origen 1']))).not.toContain('1:Avisar al dueño');
+    expect(reglasDe(base(['Origen 1', 'Origen 2']))).toContain('1:Avisar al dueño');
+  });
+
+  it('LOW-5: «Enviar contacto» lleva el número de recepción en el cuerpo y va al CLIENTE', () => {
+    const contacto = nodoMem('Enviar contacto', 'httpRequest', {
+      method: 'POST', url: `=${GRAPH}`,
+      jsonBody: "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.from, type: 'interactive', interactive: { type: 'cta_url', action: { parameters: { url: 'https://wa.me/' + $json.numeroRecepcion } } } }) }}",
+    }, 'continueErrorOutput');
+    expect(destino(contacto)).toBe('cliente');
+    expect(clase(contacto)).toBe('boton');
+  });
+
+  it('el control positivo de Venta mínima es la réplica del diseño OBJETIVO (con «Entrega fallida»), no de lo que corre hoy en Q\'Taco', () => {
+    // Q'Taco todavía no tiene el último recurso en error visible: por eso `Enviar respaldo` está en las excepciones (PR-7).
+    expect(reglasDe(ventaMinima())).toEqual([]);
+    expect((HOY.get('experimental/venta-minima/venta-minima.qtaco.json') ?? []).map((x) => `${x.regla}#${x.nodo}`)).toContain('2#Enviar respaldo');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Los *.prueba.json
+// ---------------------------------------------------------------------------
+
+/*
+ * DECLARADO (revisión de `seguridad` del #379): `EXCLUIDO` deja fuera los `*.prueba.json` (agenda-minima y
+ * venta-minima). Esos JSON SÍ se importan a n8n, para ensayar con teléfonos reales
+ * (`docs/ensayo/LEEME.md`, `Flujos/experimental/venta-minima/DISENO.md` §«se importa únicamente para ensayar, y
+ * se desactiva y se borra al terminar»). Se dejan fuera por la especificación del plan (son la misma cadena de
+ * envío que `v0` y `qtaco` con otra entrada: «Entrada de prueba» en vez del receptor), pero lo que se ensaya con ellos
+ * es lo que esta suite exige a sus hermanos. Lo que la suite afirma abajo es que no hay ningún `*.prueba.json` con
+ * un envío que su familia no tenga: mismo conjunto de nombres de envío.
+ */
+describe('Entregas: los *.prueba.json (se importan a n8n para ensayos con teléfonos reales)', () => {
+  const exp = join(CARPETA_FLUJOS, 'experimental');
+  const pruebas = readdirSync(exp, { withFileTypes: true }).filter((e) => e.isDirectory())
+    .flatMap((d) => readdirSync(join(exp, d.name)).filter((a) => a.endsWith('.prueba.json')).map((a) => `experimental/${d.name}/${a}`));
+
+  it('existen y cada uno trae solo envíos que su familia también tiene (misma cadena de envío)', () => {
+    expect(pruebas.length).toBeGreaterThan(0);
+    for (const a of pruebas) {
+      const familia = ARCHIVOS.filter((x) => x.startsWith(a.split('/').slice(0, 2).join('/') + '/'));
+      const conocidos = new Set(familia.flatMap((x) => enviosDe(FLUJOS.get(x) as Flujo).map((e) => e.name)));
+      const propios = enviosDe(leer(a)).map((e) => e.name);
+      expect(propios.filter((n) => !conocidos.has(n)), a).toEqual([]);
+    }
   });
 });
