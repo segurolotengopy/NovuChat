@@ -140,7 +140,7 @@ function _pdLista(v) {
 // Plural sencillo y simetrico: se aplica igual a la carta y a lo que dice el cliente.
 function _pdSingular(t) {
   if (t.length <= 3) return t;
-  if (t.length > 4 && /[nlrdz]es$/.test(t)) return t.slice(0, -2);
+  if (t.length > 4 && /[aeiou][nlrdz]es$/.test(t)) return t.slice(0, -2);
   if (/[^s]s$/.test(t)) return t.slice(0, -1);
   return t;
 }
@@ -504,21 +504,52 @@ function _pdElegirEnGrupo(g, f, piezasQ) {
   return uds.length === 1 ? unico(uds[0]) : ambiguo(uds);
 }
 
+// PALABRAS EXCLUIDAS (`palabrasExcluidas` de «Config base»). Los items de las areas excluidas pueden estar
+// `activo: false` en la consola (para que la pagina web no los muestre) y entonces el servidor no se los manda al
+// flujo: `pdExcluidos` no los ve. La lista de palabras cubre ese caso: lo que el negocio NO vende por WhatsApp
+// («helado», «cerveza», «vino»…), sin depender del catalogo. Se compara por PALABRA COMPLETA, sin tildes ni
+// mayusculas (`vmNorm`) y con el plural tolerado («cervezas» = «cerveza»); «ron» no dispara en «coronavirus».
+function _pdPalabrasEx(v) {
+  const r = [];
+  for (const p of _pdLista(v)) {
+    if (p.indexOf('reemplazar') === 0) continue; // un marcador sin reemplazar no es una palabra
+    const toks = p.split(' ').filter(Boolean).map(_pdSingular);
+    if (toks.length) r.push({ texto: p, toks });
+  }
+  return r;
+}
+// La palabra excluida que dice `texto` (la de la lista, normalizada), o '' si ninguna. `palabras`: lista o texto con comas.
+function pdPalabraExcluida(texto, palabras) {
+  const lista = _pdPalabrasEx(palabras);
+  if (!lista.length) return '';
+  const dicho = vmNorm(typeof texto === 'string' ? texto : '').split(' ').filter(Boolean).map(_pdSingular);
+  for (const w of lista) {
+    for (let i = 0; i + w.toks.length <= dicho.length; i++) {
+      if (w.toks.every((t, k) => dicho[i + k] === t)) return w.texto;
+    }
+  }
+  return '';
+}
+
 // Busca `producto` (lo que dijo el cliente o el modelo) en la carta.
 //   {estado:'unico', item}                         un producto
 //   {estado:'forma', opciones:[itemOrden, itemUnidad]}   hay orden y unidad: depende de la cantidad
 //   {estado:'ambiguo', opciones:[<=3]}             varios productos posibles: se pregunta
 //   {estado:'ninguno', sugerencias:[<=3]}          no esta
+//   {estado:'excluido', palabra, sugerencias:[]}   no esta Y es una palabra de `palabras` (4.º parámetro, opcional)
 // ADITIVO: todo resultado trae `forma` (la efectiva: la pasada o la que dice el propio texto, como
 // «orden de 3»); `unico` y `forma` traen `extra` si el cliente agrego palabras que no son del producto («tacos de pollo»:
 // producto «tacos», extra «pollo», que va a la nota de la linea); `forma` y `unico` traen `ordenes`
 // (todas las ordenes del producto, de menos a mas piezas) cuando hace falta elegir por cantidad.
 // Nunca se adivina: ante dos productos posibles o una palabra que parece un error de tipeo, no se elige.
-function pdBuscar(carta, producto, forma) {
+function pdBuscar(carta, producto, forma, palabras) {
   const q = _pdConsulta(producto, true);
   const f = forma === 'orden' || forma === 'unidad' ? forma : q.forma;
   const grupos = _pdGrupos(carta);
-  if (!q.tokens.length || !grupos.length) return { estado: 'ninguno', sugerencias: [], forma: f };
+  if (!q.tokens.length || !grupos.length) {
+    const w = grupos.length ? '' : pdPalabraExcluida(producto, palabras); // sin carta tambien se sabe lo que no se vende
+    return w ? { estado: 'excluido', palabra: w, sugerencias: [], forma: f } : { estado: 'ninguno', sugerencias: [], forma: f };
+  }
   const elegir = (g, extra) => {
     const r = _pdElegirEnGrupo(g, f, q.piezas);
     if (extra && (r.estado === 'unico' || r.estado === 'forma')) r.extra = extra;
@@ -558,7 +589,11 @@ function pdBuscar(carta, producto, forma) {
     if (!sospechosa && sobran.length <= 3) return elegir(g, sobran.map((p) => p.raw).join(' '));
   }
 
-  // 4. No esta: se sugiere lo que comparte palabras (o se parece a ellas) y, si nada, lo que dice la descripcion.
+  // 4. No esta. Si es una palabra que el negocio NO vende (`palabras`, opcional): {estado:'excluido', palabra}.
+  const palabra = pdPalabraExcluida(producto, palabras);
+  if (palabra) return { estado: 'excluido', palabra, sugerencias: [], forma: f };
+
+  // 5. Se sugiere lo que comparte palabras (o se parece a ellas) y, si nada, lo que dice la descripcion.
   return { estado: 'ninguno', sugerencias: _pdSugeridos(q, grupos).slice(0, 3).map((x) => x.g.items[0]), forma: f };
 }
 
@@ -685,18 +720,24 @@ function _pdResolverLinea(carta, ln) {
 // El item EXCLUIDO a proposito que el cliente nombro, o null. `excluidos` sale de `pdExcluidos`. Mira primero el
 // NOMBRE («un helado» -> «Helado de Rompope»); lo que solo se parece (descripcion, area, marca) cuenta unicamente si
 // la carta no tiene nada parecido que sugerir: «Coca-Cola» es una gaseosa que SI se vende aunque un coctel la lleve.
-function _pdExcluidoDe(producto, carta, excluidos) {
-  if (!Array.isArray(excluidos) || !excluidos.length) return null;
-  const r = pdBuscar(excluidos, producto, '');
-  if (r.estado === 'unico') return r.item;
-  if (r.estado === 'forma' || r.estado === 'ambiguo') return r.opciones[0];
+function _pdExcluidoDe(producto, carta, excluidos, palabras) {
+  const hay = Array.isArray(excluidos) && excluidos.length > 0;
+  if (hay) {
+    const r = pdBuscar(excluidos, producto, '');
+    if (r.estado === 'unico') return r.item;
+    if (r.estado === 'forma' || r.estado === 'ambiguo') return r.opciones[0];
+  }
+  // La lista de palabras del negocio (aunque la carta no tenga el item): el excluido es solo `{nombre, palabra}`.
+  const palabra = pdPalabraExcluida(producto, palabras);
+  if (palabra) return { id: '', nombre: _pdTexto(producto, 80) || palabra, palabra };
+  if (!hay) return null;
   return pdSugerir(producto, carta) ? null : pdSugerir(producto, excluidos);
 }
 
 // Una linea validada que no se pudo resolver, a su elemento de `noEncontrados`.
-function _pdNoEncontrado(ln, motivo, sugerencias, carta, excluidos) {
+function _pdNoEncontrado(ln, motivo, sugerencias, carta, excluidos, palabras) {
   if (motivo === 'ninguno') {
-    const x = _pdExcluidoDe(ln.producto, carta, excluidos);
+    const x = _pdExcluidoDe(ln.producto, carta, excluidos, palabras);
     if (x) return { producto: ln.producto, cantidad: ln.cantidad, motivo: 'excluido', sugerencias: [], excluido: x };
   }
   return { producto: ln.producto, cantidad: ln.cantidad, motivo, sugerencias };
@@ -712,14 +753,17 @@ function _pdNoEncontrado(ln, motivo, sugerencias, carta, excluidos) {
 //     «Gaseosas»; `pdTextoNoEncontrado` y `pdBotonAgregar` lo dicen y lo ofrecen).
 //   - `excluidos` (opcional, de `pdExcluidos`): lo que el cliente pidio y el negocio NO vende por aqui a proposito
 //     sale con `motivo: 'excluido'` y `excluido: <item>` (sin sugerencias); el texto es `pdTextoExcluido`, sin aviso al restaurante.
-function pdAgregarLineas(carrito, carta, lineas, excluidos) {
+//   - `palabras` (opcional, quinto parametro: `cfg.palabrasExcluidas`, lista o texto con comas): lo que no esta en la carta
+//     y dice una de esas palabras («helado», «una cerveza», «vino malbec») sale tambien como `excluido`, AUNQUE el catalogo
+//     no traiga ningun item de esa area (la consola los puede tener `activo: false`): `excluido` es entonces `{id:'', nombre, palabra}`.
+function pdAgregarLineas(carrito, carta, lineas, excluidos, palabras) {
   const nuevo = _pdCopiarCarrito(carrito);
   const noEnc = [];
   const pend = [];
   for (const ln of (Array.isArray(lineas) ? lineas : [])) {
     if (!ln || typeof ln.producto !== 'string' || !Number.isInteger(ln.cantidad) || ln.cantidad < 1) continue;
     const r = _pdResolverLinea(carta, ln);
-    if (r.tipo === 'no') noEnc.push(_pdNoEncontrado(ln, r.motivo, r.sugerencias, carta, excluidos));
+    if (r.tipo === 'no') noEnc.push(_pdNoEncontrado(ln, r.motivo, r.sugerencias, carta, excluidos, palabras));
     else if (r.tipo === 'forma') pend.push(r.pendiente);
     else if (!_pdPoner(nuevo, _pdLinea(r.item, r.cantidad, r.detalle))) {
       noEnc.push({ producto: ln.producto, cantidad: ln.cantidad, motivo: 'limite', sugerencias: [] });
