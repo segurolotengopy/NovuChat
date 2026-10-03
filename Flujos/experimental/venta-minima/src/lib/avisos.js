@@ -686,10 +686,12 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
   }
   const cod = avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs);
   const motivo = avLimpio(d.motivo, 120, opc);
+  // `comprobante: true`: no es una consulta, es la foto de un comprobante que el flujo no pudo revisar porque cambio el modo de cobro.
+  const esComprobante = d.comprobante === true;
   return {
-    items: avParametro('CONSULTA ' + cod + (motivo ? ': ' + motivo : ''), 200),
+    items: avParametro((esComprobante ? 'COMPROBANTE ' : 'CONSULTA ') + cod + (motivo ? ': ' + motivo : ''), 200),
     total: avParametro('sin cobro', 30),
-    modalidad: avParametro('el cliente pide hablar con una persona', 500),
+    modalidad: avParametro(esComprobante ? 'el cliente envió un comprobante que no se pudo revisar (cambió el modo de cobro)' : 'el cliente pide hablar con una persona', 500),
     cotejo: avParametro('no aplica', 80),
   };
 }
@@ -730,7 +732,7 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   return {
     destinatario,
     cuando: avParametro(avAhoraLegible(ahoraMs), 70),
-    detalle: avParametro(['Consulta de cliente', nombreDe(d.nombre), motivo ? 'Nota del cliente: ' + motivo : ''].filter(Boolean).join(' · '), 200),
+    detalle: avParametro([d.comprobante === true ? 'Comprobante de cliente (no se pudo revisar)' : 'Consulta de cliente', nombreDe(d.nombre), motivo ? 'Nota del cliente: ' + motivo : ''].filter(Boolean).join(' · '), 200),
     codigo: avParametro(avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs), 20),
   };
 }
@@ -800,7 +802,7 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
     cierre = AV_CIERRE_RESERVA;
   } else {
     const cod = avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs);
-    lineas.push('Consulta de un cliente N.º ' + cod);
+    lineas.push((d.comprobante === true ? 'Comprobante de un cliente (no se pudo revisar: cambió el modo de cobro) N.º ' : 'Consulta de un cliente N.º ') + cod);
     lineas.push(cliente());
     const motivo = avLimpio(d.motivo, 300, opc);
     if (motivo) lineas.push('Nota del cliente: «' + motivo + '»');

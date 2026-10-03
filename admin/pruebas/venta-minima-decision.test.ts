@@ -1467,10 +1467,13 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     const r = registrar(turno(real, { texto: '¿ya llegó?' }));
     expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Estoy esperando el comprobante de tu pedido #/);
     expect(JSON.stringify(r.p!['mensajes'])).not.toMatch(/SIMULADO|prueba/i);
-    // NEGANDO: el pedido simulado, aunque el modo vigente pasara a real, sigue hablando de SU comprobante simulado (no del real).
+    // Un pedido simulado con el modo vigente ya REAL: no se pide otra foto (volvería a derivar): se pasa con una persona y se suelta (ver «sin callejón»).
     const sim = enEsperaSim();
     sim.cfg['cobro'] = CFG_QR.cobro;
-    expect(registrar(turno(sim, { texto: '¿ya llegó?' })).p!['mensajes'][0]['cuerpo']).toContain('SIMULADO');
+    const rs = registrar(turno(sim, { texto: '¿ya llegó?' }));
+    expect(rs.p!['mensajes'][0]['tipo']).toBe('enlace');
+    expect(JSON.stringify(rs.p!['mensajes'])).not.toMatch(/sigue esperando el comprobante|Envíame aquí/);
+    // NEGANDO: con el modo vigente simulado, el pedido simulado sí habla de SU comprobante simulado.
     const normal = enEsperaSim();
     expect(registrar(turno(normal, { texto: '¿ya llegó?' })).p!['mensajes'][0]['cuerpo']).toContain('SIMULADO');
   });
@@ -1546,14 +1549,46 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     expect(s.p!['cierre']).toBeNull();
     expect(s.p!['pedido']).toBeNull();
     expect(s.p!['ruta']).toContain('transferir:el modo de cobro cambió: comprobante de un pedido simulado');
-    expect(JSON.stringify(s.p!['mensajes'])).not.toMatch(/datos coinciden|cuadra|ya pasé/i);
-    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+    expect(JSON.stringify(s.p!['mensajes'])).not.toMatch(/datos coinciden|cuadra|ya pasé|sigue esperando el comprobante/i);
+    // El restaurante lee QUÉ es: el código del PEDIDO, `comprobante: true` y un motivo fijo (no «el cliente pide hablar con una persona»).
+    expect(estadoDe(m)['paso']).toBe('menu');
+    expect(estadoDe(m)['pedido'] ?? null).toBeNull(); // el pedido se suelta: sin callejón
     // Y desde `Interpretar entrada` la marca `comprobanteCruzado` manda a derivar sin cotejo (`Decidir turno`).
     const m2 = enEsperaSim();
+    const codigo2 = String(estadoDe(m2)['pedido']['codigo']);
     m2.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: String(estadoDe(m2)['pedido']['pedidoId']), pendiente: true };
     const d = turno(m2, { tipo: 'image', comprobanteCruzado: true });
     expect(d.d['accion']).toBe('transferir');
     expect(d.p!['aviso']['tipo']).toBe('transferencia');
+    expect(d.p!['aviso']['datos']).toMatchObject({ codigo: codigo2, comprobante: true });
+    expect(d.p!['aviso']['datos']['motivo']).toBe(`comprobante enviado por el cliente (pedido de PRUEBA #${codigo2}); cambió el modo de cobro y no se revisó`);
+    expect(d.p!['aviso']['datos']['codigo']).not.toBe(AHORA.toString(36).slice(-4).toUpperCase()); // no el código inventado del turno
+  });
+
+  it('sin callejón: tras la derivación por cambio de modo el pedido se SUELTA; una segunda foto, un texto o «Reenviar QR» no piden otra foto ni dicen «sigue esperando»', () => {
+    const m = enEsperaSim();
+    const ref = String(estadoDe(m)['pedido']['pedidoId']);
+    m.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: ref, pendiente: true };
+    const primera = registrar(turno(m, { tipo: 'image', comprobanteCruzado: true }));
+    expect(primera.p!['aviso']['tipo']).toBe('transferencia');
+    expect(estadoDe(m)['paso']).toBe('menu');
+    expect(estadoDe(m)['pedido'] ?? null).toBeNull();
+    expect(JSON.stringify(primera.p!['mensajes'])).not.toMatch(/sigue esperando el comprobante|Envíame aquí|cualquier foto/);
+    // «verbo no previsto»: la segunda foto en ese estado no pide otra foto ni deja al cliente esperando.
+    const segunda = registrar(turno(m, { tipo: 'image', comprobanteCruzado: true }));
+    expect(JSON.stringify(segunda.p!['mensajes'])).not.toMatch(/sigue esperando el comprobante|Envíame aquí|cualquier foto/);
+    expect(estadoDe(m)['paso']).toBe('menu');
+    const texto = registrar(turno(m, { texto: '¿ya llegó mi pago?' }));
+    expect(JSON.stringify(texto.p!['mensajes'])).not.toMatch(/sigue esperando el comprobante|Envíame aquí/);
+    // «Reenviar QR» con un pedido de PRUEBA y el cobro ya real: deriva con el código del pedido y suelta el pedido (no «sigue esperando»).
+    const n = enEsperaSim();
+    const codigoN = String(estadoDe(n)['pedido']['codigo']);
+    n.cfg['cobro'] = CFG_QR.cobro;
+    const q = registrar(turno(n, { boton: 'q|reenviar' }));
+    expect(q.p!['mensajes'].every((x: J) => x['tipo'] !== 'imagen')).toBe(true);
+    expect(q.p!['aviso']['datos']).toMatchObject({ codigo: codigoN, comprobante: true });
+    expect(JSON.stringify(q.p!['mensajes'])).not.toMatch(/sigue esperando el comprobante/);
+    expect(estadoDe(n)['pedido'] ?? null).toBeNull();
   });
 
   it('sin la marca `comprobanteSimulado` una imagen no es un comprobante, aunque el QR esté pendiente', () => {

@@ -490,7 +490,7 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
 // =====================================================================================================
 describe('un pedido SIMULADO con el cobro real encendido y una solicitud pendiente: cero cotejos y nada rotulado como pago real', () => {
   const imagen = (): J => ({ type: 'image', image: { id: 'media-9', mime_type: 'image/jpeg' } });
-  it('la foto llega, no se baja, no se lee, no se coteja en el servidor y se pasa con una persona; el paso y el pedido siguen', () => {
+  it('la foto llega, no se baja, no se lee, no se coteja en el servidor y se pasa con una persona; el pedido de prueba se suelta', () => {
     const w = crear();
     // Modo simulado: sin cobroReal y con `cobroSimulado` declarado por el servidor.
     w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), cobroReal: undefined, cobro: { activo: false }, cobroSimulado: {} } });
@@ -512,8 +512,8 @@ describe('un pedido SIMULADO con el cobro real encendido y una solicitud pendien
     expect(t.mensajes.length).toBeGreaterThan(0); // se pasa con una persona: aviso + botón
     expect(t.llamadas.cierre).toHaveLength(0);
     expect(JSON.stringify([t.mensajes.map((m) => m.cuerpo), t.avisos.map((a) => a.cuerpo)])).not.toMatch(/datos coinciden|cuadra|Recibí tu comprobante/i);
-    expect(estadoDe(w)['paso']).toBe('esperando_comprobante');
-    expect((estadoDe(w)['pedido'] as J)['pedidoId']).toBe(ref);
+    expect(estadoDe(w)['paso']).toBe('menu'); // el pedido de PRUEBA se suelta: ni «sigue esperando» ni otra foto (que volvería a derivar)
+    expect((estadoDe(w)['pedido'] ?? null)).toBeNull();
     expect(w.mundo.llamadas.cotejo).toHaveLength(0);
   });
 });

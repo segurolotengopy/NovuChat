@@ -153,6 +153,7 @@ function despachar() {
   if (a === 'consulta') return aConsulta(d.consulta);
   if (a === 'promo') return aPromo();
   // Con un comprobante en espera, pedir una persona NO saca al cliente del cobro: el paso y el pedido se conservan.
+  if (a === 'transferir' && /^el modo de cobro cambió: comprobante de un pedido simulado/.test(String(d.motivo))) return derivarPorCambioDeModo(pedidoDeLaReferencia() || en.pedido);
   if (a === 'transferir') return derivar(d.motivo || 'derivación', en.paso === 'esperando_comprobante' && !!en.pedido);
   if (a === 'identidad') {
     if (en.paso === 'inicio') en.paso = 'menu';
@@ -342,17 +343,18 @@ function capacidades() {
 // `conservarPaso` (solo cuando el cliente PIDE una persona con un comprobante en espera): el paso y el pedido quedan como están,
 // para que «Reenviar QR» y «Cancelar pedido» sigan funcionando; el texto no manda a «menú» (con un QR pendiente el menú no está
 // disponible: solo se ofrece lo que se cumple) y el mensaje sale sin el botón «Menú».
-function derivar(razon, conservarPaso) {
+function derivar(razon, conservarPaso, extra) {
   // (Las constantes van DENTRO de la función: lo que se declara después del `return` del nodo no llega a inicializarse.)
   const TEXTO_DERIVACION = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. '
     + (conservarPaso ? 'Tu pedido sigue esperando el comprobante.' : 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
   ruta = 'transferir:' + razon;
   aviso = { tipo: 'transferencia', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: vmLinea(t.nombrePerfil, 60),
-    codigo: vmCodigoCorto(ahora),
-    // Una foto sin pie no trae texto: el comprobante derivado por el cambio de modo lleva un motivo fijo para que el restaurante sepa qué es.
-    motivo: vmLinea(d.texto, 300) || (/^el modo de cobro cambió: comprobante/.test(razon) ? 'comprobante recibido con el modo de cobro cambiado' : ''),
+    codigo: vmCodigoCorto(ahora), motivo: vmLinea(d.texto, 300),
   } };
+  // `extra` (solo la derivación por cambio de modo de cobro): el código DEL PEDIDO, un motivo fijo y `comprobante: true`, para que el restaurante lea qué es
+  // (una foto que no se pudo revisar) y no una consulta con un número inventado.
+  if (extra && typeof extra === 'object') Object.assign(aviso.datos, extra);
   // El paso queda en `menu` y no se borra nada: el siguiente mensaje se atiende de nuevo (antes, un paso de pedido volvía a
   // derivar cada mensaje) y el cliente retoma su pedido o su reserva escribiendo «menú». Con un comprobante en espera
   // (`conservarPaso`) el paso no cambia.
@@ -837,6 +839,9 @@ function aRecordatorio() {
   if (!ped) return derivar('esperando comprobante sin pedido en el flujo');
   // El texto lo decide EL PEDIDO (`ped.simulado`, fijado al mandar su QR), no el modo vigente: un pedido real nunca se rotula «SIMULADO».
   const sim = ped.simulado === true;
+  // Un pedido de PRUEBA cuyo cobro ya es REAL: su comprobante no se puede revisar aquí y pedir otra foto volvería a derivar (callejón sin salida): se
+  // pasa con una persona y el pedido se suelta (nada de «sigue esperando el comprobante»).
+  if (sim && !(cfg.cobro && cfg.cobro.modo === 'simulado')) return derivarPorCambioDeModo(ped);
   // H3: Meta puede aceptar `image.link` y fallar DESPUES (estado `failed` asincrono) y el respaldo en texto no cubre ese fallo: el recordatorio
   // simulado lleva el enlace de la imagen (ya validado como https) para que el cliente la abra. Solo con el modo simulado vigente y un QR
   // utilizable; nunca el QR del cobro real.
@@ -858,6 +863,7 @@ function aReenviarQr() {
   const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
   const simulado = cobro.modo === 'simulado';
   // Un pedido cuyo QR salió en otro modo (el cobro cambió entre la confirmación y el reenvío) no se reenvía con el modo de ahora.
+  if (ped && ped.simulado === true && !simulado) return derivarPorCambioDeModo(ped); // un pedido de PRUEBA con el cobro ya real: sin callejón
   if (ped && (ped.simulado === true) !== simulado) return derivar('el modo de cobro cambió: no se reenvía el QR');
   const pie = ped && cbHayQr(cobro) ? cbCaption(ped, { titular: simulado ? '' : cobro.titular, moneda: monedaTxt, delivery: ped.modalidad === 'delivery', simulado: simulado }) : '';
   if (!pie) return derivar('no se pudo reenviar el QR');
@@ -866,21 +872,33 @@ function aReenviarQr() {
   mensajes = [{ tipo: 'imagen', cuerpo: pie, url: cobro.qrUrl, monto: ped.total, referencia: ped.pedidoId }];
 }
 
-function aComprobante() {
+// El pedido al que apunta la referencia del servidor (`cobro.pedidoRef`), o el del estado si no hay referencia. La referencia se busca SOLO entre los pedidos
+// propios de `sd.pedidos` y solo si el pedido es de ESTE teléfono (`hasOwnProperty`: «constructor» o «__proto__» no son un pedido; otro teléfono tampoco).
+// Si la referencia no sirve y el pedido del estado no es ese mismo, no se coteja contra otro pedido: null (se deriva).
+function pedidoDeLaReferencia() {
   const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
   const ref = String(cobro.pedidoRef || '');
   const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
-  // La referencia del servidor se busca SOLO entre los pedidos propios de `sd.pedidos` y solo si el pedido es de ESTE
-  // teléfono (`hasOwnProperty`: «constructor» o «__proto__» no son un pedido; otro teléfono tampoco). Si la referencia
-  // no sirve y el pedido del estado no es ese mismo, no se coteja contra otro pedido: se deriva.
-  let ped = null;
-  if (ref) {
-    const propio = Object.prototype.hasOwnProperty.call(guardados, ref) ? guardados[ref] : null;
-    if (propio && typeof propio === 'object' && String(propio.from) === String(t.from)) ped = propio;
-    else if (en.pedido && String(en.pedido.pedidoId) === ref) ped = en.pedido;
-  } else {
-    ped = en.pedido;
-  }
+  if (!ref) return en.pedido;
+  const propio = Object.prototype.hasOwnProperty.call(guardados, ref) ? guardados[ref] : null;
+  if (propio && typeof propio === 'object' && String(propio.from) === String(t.from)) return propio;
+  return en.pedido && String(en.pedido.pedidoId) === ref ? en.pedido : null;
+}
+
+// El comprobante (o el recordatorio, o el reenvío del QR) de un pedido de PRUEBA con el cobro REAL ya encendido: nunca se coteja ni se rotula como pago.
+// Se pasa con una persona CON el código del pedido, un motivo fijo y `comprobante: true` (el restaurante lee qué es: una foto que no se pudo revisar, no
+// «una consulta»), y el pedido se SUELTA: ni se dice «sigue esperando el comprobante» ni se pide otra foto (que volvería a derivar): sin callejón.
+function derivarPorCambioDeModo(ped) {
+  const cod = ped && ped.codigo ? vmLinea(ped.codigo, 20) : '';
+  derivar('el modo de cobro cambió: comprobante de un pedido simulado', false, Object.assign({
+    comprobante: true,
+    motivo: 'comprobante enviado por el cliente (pedido de PRUEBA' + (cod ? ' #' + cod : '') + '); cambió el modo de cobro y no se revisó',
+  }, cod ? { codigo: cod } : {}));
+  limpiarConfirmado();
+}
+
+function aComprobante() {
+  const ped = pedidoDeLaReferencia();
   if (!ped || !ped.pedidoId) return derivar('comprobante sin pedido en el flujo');
 
   // COBRO SIMULADO: la foto es el comprobante de la prueba. NUNCA se coteja en el servidor (no distingue modos: daría «no cuadra» y
@@ -915,7 +933,7 @@ function aComprobante() {
   }
 
   // Segunda cerradura (la primera es `comprobanteCruzado` en `Interpretar entrada`): un pedido SIMULADO nunca se coteja ni se avisa como real.
-  if (ped.simulado === true) return derivar('el modo de cobro cambió: comprobante de un pedido simulado', en.paso === 'esperando_comprobante' && !!en.pedido);
+  if (ped.simulado === true) return derivarPorCambioDeModo(ped);
 
   let resultado = 'sin_cotejo';
   let diferencias = [];

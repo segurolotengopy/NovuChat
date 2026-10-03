@@ -520,6 +520,17 @@ CLAUDE.md: el rótulo va **impreso en la imagen** y en el **pie**, la respuesta 
 dibujar el QR desde `cargaUtil`, **sin rótulo**. Registrar `qr-demo.png` como QR real dejaría un cobro real sin rótulo: está prohibido. La imagen
 rotulada solo viaja por `qrSimuladoUrl`.
 
+**Cuando CAMBIA el modo de cobro con un QR pendiente (revisión final).** (1) *Pedido REAL y modo ahora simulado:* su foto NO entra a la rama simulada: sigue el
+camino del cobro real sin cotejo (`sin_cotejo`: «no pude revisarlo», aviso de COMPROBANTE con la foto y el código DEL PEDIDO; el restaurante lo revisa en su
+banco); nunca se rotula «SIMULADO», nunca se descarta (tampoco con el pedido cancelado) y el pedido se suelta. (2) *Pedido de PRUEBA y modo ahora real:*
+`Interpretar entrada` marca `comprobanteCruzado` (la referencia vacía usa el pedido del estado, igual que `aComprobante`) y la foto no se baja, no se lee ni se
+coteja; el recordatorio y «Reenviar QR» de ese pedido tampoco piden otra foto. En los tres casos se pasa con una persona con una derivación `comprobante: true`: el
+aviso lleva el código DEL PEDIDO, el motivo fijo «comprobante enviado por el cliente (pedido de PRUEBA #…); cambió el modo de cobro y no se revisó» y dice
+«COMPROBANTE … no se pudo revisar» (no «el cliente pide hablar con una persona»); el tope de derivaciones por hora NO la suprime (sí deja su marca: una
+consulta posterior del mismo teléfono dentro de la hora no avisa). El pedido se SUELTA (`limpiarConfirmado`): sin «sigue esperando el comprobante» ni callejón.
+Límite declarado: con el servidor aún viendo el QR pendiente, cada foto siguiente de ese teléfono vuelve a derivar (un aviso por foto) hasta que la solicitud
+venza o se cierre. (3) Una foto CON pie, fuera del cobro, es una imagen con pie (el pie se atiende como texto), salvo la de un pedido REAL propio.
+
 **Dos fotos juntas (H4) y cuándo avisa el cobro simulado.** Si el cliente manda dos fotos casi a la vez, las dos ejecuciones pueden leer el
 mismo estado antes de que la primera lo escriba y dar **2 avisos de PRUEBA y 2 respuestas** (+1 mensaje al cliente y +1 a 2 avisos al
 restaurante en ese caso). Es la misma clase de carrera que B0 (doble toque) y no se cambia código: el cierre `registro` de PRUEBA es

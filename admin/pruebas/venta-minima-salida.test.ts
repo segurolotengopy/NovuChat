@@ -285,6 +285,17 @@ describe('Armar avisos', () => {
     expect(propio.items[0]).toMatchObject({ sinAviso: true });
   });
 
+  it('una derivación `comprobante: true` (cambio de modo de cobro) NO la suprime el tope de derivaciones: un comprobante no se queda sin avisar', () => {
+    const reciente = { ventaMinima: { transferencias: { [CLIENTE]: [AHORA - 30 * MIN] } } };
+    const datos = { codigo: 'K7P2', comprobante: true, motivo: 'comprobante enviado por el cliente (pedido de PRUEBA #K7P2); cambió el modo de cobro y no se revisó' };
+    expect(avisos({ aviso: { tipo: 'transferencia', datos } }, { g: reciente }).items[0]).toMatchObject({ sinAviso: false });
+    expect(avisos({ aviso: { tipo: 'transferencia', datos } }, { cfg: { topeTransferenciasHora: 0 } }).items[0]).toMatchObject({ sinAviso: false });
+    // NEGANDO: la misma derivación SIN la marca sigue suprimida por el tope (y `comprobante: 'true'` o un valor que no es true no la exime).
+    for (const marca of [undefined, false, 'true', 1]) {
+      expect(avisos({ aviso: { tipo: 'transferencia', datos: { ...datos, comprobante: marca } } }, { g: reciente }).items[0], String(marca)).toMatchObject({ sinAviso: true });
+    }
+  });
+
   it('una segunda derivación del mismo teléfono dentro de la hora no avisa; un pedido sí', () => {
     const reciente = { ventaMinima: { transferencias: { [CLIENTE]: [AHORA - 30 * MIN] } } };
     const r = avisos({ aviso: { tipo: 'transferencia', datos: {} } }, { g: reciente });

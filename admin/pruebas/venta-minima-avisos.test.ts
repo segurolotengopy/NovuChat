@@ -1694,3 +1694,41 @@ describe('resultado «simulado»: el aviso al restaurante dice PRUEBA y SIMULADO
     expect(sim.map((i: J) => i.clase).sort()).toEqual(['detalle', 'detalle', 'plantilla', 'plantilla']);
   });
 });
+
+// ================================================================================================
+// Una derivación `comprobante: true` (la foto de un comprobante que no se pudo revisar por el cambio de modo de cobro) no se presenta como una consulta
+// ================================================================================================
+describe('transferencia con `comprobante: true`: el restaurante lee que es un comprobante sin revisar, con el código del pedido', () => {
+  const FORMA_P = { ...CFG, plantillaReserva: 'pedido_registrado', plantillaDerivacion: 'pedido_registrado', formaPlantillaReserva: 'pedido', formaPlantillaDerivacion: 'pedido' };
+  const MOTIVO = 'comprobante enviado por el cliente (pedido de PRUEBA #K7P2); cambió el modo de cobro y no se revisó';
+  const datos = (extra: J = {}): J => ({ nombre: 'Ana Pérez', telefono: CLIENTE, codigo: 'K7P2', comprobante: true, motivo: MOTIVO, ...extra });
+
+  it('plantilla de forma `pedido`: «COMPROBANTE K7P2: …» y no «el cliente pide hablar con una persona»', () => {
+    const items = L.avArmar('transferencia', datos(), CSV, FORMA_P, sdCon(), AHORA);
+    expect(items.length).toBeGreaterThanOrEqual(2);
+    for (const it of items.filter((i: J) => i.clase === 'plantilla')) {
+      const v = params(it);
+      expect(v[0]).toMatch(/^COMPROBANTE K7P2: comprobante enviado por el cliente/);
+      expect(v[2]).toContain('no se pudo revisar');
+      expect(v.join(' ')).not.toMatch(/pide hablar con una persona|CONSULTA/);
+      expect(v.join(' ')).not.toMatch(VM_PROHIBIDAS);
+    }
+    // NEGANDO: sin la marca sigue siendo la consulta de siempre.
+    const consulta = L.avArmar('transferencia', datos({ comprobante: undefined, motivo: 'quiero hablar' }), CSV, FORMA_P, sdCon(), AHORA).filter((i: J) => i.clase === 'plantilla');
+    expect(params(consulta[0]!)[0]).toMatch(/^CONSULTA K7P2/);
+    expect(params(consulta[0]!)[2]).toContain('pide hablar con una persona');
+  });
+
+  it('forma `cita` y detalle con la ventana abierta: dicen «Comprobante de cliente» y llevan el código del pedido', () => {
+    const cita = L.avArmar('transferencia', datos(), CSV, CFG, sdCon(), AHORA).filter((i: J) => i.clase === 'plantilla');
+    expect(params(cita[0]!)[2]).toMatch(/^Comprobante de cliente \(no se pudo revisar\)/);
+    expect(params(cita[0]!)[3]).toBe('K7P2');
+    const detalle = L.avArmar('transferencia', datos(), CSV, CFG, abierta(), AHORA).filter((i: J) => i.clase === 'detalle');
+    expect(detalle.length).toBeGreaterThan(0);
+    for (const d of detalle) {
+      expect(d.payload.text.body).toContain('Comprobante de un cliente (no se pudo revisar: cambió el modo de cobro) N.º K7P2');
+      expect(d.payload.text.body).not.toContain('Consulta de un cliente');
+    }
+  });
+});
+
