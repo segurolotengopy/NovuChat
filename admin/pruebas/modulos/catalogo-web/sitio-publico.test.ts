@@ -15,7 +15,7 @@
  * `scripts/modulos/catalogo-web/verificar-sitio-publico.mjs`, que corre en el job `construir`).
  */
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -199,7 +199,10 @@ function importsDe(texto: string): { relativos: string[]; paquetes: string[] } {
 function resolverRelativo(desde: string, esp: string): string {
   const base = resolve(dirname(desde), esp);
   for (const c of [base, `${base}.ts`, `${base}.tsx`, `${base}.css`, join(base, 'index.ts'), join(base, 'index.tsx')]) {
-    if (existsSync(c) && !/\/$/.test(c) && /\.(tsx?|css)$/.test(c)) return c;
+    if (!/\.(tsx?|css)$/.test(c)) continue;
+    // Se lee directamente, sin comprobar antes que exista (carrera entre la
+    // comprobación y el uso): si no se puede leer como archivo, no es el candidato.
+    try { readFileSync(c); return c; } catch { /* siguiente candidato */ }
   }
   throw new Error(`no encontré ${esp} importado desde ${desde}`);
 }
@@ -386,8 +389,21 @@ describe('el despliegue publica los dos sitios y se niega a juntarlos', () => {
 
   it('humo-sitio-publico.sh es ejecutable y comprueba la separación de orígenes', () => {
     const ruta = join(ADMIN, '..', 'scripts/humo-sitio-publico.sh');
-    expect(statSync(ruta).mode & 0o111, 'sin permiso de ejecución el job humo-staging falla').not.toBe(0);
-    const humo = readFileSync(ruta, 'utf8');
+    // Un solo descriptor para el modo y el contenido: no hay un archivo que pueda
+    // cambiar entre mirar sus permisos y leerlo.
+    let modo = 0;
+    let humo = '';
+    let fd: number | undefined;
+    try {
+      fd = openSync(ruta, 'r');
+      modo = fstatSync(fd).mode;
+      humo = readFileSync(fd, 'utf8');
+    } catch (e) {
+      throw new Error(`no se pudo leer scripts/humo-sitio-publico.sh: ${(e as Error).message}`);
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+    }
+    expect(modo & 0o111, 'sin permiso de ejecución el job humo-staging falla').not.toBe(0);
     expect(humo).toContain('GET  /index.html (entrada de la consola)');
     expect(humo).toContain('frame-ancestors');
     expect(humo).toContain('identitytoolkit');

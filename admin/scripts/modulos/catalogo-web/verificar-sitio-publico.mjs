@@ -20,7 +20,7 @@
  *
  * Sin dependencias y sin red. Salida: 0 todo en orden · 1 alguna falla.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 
 const RAIZ = resolve(new URL('../../..', import.meta.url).pathname);
@@ -42,23 +42,32 @@ const PROHIBIDAS = [
 const fallas = [];
 const falla = (m) => fallas.push(m);
 
-if (!existsSync(DIST)) {
+// Se recorre directamente, sin comprobar antes que exista (carrera entre la
+// comprobación y el uso): si falta la carpeta, readdirSync lo dice.
+function archivos(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const r = join(dir, e.name);
+    return e.isDirectory() ? archivos(r) : [r];
+  });
+}
+let todos;
+try {
+  todos = archivos(DIST);
+} catch {
   console.error(`No existe ${DIST}. Corra antes:  pnpm web:build`);
   process.exit(1);
 }
 
-function archivos(dir) {
-  return readdirSync(dir).flatMap((n) => {
-    const r = join(dir, n);
-    return statSync(r).isDirectory() ? archivos(r) : [r];
-  });
+/** El texto de un archivo, o null si no se puede leer (no existe). */
+function leerOpcional(ruta) {
+  try { return readFileSync(ruta, 'utf8'); } catch { return null; }
 }
-const todos = archivos(DIST);
 const rel = (a) => relative(DIST, a);
 
 // 1. La página existe y la consola NO está.
-if (!existsSync(join(DIST, 'catalogo.html'))) falla('falta catalogo.html: es la página que reescribe `/c/**`');
-if (existsSync(join(DIST, 'index.html'))) falla('hay un index.html: es la entrada de la consola, no debe estar en el sitio público');
+const html = leerOpcional(join(DIST, 'catalogo.html'));
+if (html === null) falla('falta catalogo.html: es la página que reescribe `/c/**`');
+if (leerOpcional(join(DIST, 'index.html')) !== null) falla('hay un index.html: es la entrada de la consola, no debe estar en el sitio público');
 
 // 2. Ni una línea del SDK de Firebase en lo que se sube.
 const texto = todos.filter((a) => ['.js', '.html', '.css', '.mjs'].includes(extname(a)));
@@ -72,8 +81,7 @@ for (const a of texto) {
 // 3. Sin JavaScript en línea: la CSP del sitio es `script-src 'self'`, y un
 //    <script> en línea no correría (y sería señal de que alguien lo agregó
 //    para esquivarla).
-if (existsSync(join(DIST, 'catalogo.html'))) {
-  const html = readFileSync(join(DIST, 'catalogo.html'), 'utf8');
+if (html !== null) {
   for (const m of html.matchAll(/<script\b([^>]*)>/gi)) {
     if (!/\bsrc=/.test(m[1] ?? '')) falla('catalogo.html trae un <script> en línea');
   }
