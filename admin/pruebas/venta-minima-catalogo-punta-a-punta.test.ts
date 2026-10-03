@@ -158,6 +158,41 @@ describe('un carrito inválido no produce nada: 0 mensajes, 0 avisos, 0 reportes
   });
 });
 
+describe('un carrito con la ventana cerrada no recibe nada aunque el comercio esté suspendido o la atención sea de un operador (revisión del PR #382)', () => {
+  const ATENCION = { mensajeFijo: 'Gracias por tu paciencia. Una persona del equipo sigue contigo.', avisarRecepcion: 'operador', respuestasEnVentana: 80 };
+  const estados: [string, J][] = [
+    ['comercio suspendido', { estadoComercio: 'suspendido' }],
+    ['atención de un operador (uso extendido)', { atencion: { estado: 'operador', ...ATENCION } }],
+    ['atención bloqueada', { atencion: { estado: 'bloqueado', ...ATENCION } }],
+  ];
+  const conPanel = (extra: J) => {
+    const w = crear();
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), ...extra } });
+    return w;
+  };
+  for (const [etiqueta, extra] of estados) {
+    it(`${etiqueta}: con la ventana cerrada (o sin el dato) no sale ningún mensaje ni aviso; Meta no recibe nada que rechazar`, () => {
+      for (const ventana of [{ ventanaAbierta: false }, { ventanaAbierta: undefined }, { ventanaAbierta: 'true' }]) {
+        const w = conPanel(extra);
+        const t = carrito(w, { headers: cabeceras(), body: cuerpo(ventana) });
+        expect(t.fallo, JSON.stringify(ventana)).toBeNull();
+        expect(t.mensajes, JSON.stringify(ventana)).toHaveLength(0);
+        expect(t.avisos, JSON.stringify(ventana)).toHaveLength(0);
+        expect(t.ejecutados.has('Enviar a WhatsApp'), JSON.stringify(ventana)).toBe(false);
+        expect(t.ejecutados.has('Uso extendido'), JSON.stringify(ventana)).toBe(false);
+        expect(t.ejecutados.has('Comercio no operativo'), JSON.stringify(ventana)).toBe(false);
+      }
+    });
+  }
+  it('NEGANDO: con la ventana ABIERTA el comportamiento de siempre sigue (aviso fijo del operador, texto neutro del comercio suspendido) y un mensaje normal también', () => {
+    const operador = carrito(conPanel({ atencion: { estado: 'operador', ...ATENCION } }), { headers: cabeceras(), body: cuerpo() });
+    expect(operador.mensajes.length).toBeGreaterThan(0);
+    const suspendido = carrito(conPanel({ estadoComercio: 'suspendido' }), { headers: cabeceras(), body: cuerpo() });
+    expect(suspendido.mensajes.length).toBeGreaterThan(0);
+    expect(turno(conPanel({ estadoComercio: 'suspendido' }), texto('hola')).mensajes.length).toBeGreaterThan(0);
+  });
+});
+
 describe('un mensaje normal de WhatsApp sigue igual', () => {
   it('entra por el receptor, SÍ se reporta como entrante, y el carrito no corre', () => {
     const w = crear();

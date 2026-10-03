@@ -489,7 +489,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; const r = $json || {}; const cortado = !!(r.servicio && r.servicio.estado === 'cortado'); return c.estadoComercio === 'operativo' && !cortado; })() }}",
+              "leftValue": "={{ (() => { const k = $('Interpretar entrada').first().json; if (k.tipo === 'carrito' && !(k.carrito && k.carrito.ventanaAbierta === true)) return true; const c = $('Config del negocio').first().json; const r = $json || {}; const cortado = !!(r.servicio && r.servicio.estado === 'cortado'); return c.estadoComercio === 'operativo' && !cortado; })() }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -539,7 +539,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; const a = ($json && $json.atencion && typeof $json.atencion === 'object') ? $json.atencion.estado : c.atencionEstado; return !['operador', 'bloqueado'].includes(a); })() }}",
+              "leftValue": "={{ (() => { const k = $('Interpretar entrada').first().json; if (k.tipo === 'carrito' && !(k.carrito && k.carrito.ventanaAbierta === true)) return true; const c = $('Config del negocio').first().json; const a = ($json && $json.atencion && typeof $json.atencion === 'object') ? $json.atencion.estado : c.atencionEstado; return !['operador', 'bloqueado'].includes(a); })() }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
