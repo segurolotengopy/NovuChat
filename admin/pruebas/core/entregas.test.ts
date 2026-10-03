@@ -581,7 +581,7 @@ export interface Excepcion { porque: string; vence: string }
  * La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
 export const ALTA_DE_EXCEPCIONES = '2026-10-03';
 /** ATENCIÓN: cambiar este tope exige pasar por el agente `seguridad`. Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
-export const TOPE_DE_EXCEPCIONES = 56;
+export const TOPE_DE_EXCEPCIONES = 55;
 
 /**
  * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
@@ -706,10 +706,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   },
   'demo-b-venta-cobro.json#1#Avisar al dueño': {
     porque: 'falla callada del aviso en pedido, cobro y uso extendido: el único verificador (Marcar aviso de transferencia) actúa solo para la transferencia; la cierra PR-4 (Demo B resto)',
-    vence: '2027-01-01',
-  },
-  'demo-b-venta-cobro.json#2#Enviar QR de cobro': {
-    porque: 'caso del 03/10: si Meta rechaza la imagen del QR, el cliente no recibe nada (la falla va solo a «QR no enviado» → aviso al dueño); también el reenvío del QR; la cierra PR-0 (Demo B QR no enviado)',
     vence: '2027-01-01',
   },
   'demo-b-venta-cobro.json#5#Procesar respuesta::aviso': {
