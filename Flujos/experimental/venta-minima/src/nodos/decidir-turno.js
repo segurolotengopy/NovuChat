@@ -176,7 +176,7 @@ const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.te
 const quiereReservar = /reserv|\bmesa\b/.test(norm);
 // FALSOS POSITIVOS (revisión del PR #382): las intenciones globales de CARTA y RESERVA valen en `inicio` y `menu` sin límite de largo, pero
 // en los demás pasos solo con un mensaje CORTO (hasta 60 caracteres) y nunca mientras se piden los datos de entrega (`pedido_entrega`,
-// `pedido_datos`): una dirección («edificio Mesa Grande») o una referencia no es «quiero una mesa». «Que tienen» no es la carta si el
+// `pedido_datos`, donde la reserva solo vale con el verbo «reservar»): una dirección («edificio Mesa Grande») o una referencia no es «quiero una mesa». «Que tienen» no es la carta si el
 // mensaje ya pide algo («quiero tacos, ¿qué tienen de postre?»), y «pedir» dentro de una reserva no es cambiar de rumbo si es una
 // pregunta («¿se puede pedir torta?»).
 const enDatosDeEntrega = paso === 'pedido_entrega' || paso === 'pedido_datos';
@@ -198,7 +198,9 @@ if (!enComprobante) {
   if (pedidosOn && globalCorto && norm.length <= 80 && !/\d/.test(norm) && (/\b(carta|catalogo)\b/.test(norm) || (/\bque tienen\b/.test(norm) && !pideAlgo))
     && !/\b(de|en|segun) la carta\b/.test(norm)) return salir('carta', { motivo: 'carta', consulta: 'carta' });
   // La reserva, en cualquier paso (en un paso de reserva sigue su camino «por paso»).
-  if (reservasOn && quiereReservar && paso.indexOf('reserva') !== 0 && globalCorto) return extraerReserva();
+  // En los pasos de datos de entrega solo vale el VERBO («quiero reservar», corto y sin numeros); «mesa» suelta es parte de una direccion.
+  const reservaEnDatos = norm.length <= 60 && !/\d/.test(norm) && /\breserv/.test(norm);
+  if (reservasOn && quiereReservar && paso.indexOf('reserva') !== 0 && (enDatosDeEntrega ? reservaEnDatos : globalCorto)) return extraerReserva();
   // El pedido, estando en una reserva: el carrito sigue donde se dejó.
   if (pedidosOn && paso.indexOf('reserva') === 0 && norm.length <= 60 && !esPregunta && /\b(pedir|pedido)\b/.test(norm)) return extraerPedido();
 }

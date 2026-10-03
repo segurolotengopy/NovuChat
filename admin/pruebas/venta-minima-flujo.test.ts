@@ -4204,6 +4204,32 @@ describe('intenciones globales: «mesa» en una dirección, «qué tienen» dent
     expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido'))).toBe(true);
   });
 
+  it('en los pasos de datos de entrega la reserva vale SOLO con el verbo («quiero reservar»): «mesa» suelta, o «Reservas» con número en una dirección, no cambian de rumbo', () => {
+    const enDatos = () => {
+      const w = crear();
+      const c = con(w);
+      c.escribe('hola');
+      c.toca('m|pedido', 'Hacer un pedido');
+      w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery' });
+      c.escribe('quiero 4 tacos de birria para delivery');
+      expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+      return { w, c };
+    };
+    for (const direccion of ['mesa', 'frente a la mesa grande', 'edificio Mesa Grande', 'Av. Reservas 123, piso 2']) {
+      const { w, c } = enDatos();
+      w.estado.extraccion = EX([], { entrega: 'delivery', direccion, referencia: 'puerta azul', nombre: 'Carlos Pérez' });
+      c.escribe(direccion);
+      expect(String(estadoDe(w.mundo)['paso']), direccion).toMatch(/^pedido/);
+      expect(estadoDe(w.mundo)['reserva'] ?? null, direccion).toBeNull();
+    }
+    // NEGANDO: con el verbo, corto y sin números, SÍ cambia a la reserva (el carrito sigue guardado).
+    const { w, c } = enDatos();
+    w.estado.extraccion = { ...RESERVA_OK };
+    c.escribe('mejor quiero reservar una mesa');
+    expect(String(estadoDe(w.mundo)['paso'])).toMatch(/^reserva/);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length).toBe(1);
+  });
+
   it('«¿qué tienen de postre?» dentro de un pedido de texto sigue siendo el pedido (no manda la carta), pero «¿qué tienen?» solo sí manda la carta', () => {
     const w = crear();
     const c = con(w);
