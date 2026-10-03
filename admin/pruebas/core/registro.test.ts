@@ -31,10 +31,11 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../web/src/core/lib/firebase', () => ({ db: {} }));
 
 import {
-  IDS_MODULOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS, REGISTRO, carpetasDe, esModulo, manifiestoDe,
-  type IdModulo, type Manifiesto, type Pestana,
+  IDS_FLUJOS, IDS_MODULOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS, REGISTRO, carpetasDe, documentoDeFlujo, esFlujo,
+  esModulo, etiquetaDeCatalogo, flujosDeFicha, manifiestoDe, modulosDeFicha, modulosDeFlujos, pestanasDe, tieneModulo,
+  type FichaConCapacidades, type IdFlujo, type IdModulo, type Manifiesto, type Pestana,
 } from '../../functions/src/registro.ts';
-import { FLUJOS } from '../../web/src/central/lib/flujos.ts';
+import { FLUJOS, esFlujo as esFlujoConsola, etiquetaCatalogo, flujosDe } from '../../web/src/central/lib/flujos.ts';
 import { VERTICALES_CONOCIDOS, documentoDeVertical } from '../../functions/src/core/prompt/prompt.ts';
 import { PLANES } from '../../functions/src/central/cuenta/planes.ts';
 import { zonaDeCodigo } from '../frontera/frontera.ts';
@@ -547,5 +548,164 @@ describe('8. las copias de la lista de flujos coinciden con el puente', () => {
     for (const f of FLUJOS_HOY) for (const m of PUENTE_DE_FLUJOS[f].modulos) expect(esModulo(m), `${f}: ${m}`).toBe(true);
     for (const m of comunes) expect(esModulo(m)).toBe(true);
     expect(TEXTO_REGISTRO).toContain('TRANSITORIO');
+  });
+});
+
+// ======================================================================= 9
+describe('9. derivaciones equivalentes: el registro calcula lo que las copias calculan hoy', () => {
+  // Los 8 subconjuntos de los tres flujos, en el orden en que los lista una ficha.
+  const subconjuntos: IdFlujo[][] = Array.from({ length: 1 << IDS_FLUJOS.length },
+    (_, mascara) => IDS_FLUJOS.filter((_f, i) => (mascara >> i) & 1));
+  const nombre = (s: readonly string[]) => `[${s.join(', ')}]`;
+
+  /** Lo que las reglas de Firestore deciden por texto: la función `tieneX` abre el flujo que dice su cuerpo. */
+  const flujoDeCapacidad = (cap: string) => {
+    const m = /return tieneFlujo\(tenantId, '(\w+)'\);/.exec(cuerpoDeFuncion(REGLAS, cap));
+    if (!m) throw new Error(`${cap} no delega en tieneFlujo`);
+    return m[1] as string;
+  };
+  /** `flujo in get('flujos', [vertical])` de `flujosTenant`/`tieneFlujo`, sobre la ficha cruda. */
+  const tieneFlujoEnReglas = (ficha: FichaConCapacidades, flujo: string) => {
+    const lista = 'flujos' in ficha ? ficha.flujos : [ficha.vertical ?? ''];
+    return Array.isArray(lista) && lista.includes(flujo);
+  };
+
+  it('los 8 subconjuntos existen y esFlujo coincide con el de la consola', () => {
+    expect(subconjuntos).toHaveLength(8);
+    for (const v of [...IDS_FLUJOS, 'interno', '', null, undefined, 3, 'toString', '__proto__']) {
+      expect(esFlujo(v), String(v)).toBe(esFlujoConsola(v));
+    }
+    expect(esFlujo('interno')).toBe(false);
+    expect(esFlujo('toString')).toBe(false);
+  });
+
+  it('documentoDeFlujo: el documento de cada flujo, y null para lo que no lo es', () => {
+    for (const f of IDS_FLUJOS) {
+      expect(documentoDeFlujo(f)).toBe(FLUJOS[f].documento);
+      expect(documentoDeFlujo(f)).toBe(documentoDeVertical(f));
+    }
+    for (const v of ['interno', 'toString', '', null, undefined, 7]) expect(documentoDeFlujo(v), String(v)).toBeNull();
+  });
+
+  const fichas: [string, FichaConCapacidades | undefined][] = [
+    ...subconjuntos.map((s): [string, FichaConCapacidades] => [`flujos ${nombre(s)}`, { flujos: s }]),
+    ...IDS_FLUJOS.map((f): [string, FichaConCapacidades] => [`solo vertical «${f}»`, { vertical: f }]),
+    ['vertical desconocido', { vertical: 'interno' }],
+    ['flujos no es lista (cadena)', { flujos: 'venta', vertical: 'agendamiento' }],
+    ['flujos no es lista (objeto)', { flujos: { venta: true } }],
+    ['flujos: []', { flujos: [], vertical: 'venta' }],
+    ['flujos con un flujo desconocido', { flujos: ['interno'] }],
+    ['flujos con desconocido y conocido', { flujos: ['interno', 'venta'] }],
+    ['la lista manda sobre vertical', { flujos: ['venta'], vertical: 'agendamiento' }],
+    ['ficha vacía', {}],
+    ['sin ficha', undefined],
+  ];
+
+  it.each(fichas)('flujosDeFicha(%s) coincide con flujosDe de la consola', (_n, ficha) => {
+    expect(flujosDeFicha(ficha)).toEqual(flujosDe(ficha));
+  });
+
+  it('flujosDeFicha quita repetidos y deja la lista vacía si no hay nada conocido', () => {
+    expect(flujosDeFicha({ flujos: ['venta', 'venta', 'agendamiento', 'venta'] })).toEqual(['venta', 'agendamiento']);
+    expect(flujosDeFicha({ flujos: ['interno'] })).toEqual([]);
+    expect(flujosDeFicha({ flujos: [] })).toEqual([]);
+    expect(flujosDeFicha({ flujos: 'venta' })).toEqual([]);
+    expect(flujosDeFicha({})).toEqual([]);
+  });
+
+  it.each(subconjuntos.map((s) => [nombre(s), s] as const))(
+    'flujos %s: módulos, pestañas y etiqueta de catálogo coinciden con la consola', (_n, s) => {
+      const modulos = modulosDeFlujos(s);
+      // Orden de IDS_MODULOS, sin repetidos, y siempre con los comunes.
+      expect(modulos).toEqual(IDS_MODULOS.filter((m) => modulos.includes(m)));
+      for (const m of comunes) expect(modulos).toContain(m);
+      // Nada de más: cada módulo viene de un flujo del subconjunto o es común.
+      for (const m of modulos) {
+        expect(comunes.includes(m) || s.some((f) => (PUENTE_DE_FLUJOS[f].modulos as readonly string[]).includes(m)), m).toBe(true);
+      }
+      // Pestañas: la unión de las de FLUJOS[f].pestanas, sin repetir ruta.
+      const hoy = [...new Set(s.flatMap((f) => FLUJOS[f].pestanas.map((p) => p.ruta)))].sort();
+      expect(pestanasDe(modulos).map((p) => p.ruta).sort()).toEqual(hoy);
+      expect(etiquetaDeCatalogo(modulos)).toBe(etiquetaCatalogo(s));
+    });
+
+  it.each(IDS_FLUJOS.map((f) => [f] as const))(
+    'el orden de las pestañas de «%s» por sí solo es EXACTAMENTE el de la consola, con título y roles', (f) => {
+      const hoy = FLUJOS[f].pestanas.map((p) => ({
+        ruta: p.ruta, titulo: p.etiqueta, roles: [...(p.roles ?? ['admin'])].sort(), tambienPropietario: p.tambienPropietario === true,
+      }));
+      const delRegistro = pestanasDe(modulosDeFlujos([f])).map((p) => ({
+        ruta: p.ruta, titulo: p.titulo, roles: [...p.roles].sort(), tambienPropietario: p.tambienPropietario === true,
+      }));
+      expect(delRegistro).toEqual(hoy);
+    });
+
+  it('en una mezcla de flujos el orden es el declarado en `orden`, y no cambia con el de la lista', () => {
+    const a = pestanasDe(modulosDeFlujos(['agendamiento', 'venta', 'onboarding'])).map((p) => p.ruta);
+    const b = pestanasDe(modulosDeFlujos(['onboarding', 'venta', 'agendamiento'])).map((p) => p.ruta);
+    expect(a).toEqual(['agenda', 'pedidos', 'cobros', 'inventario', 'cobro', 'captacion']);
+    expect(b).toEqual(a);
+  });
+
+  it('pestanasDe no devuelve las comunes ni repite una ruta', () => {
+    const rutas = pestanasDe(IDS_MODULOS).map((p) => p.ruta);
+    expect(new Set(rutas).size).toBe(rutas.length);
+    for (const m of comunes) for (const p of manifiestoDe(m).pestanas) expect(rutas).not.toContain(p.ruta);
+    expect(pestanasDe([])).toEqual([]);
+    expect(pestanasDe(['productos', 'campanas'])).toEqual([]);
+  });
+
+  it('el campo `orden` es único entre las pestañas del registro', () => {
+    const ordenes = MANIFIESTOS.flatMap((m) => m.pestanas.map((p) => p.orden));
+    expect(new Set(ordenes).size).toBe(ordenes.length);
+  });
+
+  it('etiquetaDeCatalogo: la combinación que no es de un solo flujo es «Catálogo»', () => {
+    expect(etiquetaDeCatalogo(['productos', 'agenda'])).toBe('Servicios');
+    expect(etiquetaDeCatalogo(['productos', 'pedidos'])).toBe('Productos');
+    expect(etiquetaDeCatalogo(['productos', 'agenda', 'pedidos'])).toBe('Catálogo');
+    expect(etiquetaDeCatalogo(['productos', 'agenda', 'captacion'])).toBe('Catálogo');
+    expect(etiquetaDeCatalogo(['productos', 'pedidos', 'captacion'])).toBe('Catálogo');
+    expect(etiquetaDeCatalogo(['productos'])).toBe('Catálogo');
+    expect(etiquetaDeCatalogo([])).toBe('Catálogo');
+  });
+
+  // Los cuatro módulos con capacidad en las reglas, contra la función `tieneX` que el cuerpo
+  // de las reglas dice que abre cada flujo: agenda y catálogo web/pedidos y captación.
+  const CAPACIDADES: [IdModulo, string][] = [
+    ['agenda', 'tieneAgenda'],
+    ['pedidos', 'tieneCobro'],
+    ['catalogo-web', 'tieneCobro'],
+    ['captacion', 'tieneOnboarding'],
+  ];
+  it('las capacidades de las reglas abren los flujos que el puente dice', () => {
+    expect(CAPACIDADES.map(([, c]) => flujoDeCapacidad(c))).toEqual(['agendamiento', 'venta', 'venta', 'onboarding']);
+  });
+
+  it.each(fichas.filter(([, f]) => f !== undefined && (!('flujos' in f) || Array.isArray(f.flujos))))(
+    'tieneModulo(%s) coincide con tieneFlujo de las reglas', (_n, ficha) => {
+      for (const [modulo, cap] of CAPACIDADES) {
+        expect(tieneModulo(ficha, modulo), `${modulo} / ${cap}`).toBe(tieneFlujoEnReglas(ficha!, flujoDeCapacidad(cap)));
+      }
+    });
+
+  it('una ficha con `modulos` que contradice `flujos` manda `modulos`', () => {
+    const ficha = { modulos: ['campanas', 'agenda', 'productos'], flujos: ['venta'], vertical: 'venta' };
+    expect(modulosDeFicha(ficha)).toEqual(['productos', 'agenda', 'campanas']);
+    expect(tieneModulo(ficha, 'agenda')).toBe(true);
+    expect(tieneModulo(ficha, 'pedidos')).toBe(false);
+    expect(tieneModulo(ficha, 'cobros')).toBe(false);
+  });
+
+  it('`modulos` filtra desconocidos y repetidos; si no es lista, manda `flujos`', () => {
+    expect(modulosDeFicha({ modulos: ['interno', 'agenda', 'agenda'] })).toEqual(['agenda']);
+    expect(modulosDeFicha({ modulos: [] })).toEqual([]);
+    expect(modulosDeFicha({ modulos: 'agenda', flujos: ['venta'] })).toEqual(modulosDeFlujos(['venta']));
+    expect(modulosDeFicha({ flujos: ['venta'] })).toEqual(modulosDeFlujos(['venta']));
+    expect(modulosDeFicha(undefined)).toEqual(modulosDeFlujos([]));
+  });
+
+  it('registro.ts sigue sin `import` y las derivaciones no tocan nada del exterior', () => {
+    expect(TEXTO_REGISTRO).not.toMatch(/^\s*import\s/m);
   });
 });
