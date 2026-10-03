@@ -161,7 +161,9 @@ const NO_PERMITIDOS = /bellido|platinum|q'?taco|captaci|segurolo|otp|aab1|whatsa
 const CRED_DEMO_A = {
   googlePalmApi: 'Google Gemini(PaLM) Api account',     // producción: Andres la autorizó para las pruebas del 30/09
   googleCalendarOAuth2Api: 'Google Calendar account',
-  httpHeaderAuth: { 'NovuChat ingesta (Bellido)': 'Cierres NovuChat A (auto)' }, // por NOMBRE de origen (L1): configuración, ingesta y cierre cuentan en «ensayo»
+  // por NOMBRE de origen (L1): configuración, ingesta y cierre cuentan en «ensayo». La segunda entrada deja pasar un JSON
+  // que ya nombra la del Demo A (el ensayo de Venta mínima, `venta-minima.ensayo-demo-a.json`): se mapea a sí misma.
+  httpHeaderAuth: { 'NovuChat ingesta (Bellido)': 'Cierres NovuChat A (auto)', 'Cierres NovuChat A (auto)': 'Cierres NovuChat A (auto)' },
   // «Graph WhatsApp <Cliente> (Bearer)» no se mapea: el nodo pasa a la credencial predefinida whatsAppApi (ver GRAPH_BEARER).
   whatsAppApi: 'WhatsApp account',
 };
@@ -422,6 +424,14 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   if (dentroDelRepo(RESPALDO)) morir('--respaldo tiene que estar FUERA del repositorio (lleva ids)');
   const vivo = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`);
   if (vivo.cod !== 200) morir(`GET del flujo vivo del Demo A → ${vivo.cod}`);
+  // `--sobre-demo-a` pisa el flujo del `.env` con otro: se niega si ese flujo no es el Demo A (el id sale de un .env, el nombre del flujo, no).
+  // Es la misma regla de `--actualizar-codigo`: «Demo A» tiene que ser PALABRAS del nombre y ningún nombre de cliente ni de sistema ajeno.
+  if (bandera('sobre-demo-a')) {
+    const normal = (t) => String(t).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const nombreVivo = normal(vivo.datos.name);
+    const palabrasVivo = ` ${nombreVivo.replace(/[^a-z0-9]+/g, ' ').trim()} `;
+    if (NO_ACTUALIZAR_COMPACTO.test(nombreVivo.replace(/[^a-z0-9]/g, '')) || !palabrasVivo.includes(' demo a ')) morir(`el flujo del .env no es el del Demo A («${vivo.datos.name}»): no se pisa`);
+  }
   // M2: después de un PUT el flujo tiene que quedar ACTIVO (con su webhook); si no, se activa y se verifica.
   const asegurarActivo = async () => {
     let w = (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos;
