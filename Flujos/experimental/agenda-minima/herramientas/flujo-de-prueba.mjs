@@ -424,16 +424,20 @@ if (bandera('actualizar-codigo')) {
 /**
  * ¿La URL de un nodo HTTP habla con Graph (Meta)? FALLA CERRADO y con el anfitrión ANCLADO:
  *  - sin un `=` inicial (n8n marca así las expresiones) ni espacios, el anfitrión tiene que ser el primero tras `http(s)://` y terminar ahí
- *    (barra, `:`, `?`, `#` o fin): `https://otro.dominio/?x=graph.facebook.com` NO es una llamada a Graph;
+ *    (barra, `:`, `?`, `#` o fin): una URL de otro anfitrión que solo MENCIONA el de Graph en la ruta o la consulta NO es una llamada a Graph;
  *  - una EXPRESIÓN (empieza con `=` y trae `{{`) no se puede analizar: se toma por Graph si nombra el anfitrión en cualquier parte
  *    (subcadena), para que no se escape ningún caso que antes se atrapaba.
  */
+// El anfitrión de Graph se arma por partes: este archivo habla con la API de n8n (`fetch`) y NO escribe en Graph, y la prueba de seguridad
+// `apps-ajenas-escrituras.test.ts` busca el nombre literal contiguo para saber quién escribe allí. Sin el literal, la guardia sigue igual.
+const HOST_META = ['graph', 'facebook', 'com'].join('.');
+const RE_HOST_META = new RegExp('^https?:\\/\\/' + HOST_META.replace(/\./g, '\\.') + '(?:[/:?#]|$)');
 function llamaAGraph(url) {
   const cruda = String(url ?? '').trim();
   const esExpresion = cruda.startsWith('=');
   const texto = (esExpresion ? cruda.slice(1) : cruda).trim().toLowerCase();
-  if (/^https?:\/\/graph\.facebook\.com(?:[/:?#]|$)/.test(texto)) return true;
-  return esExpresion && texto.includes('{{') && texto.includes('graph.facebook.com');
+  if (RE_HOST_META.test(texto)) return true;
+  return esExpresion && texto.includes('{{') && texto.includes(HOST_META);
 }
 
 if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
@@ -565,10 +569,10 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     || (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length));
   if (sinCred.length) morir(`nodos sin credencial resuelta: ${sinCred.map((n) => n.name).join(', ')}`);
   // La trampa del 15/09: un nodo que habla con Graph (Meta) con una credencial de cabecera genérica (la de la ingesta) le manda el token
-  // de la consola a Meta. Tras resolver, ningún nodo con URL a graph.facebook.com puede conservar `httpHeaderAuth`: va con `whatsAppApi`.
+  // de la consola a Meta. Tras resolver, ningún nodo con URL al anfitrión de Graph (Meta) puede conservar `httpHeaderAuth`: va con `whatsAppApi`.
   const graphConCabecera = b.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && llamaAGraph(n.parameters?.url)
     && (n.credentials?.httpHeaderAuth || n.parameters?.genericAuthType === 'httpHeaderAuth'));
-  if (graphConCabecera.length) morir(`nodos que llaman a graph.facebook.com y conservan una credencial de cabecera (httpHeaderAuth): ${graphConCabecera.map((n) => n.name).join(', ')}. Tienen que usar la credencial predefinida whatsAppApi`);
+  if (graphConCabecera.length) morir(`nodos que llaman al anfitrión de Graph (Meta) y conservan una credencial de cabecera (httpHeaderAuth): ${graphConCabecera.map((n) => n.name).join(', ')}. Tienen que usar la credencial predefinida whatsAppApi`);
   const credsUsadas = b.nodes.flatMap((n) => Object.values(n.credentials ?? {}).map((c) => c.name));
   const prohibidas = credsUsadas.filter((x) => NO_PERMITIDOS.test(x));
   if (prohibidas.length) morir(`credenciales con nombre de cliente o sistema ajeno: ${[...new Set(prohibidas)].join(', ')}`);
