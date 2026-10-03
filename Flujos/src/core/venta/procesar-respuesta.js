@@ -197,6 +197,22 @@ for (let i = 0; i < $input.all().length; i++) {
     avisarDueno = !(Number.isFinite(previo) && ahora - previo < VENTANA_MS);
     if (!avisarDueno) avisos.push('aviso_dueno_repetido');
   }
+  // «LE AVISO» / «YA LE AVISE» SOLO SI ES CIERTO (regla R4 del plan de entrega,
+  // 03/10/2026). En este turno el texto al cliente sale ANTES de que el aviso al
+  // dueño se intente, asi que ninguna oracion puede anunciarlo: si el aviso falla,
+  // el cliente quedaria con una promesa falsa. Se quita lo que el modelo escriba
+  // en ese sentido; lo unico que queda es el boton («escribele directo»). «Ya le
+  // avise» se dice unicamente cuando la ventana ya esta marcada: esa marca la
+  // escribe `Marcar aviso de transferencia` solo con el id de Meta en la mano.
+  const AVISO_ANUNCIADO = /\b(ya\s+)?(le|les)\s+(aviso|avis[eé]|avisar[eé]|he\s+avisado|informo|inform[eé]|notifico|notific[eé]|comunico|comuniqu[eé])\b|\b(ya\s+)?avis[eé]\s+(a|al)\b|\bse\s+(le\s+)?(avis[oó]|inform[oó]|notific[oó])\b|\bel\s+sistema\s+(ya\s+)?(le\s+)?(avis|inform|notific)/i;
+  if (avisarDueno) {
+    const oracionesAviso = texto.split(/(?<=[.!?…])\s+/);
+    const sinAviso = oracionesAviso.filter((o) => /\?\s*$/.test(o.trim()) || !AVISO_ANUNCIADO.test(o));
+    if (sinAviso.length < oracionesAviso.length) {
+      texto = sinAviso.join(' ').trim();
+      avisos.push('aviso_anunciado_quitado');
+    }
+  }
   let respuestaVacia = false;
   let falloModelo = false;
   if (fallo) {
@@ -208,13 +224,15 @@ for (let i = 0; i < $input.all().length; i++) {
       : 'Disculpa, tuve un problema para responderte. ¿Me lo repites?';
   } else if (!texto && transferir) {
     // Una respuesta que es solo la marca no esta vacia: es «paso con una persona».
-    // El texto dice solo lo que este turno cumple: «le aviso» si el aviso sale;
-    // «ya le avisé» si salió hace menos de 24 h; y si quien escribe es el
-    // propio dueño, no hay a quien avisar y solo se remite al botón.
+    // El texto dice solo lo que este turno cumple: si el aviso va a salir ahora,
+    // NO se anuncia (todavia no se sabe si sale): solo el boton. «Ya le avisé» se
+    // dice unicamente si la ventana de 24 h ya esta marcada, es decir, si un aviso
+    // anterior salio con id de Meta. Y si quien escribe es el propio dueño, no
+    // hay a quien avisar y solo se remite al botón.
     texto = String(ent.from ?? '') === numeroDuenoLimpio
       ? 'Para hablar con una persona de ' + negocio + ', toca el botón y escríbele directo.'
       : avisarDueno
-        ? 'Le aviso a ' + negocio + ' para que te atienda una persona. Si prefieres no esperar, toca el botón y escríbele directo.'
+        ? 'Para que te atienda una persona de ' + negocio + ', toca el botón y escríbele directo.'
         : 'Ya le avisé a ' + negocio + '; si prefieres no esperar, toca el botón y escríbele directo.';
     avisos.push('transferencia_sin_texto');
   } else if (!texto) {

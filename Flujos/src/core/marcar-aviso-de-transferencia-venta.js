@@ -1,29 +1,25 @@
 // CIERRA LA VENTANA DE 24 H DEL AVISO AL DUENO, SOLO SI EL AVISO SALIO.
 //
-// Cuelga de `Avisar al dueño`. Marca el telefono del cliente en
-// `$getWorkflowStaticData` unicamente si Meta devolvio un id de mensaje: un
-// aviso rechazado no cierra la ventana y el proximo intento vuelve a avisar.
-//
-// SOLO ACTUA SI CORRIO `Aviso de transferencia`. `Avisar al dueño` tambien lo
-// alimentan el pedido confirmado y otros avisos; en el turno con pedido y
-// transferencia, el aviso del pedido llega PRIMERO (esta mas arriba en el
-// lienzo, `executionOrder: v1`) y en ese momento `Aviso de transferencia`
-// todavia no corrio, asi que no marca. El que llega despues es el de la
-// transferencia, y ese si.
+// Cuelga de `Avisar al dueño (transferencia)`, que es el envio exclusivo del
+// aviso por una TRANSFERENCIA (antes compartia envio con el pedido, el cobro y
+// el uso extendido, y este nodo tenia que adivinar de quien era cada salida).
+// Marca el telefono del cliente en `$getWorkflowStaticData` unicamente si Meta
+// devolvio un id de mensaje: un aviso rechazado no cierra la ventana y el
+// proximo intento vuelve a avisar. Esa marca es lo que autoriza a
+// `Procesar respuesta` a decir «ya le avisé» en un turno posterior.
 //
 // NO ENVIA NADA: cuesta CERO mensajes de WhatsApp.
-const corrio = (() => { try { return $('Aviso de transferencia').isExecuted === true; } catch (e) { return false; } })();
 let previos = [];
 try { previos = $('Aviso de transferencia').all(); } catch (e) { previos = []; }
 
 const salidas = $input.all();
-if (corrio && previos.length > 0) {
-  const sd = $getWorkflowStaticData('global');
-  sd.avisosTransferencia = sd.avisosTransferencia ?? {};
-  salidas.forEach((s, i) => {
-    const id = String((((s.json ?? {}).messages ?? [])[0] ?? {}).id ?? '');
-    const origen = (previos[i] ?? previos[previos.length - 1]).json ?? {};
-    if (id !== '' && origen.from) sd.avisosTransferencia[origen.from] = Date.now();
-  });
-}
-return salidas.map((s, idx) => ({ json: s.json, pairedItem: { item: idx } }));
+const sd = $getWorkflowStaticData('global');
+sd.avisosTransferencia = sd.avisosTransferencia ?? {};
+const resultado = salidas.map((s, i) => {
+  const origen = (previos[i] ?? previos[previos.length - 1] ?? { json: {} }).json ?? {};
+  const salio = String((((s.json ?? {}).messages ?? [])[0] ?? {}).id ?? '') !== '';
+  if (salio && origen.from) sd.avisosTransferencia[origen.from] = Date.now();
+  if (!salio) console.error('AVISO_AL_DUENO_NO_SALIO transferencia', JSON.stringify({ from: origen.from ?? '', error: (s.json ?? {}).error ?? null }).slice(0, 300));
+  return { json: { ...(s.json ?? {}), avisoEntregado: salio }, pairedItem: { item: i } };
+});
+return resultado;

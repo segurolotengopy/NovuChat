@@ -463,6 +463,21 @@ function enviosSinPuerta(f: Flujo, reporte: string): string[] {
 export const marcasDelPrompt = (prompt: string): string[] =>
   [...new Set([...prompt.matchAll(/\[([A-ZÁÉÍÓÚ]{3,}(?:_[A-ZÁÉÍÓÚ]+)*)\]/g)].map((m) => `[${m[1]}]`))];
 
+/**
+ * «Ya le avisé» de un turno POSTERIOR al aviso: el texto lee una marca del estado de la ejecución
+ * (`$getWorkflowStaticData`, p. ej. `sd.avisosTransferencia`) que SOLO escribe un Code que lee el id de
+ * Meta del envío. La marca es la prueba guardada de que el aviso salió; sin ella (o si la escribe un Code
+ * que no mira el id) la frase sigue siendo una promesa sin respaldo. Demo B, `Procesar respuesta`, 03/10.
+ */
+export function dependeDeMarcaVerificada(f: Flujo, c: Nodo): boolean {
+  // Una MARCA con hora: `sd.<nombre>[clave] = Date.now()`. El estado de una conversación (`sd.conversaciones`)
+  // que otros nodos tocan por otras razones no es una marca de aviso.
+  const escritas = (n: Nodo): Set<string> => new Set([...codigo(n).matchAll(/\bsd\.(\w+)\[[^\]]+\]\s*=\s*Date\.now\(\)/g)].map((m) => m[1] as string));
+  const lee = (n: Nodo, p: string): boolean => new RegExp(`\\bsd\\.${p}\\b`).test(codigo(n));
+  if (!/\$getWorkflowStaticData/.test(codigo(c))) return false;
+  return f.nodes.some((v) => v !== c && esCode(v) && leeWamid(codigo(v)) && [...escritas(v)].some((p) => lee(c, p)));
+}
+
 const ANUNCIOS_CODIGO: { id: 'qr' | 'boton' | 'aviso'; re: RegExp }[] = [
   { id: 'qr', re: /aqu[ií] tienes el (c[oó]digo )?qr|te (env[ií]o|mando) el qr|a continuaci[oó]n (te|le) llega/i },
   { id: 'boton', re: /toca(r|ndo)? el bot[oó]n|t[oó]cale el bot[oó]n/i },
@@ -535,7 +550,7 @@ export function violaciones(f: Flujo): Violacion[] {
       if (id === 'aviso') {
         const alcanzableDesdeAviso = envios.some((e) => destino(e) === 'negocio' && alcanza(f, e.name).has(c.name));
         const nombraAviso = envios.some((e) => destino(e) === 'negocio' && codigo(c).includes(`'${e.name}'`) && leeWamid(codigo(c)));
-        if (!alcanzableDesdeAviso && !nombraAviso) {
+        if (!alcanzableDesdeAviso && !nombraAviso && !dependeDeMarcaVerificada(f, c)) {
           v.push({ regla: 5, nodo: `${c.name}::aviso`, detalle: `«${c.name}» dice que ya se avisó, pero no es alcanzable desde un envío al negocio ni lo nombra leyendo el id` });
         }
       }
@@ -581,7 +596,7 @@ export interface Excepcion { porque: string; vence: string }
  * La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
 export const ALTA_DE_EXCEPCIONES = '2026-10-03';
 /** ATENCIÓN: cambiar este tope exige pasar por el agente `seguridad`. Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
-export const TOPE_DE_EXCEPCIONES = 49;
+export const TOPE_DE_EXCEPCIONES = 47;
 
 /**
  * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
@@ -686,14 +701,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   },
   'demo-a-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo': {
     porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-b-venta-cobro.json#1#Avisar al dueño': {
-    porque: 'falla callada del aviso en pedido, cobro y uso extendido: el único verificador (Marcar aviso de transferencia) actúa solo para la transferencia; la cierra PR-4 (Demo B resto)',
-    vence: '2027-01-01',
-  },
-  'demo-b-venta-cobro.json#5#Procesar respuesta::aviso': {
-    porque: '«le aviso» / «ya le avisé» se dice en el mismo texto antes de que el aviso salga y sin depender de él (R4); la cierra PR-4 (Demo B resto)',
     vence: '2027-01-01',
   },
   'experimental/agenda-minima/agenda-minima.v0.json#1#Enviar a WhatsApp': {
@@ -1027,6 +1034,25 @@ describe('Entregas: contrapruebas (cada una falla nombrando el nodo)', () => {
       avisoWa('Avisar al doctor'), code('Armar mensajes', "const t = 'Comunícate ahora. Ya le avisé al doctor.'; return [{ json: { t } }];"), clienteWa('Responder al cliente'),
     ], [['Avisar al doctor', 'Armar mensajes'], ['Armar mensajes', 'Responder al cliente']]);
     expect(reglasDe(antes)).not.toContain('5:Armar mensajes::aviso');
+  });
+
+  it('regla 5: «ya le avisé» en un turno posterior solo cumple si la marca que lee la escribe un Code que mira el id', () => {
+    const texto = "const sd = $getWorkflowStaticData('global'); const t = sd.avisos[tel] ? 'Ya le avisé a Un Negocio.' : ''; return [{ json: { t } }];";
+    const conIdVerificado = mem([
+      code('Armar mensajes', texto), clienteWa('Responder al cliente'), avisoWa('Avisar al doctor'),
+      code('Marcar', "const sd = $getWorkflowStaticData('global'); if ((($input.first().json.messages || [])[0] || {}).id) sd.avisos[tel] = Date.now(); return $input.all();"),
+    ], [['Armar mensajes', 'Responder al cliente'], ['Avisar al doctor', 'Marcar']]);
+    expect(reglasDe(conIdVerificado)).not.toContain('5:Armar mensajes::aviso');
+    // Contraprueba: la marca la escribe un Code que NO mira el id (la pone siempre).
+    const sinIdVerificado = mem([
+      code('Armar mensajes', texto), clienteWa('Responder al cliente'), avisoWa('Avisar al doctor'),
+      code('Marcar', "const sd = $getWorkflowStaticData('global'); sd.avisos[tel] = Date.now(); return $input.all();"),
+    ], [['Armar mensajes', 'Responder al cliente'], ['Avisar al doctor', 'Marcar']]);
+    expect(reglasDe(sinIdVerificado)).toContain('5:Armar mensajes::aviso');
+    // Contraprueba: nadie escribe la marca.
+    const sinMarca = mem([code('Armar mensajes', texto), clienteWa('Responder al cliente'), avisoWa('Avisar al doctor')],
+      [['Armar mensajes', 'Responder al cliente']]);
+    expect(reglasDe(sinMarca)).toContain('5:Armar mensajes::aviso');
   });
 
   it('regla 5: «aquí tienes el QR» exige una imagen con respaldo; «toca el botón» exige un nodo con cta_url', () => {

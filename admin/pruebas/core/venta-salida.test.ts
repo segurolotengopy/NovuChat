@@ -94,7 +94,7 @@ describe('(1) Un embudo único de salida al cliente', () => {
       || (n.type === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(n.parameters['url'] ?? ''))
         && String(n.parameters['url']).endsWith('/messages')))
       .map((n) => n.name).sort();
-    expect(envian).toEqual(['Avisar al dueño', 'Enviar QR de cobro', 'Responder al cliente', 'Responder con botón']);
+    expect(envian).toEqual(['Avisar al dueño', 'Avisar al dueño (transferencia)', 'Enviar QR de cobro', 'Responder al cliente', 'Responder con botón']);
     // «Enviar QR de cobro» queda fuera del embudo: es la imagen con su pie.
     expect(entradas(f, 'Enviar QR de cobro').sort()).toEqual(['Preparar QR de cobro', 'Preparar reenvío del QR']);
   });
@@ -121,8 +121,9 @@ describe('(1) Un embudo único de salida al cliente', () => {
     expect(y('¿Responder ahora?')).toBeLessThan(y('¿Transferir al dueño?'));
     expect(y('Mensaje a enviar')).toBeLessThan(y('¿Transferir al dueño?'));
     expect(destinos(f, '¿Transferir al dueño?', 0)).toEqual(['Aviso de transferencia']);
-    expect(destinos(f, 'Aviso de transferencia')).toEqual(['Avisar al dueño']);
-    expect(destinos(f, 'Avisar al dueño')).toEqual(['Marcar aviso de transferencia']);
+    expect(destinos(f, 'Aviso de transferencia')).toEqual(['Avisar al dueño (transferencia)']);
+    expect(destinos(f, 'Avisar al dueño (transferencia)')).toEqual(['Marcar aviso de transferencia']);
+    expect(destinos(f, 'Avisar al dueño')).toEqual(['Verificar aviso al dueño']);
     // El aviso del pedido (más arriba) llega al envío ANTES que el de la transferencia.
     expect(y('¿Pedido confirmado?')).toBeLessThan(y('¿Transferir al dueño?'));
   });
@@ -174,7 +175,9 @@ describe('(2) [TRANSFERIR]: un mensaje con botón y un aviso al dueño por venta
 
   it('solo la marca: el texto fijo remite al botón', () => {
     const p = turno({ output: '[TRANSFERIR]' });
-    expect(p['respuesta']).toBe('Le aviso a Un Negocio para que te atienda una persona. Si prefieres no esperar, toca el botón y escríbele directo.');
+    // El aviso todavía no se intentó: el texto NO lo anuncia (R4), solo el botón.
+    expect(p['respuesta']).toBe('Para que te atienda una persona de Un Negocio, toca el botón y escríbele directo.');
+    expect(p['respuesta']).not.toMatch(/avis/i);
     expect(p['avisos']).not.toContain('respuesta_vacia');
     expect(enviar(p)['conBoton']).toBe(true);
   });
@@ -216,24 +219,25 @@ describe('(2) [TRANSFERIR]: un mensaje con botón y un aviso al dueño por venta
     expect(sd['avisosTransferencia'][CLIENTE]).toBe(ahora.t);
   });
 
-  it('el aviso del pedido, que llega antes, no cierra la ventana de la transferencia', () => {
-    const sd: J = {};
-    const ahora = { t: 1_800_000_000_000 };
-    // `Aviso de transferencia` todavía no corrió: el envío del pedido pasa de largo.
-    ejecutar(codigoDe(f, 'Marcar aviso de transferencia'), [{ messages: [{ id: 'wamid.PEDIDO' }] }], {},
-      { $getWorkflowStaticData: () => sd, Date: reloj(ahora) });
-    expect(sd['avisosTransferencia']).toBeUndefined();
+  it('el aviso del pedido, que sale por OTRO envío, no cierra la ventana de la transferencia', () => {
+    // Desde el 03/10 el pedido, el QR no enviado, el cobro y el uso extendido salen por «Avisar al dueño», y
+    // solo la transferencia por «Avisar al dueño (transferencia)», que es la única que alimenta a «Marcar».
+    expect(entradas(f, 'Marcar aviso de transferencia')).toEqual(['Avisar al dueño (transferencia)']);
+    expect(entradas(f, 'Verificar aviso al dueño')).toEqual(['Avisar al dueño']);
+    expect(entradas(f, 'Avisar al dueño (transferencia)')).toEqual(['Aviso de transferencia']);
+    expect(entradas(f, 'Aviso de transferencia')).toEqual(['¿Transferir al dueño?']);
   });
 
   it('el texto fijo de «solo la marca» dice lo que ese turno cumple', () => {
     const sd: J = {};
     const ahora = { t: 1_800_000_000_000 };
     const primero = turno({ output: '[TRANSFERIR]' }, {}, sd, ahora);
-    expect(primero['respuesta']).toMatch(/^Le aviso a Un Negocio/);
+    expect(primero['respuesta']).toBe('Para que te atienda una persona de Un Negocio, toca el botón y escríbele directo.');
     marcar(sd, ahora, primero);
     const repetido = turno({ output: '[TRANSFERIR]' }, {}, sd, ahora);
     expect(repetido['respuesta']).toBe('Ya le avisé a Un Negocio; si prefieres no esperar, toca el botón y escríbele directo.');
     expect(repetido['respuesta']).not.toMatch(/^Le aviso/);
+    // «Ya le avisé» solo sale con la ventana marcada, y la marca exige el id de Meta.
     const dueno = turno({ output: '[TRANSFERIR]' }, { from: DUENO });
     expect(dueno['respuesta']).toBe('Para hablar con una persona de Un Negocio, toca el botón y escríbele directo.');
     expect(dueno['respuesta']).not.toMatch(/avis/i);
@@ -542,7 +546,7 @@ describe('(6b) Meta rechaza el QR: el cliente no queda en silencio (03/10/2026, 
     expect(p['enviarQr']).toBe(true);
     expect(p['textoEnElQr']).toBe(true);
     expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name).sort())
-      .toEqual(['Avisar al dueño', 'Obtener URL del medio', 'Obtener URL del medio (general)', 'Responder al cliente'].sort());
+      .toEqual(['Avisar al dueño', 'Avisar al dueño (transferencia)', 'Obtener URL del medio', 'Obtener URL del medio (general)', 'Responder al cliente'].sort());
   });
 
   it('con el pie REAL de los preparadores (simulado, real y reenvío) no se piden cosas imposibles ni hay voseo', () => {
@@ -692,11 +696,17 @@ describe('(7) El prompt: solo promete pasar con una persona si hay a quién', ()
     expect(con).not.toContain('«le avisas»');
     expect(sin).toContain('no le prometes al cliente que alguien le escribirá');
     expect(sin).not.toContain('Si transfieres');
-    for (const o of ['Ya le avisé al negocio, así que puedes tocar el botón para escribirle directo.',
-      'Puedes tocar el botón para escribirle directo al negocio.']) {
+    for (const o of ['Puedes tocar el botón para escribirle directo al negocio.']) {
       const p = turno({ output: o + ' [TRANSFERIR]' });
       expect(p['respuesta'], o).toBe(o);
       expect(p['avisos']).not.toContain('promesa_quitada');
+    }
+    // «Ya le avisé» / «le aviso» en el MISMO turno del aviso es una promesa sin respaldo (R4): se quita.
+    for (const o of ['Ya le avisé al negocio, así que puedes tocar el botón para escribirle directo.',
+      'Le aviso al negocio ahora mismo. Puedes tocar el botón.', 'Ya avisé a recepción. Toca el botón.']) {
+      const p = turno({ output: o + ' [TRANSFERIR]' });
+      expect(p['avisos'], o).toContain('aviso_anunciado_quitado');
+      expect(String(p['respuesta']), o).not.toMatch(/avis/i);
     }
     // Y la promesa de verdad sí se quita.
     expect(turno({ output: 'Hola. Mañana te avisaré cuando esté. [TRANSFERIR]' })['avisos']).toContain('promesa_quitada');

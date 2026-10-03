@@ -217,7 +217,8 @@ describe('CUÁNTOS MENSAJES CUESTA: exactamente los mismos que antes', () => {
     const deWhatsApp = f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp');
     const aClientes = deWhatsApp.filter((n) => n.parameters['operation'] === 'send')
       .map((n) => n.name).sort();
-    expect(aClientes).toEqual(['Avisar al dueño', 'Responder al cliente']);
+    // El aviso por transferencia tiene su propio envío desde el 03/10 (PR-4): se verifica por separado.
+    expect(aClientes).toEqual(['Avisar al dueño', 'Avisar al dueño (transferencia)', 'Responder al cliente']);
     // Desde el 28/09 hay un cuarto, gemelo del anterior: «Obtener URL del medio
     // (general)», de la rama de medios entrantes. Tampoco manda nada.
     expect(deWhatsApp.filter((n) => n.parameters['operation'] !== 'send').map((n) => n.name).sort())
