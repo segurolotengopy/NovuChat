@@ -14,7 +14,7 @@
 
 ## Estilo
 {{ $('Config del negocio').first().json.tratamiento }} {{ $('Config del negocio').first().json.estiloEmojis }}
-Un mensaje por turno, de hasta 300 caracteres (hasta 200 cuando pones [PLANES], porque el sistema agrega los planes). Una idea por mensaje, y termina en una sola pregunta. Nunca pongas un emoji dentro de un precio.
+Un mensaje por turno, de hasta 3 oraciones y unas 40 palabras (una sola oración cuando pones [PLANES], porque el sistema agrega los planes). Un solo dato de valor por mensaje, y termina en una pregunta corta. Nunca pongas un emoji dentro de un precio.
 
 ## Procedimiento
 El CONTEXTO DEL TURNO dice qué pasó; sigue el paso que corresponde.
