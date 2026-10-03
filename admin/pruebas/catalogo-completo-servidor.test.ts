@@ -1,0 +1,522 @@
+/**
+ * `configuracionFlujo` Y LA BANDERA `catalogoCompleto`, contra el emulador.
+ *
+ * POR QUÉ EXISTE (Q'Taco, 03/10/2026). Con el catálogo web ENCENDIDO y más de
+ * `UMBRAL_CATALOGO_AL_PROMPT` ítems, la Function manda `catalogo: []` y un
+ * resumen: el Demo B lo quiere así, porque su pedido entra por la página y el
+ * agente solo recibe el resumen. «Venta mínima v0» necesita lo contrario: la
+ * carta COMPLETA (calcula el total del pedido en código) Y la página. Si no
+ * recibe la carta, deriva todo pedido sin carta. Q'Taco tiene 78 ítems.
+ *
+ * La solución es una bandera en el cuerpo de la petición que el flujo ya
+ * manda: `catalogoCompleto: true`. Esta suite fija, NEGANDO, lo que la bandera
+ * NO puede hacer:
+ *   - cambiar nada para quien no la manda (el Demo B conserva su resumen);
+ *   - valer como texto («true»), número ni ninguna otra cosa que `true`;
+ *   - valer fuera del flujo `venta` de la ruta;
+ *   - abrir la carta de un comercio suspendido o ajeno;
+ *   - mover al comercio: el `tenantId` sale de la ruta autenticada, jamás del
+ *     cuerpo.
+ *
+ * Va en su propio archivo y no en `demo-b-catalogo.test.ts` porque necesita el
+ * emulador, y esa suite está en el proyecto `puras` (sin Firestore). Los casos
+ * puros de la bandera (el Demo B no la manda) sí están en
+ * `demo-b-catalogo.test.ts`.
+ *
+ * Emulador, con puerto propio:
+ *   FIRESTORE_EMULATOR_PORT=8761 FIRESTORE_EMULATOR_WS_PORT=9761 \
+ *     bash pruebas/correr.sh --project emulador pruebas/catalogo-completo-servidor.test.ts
+ */
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+const PROYECTO = 'demo-novuchat-pruebas';
+process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
+process.env['GCLOUD_PROJECT'] = PROYECTO;
+const TOKEN = 'valor-de-prueba-del-catalogo-completo';
+process.env['INGESTA_CLIENTE16'] = TOKEN;
+
+const { initializeApp, getApps } = await import('firebase-admin/app');
+if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
+const { getFirestore, Timestamp, FieldValue } = await import('firebase-admin/firestore');
+// `firebase-functions` vive en `functions/node_modules`: se importa el mismo
+// objeto `logger` que usa `ingesta.ts`, no una copia.
+const { createRequire } = await import('node:module');
+const { logger } = createRequire(new URL('../functions/package.json', import.meta.url))(
+  'firebase-functions') as { logger: Record<'info' | 'warn' | 'error', (...a: unknown[]) => void> };
+const db = getFirestore();
+const { configuracionFlujo } = await import('../functions/src/ingesta.ts');
+const { UMBRAL_CATALOGO_AL_PROMPT } = await import('../functions/src/core/prompt/prompt.ts');
+const { limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
+
+/** Un comercio de venta con el catálogo web encendido y 41 ítems (> umbral). */
+const T_VENTA = 'cc-venta';
+/** Otro comercio, con ítems de nombre distinto: no debe aparecer jamás. */
+const T_AJENO = 'cc-ajeno';
+/** Venta, 41 ítems, catálogo web APAGADO. */
+const T_SIN_WEB = 'cc-sin-web';
+/** Ruta de otro flujo (agendamiento), 41 ítems, catálogo web encendido. */
+const T_AGENDA = 'cc-agenda';
+/** Venta con catálogo web y 41 ítems, pero suspendido. */
+const T_SUSP = 'cc-suspendido';
+/** Venta con catálogo web y 10 ítems (por debajo del umbral). */
+const T_CHICO = 'cc-chico';
+
+/** Venta con catálogo web y 3 ítems activos SIN precio («a consultar»). */
+const T_SIN_PRECIO = 'cc-sin-precio';
+
+const NUMEROS: Record<string, string> = {
+  [T_VENTA]: '1000000201', [T_AJENO]: '1000000202', [T_SIN_WEB]: '1000000203',
+  [T_AGENDA]: '1000000204', [T_SUSP]: '1000000205', [T_CHICO]: '1000000206',
+  [T_SIN_PRECIO]: '1000000207',
+};
+
+const ITEMS = UMBRAL_CATALOGO_AL_PROMPT + 1;
+
+interface Respuesta { codigo: number; cuerpo: Record<string, unknown> }
+
+async function configuracion(tenant: string, cuerpo: unknown = {}): Promise<Respuesta> {
+  const cabeceras: Record<string, string> = {
+    'x-novuchat-numero': NUMEROS[tenant]!, authorization: `Bearer ${TOKEN}`,
+    'content-type': 'application/json',
+  };
+  const leer = (n: string) => cabeceras[n.toLowerCase()];
+  const peticion = {
+    method: 'POST', body: cuerpo, rawBody: Buffer.from(JSON.stringify(cuerpo)),
+    headers: cabeceras, get: leer, header: leer,
+  };
+  const r: Respuesta = { codigo: 0, cuerpo: {} };
+  const respuesta = {
+    status(c: number) { r.codigo = c; return respuesta; },
+    send(b: unknown) { r.cuerpo = { texto: b }; return respuesta; },
+    json(b: unknown) { r.cuerpo = b as Record<string, unknown>; return respuesta; },
+    setHeader() { return respuesta; },
+    getHeader() { return undefined; },
+    set() { return respuesta; },
+    on() { return respuesta; },
+    end() { return respuesta; },
+  };
+  await (configuracionFlujo as unknown as (q: unknown, s: unknown) => Promise<void>)(peticion, respuesta);
+  return r;
+}
+
+const catalogoDe = (r: Respuesta) => r.cuerpo['catalogo'] as Record<string, unknown>[];
+
+async function sembrar(
+  tenant: string,
+  o: { flujo: string; web: boolean; items: number; estado?: string; prefijo?: string },
+) {
+  await db.doc(`rutasWhatsApp/${NUMEROS[tenant]}`).set({
+    tenantId: tenant, flujo: o.flujo, aliasSecreto: 'cliente16', estado: 'activo',
+  });
+  await db.doc(`tenants/${tenant}`).set({
+    nombre: tenant, estado: o.estado ?? 'activo', plan: 'crecimiento', flujos: [o.flujo],
+  });
+  await db.doc(`tenants/${tenant}/cuenta/estado`).set({
+    plan: 'crecimiento', limites: limitesDe('crecimiento'), modalidad: 'demostracion',
+  });
+  await db.doc(`tenants/${tenant}/config/negocio`).set({
+    nombreNegocio: tenant, numeroRecepcion: '70000001', catalogoWebActivo: o.web,
+  });
+  const prefijo = o.prefijo ?? 'Taco';
+  for (let i = 0; i < o.items; i++) {
+    await db.doc(`tenants/${tenant}/catalogo/i${String(i).padStart(3, '0')}`).set({
+      nombre: `${prefijo} ${i}`, area: i % 2 ? 'tacos' : 'bebidas', precio: 10 + i,
+      moneda: 'BOB', activo: true,
+    });
+  }
+}
+
+beforeAll(async () => {
+  await sembrar(T_VENTA, { flujo: 'venta', web: true, items: ITEMS });
+  await sembrar(T_AJENO, { flujo: 'venta', web: true, items: ITEMS, prefijo: 'AJENO' });
+  await sembrar(T_SIN_WEB, { flujo: 'venta', web: false, items: ITEMS });
+  await sembrar(T_AGENDA, { flujo: 'agendamiento', web: true, items: ITEMS });
+  await sembrar(T_SUSP, { flujo: 'venta', web: true, items: ITEMS, estado: 'suspendido' });
+  await sembrar(T_CHICO, { flujo: 'venta', web: true, items: 10 });
+  await sembrar(T_SIN_PRECIO, { flujo: 'venta', web: true, items: 3 });
+  for (let i = 0; i < 3; i++) {
+    await db.doc(`tenants/${T_SIN_PRECIO}/catalogo/i${String(i).padStart(3, '0')}`).update({
+      precio: FieldValue.delete(),
+    });
+  }
+}, 120_000);
+
+afterAll(async () => {
+  for (const t of Object.keys(NUMEROS)) {
+    await db.recursiveDelete(db.doc(`tenants/${t}`));
+    await db.doc(`rutasWhatsApp/${NUMEROS[t]}`).delete();
+    for (const f of (await db.collection('fichasCatalogo').where('tenantId', '==', t).get()).docs) {
+      await f.ref.delete();
+    }
+  }
+});
+
+describe('Sin la bandera, todo queda como estaba (el Demo B conserva su resumen)', () => {
+  it('con el catálogo web encendido y más de 40 ítems: `catalogo` vacío, resumen y `derivar: true`', async () => {
+    const r = await configuracion(T_VENTA, { telefono: '59170000001' });
+    expect(r.codigo).toBe(200);
+    expect(catalogoDe(r)).toEqual([]);
+    expect(r.cuerpo['catalogoWeb']).toEqual({ activo: true, derivar: true });
+    expect(r.cuerpo['catalogoResumen']).toBeTruthy();
+  });
+
+  it('`catalogoCompleto: false` o ausente es lo mismo que no mandarla', async () => {
+    for (const cuerpo of [{}, { catalogoCompleto: false }, { catalogoCompleto: null }]) {
+      const r = await configuracion(T_VENTA, cuerpo);
+      expect(catalogoDe(r)).toEqual([]);
+      expect(r.cuerpo['catalogoWeb']).toEqual({ activo: true, derivar: true });
+    }
+  });
+});
+
+describe('Con `catalogoCompleto: true` (booleano) el flujo `venta` recibe la carta entera', () => {
+  it('41 ítems, con su id, y `catalogoWeb: { activo: true, derivar: false }`; sin resumen', async () => {
+    const r = await configuracion(T_VENTA, { telefono: '59170000001', catalogoCompleto: true });
+    expect(r.codigo).toBe(200);
+    expect(catalogoDe(r)).toHaveLength(ITEMS);
+    expect(catalogoDe(r).every((i) => typeof i['id'] === 'string' && i['id'] !== '')).toBe(true);
+    // Sin teléfono en la petición no hay enlace (se prueba más abajo); acá sí
+    // hay teléfono, así que a las dos claves se suman el enlace y su vencimiento.
+    expect(r.cuerpo['catalogoWeb']).toMatchObject({ activo: true, derivar: false });
+    expect(r.cuerpo['catalogoResumen']).toBeUndefined();
+  });
+
+  it('el umbral no cambió: el catálogo chico sigue completo, con o sin bandera', async () => {
+    for (const cuerpo of [{}, { catalogoCompleto: true }]) {
+      const r = await configuracion(T_CHICO, cuerpo);
+      expect(catalogoDe(r)).toHaveLength(10);
+      expect(r.cuerpo['catalogoWeb']).toEqual({ activo: true, derivar: false });
+    }
+  });
+});
+
+describe('La bandera es booleana estricta', () => {
+  it.each([
+    ['el texto «true»', 'true'], ['el texto «TRUE»', 'TRUE'], ['el número 1', 1],
+    ['un objeto', { valor: true }], ['una lista', [true]], ['el texto «1»', '1'],
+  ])('%s no vale: `catalogo` sigue vacío y se deriva', async (_nombre, valor) => {
+    const r = await configuracion(T_VENTA, { catalogoCompleto: valor });
+    expect(r.codigo).toBe(200);
+    expect(catalogoDe(r)).toEqual([]);
+    expect(r.cuerpo['catalogoWeb']).toEqual({ activo: true, derivar: true });
+  });
+});
+
+describe('La bandera no cambia nada fuera del caso para el que existe', () => {
+  it('sin catálogo web: la carta completa viaja con o sin bandera, y no aparece `catalogoWeb`', async () => {
+    for (const cuerpo of [{}, { catalogoCompleto: true }]) {
+      const r = await configuracion(T_SIN_WEB, cuerpo);
+      expect(catalogoDe(r)).toHaveLength(ITEMS);
+      expect(r.cuerpo['catalogoWeb']).toBeUndefined();
+    }
+  });
+
+  it('en una ruta que NO es `venta` la bandera se ignora: sigue el resumen', async () => {
+    const r = await configuracion(T_AGENDA, { catalogoCompleto: true });
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo['flujo']).toBe('agendamiento');
+    expect(catalogoDe(r)).toEqual([]);
+    expect(r.cuerpo['catalogoWeb']).toEqual({ activo: true, derivar: true });
+  });
+
+  it('un comercio suspendido sigue dando 409, con la bandera y sin ella, y sin carta', async () => {
+    for (const cuerpo of [{}, { catalogoCompleto: true }]) {
+      const r = await configuracion(T_SUSP, cuerpo);
+      expect(r.codigo).toBe(409);
+      expect(r.cuerpo['estado']).toBe('suspendido');
+      expect(r.cuerpo['catalogo']).toBeUndefined();
+      expect(r.cuerpo['tenantId']).toBeUndefined();
+    }
+  });
+});
+
+describe('El comercio sale de la ruta autenticada, nunca del cuerpo', () => {
+  it('un `tenantId` en el cuerpo se ignora: la carta es la de la ruta y no se cuela la ajena', async () => {
+    const r = await configuracion(T_VENTA, {
+      catalogoCompleto: true, tenantId: T_AJENO, flujo: 'agendamiento', tenant: T_AJENO,
+    });
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo['tenantId']).toBe(T_VENTA);
+    expect(r.cuerpo['flujo']).toBe('venta');
+    expect(catalogoDe(r)).toHaveLength(ITEMS);
+    expect(JSON.stringify(r.cuerpo)).not.toContain('AJENO');
+  });
+
+  it('un `tenantId` ajeno sin bandera tampoco mueve nada', async () => {
+    const r = await configuracion(T_VENTA, { tenantId: T_AJENO });
+    expect(r.cuerpo['tenantId']).toBe(T_VENTA);
+    expect(catalogoDe(r)).toEqual([]);
+    expect(JSON.stringify(r.cuerpo)).not.toContain('AJENO');
+  });
+
+  it('el comercio ajeno, con su propia ruta, recibe SU carta y no la de otro', async () => {
+    const r = await configuracion(T_AJENO, { catalogoCompleto: true, tenantId: T_VENTA });
+    expect(r.cuerpo['tenantId']).toBe(T_AJENO);
+    expect(catalogoDe(r).every((i) => String(i['nombre']).startsWith('AJENO'))).toBe(true);
+  });
+});
+
+// =============================================================================
+// EL ENLACE DE LA CARTA EN LA MISMA RESPUESTA (`catalogoWeb.enlace`)
+//
+// «Venta mínima v0» no agrega un nodo HTTP: el enlace de ESA conversación viaja
+// en la respuesta de `configuracionFlujo`, con la misma bandera. Es una
+// capacidad (quien lo tiene arma un carrito en esa conversación), así que lo
+// que se defiende acá es: ni una ficha de más, ni un enlace para quien no lo
+// pidió, ni uno compartido entre dos conversaciones, ni uno en un registro.
+// =============================================================================
+const FORMA_ENLACE = /^https:\/\/[^/]+\/c\/[0-9a-f]{32}$/;
+const fichasDe = async (tenant: string, telefono?: string) => {
+  const q = await db.collection('fichasCatalogo').where('tenantId', '==', tenant).get();
+  // El puntero `ult_…` no es una ficha: se cuentan solo las de 32 hexadecimales.
+  return q.docs.filter((d) => /^[0-9a-f]{32}$/.test(d.id)
+    && (telefono === undefined || d.get('telefono') === telefono));
+};
+const enlaceDe = (r: Respuesta) =>
+  (r.cuerpo['catalogoWeb'] as Record<string, unknown> | undefined)?.['enlace'] as string | undefined;
+const idDeFicha = (url: string) => url.slice(url.lastIndexOf('/') + 1);
+const bitacoraDe = async (tenant: string) =>
+  (await db.collection(`tenants/${tenant}/bitacora`).get()).docs.map((d) => d.data());
+
+describe('Con la bandera, `catalogoWeb.enlace` es el de ESTA conversación', () => {
+  const TEL = '70010001';
+
+  it('trae la URL con una ficha de 128 bits, su vencimiento a 72 h y la carta completa', async () => {
+    const antes = Date.now();
+    const r = await configuracion(T_VENTA, { telefono: TEL, catalogoCompleto: true });
+    const url = enlaceDe(r);
+    expect(url).toMatch(FORMA_ENLACE);
+    const web = r.cuerpo['catalogoWeb'] as Record<string, unknown>;
+    expect(web['activo']).toBe(true);
+    expect(web['derivar']).toBe(false);
+    const vence = Date.parse(String(web['enlaceCaducaEn']));
+    expect(vence - antes).toBeGreaterThan(71.9 * 3_600_000);
+    expect(vence - antes).toBeLessThan(72.1 * 3_600_000);
+    expect(catalogoDe(r)).toHaveLength(ITEMS);
+    // La ficha es de ESTE comercio y de ESTE teléfono, con el número de la ruta.
+    const ficha = await db.doc(`fichasCatalogo/${idDeFicha(url!)}`).get();
+    expect(ficha.get('tenantId')).toBe(T_VENTA);
+    expect(ficha.get('telefono')).toBe(TEL);
+    expect(ficha.get('phoneNumberId')).toBe(NUMEROS[T_VENTA]);
+    expect(ficha.get('flujo')).toBe('venta');
+    expect(ficha.get('checkouts')).toBe(0);
+  });
+
+  it('tres turnos de la misma conversación: el MISMO enlace y UNA sola ficha', async () => {
+    const tel = '70010002';
+    const antes = (await fichasDe(T_VENTA)).length;
+    const bitacoraAntes = (await bitacoraDe(T_VENTA)).filter((b) => b['tipo'] === 'catalogo_enlace').length;
+    const a = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }));
+    const b = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }));
+    const c = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }));
+    expect(a).toMatch(FORMA_ENLACE);
+    expect(b).toBe(a);
+    expect(c).toBe(a);
+    expect(await fichasDe(T_VENTA, tel)).toHaveLength(1);
+    expect((await fichasDe(T_VENTA)).length).toBe(antes + 1);
+    // Y un solo renglón de bitácora: se anota la ficha que se abre, no el reuso.
+    const bitacoraDespues = (await bitacoraDe(T_VENTA)).filter((x) => x['tipo'] === 'catalogo_enlace').length;
+    expect(bitacoraDespues).toBe(bitacoraAntes + 1);
+  });
+
+  it('diez turnos SIMULTÁNEOS tampoco abren diez fichas', async () => {
+    const tel = '70010003';
+    const rs = await Promise.all(Array.from({ length: 10 },
+      () => configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true })));
+    expect(new Set(rs.map(enlaceDe)).size).toBe(1);
+    expect(await fichasDe(T_VENTA, tel)).toHaveLength(1);
+  });
+
+  it('dos conversaciones distintas NUNCA comparten enlace ni ficha', async () => {
+    const a = enlaceDe(await configuracion(T_VENTA, { telefono: '70010004', catalogoCompleto: true }));
+    const b = enlaceDe(await configuracion(T_VENTA, { telefono: '70010005', catalogoCompleto: true }));
+    expect(a).toMatch(FORMA_ENLACE);
+    expect(b).toMatch(FORMA_ENLACE);
+    expect(a).not.toBe(b);
+    const fa = await db.doc(`fichasCatalogo/${idDeFicha(a!)}`).get();
+    const fb = await db.doc(`fichasCatalogo/${idDeFicha(b!)}`).get();
+    expect(fa.get('telefono')).toBe('70010004');
+    expect(fb.get('telefono')).toBe('70010005');
+  });
+
+  it('el mismo teléfono en dos comercios distintos: dos enlaces, cada uno a su comercio', async () => {
+    const tel = '70010006';
+    const a = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }));
+    const b = enlaceDe(await configuracion(T_AJENO, { telefono: tel, catalogoCompleto: true }));
+    expect(a).not.toBe(b);
+    expect((await db.doc(`fichasCatalogo/${idDeFicha(a!)}`).get()).get('tenantId')).toBe(T_VENTA);
+    expect((await db.doc(`fichasCatalogo/${idDeFicha(b!)}`).get()).get('tenantId')).toBe(T_AJENO);
+  });
+
+  it('una ficha por vencer, o con los cinco carritos usados, se reemplaza; una vigente no', async () => {
+    const tel = '70010007';
+    const a = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+    // A cinco horas de vencer: ya no se le puede dar a alguien que empieza.
+    await db.doc(`fichasCatalogo/${idDeFicha(a)}`).update({
+      caducaEn: Timestamp.fromMillis(Date.now() + 5 * 3_600_000),
+    });
+    const b = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+    expect(b).not.toBe(a);
+    // Con los cinco carritos usados.
+    await db.doc(`fichasCatalogo/${idDeFicha(b)}`).update({ checkouts: 5 });
+    const c = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+    expect(c).not.toBe(b);
+    // Y la nueva, intacta, se reutiliza.
+    expect(enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))).toBe(c);
+  });
+
+  it('sin teléfono no hay conversación a la que atar un enlace: no sale, y la carta sí', async () => {
+    const antes = (await fichasDe(T_VENTA)).length;
+    const r = await configuracion(T_VENTA, { catalogoCompleto: true });
+    expect(enlaceDe(r)).toBeUndefined();
+    expect(r.cuerpo['catalogoWeb']).toEqual({ activo: true, derivar: false });
+    expect(catalogoDe(r)).toHaveLength(ITEMS);
+    expect((await fichasDe(T_VENTA)).length).toBe(antes);
+  });
+});
+
+describe('Sin la bandera, o con la bandera mal escrita, no sale enlace ni se abre una ficha', () => {
+  it.each([
+    ['sin bandera', {}],
+    ['`false`', { catalogoCompleto: false }],
+    ['el texto «true»', { catalogoCompleto: 'true' }],
+    ['el número 1', { catalogoCompleto: 1 }],
+  ])('%s', async (_nombre, extra) => {
+    const tel = '70020001';
+    const r = await configuracion(T_VENTA, { telefono: tel, ...extra });
+    expect(r.codigo).toBe(200);
+    expect(enlaceDe(r)).toBeUndefined();
+    expect(r.cuerpo['catalogoWeb']).toEqual({ activo: true, derivar: true });
+    expect(await fichasDe(T_VENTA, tel)).toHaveLength(0);
+  });
+});
+
+describe('Los límites del enlace: sin catálogo web, suspendido o de otro flujo, nada', () => {
+  const TEL = '70030001';
+
+  it('el comercio sin catálogo web: sin enlace, sin `catalogoWeb` y sin ficha', async () => {
+    const r = await configuracion(T_SIN_WEB, { telefono: TEL, catalogoCompleto: true });
+    expect(r.codigo).toBe(200);
+    expect(enlaceDe(r)).toBeUndefined();
+    expect(r.cuerpo['catalogoWeb']).toBeUndefined();
+    expect(await fichasDe(T_SIN_WEB)).toHaveLength(0);
+  });
+
+  it('el comercio suspendido: 409, sin enlace en la respuesta y sin ficha', async () => {
+    const r = await configuracion(T_SUSP, { telefono: TEL, catalogoCompleto: true });
+    expect(r.codigo).toBe(409);
+    expect(JSON.stringify(r.cuerpo)).not.toMatch(/\/c\/[0-9a-f]{32}/);
+    expect(await fichasDe(T_SUSP)).toHaveLength(0);
+  });
+
+  it('una ruta que no es `venta`: la bandera no abre ninguna ficha', async () => {
+    const r = await configuracion(T_AGENDA, { telefono: TEL, catalogoCompleto: true });
+    expect(r.codigo).toBe(200);
+    expect(enlaceDe(r)).toBeUndefined();
+    expect(await fichasDe(T_AGENDA)).toHaveLength(0);
+  });
+
+  it('un comercio con ítems pero NINGUNO con precio: sin enlace (una vitrina vacía no se ofrece)', async () => {
+    const r = await configuracion(T_SIN_PRECIO, { telefono: TEL, catalogoCompleto: true });
+    expect(r.codigo).toBe(200);
+    expect(enlaceDe(r)).toBeUndefined();
+    expect(catalogoDe(r)).toHaveLength(3);
+    expect(await fichasDe(T_SIN_PRECIO)).toHaveLength(0);
+  });
+
+  it('un comercio que perdió el flujo `venta` en su ficha: sin enlace', async () => {
+    await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['agendamiento'] });
+    try {
+      const r = await configuracion(T_CHICO, { telefono: TEL, catalogoCompleto: true });
+      expect(r.codigo).toBe(200);
+      expect(enlaceDe(r)).toBeUndefined();
+      expect(await fichasDe(T_CHICO)).toHaveLength(0);
+    } finally { await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['venta'] }); }
+  });
+});
+
+describe('Si la ficha no se puede crear, el turno sigue sin enlace', () => {
+  it('un error de Firestore al abrirla: 200, carta completa, sin `enlace`', async () => {
+    const tel = '70040001';
+    const espia = vi.spyOn(db, 'runTransaction').mockRejectedValueOnce(new Error('caido'));
+    try {
+      const r = await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true });
+      expect(r.codigo).toBe(200);
+      expect(enlaceDe(r)).toBeUndefined();
+      expect(r.cuerpo['catalogoWeb']).toEqual({ activo: true, derivar: false });
+      expect(catalogoDe(r)).toHaveLength(ITEMS);
+      expect(espia).toHaveBeenCalledTimes(1);
+    } finally { espia.mockRestore(); }
+    // Y al turno siguiente, ya sin la falla, el enlace sale.
+    expect(enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true })))
+      .toMatch(FORMA_ENLACE);
+  });
+});
+
+describe('El enlace es una capacidad: nunca en un registro, y solo para la ruta autenticada', () => {
+  it('ni los registros del servidor ni la bitácora llevan la ficha entera: solo sus últimos 4', async () => {
+    const tel = '70050001';
+    const salidas: string[] = [];
+    const captura = (...a: unknown[]) => { salidas.push(JSON.stringify(a)); };
+    const e1 = vi.spyOn(logger, 'info').mockImplementation(captura as never);
+    const e2 = vi.spyOn(logger, 'warn').mockImplementation(captura as never);
+    const e3 = vi.spyOn(logger, 'error').mockImplementation(captura as never);
+    let url: string | undefined;
+    try {
+      url = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }));
+      await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true });
+    } finally { e1.mockRestore(); e2.mockRestore(); e3.mockRestore(); }
+    expect(url).toMatch(FORMA_ENLACE);
+    const id = idDeFicha(url!);
+    const todo = salidas.join('\n');
+    expect(todo).toContain('configuracionFlujo: turno servido');
+    expect(todo).not.toContain(id);
+    expect(todo).not.toContain(url!);
+    expect(todo).toContain(`"catalogoEnlaceUlt4":"${id.slice(-4)}"`);
+    expect(todo).toContain('"catalogoEnlace":"reutilizado"');
+    expect(JSON.stringify(await bitacoraDe(T_VENTA))).not.toContain(id);
+  });
+
+  it('sin autenticación: 401, sin cuerpo y ni una ficha', async () => {
+    const antes = (await fichasDe(T_VENTA)).length;
+    const cabeceras: Record<string, string> = {
+      'x-novuchat-numero': NUMEROS[T_VENTA]!, authorization: 'Bearer otro-valor',
+    };
+    const leer = (n: string) => cabeceras[n.toLowerCase()];
+    const cuerpo = { telefono: '70050002', catalogoCompleto: true };
+    let codigo = 0;
+    let json: unknown;
+    const respuesta = {
+      status(c: number) { codigo = c; return respuesta; },
+      send() { return respuesta; }, json(b: unknown) { json = b; return respuesta; },
+      setHeader() { return respuesta; }, set() { return respuesta; }, end() { return respuesta; },
+      on() { return respuesta; }, getHeader() { return undefined; },
+    };
+    await (configuracionFlujo as unknown as (q: unknown, s: unknown) => Promise<void>)({
+      method: 'POST', body: cuerpo, rawBody: Buffer.from(JSON.stringify(cuerpo)),
+      headers: cabeceras, get: leer, header: leer,
+    }, respuesta);
+    expect(codigo).toBe(401);
+    expect(json).toBeUndefined();
+    expect((await fichasDe(T_VENTA)).length).toBe(antes);
+  });
+
+  it('un `tenantId` en el cuerpo se ignora: la ficha es de la ruta y el comercio ajeno no suma ninguna', async () => {
+    const tel = '70050003';
+    const antesAjeno = (await fichasDe(T_AJENO)).length;
+    const r = await configuracion(T_VENTA, {
+      telefono: tel, catalogoCompleto: true, tenantId: T_AJENO, tenant: T_AJENO,
+    });
+    const url = enlaceDe(r)!;
+    expect(url).toMatch(FORMA_ENLACE);
+    expect((await db.doc(`fichasCatalogo/${idDeFicha(url)}`).get()).get('tenantId')).toBe(T_VENTA);
+    expect((await fichasDe(T_AJENO)).length).toBe(antesAjeno);
+  });
+
+  it('la página no abre el puntero: su identificador no tiene forma de ficha', async () => {
+    const punteros = (await db.collection('fichasCatalogo').where('tenantId', '==', T_VENTA).get())
+      .docs.filter((d) => d.id.startsWith('ult_'));
+    expect(punteros.length).toBeGreaterThan(0);
+    for (const p of punteros) expect(p.id).not.toMatch(/^[0-9a-f]{32}$/);
+  });
+});

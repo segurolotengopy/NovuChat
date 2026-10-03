@@ -329,6 +329,145 @@ async function fichaVigente(id: string): Promise<Ficha | null> {
 }
 
 // ---------------------------------------------------------------------------
+// LA FICHA DE UNA CONVERSACIÓN: crearla, o devolver la que ya sirve
+// ---------------------------------------------------------------------------
+
+/**
+ * Cuánto tiene que quedarle de vida a una ficha para que se la vuelva a dar a
+ * la misma conversación: seis horas. Una ficha que vence en diez minutos no es
+ * un enlace que se le pueda dar a alguien que recién empieza a mirar la carta.
+ */
+const VIDA_MINIMA_PARA_REUTILIZAR_MS = 6 * 3_600_000;
+
+/**
+ * El documento que recuerda cuál es la ficha vigente de una conversación. Vive
+ * en `fichasCatalogo`, que las reglas tienen cerrada a todo el mundo, y su
+ * identificador NO tiene la forma de una ficha (`FICHA` exige 32 hexadecimales):
+ * `fichaVigente` lo rechaza por forma, así que desde la página pública no hay
+ * manera de abrirlo aunque alguien adivinara el identificador.
+ *
+ * Es un documento y no una consulta por (comercio, teléfono) porque la consulta
+ * pide un índice compuesto y crece con cada ficha vieja de la conversación; el
+ * documento cuesta dos lecturas por turno, siempre.
+ */
+const idDelPuntero = (tenantId: string, telefono: string) => `ult_${tenantId}_${telefono}`;
+
+export interface FichaEmitida { id: string; caducaEn: Timestamp; reutilizada: boolean }
+
+/**
+ * Crea la ficha de una conversación y, con `reutilizar`, devuelve la que ya
+ * tiene si sigue sirviendo. Sirve si: existe, es de ESTE comercio y ESTE
+ * teléfono, le quedan al menos seis horas y no agotó sus cinco carritos.
+ *
+ * Todo en una transacción, para que un cliente que escribe diez veces seguidas
+ * no abra diez fichas: dos turnos simultáneos se serializan y el segundo ve la
+ * ficha del primero. Costo: dos lecturas por turno, y la escritura de la ficha
+ * (más el puntero) una vez cada 72 horas por conversación.
+ *
+ * La usan `enlaceCatalogo` (sin reutilizar: cada llamada sigue creando su
+ * ficha, que es lo que el Demo B hace hoy) y `enlaceParaElFlujo`.
+ */
+export async function emitirFicha(o: {
+  tenantId: string; phoneNumberId: string; flujo: string; telefono: string;
+  reutilizar: boolean;
+}): Promise<FichaEmitida> {
+  const nueva = () => ({
+    id: randomBytes(16).toString('hex'),
+    caducaEn: Timestamp.fromMillis(Date.now() + VIDA_FICHA_HORAS * 3_600_000),
+  });
+  const datos = (caducaEn: Timestamp) => ({
+    tenantId: o.tenantId,
+    telefono: o.telefono,
+    phoneNumberId: o.phoneNumberId,
+    flujo: o.flujo,
+    creadaEn: Timestamp.now(),
+    caducaEn,
+    checkouts: 0,
+  });
+
+  if (!o.reutilizar) {
+    const { id, caducaEn } = nueva();
+    await db().doc(`fichasCatalogo/${id}`).create(datos(caducaEn));
+    return { id, caducaEn, reutilizada: false };
+  }
+
+  const refPuntero = db().doc(`fichasCatalogo/${idDelPuntero(o.tenantId, o.telefono)}`);
+  return db().runTransaction(async (tx) => {
+    const puntero = await tx.get(refPuntero);
+    const idPrevio = String(puntero.get('ficha') ?? '');
+    if (FICHA.test(idPrevio)) {
+      const previa = await tx.get(db().doc(`fichasCatalogo/${idPrevio}`));
+      const caducaPrevia = previa.get('caducaEn') as Timestamp | undefined;
+      if (previa.exists
+          && previa.get('tenantId') === o.tenantId
+          && previa.get('telefono') === o.telefono
+          && caducaPrevia !== undefined
+          && caducaPrevia.toMillis() - Date.now() >= VIDA_MINIMA_PARA_REUTILIZAR_MS
+          && Number(previa.get('checkouts') ?? 0) < MAX_CHECKOUTS_POR_FICHA) {
+        return { id: idPrevio, caducaEn: caducaPrevia, reutilizada: true };
+      }
+    }
+    const { id, caducaEn } = nueva();
+    tx.create(db().doc(`fichasCatalogo/${id}`), datos(caducaEn));
+    tx.set(refPuntero, { ficha: id, tenantId: o.tenantId, telefono: o.telefono, caducaEn });
+    return { id, caducaEn, reutilizada: false };
+  });
+}
+
+/**
+ * EL ENLACE DENTRO DE `configuracionFlujo` (Q'Taco, 03/10/2026).
+ *
+ * «Venta mínima v0» no puede agregar un nodo HTTP por turno para pedir el
+ * enlace (Andres: no subir nodos del flujo), pero ya llama a `configuracionFlujo`
+ * en cada turno. Con `catalogoCompleto: true` la respuesta trae además
+ * `catalogoWeb.enlace`: la URL de ESTA conversación, la misma mientras la
+ * ficha sirva.
+ *
+ * Devuelve `null`, sin lanzar por motivos de negocio, si: la ruta no es de
+ * venta o no está activa, el comercio no tiene el flujo `venta`, el catálogo
+ * web está apagado, no hay teléfono, no hay ningún ítem con precio o el sitio
+ * no está configurado. El flujo cae entonces a la carta en texto. Un error de
+ * Firestore SÍ se propaga: quien llama lo atrapa y sigue sin enlace.
+ *
+ * `vendibles` lo cuenta quien llama, con el catálogo que ya leyó: acá no se
+ * vuelve a leer (78 ítems por turno serían 78 lecturas por mensaje).
+ *
+ * La URL es una capacidad: no se registra entera. Devuelve los últimos cuatro
+ * caracteres de la ficha para que quien llama los anote.
+ */
+export async function enlaceParaElFlujo(o: {
+  ruta: { tenantId: string; phoneNumberId: string; flujo: string; estado: string };
+  telefono: string | null;
+  catalogoWebActivo: boolean;
+  vendibles: number;
+}): Promise<{ url: string; caducaEn: string; reutilizado: boolean; ultimos4: string } | null> {
+  const { ruta } = o;
+  if (!o.catalogoWebActivo || o.vendibles < 1) return null;
+  if (ruta.flujo !== 'venta' || ruta.estado !== 'activo') return null;
+  if (!ID_TENANT.test(ruta.tenantId)) return null;
+  if (o.telefono === null || !TELEFONO.test(o.telefono)) return null;
+  if (baseDelSitio() === '') return null;
+  if (!await tieneVenta(ruta.tenantId)) return null;
+
+  const ficha = await emitirFicha({
+    tenantId: ruta.tenantId, phoneNumberId: ruta.phoneNumberId, flujo: ruta.flujo,
+    telefono: o.telefono, reutilizar: true,
+  });
+  if (!ficha.reutilizada) {
+    await registrar(ruta.tenantId, {
+      tipo: 'catalogo_enlace', resultado: 'ok', telefono: o.telefono,
+      conversacionId: `wa_${o.telefono}`, detalle: `items=${o.vendibles}; via=config`,
+    });
+  }
+  return {
+    url: `${baseDelSitio()}/c/${ficha.id}`,
+    caducaEn: ficha.caducaEn.toDate().toISOString(),
+    reutilizado: ficha.reutilizada,
+    ultimos4: ficha.id.slice(-4),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 1) enlaceCatalogo — lo llama n8n cuando el asistente decide derivar al sitio
 // ---------------------------------------------------------------------------
 
@@ -400,17 +539,12 @@ export const enlaceCatalogo = onRequest(
       respuesta.status(409).json({ error: 'catalogo sin items vendibles' }); return;
     }
 
-    const id = randomBytes(16).toString('hex');
-    const caducaEn = Timestamp.fromMillis(Date.now() + VIDA_FICHA_HORAS * 3_600_000);
-
-    await db().doc(`fichasCatalogo/${id}`).create({
-      tenantId: ruta.tenantId,
-      telefono,
-      phoneNumberId: ruta.phoneNumberId,
-      flujo: ruta.flujo,
-      creadaEn: Timestamp.now(),
-      caducaEn,
-      checkouts: 0,
+    // UNA FICHA NUEVA POR LLAMADA, como siempre (`reutilizar: false`): el Demo B
+    // conserva exactamente su comportamiento. Quien reutiliza es
+    // `enlaceParaElFlujo`, que llama `configuracionFlujo`.
+    const { id, caducaEn } = await emitirFicha({
+      tenantId: ruta.tenantId, phoneNumberId: ruta.phoneNumberId, flujo: ruta.flujo,
+      telefono, reutilizar: false,
     });
 
     await registrar(ruta.tenantId, {

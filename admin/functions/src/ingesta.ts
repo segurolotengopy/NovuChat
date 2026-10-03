@@ -36,6 +36,9 @@ import {
 // sale el QR. `cobroVenta.ts` no importa nada de acá en tiempo de ejecución
 // (sus dos importaciones son de tipo), así que no hay ciclo.
 import { cobroParaElFlujo, totalUtilizable } from './modulos/cobros/cobroVenta.js';
+// El enlace de la carta para «Venta mínima v0» (`catalogoCompleto: true`). Sale
+// de `catalogoWeb.ts`, que no importa nada de acá: no hay ciclo.
+import { enlaceParaElFlujo, sePuedeComprar } from './modulos/catalogo-web/catalogoWeb.js';
 
 /**
  * =========================================================================
@@ -1778,7 +1781,48 @@ export const configuracionFlujo = onRequest(
     // Se calcula una sola vez: decide qué se manda al prompt y, además, se
     // registra (un catálogo resumido cambia cómo conversa el asistente, y por
     // lo tanto cuántos mensajes hace falta para cerrar).
-    const catalogoResumido = catalogoWebActivo && catalogo.size > UMBRAL_CATALOGO_AL_PROMPT;
+    //
+    // `catalogoCompleto` (03/10/2026, piloto Q'Taco): un flujo que NECESITA la
+    // carta entera aunque el catálogo web esté encendido —«Venta mínima v0»
+    // calcula el total del pedido en código desde la carta completa— la pide en
+    // el cuerpo con `catalogoCompleto: true`. Tres candados:
+    //   - booleano ESTRICTO: el texto «true», 1 o cualquier otra cosa no vale;
+    //   - solo para el flujo `venta` de la RUTA autenticada (nunca del cuerpo):
+    //     en cualquier otro flujo la bandera se ignora;
+    //   - quien no la manda (el Demo B) conserva el resumen, con el mismo umbral.
+    // El comercio suspendido o cortado ya salió con 409 más arriba: la bandera
+    // no llega a evaluarse para ellos.
+    const catalogoCompletoPedido = cuerpo['catalogoCompleto'] === true && comercio.flujo === 'venta';
+    const catalogoResumido = catalogoWebActivo && !catalogoCompletoPedido
+      && catalogo.size > UMBRAL_CATALOGO_AL_PROMPT;
+
+    // EL ENLACE DE LA CARTA, con la misma bandera (03/10/2026). «Venta mínima»
+    // no tiene un nodo que llame a `enlaceCatalogo`: ya llama acá en cada turno,
+    // así que el enlace de ESTA conversación viaja en `catalogoWeb.enlace`. Es
+    // el mismo mientras la ficha sirva (no una ficha por mensaje) y sale solo
+    // con teléfono, catálogo web encendido, flujo `venta` y al menos un ítem con
+    // precio. Cualquier error o límite deja la respuesta sin `enlace` y el turno
+    // sigue: el flujo cae a la carta en texto. Es una capacidad: el registro lleva
+    // solo los últimos cuatro caracteres de la ficha, nunca la URL.
+    let enlaceDeLaCarta: Awaited<ReturnType<typeof enlaceParaElFlujo>> = null;
+    if (catalogoCompletoPedido && catalogoWebActivo) {
+      try {
+        enlaceDeLaCarta = await enlaceParaElFlujo({
+          ruta: {
+            tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo, estado: ruta.estado,
+          },
+          telefono,
+          catalogoWebActivo,
+          vendibles: catalogo.docs.filter(
+            (d) => sePuedeComprar(d.data() as Record<string, unknown>)).length,
+        });
+      } catch (error) {
+        logger.warn('configuracionFlujo: sin enlace del catálogo web', {
+          evento: EVENTO_CONFIGURACION, tenantId: comercio.tenantId,
+          error: error instanceof Error ? error.name : 'desconocido',
+        });
+      }
+    }
     const cobroReal = especifica?.get('cobroReal') as Record<string, unknown> | undefined;
     // Encendido Y con código: si falta cualquiera de los dos, se cobra simulado.
     // Un comercio a medio configurar tiene que quedar en el camino que no mueve
@@ -1852,6 +1896,15 @@ export const configuracionFlujo = onRequest(
       // vuelve comparable el costo de dos comercios con catálogos distintos.
       catalogoItems: catalogo.size,
       catalogoResumido,
+      catalogoCompleto: catalogoCompletoPedido,
+      // Solo si hubo enlace: si se reutilizó o se abrió una ficha, y los últimos
+      // cuatro caracteres de ella.
+      ...(enlaceDeLaCarta
+        ? {
+            catalogoEnlace: enlaceDeLaCarta.reutilizado ? 'reutilizado' : 'nuevo',
+            catalogoEnlaceUlt4: enlaceDeLaCarta.ultimos4,
+          }
+        : {}),
     });
 
     respuesta.status(200).json({
@@ -1963,7 +2016,16 @@ export const configuracionFlujo = onRequest(
                 ...(quedan !== null ? { agotado: quedan === 0 } : {}),
               };
             }),
-            ...(catalogoWebActivo ? { catalogoWeb: { activo: true, derivar: false } } : {}),
+            ...(catalogoWebActivo
+              ? {
+                  catalogoWeb: {
+                    activo: true, derivar: false,
+                    ...(enlaceDeLaCarta
+                      ? { enlace: enlaceDeLaCarta.url, enlaceCaducaEn: enlaceDeLaCarta.caducaEn }
+                      : {}),
+                  },
+                }
+              : {}),
           }),
 
       // Configuración del vertical, en su propia clave. El flujo del Demo A no
