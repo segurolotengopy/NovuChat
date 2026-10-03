@@ -411,7 +411,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true }}",
+              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true && $('Interpretar entrada').first().json.reportarEntrante !== false }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
