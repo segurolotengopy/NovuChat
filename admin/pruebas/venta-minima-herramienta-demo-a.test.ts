@@ -86,7 +86,8 @@ interface Mundo { flujo: J; puts: J[]; credenciales: typeof CREDENCIALES }
 let mundo: Mundo;
 let servidor: Server;
 let carpeta = '';
-const leerCuerpo = (r: IncomingMessage): Promise<string> => new Promise((ok) => { let t = ''; r.on('data', (c) => { t += String(c); }); r.on('end', () => ok(t)); });
+// Se juntan los BYTES y se decodifica una vez: decodificar por fragmento parte los caracteres de varios bytes (««», «ó») y el cuerpo llega roto.
+const leerCuerpo = (r: IncomingMessage): Promise<string> => new Promise((ok) => { const trozos: Buffer[] = []; r.on('data', (c: Buffer) => { trozos.push(c); }); r.on('end', () => ok(Buffer.concat(trozos).toString('utf8'))); });
 
 beforeAll(async () => {
   carpeta = mkdtempSync(join(tmpdir(), 'herramienta-demo-a-'));
