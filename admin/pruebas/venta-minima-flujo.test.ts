@@ -1920,6 +1920,41 @@ describe('carta', () => {
     expect(vieja.texto).not.toContain('Cerveza artesanal');
   });
 
+  it('INTEGRACIÓN: con los ítems excluidos INACTIVOS (el servidor no los manda) `palabrasExcluidas` los reconoce: helado, cerveza, cóctel, vino y shot dan el texto amable, sin aviso, y la carta no los trae', () => {
+    // El comercio carga los 25 ítems de cocteleria, cervezas y postres `activo: false` (la página web no los muestra) y el servidor no los
+    // manda al flujo: `pdExcluidos(catalogo)` no ve nada. La lista `palabrasExcluidas` de los datos (quinto parámetro de `pdAgregarLineas`) lo cubre.
+    const SIN_EXCLUIDOS: J[] = [
+      it_('taco', 'Orden de 3 tacos al pastor', 48, 'tacos'),
+      it_('refresco', 'Refresco de la casa', 12, 'bebidas'),
+    ];
+    expect(configBase(QTACO)['palabrasExcluidas']).toMatch(/helado.*cerveza.*coctel.*vino.*shot/);
+    const pedir = (dicho: string, config: J = {}) => {
+      const w = crear({ panel: panel({ catalogo: SIN_EXCLUIDOS }), config });
+      const c = con(w);
+      c.escribe('hola');
+      const carta = cuerpos(c.toca('m|pedido', 'Hacer un pedido')).join('\n');
+      w.estado.extraccion = EX([ln(dicho, 1)]);
+      return { t: c.escribe(`quiero ${dicho}`), carta };
+    };
+    for (const dicho of ['un helado', 'una cerveza', 'un cóctel', 'un vino', 'un shot']) {
+      const { t, carta } = pedir(dicho);
+      expect(cuerpos(t).join('\n'), dicho).toMatch(/no está disponible para pedir por WhatsApp/);
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido')), dicho).toBe(false);
+      for (const sale of ['elado', 'erveza', 'óctel', 'ino', 'hot']) expect(carta, dicho).not.toContain(sale);
+    }
+    // Un taco SÍ se vende (la palabra «ron» no dispara en «coronavirus», ni «vino» en «vinagre»).
+    const taco = pedir('3 tacos al pastor');
+    expect(cuerpos(taco.t).join('\n')).not.toMatch(/no está disponible para pedir por WhatsApp/);
+    // Negativo: sin la lista (y sin ítems en la carta) el helado NO se reconoce como excluido a propósito.
+    const sinLista = pedir('un helado', { palabrasExcluidas: '' });
+    expect(cuerpos(sinLista.t).join('\n')).not.toMatch(/no está disponible para pedir por WhatsApp/);
+    // Y las variantes de prueba y de ensayo heredan la misma lista de `qtaco.json` (ningún archivo de datos la pierde).
+    for (const nombre of ['venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json']) {
+      expect(configBase(leer(nombre))['palabrasExcluidas'], nombre).toBe(configBase(QTACO)['palabrasExcluidas']);
+    }
+  });
+
   it('un precio ausente o un ítem agotado no entran a la carta; el modelo no puede pedirlos', () => {
     const catalogo = [...CATALOGO, it_('sin-precio', 'Plato Misterioso', undefined, 'Platos fuertes'), it_('agotado', 'Plato Agotado', 50, 'Platos fuertes', { agotado: true })];
     const w = crear({ panel: panel({ catalogo }) });

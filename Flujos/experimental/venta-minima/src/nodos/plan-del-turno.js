@@ -638,7 +638,8 @@ function lineaSaneada(l) {
 function agregarLineas(lineas) {
   const carta = cartaDelNegocio();
   const excluidos = pdExcluidos(Array.isArray(cfg.catalogo) ? cfg.catalogo : [], { areasExcluidas: lista(cfg.areasExcluidas), moneda: cfg.moneda });
-  const r = pdAgregarLineas(en.carrito, carta, lineas, excluidos) || {};
+  // Quinto parámetro: `palabrasExcluidas` (datos), para reconocer «helado», «cerveza», «cóctel»… aunque esos ítems estén inactivos y el servidor no los mande.
+  const r = pdAgregarLineas(en.carrito, carta, lineas, excluidos, lista(cfg.palabrasExcluidas)) || {};
   if (Array.isArray(r.carrito)) en.carrito = r.carrito;
   const lista1 = (v) => (Array.isArray(v) ? v : (v ? [v] : []));
   en.pendiente = en.pendiente.concat(lista1(r.pendiente));
