@@ -1062,6 +1062,25 @@ describe('Config del negocio', () => {
     for (const k of ['areasExcluidas', 'areasSinDelivery', 'zonasReserva']) expect(vacio[k], k).toEqual([]);
     expect(ok(PANEL, { base: { zonasReserva: ['salón', 'jardín'] } })['zonasReserva']).toEqual(['salón', 'jardín']);
   });
+  it('palabrasExcluidas sale como ARREGLO y SOLO de «Config base»: la clave del panel o de la consola no pasa', () => {
+    const lista = 'helado, cerveza ,bebida alcoholica,REEMPLAZAR_X,cerveza';
+    expect(ok(PANEL, { base: { ...BASE, palabrasExcluidas: lista } })['palabrasExcluidas']).toEqual(['helado', 'cerveza', 'bebida alcoholica']);
+    // ausente o vacía = sin lista
+    expect(ok(PANEL)['palabrasExcluidas']).toEqual([]);
+    expect(ok(PANEL, { base: { ...BASE, palabrasExcluidas: '' } })['palabrasExcluidas']).toEqual([]);
+    expect(ok(PANEL, { base: { ...BASE, palabrasExcluidas: 'REEMPLAZAR_PALABRAS_QTACO' } })['palabrasExcluidas']).toEqual([]);
+    // el panel intenta ponerla (en cada sección y en la raíz): no pasa ni pisa la de «Config base»
+    const hostil: J = {
+      ...PANEL, palabrasExcluidas: 'pizza', datosDelNegocio: { ...(PANEL['datosDelNegocio'] as J), palabrasExcluidas: 'pizza' },
+      operacion: { ...(PANEL['operacion'] as J), palabrasExcluidas: 'pizza' }, venta: { ...(PANEL['venta'] as J), palabrasExcluidas: 'pizza' },
+      voz: { ...(PANEL['voz'] as J), palabrasExcluidas: ['pizza'] },
+    };
+    expect(ok(hostil)['palabrasExcluidas']).toEqual([]);
+    expect(ok(hostil, { base: { ...BASE, palabrasExcluidas: 'helado' } })['palabrasExcluidas']).toEqual(['helado']);
+    // y con el panel suspendido o sin respuesta, la lista de «Config base» sigue ahí (lo que no se vende por WhatsApp no depende del panel)
+    expect(correr({ statusCode: 500, body: {} }, { base: { ...BASE, palabrasExcluidas: 'helado' } })['palabrasExcluidas']).toEqual(['helado']);
+    expect(correr({ statusCode: 409, body: {} }, { base: { ...BASE, palabrasExcluidas: 'helado' } })['palabrasExcluidas']).toEqual(['helado']);
+  });
   it('`horario` queda como CSV crudo, y `prefijosPermitidos` y `destinatariosAviso` como CSV', () => {
     const c = ok();
     expect(c['horario']).toBe(BASE['horario']);
