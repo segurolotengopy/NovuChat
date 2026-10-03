@@ -53,7 +53,7 @@ revisora; antes figuraban como «sin dueño»):
 | `admin/functions/src/index.ts`, `admin/functions/src/ingesta.ts` | la coordinadora | Prefijos de archivo exacto, solo si se la lanza con zona; hoy corre sin zona |
 | `.github/` | `devsecops` | Prefijo de carpeta, fijado por quien lo lanza (su ficha no declara zona) |
 
-**Nota sobre `.github/`:** la zona de `devsecops` sobre `.github/` la fija quien lo lanza (`NOVUCHAT_ZONA=".github/"` o `.claude/zona`). Mientras su ficha no la declare, `.github/` solo está protegido por CODEOWNERS y la revisión humana: limitación conocida, ya observada por `seguridad`.
+**Nota sobre `.github/`:** la zona de `devsecops` sobre `.github/` la fija quien lo lanza (`NOVUCHAT_ZONA=".github/"` o `.claude/zona`). Mientras su ficha no la declare, `.github/` solo está protegido por CODEOWNERS y la revisión humana: limitación conocida, ya observada por `seguridad`. Sin zona, el gancho no restringe a `devsecops` en ninguna carpeta: puede escribir en todo el repositorio, no solo en `.github/`. Y CODEOWNERS tiene un único propietario (`docs/arquitectura/registro.md`, «Hasta dónde protege»), así que la barrera real es la revisión humana de Andres.
 
 El gancho no cambia: aplica la zona que fija quien lanza al agente, y esta
 tabla es la fuente de qué prefijos se le dan. Lo que ningún agente tiene en su
