@@ -40,6 +40,24 @@ const variable = (v, max = 60) => {
 // y en ningun otro lado.
 const celda = (v) => String(v ?? '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 200);
 
+// LOS HECHOS DE LA CALIFICACION (Bloque 1, 03/10/2026). Lo que el prospecto
+// HIZO -- pidio una persona, pidio los planes, eligio «Otro», contesto la
+// pregunta de su negocio -- y, si el modelo lo propuso y el codigo lo acepto,
+// por que no es un prospecto. `Decidir fila de la planilla` calcula de ahi la
+// calificacion; aca solo se sanea: cuatro booleanos estrictos y un motivo de la
+// lista cerrada (cualquier otro valor sale vacio).
+const MOTIVOS_DESCARTE = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
+const hechosSaneados = (h) => {
+  const x = h && typeof h === 'object' ? h : {};
+  return {
+    pidioAsesor: x.pidioAsesor === true,
+    pidioPlanes: x.pidioPlanes === true,
+    eligioOtro: x.eligioOtro === true,
+    respondioDolor: x.respondioDolor === true,
+    descarte: MOTIVOS_DESCARTE.includes(x.descarte) ? x.descarte : '',
+  };
+};
+
 const texto = (to, cuerpo) => ({
   messaging_product: 'whatsapp', recipient_type: 'individual', to,
   type: 'text', text: { preview_url: false, body: String(cuerpo).slice(0, LIMITE_TEXTO) },
@@ -149,6 +167,7 @@ return $input.all().map((it, i) => {
       consulta: celda(lead.consulta),
       estado: e.estadoLead || 'en_conversacion',
       anuncio: !!(e.anuncio || e.anuncioConocido),
+      hechos: hechosSaneados(e.hechos),
     } : null,
     avisos,
   }, pairedItem: { item: i } };
