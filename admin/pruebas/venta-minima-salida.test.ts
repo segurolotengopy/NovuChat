@@ -598,6 +598,56 @@ describe('Armar mensajes — el QR', () => {
   });
 });
 
+// -------------------------------------------------------------------------------------------------
+// El QR SIMULADO: los dos modos son excluyentes y el modo coherente con el pie es lo último que se mira.
+describe('Armar mensajes — el QR del cobro simulado', () => {
+  const URL_SIM = 'https://qr.ejemplo.test/qr-demo.png';
+  const COBRO_SIM: J = { activo: false, modo: 'simulado', qrUrl: URL_SIM };
+  const PIE_SIM = 'PRUEBA · COBRO SIMULADO: este QR es de demostración, no cobra ni mueve dinero.\nPedido #K7Q2. Total de la prueba: 55 Bs (solo la comida).\nNo intentes pagarlo: tu banco lo va a rechazar. Para seguir con la prueba, envíame aquí cualquier foto como comprobante simulado.';
+  const planQr = (mensaje: J = qr({ cuerpo: PIE_SIM }), extra: J = {}): J => ({
+    ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [mensaje], ...extra,
+  });
+
+  it('simulado con el pie correcto: sale la imagen con el enlace de `cfg.cobro.qrUrl` y el evento `qr_enviado`', () => {
+    const r = mensajes(planQr(), { cfg: { cobro: COBRO_SIM } });
+    const i = r.items[0]!;
+    expect(i['payload']).toMatchObject({ type: 'image', to: CLIENTE, image: { link: URL_SIM, caption: PIE_SIM } });
+    expect(i).toMatchObject({ evento: 'qr_enviado', referencia: PEDIDO['pedidoId'], monto: 55, tipoReporte: 'image' });
+    expect(r.sd['estados'][CLIENTE].paso).toBe('esperando_comprobante');
+    // el enlace no sale de lo que traiga el mensaje del plan
+    const otro = mensajes(planQr(qr({ cuerpo: PIE_SIM, url: 'https://otro.ejemplo.test/falso.png' })), { cfg: { cobro: COBRO_SIM } });
+    expect(otro.items[0]!['payload'].image.link).toBe(URL_SIM);
+  });
+
+  it.each([
+    ['los dos modos a la vez (`activo:true` con `modo:simulado`)', { cfg: { cobro: { ...COBRO_SIM, activo: true } } }, qr({ cuerpo: PIE_SIM }), 'cobro_en_dos_modos'],
+    ['simulado con un pie SIN la palabra «simulado»', { cfg: { cobro: COBRO_SIM } }, qr({ cuerpo: PIE }), 'qr_simulado_sin_rotulo'],
+    ['simulado con un pie «simulado» pero sin «no cobra»', { cfg: { cobro: COBRO_SIM } }, qr({ cuerpo: 'Pedido #K7Q2. Total: 55 Bs. Cobro simulado, envía una foto.' }), 'qr_simulado_sin_rotulo'],
+    ['real con un pie que dice «PRUEBA»', { cfg: { cobro: { activo: true, modo: 'real', qrUrl: URL_SIM } } }, qr({ cuerpo: `${PIE} PRUEBA` }), 'qr_real_con_rotulo_simulado'],
+    ['real con un pie que dice «demostración»', {}, qr({ cuerpo: `${PIE} Es una demostración.` }), 'qr_real_con_rotulo_simulado'],
+    ['real con el pie del cobro simulado', {}, qr({ cuerpo: PIE_SIM }), 'qr_real_con_rotulo_simulado'],
+    ['simulado sin enlace https', { cfg: { cobro: { ...COBRO_SIM, qrUrl: 'http://qr.ejemplo.test/a.png' } } }, qr({ cuerpo: PIE_SIM }), 'qr_sin_https'],
+    ['simulado con un monto distinto del total', { cfg: { cobro: COBRO_SIM } }, qr({ cuerpo: PIE_SIM, monto: 999 }), 'qr_monto_distinto_del_total'],
+    ['modo desconocido sin `activo`', { cfg: { cobro: { activo: false, modo: 'apagado', qrUrl: URL_SIM } } }, qr({ cuerpo: PIE_SIM }), 'cobro_no_activo'],
+  ])('rechaza el QR: %s. No sale `type:image`, sale el genérico y no se guarda esperando_comprobante', (_n, ent, mensaje, motivo) => {
+    const r = mensajes(planQr(mensaje as J), ent as Entrada);
+    const i = r.items[0]!;
+    expect(i['payload'].type).not.toBe('image');
+    expect(i['evento']).toBeUndefined();
+    expect(i['monto']).toBeUndefined();
+    expect(cuerpoDe(i)).toBe(GENERICO);
+    expect((i['errores'] as string[]).some((e) => e === `qr_rechazado: ${motivo}`), String(i['errores'])).toBe(true);
+    expect(i['resumen']).toMatchObject({ qrRechazado: true });
+    expect(r.sd['estados']).toBeUndefined();
+    expect(r.sd['pedidos']).toBeUndefined();
+  });
+
+  it('negativo: el real con su pie de siempre sigue saliendo (el rótulo de prueba solo se exige y se prohíbe donde corresponde)', () => {
+    const r = mensajes(planQr(qr()), { cfg: { cobro: { activo: true, modo: 'real', qrUrl: URL_SIM } } });
+    expect(r.items[0]!['payload'].type).toBe('image');
+  });
+});
+
 // =================================================================================================
 describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', () => {
   const PASE = 'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.';

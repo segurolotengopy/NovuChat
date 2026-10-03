@@ -16,7 +16,8 @@
 //   - mandar un QR sin enlace https (solo con dominio con nombre: sin IP, sin `@` y sin puerto), sin monto, o con
 //     un monto distinto del total del pedido que calculó el código (el del plan, o el del estado al reenviarlo): en ese
 //     caso no se guarda `esperando_comprobante`. El evento `qr_enviado` solo lo lleva el QR que el plan pidió como evento:
-//     «Reenviar QR» lleva monto y referencia, pero NO el evento (no reabre el cobro);
+//     «Reenviar QR» lleva monto y referencia, pero NO el evento (no reabre el cobro); el QR simulado sin rótulo en el pie
+//     («simulado» y «no cobra»), o el real con un rótulo de prueba, tampoco sale (los dos modos son excluyentes);
 //   - ofrecer algo distinto de pasar con el restaurante (el botón que abre su chat): la URL del botón vale SOLO si es
 //     `https://wa.me/<dígitos>` y los dígitos son el número de recepción de la configuración; si no, se arma de ahí;
 //   - bloquear un mensaje por el texto de un TERCERO: la dirección, la referencia, las notas y el nombre llegan ya
@@ -201,13 +202,18 @@ function amQr(m, cuerpo) {
   const monto = Number(m.monto);
   const total = Number(ped.total);
   const pedidoId = String(ped.pedidoId || '');
+  const simulado = cobro.modo === 'simulado';
+  const cuerpoN = vmNorm(cuerpo);
   let motivo = '';
-  if (cobro.activo !== true) motivo = 'cobro_no_activo';
+  if (cobro.activo === true && simulado) motivo = 'cobro_en_dos_modos';
+  else if (cobro.activo !== true && !simulado) motivo = 'cobro_no_activo';
   else if (!amUrlSegura(link)) motivo = 'qr_sin_https';
   else if (!(monto > 0) || !isFinite(monto)) motivo = 'qr_sin_monto';
   else if (!(total > 0) || Math.round(monto * 100) !== Math.round(total * 100)) motivo = 'qr_monto_distinto_del_total';
   else if (!pedidoId) motivo = 'qr_sin_pedido';
   else if (m.referencia && String(m.referencia) !== pedidoId) motivo = 'qr_referencia_distinta';
+  else if (simulado && !(/simulad/.test(cuerpoN) && /no cobra/.test(cuerpoN))) motivo = 'qr_simulado_sin_rotulo';
+  else if (!simulado && /simulad|simulacr|demostracion|prueba/.test(cuerpoN)) motivo = 'qr_real_con_rotulo_simulado';
   if (motivo) {
     AM_qrRechazado = true;
     return amGenerico('qr_rechazado: ' + motivo);
