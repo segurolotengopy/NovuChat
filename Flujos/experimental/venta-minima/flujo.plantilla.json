@@ -1549,7 +1549,7 @@
         "language": "javaScript",
         "jsCode": "@@comun:nodos/resumen-del-turno.js"
       },
-      "notes": "R3 (último recurso): si un mensaje al cliente no salió y su respaldo en texto tampoco, este nodo LANZA un error (la ejecución queda en error, visible) y antes devuelve el estado del teléfono al de antes del turno. Último nodo, y el único que corre UNA sola vez por turno: cuelga directo de «Armar mensajes» por debajo de todo el lienzo, así que con `executionOrder: v1` corre después de los envíos y del cierre. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
+      "notes": "R3 (último recurso): si un mensaje al cliente no salió y su respaldo en texto tampoco, este nodo LANZA un error (la ejecución queda en error, visible) y antes ajusta el estado del teléfono: SIN hecho externo (ningún aviso salió ni corrió el cierre) lo devuelve al de antes del turno conservando su ancla, así reconfirmar repite el mismo pedido; CON un aviso ya enviado o un cierre ya registrado NO lo revierte (reconfirmar armaría un segundo pedido) y, si la conversación corrió y no se espera un comprobante, lo deja en el paso `menu`. No deshace el pedido guardado ni el aviso enviado: el error es la señal para que una persona le escriba al cliente. Último nodo, y el único que corre UNA sola vez por turno: cuelga directo de «Armar mensajes» por debajo de todo el lienzo, así que con `executionOrder: v1` corre después de los envíos y del cierre. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
     }
   ],
   "connections": {

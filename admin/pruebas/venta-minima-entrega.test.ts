@@ -24,7 +24,9 @@
 import { describe, expect, it } from 'vitest';
 import { type Flujo, type J } from './lib/flujo';
 import { FalloDeNodo } from './lib/n8n-de-mentira';
-import { boton, cobrosAbiertos, CLIENTE, crear, editarJson, estadoDe, idDeBoton, marcar, nodoDe, PHONE_ID, QR_URL, QTACO, RECHAZOS, salientes, texto, turno, verificarEnCopia, type ModoDeEnvio } from './lib/venta-minima-mundo';
+import { boton, cobrosAbiertos, CLIENTE, crear, editarJson, estadoDe, idDeBoton, leer, marcar, nodoDe, PHONE_ID, QR_URL, QTACO, RECHAZOS, salientes, texto, turno, verificarEnCopia, type ModoDeEnvio } from './lib/venta-minima-mundo';
+
+const PLANTILLA_R3 = leer('flujo.plantilla.json');
 
 /** Un pedido armado hasta «Confirmar pedido»: la confirmación es el turno que manda el QR. */
 function pedidoListoParaConfirmar(envios: Partial<Record<'Enviar a WhatsApp' | 'Enviar respaldo', ModoDeEnvio>> = {}) {
@@ -108,6 +110,16 @@ describe('R3: si el respaldo también falla, la ejecución termina en ERROR, sin
       });
     }
   }
+
+  it('la nota del nodo «Resumen del turno» describe la regla del HECHO EXTERNO (no la reversión incondicional de antes), en la plantilla y en los tres JSON', () => {
+    for (const f of [PLANTILLA_R3, QTACO, leer('venta-minima.prueba.json'), leer('venta-minima.ensayo-demo-a.json')]) {
+      const nota = String((nodoDe(f, 'Resumen del turno') as unknown as J)['notes']);
+      expect(nota).toContain('SIN hecho externo');
+      expect(nota).toContain('CON un aviso ya enviado o un cierre ya registrado NO lo revierte');
+      expect(nota).toContain('conservando su ancla');
+      expect(nota).not.toContain('y antes devuelve el estado del teléfono al de antes del turno');
+    }
+  });
 
   it('el fallo queda en «Resumen del turno» (el último nodo), el error no lleva texto ni teléfono del cliente, y ese nodo es el único que lo lanza', () => {
     const { w, idConfirmar } = pedidoListoParaConfirmar({ 'Enviar a WhatsApp': 'cuerpo vacío', 'Enviar respaldo': 'cuerpo vacío' });
