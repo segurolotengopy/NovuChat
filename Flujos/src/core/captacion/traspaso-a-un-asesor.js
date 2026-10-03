@@ -79,7 +79,7 @@ return $input.all().map((it, i) => {
       encodeURIComponent('Hola, escribo desde el WhatsApp de ' + negocio + '. Quiero hablar con un asesor.')
     : '';
 
-  const texto = conEmojis('¡Anotado! 📋 Ya le pasé tus datos a nuestro equipo. Un especialista de ' +
+  const texto = conEmojis('¡Anotado! 📋 Ya le pasé tus datos a nuestro equipo. Un asesor de ' +
     negocio + ' te escribirá a este mismo número ' + cuando +
     (url ? ', y si prefieres no esperar, toca el botón y escríbele ahora mismo.' : '.') +
     (pedido || ' ¡Que tengas un excelente día! ✨'),
@@ -92,13 +92,13 @@ return $input.all().map((it, i) => {
   // (la empresa) y el rubro dicho en palabras tambien. Sin pedido (soporte) no
   // se espera nada.
   if (c && pedido) { c.pidio = faltan; c.pidioRubro = faltan.includes('rubro'); }
-  // Pedir un asesor es un hecho de Alta (Bloque 1). Lo marca `Estado de la
-  // conversacion` con `accion === 'asesor'`; aca se asegura, por si el item no
-  // pasara por el. Nunca se quita.
-  const hechos = { pidioAsesor: true, pidioPlanes: false, eligioOtro: false, respondioDolor: false,
+  // Pedir un asesor es un hecho de Alta (Bloque 1), salvo para quien ya es cliente: pedir
+  // soporte no es interes de compra. Lo marca `Estado de la conversacion`; aca se asegura,
+  // por si el item no pasara por el. Nunca se quita.
+  const hechos = { pidioAsesor: !soporte, pidioPlanes: false, eligioOtro: false, respondioDolor: false,
     descarte: '', ...(e.hechos && typeof e.hechos === 'object' ? e.hechos : {}) };
-  hechos.pidioAsesor = true;
-  if (c) c.hechos = { ...(c.hechos || {}), pidioAsesor: true };
+  if (!soporte) hechos.pidioAsesor = true;
+  if (c && !soporte) c.hechos = { ...(c.hechos || {}), pidioAsesor: true };
 
   return { json: { ...e,
     respuesta: texto,

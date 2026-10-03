@@ -169,6 +169,10 @@ for (let i = 0; i < items.length; i++) {
   const plano = (t, max) => String(t ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ')
     .replace(/\s+/g, ' ').trim().slice(0, max);
   const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300).replace(/[\[\]]/g, ""), ...(typeof laCampana.destino === 'string' && DESTINO.test(laCampana.destino) ? { destino: laCampana.destino } : {}) } : null;
+  // El texto EXACTO de una campaña nunca elige al asesor por si solo, aunque diga «quiero
+  // hablar con una persona»: una campaña que lleva al asesor lo hace por `destino`, que solo
+  // ofrece el boton. Si no, cada clic gastaria el aviso a recepcion.
+  if (laCampana) eleccion = '';
   // Con destino valido, la campaña cuenta como el toque de esa opcion. Solo un
   // mensaje de TEXTO es una campaña (arriba), asi que no pisa un toque real.
   if (campana && campana.destino && idElegido === '') { idElegido = campana.destino; porCampana = true; }
