@@ -7,11 +7,12 @@ import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(aqui, '../../../..');
-const correr = (...args: string[]) => spawnSync('node', ['admin/scripts/modulos/captacion/bateria.mjs', '--seco', '--n', '1', ...args],
-  { cwd: RAIZ, encoding: 'utf8', timeout: 60_000, env: { PATH: process.env['PATH'] ?? '' } });
+const correr = (...args: string[]) => spawnSync(process.execPath, ['admin/scripts/modulos/captacion/bateria.mjs', '--seco', '--n', '1', ...args],
+  { cwd: RAIZ, encoding: 'utf8', timeout: 60_000, env: entornoDelEmulador(undefined) });
 
 describe('bateria.mjs --antes', () => {
   it('NEGANDO: un valor que no es un sha (una opción de git, una ruta, mayúsculas, vacío) se rechaza antes de tocar git', () => {
