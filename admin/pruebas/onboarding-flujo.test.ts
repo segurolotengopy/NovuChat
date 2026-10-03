@@ -2955,7 +2955,8 @@ describe('Base de conocimiento', () => {
     const frag = JSON.parse(/const FRAGMENTOS = (\[[\s\S]*?\n\]);/.exec(js)![1]!) as { id: string; titulo: string; texto: string }[];
     const fuera = [...(/const CUBIERTOS_POR_LA_CONSOLA = \[([\s\S]*?)\];/.exec(js)![1]!).matchAll(/'([a-z0-9-]+)',/g)].map((m) => m[1]!);
     expect(fuera).toEqual(['precios-resumen', 'excedentes', 'instalacion-costo', 'faq-cuanto-cuesta-la-instalacion',
-      'faq-en-que-moneda-pago', 'faq-cuando-se-paga', 'faq-los-costos-de-whatsapp-y', 'faq-puedo-cambiar-de-plan']);
+      'faq-en-que-moneda-pago', 'faq-cuando-se-paga', 'faq-los-costos-de-whatsapp-y', 'faq-puedo-cambiar-de-plan',
+      'plan-impulso', 'plan-crecimiento', 'plan-pro']);
     const [{ conocimiento }] = correr('Conocimiento del sitio', [{}]) as { conocimiento: string }[];
     for (const f of frag) {
       const entra = conocimiento.includes('### ' + f.titulo + ' (');
@@ -2965,6 +2966,16 @@ describe('Base de conocimiento', () => {
     for (const id of fuera) expect(frag.some((f) => f.id === id), id).toBe(true);
     // Y «excedentes» ya no aparece como título ni como pregunta de la oferta.
     expect(conocimiento).not.toContain('Qué pasa si me paso del plan');
+  });
+
+  it('NEGANDO: ningún precio de plan de la consola aparece en `conocimiento` (una sola fuente para los precios)', () => {
+    const datos = JSON.parse(readFileSync(join(aqui, '../scripts/datos/captacion-novuchat.json'), 'utf8')) as { planes: { precioUsd: number }[] };
+    const [{ conocimiento }] = correr('Conocimiento del sitio', [{}]) as { conocimiento: string }[];
+    expect(datos.planes.length).toBeGreaterThan(0);
+    for (const { precioUsd: n } of datos.planes) {
+      const hallazgos = conocimiento.match(new RegExp(`(USD|US\\$|\\$us|\\$)\\s?${n}(?![\\d.,]\\d)|(?<![\\d.,])${n}\\s?(USD|d[oó]lares)`, 'gi'));
+      expect(hallazgos, 'precio ' + n).toBeNull();
+    }
   });
 
   it('trae el corpus del sitio, con su huella', () => {

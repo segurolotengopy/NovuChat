@@ -278,7 +278,8 @@ const FRAGMENTOS = [
 // contra los rubros, planes, cargos y aclaraciones). NO se borran del archivo:
 // el procedimiento de copia no cambia. Un fragmento que trae ALGO que la
 // consola no tiene (el plan recomendado de un rubro, a quien le sirve cada plan,
-// el porque de no cobrar por mensaje) se queda.
+// el porque de no cobrar por mensaje) se queda, salvo que traiga un PRECIO: los
+// precios tienen una sola fuente, la consola.
 const CUBIERTOS_POR_LA_CONSOLA = [
   'precios-resumen',                     // planes, instalacion, moneda y tipo de cambio: planes, cargos y aclaraciones
   'excedentes',                          // la bolsa de 30 conversaciones: aclaracion «Si me paso del plan (bolsa)»
@@ -288,6 +289,9 @@ const CUBIERTOS_POR_LA_CONSOLA = [
   'faq-cuando-se-paga',                  // aclaracion «Cuándo se paga (prepago)»
   'faq-los-costos-de-whatsapp-y',        // aclaracion «Qué incluye el precio» (con «bolsas», no «excedentes»)
   'faq-puedo-cambiar-de-plan',           // aclaracion «Cambio de plan»
+  'plan-impulso',                        // precio y cupo: ya los da OFERTA (la frase «para quien es cada plan» se carga en la consola en el Bloque 2)
+  'plan-crecimiento',                    // idem
+  'plan-pro',                            // idem
 ];
 
 const conocimiento = FRAGMENTOS
