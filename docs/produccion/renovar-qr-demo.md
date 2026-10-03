@@ -36,5 +36,9 @@ Lo ejecuta Claude con el «sí» de Andres; nadie pega valores a mano.
 
 Solo los demos de venta que declara `sembrar-demos.mjs`; cualquier otro tenant
 es NEGADO. Una fila local vacía, «pendiente» o que no sea de 10 a 20 dígitos
-aborta sin escribir. Sin `--proyecto` no hay conexión. No reemplaza a
+aborta sin escribir, y una fila repetida también. El tenant debe haber sido creado por
+`sembrar-demos` (`creadoPor`). Con `FIRESTORE_EMULATOR_HOST` heredado se niega salvo
+proyecto `demo-*`, y el veredicto dice EMULADOR. La fila local se lee con
+`--archivo`, `CONFIG_LOCAL` o `CONFIGURACION.local.md` (`sembrar-demos.mjs`,
+en cambio, lee siempre la raíz). Sin `--proyecto` no hay conexión. No reemplaza a
 `sembrar-demos.mjs`, que sigue siendo quien carga el demo completo.
