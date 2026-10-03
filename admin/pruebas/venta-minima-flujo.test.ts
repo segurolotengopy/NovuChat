@@ -925,6 +925,11 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
       ['URL de otro anfitrión', (a) => { asignada(a, 'qrSimuladoUrl')['value'] = 'https://imagenes.ejemplo.invalid/qr.png'; }, 'qrSimuladoUrl no es la imagen rotulada permitida'],
       ['interruptor como texto', (a) => { const x = asignada(a, 'cobroSimuladoActivo'); x['type'] = 'string'; x['value'] = 'true'; }, 'cobroSimuladoActivo debe ser el booleano true'],
       ['interruptor en false', (a) => { asignada(a, 'cobroSimuladoActivo')['value'] = false; }, 'cobroSimuladoActivo debe ser el booleano true'],
+      // H6 (mata la mutación C04): ni el número 1, ni el tipo equivocado con el valor true, ni el tipo booleano con un valor que no lo es.
+      ['interruptor como número 1', (a) => { const x = asignada(a, 'cobroSimuladoActivo'); x['type'] = 'number'; x['value'] = 1; }, 'cobroSimuladoActivo debe ser el booleano true'],
+      ['interruptor booleano con el valor 1', (a) => { asignada(a, 'cobroSimuladoActivo')['value'] = 1; }, 'cobroSimuladoActivo debe ser el booleano true'],
+      ['interruptor booleano con el texto «true»', (a) => { asignada(a, 'cobroSimuladoActivo')['value'] = 'true'; }, 'cobroSimuladoActivo debe ser el booleano true'],
+      ['interruptor de tipo texto con el valor true', (a) => { asignada(a, 'cobroSimuladoActivo')['type'] = 'string'; }, 'cobroSimuladoActivo debe ser el booleano true'],
       ['sin la URL', (a) => { a.splice(a.findIndex((x) => x['name'] === 'qrSimuladoUrl'), 1); }, 'solo una de cobroSimuladoActivo / qrSimuladoUrl'],
       ['sin el interruptor', (a) => { a.splice(a.findIndex((x) => x['name'] === 'cobroSimuladoActivo'), 1); }, 'solo una de cobroSimuladoActivo / qrSimuladoUrl'],
     ];
