@@ -14,14 +14,63 @@
 | **Configuración** | `config/onboarding`: rubros, planes, asesor |
 | **Colecciones** | Storage `captacion/` |
 | **Pestañas** | Captación (`admin`) |
-| **Prompt** | fragmento de captación del prompt; los rubros como referencia, no como menú |
+| **Prompt** | `Flujos/prompts/modulos/captacion.md`: genérico (sin nombre de un negocio ni de personas, sin trato fijo: sale de `tratamiento` y `estiloEmojis`), parte estática < 6.000 caracteres. Desde el 03/10/2026 el primer mensaje lleva los rubros en una **lista interactiva**, no como referencia en el texto |
 | **Herramientas** | — |
-| **Nodos (lo que queda en n8n)** | nodos Code del onboarding (12, con Core); F2 los extrae |
+| **Nodos (lo que queda en n8n)** | nodos Code del onboarding (12, con Core); en `Flujos/src/modulos/captacion/`: `Estado de la conversación` (registra el rubro por el toque y guarda los hechos), `Decidir fila de la planilla` (la calificación por hechos), `Prospecto para la planilla`, `Confirmar envío`, `Filtrar categoría` y `Conocimiento del sitio`. Ningún nodo nuevo en el Bloque 1 |
 | **Ganchos** | `antesDelTurno` (rubros y planes) |
-| **Mensajes por conversación** | 0 |
-| **Pruebas** | `captacion.test.ts`, `cargar-captacion.test.ts`, `onboarding-flujo.test.ts` |
+| **Mensajes por conversación** | Rearquitectura: 0. **Bloque 1 (03/10/2026): 0 a +2**, aceptado por Andres: cada vuelta del ping-pong (pregunta de dolor, oferta) responde a un mensaje del cliente, y la lista y los botones viajan dentro del mismo mensaje. Lo demuestran la cuenta de «mensajes por conversación» de `onboarding-flujo.test.ts` (directo al asesor 4 + 1 plantilla; con planes 5 + 1; solo saluda 1; ya es cliente 1) |
+| **Pruebas** | `captacion.test.ts`, `cargar-captacion.test.ts`, `onboarding-flujo.test.ts` (los casos C1 a C22), `core/captacion-interactivos.test.ts` (la parte de Core), y la batería contra el modelo `admin/scripts/modulos/captacion/bateria.mjs` (se corre con la autorización de Andres) |
 
 **Observación:** hoy es un vertical (`onboarding`); con módulo, **NovuChat es un tenant con Captación encendida**. El corpus de 807 KB sale del nodo a un recurso que sirve la Function (bloque B-3). `captacion.ts:371` pasa a `tieneModulo('captacion')`. El chat de captación existe para la ficha: contacto, empresa y rubro, capturados por código
+
+## Bloque 1 (03/10/2026): ping-pong, lista de rubros y calificación por hechos
+
+**Lo que cambia, y lo que revierte.** Andres decidió el 03/10/2026 que el primer
+mensaje se presenta como IA y pregunta el rubro en un **mensaje interactivo tipo
+lista** con los rubros de `config/onboarding`; el toque registra el rubro por
+código y «Otro / a medida» abre la pregunta libre. Eso **revierte** «los rubros
+como referencia, no un menú» (22/09/2026) y «sin botones al inicio»
+(27/09/2026). El orden es rubro, pregunta de dolor, empatía con la oferta, y
+planes o una persona del equipo; un mensaje corto por turno, cada uno termina en
+una pregunta. Nombre y empresa **no** se piden al inicio: el contacto es el
+nombre de perfil de WhatsApp y la empresa se pide dentro del mensaje del
+traspaso. Se retiran la deducción del rubro y su confirmación, y la marca
+`[CIERRE]`: quien pide una persona por escrito va al traspaso (aviso más botón).
+
+**Calificación (columna I de la planilla), por lo que el prospecto hizo:**
+Alta si pidió una persona (botón, fila o escrito) o los planes (toque en «Ver
+planes», o un texto que los pide con rubro registrado); Media si eligió su rubro
+(o «Otro») y contestó la pregunta de dolor; Descalificado si el modelo lo
+propone con `[DESCARTE]motivo[/DESCARTE]` y el código lo acepta (motivo de la
+lista cerrada, sin un hecho de Alta, no es soporte, no la escribió el cliente);
+Baja el resto. La celda solo sube: Baja < Media < Descalificado < Alta, y un
+valor desconocido se sobrescribe. Motivos: `numero_equivocado`,
+`vende_o_busca_trabajo`, `sin_negocio`, `spam_o_prueba`.
+
+### Contrato entre nodos
+
+| Quién | Qué emite o guarda |
+|---|---|
+| `Normalizar entrada` (Core) | `idElegido`: id del botón o de la fila tocada (`rubro:<id>`, `asesor`, `planes`), solo `[a-z0-9:_-]`, hasta 200; `''` si no hay o no cumple. `porCampana`: la campaña con `destino` válido cuenta como el toque de esa opción |
+| `Estado de la conversación` (módulo) | `rubroElegido` (el nombre registrado este turno, por toque o por texto), `eligioOtroEsteTurno`, `respondioDolorEsteTurno`, `tocoPlanesEsteTurno`, `opcionVencida`, `hechos`, `hechosCambiaron`. Guarda en la conversación `c.hechos` (no vence con la ventana), `c.pidioDolor` (sí vence) y `c.rubroId`; borra `confirmaRubro` y `rubroDeducido` |
+| `hechos` | `{ pidioAsesor, pidioPlanes, eligioOtro, respondioDolor, descarte }`: cuatro booleanos estrictos y `descarte` (un motivo de la lista o `''`). `pidioAsesor`, `eligioOtro` y `respondioDolor` los marca el Estado; `pidioPlanes` y `descarte` los decide `Procesar respuesta` |
+| `Procesar respuesta` (Core) | La lista de rubros (`lista_de_rubros`), la oferta con los botones «Ver planes» y el del asesor, `c.pidioDolor`, `c.hechos.pidioPlanes` y `c.hechos.descarte`; reenvía `hechos` |
+| `Salida` (Core) | `prospectoPlanilla.hechos`, los cinco campos saneados |
+| `Decidir fila de la planilla` (módulo) | `CALIFICACION` por hechos, `PRIORIDAD` de la celda y `MOTIVOS_DESCARTE` (sus claves coinciden con las de Procesar y de Salida: una prueba lo compara) |
+
+El contexto del turno que arma el Estado dice **hechos** («Eligió su rubro: «X»
+(registrado).», «Eligió «Otro».», «Contestó tu pregunta sobre su negocio.»,
+«Tocó «Ver planes».») y nunca pide nombre ni empresa; **qué hacer** con cada
+hecho lo dice el prompt (procedimiento P1 a P7), una sola vez.
+
+**Campañas con destino.** Una campaña puede traer un `destino` con el mismo
+vocabulario de ids (`rubro:<id>`, `planes`, `asesor`) y se trata como si el
+cliente hubiera tocado esa opción. `asesor` no dispara el traspaso (una campaña
+no gasta la plantilla de aviso con cada clic): llega como contexto y el mensaje
+sale con el botón. El campo en el servidor y la consola es del Bloque 2.
+
+**Fuera del Bloque 1 (Bloque 2, exige Functions):** pregunta propia por rubro,
+imagen por rubro, nombre de la asesora, frase con cifra.
 
 Carpetas destino (F2): `admin/functions/src/modulos/<m>/`,
 `admin/web/src/modulos/<m>/`, `Flujos/src/modulos/<m>/`,
