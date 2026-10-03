@@ -53,21 +53,39 @@ valor desconocido se sobrescribe. Motivos: `numero_equivocado`,
 |---|---|
 | `Normalizar entrada` (Core) | `idElegido`: id del botón o de la fila tocada (`rubro:<id>`, `asesor`, `planes`), solo `[a-z0-9:_-]`, hasta 200; `''` si no hay o no cumple. `porCampana`: la campaña con `destino` válido cuenta como el toque de esa opción |
 | `Estado de la conversación` (módulo) | `rubroElegido` (el nombre registrado este turno, por toque o por texto), `eligioOtroEsteTurno`, `respondioDolorEsteTurno`, `tocoPlanesEsteTurno`, `opcionVencida`, `hechos`, `hechosCambiaron`. Guarda en la conversación `c.hechos` (no vence con la ventana), `c.pidioDolor` (sí vence) y `c.rubroId`; borra `confirmaRubro` y `rubroDeducido` |
-| `hechos` | `{ pidioAsesor, pidioPlanes, eligioOtro, respondioDolor, descarte }`: cuatro booleanos estrictos y `descarte` (un motivo de la lista o `''`). `pidioAsesor`, `eligioOtro` y `respondioDolor` los marca el Estado; `pidioPlanes` y `descarte` los decide `Procesar respuesta` |
+| `hechos` | `{ pidioAsesor, pidioPlanes, eligioOtro, respondioDolor, descarte }`: cuatro booleanos estrictos y `descarte` (un motivo de la lista o `''`). `pidioAsesor` (no cuando quien lo pide ya es cliente), `eligioOtro` y `respondioDolor` los marca el Estado; `pidioPlanes` y `descarte` los decide `Procesar respuesta` |
 | `Procesar respuesta` (Core) | La lista de rubros (`lista_de_rubros`), la oferta con los botones «Ver planes» y el del asesor, `c.pidioDolor`, `c.hechos.pidioPlanes` y `c.hechos.descarte`; reenvía `hechos` |
 | `Salida` (Core) | `prospectoPlanilla.hechos`, los cinco campos saneados |
 | `Decidir fila de la planilla` (módulo) | `CALIFICACION` por hechos, `PRIORIDAD` de la celda y `MOTIVOS_DESCARTE` (sus claves coinciden con las de Procesar y de Salida: una prueba lo compara) |
 
+**Planes pendientes (corrección de la revisión).** Quien pide planes o precios sin
+rubro recibe «Para mostrarte los planes que te sirven, ¿de qué rubro es tu
+negocio?», que es una promesa. `Procesar respuesta` escribe `c.planesPendientes =
+true` al retener los planes por falta de rubro y lo borra cuando salen; `Estado de
+la conversación`, si se registra un rubro (toque, nombre escrito, rubro libre o
+campaña) o elige «Otro» con la marca puesta, emite `tocoPlanesEsteTurno`, borra la
+marca y agrega el hecho «Había pedido los planes.» (los planes salen y es Alta). La
+marca vence con la ventana. **Vocabulario:** quien recibe al prospecto se llama
+siempre «asesor» (textos fijos y prompt).
+
 El contexto del turno que arma el Estado dice **hechos** («Eligió su rubro: «X»
 (registrado).», «Eligió «Otro».», «Contestó tu pregunta sobre su negocio.»,
-«Tocó «Ver planes».») y nunca pide nombre ni empresa; **qué hacer** con cada
-hecho lo dice el prompt (procedimiento P1 a P7), una sola vez.
+«Tocó «Ver planes».», «Había pedido los planes.», «Dice que ya es cliente.») y
+nunca pide nombre ni empresa ni da una orden; **qué hacer** con cada hecho lo dice
+el prompt (procedimiento P1 a P8), una sola vez.
 
 **Campañas con destino.** Una campaña puede traer un `destino` con el mismo
 vocabulario de ids (`rubro:<id>`, `planes`, `asesor`) y se trata como si el
 cliente hubiera tocado esa opción. `asesor` no dispara el traspaso (una campaña
 no gasta la plantilla de aviso con cada clic): llega como contexto y el mensaje
 sale con el botón. El campo en el servidor y la consola es del Bloque 2.
+
+**El corpus.** El nodo `Conocimiento del sitio` se copia sin `vector` y no deja entrar
+al texto los fragmentos que la consola ya cubre (`CUBIERTOS_POR_LA_CONSOLA`: planes,
+precios, instalación, moneda, prepago, cambio de plan, cómo se cuenta una conversación):
+los precios tienen una sola fuente. **Datos a cargar en la consola en el Bloque 2:** la
+frase «para quién es cada plan», el plan recomendado y el detalle de cada rubro, por qué
+no se cobra por mensaje y que la consola muestra el número que se factura.
 
 **Fuera del Bloque 1 (Bloque 2, exige Functions):** pregunta propia por rubro,
 imagen por rubro, nombre de la asesora, frase con cifra.
