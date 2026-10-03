@@ -73,7 +73,7 @@ const PLANILLA = {
 //   Baja          el resto
 const CALIFICACION = [
   { valor: 'Alta', si: (p) => p.pidioAsesor === true || p.pidioPlanes === true },
-  { valor: 'Descalificado', si: (p) => !!MOTIVOS_DESCARTE[p.descarte] },
+  { valor: 'Descalificado', si: (p) => Object.hasOwn(MOTIVOS_DESCARTE, p.descarte) },
   { valor: 'Media', si: (p) => (!!p.rubro || p.eligioOtro === true) && p.respondioDolor === true },
   { valor: 'Baja', si: () => true },
 ];
@@ -117,9 +117,11 @@ const fechaLaPaz = () => new Date(Date.now() - 4 * 3600 * 1000).toISOString().sl
 function calificar(p) {
   return CALIFICACION.find((r) => r.si(p)).valor;
 }
-function resumir(p, conEstado) {
+// `calificacionFinal` es la que QUEDA en la columna I: si la celda sigue en «Alta», el
+// resumen no dice que se descalifico.
+function resumir(p, conEstado, calificacionFinal) {
   const partes = [];
-  if (calificar(p) === 'Descalificado') partes.push('Descalificado por el asistente: ' + MOTIVOS_DESCARTE[p.descarte] + '.');
+  if (calificacionFinal === 'Descalificado') partes.push('Descalificado por el asistente: ' + MOTIVOS_DESCARTE[p.descarte] + '.');
   if (p.flujos) partes.push('Interés: ' + p.flujos + '.');
   if (p.consulta) partes.push('Consulta: ' + p.consulta + '.');
   // Sin ningun dato del negocio, el resumen no dice nada que valga pisar.
@@ -180,9 +182,13 @@ prospectos.forEach((it, i) => {
     // YA EXISTE: solo C, D, F, I y J, solo si el dato nuevo no esta vacio y
     // cambia algo. `Actualizar fila` escribe por `row_number`, como texto
     // crudo (RAW): nada se interpreta.
-    const nuevo = { C: seguro(p.nombre), D: seguro(p.empresa), F: seguro(p.rubro), I: calificacion,
-      J: seguro(resumir(prospecto, false)) };
     const prioridad = (v) => PRIORIDAD.indexOf(limpio(v));
+    // La que queda en I: la celda no baja (`noBajarCalificacion`), y el resumen (J)
+    // se arma con ESA, no con la calculada.
+    const quedaEnI = PLANILLA.noBajarCalificacion && prioridad(actual[H.I]) >= 0 && prioridad(calificacion) < prioridad(actual[H.I])
+      ? limpio(actual[H.I]) : calificacion;
+    const nuevo = { C: seguro(p.nombre), D: seguro(p.empresa), F: seguro(p.rubro), I: calificacion,
+      J: seguro(resumir(prospecto, false, quedaEnI)) };
     const celdas = {};
     for (const l of PLANILLA.actualizables) {
       const v = nuevo[l];
@@ -217,7 +223,7 @@ prospectos.forEach((it, i) => {
     [H.G]: PLANILLA.etapaNueva,
     [H.H]: p.anuncio ? PLANILLA.origenAnuncio : PLANILLA.origenChatbot,
     [H.I]: calificacion,
-    [H.J]: comoTexto(resumir(prospecto, true)),
+    [H.J]: comoTexto(resumir(prospecto, true, calificacion)),
     [H.M]: PLANILLA.estadoNuevo,
   }, pairedItem: { item: i } });
 });

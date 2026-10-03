@@ -3448,6 +3448,26 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
       expect(nueva({ pidioPlanes: true }, {}, 'Media')).toBe('Alta');
     });
 
+    // REVISOR M8: el resumen (J) dice lo que queda en I.
+    it('NEGANDO: si la celda sigue en Alta, el resumen no dice «Descalificado por el asistente»; si baja a Descalificado, sí', () => {
+      const s = salir({ respuesta: 'ok', guardarLead: true, hechos: { ...HECHOS, descarte: 'spam_o_prueba' } });
+      const fila = (antes: string) => ['LEAD-1002', '2026-09-01', 'Ana', 'Rosa', TEL, 'belleza', '1. Nuevo Lead', 'Chatbot WhatsApp IA', antes, 'Interés: citas.'];
+      const [alta] = decidir(prospecto(s), [fila('Alta')]);
+      expect(JSON.stringify(alta)).not.toMatch(/Descalificado/);
+      const [media] = decidir(prospecto(s), [fila('Media')]);
+      expect(media!['Calificación IA']).toBe('Descalificado');
+      expect(media!['Resumen Chatbot IA']).toContain('Descalificado por el asistente: Spam o prueba.');
+    });
+
+    it('NEGANDO: un descarte con el nombre de una propiedad heredada (constructor, toString) no descalifica', () => {
+      // Directo al nodo de la planilla, sin pasar por el saneo de `Salida`.
+      for (const descarte of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+        const [p] = prospecto(salir({ respuesta: 'ok', guardarLead: true, hechos: HECHOS }));
+        const [d] = decidir([{ ...p!, hechos: { ...HECHOS, descarte } }], []);
+        expect(d!['Calificación IA'], descarte).toBe('Baja');
+      }
+    });
+
     it('un valor desconocido en la celda («Muy alta», escrito por una persona) se sobrescribe', () => {
       const s = salir({ respuesta: 'ok', guardarLead: true, hechos: { ...HECHOS, respondioDolor: true }, lead: { rubro: 'belleza' } });
       const fila = ['LEAD-1002', '2026-09-01', 'Ana', 'Rosa', TEL, 'belleza', '1. Nuevo Lead', 'Chatbot WhatsApp IA', 'Muy alta', ''];
