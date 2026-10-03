@@ -3092,7 +3092,7 @@ describe('Base de conocimiento', () => {
     const fuera = [...(/const CUBIERTOS_POR_LA_CONSOLA = \[([\s\S]*?)\];/.exec(js)![1]!).matchAll(/'([a-z0-9-]+)',/g)].map((m) => m[1]!);
     expect(fuera).toEqual(['precios-resumen', 'excedentes', 'instalacion-costo', 'faq-cuanto-cuesta-la-instalacion',
       'faq-en-que-moneda-pago', 'faq-cuando-se-paga', 'faq-los-costos-de-whatsapp-y', 'faq-puedo-cambiar-de-plan',
-      'plan-impulso', 'plan-crecimiento', 'plan-pro']);
+      'plan-impulso', 'plan-crecimiento', 'plan-pro', 'como-se-cuenta']);
     const [{ conocimiento }] = correr('Conocimiento del sitio', [{}]) as { conocimiento: string }[];
     for (const f of frag) {
       const entra = conocimiento.includes('### ' + f.titulo + ' (');
@@ -3107,6 +3107,10 @@ describe('Base de conocimiento', () => {
   it('NEGANDO: ningún precio de plan de la consola aparece en `conocimiento` (una sola fuente para los precios)', () => {
     const datos = JSON.parse(readFileSync(join(aqui, '../scripts/datos/captacion-novuchat.json'), 'utf8')) as { planes: { precioUsd: number }[] };
     const [{ conocimiento }] = correr('Conocimiento del sitio', [{}]) as { conocimiento: string }[];
+    // Ningún monto en dólares, de ningún fragmento: los precios y la bolsa solo los da la consola.
+    // Si otro fragmento trae uno, la prueba lo nombra (no se excluye por cuenta propia).
+    expect(conocimiento.match(/USD\s*\d|US\$\s*\d|\$\s*\d|\d[\d.,]*\s*(USD|d[oó]lares)/gi), 'un monto en dólares en el corpus').toBeNull();
+    expect(conocimiento).not.toMatch(/excedente/i);
     expect(datos.planes.length).toBeGreaterThan(0);
     for (const { precioUsd: n } of datos.planes) {
       const hallazgos = conocimiento.match(new RegExp(`(USD|US\\$|\\$us|\\$)\\s?${n}(?![\\d.,]\\d)|(?<![\\d.,])${n}\\s?(USD|d[oó]lares)`, 'gi'));
@@ -3118,7 +3122,7 @@ describe('Base de conocimiento', () => {
     const [salida] = correr('Conocimiento del sitio', [{ a: 1 }]);
     expect(huella).toBeDefined();
     expect(String(salida!['conocimiento']).length).toBeGreaterThan(10_000);
-    expect(salida!['conocimiento']).toContain('novuchat.site/precios');
+    expect(salida!['conocimiento']).toContain('novuchat.site/como-funciona');
     expect(salida!['a']).toBe(1);
   });
 

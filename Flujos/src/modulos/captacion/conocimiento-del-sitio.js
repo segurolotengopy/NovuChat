@@ -278,7 +278,7 @@ const FRAGMENTOS = [
 // contra los rubros, planes, cargos y aclaraciones). NO se borran del archivo:
 // el procedimiento de copia no cambia. Un fragmento que trae ALGO que la
 // consola no tiene (el plan recomendado de un rubro, a quien le sirve cada plan,
-// el porque de no cobrar por mensaje) se queda, salvo que traiga un PRECIO: los
+// el plan recomendado de un rubro) se queda, salvo que traiga un PRECIO: los
 // precios tienen una sola fuente, la consola.
 const CUBIERTOS_POR_LA_CONSOLA = [
   'precios-resumen',                     // planes, instalacion, moneda y tipo de cambio: planes, cargos y aclaraciones
@@ -292,6 +292,8 @@ const CUBIERTOS_POR_LA_CONSOLA = [
   'plan-impulso',                        // precio y cupo: ya los da OFERTA (la frase «para quien es cada plan» se carga en la consola en el Bloque 2)
   'plan-crecimiento',                    // idem
   'plan-pro',                            // idem
+  'como-se-cuenta',                      // la definicion de «conversacion», atencion, cierre y la bolsa (USD 10): aclaraciones de la consola. Trae ademas el
+                                         // porque de no cobrar por mensaje y que la consola muestra el numero que se factura: DATO A CARGAR EN LA CONSOLA (Bloque 2)
 ];
 
 const conocimiento = FRAGMENTOS
