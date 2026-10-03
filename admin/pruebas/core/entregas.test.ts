@@ -94,21 +94,85 @@ const esIf = (n: Nodo): boolean => tipo(n) === 'if';
 const codigo = (n: Nodo): string => (esCode(n) ? tokenizar(String(n.parameters['jsCode'] ?? '')).sinComentarios : '');
 const texto = (n: Nodo): string => JSON.stringify(n.parameters ?? {});
 
+const COMPARA_ESTADO = /statusCode\W{0,12}(?:>=?|<=?|===?|!==?|!=|==)|(?:>=?|<=?|===?|!==?|!=|==)\W{0,12}statusCode|statusCode\s*\)\s*(?:>=?|<=?|===?|!==?)/;
+const LEE_ID = /messages[\s\S]{0,80}\[0\][\s\S]{0,40}\bid\b/;
+/** En un Code el arreglo suele copiarse antes a una variable (`const m = j.messages`): también vale `m[0].id`. */
+const LEE_ID_CODIGO = /messages[\s\S]{0,80}\[0\][\s\S]{0,40}\bid\b|\[0\]\??\.id\b/;
+const COMPARACION_O_THROW = /===|!==|==|!=|\bthrow\b|\.filter\(|[^?]\?[^?.:]/;
+
+/** El contenido (con paréntesis balanceados) del operando de cada `if (...)` de una sentencia. */
+function operandosDeIf(sentencia: string): string[] {
+  const r: string[] = [];
+  const re = /\bif\s*\(/g;
+  for (let m = re.exec(sentencia); m; m = re.exec(sentencia)) {
+    let nivel = 1;
+    let j = m.index + m[0].length;
+    for (; j < sentencia.length && nivel > 0; j++) { if (sentencia[j] === '(') nivel++; else if (sentencia[j] === ')') nivel--; }
+    r.push(sentencia.slice(m.index + m[0].length, j - 1));
+  }
+  return r;
+}
+
 /**
- * Lo que un nodo mira del resultado de un envío, de verdad: un `statusCode` dentro de una comparación, o
- * `messages[0].id` dentro de una condición o junto a un `throw`. Citarlos, copiarlos a un campo o
- * mencionarlos sin decidir nada con ellos no es mirar (sondas C, D y J de la revisión de `seguridad`).
+ * Lo que un Code mira del resultado de un envío, de verdad: un `statusCode` dentro de una comparación, o
+ * `messages[0].id` DENTRO de la condición: el operando de un `if (...)`, o una comparación, un `throw`, un
+ * `filter` o un ternario en la MISMA sentencia (el código se parte por `;` y por saltos de línea). Citarlos,
+ * copiarlos a un campo o tenerlos cerca de una comparación ajena no es mirar (sondas C, D, D2, D3 y J).
  */
 export const leeWamid = (s: string): boolean => {
-  if (/statusCode\W{0,12}(?:>=?|<=?|===?|!==?|!=|==)|(?:>=?|<=?|===?|!==?|!=|==)\W{0,12}statusCode|statusCode\s*\)\s*(?:>=?|<=?|===?|!==?)/.test(s)) return true;
-  const re = /messages[\s\S]{0,80}\[0\][\s\S]{0,40}\bid\b/g;
-  for (let m = re.exec(s); m; m = re.exec(s)) {
-    const ventana = s.slice(Math.max(0, m.index - 100), m.index + m[0].length + 100);
-    if (/\bif\b|\bthrow\b|&&|!==?|===?|[^?]\?[^?.:]|\bfilter\b|!!|\bleftValue\b/.test(ventana)) return true;
+  if (COMPARA_ESTADO.test(s)) return true;
+  for (const sentencia of s.split(/[;\n]/)) {
+    if (!LEE_ID_CODIGO.test(sentencia)) continue;
+    if (operandosDeIf(sentencia).some((o) => LEE_ID_CODIGO.test(o))) return true;
+    if (COMPARACION_O_THROW.test(sentencia)) return true;
   }
   return false;
 };
-const leeId = (n: Nodo): boolean => (esCode(n) ? leeWamid(codigo(n)) : esIf(n) && leeWamid(texto(n)));
+
+type CondicionIf = { leftValue?: unknown; rightValue?: unknown; operator?: { type?: string; operation?: string } };
+const condicionesDe = (n: Nodo): CondicionIf[] =>
+  (((n.parameters?.['conditions'] ?? {}) as { conditions?: CondicionIf[] }).conditions ?? []);
+
+/** Un IF v2 mira el resultado de un envío: una expresión que lo lee, o la forma estructurada `statusCode` + comparador. */
+const ifLeeId = (n: Nodo): boolean => condicionesDe(n).some((c) => {
+  const lv = String(c.leftValue ?? '');
+  if (COMPARA_ESTADO.test(lv) || LEE_ID.test(lv)) return true;
+  return /statusCode/.test(lv) && /^(gt|gte|lt|lte|equals|notEquals)$/.test(String(c.operator?.operation ?? ''));
+});
+const leeId = (n: Nodo): boolean => (esCode(n) ? leeWamid(codigo(n)) : esIf(n) && ifLeeId(n));
+export const leeIdDe = leeId;
+
+/**
+ * Por qué salida de un IF sale el FALLO del envío: 0 (verdadera), 1 (falsa), o null si no se puede decidir
+ * (entonces no se abre ninguna: un IF que no sabemos leer no prueba nada).
+ */
+export function salidaDeFalloDelIf(n: Nodo): 0 | 1 | null {
+  for (const c of condicionesDe(n)) {
+    const lv = String(c.leftValue ?? '');
+    const op = String(c.operator?.operation ?? '');
+    const verdad = op === 'true' || op === '' ? true : op === 'false' ? false : null;
+    const num = Number(c.rightValue);
+    // statusCode, estructurado: el error es >= 400 (o igual a un código de error).
+    if (/statusCode/.test(lv) && /^(gt|gte|lt|lte|equals|notEquals)$/.test(op)) {
+      if (op === 'gt' || op === 'gte') return 0;
+      if (op === 'lt' || op === 'lte') return 1;
+      if (Number.isFinite(num)) return (op === 'equals') === (num >= 400) ? 0 : 1;
+    }
+    // statusCode dentro de la expresión booleana: `… >= 400` es la salida de error; `… < 400`, su contraria.
+    const e = /statusCode\)?\s*(>=?|<=?)\s*\d+/.exec(lv);
+    if (e && verdad !== null) return ((e[1] as string).startsWith('>') === verdad) ? 0 : 1;
+    // `error` en la expresión: verdadera = hubo error.
+    if (/\.error\b/.test(lv) && !LEE_ID.test(lv) && verdad !== null) return verdad ? 0 : 1;
+    // id: verdadera = hay id = ÉXITO; el fallo sale por la falsa. `!id` (una sola negación) invierte.
+    if (LEE_ID.test(lv) && verdad !== null) {
+      const niega = /^=?\{\{\s*!(?!!)/.test(lv);
+      return (verdad !== niega) ? 1 : 0;
+    }
+    if (LEE_ID.test(lv) && /^(exists|notEmpty)$/.test(op)) return 1;
+    if (LEE_ID.test(lv) && /^(notExists|empty)$/.test(op)) return 0;
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Tokenizador mínimo de los Code: literales de cadena, sin comentarios ni regex
@@ -227,16 +291,24 @@ export function esEnvio(n: Nodo): boolean {
  * nodo que no decide nada, no es un camino de fallo (sondas A y B de la revisión de `seguridad`).
  */
 export function alcanceDeFallo(f: Flujo, n: Nodo): Set<string> {
-  let inicio: string[] = [];
-  if (n.onError === 'continueErrorOutput') inicio = salidasDe(f, n.name)[1] ?? [];
+  const inicio: string[] = [];
+  const sinExpandir = new Set<string>(); // gates que se cuentan (por su `throw`) pero de los que no cuelga ningún camino
+  if (n.onError === 'continueErrorOutput') inicio.push(...(salidasDe(f, n.name)[1] ?? []));
   else if (n.onError === 'continueRegularOutput') {
-    inicio = sucesores(f, n.name).filter((s) => {
+    for (const s of sucesores(f, n.name)) {
       const x = porNombre(f, s);
-      return !!x && (esCode(x) || esIf(x)) && (leeId(x) || /error/.test(esCode(x) ? codigo(x) : texto(x)));
-    });
+      if (!x) continue;
+      if (esCode(x) && (leeId(x) || /error/.test(codigo(x)))) { inicio.push(s); sinExpandir.add(s); continue; } // un Code no abre camino al cliente
+      if (!esIf(x) || !(leeId(x) || /error/.test(texto(x)))) continue;
+      const salida = salidaDeFalloDelIf(x);
+      if (salida === null) continue; // no se puede decidir la polaridad: no se abre ninguna salida
+      inicio.push(s);
+      for (const d of salidasDe(f, s)[salida] ?? []) inicio.push(d);
+      sinExpandir.add(s);
+    }
   }
   const vistos = new Set<string>(inicio);
-  const pendientes = [...inicio];
+  const pendientes = inicio.filter((x) => !sinExpandir.has(x));
   while (pendientes.length) {
     for (const s of sucesores(f, pendientes.pop() as string)) { if (!vistos.has(s)) { vistos.add(s); pendientes.push(s); } }
   }
@@ -502,32 +574,20 @@ export const clave = (archivo: string, regla: number, nodo: string): string => `
 
 export interface Excepcion { porque: string; vence: string }
 
-/** La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
+/**
+ * ATENCIÓN: cambiar esta línea, `TOPE_DE_EXCEPCIONES` o cualquier `vence` EXIGE pasar por el agente `seguridad`
+ * (revisión del #379): son los topes que impiden que el mapa de excepciones sea un cheque en blanco.
+ *
+ * La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
 export const ALTA_DE_EXCEPCIONES = '2026-10-03';
-/** Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
-export const TOPE_DE_EXCEPCIONES = 60;
+/** ATENCIÓN: cambiar este tope exige pasar por el agente `seguridad`. Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
+export const TOPE_DE_EXCEPCIONES = 56;
 
 /**
  * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
  * violación real que encontró la suite el 03/10/2026.
  */
 export const EXCEPCIONES: Record<string, Excepcion> = {
-  'bellido-agendamiento.json#1#Enviar interactivo': {
-    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
-    vence: '2027-01-01',
-  },
-  'bellido-agendamiento.json#2#Enviar interactivo': {
-    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
-    vence: '2027-01-01',
-  },
-  'bellido-agendamiento.json#1#Avisar al doctor (plantilla)': {
-    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
-    vence: '2027-01-01',
-  },
-  'bellido-agendamiento.json#3#Reportar interactivo (saliente)::Enviar interactivo': {
-    porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
-    vence: '2027-01-01',
-  },
   'agendamiento-seguimientos.json#1#Enviar texto': {
     porque: 'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
     vence: '2027-01-01',
@@ -865,7 +925,6 @@ const mem = (nodes: Nodo[], aristas: Arista[]): Flujo => {
 const reglasDe = (f: Flujo): string[] => violaciones(f).map((x) => `${x.regla}:${x.nodo}`);
 
 const ID = '(($json.messages || [])[0] || {}).id';
-const LEE_ID = `const ok = !!${ID}; if (!ok) throw new Error('Meta no devolvió messages[0].id');`;
 
 /**
  * Réplica mínima del DISEÑO OBJETIVO de Venta mínima: el id decide, y el respaldo termina en error visible
@@ -1125,7 +1184,7 @@ describe('Entregas: contrapruebas (cada una falla nombrando el nodo)', () => {
   });
 
   it('LOW-5: un verificador que «solo actúa si corrió» otro nodo no cubre un envío con dos orígenes', () => {
-    const solo = "const c = $('Aviso de transferencia').isExecuted; const id = (($input.first().json.messages || [])[0] || {}).id; if (c && !id) throw new Error('x'); return $input.all();";
+    const solo = "const c = $('Aviso de transferencia').isExecuted; if (c && !(($input.first().json.messages || [])[0] || {}).id) throw new Error('x'); return $input.all();";
     const base = (origenes: string[]) => mem([
       code('Origen 1', 'return [];'), code('Origen 2', 'return [];'), avisoWa('Avisar al dueño'), code('Marcar', solo),
     ].map((n) => (n.name === 'Avisar al dueño' ? { ...n, onError: 'continueRegularOutput' } : n)),
@@ -1150,31 +1209,106 @@ describe('Entregas: contrapruebas (cada una falla nombrando el nodo)', () => {
   });
 });
 
+describe('Entregas: segunda revisión (polaridad del IF, IF v2, ventana de leeWamid)', () => {
+  const envioConIf = (cond: Nodo, salidaConTexto: number): Flujo => mem(
+    [envioDinamico('Enviar a WhatsApp', 'continueRegularOutput'), cond, envioHttp('Enviar respaldo', 'text', 'continueRegularOutput')],
+    [['Enviar a WhatsApp', cond.name], [cond.name, 'Enviar respaldo', salidaConTexto]],
+  );
+
+  it('MEDIUM, A6: un IF `!!messages[0].id` con el texto en la salida 0 (la de ÉXITO) falla; con el texto en la 1 (fallo) cumple', () => {
+    const cond = si('¿Salió?', `!!${ID}`);
+    expect(reglasDe(envioConIf(cond, 0))).toContain('2:Enviar a WhatsApp');
+    expect(reglasDe(envioConIf(cond, 1))).not.toContain('2:Enviar a WhatsApp');
+    expect(salidaDeFalloDelIf(cond)).toBe(1);
+    expect(salidaDeFalloDelIf(si('¿No salió?', `!${ID}`))).toBe(0);
+  });
+
+  it('MEDIUM: un IF sobre `error` abre la salida 0; statusCode >= 400, también; un IF que no se puede decidir, ninguna', () => {
+    expect(salidaDeFalloDelIf(si('¿Falló?', '!!($json && $json.error)'))).toBe(0);
+    expect(reglasDe(envioConIf(si('¿Falló?', '!!($json && $json.error)'), 0))).not.toContain('2:Enviar a WhatsApp');
+    expect(reglasDe(envioConIf(si('¿Falló?', '!!($json && $json.error)'), 1))).toContain('2:Enviar a WhatsApp');
+    expect(salidaDeFalloDelIf(si('¿Falló?', 'Number($json.statusCode) >= 400'))).toBe(0);
+    const raro = nodoMem('¿Qué pasó?', 'if', { conditions: { conditions: [{ leftValue: '={{ $json.error }}', operator: { type: 'string', operation: 'contains' } }] } });
+    expect(salidaDeFalloDelIf(raro)).toBeNull();
+    expect(reglasDe(envioConIf(raro, 0))).toContain('2:Enviar a WhatsApp');
+    expect(reglasDe(envioConIf(raro, 1))).toContain('2:Enviar a WhatsApp');
+  });
+
+  it('MEDIUM, A7: un Code `if (!id) throw` con un texto DESPUÉS no abre un camino de fallo al cliente', () => {
+    const f = mem([
+      envioDinamico('Enviar a WhatsApp', 'continueRegularOutput'),
+      code('Verificar', `if (!${ID}) { throw new Error('Meta no devolvió id'); } return $input.all();`),
+      envioHttp('Enviar respaldo', 'text', 'continueRegularOutput'),
+    ], [['Enviar a WhatsApp', 'Verificar'], ['Verificar', 'Enviar respaldo']]);
+    expect(reglasDe(f)).toContain('2:Enviar a WhatsApp');
+  });
+
+  it('LOW-1: el IF v2 estructurado (leftValue con statusCode, operador number gte, rightValue 400) lee el id y abre la salida 0', () => {
+    const v2 = nodoMem('¿Falló el interactivo?', 'if', {
+      conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 },
+        conditions: [{ id: 'c1', leftValue: '={{ Number($json.statusCode) }}', rightValue: 400, operator: { type: 'number', operation: 'gte' } }], combinator: 'and' },
+      options: {},
+    });
+    expect(leeIdDe(v2)).toBe(true);
+    expect(salidaDeFalloDelIf(v2)).toBe(0);
+    const f = mem([envioDinamico('Enviar interactivo', 'continueRegularOutput'), v2, envioHttp('Enviar respaldo', 'text', 'continueRegularOutput'), reporte('Reportar mensaje (saliente)')],
+      [['Enviar interactivo', '¿Falló el interactivo?'], ['¿Falló el interactivo?', 'Enviar respaldo', 0], ['¿Falló el interactivo?', 'Reportar mensaje (saliente)', 1]]);
+    expect(reglasDe(f)).not.toContain('1:Enviar interactivo');
+    expect(reglasDe(f)).not.toContain('2:Enviar interactivo');
+    // Citar statusCode con un comparador ajeno al estado no lo lee.
+    expect(leeIdDe(nodoMem('IF', 'if', { conditions: { conditions: [{ leftValue: '={{ $json.statusCode }}', operator: { type: 'string', operation: 'contains' } }] } }))).toBe(false);
+  });
+
+  it('LOW-3, sondas D2 y D3: una copia del id cerca de una comparación o un throw AJENOS no es leerlo', () => {
+    expect(leeWamid("const idMeta = (($json.messages || [])[0] || {}).id; if (n === 1) return [];")).toBe(false); // D2
+    expect(leeWamid("return [{ json: { id: (($json.messages || [])[0] || {}).id } }];\nif (x > 0) throw new Error('y');")).toBe(false); // D3
+    expect(leeWamid("const m = j.messages;\nconst salio = !!m[0] && typeof m[0].id === 'string';")).toBe(true);
+    expect(leeWamid("if (!(($json.messages || [])[0] || {}).id) { throw new Error('x'); }")).toBe(true);
+    expect(leeWamid("const ok = x === 1; const idMeta = (($json.messages || [])[0] || {}).id;")).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Los *.prueba.json
 // ---------------------------------------------------------------------------
 
 /*
  * DECLARADO (revisión de `seguridad` del #379): `EXCLUIDO` deja fuera los `*.prueba.json` (agenda-minima y
- * venta-minima). Esos JSON SÍ se importan a n8n, para ensayar con teléfonos reales
- * (`docs/ensayo/LEEME.md`, `Flujos/experimental/venta-minima/DISENO.md` §«se importa únicamente para ensayar, y
- * se desactiva y se borra al terminar»). Se dejan fuera por la especificación del plan (son la misma cadena de
- * envío que `v0` y `qtaco` con otra entrada: «Entrada de prueba» en vez del receptor), pero lo que se ensaya con ellos
- * es lo que esta suite exige a sus hermanos. Lo que la suite afirma abajo es que no hay ningún `*.prueba.json` con
- * un envío que su familia no tenga: mismo conjunto de nombres de envío.
+ * venta-minima) de las reglas, por la especificación del plan. Pero esos JSON SÍ se importan a n8n para ensayar con
+ * teléfonos reales (`docs/ensayo/LEEME.md`, `Flujos/experimental/venta-minima/DISENO.md`: «se importa únicamente para
+ * ensayar, y se desactiva y se borra al terminar»). Por eso cada violación de un `*.prueba.json` tiene que tener su
+ * equivalente (`regla#nodo`) en las violaciones o las excepciones de su familia (los demás JSON de su carpeta):
+ * un ensayo no puede probar un camino de envío que el flujo de verdad no tiene.
  */
+export function violacionesSinEquivalente(prueba: Flujo, familia: { archivo: string; flujo: Flujo }[]): string[] {
+  const conocidas = new Set<string>();
+  for (const { archivo, flujo } of familia) {
+    for (const x of violaciones(flujo)) conocidas.add(`${x.regla}#${x.nodo}`);
+    for (const k of Object.keys(EXCEPCIONES)) {
+      const [a = '', regla = '', ...resto] = k.split('#');
+      if (a === archivo) conocidas.add(`${regla}#${resto.join('#')}`);
+    }
+  }
+  return violaciones(prueba).map((x) => `${x.regla}#${x.nodo}`).filter((k) => !conocidas.has(k));
+}
+
 describe('Entregas: los *.prueba.json (se importan a n8n para ensayos con teléfonos reales)', () => {
   const exp = join(CARPETA_FLUJOS, 'experimental');
   const pruebas = readdirSync(exp, { withFileTypes: true }).filter((e) => e.isDirectory())
     .flatMap((d) => readdirSync(join(exp, d.name)).filter((a) => a.endsWith('.prueba.json')).map((a) => `experimental/${d.name}/${a}`));
+  const familiaDe = (a: string) => ARCHIVOS.filter((x) => x.startsWith(`${a.split('/').slice(0, 2).join('/')}/`))
+    .map((archivo) => ({ archivo, flujo: FLUJOS.get(archivo) as Flujo }));
 
-  it('existen y cada uno trae solo envíos que su familia también tiene (misma cadena de envío)', () => {
+  it('existen, y cada violación de un ensayo tiene su equivalente en la familia', () => {
     expect(pruebas.length).toBeGreaterThan(0);
-    for (const a of pruebas) {
-      const familia = ARCHIVOS.filter((x) => x.startsWith(a.split('/').slice(0, 2).join('/') + '/'));
-      const conocidos = new Set(familia.flatMap((x) => enviosDe(FLUJOS.get(x) as Flujo).map((e) => e.name)));
-      const propios = enviosDe(leer(a)).map((e) => e.name);
-      expect(propios.filter((n) => !conocidos.has(n)), a).toEqual([]);
-    }
+    for (const a of pruebas) expect(violacionesSinEquivalente(leer(a), familiaDe(a)), a).toEqual([]);
+  });
+
+  it('contraprueba: sin `onError` en «Enviar a WhatsApp» de venta-minima.prueba.json, el ensayo ya no coincide con su familia', () => {
+    const a = 'experimental/venta-minima/venta-minima.prueba.json';
+    const roto = leer(a);
+    const envio = roto.nodes.find((n) => n.name === 'Enviar a WhatsApp') as Nodo;
+    delete envio.onError;
+    expect(violacionesSinEquivalente(roto, familiaDe(a))).toContain('1#Enviar a WhatsApp');
   });
 });
