@@ -82,6 +82,7 @@ function pdTextoForma(p, o){ return '¿«' + p.cantidad + ' ' + p.producto + '»
 function pdTextoNoEncontrado(n){ const sug = (n.sugerencias || []).map(function(i){ return i.nombre; }).slice(0, 3); return 'No encuentro «' + n.producto + '» en la carta.' + (sug.length ? ' ¿Es alguno de estos: ' + sug.join(', ') + '?' : ' ¿Me lo escribes como figura en la carta?'); }
 function pdExcluidos(cat, o){ const ex = ((o && o.areasExcluidas) || []).map(vmNorm); return cat.filter(function(i){ return ex.indexOf(vmNorm(i.area)) >= 0; }); }
 function pdNombreCorto(i){ return String(i.nombre).replace(/\s*\([^)]*(orden|unidad)[^)]*\)/gi, '').trim(); }
+function pdEjemploDePedido(c){ const v = []; const n = []; (Array.isArray(c) ? c : []).forEach(function(i){ const k = i.clave || pdNombreCorto(i); if (n.length < 2 && v.indexOf(k) < 0) { v.push(k); n.push('1 ' + pdNombreCorto(i)); } }); return n.join(' y '); }
 function pdTextoExcluido(n){ return 'Lo siento, «' + n + '» no está disponible para pedir por WhatsApp. ¿Te muestro la carta?'; }
 function pdBotonAgregar(i, c){ return { id: 'g|agregar|' + i.id + '|' + c, title: 'Agregar ' + pdNombreCorto(i) }; }
 function pdTextoFaltanEntrega(f){ const r = { direccion: 'la dirección exacta', referencia: 'una referencia para llegar', nombre: 'el nombre de quien recibe' }; const l = f.map(function(k){ return r[k]; }); return 'Para el delivery necesito ' + (l.length > 1 ? l.slice(0, -1).join(', ') + ' y ' + l[l.length - 1] : l[0]) + '. El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.'; }
@@ -443,7 +444,14 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
     expect(cuerpo).toContain('Esta es nuestra carta:');
     expect(cuerpo).toContain('Orden de 3 tacos de birria');
     expect(cuerpo).not.toContain('Michelada'); // área excluida
-    expect(cuerpo).toContain('(por ejemplo: «1 queso fundido con chorizo y 1 orden de 3 tacos de cochinita sin cebolla»)');
+    // El ejemplo sale de los DOS PRIMEROS productos de la carta del negocio (`pdEjemploDePedido`), nunca de un plato de un cliente.
+    expect(cuerpo).toContain('(por ejemplo: «1 Orden de 3 tacos de birria y 1 Queso fundido con chorizo»)');
+    expect(cuerpo).not.toMatch(/cochinita/i);
+    // Otra carta, otro ejemplo; y sin productos nombrables no hay ejemplo (nunca uno de código).
+    const otra = turno(crearMundo({ catalogo: [{ id: 'z1', nombre: 'Pizza Cuatro Quesos', precio: 60, area: 'Pizzas', clave: 'pizza' }, { id: 'z2', nombre: 'Lasaña', precio: 50, area: 'Pastas', clave: 'lasana' }] }), { boton: 'm|pedido' });
+    const cuerpoOtra = otra.p!['mensajes'][0]['cuerpo'] as string;
+    expect(cuerpoOtra).toContain('(por ejemplo: «1 Pizza Cuatro Quesos y 1 Lasaña»)');
+    expect(cuerpoOtra).not.toMatch(/cochinita|chorizo|birria/i);
     expect(cuerpo).toContain(' Por delivery no enviamos bebidas.');
     expect(estadoDe(m)['paso']).toBe('pedido');
     const sin = turno(crearMundo({ areasSinDelivery: '' }), { boton: 'm|pedido' });

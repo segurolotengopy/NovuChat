@@ -44,8 +44,8 @@
 //     title: 'Escribir al local'}], url} (url = enlace al número de recepción).
 //  6. `accion: 'boton'` con `boton: null` = mostrar el paso actual (botón viejo, «sí» suelto,
 //     ubicación, pregunta orden/unidad pendiente).
-//  8. El texto fijo de la carta trae el ejemplo «tacos de cochinita», que es de un cliente: se
-//     sigue literal y queda como DEUDA para F3 (texto de un cliente en código común).
+//  8. El ejemplo del cierre de la carta sale de `pdEjemploDePedido(carta)` (los dos primeros productos del negocio); con la carta
+//     sin productos nombrables se omite. Ya no hay un plato de un cliente en el código común (se cerró la deuda de F3).
 // SUPUESTOS PROPIOS (a confirmar en la integración):
 //  a. Las banderas de capacidad valen solo si son `true`; `aceptaDelivery` y
 //     `aceptaRetiroEnLocal` solo se apagan con `false` (la falta del dato es «sí», como en el servidor y en
@@ -389,8 +389,10 @@ function mensajesDeCarta(enlace) {
   if (typeof crudo === 'string' && crudo.trim() !== '') errores.push('catalogo_url_invalida');
   const partes = pdTextoDeLaCarta(carta, { moneda: monedaTxt, max: 3500 });
   if (!Array.isArray(partes) || !partes.length) return derivar('carta sin texto');
-  const cierreTxt = 'Escríbeme en un mensaje qué quieres y cuántos (por ejemplo: «1 queso fundido con chorizo y 1 orden de 3 tacos de cochinita sin cebolla») y si es para delivery o para recoger.'
-    + textoSinDelivery();
+  // El ejemplo sale de los dos primeros productos de la carta del negocio: nunca un plato de un cliente en el código común.
+  const ejemplo = pdEjemploDePedido(carta);
+  const cierreTxt = 'Escríbeme en un mensaje qué quieres y cuántos' + (ejemplo ? ' (por ejemplo: «' + ejemplo + '»)' : '')
+    + ' y si es para delivery o para recoger.' + textoSinDelivery();
   return partes.map((p, i) => {
     const inicio = i === 0 ? 'Esta es nuestra carta:\n\n' : '';
     const fin = i === partes.length - 1 ? '\n\n' + cierreTxt : '';
