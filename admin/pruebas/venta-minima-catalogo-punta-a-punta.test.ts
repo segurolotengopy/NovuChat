@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import { type J } from './lib/flujo';
 import {
-  AHORA, boton, botonesDe, crear, estadoDe, idDeBoton, nodoDe, PHONE_ID, QTACO, texto, turno,
+  AHORA, boton, botonesDe, crear, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
 } from './lib/venta-minima-mundo';
 
 const CARRITO = 'Carrito del catálogo';
@@ -152,5 +152,61 @@ describe('un mensaje normal de WhatsApp sigue igual', () => {
     const expresion = String(nodoDe(QTACO, '¿Reportar? (entrante)').parameters['conditions']?.['conditions']?.[0]?.['leftValue']);
     expect(expresion).toContain("$('Interpretar entrada').first().json.reportarEntrante !== false");
     expect(expresion).toContain("$('Config del negocio').first().json.modoPrueba !== true");
+  });
+});
+
+// =====================================================================================================
+// EL ENLACE DE LA CARTA, DE PUNTA A PUNTA: `Traer configuración` lo pide, `Config del negocio` lo copia, el plan lo usa
+// =====================================================================================================
+describe('el enlace de la carta recorre el flujo entero: se pide, se copia, sale como botón; sin enlace sale la carta en texto', () => {
+  const URL_CATALOGO = 'https://catalogo.ejemplo.invalid/c/qtaco-abc123';
+  const conPanel = (w: ReturnType<typeof crear>, extra: J) => {
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), ...extra } });
+  };
+  const urlDe = (t: ReturnType<typeof carrito>): string[] => t.mensajes.map((m) => String(m.payload['interactive']?.action?.parameters?.url ?? ''));
+
+  it('`Traer configuración` pide `catalogoCompleto: true` en cada turno (sin un nodo nuevo para el enlace)', () => {
+    const w = crear();
+    const t = turno(w, texto('hola'));
+    const cfg = t.registro.find((r) => r.nodo === 'Traer configuración');
+    expect(cfg?.cuerpo).toMatchObject({ catalogoCompleto: true });
+  });
+
+  it('con `catalogoWeb.enlace` válido: la carta sale como UN mensaje con «Ver la carta» y esa URL (nunca el chat del local), y `Config del negocio` lo copió a `catalogoWebEnlace`', () => {
+    const w = crear();
+    conPanel(w, { catalogoWeb: { enlace: URL_CATALOGO } });
+    turno(w, texto('hola'));
+    const t = turno(w, boton('m|pedido', 'Hacer un pedido'));
+    expect(t.salidas['Config del negocio']?.flat()[0]?.['catalogoWebEnlace']).toBe(URL_CATALOGO);
+    expect(t.mensajes).toHaveLength(1);
+    expect(urlDe(t)).toEqual([URL_CATALOGO]);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/Nachos Supremos/); // no hay carta en texto además del enlace
+    expect(JSON.stringify(t.mensajes[0]!.payload)).not.toContain('wa.me');
+  });
+
+  it('sin enlace (el servidor no lo manda, vacío o apagado): la carta sale en TEXTO, con sus productos, sin botón de carta ni promesa de página', () => {
+    for (const extra of [{}, { catalogoWeb: { enlace: '' } }, { catalogoWeb: { enlace: null } }, { catalogoWeb: { activo: false } }]) {
+      const w = crear();
+      conPanel(w, extra);
+      turno(w, texto('hola'));
+      const t = turno(w, boton('m|pedido', 'Hacer un pedido'));
+      expect(t.mensajes.length, JSON.stringify(extra)).toBeGreaterThan(0);
+      expect(t.mensajes.map((m) => m.cuerpo).join('\n'), JSON.stringify(extra)).toContain('Nachos Supremos');
+      expect(urlDe(t).filter(Boolean), JSON.stringify(extra)).toEqual([]);
+      expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Ver la carta')), JSON.stringify(extra)).toBe(false);
+      // El ejemplo del cierre sale de los dos primeros productos de ESTA carta, con las librerías reales (nunca un plato de un cliente).
+      expect(t.mensajes.map((m) => m.cuerpo).join('\n'), JSON.stringify(extra)).toMatch(/\(por ejemplo: «1 Nachos Supremos y 1 Tacos de Birria»\)/);
+    }
+  });
+
+  it('un enlace inseguro (http, javascript, localhost) NO se ofrece: carta en texto', () => {
+    for (const enlace of ['http://catalogo.ejemplo.invalid/c/x', 'javascript:alert(1)', 'https://localhost/c/x']) {
+      const w = crear();
+      conPanel(w, { catalogoWeb: { enlace } });
+      turno(w, texto('hola'));
+      const t = turno(w, boton('m|pedido', 'Hacer un pedido'));
+      expect(urlDe(t).filter(Boolean), enlace).toEqual([]);
+      expect(t.mensajes.map((m) => m.cuerpo).join('\n'), enlace).toContain('Nachos Supremos');
+    }
   });
 });
