@@ -409,9 +409,19 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
   `catalogoWeb.enlace`; además es el servidor el que llama al webhook `Carrito del catálogo` (`despertarFlujo`). Sin ese cambio desplegado
   no hay enlace: la carta sale en texto (verificado por la suite) y ningún carrito llega al flujo.
 - **Hosting (PR #381, segundo sitio):** la página del catálogo vive ahí. Sin ella el enlace no abre nada.
-- **Dos registros por compra (decisión pendiente de Andres):** `checkoutCatalogo` escribe `pedidos/cat_…` con estado «recibido» ANTES de que
-  el cliente confirme por el chat; cuando confirma con «Confirmar pedido», el flujo crea OTRO pedido (`ped-…`). Una compra deja dos
-  registros. Este flujo no los une ni los deduplica.
+- **Un solo pedido por compra web (decisión de Andres, 03/10/2026).** `checkoutCatalogo` escribe `pedidos/cat_…` con estado «recibido» ANTES
+  de que el cliente confirme por el chat, y el flujo guardaba su propio `ped-…` (código, referencia del cobro, cierre `registro`, aviso).
+  Ahora, en las entradas de carrito, el `cat_…` del checkout ES el `pedidoId` del turno: el cobro (`qr_enviado`), el cierre, el pedido
+  guardado y el código que lee el cliente y el restaurante (sale de ese id, estable al reconfirmar y tras R3) hablan del MISMO pedido que
+  ve la consola. Solo vale si el pedido del flujo sigue siendo EL de la página (`en.pedidoWeb`, con la huella de las líneas): el id tiene la
+  forma del checkout (`cat_` + 1 a 56 letras, números o guion bajo), el flujo no quitó ni acotó nada, el total del servidor coincide y no hay
+  costo de envío; si el cliente lo cambia por chat (agrega o quita algo, «Cambiar algo», cancela) o falla cualquiera de esas condiciones,
+  conserva el `ped-…` propio y lo anota en `errores` (`carrito_con_id_propio: <motivo>`). Los pedidos por chat no cambian.
+  **Por qué no con envío:** `sena.ts` coteja el comprobante contra el total del pedido `cat_…` (con el envío incluido), y el QR de este flujo
+  es solo la comida (el delivery se paga al repartidor): con `config/venta.costoDelivery` mayor que cero el comprobante saldría «no cuadra».
+  **Pendiente que este flujo NO resuelve (servidor, #380 o ingesta):** el flujo no tiene camino para escribir en `pedidos/`, así que el
+  documento `pedidos/cat_…` sigue en «recibido» aunque el cliente confirme; actualizarlo a «confirmado» (y que el cotejo use el monto del
+  QR cuando el pedido trae envío) es un cambio del servidor. Campo nuevo en el estado por teléfono: `pedidoWeb` (`{id, huella}` o `null`).
 - **Credencial «NovuChat ingesta (Q'Taco)»:** el valor guardado en n8n debe llevar el prefijo `Bearer ` (con el espacio). El Webhook
   `Carrito del catálogo` compara la cabecera `Authorization` de forma exacta: sin el prefijo, TODO carrito recibe 403 y no llega ninguno.
 

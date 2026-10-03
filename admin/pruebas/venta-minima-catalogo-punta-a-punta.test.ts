@@ -19,7 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import { type J } from './lib/flujo';
 import {
-  AHORA, boton, botonesDe, crear, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
+  AHORA, boton, botonesDe, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
 } from './lib/venta-minima-mundo';
 
 const CARRITO = 'Carrito del catálogo';
@@ -264,5 +264,155 @@ describe('el enlace de la carta recorre el flujo entero: se pide, se copia, sale
       expect(urlDe(t).filter(Boolean), enlace).toEqual([]);
       expect(t.mensajes.map((m) => m.cuerpo).join('\n'), enlace).toContain('Nachos Supremos');
     }
+  });
+});
+
+// =====================================================================================================
+// UN SOLO REGISTRO POR PEDIDO WEB (decisión de Andres, 03/10): el `cat_…` del checkout es el `pedidoId` del turno
+// =====================================================================================================
+describe('el pedido que llega de la página conserva su `cat_…` como pedidoId (código, cobro, cierre y aviso hablan del mismo pedido)', () => {
+  const CAT = 'cat_k1a2b3c4_9f8e7d6c';
+  const CAT2 = 'cat_k1a2b3c5_0a1b2c3d';
+  const web = (extra: J = {}) => ({ headers: cabeceras(), body: cuerpo({ pedidoId: CAT, ...extra }) });
+  const pedidoDe = (w: ReturnType<typeof crear>): J => (estadoDe(w)['pedido'] ?? {}) as J;
+  const guardados = (w: ReturnType<typeof crear>): J[] => Object.values((((w.mundo.sd['ventaMinima'] as J | undefined)?.['pedidos']) ?? {}) as J);
+  const qrAbiertos = (t: { llamadas: { ingesta: J[] } }): J[] => t.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado');
+  const confirmar = (w: ReturnType<typeof crear>, t: ReturnType<typeof carrito>) => turno(w, boton(idDeBoton(t, 'Confirmar pedido'), 'Confirmar pedido'));
+  /** Plan B: sin cobro real, el pedido se registra y se avisa (cierre `registro` con la referencia del pedido). */
+  const planB = () => {
+    const w = crear();
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), cobroReal: undefined, cobro: { activo: false } } });
+    return w;
+  };
+
+  it('con QR: el cobro se abre con el `cat_…` como referencia, el pedido guardado lleva ese id, y el código sale de él (el mismo en otra corrida)', () => {
+    const w = crear();
+    const c = confirmar(w, carrito(w, web()));
+    expect(qrAbiertos(c)).toHaveLength(1);
+    expect(qrAbiertos(c)[0]!['referencia']).toBe(CAT);
+    expect(pedidoDe(w)['pedidoId']).toBe(CAT);
+    expect(guardados(w).map((p) => p['pedidoId'])).toEqual([CAT]);
+    const codigo = String(pedidoDe(w)['codigo']);
+    expect(codigo).toMatch(/^[0-9A-Z]{4}$/);
+    expect(c.mensajes[0]!.cuerpo).toContain(`#${codigo}`);
+    // Otra corrida del mismo pedido: mismo código. Otro pedido web: otro id y otro código.
+    const w2 = crear();
+    confirmar(w2, carrito(w2, web()));
+    expect(String(pedidoDe(w2)['codigo'])).toBe(codigo);
+    const w3 = crear();
+    confirmar(w3, carrito(w3, web({ pedidoId: CAT2 })));
+    expect(pedidoDe(w3)['pedidoId']).toBe(CAT2);
+    expect(String(pedidoDe(w3)['codigo'])).not.toBe(codigo);
+  });
+
+  it('plan B: el cierre `registro` y el aviso llevan el MISMO `cat_…` y el mismo código que el cliente lee; uno solo por pedido', () => {
+    const w = planB();
+    const c = confirmar(w, carrito(w, web()));
+    expect(c.llamadas.cierre).toHaveLength(1);
+    expect(c.llamadas.cierre[0]!['referencia']).toBe(CAT);
+    expect(c.llamadas.cierre[0]!['tipo']).toBe('registro');
+    expect(guardados(w).map((p) => p['pedidoId'])).toEqual([CAT]);
+    const codigo = String(guardados(w)[0]!['codigo']);
+    expect(c.mensajes[0]!.cuerpo).toContain(codigo);
+    expect(JSON.stringify(c.avisos.map((a) => a.payload))).toContain(codigo);
+    expect(JSON.stringify([c.llamadas.cierre, c.avisos.map((a) => a.payload)])).not.toContain('ped-');
+  });
+
+  it('R3 con QR: si no llega el QR, reconfirmar da el MISMO pedido (mismo `cat_…` y código), UN cobro y UN pedido guardado', () => {
+    const w = crear();
+    const t = carrito(w, web());
+    const id = idDeBoton(t, 'Confirmar pedido');
+    w.envios['Enviar a WhatsApp'] = 'cuerpo vacío';
+    w.envios['Enviar respaldo'] = 'cuerpo vacío';
+    expect(() => turno(w, boton(id, 'Confirmar pedido'))).toThrow(/Entrega fallida/);
+    const codigoFallido = String(guardados(w)[0]!['codigo']);
+    expect(guardados(w).map((p) => p['pedidoId'])).toEqual([CAT]);
+    w.envios['Enviar a WhatsApp'] = 'acepta';
+    w.envios['Enviar respaldo'] = 'acepta';
+    const ok = turno(w, boton(id, 'Confirmar pedido'));
+    expect(qrAbiertos(ok)).toHaveLength(1);
+    expect(qrAbiertos(ok)[0]!['referencia']).toBe(CAT);
+    expect(guardados(w).map((p) => p['pedidoId'])).toEqual([CAT]);
+    expect(String(pedidoDe(w)['codigo'])).toBe(codigoFallido);
+  });
+
+  it('R3 en plan B (el aviso y el cierre ya salieron): el cierre del turno fallido ya llevaba el `cat_…` y el botón viejo no arma otro pedido ni repite el cierre', () => {
+    const w = planB();
+    const t = carrito(w, web());
+    const id = idDeBoton(t, 'Confirmar pedido');
+    w.envios['Enviar a WhatsApp'] = 'cuerpo vacío';
+    w.envios['Enviar respaldo'] = 'cuerpo vacío';
+    const fallido = w.mundo.turno(entrega(CLIENTE, boton(id, 'Confirmar pedido')), { tolerarFallo: true });
+    expect(fallido.fallo?.mensaje).toMatch(/Entrega fallida/);
+    expect(fallido.llamadas.cierre.map((x) => x['referencia'])).toEqual([CAT]);
+    w.envios['Enviar a WhatsApp'] = 'acepta';
+    w.envios['Enviar respaldo'] = 'acepta';
+    const otra = turno(w, boton(id, 'Confirmar pedido'));
+    expect(otra.llamadas.cierre).toHaveLength(0);
+    expect(otra.avisos).toHaveLength(0);
+    expect(guardados(w).map((p) => p['pedidoId'])).toEqual([CAT]);
+  });
+
+  it('NEGANDO: un pedido por CHAT sigue con su `ped-…` propio (referencia del cobro y pedido guardado)', () => {
+    const w = crear();
+    turno(w, texto('hola'));
+    w.estado.extraccion = { lineas: [{ producto: 'tacos de birria', cantidad: 4, forma: 'unidad', detalle: '' }], entrega: 'recojo', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+    const resumen = turno(w, texto('quiero 4 tacos de birria'));
+    const c = confirmar(w, resumen);
+    expect(String(qrAbiertos(c)[0]!['referencia'])).toMatch(/^ped-/);
+    expect(String(pedidoDe(w)['pedidoId'])).toMatch(/^ped-/);
+  });
+
+  describe('NEGANDO: si el pedido del flujo ya no es EL de la página, conserva su id propio `ped-…`', () => {
+    const idFinal = (t0: ReturnType<typeof carrito>, w: ReturnType<typeof crear>): string => {
+      const c = confirmar(w, t0);
+      expect(qrAbiertos(c)).toHaveLength(1);
+      return String(pedidoDe(w)['pedidoId']);
+    };
+    it('un id que no tiene la forma del checkout (otro prefijo, caracteres raros, mayúsculas)', () => {
+      let probados = 0;
+      for (const pedidoId of ['p-100', 'ped-2026-10-05-0011-abc', 'cat_', 'cat_ñ', 'CAT_abc']) {
+        const w = crear();
+        const t = carrito(w, web({ pedidoId }));
+        if (t.mensajes.length === 0) continue; // la entrada ya lo rechazó (no es un carrito válido): nada que confirmar
+        expect(idFinal(t, w), pedidoId).toMatch(/^ped-/);
+        probados++;
+      }
+      expect(probados).toBeGreaterThan(0);
+    });
+    it('con costo de envío (el servidor coteja contra el total CON envío y el QR es solo la comida)', () => {
+      const w = crear();
+      const t = carrito(w, web({ entrega: 'envio', direccion: 'Av. Banzer 1234', costoEnvio: 10, total: 120 }));
+      expect(t.mensajes.length).toBeGreaterThan(0);
+      expect(estadoDe(w)['pedidoWeb'] ?? null).toBeNull();
+    });
+    it('con un total del servidor distinto del que calcula el flujo', () => {
+      const w = crear();
+      const t = carrito(w, web({ total: 90 }));
+      expect(idFinal(t, w)).toMatch(/^ped-/);
+    });
+    it('con un producto que el flujo no pudo incluir', () => {
+      const w = crear();
+      const t = carrito(w, web({ items: [{ id: 'birria3', nombre: 'x', cantidad: 2, subtotal: 110 }, { id: 'no-existe', nombre: 'Cosa', cantidad: 1, subtotal: 5 }], total: 115 }));
+      expect(idFinal(t, w)).toMatch(/^ped-/);
+    });
+    it('si el cliente agrega un producto por chat al pedido de la página', () => {
+      const w = crear();
+      carrito(w, web());
+      expect(estadoDe(w)['pedidoWeb']).toMatchObject({ id: CAT });
+      w.estado.extraccion = { lineas: [{ producto: 'horchata', cantidad: 1, forma: '', detalle: '' }], entrega: 'recojo', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+      const resumen = turno(w, texto('agrega una horchata'));
+      expect(idFinal(resumen, w)).toMatch(/^ped-/);
+    });
+    it('«Cambiar algo» (reinicia el carrito) y cancelar el pedido borran la marca: un pedido nuevo no hereda el `cat_…`', () => {
+      const w = crear();
+      const t = carrito(w, web());
+      turno(w, boton(idDeBoton(t, 'Cambiar algo'), 'Cambiar algo'));
+      expect(estadoDe(w)['pedidoWeb'] ?? null).toBeNull();
+      const v = crear();
+      carrito(v, web());
+      turno(v, texto('cancelar pedido'));
+      expect(estadoDe(v)['pedidoWeb'] ?? null).toBeNull();
+    });
   });
 });

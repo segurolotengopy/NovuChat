@@ -229,6 +229,7 @@ function estadoDe(e) {
   s.carritoGuardado = Number(s.carritoGuardado) || 0;
   if (!s.reserva || typeof s.reserva !== 'object') s.reserva = null;
   if (!s.pedido || typeof s.pedido !== 'object') s.pedido = null;
+  if (!s.pedidoWeb || typeof s.pedidoWeb !== 'object') s.pedidoWeb = null;
   return s;
 }
 
@@ -238,6 +239,7 @@ function limpiarCarrito() {
   en.pendiente = [];
   en.entrega = entregaVacia();
   en.carritoGuardado = 0;
+  en.pedidoWeb = null;
 }
 function limpiarConfirmado() {
   en.pedido = null;
@@ -730,11 +732,22 @@ function aExtraerPedido() {
 }
 
 // El pedido a guardar y a avisar: los campos del código (nunca un precio del modelo).
+// La huella del carrito (ids, cantidades y notas): si el cliente lo cambia despues de llegar de la pagina (otra cantidad, un producto de mas, una
+// bebida quitada por delivery), ya no es el pedido que escribio el checkout y deja de usar su id.
+function huellaDelCarrito() {
+  return vmHuella(en.carrito.map((l) => String(l.id) + 'x' + String(l.cantidad) + '|' + String(l.detalle || '')).join(';'));
+}
+
 function armarPedido() {
   const total = pdTotal(en.carrito);
   if (!(total > 0)) return null;
-  const nuevo = pdNuevoPedido(t.from, t.nombrePerfil, en.carrito, en.entrega, total, monedaTxt, ahora, ancla) || {};
+  let nuevo = pdNuevoPedido(t.from, t.nombrePerfil, en.carrito, en.entrega, total, monedaTxt, ahora, ancla) || {};
   if (!nuevo.pedidoId) return null;
+  // Un pedido que llego de la pagina y sigue intacto conserva el `cat_…` del checkout; el codigo sale de ESE id (estable al reconfirmar).
+  const web = en.pedidoWeb;
+  if (web && web.id && web.huella === huellaDelCarrito()) {
+    nuevo = Object.assign({}, nuevo, { pedidoId: web.id, codigo: vmCodigoCorto(vmHuella('cat|' + web.id)) });
+  }
   const delivery = en.entrega.entrega === 'delivery';
   // Con una ubicación compartida el restaurante recibe las coordenadas (con coma decimal, que no se confunde con un enlace),
   // en su propio campo: `Avisos` las pone en su propio segmento y la dirección no las arrastra ni las corta.
@@ -1105,6 +1118,18 @@ function aCarrito() {
   const servidor = Math.round((Number(c.total) || 0) * 100) - Math.round((Number(c.costoEnvio) || 0) * 100);
   const flujo = Math.round(pdTotal(en.carrito) * 100);
   if (flujo !== servidor) errores.push('carrito_total_no_coincide: servidor ' + (servidor / 100) + ', flujo ' + (flujo / 100));
+
+  // UN SOLO REGISTRO POR PEDIDO WEB (decision de Andres, 03/10): el `cat_…` que escribio el checkout es el `pedidoId` del turno, asi el
+  // codigo, el cierre, la referencia del cobro y el aviso hablan del MISMO pedido que ve la consola (y es estable: no depende del reloj ni
+  // del estado leido). SOLO si el pedido del flujo es EL de la pagina: el id tiene la forma del checkout, el flujo no quito ni acoto
+  // nada, el total coincide con el del servidor y no hay costo de envio (el servidor coteja el comprobante contra el total del pedido
+  // `cat_…`, con envio incluido; el QR de este flujo es solo la comida). Cualquier otro caso conserva el id propio `ped-…`.
+  const motivoSinId = !/^cat_[A-Za-z0-9_]{1,56}$/.test(String(c.pedidoId || '')) ? 'id_sin_la_forma_del_checkout'
+    : (fuera.length || recortadas.length) ? 'lineas_quitadas_o_acotadas'
+      : flujo !== servidor ? 'total_distinto'
+        : Math.round((Number(c.costoEnvio) || 0) * 100) !== 0 ? 'con_costo_de_envio' : '';
+  if (motivoSinId) errores.push('carrito_con_id_propio: ' + motivoSinId);
+  else en.pedidoWeb = { id: String(c.pedidoId), huella: huellaDelCarrito() };
 
   const m = siguientePasoPedido();
   if (m) mensajes = conNotas(m);
