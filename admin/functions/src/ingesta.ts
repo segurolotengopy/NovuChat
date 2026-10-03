@@ -38,7 +38,7 @@ import {
 import { cobroParaElFlujo, totalUtilizable } from './modulos/cobros/cobroVenta.js';
 // El enlace de la carta para «Venta mínima v0» (`catalogoCompleto: true`). Sale
 // de `catalogoWeb.ts`, que no importa nada de acá: no hay ciclo.
-import { enlaceParaElFlujo, sePuedeComprar } from './modulos/catalogo-web/catalogoWeb.js';
+import { enlaceParaElFlujo, sePuedeComprar, type EnlaceEmitido } from './modulos/catalogo-web/catalogoWeb.js';
 
 /**
  * =========================================================================
@@ -1804,10 +1804,13 @@ export const configuracionFlujo = onRequest(
     // precio. Cualquier error o límite deja la respuesta sin `enlace` y el turno
     // sigue: el flujo cae a la carta en texto. Es una capacidad: el registro lleva
     // solo los últimos cuatro caracteres de la ficha, nunca la URL.
-    let enlaceDeLaCarta: Awaited<ReturnType<typeof enlaceParaElFlujo>> = null;
+    let enlaceDeLaCarta: EnlaceEmitido | null = null;
+    // Por qué NO hubo enlace, para el registro: sin esta señal, un `SITIO_PUBLICO`
+    // ausente en producción dejaría de dar enlaces sin que nadie lo note.
+    let motivoSinEnlace: string | null = null;
     if (catalogoCompletoPedido && catalogoWebActivo) {
       try {
-        enlaceDeLaCarta = await enlaceParaElFlujo({
+        const emitido = await enlaceParaElFlujo({
           ruta: {
             tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo, estado: ruta.estado,
           },
@@ -1816,10 +1819,17 @@ export const configuracionFlujo = onRequest(
           vendibles: catalogo.docs.filter(
             (d) => sePuedeComprar(d.data() as Record<string, unknown>)).length,
         });
+        if ('url' in emitido) enlaceDeLaCarta = emitido;
+        else motivoSinEnlace = emitido.motivo;
       } catch (error) {
+        // Solo el código del error: el mensaje puede traer la ruta de un
+        // documento (con el teléfono o el comercio adentro).
+        motivoSinEnlace = 'error';
+        const codigo = (error as { code?: unknown } | null)?.code;
         logger.warn('configuracionFlujo: sin enlace del catálogo web', {
           evento: EVENTO_CONFIGURACION, tenantId: comercio.tenantId,
-          error: error instanceof Error ? error.name : 'desconocido',
+          telefonoUlt4: telefono ? ultimos4(telefono) : null,
+          codigo: typeof codigo === 'string' || typeof codigo === 'number' ? codigo : null,
         });
       }
     }
@@ -1905,6 +1915,7 @@ export const configuracionFlujo = onRequest(
             catalogoEnlaceUlt4: enlaceDeLaCarta.ultimos4,
           }
         : {}),
+      ...(motivoSinEnlace ? { catalogoEnlaceMotivo: motivoSinEnlace } : {}),
     });
 
     respuesta.status(200).json({

@@ -112,8 +112,21 @@ const VIDA_FICHA_HORAS = 72;
  * legítimo y hace que un enlace reenviado a un grupo no se convierta en un
  * generador de pedidos falsos. A partir del segundo, el pedido viaja marcado
  * con `fichaCompartida` y el asistente lo confirma antes de despachar.
+ *
+ * ESTE TOPE ES EL DE LA FICHA, no el del enlace que se le da a una conversación.
+ * Desde el 03/10/2026 (Q'Taco, T-36) `configuracionFlujo` NO reutiliza una ficha
+ * que ya tuvo un carrito (`MAX_CHECKOUTS_PARA_REUTILIZAR`): el segundo pedido
+ * legítimo del mismo cliente —almuerzo y cena— abre un enlace NUEVO y no llega
+ * marcado como compartido (eso obligaría a confirmar antes de despachar, y cada
+ * confirmación es un mensaje pagado). Y un enlace reenviado a un grupo tiene el
+ * daño acotado a un pedido, porque después de ese carrito el enlace sigue
+ * sirviendo para quien lo tenga (hasta los cinco o las 72 h), pero la
+ * conversación ya recibe otro.
  */
 const MAX_CHECKOUTS_POR_FICHA = 5;
+
+/** Una ficha con un carrito o más no se vuelve a dar a la conversación. */
+const MAX_CHECKOUTS_PARA_REUTILIZAR = 1;
 
 /** Tope de líneas de un carrito y de unidades por línea. */
 const MAX_LINEAS = 50;
@@ -356,8 +369,15 @@ export interface FichaEmitida { id: string; caducaEn: Timestamp; reutilizada: bo
 
 /**
  * Crea la ficha de una conversación y, con `reutilizar`, devuelve la que ya
- * tiene si sigue sirviendo. Sirve si: existe, es de ESTE comercio y ESTE
- * teléfono, le quedan al menos seis horas y no agotó sus cinco carritos.
+ * tiene si sigue sirviendo. Sirve si: existe, es de ESTE comercio, ESTE
+ * teléfono, ESTE número (`phoneNumberId`) y ESTE flujo, le quedan al menos seis
+ * horas y NO tuvo ningún carrito todavía.
+ *
+ * El número y el flujo se comparan porque `checkoutCatalogo` despierta el
+ * webhook de `rutasWhatsApp/<phoneNumberId de la ficha>`: un comercio con dos
+ * líneas, o un número reasignado dentro de las 72 horas, mandaría el carrito al
+ * webhook del número viejo. Y sin carrito previo para que el segundo pedido de
+ * un cliente no llegue marcado como «enlace compartido» (T-36).
  *
  * Todo en una transacción, para que un cliente que escribe diez veces seguidas
  * no abra diez fichas: dos turnos simultáneos se serializan y el segundo ve la
@@ -401,9 +421,11 @@ export async function emitirFicha(o: {
       if (previa.exists
           && previa.get('tenantId') === o.tenantId
           && previa.get('telefono') === o.telefono
+          && previa.get('phoneNumberId') === o.phoneNumberId
+          && previa.get('flujo') === o.flujo
           && caducaPrevia !== undefined
           && caducaPrevia.toMillis() - Date.now() >= VIDA_MINIMA_PARA_REUTILIZAR_MS
-          && Number(previa.get('checkouts') ?? 0) < MAX_CHECKOUTS_POR_FICHA) {
+          && Number(previa.get('checkouts') ?? 0) < MAX_CHECKOUTS_PARA_REUTILIZAR) {
         return { id: idPrevio, caducaEn: caducaPrevia, reutilizada: true };
       }
     }
@@ -423,7 +445,7 @@ export async function emitirFicha(o: {
  * `catalogoWeb.enlace`: la URL de ESTA conversación, la misma mientras la
  * ficha sirva.
  *
- * Devuelve `null`, sin lanzar por motivos de negocio, si: la ruta no es de
+ * Devuelve `{ motivo }`, sin lanzar por motivos de negocio, si: la ruta no es de
  * venta o no está activa, el comercio no tiene el flujo `venta`, el catálogo
  * web está apagado, no hay teléfono, no hay ningún ítem con precio o el sitio
  * no está configurado. El flujo cae entonces a la carta en texto. Un error de
@@ -440,14 +462,16 @@ export async function enlaceParaElFlujo(o: {
   telefono: string | null;
   catalogoWebActivo: boolean;
   vendibles: number;
-}): Promise<{ url: string; caducaEn: string; reutilizado: boolean; ultimos4: string } | null> {
+}): Promise<EnlaceDelFlujo> {
   const { ruta } = o;
-  if (!o.catalogoWebActivo || o.vendibles < 1) return null;
-  if (ruta.flujo !== 'venta' || ruta.estado !== 'activo') return null;
-  if (!ID_TENANT.test(ruta.tenantId)) return null;
-  if (o.telefono === null || !TELEFONO.test(o.telefono)) return null;
-  if (baseDelSitio() === '') return null;
-  if (!await tieneVenta(ruta.tenantId)) return null;
+  if (!o.catalogoWebActivo) return { motivo: 'sinCatalogoWeb' };
+  if (o.vendibles < 1) return { motivo: 'sinVendibles' };
+  if (ruta.flujo !== 'venta' || ruta.estado !== 'activo' || !ID_TENANT.test(ruta.tenantId)) {
+    return { motivo: 'sinVenta' };
+  }
+  if (o.telefono === null || !TELEFONO.test(o.telefono)) return { motivo: 'sinTelefono' };
+  if (baseDelSitio() === '') return { motivo: 'sinSitio' };
+  if (!await tieneVenta(ruta.tenantId)) return { motivo: 'sinVenta' };
 
   const ficha = await emitirFicha({
     tenantId: ruta.tenantId, phoneNumberId: ruta.phoneNumberId, flujo: ruta.flujo,
@@ -466,6 +490,18 @@ export async function enlaceParaElFlujo(o: {
     ultimos4: ficha.id.slice(-4),
   };
 }
+
+/**
+ * Lo que devuelve `enlaceParaElFlujo`: el enlace, o el MOTIVO por el que no hay.
+ * El motivo es para el registro (`catalogoEnlaceMotivo`): si `SITIO_PUBLICO`
+ * faltara en producción, el enlace dejaría de salir sin ninguna señal.
+ */
+export type MotivoSinEnlace =
+  'sinCatalogoWeb' | 'sinVendibles' | 'sinVenta' | 'sinTelefono' | 'sinSitio';
+export interface EnlaceEmitido {
+  url: string; caducaEn: string; reutilizado: boolean; ultimos4: string;
+}
+export type EnlaceDelFlujo = EnlaceEmitido | { motivo: MotivoSinEnlace };
 
 // ---------------------------------------------------------------------------
 // 1) enlaceCatalogo — lo llama n8n cuando el asistente decide derivar al sitio

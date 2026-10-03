@@ -1601,7 +1601,7 @@ describe('`catalogoCompleto` (Q\'Taco, 03/10/2026): el Demo B NO la manda y cons
     .filter((n) => String(n.parameters['url'] ?? '').endsWith('/configuracionFlujo'))
     .map((n) => String(n.parameters['jsonBody'] ?? ''));
 
-  it('todos los nodos que llaman a `configuracionFlujo` mandan solo el teléfono', () => {
+  it('ningún nodo del Demo B que llama a `configuracionFlujo` manda `catalogoCompleto`', () => {
     const cuerpos = cuerposDeConfiguracion();
     expect(cuerpos.length).toBeGreaterThan(0);
     for (const c of cuerpos) expect(c).not.toMatch(/catalogoCompleto/);

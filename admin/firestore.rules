@@ -2346,7 +2346,14 @@ service cloud.firestore {
     // se lea, no una que se deduzca. Cuando alguien busque «quién puede leer
     // esto», tiene que encontrar la respuesta acá y no razonando por descarte.
     //
-    // QUÉ GUARDA: `{ tenantId, telefono, phoneNumberId, caducaEn, checkouts }`.
+    // QUÉ GUARDA: `{ tenantId, telefono, phoneNumberId, flujo, creadaEn,
+    // caducaEn, checkouts }`, y además UN puntero por conversación,
+    // `ult_<tenant>_<teléfono>` con `{ ficha, tenantId, telefono, caducaEn }`,
+    // que recuerda la ficha vigente para que `configuracionFlujo` no abra una
+    // por mensaje (03/10/2026). El puntero lleva el teléfono COMPLETO, igual que
+    // la ficha, y NO tiene TTL: es retención pendiente (ver `SEGURIDAD.md` T-36).
+    // Su identificador no tiene la forma de una ficha (32 hexadecimales), así que
+    // la página pública y el checkout lo rechazan.
     // El identificador del documento son 128 bits al azar y es lo único que
     // viaja en la URL que recibe el cliente final: el teléfono NO va en el
     // enlace, porque una URL termina en el historial del navegador, en el

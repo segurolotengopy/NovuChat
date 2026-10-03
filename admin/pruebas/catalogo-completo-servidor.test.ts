@@ -45,6 +45,8 @@ const { logger } = createRequire(new URL('../functions/package.json', import.met
   'firebase-functions') as { logger: Record<'info' | 'warn' | 'error', (...a: unknown[]) => void> };
 const db = getFirestore();
 const { configuracionFlujo } = await import('../functions/src/ingesta.ts');
+const { enlaceCatalogo, catalogoPublico, checkoutCatalogo } =
+  await import('../functions/src/modulos/catalogo-web/catalogoWeb.ts');
 const { UMBRAL_CATALOGO_AL_PROMPT } = await import('../functions/src/core/prompt/prompt.ts');
 const { limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
 
@@ -63,12 +65,16 @@ const T_CHICO = 'cc-chico';
 
 /** Venta con catálogo web y 3 ítems activos SIN precio («a consultar»). */
 const T_SIN_PRECIO = 'cc-sin-precio';
+/** El Demo B: solo llama a `enlaceCatalogo`, nunca a `configuracionFlujo`. */
+const T_DEMO_B = 'cc-demob';
 
 const NUMEROS: Record<string, string> = {
   [T_VENTA]: '1000000201', [T_AJENO]: '1000000202', [T_SIN_WEB]: '1000000203',
   [T_AGENDA]: '1000000204', [T_SUSP]: '1000000205', [T_CHICO]: '1000000206',
-  [T_SIN_PRECIO]: '1000000207',
+  [T_SIN_PRECIO]: '1000000207', [T_DEMO_B]: '1000000208',
 };
+/** Una SEGUNDA línea del mismo comercio de venta (dos líneas, o un número reasignado). */
+const SEGUNDA_LINEA = '1000000209';
 
 const ITEMS = UMBRAL_CATALOGO_AL_PROMPT + 1;
 
@@ -96,6 +102,35 @@ async function configuracion(tenant: string, cuerpo: unknown = {}): Promise<Resp
     end() { return respuesta; },
   };
   await (configuracionFlujo as unknown as (q: unknown, s: unknown) => Promise<void>)(peticion, respuesta);
+  return r;
+}
+
+/** Llama a una Function HTTP del catálogo web con un método y una ruta. */
+async function llamar(
+  funcion: unknown,
+  o: { metodo: 'GET' | 'POST'; ruta: string; numero?: string; cuerpo?: unknown },
+): Promise<Respuesta> {
+  const cuerpo = o.cuerpo ?? {};
+  const cabeceras: Record<string, string> = {
+    authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json',
+    ...(o.numero ? { 'x-novuchat-numero': o.numero } : {}),
+  };
+  const leer = (n: string) => cabeceras[n.toLowerCase()];
+  const peticion = {
+    method: o.metodo, body: cuerpo, rawBody: Buffer.from(JSON.stringify(cuerpo)),
+    headers: cabeceras, get: leer, header: leer,
+    path: o.ruta, url: o.ruta, originalUrl: o.ruta,
+  };
+  const r: Respuesta = { codigo: 0, cuerpo: {} };
+  const respuesta = {
+    status(c: number) { r.codigo = c; return respuesta; },
+    send(b: unknown) { r.cuerpo = { texto: b }; return respuesta; },
+    json(b: unknown) { r.cuerpo = b as Record<string, unknown>; return respuesta; },
+    setHeader() { return respuesta; }, getHeader() { return undefined; },
+    set() { return respuesta; }, type() { return respuesta; },
+    on() { return respuesta; }, end() { return respuesta; },
+  };
+  await (funcion as (q: unknown, s: unknown) => Promise<void>)(peticion, respuesta);
   return r;
 }
 
@@ -139,9 +174,14 @@ beforeAll(async () => {
       precio: FieldValue.delete(),
     });
   }
+  await sembrar(T_DEMO_B, { flujo: 'venta', web: true, items: 5 });
+  await db.doc(`rutasWhatsApp/${SEGUNDA_LINEA}`).set({
+    tenantId: T_VENTA, flujo: 'venta', aliasSecreto: 'cliente16', estado: 'activo',
+  });
 }, 120_000);
 
 afterAll(async () => {
+  await db.doc(`rutasWhatsApp/${SEGUNDA_LINEA}`).delete();
   for (const t of Object.keys(NUMEROS)) {
     await db.recursiveDelete(db.doc(`tenants/${t}`));
     await db.doc(`rutasWhatsApp/${NUMEROS[t]}`).delete();
@@ -348,21 +388,92 @@ describe('Con la bandera, `catalogoWeb.enlace` es el de ESTA conversación', () 
     expect((await db.doc(`fichasCatalogo/${idDeFicha(b!)}`).get()).get('tenantId')).toBe(T_AJENO);
   });
 
-  it('una ficha por vencer, o con los cinco carritos usados, se reemplaza; una vigente no', async () => {
-    const tel = '70010007';
+  it('borde de vida: con 6 h restantes se reutiliza; con 5 h 59 min, o 1 ms menos, no', async () => {
+    // Reloj fijo (solo `Date`) para que «6 h exactas» sea exacto y no una carrera.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const T0 = Date.now();
+    try {
+      const casos: [string, number, boolean][] = [
+        ['70010007', 6 * 3_600_000, true],
+        ['70010008', 6 * 3_600_000 - 1, false],
+        ['70010009', (5 * 60 + 59) * 60_000, false],
+      ];
+      for (const [tel, resta, seReutiliza] of casos) {
+        const a = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+        await db.doc(`fichasCatalogo/${idDeFicha(a)}`).update({
+          caducaEn: Timestamp.fromMillis(T0 + resta),
+        });
+        const b = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+        expect(b === a, `resta ${resta} ms`).toBe(seReutiliza);
+      }
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('una ficha con UN carrito ya no se reutiliza: el segundo pedido abre enlace nuevo y el puntero apunta a él', async () => {
+    const tel = '70010010';
     const a = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
-    // A cinco horas de vencer: ya no se le puede dar a alguien que empieza.
-    await db.doc(`fichasCatalogo/${idDeFicha(a)}`).update({
-      caducaEn: Timestamp.fromMillis(Date.now() + 5 * 3_600_000),
+    // Antes del primer carrito, el mismo enlace.
+    expect(enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))).toBe(a);
+    // El carrito entra por el checkout de verdad (no se simula el contador).
+    const checkout = await llamar(checkoutCatalogo, {
+      metodo: 'POST', ruta: `/api/catalogo/${idDeFicha(a)}/checkout`,
+      cuerpo: { items: [{ id: 'i000', cantidad: 2 }], entrega: 'retiro' },
     });
+    expect(checkout.codigo).toBe(200);
+    expect((await db.doc(`fichasCatalogo/${idDeFicha(a)}`).get()).get('checkouts')).toBe(1);
+    // El pedido no llegó marcado como compartido: era el primero de esa ficha.
+    const pedidos = await db.collection(`tenants/${T_VENTA}/pedidos`).get();
+    expect(pedidos.docs.filter((d) => d.get('fichaCompartida') === true)).toHaveLength(0);
+    // El siguiente turno de la conversación: ficha NUEVA.
     const b = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
     expect(b).not.toBe(a);
-    // Con los cinco carritos usados.
-    await db.doc(`fichasCatalogo/${idDeFicha(b)}`).update({ checkouts: 5 });
+    const puntero = await db.doc(`fichasCatalogo/ult_${T_VENTA}_${tel}`).get();
+    expect(puntero.get('ficha')).toBe(idDeFicha(b));
+    expect((await db.doc(`fichasCatalogo/${idDeFicha(b)}`).get()).get('checkouts')).toBe(0);
+    // Y el segundo pedido, con el enlace nuevo, tampoco llega como compartido.
+    const segundo = await llamar(checkoutCatalogo, {
+      metodo: 'POST', ruta: `/api/catalogo/${idDeFicha(b)}/checkout`,
+      cuerpo: { items: [{ id: 'i001', cantidad: 1 }], entrega: 'retiro' },
+    });
+    expect(segundo.codigo).toBe(200);
+    const todos = await db.collection(`tenants/${T_VENTA}/pedidos`).get();
+    expect(todos.docs.filter((d) => d.get('fichaCompartida') === true)).toHaveLength(0);
+    // Cada pedido consume su enlace: el tercer turno abre otro, distinto de los dos anteriores.
+    const c = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+    expect(new Set([a, b, c]).size).toBe(3);
+    // El enlace viejo sigue abriendo hasta su tope propio (cinco carritos, 72 h): el límite de
+    // la ficha no cambió, solo dejó de dársela a la conversación.
+    expect((await llamar(catalogoPublico, { metodo: 'GET', ruta: `/api/catalogo/${idDeFicha(a)}` })).codigo).toBe(200);
+  });
+
+  it('la ficha de OTRO número, o de otro flujo, no se reutiliza (dos líneas, número reasignado)', async () => {
+    const tel = '70010011';
+    const a = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+    // Misma conversación, pero por la segunda línea del comercio: otro webhook.
+    const peticion = async (numero: string) => {
+      const cuerpo = { telefono: tel, catalogoCompleto: true };
+      return llamar(configuracionFlujo, { metodo: 'POST', ruta: '/', numero, cuerpo });
+    };
+    const b = enlaceDe(await peticion(SEGUNDA_LINEA))!;
+    expect(b).toMatch(FORMA_ENLACE);
+    expect(b).not.toBe(a);
+    expect((await db.doc(`fichasCatalogo/${idDeFicha(b)}`).get()).get('phoneNumberId')).toBe(SEGUNDA_LINEA);
+    // De vuelta por la primera: la del puntero es la de la segunda línea, no sirve.
     const c = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
     expect(c).not.toBe(b);
-    // Y la nueva, intacta, se reutiliza.
-    expect(enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))).toBe(c);
+    expect((await db.doc(`fichasCatalogo/${idDeFicha(c)}`).get()).get('phoneNumberId')).toBe(NUMEROS[T_VENTA]);
+    // Un número reasignado dentro de las 72 h: la ficha vigente es del número viejo.
+    await db.doc(`fichasCatalogo/${idDeFicha(c)}`).update({ phoneNumberId: '1000000299' });
+    const d = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+    expect(d).not.toBe(c);
+    expect((await db.doc(`fichasCatalogo/${idDeFicha(d)}`).get()).get('phoneNumberId')).toBe(NUMEROS[T_VENTA]);
+    // Otro flujo en la ficha vigente: tampoco.
+    await db.doc(`fichasCatalogo/${idDeFicha(d)}`).update({ flujo: 'agendamiento' });
+    const e = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+    expect(e).not.toBe(d);
+    expect((await db.doc(`fichasCatalogo/${idDeFicha(e)}`).get()).get('flujo')).toBe('venta');
+    // Y la de ahora, intacta, se reutiliza.
+    expect(enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))).toBe(e);
   });
 
   it('sin teléfono no hay conversación a la que atar un enlace: no sale, y la carta sí', async () => {
@@ -518,5 +629,118 @@ describe('El enlace es una capacidad: nunca en un registro, y solo para la ruta 
       .docs.filter((d) => d.id.startsWith('ult_'));
     expect(punteros.length).toBeGreaterThan(0);
     for (const p of punteros) expect(p.id).not.toMatch(/^[0-9a-f]{32}$/);
+  });
+});
+
+describe('El puntero `ult_…` no abre nada desde afuera', () => {
+  it('`catalogoPublico` y `checkoutCatalogo` con el id del puntero dan 404, y no se crea ningún pedido', async () => {
+    const tel = '70010020';
+    await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true });
+    const id = `ult_${T_VENTA}_${tel}`;
+    expect((await db.doc(`fichasCatalogo/${id}`).get()).exists).toBe(true);
+    const pedidosAntes = (await db.collection(`tenants/${T_VENTA}/pedidos`).get()).size;
+    for (const ruta of [`/api/catalogo/${id}`, `/${id}`, `/c/${id}?x=1`]) {
+      const p = await llamar(catalogoPublico, { metodo: 'GET', ruta });
+      expect(p.codigo, ruta).toBe(404);
+      expect(JSON.stringify(p.cuerpo)).not.toContain(tel);
+      const c = await llamar(checkoutCatalogo, {
+        metodo: 'POST', ruta: `${ruta.split('?')[0]}/checkout`,
+        cuerpo: { items: [{ id: 'i000', cantidad: 1 }], entrega: 'retiro' },
+      });
+      expect(c.codigo, `${ruta}/checkout`).toBe(404);
+    }
+    expect((await db.collection(`tenants/${T_VENTA}/pedidos`).get()).size).toBe(pedidosAntes);
+  });
+});
+
+describe('`enlaceCatalogo` (el Demo B) no cambió: una ficha nueva por llamada y ningún puntero', () => {
+  it('dos llamadas con el mismo teléfono: dos URL distintas, dos fichas, ningún `ult_…` y los 7 campos de siempre', async () => {
+    const tel = '70010030';
+    const pedir = () => llamar(enlaceCatalogo, {
+      metodo: 'POST', ruta: '/', numero: NUMEROS[T_DEMO_B], cuerpo: { telefono: tel },
+    });
+    const a = await pedir();
+    const b = await pedir();
+    expect(a.codigo).toBe(200);
+    expect(b.codigo).toBe(200);
+    expect(a.cuerpo['url']).toMatch(FORMA_ENLACE);
+    expect(b.cuerpo['url']).toMatch(FORMA_ENLACE);
+    expect(a.cuerpo['url']).not.toBe(b.cuerpo['url']);
+    const todo = await db.collection('fichasCatalogo').where('tenantId', '==', T_DEMO_B).get();
+    expect(todo.docs.filter((d) => d.id.startsWith('ult_'))).toHaveLength(0);
+    const fichas = todo.docs.filter((d) => d.get('telefono') === tel);
+    expect(fichas).toHaveLength(2);
+    for (const f of fichas) {
+      expect(Object.keys(f.data()).sort()).toEqual(
+        ['caducaEn', 'checkouts', 'creadaEn', 'flujo', 'phoneNumberId', 'telefono', 'tenantId']);
+      expect(f.get('checkouts')).toBe(0);
+    }
+  });
+});
+
+describe('Si no hay enlace, el registro dice por qué (`catalogoEnlaceMotivo`) y sin datos sensibles', () => {
+  /** Corre una petición y devuelve lo que se escribió en el log del servidor. */
+  async function conLog(tenant: string, cuerpo: unknown) {
+    const lineas: unknown[][] = [];
+    const captura = (...a: unknown[]) => { lineas.push(a); };
+    const espias = (['info', 'warn', 'error'] as const).map(
+      (n) => vi.spyOn(logger, n).mockImplementation(captura as never));
+    try { return { r: await configuracion(tenant, cuerpo), log: JSON.stringify(lineas) }; }
+    finally { espias.forEach((e) => e.mockRestore()); }
+  }
+
+  it('sin teléfono: `sinTelefono`', async () => {
+    const { r, log } = await conLog(T_VENTA, { catalogoCompleto: true });
+    expect(enlaceDe(r)).toBeUndefined();
+    expect(log).toContain('"catalogoEnlaceMotivo":"sinTelefono"');
+  });
+
+  it('sin ítems con precio: `sinVendibles`', async () => {
+    const { r, log } = await conLog(T_SIN_PRECIO, { telefono: '70010040', catalogoCompleto: true });
+    expect(enlaceDe(r)).toBeUndefined();
+    expect(log).toContain('"catalogoEnlaceMotivo":"sinVendibles"');
+  });
+
+  it('el comercio perdió el flujo `venta` en su ficha: `sinVenta`', async () => {
+    await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['agendamiento'] });
+    try {
+      const { log } = await conLog(T_CHICO, { telefono: '70010041', catalogoCompleto: true });
+      expect(log).toContain('"catalogoEnlaceMotivo":"sinVenta"');
+    } finally { await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['venta'] }); }
+  });
+
+  it('`SITIO_PUBLICO` ausente y sin proyecto de donde derivarlo: `sinSitio` (la señal que faltaba)', async () => {
+    const guardado = { g: process.env['GCLOUD_PROJECT'], p: process.env['GCP_PROJECT'] };
+    delete process.env['GCLOUD_PROJECT'];
+    delete process.env['GCP_PROJECT'];
+    try {
+      const { r, log } = await conLog(T_VENTA, { telefono: '70010042', catalogoCompleto: true });
+      expect(r.codigo).toBe(200);
+      expect(enlaceDe(r)).toBeUndefined();
+      expect(log).toContain('"catalogoEnlaceMotivo":"sinSitio"');
+      expect(catalogoDe(r)).toHaveLength(ITEMS);
+    } finally {
+      if (guardado.g !== undefined) process.env['GCLOUD_PROJECT'] = guardado.g;
+      if (guardado.p !== undefined) process.env['GCP_PROJECT'] = guardado.p;
+    }
+  });
+
+  it('un error al abrir la ficha: `error`, con el código y el teléfono (últimos 4), sin el mensaje ni la ruta', async () => {
+    const tel = '70010043';
+    const falla = Object.assign(
+      new Error(`9 FAILED_PRECONDITION: projects/p/databases/(default)/documents/fichasCatalogo/ult_${T_VENTA}_${tel}`),
+      { code: 9 });
+    const espia = vi.spyOn(db, 'runTransaction').mockRejectedValueOnce(falla);
+    let salida: { r: Respuesta; log: string };
+    try { salida = await conLog(T_VENTA, { telefono: tel, catalogoCompleto: true }); }
+    finally { espia.mockRestore(); }
+    expect(salida.r.codigo).toBe(200);
+    expect(enlaceDe(salida.r)).toBeUndefined();
+    expect(salida.log).toContain('"catalogoEnlaceMotivo":"error"');
+    expect(salida.log).toContain('"codigo":9');
+    expect(salida.log).toContain('"telefonoUlt4":"0043"');
+    expect(salida.log).not.toContain('FAILED_PRECONDITION');
+    expect(salida.log).not.toContain('projects/');
+    expect(salida.log).not.toContain(tel);
   });
 });

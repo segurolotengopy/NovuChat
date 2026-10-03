@@ -12,12 +12,13 @@
 | **Depende de** | Productos, Pedidos, Inventario (declarado el 01/10/2026: el catálogo muestra el stock y no ofrece lo agotado, y descuenta el stock al tomar el pedido) |
 | **Límite por plan** | — |
 | **Configuración** | `config/marca` (logo, colores) |
-| **Colecciones** | `/fichasCatalogo` |
+| **Colecciones** | `/fichasCatalogo` (fichas, y el puntero `ult_<tenant>_<teléfono>`: lleva el teléfono completo y no tiene TTL, retención pendiente) |
 | **Pestañas** | la vista previa del catálogo web como ranura en Catálogo; el logo y los colores en Configuración del módulo |
 | **Prompt** | el enlace al catálogo web en el resumen de Productos cuando el catálogo pasa de 40 ítems |
 | **Herramientas** | — |
 | **Nodos (lo que queda en n8n)** | ninguno propio |
 | **Ganchos** | `antesDelTurno` (enlace) |
+| **Enlace dentro de `configuracionFlujo`** | con `catalogoCompleto: true` (booleano, solo flujo `venta`) la respuesta trae `catalogoWeb.enlace`: la ficha de la conversación, reutilizada solo mientras tenga 6 h o más de vida, el mismo número y flujo, y ningún carrito (03/10/2026, Q'Taco). El registro lleva `catalogoEnlaceMotivo` si no hay enlace y solo los últimos 4 caracteres de la ficha. **Bitácora:** `catalogo_enlace` significa ahora «ficha abierta» (detalle `items=N; via=config` cuando la abre `configuracionFlujo`); un turno que reutiliza no escribe renglón |
 | **Mensajes por conversación** | 0. **Mandar el enlace no ahorra si el asistente conversa el pedido igual**: el ahorro aparece cuando el enlace reemplaza la conversación (`docs/base-comercial.md` §5) |
 | **Pruebas** | `catalogo-web.test.ts`, `demo-b-catalogo.test.ts` |
 
