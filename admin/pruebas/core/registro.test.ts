@@ -628,6 +628,12 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
     expect(todas.length).toBeGreaterThan(0);
     const originales = new Set<object>(MANIFIESTOS.flatMap((m) => [...m.pestanas]));
     for (const p of todas) expect(originales.has(p)).toBe(false);
+    // `roles` también es copia: mutar el resultado no contamina el registro ni otra llamada.
+    const originalesPorRuta = new Map(MANIFIESTOS.flatMap((m) => [...m.pestanas]).map((o) => [o.ruta, o]));
+    for (const p of todas) expect(p.roles).not.toBe(originalesPorRuta.get(p.ruta)!.roles);
+    const antes = JSON.stringify(pestanasDe(IDS_MODULOS));
+    (todas[0]!.roles as string[]).push('intruso');
+    expect(JSON.stringify(pestanasDe(IDS_MODULOS))).toBe(antes);
   });
 
   it('flujosTenant de las reglas lee `flujos` con `[verticalTenant(tenantId)]` por defecto', () => {
@@ -733,6 +739,7 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
     expect(modulosDeFicha({ flujos: ['venta'] })).toEqual(modulosDeFlujos(['venta']));
     expect(modulosDeFicha(undefined)).toEqual([]);
     expect(modulosDeFicha(null)).toEqual([]);
+    expect(modulosDeFicha({})).toEqual(['productos', 'campanas']);
   });
 
   it('registro.ts sigue sin `import` y las derivaciones no tocan nada del exterior', () => {

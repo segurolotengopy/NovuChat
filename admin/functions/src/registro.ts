@@ -520,6 +520,8 @@ export function modulosDeFlujos(flujos: readonly IdFlujo[]): IdModulo[] {
 /**
  * TRANSITORIO hasta el paso 2 (`tenants.modulos`): con `modulos` (lista) manda
  * la lista, filtrada y en el orden de `IDS_MODULOS`; sin ella, los de sus flujos.
+ * Contrato: null/undefined → [] (sin ficha no hay nada); ficha existente vacía
+ * (`{}`) → los comunes (productos, campanas); `modulos: []` explícito → [].
  */
 export function modulosDeFicha(ficha: FichaConCapacidades | null | undefined): IdModulo[] {
   if (!ficha) return [];
@@ -537,7 +539,7 @@ export const tieneModulo = (ficha: FichaConCapacidades | null | undefined, m: Id
 export function pestanasDe(modulos: readonly IdModulo[]): Pestana[] {
   return modulos
     .filter((m) => !(MODULOS_COMUNES_HOY as readonly string[]).includes(m))
-    .flatMap((m) => manifiestoDe(m).pestanas.map((p) => ({ ...p })))
+    .flatMap((m) => manifiestoDe(m).pestanas.map((p) => ({ ...p, roles: [...p.roles] })))
     .sort((a, b) => a.orden - b.orden);
 }
 
