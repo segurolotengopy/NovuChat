@@ -493,13 +493,18 @@ export interface FichaConCapacidades {
 }
 
 /**
- * Los flujos de una ficha: manda la lista `flujos`; sin lista, `[vertical]`.
- * Filtra desconocidos y repetidos (igual que `flujosTenant` de las reglas y
- * `flujosDe` de la consola).
+ * Los flujos de una ficha: manda la lista `flujos`; con la clave ausente,
+ * `[vertical]`; con cualquier otra cosa (null, cadena, objeto), ninguno (falla
+ * cerrado, como las reglas, que no abren nada con un `flujos` que no es lista).
+ * Este código filtra desconocidos y repetidos: las reglas no filtran nada y
+ * `flujosDe` de la consola no quita repetidos.
  */
 export function flujosDeFicha(ficha: FichaConCapacidades | null | undefined): IdFlujo[] {
   if (!ficha) return [];
-  const crudos: unknown[] = Array.isArray(ficha.flujos) ? ficha.flujos : [ficha.vertical];
+  const propia = (clave: string) => Object.prototype.hasOwnProperty.call(ficha, clave);
+  const crudos: unknown[] = !propia('flujos') || ficha.flujos === undefined
+    ? [ficha.vertical]
+    : Array.isArray(ficha.flujos) ? ficha.flujos : [];
   const salida: IdFlujo[] = [];
   for (const f of crudos) if (esFlujo(f) && !salida.includes(f)) salida.push(f);
   return salida;
@@ -517,7 +522,8 @@ export function modulosDeFlujos(flujos: readonly IdFlujo[]): IdModulo[] {
  * la lista, filtrada y en el orden de `IDS_MODULOS`; sin ella, los de sus flujos.
  */
 export function modulosDeFicha(ficha: FichaConCapacidades | null | undefined): IdModulo[] {
-  if (ficha && Array.isArray(ficha.modulos)) {
+  if (!ficha) return [];
+  if (Object.prototype.hasOwnProperty.call(ficha, 'modulos') && Array.isArray(ficha.modulos)) {
     const lista: unknown[] = ficha.modulos;
     return IDS_MODULOS.filter((m) => lista.includes(m));
   }
@@ -531,7 +537,7 @@ export const tieneModulo = (ficha: FichaConCapacidades | null | undefined, m: Id
 export function pestanasDe(modulos: readonly IdModulo[]): Pestana[] {
   return modulos
     .filter((m) => !(MODULOS_COMUNES_HOY as readonly string[]).includes(m))
-    .flatMap((m) => [...manifiestoDe(m).pestanas])
+    .flatMap((m) => manifiestoDe(m).pestanas.map((p) => ({ ...p })))
     .sort((a, b) => a.orden - b.orden);
 }
 

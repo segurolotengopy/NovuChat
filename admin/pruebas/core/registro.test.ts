@@ -593,6 +593,7 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
     ['vertical desconocido', { vertical: 'interno' }],
     ['flujos no es lista (cadena)', { flujos: 'venta', vertical: 'agendamiento' }],
     ['flujos no es lista (objeto)', { flujos: { venta: true } }],
+    ['flujos null', { flujos: null, vertical: 'agendamiento' }],
     ['flujos: []', { flujos: [], vertical: 'venta' }],
     ['flujos con un flujo desconocido', { flujos: ['interno'] }],
     ['flujos con desconocido y conocido', { flujos: ['interno', 'venta'] }],
@@ -601,8 +602,36 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
     ['sin ficha', undefined],
   ];
 
-  it.each(fichas)('flujosDeFicha(%s) coincide con flujosDe de la consola', (_n, ficha) => {
+  // Con `flujos` que no es lista la consola abre por vertical y las reglas no abren nada: ahí el registro cierra (prueba aparte).
+  it.each(fichas.filter(([, f]) => f === undefined || !('flujos' in f) || Array.isArray(f.flujos)))(
+    'flujosDeFicha(%s) coincide con flujosDe de la consola', (_n, ficha) => {
     expect(flujosDeFicha(ficha)).toEqual(flujosDe(ficha));
+  });
+
+  it('flujos que no es lista cierra: ni flujos ni módulos por vertical, y tieneModulo es false', () => {
+    for (const flujos of [null, 'venta', { venta: true }, 3]) {
+      const ficha = { flujos, vertical: 'agendamiento' };
+      expect(flujosDeFicha(ficha), String(flujos)).toEqual([]);
+      for (const [modulo] of CAPACIDADES) expect(tieneModulo(ficha, modulo), `${modulo} / ${String(flujos)}`).toBe(false);
+    }
+    expect(flujosDeFicha({ flujos: undefined, vertical: 'venta' })).toEqual(['venta']);
+  });
+
+  it('las propiedades heredadas no cuentan como flujos ni como módulos', () => {
+    const heredada = Object.create({ flujos: ['venta'], modulos: ['agenda'] }) as FichaConCapacidades;
+    expect(flujosDeFicha(heredada)).toEqual([]);
+    expect(modulosDeFicha(heredada)).toEqual(modulosDeFlujos([]));
+  });
+
+  it('pestanasDe devuelve copias, no las instancias del registro', () => {
+    const todas = pestanasDe(IDS_MODULOS);
+    expect(todas.length).toBeGreaterThan(0);
+    const originales = new Set<object>(MANIFIESTOS.flatMap((m) => [...m.pestanas]));
+    for (const p of todas) expect(originales.has(p)).toBe(false);
+  });
+
+  it('flujosTenant de las reglas lee `flujos` con `[verticalTenant(tenantId)]` por defecto', () => {
+    expect(cuerpoDeFuncion(REGLAS, 'flujosTenant')).toMatch(/\.get\('flujos',\s*\[verticalTenant\(tenantId\)\]\)/);
   });
 
   it('flujosDeFicha quita repetidos y deja la lista vacía si no hay nada conocido', () => {
@@ -702,7 +731,8 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
     expect(modulosDeFicha({ modulos: [] })).toEqual([]);
     expect(modulosDeFicha({ modulos: 'agenda', flujos: ['venta'] })).toEqual(modulosDeFlujos(['venta']));
     expect(modulosDeFicha({ flujos: ['venta'] })).toEqual(modulosDeFlujos(['venta']));
-    expect(modulosDeFicha(undefined)).toEqual(modulosDeFlujos([]));
+    expect(modulosDeFicha(undefined)).toEqual([]);
+    expect(modulosDeFicha(null)).toEqual([]);
   });
 
   it('registro.ts sigue sin `import` y las derivaciones no tocan nada del exterior', () => {
