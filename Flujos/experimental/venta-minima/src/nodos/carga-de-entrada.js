@@ -2,9 +2,10 @@
 //
 // Formas que acepta:
 //   1. el disparador de WhatsApp: {messages, metadata, contacts} en la raiz;
-//   2. el `body` de la «Entrada de prueba» (o de cualquier Webhook): lo mismo dentro de `body`;
+//   2. el `body` de la «Entrada de prueba»: lo mismo dentro de `body`. SOLO si ese nodo corrio: el `body` de cualquier otro
+//      Webhook NUNCA se lee como un mensaje;
 //   3. la carga completa de la Cloud API: {entry:[{changes:[{value:{...}}]}]}, en la raiz o
-//      dentro de `body`;
+//      dentro de `body` (este ultimo, solo con «Entrada de prueba», como la forma 2);
 //   4. la del receptor: si CORRIO «Entrega del receptor», el evento es su `body.value`, y si
 //      `body.field` viene, tiene que ser `messages` (otro campo —un cambio de plantilla, de
 //      calidad— no es un mensaje). Ese nodo manda sobre las otras tres: lo que pasa por
@@ -12,7 +13,7 @@
 //   5. el carrito del catalogo web: SOLO si CORRIO «Carrito del catálogo» (el Webhook que despierta
 //      `despertarFlujo` del servidor). Ese nodo manda sobre TODAS las demas formas, incluida la del
 //      receptor: nada de lo que traiga ese Webhook se lee como un mensaje de WhatsApp (ni `messages` en
-//      la raiz ni dentro de `body`, que las formas 2 y 3 aceptarian de «cualquier Webhook»), y un cuerpo
+//      la raiz ni dentro de `body`), y un cuerpo
 //      que no pasa la validacion sale con ninguna salida. Lo que pasa se entrega como UN mensaje
 //      sintetico `{from, id: 'carrito:<pedidoId>', type: 'carrito', carrito}` con `carritoWeb: true`;
 //      `Interpretar entrada` solo acepta ese tipo con esa marca.
@@ -199,7 +200,9 @@ if (receptor) {
 const salida = [];
 for (const it of $input.all()) {
   const j = (it && it.json) || {};
-  const b = j.body && typeof j.body === 'object' ? j.body : null;
+  // El `body` solo se lee como un mensaje si CORRIO «Entrada de prueba» (`prueba` no nulo): en produccion ningun otro Webhook
+  // puede hacerse pasar por un mensaje de WhatsApp (antes lo protegia solo la precedencia del carrito y del receptor).
+  const b = prueba && j.body && typeof j.body === 'object' ? j.body : null;
   const v = cdeValorDeMeta(j) || cdeValorDeMeta(b);
   salida.push(cdeSalida(v, j.metadata || (b && b.metadata), ahoraMs, prueba));
 }

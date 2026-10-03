@@ -702,18 +702,35 @@ describe('Carga de entrada: las cuatro formas', () => {
     expect(msgs([s!])).toHaveLength(1);
     expect(s!['phoneNumberId']).toBe(PNID);
     expect(s!['prueba']).toEqual({ modoPrueba: true, telefonoDePrueba: '59100000099', enviarDeVerdad: false });
-    // el body de un Webhook cualquiera (sin ser la Entrada de prueba) también se lee, pero no da modo prueba
+    // CAMBIO DEL INTEGRADOR (03/10): el body de un Webhook cualquiera (sin que corra la Entrada de prueba) YA NO se lee como un mensaje.
+    // Antes lo protegía solo la precedencia del carrito y del receptor; ahora la forma 2 exige la Entrada de prueba.
     const [t] = correr([{ body: valor(mensaje()) }]);
-    expect(msgs([t!])).toHaveLength(1);
+    expect(msgs([t!])).toEqual([]);
     expect(t!['prueba']).toBeNull();
+    expect(t!['carritoWeb']).toBe(false);
   });
   it('3. la carga completa entry[0].changes[0].value, en la raíz o dentro de body', () => {
     const [a] = correr([sobreMeta(valor(mensaje()))]);
     expect(msgs([a!])).toHaveLength(1);
     expect(a!['phoneNumberId']).toBe(PNID);
-    const [b] = correr([{ body: sobreMeta(valor(mensaje())) }]);
+    // Dentro de `body` solo con la Entrada de prueba (como la forma 2); sin ella, no es un mensaje.
+    const cuerpoMeta = sobreMeta(valor(mensaje()));
+    const [b] = correr([{ body: cuerpoMeta }], { 'Entrada de prueba': { body: cuerpoMeta } });
     expect(msgs([b!])).toHaveLength(1);
     expect(b!['contacts']).toHaveLength(1);
+    const [sin] = correr([{ body: cuerpoMeta }]);
+    expect(msgs([sin!])).toEqual([]);
+  });
+  it('2 y 3. el body de CUALQUIER otro Webhook nunca es un mensaje: ni con `messages` ni con la carga completa, ni con otro nodo ejecutado', () => {
+    const v = valor(mensaje());
+    for (const cuerpo of [v, sobreMeta(v), { field: 'messages', value: v }]) {
+      const [s] = correr([{ body: cuerpo }]);
+      expect(msgs([s!]), JSON.stringify(Object.keys(cuerpo))).toEqual([]);
+      expect(s!['prueba']).toBeNull();
+    }
+    // El Trigger (la raíz) sigue valiendo, y el del receptor también.
+    expect(msgs(correr([v]))).toHaveLength(1);
+    expect(msgs(correr([{ valido: true }], { 'Entrega del receptor': { body: { field: 'messages', value: v } } }))).toHaveLength(1);
   });
   it('4. el receptor: el evento es el body.value de «Entrega del receptor»', () => {
     const entrega = { body: { field: 'messages', value: valor(mensaje()) } };
