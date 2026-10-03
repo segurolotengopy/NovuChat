@@ -2454,7 +2454,8 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
     it('para planes, precios y rubros manda la consola; el corpus para lo demás', () => {
       const s = instrucciones(cfgCon());
       expect(s).toMatch(/Tus datos salen solo de OFERTA y de DATOS DEL NEGOCIO/);
-      expect(s).toMatch(/Si difieren en planes, precios o aclaraciones, vale OFERTA/);
+      // Una sola frase de origen de datos, y ninguna que arbitre entre dos fuentes.
+      expect(s).not.toMatch(/difieren|vale OFERTA|gana la consola/);
       expect(s).toContain('Impulso (USD 25/mes): Hasta 100 conversaciones');
       // NUMERADOS EN EL PROMPT, sin numerar en el chat: son dos listas
       // distintas. La del prompt la lee el modelo, y medido el 22/09 con
@@ -2946,6 +2947,24 @@ describe('Base de conocimiento', () => {
     expect(frag.length).toBeGreaterThan(30);
     for (const f of frag) expect(Object.keys(f).sort(), String(f['id'])).toEqual(['id', 'texto', 'titulo', 'url']);
     expect(js.length).toBeLessThan(60_000);
+  });
+
+  // UNA SOLA FUENTE (03/10/2026): lo que la consola ya dice no entra desde el corpus.
+  it('los fragmentos cubiertos por la consola no entran a `conocimiento`; los demás sí', () => {
+    const js = nodo('Conocimiento del sitio').parameters['jsCode'] as string;
+    const frag = JSON.parse(/const FRAGMENTOS = (\[[\s\S]*?\n\]);/.exec(js)![1]!) as { id: string; titulo: string; texto: string }[];
+    const fuera = [...(/const CUBIERTOS_POR_LA_CONSOLA = \[([\s\S]*?)\];/.exec(js)![1]!).matchAll(/'([a-z0-9-]+)',/g)].map((m) => m[1]!);
+    expect(fuera).toEqual(['precios-resumen', 'excedentes', 'instalacion-costo', 'faq-cuanto-cuesta-la-instalacion',
+      'faq-en-que-moneda-pago', 'faq-cuando-se-paga', 'faq-los-costos-de-whatsapp-y', 'faq-puedo-cambiar-de-plan']);
+    const [{ conocimiento }] = correr('Conocimiento del sitio', [{}]) as { conocimiento: string }[];
+    for (const f of frag) {
+      const entra = conocimiento.includes('### ' + f.titulo + ' (');
+      expect(entra, f.id).toBe(!fuera.includes(f.id));
+    }
+    // Cada uno de los excluidos existe en el archivo: la lista no apunta a nada que no esté.
+    for (const id of fuera) expect(frag.some((f) => f.id === id), id).toBe(true);
+    // Y «excedentes» ya no aparece como título ni como pregunta de la oferta.
+    expect(conocimiento).not.toContain('Qué pasa si me paso del plan');
   });
 
   it('trae el corpus del sitio, con su huella', () => {

@@ -269,7 +269,29 @@ const FRAGMENTOS = [
  }
 ];
 
+// UNA SOLA FUENTE PARA LO QUE LA CONSOLA YA DICE (03/10/2026). Planes, cargos
+// unicos, rubros y aclaraciones llegan al agente por la OFERTA de la consola
+// (`config/onboarding`); repetirlos desde el corpus del sitio le daba dos
+// versiones de lo mismo -- el sitio dice «excedentes» donde la consola dice
+// «bolsa» -- y obligaba a una regla para arbitrar. Estos fragmentos NO entran al
+// texto porque cada dato que traen esta en la consola (se cotejo uno por uno
+// contra los rubros, planes, cargos y aclaraciones). NO se borran del archivo:
+// el procedimiento de copia no cambia. Un fragmento que trae ALGO que la
+// consola no tiene (el plan recomendado de un rubro, a quien le sirve cada plan,
+// el porque de no cobrar por mensaje) se queda.
+const CUBIERTOS_POR_LA_CONSOLA = [
+  'precios-resumen',                     // planes, instalacion, moneda y tipo de cambio: planes, cargos y aclaraciones
+  'excedentes',                          // la bolsa de 30 conversaciones: aclaracion «Si me paso del plan (bolsa)»
+  'instalacion-costo',                   // USD 65 / desde USD 125: cargos unicos (el proceso sigue en `instalacion-proceso`)
+  'faq-cuanto-cuesta-la-instalacion',    // lo mismo, en forma de pregunta
+  'faq-en-que-moneda-pago',              // aclaracion «Moneda y tipo de cambio»
+  'faq-cuando-se-paga',                  // aclaracion «Cuándo se paga (prepago)»
+  'faq-los-costos-de-whatsapp-y',        // aclaracion «Qué incluye el precio» (con «bolsas», no «excedentes»)
+  'faq-puedo-cambiar-de-plan',           // aclaracion «Cambio de plan»
+];
+
 const conocimiento = FRAGMENTOS
+  .filter((f) => !CUBIERTOS_POR_LA_CONSOLA.includes(f.id))
   .map((f) => '### ' + f.titulo + ' (novuchat.site' + f.url + ')\n' + f.texto)
   .join('\n\n');
 
