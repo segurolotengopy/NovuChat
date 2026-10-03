@@ -25,11 +25,12 @@ Cantera (solo en la rama del PR 389, commit `8173a00`; se lee con `git show 8173
    primer mensaje traiga una pregunta.
 2. Rubro elegido (toque, nombre exacto escrito o destino de campaña): frase de dolor +
    pregunta del guion de ese rubro. Sin modelo.
-3. Respuesta al dolor: una línea de empatía (modelo) + dato de impacto + imagen del rubro
-   (opcional, encabezado del mismo mensaje) + botones `planes` y `asesor`.
-4. Planes: `archivoPlanes` de la consola como encabezado con una línea y el botón `asesor`;
-   sin archivo, el bloque de planes en texto armado por código. Los precios nunca pasan al
-   modelo ni salen de su redacción.
+3. Respuesta al dolor: una línea de empatía (modelo) + dato de impacto + botones `planes` y
+   `asesor`. La oferta no lleva imagen.
+4. Planes (solo si los piden: toque `planes`, pedido escrito o promesa cumplida):
+   `archivoPlanes` de la consola —la imagen de precios— como encabezado del mismo mensaje, con una
+   línea y el botón `asesor`; sin archivo válido, el bloque de planes en texto armado por código.
+   **Es la única imagen que envía el flujo.** Los precios nunca pasan al modelo ni salen de su redacción.
 5. Traspaso (toque `asesor` o pedido escrito): plantilla de aviso a recepción (una vez por
    conversación, contando solo las que Meta aceptó) + botón `cta_url` para escribirle directo
    + pedido del nombre del negocio en el mismo mensaje. Si contesta, se registra la empresa
@@ -70,6 +71,7 @@ Cantera (solo en la rama del PR 389, commit `8173a00`; se lee con `git show 8173
 | D13 | Retención de ejecuciones `none` en todas las variantes (pendiente de ratificar por Andres antes de publicar) |
 | D14 | Textos fijos genéricos en el código, en tuteo, con `{negocio}` y `{asesor}`; textos por rubro y nombre del asesor, en datos. Ningún nombre de comercio ni de persona en `src/` |
 | D15 | Primer mensaje con una pregunta: sale la lista fija (si pide precios, con la promesa de mostrarlos) |
+| D16 | **La única imagen que se envía es la de precios, solo cuando el prospecto pregunta por ellos** (Andres, 03/10/2026: las demás no se pueden mantener). Ni la oferta ni los rubros llevan imagen; si no hay `archivoPlanes` válido, los planes salen en texto desde la consola. Los medios que ENVÍA el prospecto se siguen procesando (funcionalidad 12) |
 
 Reglas del proyecto que el flujo hace cumplir en código: nunca niega ser IA; solo ofrece lo
 que cumple (toda oferta del asesor lleva botón o fila; ninguna promesa de «te escriben» sin
@@ -210,11 +212,13 @@ Validación por campo (si un campo no pasa, su respaldo; si falla el objeto, FAL
   `rubro:<id>` (título ≤24, descripción ≤72), «Otro» al final; fila `asesor` solo si el turno
   ofrece al asesor. Respaldo en texto con los nombres en una línea.
 - **DOLOR:** `dolor` + `pregunta` del guion, texto.
-- **OFERTA:** botones de respuesta; encabezado imagen si el guion trae `imagen`; cuerpo =
+- **OFERTA:** botones de respuesta, sin encabezado; cuerpo =
   empatía + impacto + «¿Quieres ver los planes o hablar con {asesor}?»; botón `planes` solo si
   hay planes o archivo y no se mostraron; botón `asesor`.
-- **PLANES:** con `archivoPlanes`, encabezado imagen o documento + una línea + botón `asesor`;
-  sin archivo, el bloque en texto (como `bloquePlanes` de `8173a00`) + botón. Sin planes:
+- **PLANES:** con `archivoPlanes` válido (el host y el tipo ya los valida `limpiarOferta`),
+  encabezado imagen o documento + una línea + botón `asesor`; sin archivo, el bloque en texto
+  (como `bloquePlanes` de `8173a00`) + botón. Si Meta rechaza el interactivo, el respaldo lleva el
+  enlace del archivo o el bloque en texto. Sin planes:
   «Los planes te los pasa {asesor}.» + botón.
 - **TRASPASO:** `cmContactoConBoton` con `cta_url` a `wa.me/{numeroRecepcion}`, botón ≤20.
   Pide la empresa si no se conoce y no es soporte. Aviso `solicitud_contacto` (6 parámetros,
@@ -237,7 +241,7 @@ Validación por campo (si un campo no pasa, su respaldo; si falla el objeto, FAL
      plantillaAviso, idiomaPlantillaAviso, planillaProspectosId, planillaProspectosHoja, crmUrl,
      prefijosPermitidos, nivelEmojis, mensajeComercioSuspendido, limiteInteractivo},
   guion:{ asesor:{nombre:''|'<2-9 letras>'},
-          rubros:{ '<id consola>':{dolor, pregunta, impacto?, imagen?}, otro:{pregunta, impacto?, imagen?} } },
+          rubros:{ '<id consola>':{dolor, pregunta, impacto?}, otro:{pregunta, impacto?} } },
   conocimiento:{huella, generado, excluidos:[ids], fragmentos:[{id,titulo,url,texto}]} }
 ```
 
@@ -245,7 +249,7 @@ Validación por campo (si un campo no pasa, su respaldo; si falla el objeto, FAL
 - `nombreFlujo`: el del flujo vivo de captación. Corpus: de
   `8173a00:Flujos/src/modulos/captacion/conocimiento-del-sitio.js` (fragmentos sin `vector`,
   huella, generado, excluidos). Frases de dolor y preguntas: del guion comercial (abajo).
-  `impacto` e `imagen`: vacíos (los pone la coordinadora). `asesor.nombre`: `Silvana`.
+  `impacto`: vacío (lo pone la coordinadora). `asesor.nombre`: `Silvana`.
 - Un rubro de la consola sin entrada en el guion se trata como «Otro».
 
 Guion inicial (ids de la consola de NovuChat):
@@ -259,11 +263,11 @@ Guion inicial (ids de la consola de NovuChat):
 - Las de Venta mínima: `configBase` sin «=» inicial, comillas, barra invertida ni llaves;
   credenciales; `hereda`; solo `ensayo*.json` puede tener `entrada: 'prueba'`.
 - Todo texto del guion: sin controles ni saltos de línea; sin `=+-@` al inicio; sin `{{`, `[`,
-  `]`, `<`, `>`; sin `REEMPLAZAR_`; sin URL (salvo `imagen`).
+  `]`, `<`, `>`; sin `REEMPLAZAR_`; sin URL.
 - `dolor`: 1 a 200 caracteres, una oración, sin «?». `pregunta`: 1 a 140, termina en una sola
   «?». Juntos: hasta 3 oraciones y 45 palabras.
 - `impacto`: 0 a 200, una oración, hasta 25 palabras, sin «?».
-- `imagen`: vacío o `^https://(firebasestorage|storage)\.googleapis\.com/[^\s@\\"'<>{}]+\.(jpe?g|png)(\?[^\s"'<>{}]*)?$`, hasta 500.
+- Cualquier clave `imagen` en el guion es un error (no se admiten imágenes).
 - Asesor: `"Hablar con " + nombre` ≤ 20; sin nombre, «Hablar con un asesor».
 - Ids `^[a-z0-9_-]{1,40}$`; `otro` obligatorio; hasta 20 rubros.
 - Corpus: hasta 40.000 caracteres; ningún fragmento incluido con
@@ -324,7 +328,7 @@ ccCuerpoModelo({paso,cfg,mensaje,preguntaHecha,textoDeImagen,ahoraMs})->body
 ccEsquema(rubroIds,aclaracionIds)
 ccLeerModelo(jsonGemini,{rubroIds,aclaracionIds,textoCliente,textoDeImagen})->{ok,tipo,rubroId,rubroLibre,empatia,respuesta,aclaracion,enLosDatos,descarte}
 ccRubroLibreValido(v,textos) ccNombreDeEmpresa(t)->''|nombre ccDescarteAceptado({...})->motivo|''
-ccLista(cuerpo,rubros,conAsesor,tituloAsesor) ccOferta({empatia,impacto,imagen,asesor,conPlanes}) ccPlanes(cfg,asesor)
+ccLista(cuerpo,rubros,conAsesor,tituloAsesor) ccOferta({empatia,impacto,asesor,conPlanes}) ccPlanes(cfg,asesor)
 ccTraspaso({numero,desde,negocio,asesor,pideEmpresa}) ccAviso({...})->payload|null ccHechos(antes,nuevos) ccProspecto(estado,entrada)
 ```
 
@@ -363,7 +367,7 @@ Propiedades sobre todas las salidas de la suite: a lo más una «?» por mensaje
 oraciones y unas 45 palabras; toda oferta del asesor con botón o fila; ningún texto dice «ya
 le pasé», «te escribirán» ni «lo consulto»; `systemInstruction` idéntica entre turnos; una
 llamada a la ingesta por entrante y por saliente aceptado; `Reportar mensaje (entrante)` antes
-de la rama del modelo (posición y conexiones); la rama de medios está cableada; el JSON no
+de la rama del modelo (posición y conexiones); la rama de medios está cableada; solo el mensaje de PLANES con `archivoPlanes` trae `header` de imagen o documento, ningún otro; el JSON no
 trae secuencias de 10 dígitos o más; `construir --verificar` sale 0 y sale 1 ante cada dato
 inválido, guardia violada o huérfano.
 
@@ -386,7 +390,7 @@ node admin/scripts/ensamblar-flujo.mjs verificar
 
 ## 11. Fuera de v0
 
-Guion en la consola; trato de usted en los textos fijos; oferta del asesor en la respuesta 25;
+Imágenes por rubro o en la oferta (la única imagen es la de precios); guion en la consola; trato de usted en los textos fijos; oferta del asesor en la respuesta 25;
 memoria de conversación; consulta del cliente en la planilla; CRM real; segundo tenant;
 batería contra el modelo (bloque siguiente); ensayo y publicación (bloque siguiente, con el
 «sí» de Andres); retirar el flujo viejo y cerrar el PR 389.
