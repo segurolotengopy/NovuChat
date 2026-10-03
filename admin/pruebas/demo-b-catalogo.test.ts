@@ -126,7 +126,7 @@ describe('El cableado: quién entra y quién sale de cada nodo nuevo', () => {
     // carrito, que entra por el otro disparador.
     expect([...entradas(f, 'Mensaje a enviar')].sort()).toEqual([
       '¿Avisar del carrito?', '¿Responder ahora?', '¿Responder uso extendido?',
-      'Comercio no operativo', 'Enlace del catálogo', 'Respuesta del cobro',
+      'Comercio no operativo', 'Enlace del catálogo', 'QR no enviado', 'Respuesta del cobro',
     ].sort());
     // El envío de texto solo recibe del embudo: el botón (si Meta lo rechaza) y la
     // compuerta de «¿Con botón?».
@@ -746,7 +746,7 @@ describe('El carrito: el cableado de la rama nueva', () => {
   it('el envío sigue siendo uno solo, con seis caminos que llegan a él', () => {
     expect([...entradas(f, 'Mensaje a enviar')].sort()).toEqual([
       '¿Avisar del carrito?', '¿Responder ahora?', '¿Responder uso extendido?',
-      'Comercio no operativo', 'Enlace del catálogo', 'Respuesta del cobro',
+      'Comercio no operativo', 'Enlace del catálogo', 'QR no enviado', 'Respuesta del cobro',
     ].sort());
     // Y lo que cuelga del envío no cambió: el reporte del saliente, una vez.
     // (F3a: seis caminos al embudo; el envío de texto lo alcanza por «¿Con botón?».)

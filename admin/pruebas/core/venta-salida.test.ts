@@ -79,7 +79,7 @@ describe('(1) Un embudo único de salida al cliente', () => {
   it('todos los caminos al cliente entran a «Mensaje a enviar»', () => {
     expect([...entradas(f, 'Mensaje a enviar')].sort()).toEqual([
       '¿Avisar del carrito?', '¿Responder ahora?', '¿Responder uso extendido?',
-      'Comercio no operativo', 'Enlace del catálogo', 'Respuesta del cobro',
+      'Comercio no operativo', 'Enlace del catálogo', 'QR no enviado', 'Respuesta del cobro',
     ].sort());
     // Y nadie más llega a los envíos de texto sin pasar por él.
     expect([...entradas(f, 'Responder al cliente')].sort()).toEqual(['¿Con botón?', 'Responder con botón'].sort());
@@ -461,6 +461,88 @@ describe('(6) «Texto enviado» reporta exactamente lo que salió', () => {
   it('una respuesta normal se reporta tal cual', () => {
     const m = enviar(turno({ output: 'Hola, ¿qué te sirvo?' }));
     expect(reportar(m, false)['texto']).toBe('Hola, ¿qué te sirvo?');
+  });
+});
+
+describe('(6b) Meta rechaza el QR: el cliente no queda en silencio (03/10/2026, ejecución #19549)', () => {
+  const ROTULO = '⚠️ QR de DEMOSTRACIÓN: pago simulado.';
+  // El caso del 03/10: el texto del asistente viaja DENTRO del pie de la imagen.
+  const previo: J = {
+    ...ENT, cobroTotal: '597', respuesta: 'Aquí tienes el código QR para pagar.', enviarQr: true, textoEnElQr: true,
+    captionQr: ROTULO + '\n\nAquí tienes el código QR para pagar.\n\nNo hay dinero real en juego.',
+  };
+  const rechazo = { error: { message: 'image.id is not a valid whatsapp business account media attachment ID' } };
+  const noEnviado = (cfg: J | null = null): J => ejecutar(codigoDe(f, 'QR no enviado'), [rechazo],
+    { 'Preparar QR de cobro': [previo], ...(cfg ? { 'Config del negocio': [cfg] } : {}) })[0] ?? {};
+
+  it('el cliente recibe exactamente UN mensaje, con el botón; el dueño recibe su aviso', () => {
+    const s = noEnviado();
+    const salida = enviar(s);
+    expect(salida['conBoton']).toBe(true);
+    expect((salida['cuerpoBoton'] as J)['to']).toBe(CLIENTE);
+    // Un solo texto: el pie con el rótulo de simulacro (prohibición 3) + la frase de que la imagen no salió.
+    expect(String(salida['respuesta'])).toContain(ROTULO);
+    expect(String(salida['respuesta'])).toContain('No pude enviarte la imagen del QR.');
+    // Dos ramas: el cliente (arriba) y el aviso al dueño (abajo); ni una más.
+    expect(destinos(f, 'QR no enviado')).toEqual(['Mensaje a enviar', 'Avisar al dueño']);
+    expect(y('Mensaje a enviar')).toBeLessThan(y('Avisar al dueño'));
+    expect(String(s['textoAviso'])).toContain('no se pudo enviar el QR');
+    expect(s['transferir']).toBe(true);
+  });
+
+  it('no promete QR, tiempos ni acciones sin respaldo', () => {
+    const texto = String(enviar(noEnviado())['respuesta']);
+    expect(texto).not.toMatch(/te (aviso|llamo|llamamos|escribir|enviar|mand)|en unos? (minutos|momentos)|luego|enseguida|ahora te|aqu[ií] (est[aá]|tienes)|c[oó]digo QR para|ya (le|te) avis|\d/i);
+    // Español de Bolivia, sin voseo.
+    expect(texto).not.toMatch(/\b(escribí|mandá|tocá|escaneá|guardá|podés|tenés)\b/i);
+  });
+
+  it('sin número del negocio no se invita a un botón que no existe', () => {
+    const s = ejecutar(codigoDe(f, 'QR no enviado'), [rechazo],
+      { 'Preparar QR de cobro': [{ ...previo, numeroDueno: '' }], 'Config del negocio': [{ numeroDueno: '' }] })[0] ?? {};
+    const salida = enviar(s, { numeroDueno: '', nombreNegocio: 'Un Negocio' });
+    expect(salida['conBoton']).toBe(false);
+    expect(String(salida['textoParaTexto'])).not.toMatch(/bot[oó]n|wa\.me/);
+    expect(String(salida['textoParaTexto'])).toContain('No pude enviarte la imagen del QR.');
+  });
+
+  it('el fallo del REENVÍO lee el preparador que corrió, y el reporte del QR bueno también', () => {
+    const reenvio: J = { ...ENT, captionQr: ROTULO + '\n\nEste es el QR de tu pedido.', esReenvio: true, cobroTotal: '' };
+    const s = ejecutar(codigoDe(f, 'QR no enviado'), [rechazo],
+      { 'Preparar reenvío del QR': [reenvio] })[0] ?? {};
+    expect(s['from']).toBe(CLIENTE);
+    expect(String(s['respuesta'])).toContain(ROTULO);
+    expect(enviar(s)['conBoton']).toBe(true);
+    // «Reportar QR (saliente)» en un reenvío: el pie y el teléfono son del reenvío, sin `qr_enviado`.
+    const cuerpo = JSON.parse(String(expresion(nodo(f, 'Reportar QR (saliente)').parameters['jsonBody'],
+      { messages: [{ id: 'wamid.RE' }] }, { 'Normalizar entrada': [ENT], 'Preparar reenvío del QR': [reenvio] })));
+    expect(cuerpo.telefono).toBe(CLIENTE);
+    expect(cuerpo.texto).toContain('Este es el QR de tu pedido.');
+    expect(cuerpo.evento).toBeUndefined();
+    expect(cuerpo.idMeta).toBe('wamid.RE');
+  });
+
+  it('el QR que falló no se reporta como saliente; el mensaje al cliente solo si Meta devuelve un id', () => {
+    expect(destinos(f, 'Enviar QR de cobro', 0)).toEqual(['Reportar QR (saliente)']);
+    expect(destinos(f, 'Enviar QR de cobro', 1)).toEqual(['QR no enviado']);
+    expect(entradas(f, 'Reportar QR (saliente)')).toEqual(['Enviar QR de cobro']);
+    // El reporte del mensaje cuelga del envío aceptado (con el id), no de «QR no enviado».
+    expect(destinos(f, 'Responder con botón', 0)).toEqual(['Texto enviado']);
+    const mensaje = enviar(noEnviado());
+    const rep = ejecutar(codigoDe(f, 'Texto enviado'), [{ messages: [{ id: 'wamid.X' }] }],
+      { 'Normalizar entrada': [ENT], 'Mensaje a enviar': [mensaje] })[0] ?? {};
+    expect(rep['idMeta']).toBe('wamid.X');
+    expect(rep['texto']).toBe(mensaje['respuesta']);
+  });
+
+  it('sin fallo el camino normal queda igual: ningún mensaje de más', () => {
+    // Solo la salida de error del QR llega a «QR no enviado».
+    expect(entradas(f, 'QR no enviado')).toEqual(['Enviar QR de cobro']);
+    const p = turno({ output: 'Aquí tu QR. [ENVIAR_QR]' });
+    expect(p['enviarQr']).toBe(true);
+    expect(p['textoEnElQr']).toBe(true);
+    expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name).sort())
+      .toEqual(['Avisar al dueño', 'Obtener URL del medio', 'Obtener URL del medio (general)', 'Responder al cliente'].sort());
   });
 });
 
