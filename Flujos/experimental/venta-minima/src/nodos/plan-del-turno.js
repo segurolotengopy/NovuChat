@@ -992,22 +992,24 @@ function enviarReserva() {
 // =============================================================================================
 // CARRITO DEL CATALOGO WEB
 // =============================================================================================
-// La URL del catalogo, o '' si no sirve. LA MISMA VALIDACION que `enlace-del-catalogo.js` del Demo B (https, host por segmentos con un
-// dominio de primer nivel alfabetico —sin IP, sin `localhost`—, puerto 1 a 65535, hasta 2.048 caracteres) y SIN `URL`, que en el Code
-// de n8n no existe (el 23/09/2026 un `new URL` en un `try/catch` dejo sin enlace a un cliente con un 200 bueno): solo `String`,
-// `RegExp` y `Array`. Se compara el host por segmentos, nunca por subcadena.
+// La URL del catalogo, o '' si no sirve. LA MISMA FORMA que `amUrlSegura` de `Armar mensajes` (https, host por segmentos con un dominio de
+// primer nivel alfabetico —sin IP, sin `localhost`, SIN puerto—, sin usuario ni `<>"'@` en la ruta, hasta 2.000 caracteres): lo que
+// `Armar mensajes` rechazaria cae aca a la carta en texto, y no a la derivacion generica. Tampoco vale un anfitrion de WhatsApp (`wa.me`,
+// `whatsapp.com`): el enlace de la carta es la pagina, nunca el chat de alguien. Sin `URL` (en el Code de n8n no existe; el 23/09/2026 un
+// `new URL` en un `try/catch` dejo sin enlace a un cliente con un 200 bueno): solo `String`, `RegExp` y `Array`. El host se compara por
+// segmentos, nunca por subcadena.
 function urlDelCatalogo(v) {
   if (typeof v !== 'string') return '';
   const u = v.trim();
-  if (u === '' || u.length > 2048) return '';
-  const m = /^https:\/\/([A-Za-z0-9.-]{1,253})(?::(\d{1,5}))?([/?#][^\s]*)?$/.exec(u);
+  if (u === '' || u.length > 2000) return '';
+  const m = /^https:\/\/([A-Za-z0-9.-]{1,253})([/?#][^\s<>"'@]*)?$/.exec(u);
   if (!m) return '';
-  const puerto = m[2] ? Number(m[2]) : 443;
-  if (!(puerto >= 1 && puerto <= 65535)) return '';
   const segmentos = m[1].toLowerCase().split('.');
   if (segmentos.length < 2) return '';
   if (!segmentos.every((s) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(s))) return '';
   if (!/^[A-Za-z]{2,63}$/.test(segmentos[segmentos.length - 1])) return '';
+  const base = segmentos.slice(-2).join('.');
+  if (base === 'wa.me' || base === 'whatsapp.com') return '';
   return u;
 }
 
@@ -1028,7 +1030,8 @@ function conNotaDelPedido(lista_) {
   const nota = en.entrega && typeof en.entrega.notaPedido === 'string' ? en.entrega.notaPedido : '';
   if (!nota || !Array.isArray(lista_)) return lista_;
   return lista_.map((m) => (m && m.tipo === 'botones' && String(m.cuerpo).indexOf('\nTotal de la comida:') > 0
-    ? Object.assign({}, m, { cuerpo: String(m.cuerpo).replace('\nTotal de la comida:', '\nTu nota: ' + nota + '\nTotal de la comida:') }) : m));
+    // Con una FUNCION de reemplazo: la nota es texto del cliente y un `$&`, `$'` o `$\`` suyo no se interpreta como patron de reemplazo.
+    ? Object.assign({}, m, { cuerpo: String(m.cuerpo).replace('\nTotal de la comida:', () => '\nTu nota: ' + nota + '\nTotal de la comida:') }) : m));
 }
 
 // El pedido que volvio de la pagina. EL CODIGO CALCULA: cada linea se busca POR ID en la carta del panel (nunca por el nombre ni por

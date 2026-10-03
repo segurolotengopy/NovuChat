@@ -227,15 +227,23 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
       'https://catalogo.ejemplo.invalid:0/c/x', 'https://-malo.ejemplo.invalid/c/x', 'https://catalogo..ejemplo.invalid/c/x',
       'javascript:alert(1)', 'ftp://catalogo.ejemplo.invalid/x', 'https://catalogo.ejemplo.invalid/c/ x',
       `https://catalogo.ejemplo.invalid/${'a'.repeat(2100)}`, 'https://', 'catalogo.ejemplo.invalid/c/x',
+      // Revisión del PR #382 (L-1): la misma forma que `Armar mensajes` (nada de puerto: caía a la derivación genérica) y nunca un chat de WhatsApp.
+      'https://catalogo.ejemplo.invalid:8443/c/x?a=1', 'https://catalogo.ejemplo.invalid:443/c/x', 'https://wa.me/59100000031', 'https://WA.ME/59100000031?text=hola',
+      'https://api.whatsapp.com/send?phone=59100000031', 'https://whatsapp.com/', 'https://web.whatsapp.com/x',
+      `https://catalogo.ejemplo.invalid/c/x${'@'}otro.invalid`, 'https://catalogo.ejemplo.invalid/c/x"y', "https://catalogo.ejemplo.invalid/c/x'y",
     ];
     for (const url of malas) {
       const t = turno(crear(), { mensaje: texto('la carta') }, conEnlace(url));
       expect(mensajes(t).every((x) => x['tipo'] === 'texto'), url.slice(0, 50)).toBe(true);
       expect(error(t), url.slice(0, 50)).toContain('catalogo_url_invalida');
     }
-    // un puerto válido y un subdominio sí pasan (el negativo del requisito)
-    const bien = turno(crear(), { mensaje: texto('la carta') }, conEnlace('https://catalogo.ejemplo.invalid:8443/c/x?a=1'));
-    expect(mensajes(bien)[0]!['tipo']).toBe('enlace');
+    // CAMBIO DECLARADO (revisión del PR #382, L-1): antes un puerto válido pasaba aquí y `Armar mensajes` lo rechazaba (derivación genérica).
+    // Un subdominio, una ruta con consulta y un dominio que SOLO contiene «wa.me» o «whatsapp.com» en otra parte sí pasan (el negativo).
+    for (const url of ['https://catalogo.ejemplo.invalid/c/x?a=1', 'https://catalogo.novuchat.invalid/c/abc', 'https://mi-wa.me.ejemplo.invalid/c/x', 'https://swhatsapp.com.ejemplo.invalid/c/x']) {
+      const bien = turno(crear(), { mensaje: texto('la carta') }, conEnlace(url));
+      expect(mensajes(bien)[0]!['tipo'], url).toBe('enlace');
+      expect(mensajes(bien)[0]!['url'], url).toBe(url);
+    }
   });
 
   it('con el panel sin respuesta (timeout) no se promete nada: se pasa con el local', () => {
@@ -410,6 +418,16 @@ describe('el carrito que vuelve de la página', () => {
     expect(String(mensajes(carrito(sinLista, { nota: 'con tequila por favor' }))[0]!['cuerpo'])).toContain('Tu nota: con tequila por favor');
     const limpia = crear({ palabrasExcluidas: 'tequila,cerveza,shot' });
     expect(String(mensajes(carrito(limpia, { nota: 'sin cebolla por favor' }))[0]!['cuerpo'])).toContain('Tu nota: sin cebolla por favor');
+  });
+
+  it('la nota del cliente no se interpreta como patrón de reemplazo: «$\'», «$`» y «$$» salen tal cual en el resumen (L-2)', () => {
+    for (const nota of ["pon $' y $` por favor", 'cobra $$ aparte', 'sin cebolla $1 y $0']) {
+      const m = crear();
+      const t = carrito(m, { nota });
+      const cuerpo = String(mensajes(t)[0]!['cuerpo']);
+      expect(cuerpo, nota).toContain(`Tu nota: ${nota}\nTotal de la comida:`);
+      expect(cuerpo.split('Total de la comida:').length, nota).toBe(2); // el resumen no se duplicó ni se partió
+    }
   });
 
   it('el carrito sin nota no deja rastro de nota, y una nota con palabras de la red se sanea', () => {
