@@ -93,7 +93,7 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
     ]);
   });
 
-  it('el Demo B y la captación inyectan TODOS sus nodos Code (FL2), sin prompts todavía', () => {
+  it('el Demo B y la captación inyectan TODOS sus nodos Code (FL2); solo la captación saca su prompt (Bloque 1)', () => {
     for (const f of ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']) {
       const m = leerManifiesto(f) as Record<string, any>;
       const a = leerManifiesto('demo-a-agendamiento.json') as Record<string, any>;
@@ -108,7 +108,10 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
         const v = m.codigo[nodo];
         expect(typeof v === 'string' ? v : v.archivo, `${f} ${nodo}`).toMatch(/^core\/(venta|captacion)\//);
       }
-      expect(m.prompts, f).toEqual({});
+      // La captación declara el systemMessage de su agente (módulo, no core); el Demo B sigue sin prompts.
+      expect(m.prompts, f).toEqual(f === 'novuchat-onboarding.json'
+        ? { 'AI Agent NovuChat': { systemMessage: 'modulos/captacion.md' } }
+        : {});
     }
   });
 

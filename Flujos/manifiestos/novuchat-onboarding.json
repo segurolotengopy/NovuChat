@@ -31,5 +31,9 @@
     "Filtrar categoría": "modulos/captacion/filtrar-categoria.js",
     "Medio no aceptado": "core/medios/medio-no-aceptado.js"
   },
-  "prompts": {}
+  "prompts": {
+    "AI Agent NovuChat": {
+      "systemMessage": "modulos/captacion.md"
+    }
+  }
 }
