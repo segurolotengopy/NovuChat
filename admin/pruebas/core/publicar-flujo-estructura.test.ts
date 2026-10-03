@@ -172,6 +172,59 @@ describe('publicar-flujo.sh: la estructura cuenta como diferencia', () => {
     expect(r.salida).not.toContain('zz9');
   });
 
+  it.each([
+    ['saveDataErrorExecution', 'none'],
+    ['callerPolicy', 'none'],
+    ['saveDataSuccessExecution', 'none'],
+    ['saveManualExecutions', false],
+    ['saveExecutionProgress', true],
+    ['callerIds', 'zz9'],
+  ])('settings %s solo en el vivo con valor que no es el defecto: cuenta, por nombre', (clave, valor) => {
+    const vivo = flujo([nodo('A'), nodo('B')], { A: enlace('B') }, { executionOrder: 'v1', [clave]: valor });
+    const r = correr(BASE(), vivo);
+    expect(coincide(r.salida), r.salida).toBe(false);
+    expect(r.salida).toContain(`claves solo en el vivo, --aplicar las borraria: ${clave}`);
+    expect(r.salida).not.toContain('zz9');
+  });
+
+  it('settings con los defectos de n8n 2.36.5 solo en el vivo: coincide', () => {
+    const vivo = flujo([nodo('A'), nodo('B')], { A: enlace('B') }, {
+      executionOrder: 'v1', saveDataErrorExecution: 'DEFAULT', saveDataSuccessExecution: 'DEFAULT',
+      saveManualExecutions: 'DEFAULT', saveExecutionProgress: 'DEFAULT',
+      callerPolicy: 'workflowsFromSameOwner', binaryMode: 'separate', availableInMCP: false,
+    });
+    const r = correr(BASE(), vivo);
+    expect(coincide(r.salida), r.salida).toBe(true);
+  });
+
+  // --- onError, maxTries, waitBetweenTries, continueOnFail: en ambos sentidos
+  it.each([
+    ['onError', 'continueRegularOutput'],
+    ['continueOnFail', true],
+    ['maxTries', 3],
+    ['waitBetweenTries', 2000],
+  ])('%s solo en el vivo: cuenta, por nodo y propiedad', (prop, valor) => {
+    const vivo = flujo([nodo('A', { [prop]: valor }), nodo('B')], { A: enlace('B') });
+    const r = correr(BASE(), vivo);
+    expect(coincide(r.salida), r.salida).toBe(false);
+    expect(r.salida).toContain(`~ A · propiedad distinta: ${prop}`);
+    expect(r.salida).not.toContain('continueRegularOutput');
+  });
+
+  it('onError y continueOnFail distintos entre origen y vivo: cuentan', () => {
+    const origen = flujo([nodo('A', { onError: 'continueErrorOutput' }), nodo('B')], { A: enlace('B') });
+    const vivo = flujo([nodo('A', { onError: 'continueRegularOutput' }), nodo('B')], { A: enlace('B') });
+    const r = correr(origen, vivo);
+    expect(coincide(r.salida), r.salida).toBe(false);
+    expect(r.salida).toContain('~ A · propiedad distinta: onError');
+  });
+
+  it('false en el origen frente a nada en el vivo (continueOnFail, maxTries) sigue coincidiendo', () => {
+    const origen = flujo([nodo('A', { continueOnFail: false, retryOnFail: false }), nodo('B')], { A: enlace('B') });
+    const r = correr(origen, BASE());
+    expect(coincide(r.salida), r.salida).toBe(true);
+  });
+
   // --- el diagnóstico no imprime valores de parámetros (URL de capacidad, ids)
   it('valor distinto o ausente en el vivo: se informa por longitud y el valor no aparece', () => {
     const secreto = 'https://capacidad.invalid/abc123SECRETO';
