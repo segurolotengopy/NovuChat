@@ -847,7 +847,7 @@ describe('Interpretar entrada', () => {
       ubicacion: null, ahoraMs: AHORA, prueba: null,
     });
     expect(Object.keys(t).sort()).toEqual([
-      'ahoraMs', 'boton', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
+      'ahoraMs', 'boton', 'comprobanteCruzado', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
       'phoneNumberId', 'prueba', 'texto', 'textoReporte', 'tipo', 'ubicacion',
     ]);
   });
@@ -940,6 +940,25 @@ describe('Interpretar entrada', () => {
     expect(uno(img, { cfg: real })).toMatchObject({ esComprobante: true, comprobanteSimulado: false });
     // y aunque llegue `activo:true` con `modo:'simulado'` (no debería), no se baja ni se coteja: `esComprobante` es falso
     expect(uno(img, { cfg: { ...CFG, cobro: { ...COBRO_PENDIENTE, modo: 'simulado' } } })).toMatchObject({ esComprobante: false, comprobanteSimulado: false });
+  });
+  it('H2: con el cobro REAL encendido y un pedido SIMULADO de este teléfono pendiente, la foto NO es `esComprobante` (no se baja ni se coteja): es `comprobanteCruzado`', () => {
+    const cfg = { ...CFG, cobro: { ...COBRO_PENDIENTE, modo: 'real', pedidoRef: 'ped-sim-1' } };
+    const img = mensaje({ type: 'image', image: { id: 'media-i1' } });
+    const doc = mensaje({ type: 'document', document: { id: 'media-d1' } });
+    const raiz = (pedido: J) => ({ ventaMinima: { pedidos: { 'ped-sim-1': pedido } } });
+    for (const m of [img, doc]) {
+      expect(uno(m, { cfg, raiz: raiz({ from: CLIENTE, simulado: true }) }), JSON.stringify(m)).toMatchObject({ esComprobante: false, comprobanteCruzado: true });
+    }
+    // También cuando el pedido solo está en el estado del teléfono (no en los pedidos guardados).
+    const enEstado = { ventaMinima: { estados: { [CLIENTE]: { paso: 'esperando_comprobante', ultimoMensajeMs: AHORA - 1000, pedido: { pedidoId: 'ped-sim-1', simulado: true } } } } };
+    expect(uno(img, { cfg, raiz: enEstado })).toMatchObject({ esComprobante: false, comprobanteCruzado: true });
+    // NEGANDO: un pedido REAL, sin la marca, de otro teléfono, o sin pedido, sigue siendo un comprobante real (y nada cruzado).
+    for (const pedido of [{ from: CLIENTE, simulado: false }, { from: CLIENTE }, { from: '59100000099', simulado: true }]) {
+      expect(uno(img, { cfg, raiz: raiz(pedido) }), JSON.stringify(pedido)).toMatchObject({ esComprobante: true, comprobanteCruzado: false });
+    }
+    expect(uno(img, { cfg })).toMatchObject({ esComprobante: true, comprobanteCruzado: false });
+    // Sin cobro real pendiente tampoco hay nada cruzado.
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...cfg.cobro, pendiente: false } }, raiz: raiz({ from: CLIENTE, simulado: true }) })).toMatchObject({ comprobanteCruzado: false });
   });
   it('location pasa a `ubicacion`; una coordenada inválida la deja en null', () => {
     const u = uno(mensaje({ type: 'location', location: { latitude: -16.5, longitude: -68.15, name: 'Casa', address: 'Calle 1 <b>' } }));

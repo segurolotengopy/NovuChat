@@ -91,6 +91,8 @@ const salir = (accion, extra) => [{ json: Object.assign({
 // `Interpretar entrada` marcó como comprobante pero la lectura o el
 // cotejo no corrieron: `Plan del turno` lo trata como «sin cotejar», nunca como «cuadra»).
 if (vmNodo('Cotejar en el servidor') || t.esComprobante === true || t.comprobanteSimulado === true) return salir('comprobante');
+// Un pedido SIMULADO con el cobro real encendido y su QR pendiente: la foto no es un comprobante real ni se coteja; se pasa con una persona.
+if (t.comprobanteCruzado === true) return salir('transferir', { motivo: 'el modo de cobro cambió: comprobante de un pedido simulado' });
 
 // --- 1b. El carrito del catalogo web (no es un mensaje de WhatsApp: decide `decidirCarrito`, mas abajo) ----
 if (t.tipo === 'carrito') return decidirCarrito();

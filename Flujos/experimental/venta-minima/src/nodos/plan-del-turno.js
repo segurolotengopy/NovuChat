@@ -904,6 +904,9 @@ function aComprobante() {
     return;
   }
 
+  // Segunda cerradura (la primera es `comprobanteCruzado` en `Interpretar entrada`): un pedido SIMULADO nunca se coteja ni se avisa como real.
+  if (ped.simulado === true) return derivar('el modo de cobro cambió: comprobante de un pedido simulado', en.paso === 'esperando_comprobante' && !!en.pedido);
+
   let resultado = 'sin_cotejo';
   let diferencias = [];
   let cierreId = '';

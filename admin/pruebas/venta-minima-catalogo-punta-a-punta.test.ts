@@ -484,3 +484,37 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
     });
   });
 });
+
+// =====================================================================================================
+// COBRO SIMULADO Y REAL SE CRUZAN (revisión del cobro simulado, H2): el comprobante de un pedido de PRUEBA nunca se coteja como real
+// =====================================================================================================
+describe('un pedido SIMULADO con el cobro real encendido y una solicitud pendiente: cero cotejos y nada rotulado como pago real', () => {
+  const imagen = (): J => ({ type: 'image', image: { id: 'media-9', mime_type: 'image/jpeg' } });
+  it('la foto llega, no se baja, no se lee, no se coteja en el servidor y se pasa con una persona; el paso y el pedido siguen', () => {
+    const w = crear();
+    // Modo simulado: sin cobroReal y con `cobroSimulado` declarado por el servidor.
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), cobroReal: undefined, cobro: { activo: false }, cobroSimulado: {} } });
+    turno(w, texto('hola'));
+    w.estado.extraccion = { lineas: [{ producto: 'tacos de birria', cantidad: 4, forma: 'unidad', detalle: '' }], entrega: 'recojo', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+    const resumen = turno(w, texto('quiero 4 tacos de birria'));
+    const qr = turno(w, boton(idDeBoton(resumen, 'Confirmar pedido'), 'Confirmar pedido'));
+    expect(qr.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    const abierto = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado');
+    const ref = String(abierto?.['referencia']);
+    expect((estadoDe(w)['pedido'] as J)['simulado']).toBe(true);
+    // El cobro real se enciende (el servidor manda cobroReal y la solicitud pendiente de ESE pedido).
+    w.mundo.dobles['Traer configuración'] = () => ({ statusCode: 200, body: { ...panel(), cobroReal: { nombreCuenta: 'Q TACO SRL', banco: 'Banco Ejemplo' }, cobro: { activo: true, qr: { url: 'https://qr.ejemplo.invalid/qtaco.png' }, pendiente: true, monto: Number(abierto?.['monto']), pedido: ref } } });
+    const t = w.mundo.turno(entrega(CLIENTE, imagen()), { tolerarFallo: true });
+    expect(t.fallo).toBeNull();
+    expect(t.llamadas.cotejo).toHaveLength(0);
+    for (const n of ['Cotejar en el servidor', 'Leer comprobante (imagen)', 'Leer comprobante (PDF)', 'Obtener URL del medio', 'Descargar medio']) expect(t.ejecutados.has(n), n).toBe(false);
+    expect(String(((t.resumen as J)['resumen'] as J)['ruta'])).toContain('transferir:el modo de cobro cambió: comprobante de un pedido simulado');
+    expect(t.mensajes.length).toBeGreaterThan(0); // se pasa con una persona: aviso + botón
+    expect(t.llamadas.cierre).toHaveLength(0);
+    expect(JSON.stringify([t.mensajes.map((m) => m.cuerpo), t.avisos.map((a) => a.cuerpo)])).not.toMatch(/datos coinciden|cuadra|Recibí tu comprobante/i);
+    expect(estadoDe(w)['paso']).toBe('esperando_comprobante');
+    expect((estadoDe(w)['pedido'] as J)['pedidoId']).toBe(ref);
+    expect(w.mundo.llamadas.cotejo).toHaveLength(0);
+  });
+});
+

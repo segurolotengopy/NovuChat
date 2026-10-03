@@ -147,7 +147,7 @@ const sdDe = (m: Mundo): J => (m.global['ventaMinima'] ??= {});
 const estadoDe = (m: Mundo, from = FROM): J => sdDe(m)['estados']?.[from] ?? {};
 
 interface Entrada {
-  from?: string; texto?: string; boton?: string; tipo?: string; esAudio?: boolean; esComprobante?: boolean; comprobanteSimulado?: boolean; mediaId?: string;
+  from?: string; texto?: string; boton?: string; tipo?: string; esAudio?: boolean; esComprobante?: boolean; comprobanteSimulado?: boolean; comprobanteCruzado?: boolean; mediaId?: string;
   ubicacion?: J; nombrePerfil?: string;
   extraccion?: J; transcripcion?: string; cotejo?: J; lectura?: J;
 }
@@ -164,7 +164,7 @@ function turno(m: Mundo, e: Entrada = {}): Salida {
   const from = e.from ?? FROM;
   const t: J = {
     from, nombrePerfil: e.nombrePerfil ?? 'Ana Pérez', mensajeId: 'wamid.x', tipo: e.tipo ?? 'text', texto: e.texto ?? '',
-    boton: e.boton ?? '', esAudio: e.esAudio ?? false, esComprobante: e.esComprobante ?? false, comprobanteSimulado: e.comprobanteSimulado ?? false, mediaId: e.mediaId ?? '',
+    boton: e.boton ?? '', esAudio: e.esAudio ?? false, esComprobante: e.esComprobante ?? false, comprobanteSimulado: e.comprobanteSimulado ?? false, comprobanteCruzado: e.comprobanteCruzado ?? false, mediaId: e.mediaId ?? '',
     ubicacion: e.ubicacion ?? null, ahoraMs: m.ahora,
   };
   const refs: J = { 'Config del negocio': m.cfg, 'Interpretar entrada': t };
@@ -1414,13 +1414,32 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     expect(real.p!['mensajes'][0]['cuerpo']).not.toMatch(/simulad|prueba/i);
   });
 
-  it('con `Cotejar en el servidor` corrido la rama simulada NO se toma (nunca se mezcla con el cotejo)', () => {
-    const m = enEsperaSim();
-    pendiente(m);
-    const s = foto(m, { cotejo: { statusCode: 200, body: { resultado: 'cuadra', cierreId: 'c1' } } });
+  it('con `Cotejar en el servidor` corrido la rama simulada NO se toma (nunca se mezcla con el cotejo) y un pedido REAL se coteja como siempre', () => {
+    const m = enEsperaReal();
+    const ref = String(estadoDe(m)['pedido']['pedidoId']);
+    m.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: ref, pendiente: true };
+    const s = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: { statusCode: 200, body: { resultado: 'cuadra', cierreId: 'c1' } } }));
     expect(s.p!['ruta']).toBe('comprobante:cuadra');
     expect(s.p!['aviso']['datos']['resultado']).toBe('cuadra');
+  });
+
+  it('H2: un pedido SIMULADO con el cobro real encendido y su cotejo ya corrido NO se avisa como real ni se rotula «cuadra»: se deriva y conserva el paso', () => {
+    const m = enEsperaSim();
+    const ref = String(estadoDe(m)['pedido']['pedidoId']);
+    m.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: ref, pendiente: true };
+    const s = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: { statusCode: 200, body: { resultado: 'cuadra', cierreId: 'c1' } } }));
+    expect(s.p!['aviso']['tipo']).toBe('transferencia');
     expect(s.p!['cierre']).toBeNull();
+    expect(s.p!['pedido']).toBeNull();
+    expect(s.p!['ruta']).toContain('transferir:el modo de cobro cambió: comprobante de un pedido simulado');
+    expect(JSON.stringify(s.p!['mensajes'])).not.toMatch(/datos coinciden|cuadra|ya pasé/i);
+    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+    // Y desde `Interpretar entrada` la marca `comprobanteCruzado` manda a derivar sin cotejo (`Decidir turno`).
+    const m2 = enEsperaSim();
+    m2.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: String(estadoDe(m2)['pedido']['pedidoId']), pendiente: true };
+    const d = turno(m2, { tipo: 'image', comprobanteCruzado: true });
+    expect(d.d['accion']).toBe('transferir');
+    expect(d.p!['aviso']['tipo']).toBe('transferencia');
   });
 
   it('sin la marca `comprobanteSimulado` una imagen no es un comprobante, aunque el QR esté pendiente', () => {

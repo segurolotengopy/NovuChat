@@ -129,6 +129,20 @@ const contacto = Array.isArray(carga.contacts) ? carga.contacts[0] : undefined;
 const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;
 const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
 
+// COBRO REAL ENCENDIDO CON UN PEDIDO SIMULADO PENDIENTE (simetrico de «real a simulado»): si el pedido al que apunta el QR pendiente es de
+// ESTE telefono y salio como simulado, la foto NO es un comprobante real: no se baja, no se lee con Gemini ni se coteja en el servidor (daria
+// «cuadra» o «no cuadra» sobre una prueba y un cierre de venta con monto). `comprobanteCruzado` la manda a una persona (`Decidir turno`).
+const pedidoDeLaRef = (() => {
+  const ref = typeof cobro.pedidoRef === 'string' ? cobro.pedidoRef : '';
+  const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
+  const propio = ref && Object.prototype.hasOwnProperty.call(guardados, ref) ? guardados[ref] : null;
+  if (propio && typeof propio === 'object' && String(propio.from) === from) return propio;
+  const enEstado = sd ? vmLeerEstado(sd, from, ahoraMs).pedido : null;
+  return ref && enEstado && typeof enEstado === 'object' && String(enEstado.pedidoId) === ref ? enEstado : null;
+})();
+const pedidoSimulado = !!pedidoDeLaRef && pedidoDeLaRef.simulado === true;
+const llegaComoComprobanteReal = (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.modo !== 'simulado' && cobro.pendiente === true;
+
 return [{ json: {
   from: from,
   // El nombre de perfil acaba en los avisos al restaurante y en los resúmenes al cliente: sin <, >, &, saltos ni
@@ -142,7 +156,8 @@ return [{ json: {
   origen: ref ? 'anuncio' : 'directo',
   boton: boton,
   esAudio: tipo === 'audio' && mediaId !== '',
-  esComprobante: (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.modo !== 'simulado' && cobro.pendiente === true && mediaId !== '',
+  esComprobante: llegaComoComprobanteReal && mediaId !== '' && !pedidoSimulado,
+  comprobanteCruzado: llegaComoComprobanteReal && pedidoSimulado,
   // Cobro SIMULADO: cualquier foto o archivo con el QR pendiente es el comprobante de la prueba. No exige `mediaId` porque no se baja
   // nada (ni se lee con Gemini ni se coteja en el servidor): `esComprobante` y esto nunca valen a la vez.
   comprobanteSimulado: (tipo === 'image' || tipo === 'document') && cobro.modo === 'simulado' && cobro.activo !== true && cobro.pendiente === true,
