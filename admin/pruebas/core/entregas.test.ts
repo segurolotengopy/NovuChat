@@ -581,7 +581,7 @@ export interface Excepcion { porque: string; vence: string }
  * La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
 export const ALTA_DE_EXCEPCIONES = '2026-10-03';
 /** ATENCIÓN: cambiar este tope exige pasar por el agente `seguridad`. Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
-export const TOPE_DE_EXCEPCIONES = 50;
+export const TOPE_DE_EXCEPCIONES = 49;
 
 /**
  * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
@@ -730,10 +730,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   },
   'experimental/venta-minima/venta-minima.qtaco.json#2#Enviar respaldo': {
     porque: 'Q\'Taco: cumple R2 y R4 pero «Enviar respaldo» es el último recurso y no termina en error visible ni reporta envio_fallido (D11); la cierra PR-7 (Q\'Taco, ventana y ensayo; D3)',
-    vence: '2027-01-01',
-  },
-  'novuchat-onboarding.json#3#Reportar mensaje (saliente)': {
-    porque: 'el reporte saliente de captación no manda idMeta: el servidor no puede contar solo lo entregado; la cierra PR-3 (parte a: captación manda idMeta)',
     vence: '2027-01-01',
   },
   'novuchat-onboarding.json#5#Traspaso a un asesor::aviso': {

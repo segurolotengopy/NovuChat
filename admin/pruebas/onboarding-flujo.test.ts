@@ -410,7 +410,7 @@ describe('Procesar respuesta', () => {
     expect(sd['conversaciones'][TEL]['hechos']['pidioAsesor']).toBe(true);
     // El aviso queda dado cuando Meta acepta la plantilla.
     correr('Confirmar envío', [correr('Salida', [t1])[0]!],
-      { 'Enviar a WhatsApp': { statusCode: 200 }, 'Avisar a NovuChat': { statusCode: 200 } }, sd);
+      { 'Enviar a WhatsApp': { statusCode: 200, body: { messages: [{ id: 'wamid.x' }] } }, 'Avisar a NovuChat': { statusCode: 200 } }, sd);
     const t2 = correr('Traspaso a un asesor', [estado(normalizar(texto('asesor'), cfg), sd)[0]!], {}, sd)[0]!;
     expect(t2['avisar']).toBe(false);
   });
@@ -744,7 +744,23 @@ describe('Confirmar envío: solo se da por hecho lo que Meta aceptó', () => {
     // nosemgrep: devsecops.js-eval-prohibido
     const armar = new Function('$json', `return (${/^=\{\{([\s\S]*)\}\}$/.exec(cuerpo)![1]});`) as (j: J) => string;
     expect(JSON.parse(armar(ok!))).toEqual({
-      telefono: TEL, direccion: 'saliente', tipo: 'text', texto: 'Tu cita es el martes, Ana.' });
+      telefono: TEL, direccion: 'saliente', tipo: 'text', texto: 'Tu cita es el martes, Ana.', idMeta: 'wamid.aceptado' });
+  });
+
+  it('(b) sin id de Meta (2xx vacía o con cuerpo sin messages) no se reporta como saliente, y tampoco corta', () => {
+    const s = turno(texto('Hola, quiero agendar'), enCurso({}));
+    expect(confirmar([s], { statusCode: 200, body: {} })).toEqual([]);
+    expect(confirmar([s], { statusCode: 200, body: { messages: [{}] } })).toEqual([]);
+    expect(confirmar([s], { statusCode: 200 })).toEqual([]);
+    // El rechazo sigue cortando, sin reporte.
+    expect(error(() => confirmar([s], RECHAZO_190))).not.toBe('');
+  });
+
+  it('(b) el respaldo en texto reporta SU id, no el del interactivo rechazado', () => {
+    const s = { ...turno(texto('Hola, quiero agendar'), enCurso({})), esInteractivo: true };
+    const [ok] = confirmar([s], { statusCode: 400, body: { error: { code: 131009 } } },
+      { statusCode: 200, body: { messages: [{ id: 'wamid.respaldo' }] } });
+    expect(ok!['idMeta']).toBe('wamid.respaldo');
   });
 
   it('con el teléfono bloqueado no se envió nada: no hay nada que confirmar ni que reportar', () => {
@@ -856,7 +872,7 @@ describe('El aviso a una persona: solo se da por hecho si Meta lo aceptó', () =
     const s = correr('Salida', [{ ...r, crmUrl: 'https://crm.ejemplo/leads' }])[0]!;
     expect(s['guardar']).toBe(true);
     const [reportado] = correr('Confirmar envío', [s],
-      { 'Enviar a WhatsApp': { statusCode: 200 }, 'Guardar prospecto': { statusCode: 503, body: {} } }, sd);
+      { 'Enviar a WhatsApp': { statusCode: 200, body: { messages: [{ id: 'wamid.x' }] } }, 'Guardar prospecto': { statusCode: 503, body: {} } }, sd);
     expect(String(reportado!['avisos'])).toMatch(/^crm_rechazado: HTTP 503/);
   });
 
@@ -2371,7 +2387,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       expect(s['cuerpoMeta']['interactive']['action']['parameters']['url'])
         .toMatch(/^https:\/\/wa\.me\/59170000000\?text=/);
       // Meta acepta la plantilla: recién ahí el aviso queda dado.
-      correr('Confirmar envío', [s], { 'Enviar a WhatsApp': { statusCode: 200 },
+      correr('Confirmar envío', [s], { 'Enviar a WhatsApp': { statusCode: 200, body: { messages: [{ id: 'wamid.x' }] } },
         'Avisar a NovuChat': { statusCode: 200 } }, sd);
       // Un segundo toque responde, pero no vuelve a avisar: la plantilla se cobra.
       const otra = correr('Traspaso a un asesor', [turnoCon(tocar(), sd, cfg)], {}, sd)[0]!;
@@ -3518,7 +3534,7 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
     // Un rubro dicho, sin pedir planes ni una persona, es Baja: la calificación es por hechos.
     expect(d).toMatchObject({ accionPlanilla: 'agregar', 'ID Lead': 'LEAD-1002', 'Calificación IA': 'Baja',
       'Rubro': "'salón de belleza" });
-    const [reportado] = correr('Confirmar envío', [s], { 'Enviar a WhatsApp': { statusCode: 200 },
+    const [reportado] = correr('Confirmar envío', [s], { 'Enviar a WhatsApp': { statusCode: 200, body: { messages: [{ id: 'wamid.x' }] } },
       'Decidir fila de la planilla': d!, 'Agregar fila': d! }, sd);
     expect(reportado!['respuesta']).toBe(s['respuesta']);
     expect(String(reportado!['avisos'])).not.toMatch(/planilla/);

@@ -1,0 +1,24 @@
+<!doctype html>
+<!--
+  PÁGINA PÚBLICA DEL CATÁLOGO WEB. Es el HTML del SEGUNDO SITIO de Hosting
+  (target `catalogo` de firebase.json), construido con `vite.catalogo.config.ts`
+  en `web/dist-catalogo/`. La consola tiene el suyo (`index.html`) y no
+  comparten origen: ver admin/SEGURIDAD.md T-37.
+
+  NO lleva título ni icono de la consola: el cliente final cree estar hablando
+  con el comercio, y el título lo pone la página con su marca al cargar.
+-->
+<html lang="es-BO">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Catálogo</title>
+  </head>
+  <body>
+    <div id="raiz"></div>
+    <script type="module" src="/src/modulos/catalogo-web/publico/entrada.tsx"></script>
+  </body>
+</html>

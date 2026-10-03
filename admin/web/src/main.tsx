@@ -1,24 +1,27 @@
 /**
- * PUNTO DE ENTRADA. Decide cuál de las dos aplicaciones se monta y NO importa
- * ninguna de las dos de forma estática: cada `import()` es un trozo aparte, y
- * el navegador descarga solo el que le toca.
+ * PUNTO DE ENTRADA DE LA CONSOLA. Monta la consola y nada más.
  *
- * DOS APLICACIONES EN UN MISMO SITIO:
+ * HASTA T-37 ESTE ARCHIVO ELEGÍA ENTRE DOS APLICACIONES según la ruta: `/c/<ficha>`
+ * montaba el catálogo público y todo lo demás, la consola. Las dos vivían en el
+ * mismo sitio de Hosting, o sea en el mismo origen del navegador, y el origen es
+ * donde el SDK de Firebase guarda las sesiones de administrador (admin/SEGURIDAD.md,
+ * T-37).
  *
- *   /c/<ficha>   el catálogo público que ve un cliente final. Sin sesión, sin
- *                Firebase, con la marca del comercio.
- *   todo lo demás  la consola, detrás de un inicio de sesión.
+ * AHORA SON DOS SITIOS DE HOSTING CON ORÍGENES DISTINTOS:
  *
- * LA DECISIÓN SE TOMA POR LA RUTA Y ANTES DE CARGAR NADA. Hacerlo con el
- * enrutador —una ruta `/c/:ficha` más dentro de `App`— habría sido menos código
- * y habría cargado la consola entera para cada cliente final que abre un
- * enlace.
+ *   consola   `index.html` → este archivo → `consola.tsx`. Detrás de inicio de sesión.
+ *   catálogo  `catalogo.html` → `modulos/catalogo-web/publico/entrada.tsx`, con su
+ *             propia compilación (`vite.catalogo.config.ts` → `dist-catalogo/`).
+ *
+ * Una ruta `/c/<ficha>` pedida a la consola ya NO monta el catálogo: cae en la
+ * pantalla de ingreso, que no muestra datos de ningún comercio. Es deliberado:
+ * si la consola siguiera sirviendo la página pública, la separación de orígenes
+ * sería solo de nombre.
+ *
+ * El `import()` dinámico se conserva (la consola sigue partida en fragmentos y
+ * `scripts/humo-staging.sh` lee el paquete a través de ellos).
  */
 const raiz = document.getElementById('raiz');
 if (!raiz) throw new Error('Falta el nodo #raiz');
 
-if (/^\/c\/[0-9a-f]{32}$/.test(window.location.pathname)) {
-  void import('./modulos/catalogo-web/publico/montar').then((m) => m.montarCatalogo(raiz));
-} else {
-  void import('./consola').then((m) => m.montarConsola(raiz));
-}
+void import('./consola').then((m) => m.montarConsola(raiz));

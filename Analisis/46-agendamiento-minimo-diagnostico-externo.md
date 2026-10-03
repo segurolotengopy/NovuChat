@@ -168,7 +168,7 @@ que construyó Antigravity, y Antigravity nunca discute el veredicto.
 - **Fin de semana:** las rondas 2 y 3, si hacen falta.
 
 **Correcciones de la revisora antes de pegar.** Las versiones que se usan son
-las corregidas, en `~/Descargas/NOVUCHAT_agenda-minima-0{1,2}-…_2026-09-30.md`:
+las corregidas, en `~/CLAUDE_DESCARGAS/NOVUCHAT_agenda-minima-0{1,2}-…_2026-09-30.md`:
 
 | Marca | Corrección | Por qué |
 |---|---|---|
