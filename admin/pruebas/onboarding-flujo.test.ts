@@ -2857,6 +2857,40 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
         expect(v.c()['pidioDolor']).toBe(true);
       });
 
+      it('el origen de la campaña llega a la columna H de la planilla; sin campaña ni anuncio sigue siendo el chatbot', () => {
+        const v = conversacion(cfgCampana());
+        v.turno(texto(TEXTO_CAMPANA), SALUDO);
+        expect(v.c()['anuncio']).toEqual({ titular: TEXTO_CAMPANA, fuente: 'campana_texto' });
+        expect(v.filas[0]![7]).toBe('Campaña Meta Ads');
+        // Negando: un mensaje que no es el texto de la campaña, o sin campañas, es del chatbot.
+        const w = conversacion(cfgCampana());
+        w.turno(texto('Hola, quiero info'), SALUDO);
+        expect(w.c()['anuncio']).toBeUndefined();
+        expect(w.filas[0]![7]).toBe('Chatbot WhatsApp IA');
+        const x = conversacion();
+        x.turno(texto(TEXTO_CAMPANA), SALUDO);
+        expect(x.filas[0]![7]).toBe('Chatbot WhatsApp IA');
+        // Un origen ya guardado (un anuncio) no se pisa con el de la campaña.
+        const y = conversacion(cfgCampana());
+        const sd0 = y.sd;
+        turnoCon({ ...texto('hola'), referral: { headline: 'Anuncio', source_type: 'ad' } }, sd0, cfgCampana());
+        y.turno(texto(TEXTO_CAMPANA), SALUDO);
+        expect(y.c()['anuncio']).toMatchObject({ titular: 'Anuncio', fuente: 'ad' });
+      });
+
+      it('una fila que ya existe no cambia su columna H, venga o no por campaña', () => {
+        const cfg = cfgCampana();
+        const sd: J = {};
+        const e = turnoCon(texto(TEXTO_CAMPANA), sd, cfg);
+        const s = correr('Salida', [procesar('Hola.', e, sd)])[0]!;
+        const p = correr('Prospecto para la planilla', [s], { 'Config del negocio': cfg });
+        const fila = ['LEAD-1002', '2026-09-01', 'Ana', '', TEL, '', '1. Nuevo Lead', 'Chatbot WhatsApp IA', 'Baja', ''];
+        const busqueda = [{ row_number: 2, ...Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, fila[c]])) }];
+        const [d] = correr('Decidir fila de la planilla', [{ row_number: 2, 'ID Lead': 'LEAD-1002' }],
+          { 'Prospecto para la planilla': p, 'Buscar teléfono en planilla': busqueda });
+        expect(d).not.toHaveProperty('Origen / Canal');
+      });
+
       it('C20 campaña sin destino: como hoy, una línea de contexto y el primer mensaje sale con la lista', () => {
         const v = conversacion(cfgCampana());
         const t = v.turno(texto(TEXTO_CAMPANA), SALUDO);

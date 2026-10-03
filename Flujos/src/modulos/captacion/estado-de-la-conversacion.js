@@ -244,6 +244,13 @@ for (let i = 0; i < items.length; i++) {
   if (e.anuncio && !c.anuncio) {
     c.anuncio = { titular: String(e.anuncio.titular ?? '').slice(0, 120), fuente: String(e.anuncio.fuente ?? '') };
   }
+  // Y quien llega por el TEXTO EXACTO de una campaña (`Normalizar entrada` lo
+  // detecta en `e.campana`) tiene el mismo origen (la columna H de la planilla lo
+  // decide en `Decidir fila de la planilla`). Misma forma que el anuncio, con otra fuente; no
+  // pisa un origen ya guardado.
+  if (e.campana && e.campana.texto && !c.anuncio) {
+    c.anuncio = { titular: String(e.campana.texto).slice(0, 120), fuente: 'campana_texto' };
+  }
 
   const estadoServidor = e.atencionEstado === 'operador' || e.atencionEstado === 'bloqueado'
     ? e.atencionEstado : 'normal';
