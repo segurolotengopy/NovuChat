@@ -741,7 +741,7 @@ function armarPedido() {
   return Object.assign({}, nuevo, {
     lineas: pdLineasAviso(en.carrito),
     total: total, modalidad: en.entrega.entrega, moneda: monedaTxt,
-    nombre: en.entrega.nombre, direccion: delivery ? en.entrega.direccion : '', coordenadas: coordenadas,
+    nombre: en.entrega.nombre || vmLinea(t.nombrePerfil, 60), direccion: delivery ? en.entrega.direccion : '', coordenadas: coordenadas,
     notaPedido: en.entrega.notaPedido || '', // la nota del carrito del catalogo web (texto del cliente, ya saneado)
     referencia: delivery ? en.entrega.referencia : '',
     from: t.from, nombrePerfil: t.nombrePerfil,
@@ -1040,10 +1040,15 @@ function aCarrito() {
     ruta = 'nada';
     return;
   }
-  // Un carrito nuevo reemplaza el pedido en curso; una reserva a medias sobrevive (`limpiarCarrito` no la toca).
+  // Un carrito nuevo reemplaza el pedido en curso; una reserva a medias sobrevive (`limpiarCarrito` no la toca). El nombre, la
+  // dirección y la referencia ya dados se conservan (como en «Cambiar algo»): el carrito no trae el nombre del cliente y, sin
+  // esto, un pedido para recoger llegaba a cocina sin nombre.
+  const entregaPrevia = en.entrega;
   limpiarCarrito();
   limpiarConfirmado();
   irA('pedido');
+  en.entrega = Object.assign(entregaVacia(), { direccion: entregaPrevia.direccion, referencia: entregaPrevia.referencia, nombre: entregaPrevia.nombre });
+  if (entregaPrevia.ubicacion) en.entrega.ubicacion = entregaPrevia.ubicacion;
 
   const carta = cartaDelNegocio();
   const lineas = [];

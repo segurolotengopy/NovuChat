@@ -93,6 +93,27 @@ describe('un carrito válido: UN resumen con sus tres botones, sin reportarse co
   });
 });
 
+describe('el carrito para recoger no llega a cocina sin nombre (revisión del PR #382)', () => {
+  it('el nombre ya dado en la conversación se conserva cuando llega el carrito de la página, y viaja al pedido que se confirma', () => {
+    const w = crear();
+    turno(w, texto('hola'));
+    w.estado.extraccion = { lineas: [{ producto: 'tacos de birria', cantidad: 4, forma: 'unidad', detalle: '' }], entrega: 'recojo', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+    turno(w, texto('quiero 4 tacos de birria'));
+    expect((estadoDe(w)['entrega'] as J)['nombre']).toBe('Carlos Pérez');
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo() });
+    expect(t.mensajes).toHaveLength(1);
+    expect((estadoDe(w)['entrega'] as J)['nombre'], 'el carrito no borra el nombre').toBe('Carlos Pérez');
+    const confirmar = turno(w, boton(idDeBoton(t, 'Confirmar pedido'), 'Confirmar pedido'));
+    expect(confirmar.mensajes.length).toBeGreaterThan(0);
+    expect((estadoDe(w)['pedido'] as J)['nombre']).toBe('Carlos Pérez');
+  });
+  it('NEGANDO: un cliente sin conversación previa no tiene nombre que conservar (el carrito no trae el nombre de perfil): queda vacío, nunca inventado', () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo() });
+    expect((estadoDe(w)['entrega'] as J)['nombre']).toBe('');
+  });
+});
+
 describe('un carrito inválido no produce nada: 0 mensajes, 0 avisos, 0 reportes, 0 llamadas al modelo', () => {
   const casos: [string, J][] = [
     ['de otro número (la cabecera nombra un número que no es el del negocio)', { headers: cabeceras({ 'x-novuchat-numero': '100000000000099' }), body: cuerpo() }],
