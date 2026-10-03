@@ -19,6 +19,8 @@
 //  2. Solo lo que salio pasa a `Reportar mensaje (saliente)`. El servidor cuenta
 //     cada saliente como una respuesta del bloque (`ingesta.ts`,
 //     `mensajesVentana`): reportar uno que no salio se le facturaba al comercio.
+//     Regla I-ENTREGA: salio solo si Meta devolvio `messages[0].id`; ese id viaja
+//     como `idMeta`. Una 2xx sin id no se reporta (ni corta la ejecucion).
 //  3. Marca `avisado` recien cuando Meta acepto la PLANTILLA del aviso interno.
 //     El 15/09/2026 `solicitud_contacto` todavia estaba en revision y Meta
 //     rechazo el envio (132001): el flujo dio el aviso por hecho y los cuatro
@@ -45,6 +47,14 @@ const sd = $getWorkflowStaticData('global');
 sd.conversaciones = sd.conversaciones ?? {};
 
 const acepto = (r) => { const s = Number(r?.statusCode); return s >= 200 && s < 300; };
+
+// El id que Meta devuelve al aceptar un mensaje (`messages[0].id`); vacio si no hay.
+const idDe = (r) => {
+  let cuerpo = r?.body;
+  if (typeof cuerpo === 'string') { try { cuerpo = JSON.parse(cuerpo); } catch (err) { cuerpo = {}; } }
+  const id = cuerpo && Array.isArray(cuerpo.messages) ? cuerpo.messages[0]?.id : undefined;
+  return typeof id === 'string' ? id.trim() : '';
+};
 
 // Lo que devolvio un nodo de envio; nada si no corrio.
 const salidaDe = (nombre) => {
@@ -175,6 +185,8 @@ aEnviar.forEach((s, k) => {
       : detalle(final, s.from) + ' (' + (s.esInteractivo ? 'interactivo' : 'texto') + ', ' + turno + ')');
     return;
   }
+  const idMeta = idDe(final);
+  if (!idMeta) return; // sin id de Meta no hay entrega que reportar
   const idx = items.indexOf(s);
   salen.push({ json: {
     from: s.from,
@@ -182,6 +194,7 @@ aEnviar.forEach((s, k) => {
     esInteractivo: porRespaldo ? false : s.esInteractivo === true,
     respuesta: porRespaldo ? String(s.respuestaRespaldo ?? s.respuesta ?? '') : s.respuesta,
     porRespaldo,
+    idMeta,
     avisos: [...(Array.isArray(s.avisos) ? s.avisos : []), ...extra[idx]],
   }, pairedItem: { item: idx } });
 });
