@@ -770,6 +770,59 @@ describe('Procesar respuesta: [DESCARTE] lo propone el modelo y lo decide el có
 });
 
 // ===========================================================================
+describe('Campaña con destino `asesor`: el mensaje sale con el botón, garantizado por código', () => {
+  const campana = (extra: J = {}): J => ENT({ tipo: 'text', userInput: 'Hola, quiero hablar con una persona', idElegido: 'asesor', porCampana: true, ...extra });
+  // El modelo contesta SIN prometer nada: antes el botón no salía.
+  const MODELO = 'Claro, cuéntame un poco de tu negocio. ¿De qué se trata?';
+  const botones = (r: J): string[] => (interactivo(r)?.action?.buttons ?? []).map((b: J) => b.reply.id);
+
+  it('lleva el botón del asesor aunque el texto no prometa nada', () => {
+    const r = procesar(MODELO, campana(), conversacion({ rubro: 'pastelería' }));
+    expect(interactivo(r).type).toBe('button');
+    expect(botones(r)).toEqual(['asesor']);
+    expect(r['textoRespaldo']).toContain('escríbeme «asesor»');
+    expect(r['avisos']).not.toContain('promesa_con_boton_asesor');
+  });
+
+  it('en el primer mensaje, la lista de rubros lleva la fila del asesor como última', () => {
+    const r = procesar('¡Hola! Soy Sofía, con inteligencia artificial.\n[RUBROS]', campana({ primeraDeVentana: true }), conversacion());
+    expect(interactivo(r).type).toBe('list');
+    expect(filas(r).at(-1)).toEqual({ id: 'asesor', title: 'Hablar con un asesor' });
+    expect(filas(r).at(-2)!.id).toBe('rubro:otro');
+  });
+
+  it('NEGANDO: no dispara el traspaso: sin aviso a recepción, sin cerrar, sin hecho de Alta', () => {
+    const sd = conversacion({ rubro: 'pastelería' });
+    const r = procesar(MODELO, campana(), sd);
+    expect(r['avisar']).toBe(false);
+    expect(r['cuerpoMeta']?.interactive?.type).not.toBe('cta_url');
+    expect(sd['conversaciones'][TEL].etapa).toBe('en_curso');
+    expect(r['hechos']['pidioAsesor']).toBe(false);
+  });
+
+  it('NEGANDO: sin porCampana, o con otro destino, o con un toque real de otra opción, no hay botón de más', () => {
+    const rubro = conversacion({ rubro: 'pastelería' });
+    expect(procesar(MODELO, campana({ porCampana: false }), rubro)['cuerpoMeta']).toBeUndefined();
+    expect(procesar(MODELO, campana({ idElegido: 'rubro:comercio' }), conversacion({ rubro: 'pastelería' }))['cuerpoMeta']).toBeUndefined();
+    expect(procesar(MODELO, campana({ idElegido: 'planes' }), conversacion({ rubro: 'pastelería' }))['cuerpoMeta']).toBeUndefined();
+    expect(procesar(MODELO, campana({ idElegido: '' }), conversacion({ rubro: 'pastelería' }))['cuerpoMeta']).toBeUndefined();
+  });
+
+  it('NEGANDO: cerrada y ya avisada no se vuelve a ofrecer el botón (no hay a quién avisar)', () => {
+    const r = procesar(MODELO, campana({ etapa: 'cerrado' }), conversacion({ rubro: 'x' }, { etapa: 'cerrado', avisado: true }));
+    expect(r['cuerpoMeta']).toBeUndefined();
+  });
+
+  it('el límite de 1024 se respeta: un cuerpo largo se recorta y el botón sobrevive', () => {
+    const largo = 'Claro. ' + 'Cuéntame más de tu negocio. '.repeat(60);
+    const r = procesar(largo, campana(), conversacion({ rubro: 'x' }));
+    expect(interactivo(r).type).toBe('button');
+    expect(interactivo(r).body.text.length).toBeLessThanOrEqual(META.cuerpo);
+    expect(r['avisos']).toContain('texto_recortado');
+  });
+});
+
+// ===========================================================================
 describe('[CIERRE] se retiró: quien pide una persona va al traspaso', () => {
   it('no queda ni la marca ni sus nombres en el código de captación', () => {
     for (const [nombre, codigo] of Object.entries({ NORMALIZAR, CONFIG, TRASPASO, PROCESAR, SALIDA })) {

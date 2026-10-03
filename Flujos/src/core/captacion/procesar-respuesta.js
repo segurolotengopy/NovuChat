@@ -843,6 +843,12 @@ for (let i = 0; i < items.length; i++) {
     || botonSoporte
     || (sinRespuesta && !falloSinBoton)
     || esOferta
+    // CAMPAÑA CON DESTINO `asesor` (Andres, 03/10/2026): el contexto del turno le
+    // dice al modelo que el mensaje sale con el boton; aqui se GARANTIZA por
+    // codigo, sin depender de que el texto prometa algo. No dispara el traspaso
+    // ni la plantilla: solo ofrece el boton. Cerrada y ya avisada, no (no hay a
+    // quien avisar de nuevo y el texto no lo ofrece).
+    || (ent.porCampana === true && ent.idElegido === 'asesor' && !(yaCerrado && c?.avisado === true))
     || (!yaCerrado && (planesMostrados || ent.finBloque === true));
   const filas = quiereLista ? filasDeRubros(rubrosConId, conBotonAsesor) : [];
   const conLista = filas.length > 0;
