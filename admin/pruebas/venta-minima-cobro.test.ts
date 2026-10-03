@@ -36,6 +36,7 @@ export const LUNES_10 = Date.UTC(2026, 9, 5, 14);
 const NOMBRES = [
   'cbCobroReal', 'cbCaption', 'cbMensajeQr', 'cbLectura', 'cbResultado', 'cbEstadoParaAviso',
   'cbTextoAlCliente', 'cbDiferencia', 'cbObjetoUnico', 'cbTotalValido', 'cbMonto', 'cbUrlSegura',
+  'cbCobroSimulado', 'cbHayQr',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -754,5 +755,242 @@ describe('S-1: `cbCanon` compara sin homoglifos, sin marcas combinantes y sin co
   it('la red conserva el cuantificador acotado y las raíces en su contexto', () => {
     expect(L.CB_PROHIBIDAS.source).toContain('recib\\S{0,40} (tu|el) pago');
     expect(L.CB_PROHIBIDAS.source).not.toContain('|reservad|');
+  });
+});
+
+// =====================================================================================================================
+// COBRO SIMULADO (piloto de Q'Taco, 03/10/2026): dos modos EXCLUYENTES (PROHIBICIÓN 3 de CLAUDE.md). Cada caso va con
+// su opuesto: el simulado solo existe con las cuatro condiciones, y el real nunca se disfraza de simulado.
+// =====================================================================================================================
+
+// La red de `comun.js` (`VM_PROHIBIDAS`), copiada acá: si la librería o `comun.js` la aflojaran, esta prueba lo vería.
+const RED_COMUN =
+  /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
+const ACREDITACION = /pago (acreditado|verificado)|recibimos tu pago/i;
+
+const URL_SIM = 'https://raw.githubusercontent.com/segurolotengopy/NovuChat/v0.11.0/Demo-Recursos/qr-demo.png';
+const BASE_SIM = { cobroSimuladoActivo: true, qrSimuladoUrl: URL_SIM };
+/** El cuerpo de `configuracionFlujo` de un negocio SIN cobro real y con `cobroSimulado` declarado por el servidor. */
+const panelSim = (cambios: Record<string, unknown> = {}, cobro: Record<string, unknown> = {}) => ({
+  cobroSimulado: { rotuloSuperior: 'x' },
+  cobro: { activo: false, pendiente: true, monto: 63, pedido: 'ped-2026-10-05-0011-abc', vencidoHaceMin: null, ...cobro },
+  ...cambios,
+});
+
+describe('cbCobroSimulado: simulado solo con las cuatro condiciones, y nunca con cobro real presente', () => {
+  it('con todo en regla da el cobro simulado: activo false, modo simulado, sin titular ni banco', () => {
+    expect(L.cbCobroSimulado(panelSim(), BASE_SIM)).toEqual({
+      activo: false, modo: 'simulado', qrUrl: URL_SIM, titular: '', banco: '',
+      pendiente: true, monto: 63, pedidoRef: 'ped-2026-10-05-0011-abc', vencidoHaceMin: null,
+    });
+  });
+
+  it('pendiente, monto y pedido son los del servidor: sin pendiente no hay pendiente, y un monto-texto no es monto', () => {
+    const sinPend = L.cbCobroSimulado(panelSim({}, { pendiente: false }), BASE_SIM);
+    expect(sinPend.pendiente).toBe(false);
+    expect(L.cbCobroSimulado(panelSim({}, { pendiente: 'true' }), BASE_SIM).pendiente).toBe(false);
+    expect(L.cbCobroSimulado(panelSim({}, { monto: '63' }), BASE_SIM).monto).toBeNull();
+    expect(L.cbCobroSimulado(panelSim({}, { vencidoHaceMin: 12.7 }), BASE_SIM).vencidoHaceMin).toBe(12);
+    expect(L.cbCobroSimulado(panelSim({}, { vencidoHaceMin: -3 }), BASE_SIM).vencidoHaceMin).toBeNull();
+  });
+
+  it('EXCLUSIÓN: con `cobroReal` presente (buena o mala URL, o incluso vacío) nunca hay simulado', () => {
+    expect(L.cbCobroSimulado(panel({ cobroSimulado: {} }), BASE_SIM)).toBeNull();
+    expect(L.cbCobroSimulado(panel({ cobroSimulado: {} }, { qr: { url: 'http://inseguro.ejemplo.test/qr.png' } }), BASE_SIM)).toBeNull();
+    expect(L.cbCobroSimulado(panelSim({ cobroReal: {} }), BASE_SIM)).toBeNull();
+    // El opuesto: el mismo panel SIN `cobroReal` sí es simulado.
+    expect(L.cbCobroSimulado(panelSim(), BASE_SIM)).not.toBeNull();
+  });
+
+  it('`cobroSimuladoActivo` solo vale como el booleano true (ni texto, ni número, ni false, ni ausente)', () => {
+    for (const v of ['true', 'TRUE', 1, 0, false, null, undefined, {}, [true]]) {
+      expect(L.cbCobroSimulado(panelSim(), { ...BASE_SIM, cobroSimuladoActivo: v }), JSON.stringify(v)).toBeNull();
+    }
+    expect(L.cbCobroSimulado(panelSim(), { qrSimuladoUrl: URL_SIM })).toBeNull();
+    expect(L.cbCobroSimulado(panelSim(), { ...BASE_SIM, cobroSimuladoActivo: true })).not.toBeNull();
+  });
+
+  it('el servidor tiene que declarar `cobroSimulado` como objeto', () => {
+    const { cobroSimulado: _quitado, ...sinClave } = panelSim();
+    expect(L.cbCobroSimulado(sinClave, BASE_SIM)).toBeNull();
+    for (const v of [null, undefined, 'si', 1, true, []]) {
+      expect(L.cbCobroSimulado(panelSim({ cobroSimulado: v }), BASE_SIM), JSON.stringify(v)).toBeNull();
+    }
+    expect(L.cbCobroSimulado(panelSim({ cobroSimulado: {} }), BASE_SIM)).not.toBeNull();
+  });
+
+  it('`qrSimuladoUrl` pasa la misma regla que el QR real: http, IP, @, puerto, marcador, vacía o larga no valen', () => {
+    const malas = [
+      'http://raw.githubusercontent.com/x/qr-demo.png',
+      'https://192.168.1.10/qr.png',
+      'https://usuario@raw.githubusercontent.com/qr-demo.png',
+      'https://raw.githubusercontent.com:8443/qr-demo.png',
+      'REEMPLAZAR_URL', '', '   ', 'https://localhost/qr.png',
+      'https://almacen.ejemplo.test/' + 'a'.repeat(2001),
+      42, null, undefined, { u: 1 },
+    ];
+    for (const u of malas) {
+      expect(L.cbCobroSimulado(panelSim(), { ...BASE_SIM, qrSimuladoUrl: u }), String(u).slice(0, 60)).toBeNull();
+    }
+    expect(L.cbCobroSimulado(panelSim(), { ...BASE_SIM, qrSimuladoUrl: '  ' + URL_SIM + '  ' }).qrUrl).toBe(URL_SIM);
+  });
+
+  it('sin cuerpo o sin base utilizable (nulo, lista, texto) es null', () => {
+    for (const b of [null, undefined, [], [BASE_SIM], 'base', 7]) expect(L.cbCobroSimulado(panelSim(), b), JSON.stringify(b)).toBeNull();
+    for (const c of [null, undefined, [], 'panel', 7]) expect(L.cbCobroSimulado(c, BASE_SIM), JSON.stringify(c)).toBeNull();
+  });
+
+  it('nunca sale activo:true, y nunca a la vez con el real: barrido de combinaciones', () => {
+    const reales = [undefined, {}, { nombreCuenta: 'Cuenta de Prueba' }];
+    const sims = [undefined, null, {}, 'x'];
+    const acts = [true, 'true', 1, false, undefined];
+    const urls = [URL_SIM, 'http://a.b.test/x.png', '', undefined];
+    for (const cr of reales) for (const cs of sims) for (const a of acts) for (const u of urls) {
+      const cuerpo: Record<string, unknown> = { cobro: { activo: true, pendiente: true, monto: 63, qr: { url: URL_QR } } };
+      if (cr !== undefined) cuerpo.cobroReal = cr;
+      if (cs !== undefined) cuerpo.cobroSimulado = cs;
+      const r = L.cbCobroSimulado(cuerpo, { cobroSimuladoActivo: a, qrSimuladoUrl: u });
+      if (r === null) continue;
+      expect(r.activo).toBe(false);
+      expect(r.modo).toBe('simulado');
+      expect(cr, 'simulado con cobroReal presente').toBeUndefined();
+      expect(a).toBe(true);
+    }
+  });
+});
+
+describe('cbHayQr: hay QR que mandar solo en los dos casos válidos', () => {
+  it('real encendido con https y simulado (activo false) con https: sí', () => {
+    expect(L.cbHayQr({ modo: 'real', activo: true, qrUrl: URL_QR })).toBe(true);
+    expect(L.cbHayQr({ modo: 'simulado', activo: false, qrUrl: URL_SIM })).toBe(true);
+  });
+
+  it('los modos mezclados, el apagado, el modo ausente y una URL no https: no', () => {
+    expect(L.cbHayQr({ modo: 'simulado', activo: true, qrUrl: URL_SIM })).toBe(false);
+    expect(L.cbHayQr({ modo: 'real', activo: false, qrUrl: URL_QR })).toBe(false);
+    expect(L.cbHayQr({ modo: 'apagado', activo: false, qrUrl: URL_QR })).toBe(false);
+    expect(L.cbHayQr({ activo: true, qrUrl: URL_QR })).toBe(false);
+    expect(L.cbHayQr({ modo: 'simulado', activo: false, qrUrl: 'http://a.ejemplo.test/qr.png' })).toBe(false);
+    expect(L.cbHayQr({ modo: 'real', activo: true, qrUrl: '' })).toBe(false);
+    expect(L.cbHayQr({ modo: 'simulado', activo: false })).toBe(false);
+    for (const v of [null, undefined, [], 'x', 5]) expect(L.cbHayQr(v), JSON.stringify(v)).toBe(false);
+  });
+});
+
+describe('cbCaption simulado: lleva el rótulo y nunca se pide pagar; el real nunca lo lleva', () => {
+  const sim = (o: Record<string, unknown> = {}, ped: Record<string, unknown> = {}) =>
+    L.cbCaption({ codigo: 'K7QX', total: 63, ...ped }, { moneda: 'BOB', simulado: true, ...o });
+
+  it('dice SIMULADO y «no cobra», trae el total y el código, y cabe en 1.024 caracteres', () => {
+    const pie = sim();
+    expect(pie).toContain('SIMULADO');
+    expect(pie).toContain('no cobra');
+    expect(pie).toContain('Pedido #K7QX');
+    expect(pie).toContain('Total de la prueba: 63 Bs');
+    expect(pie.length).toBeLessThanOrEqual(1024);
+    expect(pie.startsWith('PRUEBA · COBRO SIMULADO')).toBe(true);
+  });
+
+  it('el delivery se aclara aparte y no entra al total', () => {
+    expect(sim({ delivery: true })).toContain('el delivery se paga aparte, al repartidor');
+    expect(sim({ delivery: false })).not.toContain('delivery');
+  });
+
+  it('NO pide escanear con la app del banco ni nombra al titular, aunque se le pase uno', () => {
+    const pie = sim({ titular: 'Taqueria Ejemplo SRL' });
+    expect(pie).not.toContain('Escanea el QR con la app de tu banco');
+    expect(pie).not.toContain('Taqueria Ejemplo');
+    expect(pie).not.toContain('la cuenta es de');
+    expect(pie).not.toContain('Total a pagar por QR');
+    expect(pie).toContain('No intentes pagarlo');
+  });
+
+  it('sin total válido no hay pie, tampoco en simulado; el tope de 1.024 se respeta aun con un código largo', () => {
+    for (const t of [null, 0, -5, '63', NaN, 2000000]) expect(sim({}, { total: t }), String(t)).toBe('');
+    expect(sim({ moneda: 'x'.repeat(500) }).length).toBeLessThanOrEqual(1024);
+  });
+
+  it('el real, con cualquier titular, moneda o delivery, jamás se parece a un simulacro', () => {
+    for (const titular of ['', 'Taqueria Ejemplo SRL']) for (const delivery of [true, false]) for (const simulado of [undefined, false]) {
+      const pie = L.cbCaption({ codigo: 'K7QX', total: 63 }, { titular, moneda: 'BOB', delivery, simulado });
+      expect(pie).toContain('Total a pagar por QR: 63 Bs');
+      expect(pie).toContain('Escanea el QR con la app de tu banco');
+      expect(pie).not.toMatch(/simulad|simulacr|demostraci|prueba/i);
+    }
+    // `simulado` solo vale como el booleano true: un texto no activa el rótulo.
+    expect(L.cbCaption({ codigo: 'K7QX', total: 63 }, { simulado: 'true' })).not.toMatch(/simulad/i);
+  });
+});
+
+describe('cbTextoAlCliente simulado: dice SIMULADO y nunca acredita nada', () => {
+  const T = (o: Record<string, unknown> = {}) => L.cbTextoAlCliente('simulado', { codigo: 'K7QX', ...o });
+
+  it('con el aviso salido: «Ya pasé tu pedido» como pedido de PRUEBA, sin botón', () => {
+    const t = T({ avisoSalio: true });
+    expect(t.cuerpo).toContain('SIMULADO');
+    expect(t.cuerpo).toContain('no se movió dinero');
+    expect(t.cuerpo).toContain('Ya pasé tu pedido al restaurante como pedido de PRUEBA');
+    expect(t.cuerpo).toContain('tu pedido #K7QX');
+    expect(t.enlace).toBe(false);
+    expect(t.aviso).toBe(true);
+  });
+
+  it('sin el aviso salido: no se promete nada, y sale con el botón para escribirle al local', () => {
+    const t = T({ avisoSalio: false });
+    expect(t.cuerpo).toContain('SIMULADO');
+    expect(t.cuerpo).not.toContain('Ya pasé');
+    expect(t.cuerpo).toContain('No pude pasarle tu pedido al restaurante');
+    expect(t.enlace).toBe(true);
+    expect(t.aviso).toBe(true);
+    // `avisoSalio` solo vale como true: ausente o texto no promete.
+    expect(T({}).cuerpo).not.toContain('Ya pasé');
+    expect(T({ avisoSalio: 'true' }).cuerpo).not.toContain('Ya pasé');
+  });
+
+  it('ni con código raro, ni con ninguno: nunca acredita ni coincide con la red', () => {
+    for (const avisoSalio of [true, false, undefined]) for (const codigo of ['K7QX', '', 'pagado', 'verificado', '<b>x</b>']) {
+      const c = L.cbTextoAlCliente('simulado', { codigo, avisoSalio }).cuerpo as string;
+      expect(c, `${avisoSalio}/${codigo}`).toContain('SIMULADO');
+      expect(c).not.toMatch(L.CB_PROHIBIDAS);
+      expect(c).not.toMatch(RED_COMUN);
+      expect(c).not.toMatch(ACREDITACION);
+      expect(c).not.toMatch(VOSEO);
+    }
+  });
+
+  it('el opuesto: ningún otro resultado dice SIMULADO', () => {
+    for (const r of ['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'ya_cotejado', 'sin_qr', undefined]) {
+      for (const avisoSalio of [true, false]) {
+        expect(L.cbTextoAlCliente(r, { codigo: 'K7QX', avisoSalio }).cuerpo, String(r)).not.toMatch(/simulad/i);
+      }
+    }
+  });
+});
+
+describe('cbEstadoParaAviso simulado y la red del texto simulado', () => {
+  it('el estado dice PRUEBA y SIMULADO, y no es el del plan B ni el de un cotejo', () => {
+    const e = L.cbEstadoParaAviso('simulado');
+    expect(e).toContain('PRUEBA');
+    expect(e).toContain('SIMULADO');
+    expect(e).not.toBe(L.cbEstadoParaAviso('sin_qr'));
+    expect(e).not.toBe(L.cbEstadoParaAviso('cuadra'));
+    expect(e).not.toBeNull();
+  });
+
+  it('todo texto simulado de la librería pasa las dos redes y la de acreditación', () => {
+    const textos = [
+      L.cbEstadoParaAviso('simulado'),
+      L.cbCaption({ codigo: 'K7QX', total: 63 }, { simulado: true, moneda: 'BOB' }),
+      L.cbCaption({ codigo: 'K7QX', total: 12.5 }, { simulado: true, delivery: true }),
+      L.cbCaption({ total: 63 }, { simulado: true }),
+      L.cbTextoAlCliente('simulado', { codigo: 'K7QX', avisoSalio: true }).cuerpo,
+      L.cbTextoAlCliente('simulado', { codigo: 'K7QX', avisoSalio: false }).cuerpo,
+    ] as string[];
+    for (const t of textos) {
+      expect(t).not.toMatch(L.CB_PROHIBIDAS);
+      expect(t).not.toMatch(RED_COMUN);
+      expect(t).not.toMatch(ACREDITACION);
+      expect(t).not.toMatch(VOSEO);
+    }
   });
 });
