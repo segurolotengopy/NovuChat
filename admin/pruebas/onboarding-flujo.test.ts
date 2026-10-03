@@ -2940,6 +2940,14 @@ describe('Base de conocimiento', () => {
   const indice = join(process.env['NOVUCHAT_SITE_DIR'] ?? join(homedir(), 'Novuchat-site'),
     'functions/src/rag/indice.json');
 
+  it('ningún fragmento trae `vector` (unos 809 KB que el nodo no usa) y el nodo pesa menos de 60 KB', () => {
+    const js = nodo('Conocimiento del sitio').parameters['jsCode'] as string;
+    const frag = JSON.parse(/const FRAGMENTOS = (\[[\s\S]*?\n\]);/.exec(js)![1]!) as J[];
+    expect(frag.length).toBeGreaterThan(30);
+    for (const f of frag) expect(Object.keys(f).sort(), String(f['id'])).toEqual(['id', 'texto', 'titulo', 'url']);
+    expect(js.length).toBeLessThan(60_000);
+  });
+
   it('trae el corpus del sitio, con su huella', () => {
     const [salida] = correr('Conocimiento del sitio', [{ a: 1 }]);
     expect(huella).toBeDefined();

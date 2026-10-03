@@ -573,7 +573,9 @@ El nodo `Conocimiento del sitio` lleva el corpus del RAG de novuchat.site con su
 huella. `admin/pruebas/onboarding-flujo.test.ts` falla si el sitio regeneró su
 índice y la huella ya no coincide. Para actualizarlo, se vuelve a copiar
 `FRAGMENTOS`, `HUELLA` y `GENERADO` desde
-`Novuchat-site/functions/src/rag/indice.json`. Se retira cuando el sitio exponga
+`Novuchat-site/functions/src/rag/indice.json`, **sin el campo `vector`** de cada
+fragmento (unos 809 KB, el 98 % del nodo, que el nodo no usa: solo lee `id`,
+`titulo`, `url` y `texto`). La `HUELLA` es la del índice del sitio, tal cual. Se retira cuando el sitio exponga
 la Function `conocimiento` (pedido en `CLIENTES/NOVUCHAT/02-pedido-sesion-sitio.md`).
 
 ### Límites conocidos
