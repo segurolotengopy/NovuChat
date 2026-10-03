@@ -1,0 +1,9 @@
+{
+  "hereda": "novuchat",
+  "nombreFlujo": "NovuChat — Captación mínima (v0, prueba)",
+  "entrada": "prueba",
+  "credenciales": {
+    "graph": "Graph WhatsApp — pruebas (no producción)",
+    "entradaPrueba": "Entrada de prueba NovuChat (captación)"
+  }
+}
