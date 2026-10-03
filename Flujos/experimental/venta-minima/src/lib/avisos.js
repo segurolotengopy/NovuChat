@@ -86,6 +86,7 @@
 // FORMA DE `datos` (todos los campos son opcionales; lo que falta sale como «—»):
 //   tipo `pedido` | `comprobante`:
 //     lineas:[{cantidad, nombre, detalle}]   total: número en Bs (nunca el delivery)
+//     notaPedido (opcional): la nota del cliente desde la página del catálogo; la ven `completo` y `cocina`
 //     modalidad: 'delivery' | 'recojo'       codigo: código corto del pedido
 //     resultado: 'cuadra'|'no_cuadra'|'ilegible'|'sin_cotejo'|'sin_qr'|'ya_cotejado'
 //       (por defecto: `sin_qr` en `pedido`, `sin_cotejo` en `comprobante`; con
@@ -647,6 +648,10 @@ function avModalidadVariable(d, dest, opc) {
       coord,
     ].filter(Boolean);
   }
+  // La nota del cliente desde la pagina del catalogo (`notaPedido`) es una nota de cocina: la ven los dos roles (a cocina,
+  // sin numeros largos). Va con los segmentos fijos, para que los items se corten antes que ella.
+  const nota = typeof d.notaPedido === 'string' ? avLimpio(d.notaPedido, 100, opc) : '';
+  if (nota) segmentos.push('nota: ' + nota);
   const fijo = segmentos.join(' · ');
   const items = avItemsCompactos(avLineas(d.lineas), opc, tope - fijo.length - 3);
   return items ? fijo + ' · ' + items : fijo;
@@ -763,6 +768,9 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
       largo += linea.length + 1;
     }
     if (!todas.length) lineas.push('• (sin ítems)');
+    // La nota del cliente (`notaPedido`, de la pagina del catalogo): la ven completo y cocina (sin numeros largos para cocina).
+    const notaPedido = typeof d.notaPedido === 'string' ? avLimpio(d.notaPedido, 300, opc) : '';
+    if (notaPedido) lineas.push('Nota del cliente: «' + notaPedido + '»');
     lineas.push('Total de la comida: Bs ' + avMonto(d.total));
     if (completo && Array.isArray(d.diferencias) && d.diferencias.length) {
       const dif = d.diferencias.slice(0, 6).map((x) => avLimpio(x, 100)).filter(Boolean).join('; ');
