@@ -697,15 +697,8 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
   background-position: 0 0, 6px 6px;
 }
 
-/* Vista previa del catálogo: ancho de teléfono, porque es donde lo abre el
-   cliente. Mostrarlo a 1.200 píxeles da una impresión que después no se cumple. */
+/* Vista previa del catálogo (se abre en otra pestaña desde T-37; ya no hay marco). */
 .vista-previa { margin-top: var(--space-8); }
-.marco-catalogo {
-  width: 100%; max-width: 390px; height: 680px;
-  border: 1px solid var(--color-borde-control);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-}
 /* La subida de foto: el `input[type=file]` va oculto detrás de su etiqueta, que
    es la que se ve como botón. El control nativo no se puede peinar. */
 .subir-foto { display: inline-flex; gap: var(--space-2); margin-top: var(--space-1); }
