@@ -139,11 +139,11 @@ describe('1. Ensamblar reproduce cada JSON byte a byte', () => {
     expect(Buffer.from(r.texto, 'utf8').equals(bytes(join(RAIZ_FLUJOS, archivo)))).toBe(true);
   });
 
-  it('el vertical de reservas inyecta 22 puntos: 18 nodos Code y 2 campos en cada uno de los 2 agentes', () => {
+  it('el vertical de reservas inyecta 23 puntos: 19 nodos Code y 2 campos en cada uno de los 2 agentes', () => {
     for (const f of ['demo-a-agendamiento.json', 'platinum-agendamiento.json']) {
       const r = ensamblarEnMemoria(f);
-      expect(r.inyectados, f).toHaveLength(22);
-      expect(r.inyectados!.filter((c) => c.startsWith('codigo/'))).toHaveLength(18);
+      expect(r.inyectados, f).toHaveLength(23);
+      expect(r.inyectados!.filter((c) => c.startsWith('codigo/'))).toHaveLength(19);
       expect(r.inyectados!.filter((c) => c.startsWith('prompts/'))).toHaveLength(4);
     }
   });
@@ -391,11 +391,11 @@ describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt d
   // 25/09 aunque todavía solo los use reservas). Lo del vertical es `reservas/`
   // hasta FL1 y `modulos/<m>/` o `core/medios/` desde FL1.
   const COMUN = /^(comun|core)\/[^/]+\.js$/;
-  it('cinco módulos son comunes por nombre a los otros verticales y trece son del vertical de reservas', () => {
+  it('cinco módulos son comunes por nombre a los otros verticales y catorce son del vertical de reservas', () => {
     const a = leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | { archivo: string }> };
     const rutas = Object.values(a.codigo).map((v) => (typeof v === 'string' ? v : v.archivo));
     expect(rutas.filter((r) => COMUN.test(r))).toHaveLength(5);
-    expect(rutas.filter((r) => /^(reservas|modulos\/[a-z-]+|core\/medios)\/[^/]+\.js$/.test(r))).toHaveLength(13);
+    expect(rutas.filter((r) => /^(reservas|modulos\/[a-z-]+|core\/medios)\/[^/]+\.js$/.test(r))).toHaveLength(14);
     // Los comunes existen con el mismo nombre en el Demo B y en la captación,
     // aunque su código todavía diverja: es lo que el bloque B-2 tiene que mirar.
     const otros = ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']

@@ -62,13 +62,14 @@ const origenes = (f: Flujo, hacia: string) => Object.entries(f.connections)
   .map(([origen]) => origen);
 
 /** Todo lo alcanzable desde un nodo, por cualquier salida. */
-function alcanzables(f: Flujo, desde: string): Set<string> {
+function alcanzables(f: Flujo, desde: string, sin: string[] = []): Set<string> {
   const vistos = new Set<string>();
   const pendientes = [desde];
   while (pendientes.length) {
     const actual = pendientes.pop() as string;
     for (const salida of f.connections[actual]?.main ?? []) {
       for (const x of salida) {
+        if (sin.includes(x.node)) continue;
         if (!vistos.has(x.node)) { vistos.add(x.node); pendientes.push(x.node); }
       }
     }
@@ -487,7 +488,12 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
       for (const padre of padres) {
         for (const hermano of destinos(f, padre)) {
           if (hermano === 'Reportar mensaje (saliente)') continue;
-          if (hermano === 'Responder al cliente' || alcanzables(f, hermano).has('Responder al cliente')) {
+          // PR-5: «QR no enviado» vuelve al embudo para escribirle al paciente (segundo
+          // pasaje por `Mensaje a enviar`, que reporta su texto antes que sus hermanos).
+          // Ese regreso cierra un ciclo ESTÁTICO a través de `¿Reenviar el QR?` que nunca
+          // corre: «QR no enviado» emite `reenviarQr: false` (lo prueba
+          // `agenda-envios-con-respaldo.test.ts`). No cuenta como camino de vuelta.
+          if (hermano === 'Responder al cliente' || alcanzables(f, hermano, ['QR no enviado']).has('Responder al cliente')) {
             expect(y(hermano), `${padre} → ${hermano}`).toBeLessThan(y('Reportar mensaje (saliente)'));
           }
         }
