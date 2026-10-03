@@ -128,132 +128,198 @@ Y borrar de las agendas del demo las citas de la prueba.
 
 ## 6 · Ensayar un flujo de venta mínima en el Demo A
 
-> Andres escribe desde su teléfono a la línea del Demo A y el flujo de «Venta
-> mínima (v0)» —el de Q'Taco— le contesta. El n8n es el del Demo A y su
-> `WhatsApp Trigger` usa la credencial de la app NovuChat-Demo-A (nunca la de
-> AAB1-WA-Prod, `CLAUDE.md` prohibición 7). Diseño de la variante:
-> `Flujos/experimental/venta-minima/DISENO.md`, «La variante de ensayo en el Demo A».
+> Andres escribe como cliente desde su teléfono a la línea del Demo A, y Silvana
+> hace de restaurante con el suyo (segundo teléfono registrado en la app del
+> Demo A; decisión de Andres, 02/10/2026). El flujo de «Venta mínima (v0)» —el de
+> Q'Taco— contesta desde el n8n del Demo A. Su `WhatsApp Trigger` es **el del
+> Demo A, copiado tal cual** del flujo vivo: la credencial de la app
+> NovuChat-Demo-A, nunca la de AAB1-WA-Prod (`CLAUDE.md` prohibición 7). Diseño de
+> la variante: `Flujos/experimental/venta-minima/DISENO.md`, «La variante de
+> ensayo en el Demo A».
 
-**Por qué no sirve `ensayo-flujo.sh`.** Su cerrojo exige que cada nodo con
-credencial exista, con el mismo nombre, en el Demo A de agendamiento, y que los
-marcadores sean los de un cliente de agendamiento. Un flujo de venta tiene nodos
-de envío propios. Por eso hay un archivo de datos aparte
-(`admin/scripts/datos/venta-minima/ensayo-demo-a.json`) que da el JSON
-`Flujos/experimental/venta-minima/venta-minima.ensayo-demo-a.json`, con el
-**mismo nombre de flujo que el Demo A**: así `publicar-flujo.sh` sigue
-protegiendo con su cerrojo de nombre (solo pisa al Demo A), y la vuelta es
-`ensayo-flujo.sh --restaurar`.
+**Por qué NO se usa `ensayo-flujo.sh` en este ensayo, ni para ir ni para volver.**
+Su cerrojo exige los mismos nodos con credencial que el Demo A de agendamiento, y
+su `--restaurar` republica el `demo-a-agendamiento.json` **de la copia desde donde
+se corre** (que puede traer cambios sin autorizar, como F3a) y, como `publicar-flujo.sh`
+completa las credenciales por tipo, deja al Demo A sin credencial en 12 nodos
+(Google Calendar y Gemini en el agente, `consultar_disponibilidad`, `agendar_cita`,
+`Responder al cliente`, `Avisar a recepción`; hallazgo de la revisión del PR #375).
+Eso es un defecto aparte de `ensayo-flujo.sh`, que este procedimiento no toca. Acá
+se usa `Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs`
+(`--sobre-demo-a`), que:
 
-Todo `--aplicar` lo corre Claude con el «sí» de Andres en el chat, después de
-leer entero el seco del mismo paso. Los scripts de n8n se corren desde
-`~/NovuChat` (donde están los `.env` y `CONFIGURACION.local.md`), con la ruta
-absoluta al JSON del worktree (`<worktree>` abajo).
+- copia el Trigger del Demo A vivo tal cual (id, `webhookId`, parámetros y credencial);
+- asigna **todas** las credenciales por nombre y por id, y solo las que el Demo A
+  vivo ya usa; se niega si un nodo queda sin credencial, si el nombre de una
+  credencial nombra a un cliente o a un sistema ajeno, o si el flujo del `.env` no
+  es el Demo A;
+- cambia los cuatro envíos por Graph a la credencial predefinida `whatsAppApi` («WhatsApp
+  account»): **no se crea ninguna credencial con el token**. (`PREPARACION.md` de
+  Agenda mínima decía «no crees» una credencial Graph Bearer en el Demo A: aquí queda
+  cumplido. El nombre «Graph WhatsApp Demo A (Bearer)» del JSON es solo la etiqueta que
+  la herramienta reconoce y cambia; esa credencial no existe ni se crea);
+- guarda el flujo vivo **entero** en un respaldo (permisos 600, fuera del repositorio):
+  la única vuelta atrás es `--restaurar-respaldo`, que repone ese respaldo exacto.
 
-**1. Preparar el worktree.** Dentro de `.claude/worktrees/<nombre>/`, en una
-rama nacida de `origin/main` con el PR del cambio; `pnpm install
---frozen-lockfile` en `admin/` (nunca `npm`) y, con la suite en verde,
-`node Flujos/experimental/venta-minima/construir.mjs --verificar` en 0.
+Todo `--aplicar` lo corre Claude con el «sí» de Andres en el chat, después de leer
+entero el seco del mismo paso. Cada seco de la herramienta guarda el respaldo del
+vivo (no escribe en n8n).
 
-**2. Los marcadores de la tabla local.** El JSON trae dos:
-`REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A, ya está en la tabla) y
-`REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono del restaurante en el ensayo).
-Se comprueba con `./scripts/marcador-local.sh --verificar <marcador>` y, si
-falta el segundo, se agrega sin mostrar su valor:
+### Antes de empezar (obligatorio)
 
-    ./scripts/marcador-local.sh --marcador REEMPLAZAR_NUMERO_AVISO_ENSAYO \
-      --copiar-de REEMPLAZAR_NUMERO_RECEPCION_ENSAYO --nota "restaurante del ensayo de venta"
+**A. Autorizaciones de Andres, en el chat, para ESTE ensayo:**
 
-Quien hace de restaurante es el teléfono de `REEMPLAZAR_NUMERO_RECEPCION_ENSAYO`
-(hoy, Andres). Si tiene que ser otro, el valor lo pone Andres por `MARCADOR_VALOR`.
+1. **La credencial de Gemini de producción en el Demo A.** La tabla de la herramienta
+   usa «Google Gemini(PaLM) Api account» (la de producción; hay otra, «Gemini —
+   pruebas (no producción)», que no sirve: el Demo A vivo no la usa y la herramienta
+   se niega). Andres la autorizó **solo para las pruebas del 30/09/2026**: hay que pedir
+   la autorización de nuevo, con el costo: unos 0,0005 USD por llamada, de 0 a 1
+   llamadas por turno. La herramienta elige la credencial **por nombre**, así que
+   que haya dos de Gemini no la confunde (y si hay dos con el mismo nombre, se niega).
+   Sin esa autorización, no hay ensayo en el Demo A.
+2. **Que el Demo A deje de servir para una demo comercial** mientras dure, y la
+   ventana en que se hace.
 
-**3. Preparar el import** (reemplaza los dos marcadores y fija el `webhookId` del
-Trigger en la ruta que Meta ya tiene registrada para el Demo A):
+**B. Anotar el ensayo** antes del primer `--aplicar`, en `ESTADO.md` y en
+`docs/versiones-por-cliente.md` (una fila para el Demo A: «corre Venta mínima en ensayo»,
+con su porqué y su cierre). Sin la fila, `estado-de-versiones.sh` ve al Demo A atrasado
+sin declarar. Se retira al restaurar.
 
-    ./scripts/preparar-import.sh <worktree>/Flujos/experimental/venta-minima/venta-minima.ensayo-demo-a.json .env
+**C. Un árbol al día, no `~/NovuChat`.** Los scripts se corren desde un **worktree
+nacido de `origin/main`** (`.claude/worktrees/<nombre>/`), con la suite en verde,
+`pnpm install --frozen-lockfile` en `admin/` (nunca `npm`) y
+`node Flujos/experimental/venta-minima/construir.mjs --verificar` en 0. La copia
+principal puede estar cientos de commits atrás y sin `ensayo.mjs` ni los abortos de
+`publicar-flujo.sh`. El worktree no trae los `.env`, así que se enlazan (están ignorados
+por git; `publicar-flujo.sh` hace `. "./$ENV_FILE"` desde la raíz del repositorio):
 
-Se lee entero: tiene que decir que los dos marcadores se resolvieron y que
-ninguno quedó sin resolver. Deja `venta-minima.ensayo-demo-a.local.json` junto al
-original (ignorado por git: lleva valores reales; se borra al terminar).
+    ln -s ~/NovuChat/.env <worktree>/.env
 
-**4. La credencial «Graph WhatsApp Demo A (Bearer)»** no existe en el Demo A y
-los cuatro nodos de envío de la venta la usan. Se crea con el token del Demo A,
-sin mostrarlo, y se resuelven los ids del `.local.json`:
+y la tabla de marcadores se pasa por variable: `CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md`
+(para `preparar-import.sh`; `marcador-local.sh` ya la busca ahí). Todo desde la raíz del
+worktree, con rutas absolutas (`<worktree>` abajo).
 
-    ./scripts/credenciales-cliente.sh --cliente "Demo A" --env-cliente .env \
-      --flujo <worktree>/Flujos/experimental/venta-minima/venta-minima.ensayo-demo-a.local.json          # seco
-    ... --aplicar
+**D. Línea de base de la suscripción de Meta y de las credenciales (solo lectura).**
+Antes del primer `--aplicar`:
 
-El seco tiene que listar `+ Graph WhatsApp Demo A (Bearer)` (o `= … ya existe`) y
-resolver todos los nodos con credencial; si dice «Sin credencial en la
-instancia», se detiene el procedimiento (no se completa por tipo). Antes de
-publicar se puede comparar con `./scripts/credenciales-flujo.sh --env .env`, que
-muestra los nombres de las credenciales del Demo A vivo («WhatsApp OAuth
-account», «Cierres NovuChat A (auto)», «WhatsApp account»), nunca valores.
+    ./scripts/credenciales-flujo.sh --env .env
+    ./scripts/webhook-meta.sh --ver-meta --env-cliente .env
 
-**5. La plataforma: `ensayo.mjs --preparar`** (desde `admin/`, con
-`CLOUDSDK_CONFIG=$HOME/.config/gcloud-novuchat-prod`). Con una **copia del
-borrador de Q'Taco fuera del repositorio** (en el scratchpad de la sesión) que
-cambia dos cosas: `catalogoWebActivo` en `false` (con más de 40 ítems y el
-catálogo web encendido, la ingesta manda `catalogo: []` y el flujo deriva todo
-pedido) y el marcador de recepción `REEMPLAZAR_NUMERO_RECEPCION_QTACO` por
-`REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el botón «Escribir al local» va al mismo
-teléfono que recibe los avisos):
+- Anotar el **id de la credencial del nodo `WhatsApp Trigger` vivo** y su nombre.
+- Anotar a qué ruta apunta el webhook de la app: **tiene que ser la del Demo A**. Si no
+  lo es, o si el nombre de la credencial del Trigger es de AAB1-WA-Prod, o el flujo vivo
+  ya trae nodos de un candidato (`Plan del turno`, `Candado`…) sin un respaldo del Demo A
+  original a mano: **detenerse** (prohibición 7: activar un Trigger con otra credencial
+  reescribe el webhook de toda esa app).
+
+### El procedimiento
+
+**1. Los marcadores de la tabla local.** El JSON trae dos: `REEMPLAZAR_PHONE_NUMBER_ID`
+(el del Demo A, ya está en la tabla) y `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono del
+restaurante: **Silvana**, destinatario `completo` y recepción de respaldo). Se comprueba
+con `./scripts/marcador-local.sh --verificar <marcador>`; si falta el segundo, se agrega sin
+mostrar el valor: con `--copiar-de` si una fila de la tabla ya tiene el teléfono de Silvana,
+o con el valor que Andres pone en `MARCADOR_VALOR`. Ese teléfono tiene que estar registrado
+en la app del Demo A, y **no** puede ser el del cliente (Andres).
+
+**2. Preparar el import** (reemplaza los dos marcadores):
+
+    CONFIG_LOCAL_MD=~/NovuChat/CONFIGURACION.local.md ./scripts/preparar-import.sh \
+      <worktree>/Flujos/experimental/venta-minima/venta-minima.ensayo-demo-a.json .env
+
+Se lee entero: los dos marcadores resueltos y ninguno sin resolver. Deja
+`venta-minima.ensayo-demo-a.local.json` junto al original (ignorado por git, y
+`construir.mjs` no lo toma por huérfano): lleva valores reales y se borra al terminar.
+
+**3. La plataforma: `ensayo.mjs --preparar`** (desde `admin/`, con
+`CLOUDSDK_CONFIG=$HOME/.config/gcloud-novuchat-prod`), con una **copia del borrador de
+Q'Taco fuera del repositorio** (en el scratchpad de la sesión) que cambia **una sola
+cosa**: `catalogoWebActivo` en `false` (con más de 40 ítems y el catálogo web encendido, la
+ingesta manda `catalogo: []` y el flujo deriva todo pedido). El marcador de recepción
+`REEMPLAZAR_NUMERO_RECEPCION_QTACO` **no se edita**: `ensayo.mjs` lo traduce solo a
+`REEMPLAZAR_NUMERO_RECEPCION_ENSAYO`.
 
     node scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo A> --preparar \
       --cliente qtaco --archivo <copia del borrador, en el scratchpad> \
       --local ~/NovuChat/CONFIGURACION.local.md            # seco: se lee entero
     ... --aplicar
 
-Vacía y recarga el comercio `ensayo` y desvía la ruta del número a `ensayo`.
-Como la ruta del Demo A es `agendamiento`, no carga `config/venta`.
+Vacía y recarga el comercio `ensayo` y desvía la ruta del número a `ensayo`. Como la ruta
+del Demo A es `agendamiento`, no carga `config/venta`. **Ojo con el botón «Escribir al
+local»:** va a la recepción del comercio `ensayo`, o sea a `REEMPLAZAR_NUMERO_RECEPCION_ENSAYO`
+(hoy, el teléfono de Andres), no al de Silvana. Probar que el botón abre el chat con el
+restaurante exigiría que esa fila fuera la de Silvana: decisión de Andres, no se cambia acá.
 
-**6. El flujo: `publicar-flujo.sh` del JSON del ensayo**, sobre el Demo A:
+**4. El flujo: `flujo-de-prueba.mjs --sobre-demo-a`.** Con el respaldo y el estado en el
+scratchpad (fuera del repositorio; la herramienta se niega si no):
 
-    ./scripts/publicar-flujo.sh --env .env --flujo <worktree>/Flujos/experimental/venta-minima/venta-minima.ensayo-demo-a.json   # seco
+    node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
+      --estado <scratchpad>/estado-ensayo.json --sobre-demo-a --respaldo <scratchpad>/respaldo-demo-a.json \
+      --flujo <worktree>/Flujos/experimental/venta-minima/venta-minima.ensayo-demo-a.local.json   # seco
     ... --aplicar
 
-El seco se lee entero. Tiene que decir que usa el archivo preparado, que el
-nombre del archivo y el del flujo vivo coinciden (si no, el cerrojo se niega) y
-que no queda ningún marcador. `--aplicar` guarda antes un respaldo del flujo vivo.
+El seco se lee entero. Tiene que decir: «Demo A vivo» con el nombre del Demo A;
+**`WhatsApp Trigger: el del Demo A, tal cual («…»)`** (si dice cualquier otra cosa, o aparece
+«credencial corregida: WhatsApp Trigger», **detenerse**); los cuatro envíos con «PARÁMETROS
+CAMBIADOS … → predefinedCredentialType/whatsAppApi»; cada nodo con su credencial por nombre
+(Gemini: «Google Gemini(PaLM) Api account»); y ningún marcador que quede. Después de cada
+`--aplicar` la herramienta lee el flujo de vuelta y exige que quede **activo**.
 
-**7. Las pruebas, con dos teléfonos registrados** en la app del Demo A (hasta 5,
-prohibición 6):
+Comprobaciones **antes y después del primer `--aplicar`** (solo lectura):
 
-- **El restaurante escribe primero** (cualquier «hola»): eso abre su ventana de
-  24 h. El flujo no tiene plantillas aquí: con la ventana cerrada el aviso no
-  sale.
-- **El cliente es otro teléfono.** No puede ser también el destinatario
-  `completo`: su aviso se descarta (`avUnificar`) y leería «No pude pasarle tu
-  pedido al restaurante…».
-- Pedido de recojo sin QR hasta «Confirmar pedido»: el restaurante recibe el
-  detalle en **texto libre** y el cliente lee «pasé tu pedido». Reserva,
-  derivación («Escribir al local») y una bebida alcohólica o un helado (que no
-  deben ofrecerse).
-- El flujo de venta no guarda ejecuciones (retención `none`, decisión del
-  02/10/2026): `ver-ejecuciones.sh` no mostrará nada de este ensayo. Lo que vale
-  es lo que cada teléfono recibió, y los conteos que quedan en el comercio
-  `ensayo`.
+    ./scripts/credenciales-flujo.sh --env .env      # el id de la credencial del Trigger es el mismo que el anotado
+    ./scripts/webhook-meta.sh --ver-meta --env-cliente .env   # sigue apuntando a la ruta del Demo A
 
-**8. La restauración completa, siempre, salga bien o mal.** En este orden y con
-cada paso en seco primero:
+Si el id cambió o Meta apunta a otra ruta: detenerse y restaurar de inmediato (paso 6).
 
-    ./scripts/ensayo-flujo.sh --restaurar            # seco: republica demo-a-agendamiento.json
-    ./scripts/ensayo-flujo.sh --restaurar --aplicar
-    ./scripts/publicar-flujo.sh --env .env --reiniciar-estado            # seco: lista los teléfonos con estado
-    ./scripts/publicar-flujo.sh --env .env --reiniciar-estado --aplicar  # deja el estado global del flujo vacío (incluido el de la venta)
-    node scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo A> --restaurar            # seco
-    ... --aplicar
+**5. Las pruebas, con dos teléfonos registrados** en la app del Demo A (hasta 5,
+prohibición 6): **Silvana** (restaurante) y **Andres** (cliente).
 
-Después se borran los `.local.json` generados y las citas de prueba de las
-agendas del demo. La credencial «Graph WhatsApp Demo A (Bearer)» puede quedar en
-n8n (el próximo ensayo la reutiliza); retirarla es decisión de Andres.
+- **El restaurante escribe primero** (cualquier «hola»): eso abre su ventana de 24 h. El flujo
+  no tiene plantillas aquí: con la ventana cerrada el aviso no sale.
+- **El cliente no puede ser también el destinatario `completo`**: su aviso se descarta
+  (`avUnificar`) y leería «No pude pasarle tu pedido al restaurante…».
+- Pedido de recojo sin QR hasta «Confirmar pedido»: el restaurante recibe el detalle en
+  **texto libre** y el cliente lee «pasé tu pedido». Reserva, derivación, y una bebida alcohólica
+  o un helado (que no deben ofrecerse: el único control es el área, ver DISENO.md).
+- El flujo no guarda ejecuciones (retención `none`, decisión del 02/10/2026): `ver-ejecuciones.sh`
+  no mostrará nada de este ensayo. Vale lo que cada teléfono recibió y los conteos del comercio `ensayo`.
 
-**Lo que este ensayo NO prueba** (y dónde se prueba):
+**6. La restauración completa, siempre, salga bien o mal.** En este orden, con cada paso
+en seco primero y su `--aplicar` con el «sí» de Andres:
 
-| Qué | Por qué | Dónde se prueba |
+1. **El flujo: solo el respaldo exacto.**
+
+       node Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --env <worktree>/.env \
+         --estado <scratchpad>/estado-ensayo.json --restaurar-respaldo --respaldo <scratchpad>/respaldo-demo-a.json   # seco
+       ... --aplicar
+
+   Antes del `--aplicar`: repetir `credenciales-flujo.sh --env .env` y `webhook-meta.sh --ver-meta
+   --env-cliente .env` (solo lectura); el id de la credencial del Trigger vivo tiene que ser el anotado.
+   Después del `--aplicar`: otra vez las dos, y comparar con la línea de base.
+2. **El estado por teléfono.** `./scripts/publicar-flujo.sh --env .env --reiniciar-estado` (seco) y
+   luego `--aplicar`. Deja vacío el estado global del flujo (incluido el de la venta, `ventaMinima`).
+   **Hoy ese modo NO tiene cerrojo de nombre** (mejora aparte): en el seco hay que verificar que
+   «Flujo vivo» es el del Demo A y que los teléfonos listados son los del ensayo; si el nombre no es el
+   del Demo A, detenerse.
+3. **La plataforma.**
+
+       node scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo A> --restaurar   # seco
+       ... --aplicar
+
+4. **Limpiar lo que lleva datos de personas.** Los respaldos llevan teléfonos, nombres y direcciones de
+   quienes probaron. Listarlos y borrarlos: `ls Flujos/respaldo-*.local.json Flujos/respaldo-estado-*.local.json`
+   en el worktree, el `.local.json` del paso 2, y en el scratchpad el respaldo del Demo A, su `.aplicado.json`,
+   el estado y la copia del borrador. Retirar las filas de `ESTADO.md` y de `docs/versiones-por-cliente.md`
+   (punto B) y borrar de las agendas del demo las citas de la prueba, si las hubo.
+
+### Lo que este procedimiento NO prueba ni garantiza
+
+| Qué | Por qué | Dónde se mira |
 |---|---|---|
-| **QR y comprobante** | La ruta del Demo A es `agendamiento`: el servidor no manda `config/venta` ni cobro, así que no hay QR que enviar ni cotejo | Con la línea de Q'Taco, con un QR de NovuChat e importe simbólico (prohibición 3) |
-| **Plantillas** | Son de la WABA de Q'Taco y aquí van vacías a propósito | Con Q'Taco, con `pedido_registrado` aprobada |
-| **Receptor y verificador** | La entrada es el Trigger del Demo A, no la entrega firmada del receptor | Con Q'Taco, en la ventana de mantenimiento |
+| **QR y comprobante** | La ruta del Demo A es `agendamiento`: el servidor no manda `config/venta` ni cobro | Con la línea de Q'Taco, con un QR de NovuChat e importe simbólico (prohibición 3) |
+| **Plantillas** | Son de la WABA de Q'Taco; aquí van vacías a propósito | Con Q'Taco, con `pedido_registrado` aprobada |
+| **Receptor y verificador** | La entrada es el Trigger del Demo A, no la entrega firmada | Con Q'Taco, en la ventana de mantenimiento |
 | **Promociones** | Las campañas del comercio `ensayo` no son las de Q'Taco | Con Q'Taco |
 | **Latencia con el número real** | Es el número de prueba de Meta y otra WABA | Con Q'Taco |
+| **Los nombres de credencial en la instancia, la credencial del Trigger vivo y la ruta de Meta** | No se pueden probar sin n8n ni Meta reales: la suite (`venta-minima-herramienta-demo-a.test.ts`) prueba la herramienta contra un n8n de mentira | El seco real y los pasos D y 4 de arriba |
