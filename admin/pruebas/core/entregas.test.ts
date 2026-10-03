@@ -581,29 +581,13 @@ export interface Excepcion { porque: string; vence: string }
  * La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
 export const ALTA_DE_EXCEPCIONES = '2026-10-03';
 /** ATENCIÓN: cambiar este tope exige pasar por el agente `seguridad`. Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
-export const TOPE_DE_EXCEPCIONES = 55;
+export const TOPE_DE_EXCEPCIONES = 51;
 
 /**
  * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
  * violación real que encontró la suite el 03/10/2026.
  */
 export const EXCEPCIONES: Record<string, Excepcion> = {
-  'agendamiento-seguimientos.json#1#Enviar texto': {
-    porque: 'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
-    vence: '2027-01-01',
-  },
-  'agendamiento-seguimientos.json#1#Enviar plantilla': {
-    porque: 'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
-    vence: '2027-01-01',
-  },
-  'agendamiento-seguimientos.json#3#Reportar seguimiento (saliente)::Enviar texto': {
-    porque: 'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
-    vence: '2027-01-01',
-  },
-  'agendamiento-seguimientos.json#3#Reportar seguimiento (saliente)::Enviar plantilla': {
-    porque: 'los seguimientos se cuentan como salientes aunque no hayan salido: sin verificador del id ni puerta antes del reporte; la cierra PR-9 (seguimientos)',
-    vence: '2027-01-01',
-  },
   'bellido-agendamiento.json#1#Enviar ubicación': {
     porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
     vence: '2027-01-01',

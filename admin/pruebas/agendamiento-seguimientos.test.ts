@@ -223,8 +223,10 @@ describe('3. Un solo envío por item, y el flujo no recalcula a quién le toca',
   });
 
   it('las dos ramas convergen en UN solo reporte, y ninguna manda dos mensajes', () => {
-    expect(destinos('Enviar texto')).toEqual(['Reportar seguimiento (saliente)']);
-    expect(destinos('Enviar plantilla')).toEqual(['Reportar seguimiento (saliente)']);
+    // I-ENTREGA: entre el envío y el reporte está `¿Salió?`, que mira el id de Meta.
+    expect(destinos('Enviar texto')).toEqual(['¿Salió?']);
+    expect(destinos('Enviar plantilla')).toEqual(['¿Salió?']);
+    expect(destinos('¿Salió?', 0)).toEqual(['Reportar seguimiento (saliente)']);
     // Ningún nodo de envío cuelga del otro.
     expect(destinos('Enviar texto')).not.toContain('Enviar plantilla');
     expect(destinos('Enviar plantilla')).not.toContain('Enviar texto');
@@ -380,6 +382,46 @@ describe('7. El reporte a la ingesta: lo que la persona recibió', () => {
   it('el reporte NO manda ningún `evento`: el hecho ya lo anotó `seguimientoEnviado`', () => {
     const cuerpo = String(nodo('Reportar seguimiento (saliente)').parameters['jsonBody']);
     expect(cuerpo).not.toContain('evento:');
+  });
+});
+
+describe('7b. I-ENTREGA: solo se reporta lo que Meta aceptó (id de Meta)', () => {
+  const cond = () => nodo('¿Salió?').parameters['conditions'].conditions[0];
+  const sale = (json: J) => String(expresion(cond().leftValue, json)) !== '';
+
+  it('con Meta rechazando, no hay reporte: el item muere en la rama falsa, que no va a ninguna parte', () => {
+    expect(cond().operator.operation).toBe('notEmpty');
+    expect(sale({ error: { message: 'Media ID vencido', code: 131053 } })).toBe(false);
+    expect(sale({ error: 'The service refused the connection' })).toBe(false);
+    expect(sale({ messages: [] })).toBe(false);
+    expect(sale({ messages: [{}] })).toBe(false);
+    expect(sale({ messages: [{ id: '' }] })).toBe(false);
+    expect(sale({})).toBe(false);
+    expect(destinos('¿Salió?', 1)).toEqual([]);
+  });
+
+  it('con Meta aceptando, sí se reporta', () => {
+    expect(sale({ messages: [{ id: 'wamid.ABC' }] })).toBe(true);
+    // El nodo de WhatsApp y el HTTP devuelven la misma forma de id.
+    expect(sale({ messaging_product: 'whatsapp', contacts: [{}], messages: [{ id: 'wamid.XYZ' }] })).toBe(true);
+  });
+
+  it('el reporte es el ÚNICO destino de `¿Salió?` y no cuelga de ningún otro nodo', () => {
+    const entrantes = Object.entries(f.connections).filter(([, c]) =>
+      (c['main'] ?? []).some((salida) => salida.some((x) => x.node === 'Reportar seguimiento (saliente)')));
+    expect(entrantes.map(([k]) => k)).toEqual(['¿Salió?']);
+  });
+
+  it('el reporte manda el idMeta real, y la marca sigue ANTES del envío (no hay marca después)', () => {
+    expect(String(nodo('Reportar seguimiento (saliente)').parameters['jsonBody'])).toContain('idMeta');
+    const marcas = f.nodes.filter((n) => String(n.parameters['url'] ?? '').includes('seguimientoEnviado'));
+    expect(marcas.map((n) => n.name)).toEqual(['Marcar seguimiento']);
+  });
+
+  it('el orden del lienzo: ¿Salió? va entre los envíos y el reporte', () => {
+    const x = (n: string) => (nodo(n).position as number[])[0];
+    expect(x('Enviar texto')).toBeLessThan(x('¿Salió?'));
+    expect(x('¿Salió?')).toBeLessThan(x('Reportar seguimiento (saliente)'));
   });
 });
 
