@@ -581,7 +581,7 @@ export interface Excepcion { porque: string; vence: string }
  * La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
 export const ALTA_DE_EXCEPCIONES = '2026-10-03';
 /** ATENCIÓN: cambiar este tope exige pasar por el agente `seguridad`. Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
-export const TOPE_DE_EXCEPCIONES = 50;
+export const TOPE_DE_EXCEPCIONES = 49;
 
 /**
  * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
