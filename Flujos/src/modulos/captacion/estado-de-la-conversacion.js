@@ -21,14 +21,14 @@
 // prompt ve los datos en «Datos ya registrados» y no le vuelve a preguntar lo
 // que ya dijo.
 //
-// SIN BOTONES AL INICIO (Andres, 27/09/2026). Hasta esa fecha un «hola» suelto
-// recibia, sin modelo, dos botones para que dijera si ya era cliente. Ahora
-// el primer mensaje de la ventana lo escribe el agente: se presenta como
-// asistente virtual con inteligencia artificial y pide nombre y empresa en ese
-// mismo mensaje. `primeraDeVentana` le avisa a `Procesar respuesta`, que lo
-// hace cumplir por codigo. Quien dice que ya es cliente o pide soporte
-// (`pideSoporte`, de `Normalizar entrada`) recibe la respuesta del agente con
-// el boton «Hablar con un asesor»; no hay rama propia.
+// EL PRIMER MENSAJE LO ESCRIBE EL AGENTE, CON LA LISTA DE RUBROS (Andres,
+// 03/10/2026; revierte «sin botones al inicio» del 27/09). `primeraDeVentana` le
+// avisa a `Procesar respuesta`, que presenta al asistente como IA y adjunta la
+// lista interactiva de rubros de la consola. NI EL NOMBRE NI LA EMPRESA SE PIDEN
+// AL INICIO: el contacto es el nombre de perfil de WhatsApp y la empresa se pide
+// dentro del mensaje del traspaso. Quien dice que ya es cliente o pide soporte
+// (`pideSoporte`, de `Normalizar entrada`) recibe la respuesta del agente con el
+// boton «Hablar con un asesor»; no hay rama propia.
 //
 // QUE DECIDE (campo `accion`):
 //   uso_extendido   el servidor dice operador o bloqueado: mensaje fijo o
@@ -43,19 +43,34 @@
 //     y sin esto el prospecto recibe dos respuestas (Analisis/25 §3.3);
 //   - el telefono esta bloqueado y ya se aviso: no hay nada que enviar.
 //
-// EL RUBRO SE REGISTRA ACA, POR CODIGO. Si el turno anterior pregunto por el
-// rubro (`pidioRubro`, lo marca `Procesar respuesta`) y el cliente contesta
-// «tenemos una pasteleria», ESO es su rubro y queda registrado antes de llamar
-// al modelo. Medido el 22/09/2026 con `scripts/comparar-prompt.mjs`: dejandoselo
-// al modelo, el rubro dicho con todas las letras quedaba en [LEAD] solo el 60 %
-// de las veces.
+// EL RUBRO SE REGISTRA ACA, POR CODIGO, y de tres maneras:
+//   1. EL TOQUE. El id de la fila de la lista (`rubro:<id>`, de `Normalizar
+//      entrada`) que existe en la consola registra el rubro, su area y sus
+//      flujos sin pasar por el modelo. Si es «a medida» (la salida abierta), no
+//      se registra un rubro: queda el hecho `eligioOtro` y la pregunta abierta.
+//      Una campaña con destino `rubro:<id>` cuenta como ese toque. Un id que ya
+//      no existe se compara por su titulo; si tampoco coincide, es una opcion
+//      vencida (`opcionVencida`) y `Procesar respuesta` reenvia la lista.
+//   2. EL NOMBRE ESCRITO. Quien escribe el nombre exacto de un rubro (o su id)
+//      sin tener rubro registrado hizo lo mismo que tocar la fila.
+//   3. EL RUBRO LIBRE. Si el turno anterior pregunto por el rubro (`pidioRubro`,
+//      lo marca `Procesar respuesta`) y el cliente contesta «tenemos una
+//      pasteleria», ESO es su rubro. Medido el 22/09/2026 con
+//      `scripts/comparar-prompt.mjs`: dejandoselo al modelo, el rubro dicho con
+//      todas las letras quedaba en [LEAD] solo el 60 % de las veces. Con «Otro»
+//      no: ahi la pregunta pide dos cosas y el rubro lo valida `Procesar
+//      respuesta` sobre el [LEAD] del modelo.
+// Desde el 03/10/2026 YA NO HAY DEDUCCION NI CONFIRMACION de rubros: el rubro se
+// elige tocando la lista, o se dice. Un estado guardado con `confirmaRubro` o
+// `rubroDeducido` los pierde al cargarse.
 //
-// UNA DEDUCCION NO ES UN RUBRO HASTA QUE EL CLIENTE LA CONFIRMA (27/09/2026,
-// ejecucion #4160: «parece ser una pasteleria; si me equivoque, dime.», sin
-// pregunta). Si el turno anterior pidio CONFIRMAR un rubro deducido
-// (`confirmaRubro`), un «si» registra lo deducido (`rubroDeducido`); un «no, es
-// una cafeteria» registra «cafeteria»; un «no» suelto descarta la deduccion y
-// deja la pregunta abierta.
+// LOS HECHOS (Bloque 1, 03/10/2026). Lo que el prospecto HIZO, para calificarlo:
+// `pidioAsesor` (el traspaso), `eligioOtro` y `respondioDolor` (contesto con un
+// texto o un audio la pregunta por su negocio, sea lo que sea que diga: un «si»
+// vale) los guarda este nodo en `c.hechos`, que NO vence con la ventana;
+// `pidioPlanes` y `descarte` los decide `Procesar respuesta`. `hechosCambiaron`
+// avisa si este turno cambio alguno de los tres de aca, para que la planilla se
+// entere.
 //
 // LA RESPUESTA VA AL PRIMER DATO QUE PIDIO EL MENSAJE (27/09/2026, #6635).
 // `Procesar respuesta` anota en orden que datos pidio el turno (`c.pidio`).
@@ -77,8 +92,7 @@ const VENTANA_MS = 24 * 60 * 60 * 1000;
 const DEDUP_MS = 10 * 60 * 1000;
 const OLVIDO_MS = 48 * 60 * 60 * 1000;
 // Sin NIT: se dejo de pedir (decision de Andres del 15/09). `flujos` no se le
-// pregunta al cliente: se deduce del rubro.
-const OBLIGATORIOS = ['empresa', 'contacto', 'rubro'];
+// pregunta al cliente: viene del rubro de la consola (`flujoSugerido`).
 
 const sd = $getWorkflowStaticData('global');
 sd.vistos = sd.vistos ?? {};
@@ -107,10 +121,6 @@ const PEDIDO = /^(quiero|necesito|me\s+interesa|dame|envía|envia|mánda|manda|m
 // no coincide nunca con un «sí» suelto. Se usa esta mirada adelante.
 const FIN = '(?![a-z0-9áéíóúüñ])';
 const CORTESIA = new RegExp('^(hola|buen(as|os)|gracias|ok|si|sí|no|listo|claro|dale)' + FIN, 'i');
-// Respuesta a «¿es asi?»: un si corto confirma la deduccion.
-const AFIRMA = new RegExp('^(s[ií]+|sip|correcto|exacto|as[ií]\\s+es|eso(\\s+es)?|efectivamente|' +
-  'claro(\\s+que\\s+s[ií])?|afirmativo|acertaste|tal\\s+cual)' + FIN, 'i');
-const NIEGA = new RegExp('^no' + FIN, 'i');
 const esRubro = (t) => t.length > 0 && t.length <= 80 && !/[?¿]/.test(t)
   && !NO_ES_RUBRO.test(t) && !PEDIDO.test(t) && !CORTESIA.test(t);
 // Texto comparable: sin tildes, sin mayusculas y sin signos.
@@ -188,6 +198,13 @@ for (let i = 0; i < items.length; i++) {
   // bienvenida con botones que se retiro el 27/09/2026.
   delete c.lead.nit;
   delete c.bienvenida;
+  // La deduccion del rubro se retiro el 03/10/2026: lo que quedo guardado no
+  // se usa ni sigue viajando.
+  delete c.confirmaRubro;
+  delete c.rubroDeducido;
+  // LOS HECHOS NO VENCEN con la ventana: lo que el prospecto hizo hace dos dias
+  // sigue siendo cierto para calificarlo.
+  c.hechos = c.hechos && typeof c.hechos === 'object' ? c.hechos : {};
   // Cualquier etapa que no sea el cierre es una conversacion en curso (las de
   // antes del 27/09 distinguian dos clases de cliente).
   if (c.etapa && c.etapa !== 'cerrado') c.etapa = 'en_curso';
@@ -204,9 +221,8 @@ for (let i = 0; i < items.length; i++) {
     c.avisado = false;
     c.pidioRubro = false;
     c.pidio = [];
-    c.confirmaRubro = false;
+    c.pidioDolor = false;
     c.soporte = false;
-    delete c.rubroDeducido;
     delete c.avisoFalla;
   }
   // Quien dijo que ya es cliente lo sigue siendo el resto de la ventana: no se
@@ -236,62 +252,111 @@ for (let i = 0; i < items.length; i++) {
   const avisaServidor = e.atencionAvisarRecepcion === 'operador' || e.atencionAvisarRecepcion === 'bloqueado';
   if (estadoServidor === 'bloqueado' && !avisaServidor) { sd.conversaciones[e.from] = c; continue; }
 
-  // --- La respuesta a «¿a qué se dedica tu negocio?» o a «¿es así?» ---------
+  // --- El rubro: el toque, el nombre escrito o la respuesta a «¿a que se dedica?» ---
   const dicho = String(e.userInput ?? '').trim().replace(/\s+/g, ' ');
+  const rubros = Array.isArray(e.rubros) ? e.rubros : [];
   let rubroDicho = '';
   let empresaDicha = '';
-  let confirmoRubro = false;
-  let rechazoDeduccion = false;
+  let rubroElegido = '';          // el nombre registrado ESTE turno, por toque o por texto
+  let eligioOtroEsteTurno = false;
+  let opcionVencida = false;
+  let rubroLibre = false;         // lo dijo con sus palabras, no lo toco
+  const porCampana = e.porCampana === true;
   // Lo que pidio el turno anterior, en orden. Un estado guardado antes del
   // 27/09 no trae `pidio`: ahi vale `pidioRubro`, como antes.
   const pendiente = Array.isArray(c.pidio) ? c.pidio : (c.pidioRubro ? ['rubro'] : []);
   const pidioOtroDato = pendiente[0] === 'empresa' || pendiente[0] === 'contacto';
   const esLaEmpresa = (t) => !!plano(c.lead.empresa) && plano(t) === plano(c.lead.empresa);
+  const soporteAhora = e.pideSoporte === true || c.soporte === true;
+  // Hechos al empezar el turno, para saber si este los cambia.
+  const antes = { pidioAsesor: c.hechos.pidioAsesor === true, eligioOtro: c.hechos.eligioOtro === true,
+    respondioDolor: c.hechos.respondioDolor === true };
+  const hecho = { ...antes };
+
+  // «a medida»: la misma prueba que `Procesar respuesta` y `Config del negocio`.
+  const esAMedida = (r) => /medida|^otro/i.test(String(r.id) + ' ' + String(r.nombre));
+  const registrarRubro = (r) => {
+    rubroDicho = String(r.nombre).slice(0, 60);
+    rubroElegido = rubroDicho;
+    c.lead.rubro = rubroDicho;
+    c.lead.area = rubroDicho;
+    if (r.flujoSugerido) c.lead.flujos = String(r.flujoSugerido);
+    c.rubroId = String(r.id);
+    c.pidioRubro = false;
+    c.pidio = [];
+  };
+  const elegirOtro = () => {
+    eligioOtroEsteTurno = true;
+    hecho.eligioOtro = true;
+    c.pidio = ['rubro'];
+    c.pidioRubro = true;
+  };
+
+  // El toque (o la campaña con destino, que cuenta como uno). Quien pide
+  // soporte no es un prospecto: nada suyo se registra.
+  let idRubro = '';
+  const idToque = typeof e.idElegido === 'string' ? e.idElegido : '';
+  if (accion === 'agente' && !soporteAhora && idToque.startsWith('rubro:')) {
+    idRubro = idToque.slice(6);
+    const r = rubros.find((x) => String(x.id) === idRubro);
+    if (r) {
+      if (esAMedida(r)) elegirOtro(); else registrarRubro(r);
+    } else {
+      // Una fila de una lista que ya no esta: por su titulo, sin tildes. Una
+      // campaña no trae titulo: su destino vencido es solo una opcion vencida.
+      const titulo = ((/^El cliente toco: (.*)\. Tomalo como si te lo hubiera escrito\.$/.exec(String(e.userInput ?? '')) || [])[1]) || '';
+      const r2 = !porCampana && plano(titulo) ? rubros.find((x) => plano(x.nombre) === plano(titulo)) : undefined;
+      if (r2) { if (esAMedida(r2)) elegirOtro(); else registrarRubro(r2); }
+      else opcionVencida = true;
+    }
+  } else if (accion === 'agente' && !soporteAhora && e.tipo === 'text' && dicho && !c.lead.rubro && idToque === ''
+      && !(pendiente[0] === 'empresa' && !c.lead.empresa)) {
+    // El nombre (o el id) de un rubro escrito tal cual es un toque.
+    const r = rubros.find((x) => plano(dicho) !== '' && (plano(x.nombre) === plano(dicho) || plano(x.id) === plano(dicho)));
+    if (r) { if (esAMedida(r)) elegirOtro(); else registrarRubro(r); }
+  }
+  // Un toque o un texto que ya hizo su trabajo no se vuelve a interpretar abajo.
+  const yaResuelto = rubroElegido !== '' || eligioOtroEsteTurno || opcionVencida;
+
   // Quien pide soporte no es un prospecto: nada suyo se registra como empresa.
-  if (accion === 'agente' && pendiente[0] === 'empresa' && !c.lead.empresa && e.tipo === 'text' && dicho
-      && !c.confirmaRubro && e.pideSoporte !== true && c.soporte !== true) {
+  if (!yaResuelto && accion === 'agente' && pendiente[0] === 'empresa' && !c.lead.empresa && e.tipo === 'text' && dicho
+      && e.pideSoporte !== true && c.soporte !== true) {
     // Pidio primero la empresa: la respuesta es la empresa, nunca el rubro.
     empresaDicha = nombreDeEmpresa(dicho);
     if (empresaDicha) { c.lead.empresa = empresaDicha; c.pidio = []; }
-  } else if (accion === 'agente' && c.pidioRubro && !pidioOtroDato && !c.lead.rubro && e.tipo === 'text' && dicho
-      && !esLaEmpresa(dicho)) {
-    if (c.confirmaRubro && AFIRMA.test(dicho) && dicho.length <= 60 && !/[?¿]/.test(dicho)) {
-      // Confirmo lo deducido. Si el codigo lo guardo, se registra ya; si la
-      // deduccion solo estaba en el texto, el modelo la manda en [LEAD] y
-      // `Procesar respuesta` la acepta por esta confirmacion.
-      if (c.rubroDeducido && c.rubroDeducido.rubro) {
-        rubroDicho = limpiarRubro(c.rubroDeducido.rubro).slice(0, 60);
-        c.lead.rubro = rubroDicho;
-        if (c.rubroDeducido.area) c.lead.area = String(c.rubroDeducido.area).slice(0, 60);
-      } else {
-        confirmoRubro = true;
-      }
-      c.pidioRubro = false;
-    } else if (c.confirmaRubro && NIEGA.test(dicho)) {
-      // «no, es una cafetería»: lo que sigue a la negacion es el rubro.
-      const resto = dicho
-        .replace(/^no\b[\s,.;:!¡]*/i, '')
-        .replace(/^(es|somos|son|tenemos|trabajamos\s+(en|con)|nos\s+dedicamos\s+a)\s+/i, '')
-        .replace(/^(una?|el|la|los|las)\s+/i, '')
-        .trim();
-      if (esRubro(resto) && resto.length >= 3 && !esLaEmpresa(resto)) {
-        rubroDicho = limpiarRubro(resto).slice(0, 60);
-        c.lead.rubro = rubroDicho;
-        c.pidioRubro = false;
-      } else {
-        rechazoDeduccion = true;
-      }
-    } else if (esRubro(dicho)) {
-      rubroDicho = limpiarRubro(dicho).slice(0, 60);
-      c.lead.rubro = rubroDicho;
-      c.pidioRubro = false;
-    }
-    if (rubroDicho || confirmoRubro || rechazoDeduccion) {
-      c.confirmaRubro = false;
-      delete c.rubroDeducido;
-    }
-    if (rubroDicho) c.pidio = [];
+  } else if (!yaResuelto && accion === 'agente' && c.pidioRubro && !pidioOtroDato && !c.lead.rubro && e.tipo === 'text'
+      && dicho && !esLaEmpresa(dicho) && c.pidioDolor !== true && !soporteAhora && esRubro(dicho)) {
+    // El rubro libre: «tenemos una pasteleria».
+    rubroDicho = limpiarRubro(dicho).slice(0, 60);
+    rubroElegido = rubroDicho;
+    rubroLibre = true;
+    c.lead.rubro = rubroDicho;
+    c.pidioRubro = false;
+    c.pidio = [];
   }
+
+  // HECHO: pidio una persona (el boton, la fila o escrito).
+  if (accion === 'asesor') hecho.pidioAsesor = true;
+  // `pidioPlanes` NO se decide aca (C16 y C22: un pedido de planes sin rubro no
+  // da Alta): `Procesar respuesta` lo decide. Aca solo se avisa del toque.
+  const tocoPlanesEsteTurno = accion === 'agente' && idToque === 'planes';
+  // HECHO: contesto la pregunta por su negocio. No se mira el contenido: un
+  // «si» vale. Cuenta un texto o la transcripcion de un audio, en un turno del
+  // agente, y nunca el mismo turno en que se hizo la pregunta (la marca la
+  // pone `Procesar respuesta` al final de ese turno).
+  const dijoAlgo = e.tipo === 'text' || (e.esMedioAudio === true && /^\(audio transcripto\)/.test(String(e.userInput ?? '')));
+  let respondioDolorEsteTurno = false;
+  if (accion === 'agente' && c.pidioDolor === true && dijoAlgo && !soporteAhora && !yaResuelto) {
+    respondioDolorEsteTurno = true;
+    hecho.respondioDolor = true;
+    c.pidioDolor = false;
+  }
+  const hechosCambiaron = hecho.pidioAsesor !== antes.pidioAsesor || hecho.eligioOtro !== antes.eligioOtro
+    || hecho.respondioDolor !== antes.respondioDolor;
+  c.hechos = { ...c.hechos, ...hecho };
+  const hechos = { pidioAsesor: hecho.pidioAsesor, pidioPlanes: c.hechos.pidioPlanes === true,
+    eligioOtro: hecho.eligioOtro, respondioDolor: hecho.respondioDolor,
+    descarte: typeof c.hechos.descarte === 'string' ? c.hechos.descarte : '' };
 
   // La respuesta que se va a enviar es la numero `siguiente` de la ventana. Se
   // toma el conteo del SERVIDOR cuando llego; el propio es el respaldo.
@@ -306,7 +371,6 @@ for (let i = 0; i < items.length; i++) {
   // anterior, el servidor no lo conto y este vuelve a ser el primero.
   const primeraDeVentana = accion === 'agente' && siguiente === 1;
   const lead = c.lead;
-  const faltan = OBLIGATORIOS.filter((k) => !lead[k]);
   const soporte = e.pideSoporte === true || c.soporte === true;
 
   // EL MENSAJE DEL TURNO lleva todo lo que cambia entre un turno y otro -- la
@@ -316,35 +380,34 @@ for (let i = 0; i < items.length; i++) {
     '[CONTEXTO DEL TURNO - no lo repitas al cliente]',
     'Fecha y hora en La Paz: ' + hora + '.',
     'Nombre de perfil de WhatsApp: ' + (e.nombrePerfil || 'sin nombre') + '.',
-    'Datos ya registrados: ' + JSON.stringify(lead) + '. Faltan: ' + (faltan.join(', ') || 'ninguno') + '.',
+    // Nunca se pide el nombre ni la empresa: el contacto es el nombre de perfil y
+    // la empresa se pide dentro del traspaso (decision del 03/10/2026).
+    'Datos ya registrados: ' + JSON.stringify(lead) + '.',
     primeraDeVentana
-      ? 'Primer mensaje de la conversación: preséntate con tu nombre como asistente virtual con inteligencia ' +
-        'artificial y, si faltan, pídele su nombre y el de su empresa en una sola pregunta, al final del mensaje.' : '',
+      ? 'Primer mensaje de la conversación: preséntate' + (soporte ? '.' : (rubroElegido
+        ? ' y hazle la pregunta de dolor de su rubro (ya quedó registrado; no se adjunta la lista).'
+        : (eligioOtroEsteTurno || (!lead.rubro && hechos.eligioOtro)
+          ? ' y pregúntale de qué trata su negocio y qué es lo que más tiempo le quita hoy.'
+          : (lead.rubro ? ' y pregúntale en qué puedes ayudarle hoy (ya conoces su rubro; no se adjunta la lista).'
+            : '; el sistema adjunta la lista de rubros. Pregúntale de qué rubro es su negocio.')))) : '',
     soporte
       ? 'Dice que ya es cliente o pide soporte: no le pidas datos de prospecto; si la respuesta está en DATOS, ' +
         'dásela en una línea, y ofrécele hablar con un asesor (el mensaje sale con el botón).' : '',
-    // EL RUBRO SE PIDE POR CODIGO, NO SOLO POR PROMPT. Medido el 22/09/2026
-    // con `scripts/comparar-prompt.mjs` (30 corridas por version contra
-    // gemini-3.5-flash-lite): sin esta linea el modelo pone la marca [RUBROS]
-    // en el 83 % de los turnos; con ella, en el 93 %.
+    // Los hechos del turno, que decide el codigo y no el modelo.
+    rubroElegido ? 'Eligió su rubro: «' + rubroElegido + '» (registrado). ' + (rubroLibre
+      ? 'Mándalo en [LEAD] solo si lo dijo; si encaja claramente en un área de OFERTA, manda también area con su nombre exacto. '
+      : '') + 'Hazle la pregunta de dolor: qué es lo que más tiempo le quita hoy, partiendo de lo que ese rubro resuelve en OFERTA; sin precios y sin [PLANES].' : '',
+    eligioOtroEsteTurno ? 'Eligió «Otro»: pregúntale de qué trata su negocio y qué es lo que más tiempo le quita hoy, en una sola pregunta; sin precios y sin [PLANES].' : '',
+    respondioDolorEsteTurno ? 'Contestó tu pregunta sobre su negocio: una línea de empatía, lo que el servicio resuelve para él ' +
+      'y termina ofreciéndole los planes o una persona del equipo (el sistema agrega los botones).' : '',
+    tocoPlanesEsteTurno ? (lead.rubro || hechos.eligioOtro
+      ? 'Tocó «Ver planes»: pon [PLANES].'
+      : 'Pidió los planes y todavía no tiene rubro: pregúntale de qué rubro es su negocio (el sistema adjunta la lista); no pongas [PLANES] ni precios.') : '',
+    opcionVencida && !porCampana ? 'Tocó una opción de una lista anterior que ya no está vigente: el sistema le vuelve a mostrar la lista.' : '',
+    porCampana && e.campana && e.campana.destino === 'asesor'
+      ? 'Llegó por una campaña que ofrece hablar con una persona: ofrécelo (el mensaje sale con el botón).' : '',
     empresaDicha ? 'El cliente dijo el nombre de su empresa: «' + empresaDicha + '». YA QUEDÓ REGISTRADO: no se lo ' +
       'vuelvas a preguntar, y no es su rubro.' : '',
-    rubroDicho ? 'El cliente dijo a qué se dedica: «' + rubroDicho + '». YA QUEDÓ REGISTRADO como su rubro: ' +
-      'no se lo vuelvas a preguntar. ' + (lead.empresa
-        ? 'En este mensaje ofrécele la solución del área que le corresponda y pon [PLANES].'
-        : 'Todavía no sabes el nombre de su empresa: pídeselo, y no pongas [PLANES] hasta tenerlo.') +
-      ' Y en [LEAD] manda area con el nombre exacto del área de la lista, si encaja en alguna.' : '',
-    confirmoRubro ? 'El cliente CONFIRMÓ el rubro que dedujiste: mándalo en [LEAD] (rubro y, si encaja, area) y ' +
-      'sigue con la solución y [PLANES].' : '',
-    rechazoDeduccion ? 'El cliente dijo que NO acertaste su rubro: pregúntale a qué se dedica su negocio, sin ' +
-      'volver a adivinar.' : '',
-    !rubroDicho && !confirmoRubro && !rechazoDeduccion && c.confirmaRubro && !lead.rubro
-      ? 'Le preguntaste si su negocio es de un rubro que dedujiste y todavía no lo confirmó: no lo des por hecho.' : '',
-    // Solo con la EMPRESA sabida: con el nombre de la persona y sin empresa, el
-    // dato del turno es la empresa (un mensaje pide un dato, 27/09/2026).
-    !soporte && lead.empresa && !lead.rubro && !c.confirmaRubro && !rubroDicho && !confirmoRubro
-      ? 'Ya sabes a qué empresa pertenece y NO sabes su rubro: en ESTE mensaje escribe la marca ' +
-        '[RUBROS] en su propia línea y pídele que te cuente a qué se dedica su negocio.' : '',
     c.etapa === 'cerrado' && c.avisado === true
       ? 'Ya se avisó a un asesor: no vuelvas a pedir datos ni a ofrecer el asesor.' : '',
     c.etapa === 'cerrado' && c.avisado !== true
@@ -368,11 +431,18 @@ for (let i = 0; i < items.length; i++) {
     respuestasEnVentana: siguiente,
     finBloque,
     primeraDeVentana,
-    confirmoRubro,
     // Lo que este nodo registro en la ficha ya esta en `leadConocido` cuando
     // `Procesar respuesta` compara: sin esta marca, la planilla y el CRM no se
     // enteraban de un rubro o una empresa registrados por codigo.
     fichaPorCodigo: !!(rubroDicho || empresaDicha),
+    // Lo que paso ESTE turno, para `Procesar respuesta` (Bloque 1, 03/10/2026).
+    rubroElegido,
+    eligioOtroEsteTurno,
+    respondioDolorEsteTurno,
+    tocoPlanesEsteTurno,
+    opcionVencida,
+    hechos,
+    hechosCambiaron,
     soporteEnVentana: c.soporte === true,
     primeraVez: nueva,
     leadConocido: lead,

@@ -56,17 +56,41 @@ const PLANILLA = {
   // equipo comercial y NUNCA se pisan.
   actualizables: ['C', 'D', 'F', 'I', 'J'],
   // La calificacion calculada no baja la que ya tiene la fila: si el flujo
-  // olvido la ficha (48 horas sin mensajes), un «Baja» no pisa un «Alta».
+  // olvido la ficha (48 horas sin mensajes), un «Baja» no pisa un «Alta». El
+  // orden es el de PRIORIDAD de abajo, que NO es el de CALIFICACION.
   noBajarCalificacion: true,
 };
 
-// I «Calificación IA», POR CODIGO. Tabla de reglas, de arriba hacia abajo: la
-// primera que se cumple gana. Para ajustarla se edita solo esta tabla.
+// I «Calificación IA», POR CODIGO Y POR HECHOS (Bloque 1, 03/10/2026). Lo que el
+// prospecto HIZO, no lo que el modelo dijo: los hechos los deja `Procesar
+// respuesta` y llegan saneados por `Salida` en `prospectoPlanilla.hechos`.
+// Tabla de reglas, de arriba hacia abajo: la primera que se cumple gana. Para
+// ajustarla se edita solo esta tabla.
+//   Alta          pidio una persona (boton, fila o escrito) o pidio los planes
+//   Descalificado el modelo propuso un motivo de la lista y el codigo lo acepto
+//                 (un hecho de Alta posterior gana: va primero)
+//   Media         eligio su rubro (o «Otro») y contesto la pregunta por su negocio
+//   Baja          el resto
 const CALIFICACION = [
-  { valor: 'Alta', si: (p) => p.pidioAsesor || (!!p.empresa && !!p.rubro) },
-  { valor: 'Media', si: (p) => !!p.empresa || !!p.rubro },
+  { valor: 'Alta', si: (p) => p.pidioAsesor === true || p.pidioPlanes === true },
+  { valor: 'Descalificado', si: (p) => !!MOTIVOS_DESCARTE[p.descarte] },
+  { valor: 'Media', si: (p) => (!!p.rubro || p.eligioOtro === true) && p.respondioDolor === true },
   { valor: 'Baja', si: () => true },
 ];
+// LA PRIORIDAD de la celda, de menor a mayor: Media no pisa Descalificado,
+// Descalificado no pisa Alta, Alta pisa todo. Se escribe solo si la nueva es
+// mayor que la de la celda (o igual y distinta no existe). Un valor que no esta
+// aca -- lo escribio una persona -- se sobrescribe.
+const PRIORIDAD = ['Baja', 'Media', 'Descalificado', 'Alta'];
+// Los motivos de descarte, como los propone el modelo en [DESCARTE] -- la lista
+// de `Procesar respuesta` y de `Salida`: una prueba compara las claves -- y la
+// etiqueta que se lee en la hoja.
+const MOTIVOS_DESCARTE = {
+  numero_equivocado: 'Número equivocado',
+  vende_o_busca_trabajo: 'Ofrece algo o busca trabajo',
+  sin_negocio: 'No tiene negocio',
+  spam_o_prueba: 'Spam o prueba',
+};
 // J «Resumen Chatbot IA», POR CODIGO: el interes, la consulta y el estado. El
 // rubro ya no va aca: tiene su columna, F.
 const RESUMEN_ESTADO = {
@@ -95,6 +119,7 @@ function calificar(p) {
 }
 function resumir(p, conEstado) {
   const partes = [];
+  if (calificar(p) === 'Descalificado') partes.push('Descalificado por el asistente: ' + MOTIVOS_DESCARTE[p.descarte] + '.');
   if (p.flujos) partes.push('Interés: ' + p.flujos + '.');
   if (p.consulta) partes.push('Consulta: ' + p.consulta + '.');
   // Sin ningun dato del negocio, el resumen no dice nada que valga pisar.
@@ -145,7 +170,10 @@ prospectos.forEach((it, i) => {
     faltan[0] + '»');
 
   const actual = coincidencias.find((f) => digitos(f[H.E]) === p.telefono);
-  const prospecto = { ...p, pidioAsesor: p.estado === 'cerrado' };
+  // Los hechos viajan dentro del prospecto (`Salida`); un item de antes de ese
+  // cambio no los trae, y `cerrado` sigue siendo un pedido de una persona.
+  const prospecto = { ...p, ...(p.hechos && typeof p.hechos === 'object' ? p.hechos : {}),
+    pidioAsesor: p.estado === 'cerrado' || p.hechos?.pidioAsesor === true };
   const calificacion = calificar(prospecto);
 
   if (actual) {
@@ -154,13 +182,13 @@ prospectos.forEach((it, i) => {
     // crudo (RAW): nada se interpreta.
     const nuevo = { C: seguro(p.nombre), D: seguro(p.empresa), F: seguro(p.rubro), I: calificacion,
       J: seguro(resumir(prospecto, false)) };
-    const orden = (v) => CALIFICACION.findIndex((x) => x.valor === limpio(v));
+    const prioridad = (v) => PRIORIDAD.indexOf(limpio(v));
     const celdas = {};
     for (const l of PLANILLA.actualizables) {
       const v = nuevo[l];
       const antes = actual[H[l]];
       if (!v || limpio(antes) === v) continue;
-      if (l === 'I' && PLANILLA.noBajarCalificacion && orden(antes) >= 0 && orden(v) > orden(antes)) continue;
+      if (l === 'I' && PLANILLA.noBajarCalificacion && prioridad(antes) >= 0 && prioridad(v) < prioridad(antes)) continue;
       celdas[H[l]] = v;
     }
     if (!Object.keys(celdas).length) return nada('sin_cambios');
