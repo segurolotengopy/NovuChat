@@ -1469,3 +1469,83 @@ describe('notaPedido: la nota del cliente desde la página del catálogo llega a
     expect(cuerpo(items, SILVANA)).toContain(`Nota del cliente: «${NOTA}»`);
   });
 });
+
+// ================================================================================================
+// META RECHAZA una variable de plantilla con saltos de línea, tabuladores o 4 o más espacios seguidos (error 132018), y las
+// variables de TEXTO LIBRE del cliente (nota del pedido, zona, celebración, requerimiento, motivo de la consulta, nombre,
+// dirección, referencia, ítems) son justo donde llegan. Se prueba NEGANDO con cada separador que `\s` conoce y con topes.
+// ================================================================================================
+describe('Meta: TODA variable de plantilla sale en una línea, sin tabuladores ni 4+ espacios seguidos, con tope y no vacía', () => {
+  // Cada separador de línea o de espacio que un cliente puede pegar: LF, CR, CRLF, TAB, VT, FF, NEL, LS, PS, NBSP, espacio
+  // ideográfico, espacio de ancho em, espacio de ancho cero (que NFKC no toca).
+  const SEPARADORES = ['\n', '\r', '\r\n', '\t', '\v', '\f', '\u0085', '\u2028', '\u2029', '\u00a0', '\u3000', '\u2003', '\u200b'];
+  const MALO = (palabra: string): string => `${palabra}${SEPARADORES.join('')}uno    dos\t\t\ttres     cuatro\n\n\n\ncinco${' '.repeat(40)}${palabra}`;
+  const LARGO = 'palabra '.repeat(400);
+  const FORMA = { ...CFG, plantillaReserva: 'pedido_registrado', plantillaDerivacion: 'pedido_registrado', formaPlantillaReserva: 'pedido', formaPlantillaDerivacion: 'pedido' };
+  const SOLO_UNA_LINEA = /[\r\n\t\v\f\u0085\u2028\u2029]/;
+  const CUATRO_ESPACIOS = /\s{4,}/;
+
+  const hostiles = (): [string, string, J][] => {
+    const pedidoHostil = pedido({
+      codigo: MALO('K7'), nombre: MALO('Ana'), direccion: MALO('Calle'), referencia: MALO('frente'), notaPedido: MALO('nota'),
+      coordenadas: MALO('-16.5'), motivo: MALO('motivo'),
+      lineas: [{ cantidad: 2, nombre: MALO('Taco'), detalle: MALO('sin') }, { cantidad: 1, nombre: LARGO, detalle: LARGO }],
+    });
+    const reservaHostil = reserva({
+      codigo: MALO('R4'), nombre: MALO('Ana'), reserva: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: MALO('terraza'), nombre: MALO('Ana'), celebracion: MALO('fiesta'), requerimiento: MALO('silla') },
+    });
+    const consulta = { nombre: MALO('Ana'), telefono: CLIENTE, motivo: MALO('consulta') + LARGO, codigo: MALO('C1') };
+    return [['pedido', 'pedido', pedidoHostil], ['comprobante', 'pedido', pedidoHostil], ['reserva', 'cita', reservaHostil], ['reserva', 'pedido', reservaHostil],
+      ['transferencia', 'cita', consulta], ['transferencia', 'pedido', consulta]];
+  };
+
+  it('pedido, comprobante, reserva y derivación (formas `cita` y `pedido`), con ventana cerrada, para los dos roles: ninguna variable rompe la regla', () => {
+    let vistas = 0;
+    for (const [tipo, forma, datos] of hostiles()) {
+      const cfg = forma === 'pedido' ? FORMA : CFG;
+      const items = L.avArmar(tipo, datos, CSV, cfg, sdCon(), AHORA).filter((i: J) => i.clase === 'plantilla');
+      expect(items.length, `${tipo}/${forma}`).toBeGreaterThanOrEqual(2); // completo y cocina
+      for (const it of items) {
+        const v = params(it);
+        expect(v, `${tipo}/${forma}`).toHaveLength(4);
+        v.forEach((t, k) => {
+          const donde = `${tipo}/${forma} para ${it.para} variable ${k + 1}: ${JSON.stringify(t).slice(0, 120)}`;
+          expect(t.trim(), donde).not.toBe('');
+          expect(t, donde).not.toMatch(SOLO_UNA_LINEA);
+          expect(t, donde).not.toMatch(CUATRO_ESPACIOS);
+          expect(t, donde).not.toMatch(/\u200b/);
+          expect(Array.from(t).length, donde).toBeLessThanOrEqual(500);
+          expect(t, donde).not.toMatch(VM_PROHIBIDAS);
+          vistas++;
+        });
+      }
+    }
+    expect(vistas).toBeGreaterThan(40); // la prueba no es vacía: 6 casos x 2 roles x 4 variables
+  });
+
+  it('los topes de cada variable (el nombre del cliente, el código y el motivo largos no desbordan la variable)', () => {
+    for (const [tipo, forma, datos] of hostiles()) {
+      const cfg = forma === 'pedido' ? FORMA : CFG;
+      for (const it of L.avArmar(tipo, datos, CSV, cfg, sdCon(), AHORA).filter((i: J) => i.clase === 'plantilla')) {
+        const v = params(it);
+        const tope = tipo === 'pedido' || tipo === 'comprobante' ? [60, 30, 500, 80] : forma === 'pedido' ? [200, 30, 500, 80] : [40, 70, 200, 20];
+        v.forEach((t, k) => expect(Array.from(t).length, `${tipo}/${forma} ${it.para} variable ${k + 1}`).toBeLessThanOrEqual(tope[k]!));
+      }
+    }
+  });
+
+  it('avParametro por separador: cada uno, solo y repetido, deja UNA línea sin 4+ espacios', () => {
+    for (const sep of SEPARADORES) {
+      for (const n of [1, 3, 4, 5, 30]) {
+        const r = L.avParametro(`a${sep.repeat(n)}b`);
+        expect(r, JSON.stringify(sep) + n).not.toMatch(SOLO_UNA_LINEA);
+        expect(r, JSON.stringify(sep) + n).not.toMatch(CUATRO_ESPACIOS);
+        expect(r.startsWith('a') && r.endsWith('b'), JSON.stringify(sep) + n).toBe(true);
+      }
+    }
+    // Y el caso exacto de la regla: 4 espacios seguidos (uno menos que lo que cubría la prueba vieja de «5+»).
+    expect(L.avParametro('a    b')).toBe('a b');
+    expect(L.avParametro('a   b')).toBe('a b');
+    expect(L.avParametro('a \t \n  b')).not.toMatch(CUATRO_ESPACIOS);
+  });
+});
