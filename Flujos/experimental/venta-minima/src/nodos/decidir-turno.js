@@ -16,8 +16,14 @@
 // ORDEN (diseño §4.5, sin modelo): 1) cotejo → `comprobante`; 2) medios (imagen o documento
 // sin QR pendiente, audio); 3) botón, validado contra el estado; 4) texto exacto de una
 // campaña vigente → `promo`; 5) pide una persona → `transferir`, pregunta si es una IA →
-// `identidad` (la identidad se revisa primero); 6) «menu», «cancelar»… → `menu`; 7) en
-// `inicio` o `menu`, consulta fija; 8) por paso; 9) pedido fuera de horario.
+// `identidad` (la identidad se revisa primero); 6) intenciones GLOBALES, en cualquier paso salvo
+// `esperando_comprobante` (ahí solo «menú» funciona): «menú», «cancelar», «carta», «reserva» y,
+// estando en una reserva, «pedir»; 7) en `inicio` o `menu`, consulta fija; 8) por paso; 9) pedido
+// fuera de horario.
+//
+// CARRITO Y RESERVA VIVEN POR SEPARADO (03/10): ninguna transición borra uno por pasar al otro. Solo se
+// limpian al confirmar, al cancelar (`limpiar` = 'pedido' | 'reserva' | 'todo' en la salida de `menu`) o al
+// vencer el estado. «Menú» (texto o botón `m|menu`) muestra el menú y deja el estado como está.
 //
 // LIBRERÍAS QUE LLAMA (contrato §4.2; en la suite van dobles mínimos):
 //   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmEstadoBase, vmLeerEstado, vmLeerBoton, vmNorm,
@@ -39,11 +45,12 @@
 //     `pd*`/`rs*` como arreglo (acepta también un CSV en la configuración).
 //  b. El estado por teléfono tiene, además de lo de `vmEstadoBase()`: `paso`, `carrito`,
 //     `pendiente`, `entrega`, `reserva`, `pedido`, `vacias`, `ilegibles`, `transferencias`.
-//  c. Un botón `m|*` solo vale en `inicio` o `menu`; `g|pedir|<id>` también; `f|<i>|<forma>`
+//  c. Un botón `m|*` vale en cualquier paso salvo `esperando_comprobante`, donde solo `m|menu` vale;
+//     `g|pedir|<id>` y `g|agregar|<id>|<cantidad>` valen en `inicio`, `menu` y los pasos de pedido; `f|<i>|<forma>`
 //     con la pregunta `i` pendiente; `e|…` en `pedido_entrega`; `p|…` en `pedido_confirmar`;
 //     `r|…` en `reserva_confirmar`; `q|…` en `esperando_comprobante`. En otro paso, un botón
 //     viejo muestra el paso actual y no cambia nada. `q|cancelar` es `menu` con el pedido
-//     descartado; `q|reenviar` es `reenviar_qr`. LÍMITE CONOCIDO: `q|cancelar` descarta el pedido del
+//     descartado (`limpiar: 'pedido'`); `q|reenviar` es `reenviar_qr`. LÍMITE CONOCIDO: `q|cancelar` descarta el pedido del
 //     estado pero NO avisa al servidor (el cobro abierto por `qr_enviado` vence solo): no se construye aquí.
 //  d. «Hacer un pedido» (`m|pedido`) y «Ver la carta» son la misma acción: `carta`.
 //  e. Sin horario en la configuración (`horario` vacío) no se bloquea ningún pedido; con un
@@ -109,14 +116,20 @@ if (idBoton) {
   if (!b || typeof b.tipo !== 'string' || !Array.isArray(b.partes)) return viejo();
   const p0 = String(b.partes[0] === undefined ? '' : b.partes[0]);
   const enMenu = paso === 'inicio' || paso === 'menu';
+  const enComp = paso === 'esperando_comprobante';
+  const enPedido = paso.indexOf('pedido') === 0;
   const esDePedido = (b.tipo === 'm' && p0 === 'pedido') || ['g', 'f', 'e', 'p'].indexOf(b.tipo) >= 0;
   if (esDePedido && pedidosOn && cerrado()) return salir('fuera_de_horario');
 
-  if (b.tipo === 'm' && enMenu) {
+  // «Menú» vale siempre: muestra el menú y no borra nada. Los demás `m|*` valen salvo con un comprobante en espera.
+  if (b.tipo === 'm' && p0 === 'menu') return salir('menu', { boton: b, motivo: 'boton_menu' });
+  if (b.tipo === 'm' && !enComp) {
     if (p0 === 'pedido' && pedidosOn) return salir('carta', { boton: b });
     if (p0 === 'reserva' && reservasOn) return salir('boton', { boton: b });
+    if (p0 === 'promos' && cfg.promosActivo === true) return salir('consulta', { boton: b, consulta: 'promociones' });
   }
-  if (b.tipo === 'g' && enMenu && pedidosOn && p0 === 'pedir' && b.partes[1]) return salir('boton', { boton: b });
+  if (b.tipo === 'g' && (enMenu || enPedido) && pedidosOn && p0 === 'pedir' && b.partes[1]) return salir('boton', { boton: b });
+  if (b.tipo === 'g' && (enMenu || enPedido) && pedidosOn && p0 === 'agregar' && b.partes[1] && /^\d{1,2}$/.test(String(b.partes[2]))) return salir('boton', { boton: b });
   if (b.tipo === 'f' && paso === 'pedido') {
     // Solo se pregunta la primera pendiente (`pdResolverForma` resuelve `pendiente[0]`).
     const forma = b.partes[1];
@@ -128,7 +141,7 @@ if (idBoton) {
   if (b.tipo === 'r' && paso === 'reserva_confirmar' && (p0 === 'enviar' || p0 === 'corregir')) return salir('boton', { boton: b });
   if (b.tipo === 'q' && paso === 'esperando_comprobante') {
     if (p0 === 'reenviar') return salir('reenviar_qr', { boton: b });
-    if (p0 === 'cancelar') return salir('menu', { boton: b, motivo: 'cancelar_pedido' });
+    if (p0 === 'cancelar') return salir('menu', { boton: b, motivo: 'cancelar_pedido', limpiar: 'pedido' });
   }
   return viejo();
 }
@@ -147,9 +160,30 @@ const PIDE_PERSONA = /\b(hablar|conversar|comunicar|comunicarme|comunicarnos|con
 if (PREGUNTA_IDENTIDAD.test(norm)) return salir('identidad');
 if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar con una persona' });
 
-// --- 6. Reinicios: «menu», «empezar de nuevo», «cancelar» ----------------------------------
-if (/^(menu|menu principal|inicio|empezar de nuevo|empezar otra vez|volver a empezar|volver al menu|cancelar|cancela|cancelar pedido|cancelar reserva|reiniciar)$/.test(norm)) {
-  return salir('menu', { motivo: 'reinicio' });
+// --- 6. Intenciones GLOBALES: valen en cualquier paso, antes del «por paso» ------------------------
+// Con un comprobante en espera (`esperando_comprobante`) solo «menú» funciona: el pedido sigue esperando y lo
+// demás recibe el recordatorio. «Menú» muestra el menú y NO borra nada; «cancelar» y «empezar de nuevo» sí limpian.
+const enComprobante = paso === 'esperando_comprobante';
+const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm);
+const quiereReservar = /reserv|\bmesa\b/.test(norm);
+if (/^(menu|menu principal|inicio|volver al menu)$/.test(norm) || (!enComprobante && /^(hola|volver|atras)$/.test(norm))) {
+  return salir('menu', { motivo: 'menu' });
+}
+if (!enComprobante) {
+  if (/^(empezar de nuevo|empezar otra vez|volver a empezar|reiniciar)$/.test(norm)) return salir('menu', { motivo: 'reinicio', limpiar: 'todo' });
+  if (/^(cancelar pedido)$/.test(norm)) return salir('menu', { motivo: 'reinicio', limpiar: 'pedido' });
+  if (/^(cancelar reserva)$/.test(norm)) return salir('menu', { motivo: 'reinicio', limpiar: 'reserva' });
+  // «cancelar» a secas cancela lo que se está haciendo; sin nada en curso, todo.
+  if (/^(cancelar|cancela)$/.test(norm)) {
+    return salir('menu', { motivo: 'reinicio', limpiar: paso.indexOf('reserva') === 0 ? 'reserva' : (paso.indexOf('pedido') === 0 ? 'pedido' : 'todo') });
+  }
+  // La carta, en cualquier paso. Un pedido que la nombra («tres tacos de la carta») no es esta intención.
+  if (pedidosOn && norm.length <= 80 && !/\d/.test(norm) && /\b(carta|catalogo|que tienen)\b/.test(norm)
+    && !/\b(de|en|segun) la carta\b/.test(norm)) return salir('carta', { motivo: 'carta', consulta: 'carta' });
+  // La reserva, en cualquier paso (en un paso de reserva sigue su camino «por paso»).
+  if (reservasOn && quiereReservar && paso.indexOf('reserva') !== 0) return extraerReserva();
+  // El pedido, estando en una reserva: el carrito sigue donde se dejó.
+  if (pedidosOn && paso.indexOf('reserva') === 0 && /\b(pedir|pedido)\b/.test(norm)) return extraerPedido();
 }
 
 // --- Un «sí» suelto no confirma nada; una pregunta orden/unidad pendiente se vuelve a mostrar --
@@ -159,11 +193,13 @@ const RELLENO = ['si', 'ya', 'dale', 'ok', 'okey', 'okay', 'listo', 'claro', 'bu
 const palabras = norm.split(' ').filter(Boolean);
 const soloAfirma = palabras.length > 0 && palabras.length <= 6 && palabras.every((w) => RELLENO.indexOf(w) >= 0);
 if ((paso === 'pedido_confirmar' || paso === 'reserva_confirmar') && soloAfirma) return salir('boton', { motivo: 'si_suelto' });
-if (paso === 'pedido' && Array.isArray(previo.pendiente) && previo.pendiente.length) return salir('boton', { motivo: 'forma_pendiente' });
+// Una respuesta a la pregunta orden/unidad («sueltos», «la orden», «dale») repite la pregunta sin gastar un modelo; cualquier otro
+// texto es un mensaje nuevo y se atiende (si no, «quiero un helado» recibía la misma pregunta una y otra vez). La
+// pregunta sigue pendiente en el estado y vuelve a salir en cuanto el pedido avanza.
+const RESPUESTA_FORMA = /^((la|las|en|por|una|un|el) )?(orden|ordenes|suelt[oa]s?|unidad|unidades)( completa)?$/;
+if (paso === 'pedido' && Array.isArray(previo.pendiente) && previo.pendiente.length && (RESPUESTA_FORMA.test(norm) || soloAfirma)) return salir('boton', { motivo: 'forma_pendiente' });
 
 // --- 7. En inicio o menú: consulta fija (dirección, horario, delivery, promociones, carta) ----
-const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm);
-const quiereReservar = /reserv|\bmesa\b/.test(norm);
 if (paso === 'inicio' || paso === 'menu') {
   const consulta = consultaFija();
   if (consulta === 'carta') return salir('carta', { consulta: consulta });
@@ -176,7 +212,6 @@ if (paso.indexOf('reserva') === 0) return extraerReserva();
 if (paso.indexOf('pedido') === 0) return extraerPedido();
 // inicio o menu, sin consulta fija: la intención de pedido o de reserva, o el menú.
 if (pedidosOn && quierePedir) return extraerPedido();
-if (reservasOn && quiereReservar) return extraerReserva();
 return salir('menu');
 
 // ---------------------------------------------------------------------------------------------
@@ -185,6 +220,7 @@ function estadoBase() {
     paso: 'inicio', carrito: [], pendiente: [],
     entrega: { entrega: '', modalidad: '', direccion: '', referencia: '', nombre: '' },
     reserva: null, pedido: null, vacias: 0, ilegibles: 0, transferencias: [],
+    carritoGuardado: 0,
   });
 }
 

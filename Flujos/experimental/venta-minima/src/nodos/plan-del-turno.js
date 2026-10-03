@@ -14,8 +14,8 @@
 // detalle, referencia} | null; `ruta`; `errores`. Además, `anotarReserva` (ver el supuesto 4) y `accion`.
 //
 // LIBRERÍAS QUE LLAMA (contrato §4.2; en la suite van dobles mínimos):
-//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmIdEstable, vmJsonDeGemini, vmSinProhibidas.
-//   pedido: pdCarta, pdTextoDeLaCarta, pdValidarExtraccion, pdAgregarLineas, pdResolverForma,
+//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmIdEstable, vmJsonDeGemini, vmSinProhibidas, vmHorarioLegible.
+//   pedido: pdCarta, pdExcluidos, pdNombreCorto, pdBotonAgregar, pdTextoExcluido, pdTextoDeLaCarta, pdValidarExtraccion, pdAgregarLineas, pdResolverForma,
 //     pdQuitarSinDelivery, pdTotal, pdFaltanEntrega, pdResumen, pdLineaCompacta, pdNuevoPedido y
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
@@ -88,6 +88,16 @@
 //     promociones), tope de reservas, recordatorio del comprobante, imagen sin pedido, medio no
 //     leído. Ninguno usa palabras de `VM_PROHIBIDAS`.
 //
+//  n. CARRITO Y RESERVA VIVEN POR SEPARADO (03/10): ninguna transición borra uno por pasar al otro (ni el menú, ni la
+//     derivación, ni entrar a la reserva, ni volver al pedido). Se limpian solo al confirmar, al cancelar (`d.limpiar`) o cuando
+//     vence el estado. Campo nuevo `carritoGuardado` (número): al entrar a una reserva con un carrito en curso vale el número
+//     de productos del carrito (que sigue en `carrito`); vuelve a 0 al retomar el pedido o al vaciar el carrito. El nombre se
+//     comparte: `entrega.nombre` y `reserva.nombre` se completan uno al otro.
+//  o. La derivación deja `paso = 'menu'` (nunca el paso en que estaba): el siguiente mensaje se atiende de nuevo y no vuelve a
+//     derivar en bucle. Un medio que no se pudo leer, una imagen sin comprobante pendiente, un producto excluido o no encontrado
+//     salen con el botón «Ver la carta» o con los del menú; el botón «Menú» (`m|menu`) lo agrega `Armar mensajes` a todo mensaje
+//     interactivo con espacio (no agrega mensajes).
+//
 // LÍMITES CONOCIDOS (no se construyen aquí): si el modelo da un sábado para «este viernes», nadie lo
 // detecta (el cruce entre el día nombrado y la fecha queda fuera); `q|cancelar` («Cancelar pedido») descarta el
 // pedido del estado pero NO avisa al servidor: el cobro que abrió `qr_enviado` queda abierto hasta que vence; el cierre
@@ -118,6 +128,9 @@ let anotarReserva = false;
 let ruta = String(d.accion || '');
 
 despachar();
+if (d.accion === 'carta') notaDelPedidoGuardado();
+// Al volver a un paso de pedido el carrito guardado deja de estar «guardado»: ya se retomó.
+if (en.paso.indexOf('pedido') === 0) en.carritoGuardado = 0;
 mensajes = partirLargos(mensajes);
 en.ultimoMensajeMs = ahora;
 return [{ json: {
@@ -139,7 +152,7 @@ function despachar() {
     return (mensajes = [enlace('Soy un asistente virtual con inteligencia artificial de ' + negocio()
       + '. Si prefieres hablar con una persona del restaurante, toca el botón.')]);
   }
-  if (a === 'medio_no_leido') return (mensajes = [texto('No pude entender ese mensaje. ¿Me lo escribes?')]);
+  if (a === 'medio_no_leido') return aMedioNoLeido();
   if (a === 'imagen_sin_pendiente') return aImagenSinPendiente();
   if (a === 'fuera_de_horario') return aFueraDeHorario();
   if (a === 'recordatorio_comprobante') return aRecordatorio();
@@ -150,6 +163,14 @@ function despachar() {
   if (a === 'boton') return aBoton(b);
   errores.push('accion_desconocida');
   return derivar('acción desconocida');
+}
+
+// Al mostrar la carta con un pedido ya empezado, se le dice que sigue ahí (es lo que dejó al irse al menú, a la reserva o a una derivación).
+function notaDelPedidoGuardado() {
+  const n = en.carrito.reduce((suma, l) => suma + (l && Number.isInteger(l.cantidad) && l.cantidad > 0 ? l.cantidad : 0), 0);
+  const primero = mensajes[0];
+  if (!n || !primero || primero.tipo !== 'texto' || typeof primero.cuerpo !== 'string') return;
+  mensajes[0] = Object.assign({}, primero, { cuerpo: 'Tu pedido sigue guardado (' + n + (n === 1 ? ' producto' : ' productos') + ').\n\n' + primero.cuerpo });
 }
 
 // --- Un resumen más largo que un mensaje con botones ---------------------------------------
@@ -195,21 +216,33 @@ function estadoDe(e) {
   if (!Array.isArray(s.transferencias)) s.transferencias = [];
   s.vacias = Number(s.vacias) || 0;
   s.ilegibles = Number(s.ilegibles) || 0;
+  s.carritoGuardado = Number(s.carritoGuardado) || 0;
   if (!s.reserva || typeof s.reserva !== 'object') s.reserva = null;
   if (!s.pedido || typeof s.pedido !== 'object') s.pedido = null;
   return s;
 }
 
-// Vuelve a un paso limpio. Lo único que sobrevive es lo de las derivaciones recientes.
-function reiniciar(paso) {
-  en.paso = paso;
+// Cada cosa se limpia por separado y solo al confirmar, cancelar o vencer: nada la borra de paso (ver el supuesto n).
+function limpiarCarrito() {
   en.carrito = [];
   en.pendiente = [];
   en.entrega = entregaVacia();
-  en.reserva = null;
+  en.carritoGuardado = 0;
+}
+function limpiarConfirmado() {
   en.pedido = null;
-  en.vacias = 0;
   en.ilegibles = 0;
+}
+function limpiarReserva() { en.reserva = null; }
+// `que` = lo que pide `Decidir turno` al cancelar: 'pedido' (carrito y pedido en espera), 'reserva' o 'todo'.
+function limpiarSegun(que) {
+  if (que === 'pedido' || que === 'todo') { limpiarCarrito(); limpiarConfirmado(); }
+  if (que === 'reserva' || que === 'todo') limpiarReserva();
+}
+// Cambia de paso sin tocar el carrito ni la reserva.
+function irA(paso) {
+  en.paso = paso;
+  en.vacias = 0;
 }
 
 // --- Utilidades de texto --------------------------------------------------------------------
@@ -260,7 +293,28 @@ function conNotas(lista_) {
   return [primero].concat(ms.slice(1));
 }
 
+// ¿Hay una campaña vigente con ficha que mostrar? Solo entonces el menú ofrece «Promociones».
+function hayPromociones() {
+  if (cfg.promosActivo !== true || !Array.isArray(cfg.campanas) || !cfg.campanas.length) return false;
+  try {
+    const carta = cartaDelNegocio();
+    return cfg.campanas.some((c) => {
+      const ficha = prFicha(c, carta, ahora);
+      const tx = ficha ? prTexto(ficha, cfg) : null;
+      return !!tx && Array.isArray(tx.botones) && tx.botones.length > 0;
+    });
+  } catch (e) {
+    return false;
+  }
+}
+
+// Los botones del menú: lo que el negocio tiene activo, más «Promociones» si hay una campaña vigente.
 function menuBotones() {
+  const botones = capacidades();
+  if (hayPromociones()) botones.push({ id: vmIdDeBoton('m', 'promos'), title: 'Promociones' });
+  return botones;
+}
+function capacidades() {
   const botones = [];
   if (pedidosOn) botones.push({ id: vmIdDeBoton('m', 'pedido'), title: 'Hacer un pedido' });
   if (reservasOn) botones.push({ id: vmIdDeBoton('m', 'reserva'), title: 'Reservar mesa' });
@@ -274,29 +328,35 @@ function menuBotones() {
 // `Armar mensajes` SOLO si el aviso salió (hecho, no dicho). Este nodo ni escribe esa marca ni suprime
 // el aviso por su cuenta: si el primer aviso falla (Graph en error), el siguiente SÍ se intenta.
 function derivar(razon) {
+  // (Las constantes van DENTRO de la función: lo que se declara después del `return` del nodo no llega a inicializarse.)
+  const TEXTO_DERIVACION = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. '
+    + 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
   ruta = 'transferir:' + razon;
   aviso = { tipo: 'transferencia', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: vmLinea(t.nombrePerfil, 60),
     codigo: vmCodigoCorto(ahora), motivo: vmLinea(d.texto, 300),
   } };
-  en.vacias = 0;
-  if (en.paso === 'inicio') en.paso = 'menu';
-  mensajes = [enlace('Eso lo ve directamente el restaurante. Toca el botón para escribirles.')];
+  // El paso queda en `menu` y no se borra nada: el siguiente mensaje se atiende de nuevo (antes, un paso de pedido volvía a
+  // derivar cada mensaje) y el cliente retoma su pedido o su reserva escribiendo «menú».
+  irA('menu');
+  mensajes = [enlace(TEXTO_DERIVACION)];
   condicionados = null;
   return null;
 }
 
 // --- Menú, carta, consultas, promoción ------------------------------------------------------
 function aMenu() {
-  reiniciar('menu');
+  irA('menu');
+  if (d.limpiar) limpiarSegun(d.limpiar);
   if (d.motivo) ruta = 'menu:' + d.motivo;
   const botones = menuBotones();
-  if (botones.length === 0) return derivar('sin capacidades activas');
+  if (capacidades().length === 0) return derivar('sin capacidades activas');
   // Con una sola capacidad no hay nada que elegir: se va directo a ella.
-  if (botones.length === 1) return pedidosOn ? aCarta() : iniciarReserva();
+  if (capacidades().length === 1) return pedidosOn ? aCarta() : iniciarReserva();
   const asistente = vmLinea(cfg.nombreAsistente, 40);
-  mensajes = [conBotones('¡Hola! Soy ' + (asistente ? asistente + ', el asistente virtual' : 'el asistente virtual')
-    + ' de ' + negocio() + '. ¿Qué quieres hacer?', botones)];
+  // `sinMenu`: el menú ya es el menú; `Armar mensajes` no le agrega el botón «Menú».
+  mensajes = [Object.assign(conBotones('¡Hola! 👋 Soy ' + (asistente ? asistente + ', el asistente virtual' : 'el asistente virtual')
+    + ' de ' + negocio() + '. ¿Qué te gustaría hacer?', botones), { sinMenu: true })];
 }
 
 function cartaDelNegocio() {
@@ -366,21 +426,29 @@ function aPromo() {
     ruta = 'menu:promo_sin_ficha';
     return aMenu();
   }
-  reiniciar('menu');
+  irA('menu');
   mensajes = [{ tipo: 'botones', cuerpo: tx.cuerpo, botones: tx.botones }];
 }
 
 function aImagenSinPendiente() {
-  const cuerpo = 'Recibí tu imagen. Por ahora no tengo ningún comprobante pendiente.';
-  const enMenu = en.paso === 'inicio' || en.paso === 'menu';
+  const cuerpo = '¡Gracias por la imagen! Por aquí solo leo comprobantes de un pedido con QR, y ahora no tienes ninguno pendiente. ¿Qué te gustaría hacer?';
   if (en.paso === 'inicio') en.paso = 'menu';
-  mensajes = enMenu ? [conBotones(cuerpo + ' ¿Qué quieres hacer?', menuBotones())] : [texto(cuerpo)];
+  mensajes = [conBotones(cuerpo, capacidades())];
+}
+
+// Un audio que no se entendió, un sticker, un contacto…: se pide que lo escriba, con la carta a un toque.
+function aMedioNoLeido() {
+  const cuerpo = d.motivo === 'audio'
+    ? 'No pude escuchar bien ese mensaje 😅. ¿Me lo escribes?'
+    : 'No pude entender bien ese mensaje 😅. ¿Me lo escribes?';
+  mensajes = [conBotones(cuerpo, pedidosOn ? [{ id: vmIdDeBoton('m', 'pedido'), title: 'Ver la carta' }] : [])];
 }
 
 function aFueraDeHorario() {
-  const h = vmLinea(cfg.horarioAtencion, 200);
-  const cuerpo = 'Ahora no estamos tomando pedidos.' + (h ? ' Atendemos ' + h + '.' : '');
-  reiniciar('menu');
+  // El texto de la consola manda; sin él, el horario de la configuración dicho en palabras (`vmHorarioLegible`).
+  const h = vmLinea(cfg.horarioAtencion, 200) || vmLinea(vmHorarioLegible(cfg.horario), 200);
+  const cuerpo = 'Por ahora no estamos tomando pedidos 🕒.' + (h ? ' Atendemos ' + h + '.' : '');
+  irA('menu');
   mensajes = [conBotones(cuerpo, reservasOn ? [{ id: vmIdDeBoton('m', 'reserva'), title: 'Reservar mesa' }] : [])];
 }
 
@@ -389,6 +457,7 @@ function aBoton(b) {
   if (!b) return mostrarPaso();
   const p0 = String(b.partes[0] === undefined ? '' : b.partes[0]);
   if (b.tipo === 'm' && p0 === 'reserva') return iniciarReserva();
+  if (b.tipo === 'g' && p0 === 'agregar') return sumarItem(String(b.partes[1]), Number(b.partes[2]));
   if (b.tipo === 'g') return pedirItem(String(b.partes[1]));
   if (b.tipo === 'f') return resolverForma(Number(p0), String(b.partes[1]));
   if (b.tipo === 'e') {
@@ -396,9 +465,10 @@ function aBoton(b) {
     return mostrarPedido();
   }
   if (b.tipo === 'p' && p0 === 'cambiar') {
-    // «Cambiar algo» reinicia el carrito y la modalidad; la dirección y el nombre ya dados se conservan.
+    // «Cambiar algo» reinicia el carrito y la modalidad (la reserva no se toca); la dirección y el nombre ya dados se conservan.
     const e = en.entrega;
-    reiniciar('pedido');
+    limpiarCarrito();
+    irA('pedido');
     en.entrega = Object.assign(entregaVacia(), { direccion: e.direccion, referencia: e.referencia, nombre: e.nombre });
     if (e.ubicacion) en.entrega.ubicacion = e.ubicacion;
     const m = mensajesDeCarta();
@@ -474,8 +544,24 @@ function preguntaForma() {
   };
 }
 
+// Lo que no entró al carrito: un producto EXCLUIDO a propósito (área excluida) tiene su texto amable y no es una búsqueda fallida.
 function textoNoEncontrados(lista_) {
-  return lista_.slice(0, 3).map((e) => pdTextoNoEncontrado(e)).join(' ');
+  return lista_.slice(0, 3).map((e) => (e && e.motivo === 'excluido' && e.excluido
+    ? pdTextoExcluido(pdNombreCorto(e.excluido), { nivelEmojis: cfg.nivelEmojis })
+    : pdTextoNoEncontrado(e))).join(' ');
+}
+
+// El mensaje de cuando NADA de lo pedido se pudo tomar: el texto, «Agregar <producto>» solo si hay UNA sugerencia clara, y
+// «Ver la carta». (El botón «Menú» lo agrega `Armar mensajes`.)
+function mensajeNoEncontrado(noEnc) {
+  const botones = [];
+  const e = noEnc.length === 1 ? noEnc[0] : null;
+  if (e && e.motivo === 'ninguno' && Array.isArray(e.sugerencias) && e.sugerencias.length === 1) {
+    const agregar = pdBotonAgregar(e.sugerencias[0], e.cantidad);
+    if (agregar) botones.push(agregar);
+  }
+  botones.push({ id: vmIdDeBoton('m', 'pedido'), title: 'Ver la carta' });
+  return conBotones(textoNoEncontrados(noEnc), botones);
 }
 
 // El paso que sigue según lo que ya hay en el estado. Devuelve los mensajes, o null si derivó.
@@ -531,21 +617,25 @@ function lineaSaneada(l) {
 
 function agregarLineas(lineas) {
   const carta = cartaDelNegocio();
-  const r = pdAgregarLineas(en.carrito, carta, lineas) || {};
+  const excluidos = pdExcluidos(Array.isArray(cfg.catalogo) ? cfg.catalogo : [], { areasExcluidas: lista(cfg.areasExcluidas), moneda: cfg.moneda });
+  const r = pdAgregarLineas(en.carrito, carta, lineas, excluidos) || {};
   if (Array.isArray(r.carrito)) en.carrito = r.carrito;
   const lista1 = (v) => (Array.isArray(v) ? v : (v ? [v] : []));
   en.pendiente = en.pendiente.concat(lista1(r.pendiente));
   return lista1(r.noEncontrados);
 }
 
-function pedirItem(id) {
+// «Pedir la promo» y el botón «Agregar <producto>» de una sugerencia SUMAN al carrito que ya hay (no lo reinician).
+function pedirItem(id) { return sumarItem(id, 1); }
+
+function sumarItem(id, cantidad) {
   const item = cartaDelNegocio().find((i) => String(i.id) === id);
   if (!item) {
     ruta = 'menu:item_no_disponible';
     return aMenu();
   }
-  reiniciar('pedido');
-  agregarLineas([{ producto: item.nombre, cantidad: 1, forma: '', detalle: '' }]);
+  irA('pedido');
+  agregarLineas([{ producto: item.nombre, cantidad: Number.isInteger(cantidad) && cantidad > 0 ? cantidad : 1, forma: '', detalle: '' }]);
   mostrarPedido();
 }
 
@@ -590,10 +680,12 @@ function aExtraerPedido() {
   ['direccion', 'referencia', 'nombre'].forEach((k) => { if (x[k]) en.entrega[k] = delCliente(x[k], 160); });
   const noEnc = lineas.length ? agregarLineas(lineas.map(lineaSaneada)) : [];
   const falto = noEnc.length ? textoNoEncontrados(noEnc) : '';
-  if (!en.carrito.length && !en.pendiente.length && falto) {
-    // Nada se entendió: solo se dice qué no se encontró (sin repetir la carta).
-    en.paso = 'pedido';
-    return (mensajes = [texto(falto)]);
+  const agrego = lineas.length > noEnc.length;
+  if (noEnc.length && !agrego && (!datosEntrega || !(en.carrito.length || en.pendiente.length))) {
+    // Nada de lo pedido se pudo tomar: solo se dice qué pasó (sin repetir la carta), con la carta a un toque. Si ya había
+    // un pedido en curso se queda donde estaba (sus botones siguen valiendo, y la pregunta pendiente vuelve a salir).
+    if (en.paso.indexOf('pedido') !== 0) irA('pedido');
+    return (mensajes = [mensajeNoEncontrado(noEnc)]);
   }
   if (falto) notas.push(falto);
   mostrarPedido();
@@ -650,7 +742,9 @@ function confirmarPedido() {
       // El monto del QR es el del código; el servidor coteja el comprobante contra ESE número.
       mensajes = [{ tipo: 'imagen', cuerpo: pie, url: cobro.qrUrl, evento: 'qr_enviado', referencia: ped.pedidoId, monto: ped.total }];
       pedidoGuardar = ped;
-      reiniciar('esperando_comprobante');
+      limpiarCarrito();
+      irA('esperando_comprobante');
+      en.ilegibles = 0;
       en.pedido = ped;
       ruta = 'pedido:qr';
       return;
@@ -668,7 +762,8 @@ function confirmarPedido() {
     + pdLineaCompacta(en.carrito, 200) + '. Total ' + pdMonto(ped.total, monedaTxt) + '.', 300), referencia: ped.pedidoId };
   mensajes = [];
   ruta = 'pedido:sin_qr';
-  reiniciar('menu');
+  limpiarCarrito();
+  irA('menu');
 }
 
 // =============================================================================================
@@ -737,7 +832,8 @@ function aComprobante() {
       en.pedido = en.pedido || ped;
       en.paso = 'esperando_comprobante';
     } else {
-      reiniciar('menu');
+      limpiarConfirmado();
+      irA('menu');
     }
     return;
   }
@@ -748,7 +844,8 @@ function aComprobante() {
   aviso = { tipo: 'comprobante', datos: Object.assign(datosDePedido(pedidoGuardar, resultado, diferencias), { mediaId: String(t.mediaId || '') }) };
   condicionados = { siSalio: [mensajeDeCb(conAviso)], siNoSalio: [mensajeDeCb(sinAviso)] };
   mensajes = [];
-  reiniciar('menu');
+  limpiarConfirmado();
+  irA('menu');
 }
 
 // =============================================================================================
@@ -761,9 +858,25 @@ function limitesReserva() {
   };
 }
 
+// Entrar a la reserva desde otro paso: un carrito en curso queda guardado (sigue en `carrito`; `carritoGuardado` dice cuántos
+// productos tiene y el aviso sale UNA vez, en el primer mensaje de la reserva) y el nombre ya dado en el pedido se aprovecha.
+function entrarAReserva() {
+  if (en.paso.indexOf('reserva') === 0) return;
+  const n = en.carrito.reduce((suma, l) => suma + (l && Number.isInteger(l.cantidad) && l.cantidad > 0 ? l.cantidad : 0), 0);
+  if (n > 0) {
+    en.carritoGuardado = n;
+    notas.push('Guardé tu pedido (' + n + (n === 1 ? ' producto' : ' productos')
+      + '). Cuando termines la reserva, escribe «carta» para seguir con el pedido.');
+  }
+  if (en.entrega.nombre && !(en.reserva && en.reserva.nombre)) en.reserva = Object.assign({}, en.reserva || {}, { nombre: en.entrega.nombre });
+}
+
 function iniciarReserva() {
-  reiniciar('reserva');
-  mensajes = [texto(rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: lista(cfg.zonasReserva) }))];
+  entrarAReserva();
+  irA('reserva');
+  // Una reserva que ya estaba a medias se retoma donde quedó; si no, se empieza por las preguntas.
+  if (en.reserva) return evaluarReserva(en.reserva);
+  mensajes = conNotas([texto(rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: lista(cfg.zonasReserva) }))]);
 }
 
 // Valida lo que hay y muestra lo que sigue: el error concreto, lo que falta, o el resumen.
@@ -771,23 +884,25 @@ function evaluarReserva(reserva) {
   const v = rsValidar(reserva || {}, limitesReserva(), t.nombrePerfil, ahora);
   en.reserva = v.reserva;
   en.paso = 'reserva';
+  // El nombre se comparte: el de la reserva completa al del pedido (si no tenía).
+  if (v.reserva && v.reserva.nombre && !en.entrega.nombre) en.entrega.nombre = delCliente(v.reserva.nombre, 60);
   if (v.error) {
     // Sin horario cargado no se puede tomar ninguna solicitud: se pasa con el local.
     if (v.error.campo === 'horario') return derivar('reservas sin horario cargado');
-    mensajes = [texto(v.error.texto)];
+    mensajes = conNotas([texto(v.error.texto)]);
     return v;
   }
   if (!v.completa) {
     const pregunta = rsPreguntaFaltantes(v.faltan, { zonas: lista(cfg.zonasReserva) });
     if (!pregunta) return derivar('reserva incompleta sin pregunta');
-    mensajes = [texto(pregunta)];
+    mensajes = conNotas([texto(pregunta)]);
     return v;
   }
   en.paso = 'reserva_confirmar';
-  mensajes = [{ tipo: 'botones', cuerpo: rsResumen(v.reserva), botones: [
+  mensajes = conNotas([{ tipo: 'botones', cuerpo: rsResumen(v.reserva), botones: [
     { id: vmIdDeBoton('r', 'enviar'), title: 'Enviar solicitud' },
     { id: vmIdDeBoton('r', 'corregir'), title: 'Corregir' },
-  ] }];
+  ] }]);
   return v;
 }
 
@@ -799,6 +914,7 @@ function aExtraerReserva() {
   }
   const x = rsValidarExtraccion(j);
   ['zona', 'nombre', 'celebracion', 'requerimiento'].forEach((k) => { x[k] = delCliente(x[k], 200); });
+  entrarAReserva();
   evaluarReserva(rsFusionar(en.reserva || {}, x));
 }
 
@@ -809,8 +925,9 @@ function enviarReserva() {
   // Una solicitud más allá del tope diario: texto de tope y botón, sin aviso.
   if (!rsDentroDelTope(sd, t.from, ahora, Number(cfg.topeReservasDia))) {
     ruta = 'reserva:tope';
-    reiniciar('menu');
-    return (mensajes = [enlace('Por hoy ya recibimos todas las solicitudes de reserva que podemos tomar por este medio. Escríbele al restaurante con el botón para reservar.')]);
+    limpiarReserva();
+    irA('menu');
+    return (mensajes = [enlace('Por hoy ya no puedo tomar más solicitudes de reserva por aquí 🙏. Escríbele al restaurante con el botón.')]);
   }
   const reserva = v.reserva;
   // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Enviar solicitud»
@@ -829,5 +946,6 @@ function enviarReserva() {
   anotarReserva = true;
   mensajes = [];
   ruta = 'reserva:enviada';
-  reiniciar('menu');
+  limpiarReserva();
+  irA('menu');
 }

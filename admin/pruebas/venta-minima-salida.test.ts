@@ -77,6 +77,7 @@ function vmEstadoBase() { return { paso: 'inicio' }; }
 function vmEscribirEstado(sd, from, e, ms) { __bit.push(['escribirEstado', from, e.paso]); sd.estados = sd.estados || {}; sd.estados[from] = Object.assign({}, e, { ultimoMensajeMs: ms }); }
 function vmBarrer(sd, ms) { __bit.push(['barrer']); }
 function vmCodigoCorto(ms) { return 'ABCD'; }
+function vmIdDeBoton() { return Array.prototype.slice.call(arguments).join('|'); }
 function avDestinatarios(csv, from, pref) {
   const out = []; const visto = {};
   const prefijos = String(pref || '591').split(',').map((s) => s.trim()).filter(Boolean);
@@ -174,7 +175,7 @@ function textosDe(j: J): string[] {
   if (typeof j['texto'] === 'string') out.push(j['texto']);
   return out;
 }
-const GENERICO = 'Eso lo ve directamente el restaurante. Toca el botón para escribirles.';
+const GENERICO = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
 const cuerpoDe = (j: J): string => String(j['payload'].text?.body ?? j['payload'].interactive?.body.text ?? j['payload'].image?.caption);
 
 // =================================================================================================
@@ -438,12 +439,12 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
   });
 
   it('botones: como mucho 3, título de 20 caracteres, y un respaldo en texto', () => {
-    const r = mensajes({ mensajes: [botones('¿Qué quieres hacer?', 'Hacer un pedido', 'Reservar mesa', 'Un título larguísimo que no cabe', 'Cuarto')] });
+    const r = mensajes({ mensajes: [botones('¿Qué te gustaría hacer?', 'Hacer un pedido', 'Reservar mesa', 'Un título larguísimo que no cabe', 'Cuarto')] });
     const bs = r.items[0]!['payload'].interactive.action.buttons;
     expect(bs).toHaveLength(3);
     expect(bs[2].reply.title.length).toBeLessThanOrEqual(20);
     expect(r.items[0]).toMatchObject({ tipoReporte: 'interactive' });
-    expect(r.items[0]!['respaldo']).toContain('¿Qué quieres hacer?');
+    expect(r.items[0]!['respaldo']).toContain('¿Qué te gustaría hacer?');
     expect(r.items[0]!['respaldo']).toContain('escribe «menu»');
   });
 
@@ -486,15 +487,16 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
       const r = mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { numeroRecepcion } });
       const i = r.items[0]!;
       expect(i['payload'].type).toBe('text');
-      expect(i['payload'].text.body).toBe('Eso lo ve directamente el restaurante.');
+      // Sin botón no se nombra el botón («Escribir al local»): queda lo demás, con el camino de vuelta al menú.
+      expect(i['payload'].text.body).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
       expect(i['tipoReporte']).toBe('text');
       expect(JSON.stringify(i)).not.toMatch(/bot[oó]n/i);
     }
     // el texto con «:» conserva lo que viene antes del «:»
     const r = mensajes({ mensajes: [enlace('No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido al restaurante en este momento.');
+    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido al restaurante en este momento. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
     const dos = mensajes({ mensajes: [enlace('Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2.');
+    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
   });
 
   it('modo prueba: a telefonoDePrueba, sin prefijo y sin reportar; fuera de prueba, reportable', () => {
@@ -599,10 +601,12 @@ describe('Armar mensajes — el QR', () => {
 // =================================================================================================
 describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', () => {
   const PASE = 'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.';
-  const NO_PASE = 'No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.';
+  const NO_PASE_PLAN = 'No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.';
+  // Lo que sale: el mensaje con botón de enlace lleva al final el camino de vuelta al menú (03/10).
+  const NO_PASE = NO_PASE_PLAN + ' Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
   const plan = (): J => ({
     ruta: 'confirmar', pedido: PEDIDO, aviso: { tipo: 'pedido', datos: {} }, mensajes: [],
-    condicionados: { siSalio: [texto(PASE)], siNoSalio: [enlace(NO_PASE)] },
+    condicionados: { siSalio: [texto(PASE)], siNoSalio: [enlace(NO_PASE_PLAN)] },
   });
   const armados = [armado('pedido', { para: AV1 }), armado('pedido', { para: AV2, rol: 'cocina' })];
 
@@ -1190,5 +1194,87 @@ describe('Armar avisos — R3: el tope de derivaciones respeta el 0 y lee solo l
     // Negado: sin el dato rige 1 (avisa la primera) y con 1 marca reciente ya no.
     expect(avisos({ aviso: { tipo: 'transferencia', datos: {} } }).items[0]).toMatchObject({ sinAviso: false });
     expect(avisos({ aviso: { tipo: 'transferencia', datos: {} } }, { g: { ventaMinima: { transferencias: { [CLIENTE]: [AHORA - MIN] } } } }).items[0]).toMatchObject({ sinAviso: true });
+  });
+});
+
+// =================================================================================================
+describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (03/10)', () => {
+  const titulos = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.title));
+  const ids = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.id));
+  const SEGUIR = 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+
+  it('todo mensaje con botones y lugar (menos de tres) sale con «Menú» (`m|menu`) al final; con tres, no se agrega nada', () => {
+    const uno = mensajes({ mensajes: [botones('Elige', 'A')] }).items[0]!;
+    expect(titulos(uno)).toEqual(['A', 'Menú']);
+    expect(ids(uno)).toEqual(['b|0', 'm|menu']);
+    const dos = mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items[0]!;
+    expect(titulos(dos)).toEqual(['A', 'B', 'Menú']);
+    // Negado: con tres no hay lugar; con el propio menú (`sinMenu`) no se repite; sin botones sigue siendo un texto.
+    expect(titulos(mensajes({ mensajes: [botones('Elige', 'A', 'B', 'C')] }).items[0]!)).toEqual(['A', 'B', 'C']);
+    expect(titulos(mensajes({ mensajes: [{ ...botones('Elige', 'A', 'B'), sinMenu: true }] }).items[0]!)).toEqual(['A', 'B']);
+    expect(mensajes({ mensajes: [texto('Hola')] }).items[0]!['payload'].type).toBe('text');
+    // Un botón «m|menu» que el plan ya trae no se duplica.
+    const ya = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'm|menu', title: 'Menú' }] }] }).items[0]!;
+    expect(ids(ya)).toEqual(['m|menu']);
+    // Agregar el botón no agrega mensajes.
+    expect(mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items).toHaveLength(1);
+  });
+
+  it('el mensaje con botón de enlace lleva al final «escribe «menú»», sin repetirlo si ya lo trae', () => {
+    const e = mensajes({ mensajes: [enlace('Texto del plan.')] }).items[0]!;
+    expect(e['texto']).toBe(`Texto del plan. ${SEGUIR}`);
+    expect(e['payload'].interactive.body.text).toBe(`Texto del plan. ${SEGUIR}`);
+    const ya = mensajes({ mensajes: [enlace(`Texto del plan. ${SEGUIR}`)] }).items[0]!;
+    expect(ya['texto']).toBe(`Texto del plan. ${SEGUIR}`);
+  });
+
+  it('solo en la conversación: el aviso fijo de «Uso extendido» y de «Comercio no operativo» NO ofrece «menú» (ahí no funciona)', () => {
+    for (const nombrePlan of ['Uso extendido', 'Comercio no operativo']) {
+      const r = mensajes({ ruta: 'uso_extendido', mensajes: [enlace('Una persona del equipo sigue contigo.'), botones('Elige', 'A')] }, { nombrePlan }).items;
+      expect(r[0]!['texto'], nombrePlan).toBe('Una persona del equipo sigue contigo.');
+      expect(titulos(r[1]!), nombrePlan).toEqual(['A']);
+      expect(JSON.stringify(r), nombrePlan).not.toMatch(/«menú»/);
+    }
+  });
+
+  it('el texto sin botón (recepción igual al cliente) nombra «menú» y NO el botón «Escribir al local»', () => {
+    const r = mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { numeroRecepcion: CLIENTE } }).items[0]!;
+    expect(r['payload'].type).toBe('text');
+    expect(r['texto']).toContain('escribe «menú»');
+    expect(r['texto']).not.toMatch(/escribir al local|bot[oó]n/i);
+  });
+
+  it('el enlace a la carta del catálogo abre ESA URL (no el chat del local); sin URL segura se pasa con el local y no se promete una carta', () => {
+    const URL_CARTA = 'https://carta.ejemplo.invalid/c?t=abc123';
+    const carta = (extra: J = {}): J => ({ tipo: 'enlace', catalogo: true, cuerpo: 'Mira nuestra carta y arma tu pedido.', botones: [{ id: '', title: 'Ver la carta' }], url: URL_CARTA, ...extra });
+    const ok = mensajes({ mensajes: [carta()] }).items[0]!;
+    expect(ok['payload'].interactive.type).toBe('cta_url');
+    expect(ok['payload'].interactive.action.parameters).toEqual({ display_text: 'Ver la carta', url: URL_CARTA });
+    expect(ok['payload'].interactive.action.parameters.url).not.toContain(REC);
+    expect(ok['texto']).toBe(`Mira nuestra carta y arma tu pedido. ${SEGUIR}`);
+    expect(ok['respaldo']).toContain(`Ver la carta: ${URL_CARTA}`);
+    expect(ok['tipoReporte']).toBe('interactive');
+    // Negativos: http, IP, usuario, puerto, vacío, otra cosa → la derivación (nunca un botón «Ver la carta» que abre el chat del local).
+    for (const mala of ['http://carta.ejemplo.invalid/c', 'https://10.0.0.1/c', ['https://usuario', 'carta.ejemplo.invalid/c'].join('@'), 'https://carta.ejemplo.invalid:8443/c', '', 'ftp://carta.ejemplo.invalid/c']) {
+      const i = mensajes({ mensajes: [carta({ url: mala })] }).items[0]!;
+      expect(i['texto'], mala).toBe(GENERICO);
+      expect(JSON.stringify(i['payload']), mala).not.toContain('Ver la carta');
+    }
+    // Sin la marca `catalogo`, un enlace con otra URL sigue siendo el chat del local (la regla de siempre).
+    const chat = mensajes({ mensajes: [enlace(GENERICO, { url: URL_CARTA })] }).items[0]!;
+    expect(chat['payload'].interactive.action.parameters.url).toMatch(new RegExp(`^https://wa\\.me/${REC}`));
+  });
+
+  it('`nivelEmojis`: «pocos» deja el primer emoji de cada mensaje, «ninguno» los quita todos, «muchos» no toca nada', () => {
+    const t = '¡Hola! 👋 Soy el asistente 🌮 de Q. ¿Qué te gustaría hacer? 😅';
+    const cuerpo = (nivel: string) => mensajes({ mensajes: [texto(t)] }, { cfg: { nivelEmojis: nivel } }).items[0]!['payload'].text.body;
+    expect(cuerpo('pocos')).toBe('¡Hola! 👋 Soy el asistente de Q. ¿Qué te gustaría hacer?');
+    expect(cuerpo('ninguno')).toBe('¡Hola! Soy el asistente de Q. ¿Qué te gustaría hacer?');
+    expect(cuerpo('muchos')).toBe(t);
+    // Sin el dato rige «pocos»; y un emoji al principio no deja un espacio suelto.
+    expect(mensajes({ mensajes: [texto(t)] }).items[0]!['payload'].text.body).toBe('¡Hola! 👋 Soy el asistente de Q. ¿Qué te gustaría hacer?');
+    expect(mensajes({ mensajes: [texto('🙂 Hola')] }, { cfg: { nivelEmojis: 'ninguno' } }).items[0]!['payload'].text.body).toBe('Hola');
+    // También en el mensaje con botón de enlace.
+    expect(mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { nivelEmojis: 'ninguno' } }).items[0]!['texto']).not.toContain('🙂');
   });
 });
