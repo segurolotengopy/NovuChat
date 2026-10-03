@@ -197,7 +197,7 @@ Validación por campo (si un campo no pasa, su respaldo; si falla el objeto, FAL
 - `rubroLibre`: 3 a 60 caracteres; sin `[]{}<>«»"` ni backtick; sin `=+-@` al inicio; no es una
   orden al asistente ni un no-rubro; y aparece en el texto del cliente o en el de la imagen
   (normalizado), o cada palabra de 4 letras o más aparece ahí.
-- `empatia`: 1 oración, ≤160, sin «?», pasa `cmRevisarRedaccion`. Si no: «Te entiendo.».
+- `empatia`: 1 oración, ≤100 caracteres, sin «?», pasa `cmRevisarRedaccion`. Si no: «Te entiendo.».
 - `respuesta`: ≤2 oraciones y 280 caracteres, sin «?», pasa `cmRevisarRedaccion` (sin montos,
   promesas, enlaces ni negar ser IA). Si no: se trata como «no lo tengo».
 - `aclaracion` válida: la respuesta es el texto de la consola, recortado a 300.
@@ -266,7 +266,7 @@ Guion inicial (ids de la consola de NovuChat):
   `]`, `<`, `>`; sin `REEMPLAZAR_`; sin URL.
 - `dolor`: 1 a 200 caracteres, una oración, sin «?». `pregunta`: 1 a 140, termina en una sola
   «?». Juntos: hasta 3 oraciones y 45 palabras.
-- `impacto`: 0 a 200, una oración, hasta 25 palabras, sin «?».
+- `impacto`: 0 a 160 caracteres, una oración, hasta 20 palabras, sin «?». Con empatía ≤100 caracteres y la pregunta fija, la oferta cabe en 3 oraciones y unas 45 palabras.
 - Cualquier clave `imagen` en el guion es un error (no se admiten imágenes).
 - Asesor: `"Hablar con " + nombre` ≤ 20; sin nombre, «Hablar con un asesor».
 - Ids `^[a-z0-9_-]{1,40}$`; `otro` obligatorio; hasta 20 rubros.
