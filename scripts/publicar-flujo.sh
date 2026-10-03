@@ -619,7 +619,7 @@ def aplanar(d, prefijo=""):
                 plano[ruta] = v
     return plano
 
-perdidos, cambiados, config_dif = [], [], []
+perdidos, cambiados, config_dif, solo_vivo, props_dif = [], [], [], [], []
 for n in nuevo["nodes"]:
     par = por_nombre.get(n["name"])
     if par is None:
@@ -638,6 +638,22 @@ for n in nuevo["nodes"]:
                 perdidos.append((n["name"], clave, valor))
         elif pv[clave] != valor:
             cambiados.append((n["name"], clave, pv[clave], valor))
+    # Parametros que SOLO tiene el vivo: --aplicar los borraria. Por clave,
+    # nunca por valor. Se ignoran los vacios (n8n a veces los guarda asi).
+    for clave, valor in pv.items():
+        if clave.startswith("assignments"):
+            continue
+        if clave not in pn and valor not in (None, "", [], {}):
+            solo_vivo.append((n["name"], clave))
+    # Propiedades del nodo que cambian el comportamiento. Si el origen no las
+    # declara se toma el valor por defecto de n8n (False / el del vivo en
+    # type), para no contar lo que n8n agrega.
+    for prop in ("type", "typeVersion"):
+        if par.get(prop) != n.get(prop):
+            props_dif.append((n["name"], prop))
+    for prop in ("disabled", "retryOnFail", "alwaysOutputData", "executeOnce"):
+        if bool(par.get(prop, False)) != bool(n.get(prop, False)):
+            props_dif.append((n["name"], prop))
     # Los campos de un nodo Set viven en una LISTA, no en un diccionario, asi
     # que el aplanado no los alcanza: hay que emparejarlos por nombre. Se
     # informan por LONGITUD, nunca mostrando el valor, porque son datos reales
@@ -662,7 +678,8 @@ for n in nuevo["nodes"]:
 if perdidos:
     print(f"\n  {A}El flujo vivo no tiene esto explicito, y el origen si:{FIN}")
     for nodo, clave, valor in perdidos:
-        print(f"    {A}!{FIN} {nodo} · {clave} = {json.dumps(valor, ensure_ascii=False)}")
+        # Por LONGITUD: el valor puede ser una URL de capacidad o un id real.
+        print(f"    {A}!{FIN} {nodo} · {clave}: origen {len(json.dumps(valor, ensure_ascii=False))} car. (vivo: ausente)")
         nota = NOTAS.get(clave) or NOTAS.get(clave.split(".")[-1])
         if nota:
             print(f"      {G}{nota}{FIN}")
@@ -670,10 +687,11 @@ if perdidos:
     print(f"  {G}descarto al importar. Aplicar los deja explicitos en los dos casos.{FIN}")
 
 if cambiados:
-    print(f"\n  {A}Valores distintos entre el flujo vivo y el origen:{FIN}")
+    print(f"\n  {A}Valores distintos entre el flujo vivo y el origen (se informa longitud, no valor):{FIN}")
     for nodo, clave, va, vb in cambiados:
-        corta = lambda x: (json.dumps(x, ensure_ascii=False)[:70] + "…") if len(json.dumps(x, ensure_ascii=False)) > 70 else json.dumps(x, ensure_ascii=False)
-        print(f"    {A}~{FIN} {nodo} · {clave}: vivo {corta(va)} -> origen {corta(vb)}")
+        # Por LONGITUD, nunca el valor (URL de capacidad, phoneNumberId...).
+        lon = lambda x: len(json.dumps(x, ensure_ascii=False))
+        print(f"    {A}~{FIN} {nodo} · {clave}: vivo {lon(va)} car. -> origen {lon(vb)} car.")
 
 if config_dif:
     print(f"\n  {A}Campos de configuracion distintos (se informa longitud, no valor):{FIN}")
@@ -691,8 +709,10 @@ if config_dif:
 # Para no dar falsos positivos: las conexiones se normalizan (sin ramas de
 # salida vacias al final, sin origenes sin destinos), y de `settings` solo se
 # comparan las claves que el origen declara (n8n agrega las suyas por defecto).
-# Las posiciones no se comparan: solo importan por el orden de las ramas, y ese
-# orden va en la estructura de conexiones y en settings.executionOrder.
+# Las posiciones ABSOLUTAS no se comparan, pero el ORDEN RELATIVO de los
+# destinos de un nodo con dos o mas destinos SI: con executionOrder v1 n8n
+# corre las ramas de arriba hacia abajo (a igual altura, de izquierda a
+# derecha), asi que mover un nodo por encima de otro cambia el comportamiento.
 def _conex(c):
     out = {}
     for origen, tipos in (c or {}).items():
@@ -718,10 +738,37 @@ for origen in sorted(set(cv_) | set(cn_)):
         continue
     if cv_.get(origen) != cn_.get(origen):
         estructura.append((origen, "conexiones de salida distintas"))
+# Orden de las ramas: destinos de cada nodo (con >= 2), por (y, x), a cada lado.
+def _orden_ramas(flujo_):
+    pos = {x["name"]: tuple(x.get("position") or (0, 0)) for x in flujo_.get("nodes", [])}
+    out = {}
+    for origen, tipos in (flujo_.get("connections") or {}).items():
+        dest = {d.get("node") for ramas in (tipos or {}).values() for r in (ramas or []) for d in (r or [])}
+        if len(dest) >= 2 and all(d in pos for d in dest):
+            out[origen] = sorted(dest, key=lambda d: (pos[d][1], pos[d][0], d))
+    return out
+ov_, on_ = _orden_ramas(vivo), _orden_ramas(nuevo)
+for origen in sorted(set(ov_) & set(on_)):
+    if origen in nuevos or origen in sin_par:
+        continue
+    if set(ov_[origen]) == set(on_[origen]) and ov_[origen] != on_[origen]:
+        estructura.append((origen, "orden de ramas distinto (el orden de los destinos en el lienzo cambia)"))
+# Propiedades de nodo y parametros presentes solo en el vivo (nombre y clave, nunca valor).
+for nodo_, prop in props_dif:
+    estructura.append((nodo_, f"propiedad distinta: {prop}"))
+for nodo_, clave in solo_vivo:
+    estructura.append((nodo_, f"parametro presente solo en el vivo, --aplicar lo borraria: {clave}"))
 sv_, sn_ = vivo.get("settings") or {}, nuevo.get("settings") or {}
 claves_set = sorted(k for k in sn_ if sv_.get(k) != sn_.get(k))
 if claves_set:
     estructura.append(("(settings del flujo)", "claves distintas: " + ", ".join(claves_set)))
+# Claves de settings que solo tiene el vivo: --aplicar las borraria. Se ignoran
+# las que n8n agrega por defecto.
+SETTINGS_DE_N8N = {"callerPolicy", "availableInMCP", "saveManualExecutions", "saveExecutionProgress",
+                   "saveDataErrorExecution", "saveDataSuccessExecution", "binaryMode", "callerIds"}
+solo_set = sorted(k for k in sv_ if k not in sn_ and k not in SETTINGS_DE_N8N)
+if solo_set:
+    estructura.append(("(settings del flujo)", "claves solo en el vivo, --aplicar las borraria: " + ", ".join(solo_set)))
 
 if estructura:
     print(f"\n  {A}Diferencias de estructura entre el flujo vivo y el origen ({len(estructura)}):{FIN}")
