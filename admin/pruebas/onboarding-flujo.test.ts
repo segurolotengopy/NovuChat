@@ -1059,10 +1059,26 @@ describe('Estructura del flujo', () => {
     }
   });
 
-  // Hoy el código de Core rechaza el descarte de un audio (solo texto escrito);
-  // la decisión del 03/10/2026 es que un audio transcrito también cuenta, y el
-  // cambio lo hace `core-flujos`. Cuando llegue, esta prueba se enciende.
-  it.todo('audio: «me equivoqué de número» transcrito con [DESCARTE] → Descalificado (espera el cambio de Core)');
+  // Un audio transcrito también cuenta para el descarte (Andres, 03/10/2026);
+  // uno que no se pudo transcribir, no.
+  it('audio: «me equivoqué de número» transcrito con [DESCARTE] → Descalificado; sin transcripción, no', () => {
+    const modelo = 'Sin problema.\n[DESCARTE]numero_equivocado[/DESCARTE]';
+    const conAudio = (userInput: string, esMedioAudio: boolean) => {
+      const sd: J = {};
+      const cfg = config();
+      estado(normalizar(texto('hola'), cfg), sd);
+      const e = estado(normalizar({ type: 'audio', audio: { id: 'media-1' } }, cfg), sd)[0]!;
+      return correr('Procesar respuesta', [{ output: modelo }],
+        { 'Estado de la conversación': { ...e, userInput, tipo: 'audio', esMedioAudio } }, sd)[0]!;
+    };
+    const ok = conAudio('(audio transcripto) perdón, creo que me equivoqué de número', true);
+    expect(ok['hechos']['descarte']).toBe('numero_equivocado');
+    expect(ok['avisos']).not.toContain('descarte_rechazado');
+    // Negando: un audio que no se pudo abrir no descalifica.
+    const sin = conAudio('AVISO_SISTEMA: el cliente envio una NOTA DE VOZ que no se pudo abrir. Pidele con amabilidad que te lo escriba.', false);
+    expect(sin['hechos']['descarte']).toBe('');
+    expect(sin['avisos']).toContain('descarte_rechazado');
+  });
 
   it('todo lo que sale al cliente pasa por «Salida»', () => {
     for (const rama of ['Uso extendido', 'Traspaso a un asesor',
