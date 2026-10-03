@@ -165,11 +165,34 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     const t = turno(m, { mensaje: texto('quiero ver la carta') }, conEnlace(URL_CATALOGO));
     expect(mensajes(t)).toEqual([{
       tipo: 'enlace', catalogo: true,
-      cuerpo: 'Esta es nuestra carta. Elige y confirma ahí, o escríbeme lo que quieres. Si quieres seguir con tu pedido o tu reserva, escribe «menú».',
+      cuerpo: 'Esta es nuestra carta. Elige ahí tus productos y vuelve al chat para confirmar el pedido, o escríbeme lo que quieres. Si quieres seguir con tu pedido o tu reserva, escribe «menú».',
       botones: [{ id: '', title: 'Ver la carta' }], url: URL_CATALOGO,
     }]);
     expect(estadoDe(m)['paso']).toBe('pedido');
     expect(error(t)).toEqual([]);
+  });
+
+  it('la carta como enlace NO promete confirmar en la página, y con un pedido guardado dice que sigue ahí (igual que la carta en texto)', () => {
+    const m = crear();
+    const sin = turno(m, { mensaje: texto('quiero ver la carta') }, conEnlace(URL_CATALOGO));
+    const cuerpoSin = String(mensajes(sin)[0]!['cuerpo']);
+    expect(cuerpoSin).not.toMatch(/confirma ah|confirmar ah/i);
+    expect(cuerpoSin).toContain('vuelve al chat para confirmar el pedido');
+    expect(cuerpoSin).not.toContain('sigue guardado');
+    // Un pedido en curso (llegó un carrito) y luego «carta»: el enlace lleva el aviso, en el mismo mensaje (0 mensajes de más).
+    const c = crear();
+    carrito(c, {}, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['paso']).toBe('pedido_confirmar');
+    const t = turno(c, { mensaje: texto('quiero ver la carta') }, conEnlace(URL_CATALOGO));
+    expect(mensajes(t)).toHaveLength(1);
+    expect(mensajes(t)[0]!['tipo']).toBe('enlace');
+    expect(String(mensajes(t)[0]!['cuerpo'])).toMatch(/^Tu pedido sigue guardado \(\d+ productos?\)\. Esta es nuestra carta\./);
+    expect(mensajes(t)[0]!['url']).toBe(URL_CATALOGO);
+    // Sin enlace, la carta en texto lleva el mismo aviso (como siempre).
+    const d = crear();
+    carrito(d, {}, respuesta());
+    const texto2 = turno(d, { mensaje: texto('quiero ver la carta') }, respuesta());
+    expect(String(mensajes(texto2)[0]!['cuerpo'])).toMatch(/^Tu pedido sigue guardado/);
   });
 
   it('el botón «Hacer un pedido» y «Cambiar algo» también dan el enlace', () => {

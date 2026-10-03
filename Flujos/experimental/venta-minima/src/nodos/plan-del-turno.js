@@ -176,8 +176,11 @@ function despachar() {
 function notaDelPedidoGuardado() {
   const n = en.carrito.reduce((suma, l) => suma + (l && Number.isInteger(l.cantidad) && l.cantidad > 0 ? l.cantidad : 0), 0);
   const primero = mensajes[0];
-  if (!n || !primero || primero.tipo !== 'texto' || typeof primero.cuerpo !== 'string') return;
-  mensajes[0] = Object.assign({}, primero, { cuerpo: 'Tu pedido sigue guardado (' + n + (n === 1 ? ' producto' : ' productos') + ').\n\n' + primero.cuerpo });
+  if (!n || !primero || typeof primero.cuerpo !== 'string') return;
+  const aviso = 'Tu pedido sigue guardado (' + n + (n === 1 ? ' producto' : ' productos') + ').';
+  // La carta en texto lleva el aviso en su propio párrafo; la carta como enlace (un solo mensaje con botón) lo lleva al comienzo del cuerpo.
+  if (primero.tipo === 'texto') mensajes[0] = Object.assign({}, primero, { cuerpo: aviso + '\n\n' + primero.cuerpo });
+  else if (primero.tipo === 'enlace' && primero.catalogo === true) mensajes[0] = Object.assign({}, primero, { cuerpo: aviso + ' ' + primero.cuerpo });
 }
 
 // --- Un resumen más largo que un mensaje con botones ---------------------------------------
@@ -394,7 +397,7 @@ function mensajesDeCarta(enlace) {
   if (url) {
     return [{
       tipo: 'enlace', catalogo: true,
-      cuerpo: 'Esta es nuestra carta. Elige y confirma ahí, o escríbeme lo que quieres. Si quieres seguir con tu pedido o tu reserva, escribe «menú».',
+      cuerpo: 'Esta es nuestra carta. Elige ahí tus productos y vuelve al chat para confirmar el pedido, o escríbeme lo que quieres. Si quieres seguir con tu pedido o tu reserva, escribe «menú».',
       botones: [{ id: '', title: 'Ver la carta' }], url: url,
     }];
   }
