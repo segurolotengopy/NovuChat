@@ -137,8 +137,10 @@ const pedidoDeLaRef = (() => {
   const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
   const propio = ref && Object.prototype.hasOwnProperty.call(guardados, ref) ? guardados[ref] : null;
   if (propio && typeof propio === 'object' && String(propio.from) === from) return propio;
+  // Igual que `aComprobante`: sin referencia del servidor (`pedido: null`) el pedido es el del estado; con referencia, solo si es ESE mismo.
   const enEstado = sd ? vmLeerEstado(sd, from, ahoraMs).pedido : null;
-  return ref && enEstado && typeof enEstado === 'object' && String(enEstado.pedidoId) === ref ? enEstado : null;
+  if (!enEstado || typeof enEstado !== 'object') return null;
+  return !ref || String(enEstado.pedidoId) === ref ? enEstado : null;
 })();
 const pedidoSimulado = !!pedidoDeLaRef && pedidoDeLaRef.simulado === true;
 const llegaComoComprobanteReal = (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.modo !== 'simulado' && cobro.pendiente === true;

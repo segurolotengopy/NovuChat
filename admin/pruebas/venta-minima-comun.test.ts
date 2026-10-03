@@ -960,6 +960,18 @@ describe('Interpretar entrada', () => {
     // Sin cobro real pendiente tampoco hay nada cruzado.
     expect(uno(img, { cfg: { ...cfg, cobro: { ...cfg.cobro, pendiente: false } }, raiz: raiz({ from: CLIENTE, simulado: true }) })).toMatchObject({ comprobanteCruzado: false });
   });
+  it('H2 con la referencia VACÍA (`pedido: null` del servidor): se usa el pedido simulado del estado, igual que `aComprobante`; con otra referencia, no', () => {
+    const img = mensaje({ type: 'image', image: { id: 'media-i1' } });
+    const estado = (pedido: J) => ({ ventaMinima: { estados: { [CLIENTE]: { paso: 'esperando_comprobante', ultimoMensajeMs: AHORA - 1000, pedido } } } });
+    const cfg = (pedidoRef: string) => ({ ...CFG, cobro: { ...COBRO_PENDIENTE, modo: 'real', pedidoRef } });
+    // Sin referencia y con un pedido SIMULADO en el estado: cruzado (no se baja, no se lee, no se coteja).
+    expect(uno(img, { cfg: cfg(''), raiz: estado({ pedidoId: 'ped-sim-1', simulado: true }) })).toMatchObject({ esComprobante: false, comprobanteCruzado: true });
+    // NEGANDO: el pedido del estado REAL, o sin pedido, con referencia vacía sigue siendo un comprobante real.
+    expect(uno(img, { cfg: cfg(''), raiz: estado({ pedidoId: 'ped-real-1', simulado: false }) })).toMatchObject({ esComprobante: true, comprobanteCruzado: false });
+    expect(uno(img, { cfg: cfg('') })).toMatchObject({ esComprobante: true, comprobanteCruzado: false });
+    // Con una referencia que NO es la del pedido del estado, no se mezcla.
+    expect(uno(img, { cfg: cfg('ped-otro'), raiz: estado({ pedidoId: 'ped-sim-1', simulado: true }) })).toMatchObject({ esComprobante: true, comprobanteCruzado: false });
+  });
   it('location pasa a `ubicacion`; una coordenada inválida la deja en null', () => {
     const u = uno(mensaje({ type: 'location', location: { latitude: -16.5, longitude: -68.15, name: 'Casa', address: 'Calle 1 <b>' } }));
     expect(u).toMatchObject({ tipo: 'location', texto: '', ubicacion: { latitud: -16.5, longitud: -68.15, nombre: 'Casa', direccion: 'Calle 1 b' } });
