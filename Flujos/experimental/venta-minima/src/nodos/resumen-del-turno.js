@@ -37,8 +37,10 @@ if (vmNodo('Enviar a WhatsApp')) {
       || vmTodos('Enviar aviso').concat(vmTodos('Aviso de respaldo')).some(rtId);
     const RT_from = String(RT_t.from || '');
     if (RT_sd && RT_hecho) {
+      // Solo si `Decidir turno` corrio (hubo una conversacion que dejo un paso nuevo) y el estado no es `esperando_comprobante`: un turno de
+      // «Uso extendido» no pasa por la conversacion, y la derivacion con un QR en espera conserva ese paso A PROPOSITO.
       const RT_actual = RT_sd.estados && RT_sd.estados[RT_from];
-      if (RT_actual && typeof RT_actual === 'object') RT_actual.paso = 'menu';
+      if (RT_d && RT_actual && typeof RT_actual === 'object' && RT_actual.paso !== 'esperando_comprobante') RT_actual.paso = 'menu';
     } else if (RT_sd && RT_d && RT_d.estado && typeof RT_d.estado === 'object' && RT_from) {
       if (vmEscribirEstado(RT_sd, RT_from, RT_d.estado, Number(RT_t.ahoraMs) || Date.now()) && Number(RT_d.anclaMs) > 0) {
         RT_sd.estados[RT_from].ultimoMensajeMs = Number(RT_d.anclaMs);

@@ -4489,3 +4489,53 @@ describe('cobro SIMULADO: el QR de prueba, cualquier foto como comprobante simul
     expect(QTACO.nodes.some((n) => /simulad/i.test(n.name))).toBe(false); // el simulado no agrega nodos
   });
 });
+
+// =============================================================================================================================
+// REVISIÓN DEL PR #382 (menor 2): R3 con hecho externo NO fuerza `menu` donde la conversación no corrió o conserva el cobro a propósito
+// =============================================================================================================================
+describe('R3 con hecho externo: no pisa el paso de un turno de «Uso extendido» ni el `esperando_comprobante` conservado', () => {
+  const tocaTolerando = (w: Mundial, m: Mensaje): ResultadoTurno => w.mundo.turno(entrega(CLIENTE, m), { tolerarFallo: true });
+  const fallaTodo = (w: Mundial): void => { w.fallan.add('Enviar a WhatsApp'); w.fallan.add('Enviar respaldo'); };
+
+  it('uso extendido (el aviso a recepción salió, el mensaje fijo no llegó): el paso del cliente NO cambia a `menu`', () => {
+    const r = armarPedido({ ventana: 5 });
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    r.w.estado.panel = panel({ ...COBRO_REAL, atencion: { estado: 'operador', mensajeFijo: 'Gracias por tu paciencia. Una persona del equipo sigue contigo.', avisarRecepcion: 'operador', respuestasEnVentana: 80 } });
+    fallaTodo(r.w);
+    const t = tocaTolerando(r.w, mTexto('hola, ¿hay alguien?'));
+    expect(t.ejecutados.has('Uso extendido')).toBe(true);
+    expect(t.ejecutados.has('Decidir turno')).toBe(false);
+    expect(t.fallo?.mensaje).toMatch(/Entrega fallida/);
+    expect(t.avisos.length, 'el aviso salió: hecho externo').toBeGreaterThan(0);
+    expect(estadoDe(r.w.mundo)['paso'], 'la conversación no corrió: su paso no se toca').toBe('pedido_confirmar');
+    expect((estadoDe(r.w.mundo)['carrito'] as J[]).length).toBe(1);
+  });
+
+  it('derivación con un QR en espera (el aviso salió, el mensaje no): el estado sigue en `esperando_comprobante` y «Reenviar QR» y «Cancelar pedido» siguen valiendo', () => {
+    const r = armarPedido({ ventana: 5 });
+    const qr = confirmarPedido(r);
+    const abierto = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado');
+    r.w.estado.panel = panel(conCobroPendiente(String(abierto?.['referencia']), Number(abierto?.['monto'])));
+    const codigo = String((estadoDe(r.w.mundo)['pedido'] as J)['codigo']);
+    fallaTodo(r.w);
+    const t = tocaTolerando(r.w, mTexto('quiero hablar con una persona'));
+    expect(t.fallo?.mensaje).toMatch(/Entrega fallida/);
+    expect(t.avisos.length, 'el aviso de transferencia salió').toBeGreaterThan(0);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
+    expect((estadoDe(r.w.mundo)['pedido'] as J)['codigo']).toBe(codigo);
+    r.w.fallan.clear();
+    expect(r.c.toca('q|reenviar', 'Reenviar QR').mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    r.c.toca('q|cancelar', 'Cancelar pedido');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+  });
+
+  it('NEGANDO: un turno de conversación con aviso y cierre ya hechos (plan B) SIGUE pasando a `menu` (no se aflojó el caso del punto 1)', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    const id = idDeBoton(r.resumen, 'Confirmar pedido');
+    fallaTodo(r.w);
+    const t = tocaTolerando(r.w, mBoton(id, 'Confirmar pedido'));
+    expect(t.fallo?.mensaje).toMatch(/Entrega fallida/);
+    expect(t.llamadas.cierre.length).toBeGreaterThan(0);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+  });
+});
