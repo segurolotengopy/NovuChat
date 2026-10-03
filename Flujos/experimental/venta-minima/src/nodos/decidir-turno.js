@@ -173,6 +173,15 @@ if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar
 const enComprobante = paso === 'esperando_comprobante';
 const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm);
 const quiereReservar = /reserv|\bmesa\b/.test(norm);
+// FALSOS POSITIVOS (revisión del PR #382): las intenciones globales de CARTA y RESERVA valen en `inicio` y `menu` sin límite de largo, pero
+// en los demás pasos solo con un mensaje CORTO (hasta 60 caracteres) y nunca mientras se piden los datos de entrega (`pedido_entrega`,
+// `pedido_datos`): una dirección («edificio Mesa Grande») o una referencia no es «quiero una mesa». «Que tienen» no es la carta si el
+// mensaje ya pide algo («quiero tacos, ¿qué tienen de postre?»), y «pedir» dentro de una reserva no es cambiar de rumbo si es una
+// pregunta («¿se puede pedir torta?»).
+const enDatosDeEntrega = paso === 'pedido_entrega' || paso === 'pedido_datos';
+const globalCorto = paso === 'inicio' || paso === 'menu' || (norm.length <= 60 && !enDatosDeEntrega);
+const pideAlgo = /\b(quiero|quisiera|queremos|necesito|dame|me das|ponme|pedir|pedido)\b/.test(norm);
+const esPregunta = /[?¿]/.test(texto) || /\b(se puede|puedo|pueden|podria|podrian|hay|tienen|aceptan)\b/.test(norm);
 if (/^(menu|menu principal|inicio|volver al menu)$/.test(norm) || (!enComprobante && /^(hola|volver|atras)$/.test(norm))) {
   return salir('menu', { motivo: 'menu' });
 }
@@ -185,12 +194,12 @@ if (!enComprobante) {
     return salir('menu', { motivo: 'reinicio', limpiar: paso.indexOf('reserva') === 0 ? 'reserva' : (paso.indexOf('pedido') === 0 ? 'pedido' : 'todo') });
   }
   // La carta, en cualquier paso. Un pedido que la nombra («tres tacos de la carta») no es esta intención.
-  if (pedidosOn && norm.length <= 80 && !/\d/.test(norm) && /\b(carta|catalogo|que tienen)\b/.test(norm)
+  if (pedidosOn && globalCorto && norm.length <= 80 && !/\d/.test(norm) && (/\b(carta|catalogo)\b/.test(norm) || (/\bque tienen\b/.test(norm) && !pideAlgo))
     && !/\b(de|en|segun) la carta\b/.test(norm)) return salir('carta', { motivo: 'carta', consulta: 'carta' });
   // La reserva, en cualquier paso (en un paso de reserva sigue su camino «por paso»).
-  if (reservasOn && quiereReservar && paso.indexOf('reserva') !== 0) return extraerReserva();
+  if (reservasOn && quiereReservar && paso.indexOf('reserva') !== 0 && globalCorto) return extraerReserva();
   // El pedido, estando en una reserva: el carrito sigue donde se dejó.
-  if (pedidosOn && paso.indexOf('reserva') === 0 && /\b(pedir|pedido)\b/.test(norm)) return extraerPedido();
+  if (pedidosOn && paso.indexOf('reserva') === 0 && norm.length <= 60 && !esPregunta && /\b(pedir|pedido)\b/.test(norm)) return extraerPedido();
 }
 
 // --- Un «sí» suelto no confirma nada; una pregunta orden/unidad pendiente se vuelve a mostrar --

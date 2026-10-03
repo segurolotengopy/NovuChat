@@ -4080,6 +4080,77 @@ describe('esperando_comprobante: «menú» y la derivación conservan el paso y 
 });
 
 // =============================================================================================================================
+// REVISIÓN DEL PR #382, punto 9: falsos positivos de las intenciones globales (reserva, carta, «pedir» dentro de una reserva)
+// =============================================================================================================================
+describe('intenciones globales: «mesa» en una dirección, «qué tienen» dentro de un pedido y «pedir» en una pregunta de reserva NO cambian de rumbo', () => {
+  it('«mesa» dentro de una dirección o referencia (paso de datos de entrega) es la dirección, no una reserva', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery' });
+    c.escribe('quiero 4 tacos de birria para delivery');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+    w.estado.extraccion = EX([], { entrega: 'delivery', direccion: 'Av. Banzer, edificio Mesa Grande, piso 3', referencia: 'puerta azul', nombre: 'Carlos Pérez' });
+    const t = c.escribe('Av. Banzer, edificio Mesa Grande, piso 3, puerta azul');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(estadoDe(w.mundo)['reserva'] ?? null).toBeNull();
+    expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido'))).toBe(true);
+  });
+
+  it('«¿qué tienen de postre?» dentro de un pedido de texto sigue siendo el pedido (no manda la carta), pero «¿qué tienen?» solo sí manda la carta', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 1, 'unidad')]);
+    const t = c.escribe('quiero tacos de birria, ¿qué tienen de postre?');
+    expect(t.llamadas.extraer).toHaveLength(1);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length).toBe(1);
+    // NEGANDO: la pregunta sola sí es la carta (sin llamar al modelo).
+    const sola = c.escribe('¿qué tienen?');
+    expect(sola.llamadas.extraer).toHaveLength(0);
+    expect(cuerpos(sola).join('\n')).toContain('Esta es nuestra carta');
+  });
+
+  it('«¿se puede pedir torta?» dentro de una reserva sigue siendo la reserva; «quiero pedir» sí cambia al pedido', () => {
+    const r = armarReserva({ ventana: 5 });
+    expect(estadoDe(r.w.mundo)['paso']).toBe('reserva_confirmar');
+    r.w.estado.extraccion = { ...RESERVA_OK };
+    r.c.escribe('¿se puede pedir torta?');
+    expect(String(estadoDe(r.w.mundo)['paso'])).toMatch(/^reserva/);
+    r.c.escribe('se puede pedir una torta para el cumpleaños');
+    expect(String(estadoDe(r.w.mundo)['paso'])).toMatch(/^reserva/);
+    // NEGANDO: pedir de verdad, con un mensaje corto, sí cambia al pedido y la reserva sigue guardada.
+    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')]);
+    r.c.escribe('quiero pedir');
+    expect(String(estadoDe(r.w.mundo)['paso'])).toMatch(/^pedido/);
+    expect(estadoDe(r.w.mundo)['reserva'] ?? null).not.toBeNull();
+  });
+
+  it('NEGANDO: una reserva larga desde el inicio o el menú se sigue entendiendo (el límite de 60 caracteres no vale ahí)', () => {
+    const largo = 'quiero reservar una mesa para seis personas el viernes a las ocho de la noche en la terraza por favor';
+    expect(largo.length).toBeGreaterThan(60);
+    for (const antes of [() => undefined, (c: ReturnType<typeof con>) => c.escribe('hola')]) {
+      const w = crear();
+      const c = con(w);
+      antes(c);
+      w.estado.extraccion = { ...RESERVA_OK };
+      c.escribe(largo);
+      expect(String(estadoDe(w.mundo)['paso'])).toMatch(/^reserva/);
+    }
+    // Y «reservar» corto, en medio de un pedido, sigue valiendo.
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = { ...RESERVA_OK };
+    c.escribe('quiero reservar una mesa');
+    expect(String(estadoDe(w.mundo)['paso'])).toMatch(/^reserva/);
+  });
+});
+
+// =============================================================================================================================
 // REVISIÓN DEL PR #382, punto 3: una palabra excluida no se esquiva como nota o detalle de un producto que sí se vende
 // =============================================================================================================================
 describe('excluidos de punta a punta: «jamaica shot», «limonada con tequila», «gaseosa con ron» y «paleta mango chamoy» no llegan al restaurante', () => {
