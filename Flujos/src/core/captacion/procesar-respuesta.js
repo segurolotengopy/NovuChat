@@ -7,7 +7,7 @@
 //
 // LAS MARCAS, que el cliente nunca ve:
 //   [LEAD]{json}[/LEAD]  datos del prospecto que el cliente dio o corrigio en este turno.
-//   [RUBROS]             pide la LISTA de rubros de la consola (mensaje interactivo de lista).
+//   [RUBROS]             ya no dispara nada (la lista la adjunta el codigo cuando corresponde); se quita si el modelo la escribe.
 //   [PLANES]             se reemplaza por los planes y cargos con los precios EXACTOS de la
 //                        consola, solo si hay rubro (o eligio «Otro»). Con un archivo de planes
 //                        valido (imagen o PDF) el archivo es el encabezado del mensaje y el
@@ -49,7 +49,9 @@ const BOTON_PLANES = { type: 'reply', reply: { id: 'planes', title: 'Ver planes'
 // traduce `Decidir fila de la planilla` a una etiqueta.
 const MOTIVOS_DESCARTE = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
 // Quien pide los planes o los precios escribiendo, con rubro registrado.
-const PIDE_PLANES = /(precio|precios|planes?|cu[aá]nto\s+(cuesta|sale|cobran|vale)|costo|tarifa|cotiza)/i;
+const PIDE_PLANES = /(^|[^a-záéíóúñ])(precios?|planes|tarifas?|cu[aá]nto\s+(cuesta|sale|cobran|vale))(?![a-záéíóúñ])/i;
+// Ofrecer al asesor, tambien en forma de pregunta: el mensaje lleva el boton (solo se ofrece lo que se cumple).
+const OFRECE_ASESOR = /(hablar|pasarte|comunicarte|conectarte)\s+con\s+(un[ao]?\s+)?(asesor[a]?|especialista|persona)/i;
 const PIDE_ASESOR = 'Si quieres hablar con un asesor, escríbeme «asesor».';
 const SUFIJO = { mes: '/mes', anio: '/año', unico: ', pago único' };
 const monto = (n) => Number.isInteger(n) ? String(n) : n.toFixed(2).replace('.', ',');
@@ -102,15 +104,21 @@ function bloquePlanes(ent, compacto) {
 
 // El texto del turno: el del modelo -- con la marca de los planes -- y el bloque
 // que le toca. El mensaje de los planes termina siempre con la pregunta por el
-// especialista, la haya escrito el modelo o no. Es una funcion y no dos lineas
+// asesor, la haya escrito el modelo o no. Es una funcion y no dos lineas
 // sueltas porque el texto se vuelve a armar con el bloque compacto o con el
 // texto recortado cuando no entra en el limite.
-const PREGUNTA_ESPECIALISTA = '¿Te gustaría hablar con un especialista?';
+const PREGUNTA_ASESOR = '¿Te gustaría hablar con un asesor?';
 function armar(conMarca, bloque) {
   if (!bloque) return conMarca.replace(/\u0002/g, '').replace(/\n{3,}/g, '\n\n').trim();
-  let t = conMarca.replace('\u0002', '\n' + bloque + '\n').replace(/\u0002/g, '');
+  // Si despues del bloque no hay pregunta, la del codigo reemplaza a la que el modelo dejo antes.
+  const k = conMarca.indexOf('\u0002');
+  const trasMarca = k >= 0 ? conMarca.slice(k + 1) : '';
+  const antesDelBloque = k >= 0 ? conMarca.slice(0, k) : conMarca;
+  const sinPreguntaDespues = !/\?/.test(trasMarca);
+  const previo = sinPreguntaDespues ? quitarUltimaPregunta(antesDelBloque) : antesDelBloque;
+  let t = (k >= 0 ? previo + '\u0002' + trasMarca : conMarca).replace('\u0002', '\n' + bloque + '\n').replace(/\u0002/g, '');
   const cola = t.slice(t.lastIndexOf(bloque) + bloque.length);
-  if (!/\?/.test(cola)) t = t.trimEnd() + '\n\n' + PREGUNTA_ESPECIALISTA;
+  if (!/\?/.test(cola)) t = t.trimEnd() + '\n\n' + PREGUNTA_ASESOR;
   return t.replace(/\n{3,}/g, '\n\n').trim();
 }
 
@@ -281,6 +289,34 @@ const EMOJIS = '\\p{Extended_Pictographic}\\p{Emoji_Modifier}\\p{Regional_Indica
 const SOLO_EMOJIS = new RegExp('^[\\s' + EMOJIS + ']+$', 'u');
 const FIN_PREGUNTA = new RegExp('\\?[\\s' + EMOJIS + ']*$', 'u');
 const terminaEnPregunta = (t) => FIN_PREGUNTA.test(String(t));
+// UNA SOLA PREGUNTA POR MENSAJE: cuando el codigo debe poner la suya, REEMPLAZA la ultima del
+// modelo en vez de sumarla. `quitarUltimaPregunta` la quita; `separarPregunta` la aparta para
+// ponerla al final (el texto de respaldo termina siempre en la pregunta).
+function ultimaPregunta(t) {
+  const re = /¿[^¿?]*\?|[^.!?¿…\n]+\?/g;
+  let m;
+  let ult = null;
+  while ((m = re.exec(String(t))) !== null) ult = m;
+  return ult;
+}
+function quitarUltimaPregunta(t) {
+  const m = ultimaPregunta(t);
+  if (!m) return String(t);
+  const antes = String(t).slice(0, m.index).trimEnd();
+  const despues = String(t).slice(m.index + m[0].length).trim();
+  if (despues) return [antes, despues].filter(Boolean).join(' ');
+  return antes.replace(/[,;:]+$/, '.').trim();
+}
+function separarPregunta(t) {
+  const m = terminaEnPregunta(t) ? ultimaPregunta(t) : null;
+  if (!m) return { cuerpo: String(t), pregunta: '' };
+  return { cuerpo: String(t).slice(0, m.index).trimEnd().replace(/[,;:]+$/, '.'), pregunta: m[0].trim() };
+}
+// El texto con `cola` antes de su pregunta final: la pregunta sigue siendo lo ultimo.
+const conCola = (t, cola) => {
+  const { cuerpo, pregunta } = separarPregunta(t);
+  return [cuerpo, cola, pregunta].filter(Boolean).join('\n\n');
+};
 // Una linea que solo tiene emojis se une a la ultima linea con texto; si no
 // hay ninguna antes, se quita. Sin dejar lineas vacias dobles.
 function sinEmojisSueltos(t) {
@@ -318,9 +354,9 @@ function sinEnumeracion(t, rubros) {
 }
 
 // c. Una oracion con un precio.
-const PRECIO = /(USD|US\$|\$us|\$\s?\d|\d+([.,]\d+)?\s*(d[oó]lares|bs\.?|bolivianos))/i;
+const PRECIO = /(USD|US\$|\$us|\$\s?\d|\bbs\.?\s?\d|\d+([.,]\d+)?\s*(d[oó]lares|bs\.?|bolivianos)|\d+([.,]\d+)?\s+al\s+mes)/i;
 function sinPrecios(t) {
-  return t.split('\n').map((l) => l.split(/(?<=[.!?…])\s+/).filter((o) => !PRECIO.test(o)).join(' '))
+  return t.split('\n').map((l) => l.split(/(?<=(?<!\bbs)[.!?…])\s+/i).filter((o) => !PRECIO.test(o)).join(' '))
     .join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 // ¿El texto ya pregunta por esto?
@@ -428,7 +464,6 @@ for (let i = 0; i < items.length; i++) {
     || (items[i].json.output === undefined && items[i].json.text === undefined);
 
   const { lead, invalido } = leerLead(bruto);
-  const modeloPusoRubros = /\[RUBROS\]/i.test(bruto);
   const conPlanes = /\[PLANES\]/i.test(bruto);
   const rubros = Array.isArray(ent.rubros) ? ent.rubros : [];
   const hayPlanes = Array.isArray(ent.planes) && ent.planes.length > 0;
@@ -449,7 +484,7 @@ for (let i = 0; i < items.length; i++) {
     .replace(/\[\/?LEAD\]/gi, '')
     .replace(/\[DESCARTE\][\s\S]*?\[\/DESCARTE\]/gi, '')
     .replace(/\[\/?DESCARTE\]/gi, '')
-    .replace(/\[RUBROS\]/gi, '\u0001')
+    .replace(/\[RUBROS\]/gi, '') // la lista la adjunta el codigo; la marca sobra y se quita si el modelo la escribe
     .replace(/\[PLANES\]/gi, '\u0002')
     .replace(/\[[A-ZÁÉÍÓÚÑ_ ]{3,30}\]/g, '')
     .trim();
@@ -542,9 +577,18 @@ for (let i = 0; i < items.length; i++) {
   // c. Los planes y los precios, solo con rubro (o «Otro»). Desde el 03/10/2026
   // la empresa ya no se pide al inicio y no es condicion. Quien toco «Ver
   // planes» los recibe aunque el modelo olvide la marca.
-  const toquePlanes = ent.tocoPlanesEsteTurno === true;
+  // Un pedido de planes que se hizo SIN rubro es una promesa: al registrarse el rubro, salen
+  // (`c.planesPendientes`; `Estado de la conversación` lo cumple al registrarlo). Si el rubro
+  // lo valida el [LEAD] en este turno, se cumple aqui.
+  const cumplePendiente = c?.planesPendientes === true && !ent.tocoPlanesEsteTurno
+    && (rubroDelTurno || ent.eligioOtroEsteTurno === true) && (!!combinado.rubro || hechos.eligioOtro === true);
+  const toquePlanes = ent.tocoPlanesEsteTurno === true || cumplePendiente;
   const fichaLista = !!combinado.rubro || hechos.eligioOtro === true;
-  const queriaPlanes = conPlanes || toquePlanes;
+  // El texto del cliente que pide planes o precios (no se mira en el turno en que contesta su
+  // dolor, salvo con [PLANES] o un toque: «me preguntan precios todo el dia» no es un pedido).
+  const miraElTexto = ent.respondioDolorEsteTurno !== true || conPlanes || toquePlanes;
+  const pidePorTexto = miraElTexto && PIDE_PLANES.test(dicho);
+  const queriaPlanes = conPlanes || toquePlanes || (pidePorTexto && !fichaLista);
   const planesMostrados = queriaPlanes && fichaLista;
   let retenidos = false;
   if (queriaPlanes && !fichaLista) {
@@ -559,11 +603,11 @@ for (let i = 0; i < items.length; i++) {
   }
   if (planesMostrados && !texto.includes('\u0002')) texto = texto.trimEnd() + '\n\u0002';
 
-  // HECHO: pidio los planes. El toque en «Ver planes», o el texto que los pide
-  // con rubro (o «Otro») al cerrar el turno. Un toque sin rubro (una campaña
-  // con destino `planes`) no es un hecho hasta que haya rubro (C22).
+  // HECHO: pidio los planes. El toque en «Ver planes» (o el rubro que cumple un pedido
+  // pendiente), o el texto que los pide con rubro (o «Otro») al cerrar el turno. Un toque sin
+  // rubro (una campaña con destino `planes`) no es un hecho hasta que haya rubro.
   if (toquePlanes && !fichaLista) hechos.pidioPlanes = false;
-  if ((toquePlanes && fichaLista) || (fichaLista && PIDE_PLANES.test(dicho))) hechos.pidioPlanes = true;
+  if ((toquePlanes && fichaLista) || (fichaLista && pidePorTexto)) hechos.pidioPlanes = true;
 
   // HECHO: el modelo propone descartar; el codigo decide. Se acepta solo con un
   // motivo de la lista, en un mensaje ESCRITO o en un AUDIO TRANSCRITO (decision
@@ -573,7 +617,8 @@ for (let i = 0; i < items.length; i++) {
   let descarteNuevo = '';
   if (hayMarcaDeDescarte) {
     const motivo = String(marcaDeDescarte?.[1] ?? '').toLowerCase();
-    const marcaDelCliente = /\[\/?DESCARTE\]/i.test(String(ent.userInput ?? ''));
+    // La marca del cliente, con o sin corchetes, mayusculas o espacios («d e s c a r t e»).
+    const marcaDelCliente = /descarte/.test(String(ent.userInput ?? '').normalize('NFD').toLowerCase().replace(/[^a-z]/g, ''));
     if (MOTIVOS_DESCARTE.includes(motivo) && (ent.tipo === 'text' || audioTranscrito) && !soporte
         && !hechos.pidioAsesor && !hechos.pidioPlanes && !marcaDelCliente && !fallo) {
       if (hechos.descarte !== motivo) descarteNuevo = motivo;
@@ -590,33 +635,50 @@ for (let i = 0; i < items.length; i++) {
   // --- LA LISTA DE RUBROS -----------------------------------------------------
   // Los rubros de la consola salen en un mensaje interactivo de LISTA; el toque registra el
   // rubro POR CODIGO (`Estado de la conversación`, id `rubro:<id>`). Sale sin rubro (ni «Otro»)
-  // cuando es el primer mensaje, el modelo la pidio o pregunto el rubro, enumero rubros, el
-  // cliente toco una opcion vencida o se retuvieron los planes. Nunca en soporte, en una
+  // cuando es el primer mensaje, el modelo pregunto el rubro o enumero rubros, el cliente
+  // toco una opcion vencida o se retuvieron los planes. Nunca en soporte, en una
   // conversacion cerrada ni si el modelo fallo. Sin rubros con id valido, la pregunta queda abierta.
   const rubrosConId = rubros.filter((r) => ID_RUBRO.test(String(r.id)));
   const quiereLista = rubrosConId.length > 0 && !combinado.rubro && !hechos.eligioOtro
     && !soporte && !cerrada && !fallo
-    && (ent.primeraDeVentana === true || modeloPusoRubros || enumero || pideRubro
+    && (ent.primeraDeVentana === true || enumero || pideRubro
       || ent.opcionVencida === true || retenidos);
+  let preguntoPorPlanes = false;
   const preguntaRubro = retenidos ? 'Para mostrarte los planes que te sirven, ¿de qué rubro es tu negocio?'
     : '¿De qué rubro es tu negocio?';
   // Con los planes retenidos y sin lista (sin rubros cargados) la pregunta
   // tambien se hace: no se calla lo que se pidio.
   if (quiereLista || (retenidos && !combinado.rubro && !soporte && !cerrada && !fallo)) {
-    if (!pideRubro) texto = texto.trimEnd() + (texto.trim() ? '\n\n' : '') + preguntaRubro;
+    // Una sola pregunta: la del codigo reemplaza a la ultima del modelo.
+    if (!pideRubro) texto = [quitarUltimaPregunta(texto).trim(), preguntaRubro].filter(Boolean).join('\n\n');
     else texto = preguntaAlFinal(texto, PIDE.rubro);
     avisos.push(quiereLista ? 'lista_de_rubros' : 'pide_rubro_por_codigo');
+    if (retenidos) preguntoPorPlanes = true;
   }
 
-  // d. El primer mensaje de la ventana dice que es una IA; si el modelo no lo dijo, se agrega.
+  // d. El primer mensaje de la ventana dice que es una IA; si el modelo no lo dijo, se agrega
+  // sin repetir el saludo ni el nombre que el modelo ya escribio.
   if (ent.primeraDeVentana === true && !/inteligencia\s+artificial|\bIA\b/i.test(texto)) {
     const k = texto.search(/asistente\s+virtual/i);
+    const nombre = String(ent.presentacion || '').split(',')[0].trim();
+    const soyNombre = nombre && !/^el\s+asistente/i.test(nombre)
+      ? texto.match(new RegExp('\\bsoy\\s+' + nombre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')) : null;
+    const saludo = texto.match(/^\s*¡?(?:hola|buen(?:os\s+d[ií]as|as(?:\s+(?:tardes|noches|d[ií]as))?)|saludos)\b[^.!?\n]{0,20}[.!?]*/i);
     if (k >= 0) {
       const fin = k + texto.slice(k).match(/asistente\s+virtual/i)[0].length;
       texto = texto.slice(0, fin) + ' con inteligencia artificial' + texto.slice(fin);
+    } else if (soyNombre) {
+      const fin = soyNombre.index + soyNombre[0].length;
+      texto = texto.slice(0, fin) + ', con inteligencia artificial' + texto.slice(fin);
     } else {
-      texto = '¡Hola! Soy ' + (ent.presentacion || 'el asistente virtual') + ', con inteligencia artificial.' +
-        (texto ? ' ' + texto : '');
+      const quien = 'Soy ' + (nombre && texto.toLowerCase().includes(nombre.toLowerCase()) ? 'un asistente virtual' : (ent.presentacion || 'el asistente virtual')) + ', con inteligencia artificial.';
+      if (saludo) {
+        const cabeza = saludo[0].trim().replace(/[,;:]$/, '.');
+        const resto = texto.slice(saludo[0].length).trim();
+        texto = cabeza + ' ' + quien + (resto ? ' ' + resto : '');
+      } else {
+        texto = '¡Hola! ' + quien + (texto ? ' ' + texto : '');
+      }
     }
     avisos.push('presentacion_ia_agregada');
   }
@@ -632,11 +694,13 @@ for (let i = 0; i < items.length; i++) {
   // registrado en este mismo turno no se vuelve a preguntar por el negocio.
   const esOferta = ent.respondioDolorEsteTurno === true && fichaLista && !planesMostrados
     && !soporte && !cerrada && !fallo && texto.replace(/[\u0001\u0002]/g, '').trim() !== '';
-  const botonPlanes = esOferta && hayPlanes && !h0.pidioPlanes && !hechos.pidioPlanes;
+  // El boton «Ver planes» sale si no se habian pedido antes (ni en este turno).
+  const botonPlanes = esOferta && hayPlanes && !h0.pidioPlanes;
   if (esOferta && !terminaEnPregunta(texto)) {
-    texto = texto.trimEnd() + '\n\n' + (botonPlanes
-      ? '¿Quieres ver los planes o prefieres hablar con una persona del equipo?'
-      : '¿Quieres hablar con una persona del equipo?');
+    // Una sola pregunta: la del codigo reemplaza a la que el modelo dejo a medias.
+    texto = [quitarUltimaPregunta(texto).trim(), botonPlanes
+      ? '¿Quieres ver los planes o prefieres hablar con un asesor?'
+      : '¿Quieres hablar con un asesor?'].filter(Boolean).join('\n\n');
     avisos.push('oferta_con_pregunta');
   }
 
@@ -678,7 +742,7 @@ for (let i = 0; i < items.length; i++) {
   const bloqueEnlace = conArchivo ? 'Te comparto los planes y sus precios en este enlace: ' + archivo.url : '';
   texto = armar(conMarca, bloqueLargo);
 
-  const TEXTO_FALLO = 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y te paso con una persona del equipo.';
+  const TEXTO_FALLO = 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y te paso con un asesor.';
   // Cerrado y ya avisado, el boton no sale (no hay a quien avisar de nuevo): el texto no lo ofrece.
   const TEXTO_FALLO_SIN_BOTON = 'Disculpa, tuve un problema para responderte. ¿Me lo repites?';
   if (fallo) {
@@ -710,14 +774,20 @@ for (let i = 0; i < items.length; i++) {
     // Lo que solo se sabe aca. `Estado de la conversación` guarda el resto de
     // los hechos al inicio del turno.
     c.hechos = { ...(c.hechos || {}), pidioPlanes: hechos.pidioPlanes, descarte: hechos.descarte };
-    // LA PREGUNTA DE DOLOR: con el rubro registrado en este turno (o «Otro») y
-    // sin planes, esta conversacion espera la respuesta a la pregunta por su
-    // negocio. Quien ya la esta contestando (turno de la oferta) no se
-    // vuelve a preguntar.
+    // LA PREGUNTA DE DOLOR: con el rubro registrado en este turno (o «Otro») y sin planes,
+    // esta conversacion espera la respuesta a la pregunta por su negocio. Solo una vez: quien
+    // ya la contesto (`hechos.respondioDolor`, que no vence con la ventana) o la esta
+    // contestando (turno de la oferta) no se vuelve a preguntar.
     if ((rubroDelTurno || ent.eligioOtroEsteTurno === true) && !planesMostrados && !esOferta
-        && !ent.respondioDolorEsteTurno && !soporte && !cerrada && !sinRespuesta) {
+        && !hechos.respondioDolor && !soporte && !cerrada && !sinRespuesta) {
       c.pidioDolor = true;
     }
+    // En el turno de la oferta la conversacion ya no espera el rubro ni otro dato: lo que
+    // conteste («ambos») no se registra como rubro.
+    if (esOferta) { c.pidioRubro = false; c.pidio = []; }
+    // PLANES PENDIENTES: pidio los planes sin rubro y se le prometio mostrarlos al tenerlo.
+    if (preguntoPorPlanes) c.planesPendientes = true;
+    if (planesMostrados) delete c.planesPendientes;
   }
 
   // --- El boton «Hablar con un asesor» -------------------------------------
@@ -741,6 +811,8 @@ for (let i = 0; i < items.length; i++) {
     || botonSoporte
     || (sinRespuesta && !falloSinBoton)
     || esOferta
+    // El asesor ofrecido en el texto, aun en forma de pregunta: se ofrece lo que se cumple.
+    || (OFRECE_ASESOR.test(texto) && !(yaCerrado && c?.avisado === true))
     // CAMPAÑA CON DESTINO `asesor` (Andres, 03/10/2026): el contexto del turno le
     // dice al modelo que el mensaje sale con el boton; aqui se GARANTIZA por
     // codigo, sin depender de que el texto prometa algo. No dispara el traspaso
@@ -802,10 +874,11 @@ for (let i = 0; i < items.length; i++) {
   // areas de la lista y la forma de pedir el asesor sin boton (`Normalizar
   // entrada` reconoce lo escrito).
   const areas = rubrosConId.filter((r) => !esAMedida(r)).map((r) => r.nombre);
+  // El respaldo termina siempre en la pregunta: lo que se agrega va antes de ella.
   const respaldo = conLista
-    ? texto + (areas.length ? '\n\nPor ejemplo: ' + areas.join(', ') + '. Si es otro, cuéntame a qué se dedica.' : '')
-      + (filas.some((f) => f.id === 'asesor') ? '\n\n' + PIDE_ASESOR : '')
-    : (conBoton ? (encabezado ? armar(conMarca, bloqueEnlace) : texto) + '\n\n' + PIDE_ASESOR : texto);
+    ? conCola(texto, [areas.length ? 'Por ejemplo: ' + areas.join(', ') + '. Si es otro, cuéntame a qué se dedica.' : '',
+      filas.some((f) => f.id === 'asesor') ? PIDE_ASESOR : ''].filter(Boolean).join('\n\n'))
+    : (conBoton ? conCola(encabezado ? armar(conMarca, bloqueEnlace) : texto, PIDE_ASESOR) : texto);
 
   out.push({ json: { ...ent,
     respuesta: texto,

@@ -38,6 +38,7 @@ const CONFIG = fuente('config-del-negocio.js');
 const TRASPASO = fuente('traspaso-a-un-asesor.js');
 const PROCESAR = fuente('procesar-respuesta.js');
 const SALIDA = fuente('salida.js');
+const ESTADO_DE_LA_CONVERSACION = readFileSync(join(aqui, '../../../Flujos/src/modulos/captacion/estado-de-la-conversacion.js'), 'utf8');
 
 // ---------------------------------------------------------------------------
 // Los límites de Meta
@@ -459,11 +460,11 @@ describe('Procesar respuesta: la lista de rubros', () => {
     const sin = procesar('Hola.\n[RUBROS]', ENT({ primeraDeVentana: true }), conversacion());
     expect(filas(sin).map((f) => f.id)).not.toContain('asesor');
     expect(sin['textoRespaldo']).not.toContain('escríbeme «asesor»');
-    const fin = procesar('Hola.\n[RUBROS]', ENT({ finBloque: true }), conversacion());
+    const fin = procesar('Hola.', ENT({ finBloque: true, primeraDeVentana: true }), conversacion());
     expect(filas(fin).at(-1)).toEqual({ id: 'asesor', title: 'Hablar con un asesor' });
     expect(fin['textoRespaldo']).toContain('escríbeme «asesor»');
     // Una promesa sin respaldo también pide el botón (solo se ofrece lo que se cumple).
-    const promesa = procesar('Te aviso luego.\n[RUBROS]', ENT(), conversacion());
+    const promesa = procesar('Te aviso luego.', ENT({ primeraDeVentana: true }), conversacion());
     expect(filas(promesa).at(-1)!.id).toBe('asesor');
     expect(promesa['avisos']).toContain('promesa_con_boton_asesor');
   });
@@ -536,7 +537,7 @@ describe('Procesar respuesta: la oferta con dos botones', () => {
     expect(botones).toEqual([{ id: 'planes', title: 'Ver planes' }, { id: 'asesor', title: 'Hablar con un asesor' }]);
     expect(botones.length).toBeLessThanOrEqual(META.botones);
     for (const b of botones) expect(b.title.length).toBeLessThanOrEqual(META.tituloBoton);
-    expect(r['respuesta']).toMatch(/¿Quieres ver los planes o prefieres hablar con una persona del equipo\?$/);
+    expect(r['respuesta']).toMatch(/¿Quieres ver los planes o prefieres hablar con un asesor\?$/);
     expect(interactivo(r).body.text.length).toBeLessThanOrEqual(META.cuerpo);
     expect(r['respuesta']).not.toMatch(/USD/);
     expect(r['avisos']).toContain('oferta_con_pregunta');
@@ -551,7 +552,7 @@ describe('Procesar respuesta: la oferta con dos botones', () => {
   it('NEGANDO: el botón «Ver planes» solo sale con planes cargados', () => {
     const r = oferta('Eso se resuelve.', { planes: [] });
     expect(interactivo(r).action.buttons.map((b: J) => b.reply.id)).toEqual(['asesor']);
-    expect(r['respuesta']).toMatch(/¿Quieres hablar con una persona del equipo\?$/);
+    expect(r['respuesta']).toMatch(/¿Quieres hablar con un asesor\?$/);
     expect(r['respuesta']).not.toMatch(/planes/);
   });
 
@@ -870,6 +871,351 @@ describe('Campaña con destino `asesor`: el mensaje sale con el botón, garantiz
     expect(interactivo(r).type).toBe('button');
     expect(interactivo(r).body.text.length).toBeLessThanOrEqual(META.cuerpo);
     expect(r['avisos']).toContain('texto_recortado');
+  });
+});
+
+// ===========================================================================
+// RONDA DE CORRECCIONES TRAS LA REVISIÓN (03/10/2026)
+// ===========================================================================
+const botonesDe = (r: J): string[] => (interactivo(r)?.action?.buttons ?? []).map((b: J) => b.reply.id);
+const signos = (t: string): number => (t.match(/\?/g) ?? []).length;
+const PROHIBIDAS = /especialista|persona del equipo/i;
+
+describe('A1: pedir planes se reconoce por palabra entera y no en la respuesta al dolor', () => {
+  const dolor = (texto: string, modelo = 'Entiendo, eso se resuelve.', extra: J = {}): J =>
+    procesar(modelo, ENT({ userInput: texto, respondioDolorEsteTurno: true, hechos: { respondioDolor: true }, ...extra }),
+      conversacion({ rubro: 'pastelería' }));
+
+  it('NEGANDO: «me preguntan precios todo el día…» como respuesta al dolor NO da Alta y la oferta sale con los dos botones', () => {
+    const r = dolor('Me preguntan precios todo el día y no doy abasto');
+    expect(r['hechos']['pidioPlanes']).toBe(false);
+    expect(botonesDe(r)).toEqual(['planes', 'asesor']);
+  });
+
+  it('NEGANDO: «vendemos plantas y nos piden cotizaciones» no da Alta (ni «cotiza» ni «plan» dentro de «plantas»)', () => {
+    const r = procesar('Claro.', ENT({ userInput: 'vendemos plantas y nos piden cotizaciones' }), conversacion({ rubro: 'vivero' }));
+    expect(r['hechos']['pidioPlanes']).toBe(false);
+  });
+
+  it.each(['¿Qué planes tienen?', 'precio?', '¿Cuánto cuesta?', 'sus tarifas', 'cuanto sale', 'Los precios, por favor'])(
+    'un pedido real («%s») con rubro sí da Alta', (t) => {
+      const r = procesar('Claro.', ENT({ userInput: t }), conversacion({ rubro: 'pastelería' }));
+      expect(r['hechos']['pidioPlanes'], t).toBe(true);
+    });
+
+  it.each(['preciosa', 'planteles', 'esplanes', 'tarifario', 'el costo de mi tiempo', 'mi plan de trabajo'])(
+    'NEGANDO: «%s» no es un pedido de planes', (t) => {
+      const r = procesar('Claro.', ENT({ userInput: t }), conversacion({ rubro: 'pastelería' }));
+      expect(r['hechos']['pidioPlanes'], t).toBe(false);
+    });
+
+  it('si en ese turno el modelo pone [PLANES] o hay toque, el texto sí se mira', () => {
+    const r = dolor('¿cuánto cuesta?', 'Mira.\n[PLANES]');
+    expect(r['hechos']['pidioPlanes']).toBe(true);
+    expect(r['respuesta']).toContain('Impulso (USD 25/mes)');
+  });
+
+  it('el botón «Ver planes» depende de que no se hayan pedido antes, no del propio turno', () => {
+    expect(botonesDe(dolor('Perdemos pedidos'))).toEqual(['planes', 'asesor']);
+    const antes = procesar('Eso se resuelve.', ENT({ userInput: 'Perdemos pedidos', respondioDolorEsteTurno: true,
+      hechos: { respondioDolor: true, pidioPlanes: true } }), conversacion({ rubro: 'x' }));
+    expect(botonesDe(antes)).toEqual(['asesor']);
+  });
+});
+
+describe('A2: el texto exacto de una campaña nunca elige al asesor', () => {
+  const ahora = Date.now();
+  const cfgCampana = (texto: string, destino?: string): J => ({
+    campanasActivas: JSON.stringify([{ id: 'c1', texto, ...(destino ? { destino } : {}) }]) });
+
+  it.each(['Quiero hablar con una persona', 'Quiero que me llamen', 'Asesor', 'quiero hablar con un asesor'])(
+    'NEGANDO: la campaña «%s», con o sin destino, no dispara el traspaso', (t) => {
+      for (const destino of [undefined, 'asesor', 'planes', 'rubro:gastronomia']) {
+        const n = normalizar(texto(t), cfgCampana(t, destino));
+        expect(n['eleccion'], `${t} / ${destino}`).toBe('');
+        expect(n['campana'], `${t} / ${destino}`).not.toBeNull();
+      }
+    });
+
+  it('el mismo texto cuando NO es de campaña, o un toque real del botón, sí elige al asesor', () => {
+    expect(normalizar(texto('Quiero que me llamen'), cfgCampana('Otro texto distinto'))['eleccion']).toBe('asesor');
+    expect(normalizar(texto('asesor'), { campanasActivas: '[]' })['eleccion']).toBe('asesor');
+    expect(normalizar(toque('asesor', 'Hablar con un asesor', 'button_reply'), cfgCampana('asesor', 'asesor'))['eleccion']).toBe('asesor');
+    expect(ahora).toBeGreaterThan(0);
+  });
+});
+
+describe('A3: el asesor ofrecido en forma de pregunta también lleva el botón', () => {
+  const con = (modelo: string, sd: J = conversacion({ rubro: 'pastelería' }), extra: J = {}): J => procesar(modelo, ENT(extra), sd);
+
+  it.each([
+    'Eso no lo tengo en mis datos. ¿Quieres hablar con un asesor?',
+    'No tengo ese dato. ¿Prefieres que te pase con un especialista?'.replace('te pase con', 'hablar con'),
+    'No tengo ese dato. ¿Te gustaría hablar con una persona?',
+    '¿Quieres que te pase? Puedo pasarte con un asesor.',
+  ])('«%s» sale con el botón', (t) => {
+    const r = con(t);
+    expect(interactivo(r).type).toBe('button');
+    expect(botonesDe(r)).toEqual(['asesor']);
+  });
+
+  it('NEGANDO: un texto que no nombra al asesor, o lo nombra de pasada, sale sin botón', () => {
+    expect(con('Eso no lo tengo en mis datos. ¿Quieres que te cuente de los planes?')['cuerpoMeta']).toBeUndefined();
+    expect(con('Los asesores de la competencia cobran más. ¿Algo más?')['cuerpoMeta']).toBeUndefined();
+  });
+
+  it('NEGANDO: cerrada y ya avisada no se vuelve a ofrecer', () => {
+    const r = con('¿Quieres hablar con un asesor?', conversacion({ rubro: 'x' }, { etapa: 'cerrado', avisado: true }), { etapa: 'cerrado' });
+    expect(r['cuerpoMeta']).toBeUndefined();
+  });
+});
+
+describe('A4: una sola pregunta por mensaje; el código reemplaza la del modelo', () => {
+  it('primer mensaje: el modelo cierra con «¿En qué te puedo ayudar?» y sale UN solo «?», el del rubro', () => {
+    const r = procesar('¡Hola! Soy Sofía, con inteligencia artificial. ¿En qué te puedo ayudar?', ENT({ primeraDeVentana: true }), conversacion());
+    const t = interactivo(r).body.text;
+    expect(signos(t)).toBe(1);
+    expect(t).toMatch(/¿De qué rubro es tu negocio\?$/);
+    expect(t).not.toContain('En qué te puedo ayudar');
+    expect(t).toContain('¡Hola! Soy Sofía, con inteligencia artificial.');
+  });
+
+  it('con una pregunta del modelo a la mitad, también se reemplaza la última', () => {
+    const r = procesar('Hola, ¿cómo estás? Soy Sofía, con inteligencia artificial.', ENT({ primeraDeVentana: true }), conversacion());
+    expect(signos(interactivo(r).body.text)).toBe(1);
+  });
+
+  it('el respaldo de la lista termina en la pregunta (los ejemplos van antes)', () => {
+    const r = procesar('¡Hola! Soy Sofía, con inteligencia artificial. ¿En qué te puedo ayudar?', ENT({ primeraDeVentana: true, finBloque: true }), conversacion());
+    const t = r['textoRespaldo'];
+    expect(t).toMatch(/¿De qué rubro es tu negocio\?$/);
+    expect(t.indexOf('Por ejemplo:')).toBeLessThan(t.indexOf('¿De qué rubro'));
+    expect(t.indexOf('escríbeme «asesor»')).toBeLessThan(t.indexOf('¿De qué rubro'));
+    expect(signos(t)).toBe(1);
+  });
+
+  it('con planes forzados por toque se quita la pregunta previa al bloque: un solo «?»', () => {
+    const r = procesar('Con gusto. ¿Quieres que te cuente algo más?', ENT({ tocoPlanesEsteTurno: true }), conversacion({ rubro: 'pastelería' }));
+    expect(r['respuesta']).toContain('Impulso (USD 25/mes)');
+    expect(signos(r['respuesta'])).toBe(1);
+    expect(r['respuesta']).toMatch(/¿Te gustaría hablar con un asesor\?$/);
+    expect(r['respuesta']).not.toContain('algo más');
+  });
+
+  it('con [PLANES] del modelo y una pregunta antes del bloque, también', () => {
+    const r = procesar('Mira los planes. ¿Cuál te sirve?\n[PLANES]', ENT({ userInput: 'precios' }), conversacion({ rubro: 'pastelería' }));
+    expect(signos(r['respuesta'])).toBe(1);
+  });
+
+  it('la oferta: sin pregunta final del modelo sale la del código, sin dejar una a medias; y el respaldo termina en ella', () => {
+    const r = procesar('Entiendo. ¿Te pasa seguido? Eso se resuelve con agenda.',
+      ENT({ respondioDolorEsteTurno: true, hechos: { respondioDolor: true } }), conversacion({ rubro: 'pastelería' }));
+    expect(signos(r['respuesta'])).toBe(1);
+    expect(r['respuesta']).toMatch(/¿Quieres ver los planes o prefieres hablar con un asesor\?$/);
+    expect(r['textoRespaldo']).toMatch(/\?$/);
+    expect(r['textoRespaldo'].indexOf('escríbeme «asesor»')).toBeLessThan(r['textoRespaldo'].lastIndexOf('¿Quieres ver'));
+    expect(signos(r['textoRespaldo'])).toBe(1);
+  });
+
+  it('NEGANDO: si el modelo ya pregunta el rubro, no se agrega otra pregunta', () => {
+    const r = procesar('¡Hola! Soy Sofía, con inteligencia artificial. ¿A qué se dedica tu negocio?', ENT({ primeraDeVentana: true }), conversacion());
+    expect(signos(interactivo(r).body.text)).toBe(1);
+    expect(interactivo(r).body.text).toContain('A qué se dedica');
+  });
+});
+
+describe('A5: la pregunta de dolor se hace una sola vez y la oferta cierra lo pendiente', () => {
+  it('NEGANDO: un [LEAD] con rubro después de contestado el dolor no rearma la pregunta ni repite la oferta', () => {
+    const sd = conversacion({}, { pidio: ['rubro'], pidioRubro: true, hechos: { respondioDolor: true } });
+    const r = procesar('Anotado.\n[LEAD]{"rubro":"pastelería"}[/LEAD]',
+      ENT({ userInput: 'tengo una pastelería', hechos: { respondioDolor: true } }), sd);
+    expect(sd['conversaciones'][TEL].lead.rubro).toBe('pastelería');
+    expect(sd['conversaciones'][TEL].pidioDolor).toBeUndefined();
+    expect(botonesDe(r)).not.toContain('planes');
+  });
+
+  it('sin haber contestado el dolor, el rubro del [LEAD] sí arma la pregunta (contraprueba)', () => {
+    const sd = conversacion({}, { pidio: ['rubro'], pidioRubro: true });
+    procesar('Anotado.\n[LEAD]{"rubro":"pastelería"}[/LEAD]', ENT({ userInput: 'tengo una pastelería' }), sd);
+    expect(sd['conversaciones'][TEL].pidioDolor).toBe(true);
+  });
+
+  it('en el turno de la oferta se limpian pidioRubro y pidio', () => {
+    const sd = conversacion({ rubro: 'x' }, { pidio: ['rubro'], pidioRubro: true, pidioDolor: true });
+    procesar('Eso se resuelve.', ENT({ respondioDolorEsteTurno: true, hechos: { respondioDolor: true } }), sd);
+    expect(sd['conversaciones'][TEL].pidio).toEqual([]);
+    expect(sd['conversaciones'][TEL].pidioRubro).toBe(false);
+  });
+
+  it('NEGANDO: «ambos» como respuesta a la oferta no se registra como rubro (Estado + Procesar, tras «Otro»)', () => {
+    const sd = conversacion({}, { pidio: ['rubro'], pidioRubro: true, pidioDolor: true, hechos: { eligioOtro: true },
+      desde: Date.now() - 60_000, ultimo: Date.now() - 30_000, respuestas: 2 });
+    sd['vistos'] = {};
+    const t = (userInput: string, modelo: string): J => {
+      const base: J = { from: TEL, tipo: 'text', userInput, mensajeId: `wamid.o.${++secuencia}`, rubros: RUBROS, planes: PLANES,
+        cargosUnicos: [], limiteInteractivo: META.cuerpo, atencionEstado: 'normal', topeAviso: 25 };
+      const e = ejecutar(ESTADO_DE_LA_CONVERSACION, [base], {}, { $getWorkflowStaticData: () => sd })[0]!;
+      return ejecutar(PROCESAR, [{ output: modelo }], { 'Estado de la conversación': [e] }, { $getWorkflowStaticData: () => sd })[0]!;
+    };
+    const oferta = t('Me quita tiempo contestar los pedidos', 'Entiendo, eso se resuelve.');
+    expect(botonesDe(oferta)).toEqual(['planes', 'asesor']);
+    // Sin la limpieza de la oferta, `Estado` tomaba «ambos» por el rubro libre (pidioRubro seguia en true).
+    t('ambos', 'Perfecto.');
+    expect(sd['conversaciones'][TEL].lead.rubro).toBeUndefined();
+    expect(sd['conversaciones'][TEL].pidioRubro).toBe(false);
+  });
+});
+
+describe('A6: planes pendientes', () => {
+  const pendiente = (sd: J): unknown => sd['conversaciones'][TEL].planesPendientes;
+
+  it('quien pide precios sin rubro recibe la lista con «Para mostrarte los planes…» y queda pendiente', () => {
+    const sd = conversacion();
+    const r = procesar('Claro, con gusto.', ENT({ userInput: '¿Cuánto cuesta?', primeraDeVentana: true }), sd);
+    expect(interactivo(r).type).toBe('list');
+    expect(interactivo(r).body.text).toContain('Para mostrarte los planes que te sirven, ¿de qué rubro es tu negocio?');
+    expect(r['respuesta']).not.toMatch(/USD/);
+    expect(pendiente(sd)).toBe(true);
+  });
+
+  it('también con [PLANES] del modelo o con el toque de «Ver planes» sin rubro', () => {
+    const a = conversacion();
+    procesar('Claro.\n[PLANES]', ENT({ userInput: 'hola' }), a);
+    expect(pendiente(a)).toBe(true);
+    const b = conversacion();
+    procesar('Con gusto.', ENT({ tocoPlanesEsteTurno: true }), b);
+    expect(pendiente(b)).toBe(true);
+  });
+
+  it('NEGANDO: sin retención no se escribe (primer saludo, soporte, cerrada, fallo, con rubro)', () => {
+    const casos: [string, J, J][] = [
+      ['saludo', ENT({ primeraDeVentana: true }), conversacion()],
+      ['soporte', ENT({ pideSoporte: true, userInput: '¿cuánto cuesta?' }), conversacion()],
+      ['cerrada', ENT({ etapa: 'cerrado', userInput: '¿cuánto cuesta?' }), conversacion({}, { etapa: 'cerrado', avisado: true })],
+      ['con rubro', ENT({ userInput: '¿cuánto cuesta?' }), conversacion({ rubro: 'pastelería' })],
+    ];
+    for (const [nombre, ent, sd] of casos) {
+      procesar(nombre === 'saludo' ? 'Claro.' : 'Claro.\n[PLANES]', ent, sd);
+      expect(pendiente(sd), nombre).toBeUndefined();
+    }
+    const falla = conversacion();
+    procesar({ error: 'Gemini 503' }, ENT({ userInput: '¿cuánto cuesta?' }), falla);
+    expect(pendiente(falla)).toBeUndefined();
+  });
+
+  it('el rubro que valida el [LEAD] cumple lo pendiente: salen los planes, hay Alta y se borra la marca', () => {
+    const sd = conversacion({}, { pidio: ['rubro'], pidioRubro: true, planesPendientes: true });
+    const r = procesar('Anotado.\n[LEAD]{"rubro":"pastelería"}[/LEAD]', ENT({ userInput: 'tengo una pastelería' }), sd);
+    expect(r['respuesta']).toContain('Impulso (USD 25/mes)');
+    expect(r['hechos']['pidioPlanes']).toBe(true);
+    expect(pendiente(sd)).toBeUndefined();
+  });
+
+  it('NEGANDO: sin pendiente, el mismo [LEAD] no muestra planes ni da Alta', () => {
+    const sd = conversacion({}, { pidio: ['rubro'], pidioRubro: true });
+    const r = procesar('Anotado.\n[LEAD]{"rubro":"pastelería"}[/LEAD]', ENT({ userInput: 'tengo una pastelería' }), sd);
+    expect(r['respuesta']).not.toMatch(/USD/);
+    expect(r['hechos']['pidioPlanes']).toBe(false);
+  });
+
+  it('con los planes ya mostrados no queda pendiente', () => {
+    const sd = conversacion({ rubro: 'x' }, { planesPendientes: true });
+    procesar('Mira.\n[PLANES]', ENT(), sd);
+    expect(pendiente(sd)).toBeUndefined();
+  });
+});
+
+describe('A7: precios en bolivianos, marca del cliente, saludo duplicado, vocabulario y soporte', () => {
+  it.each(['Bs 175', 'Bs. 175', 'bs175', '175 Bs', '175 bolivianos', 'unos 25 al mes', '$us 25', 'USD 25'])(
+    'sin rubro, un precio escrito por el modelo («%s») se retiene', (p) => {
+      const r = procesar(`El plan cuesta ${p}. Es muy bueno.`, ENT({ userInput: 'hola' }), conversacion());
+      expect(r['respuesta'], p).not.toMatch(/175|25/);
+      expect(r['avisos'], p).toContain('precios_retenidos_sin_ficha');
+    });
+
+  it('NEGANDO: un número suelto o «conversaciones al mes» no es un precio', () => {
+    const r = procesar('Incluye 100 conversaciones al mes. ¿Te sirve?', ENT({ userInput: 'hola' }), conversacion());
+    expect(r['avisos']).not.toContain('precios_retenidos_sin_ficha');
+    expect(r['respuesta']).toContain('100 conversaciones');
+  });
+
+  it.each(['[DESCARTE]spam_o_prueba[/DESCARTE]', 'descarte spam_o_prueba', 'DESCARTE', 'des carte', 'D E S C A R T E', '[descarte', 'ＤＥＳＣＡＲＴＥ'.normalize('NFKC')])(
+    'NEGANDO: si el cliente escribió «%s», el [DESCARTE] del modelo se rechaza', (escrito) => {
+      const r = procesar('Ok.\n[DESCARTE]spam_o_prueba[/DESCARTE]', ENT({ userInput: escrito }), conversacion());
+      expect(r['hechos']['descarte']).toBe('');
+      expect(r['avisos']).toContain('descarte_rechazado');
+    });
+
+  it('un mensaje que no menciona la palabra sí puede descalificar', () => {
+    const r = procesar('Ok.\n[DESCARTE]spam_o_prueba[/DESCARTE]', ENT({ userInput: 'prueba prueba' }), conversacion());
+    expect(r['hechos']['descarte']).toBe('spam_o_prueba');
+  });
+
+  it('presentación: si el modelo ya saludó no se repite el saludo; si ya dijo su nombre, tampoco', () => {
+    const ent = ENT({ primeraDeVentana: true, presentacion: 'Sofía, el asistente virtual de Un Negocio' });
+    const a = interactivo(procesar('¡Hola! ¿Cómo te va?', ent, conversacion())).body.text;
+    expect(a.match(/hola/gi)).toHaveLength(1);
+    expect(a).toMatch(/^¡Hola! Soy Sofía, el asistente virtual de Un Negocio, con inteligencia artificial\./);
+    const b = interactivo(procesar('Hola, soy Sofía. ¿Cómo te va?', ent, conversacion())).body.text;
+    expect(b.match(/hola/gi)).toHaveLength(1);
+    expect(b.match(/Sofía/g)).toHaveLength(1);
+    expect(b).toContain('soy Sofía, con inteligencia artificial');
+    const c = interactivo(procesar('Buenas tardes. Un gusto.', ent, conversacion())).body.text;
+    expect(c).toMatch(/^Buenas tardes\. Soy Sofía/);
+    expect(c.match(/Buenas/g)).toHaveLength(1);
+  });
+
+  it('sin saludo del modelo, se agrega uno solo', () => {
+    const t = interactivo(procesar('Cuéntame de tu negocio.', ENT({ primeraDeVentana: true, presentacion: 'Sofía, el asistente virtual de Un Negocio' }), conversacion())).body.text;
+    expect(t).toMatch(/^¡Hola! Soy Sofía, el asistente virtual de Un Negocio, con inteligencia artificial\./);
+  });
+
+  it('un solo nombre para la persona: «asesor», en los textos fijos de Procesar y del traspaso', () => {
+    const fijos = [
+      procesar({ error: 'x' }, ENT(), conversacion())['respuesta'],
+      procesar('Entiendo.', ENT({ respondioDolorEsteTurno: true, hechos: { respondioDolor: true } }), conversacion({ rubro: 'x' }))['respuesta'],
+      procesar('Entiendo.', ENT({ respondioDolorEsteTurno: true, hechos: { respondioDolor: true } }), conversacion({ rubro: 'x' }))['textoRespaldo'],
+      procesar('Mira.\n[PLANES]', ENT(), conversacion({ rubro: 'x' }))['respuesta'],
+      procesar('Mira.\n[PLANES]', ENT({ planes: [] }), conversacion({ rubro: 'x' }))['respuesta'],
+      procesar('Claro.', ENT({ pideSoporte: true }), conversacion())['respuesta'],
+      ejecutar(TRASPASO, [{ from: TEL, nombrePerfil: 'Ana', nombreNegocio: 'Un Negocio', numeroRecepcion: '59170000009',
+        fraseContacto: 'lo antes posible', nivelEmojis: 'pocos' }], {}, { $getWorkflowStaticData: () => conversacion({ rubro: 'x' }) })[0]!['respuesta'],
+    ];
+    for (const t of fijos) { expect(t).not.toMatch(PROHIBIDAS); }
+    expect(fijos[0]).toContain('te paso con un asesor');
+    expect(fijos[6]).toContain('Un asesor de Un Negocio te escribirá');
+  });
+
+  it('traspaso de quien ya es cliente: NO marca el hecho de Alta ni lo guarda; quien no, sí', () => {
+    const traspaso = (e: J, sd: J): J => ejecutar(TRASPASO, [{ from: TEL, nombrePerfil: 'Ana', nombreNegocio: 'Un Negocio',
+      numeroRecepcion: '59170000009', fraseContacto: 'lo antes posible', nivelEmojis: 'pocos', ...e }], {},
+    { $getWorkflowStaticData: () => sd })[0]!;
+    const cliente = conversacion({ rubro: 'x', empresa: 'E' }, { soporte: true });
+    const r = traspaso({ pideSoporte: true }, cliente);
+    expect(r['hechos']['pidioAsesor']).toBe(false);
+    expect(cliente['conversaciones'][TEL].hechos?.pidioAsesor).toBeUndefined();
+    const enVentana = conversacion({ rubro: 'x', empresa: 'E' }, { soporte: true });
+    expect(traspaso({ soporteEnVentana: true }, enVentana)['hechos']['pidioAsesor']).toBe(false);
+    const prospecto = conversacion({ rubro: 'x', empresa: 'E' });
+    expect(traspaso({}, prospecto)['hechos']['pidioAsesor']).toBe(true);
+    expect(prospecto['conversaciones'][TEL].hechos.pidioAsesor).toBe(true);
+  });
+});
+
+describe('A8: [RUBROS] ya no es un disparador', () => {
+  it('NEGANDO: la marca sola, en un turno que no es el primero, no saca la lista y no se ve', () => {
+    const r = procesar('Cuéntame más.\n[RUBROS]', ENT(), conversacion());
+    expect(r['cuerpoMeta']).toBeUndefined();
+    expect(r['respuesta']).toBe('Cuéntame más.');
+    expect(r['avisos']).not.toContain('lista_de_rubros');
+  });
+
+  it('en el primer mensaje la lista sale con o sin la marca, y la marca nunca llega al cliente', () => {
+    for (const modelo of ['Hola.', 'Hola.\n[RUBROS]', 'Hola. [rubros]']) {
+      const r = procesar(modelo, ENT({ primeraDeVentana: true }), conversacion());
+      expect(interactivo(r).type, modelo).toBe('list');
+      expect(interactivo(r).body.text, modelo).not.toMatch(/RUBROS/i);
+    }
   });
 });
 
