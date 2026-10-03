@@ -646,6 +646,18 @@ describe('Armar mensajes — el QR del cobro simulado', () => {
     const r = mensajes(planQr(qr()), { cfg: { cobro: { activo: true, modo: 'real', qrUrl: URL_SIM } } });
     expect(r.items[0]!['payload'].type).toBe('image');
   });
+
+  it('el titular de la cuenta real («Pruebas SRL») no es un rótulo: su QR sale; pero un «PRUEBA» fuera del titular sí lo rechaza', () => {
+    const cobro = { activo: true, modo: 'real', qrUrl: URL_SIM, titular: 'Pruebas y Demostraciones SRL' };
+    const pie = PIE.replace('Escanea el QR', 'Titular: Pruebas y Demostraciones SRL. Escanea el QR');
+    expect(mensajes(planQr(qr({ cuerpo: pie })), { cfg: { cobro } }).items[0]!['payload'].type).toBe('image');
+    const malo = mensajes(planQr(qr({ cuerpo: `${pie} PRUEBA` })), { cfg: { cobro } });
+    expect(malo.items[0]!['payload'].type).not.toBe('image');
+    expect((malo.items[0]!['errores'] as string[])).toContain('qr_rechazado: qr_real_con_rotulo_simulado');
+    // sin titular declarado, la misma palabra en el pie sí cuenta como rótulo
+    const sin = mensajes(planQr(qr({ cuerpo: pie })), { cfg: { cobro: { ...cobro, titular: '' } } });
+    expect(sin.items[0]!['payload'].type).not.toBe('image');
+  });
 });
 
 // =================================================================================================

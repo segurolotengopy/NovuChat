@@ -191,6 +191,11 @@ function amUrlSegura(u) {
   const s = String(u === undefined || u === null ? '' : u).trim();
   return s.length <= 2000 && /^https:\/\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?:[/?#][^\s<>"'@]*)?$/i.test(s);
 }
+// El titular de la cuenta real es un dato del comercio («Pruebas SRL», «Demostraciones del Sur»): no es un rótulo y no debe trabar su QR.
+function sinTitular(cuerpoN, titular) {
+  const t = vmNorm(titular);
+  return t ? cuerpoN.split(t).join(' ') : cuerpoN;
+}
 function amQr(m, cuerpo) {
   // El pedido contra el que se compara el monto: el del plan (el turno que creó el QR) o, al reenviarlo, el del estado
   // nuevo (el que quedó esperando el comprobante). Nunca el que diga el propio mensaje.
@@ -213,7 +218,7 @@ function amQr(m, cuerpo) {
   else if (!pedidoId) motivo = 'qr_sin_pedido';
   else if (m.referencia && String(m.referencia) !== pedidoId) motivo = 'qr_referencia_distinta';
   else if (simulado && !(/simulad/.test(cuerpoN) && /no cobra/.test(cuerpoN))) motivo = 'qr_simulado_sin_rotulo';
-  else if (!simulado && /simulad|simulacr|demostracion|prueba/.test(cuerpoN)) motivo = 'qr_real_con_rotulo_simulado';
+  else if (!simulado && /simulad|simulacr|demostracion|prueba/.test(sinTitular(cuerpoN, cobro.titular))) motivo = 'qr_real_con_rotulo_simulado';
   if (motivo) {
     AM_qrRechazado = true;
     return amGenerico('qr_rechazado: ' + motivo);
