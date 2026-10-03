@@ -16,6 +16,13 @@
 // pago pendiente, la próxima imagen que mande el cliente vuelve a ser una
 // imagen, que es lo correcto.
 //
+// LIMITACION CONOCIDA (decision D11, aceptada por Andres): `Responder al cliente`
+// no tiene `onError`. Si Meta rechaza tambien el texto al cliente, la ejecucion
+// se detiene y no corren el aviso al dueno ni `¿Pedido confirmado?`. Es el
+// «ultimo recurso ruidoso» para el texto al cliente. La razon: si Meta rechaza el
+// texto y el QR a la vez, lo normal es una caida de Meta, y el aviso al dueno
+// tambien fallaria.
+//
 // COSTO: +1 mensaje al número del negocio y +1 al cliente (con el boton adentro),
 // solo cuando Meta rechaza el envío. Lo paga NovuChat y no se le cuenta al comercio.
 const item = $input.first().json;
@@ -25,6 +32,10 @@ let previo = {};
 try {
   previo = $(corrio('Preparar reenvío del QR') ? 'Preparar reenvío del QR' : 'Preparar QR de cobro').first().json;
 } catch (e) { previo = {}; }
+// Respaldo si fallan las dos referencias: al menos el telefono y el negocio.
+if (!previo || Object.keys(previo).length === 0) {
+  try { previo = $('Normalizar entrada').first().json ?? {}; } catch (e) { previo = {}; }
+}
 
 // El error puede ser texto u objeto sin `message`: nunca «[object Object]».
 const err = item && item.error;
@@ -38,7 +49,11 @@ const detalle = String((err && typeof err === 'object')
 // real, solo la frase. El boton de `Mensaje a enviar` ya ofrece pasar con el negocio.
 let cfg = {};
 try { cfg = $('Config del negocio').first().json ?? {}; } catch (e) { cfg = {}; }
-const simulado = previo.qrEsReal !== true;
+// Sin `qrEsReal` (el preparador no se pudo leer) se decide por la configuracion:
+// ante la duda, simulado, que es el modo que obliga al rotulo.
+const simulado = previo.qrEsReal === undefined
+  ? String(cfg.cobroRealActivo || '') !== 'si'
+  : previo.qrEsReal !== true;
 const rotulo = simulado ? String(cfg.rotuloDemo || '').trim() : '';
 const respuestaAlCliente = (rotulo ? rotulo + '\n\n' : '') + 'No pude enviarte la imagen del QR.';
 const total = String(previo.cobroTotal || '').trim();
