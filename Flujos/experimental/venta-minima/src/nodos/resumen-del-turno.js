@@ -12,9 +12,15 @@ const RT_items = vmTodos('Armar mensajes');
 // R3, ULTIMO RECURSO («se entrega lo que se promete»). Este nodo corre despues de los envios (esta por debajo de `¿Enviar de
 // verdad?` en el lienzo y `executionOrder` es v1). Un mensaje al cliente cuenta como entregado SOLO si Meta devolvio un
 // `messages[0].id` no vacio, por el envio principal o por su respaldo en texto. Si hubo mensajes que no salieron ni por uno ni
-// por el otro, la ejecucion termina en ERROR (visible en n8n) en vez de en `success`, y antes se DEVUELVE el estado del telefono
-// al de antes del turno: el cliente no recibio el paso nuevo (un QR, una pregunta), asi que el estado no puede quedar en ese
-// paso. No se reporta nada como enviado (`¿Reportar? (saliente)` exige el id) y el error no lleva texto ni numero del cliente.
+// por el otro, la ejecucion termina en ERROR (visible en n8n) en vez de en `success`. El estado del telefono se trata asi:
+//   - SIN hecho externo (no salio ningun aviso a terceros y no corrio `Registrar cierre`): se DEVUELVE el estado de antes del turno
+//     CONSERVANDO su `ultimoMensajeMs` (la ancla de las claves estables, B0): el cliente no recibio el paso nuevo (un QR, una
+//     pregunta) y, al reconfirmar, `pedidoId`, codigo y cierre salen IGUALES que en el intento fallido (nunca un segundo pedido);
+//   - CON hecho externo (el restaurante ya recibio el aviso o el cierre quedo registrado): NO se devuelve nada, porque reconfirmar
+//     armaria un segundo pedido con otro codigo, otro aviso y otro cierre. El estado nuevo queda, en el paso `menu`: un boton viejo
+//     solo muestra el menu. LIMITE CONOCIDO (I-3): este nodo NO deshace `sd.pedidos`, `vistos`, el aviso ya enviado ni el cierre; el
+//     error de n8n es la senal para que una persona le escriba al cliente.
+// No se reporta nada como enviado (`¿Reportar? (saliente)` exige el id) y el error no lleva texto ni numero del cliente.
 // Con el envio saltado (modo prueba sin `enviarDeVerdad`) `Enviar a WhatsApp` no corrio y no hay nada que verificar.
 const rtId = (j) => {
   const m = j && j.messages;
@@ -27,8 +33,16 @@ if (vmNodo('Enviar a WhatsApp')) {
     const RT_d = vmPrimero('Decidir turno');
     const RT_t = vmPrimero('Interpretar entrada') || {};
     const RT_sd = vmSd();
-    if (RT_sd && RT_d && RT_d.estado && typeof RT_d.estado === 'object' && RT_t.from) {
-      vmEscribirEstado(RT_sd, String(RT_t.from), RT_d.estado, Number(RT_t.ahoraMs) || Date.now());
+    const RT_hecho = vmNodo('Registrar cierre') !== null
+      || vmTodos('Enviar aviso').concat(vmTodos('Aviso de respaldo')).some(rtId);
+    const RT_from = String(RT_t.from || '');
+    if (RT_sd && RT_hecho) {
+      const RT_actual = RT_sd.estados && RT_sd.estados[RT_from];
+      if (RT_actual && typeof RT_actual === 'object') RT_actual.paso = 'menu';
+    } else if (RT_sd && RT_d && RT_d.estado && typeof RT_d.estado === 'object' && RT_from) {
+      if (vmEscribirEstado(RT_sd, RT_from, RT_d.estado, Number(RT_t.ahoraMs) || Date.now()) && Number(RT_d.anclaMs) > 0) {
+        RT_sd.estados[RT_from].ultimoMensajeMs = Number(RT_d.anclaMs);
+      }
     }
     throw new Error('Entrega fallida: Meta rechazó el envío y su respaldo en texto; ' + (RT_esperados - RT_entregados) + ' de ' + RT_esperados + ' mensaje(s) al cliente sin entregar. El cliente no recibió respuesta.');
   }

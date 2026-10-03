@@ -3937,3 +3937,67 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     expect(m.turno(CLIENTE, mTexto('hola')).mensajes.length).toBeGreaterThan(0);
   });
 });
+
+// =============================================================================================================================
+// REVISIÓN DEL PR #382, punto 1: R3 (la ejecución termina en error) NO puede dejar que reconfirmar arme un SEGUNDO pedido
+// =============================================================================================================================
+describe('R3 y hechos externos: si ya salió un aviso o corrió el cierre, reconfirmar no duplica nada (ni aviso, ni cierre, ni pedido)', () => {
+  const fallaTodo = (w: Mundial): void => { w.fallan.add('Enviar a WhatsApp'); w.fallan.add('Enviar respaldo'); };
+  const sinFalla = (w: Mundial): void => { w.fallan.delete('Enviar a WhatsApp'); w.fallan.delete('Enviar respaldo'); };
+  const tocaTolerando = (w: Mundial, id: string): ResultadoTurno => w.mundo.turno(entrega(CLIENTE, mBoton(id, 'x')), { tolerarFallo: true });
+
+  it('plan B (sin QR): el aviso y el cierre salieron, el cliente no recibió nada; el botón viejo NO arma otro pedido y el estado queda en el menú', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    const id = idDeBoton(r.resumen, 'Confirmar pedido');
+    fallaTodo(r.w);
+    const fallido = tocaTolerando(r.w, id);
+    expect(fallido.fallo?.mensaje).toMatch(/Entrega fallida/);
+    expect(fallido.avisos.length, 'el aviso salió en el turno fallido').toBeGreaterThan(0);
+    expect(fallido.llamadas.cierre.length, 'el cierre se registró en el turno fallido').toBeGreaterThan(0);
+    const codigos = pedidosGuardados(r.w.mundo).map((p) => p['codigo']);
+    expect(codigos).toHaveLength(1);
+    // Meta vuelve y el cliente toca el mismo botón otra vez (o escribe cualquier cosa).
+    sinFalla(r.w);
+    for (const reintento of [() => r.c.toca(id, 'Confirmar pedido'), () => r.c.escribe('confirmo')]) {
+      const t = reintento();
+      expect(t.avisos, 'ningún aviso nuevo').toHaveLength(0);
+      expect(t.llamadas.cierre, 'ningún cierre nuevo').toHaveLength(0);
+      expect(t.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado')).toHaveLength(0);
+      expect(pedidosGuardados(r.w.mundo).map((p) => p['codigo'])).toEqual(codigos);
+    }
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+  });
+
+  it('reserva: el aviso y el cierre salieron; reenviar la solicitud con el botón viejo no manda otro aviso ni otro cierre', () => {
+    const r = armarReserva({ ventana: 5 });
+    fallaTodo(r.w);
+    const fallido = tocaTolerando(r.w, 'r|enviar');
+    expect(fallido.fallo?.mensaje).toMatch(/Entrega fallida/);
+    expect(fallido.avisos.length).toBeGreaterThan(0);
+    expect(fallido.llamadas.cierre.length).toBeGreaterThan(0);
+    sinFalla(r.w);
+    const t = r.c.toca('r|enviar', 'Enviar solicitud');
+    expect(t.avisos).toHaveLength(0);
+    expect(t.llamadas.cierre).toHaveLength(0);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+  });
+
+  it('SIN hecho externo (el QR no llegó): el estado vuelve al previo CON su ancla, y reconfirmar da el MISMO pedido (mismo código), un solo cobro y un solo pedido guardado', () => {
+    const r = armarPedido();
+    const id = idDeBoton(r.resumen, 'Confirmar pedido');
+    const ancla = estadoDe(r.w.mundo)['ultimoMensajeMs'];
+    fallaTodo(r.w);
+    const fallido = tocaTolerando(r.w, id);
+    expect(fallido.fallo?.mensaje).toMatch(/Entrega fallida/);
+    expect(fallido.avisos).toHaveLength(0);
+    expect(fallido.llamadas.cierre).toHaveLength(0);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(estadoDe(r.w.mundo)['ultimoMensajeMs'], 'la ancla del estado leído se conserva').toBe(ancla);
+    const codigo1 = pedidosGuardados(r.w.mundo).map((p) => p['codigo']);
+    sinFalla(r.w);
+    const ok = r.c.toca(id, 'Confirmar pedido');
+    expect(ok.mensajes.some((m) => m.ok && m.tipo === 'image')).toBe(true);
+    expect(pedidosGuardados(r.w.mundo).map((p) => p['codigo'])).toEqual(codigo1);
+    expect(ok.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado')).toHaveLength(1);
+  });
+});
