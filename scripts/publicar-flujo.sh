@@ -681,7 +681,54 @@ if config_dif:
         aviso = f"  {R}<- longitud distinta{FIN}" if la != lb else ""
         print(f"    {A}~{FIN} {nodo} · {campo}: vivo {la} car. -> origen {lb} car.{aviso}")
 
-if not perdidos and not cambiados and not config_dif and not corregidas:
+# --- diferencias de ESTRUCTURA -------------------------------------------------
+# VERDE FALSO (03/10/2026): un nodo nuevo en el origen, un nodo que solo existe
+# en el vivo, o un cambio de conexiones o de `settings` NO contaban como
+# diferencia (solo los «valores distintos» de nodos presentes en los dos
+# lados), y el diagnostico decia «coincide con el origen» con el flujo vivo
+# atrasado (Platinum Seguimientos: 11 nodos vivos, 12 en el JSON). Se informan
+# SOLO nombres de nodo y de clave de settings, nunca valores.
+# Para no dar falsos positivos: las conexiones se normalizan (sin ramas de
+# salida vacias al final, sin origenes sin destinos), y de `settings` solo se
+# comparan las claves que el origen declara (n8n agrega las suyas por defecto).
+# Las posiciones no se comparan: solo importan por el orden de las ramas, y ese
+# orden va en la estructura de conexiones y en settings.executionOrder.
+def _conex(c):
+    out = {}
+    for origen, tipos in (c or {}).items():
+        t2 = {}
+        for tipo, ramas in (tipos or {}).items():
+            ramas = [[(d.get("node"), d.get("type"), d.get("index", 0)) for d in (r or [])] for r in (ramas or [])]
+            while ramas and not ramas[-1]:
+                ramas.pop()
+            if ramas:
+                t2[tipo] = ramas
+        if t2:
+            out[origen] = t2
+    return out
+
+estructura = []   # (nombre, motivo)
+for c in nuevos:
+    estructura.append((c, "nodo nuevo en el origen, no esta en el flujo vivo"))
+for c in sin_par:
+    estructura.append((c, "nodo solo en el flujo vivo, no esta en el origen"))
+cv_, cn_ = _conex(vivo.get("connections")), _conex(nuevo.get("connections"))
+for origen in sorted(set(cv_) | set(cn_)):
+    if origen in nuevos or origen in sin_par:
+        continue
+    if cv_.get(origen) != cn_.get(origen):
+        estructura.append((origen, "conexiones de salida distintas"))
+sv_, sn_ = vivo.get("settings") or {}, nuevo.get("settings") or {}
+claves_set = sorted(k for k in sn_ if sv_.get(k) != sn_.get(k))
+if claves_set:
+    estructura.append(("(settings del flujo)", "claves distintas: " + ", ".join(claves_set)))
+
+if estructura:
+    print(f"\n  {A}Diferencias de estructura entre el flujo vivo y el origen ({len(estructura)}):{FIN}")
+    for nombre, motivo in estructura:
+        print(f"    {A}~{FIN} {nombre} · {motivo}")
+
+if not perdidos and not cambiados and not config_dif and not corregidas and not estructura:
     print(f"\n  {V}El flujo vivo coincide con el origen: no hay nada que reponer.{FIN}")
 
 # --- cuerpo para el PUT: la API rechaza campos de solo lectura ---------------
