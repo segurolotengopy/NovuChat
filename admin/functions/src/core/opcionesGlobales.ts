@@ -9,7 +9,7 @@
  * ocho Functions —ingesta y configuracionFlujo entre ellas— quedaron en el
  * manifiesto sin la cuenta sa-functions (y una, sin región). Con las opciones
  * en su propio módulo, importado primero, ningún import futuro puede
- * adelantarse. Lo vigila admin/pruebas/region-y-cuenta.test.ts.
+ * adelantarse. Lo vigila admin/pruebas/plataforma/region-y-cuenta.test.ts.
  */
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { REGION } from './region.js';
@@ -47,8 +47,8 @@ import { REGION } from './region.js';
 // (DESPLIEGUE-FIREBASE.md, `desplegadorSecretos`): 403 en producción y 400 en
 // staging, y el `--dry-run` NO lo ve (solo corre `checkSecretAccess`).
 // Reproducido contra `ensure.secretsAccessDelta` en
-// admin/pruebas/manifiesto-secretos.test.ts; la forma del correo la vigila
-// admin/pruebas/region-y-cuenta.test.ts.
+// admin/pruebas/plataforma/manifiesto-secretos.test.ts; la forma del correo la vigila
+// admin/pruebas/plataforma/region-y-cuenta.test.ts.
 //
 // Sin GCLOUD_PROJECT se FALLA, no se adivina: un manifiesto con un correo a
 // medias es exactamente el defecto de arriba. En las pruebas lo fija

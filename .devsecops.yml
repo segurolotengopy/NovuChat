@@ -55,28 +55,48 @@ seguridad:
 
 
   # ---------------------------------------------------------------------------
-  # ACTIVA: hallazgo de Gitleaks del PR #1 (falso positivo). La regla
-  # generic-api-key cruza el salto de línea cuando el valor está vacío y
-  # captura el renglón siguiente: lo que reporta como secreto es la cadena
-  # VITE_USAR_EMULADORES=true.
-  #
-  # POR QUÉ SIGUE ACTIVA (revisión de seguridad del #253, 28/09/2026). Las
-  # allowlists por forma del valor de .github/gitleaks.toml lo tapan con
-  # gitleaks 8.30.1, pero el CI corre la versión por defecto de
-  # gitleaks-action, que es 8.24.3, y con esa versión no lo tapan. La corrida
-  # del PR #1 lo muestra con el hallazgo y las allowlists ya presentes, y la
-  # siguiente en verde lo saltea por esta excepción. Solo se nota en un
-  # escaneo de la historia completa (workflow_dispatch). Se cierra cuando el CI
-  # fije gitleaks 8.28 o posterior (GITLEAKS_VERSION en
-  # _reusable-security.yml, que es copia del estándar). Si eso no ocurre antes
-  # del vencimiento, se renueva con la misma huella exacta.
+  # ✅ CERRADA el 2026-10-01: la excepción de Gitleaks por el falso positivo del
+  # PR #1 (generic-api-key cruzaba el salto de línea de
+  # `VITE_APPCHECK_SITE_KEY=` vacío y capturaba `VITE_USAR_EMULADORES=true`;
+  # huella ce0b484c46b7:admin/scripts/emuladores.sh:generic-api-key:111). Seguía
+  # activa porque la acción de CI instalaba gitleaks 8.24.3, que ignoraba las
+  # allowlists; el reusable 2.8 fija GITLEAKS_VERSION 8.30.1 y la allowlist por
+  # forma del valor de .github/gitleaks.toml la cubre. Medido: gitleaks 8.30.1
+  # sobre el árbol y los 874 commits, con ese toml, sin hallazgos.
   # ---------------------------------------------------------------------------
-    - id: ce0b484c46b784957ace1313296bf7089630dcd0:admin/scripts/emuladores.sh:generic-api-key:111
-      herramienta: gitleaks
+
+  # ---------------------------------------------------------------------------
+  # ACTIVA (01/10/2026): CKV_GHA_7 de Checkov sobre release.yml y
+  # ci-node-firebase.yml. Desde el reusable de seguridad 2.7, el job
+  # `workflows` analiza los workflows (antes Checkov los descartaba sin avisar).
+  # Comprobado con entradas_workflow_dispatch.py del estándar: 13 ok, 0 fallos.
+  # Apartarse del texto del estándar: NovuChat tiene un tercer input, `destino`,
+  # y `tag` y `confirmar` no son obligatorios (se dice abajo). Se revisa al vencer.
+  # ---------------------------------------------------------------------------
+    - id: CKV_GHA_7
+      herramienta: checkov
       justificacion: >-
-        Falso positivo: VITE_APPCHECK_SITE_KEY esta vacio y generic-api-key
-        cruza el salto de linea, capturando VITE_USAR_EMULADORES=true como si
-        fuera el secreto. No hay ninguna credencial en ese archivo.
+        Regla SLSA sobre workflow_dispatch con inputs, en dos workflows
+        (revisado el 2026-10-01 con entradas_workflow_dispatch.py del estandar:
+        13 ok, 0 fallos; ningun input se interpola en un script). (1)
+        release.yml declara `tipo`, un choice de [auto, patch, minor, major], y
+        `prerelease`, un boolean: GitHub rechaza cualquier otro valor antes de
+        que arranque, y `tipo` llega al shell por variable de entorno
+        (TIPO_ENTRADA). (2) ci-node-firebase.yml declara `destino`, un choice
+        de [dev, produccion] que solo se usa en condiciones `if:`, y `tag` y
+        `confirmar`, de texto y opcionales: `confirmar` solo se compara con la
+        cadena DESPLEGAR en el `if:` de desplegar-produccion; `tag` llega a
+        actions/checkout (`ref:`) y a una variable de entorno (TAG) que el
+        shell usa entre comillas, y antes de desplegar a produccion se exige
+        que sea un tag existente (refs/tags/), sin guion y ancestro de main,
+        y que quien lo lanza este en APROBADORES_PROD; vacio, falla. Con
+        destino=dev y un tag cargado, calidad y seguridad analizan ese tag pero
+        construir-staging y desplegar-dev construyen y despliegan github.ref: el
+        tag no cambia lo que se despliega, pero si lo que se verifico (pendiente,
+        se corrige en otro PR). Solo
+        quien tiene permiso de escritura lanza un workflow_dispatch. Quitar los
+        inputs obligaria a editar el workflow en cada release o despliegue
+        manual.
       aprobado_por: Andres Alberdi
-      creado: "2026-08-30"
-      vence: "2026-10-31"
+      creado: "2026-10-01"
+      vence: "2026-12-30"

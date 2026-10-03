@@ -4,11 +4,11 @@ import {
   query, serverTimestamp, setDoc, updateDoc, where, writeBatch,
 } from 'firebase/firestore';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { limiteDeProductos, nombreDePlan, planSiguiente } from '../../lib/planes';
-import { auth, db, funciones } from '../../lib/firebase';
+import { limiteDeProductos, nombreDePlan, planSiguiente } from '../../central/lib/planes';
+import { auth, db, funciones } from '../../core/lib/firebase';
 import { httpsCallable } from 'firebase/functions';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
-import { etiquetaCatalogo, useFlujos } from '../../lib/flujos';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
+import { etiquetaCatalogo, useFlujos } from '../../central/lib/flujos';
 import { mensajeDeFalla, prepararFoto } from './foto';
 import {
   aCsv, idDeNombre, partirCsv, validarFilas, type FilaCatalogo, type FilaConProblemas,
@@ -65,7 +65,7 @@ interface Item {
   id: string; nombre?: unknown; descripcion?: unknown; area?: unknown;
   precio?: unknown; moneda?: unknown; duracionMin?: unknown; activo?: unknown;
   imagenUrl?: unknown; actualizadoEn?: unknown;
-  /** Ausente = no lleva control de existencias. Ver `functions/src/inventario.ts`. */
+  /** Ausente = no lleva control de existencias. Ver `functions/src/modulos/inventario/inventario.ts`. */
   stock?: unknown;
 }
 
@@ -1277,7 +1277,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items, usados, limite, unidad }
       avisarSiTraeMoneda(r.columnas);
       if (imagenes > 0) {
         // Se dice ANTES de importar, no después. Ver el comentario de
-        // `imagenesIncrustadas` en `lib/xlsx.ts`.
+        // `imagenesIncrustadas` en `web/src/modulos/productos/xlsx.ts`.
         const atadas = fotos.size;
         setEstado(`Ese archivo trae ${imagenes} ${imagenes === 1 ? 'foto pegada' : 'fotos pegadas'} adentro`
           + (atadas === imagenes
@@ -1779,8 +1779,10 @@ function ImportarCatalogo({ tenantId, conAgenda, items, usados, limite, unidad }
  * minutos, no cuenta como conversación —mirar el catálogo propio no se cobra— y
  * el checkout la rechaza, así que probando no se puede generar un pedido falso.
  *
- * Va en un marco del ancho de un teléfono porque es donde lo va a abrir el
- * cliente: mostrarlo a 1.200 píxeles da una impresión que después no se cumple.
+ * SE ABRE EN OTRA PESTAÑA, no en un marco (T-37, `admin/SEGURIDAD.md`): la
+ * página pública está en un sitio de Hosting con otro origen que la consola, y
+ * enmarcarla exigiría que ambas políticas de seguridad nombraran la dirección de
+ * la otra. (Antes iba en un marco del ancho de un teléfono.)
  */
 function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boolean }) {
   const [catalogoWebActivo, setCatalogoWebActivo] = useState<boolean | null>(null);
@@ -1804,8 +1806,14 @@ function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boole
       const r = await httpsCallable<{ tenantId: string }, { url: string }>(
         funciones, 'vistaPreviaCatalogo')({ tenantId });
       setUrl(r.data.url);
-    } catch {
-      setError('No se pudo abrir la vista previa. Intente en un momento.');
+    } catch (e) {
+      // El servidor dice «Falta configurar la dirección del sitio» cuando falta
+      // SITIO_PUBLICO (T-37): reintentar no lo arregla, y «intente en un momento»
+      // le haría perder tiempo al comercio. Se le dice qué pasa y a quién avisar.
+      const mensaje = (e as { message?: unknown }).message;
+      setError(typeof mensaje === 'string' && mensaje.includes('dirección del sitio')
+        ? 'La dirección pública del catálogo todavía no está configurada, así que no se puede abrir la vista previa ni mandar enlaces a los clientes. Avise a NovuChat.'
+        : 'No se pudo abrir la vista previa. Intente en un momento.');
     } finally {
       setPidiendo(false);
     }
@@ -1836,12 +1844,17 @@ function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boole
         </button>
       ) : (
         <>
-          <iframe className="marco-catalogo" src={url} title="Vista previa del catálogo"
-                  sandbox="allow-scripts allow-same-origin" />
+          {/* SIN MARCO (T-37, admin/SEGURIDAD.md). La vista previa era un
+              `<iframe>` con la página pública dentro; ahora la página vive en
+              OTRO sitio de Hosting, con otro origen, y enmarcarla exigiría que
+              cada una de las dos políticas de seguridad nombrara la dirección
+              de la otra —direcciones que cambian por ambiente y que no se
+              versionan—, o abrirlas a cualquier sitio de Firebase. Se abre en
+              otra pestaña, que además es como la ve el cliente. */}
           <p className="ayuda">
             {/* `noreferrer` además de `noopener`: la página del catálogo no tiene
                 por qué enterarse de desde qué dirección de la consola se la abrió. */}
-            <a href={url} target="_blank" rel="noopener noreferrer">Abrirla en otra pestaña ↗</a>
+            <a className="btn btn-secondary" href={url} target="_blank" rel="noopener noreferrer">Abrir la vista previa en otra pestaña ↗</a>
             {' · '}
             <button type="button" className="enlace" onClick={() => void abrir()}>Recargar</button>
             {' · '}vence en 15 minutos

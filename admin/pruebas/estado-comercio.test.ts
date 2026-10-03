@@ -166,7 +166,10 @@ describe('La compuerta que aplica el estado', () => {
     // ni siquiera corre.
     const conexiones = flujo('demo-b-venta-cobro.json').connections;
     const destinos = (n: string) => (conexiones[n]?.main?.[0] ?? []).map((x) => x.node);
-    expect(destinos('Comercio no operativo')).toEqual(['Responder al cliente']);
+    // F3a (02/10/2026): el aviso entra por el embudo «Mensaje a enviar», que solo
+    // decide si lleva botón; el aviso neutro no lo lleva.
+    expect(destinos('Comercio no operativo')).toEqual(['Mensaje a enviar']);
+    expect(destinos('Mensaje a enviar')).toEqual(['¿Con botón?']);
     expect(destinos('Responder al cliente')).toEqual(['Texto enviado']);
     expect(destinos('Texto enviado')).toEqual(['Reportar mensaje (saliente)']);
   });

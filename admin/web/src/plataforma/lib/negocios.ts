@@ -22,11 +22,11 @@
  *
  * Módulo puro: no importa Firebase y se prueba sin emulador.
  */
-import { FORMATOS, extensionDe, type ExtensionPlanes } from '../../lib/archivoPlanes';
+import { FORMATOS, extensionDe, type ExtensionPlanes } from '../../central/lib/archivoPlanes';
 import {
   MESES_MAXIMO, TCO_MAXIMO, TCO_MINIMO, aplicarPago, descripcionDe, esFecha, esPago, importeBs, montoUsdDe,
   type CuentaCruda, type Pago,
-} from '../../lib/prepago';
+} from '../../central/lib/prepago';
 
 /**
  * La MISMA forma que `ID_TENANT` de `functions/src/central/pagar/pagos.ts` e `index.ts`
@@ -190,8 +190,8 @@ export const diaBolivia = (ms: number): string => new Date(ms - 4 * 3_600_000).t
 // EL ERROR DEL SERVIDOR, TAL CUAL
 // -----------------------------------------------------------------------------
 
-/** El error del servidor, tal cual (`lib/errores.ts`, compartido con Central). */
-export { mensajeDeError } from '../../lib/errores';
+/** El error del servidor, tal cual (`web/src/central/lib/errores.ts`, compartido con Central). */
+export { mensajeDeError } from '../../central/lib/errores';
 
 /** `registrarPagoManual` exige una sesión de hace menos de media hora: con este código la pantalla ofrece volver a entrar. */
 export const pideSesionReciente = (e: unknown): boolean =>

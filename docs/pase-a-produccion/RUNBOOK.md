@@ -68,7 +68,7 @@ Environment `production`, una etiqueta, una sesión de propietario en la consola
 
 ```bash
 cd <worktree>/admin
-node scripts/pase-a-produccion.mjs --proyecto <proyecto> --tenant <id> \
+node scripts/plataforma/pase-a-produccion.mjs --proyecto <proyecto> --tenant <id> \
   --aceptacion ~/NovuChat/CLIENTES/<NOMBRE>/aceptacion.md
 ```
 
@@ -81,7 +81,7 @@ node scripts/pase-a-produccion.mjs --proyecto <proyecto> --tenant <id> \
   n8n, un teléfono). Al final dice **en qué etapa está el pase** (1 a 4 de este
   documento). Salida 0 = todo lo que ve se cumple; 1 = falta algo; 3 = este
   comercio no pasa nunca.
-- Probado contra el emulador en `admin/pruebas/pase-a-produccion.test.ts`
+- Probado contra el emulador en `admin/pruebas/plataforma/pase-a-produccion.test.ts`
   (listo, sin plan, demo, `novuchat`, marcadores y supuestos, WABA compartida,
   en prueba, corte encendido sin precondiciones, sin TCO, aceptación a medias).
 
@@ -157,8 +157,8 @@ Un comercio sin modalidad **es demostración** para el servidor: no se le cobra
 ni se le corta. El primer paso visible es la prueba:
 
 ```bash
-node scripts/migrar-prepago.mjs --proyecto <proyecto> --tenant <id> --modalidad prueba   # seco, leído entero
-node scripts/migrar-prepago.mjs --proyecto <proyecto> --tenant <id> --modalidad prueba --aplicar
+node scripts/plataforma/migrar-prepago.mjs --proyecto <proyecto> --tenant <id> --modalidad prueba   # seco, leído entero
+node scripts/plataforma/migrar-prepago.mjs --proyecto <proyecto> --tenant <id> --modalidad prueba --aplicar
 ```
 
 - La prueba es el mes en curso de Bolivia (o `--periodo-prueba aaaa-mm`) con su
@@ -177,8 +177,8 @@ conversaciones), se fija con `asignar-plan.mjs` (o la fila «Prueba» de
 Negocios, con sesión reciente), en seco primero:
 
 ```bash
-node scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --periodo-prueba <aaaa-mm> [--bolsa-prueba <N>]            # seco, leído entero
-node scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --periodo-prueba <aaaa-mm> [--bolsa-prueba <N>] --aplicar
+node scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --periodo-prueba <aaaa-mm> [--bolsa-prueba <N>]            # seco, leído entero
+node scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --periodo-prueba <aaaa-mm> [--bolsa-prueba <N>] --aplicar
 ```
 
 - `--periodo-prueba` es el **último** mes de la prueba. La fija o la
@@ -230,8 +230,8 @@ auditados con sus últimos 4. Son los que recibirán la cobranza y, con A-4, los
 ### 3.3 [Claude, con el OK de Andres] El TCO del día
 
 ```bash
-node scripts/fijar-tipo-cambio.mjs --proyecto <proyecto> --tco <valor del BCB> --fecha <aaaa-mm-dd> --por andres            # seco
-node scripts/fijar-tipo-cambio.mjs --proyecto <proyecto> --tco <valor del BCB> --fecha <aaaa-mm-dd> --por andres --aplicar
+node scripts/plataforma/fijar-tipo-cambio.mjs --proyecto <proyecto> --tco <valor del BCB> --fecha <aaaa-mm-dd> --por andres            # seco
+node scripts/plataforma/fijar-tipo-cambio.mjs --proyecto <proyecto> --tco <valor del BCB> --fecha <aaaa-mm-dd> --por andres --aplicar
 ```
 
 Sin TCO vigente (más de 4 días, fuera de 5..40, fecha futura) **no se emite
@@ -256,7 +256,7 @@ PRODUCCIÓN es un paso aparte del propietario, después de ver el pago
 confirmado:** en Negocios, modalidad «Producción» (pide sesión reciente), o
 
 ```bash
-node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --modalidad prepago   # seco, y después --aplicar
+node admin/scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --modalidad prepago   # seco, y después --aplicar
 ```
 
 **Desde ese momento el encabezado dice PRODUCCIÓN.**
@@ -288,7 +288,7 @@ Si un comercio pagó antes de que existieran los pagos del prepago, Andres puede
 decidir migrarlo directo, con su último mes cubierto:
 
 ```bash
-node scripts/migrar-prepago.mjs --proyecto <proyecto> --tenant <id> --modalidad prepago --periodo-pagado aaaa-mm   # seco
+node scripts/plataforma/migrar-prepago.mjs --proyecto <proyecto> --tenant <id> --modalidad prepago --periodo-pagado aaaa-mm   # seco
 ```
 
 Es la vía que `admin/DISENO.md` §4undecies.2 reserva para «una decisión

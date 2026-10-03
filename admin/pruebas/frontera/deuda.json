@@ -12,76 +12,18 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/seguimientos.ts",
+      "desde": "admin/functions/src/modulos/agenda/seguimientos.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/sena.ts",
+      "desde": "admin/functions/src/modulos/agenda/sena.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
-    },
-    {
-      "desde": "admin/functions/src/catalogoWeb.ts",
-      "hacia": "admin/functions/src/inventario.ts",
-      "porque": "Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web"
-    },
-    {
-      "desde": "admin/web/src/plataforma/lib/negocios.ts",
-      "hacia": "admin/web/src/lib/archivoPlanes.ts",
-      "porque": "Plataforma lee el archivo de planes de Captación: la pieza compartida baja a Central al mover captación"
     }
   ],
-  "sinZona": [
-    "admin/scripts/activar-cobro-real.mjs",
-    "admin/scripts/completar-flujos.mjs",
-    "admin/scripts/contar-catalogo.mjs",
-    "admin/scripts/emuladores.sh",
-    "admin/scripts/ensayo.mjs",
-    "admin/scripts/fijar-webhook-carrito.mjs",
-    "admin/scripts/lib/contador-catalogo.mjs",
-    "admin/scripts/limpiar-cierres-de-prueba.mjs",
-    "admin/scripts/lockfile-functions.sh",
-    "admin/scripts/pase-a-produccion.mjs",
-    "admin/scripts/plantilla-catalogo.mjs",
-    "admin/scripts/probar-cierre.mjs",
-    "admin/scripts/probar-csp.mjs",
-    "admin/scripts/reiniciar-ventana.mjs",
-    "admin/scripts/sembrar-demos.mjs",
-    "admin/scripts/sembrar.mjs",
-    "admin/scripts/soltar-sena-pendiente.mjs",
-    "admin/scripts/usuarios-prueba.mjs",
-    "admin/web/src/App.tsx",
-    "admin/web/src/componentes/AvisoConsumo.tsx",
-    "admin/web/src/componentes/CampoMonto.tsx",
-    "admin/web/src/componentes/ChipModo.tsx",
-    "admin/web/src/componentes/EditorLista.tsx",
-    "admin/web/src/componentes/EncabezadoComercio.tsx",
-    "admin/web/src/componentes/GraficoDias.tsx",
-    "admin/web/src/componentes/Marca.tsx",
-    "admin/web/src/componentes/Proteger.tsx",
-    "admin/web/src/componentes/ResumenPrepago.tsx",
-    "admin/web/src/componentes/SinSalida.tsx",
-    "admin/web/src/componentes/TextoSeguro.tsx",
-    "admin/web/src/consola.tsx",
-    "admin/web/src/diseno.css",
-    "admin/web/src/estilos.css",
-    "admin/web/src/lib/contrasena.ts",
-    "admin/web/src/lib/ejes.ts",
-    "admin/web/src/lib/errores.ts",
-    "admin/web/src/lib/exportar.ts",
-    "admin/web/src/lib/firebase.ts",
-    "admin/web/src/lib/modoComercio.ts",
-    "admin/web/src/lib/paletas.ts",
-    "admin/web/src/lib/tema.ts",
-    "admin/web/src/main.tsx"
-  ],
-  "sinResolver": {
-    "admin/scripts/medir-zonas.mjs": {
-      "cantidad": 1,
-      "porque": "Carga frontera.ts con import() después de callar un aviso de Node; frontera.ts no tiene zona"
-    }
-  },
+  "sinZona": [],
+  "sinResolver": {},
   "transversales": [
     "admin/pruebas/core/registro.test.ts"
   ]

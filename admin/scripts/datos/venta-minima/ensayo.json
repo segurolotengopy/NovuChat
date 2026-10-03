@@ -1,0 +1,12 @@
+{
+  "hereda": "qtaco",
+  "nombreFlujo": "NovuChat — Venta mínima (v0, prueba)",
+  "entrada": "prueba",
+  "credenciales": {
+    "graph": "Graph WhatsApp — pruebas (no producción)",
+    "entradaPrueba": "Entrada de prueba Q'Taco"
+  },
+  "configBase": {
+    "numeroEnsayo": "REEMPLAZAR_NUMERO_ENSAYO_QTACO"
+  }
+}

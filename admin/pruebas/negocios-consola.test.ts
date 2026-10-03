@@ -6,7 +6,7 @@
  *
  * Lo que estas pruebas defienden, y por qué:
  *  1. LA PANTALLA NO ESCRIBE EN FIRESTORE. Todo es una callable del propietario
- *     (`CALLABLES` de `lib/ejes.ts`), y las reglas niegan la escritura del
+ *     (`CALLABLES` de `web/src/central/lib/ejes.ts`), y las reglas niegan la escritura del
  *     navegador sobre `/cuenta`, `/pagos` y `/rutasWhatsApp`. La pantalla
  *     acompaña, el servidor manda (`CLAUDE.md` §7).
  *  2. NADA SE ESCRIBE SIN CONFIRMAR. Cada acción muestra qué va a cambiar y
@@ -38,7 +38,7 @@ import { PanelEjes } from '../web/src/plataforma/componentes/PanelEjes';
 import { SuspensionNegocio } from '../web/src/plataforma/componentes/SuspensionNegocio';
 import { CortePrepago } from '../web/src/plataforma/componentes/CortePrepago';
 import { FormularioPagoManual } from '../web/src/plataforma/componentes/FormularioPagoManual';
-import { MODELO_POR_DEFECTO, type EjesDeCuenta } from '../web/src/lib/ejes';
+import { MODELO_POR_DEFECTO, type EjesDeCuenta } from '../web/src/central/lib/ejes';
 import { BOLSA, MESES_MAXIMO, PLANES, aplicarPago, importeBs } from '../functions/src/central/cuenta/prepago';
 import { UMBRALES_ATENCION } from '../functions/src/core/conteo/atencion';
 
@@ -129,9 +129,9 @@ describe('nada se sube a Storage si el servidor rechazaría el pedido antes de m
 });
 
 describe('el tenantId se valida antes de llamar a cualquier callable (LOW 2)', () => {
-  it('ID_TENANT es la misma expresión de functions/src/central/pagar/pagos.ts e index.ts', () => {
+  it('ID_TENANT es la misma expresión de functions/src/central/pagar/pagos.ts y central/comunes.ts', () => {
     expect(leer('functions/src/central/pagar/pagos.ts')).toContain(`const ID_TENANT = ${ID_TENANT.toString()};`);
-    expect(leer('functions/src/index.ts')).toContain(`const ID_TENANT = ${ID_TENANT.toString()};`);
+    expect(leer('functions/src/central/comunes.ts')).toContain(`const ID_TENANT = ${ID_TENANT.toString()};`);
     expect(esIdTenant('salon-rosa')).toBe(true);
     for (const malo of ['', 'ab', 'Salon', '-salon', 'a'.repeat(61), undefined, 7]) expect(esIdTenant(malo)).toBe(false);
   });
@@ -147,10 +147,10 @@ describe('el tenantId se valida antes de llamar a cualquier callable (LOW 2)', (
 
 describe('la titularidad llega por ejesDeCuenta: nadie fuera de la cartera lee rutasWhatsApp (LOW 3)', () => {
   it('Cuenta, Pagar y Administrar piden ejesDeCuenta y no consultan rutasWhatsApp', () => {
-    for (const ruta of ['web/src/paginas/EstadoCuenta.tsx', 'web/src/paginas/Pagar.tsx', 'web/src/plataforma/paginas/CuentaNegocio.tsx']) {
-      const fuente = sinComentarios(leer(ruta));
-      expect(fuente, ruta).toContain('useEjesDeCuenta(tenantId)');
-      expect(fuente, ruta).not.toContain('rutasWhatsApp');
+    for (const bruta of [leer('web/src/central/paginas/EstadoCuenta.tsx'), leer('web/src/central/paginas/Pagar.tsx'), leer('web/src/plataforma/paginas/CuentaNegocio.tsx')]) {
+      const fuente = sinComentarios(bruta);
+      expect(fuente).toContain('useEjesDeCuenta(tenantId)');
+      expect(fuente).not.toContain('rutasWhatsApp');
     }
     const hook = sinComentarios(leer('web/src/central/lib/lecturas.ts'));
     expect(hook).toContain('CALLABLES.leerEjes');
@@ -372,7 +372,7 @@ describe('FormularioPagoManual: lo que se ve antes de registrar', () => {
 
 describe('las pantallas no escriben en Firestore y llaman a las callables por el contrato', () => {
   const pagina = sinComentarios(leer('web/src/plataforma/paginas/CuentaNegocio.tsx'));
-  const cartera = sinComentarios(leer('web/src/paginas/Tenants.tsx'));
+  const cartera = sinComentarios(leer('web/src/plataforma/paginas/Tenants.tsx'));
   const app = sinComentarios(leer('web/src/App.tsx'));
 
   it('ni Negocios ni Administrar usan setDoc, updateDoc, addDoc, deleteDoc, writeBatch ni runTransaction', () => {

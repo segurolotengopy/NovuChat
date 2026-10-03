@@ -505,6 +505,13 @@ for (let i = 0; i < items.length; i++) {
   // primer mensaje a todos los items si llegaran dos a la vez.
   const ent = (entradas[i] ?? entradas[entradas.length - 1]).json;
   const bruto = String(items[i].json.output ?? items[i].json.text ?? '').trim();
+  // Gemini devuelve 500/503 en picos y el agente (onError: continueRegularOutput)
+  // entrega el item con `error` o sin `output`. Se distingue de una respuesta
+  // vacia, pero las dos terminan igual: texto fijo CON el boton al asesor
+  // (politica «solo se ofrece lo que se cumple»). Cuesta un mensaje en el turno
+  // en que el modelo falla; antes el cliente no recibia nada.
+  const fallo = items[i].json.error !== undefined
+    || (items[i].json.output === undefined && items[i].json.text === undefined);
 
   const { lead, invalido } = leerLead(bruto);
   const pideCierre = /\[CIERRE\]/i.test(bruto);
@@ -790,10 +797,17 @@ for (let i = 0; i < items.length; i++) {
   const bloqueEnlace = conArchivo ? 'Te comparto los planes y sus precios en este enlace: ' + archivo.url : '';
   texto = armar(conMarca, bloqueLargo);
 
-  if (!texto) {
-    texto = 'Disculpa, no pude generar la respuesta. ¿Me lo repites?';
+  const TEXTO_FALLO = 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y te paso con una persona del equipo.';
+  // Cerrado y ya avisado, el boton no sale (no hay a quien avisar de nuevo): el texto no lo ofrece.
+  const TEXTO_FALLO_SIN_BOTON = 'Disculpa, tuve un problema para responderte. ¿Me lo repites?';
+  if (fallo) {
+    texto = TEXTO_FALLO;
+    avisos.push('fallo_modelo');
+  } else if (!texto) {
+    texto = TEXTO_FALLO;
     avisos.push('respuesta_vacia');
   }
+  const sinRespuesta = avisos.includes('fallo_modelo') || avisos.includes('respuesta_vacia');
 
   // --- Datos del prospecto: se acumulan en la conversacion ----------------
   // `flujos` se deduce del rubro, cuando el rubro es uno de la lista. `area` la
@@ -826,6 +840,8 @@ for (let i = 0; i < items.length; i++) {
   const yaCerrado = cierre || c?.etapa === 'cerrado' || ent.etapa === 'cerrado';
   // Cerrado, pero con el aviso sin confirmar y sin uno saliendo en este turno:
   // la salida hacia una persona se sigue ofreciendo en cada respuesta.
+  const falloSinBoton = sinRespuesta && yaCerrado && c?.avisado === true;
+  if (falloSinBoton) texto = TEXTO_FALLO_SIN_BOTON;
   const cerradoSinAviso = !avisar && !!c && c.etapa === 'cerrado' && c.avisado !== true;
   // SOLO SE OFRECE LO QUE SE CUMPLE (politica de NovuChat, 21/09/2026). Si el
   // texto remite a un asesor o promete que alguien le va a responder, y en este
@@ -838,6 +854,7 @@ for (let i = 0; i < items.length; i++) {
   if (prometeSinAviso) avisos.push('promesa_con_boton_asesor');
   const conBoton = cerradoSinAviso || (prometeSinAviso && !(c && c.avisado === true))
     || botonSoporte
+    || (sinRespuesta && !falloSinBoton)
     || (!yaCerrado && (planesMostrados || ent.finBloque === true || (pideCierre && !cierre)));
 
   // --- Que el boton sobreviva al limite de Meta ----------------------------

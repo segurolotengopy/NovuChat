@@ -20,13 +20,14 @@ Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`d
 `admin/firestore.rules` solo en las reglas de `cuenta` y `pagos`; el gancho no
 distingue secciones de un archivo, así que la revisión del PR sí. Fuera de esa
 lista no escribe: el gancho `.claude/hooks/zona-de-escritura.sh` lo rechaza, y
-lo que corresponde a otra zona se anota en el PR para su agente. Hasta que F2
-cree las carpetas `central/`, los archivos viven en `admin/functions/src/`
-(`planes.ts`, `prepago.ts`, `pagos*.ts`, `cobroPrepago.ts`, `cobrador.ts`,
-`cobranza.ts`, `tipoCambio*.ts`, `saneo.ts`, `comportamiento.ts`,
-`verificarComportamiento.ts`, `mapa.ts`, `reclamos.ts`) y en
-`admin/web/src/paginas/`: en F1 la zona es esa lista de archivos, y se declara
-en el PR.
+lo que corresponde a otra zona se anota en el PR para su agente. Los
+archivos viven en `admin/functions/src/central/` (`cuenta/{planes,prepago}.ts`,
+`pagar/{pagos*,cobroPrepago,cobrador,cobranza}.ts`,
+`servicios/{tipoCambio*,saneo}.ts`,
+`asistente/{comportamiento,verificarComportamiento}.ts`,
+`negocio/mapa.ts`, `reclamos/reclamos.ts`), en `admin/web/src/central/`
+(`paginas/`, `componentes/`) y en `admin/pruebas/central/`: la zona es esa
+carpeta, y se declara en el PR.
 
 ## Antes de actuar, lea
 

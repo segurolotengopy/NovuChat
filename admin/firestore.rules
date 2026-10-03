@@ -227,7 +227,7 @@ service cloud.firestore {
     // Capacidades, expresadas como tabla y no como condiciones sueltas: agregar
     // un flujo es tocar estas líneas, no cazar `if` por el archivo. La misma
     // tabla vive en `functions/src/core/prompt/prompt.ts` (VERTICALES_CONOCIDOS) y en
-    // `web/src/lib/flujos.ts`: si se agrega un flujo en un solo lado, se nota.
+    // `web/src/central/lib/flujos.ts`: si se agrega un flujo en un solo lado, se nota.
     function tieneAgenda(tenantId) {
       return tieneFlujo(tenantId, 'agendamiento');
     }
@@ -856,7 +856,7 @@ service cloud.firestore {
             // color y la página necesita TRES —el botón, su estado presionado y
             // el fondo de los chips— que tienen que contrastar entre sí. Las
             // cinco combinaciones están calculadas y medidas en
-            // `web/src/lib/paletas.ts`. Agregar una es tocar esta línea y esa
+            // `web/src/central/lib/paletas.ts`. Agregar una es tocar esta línea y esa
             // tabla; si se toca una sola, se nota.
             && d.get('paleta', 'indigo') in ['terracota', 'bosque', 'indigo', 'vino', 'oceano']
 
@@ -985,7 +985,7 @@ service cloud.firestore {
         // `aclaraciones` y `archivoPlanes`. Las reglas NO recorren elementos de
         // una lista: acá se comprueba el tipo y el tope de cada una; la forma
         // de cada elemento la valida y recorta `sanearCaptacion`
-        // (functions/src/captacion.ts) antes de mandarla al flujo, y descarta
+        // (functions/src/modulos/captacion/captacion.ts) antes de mandarla al flujo, y descarta
         // lo que no cumple. Mismo reparto que `datosQueNoTenemos` (T-27).
         //
         // MÁS DE CINCO PLANES EXIGEN EL ARCHIVO. Recitar veinte planes por chat
@@ -1125,14 +1125,14 @@ service cloud.firestore {
       // `ultimoItem` es lo que impide colar DOS productos con un solo +1: cada
       // alta exige que el contador la nombre a ella, y el contador nombra uno.
       // Un lote crea o borra, entonces, un producto a la vez. La importación
-      // masiva va por `importarCatalogo` (functions/src/limiteCatalogo.ts), que
+      // masiva va por `importarCatalogo` (functions/src/modulos/productos/limiteCatalogo.ts), que
       // cuenta en una transacción con el SDK Admin.
       //
       // SIN CONTADOR NO SE CREA NI SE BORRA desde el navegador. Las reglas no
       // pueden saber si un comercio sin contador tiene cero productos o
       // doscientos, y tratar la ausencia como cero regalaría el cupo entero a
       // quien ya lo tiene lleno. Por eso: el contador lo crea
-      // `scripts/contar-catalogo.mjs` ANTES de desplegar estas reglas, y para
+      // `scripts/modulos/productos/contar-catalogo.mjs` ANTES de desplegar estas reglas, y para
       // un comercio nuevo lo crea `importarCatalogo` (con `items: []` basta),
       // que sí puede contar. Nadie lo crea ni lo borra desde el navegador.
       // -----------------------------------------------------------------------
@@ -1144,7 +1144,7 @@ service cloud.firestore {
       //
       // Primero `cuenta/estado.limites.productos`, la copia que escribe
       // NovuChat al asignar el plan (`actualizarEstadoCuenta`,
-      // `scripts/asignar-plan.mjs`). Vale si es un entero de 1 a 100000
+      // `scripts/plataforma/asignar-plan.mjs`). Vale si es un entero de 1 a 100000
       // (`LIMITE_MAXIMO` de `planes.ts`): fuera de ese rango es un dato
       // corrupto y rige el plan, igual que en `limitesDeCuenta()`. Si no está,
       // la TABLA DE RESPALDO de abajo según `cuenta/estado.plan`; y si el plan

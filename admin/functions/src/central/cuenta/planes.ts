@@ -6,7 +6,7 @@
  *
  * ESTE MÓDULO ES PURO A PROPÓSITO, igual que `atencion.ts`: no importa Firebase
  * ni lee la red. Lo usan las Functions (`actualizarEstadoCuenta`, la ingesta),
- * el script `scripts/asignar-plan.mjs` y la consola (`web/src/lib/planes.ts`).
+ * el script `scripts/plataforma/asignar-plan.mjs` y la consola (`web/src/central/lib/planes.ts`).
  * Un solo catálogo y cuatro lectores: si la consola tuviera su copia, podría
  * decir «hasta 100 productos» mientras el servidor corta en otra cifra, y sobre
  * esa diferencia se discute un reclamo.
@@ -31,7 +31,7 @@
  * LOS NÚMEROS DE LOS PLANES PUBLICADOS son los que publica el sitio
  * (`Novuchat-site`, `src/contenido/precios.es.ts`, verificado el 15/09/2026) y
  * los de la «Base comercial» de `CLAUDE.md`. Un PR que cambie uno de ellos
- * cambia los tres lugares; `pruebas/planes.test.ts` compara este archivo con
+ * cambia los tres lugares; `pruebas/central/planes.test.ts` compara este archivo con
  * `CLAUDE.md`. `byoc` NO se publica y por eso no está en esa comparación: se
  * ofrece caso por caso (`Analisis/39`).
  */
@@ -54,7 +54,7 @@ export type IdPlanVendible = 'impulso' | 'crecimiento' | 'pro' | 'byoc';
  * plan solo dice qué límites rigen. Un demo es un tenant con modalidad
  * `demostracion` y cualquier plan del catálogo.
  *
- * Este tipo conserva `'demostracion'` ÚNICAMENTE porque `web/src/lib/pagar.ts`
+ * Este tipo conserva `'demostracion'` ÚNICAMENTE porque `web/src/central/lib/pagar.ts`
  * compara `actual !== 'demostracion'` después de acotar con `esIdPlan`, y
  * TypeScript rechaza esa comparación si el tipo no la contiene; la consola es
  * zona de otro agente. NINGÚN VALOR `'demostracion'` existe en el catálogo ni
@@ -103,7 +103,7 @@ export interface Plan extends Limites {
    * `central/ejes.ts`): un comercio puede tener un número propio y otro
    * provisto, y la franquicia de Meta es por número. Ningún plan trae este
    * campo. La clave sigue existiendo, opcional, solo porque
-   * `web/src/lib/pagar.ts` (`paganEllosAMeta`) todavía la lee y la consola es
+   * `web/src/central/lib/pagar.ts` (`paganEllosAMeta`) todavía la lee y la consola es
    * zona de otro agente; cuando la consola lea la titularidad, esta línea se
    * borra. `pruebas/central/ejes.test.ts` vigila que ningún plan la traiga.
    *
@@ -204,7 +204,7 @@ export const PLANES: Readonly<Record<IdPlanVendible, Readonly<Plan>>> = {
 /**
  * LOS QUE PUBLICA EL SITIO, en el orden en que se muestran. `Novuchat-site`
  * (`src/contenido/precios.es.ts`) y la «Base comercial» de `CLAUDE.md` §3 dicen
- * estos tres y solo estos tres; `pruebas/planes.test.ts` lo verifica.
+ * estos tres y solo estos tres; `pruebas/central/planes.test.ts` lo verifica.
  *
  * BYOC no está acá a propósito: se ofrece caso por caso, contra un portafolio
  * verificado del comercio, y su precio no se puede comparar de frente con los
@@ -221,7 +221,7 @@ export const PLANES_PUBLICADOS = ['impulso', 'crecimiento', 'pro'] as const;
  * cero, el «nunca se corta» y el «sin cobranza» los decide la modalidad en
  * `prepago.ts`, como siempre lo hizo para las cuentas sin plan de demo.
  *
- * ESTA CONSTANTE ES UN PUENTE NULO: `web/src/lib/planes.ts` la reexporta y la
+ * ESTA CONSTANTE ES UN PUENTE NULO: `web/src/central/lib/planes.ts` la reexporta y la
  * consola es zona de otro agente. Cuando esa reexportación se quite, esta
  * línea se borra. Ningún módulo del servidor, script ni prueba la usa
  * (`pruebas/central/ejes.test.ts` lo verifica).
@@ -233,8 +233,8 @@ export const PLAN_DEMOSTRACION = null;
 /**
  * Todo lo que se puede asignar a una cuenta. Desde F1 es EL CATÁLOGO: ya no
  * hay un plan interno además de los vendibles. Es EL MISMO OBJETO que
- * `PLANES`; se conserva el nombre porque la consola (`web/src/lib/planes.ts`,
- * `web/src/lib/prepago.ts`) y varias pruebas lo importan. El tipo declara la
+ * `PLANES`; se conserva el nombre porque la consola (`web/src/central/lib/planes.ts`,
+ * `web/src/central/lib/prepago.ts`) y varias pruebas lo importan. El tipo declara la
  * clave `'demostracion'` por el puente de `IdPlan` (arriba): en tiempo de
  * ejecución NO existe, y como `esIdPlan` nunca la da por válida, nadie llega a
  * indexarla. Es la única conversión de tipo del archivo, y se va con el puente.
@@ -315,7 +315,7 @@ export function esIdPlan(v: unknown): v is IdPlan {
  *
  * Un plan que no es del catálogo (una cuenta sin plan, o con el `'basico'` de
  * las altas viejas) no se renueva: primero NovuChat le asigna uno. Es la regla
- * de `planesQuePuedePagar` (`web/src/lib/pagar.ts`) hecha cumplir en el
+ * de `planesQuePuedePagar` (`web/src/central/lib/pagar.ts`) hecha cumplir en el
  * servidor (CLAUDE.md, «Base comercial» §7): la pantalla solo la acompaña. El
  * propietario no pasa por acá.
  */
@@ -339,7 +339,7 @@ export function limitesDe(plan: unknown): Limites {
 /**
  * LO QUE NACE EN `cuenta/estado` AL DAR DE ALTA UN COMERCIO: el plan más chico
  * con su copia de límites y la versión del catálogo. Lo usan `altaTenant`
- * (index.ts), `scripts/alta-comercio.mjs` y el sembrador local, para que las
+ * (index.ts), `scripts/plataforma/alta-comercio.mjs` y el sembrador local, para que las
  * tres altas escriban lo mismo. Antes escribían `plan: 'basico'`, que no es un
  * plan del catálogo y no traía copia: el comercio caía en el respaldo sin que
  * nadie lo supiera. Subir de plan después es `asignar-plan.mjs` o

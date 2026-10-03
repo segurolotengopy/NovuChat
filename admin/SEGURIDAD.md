@@ -31,7 +31,7 @@ entrada no confiable en el sentido más literal.
 
 Dos de tres, nunca las tres. Controles concretos:
 
-- **`web/src/componentes/TextoSeguro.tsx`.** Todo texto ajeno pasa por ahí. React
+- **`web/src/central/componentes/TextoSeguro.tsx`.** Todo texto ajeno pasa por ahí. React
   escapa por defecto y el componente solo interpola texto como hijo de un
   elemento; **nunca** `dangerouslySetInnerHTML`.
 - **Prohibición verificada en el CI.** El paso "Prohibiciones de renderizado" de
@@ -131,7 +131,7 @@ comercio. Conviene tener las dos cosas separadas en la cabeza.
 | Verificación de correo antes del primer acceso | ✅ **cubierto de verdad** | `correoVerificado()` en las reglas: sin verificar, **el servidor niega los datos**. No es un aviso de interfaz que se saltee recargando. Gratis |
 | Recuperación de contraseña | ✅ cubierto | `sendPasswordResetEmail`. Gratis |
 | No confirmar qué correos están registrados | ✅ cubierto | protección de enumeración de Firebase + mensajes de error genéricos en el ingreso. Gratis |
-| Longitud mínima real de contraseña | ⚠️ **parcial** | Firebase Auth impone 6. La consola pide **8** al cambiarla (`web/src/lib/contrasena.ts`), **pero eso es del navegador y se saltea**. Una política real —y el bloqueo de contraseñas comunes— exige **Identity Platform** |
+| Longitud mínima real de contraseña | ⚠️ **parcial** | Firebase Auth impone 6. La consola pide **8** al cambiarla (`web/src/core/lib/contrasena.ts`), **pero eso es del navegador y se saltea**. Una política real —y el bloqueo de contraseñas comunes— exige **Identity Platform** |
 | Límite de intentos / bloqueo | ⚠️ **parcial** | hay anti-abuso por IP, no configurable ni garantizado. Un límite por cuenta exige **Identity Platform**. Mitigación gratuita: **App Check con reCAPTCHA Enterprise** en el ingreso |
 | Segundo factor para cuentas de contraseña | ❌ **no cubierto** | exige **Identity Platform**. Los superadministradores sí lo tienen: su MFA la administra Google |
 
@@ -162,8 +162,8 @@ contraseña de 11 caracteres y el ingreso de la consola la rechazó, dejando a u
 administrador con una credencial válida y una pantalla que no lo dejaba pasar,
 sin explicar nada. Un `minLength` en el ingreso no le agrega dificultad a quien
 adivina contraseñas —no las escribe más cortas— y sí bloquea a quien la tiene
-bien. El número está una sola vez, en `web/src/lib/contrasena.ts`, con la
-prueba `pruebas/contrasena-minimo.test.ts` que verifica que las dos pantallas lo
+bien. El número está una sola vez, en `web/src/core/lib/contrasena.ts`, con la
+prueba `pruebas/central/contrasena-minimo.test.ts` que verifica que las dos pantallas lo
 usen.
 
 **Lo que queda pendiente, y es configuración, no código:** activar la *password
@@ -214,7 +214,7 @@ le toca a este diseño:
     modelo—. Ante la duda no se aplica. Las reglas niegan `instruccionesVigentes`
     e `instruccionesRevision` desde el navegador a todo rol, mirando el diff.
     `DISENO.md` §4quater.5; pruebas en *"Comportamiento general: lo vigente lo
-    escribe solo el servidor"* y `pruebas/comportamiento.test.ts`.
+    escribe solo el servidor"* y `pruebas/central/comportamiento.test.ts`.
   - **El prompt base del agente no es editable desde el panel**: vive en el flujo
     de n8n. Desde el panel se aportan datos, no comportamiento.
   - `configuracionParaFlujo` devuelve los campos **separados y rotulados** para
@@ -371,7 +371,9 @@ excepción que se AGREGÓ, y conviene decir qué cuesta:
 
 `scripts/probar-csp.mjs` aplica **el bloque que corresponde a cada ruta**, no solo
 el general: probar `/c/<ficha>` con la política de la consola diría que todo está
-bien y estaría probando la página equivocada.
+bien y estaría probando la página equivocada. (Desde T-37 `/c/<ficha>` ya no es de
+la consola: este script sirve el sitio `consola` y la página pública se prueba con
+`scripts/datos/catalogo-demo.mjs`, que lee el bloque del sitio `catalogo`.)
 
 ### Fragilidad conocida, dicha por adelantado
 
@@ -956,7 +958,7 @@ medios son distintos.
 
 **Pruebas.** 9 en *"Reclamos"* —una recorre los seis campos reservados de
 FormSubmit— y 2 en *"Configuración de plataforma"*, más las 13 pruebas puras de
-`pruebas/saneo.test.ts`, que verifican el escapado y la limpieza de encabezados
+`pruebas/central/saneo.test.ts`, que verifican el escapado y la limpieza de encabezados
 sin emulador ni red.
 
 ---
@@ -1399,7 +1401,7 @@ Tres consecuencias que salen gratis del mismo diseño:
 de NINGÚN navegador —ni el del admin del comercio, ni el de NovuChat—. Eso es lo
 que hace que un pedido sea evidencia de lo que el catálogo decía en ese momento.
 
-**Probado.** `pruebas/catalogo-web.test.ts`, sección de reglas: el admin no puede
+**Probado.** `pruebas/modulos/catalogo-web/catalogo-web.test.ts`, sección de reglas: el admin no puede
 crear, actualizar ni borrar un pedido.
 
 ---
@@ -1472,6 +1474,32 @@ funcionando, o a romperlos.
 devuelve algo y el catálogo sigue en el sitio de la consola, esta amenaza está
 abierta en producción.
 
+**Estado (03/10/2026): implementado en el código; falta operarlo.** El disparador
+llegó con Q'Taco (primer comercio real con catálogo web, lunes 05/10). Lo que
+quedó escrito, y qué lo vigila:
+
+| Pieza | Dónde | Qué impide que se pierda |
+|---|---|---|
+| Dos sitios de Hosting con destinos `consola` y `catalogo` | `firebase.json`, `.firebaserc.ejemplo` | `pruebas/modulos/catalogo-web/sitio-publico.test.ts` |
+| La consola ya no sirve `/c/**` ni las Functions públicas del catálogo | `firebase.json` (sitio `consola`), `src/main.tsx` | la misma suite y el punto 1 de `scripts/humo-staging.sh` |
+| El sitio público solo reescribe a `checkoutCatalogo`, `fotoDeCatalogo`, `catalogoPublico`; su CSP no nombra marcos, Google, Firebase ni Functions, y no se indexa | `firebase.json` (sitio `catalogo`) | la suite y `scripts/humo-sitio-publico.sh` |
+| El paquete público tiene su propia compilación y su única entrada no importa la consola ni el SDK de Firebase | `web/vite.catalogo.config.ts`, `web/catalogo.html`, `publico/entrada.tsx` | la suite (sobre los `import`) y `scripts/modulos/catalogo-web/verificar-sitio-publico.mjs` (sobre lo que Vite emitió, en el job `construir`) |
+| `SITIO_PUBLICO` obligatoria: sin ella no hay enlace (500) | `catalogoWeb.ts` (`baseDelSitio`) | la suite: ya no existe el respaldo `https://<proyecto>.web.app`, que ahora llevaría a la consola |
+| El despliegue falla si falta `HOSTING_SITIO_CATALOGO`, si es el sitio de la consola o si `SITIO_PUBLICO` sigue siendo el origen de la consola | `ci-node-firebase.yml` (`desplegar-staging`, `desplegar-produccion`) | la suite (lee el workflow) |
+
+**Cambios de comportamiento que esto trae:** la vista previa del catálogo en la
+consola (`Catalogo.tsx`) se abre en otra pestaña en vez de un marco: enmarcar una
+página de otro origen exigiría que cada CSP nombrara la dirección de la otra, que
+cambia por ambiente y no se versiona. Los enlaces de catálogo repartidos antes del
+cambio, con la dirección de la consola, dejan de abrir la página (vencen a las
+72 horas y solo los tienen demos).
+
+**Lo que sigue abierto** hasta que se opere (`docs/produccion/sitio-publico-catalogo.md`):
+crear los dos sitios, cargar `HOSTING_SITIO_CATALOGO` y `SITIO_PUBLICO` en staging y
+en producción, desplegar y correr `scripts/humo-sitio-publico.sh`. **Hasta entonces
+Q'Taco no enciende `catalogoWebActivo`**: la consulta de arriba sigue siendo la
+comprobación.
+
 ---
 
 ## Resultado real de las pruebas
@@ -1479,8 +1507,8 @@ abierta en producción.
 ```
 $ pnpm pruebas:reglas
  ✓ pruebas/reglas.test.ts   (155 tests)
- ✓ pruebas/saneo.test.ts    ( 22 tests)
- ✓ pruebas/indices.test.ts  (  4 tests)
+ ✓ pruebas/central/saneo.test.ts    ( 22 tests)
+ ✓ pruebas/central/indices.test.ts  (  4 tests)
    Test Files  3 passed (3)
         Tests  164 passed (164)
 ```
@@ -1560,8 +1588,8 @@ deben usar la misma consulta que la interfaz, no una parecida.** Corregido con
 **Una limitación del emulador que hay que tener presente:** **no exige índices
 compuestos.** Responde cualquier consulta, así que una pantalla de filtros puede
 pasar todo lo local y romperse en producción con «The query requires an index».
-Por eso las formas de consulta se declaran en `web/src/lib/bitacora.ts` y
-`pruebas/indices.test.ts` verifica que cada una tenga su índice en
+Por eso las formas de consulta se declaran en `web/src/central/lib/bitacora.ts` y
+`pruebas/central/indices.test.ts` verifica que cada una tenga su índice en
 `firestore.indexes.json`. Se comprobó que el control funciona quitando un índice
 a propósito: la prueba lo nombra exactamente.
 

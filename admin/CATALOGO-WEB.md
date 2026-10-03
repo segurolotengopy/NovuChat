@@ -37,7 +37,7 @@ antes de mandarlo. Acá no hay nada que editar porque no hay ningún número del
 cliente en el que el sistema confíe.
 
 Si alguien va a tocar `catalogoWeb.ts`, esa es la propiedad que no se puede
-perder. Hay pruebas que la cubren en `pruebas/catalogo-web.test.ts`.
+perder. Hay pruebas que la cubren en `pruebas/modulos/catalogo-web/catalogo-web.test.ts`.
 
 ---
 
@@ -74,7 +74,7 @@ Respuestas de error, y qué significan de verdad:
 | `401` | firma o token inválidos | no reintentar: está mal configurado |
 | `409 catalogo web apagado` | el comercio no lo encendió en la consola | seguir la conversación sin enlace |
 | `409 catalogo sin items vendibles` | no hay ningún ítem activo **con precio** | ídem: mandar a alguien a una tienda vacía es peor que no mandarlo. No alcanza con que haya ítems: un salón cuyo catálogo entero se cotiza tiene ítems activos y una vitrina vacía |
-| `500 sitio no configurado` | falta `SITIO_PUBLICO` y no se pudo derivar | avisar a NovuChat |
+| `500 sitio no configurado` | falta `SITIO_PUBLICO` (no hay valor derivado: T-37) | avisar a NovuChat |
 
 ### 2.2 `GET /api/catalogo/{ficha}` — la llama el navegador del cliente
 
@@ -284,10 +284,15 @@ prohibición 3 de `CLAUDE.md` gobierna igual acá.
 
 ## 5. Puesta en marcha, en orden
 
-1. **Desplegar** Functions, reglas y Hosting. Nada más que el despliegue normal.
-2. **`SITIO_PUBLICO`** (opcional). Si no se define, el enlace sale como
-   `https://${GCP_PROJECT_ID}.web.app/c/<ficha>`, que es correcto. Se define el
-   día que haya dominio propio.
+1. **Crear el segundo sitio de Hosting** (una vez por proyecto) y desplegar
+   Functions, reglas y Hosting. Desde T-37 (`SEGURIDAD.md`) la página pública
+   vive en su PROPIO sitio, con otro origen que la consola; los comandos exactos
+   y su orden están en `docs/produccion/sitio-publico-catalogo.md`.
+2. **`SITIO_PUBLICO`** (obligatoria). Es la dirección del segundo sitio
+   (`https://<sitio>.web.app` o el dominio propio). Ya no hay valor derivado del
+   proyecto: el sitio de la consola no sirve `/c/**`, y un enlace derivado de
+   ahí llegaría al cliente a la pantalla de ingreso. Sin ella `enlaceCatalogo`
+   contesta 500 y el despliegue de producción se detiene.
 3. **En la consola**, el comercio: pestaña de catálogo → cargar o importar los
    ítems con sus fotos; pestaña de configuración → encender «Publicar mi
    catálogo como página web», poner logo y color.
@@ -325,7 +330,7 @@ ponerlo a propósito, en la máquina donde se hace la demostración. Es la
 diferencia entre un andamio que se ve y uno que se queda puesto.
 
 Para la demostración local, la dirección es la que imprime
-`scripts/catalogo-demo.mjs` al arrancar.
+`scripts/datos/catalogo-demo.mjs` al arrancar.
 
 ## 6. Importar un catálogo desde una planilla
 

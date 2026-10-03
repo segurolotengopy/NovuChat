@@ -47,10 +47,10 @@ if (delAsistente) lineas.push(delAsistente);
 
 if (cobroReal) {
   const aQuien = [cuenta, banco].filter(Boolean).join(' · ');
-  lineas.push(`${e('💳')}Escaneá el QR con la app de tu banco`
+  lineas.push(`${e('💳')}Escanea el QR con la app de tu banco`
     + (aQuien ? ` (la cuenta es de ${aQuien}).` : '.'));
-  lineas.push(`${e('🧾')}Cuando termines, guardá o compartí el comprobante ANTES de salir de la `
-    + 'app y mandámelo por acá, como foto o PDF.');
+  lineas.push(`${e('🧾')}Cuando termines, guarda o comparte el comprobante ANTES de salir de la `
+    + 'app y mándamelo por acá, como foto o PDF.');
 } else {
   // EL RÓTULO ABRE EL PIE, no lo cierra: es lo primero que tiene que leer quien
   // recibe la imagen, antes de pensar en escanearla.

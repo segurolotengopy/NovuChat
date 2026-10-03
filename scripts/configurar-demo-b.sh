@@ -74,10 +74,13 @@ if [[ $mal -eq 1 ]]; then
 fi
 
 # --- .env.demo-b --------------------------------------------------------------
-[[ -f "$DESTINO" ]] && cp -p "$DESTINO" "${DESTINO}.respaldo"
+# El respaldo hereda el modo del original (cp -p): se cierra ANTES de copiar.
+[[ -f "$DESTINO" ]] && { chmod 600 "$DESTINO"; cp -p "$DESTINO" "${DESTINO}.respaldo"; }
 GRAPH=$(grep -E '^WA_GRAPH_VERSION=' .env | cut -d= -f2- | tr -d '[:space:]')
 TO=$(grep    -E '^WA_TO='            .env | cut -d= -f2- | tr -d '[:space:]')
 
+# Nace cerrado (umask 077 en una subshell); el chmod, por si ya existia.
+( umask 077
 {
   echo "# Entorno del Demo B. Generado por scripts/configurar-demo-b.sh."
   echo "# Ignorado por git: contiene valores reales y el repositorio es publico."
@@ -94,7 +97,7 @@ TO=$(grep    -E '^WA_TO='            .env | cut -d= -f2- | tr -d '[:space:]')
   echo "N8N_WEBHOOK_PATH="
   echo "N8N_WEBHOOK_URL="
   echo "N8N_WORKFLOW_ID="
-} > "$DESTINO"
+} > "$DESTINO" )
 chmod 600 "$DESTINO"
 
 # --- tabla de marcadores ------------------------------------------------------

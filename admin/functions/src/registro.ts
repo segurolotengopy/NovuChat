@@ -8,15 +8,15 @@
  * (configuración, colecciones, límites, pestañas, herramientas, Functions,
  * ganchos y los mensajes que agrega por conversación). De acá se derivan, en
  * F2 y F3, las siete copias de hoy (`Analisis/41` §3.3): la tabla de flujos de
- * la consola (`web/src/lib/flujos.ts`), `VERTICALES` de `index.ts`,
+ * la consola (`web/src/central/lib/flujos.ts`), `VERTICALES` de `plataforma/tenants.ts`,
  * `VERTICALES_CONOCIDOS` y `documentoDeVertical` de `prompt.ts`, las
  * capacidades de `firestore.rules`, y las elecciones a mano de `cobro.ts`,
  * `catalogoWeb.ts` y `captacion.ts`.
  *
- * F2, PR 1: ESTE ARCHIVO TODAVÍA NO LO IMPORTA NADIE. Existe, se verifica
- * contra el código de hoy (`pruebas/core/registro.test.ts`) y mide cuánto del
- * árbol cabe en las zonas (`scripts/medir-zonas.mjs`). Los PR siguientes lo
- * enchufan donde hoy están las copias.
+ * F2, PR 1: EL CÓDIGO DE PRODUCCIÓN TODAVÍA NO LO IMPORTA. Lo importan
+ * `pruebas/frontera/frontera.ts` y sus suites, y se verifica contra el código
+ * de hoy (`pruebas/core/registro.test.ts`). Los PR siguientes lo enchufan donde
+ * hoy están las copias.
  *
  * CERO `import`, Y ES A PROPÓSITO. Lo importan cuatro mundos que no comparten
  * resolución de módulos: las Functions (compilan con `rootDir: src` e importan
@@ -30,9 +30,9 @@
  * La prueba del registro falla si aparece un `import`.
  *
  * EL REGISTRO NO LLEVA RUTAS DE ARCHIVOS QUE F2 MUEVE. Las carpetas de un
- * módulo se derivan de su id (`carpetasDe`); el inventario origen → destino de
- * la mudanza vive aparte, en `pruebas/frontera/destinos-f2.ts`, y se borra cuando
- * F2 termine.
+ * módulo se derivan de su id (`carpetasDe`); desde el cierre de F2 la carpeta
+ * ES la zona, y lo que no sale de la carpeta lo anota
+ * `pruebas/frontera/frontera.ts` (`ZONA_POR_ARCHIVO` y `SE_PARTE`).
  *
  * LO ESCRIBE LA COORDINADORA (`Analisis/41` §8.1): cada agente de módulo
  * escribe su carpeta y propone su línea acá.
@@ -72,6 +72,12 @@ export interface Pestana {
   readonly titulo: string;
   /** Quién la ve. Hoy `flujos.ts` lo llama `roles` y su ausencia es `['admin']`. */
   readonly roles: readonly Rol[];
+  /**
+   * Posición en la cabecera de la consola (`pestanasDe`). Reproduce EXACTO el
+   * orden que hoy tiene cada flujo por separado; en una mezcla de flujos el
+   * orden es este, el declarado (no el de cada lista de `flujos.ts`).
+   */
+  readonly orden: number;
   /** La ve además el propietario de NovuChat (la instala y le da soporte). */
   readonly tambienPropietario?: true;
 }
@@ -155,7 +161,7 @@ export const REGISTRO = [
     limites: [{ clave: 'productos', hacerCumplir: 'reglas-y-servidor', contador: 'contadores/catalogo' }],
     // El título que ve el comercio sale de PUENTE_DE_FLUJOS[f].catalogo
     // («Servicios», «Productos» o «Catálogo»), como hoy `etiquetaCatalogo`.
-    pestanas: [{ ruta: 'catalogo', titulo: 'Catálogo', roles: ['admin'] }],
+    pestanas: [{ ruta: 'catalogo', titulo: 'Catálogo', roles: ['admin'], orden: 0 }],
     // (i) resuelto: el diseño decía `productosActivos`, pero `Tablero.tsx`
     // cuenta TODOS los documentos de `catalogo` (getCountFromServer), activos
     // o no. La ranura se llama como el dato que existe hoy.
@@ -193,8 +199,8 @@ export const REGISTRO = [
     almacenamiento: [],
     limites: [],
     pestanas: [
-      { ruta: 'cobros', titulo: 'Cobros', roles: ['admin'] },
-      { ruta: 'cobro', titulo: 'Configuración de QR', roles: ['admin'] },
+      { ruta: 'cobros', titulo: 'Cobros', roles: ['admin'], orden: 30 },
+      { ruta: 'cobro', titulo: 'Configuración de QR', roles: ['admin'], orden: 50 },
     ],
     tablero: [],
     herramientas: [],
@@ -233,7 +239,7 @@ export const REGISTRO = [
     almacenamiento: [],
     // Vendido (1 / 5 / 10) y hoy SIN hacer cumplir: ni regla ni contador.
     limites: [{ clave: 'agendas', hacerCumplir: 'pendiente' }],
-    pestanas: [{ ruta: 'agenda', titulo: 'Agenda', roles: ['admin'] }],
+    pestanas: [{ ruta: 'agenda', titulo: 'Agenda', roles: ['admin'], orden: 10 }],
     tablero: ['agendas'],
     herramientas: ['consultar_disponibilidad', 'agendar_cita', 'buscar_mi_cita', 'cancelar_cita'],
     functions: ['cotejarComprobante', 'senaVencida', 'seguimientosPendientes', 'seguimientoEnviado'],
@@ -260,7 +266,7 @@ export const REGISTRO = [
     coleccionesRaiz: [],
     almacenamiento: [],
     limites: [],
-    pestanas: [{ ruta: 'inventario', titulo: 'Inventario', roles: ['admin'] }],
+    pestanas: [{ ruta: 'inventario', titulo: 'Inventario', roles: ['admin'], orden: 40 }],
     tablero: [],
     herramientas: [],
     functions: ['ajustarStock', 'dejarDeControlarStock'],
@@ -280,7 +286,7 @@ export const REGISTRO = [
     // descuenta stock con `descontarPedido` de `inventario.ts`. No se declara
     // `inventario` porque haría obligatorio Inventario para vender; la
     // revisora decide entre declararlo o volver el descuento un gancho de
-    // Inventario. `medir-zonas.mjs` lo lista como importación entre módulos.
+    // Inventario. `fronteras.test.ts` la verá como importación entre módulos.
     dependeDe: ['productos'],
     configuracion: [
       {
@@ -297,7 +303,7 @@ export const REGISTRO = [
     coleccionesRaiz: [],
     almacenamiento: [],
     limites: [],
-    pestanas: [{ ruta: 'pedidos', titulo: 'Pedidos', roles: ['admin', 'oper'] }],
+    pestanas: [{ ruta: 'pedidos', titulo: 'Pedidos', roles: ['admin', 'oper'], orden: 20 }],
     tablero: [],
     herramientas: [],
     // (i) resuelto: `checkoutCatalogo` es la única Function que escribe
@@ -311,10 +317,10 @@ export const REGISTRO = [
     modulo: 'catalogo-web',
     nombre: 'Catálogo web',
     version: 1,
-    // DUDA (i): `catalogoWeb.ts` importa `hayParaVender` de `inventario.ts`
-    // para no ofrecer lo agotado. Igual que en Pedidos, no se declara: lo
-    // decide la revisora junto con el caso de Pedidos.
-    dependeDe: ['productos', 'pedidos'],
+    // `catalogoWeb.ts` importa `hayParaVender` y `descontarPedido` de
+    // `inventario.ts`: el catálogo no ofrece lo agotado y descuenta el stock
+    // al tomar el pedido. Declarado el 01/10/2026 (decisión de Andres).
+    dependeDe: ['productos', 'pedidos', 'inventario'],
     // El logo vive aparte porque `config/negocio` viaja en cada turno
     // (firestore.rules, `logoValido`).
     configuracion: [{ documento: 'config/marca', campos: ['logo'] }],
@@ -348,7 +354,7 @@ export const REGISTRO = [
     // `limiteDeCampanas` en el servidor, que recorta lo que viaja al flujo.
     limites: [{ clave: 'campanas', hacerCumplir: 'reglas-y-servidor' }],
     // Hoy es común: `App.tsx` la pinta para todo administrador.
-    pestanas: [{ ruta: 'campanas', titulo: 'Campañas', roles: ['admin'] }],
+    pestanas: [{ ruta: 'campanas', titulo: 'Campañas', roles: ['admin'], orden: 70 }],
     tablero: [],
     herramientas: [],
     functions: ['verificarCampanas'],
@@ -378,7 +384,7 @@ export const REGISTRO = [
     coleccionesRaiz: [],
     almacenamiento: ['captacion/'],
     limites: [],
-    pestanas: [{ ruta: 'captacion', titulo: 'Captación', roles: ['admin'], tambienPropietario: true }],
+    pestanas: [{ ruta: 'captacion', titulo: 'Captación', roles: ['admin'], orden: 60, tambienPropietario: true }],
     tablero: [],
     herramientas: [],
     functions: ['comprobarArchivoPlanes'],
@@ -466,3 +472,82 @@ export const PUENTE_DE_FLUJOS = {
  * límite 0 (`Analisis/41` §3.2).
  */
 export const MODULOS_COMUNES_HOY = ['productos', 'campanas'] as const satisfies readonly IdModulo[];
+
+// ============================================================================
+// DERIVACIONES (H2b-1): lo que las copias de la lista de flujos calculan hoy,
+// calculado una sola vez desde el registro. Los consumidores se enchufan en
+// otros PR. Sin `import`: ver la cabecera.
+// ============================================================================
+
+export type IdFlujo = keyof typeof PUENTE_DE_FLUJOS;
+export const IDS_FLUJOS = Object.keys(PUENTE_DE_FLUJOS) as readonly IdFlujo[];
+export const esFlujo = (v: unknown): v is IdFlujo =>
+  typeof v === 'string' && Object.prototype.hasOwnProperty.call(PUENTE_DE_FLUJOS, v);
+export const documentoDeFlujo = (f: unknown): string | null => (esFlujo(f) ? PUENTE_DE_FLUJOS[f].documento : null);
+
+/** Lo que de una ficha de `tenants/{id}` importa para las capacidades. */
+export interface FichaConCapacidades {
+  readonly modulos?: unknown;
+  readonly flujos?: unknown;
+  readonly vertical?: unknown;
+}
+
+/**
+ * Los flujos de una ficha: manda la lista `flujos`; con la clave ausente,
+ * `[vertical]`; con cualquier otra cosa (null, cadena, objeto), ninguno (falla
+ * cerrado, como las reglas, que no abren nada con un `flujos` que no es lista).
+ * Este código filtra desconocidos y repetidos: las reglas no filtran nada y
+ * `flujosDe` de la consola no quita repetidos.
+ */
+export function flujosDeFicha(ficha: FichaConCapacidades | null | undefined): IdFlujo[] {
+  if (!ficha) return [];
+  const propia = (clave: string) => Object.prototype.hasOwnProperty.call(ficha, clave);
+  const crudos: unknown[] = !propia('flujos') || ficha.flujos === undefined
+    ? [ficha.vertical]
+    : Array.isArray(ficha.flujos) ? ficha.flujos : [];
+  const salida: IdFlujo[] = [];
+  for (const f of crudos) if (esFlujo(f) && !salida.includes(f)) salida.push(f);
+  return salida;
+}
+
+/** Unión de los módulos de los flujos y los comunes, en el orden de `IDS_MODULOS`. */
+export function modulosDeFlujos(flujos: readonly IdFlujo[]): IdModulo[] {
+  const activos = new Set<string>(MODULOS_COMUNES_HOY);
+  for (const f of flujos) for (const m of PUENTE_DE_FLUJOS[f].modulos) activos.add(m);
+  return IDS_MODULOS.filter((m) => activos.has(m));
+}
+
+/**
+ * TRANSITORIO hasta el paso 2 (`tenants.modulos`): con `modulos` (lista) manda
+ * la lista, filtrada y en el orden de `IDS_MODULOS`; sin ella, los de sus flujos.
+ * Contrato: null/undefined → [] (sin ficha no hay nada); ficha existente vacía
+ * (`{}`) → los comunes (productos, campanas); `modulos: []` explícito → [].
+ */
+export function modulosDeFicha(ficha: FichaConCapacidades | null | undefined): IdModulo[] {
+  if (!ficha) return [];
+  if (Object.prototype.hasOwnProperty.call(ficha, 'modulos') && Array.isArray(ficha.modulos)) {
+    const lista: unknown[] = ficha.modulos;
+    return IDS_MODULOS.filter((m) => lista.includes(m));
+  }
+  return modulosDeFlujos(flujosDeFicha(ficha));
+}
+
+export const tieneModulo = (ficha: FichaConCapacidades | null | undefined, m: IdModulo): boolean =>
+  modulosDeFicha(ficha).includes(m);
+
+/** Pestañas de los módulos encendidos que no son comunes hoy, por `orden`. */
+export function pestanasDe(modulos: readonly IdModulo[]): Pestana[] {
+  return modulos
+    .filter((m) => !(MODULOS_COMUNES_HOY as readonly string[]).includes(m))
+    .flatMap((m) => manifiestoDe(m).pestanas.map((p) => ({ ...p, roles: [...p.roles] })))
+    .sort((a, b) => a.orden - b.orden);
+}
+
+/** «Servicios» (agenda sin pedidos ni captación), «Productos» (pedidos sin agenda ni captación) o «Catálogo». */
+export function etiquetaDeCatalogo(modulos: readonly IdModulo[]): string {
+  const hay = (m: IdModulo) => modulos.includes(m);
+  if (hay('captacion')) return 'Catálogo';
+  if (hay('agenda') && !hay('pedidos')) return 'Servicios';
+  if (hay('pedidos') && !hay('agenda')) return 'Productos';
+  return 'Catálogo';
+}

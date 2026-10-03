@@ -287,6 +287,83 @@ modo_patrones() {
   else
     verde "  ✓ JSON de flujo conservan sus marcadores REEMPLAZAR_"
   fi
+
+  # Higiene de los flujos (F3a): el id de una credencial de n8n es un
+  # identificador de la instancia; en el JSON versionado va vacio y
+  # publicar-flujo.sh resuelve la credencial por su nombre.
+  local con_id hallazgos_antes=$HALLAZGOS
+  con_id="$(python3 - "${ARCHIVOS[@]}" <<'PY'
+import json, sys
+for ruta in sys.argv[1:]:
+    if not (ruta.startswith("Flujos/") and ruta.endswith(".json")) or "/manifiestos/" in ruta:
+        continue
+    try:
+        datos = json.load(open(ruta, encoding="utf-8"))
+        nodos = datos["nodes"]
+        assert isinstance(nodos, list)
+        for nodo in nodos:
+            cred = nodo.get("credentials")
+            if cred is None:
+                continue
+            assert isinstance(cred, dict)
+            for tipo, ref in cred.items():
+                assert isinstance(ref, dict)
+                if ref.get("id"):
+                    print(f"{ruta}: nodo «{nodo.get('name')}» ({tipo})")
+    except Exception as e:
+        print(f"ERROR {ruta}: {type(e).__name__}")
+        sys.exit(3)
+PY
+)" || { rojo "  ✗ no se pudo analizar un JSON de flujo (ilegible o con forma inesperada)"; printf '%s\n' "$con_id" | sed 's/^/      /'; con_id=""; HALLAZGOS=$((HALLAZGOS+1)); }
+  if [[ -n "$con_id" ]]; then
+    rojo "  ✗ id de credencial de n8n no vacio en un JSON de flujo"
+    printf '%s\n' "$con_id" | sed 's/^/      /'
+    gris "      Deje \"id\": \"\" y conserve el nombre: publicar-flujo.sh la resuelve."
+    HALLAZGOS=$((HALLAZGOS+1))
+  elif [[ $HALLAZGOS -eq $hallazgos_antes ]]; then
+    verde "  ✓ JSON de flujo sin ids de credencial"
+  fi
+
+  # Un REEMPLAZAR_ fuera de «Config base» y fuera de un jsCode (donde solo
+  # aparece dentro de una expresion regular) existe unicamente si el manifiesto
+  # del flujo lo declara en conservanMarcadores (Flujos/LEEME-flujos.md §0.a).
+  local sin_declarar
+  sin_declarar="$(python3 - "${ARCHIVOS[@]}" <<'PY'
+import json, os, sys
+for ruta in sys.argv[1:]:
+    if not (ruta.startswith("Flujos/") and ruta.endswith(".json")) or "/" in ruta[len("Flujos/"):]:
+        continue
+    try:
+        datos = json.load(open(ruta, encoding="utf-8"))
+        nodos = datos["nodes"]
+        assert isinstance(nodos, list)
+        man = os.path.join("Flujos", "manifiestos", os.path.basename(ruta))
+        declarados = set()
+        if os.path.isfile(man):
+            cm = json.load(open(man, encoding="utf-8")).get("conservanMarcadores") or {}
+            assert isinstance(cm, dict)
+            declarados = set(cm.keys())
+        for nodo in nodos:
+            params = nodo.get("parameters") or {}
+            assert isinstance(params, dict)
+            params = dict(params)
+            params.pop("jsCode", None)
+            nombre = nodo.get("name") or ""
+            # Igualdad exacta: un nodo «Config base X» propio no queda exento.
+            if "REEMPLAZAR_" in json.dumps(params) and nombre not in declarados and nombre not in ("Config base", "Config base del recordatorio"):
+                print(f"{ruta}: nodo «{nombre}»")
+    except Exception as e:
+        print(f"ERROR {ruta}: {type(e).__name__}")
+        sys.exit(3)
+PY
+)" || { rojo "  ✗ no se pudo analizar un JSON de flujo o su manifiesto"; printf '%s\n' "$sin_declarar" | sed 's/^/      /'; sin_declarar=""; HALLAZGOS=$((HALLAZGOS+1)); }
+  if [[ -n "$sin_declarar" ]]; then
+    rojo "  ✗ marcador REEMPLAZAR_ no declarado en conservanMarcadores"
+    printf '%s\n' "$sin_declarar" | sed 's/^/      /'
+    HALLAZGOS=$((HALLAZGOS+1))
+  elif [[ $HALLAZGOS -eq $hallazgos_antes ]]; then
+    verde "  ✓ marcadores REEMPLAZAR_ fuera de Config base, declarados"
+  fi
 }
 
 # ============================================================================

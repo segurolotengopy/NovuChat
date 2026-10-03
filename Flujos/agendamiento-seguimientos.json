@@ -357,7 +357,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1940,
+        2160,
         300
       ],
       "parameters": {
@@ -392,6 +392,40 @@
         }
       },
       "notes": "El recordatorio se cuenta como cualquier otro mensaje del asistente: dentro de la ventana suma una respuesta al bloque de 25; fuera, la ingesta no abre ninguna conversación. La consola muestra el texto que la persona recibió, no el nombre de la plantilla."
+    },
+    {
+      "id": "sg-if-salio",
+      "name": "¿Salió?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1940,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "sgs1",
+              "leftValue": "={{ String((((($json || {}).messages || [])[0]) || {}).id || '') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "I-ENTREGA R1: un seguimiento solo se reporta como saliente si Meta devolvió `messages[0].id` no vacío. Un envío rechazado (error de Meta, `continueRegularOutput`) no se reporta y no suma al conteo. La marca ya se hizo ANTES del envío, por diseño (ver `Marcar seguimiento`): el seguimiento fallido NO se reintenta en el siguiente barrido, porque un seguimiento perdido es mejor que dos."
     }
   ],
   "connections": {
@@ -495,7 +529,7 @@
       "main": [
         [
           {
-            "node": "Reportar seguimiento (saliente)",
+            "node": "¿Salió?",
             "type": "main",
             "index": 0
           }
@@ -506,11 +540,23 @@
       "main": [
         [
           {
-            "node": "Reportar seguimiento (saliente)",
+            "node": "¿Salió?",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "¿Salió?": {
+      "main": [
+        [
+          {
+            "node": "Reportar seguimiento (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   }

@@ -8,8 +8,15 @@
  * documentación pasa. Revisión de seguridad del #260: los nombres del receptor
  * y `/subscriptions` no estaban.
  *
+ * Revisión de seguridad del #264 (LOW): el verbo cuenta como palabra de
+ * comando, no dentro de un nombre de archivo (`docker-compose.yml`,
+ * `docs/ssh-vm.md`), y el texto de un commit o de un PR (-m, --title, --body,
+ * un heredoc con comillas) no cuenta como nombre. Todo lo que la shell ejecuta
+ * —`$(…)`, la comilla invertida, un heredoc sin comillas— sigue contando.
+ *
  * Límite honesto, el mismo del gancho: un script que recibe la app por
- * variable de entorno, sin nombrarla en el comando, no se ve acá.
+ * variable de entorno, sin nombrarla en el comando, no se ve acá; eso lo
+ * cierra `scripts/lib/apps-ajenas.sh` (#265), y acá se pide confirmación.
  */
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -53,6 +60,30 @@ describe('prohibiciones 5 y 7: los sistemas ajenos no se tocan', () => {
     }
   });
 
+  it('el repositorio en GitHub se llama «WhatsAppModular», sin guion: también se niega', () => {
+    // El nombre de la carpeta lleva guion y el del repositorio no (comprobado
+    // en su remoto el 01/10/2026): con solo el guion, estos pasaban o pedían confirmación.
+    for (const c of [
+      'gh repo clone segurolotengopy/WhatsAppModular',
+      'gh pr merge 3 --repo segurolotengopy/WhatsAppModular',
+      'gh pr create -R segurolotengopy/WhatsAppModular --title x --body y',
+      'gh api -X DELETE repos/segurolotengopy/WhatsAppModular/hooks/1',
+      'gh pr list --repo segurolotengopy/whatsappmodular',
+      'git clone https://github.com/segurolotengopy/WhatsAppModular.git',
+      // Las otras formas del separador, como en las otras dos apps.
+      'gh repo clone segurolotengopy/WhatsApp_Modular',
+      'gh repo clone "WhatsApp Modular"',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('nombrar el repositorio sin actuar sigue pasando: leer la carpeta o mencionarlo en un commit', () => {
+    for (const c of [
+      'ls ~/WhatsAppModular/docs',
+      'grep -n WhatsAppModular CLAUDE.md',
+      'git commit -m "se coordina con WhatsAppModular"',
+    ]) expect(decision(c), c).not.toBe('deny');
+  });
+
   it('nombrarlos sin actuar pasa: leer la documentación o buscar en el repositorio', () => {
     for (const c of [
       'grep -n "receptor-clientes" CLAUDE.md',
@@ -67,5 +98,389 @@ describe('prohibiciones 5 y 7: los sistemas ajenos no se tocan', () => {
 
   it('«AAB1» a secas no niega: aparece en títulos y cuerpos de PR que documentan B8', () => {
     expect(decision('gh pr view 260 --json title # B8: receptor de AAB1')).not.toBe('deny');
+  });
+});
+
+describe('el verbo es una palabra de comando, no un pedazo de nombre de archivo (#264, LOW)', () => {
+  it('un verbo dentro de un nombre de archivo no es una acción', () => {
+    for (const c of [
+      'grep -n receptor-clientes docker-compose.yml',
+      'cat docs/ssh-vm.md | grep AAB1-WA-Prod',
+      'ls docs/gh-pages/ | grep WhatsApp-Modular',
+      'grep -rn otp-service docs/firebase.json.md',
+      'sed -n 1,20p scripts/docker.sh.md # WhatsApp-Modular',
+    ]) expect(decision(c), c).not.toBe('deny');
+  });
+
+  it('el verbo se sigue viendo con ruta, detrás de sudo/timeout/xargs, dentro de bash -c o de $(…)', () => {
+    for (const c of [
+      '/usr/bin/curl -X POST "$G/x" # AAB1-WA-Prod',
+      'bash -c "docker restart receptor-clientes"',
+      'sudo docker restart receptor-clientes',
+      'timeout 5 docker restart receptor-clientes',
+      'echo x | xargs curl -X POST # AAB1-WA-Prod',
+      'x=$(curl -s $G/app) # AAB1-WA-Prod',
+      'docker-compose restart receptor-clientes',
+      'gh api -X DELETE repos/segurolotengopy/WhatsApp-Modular/hooks/1',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('la instalación del canal no oficial se sigue negando (prohibición 1)', () => {
+    for (const c of ['pip3 install baileys', 'npm install @whiskeysockets/baileys']) expect(decision(c), c).toBe('deny');
+  });
+});
+
+describe('el texto de un commit o de un PR no es una acción (#264, LOW)', () => {
+  it('el nombre en -m, --title o --body de UNA invocación de git/gh pasa', () => {
+    for (const c of [
+      "gh pr create --title 'Gancho' --body '…receptor-clientes…'",
+      'gh pr create --title "receptor-clientes: B8" --body-file cuerpo.md',
+      'git commit -m "receptor-clientes y AAB1-WA-Prod: prohibiciones 5 y 7"',
+      'gh pr create --title x --body="AAB1-WA-Prod"',
+      'git commit -m "línea 1\n\nreceptor-clientes en la línea 3"',
+    ]) expect(decision(c), c).not.toBe('deny');
+  });
+
+  it('por diseño, con un heredoc o varios tramos no se quita el texto: se parte en dos llamadas o va en --body-file', () => {
+    for (const c of [
+      "git commit -q -F - <<'EOF'\nreceptor-clientes y curl -X POST\nEOF",
+      "gh pr create --title x --body-file - <<'EOF'\nAAB1-WA-Prod $(nada)\nEOF",
+      "gh pr edit 272 --body \"$(cat <<'EOF'\nINTERPRETE: sh, bash.\nreceptor-clientes intacto.\nEOF\n)\"",
+      'git commit -m "arreglo con bash" && gh pr create --title "receptor-clientes" --body x',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('el emparejamiento sigue sobre el comando ENTERO: otro argumento u otro tramo niega', () => {
+    for (const c of [
+      'gh pr create --title x --body y && docker restart receptor-clientes',
+      'gh pr create --repo segurolotengopy/WhatsApp-Modular --title x --body y',
+      'gh pr create --title "a" --body "b" receptor-clientes',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('un texto que la shell EJECUTA no se quita: $(…), comilla invertida, heredoc sin comillas', () => {
+    for (const c of [
+      'gh pr create --title x --body "$(curl -X POST $G/app/subscriptions) AAB1-WA-Prod"',
+      'gh pr create --title x --body "`docker restart receptor-clientes`"',
+      'git commit -F - <<EOF\n$(docker restart receptor-clientes)\nEOF',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('con comillas sin cerrar no se puede partir: se decide sobre el comando crudo', () => {
+    expect(decision('curl -s "$G/x" -H "sin cerrar # AAB1-WA-Prod')).toBe('deny');
+  });
+});
+
+describe('revisión de seguridad del #272: lo que quitar el texto no puede abrir', () => {
+  it('la misma letra no es texto en todos los subcomandos: el objetivo no se borra (MEDIUM)', () => {
+    for (const c of [
+      // gh pr merge: -m es --merge; gh api: -p toma «-m» como valor; git fetch: -t es --tags.
+      'gh pr merge -m https://github.com/segurolotengopy/WhatsApp-Modular/pull/12',
+      'gh api -p -m repos/segurolotengopy/WhatsApp-Modular -X DELETE',
+      'git clone --template -m https://github.com/x/evolution-api',
+      'git clone -o -m https://github.com/x/evolution-api',
+      'git fetch -t https://github.com/segurolotengopy/WhatsApp-Modular && gh pr list',
+      'gh pr create --repo -t segurolotengopy/WhatsApp-Modular',
+      'GH_REPO=segurolotengopy/WhatsApp-Modular gh pr merge 3',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('el texto sigue quitándose donde SÍ es texto, también después de una bandera sin valor', () => {
+    for (const c of [
+      'gh pr create --draft --title "receptor-clientes: B8" --body "AAB1-WA-Prod"',
+      'gh pr comment 272 --body "otp-service y receptor-clientes"',
+      'git tag -a v1 -m "WhatsApp-Modular"',
+    ]) expect(decision(c), c).not.toBe('deny');
+  });
+
+  it('con un intérprete en el comando no se quita nada: el texto se podría ejecutar (LOW)', () => {
+    for (const c of [
+      `git -c alias.x='!sh -c "$2"' x -m 'docker restart otp-service'`,
+      "git commit --allow-empty -m 'docker restart otp-service' && git log -1 --format=%s | sh",
+      "git commit -F - <<'EOF'\ndocker restart otp-service\nEOF\ngit log -1 --format=%B | sh",
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('el verbo detrás de =, {, «,» o «:-» también cuenta (LOW)', () => {
+    for (const c of [
+      'rsync --rsh=ssh vm:/opt/otp-service/.env /tmp/',
+      'a=curl; $a https://x/otp-service',
+      '{curl,-X,POST,https://x/otp-service}',
+      '${X:-curl} https://x/otp-service',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('escribir en Meta nombrando la app ajena se niega, no se confirma (LOW)', () => {
+    for (const c of [
+      './scripts/verificar-meta.sh --env .env.AAB1-WA-Prod --desuscribir',
+      './scripts/webhook-meta.sh --alta-meta --env-cliente .env.AAB1-WA-Prod',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+});
+
+describe('re-revisión del #272: el texto quitado no se puede reusar desde otro tramo', () => {
+  it('otro tramo con un verbo, `$` o comilla invertida impide quitar el texto (LOW-A)', () => {
+    for (const c of [
+      'git commit -m receptor-clientes; docker restart "$_"',
+      'git commit -m receptor-clientes; docker restart "${_}"',
+      'gh pr comment 999 -b receptor-clientes; docker restart $_',
+      'git commit --allow-empty -m receptor-clientes && docker restart "$(git log -1 --format=%s)"',
+      'git commit --allow-empty -m receptor-clientes && docker restart "`git log -1 --format=%s`"',
+      'git commit -m "a b receptor-clientes" && git log -1 --format=%s | while read a b c; do docker restart "$c"; done',
+      'git() { docker restart "$3"; }; git commit -m receptor-clientes',
+      'function gh { docker restart "$6"; }; gh pr create -t x -b receptor-clientes',
+      "trap 'docker restart ${BASH_COMMAND##* }' DEBUG; git commit -m receptor-clientes",
+      `git commit -m otp-service && git log -1 --format=%s | awk '{system("docker restart " $0)}'`,
+      "git commit -m otp-service && git log -1 --format=%s | sed 's/^/docker restart /e'",
+      'gh pr comment 1 -b AAB1-WA-Prod && gh api -X DELETE "/app/subscriptions?x=$_"',
+      'git commit -m segurolotengopy/WhatsApp-Modular; gh pr create -R "$_" -t x -b y',
+      'X=$(docker restart receptor-clientes) gh pr create -t x -b y',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('la expansión de parámetros no esconde el verbo (LOW-B)', () => {
+    for (const c of ['${X:+curl} https://x/otp-service', '${X+curl} https://x/otp-service', '${X-curl} https://x/otp-service']) {
+      expect(decision(c), c).toBe('deny');
+    }
+  });
+
+  it('los falsos positivos no vuelven: un cuerpo que menciona un intérprete, `--base=main`, la variable delante (LOW-C)', () => {
+    for (const c of [
+      'gh pr create --title x --body "Probado con node scripts/alta.mjs; el receptor-clientes intacto"',
+      'gh pr create --title "python3 y otp-service" --body x',
+      'gh pr create --base=main --title "receptor-clientes: B8" --body x',
+      'git add a b && git commit -m "receptor-clientes" && git push',
+      'GH_CONFIG_DIR=$HOME/.config/gh-pro gh pr edit 272 --body "receptor-clientes"',
+    ]) expect(decision(c), c).not.toBe('deny');
+  });
+});
+
+describe('tercera revisión del #272: una sola invocación, o nada', () => {
+  it('el salto de línea separa comandos: el -t de la línea siguiente no es un título (MEDIUM)', () => {
+    for (const c of [
+      'gh pr create -t x -b y\ndocker exec -t otp-service cat /app/.env',
+      'gh pr create -t x -b y\ndocker logs -t receptor-clientes',
+      'gh release create v1 -n x\ndocker exec -t receptor-clientes printenv',
+      'git commit -m x\ndocker run -m receptor-clientes',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('un heredoc que la expresión leería distinto que bash no abre nada (LOW)', () => {
+    for (const c of [
+      "git notes list # <<'true'\ndocker restart receptor-clientes\ntrue",
+      "git notes list '<<true'\ndocker restart receptor-clientes\ntrue",
+      "git stash list <<'E'\nE\ndocker restart receptor-clientes\nE",
+      "git commit -m \"$(cat <<'EOF'\nx\nEOF)\" -q\ndocker restart receptor-clientes\ngit commit -m \"$(cat <<'EOF'\ny\nEOF\n)\"",
+      "git commit -m \"$(awk '{system($0)}' <<'EOF'\ndocker restart receptor-clientes\nEOF\n)\"",
+      "git commit -m \"$(sed 's/^//e' <<'EOF'\ndocker restart receptor-clientes\nEOF\n)\"",
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('quinta revisión: con saltos de línea no se quita texto (una barra doble al final no une; un comentario no abre comillas)', () => {
+    for (const c of [
+      // Barra doble al final: para bash es una barra literal y el salto separa.
+      'git commit -m a\\\\\ndocker restart receptor-clientes',
+      // Un comentario con una comilla: bash lo ignora; el tokenizador abriría la comilla.
+      "git commit # -m '\ndocker restart receptor-clientes\n'",
+      // El enlace de contraseña: la ruta en una redirección de la línea siguiente.
+      'git commit -m "a b"\\\\\n< CLIENTES/B/.enlaces/enlace-admin-a.txt cat',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('una variable delante que puede ejecutar el texto impide quitarlo (LOW)', () => {
+    for (const c of [
+      "GIT_EDITOR=$SHELL git commit --allow-empty -m 'docker restart receptor-clientes' -e",
+      "GIT_EDITOR=rbash git commit --allow-empty -m 'docker restart receptor-clientes' -e",
+      "GIT_EDITOR=$SHELL git commit -e -F - <<'EOF'\ndocker restart receptor-clientes\nEOF",
+    ]) expect(decision(c), c).toBe('deny');
+  });
+});
+
+describe('un git push al sistema ajeno se niega, no se confirma (#323, L2)', () => {
+  it('empujar al repositorio ajeno, o desde la carpeta de otro proyecto, se niega', () => {
+    for (const c of [
+      'git push https://github.com/segurolotengopy/WhatsAppModular.git main',
+      'git push https://github.com/segurolotengopy/WhatsApp-Modular.git HEAD:refs/heads/x',
+      'git -C ~/WhatsApp-Modular push origin main',
+      'cd ~/WhatsApp-Modular && git push',
+      'git --no-pager push https://github.com/segurolotengopy/WhatsAppModular.git main',
+      'git -c push.default=current -C ~/WhatsAppModular push',
+      'git push origin main # receptor-clientes',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('el push propio de NovuChat sigue pidiendo confirmación, no se niega', () => {
+    for (const c of [
+      'git push -u origin HEAD',
+      'git push origin ganchos/git-push-al-sistema-ajeno',
+    ]) expect(decision(c), c).toBe('ask');
+    // Con una opción global entre `git` y `push` también pide confirmación (ver el bloque siguiente).
+    expect(decision('git -C ~/NovuChat push origin HEAD')).toBe('ask');
+  });
+
+  it('la cadena de todos los días, `git add && git commit -m "…nombre…" && git push`, sigue pasando', () => {
+    for (const c of [
+      'git add a b && git commit -m "receptor-clientes" && git push',
+      'git commit -m "se coordina con otp-service" && git push -u origin HEAD',
+      'git add -A && git status && git commit -m "WhatsAppModular: documentado" && git push origin ganchos/x',
+    ]) expect(decision(c), c).toBe('ask');
+  });
+
+  it('pero un nombre ajeno EN el push, o un tramo que pueda leer el texto, se niega', () => {
+    for (const c of [
+      'git commit -m x && git push https://github.com/segurolotengopy/WhatsAppModular.git',
+      'git commit -m "receptor-clientes" && git -C ~/WhatsApp-Modular push',
+      'git commit -m "https://github.com/segurolotengopy/WhatsAppModular.git" && git push "$_"',
+      'git commit -m "docker restart receptor-clientes" && git log -1 --format=%s | sh',
+      'git commit -m "receptor-clientes" && docker restart x',
+      'git commit -m "receptor-clientes" && git -c core.pager=docker push',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('el push inocuo es una lista cerrada: otra opción, una URL, un transporte o un refspec anulan la excepción (#329)', () => {
+    // Con el nombre ajeno en el mensaje y un push que no es una de las formas conocidas, se niega.
+    for (const c of [
+      'git commit -m "receptor-clientes" && git push --receive-pack=x origin main',
+      'git commit -m "receptor-clientes" && git push --exec=x origin main',
+      'git commit -m "receptor-clientes" && git push --mirror origin',
+      'git commit -m "receptor-clientes" && git push ext::sh main',
+      'git commit -m "receptor-clientes" && git push https://example.org/r.git main',
+      'git commit -m "receptor-clientes" && git push origin HEAD:refs/heads/otra',
+      'git commit -m "receptor-clientes" && git push origin a b',
+      'git commit -m "receptor-clientes" && git add --chmod=+x f && git push',
+      'git commit -m "receptor-clientes" && git add :(top)f && git push',
+      'git commit -m "receptor-clientes" && git status --ignored && git push',
+      // Revisión del #329: una redirección no es una ruta, y un `*` lo expande la shell antes que git.
+      'git commit -m "receptor-clientes" && git push origin main > salida.txt',
+      'git commit -m "receptor-clientes" && git add * && git push',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('y las formas conocidas del push, del add y del status siguen pasando junto al commit', () => {
+    for (const c of [
+      'git commit -m "receptor-clientes" && git push -u origin HEAD',
+      'git commit -m "receptor-clientes" && git push --set-upstream origin ganchos/git-push-al-sistema-ajeno',
+      'git add -A && git commit -m "receptor-clientes" && git push',
+      'git add admin/pruebas/core/x.test.ts .claude/hooks/y.sh && git commit -m "receptor-clientes" && git push',
+      'git status -sb && git commit -m "receptor-clientes" && git push origin main',
+    ]) expect(decision(c), c).toBe('ask');
+  });
+
+  it('el canal no oficial no gana el push: una rama de NovuChat que lo mencione se puede empujar', () => {
+    // La prohibición 1 sigue negando instalar o llamar al canal, no empujar una rama sobre él.
+    expect(decision('git push -u origin docs/retiro-evolution-api')).toBe('ask');
+  });
+
+  it('nombrar el sistema ajeno sin empujar sigue pasando', () => {
+    for (const c of ['ls ~/WhatsApp-Modular/docs', 'git -C ~/WhatsApp-Modular log --oneline -3']) {
+      expect(decision(c), c).not.toBe('deny');
+    }
+  });
+});
+
+describe('una opción global entre `git` y `push` no esconde el push (revisión del #334)', () => {
+  // Solo se le pasa el JSON al gancho y se lee su decisión: ningún comando se ejecuta.
+  it('el push forzado se niega con una opción global delante, igual que sin ella', () => {
+    for (const c of [
+      'git push --force',
+      'git -C ~/NovuChat push --force',
+      'git -C ~/NovuChat push origin HEAD -f',
+      'git -c user.name=x push --force-with-lease origin main',
+      'git --no-pager push --force-if-includes origin main',
+      'git -C "~/Nova Chat" push --force',
+      '/usr/bin/git -C ~/NovuChat push -f',
+      // El `-f` dentro de un grupo de letras, que la regla anterior no veía.
+      'git push -fu origin HEAD',
+      'git -C ~/NovuChat push -uf origin HEAD',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('un refspec que empieza con `+` fuerza la actualización: se niega, con o sin opción global', () => {
+    for (const c of [
+      'git push origin +rama',
+      'git push origin +HEAD:rama',
+      'git push +rama',
+      'git push origin "+rama"',
+      'git -C ~/NovuChat push origin +HEAD:rama',
+      'git -c push.default=current push origin +main:main',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('una barra invertida al final de la línea no parte el comando', () => {
+    expect(decision('git \\\n  -C ~/NovuChat push \\\n  --force')).toBe('deny');
+    expect(decision('git -C ~/NovuChat push origin \\\n  +HEAD:rama')).toBe('deny');
+  });
+
+  it('sin regresión frente a la forma anterior: `\\git` (git sin alias) se ve igual que `git` (revisión de seguridad, HIGH)', () => {
+    expect(decision('\\git push --force')).toBe('deny');
+    expect(decision('\\git -C ~/NovuChat push -f')).toBe('deny');
+    expect(decision('\\git push origin HEAD')).toBe('ask');
+    expect(decision('\\git -C ~/WhatsApp-Modular push')).toBe('deny');
+  });
+
+  it('un comentario con una barra al final no esconde un push de la línea siguiente (revisión de seguridad, MEDIUM)', () => {
+    // La unión de líneas no debe anular el resguardo de quitar_texto contra los saltos de línea.
+    expect(decision("git commit -m x a b c d e f #'\\\ngit push #'")).toBe('ask');
+  });
+
+  it('el «-f» o el «+» dentro del mensaje de un commit no es un empujón forzado', () => {
+    for (const c of ['git commit -m "se documenta el push -f"', 'git add a && git commit -m "el push +rama queda prohibido"']) {
+      expect(decision(c), c).toBe('nada');
+    }
+  });
+
+  it('las comillas delante de la opción no la esconden', () => {
+    for (const c of ['git push "--force" origin x', "git -C ~/NovuChat push '-f' origin x"]) {
+      expect(decision(c), c).toBe('deny');
+    }
+  });
+
+  it('el push propio con una opción global pide confirmación, no se niega', () => {
+    for (const c of [
+      'git -C ~/NovuChat push',
+      'git -C ~/NovuChat push origin HEAD',
+      'git -C ~/NovuChat push -u origin ganchos/x',
+      'git -c push.default=current push',
+      'git --no-pager push origin ganchos/x',
+      '/usr/bin/git -C ~/NovuChat push origin HEAD',
+    ]) expect(decision(c), c).toBe('ask');
+  });
+
+  it('`git push -u origin HEAD` sigue pidiendo confirmación, sin negarse', () => {
+    expect(decision('git push -u origin HEAD')).toBe('ask');
+    expect(decision('git push --follow-tags origin ganchos/x')).toBe('ask');
+    expect(decision('git push origin ganchos/x --tags')).toBe('ask');
+    expect(decision('git add -A && git commit -m "ajuste" && git push -u origin HEAD')).toBe('ask');
+  });
+
+  it('una rama cuyo nombre lleva una `f` o un `+` en medio no es un empujón forzado', () => {
+    for (const c of ['git push origin feature/x', 'git push origin ganchos/fix-a+b', 'git push -u origin refactor-f']) {
+      expect(decision(c), c).toBe('ask');
+    }
+  });
+
+  it('la palabra «push» dentro del mensaje de un commit no pide confirmación', () => {
+    // Costo conocido: con una opción global delante del `commit`, quitar_texto no
+    // quita el mensaje, y una palabra «push» dentro vuelve a pedir confirmación.
+    for (const c of ['git commit -m "arreglo del push"', 'git add a && git commit -m "se documenta el push propio"']) {
+      expect(decision(c), c).toBe('nada');
+    }
+  });
+});
+
+describe('las escrituras en Meta por script piden confirmación (#265)', () => {
+  it.each([
+    './scripts/verificar-meta.sh --env .env.x --desuscribir',
+    './scripts/verificar-meta.sh --env .env.x --suscribir',
+    './scripts/webhook-meta.sh --alta-meta --webhook-id r --env-cliente .env.x',
+    './scripts/webhook-meta.sh --alta-waba --webhook-id r --env-cliente .env.x',
+    './scripts/webhook-meta.sh --preparar --webhook-id r --flujo-id f',
+    './scripts/webhook-meta.sh --cerrar --webhook-id r --flujo-id f',
+  ])('%s', (c) => expect(decision(c)).toBe('ask'));
+
+  it('los modos que solo leen no piden nada', () => {
+    for (const c of ['./scripts/webhook-meta.sh --ver-meta --env-cliente .env.x', './scripts/webhook-meta.sh --probar --webhook-id r']) {
+      expect(decision(c), c).toBe('nada');
+    }
   });
 });

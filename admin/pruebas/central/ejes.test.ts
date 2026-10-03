@@ -220,7 +220,7 @@ describe('Las fuentes: nadie escribe el plan viejo ni pagaMeta, y el servidor us
     }
     // Y la consola ya no los usa (reconciliación de #203 con #207): el puente
     // queda solo en `planes.ts` y lo borra F2.
-    const consola = sinComentarios(leer('web/src/lib/planes.ts') + leer('web/src/lib/pagar.ts') + leer('web/src/lib/prepago.ts'));
+    const consola = sinComentarios(leer('web/src/central/lib/planes.ts') + leer('web/src/central/lib/pagar.ts') + leer('web/src/central/lib/prepago.ts'));
     expect(consola).not.toMatch(/\bPLAN_DEMOSTRACION\b|\besIdPlan\b|\bPLANES_ASIGNABLES\b|\bIdPlan\b|\bpagaMeta\b/);
   });
 });

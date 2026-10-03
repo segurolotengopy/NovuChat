@@ -83,8 +83,9 @@ function expresion(texto: unknown, $json: Record<string, unknown>): unknown {
   // Se evalúa la expresión VERSIONADA, por la misma razón que el código de los
   // nodos: copiarla dejaría la prueba en verde mientras el flujo se rompe.
   // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$json', `return (${m[1]});`) as (j: unknown) => unknown;
-  return fn($json);
+  const fn = new Function('$json', '$', `return (${m[1]});`) as (j: unknown, d: unknown) => unknown;
+  // Ningún otro nodo corrió en esta evaluación (`$('X').isExecuted` es falso).
+  return fn($json, () => ({ isExecuted: false }));
 }
 
 /** Ejecuta un nodo Code; `$(nombre).first()` devuelve `referencias[nombre]`. */
@@ -374,7 +375,10 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
       // lo que salió, no lo que se pensaba mandar. Antes, en el Demo B, el
       // reporte colgaba en paralelo al envío y contaba un mensaje que Meta
       // podía haber rechazado.
-      expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual([salidaAlCliente ?? 'Responder al cliente']);
+      // Demo B (F3a, 02/10/2026): el embudo único es «Mensaje a enviar», que desde
+      // ahora decide si el mensaje lleva botón; el envío sigue más abajo.
+      expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual([
+        salidaAlCliente ?? (archivo === 'demo-b-venta-cobro.json' ? 'Mensaje a enviar' : 'Responder al cliente')]);
       if (salidaAlCliente) expect(destinos(f, salidaAlCliente)).toEqual(['Responder al cliente']);
       // Del envío cuelgan, PRIMERO, el reporte del texto —o el nodo que lo
       // alimenta— y, DEBAJO, lo que cada flujo agregue: la compuerta del pin
@@ -474,7 +478,9 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
         // texto salió es «Texto enviado», que corre después del envío y solo
         // alimenta al reporte.
         expect(padres).toEqual(['Texto enviado']);
-        expect(origenes(f, 'Texto enviado')).toEqual(['Responder al cliente']);
+        // F3a: al reporte llegan los DOS envíos del embudo (botón y texto): o sale uno
+        // o sale el otro, nunca los dos, y ambos pasan por el mismo reporte.
+        expect([...origenes(f, 'Texto enviado')].sort()).toEqual(['Responder al cliente', 'Responder con botón']);
         expect(destinos(f, 'Texto enviado')).toEqual(['Reportar mensaje (saliente)']);
         expect(cuerpo).toContain('$json.texto');
       }

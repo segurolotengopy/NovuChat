@@ -1,12 +1,12 @@
 import { REGION } from './core/region.js';
-import { senaVencidaPorTiempo } from './retencion.js';
-import { existencias } from './inventario.js';
+import { senaVencidaPorTiempo } from './modulos/agenda/retencion.js';
+import { existencias } from './modulos/inventario/inventario.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { defineInt } from 'firebase-functions/params';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
-import { sanearCaptacion } from './captacion.js';
+import { sanearCaptacion } from './modulos/captacion/captacion.js';
 import { vozFija } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
 import {
@@ -18,7 +18,7 @@ import {
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
 import { avisoConsumoPendiente, avisoDeConsumo, limiteDeCampanas, periodoDe } from './central/cuenta/planes.js';
-import { campanasParaElFlujo } from './campanas.js';
+import { campanasParaElFlujo } from './modulos/campanas/campanas.js';
 // EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
 // saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
 // aplica lo que decidió, dentro de la transacción que ya existía.
@@ -35,7 +35,7 @@ import {
 // El cobro de una VENTA: el importe no vive en la configuración, se fija cuando
 // sale el QR. `cobroVenta.ts` no importa nada de acá en tiempo de ejecución
 // (sus dos importaciones son de tipo), así que no hay ciclo.
-import { cobroParaElFlujo, totalUtilizable } from './cobroVenta.js';
+import { cobroParaElFlujo, totalUtilizable } from './modulos/cobros/cobroVenta.js';
 
 /**
  * =========================================================================
@@ -674,7 +674,7 @@ export function senaParaElFlujo(
  * ATENCIONES E INTERACCIONES — dos de las tres cifras de la oferta comercial
  * ===========================================================================
  *
- * Las definiciones son las de `web/src/paginas/Cierres.tsx` y no se
+ * Las definiciones son las de `web/src/central/paginas/Consumo.tsx` y no se
  * reinterpretan acá:
  *
  *   ATENCIÓN     una conversación iniciada con un cliente. Cuenta el arranque,
@@ -1176,7 +1176,7 @@ export const ingesta = onRequest(
       // EL PREPAGO (bloque A-0, `DISENO.md` §4undecies.3). Sin modalidad, o
       // en demostración, `servicio` es operativo, `rechazo` es nulo y nada de
       // este bloque escribe: los contadores son idénticos a los de hoy, y
-      // `pruebas/prepago-ingesta.test.ts` lo exige negando.
+      // `pruebas/plataforma/prepago-ingesta.test.ts` lo exige negando.
       //
       // `sin_pago` rechaza todo; `sin_conversaciones` rechaza solo lo que
       // ABRIRÍA una conversación (una ventana ya abierta se atiende hasta el

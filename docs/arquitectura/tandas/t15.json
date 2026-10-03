@@ -1,0 +1,61 @@
+{
+  "movimientos": [
+    {
+      "de": "admin/web/src/paginas/Ingresar.tsx",
+      "a": "admin/web/src/central/paginas/Ingresar.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/MiCuenta.tsx",
+      "a": "admin/web/src/central/paginas/MiCuenta.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/Usuarios.tsx",
+      "a": "admin/web/src/central/paginas/Usuarios.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/Contactos.tsx",
+      "a": "admin/web/src/central/paginas/Contactos.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/Conversaciones.tsx",
+      "a": "admin/web/src/central/paginas/Conversaciones.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/Consumo.tsx",
+      "a": "admin/web/src/central/paginas/Consumo.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/EstadoCuenta.tsx",
+      "a": "admin/web/src/central/paginas/EstadoCuenta.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/Pagar.tsx",
+      "a": "admin/web/src/central/paginas/Pagar.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/Reclamos.tsx",
+      "a": "admin/web/src/central/paginas/Reclamos.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/Bitacora.tsx",
+      "a": "admin/web/src/central/paginas/Bitacora.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/Tablero.tsx",
+      "a": "admin/web/src/central/paginas/Tablero.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/Configuracion.tsx",
+      "a": "admin/web/src/central/paginas/Configuracion.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/ConfiguracionVertical.tsx",
+      "a": "admin/web/src/central/componentes/ConfiguracionModulo.tsx"
+    },
+    {
+      "de": "admin/web/src/paginas/Tenants.tsx",
+      "a": "admin/web/src/plataforma/paginas/Tenants.tsx"
+    }
+  ],
+  "suitesPuras": []
+}

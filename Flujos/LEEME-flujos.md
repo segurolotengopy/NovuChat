@@ -42,7 +42,7 @@ en el JSON:
 | `Flujos/prompts/reservas/` | El `systemMessage` de Sofía, uno por flujo (`demo-a.md`, `platinum.md`); el turno del cliente (`turno-del-cliente.md`) y el reintento tras cruce, compartidos |
 | `Flujos/manifiestos/<flujo>.json` | Qué nodo de ese JSON toma qué archivo, **por nombre de nodo**. Nunca hay marcadores dentro del código |
 | `admin/scripts/ensamblar-flujo.mjs` | `verificar` (ensambla en memoria y compara byte a byte; sale con 1 si difiere), `ensamblar` (módulos → JSON) y `extraer` (JSON → módulos) |
-| `admin/pruebas/ensamblador.test.ts` | La prueba de identidad: para cada JSON con manifiesto, ensamblar reproduce el archivo byte a byte; `extraer` y volver a ensamblar es la identidad; un módulo cambiado o un nodo renombrado hacen fallar con el nombre; y ningún módulo contiene un valor real |
+| `admin/pruebas/core/ensamblador.test.ts` | La prueba de identidad: para cada JSON con manifiesto, ensamblar reproduce el archivo byte a byte; `extraer` y volver a ensamblar es la identidad; un módulo cambiado o un nodo renombrado hacen fallar con el nombre; y ningún módulo contiene un valor real |
 
 **Regla:** el JSON y sus módulos tienen que ser **idénticos byte a byte**, y
 `node admin/scripts/ensamblar-flujo.mjs verificar` lo comprueba para los ocho
@@ -86,6 +86,11 @@ El ensamblador de hoy responde a esa objeción punto por punto:
    manifiesto lo declara en `conservanMarcadores`; `verificar` comprueba que
    el prefijo sigue ahí. `preparar-import.sh` y `verificar-saneo.sh` no
    cambiaron.
+   Un `REEMPLAZAR_` fuera de `Config base` existe solo si el manifiesto lo
+   declara en `conservanMarcadores` (el carrito del Demo B, `¿Es un mensaje?`
+   de la captación), y ningún JSON versionado lleva el id de una credencial de
+   n8n: va `""` y `publicar-flujo.sh` la resuelve por el nombre. Lo exigen
+   `verificar-saneo.sh` y `admin/pruebas/core/higiene-flujos.test.ts`.
 
 ### 0.b El ciclo de trabajo, ahora
 
@@ -527,7 +532,7 @@ con los límites de WhatsApp (imagen JPEG o PNG hasta 5 MB, documento hasta
 100 MB) antes de que lo pruebe un prospecto.
 
 **Carga inicial:** desde la pestaña «Captación», o con
-`node admin/scripts/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json>`
+`node admin/scripts/datos/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json>`
 (primero en seco). El contenido de NovuChat está en
 `admin/scripts/datos/captacion-novuchat.json`, copiado del sitio.
 
@@ -985,7 +990,7 @@ comercio está activo**, le pregunta al servidor a quién le toca el recordatori
 de solicitud pendiente.
 
 **El flujo no decide a quién se le escribe.** Lo decide
-`seguimientosPendientes` (`admin/functions/src/seguimientos.ts`, regla completa
+`seguimientosPendientes` (`admin/functions/src/modulos/agenda/seguimientos.ts`, regla completa
 en `admin/DISENO.md` §4quaterdecies): una sola vez por solicitud, nunca a quien
 pidió que no le escriban, nunca a un teléfono en operador o bloqueado, nunca a
 quien ya agendó, y solo entre 2 y 4 h (texto en ventana) o entre 24 y 48 h

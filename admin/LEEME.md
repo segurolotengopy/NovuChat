@@ -241,8 +241,8 @@ Cloud y a GitHub. Los tres que más fácil se hacen mal:
    vigilante del CLI. Si no reinicia, sigue probando contra las reglas viejas.
 10. **El emulador NO exige índices compuestos.** Un filtro nuevo puede pasar todo
     lo local y fallar en producción. Declare la forma de consulta en
-    `web/src/lib/bitacora.ts` y corra `pnpm pruebas:reglas`:
-    `pruebas/indices.test.ts` le va a decir qué índice falta.
+    `web/src/central/lib/bitacora.ts` y corra `pnpm pruebas:reglas`:
+    `pruebas/central/indices.test.ts` le va a decir qué índice falta.
 11. **La CSP no se puede probar con `pnpm web:dev`.** Vite no aplica las
     cabeceras de `firebase.json`: un error de política aparece recién en
     producción. Use `pnpm csp` y mire la consola del navegador — cualquier

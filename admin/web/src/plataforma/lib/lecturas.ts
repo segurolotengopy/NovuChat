@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db } from '../../core/lib/firebase';
 
 /**
  * LA COMPUERTA GLOBAL DEL CORTE (`plataforma/prepago`, `DISENO.md`

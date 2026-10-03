@@ -48,13 +48,13 @@ import { dirname, join } from 'node:path';
 
 import { UMBRAL_CATALOGO_AL_PROMPT } from '../functions/src/core/prompt/prompt.ts';
 import { limitesDe } from '../functions/src/central/cuenta/planes.ts';
-import { urlImagenValida } from '../functions/src/catalogoWeb.ts';
+import { urlImagenValida } from '../functions/src/modulos/catalogo-web/catalogoWeb.ts';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', 'scripts', 'cargar-negocio.mjs');
+const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'cargar-negocio.mjs');
 const DATOS = join(aqui, '..', 'scripts', 'datos');
-const SEMBRAR = join(aqui, '..', 'scripts', 'sembrar-demos.mjs');
+const SEMBRAR = join(aqui, '..', 'scripts', 'datos', 'sembrar-demos.mjs');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;

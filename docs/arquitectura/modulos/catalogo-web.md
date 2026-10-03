@@ -9,7 +9,7 @@
 | Campo | Valor hoy |
 |---|---|
 | **Qué contiene hoy** | `catalogoWeb.ts` (sitio público, fichas, `fijarWebhookCarrito`), `publico/` |
-| **Depende de** | Productos, Pedidos |
+| **Depende de** | Productos, Pedidos, Inventario (declarado el 01/10/2026: el catálogo muestra el stock y no ofrece lo agotado, y descuenta el stock al tomar el pedido) |
 | **Límite por plan** | — |
 | **Configuración** | `config/marca` (logo, colores) |
 | **Colecciones** | `/fichasCatalogo` |
@@ -21,7 +21,7 @@
 | **Mensajes por conversación** | 0. **Mandar el enlace no ahorra si el asistente conversa el pedido igual**: el ahorro aparece cuando el enlace reemplaza la conversación (`docs/base-comercial.md` §5) |
 | **Pruebas** | `catalogo-web.test.ts`, `demo-b-catalogo.test.ts` |
 
-**Observación:** exige el segundo sitio de Hosting antes del primer comercio que lo encienda (`admin/SEGURIDAD.md`). `catalogoWeb.ts` **se parte**: el checkout que escribe `pedidos` va a Pedidos. `config/marca` y el logo (hoy en `Configuracion.tsx`) pasan acá. `publico/` sigue sin cargar Firebase
+**Observación:** exige el segundo sitio de Hosting antes del primer comercio que lo encienda (`admin/SEGURIDAD.md`). **Implementado el 03/10/2026** (T-37): `firebase.json` con los destinos `consola` y `catalogo`, `publico/entrada.tsx` como única entrada del paquete público (`web/dist-catalogo`), `SITIO_PUBLICO` obligatoria; falta operarlo (`docs/produccion/sitio-publico-catalogo.md`). `catalogoWeb.ts` **se parte**: el checkout que escribe `pedidos` va a Pedidos. `config/marca` y el logo (hoy en `Configuracion.tsx`) pasan acá. `publico/` sigue sin cargar Firebase
 
 Carpetas destino (F2): `admin/functions/src/modulos/<m>/`,
 `admin/web/src/modulos/<m>/`, `Flujos/src/modulos/<m>/`,
@@ -152,7 +152,7 @@ hay que darla de alta en Meta: está en `admin/CATALOGO-WEB.md` §4.
 
 Se coincide con el §4 del análisis. La consola ya es una aplicación React sobre
 Firebase Hosting con su API y su sistema de diseño; una ruta pública de catálogo
-—lista, detalle, carrito, checkout— es lo que hay en `web/src/publico/`, unas
+—lista, detalle, carrito, checkout— es lo que hay en `web/src/modulos/catalogo-web/publico/`, unas
 quinientas líneas. Integrar una plantilla ajena cuesta entenderla, alojarla,
 mantenerla actualizada, hacerla parecerse a NovuChat, y deja una dependencia más
 que auditar en un producto que ya tiene una CSP con `default-src 'none'`.
@@ -261,7 +261,7 @@ agregaría decenas de kilobytes a cada mensaje del asistente.
 Los tipos son **PNG, JPEG y WebP**. SVG **no**, aunque sea una imagen: puede
 llevar `<script>` adentro y esto termina en un `src`.
 
-**El color pasó a ser una de cinco paletas** (`web/src/lib/paletas.ts`). La razón
+**El color pasó a ser una de cinco paletas** (`web/src/central/lib/paletas.ts`). La razón
 de diseño pesa más que la de seguridad: la página necesita **tres** tonos que
 combinen y un comercio elige uno solo; pedirle los tres termina en texto que no
 se lee. Las cinco están calculadas juntas y sus quince relaciones de contraste

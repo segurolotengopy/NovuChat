@@ -36,7 +36,10 @@ try { ent = $('Normalizar entrada').first().json ?? {}; } catch (e) { ent = {}; 
 // el fijo del cotejo, no el del modelo. Hoy el modelo ni siquiera corre en ese
 // turno --el comprobante se desvia antes del agente-- pero el orden se escribe
 // igual: la precedencia no puede depender de que la topologia no cambie.
-const FUENTES = ['Mensaje del carrito', 'Respuesta del cobro', 'Enlace del catálogo',
+// «Mensaje a enviar» (F3a, 02/10/2026) es el embudo unico de salida al cliente:
+// lo que el cliente recibe es lo que ese nodo armo, venga de donde venga. Los
+// demas quedan de respaldo para una ejecucion que no pase por el.
+const FUENTES = ['Mensaje a enviar', 'Mensaje del carrito', 'Respuesta del cobro', 'Enlace del catálogo',
   'Procesar respuesta', 'Uso extendido', 'Comercio no operativo'];
 
 // `isExecuted` es de toda la ejecucion, no del item, y se lee PROTEGIDO: si
@@ -62,9 +65,22 @@ for (let i = 0; i < salidas.length; i++) {
   }
 
   const meta = salidas[i].json ?? {};
+  // Si el boton fue rechazado y salio el texto con el enlace, se reporta ESE
+  // texto: es lo que el cliente recibio. Con el boton aceptado, `Responder al
+  // cliente` no corrio y se reporta el cuerpo del boton.
+  // Se decide POR LA CORRIDA, no por la ejecucion: `$prevNode` es el nodo que
+  // alimento esta corrida. `corrio('Responder al cliente')` mira toda la
+  // ejecucion y, con dos corridas de «Mensaje a enviar» (un texto aceptado y un
+  // boton despues), reportaria el texto con el enlace de un boton que si salio.
+  // Solo si `$prevNode` no existe se cae a la lectura de toda la ejecucion.
+  let previoNodo = '';
+  try { previoNodo = String($prevNode.name ?? ''); } catch (e) { previoNodo = ''; }
+  const vinoDelTexto = previoNodo !== '' ? previoNodo === 'Responder al cliente' : corrio('Responder al cliente');
+  const salioComoTexto = fuente === 'Mensaje a enviar' && vinoDelTexto
+    && String(elegido.textoParaTexto ?? '') !== '';
   out.push({ json: {
     telefono: String(elegido.from ?? ent.from ?? ''),
-    texto: String(elegido.respuesta ?? ''),
+    texto: String(salioComoTexto ? elegido.textoParaTexto : (elegido.respuesta ?? '')),
     // El id que devolvio Meta: es la unica prueba de que el mensaje salio.
     idMeta: String((((meta.messages ?? [])[0]) ?? {}).id ?? ''),
     phoneNumberId: String(elegido.phoneNumberId ?? ent.phoneNumberId ?? ''),

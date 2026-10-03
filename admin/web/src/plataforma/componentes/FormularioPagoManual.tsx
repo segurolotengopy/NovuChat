@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Confirmacion } from './Confirmacion';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import {
   BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, avisoPrecioPorContrato, mesEscrito, planDeLaCuenta, planesOfrecidos, planInicial,
   type PlanEnVenta,
-} from '../../lib/pagar';
-import { tipoCambioVigente, type Pago } from '../../lib/prepago';
+} from '../../central/lib/pagar';
+import { tipoCambioVigente, type Pago } from '../../central/lib/prepago';
 import {
   ACEPTA_COMPROBANTE, MEDIOS_MANUALES, diaBolivia, vistaDelPagoManual, type MedioManual,
 } from '../lib/negocios';

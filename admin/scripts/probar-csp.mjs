@@ -40,6 +40,12 @@ if (!existsSync(DIST)) {
 
 // Las cabeceras salen del archivo REAL, no de una copia.
 const config = JSON.parse(readFileSync(join(RAIZ, 'firebase.json'), 'utf8'));
+// Desde T-37 hay DOS sitios de Hosting (admin/SEGURIDAD.md): este script sirve
+// `web/dist`, o sea el de la CONSOLA (`target: consola`). La página pública del
+// catálogo tiene su propio servidor de prueba con sus cabeceras:
+// `scripts/datos/catalogo-demo.mjs` (lee el target `catalogo` y sirve `web/dist-catalogo`).
+const sitio = [config.hosting].flat().find((h) => h.target === 'consola');
+if (!sitio) { console.error('firebase.json no tiene el sitio de hosting con target «consola».'); process.exit(1); }
 
 const aMapa = (bloque) => Object.fromEntries(
   bloque.headers
@@ -52,11 +58,9 @@ const aMapa = (bloque) => Object.fromEntries(
 /**
  * LAS CABECERAS DEPENDEN DE LA RUTA, y este script tiene que reproducir eso.
  *
- * Desde que existe el catálogo público, `/c/**` tiene su propia política: más
- * cerrada en todo —ni Firebase, ni Google, ni formularios— salvo en `img-src`,
- * que admite cualquier `https:` porque las fotos las aloja cada comercio donde
- * quiere. Si este servidor siguiera aplicando solo el bloque `**`, estaría
- * probando la página equivocada y diría que todo está bien.
+ * Hubo una época en que `/c/**` (el catálogo público) tenía su propia política
+ * dentro de este mismo sitio; desde T-37 el catálogo es otro sitio y la consola
+ * solo tiene bloques por tipo de archivo (`/assets/**`, `/index.html`).
  *
  * Firebase Hosting aplica TODOS los bloques que coinciden, y el último gana. Acá
  * se recorren en el mismo orden y se van pisando, que es exactamente lo que
@@ -68,7 +72,7 @@ const aExpresion = (patron) => new RegExp('^' + patron
   .replace(/\*/g, '[^/]*')
   .replace(/CUALQUIER_RUTA/g, '.*') + '$');
 
-const GLOBOS = config.hosting.headers.map((h) => ({
+const GLOBOS = sitio.headers.map((h) => ({
   prueba: aExpresion(h.source),
   cabeceras: aMapa(h),
 }));
@@ -119,8 +123,7 @@ createServer(async (peticion, respuesta) => {
   for (const [k, v] of Object.entries(CABECERAS)) {
     console.log(`  ${k}: ${v.length > 90 ? v.slice(0, 90) + '…' : v}`);
   }
-  console.log(`\n  Catálogo público: http://127.0.0.1:${PUERTO}/c/${'0'.repeat(32)}`);
-  console.log('  (sin backend dice «enlace vencido»; lo que se prueba acá es que');
-  console.log('   la página cargue sin ninguna violación de la política.)');
+  console.log('\n  La página pública del catálogo ya no se sirve desde acá (T-37): es otro');
+  console.log('  sitio de Hosting, con su propia política. Para verla: scripts/datos/catalogo-demo.mjs');
   console.log('\nEn la consola del navegador, cualquier «Refused to» es una violación.');
 });

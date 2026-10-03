@@ -121,6 +121,35 @@ describe('estado-de-versiones.sh: los nodos que difieren', () => {
   });
 });
 
+// EL VERDE FALSO DE LOS NODOS NUEVOS (03/10/2026): un nodo nuevo, uno que falta o una
+// conexión distinta no contaban, y la fila salía «✓ al día» con el flujo vivo atrasado.
+// publicar-flujo.sh ahora los lista como `~ <nodo> · <motivo>`; aquí se prueba que el
+// estado los trata igual que «difiere en N nodo(s)».
+describe('estado-de-versiones.sh: nodos nuevos, faltantes y conexiones', () => {
+  const estructural = [
+    '  Diagnóstico en seco de Platinum',
+    '  ! nodo nuevo, sin par en el flujo vivo: ¿Salió?',
+    `    ${AMARILLO}~${FIN} ¿Salió? · nodo nuevo en el origen, no esta en el flujo vivo`,
+    `    ${AMARILLO}~${FIN} Enviar · conexiones de salida distintas`,
+    '',
+  ].join('\n');
+
+  it('sin excepción: ATRASADO Y SIN DECLARAR, salida 1, con los nombres', () => {
+    preparar('—', estructural);
+    const { codigo, lineas } = correr();
+    expect(codigo).toBe(1);
+    expect(lineas.join('\n')).toContain('ATRASADO Y SIN DECLARAR');
+    expect(listaDeNodos(lineas).lista.sort()).toEqual(['Enviar', '¿Salió?']);
+  });
+
+  it('con excepción declarada: se informa y no falla', () => {
+    preparar('Congelado hasta el 10/10', estructural);
+    const { codigo, lineas } = correr();
+    expect(codigo).toBe(0);
+    expect(lineas.join('\n')).toContain('CON excepción declarada');
+  });
+});
+
 // EL VERDE FALSO (27/09/2026, cerrado el 01/10): una fila que no se pudo comprobar
 // dejaba el veredicto en «✓ Ningún atraso sin declarar» con salida 0. Lo que no se
 // comprobó no está bien: se dice, y la salida es 3 (o 1 si además hay un atraso sin declarar).

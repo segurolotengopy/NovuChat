@@ -113,9 +113,9 @@
           "value": "={{ $json.calendarioARevisar }}"
         },
         "returnAll": true,
+        "timeMin": "={{ $now.setZone('America/La_Paz').plus({days:1}).startOf('day').toISO() }}",
+        "timeMax": "={{ $now.setZone('America/La_Paz').plus({days:1}).endOf('day').toISO() }}",
         "options": {
-          "timeMin": "={{ $now.setZone('America/La_Paz').plus({days:1}).startOf('day').toISO() }}",
-          "timeMax": "={{ $now.setZone('America/La_Paz').plus({days:1}).endOf('day').toISO() }}",
           "singleEvents": true
         }
       },
@@ -313,7 +313,7 @@
       "onError": "continueRegularOutput",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zsGBHfe95mZ9oJCQ",
+          "id": "",
           "name": "Cierres NovuChat A (auto)"
         }
       },

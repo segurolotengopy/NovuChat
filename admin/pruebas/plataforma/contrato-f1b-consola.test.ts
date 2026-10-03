@@ -24,8 +24,8 @@ import { PanelEjes } from '../../web/src/plataforma/componentes/PanelEjes';
 import { EjesDeLaCuenta } from '../../web/src/central/componentes/EjesDeLaCuenta';
 import {
   MODELO_POR_DEFECTO, origenPorContrato, periodoPruebaAceptable, pruebaDeCuenta, type EjesDeCuenta,
-} from '../../web/src/lib/ejes';
-import { avisoPrecioPorContrato, planDeLaCuenta, vistaDelPedido } from '../../web/src/lib/pagar';
+} from '../../web/src/central/lib/ejes';
+import { avisoPrecioPorContrato, planDeLaCuenta, vistaDelPedido } from '../../web/src/central/lib/pagar';
 import { pagosEnRevision, vistaDelPagoManual } from '../../web/src/plataforma/lib/negocios';
 import {
   LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, limitesDe,
@@ -169,7 +169,7 @@ describe('Cuenta, Pagar y el pago manual dicen el precio del contrato', () => {
   });
 
   it('Pagar usa `planDeLaCuenta` para el renglón del plan, no el precio del catálogo', () => {
-    const pagar = leer('web/src/paginas/Pagar.tsx');
+    const pagar = leer('web/src/central/paginas/Pagar.tsx');
     expect(pagar).toContain('planDeLaCuenta(cuenta, planes[0])');
     expect(pagar).not.toMatch(/PLANES\[planes\[0\]\]\.precioUsd/);
   });

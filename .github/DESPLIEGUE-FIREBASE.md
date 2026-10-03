@@ -218,11 +218,32 @@ del proyecto de producción. Lo que hay:
 - Dos variables de GitHub que §5.3 no lista:
   - **`SITIO_PUBLICO`**: el job de producción escribe con ella
     `functions/.env`, que está ignorado. Sin la variable, **el despliegue falla a
-    propósito**: si no, los enlaces del catálogo pasarían en silencio a
-    `<proyecto>.web.app`. Se carga sin mostrar el valor:
+    propósito**: sin ella las Functions no tienen dirección que dar (desde T-37 ya
+    no hay respaldo `<proyecto>.web.app`, que llevaría a la consola). Es la
+    dirección del segundo sitio de Hosting (ver abajo). Se carga sin mostrar el valor:
     `gh variable set -f admin/functions/.env`.
   - Las **`VITE_*`** salen de `admin/web/.env.local`, que ya apunta a
     producción: `gh variable set -f admin/web/.env.local`.
+- **Dos sitios de Hosting (T-37, 03/10/2026).** `firebase.json` tiene dos
+  destinos: `consola` y `catalogo` (la página pública del catálogo, con otro
+  origen). Se resuelven a sitios reales en cada despliegue con
+  `firebase target:apply hosting …`, desde variables (el repositorio es público):
+  - **`FIREBASE_SITE_ID`** (ya existía): el sitio de la consola; por omisión, el
+    del proyecto.
+  - **`HOSTING_SITIO_CATALOGO`** (nueva): el sitio de la página pública. En
+    producción es una variable del repositorio; en staging, del Environment
+    `staging`. **El despliegue falla a propósito** si falta, si coincide con el
+    de la consola, si el sitio no existe en el proyecto (`hosting:sites:get`), o
+    si el host de `SITIO_PUBLICO` no es `<sitio>.web.app`, `<sitio>.firebaseapp.com`
+    o un dominio de **`HOSTING_DOMINIO_CATALOGO`** (variable opcional, hosts
+    separados por comas), o es uno donde responde la consola
+    (`scripts/comprobar-origen-catalogo.sh`). `SITIO_PUBLICO` pasa a ser la
+    dirección de ese segundo sitio. Tras el health check, producción corre
+    `scripts/humo-sitio-publico.sh` (solo lectura) y falla el job si no pasa.
+  - El ambiente `dev` y el canal de PR publican solo la consola
+    (`hosting:consola`, `--only consola`).
+  - Procedimiento de operación, con los comandos exactos:
+    `docs/produccion/sitio-publico-catalogo.md`.
 - **`INSTANCIAS_MINIMAS`** (26/09/2026) no es una variable de GitHub: el job
   la escribe en `functions/.env` junto a `SITIO_PUBLICO`, en **1** en
   producción y en **0** en staging (`instancias-minimas.test.ts`), y el job de
@@ -258,7 +279,7 @@ se hace clic y no pasa nada. Falta algo como:
 frame-src https://<PROJECT_ID>.firebaseapp.com https://accounts.google.com;
 ```
 
-**2. La CSP bloquea App Check.** `admin/web/src/lib/firebase.ts` inicializa App
+**2. La CSP bloquea App Check.** `admin/web/src/core/lib/firebase.ts` inicializa App
 Check con `ReCaptchaEnterpriseProvider`, que carga un script de
 `https://www.google.com/recaptcha/` y recursos de `https://www.gstatic.com`.
 La política dice `script-src 'self'`. Con la clave cargada, App Check no
@@ -383,8 +404,15 @@ assertion.sub in [
   un claim ausente hace fallar el canje con un error que no explica nada. `sub`
   está siempre presente.
 
+> **Desde el ci-node-firebase.yml 2.9 (01/10/2026) el health check y el
+> rollback corren al final de `desplegar-produccion`, el job aprobado por el
+> Environment `production`, y `post-despliegue` ya no autentica en la nube.
+> `production-rollback` **ya no lo usa ningún job**; su binding y su
+> Environment siguen existiendo hasta que Andres autorice retirarlos (cambio
+> en GCP y en GitHub, aparte).** Lo que sigue describe el diseño anterior.
+
 `production-rollback` está en la lista por un motivo concreto: el job
-`post-despliegue` hace el health check de producción y, si falla, ejecuta el
+`post-despliegue` hacía el health check de producción y, si fallaba, ejecutaba el
 rollback clonando el canal `previa` sobre `live`. Necesita credenciales, y por
 tanto un Environment. **No puede usar `production`**, porque su revisor
 obligatorio dejaría el rollback esperando aprobación humana — lo contrario de
@@ -548,7 +576,7 @@ conviene cargarlos en el Environment `production`, no a nivel repositorio.
 | `dev` | no | despliegue manual de prueba |
 | `staging` | no | push a `main` (opcional por ahora) |
 | `production` | **sí** — regla §4: nadie aprueba su propio cambio | tags `v*` |
-| `production-rollback` | **no** — a propósito | health check y rollback automático |
+| `production-rollback` | **no** — a propósito | sin uso desde el CI 2.9 (el health check y el rollback pasaron a `desplegar-produccion`); pendiente de retirar |
 
 ### 5.2 Secretos
 

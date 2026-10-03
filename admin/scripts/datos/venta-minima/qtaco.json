@@ -1,0 +1,50 @@
+{
+  "nombreFlujo": "NovuChat — Venta mínima (v0) — Q'Taco",
+  "entrada": "receptor",
+  "credenciales": {
+    "ingesta": "NovuChat ingesta (Q'Taco)",
+    "graph": "Graph WhatsApp Q'Taco (Bearer)",
+    "medios": "WhatsApp Q'Taco (envío)"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_QTACO",
+    "urlVerificador": "REEMPLAZAR_URL_VERIFICADOR_RECEPTOR",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_QTACO"
+  },
+  "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA",
+  "configBase": {
+    "waGraphVersion": "v26.0",
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_QTACO",
+    "respaldoNumeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_QTACO",
+    "nombreNegocio": "Q'Taco",
+    "nombreAsistente": "",
+    "nivelEmojis": "pocos",
+    "direccion": "REEMPLAZAR_DIRECCION_QTACO",
+    "horarioAtencion": "REEMPLAZAR_HORARIO_ATENCION_QTACO",
+    "moneda": "BOB",
+    "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
+    "prefijosPermitidos": "591",
+    "pedidosActivo": true,
+    "reservasActivo": true,
+    "promosActivo": true,
+    "areasExcluidas": "cocteleria,cervezas,postres",
+    "areasSinDelivery": "Bebidas",
+    "horario": "REEMPLAZAR_HORARIO_PEDIDOS_QTACO",
+    "zonasReserva": "salón,terraza",
+    "maxPersonasReserva": 12,
+    "anticipacionReservaMin": 60,
+    "maxDiasReserva": 30,
+    "topeReservasDia": 3,
+    "topeAvisosDia": 150,
+    "topeTransferenciasHora": 1,
+    "destinatariosAviso": "completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO , cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO",
+    "plantillaPedido": "pedido_registrado",
+    "idiomaPlantillaPedido": "es",
+    "plantillaReserva": "pedido_registrado",
+    "idiomaPlantillaReserva": "es",
+    "formaPlantillaReserva": "pedido",
+    "plantillaDerivacion": "pedido_registrado",
+    "idiomaPlantillaDerivacion": "es",
+    "formaPlantillaDerivacion": "pedido"
+  }
+}

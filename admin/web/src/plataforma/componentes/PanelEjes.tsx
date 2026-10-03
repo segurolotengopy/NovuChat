@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Confirmacion } from './Confirmacion';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { ContadorCambios } from '../../central/componentes/ContadorCambios';
 import {
   BOLSA_PRUEBA_MAXIMA, DESCRIPCION_MODALIDAD, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_MODELO,
@@ -9,10 +9,10 @@ import {
   bolsaPruebaValida, conversacionesValidas, mesEnCurso, modalidadDe, origenDeCambiosIncluidos, origenPorContrato,
   periodoPruebaAceptable, precioMensualDe, precioPorContratoDe, precioPorContratoValido, pruebaDeCuenta, techoDePrueba,
   type CambiosVista, type EjesDeCuenta, type Modalidad, type Modelo, type NumeroDeCuenta, type Titularidad,
-} from '../../lib/ejes';
-import { MAXIMO_CAMBIOS_INCLUIDOS, PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../lib/planes';
-import { importeBs, tipoCambioVigente } from '../../lib/prepago';
-import { avisoPrecioPorContrato } from '../../lib/pagar';
+} from '../../central/lib/ejes';
+import { MAXIMO_CAMBIOS_INCLUIDOS, PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../central/lib/planes';
+import { importeBs, tipoCambioVigente } from '../../central/lib/prepago';
+import { avisoPrecioPorContrato } from '../../central/lib/pagar';
 import { UMBRALES_ATENCION, UMBRAL_MAXIMO, umbralesDeAtencion } from '../../core/lib/atencion';
 import { resumenDeCambio } from '../lib/negocios';
 

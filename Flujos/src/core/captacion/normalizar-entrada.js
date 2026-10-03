@@ -129,6 +129,25 @@ for (let i = 0; i < items.length; i++) {
     url: String(ref.source_url ?? '').slice(0, 200),
   } : null;
 
+  // --- LA CAMPAÑA POR TEXTO (Andres, 02/10/2026, D4) -------------------------
+  // Misma deteccion que `core/normalizar-entrada.js` (reservas): el servidor manda
+  // en `campanasActivas` (texto JSON) solo las campañas vigentes y aplicadas, y si
+  // lo escrito es EXACTO su texto en palabras (sin mayusculas, tildes ni signos)
+  // la conversacion nace de la campaña. Solo texto. AQUI SOLO SE DETECTA: viaja
+  // en `campana` y el turno del agente agrega UNA linea de contexto. No salta
+  // ningun menu, no manda ningun mensaje y no toca el candado de agenda. Sin
+  // campañas, o con el panel caido, no hay coincidencia y nada cambia.
+  const palabras = (t) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  let campanas = [];
+  try { campanas = JSON.parse(String(cfg.campanasActivas || '[]')); } catch (e) { campanas = []; }
+  const escrito = tipo === 'text' ? palabras(msg.text?.body) : '';
+  const laCampana = escrito === '' || !Array.isArray(campanas) ? null
+    : (campanas.find((c) => c && typeof c.texto === 'string' && palabras(c.texto) === escrito) || null);
+  const plano = (t, max) => String(t ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ')
+    .replace(/\s+/g, ' ').trim().slice(0, max);
+  const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300).replace(/[\[\]]/g, "") } : null;
+
   const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;
 
     // DE DONDE NACIO LA CONVERSACION (Analisis/38 §2, Analisis/39). Si el cliente
@@ -153,6 +172,7 @@ for (let i = 0; i < items.length; i++) {
     pideSoporte,
     anuncio,
     origen,
+    campana,
     mediaId,
     mimeType,
     esMedioAudio,

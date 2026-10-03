@@ -9,11 +9,10 @@
  * coordinador < tenants) o si un módulo importa a otro que no declara en
  * `dependeDe`. Sin esta prueba en verde no se fusiona nada de F2 en adelante.
  *
- * La regla vive en `frontera.ts`, que usa también `scripts/medir-zonas.mjs`:
- * la medición que se cita en cada informe y esta prueba no pueden contar
- * distinto. Las dos, la deuda y el inventario de F2 viven en
- * `admin/pruebas/frontera/`, fuera de la zona de todo agente: solo la
- * coordinadora los cambia (revisión de seguridad del PR #231).
+ * La regla vive en `frontera.ts` (carpeta = zona; `ZONA_POR_ARCHIVO` para lo
+ * que no sale de la carpeta y `SE_PARTE` para lo que F3 separa). Las dos y la
+ * deuda viven en `admin/pruebas/frontera/`, fuera de la zona de todo agente:
+ * solo la coordinadora los cambia (revisión de seguridad del PR #231).
  *
  * LA DEUDA CONOCIDA. El código de hoy ya tiene cruces: el plano los esperaba
  * (el coordinador de turno de F3 existe para deshacer los de `ingesta.ts`).
@@ -27,13 +26,16 @@
  * Y la regla se prueba NEGANDO, con un árbol inventado: sin esa parte, un
  * lector de imports que no ve nada daría verde para siempre.
  */
-import { dirname as carpetaDe } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname as carpetaDe, join } from 'node:path';
 import { fileURLToPath as rutaDe } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { IDS_MODULOS, REGISTRO } from '../../functions/src/registro.ts';
 import {
-  CALCULADO, INDICE_DE_FUNCTIONS, MOTIVO_INDICE, MOTIVO_PRUEBA, analizar, claveDeCruce, esPrueba, importsDe,
-  leerDeuda, listarRaices, motivoDeCruce, zonaDeCodigo, zonaPorCarpeta, type Arbol,
+  CALCULADO, FUNCTION_DEL_COORDINADOR, INDICE_DE_FUNCTIONS, MOTIVO_INDICE, MOTIVO_PRUEBA, RAIZ, SE_PARTE, ZONA_POR_ARCHIVO,
+  analizar, claveDeCruce, esPrueba, fuenteDeFunction, importsDe, leerDeuda, listarRaices, motivoDeCruce, zonaDeCodigo,
+  zonaPorCarpeta, type Arbol,
 } from './frontera.ts';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
@@ -110,8 +112,46 @@ describe('la frontera sobre el código de hoy', () => {
     expect([...new Set(ajenos)]).toEqual([]);
   });
 
-  it('el coordinador de turno no se pierde al moverlo (sigue habiendo uno)', () => {
-    expect(ARCHIVOS.some((a) => zonaDeCodigo(a)?.zona === 'coordinador')).toBe(true);
+  it('el coordinador de turno no se pierde: la Function ingesta sale de un archivo coordinador', () => {
+    const fuente = fuenteDeFunction(FUNCTION_DEL_COORDINADOR);
+    expect(fuente, `index.ts no reexporta la Function ${FUNCTION_DEL_COORDINADOR}`).not.toBeNull();
+    expect(zonaDeCodigo(fuente!)?.zona).toBe('coordinador');
+  });
+
+  it('cada clave de ZONA_POR_ARCHIVO y de SE_PARTE existe (una clave muerta no protege nada)', () => {
+    const faltan = [...Object.keys(ZONA_POR_ARCHIVO), ...Object.keys(SE_PARTE)].filter((a) => !existsSync(join(RAIZ, a)));
+    expect(faltan, 'Archivo movido o borrado: corregir su ruta en frontera.ts').toEqual([]);
+  });
+
+  it('SE_PARTE nombra zonas reales, distintas de la del archivo', () => {
+    const validas = new Set<string>(['core', 'central', 'plataforma', ...IDS_MODULOS.map((m) => `modulo:${m}`)]);
+    for (const [archivo, partes] of Object.entries(SE_PARTE)) {
+      const z = zonaPorCarpeta(archivo);
+      expect(z, archivo).not.toBeNull();
+      const propia = z!.zona === 'modulo' ? `modulo:${z!.modulo}` : z!.zona;
+      for (const p of partes) {
+        expect(validas.has(p), `${archivo}: «${p}» no es una zona`).toBe(true);
+        expect(p, `${archivo} se parte hacia su propia zona`).not.toBe(propia);
+      }
+    }
+  });
+
+  it('index.ts solo reexporta, salvo core/opcionesGlobales.ts (si no, el coordinador esconde lógica)', () => {
+    const fuente = ts.createSourceFile(INDICE_DE_FUNCTIONS, readFileSync(join(RAIZ, INDICE_DE_FUNCTIONS), 'utf8'), ts.ScriptTarget.Latest, true);
+    const importados = fuente.statements.filter(ts.isImportDeclaration)
+      .map((n) => (ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : '<calculado>'));
+    expect(importados.filter((m) => m !== 'firebase-admin/app' && m !== './core/opcionesGlobales.js'),
+      'index.ts importa algo que no es firebase-admin/app ni core/opcionesGlobales').toEqual([]);
+    // Toda exportación con origen es nombrada: `export * from` y `export * as ns from` esconden qué se despliega.
+    const noNombradas = fuente.statements.filter((n): n is ts.ExportDeclaration => ts.isExportDeclaration(n))
+      .filter((n) => !(n.exportClause && ts.isNamedExports(n.exportClause))).map((n) => n.getText().slice(0, 60));
+    expect(noNombradas, 'index.ts tiene una exportación que no es `export { … } from`').toEqual([]);
+    const esInicio = (n: ts.Statement): boolean => ts.isExpressionStatement(n) && ts.isCallExpression(n.expression)
+      && ts.isIdentifier(n.expression.expression) && n.expression.expression.text === 'initializeApp';
+    const sueltos = fuente.statements
+      .filter((n) => !ts.isImportDeclaration(n) && !(ts.isExportDeclaration(n) && n.moduleSpecifier) && !esInicio(n))
+      .map((n) => n.getText().slice(0, 60));
+    expect(sueltos, 'index.ts declara algo que no es una reexportación').toEqual([]);
   });
 });
 
@@ -126,6 +166,9 @@ function arbolDe(archivos: Record<string, string>): Arbol {
 }
 const cruces = (archivos: Record<string, string>) =>
   analizar(Object.keys(archivos), zonaDeCodigo, arbolDe(archivos));
+/** Igual, con index.ts en una zona baja: el coordinador real no tiene nada «arriba» que importar. */
+const crucesConIndiceEnCore = (archivos: Record<string, string>) =>
+  analizar(Object.keys(archivos), (a) => (a === INDICE_DE_FUNCTIONS ? { zona: 'core', destino: a } : zonaDeCodigo(a)), arbolDe(archivos));
 
 describe('la regla de la frontera (árbol inventado)', () => {
   const CORE = `${F}core/a.ts`;
@@ -162,6 +205,12 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(r.cruces.map((c) => c.motivo)).toEqual([`módulo sin dependeDe (${conDependencia.modulo} → ${sinDependencia.modulo})`]);
     // Indirecto: catalogo-web → pedidos → productos.
     expect(motivoDeCruce({ zona: 'modulo', modulo: 'catalogo-web', destino: '' }, { zona: 'modulo', modulo: 'productos', destino: '' })).toBeNull();
+    // Catálogo web → inventario está declarada; inventario → catálogo web, no.
+    expect(motivoDeCruce({ zona: 'modulo', modulo: 'catalogo-web', destino: '' }, { zona: 'modulo', modulo: 'inventario', destino: '' })).toBeNull();
+    expect(motivoDeCruce({ zona: 'modulo', modulo: 'inventario', destino: '' }, { zona: 'modulo', modulo: 'catalogo-web', destino: '' }))
+      .toMatch(/módulo sin dependeDe \(inventario → catalogo-web\)/);
+    expect(motivoDeCruce({ zona: 'modulo', modulo: 'catalogo-web', destino: '' }, { zona: 'modulo', modulo: 'campanas', destino: '' }))
+      .toMatch(/módulo sin dependeDe/);
     // Y al revés, no: que A dependa de B no deja a B importar de A.
     expect(motivoDeCruce({ zona: 'modulo', modulo: declarado, destino: '' }, { zona: 'modulo', modulo: conDependencia.modulo, destino: '' }))
       .toMatch(/módulo sin dependeDe/);
@@ -364,7 +413,7 @@ describe('la regla de la frontera (árbol inventado)', () => {
   });
 
   it('en index.ts, un export sin punto y coma no convierte al import siguiente en reexportación', () => {
-    const r = cruces({
+    const r = crucesConIndiceEnCore({
       [INDICE_DE_FUNCTIONS]: "export const v = 1\nimport { y } from './modulos/agenda/y';",
       [`${F}modulos/agenda/y.ts`]: '',
     });
@@ -376,20 +425,21 @@ describe('la regla de la frontera (árbol inventado)', () => {
   // archivos (tanda 5), la mudanza reescribe el especificador, y una ruta
   // armada con plantilla no la reescribe (revisión de seguridad del #250).
   it('los scripts que importan las Functions compiladas dependen de su fuente', () => {
-    const compilados = importsDe('admin/scripts/migrar-prepago.mjs').filter((i) => i.especificador.startsWith('../functions/lib/'));
-    expect(compilados.map((i) => i.especificador.replace(/^\.\.\/functions\/lib\/(.+)\.js$/, '$1').split('/').pop()))
+    const compilados = importsDe(join('admin/scripts/plataforma/migrar-prepago.mjs')).filter((i) => i.especificador.startsWith('../../functions/lib/'));
+    expect(compilados.map((i) => i.especificador.replace(/^\.\.\/\.\.\/functions\/lib\/(.+)\.js$/, '$1').split('/').pop()))
       .toEqual(expect.arrayContaining(['prepago', 'planes']));
     for (const i of compilados) {
-      expect(i.destino, i.especificador).toBe(`${F}${i.especificador.replace(/^\.\.\/functions\/lib\/(.+)\.js$/, '$1')}.ts`);
+      expect(i.destino, i.especificador).toBe(`${F}${i.especificador.replace(/^\.\.\/\.\.\/functions\/lib\/(.+)\.js$/, '$1')}.ts`);
     }
   });
 
   it('index.ts: sus reexportaciones no cuentan; un import suyo sí', () => {
-    const r = cruces({
+    const r = crucesConIndiceEnCore({
       [INDICE_DE_FUNCTIONS]: "export { x } from './modulos/agenda/x';\nimport { y } from './modulos/agenda/y';",
       [`${F}modulos/agenda/x.ts`]: '', [`${F}modulos/agenda/y.ts`]: '',
     });
-    // index.ts es Plataforma (inventario §5): importar un módulo es subir.
+    // index.ts es coordinador, y un coordinador sí importa módulos: para ver que el
+    // import de index.ts cuenta y la reexportación no, se le pone zona core.
     expect(r.cruces.map((c) => c.hacia)).toEqual([`${F}modulos/agenda/y.ts`]);
   });
 
@@ -402,12 +452,38 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(r.cruces.map(claveDeCruce)).toEqual([`admin/pruebas/core/p.test.ts → ${CENTRAL}`]);
   });
 
+  it('un coordinador de turno mudado a core/turno/ sin línea en ZONA_POR_ARCHIVO pasa a core, y la prueba lo ve', () => {
+    const arbol = arbolDe({
+      [INDICE_DE_FUNCTIONS]: "export { ingesta } from './core/turno/ingesta.js';",
+      [`${F}core/turno/ingesta.ts`]: '',
+    });
+    const fuente = fuenteDeFunction('ingesta', arbol);
+    expect(fuente).toBe(`${F}core/turno/ingesta.ts`);
+    expect(zonaDeCodigo(fuente!)?.zona).toBe('core');
+  });
+
+  it('fuenteDeFunction: reexportar desde una ruta que no existe es un error claro, no «null»', () => {
+    expect(() => fuenteDeFunction('ingesta', arbolDe({ [INDICE_DE_FUNCTIONS]: "export { ingesta } from './no-existe.js';" })))
+      .toThrow(/ingesta desde \.\/no-existe\.js, que no existe/);
+  });
+
+  it('fuenteDeFunction: un index.ts que no reexporta la Function devuelve null', () => {
+    expect(fuenteDeFunction('ingesta', arbolDe({ [INDICE_DE_FUNCTIONS]: '' }))).toBeNull();
+    expect(fuenteDeFunction('ingesta', arbolDe({ [INDICE_DE_FUNCTIONS]: "export { otra } from './otra.js';", [`${F}otra.ts`]: '' }))).toBeNull();
+  });
+
   it('la zona sale de la carpeta', () => {
     expect(zonaPorCarpeta(`${W}modulos/agenda/Agenda.tsx`)).toMatchObject({ zona: 'modulo', modulo: 'agenda' });
     expect(zonaPorCarpeta('Flujos/src/core/medios/a.js')).toMatchObject({ zona: 'core' });
     expect(zonaPorCarpeta('admin/scripts/plataforma/alta.mjs')).toMatchObject({ zona: 'plataforma' });
     expect(zonaPorCarpeta('admin/scripts/datos/x.mjs')).toMatchObject({ zona: 'tenants' });
     expect(zonaPorCarpeta(`${F}registro.ts`)).toMatchObject({ zona: 'registro' });
+    expect(zonaPorCarpeta(`${F}ingesta.ts`)).toMatchObject({ zona: 'coordinador' });
+    expect(zonaPorCarpeta(INDICE_DE_FUNCTIONS)).toMatchObject({ zona: 'coordinador' });
+    expect(zonaPorCarpeta('admin/scripts/ensamblar-flujo.mjs')).toMatchObject({ zona: 'core' });
+    // SE_PARTE anota, no cambia la zona.
+    expect(zonaDeCodigo(`${F}modulos/catalogo-web/catalogoWeb.ts`)).toMatchObject({ zona: 'modulo', modulo: 'catalogo-web', seParte: expect.arrayContaining(['modulo:pedidos']) });
+    expect(zonaDeCodigo(`${F}ingesta.ts`)?.seParte).toEqual(expect.arrayContaining(['modulo:agenda']));
     // Un archivo suelto en la raíz, o una carpeta que no es de zona, no tiene zona por carpeta.
     expect(zonaPorCarpeta(`${F}suelto.ts`)).toBeNull();
     expect(zonaPorCarpeta(`${W}componentes/Marca.tsx`)).toBeNull();
@@ -460,9 +536,11 @@ describe('deuda-solo-baja.mjs: el paso de CI que compara la deuda con la base', 
   });
 
   it('ubicar un archivo y dejar otro nuevo sin zona, o cambiar una transversal, no pasa', () => {
-    const r = comparar(base, {
-      ...base,
-      sinZona: [...base.sinZona.slice(1), `${W}lib/nuevo.ts`],
+    // La base lleva una entrada propia: la deuda real puede quedar sin ninguna.
+    const conUna = { ...base, sinZona: [`${W}lib/viejo.ts`] };
+    const r = comparar(conUna, {
+      ...conUna,
+      sinZona: [`${W}lib/nuevo.ts`],
       transversales: ['admin/pruebas/core/otra.test.ts'],
     });
     expect(r.crecen).toEqual([]);

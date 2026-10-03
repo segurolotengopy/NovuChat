@@ -4,14 +4,14 @@ import { httpsCallable } from 'firebase/functions';
 import { GoogleAuthProvider, reauthenticateWithPopup } from 'firebase/auth';
 import { ref, uploadBytes } from 'firebase/storage';
 import { Link, useParams } from 'react-router-dom';
-import { auth, db, funciones, storage } from '../../lib/firebase';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
-import { ChipModo } from '../../componentes/ChipModo';
-import { modoDelComercio } from '../../lib/modoComercio';
+import { auth, db, funciones, storage } from '../../core/lib/firebase';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
+import { ChipModo } from '../../central/componentes/ChipModo';
+import { modoDelComercio } from '../../central/lib/modoComercio';
 import { useEjesDeCuenta, useTipoCambio } from '../../central/lib/lecturas';
-import { CALLABLES, type Modalidad, type Modelo, type Titularidad } from '../../lib/ejes';
-import type { IdPlanVendible } from '../../lib/planes';
-import { corteDe, fechaCorta } from '../../lib/prepago';
+import { CALLABLES, type Modalidad, type Modelo, type Titularidad } from '../../central/lib/ejes';
+import type { IdPlanVendible } from '../../central/lib/planes';
+import { corteDe, fechaCorta } from '../../central/lib/prepago';
 import { PanelEjes } from '../componentes/PanelEjes';
 import { SuspensionNegocio } from '../componentes/SuspensionNegocio';
 import { FormularioPagoManual, type PedidoDePagoManual } from '../componentes/FormularioPagoManual';
@@ -42,7 +42,7 @@ interface FilaPago {
  *
  * LA PANTALLA ACOMPAÑA, EL SERVIDOR MANDA (`CLAUDE.md` §7). Ninguna acción
  * escribe Firestore desde el navegador: todas son callables del propietario
- * (`lib/ejes.ts`, `CALLABLES`), cada una con su confirmación explícita antes,
+ * (`web/src/central/lib/ejes.ts`, `CALLABLES`), cada una con su confirmación explícita antes,
  * y el error que devuelve el servidor se muestra tal cual, porque está escrito
  * para quien opera. Lo que el servidor rechaza, no pasa, aunque alguien arme
  * la petición a mano.

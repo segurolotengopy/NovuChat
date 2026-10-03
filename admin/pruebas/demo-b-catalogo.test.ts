@@ -101,6 +101,9 @@ describe('El cableado: quién entra y quién sale de cada nodo nuevo', () => {
     expect(destinos(f, 'Procesar respuesta')).toEqual([
       '¿Responder ahora?', '¿Pedir catálogo?', '¿Enviar QR?', '¿Reenviar el QR?',
       '¿Pedido confirmado?', '¿Hay comprobante?',
+      // F3a (02/10/2026): el aviso por transferencia va DEBAJO de todo, para que
+      // el cliente reciba primero.
+      '¿Transferir al dueño?',
     ]);
     expect(destinos(f, 'Procesar respuesta')).not.toContain('Reportar mensaje (saliente)');
     expect(destinos(f, 'Procesar respuesta')).not.toContain('Responder al cliente');
@@ -110,20 +113,24 @@ describe('El cableado: quién entra y quién sale de cada nodo nuevo', () => {
     expect(destinos(f, '¿Pedir catálogo?', 0)).toEqual(['Pedir enlace del catálogo']);
     expect(destinos(f, '¿Pedir catálogo?', 1)).toEqual([]);
     expect(destinos(f, 'Pedir enlace del catálogo')).toEqual(['Enlace del catálogo']);
-    expect(destinos(f, 'Enlace del catálogo')).toEqual(['Responder al cliente']);
+    // F3a: todo camino al cliente entra por el embudo «Mensaje a enviar».
+    expect(destinos(f, 'Enlace del catálogo')).toEqual(['Mensaje a enviar']);
   });
 
   it('«¿Responder ahora?» corta el camino normal; los otros orígenes siguen directos', () => {
-    expect(destinos(f, '¿Responder ahora?', 0)).toEqual(['Responder al cliente']);
+    expect(destinos(f, '¿Responder ahora?', 0)).toEqual(['Mensaje a enviar']);
     expect(destinos(f, '¿Responder ahora?', 1)).toEqual([]);
     // `Comercio no operativo` y `¿Responder uso extendido?` NO pasan por la
     // compuerta nueva: solo la respuesta del agente puede tener que callarse
     // para que el mensaje lo arme el enlace. Desde el 22/09 se suma la rama del
     // carrito, que entra por el otro disparador.
-    expect([...entradas(f, 'Responder al cliente')].sort()).toEqual([
+    expect([...entradas(f, 'Mensaje a enviar')].sort()).toEqual([
       '¿Avisar del carrito?', '¿Responder ahora?', '¿Responder uso extendido?',
-      'Comercio no operativo', 'Enlace del catálogo', 'Respuesta del cobro',
+      'Comercio no operativo', 'Enlace del catálogo', 'QR no enviado', 'Respuesta del cobro',
     ].sort());
+    // El envío de texto solo recibe del embudo: el botón (si Meta lo rechaza) y la
+    // compuerta de «¿Con botón?».
+    expect([...entradas(f, 'Responder al cliente')].sort()).toEqual(['¿Con botón?', 'Responder con botón'].sort());
   });
 
   it('el saliente se reporta DESPUÉS del envío, una sola vez y por un solo camino', () => {
@@ -131,9 +138,10 @@ describe('El cableado: quién entra y quién sale de cada nodo nuevo', () => {
     // uso extendido, que reportaba en paralelo al envío. Ahora hay un único
     // camino: envío → «Texto enviado» → reporte.
     expect(destinos(f, 'Responder al cliente')).toEqual(['Texto enviado']);
+    expect(destinos(f, 'Responder con botón', 0)).toEqual(['Texto enviado']);
     expect(destinos(f, 'Texto enviado')).toEqual(['Reportar mensaje (saliente)']);
     expect(entradas(f, 'Reportar mensaje (saliente)')).toEqual(['Texto enviado']);
-    expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual(['Responder al cliente']);
+    expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual(['Mensaje a enviar']);
   });
 
   it('el orden de las ramas es el del lienzo: de arriba hacia abajo por coordenada Y', () => {
@@ -729,18 +737,19 @@ describe('El carrito: el cableado de la rama nueva', () => {
     // turno siguiente. El envío va primero —está más arriba en el lienzo y
     // `executionOrder: v1` respeta esa altura—, así que un fallo al escribir
     // la memoria nunca deja al cliente sin su mensaje.
-    expect(destinos(f, '¿Avisar del carrito?', 0)).toEqual(['Responder al cliente', 'Recordar pedido']);
+    expect(destinos(f, '¿Avisar del carrito?', 0)).toEqual(['Mensaje a enviar', 'Recordar pedido']);
     expect(destinos(f, '¿Avisar del carrito?', 1)).toEqual([]);
     // Y «Recordar pedido» es una hoja: no reencamina nada hacia el envío.
     expect(destinos(f, 'Recordar pedido')).toEqual([]);
   });
 
-  it('el envío sigue siendo uno solo, con seis caminos que llegan a él', () => {
-    expect([...entradas(f, 'Responder al cliente')].sort()).toEqual([
+  it('el envío sigue siendo uno solo, con siete caminos que llegan a él', () => {
+    expect([...entradas(f, 'Mensaje a enviar')].sort()).toEqual([
       '¿Avisar del carrito?', '¿Responder ahora?', '¿Responder uso extendido?',
-      'Comercio no operativo', 'Enlace del catálogo', 'Respuesta del cobro',
+      'Comercio no operativo', 'Enlace del catálogo', 'QR no enviado', 'Respuesta del cobro',
     ].sort());
     // Y lo que cuelga del envío no cambió: el reporte del saliente, una vez.
+    // (F3a: siete caminos al embudo, con «QR no enviado»; el envío de texto lo alcanza por «¿Con botón?».)
     expect(destinos(f, 'Responder al cliente')).toEqual(['Texto enviado']);
   });
 
@@ -850,9 +859,13 @@ describe('El carrito deja el pedido en la memoria del agente', () => {
     expect(destinos(f, 'Procesar respuesta')).toEqual([
       '¿Responder ahora?', '¿Pedir catálogo?', '¿Enviar QR?', '¿Reenviar el QR?',
       '¿Pedido confirmado?', '¿Hay comprobante?',
+      // F3a (02/10/2026): el aviso por transferencia va DEBAJO de todo, para que
+      // el cliente reciba primero.
+      '¿Transferir al dueño?',
     ]);
     expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('¿Comercio operativo?'));
     // El envío está más arriba que la escritura en memoria: corre primero.
+    expect(y('Mensaje a enviar')).toBeLessThan(y('Recordar pedido'));
     expect(y('Responder al cliente')).toBeLessThan(y('Recordar pedido'));
   });
 
