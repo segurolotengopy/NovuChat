@@ -1,6 +1,7 @@
 {
   "nombreFlujo": "NovuChat — Venta mínima (v0) — Q'Taco",
   "entrada": "receptor",
+  "modoCobro": "simulado",
   "credenciales": {
     "ingesta": "NovuChat ingesta (Q'Taco)",
     "graph": "Graph WhatsApp Q'Taco (Bearer)",
@@ -46,6 +47,8 @@
     "formaPlantillaReserva": "pedido",
     "plantillaDerivacion": "pedido_registrado",
     "idiomaPlantillaDerivacion": "es",
-    "formaPlantillaDerivacion": "pedido"
+    "formaPlantillaDerivacion": "pedido",
+    "cobroSimuladoActivo": true,
+    "qrSimuladoUrl": "https://raw.githubusercontent.com/segurolotengopy/NovuChat/v0.11.0/Demo-Recursos/qr-demo.png"
   }
 }

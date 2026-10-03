@@ -94,6 +94,11 @@ const RETENCION_TEMPORAL = new Set(['venta-minima.qtaco.json']);
 const RETENCION_POR_OMISION = { exito: 'none', error: 'none' };
 const retencionDe = (destino) => RETENCION_POR_SALIDA[destino] || RETENCION_POR_OMISION;
 
+// COBRO SIMULADO (piloto de Q'Taco, 03/10/2026): la ÚNICA imagen permitida es el QR de demostración versionado, con el rótulo
+// IMPRESO, fijado a una etiqueta de versión. Otro anfitrión u otra ruta = una imagen sin rótulo garantizado.
+const URL_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy\/NovuChat\/v\d+\.\d+\.\d+\/Demo-Recursos\/qr-demo\.png$/;
+const MODOS_COBRO = ['simulado', 'real', 'sin_qr'];
+
 function codigoDe(marca, nodo) {
   const modo = marca.startsWith('@@solo:') ? 'solo' : (marca.startsWith('@@comun:') ? 'comun' : 'todo');
   const ruta = marca.slice(modo === 'solo' ? '@@solo:'.length : (modo === 'comun' ? '@@comun:'.length : '@@'.length));
@@ -166,6 +171,17 @@ function validarDatos(datos, archivo) {
     if (typeof v !== 'string') continue;
     if (v.startsWith('=')) errores.push(`«configBase.${k}» empieza con «=» (n8n lo evaluaría como expresión)`);
     if (/["\\{}]/.test(v)) errores.push(`«configBase.${k}» trae una comilla doble, una barra invertida o una llave`);
+  }
+  // COBRO: los dos modos son excluyentes (prohibición 3 de CLAUDE.md). Se valida sobre los datos ya mezclados, así que la herencia cuenta.
+  const cbz = datos.configBase || {};
+  if (!MODOS_COBRO.includes(datos.modoCobro)) errores.push(`«modoCobro» debe ser ${MODOS_COBRO.join(', ')} (no «${datos.modoCobro}»)`);
+  const tieneAct = Object.prototype.hasOwnProperty.call(cbz, 'cobroSimuladoActivo');
+  const tieneUrl = Object.prototype.hasOwnProperty.call(cbz, 'qrSimuladoUrl');
+  if (datos.modoCobro === 'simulado') {
+    if (cbz.cobroSimuladoActivo !== true) errores.push('modoCobro «simulado» exige configBase.cobroSimuladoActivo = true (booleano)');
+    if (typeof cbz.qrSimuladoUrl !== 'string' || !URL_QR_SIMULADO.test(cbz.qrSimuladoUrl)) errores.push('configBase.qrSimuladoUrl no es la imagen rotulada permitida (URL_QR_SIMULADO)');
+  } else if (tieneAct || tieneUrl) {
+    errores.push(`modoCobro «${datos.modoCobro}» no admite cobroSimuladoActivo ni qrSimuladoUrl (los dos modos son excluyentes)`);
   }
   if (errores.length) throw new Error(`${archivo}: datos no válidos: ${errores.join('; ')}`);
 }
@@ -374,6 +390,13 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   if (destino !== SALIDA_CON_LA_CLAVE && asignadas.some((a) => a && a.name === CLAVE_SOLO_ENSAYO)) {
     hallazgos.push(`«Config base» trae «${CLAVE_SOLO_ENSAYO}» (interruptor solo de ensayo): solo ${SALIDA_CON_LA_CLAVE} puede llevarla`);
   }
+  // COBRO SIMULADO: las dos claves van juntas o ninguna, con su forma exacta, y solo si los datos dicen `modoCobro: simulado`.
+  const aAct = asignadas.find((a) => a && a.name === 'cobroSimuladoActivo');
+  const aUrl = asignadas.find((a) => a && a.name === 'qrSimuladoUrl');
+  if (aAct && !(aAct.type === 'boolean' && aAct.value === true)) hallazgos.push('«Config base».cobroSimuladoActivo debe ser el booleano true');
+  if (!!aAct !== !!aUrl) hallazgos.push('«Config base» trae solo una de cobroSimuladoActivo / qrSimuladoUrl: van juntas o ninguna');
+  if (aUrl && !(typeof aUrl.value === 'string' && URL_QR_SIMULADO.test(aUrl.value))) hallazgos.push('«Config base».qrSimuladoUrl no es la imagen rotulada permitida');
+  if (aAct && datos.modoCobro !== 'simulado') hallazgos.push(`«Config base» trae el cobro simulado y los datos dicen modoCobro «${datos.modoCobro}»`);
   const nombres = new Set(flujo.nodes.map((n) => n.name));
   const tipos = flujo.nodes.map((n) => n.type);
   if (entrada !== 'prueba' && nombres.has('Entrada de prueba')) hallazgos.push('contiene el nodo «Entrada de prueba» (activa modoPrueba): solo va en el JSON de prueba');
