@@ -79,9 +79,10 @@ de Q'Taco pasa de 49 a **50 como máximo**, y `--verificar` falla si crece. El �
 
 - **R1**: `¿Falló el envío?` decide por `messages[0].id` (no por `$json.error`) y el reporte saliente cuenta solo con `idMeta`.
 - **R3 (último recurso)**: `Resumen del turno` (un Code que ya corre al final, debajo de los envíos) lanza `throw` cuando un mensaje
-  al cliente no salió ni por el envío principal ni por el respaldo en texto; antes devuelve el estado del teléfono al previo al turno
-  (la única escritura de estado que no hace `Armar mensajes`). No hay nodo «Entrega fallida». Si el estado se escribe antes de enviar
-  (como hoy en `Armar mensajes`), esa reversión es lo que evita dejar `esperando_comprobante` sin QR.
+  al cliente no salió ni por el envío principal ni por el respaldo en texto. Antes ajusta el estado del teléfono (la única escritura de
+  estado que no hace `Armar mensajes`): sin hecho externo lo devuelve al previo conservando su `ultimoMensajeMs`; con un aviso ya enviado o
+  un cierre ya registrado NO lo revierte y lo deja en el paso `menu` (ver «Revisión del PR #382»). No hay nodo «Entrega fallida». Si el
+  estado se escribe antes de enviar (como hoy en `Armar mensajes`), esa reversión es lo que evita dejar `esperando_comprobante` sin QR.
 - **R5**: un envío a Meta con `continueRegularOutput` exige un verificador del id declarado en `VERIFICADOR_DE_ENVIO`; `continueErrorOutput`
   exige su salida de error conectada.
 - **Catálogo web**: el enlace de la carta no tiene nodos propios: `Traer configuración` pide `catalogoCompleto: true` y la consola contesta
@@ -396,6 +397,48 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
   reportando `tipo` `image` o `interactive` (el del mensaje original). Solo afecta al campo `tipo` del mensaje guardado (no a la
   facturación ni a los contadores de entrantes). No se corrigió: distinguir el respaldo por ítem exige emparejar ítems de
   `Enviar respaldo` en la expresión, algo que el arnés de pruebas no reproduce con fidelidad; queda para quien toque ese nodo.
+
+## Revisión del PR #382 (03/10): lo que cambió y lo que queda declarado
+
+**Dependencias de otras piezas (sin ellas el catálogo web no funciona de punta a punta):**
+
+- **Servidor (PR #380, `ingesta.ts`):** `Traer configuración` manda `catalogoCompleto: true` en cada turno y la Function contesta
+  `catalogoWeb.enlace`; además es el servidor el que llama al webhook `Carrito del catálogo` (`despertarFlujo`). Sin ese cambio desplegado
+  no hay enlace: la carta sale en texto (verificado por la suite) y ningún carrito llega al flujo.
+- **Hosting (PR #381, segundo sitio):** la página del catálogo vive ahí. Sin ella el enlace no abre nada.
+- **Dos registros por compra (decisión pendiente de Andres):** `checkoutCatalogo` escribe `pedidos/cat_…` con estado «recibido» ANTES de que
+  el cliente confirme por el chat; cuando confirma con «Confirmar pedido», el flujo crea OTRO pedido (`ped-…`). Una compra deja dos
+  registros. Este flujo no los une ni los deduplica.
+- **Credencial «NovuChat ingesta (Q'Taco)»:** el valor guardado en n8n debe llevar el prefijo `Bearer ` (con el espacio). El Webhook
+  `Carrito del catálogo` compara la cabecera `Authorization` de forma exacta: sin el prefijo, TODO carrito recibe 403 y no llega ninguno.
+
+**Comportamientos cambiados en esta revisión (cada uno con su prueba negando):**
+
+- **R3 y hechos externos.** Si ya salió un aviso a terceros o corrió `Registrar cierre`, `Resumen del turno` NO revierte el estado: lo deja en
+  el paso `menu` (reconfirmar con el botón viejo no arma un segundo pedido, ni otro aviso, ni otro cierre) y lanza igual el error. Sin hecho
+  externo revierte al estado previo conservando su `ultimoMensajeMs`, así `pedidoId`, código y cierre se repiten al reintentar. **Límite
+  conocido (I-3):** R3 no deshace `sd.pedidos`, `vistos` ni el aviso ya enviado; el error de n8n es la señal para que una persona le
+  escriba al cliente.
+- **Con un comprobante en espera, «menú» y pedir una persona no sacan del cobro.** Se conserva `esperando_comprobante` y el pedido; «menú»
+  muestra el recordatorio (sus botones valen con un QR pendiente, los del menú no) y esos mensajes salen sin botón «Menú» ni la frase de
+  «menú». Solo «Cancelar pedido» lleva al menú y borra el pedido.
+- **Excluidos.** `pdAgregarLineas` aplica la lista `palabrasExcluidas` también al sobrante del nombre y al detalle del modelo (nunca al nombre
+  del producto de la carta), y `aCarrito` a la nota del carrito: la palabra excluida no se esquiva como nota. La lista por omisión de Q'Taco
+  se amplió (se probó contra los 53 ítems activos reales: sin falsos positivos).
+- **Carrito.** Conserva el nombre, la dirección y la referencia ya dados; con la ventana cerrada (o sin el dato) no sale nada aunque el
+  comercio esté suspendido o la atención sea de un operador (las condiciones de `¿Comercio operativo?` y `¿Atención normal?` dejan pasar a
+  `Decidir turno`); el comprobante pendiente se revisa antes del horario.
+- **Carta como enlace.** Dice «Elige ahí tus productos y vuelve al chat para confirmar el pedido» (el pedido no queda confirmado hasta tocar
+  «Confirmar pedido» en el chat) y, con un carrito en curso, lleva «Tu pedido sigue guardado (N productos)». El mensaje genérico respeta
+  `nivelEmojis: ninguno`.
+- **Intenciones globales** (reserva, carta, «pedir» dentro de una reserva): en `inicio` y `menu` valen sin límite; en los demás pasos, solo
+  con un mensaje de hasta 60 caracteres y nunca en `pedido_entrega` ni `pedido_datos`; «qué tienen» exige que el mensaje no pida algo y «pedir»
+  dentro de una reserva exige que no sea una pregunta.
+- **Seguridad L-1 y L-2.** `urlDelCatalogo` tiene la misma forma que `amUrlSegura` (sin puerto, sin `@` ni `<>"'` en la ruta, hasta 2.000
+  caracteres) y rechaza `wa.me` y `whatsapp.com`; la nota del cliente se inserta con una función de reemplazo (`$&`, `$'` no se interpretan).
+- **Mensajes por conversación:** 0 agregados ni quitados por esta revisión (el aviso «sigue guardado» va dentro del mismo mensaje).
+- **Declarado y fuera de este flujo:** los hallazgos L-4 y L-5 de la revisión de seguridad son del servidor o de trabajo futuro y no se tocan
+  aquí; la retención de errores `all` de `venta-minima.qtaco.json` (M-1) la decide Andres y `RETENCION_POR_SALIDA` no se cambió.
 
 ## Mensajes por conversación (declarados y medidos en la suite)
 
