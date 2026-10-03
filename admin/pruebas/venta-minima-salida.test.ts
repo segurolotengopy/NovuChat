@@ -1039,8 +1039,12 @@ describe('Los tres nodos son JavaScript plano', () => {
     }
   });
 
-  it('solo Armar mensajes escribe estado: los otros dos no llaman a las funciones que escriben', () => {
-    for (const f of [AVISOS, RESUMEN]) expect(f).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
+  it('solo Armar mensajes escribe estado: los otros dos no llaman a las funciones que escriben (salvo que Resumen del turno DEVUELVE el estado previo si la entrega falla del todo: R3)', () => {
+    expect(AVISOS).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
+    expect(RESUMEN).not.toMatch(/vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
+    // La única escritura de Resumen es la reversión, y va justo antes del `throw` de la entrega fallida.
+    expect(RESUMEN.match(/vmEscribirEstado/g)).toHaveLength(1);
+    expect(RESUMEN).toMatch(/vmEscribirEstado\([\s\S]{0,200}\}\s*throw new Error\('Entrega fallida/);
     expect(MENSAJES).toMatch(/vmEscribirEstado/);
     expect(MENSAJES).toMatch(/avContar/);
   });

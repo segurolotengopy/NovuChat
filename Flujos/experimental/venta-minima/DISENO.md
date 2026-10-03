@@ -55,18 +55,41 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - ninguna mención de `subscriptions` ni `subscribed_apps` en ningún JSON (prohibición 7);
   - un nodo HTTP solo llama a `graph.facebook.com`, `generativelanguage.googleapis.com` o `*.cloudfunctions.net` (o a un
     marcador; la única URL por expresión es la de `Descargar medio`, que baja el medio que Meta devolvió);
-  - en producción, ningún webhook con ruta de prueba y ninguno que no sea la entrada del receptor;
+  - en producción, ningún webhook con ruta de prueba y solo dos entradas: la del receptor y `Carrito del catálogo` (con su forma
+    exacta: POST, `headerAuth` con la credencial de la ingesta, `onReceived`, ruta como `REEMPLAZAR_RUTA_CARRITO_QTACO`, conectado solo a
+    `Carga de entrada`, solo en la variante del receptor);
+  - presupuesto de nodos: los JSON de producción tienen **50 nodos como máximo** (49 + el webhook del carrito);
+  - «se entrega lo que se promete» (R1, R3, R5; ver «Entrega de lo prometido»);
   - cada `venta-minima.*.json` versionado tiene su archivo de datos (si no, queda huérfano); un `*.local.json` (lo que deja
     `preparar-import.sh`, con valores reales) no cuenta como huérfano;
   - la clave `avisarAlPropioNumero` (interruptor solo de ensayo) solo puede estar en `ensayo-demo-a.json` y en su salida (ver «La variante
     de ensayo en el Demo A»);
-  - retención de ejecuciones en `none` (ver abajo).
-- **Retención de ejecuciones (decisión de Andres, 02/10/2026): nada se guarda.** `saveDataSuccessExecution: "none"`,
-  `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, explícitos en la plantilla y en los JSON generados,
-  porque las ejecuciones llevan texto de clientes. La suite y `--verificar` lo exigen. Costo: sin ejecuciones guardadas, un
-  fallo en producción no se puede reconstruir desde n8n; se diagnostica con la bitácora del servidor y con el ensayo.
+  - retención de ejecuciones (ver abajo).
+- **Retención de ejecuciones (decisión de Andres, 02/10/2026; Q'Taco, 03/10/2026).** Por omisión nada se guarda:
+  `saveDataSuccessExecution: "none"`, `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, explícitos en la plantilla y en
+  los JSON generados, porque las ejecuciones llevan texto de clientes. **Excepción de UN solo archivo:** `venta-minima.qtaco.json`
+  guarda las ejecuciones con ERROR (`saveDataErrorExecution: "all"`; Q'Taco es un restaurante, no una clínica) para tener rastro de las
+  fallas, entre ellas «Entrega fallida»; las exitosas y el progreso siguen sin guardarse. La prueba y el ensayo en el Demo A conservan
+  `none` en todo. `construir.mjs` lo arma por salida (`RETENCION_POR_SALIDA`) y `--verificar` exige cada valor en ambos sentidos.
 
-## El grafo (49 nodos en producción de Q'Taco; 46 en la prueba)
+## Entrega de lo prometido (R1, R3, R5) y catálogo web, sin subir el tope de nodos
+
+Decisión de Andres (03/10/2026): **no subir nodos** (la complejidad de los nodos de n8n ya impidió salir otras veces); el JSON de producción
+de Q'Taco pasa de 49 a **50 como máximo**, y `--verificar` falla si crece. El único nodo nuevo es la segunda entrada de producción.
+
+- **R1**: `¿Falló el envío?` decide por `messages[0].id` (no por `$json.error`) y el reporte saliente cuenta solo con `idMeta`.
+- **R3 (último recurso)**: `Resumen del turno` (un Code que ya corre al final, debajo de los envíos) lanza `throw` cuando un mensaje
+  al cliente no salió ni por el envío principal ni por el respaldo en texto; antes devuelve el estado del teléfono al previo al turno
+  (la única escritura de estado que no hace `Armar mensajes`). No hay nodo «Entrega fallida». Si el estado se escribe antes de enviar
+  (como hoy en `Armar mensajes`), esa reversión es lo que evita dejar `esperando_comprobante` sin QR.
+- **R5**: un envío a Meta con `continueRegularOutput` exige un verificador del id declarado en `VERIFICADOR_DE_ENVIO`; `continueErrorOutput`
+  exige su salida de error conectada.
+- **Catálogo web**: el enlace de la carta no tiene nodos propios: `Traer configuración` pide `catalogoCompleto: true` y la consola contesta
+  `catalogoWeb.enlace`. La segunda entrada es el webhook `Carrito del catálogo` (solo en el JSON del receptor), conectado directo a
+  `Carga de entrada`, que valida el carrito SOLO si ese nodo corrió. Su ruta es el marcador propio `REEMPLAZAR_RUTA_CARRITO_QTACO` (no el del Demo B).
+- Pruebas: `venta-minima-entrega.test.ts` (negando) y `venta-minima-catalogo-topologia.test.ts`.
+
+## El grafo (50 nodos en producción de Q'Taco; 46 en la prueba)
 
 ```
 Entrega del receptor → Verificar firma con el receptor → ¿Firma válida? ─sí→ Aceptar (200) → Descartar repetidos ─┐
@@ -237,7 +260,7 @@ Demo A». Decisiones:
 - **Dos marcadores y nada más**: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A) y `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de Andres, con
   prefijo 591, que solo vive en la tabla local: destinatario `completo` y recepción de respaldo; **ninguna cifra de teléfono en el
   repositorio**). `preparar-import.sh` los reemplaza y deja un `.local.json` que `construir.mjs` no cuenta como huérfano. Ninguno `_QTACO`,
-  ni receptor, ni verificador, ni «Entrada de prueba», ni «Simular aviso», ni webhooks. La retención sigue en `none`.
+  ni receptor, ni verificador, ni «Entrada de prueba», ni «Simular aviso», ni webhooks (tampoco el carrito). La retención sigue en `none`.
 - **Plantillas vacías**: en la línea del Demo A no existen. Con un solo teléfono la ventana de 24 h **ya está abierta** (escribe él, y cada
   mensaje suyo la reabre): el aviso sale como texto libre. El botón «Escribir al local» va a la recepción del comercio `ensayo`
   (`REEMPLAZAR_NUMERO_RECEPCION_ENSAYO`, hoy el teléfono de Andres): su propio teléfono.
@@ -417,7 +440,8 @@ en texto llegue; sin esa conversación, el destinatario solo recibe la plantilla
   Andres prefiere una plantilla propia para reservas y consultas (ver el punto 5).
 - **Consola de Q'Taco**: `catalogoWebActivo` en `false` (con más de 40 ítems la ingesta manda `catalogo: []` y el flujo
   deriva todo pedido), carta, campañas y QR; `numeroRecepcion` y `venta.aceptaDelivery`/`aceptaRetiroEnLocal`.
-- **Retención de ejecuciones (P6)**: decidido el 02/10 en `none` para todo (ver «Cómo se arma»).
+- **Retención de ejecuciones (P6)**: `none` en todo, salvo las de error de `venta-minima.qtaco.json` (`all`, decidido el 03/10; ver «Cómo se arma»).
+- **Marcador nuevo en el alta**: `REEMPLAZAR_RUTA_CARRITO_QTACO` (la ruta del webhook del carrito) entra a la tabla local del alta de Q'Taco.
 - Importar con `./scripts/preparar-import.sh Flujos/experimental/venta-minima/venta-minima.qtaco.json .env.qtaco`
   (el patrón de marcadores corta en comillas, barras y espacios: **no pegar dos marcadores con una coma**; la suite lo
   verifica) y **Publish**, con la ventana de mantenimiento y el «sí» de Andres.

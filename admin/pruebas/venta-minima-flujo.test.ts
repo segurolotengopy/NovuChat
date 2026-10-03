@@ -635,7 +635,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     // Negativo: en el JSON de prueba su webhook de prueba es lo normal; en el de producción, el del receptor.
     expect(verificarEnCopia(() => undefined).status).toBe(0);
     expect(PRUEBA.nodes.filter((n) => n.type === 'n8n-nodes-base.webhook').map((n) => n.name)).toEqual(['Entrada de prueba']);
-    expect(QTACO.nodes.filter((n) => n.type === 'n8n-nodes-base.webhook').map((n) => n.name)).toEqual(['Entrega del receptor']);
+    expect(QTACO.nodes.filter((n) => n.type === 'n8n-nodes-base.webhook').map((n) => n.name)).toEqual(['Entrega del receptor', 'Carrito del catálogo']);
   });
 
   it('L1: `--verificar` FALLA si un `venta-minima.*.json` versionado ya no tiene su archivo de datos', () => {
@@ -756,7 +756,8 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     const patron = /REEMPLAZAR_[A-Z][^"\\\s]*/g;
     const marcadores = (f: string): string[] => [...new Set(texto(f).match(patron) ?? [])].sort();
     const comunes = ['REEMPLAZAR_DIRECCION_QTACO', 'REEMPLAZAR_HORARIO_ATENCION_QTACO', 'REEMPLAZAR_HORARIO_PEDIDOS_QTACO', 'REEMPLAZAR_NUMERO_AVISO_1_QTACO', 'REEMPLAZAR_NUMERO_AVISO_2_QTACO', 'REEMPLAZAR_NUMERO_RECEPCION_QTACO', 'REEMPLAZAR_PHONE_NUMBER_ID_QTACO'];
-    expect(marcadores('venta-minima.qtaco.json')).toEqual([...comunes, 'REEMPLAZAR_RUTA_RECEPTOR_QTACO', 'REEMPLAZAR_URL_VERIFICADOR_RECEPTOR', 'REEMPLAZAR_WABA_ID_QTACO'].sort());
+    // `REEMPLAZAR_RUTA_CARRITO_QTACO` es el marcador de la ruta del webhook del carrito (segunda entrada de producción, solo en el JSON de Q'Taco).
+    expect(marcadores('venta-minima.qtaco.json')).toEqual([...comunes, 'REEMPLAZAR_RUTA_CARRITO_QTACO', 'REEMPLAZAR_RUTA_RECEPTOR_QTACO', 'REEMPLAZAR_URL_VERIFICADOR_RECEPTOR', 'REEMPLAZAR_WABA_ID_QTACO'].sort());
     expect(marcadores('venta-minima.prueba.json')).toEqual([...comunes, 'REEMPLAZAR_NUMERO_ENSAYO_QTACO', 'REEMPLAZAR_RUTA_DE_PRUEBA'].sort());
     // El negativo: así se fundían los dos números de aviso (o el WABA y su comilla) cuando iban pegados.
     expect('completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO,cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO'.match(patron)).toHaveLength(1);
@@ -817,20 +818,29 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     expect(Object.keys(base)).not.toContain('catalogoWebActivo');
   });
 
-  it('settings: executionOrder v1, zona de La Paz, 60 s, y NADA de ejecuciones guardadas (éxito, error y progreso: llevan texto de clientes; decisión del 02/10)', () => {
-    for (const f of [PLANTILLA, QTACO, PRUEBA]) {
+  it('settings: executionOrder v1, zona de La Paz, 60 s, y NADA de ejecuciones guardadas salvo las de ERROR del JSON de Q\'Taco (decisión del 03/10); el progreso nunca', () => {
+    for (const [f, error] of [[PLANTILLA, 'none'], [QTACO, 'all'], [PRUEBA, 'none']] as [Flujo, string][]) {
       expect(f.settings).toMatchObject({
         executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
-        saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false,
+        saveDataSuccessExecution: 'none', saveDataErrorExecution: error, saveExecutionProgress: false,
       });
     }
   });
 
   it('--verificar FALLA si un JSON versionado guarda ejecuciones de errores, de éxitos o su progreso (cada uno, por separado)', () => {
-    for (const [clave, valor] of [['saveDataErrorExecution', 'all'], ['saveDataSuccessExecution', 'all'], ['saveExecutionProgress', true]] as const) {
+    // Q'Taco guarda SOLO las de error (`all`); cualquier otro valor, en el sentido que sea, falla.
+    for (const [clave, valor] of [['saveDataErrorExecution', 'none'], ['saveDataSuccessExecution', 'all'], ['saveExecutionProgress', true]] as const) {
       const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => { (f.settings as J)[clave] = valor; }));
       expect(r.status, clave).toBe(1);
       expect(r.stderr, clave).toContain('retención');
+    }
+    // Las variantes de prueba y de ensayo no guardan nada: ni siquiera errores.
+    for (const archivo of ['venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json']) {
+      for (const [clave, valor] of [['saveDataErrorExecution', 'all'], ['saveDataSuccessExecution', 'all']] as const) {
+        const r = verificarEnCopia((vm) => editarJson(vm, archivo, (f) => { (f.settings as J)[clave] = valor; }));
+        expect(r.status, `${archivo} ${clave}`).toBe(1);
+        expect(r.stderr, `${archivo} ${clave}`).toContain('retención');
+      }
     }
     // Una clave que falta también falla (n8n tomaría el valor de la instancia).
     const sin = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.prueba.json', (f) => { delete (f.settings as J)['saveExecutionProgress']; }));
@@ -1948,8 +1958,9 @@ describe('cobro', () => {
     const ambas = armarPedido();
     ambas.w.fallan.add('Enviar a WhatsApp');
     ambas.w.fallan.add('Enviar respaldo');
-    const nada = confirmarPedido(ambas);
-    expect(nada.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado')).toHaveLength(0);
+    // R3: sin QR y sin respaldo, la ejecución termina en ERROR (no en `success`) y el cobro no se abre.
+    expect(() => confirmarPedido(ambas)).toThrow(/Entrega fallida/);
+    expect(ambas.w.mundo.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado')).toHaveLength(0);
   });
 
   it('sin cobro real (plan B), con la consola caída o con un QR que no es https: no hay QR y el pago se coordina con el restaurante', () => {
@@ -2419,14 +2430,14 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
   it('el JSON de prueba tiene «Entrada de prueba» y ninguno de los nodos del receptor; el de Q\'Taco, al revés', () => {
     const nombres = (f: Flujo) => f.nodes.map((n) => n.name);
     expect(nombres(PRUEBA)).toContain('Entrada de prueba');
-    for (const n of ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos']) {
+    for (const n of ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos', 'Carrito del catálogo']) {
       expect(nombres(PRUEBA)).not.toContain(n);
       expect(nombres(QTACO)).toContain(n);
     }
     expect(nombres(QTACO)).not.toContain('Entrada de prueba');
     expect(PRUEBA.nodes.find((n) => n.name === 'Entrada de prueba')?.parameters['path']).toBe('REEMPLAZAR_RUTA_DE_PRUEBA');
     // Las demás conexiones son las mismas: la prueba corre el mismo flujo.
-    const sinEntrada = (f: Flujo) => nombres(f).filter((n) => !['Entrada de prueba', 'Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos', 'Simular aviso', '¿Avisar de verdad?'].includes(n));
+    const sinEntrada = (f: Flujo) => nombres(f).filter((n) => !['Entrada de prueba', 'Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos', 'Carrito del catálogo', 'Simular aviso', '¿Avisar de verdad?'].includes(n));
     expect(sinEntrada(PRUEBA)).toEqual(sinEntrada(QTACO));
   });
   // M2. La variante de prueba solo se importa para ensayar: autenticada, con su propia credencial de Graph, con el número del
@@ -2551,7 +2562,7 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       expect(vivos.has(de), de).toBe(true);
       for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
     }
-    expect(QTACO.nodes).toHaveLength(49);
+    expect(QTACO.nodes).toHaveLength(50); // 49 + el webhook del carrito: el tope de producción (`construir.mjs` lo impone)
     expect(PRUEBA.nodes).toHaveLength(46);
   });
 
