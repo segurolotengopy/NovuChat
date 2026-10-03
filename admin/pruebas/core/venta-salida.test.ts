@@ -473,7 +473,7 @@ describe('(6b) Meta rechaza el QR: el cliente no queda en silencio (03/10/2026, 
   };
   const rechazo = { error: { message: 'image.id is not a valid whatsapp business account media attachment ID' } };
   const noEnviado = (cfg: J | null = null): J => ejecutar(codigoDe(f, 'QR no enviado'), [rechazo],
-    { 'Preparar QR de cobro': [previo], ...(cfg ? { 'Config del negocio': [cfg] } : {}) })[0] ?? {};
+    { 'Preparar QR de cobro': [previo], 'Config del negocio': [cfg ?? { rotuloDemo: ROTULO }] })[0] ?? {};
 
   it('el cliente recibe exactamente UN mensaje, con el botón; el dueño recibe su aviso', () => {
     const s = noEnviado();
@@ -481,7 +481,7 @@ describe('(6b) Meta rechaza el QR: el cliente no queda en silencio (03/10/2026, 
     expect(salida['conBoton']).toBe(true);
     expect((salida['cuerpoBoton'] as J)['to']).toBe(CLIENTE);
     // Un solo texto: el pie con el rótulo de simulacro (prohibición 3) + la frase de que la imagen no salió.
-    expect(String(salida['respuesta'])).toContain(ROTULO);
+    expect(String(salida['respuesta'])).toBe(ROTULO + '\n\nNo pude enviarte la imagen del QR.');
     expect(String(salida['respuesta'])).toContain('No pude enviarte la imagen del QR.');
     // Dos ramas: el cliente (arriba) y el aviso al dueño (abajo); ni una más.
     expect(destinos(f, 'QR no enviado')).toEqual(['Mensaje a enviar', 'Avisar al dueño']);
@@ -499,7 +499,7 @@ describe('(6b) Meta rechaza el QR: el cliente no queda en silencio (03/10/2026, 
 
   it('sin número del negocio no se invita a un botón que no existe', () => {
     const s = ejecutar(codigoDe(f, 'QR no enviado'), [rechazo],
-      { 'Preparar QR de cobro': [{ ...previo, numeroDueno: '' }], 'Config del negocio': [{ numeroDueno: '' }] })[0] ?? {};
+      { 'Preparar QR de cobro': [{ ...previo, numeroDueno: '' }], 'Config del negocio': [{ numeroDueno: '', rotuloDemo: ROTULO }] })[0] ?? {};
     const salida = enviar(s, { numeroDueno: '', nombreNegocio: 'Un Negocio' });
     expect(salida['conBoton']).toBe(false);
     expect(String(salida['textoParaTexto'])).not.toMatch(/bot[oó]n|wa\.me/);
@@ -509,9 +509,9 @@ describe('(6b) Meta rechaza el QR: el cliente no queda en silencio (03/10/2026, 
   it('el fallo del REENVÍO lee el preparador que corrió, y el reporte del QR bueno también', () => {
     const reenvio: J = { ...ENT, captionQr: ROTULO + '\n\nEste es el QR de tu pedido.', esReenvio: true, cobroTotal: '' };
     const s = ejecutar(codigoDe(f, 'QR no enviado'), [rechazo],
-      { 'Preparar reenvío del QR': [reenvio] })[0] ?? {};
+      { 'Preparar reenvío del QR': [reenvio], 'Config del negocio': [{ rotuloDemo: ROTULO }] })[0] ?? {};
     expect(s['from']).toBe(CLIENTE);
-    expect(String(s['respuesta'])).toContain(ROTULO);
+    expect(String(s['respuesta'])).toBe(ROTULO + '\n\nNo pude enviarte la imagen del QR.');
     expect(enviar(s)['conBoton']).toBe(true);
     // «Reportar QR (saliente)» en un reenvío: el pie y el teléfono son del reenvío, sin `qr_enviado`.
     const cuerpo = JSON.parse(String(expresion(nodo(f, 'Reportar QR (saliente)').parameters['jsonBody'],
@@ -543,6 +543,50 @@ describe('(6b) Meta rechaza el QR: el cliente no queda en silencio (03/10/2026, 
     expect(p['textoEnElQr']).toBe(true);
     expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name).sort())
       .toEqual(['Avisar al dueño', 'Obtener URL del medio', 'Obtener URL del medio (general)', 'Responder al cliente'].sort());
+  });
+
+  it('con el pie REAL de los preparadores (simulado, real y reenvío) no se piden cosas imposibles ni hay voseo', () => {
+    const base: J = {
+      rotuloDemo: ROTULO, captionQr: 'Envía la foto de tu comprobante para continuar con la demo.',
+      nivelEmojis: 'ninguno', moneda: 'Bs', cobroMonto: '597', cobroNombreCuenta: 'Un Negocio', cobroBanco: 'Banco X',
+      cobroQrUrl: 'https://ejemplo.invalid/qr.png', qrUrl: 'https://ejemplo.invalid/demo.png', qrMediaId: 'MEDIA1',
+    };
+    const ARMADORES: [string, string, J][] = [
+      ['Preparar QR de cobro', 'simulado', { ...base, cobroRealActivo: 'no' }],
+      ['Preparar QR de cobro', 'real', { ...base, cobroRealActivo: 'si' }],
+      ['Preparar reenvío del QR', 'reenvío simulado', { ...base, cobroRealActivo: 'no' }],
+      ['Preparar reenvío del QR', 'reenvío real', { ...base, cobroRealActivo: 'si' }],
+    ];
+    for (const [preparador, modo, cfg] of ARMADORES) {
+      const prep = ejecutar(codigoDe(f, preparador), [{ ...ENT, respuesta: 'Aquí tienes el código QR para pagar.', textoEnElQr: true }],
+        { 'Config del negocio': [cfg] })[0] ?? {};
+      expect(String(prep['captionQr']), modo).not.toBe('');
+      const s = ejecutar(codigoDe(f, 'QR no enviado'), [rechazo], { [preparador]: [prep], 'Config del negocio': [cfg] })[0] ?? {};
+      const texto = String(s['respuesta']);
+      expect(texto, modo).not.toMatch(/escane|comprobante|este es el qr|aqu[ií] tienes|guard[aá]|mand[aá]/i);
+      expect(texto, modo).toContain('No pude enviarte la imagen del QR.');
+      if (modo.includes('simulado')) expect(texto, modo).toContain(ROTULO);
+      else expect(texto, modo).toBe('No pude enviarte la imagen del QR.');
+      expect(enviar(s)['conBoton'], modo).toBe(true);
+    }
+  });
+
+  it('un error sin `message` no imprime «[object Object]» en el aviso', () => {
+    for (const error of [{ code: 400 }, { message: '' }, {}]) {
+      const s = ejecutar(codigoDe(f, 'QR no enviado'), [{ error }],
+        { 'Preparar QR de cobro': [previo], 'Config del negocio': [{ rotuloDemo: ROTULO }] })[0] ?? {};
+      expect(String(s['textoAviso'])).not.toContain('[object Object]');
+    }
+  });
+
+  it('dos corridas de «Mensaje a enviar»: un botón aceptado se reporta con su cuerpo, no con el texto con enlace', () => {
+    const texto = enviar(turno({ output: 'Te paso con alguien. [TRANSFERIR]' }));
+    const fallo = enviar(noEnviado());
+    const rep = (prev: string): J => ejecutar(codigoDe(f, 'Texto enviado'), [{ messages: [{ id: 'wamid.Z' }] }],
+      { 'Normalizar entrada': [ENT], 'Mensaje a enviar': [fallo, texto], 'Responder al cliente': [{}] },
+      { $prevNode: { name: prev } })[0] ?? {};
+    expect(rep('Responder con botón')['texto']).toBe(fallo['respuesta']);
+    expect(rep('Responder al cliente')['texto']).toBe(fallo['textoParaTexto']);
   });
 });
 
