@@ -13,10 +13,10 @@ calendario y el catálogo web). Escriba en español de Bolivia, sin voseo.
 ## Zona de escritura (`Analisis/41` §8.1)
 
 ```
-NOVUCHAT_ZONA="admin/web/src/central/paginas/Tablero.tsx:admin/web/src/central/paginas/Configuracion.tsx:admin/web/src/central/componentes/:admin/pruebas/central/"
+NOVUCHAT_ZONA="admin/web/src/central/paginas/Tablero.tsx:admin/web/src/central/paginas/Configuracion.tsx:admin/web/src/central/componentes/:admin/pruebas/central/:admin/web/src/core/"
 ```
 
-Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** quita `plataforma/`, que §8.1 pone en esta fila y que `Prompts/rearquitectura-por-capas.md` ya separa en el agente `plataforma-consola` (§1.2 del plano: lo del operador no comparte zona con lo del comercio); y agrega `admin/pruebas/central/` (compartida con `central`) para las pruebas de pantalla.
+Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** quita `plataforma/`, que §8.1 pone en esta fila y que `Prompts/rearquitectura-por-capas.md` ya separa en el agente `plataforma-consola` (§1.2 del plano: lo del operador no comparte zona con lo del comercio); y agrega `admin/pruebas/central/` (compartida con `central`) para las pruebas de pantalla; y agrega `admin/web/src/core/` (la consola de Core, asignada por Andres el 02/10/2026).
 
 Esas páginas viven en `admin/web/src/central/paginas/` (`Tablero.tsx`,
 `Configuracion.tsx`) y el componente en
