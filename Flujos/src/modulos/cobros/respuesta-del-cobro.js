@@ -56,26 +56,26 @@ for (let i = 0; i < items.length; i++) {
     // «Los datos coinciden con tu pedido», y nada más. NO «pago acreditado»,
     // NO «recibimos tu pago», NO «verificado»: ninguna de las tres es cierta
     // mirando una imagen. Lo que sí es cierto, y es lo que el cliente necesita
-    // saber, es que su pedido quedó tomado.
+    // saber, es que que los datos coinciden.
     respuesta = 'Recibí tu comprobante y los datos coinciden con tu pedido. '
-      + 'Tu pedido queda tomado y lo preparamos.';
+      + 'Quien confirma que el pago entró es el negocio, en su banco.';
     motivo = `llegó el comprobante de un pedido de ${importe || 'monto no registrado'} y sus datos `
       + `coinciden (monto leído ${montoLeido || 'sin dato'}${banco ? `, banco ${banco}` : ''}); `
       + 'confirmar en el banco que el dinero entró antes de darlo por cobrado';
   } else if (resultado === 'no_cuadra') {
     const detalle = diferencias[0] ? ` (${diferencias[0].replace(/\.$/, '')})` : '';
-    respuesta = `Recibí tu comprobante. Hay un dato que no me coincide${detalle}, así que lo va a `
-      + `revisar una persona de ${negocio} y te escribe por acá. Tu pedido queda guardado mientras tanto.`;
+    respuesta = `Recibí tu comprobante. Hay un dato que no me coincide${detalle}, así que `
+      + `avisé a ${negocio}. Si prefieres, puedes escribirle directo con el botón de abajo.`;
     motivo = `comprobante con diferencia: ${diferencias.join('; ') || 'sin detalle'}; `
       + `el pedido es de ${importe || 'monto no registrado'}; revisar el banco y escribirle`;
   } else if (resultado === 'ilegible') {
     respuesta = 'Recibí tu comprobante pero no pude leerlo bien. '
-      + '¿Me lo mandás de nuevo, más nítido o como PDF desde la app de tu banco?';
+      + '¿Me lo mandas de nuevo, más nítido o como PDF desde la app de tu banco?';
     motivo = 'llegó un comprobante ilegible y se le pidió que lo reenvíe';
   } else {
     const porQue = codigo === 409 ? String(cuerpo.error || 'sin pago pendiente')
       : (Number.isFinite(codigo) && codigo > 0 ? `el panel contestó ${codigo}` : 'el panel no contestó');
-    respuesta = `Recibí tu comprobante. Lo revisa una persona de ${negocio} y te escribe por acá.`;
+    respuesta = `Recibí tu comprobante, pero no pude cotejarlo. Avisé a ${negocio}; si prefieres, puedes escribirle directo con el botón de abajo.`;
     motivo = `comprobante recibido sin poder cotejar (${porQue}); revisarlo a mano`;
   }
 
