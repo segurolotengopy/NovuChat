@@ -2093,7 +2093,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
         // Y si el modelo manda la empresa como rubro, tampoco.
         const r = procesar('Perfecto.\n[LEAD]{"rubro":"Consultorio Rojas"}[/LEAD]', e, sd);
         expect(conv(sd)['lead']['rubro']).toBeUndefined();
-        expect(r['avisos']).toContain('rubro_igual_a_la_empresa');
+        expect(r['avisos']).toContain('rubro_del_modelo_descartado');
       });
 
       it('una respuesta que no es un nombre no se registra como empresa: la deja al modelo', () => {
