@@ -1351,9 +1351,31 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     expect(estadoDe(m)['pedido']['simulado']).toBe(false);
     m.cfg['cobro'] = { ...CFG_SIM.cobro, pedidoRef: ref, pendiente: true };
     const s = foto(m);
-    expect(s.p!['aviso']).toBeNull();
     expect(s.p!['cierre']).toBeNull();
     expect(s.p!['ruta']).not.toBe('comprobante:simulado');
+    // H1 (revisión del cobro simulado): la foto puede ser un pago REAL. Se pasa con una persona (aviso de transferencia + botón),
+    // conservando el paso y el pedido; no es una «imagen sin pendiente» y nada dice «SIMULADO».
+    expect(s.p!['aviso']['tipo']).toBe('transferencia');
+    expect(s.p!['ruta']).toContain('transferir:el modo de cobro cambió: comprobante de un pedido real');
+    expect(s.p!['mensajes'][0]['tipo']).toBe('enlace');
+    expect(JSON.stringify([s.p!['mensajes'], s.p!['aviso']])).not.toMatch(/SIMULADO|simulado|PRUEBA/);
+    expect(JSON.stringify(s.p!['mensajes'])).not.toContain('no tienes ninguno pendiente');
+    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+    expect(estadoDe(m)['pedido']['pedidoId']).toBe(ref);
+  });
+
+  it('H1: el recordatorio de un pedido REAL nunca dice «SIMULADO» aunque el modo vigente sea simulado; el de un pedido simulado sí', () => {
+    const real = enEsperaReal();
+    real.cfg['cobro'] = { ...CFG_SIM.cobro, pendiente: true };
+    const r = registrar(turno(real, { texto: '¿ya llegó?' }));
+    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Estoy esperando el comprobante de tu pedido #/);
+    expect(JSON.stringify(r.p!['mensajes'])).not.toMatch(/SIMULADO|prueba/i);
+    // NEGANDO: el pedido simulado, aunque el modo vigente pasara a real, sigue hablando de SU comprobante simulado (no del real).
+    const sim = enEsperaSim();
+    sim.cfg['cobro'] = CFG_QR.cobro;
+    expect(registrar(turno(sim, { texto: '¿ya llegó?' })).p!['mensajes'][0]['cuerpo']).toContain('SIMULADO');
+    const normal = enEsperaSim();
+    expect(registrar(turno(normal, { texto: '¿ya llegó?' })).p!['mensajes'][0]['cuerpo']).toContain('SIMULADO');
   });
 
   it('«Reenviar QR» en simulado manda la imagen con el pie «SIMULADO» y sin `qr_enviado`', () => {

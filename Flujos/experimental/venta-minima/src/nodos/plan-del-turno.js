@@ -833,7 +833,8 @@ function confirmarPedido() {
 function aRecordatorio() {
   const ped = en.pedido;
   if (!ped) return derivar('esperando comprobante sin pedido en el flujo');
-  const sim = !!(cfg.cobro && cfg.cobro.modo === 'simulado');
+  // El texto lo decide EL PEDIDO (`ped.simulado`, fijado al mandar su QR), no el modo vigente: un pedido real nunca se rotula «SIMULADO».
+  const sim = ped.simulado === true;
   const cuerpo = sim
     ? 'Estoy esperando el comprobante SIMULADO de tu pedido #' + ped.codigo + ' (es una prueba: no se paga nada). Envíame aquí cualquier foto, o usa los botones.'
     : 'Estoy esperando el comprobante de tu pedido #' + ped.codigo + '. Envíame aquí la foto o el PDF, o usa los botones.';
@@ -880,7 +881,12 @@ function aComprobante() {
   // terminado o de otro modo) se trata como una imagen sin pendiente. Un segundo comprobante del mismo pedido no repite el
   // aviso ni el cierre (`ya_cotejado`). El cierre es un `registro` de PRUEBA, sin monto.
   if (t.comprobanteSimulado === true && !vmNodo('Cotejar en el servidor')) {
-    if (ped.resultado !== 'simulado' && (en.paso !== 'esperando_comprobante' || ped.simulado !== true)) return aImagenSinPendiente();
+    if (ped.resultado !== 'simulado') {
+      // Un pedido REAL con su QR pendiente cuyo modo pasó a simulado: la foto puede ser un pago real. Nunca se rotula «SIMULADO» ni se descarta
+      // como imagen sin pendiente: se pasa con una persona (aviso + botón) conservando el paso y el pedido.
+      if (en.paso === 'esperando_comprobante' && ped.simulado !== true) return derivar('el modo de cobro cambió: comprobante de un pedido real', true);
+      if (en.paso !== 'esperando_comprobante' || ped.simulado !== true) return aImagenSinPendiente();
+    }
     const resSim = ped.resultado === 'simulado' ? 'ya_cotejado' : 'simulado';
     const baseSim = { codigo: ped.codigo, entrega: ped.modalidad };
     const conA = cbTextoAlCliente(resSim, Object.assign({ avisoSalio: true }, baseSim));
