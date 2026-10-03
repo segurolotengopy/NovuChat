@@ -9,6 +9,7 @@
 // prompt de `Flujos/prompts/modulos/captacion.md` armado con los datos de
 // `admin/scripts/datos/captacion-novuchat.json`.
 //
+// Se corre desde la raiz del repositorio:
 //   node admin/scripts/modulos/captacion/bateria.mjs --seco
 //   node admin/scripts/modulos/captacion/bateria.mjs --n 5 --antes <sha>
 //   node admin/scripts/modulos/captacion/bateria.mjs --n 5 --vertex <proyecto> --casos C1,C3
@@ -62,10 +63,10 @@ const VOSEO = /\b(quer[eé]s|ten[eé]s|pod[eé]s|dec[ií]me|cont[aá]me|escrib[i
 let CLAVE = null, TOKEN = null, MODELO_VIVO = false;
 if (!SECO) {
   const leerEnv = (a) => {
-    const f = join(RAIZ, a);
-    if (!existsSync(f)) return {};
+    // Relativa a donde se corre (la raiz del repositorio), como `comparar-prompt.mjs`.
+    if (!existsSync(a)) return {};
     const out = {};
-    for (const l of readFileSync(f, 'utf8').split('\n')) {
+    for (const l of readFileSync(a, 'utf8').split('\n')) {
       const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(l);
       if (m) out[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
     }
@@ -85,8 +86,8 @@ if (!SECO) {
 }
 
 // --- El flujo: el de ahora y, si se pide, el de un commit --------------------
-const leerFlujo = (sha) => JSON.parse(sha ? execFileSync('git', ['show', `${sha}:${FLUJO}`], { cwd: RAIZ, maxBuffer: 256 * 1024 * 1024 }).toString()
-  : readFileSync(join(RAIZ, FLUJO), 'utf8'));
+const leerFlujo = (sha) => JSON.parse(sha ? execFileSync('git', ['show', `${sha}:${FLUJO}`], { maxBuffer: 256 * 1024 * 1024 }).toString()
+  : readFileSync(FLUJO, 'utf8'));
 const datos = JSON.parse(readFileSync(join(RAIZ, 'admin/scripts/datos/captacion-novuchat.json'), 'utf8'));
 const { casos } = JSON.parse(readFileSync(join(aqui, 'bateria-casos.json'), 'utf8'));
 
