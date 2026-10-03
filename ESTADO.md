@@ -18,9 +18,11 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
 - **Flujos de n8n:** Bellido corre «Agenda mínima v0» (45 nodos). Demo A y
   Platinum, atrasados en `Procesar respuesta`, declarado en
   `docs/versiones-por-cliente.md`. **Demo B con F3a publicada el 03/10** (74
-  nodos): su QR de cobro no sale por un media ID vencido (30 días).
+  nodos): el QR del cobro quedó pendiente de republicar (el media ID vencía a los 30 días).
 - **Cuentas:** Bellido y Platinum en prueba; demos y captación en demostración.
   Nadie está en producción.
+- **Rojos aceptados:** el ruleset de `main` sin revisor obligatorio, sin ruleset
+  de etiquetas `v*` y sin GitHub Releases (verificado el 03/10).
 
 ## Obra
 
@@ -31,7 +33,7 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
   recorte de tres criterios pasa a F3 como **H2b**.
 - **F3a en `main`:** #359, #360, #361, #363, #365, #368, #370. Publicada solo en
   el Demo B.
-- **Plano:** #373 y #374 (dueños de zona) fusionados. Seguimientos de
+- **Plano:** #373 (correcciones al plano) y #374 (dueños de zona) fusionados. Seguimientos de
   `seguridad`: revisar la autenticación de `admin/web/src/core/` y fijar por
   escrito la zona de `devsecops` para `.github/`.
 - **Planes con decisión de Andres pendiente:** «se entrega lo que se promete»
@@ -40,8 +42,9 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
 
 ## Lo próximo, en orden
 
-1. Fusionar el #376 (`marcador-local.sh --reemplazar`), subir otra vez el QR
-   demo y republicar el Demo B; PR aparte con el mensaje con botón si falla el QR.
+1. Republicar el Demo B junto al #378 (aviso al cliente cuando falla el QR, en
+   revisión) y repetir el caso del pedido con QR. El #376 ya está fusionado
+   (03/10, `c712979`) y el QR demo ya se subió de nuevo con el número del Demo B.
 2. Las dos lecturas de la condición de H2, el ensayo del Demo B y la
    publicación de F3a en la ventana de 02 a 03.
 3. Plantillas `prueba_termina` y `conversaciones_agotadas` (Meta), antes del
@@ -53,7 +56,7 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
    teléfono para el aviso al dueño del Demo B.
 2. Publicar el Demo A y la captación en la ventana de 02 a 03 (captación fuera
    del traspaso a Silvana). Platinum no entra.
-3. OK para fusionar el #376; decisiones D1 a D11 y la opción O0 a O4.
+3. Decisiones D1 a D11 y la opción O0 a O4.
 4. Pendientes de cartera: Gemini prepago, alcance de Q'Taco, contrato y
    plantillas de Bellido, correo de María René (rol `oper`).
 
