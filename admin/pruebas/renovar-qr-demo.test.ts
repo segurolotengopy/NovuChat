@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
+import { descubrirDemosDeVenta } from '../scripts/datos/demos-de-venta.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'renovar-qr-demo.mjs');
@@ -36,9 +37,10 @@ const VIEJO = '2'.repeat(13);
 const tmp = mkdtempSync(join(tmpdir(), 'renovar-qr-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function archivoCon(valor: string | null, nombre = 'local.md') {
+function archivoCon(valor: string | null, nombre = 'local.md', veces = 1) {
   const ruta = join(tmp, nombre);
-  const fila = valor === null ? '' : `| \`REEMPLAZAR_MEDIA_ID_QR_DEMO\` | ${valor} | vence a los 30 días |`;
+  const una = `| \`REEMPLAZAR_MEDIA_ID_QR_DEMO\` | ${valor} | vence a los 30 días |`;
+  const fila = valor === null ? '' : Array(veces).fill(una).join('\n');
   writeFileSync(ruta, ['# falso', '', '| Marcador | Valor | Nota |', '|---|---|---|', fila, ''].join('\n'));
   return ruta;
 }
@@ -56,7 +58,10 @@ const sinValores = (s: string) => {
 
 beforeEach(async () => {
   for (const t of [DEMO, NO_DEMO]) {
-    await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', vertical: 'venta' });
+    await db.doc(`tenants/${t}`).set({
+      nombre: t, estado: 'activo', vertical: 'venta',
+      ...(t === DEMO ? { creadoPor: 'sembrar-demos' } : {}),
+    });
     await db.doc(`tenants/${t}/config/venta`).set({
       mediaIdQr: VIEJO, cobroReal: { activo: true, banco: 'x' }, costoDelivery: 7,
     });
@@ -146,5 +151,47 @@ describe('renovar-qr-demo.mjs', () => {
     const r = correr(['--tenant', DEMO, '--archivo', join(tmp, 'no-existe.md')]);
     expect(r.codigo).toBe(1);
     expect(r.salida).toMatch(/NEGADO/);
+  });
+
+  it('un tenant con id de demo pero no creado por sembrar-demos, NEGADO en seco y en aplicar', async () => {
+    await db.doc(`tenants/${DEMO}`).set({ nombre: 'otro', estado: 'activo', creadoPor: 'alguien' });
+    for (const extra of [[], ['--aplicar']]) {
+      const r = correr(['--tenant', DEMO, '--proyecto', PROYECTO, ...extra, '--archivo', archivoCon(LOCAL)]);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/NEGADO.*no es un demo/s);
+    }
+    expect((await db.doc(`tenants/${DEMO}/config/venta`).get()).get('mediaIdQr')).toBe(VIEJO);
+  }, 60_000);
+
+  it('el seco con emulador heredado y proyecto no demo-*, NEGADO; con demo-* dice EMULADOR', () => {
+    const r = correr(['--tenant', DEMO, '--proyecto', 'novuchat-real', '--archivo', archivoCon(LOCAL)]);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/NEGADO.*FIRESTORE_EMULATOR_HOST/s);
+    const ok = correr(['--tenant', DEMO, '--proyecto', PROYECTO, '--archivo', archivoCon(LOCAL)]);
+    expect(ok.salida).toMatch(/\(EMULADOR\)/);
+  });
+
+  it('una fila repetida del marcador, NEGADO (no se toma la última)', () => {
+    const r = correr(['--tenant', DEMO, '--proyecto', PROYECTO, '--aplicar',
+      '--archivo', archivoCon(LOCAL, 'dup.md', 2)]);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/NEGADO.*repetida/s);
+    sinValores(r.salida);
+  });
+});
+
+describe('descubrirDemosDeVenta (falla cerrado)', () => {
+  const entrada = (id: string, vertical: string | null) =>
+    `  {\n    id: '${id}',\n    alias: 'x',\n${vertical ? `    vertical: '${vertical}',\n` : ''}  },\n`;
+
+  it('lee los demos de venta de un formato normal', () => {
+    expect(descubrirDemosDeVenta(entrada('a-1', 'agendamiento') + entrada('b-2', 'venta'))).toEqual(['b-2']);
+  });
+  it('un id sin vertical no toma el de la entrada siguiente', () => {
+    expect(() => descubrirDemosDeVenta(entrada('a-1', null) + entrada('b-2', 'venta'))).toThrow(/formato/);
+  });
+  it('formato cambiado (otra sangría) o sin demos de venta, error', () => {
+    expect(() => descubrirDemosDeVenta(entrada('a-1', 'venta').replace(/^ {4}/gm, '      '))).toThrow();
+    expect(() => descubrirDemosDeVenta(entrada('a-1', 'agendamiento'))).toThrow(/ningún demo/);
   });
 });
