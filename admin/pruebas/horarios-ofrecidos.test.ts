@@ -1279,8 +1279,26 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
 describe('Los tres flujos corren el mismo código para esto', () => {
   it('Procesar respuesta, Comprobar reserva, Retomar respuesta y Procesar reintento son idénticos en los tres', () => {
     const [a, ...otros] = FLUJOS.map(leerFlujo);
+    // PR-5 (03/10/2026) cambió un solo bloque de `Procesar respuesta` (el texto de la negación de
+    // servicio) en el Demo A y Platinum. El A de Bellido está descartado (corre B) y su JSON se
+    // retira o se declara en PR-6 (D9): se compara con el del Demo A SIN ese bloque, de modo que
+    // todo lo demás siga siendo idéntico, letra por letra.
+    const sinPr5 = (c: string): string => {
+      const i = c.indexOf('    // SOLO LO QUE SE CUMPLE (inventario (d)');
+      const j = c.indexOf("    avisos.push('negacion_de_servicio');");
+      expect(i, 'no se encontró el bloque de PR-5').toBeGreaterThan(0);
+      return c.slice(0, i)
+        + "    respuesta = /\\busted\\b/i.test(String(cfg.tratamiento || ''))\n"
+        + "      ? 'Sobre eso le asesora una persona del equipo: ya le paso su consulta y le escribe por acá.'\n"
+        + "      : 'Sobre eso te asesora una persona del equipo: ya le paso tu consulta y te escribe por acá.';\n"
+        + c.slice(j);
+    };
     for (const n of ['Procesar respuesta', 'Comprobar reserva', 'Retomar respuesta', 'Procesar reintento', 'Config del negocio']) {
-      for (const o of otros) expect(codigoDe(o, n), n).toBe(codigoDe(a!, n));
+      for (const [i, o] of otros.entries()) {
+        const esperado = n === 'Procesar respuesta' && FLUJOS[i + 1] === 'bellido-agendamiento.json'
+          ? sinPr5(codigoDe(a!, n)) : codigoDe(a!, n);
+        expect(codigoDe(o, n), n).toBe(esperado);
+      }
     }
   });
 });
