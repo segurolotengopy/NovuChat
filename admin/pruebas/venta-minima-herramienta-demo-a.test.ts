@@ -82,7 +82,7 @@ function demoAVivo(cambios: (w: J) => void = () => undefined): J {
 }
 
 // ---------------------------------------------------------------------------------- n8n de mentira
-interface Mundo { flujo: J; puts: J[]; credenciales: typeof CREDENCIALES }
+interface Mundo { flujo: J; puts: J[]; credenciales: typeof CREDENCIALES; activarAlGuardar: boolean; activarNoArregla: boolean; corrompe: boolean }
 let mundo: Mundo;
 let servidor: Server;
 let carpeta = '';
@@ -100,10 +100,13 @@ beforeAll(async () => {
       if (req.method === 'PUT' && req.url === '/api/v1/workflows/wf1') {
         const b = JSON.parse(cuerpo) as J;
         mundo.puts.push(b);
-        mundo.flujo = { ...mundo.flujo, name: b.name, nodes: b.nodes, connections: b.connections, settings: b.settings, versionId: 'v' + String(mundo.puts.length + 1), activeVersionId: 'v' + String(mundo.puts.length + 1) };
+        const version = 'v' + String(mundo.puts.length + 1);
+        mundo.flujo = { ...mundo.flujo, name: b.name, nodes: b.nodes, connections: b.connections, settings: b.settings, versionId: version, activeVersionId: mundo.activarAlGuardar ? version : mundo.flujo.activeVersionId };
+        // Un n8n que dice «200» pero guarda otra cosa: la restauración tiene que LEER de vuelta y notarlo.
+        if (mundo.corrompe) mundo.flujo.nodes = (mundo.flujo.nodes as J[]).slice(0, -1);
         return enviar(200, mundo.flujo);
       }
-      if (req.method === 'POST' && req.url === '/api/v1/workflows/wf1/activate') { mundo.flujo.active = true; return enviar(200, mundo.flujo); }
+      if (req.method === 'POST' && req.url === '/api/v1/workflows/wf1/activate') { mundo.flujo.active = true; if (!mundo.activarNoArregla) mundo.flujo.activeVersionId = mundo.flujo.versionId; return enviar(200, mundo.flujo); }
       return enviar(404, { message: 'no existe' });
     })();
   });
@@ -119,7 +122,7 @@ beforeAll(async () => {
 afterAll(async () => { await new Promise<void>((ok) => servidor.close(() => ok())); rmSync(carpeta, { recursive: true, force: true }); });
 
 let secuencia = 0;
-const nuevo = (flujo: J = demoAVivo(), credenciales = CREDENCIALES): void => { mundo = { flujo, puts: [], credenciales }; };
+const nuevo = (flujo: J = demoAVivo(), credenciales = CREDENCIALES, extra: Partial<Mundo> = {}): void => { mundo = { flujo, puts: [], credenciales, activarAlGuardar: true, activarNoArregla: false, corrompe: false, ...extra }; };
 /** Una ruta de respaldo nueva (fuera del repositorio) por prueba. */
 const respaldoNuevo = (): string => join(carpeta, `respaldo-${++secuencia}.json`);
 
@@ -132,7 +135,9 @@ async function correr(args: string[]): Promise<{ codigo: number; salida: string 
     return { codigo: x.code, salida: x.stdout + x.stderr };
   }
 }
-const sobreDemoA = (respaldo: string, extra: string[] = [], flujo = 'venta.local.json') => correr(['--sobre-demo-a', '--respaldo', respaldo, '--flujo', join(carpeta, flujo), ...extra]);
+// La autorización de Gemini de producción es por ensayo: `--aplicar` exige `--autorizo-gemini-produccion`; las pruebas la pasan salvo que prueben su ausencia.
+const sobreDemoA = (respaldo: string, extra: string[] = [], flujo = 'venta.local.json', autoriza = true) =>
+  correr(['--sobre-demo-a', '--respaldo', respaldo, '--flujo', join(carpeta, flujo), ...(autoriza && extra.includes('--aplicar') ? ['--autorizo-gemini-produccion'] : []), ...extra]);
 const nodo = (w: J, n: string): J => (w.nodes as J[]).find((x) => x.name === n)!;
 const cuerpoPut = (w: J): J => ({ name: w.name, nodes: w.nodes, connections: w.connections, settings: w.settings ?? {} });
 const ENVIOS_POR_GRAPH = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo'];
@@ -251,7 +256,7 @@ describe('con --aplicar', () => {
 
 describe('se NIEGA sin escribir (ningún PUT)', () => {
   it('si el flujo del .env no es el Demo A (otro cliente, o un nombre que solo parece)', async () => {
-    for (const nombre of ['NovuChat Bellido — Agendamiento (Pediatría)', 'NovuChat — Venta mínima (v0) — Q\'Taco', 'Demo Agendamiento de otro negocio', 'NovuChat Platinum — Demo A']) {
+    for (const nombre of ['NovuChat Bellido — Agendamiento (Pediatría)', 'NovuChat — Venta mínima (v0) — Q\'Taco', 'Demo Agendamiento de otro negocio', 'NovuChat Platinum — Demo A', 'NovuChat Bellido — Demo A', 'Bellido Demo A']) {
       nuevo(demoAVivo((w) => { w.name = nombre; }));
       const r = await sobreDemoA(respaldoNuevo(), ['--aplicar']);
       expect(r.codigo, nombre).toBe(1);
@@ -297,5 +302,93 @@ describe('se NIEGA sin escribir (ningún PUT)', () => {
     expect(r.codigo).toBe(1);
     expect(r.salida).toMatch(/FUERA del repositorio/);
     expect(mundo.puts).toHaveLength(0);
+  });
+});
+
+describe('endurecimientos de la revisión de seguridad (todos niegan sin escribir, salvo los que se dicen)', () => {
+  it('`--aplicar` exige `--autorizo-gemini-produccion` (la autorización de Andres es por ensayo); el seco no lo necesita', async () => {
+    nuevo();
+    const sin = await sobreDemoA(respaldoNuevo(), ['--aplicar'], 'venta.local.json', false);
+    expect(sin.codigo).toBe(1);
+    expect(sin.salida).toMatch(/exige --autorizo-gemini-produccion/);
+    expect(mundo.puts).toHaveLength(0);
+    expect((await sobreDemoA(respaldoNuevo())).codigo).toBe(0); // seco, sin la bandera
+    expect((await sobreDemoA(respaldoNuevo(), ['--aplicar'])).codigo).toBe(0); // con la bandera
+    expect(mundo.puts).toHaveLength(1);
+  });
+
+  it('se niega a escribir sobre un Demo A INACTIVO (el seco, en cambio, lo muestra)', async () => {
+    nuevo(demoAVivo((w) => { w.active = false; }));
+    const seco = await sobreDemoA(respaldoNuevo());
+    expect(seco.codigo, seco.salida).toBe(0);
+    expect(seco.salida).toContain('flujo vivo activo=false');
+    const r = await sobreDemoA(respaldoNuevo(), ['--aplicar']);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/NO está activo/);
+    expect(mundo.puts).toHaveLength(0);
+  });
+
+  it('el seco imprime SOLO los últimos 4 del `webhookId` del Trigger vivo (para cotejar con `webhook-meta.sh --ver-meta`), nunca el completo', async () => {
+    nuevo();
+    const r = await sobreDemoA(respaldoNuevo());
+    expect(r.salida).toContain('Trigger vivo: webhookId …mo-a');
+    expect(r.salida).not.toContain('webhook-del-demo-a');
+  });
+
+  it('`--restaurar-respaldo` rechaza un respaldo cuyo `id` es de otro flujo, sin ningún PUT', async () => {
+    nuevo();
+    const respaldo = respaldoNuevo();
+    writeFileSync(respaldo, JSON.stringify({ ...demoAVivo(), id: 'wf-ajeno' }));
+    const r = await correr(['--restaurar-respaldo', '--respaldo', respaldo, '--aplicar']);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/el respaldo no es del flujo de este \.env/);
+    expect(mundo.puts).toHaveLength(0);
+  });
+
+  it('se niega si un nodo que llama a graph.facebook.com conserva una credencial de cabecera (el token de ingesta a Meta: la trampa del 15/09)', async () => {
+    const texto = readFileSync(join(carpeta, 'venta.local.json'), 'utf8');
+    const f = JSON.parse(texto) as J;
+    // El envío con la credencial de la INGESTA (la del Demo A, que la herramienta acepta por nombre): antes pasaba el resto de las guardias.
+    (f.nodes as J[]).find((n) => n.name === 'Enviar aviso')!.credentials = { httpHeaderAuth: { id: '', name: 'Cierres NovuChat A (auto)' } };
+    writeFileSync(join(carpeta, 'venta-ingesta-a-meta.local.json'), JSON.stringify(f));
+    nuevo();
+    const r = await sobreDemoA(respaldoNuevo(), ['--aplicar'], 'venta-ingesta-a-meta.local.json');
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/graph\.facebook\.com y conservan una credencial de cabecera.*Enviar aviso/);
+    expect(mundo.puts).toHaveLength(0);
+    // Negativo: el JSON de venta normal (los envíos pasan a whatsAppApi) no lo dispara.
+    expect((await sobreDemoA(respaldoNuevo(), ['--aplicar'])).codigo).toBe(0);
+  });
+
+  it('`--restaurar-respaldo` RELEE el vivo y lo compara con el respaldo: si n8n guardó otra cosa, sale con error y lo dice', async () => {
+    nuevo();
+    const respaldo = respaldoNuevo();
+    expect((await sobreDemoA(respaldo, ['--aplicar'])).codigo).toBe(0);
+    mundo.corrompe = true;
+    const r = await correr(['--restaurar-respaldo', '--respaldo', respaldo, '--aplicar']);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/leído de vuelta DIFIERE del respaldo/);
+    // Negativo: sin corrupción, lo confirma.
+    mundo.corrompe = false;
+    const ok = await correr(['--restaurar-respaldo', '--respaldo', respaldo, '--aplicar']);
+    expect(ok.codigo, ok.salida).toBe(0);
+    expect(ok.salida).toContain('leído de vuelta es igual al respaldo');
+  });
+
+  it('`--restaurar-respaldo` comprueba que la versión ACTIVA sea la escrita: la activa si hace falta, y si no se arregla, sale con error', async () => {
+    nuevo();
+    const respaldo = respaldoNuevo();
+    expect((await sobreDemoA(respaldo, ['--aplicar'])).codigo).toBe(0);
+    mundo.activarAlGuardar = false; // n8n guarda pero la versión activa se queda atrás hasta activar
+    const arregla = await correr(['--restaurar-respaldo', '--respaldo', respaldo, '--aplicar']);
+    expect(arregla.codigo, arregla.salida).toBe(0);
+    expect(mundo.flujo.activeVersionId).toBe(mundo.flujo.versionId);
+    // Otra vuelta de ida y vuelta, ahora con una activación que no arregla nada.
+    expect((await sobreDemoA(respaldo, ['--aplicar'])).codigo).toBe(0);
+    mundo.activarAlGuardar = false;
+    mundo.activarNoArregla = true;
+    const noArregla = await correr(['--restaurar-respaldo', '--respaldo', respaldo, '--aplicar']);
+    expect(noArregla.codigo).toBe(1);
+    expect(noArregla.salida).toMatch(/versión ACTIVA no es la que se acaba de escribir/);
   });
 });

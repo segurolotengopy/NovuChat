@@ -140,8 +140,10 @@ if (bandera('borrar')) {
 
 // ---------------------------------------------------------------- sobre el Demo A
 // Nota (revisión de seguridad): el modo de CREAR usa la credencial de Gemini de PRUEBAS; este modo, que
-// pone un candidato en el número del Demo A para probar con teléfono real, usa la de PRODUCCIÓN porque
-// Andres la autorizó para las pruebas del 30/09/2026. Para otro día, revisar esa autorización.
+// pone un candidato en el número del Demo A para probar con teléfono real, usa la de PRODUCCIÓN. La autorización es POR ENSAYO:
+// Andres la dio para las pruebas del 30/09/2026 y de nuevo, en el chat, el 02/10/2026 para el ensayo de Venta mínima; cada ensayo
+// nuevo la pide otra vez. Por eso `--sobre-demo-a --aplicar` exige `--autorizo-gemini-produccion` (la bandera no sustituye la
+// autorización: la deja dicha en la línea de comandos; sin ella no se escribe nada).
 /*
  * --sobre-demo-a --respaldo <archivo fuera del repo> [--aplicar]
  *   Pone el candidato B (agenda-minima.v0.json) EN el flujo vivo del Demo A, para la prueba con
@@ -430,7 +432,11 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     const normal = (t) => String(t).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
     const nombreVivo = normal(vivo.datos.name);
     const palabrasVivo = ` ${nombreVivo.replace(/[^a-z0-9]+/g, ' ').trim()} `;
-    if (NO_ACTUALIZAR_COMPACTO.test(nombreVivo.replace(/[^a-z0-9]/g, '')) || !palabrasVivo.includes(' demo a ')) morir(`el flujo del .env no es el del Demo A («${vivo.datos.name}»): no se pisa`);
+    // «bellido» también se rechaza acá (a diferencia de `--actualizar-codigo`, que sí puede actualizar a Bellido): «Bellido — Demo A» no es el Demo A.
+    if (NO_ACTUALIZAR_COMPACTO.test(nombreVivo.replace(/[^a-z0-9]/g, '')) || /bellido/.test(nombreVivo) || !palabrasVivo.includes(' demo a ')) morir(`el flujo del .env no es el del Demo A («${vivo.datos.name}»): no se pisa`);
+    // Un flujo apagado no es el Demo A que se vigila: se escribiría sobre algo que hoy no recibe mensajes y el PUT lo activaría.
+    if (APLICAR && vivo.datos.active !== true) morir('el Demo A vivo NO está activo: no se pisa (actívelo y compruebe la suscripción de Meta antes)');
+    if (APLICAR && !bandera('autorizo-gemini-produccion')) morir('--sobre-demo-a --aplicar usa la credencial de Gemini de PRODUCCIÓN: exige --autorizo-gemini-produccion (la autorización de Andres es por ensayo y se pide de nuevo cada vez)');
   }
   // M2: después de un PUT el flujo tiene que quedar ACTIVO (con su webhook); si no, se activa y se verifica.
   const asegurarActivo = async () => {
@@ -455,8 +461,17 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     if (!APLICAR || igual) { console.log(APLICAR ? '' : '\nEn seco: no se escribió nada. Agregue --aplicar.'); process.exit(0); }
     const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, cuerpoPut(r));
     if (put.cod !== 200) morir(`PUT del respaldo → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}`);
-    const tras = r.active === false ? (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos : await asegurarActivo();
+    let tras = r.active === false ? (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos : await asegurarActivo();
+    // La versión ACTIVA tiene que ser la que se acaba de escribir (n8n separa borrador y publicada), como en `--actualizar-codigo`.
+    if (r.active !== false && tras.versionId && tras.activeVersionId && tras.versionId !== tras.activeVersionId) {
+      const a = await llamar('POST', `/workflows/${env.N8N_WORKFLOW_ID}/activate`);
+      tras = (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos;
+      if (tras.versionId !== tras.activeVersionId) morir(`la versión ACTIVA no es la que se acaba de escribir (versionId ≠ activeVersionId; activate → ${a.cod}). El respaldo YA se escribió: revise n8n`);
+    }
     console.log(`✓ repuesto: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
+    // Lo que se afirma se LEE de vuelta: el flujo vivo contra el respaldo.
+    if (JSON.stringify(cuerpoPut(r)) !== JSON.stringify(cuerpoPut(tras))) morir('el flujo vivo leído de vuelta DIFIERE del respaldo (n8n no guardó algo o lo normalizó): revise n8n antes de dar la restauración por hecha');
+    console.log('✓ el flujo vivo leído de vuelta es igual al respaldo');
     process.exit(0);
   }
 
@@ -534,6 +549,11 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     // L4: un HTTP con autenticación y sin credencial fallaría en ejecución.
     || (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length));
   if (sinCred.length) morir(`nodos sin credencial resuelta: ${sinCred.map((n) => n.name).join(', ')}`);
+  // La trampa del 15/09: un nodo que habla con Graph (Meta) con una credencial de cabecera genérica (la de la ingesta) le manda el token
+  // de la consola a Meta. Tras resolver, ningún nodo con URL a graph.facebook.com puede conservar `httpHeaderAuth`: va con `whatsAppApi`.
+  const graphConCabecera = b.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /graph\.facebook\.com/i.test(String(n.parameters?.url ?? ''))
+    && (n.credentials?.httpHeaderAuth || n.parameters?.genericAuthType === 'httpHeaderAuth'));
+  if (graphConCabecera.length) morir(`nodos que llaman a graph.facebook.com y conservan una credencial de cabecera (httpHeaderAuth): ${graphConCabecera.map((n) => n.name).join(', ')}. Tienen que usar la credencial predefinida whatsAppApi`);
   const credsUsadas = b.nodes.flatMap((n) => Object.values(n.credentials ?? {}).map((c) => c.name));
   const prohibidas = credsUsadas.filter((x) => NO_PERMITIDOS.test(x));
   if (prohibidas.length) morir(`credenciales con nombre de cliente o sistema ajeno: ${[...new Set(prohibidas)].join(', ')}`);
@@ -549,6 +569,9 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   // 4. la diferencia con el vivo
   const nv = new Set(vivo.datos.nodes.map((n) => n.name)); const nb = new Set(b.nodes.map((n) => n.name));
   console.log(`Demo A vivo: «${vivo.datos.name}», ${vivo.datos.nodes.length} nodos, activo=${vivo.datos.active}`);
+  // Los últimos 4 del `webhookId` del Trigger vivo, para cotejarlos a ojo con el `callback_url` de `webhook-meta.sh --ver-meta` (termina en
+  // `/webhook/<webhookId>/webhook`). Solo 4 caracteres: la ruta completa es una URL de capacidad y no se imprime.
+  console.log(`Trigger vivo: webhookId …${String(t.webhookId ?? '').slice(-4) || '(sin webhookId)'}; flujo vivo activo=${vivo.datos.active}`);
   console.log(`Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${b.nodes.length} nodos (con el disparador del Demo A). El nombre del flujo queda «${vivo.datos.name}».`);
   console.log(`Phone id del cliente en el JSON: ${MARCA_PHONE.test(readFileSync(ARCHIVO, 'utf8')) ? 'reemplazado en memoria por el del Demo A (no se muestra)' : 'no trae'}`);
   console.log(`Nodos que se van: ${[...nv].filter((x) => !nb.has(x)).length} · que llegan: ${[...nb].filter((x) => !nv.has(x)).length} · en los dos: ${[...nb].filter((x) => nv.has(x)).length}`);
