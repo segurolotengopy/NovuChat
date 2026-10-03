@@ -108,6 +108,84 @@ describe('publicar-flujo.sh: la estructura cuenta como diferencia', () => {
     expect(r.salida).not.toContain('v0');
   });
 
+  // --- orden de las ramas (executionOrder v1: arriba hacia abajo, a igual altura izquierda a derecha)
+  const abc = (pb: number[], pc: number[]) => flujo(
+    [nodo('A'), nodo('B', { position: pb }), nodo('C', { position: pc })],
+    { A: enlace('B', 'C') },
+  );
+
+  it('B y C intercambian altura: no coincide y nombra el nodo de origen (orden de ramas)', () => {
+    const r = correr(abc([200, 300], [200, 100]), abc([200, 100], [200, 300]));
+    expect(coincide(r.salida), r.salida).toBe(false);
+    expect(r.salida).toContain('~ A · orden de ramas distinto');
+  });
+
+  it('mover nodos sin cambiar el orden relativo sigue dando «coincide»', () => {
+    const r = correr(abc([250, 120], [260, 500]), abc([200, 100], [200, 300]));
+    expect(coincide(r.salida), r.salida).toBe(true);
+  });
+
+  // --- propiedades de nodo
+  it.each([
+    ['type', { type: 'n8n-nodes-base.code' }],
+    ['typeVersion', { typeVersion: 4 }],
+    ['disabled', { disabled: true }],
+    ['retryOnFail', { retryOnFail: true }],
+    ['alwaysOutputData', { alwaysOutputData: true }],
+    ['executeOnce', { executeOnce: true }],
+  ])('propiedad %s distinta: no coincide y nombra nodo y propiedad', (prop, cambio) => {
+    const origen = flujo([nodo('A', cambio), nodo('B')], { A: enlace('B') });
+    const r = correr(origen, BASE());
+    expect(coincide(r.salida), r.salida).toBe(false);
+    expect(r.salida).toContain(`~ A · propiedad distinta: ${prop}`);
+  });
+
+  it('propiedad en falso en el origen y ausente en el vivo: coincide (no es diferencia)', () => {
+    const origen = flujo([nodo('A', { disabled: false, retryOnFail: false }), nodo('B')], { A: enlace('B') });
+    const r = correr(origen, BASE());
+    expect(coincide(r.salida), r.salida).toBe(true);
+  });
+
+  it('parámetro presente solo en el vivo: no coincide, por clave y nunca por valor', () => {
+    const vivo = flujo([nodo('A', { parameters: { campo: 'x', webhookUrl: 'https://secreto.invalid/capacidad' } }), nodo('B')], { A: enlace('B') });
+    const r = correr(BASE(), vivo);
+    expect(coincide(r.salida), r.salida).toBe(false);
+    expect(r.salida).toContain('~ A · parametro presente solo en el vivo');
+    expect(r.salida).toContain('webhookUrl');
+    expect(r.salida).not.toContain('secreto.invalid');
+  });
+
+  it('parámetro vacío que n8n deja en el vivo (options: {}) no cuenta', () => {
+    const vivo = flujo([nodo('A', { parameters: { campo: 'x', options: {} } }), nodo('B')], { A: enlace('B') });
+    const r = correr(BASE(), vivo);
+    expect(coincide(r.salida), r.salida).toBe(true);
+  });
+
+  // --- settings solo en el vivo
+  it('settings con una clave propia solo en el vivo: no coincide y la nombra; las de n8n por defecto no cuentan', () => {
+    const vivo = flujo([nodo('A'), nodo('B')], { A: enlace('B') },
+      { executionOrder: 'v1', callerPolicy: 'workflowsFromSameOwner', availableInMCP: false, errorWorkflow: 'zz9' });
+    const r = correr(BASE(), vivo);
+    expect(coincide(r.salida), r.salida).toBe(false);
+    expect(r.salida).toContain('claves solo en el vivo, --aplicar las borraria: errorWorkflow');
+    expect(r.salida).not.toContain('callerPolicy');
+    expect(r.salida).not.toContain('zz9');
+  });
+
+  // --- el diagnóstico no imprime valores de parámetros (URL de capacidad, ids)
+  it('valor distinto o ausente en el vivo: se informa por longitud y el valor no aparece', () => {
+    const secreto = 'https://capacidad.invalid/abc123SECRETO';
+    const origen = flujo([nodo('A', { parameters: { campo: 'x', url: secreto, otro: 'IDnuevoAAAAA' } }), nodo('B')], { A: enlace('B') });
+    const vivo = flujo([nodo('A', { parameters: { campo: 'x', otro: 'IDviejoBBBBB' } }), nodo('B')], { A: enlace('B') });
+    const r = correr(origen, vivo);
+    expect(coincide(r.salida), r.salida).toBe(false);
+    expect(r.salida).toContain('A · url: origen');
+    expect(r.salida).toContain('A · otro: vivo 14 car. -> origen 14 car.');
+    expect(r.salida).not.toContain('SECRETO');
+    expect(r.salida).not.toContain('IDnuevoAAAAA');
+    expect(r.salida).not.toContain('IDviejoBBBBB');
+  });
+
   it('con --aplicar también se informa la diferencia y no se dice «coincide»', () => {
     const origen = flujo([nodo('A'), nodo('B'), nodo('¿Salió?')], { A: enlace('B') });
     const r = correr(origen, BASE(), ['--aplicar']);
