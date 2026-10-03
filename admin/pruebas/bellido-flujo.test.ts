@@ -178,6 +178,30 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     'Avisar a recepción',   // el rótulo del aviso nombra al consultorio, no al demo
     'Responder al cliente', // vista previa del enlace de Maps en la confirmación
   ];
+  /**
+   * PR-5 «se entrega lo que se promete» (03/10/2026) cambió el Demo A y NO este
+   * flujo: el A de Bellido está descartado desde el 01/10 (corre B) y su JSON se
+   * retira o se declara en PR-6 (D9). Los tres nodos de respaldo, sus empalmes y
+   * los tres nodos cuyo código/expresión cambió se declaran acá, de modo que
+   * todo lo demás siga siendo, letra por letra, el del Demo A.
+   */
+  const NODOS_DE_PR5 = ['Respaldo del envío', 'Enviar respaldo', 'Reportar respaldo (saliente)'];
+  // `Procesar respuesta` también cambia, pero su código se compara abajo, letra por letra, contra el del Demo A
+  // sin el bloque de PR-5 (`SIN_PR5`): solo ese bloque puede diferir.
+  const CAMBIADOS_POR_PR5 = ['QR no enviado', 'Preparar reenvío del QR', 'Reportar QR (saliente)', 'Procesar respuesta'];
+  const ORIGENES_DE_PR5 = [...NODOS_DE_PR5, 'Enviar ubicación', 'Enviar contacto', 'QR no enviado'];
+  /** `Procesar respuesta` del Demo A sin el único cambio de PR-5 (el texto de «negación de servicio»). */
+  const SIN_PR5 = (c: string): string => {
+    const i = c.indexOf('    // SOLO LO QUE SE CUMPLE (inventario (d)');
+    const j = c.indexOf("    avisos.push('negacion_de_servicio');");
+    expect(i, 'no se encontró el bloque de PR-5 en Procesar respuesta').toBeGreaterThan(0);
+    expect(j).toBeGreaterThan(i);
+    return c.slice(0, i)
+      + "    respuesta = /\\busted\\b/i.test(String(cfg.tratamiento || ''))\n"
+      + "      ? 'Sobre eso le asesora una persona del equipo: ya le paso su consulta y le escribe por acá.'\n"
+      + "      : 'Sobre eso te asesora una persona del equipo: ya le paso tu consulta y te escribe por acá.';\n"
+      + c.slice(j);
+  };
   /** Los nodos que llevan credencial propia del cliente, con id vacío. */
   const CREDENCIALES_PROPIAS = [
     'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)',
@@ -233,10 +257,11 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     expect(flujo.name).not.toMatch(/Demo|Platinum/);
     const forma = (n: Nodo) => [n.id, n.name, n.type, n.typeVersion, n.position,
       n.onError ?? null, n.retryOnFail ?? null, n.maxTries ?? null];
-    for (const n of demoA.nodes) expect(forma(nodo(flujo, n.name)), n.name).toEqual(forma(n));
+    const delVertical = demoA.nodes.filter((n) => !NODOS_DE_PR5.includes(n.name));
+    for (const n of delVertical) expect(forma(nodo(flujo, n.name)), n.name).toEqual(forma(n));
     const propios = flujo.nodes.filter((n) => !demoA.nodes.some((d) => d.name === n.name));
     expect(Object.fromEntries(propios.map((n) => [n.name, n.type]))).toEqual(NODOS_PROPIOS);
-    expect(flujo.nodes).toHaveLength(demoA.nodes.length + Object.keys(NODOS_PROPIOS).length);
+    expect(flujo.nodes).toHaveLength(delVertical.length + Object.keys(NODOS_PROPIOS).length);
   });
 
   it('las conexiones del Demo A se conservan, salvo los dos empalmes declarados; los settings son los mismos', () => {
@@ -256,16 +281,23 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     sinEmpalmes['Responder al cliente']!['main']![0] =
       sinEmpalmes['Responder al cliente']!['main']![0]!.filter((x) => x.node !== '¿Enviar redes?');
     for (const [origen, c] of Object.entries(demoA.connections)) {
+      if (ORIGENES_DE_PR5.includes(origen)) continue;
       expect(sinEmpalmes[origen], origen).toEqual(c);
     }
+    // Lo de PR-5, declarado: este flujo conserva las conexiones de antes.
+    expect(sinEmpalmes['Enviar ubicación']).toEqual({ main: [demoA.connections['Enviar ubicación']!['main']![0], []] });
+    expect(sinEmpalmes['Enviar contacto']).toEqual({ main: [demoA.connections['Enviar contacto']!['main']![0]] });
+    expect(sinEmpalmes['QR no enviado']).toEqual({ main: [[{ node: '¿Transferir a humano?', type: 'main', index: 0 }]] });
+    for (const n of NODOS_DE_PR5) expect(sinEmpalmes[n], n).toBeUndefined();
   });
 
   it('los parámetros solo cambian en los nodos declarados, y sí cambian donde deben', () => {
     const distintos = demoA.nodes
+      .filter((n) => !NODOS_DE_PR5.includes(n.name))
       .filter((n) => JSON.stringify(n.parameters) !== JSON.stringify(nodo(flujo, n.name).parameters))
       .map((n) => n.name);
     for (const n of distintos) {
-      expect(PARAMETROS_QUE_PUEDEN_CAMBIAR, `${n} se separó del vertical`).toContain(n);
+      expect([...PARAMETROS_QUE_PUEDEN_CAMBIAR, ...CAMBIADOS_POR_PR5], `${n} se separó del vertical`).toContain(n);
     }
     // `Config del negocio` SÍ solía estar acá: el borrador de este flujo salió de
     // un Demo A que no fusionaba `instruccionesExtra`, y hubo que arreglarlo
@@ -288,7 +320,7 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     for (const n of ['Normalizar entrada', 'Procesar respuesta', 'Comprobar reserva',
       'Calendarios a revisar', 'Retomar respuesta', 'Procesar reintento', 'Mensaje a enviar',
       'Uso extendido', 'Comercio no operativo']) {
-      expect(codigo(flujo, n), n).toBe(codigo(demoA, n));
+      expect(codigo(flujo, n), n).toBe(n === 'Procesar respuesta' ? SIN_PR5(codigo(demoA, n)) : codigo(demoA, n));
     }
     for (const n of ['¿Es un mensaje?', '¿Afirma que agendó?', '¿Atención normal?',
       '¿Comercio operativo?', '¿Transferir a humano?', 'Memoria por teléfono', 'Traer configuración']) {
@@ -341,7 +373,8 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     const envios = (f: Flujo) => f.nodes
       .filter((n) => n.type === 'n8n-nodes-base.whatsApp' && n.parameters['resource'] !== 'media')
       .map((n) => n.name).sort();
-    expect(envios(demoA)).toEqual(['Avisar a recepción', 'Responder al cliente']);
+    // «Enviar respaldo» (PR-5) solo sale cuando Meta rechaza el pin o el botón: 0 en el camino normal.
+    expect(envios(demoA)).toEqual(['Avisar a recepción', 'Enviar respaldo', 'Responder al cliente']);
     expect(envios(flujo)).toEqual(['Avisar a recepción', 'Avisar al doctor (texto)', 'Redes del doctor', 'Responder al cliente']);
     // Por la Graph API salen los interactivos y la PLANTILLA al doctor (el
     // texto es solo su respaldo, cuando Meta rechaza la plantilla), el pin a

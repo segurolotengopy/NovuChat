@@ -54,4 +54,8 @@ return [{ json: {
   phoneNumberId: String(cfg.phoneNumberId || item.phoneNumberId || ''),
   waGraphVersion: String(cfg.waGraphVersion || item.waGraphVersion || 'v26.0'),
   from: item.from,
+  // Para `Reportar QR (saliente)` y `QR no enviado`: un reenvio no abre una
+  // solicitud nueva (sin evento `qr_enviado`) y su preparador es este, no
+  // `Preparar seña`, que en este camino no corrio.
+  esReenvio: true,
 }, pairedItem: { item: 0 } }];
