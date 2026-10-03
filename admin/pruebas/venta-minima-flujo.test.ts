@@ -412,7 +412,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
       const datos = join(tmp, 'admin/scripts/datos/venta-minima');
       mkdirSync(vm, { recursive: true });
       mkdirSync(datos, { recursive: true });
-      cpSync(CARPETA_VM, vm, { recursive: true });
+      cpSync(CARPETA_VM, vm, { recursive: true, filter: (src) => !src.endsWith('.local.json') }); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
       modifica(vm, datos);
       return spawnSync(process.execPath, [join(vm, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
@@ -619,6 +619,17 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     expect(sinEnsayo.stderr).toContain('venta-minima.prueba.json');
     // Negativo: con todos sus datos, 0.
     expect(verificarEnCopia(() => undefined).status).toBe(0);
+  });
+
+  it('un `*.local.json` (lo que deja `preparar-import.sh`, con valores reales) NO es una salida huérfana y no rompe `--verificar`; uno que no es `.local` sí', () => {
+    const conLocal = verificarEnCopia((vm) => writeFileSync(join(vm, 'venta-minima.ensayo-demo-a.local.json'), texto('venta-minima.ensayo-demo-a.json')));
+    expect(conLocal.status, conLocal.stderr).toBe(0);
+    const otroLocal = verificarEnCopia((vm) => writeFileSync(join(vm, 'venta-minima.qtaco.local.json'), '{"valores":"reales"}'));
+    expect(otroLocal.status, otroLocal.stderr).toBe(0);
+    // Negativo: sin el `.local`, el mismo contenido SÍ queda huérfano.
+    const huerfano = verificarEnCopia((vm) => writeFileSync(join(vm, 'venta-minima.ensayo-demo-a-copia.json'), texto('venta-minima.ensayo-demo-a.json')));
+    expect(huerfano.status).toBe(1);
+    expect(huerfano.stderr).toContain('venta-minima.ensayo-demo-a-copia.json');
   });
 
   it('L1: la variante `trigger` exige una credencial explícita y nunca una de la app de producción del receptor (prohibición 7)', () => {
@@ -3109,7 +3120,7 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
       const datos = join(tmp, 'admin/scripts/datos/venta-minima');
       mkdirSync(vm, { recursive: true });
       mkdirSync(datos, { recursive: true });
-      cpSync(CARPETA_VM, vm, { recursive: true });
+      cpSync(CARPETA_VM, vm, { recursive: true, filter: (src) => !src.endsWith('.local.json') }); // un `.local.json` lleva valores reales: nunca a un temporal
       cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
       modifica(vm, datos);
       return spawnSync(process.execPath, [join(vm, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
@@ -3142,13 +3153,22 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     expect(PRUEBA.nodes.some((n) => n.name === 'WhatsApp Trigger')).toBe(false);
   });
 
-  it('las credenciales son las del Demo A por nombre: Trigger, ingesta, medios y Graph; Gemini se completa por tipo', () => {
+  it('los nombres de credencial del JSON son los de la tabla de `flujo-de-prueba.mjs --sobre-demo-a` (la herramienta los resuelve por id; que existan en n8n solo se ve en el seco real)', () => {
+    // La tabla de la herramienta (`CRED_DEMO_A`) y su regla de los envíos por Graph: `^Graph WhatsApp .+ \(Bearer\)$` pasa a `whatsAppApi`.
+    // Acá se comprueba solo que el JSON dice lo que la herramienta espera; lo que la herramienta hace con ellos lo prueba
+    // `venta-minima-herramienta-demo-a.test.ts` contra un n8n de mentira.
+    const herramienta = readFileSync(join(AQUI, '../../Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs'), 'utf8');
+    expect(herramienta).toContain("'Cierres NovuChat A (auto)': 'Cierres NovuChat A (auto)'");
+    expect(herramienta).toContain("whatsAppApi: 'WhatsApp account'");
+    expect(herramienta).toContain('const GRAPH_BEARER = /^Graph WhatsApp .+ \\(Bearer\\)$/;');
+    const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo'];
     for (const c of credencialesDe(DEMO_A)) {
       if (c.tipo === 'httpHeaderAuth') {
-        const envio = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo'].includes(c.nodo);
-        expect(c.nombre, c.nodo).toBe(envio ? 'Graph WhatsApp Demo A (Bearer)' : 'Cierres NovuChat A (auto)');
+        // El nombre de los envíos es solo la ETIQUETA que la herramienta reconoce: esa credencial NO existe en el Demo A ni se crea.
+        if (ENVIOS.includes(c.nodo)) expect(c.nombre, c.nodo).toMatch(/^Graph WhatsApp .+ \(Bearer\)$/);
+        else expect(c.nombre, c.nodo).toBe('Cierres NovuChat A (auto)');
       } else if (c.tipo === 'googlePalmApi') {
-        expect(c.nombre, c.nodo).toBe('');
+        expect(c.nombre, c.nodo).toBe(''); // Gemini va sin nombre: la herramienta pone la del Demo A por nombre
       } else if (c.tipo === 'whatsAppApi') {
         expect(c.nombre, c.nodo).toBe('WhatsApp account');
       } else {
@@ -3156,14 +3176,12 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
         expect(c.nombre, c.nodo).toBe('WhatsApp OAuth account');
       }
     }
-    // Los nodos de envío son nuevos para el Demo A (no existen en su JSON): `credenciales-cliente.sh` resuelve su id contra la instancia.
-    const nuevos = DEMO_A.nodes.filter((n) => n.credentials && !DEMO_A_VIVO.nodes.some((v) => v.name === n.name)).map((n) => n.name);
-    for (const n of ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo']) expect(nuevos).toContain(n);
+    expect(credencialesDe(DEMO_A).filter((c) => ENVIOS.includes(c.nodo))).toHaveLength(ENVIOS.length);
   });
 
-  it('el nombre del flujo es EXACTAMENTE el del Demo A: es lo que protege el cerrojo de nombre de `publicar-flujo.sh`', () => {
+  it('el nombre del flujo es el del Demo A versionado (la herramienta conserva el nombre del vivo y se niega si el vivo no es «Demo A»)', () => {
     expect(DEMO_A.name).toBe(DEMO_A_VIVO.name);
-    // Negativo: los demás JSON de venta no se llaman así (publicarlos sobre el Demo A fallaría el cerrojo).
+    // Negativo: los demás JSON de venta no se llaman así. Que el flujo VIVO se llame igual solo se comprueba en el seco real.
     for (const f of [QTACO, PRUEBA]) expect(f.name).not.toBe(DEMO_A_VIVO.name);
   });
 
@@ -3225,7 +3243,7 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     }
   });
 
-  it('construir.mjs NO construye si los datos del Demo A nombran la credencial de la app de producción del receptor (en cualquier grafía) o no traen la del Trigger', () => {
+  it('construir.mjs NO construye si el NOMBRE de la credencial del Trigger es de la app de producción del receptor (aab1 o wa-prod, con cualquier mayúscula o separador) o falta; un nombre neutro no se distingue (límite declarado)', () => {
     for (const nombre of [AJENA, 'aab1 wa prod', 'WhatsApp wa-prod']) {
       const r = enCopia((_vm, datos) => editarDatosDemoA(datos, (d) => { (d['credenciales'] as J)['trigger'] = nombre; }));
       expect(r.status, nombre).not.toBe(0);

@@ -272,7 +272,8 @@ function anfitrionPermitido(nombreDelNodo, url) {
 // datos se borró o se renombró, el JSON quedó huérfano y nadie lo regenera.
 function huerfanos() {
   const salidas = new Set(readdirSync(DATOS).filter((f) => f.endsWith('.json')).map(salidaDe));
-  return readdirSync(AQUI).filter((f) => /^venta-minima\..+\.json$/.test(f) && !salidas.has(f));
+  // Un `*.local.json` es lo que deja `preparar-import.sh` (con valores reales, ignorado por git): no es una salida versionada.
+  return readdirSync(AQUI).filter((f) => /^venta-minima\..+\.json$/.test(f) && !/\.local\.json$/.test(f) && !salidas.has(f));
 }
 
 const salidaDe = (archivo) => (archivo === 'ensayo.json' ? 'venta-minima.prueba.json' : `venta-minima.${archivo.replace(/\.json$/, '')}.json`);
