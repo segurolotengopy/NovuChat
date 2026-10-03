@@ -8,6 +8,11 @@
 // proximo intento vuelve a avisar. Esa marca es lo que autoriza a
 // `Procesar respuesta` a decir «ya le avisé» en un turno posterior.
 //
+// LIMITE: el id de Meta prueba que Meta ACEPTO el mensaje, no que el dueño lo recibio
+// (la entrega real llega despues por un acuse asincrono y fuera de la ventana de 24 h
+// de servicio un texto libre puede no llegar). La solucion de fondo (una plantilla
+// aprobada para el aviso) la decide Andres; por eso el campo se llama `avisoAceptado`.
+//
 // NO ENVIA NADA: cuesta CERO mensajes de WhatsApp.
 let previos = [];
 try { previos = $('Aviso de transferencia').all(); } catch (e) { previos = []; }
@@ -19,7 +24,7 @@ const resultado = salidas.map((s, i) => {
   const origen = (previos[i] ?? previos[previos.length - 1] ?? { json: {} }).json ?? {};
   const salio = String((((s.json ?? {}).messages ?? [])[0] ?? {}).id ?? '') !== '';
   if (salio && origen.from) sd.avisosTransferencia[origen.from] = Date.now();
-  if (!salio) console.error('AVISO_AL_DUENO_NO_SALIO transferencia', JSON.stringify({ from: origen.from ?? '', error: (s.json ?? {}).error ?? null }).slice(0, 300));
-  return { json: { ...(s.json ?? {}), avisoEntregado: salio }, pairedItem: { item: i } };
+  if (!salio) console.error('AVISO_AL_DUENO_NO_SALIO transferencia', JSON.stringify({ from: '…' + String(origen.from ?? '').slice(-4), error: (s.json ?? {}).error ?? null }).slice(0, 300));
+  return { json: { ...(s.json ?? {}), avisoAceptado: salio }, pairedItem: { item: i } };
 });
 return resultado;

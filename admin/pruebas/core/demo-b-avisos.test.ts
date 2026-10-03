@@ -53,22 +53,22 @@ describe('(a) «Avisar al dueño»: su salida se verifica', () => {
     return { s, registro };
   };
 
-  it('Meta rechaza el aviso: queda `avisoEntregado: false` y una línea en el registro de n8n', () => {
+  it('Meta rechaza el aviso: queda `avisoAceptado: false` y una línea en el registro de n8n', () => {
     const { s, registro } = verificar(RECHAZO);
-    expect(s['avisoEntregado']).toBe(false);
+    expect(s['avisoAceptado']).toBe(false);
     expect(registro).toHaveLength(1);
     expect(String(registro[0]?.[0])).toContain('AVISO_AL_DUENO_NO_SALIO');
   });
 
   it('Meta responde sin id (200 sin messages): tampoco cuenta como entregado', () => {
-    expect(verificar({}).s['avisoEntregado']).toBe(false);
-    expect(verificar({ messages: [{}] }).s['avisoEntregado']).toBe(false);
-    expect(verificar({ messages: [{ id: '' }] }).s['avisoEntregado']).toBe(false);
+    expect(verificar({}).s['avisoAceptado']).toBe(false);
+    expect(verificar({ messages: [{}] }).s['avisoAceptado']).toBe(false);
+    expect(verificar({ messages: [{ id: '' }] }).s['avisoAceptado']).toBe(false);
   });
 
   it('Meta acepta: entregado y sin ruido', () => {
     const { s, registro } = verificar(ACEPTADO);
-    expect(s['avisoEntregado']).toBe(true);
+    expect(s['avisoAceptado']).toBe(true);
     expect(registro).toHaveLength(0);
   });
 
@@ -114,7 +114,7 @@ describe('(b) «Le aviso» / «Ya le avisé» solo si el aviso salió', () => {
     const ahora = { t: 1_800_000_000_000 };
     const turno1 = procesar({ output: '[TRANSFERIR]' }, sd, ahora);
     const m = marcar(sd, ahora, turno1, RECHAZO);
-    expect(m['avisoEntregado']).toBe(false);
+    expect(m['avisoAceptado']).toBe(false);
     expect(sd['avisosTransferencia'][CLIENTE]).toBeUndefined();
     // El cliente insiste: se vuelve a intentar el aviso y el texto NO dice que ya se avisó.
     ahora.t += 60_000;
@@ -129,7 +129,7 @@ describe('(b) «Le aviso» / «Ya le avisé» solo si el aviso salió', () => {
     const sd: J = {};
     const ahora = { t: 1_800_000_000_000 };
     const turno1 = procesar({ output: '[TRANSFERIR]' }, sd, ahora);
-    expect(marcar(sd, ahora, turno1, ACEPTADO)['avisoEntregado']).toBe(true);
+    expect(marcar(sd, ahora, turno1, ACEPTADO)['avisoAceptado']).toBe(true);
     ahora.t += 60_000;
     const turno2 = procesar({ output: '[TRANSFERIR]' }, sd, ahora);
     expect(turno2['avisarDueno']).toBe(false);
@@ -151,6 +151,57 @@ describe('(b) «Le aviso» / «Ya le avisé» solo si el aviso salió', () => {
     const y = (n: string) => nodo(f, n).position?.[1] ?? Number.NaN;
     expect(y('¿Responder ahora?')).toBeLessThan(y('¿Transferir al dueño?'));
     expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('AI Agent NovuChat'));
+  });
+});
+
+describe('(b2) El filtro de avisos anunciados (tildes, presente, pasado, falsos positivos)', () => {
+  const turno = (o: string, ent: J = {}, sd: J = {}) => {
+    const ahora = { t: 1_800_000_000_000 };
+    return ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: o }], { 'Normalizar entrada': [{ ...ENT, ...ent }] },
+      { $getWorkflowStaticData: () => sd, Date: reloj(ahora) })[0] ?? {};
+  };
+  const FORMAS = ['Ya le avisé.', 'Ya se le avisó al negocio.', 'Ya les informé, toca el botón.', 'Le notifiqué al negocio.',
+    'Ya le comuniqué tu pedido.', 'Ya he avisado a recepción.', 'El negocio fue avisado.', 'Ya están avisados.', 'Entonces le avisaré a Un Negocio.',
+    'Puedo avisarle ahora.', 'Le avisaré a Un Negocio.', 'El sistema le avisa ahora.', 'Le pasé tu consulta.'];
+
+  it('con transferencia y aviso por salir, todas esas formas se quitan (también las que terminan en é/ó)', () => {
+    for (const o of FORMAS) {
+      const p = turno(o + ' Toca el botón para escribirle. [TRANSFERIR]');
+      // «le avisaré» lo quita también el filtro de promesas anterior: basta con que se quite alguno.
+      expect((p['avisos'] as string[]).some((a) => /^(aviso_anunciado|promesa)_quitad/.test(a)), o).toBe(true);
+      expect(String(p['respuesta']), o).not.toMatch(/avis|notific|inform|comuniqu|le pas[eé]/i);
+      expect(String(p['respuesta']), o).toContain('botón');
+    }
+  });
+
+  it('con la ventana ya marcada se conserva «ya le avisé», pero no el presente ni el futuro', () => {
+    const sd: J = { avisosTransferencia: { [CLIENTE]: 1_800_000_000_000 - 60_000 } };
+    const pasado = turno('Ya le avisé a Un Negocio. Toca el botón. [TRANSFERIR]', {}, sd);
+    expect(pasado['avisos']).not.toContain('aviso_anunciado_quitado');
+    expect(String(pasado['respuesta'])).toContain('Ya le avisé');
+    for (const o of ['Le aviso a Un Negocio.', 'Le avisaré a Un Negocio.', 'Puedo avisarle.']) {
+      const r = turno(o + ' Toca el botón. [TRANSFERIR]', {}, sd);
+      expect((r['avisos'] as string[]).some((a) => /^(aviso_anunciado|promesa)_quitad/.test(a)), o).toBe(true);
+      expect(String(r['respuesta']), o).not.toMatch(/avis/i);
+    }
+  });
+
+  it('sin marca vigente se filtra también sin transferencia, y cuando escribe el dueño', () => {
+    expect(turno('Ya le avisé a recepción, ¿algo más?')['avisos']).toContain('aviso_anunciado_quitado');
+    const dueno = turno('Le aviso al negocio. Toca el botón. [TRANSFERIR]', { from: DUENO });
+    expect(dueno['avisos']).toContain('aviso_anunciado_quitado');
+    expect(String(dueno['respuesta'])).not.toMatch(/avis/i);
+    // La marca del DUEÑO no cuenta aunque exista.
+    const sd: J = { avisosTransferencia: { [DUENO]: 1_800_000_000_000 - 60_000 } };
+    expect(turno('Ya le avisé. Toca el botón. [TRANSFERIR]', { from: DUENO }, sd)['avisos']).toContain('aviso_anunciado_quitado');
+  });
+
+  it('una pregunta pegada tras una coma queda; «le aviso que…» y «le informo» no son anuncios', () => {
+    const q = turno('Ya le avisé, ¿quieres algo más? [TRANSFERIR]');
+    expect(String(q['respuesta'])).toBe('¿quieres algo más?');
+    for (const o of ['Le aviso que el pedido mínimo es de 30 Bs.', 'Le informo que el total es de 70 Bs.', 'Le comunico el precio: 15 Bs.']) {
+      expect(turno(o)['avisos'], o).not.toContain('aviso_anunciado_quitado');
+    }
   });
 });
 
@@ -179,6 +230,18 @@ describe('(c) Con el QR del turno fallido, el pedido no se anuncia como confirma
     }
   });
 
+  it('«¿Pedido confirmado?» no deja pasar el pedido cuando el QR del turno falló: no hay doble aviso', () => {
+    const cond = (nodo(f, '¿Pedido confirmado?').parameters['conditions'] as J)['conditions'] as J[];
+    const pasa = (refs: Record<string, J[]>) => cond.every((c) => {
+      const v = expresion(c.leftValue, { ...p, from: CLIENTE, numeroDueno: DUENO }, refs);
+      const op = c.operator;
+      if (op.type === 'boolean') return op.operation === 'true' ? v === true : v === false;
+      return String(v) !== String(c.rightValue === '={{ $json.from }}' ? CLIENTE : c.rightValue);
+    });
+    expect(pasa({})).toBe(true);
+    expect(pasa({ 'QR no enviado': [{}] })).toBe(false);
+  });
+
   it('el único otro camino al aviso del pedido es la compuerta «¿Pedido confirmado?», y el QR fallido avisa por su propio nodo', () => {
     expect(entradas(f, 'Avisar al dueño')).toContain('¿Pedido confirmado?');
     expect(entradas(f, 'Avisar al dueño')).toContain('QR no enviado');
@@ -197,10 +260,47 @@ describe('(d) El despacho del demo no promete una hora que nadie cumple', () => 
     expect(despacho).toMatch(/demostraci[oó]n/i);
   });
 
+  it('el texto del dato sobrevive al filtro de promesas de «Procesar respuesta» (no se borra ni se vuelve «no pude responder»)', () => {
+    const despacho = String(configBase(f)['despachoRetail']);
+    const o = `Tu pedido es de 70 Bs en total. El despacho: ${despacho}.`;
+    const p = ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: o }], { 'Normalizar entrada': [ENT] },
+      { $getWorkflowStaticData: () => ({}), Date })[0] ?? {};
+    expect(p['avisos']).not.toContain('promesa_quitada');
+    expect(p['avisos']).not.toContain('respuesta_vacia');
+    expect(String(p['respuesta'])).toContain('70 Bs');
+    expect(String(p['respuesta'])).toContain(despacho);
+  });
+
   it('el prompt armado con ese dato no contiene «17:00»', () => {
     const base = configBase(f);
     const armado = plantilla(sistema, { ...ENT, ...base, moneda: 'Bs' });
     expect(armado).not.toContain('17:00');
     expect(armado).toContain(String(base['despachoRetail']));
+  });
+});
+
+describe('(e) Credenciales y lienzo de los nodos nuevos', () => {
+  const envios = f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send');
+
+  it('todo nodo de WhatsApp que ENVÍA declara su credencial por nombre, el mismo de «Obtener URL del medio»', () => {
+    const nombre = nodo(f, 'Obtener URL del medio').credentials?.['whatsAppApi']?.name;
+    expect(nombre).toBeTruthy();
+    expect(envios.map((n) => n.name)).toContain('Avisar al dueño (transferencia)');
+    for (const n of envios) {
+      expect(n.credentials?.['whatsAppApi']?.name, n.name).toBe(nombre);
+      expect(n.credentials?.['whatsAppApi']?.id, n.name).toBe('');
+    }
+  });
+
+  it('los nodos nuevos o movidos no se encima con ningún otro (cajas de 100 x 60)', () => {
+    const pos = f.nodes.map((n) => ({ n: n.name, x: n.position?.[0] ?? 0, y: n.position?.[1] ?? 0 }));
+    const choques: string[] = [];
+    const mios = new Set(['Verificar aviso al dueño', 'Avisar al dueño (transferencia)', 'Aviso de transferencia', 'Marcar aviso de transferencia']);
+    for (let i = 0; i < pos.length; i++) for (let j = i + 1; j < pos.length; j++) {
+      const a = pos[i]!; const b = pos[j]!;
+      if (!mios.has(a.n) && !mios.has(b.n)) continue;
+      if (Math.abs(a.x - b.x) < 100 && Math.abs(a.y - b.y) < 60) choques.push(`${a.n} / ${b.n}`);
+    }
+    expect(choques).toEqual([]);
   });
 });
