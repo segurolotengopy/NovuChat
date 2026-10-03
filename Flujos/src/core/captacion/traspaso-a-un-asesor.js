@@ -55,9 +55,14 @@ return $input.all().map((it, i) => {
   const c = sd.conversaciones[e.from];
   const lead = (c && c.lead) || e.leadConocido || {};
 
-  // Lo que falta de la ficha, en el orden en que se pide.
+  // Lo que falta de la ficha, en el orden en que se pide. DESDE EL 03/10/2026
+  // (Bloque 1) el nombre y la empresa ya no se piden al inicio: la empresa se
+  // pide AQUI, dentro de este mensaje, y el nombre solo si el perfil de
+  // WhatsApp no sirve (menos de dos letras: vacio o solo emojis).
   const ETIQUETA = { contacto: 'tu nombre', empresa: 'el nombre de tu empresa', rubro: 'a qué se dedica' };
-  const faltan = ['contacto', 'empresa', 'rubro'].filter((k) => !lead[k]);
+  const letrasDelPerfil = (String(e.nombrePerfil || '').match(/\p{L}/gu) || []).length;
+  const conoceElContacto = !!lead.contacto || letrasDelPerfil >= 2;
+  const faltan = ['empresa', 'rubro', 'contacto'].filter((k) => (k === 'contacto' ? !conoceElContacto : !lead[k]));
   // A quien ya es cliente no se le piden datos de prospecto.
   const soporte = e.pideSoporte === true || e.soporteEnVentana === true || !!(c && c.soporte);
   const pedido = faltan.length && !soporte
@@ -82,10 +87,18 @@ return $input.all().map((it, i) => {
 
   const avisar = !(c && c.avisado);
   if (c) c.etapa = 'cerrado';
-  // Si se pidio un dato, la conversacion queda esperando esa respuesta: el
-  // rubro dicho en palabras lo registra `Estado de la conversacion`. La
-  // pregunta es abierta: una deduccion pendiente deja de esperar un «si».
-  if (c && faltan.includes('rubro') && pedido) { c.pidioRubro = true; c.confirmaRubro = false; }
+  // Si se pidio un dato, la conversacion queda esperando esa respuesta, EN ESTE
+  // ORDEN: `Estado de la conversacion` registra lo que conteste en el PRIMERO
+  // (la empresa) y el rubro dicho en palabras tambien. Sin pedido (soporte) no
+  // se espera nada.
+  if (c && pedido) { c.pidio = faltan; c.pidioRubro = faltan.includes('rubro'); }
+  // Pedir un asesor es un hecho de Alta (Bloque 1). Lo marca `Estado de la
+  // conversacion` con `accion === 'asesor'`; aca se asegura, por si el item no
+  // pasara por el. Nunca se quita.
+  const hechos = { pidioAsesor: true, pidioPlanes: false, eligioOtro: false, respondioDolor: false,
+    descarte: '', ...(e.hechos && typeof e.hechos === 'object' ? e.hechos : {}) };
+  hechos.pidioAsesor = true;
+  if (c) c.hechos = { ...(c.hechos || {}), pidioAsesor: true };
 
   return { json: { ...e,
     respuesta: texto,
@@ -103,6 +116,7 @@ return $input.all().map((it, i) => {
     } : undefined,
     textoRespaldo: url ? texto + '\n\nPara escribirle a una persona: ' + url : texto,
     lead,
+    hechos,
     avisar,
     estadoAviso: 'pidió hablar con un asesor',
     guardarLead: true,
