@@ -363,6 +363,35 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
     expect(String(pedidoDe(w)['pedidoId'])).toMatch(/^ped-/);
   });
 
+  it('una línea QUITADA o ACOTADA con el total igual (el servidor no contó el producto que el flujo no tiene) también conserva el `ped-…` propio (mutación M03)', () => {
+    // Sin la guarda de líneas quitadas, solo el total distinto lo evitaba: aquí el total coincide a propósito.
+    const quitada = crear();
+    const t1 = carrito(quitada, web({ items: [{ id: 'birria3', nombre: 'x', cantidad: 2, subtotal: 110 }, { id: 'no-existe', nombre: 'Cosa', cantidad: 1, subtotal: 0 }], total: 110 }));
+    expect(t1.mensajes).toHaveLength(1);
+    expect((estadoDe(quitada)['carrito'] as J[]).length).toBe(1); // el flujo quitó una línea…
+    expect(estadoDe(quitada)['pedidoWeb'] ?? null).toBeNull(); // …y ya no es EL pedido de la página
+    confirmar(quitada, t1);
+    expect(String(pedidoDe(quitada)['pedidoId'])).toMatch(/^ped-/);
+    // Acotada: 60 horchatas, el flujo toma 50 (el máximo) y el servidor dice el total de 50: coincide, pero el flujo cambió la cantidad.
+    const acotada = crear();
+    const t2 = carrito(acotada, web({ items: [{ id: 'horchata', nombre: 'Horchata', cantidad: 60, subtotal: 1000 }], total: 1000 }));
+    expect(t2.mensajes.length).toBeGreaterThan(0);
+    expect(estadoDe(acotada)['pedidoWeb'] ?? null).toBeNull();
+    // NEGANDO: sin líneas quitadas ni acotadas, con el mismo total, sí conserva el `cat_…`.
+    const intacto = crear();
+    carrito(intacto, web({ items: [{ id: 'birria3', nombre: 'x', cantidad: 2, subtotal: 110 }], total: 110 }));
+    expect(estadoDe(intacto)['pedidoWeb']).toMatchObject({ id: CAT });
+  });
+
+  it('un carrito SIN conversación previa que se confirma lleva el nombre de perfil del turno de la confirmación al pedido y al aviso (mutación M28)', () => {
+    const w = planB();
+    const t = carrito(w, web());
+    expect((estadoDe(w)['entrega'] as J)['nombre']).toBe(''); // el carrito no trae el nombre
+    const c = confirmar(w, t); // el mensaje de confirmación sí viene de un teléfono con perfil «Carlos Pérez»
+    expect(guardados(w)[0]!['nombre']).toBe('Carlos Pérez');
+    expect(JSON.stringify(c.avisos.map((x) => x.payload))).toContain('Carlos Pérez');
+  });
+
   describe('la MODALIDAD de entrega es parte de «el pedido de la página» (revisión del PR #382, LOW de seguridad)', () => {
     const EX = (extra: J = {}): J => ({ lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false, ...extra });
     const idConfirmado = (w: ReturnType<typeof crear>, t: ReturnType<typeof carrito>): string => {
