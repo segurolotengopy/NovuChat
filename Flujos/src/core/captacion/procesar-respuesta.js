@@ -555,8 +555,10 @@ for (let i = 0; i < items.length; i++) {
   const previo = c?.lead ?? ent.leadConocido ?? {};
   // Lo que dijo el cliente, escrito o en un audio (la transcripcion que dejo
   // `Preparar transcripcion`, sin sus lineas de instruccion).
+  const audioTranscrito = ['audio', 'voice'].includes(ent.tipo) && ent.esMedioAudio === true
+    && /^\(audio transcripto\)/.test(String(ent.userInput ?? ''));
   const dicho = ent.tipo === 'text' ? String(ent.userInput ?? '')
-    : (ent.esMedioAudio === true && /^\(audio transcripto\)/.test(String(ent.userInput ?? ''))
+    : (audioTranscrito
       ? String(ent.userInput).replace(/^\(audio transcripto\)\s*/, '').split('\nAVISO_SISTEMA')[0].trim() : '');
   // Pidio soporte en este mensaje o antes en la ventana: ya es cliente.
   const soporte = ent.pideSoporte === true || ent.soporteEnVentana === true;
@@ -651,14 +653,15 @@ for (let i = 0; i < items.length; i++) {
   if ((toquePlanes && fichaLista) || (fichaLista && PIDE_PLANES.test(dicho))) hechos.pidioPlanes = true;
 
   // HECHO: el modelo propone descartar; el codigo decide. Se acepta solo con un
-  // motivo de la lista, en un mensaje ESCRITO (no un toque), que no sea de
+  // motivo de la lista, en un mensaje ESCRITO o en un AUDIO TRANSCRITO (decision
+  // de Andres, 03/10/2026; no un toque, una imagen ni un documento), que no sea de
   // soporte, sin un hecho de Alta y sin que la marca la haya escrito el propio
   // cliente. Un hecho de Alta posterior gana (`Decidir fila de la planilla`).
   let descarteNuevo = '';
   if (hayMarcaDeDescarte) {
     const motivo = String(marcaDeDescarte?.[1] ?? '').toLowerCase();
     const marcaDelCliente = /\[\/?DESCARTE\]/i.test(String(ent.userInput ?? ''));
-    if (MOTIVOS_DESCARTE.includes(motivo) && ent.tipo === 'text' && !soporte
+    if (MOTIVOS_DESCARTE.includes(motivo) && (ent.tipo === 'text' || audioTranscrito) && !soporte
         && !hechos.pidioAsesor && !hechos.pidioPlanes && !marcaDelCliente && !fallo) {
       if (hechos.descarte !== motivo) descarteNuevo = motivo;
       hechos.descarte = motivo;
