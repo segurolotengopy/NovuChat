@@ -263,7 +263,7 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
     for (const url of [
       'https://graph.facebook.com/v26.0/x/messages', 'HTTPS://GRAPH.FACEBOOK.COM/v26.0/x/messages', '  https://graph.facebook.com/v26.0/x/messages',
       'http://graph.facebook.com:443/x/messages', '=https://graph.facebook.com/{{ $json.v }}/x/messages', '= https://graph.facebook.com/{{ $json.v }}/messages',
-      '={{ "https://" + "graph.facebook.com" + "/x/messages" }}',
+      "=https://graph.facebook.com/{{ $json.waGraphVersion || 'v26.0' }}/{{ $json.phoneNumberId }}/messages",
     ]) {
       it(`SÍ cuenta como envío a Meta: ${url.trim().slice(0, 60)}`, () => {
         expect(conUrl(url).stderr).toMatch(DETECTADO);
@@ -272,6 +272,8 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
     for (const url of [
       'https://otro.dominio/?x=graph.facebook.com/messages', 'https://otro.dominio/graph.facebook.com/x/messages', 'https://graph.facebook.com.otro.invalid/x/messages',
       'https://otro.dominio/x/messages#graph.facebook.com', 'ftp://graph.facebook.com/x/messages',
+      // El anfitrión solo dentro de una expresión (no abre la URL): tampoco es un envío a Meta (CodeQL js/incomplete-url-substring-sanitization).
+      "={{ 'x' }}graph.facebook.com/x/messages", '={{ "https://" + "graph.facebook.com" + "/x/messages" }}', '={{ $json.base }}/graph.facebook.com/x/messages',
     ]) {
       it(`NO cuenta como envío a Meta (el anfitrión no es el de Meta): ${url.slice(0, 60)}`, () => {
         const r = conUrl(url);

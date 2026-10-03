@@ -268,14 +268,13 @@ const VERIFICADOR_DE_ENVIO = {
 };
 const LEE_EL_ID = /messages[\s\S]{0,200}\bid\b|\bid\b[\s\S]{0,200}messages/;
 const textoDe = (n) => JSON.stringify(((n.parameters || {}).conditions) || '') + String((n.parameters || {}).jsCode || '') + String((n.parameters || {}).jsonBody || '');
-// ¿La URL es de Meta (Graph)? El patron va ANCLADO al inicio: la URL puede empezar con `=` (expresion de n8n) y el anfitrion tiene que ser
-// el de la URL, no un texto que aparece en un parametro (`https://otro.dominio/?x=<anfitrion>`: eso NO es un envio a Meta). Solo las
-// EXPRESIONES con `{{` (el anfitrion puede ir armado en cualquier parte) conservan la busqueda por subcadena.
+// ¿La URL es de Meta (Graph)? El patron va ANCLADO al inicio y el anfitrion tiene que ser el FIJO que abre la URL (con o sin el `=` de una
+// expresion de n8n): los doce nodos de envio de los tres JSON lo traen asi (`=https://graph.facebook.com/{{ ... }}/messages`, con las
+// llaves SOLO despues del anfitrion). Un texto que nombra el anfitrion en un parametro (`https://otro.dominio/?x=<anfitrion>`) o dentro
+// de una expresion (`{{ 'x' }}<anfitrion>`) NO es un envio a Meta; y un anfitrion armado por expresion tampoco pasa la lista de
+// `anfitrionPermitido`, que exige el anfitrion literal: `--verificar` lo rechaza igual. Sin busqueda por subcadena.
 const URL_DE_META = /^=?\s*https?:\/\/graph\.facebook\.com(?:[/:?#]|$)/;
-const esUrlDeMeta = (url) => {
-  const u = String(url || '').trim().toLowerCase();
-  return URL_DE_META.test(u) || (u.includes('{{') && u.indexOf('graph.facebook.com') >= 0);
-};
+const esUrlDeMeta = (url) => URL_DE_META.test(String(url || '').trim().toLowerCase());
 const esEnvioAMeta = (n) => n.type === 'n8n-nodes-base.httpRequest' && esUrlDeMeta((n.parameters || {}).url) && /\/messages\b/.test(String((n.parameters || {}).url || ''));
 
 function alcanzables(flujo, desde) {
