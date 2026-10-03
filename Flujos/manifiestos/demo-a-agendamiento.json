@@ -23,6 +23,7 @@
     },
     "Preparar seña": "modulos/cobros/preparar-sena.js",
     "QR no enviado": "modulos/agenda/qr-no-enviado.js",
+    "Respaldo del envío": "modulos/agenda/respaldo-del-envio.js",
     "Interpretar lectura": "modulos/cobros/interpretar-lectura.js",
     "Respuesta de la seña": "modulos/cobros/respuesta-de-la-sena.js",
     "Mensaje de la seña": "modulos/cobros/mensaje-de-la-sena.js",

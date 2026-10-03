@@ -581,7 +581,7 @@ export interface Excepcion { porque: string; vence: string }
  * La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
 export const ALTA_DE_EXCEPCIONES = '2026-10-03';
 /** ATENCIÓN: cambiar este tope exige pasar por el agente `seguridad`. Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
-export const TOPE_DE_EXCEPCIONES = 49;
+export const TOPE_DE_EXCEPCIONES = 25;
 
 /**
  * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
@@ -640,54 +640,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
     porque: 'flujo A de Bellido, descartado el 01/10 (corre B); D9: la cierra PR-6, que deja a B como único flujo de Bellido y retira o declara este JSON',
     vence: '2027-01-01',
   },
-  'demo-a-agendamiento.json#1#Enviar ubicación': {
-    porque: '«Enviar contacto/ubicación» (continueErrorOutput) con la salida de error sin conectar: el texto dice «toca el botón» y no hay botón; la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#2#Enviar ubicación': {
-    porque: 'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#1#Enviar contacto': {
-    porque: '«Enviar contacto/ubicación» (continueErrorOutput) con la salida de error sin conectar: el texto dice «toca el botón» y no hay botón; la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#2#Enviar contacto': {
-    porque: 'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#2#Enviar QR de la seña': {
-    porque: 'el fallo del envío no llega al cliente (el aviso o nada, sin texto de respaldo con botón); la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación': {
-    porque: 'el reporte saliente cuelga del envío sin puerta que lea el id; la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto': {
-    porque: 'el reporte saliente cuelga del envío sin puerta que lea el id; la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#5#Procesar respuesta::aviso': {
-    porque: '«Un humano tomará el chat» sale antes de que el aviso a recepción salga y no depende de él (R4); la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::a-continuacion-llega': {
-    porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano': {
-    porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::le-pasas-el-contacto': {
-    porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-a-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo': {
-    porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
   'demo-b-venta-cobro.json#1#Avisar al dueño': {
     porque: 'falla callada del aviso en pedido, cobro y uso extendido: el único verificador (Marcar aviso de transferencia) actúa solo para la transferencia; la cierra PR-4 (Demo B resto)',
     vence: '2027-01-01',
@@ -734,54 +686,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   },
   'novuchat-onboarding.json#5#Traspaso a un asesor::aviso': {
     porque: 'captación: «Ya le pasé tus datos» sale antes del aviso a NovuChat y no depende de él (R4); la cierra PR-8 (captación R4, después del traspaso)',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#1#Enviar ubicación': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#2#Enviar ubicación': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#1#Enviar contacto': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#2#Enviar contacto': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#2#Enviar QR de la seña': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#3#Reportar ubicación (saliente)::Enviar ubicación': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#3#Reportar contacto (saliente)::Enviar contacto': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#5#Procesar respuesta::aviso': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::a-continuacion-llega': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::avisa-que-un-humano': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::le-pasas-el-contacto': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
-    vence: '2027-01-01',
-  },
-  'platinum-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo': {
-    porque: 'Platinum es un demo con JSON desalineado de Demo A; D8: excepción declarada hasta que PR-5 o F3b lo reconstruya sobre el core',
     vence: '2027-01-01',
   },
 };

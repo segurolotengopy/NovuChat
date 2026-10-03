@@ -57,6 +57,7 @@ export const SUITES_PURAS = [
   'pruebas/agendamiento-seguimientos.test.ts',
   'pruebas/alta-plan-inicial.test.ts',
   // 'pruebas/asignar-rol.test.ts' NO: abre Firebase antes del modo seco (ver arriba).
+  'pruebas/agenda-envios-con-respaldo.test.ts',
   'pruebas/bellido-flujo.test.ts',
   'pruebas/bitacora-tipos.test.ts',
   'pruebas/core/bitacora.test.ts',

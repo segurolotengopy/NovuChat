@@ -247,6 +247,8 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
     // El botón para escribirle a recepción (19/09): el interactivo sale por
     // Graph con la credencial de envío, y su reporte va a la ingesta.
     'Enviar contacto', 'Reportar contacto (saliente)',
+    // El respaldo del pin y del botón (PR-5): el texto con el enlace y su reporte.
+    'Enviar respaldo', 'Reportar respaldo (saliente)',
   ];
 
   it('tiene el nombre del cliente y los mismos nodos del Demo A, con los mismos ids, tipos y posiciones', () => {
@@ -292,12 +294,12 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
     }
     for (const nombre of ['Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Registrar cierre (cita)',
       'Reportar ubicación (saliente)', 'Reportar QR (saliente)', 'Cotejar en el servidor',
-      'Reportar contacto (saliente)']) {
+      'Reportar contacto (saliente)', 'Reportar respaldo (saliente)']) {
       expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name).toBe('NovuChat ingesta (Clínica Platinum)');
     }
     for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación',
       'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante',
-      'Obtener URL del medio (general)', 'Descargar medio', 'Enviar contacto']) {
+      'Obtener URL del medio (general)', 'Descargar medio', 'Enviar contacto', 'Enviar respaldo']) {
       expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name).toBe('WhatsApp Clínica Platinum (envío)');
     }
     expect(TEXTO).not.toContain('Cierres NovuChat A');
@@ -511,7 +513,7 @@ describe('(d) El prompt inserta la información del negocio como dato, sin resto
       'SI UNA HERRAMIENTA FALLA, NO INVENTES EL RESULTADO:',
       'agendar_cita: UNA VEZ POR CADA CITA.',
       '4b. CANCELAR O MOVER UNA CITA.',
-      'Al TERCER rechazo consecutivo, discúlpate, avisa que un humano de recepción tomará el chat y termina tu mensaje EXACTAMENTE con la marca [TRANSFERIR].',
+      'Al TERCER rechazo consecutivo, discúlpate, dile en una línea que lo pasas con recepción y termina tu mensaje EXACTAMENTE con la marca [TRANSFERIR], que avisa a recepción y le manda un botón para escribirles directo. No digas que ya avisaste ni que alguien tomará el chat.',
       '6. NUNCA INVENTES NINGÚN DATO DEL NEGOCIO.',
       '7. Eres asistente virtual con inteligencia artificial: si te lo preguntan, no lo niegues; dilo con naturalidad y sigue ayudando.',
       'CADA PERSONA TIENE SU PROPIA AGENDA, Y SON INDEPENDIENTES.',
@@ -926,6 +928,7 @@ describe.each([
         'Comercio no operativo', 'Procesar reintento', '¿Afirma que agendó?', '¿Deshacer cita solapada?',
         '¿Reintentar tras cruce?', '¿Responder uso extendido?',
         'Mensaje de la seña', // la respuesta fija al comprobante (bloque l)
+        'QR no enviado', // PR-5: el QR rechazado por Meta avisa al paciente, con el botón
       ].sort());
       // Las ramas verdaderas de los IF siguen yendo a donde iban.
       expect(destinos('¿Afirma que agendó?', 0)).toEqual(['Calendarios a revisar']);
@@ -973,7 +976,11 @@ describe.each([
       // El nodo oficial de WhatsApp también sirve para leer un medio (bloque
       // l): solo cuentan como envío los que tienen la operación `send`.
       expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send').map((n) => n.name))
-        .toEqual(['Responder al cliente', 'Avisar a recepción']);
+        .toEqual(['Responder al cliente', 'Avisar a recepción', 'Enviar respaldo']);
+      // «Enviar respaldo» (PR-5) NO es un mensaje del camino normal: solo sale por
+      // la salida de error del pin o del botón. Nada del camino normal llega a él.
+      expect(origenes('Enviar respaldo')).toEqual(['Respaldo del envío']);
+      expect(origenes('Respaldo del envío').sort()).toEqual(['Enviar contacto', 'Enviar ubicación']);
       // Los envíos por HTTP a Graph son el pin a pedido (bloque k) y el QR de
       // la seña (bloque l), y ninguno corre si su compuerta no lo deja pasar.
       // La regex va ANCLADA al comienzo: reconocer un host por subcadena es
@@ -1033,7 +1040,9 @@ describe.each([
         // El reenvío del QR cuelga del mismo envío y comparte el nodo que manda
         // la imagen; desde el reintento su compuerta tampoco pasa nada.
         '¿Reenviar el QR?', 'Preparar reenvío del QR', 'Enviar QR de la seña',
-        'Reportar QR (saliente)', 'QR no enviado'].sort());
+        'Reportar QR (saliente)', 'QR no enviado',
+        // El respaldo del pin y del botón (PR-5) cuelga de sus salidas de error.
+        'Respaldo del envío', 'Enviar respaldo', 'Reportar respaldo (saliente)'].sort());
       // Y al agente principal se entra por UN solo lugar efectivo: la compuerta
       // de medios, directamente o después de convertir el medio en texto.
       expect(origenes(AGENTE).sort()).toEqual(
@@ -1227,7 +1236,7 @@ describe.each([
     it('en cada bifurcación que responde Y avisa, el envío al cliente va arriba del aviso', () => {
       const bifurcan = Object.keys(f.connections).filter((n) => (f.connections[n]?.['main'] ?? [])
         .some((s) => s.some((c) => c.node === 'Mensaje a enviar') && s.some((c) => c.node === '¿Transferir a humano?')));
-      expect(bifurcan.sort()).toEqual(['Procesar reintento', '¿Afirma que agendó?', '¿Reintentar tras cruce?', 'Mensaje de la seña'].sort());
+      expect(bifurcan.sort()).toEqual(['Procesar reintento', '¿Afirma que agendó?', '¿Reintentar tras cruce?', 'Mensaje de la seña', 'QR no enviado'].sort());
       expect(y('Mensaje a enviar')).toBeLessThan(y('¿Transferir a humano?'));
       expect(y('¿Responder uso extendido?')).toBeLessThan(y('¿Transferir a humano?'));
     });
@@ -1655,9 +1664,9 @@ describe.each([
   });
 
   describe('5. cero mensajes agregados; el mismo mecanismo en los dos flujos', () => {
-    it('los mismos dos nodos de envío, y la compuerta y el candado siguen donde estaban', () => {
+    it('los mismos nodos de envío (más el respaldo, solo por fallo), y la compuerta y el candado siguen donde estaban', () => {
       expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send').map((n) => n.name))
-        .toEqual(['Responder al cliente', 'Avisar a recepción']);
+        .toEqual(['Responder al cliente', 'Avisar a recepción', 'Enviar respaldo']);
       expect(destinos('Procesar respuesta')).toEqual(['¿Afirma que agendó?']);
       expect(destinos('¿Afirma que agendó?', 0)).toEqual(['Calendarios a revisar']);
       expect(destinos('¿Afirma que agendó?', 1)).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
@@ -1914,9 +1923,10 @@ describe.each([
       expect(destinos('¿Enviar ubicación?', 0)).toEqual(['Enviar ubicación']);
       expect(destinos('¿Enviar ubicación?', 1)).toEqual([]);
       expect(destinos('Enviar ubicación', 0)).toEqual(['Reportar ubicación (saliente)']);
-      // La salida de error del envío no va a ningún lado: un pin rechazado por
-      // Meta no se reporta ni corta nada. El texto ya salió y ya se contó.
-      expect(destinos('Enviar ubicación', 1)).toEqual([]);
+      // La salida de error del envío va al respaldo (PR-5): un pin rechazado por
+      // Meta no se reporta como pin ni corta nada; el paciente recibe un texto con
+      // el enlace al mapa (ver agenda-envios-con-respaldo.test.ts).
+      expect(destinos('Enviar ubicación', 1)).toEqual(['Respaldo del envío']);
       expect(nodo(f, 'Enviar ubicación').onError).toBe('continueErrorOutput');
       expect(destinos('Reportar ubicación (saliente)')).toEqual([]);
     });
@@ -1940,7 +1950,9 @@ describe.each([
     });
 
     it('desde los nodos nuevos no se vuelve a ningún lado: ni al agente, ni al envío de texto, ni al candado', () => {
-      expect([...alcanzables('¿Enviar ubicación?')].sort()).toEqual(['Enviar ubicación', 'Reportar ubicación (saliente)']);
+      expect([...alcanzables('¿Enviar ubicación?')].sort()).toEqual(['Enviar ubicación', 'Reportar ubicación (saliente)',
+        // Y, solo si Meta rechaza el pin, el texto de respaldo con el enlace al mapa (PR-5).
+        'Respaldo del envío', 'Enviar respaldo', 'Reportar respaldo (saliente)'].sort());
     });
 
     it('los ids son nombres cortos, sin UUID', () => {
@@ -2646,11 +2658,19 @@ describe.each([
       expect(destinos('Enviar QR de la seña', 0)).toEqual(['Reportar QR (saliente)']);
       expect(destinos('Enviar QR de la seña', 1)).toEqual(['QR no enviado']);
       expect(nodo(f, 'Enviar QR de la seña').onError).toBe('continueErrorOutput');
-      expect(destinos('QR no enviado')).toEqual(['¿Transferir a humano?']);
+      // PR-5: el rechazo del QR avisa a recepción Y le escribe al paciente, por el
+      // embudo `Mensaje a enviar` (que arma el botón porque `transferir` es true).
+      // El cliente va primero (arriba en el lienzo), el aviso después.
+      expect(destinos('QR no enviado')).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
       expect(destinos('Reportar QR (saliente)')).toEqual([]);
-      // Desde la rama del QR no se vuelve al agente, al envío del texto ni al candado.
-      expect([...alcanzables('¿Enviar QR de la seña?')].sort()).toEqual(['Preparar seña', 'Enviar QR de la seña', 'Reportar QR (saliente)',
-        'QR no enviado', '¿Transferir a humano?', 'Avisar a recepción'].sort());
+      // Desde la rama del QR no se vuelve al agente ni al candado. SÍ se llega, por
+      // el embudo, al texto al paciente y a lo que cuelga de él (PR-5); el reenvío
+      // del QR queda cerrado porque `QR no enviado` emite `reenviarQr: false`.
+      const desdeQr = alcanzables('¿Enviar QR de la seña?');
+      for (const n of [AGENTE, 'Procesar respuesta', '¿Afirma que agendó?', 'Calendarios a revisar', 'Verificar en el calendario',
+        'Comprobar reserva', 'Deshacer cita solapada', 'Retomar respuesta', 'Reintento tras cruce']) expect(desdeQr.has(n), n).toBe(false);
+      for (const n of ['Preparar seña', 'Enviar QR de la seña', 'Reportar QR (saliente)', 'QR no enviado', 'Mensaje a enviar',
+        'Responder al cliente', '¿Transferir a humano?', 'Avisar a recepción', 'Enviar contacto', 'Respaldo del envío']) expect(desdeQr.has(n), n).toBe(true);
     });
 
     it('en el lienzo va DEBAJO del envío y del reporte del texto, y debajo de las otras salidas del candado (orden v1: el texto primero)', () => {
@@ -2752,7 +2772,9 @@ describe.each([
       // reenvío a pedido: mismo caso, su compuerta tampoco abre acá.
       expect(envian.sort()).toEqual(
         ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación', 'Enviar contacto',
-          'Enviar QR de la seña'].sort());
+          'Enviar QR de la seña',
+          // Y el respaldo del pin y del botón (PR-5), que solo corre por su salida de error.
+          'Enviar respaldo'].sort());
       const item = ejecutar(codigo('Mensaje de la seña'), [{}], { 'Respuesta de la seña': [{ respuesta: 'x', resultadoSena: 'ilegible' }], 'Config del negocio': [CON_SENA] })[0]!;
       for (const compuerta of ['¿Enviar ubicación?', '¿Enviar contacto?', '¿Reenviar el QR?']) {
         expect(expresion(nodo(f, compuerta).parameters['conditions'].conditions[0].leftValue,
@@ -2988,7 +3010,7 @@ describe.each([
         || (n.type === 'n8n-nodes-base.httpRequest' && String(n.parameters['url'] ?? '').includes('/messages'));
       expect(f.nodes.filter(envia).map((n) => n.name).sort()).toEqual(
         ['Avisar a recepción', 'Enviar QR de la seña', 'Enviar ubicación', 'Enviar contacto',
-          'Responder al cliente'].sort());
+          'Responder al cliente', 'Enviar respaldo'].sort());
       for (const n of RAMA) expect(envia(nodo(f, n)), n).toBe(false);
       expect(nodo(f, 'Obtener URL del medio (general)').parameters['resource']).toBe('media');
     });

@@ -635,9 +635,16 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
   const NIEGA_SERVICIO = /\bno\s+(realizamos|ofrecemos|brindamos|hacemos|trabajamos|contamos\s+con|damos)\b|\bexclusivamente\s+(en\s+)?(odontolog|dental|estetica\s+dental|est[eé]tica\s+dental)|\bsolo\s+(hacemos|ofrecemos|realizamos|trabajamos)\b/i;
   const negoServicio = !fallo && NIEGA_SERVICIO.test(respuesta.replace(/[*_~]/g, ''));
   if (negoServicio) {
-    respuesta = /\busted\b/i.test(String(cfg.tratamiento || ''))
-      ? 'Sobre eso le asesora una persona del equipo: ya le paso su consulta y le escribe por acá.'
-      : 'Sobre eso te asesora una persona del equipo: ya le paso tu consulta y te escribe por acá.';
+    // SOLO LO QUE SE CUMPLE (inventario (d) del plan de entrega, 03/10/2026): el
+    // texto no dice «ya le paso su consulta» ni «le escribe por acá», que
+    // anunciaban un aviso que este mismo turno todavia no habia enviado y una
+    // respuesta que nadie prometio. Lo que si ocurre es el aviso a recepcion y
+    // el boton; el boton solo se nombra si hay numero de recepcion cargado.
+    const deUstedNiega = /\busted\b/i.test(String(cfg.tratamiento || ''));
+    respuesta = (deUstedNiega ? 'Sobre eso le asesora una persona del equipo.' : 'Sobre eso te asesora una persona del equipo.')
+      + (String(cfg.numeroRecepcion ?? '').replace(/\D/g, '') !== ''
+        ? (deUstedNiega ? ' Toque el botón para escribirle directo a recepción.' : ' Toca el botón para escribirle directo a recepción.')
+        : '');
     avisos.push('negacion_de_servicio');
   }
 
