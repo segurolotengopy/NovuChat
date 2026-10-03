@@ -252,6 +252,35 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
     const molde = nodo(f, 'Enviar a WhatsApp');
     f.nodes.push({ ...molde, id: 'enviar-otro', name: 'Enviar otro', position: [7640, 900] });
   }, /R5: «Enviar otro» \(envío a Meta con continueRegularOutput\) no tiene un verificador/);
+  // CodeQL `js/regex/missing-regexp-anchor` (revisión del PR #382): «es un envío a Meta» se decide por el ANFITRIÓN de la URL, anclado al inicio
+  // (con o sin el `=` de una expresión de n8n), no por un texto que aparece en cualquier parte (un parámetro, otra ruta).
+  describe('«es un envío a Meta» se decide por el anfitrión anclado de la URL', () => {
+    const conUrl = (url: string) => verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
+      const molde = nodo(f, 'Enviar a WhatsApp');
+      f.nodes.push({ ...molde, id: 'enviar-otro', name: 'Enviar otro', position: [7640, 900], parameters: { ...molde.parameters, url } });
+    }));
+    const DETECTADO = /R5: «Enviar otro» \(envío a Meta con continueRegularOutput\) no tiene un verificador/;
+    for (const url of [
+      'https://graph.facebook.com/v26.0/x/messages', 'HTTPS://GRAPH.FACEBOOK.COM/v26.0/x/messages', '  https://graph.facebook.com/v26.0/x/messages',
+      'http://graph.facebook.com:443/x/messages', '=https://graph.facebook.com/{{ $json.v }}/x/messages', '= https://graph.facebook.com/{{ $json.v }}/messages',
+      '={{ "https://" + "graph.facebook.com" + "/x/messages" }}',
+    ]) {
+      it(`SÍ cuenta como envío a Meta: ${url.trim().slice(0, 60)}`, () => {
+        expect(conUrl(url).stderr).toMatch(DETECTADO);
+      });
+    }
+    for (const url of [
+      'https://otro.dominio/?x=graph.facebook.com/messages', 'https://otro.dominio/graph.facebook.com/x/messages', 'https://graph.facebook.com.otro.invalid/x/messages',
+      'https://otro.dominio/x/messages#graph.facebook.com', 'ftp://graph.facebook.com/x/messages',
+    ]) {
+      it(`NO cuenta como envío a Meta (el anfitrión no es el de Meta): ${url.slice(0, 60)}`, () => {
+        const r = conUrl(url);
+        expect(r.stderr).not.toMatch(DETECTADO);
+        expect(r.status).toBe(1); // y `--verificar` igual lo rechaza por otra guardia (anfitrión fuera de la lista)
+        expect(r.stderr).toContain('anfitrión fuera de la lista');
+      });
+    }
+  });
   rompe('el verificador del envío ya no lee el id (`¿Falló el envío?` decide por un campo cualquiera)', (f) => {
     nodo(f, '¿Falló el envío?').parameters['conditions'].conditions[0].leftValue = '={{ $json.ok !== true }}';
   }, /R5: el verificador «¿Falló el envío\?» de «Enviar a WhatsApp» no lee messages\[0\]\.id/);

@@ -268,7 +268,15 @@ const VERIFICADOR_DE_ENVIO = {
 };
 const LEE_EL_ID = /messages[\s\S]{0,200}\bid\b|\bid\b[\s\S]{0,200}messages/;
 const textoDe = (n) => JSON.stringify(((n.parameters || {}).conditions) || '') + String((n.parameters || {}).jsCode || '') + String((n.parameters || {}).jsonBody || '');
-const esEnvioAMeta = (n) => n.type === 'n8n-nodes-base.httpRequest' && /graph\.facebook\.com/.test(String((n.parameters || {}).url || '')) && /\/messages\b/.test(String((n.parameters || {}).url || ''));
+// ¿La URL es de Meta (Graph)? El patron va ANCLADO al inicio: la URL puede empezar con `=` (expresion de n8n) y el anfitrion tiene que ser
+// el de la URL, no un texto que aparece en un parametro (`https://otro.dominio/?x=<anfitrion>`: eso NO es un envio a Meta). Solo las
+// EXPRESIONES con `{{` (el anfitrion puede ir armado en cualquier parte) conservan la busqueda por subcadena.
+const URL_DE_META = /^=?\s*https?:\/\/graph\.facebook\.com(?:[/:?#]|$)/;
+const esUrlDeMeta = (url) => {
+  const u = String(url || '').trim().toLowerCase();
+  return URL_DE_META.test(u) || (u.includes('{{') && u.indexOf('graph.facebook.com') >= 0);
+};
+const esEnvioAMeta = (n) => n.type === 'n8n-nodes-base.httpRequest' && esUrlDeMeta((n.parameters || {}).url) && /\/messages\b/.test(String((n.parameters || {}).url || ''));
 
 function alcanzables(flujo, desde) {
   const vistos = new Set([desde]);
