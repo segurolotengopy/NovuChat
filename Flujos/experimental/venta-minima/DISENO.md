@@ -515,6 +515,13 @@ CLAUDE.md: el rótulo va **impreso en la imagen** y en el **pie**, la respuesta 
 dibujar el QR desde `cargaUtil`, **sin rótulo**. Registrar `qr-demo.png` como QR real dejaría un cobro real sin rótulo: está prohibido. La imagen
 rotulada solo viaja por `qrSimuladoUrl`.
 
+**Dos fotos juntas (H4) y cuándo avisa el cobro simulado.** Si el cliente manda dos fotos casi a la vez, las dos ejecuciones pueden leer el
+mismo estado antes de que la primera lo escriba y dar **2 avisos de PRUEBA y 2 respuestas** (+1 mensaje al cliente y +1 a 2 avisos al
+restaurante en ese caso). Es la misma clase de carrera que B0 (doble toque) y no se cambia código: el cierre `registro` de PRUEBA es
+idempotente por referencia, y el costo es de una sola conversación de prueba. **A diferencia del plan B**, donde el restaurante recibe el aviso
+al confirmar el pedido, con el cobro simulado el aviso al restaurante sale **con la foto** (el comprobante), no al confirmar: un cliente que
+confirma y no manda foto no genera aviso (y su pedido de prueba no llega al restaurante).
+
 **Qué se verifica con un teléfono ANTES de abrir el piloto (H3).** Meta puede aceptar `image.link` y fallar después (estado `failed` asíncrono,
 sin id de error en la respuesta del envío) y el respaldo en texto no cubre ese fallo. Mitigación sin mensajes extra: el recordatorio del
 comprobante simulado lleva «Si no ves el QR, ábrelo aquí: <enlace>» (el enlace de `qrSimuladoUrl`, ya validado como https; solo con el modo
