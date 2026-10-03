@@ -260,7 +260,6 @@ for (let i = 0; i < items.length; i++) {
   let rubroElegido = '';          // el nombre registrado ESTE turno, por toque o por texto
   let eligioOtroEsteTurno = false;
   let opcionVencida = false;
-  let rubroLibre = false;         // lo dijo con sus palabras, no lo toco
   const porCampana = e.porCampana === true;
   // Lo que pidio el turno anterior, en orden. Un estado guardado antes del
   // 27/09 no trae `pidio`: ahi vale `pidioRubro`, como antes.
@@ -329,7 +328,6 @@ for (let i = 0; i < items.length; i++) {
     // El rubro libre: «tenemos una pasteleria».
     rubroDicho = limpiarRubro(dicho).slice(0, 60);
     rubroElegido = rubroDicho;
-    rubroLibre = true;
     c.lead.rubro = rubroDicho;
     c.pidioRubro = false;
     c.pidio = [];
@@ -380,34 +378,24 @@ for (let i = 0; i < items.length; i++) {
     '[CONTEXTO DEL TURNO - no lo repitas al cliente]',
     'Fecha y hora en La Paz: ' + hora + '.',
     'Nombre de perfil de WhatsApp: ' + (e.nombrePerfil || 'sin nombre') + '.',
-    // Nunca se pide el nombre ni la empresa: el contacto es el nombre de perfil y
-    // la empresa se pide dentro del traspaso (decision del 03/10/2026).
+    // Aca van los HECHOS del turno, en una frase cada uno; el QUE HACER con cada
+    // uno esta en el prompt (`Procedimiento`), una sola vez. Nunca se pide el
+    // nombre ni la empresa: el contacto es el nombre de perfil y la empresa se
+    // pide dentro del traspaso (decision del 03/10/2026).
     'Datos ya registrados: ' + JSON.stringify(lead) + '.',
-    primeraDeVentana
-      ? 'Primer mensaje de la conversación: preséntate' + (soporte ? '.' : (rubroElegido
-        ? ' y hazle la pregunta de dolor de su rubro (ya quedó registrado; no se adjunta la lista).'
-        : (eligioOtroEsteTurno || (!lead.rubro && hechos.eligioOtro)
-          ? ' y pregúntale de qué trata su negocio y qué es lo que más tiempo le quita hoy.'
-          : (lead.rubro ? ' y pregúntale en qué puedes ayudarle hoy (ya conoces su rubro; no se adjunta la lista).'
-            : '; el sistema adjunta la lista de rubros. Pregúntale de qué rubro es su negocio.')))) : '',
+    primeraDeVentana ? 'Primer mensaje de la conversación.' : '',
+    rubroElegido ? 'Eligió su rubro: «' + rubroElegido + '» (registrado).' : '',
+    eligioOtroEsteTurno ? 'Eligió «Otro».' : '',
+    respondioDolorEsteTurno ? 'Contestó tu pregunta sobre su negocio.' : '',
+    tocoPlanesEsteTurno ? (lead.rubro || hechos.eligioOtro ? 'Tocó «Ver planes».'
+      : 'Pidió los planes y todavía no tiene rubro.') : '',
+    opcionVencida && !porCampana ? 'Tocó una opción de una lista anterior que ya no está vigente.' : '',
+    porCampana && e.campana && e.campana.destino === 'asesor'
+      ? 'Llegó por una campaña que ofrece hablar con una persona: ofrécelo (el mensaje sale con el botón).' : '',
     soporte
       ? 'Dice que ya es cliente o pide soporte: no le pidas datos de prospecto; si la respuesta está en DATOS, ' +
         'dásela en una línea, y ofrécele hablar con un asesor (el mensaje sale con el botón).' : '',
-    // Los hechos del turno, que decide el codigo y no el modelo.
-    rubroElegido ? 'Eligió su rubro: «' + rubroElegido + '» (registrado). ' + (rubroLibre
-      ? 'Mándalo en [LEAD] solo si lo dijo; si encaja claramente en un área de OFERTA, manda también area con su nombre exacto. '
-      : '') + 'Hazle la pregunta de dolor: qué es lo que más tiempo le quita hoy, partiendo de lo que ese rubro resuelve en OFERTA; sin precios y sin [PLANES].' : '',
-    eligioOtroEsteTurno ? 'Eligió «Otro»: pregúntale de qué trata su negocio y qué es lo que más tiempo le quita hoy, en una sola pregunta; sin precios y sin [PLANES].' : '',
-    respondioDolorEsteTurno ? 'Contestó tu pregunta sobre su negocio: una línea de empatía, lo que el servicio resuelve para él ' +
-      'y termina ofreciéndole los planes o una persona del equipo (el sistema agrega los botones).' : '',
-    tocoPlanesEsteTurno ? (lead.rubro || hechos.eligioOtro
-      ? 'Tocó «Ver planes»: pon [PLANES].'
-      : 'Pidió los planes y todavía no tiene rubro: pregúntale de qué rubro es su negocio (el sistema adjunta la lista); no pongas [PLANES] ni precios.') : '',
-    opcionVencida && !porCampana ? 'Tocó una opción de una lista anterior que ya no está vigente: el sistema le vuelve a mostrar la lista.' : '',
-    porCampana && e.campana && e.campana.destino === 'asesor'
-      ? 'Llegó por una campaña que ofrece hablar con una persona: ofrécelo (el mensaje sale con el botón).' : '',
-    empresaDicha ? 'El cliente dijo el nombre de su empresa: «' + empresaDicha + '». YA QUEDÓ REGISTRADO: no se lo ' +
-      'vuelvas a preguntar, y no es su rubro.' : '',
+    empresaDicha ? 'Dijo el nombre de su empresa: «' + empresaDicha + '» (registrado).' : '',
     c.etapa === 'cerrado' && c.avisado === true
       ? 'Ya se avisó a un asesor: no vuelvas a pedir datos ni a ofrecer el asesor.' : '',
     c.etapa === 'cerrado' && c.avisado !== true
