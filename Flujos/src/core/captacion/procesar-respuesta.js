@@ -1,90 +1,44 @@
-// PROCESAR RESPUESTA: separa las marcas del agente, arma POR CODIGO lo que no
-// puede depender del modelo -- la lista de rubros, los planes con sus precios,
-// la oferta con sus botones, la calificacion del prospecto -- y aplica la
-// prohibicion 4 (el agente no niega ser una IA). Un modelo puede omitir una
-// frase de las instrucciones; lo que no se negocia no depende de su voluntad.
+// PROCESAR RESPUESTA: separa las marcas del agente y arma POR CODIGO lo que no
+// puede depender del modelo: la lista de rubros, los planes con sus precios, la
+// oferta con sus botones, la calificacion del prospecto y la prohibicion 4 (el
+// agente no niega ser una IA). El prompt no es una barrera: cada regla de aqui
+// se hace cumplir por lo que el modelo HIZO o el cliente HIZO, no por lo que se
+// le pidio. MENSAJES POR TURNO: los mismos; todo viaja dentro de la respuesta.
 //
 // LAS MARCAS, que el cliente nunca ve:
-//   [LEAD]{json}[/LEAD]  los datos del prospecto que el cliente dio o corrigio
-//                        en este turno. Una sola llamada al modelo por turno:
-//                        la extraccion viaja en la misma respuesta.
-//   [RUBROS]             pide la LISTA de rubros de la consola: un mensaje
-//                        interactivo de lista (ver «LA LISTA DE RUBROS»).
-//   [PLANES]             se reemplaza por el bloque de planes y cargos unicos,
-//                        con los precios EXACTOS de la consola, SOLO si ya hay
-//                        rubro (o eligio «Otro»). Si la consola tiene un
-//                        archivo de planes valido (imagen o PDF), los planes
-//                        van en ese archivo, sean cuantos sean (Andres,
-//                        27/09/2026): el archivo es el encabezado del mensaje
-//                        y el cuerpo es corto, sin la lista ni los precios en
-//                        texto (ver «f» mas abajo). Sin planes cargados no hay
-//                        precios: se ofrece al asesor. El mensaje sale con el
-//                        boton «Hablar con un asesor».
+//   [LEAD]{json}[/LEAD]  datos del prospecto que el cliente dio o corrigio en este turno.
+//   [RUBROS]             pide la LISTA de rubros de la consola (mensaje interactivo de lista).
+//   [PLANES]             se reemplaza por los planes y cargos con los precios EXACTOS de la
+//                        consola, solo si hay rubro (o eligio «Otro»). Con un archivo de planes
+//                        valido (imagen o PDF) el archivo es el encabezado del mensaje y el
+//                        cuerpo no lleva precios en texto. Sin planes cargados, se ofrece al asesor.
 //   [DESCARTE]motivo[/DESCARTE]
-//                        el modelo propone que este contacto no es un
-//                        prospecto (numero equivocado, ofrece algo o busca
-//                        trabajo, no tiene negocio, spam o prueba). Es solo una
-//                        PROPUESTA: el codigo la acepta si el motivo esta en
-//                        la lista, el mensaje fue ESCRITO (no un toque), no es
-//                        soporte, no hay un hecho de Alta y la marca no la
-//                        escribio el cliente. Va a la planilla como
-//                        «Descalificado».
+//                        el modelo PROPONE que no es un prospecto; el codigo la acepta solo con
+//                        un motivo de la lista, en un mensaje escrito o un audio transcrito (no un
+//                        toque), sin soporte ni hecho de Alta, y si la marca no la escribio el
+//                        cliente. Va a la planilla como «Descalificado».
+// Quien pide una persona por escrito no pasa por aqui: `Normalizar entrada` lo manda al traspaso.
 //
-// DESDE EL 03/10/2026 YA NO HAY MARCA DE CIERRE: quien pide una persona por escrito
-// («quiero que me llamen») va al traspaso -- aviso a recepcion MAS el boton --,
-// sin pasar por el modelo (`Normalizar entrada` lo reconoce).
+// EL BOTON «Hablar con un asesor» (id `asesor`) va con los planes, al terminar el primer
+// bloque, en la oferta, en soporte y cuando el texto promete algo; en la lista de rubros es su
+// ultima fila. Tocarlo dispara `Traspaso a un asesor`. Una conversacion cerrada sigue con el
+// boton mientras `c.avisado` (que escribe `Confirmar envio` cuando Meta acepto la plantilla)
+// sea falso: el boton viaja dentro del mismo mensaje y no cuesta uno mas.
 //
-// EL BOTON «Hablar con un asesor» (respuesta, id `asesor`) va con los planes, al
-// terminar el primer bloque, en la oferta, y cuando pide soporte. Tocarlo
-// dispara `Traspaso a un asesor`, sin modelo. En la lista de rubros es su
-// ultima fila, y solo cuando ese turno llevaria el boton.
-//
-// PERO UN CIERRE SIN AVISO NO DEJA AL PROSPECTO SIN SALIDA. «Ya fue avisada»
-// vale solo si Meta acepto la plantilla, y eso lo dice `c.avisado`, que escribe
-// `Confirmar envio`. El 15/09/2026 la plantilla estaba en revision, Meta la
-// rechazo (132001) y los cuatro telefonos que probaron quedaron cerrados, sin
-// boton y sin que nadie los llamara. Mientras `avisado` sea falso, la respuesta
-// de una conversacion cerrada sigue saliendo con el boton. NO CUESTA UN MENSAJE
-// MAS: el boton viaja dentro del mismo.
-//
-// QUE EL BOTON SOBREVIVA AL LIMITE DE META. El cuerpo de un mensaje con botones
-// admite hasta `limiteInteractivo` caracteres (1024, `Config base`). Pasarse no
-// da error: `Salida` baja el mensaje a texto y el cliente se queda SIN la unica
-// salida hacia una persona. Paso el 15/09/2026, con los planes en 1411
-// caracteres, y la ejecucion figuro «success». Antes de resignar el boton se
-// compacta, en este orden y deteniendose apenas entra:
-//   1. el texto del modelo -- el envoltorio -- recortado por palabras, con «…»
-//      al final (`texto_recortado`), y NUNCA por debajo de `PISO_TEXTO`;
-//   2. solo si ni asi entra, el bloque de planes sin lo que incluye cada plan
-//      ni el detalle de cada cargo -- nombre, precio y periodo --
-//      (`planes_compactados`). Con el bloque resumido el texto se vuelve a
-//      recortar desde el original, para no quitarle mas de lo necesario;
-//   3. si ni asi entra, el mensaje sale entero como texto y sin boton -- lo hace
-//      `Salida`, que lo anota con `boton_perdido_por_largo` --. Ahi no se
-//      recorta nada: como texto caben 4096 y el boton ya esta perdido.
-// LOS PRECIOS NO SE RECORTAN NUNCA: son lo que el cliente compara.
-//
-// EL ORDEN SE INVIRTIO el 15/09/2026 (ejecucion 2536). Estaba al reves --
-// primero el bloque -- y con 380 caracteres del modelo y el bloque en 650
-// (1030: SEIS caracteres de mas) el cliente recibio «Impulso (USD 25/mes).
-// Crecimiento (USD 50/mes). Pro (USD 90/mes).», sin las conversaciones
-// incluidas ni lo que trae cada plan, que es justo lo que se compara al elegir.
-// El aviso quedo anotado, asi que el mecanismo funcionaba: lo que estaba mal
-// era el orden. Lo que escribio el modelo es el envoltorio y se pierde primero;
-// el precio Y EL DETALLE de cada plan son lo ultimo.
-// MENSAJES POR TURNO: los mismos. Compactar no agrega ni quita un mensaje.
-//
+// QUE EL BOTON SOBREVIVA AL LIMITE DE META (`limiteInteractivo`, 1024): pasarse no da error,
+// `Salida` baja el mensaje a texto y el cliente pierde la unica salida hacia una persona. Antes
+// de resignar el boton se compacta, deteniendose apenas entra: 1) el texto del modelo, recortado
+// por palabras y nunca por debajo de `PISO_TEXTO` (`texto_recortado`); 2) el bloque de planes
+// sin el detalle, solo nombre, precio y periodo (`planes_compactados`); 3) si ni asi entra, sale
+// como texto sin boton (lo anota `Salida`). Los precios no se recortan nunca.
 const entradas = $('Estado de la conversación').all();
 const sd = $getWorkflowStaticData('global');
 sd.conversaciones = sd.conversaciones ?? {};
 
 const NIEGA_IA = /(no\s+soy\s+(un[ao]?\s+)?(bot|robot|m[aá]quina|programa|inteligencia\s+artificial|\bia\b|asistente\s+virtual|autom[aá]tic[ao])|soy\s+(un[ao]?\s+)?(persona|humano|humana|ser\s+humano)|habl(as|[aá]s|a)\s+con\s+(un[ao]?\s+)?(persona|humano|humana))/i;
-// Sin NIT desde el 15/09. `flujos` no lo pide el modelo: se deduce del rubro,
-// pero se acepta si lo manda.
-const CAMPOS = ['empresa', 'contacto', 'rubro', 'area', 'personalizacion', 'consulta', 'flujos'];
-// UN DATO DE RELLENO NO ES UN DATO. El 15/09 el modelo marco rubro «Pendiente»
-// sin que el cliente dijera nada: contaba como registrado, y con los otros tres
-// el cierre avisaba a un asesor por un prospecto a medias.
+// Los datos que el modelo puede mandar en [LEAD]. `flujos` lo calcula el codigo del rubro.
+const CAMPOS = ['empresa', 'contacto', 'rubro', 'area', 'personalizacion', 'consulta'];
+// UN DATO DE RELLENO NO ES UN DATO: «Pendiente» sin que el cliente dijera nada no se registra.
 const RELLENO = /^(pendiente|por (definir|confirmar)|a definir|desconocid[oa]|no (especificad[oa]|indicad[oa]|informad[oa]|sabe|lo sabe|dijo)|sin (dato|datos|definir|especificar)|n\/?a|ninguno|null|undefined|-+|\?+|…|\.{3})$/i;
 
 const BOTON_ASESOR = { type: 'reply', reply: { id: 'asesor', title: 'Hablar con un asesor' } };
@@ -208,50 +162,22 @@ function ajustar(conMarca, bloque, limite, piso) {
 }
 
 // =============================================================================
-// LO QUE EL PROMPT NO GARANTIZA Y EL CODIGO SI (Andres, 27/09/2026; Bloque 1,
-// 03/10/2026)
+// REGLAS QUE EL CODIGO HACE CUMPLIR
 // =============================================================================
-// Como el candado de las citas, esto se hace cumplir por lo que el modelo HIZO
-// (el rubro que mando en [LEAD], la marca [PLANES], la marca [DESCARTE]) y por
-// lo que el cliente HIZO (un toque, un pedido), no por lo que se le pidio:
-//   a. una ENUMERACION de los rubros de la consola que escribio el modelo se
-//      quita: los rubros salen en la lista interactiva;
-//   b. un rubro en [LEAD] que el cliente NO dijo no se registra (no hay
-//      deduccion desde el 03/10: el rubro se elige tocando la lista);
-//   c. los planes y los precios no salen mientras no haya rubro (o «Otro»): en
-//      su lugar sale la lista de rubros. La empresa ya no es condicion;
-//   d. el primer mensaje de la ventana se presenta como asistente virtual con
-//      inteligencia artificial;
-//   e. a quien dice que ya es cliente o pide soporte no se le piden datos de
-//      prospecto, y su respuesta sale con el boton «Hablar con un asesor».
-// Y seis de la prueba real del 27/09 (ejecuciones #6619 a #6648, dos telefonos)
-// que siguen vigentes:
-//   1. #6627 «Soy Andrés Rojas, pediatra»: el modelo mando rubro «pediatría»
-//      y el codigo lo descarto porque no estaba LETRA POR LETRA en el mensaje.
-//      Ahora vale lo que el cliente dijo con otra forma de la misma palabra
-//      (raiz comun de 5 letras o mas, sin tildes) o nombrando el oficio
-//      («dentista» -> odontologia). Lo deducido del NOMBRE DE LA EMPRESA no
-//      vale: las palabras de la empresa y del contacto no cuentan.
-//   2. UN MENSAJE PIDE UN DATO: nunca dos signos de pregunta sobre el rubro.
-//   3. #6635: la respuesta a «¿como se llama tu consultorio?» quedo como rubro.
-//      Lo que coincide con la empresa no es un rubro, y el turno recuerda EN
-//      ORDEN que datos pidio (`c.pidio`): la respuesta va al primero
-//      (`Estado de la conversacion`).
-//   4. #6648: rubro «Es una tienda de ropa para niños». Se guarda limpio
-//      (`limpiarRubro`, la misma funcion que en `Estado de la conversacion`).
-//   5. #6619 y #6623: un parrafo que era solo un emoji. Una linea de solo
-//      emojis se une al parrafo anterior, y «¿…? 🏢» cuenta como terminar en
-//      pregunta (moverla dejaba el emoji solo).
-//   6. Planes con archivo: ver «f» en [PLANES].
-// MENSAJES: ninguno de mas. Todo se escribe dentro de la respuesta del turno.
+//   a. Una enumeracion de rubros escrita por el modelo se quita: los rubros salen en la lista.
+//   b. Un rubro en [LEAD] que el cliente no dijo no se registra: vale la misma palabra, otra
+//      forma de ella (raiz comun de 5 letras) o un oficio («dentista» -> odontologia); las
+//      palabras de la empresa y del contacto no cuentan.
+//   c. Sin rubro (o «Otro») no salen planes ni precios: sale la lista de rubros.
+//   d. El primer mensaje de la ventana se presenta como asistente virtual con IA.
+//   e. A quien ya es cliente no se le piden datos de prospecto y su respuesta lleva el boton.
+//   f. El rubro se guarda limpio (`limpiarRubro`, igual que en `Estado de la conversación`).
+//   g. Un parrafo de solo emojis se une al anterior; «¿…? 🏢» cuenta como pregunta.
 
 // Texto comparable: sin tildes, sin mayusculas y sin signos.
 const plano = (t) => norm(t).replace(/[^a-z0-9ñ]+/g, ' ').trim();
-// El mensaje del cliente sin las palabras de su empresa ni de su nombre: lo
-// que se deduce de «Salon Rosa» no lo dijo el cliente, lo dice el nombre.
-// Se quita el nombre ENTERO donde aparece, no sus palabras sueltas: asi
-// «tenemos un salon de belleza», de Salon Rosa, conserva el «salon de belleza»
-// que el cliente SI dijo.
+// El mensaje del cliente sin el nombre de su empresa ni el suyo (enteros, no palabras
+// sueltas): lo que se deduce del nombre no lo dijo el cliente.
 function sinNombres(dicho, nombres) {
   let t = ' ' + plano(dicho) + ' ';
   for (const n of nombres) {
@@ -293,7 +219,7 @@ const OFICIOS = [
   [['carpinter'], ['carpinter', 'mueble']],
   [['plomer', 'gasfiter'], ['plomer', 'gasfiter']],
 ];
-// UNA MENCION NO ES EL NEGOCIO (revision de seguridad del PR #238, L3): «no
+// UNA MENCION NO ES EL NEGOCIO: «no
 // vendo ropa», «mi mama es medica». La palabra no cuenta si la precede un «no»
 // (hasta dos palabras antes) o un pariente (hasta tres).
 const PARIENTES = new Set(['mama', 'papa', 'madre', 'padre', 'hijo', 'hija', 'hijos', 'hijas', 'esposo', 'esposa',
@@ -324,12 +250,9 @@ function loNombro(rubro, suyo, conRaiz) {
     && [...campos, ...oficios].some((c) => k.some((p) => p.startsWith(c))));
 }
 
-// 4. EL RUBRO SE GUARDA LIMPIO (#6648: «Es una tienda de ropa para niños»).
-// Se quita al principio «es un/una», «somos», «tengo/tenemos un/una», «me
-// dedico a», «trabajo en» y la puntuacion del final; «vendo ropa» queda
-// «venta de ropa». Lo que no empieza asi no se toca. MISMA FUNCION, letra por
-// letra, que en `Estado de la conversacion` (la prueba lo verifica): el rubro
-// que registra el codigo y el que manda el modelo se escriben igual.
+// El rubro se guarda limpio: se quita «es un/una», «somos», «tengo un/una», «me dedico a»,
+// «trabajo en» y la puntuacion final; «vendo ropa» queda «venta de ropa». MISMA FUNCION,
+// letra por letra, que en `Estado de la conversacion` (una prueba lo verifica).
 function limpiarRubro(v) {
   const original = String(v ?? '').replace(/\s+/g, ' ').trim();
   let t = original
@@ -353,8 +276,7 @@ function limpiarRubro(v) {
   return t.length >= 2 ? t : original;
 }
 
-// 5. Los emojis de un mensaje. Una pregunta seguida de emojis («¿…? 🏢")
-// TERMINA en pregunta: tratarla como si no dejo el emoji solo en #6619.
+// Una pregunta seguida de emojis («¿…? 🏢») TERMINA en pregunta.
 const EMOJIS = '\\p{Extended_Pictographic}\\p{Emoji_Modifier}\\p{Regional_Indicator}\\u200d\\ufe0f\\u20e3';
 const SOLO_EMOJIS = new RegExp('^[\\s' + EMOJIS + ']+$', 'u');
 const FIN_PREGUNTA = new RegExp('\\?[\\s' + EMOJIS + ']*$', 'u');
@@ -564,7 +486,7 @@ for (let i = 0; i < items.length; i++) {
   const soporte = ent.pideSoporte === true || ent.soporteEnVentana === true;
   const cerrada = ent.etapa === 'cerrado' || c?.etapa === 'cerrado';
   // UNA sola condicion para el texto que invita a tocar el boton y para el
-  // boton mismo (revision del PR #237, L2): nunca uno sin el otro.
+  // boton mismo: nunca uno sin el otro.
   const botonSoporte = soporte && !cerrada && !(c && c.avisado === true);
 
   // LOS HECHOS (Bloque 1). Lo que el prospecto HIZO, no lo que el modelo dijo:
@@ -579,26 +501,18 @@ for (let i = 0; i < items.length; i++) {
     descarte: MOTIVOS_DESCARTE.includes(h0.descarte) ? h0.descarte : '',
   };
 
-  // b. EL RUBRO DEL [LEAD]: registrado solo si el cliente lo dijo en este
-  // mensaje -- con esa palabra, con otra forma de ella o nombrando el oficio
-  // (regla 1) --. Lo que no dijo (una deduccion por el nombre de la empresa, la
-  // memoria de otra ventana, #4817) no se registra: SIN CONFIRMACION, porque
-  // desde el 03/10/2026 el rubro se elige tocando la lista y la deduccion se
-  // retiro. El rubro que toco el cliente ya esta en la ficha (`previo`), que lo
-  // registro `Estado de la conversación`. Un rubro igual a la empresa no es un
-  // rubro (regla 3, #6635).
+  // b. EL RUBRO DEL [LEAD]: se registra solo si el cliente lo dijo en este mensaje (ver
+  // `loNombro`). El rubro que toco ya esta en la ficha (`previo`), registrado por `Estado de la
+  // conversación`, que tambien separa la empresa del rubro cuando se pide en el traspaso.
   const esArea = (v) => rubros.some((r) => plano(r.nombre) === plano(v));
   const empresaTurno = lead.empresa || previo.empresa || '';
-  const esLaEmpresa = (v) => !!plano(empresaTurno) && plano(v) === plano(empresaTurno);
-  let rubroModelo = lead.rubro ? limpiarRubro(lead.rubro) : undefined;
-  if (rubroModelo && esLaEmpresa(rubroModelo)) { rubroModelo = undefined; avisos.push('rubro_igual_a_la_empresa'); }
+  const rubroModelo = lead.rubro ? limpiarRubro(lead.rubro) : undefined;
   const areaModelo = lead.area;
   delete lead.rubro;
   delete lead.area;
   const suyo = sinNombres(dicho, [empresaTurno, lead.contacto || previo.contacto || '']);
-  // ¿Este mensaje respondia a la pregunta por el rubro? (L3). Un estado de
-  // antes del 27/09 no trae `pidio`: ahi vale `pidioRubro`.
-  const respondeAlRubro = !!c && (Array.isArray(c.pidio) && c.pidio.length ? c.pidio[0] === 'rubro' : c.pidioRubro === true);
+  // ¿Este mensaje respondia a la pregunta por el rubro? Solo ahi vale la raiz comun.
+  const respondeAlRubro = c?.pidio?.[0] === 'rubro' || c?.pidioRubro === true;
   if (rubroModelo) {
     if (loNombro(rubroModelo, suyo, respondeAlRubro)) {
       lead.rubro = rubroModelo;
@@ -614,7 +528,6 @@ for (let i = 0; i < items.length; i++) {
     lead.area = areaModelo;
   }
   const combinado = { ...previo, ...lead };
-  delete combinado.nit;
   // ¿Se registro un rubro en ESTE turno? Por el toque (`Estado`) o por el
   // [LEAD] validado.
   const rubroDelTurno = String(ent.rubroElegido ?? '') !== '' || (!!lead.rubro && lead.rubro !== previo.rubro);
@@ -674,17 +587,12 @@ for (let i = 0; i < items.length; i++) {
   const pedidosModelo = datosPedidos(texto.replace(/\u0002/g, ''));
   const pideRubro = pedidosModelo.includes('rubro');
 
-  // --- LA LISTA DE RUBROS (decision de Andres, 03/10/2026) ------------------
-  // Revierte «rubros como referencia» (22/09) y «sin botones al inicio» (27/09).
-  // Los rubros de la consola salen en un mensaje interactivo de LISTA: el
-  // toque registra el rubro POR CODIGO (`Estado de la conversación`, con el id
-  // `rubro:<id>`), sin depender del modelo. Sale cuando no hay rubro (ni «Otro»)
-  // y: es el primer mensaje, el modelo la pidio con [RUBROS], enumero rubros o
-  // pregunto el rubro, el cliente toco una opcion que ya no esta vigente, o se
-  // retuvieron los planes por falta de rubro. Nunca a quien pide soporte, a una
-  // conversacion cerrada ni cuando el modelo fallo. Sin rubros cargados -- o
-  // sin ninguno con un id que un boton pueda llevar -- no hay lista y la
-  // pregunta queda abierta.
+  // --- LA LISTA DE RUBROS -----------------------------------------------------
+  // Los rubros de la consola salen en un mensaje interactivo de LISTA; el toque registra el
+  // rubro POR CODIGO (`Estado de la conversación`, id `rubro:<id>`). Sale sin rubro (ni «Otro»)
+  // cuando es el primer mensaje, el modelo la pidio o pregunto el rubro, enumero rubros, el
+  // cliente toco una opcion vencida o se retuvieron los planes. Nunca en soporte, en una
+  // conversacion cerrada ni si el modelo fallo. Sin rubros con id valido, la pregunta queda abierta.
   const rubrosConId = rubros.filter((r) => ID_RUBRO.test(String(r.id)));
   const quiereLista = rubrosConId.length > 0 && !combinado.rubro && !hechos.eligioOtro
     && !soporte && !cerrada && !fallo
@@ -700,8 +608,7 @@ for (let i = 0; i < items.length; i++) {
     avisos.push(quiereLista ? 'lista_de_rubros' : 'pide_rubro_por_codigo');
   }
 
-  // d. El primer mensaje de la ventana dice que es una IA (prohibicion 4, y la
-  // presentacion del 27/09). Si el modelo no lo dijo, se agrega.
+  // d. El primer mensaje de la ventana dice que es una IA; si el modelo no lo dijo, se agrega.
   if (ent.primeraDeVentana === true && !/inteligencia\s+artificial|\bIA\b/i.test(texto)) {
     const k = texto.search(/asistente\s+virtual/i);
     if (k >= 0) {
@@ -736,10 +643,8 @@ for (let i = 0; i < items.length; i++) {
   // 5. Al final, que ningun emoji quede solo en su linea.
   texto = sinEmojisSueltos(texto);
 
-  // QUE SE PREGUNTO, EN ORDEN (regla 3). Lo que el cliente conteste en el
-  // proximo turno lo registra `Estado de la conversación`, por codigo, en el
-  // PRIMER dato que pidio este mensaje. Un mensaje que no pide nada no borra lo
-  // pendiente.
+  // QUE SE PREGUNTO, EN ORDEN: la respuesta del proximo turno la registra `Estado de la
+  // conversación` en el PRIMER dato que pidio este mensaje. Un mensaje que no pide nada no borra lo pendiente.
   const pedidos = datosPedidos(texto);
   if (c) {
     if (quiereLista) { c.pidio = ['rubro']; c.pidioRubro = true; }
@@ -752,19 +657,12 @@ for (let i = 0; i < items.length; i++) {
   }
 
   // --- [PLANES]: el bloque armado por codigo --------------------------------
-  // `conMarca` -- lo que escribio el modelo, con la marca de los planes -- y
-  // `bloqueLargo` se guardan: con ellos se vuelve a armar el texto si hay que
-  // compactarlo para que el boton entre (ver el encabezado).
-  //
-  // f. LOS PLANES EN ARCHIVO (Andres, 27/09/2026). Con un archivo de planes
-  // valido en la consola (`archivo`), los planes salen en ese archivo aunque
-  // sean 5 o menos: el mensaje es UN interactivo con la imagen o el PDF de
-  // encabezado, un cuerpo corto y el boton. El cuerpo no lleva la lista, ni
-  // los cargos unicos, ni la aclaracion de la moneda -- estan en el archivo --,
-  // y una oracion con un precio que haya escrito el modelo se quita: un precio
-  // en texto que no coincide con la imagen es peor que ninguno. Si Meta rechaza
-  // el interactivo, el respaldo en texto lleva el enlace del archivo. CERO
-  // mensajes de mas: el archivo viaja en el mismo mensaje.
+  // `conMarca` (el texto del modelo con la marca) y `bloqueLargo` se guardan para volver a
+  // armar el texto si hay que compactarlo (ver el encabezado).
+  // f. PLANES EN ARCHIVO: con un archivo valido en la consola los planes salen en el archivo
+  // (encabezado del interactivo) y el cuerpo no lleva precios: el que escriba el modelo se quita,
+  // porque un precio que no coincide con la imagen es peor que ninguno. Si Meta rechaza el
+  // interactivo, el respaldo lleva el enlace del archivo.
   const conArchivo = planesMostrados && hayPlanes && !!archivo;
   let conMarca = texto;
   if (conArchivo && PRECIO.test(conMarca.replace(/[\u0001\u0002]/g, ''))) {
