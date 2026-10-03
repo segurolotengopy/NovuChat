@@ -29,9 +29,9 @@
  *   4. Repetir el seco: debe decir COINCIDE.
  *
  * QUÉ HACE. Toma el valor de la fila `REEMPLAZAR_MEDIA_ID_QR_DEMO` de la tabla
- * local (la MISMA convención que `sembrar-demos.mjs` y `marcador-local.sh`:
- * `CONFIG_LOCAL`, `--archivo` para pruebas, o `CONFIGURACION.local.md` de la
- * raíz) y lo escribe en `config/venta`.
+ * local (el mismo formato de tabla que `marcador-local.sh`: `--archivo` para
+ * pruebas, `CONFIG_LOCAL`, o `CONFIGURACION.local.md` de la raíz; OJO:
+ * `sembrar-demos.mjs` lee siempre la raíz y no admite ninguna de las dos) y lo escribe en `config/venta`.
  *
  *   - SECO (por defecto): no escribe. Sin `--proyecto` no se conecta y solo
  *     valida la fila local (solo dígitos, 10 a 20). Con `--proyecto` LEE
@@ -47,11 +47,14 @@
  *     leyendo ese archivo, sin copiar sus ids). Otro tenant: NEGADO.
  *   - Fila vacía, «pendiente» o con forma inválida: se aborta sin escribir.
  *   - NUNCA se imprime el valor local ni el del servidor. Solo veredictos.
- *   - `--aplicar` rechaza FIRESTORE_EMULATOR_HOST salvo con un proyecto `demo-*`
+ *   - Una fila repetida del marcador se niega (no se toma la última).
+ *   - En el servidor, el tenant debe tener `creadoPor: 'sembrar-demos'`.
+ *   - Con FIRESTORE_EMULATOR_HOST (seco o aplicar) se rechaza salvo con un proyecto `demo-*`
  *     (el de las pruebas); contra un proyecto real, NEGADO.
  */
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { descubrirDemosDeVenta } from './demos-de-venta.mjs';
 
 const RAIZ = new URL('../../..', import.meta.url);
 const MARCADOR = 'REEMPLAZAR_MEDIA_ID_QR_DEMO';
@@ -69,9 +72,12 @@ const niega = (m) => { console.error(`\nNEGADO: ${m}\n`); process.exit(1); };
 
 // --- Los demos de venta: se descubren en sembrar-demos.mjs -------------------
 const fuente = readFileSync(new URL('./sembrar-demos.mjs', import.meta.url), 'utf8');
-const DEMOS_VENTA = [...fuente.matchAll(/^ {4}id: '([a-z0-9-]+)',[\s\S]*?^ {4}vertical: '(\w+)'/gm)]
-  .filter((m) => m[2] === 'venta').map((m) => m[1]);
-if (!DEMOS_VENTA.length) niega('no se pudo descubrir ningún demo de venta en sembrar-demos.mjs.');
+let DEMOS_VENTA;
+try {
+  DEMOS_VENTA = descubrirDemosDeVenta(fuente);
+} catch (e) {
+  niega(e.message);
+}
 
 if (!TENANT) niega(`falta --tenant <id>. Demos de venta: ${DEMOS_VENTA.join(', ')}.`);
 if (!DEMOS_VENTA.includes(TENANT)) {
@@ -81,14 +87,17 @@ if (APLICAR && !PROYECTO) niega('--aplicar exige --proyecto <id>.');
 
 // --- La fila local: solo esa fila, nunca su valor en pantalla -----------------
 let valorLocal = '';
+let duplicada = false;
 try {
   const texto = readFileSync(ARCHIVO, 'utf8');
-  for (const m of texto.matchAll(/^\|\s*`(REEMPLAZAR_[^`]*)`\s*\|([^|]*)\|/gm)) {
-    if (m[1] === MARCADOR) valorLocal = m[2].trim().replace(/^`|`$/g, '').trim();
-  }
+  const filas = [...texto.matchAll(/^\|\s*`(REEMPLAZAR_[^`]*)`\s*\|([^|]*)\|/gm)]
+    .filter((m) => m[1] === MARCADOR);
+  if (filas.length > 1) duplicada = true;
+  else if (filas.length === 1) valorLocal = filas[0][2].trim().replace(/^`|`$/g, '').trim();
 } catch {
   niega('no se pudo leer el archivo de valores locales.');
 }
+if (duplicada) niega(`la fila ${MARCADOR} está repetida; corrija la tabla local.`);
 if (!valorLocal || /pendiente/i.test(valorLocal)) {
   niega(`la fila ${MARCADOR} está vacía o pendiente; renueve primero la tabla local.`);
 }
@@ -101,7 +110,10 @@ if (!PROYECTO) {
   console.log('Seco sin --proyecto: no se abrió ninguna conexión.\n');
   process.exit(0);
 }
-if (APLICAR && process.env.FIRESTORE_EMULATOR_HOST && !PROYECTO.startsWith('demo-')) {
+// También en el seco: con el emulador heredado, una lectura del emulador se
+// rotularía como si fuera la del proyecto real.
+const EMULADOR = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
+if (EMULADOR && !PROYECTO.startsWith('demo-')) {
   niega('hay FIRESTORE_EMULATOR_HOST en el entorno y el proyecto no es de pruebas (demo-*).');
 }
 
@@ -113,6 +125,11 @@ const ref = db.doc(`tenants/${TENANT}/config/venta`);
 
 const tenant = await db.doc(`tenants/${TENANT}`).get();
 if (!tenant.exists) niega(`el tenant ${TENANT} no existe en ${PROYECTO}.`);
+// Candado en el servidor: lo creó `sembrar-demos.mjs` (campo `creadoPor`). Un
+// tenant con el mismo id pero de otro origen no es un demo. Vale para el seco.
+if (tenant.get('creadoPor') !== 'sembrar-demos') {
+  niega(`el tenant ${TENANT} no fue creado por sembrar-demos: no es un demo.`);
+}
 
 async function veredicto() {
   const v = (await ref.get()).get('mediaIdQr');
@@ -121,7 +138,7 @@ async function veredicto() {
 }
 
 const antes = await veredicto();
-console.log(`Servidor (${PROYECTO}, tenants/${TENANT}/config/venta): mediaIdQr ${antes} respecto de la fila local.`);
+console.log(`Servidor${EMULADOR ? ' (EMULADOR)' : ''} (${PROYECTO}, tenants/${TENANT}/config/venta): mediaIdQr ${antes} respecto de la fila local.`);
 
 if (!APLICAR) {
   console.log(antes === 'COINCIDE'
