@@ -770,6 +770,57 @@ describe('Procesar respuesta: [DESCARTE] lo propone el modelo y lo decide el có
 });
 
 // ===========================================================================
+describe('Tras el traspaso, el nombre de la empresa es la empresa y nunca el rubro (Estado + Procesar)', () => {
+  // La cadena real: `Estado de la conversación` registra lo que contesta el cliente
+  // en el PRIMER dato que se pidio, y `Procesar respuesta` recibe su salida. Antes
+  // `Procesar` tenia su propia regla «rubro igual a la empresa»; la proteccion es
+  // ahora de `Estado` (la empresa se pide solo en el traspaso) y de `sinNombres`.
+  const ESTADO = readFileSync(join(aqui, '../../../Flujos/src/modulos/captacion/estado-de-la-conversacion.js'), 'utf8');
+  const turno = (userInput: string, sd: J, modelo: string, extra: J = {}): { e: J; r: J } => {
+    const base: J = { from: TEL, tipo: 'text', userInput, mensajeId: `wamid.t.${++secuencia}`, rubros: RUBROS, planes: PLANES,
+      cargosUnicos: [], nombreNegocio: 'Un Negocio', nombrePerfil: 'Ana', limiteInteractivo: META.cuerpo,
+      atencionEstado: 'normal', topeAviso: 25, ...extra };
+    const e = ejecutar(ESTADO, [base], {}, { $getWorkflowStaticData: () => sd })[0]!;
+    const r = ejecutar(PROCESAR, [{ output: modelo }], { 'Estado de la conversación': [e] },
+      { $getWorkflowStaticData: () => sd })[0]!;
+    return { e, r };
+  };
+  // Tras el traspaso sin empresa ni rubro: `Traspaso a un asesor` dejo pidio = [empresa, rubro, contacto].
+  const traspasada = (): J => {
+    const sd = conversacion({ contacto: 'Ana' }, { etapa: 'cerrado', avisado: true, pidio: ['empresa', 'rubro'], pidioRubro: true,
+      desde: Date.now() - 60_000, ultimo: Date.now() - 30_000, respuestas: 3 });
+    sd['vistos'] = {};
+    return sd;
+  };
+  const ficha = (sd: J): J => sd['conversaciones'][TEL].lead;
+
+  it('la respuesta con el nombre de la empresa se registra como empresa y NO como rubro, aunque el modelo la mande como rubro', () => {
+    for (const nombre of ['Salón Rosa', 'Importadora Los Andes SRL', 'La Colmena']) {
+      const sd = traspasada();
+      const { r } = turno(nombre, sd, `Gracias. [LEAD]{"rubro":"${nombre}","empresa":"${nombre}"}[/LEAD]`);
+      expect(ficha(sd)['empresa'], nombre).toBe(nombre);
+      expect(ficha(sd)['rubro'], nombre).toBeUndefined();
+      expect(r['lead']['rubro'], nombre).toBeUndefined();
+    }
+  });
+
+  it('lo mismo si el modelo manda solo el rubro (sin la empresa) con el nombre de la empresa', () => {
+    const sd = traspasada();
+    turno('Salón Rosa', sd, 'Gracias. [LEAD]{"rubro":"Salón Rosa"}[/LEAD]');
+    expect(ficha(sd)['empresa']).toBe('Salón Rosa');
+    expect(ficha(sd)['rubro']).toBeUndefined();
+  });
+
+  it('el rubro que SÍ dice el cliente en el turno siguiente se registra, y la empresa queda', () => {
+    const sd = traspasada();
+    turno('Salón Rosa', sd, 'Gracias.');
+    turno('Tenemos una peluquería', sd, 'Anotado. [LEAD]{"rubro":"peluquería"}[/LEAD]');
+    expect(ficha(sd)['empresa']).toBe('Salón Rosa');
+    expect(ficha(sd)['rubro']).toBe('peluquería');
+  });
+});
+
+// ===========================================================================
 describe('Campaña con destino `asesor`: el mensaje sale con el botón, garantizado por código', () => {
   const campana = (extra: J = {}): J => ENT({ tipo: 'text', userInput: 'Hola, quiero hablar con una persona', idElegido: 'asesor', porCampana: true, ...extra });
   // El modelo contesta SIN prometer nada: antes el botón no salía.
