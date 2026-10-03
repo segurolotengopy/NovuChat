@@ -453,6 +453,69 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
 - **Declarado y fuera de este flujo:** los hallazgos L-4 y L-5 de la revisión de seguridad son del servidor o de trabajo futuro y no se tocan
   aquí; la retención de errores de `venta-minima.qtaco.json` (M-1) quedó en `none`, TEMPORAL por decisión de Andres (03/10), a revisar tras el piloto.
 
+## Cobro: real, simulado o sin QR (03/10/2026)
+
+Piloto de Q'Taco. Hasta ahora este flujo no tenía modo simulado: con cobro real mandaba el QR del comercio y, sin él, el plan B (el pedido
+pasa al restaurante sin QR). Se agrega el **cobro SIMULADO** como el del Demo B (Walisuma), con las dos mitades de la prohibición 3 de
+CLAUDE.md: el rótulo va **impreso en la imagen** y en el **pie**, la respuesta dice «SIMULADO», y nunca «pago acreditado», «verificado» ni
+«recibimos tu pago». Los modos son excluyentes. **Quien manda es el servidor**: el flujo solo obedece lo que el panel trae
+(`cobroReal` o `cobroSimulado`), y el cobro real tiene precedencia sin tocar código.
+
+**Decisiones asumidas por omisión (las fijó el coordinador; Andres puede cambiarlas):**
+
+| Id | Asumido | Qué cambia si Andres decide otra cosa |
+|---|---|---|
+| D1 | Tráfico controlado: solo teléfonos de prueba. No hay lista blanca en el código. | Si se abre al público, se repasan los textos (el cliente no puede pagar) y qué hace el restaurante con un pedido PRUEBA. |
+| D2 | La imagen sale por **enlace** al repositorio público, en la etiqueta `v0.11.0` (`Demo-Recursos/qr-demo.png`). | Otro alojamiento: cambia solo `URL_QR_SIMULADO` en `construir.mjs` y el valor en `qtaco.json`. Con media ID haría falta otro diseño. |
+| D3 | Los textos literales del plan. | Cambian las constantes de `cobro.js` y `avisos.js` y las pruebas que las citan. |
+| D4 | Cierre `tipo: 'registro'` de prueba, **sin monto**. | Si «ningún cierre», se quita la asignación `cierre = …` de `aComprobante`. |
+| D5 | La imagen queda como está («DEMOSTRACIÓN · ESTE QR NO COBRA · SIMULACRO DE PAGO»). | Una variante «PRUEBA» exige `build_recursos.py` y otra ruta permitida. |
+| D6 | Se publica a cualquier hora, porque solo Bellido está en producción. | — |
+
+**Decisiones técnicas (con la alternativa descartada):**
+
+- **T1. Simulado solo si se cumplen las cuatro:** (a) el cuerpo del panel trae `cobroSimulado` (objeto); (b) **no** trae `cobroReal` (aunque no
+  sirva); (c) `Config base.cobroSimuladoActivo === true` (booleano exacto); (d) `Config base.qrSimuladoUrl` pasa `cbUrlSegura`. *Descartado:* solo
+  la clave de datos (permitiría simulado con el real encendido) o solo el servidor (todo cliente de venta mínima sin real quedaría simulado sin pedirlo).
+- **T2. Claves `cobroSimuladoActivo` y `qrSimuladoUrl`, leídas solo de `Config base`.** *Descartado:* `cobroSimulado`, que choca con el campo
+  homónimo del servidor (un objeto).
+- **T3. `cfg.cobro.modo` vale `real`, `simulado` o `apagado`, y `activo` sigue significando «real».** Así la descarga, Gemini y el cotejo no
+  corren en simulado sin tocar sus condiciones. *Descartado:* `activo: true` en simulado: todo consumidor que lee `activo` como «real» cotejaría.
+- **T4. Imagen por `image.link` (D2).** *Descartado:* media ID (hay que cambiar `amImagen`, subirlo con el número de Q'Taco y vence a los 30 días).
+- **T5. Textos simulados como constantes de código** en `cobro.js` y `avisos.js`. *Descartado:* los rótulos del servidor, cuya `confirmacion`
+  dice «Pago verificado», que la red del flujo bloquea.
+- **T6. En simulado nunca se llama a `Cotejar en el servidor` ni a Gemini.** El cotejo del servidor (`cotejarComprobante`) **no distingue
+  modos**: compararía contra un `cobroReal` inexistente y daría siempre `no_cuadra`, y crearía un cierre `venta_<ref>` con monto que Cobros suma.
+- **T7. Cierre `registro`, sin monto,** con detalle «PRUEBA · cobro SIMULADO…» y referencia `pedidoId` (D4). *Descartado:* `venta` como en el Demo B
+  (aparece como venta en Cobros y obliga a tocar el nodo, la IF y `armar-mensajes`).
+- **T8. Idempotencia.** El cierre `registro` no cierra la solicitud del servidor (pendiente hasta 24 h): un segundo comprobante da `ya_cotejado`
+  (sin aviso ni cierre) y una foto después de cancelar cae en «imagen sin pendiente».
+- **T9. Red final y guardas.** `amQr` revisa que el modo sea coherente con el pie (el simulado sin rótulo, o el real con rótulo, no sale) y
+  `construir.mjs` exige `modoCobro` en los datos y fija la imagen a `URL_QR_SIMULADO`.
+
+**En los datos del tenant (`admin/scripts/datos/venta-minima/*.json`):**
+
+- `modoCobro` es obligatorio y vale `simulado`, `real` o `sin_qr`. Con `simulado` exige `configBase.cobroSimuladoActivo` = `true` (booleano) y
+  `configBase.qrSimuladoUrl` con la forma exacta de `URL_QR_SIMULADO` (anfitrión `raw.githubusercontent.com`, etiqueta `vN.N.N`, ruta
+  `Demo-Recursos/qr-demo.png`; ni `main`, ni http, ni marcador). Con otro modo, esas dos claves no pueden existir.
+- `guardiasDeProduccion` repite la regla sobre el JSON armado **y sobre el versionado** (un JSON editado a mano con otra URL falla en `--verificar`):
+  las dos claves van juntas o ninguna, `cobroSimuladoActivo` es el booleano `true`, y solo con `modoCobro: simulado`.
+- `qtaco.json` queda en `simulado`. `ensayo.json` y `ensayo-demo-a.json` **heredan** de `qtaco.json`: no cambia lo que hacen hoy, porque la clave
+  de datos es solo un permiso; sin que el servidor mande `cobroSimulado` (el Demo A es de agenda) el flujo sigue en plan B.
+- Volver al plan B sin código: `modoCobro: sin_qr`, quitar las dos claves, reconstruir y republicar.
+
+**Trampa que se evita (`registrarQrDeCobro`).** Esa Function es solo para el cobro real: guarda `cobroReal` apagado y `imagenDeCobro` vuelve a
+dibujar el QR desde `cargaUtil`, **sin rótulo**. Registrar `qr-demo.png` como QR real dejaría un cobro real sin rótulo: está prohibido. La imagen
+rotulada solo viaja por `qrSimuladoUrl`.
+
+**Pasar a cobro real sin tocar código:** el administrador registra su QR en la consola, `activar-cobro-real.mjs` lo enciende y desde ese momento
+el servidor manda `cobroReal` y el flujo ya está en real. Como limpieza: `modoCobro: real`, quitar las dos claves, reconstruir y republicar.
+Encender el real sin pruebas abiertas: un QR simulado pendiente se cotejaría contra la cuenta real y daría `no_cuadra`.
+
+**Costo (por conversación con pedido):** frente al plan B, +1 mensaje al cliente (el QR y la respuesta, en lugar de una confirmación) = +0,0113 USD;
+frente al real, 0. Avisos al restaurante: igual que el plan B y 1 menos que el real (sin la imagen del comprobante). Gemini: 1 lectura menos por
+pedido frente al real. Nodos: no se agregan (siguen 50) y `flujo.plantilla.json` no cambia.
+
 ## Mensajes por conversación (declarados y medidos en la suite)
 
 Es un flujo nuevo: no agrega ni quita mensajes a ningún otro cliente. Lo que cuesta cada conversación de Q'Taco es **el recorrido
@@ -461,6 +524,7 @@ típico más un mensaje por cada aclaración** (no hay un techo fijo):
 | Conversación | Al cliente (recorrido típico) | Al restaurante (ventanas cerradas) | Al restaurante (ventanas abiertas) |
 |---|---|---|---|
 | Pedido con QR (menú, carta, resumen, QR, comprobante) | **5** + 1 por aclaración | 2 plantillas | 5 (2 plantillas, 2 detalles y la imagen del comprobante para `completo`) |
+| Pedido con QR simulado (menú, carta, resumen, QR de prueba, foto) | **5** + 1 por aclaración | 2 plantillas | 4 (2 plantillas y 2 detalles; sin la imagen del comprobante) |
 | Pedido sin QR, plan B (menú, carta, resumen, pase) | **4** + 1 por aclaración | 2 | 4 |
 | Reserva (menú, datos, resumen, enviada) | **4** + 1 si faltan datos | 2 | 4 |
 | Promoción | **1** (ficha con 3 botones) | 0 | 0 |
