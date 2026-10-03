@@ -787,18 +787,21 @@ function confirmarPedido() {
     return derivar('no se pudo armar el pedido');
   }
   const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
-  const conQr = cobro.activo === true && /^https:\/\//i.test(String(cobro.qrUrl || ''));
+  const simulado = cobro.modo === 'simulado';
+  const conQr = cbHayQr(cobro);
   if (conQr) {
-    const pie = cbCaption(ped, { titular: cobro.titular, moneda: monedaTxt, delivery: ped.modalidad === 'delivery' });
+    const pie = cbCaption(ped, { titular: simulado ? '' : cobro.titular, moneda: monedaTxt, delivery: ped.modalidad === 'delivery', simulado: simulado });
     if (pie) {
-      // El monto del QR es el del código; el servidor coteja el comprobante contra ESE número.
+      // El monto del QR es el del código; el servidor coteja el comprobante contra ESE número (en simulado no se coteja nada).
+      // El pedido guarda el modo con que se mandó el QR: un comprobante o un reenvío con otro modo vigente no se acepta.
+      const pedConModo = Object.assign({}, ped, { simulado: simulado });
       mensajes = [{ tipo: 'imagen', cuerpo: pie, url: cobro.qrUrl, evento: 'qr_enviado', referencia: ped.pedidoId, monto: ped.total }];
-      pedidoGuardar = ped;
+      pedidoGuardar = pedConModo;
       limpiarCarrito();
       irA('esperando_comprobante');
       en.ilegibles = 0;
-      en.pedido = ped;
-      ruta = 'pedido:qr';
+      en.pedido = pedConModo;
+      ruta = simulado ? 'pedido:qr_simulado' : 'pedido:qr';
       return;
     }
     errores.push('qr_sin_pie');
@@ -824,8 +827,12 @@ function confirmarPedido() {
 function aRecordatorio() {
   const ped = en.pedido;
   if (!ped) return derivar('esperando comprobante sin pedido en el flujo');
+  const sim = !!(cfg.cobro && cfg.cobro.modo === 'simulado');
+  const cuerpo = sim
+    ? 'Estoy esperando el comprobante SIMULADO de tu pedido #' + ped.codigo + ' (es una prueba: no se paga nada). Envíame aquí cualquier foto, o usa los botones.'
+    : 'Estoy esperando el comprobante de tu pedido #' + ped.codigo + '. Envíame aquí la foto o el PDF, o usa los botones.';
   mensajes = [{ tipo: 'botones',
-    cuerpo: 'Estoy esperando el comprobante de tu pedido #' + ped.codigo + '. Envíame aquí la foto o el PDF, o usa los botones.',
+    cuerpo: cuerpo,
     botones: [
       { id: vmIdDeBoton('q', 'reenviar'), title: 'Reenviar QR' },
       { id: vmIdDeBoton('q', 'cancelar'), title: 'Cancelar pedido' },
@@ -835,7 +842,10 @@ function aRecordatorio() {
 function aReenviarQr() {
   const ped = en.pedido;
   const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
-  const pie = ped && cobro.activo === true ? cbCaption(ped, { titular: cobro.titular, moneda: monedaTxt, delivery: ped.modalidad === 'delivery' }) : '';
+  const simulado = cobro.modo === 'simulado';
+  // Un pedido cuyo QR salió en otro modo (el cobro cambió entre la confirmación y el reenvío) no se reenvía con el modo de ahora.
+  if (ped && (ped.simulado === true) !== simulado) return derivar('el modo de cobro cambió: no se reenvía el QR');
+  const pie = ped && cbHayQr(cobro) ? cbCaption(ped, { titular: simulado ? '' : cobro.titular, moneda: monedaTxt, delivery: ped.modalidad === 'delivery', simulado: simulado }) : '';
   if (!pie) return derivar('no se pudo reenviar el QR');
   // Lleva el monto y la referencia del pedido para que `Armar mensajes` compruebe el total, pero NO el evento
   // `qr_enviado`: el servidor ya abrió ese cobro y reenviar la imagen no lo reabre.
@@ -858,6 +868,29 @@ function aComprobante() {
     ped = en.pedido;
   }
   if (!ped || !ped.pedidoId) return derivar('comprobante sin pedido en el flujo');
+
+  // COBRO SIMULADO: la foto es el comprobante de la prueba. NUNCA se coteja en el servidor (no distingue modos: daría «no cuadra» y
+  // un cierre de venta con monto) ni se lee con Gemini. Un pedido que no esperaba un comprobante simulado (cancelado, ya
+  // terminado o de otro modo) se trata como una imagen sin pendiente. Un segundo comprobante del mismo pedido no repite el
+  // aviso ni el cierre (`ya_cotejado`). El cierre es un `registro` de PRUEBA, sin monto.
+  if (t.comprobanteSimulado === true && !vmNodo('Cotejar en el servidor')) {
+    if (ped.resultado !== 'simulado' && (en.paso !== 'esperando_comprobante' || ped.simulado !== true)) return aImagenSinPendiente();
+    const resSim = ped.resultado === 'simulado' ? 'ya_cotejado' : 'simulado';
+    const baseSim = { codigo: ped.codigo, entrega: ped.modalidad };
+    const conA = cbTextoAlCliente(resSim, Object.assign({ avisoSalio: true }, baseSim));
+    ruta = 'comprobante:' + resSim;
+    if (!conA.aviso) { mensajes = [mensajeDeCb(conA)]; limpiarConfirmado(); irA('menu'); return; }
+    const sinA = cbTextoAlCliente(resSim, Object.assign({ avisoSalio: false }, baseSim));
+    pedidoGuardar = Object.assign({}, ped, { resultado: 'simulado', estado: cbEstadoParaAviso('simulado'), diferencias: [], mediaId: '', cierreId: '' });
+    aviso = { tipo: 'comprobante', datos: Object.assign(datosDePedido(pedidoGuardar, 'simulado', []), { mediaId: '' }) };
+    condicionados = { siSalio: [mensajeDeCb(conA)], siNoSalio: [mensajeDeCb(sinA)] };
+    cierre = { tipo: 'registro', referencia: ped.pedidoId,
+      detalle: vmRecorte('PRUEBA · cobro SIMULADO (sin dinero) · Pedido #' + ped.codigo + ' (' + (ped.modalidad || '—') + '). Total ' + pdMonto(ped.total, monedaTxt) + '.', 300) };
+    mensajes = [];
+    limpiarConfirmado();
+    irA('menu');
+    return;
+  }
 
   let resultado = 'sin_cotejo';
   let diferencias = [];

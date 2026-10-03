@@ -13,7 +13,7 @@
 // El estado NO se escribe acá: se lee, se copia (`estado`) y lo fija `Plan del turno`; lo
 // guarda `Armar mensajes`.
 //
-// ORDEN (diseño §4.5, sin modelo): 1) cotejo → `comprobante`; 2) medios (imagen o documento
+// ORDEN (diseño §4.5, sin modelo): 1) cotejo, o comprobante simulado → `comprobante`; 2) medios (imagen o documento
 // sin QR pendiente, audio); 3) botón, validado contra el estado; 4) texto exacto de una
 // campaña vigente → `promo`; 5) pide una persona → `transferir`, pregunta si es una IA →
 // `identidad` (la identidad se revisa primero); 6) intenciones GLOBALES, en cualquier paso salvo
@@ -87,9 +87,10 @@ const salir = (accion, extra) => [{ json: Object.assign({
 }, extra || {}) }];
 
 // --- 1. Resultado del cotejo: el comprobante llegó hasta el servidor ----------------------
-// (o llegó una imagen que `Interpretar entrada` marcó como comprobante pero la lectura o el
+// (o llegó una foto con el cobro SIMULADO y el QR pendiente, `comprobanteSimulado`, que no se coteja; o llegó una imagen que
+// `Interpretar entrada` marcó como comprobante pero la lectura o el
 // cotejo no corrieron: `Plan del turno` lo trata como «sin cotejar», nunca como «cuadra»).
-if (vmNodo('Cotejar en el servidor') || t.esComprobante === true) return salir('comprobante');
+if (vmNodo('Cotejar en el servidor') || t.esComprobante === true || t.comprobanteSimulado === true) return salir('comprobante');
 
 // --- 1b. El carrito del catalogo web (no es un mensaje de WhatsApp: decide `decidirCarrito`, mas abajo) ----
 if (t.tipo === 'carrito') return decidirCarrito();
