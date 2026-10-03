@@ -32,8 +32,8 @@ if (!cobroReal) lineas.push(String(cfg.rotuloDemo || '').trim());
 lineas.push(`${e('💳')}Este es el QR de tu pedido`
   + (importe ? `, por ${importe}.` : '.'));
 if (cobroReal) {
-  lineas.push(`${e('🧾')}Cuando termines, guardá o compartí el comprobante ANTES de salir de la `
-    + 'app y mandámelo por acá, como foto o PDF.');
+  lineas.push(`${e('🧾')}Cuando termines, guarda o comparte el comprobante ANTES de salir de la `
+    + 'app y mándamelo por acá, como foto o PDF.');
 } else {
   lineas.push(String(cfg.captionQr || '').trim());
 }

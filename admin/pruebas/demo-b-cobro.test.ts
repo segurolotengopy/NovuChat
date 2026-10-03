@@ -563,13 +563,53 @@ describe('(6) Lo que se le dice al cliente según el cotejo: ninguno afirma un p
     // La política del 21/09/2026: ninguna promesa sin mecanismo detrás. Si el
     // texto dice «lo revisa una persona», `transferir` tiene que ser true y el
     // aviso tiene que llegar al número del negocio.
-    for (const r of [{ statusCode: 200, body: { resultado: 'no_cuadra', diferencias: [] } },
-                     { statusCode: 200, body: { resultado: 'cuadra', diferencias: [] } },
-                     { statusCode: 409, body: { error: 'sin_total' } }]) {
-      const s = responder(r, previo());
-      const prometeUnaPersona = /revisa una persona|te escribe por acá/i.test(String(s['respuesta']));
-      expect(prometeUnaPersona, String(s['respuesta'])).toBe(s['transferir'] === true);
+    const casos = [{ statusCode: 200, body: { resultado: 'no_cuadra', diferencias: [] } },
+                   { statusCode: 200, body: { resultado: 'cuadra', diferencias: [] } },
+                   { statusCode: 409, body: { error: 'sin_total' } }];
+    for (const r of casos) {
+      // El texto que invita a escribirle al negocio exige transferir y un número
+      // presente y distinto del cliente; y NUNCA afirma que el aviso salió.
+      for (const [numeroDueno, invita] of [['59171111111', true], ['59170000001', false], ['', false]] as const) {
+        const s = responder(r, { ...previo(), numeroDueno });
+        const t = String(s['respuesta']);
+        expect(/escr[ií]bele|bot[oó]n/i.test(t), t).toBe(invita && r.body['resultado'] !== 'cuadra');
+        if (/escr[ií]bele/i.test(t)) expect(s['transferir']).toBe(true);
+        expect(t).not.toMatch(/avis[eé]\b|te escribe|lo revisa una persona/i);
+      }
     }
+  });
+
+  it('RED: ningún texto del cobro tiene voseo ni frases prohibidas ni promesas sin respaldo', () => {
+    const RAICES = 'escane|guard|compart|mand|envi|toc|dec|mir|fij|escrib|avis|pod|quer|ten|pas|hac|confirm|pag|revis|prefer|segu|cont|pon|vend|llam|prob';
+    const VOSEO = new RegExp(`(?<!\\p{L})(${RAICES})[aei]?(á|é|í)s?((me|te|lo|la|le|nos|se)+)?(?!\\p{L})|(?<!\\p{L})(escrib|avis|fij|mir|dec)[aei](me|le|te)(?!\\p{L})|(?<!\\p{L})(vos|tenés|querés|podés|mandás|preferís)(?!\\p{L})`, 'iu');
+    // La red de promesas es la MISMA de `Procesar respuesta`, no una lista paralela.
+    const PROMESA = new RegExp(/const PROMESA = \/(.*)\/i;/.exec(codigoDe(f, 'Procesar respuesta'))![1]!, 'i');
+    for (const t of ['Escaneá el QR', 'guardá o compartí', 'mandámelo', 'escribile directo', 'tocá', 'confirmá',
+      'pagá', 'revisá', 'fijate', 'avisale', 'si preferís']) expect(t).toMatch(VOSEO);
+    for (const t of ['Escanea el QR', 'guarda o comparte', 'mándamelo', 'escríbele directo', 'si prefieres']) expect(t).not.toMatch(VOSEO);
+    expect('Te avisaremos luego').toMatch(PROMESA);
+    const PROHIBIDA = /acredit|verificad|recibimos tu pago|lo preparamos|queda tomado|te escribe|te escribir[aá]|te avisamos|te llamamos|lo consulto|avis[eé] a/i;
+    const textos: string[] = [];
+    for (const r of [{ statusCode: 200, body: { resultado: 'cuadra', diferencias: [] } },
+                     { statusCode: 200, body: { resultado: 'no_cuadra', diferencias: ['monto distinto'] } },
+                     { statusCode: 200, body: { resultado: 'ilegible' } },
+                     { statusCode: 409, body: { error: 'sin_total' } }, { statusCode: 500, body: {} }]) {
+      textos.push(String(responder(r, previo())['respuesta']));
+    }
+    const cfg = fusionar(real({ pendiente: true, monto: 597 }));
+    textos.push(String(prepararQr({ respuesta: '', textoEnElQr: false }, cfg)['caption'] ?? ''));
+    textos.push(String(ejecutar(codigoDe(f, 'Preparar reenvío del QR'), [{}], { 'Config del negocio': [cfg] })[0]?.['caption'] ?? ''));
+    // Y los textos fijos en el código fuente de los nodos del cobro.
+    for (const n of ['Respuesta del cobro', 'Preparar QR de cobro', 'Preparar reenvío del QR']) {
+      for (const m of codigoDe(f, n).matchAll(/'([^'\n]{12,})'|`([^`\n]{12,})`/g)) textos.push(m[1] ?? m[2] ?? '');
+    }
+    for (const t of textos) {
+      expect(t, t).not.toMatch(VOSEO);
+      expect(t, t).not.toMatch(PROHIBIDA);
+      expect(t, t).not.toMatch(PROMESA);
+    }
+    // Cada texto de respuesta sigue siendo un texto: la red no pasa por estar vacía.
+    expect(textos.slice(0, 5).every((t) => t.length > 20)).toBe(true);
   });
 
   it('el aviso NUNCA va al propio número del cliente', () => {

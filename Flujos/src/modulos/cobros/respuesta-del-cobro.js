@@ -8,12 +8,12 @@
 // pasa cualquier cotejo. Quien confirma que el dinero entró es el negocio,
 // mirando su banco.
 //
-//   cuadra     -> el pedido queda tomado. El cierre ya lo creó el servidor, con
+//   cuadra     -> los datos coinciden. El cierre ya lo creó el servidor, con
 //                 el monto y el resultado adentro, y el negocio lo ve en su
 //                 pantalla de Cobros con el botón para marcarlo comprobado
 //                 contra el banco. Ese botón lo aprieta una PERSONA.
-//   no_cuadra  -> hay un dato que no coincide; lo revisa una persona, y se le
-//                 dice cuál sin dramatizar.
+//   no_cuadra  -> hay un dato que no coincide; se le dice cuál sin dramatizar y se
+//                 le invita a escribirle directo al negocio.
 //   ilegible   -> no se pudo leer; se pide de nuevo, más nítido o como PDF.
 //   sin cotejo -> 409 o el panel no contestó: llegó un comprobante que no se
 //                 pudo cotejar (no había pago pendiente, el QR ya venció, o no
@@ -21,9 +21,11 @@
 //                 cliente sin respuesta.
 //
 // SOLO SE OFRECE LO QUE SE CUMPLE (política de NovuChat, 21/09/2026): los tres
-// casos que dicen «lo revisa una persona» salen con `transferir: true`, y el
-// aviso al negocio va de verdad --«¿Avisar del cobro?» lo manda--. No se promete
-// nada que no tenga un mecanismo detrás.
+// casos que invitan a escribirle al negocio salen con `transferir: true` y el
+// botón de escribirle directo. El texto NO afirma que el aviso salió («avisé»):
+// `Mensaje a enviar` corre antes que `¿Avisar del cobro?`, el aviso puede fallar
+// y el cliente puede ser el propio dueño. Con `numeroDueno` vacío o igual al
+// cliente no hay a quién invitar a escribir, y el texto no lo ofrece.
 //
 // COSTO: 1 mensaje al cliente (fijo, sin modelo) --el mismo que hoy escribe el
 // modelo al recibir el comprobante, así que no agrega ninguno-- más el aviso al
@@ -50,32 +52,37 @@ for (let i = 0; i < items.length; i++) {
   const banco = String((previo.leido && previo.leido.banco) || '').trim();
   const montoLeido = String((previo.leido && previo.leido.monto) || '').trim();
 
+  // Solo se invita a escribir si hay un número de negocio distinto del cliente.
+  const dueno = String(previo.numeroDueno || '').replace(/\D/g, '');
+  const puedeEscribir = dueno !== '' && dueno !== String(previo.from || '').replace(/\D/g, '');
+
   let respuesta = '';
   let motivo = '';
   if (resultado === 'cuadra') {
     // «Los datos coinciden con tu pedido», y nada más. NO «pago acreditado»,
     // NO «recibimos tu pago», NO «verificado»: ninguna de las tres es cierta
     // mirando una imagen. Lo que sí es cierto, y es lo que el cliente necesita
-    // saber, es que su pedido quedó tomado.
+    // saber, es que los datos coinciden.
     respuesta = 'Recibí tu comprobante y los datos coinciden con tu pedido. '
-      + 'Tu pedido queda tomado y lo preparamos.';
+      + 'Quien confirma que el pago entró es el negocio, en su banco.';
     motivo = `llegó el comprobante de un pedido de ${importe || 'monto no registrado'} y sus datos `
       + `coinciden (monto leído ${montoLeido || 'sin dato'}${banco ? `, banco ${banco}` : ''}); `
       + 'confirmar en el banco que el dinero entró antes de darlo por cobrado';
   } else if (resultado === 'no_cuadra') {
     const detalle = diferencias[0] ? ` (${diferencias[0].replace(/\.$/, '')})` : '';
-    respuesta = `Recibí tu comprobante. Hay un dato que no me coincide${detalle}, así que lo va a `
-      + `revisar una persona de ${negocio} y te escribe por acá. Tu pedido queda guardado mientras tanto.`;
+    respuesta = `Recibí tu comprobante. Hay un dato que no me coincide${detalle}. `
+      + (puedeEscribir ? `Para resolverlo, escríbele directo a ${negocio}.` : `Quien lo revisa es ${negocio}.`);
     motivo = `comprobante con diferencia: ${diferencias.join('; ') || 'sin detalle'}; `
       + `el pedido es de ${importe || 'monto no registrado'}; revisar el banco y escribirle`;
   } else if (resultado === 'ilegible') {
     respuesta = 'Recibí tu comprobante pero no pude leerlo bien. '
-      + '¿Me lo mandás de nuevo, más nítido o como PDF desde la app de tu banco?';
+      + '¿Me lo mandas de nuevo, más nítido o como PDF desde la app de tu banco?';
     motivo = 'llegó un comprobante ilegible y se le pidió que lo reenvíe';
   } else {
     const porQue = codigo === 409 ? String(cuerpo.error || 'sin pago pendiente')
       : (Number.isFinite(codigo) && codigo > 0 ? `el panel contestó ${codigo}` : 'el panel no contestó');
-    respuesta = `Recibí tu comprobante. Lo revisa una persona de ${negocio} y te escribe por acá.`;
+    respuesta = 'Recibí tu comprobante, pero no pude cotejarlo. '
+      + (puedeEscribir ? `Para revisarlo, escríbele directo a ${negocio}.` : `Quien lo revisa es ${negocio}.`);
     motivo = `comprobante recibido sin poder cotejar (${porQue}); revisarlo a mano`;
   }
 
