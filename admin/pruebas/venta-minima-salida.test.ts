@@ -1281,4 +1281,16 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     // También en el mensaje con botón de enlace.
     expect(mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { nivelEmojis: 'ninguno' } }).items[0]!['texto']).not.toContain('🙂');
   });
+
+  it('el mensaje GENÉRICO (palabra prohibida, QR rechazado…) también respeta `nivelEmojis`: con «ninguno» no sale el 🙂, en ningún texto del ítem', () => {
+    for (const mal of [texto('Ya va en camino.'), texto('Pagado')]) {
+      const r = mensajes({ mensajes: [mal] }, { cfg: { nivelEmojis: 'ninguno' } }).items[0]!;
+      expect(JSON.stringify([r['payload'], r['texto'], r['respaldo']]), JSON.stringify(mal)).not.toContain('🙂');
+      expect(r['texto']).toContain('Esto prefiero que lo vea una persona del restaurante.'); // la frase queda entera, sin el emoji ni un espacio suelto
+    }
+    // NEGANDO: con «pocos» (o sin el dato) el 🙂 sigue; con «muchos» también.
+    for (const cfg of [{ nivelEmojis: 'pocos' }, { nivelEmojis: 'muchos' }, {}]) {
+      expect(mensajes({ mensajes: [texto('Ya va en camino.')] }, { cfg }).items[0]!['texto'], JSON.stringify(cfg)).toContain('🙂');
+    }
+  });
 });

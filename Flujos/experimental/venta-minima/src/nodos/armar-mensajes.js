@@ -179,7 +179,8 @@ function amEnlace(cuerpoCrudo, boton, urlDelPlan, tipoReporte, sinMenu) {
 }
 function amGenerico(motivo) {
   AM_errores.push(motivo);
-  return amEnlace(AM_GEN_CUERPO, AM_GEN_BOTON, '', 'interactive');
+  // El mensaje genérico también respeta `nivelEmojis` (con `ninguno` no sale el 🙂).
+  return amEnlace(amEmojis(AM_GEN_CUERPO).trim(), AM_GEN_BOTON, '', 'interactive');
 }
 
 // ----------------------------------------------------------------- un mensaje del plan
