@@ -189,6 +189,9 @@ if (codigo === 409) {
   cfg = Object.assign({}, RESPALDO, deBase, deBaseDeReglas, deBasePlantillas, atencion, deLaConsola, {
     estadoComercio: estadoComercio, configDeLaConsola: true, panelSinRespuesta: false,
     catalogo: carta(cuerpo.catalogo),
+    // El enlace vigente del catalogo web de ESTA conversacion (`catalogoWeb.enlace`, solo si el cuerpo pidio `catalogoCompleto`).
+    // Aca solo se copia como texto: `Plan del turno` lo valida (https, host con dominio) antes de ofrecerlo; sin enlace, carta en texto.
+    catalogoWebEnlace: util(objeto(cuerpo.catalogoWeb).enlace) || '',
     campanas: campanas(cuerpo.campanas),
     // Solo se apagan con `false`: la falta del dato es «sí», igual que en el servidor (`!== false`).
     aceptaDelivery: venta.aceptaDelivery !== false,

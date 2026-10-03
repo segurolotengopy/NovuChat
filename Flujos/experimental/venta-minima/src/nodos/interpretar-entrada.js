@@ -15,6 +15,11 @@
 //   - es una reaccion, un sticker o un tipo equivalente sin contenido (cada respuesta cuesta
 //     dinero y no hay nada que contestar). CAMBIO AL CONTRATO §4.3, declarado.
 //
+// EL CARRITO DEL CATALOGO WEB (`tipo: 'carrito'`): solo si `Carga de entrada` marco `carritoWeb: true` (corrio «Carrito del
+// catálogo») y con un `carrito` objeto; un `type: 'carrito'` sin esa marca, o la marca con otro tipo, no entra. Su id de mensaje es
+// `carrito:<pedidoId>`: el control de «ya visto» (24 h) descarta un reintento del servidor. Sale con `carrito` y
+// `reportarEntrante: false` (el servidor ya escribio el pedido y el hilo: `¿Reportar? (entrante)` no lo reporta de nuevo).
+//
 // LO QUE SE REPORTA A LA CONSOLA (`textoReporte`) no es el contenido de un medio: una nota de voz
 // o una foto no dejan rastro escrito.
 const SIN_CONTENIDO = ['reaction', 'sticker', 'request_welcome', 'system', 'ephemeral'];
@@ -46,6 +51,11 @@ if (!vmPrefijoPermitido(from, cfg.prefijosPermitidos)) return [];
 
 const tipo = msg.type === 'voice' ? 'audio' : String(msg.type || 'desconocido');
 if (SIN_CONTENIDO.indexOf(tipo) >= 0) return [];
+// EL CARRITO DEL CATALOGO WEB solo entra por `Carga de entrada` cuando corrio «Carrito del catálogo» (`carritoWeb: true`). Un
+// mensaje de tipo `carrito` que NO viene de ahi (Meta no tiene ese tipo) no es nada, y un carrito web nunca se lee como otro tipo.
+const esCarritoWeb = carga.carritoWeb === true;
+if ((tipo === 'carrito') !== esCarritoWeb) return [];
+if (esCarritoWeb && (!msg.carrito || typeof msg.carrito !== 'object' || Array.isArray(msg.carrito))) return [];
 
 const ahoraMs = Number(carga.ahoraMs) || Date.now();
 const mensajeId = String(msg.id || '');
@@ -107,6 +117,10 @@ if (tipo === 'text') {
     ubicacion = { latitud: lat, longitud: lng, nombre: vmLinea(l.name, 100), direccion: vmLinea(l.address, 200) };
   }
   textoReporte = '(ubicación) el cliente compartió una ubicación';
+} else if (tipo === 'carrito') {
+  // El servidor ya escribio el pedido y el hilo de la conversacion: NO se reporta como entrante (`textoReporte` vacio y
+  // `reportarEntrante: false`; `¿Reportar? (entrante)` lo lee). Sin texto: `Decidir turno` decide por `tipo`.
+  textoReporte = '';
 } else {
   textoReporte = '(' + tipo + ') el cliente envió un mensaje de tipo ' + tipo;
 }
@@ -132,6 +146,8 @@ return [{ json: {
   mediaId: mediaId,
   mimeType: mimeType,
   ubicacion: ubicacion,
+  // Solo el carrito del catalogo web trae estas dos claves (el resto de las entradas queda exactamente como estaba).
+  ...(esCarritoWeb ? { carrito: msg.carrito, reportarEntrante: false } : {}),
   ahoraMs: ahoraMs,
   prueba: prueba,
 } }];

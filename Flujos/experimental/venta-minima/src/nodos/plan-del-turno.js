@@ -97,6 +97,11 @@
 //     derivar en bucle. Un medio que no se pudo leer, una imagen sin comprobante pendiente, un producto excluido o no encontrado
 //     salen con el botón «Ver la carta» o con los del menú; el botón «Menú» (`m|menu`) lo agrega `Armar mensajes` a todo mensaje
 //     interactivo con espacio (no agrega mensajes).
+//  p. CATÁLOGO WEB. La carta sale como UN mensaje con el botón «Ver la carta» si hay un enlace válido (`cfg.catalogoWebEnlace`, que
+//     trae `Traer configuración`); sin enlace, en texto. El carrito que vuelve de la página (`aCarrito`) se arma por ID desde la
+//     carta y sigue por `siguientePasoPedido`: el cliente confirma con el botón, como en un pedido escrito. El mensaje de enlace lleva
+//     `catalogo: true` y `Armar mensajes` solo lo manda con su URL si esa marca viene y la URL pasa la misma validación.
+//     La nota del carrito vive en `en.entrega.notaPedido` (se borra sola con `limpiarCarrito`) y sale en el resumen y en el pedido avisado.
 //
 // LÍMITES CONOCIDOS (no se construyen aquí): si el modelo da un sábado para «este viernes», nadie lo
 // detecta (el cruce entre el día nombrado y la fecha queda fuera); `q|cancelar` («Cancelar pedido») descarta el
@@ -131,7 +136,7 @@ despachar();
 if (d.accion === 'carta') notaDelPedidoGuardado();
 // Al volver a un paso de pedido el carrito guardado deja de estar «guardado»: ya se retomó.
 if (en.paso.indexOf('pedido') === 0) en.carritoGuardado = 0;
-mensajes = partirLargos(mensajes);
+mensajes = partirLargos(conNotaDelPedido(mensajes));
 en.ultimoMensajeMs = ahora;
 return [{ json: {
   accion: d.accion, estadoNuevo: en, mensajes: mensajes, condicionados: condicionados, aviso: aviso,
@@ -144,6 +149,7 @@ function despachar() {
   const b = d.boton && typeof d.boton === 'object' ? d.boton : null;
   if (a === 'menu') return aMenu();
   if (a === 'carta') return aCarta();
+  if (a === 'carrito') return aCarrito();
   if (a === 'consulta') return aConsulta(d.consulta);
   if (a === 'promo') return aPromo();
   if (a === 'transferir') return derivar(d.motivo || 'derivación');
@@ -364,9 +370,23 @@ function cartaDelNegocio() {
 }
 
 // Los mensajes de la carta, o null (y se deriva) si no hay carta cargada.
-function mensajesDeCarta() {
+// LA CARTA COMO ENLACE (catalogo web): si hay un enlace VALIDO (`enlace`, o el que trajo la consola en `cfg.catalogoWebEnlace`),
+// la carta sale como UN mensaje con el boton «Ver la carta» que abre la pagina (el servidor recalcula los precios y escribe el
+// pedido; el carrito vuelve por `aCarrito`). Sin enlace —la consola no lo dio, el catalogo esta apagado, un 409, un timeout o una
+// URL que no pasa la validacion— sale la carta en texto de siempre: solo se ofrece lo que se cumple. Un solo mensaje en los dos casos.
+function mensajesDeCarta(enlace) {
   const carta = cartaDelNegocio();
   if (!carta.length) return derivar('carta sin cargar');
+  const crudo = enlace === undefined ? cfg.catalogoWebEnlace : enlace;
+  const url = urlDelCatalogo(crudo);
+  if (url) {
+    return [{
+      tipo: 'enlace', catalogo: true,
+      cuerpo: 'Esta es nuestra carta. Elige y confirma ahí, o escríbeme lo que quieres. Si quieres seguir con tu pedido o tu reserva, escribe «menú».',
+      botones: [{ id: '', title: 'Ver la carta' }], url: url,
+    }];
+  }
+  if (typeof crudo === 'string' && crudo.trim() !== '') errores.push('catalogo_url_invalida');
   const partes = pdTextoDeLaCarta(carta, { moneda: monedaTxt, max: 3500 });
   if (!Array.isArray(partes) || !partes.length) return derivar('carta sin texto');
   const cierreTxt = 'Escríbeme en un mensaje qué quieres y cuántos (por ejemplo: «1 queso fundido con chorizo y 1 orden de 3 tacos de cochinita sin cebolla») y si es para delivery o para recoger.'
@@ -707,6 +727,7 @@ function armarPedido() {
     lineas: pdLineasAviso(en.carrito),
     total: total, modalidad: en.entrega.entrega, moneda: monedaTxt,
     nombre: en.entrega.nombre, direccion: delivery ? en.entrega.direccion : '', coordenadas: coordenadas,
+    notaPedido: en.entrega.notaPedido || '', // la nota del carrito del catalogo web (texto del cliente, ya saneado)
     referencia: delivery ? en.entrega.referencia : '',
     from: t.from, nombrePerfil: t.nombrePerfil,
   });
@@ -948,4 +969,114 @@ function enviarReserva() {
   ruta = 'reserva:enviada';
   limpiarReserva();
   irA('menu');
+}
+
+// =============================================================================================
+// CARRITO DEL CATALOGO WEB
+// =============================================================================================
+// La URL del catalogo, o '' si no sirve. LA MISMA VALIDACION que `enlace-del-catalogo.js` del Demo B (https, host por segmentos con un
+// dominio de primer nivel alfabetico —sin IP, sin `localhost`—, puerto 1 a 65535, hasta 2.048 caracteres) y SIN `URL`, que en el Code
+// de n8n no existe (el 23/09/2026 un `new URL` en un `try/catch` dejo sin enlace a un cliente con un 200 bueno): solo `String`,
+// `RegExp` y `Array`. Se compara el host por segmentos, nunca por subcadena.
+function urlDelCatalogo(v) {
+  if (typeof v !== 'string') return '';
+  const u = v.trim();
+  if (u === '' || u.length > 2048) return '';
+  const m = /^https:\/\/([A-Za-z0-9.-]{1,253})(?::(\d{1,5}))?([/?#][^\s]*)?$/.exec(u);
+  if (!m) return '';
+  const puerto = m[2] ? Number(m[2]) : 443;
+  if (!(puerto >= 1 && puerto <= 65535)) return '';
+  const segmentos = m[1].toLowerCase().split('.');
+  if (segmentos.length < 2) return '';
+  if (!segmentos.every((s) => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(s))) return '';
+  if (!/^[A-Za-z]{2,63}$/.test(segmentos[segmentos.length - 1])) return '';
+  return u;
+}
+
+// El id de una linea del carrito, con la misma forma que el id de `pdCarta` (sin «|» ni espacios, hasta 60 caracteres).
+function idDeCarrito(v) {
+  return typeof v === 'string' ? v.replace(/[|\s]+/g, '-').slice(0, 60) : '';
+}
+
+// La cantidad de una linea: entero de 1 a `PD_MAX_CANTIDAD`; 0 si no es un numero utilizable.
+function cantidadDeCarrito(v) {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, PD_MAX_CANTIDAD) : 0;
+}
+
+// «Tu nota: …» (la del carrito del catalogo) va en el resumen, justo antes del total. Se aplica a todo resumen del turno, no solo al del
+// carrito: la direccion que falta se pide en otro turno y el resumen vuelve a salir con la nota del cliente.
+function conNotaDelPedido(lista_) {
+  const nota = en.entrega && typeof en.entrega.notaPedido === 'string' ? en.entrega.notaPedido : '';
+  if (!nota || !Array.isArray(lista_)) return lista_;
+  return lista_.map((m) => (m && m.tipo === 'botones' && String(m.cuerpo).indexOf('\nTotal de la comida:') > 0
+    ? Object.assign({}, m, { cuerpo: String(m.cuerpo).replace('\nTotal de la comida:', '\nTu nota: ' + nota + '\nTotal de la comida:') }) : m));
+}
+
+// El pedido que volvio de la pagina. EL CODIGO CALCULA: cada linea se busca POR ID en la carta del panel (nunca por el nombre ni por
+// el precio que traiga el carrito), la cantidad se acota y el total lo hace `pdTotal`. Lo que no esta en la carta (un area excluida
+// como cocteleria, un item dado de baja) no se vende: se nombra en la respuesta. Si el total del servidor difiere, manda el del flujo
+// y la diferencia queda en `errores`. Despues sigue el flujo de siempre (`siguientePasoPedido`): el cliente confirma con el boton.
+function aCarrito() {
+  const c = t.carrito && typeof t.carrito === 'object' ? t.carrito : {};
+  if (String(d.motivo || '').indexOf('carrito_') === 0) {
+    // Nada que contestar (ventana cerrada, otro comercio, pedidos apagados): sin mensajes, sin aviso y sin tocar el estado.
+    errores.push(String(d.motivo));
+    ruta = 'nada';
+    return;
+  }
+  // Un carrito nuevo reemplaza el pedido en curso; una reserva a medias sobrevive (`limpiarCarrito` no la toca).
+  limpiarCarrito();
+  limpiarConfirmado();
+  irA('pedido');
+
+  const carta = cartaDelNegocio();
+  const lineas = [];
+  const fuera = [];
+  const recortadas = [];
+  for (const it of (Array.isArray(c.items) ? c.items.slice(0, 50) : [])) {
+    const x = it && typeof it === 'object' ? it : {};
+    const nombre = delCliente(x.nombre, 80) || 'un producto';
+    const id = idDeCarrito(x.id);
+    const item = id ? carta.find((i) => String(i.id) === id) : undefined;
+    const cantidad = cantidadDeCarrito(x.cantidad);
+    if (!item || !cantidad) { fuera.push(nombre); continue; }
+    if (Math.floor(Number(x.cantidad)) > PD_MAX_CANTIDAD) recortadas.push(item.nombre);
+    const previa = lineas.find((l) => l.id === item.id);
+    if (previa) previa.cantidad = Math.min(PD_MAX_CANTIDAD, previa.cantidad + cantidad);
+    else if (lineas.length >= PD_MAX_LINEAS) fuera.push(nombre);
+    else {
+      lineas.push({ id: item.id, nombre: item.nombre, precio: item.precio, cantidad: cantidad, detalle: '', forma: item.forma,
+        piezas: item.piezas, area: item.area, moneda: item.moneda });
+    }
+  }
+  en.carrito = lineas;
+
+  // La entrega que eligio en la pagina, si el local la ofrece; si no, se dice y el flujo pregunta o toma la unica que hay.
+  const quiere = c.entrega === 'envio' ? 'delivery' : 'recojo';
+  if (modalidades().indexOf(quiere) >= 0) {
+    ponerModalidad(quiere);
+    if (quiere === 'delivery' && c.direccion) en.entrega.direccion = delCliente(c.direccion, 160);
+  } else if (modalidades().length) {
+    notas.push(quiere === 'delivery' ? 'Por ahora no hacemos delivery: tu pedido sería para recoger en el local.' : 'Por ahora solo hacemos delivery.');
+  }
+  const nota = delCliente(c.nota, 200);
+  if (nota) en.entrega.notaPedido = nota;
+
+  const nombres = (l) => unirY(l.slice(0, 3).map((n) => '«' + n + '»')) + (l.length > 3 ? ' y ' + (l.length - 3) + ' más' : '');
+  if (fuera.length) notas.push('No pude incluir ' + nombres(fuera) + ' en tu pedido: no está disponible por este medio.');
+  if (recortadas.length) notas.push('De ' + nombres(recortadas) + ' tomé ' + PD_MAX_CANTIDAD + ', que es el máximo por pedido.');
+  const descartados = Math.floor(Number(c.descartados)) || 0;
+  if (descartados > 0) {
+    notas.push(descartados === 1 ? 'Hay 1 producto del catálogo que no entró en tu pedido. Si quieres agregarlo, escríbeme cuál era.'
+      : 'Hay ' + descartados + ' productos del catálogo que no entraron en tu pedido. Si quieres agregarlos, escríbeme cuáles eran.');
+  }
+
+  // El total del servidor es solo un control: la comida, sin el costo de envio (que el flujo nunca suma).
+  const servidor = Math.round((Number(c.total) || 0) * 100) - Math.round((Number(c.costoEnvio) || 0) * 100);
+  const flujo = Math.round(pdTotal(en.carrito) * 100);
+  if (flujo !== servidor) errores.push('carrito_total_no_coincide: servidor ' + (servidor / 100) + ', flujo ' + (flujo / 100));
+
+  const m = siguientePasoPedido();
+  if (m) mensajes = conNotas(m);
 }
