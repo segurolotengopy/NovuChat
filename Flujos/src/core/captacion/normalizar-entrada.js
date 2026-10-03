@@ -8,6 +8,17 @@
 //    pide soporte -- o lo ESCRIBIO: quien contesta «quiero hablar con un
 //    asesor» no tiene que tocar el boton. Y si Meta rechazo el interactivo, el
 //    texto de respaldo le pide justamente que lo escriba.
+//  - `idElegido` (Bloque 1, 03/10/2026): el id de lo que el cliente TOCO, de un
+//    boton de respuesta o de una fila de lista (`rubro:<id>`, `planes`,
+//    `asesor`). Solo `[a-z0-9:_-]`, hasta 200 caracteres; si no cumple, `''`:
+//    un id raro no se registra ni se interpreta. `Estado de la conversación`
+//    lo lee para registrar el rubro; `userInput` queda como siempre.
+//  - CAMPAÑA CON DESTINO (Andres, 03/10/2026): la campaña puede traer un
+//    `destino` con el mismo vocabulario de ids. Si el mensaje es EXACTAMENTE su
+//    texto, se trata como si el cliente hubiera tocado esa opcion:
+//    `idElegido = destino` y `porCampana = true`. `destino = asesor` NO fuerza
+//    `eleccion = 'asesor'`: una campaña no puede gastar el aviso a recepcion
+//    con cada clic; se trata como contexto y el mensaje sale con el boton.
 //  - `pideSoporte`: dice que ya es cliente o pide ayuda con su cuenta. Desde el
 //    27/09/2026 no hay botones de bienvenida ni rama propia para eso: responde
 //    el agente, sin pedirle datos de prospecto, y el mensaje sale con el boton
@@ -31,6 +42,14 @@ const SOPORTE = /\b(ya\s+soy\s+cliente|soy\s+cliente(?!\s+nuev)|ya\s+(tengo|uso|
 // Una pregunta que solo menciona al asesor («¿el asesor me llama?») sigue al
 // asistente.
 const ASESOR = /^\s*(quiero\s+|me\s+gustar[ií]a\s+|deseo\s+|prefiero\s+)?(hablar\s+con\s+)?(un\s+|una\s+|el\s+|la\s+)?(asesor|asesora|especialista)(\s+por\s+favor)?[\s.!¡]*$/i;
+
+// Quien pide que lo llamen o hablar con una persona por escrito va al traspaso
+// (aviso + boton), igual que quien escribe «asesor». El mensaje ENTERO es el
+// pedido: «¿una persona me llama?» sigue al asistente.
+const CONTACTO_PERSONA = /^\s*(quiero\s+|me\s+gustar[ií]a\s+|deseo\s+|prefiero\s+|necesito\s+)?(que\s+me\s+(llame|llamen|contacte|contacten|escriba|escriban)(\s+(un|una|el|la|alg[uú]n|alguna)\s+(asesor|asesora|especialista|persona))?|hablar\s+con\s+(una\s+persona|un\s+humano|alguien))(\s+por\s+favor)?[\s.!¡]*$/i;
+// El id de una opcion interactiva y el destino de una campaña: el mismo patron.
+const ID_ELEGIDO = /^[a-z0-9:_-]{1,200}$/;
+const DESTINO = /^[a-z0-9:_-]{1,60}$/;
 
 const out = [];
 const items = $input.all();
@@ -63,12 +82,14 @@ for (let i = 0; i < items.length; i++) {
     : '';
   let userInput = '';
   let eleccion = '';
+  let idElegido = '';
+  let porCampana = false;
   let pideSoporte = false;
 
   switch (tipo) {
     case 'text': {
       userInput = msg.text?.body ?? '';
-      if (ASESOR.test(userInput)) eleccion = 'asesor';
+      if (ASESOR.test(userInput) || CONTACTO_PERSONA.test(userInput)) eleccion = 'asesor';
       else if (SOPORTE.test(userInput)) pideSoporte = true;
       break;
     }
@@ -76,6 +97,7 @@ for (let i = 0; i < items.length; i++) {
       const r = msg.interactive?.button_reply ?? msg.interactive?.list_reply;
       const id = String(r?.id ?? '');
       const titulo = String(r?.title ?? '');
+      idElegido = ID_ELEGIDO.test(id) ? id : '';
       if (id === 'asesor') eleccion = 'asesor';
       // Un boton de un mensaje viejo se toma por su texto, como si lo hubiera
       // escrito: «Soy cliente…» sigue siendo un pedido de soporte.
@@ -146,7 +168,10 @@ for (let i = 0; i < items.length; i++) {
     : (campanas.find((c) => c && typeof c.texto === 'string' && palabras(c.texto) === escrito) || null);
   const plano = (t, max) => String(t ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ')
     .replace(/\s+/g, ' ').trim().slice(0, max);
-  const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300).replace(/[\[\]]/g, "") } : null;
+  const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300).replace(/[\[\]]/g, ""), ...(typeof laCampana.destino === 'string' && DESTINO.test(laCampana.destino) ? { destino: laCampana.destino } : {}) } : null;
+  // Con destino valido, la campaña cuenta como el toque de esa opcion. Solo un
+  // mensaje de TEXTO es una campaña (arriba), asi que no pisa un toque real.
+  if (campana && campana.destino && idElegido === '') { idElegido = campana.destino; porCampana = true; }
 
   const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;
 
@@ -169,6 +194,8 @@ for (let i = 0; i < items.length; i++) {
     userInput,
     tipo,
     eleccion,
+    idElegido,
+    porCampana,
     pideSoporte,
     anuncio,
     origen,

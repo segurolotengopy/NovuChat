@@ -195,9 +195,13 @@ describe('misma regla que reservas', () => {
     expect(plano(venta)).toBe(plano(reservas));
     expect(plano(captacion)).toBe(plano(reservas));
     const bloque = (j: ReturnType<typeof leerFlujo>): string => {
-      const m = /const campanasActivas = JSON\.stringify[\s\S]*?texto: k\.texto\.trim\(\) \}\)\)\);/.exec(codigoDe(j, 'Config del negocio'));
+      const m = /const campanasActivas = JSON\.stringify[\s\S]*?texto: k\.texto\.trim\(\)(?:,[\s\S]*?\{ destino: k\.destino \} : \{\}\))? \}\)\)\);/.exec(codigoDe(j, 'Config del negocio'));
       if (!m) throw new Error('sin campanasActivas');
-      return m[0];
+      // La captación agrega, desde el 03/10/2026 (Bloque 1, campañas con destino),
+      // el `destino` opcional de cada campaña. Es lo ÚNICO que la distingue: se
+      // quitan los comentarios y esa extensión, y el resto es el mismo bloque.
+      // `captacion-interactivos.test.ts` prueba el `destino`.
+      return m[0].replace(/,\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*\.\.\.\(typeof k\.destino[^\n]*\{\}\)/, '');
     };
     expect(bloque(venta)).toBe(bloque(reservas));
     expect(bloque(captacion)).toBe(bloque(reservas));

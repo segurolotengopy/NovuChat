@@ -62,7 +62,7 @@ const soloLlenos = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) =>
 const entero = (v, min, max) => (Number.isInteger(v) && v >= min && v <= max) ? v : undefined;
 
 // Texto de la consola que va al prompt o a un mensaje: una linea, sin corchetes
-// (no puede fingir una marca como [CIERRE]) ni los delimitadores del corpus.
+// (no puede fingir una marca como [PLANES]) ni los delimitadores del corpus.
 const linea = (v, max) => String(v ?? '')
   .replace(/<<<|>>>/g, '').replace(/[\[\]{}]/g, '')
   .replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, max);
@@ -276,7 +276,11 @@ const campanasActivas = JSON.stringify((Array.isArray(r.campanas) ? r.campanas :
     return Number.isFinite(desde) && Number.isFinite(hasta) && desde <= ahora && ahora < hasta;
   })
   .slice(0, 10)
-  .map((k) => ({ id: String(k.id || '').slice(0, 60), texto: k.texto.trim() })));
+  .map((k) => ({ id: String(k.id || '').slice(0, 60), texto: k.texto.trim(),
+    // DESTINO (Bloque 1, 03/10/2026): a que opcion lleva la campaña, con el
+    // vocabulario de ids interactivos (`rubro:<id>`, `planes`, `asesor`). Sin
+    // destino, o con uno fuera del patron, la campaña queda como siempre.
+    ...(typeof k.destino === 'string' && /^[a-z0-9:_-]{1,60}$/.test(k.destino) ? { destino: k.destino } : {}) })));
 
 return [{ json: derivar({
   ...respaldo,
