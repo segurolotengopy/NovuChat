@@ -696,10 +696,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
     porque: '«le aviso» / «ya le avisé» se dice en el mismo texto antes de que el aviso salga y sin depender de él (R4); la cierra PR-4 (Demo B resto)',
     vence: '2027-01-01',
   },
-  'demo-b-venta-cobro.json#5#Respuesta del cobro::aviso': {
-    porque: '«le aviso» / «ya le avisé» se dice en el mismo texto antes de que el aviso salga y sin depender de él (R4); la cierra PR-4 (Demo B resto)',
-    vence: '2027-01-01',
-  },
   'experimental/agenda-minima/agenda-minima.v0.json#1#Enviar a WhatsApp': {
     porque: 'Bellido B (agenda mínima): ¿Falló el envío? mira solo $json.error, el respaldo no tiene último recurso (error visible) y el reporte saliente no verifica el id; la cierra PR-6 (Bellido B, ventana 2 a 3)',
     vence: '2027-01-01',
