@@ -278,6 +278,12 @@ describe('pdCuerpoExtraccion: el pedido al modelo', () => {
     expect(Object.keys(esq.properties).sort()).toEqual(['direccion', 'entrega', 'lineas', 'nombre', 'quiereHablar', 'referencia']);
     expect(esq.properties.lineas.items.properties.cantidad.type).toBe('INTEGER');
   });
+  it('quiereHablar es SOLO pedir una persona o reclamar: una pregunta que no es un pedido NO deriva (la responde el flujo con la carta o la consulta fija)', () => {
+    expect(instrucciones).toMatch(/quiereHablar: true SOLO si pide hablar con una persona o reclama\./);
+    // Negativo: la frase vieja mandaba a una persona toda pregunta («¿tienen estacionamiento?», «¿abren el domingo?») y rompía el pedido.
+    expect(instrucciones).not.toMatch(/pregunta algo que no es hacer un pedido/);
+    expect(instrucciones).not.toMatch(/\bpregunta\b[^\n]*quiereHablar|quiereHablar[^\n]*\bpregunta/i);
+  });
   it('el esquema NO pide precio, total ni descuento (el modelo no los entrega)', () => {
     const esq = JSON.stringify(cuerpo.generationConfig.responseSchema);
     expect(esq).not.toMatch(/precio|total|descuento|costo/i);
