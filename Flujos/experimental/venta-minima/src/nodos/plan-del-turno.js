@@ -1075,8 +1075,11 @@ function aCarrito() {
   } else if (modalidades().length) {
     notas.push(quiere === 'delivery' ? 'Por ahora no hacemos delivery: tu pedido sería para recoger en el local.' : 'Por ahora solo hacemos delivery.');
   }
+  // La nota del carrito tampoco esquiva las palabras excluidas («con tequila»): no se guarda ni llega al restaurante, y se le dice.
   const nota = delCliente(c.nota, 200);
-  if (nota) en.entrega.notaPedido = nota;
+  const notaExcluida = nota ? pdPalabraExcluida(nota, lista(cfg.palabrasExcluidas)) : '';
+  if (nota && !notaExcluida) en.entrega.notaPedido = nota;
+  if (notaExcluida) notas.push('No incluí tu nota: menciona «' + notaExcluida + '», que no está disponible para pedir por WhatsApp.');
 
   const nombres = (l) => unirY(l.slice(0, 3).map((n) => '«' + n + '»')) + (l.length > 3 ? ' y ' + (l.length - 3) + ' más' : '');
   if (fuera.length) notas.push('No pude incluir ' + nombres(fuera) + ' en tu pedido: no está disponible por este medio.');

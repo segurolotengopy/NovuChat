@@ -4078,3 +4078,47 @@ describe('esperando_comprobante: «menú» y la derivación conservan el paso y 
     expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
   });
 });
+
+// =============================================================================================================================
+// REVISIÓN DEL PR #382, punto 3: una palabra excluida no se esquiva como nota o detalle de un producto que sí se vende
+// =============================================================================================================================
+describe('excluidos de punta a punta: «jamaica shot», «limonada con tequila», «gaseosa con ron» y «paleta mango chamoy» no llegan al restaurante', () => {
+  // La carta ACTIVA de Q'Taco: el servidor no manda los 25 ítems inactivos (cócteles, cervezas y postres).
+  const ACTIVA: J[] = [
+    it_('jamaica', 'Jamaica', 16, 'bebidas'), it_('limonada', 'Limonada', 14, 'bebidas'), it_('mango', 'Mango con Chamoy', 18, 'bebidas'),
+    it_('gaseosas', 'Gaseosas', 16, 'bebidas'), it_('nachos', 'Nachos Supremos', 58, 'entradas'),
+  ];
+  const pedir = (lineas: J[], dicho: string) => {
+    const w = crear({ panel: panel({ catalogo: ACTIVA }) });
+    const c = con(w);
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX(lineas);
+    return { w, c, t: c.escribe(dicho) };
+  };
+
+  it('cada esquive recibe el texto amable de excluido, sin «Confirmar pedido», sin aviso al restaurante y sin carrito', () => {
+    for (const [dicho, lineas] of [
+      ['quiero un jamaica shot', [ln('jamaica shot', 1)]],
+      ['quiero una limonada con tequila', [ln('limonada con tequila', 1)]],
+      ['quiero una gaseosa con ron', [ln('gaseosa', 1, '', 'con ron')]],
+      ['quiero una paleta mango chamoy', [ln('paleta mango chamoy', 1)]],
+    ] as [string, J[]][]) {
+      const { w, t } = pedir(lineas, dicho);
+      expect(cuerpos(t).join('\n'), dicho).toMatch(/no está disponible para pedir por WhatsApp/);
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido')), dicho).toBe(false);
+      expect((estadoDe(w.mundo)['carrito'] as J[]) ?? [], dicho).toHaveLength(0);
+    }
+  });
+
+  it('NEGANDO: los mismos productos limpios sí llegan al resumen con su «Confirmar pedido»', () => {
+    for (const [dicho, lineas] of [
+      ['quiero un jamaica', [ln('jamaica', 1)]], ['quiero una limonada', [ln('limonada', 1)]],
+      ['quiero una gaseosa bien fría', [ln('gaseosa', 1, '', 'bien fría')]], ['quiero un mango con chamoy', [ln('mango con chamoy', 1)]],
+    ] as [string, J[]][]) {
+      const { t } = pedir(lineas, dicho);
+      expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido')), dicho).toBe(true);
+    }
+  });
+});

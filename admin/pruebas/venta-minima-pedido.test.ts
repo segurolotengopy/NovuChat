@@ -1537,3 +1537,80 @@ describe('palabras excluidas: lo que el negocio NO vende por WhatsApp, aunque la
     expect(L.pdTextoExcluido(agregarPal('vino malbec').noEncontrados[0].excluido.nombre)).not.toMatch(PROHIBIDAS_REAL);
   });
 });
+
+// REVISIÓN DEL PR #382 (punto 3 y L-3): la palabra excluida no se esquiva como NOTA o DETALLE de un producto que sí se vende.
+describe('palabras excluidas como nota o detalle de un producto activo: la línea se descarta como excluida (sin aviso)', () => {
+  // La lista REAL por omisión de Q'Taco (el archivo de datos del repositorio): lo que se prueba es lo que se despliega.
+  const PALABRAS_QTACO = ((JSON.parse(readFileSync(join(CARPETA, '../../../../../admin/scripts/datos/venta-minima/qtaco.json'), 'utf8')) as { configBase: { palabrasExcluidas: string } }).configBase.palabrasExcluidas);
+  const agregar = (lineas: ReturnType<typeof ln>[], palabras: unknown = PALABRAS_QTACO) => L.pdAgregarLineas([], CARTA, lineas, [], palabras);
+
+  it('los cuatro esquives del 03/10: «jamaica shot», «limonada con tequila», «gaseosa con ron» (en el detalle) y «paleta mango chamoy»', () => {
+    const carta = L.pdCarta([...CATALOGO, it_('limonada', 'Limonada', 14, 'bebidas'), it_('mango', 'Mango con Chamoy', 18, 'bebidas')], { areasExcluidas: EXCLUIDAS, moneda: 'BOB' });
+    for (const [lineas, palabra] of [
+      [[ln('jamaica shot', 1)], 'shot'], [[ln('limonada con tequila', 1)], 'tequila'],
+      [[ln('gaseosa', 1, '', 'con ron')], 'ron'], [[ln('paleta mango chamoy', 1)], 'paleta'],
+      [[ln('limonada', 1, '', 'con un chorrito de vodka')], 'vodka'], [[ln('jamaica', 1, 'unidad', 'con fernet')], 'fernet'],
+    ] as [ReturnType<typeof ln>[], string][]) {
+      const r = L.pdAgregarLineas([], carta, lineas, [], PALABRAS_QTACO);
+      const dicho = JSON.stringify(lineas);
+      expect(r.carrito, dicho).toEqual([]);
+      expect(r.pendiente, dicho).toEqual([]);
+      expect(r.noEncontrados, dicho).toHaveLength(1);
+      expect(r.noEncontrados[0], dicho).toMatchObject({ motivo: 'excluido', sugerencias: [] });
+      expect(r.noEncontrados[0].excluido.palabra, dicho).toBe(palabra);
+      expect(L.pdTextoExcluido(L.pdNombreCorto(r.noEncontrados[0].excluido)), dicho).toMatch(/no está disponible para pedir por WhatsApp/);
+    }
+  });
+
+  it('NEGANDO: lo mismo con el producto y el detalle limpios entra al carrito, y sin la lista el esquive pasa (la lista es la barrera)', () => {
+    for (const lineas of [[ln('jamaica', 1)], [ln('gaseosa', 1, '', 'bien fría')], [ln('horchata', 1)], [ln('gaseosas', 2, '', 'sin hielo')]]) {
+      const r = agregar(lineas);
+      expect(r.noEncontrados, JSON.stringify(lineas)).toEqual([]);
+      expect(r.carrito, JSON.stringify(lineas)).toHaveLength(1);
+    }
+    expect(L.pdAgregarLineas([], CARTA, [ln('jamaica shot', 1)], [], '').carrito).toHaveLength(1);
+  });
+
+  it('una línea excluida no arrastra a las demás: lo que se vende entra y lo excluido se dice', () => {
+    const r = agregar([ln('jamaica', 2), ln('gaseosa', 1, '', 'con ron'), ln('nachos supremos', 1)]);
+    expect(r.carrito.map((l: { id: string }) => l.id)).toEqual(['jamaica', 'nachos']);
+    expect(r.noEncontrados.map((n: { motivo: string }) => n.motivo)).toEqual(['excluido']);
+  });
+
+  it('la lista por omisión de Q\'Taco trae las palabras de los 25 ítems inactivos (cócteles, cervezas y postres), por palabra completa', () => {
+    for (const p of ['vodka', 'gin', 'fernet', 'mojito', 'margarita', 'chop', 'cuba libre', 'champan', 'singani', 'paloma', 'pina colada', 'cubita', 'azulito', 'pils', 'hoppy', 'ipa', 'lemon drop', 'pispireta']) {
+      expect(L.pdPalabraExcluida(`quiero ${p}`, PALABRAS_QTACO), p).not.toBe('');
+    }
+    // «piña colada» con tilde, y el plural de una cerveza.
+    expect(L.pdPalabraExcluida('una piña colada', PALABRAS_QTACO)).toBe('pina colada');
+    expect(L.pdPalabraExcluida('dos pils', PALABRAS_QTACO)).toBe('pils');
+    // Palabra completa: «gin» no dispara en «ginger» ni en «original», «ipa» en «tipa», «ron» en «coronavirus», «chop» en «choppy».
+    for (const limpio of ['ginger', 'original', 'tipa', 'coronavirus', 'choppy', 'paloma' + 'rosa']) expect(L.pdPalabraExcluida(limpio, PALABRAS_QTACO), limpio).toBe('');
+  });
+
+  // Los 53 ítems ACTIVOS de la carta real de Q'Taco (solo los nombres; el precio no importa): ninguno se bloquea, ni solo ni con una nota.
+  const ACTIVOS_QTACO = [
+    'Nachos Supremos', 'Fiesta Mexicana', 'Chicharrón Norteño', 'Queso Fundido', 'Ceviche Yucateco', "Q' Birria", 'Tacos de Birria (orden de 3)',
+    'Taco de Birria (unidad)', 'Quesabirrias (orden de 3)', 'Quesabirria (unidad)', 'Birriamen', 'Pozole', 'Caldo Tlalpeño', 'Sopa Azteca',
+    'Enchiladas Suizas', 'Enchiladas Verdes', 'Enchiladas Rojas', 'Chilaquiles con Carne', 'Chilaquiles con Huevo', 'Flautas',
+    'Arrachera a la Tampiqueña', 'Plato Huasteco', 'Proteína Extra', 'Taco (unidad)', 'Orden de 3 Tacos', 'Orden de 4 Tacos', 'Taco del Mar (unidad)',
+    'Orden de 3 Tacos del Mar', 'Burritos', 'Chili con Carne', 'Quesadilla (unidad)', 'Quesadilla (orden de 3)', 'Quesadilla con Verduras Salteadas (unidad)',
+    'Quesadillas con Verduras Salteadas (orden de 3)', 'Quesadilla con Champiñones (unidad)', 'Quesadillas con Champiñones (orden de 3)',
+    'Enchiladas con Queso Fundido', 'Burritos con Queso', 'Tacos de Verduras Salteadas (orden de 3)', 'Taco de Verduras Salteadas (unidad)',
+    'Mix de Ensaladas', 'Horchata', 'Jamaica', 'Tamarindo', 'Limonada', 'Mango con Chamoy', 'Jugo de Temporada', 'Gaseosas', 'Consomé de Pollo',
+    'Salchipapas', 'Tenders de Pollo', 'Mini Orden de Nachos', 'Dúo Quesadillas',
+  ];
+  it('SIN FALSOS POSITIVOS: ninguno de los 53 ítems activos de la carta real se bloquea (ni por su nombre, ni con notas comunes de cocina)', () => {
+    expect(ACTIVOS_QTACO).toHaveLength(53);
+    const carta = L.pdCarta(ACTIVOS_QTACO.map((n, i) => it_(`a${i}`, n, 10 + i, 'platos-fuertes')), { moneda: 'BOB' });
+    expect(carta).toHaveLength(53);
+    for (const nombre of ACTIVOS_QTACO) {
+      expect(L.pdPalabraExcluida(nombre, PALABRAS_QTACO), `el nombre «${nombre}»`).toBe('');
+      for (const detalle of ['', 'sin cebolla', 'con extra queso y salsa verde', 'bien picante', 'para llevar', 'sin hielo']) {
+        const r = L.pdAgregarLineas([], carta, [ln(nombre, 1, '', detalle)], [], PALABRAS_QTACO);
+        const quien = `«${nombre}» con «${detalle}»`;
+        expect(r.noEncontrados.filter((n: { motivo: string }) => n.motivo === 'excluido'), quien).toEqual([]);
+      }
+    }
+  });
+});

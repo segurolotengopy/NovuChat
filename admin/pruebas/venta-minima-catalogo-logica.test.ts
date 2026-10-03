@@ -370,6 +370,25 @@ describe('el carrito que vuelve de la página', () => {
     expect(estadoDe(m2)['entrega']?.['notaPedido']).toBeUndefined();
   });
 
+  it('una nota del carrito con una palabra excluida («con tequila», «una cerveza para tomar») NO llega al pedido ni al restaurante, y se le dice al cliente', () => {
+    for (const nota of ['con tequila por favor', 'agrega una cerveza para tomar', 'jamaica shot']) {
+      const m = crear({ palabrasExcluidas: 'tequila,cerveza,shot' });
+      const t = carrito(m, { nota });
+      const cuerpo = String(mensajes(t)[0]!['cuerpo']);
+      expect(cuerpo, nota).not.toContain('Tu nota');
+      expect(cuerpo, nota).toMatch(/No incluí tu nota: menciona «(tequila|cerveza|shot)», que no está disponible para pedir por WhatsApp/);
+      expect(estadoDe(m)['entrega']?.['notaPedido'], nota).toBeUndefined();
+      // el resto del pedido sigue: se confirma con el botón y el aviso NO lleva la nota
+      const c = turno(m, { mensaje: boton('p|confirmar', 'Confirmar pedido') });
+      expect(JSON.stringify(c.plan!['aviso']), nota).not.toMatch(/tequila|cerveza|shot/);
+    }
+    // NEGANDO: sin la lista, o con una nota limpia, la nota viaja como siempre.
+    const sinLista = crear({ palabrasExcluidas: '' });
+    expect(String(mensajes(carrito(sinLista, { nota: 'con tequila por favor' }))[0]!['cuerpo'])).toContain('Tu nota: con tequila por favor');
+    const limpia = crear({ palabrasExcluidas: 'tequila,cerveza,shot' });
+    expect(String(mensajes(carrito(limpia, { nota: 'sin cebolla por favor' }))[0]!['cuerpo'])).toContain('Tu nota: sin cebolla por favor');
+  });
+
   it('el carrito sin nota no deja rastro de nota, y una nota con palabras de la red se sanea', () => {
     const m = crear();
     expect(String(mensajes(carrito(m))[0]!['cuerpo'])).not.toContain('Tu nota');

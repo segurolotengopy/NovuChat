@@ -688,9 +688,17 @@ function _pdMejorOrden(ords, cantidad) {
 }
 
 // Una linea validada a su resultado: ok (item y cantidad), no (no se pudo) o forma (hay que preguntar).
-function _pdResolverLinea(carta, ln) {
+// `palabras` (opcional, `palabrasExcluidas`): una palabra excluida que viaja como NOTA de un producto que si se vende («jamaica shot» ->
+// «Jamaica» con «shot» de nota, «paleta mango chamoy» -> «Mango con Chamoy» con «paleta», «gaseosa» con detalle «con ron») no se esquiva:
+// la linea entera se descarta como excluida. Se mira SOLO lo que sobra del nombre y el detalle del modelo, nunca el nombre del producto
+// de la carta (un plato activo que lleve esa palabra en su nombre no se bloquea).
+function _pdResolverLinea(carta, ln, palabras) {
   const r = pdBuscar(carta, ln.producto, ln.forma);
   const nota = (extra) => _pdNota(ln.detalle, extra);
+  if (r.estado === 'unico' || r.estado === 'forma') {
+    const w = pdPalabraExcluida([r.extra, ln.detalle].filter(Boolean).join(' '), palabras);
+    if (w) return { tipo: 'no', motivo: 'excluido', producto: ln.producto, cantidad: ln.cantidad, sugerencias: [], palabra: w };
+  }
   if (r.estado === 'ninguno') return { tipo: 'no', motivo: 'ninguno', producto: ln.producto, cantidad: ln.cantidad, sugerencias: r.sugerencias };
   if (r.estado === 'ambiguo') return { tipo: 'no', motivo: 'ambiguo', producto: ln.producto, cantidad: ln.cantidad, sugerencias: r.opciones };
   if (r.estado === 'unico') {
@@ -735,7 +743,11 @@ function _pdExcluidoDe(producto, carta, excluidos, palabras) {
 }
 
 // Una linea validada que no se pudo resolver, a su elemento de `noEncontrados`.
-function _pdNoEncontrado(ln, motivo, sugerencias, carta, excluidos, palabras) {
+function _pdNoEncontrado(ln, motivo, sugerencias, carta, excluidos, palabras, palabra) {
+  if (motivo === 'excluido') {
+    return { producto: ln.producto, cantidad: ln.cantidad, motivo: 'excluido', sugerencias: [],
+      excluido: { id: '', nombre: _pdTexto(ln.producto, 80) || palabra, palabra } };
+  }
   if (motivo === 'ninguno') {
     const x = _pdExcluidoDe(ln.producto, carta, excluidos, palabras);
     if (x) return { producto: ln.producto, cantidad: ln.cantidad, motivo: 'excluido', sugerencias: [], excluido: x };
@@ -762,8 +774,8 @@ function pdAgregarLineas(carrito, carta, lineas, excluidos, palabras) {
   const pend = [];
   for (const ln of (Array.isArray(lineas) ? lineas : [])) {
     if (!ln || typeof ln.producto !== 'string' || !Number.isInteger(ln.cantidad) || ln.cantidad < 1) continue;
-    const r = _pdResolverLinea(carta, ln);
-    if (r.tipo === 'no') noEnc.push(_pdNoEncontrado(ln, r.motivo, r.sugerencias, carta, excluidos, palabras));
+    const r = _pdResolverLinea(carta, ln, palabras);
+    if (r.tipo === 'no') noEnc.push(_pdNoEncontrado(ln, r.motivo, r.sugerencias, carta, excluidos, palabras, r.palabra));
     else if (r.tipo === 'forma') pend.push(r.pendiente);
     else if (!_pdPoner(nuevo, _pdLinea(r.item, r.cantidad, r.detalle))) {
       noEnc.push({ producto: ln.producto, cantidad: ln.cantidad, motivo: 'limite', sugerencias: [] });
