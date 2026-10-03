@@ -1381,6 +1381,48 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     expect(JSON.stringify(t.p!['mensajes'])).toContain('no tienes ninguno pendiente');
   });
 
+  const enEsperaSimCancelado = (): Mundo => {
+    const m = enEsperaSim();
+    const ref = String(estadoDe(m)['pedido']['pedidoId']);
+    turno(m, { boton: 'q|cancelar' });
+    pendiente(m, ref);
+    return m;
+  };
+  const conPie = { tipo: 'image', comprobanteSimulado: true, texto: 'quiero 3 tacos de birria', extraccion: extPedido({ lineas: [linea('tacos de birria', 3, 'orden')] }) } as const;
+
+  it('H5 completo: tras «Cancelar pedido» una foto CON pie («quiero 3 tacos de birria») es una imagen con pie: el pie se atiende como pedido, no se descarta', () => {
+    const m = enEsperaSim();
+    const ref = String(estadoDe(m)['pedido']['pedidoId']);
+    turno(m, { boton: 'q|cancelar' });
+    expect(estadoDe(m)['paso']).toBe('menu');
+    pendiente(m, ref); // el servidor aún ve el QR pendiente
+    const s = turno(m, conPie);
+    expect(s.d['accion']).toBe('extraer_pedido');
+    expect(JSON.stringify(s.p!['mensajes'])).not.toContain('no tienes ninguno pendiente');
+    expect(s.p!['aviso']).toBeNull();
+    // NEGANDO: la misma foto SIN pie sigue siendo «sin pendiente» (no hay nada que atender como texto).
+    const t = turno(enEsperaSimCancelado(), { tipo: 'image', comprobanteSimulado: true });
+    expect(JSON.stringify(t.p!['mensajes'])).toContain('no tienes ninguno pendiente');
+  });
+
+  it('LOW: «imagen con pie» solo se mira por el pedido de ESTE teléfono: un pedido REAL ajeno no cambia nada, y uno REAL propio sigue como comprobante (sin cotejo)', () => {
+    // Un pedido REAL de OTRO teléfono en la referencia: no es mío, mi foto con pie es una imagen con pie (texto).
+    const ajeno = enEsperaReal();
+    const refAjeno = String(estadoDe(ajeno)['pedido']['pedidoId']);
+    turno(ajeno, { boton: 'q|cancelar' });
+    sdDe(ajeno)['pedidos'][refAjeno]['from'] = '59100000099';
+    ajeno.cfg['cobro'] = { ...CFG_SIM.cobro, pedidoRef: refAjeno, pendiente: true };
+    expect(turno(ajeno, conPie).d['accion']).toBe('extraer_pedido');
+    // El MISMO pedido real, de ESTE teléfono: puede ser un pago, la foto sigue como comprobante aunque traiga pie.
+    const mio = enEsperaReal();
+    const refMio = String(estadoDe(mio)['pedido']['pedidoId']);
+    turno(mio, { boton: 'q|cancelar' });
+    mio.cfg['cobro'] = { ...CFG_SIM.cobro, pedidoRef: refMio, pendiente: true };
+    const s = turno(mio, conPie);
+    expect(s.d['accion']).toBe('comprobante');
+    expect(registrar(s).p!['aviso']['tipo']).toBe('comprobante');
+  });
+
   it('una foto después de «Cancelar pedido» es una imagen sin pendiente: ni aviso ni cierre, aunque el servidor aún vea el QR', () => {
     const m = enEsperaSim();
     const ref = String(estadoDe(m)['pedido']['pedidoId']);

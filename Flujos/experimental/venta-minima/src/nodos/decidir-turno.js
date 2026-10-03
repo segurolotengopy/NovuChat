@@ -90,16 +90,19 @@ const salir = (accion, extra) => [{ json: Object.assign({
 // (o llegó una foto con el cobro SIMULADO y el QR pendiente, `comprobanteSimulado`, que no se coteja; o llegó una imagen que
 // `Interpretar entrada` marcó como comprobante pero la lectura o el
 // cotejo no corrieron: `Plan del turno` lo trata como «sin cotejar», nunca como «cuadra»).
-// H5: una foto de un pedido simulado que YA tiene su comprobante, llegada FUERA del cobro (el cliente empezo otro pedido) y con pie de foto, es
-// una imagen con pie: el pie se atiende como texto. Sin pie sigue siendo «ya tengo el comprobante» (sin tocar el paso).
-const simYaCotejadoFueraDelCobro = (() => {
+// H5: una foto con PIE llegada FUERA del cobro (el cliente ya no espera un comprobante: cancelo, termino o empezo otro pedido) es una imagen con pie y el
+// pie se atiende como texto. Una sola excepcion: si la referencia del QR pendiente es un pedido REAL y de ESTE telefono (el modo cambio a simulado), la foto
+// puede ser un pago y sigue como comprobante (`Plan del turno` la manda sin cotejo al restaurante). Sin pie, una foto fuera del cobro sigue siendo un
+// comprobante (ya cotejado, o sin pendiente) y no toca el paso.
+const fotoConPieFueraDelCobro = (() => {
   if (t.comprobanteSimulado !== true || previo.paso === 'esperando_comprobante' || !String(t.texto || '').trim()) return false;
   const ref = String((cfg.cobro && cfg.cobro.pedidoRef) || '');
   const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
   const p = ref && Object.prototype.hasOwnProperty.call(guardados, ref) ? guardados[ref] : null;
-  return !!p && typeof p === 'object' && String(p.from) === String(t.from) && p.resultado === 'simulado';
+  const esRealMio = !!p && typeof p === 'object' && String(p.from) === String(t.from) && p.simulado !== true;
+  return !esRealMio;
 })();
-if (vmNodo('Cotejar en el servidor') || t.esComprobante === true || (t.comprobanteSimulado === true && !simYaCotejadoFueraDelCobro)) return salir('comprobante');
+if (vmNodo('Cotejar en el servidor') || t.esComprobante === true || (t.comprobanteSimulado === true && !fotoConPieFueraDelCobro)) return salir('comprobante');
 // Un pedido SIMULADO con el cobro real encendido y su QR pendiente: la foto no es un comprobante real ni se coteja; se pasa con una persona.
 if (t.comprobanteCruzado === true) return salir('transferir', { motivo: 'el modo de cobro cambió: comprobante de un pedido simulado' });
 
