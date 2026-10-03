@@ -152,7 +152,8 @@ function despachar() {
   if (a === 'carrito') return aCarrito();
   if (a === 'consulta') return aConsulta(d.consulta);
   if (a === 'promo') return aPromo();
-  if (a === 'transferir') return derivar(d.motivo || 'derivación');
+  // Con un comprobante en espera, pedir una persona NO saca al cliente del cobro: el paso y el pedido se conservan.
+  if (a === 'transferir') return derivar(d.motivo || 'derivación', en.paso === 'esperando_comprobante' && !!en.pedido);
   if (a === 'identidad') {
     if (en.paso === 'inicio') en.paso = 'menu';
     return (mensajes = [enlace('Soy un asistente virtual con inteligencia artificial de ' + negocio()
@@ -333,25 +334,36 @@ function capacidades() {
 // aviso: el tope por teléfono y por hora lo aplica `Armar avisos` leyendo la marca que escribe
 // `Armar mensajes` SOLO si el aviso salió (hecho, no dicho). Este nodo ni escribe esa marca ni suprime
 // el aviso por su cuenta: si el primer aviso falla (Graph en error), el siguiente SÍ se intenta.
-function derivar(razon) {
+// `conservarPaso` (solo cuando el cliente PIDE una persona con un comprobante en espera): el paso y el pedido quedan como están,
+// para que «Reenviar QR» y «Cancelar pedido» sigan funcionando; el texto no manda a «menú» (con un QR pendiente el menú no está
+// disponible: solo se ofrece lo que se cumple) y el mensaje sale sin el botón «Menú».
+function derivar(razon, conservarPaso) {
   // (Las constantes van DENTRO de la función: lo que se declara después del `return` del nodo no llega a inicializarse.)
   const TEXTO_DERIVACION = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. '
-    + 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+    + (conservarPaso ? 'Tu pedido sigue esperando el comprobante.' : 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
   ruta = 'transferir:' + razon;
   aviso = { tipo: 'transferencia', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: vmLinea(t.nombrePerfil, 60),
     codigo: vmCodigoCorto(ahora), motivo: vmLinea(d.texto, 300),
   } };
   // El paso queda en `menu` y no se borra nada: el siguiente mensaje se atiende de nuevo (antes, un paso de pedido volvía a
-  // derivar cada mensaje) y el cliente retoma su pedido o su reserva escribiendo «menú».
-  irA('menu');
-  mensajes = [enlace(TEXTO_DERIVACION)];
+  // derivar cada mensaje) y el cliente retoma su pedido o su reserva escribiendo «menú». Con un comprobante en espera
+  // (`conservarPaso`) el paso no cambia.
+  if (!conservarPaso) irA('menu');
+  mensajes = [conservarPaso ? Object.assign(enlace(TEXTO_DERIVACION), { sinMenu: true }) : enlace(TEXTO_DERIVACION)];
   condicionados = null;
   return null;
 }
 
 // --- Menú, carta, consultas, promoción ------------------------------------------------------
 function aMenu() {
+  // Con un comprobante en espera, «menú» NO saca al cliente del cobro: el paso y el pedido se conservan y se vuelve a mostrar el
+  // recordatorio (con «Reenviar QR» y «Cancelar pedido»). El menú no se ofrece: sus botones no valen con un QR pendiente. Solo
+  // «Cancelar pedido» (`d.limpiar`) lleva al menú, y borra el pedido.
+  if (en.paso === 'esperando_comprobante' && en.pedido && !d.limpiar) {
+    if (d.motivo) ruta = 'menu:' + d.motivo;
+    return aRecordatorio();
+  }
   irA('menu');
   if (d.limpiar) limpiarSegun(d.limpiar);
   if (d.motivo) ruta = 'menu:' + d.motivo;
@@ -801,7 +813,7 @@ function aRecordatorio() {
     botones: [
       { id: vmIdDeBoton('q', 'reenviar'), title: 'Reenviar QR' },
       { id: vmIdDeBoton('q', 'cancelar'), title: 'Cancelar pedido' },
-    ] }];
+    ], sinMenu: true }];
 }
 
 function aReenviarQr() {

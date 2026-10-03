@@ -17,13 +17,14 @@
 // sin QR pendiente, audio); 3) botón, validado contra el estado; 4) texto exacto de una
 // campaña vigente → `promo`; 5) pide una persona → `transferir`, pregunta si es una IA →
 // `identidad` (la identidad se revisa primero); 6) intenciones GLOBALES, en cualquier paso salvo
-// `esperando_comprobante` (ahí solo «menú» funciona): «menú», «cancelar», «carta», «reserva» y,
+// `esperando_comprobante` (ahí «menú» y pedir una persona NO sacan del cobro: se conserva el paso): «menú», «cancelar», «carta», «reserva» y,
 // estando en una reserva, «pedir»; 7) en `inicio` o `menu`, consulta fija; 8) por paso; 9) pedido
 // fuera de horario.
 //
 // CARRITO Y RESERVA VIVEN POR SEPARADO (03/10): ninguna transición borra uno por pasar al otro. Solo se
 // limpian al confirmar, al cancelar (`limpiar` = 'pedido' | 'reserva' | 'todo' en la salida de `menu`) o al
-// vencer el estado. «Menú» (texto o botón `m|menu`) muestra el menú y deja el estado como está.
+// vencer el estado. «Menú» (texto o botón `m|menu`) muestra el menú y no borra el carrito ni la reserva (el paso pasa a `menu`); con un
+// comprobante en espera conserva el paso y el pedido, y muestra el recordatorio del comprobante (`Plan del turno`: `aMenu`).
 //
 // EL CARRITO DEL CATÁLOGO WEB (`tipo: 'carrito'`) no es un mensaje de WhatsApp: se decide antes que todo lo demás, en
 // `decidirCarrito` (ventana cerrada, panel sin respuesta, otro comercio, pedidos apagados, local cerrado, QR pendiente).
@@ -167,8 +168,8 @@ if (PREGUNTA_IDENTIDAD.test(norm)) return salir('identidad');
 if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar con una persona' });
 
 // --- 6. Intenciones GLOBALES: valen en cualquier paso, antes del «por paso» ------------------------
-// Con un comprobante en espera (`esperando_comprobante`) solo «menú» funciona: el pedido sigue esperando y lo
-// demás recibe el recordatorio. «Menú» muestra el menú y NO borra nada; «cancelar» y «empezar de nuevo» sí limpian.
+// Con un comprobante en espera (`esperando_comprobante`) «menú» no sale del cobro (muestra el recordatorio) y lo
+// demás recibe el recordatorio. «Menú» no borra nada; «cancelar» y «empezar de nuevo» sí limpian.
 const enComprobante = paso === 'esperando_comprobante';
 const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm);
 const quiereReservar = /reserv|\bmesa\b/.test(norm);

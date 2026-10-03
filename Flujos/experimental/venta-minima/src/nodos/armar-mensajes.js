@@ -161,8 +161,9 @@ function amEmojis(texto) {
 function amConSeguir(cuerpo) {
   return !AM_CONVERSA || cuerpo.indexOf(AM_SEGUIR) >= 0 ? cuerpo : cuerpo + ' ' + AM_SEGUIR;
 }
-function amEnlace(cuerpoCrudo, boton, urlDelPlan, tipoReporte) {
-  const cuerpo = amConSeguir(cuerpoCrudo);
+// `sinMenu`: el mensaje no manda a «menú» (con un comprobante en espera el menú no está disponible).
+function amEnlace(cuerpoCrudo, boton, urlDelPlan, tipoReporte, sinMenu) {
+  const cuerpo = sinMenu === true ? cuerpoCrudo : amConSeguir(cuerpoCrudo);
   // La URL del plan vale SOLO si es `https://wa.me/<8 a 15 dígitos>` (con `?text=` opcional) y esos dígitos son EXACTAMENTE
   // el número de recepción de la configuración (que no es el del propio cliente). Cualquier otra cosa se descarta.
   let url = String(urlDelPlan || '').trim();
@@ -247,7 +248,7 @@ function amArmarUno(m) {
   }
   if (tipo === 'enlace') {
     const boton = m.boton || (Array.isArray(m.botones) && m.botones[0] ? (m.botones[0].title || m.botones[0].titulo) : '');
-    return Object.assign(amEnlace(cuerpo, boton, m.url, 'interactive'), extra);
+    return Object.assign(amEnlace(cuerpo, boton, m.url, 'interactive', m.sinMenu === true), extra);
   }
   if (tipo === 'botones') {
     const bs = (Array.isArray(m.botones) ? m.botones : []).map((b) => ({

@@ -2104,7 +2104,8 @@ describe('cobro', () => {
     confirmarPedido(r);
     const recuerdo = r.c.escribe('¿ya llegó?');
     expect(cuerpos(recuerdo)[0]).toMatch(/Estoy esperando el comprobante de tu pedido #\w+/);
-    expect(recuerdo.mensajes.flatMap(titulosDe)).toEqual(['Reenviar QR', 'Cancelar pedido', 'Menú']);
+    // Cambio de la revisión del PR #382: sin botón «Menú» (con un QR pendiente el menú no está disponible; solo se ofrece lo que se cumple).
+    expect(recuerdo.mensajes.flatMap(titulosDe)).toEqual(['Reenviar QR', 'Cancelar pedido']);
     expect(recuerdo.avisos).toHaveLength(0);
     const reenvio = r.c.toca(idDeBoton(recuerdo, 'Reenviar QR'), 'Reenviar QR');
     expect(reenvio.llamadas.ingesta.some((x) => x['evento'] === 'qr_enviado')).toBe(false); // el servidor ya abrió ese cobro
@@ -3345,7 +3346,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     expect(estadoDe(w.mundo)['paso']).toBe('reserva');
   });
 
-  it('con un comprobante en espera solo «menú» funciona: lo demás recibe el recordatorio, y el pedido sigue esperando su comprobante', () => {
+  it('con un comprobante en espera NADA saca del cobro, ni «menú»: todo recibe el recordatorio, y el pedido sigue esperando su comprobante', () => {
     const r = armarPedido({ ventana: 5 });
     const qr = confirmarPedido(r);
     expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
@@ -3360,10 +3361,11 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     for (const id of ['m|pedido', 'm|reserva', 'm|promos']) {
       expect(cuerpos(r.c.toca(id))[0], id).toMatch(/Estoy esperando el comprobante/);
     }
-    // «menú» sí: muestra el menú y el pedido NO se descarta (sigue en el estado y en `sd.pedidos`).
+    // «menú» (cambio de la revisión del PR #382): tampoco saca del cobro; el recordatorio sale con «Reenviar QR» y «Cancelar pedido», el paso
+    // sigue en `esperando_comprobante` y el pedido NO se descarta (sigue en el estado y en `sd.pedidos`).
     const menu = r.c.escribe('menú');
-    expect(cuerpos(menu)[0]).toContain('¿Qué te gustaría hacer?');
-    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+    expect(cuerpos(menu)[0]).toMatch(/Estoy esperando el comprobante/);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
     expect(estadoDe(r.w.mundo)['pedido']).not.toBeNull();
     expect(pedidosGuardados(r.w.mundo)).toHaveLength(1);
     // El comprobante que llega después se coteja y se avisa igual (la pantalla de cobro del servidor sigue abierta).
@@ -3999,5 +4001,80 @@ describe('R3 y hechos externos: si ya salió un aviso o corrió el cierre, recon
     expect(ok.mensajes.some((m) => m.ok && m.tipo === 'image')).toBe(true);
     expect(pedidosGuardados(r.w.mundo).map((p) => p['codigo'])).toEqual(codigo1);
     expect(ok.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado')).toHaveLength(1);
+  });
+});
+
+// =============================================================================================================================
+// REVISIÓN DEL PR #382, punto 2: con un comprobante en espera, «menú» y pedir una persona NO sacan al cliente del cobro
+// =============================================================================================================================
+describe('esperando_comprobante: «menú» y la derivación conservan el paso y el pedido; «Reenviar QR» y «Cancelar pedido» siguen valiendo', () => {
+  function conQrEnEspera() {
+    const r = armarPedido({ ventana: 5 });
+    const qr = confirmarPedido(r);
+    const abierto = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado');
+    const ref = String(abierto?.['referencia'] ?? '');
+    const total = Number(abierto?.['monto']);
+    r.w.estado.panel = panel(conCobroPendiente(ref, total));
+    const codigo = String((estadoDe(r.w.mundo)['pedido'] as J)['codigo']);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
+    return { ...r, ref, total, codigo };
+  }
+  const sigueEsperando = (e: ReturnType<typeof conQrEnEspera>): void => {
+    expect(estadoDe(e.w.mundo)['paso']).toBe('esperando_comprobante');
+    expect((estadoDe(e.w.mundo)['pedido'] as J | null)?.['codigo']).toBe(e.codigo);
+  };
+
+  it('«menú» (escrito y con el botón) muestra el recordatorio con «Reenviar QR» y «Cancelar pedido», SIN botón «Menú»; el paso y el pedido siguen', () => {
+    const e = conQrEnEspera();
+    for (const t of [e.c.escribe('menú'), e.c.toca('m|menu', 'Menú')]) {
+      expect(cuerpos(t)[0]).toContain(`#${e.codigo}`);
+      expect(titulosDe(t.mensajes[0]!)).toEqual(['Reenviar QR', 'Cancelar pedido']);
+      expect(t.avisos).toHaveLength(0);
+      sigueEsperando(e);
+    }
+  });
+
+  it('pedir una persona (aviso + botón) tampoco cambia el paso ni borra el pedido, y el texto no manda a «menú»', () => {
+    const e = conQrEnEspera();
+    const t = e.c.escribe('quiero hablar con una persona');
+    expect(tieneEnlace(t)).toBe(true);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(cuerpos(t)[0]).toContain('Tu pedido sigue esperando el comprobante');
+    expect(cuerpos(t)[0]).not.toMatch(/escribe «menú»|escribe «menu»/i);
+    sigueEsperando(e);
+  });
+
+  it('después de «menú» y de la derivación, «Reenviar QR» manda el QR y NO reabre el cobro; «ya pagué» recibe el recordatorio; el comprobante se atiende', () => {
+    const e = conQrEnEspera();
+    e.c.escribe('menú');
+    e.c.escribe('quiero hablar con una persona');
+    const reenvio = e.c.toca('q|reenviar', 'Reenviar QR');
+    expect(reenvio.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    expect(reenvio.llamadas.ingesta.filter((x) => x['evento'] === 'qr_enviado')).toHaveLength(0);
+    const pago = e.c.escribe('ya pagué');
+    expect(cuerpos(pago)[0]).toContain(`#${e.codigo}`);
+    expect(e.c.escribe('menú').llamadas.cotejo).toHaveLength(0);
+    const comprobante = e.c.imagen('media-9');
+    expect(comprobante.llamadas.cotejo.length).toBeGreaterThan(0);
+  });
+
+  it('después de «menú» y de la derivación, «Cancelar pedido» SÍ cancela: lleva al menú y borra el pedido (el cliente puede salir del cobro)', () => {
+    const e = conQrEnEspera();
+    e.c.escribe('menú');
+    e.c.escribe('quiero hablar con una persona');
+    const t = e.c.toca('q|cancelar', 'Cancelar pedido');
+    expect(estadoDe(e.w.mundo)['paso']).toBe('menu');
+    expect(estadoDe(e.w.mundo)['pedido'] ?? null).toBeNull();
+    expect(t.mensajes.length).toBeGreaterThan(0);
+  });
+
+  it('contraprueba: sin un comprobante en espera, «menú» sí pasa al menú y la derivación sí deja el paso en `menu` (nada cambió fuera del cobro)', () => {
+    const r = armarPedido({ ventana: 5 });
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    const m = r.c.escribe('menú');
+    expect(titulosDe(m.mensajes[0]!)).toContain('Hacer un pedido');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+    r.c.escribe('quiero hablar con una persona');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
   });
 });
