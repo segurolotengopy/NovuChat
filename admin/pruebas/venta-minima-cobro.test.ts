@@ -798,7 +798,12 @@ describe('cbCobroSimulado: simulado solo con las cuatro condiciones, y nunca con
     expect(L.cbCobroSimulado(panel({ cobroSimulado: {} }), BASE_SIM)).toBeNull();
     expect(L.cbCobroSimulado(panel({ cobroSimulado: {} }, { qr: { url: 'http://inseguro.ejemplo.test/qr.png' } }), BASE_SIM)).toBeNull();
     expect(L.cbCobroSimulado(panelSim({ cobroReal: {} }), BASE_SIM)).toBeNull();
-    // El opuesto: el mismo panel SIN `cobroReal` sí es simulado.
+    // El contrato es «no trae cobroReal, aunque no sirva»: la CLAVE presente con cualquier valor excluye al simulado (revisión del cobro simulado, LOW).
+    for (const raro of [null, [], 'x', false, 0, '', { nombreCuenta: '' }]) {
+      expect(L.cbCobroSimulado(panelSim({ cobroReal: raro }), BASE_SIM), JSON.stringify(raro)).toBeNull();
+    }
+    // El opuesto: el mismo panel SIN `cobroReal` (o con la clave `undefined`, que JSON no manda) sí es simulado.
+    expect(L.cbCobroSimulado(panelSim({ cobroReal: undefined }), BASE_SIM)).not.toBeNull();
     expect(L.cbCobroSimulado(panelSim(), BASE_SIM)).not.toBeNull();
   });
 

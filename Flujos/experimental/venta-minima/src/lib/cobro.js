@@ -183,7 +183,7 @@ function cbCobroSimulado(cuerpoPanel, base) {
   const r = cbEsObjeto(cuerpoPanel) ? cuerpoPanel : null;
   const b = cbEsObjeto(base) ? base : null;
   if (!r || !b) return null;
-  if (cbEsObjeto(r.cobroReal)) return null;            // EXCLUSIÓN: con cobro real presente, nunca simulado
+  if (r.cobroReal !== undefined) return null;          // EXCLUSIÓN: si el cuerpo trae `cobroReal` (aunque sea null, vacío o no sirva), nunca simulado
   if (!cbEsObjeto(r.cobroSimulado)) return null;       // el servidor no declaró simulado
   if (b.cobroSimuladoActivo !== true) return null;     // solo el booleano true (ni «true», ni 1)
   const url = typeof b.qrSimuladoUrl === 'string' ? b.qrSimuladoUrl.trim() : '';
