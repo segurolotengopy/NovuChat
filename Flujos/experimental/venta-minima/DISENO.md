@@ -56,7 +56,10 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - un nodo HTTP solo llama a `graph.facebook.com`, `generativelanguage.googleapis.com` o `*.cloudfunctions.net` (o a un
     marcador; la única URL por expresión es la de `Descargar medio`, que baja el medio que Meta devolvió);
   - en producción, ningún webhook con ruta de prueba y ninguno que no sea la entrada del receptor;
-  - cada `venta-minima.*.json` versionado tiene su archivo de datos (si no, queda huérfano);
+  - cada `venta-minima.*.json` versionado tiene su archivo de datos (si no, queda huérfano); un `*.local.json` (lo que deja
+    `preparar-import.sh`, con valores reales) no cuenta como huérfano;
+  - la clave `avisarAlPropioNumero` (interruptor solo de ensayo) solo puede estar en `ensayo-demo-a.json` y en su salida (ver «La variante
+    de ensayo en el Demo A»);
   - retención de ejecuciones en `none` (ver abajo).
 - **Retención de ejecuciones (decisión de Andres, 02/10/2026): nada se guarda.** `saveDataSuccessExecution: "none"`,
   `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, explícitos en la plantilla y en los JSON generados,
@@ -181,26 +184,44 @@ deja publicado junto a la producción. Sus cerraduras:
   `Config base` o el `numeroEnsayo` (la misma lista de `¿Avisar de verdad?` y `¿Enviar de verdad?`). Se mira en `¿Es un mensaje?`
   (antes de `Traer configuración`) y otra vez en `Interpretar entrada`: un `from` ajeno no llega a la consola ni a `Cotejar en el servidor`.
 
-## La variante de ensayo en el Demo A: un teléfono real contra la línea del Demo A
+## La variante de ensayo en el Demo A: UN teléfono real contra la línea del Demo A
 
-`venta-minima.ensayo-demo-a.json` (44 nodos) permite ensayar el flujo de venta con **teléfonos reales** contra la línea del Demo A
-(Andres como cliente, Silvana como restaurante), antes de que exista la línea de Q'Taco. Es una tercera salida de `construir.mjs`, con
-la entrada `trigger`. El procedimiento está en `docs/ensayo/LEEME.md`, «Ensayar un flujo de venta mínima en el Demo A». Decisiones:
+`venta-minima.ensayo-demo-a.json` (44 nodos) permite ensayar el flujo de venta con **un solo teléfono real**, el de Andres, que hace de
+cliente, de dueño y de cocinero contra la línea del Demo A, antes de que exista la línea de Q'Taco. Es una tercera salida de
+`construir.mjs`, con la entrada `trigger`. El procedimiento está en `docs/ensayo/LEEME.md`, «Ensayar un flujo de venta mínima en el
+Demo A». Decisiones:
 
+- **El interruptor de un solo teléfono, `avisarAlPropioNumero` (solo de ensayo).** En producción `avUnificar` descarta al destinatario
+  igual al `from` (un empleado que pide no se avisa a sí mismo), y con un solo teléfono el aviso nunca saldría. Con
+  `avisarAlPropioNumero: true` en `configBase` (`ensayo-demo-a.json`), `avDestinatarios` y `avNormalizarDestinatarios` pasan `propio`
+  vacío: el destinatario igual al `from` se queda, y siguen valiendo los demás filtros (prefijo, 8 a 15 dígitos, unicidad, rol). Solo
+  `true` exacto (o el texto «true», como llega de `Config base`) lo enciende; ausente, «false», «0», vacío, un número o un objeto es falso.
+  `Config del negocio` lo lee **solo de `Config base`**: el panel no lo puede encender. El aviso llega **al mismo chat** del cliente, y
+  «pasé tu pedido» sigue saliendo únicamente si Meta devolvió un `wamid` real (con Meta rechazando el aviso, el cliente lee «No pude
+  pasarle…»). Guardias de construcción: `construir.mjs` falla si la clave aparece en cualquier archivo de datos que no sea
+  `ensayo-demo-a.json` (ni `qtaco.json` ni `ensayo.json`, ni heredada), y `--verificar` falla si `venta-minima.qtaco.json` o
+  `venta-minima.prueba.json` traen la clave como asignación de «Config base». **El código de los nodos sí nombra la clave** (para
+  leerla) en todos los JSON, incluido el de producción: eso no es el dato y no enciende nada. Solo `venta-minima.ensayo-demo-a.json`
+  puede llevar el dato.
 - **Se publica con `Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --sobre-demo-a`, no con `ensayo-flujo.sh`.**
   `ensayo-flujo.sh` no sirve: su cerrojo exige los mismos nodos con credencial que el Demo A de agendamiento, y su `--restaurar`
   republica el `demo-a-agendamiento.json` de la copia desde donde se corre (puede traer F3a sin autorizar) y deja 12 nodos del Demo A
   sin credencial (completa por tipo; hallazgo de la revisión del PR #375, defecto aparte). La herramienta, en cambio:
   - copia el **`WhatsApp Trigger` vivo del Demo A tal cual** (id, `webhookId`, credencial): el `WhatsApp Trigger` de este JSON solo
     existe para que la plantilla tenga una entrada, y la herramienta lo reemplaza. Un Trigger con la credencial de AAB1-WA-Prod
-    reescribiría el webhook de toda esa app (prohibición 7), por eso el procedimiento mide antes y después el id de la credencial
-    del Trigger vivo y la ruta de Meta (`credenciales-flujo.sh`, `webhook-meta.sh --ver-meta`);
+    reescribiría el webhook de toda esa app (prohibición 7), por eso el procedimiento coteja, antes y después, que el `callback_url`
+    de `webhook-meta.sh --ver-meta` termine en `/webhook/<webhookId del Trigger vivo>/webhook` (solo los últimos 4 caracteres: el seco
+    imprime `Trigger vivo: webhookId …XXXX`);
   - asigna **todas** las credenciales por nombre y por id, y solo las que el Demo A vivo ya usa; se niega si un nodo queda sin
-    credencial, si hay dos credenciales con el mismo nombre o si el nombre es de un cliente o de un sistema ajeno;
-  - guarda el flujo vivo **entero** (permisos 600, fuera del repositorio) y la vuelta atrás es **solo** `--restaurar-respaldo`.
-  Se le hicieron dos ajustes mínimos (con su prueba en `venta-minima-herramienta-demo-a.test.ts`): su tabla acepta el nombre de la
-  ingesta del Demo A que este JSON ya trae («Cierres NovuChat A (auto)»), y `--sobre-demo-a` se niega si el flujo del `.env` no es el
-  Demo A (palabras «demo a», ningún cliente ni sistema ajeno), la misma regla de `--actualizar-codigo`.
+    credencial, si hay dos credenciales con el mismo nombre, si el nombre es de un cliente o de un sistema ajeno, o si un nodo con URL
+    a `graph.facebook.com` conserva una credencial de cabecera (la trampa del 15/09);
+  - guarda el flujo vivo **entero** (permisos 600, fuera del repositorio) y la vuelta atrás es **solo** `--restaurar-respaldo`, que
+    comprueba la versión activa y relee el vivo para compararlo con el respaldo.
+  Se le hicieron ajustes (con su prueba en `venta-minima-herramienta-demo-a.test.ts`): su tabla acepta el nombre de la ingesta del Demo A
+  que este JSON ya trae («Cierres NovuChat A (auto)»); `--sobre-demo-a` se niega si el flujo del `.env` no es el Demo A (palabras
+  «demo a», ningún cliente ni sistema ajeno, ni «Bellido») o si está inactivo; y `--aplicar` exige `--autorizo-gemini-produccion`.
+  Límite declarado: no se exige que el nombre del respaldo contenga «demo a» (`--restaurar-respaldo` lo comparten otros flujos); se
+  exige que el `id` del respaldo sea el del `.env`.
 - **El nombre del flujo es el del Demo A**, y la herramienta conserva el del vivo al escribir. La suite compara el nombre del JSON con el
   de `demo-a-agendamiento.json`; que el flujo vivo se llame igual solo se ve en el seco real.
 - **Credenciales por nombre**: «WhatsApp OAuth account» (Trigger, el que se reemplaza), «Cierres NovuChat A (auto)» (ingesta y cierres),
@@ -209,19 +230,22 @@ la entrada `trigger`. El procedimiento está en `docs/ensayo/LEEME.md`, «Ensaya
   **no existe ni se crea**, y no se crea ninguna con el token (`PREPARACION.md` de Agenda mínima decía «no crees» una credencial Graph
   Bearer en el Demo A: queda cumplido). Gemini va sin nombre y la herramienta pone «Google Gemini(PaLM) Api account» **por nombre**: hay
   otra de Gemini, «Gemini — pruebas (no producción)», que no se usa.
-- **Gemini de producción: hay que pedir la autorización de nuevo.** Andres la dio para las pruebas del 30/09/2026 y esta herramienta lo
-  anota. Cada ensayo la vuelve a pedir, con el costo (~0,0005 USD por llamada, de 0 a 1 por turno). Es el paso A.1 del procedimiento.
-- **Dos marcadores y nada más**: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A) y `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono del
-  restaurante: destinatario `completo` y recepción de respaldo). `preparar-import.sh` los reemplaza y deja un `.local.json` que
-  `construir.mjs` no cuenta como huérfano. Ninguno `_QTACO`, ni receptor, ni verificador, ni «Entrada de prueba», ni «Simular aviso»,
-  ni webhooks. La retención sigue en `none`.
-- **Plantillas vacías**: en la línea del Demo A no existen. Con la ventana de 24 h del restaurante abierta, el aviso sale como
-  texto libre (el detalle); con la ventana cerrada no sale nada y el cliente lee «No pude pasarle tu pedido al restaurante…» con el
-  botón. Por eso **el restaurante escribe primero**. El botón va a la recepción del comercio `ensayo`, no al restaurante del ensayo.
-- **El cliente no puede ser también el destinatario**: `avUnificar` descarta el aviso al propio `from`, y el cliente leería
-  «No pude pasarle…». Hacen falta dos teléfonos registrados en la app del Demo A.
+- **Gemini de producción: la autorización es por ensayo.** Andres la dio para las pruebas del 30/09/2026 y, en el chat, para este ensayo el
+  02/10/2026; cada ensayo nuevo la pide de nuevo (paso A.1 del procedimiento). Costo: ~0,0005 USD **por llamada**, y un turno puede sumar
+  varias (`Extraer`, `Transcribir audio` y `Leer comprobante` llaman a Gemini cada uno cuando corren). Cerrojo de código: `--aplicar` exige
+  `--autorizo-gemini-produccion`.
+- **Dos marcadores y nada más**: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A) y `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de Andres, con
+  prefijo 591, que solo vive en la tabla local: destinatario `completo` y recepción de respaldo; **ninguna cifra de teléfono en el
+  repositorio**). `preparar-import.sh` los reemplaza y deja un `.local.json` que `construir.mjs` no cuenta como huérfano. Ninguno `_QTACO`,
+  ni receptor, ni verificador, ni «Entrada de prueba», ni «Simular aviso», ni webhooks. La retención sigue en `none`.
+- **Plantillas vacías**: en la línea del Demo A no existen. Con un solo teléfono la ventana de 24 h **ya está abierta** (escribe él, y cada
+  mensaje suyo la reabre): el aviso sale como texto libre. El botón «Escribir al local» va a la recepción del comercio `ensayo`
+  (`REEMPLAZAR_NUMERO_RECEPCION_ENSAYO`, hoy el teléfono de Andres): su propio teléfono.
+- **Con un solo teléfono, «No pude pasarle…» no se puede provocar en vivo** (la ventana nunca está cerrada cuando confirma el pedido): se
+  prueba en la suite, con el interruptor apagado, con la ventana cerrada de otro teléfono o con Meta rechazando el aviso.
 - **Lo que NO se prueba aquí**: QR y comprobante (la ruta del Demo A es `agendamiento`: el servidor no manda `config/venta` ni
-  cobro), plantillas, receptor y verificador, promociones, ni la latencia con el número real de Q'Taco.
+  cobro), plantillas, receptor y verificador, promociones, ni la latencia con el número real de Q'Taco; tampoco que el aviso llegue a
+  **otra** persona (con un solo teléfono llega al mismo chat).
 - **Lo que no se puede probar sin n8n ni Meta reales** (se mira en el seco real): que los nombres de credencial de la tabla existan hoy
   en la instancia, que el Trigger vivo tenga la credencial de la app del Demo A (la guardia mira el NOMBRE: un nombre neutro no se
   distingue, el mismo límite de A4) y que Meta siga apuntando a la ruta del Demo A después del PUT.
