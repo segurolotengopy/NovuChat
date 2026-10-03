@@ -345,18 +345,44 @@ describe('endurecimientos de la revisión de seguridad (todos niegan sin escribi
     expect(mundo.puts).toHaveLength(0);
   });
 
-  it('se niega si un nodo que llama a graph.facebook.com conserva una credencial de cabecera (el token de ingesta a Meta: la trampa del 15/09)', async () => {
-    const texto = readFileSync(join(carpeta, 'venta.local.json'), 'utf8');
-    const f = JSON.parse(texto) as J;
-    // El envío con la credencial de la INGESTA (la del Demo A, que la herramienta acepta por nombre): antes pasaba el resto de las guardias.
-    (f.nodes as J[]).find((n) => n.name === 'Enviar aviso')!.credentials = { httpHeaderAuth: { id: '', name: 'Cierres NovuChat A (auto)' } };
-    writeFileSync(join(carpeta, 'venta-ingesta-a-meta.local.json'), JSON.stringify(f));
-    nuevo();
-    const r = await sobreDemoA(respaldoNuevo(), ['--aplicar'], 'venta-ingesta-a-meta.local.json');
-    expect(r.codigo).toBe(1);
-    expect(r.salida).toMatch(/graph\.facebook\.com y conservan una credencial de cabecera.*Enviar aviso/);
-    expect(mundo.puts).toHaveLength(0);
+  it('se niega si un nodo que llama a graph.facebook.com conserva una credencial de cabecera (el token de ingesta a Meta: la trampa del 15/09), con el anfitrión ANCLADO y sin escaparse una expresión', async () => {
+    const f0 = JSON.parse(readFileSync(join(carpeta, 'venta.local.json'), 'utf8')) as J;
+    const conUrl = (url: string): string => {
+      const f = JSON.parse(JSON.stringify(f0)) as J;
+      const n = (f.nodes as J[]).find((x) => x.name === 'Enviar aviso')!;
+      // El envío con la credencial de la INGESTA (la del Demo A, que la herramienta acepta por nombre): antes pasaba el resto de las guardias.
+      n.credentials = { httpHeaderAuth: { id: '', name: 'Cierres NovuChat A (auto)' } };
+      n.parameters.url = url;
+      const archivo = `venta-url-${++secuencia}.local.json`;
+      writeFileSync(join(carpeta, archivo), JSON.stringify(f));
+      return archivo;
+    };
+    // Las cuatro URL reales de los envíos del JSON de ensayo son expresiones que EMPIEZAN con `=`: el caso principal.
+    for (const n of ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo']) {
+      expect(String(nodo(f0, n).parameters.url), n).toMatch(/^=https:\/\/graph\.facebook\.com\//);
+    }
+    // Se niegan: con y sin `=`, con mayúsculas, con espacios, con puerto, en una expresión que no se puede analizar.
+    for (const url of [
+      'https://graph.facebook.com/v26.0/x/messages', '=https://graph.facebook.com/{{ $json.waGraphVersion }}/x/messages', '=HTTPS://GRAPH.FACEBOOK.COM/v26.0/x',
+      '  =  https://graph.facebook.com/v26.0/x', 'https://graph.facebook.com:443/x', 'https://graph.facebook.com', 'http://graph.facebook.com?x=1',
+      '={{ $json.base }}/graph.facebook.com/x', '={{ "https://" + "graph.facebook.com" }}/v26.0/x',
+    ]) {
+      nuevo();
+      const r = await sobreDemoA(respaldoNuevo(), ['--aplicar'], conUrl(url));
+      expect(r.codigo, url).toBe(1);
+      expect(r.salida, url).toContain('conservan una credencial de cabecera');
+      expect(r.salida, url).toContain('Enviar aviso');
+      expect(mundo.puts, url).toHaveLength(0);
+    }
+    // NO cuentan como Graph (y no rompen nada): otro anfitrión que solo MENCIONA graph.facebook.com en la ruta o en la consulta.
+    for (const url of ['https://otro.dominio/?x=graph.facebook.com', 'https://graph.facebook.com.otro.dominio/x', 'https://otro.dominio/graph.facebook.com']) {
+      nuevo();
+      const r = await sobreDemoA(respaldoNuevo(), ['--aplicar'], conUrl(url));
+      expect(r.salida, url).not.toContain('conservan una credencial de cabecera');
+      expect(r.codigo, `${url}: ${r.salida}`).toBe(0);
+    }
     // Negativo: el JSON de venta normal (los envíos pasan a whatsAppApi) no lo dispara.
+    nuevo();
     expect((await sobreDemoA(respaldoNuevo(), ['--aplicar'])).codigo).toBe(0);
   });
 

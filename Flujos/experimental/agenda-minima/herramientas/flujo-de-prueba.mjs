@@ -421,6 +421,21 @@ if (bandera('actualizar-codigo')) {
   process.exit(0);
 }
 
+/**
+ * ¿La URL de un nodo HTTP habla con Graph (Meta)? FALLA CERRADO y con el anfitrión ANCLADO:
+ *  - sin un `=` inicial (n8n marca así las expresiones) ni espacios, el anfitrión tiene que ser el primero tras `http(s)://` y terminar ahí
+ *    (barra, `:`, `?`, `#` o fin): `https://otro.dominio/?x=graph.facebook.com` NO es una llamada a Graph;
+ *  - una EXPRESIÓN (empieza con `=` y trae `{{`) no se puede analizar: se toma por Graph si nombra el anfitrión en cualquier parte
+ *    (subcadena), para que no se escape ningún caso que antes se atrapaba.
+ */
+function llamaAGraph(url) {
+  const cruda = String(url ?? '').trim();
+  const esExpresion = cruda.startsWith('=');
+  const texto = (esExpresion ? cruda.slice(1) : cruda).trim().toLowerCase();
+  if (/^https?:\/\/graph\.facebook\.com(?:[/:?#]|$)/.test(texto)) return true;
+  return esExpresion && texto.includes('{{') && texto.includes('graph.facebook.com');
+}
+
 if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
   if (dentroDelRepo(RESPALDO)) morir('--respaldo tiene que estar FUERA del repositorio (lleva ids)');
@@ -551,7 +566,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   if (sinCred.length) morir(`nodos sin credencial resuelta: ${sinCred.map((n) => n.name).join(', ')}`);
   // La trampa del 15/09: un nodo que habla con Graph (Meta) con una credencial de cabecera genérica (la de la ingesta) le manda el token
   // de la consola a Meta. Tras resolver, ningún nodo con URL a graph.facebook.com puede conservar `httpHeaderAuth`: va con `whatsAppApi`.
-  const graphConCabecera = b.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /graph\.facebook\.com/i.test(String(n.parameters?.url ?? ''))
+  const graphConCabecera = b.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && llamaAGraph(n.parameters?.url)
     && (n.credentials?.httpHeaderAuth || n.parameters?.genericAuthType === 'httpHeaderAuth'));
   if (graphConCabecera.length) morir(`nodos que llaman a graph.facebook.com y conservan una credencial de cabecera (httpHeaderAuth): ${graphConCabecera.map((n) => n.name).join(', ')}. Tienen que usar la credencial predefinida whatsAppApi`);
   const credsUsadas = b.nodes.flatMap((n) => Object.values(n.credentials ?? {}).map((c) => c.name));
