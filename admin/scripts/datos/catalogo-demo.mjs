@@ -7,7 +7,7 @@
  * QUÉ RESUELVE. El catálogo web necesita Cloud Functions y una ficha emitida
  * desde una conversación de WhatsApp. Nada de eso existe hasta que haya un
  * proyecto de nube creado, así que **la página no se podía mostrar a nadie**.
- * Este script sirve `web/dist` —la misma compilación que iría a producción— y
+ * Este script sirve `web/dist-catalogo` —la misma compilación que iría a producción— y
  * responde el API del catálogo con los datos del Demo B.
  *
  * QUÉ ES REAL Y QUÉ NO, dicho antes de que alguien lo muestre en una reunión:
@@ -48,7 +48,10 @@ import { fileURLToPath } from 'node:url';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(aqui, '..', '..');
-const DIST = join(RAIZ, 'web', 'dist');
+// Desde T-37 la página pública es un SEGUNDO sitio de Hosting con su propia
+// compilación (`web/dist-catalogo`, `pnpm web:build` la genera junto con la
+// consola) y su propio bloque de `firebase.json` (target `catalogo`).
+const DIST = join(RAIZ, 'web', 'dist-catalogo');
 const PUERTO = Number(process.env['PUERTO_DEMO'] ?? 5241);
 
 const args = process.argv.slice(2);
@@ -190,11 +193,13 @@ const RESPUESTA = {
 
 // --- Cabeceras reales, por ruta, leídas de firebase.json ---------------------
 const config = JSON.parse(readFileSync(join(RAIZ, 'firebase.json'), 'utf8'));
+const SITIO = [config.hosting].flat().find((h) => h.target === 'catalogo');
+if (!SITIO) { console.error('firebase.json no tiene el sitio de hosting con target «catalogo».'); process.exit(1); }
 const aExpresion = (patron) => new RegExp('^' + patron
   .replace(/[.+^${}()|[\]\\]/g, '\\$&')
   .replace(/\*\*/g, 'CUALQUIER_RUTA').replace(/\*/g, '[^/]*')
   .replace(/CUALQUIER_RUTA/g, '.*') + '$');
-const GLOBOS = config.hosting.headers.map((h) => ({
+const GLOBOS = SITIO.headers.map((h) => ({
   prueba: aExpresion(h.source),
   cabeceras: Object.fromEntries(h.headers
     .filter((c) => c.key !== 'Strict-Transport-Security')
@@ -266,7 +271,7 @@ createServer(async (peticion, respuesta) => {
   const destino = candidato.startsWith(DIST) && existsSync(candidato)
     && extname(candidato) !== ''
     ? candidato
-    : join(DIST, 'index.html');
+    : join(DIST, 'catalogo.html');   // como la reescritura `/c/**` del sitio
   try {
     const cuerpo = await readFile(destino);
     respuesta.writeHead(200, {

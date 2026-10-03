@@ -344,7 +344,7 @@ export function literalesDeFunctions(archivo: string, texto: string): { linea: n
  * para que una base mal armada (que cae en una carpeta que no es) se atrape.
  */
 export const LOCALES_O_GENERADAS: readonly string[] = [
-  'admin/web/dist', 'admin/functions/lib', 'CLIENTES', 'CONFIGURACION.local.md', 'Demo-Recursos/plantilla-catalogo.xlsx',
+  'admin/web/dist', 'admin/web/dist-catalogo', 'admin/functions/lib', 'CLIENTES', 'CONFIGURACION.local.md', 'Demo-Recursos/plantilla-catalogo.xlsx',
 ];
 
 /** `admin/functions/lib/x.js` es el compilado de `admin/functions/src/x.ts`. */
