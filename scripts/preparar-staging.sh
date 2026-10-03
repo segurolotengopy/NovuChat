@@ -322,7 +322,13 @@ fase_sitio() {
   # es dueña de los proyectos: se usa su configuración propia y las credenciales
   # aisladas de gcloud (nunca `firebase login` ni `logout`). Procedimiento
   # completo y porqués: docs/produccion/sitio-publico-catalogo.md.
-  local cfg="${FB_CFG:-${TMPDIR:-/tmp}/fbcfg-staging}"
+  # Configuración PROPIA del CLI: un directorio temporal nuevo por corrida (nunca
+  # una ruta fija y previsible en /tmp). En seco no se crea nada: se muestra el
+  # nombre que tendría.
+  local cfg="${FB_CFG:-}"
+  if [[ -z "$cfg" ]]; then
+    if (( APLICAR )); then cfg="$(mktemp -d)"; else cfg="<directorio temporal de la corrida>"; fi
+  fi
   local fb=(env "XDG_CONFIG_HOME=$cfg" "GOOGLE_APPLICATION_CREDENTIALS=$CLOUDSDK_CONFIG/application_default_credentials.json" npx --yes firebase-tools@15.28.1)
   # En seco NO se consulta nada (el encabezado promete que no ejecuta): solo
   # con --aplicar se mira si el sitio ya existe, para ser idempotente.

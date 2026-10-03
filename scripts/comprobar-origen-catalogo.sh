@@ -55,6 +55,16 @@ DOMINIOS="${DOMINIOS_CATALOGO:-}"
 [[ -n "$CATALOGO" ]] || { echo "::error::Falta SITIO_CATALOGO (HOSTING_SITIO_CATALOGO)." >&2; exit 2; }
 shopt -s nocasematch
 [[ "$PUBLICO" == https://* ]] || { echo "::error::SITIO_PUBLICO tiene que empezar por https://."; exit 1; }
+# LA FORMA COMPLETA SE VALIDA ANTES DE NORMALIZAR. `host_de` solo mira el host y
+# un valor torcido lo confundiría: con `\`, un navegador trata `https://a.web.app\@b.web.app`
+# como una dirección a `a.web.app` (la consola, si es ese), y con un salto de
+# línea el valor escrito con printf en functions/.env sería OTRA línea, o sea
+# otro parámetro. Se acepta solo esquema + host + puerto opcional + ruta sin
+# espacios, sin `\` y sin `@` en ninguna parte (ni como usuario ni en la ruta: un
+# enlace de catálogo no lo necesita, y rechazarlo del todo no deja ambigüedad).
+forma='^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[^[:space:]\\@]*)?$'
+[[ "$PUBLICO" =~ $forma ]] \
+  || { echo "::error::SITIO_PUBLICO no tiene la forma https://<host>[:<puerto>][/<ruta>]: sin usuario@, sin barra invertida, sin espacios ni saltos de línea."; exit 1; }
 shopt -u nocasematch
 
 H="$(host_de "$PUBLICO")"

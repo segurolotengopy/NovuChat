@@ -539,12 +539,43 @@ describe('comprobar-origen-catalogo.sh: SITIO_PUBLICO no puede ser un origen de 
       'https://proyecto-id.firebaseapp.com./',
       'https://consola.ejemplo.test',                 // PROD_URL
       'https://Consola.Ejemplo.Test:8443/ruta?x#y',   // PROD_URL con otra forma
-      ['https://usuario', 'consola-sitio.web.app/'].join('@'), // con usuario delante: el host sigue siendo el de la consola (armado así: el saneo toma «a@b.c» por un correo)
     ]) {
       const r = corre(u);
       expect(r.codigo, u).toBe(1);
       expect(r.salida, u).toContain('un host de la consola');
     }
+  });
+
+  it('NEGANDO: la forma completa se valida ANTES de normalizar (barra invertida, saltos de línea, usuario@)', () => {
+    const arroba = '@'; // armado aparte: el saneo del repositorio toma «a@b.c» por un correo
+    // (El `@` se rechaza en TODA la dirección, también en la ruta: un enlace de catálogo no lo necesita.)
+    for (const [que, u] of [
+      // Un navegador trata `\` como `/`: iría a la consola aunque el texto nombre el catálogo.
+      ['barra invertida con @', `https://consola-sitio.web.app\\${arroba}cat-sitio.web.app`],
+      ['barra invertida en la ruta', 'https://cat-sitio.web.app\\ruta'],
+      // El paso de producción escribe el valor con printf en functions/.env: una línea extra sería otro parámetro.
+      ['salto de línea', 'https://cat-sitio.web.app/ruta\nOTRO_PARAMETRO=1'],
+      ['retorno de carro', 'https://cat-sitio.web.app/ruta\rx'],
+      ['salto de línea al final', 'https://cat-sitio.web.app\n'],
+      ['espacio', 'https://cat-sitio.web.app/a b'],
+      ['tabulación', 'https://cat-sitio.web.app/a\tb'],
+      ['usuario delante del host de la consola', `https://usuario${arroba}consola-sitio.web.app/`],
+      ['usuario delante del sitio válido', `https://usuario${arroba}cat-sitio.web.app/`],
+      ['puerto sin número', 'https://cat-sitio.web.app:/x'],
+      ['puerto de más de cinco cifras', 'https://cat-sitio.web.app:123456/x'],
+    ] as const) {
+      const r = corre(u);
+      expect(r.codigo, que).toBe(1);
+      expect(r.salida, que).toContain('no tiene la forma');
+    }
+  });
+
+  it('lo que se aceptaba sigue aceptándose (mayúsculas, puerto, punto final, esquema en mayúsculas)', () => {
+    for (const u of [
+      'https://CAT-SITIO.web.APP:8443/c/x?y=1#z',
+      'https://cat-sitio.web.app./',
+      'HTTPS://cat-sitio.web.app',
+    ]) expect(corre(u).codigo, u).toBe(0);
   });
 
   it('NEGANDO: el host de la consola se rechaza aunque esté en la lista de dominios propios', () => {

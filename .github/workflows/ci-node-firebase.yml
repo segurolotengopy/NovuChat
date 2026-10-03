@@ -2194,7 +2194,9 @@ jobs:
               ? 'Health check correcto'
               : process.env.SALUD_OK === 'false'
                 ? 'Health check fallido; rollback intentado en desplegar-produccion'
-                : 'desplegar-produccion falló antes de verificar la salud';
+                : process.env.SALUD_OK === 'true'
+                  ? 'Consola sana, pero falló un paso posterior de desplegar-produccion (p. ej. el humo del sitio público); sin rollback'
+                  : 'desplegar-produccion falló antes de verificar la salud';
             const { data: d } = await github.rest.repos.createDeployment({
               owner: context.repo.owner, repo: context.repo.repo,
               ref: context.ref, environment: 'production', auto_merge: false,
