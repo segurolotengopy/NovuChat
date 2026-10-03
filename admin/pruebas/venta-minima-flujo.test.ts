@@ -20,6 +20,7 @@
  * Para ver una conversación con los ojos: `VM_VER=1 pnpm -s vitest run --project puras pruebas/venta-minima-flujo.test.ts -t traza`.
  */
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -855,6 +856,19 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
   });
 
   // COBRO SIMULADO (piloto de Q'Taco, 03/10/2026). Cada caso se prueba NEGANDO: la copia sin tocar da 0 y la alterada da 1 con SU mensaje.
+  it('H7: el contenido de la imagen del QR simulado es el de la etiqueta v0.11.0 (el blob fijado): ningún cambio de HEAD lo altera sin esta prueba', () => {
+    // El identificador del blob de `Demo-Recursos/qr-demo.png` EN LA ETIQUETA v0.11.0, comprobado con el repositorio al fijar esta prueba (el mismo
+    // en HEAD). Se calcula como `git hash-object` (SHA-1 de «blob <largo>\0» + contenido) SIN ejecutar git ni pedir nada a la red. LÍMITE
+    // DECLARADO: no se compara con la etiqueta en cada corrida (un clon superficial del CI no la trae); la comparación es contra el blob fijado.
+    const BLOB_DE_V0_11_0 = 'f4a5410d2ac42063c53d00d8edecc28cc4a757f4';
+    const bytes = readFileSync(join(AQUI, '../../Demo-Recursos/qr-demo.png'));
+    const hash = createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${bytes.length}\0`), bytes])).digest('hex');
+    expect(hash, 'Demo-Recursos/qr-demo.png cambió respecto de la etiqueta v0.11.0: subir la etiqueta es una decisión revisada (construir.mjs + esta prueba + datos)').toBe(BLOB_DE_V0_11_0);
+    // NEGANDO: un byte distinto da otro identificador (la comparación no es una igualdad vacía).
+    const otro = createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${bytes.length + 1}\0`), bytes, Buffer.from('x')])).digest('hex');
+    expect(otro).not.toBe(BLOB_DE_V0_11_0);
+  });
+
   it('--verificar FALLA si el cobro simulado trae otra imagen, un booleano que no lo es, una sola clave o un modo que no corresponde', () => {
     const URL_OK = 'https://raw.githubusercontent.com/segurolotengopy/NovuChat/v0.11.0/Demo-Recursos/qr-demo.png';
     expect(verificarEnCopia(() => undefined).status, 'la copia sin tocar').toBe(0);
@@ -868,6 +882,12 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
       ['otro anfitrión', URL_OK.replace('raw.githubusercontent.com', 'imagenes.ejemplo.invalid')],
       ['otro repositorio', URL_OK.replace('segurolotengopy/NovuChat', 'otro/Repo')],
       ['rama main en lugar de la etiqueta', URL_OK.replace('v0.11.0', 'main')],
+      // H7: la etiqueta es EXACTAMENTE v0.11.0; una posterior (u otra con la misma forma) podría traer otra imagen.
+      ['etiqueta v0.11.1', URL_OK.replace('v0.11.0', 'v0.11.1')],
+      ['etiqueta v0.12.0', URL_OK.replace('v0.11.0', 'v0.12.0')],
+      ['etiqueta v1.0.0', URL_OK.replace('v0.11.0', 'v1.0.0')],
+      ['etiqueta v0.11.0 con sufijo', URL_OK.replace('v0.11.0', 'v0.11.0-rc1')],
+      ['etiqueta v0.11.00', URL_OK.replace('v0.11.0', 'v0.11.00')],
       ['otra imagen del mismo repositorio', URL_OK.replace('qr-demo.png', 'otra.png')],
       ['http', URL_OK.replace('https', 'http')],
       ['con puerto', URL_OK.replace('.com/', '.com:8443/')],

@@ -503,8 +503,9 @@ CLAUDE.md: el rótulo va **impreso en la imagen** y en el **pie**, la respuesta 
 **En los datos del tenant (`admin/scripts/datos/venta-minima/*.json`):**
 
 - `modoCobro` es obligatorio y vale `simulado`, `real` o `sin_qr`. Con `simulado` exige `configBase.cobroSimuladoActivo` = `true` (booleano) y
-  `configBase.qrSimuladoUrl` con la forma exacta de `URL_QR_SIMULADO` (anfitrión `raw.githubusercontent.com`, etiqueta `vN.N.N`, ruta
-  `Demo-Recursos/qr-demo.png`; ni `main`, ni http, ni marcador). Con otro modo, esas dos claves no pueden existir.
+  `configBase.qrSimuladoUrl` con la forma exacta de `URL_QR_SIMULADO` (anfitrión `raw.githubusercontent.com`, etiqueta **`v0.11.0` exactamente**, ruta
+  `Demo-Recursos/qr-demo.png`; ni `main`, ni otra etiqueta, ni http, ni marcador). `Armar mensajes` repite la comprobación de anfitrión y ruta
+  cuando el QR es simulado (`qr_simulado_imagen_no_permitida`). Con otro modo, esas dos claves no pueden existir.
 - `guardiasDeProduccion` repite la regla sobre el JSON armado **y sobre el versionado** (un JSON editado a mano con otra URL falla en `--verificar`):
   las dos claves van juntas o ninguna, `cobroSimuladoActivo` es el booleano `true`, y solo con `modoCobro: simulado`.
 - `qtaco.json` queda en `simulado`. `ensayo.json` y `ensayo-demo-a.json` **heredan** de `qtaco.json`: no cambia lo que hacen hoy, porque la clave

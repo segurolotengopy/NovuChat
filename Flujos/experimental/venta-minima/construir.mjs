@@ -95,8 +95,10 @@ const RETENCION_POR_OMISION = { exito: 'none', error: 'none' };
 const retencionDe = (destino) => RETENCION_POR_SALIDA[destino] || RETENCION_POR_OMISION;
 
 // COBRO SIMULADO (piloto de Q'Taco, 03/10/2026): la ÚNICA imagen permitida es el QR de demostración versionado, con el rótulo
-// IMPRESO, fijado a una etiqueta de versión. Otro anfitrión u otra ruta = una imagen sin rótulo garantizado.
-const URL_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy\/NovuChat\/v\d+\.\d+\.\d+\/Demo-Recursos\/qr-demo\.png$/;
+// IMPRESO, fijado EXACTAMENTE a la etiqueta v0.11.0 (no a «cualquier vN.N.N»: una etiqueta futura podría traer otra imagen). Otro anfitrión, otra
+// ruta u otra etiqueta = una imagen sin rótulo garantizado. Subir la etiqueta es una decisión revisada: se cambia aquí, en la prueba del blob
+// (`venta-minima-flujo.test.ts`, que fija el contenido de la imagen) y en los datos, juntos.
+const URL_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy\/NovuChat\/v0\.11\.0\/Demo-Recursos\/qr-demo\.png$/;
 const MODOS_COBRO = ['simulado', 'real', 'sin_qr'];
 
 function codigoDe(marca, nodo) {

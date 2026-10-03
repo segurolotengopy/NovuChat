@@ -601,7 +601,9 @@ describe('Armar mensajes — el QR', () => {
 // -------------------------------------------------------------------------------------------------
 // El QR SIMULADO: los dos modos son excluyentes y el modo coherente con el pie es lo último que se mira.
 describe('Armar mensajes — el QR del cobro simulado', () => {
-  const URL_SIM = 'https://qr.ejemplo.test/qr-demo.png';
+  // La imagen permitida del QR simulado (la misma que fija `construir.mjs`); `URL_OTRA` es https pero NO es esa imagen.
+  const URL_SIM = 'https://raw.githubusercontent.com/segurolotengopy/NovuChat/v0.11.0/Demo-Recursos/qr-demo.png';
+  const URL_OTRA = 'https://qr.ejemplo.test/qr-demo.png';
   const COBRO_SIM: J = { activo: false, modo: 'simulado', qrUrl: URL_SIM };
   const PIE_SIM = 'PRUEBA · COBRO SIMULADO: este QR es de demostración, no cobra ni mueve dinero.\nPedido #K7Q2. Total de la prueba: 55 Bs (solo la comida).\nNo intentes pagarlo: tu banco lo va a rechazar. Para seguir con la prueba, envíame aquí cualquier foto como comprobante simulado.';
   const planQr = (mensaje: J = qr({ cuerpo: PIE_SIM }), extra: J = {}): J => ({
@@ -626,6 +628,10 @@ describe('Armar mensajes — el QR del cobro simulado', () => {
     ['real con un pie que dice «PRUEBA»', { cfg: { cobro: { activo: true, modo: 'real', qrUrl: URL_SIM } } }, qr({ cuerpo: `${PIE} PRUEBA` }), 'qr_real_con_rotulo_simulado'],
     ['real con un pie que dice «demostración»', {}, qr({ cuerpo: `${PIE} Es una demostración.` }), 'qr_real_con_rotulo_simulado'],
     ['real con el pie del cobro simulado', {}, qr({ cuerpo: PIE_SIM }), 'qr_real_con_rotulo_simulado'],
+    // H7 (defensa en profundidad): una imagen https que no es el QR de demostración del repositorio no sale con la marca «SIMULADO».
+    ['simulado con otra imagen https (otro anfitrión)', { cfg: { cobro: { ...COBRO_SIM, qrUrl: URL_OTRA } } }, qr({ cuerpo: PIE_SIM }), 'qr_simulado_imagen_no_permitida'],
+    ['simulado con la imagen del repositorio en otra ruta', { cfg: { cobro: { ...COBRO_SIM, qrUrl: URL_SIM.replace('qr-demo.png', 'otra.png') } } }, qr({ cuerpo: PIE_SIM }), 'qr_simulado_imagen_no_permitida'],
+    ['simulado con la imagen de otro repositorio', { cfg: { cobro: { ...COBRO_SIM, qrUrl: URL_SIM.replace('segurolotengopy/NovuChat', 'otro/Repo') } } }, qr({ cuerpo: PIE_SIM }), 'qr_simulado_imagen_no_permitida'],
     ['simulado sin enlace https', { cfg: { cobro: { ...COBRO_SIM, qrUrl: 'http://qr.ejemplo.test/a.png' } } }, qr({ cuerpo: PIE_SIM }), 'qr_sin_https'],
     ['simulado con un monto distinto del total', { cfg: { cobro: COBRO_SIM } }, qr({ cuerpo: PIE_SIM, monto: 999 }), 'qr_monto_distinto_del_total'],
     ['modo desconocido sin `activo`', { cfg: { cobro: { activo: false, modo: 'apagado', qrUrl: URL_SIM } } }, qr({ cuerpo: PIE_SIM }), 'cobro_no_activo'],

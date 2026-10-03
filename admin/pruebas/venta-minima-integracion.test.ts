@@ -1082,7 +1082,7 @@ describe('las tres copias de la red de prohibidas y las expresiones regulares', 
 // `cobroReal`), «Config base» lo habilita con la imagen de demostración, y la foto es el comprobante de la prueba SIN cotejo.
 // =================================================================================================
 describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso de PRUEBA y cierre sin monto', () => {
-  const URL_SIM = 'https://almacen.ejemplo.test/demo/qr-demo.png';
+  const URL_SIM = 'https://raw.githubusercontent.com/segurolotengopy/NovuChat/v0.11.0/Demo-Recursos/qr-demo.png'; // la única imagen que `Armar mensajes` deja salir como QR simulado (H7)
   const BASE_SIM: J = { ...BASE, cobroSimuladoActivo: true, qrSimuladoUrl: URL_SIM };
   /** El panel en simulado: `cobroSimulado` (objeto), sin `cobroReal`, y si hay un QR esperando, su pedido. */
   const conSimulado = (pendiente?: { pedido: string; monto: number }): J => panel({

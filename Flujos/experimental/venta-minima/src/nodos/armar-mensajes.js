@@ -186,6 +186,9 @@ function amGenerico(motivo) {
 
 // ----------------------------------------------------------------- un mensaje del plan
 let AM_qrRechazado = false;
+// Defensa en profundidad (la guarda real es `construir.mjs`, que fija la etiqueta exacta): el QR SIMULADO solo sale si su imagen es el QR de
+// demostración rotulado del repositorio (anfitrión, repositorio y ruta). Un enlace distinto, aunque sea https, no sale con la marca «SIMULADO».
+const AM_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy\/NovuChat\/v\d+\.\d+\.\d+\/Demo-Recursos\/qr-demo\.png$/;
 // La URL del QR: solo https, con un dominio con nombre (nada de IP ni de «localhost»), sin usuario (`@`) ni puerto.
 function amUrlSegura(u) {
   const s = String(u === undefined || u === null ? '' : u).trim();
@@ -217,6 +220,7 @@ function amQr(m, cuerpo) {
   else if (!(total > 0) || Math.round(monto * 100) !== Math.round(total * 100)) motivo = 'qr_monto_distinto_del_total';
   else if (!pedidoId) motivo = 'qr_sin_pedido';
   else if (m.referencia && String(m.referencia) !== pedidoId) motivo = 'qr_referencia_distinta';
+  else if (simulado && !AM_QR_SIMULADO.test(link)) motivo = 'qr_simulado_imagen_no_permitida';
   else if (simulado && !(/simulad/.test(cuerpoN) && /no cobra/.test(cuerpoN))) motivo = 'qr_simulado_sin_rotulo';
   else if (!simulado && /simulad|simulacr|demostracion|prueba/.test(sinTitular(cuerpoN, cobro.titular))) motivo = 'qr_real_con_rotulo_simulado';
   if (motivo) {
