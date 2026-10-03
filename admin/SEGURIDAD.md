@@ -371,7 +371,9 @@ excepción que se AGREGÓ, y conviene decir qué cuesta:
 
 `scripts/probar-csp.mjs` aplica **el bloque que corresponde a cada ruta**, no solo
 el general: probar `/c/<ficha>` con la política de la consola diría que todo está
-bien y estaría probando la página equivocada.
+bien y estaría probando la página equivocada. (Desde T-37 `/c/<ficha>` ya no es de
+la consola: este script sirve el sitio `consola` y la página pública se prueba con
+`scripts/datos/catalogo-demo.mjs`, que lee el bloque del sitio `catalogo`.)
 
 ### Fragilidad conocida, dicha por adelantado
 
@@ -1471,6 +1473,32 @@ funcionando, o a romperlos.
 `catalogoWebActivo == true` sobre `/config/negocio` de los comercios reales. Si
 devuelve algo y el catálogo sigue en el sitio de la consola, esta amenaza está
 abierta en producción.
+
+**Estado (03/10/2026): implementado en el código; falta operarlo.** El disparador
+llegó con Q'Taco (primer comercio real con catálogo web, lunes 05/10). Lo que
+quedó escrito, y qué lo vigila:
+
+| Pieza | Dónde | Qué impide que se pierda |
+|---|---|---|
+| Dos sitios de Hosting con destinos `consola` y `catalogo` | `firebase.json`, `.firebaserc.ejemplo` | `pruebas/modulos/catalogo-web/sitio-publico.test.ts` |
+| La consola ya no sirve `/c/**` ni las Functions públicas del catálogo | `firebase.json` (sitio `consola`), `src/main.tsx` | la misma suite y el punto 1 de `scripts/humo-staging.sh` |
+| El sitio público solo reescribe a `checkoutCatalogo`, `fotoDeCatalogo`, `catalogoPublico`; su CSP no nombra marcos, Google, Firebase ni Functions, y no se indexa | `firebase.json` (sitio `catalogo`) | la suite y `scripts/humo-sitio-publico.sh` |
+| El paquete público tiene su propia compilación y su única entrada no importa la consola ni el SDK de Firebase | `web/vite.catalogo.config.ts`, `web/catalogo.html`, `publico/entrada.tsx` | la suite (sobre los `import`) y `scripts/modulos/catalogo-web/verificar-sitio-publico.mjs` (sobre lo que Vite emitió, en el job `construir`) |
+| `SITIO_PUBLICO` obligatoria: sin ella no hay enlace (500) | `catalogoWeb.ts` (`baseDelSitio`) | la suite: ya no existe el respaldo `https://<proyecto>.web.app`, que ahora llevaría a la consola |
+| El despliegue falla si falta `HOSTING_SITIO_CATALOGO`, si es el sitio de la consola o si `SITIO_PUBLICO` sigue siendo el origen de la consola | `ci-node-firebase.yml` (`desplegar-staging`, `desplegar-produccion`) | la suite (lee el workflow) |
+
+**Cambios de comportamiento que esto trae:** la vista previa del catálogo en la
+consola (`Catalogo.tsx`) se abre en otra pestaña en vez de un marco: enmarcar una
+página de otro origen exigiría que cada CSP nombrara la dirección de la otra, que
+cambia por ambiente y no se versiona. Los enlaces de catálogo repartidos antes del
+cambio, con la dirección de la consola, dejan de abrir la página (vencen a las
+72 horas y solo los tienen demos).
+
+**Lo que sigue abierto** hasta que se opere (`docs/produccion/sitio-publico-catalogo.md`):
+crear los dos sitios, cargar `HOSTING_SITIO_CATALOGO` y `SITIO_PUBLICO` en staging y
+en producción, desplegar y correr `scripts/humo-sitio-publico.sh`. **Hasta entonces
+Q'Taco no enciende `catalogoWebActivo`**: la consulta de arriba sigue siendo la
+comprobación.
 
 ---
 

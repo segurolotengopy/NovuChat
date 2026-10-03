@@ -3,6 +3,8 @@
 # directorios. Por eso un `git add -A` llego a versionar el enlace.
 node_modules
 dist/
+# Segundo sitio de Hosting (página pública del catálogo, T-37): web/dist-catalogo/
+dist-catalogo/
 .firebase/
 .firebaserc
 *.local

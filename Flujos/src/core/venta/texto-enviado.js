@@ -68,7 +68,15 @@ for (let i = 0; i < salidas.length; i++) {
   // Si el boton fue rechazado y salio el texto con el enlace, se reporta ESE
   // texto: es lo que el cliente recibio. Con el boton aceptado, `Responder al
   // cliente` no corrio y se reporta el cuerpo del boton.
-  const salioComoTexto = fuente === 'Mensaje a enviar' && corrio('Responder al cliente')
+  // Se decide POR LA CORRIDA, no por la ejecucion: `$prevNode` es el nodo que
+  // alimento esta corrida. `corrio('Responder al cliente')` mira toda la
+  // ejecucion y, con dos corridas de «Mensaje a enviar» (un texto aceptado y un
+  // boton despues), reportaria el texto con el enlace de un boton que si salio.
+  // Solo si `$prevNode` no existe se cae a la lectura de toda la ejecucion.
+  let previoNodo = '';
+  try { previoNodo = String($prevNode.name ?? ''); } catch (e) { previoNodo = ''; }
+  const vinoDelTexto = previoNodo !== '' ? previoNodo === 'Responder al cliente' : corrio('Responder al cliente');
+  const salioComoTexto = fuente === 'Mensaje a enviar' && vinoDelTexto
     && String(elegido.textoParaTexto ?? '') !== '';
   out.push({ json: {
     telefono: String(elegido.from ?? ent.from ?? ''),
