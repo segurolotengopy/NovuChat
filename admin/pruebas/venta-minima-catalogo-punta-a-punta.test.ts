@@ -363,6 +363,45 @@ describe('el pedido que llega de la página conserva su `cat_…` como pedidoId 
     expect(String(pedidoDe(w)['pedidoId'])).toMatch(/^ped-/);
   });
 
+  describe('la MODALIDAD de entrega es parte de «el pedido de la página» (revisión del PR #382, LOW de seguridad)', () => {
+    const EX = (extra: J = {}): J => ({ lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false, ...extra });
+    const idConfirmado = (w: ReturnType<typeof crear>, t: ReturnType<typeof carrito>): string => {
+      const c = confirmar(w, t);
+      expect(qrAbiertos(c)).toHaveLength(1);
+      return String(pedidoDe(w)['pedidoId']);
+    };
+    it('retiro en la página y delivery por chat: conserva el `ped-…` (la consola decía retiro, el aviso diría delivery)', () => {
+      const w = crear();
+      carrito(w, web());
+      expect((estadoDe(w)['pedidoWeb'] as J)['id']).toBe(CAT);
+      w.estado.extraccion = EX({ entrega: 'delivery', direccion: 'Av. Banzer 1234', referencia: 'puerta azul', nombre: 'Carlos Pérez' });
+      const t = turno(w, texto('mejor para delivery, Av. Banzer 1234, puerta azul'));
+      expect(String((estadoDe(w)['entrega'] as J)['entrega'])).toBe('delivery');
+      expect(idConfirmado(w, t)).toMatch(/^ped-/);
+    });
+    it('delivery en la página y retiro por chat: también conserva el `ped-…`', () => {
+      const w = crear();
+      const entrada = carrito(w, web({ entrega: 'envio', direccion: 'Av. Banzer 1234', costoEnvio: 0 }));
+      expect(entrada.mensajes.length).toBeGreaterThan(0);
+      w.estado.extraccion = EX({ entrega: 'delivery', referencia: 'puerta azul', nombre: 'Carlos Pérez' });
+      turno(w, texto('puerta azul, a nombre de Carlos Pérez'));
+      expect(estadoDe(w)['pedidoWeb']).toMatchObject({ id: CAT });
+      w.estado.extraccion = EX({ entrega: 'recojo' });
+      const t = turno(w, texto('mejor paso a recoger'));
+      expect(String((estadoDe(w)['entrega'] as J)['entrega'])).toBe('recojo');
+      expect(idConfirmado(w, t)).toMatch(/^ped-/);
+    });
+    it('NEGANDO: si la modalidad no cambia (retiro, o delivery con sus datos completados por chat), el `cat_…` se conserva', () => {
+      const w = crear();
+      expect(idConfirmado(w, carrito(w, web()))).toBe(CAT);
+      const v = crear();
+      carrito(v, web({ entrega: 'envio', direccion: 'Av. Banzer 1234', costoEnvio: 0 }));
+      v.estado.extraccion = EX({ entrega: 'delivery', referencia: 'puerta azul', nombre: 'Carlos Pérez' });
+      const t = turno(v, texto('puerta azul, a nombre de Carlos Pérez'));
+      expect(idConfirmado(v, t)).toBe(CAT);
+    });
+  });
+
   describe('NEGANDO: si el pedido del flujo ya no es EL de la página, conserva su id propio `ped-…`', () => {
     const idFinal = (t0: ReturnType<typeof carrito>, w: ReturnType<typeof crear>): string => {
       const c = confirmar(w, t0);

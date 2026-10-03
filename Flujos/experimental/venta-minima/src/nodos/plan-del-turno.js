@@ -734,10 +734,12 @@ function aExtraerPedido() {
 }
 
 // El pedido a guardar y a avisar: los campos del código (nunca un precio del modelo).
-// La huella del carrito (ids, cantidades y notas): si el cliente lo cambia despues de llegar de la pagina (otra cantidad, un producto de mas, una
-// bebida quitada por delivery), ya no es el pedido que escribio el checkout y deja de usar su id.
+// La huella del carrito (ids, cantidades, notas Y la modalidad de entrega): si el cliente lo cambia despues de llegar de la pagina (otra cantidad,
+// un producto de mas, una bebida quitada por delivery, o retiro por delivery), ya no es el pedido que escribio el checkout y deja de usar su
+// id: la consola diria una entrega y el aviso otra. La modalidad se fija en `aCarrito` con la de la pagina; si el local no la ofrece y el flujo
+// toma otra, la huella no coincide y el pedido conserva su id propio.
 function huellaDelCarrito() {
-  return vmHuella(en.carrito.map((l) => String(l.id) + 'x' + String(l.cantidad) + '|' + String(l.detalle || '')).join(';'));
+  return vmHuella(en.carrito.map((l) => String(l.id) + 'x' + String(l.cantidad) + '|' + String(l.detalle || '')).join(';') + '#' + String(en.entrega.entrega || ''));
 }
 
 function armarPedido() {
