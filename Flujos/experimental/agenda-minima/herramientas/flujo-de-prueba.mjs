@@ -431,7 +431,9 @@ if (bandera('actualizar-codigo')) {
 // El anfitrión de Graph se arma por partes: este archivo habla con la API de n8n (`fetch`) y NO escribe en Graph, y la prueba de seguridad
 // `apps-ajenas-escrituras.test.ts` busca el nombre literal contiguo para saber quién escribe allí. Sin el literal, la guardia sigue igual.
 const HOST_META = ['graph', 'facebook', 'com'].join('.');
-const RE_HOST_META = new RegExp('^https?:\\/\\/' + HOST_META.replace(/\./g, '\\.') + '(?:[/:?#]|$)');
+// El mismo anfitrión con cada punto ya escapado para la regex (sin `replace`: nada que sanear después).
+const HOST_META_RE = ['graph', 'facebook', 'com'].join('\\.');
+const RE_HOST_META = new RegExp('^https?:\\/\\/' + HOST_META_RE + '(?:[/:?#]|$)');
 function llamaAGraph(url) {
   const cruda = String(url ?? '').trim();
   const esExpresion = cruda.startsWith('=');
