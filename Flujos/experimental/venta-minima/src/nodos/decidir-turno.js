@@ -230,8 +230,8 @@ return salir('menu');
 //   2. el panel no contesto: no hay carta con que armar nada, se pasa con el local (aviso + boton);
 //   3. el tenant del carrito no es el del panel de ESTE numero: no es de este comercio, no se contesta;
 //   4. pedidos apagados: no hay nada que tomar;
-//   5. local cerrado: fuera de horario (como un pedido por texto);
-//   6. con un QR esperando comprobante: el carrito se ignora y se recuerda el comprobante;
+//   5. con un QR esperando comprobante: el carrito se ignora y se recuerda el comprobante (antes que el horario);
+//   6. local cerrado: fuera de horario (como un pedido por texto);
 //   7. si no, `carrito`: `Plan del turno` arma el pedido desde la carta y sigue con el paso que corresponda.
 function decidirCarrito() {
   const c = t.carrito && typeof t.carrito === 'object' ? t.carrito : {};
@@ -239,8 +239,9 @@ function decidirCarrito() {
   if (cfg.panelSinRespuesta === true) return salir('transferir', { motivo: 'carrito del catálogo sin respuesta del panel' });
   if (!mismoTexto(c.tenantId, tenantDelPanel())) return salir('carrito', { motivo: 'carrito_otro_tenant' });
   if (!pedidosOn) return salir('carrito', { motivo: 'carrito_sin_pedidos' });
-  if (cerrado()) return salir('fuera_de_horario');
+  // El comprobante pendiente se revisa ANTES del horario: un cliente que ya pagó recibe el recordatorio de su comprobante aunque el local cerró.
   if (previo.paso === 'esperando_comprobante') return salir('recordatorio_comprobante');
+  if (cerrado()) return salir('fuera_de_horario');
   return salir('carrito');
 }
 

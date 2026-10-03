@@ -419,6 +419,22 @@ describe('el carrito que vuelve de la página', () => {
     expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
   });
 
+  it('con un QR esperando comprobante Y el local ya cerrado: manda el recordatorio del comprobante (no «fuera de horario»), y el pedido en curso no se toca', () => {
+    const m = crear();
+    carrito(m, {}, respuesta(COBRO_REAL));
+    turno(m, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, respuesta(COBRO_REAL));
+    const antes = JSON.stringify(estadoDe(m)['pedido']);
+    m.config['horario'] = HORARIO_SIN_LUNES; // el local cerró mientras el cliente pagaba
+    const t = carrito(m, { pedidoId: 'cat_otro_0002' }, respuesta(COBRO_REAL));
+    expect(t.decision!['accion']).toBe('recordatorio_comprobante');
+    expect(t.textos[0]).toContain('Estoy esperando el comprobante');
+    expect(t.textos.join(' ')).not.toContain('Por ahora no estamos tomando pedidos');
+    expect(JSON.stringify(estadoDe(m)['pedido'])).toBe(antes);
+    // NEGANDO: sin comprobante pendiente y con el local cerrado, sigue siendo «fuera de horario».
+    const sinPendiente = crear({ horario: HORARIO_SIN_LUNES });
+    expect(carrito(sinPendiente).decision!['accion']).toBe('fuera_de_horario');
+  });
+
   it('local cerrado: fuera de horario (como un pedido por texto), sin armar nada', () => {
     const m = crear({ horario: HORARIO_SIN_LUNES });
     const t = carrito(m);
