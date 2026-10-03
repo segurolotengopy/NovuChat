@@ -896,7 +896,12 @@ function aComprobante() {
     const baseSim = { codigo: ped.codigo, entrega: ped.modalidad };
     const conA = cbTextoAlCliente(resSim, Object.assign({ avisoSalio: true }, baseSim));
     ruta = 'comprobante:' + resSim;
-    if (!conA.aviso) { mensajes = [mensajeDeCb(conA)]; limpiarConfirmado(); irA('menu'); return; }
+    if (!conA.aviso) {
+      mensajes = [mensajeDeCb(conA)];
+      // «Ya tengo el comprobante» no cambia el paso si el cliente ya no esta esperando uno (empezo otro pedido): solo cierra un cobro en espera.
+      if (en.paso === 'esperando_comprobante') { limpiarConfirmado(); irA('menu'); }
+      return;
+    }
     const sinA = cbTextoAlCliente(resSim, Object.assign({ avisoSalio: false }, baseSim));
     pedidoGuardar = Object.assign({}, ped, { resultado: 'simulado', estado: cbEstadoParaAviso('simulado'), diferencias: [], mediaId: '', cierreId: '' });
     aviso = { tipo: 'comprobante', datos: Object.assign(datosDePedido(pedidoGuardar, 'simulado', []), { mediaId: '' }) };

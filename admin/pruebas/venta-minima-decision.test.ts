@@ -1330,6 +1330,33 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^Ya tengo el comprobante de tu pedido #/);
   });
 
+  it('H5: «ya tengo el comprobante» NO cambia el paso si el cliente ya empezó otro pedido; y una foto con PIE en ese caso es una imagen con pie (el pie se atiende como texto)', () => {
+    const m = enEsperaSim();
+    const ref = String(estadoDe(m)['pedido']['pedidoId']);
+    pendiente(m);
+    foto(m); // primer comprobante: el pedido queda con resultado «simulado» y el estado vuelve a `menu`
+    pendiente(m, ref); // el servidor aún lo ve pendiente
+    hastaResumen(m); // el cliente empieza OTRO pedido y llega al resumen
+    expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
+    const carritoAntes = JSON.stringify(estadoDe(m)['carrito']);
+    // Sin pie: «ya tengo el comprobante», sin aviso ni cierre, y el pedido en curso queda donde estaba (antes se iba a `menu`).
+    const sin = foto(m);
+    expect(sin.p!['ruta']).toBe('comprobante:ya_cotejado');
+    expect(sin.p!['aviso']).toBeNull();
+    expect(sin.p!['cierre']).toBeNull();
+    expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
+    expect(JSON.stringify(estadoDe(m)['carrito'])).toBe(carritoAntes);
+    // Con pie: es una imagen con pie, el pie se atiende como texto (no «ya tengo el comprobante»).
+    const con = turno(m, { tipo: 'image', comprobanteSimulado: true, texto: 'mejor 3 tacos de birria', extraccion: extPedido({ lineas: [linea('tacos de birria', 3, 'orden')] }) });
+    expect(con.d['accion']).toBe('extraer_pedido');
+    expect(con.d['accion']).not.toBe('comprobante');
+    // NEGANDO: dentro del cobro (esperando el comprobante) una foto CON pie sigue siendo el comprobante simulado, y la segunda sigue cerrando el cobro.
+    const dentro = enEsperaSim();
+    pendiente(dentro);
+    expect(registrar(turno(dentro, { tipo: 'image', comprobanteSimulado: true, texto: 'aquí está' })).p!['ruta']).toBe('comprobante:simulado');
+    expect(estadoDe(dentro)['paso']).toBe('menu');
+  });
+
   it('una foto después de «Cancelar pedido» es una imagen sin pendiente: ni aviso ni cierre, aunque el servidor aún vea el QR', () => {
     const m = enEsperaSim();
     const ref = String(estadoDe(m)['pedido']['pedidoId']);
