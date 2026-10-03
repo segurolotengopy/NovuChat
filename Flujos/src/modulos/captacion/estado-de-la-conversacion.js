@@ -120,7 +120,16 @@ const PEDIDO = /^(quiero|necesito|me\s+interesa|dame|envía|envia|mánda|manda|m
 // tilde (sin la bandera `u`, «í» no es una letra de palabra), asi que «sí\b»
 // no coincide nunca con un «sí» suelto. Se usa esta mirada adelante.
 const FIN = '(?![a-z0-9áéíóúüñ])';
-const CORTESIA = new RegExp('^(hola|buen(as|os)|gracias|ok|si|sí|no|listo|claro|dale)' + FIN, 'i');
+// Desde el 03/10/2026 TODO prospecto ve la lista en el primer mensaje, y su
+// siguiente mensaje escrito es candidato a rubro: una disculpa o un «creo que me
+// equivoque de numero» no lo es.
+const CORTESIA = new RegExp('^(hola|buen(as|os)|gracias|ok|si|sí|no|listo|claro|dale|perd[oó]n|disculp[a-záéíóúñ]*|lo\\s+siento|' +
+  'creo\\s+que|me\\s+equivoqu)' + FIN, 'i');
+// Quien contesta «¿de que rubro es?» dice «tengo una pasteleria» o nombra el
+// rubro en pocas palabras. Una frase larga y sin esa forma -- «les ofrezco
+// servicios de diseño para sus redes» -- la valida el modelo, no el codigo.
+const DICE_SU_RUBRO = /^(?:(?:mi|nuestro|nuestra)\s+(?:negocio|empresa|emprendimiento)\s+)?(?:es|son|somos|tengo|tenemos|vendo|vendemos|me\s+dedico|nos\s+dedicamos|trabajo|trabajamos)\s/i;
+const pareceRubro = (t) => DICE_SU_RUBRO.test(t) || (t.split(/\s+/).length <= 5 && !/[,;:]/.test(t));
 const esRubro = (t) => t.length > 0 && t.length <= 80 && !/[?¿]/.test(t)
   && !NO_ES_RUBRO.test(t) && !PEDIDO.test(t) && !CORTESIA.test(t);
 // Texto comparable: sin tildes, sin mayusculas y sin signos.
@@ -324,7 +333,7 @@ for (let i = 0; i < items.length; i++) {
     empresaDicha = nombreDeEmpresa(dicho);
     if (empresaDicha) { c.lead.empresa = empresaDicha; c.pidio = []; }
   } else if (!yaResuelto && accion === 'agente' && c.pidioRubro && !pidioOtroDato && !c.lead.rubro && e.tipo === 'text'
-      && dicho && !esLaEmpresa(dicho) && c.pidioDolor !== true && !soporteAhora && esRubro(dicho)) {
+      && dicho && !esLaEmpresa(dicho) && c.pidioDolor !== true && !soporteAhora && esRubro(dicho) && pareceRubro(dicho)) {
     // El rubro libre: «tenemos una pasteleria».
     rubroDicho = limpiarRubro(dicho).slice(0, 60);
     rubroElegido = rubroDicho;

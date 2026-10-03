@@ -1722,6 +1722,26 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       }
     });
 
+    // Con la lista en el primer mensaje, el siguiente mensaje escrito de TODO
+    // prospecto es candidato a rubro: lo que no lo parece no se registra.
+    it('NEGANDO: una disculpa, un «no me interesa» o una oferta larga no son un rubro, aunque se escriban tras la lista', () => {
+      for (const t of ['Perdón, creo que me equivoqué de número', 'creo que me equivoqué de número', 'no me interesa',
+        'les ofrezco servicios de diseño gráfico para sus redes sociales', 'Disculpe la molestia']) {
+        const sd: J = {};
+        const cfg = cfgCon();
+        procesar('¡Hola! ¿De qué rubro es tu negocio?', turnoCon(texto('hola'), sd, cfg), sd);
+        const e = turnoCon(texto(t), sd, cfg);
+        expect([t, e['leadConocido']['rubro'], e['rubroElegido']], t).toEqual([t, undefined, '']);
+      }
+      // Y lo que sí lo parece, sí: la forma «tengo una…» o pocas palabras.
+      for (const [t, rubro] of [['tengo una pastelería', 'pastelería'], ['tienda de ropa para niños', 'tienda de ropa para niños']] as const) {
+        const sd: J = {};
+        const cfg = cfgCon();
+        procesar('¡Hola! ¿De qué rubro es tu negocio?', turnoCon(texto('hola'), sd, cfg), sd);
+        expect(turnoCon(texto(t), sd, cfg)['leadConocido']['rubro']).toBe(rubro);
+      }
+    });
+
     it('sin haber preguntado, un texto suelto no se toma por rubro', () => {
       expect(turnoCon(texto('pastelería'), {}, cfgCon())['leadConocido']['rubro']).toBeUndefined();
       expect(turnoCon(texto('2'), {}, cfgCon())['leadConocido']['rubro']).toBeUndefined();
