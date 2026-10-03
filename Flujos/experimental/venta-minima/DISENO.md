@@ -65,12 +65,15 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - la clave `avisarAlPropioNumero` (interruptor solo de ensayo) solo puede estar en `ensayo-demo-a.json` y en su salida (ver «La variante
     de ensayo en el Demo A»);
   - retención de ejecuciones (ver abajo).
-- **Retención de ejecuciones (decisión de Andres, 02/10/2026; Q'Taco, 03/10/2026).** Por omisión nada se guarda:
+- **Retención de ejecuciones (decisión de Andres, 02/10/2026; Q'Taco, 03/10/2026; M-1, 03/10/2026).** Por omisión nada se guarda:
   `saveDataSuccessExecution: "none"`, `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, explícitos en la plantilla y en
-  los JSON generados, porque las ejecuciones llevan texto de clientes. **Excepción de UN solo archivo:** `venta-minima.qtaco.json`
-  guarda las ejecuciones con ERROR (`saveDataErrorExecution: "all"`; Q'Taco es un restaurante, no una clínica) para tener rastro de las
-  fallas, entre ellas «Entrega fallida»; las exitosas y el progreso siguen sin guardarse. La prueba y el ensayo en el Demo A conservan
-  `none` en todo. `construir.mjs` lo arma por salida (`RETENCION_POR_SALIDA`) y `--verificar` exige cada valor en ambos sentidos.
+  los JSON generados, porque las ejecuciones llevan texto de clientes. **Q'Taco tampoco guarda las de error, y es TEMPORAL por decisión de
+  Andres (03/10/2026):** el 03/10 se había decidido guardarlas (`all`) para tener rastro de las fallas, pero la revisión de seguridad
+  (M-1) advirtió que la base de n8n guardaría el token de cabecera de la ingesta, los enlaces, la URL del QR y datos de clientes. Hasta el piloto,
+  `venta-minima.qtaco.json` queda con `none` en todo y el diagnóstico de fallas (entre ellas «Entrega fallida») va por el servidor y el
+  error visible de n8n, sin datos guardados. **Se vuelve a revisar tras el piloto, con ese dato.** `construir.mjs` lo arma por salida
+  (`RETENCION_POR_SALIDA`, marcada TEMPORAL), y `--verificar` exige cada valor en ambos sentidos: subir los errores a `all` falla, y el
+  mensaje recuerda que es temporal y que no se sube sin la excepción de Andres.
 
 ## Entrega de lo prometido (R1, R3, R5) y catálogo web, sin subir el tope de nodos
 
@@ -438,7 +441,7 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
   caracteres) y rechaza `wa.me` y `whatsapp.com`; la nota del cliente se inserta con una función de reemplazo (`$&`, `$'` no se interpretan).
 - **Mensajes por conversación:** 0 agregados ni quitados por esta revisión (el aviso «sigue guardado» va dentro del mismo mensaje).
 - **Declarado y fuera de este flujo:** los hallazgos L-4 y L-5 de la revisión de seguridad son del servidor o de trabajo futuro y no se tocan
-  aquí; la retención de errores `all` de `venta-minima.qtaco.json` (M-1) la decide Andres y `RETENCION_POR_SALIDA` no se cambió.
+  aquí; la retención de errores de `venta-minima.qtaco.json` (M-1) quedó en `none`, TEMPORAL por decisión de Andres (03/10), a revisar tras el piloto.
 
 ## Mensajes por conversación (declarados y medidos en la suite)
 
@@ -483,7 +486,7 @@ en texto llegue; sin esa conversación, el destinatario solo recibe la plantilla
   Andres prefiere una plantilla propia para reservas y consultas (ver el punto 5).
 - **Consola de Q'Taco**: `catalogoWebActivo` en `false` (con más de 40 ítems la ingesta manda `catalogo: []` y el flujo
   deriva todo pedido), carta, campañas y QR; `numeroRecepcion` y `venta.aceptaDelivery`/`aceptaRetiroEnLocal`.
-- **Retención de ejecuciones (P6)**: `none` en todo, salvo las de error de `venta-minima.qtaco.json` (`all`, decidido el 03/10; ver «Cómo se arma»).
+- **Retención de ejecuciones (P6)**: `none` en todo, también en `venta-minima.qtaco.json` (TEMPORAL por decisión de Andres del 03/10; se revisa tras el piloto; ver «Cómo se arma»).
 - **Marcador nuevo en el alta**: `REEMPLAZAR_RUTA_CARRITO_QTACO` (la ruta del webhook del carrito) entra a la tabla local del alta de Q'Taco.
 - Importar con `./scripts/preparar-import.sh Flujos/experimental/venta-minima/venta-minima.qtaco.json .env.qtaco`
   (el patrón de marcadores corta en comillas, barras y espacios: **no pegar dos marcadores con una coma**; la suite lo

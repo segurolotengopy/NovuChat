@@ -818,8 +818,8 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     expect(Object.keys(base)).not.toContain('catalogoWebActivo');
   });
 
-  it('settings: executionOrder v1, zona de La Paz, 60 s, y NADA de ejecuciones guardadas salvo las de ERROR del JSON de Q\'Taco (decisión del 03/10); el progreso nunca', () => {
-    for (const [f, error] of [[PLANTILLA, 'none'], [QTACO, 'all'], [PRUEBA, 'none']] as [Flujo, string][]) {
+  it('settings: executionOrder v1, zona de La Paz, 60 s, y NADA de ejecuciones guardadas, ni las de error, tampoco en Q\'Taco (TEMPORAL, decisión de Andres del 03/10; M-1); el progreso nunca', () => {
+    for (const [f, error] of [[PLANTILLA, 'none'], [QTACO, 'none'], [PRUEBA, 'none']] as [Flujo, string][]) {
       expect(f.settings).toMatchObject({
         executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
         saveDataSuccessExecution: 'none', saveDataErrorExecution: error, saveExecutionProgress: false,
@@ -828,12 +828,18 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
   });
 
   it('--verificar FALLA si un JSON versionado guarda ejecuciones de errores, de éxitos o su progreso (cada uno, por separado)', () => {
-    // Q'Taco guarda SOLO las de error (`all`); cualquier otro valor, en el sentido que sea, falla.
-    for (const [clave, valor] of [['saveDataErrorExecution', 'none'], ['saveDataSuccessExecution', 'all'], ['saveExecutionProgress', true]] as const) {
+    // Q'Taco NO guarda nada (TEMPORAL, decisión de Andres del 03/10; M-1): subir los errores a `all` (la excepción vieja) o los éxitos falla,
+    // y el mensaje dice que es temporal y que se revisa tras el piloto.
+    for (const [clave, valor] of [['saveDataErrorExecution', 'all'], ['saveDataSuccessExecution', 'all'], ['saveExecutionProgress', true], ['saveDataErrorExecution', 'default']] as const) {
       const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => { (f.settings as J)[clave] = valor; }));
-      expect(r.status, clave).toBe(1);
+      expect(r.status, `${clave}=${String(valor)}`).toBe(1);
       expect(r.stderr, clave).toContain('retención');
+      expect(r.stderr, clave).toContain('TEMPORAL por decisión de Andres');
+      expect(r.stderr, clave).toContain('saveDataErrorExecution «none»');
     }
+    // Y la excepción no se cuela por otro archivo: el mensaje temporal es solo del JSON de Q'Taco.
+    const prueba = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.prueba.json', (f) => { (f.settings as J)['saveDataErrorExecution'] = 'all'; }));
+    expect(prueba.stderr).not.toContain('TEMPORAL');
     // Las variantes de prueba y de ensayo no guardan nada: ni siquiera errores.
     for (const archivo of ['venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json']) {
       for (const [clave, valor] of [['saveDataErrorExecution', 'all'], ['saveDataSuccessExecution', 'all']] as const) {
