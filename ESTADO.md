@@ -8,8 +8,9 @@
 > bitácora del mes. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos. (`Analisis/41` §5.5 y §9.4.)
 
-**Última actualización:** 2026-10-03. **H2 cerrado «pasa con observaciones»** y
-F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
+**Última actualización:** 2026-10-03, noche. **La captación de NovuChat corre «Captación
+mínima v0»** (publicada a las 22:32, hora de La Paz). Asiento de hoy en
+`bitacora/2026-10.md`.
 
 ## En producción
 
@@ -19,6 +20,9 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
   Platinum, atrasados en `Procesar respuesta`, declarado en
   `docs/versiones-por-cliente.md`. **Demo B con F3a publicada el 03/10** (74
   nodos): el QR del cobro quedó pendiente de republicar (el media ID vencía a los 30 días).
+  **NovuChat (captación) corre «Captación mínima v0»** (43 nodos, PR #396, sin
+  agente ni memoria; historial de n8n: solo las ejecuciones que fallan). El flujo
+  viejo (`Flujos/novuchat-onboarding.json`) ya no corre y sigue en el repositorio.
 - **Cuentas:** Bellido y Platinum en prueba; demos y captación en demostración.
   Nadie está en producción.
 - **Rojos aceptados:** el ruleset de `main` sin revisor obligatorio, sin ruleset
@@ -45,8 +49,10 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
 1. Republicar el Demo B junto al #378 (aviso al cliente cuando falla el QR, en
    revisión) y repetir el caso del pedido con QR. El #376 ya está fusionado
    (03/10, `c712979`) y el QR demo ya se subió de nuevo con el número del Demo B.
-2. Las dos lecturas de la condición de H2, el ensayo del Demo B y la
-   publicación de F3a en la ventana de 02 a 03.
+2. **Captación:** leer las primeras conversaciones reales y la planilla; cargar la
+   frase de impacto (con la cifra de Harvard verificada) en el guion; retirar el
+   flujo viejo y sus módulos; cerrar el #389. Del resto de H2: el ensayo del Demo B
+   y la publicación de F3a en el Demo A, en la ventana de 02 a 03.
 3. Plantillas `prueba_termina` y `conversaciones_agotadas` (Meta), antes del
    primer pase real. B8 (receptor de AAB1): bloques A a C después de H3a.
 
@@ -54,8 +60,8 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
 
 1. Prueba con teléfono de Bellido y Platinum sobre `v0.11.0`; un segundo
    teléfono para el aviso al dueño del Demo B.
-2. Publicar el Demo A y la captación en la ventana de 02 a 03 (captación fuera
-   del traspaso a Silvana). Platinum no entra.
+2. Publicar el Demo A en la ventana de 02 a 03. Platinum no entra. Probar la
+   captación con un teléfono: su primer mensaje real cierra lo que ninguna prueba mide.
 3. Decisiones D1 a D11 y la opción O0 a O4.
 4. Pendientes de cartera: Gemini prepago, alcance de Q'Taco, contrato y
    plantillas de Bellido, correo de María René (rol `oper`).
