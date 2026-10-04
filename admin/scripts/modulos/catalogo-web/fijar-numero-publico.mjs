@@ -23,17 +23,23 @@
  *   - valida el número: SOLO dígitos, 8 a 15, con prefijo de país, sin `+`,
  *     sin espacios y sin cero inicial. Un número local boliviano de 8 dígitos
  *     (empieza en 6 o 7) se rechaza: sin el 591 el enlace llevaría a otro país;
+ *     y si empieza por 591 tiene que tener EXACTAMENTE 11 dígitos (591 más los 8
+ *     del número): un dígito de más o de menos es un enlace a nadie;
  *   - muestra antes y después (el número público, que el negocio ya publica, y
  *     del `phoneNumberId` solo los últimos cuatro dígitos), sin imprimir ningún
  *     otro dato de la ruta ni del comercio;
- *   - escribe SOLO `numeroPublico` y el sello (`actualizadoPor`,
- *     `actualizadoEn`) con un `update` dentro de una transacción, y deja una
+ *   - escribe SOLO `numeroPublico` y el sello (`actualizadoPor` con el
+ *     correo del operador, `actualizadoEn`) con un `update` dentro de una transacción, y deja una
  *     entrada en `tenants/<id>/auditoria`.
  *
  * SECO POR OMISIÓN: sin `--aplicar` no escribe nada.
  *
  *   node scripts/modulos/catalogo-web/fijar-numero-publico.mjs \
- *     --proyecto <id> --tenant <id> --numero <dígitos con prefijo, sin +> [--aplicar]
+ *     --proyecto <id> --tenant <id> --numero <dígitos con prefijo, sin +> \
+ *     --operador <correo de quien lo corre> [--aplicar]
+ *
+ * `--operador` es obligatorio (la misma validación que `asignar-numero.mjs`): es
+ * quien queda como `actualizadoPor` de la ruta y como `uid` de la auditoría.
  *
  * Dos avisos operativos:
  *   - `asignarNumero` (la callable) REEMPLAZA el documento de la ruta y borraría
@@ -48,6 +54,7 @@ const APLICAR = args.includes('--aplicar');
 const PROYECTO = (opcion('proyecto') ?? '').trim();
 const TENANT = (opcion('tenant') ?? '').trim();
 const NUMERO = (opcion('numero') ?? '').trim();
+const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
 
 const rojo = (t) => console.error(`\x1b[1;31m${t}\x1b[0m`);
 const verde = (t) => console.log(`\x1b[1;32m${t}\x1b[0m`);
@@ -58,21 +65,27 @@ const ult4 = (v) => `…${String(v).slice(-4)}`;
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_RUTA = /^[0-9]{6,25}$/;
 const NUMERO_PUBLICO = /^[1-9][0-9]{7,14}$/;
+// La misma validación que `asignar-numero.mjs`.
+const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const problemas = [];
 if (PROYECTO === '') problemas.push('falta --proyecto');
 if (!ID_TENANT.test(TENANT)) problemas.push('--tenant no es un identificador válido');
+if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: es quien queda en la auditoría');
 if (!NUMERO_PUBLICO.test(NUMERO)) {
   problemas.push('--numero tiene que ser solo dígitos, de 8 a 15, con el prefijo del país '
     + '(sin +, sin espacios, sin cero inicial)');
 } else if (/^[67][0-9]{7}$/.test(NUMERO)) {
   problemas.push('--numero parece un número local boliviano sin prefijo: falta el código del país '
     + 'delante, o el enlace llevaría a otro número');
+} else if (NUMERO.startsWith('591') && NUMERO.length !== 11) {
+  problemas.push('--numero empieza por 591 (Bolivia) y tiene que tener exactamente 11 dígitos: '
+    + '591 más los 8 del número');
 }
 if (problemas.length > 0) {
   rojo(`\n  ✗ ${problemas.join('\n  ✗ ')}\n`);
   console.error('  node scripts/modulos/catalogo-web/fijar-numero-publico.mjs --proyecto <id> '
-    + '--tenant <id> --numero <dígitos con prefijo, sin +> [--aplicar]\n');
+    + '--tenant <id> --numero <dígitos con prefijo, sin +> --operador <correo> [--aplicar]\n');
   process.exit(2);
 }
 
@@ -82,7 +95,6 @@ initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 
 const NEGADO = Symbol('negado');
-const SELLO = 'script:fijar-numero-publico';
 
 let plan;
 try {
@@ -114,11 +126,11 @@ try {
 
     tx.update(refRuta, {
       numeroPublico: NUMERO,
-      actualizadoPor: SELLO,
+      actualizadoPor: OPERADOR,
       actualizadoEn: Timestamp.now(),
     });
     tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
-      accion: 'fijar_numero_publico', origen: 'script', script: 'fijar-numero-publico',
+      accion: 'fijar_numero_publico', uid: OPERADOR, origen: 'script', script: 'fijar-numero-publico',
       en: Timestamp.now(), phoneNumberId: ult4(phoneNumberId),
       antes: resumen.antes, despues: NUMERO,
     });
@@ -137,6 +149,7 @@ if (plan[NEGADO]) {
 console.log();
 console.log(`  Proyecto : ${PROYECTO}`);
 console.log(`  Comercio : ${TENANT}  ·  línea ${ult4(plan.phoneNumberId)}`);
+console.log(`  Operador : ${OPERADOR}`);
 console.log(`  Antes    : ${plan.antes === '' ? '(sin número público)' : plan.antes}`);
 console.log(`  Después  : ${NUMERO}`);
 console.log();

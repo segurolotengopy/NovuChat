@@ -242,7 +242,9 @@ const correr = (...args: string[]) => {
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 };
-const base = (tenant: string, numero: string) => ['--proyecto', PROYECTO, '--tenant', tenant, '--numero', numero];
+const OPERADOR = 'operador@ejemplo.com';
+const base = (tenant: string, numero: string) =>
+  ['--proyecto', PROYECTO, '--tenant', tenant, '--numero', numero, '--operador', OPERADOR];
 const ruta = async (linea: string) => (await db.doc(`rutasWhatsApp/${linea}`).get()).data() ?? {};
 const auditorias = async (tenant: string) =>
   (await db.collection(`tenants/${tenant}/auditoria`).get()).docs.map((d) => d.data());
@@ -254,6 +256,37 @@ describe('fijar-numero-publico.mjs: lo que no se puede pedir', () => {
     expect(r.salida).toContain('falta --proyecto');
     expect(r.salida).toContain('--tenant no es un identificador válido');
     expect(r.salida).toContain('--numero tiene que ser solo dígitos');
+    expect(r.salida).toContain('--operador <correo> es obligatorio');
+  });
+
+  it('NEGANDO: sin --operador, o con un correo inválido, no escribe nada (salida 2)', async () => {
+    const antes = await ruta(LINEA);
+    const sinOperador = ['--proyecto', PROYECTO, '--tenant', T, '--numero', '59100000061', '--aplicar'];
+    const r = correr(...sinOperador);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('--operador <correo> es obligatorio');
+    for (const malo of ['', 'operador', 'a@b', '@ejemplo.com', 'a b@ejemplo.com', 'a@@ejemplo.com', 'a@ejemplo .com']) {
+      const q = correr(...sinOperador, '--operador', malo);
+      expect(q.codigo, JSON.stringify(malo)).toBe(2);
+      expect(q.salida).toContain('--operador <correo> es obligatorio');
+    }
+    expect(await ruta(LINEA)).toEqual(antes);
+    expect(await auditorias(T)).toEqual([]);
+  });
+
+  it('NEGANDO: un número que empieza por 591 tiene que tener exactamente 11 dígitos (salida 2)', async () => {
+    const antes = await ruta(LINEA);
+    for (const raro of ['5917000001', '591700000012', '59170000', '5917000000123']) {
+      const r = correr(...base(T, raro), '--aplicar');
+      expect(r.codigo, raro).toBe(2);
+      expect(r.salida, raro).toContain('exactamente 11 dígitos');
+    }
+    expect(await ruta(LINEA)).toEqual(antes);
+    // Y con 11 dígitos pasa la validación de forma (llega a Firebase: seco, sin escribir).
+    expect(correr(...base(T, '59170000001')).codigo).toBe(0);
+    // Otros países no se ven afectados por la regla de Bolivia.
+    expect(correr(...base(T, '5491100000071')).codigo).toBe(0);
+    expect(await ruta(LINEA)).toEqual(antes);
   });
 
   it.each([
@@ -331,7 +364,8 @@ describe('fijar-numero-publico.mjs: el caso bueno', () => {
       .filter((k) => JSON.stringify(antes[k]) !== JSON.stringify(despues[k])).sort();
     expect(cambiaron).toEqual(['actualizadoEn', 'actualizadoPor', 'numeroPublico']);
     expect(despues['numeroPublico']).toBe(NUEVO);
-    expect(despues['actualizadoPor']).toBe('script:fijar-numero-publico');
+    // Quien lo corrió (el correo), no el nombre del script.
+    expect(despues['actualizadoPor']).toBe(OPERADOR);
     // Lo demás de la ruta, intacto: el alias, la WABA, el webhook, la titularidad.
     for (const k of ['tenantId', 'flujo', 'wabaId', 'aliasSecreto', 'titularidad', 'estado', 'webhookCarrito']) {
       expect(despues[k], k).toEqual(antes[k]);
@@ -340,7 +374,7 @@ describe('fijar-numero-publico.mjs: el caso bueno', () => {
     const auditoria = await auditorias(T);
     expect(auditoria).toHaveLength(1);
     expect(auditoria[0]).toMatchObject({
-      accion: 'fijar_numero_publico', origen: 'script', antes: PUBLICO, despues: NUEVO,
+      accion: 'fijar_numero_publico', origen: 'script', uid: OPERADOR, antes: PUBLICO, despues: NUEVO,
       phoneNumberId: `…${LINEA.slice(-4)}`,
     });
     expect(auditoria[0]!['en']).toBeInstanceOf(Timestamp);
