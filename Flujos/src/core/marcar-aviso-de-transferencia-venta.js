@@ -24,7 +24,8 @@ const resultado = salidas.map((s, i) => {
   const origen = (previos[i] ?? previos[previos.length - 1] ?? { json: {} }).json ?? {};
   const salio = String((((s.json ?? {}).messages ?? [])[0] ?? {}).id ?? '') !== '';
   if (salio && origen.from) sd.avisosTransferencia[origen.from] = Date.now();
-  if (!salio) console.error('AVISO_AL_DUENO_NO_SALIO transferencia', JSON.stringify({ from: '…' + String(origen.from ?? '').slice(-4), error: (s.json ?? {}).error ?? null }).slice(0, 300));
-  return { json: { ...(s.json ?? {}), avisoAceptado: salio }, pairedItem: { item: i } };
+  const e = (s.json ?? {}).error;
+  const avisoError = salio ? undefined : { code: (e && e.code) ?? null, subcode: (e && e.error_subcode) ?? null };
+  return { json: { ...(s.json ?? {}), avisoAceptado: salio, ...(avisoError ? { avisoError } : {}) }, pairedItem: { item: i } };
 });
 return resultado;

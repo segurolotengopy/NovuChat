@@ -472,7 +472,7 @@ export const marcasDelPrompt = (prompt: string): string[] =>
  *   3. la escritura `sd.X[clave] = Date.now()` está BAJO un `if (...)` cuya condición lee el id, directamente o por
  *      una variable que se calculó leyéndolo (`const salio = ...messages[0].id... !== ''`).
  * LÍMITES DEL ANÁLISIS ESTÁTICO (a propósito, documentados): (P4) una condición que lee el id pero no lo exige
- * (`id || true`) o (P5) un `if` cuyo else también marca, no se distinguen; los vería el ensayo con el teléfono.
+ * (`id || true`), (P5) un `if` cuyo else también marca, y (P6) un `if (!salio && …)` que marca justo cuando NO salió, no se distinguen; los vería el ensayo con el teléfono.
  * Demo B, `Procesar respuesta`, 03/10.
  */
 export function dependeDeMarcaVerificada(f: Flujo, c: Nodo): boolean {

@@ -53,22 +53,27 @@ describe('(a) «Avisar al dueño»: su salida se verifica', () => {
     return { s, registro };
   };
 
-  it('Meta rechaza el aviso: queda `avisoAceptado: false` y una línea en el registro de n8n', () => {
-    const { s, registro } = verificar(RECHAZO);
+  it('Meta rechaza el aviso: queda `avisoAceptado: false` y el código de Meta EN LOS DATOS de la ejecución (sin su mensaje)', () => {
+    const { s } = verificar({ error: { code: 131047, error_subcode: 2494, message: 'texto de Meta con datos' } });
     expect(s['avisoAceptado']).toBe(false);
-    expect(registro).toHaveLength(1);
-    expect(String(registro[0]?.[0])).toContain('AVISO_AL_DUENO_NO_SALIO');
+    expect(s['avisoError']).toEqual({ code: 131047, subcode: 2494 });
+    expect(JSON.stringify(s['avisoError'])).not.toContain('texto de Meta');
   });
 
-  it('Meta responde sin id (200 sin messages): tampoco cuenta como entregado', () => {
+  it('el módulo no promete una línea en el registro del servidor', () => {
+    expect(codigoDe(f, 'Verificar aviso al dueño').replace(/\/\/.*$/gm, '')).not.toMatch(/console\./);
+  });
+
+  it('Meta responde sin id (200 sin messages): tampoco cuenta como aceptado', () => {
     expect(verificar({}).s['avisoAceptado']).toBe(false);
     expect(verificar({ messages: [{}] }).s['avisoAceptado']).toBe(false);
     expect(verificar({ messages: [{ id: '' }] }).s['avisoAceptado']).toBe(false);
   });
 
-  it('Meta acepta: entregado y sin ruido', () => {
+  it('Meta acepta: aceptado y sin `avisoError`', () => {
     const { s, registro } = verificar(ACEPTADO);
     expect(s['avisoAceptado']).toBe(true);
+    expect(s['avisoError']).toBeUndefined();
     expect(registro).toHaveLength(0);
   });
 
@@ -202,6 +207,58 @@ describe('(b2) El filtro de avisos anunciados (tildes, presente, pasado, falsos 
     for (const o of ['Le aviso que el pedido mínimo es de 30 Bs.', 'Le informo que el total es de 70 Bs.', 'Le comunico el precio: 15 Bs.']) {
       expect(turno(o)['avisos'], o).not.toContain('aviso_anunciado_quitado');
     }
+  });
+});
+
+describe('(b3) Más formas, troceo, falsos positivos y líneas', () => {
+  const turno = (o: string, ent: J = {}, sd: J = {}) => ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: o }],
+    { 'Normalizar entrada': [{ ...ENT, ...ent }] }, { $getWorkflowStaticData: () => sd, Date: reloj({ t: 1_800_000_000_000 }) })[0] ?? {};
+  const quita = (o: string) => (turno(o)['avisos'] as string[]).some((a) => /^(aviso_anunciado|promesa)_quitad/.test(a));
+  const FORMAS = ['Notifiqué al negocio.', 'Ya informé a la dueña.', 'Comuniqué al negocio tu caso.', 'Ya he notificado al negocio.', 'Hemos informado al negocio.',
+    'Acabo de avisar a recepción.', 'Le estoy avisando a Un Negocio.', 'Le avisó a la dueña.', 'Pasé tu pedido al negocio.', 'Mandé tu consulta a recepción.',
+    'Envié tu mensaje al negocio.', 'Escribí a la dueña.', 'Aviso al negocio ahora mismo.', 'Ahora aviso a recepción.', 'Le hemos notificado.', 'Ya está al tanto.',
+    'Le avisaremos que llegaste.', 'Ya les informé,', 'Ya le comuniqué tu pedido.', 'Te avisamos por aquí cuando esté listo.', 'Te avisamos cuando esté listo.'];
+
+  it('cada forma se quita', () => {
+    for (const o of FORMAS) expect(quita(o + ' Toca el botón. [TRANSFERIR]'), o).toBe(true);
+  });
+
+  it('troceo: la pregunta pegada tras «a la dueña», coma o punto y coma no salva el anuncio', () => {
+    for (const o of ['Ya le avisé a la dueña ¿algo más?', 'Le avisé a Un Negocio; ¿algo más?', 'Le aviso a Un Negocio, ¿algo más?']) {
+      const p = turno(o + ' [TRANSFERIR]');
+      expect(p['avisos'], o).toContain('aviso_anunciado_quitado');
+      expect(String(p['respuesta']), o).toContain('¿algo más?');
+      expect(String(p['respuesta']), o).not.toMatch(/avis/i);
+    }
+  });
+
+  it('falsos positivos: lo que informa, no anuncia, se conserva', () => {
+    for (const o of ['Le informé el precio antes: 10 Bs.', 'Le aviso: el pedido mínimo es 30 Bs.', 'Como le comuniqué, el total es 70 Bs.',
+      'Como le informé, el envío cuesta 10 Bs.', 'Ya le comuniqué el total: 70 Bs.', 'Le aviso que el pedido mínimo es 30 Bs.', 'Ya te he informado del precio: 10 Bs.']) {
+      const p = turno(o);
+      expect(p['avisos'], o).not.toContain('aviso_anunciado_quitado');
+      expect(String(p['respuesta']), o).toBe(o);
+    }
+  });
+
+  it('«cuando» no rompe lo legítimo (y «te mando» sin tiempo sigue igual)', () => {
+    for (const o of ['Cuando quieras te muestro el catálogo.', 'Te mando el catálogo ahora.', 'Escríbeme cuando decidas.']) {
+      expect(turno(o)['avisos'], o).not.toContain('promesa_quitada');
+    }
+  });
+
+  it('si el filtro deja la respuesta vacía en un turno con transferencia, queda el texto de transferencia con botón', () => {
+    const p = turno('Ya le avisé a la dueña. [TRANSFERIR]');
+    expect(p['avisos']).not.toContain('respuesta_vacia');
+    expect(String(p['respuesta'])).toBe('Para que te atienda una persona de Un Negocio, toca el botón y escríbele directo.');
+    expect(enviar(p)['conBoton']).toBe(true);
+  });
+
+  it('un resumen de pedido de varias líneas conserva sus saltos al quitar una oración', () => {
+    const o = 'Tu pedido:\n- 2 pizzas: 70 Bs\n- 1 gaseosa: 10 Bs\nTotal: 80 Bs. Ya le avisé al negocio.';
+    const p = turno(o);
+    expect(p['avisos']).toContain('aviso_anunciado_quitado');
+    expect(String(p['respuesta'])).toBe('Tu pedido:\n- 2 pizzas: 70 Bs\n- 1 gaseosa: 10 Bs\nTotal: 80 Bs.');
   });
 });
 
