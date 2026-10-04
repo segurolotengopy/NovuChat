@@ -158,7 +158,7 @@ for (let i = 0; i < $input.all().length; i++) {
   // boton, ver `Mensaje a enviar`): una promesa de consultar o de avisar despues
   // no la cumple nadie, asi que se quita la oracion. Las preguntas no prometen
   // nada y quedan.
-  const PROMESA = /(consult|averigu|pregunt|verific|revis|coordin)[a-záéíóúñ]*\s+(lo\s+|eso\s+)?(con|a)\s+(recepci|la\s+cl[ií]nica|el\s+equipo|el\s+personal|(el|la)\s+(doctor|doctora|dr|dra)(?![a-záéíóúñ])|administraci|caja|alguien|una\s+persona|la\s+empresa|el\s+negocio|mis\s+compa)|(te|le)\s+(avis|escrib|llam|contact|confirm|mand|env[ií]|respond)[a-záéíóúñ]*\s+(luego|despu[eé]s|m[aá]s\s+tarde|ma[ñn]ana|en\s+cuanto|apenas|pronto|en\s+un\s+rato|en\s+breve|a\s+la\s+brevedad)|(te|le)\s+(avisar|escribir|llamar|contactar|confirmar|responder)([eé]|[aá]n?)(?![a-záéíóúñ])|voy\s+a\s+(consultar|averiguar|preguntar|avisar|escribir|llamar|contactar|confirmar)/i;
+  const PROMESA = /(consult|averigu|pregunt|verific|revis|coordin)[a-záéíóúñ]*\s+(lo\s+|eso\s+)?(con|a)\s+(recepci|la\s+cl[ií]nica|el\s+equipo|el\s+personal|(el|la)\s+(doctor|doctora|dr|dra)(?![a-záéíóúñ])|administraci|caja|alguien|una\s+persona|la\s+empresa|el\s+negocio|mis\s+compa)|(te|le)\s+(avis|escrib|llam|contact|confirm|mand|env[ií]|respond)[a-záéíóúñ]*\s+(?:por\s+(?:aqu[ií]|ac[aá]|este\s+chat|whatsapp)\s+)?(luego|despu[eé]s|m[aá]s\s+tarde|ma[ñn]ana|en\s+cuanto|apenas|pronto|en\s+un\s+rato|en\s+breve|a\s+la\s+brevedad|cuando(?![a-záéíóúñ])(?!\s+(?:me|nos)\s+(?:digas|confirmes|env[ií]es|mandes|escribas|pases)))|(te|le)\s+(avisar|escribir|llamar|contactar|confirmar|responder)([eé]|[aá]n?)(?![a-záéíóúñ])|voy\s+a\s+(consultar|averiguar|preguntar|avisar|escribir|llamar|contactar|confirmar)/i;
   const oraciones = texto.split(/(?<=[.!?…])\s+/);
   const sinPromesas = oraciones.filter((o) => /\?\s*$/.test(o.trim()) || !PROMESA.test(o));
   if (sinPromesas.length < oraciones.length) {
@@ -197,6 +197,46 @@ for (let i = 0; i < $input.all().length; i++) {
     avisarDueno = !(Number.isFinite(previo) && ahora - previo < VENTANA_MS);
     if (!avisarDueno) avisos.push('aviso_dueno_repetido');
   }
+  // «LE AVISO» / «YA LE AVISE» SOLO SI ES CIERTO (regla R4 del plan de entrega,
+  // 03/10/2026). El texto al cliente sale ANTES de que el aviso al dueño se
+  // intente, asi que ninguna oracion puede anunciarlo: si el aviso falla, el
+  // cliente quedaria con una promesa falsa. Se quita lo que el modelo escriba en
+  // ese sentido; lo unico que queda es el boton («escribele directo»).
+  //   - Futuro y presente («le aviso», «le avisaré», «avisarle», «le estoy
+  //     avisando», «el sistema le avisa»): se quitan SIEMPRE, con o sin
+  //     transferencia, y tambien si quien escribe es el dueño. «le aviso que…» y
+  //     «le aviso:» (presente) son informar, no avisar: quedan.
+  //   - Pasado («ya le avisé», «se le avisó», «le notifiqué», «fue avisado»,
+  //     «ya está al tanto», «le pasé tu consulta»): se quita salvo que haya una
+  //     marca vigente para ESTE telefono. La marca la escribe `Marcar aviso de
+  //     transferencia` solo con el id de Meta. «informé»/«comuniqué» solo cuentan
+  //     si van a un destinatario o sin complemento («Ya les informé,»); «Como le
+  //     informé, el envío cuesta 10 Bs.» y «Le informé el precio» quedan.
+  // Con `u` y `(?<![\p{L}])` / `(?![\p{L}])` porque `\b` no ve las vocales con tilde.
+  const AVISO_FUTURO = /(?<![\p{L}])(?:(?:le|les)\s+(?:(?:aviso|notifico)(?![\p{L}])(?!\s+que(?![\p{L}])|\s*:)|avisar[eé](?![\p{L}])|avisaremos(?![\p{L}])|avisamos(?![\p{L}])|notificar[eé](?![\p{L}])|estoy\s+avisando(?![\p{L}]))|avisarl[eo]s?(?![\p{L}])|el\s+sistema\s+(?:le\s+|les\s+)?(?:avisa|avisar[aá]|notifica|notificar[aá])(?![\p{L}])|^\s*(?:ahora\s+)?aviso\s+(?:a|al)(?![\p{L}])|(?:estoy|estamos)\s+avisando(?![\p{L}])|(?:le|les)\s+(?:paso|estoy\s+pasando)\s+(?:tu|su)\s+\p{L}+\s+(?:a|al)(?![\p{L}]))/iu;
+  const AVISO_PASADO = /(?<![\p{L}])(?:(?<!como\s(?:ya\s)?)(?:le|les|lo|los)\s+(?:(?:avis[eé]|avisó|he\s+avisado|hemos\s+avisado|he\s+notificado|hemos\s+notificado|notifiqu[eé]|pas[eé]\s+(?:tu|el|su)\s+(?:mensaje|pedido|consulta|caso))(?![\p{L}])|(?:inform|comuniqu)[eé](?=\s*(?:[,.;!]|$)|\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa])(?![\p{L}])|\s+(?:tu|su)\s+(?:pedido|consulta|caso|mensaje|solicitud)(?![\p{L}])))|(?:ya\s+)?(?:avis|notifiqu|inform|comuniqu)[eé]\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa])(?![\p{L}])|ya\s+(?:avis|notifiqu)[eé](?=\s*[.,;!]|$)|(?<!te\s(?:lo\s|la\s)?)(?:ya\s+)?(?:he|hemos)\s+(?:avisado|notificado|informado)(?![\p{L}])|acabo\s+de\s+(?:avisar|notificar)(?![\p{L}])|(?:pas|mand|envi)[eé]\s+(?:(?:tu|su)\s+[\p{L}]+\s+)?(?:a|al)\s+(?:la\s+|el\s+)?(?:due[ñn][oa]|negocio|recepci[oó]n|encargad[oa])(?![\p{L}])|escrib[ií]\s+(?:a|al)\s+(?:la\s+|el\s+)?(?:due[ñn][oa]|negocio|recepci[oó]n|encargad[oa])(?![\p{L}])|se\s+(?:le\s+|les\s+)?(?:avisó|informó|notificó)(?![\p{L}])|fue(?:ron)?\s+(?:avisad|notificad|informad)[oa]s?(?![\p{L}])|est[aá]n?\s+(?:ya\s+)?(?:avisad|notificad|informad)[oa]s?(?![\p{L}])|(?:ya\s+)?est[aá]n?\s+al\s+tanto(?![\p{L}])|el\s+sistema\s+(?:ya\s+)?(?:le\s+|les\s+)?(?:avisó|notificó)(?![\p{L}]))/iu;
+  {
+    // Solo se LEE (no se crea nada): sin transferencia el estado no se toca.
+    let marcas = {};
+    try { marcas = $getWorkflowStaticData('global').avisosTransferencia ?? {}; } catch (e) { marcas = {}; }
+    const prevMarca = Number(marcas[ent.from]);
+    const marcaVigente = Number.isFinite(prevMarca) && Date.now() - prevMarca < 24 * 60 * 60 * 1000
+      && String(ent.from ?? '') !== numeroDuenoLimpio;
+    // Linea por linea (un resumen de pedido de varias lineas conserva sus saltos) y,
+    // dentro de cada linea, por oracion y antes de cualquier «¿».
+    let quitado = false;
+    const lineas = texto.split('\n').map((linea) => {
+      const trozos = linea.split(/(?<=[.!?…])\s+|;\s+|,?\s*(?=¿)|,\s*(?=(?:ya\s+)?(?:le|les)\s+avis)/u);
+      const dejar = trozos.filter((o) => /\?\s*$/.test(o.trim())
+        || !(AVISO_FUTURO.test(o) || (!marcaVigente && AVISO_PASADO.test(o))));
+      if (dejar.length < trozos.length) quitado = true;
+      return dejar.length < trozos.length ? dejar.join(' ').trim() : linea;
+    });
+    if (quitado) {
+      texto = lineas.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+      avisos.push('aviso_anunciado_quitado');
+    }
+  }
   let respuestaVacia = false;
   let falloModelo = false;
   if (fallo) {
@@ -208,13 +248,15 @@ for (let i = 0; i < $input.all().length; i++) {
       : 'Disculpa, tuve un problema para responderte. ¿Me lo repites?';
   } else if (!texto && transferir) {
     // Una respuesta que es solo la marca no esta vacia: es «paso con una persona».
-    // El texto dice solo lo que este turno cumple: «le aviso» si el aviso sale;
-    // «ya le avisé» si salió hace menos de 24 h; y si quien escribe es el
-    // propio dueño, no hay a quien avisar y solo se remite al botón.
+    // El texto dice solo lo que este turno cumple: si el aviso va a salir ahora,
+    // NO se anuncia (todavia no se sabe si sale): solo el boton. «Ya le avisé» se
+    // dice unicamente si la ventana de 24 h ya esta marcada, es decir, si un aviso
+    // anterior salio con id de Meta. Y si quien escribe es el propio dueño, no
+    // hay a quien avisar y solo se remite al botón.
     texto = String(ent.from ?? '') === numeroDuenoLimpio
       ? 'Para hablar con una persona de ' + negocio + ', toca el botón y escríbele directo.'
       : avisarDueno
-        ? 'Le aviso a ' + negocio + ' para que te atienda una persona. Si prefieres no esperar, toca el botón y escríbele directo.'
+        ? 'Para que te atienda una persona de ' + negocio + ', toca el botón y escríbele directo.'
         : 'Ya le avisé a ' + negocio + '; si prefieres no esperar, toca el botón y escríbele directo.';
     avisos.push('transferencia_sin_texto');
   } else if (!texto) {
