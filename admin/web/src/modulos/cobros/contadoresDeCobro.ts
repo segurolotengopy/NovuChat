@@ -22,7 +22,6 @@ export interface LineaDeCobros {
   enRevision: number;
   cancelados: number;
   tardios: number;
-  cotejados: number;
   vencidos: number;
   /** `aproximado` + `en_revision`: los confirma una persona del negocio. */
   porConfirmar: number;
@@ -43,9 +42,8 @@ export function lineasDeCobros(periodos: { id: string; [k: string]: unknown }[])
       enRevision: n(p['cobrosEnRevision']),
       cancelados: n(p['cobrosCancelados']),
       tardios: n(p['cobrosTardios']),
-      cotejados: n(p['cobrosCotejados']),
       vencidos: n(p['cobrosVencidos']),
-      porConfirmar: n(p['cobrosAproximados']) + n(p['cobrosEnRevision']),
+      porConfirmar: n(n(p['cobrosAproximados']) + n(p['cobrosEnRevision'])),
     }))
     .sort((a, b) => b.periodo.localeCompare(a.periodo));
 }
@@ -57,3 +55,30 @@ export function ultimosMesesDeCobro(cantidad: number, hoy = new Date()): string[
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
   });
 }
+
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+  'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+/** '2026-10' -> 'octubre 2026'. Si no tiene la forma, se devuelve tal cual. */
+export function mesLegible(periodo: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(periodo);
+  const nombre = m ? MESES[Number(m[2]) - 1] : undefined;
+  return m && nombre ? `${nombre} ${m[1]}` : periodo;
+}
+
+/**
+ * Columnas de la tabla, en orden. Cada cabecera lleva su dato: una prueba
+ * fija que ninguna se cruce. Las cifras son SUCESOS del mes, no cobros
+ * pendientes: cada comprobante que no coincide se cuenta, y un cobro puede
+ * tener hasta tres.
+ */
+export const COLUMNAS: { titulo: string; valor: (l: LineaDeCobros) => number }[] = [
+  { titulo: 'QR enviados', valor: (l) => l.qrEnviados },
+  { titulo: 'Datos coinciden', valor: (l) => l.validos },
+  { titulo: 'Aproximados', valor: (l) => l.aproximados },
+  { titulo: 'Pasaron a revisión', valor: (l) => l.enRevision },
+  { titulo: 'Comprobantes que no coinciden', valor: (l) => l.invalidos },
+  { titulo: 'Cancelados', valor: (l) => l.cancelados },
+  { titulo: 'Vencidos', valor: (l) => l.vencidos },
+  { titulo: 'Tardíos', valor: (l) => l.tardios },
+];

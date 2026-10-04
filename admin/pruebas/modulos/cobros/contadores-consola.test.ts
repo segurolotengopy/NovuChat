@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { lineasDeCobros, ultimosMesesDeCobro } from '../../../web/src/modulos/cobros/contadoresDeCobro.ts';
+import { COLUMNAS, lineasDeCobros, mesLegible, ultimosMesesDeCobro } from '../../../web/src/modulos/cobros/contadoresDeCobro.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const carpeta = join(aqui, '../../../web/src/modulos/cobros');
@@ -61,5 +61,38 @@ describe('la pantalla de contadores', () => {
 
   it('Cobros.tsx monta el componente', () => {
     expect(readFileSync(join(carpeta, 'Cobros.tsx'), 'utf8')).toContain('<ContadoresDeCobro tenantId={tenantId} />');
+  });
+
+  it('devuelve null cuando no hay líneas y avisa si la lectura falla', () => {
+    expect(texto).toMatch(/lineas\.length === 0\) return null/);
+    expect(texto).toMatch(/role="alert"/);
+    expect(texto).toMatch(/overflowX: 'auto'/);
+  });
+});
+
+describe('columnas y meses', () => {
+  const l = lineasDeCobros([{ id: '2026-10', cobrosQrEnviados: 1, cobrosValidos: 2, cobrosAproximados: 3,
+    cobrosEnRevision: 4, cobrosInvalidos: 5, cobrosCancelados: 6, cobrosVencidos: 7, cobrosTardios: 8 }])[0]!;
+
+  it('cada cabecera lleva su dato', () => {
+    const por = Object.fromEntries(COLUMNAS.map((c) => [c.titulo, c.valor(l)]));
+    expect(por).toEqual({
+      'QR enviados': 1, 'Datos coinciden': 2, 'Aproximados': 3, 'Pasaron a revisión': 4,
+      'Comprobantes que no coinciden': 5, 'Cancelados': 6, 'Vencidos': 7, 'Tardíos': 8,
+    });
+  });
+
+  it('un mes con solo en revisión, o solo cancelados, cuenta', () => {
+    expect(lineasDeCobros([{ id: '2026-10', cobrosEnRevision: 1 }])[0]).toMatchObject({ enRevision: 1, porConfirmar: 1 });
+    expect(lineasDeCobros([{ id: '2026-09', cobrosCancelados: 2 }])).toHaveLength(1);
+  });
+
+  it('Infinity no entra a la suma', () => {
+    expect(lineasDeCobros([{ id: '2026-10', cobrosAproximados: Infinity, cobrosEnRevision: 1 }])[0]!.porConfirmar).toBe(1);
+  });
+
+  it('el mes se lee legible', () => {
+    expect(mesLegible('2026-10')).toBe('octubre 2026');
+    expect(mesLegible('raro')).toBe('raro');
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, documentId, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../core/lib/firebase';
-import { lineasDeCobros, ultimosMesesDeCobro } from './contadoresDeCobro';
+import { COLUMNAS, lineasDeCobros, mesLegible, ultimosMesesDeCobro } from './contadoresDeCobro';
 
 /**
  * CONTADORES DE COBRO — solo números, una línea por mes.
@@ -17,55 +17,49 @@ import { lineasDeCobros, ultimosMesesDeCobro } from './contadoresDeCobro';
  */
 export function ContadoresDeCobro({ tenantId }: { tenantId: string }) {
   const [periodos, setPeriodos] = useState<{ id: string; [k: string]: unknown }[]>([]);
+  const [fallo, setFallo] = useState(false);
   const meses = useMemo(() => ultimosMesesDeCobro(6), []);
 
   useEffect(() => {
     if (!tenantId) return;
     return onSnapshot(
       query(collection(db, 'tenants', tenantId, 'metricas'), where(documentId(), 'in', meses)),
-      (s) => setPeriodos(s.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      () => setPeriodos([]),
+      (s) => { setFallo(false); setPeriodos(s.docs.map((d) => ({ id: d.id, ...d.data() }))); },
+      () => { setPeriodos([]); setFallo(true); },
     );
   }, [tenantId, meses]);
 
   const lineas = lineasDeCobros(periodos);
+  if (fallo) return <p role="alert">No se pudieron leer los contadores de comprobantes.</p>;
   if (lineas.length === 0) return null;
+  const mesEnCurso = ultimosMesesDeCobro(1)[0];
 
   return (
     <article className="tarjeta" aria-label="Comprobantes por mes">
-      <h3>Comprobantes por mes</h3>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Mes</th><th>QR enviados</th><th>Datos coinciden</th>
-            <th>Por confirmar</th><th>No coinciden</th><th>Cancelados</th><th>Tardíos</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lineas.map((l) => (
-            <tr key={l.periodo}>
-              <td>{l.periodo}</td>
-              <td>{l.qrEnviados}</td>
-              <td>{l.validos}</td>
-              <td>
-                {l.porConfirmar > 0
-                  ? <span className="tag tag-aviso">{l.porConfirmar}</span>
-                  : 0}
-                {l.porConfirmar > 0 && (
-                  <span className="ayuda"> ({l.aproximados} aproximados, {l.enRevision} en revisión)</span>
-                )}
-              </td>
-              <td>{l.invalidos}</td>
-              <td>{l.cancelados}</td>
-              <td>{l.tardios}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <h3>Comprobantes por mes (últimos 6 meses)</h3>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="table">
+          <thead>
+            <tr><th>Mes</th>{COLUMNAS.map((c) => <th key={c.titulo}>{c.titulo}</th>)}</tr>
+          </thead>
+          <tbody>
+            {lineas.map((l) => (
+              <tr key={l.periodo}>
+                <td>{mesLegible(l.periodo)}</td>
+                {COLUMNAS.map((c) => <td key={c.titulo}>{c.valor(l)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {lineas.some((l) => l.periodo === mesEnCurso && l.porConfirmar > 0) && (
+        <p><span className="tag tag-aviso">Este mes hay comprobantes aproximados o en revisión</span></p>
+      )}
       <p className="ayuda tarjeta-pie">
-        Los comprobantes «aproximados» y «en revisión» los confirma una persona
-        del negocio mirando su cuenta. Que los datos coincidan no confirma que el
-        dinero entró: eso lo dice su banco.
+        Cifras del mes: cada comprobante rechazado se cuenta, y un cobro puede
+        tener hasta tres. Los comprobantes «aproximados» y «en revisión» los
+        confirma una persona del negocio mirando su cuenta. Que los datos
+        coincidan no confirma que el dinero entró: eso lo dice su banco.
       </p>
     </article>
   );
