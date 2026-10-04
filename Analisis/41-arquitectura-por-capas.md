@@ -188,7 +188,9 @@ fuera del servidor.
 
 ### 2.4 Cierre
 
-`registrarCierre` no cambia: es la unidad que se factura y es del core.
+`registrarCierre` no cambia y es del core. (Corrección del 03/10/2026: decía
+«es la unidad que se factura»; desde el 13/09 la unidad es la conversación,
+`docs/base-comercial.md` §2, y el cierre es el registro de lo que terminó bien.)
 
 ### 2.5 Envío (salida)
 

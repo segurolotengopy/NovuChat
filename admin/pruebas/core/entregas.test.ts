@@ -581,7 +581,7 @@ export interface Excepcion { porque: string; vence: string }
  * La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
 export const ALTA_DE_EXCEPCIONES = '2026-10-03';
 /** ATENCIÓN: cambiar este tope exige pasar por el agente `seguridad`. Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
-export const TOPE_DE_EXCEPCIONES = 49;
+export const TOPE_DE_EXCEPCIONES = 47; // 49 menos las dos de Venta mínima (qtaco.json y ensayo-demo-a.json, regla 2, «Enviar respaldo») que cerró el PR-7
 
 /**
  * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
@@ -722,14 +722,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   },
   'experimental/agenda-minima/agenda-minima.v0.json#5#Armar mensajes::aviso': {
     porque: 'Bellido B: «Ya le avisé al doctor» sale en la misma tanda que la plantilla de emergencia y no depende de que salga (gravedad alta, emergencia clínica); D4 con el doctor; la cierra PR-6 (Bellido B, ventana 2 a 3)',
-    vence: '2027-01-01',
-  },
-  'experimental/venta-minima/venta-minima.ensayo-demo-a.json#2#Enviar respaldo': {
-    porque: 'Q\'Taco: cumple R2 y R4 pero «Enviar respaldo» es el último recurso y no termina en error visible ni reporta envio_fallido (D11); la cierra PR-7 (Q\'Taco, ventana y ensayo; D3)',
-    vence: '2027-01-01',
-  },
-  'experimental/venta-minima/venta-minima.qtaco.json#2#Enviar respaldo': {
-    porque: 'Q\'Taco: cumple R2 y R4 pero «Enviar respaldo» es el último recurso y no termina en error visible ni reporta envio_fallido (D11); la cierra PR-7 (Q\'Taco, ventana y ensayo; D3)',
     vence: '2027-01-01',
   },
   'novuchat-onboarding.json#5#Traspaso a un asesor::aviso': {
@@ -1174,10 +1166,22 @@ describe('Entregas: contrapruebas (cada una falla nombrando el nodo)', () => {
     expect(clase(contacto)).toBe('boton');
   });
 
-  it('el control positivo de Venta mínima es la réplica del diseño OBJETIVO (con «Entrega fallida»), no de lo que corre hoy en Q\'Taco', () => {
-    // Q'Taco todavía no tiene el último recurso en error visible: por eso `Enviar respaldo` está en las excepciones (PR-7).
+  it('el control positivo de Venta mínima es la réplica del diseño OBJETIVO (con «Entrega fallida»); Q\'Taco (PR-7) YA tiene el último recurso en error visible y no tiene ninguna violación', () => {
     expect(reglasDe(ventaMinima())).toEqual([]);
-    expect((HOY.get('experimental/venta-minima/venta-minima.qtaco.json') ?? []).map((x) => `${x.regla}#${x.nodo}`)).toContain('2#Enviar respaldo');
+    // Q'Taco y su ensayo en el Demo A: «Resumen del turno» lanza el error cuando el respaldo en texto también falla, así que `Enviar respaldo` cumple la regla 2.
+    for (const a of ['experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.ensayo-demo-a.json']) {
+      expect((HOY.get(a) ?? []).map((x) => `${x.regla}#${x.nodo}`), a).toEqual([]);
+      expect(Object.keys(EXCEPCIONES).filter((k) => k.startsWith(`${a}#`)), `${a}: sin excepciones`).toEqual([]);
+    }
+  });
+
+  it('contraprueba del control de Q\'Taco: si «Resumen del turno» dejara de lanzar el error, `Enviar respaldo` vuelve a violar la regla 2 (la regla sí lo ve)', () => {
+    for (const a of ['experimental/venta-minima/venta-minima.qtaco.json', 'experimental/venta-minima/venta-minima.ensayo-demo-a.json']) {
+      const roto = leer(a);
+      const resumen = roto.nodes.find((n) => n.name === 'Resumen del turno') as Nodo;
+      resumen.parameters['jsCode'] = String(resumen.parameters['jsCode']).replace(/throw new Error\(/g, 'console.log(');
+      expect(violaciones(roto).map((x) => `${x.regla}#${x.nodo}`), a).toContain('2#Enviar respaldo');
+    }
   });
 });
 
@@ -1281,6 +1285,8 @@ describe('Entregas: los *.prueba.json (se importan a n8n para ensayos con teléf
     const roto = leer(a);
     const envio = roto.nodes.find((n) => n.name === 'Enviar a WhatsApp') as Nodo;
     delete envio.onError;
-    expect(violacionesSinEquivalente(roto, familiaDe(a))).toContain('1#Enviar a WhatsApp');
+    // Con la familia de Venta mínima ya sin violaciones ni excepciones (PR-7), el envío roto del ensayo no tiene equivalente: la regla que lo ve es la 2.
+    expect(violacionesSinEquivalente(roto, familiaDe(a))).toEqual(['2#Enviar a WhatsApp']);
+    expect(violacionesSinEquivalente(leer(a), familiaDe(a))).toEqual([]); // sin romper nada, el ensayo coincide con su familia
   });
 });
