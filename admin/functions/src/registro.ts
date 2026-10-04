@@ -13,10 +13,11 @@
  * capacidades de `firestore.rules`, y las elecciones a mano de `cobro.ts`,
  * `catalogoWeb.ts` y `captacion.ts`.
  *
- * F2, PR 1: EL CÓDIGO DE PRODUCCIÓN TODAVÍA NO LO IMPORTA. Lo importan
- * `pruebas/frontera/frontera.ts` y sus suites, y se verifica contra el código
- * de hoy (`pruebas/core/registro.test.ts`). Los PR siguientes lo enchufan donde
- * hoy están las copias.
+ * Hoy lo importan `pruebas/frontera/frontera.ts` y sus suites, y se verifica
+ * contra el código de hoy (`pruebas/core/registro.test.ts`); el código de
+ * producción (Functions, consola y scripts) todavía conserva sus copias de la
+ * lista de flujos, que los PR de H2b van cambiando por una lectura de este
+ * archivo, una por PR.
  *
  * CERO `import`, Y ES A PROPÓSITO. Lo importan cuatro mundos que no comparten
  * resolución de módulos: las Functions (compilan con `rootDir: src` e importan
@@ -436,29 +437,34 @@ export function manifiestoDe(m: IdModulo): Manifiesto {
  * pestañas de cada flujo son la unión de las de sus módulos, que cada
  * documento propio lo exige la capacidad del flujo, etc.
  *
+ * `nombre` es el nombre visible del flujo (insignias del Tablero);
  * `catalogo` es la etiqueta de la pestaña de catálogo; `capacidadEnReglas`, la
  * función de `firestore.rules` que hoy abre ese flujo.
  */
 export const PUENTE_DE_FLUJOS = {
   agendamiento: {
+    nombre: 'Reservas y citas',
     modulos: ['productos', 'cobros', 'agenda'],
     documento: 'agendamiento',
     catalogo: 'Servicios',
     capacidadEnReglas: 'tieneAgenda',
   },
   venta: {
+    nombre: 'Pedidos y cobro',
     modulos: ['productos', 'cobros', 'inventario', 'pedidos', 'catalogo-web'],
     documento: 'venta',
     catalogo: 'Productos',
     capacidadEnReglas: 'tieneCobro',
   },
   onboarding: {
+    nombre: 'Captación de clientes',
     modulos: ['productos', 'captacion'],
     documento: 'onboarding',
     catalogo: 'Catálogo',
     capacidadEnReglas: 'tieneOnboarding',
   },
 } as const satisfies Record<string, {
+  readonly nombre: string;
   readonly modulos: readonly IdModulo[];
   readonly documento: string;
   readonly catalogo: string;
@@ -550,4 +556,17 @@ export function etiquetaDeCatalogo(modulos: readonly IdModulo[]): string {
   if (hay('agenda') && !hay('pedidos')) return 'Servicios';
   if (hay('pedidos') && !hay('agenda')) return 'Productos';
   return 'Catálogo';
+}
+
+/**
+ * El documento de `/config` donde vive el QR de un comercio, según sus módulos:
+ * sin `cobros`, `null`; con `pedidos`, `venta` (gana); con `agenda`,
+ * `agendamiento`; si no, `null`. Equivale a `documentoQueCobra` de
+ * `modulos/cobros/cobro.ts` sobre los flujos del puente.
+ */
+export function documentoDeCobro(modulos: readonly IdModulo[]): 'venta' | 'agendamiento' | null {
+  if (!modulos.includes('cobros')) return null;
+  if (modulos.includes('pedidos')) return 'venta';
+  if (modulos.includes('agenda')) return 'agendamiento';
+  return null;
 }
