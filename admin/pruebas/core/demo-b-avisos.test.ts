@@ -375,3 +375,67 @@ describe('(e) Credenciales y lienzo de los nodos nuevos', () => {
     expect(choques).toEqual([]);
   });
 });
+
+describe('(f) Prohibición 3: «Recibimos tu pago» con cobro REAL se corrige y con SIMULADO lleva el rótulo', () => {
+  const turno = (o: string, ent: J = {}) => ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: o }],
+    { 'Normalizar entrada': [{ ...ENT, ...ent }] }, { $getWorkflowStaticData: () => ({}), Date: reloj({ t: 1_800_000_000_000 }) })[0] ?? {};
+  const REAL: J = { cobroRealActivo: 'si' };
+  const CORRECCION = 'El comprobante lo revisa Un Negocio y ellos confirman el pago.';
+  const FORMAS = ['Recibimos tu pago.', 'RECIBIMOS TU PAGO!', '¡Recibimos su pago!', 'Recibimos el depósito.', 'Recibimos tu transferencia.', 'recibimos tu pago',
+    'Recibi tu pago.', 'Recibí tu pago.', 'Pago recibido.', 'Pago recibida.', 'Hemos recibido tu pago.', 'He recibido tu pago.', 'Acreditamos tu pago.',
+    'Tu pago quedó acreditado.', 'Pago acreditada.', 'Pago verificado.', 'Pago confirmado.', 'Pago aprobado.', 'Pago realizado.', 'Pago exitoso.',
+    'Tu pago llegó.', 'Tu pago ya llego.', 'Tu pago fue recibido.', 'Tu pago fue acreditado.', 'Tu pago fue confirmado.', 'Ya nos llegó tu pago.',
+    'Ya llegó tu transferencia.', 'Ya pagaste.', 'Gracias por tu pago.', '*Recibimos tu pago*.', 'Recibimos  tu pago.'];
+
+  it('REAL: cada forma se reescribe a la frase fija y se deja constancia', () => {
+    for (const o of FORMAS) {
+      const p = turno('Listo, tu pedido va en camino. ' + o + '\nAvísame si necesitas algo.', REAL);
+      expect(p['avisos'], o).toContain('correccion_cobro');
+      expect(String(p['respuesta']), o).toContain(CORRECCION);
+      expect(String(p['respuesta']), o).toContain('Avísame si necesitas algo.');
+      expect(String(p['respuesta']).replace(CORRECCION, ''), o).not.toMatch(/recib[ií]|acredit|lleg[oó]|pagaste|gracias por/i);
+    }
+  });
+
+  it('SIMULADO: cada forma lleva el rótulo de demostración', () => {
+    for (const o of FORMAS) {
+      const p = turno('Listo. ' + o, { cobroRealActivo: 'no' });
+      expect(p['avisos'], o).toContain('rotulo_generico');
+      expect(String(p['respuesta']), o).toContain('rótulo simulado');
+    }
+    // Y el que ya dice que es simulado no lo repite.
+    expect(turno('Recibimos tu pago (simulado).', { cobroRealActivo: 'no' })['avisos']).not.toContain('rotulo_generico');
+  });
+
+  it('los futuros y las preguntas legítimos no se tocan (ni con cobro real ni con simulado)', () => {
+    for (const o of ['Te aviso cuando recibamos tu comprobante.', 'Cuando recibamos tu pago te confirmamos.', 'Apenas recibamos tu comprobante lo revisamos.',
+      'Recibiremos tu pago en el banco.', 'Envíanos tu comprobante y lo revisamos.', 'Recibimos tu comprobante.', 'Recibimos tu pedido.', 'Recibimos tu mensaje.',
+      '¿Ya pagaste?', '¿Recibiste el QR?', 'Tu pedido llegó a la tienda.', 'Gracias por tu pedido.', 'Gracias por tu paciencia.']) {
+      for (const ent of [REAL, { cobroRealActivo: 'no' }]) {
+        const p = turno(o, ent);
+        expect(p['avisos'], o).not.toContain('correccion_cobro');
+        expect(p['avisos'], o).not.toContain('rotulo_generico');
+        if (!/aviso|confirmamos|revisamos/.test(o)) expect(String(p['respuesta']), o).toBe(o);
+      }
+    }
+  });
+
+  it('REAL: solo se reescribe la oración que afirma; el resto, el monto y las líneas quedan', () => {
+    const p = turno('Tu pedido:\n- 2 pizzas: 70 Bs\nTotal: 80 Bs. Recibimos tu pago. ¿Algo más?', REAL);
+    expect(String(p['respuesta'])).toBe('Tu pedido:\n- 2 pizzas: 70 Bs\nTotal: 80 Bs. ' + CORRECCION + ' ¿Algo más?');
+  });
+
+  it('REAL: lo que ya corregía el regex de siempre sigue corrigiendo («ya recibimos», «pago verificado»)', () => {
+    for (const o of ['Ya recibimos tu comprobante.', 'Pago verificado.', 'Ya se acreditó.']) {
+      expect(turno(o, REAL)['avisos'], o).toContain('correccion_cobro');
+    }
+  });
+
+  it('sin ReDoS: 50 000 caracteres de casi-coincidencias terminan rápido', () => {
+    for (const bloque of ['recibimos tu ', 'tu pago ya ', 'ya nos ', 'pago ', 'recibimos   '.repeat(3)]) {
+      const t0 = Date.now();
+      turno(bloque.repeat(Math.ceil(50_000 / bloque.length)), REAL);
+      expect(Date.now() - t0, bloque).toBeLessThan(3000);
+    }
+  });
+});

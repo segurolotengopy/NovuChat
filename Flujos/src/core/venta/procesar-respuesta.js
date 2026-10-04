@@ -11,6 +11,24 @@ const entradas = $('Normalizar entrada').all();
 
 // Frases que, si aparecen sin la palabra "simulad…", harían pasar el cobro por real.
 const AFIRMA_COBRO = /((pago|cobro|transferencia|dep[oó]sito|abono)\s+(\S+\s+){0,3}(verificad|confirmad|recibid|acreditad|procesad|aprobad|realizad|efectuad|exitos)|ya\s+(recibimos|se\s+acredit|te\s+cobr|se\s+cobr)|(pago|cobro)\s+(\S+\s+){0,2}(real|de\s+verdad))/i;
+// «Recibimos tu pago» y las demás formas que AFIRMAN un pago ya hecho y que
+// AFIRMA_COBRO no cubre (prohibición 3 de CLAUDE.md, hallazgo de seguridad sobre
+// main). Va APARTE y no dentro de AFIRMA_COBRO porque ese regex es letra por letra
+// el de Platinum (una prueba lo exige) y este módulo no puede tocarlo. Con `u` y
+// límites `(?<![\p{L}])` / `(?![\p{L}])` porque `\b` no ve las vocales con tilde.
+// Los futuros («cuando recibamos tu pago te confirmamos», «te aviso cuando
+// recibamos tu comprobante») NO entran: «recibamos» es subjuntivo y «comprobante»
+// no es un pago. Una oración que es pregunta («¿Ya pagaste?») tampoco se toca.
+const AFIRMA_RECIBIDO = /(?<![\p{L}])(?:(?:recibimos|hemos\s+recibido|he\s+recibido|recib[ií])\s+(?:ya\s+)?(?:tu|su|el|un)\s+(?:pago|dep[oó]sito|transferencia|abono)s?(?![\p{L}])|(?:pago|dep[oó]sito|transferencia|abono)s?\s+(?:ya\s+)?(?:recibid|acreditad|verificad|confirmad|aprobad|realizad|exitos)[oa]s?(?![\p{L}])|acredit(?:amos|ad[oa]s?|[oó])(?![\p{L}])|(?:tu|su|el)\s+(?:pago|dep[oó]sito|transferencia|abono)\s+(?:ya\s+)?(?:lleg[oó]|fue\s+(?:recibid|acreditad|confirmad)[oa]|se\s+(?:recibi[oó]|acredit[oó]|confirm[oó]))(?![\p{L}])|ya\s+(?:nos\s+)?lleg[oó]\s+(?:tu|su|el)\s+(?:pago|dep[oó]sito|transferencia|abono)(?![\p{L}])|ya\s+pagaste(?![\p{L}])|gracias\s+por\s+(?:tu|su|el)\s+(?:pago|dep[oó]sito|transferencia|abono)(?![\p{L}]))/iu;
+// ¿Esta oración afirma un pago? (se juzga sin marcas de formato).
+const afirmaPagoOracion = (o) => {
+  const s = o.replace(/[*_~]/g, '');
+  return AFIRMA_COBRO.test(s) || (!/\?\s*$/.test(s.trim()) && AFIRMA_RECIBIDO.test(s));
+};
+// ¿Algún tramo del texto afirma un pago? Conserva el criterio de siempre
+// (AFIRMA_COBRO sobre el texto entero) y suma el de oración por oración.
+const afirmaPago = (t) => AFIRMA_COBRO.test(t.replace(/[*_~]/g, ''))
+  || t.split('\n').some((l) => l.split(/(?<=[.!?…])\s+/).some(afirmaPagoOracion));
 const DICE_SIMULADO = /(simulad|simulacr|demostraci[oó]n|\bdemo\b|no\s+cobra)/i;
 // Negaciones de ser IA (prohibición 4).
 const NIEGA_IA = /(no\s+soy\s+(un[ao]?\s+)?(bot|robot|m[aá]quina|programa|inteligencia\s+artificial|\bia\b|asistente\s+virtual|autom[aá]tic[ao])|soy\s+(un[ao]?\s+)?(persona|humano|humana|ser\s+humano)|habl(as|[aá]s|a)\s+con\s+(un[ao]?\s+)?(persona|humano|humana))/i;
@@ -124,7 +142,7 @@ for (let i = 0; i < $input.all().length; i++) {
     // (c) Red de seguridad para CUALQUIER otro camino —reintento del cliente,
     //     mensaje suelto, respuesta fuera de guion— en el que el agente afirme
     //     un cobro sin decir que es simulado.
-    if (AFIRMA_COBRO.test(texto) && !DICE_SIMULADO.test(texto)) {
+    if (afirmaPago(texto) && !DICE_SIMULADO.test(texto)) {
       texto = texto + '\n\n' + ent.rotuloDemo;
       avisos.push('rotulo_generico');
     }
@@ -134,11 +152,11 @@ for (let i = 0; i < $input.all().length; i++) {
     // (`Flujos/src/comun/procesar-respuesta.js`), con el mismo regex y el mismo
     // troceado por oración; una prueba exige que las dos sigan siendo iguales.
     // Se juzga sin marcas de formato: «*pago verificado*» también cuenta.
-    if (AFIRMA_COBRO.test(texto.replace(/[*_~]/g, ''))) {
+    if (afirmaPago(texto)) {
       const quienRevisa = String(ent.nombreNegocio || '').trim() || 'el negocio';
       const CORRECCION = `El comprobante lo revisa ${quienRevisa} y ellos confirman el pago.`;
       texto = texto.split('\n').map((linea) => linea.split(/(?<=[.!?…])\s+/)
-        .map((o) => (AFIRMA_COBRO.test(o.replace(/[*_~]/g, '')) ? CORRECCION : o)).join(' ')).join('\n').trim();
+        .map((o) => (afirmaPagoOracion(o) ? CORRECCION : o)).join(' ')).join('\n').trim();
       avisos.push('correccion_cobro');
     }
     // Y NADA DE «SIMULADO» CON UN COBRO REAL: el rótulo diría que un QR que sí
