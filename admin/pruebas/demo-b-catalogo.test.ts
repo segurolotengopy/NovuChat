@@ -217,7 +217,8 @@ describe('CUÁNTOS MENSAJES CUESTA: exactamente los mismos que antes', () => {
     const deWhatsApp = f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp');
     const aClientes = deWhatsApp.filter((n) => n.parameters['operation'] === 'send')
       .map((n) => n.name).sort();
-    expect(aClientes).toEqual(['Avisar al dueño', 'Responder al cliente']);
+    // El aviso por transferencia tiene su propio envío desde el 03/10 (PR-4): se verifica por separado.
+    expect(aClientes).toEqual(['Avisar al dueño', 'Avisar al dueño (transferencia)', 'Responder al cliente']);
     // Desde el 28/09 hay un cuarto, gemelo del anterior: «Obtener URL del medio
     // (general)», de la rama de medios entrantes. Tampoco manda nada.
     expect(deWhatsApp.filter((n) => n.parameters['operation'] !== 'send').map((n) => n.name).sort())
@@ -1586,5 +1587,24 @@ describe('las formas con las que un modelo anuncia una página', () => {
     const s = enlazar(OK(), previo);
     expect(String(s['respuesta'])).toContain('Te comparto el catálogo.');
     expect(s['avisos']).not.toContain('anuncio_de_enlace_quitado');
+  });
+});
+
+describe('`catalogoCompleto` (Q\'Taco, 03/10/2026): el Demo B NO la manda y conserva su resumen', () => {
+  // La bandera se la pide a `configuracionFlujo` el flujo que necesita la carta
+  // entera («Venta mínima v0»). El Demo B entrega el pedido por la página y el
+  // agente solo recibe el resumen: si algún día su cuerpo empezara a llevarla,
+  // el asistente recibiría 40 o más ítems en cada turno sin que nadie lo
+  // decidiera. El lado del servidor (booleano estricto, solo `venta`, el
+  // comercio de la ruta) está en `catalogo-completo-servidor.test.ts`, que
+  // necesita el emulador.
+  const cuerposDeConfiguracion = (): string[] => f.nodes
+    .filter((n) => String(n.parameters['url'] ?? '').endsWith('/configuracionFlujo'))
+    .map((n) => String(n.parameters['jsonBody'] ?? ''));
+
+  it('ningún nodo del Demo B que llama a `configuracionFlujo` manda `catalogoCompleto`', () => {
+    const cuerpos = cuerposDeConfiguracion();
+    expect(cuerpos.length).toBeGreaterThan(0);
+    for (const c of cuerpos) expect(c).not.toMatch(/catalogoCompleto/);
   });
 });

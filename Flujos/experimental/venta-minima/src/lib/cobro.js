@@ -6,7 +6,13 @@
 //  - HAY COBRO REAL solo si el servidor lo manda (`cobroReal`) Y la imagen del QR
 //    tiene una dirección `https://`. Un cobro a medio armar no se convierte en
 //    «cobro real sin QR»: sin QR utilizable, el flujo va por el plan B (el pago se
-//    coordina con el restaurante). Este flujo NO tiene modo simulado.
+//    coordina con el restaurante).
+//  - DOS MODOS EXCLUYENTES, y quien manda es el SERVIDOR. COBRO REAL solo si el servidor lo manda (`cobroReal`) Y la imagen
+//    del QR tiene una dirección `https://`. COBRO SIMULADO (`cbCobroSimulado`) solo si el servidor NO manda `cobroReal`,
+//    SÍ manda `cobroSimulado`, y «Config base» lo habilita (`cobroSimuladoActivo === true` y `qrSimuladoUrl` https). Con
+//    `cobroReal` presente (aunque no sirva) NUNCA hay simulado. Sin ninguno de los dos, plan B. En simulado el QR lleva el
+//    rótulo impreso en la imagen Y en el pie, la respuesta dice «SIMULADO» y no se coteja nada (el cotejo del servidor no
+//    distingue modos: daría «no cuadra» y un cierre de venta con monto).
 //  - EL TOTAL DEL QR ES EL DEL CÓDIGO. Entra por `pedido.total` (un número que
 //    calculó `pdTotal` desde la carta) y nada de lo que el modelo o el cliente
 //    escriban lo mueve. El delivery nunca entra al total.
@@ -32,10 +38,13 @@
 
 // La red de palabras de `comun.js` (`VM_PROHIBIDAS`), copiada acá a propósito: esta
 // librería se prueba sola y no puede depender de otro archivo.
-const CB_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
+const CB_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+tu\s+pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40}\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\s+(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+)?(lleg|ingres|entr)(o|ó|aron)\b|(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+|fue\s+|fueron\s+|est[aá]\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b|gracias\s+por\s+(tu|su|el)\s+(pago|transferencia|dep[oó]sito|abono)s?|\b(lleg|ingres|entr)(o|ó|aron)\s+(tu|tus|el|los|su|sus|mi|la|las)\s+(pago|transferencia|dep[oó]sito|abono|dinero|plata|monto)|\b(tu|tus|el|los|su|sus|mi|la|las)\s+(pago|transferencia|dep[oó]sito|abono|dinero|plata|monto)s?\s+(ya\s+)?(lleg|ingres|entr)(o|ó|aron)\b|\brecib(imos|i|í|ido)\s+(el|la|tu|su)\s+(dinero|plata|monto)|(pago|transferencia|dep[oó]sito|abono|cobro)s?\s+(ya\s+|fue\s+|fueron\s+|est[aá]\s+|qued[oó]\s+|se\s+)?(ya\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad|aceptad|completad|procesad|reflejad|comprobad)|\breflej(o|ó)\s+(tu|el|su)\s+(pago|transferencia|dep[oó]sito|abono)|\b(verificamos|comprobamos|validamos|aceptamos|tenemos|vimos|cobramos)\s+(tu|tus|su|sus|el|la)\s+(pago|transferencia|dep[oó]sito|abono|dinero|plata)|\bpago\s+(listo|ok)\b|\b(tu|su|el)\s+pago\s+(ya\s+)?(est[aá]|qued[oó])\s+(ya\s+)?(listo|ok|en\s+orden|bien|correcto|completo|hecho)\b|en\s+orden\s+con\s+(tu|su|el)\s+pago|\bsaldad[oa]s?\b|\b(pedido|cuenta|pago|total|orden|deuda)s?\s+((ya\s+)?(est[aá]n?|qued[oó]|fue|queda)\s+)?(ya\s+)?cancelad[oa]s?\b|\bya\s+nos\s+pag(aste|o|ó|aron)\b|\bgracias\s+por\s+pagar\b|\bya\s+pagaste\W{0,3}\s*(muchas\s+)?gracias|\brecib(imos|i|í|ido)\s+(bs\.?\s*|bob\s*)?\d+([.,]\d+)?\s*(bs|bob|bolivianos)\b|\bconfirm(amos|e|é)\s+que\s+(ya\s+)?pag|(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+)?se\s+reflej/i;
 
 // El total que acepta el servidor para cotejar (`TOTAL_VENTA_MAXIMO`).
 const CB_TOTAL_MAXIMO = 1000000;
+
+// El rótulo del QR simulado en el pie (el otro va IMPRESO en la imagen): sin él, el simulado no sale (PROHIBICIÓN 3).
+const CB_ROTULO_SIMULADO = 'PRUEBA · COBRO SIMULADO: este QR es de demostración, no cobra ni mueve dinero.';
 
 // ---------------------------------------------------------------------------
 // Utilidades mínimas
@@ -169,6 +178,35 @@ function cbCobroReal(cuerpoPanel) {
   };
 }
 
+// `cuerpoPanel` = cuerpo de `configuracionFlujo`; `base` = «Config base». null si no corresponde simulado.
+function cbCobroSimulado(cuerpoPanel, base) {
+  const r = cbEsObjeto(cuerpoPanel) ? cuerpoPanel : null;
+  const b = cbEsObjeto(base) ? base : null;
+  if (!r || !b) return null;
+  if (r.cobroReal !== undefined) return null;          // EXCLUSIÓN: si el cuerpo trae `cobroReal` (aunque sea null, vacío o no sirva), nunca simulado
+  if (!cbEsObjeto(r.cobroSimulado)) return null;       // el servidor no declaró simulado
+  if (b.cobroSimuladoActivo !== true) return null;     // solo el booleano true (ni «true», ni 1)
+  const url = typeof b.qrSimuladoUrl === 'string' ? b.qrSimuladoUrl.trim() : '';
+  if (!cbUrlSegura(url)) return null;
+  const cb = cbEsObjeto(r.cobro) ? r.cobro : {};
+  const vencido = typeof cb.vencidoHaceMin === 'number' && Number.isFinite(cb.vencidoHaceMin) && cb.vencidoHaceMin >= 0
+    ? Math.floor(cb.vencidoHaceMin) : null;
+  return {
+    activo: false, modo: 'simulado', qrUrl: url, titular: '', banco: '',
+    pendiente: cb.pendiente === true, monto: cbTotalValido(cb.monto),
+    pedidoRef: typeof cb.pedido === 'string' ? cbLinea(cb.pedido, 120) : '', vencidoHaceMin: vencido,
+  };
+}
+
+// ¿Hay un QR que mandar? Real encendido con https, o simulado (activo false) con https. Nunca los dos.
+function cbHayQr(cobro) {
+  const c = cbEsObjeto(cobro) ? cobro : {};
+  if (!cbUrlSegura(c.qrUrl)) return false;
+  if (c.modo === 'real') return c.activo === true;
+  if (c.modo === 'simulado') return c.activo !== true;
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // El QR: pie y mensaje
 // ---------------------------------------------------------------------------
@@ -187,6 +225,13 @@ function cbCaption(pedido, opciones) {
   if (CB_PROHIBIDAS.test(cbCanon(titular))) titular = '';
   const cabeza = codigo ? 'Pedido #' + codigo + '. ' : '';
   const delivery = o.delivery === true ? '; el delivery se paga aparte, al repartidor' : '';
+  if (o.simulado === true) {
+    // Simulado: el rótulo va primero y no se nombra al titular (no hay cuenta a la que pagar).
+    const sim = CB_ROTULO_SIMULADO + '\n' + cabeza + 'Total de la prueba: ' + cbMonto(total) + ' ' + cbMoneda(o.moneda)
+      + ' (solo la comida' + delivery + ').\n'
+      + 'No intentes pagarlo: tu banco lo va a rechazar. Para seguir con la prueba, envíame aquí cualquier foto como comprobante simulado.';
+    return sim.slice(0, 1024);
+  }
   const texto = cabeza + 'Total a pagar por QR: ' + cbMonto(total) + ' ' + cbMoneda(o.moneda)
     + ' (solo la comida' + delivery + ').\n'
     + 'Escanea el QR con la app de tu banco' + (titular ? ' (la cuenta es de ' + titular + ')' : '')
@@ -359,6 +404,7 @@ function cbEstadoParaAviso(resultado) {
   if (resultado === 'ilegible') return 'comprobante ilegible';
   if (resultado === 'sin_cotejo') return 'comprobante sin cotejar';
   if (resultado === 'ya_cotejado') return null;
+  if (resultado === 'simulado') return 'PRUEBA: cobro SIMULADO, sin dinero';
   return 'sin QR: cobrar al entregar';
 }
 
@@ -447,6 +493,12 @@ function cbTextoAlCliente(resultado, opciones) {
       cuerpo: alRestaurante('Recibí tu comprobante, pero no pude revisarlo contra ' + pedido + '.'),
       enlace: true, aviso: true,
     };
+  }
+  if (resultado === 'simulado') {
+    const cabezaSim = 'Recibí tu comprobante SIMULADO de ' + pedido + '. Es una prueba: no se movió dinero.';
+    return salio
+      ? { cuerpo: cabezaSim + ' Ya pasé tu pedido al restaurante como pedido de PRUEBA.', enlace: false, aviso: true }
+      : { cuerpo: cabezaSim + ' ' + sinAviso, enlace: true, aviso: true };
   }
   if (resultado === 'ya_cotejado') {
     return {

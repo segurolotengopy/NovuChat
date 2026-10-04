@@ -34,7 +34,7 @@ type Fn = (...a: any[]) => any;
 const L = ejecutar(`${FUENTE}\nreturn [{ json: { ${NOMBRES.join(', ')} } }];`, [{}])[0] as Record<(typeof NOMBRES)[number], Fn>;
 
 // La red de palabras prohibidas de `comun.js` (§4.2), copiada: esta suite corre sola.
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+tu\s+pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40}\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\s+(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+)?(lleg|ingres|entr)(o|ó|aron)\b|(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+|fue\s+|fueron\s+|est[aá]\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
 
 // --- El mundo de las pruebas ------------------------------------------------------------------
 // Lunes 05/10/2026, 10:00 en La Paz. Martes 06, … viernes 09, sábado 10, domingo 11.
@@ -474,6 +474,43 @@ describe('rsValidar: la solicitud completa', () => {
       expect(validar({ hora: '17:00' }, cfg).error.texto).toContain('de 12:00 a 14:30 y de 19:00 a 22:30');
       expect(validar({ hora: '19:00' }, cfg).completa).toBe(true);
     });
+    describe('el horario real de Q\'Taco: lunes a viernes 12:00-16:00 y 18:00-22:00, sábado y domingo 12:00-22:00', () => {
+      const QT = 'lun=12:00-16:00/18:00-22:00,mar=12:00-16:00/18:00-22:00,mie=12:00-16:00/18:00-22:00,jue=12:00-16:00/18:00-22:00,vie=12:00-16:00/18:00-22:00,sab=12:00-22:00,dom=12:00-22:00';
+      const cfg = { horario: QT };
+      it('entre semana, la hora dentro de un tramo sirve (borde: 30 minutos antes de cada cierre) y el hueco de 16:00 a 18:00 no', () => {
+        for (const h of ['12:00', '13:30', '15:30', '18:00', '20:00', '21:30']) expect(validar({ fecha: VIE, hora: h }, cfg).completa, h).toBe(true);
+        for (const h of ['11:59', '15:31', '16:00', '17:00', '17:59', '21:31', '22:00', '23:00']) {
+          expect(validar({ fecha: VIE, hora: h }, cfg).error, h).toMatchObject({ campo: 'hora' });
+        }
+      });
+      it('el texto del error dice los dos tramos en que sí recibe reservas', () => {
+        expect(validar({ fecha: VIE, hora: '17:00' }, cfg).error.texto).toContain('El viernes el restaurante recibe reservas de 12:00 a 15:30 y de 18:00 a 21:30');
+      });
+      it('sábado y domingo es un solo tramo: a las 17:00 sí se reserva', () => {
+        for (const f of ['2026-10-10', DOM]) {
+          expect(validar({ fecha: f, hora: '17:00' }, cfg).completa, f).toBe(true);
+          expect(validar({ fecha: f, hora: '21:30' }, cfg).completa, f).toBe(true);
+          expect(validar({ fecha: f, hora: '21:31' }, cfg).error, f).toMatchObject({ campo: 'hora' });
+        }
+      });
+      it('NEGANDO: un tramo mal formado, pisado o con el día repetido deja SIN horario (falla cerrado): no se acepta nada', () => {
+        for (const mal of [
+          'lun=12:00-16:00/18:00-22', 'lun=12:00-16:00/', 'lun=12:00-16:00//18:00-22:00', 'lun=12:00-16:00/18:00',
+          'lun=12:00-18:00/16:00-22:00', 'lun=12:00-16:00/15:00-22:00', 'lun=22:00-18:00', 'lun=12:00-16:00/18:00-22:00,lun=12:00-22:00',
+          'lun=12:00-16:00 y 18:00-22:00', 'lun=12:00-16:00;18:00-22:00',
+        ]) {
+          const v = validar({ fecha: LUN, hora: '13:00' }, { horario: mal });
+          expect(v.completa, mal).toBe(false);
+          expect(v.error, mal).toMatchObject({ campo: 'horario' });
+        }
+      });
+      it('los tramos en otro orden dan el mismo horario que en orden', () => {
+        const al_reves = { horario: QT.replace(/12:00-16:00\/18:00-22:00/g, '18:00-22:00/12:00-16:00') };
+        for (const h of ['13:00', '17:00', '19:00', '21:31']) {
+          expect(validar({ fecha: VIE, hora: h }, al_reves).completa, h).toBe(validar({ fecha: VIE, hora: h }, cfg).completa);
+        }
+      });
+    });
     it('un tramo de menos de 30 minutos no deja reservar: el día cuenta como cerrado', () => {
       const cfg = { horario: 'vie=12:00-12:20,lun=12:00-22:00' };
       expect(validar({ hora: '12:00' }, cfg).error).toMatchObject({ campo: 'fecha' });
@@ -515,11 +552,37 @@ describe('rsValidar: la solicitud completa', () => {
   });
 });
 
+describe('responseSchema de reserva.js: ningún enum vacío ni con cadena vacía', () => {
+  it('el esquema de extracción de la reserva no trae enum (o, si lo trajera, sin vacíos)', () => {
+    const esq = L.rsCuerpoExtraccion('mesa para 4', { ahoraMs: AHORA }).generationConfig.responseSchema;
+    const enums: unknown[][] = [];
+    const recorre = (n: unknown) => {
+      if (!n || typeof n !== 'object') return;
+      for (const [k, v] of Object.entries(n as Record<string, unknown>)) {
+        if (k === 'enum' && Array.isArray(v)) enums.push(v); else recorre(v);
+      }
+    };
+    recorre(esq);
+    for (const e of enums) { expect(e.length).toBeGreaterThan(0); expect(e).not.toContain(''); }
+    expect(JSON.stringify(esq)).not.toMatch(/"enum":\[\]|"enum":\[[^\]]*""/);
+  });
+});
+
 describe('rsPreguntaFaltantes', () => {
   it('con lo esencial vacío es el pedido de datos completo, con las zonas', () => {
     expect(L.rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: ['salón', 'terraza'] })).toBe(
-      'Para tu solicitud de reserva dime, en un solo mensaje: cuántas personas, qué día y a qué hora, si prefieres salón o terraza y a nombre de quién (nombre y apellido). Si celebran algo o necesitan algo especial, cuéntamelo también.',
+      '¡Con gusto! 🙌 Para tu solicitud de reserva cuéntame en un solo mensaje: cuántas personas, qué día y a qué hora, si prefieres salón o terraza y a nombre de quién (nombre y apellido). Si celebran algo o necesitan algo especial, cuéntamelo también.',
     );
+  });
+  it('abre con «¡Con gusto!» y un emoji, y con nivelEmojis «ninguno» va sin emoji; la pregunta parcial no lleva ninguno', () => {
+    const t = L.rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: 'salón', nivelEmojis: 'pocos' });
+    expect(t.startsWith('¡Con gusto! 🙌 Para tu solicitud de reserva cuéntame en un solo mensaje: ')).toBe(true);
+    const sin = L.rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: 'salón', nivelEmojis: 'ninguno' });
+    expect(sin.startsWith('¡Con gusto! Para tu solicitud de reserva cuéntame en un solo mensaje: ')).toBe(true);
+    expect(sin).not.toMatch(/\p{Extended_Pictographic}/u);
+    expect(L.rsPreguntaFaltantes(['hora'], {})).not.toMatch(/\p{Extended_Pictographic}|Con gusto/u);
+    for (const x of [t, sin]) expect(x).not.toMatch(VM_PROHIBIDAS);
+    expect(t + sin).not.toMatch(/te aviso|luego|te llamamos|te escribir|lo consulto|confirmad/i); // no promete lo que el flujo no cumple
   });
   it('sin zonas configuradas no ofrece zonas; con el nombre resuelto no lo pide', () => {
     const t = L.rsPreguntaFaltantes(['personas', 'fecha', 'hora'], {});

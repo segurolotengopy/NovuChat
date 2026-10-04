@@ -16,7 +16,8 @@
 //   - mandar un QR sin enlace https (solo con dominio con nombre: sin IP, sin `@` y sin puerto), sin monto, o con
 //     un monto distinto del total del pedido que calculó el código (el del plan, o el del estado al reenviarlo): en ese
 //     caso no se guarda `esperando_comprobante`. El evento `qr_enviado` solo lo lleva el QR que el plan pidió como evento:
-//     «Reenviar QR» lleva monto y referencia, pero NO el evento (no reabre el cobro);
+//     «Reenviar QR» lleva monto y referencia, pero NO el evento (no reabre el cobro); el QR simulado sin rótulo en el pie
+//     («simulado» y «no cobra»), o el real con un rótulo de prueba, tampoco sale (los dos modos son excluyentes);
 //   - ofrecer algo distinto de pasar con el restaurante (el botón que abre su chat): la URL del botón vale SOLO si es
 //     `https://wa.me/<dígitos>` y los dígitos son el número de recepción de la configuración; si no, se arma de ahí;
 //   - bloquear un mensaje por el texto de un TERCERO: la dirección, la referencia, las notas y el nombre llegan ya
@@ -26,12 +27,22 @@
 // tope se expulsan los más antiguos); y las marcas de aviso por hora, SOLO si el aviso salió: `transferencias` y
 // `avisosPedido` (pedido y comprobante), que `Armar avisos` lee para sus topes. Un aviso que falló no deja marca.
 //
+// BOTÓN «MENÚ» (03/10): todo mensaje interactivo con botones de respuesta que tenga lugar (menos de tres) sale con `m|menu`
+// como último botón (salvo el propio menú: `sinMenu`), para que el cliente siempre pueda volver al inicio; el mensaje con botón de enlace (uno solo) lleva al
+// final «Si quieres seguir con tu pedido o tu reserva, escribe «menú».». Solo en la conversación (`Plan del turno`): el aviso fijo
+// de «Uso extendido» y el de «Comercio no operativo» no llegan a `Decidir turno`, así que no ofrecen «menú». No agrega mensajes.
+// `nivelEmojis` (la voz del negocio): `ninguno` quita los emojis de todo texto al cliente, `pocos` deja a lo sumo uno por
+// mensaje (el primero) y `muchos` no toca nada.
+//
 // MENSAJES QUE AGREGA: ninguno por sí mismo. (Un resumen de pedido de más de 1.024 caracteres lo parte `Plan del turno`
 // en un texto y un mensaje corto con el total: es el único caso en el flujo que agrega un mensaje.)
 //
 // MODO PRUEBA: los mensajes al cliente van a `telefonoDePrueba`, sin prefijo y sin reportar.
 const AM_PLAN = vmPrimero('Plan del turno') || vmPrimero('Uso extendido') || vmPrimero('Comercio no operativo') || {};
 const AM_CFG = vmCfg();
+// ¿Es la conversación (`Plan del turno`)? El aviso fijo de «Uso extendido» y el de «Comercio no operativo» no pasan por
+// `Decidir turno`: ahí escribir «menú» no hace nada y no se ofrece (solo se ofrece lo que se cumple).
+const AM_CONVERSA = !!vmPrimero('Plan del turno');
 const AM_T = vmPrimero('Interpretar entrada') || {};
 const AM_AHORA = Number(AM_T.ahoraMs) || Date.now();
 const AM_FROM = String(AM_T.from || '');
@@ -43,7 +54,11 @@ const AM_TEL_PRUEBA = String(AM_CFG.telefonoDePrueba || '');
 const AM_NUMERO_ID = AM_PRUEBA ? String(AM_CFG.phoneNumberIdEsperado || '') : (AM_T.phoneNumberId || AM_CFG.phoneNumberId || AM_CFG.phoneNumberIdEsperado || '');
 const AM_REC = vmDigitos(AM_CFG.numeroRecepcion);
 const AM_REC_OK = AM_REC.length >= 8 && AM_REC.length <= 15 && AM_REC !== AM_FROM_DIG;
-const AM_GEN_CUERPO = 'Eso lo ve directamente el restaurante. Toca el botón para escribirles.';
+const AM_GEN_CUERPO = AM_CONVERSA
+  ? 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. '
+    + 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».'
+  : 'Eso lo ve directamente el restaurante. Toca el botón para escribirles.';
+const AM_SEGUIR = 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
 const AM_GEN_BOTON = 'Escribir al local';
 const AM_HORA_MS = 60 * 60 * 1000;
 const AM_PEDIDOS_MS = 72 * AM_HORA_MS;
@@ -122,11 +137,12 @@ function amUrlWa(saludo) {
   const s = amSeguro(saludo) ? saludo : 'Hola, escribo desde el asistente virtual.';
   return 'https://wa.me/' + AM_REC + '?text=' + encodeURIComponent(s);
 }
-// Sin botón no se nombra el botón: se quita la oración que lo menciona (o, si trae «:», solo lo que sigue).
+// Sin botón no se nombra el botón: se quita la oración que lo menciona, o que nombra «Escribir al local» (o, si trae «:», solo
+// lo que sigue).
 function amSinBoton(cuerpo) {
   const salida = [];
   for (const o of String(cuerpo).split(/(?<=[.!?])\s+/)) {
-    if (!/bot[oó]n/i.test(o)) { salida.push(o); continue; }
+    if (!/bot[oó]n|escribir al local/i.test(o)) { salida.push(o); continue; }
     const i = o.indexOf(':');
     if (i > 0) salida.push(o.slice(0, i).trimEnd() + '.');
   }
@@ -134,7 +150,21 @@ function amSinBoton(cuerpo) {
 }
 // El botón que abre el chat del restaurante. La URL del plan se acepta si es https y no es el chat del
 // propio cliente; si no, sale del número de recepción; sin número válido, texto sin la frase del botón.
-function amEnlace(cuerpo, boton, urlDelPlan, tipoReporte) {
+// Emojis: `ninguno` los quita (con el espacio que los precede) y `pocos` deja el primero de cada mensaje.
+const AM_EMOJI = '\\p{Extended_Pictographic}(?:\\uFE0F|\\p{Emoji_Modifier}|\\u200D\\p{Extended_Pictographic}\\uFE0F?)*';
+function amEmojis(texto) {
+  const nivel = String(AM_CFG.nivelEmojis || 'pocos');
+  if (nivel === 'muchos') return texto;
+  let vistos = 0;
+  return texto.replace(new RegExp('[ \\t]*(' + AM_EMOJI + ')', 'gu'), (m) => (nivel !== 'ninguno' && ++vistos === 1 ? m : '')).replace(/^[ \t]+/, '');
+}
+// Un solo botón (el de enlace): el camino de vuelta al menú va escrito, solo en la conversación y sin repetirlo.
+function amConSeguir(cuerpo) {
+  return !AM_CONVERSA || cuerpo.indexOf(AM_SEGUIR) >= 0 ? cuerpo : cuerpo + ' ' + AM_SEGUIR;
+}
+// `sinMenu`: el mensaje no manda a «menú» (con un comprobante en espera el menú no está disponible).
+function amEnlace(cuerpoCrudo, boton, urlDelPlan, tipoReporte, sinMenu) {
+  const cuerpo = sinMenu === true ? cuerpoCrudo : amConSeguir(cuerpoCrudo);
   // La URL del plan vale SOLO si es `https://wa.me/<8 a 15 dígitos>` (con `?text=` opcional) y esos dígitos son EXACTAMENTE
   // el número de recepción de la configuración (que no es el del propio cliente). Cualquier otra cosa se descarta.
   let url = String(urlDelPlan || '').trim();
@@ -150,15 +180,24 @@ function amEnlace(cuerpo, boton, urlDelPlan, tipoReporte) {
 }
 function amGenerico(motivo) {
   AM_errores.push(motivo);
-  return amEnlace(AM_GEN_CUERPO, AM_GEN_BOTON, '', 'interactive');
+  // El mensaje genérico también respeta `nivelEmojis` (con `ninguno` no sale el 🙂).
+  return amEnlace(amEmojis(AM_GEN_CUERPO).trim(), AM_GEN_BOTON, '', 'interactive');
 }
 
 // ----------------------------------------------------------------- un mensaje del plan
 let AM_qrRechazado = false;
+// Defensa en profundidad (la guarda real es `construir.mjs`, que fija la etiqueta exacta): el QR SIMULADO solo sale si su imagen es el QR de
+// demostración rotulado del repositorio (anfitrión, repositorio y ruta). Un enlace distinto, aunque sea https, no sale con la marca «SIMULADO».
+const AM_QR_SIMULADO = /^https:\/\/raw\.githubusercontent\.com\/segurolotengopy\/NovuChat\/v\d+\.\d+\.\d+\/Demo-Recursos\/qr-demo\.png$/;
 // La URL del QR: solo https, con un dominio con nombre (nada de IP ni de «localhost»), sin usuario (`@`) ni puerto.
 function amUrlSegura(u) {
   const s = String(u === undefined || u === null ? '' : u).trim();
   return s.length <= 2000 && /^https:\/\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?:[/?#][^\s<>"'@]*)?$/i.test(s);
+}
+// El titular de la cuenta real es un dato del comercio («Pruebas SRL», «Demostraciones del Sur»): no es un rótulo y no debe trabar su QR.
+function sinTitular(cuerpoN, titular) {
+  const t = vmNorm(titular);
+  return t ? cuerpoN.split(t).join(' ') : cuerpoN;
 }
 function amQr(m, cuerpo) {
   // El pedido contra el que se compara el monto: el del plan (el turno que creó el QR) o, al reenviarlo, el del estado
@@ -171,13 +210,19 @@ function amQr(m, cuerpo) {
   const monto = Number(m.monto);
   const total = Number(ped.total);
   const pedidoId = String(ped.pedidoId || '');
+  const simulado = cobro.modo === 'simulado';
+  const cuerpoN = vmNorm(cuerpo);
   let motivo = '';
-  if (cobro.activo !== true) motivo = 'cobro_no_activo';
+  if (cobro.activo === true && simulado) motivo = 'cobro_en_dos_modos';
+  else if (cobro.activo !== true && !simulado) motivo = 'cobro_no_activo';
   else if (!amUrlSegura(link)) motivo = 'qr_sin_https';
   else if (!(monto > 0) || !isFinite(monto)) motivo = 'qr_sin_monto';
   else if (!(total > 0) || Math.round(monto * 100) !== Math.round(total * 100)) motivo = 'qr_monto_distinto_del_total';
   else if (!pedidoId) motivo = 'qr_sin_pedido';
   else if (m.referencia && String(m.referencia) !== pedidoId) motivo = 'qr_referencia_distinta';
+  else if (simulado && !AM_QR_SIMULADO.test(link)) motivo = 'qr_simulado_imagen_no_permitida';
+  else if (simulado && !(/simulad/.test(cuerpoN) && /no cobra/.test(cuerpoN))) motivo = 'qr_simulado_sin_rotulo';
+  else if (!simulado && /simulad|simulacr|demostracion|prueba/.test(sinTitular(cuerpoN, cobro.titular))) motivo = 'qr_real_con_rotulo_simulado';
   if (motivo) {
     AM_qrRechazado = true;
     return amGenerico('qr_rechazado: ' + motivo);
@@ -194,7 +239,7 @@ function amQr(m, cuerpo) {
 function amArmarUno(m) {
   if (!m || typeof m !== 'object') return null;
   const tipo = String(m.tipo || 'texto');
-  const cuerpo = String(m.cuerpo === undefined || m.cuerpo === null ? '' : m.cuerpo).trim();
+  const cuerpo = amEmojis(String(m.cuerpo === undefined || m.cuerpo === null ? '' : m.cuerpo).trim()).trim();
   if (!cuerpo) { AM_errores.push('mensaje_sin_cuerpo: ' + tipo); return null; }
   if (!amSeguro(cuerpo)) return amGenerico('texto_reemplazado_por_palabra_prohibida');
   if (!AM_AVISO_SALIO && amAfirmaPase(cuerpo)) return amGenerico('pase_afirmado_sin_aviso_salido');
@@ -205,15 +250,29 @@ function amArmarUno(m) {
     if (Number.isFinite(Number(m.monto)) && m.monto !== null && m.monto !== '') extra.monto = Number(m.monto);
   }
   if (tipo === 'imagen') return amQr(m, cuerpo);
+  // El enlace a la carta (página del catálogo): el botón abre ESA dirección, no el chat del local. Vale solo con una URL segura
+  // (https, dominio con nombre, sin usuario ni puerto); sin ella no se promete una carta que el cliente no puede abrir: se pasa con el local.
+  if (tipo === 'enlace' && m.catalogo === true) {
+    const url = String(m.url === undefined || m.url === null ? '' : m.url).trim();
+    if (!amUrlSegura(url)) return amGenerico('catalogo_sin_enlace_seguro');
+    const pedido = m.boton || (Array.isArray(m.botones) && m.botones[0] ? (m.botones[0].title || m.botones[0].titulo) : '');
+    const titulo = amSeguro(pedido) && String(pedido || '').trim() ? String(pedido).trim() : 'Ver la carta';
+    const cuerpoCta = amConSeguir(cuerpo);
+    return Object.assign({
+      payload: amCta(cuerpoCta, titulo, url), texto: cuerpoCta, respaldo: vmRecorte(cuerpoCta + '\n\nVer la carta: ' + url, 4000), tipoReporte: 'interactive',
+    }, extra);
+  }
   if (tipo === 'enlace') {
     const boton = m.boton || (Array.isArray(m.botones) && m.botones[0] ? (m.botones[0].title || m.botones[0].titulo) : '');
-    return Object.assign(amEnlace(cuerpo, boton, m.url, 'interactive'), extra);
+    return Object.assign(amEnlace(cuerpo, boton, m.url, 'interactive', m.sinMenu === true), extra);
   }
   if (tipo === 'botones') {
     const bs = (Array.isArray(m.botones) ? m.botones : []).map((b) => ({
       id: String((b && b.id) || ''), title: String((b && (b.title || b.titulo)) || '').trim(),
     })).filter((b) => b.id && b.id.length <= 256 && b.title).slice(0, 3);
     if (bs.some((b) => !amSeguro(b.title))) return amGenerico('boton_reemplazado_por_palabra_prohibida');
+    const idMenu = vmIdDeBoton('m', 'menu');
+    if (AM_CONVERSA && m.sinMenu !== true && bs.length && bs.length < 3 && idMenu && !bs.some((b) => b.id === idMenu)) bs.push({ id: idMenu, title: 'Menú' });
     if (bs.length) {
       return Object.assign({ payload: amBotones(cuerpo, bs), texto: cuerpo,
         respaldo: vmRecorte(cuerpo + '\n\nSi no ves los botones, escribe «menu» para volver al inicio.', 4000), tipoReporte: 'interactive' }, extra);

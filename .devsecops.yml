@@ -66,6 +66,36 @@ seguridad:
   # ---------------------------------------------------------------------------
 
   # ---------------------------------------------------------------------------
+  # RIESGO ACEPTADO (04/10/2026), no es excepcion de escaner: ninguna herramienta
+  # del pipeline lo detecta, y el esquema no admite herramienta «manual» ni un
+  # archivo como componente. Lo hace cumplir construir.mjs --verificar.
+  #   id:           EXC-QTACO-EJEC-ERROR
+  #   herramienta:  manual (revision de seguridad M-1, PR #382 y PR #395)
+  #   componente:   Flujos/experimental/venta-minima/venta-minima.qtaco.json
+  #   severidad:    MEDIUM
+  #   justificacion: Andres decidio el 04/10/2026 que el flujo de Q'Taco guarde
+  #     TODAS las ejecuciones (saveDataSuccessExecution=all, saveDataErrorExecution=all,
+  #     saveExecutionProgress=false), por lo menos 24 horas, para diagnosticar el
+  #     piloto. La base de n8n guardara por ejecucion: el encabezado Authorization
+  #     del webhook «Carrito del catalogo» (credencial NovuChat ingesta (Q'Taco), la
+  #     misma de la ingesta, la configuracion, el cotejo y el cierre), telefonos,
+  #     nombres, textos, direcciones y pedidos de clientes, enlaces del catalogo con
+  #     ficha de 128 bits, la URL del QR de cobro, notas de voz y comprobantes de
+  #     pago (imagen o PDF), y la copia del flujo con sus rutas de webhook.
+  #     Mitigaciones: acceso solo del propietario a n8n y su API; poda actual de la
+  #     instancia (unos 14 dias, 10.000 maximo) ACEPTADA por Andres el 04/10 para el
+  #     piloto (global y compartida con Bellido: no se baja); modo de datos binarios
+  #     en filesystem con permisos 700, verificado en la VM en solo lectura (ver
+  #     DISENO.md de venta-minima); rotacion del secreto de
+  #     ingesta (scripts/rotar-ingesta.sh) al vencer y ante cualquier exportacion o
+  #     captura; el resto de los JSON (prueba, ensayo en el Demo A, otros tenants)
+  #     siguen en none.
+  #   aprobado_por: Andres Alberdi (04/10/2026, en el chat de Cartera)
+  #   creado:       2026-10-04
+  #   vence:        2026-12-31
+  #   Al vencer: o se baja a none, o se renueva con nueva justificacion; no se
+  #   prorroga en silencio.
+  # ---------------------------------------------------------------------------
   # ACTIVA (01/10/2026): CKV_GHA_7 de Checkov sobre release.yml y
   # ci-node-firebase.yml. Desde el reusable de seguridad 2.7, el job
   # `workflows` analiza los workflows (antes Checkov los descartaba sin avisar).
@@ -100,3 +130,26 @@ seguridad:
       aprobado_por: Andres Alberdi
       creado: "2026-10-01"
       vence: "2026-12-30"
+  # ---------------------------------------------------------------------------
+  # ACTIVA (03/10/2026): braces@3.0.3 en admin/pnpm-lock.yaml (GHSA-vfj7-8cjw-p6xm,
+  # CVE-2026-93687, CVSS 8.7, HIGH). En origin/main desde el 28/08 (f03c258c);
+  # entra por firebase-tools@15.29.0 -> chokidar@3.6.0 -> braces: tooling de
+  # desarrollo y CLI, sin entrada no confiable. osv-scanner no informa version
+  # corregida. El `id` es el CVE porque security-local.sh identifica el hallazgo
+  # de osv-scanner por su primer alias CVE- y compara contra ese valor; un id
+  # propio (osv-braces-GHSA-...) o el GHSA no lo exceptuarian. En CI
+  # osv-scanner es informativo y no lee excepciones: esta entrada surte efecto
+  # en el analisis local (paridad con el umbral bloquear_en).
+  # Al vencer: revisar si salio version corregida de braces o si firebase-tools
+  # ya trae chokidar@4 (que no depende de braces); no se prorroga en silencio.
+  # ---------------------------------------------------------------------------
+    - id: CVE-2026-93687
+      herramienta: osv-scanner
+      justificacion: >-
+        DoS por patrones anidados; solo en tooling de desarrollo/CLI, sin
+        entrada no confiable; sin version corregida publicada. braces@3.0.3
+        (GHSA-vfj7-8cjw-p6xm) entra por firebase-tools@15.29.0 ->
+        chokidar@3.6.0 en admin/pnpm-lock.yaml.
+      aprobado_por: Andres Alberdi
+      creado: "2026-10-03"
+      vence: "2026-12-31"

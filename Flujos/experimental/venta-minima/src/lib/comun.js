@@ -30,7 +30,7 @@ const VM_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
 // La red de palabras que un texto al cliente o al restaurante nunca puede traer:
 // presentan como hecho lo que el flujo no verifico (prohibicion 3) o prometen lo
 // que no tiene mecanismo detras («solo se ofrece lo que se cumple»).
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+tu\s+pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40}\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\s+(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+)?(lleg|ingres|entr)(o|ó|aron)\b|(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+|fue\s+|fueron\s+|est[aá]\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b|gracias\s+por\s+(tu|su|el)\s+(pago|transferencia|dep[oó]sito|abono)s?|\b(lleg|ingres|entr)(o|ó|aron)\s+(tu|tus|el|los|su|sus|mi|la|las)\s+(pago|transferencia|dep[oó]sito|abono|dinero|plata|monto)|\b(tu|tus|el|los|su|sus|mi|la|las)\s+(pago|transferencia|dep[oó]sito|abono|dinero|plata|monto)s?\s+(ya\s+)?(lleg|ingres|entr)(o|ó|aron)\b|\brecib(imos|i|í|ido)\s+(el|la|tu|su)\s+(dinero|plata|monto)|(pago|transferencia|dep[oó]sito|abono|cobro)s?\s+(ya\s+|fue\s+|fueron\s+|est[aá]\s+|qued[oó]\s+|se\s+)?(ya\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad|aceptad|completad|procesad|reflejad|comprobad)|\breflej(o|ó)\s+(tu|el|su)\s+(pago|transferencia|dep[oó]sito|abono)|\b(verificamos|comprobamos|validamos|aceptamos|tenemos|vimos|cobramos)\s+(tu|tus|su|sus|el|la)\s+(pago|transferencia|dep[oó]sito|abono|dinero|plata)|\bpago\s+(listo|ok)\b|\b(tu|su|el)\s+pago\s+(ya\s+)?(est[aá]|qued[oó])\s+(ya\s+)?(listo|ok|en\s+orden|bien|correcto|completo|hecho)\b|en\s+orden\s+con\s+(tu|su|el)\s+pago|\bsaldad[oa]s?\b|\b(pedido|cuenta|pago|total|orden|deuda)s?\s+((ya\s+)?(est[aá]n?|qued[oó]|fue|queda)\s+)?(ya\s+)?cancelad[oa]s?\b|\bya\s+nos\s+pag(aste|o|ó|aron)\b|\bgracias\s+por\s+pagar\b|\bya\s+pagaste\W{0,3}\s*(muchas\s+)?gracias|\brecib(imos|i|í|ido)\s+(bs\.?\s*|bob\s*)?\d+([.,]\d+)?\s*(bs|bob|bolivianos)\b|\bconfirm(amos|e|é)\s+que\s+(ya\s+)?pag|(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+)?se\s+reflej/i;
 
 // ---------------------------------------------------------------------------
 // Nodos de n8n
@@ -621,6 +621,31 @@ function vmHorario(v) {
     h[clave] = tr;
   }
   return Object.keys(nombrados).length ? h : null;
+}
+
+// El horario en palabras, de lunes a domingo, juntando los dias seguidos que abren igual:
+// «lunes a viernes de 12:00 a 16:00 y de 18:00 a 22:00; sábado y domingo de 12:00 a 22:00». Un dia sin tramos dice
+// «cerrado». '' si el horario no se entiende o no esta. Sirve de respaldo cuando `horarioAtencion` (el texto que
+// escribe el negocio) esta vacio: asi el horario que se aplica y el que se dice salen de la misma fuente.
+function vmHorarioLegible(v) {
+  const h = vmHorario(v);
+  if (!h) return '';
+  const orden = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
+  const tramosTxt = (k) => (h[k].length
+    ? h[k].map((t) => 'de ' + t.desde + ' a ' + t.hasta).join(' y ')
+    : 'cerrado');
+  const grupos = [];
+  for (const k of orden) {
+    const txt = tramosTxt(k);
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.txt === txt) ultimo.dias.push(k); else grupos.push({ txt: txt, dias: [k] });
+  }
+  const nombre = (k) => VM_DIAS[VM_CLAVES_DIA.indexOf(k)];
+  return grupos.map((g) => {
+    const n = g.dias.length;
+    const dias = n === 1 ? nombre(g.dias[0]) : (n === 2 ? nombre(g.dias[0]) + ' y ' + nombre(g.dias[1]) : nombre(g.dias[0]) + ' a ' + nombre(g.dias[n - 1]));
+    return dias + ' ' + g.txt;
+  }).join('; ');
 }
 
 // ¿Esta abierto ahora? `{abierto, hoyCerrado, sinHorario}`. Sin horario (o uno que no se

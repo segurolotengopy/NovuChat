@@ -17,7 +17,10 @@
  *   - `avAnotarEntrante(sd, tel, ahoraMs)`: anota que `tel` escribió (el doble lo deja en
  *     `sd.avVentanas[tel]`, solo para poder comprobar que se llamó);
  *   - `cbCobroReal(cuerpoPanel)`: `{activo, qrUrl, titular, banco, pendiente, monto, pedidoRef,
- *     vencidoHaceMin}` desde `cuerpo.cobro` (`activo` solo con un QR `https://`).
+ *     vencidoHaceMin}` desde `cuerpo.cobro` (`activo` solo con un QR `https://`);
+ *   - `cbCobroSimulado(cuerpoPanel, base)`: `null` si el cuerpo trae `cobroReal`, si no trae `cobroSimulado`, si «Config base» no
+ *     trae `cobroSimuladoActivo === true` o si `qrSimuladoUrl` no empieza con `https://`; si no, el cobro simulado
+ *     (`activo:false`, `modo:'simulado'`, `pendiente`, `monto` y `pedidoRef` del servidor).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -54,7 +57,7 @@ const NOMBRES = [
   'vmTextoDeGemini', 'vmJsonDeGemini', 'vmTextoSeguro', 'vmSd', 'vmEstadoBase', 'vmLeerEstado', 'vmEscribirEstado',
   'vmBarrer', 'vmYaVisto', 'vmMarcarVisto', 'vmAtencion', 'vmPrefijoPermitido', 'vmIdDeBoton', 'vmLeerBoton',
   'vmCodigoCorto', 'vmHuella', 'vmIdEstable', 'vmFechaLocal', 'vmHoraLocal', 'vmDiaSemana', 'vmMsLocal', 'vmFechaLegible', 'vmTablaDeDias',
-  'vmHorario', 'vmAbierto', 'VM_PROHIBIDAS', 'vmCanon', 'vmSinProhibidas',
+  'vmHorario', 'vmAbierto', 'vmHorarioLegible', 'VM_PROHIBIDAS', 'vmCanon', 'vmSinProhibidas',
 ] as const;
 type Lib = Record<(typeof NOMBRES)[number], Fn>;
 
@@ -93,10 +96,25 @@ function cbCobroReal(cuerpo) {
   const c = (cuerpo && cuerpo.cobro) || {};
   const qr = c.qr || {};
   const activo = c.activo === true && typeof qr.url === 'string' && qr.url.indexOf('https://') === 0;
+  // Sin QR utilizable todo queda vacío, como en la librería de verdad (nada del servidor se arrastra a un cobro apagado).
+  if (!activo) return { activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: null, vencidoHaceMin: null };
   return {
-    activo: activo, qrUrl: activo ? qr.url : '', titular: qr.nombreCuenta || '', banco: qr.banco || '',
-    pendiente: activo && c.pendiente === true, monto: typeof c.monto === 'number' ? c.monto : null,
+    activo: true, qrUrl: qr.url, titular: qr.nombreCuenta || '', banco: qr.banco || '',
+    pendiente: c.pendiente === true, monto: typeof c.monto === 'number' ? c.monto : null,
     pedidoRef: c.pedido || null, vencidoHaceMin: typeof c.vencidoHaceMin === 'number' ? c.vencidoHaceMin : null,
+  };
+}
+function cbCobroSimulado(cuerpo, base) {
+  if (!cuerpo || !base) return null;
+  if (cuerpo.cobroReal) return null;
+  if (!cuerpo.cobroSimulado || typeof cuerpo.cobroSimulado !== 'object') return null;
+  if (base.cobroSimuladoActivo !== true) return null;
+  const url = typeof base.qrSimuladoUrl === 'string' ? base.qrSimuladoUrl.trim() : '';
+  if (url.indexOf('https://') !== 0) return null;
+  const c = cuerpo.cobro || {};
+  return {
+    activo: false, modo: 'simulado', qrUrl: url, titular: '', banco: '', pendiente: c.pendiente === true,
+    monto: typeof c.monto === 'number' ? c.monto : null, pedidoRef: c.pedido || null, vencidoHaceMin: null,
   };
 }
 `;
@@ -187,7 +205,7 @@ describe('comun.js: red de palabras prohibidas', () => {
   ];
   it('el regex es el del contrato, literal', () => {
     expect((L.VM_PROHIBIDAS as unknown as RegExp).source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\\s+(tu|tus|su|sus|la|el|lo|los|las)\\b|\\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\\s+(?:ya\\s+)?reservad|reserva\\s+((est[aá]|qued[oó])\\s+)?(registrad|agendad)|reservamos tu|\\b(?:te|le|les|se|lo|la|ya)\\s+confirm(?:o|amos|é|ó|aron)\\b');
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\\s+tu\\s+pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S{0,40}\\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\\s+(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)s?\\s+(ya\\s+)?(lleg|ingres|entr)(o|ó|aron)\\b|(pago|transferencia|dep[oó]sito|abono)s?\\s+(ya\\s+|fue\\s+|fueron\\s+|est[aá]\\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad)|confirm(amos|ó|o)\\s+(tu|tus|su|sus|la|el|lo|los|las)\\b|\\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\\s+(?:ya\\s+)?reservad|reserva\\s+((est[aá]|qued[oó])\\s+)?(registrad|agendad)|reservamos tu|\\b(?:te|le|les|se|lo|la|ya)\\s+confirm(?:o|amos|é|ó|aron)\\b|gracias\\s+por\\s+(tu|su|el)\\s+(pago|transferencia|dep[oó]sito|abono)s?|\\b(lleg|ingres|entr)(o|ó|aron)\\s+(tu|tus|el|los|su|sus|mi|la|las)\\s+(pago|transferencia|dep[oó]sito|abono|dinero|plata|monto)|\\b(tu|tus|el|los|su|sus|mi|la|las)\\s+(pago|transferencia|dep[oó]sito|abono|dinero|plata|monto)s?\\s+(ya\\s+)?(lleg|ingres|entr)(o|ó|aron)\\b|\\brecib(imos|i|í|ido)\\s+(el|la|tu|su)\\s+(dinero|plata|monto)|(pago|transferencia|dep[oó]sito|abono|cobro)s?\\s+(ya\\s+|fue\\s+|fueron\\s+|est[aá]\\s+|qued[oó]\\s+|se\\s+)?(ya\\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad|aceptad|completad|procesad|reflejad|comprobad)|\\breflej(o|ó)\\s+(tu|el|su)\\s+(pago|transferencia|dep[oó]sito|abono)|\\b(verificamos|comprobamos|validamos|aceptamos|tenemos|vimos|cobramos)\\s+(tu|tus|su|sus|el|la)\\s+(pago|transferencia|dep[oó]sito|abono|dinero|plata)|\\bpago\\s+(listo|ok)\\b|\\b(tu|su|el)\\s+pago\\s+(ya\\s+)?(est[aá]|qued[oó])\\s+(ya\\s+)?(listo|ok|en\\s+orden|bien|correcto|completo|hecho)\\b|en\\s+orden\\s+con\\s+(tu|su|el)\\s+pago|\\bsaldad[oa]s?\\b|\\b(pedido|cuenta|pago|total|orden|deuda)s?\\s+((ya\\s+)?(est[aá]n?|qued[oó]|fue|queda)\\s+)?(ya\\s+)?cancelad[oa]s?\\b|\\bya\\s+nos\\s+pag(aste|o|ó|aron)\\b|\\bgracias\\s+por\\s+pagar\\b|\\bya\\s+pagaste\\W{0,3}\\s*(muchas\\s+)?gracias|\\brecib(imos|i|í|ido)\\s+(bs\\.?\\s*|bob\\s*)?\\d+([.,]\\d+)?\\s*(bs|bob|bolivianos)\\b|\\bconfirm(amos|e|é)\\s+que\\s+(ya\\s+)?pag|(pago|transferencia|dep[oó]sito|abono)s?\\s+(ya\\s+)?se\\s+reflej');
     expect((L.VM_PROHIBIDAS as unknown as RegExp).flags).toBe('i');
   });
   it('S3 e I1: las raíces nuevas se atrapan en su contexto de afirmación; «reservado» como dato de una carta o de una zona, no', () => {
@@ -632,6 +650,57 @@ describe('comun.js: horario', () => {
 });
 
 // ================================================================================================
+describe('comun.js: el horario de dos tramos de Q\'Taco (lunes a viernes 12:00-16:00 y 18:00-22:00; sábado y domingo 12:00-22:00)', () => {
+  const QT = 'lun=12:00-16:00/18:00-22:00,mar=12:00-16:00/18:00-22:00,mie=12:00-16:00/18:00-22:00,jue=12:00-16:00/18:00-22:00,vie=12:00-16:00/18:00-22:00,sab=12:00-22:00,dom=12:00-22:00';
+  // Hora local de La Paz (UTC-4) de un día de octubre de 2026: 5 = lunes, 9 = viernes, 10 = sábado, 11 = domingo.
+  const en = (dia: number, h: number, m = 0): number => Date.UTC(2026, 9, dia, h + 4, m);
+  it('vmHorario lo entiende: dos tramos de lunes a viernes y uno el fin de semana', () => {
+    const h = L.vmHorario(QT);
+    for (const d of ['lun', 'mar', 'mie', 'jue', 'vie']) expect(h[d], d).toEqual([{ desde: '12:00', hasta: '16:00' }, { desde: '18:00', hasta: '22:00' }]);
+    for (const d of ['sab', 'dom']) expect(h[d], d).toEqual([{ desde: '12:00', hasta: '22:00' }]);
+  });
+  it('entre semana: abierto en cada tramo y CERRADO en el hueco de 16:00 a 18:00 (bordes incluidos)', () => {
+    for (const dia of [5, 6, 7, 8, 9]) {
+      for (const [h, m] of [[12, 0], [15, 59], [18, 0], [21, 59]] as const) expect(L.vmAbierto(QT, en(dia, h, m)).abierto, `${dia} ${h}:${m}`).toBe(true);
+      for (const [h, m] of [[11, 59], [16, 0], [16, 1], [17, 0], [17, 59], [22, 0], [23, 0]] as const) expect(L.vmAbierto(QT, en(dia, h, m)).abierto, `${dia} ${h}:${m}`).toBe(false);
+    }
+  });
+  it('sábado y domingo no tienen hueco: a las 17:00 está abierto, a las 22:00 no', () => {
+    for (const dia of [10, 11]) {
+      expect(L.vmAbierto(QT, en(dia, 17)).abierto, String(dia)).toBe(true);
+      expect(L.vmAbierto(QT, en(dia, 12)).abierto, String(dia)).toBe(true);
+      expect(L.vmAbierto(QT, en(dia, 11, 59)).abierto, String(dia)).toBe(false);
+      expect(L.vmAbierto(QT, en(dia, 22)).abierto, String(dia)).toBe(false);
+    }
+    expect(L.vmAbierto(QT, en(10, 17)).hoyCerrado).toBe(false);
+  });
+  it('NEGANDO: un tramo mal formado, pisado o pegado con otro separador NO se entiende (null), y con eso no se bloquea ningún pedido', () => {
+    for (const mal of [
+      'lun=12:00-16:00/18:00-22', 'lun=12:00-16:00/', 'lun=12:00-16:00//18:00-22:00', 'lun=12:00-16:00/18:00', 'lun=12:00-18:00/16:00-22:00',
+      'lun=12:00-16:00/15:00-22:00', 'lun=12:00-16:00 y 18:00-22:00', 'lun=12:00-16:00;18:00-22:00', 'lun=12:00-16:00,18:00-22:00',
+      'lun=16:00-12:00/18:00-22:00', 'lun=12:00-16:00/22:00-18:00',
+    ]) {
+      expect(L.vmHorario(mal), mal).toBeNull();
+      expect(L.vmAbierto(mal, en(5, 17)), mal).toEqual({ abierto: true, hoyCerrado: false, sinHorario: true });
+    }
+  });
+  it('los tramos escritos en otro orden dan el mismo horario', () => {
+    expect(L.vmHorario('lun=18:00-22:00/12:00-16:00')).toEqual(L.vmHorario('lun=12:00-16:00/18:00-22:00'));
+  });
+  it('vmHorarioLegible: el texto en palabras, juntando los días seguidos que abren igual', () => {
+    expect(L.vmHorarioLegible(QT)).toBe('lunes a viernes de 12:00 a 16:00 y de 18:00 a 22:00; sábado y domingo de 12:00 a 22:00');
+    expect(L.vmHorarioLegible('lun=12:00-22:00,mar=12:00-22:00,mie=12:00-22:00,jue=12:00-22:00,vie=12:00-23:00,sab=12:00-23:00,dom=cerrado'))
+      .toBe('lunes a jueves de 12:00 a 22:00; viernes y sábado de 12:00 a 23:00; domingo cerrado');
+    expect(L.vmHorarioLegible('lun=09:00-13:00')).toBe('lunes de 09:00 a 13:00; martes a domingo cerrado');
+    expect(L.vmHorarioLegible(L.vmHorario(QT))).toBe(L.vmHorarioLegible(QT)); // también con el objeto convertido
+  });
+  it('vmHorarioLegible: lo que no se entiende da texto vacío, y el texto no trae palabras prohibidas', () => {
+    for (const m of ['', null, undefined, 5, 'lun=12:00-16:00/18:00-22', 'xyz=1']) expect(L.vmHorarioLegible(m), String(m)).toBe('');
+    expect(L.vmHorarioLegible(QT)).not.toMatch(L.VM_PROHIBIDAS as unknown as RegExp);
+  });
+});
+
+// ================================================================================================
 describe('Carga de entrada: las cuatro formas', () => {
   const correr = (entradas: J[], refs: Referencias = {}): J[] => correrNodo('carga-de-entrada', entradas, refs);
   const msgs = (s: J[]): J[] => s[0]!['messages'] as J[];
@@ -651,18 +720,35 @@ describe('Carga de entrada: las cuatro formas', () => {
     expect(msgs([s!])).toHaveLength(1);
     expect(s!['phoneNumberId']).toBe(PNID);
     expect(s!['prueba']).toEqual({ modoPrueba: true, telefonoDePrueba: '59100000099', enviarDeVerdad: false });
-    // el body de un Webhook cualquiera (sin ser la Entrada de prueba) también se lee, pero no da modo prueba
+    // CAMBIO DEL INTEGRADOR (03/10): el body de un Webhook cualquiera (sin que corra la Entrada de prueba) YA NO se lee como un mensaje.
+    // Antes lo protegía solo la precedencia del carrito y del receptor; ahora la forma 2 exige la Entrada de prueba.
     const [t] = correr([{ body: valor(mensaje()) }]);
-    expect(msgs([t!])).toHaveLength(1);
+    expect(msgs([t!])).toEqual([]);
     expect(t!['prueba']).toBeNull();
+    expect(t!['carritoWeb']).toBe(false);
   });
   it('3. la carga completa entry[0].changes[0].value, en la raíz o dentro de body', () => {
     const [a] = correr([sobreMeta(valor(mensaje()))]);
     expect(msgs([a!])).toHaveLength(1);
     expect(a!['phoneNumberId']).toBe(PNID);
-    const [b] = correr([{ body: sobreMeta(valor(mensaje())) }]);
+    // Dentro de `body` solo con la Entrada de prueba (como la forma 2); sin ella, no es un mensaje.
+    const cuerpoMeta = sobreMeta(valor(mensaje()));
+    const [b] = correr([{ body: cuerpoMeta }], { 'Entrada de prueba': { body: cuerpoMeta } });
     expect(msgs([b!])).toHaveLength(1);
     expect(b!['contacts']).toHaveLength(1);
+    const [sin] = correr([{ body: cuerpoMeta }]);
+    expect(msgs([sin!])).toEqual([]);
+  });
+  it('2 y 3. el body de CUALQUIER otro Webhook nunca es un mensaje: ni con `messages` ni con la carga completa, ni con otro nodo ejecutado', () => {
+    const v = valor(mensaje());
+    for (const cuerpo of [v, sobreMeta(v), { field: 'messages', value: v }]) {
+      const [s] = correr([{ body: cuerpo }]);
+      expect(msgs([s!]), JSON.stringify(Object.keys(cuerpo))).toEqual([]);
+      expect(s!['prueba']).toBeNull();
+    }
+    // El Trigger (la raíz) sigue valiendo, y el del receptor también.
+    expect(msgs(correr([v]))).toHaveLength(1);
+    expect(msgs(correr([{ valido: true }], { 'Entrega del receptor': { body: { field: 'messages', value: v } } }))).toHaveLength(1);
   });
   it('4. el receptor: el evento es el body.value de «Entrega del receptor»', () => {
     const entrega = { body: { field: 'messages', value: valor(mensaje()) } };
@@ -757,11 +843,11 @@ describe('Interpretar entrada', () => {
     const t = uno(mensaje());
     expect(t).toMatchObject({
       from: CLIENTE, nombrePerfil: 'Ana Pérez', phoneNumberId: PNID, mensajeId: 'wamid.prueba-1', tipo: 'text', texto: 'hola',
-      textoReporte: 'hola', origen: 'directo', boton: '', esAudio: false, esComprobante: false, mediaId: '', mimeType: '',
+      textoReporte: 'hola', origen: 'directo', boton: '', esAudio: false, esComprobante: false, comprobanteSimulado: false, mediaId: '', mimeType: '',
       ubicacion: null, ahoraMs: AHORA, prueba: null,
     });
     expect(Object.keys(t).sort()).toEqual([
-      'ahoraMs', 'boton', 'esAudio', 'esComprobante', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
+      'ahoraMs', 'boton', 'comprobanteCruzado', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
       'phoneNumberId', 'prueba', 'texto', 'textoReporte', 'tipo', 'ubicacion',
     ]);
   });
@@ -830,6 +916,61 @@ describe('Interpretar entrada', () => {
     expect(uno(mensaje({ type: 'video', video: { id: 'v' } }), { cfg })['esComprobante']).toBe(false);
     expect(uno(img, { cfg: { ...CFG, cobro: undefined } })['esComprobante']).toBe(false); // sin bloque de cobro
     expect(uno(img, { cfg: { ...CFG, cobro: { activo: 'true', pendiente: 'true' } } })['esComprobante']).toBe(false); // solo true de verdad
+  });
+  it('cobro SIMULADO: `comprobanteSimulado` con foto o archivo y QR pendiente, sin medio ni descarga; `esComprobante` nunca', () => {
+    const SIM = { activo: false, modo: 'simulado', pendiente: true, qrUrl: 'https://qr.example/sim.png' };
+    const cfg = { ...CFG, cobro: SIM };
+    const img = mensaje({ type: 'image', image: { id: 'media-i1' } });
+    const doc = mensaje({ type: 'document', document: { id: 'media-d1' } });
+    for (const m of [img, doc, mensaje({ type: 'image', image: {} })]) {
+      // no exige `mediaId` (no se baja nada) y NUNCA es un comprobante para cotejar: sin descarga, sin Gemini, sin cotejo
+      expect(uno(m, { cfg }), JSON.stringify(m)).toMatchObject({ comprobanteSimulado: true, esComprobante: false });
+    }
+    // los negativos, uno por condición
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...SIM, pendiente: false } } })).toMatchObject({ comprobanteSimulado: false, esComprobante: false }); // sin QR pendiente
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...SIM, pendiente: 'true' } } })['comprobanteSimulado']).toBe(false); // solo true de verdad
+    expect(uno(mensaje({ type: 'audio', audio: { id: 'a' } }), { cfg })['comprobanteSimulado']).toBe(false);
+    expect(uno(mensaje({ type: 'text', text: { body: 'hola' } }), { cfg })['comprobanteSimulado']).toBe(false);
+    expect(uno(mensaje({ type: 'video', video: { id: 'v' } }), { cfg })['comprobanteSimulado']).toBe(false);
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...SIM, modo: 'apagado' } } })['comprobanteSimulado']).toBe(false);
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...SIM, modo: undefined } } })['comprobanteSimulado']).toBe(false);
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...SIM, activo: true } } })['comprobanteSimulado']).toBe(false); // «activo» es real: no se mezclan
+    // con el cobro REAL: `esComprobante` sí, `comprobanteSimulado` nunca
+    const real = { ...CFG, cobro: { ...COBRO_PENDIENTE, modo: 'real' } };
+    expect(uno(img, { cfg: real })).toMatchObject({ esComprobante: true, comprobanteSimulado: false });
+    // y aunque llegue `activo:true` con `modo:'simulado'` (no debería), no se baja ni se coteja: `esComprobante` es falso
+    expect(uno(img, { cfg: { ...CFG, cobro: { ...COBRO_PENDIENTE, modo: 'simulado' } } })).toMatchObject({ esComprobante: false, comprobanteSimulado: false });
+  });
+  it('H2: con el cobro REAL encendido y un pedido SIMULADO de este teléfono pendiente, la foto NO es `esComprobante` (no se baja ni se coteja): es `comprobanteCruzado`', () => {
+    const cfg = { ...CFG, cobro: { ...COBRO_PENDIENTE, modo: 'real', pedidoRef: 'ped-sim-1' } };
+    const img = mensaje({ type: 'image', image: { id: 'media-i1' } });
+    const doc = mensaje({ type: 'document', document: { id: 'media-d1' } });
+    const raiz = (pedido: J) => ({ ventaMinima: { pedidos: { 'ped-sim-1': pedido } } });
+    for (const m of [img, doc]) {
+      expect(uno(m, { cfg, raiz: raiz({ from: CLIENTE, simulado: true }) }), JSON.stringify(m)).toMatchObject({ esComprobante: false, comprobanteCruzado: true });
+    }
+    // También cuando el pedido solo está en el estado del teléfono (no en los pedidos guardados).
+    const enEstado = { ventaMinima: { estados: { [CLIENTE]: { paso: 'esperando_comprobante', ultimoMensajeMs: AHORA - 1000, pedido: { pedidoId: 'ped-sim-1', simulado: true } } } } };
+    expect(uno(img, { cfg, raiz: enEstado })).toMatchObject({ esComprobante: false, comprobanteCruzado: true });
+    // NEGANDO: un pedido REAL, sin la marca, de otro teléfono, o sin pedido, sigue siendo un comprobante real (y nada cruzado).
+    for (const pedido of [{ from: CLIENTE, simulado: false }, { from: CLIENTE }, { from: '59100000099', simulado: true }]) {
+      expect(uno(img, { cfg, raiz: raiz(pedido) }), JSON.stringify(pedido)).toMatchObject({ esComprobante: true, comprobanteCruzado: false });
+    }
+    expect(uno(img, { cfg })).toMatchObject({ esComprobante: true, comprobanteCruzado: false });
+    // Sin cobro real pendiente tampoco hay nada cruzado.
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...cfg.cobro, pendiente: false } }, raiz: raiz({ from: CLIENTE, simulado: true }) })).toMatchObject({ comprobanteCruzado: false });
+  });
+  it('H2 con la referencia VACÍA (`pedido: null` del servidor): se usa el pedido simulado del estado, igual que `aComprobante`; con otra referencia, no', () => {
+    const img = mensaje({ type: 'image', image: { id: 'media-i1' } });
+    const estado = (pedido: J) => ({ ventaMinima: { estados: { [CLIENTE]: { paso: 'esperando_comprobante', ultimoMensajeMs: AHORA - 1000, pedido } } } });
+    const cfg = (pedidoRef: string) => ({ ...CFG, cobro: { ...COBRO_PENDIENTE, modo: 'real', pedidoRef } });
+    // Sin referencia y con un pedido SIMULADO en el estado: cruzado (no se baja, no se lee, no se coteja).
+    expect(uno(img, { cfg: cfg(''), raiz: estado({ pedidoId: 'ped-sim-1', simulado: true }) })).toMatchObject({ esComprobante: false, comprobanteCruzado: true });
+    // NEGANDO: el pedido del estado REAL, o sin pedido, con referencia vacía sigue siendo un comprobante real.
+    expect(uno(img, { cfg: cfg(''), raiz: estado({ pedidoId: 'ped-real-1', simulado: false }) })).toMatchObject({ esComprobante: true, comprobanteCruzado: false });
+    expect(uno(img, { cfg: cfg('') })).toMatchObject({ esComprobante: true, comprobanteCruzado: false });
+    // Con una referencia que NO es la del pedido del estado, no se mezcla.
+    expect(uno(img, { cfg: cfg('ped-otro'), raiz: estado({ pedidoId: 'ped-sim-1', simulado: true }) })).toMatchObject({ esComprobante: true, comprobanteCruzado: false });
   });
   it('location pasa a `ubicacion`; una coordenada inválida la deja en null', () => {
     const u = uno(mensaje({ type: 'location', location: { latitude: -16.5, longitude: -68.15, name: 'Casa', address: 'Calle 1 <b>' } }));
@@ -997,7 +1138,7 @@ describe('Config del negocio', () => {
       nombreAsistente: 'Kai', nivelEmojis: 'muchos', moneda: 'BOB', horarioAtencion: 'Lunes a sábado de 12:00 a 22:00',
       numeroRecepcion: '59100000041', prefijosPermitidos: '591,51', aceptaDelivery: true, aceptaRetiroEnLocal: true,
     });
-    expect(c['cobro']).toEqual({ activo: true, qrUrl: 'https://qr.example/f?x=1', titular: 'Casa de Tacos SRL', banco: 'Banco X', pendiente: true, monto: 55, pedidoRef: 'ped-1', vencidoHaceMin: null });
+    expect(c['cobro']).toEqual({ activo: true, modo: 'real', qrUrl: 'https://qr.example/f?x=1', titular: 'Casa de Tacos SRL', banco: 'Banco X', pendiente: true, monto: 55, pedidoRef: 'ped-1', vencidoHaceMin: null });
     expect(c['campanas']).toEqual([{ id: 'c1', texto: 'Promo Dúo', inicio: '2026-10-01T04:00:00.000Z', fin: '2026-10-31T04:00:00.000Z' }]);
     expect(c['catalogo']).toEqual([{ id: 'a1', nombre: 'Queso fundido', precio: 40, area: 'Entradas', descripcion: 'Con chorizo', agotado: false }]);
     expect(c['phoneNumberId']).toBe(PNID);
@@ -1010,6 +1151,25 @@ describe('Config del negocio', () => {
     const vacio = ok(PANEL, { base: {} });
     for (const k of ['areasExcluidas', 'areasSinDelivery', 'zonasReserva']) expect(vacio[k], k).toEqual([]);
     expect(ok(PANEL, { base: { zonasReserva: ['salón', 'jardín'] } })['zonasReserva']).toEqual(['salón', 'jardín']);
+  });
+  it('palabrasExcluidas sale como ARREGLO y SOLO de «Config base»: la clave del panel o de la consola no pasa', () => {
+    const lista = 'helado, cerveza ,bebida alcoholica,REEMPLAZAR_X,cerveza';
+    expect(ok(PANEL, { base: { ...BASE, palabrasExcluidas: lista } })['palabrasExcluidas']).toEqual(['helado', 'cerveza', 'bebida alcoholica']);
+    // ausente o vacía = sin lista
+    expect(ok(PANEL)['palabrasExcluidas']).toEqual([]);
+    expect(ok(PANEL, { base: { ...BASE, palabrasExcluidas: '' } })['palabrasExcluidas']).toEqual([]);
+    expect(ok(PANEL, { base: { ...BASE, palabrasExcluidas: 'REEMPLAZAR_PALABRAS_QTACO' } })['palabrasExcluidas']).toEqual([]);
+    // el panel intenta ponerla (en cada sección y en la raíz): no pasa ni pisa la de «Config base»
+    const hostil: J = {
+      ...PANEL, palabrasExcluidas: 'pizza', datosDelNegocio: { ...(PANEL['datosDelNegocio'] as J), palabrasExcluidas: 'pizza' },
+      operacion: { ...(PANEL['operacion'] as J), palabrasExcluidas: 'pizza' }, venta: { ...(PANEL['venta'] as J), palabrasExcluidas: 'pizza' },
+      voz: { ...(PANEL['voz'] as J), palabrasExcluidas: ['pizza'] },
+    };
+    expect(ok(hostil)['palabrasExcluidas']).toEqual([]);
+    expect(ok(hostil, { base: { ...BASE, palabrasExcluidas: 'helado' } })['palabrasExcluidas']).toEqual(['helado']);
+    // y con el panel suspendido o sin respuesta, la lista de «Config base» sigue ahí (lo que no se vende por WhatsApp no depende del panel)
+    expect(correr({ statusCode: 500, body: {} }, { base: { ...BASE, palabrasExcluidas: 'helado' } })['palabrasExcluidas']).toEqual(['helado']);
+    expect(correr({ statusCode: 409, body: {} }, { base: { ...BASE, palabrasExcluidas: 'helado' } })['palabrasExcluidas']).toEqual(['helado']);
   });
   it('`horario` queda como CSV crudo, y `prefijosPermitidos` y `destinatariosAviso` como CSV', () => {
     const c = ok();
@@ -1123,11 +1283,67 @@ describe('Config del negocio', () => {
   });
   it('cobro: lo arma `cbCobroReal`; si falla o el panel no está en 200, queda apagado (plan B)', () => {
     expect(ok()['cobro']).toMatchObject({ activo: true });
-    const apagado = { activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: null, vencidoHaceMin: null };
+    const apagado = { activo: false, modo: 'apagado', qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: null, vencidoHaceMin: null };
     expect(ok(PANEL, { globales: { $fallaCobro: true } })['cobro']).toEqual(apagado);
     expect(ok({ ...PANEL, cobro: { activo: true, qr: { url: 'http://sin-https.example/q' } } })['cobro']).toMatchObject({ activo: false });
     expect(correr({ statusCode: 500, body: PANEL })['cobro']).toEqual(apagado);
     expect(correr({ statusCode: 409, body: PANEL })['cobro']).toEqual(apagado);
+  });
+  describe('cobro SIMULADO (modo del cobro)', () => {
+    const URL_SIM = 'https://qr.example/qr-sim.png';
+    const BASE_SIM: J = { ...BASE, cobroSimuladoActivo: true, qrSimuladoUrl: URL_SIM };
+    // El panel del servidor en simulado: `cobroSimulado` (objeto), SIN `cobroReal` y con el `cobro` pendiente.
+    const PANEL_SIM: J = { ...PANEL, cobro: { activo: false, pendiente: true, monto: 55, pedido: 'ped-1' }, cobroSimulado: {} };
+    const APAGADO = { activo: false, modo: 'apagado', qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: null, vencidoHaceMin: null };
+    const cobroDe = (resp: J, base: J = BASE_SIM): J => correr(resp, { base })['cobro'] as J;
+
+    it('con las cuatro condiciones: `modo:simulado`, `activo:false`, la imagen de «Config base» y lo pendiente del servidor', () => {
+      expect(cobroDe({ statusCode: 200, body: PANEL_SIM })).toEqual({
+        activo: false, modo: 'simulado', qrUrl: URL_SIM, titular: '', banco: '', pendiente: true, monto: 55, pedidoRef: 'ped-1', vencidoHaceMin: null,
+      });
+    });
+    it('el servidor con `cobroReal` (aunque no sirva) NUNCA es simulado: o es real o está apagado', () => {
+      // real útil + base simulada → real, con la imagen del real, jamás la simulada
+      const real = cobroDe({ statusCode: 200, body: { ...PANEL, cobroReal: { nombreCuenta: 'Casa de Tacos SRL' }, cobroSimulado: {} } });
+      expect(real).toMatchObject({ activo: true, modo: 'real', qrUrl: 'https://qr.example/f?x=1' });
+      expect(real['qrUrl']).not.toBe(URL_SIM);
+      // `cobroReal` presente pero sin QR utilizable + `cobroSimulado` + base simulada → apagado, no simulado
+      expect(cobroDe({ statusCode: 200, body: { ...PANEL_SIM, cobroReal: {} } })).toEqual(APAGADO);
+    });
+    it('409, 500 y panel sin respuesta con la base simulada: apagado (plan B), nunca simulado', () => {
+      expect(cobroDe({ statusCode: 409, body: PANEL_SIM })).toEqual(APAGADO);
+      expect(cobroDe({ statusCode: 500, body: PANEL_SIM })).toEqual(APAGADO);
+      expect(cobroDe({ statusCode: 200, body: 'no es json' })).toEqual(APAGADO);
+      expect(cobroDe({})).toEqual(APAGADO);
+    });
+    it('falta una condición → apagado: sin `cobroSimulado` del servidor, con `cobroSimulado` que no es objeto, o con la base mal', () => {
+      const { cobroSimulado: _quitado, ...sinSim } = PANEL_SIM;
+      expect(cobroDe({ statusCode: 200, body: sinSim })).toEqual(APAGADO);
+      for (const malo of ['si', 1, true, null]) {
+        expect(cobroDe({ statusCode: 200, body: { ...PANEL_SIM, cobroSimulado: malo } }), JSON.stringify(malo)).toEqual(APAGADO);
+      }
+      for (const activo of ['true', 1, false, undefined, null]) {
+        expect(cobroDe({ statusCode: 200, body: PANEL_SIM }, { ...BASE_SIM, cobroSimuladoActivo: activo }), String(activo)).toEqual(APAGADO);
+      }
+      for (const url of ['http://qr.example/x.png', '', undefined, 7]) {
+        expect(cobroDe({ statusCode: 200, body: PANEL_SIM }, { ...BASE_SIM, qrSimuladoUrl: url }), String(url)).toEqual(APAGADO);
+      }
+      expect(cobroDe({ statusCode: 200, body: PANEL_SIM }, BASE)).toEqual(APAGADO); // la base sin las claves
+    });
+    it('barrido: nunca `activo:true` con `modo:simulado`, ni `modo:simulado` con `activo` distinto de false', () => {
+      const paneles: J[] = [PANEL, PANEL_SIM, { ...PANEL_SIM, cobroReal: {} }, { ...PANEL, cobroSimulado: {} },
+        { ...PANEL_SIM, cobro: { activo: true, pendiente: true, qr: { url: 'https://qr.example/f?x=1' } } }, { ...PANEL, cobro: undefined }];
+      const bases: J[] = [BASE, BASE_SIM, { ...BASE_SIM, cobroSimuladoActivo: 'true' }, { ...BASE_SIM, qrSimuladoUrl: 'http://x.example/a' }];
+      for (const body of paneles) for (const base of bases) {
+        const c = cobroDe({ statusCode: 200, body }, base);
+        expect(['real', 'simulado', 'apagado'], JSON.stringify(c)).toContain(c['modo']);
+        if (c['modo'] === 'simulado') expect(c['activo']).toBe(false);
+        if (c['activo'] === true) expect(c['modo']).toBe('real');
+      }
+    });
+    it('si `cbCobroSimulado` falla, el cobro queda apagado (no se cae el nodo)', () => {
+      expect(correr({ statusCode: 200, body: PANEL_SIM }, { base: BASE_SIM, globales: { $fallaCobro: true } })['cobro']).toEqual(APAGADO);
+    });
   });
   it('numeroRecepcion: dígitos del panel; si falta, el respaldo de «Config base»; un marcador cuenta como vacío', () => {
     expect(ok()['numeroRecepcion']).toBe('59100000041');
@@ -1413,7 +1629,7 @@ describe('I1, I2 y S-1: la red de prohibidas y el saneo del texto de terceros', 
     expect(L.vmLinea('Hola\u0080 mundo')).toBe('Hola mundo');
   });
   it('S-5: `recib\\S{0,40}` acota la raíz; una palabra de 41 caracteres tras «recib» no la dispara', () => {
-    expect(RED().source).toContain('recib\\S{0,40} (tu|el) pago');
+    expect(RED().source).toContain('recib\\S{0,40}\\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\\s+(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)s?\\s+(ya\\s+)?(lleg|ingres|entr)(o|ó|aron)\\b');
     expect(L.vmTextoSeguro('recib' + 'x'.repeat(41) + ' tu pago')).toBe(true);
     expect(L.vmTextoSeguro('recibimos tu pago')).toBe(false);
   });
