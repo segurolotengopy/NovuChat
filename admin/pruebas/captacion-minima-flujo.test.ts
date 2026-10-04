@@ -348,7 +348,7 @@ const SIN_URL = (s: string): string => s.replace(/https?:\/\/\S+/g, ' ');
 const preguntasDe = (s: string): number => (SIN_URL(s).match(/\?/g) ?? []).length;
 const oracionesDe = (s: string): number => SIN_URL(s).split(/[.!?…]+(?:\s+|$)/).map((x) => x.trim()).filter((x) => /\p{L}/u.test(x)).length;
 const palabrasDe = (s: string): number => SIN_URL(s).split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length;
-const MAX_PALABRAS = 60; // «unas 45 palabras» (§9): se tolera un tercio más
+const MAX_PALABRAS = 50; // «unas 45 palabras» (§9), con un margen de cinco
 // Promesas sin mecanismo (política general «solo se ofrece lo que se cumple»).
 const PROMESAS = /\bya (le|te|se|les) (pas[eé]|avis[eé]|notific[eé]|inform[eé]|transmit[ií])|\bte (escribir[aá]n|llamar[aá]n|contactar[aá]n|llamamos|escribimos|avisamos|contactamos|avisar[eé]|avisaremos)\b|\b(se|nos) (comunicar[aá]n?|pondr[aá]n? en contacto)\b|\blo consulto\b|\blo consultamos\b|\bte aviso\b|\bya avis[eé]\b|\bte llamar[aá]\b|\bte escribir[aá]\b/i;
 const NIEGA_IA = /\bno soy (un |una )?(bot|robot|ia|inteligencia artificial|asistente virtual)\b|\bsoy (una )?persona (real|de carne)|\bsoy (un )?humano\b/i;
