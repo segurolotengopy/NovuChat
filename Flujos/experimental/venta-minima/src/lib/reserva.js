@@ -210,6 +210,11 @@ function _rsTramosDeTexto(texto) {
     if (!tr) return null;
     salida.push(tr);
   }
+  // Los tramos de un dia no se pisan (igual que en `vmHorario`): «12:00-18:00/16:00-22:00» es un error de tipeo, no un horario.
+  salida.sort(function (x, y) { return x[0] - y[0]; });
+  for (let j = 1; j < salida.length; j++) {
+    if (salida[j][0] < salida[j - 1][1]) return null;
+  }
   return salida;
 }
 
@@ -464,7 +469,8 @@ function rsValidar(r, cfg, nombrePerfil, ahoraMs) {
   };
 }
 
-// La pregunta por lo que falta. Con todo lo esencial vacio es el pedido de datos completo.
+// La pregunta por lo que falta. Con todo lo esencial vacio es el pedido de datos completo, que abre con «¡Con gusto!»
+// y un emoji (sin el emoji si `p.nivelEmojis` es «ninguno»).
 function rsPreguntaFaltantes(faltan, p) {
   const f = Array.isArray(faltan) ? faltan : [];
   const falta = function (k) { return f.indexOf(k) >= 0; };
@@ -479,7 +485,8 @@ function rsPreguntaFaltantes(faltan, p) {
   if (falta('nombre')) partes.push('a nombre de quién (nombre y apellido)');
   if (!partes.length) return '';
   if (inicial) {
-    return 'Para tu solicitud de reserva dime, en un solo mensaje: ' + _rsListaY(partes)
+    return '¡Con gusto!' + (p && typeof p === 'object' && p.nivelEmojis === 'ninguno' ? '' : ' 🙌')
+      + ' Para tu solicitud de reserva cuéntame en un solo mensaje: ' + _rsListaY(partes)
       + '. Si celebran algo o necesitan algo especial, cuéntamelo también.';
   }
   return 'Para tu solicitud de reserva me falta saber ' + _rsListaY(partes) + '.';

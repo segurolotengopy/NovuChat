@@ -623,6 +623,31 @@ function vmHorario(v) {
   return Object.keys(nombrados).length ? h : null;
 }
 
+// El horario en palabras, de lunes a domingo, juntando los dias seguidos que abren igual:
+// «lunes a viernes de 12:00 a 16:00 y de 18:00 a 22:00; sábado y domingo de 12:00 a 22:00». Un dia sin tramos dice
+// «cerrado». '' si el horario no se entiende o no esta. Sirve de respaldo cuando `horarioAtencion` (el texto que
+// escribe el negocio) esta vacio: asi el horario que se aplica y el que se dice salen de la misma fuente.
+function vmHorarioLegible(v) {
+  const h = vmHorario(v);
+  if (!h) return '';
+  const orden = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
+  const tramosTxt = (k) => (h[k].length
+    ? h[k].map((t) => 'de ' + t.desde + ' a ' + t.hasta).join(' y ')
+    : 'cerrado');
+  const grupos = [];
+  for (const k of orden) {
+    const txt = tramosTxt(k);
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.txt === txt) ultimo.dias.push(k); else grupos.push({ txt: txt, dias: [k] });
+  }
+  const nombre = (k) => VM_DIAS[VM_CLAVES_DIA.indexOf(k)];
+  return grupos.map((g) => {
+    const n = g.dias.length;
+    const dias = n === 1 ? nombre(g.dias[0]) : (n === 2 ? nombre(g.dias[0]) + ' y ' + nombre(g.dias[1]) : nombre(g.dias[0]) + ' a ' + nombre(g.dias[n - 1]));
+    return dias + ' ' + g.txt;
+  }).join('; ');
+}
+
 // ¿Esta abierto ahora? `{abierto, hoyCerrado, sinHorario}`. Sin horario (o uno que no se
 // entiende) NO se bloquea nada: abierto con `sinHorario: true`. `hoyCerrado`: hoy no tiene tramos.
 function vmAbierto(horario, ahoraMs) {

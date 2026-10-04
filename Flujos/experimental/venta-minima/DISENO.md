@@ -55,18 +55,45 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - ninguna mención de `subscriptions` ni `subscribed_apps` en ningún JSON (prohibición 7);
   - un nodo HTTP solo llama a `graph.facebook.com`, `generativelanguage.googleapis.com` o `*.cloudfunctions.net` (o a un
     marcador; la única URL por expresión es la de `Descargar medio`, que baja el medio que Meta devolvió);
-  - en producción, ningún webhook con ruta de prueba y ninguno que no sea la entrada del receptor;
+  - en producción, ningún webhook con ruta de prueba y solo dos entradas: la del receptor y `Carrito del catálogo` (con su forma
+    exacta: POST, `headerAuth` con la credencial de la ingesta, `onReceived`, ruta como `REEMPLAZAR_RUTA_CARRITO_QTACO`, conectado solo a
+    `Carga de entrada`, solo en la variante del receptor);
+  - presupuesto de nodos: los JSON de producción tienen **50 nodos como máximo** (49 + el webhook del carrito);
+  - «se entrega lo que se promete» (R1, R3, R5; ver «Entrega de lo prometido»);
   - cada `venta-minima.*.json` versionado tiene su archivo de datos (si no, queda huérfano); un `*.local.json` (lo que deja
     `preparar-import.sh`, con valores reales) no cuenta como huérfano;
   - la clave `avisarAlPropioNumero` (interruptor solo de ensayo) solo puede estar en `ensayo-demo-a.json` y en su salida (ver «La variante
     de ensayo en el Demo A»);
-  - retención de ejecuciones en `none` (ver abajo).
-- **Retención de ejecuciones (decisión de Andres, 02/10/2026): nada se guarda.** `saveDataSuccessExecution: "none"`,
-  `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, explícitos en la plantilla y en los JSON generados,
-  porque las ejecuciones llevan texto de clientes. La suite y `--verificar` lo exigen. Costo: sin ejecuciones guardadas, un
-  fallo en producción no se puede reconstruir desde n8n; se diagnostica con la bitácora del servidor y con el ensayo.
+  - retención de ejecuciones (ver abajo).
+- **Retención de ejecuciones (decisión de Andres, 02/10/2026; Q'Taco, 03/10/2026; M-1, 03/10/2026).** Por omisión nada se guarda:
+  `saveDataSuccessExecution: "none"`, `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, explícitos en la plantilla y en
+  los JSON generados, porque las ejecuciones llevan texto de clientes. **Q'Taco tampoco guarda las de error, y es TEMPORAL por decisión de
+  Andres (03/10/2026):** el 03/10 se había decidido guardarlas (`all`) para tener rastro de las fallas, pero la revisión de seguridad
+  (M-1) advirtió que la base de n8n guardaría el token de cabecera de la ingesta, los enlaces, la URL del QR y datos de clientes. Hasta el piloto,
+  `venta-minima.qtaco.json` queda con `none` en todo y el diagnóstico de fallas (entre ellas «Entrega fallida») va por el servidor y el
+  error visible de n8n, sin datos guardados. **Se vuelve a revisar tras el piloto, con ese dato.** `construir.mjs` lo arma por salida
+  (`RETENCION_POR_SALIDA`, marcada TEMPORAL), y `--verificar` exige cada valor en ambos sentidos: subir los errores a `all` falla, y el
+  mensaje recuerda que es temporal y que no se sube sin la excepción de Andres.
 
-## El grafo (49 nodos en producción de Q'Taco; 46 en la prueba)
+## Entrega de lo prometido (R1, R3, R5) y catálogo web, sin subir el tope de nodos
+
+Decisión de Andres (03/10/2026): **no subir nodos** (la complejidad de los nodos de n8n ya impidió salir otras veces); el JSON de producción
+de Q'Taco pasa de 49 a **50 como máximo**, y `--verificar` falla si crece. El único nodo nuevo es la segunda entrada de producción.
+
+- **R1**: `¿Falló el envío?` decide por `messages[0].id` (no por `$json.error`) y el reporte saliente cuenta solo con `idMeta`.
+- **R3 (último recurso)**: `Resumen del turno` (un Code que ya corre al final, debajo de los envíos) lanza `throw` cuando un mensaje
+  al cliente no salió ni por el envío principal ni por el respaldo en texto. Antes ajusta el estado del teléfono (la única escritura de
+  estado que no hace `Armar mensajes`): sin hecho externo lo devuelve al previo conservando su `ultimoMensajeMs`; con un aviso ya enviado o
+  un cierre ya registrado NO lo revierte y lo deja en el paso `menu` (ver «Revisión del PR #382»). No hay nodo «Entrega fallida». Si el
+  estado se escribe antes de enviar (como hoy en `Armar mensajes`), esa reversión es lo que evita dejar `esperando_comprobante` sin QR.
+- **R5**: un envío a Meta con `continueRegularOutput` exige un verificador del id declarado en `VERIFICADOR_DE_ENVIO`; `continueErrorOutput`
+  exige su salida de error conectada.
+- **Catálogo web**: el enlace de la carta no tiene nodos propios: `Traer configuración` pide `catalogoCompleto: true` y la consola contesta
+  `catalogoWeb.enlace`. La segunda entrada es el webhook `Carrito del catálogo` (solo en el JSON del receptor), conectado directo a
+  `Carga de entrada`, que valida el carrito SOLO si ese nodo corrió. Su ruta es el marcador propio `REEMPLAZAR_RUTA_CARRITO_QTACO` (no el del Demo B).
+- Pruebas: `venta-minima-entrega.test.ts` (negando) y `venta-minima-catalogo-topologia.test.ts`.
+
+## El grafo (50 nodos en producción de Q'Taco; 46 en la prueba)
 
 ```
 Entrega del receptor → Verificar firma con el receptor → ¿Firma válida? ─sí→ Aceptar (200) → Descartar repetidos ─┐
@@ -237,7 +264,7 @@ Demo A». Decisiones:
 - **Dos marcadores y nada más**: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A) y `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de Andres, con
   prefijo 591, que solo vive en la tabla local: destinatario `completo` y recepción de respaldo; **ninguna cifra de teléfono en el
   repositorio**). `preparar-import.sh` los reemplaza y deja un `.local.json` que `construir.mjs` no cuenta como huérfano. Ninguno `_QTACO`,
-  ni receptor, ni verificador, ni «Entrada de prueba», ni «Simular aviso», ni webhooks. La retención sigue en `none`.
+  ni receptor, ni verificador, ni «Entrada de prueba», ni «Simular aviso», ni webhooks (tampoco el carrito). La retención sigue en `none`.
 - **Plantillas vacías**: en la línea del Demo A no existen. Con un solo teléfono la ventana de 24 h **ya está abierta** (escribe él, y cada
   mensaje suyo la reabre): el aviso sale como texto libre. El botón «Escribir al local» va a la recepción del comercio `ensayo`
   (`REEMPLAZAR_NUMERO_RECEPCION_ENSAYO`, hoy el teléfono de Andres): su propio teléfono.
@@ -374,6 +401,157 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
   facturación ni a los contadores de entrantes). No se corrigió: distinguir el respaldo por ítem exige emparejar ítems de
   `Enviar respaldo` en la expresión, algo que el arnés de pruebas no reproduce con fidelidad; queda para quien toque ese nodo.
 
+## Revisión del PR #382 (03/10): lo que cambió y lo que queda declarado
+
+**Dependencias de otras piezas (sin ellas el catálogo web no funciona de punta a punta):**
+
+- **Servidor (PR #380, `ingesta.ts`):** `Traer configuración` manda `catalogoCompleto: true` en cada turno y la Function contesta
+  `catalogoWeb.enlace`; además es el servidor el que llama al webhook `Carrito del catálogo` (`despertarFlujo`). Sin ese cambio desplegado
+  no hay enlace: la carta sale en texto (verificado por la suite) y ningún carrito llega al flujo.
+- **Hosting (PR #381, segundo sitio):** la página del catálogo vive ahí. Sin ella el enlace no abre nada.
+- **Un solo pedido por compra web (decisión de Andres, 03/10/2026).** `checkoutCatalogo` escribe `pedidos/cat_…` con estado «recibido» ANTES
+  de que el cliente confirme por el chat, y el flujo guardaba su propio `ped-…` (código, referencia del cobro, cierre `registro`, aviso).
+  Ahora, en las entradas de carrito, el `cat_…` del checkout ES el `pedidoId` del turno: el cobro (`qr_enviado`), el cierre, el pedido
+  guardado y el código que lee el cliente y el restaurante (sale de ese id, estable al reconfirmar y tras R3) hablan del MISMO pedido que
+  ve la consola. Solo vale si el pedido del flujo sigue siendo EL de la página (`en.pedidoWeb`, con la huella de las líneas): el id tiene la
+  forma del checkout (`cat_` + 1 a 56 letras, números o guion bajo), el flujo no quitó ni acotó nada, el total del servidor coincide y no hay
+  costo de envío; si el cliente lo cambia por chat (agrega o quita algo, «Cambiar algo», cancela) o falla cualquiera de esas condiciones,
+  conserva el `ped-…` propio y lo anota en `errores` (`carrito_con_id_propio: <motivo>`). Los pedidos por chat no cambian.
+  **Por qué no con envío:** `sena.ts` coteja el comprobante contra el total del pedido `cat_…` (con el envío incluido), y el QR de este flujo
+  es solo la comida (el delivery se paga al repartidor): con `config/venta.costoDelivery` mayor que cero el comprobante saldría «no cuadra».
+  **Pendiente que este flujo NO resuelve (servidor, #380 o ingesta):** el flujo no tiene camino para escribir en `pedidos/`, así que el
+  documento `pedidos/cat_…` sigue en «recibido» aunque el cliente confirme; actualizarlo a «confirmado» (y que el cotejo use el monto del
+  QR cuando el pedido trae envío) es un cambio del servidor. Campo nuevo en el estado por teléfono: `pedidoWeb` (`{id, huella}` o `null`).
+- **Credencial «NovuChat ingesta (Q'Taco)»:** el valor guardado en n8n debe llevar el prefijo `Bearer ` (con el espacio). El Webhook
+  `Carrito del catálogo` compara la cabecera `Authorization` de forma exacta: sin el prefijo, TODO carrito recibe 403 y no llega ninguno.
+
+**Comportamientos cambiados en esta revisión (cada uno con su prueba negando):**
+
+- **R3 y hechos externos.** Si ya salió un aviso a terceros o corrió `Registrar cierre`, `Resumen del turno` NO revierte el estado: lo deja en
+  el paso `menu` (reconfirmar con el botón viejo no arma un segundo pedido, ni otro aviso, ni otro cierre) y lanza igual el error. Sin hecho
+  externo revierte al estado previo conservando su `ultimoMensajeMs`, así `pedidoId`, código y cierre se repiten al reintentar. **Límite
+  conocido (I-3):** R3 no deshace `sd.pedidos`, `vistos` ni el aviso ya enviado; el error de n8n es la señal para que una persona le
+  escriba al cliente.
+- **Con un comprobante en espera, «menú» y pedir una persona no sacan del cobro.** Se conserva `esperando_comprobante` y el pedido; «menú»
+  muestra el recordatorio (sus botones valen con un QR pendiente, los del menú no) y esos mensajes salen sin botón «Menú» ni la frase de
+  «menú». Solo «Cancelar pedido» lleva al menú y borra el pedido.
+- **Excluidos.** `pdAgregarLineas` aplica la lista `palabrasExcluidas` también al sobrante del nombre y al detalle del modelo (nunca al nombre
+  del producto de la carta), y `aCarrito` a la nota del carrito: la palabra excluida no se esquiva como nota. La lista por omisión de Q'Taco
+  se amplió (se probó contra los 53 ítems activos reales: sin falsos positivos). **La lista es de mejor esfuerzo, no una garantía** (un cliente
+  puede escribir la bebida con otra palabra, con faltas o en otro idioma): la barrera real es que las áreas no se vendan y que el negocio vea
+  cada pedido. También se compara la forma compacta («cubalibre», «te quila», solo palabras de 6 letras o más). **Nombres propios:** «paloma»,
+  «margarita», «ron», «chop» y «vino» solo cuentan como bebida en su contexto («con», «un/una», un número, «copa de»…) o como lo pedido;
+  nunca tras «para», «a nombre de» o «es de» («una orden de birria para Paloma» y la nota «Es para Margarita» pasan). Una palabra excluida en
+  el DETALLE del modelo o en la nota del carrito no culpa al producto: la línea se conserva, se quita solo la nota y el mensaje nombra la palabra
+  (««ron» no lo podemos incluir en tu pedido.»); si la palabra va dentro del nombre de lo pedido («gaseosa con ron», «jamaica shot»), la línea se
+  descarta como excluida.
+- **Carrito.** Conserva el nombre, la dirección y la referencia ya dados; con la ventana cerrada (o sin el dato) no sale nada aunque el
+  comercio esté suspendido o la atención sea de un operador (las condiciones de `¿Comercio operativo?` y `¿Atención normal?` dejan pasar a
+  `Decidir turno`); el comprobante pendiente se revisa antes del horario.
+- **Carta como enlace.** Dice «Elige ahí tus productos y vuelve al chat para confirmar el pedido» (el pedido no queda confirmado hasta tocar
+  «Confirmar pedido» en el chat) y, con un carrito en curso, lleva «Tu pedido sigue guardado (N productos)». El mensaje genérico respeta
+  `nivelEmojis: ninguno`.
+- **Intenciones globales** (reserva, carta, «pedir» dentro de una reserva): en `inicio` y `menu` valen sin límite; en los demás pasos, solo
+  con un mensaje de hasta 60 caracteres y nunca en `pedido_entrega` ni `pedido_datos`; «qué tienen» exige que el mensaje no pida algo y «pedir»
+  dentro de una reserva exige que no sea una pregunta.
+- **Seguridad L-1 y L-2.** `urlDelCatalogo` tiene la misma forma que `amUrlSegura` (sin puerto, sin `@` ni `<>"'` en la ruta, hasta 2.000
+  caracteres) y rechaza `wa.me` y `whatsapp.com`; la nota del cliente se inserta con una función de reemplazo (`$&`, `$'` no se interpretan).
+- **Mensajes por conversación:** 0 agregados ni quitados por esta revisión (el aviso «sigue guardado» va dentro del mismo mensaje).
+- **Declarado y fuera de este flujo:** los hallazgos L-4 y L-5 de la revisión de seguridad son del servidor o de trabajo futuro y no se tocan
+  aquí; la retención de errores de `venta-minima.qtaco.json` (M-1) quedó en `none`, TEMPORAL por decisión de Andres (03/10), a revisar tras el piloto.
+
+## Cobro: real, simulado o sin QR (03/10/2026)
+
+Piloto de Q'Taco. Hasta ahora este flujo no tenía modo simulado: con cobro real mandaba el QR del comercio y, sin él, el plan B (el pedido
+pasa al restaurante sin QR). Se agrega el **cobro SIMULADO** como el del Demo B (Walisuma), con las dos mitades de la prohibición 3 de
+CLAUDE.md: el rótulo va **impreso en la imagen** y en el **pie**, la respuesta dice «SIMULADO», y nunca «pago acreditado», «verificado» ni
+«recibimos tu pago». Los modos son excluyentes. **Quien manda es el servidor**: el flujo solo obedece lo que el panel trae
+(`cobroReal` o `cobroSimulado`), y el cobro real tiene precedencia sin tocar código.
+
+**Decisiones asumidas por omisión (las fijó el coordinador; Andres puede cambiarlas):**
+
+| Id | Asumido | Qué cambia si Andres decide otra cosa |
+|---|---|---|
+| D1 | Tráfico controlado: solo teléfonos de prueba. No hay lista blanca en el código. | Si se abre al público, se repasan los textos (el cliente no puede pagar) y qué hace el restaurante con un pedido PRUEBA. |
+| D2 | La imagen sale por **enlace** al repositorio público, en la etiqueta `v0.11.0` (`Demo-Recursos/qr-demo.png`). | Otro alojamiento: cambia solo `URL_QR_SIMULADO` en `construir.mjs` y el valor en `qtaco.json`. Con media ID haría falta otro diseño. |
+| D3 | Los textos literales del plan. | Cambian las constantes de `cobro.js` y `avisos.js` y las pruebas que las citan. |
+| D4 | Cierre `tipo: 'registro'` de prueba, **sin monto**. | Si «ningún cierre», se quita la asignación `cierre = …` de `aComprobante`. |
+| D5 | La imagen queda como está («DEMOSTRACIÓN · ESTE QR NO COBRA · SIMULACRO DE PAGO»). | Una variante «PRUEBA» exige `build_recursos.py` y otra ruta permitida. |
+| D6 | Se publica a cualquier hora, porque solo Bellido está en producción. | — |
+
+**Decisiones técnicas (con la alternativa descartada):**
+
+- **T1. Simulado solo si se cumplen las cuatro:** (a) el cuerpo del panel trae `cobroSimulado` (objeto); (b) **no** trae `cobroReal` (aunque no
+  sirva); (c) `Config base.cobroSimuladoActivo === true` (booleano exacto); (d) `Config base.qrSimuladoUrl` pasa `cbUrlSegura`. *Descartado:* solo
+  la clave de datos (permitiría simulado con el real encendido) o solo el servidor (todo cliente de venta mínima sin real quedaría simulado sin pedirlo).
+- **T2. Claves `cobroSimuladoActivo` y `qrSimuladoUrl`, leídas solo de `Config base`.** *Descartado:* `cobroSimulado`, que choca con el campo
+  homónimo del servidor (un objeto).
+- **T3. `cfg.cobro.modo` vale `real`, `simulado` o `apagado`, y `activo` sigue significando «real».** Así la descarga, Gemini y el cotejo no
+  corren en simulado sin tocar sus condiciones. *Descartado:* `activo: true` en simulado: todo consumidor que lee `activo` como «real» cotejaría.
+- **T4. Imagen por `image.link` (D2).** *Descartado:* media ID (hay que cambiar `amImagen`, subirlo con el número de Q'Taco y vence a los 30 días).
+- **T5. Textos simulados como constantes de código** en `cobro.js` y `avisos.js`. *Descartado:* los rótulos del servidor, cuya `confirmacion`
+  dice «Pago verificado», que la red del flujo bloquea.
+- **T6. En simulado nunca se llama a `Cotejar en el servidor` ni a Gemini.** El cotejo del servidor (`cotejarComprobante`) **no distingue
+  modos**: compararía contra un `cobroReal` inexistente y daría siempre `no_cuadra`, y crearía un cierre `venta_<ref>` con monto que Cobros suma.
+- **T7. Cierre `registro`, sin monto,** con detalle «PRUEBA · cobro SIMULADO…» y referencia `pedidoId` (D4). *Descartado:* `venta` como en el Demo B
+  (aparece como venta en Cobros y obliga a tocar el nodo, la IF y `armar-mensajes`).
+- **T8. Idempotencia.** El cierre `registro` no cierra la solicitud del servidor (pendiente hasta 24 h): un segundo comprobante da `ya_cotejado`
+  (sin aviso ni cierre) y una foto después de cancelar cae en «imagen sin pendiente».
+- **T9. Red final y guardas.** `amQr` revisa que el modo sea coherente con el pie (el simulado sin rótulo, o el real con rótulo, no sale) y
+  `construir.mjs` exige `modoCobro` en los datos y fija la imagen a `URL_QR_SIMULADO`.
+
+**En los datos del tenant (`admin/scripts/datos/venta-minima/*.json`):**
+
+- `modoCobro` es obligatorio y vale `simulado`, `real` o `sin_qr`. Con `simulado` exige `configBase.cobroSimuladoActivo` = `true` (booleano) y
+  `configBase.qrSimuladoUrl` con la forma exacta de `URL_QR_SIMULADO` (anfitrión `raw.githubusercontent.com`, etiqueta **`v0.11.0` exactamente**, ruta
+  `Demo-Recursos/qr-demo.png`; ni `main`, ni otra etiqueta, ni http, ni marcador). `Armar mensajes` repite la comprobación de anfitrión y ruta
+  cuando el QR es simulado (`qr_simulado_imagen_no_permitida`). Con otro modo, esas dos claves no pueden existir.
+- `guardiasDeProduccion` repite la regla sobre el JSON armado **y sobre el versionado** (un JSON editado a mano con otra URL falla en `--verificar`):
+  las dos claves van juntas o ninguna, `cobroSimuladoActivo` es el booleano `true`, y solo con `modoCobro: simulado`.
+- `qtaco.json` queda en `simulado`. `ensayo.json` y `ensayo-demo-a.json` **heredan** de `qtaco.json`: no cambia lo que hacen hoy, porque la clave
+  de datos es solo un permiso; sin que el servidor mande `cobroSimulado` (el Demo A es de agenda) el flujo sigue en plan B.
+- Volver al plan B sin código: `modoCobro: sin_qr`, quitar las dos claves, reconstruir y republicar.
+  **`modoCobro` `sin_qr` y `real` son solo rótulos** (documentan lo que se espera y activan las guardas de los datos): el modo EFECTIVO lo decide el
+  servidor en cada turno, según mande o no `cobroReal` y `cobroSimulado`. Por eso volver al plan B sin tocar código solo vale si el servidor no
+  manda `cobroReal` ni `cobroSimulado`; con `cobroSimulado` declarado y las dos claves puestas, el flujo sigue en simulado aunque los datos digan
+  otra cosa. El texto del comprobante simulado dice «tu comprobante» (puede ser una foto o un PDF).
+
+**Trampa que se evita (`registrarQrDeCobro`).** Esa Function es solo para el cobro real: guarda `cobroReal` apagado y `imagenDeCobro` vuelve a
+dibujar el QR desde `cargaUtil`, **sin rótulo**. Registrar `qr-demo.png` como QR real dejaría un cobro real sin rótulo: está prohibido. La imagen
+rotulada solo viaja por `qrSimuladoUrl`.
+
+**Cuando CAMBIA el modo de cobro con un QR pendiente (revisión final).** (1) *Pedido REAL y modo ahora simulado:* su foto NO entra a la rama simulada: sigue el
+camino del cobro real sin cotejo (`sin_cotejo`: «no pude revisarlo», aviso de COMPROBANTE con la foto y el código DEL PEDIDO; el restaurante lo revisa en su
+banco); nunca se rotula «SIMULADO», nunca se descarta (tampoco con el pedido cancelado) y el pedido se suelta. (2) *Pedido de PRUEBA y modo ahora real:*
+`Interpretar entrada` marca `comprobanteCruzado` (la referencia vacía usa el pedido del estado, igual que `aComprobante`) y la foto no se baja, no se lee ni se
+coteja; el recordatorio y «Reenviar QR» de ese pedido tampoco piden otra foto. En los tres casos se pasa con una persona con una derivación `comprobante: true`: el
+aviso lleva el código DEL PEDIDO, el motivo fijo «comprobante enviado por el cliente (pedido de PRUEBA #…); cambió el modo de cobro y no se revisó» y dice
+«COMPROBANTE … no se pudo revisar» (no «el cliente pide hablar con una persona»); el tope de derivaciones por hora NO la suprime (sí deja su marca: una
+consulta posterior del mismo teléfono dentro de la hora no avisa). El pedido se SUELTA (`limpiarConfirmado`): sin «sigue esperando el comprobante» ni callejón.
+Límite declarado: con el servidor aún viendo el QR pendiente, cada foto siguiente de ese teléfono vuelve a derivar (un aviso por foto) hasta que la solicitud
+venza o se cierre. (3) Una foto CON pie, fuera del cobro, es una imagen con pie (el pie se atiende como texto), salvo la de un pedido REAL propio.
+
+**Dos fotos juntas (H4) y cuándo avisa el cobro simulado.** Si el cliente manda dos fotos casi a la vez, las dos ejecuciones pueden leer el
+mismo estado antes de que la primera lo escriba y dar **2 avisos de PRUEBA y 2 respuestas** (+1 mensaje al cliente y +1 a 2 avisos al
+restaurante en ese caso). Es la misma clase de carrera que B0 (doble toque) y no se cambia código: el cierre `registro` de PRUEBA es
+idempotente por referencia, y el costo es de una sola conversación de prueba. **A diferencia del plan B**, donde el restaurante recibe el aviso
+al confirmar el pedido, con el cobro simulado el aviso al restaurante sale **con la foto** (el comprobante), no al confirmar: un cliente que
+confirma y no manda foto no genera aviso (y su pedido de prueba no llega al restaurante).
+
+**Qué se verifica con un teléfono ANTES de abrir el piloto (H3).** Meta puede aceptar `image.link` y fallar después (estado `failed` asíncrono,
+sin id de error en la respuesta del envío) y el respaldo en texto no cubre ese fallo. Mitigación sin mensajes extra: el recordatorio del
+comprobante simulado lleva «Si no ves el QR, ábrelo aquí: <enlace>» (el enlace de `qrSimuladoUrl`, ya validado como https; solo con el modo
+simulado vigente). Lo que NO se puede probar sin red y queda para un teléfono real antes de abrir: que Meta descargue la imagen de
+`raw.githubusercontent.com` y que el cliente la vea.
+
+**Pasar a cobro real sin tocar código:** el administrador registra su QR en la consola, `activar-cobro-real.mjs` lo enciende y desde ese momento
+el servidor manda `cobroReal` y el flujo ya está en real. Como limpieza: `modoCobro: real`, quitar las dos claves, reconstruir y republicar.
+Encender el real sin pruebas abiertas: un QR simulado pendiente se cotejaría contra la cuenta real y daría `no_cuadra`.
+
+**Costo (por conversación con pedido):** frente al plan B, +1 mensaje al cliente (el QR y la respuesta, en lugar de una confirmación) = +0,0113 USD;
+frente al real, 0. Avisos al restaurante: igual que el plan B y 1 menos que el real (sin la imagen del comprobante). Gemini: 1 lectura menos por
+pedido frente al real. Nodos: no se agregan (siguen 50) y `flujo.plantilla.json` no cambia.
+
 ## Mensajes por conversación (declarados y medidos en la suite)
 
 Es un flujo nuevo: no agrega ni quita mensajes a ningún otro cliente. Lo que cuesta cada conversación de Q'Taco es **el recorrido
@@ -382,6 +560,7 @@ típico más un mensaje por cada aclaración** (no hay un techo fijo):
 | Conversación | Al cliente (recorrido típico) | Al restaurante (ventanas cerradas) | Al restaurante (ventanas abiertas) |
 |---|---|---|---|
 | Pedido con QR (menú, carta, resumen, QR, comprobante) | **5** + 1 por aclaración | 2 plantillas | 5 (2 plantillas, 2 detalles y la imagen del comprobante para `completo`) |
+| Pedido con QR simulado (menú, carta, resumen, QR de prueba, foto) | **5** + 1 por aclaración | 2 plantillas | 4 (2 plantillas y 2 detalles; sin la imagen del comprobante) |
 | Pedido sin QR, plan B (menú, carta, resumen, pase) | **4** + 1 por aclaración | 2 | 4 |
 | Reserva (menú, datos, resumen, enviada) | **4** + 1 si faltan datos | 2 | 4 |
 | Promoción | **1** (ficha con 3 botones) | 0 | 0 |
@@ -417,7 +596,8 @@ en texto llegue; sin esa conversación, el destinatario solo recibe la plantilla
   Andres prefiere una plantilla propia para reservas y consultas (ver el punto 5).
 - **Consola de Q'Taco**: `catalogoWebActivo` en `false` (con más de 40 ítems la ingesta manda `catalogo: []` y el flujo
   deriva todo pedido), carta, campañas y QR; `numeroRecepcion` y `venta.aceptaDelivery`/`aceptaRetiroEnLocal`.
-- **Retención de ejecuciones (P6)**: decidido el 02/10 en `none` para todo (ver «Cómo se arma»).
+- **Retención de ejecuciones (P6)**: `none` en todo, también en `venta-minima.qtaco.json` (TEMPORAL por decisión de Andres del 03/10; se revisa tras el piloto; ver «Cómo se arma»).
+- **Marcador nuevo en el alta**: `REEMPLAZAR_RUTA_CARRITO_QTACO` (la ruta del webhook del carrito) entra a la tabla local del alta de Q'Taco.
 - Importar con `./scripts/preparar-import.sh Flujos/experimental/venta-minima/venta-minima.qtaco.json .env.qtaco`
   (el patrón de marcadores corta en comillas, barras y espacios: **no pegar dos marcadores con una coma**; la suite lo
   verifica) y **Publish**, con la ventana de mantenimiento y el «sí» de Andres.

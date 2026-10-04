@@ -157,8 +157,8 @@ function porcentaje(parte: number, total: number): number | null {
  * identifica a la persona vive en `/cierres/{id}/privado`, que solo abre el
  * administrador del negocio y esta pantalla ni siquiera pide.
  *
- * Existe porque sobre esto se factura: un número que nadie puede desglosar no
- * se puede discutir con un cliente que reclama.
+ * Existe porque un número que nadie puede desglosar no se puede discutir con
+ * un cliente que reclama. Los cierres no se facturan (ver CIERRE, arriba).
  */
 function DetalleCierres({ tenantId, cerrar }: { tenantId: string; cerrar: () => void }) {
   const [cierres, setCierres] = useState<Cierre[] | null>(null);
