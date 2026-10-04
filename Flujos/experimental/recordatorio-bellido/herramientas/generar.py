@@ -16,12 +16,12 @@ CONFIG_PARAMS={"assignments":{"assignments":[
    {"id":"c3","name":"waGraphVersion","type":"string","value":"v26.0"},
    {"id":"c4","name":"plantilla","type":"string","value":"recordatorio_cita_consultorio"},
    {"id":"c5","name":"idiomaPlantilla","type":"string","value":"es"},
-   {"id":"c6","name":"conQuienVariable","type":"string","value":"tu peque 👶"},
+   {"id":"c6","name":"conQuienVariable","type":"string","value":"el Doctor Bellido"},
    {"id":"c7","name":"prefijosPermitidos","type":"string","value":"591"},
    {"id":"c8","name":"estadoComercio","type":"string","value":"operativo"},
    {"id":"c9","name":"telefonoPruebaAndres","type":"string","value":"REEMPLAZAR_TELEFONO_PRUEBA_ANDRES"},
    {"id":"c10","name":"telefonoPruebaSilvana","type":"string","value":"REEMPLAZAR_TELEFONO_PRUEBA_SILVANA"},
-   {"id":"c11","name":"saludoVariable","type":"string","value":"te escribimos del Dr. Bellido"},
+   {"id":"c11","name":"saludoVariable","type":"string","value":"te escribimos del consultorio"},
    {"id":"c12","name":"variablesCuerpo","type":"string","value":"4"}]},"options":{}}
 nodos=[
  nodo("Todos los días 17:00 (apagado en la prueba)","n8n-nodes-base.scheduleTrigger",1.2,[0,300],{"rule":{"interval":[{"field":"cronExpression","expression":"0 17 * * *"}]}},disabled=True),
