@@ -6,6 +6,7 @@ import { ETAPAS_PENDIENTES, milisegundosDe, type Solicitud } from '../../ingesta
 import { registrar } from '../../core/turno/bitacora.js';
 import { documentoDeVertical } from '../../core/prompt/prompt.js';
 import { periodoDe } from '../../central/cuenta/planes.js';
+import { esReglaDos, limiteDe } from '../cobros/cobroVenta.js';
 
 /**
  * =============================================================================
@@ -109,6 +110,8 @@ export interface ConversacionParaSeguimiento {
  *   · ya salió un seguimiento para esta solicitud (`seguimientos` distinto de 0,
  *     y también si el campo viniera con basura: ante la duda, no se escribe);
  *   · `noContactar === true`;
+ *   · la solicitud es de COBRO de regla 2 y su límite (`venceEn` o la prórroga,
+ *     el mayor) ya pasó por reloj, aunque la etapa siga en `qr_enviado`;
  *   · el teléfono está en `operador` o `bloqueado`;
  *   · no se sabe cuándo fue el último mensaje;
  *   · el último mensaje cae fuera de las dos ventanas.
@@ -126,6 +129,11 @@ export function esPendienteDeSeguimiento(
     ? (conversacion.solicitud as Partial<Solicitud>) : null;
   if (!s) return null;
   if (typeof s.etapa !== 'string' || !ETAPAS_PENDIENTES.has(s.etapa)) return null;
+  // Regla 2 de Cobros (`cobros.md` §4duodecies.6, obligación d): el QR vence por
+  // reloj aunque nadie lo haya materializado (vencimiento perezoso) y la etapa
+  // siga escrita como `qr_enviado`. Pedirle el pago a quien ya no puede pagar
+  // es un recordatorio inválido. Sin `reglaCobro` (regla 1) esto no se activa.
+  if (esReglaDos(s as Record<string, unknown>) && (limiteDe(s as Record<string, unknown>) ?? Infinity) <= ahoraMs) return null;
   // El cero tiene que estar escrito: un campo ausente o con otro tipo no es
   // «todavía ninguno», es una solicitud que no entiendo, y no se le escribe.
   if (s.seguimientos !== 0) return null;
