@@ -52,6 +52,7 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { defineString } from 'firebase-functions/params';
 import { REGION } from '../../core/region.js';
+import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 import { descontarPedido, hayParaVender } from '../inventario/inventario.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
 // `enmascarar` sale de `ingesta.ts` y no de `firma.ts`, que tiene la suya con
@@ -208,13 +209,19 @@ const texto = (v: unknown, max: number): string =>
 async function tieneVenta(tenantId: string): Promise<boolean> {
   const tenant = await db().doc(`tenants/${tenantId}`).get();
   if (!tenant.exists) return false;
-  const flujos = tenant.get('flujos');
-  // Igual que en las reglas y en `flujos.ts`: manda la lista, y una ficha
-  // anterior a la lista se lee por `vertical`. Así nada de lo ya cargado
-  // cambia de comportamiento.
-  if (Array.isArray(flujos)) return flujos.includes('venta');
-  return tenant.get('vertical') === 'venta';
+  return fichaVende(tenant.data());
 }
+
+/**
+ * La decisión, pura: la ficha vende si el registro le da el módulo
+ * `catalogo-web` (H2b-4d; antes una lista propia de `flujos`/`vertical`).
+ * Para fichas reales (`flujos: ['venta']`, `vertical: 'venta'`) el resultado es
+ * el de siempre, porque `venta` trae `catalogo-web` en el registro. Diferencias
+ * a propósito: con `modulos` (lista) manda la lista, y un `flujos` que no es
+ * lista (null, cadena) ya no cae a `vertical`: falla cerrado, como las reglas.
+ */
+export const fichaVende = (ficha: FichaConCapacidades | null | undefined): boolean =>
+  tieneModulo(ficha, 'catalogo-web');
 
 export const sePuedeComprar = (d: Record<string, unknown> | undefined): boolean =>
   Number.isFinite(d?.['precio']);
