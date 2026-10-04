@@ -3,7 +3,7 @@
  *
  * Con cobro real, el asistente NUNCA dice «pago acreditado», «pago verificado» ni «recibimos tu pago»: el OCR de un
  * comprobante no es una acreditación bancaria; quien confirma que entró la plata es el banco y el negocio. La red tenía huecos
- * (hallazgo de seguridad del 04/10/2026 sobre el módulo del Demo B, extendido a Q'Taco): «recibimos SU pago», «transferencia
+ * (hallazgo de seguridad del 03/10/2026 sobre el módulo del Demo B, extendido a Q'Taco): «recibimos SU pago», «transferencia
  * recibida», «depósito recibido», «ya llegó tu pago», «hemos recibido su pago o depósito».
  *
  * La red existe en TRES copias (`comun.js`, `cobro.js`, `avisos.js`) porque cada librería se prueba sola. Esta suite recorre las
@@ -40,6 +40,14 @@ const PROHIBIDAS = [
   'Ya llegó tu pago', 'Llegó tu pago', 'llegó el pago', 'tu pago ya llegó', 'su transferencia ingresó', 'tu depósito entró',
   'pago aprobado', 'pago exitoso', 'pago realizado', 'pago registrado', 'transferencia realizada', 'depósito efectuado',
   'RECIBIMOS SU PAGO', 'Recibimos  su   pago', 'recibimos su pago',
+  // Hallazgo de seguridad (04/10), formas graves y medias que la primera red dejaba pasar
+  'gracias por tu pago', 'verificamos tu pago', 'ya tenemos tu pago', 'vimos tu pago', 'aceptamos tu pago', 'comprobamos tu pago',
+  'confirmamos que pagaste', 'ingresó tu pago', 'llegó la transferencia', 'la transferencia ya llegó', 'llegaron tus pagos',
+  'tus pagos ya llegaron', 'el dinero llegó', 'la plata ya llegó', 'recibimos el dinero', 'recibimos la plata', 'recibimos 155 Bs',
+  'pago aceptado', 'pago completado', 'pago procesado', 'tu pago fue procesado', 'cobro exitoso', 'cobro realizado', 'cobro aprobado',
+  'tu pago se reflejó', 'pago listo', 'pago ok', 'tu pago está ok', 'tu pago está completo', 'todo en orden con tu pago', 'quedó saldado',
+  'tu cuenta quedó saldada', 'tu pedido está cancelado', 'ya nos pagaste', 'gracias por pagar', 'ya pagaste, gracias', 'PAGO ACEPTADO POR EL BANCO',
+  'gracias por tu pago jeje',
 ];
 // Lo honesto: el comprobante llegó, los datos coinciden o no, y quien confirma es el banco.
 const HONESTAS = [
@@ -47,13 +55,14 @@ const HONESTAS = [
   'Revisen el pago en su banco antes de entregar.', 'El pago se coordina con el restaurante al recibir tu pedido.',
   'Envíame aquí la foto o el PDF de tu comprobante.', 'Si ya hiciste tu pago, envíame el comprobante.',
   'Total de la comida: 155 Bs.', 'Escanea el QR con la app de tu banco.', 'Tu pedido sigue guardado.',
-  'Estoy esperando el comprobante de tu pedido.', 'El delivery no está incluido: se lo pagas al repartidor al recibir.',
+  'Estoy esperando el comprobante de tu pedido.',
+  'Cuando tu pago llegue al banco, ellos lo revisan.', 'Tu depósito ingresará en 24 horas según tu banco.', 'Si ya pagaste, envíame el comprobante.', 'Cancelar pedido', 'Hemos recibido tu comprobante de pago.', 'El delivery no está incluido: se lo pagas al repartidor al recibir.',
 ];
 
 describe.each(REDES)('red de prohibidas de $nombre', (red) => {
   it('atrapa cada forma de «recibimos tu plata» (con su canonización: acentos, mayúsculas, espacios)', () => {
     for (const f of PROHIBIDAS) {
-      const atrapada = red.re.test(red.canon(f)) || red.re.test(f);
+      const atrapada = red.re.test(red.canon(f)); // el mismo predicado que producción (forma canónica)
       expect(atrapada, `${red.nombre} deja pasar: «${f}»`).toBe(true);
     }
   });
@@ -68,7 +77,7 @@ describe.each(REDES)('red de prohibidas de $nombre', (red) => {
 describe('las tres redes dicen lo mismo', () => {
   it('cada frase se atrapa o se deja pasar igual en las tres copias', () => {
     for (const f of [...PROHIBIDAS, ...HONESTAS]) {
-      const veredictos = REDES.map((r) => r.re.test(r.canon(f)) || r.re.test(f));
+      const veredictos = REDES.map((r) => r.re.test(r.canon(f)));
       expect(new Set(veredictos).size, `las copias discrepan con «${f}»: ${veredictos.join(',')}`).toBe(1);
     }
   });
