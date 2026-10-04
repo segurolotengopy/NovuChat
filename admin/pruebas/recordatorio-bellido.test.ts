@@ -208,7 +208,7 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
       }
     }
     // la sucia se limpia, no se descarta: el texto queda legible
-    expect(correrPreparar([evento()], sucia)[0]['parametros'].slice(0, 2)).toEqual(['te escribimos del consultorio del Dr. Bellido', 'tu peque 👶']);
+    expect(correrPreparar([evento()], sucia)[0]['parametros'].slice(0, 2)).toEqual(['te escribimos del consultorio del Dr. Bellido', 'tu peque']);
   });
 
   it('con una plantilla de 3 variables la lista no lleva el saludo; con 4 sí', () => {
