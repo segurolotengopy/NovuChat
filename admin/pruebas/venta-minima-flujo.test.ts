@@ -842,6 +842,16 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
       expect(r.stderr, clave).toContain('decisión de Andres (04/10/2026)');
       expect(r.stderr, clave).not.toContain('TEMPORAL');
     }
+    // Las ejecuciones MANUALES tampoco se guardan, en ningún JSON de producción, de prueba ni de ensayo: `true` falla, y una clave que falta también.
+    for (const archivo of ['venta-minima.qtaco.json', 'venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json']) {
+      for (const valor of [true, 'true', 'DEFAULT', 1]) {
+        const m = verificarEnCopia((vm) => editarJson(vm, archivo, (f) => { (f.settings as J)['saveManualExecutions'] = valor; }));
+        expect(m.status, `${archivo} saveManualExecutions=${String(valor)}`).toBe(1);
+        expect(m.stderr, archivo).toContain('saveManualExecutions false');
+      }
+      const faltaM = verificarEnCopia((vm) => editarJson(vm, archivo, (f) => { delete (f.settings as J)['saveManualExecutions']; }));
+      expect(faltaM.status, `${archivo} sin saveManualExecutions`).toBe(1);
+    }
     // Una clave que falta también falla (n8n tomaría el valor de la instancia), en Q'Taco.
     const falta = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => { delete (f.settings as J)['saveDataSuccessExecution']; }));
     expect(falta.status).toBe(1);

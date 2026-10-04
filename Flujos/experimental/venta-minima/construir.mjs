@@ -404,12 +404,12 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   for (const solo of SOLO_PRUEBA) {
     if (entrada !== 'prueba' && nombres.has(solo)) hallazgos.push(`contiene el nodo «${solo}» (inventa avisos «salidos»): solo va en el JSON de prueba`);
   }
-  // Retención de ejecuciones: por omisión NADA se guarda (las ejecuciones llevan texto de clientes) y el progreso nunca se guarda. La UNICA excepción
+  // Retención de ejecuciones: por omisión NADA se guarda (las ejecuciones llevan texto de clientes) y el progreso y las ejecuciones manuales nunca se guardan. La UNICA excepción
   // declarada es el JSON de Q'Taco, que guarda todo (`all`/`all`) por decisión de Andres (04/10/2026): ver `RETENCION_POR_SALIDA`.
   const st = flujo.settings || {};
   const ret = retencionDe(destino);
-  if (st.saveDataSuccessExecution !== ret.exito || st.saveDataErrorExecution !== ret.error || st.saveExecutionProgress !== false) {
-    hallazgos.push(`los ajustes de retención de ${destino || 'este archivo'} deben ser saveDataSuccessExecution «${ret.exito}», saveDataErrorExecution «${ret.error}» y saveExecutionProgress false`
+  if (st.saveDataSuccessExecution !== ret.exito || st.saveDataErrorExecution !== ret.error || st.saveExecutionProgress !== false || st.saveManualExecutions !== false) {
+    hallazgos.push(`los ajustes de retención de ${destino || 'este archivo'} deben ser saveDataSuccessExecution «${ret.exito}», saveDataErrorExecution «${ret.error}», saveExecutionProgress false y saveManualExecutions false`
       + (RETENCION_DECLARADA.has(destino)
         ? '; decisión de Andres (04/10/2026): Q\'Taco guarda TODO (fallas y éxitos) por lo menos 24 horas para diagnosticar; el riesgo está aceptado y declarado en DISENO.md (no se baja a «none» ni a «default» sin su decisión)'
         : '; las ejecuciones llevan texto de clientes: este archivo no guarda nada y no puede hacerlo sin declararlo en RETENCION_POR_SALIDA'));
