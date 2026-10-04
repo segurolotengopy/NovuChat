@@ -406,7 +406,7 @@ export type MotivoCalificacion =
   | 'monto_distinto' | 'fecha_sin_hora' | 'nombre_aproximado'
   // inválido
   | 'monto_menor' | 'monto_mayor' | 'fecha_anterior' | 'fecha_posterior'
-  | 'cuenta_distinta' | 'nombre_distinto' | 'destino_no_verificable'
+  | 'cuenta_distinta' | 'nombre_distinto' | 'destino_no_coincide' | 'destino_no_verificable'
   // no es comprobante
   | 'falta_monto' | 'falta_fecha' | 'falta_destino' | 'ilegible';
 
@@ -464,21 +464,38 @@ export function instanteConPrecision(leido: Leido): { ms: number; conHora: boole
 }
 
 /**
- * ¿Es el mismo titular, con una letra de diferencia permitida? Igual que
- * `nombreCoincide` (orden invertido, nombres de más, truncado), más: dos
- * palabras de 5 letras o más que difieren en una sola letra cuentan como la
- * misma. «PEREZ» y «LOPEZ» difieren en dos y NO coinciden.
+ * ¿Es el mismo titular? Regla de Andres (P1b, 03/10/2026): el nombre vale POR
+ * SÍ SOLO únicamente si coinciden al menos DOS palabras (sin contar partículas
+ * como «de», «del», «la»); con una sola palabra coincidente hace falta que
+ * coincida la cuenta. Todas las palabras del nombre más corto tienen que estar
+ * en el más largo, en cualquier orden (invertido), con estas tolerancias por
+ * palabra: truncada (una inicial, o un principio de 3 letras o más), o una
+ * letra de diferencia en palabras de 5 o más.
+ *
+ *  - `exacto`: dos o más palabras, sin necesitar la letra de diferencia.
+ *  - `aproximado`: dos o más palabras, alguna con una letra de diferencia.
+ *  - `insuficiente`: coincide, pero con una sola palabra (no basta sin cuenta).
+ *  - `no`: alguna palabra no coincide («Juan Pérez» frente a «Juan López»).
+ *
+ * `nombreCoincide` (la seña) no se toca.
  */
-export function nombreCoincideConUnaLetra(esperado: string, leido: string): 'exacto' | 'aproximado' | 'no' {
-  if (nombreCoincide(esperado, leido)) return 'exacto';
+export function nombreCoincideConUnaLetra(
+  esperado: string, leido: string,
+): 'exacto' | 'aproximado' | 'insuficiente' | 'no' {
   const a = palabras(esperado);
   const b = palabras(leido);
   if (a.length === 0 || b.length === 0) return 'no';
   const [corto, largo] = a.length <= b.length ? [a, b] : [b, a];
-  if (corto.length === 1 && (corto[0] as string).length < 4) return 'no';
-  const casi = (p: string, q: string) => mismaPalabra(p, q)
-    || (p.length >= 5 && q.length >= 5 && distanciaDeEdicion(p, q) <= 1);
-  return corto.every((p) => largo.some((q) => casi(p, q))) ? 'aproximado' : 'no';
+  let aproximado = false;
+  for (const p of corto) {
+    const exacta = largo.some((q) => mismaPalabra(p, q)
+      || (Math.min(p.length, q.length) >= 3 && (p.startsWith(q) || q.startsWith(p))));
+    if (exacta) continue;
+    if (largo.some((q) => p.length >= 5 && q.length >= 5 && distanciaDeEdicion(p, q) <= 1)) { aproximado = true; continue; }
+    return 'no';
+  }
+  if (corto.length < 2) return 'insuficiente';
+  return aproximado ? 'aproximado' : 'exacto';
 }
 
 function noEsComprobante(motivo: MotivoCalificacion, montoLeido: number | null): Calificacion {
@@ -488,7 +505,7 @@ function noEsComprobante(motivo: MotivoCalificacion, montoLeido: number | null):
 /** Califica lo leído contra lo esperado. Pura. */
 export function calificarComprobante(esperado: Esperado, leido: Leido): Calificacion {
   const tolerancia = (esperado.toleranciaMin ?? 10) * 60_000;
-  const montoLeido = parsearMonto(String(leido.monto ?? ''));
+  const montoLeido = parsearMonto(leido.monto as string);
   const instante = instanteConPrecision(leido);
   const cuentaLeida = (leido.cuentaDestino ?? '').trim();
   const nombreLeido = (leido.nombreCuenta ?? '').trim();
@@ -531,7 +548,9 @@ export function calificarComprobante(esperado: Esperado, leido: Leido): Califica
   const nombre = nombreFigura ? nombreCoincideConUnaLetra(esperado.nombreCuenta, nombreLeido) : 'no';
   if (cuentaFigura && !cuentaOk) invalidos.push('cuenta_distinta');
   if (nombreFigura && nombre === 'no') invalidos.push('nombre_distinto');
-  if (!cuentaOk && nombre === 'no' && !cuentaFigura && !nombreFigura) invalidos.push('destino_no_verificable');
+  // Una sola palabra coincidente no basta sin la cuenta (P1b).
+  if (nombreFigura && nombre === 'insuficiente' && !cuentaOk) invalidos.push('destino_no_coincide');
+  if (!cuentaFigura && !nombreFigura) invalidos.push('destino_no_verificable');
   if ((cuentaFigura ? cuentaOk : true) && nombre === 'aproximado') aproximados.push('nombre_aproximado');
 
   if (invalidos.length > 0) {

@@ -121,13 +121,52 @@ describe('destinatario', () => {
   });
   it('un dato que figura y no coincide descalifica aunque el otro coincida', () => {
     expect(califica({ nombreCuenta: 'MARIA LOPEZ' })).toMatchObject({ estado: 'invalido', motivo: 'nombre_distinto' });
-    expect(califica({ cuentaDestino: '9999999999' })).toMatchObject({ estado: 'invalido', motivo: 'cuenta_distinta' });
+    expect(califica({ cuentaDestino: '9000000999' })).toMatchObject({ estado: 'invalido', motivo: 'cuenta_distinta' });
   });
   it('un nombre muy distinto, sin cuenta visible, no basta (P1)', () => {
     expect(califica({ cuentaDestino: '', nombreCuenta: 'MARIA LOPEZ' }).estado).toBe('invalido');
   });
   it('cuenta enmascarada que calza con el QR', () => {
     expect(califica({ cuentaDestino: '100*****890', nombreCuenta: '' }).estado).toBe('valido');
+  });
+});
+
+describe('P1b: el nombre solo vale por sí solo con DOS palabras que coincidan', () => {
+  const nombre = (leido: string, esp = 'Juan Perez Gomez') =>
+    califica({ cuentaDestino: '', nombreCuenta: leido }, { nombreCuenta: esp });
+  it('«JUAN» solo frente a «Juan Perez» es inválido con `destino_no_coincide`', () => {
+    expect(nombre('JUAN', 'Juan Perez')).toMatchObject({ estado: 'invalido', motivo: 'destino_no_coincide' });
+    expect(nombre('PEREZ', 'Juan Perez')).toMatchObject({ estado: 'invalido', motivo: 'destino_no_coincide' });
+  });
+  it('con una sola palabra coincidente pero la CUENTA coincide: vale', () => {
+    expect(califica({ nombreCuenta: 'JUAN' }, { nombreCuenta: 'Juan Perez' }).estado).toBe('valido');
+  });
+  it('orden invertido con dos palabras: válido', () => {
+    expect(nombre('PEREZ JUAN').estado).toBe('valido');
+  });
+  it('truncado con dos palabras: «Juan Pér» frente a «Juan Perez Gomez» es válido', () => {
+    expect(nombre('Juan Pér').estado).toBe('valido');
+    expect(nombre('JUAN PEREZ GOM').estado).toBe('valido');
+  });
+  it('«PERES GOMES» frente a «Perez Gomez»: aproximado (dos palabras con una letra cada una)', () => {
+    expect(nombre('PERES GOMES', 'Perez Gomez')).toMatchObject({ estado: 'aproximado', motivo: 'nombre_aproximado' });
+  });
+  it('una palabra buena y una distinta sigue siendo `nombre_distinto`', () => {
+    expect(nombre('JUAN LOPEZ', 'Juan Perez')).toMatchObject({ estado: 'invalido', motivo: 'nombre_distinto' });
+  });
+  it('la función: exacto, aproximado, insuficiente y no', () => {
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'PEREZ JUAN')).toBe('exacto');
+    expect(nombreCoincideConUnaLetra('Perez Gomez', 'PERES GOMES')).toBe('aproximado');
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'JUAN')).toBe('insuficiente');
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'Juan Lopez')).toBe('no');
+  });
+});
+
+describe('el monto numérico llega como lo da el modelo, sin pasar por texto', () => {
+  it('100.004 es 100 y 350.00000000000006 es 350 (con String() se leían mal)', () => {
+    expect(califica({ monto: 100.004 }).estado).toBe('valido');
+    expect(califica({ monto: 350.00000000000006 }, {}, 350).estado).toBe('valido');
+    expect(califica({ monto: 100 }).montoLeido).toBe(100);
   });
 });
 
