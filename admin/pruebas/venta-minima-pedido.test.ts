@@ -18,7 +18,7 @@
  * `comun.js` ya existe junto a `pedido.js`, esta suite corre contra el real; si no, contra `COMUN_DE_CONTRATO`
  * (abajo), que implementa esas seis funciones tal como las fija el contrato de §4.2.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -53,12 +53,15 @@ const NOMBRES = [
   'pdCarta', 'pdNombreCorto', 'pdTextoDeLaCarta', 'pdCuerpoExtraccion', 'pdValidarExtraccion', 'pdBuscar',
   'pdAgregarLineas', 'pdResolverForma', 'pdQuitarSinDelivery', 'pdTotal', 'pdFaltanEntrega', 'pdFusionarEntrega',
   'pdResumen', 'pdLineaCompacta', 'pdTextoForma', 'pdTextoNoEncontrado', 'pdTextoFaltanEntrega', 'pdNuevoPedido',
-  'pdMonto', 'pdLineasAviso',
+  'pdMonto', 'pdLineasAviso', 'pdExcluidos', 'pdSugerir', 'pdTextoExcluido', 'pdBotonAgregar', 'pdEjemploDePedido', 'vmLeerBoton', 'pdPalabraExcluida',
 ] as const;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Fn = (...a: any[]) => any;
 const L = ejecutar(`${COMUN}\n${PEDIDO}\nreturn [{ json: { ${NOMBRES.join(', ')} } }];`, [{}])[0] as Record<(typeof NOMBRES)[number], Fn>;
 
+// La red REAL de `comun.js` (`VM_PROHIBIDAS`): los textos nuevos del 03/10 la pasan completa.
+const RED_REAL = (ejecutar(`${COMUN}\nreturn [{ json: { red: VM_PROHIBIDAS.source } }];`, [{}])[0] as { red: string }).red;
+const PROHIBIDAS_REAL = new RegExp(RED_REAL, 'i');
 // La red de palabras de §4.2 (`VM_PROHIBIDAS`): ningun texto de este archivo debe coincidir.
 const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
 
@@ -270,17 +273,23 @@ describe('pdCuerpoExtraccion: el pedido al modelo', () => {
     expect(cuerpo.generationConfig).not.toHaveProperty('temperature');
     expect(cuerpo.generationConfig).not.toHaveProperty('topP');
     const esq = cuerpo.generationConfig.responseSchema;
-    expect(esq.properties.lineas.items.properties.forma.enum).toEqual(['orden', 'unidad', '']);
-    expect(esq.properties.entrega.enum).toEqual(['delivery', 'recojo', '']);
+    expect(esq.properties.lineas.items.properties.forma.enum).toEqual(['orden', 'unidad']);
+    expect(esq.properties.entrega.enum).toEqual(['delivery', 'recojo']);
     expect(Object.keys(esq.properties).sort()).toEqual(['direccion', 'entrega', 'lineas', 'nombre', 'quiereHablar', 'referencia']);
     expect(esq.properties.lineas.items.properties.cantidad.type).toBe('INTEGER');
+  });
+  it('quiereHablar es SOLO pedir una persona o reclamar: una pregunta que no es un pedido NO deriva (la responde el flujo con la carta o la consulta fija)', () => {
+    expect(instrucciones).toMatch(/quiereHablar: true SOLO si pide hablar con una persona o reclama\./);
+    // Negativo: la frase vieja mandaba a una persona toda pregunta («¿tienen estacionamiento?», «¿abren el domingo?») y rompía el pedido.
+    expect(instrucciones).not.toMatch(/pregunta algo que no es hacer un pedido/);
+    expect(instrucciones).not.toMatch(/\bpregunta\b[^\n]*quiereHablar|quiereHablar[^\n]*\bpregunta/i);
   });
   it('el esquema NO pide precio, total ni descuento (el modelo no los entrega)', () => {
     const esq = JSON.stringify(cuerpo.generationConfig.responseSchema);
     expect(esq).not.toMatch(/precio|total|descuento|costo/i);
   });
   it('lleva la instruccion de `forma` y las dos prohibiciones, literales', () => {
-    expect(instrucciones).toContain('forma: "orden" si pide una orden, porción o plato de varias piezas ("una orden de tacos", "2 órdenes de birria"); "unidad" si pide piezas sueltas ("3 tacos sueltos", "3 pedidos de 1 taco", "3 unidades"); vacío si no está claro ("3 tacos de birria").');
+    expect(instrucciones).toContain('forma: "orden" si pide una orden, porción o plato de varias piezas ("una orden de tacos", "2 órdenes de birria"); "unidad" si pide piezas sueltas ("3 tacos sueltos", "3 pedidos de 1 taco", "3 unidades"); si no está claro ("3 tacos de birria"), no incluyas este campo.');
     expect(instrucciones).toContain('No calcules precios, totales, descuentos ni costo de envío.');
     expect(instrucciones).toContain('No inventes nada.');
     expect(instrucciones).toContain('NO respondes al cliente');
@@ -615,9 +624,9 @@ describe('pdAgregarLineas: la regla «orden o unidad» y el total', () => {
     expect(r.carrito).toEqual([]);
     expect(r.noEncontrados.map((x: { motivo: string }) => x.motivo)).toEqual(['ninguno', 'ambiguo', 'ninguno', 'ninguno']);
     expect(r.noEncontrados[1].sugerencias.map((x: { id: string }) => x.id).sort()).toEqual(['birria3', 'qbirria']);
-    expect(L.pdTextoNoEncontrado(r.noEncontrados[0])).toBe('No encuentro «sushi» en la carta. ¿Me lo escribes como figura en la carta?');
-    expect(L.pdTextoNoEncontrado(r.noEncontrados[1])).toBe("No encuentro «birria» en la carta. ¿Es alguno de estos: Q' Birria o Tacos de Birria?");
-    expect(L.pdTextoNoEncontrado(r.noEncontrados[3])).toMatch(/^No encuentro «tacos de biria» en la carta\. ¿Es alguno de estos: Tacos de Birria, /);
+    expect(L.pdTextoNoEncontrado(r.noEncontrados[0])).toBe('No encontré «sushi» en la carta. Puedes verla con el botón.');
+    expect(L.pdTextoNoEncontrado(r.noEncontrados[1])).toBe("No encontré «birria» en la carta. ¿Te refieres a *Q' Birria* (50 Bs) o *Tacos de Birria* (orden de 3: 55 Bs)?");
+    expect(L.pdTextoNoEncontrado(r.noEncontrados[3])).toMatch(/^No encontré «tacos de biria» en la carta\. ¿Te refieres a \*Tacos de Birria\* \(/);
   });
   it('la nota (`detalle`) pasa a la linea, y lo que sobro del nombre se le suma; ninguna nota cambia el precio', () => {
     const r = agregar([ln('plato huasteco', 1, '', 'sin picante'), ln('nachos supremos con pollo', 1, '', 'sin crema')]);
@@ -657,7 +666,7 @@ describe('pdAgregarLineas: la regla «orden o unidad» y el total', () => {
   it('ignora lineas malformadas sin reventar', () => {
     const r = L.pdAgregarLineas([], CARTA, [null, {}, { producto: 3, cantidad: 1 }, { producto: 'gaseosas', cantidad: 0 }, { producto: 'gaseosas', cantidad: 1.5 }, ln('gaseosas', 1)]);
     expect(r.carrito).toHaveLength(1);
-    expect(L.pdAgregarLineas(undefined, undefined, undefined)).toEqual({ carrito: [], pendiente: [], noEncontrados: [] });
+    expect(L.pdAgregarLineas(undefined, undefined, undefined)).toEqual({ carrito: [], pendiente: [], noEncontrados: [], notasQuitadas: [] });
   });
 });
 
@@ -871,15 +880,21 @@ describe('textos fijos del pedido', () => {
     expect(L.pdTextoFaltanEntrega(['direccion', 'nombre'])).toContain('la dirección exacta y el nombre de quien recibe.');
     expect(L.pdTextoFaltanEntrega([])).toContain('los datos de entrega');
   });
-  it('«No encuentro …»: con 1, 2 o 3 sugerencias (sin repetir) y sin ellas', () => {
+  it('«No encontré …»: con 1, 2 o 3 sugerencias (sin repetir, con su precio) y sin ellas', () => {
     const s = (k: string) => porId(k);
-    expect(L.pdTextoNoEncontrado({ producto: 'x', sugerencias: [s('suiza')] })).toBe('No encuentro «x» en la carta. ¿Es Enchiladas Suizas?');
-    expect(L.pdTextoNoEncontrado({ producto: 'x', sugerencias: [s('birria3'), s('birria1')] })).toBe('No encuentro «x» en la carta. ¿Es Tacos de Birria?'); // misma carta, un solo nombre
+    // forma nueva: (nombre, sugerencia), con un item, una lista o nada
+    expect(L.pdTextoNoEncontrado('x', s('gaseosas'))).toBe('No encontré «x» en la carta. ¿Te refieres a *Gaseosas* (16 Bs)?');
+    expect(L.pdTextoNoEncontrado('x', [s('suiza'), s('verde')])).toBe('No encontré «x» en la carta. ¿Te refieres a *Enchiladas Suizas* (55 Bs) o *Enchiladas Verdes* (50 Bs)?');
+    expect(L.pdTextoNoEncontrado('x', null)).toBe('No encontré «x» en la carta. Puedes verla con el botón.');
+    expect(L.pdTextoNoEncontrado('x')).toBe('No encontré «x» en la carta. Puedes verla con el botón.');
+    // forma de siempre: un elemento de `noEncontrados`
+    expect(L.pdTextoNoEncontrado({ producto: 'x', sugerencias: [s('suiza')] })).toBe('No encontré «x» en la carta. ¿Te refieres a *Enchiladas Suizas* (55 Bs)?');
+    expect(L.pdTextoNoEncontrado({ producto: 'x', sugerencias: [s('birria3'), s('birria1')] })).toBe('No encontré «x» en la carta. ¿Te refieres a *Tacos de Birria* (orden de 3: 55 Bs)?'); // misma carta, un solo nombre
     expect(L.pdTextoNoEncontrado({ producto: 'x', sugerencias: [s('suiza'), s('verde'), s('roja')] }))
-      .toBe('No encuentro «x» en la carta. ¿Es alguno de estos: Enchiladas Suizas, Enchiladas Verdes o Enchiladas Rojas?');
-    expect(L.pdTextoNoEncontrado({ producto: 'x', sugerencias: [] })).toBe('No encuentro «x» en la carta. ¿Me lo escribes como figura en la carta?');
-    expect(L.pdTextoNoEncontrado({ producto: '«a»  b', sugerencias: undefined })).toBe('No encuentro «a b» en la carta. ¿Me lo escribes como figura en la carta?');
-    expect(L.pdTextoNoEncontrado(null)).toContain('No encuentro «»');
+      .toBe('No encontré «x» en la carta. ¿Te refieres a *Enchiladas Suizas* (55 Bs), *Enchiladas Verdes* (50 Bs) o *Enchiladas Rojas* (50 Bs)?');
+    expect(L.pdTextoNoEncontrado({ producto: 'x', sugerencias: [] })).toBe('No encontré «x» en la carta. Puedes verla con el botón.');
+    expect(L.pdTextoNoEncontrado({ producto: '«a»  b', sugerencias: undefined })).toBe('No encontré «a b» en la carta. Puedes verla con el botón.');
+    expect(L.pdTextoNoEncontrado(null)).toContain('No encontré «»');
   });
   it('la pregunta «orden o sueltos»: singular y plural, y las comillas del cliente no la rompen', () => {
     const p = (cantidad: number, ordenes: number) => ({ producto: '«x»', cantidad, piezas: 3, ordenes, totalOrden: 55 * ordenes, totalUnidad: 21.5 * cantidad });
@@ -1173,5 +1188,483 @@ describe('I5: `pdResumen` con `maxDetalle` cabe en un solo texto (notas recortad
     expect(r).toContain(`Total de la comida: ${L.pdTotal(c)} Bs.`);
     // Las líneas listadas están enteras (terminan con su precio).
     for (const linea of r.split('\n').filter((x: string) => x.startsWith('• 1 × '))) expect(linea).toMatch(/: \d+ Bs$/);
+  });
+});
+
+// =================================================================================================
+// 03/10/2026: el ensayo en el Demo A (pedido por audio «tres tacos de birria y una Coca-Cola»)
+// =================================================================================================
+
+/** Los problemas de un `responseSchema`: todo `enum` debe ser una lista NO vacia de textos NO vacios. */
+function problemasDeEnum(nodo: unknown, ruta = 'responseSchema'): string[] {
+  if (!nodo || typeof nodo !== 'object') return [];
+  const o = nodo as Record<string, unknown>;
+  const fallas: string[] = [];
+  if ('enum' in o) {
+    const e = o['enum'];
+    if (!Array.isArray(e) || e.length === 0) fallas.push(`${ruta}: enum vacío`);
+    else for (const v of e) if (typeof v !== 'string' || v.trim() === '') fallas.push(`${ruta}: enum con valor vacío (${JSON.stringify(v)})`);
+  }
+  for (const [k, v] of Object.entries(o)) {
+    if (k !== 'enum') fallas.push(...problemasDeEnum(v, `${ruta}.${k}`));
+  }
+  return fallas;
+}
+
+describe('responseSchema de la librería: ningún enum vacío ni con cadena vacía (Gemini responde 400)', () => {
+  it('el esquema del pedido no trae enum vacío ni con cadena vacía', () => {
+    const esq = L.pdCuerpoExtraccion('quiero 3 tacos de birria', CARTA, { ahoraMs: AHORA }).generationConfig.responseSchema;
+    expect(problemasDeEnum(esq)).toEqual([]);
+    expect(esq.properties.entrega.enum).not.toContain('');
+    expect(esq.properties.lineas.items.properties.forma.enum).not.toContain('');
+  });
+  it('NEGANDO: la guardia sí detecta un enum con cadena vacía, vacío o con un valor que no es texto (el esquema que rompió el ensayo)', () => {
+    expect(problemasDeEnum({ type: 'OBJECT', properties: { a: { type: 'STRING', enum: ['x', ''] } } })).toHaveLength(1);
+    expect(problemasDeEnum({ properties: { a: { enum: [] } } })).toHaveLength(1);
+    expect(problemasDeEnum({ properties: { a: { enum: ['x', 3] } } })).toHaveLength(1);
+    expect(problemasDeEnum({ properties: { a: { enum: ['x', 'y'] } } })).toEqual([]);
+  });
+  it('estática: ningún archivo de src/lib declara un `enum: [...]` vacío o con cadena vacía (y la guardia no está ciega)', () => {
+    let total = 0;
+    for (const f of readdirSync(CARPETA).filter((x) => x.endsWith('.js'))) {
+      const fuente = readFileSync(join(CARPETA, f), 'utf8');
+      for (const m of fuente.matchAll(/\benum\s*:\s*\[([^\]]*)\]/g)) {
+        total++;
+        const cuerpo = m[1]!.trim();
+        expect(cuerpo, `${f}: enum vacío`).not.toBe('');
+        expect(cuerpo, `${f}: enum con cadena vacía`).not.toMatch(/(^|,)\s*(''|""|``)\s*(,|$)/);
+      }
+    }
+    expect(total).toBeGreaterThanOrEqual(2); // los dos del pedido; si baja a 0, la regex dejó de ver los enum
+  });
+});
+
+describe('pdCuerpoExtraccion: la marca de una bebida genérica va al nombre genérico de la carta', () => {
+  const instrucciones = L.pdCuerpoExtraccion('una coca cola', CARTA, { ahoraMs: AHORA }).systemInstruction.parts[0].text as string;
+  it('la instrucción genérica está en el prompt, con la marca en el detalle', () => {
+    expect(instrucciones).toContain('Si pide una MARCA de una bebida genérica que la carta ofrece con su nombre genérico, el producto es ese nombre genérico de la carta y la marca va en el detalle (ejemplo: «una Coca-Cola» → producto «Gaseosas», detalle «Coca-Cola»).');
+  });
+  it('lo que el modelo devuelve así entra a la carta con la marca en la nota, y el precio es el de la carta', () => {
+    const x = L.pdValidarExtraccion({ lineas: [{ producto: 'Gaseosas', cantidad: 1, forma: '', detalle: 'Coca-Cola', precio: 1, total: 1 }], total: 1 });
+    const r = agregar(x.lineas);
+    expect(r.noEncontrados).toEqual([]);
+    expect(r.carrito[0]).toMatchObject({ id: 'gaseosas', nombre: 'Gaseosas', cantidad: 1, detalle: 'Coca-Cola', precio: 16 });
+    expect(L.pdTotal(r.carrito)).toBe(16);
+  });
+  it('NEGANDO: ningún precio ni total del modelo entra a la cuenta, ni siquiera dentro de una línea', () => {
+    const x = L.pdValidarExtraccion({ lineas: [{ producto: 'Gaseosas', cantidad: 2, precio: 1, total: 1, costo: 1 }], precio: 1, total: 1 });
+    expect(JSON.stringify(x)).not.toMatch(/"(precio|total|costo)"/);
+    expect(L.pdTotal(agregar(x.lineas).carrito)).toBe(32);
+  });
+});
+
+describe('pdExcluidos: lo que el negocio NO vende por aquí a propósito', () => {
+  const EXCL = L.pdExcluidos(CATALOGO, { areasExcluidas: EXCLUIDAS, moneda: 'BOB' });
+  it('devuelve los items de las áreas excluidas, en la forma de la carta, y ninguno de la carta', () => {
+    expect(EXCL.map((i: { id: string }) => i.id)).toEqual(['pils', 'michelada', 'rompope']);
+    expect(EXCL[2]).toMatchObject({ id: 'rompope', nombre: 'Helado de Rompope', area: 'postres', precio: 23, clave: 'helado rompope' });
+    const enCarta = new Set(CARTA.map((i: { id: string }) => i.id));
+    for (const i of EXCL) expect(enCarta.has(i.id)).toBe(false);
+    // y lo que la carta deja fuera por OTRA razón (la Promo sin precio, inactiva) no es un excluido
+    expect(EXCL.map((i: { id: string }) => i.id)).not.toContain('promo');
+  });
+  it('cuenta aunque el item esté inactivo (la página web puede ocultar lo mismo que el flujo excluye)', () => {
+    const cat = [
+      it_('h1', 'Helado de Mango', 20, 'postres', { activo: false }),
+      it_('t1', 'Taco Agotado', 21, 'tacos', { agotado: true }),
+      it_('t2', 'Taco Oculto', 21, 'tacos', { activo: false }),
+    ];
+    expect(L.pdExcluidos(cat, { areasExcluidas: 'postres' }).map((i: { id: string }) => i.id)).toEqual(['h1']);
+  });
+  it('un item marcado `excluido` cuenta aunque su área se venda; sin áreas ni marcas, no hay excluidos', () => {
+    const cat = [it_('x', 'Plato Raro', 30, 'tacos', { excluido: true }), it_('y', 'Taco Normal', 21, 'tacos')];
+    expect(L.pdExcluidos(cat, {}).map((i: { id: string }) => i.id)).toEqual(['x']);
+    expect(L.pdExcluidos(CATALOGO, {})).toEqual([]);
+    expect(L.pdExcluidos(CATALOGO, { areasExcluidas: '' })).toEqual([]);
+  });
+  it('areasExcluidas acepta lista o texto con comas, se compara sin tildes ni mayúsculas, y la entrada basura no revienta', () => {
+    expect(L.pdExcluidos(CATALOGO, { areasExcluidas: ' COCTELERÍA , Cervezas,postres ' })).toHaveLength(3);
+    expect(L.pdExcluidos(CATALOGO, { areasExcluidas: ['Postres'] })).toHaveLength(1);
+    for (const malo of [null, undefined, 'x', 3, [null, 1, 'a']]) expect(L.pdExcluidos(malo, { areasExcluidas: 'postres' })).toEqual([]);
+    expect(L.pdExcluidos([null, 1, { nombre: '' }, { nombre: 'Sin area', excluido: true, area: 'postres' }], { areasExcluidas: 'postres' })).toHaveLength(1);
+  });
+  it('un excluido sin precio válido sale con precio 0 (no se vende) y ids únicos', () => {
+    const cat = [it_('a', 'Helado A', undefined, 'postres'), it_('a', 'Helado B', 10, 'postres')];
+    const r = L.pdExcluidos(cat, { areasExcluidas: 'postres' });
+    expect(r.map((i: { precio: number }) => i.precio)).toEqual([0, 10]);
+    expect(new Set(r.map((i: { id: string }) => i.id)).size).toBe(2);
+  });
+  it('no muta lo que recibe', () => {
+    const cat = deepFreeze(JSON.parse(JSON.stringify(CATALOGO)));
+    expect(() => L.pdExcluidos(cat, { areasExcluidas: EXCLUIDAS })).not.toThrow();
+  });
+});
+
+describe('pdSugerir: por nombre y por descripción', () => {
+  it('«Coca-Cola» sugiere «Gaseosas» aunque la carta no la nombre', () => {
+    expect(L.pdSugerir('Coca-Cola', CARTA)).toMatchObject({ id: 'gaseosas', nombre: 'Gaseosas' });
+    expect(L.pdSugerir('una coca cola bien fria', CARTA)).toMatchObject({ id: 'gaseosas' });
+    expect(L.pdSugerir('Pepsi', CARTA)).toMatchObject({ id: 'gaseosas' });
+    expect(L.pdSugerir('2 Sprite', CARTA)).toMatchObject({ id: 'gaseosas' });
+  });
+  it('por descripción: lo que la descripción nombra, sin que el nombre lo diga', () => {
+    const carta = L.pdCarta([
+      it_('ref', 'Refrescos', 12, 'bebidas', { descripcion: 'Sprite, Fanta y Pepsi bien frías' }),
+      it_('tex', 'Taco Norteño', 30, 'tacos', { descripcion: 'Con chicharrón y frijoles' }),
+    ]);
+    expect(L.pdSugerir('sprite', carta)).toMatchObject({ id: 'ref' });
+    expect(L.pdSugerir('chicharron', carta)).toMatchObject({ id: 'tex' });
+  });
+  it('por nombre sigue ganando: «birria» sugiere el primero que lo nombra, y un error de tipeo se corrige', () => {
+    expect(L.pdSugerir('birria', CARTA)).toMatchObject({ id: 'qbirria' });
+    expect(L.pdSugerir('enchiladas suisas', CARTA)).toMatchObject({ id: 'suiza' });
+  });
+  it('NEGANDO: lo que no se parece a nada no sugiere nada', () => {
+    expect(L.pdSugerir('sushi', CARTA)).toBeNull();
+    expect(L.pdSugerir('', CARTA)).toBeNull();
+    expect(L.pdSugerir('   ', CARTA)).toBeNull();
+    expect(L.pdSugerir('coca cola', [])).toBeNull();
+    expect(L.pdSugerir(null, CARTA)).toBeNull();
+    expect(L.pdSugerir('coca cola', null)).toBeNull();
+  });
+  it('NEGANDO: una marca de cerveza no sugiere una gaseosa (la carta de ventas no tiene cervezas)', () => {
+    expect(L.pdSugerir('una paceña', CARTA)).toBeNull();
+  });
+});
+
+describe('pdAgregarLineas: lo conocido entra, lo desconocido se pregunta, lo excluido se dice', () => {
+  const EXCL = L.pdExcluidos(CATALOGO, { areasExcluidas: EXCLUIDAS, moneda: 'BOB' });
+  const mixto = (lineas: ReturnType<typeof ln>[], excl: unknown = EXCL, carrito: unknown[] = []) => L.pdAgregarLineas(carrito, CARTA, lineas, excl);
+
+  it('«tres tacos de birria y una Coca-Cola»: los tacos entran y la Coca-Cola se pregunta con «Gaseosas»', () => {
+    const r = mixto([ln('Tacos de Birria', 3, 'orden'), ln('Coca-Cola', 1)]);
+    expect(r.carrito).toHaveLength(1);
+    expect(r.carrito[0]).toMatchObject({ id: 'birria3', cantidad: 3 });
+    expect(r.pendiente).toEqual([]);
+    expect(r.noEncontrados).toHaveLength(1);
+    expect(r.noEncontrados[0]).toMatchObject({ producto: 'Coca-Cola', cantidad: 1, motivo: 'ninguno' });
+    expect(r.noEncontrados[0].sugerencias[0].id).toBe('gaseosas');
+    expect(L.pdTextoNoEncontrado(r.noEncontrados[0].producto, r.noEncontrados[0].sugerencias[0])).toBe('No encontré «Coca-Cola» en la carta. ¿Te refieres a *Gaseosas* (16 Bs)?');
+    expect(L.pdTotal(r.carrito)).toBe(165); // solo lo conocido: la sugerencia NO se suma sola
+  });
+  it('una pregunta «orden o sueltos» y un desconocido conviven: ni una ni otro se pierden', () => {
+    const r = mixto([ln('tacos de birria', 3), ln('Coca-Cola', 2), ln('nachos supremos', 1)]);
+    expect(r.carrito.map((l: { id: string }) => l.id)).toEqual(['nachos']);
+    expect(r.pendiente).toHaveLength(1);
+    expect(r.noEncontrados.map((n: { producto: string }) => n.producto)).toEqual(['Coca-Cola']);
+  });
+  it('«quiero un helado»: de un área excluida, sale como excluido (con el item real) y sin sugerencias', () => {
+    const r = mixto([ln('helado', 1)]);
+    expect(r.carrito).toEqual([]);
+    expect(r.noEncontrados[0]).toMatchObject({ producto: 'helado', motivo: 'excluido', sugerencias: [] });
+    expect(r.noEncontrados[0].excluido.id).toBe('rompope');
+    expect(L.pdTextoExcluido(L.pdNombreCorto(r.noEncontrados[0].excluido))).toBe('Lo siento, «Helado de Rompope» no está disponible para pedir por WhatsApp 🙏. ¿Te muestro la carta?');
+  });
+  it('un excluido por nombre exacto, por tipeo, por el área y sin tildes también se dicen como excluidos', () => {
+    for (const [dicho, id] of [['Michelada', 'michelada'], ['micheladas', 'michelada'], ['una cerveza', 'pils'], ['cervezas', 'pils'], ['helado de rompope', 'rompope'], ['postres', 'rompope']]) {
+      const r = mixto([ln(dicho!, 1)]);
+      expect(r.noEncontrados[0], dicho).toMatchObject({ motivo: 'excluido' });
+      expect(r.noEncontrados[0].excluido.id, dicho).toBe(id);
+    }
+  });
+  it('NEGANDO: sin el cuarto parámetro (o con una lista vacía) lo excluido sigue siendo «no existe», como antes', () => {
+    expect(L.pdAgregarLineas([], CARTA, [ln('helado', 1)]).noEncontrados[0].motivo).toBe('ninguno');
+    expect(mixto([ln('helado', 1)], []).noEncontrados[0].motivo).toBe('ninguno');
+    expect(mixto([ln('helado', 1)], null).noEncontrados[0].motivo).toBe('ninguno');
+  });
+  it('NEGANDO: lo que está en la carta nunca se toma por excluido, y lo que no existe en ningún lado sigue «ninguno»', () => {
+    const r = mixto([ln('gaseosas', 1), ln('sushi', 1)]);
+    expect(r.carrito.map((l: { id: string }) => l.id)).toEqual(['gaseosas']);
+    expect(r.noEncontrados).toHaveLength(1);
+    expect(r.noEncontrados[0]).toMatchObject({ producto: 'sushi', motivo: 'ninguno', sugerencias: [] });
+    expect(r.noEncontrados[0]).not.toHaveProperty('excluido');
+  });
+  it('NEGANDO: una marca de gaseosa que un coctel lleva en su descripción sigue siendo la gaseosa de la carta, no el coctel excluido', () => {
+    const cat = [
+      it_('g', 'Gaseosas', 16, 'bebidas'),
+      it_('cuba', 'Cuba Libre', 35, 'cocteleria', { descripcion: 'Ron con Coca-Cola y limón' }),
+    ];
+    const carta = L.pdCarta(cat, { areasExcluidas: 'cocteleria' });
+    const excl = L.pdExcluidos(cat, { areasExcluidas: 'cocteleria' });
+    const r = L.pdAgregarLineas([], carta, [ln('Coca-Cola', 1)], excl);
+    expect(r.noEncontrados[0].motivo).toBe('ninguno');
+    expect(r.noEncontrados[0].sugerencias[0].id).toBe('g');
+    // y el coctel por su nombre sí es excluido
+    expect(L.pdAgregarLineas([], carta, [ln('cuba libre', 1)], excl).noEncontrados[0].motivo).toBe('excluido');
+  });
+  it('suma al carrito que ya había y no muta ni el carrito ni la lista de excluidos', () => {
+    const previo = agregar([ln('nachos supremos', 1)]).carrito;
+    const congelado = deepFreeze(JSON.parse(JSON.stringify(previo)));
+    const excl = deepFreeze(JSON.parse(JSON.stringify(EXCL)));
+    const r = L.pdAgregarLineas(congelado, CARTA, [ln('gaseosas', 2), ln('helado', 1)], excl);
+    expect(r.carrito.map((l: { id: string; cantidad: number }) => [l.id, l.cantidad])).toEqual([['nachos', 1], ['gaseosas', 2]]);
+    expect(r.noEncontrados[0].motivo).toBe('excluido');
+  });
+});
+
+describe('textos amables del 03/10 (pedido)', () => {
+  it('pdTextoExcluido: el ítem real en la comilla, un emoji según nivelEmojis y sin prometer nada', () => {
+    expect(L.pdTextoExcluido('helado')).toBe('Lo siento, «helado» no está disponible para pedir por WhatsApp 🙏. ¿Te muestro la carta?');
+    expect(L.pdTextoExcluido('Michelada', { nivelEmojis: 'pocos' })).toContain('🙏');
+    expect(L.pdTextoExcluido('Michelada', { nivelEmojis: 'ninguno' })).toBe('Lo siento, «Michelada» no está disponible para pedir por WhatsApp. ¿Te muestro la carta?');
+    expect(L.pdTextoExcluido('«a»  *b*')).toBe('Lo siento, «a b» no está disponible para pedir por WhatsApp 🙏. ¿Te muestro la carta?');
+    expect(L.pdTextoExcluido(null)).toContain('«»');
+  });
+  it('ningún texto nuevo trae palabras de la red real VM_PROHIBIDAS', () => {
+    const textos = [
+      L.pdTextoExcluido('helado'), L.pdTextoExcluido('x', { nivelEmojis: 'ninguno' }),
+      L.pdTextoNoEncontrado('x', porId('gaseosas')), L.pdTextoNoEncontrado('x', null), L.pdTextoNoEncontrado('x', [porId('suiza'), porId('verde'), porId('roja')]),
+      L.pdTextoNoEncontrado({ producto: 'x', motivo: 'limite' }),
+    ];
+    for (const t of textos) {
+      expect(t).not.toMatch(PROHIBIDAS_REAL);
+      expect(t).not.toMatch(/te aviso|luego|te llamamos|te escribir|lo consulto/i);
+    }
+  });
+  it('pdBotonAgregar: `g|agregar|<id>|<cantidad>` con el id de la carta, que se decodifica de vuelta', () => {
+    const b = L.pdBotonAgregar(porId('gaseosas'), 2);
+    expect(b).toEqual({ id: 'g|agregar|gaseosas|2', title: 'Agregar Gaseosas' });
+    expect(L.vmLeerBoton(b.id)).toEqual({ tipo: 'g', partes: ['agregar', 'gaseosas', '2'] });
+    expect(b.title.length).toBeLessThanOrEqual(20);
+    expect(b.id.length).toBeLessThanOrEqual(256);
+  });
+  it('pdBotonAgregar: el título cabe en 20 caracteres y la orden no arrastra «(orden de 3)»', () => {
+    expect(L.pdBotonAgregar(porId('birria3'), 1).title).toBe('Tacos de Birria');
+    expect(L.pdBotonAgregar(porId('chilC'), 1).title.length).toBeLessThanOrEqual(20);
+    expect(L.pdBotonAgregar(porId('chilC'), 1).title).toBe('Chilaquiles con Car…');
+  });
+  it('NEGANDO: sin item, sin id válido o con una cantidad fuera de 1 a 50 no hay botón', () => {
+    expect(L.pdBotonAgregar(null, 1)).toBeNull();
+    expect(L.pdBotonAgregar({ nombre: 'x' }, 1)).toBeNull();
+    expect(L.pdBotonAgregar({ id: 'a/b', nombre: 'x' }, 1)).toBeNull(); // «/» no cabe en un id de boton
+    expect(L.pdBotonAgregar({ id: 'x'.repeat(300), nombre: 'x' }, 1)).toBeNull();
+    for (const c of [0, -1, 51, 1.5, NaN, '2', null, undefined]) expect(L.pdBotonAgregar(porId('gaseosas'), c), String(c)).toBeNull();
+    expect(L.pdBotonAgregar(porId('gaseosas'), 50)).not.toBeNull();
+  });
+  it('pdEjemploDePedido: con los dos primeros productos de la carta, nunca un plato de un cliente', () => {
+    expect(L.pdEjemploDePedido(CARTA)).toBe('1 Nachos Supremos y 1 Queso Fundido');
+    const otra = L.pdCarta([it_('a', 'Pizza Cuatro Quesos', 60, 'x'), it_('b', 'Lasaña (orden de 2)', 70, 'x'), it_('c', 'Tiramisú', 30, 'x')]);
+    expect(L.pdEjemploDePedido(otra)).toBe('1 Pizza Cuatro Quesos y 1 Lasaña');
+    expect(L.pdEjemploDePedido(otra)).not.toMatch(/cochinita/i);
+    expect(L.pdEjemploDePedido(L.pdCarta([it_('a', 'Solo Uno', 5, 'x')]))).toBe('1 Solo Uno');
+  });
+  it('NEGANDO: carta vacía o basura da texto vacío', () => {
+    for (const malo of [[], null, undefined, 'x', [null, 3]]) expect(L.pdEjemploDePedido(malo)).toBe('');
+  });
+});
+
+// =================================================================================================
+// `palabrasExcluidas`: la consola carga los items de coctelería, cervezas y postres `activo: false` y el
+// servidor no se los manda al flujo: la lista de palabras de «Config base» cubre lo que el catálogo ya no dice.
+// =================================================================================================
+describe('palabras excluidas: lo que el negocio NO vende por WhatsApp, aunque la carta no traiga el item', () => {
+  // La lista REAL de Q'Taco, leída de su archivo de datos (así la prueba no se desincroniza).
+  const RUTA_QTACO = join(CARPETA, '../../../../../admin/scripts/datos/venta-minima/qtaco.json');
+  const PALABRAS = (JSON.parse(readFileSync(RUTA_QTACO, 'utf8')) as { configBase: { palabrasExcluidas: string } }).configBase.palabrasExcluidas;
+  // Una carta SIN ningún item de esas áreas, y ninguna lista de excluidos por área: solo la lista de palabras.
+  const SOLO_VENDIBLE = L.pdCarta(CATALOGO.filter((i: { area: string }) => !['cervezas', 'cocteleria', 'postres'].includes(i.area)));
+  const agregarPal = (producto: string, palabras: unknown = PALABRAS, carta = SOLO_VENDIBLE) => L.pdAgregarLineas([], carta, [ln(producto, 1)], [], palabras);
+
+  it('la lista por omisión de Q\'Taco trae las palabras acordadas', () => {
+    for (const p of ['helado', 'paleta', 'postre', 'cerveza', 'chela', 'michelada', 'coctel', 'cocktail', 'trago', 'vino', 'shot', 'tequila', 'ron', 'whisky', 'pisco', 'singani', 'bebida alcoholica']) {
+      expect(PALABRAS.split(','), p).toContain(p);
+    }
+  });
+  it('«helado», «una cerveza», «un cóctel», «vino malbec», «shot de tequila» y «un postre» salen como excluidos, sin ítem en la carta', () => {
+    for (const dicho of ['helado', 'una cerveza', 'un cóctel', 'vino malbec', 'shot de tequila', 'un postre', 'dos helados', 'las micheladas', 'unas chelas', 'una bebida alcohólica', 'whisky', 'un trago', 'cocteles', 'postres']) {
+      const r = agregarPal(dicho);
+      expect(r.carrito, dicho).toEqual([]);
+      expect(r.noEncontrados[0], dicho).toMatchObject({ producto: dicho, motivo: 'excluido', sugerencias: [] });
+      expect(r.noEncontrados[0].excluido.nombre, dicho).toBe(dicho);
+      expect(L.pdTextoExcluido(r.noEncontrados[0].excluido.nombre), dicho).toMatch(/^Lo siento, «.+» no está disponible para pedir por WhatsApp 🙏\. ¿Te muestro la carta\?$/);
+    }
+  });
+  it('NEGANDO: «taco», «horchata», «refresco» y lo que SÍ está en la carta no se toman por excluidos', () => {
+    for (const dicho of ['taco', 'horchata', 'refresco', 'jamaica', 'nachos supremos', 'tacos de birria']) {
+      const r = agregarPal(dicho);
+      expect(r.noEncontrados.map((n: { motivo: string }) => n.motivo), dicho).not.toContain('excluido');
+    }
+    expect(agregarPal('refresco').noEncontrados[0].motivo).toBe('ninguno');
+    expect(agregarPal('horchata').carrito[0]).toMatchObject({ id: 'horchata' });
+  });
+  it('NEGANDO: una palabra dentro de otra no dispara («coronavirus» no es «ron»; «vinagreta», «heladera», «cervecería»)', () => {
+    for (const dicho of ['coronavirus', 'vinagreta', 'heladera', 'cervecería', 'cronos', 'tiroshot', 'chicharrones', 'pizarrón', 'aperitivo']) {
+      expect(agregarPal(dicho).noEncontrados[0].motivo, dicho).toBe('ninguno');
+    }
+    expect(L.pdPalabraExcluida('coronavirus', 'ron')).toBe('');
+    expect(L.pdPalabraExcluida('un ron con hielo', 'ron')).toBe('ron');
+    expect(L.pdPalabraExcluida('ron', 'ron', true)).toBe('ron'); // «ron» ES lo pedido
+    expect(L.pdPalabraExcluida('ron', 'ron')).toBe(''); // pero como nota suelta puede ser un nombre
+  });
+  it('NEGANDO: sin lista (ausente, vacía, basura o solo marcadores sin reemplazar) nada es excluido: «helado» sigue siendo «ninguno»', () => {
+    // (ausente = el quinto parámetro no se pasa: se prueba abajo)
+    for (const nada of [null, '', [], '  ,, ', 'REEMPLAZAR_PALABRAS_QTACO', 5, {}]) {
+      expect(agregarPal('helado', nada).noEncontrados[0].motivo, JSON.stringify(nada)).toBe('ninguno');
+    }
+    expect(L.pdAgregarLineas([], SOLO_VENDIBLE, [ln('helado', 1)]).noEncontrados[0].motivo).toBe('ninguno'); // sin el quinto parámetro, como antes
+  });
+  it('tolera el plural en las dos direcciones y la palabra de varias palabras («bebida alcoholica»)', () => {
+    expect(L.pdPalabraExcluida('una cerveza', 'cervezas')).toBe('cervezas');
+    expect(L.pdPalabraExcluida('2 cervezas', 'cerveza')).toBe('cerveza');
+    expect(L.pdPalabraExcluida('bebidas alcohólicas por favor', ['bebida alcoholica'])).toBe('bebida alcoholica');
+    expect(L.pdPalabraExcluida('una bebida sin alcohol', 'bebida alcoholica')).toBe('');
+    expect(L.pdPalabraExcluida('postres', 'postre')).toBe('postre'); // «postres» ya no se reduce a «post»
+    expect(L.pdPalabraExcluida('un post de instagram', 'postre')).toBe('');
+  });
+  it('lo conocido entra al carrito y lo excluido por palabra se dice aparte, en el mismo pedido', () => {
+    const r = L.pdAgregarLineas([], SOLO_VENDIBLE, [ln('nachos supremos', 1), ln('una cerveza', 2), ln('Coca-Cola', 1)], [], PALABRAS);
+    expect(r.carrito.map((l: { id: string }) => l.id)).toEqual(['nachos']);
+    expect(r.noEncontrados.map((n: { motivo: string }) => n.motivo)).toEqual(['excluido', 'ninguno']);
+    expect(r.noEncontrados[1].sugerencias[0].id).toBe('gaseosas');
+  });
+  it('si el área sigue visible en la carta (otro negocio que no desactiva los items), `pdExcluidos` por área sigue funcionando y manda el ítem real', () => {
+    const excl = L.pdExcluidos(CATALOGO, { areasExcluidas: EXCLUIDAS });
+    const r = L.pdAgregarLineas([], CARTA, [ln('helado', 1)], excl, PALABRAS);
+    expect(r.noEncontrados[0].motivo).toBe('excluido');
+    expect(r.noEncontrados[0].excluido.id).toBe('rompope'); // el ítem real, no el objeto mínimo de la palabra
+  });
+  it('pdBuscar: con `palabras` (opcional) devuelve {estado:\'excluido\'} cuando no está en la carta; sin ellas, ninguno', () => {
+    expect(L.pdBuscar(SOLO_VENDIBLE, 'una cerveza', '', PALABRAS)).toMatchObject({ estado: 'excluido', palabra: 'cerveza', sugerencias: [] });
+    expect(L.pdBuscar(SOLO_VENDIBLE, 'una cerveza')).toMatchObject({ estado: 'ninguno' });
+    expect(L.pdBuscar(SOLO_VENDIBLE, 'horchata', '', PALABRAS)).toMatchObject({ estado: 'unico' });
+    expect(L.pdBuscar([], 'helado', '', PALABRAS)).toMatchObject({ estado: 'excluido' });
+    expect(L.pdBuscar(SOLO_VENDIBLE, 'sushi', '', PALABRAS)).toMatchObject({ estado: 'ninguno' });
+  });
+  it('NEGANDO: con la carta que sí trae el item (el nombre contiene la palabra), el item se encuentra; no se toma por excluido', () => {
+    const carta = L.pdCarta([it_('h', 'Horchata con Ron', 20, 'bebidas')]);
+    expect(L.pdAgregarLineas([], carta, [ln('horchata con ron', 1)], [], PALABRAS).carrito).toHaveLength(1);
+  });
+  it('el texto de excluido por palabra no usa palabras prohibidas', () => {
+    expect(L.pdTextoExcluido(agregarPal('vino malbec').noEncontrados[0].excluido.nombre)).not.toMatch(PROHIBIDAS_REAL);
+  });
+});
+
+// REVISIÓN DEL PR #382 (punto 3 y L-3): la palabra excluida no se esquiva como NOTA o DETALLE de un producto que sí se vende.
+describe('palabras excluidas como nota o detalle de un producto activo: la línea se descarta como excluida (sin aviso)', () => {
+  // La lista REAL por omisión de Q'Taco (el archivo de datos del repositorio): lo que se prueba es lo que se despliega.
+  const PALABRAS_QTACO = ((JSON.parse(readFileSync(join(CARPETA, '../../../../../admin/scripts/datos/venta-minima/qtaco.json'), 'utf8')) as { configBase: { palabrasExcluidas: string } }).configBase.palabrasExcluidas);
+  const agregar = (lineas: ReturnType<typeof ln>[], palabras: unknown = PALABRAS_QTACO) => L.pdAgregarLineas([], CARTA, lineas, [], palabras);
+
+  it('los cuatro esquives del 03/10: «jamaica shot», «limonada con tequila», «gaseosa con ron» (en el detalle) y «paleta mango chamoy»', () => {
+    const carta = L.pdCarta([...CATALOGO, it_('limonada', 'Limonada', 14, 'bebidas'), it_('mango', 'Mango con Chamoy', 18, 'bebidas')], { areasExcluidas: EXCLUIDAS, moneda: 'BOB' });
+    for (const [lineas, palabra] of [
+      [[ln('jamaica shot', 1)], 'shot'], [[ln('limonada con tequila', 1)], 'tequila'],
+      [[ln('gaseosa con ron', 1)], 'ron'], [[ln('paleta mango chamoy', 1)], 'paleta'],
+      [[ln('limonada con un chorrito de vodka', 1)], 'vodka'], [[ln('jamaica con fernet', 1, 'unidad')], 'fernet'],
+    ] as [ReturnType<typeof ln>[], string][]) {
+      const r = L.pdAgregarLineas([], carta, lineas, [], PALABRAS_QTACO);
+      const dicho = JSON.stringify(lineas);
+      expect(r.carrito, dicho).toEqual([]);
+      expect(r.pendiente, dicho).toEqual([]);
+      expect(r.noEncontrados, dicho).toHaveLength(1);
+      expect(r.noEncontrados[0], dicho).toMatchObject({ motivo: 'excluido', sugerencias: [] });
+      expect(r.noEncontrados[0].excluido.palabra, dicho).toBe(palabra);
+      expect(L.pdTextoExcluido(L.pdNombreCorto(r.noEncontrados[0].excluido)), dicho).toMatch(/no está disponible para pedir por WhatsApp/);
+    }
+  });
+
+  it('NEGANDO: lo mismo con el producto y el detalle limpios entra al carrito, y sin la lista el esquive pasa (la lista es la barrera)', () => {
+    for (const lineas of [[ln('jamaica', 1)], [ln('gaseosa', 1, '', 'bien fría')], [ln('horchata', 1)], [ln('gaseosas', 2, '', 'sin hielo')]]) {
+      const r = agregar(lineas);
+      expect(r.noEncontrados, JSON.stringify(lineas)).toEqual([]);
+      expect(r.carrito, JSON.stringify(lineas)).toHaveLength(1);
+    }
+    expect(L.pdAgregarLineas([], CARTA, [ln('jamaica shot', 1)], [], '').carrito).toHaveLength(1);
+  });
+
+  it('una línea excluida no arrastra a las demás: lo que se vende entra y lo excluido se dice', () => {
+    const r = agregar([ln('jamaica', 2), ln('gaseosa con ron', 1), ln('nachos supremos', 1)]);
+    expect(r.carrito.map((l: { id: string }) => l.id)).toEqual(['jamaica', 'nachos']);
+    expect(r.noEncontrados.map((n: { motivo: string }) => n.motivo)).toEqual(['excluido']);
+  });
+
+  it('la lista por omisión de Q\'Taco trae las palabras de los 25 ítems inactivos (cócteles, cervezas y postres), por palabra completa', () => {
+    for (const p of ['vodka', 'gin', 'fernet', 'mojito', 'margarita', 'chop', 'cuba libre', 'champan', 'singani', 'paloma', 'pina colada', 'cubita', 'azulito', 'pils', 'hoppy', 'ipa', 'lemon drop', 'pispireta']) {
+      expect(L.pdPalabraExcluida(p, PALABRAS_QTACO, true), p).not.toBe(''); // como lo pedido (el nombre del producto)
+      expect(L.pdPalabraExcluida(`quiero un ${p}`, PALABRAS_QTACO), p).not.toBe(''); // y en contexto de bebida
+    }
+    // «piña colada» con tilde, y el plural de una cerveza.
+    expect(L.pdPalabraExcluida('una piña colada', PALABRAS_QTACO)).toBe('pina colada');
+    expect(L.pdPalabraExcluida('dos pils', PALABRAS_QTACO)).toBe('pils');
+    // Palabra completa: «gin» no dispara en «ginger» ni en «original», «ipa» en «tipa», «ron» en «coronavirus», «chop» en «choppy».
+    for (const limpio of ['ginger', 'original', 'tipa', 'coronavirus', 'choppy', 'paloma' + 'rosa']) expect(L.pdPalabraExcluida(limpio, PALABRAS_QTACO), limpio).toBe('');
+  });
+
+  // REVISIÓN DEL PR #382 (importante): los nombres propios que también son palabras de la lista NO rechazan pedidos legítimos.
+  it('NOMBRES PROPIOS: «para Paloma», «es para Margarita», «a nombre de Ron» o «Chop» como nota NO son bebidas; la bebida, en su contexto, sí', () => {
+    const carta = L.pdCarta([...CATALOGO, it_('limonada', 'Limonada', 14, 'bebidas')], { areasExcluidas: EXCLUIDAS, moneda: 'BOB' });
+    const agregarA = (lineas: ReturnType<typeof ln>[]) => L.pdAgregarLineas([], carta, lineas, [], PALABRAS_QTACO);
+    for (const nombre of ['Paloma', 'Margarita', 'Ron', 'Chop', 'Vino']) {
+      for (const lineas of [
+        [ln('una orden de tacos de birria para ' + nombre, 1, 'orden')], [ln('tacos de birria', 3, 'orden', 'para ' + nombre)],
+        [ln('tacos de birria', 3, 'orden', 'es para ' + nombre)], [ln('tacos de birria', 3, 'orden', 'a nombre de ' + nombre)],
+        [ln('tacos de birria', 3, 'orden', nombre)], [ln('nachos supremos', 1, '', 'pedido de ' + nombre)],
+      ]) {
+        const r = agregarA(lineas);
+        const dicho = JSON.stringify(lineas);
+        expect(r.noEncontrados, dicho).toEqual([]);
+        expect(r.notasQuitadas, dicho).toEqual([]);
+        expect(r.carrito.length + r.pendiente.length, dicho).toBe(1);
+      }
+      // y el nombre sigue siendo un nombre aunque se escriba sin mayúscula ni tilde
+      expect(L.pdPalabraExcluida('es para ' + nombre.toLowerCase(), PALABRAS_QTACO), nombre).toBe('');
+      expect(L.pdPalabraExcluida('a nombre de ' + nombre.toLowerCase(), PALABRAS_QTACO), nombre).toBe('');
+    }
+    // NEGANDO: la bebida con su contexto, o como lo pedido, sigue excluida.
+    for (const dicho of ['una margarita', 'con ron', 'dos paloma', 'una copa de vino', 'un vaso de ron', 'un chop', 'jamaica con ron']) {
+      expect(L.pdPalabraExcluida(dicho, PALABRAS_QTACO), dicho).not.toBe('');
+    }
+    for (const producto of ['margarita', 'paloma', 'ron', 'chop', 'vino tinto']) expect(L.pdPalabraExcluida(producto, PALABRAS_QTACO, true), producto).not.toBe('');
+  });
+
+  it('DETALLE con una palabra excluida: la línea se CONSERVA, se quita solo la nota y se dice cuál palabra («ron» no lo podemos incluir); el producto no se culpa', () => {
+    const r = L.pdAgregarLineas([], CARTA, [ln('gaseosa', 2, '', 'con ron y hielo'), ln('nachos supremos', 1, '', 'sin picante')], [], PALABRAS_QTACO);
+    expect(r.noEncontrados).toEqual([]);
+    expect(r.carrito.map((l: { id: string; detalle: string }) => [l.id, l.detalle])).toEqual([['gaseosas', ''], ['nachos', 'sin picante']]);
+    expect(r.notasQuitadas).toEqual([{ producto: 'gaseosa', palabra: 'ron' }]);
+    // NEGANDO: si la línea NO entra (no existe), no se dice nada de la nota; y sin la lista la nota viaja.
+    expect(L.pdAgregarLineas([], CARTA, [ln('plato inexistente', 1, '', 'con ron')], [], PALABRAS_QTACO).notasQuitadas).toEqual([]);
+    expect(L.pdAgregarLineas([], CARTA, [ln('gaseosa', 1, '', 'con ron')], [], '').carrito[0].detalle).toBe('con ron');
+  });
+
+  it('LISTA AMPLIADA y forma COMPACTA: ginebra, whiskey, wiski, licor, sangría, caipirinha, aperol, daiquiri, heladito; «cubalibre» y «te quila»', () => {
+    for (const p of ['ginebra', 'whiskey', 'wiski', 'licor', 'sangria', 'caipirinha', 'aperol', 'daiquiri', 'heladito']) {
+      expect(L.pdPalabraExcluida(`quiero un ${p}`, PALABRAS_QTACO), p).toBe(p);
+    }
+    expect(L.pdPalabraExcluida('una sangría', PALABRAS_QTACO)).toBe('sangria');
+    for (const [dicho, palabra] of [['un cubalibre', 'cuba libre'], ['dos cuba-libre', 'cuba libre'], ['un te quila', 'tequila'], ['una pina colada', 'pina colada'], ['unas pinacolada', 'pina colada'], ['un lemondrop', 'lemon drop'], ['un cerve za', 'cerveza']] as const) {
+      expect(L.pdPalabraExcluida(dicho, PALABRAS_QTACO), dicho).toBe(palabra);
+    }
+    // NEGANDO: la forma compacta no une restos de palabras cortas ni de platos reales.
+    for (const limpio of ['me gusta la sal', 'es de la casa', 'para llevar la orden', 'te quiero mucho', 'cuba libre de gluten']) {
+      if (limpio === 'cuba libre de gluten') continue; // la bebida con todas sus letras sí es la bebida
+      expect(L.pdPalabraExcluida(limpio, PALABRAS_QTACO), limpio).toBe('');
+    }
+  });
+
+  // Los 53 ítems ACTIVOS de la carta real de Q'Taco (solo los nombres; el precio no importa): ninguno se bloquea, ni solo ni con una nota.
+  const ACTIVOS_QTACO = [
+    'Nachos Supremos', 'Fiesta Mexicana', 'Chicharrón Norteño', 'Queso Fundido', 'Ceviche Yucateco', "Q' Birria", 'Tacos de Birria (orden de 3)',
+    'Taco de Birria (unidad)', 'Quesabirrias (orden de 3)', 'Quesabirria (unidad)', 'Birriamen', 'Pozole', 'Caldo Tlalpeño', 'Sopa Azteca',
+    'Enchiladas Suizas', 'Enchiladas Verdes', 'Enchiladas Rojas', 'Chilaquiles con Carne', 'Chilaquiles con Huevo', 'Flautas',
+    'Arrachera a la Tampiqueña', 'Plato Huasteco', 'Proteína Extra', 'Taco (unidad)', 'Orden de 3 Tacos', 'Orden de 4 Tacos', 'Taco del Mar (unidad)',
+    'Orden de 3 Tacos del Mar', 'Burritos', 'Chili con Carne', 'Quesadilla (unidad)', 'Quesadilla (orden de 3)', 'Quesadilla con Verduras Salteadas (unidad)',
+    'Quesadillas con Verduras Salteadas (orden de 3)', 'Quesadilla con Champiñones (unidad)', 'Quesadillas con Champiñones (orden de 3)',
+    'Enchiladas con Queso Fundido', 'Burritos con Queso', 'Tacos de Verduras Salteadas (orden de 3)', 'Taco de Verduras Salteadas (unidad)',
+    'Mix de Ensaladas', 'Horchata', 'Jamaica', 'Tamarindo', 'Limonada', 'Mango con Chamoy', 'Jugo de Temporada', 'Gaseosas', 'Consomé de Pollo',
+    'Salchipapas', 'Tenders de Pollo', 'Mini Orden de Nachos', 'Dúo Quesadillas',
+  ];
+  it('SIN FALSOS POSITIVOS: ninguno de los 53 ítems activos de la carta real se bloquea (ni por su nombre, ni con notas comunes de cocina)', () => {
+    expect(ACTIVOS_QTACO).toHaveLength(53);
+    const carta = L.pdCarta(ACTIVOS_QTACO.map((n, i) => it_(`a${i}`, n, 10 + i, 'platos-fuertes')), { moneda: 'BOB' });
+    expect(carta).toHaveLength(53);
+    for (const nombre of ACTIVOS_QTACO) {
+      expect(L.pdPalabraExcluida(nombre, PALABRAS_QTACO), `el nombre «${nombre}»`).toBe('');
+      for (const detalle of ['', 'sin cebolla', 'con extra queso y salsa verde', 'bien picante', 'para llevar', 'sin hielo', 'para Paloma', 'es para Margarita', 'a nombre de Ron']) {
+        const r = L.pdAgregarLineas([], carta, [ln(nombre, 1, '', detalle)], [], PALABRAS_QTACO);
+        const quien = `«${nombre}» con «${detalle}»`;
+        expect(r.noEncontrados.filter((n: { motivo: string }) => n.motivo === 'excluido'), quien).toEqual([]);
+      }
+    }
   });
 });

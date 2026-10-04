@@ -28,6 +28,30 @@
       "notes": "SOLO en la variante del receptor de clientes (camino B). Recibe la entrega firmada del receptor (cabeceras X-AAB1-Delivery-Id, X-AAB1-Timestamp, X-AAB1-Signature y X-AAB1-Attempt). La ruta es una URL de capacidad: va como marcador y la reemplaza preparar-import.sh. El Code de n8n no tiene crypto: la firma la verifica el receptor, por la red interna, en el nodo siguiente."
     },
     {
+      "id": "carrito-catalogo",
+      "name": "Carrito del catálogo",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1560,
+        560
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "REEMPLAZAR_RUTA_CARRITO_QTACO",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "notes": "SOLO en la variante del receptor (la de prueba y la del Demo A no la llevan: el Demo A no tiene flujo `venta`). Recibe el carrito que el cliente confirmó en la página del catálogo web, con la misma forma que el del Demo B. Autentica el propio nodo con la credencial de cabecera de la ingesta (n8n contesta 403 sin ella); cuelga directo de `Carga de entrada`, que valida el carrito SOLO si este nodo corrió. La ruta es una URL de capacidad: va como marcador en `path` y la reemplaza preparar-import.sh (el nombre del marcador NO se repite en este texto: el script lo reemplazaría también aquí). Es la única entrada de producción además de la del receptor."
+    },
+    {
       "id": "verificar-firma",
       "name": "Verificar firma con el receptor",
       "type": "n8n-nodes-base.httpRequest",
@@ -273,7 +297,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || '') }) }}",
+        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || ''), catalogoCompleto: true }) }}",
         "options": {
           "timeout": 4000,
           "response": {
@@ -291,7 +315,7 @@
         }
       },
       "onError": "continueRegularOutput",
-      "notes": "Carta, campañas, cobro real, atención y datos del negocio. Con el panel caído, «Config del negocio» usa el respaldo: sin carta no se toma ningún pedido, se deriva."
+      "notes": "Carta, campañas, cobro real, atención y datos del negocio. `catalogoCompleto: true` pide además el catálogo completo y, si el comercio tiene el catálogo web encendido, el enlace de ESTA conversación en `catalogoWeb.enlace` (sin un nodo aparte). Con el panel caído, «Config del negocio» usa el respaldo: sin carta no se toma ningún pedido, se deriva."
     },
     {
       "id": "config-negocio",
@@ -344,7 +368,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true }}",
+              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true && $('Interpretar entrada').first().json.reportarEntrante !== false }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -422,7 +446,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; const r = $json || {}; const cortado = !!(r.servicio && r.servicio.estado === 'cortado'); return c.estadoComercio === 'operativo' && !cortado; })() }}",
+              "leftValue": "={{ (() => { const k = $('Interpretar entrada').first().json; if (k.tipo === 'carrito' && !(k.carrito && k.carrito.ventanaAbierta === true)) return true; const c = $('Config del negocio').first().json; const r = $json || {}; const cortado = !!(r.servicio && r.servicio.estado === 'cortado'); return c.estadoComercio === 'operativo' && !cortado; })() }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -472,7 +496,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; const a = ($json && $json.atencion && typeof $json.atencion === 'object') ? $json.atencion.estado : c.atencionEstado; return !['operador', 'bloqueado'].includes(a); })() }}",
+              "leftValue": "={{ (() => { const k = $('Interpretar entrada').first().json; if (k.tipo === 'carrito' && !(k.carrito && k.carrito.ventanaAbierta === true)) return true; const c = $('Config del negocio').first().json; const a = ($json && $json.atencion && typeof $json.atencion === 'object') ? $json.atencion.estado : c.atencionEstado; return !['operador', 'bloqueado'].includes(a); })() }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -1303,7 +1327,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ !!($json && $json.error) }}",
+              "leftValue": "={{ !((((($json || {}).messages || [])[0]) || {}).id) }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -1316,7 +1340,7 @@
         },
         "options": {}
       },
-      "notes": "Solo mira un campo `error` explícito; sin él, no falló."
+      "notes": "R1 (entrega de lo prometido): un envío cuenta como hecho SOLO si Meta devolvió un `messages[0].id` no vacío. Un error, una respuesta vacía o un cuerpo sin id van al respaldo en texto; no se mira `$json.error`, que una respuesta rara de Meta no trae."
     },
     {
       "id": "enviar-respaldo",
@@ -1525,10 +1549,21 @@
         "language": "javaScript",
         "jsCode": "@@comun:nodos/resumen-del-turno.js"
       },
-      "notes": "Último nodo, y el único que corre UNA sola vez por turno: cuelga directo de «Armar mensajes» por debajo de todo el lienzo, así que con `executionOrder: v1` corre después de los envíos y del cierre. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
+      "notes": "R3 (último recurso): si un mensaje al cliente no salió y su respaldo en texto tampoco, este nodo LANZA un error (la ejecución queda en error, visible) y antes ajusta el estado del teléfono: SIN hecho externo (ningún aviso salió ni corrió el cierre) lo devuelve al de antes del turno conservando su ancla, así reconfirmar repite el mismo pedido; CON un aviso ya enviado o un cierre ya registrado NO lo revierte (reconfirmar armaría un segundo pedido) y, si la conversación corrió y no se espera un comprobante, lo deja en el paso `menu`. No deshace el pedido guardado ni el aviso enviado: el error es la señal para que una persona le escriba al cliente. Último nodo, y el único que corre UNA sola vez por turno: cuelga directo de «Armar mensajes» por debajo de todo el lienzo, así que con `executionOrder: v1` corre después de los envíos y del cierre. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
     }
   ],
   "connections": {
+    "Carrito del catálogo": {
+      "main": [
+        [
+          {
+            "node": "Carga de entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Entrega del receptor": {
       "main": [
         [

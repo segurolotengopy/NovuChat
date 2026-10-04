@@ -1386,3 +1386,349 @@ describe('M1: el tope diario de avisos respeta el 0', () => {
     expect(L.avPlan('pedido', pedido(), CSV, CFG, sdCon(), AHORA).items.length).toBeGreaterThan(0);
   });
 });
+
+describe('notaPedido: la nota del cliente desde la página del catálogo llega al restaurante (completo y cocina)', () => {
+  const NOTA = 'sin cilantro, salsa aparte y tocar el timbre dos veces';
+  const cerrada = (datos: J) => L.avArmar('pedido', datos, CSV, CFG, sdCon(), AHORA);
+  const conVentana = (datos: J) => L.avArmar('pedido', datos, CSV, CFG, abierta(), AHORA);
+
+  it('con ventana abierta, el detalle de completo y de cocina trae «Nota del cliente» después de los ítems y antes del total', () => {
+    const items = conVentana(pedido({ notaPedido: NOTA }));
+    for (const tel of [ANDRES, SILVANA]) {
+      const c = cuerpo(items, tel);
+      expect(c, tel).toContain(`Nota del cliente: «${NOTA}»`);
+      expect(c.indexOf('Nota del cliente'), tel).toBeLessThan(c.indexOf('Total de la comida'));
+      expect(c.indexOf('Nota del cliente'), tel).toBeGreaterThan(c.indexOf('Queso fundido con chorizo'));
+    }
+  });
+  it('con ventana cerrada, la variable 3 de la plantilla la lleva en los dos roles, y los ítems siguen', () => {
+    const items = cerrada(pedido({ notaPedido: NOTA }));
+    const completo = params(plantillaDe(items, ANDRES))[2]!;
+    const cocina = params(plantillaDe(items, SILVANA))[2]!;
+    expect(completo).toContain(`nota: ${NOTA}`);
+    expect(cocina).toContain(`nota: ${NOTA}`);
+    for (const v of [completo, cocina]) { expect(v.length).toBeLessThanOrEqual(500); expect(v).toContain(ITEMS_PEDIDO); }
+  });
+  it('NEGANDO: sin nota (ausente, vacía, solo espacios o que no es texto) no sale ninguna línea ni segmento', () => {
+    for (const n of [undefined, null, '', '   ', '\n\t', 5, {}, []]) {
+      const sin = conVentana(pedido({ notaPedido: n }));
+      const sinVar = cerrada(pedido({ notaPedido: n }));
+      for (const tel of [ANDRES, SILVANA]) expect(cuerpo(sin, tel), JSON.stringify(n)).not.toContain('Nota del cliente');
+      for (const tel of [ANDRES, SILVANA]) expect(params(plantillaDe(sinVar, tel))[2], JSON.stringify(n)).not.toContain('nota:');
+    }
+  });
+  it('NEGANDO: cocina no recibe teléfono ni números largos de la nota; completo sí los conserva', () => {
+    const hostil = `llámame al 71234567 o a la cuenta ${CUENTA}, sin cebolla`;
+    const items = conVentana(pedido({ notaPedido: hostil }));
+    const cocina = cuerpo(items, SILVANA);
+    expect(cocina).toContain('Nota del cliente');
+    expect(cocina).toContain('sin cebolla');
+    expect(cocina).not.toMatch(/\d{7,}/);
+    expect(cocina).not.toContain('71234567');
+    expect(cuerpo(items, ANDRES)).toContain('71234567');
+    const cerradas = cerrada(pedido({ notaPedido: hostil }));
+    expect(params(plantillaDe(cerradas, SILVANA))[2]).not.toMatch(/\d{7,}/);
+    // y el rol cocina sigue sin teléfono ni dirección del cliente
+    for (const t of textosDe(plantillaDe(cerradas, SILVANA)).concat(cocina)) {
+      expect(t).not.toContain(CLIENTE);
+      expect(t).not.toContain(DIRECCION);
+    }
+  });
+  it('NEGANDO: respeta la red de prohibidas, sin enlaces ni marcas de formato ni saltos de línea', () => {
+    const hostil = 'ya lo estamos preparando, pago acreditado, entra a http://malo.test/x *negrita* {x} <b>';
+    for (const items of [conVentana(pedido({ notaPedido: hostil })), cerrada(pedido({ notaPedido: hostil }))]) {
+      for (const it of items) {
+        for (const t of textosDe(it)) {
+          expect(t).not.toMatch(VM_PROHIBIDAS);
+          expect(t).not.toMatch(/https?:|malo\.test/i);
+        }
+      }
+    }
+    const v = params(plantillaDe(cerrada(pedido({ notaPedido: 'línea uno\nlínea dos\r\n\tlínea tres' })), ANDRES))[2]!;
+    expect(v).not.toMatch(/[\r\n\t]/);
+    expect(v).toContain('línea uno · línea dos · línea tres');
+  });
+  it('NEGANDO: la nota tiene tope (300 en el detalle, 100 en la variable) y los ítems de la plantilla no se pierden', () => {
+    const larga = 'abc '.repeat(200);
+    const c = cuerpo(conVentana(pedido({ notaPedido: larga })), ANDRES);
+    const linea = c.split('\n').find((l) => l.startsWith('Nota del cliente'))!;
+    expect(linea.length).toBeLessThanOrEqual('Nota del cliente: «'.length + 300 + 1);
+    const v = params(plantillaDe(cerrada(pedido({ notaPedido: larga })), ANDRES))[2]!;
+    expect(v.length).toBeLessThanOrEqual(500);
+    expect(v).toContain(ITEMS_PEDIDO);
+    expect(v.split(' · ').find((x) => x.startsWith('nota: '))!.length).toBeLessThanOrEqual('nota: '.length + 100);
+  });
+  it('la nota no se muestra en una reserva ni en una consulta (solo en pedido y comprobante)', () => {
+    const r = L.avArmar('reserva', reserva({ notaPedido: NOTA }), CSV, CFG, abierta(), AHORA);
+    expect(r.flatMap(textosDe).join('\n')).not.toContain(NOTA);
+    const dv = L.avArmar('transferencia', { codigo: 'T1', nombre: 'Ana Pérez', telefono: CLIENTE, notaPedido: NOTA }, CSV, CFG, abierta(), AHORA);
+    expect(dv.flatMap(textosDe).join('\n')).not.toContain(NOTA);
+  });
+  it('un comprobante con nota también la lleva', () => {
+    const items = L.avArmar('comprobante', pedido({ notaPedido: NOTA }), CSV, CFG, abierta(), AHORA);
+    expect(cuerpo(items, SILVANA)).toContain(`Nota del cliente: «${NOTA}»`);
+  });
+});
+
+// ================================================================================================
+// META RECHAZA una variable de plantilla con saltos de línea, tabuladores o 4 o más espacios seguidos (error 132018), y las
+// variables de TEXTO LIBRE del cliente (nota del pedido, zona, celebración, requerimiento, motivo de la consulta, nombre,
+// dirección, referencia, ítems) son justo donde llegan. Se prueba NEGANDO con cada separador que `\s` conoce y con topes.
+// ================================================================================================
+describe('Meta: TODA variable de plantilla sale en una línea, sin tabuladores ni 4+ espacios seguidos, con tope y no vacía', () => {
+  // Cada separador de línea o de espacio que un cliente puede pegar: LF, CR, CRLF, TAB, VT, FF, NEL, LS, PS, NBSP, espacio
+  // ideográfico, espacio de ancho em, espacio de ancho cero (que NFKC no toca).
+  const SEPARADORES = ['\n', '\r', '\r\n', '\t', '\v', '\f', '\u0085', '\u2028', '\u2029', '\u00a0', '\u3000', '\u2003', '\u200b'];
+  const MALO = (palabra: string): string => `${palabra}${SEPARADORES.join('')}uno    dos\t\t\ttres     cuatro\n\n\n\ncinco${' '.repeat(40)}${palabra}`;
+  const LARGO = 'palabra '.repeat(400);
+  const FORMA = { ...CFG, plantillaReserva: 'pedido_registrado', plantillaDerivacion: 'pedido_registrado', formaPlantillaReserva: 'pedido', formaPlantillaDerivacion: 'pedido' };
+  const SOLO_UNA_LINEA = /[\r\n\t\v\f\u0085\u2028\u2029]/;
+  const CUATRO_ESPACIOS = /\s{4,}/;
+
+  const hostiles = (): [string, string, J][] => {
+    const pedidoHostil = pedido({
+      codigo: MALO('K7'), nombre: MALO('Ana'), direccion: MALO('Calle'), referencia: MALO('frente'), notaPedido: MALO('nota'),
+      coordenadas: MALO('-16.5'), motivo: MALO('motivo'),
+      lineas: [{ cantidad: 2, nombre: MALO('Taco'), detalle: MALO('sin') }, { cantidad: 1, nombre: LARGO, detalle: LARGO }],
+    });
+    const reservaHostil = reserva({
+      codigo: MALO('R4'), nombre: MALO('Ana'), reserva: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: MALO('terraza'), nombre: MALO('Ana'), celebracion: MALO('fiesta'), requerimiento: MALO('silla') },
+    });
+    const consulta = { nombre: MALO('Ana'), telefono: CLIENTE, motivo: MALO('consulta') + LARGO, codigo: MALO('C1') };
+    return [['pedido', 'pedido', pedidoHostil], ['comprobante', 'pedido', pedidoHostil], ['reserva', 'cita', reservaHostil], ['reserva', 'pedido', reservaHostil],
+      ['transferencia', 'cita', consulta], ['transferencia', 'pedido', consulta]];
+  };
+
+  it('pedido, comprobante, reserva y derivación (formas `cita` y `pedido`), con ventana cerrada, para los dos roles: ninguna variable rompe la regla', () => {
+    let vistas = 0;
+    for (const [tipo, forma, datos] of hostiles()) {
+      const cfg = forma === 'pedido' ? FORMA : CFG;
+      const items = L.avArmar(tipo, datos, CSV, cfg, sdCon(), AHORA).filter((i: J) => i.clase === 'plantilla');
+      expect(items.length, `${tipo}/${forma}`).toBeGreaterThanOrEqual(2); // completo y cocina
+      for (const it of items) {
+        const v = params(it);
+        expect(v, `${tipo}/${forma}`).toHaveLength(4);
+        v.forEach((t, k) => {
+          const donde = `${tipo}/${forma} para ${it.para} variable ${k + 1}: ${JSON.stringify(t).slice(0, 120)}`;
+          expect(t.trim(), donde).not.toBe('');
+          expect(t, donde).not.toMatch(SOLO_UNA_LINEA);
+          expect(t, donde).not.toMatch(CUATRO_ESPACIOS);
+          expect(t, donde).not.toMatch(/\u200b/);
+          expect(Array.from(t).length, donde).toBeLessThanOrEqual(500);
+          expect(t, donde).not.toMatch(VM_PROHIBIDAS);
+          vistas++;
+        });
+      }
+    }
+    expect(vistas).toBeGreaterThan(40); // la prueba no es vacía: 6 casos x 2 roles x 4 variables
+  });
+
+  it('los topes de cada variable (el nombre del cliente, el código y el motivo largos no desbordan la variable)', () => {
+    for (const [tipo, forma, datos] of hostiles()) {
+      const cfg = forma === 'pedido' ? FORMA : CFG;
+      for (const it of L.avArmar(tipo, datos, CSV, cfg, sdCon(), AHORA).filter((i: J) => i.clase === 'plantilla')) {
+        const v = params(it);
+        const tope = tipo === 'pedido' || tipo === 'comprobante' ? [60, 30, 500, 80] : forma === 'pedido' ? [200, 30, 500, 80] : [40, 70, 200, 20];
+        v.forEach((t, k) => expect(Array.from(t).length, `${tipo}/${forma} ${it.para} variable ${k + 1}`).toBeLessThanOrEqual(tope[k]!));
+      }
+    }
+  });
+
+  it('avParametro por separador: cada uno, solo y repetido, deja UNA línea sin 4+ espacios', () => {
+    for (const sep of SEPARADORES) {
+      for (const n of [1, 3, 4, 5, 30]) {
+        const r = L.avParametro(`a${sep.repeat(n)}b`);
+        expect(r, JSON.stringify(sep) + n).not.toMatch(SOLO_UNA_LINEA);
+        expect(r, JSON.stringify(sep) + n).not.toMatch(CUATRO_ESPACIOS);
+        expect(r.startsWith('a') && r.endsWith('b'), JSON.stringify(sep) + n).toBe(true);
+      }
+    }
+    // Y el caso exacto de la regla: 4 espacios seguidos (uno menos que lo que cubría la prueba vieja de «5+»).
+    expect(L.avParametro('a    b')).toBe('a b');
+    expect(L.avParametro('a   b')).toBe('a b');
+    expect(L.avParametro('a \t \n  b')).not.toMatch(CUATRO_ESPACIOS);
+  });
+});
+
+// =====================================================================================================================
+// COBRO SIMULADO (piloto de Q'Taco, 03/10/2026): un pedido de PRUEBA se rotula PRUEBA y SIMULADO en cada pieza del aviso,
+// no habla del banco y no lleva la imagen de un comprobante. Cada caso va con su opuesto (el real no se rotula así).
+// =====================================================================================================================
+describe('resultado «simulado»: el aviso al restaurante dice PRUEBA y SIMULADO', () => {
+  const CIERRE_SIM = 'Pedido de PRUEBA: el cobro fue SIMULADO y no se movió dinero.';
+  const BANCO = 'Revisen el pago en su banco antes de despachar.';
+  const ACREDITACION = /pago (acreditado|verificado)|recibimos tu pago/i;
+  const simulado = (extra: J = {}): J => pedido({ resultado: 'simulado', ...extra });
+  const IGUALES = ['pedido', 'comprobante'] as const;
+
+  it('la variable 1 (items) empieza en «PRUEBA · » y respeta su tope de 60; la del real no', () => {
+    for (const tipo of IGUALES) {
+      const it = plantillaDe(L.avArmar(tipo, simulado(), CSV, CFG, sdCon(), AHORA), ANDRES);
+      expect(params(it)[0]).toBe('PRUEBA · N.º K7P2 de 3 ítems');
+      expect(Array.from(params(it)[0]!).length).toBeLessThanOrEqual(60);
+      const real = plantillaDe(L.avArmar(tipo, pedido(), CSV, CFG, sdCon(), AHORA), ANDRES);
+      expect(params(real)[0]).not.toMatch(/PRUEBA|SIMULAD/);
+    }
+  });
+
+  it('la variable 2 (total) termina en «(SIMULADO)» y cabe en 30; la del real no lo lleva', () => {
+    const it = plantillaDe(L.avArmar('comprobante', simulado(), CSV, CFG, sdCon(), AHORA), SILVANA);
+    expect(params(it)[1]).toBe('Bs 110 (SIMULADO)');
+    expect(params(it)[1]!.endsWith('(SIMULADO)')).toBe(true);
+    expect(Array.from(params(it)[1]!).length).toBeLessThanOrEqual(30);
+    const grande = plantillaDe(L.avArmar('comprobante', simulado({ total: 123456.5 }), CSV, CFG, sdCon(), AHORA), SILVANA);
+    expect(Array.from(params(grande)[1]!).length).toBeLessThanOrEqual(30);
+    expect(grande.payload.template.components[0].parameters[1].text).toContain('(SIMULADO)');
+    expect(params(plantillaDe(L.avArmar('comprobante', pedido(), CSV, CFG, sdCon(), AHORA), ANDRES))[1]).toBe('Bs 110');
+  });
+
+  it('la variable 4 (cotejo) dice PRUEBA y SIMULADO, y no se parece a ningún otro estado', () => {
+    const c = params(plantillaDe(L.avArmar('comprobante', simulado(), CSV, CFG, sdCon(), AHORA), ANDRES))[3]!;
+    expect(c).toContain('PRUEBA');
+    expect(c).toContain('SIMULADO');
+    expect(c).not.toMatch(/coinciden|banco/);
+    for (const r of ['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr']) {
+      const otro = params(plantillaDe(L.avArmar('comprobante', pedido({ resultado: r }), CSV, CFG, sdCon(), AHORA), ANDRES))[3]!;
+      expect(otro, r).not.toMatch(/SIMULAD|PRUEBA/);
+    }
+  });
+
+  it('el detalle empieza en «PEDIDO DE PRUEBA», termina en el cierre simulado y NUNCA manda revisar el banco (ambos roles)', () => {
+    for (const tipo of IGUALES) for (const rol of [ANDRES, SILVANA]) {
+      const c = cuerpo(L.avArmar(tipo, simulado(), CSV, CFG, abierta(), AHORA), rol);
+      expect(c.startsWith('PEDIDO DE PRUEBA N.º K7P2 (cobro SIMULADO: no se movió dinero)'), `${tipo}/${rol}`).toBe(true);
+      expect(c.endsWith(CIERRE_SIM)).toBe(true);
+      expect(c).not.toContain(BANCO);
+      expect(c).not.toContain('Revisen el pago');
+      expect(c).not.toMatch(ACREDITACION);
+    }
+    // El opuesto: el real conserva su primera línea y su cierre, sin la palabra PRUEBA.
+    const real = cuerpo(L.avArmar('comprobante', pedido(), CSV, CFG, abierta(), AHORA), ANDRES);
+    expect(real.startsWith('Pedido N.º K7P2 (comprobante: datos coinciden)')).toBe(true);
+    expect(real.endsWith(BANCO)).toBe(true);
+    expect(real).not.toMatch(/PRUEBA|SIMULAD/);
+  });
+
+  it('el texto completo de un pedido simulado, tal cual sale (el nombre del cliente y las diferencias del real no cambian)', () => {
+    const c = cuerpo(L.avArmar('comprobante', simulado(), CSV, CFG, abierta(), AHORA), ANDRES);
+    expect(c).toBe([
+      'PEDIDO DE PRUEBA N.º K7P2 (cobro SIMULADO: no se movió dinero)',
+      `Cliente: Ana Pérez · tel ${CLIENTE}`,
+      `Entrega: delivery a ${DIRECCION} (${REFERENCIA})`,
+      'Ítems:',
+      '• 2 × Orden de 3 tacos de birria (sin cebolla)',
+      '• 1 × Queso fundido con chorizo',
+      'Total de la comida: Bs 110',
+      CIERRE_SIM,
+    ].join('\n'));
+  });
+
+  it('NO sale la imagen del comprobante aunque `mediaId` traiga un id válido; con el real y ese mismo id sí sale', () => {
+    for (const tipo of IGUALES) {
+      const items = L.avArmar(tipo, simulado({ mediaId: '99887766' }), CSV, CFG, abierta(), AHORA);
+      expect(items.some((i: J) => i.clase === 'imagen'), tipo).toBe(false);
+      expect(items.some((i: J) => i.payload.type === 'image'), tipo).toBe(false);
+    }
+    const real = L.avArmar('comprobante', pedido({ mediaId: '99887766' }), CSV, CFG, abierta(), AHORA);
+    expect(real.filter((i: J) => i.clase === 'imagen')).toHaveLength(1);
+  });
+
+  it('`simulado` es un resultado aceptado: no cae al valor por defecto del tipo, y no es «sin_qr» ni «sin_cotejo»', () => {
+    for (const tipo of IGUALES) {
+      const r = L.avPlan(tipo, simulado(), CSV, CFG, sdCon(), AHORA);
+      expect(r.errores).toEqual([]);
+      const v = params(plantillaDe(r.items, ANDRES));
+      expect(v[3], tipo).not.toBe('sin QR: se cobra al entregar o al recoger');
+      expect(v[3], tipo).not.toBe('comprobante sin cotejar');
+    }
+    // Un resultado cercano pero inválido no es simulado.
+    for (const raro of ['Simulado', 'simulada', 'SIMULADO', ' simulado', 'simulado ']) {
+      const v = params(plantillaDe(L.avArmar('comprobante', pedido({ resultado: raro }), CSV, CFG, sdCon(), AHORA), ANDRES));
+      expect(v[0], JSON.stringify(raro)).not.toMatch(/PRUEBA/);
+    }
+  });
+
+  it('recojo y delivery, ventana abierta y cerrada, hostiles incluidos: una línea por variable, con su tope, sin la red', () => {
+    const SOLO_UNA_LINEA = /[\r\n\t\v\f\u0085\u2028\u2029]/;
+    const hostil = simulado({
+      codigo: 'K7\n\n\n\n' + 'x'.repeat(80), nombre: 'Ana\u2028Pérez', modalidad: 'recojo',
+      lineas: Array.from({ length: 20 }, (_, i) => ({ cantidad: 2, nombre: 'Taco ' + i + '\t\tcon   salsa'.repeat(10), detalle: 'sin\ncebolla' })),
+    });
+    for (const modalidad of ['delivery', 'recojo']) for (const sd of [sdCon(), abierta()]) for (const tipo of IGUALES) {
+      const items = L.avArmar(tipo, { ...hostil, modalidad }, CSV, CFG, sd, AHORA);
+      const plantillas = items.filter((i: J) => i.clase === 'plantilla');
+      expect(plantillas.length).toBeGreaterThanOrEqual(2);
+      for (const it of plantillas) {
+        const v = params(it);
+        expect(v).toHaveLength(4);
+        const topes = [60, 30, 500, 80];
+        v.forEach((t, k) => {
+          expect(t.trim(), `variable ${k + 1}`).not.toBe('');
+          expect(t, `variable ${k + 1}`).not.toMatch(SOLO_UNA_LINEA);
+          expect(t, `variable ${k + 1}`).not.toMatch(/\s{4,}/);
+          expect(Array.from(t).length, `variable ${k + 1}`).toBeLessThanOrEqual(topes[k]!);
+        });
+        // Aun con códigos largos, lo que identifica la prueba sobrevive al tope.
+        expect(v[0]).toMatch(/^PRUEBA · /);
+        expect(v[3]).toContain('SIMULADO');
+      }
+    }
+  });
+
+  it('ningún texto del aviso simulado coincide con la red ni acredita un pago', () => {
+    for (const tipo of IGUALES) for (const sd of [sdCon(), abierta()]) for (const modalidad of ['delivery', 'recojo']) {
+      for (const it of L.avArmar(tipo, simulado({ modalidad }), CSV, CFG, sd, AHORA)) {
+        for (const t of textosDe(it)) {
+          expect(t).not.toMatch(VM_PROHIBIDAS);
+          expect(t).not.toMatch(ACREDITACION);
+          expect(t).not.toMatch(/Revisen el pago/);
+        }
+      }
+    }
+  });
+
+  it('un aviso simulado cuenta igual que uno real: mismos ítems por destinatario, salvo la imagen del comprobante', () => {
+    const real = L.avArmar('comprobante', pedido({ mediaId: '123' }), CSV, CFG, abierta(), AHORA);
+    const sim = L.avArmar('comprobante', simulado({ mediaId: '123' }), CSV, CFG, abierta(), AHORA);
+    expect(real.length - sim.length).toBe(1);
+    expect(sim.map((i: J) => i.clase).sort()).toEqual(['detalle', 'detalle', 'plantilla', 'plantilla']);
+  });
+});
+
+// ================================================================================================
+// Una derivación `comprobante: true` (la foto de un comprobante que no se pudo revisar por el cambio de modo de cobro) no se presenta como una consulta
+// ================================================================================================
+describe('transferencia con `comprobante: true`: el restaurante lee que es un comprobante sin revisar, con el código del pedido', () => {
+  const FORMA_P = { ...CFG, plantillaReserva: 'pedido_registrado', plantillaDerivacion: 'pedido_registrado', formaPlantillaReserva: 'pedido', formaPlantillaDerivacion: 'pedido' };
+  const MOTIVO = 'comprobante enviado por el cliente (pedido de PRUEBA #K7P2); cambió el modo de cobro y no se revisó';
+  const datos = (extra: J = {}): J => ({ nombre: 'Ana Pérez', telefono: CLIENTE, codigo: 'K7P2', comprobante: true, motivo: MOTIVO, ...extra });
+
+  it('plantilla de forma `pedido`: «COMPROBANTE K7P2: …» y no «el cliente pide hablar con una persona»', () => {
+    const items = L.avArmar('transferencia', datos(), CSV, FORMA_P, sdCon(), AHORA);
+    expect(items.length).toBeGreaterThanOrEqual(2);
+    for (const it of items.filter((i: J) => i.clase === 'plantilla')) {
+      const v = params(it);
+      expect(v[0]).toMatch(/^COMPROBANTE K7P2: comprobante enviado por el cliente/);
+      expect(v[2]).toContain('no se pudo revisar');
+      expect(v.join(' ')).not.toMatch(/pide hablar con una persona|CONSULTA/);
+      expect(v.join(' ')).not.toMatch(VM_PROHIBIDAS);
+    }
+    // NEGANDO: sin la marca sigue siendo la consulta de siempre.
+    const consulta = L.avArmar('transferencia', datos({ comprobante: undefined, motivo: 'quiero hablar' }), CSV, FORMA_P, sdCon(), AHORA).filter((i: J) => i.clase === 'plantilla');
+    expect(params(consulta[0]!)[0]).toMatch(/^CONSULTA K7P2/);
+    expect(params(consulta[0]!)[2]).toContain('pide hablar con una persona');
+  });
+
+  it('forma `cita` y detalle con la ventana abierta: dicen «Comprobante de cliente» y llevan el código del pedido', () => {
+    const cita = L.avArmar('transferencia', datos(), CSV, CFG, sdCon(), AHORA).filter((i: J) => i.clase === 'plantilla');
+    expect(params(cita[0]!)[2]).toMatch(/^Comprobante de cliente \(no se pudo revisar\)/);
+    expect(params(cita[0]!)[3]).toBe('K7P2');
+    const detalle = L.avArmar('transferencia', datos(), CSV, CFG, abierta(), AHORA).filter((i: J) => i.clase === 'detalle');
+    expect(detalle.length).toBeGreaterThan(0);
+    for (const d of detalle) {
+      expect(d.payload.text.body).toContain('Comprobante de un cliente (no se pudo revisar: cambió el modo de cobro) N.º K7P2');
+      expect(d.payload.text.body).not.toContain('Consulta de un cliente');
+    }
+  });
+});
+
