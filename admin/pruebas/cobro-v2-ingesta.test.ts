@@ -227,6 +227,20 @@ describe('regla 2: qr_enviado', () => {
   });
 });
 
+describe('regla 2: una solicitud nueva posterior no arrastra los restos', () => {
+  it('NIEGA: una solicitud horarios posterior a un cobro de regla 2 no conserva reglaCobro/venceEn/prorrogaHasta/subidas/comprobantes', async () => {
+    const tel = '59170500001';
+    await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_h', monto: 20, reglaCobro: 2, idMeta: 'wamid.H1' });
+    // El cobro termina hace más de 24 h: una solicitud horarios nueva es posible.
+    await db.doc(`tenants/${T}/conversaciones/wa_${tel}`).update({
+      'solicitud.etapa': 'cancelada', 'solicitud.desde': Timestamp.fromMillis(Date.now() - 30 * 3_600_000) });
+    expect((await reportar({ telefono: tel, evento: 'horarios_ofrecidos' })).codigo).toBe(200);
+    const s = (await solicitud(tel))!;
+    expect(s['etapa']).toBe('horarios');
+    for (const c of CAMPOS_REGLA_2) expect(s[c], c).toBeNull();
+  });
+});
+
 describe('regla 2: cobro_cancelado y anulacion_avisada', () => {
   it('cobro_cancelado cancela el cobro abierto y cuenta cobrosCancelados', async () => {
     const tel = '59170300001';

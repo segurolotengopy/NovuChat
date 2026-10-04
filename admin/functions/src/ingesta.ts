@@ -411,11 +411,16 @@ export function solicitudTras(
   }
 
   if (evento === 'horarios_ofrecidos') {
-    if (!p || etapaPrevia === '') return solicitudNueva('horarios', ahora);
+    // Una solicitud NUEVA sobre los restos de un cobro de regla 2 los anula
+    // (`merge` los conservaría): si no, `reglaCobro`/`venceEn` sobrevivirían.
+    const nueva = (): Solicitud => (p as Record<string, unknown> | null)?.['reglaCobro'] === 2
+      ? { ...solicitudNueva('horarios', ahora), ...CAMPOS_REGLA_2_EN_NULO } as Solicitud
+      : solicitudNueva('horarios', ahora);
+    if (!p || etapaPrevia === '') return nueva();
     if (ETAPAS_PENDIENTES.has(etapaPrevia)) return null;
     const desdeMs = milisegundosDe(p.desde);
     const cerradaHaceMas24h = desdeMs === null || ahoraMs - desdeMs >= MS_VENTANA_ATENCION;
-    return cerradaHaceMas24h ? solicitudNueva('horarios', ahora) : null;
+    return cerradaHaceMas24h ? nueva() : null;
   }
 
   // CANCELÓ UNA CITA PAGADA: el adelanto queda a su favor, si hubo anticipación.
