@@ -21,7 +21,7 @@
     "planillaProspectosHoja": "REEMPLAZAR_PLANILLA_PROSPECTOS_HOJA",
     "crmUrl": "",
     "prefijosPermitidos": "591",
-    "nivelEmojis": "pocos",
+    "nivelEmojis": "muchos",
     "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
     "limiteInteractivo": 1024
   },
@@ -30,30 +30,35 @@
       "nombre": "Silvana"
     },
     "rubros": {
-      "salud-belleza": {
-        "dolor": "En salones y consultorios, la gente olvida su turno y ese hueco ya no se recupera.",
-        "pregunta": "¿Pierdes mucho tiempo agendando y recordando citas a mano?",
-        "impacto": ""
+      "salud-y-belleza": {
+        "dolor": "¡Excelente! 💅 En los salones y consultorios, la gente olvida su turno y ese hueco ya no se recupera.",
+        "pregunta": "Cuéntame, ¿actualmente pierdes mucho tiempo agendando y recordando citas a mano?",
+        "impacto": "Nuestra IA responde al instante y agenda sola, incluso cuando estás atendiendo.",
+        "cierre": "¿Qué te parece si Silvana te cuenta cómo armaríamos esto para tu negocio? 👇"
       },
       "gastronomia": {
-        "dolor": "En hora pico, si no respondes rápido, el cliente le compra al de al lado.",
-        "pregunta": "¿Se te escapan pedidos los fines de semana o de noche?",
-        "impacto": ""
+        "dolor": "¡Qué rico! 🍔 En gastronomía los clientes escriben en plena hora pico y, si no respondes rápido, le compran al de al lado.",
+        "pregunta": "¿Tomas pedidos por WhatsApp actualmente?",
+        "impacto": "Tomamos el pedido, sumamos el envío y mandamos el QR de cobro en segundos.",
+        "cierre": "¿Hablamos con Silvana para ver cómo subiríamos tu menú al sistema? 👇"
       },
-      "comercio": {
-        "dolor": "Tus clientes escriben fuera de horario y, sin respuesta rápida, le compran a otro.",
+      "comercio-y-retail": {
+        "dolor": "¡Genial! 🛍️ Cuando un cliente escribe fuera de horario y nadie responde rápido, le compra a otro.",
         "pregunta": "¿Se te escapan ventas de noche o los fines de semana?",
-        "impacto": ""
+        "impacto": "Responde por tu catálogo a cualquier hora y deja el pedido listo con el QR.",
+        "cierre": "¿Hablamos con Silvana para ver cómo cargaríamos tu catálogo? 👇"
       },
       "educacion": {
-        "dolor": "Responder las mismas dudas de padres y alumnos quita mucho tiempo.",
-        "pregunta": "¿Te llegan las mismas consultas todos los días?",
-        "impacto": ""
+        "dolor": "¡Qué bien! 🎓 Responder las mismas dudas de padres y alumnos todos los días quita muchísimo tiempo.",
+        "pregunta": "¿Te llegan las mismas consultas una y otra vez?",
+        "impacto": "Responde sobre horarios e inscripciones y agenda visitas en tu calendario.",
+        "cierre": "¿Hablamos con Silvana para ver cómo armaríamos las respuestas para tu institución? 👇"
       },
       "otro": {
-        "pregunta": "¿De qué trata tu negocio y qué es lo que más tiempo te quita hoy?",
-        "impacto": "",
-        "preguntaDolor": "¿Qué es lo que más tiempo te quita hoy en tu negocio?"
+        "pregunta": "¡Perfecto! 😊 Cuéntame un poquito, ¿de qué trata tu negocio y qué es lo que más tiempo te quita hoy?",
+        "preguntaDolor": "🤔 ¿Y qué es lo que más tiempo te quita hoy en tu negocio?",
+        "impacto": "Armamos flujos a medida para lo que necesitas lograr, incluso conectados a tu sistema.",
+        "cierre": "Para negocios como el tuyo diseñamos flujos a medida. ¿Te animas a hablar con Silvana para ver cómo estructuraríamos tus respuestas? 👇"
       }
     }
   },

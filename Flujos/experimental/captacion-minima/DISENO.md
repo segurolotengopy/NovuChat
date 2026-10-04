@@ -17,7 +17,7 @@ modelo solo pone una línea de empatía, contesta preguntas sueltas con los dato
 | `construir.mjs` | Arma los dos JSON con el armador genérico `../comun-sin-agente/construir.mjs`, valida los datos, inyecta guion y corpus y aplica las guardias. `--verificar` no escribe |
 | `captacion-minima.novuchat.json` | **Producción**: con «WhatsApp Trigger», sin «Entrada de prueba» |
 | `captacion-minima.prueba.json` | **Prueba**: con «Entrada de prueba» (Webhook POST con Header Auth), sin «WhatsApp Trigger» |
-| `admin/scripts/datos/captacion-minima/{novuchat,ensayo}.json` | Datos del tenant (zona Tenants): solo marcadores `REEMPLAZAR_*` para identificadores, el guion y el corpus |
+| `admin/scripts/datos/captacion-minima/{novuchat,ensayo}.json` | Datos del tenant (zona Tenants): solo marcadores `REEMPLAZAR_*` para identificadores, el guion (por rubro: `dolor`, `pregunta`, `impacto`, `cierre`; las claves son los ids VIVOS de la consola) y el corpus |
 | `admin/pruebas/captacion-minima-lib.test.ts` | La librería, el armador y el JSON armado |
 | `admin/pruebas/captacion-minima-flujo.test.ts` | Punta a punta, de caja negra (otro agente) |
 
@@ -102,7 +102,7 @@ se dice. Los campos que viajan:
 | Decidir turno | Interpretar entrada, Config del negocio, la ficha, los nodos de medios | `plan` (ver abajo), `llamarModelo`, `cuerpoModelo` (null si no hay modelo), `from` |
 | ¿Llamar al modelo? | `$json` | `llamarModelo === true` |
 | Llamar al modelo | `$json.cuerpoModelo` | la respuesta de `generateContent` (o `{error}`) |
-| Armar mensajes | Decidir turno, Llamar al modelo, Comercio no operativo, Uso extendido, la ficha | **un ítem por mensaje**: `para` (número destino), `destino` (`cliente`/`recepcion`), `payload`, `texto`, `respaldo`, `tipoReporte`, `evento`, `esInteractivo`, `esAviso`, `marcaAvisado`, `reportar`, `phoneNumberId`, `waGraphVersion`, `from`, `sinMensajes`. **Solo el primero** trae además `resumen`, `guardarPlanilla`, `prospectoPlanilla`, `guardarCrm`, `crmUrl`, `cuerpoCrm`. Sin mensajes (bloqueado sin aviso): un ítem `sinMensajes:true` |
+| Armar mensajes | Decidir turno, Llamar al modelo, Comercio no operativo, Uso extendido, la ficha | **un ítem por mensaje**: `para` (número destino), `destino` (`cliente`/`recepcion`), `payload`, `texto`, `respaldo`, `tipoReporte`, `evento`, `esInteractivo`, `esAviso`, `marcaAvisado`, `reportar`, `phoneNumberId`, `waGraphVersion`, `from`, `sinMensajes`. **Solo el primero** trae además `resumen` (con `avisos`), `avisos` (`['rubro_sin_guion']` o `[]`, §13), `guardarPlanilla`, `prospectoPlanilla`, `guardarCrm`, `crmUrl`, `cuerpoCrm`. Sin mensajes (bloqueado sin aviso): un ítem `sinMensajes:true` |
 | ¿Enviar de verdad? | Config del negocio | pasa el ítem si no es `sinMensajes` y (no es prueba, o hay `enviarDeVerdad` y teléfono de prueba) |
 | Enviar a WhatsApp | `$json.payload` | `{statusCode, body}` (`fullResponse`, `neverError`); un mensaje cada 1,5 s |
 | ¿Falló el interactivo? | Enviar a WhatsApp, Armar mensajes (`esInteractivo`) | pasa el ítem si falló y era interactivo |
@@ -139,8 +139,8 @@ flujo viejo (`conversaciones`, `vistos`) no se lee y «Armar mensajes» lo borra
 - `ccDescarteAceptado({descarte, via, hechos, soporte, textoCliente})`; `via`: `texto`, `audio` o `campana`; el resto se rechaza.
 - `ccCuerpoModelo` recibe además `rubro` y `conocimiento`; `ccLeerModelo` además `nombreNegocio`, `asesor` y `aclaraciones:[{id,texto}]`, y devuelve `motivo` (`vacio`, `json`, `esquema`).
 - «Otro / a medida» es una fila fija `rubro:otro`; los rubros «a medida» de la consola se descartan de la lista y del esquema.
-- Límites nuevos del contrato: `empatia` ≤100 caracteres; `impacto` ≤160 caracteres y ≤20 palabras. La oferta máxima real mide 44 palabras
-  y 3 oraciones (con palabras de longitud normal: 92 caracteres de empatía, 121 de impacto y la pregunta fija de 9 palabras).
+- Límites del contrato (§12, reemplazados por los del §13, ver abajo): `empatia` ≤140 caracteres y ≤25 palabras; `impacto` ≤160 caracteres y ≤24 palabras;
+  mensaje general ≤4 oraciones y ≤60 palabras (la oferta máxima mide 60: 25 + 24 + 11); el de PLANES ≤5 oraciones y ≤70 palabras.
 - Funciones nuevas: `ccDecidir`, `ccCompletar`, `ccCuerpoLista`, `ccTituloAsesor`, `ccTituloDeFila`, `ccFijo`, `ccRetomar`, `ccPreguntaDelPaso`, `ccGuionDe` y las
   ayudas `ccAplicarRubro`, `ccAplicarPlanes`, `ccPedirPlanes`.
 - `ccProspecto` agrega `consulta` («Quiere hablar con una persona», «Pidió los planes»): sin ella, «Decidir fila de la planilla» (copia exacta) no
@@ -148,8 +148,8 @@ flujo viejo (`conversaciones`, `vistos`) no se lee y «Armar mensajes» lo borra
 
 ## Decisiones del diseño que el contrato no fijaba
 
-- **Mensajes del flujo propios del código** (fijos, en tuteo, sin nombre de comercio): «Ya te mostré los planes. ¿Quieres hablar con {asesor}?» (un segundo
-  pedido de planes no los repite), el texto de cada descarte, el de comprobante, el de medios ilegibles y el de falla.
+- **Mensajes del flujo propios del código** (fijos, en tuteo, sin nombre de comercio; los textos exactos son los del §13): «¡Ya te los mostré arriba! 😊» + «¿Te gustaría hablar con {asesor}?»
+  (un segundo pedido de planes no los repite), el texto de cada descarte, el de comprobante, el de medios ilegibles y el de falla. Todos pasan por `ccConEmojis` según el nivel de la consola.
 - **Empresa:** mientras el cliente no diga un nombre válido el paso sigue en `esperando_empresa` (el nombre se anota cuando llegue); lo que se repregunta
   UNA sola vez es la pregunta.
 - **Un toque no es texto:** un id de lista o de botón con forma rara no elige nada ni llama al modelo; el paso se repite.
@@ -176,7 +176,8 @@ enlace). No lee `conversaciones`.
 - **Credencial del disparador:** `credenciales.trigger` vale «WhatsApp Trigger NovuChat», un nombre provisional (el flujo viejo no trae la credencial en el JSON).
   Confirmarlo contra n8n; nunca la de AAB1-WA-Prod.
 - **Retención (D13, Andres 03/10/2026):** se guardan solo las ejecuciones que fallan; una ejecución fallida guarda el texto del turno que falló.
-- Cargar `impacto` por rubro (hoy vacío) y los identificadores reales en una copia `*.local.json` (ignorada por git).
+- El `impacto` y el `cierre` por rubro ya están en el archivo de datos (§13); la cifra de Harvard NO entra: se carga después, verificada.
+  Los identificadores reales van en una copia `*.local.json` (ignorada por git).
 - `cmLista` (común) manda `description: ''` en las filas sin descripción; `ccLista` evita la clave. Revisar `cmLista` antes de que otro flujo la use.
 - La plantilla `solicitud_contacto` debe estar aprobada en el WABA del tenant (seis parámetros).
 - Probar contra un teléfono real y ensayar en el número del Demo A antes de publicar.
@@ -206,3 +207,33 @@ Resumen de lo que cambió respecto de la primera entrega (cada punto tiene su pr
   `ccRubrosComunes`; la campaña con destino vencido se presenta sin «Esa opción ya no está»; en la oferta el modelo recibe la pregunta de la
   oferta (`ccPreguntaHecha`); el modo `negocio` respeta `rubroId`; un agradecimiento en `libre` no repite la oferta (`ccEsAgradecimiento`); una
   aclaración se recorta (`ccAcotar`); «No pude leer tu documento»; `cnMapaDeFichas(escribir)`; «Reportar mensaje (saliente)» con `timeout` de 4000.
+
+## Tono y rubros vivos (§13 del contrato, 03/10/2026 noche)
+
+Andres probó el flujo publicado: «muy muy mal, robotizado, nada amable». Dos causas, dos arreglos, cada uno con su prueba.
+
+### C1: los ids de rubro del guion no eran los de la consola VIVA
+La consola de NovuChat usa `salud-y-belleza`, `gastronomia`, `comercio-y-retail`, `educacion` y `otro-a-medida` (el slug del nombre); el guion tenía `salud-belleza`, `comercio` y `otro`,
+así que «Salud y Belleza» y «Comercio y Retail» caían en la pregunta de «Otro» sin que nadie lo notara (la suite y la batería usaban los mismos ids equivocados).
+- `ccGuionDe(cfg, rubroId)` busca la entrada por el **id** del rubro y, si no está, por el **slug de su nombre** (`ccSlug`: minúsculas, sin tildes, lo que no es letra ni número, un guion). Las claves de `guion.rubros` en `novuchat.json` son los ids vivos.
+- Un rubro de la consola sin entrada en el guion (y que no sea el «a medida») sigue tratándose como «Otro», pero **ya no en silencio**: `ccCompletar` devuelve `avisos: ['rubro_sin_guion']`
+  (`ccAvisosDelTurno`), «Armar mensajes» lo deja en el primer ítem (`avisos`) y en el `resumen` del turno. La suite de punta a punta falla ante cualquier turno con aviso (salvo la prueba que lo provoca) y la batería lo cuenta como violación (`rubro_sin_guion`) y lo imprime como FALLO DE CONFIGURACIÓN.
+- Pruebas: «REGRESIÓN: tocar CADA rubro de la consola viva da SU frase de dolor» (`captacion-minima-flujo.test.ts`, con la consola viva como fixture, por toque, por nombre escrito y por campaña), `ccGuionDe`/`ccSlug`/`rubro_sin_guion` en `captacion-minima-lib.test.ts`, y el caso de la batería con el guion sin la clave.
+
+### C2: el tono
+Se sigue `CLIENTES/NOVUCHAT/Opciones de Conversaciones Novuchat.pdf`: cálido, cercano, con exclamaciones y emojis, de tú.
+- `nivelEmojis: muchos` en `novuchat.json` (la consola de NovuChat lo declara); todos los textos fijos pasan por `ccConEmojis` (`ccEm`) según el nivel, y al quitar un emoji no queda un espacio delante de la puntuación.
+- **Textos fijos** (los del §13): lista («¡Hola! 👋 Soy el asistente virtual de {negocio} 🤖✨, con inteligencia artificial. Para darte la info exacta, ¿de qué rubro es tu negocio?»), oferta
+  («empatía + impacto + ¿Te gustaría ver los planes o prefieres hablar con {asesor}?»), planes («¡Claro! 😊 {resumen} {cierre}»), traspaso («¡Perfecto! 🙌 Toca el botón para escribirle directo a {asesor}, que te cuenta cómo armarlo para tu negocio. Y para dejarlo anotado, ¿cómo se llama tu negocio?»),
+  gracias por la empresa, falla del modelo, identidad, «sin datos», descartes y medios ilegibles.
+- **El `resumen` de precios lo arma el código desde la consola** (`ccResumenDePrecios`): «La instalación sale desde USD {mínimo de `cargosUnicos`} (pago único) y los planes mensuales desde USD {mínimo de los planes `mes`}, cobrados en bolivianos.»
+  Un plan anual no entra al mínimo mensual (no se afirma un precio mensual que no existe); sin cargos queda solo la mitad de los planes (y al revés); sin ninguno, «¡Claro! 😊» y el cierre. Nunca lo escribe el modelo: la empatía rechaza todo dígito y la respuesta, todo monto.
+- **`cierre`** por rubro (dato del guion; el de «otro» para quien no tiene guion propio; el genérico «¿Qué te parece si {asesor} te cuenta cómo armaríamos esto para tu negocio? 👇» si falta) e **`impacto`** por rubro en la oferta.
+- **El modelo escribe la empatía con calidez:** `ccInstrucciones` trae una sección «Tono» con los dos ejemplos genéricos del contrato. La empatía admite **hasta 2 oraciones** (una exclamación inicial cuenta como oración: el propio ejemplo del contrato «¡Uff, te entiendo! 😅 Responder todo a mano le quita tiempo a cualquiera.» tiene dos),
+  hasta 140 caracteres (emojis incluidos) y **hasta 25 palabras** (60 − 24 del impacto − 11 de la pregunta de la oferta: así la oferta máxima nunca pasa de 60 palabras aunque el modelo use palabras cortas), sin «?», cifras, saludos ni promesas, y con al menos una letra.
+  El respaldo cuando no pasa el filtro es «¡Te entiendo! 😊».
+- **Límites** (`construir.mjs`, la librería, las suites y el detector de la batería): `dolor` hasta 2 oraciones y 200 caracteres; `dolor` + `pregunta` hasta 3 oraciones y 50 palabras; `impacto` hasta 160 caracteres y 24 palabras; `cierre` hasta 2 oraciones, 160 caracteres y una sola «?»;
+  mensaje general hasta 4 oraciones y 60 palabras; mensaje de PLANES (el único con encabezado) hasta 5 y 70; sigue siendo una «?» y un mensaje por turno.
+- **Mensajes por conversación: 0 agregados y 0 quitados** (los mismos mensajes, con otro texto).
+- **Batería** (`herramientas/bateria.mjs`, `bateria-casos.json`): la consola ficticia usa los ids y los nombres VIVOS, el nivel «muchos» y un cargo de instalación; los casos `P1` a `P5` son las conversaciones del PDF (belleza completa, gastronomía,
+  estudio contable, importadora con ERP y comercio); el resumen de precios del código no cuenta como monto del modelo; `rubro_sin_guion` cuenta como violación; el informe mide también la calidez (mensajes sin ningún emoji, empatías con emoji). La corrida contra el modelo real es de la coordinadora.

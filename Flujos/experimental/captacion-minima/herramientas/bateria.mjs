@@ -72,17 +72,20 @@ const ID_PLANILLA = 'PLANILLA_DE_PRUEBA_' + 'x'.repeat(26);
 const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
 const SUSPENDIDO = 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.';
 
+// La consola de NovuChat VIVA (§13): los ids son el slug del nombre y los nombres, los de la consola. Con otros ids el guion no los
+// encontraba y «Salud y Belleza» y «Comercio y Retail» caían en la pregunta de «Otro» sin que nadie lo notara.
 const RUBROS = [
-  { id: 'salud-belleza', nombre: 'Salud y belleza', solucion: 'Agenda y recuerda las citas sola.', flujoSugerido: 'agendamiento' },
+  { id: 'salud-y-belleza', nombre: 'Salud y Belleza', solucion: 'Agenda y recuerda las citas sola.', flujoSugerido: 'agendamiento' },
   { id: 'gastronomia', nombre: 'Gastronomía', solucion: 'Toma los pedidos por WhatsApp.', flujoSugerido: 'venta' },
-  { id: 'comercio', nombre: 'Comercio y retail', solucion: 'Responde por tu catálogo.', flujoSugerido: 'venta' },
+  { id: 'comercio-y-retail', nombre: 'Comercio y Retail', solucion: 'Responde por tu catálogo.', flujoSugerido: 'venta' },
   { id: 'educacion', nombre: 'Educación', solucion: 'Agenda clases y responde dudas.', flujoSugerido: 'agendamiento' },
-  { id: 'otro', nombre: 'Otro / a medida', solucion: 'Lo armamos a tu medida.', flujoSugerido: '' },
+  { id: 'otro-a-medida', nombre: 'Otro / a medida', solucion: 'Lo armamos a tu medida.', flujoSugerido: '' },
 ];
 const PLANES = [
   { nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: 'Hasta 100 conversaciones.' },
   { nombre: 'Crecimiento', precioUsd: 50, periodo: 'mes', incluye: 'Hasta 300 conversaciones.' },
 ];
+const CARGOS = [{ nombre: 'Instalación', precioUsd: 65, desde: false, detalle: 'Llave en mano.' }];
 // a1 sin monto (el modelo la ve completa); a2 trae un monto (el modelo solo ve su tema y el codigo copia el texto).
 const ACLARACIONES = [
   { tema: 'Conversaciones', texto: 'Cada conversación dura 24 horas desde el primer mensaje.' },
@@ -95,11 +98,11 @@ function panelDe(opciones = {}) {
     tenantId: 'novuchat', flujo: 'onboarding', estadoComercio: 'activo', phoneNumberId: PID,
     operacion: { numeroRecepcion: REC, horarioAtencion: '' },
     datosDelNegocio: { nombreNegocio: 'NovuChat' },
-    voz: { nivelEmojis: 'ninguno' },
+    voz: { nivelEmojis: 'muchos' },   // la consola de NovuChat lo declara así (§13)
     onboarding: {
       topeAviso: 10, plantillaAviso: 'solicitud_contacto',
       rubros: opciones.sinRubros ? [] : RUBROS,
-      planes: opciones.sinPlanes ? [] : PLANES, cargosUnicos: [],
+      planes: opciones.sinPlanes ? [] : PLANES, cargosUnicos: opciones.sinPlanes ? [] : CARGOS,
       aclaraciones: ACLARACIONES,
       archivoPlanes: opciones.sinPlanes || opciones.sinArchivo ? null : ARCHIVO,
     },
@@ -628,8 +631,12 @@ const preguntasDe = (s) => (sinUrl(s).match(/\?/g) ?? []).length;
 const oracionesDe = (s) => sinUrl(s).split(/[.!?…]+(?:\s+|$)/).map((x) => x.trim()).filter((x) => /\p{L}/u.test(x)).length;
 const palabrasDe = (s) => sinUrl(s).split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length;
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-export const MAX_ORACIONES = 3;
-export const MAX_PALABRAS = 50; // «unas 45 palabras» del contrato, con cinco de margen
+// §13: un mensaje general hasta 4 oraciones y 60 palabras (la exclamación inicial cuenta como oración); el de PLANES (el único con encabezado), 5 y 70.
+export const MAX_ORACIONES = 4;
+export const MAX_PALABRAS = 60;
+export const MAX_ORACIONES_PLANES = 5;
+export const MAX_PALABRAS_PLANES = 70;
+const CON_EMOJI = /\p{Extended_Pictographic}/u;
 
 // Promesas sin mecanismo (politica general «solo se ofrece lo que se cumple»), en tercera persona y en primera.
 const PROMESAS = /\bya (le|te|se|les) (pas[eé]|avis[eé]|notific[eé]|inform[eé]|transmit[ií])|\bte (escribir[aá]n|llamar[aá]n|contactar[aá]n|llamamos|escribimos|avisamos|contactamos|avisar[eé]|avisaremos)\b|\b(se|nos) (comunicar[aá]n?|pondr[aá]n? en contacto)\b|\blo consulto\b|\blo consultamos\b|\bte aviso\b|\bya avis[eé]\b|\bte llamar[aá]\b|\bte escribir[aá]\b|\b(te|le) (llamo|escribo|contacto|informo|enviar[eé]|mandar[eé]|llamar[eé]|escribir[eé]|contactar[eé]|informar[eé])\b|\bme (comunico|pongo en contacto)\b|\b(te|le) (envio|mando) (un mensaje|el|la|los|las|mas|más)\b/i;
@@ -670,8 +677,11 @@ export function revisarMensaje(m, ctx = {}) {
     const esBloqueDePlanes = /\*Planes\*/.test(c);
     if (preguntasDe(c) > 1) anota('mas_de_una_pregunta', c);
     if (!respaldo && !esBloqueDePlanes) {
-      if (oracionesDe(c) > MAX_ORACIONES) anota('mas_de_3_oraciones', c);
-      if (palabrasDe(c) > MAX_PALABRAS) anota('mas_de_50_palabras', c);
+      // El mensaje de PLANES con archivo es el único con encabezado (imagen o documento) y tiene su propio tope.
+      const planes = payload !== null && payload !== undefined && objeto(payload.interactive).header !== undefined;
+      const [maxO, maxP] = planes ? [MAX_ORACIONES_PLANES, MAX_PALABRAS_PLANES] : [MAX_ORACIONES, MAX_PALABRAS];
+      if (oracionesDe(c) > maxO) anota(`mas_de_${maxO}_oraciones`, c);
+      if (palabrasDe(c) > maxP) anota(`mas_de_${maxP}_palabras`, c);
     }
     if (NIEGA_IA.test(c)) anota('niega_ser_ia', c);
     if (SE_PRESENTA_PERSONA.test(c) || (asesor && new RegExp(`\\b(soy|me llamo|mi nombre es) ${esc(asesor)}\\b`, 'i').test(c))) anota('se_presenta_como_persona_o_asesor', c);
@@ -711,6 +721,10 @@ export function tonoDe(texto) {
   const c = String(texto ?? '');
   return { voseo: VOSEO.test(c), usted: USTED.test(c) };
 }
+/** La calidez (§13): ¿el mensaje lleva al menos un emoji? Con el nivel «muchos» de la consola, los textos del código los traen. */
+export function conEmoji(texto) {
+  return CON_EMOJI.test(String(texto ?? ''));
+}
 
 // ------------------------------------------------------------------------------------------------------- lectura del modelo
 /** Las funciones de validacion del propio flujo (las que usa «Armar mensajes»), sacadas del JSON armado: el codigo que corre es ese. */
@@ -720,7 +734,7 @@ export function cargarLibreria(flujo) {
   const i = codigo.indexOf('// ARMAR MENSAJES:');
   if (i < 0) throw new Error('No encuentro el inicio del código propio de «Armar mensajes» en el flujo: ¿se reconstruyó con otra cabecera?');
   // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function(...GLOBALES_FUERA, codigo.slice(0, i) + '\nreturn { ccLeerModelo, ccIdsDeRubros, ccIdsDeAclaraciones };');
+  const fn = new Function(...GLOBALES_FUERA, codigo.slice(0, i) + '\nreturn { ccLeerModelo, ccIdsDeRubros, ccIdsDeAclaraciones, ccResumenDePrecios, CC_EMPATIA_RESPALDO, CC_MAX_EMPATIA, CC_MAX_PALABRAS_EMPATIA, ccContar };');
   return fn(...GLOBALES_FUERA.map(() => undefined));
 }
 
@@ -738,8 +752,6 @@ function incumpleEsquema(obj, esquema) {
   }
   return '';
 }
-
-const unaOracion = (t) => oracionesDe(t) === 1;
 
 /**
  * Lo que se mide de UNA llamada al modelo: validez, conformidad, uso de respaldo por campo, empatia y, si el turno trae `espera`,
@@ -772,8 +784,8 @@ function evaluarLlamada({ crudo, cuerpo, espera, lib, cfg, plan, uso, ms, reinte
     rec.campos.tipo = esquema?.properties?.tipo?.enum?.includes(raw.tipo) ? 'aceptado' : 'respaldo';
     rec.campos.rubroId = estado(raw.rubroId !== 'ninguno', v.rubroId !== '');
     rec.campos.rubroLibre = estado(String(raw.rubroLibre).trim() !== '', v.rubroLibre !== '');
-    // La empatia: respaldo si el modelo no puso nada o el codigo la cambio por «Te entiendo.».
-    const empatiaPaso = String(raw.empatia).trim() !== '' && (v.empatia !== 'Te entiendo.' || String(raw.empatia).trim() === 'Te entiendo.');
+    // La empatia: respaldo si el modelo no puso nada o el codigo la cambio por la de respaldo («¡Te entiendo! 😊»).
+    const empatiaPaso = String(raw.empatia).trim() !== '' && (v.empatia !== lib.CC_EMPATIA_RESPALDO || String(raw.empatia).trim() === lib.CC_EMPATIA_RESPALDO);
     rec.campos.empatia = empatiaPaso ? 'aceptado' : 'respaldo';
     rec.campos.aclaracion = estado(raw.aclaracion !== 'ninguno', v.aclaracion !== '');
     // Con una aclaracion valida, `respuesta` es el texto de la consola: no mide al modelo.
@@ -781,8 +793,9 @@ function evaluarLlamada({ crudo, cuerpo, espera, lib, cfg, plan, uso, ms, reinte
     rec.campos.enLosDatos = estado(raw.enLosDatos === true, v.enLosDatos === true);
     rec.campos.descarte = estado(raw.descarte !== 'ninguno', v.descarte !== '');
     rec.tono = {
-      palabras: palabrasDe(raw.empatia), unaOracion: unaOracion(raw.empatia), sinPregunta: !/[?¿]/.test(raw.empatia),
-      hasta100: String(raw.empatia).length <= 100, sinVoseo: !VOSEO.test(raw.empatia), tuteo: !USTED.test(raw.empatia), vacia: String(raw.empatia).trim() === '',
+      palabras: palabrasDe(raw.empatia), hastaDosOraciones: oracionesDe(raw.empatia) <= 2, sinPregunta: !/[?¿]/.test(raw.empatia),
+      hasta140: String(raw.empatia).length <= lib.CC_MAX_EMPATIA && palabrasDe(raw.empatia) <= lib.CC_MAX_PALABRAS_EMPATIA,
+      sinVoseo: !VOSEO.test(raw.empatia), tuteo: !USTED.test(raw.empatia), vacia: String(raw.empatia).trim() === '', conEmoji: CON_EMOJI.test(raw.empatia),
     };
     rec.tipoDicho = raw.tipo; rec.descarteDicho = raw.descarte;
     rec.afirmaDatos = raw.enLosDatos === true && (String(raw.respuesta).trim() !== '' || (raw.aclaracion !== 'ninguno' && String(raw.aclaracion).trim() !== ''));
@@ -930,10 +943,16 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     const alCliente = captura.mensajes.filter((m) => m.a === CLIENTE && m.tipo !== 'template');
     corrida.mensajes += alCliente.length;
     corrida.plantillas += captura.mensajes.filter((m) => m.tipo === 'template').length;
-    const ctx = { asesor: corrida.asesor, recepcion: REC, aclaraciones: ACLARACIONES.map((a) => a.texto), archivos: [ARCHIVO.url] };
+    // El resumen de precios del mensaje de planes lo arma el CODIGO con los minimos de la consola: no es un monto del modelo.
+    const resumen = cfg.planes || cfg.cargosUnicos ? lib.ccResumenDePrecios(cfg) : '';
+    const ctx = { asesor: corrida.asesor, recepcion: REC, aclaraciones: ACLARACIONES.map((a) => a.texto).concat(resumen ? [resumen] : []), archivos: [ARCHIVO.url] };
+    // C1 (§13): un rubro de la consola sin entrada en el guion se atiende como «Otro»; eso cuenta como fallo, no se calla.
+    for (const aviso of ((r.porNodo['Armar mensajes'] ?? [])[0] ?? {}).avisos ?? []) {
+      corrida.violaciones.push({ caso: caso.id, rep, turno: i + 1, dicho: dichoDe(t), regla: aviso, texto: `el rubro «${String(plan.e?.rubroId ?? '')}» de la consola no tiene entrada en el guion y se atendió como «Otro»` });
+    }
     for (const m of alCliente) {
       for (const x of revisarMensaje(m, ctx)) corrida.violaciones.push({ caso: caso.id, rep, turno: i + 1, dicho: dichoDe(t), ...x });
-      if (!m.esRespaldo) corrida.tonos.push(tonoDe(m.cuerpo));
+      if (!m.esRespaldo) corrida.tonos.push({ ...tonoDe(m.cuerpo), conEmoji: conEmoji(m.cuerpo) });
     }
     salidas.push({ turno: i + 1, dicho: dichoDe(t), mensajes: alCliente.map((m) => m.cuerpo) });
     if (captura.modelo) {
@@ -995,10 +1014,11 @@ export function medir(corridas, descarteEsperado = () => false) {
     campos,
     empatia: {
       n: tonos.length,
-      unaOracion: cuenta(tonos, (t) => t.unaOracion), sinPregunta: cuenta(tonos, (t) => t.sinPregunta), sinVoseo: cuenta(tonos, (t) => t.sinVoseo),
-      tuteo: cuenta(tonos, (t) => t.tuteo), hasta100: cuenta(tonos, (t) => t.hasta100), vacias: tonos.filter((t) => t.vacia).length,
+      hastaDosOraciones: cuenta(tonos, (t) => t.hastaDosOraciones), sinPregunta: cuenta(tonos, (t) => t.sinPregunta), sinVoseo: cuenta(tonos, (t) => t.sinVoseo),
+      tuteo: cuenta(tonos, (t) => t.tuteo), hasta140: cuenta(tonos, (t) => t.hasta140), vacias: tonos.filter((t) => t.vacia).length,
+      conEmoji: cuenta(tonos, (t) => t.conEmoji),
       palabrasMedias: redondear(media(tonos.map((t) => t.palabras)), 1),
-      todoOk: cuenta(tonos, (t) => t.unaOracion && t.sinPregunta && t.sinVoseo && t.tuteo && t.hasta100 && !t.vacia),
+      todoOk: cuenta(tonos, (t) => t.hastaDosOraciones && t.sinPregunta && t.sinVoseo && t.tuteo && t.hasta140 && !t.vacia),
     },
     tipo: cuenta(ev('tipo'), (l) => l.evaluado.tipo === true),
     pidePlanesIndebido: ev('tipo').filter((l) => l.evaluado.pidePlanesIndebido === true).length,
@@ -1017,7 +1037,10 @@ export function medir(corridas, descarteEsperado = () => false) {
       mensajes: suma(corridas.map((c) => c.tonos.length)),
       voseo: suma(corridas.map((c) => c.tonos.filter((t) => t.voseo).length)),
       usted: suma(corridas.map((c) => c.tonos.filter((t) => t.usted).length)),
+      // La calidez (§13): mensajes del flujo sin un solo emoji (informativo: con el nivel «muchos», casi todos llevan).
+      sinEmoji: suma(corridas.map((c) => c.tonos.filter((t) => t.conEmoji === false).length)),
     },
+    avisosDeConfiguracion: suma(corridas.map((c) => c.violaciones.filter((v) => v.regla === 'rubro_sin_guion').length)),
     sinModelo: corridas.flatMap((c) => c.sinModelo.map((t) => `${c.caso}#${t}`)).filter((x, i, a) => a.indexOf(x) === i),
     formulasEnLaPlanilla: suma(corridas.map((c) => c.formulas || 0)),
     filasPorCorrida: media(corridas.map((c) => c.filas || 0)),
@@ -1110,19 +1133,20 @@ function textoDelInforme(r) {
   o.push('');
   o.push('MSJ/C = mensajes al cliente por corrida · LLAM/C = llamadas al modelo por corrida · JSON/ESQ = JSON válido / conforme al esquema (sobre las llamadas)');
   o.push('TIPO = acierto de `tipo` · RUBRO = `rubroId` y `rubroLibre` acertados · DESC = descarte final correcto por corrida (verdaderos en C11 y C12) · DATOS = `enLosDatos` honesto');
-  o.push('EMP = empatía del modelo que cumple todo (una oración, ≤100 caracteres, sin «?», sin voseo, de tú) · VIOL = violaciones de reglas duras sobre lo que el cliente recibe');
+  o.push('EMP = empatía del modelo que cumple todo (hasta 2 oraciones, ≤140 caracteres y ≤25 palabras, sin «?», sin voseo, de tú) · VIOL = violaciones de reglas duras sobre lo que el cliente recibe (incluye `rubro_sin_guion`)');
   o.push('');
   o.push('Campos del modelo (todas las llamadas con objeto válido): aceptado = pasó la validación · respaldo = el código lo reemplazó · vacío = el modelo no puso nada');
   const kc = Object.entries(t.campos).map(([k, v]) => [k, v.aceptado, v.respaldo, v.vacio, v.porAclaracion]);
   o.push(tablaTexto(kc, ['CAMPO', 'ACEPTADO', 'RESPALDO', 'VACÍO', 'ACLARAC.']));
   o.push(`FALLO (objeto entero inválido: «Disculpa, no pude procesar tu mensaje…»): ${t.fallo} de ${t.llamadas} llamadas${t.erroresDelServicio ? ` (${t.erroresDelServicio} con error del servicio)` : ''}`);
   o.push('');
-  o.push(`Empatía (${t.empatia.n} medidas): una oración ${fr(t.empatia.unaOracion)} · ≤100 caracteres ${fr(t.empatia.hasta100)} · sin «?» ${fr(t.empatia.sinPregunta)} · sin voseo ${fr(t.empatia.sinVoseo)} · de tú ${fr(t.empatia.tuteo)} · vacías ${t.empatia.vacias} · ${t.empatia.palabrasMedias} palabras en promedio`);
+  o.push(`Empatía (${t.empatia.n} medidas): hasta 2 oraciones ${fr(t.empatia.hastaDosOraciones)} · ≤140 caracteres y ≤25 palabras ${fr(t.empatia.hasta140)} · sin «?» ${fr(t.empatia.sinPregunta)} · sin voseo ${fr(t.empatia.sinVoseo)} · de tú ${fr(t.empatia.tuteo)} · con emoji ${fr(t.empatia.conEmoji)} · vacías ${t.empatia.vacias} · ${t.empatia.palabrasMedias} palabras en promedio`);
   o.push(`Acierto: tipo ${fr(t.tipo)} (pide_planes indebido ${t.pidePlanesIndebido}) · rubroId ${fr(t.rubroId)} · rubroLibre ${fr(t.rubroLibre)} · descarte por turno ${fr(t.descarteTurno)}`);
   o.push(`Descarte final por corrida: ${fr(t.descarteFinal)} (falsos positivos ${t.descarteFinal.falsosPositivos}, falsos negativos ${t.descarteFinal.falsosNegativos})`);
   o.push(`Honestidad de enLosDatos: ${fr(t.enLosDatos)} · el modelo afirmó tener datos que no hay: ${t.invenciones} (llegaron al cliente: ${t.invencionesEfectivas})`);
   o.push(`Calificación final (planilla): ${Object.entries(t.calificaciones).map(([k, v]) => `${k || '(vacía)'} ${v}`).join(', ') || '—'}`);
-  o.push(`Tono sobre ${t.tono.mensajes} mensajes al cliente: voseo ${t.tono.voseo} · trato de usted ${t.tono.usted}`);
+  o.push(`Tono sobre ${t.tono.mensajes} mensajes al cliente: voseo ${t.tono.voseo} · trato de usted ${t.tono.usted} · sin ningún emoji ${t.tono.sinEmoji}`);
+  if (t.avisosDeConfiguracion) o.push(`FALLO DE CONFIGURACIÓN: ${t.avisosDeConfiguracion} turno(s) con \`rubro_sin_guion\` (un rubro de la consola sin entrada en el guion se atendió como «Otro»).`);
   if (t.sinModelo.length) o.push(`ATENCIÓN: turnos donde se esperaba el modelo y el flujo no lo llamó: ${t.sinModelo.join(', ')}`);
   if (t.filasPorCorrida > 1.0001) o.push(`ATENCIÓN: la planilla quedó con ${redondear(t.filasPorCorrida, 2)} filas por corrida en promedio (debería ser una por teléfono).`);
   if (t.formulasEnLaPlanilla) o.push(`ATENCIÓN: ${t.formulasEnLaPlanilla} celda(s) de la planilla quedaron como fórmula (USER_ENTERED).`);

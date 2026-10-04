@@ -32,6 +32,7 @@ const antes = ccEstadoVigente(previa, ahora);
 let mensajes = [];
 let estado = antes;
 let accion = 'nada';
+let avisos = [];        // avisos de configuracion del turno (p. ej. `rubro_sin_guion`): la suite y la bateria los cuentan
 let conversacion = false;   // true si fue un turno del guion (los demas no tocan la planilla)
 
 if (decidir && decidir.plan) {
@@ -48,6 +49,7 @@ if (decidir && decidir.plan) {
   mensajes = r.mensajes;
   estado = r.e;
   accion = r.accion;
+  avisos = Array.isArray(r.avisos) ? r.avisos : [];
   conversacion = true;
 } else if (noOperativo) {
   const texto = String(noOperativo.texto || '');
@@ -116,13 +118,14 @@ const celda = (v) => String(v === undefined || v === null ? '' : v).replace(/[\r
 
 // R8: la ficha de ANTES de este turno viaja en el primer item: si Meta rechaza el mensaje y su respaldo, «Confirmar envío» la restaura.
 const fichaAntes = claveOk ? antes : null;
-const resumen = { plan: accion, estadoDespues: claveOk ? estado : null, mensajes: salida.length, hechos: estado.hechos, paso: estado.paso };
+const resumen = { plan: accion, estadoDespues: claveOk ? estado : null, mensajes: salida.length, hechos: estado.hechos, paso: estado.paso, avisos: avisos };
 if (!salida.length) {
-  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: accion, resumen: resumen, fichaAntes: fichaAntes,
+  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: accion, resumen: resumen, fichaAntes: fichaAntes, avisos: avisos,
     guardarPlanilla: guardarPlanilla, prospectoPlanilla: guardarPlanilla ? despues : null, guardarCrm: false, cuerpoCrm: null } }];
 }
 const primero = salida[0].json;
 primero.resumen = resumen;
+primero.avisos = avisos;
 primero.fichaAntes = fichaAntes;
 primero.guardarPlanilla = guardarPlanilla;
 primero.prospectoPlanilla = guardarPlanilla ? despues : null;

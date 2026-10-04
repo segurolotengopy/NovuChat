@@ -428,3 +428,53 @@ terminó).
 
 ### Fuera de esta ronda
 Tokens de razonamiento dentro de `maxOutputTokens: 400` y el pedido de baja («no me escriban más»): los mide la batería. Concurrencia de `staticData` entre ejecuciones y credencial del disparador por id de app: se verifican contra n8n antes de publicar.
+
+## 13. Tono y rubros: correcciones tras ver el flujo vivo (03/10/2026, noche)
+
+Andres probó el flujo publicado: «muy muy mal, robotizado, nada amable; hay que seguir los
+ejemplos» (`CLIENTES/NOVUCHAT/Opciones de Conversaciones Novuchat.pdf`; léelo). Dos causas:
+
+**C1. Los ids de rubro del guion no coincidían con los de la consola VIVA.** La consola de
+NovuChat usa `salud-y-belleza`, `gastronomia`, `comercio-y-retail`, `educacion` y `otro-a-medida`
+(son el *slug del nombre*). El guion usaba `salud-belleza`, `comercio` y `otro` (copiados de un
+archivo del repositorio), así que «Salud y Belleza» y «Comercio y Retail» caían en la pregunta de
+«Otro» sin que nadie lo notara: un rubro sin entrada en el guion se trata como «Otro» en silencio.
+- El guion se busca por el id del rubro y, si no está, por el *slug de su nombre* (minúsculas, sin
+  tildes, no alfanuméricos → `-`). Las claves de `guion.rubros` en `novuchat.json` pasan a los ids
+  vivos: `salud-y-belleza`, `gastronomia`, `comercio-y-retail`, `educacion`, y `otro`.
+- Un rubro de la consola SIN entrada en el guion (y que no sea el de «a medida») ya no es silencioso:
+  se sigue tratando como «Otro», pero con aviso `rubro_sin_guion` en el ítem (la suite y la batería lo
+  cuentan; la batería falla si lo ve).
+- Prueba de regresión en la suite de punta a punta con la consola VIVA como fixture (los cinco ids de
+  arriba): tocar cada rubro da SU frase de dolor, nunca la de «Otro».
+
+**C2. El tono.** Se sigue el PDF: cálido, cercano, con exclamaciones y emojis, y dicho como lo diría
+una persona de Bolivia; el asistente refleja lo que el cliente contó con sus palabras y nunca suena
+seco. Lo que cambia:
+- `configBase.nivelEmojis` pasa a `muchos` (la consola de NovuChat lo declara así).
+- **Límites de longitud** (el PDF tiene mensajes de 3 o 4 oraciones): mensaje general ≤ 4 oraciones
+  y ≤ 60 palabras (una exclamación inicial cuenta como oración); el mensaje de PLANES ≤ 5 oraciones y
+  ≤ 70 palabras. Sigue siendo UNA «?» por mensaje y un solo mensaje por turno. `empatia` sube a ≤ 140
+  caracteres (emojis incluidos); `impacto` ≤ 160 caracteres y ≤ 24 palabras. Ajusta `construir.mjs`,
+  la librería, `MAX_PALABRAS`/`MAX_ORACIONES` de las suites y el detector de la batería.
+- **El modelo escribe la empatía con calidez.** En `ccInstrucciones`, una sección de tono: escribe
+  como una persona cercana y entusiasta; `empatia` = UNA oración que retome con tus palabras lo que
+  dijo el cliente (no lo repitas textual), 1 emoji cuando aporta, sin preguntas, cifras, saludos ni
+  promesas. Dos ejemplos genéricos, sin nombres de comercios: «¡Uff, te entiendo! 😅 Responder todo a
+  mano le quita tiempo a cualquiera.» y «¡Qué buena señal que ya vendas por WhatsApp! 🙌». El respaldo
+  cuando la empatía no pasa el filtro deja de ser «Te entiendo.»: «¡Te entiendo! 😊».
+- **Textos fijos del código** (todos pasan por `ccConEmojis` según el nivel):
+  - LISTA: «¡Hola! 👋 Soy {nombre, }el asistente virtual de {negocio} 🤖✨, con inteligencia artificial. Para darte la info exacta, ¿de qué rubro es tu negocio?»
+  - OFERTA: empatía + impacto + «¿Te gustaría ver los planes o prefieres hablar con {asesor}?»
+  - PLANES con archivo: «¡Claro! 😊 {resumen} {cierre}», donde `resumen` lo arma el código desde la consola: «La instalación sale desde USD {mínimo de cargosUnicos} (pago único) y los planes mensuales desde USD {mínimo de planes}, cobrados en bolivianos.» (sin cargos, solo la mitad de los planes; sin planes ni cargos, solo el cierre) y `cierre` es el del rubro (abajo) o «¿Qué te parece si {asesor} te cuenta cómo armaríamos esto para tu negocio? 👇». Sin archivo: el bloque de planes en texto + el mismo cierre.
+  - TRASPASO: «¡Perfecto! 🙌 Toca el botón para escribirle directo a {asesor}, que te cuenta cómo armarlo para tu negocio. Y para dejarlo anotado, ¿cómo se llama tu negocio?» (sin recepción: sin botón ni promesa; nunca «ya le pasé tus datos»).
+  - Gracias por la empresa: «¡Gracias! 😊 Quedó anotado.»  Falla del modelo: «¡Uy, tuve un problema para procesar tu mensaje! 😅 Si quieres, {asesor} te ayuda directamente.»  Identidad: «Soy el asistente virtual de {negocio}, con inteligencia artificial 🤖.»  Sin datos: «Esa no la tengo a la mano 🤔; {asesor} te lo responde.»  Descarte: un texto cordial («¡Sin problema! 😊 …») por motivo.  Audio ilegible y tipo no admitido: con 😊.
+- **Datos nuevos por rubro:** `cierre` (opcional; ≤ 2 oraciones y ≤ 160 caracteres, puede terminar en «?» y en «👇»; mismas reglas de caracteres que el resto del guion). `dolor` admite hasta 2 oraciones y ≤ 200 caracteres (la exclamación inicial cuenta); `dolor` + `pregunta` juntos ≤ 3 oraciones y ≤ 50 palabras. Los emojis son válidos en todo el guion.
+- **Guion de `novuchat.json`** (sale del PDF; el trato es de tú):
+  - `salud-y-belleza`: dolor «¡Excelente! 💅 En los salones y consultorios, la gente olvida su turno y ese hueco ya no se recupera.» · pregunta «Cuéntame, ¿actualmente pierdes mucho tiempo agendando y recordando citas a mano?» · impacto «Nuestra IA responde al instante y agenda sola, incluso cuando estás atendiendo.» · cierre «¿Qué te parece si Silvana te cuenta cómo armaríamos esto para tu negocio? 👇»
+  - `gastronomia`: dolor «¡Qué rico! 🍔 En gastronomía los clientes escriben en plena hora pico y, si no respondes rápido, le compran al de al lado.» · pregunta «¿Tomas pedidos por WhatsApp actualmente?» · impacto «Tomamos el pedido, sumamos el envío y mandamos el QR de cobro en segundos.» · cierre «¿Hablamos con Silvana para ver cómo subiríamos tu menú al sistema? 👇»
+  - `comercio-y-retail`: dolor «¡Genial! 🛍️ Cuando un cliente escribe fuera de horario y nadie responde rápido, le compra a otro.» · pregunta «¿Se te escapan ventas de noche o los fines de semana?» · impacto «Responde por tu catálogo a cualquier hora y deja el pedido listo con el QR.» · cierre «¿Hablamos con Silvana para ver cómo cargaríamos tu catálogo? 👇»
+  - `educacion`: dolor «¡Qué bien! 🎓 Responder las mismas dudas de padres y alumnos todos los días quita muchísimo tiempo.» · pregunta «¿Te llegan las mismas consultas una y otra vez?» · impacto «Responde sobre horarios e inscripciones y agenda visitas en tu calendario.» · cierre «¿Hablamos con Silvana para ver cómo armaríamos las respuestas para tu institución? 👇»
+  - `otro`: pregunta «¡Perfecto! 😊 Cuéntame un poquito, ¿de qué trata tu negocio y qué es lo que más tiempo te quita hoy?» · preguntaDolor «🤔 ¿Y qué es lo que más tiempo te quita hoy en tu negocio?» · impacto «Armamos flujos a medida para lo que necesitas lograr, incluso conectados a tu sistema.» · cierre «Para negocios como el tuyo diseñamos flujos a medida. ¿Te animas a hablar con Silvana para ver cómo estructuraríamos tus respuestas? 👇»
+  La cifra de Harvard no entra (se carga después, verificada).
+- **Batería:** la consola ficticia de `herramientas/bateria.mjs` usa los ids VIVOS y los nombres vivos; agrega casos de tono con las conversaciones del PDF (belleza completa, gastronomía, estudio contable, importadora con ERP, comercio) y que `rubro_sin_guion` cuente como fallo. Sigue siendo solo en seco para ti: la corrida real la hace la coordinadora.

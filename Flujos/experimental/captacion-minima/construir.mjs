@@ -29,7 +29,8 @@
  *       hereda?: '<otro tenant>',
  *       credenciales: { trigger, ingesta, graph, planilla, crm, entradaPrueba? }, pruebaRuta,
  *       configBase: { … },
- *       guion: { asesor: { nombre }, rubros: { '<id>': { dolor, pregunta, impacto? }, otro: { pregunta, impacto? } } },   // sin imágenes (D16)
+ *       guion: { asesor: { nombre }, rubros: { '<id>': { dolor, pregunta, impacto?, cierre? }, otro: { pregunta, preguntaDolor?, impacto?, cierre? } } },   // sin imágenes (D16)
+ *                                                          // '<id>': el de la consola VIVA o el slug de su nombre (§13, C1)
  *       conocimiento: { huella, generado, excluidos: [ids], fragmentos: [{ id, titulo, url, texto }] } }
  *
  * UNA SALIDA POR ARCHIVO DE DATOS: `novuchat.json` → `captacion-minima.novuchat.json` (con «WhatsApp Trigger»),
@@ -238,7 +239,7 @@ export function validarDatos(datos, archivo) {
         if (!r || typeof r !== 'object' || Array.isArray(r)) { e(ruta, 'tiene que ser un objeto'); continue; }
         // D16: la única imagen que envía el flujo es la de los planes (`archivoPlanes` de la consola); el guion no lleva imágenes.
         if ('imagen' in r) e(`${ruta}.imagen`, 'no se admite: la única imagen que envía el flujo es la de los planes, y viene de la consola');
-        for (const k of Object.keys(r)) if (k !== 'imagen' && !['dolor', 'pregunta', 'impacto', 'preguntaDolor'].includes(k)) e(`${ruta}.${k}`, 'no es un campo del guion (dolor, pregunta, impacto, preguntaDolor)');
+        for (const k of Object.keys(r)) if (k !== 'imagen' && !['dolor', 'pregunta', 'impacto', 'preguntaDolor', 'cierre'].includes(k)) e(`${ruta}.${k}`, 'no es un campo del guion (dolor, pregunta, impacto, preguntaDolor, cierre)');
         // Texto: de qué se compone cada campo.
         const texto = (k, { requerido, max }) => {
           const v = r[k];
@@ -255,22 +256,30 @@ export function validarDatos(datos, archivo) {
         const impacto = texto('impacto', { requerido: false, max: 160 });
         // R7: la pregunta de «Otro» cuando el rubro ya se conoce (solo «otro»), validada como `pregunta`.
         const preguntaDolor = texto('preguntaDolor', { requerido: false, max: 140 });
+        // §13: el cierre del mensaje de planes (opcional, por rubro): hasta 2 oraciones y 160 caracteres; a lo más una «?» (el mensaje lleva una sola).
+        const cierre = texto('cierre', { requerido: false, max: 160 });
         if (preguntaDolor && ((preguntaDolor.match(/\?/g) || []).length !== 1 || !preguntaDolor.endsWith('?'))) e(`${ruta}.preguntaDolor`, 'tiene que terminar en una sola «?»');
         if (preguntaDolor && id !== 'otro') e(`${ruta}.preguntaDolor`, 'solo lo lleva «otro»');
         if (dolor) {
-          if (contarTexto(dolor).oraciones !== 1) e(`${ruta}.dolor`, 'tiene que ser una sola oración');
+          // §13: hasta 2 oraciones (la exclamación inicial cuenta: «¡Qué rico! 🍔 En gastronomía…»).
+          if (contarTexto(dolor).oraciones > 2) e(`${ruta}.dolor`, 'tiene más de 2 oraciones (la exclamación inicial cuenta)');
           if (dolor.includes('?')) e(`${ruta}.dolor`, 'no lleva «?»: la pregunta es otro campo');
         }
         if (pregunta) {
           if ((pregunta.match(/\?/g) || []).length !== 1 || !pregunta.endsWith('?')) e(`${ruta}.pregunta`, 'tiene que terminar en una sola «?»');
           const junto = contarTexto([dolor, pregunta].filter(Boolean).join(' '));
-          if (junto.oraciones > 3 || junto.palabras > 45) e(ruta, `dolor y pregunta juntos pasan de 3 oraciones o de 45 palabras (${junto.oraciones} oraciones, ${junto.palabras} palabras)`);
+          if (junto.oraciones > 3 || junto.palabras > 50) e(ruta, `dolor y pregunta juntos pasan de 3 oraciones o de 50 palabras (${junto.oraciones} oraciones, ${junto.palabras} palabras)`);
         }
         if (impacto) {
           const c = contarTexto(impacto);
           if (c.oraciones > 1) e(`${ruta}.impacto`, 'tiene que ser una sola oración');
-          if (c.palabras > 20) e(`${ruta}.impacto`, `tiene ${c.palabras} palabras (hasta 20)`);
+          if (c.palabras > 24) e(`${ruta}.impacto`, `tiene ${c.palabras} palabras (hasta 24)`);
           if (impacto.includes('?')) e(`${ruta}.impacto`, 'no lleva «?»');
+        }
+        if (cierre) {
+          const c = contarTexto(cierre);
+          if (c.oraciones > 2) e(`${ruta}.cierre`, 'tiene más de 2 oraciones');
+          if ((cierre.match(/\?/g) || []).length > 1) e(`${ruta}.cierre`, 'lleva más de una «?»');
         }
       }
     }
