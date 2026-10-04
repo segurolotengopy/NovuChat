@@ -344,11 +344,21 @@ export const asignarNumero = onCall(async (peticion) => {
     const refConfig = documento ? db().doc(`tenants/${tenantId}/config/${documento}`) : null;
     const config = refConfig ? await tx.get(refConfig) : null;
 
+    // CON `merge`. Reasignar la misma línea al mismo comercio es legítimo
+    // (corregir la WABA, el flujo o la titularidad), y el documento trae
+    // propiedades de la LÍNEA que escriben otras piezas y que no son de esta
+    // llamada: `numeroPublico` (botón «Volver al chat» del catálogo web),
+    // `webhookCarrito` (a dónde notifica el carrito) y `aliasSecreto` (qué
+    // secreto HMAC valida el número). Sin merge, este set las borraba en
+    // silencio (hallazgo de seguridad del PR #414). No arrastra datos ajenos:
+    // la unicidad de arriba garantiza que el documento existente es de ESTE
+    // comercio, y `liberarNumero` borra el documento entero, de modo que un
+    // número reasignado a OTRO comercio nace sin nada del dueño anterior.
     tx.set(ref, {
       tenantId, flujo, wabaId, titularidad,
       estado: tenant.get('estado') ?? 'activo',
       asignadoEn: Timestamp.now(), asignadoPor: uid,
-    });
+    }, { merge: true });
     tx.update(tenant.ref, {
       waPhoneNumberId: phoneNumberId, waWabaId: wabaId,
       vertical: tenant.get('vertical') ?? flujo,
