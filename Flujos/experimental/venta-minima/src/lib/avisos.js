@@ -52,6 +52,15 @@
 //                 · `pedido` (la plantilla `pedido_registrado`, decisión de Andres del 02/10/2026): orden def.
 //                   `items,total,modalidad,cotejo`, con {{1}} «SOLICITUD DE RESERVA <código>: <N personas, fecha y
 //                   hora, zona>», {{2}} «sin cobro», {{3}} «reserva de mesa por confirmar con el cliente», {{4}} «no aplica».
+//                 · `solicitud` (la plantilla `solicitud_reserva`, UTILITY, 5 variables, solo para el rol `completo`):
+//                   orden def. `cliente,personas,cuando,telefono,nota`: {{1}} «<código> · <nombre del cliente>», {{2}} «N personas»,
+//                   {{3}} «<día y hora>, <zona>», {{4}} el teléfono del cliente con prefijo («+591…»; SOLO el rol `completo`: a `cocina`
+//                   nunca se le muestra), {{5}} la celebración y el pedido especial o «sin datos adicionales». Cada variable se recorta
+//                   por campo (sin saltos ni 4+ espacios; ninguna pasa de 300 caracteres).
+//                 · POR ROL (aditivo, 04/10): `plantillaReservaCompleto`, `idiomaPlantillaReservaCompleto` y `formaPlantillaReservaCompleto`
+//                   cambian SOLO lo que recibe el rol `completo` en el evento reserva (cada clave por separado: la que falta rige
+//                   la de `plantillaReserva`, `idiomaPlantillaReserva` o `formaPlantillaReserva`). Sin las tres claves nuevas el
+//                   aviso sale exactamente como antes. El rol `cocina` nunca las lee.
 //   derivación  → `plantillaDerivacion`, `idiomaPlantillaDerivacion`, `ordenDerivacion` y la FORMA
 //                 `formaPlantillaDerivacion` (`cita`, los mismos tokens que reserva; o `pedido`, con {{1}} «CONSULTA
 //                 <código>: <motivo saneado>», {{2}} «sin cobro», {{3}} «el cliente pide hablar con una persona»,
@@ -123,6 +132,7 @@ const AV_UTC_MENOS_4_MS = 4 * 60 * 60 * 1000;
 const AV_TIPOS = ['pedido', 'comprobante', 'reserva', 'transferencia'];
 const AV_ORDEN_PEDIDO = ['items', 'total', 'modalidad', 'cotejo'];
 const AV_ORDEN_AGENDA = ['destinatario', 'cuando', 'detalle', 'codigo'];
+const AV_ORDEN_SOLICITUD = ['cliente', 'personas', 'cuando', 'telefono', 'nota'];
 const AV_CIERRE_PAGO = 'Revisen el pago en su banco antes de despachar.';
 const AV_CIERRE_SIN_QR = 'El pago se coordina con el cliente al entregar o al recoger.';
 const AV_CIERRE_SIMULADO = 'Pedido de PRUEBA: el cobro fue SIMULADO y no se movió dinero.';
@@ -575,17 +585,19 @@ function avOrden(valor, base) {
 //  - La forma de la reserva y de la derivación (`formaPlantillaReserva`, `formaPlantillaDerivacion`) es `cita` (4 variables:
 //    destinatario, cuándo, detalle, código; la de por omisión) o `pedido` (las 4 variables de la plantilla de pedido, ver
 //    `avVariablesDePedidoForma`); un valor que no es ninguna de las dos cae a `cita` y se anota `forma_invalida_<evento>`.
-function avConfigPlantilla(tipo, c, errores) {
+// `rol` (solo 'completo', solo en la reserva): las claves `*ReservaCompleto` pisan, una por una, las de la reserva.
+function avConfigPlantilla(tipo, c, errores, rol) {
   const texto = (v) => String(v === undefined || v === null ? '' : v).trim();
   const falta = (v) => v === undefined || v === null;
   const elegir = (propia) => (falta(propia) ? texto(c.plantillaAviso) : texto(propia));
   const idiomaDe = (propio) => texto(propio) || texto(c.idiomaPlantilla) || 'es';
   let nombre; let idioma; let ordenCsv; let base; let evento; let forma = 'cita';
-  const formaDe = (v) => {
+  const formaDe = (v, nombreClave) => {
     const f = texto(v).toLowerCase();
     if (f === '' || f === 'cita') return 'cita';
     if (f === 'pedido') return 'pedido';
-    errores.push('forma_invalida_' + evento);
+    if (f === 'solicitud' && evento === 'reserva') return 'solicitud';
+    errores.push('forma_invalida_' + (nombreClave || evento));
     return 'cita';
   };
   if (tipo === 'pedido' || tipo === 'comprobante') {
@@ -598,7 +610,12 @@ function avConfigPlantilla(tipo, c, errores) {
     nombre = elegir(c.plantillaReserva);
     idioma = idiomaDe(c.idiomaPlantillaReserva);
     forma = formaDe(c.formaPlantillaReserva);
-    ordenCsv = c.ordenReserva; base = forma === 'pedido' ? AV_ORDEN_PEDIDO : AV_ORDEN_AGENDA;
+    if (rol === 'completo') {
+      if (texto(c.plantillaReservaCompleto)) nombre = texto(c.plantillaReservaCompleto);
+      if (texto(c.idiomaPlantillaReservaCompleto)) idioma = texto(c.idiomaPlantillaReservaCompleto);
+      if (!falta(c.formaPlantillaReservaCompleto) && texto(c.formaPlantillaReservaCompleto)) forma = formaDe(c.formaPlantillaReservaCompleto, 'reserva_completo');
+    }
+    ordenCsv = c.ordenReserva; base = forma === 'pedido' ? AV_ORDEN_PEDIDO : (forma === 'solicitud' ? AV_ORDEN_SOLICITUD : AV_ORDEN_AGENDA);
   } else {
     evento = 'derivacion';
     nombre = elegir(c.plantillaDerivacion);
@@ -696,9 +713,35 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
   };
 }
 
+// Reserva con la FORMA `solicitud` (plantilla `solicitud_reserva`, 5 variables). Cada una se recorta por campo para que Meta nunca la
+// rechace por largo. Es una SOLICITUD por confirmar: ninguna variable dice «confirmada» (y la red de prohibidas las revisa, `avLimpio`).
+// El teléfono del cliente va SOLO al rol `completo`; para `cocina` queda «—» (y sus números largos se quitan de cualquier campo).
+function avVariablesSolicitud(d, dest) {
+  const opc = { cocina: dest.rol === 'cocina' };
+  const r = (d.reserva && typeof d.reserva === 'object') ? d.reserva : {};
+  const p = Math.floor(Number(r.personas));
+  const cod = avLimpio(d.codigo, 20);
+  const nombre = (dest.rol === 'cocina' ? avPrimerNombre(r.nombre || d.nombre, opc) : avLimpio(r.nombre || d.nombre, 60)) || 'cliente';
+  const zona = avLimpio(r.zona, 40, opc);
+  const cuando = avFechaLegible(r.fecha, r.hora) || 'fecha sin indicar';
+  const tel = dest.rol === 'completo' ? avDigitos(d.telefono) : '';
+  const extras = [
+    avLimpio(r.celebracion, 120, opc) ? 'Celebración: ' + avLimpio(r.celebracion, 120, opc) : '',
+    avLimpio(r.requerimiento, 150, opc) ? 'Pedido especial: ' + avLimpio(r.requerimiento, 150, opc) : '',
+  ].filter(Boolean);
+  return {
+    cliente: avParametro((cod ? cod + ' · ' : '') + nombre, 90),
+    personas: avParametro(Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : 'personas sin indicar', 30),
+    cuando: avParametro(cuando + (zona ? ', ' + zona : ''), 100),
+    telefono: avParametro(tel && tel.length >= 8 && tel.length <= 15 ? '+' + tel : '', 20),
+    nota: avParametro(extras.length ? extras.join(' · ') : 'sin datos adicionales', 300),
+  };
+}
+
 // Las cuatro variables, ya saneadas, por token. `rol` decide cuánto se muestra.
 function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   const opc = { cocina: dest.rol === 'cocina' };
+  if (forma === 'solicitud' && tipo === 'reserva') return avVariablesSolicitud(d, dest);
   if (forma === 'pedido' && (tipo === 'reserva' || tipo === 'transferencia')) return avVariablesDeForma(tipo, d, dest, ahoraMs);
   const nombreDe = (n) => (dest.rol === 'cocina' ? avPrimerNombre(n, opc) : avLimpio(n, 60)) || 'cliente';
   if (tipo === 'pedido' || tipo === 'comprobante') {
@@ -837,7 +880,7 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
   const dests = avNormalizarDestinatarios(destinatarios, d, c);
   if (!dests.length) return { items: [], errores: ['sin_destinatarios'] };
 
-  const pl = avConfigPlantilla(tipo, c, errores);
+  const plEvento = avConfigPlantilla(tipo, c, errores);
   // En simulado no hay comprobante que mostrar (la foto no se baja ni se lee): nunca sale la imagen, venga o no `mediaId`.
   const idMedio = resultado !== 'simulado' && /^[A-Za-z0-9_.-]{1,100}$/.test(String(d.mediaId || '')) ? String(d.mediaId) : '';
   const items = [];
@@ -848,6 +891,13 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
       items.push({ para: dest.tel, rol: dest.rol, payload: avTexto(dest.tel, cuerpo), respaldo: null, esPlantilla: false, clase: 'detalle' });
     };
     const conPlantilla = () => {
+      // La reserva del rol `completo` puede tener su propia plantilla (`*ReservaCompleto`); el resto, la del evento.
+      let pl = plEvento;
+      if (tipo === 'reserva' && dest.rol === 'completo') {
+        const propios = [];
+        pl = avConfigPlantilla(tipo, c, propios, 'completo');
+        for (const e of propios) if (errores.indexOf(e) < 0) errores.push(e);
+      }
       if (!pl.nombre) {
         // Sin plantilla configurada no se inventa un nombre: el evento falla cerrado (con ventana abierta cae al texto).
         if (!pl.configurada && errores.indexOf('plantilla_no_configurada_' + pl.evento) < 0) errores.push('plantilla_no_configurada_' + pl.evento);

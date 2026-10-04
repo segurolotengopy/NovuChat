@@ -1568,6 +1568,32 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     expect(cuerpos(r2.resumen)[0]).not.toMatch(/lunes/);
   });
 
+  it('plantilla por rol (04/10): con las claves `*ReservaCompleto` el rol completo recibe `solicitud_reserva` (5 variables, con teléfono) y cocina sigue como hoy, con el mismo número de avisos', () => {
+    const hoy = enviarReserva(armarReserva({ ventana: 5, from: CLIENTE }));
+    const por = enviarReserva(armarReserva({
+      ventana: 5, from: CLIENTE,
+      config: { plantillaReservaCompleto: 'solicitud_reserva', formaPlantillaReservaCompleto: 'solicitud', idiomaPlantillaReservaCompleto: 'es' },
+    }));
+    const completo = plantillasA(por, AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>;
+    expect(completo.payload['template']?.name).toBe('solicitud_reserva');
+    const v = parametrosDe(completo);
+    expect(v).toHaveLength(5);
+    expect(v[0]).toMatch(/ · Carlos Pérez$/);
+    expect(v[1]).toBe('4 personas');
+    expect(v[2]).toBe('viernes 9 de octubre a las 20:00, salón');
+    expect(v[3]).toBe('+' + CLIENTE);
+    expect(v[4]).toBe('sin datos adicionales');
+    expect(v.join(' ')).not.toMatch(/confirmad/i);
+    const cocina = plantillasA(por, AV2)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>;
+    expect(cocina.payload['template']?.name).toBe('pedido_registrado');
+    expect(parametrosDe(cocina)).toHaveLength(4);
+    expect(JSON.stringify(cocina.payload)).not.toContain(CLIENTE);
+    // Mismo número de avisos que sin las claves nuevas: solo cambia el contenido del aviso al rol completo.
+    expect(por.avisos.length).toBe(hoy.avisos.length);
+    expect(plantillasA(hoy, AV1)[0]!.payload['template']?.name).toBe('pedido_registrado');
+    expect(cuerpos(por)).toEqual(cuerpos(hoy));
+  });
+
   const casos: [string, OpReserva, RegExp | null][] = [
     ['fecha pasada', { extra: { fecha: '2026-10-04' } }, null],
     ['menos de la anticipación (hoy, en 30 minutos)', { extra: { fecha: '2026-10-05', hora: '10:30' } }, null],
