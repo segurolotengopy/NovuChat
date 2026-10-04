@@ -498,10 +498,14 @@ export const MAXIMO_DE_PALABRAS = 8;
 type TipoDeParEnNombre = 'completa' | 'una_letra' | 'debil';
 
 function tipoDePar(e: string, l: string): TipoDeParEnNombre | null {
+  // Una INICIAL, de cualquiera de los dos lados, es siempre débil: dos iniciales
+  // iguales («C» y «C») tampoco dan una coincidencia completa. Va ANTES de la
+  // igualdad a propósito.
+  if (e.length === 1 || l.length === 1) {
+    const [corta, larga] = e.length === 1 ? [e, l] : [l, e];
+    return larga.startsWith(corta) ? 'debil' : null;
+  }
   if (e === l) return 'completa';
-  // Una inicial del lado ESPERADO («Juan C. Perez») también es débil.
-  if (e.length === 1) return l.startsWith(e) ? 'debil' : null;
-  if (l.length === 1) return e.startsWith(l) ? 'debil' : null;
   if (e.startsWith(l)) {
     if (l.length >= 4) return 'completa';
     if (l.length === 3) return 'debil';

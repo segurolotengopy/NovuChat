@@ -219,6 +219,13 @@ describe('P1b: iniciales del lado ESPERADO y tope contra la búsqueda explosiva'
   it('el emparejamiento prefiere el que tiene una coincidencia fuerte: «Jose Jaime» frente a «J JAI JOSE»', () => {
     expect(nombreCoincideConUnaLetra('Jose Jaime', 'J JAI JOSE')).toBe('aproximado');
   });
+  it('dos iniciales iguales NUNCA dan exacto: la inicial es débil aunque esté en los dos lados', () => {
+    expect(nombreCoincideConUnaLetra('J. Perez', 'J PEREZ')).toBe('aproximado');
+    expect(nombreCoincideConUnaLetra('M M', 'M M')).toBe('insuficiente');
+    expect(nombreCoincideConUnaLetra('Juan C. Perez', 'C PEREZ')).not.toBe('exacto');
+    // Una palabra completa y una inicial: aproximado, como la regla dice (hay una coincidencia fuerte).
+    expect(nombreCoincideConUnaLetra('Juan C. Perez', 'C PEREZ')).toBe('aproximado');
+  });
   it('60 iniciales «M» no cuelgan la transacción: responde en menos de 50 ms', () => {
     for (const esp of ['Maria Mercedes Mamani Mendoza Molina', 'Maria Magdalena Mamani Mendoza Mercado']) {
       const t0 = performance.now();
