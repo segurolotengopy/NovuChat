@@ -195,7 +195,7 @@ const params = (j: J): string[] => j['payload'].template.components[0].parameter
 const plantillas = (s: Salida): J[] => s.armados.filter((i) => i['payload'].type === 'template');
 const errores = (s: Salida): string[] => (s.mensajes[0]?.['errores'] ?? []) as string[];
 const erroresAvisos = (s: Salida): string[] => (s.avisos[0]?.['errores'] ?? []) as string[];
-const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
+const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+tu\s+pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40}\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\s+(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+)?(lleg|ingres|entr)|(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+|fue\s+|fueron\s+|est[aá]\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
 
 /** Lleva a `from` hasta el resumen de un pedido: 1 orden de tacos, delivery con dirección y referencia (o recojo). */
 function hastaResumen(m: Mundo, modalidad: 'delivery' | 'recojo' = 'delivery', from = CLIENTE): Salida {
@@ -1055,7 +1055,7 @@ describe('las tres copias de la red de prohibidas y las expresiones regulares', 
     expect(fuentes[0]).not.toContain('|reservad|');
     expect(fuentes[0]).toContain('(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\\s+(?:ya\\s+)?reservad');
     expect(fuentes[0]).toContain('\\b(?:te|le|les|se|lo|la|ya)\\s+confirm(?:o|amos|é|ó|aron)\\b');
-    expect(fuentes[0]).toContain('recib\\S{0,40} (tu|el) pago');
+    expect(fuentes[0]).toContain('recib\\S{0,40}\\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\\s+(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)s?\\s+(ya\\s+)?(lleg|ingres|entr)');
     // La copia que usan las pruebas de esta suite coincide con las tres.
     expect(PROHIBIDAS.source).toBe(fuentes[0]);
     // Sin la bandera `g` ni `y` (con ellas, `.test` guardaría estado entre llamadas): el literal termina en `/i;`.
@@ -1126,7 +1126,7 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
     expect(texto).toContain('SIMULADO');
     expect(texto).toMatch(/pas[ée] tu pedido al restaurante como pedido de PRUEBA/);
     expect(texto).not.toMatch(PROHIBIDAS);
-    expect(texto).not.toMatch(/pago (acreditado|verificado)|recibimos tu pago|los datos coinciden/i);
+    expect(texto).not.toMatch(/pago (acreditado|verificado)|recibimos\s+tu\s+pago|los datos coinciden/i);
     // El restaurante: plantilla con PRUEBA, detalle de PRUEBA y NUNCA la imagen del comprobante ni «revisen el pago»
     const completo = plantillas(s).find((a) => a['para'] === AV1)!;
     const ps = params(completo);

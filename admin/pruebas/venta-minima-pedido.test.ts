@@ -63,7 +63,7 @@ const L = ejecutar(`${COMUN}\n${PEDIDO}\nreturn [{ json: { ${NOMBRES.join(', ')}
 const RED_REAL = (ejecutar(`${COMUN}\nreturn [{ json: { red: VM_PROHIBIDAS.source } }];`, [{}])[0] as { red: string }).red;
 const PROHIBIDAS_REAL = new RegExp(RED_REAL, 'i');
 // La red de palabras de §4.2 (`VM_PROHIBIDAS`): ningun texto de este archivo debe coincidir.
-const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
+const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+tu\s+pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40}\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\s+(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+)?(lleg|ingres|entr)|(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+|fue\s+|fueron\s+|est[aá]\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026 10:00 en La Paz
 const TEL = '59100000011';

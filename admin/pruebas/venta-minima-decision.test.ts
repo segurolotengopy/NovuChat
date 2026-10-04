@@ -39,7 +39,7 @@ const PLAN = readFileSync(join(NODOS, 'plan-del-turno.js'), 'utf8');
 type J = Record<string, any>;
 
 // La red de palabras que el asistente jamás dice (`VM_PROHIBIDAS` de comun.js, literal del diseño §4.2).
-const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+tu\s+pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 
 // --- Los dobles de las librerías --------------------------------------------------------------
 const DOBLES = String.raw`
@@ -1311,7 +1311,7 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     pendiente(m);
     const s = foto(m);
     const todos = [...cuerpos(s.p), s.p!['aviso']['datos']['estado'], s.p!['cierre']['detalle']];
-    for (const t of todos) expect(String(t), String(t)).not.toMatch(/pago (acreditado|verificado)|recibimos tu pago|acreditad|verificad/i);
+    for (const t of todos) expect(String(t), String(t)).not.toMatch(/pago (acreditado|verificado)|recibimos\s+tu\s+pago|acreditad|verificad/i);
     for (const t of todos) expect(PROHIBIDAS.test(String(t)), String(t)).toBe(false);
   });
 

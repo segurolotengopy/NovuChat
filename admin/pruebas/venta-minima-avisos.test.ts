@@ -37,7 +37,7 @@ const cargar = (antes = ''): Lib =>
 const L = cargar();
 
 // La lista de palabras que el asistente jamás dice (la misma que `comun.js` define como `VM_PROHIBIDAS`).
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+tu\s+pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40}\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\s+(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+)?(lleg|ingres|entr)|(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+|fue\s+|fueron\s+|est[aá]\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026 10:00 en La Paz
 const HORA = 60 * 60 * 1000;
@@ -1281,7 +1281,7 @@ describe('S-1: homoglifos y marcas combinantes no esconden una palabra prohibida
     }
   });
   it('S-5: `recib\\S{0,40}` está acotado y avLimpio vuelve a recortar después de NFKC', () => {
-    expect(FUENTE).toContain('recib\\S{0,40} (tu|el) pago');
+    expect(FUENTE).toContain('recib\\S{0,40}\\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\\s+(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)s?\\s+(ya\\s+)?(lleg|ingres|entr)');
     expect(L.avLimpio('recibimos tu pago', 100)).toBe('[texto omitido]');
     // Una «palabra» de 41 caracteres tras «recib» ya no coincide con la raíz acotada.
     expect(L.avLimpio('recib' + 'x'.repeat(41) + ' tu pago', 200)).toContain('tu pago');

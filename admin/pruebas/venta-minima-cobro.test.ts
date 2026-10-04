@@ -47,7 +47,7 @@ const L = ejecutar(`${LIB}\nreturn [{ json: { ${NOMBRES.join(', ')}, CB_PROHIBID
 // Las formas prohibidas, escritas ACÁ y no importadas de la librería: si la librería aflojara su red, esta
 // prueba lo vería. Son las del plan técnico (`VM_PROHIBIDAS`) más las de CLAUDE.md, PROHIBICIÓN 3.
 const PROHIBIDAS =
-  /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|pago recibido|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+  /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+tu\s+pago|pago recibido|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 // Voseo: el español de Bolivia usa tuteo.
 const VOSEO = /(?<![\p{L}])(mand[aá]me|mandá|guardá|escaneá|tenés|querés|podés|decime|escribile|avisame|compartí|enviá|enviame)(?![\p{L}])/iu;
 
@@ -104,7 +104,7 @@ describe('la librería respeta el sandbox de n8n', () => {
 
   it('la red propia de la librería coincide con la del plan (y atrapa las 16 frases prohibidas)', () => {
     expect(L.CB_PROHIBIDAS.source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\\s+(tu|tus|su|sus|la|el|lo|los|las)\\b|\\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\\s+(?:ya\\s+)?reservad|reserva\\s+((est[aá]|qued[oó])\\s+)?(registrad|agendad)|reservamos tu|\\b(?:te|le|les|se|lo|la|ya)\\s+confirm(?:o|amos|é|ó|aron)\\b',
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\\s+tu\\s+pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S{0,40}\\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\\s+(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)s?\\s+(ya\\s+)?(lleg|ingres|entr)|(pago|transferencia|dep[oó]sito|abono)s?\\s+(ya\\s+|fue\\s+|fueron\\s+|est[aá]\\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad)|confirm(amos|ó|o)\\s+(tu|tus|su|sus|la|el|lo|los|las)\\b|\\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\\s+(?:ya\\s+)?reservad|reserva\\s+((est[aá]|qued[oó])\\s+)?(registrad|agendad)|reservamos tu|\\b(?:te|le|les|se|lo|la|ya)\\s+confirm(?:o|amos|é|ó|aron)\\b',
     );
     for (const f of FRASES_PROHIBIDAS) expect(L.CB_PROHIBIDAS.test(f), f).toBe(true);
     // El negativo: una frase honesta no la dispara.
@@ -753,7 +753,7 @@ describe('S-1: `cbCanon` compara sin homoglifos, sin marcas combinantes y sin co
     expect(pie).not.toContain('la cuenta es de');
   });
   it('la red conserva el cuantificador acotado y las raíces en su contexto', () => {
-    expect(L.CB_PROHIBIDAS.source).toContain('recib\\S{0,40} (tu|el) pago');
+    expect(L.CB_PROHIBIDAS.source).toContain('recib\\S{0,40}\\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\\s+(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\\s+(pago|transferencia|dep[oó]sito|abono)s?\\s+(ya\\s+)?(lleg|ingres|entr)');
     expect(L.CB_PROHIBIDAS.source).not.toContain('|reservad|');
   });
 });
@@ -765,7 +765,7 @@ describe('S-1: `cbCanon` compara sin homoglifos, sin marcas combinantes y sin co
 
 // La red de `comun.js` (`VM_PROHIBIDAS`), copiada acá: si la librería o `comun.js` la aflojaran, esta prueba lo vería.
 const RED_COMUN =
-  /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
+  /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos\s+tu\s+pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40}\s+(tu|el|su|mi|un|este|ese|la|tus|sus|los)\s+(pago|transferencia|dep[oó]sito|abono)s?|lleg[oó]\s+(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)|(tu|el|su|mi)\s+(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+)?(lleg|ingres|entr)|(pago|transferencia|dep[oó]sito|abono)s?\s+(ya\s+|fue\s+|fueron\s+|est[aá]\s+)?(recibid|aprobad|[eé]xitos|realizad|registrad|llegad|ingresad|efectuad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
 const ACREDITACION = /pago (acreditado|verificado)|recibimos tu pago/i;
 
 const URL_SIM = 'https://raw.githubusercontent.com/segurolotengopy/NovuChat/v0.11.0/Demo-Recursos/qr-demo.png';
