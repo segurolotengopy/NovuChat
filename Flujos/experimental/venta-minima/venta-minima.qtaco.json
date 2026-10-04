@@ -4,8 +4,8 @@
     "executionOrder": "v1",
     "timezone": "America/La_Paz",
     "executionTimeout": 60,
-    "saveDataSuccessExecution": "none",
-    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
     "saveExecutionProgress": false,
     "saveManualExecutions": false
   },

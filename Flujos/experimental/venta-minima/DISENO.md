@@ -65,15 +65,34 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - la clave `avisarAlPropioNumero` (interruptor solo de ensayo) solo puede estar en `ensayo-demo-a.json` y en su salida (ver «La variante
     de ensayo en el Demo A»);
   - retención de ejecuciones (ver abajo).
-- **Retención de ejecuciones (decisión de Andres, 02/10/2026; Q'Taco, 03/10/2026; M-1, 03/10/2026).** Por omisión nada se guarda:
-  `saveDataSuccessExecution: "none"`, `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, explícitos en la plantilla y en
-  los JSON generados, porque las ejecuciones llevan texto de clientes. **Q'Taco tampoco guarda las de error, y es TEMPORAL por decisión de
-  Andres (03/10/2026):** el 03/10 se había decidido guardarlas (`all`) para tener rastro de las fallas, pero la revisión de seguridad
-  (M-1) advirtió que la base de n8n guardaría el token de cabecera de la ingesta, los enlaces, la URL del QR y datos de clientes. Hasta el piloto,
-  `venta-minima.qtaco.json` queda con `none` en todo y el diagnóstico de fallas (entre ellas «Entrega fallida») va por el servidor y el
-  error visible de n8n, sin datos guardados. **Se vuelve a revisar tras el piloto, con ese dato.** `construir.mjs` lo arma por salida
-  (`RETENCION_POR_SALIDA`, marcada TEMPORAL), y `--verificar` exige cada valor en ambos sentidos: subir los errores a `all` falla, y el
-  mensaje recuerda que es temporal y que no se sube sin la excepción de Andres.
+- **Retención de ejecuciones (decisión de Andres, 04/10/2026; reemplaza las del 02/10 y el 03/10).** Por omisión (plantilla, prueba, ensayo en el Demo A y cualquier otro
+  tenant) nada se guarda: `saveDataSuccessExecution: "none"`, `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, porque las ejecuciones llevan
+  texto de clientes. **La excepción es UN solo archivo, `venta-minima.qtaco.json`: guarda TODO, las fallas y los éxitos (`all`/`all`), por lo menos 24 horas, para poder
+  diagnosticar** (el progreso sigue sin guardarse; las ejecuciones manuales tampoco: `saveManualExecutions: false` en todos los JSON). Decisión de Andres, 04/10:
+  guardar todo ≥24 h para diagnosticar (el 03/10 se había decidido primero `all` solo en errores y luego `none` en todo, por el riesgo M-1). `construir.mjs` lo arma por
+  salida (`RETENCION_POR_SALIDA`) y `--verificar` EXIGE `all`/`all` en Q'Taco (bajar a `none` o a `default` falla con un mensaje que cita esta decisión) y sigue impidiendo que
+  cualquier otro archivo guarde algo sin declararlo.
+  - **Riesgo M-1, DECLARADO y ACEPTADO por Andres. Qué queda en la base de n8n, por cada ejecución (completo):**
+    (a) el encabezado `Authorization` del webhook `Carrito del catálogo` **es la credencial `NovuChat ingesta (Q'Taco)`, la misma de SEIS nodos** (`Carrito del catálogo`,
+    `Traer configuración`, `Reportar mensaje (entrante)`, `Reportar mensaje (saliente)`, `Cotejar en el servidor` y `Registrar cierre`): quien la lea puede llamar a la ingesta,
+    a la configuración, al cotejo y al cierre de ese comercio, no solo al webhook;
+    (b) los datos de los clientes (teléfono, nombre de perfil, dirección, notas, pedidos), las **notas de voz** y los **comprobantes de pago** (imagen o PDF: nombre, banco,
+    cuenta y monto) y las **salidas de Gemini** (la transcripción del audio y los datos extraídos del pedido y del comprobante), además de los enlaces de la carta y la URL del QR;
+    (c) **cada ejecución guarda una copia del flujo con sus valores reales**: las rutas de los DOS webhooks (el del receptor y el del carrito, que son URL de capacidad) y la URL
+    del verificador interno (también una URL de capacidad).
+  - **Poda de n8n (n8n 2.36.5), DECIDIDO por Andres el 04/10:** la poda la fijan variables de entorno de n8n (el nombre se comprobó en el paquete `@n8n/config` de las dependencias de n8n 2.36.5): `EXECUTIONS_DATA_PRUNE` (por omisión `true`) y `EXECUTIONS_DATA_MAX_AGE`, **en horas**; el valor por omisión es **336 horas (14 días)** y `EXECUTIONS_DATA_PRUNE_MAX_COUNT` es 10.000. **Andres aceptó la poda actual de la instancia (unos 14 días, 10.000 como máximo) para el piloto; no se baja**, porque es global de la instancia y la comparte Bellido. El piso de 24 horas se cumple de sobra; el techo de 72 horas que había propuesto la revisión de seguridad NO se adopta, y el riesgo que eso implica (datos de clientes guardados hasta 14 días) queda declarado y aceptado, con revisión el 2026-12-31. La poda es del despliegue de n8n, NO de este flujo ni de este PR.
+  - **Verificación en la VM, solo lectura (autorizada por Andres el 04/10; la hace la sesión que tiene el acceso)**, antes de dar por cumplido el riesgo declarado (`docs/arquitectura/core.md`, §
+    sobre medios): (1) anotar los valores reales de `EXECUTIONS_DATA_PRUNE` y `EXECUTIONS_DATA_MAX_AGE` (se acepta la poda actual de ~14 días); (2) los datos binarios (audio, fotos, PDF) en el sistema de archivos con permisos 700
+    en su directorio. **Nota sobre el nombre de la variable binaria:** los documentos del repositorio dicen `N8N_DEFAULT_BINARY_MODE=filesystem`, pero en el código de `n8n-core`
+    de n8n 2.36.5 la variable es `N8N_DEFAULT_BINARY_DATA_MODE` (valores `default`, `filesystem`, `s3`, `azure`, `database`; y, sin configurar y sin modo cola, el código elige
+    `filesystem`) y el directorio lo fija `N8N_BINARY_DATA_STORAGE_PATH`; el nombre que figura en los documentos NO se encontró en el código: **hay que confirmar en la VM, con
+    `docker exec … env` y mirando el directorio real, cuál modo y cuál directorio están en uso** antes de dar la condición por cumplida.
+  - **Mitigaciones:** (1) acceso a n8n y a su API solo del propietario; (2) la poda actual de ~14 días, aceptada por Andres (arriba); (3) los **respaldos de la VM que incluyan la base de n8n retienen
+    más allá de la poda**: hay que saberlo y decidirlo; (4) **rotación del secreto de ingesta con `scripts/rotar-ingesta.sh`** al vencer la revisión (**2026-12-31**), tras el piloto, ante
+    cualquier sospecha y ante cualquier exportación o captura de ejecuciones; (5) no compartir exportaciones de ejecuciones ni capturas de ellas; (6) **sugerencia para después (requiere
+    servidor):** una credencial propia para el webhook del carrito, distinta de la de la ingesta, para que su exposición no abra los otros cinco usos.
+  - **Fecha de revisión de esta decisión y de rotación del secreto de ingesta: 2026-12-31.**
+  - Solo cambian estos dos valores de `venta-minima.qtaco.json` (y el texto de la guarda); el resto del flujo, los nodos (50) y las otras salidas no se tocan.
 
 ## Entrega de lo prometido (R1, R3, R5) y catálogo web, sin subir el tope de nodos
 
@@ -264,7 +283,7 @@ Demo A». Decisiones:
 - **Dos marcadores y nada más**: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A) y `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de Andres, con
   prefijo 591, que solo vive en la tabla local: destinatario `completo` y recepción de respaldo; **ninguna cifra de teléfono en el
   repositorio**). `preparar-import.sh` los reemplaza y deja un `.local.json` que `construir.mjs` no cuenta como huérfano. Ninguno `_QTACO`,
-  ni receptor, ni verificador, ni «Entrada de prueba», ni «Simular aviso», ni webhooks (tampoco el carrito). La retención sigue en `none`.
+  ni receptor, ni verificador, ni «Entrada de prueba», ni «Simular aviso», ni webhooks (tampoco el carrito). La retención de esta salida (Demo A, ensayo) sigue en `none`.
 - **Plantillas vacías**: en la línea del Demo A no existen. Con un solo teléfono la ventana de 24 h **ya está abierta** (escribe él, y cada
   mensaje suyo la reabre): el aviso sale como texto libre. El botón «Escribir al local» va a la recepción del comercio `ensayo`
   (`REEMPLAZAR_NUMERO_RECEPCION_ENSAYO`, hoy el teléfono de Andres): su propio teléfono.
@@ -458,7 +477,7 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
   caracteres) y rechaza `wa.me` y `whatsapp.com`; la nota del cliente se inserta con una función de reemplazo (`$&`, `$'` no se interpretan).
 - **Mensajes por conversación:** 0 agregados ni quitados por esta revisión (el aviso «sigue guardado» va dentro del mismo mensaje).
 - **Declarado y fuera de este flujo:** los hallazgos L-4 y L-5 de la revisión de seguridad son del servidor o de trabajo futuro y no se tocan
-  aquí; la retención de errores de `venta-minima.qtaco.json` (M-1) quedó en `none`, TEMPORAL por decisión de Andres (03/10), a revisar tras el piloto.
+  aquí; la retención de `venta-minima.qtaco.json` (M-1) la decidió Andres el 04/10: guarda todo (`all`/`all`), con el riesgo aceptado (ver «Cómo se arma»).
 
 ## Cobro: real, simulado o sin QR (03/10/2026)
 
@@ -596,7 +615,7 @@ en texto llegue; sin esa conversación, el destinatario solo recibe la plantilla
   Andres prefiere una plantilla propia para reservas y consultas (ver el punto 5).
 - **Consola de Q'Taco**: `catalogoWebActivo` en `false` (con más de 40 ítems la ingesta manda `catalogo: []` y el flujo
   deriva todo pedido), carta, campañas y QR; `numeroRecepcion` y `venta.aceptaDelivery`/`aceptaRetiroEnLocal`.
-- **Retención de ejecuciones (P6)**: `none` en todo, también en `venta-minima.qtaco.json` (TEMPORAL por decisión de Andres del 03/10; se revisa tras el piloto; ver «Cómo se arma»).
+- **Retención de ejecuciones (P6)**: `none` en todo, salvo `venta-minima.qtaco.json`, que guarda todo (`all`/`all`, por lo menos 24 h; decisión de Andres del 04/10; riesgo M-1 aceptado: ver «Cómo se arma»).
 - **Marcador nuevo en el alta**: `REEMPLAZAR_RUTA_CARRITO_QTACO` (la ruta del webhook del carrito) entra a la tabla local del alta de Q'Taco.
 - Importar con `./scripts/preparar-import.sh Flujos/experimental/venta-minima/venta-minima.qtaco.json .env.qtaco`
   (el patrón de marcadores corta en comillas, barras y espacios: **no pegar dos marcadores con una coma**; la suite lo
