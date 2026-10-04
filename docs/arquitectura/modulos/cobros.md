@@ -294,7 +294,14 @@ cambia ningún flujo publicado. La regla 1 se retira cuando ningún flujo la use
   invertido, truncado y con **una letra de diferencia** en palabras de 5 o más
   letras (aproximado). «Juan Pérez» frente a «Juan López» es inválido; un nombre
   muy distinto sin cuenta visible, también.
-- **P1b (03/10/2026).** El nombre del destinatario vale **por sí solo** solo si
+- **P1b (03/10/2026, afinada tras la revisión).** El emparejamiento es **uno a
+  uno** y la **dirección importa** (esperado, leído): un prefijo vale solo si la
+  palabra truncada es la LEÍDA del comprobante (el banco trunca) y es principio
+  de la esperada, con 4 letras o más (completo) o con 3 (débil); ANA no valida
+  ANABEL, PAZ no valida PAZOS, EVA no valida EVANGELINA. Las iniciales y los
+  prefijos de 3 letras son **débiles**: solo dan `aproximado`, y si todas las
+  coincidencias son débiles («Juan Perez» frente a «J P» o «JUA PER») el nombre
+  es `insuficiente`. Un prefijo de 2 letras no es nada. El nombre del destinatario vale **por sí solo** solo si
   coinciden al menos **dos palabras** (sin partículas); con una sola palabra
   coincidente hace falta que coincida la cuenta, y si no el resultado es
   inválido con motivo `destino_no_coincide`. Orden invertido y nombre truncado
@@ -341,7 +348,9 @@ arma `solicitudTras`. (b) `solicitudDeCobroTras` se llama en **TODO
 `qr_enviado` de cualquier módulo** (agenda y venta comparten
 `conversaciones/{t}.solicitud`); con efecto `ignorado` o `sin_id_meta` la
 ingesta **no toca la solicitud ni cuenta el QR**, y con `qr_enviado` debe pasar
-`reglaCobro`, `idMeta`, `referencia` y `monto`. (c) `registrarCierre` con
+`reglaCobro`, `idMeta`, `referencia` y `monto`; **`referencia` es siempre el
+pedido** (el `cat_…` o su id), **nunca el id del mensaje del QR**, y `monto` el
+total cotizado: con ellos se decide si un `qr_enviado` es reenvío o cobro nuevo. (c) `registrarCierre` con
 `cita_agendada` (`core/turno/cierres.ts:140-142`) **no debe pasar a `agendada`**
 una solicitud de regla 2 en `en_revision`, `cancelada` o vencida por reloj.
 (d) `seguimientos.ts:128` **no debe emitir recordatorio** sobre una regla 2
@@ -360,7 +369,8 @@ anterior sobreviviría.
 
 *`solicitud` con regla 2.* `reglaCobro`, `venceEn`, `prorrogaHasta`,
 `intentosInvalidos`, `comprobantes` (hasta 6: `{idMeta, estado, motivo, en,
-ruta|null}`), `anulacionAvisadaEn`; etapas nuevas `en_revision` (no vence por
+ruta|null, avisar, intentos, importe, montoLeido, montoDistinto}`), `subidas`
+(hasta 6: `{idMeta, ruta}`), `anulacionAvisadaEn`; etapas nuevas `en_revision` (no vence por
 reloj) y `cancelada`; `agendada` es la venta cerrada.
 
 *`configuracionFlujo.cobro`* (`cobroParaElFlujo`): los campos de siempre,
@@ -384,15 +394,21 @@ inválido: `monto_menor`, `monto_mayor`, `fecha_anterior`, `fecha_posterior`,
 `destino_no_verificable`; no es
 comprobante: `falta_monto`, `falta_fecha`, `falta_destino`, `ilegible`; y
 `tardio`, `en_revision`, `ya_resuelto`. Nada de lo leído de la imagen vuelve al
-cliente, salvo `montoLeido` cuando hay `montoDistinto`.
+cliente, salvo `montoLeido`: sale en **toda** respuesta con un comprobante
+legible (aproximado, inválido y tardío incluidos) para que el flujo diga «el
+comprobante dice X y el pedido es Y»; `montoDistinto` es `true` solo cuando se
+aceptó como aproximado por la tolerancia.
 **Una transacción:** `valido`/`aproximado` crean `cierres/venta_<ref>` (con
 `cotejo.resultado: 'cuadra'` y `cotejo.calidad`) y suman `cierres`; un
 **inválido NO crea cierre ni suma `cierres`**, suma `cobrosInvalidos`; el
 tercero pasa a `en_revision` con `avisarComercio`; un tardío no cierra la venta.
 Un `idMeta` repetido (reintento de n8n, porque la primera respuesta se perdió)
 **repite lo que se contestó** —`estado` (`invalido` sale como `reintentar`),
-`motivo`, `cierreId` y el `avisarComercio` original— con `repetido: true`, para
-que el flujo decida; no cuenta ni escribe nada. Un comprobante recibido en
+`motivo`, `intentos` e `intentosRestantes` **de entonces**, `montoLeido`,
+`cierreId` y el `avisarComercio` original— con `repetido: true`. **El flujo no
+debe volver a avisar al comercio cuando llega `repetido: true`** (la solicitud
+ya lo decidió; el reintento existe por si se perdió la respuesta, y el flujo
+decide si el aviso original llegó); no cuenta ni escribe nada. Un comprobante recibido en
 `en_revision` se anota con motivo `en_revision`; el tercer inválido se anota ya
 como `en_revision`.
 La `ruta` solo se anota si coincide con el patrón del comercio y del `idMeta`.
@@ -402,12 +418,19 @@ La `ruta` solo se anota si coincide con el patrón del comercio y del `idMeta`.
 hasta **5 MB**, pdf hasta **10 MB**; el tipo se comprueba **por los bytes** y
 debe coincidir con el declarado. 200 `{ruta}`, o 400, 401, **413**, **415**,
 **409** (no hay cobro de regla 2 abierto, en revisión o recién vencido para ese
-teléfono) o 502 (Storage falló: el flujo sigue con `ruta: null`). El 409 cubre: sin cobro
-de regla 2 abierto, en revisión o vencido; `vencida` con más de 24 h desde el
-límite; y seis comprobantes ya anotados (`demasiados_comprobantes`; un `idMeta`
-ya anotado sí pasa). **Una evidencia nunca se sobrescribe**: se guarda con
-`ifGenerationMatch: 0` y el mismo `idMeta` repetido responde 200 con la misma
-ruta sin reescribir. Ruta:
+teléfono) o 502 (Storage falló: el flujo sigue con `ruta: null`). **Se aceptan imágenes** mientras el cobro está en `qr_enviado` o `vencida`
+hasta 24 h después del límite efectivo (`limiteDe`, también un `qr_enviado`
+vencido por reloj que nadie anotó) y en `en_revision` hasta 24 h desde que
+entró (`solicitud.desde`); fuera de eso, 409 `sin_cobro_pendiente`. **El tope de
+6 cuenta SUBIDAS**: cada imagen nueva anota `{idMeta, ruta}` en
+`solicitud.subidas` dentro de una transacción (una escritura por imagen) y la
+séptima da 409 `demasiados_comprobantes`; un `idMeta` ya subido pasa. El nombre
+del objeto es el **sha256 del `idMeta` crudo en base64url** (43 caracteres), no
+un saneo con pérdida, y `rutaValidaDe` compara contra ese mismo hash. **Una
+evidencia nunca se sobrescribe**: se guarda con `ifGenerationMatch: 0`, hay una
+sola extensión por `idMeta` y el mismo `idMeta` repetido responde 200 con la
+misma ruta sin reescribir (si la primera vez Storage falló, el reintento sí
+guarda). Ruta:
 `tenants/{t}/comprobantes/{aaaa-mm-dd}/{idMetaSaneado}.{jpg|png|webp|pdf}`, con
 el día de La Paz y **sin el teléfono**; `cacheControl: private`. **Solo
 autentica con el token por número**: la firma HMAC cubre el cuerpo y
