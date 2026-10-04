@@ -1434,9 +1434,10 @@ respuesta de `configuracionFlujo` (con `catalogoCompleto: true`), y la ficha se
 reutiliza entre turnos para no abrir una por mensaje. Pero solo mientras no tuvo
 ningún carrito: el segundo pedido legítimo del mismo cliente (almuerzo y cena) abre
 una ficha nueva y no llega marcado como `fichaCompartida` (eso obligaría a confirmar
-antes de despachar, y cada confirmación es un mensaje pagado). La consecuencia de
-seguridad es mejor, no peor: un enlace reenviado a un grupo tiene el daño acotado a
-un pedido por enlace entregado a la conversación. **El tope de cinco carritos por
+antes de despachar, y cada confirmación es un mensaje pagado). Lo que esto cambia
+en seguridad: la conversación recibe una ficha nueva tras cada pedido; la ficha
+reenviada conserva su tope de cinco carritos y del segundo en adelante llegan
+marcados como compartidos. **El tope de cinco carritos por
 ficha no cambia** (lo siguen usando `enlaceCatalogo` y el checkout): cambia a quién
 se le vuelve a dar la ficha. La reutilización además exige el mismo comercio, el
 mismo teléfono, el mismo número (`phoneNumberId`) y el mismo flujo, y al menos seis
