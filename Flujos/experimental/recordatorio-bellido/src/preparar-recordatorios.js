@@ -9,7 +9,7 @@
 //  4. una cita cancelada o borrada no se recuerda; solo si el comercio esta operativo;
 //  5. el mensaje no lleva datos del paciente. Plantilla: «Hola {{1}}, Este es un recordatorio sobre tu proxima cita con
 //     {{2}} el {{3}} a las {{4}}. ¡Esperamos verte!». {{1}} y {{2}} son valores de configuracion (`saludoVariable`, por
-//     omision «te escribimos del consultorio del Dr. Bellido»; `conQuienVariable`, por omision «tu peque 👶»), {{3}} es solo
+//     omision «te escribimos del Dr. Bellido»; `conQuienVariable`, por omision «tu peque 👶»), {{3}} es solo
 //     la fecha escrita y {{4}} solo la hora en 24 h. Ni el titulo ni el nombre salen en ningun campo del item (ni hacia
 //     Meta ni a los registros). Ninguna variable lleva saltos de linea, tabuladores ni 4 o mas espacios seguidos (limite
 //     de Meta): se limpian aca.
@@ -24,7 +24,7 @@ const MARCA_NOVUCHAT = 'Agendado por NovuChat.';
 const PREFIJO_IMPORTADA = 'novuchat-importada-';
 const limpiar = (t) => String(t).replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim();
 const deConfig = (valor, porOmision) => limpiar(valor === undefined || valor === null || limpiar(valor) === '' ? porOmision : valor);
-const SALUDO = deConfig(cfg.saludoVariable, 'te escribimos del consultorio del Dr. Bellido');
+const SALUDO = deConfig(cfg.saludoVariable, 'te escribimos del Dr. Bellido');
 const CON_QUIEN = deConfig(cfg.conQuienVariable, 'tu peque 👶');
 const CON_SALUDO = Number(cfg.variablesCuerpo || 4) !== 3;
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -48,10 +48,14 @@ for (const item of $input.all()) {
   const lp = new Date(inicio - 4 * 3600000);               // UTC-4 fijo (La Paz)
   const fecha = `${DIAS[lp.getUTCDay()]} ${lp.getUTCDate()} de ${MESES[lp.getUTCMonth()]}`;
   const hora = String(lp.getUTCHours()).padStart(2, '0') + ':' + String(lp.getUTCMinutes()).padStart(2, '0');
+  const parametros = (CON_SALUDO ? [SALUDO] : []).concat([CON_QUIEN, fecha, hora].map(limpiar));
+  // Meta (plantillas de utilidad) rechaza con «(#100) Invalid parameter» una variable de texto de MAS DE 30 caracteres
+  // (comprobado el 04/10/2026 con «te escribimos del consultorio del Dr. Bellido», 44): se omite con su causa, no se envia.
+  if (parametros.some((v) => v.length > 30)) { omitidas.push('variable de plantilla de mas de 30 caracteres'); continue; }
   salida.push({ json: {
     eventoId: ev.id, calendarioDelEvento: (ev.organizer || {}).email || cfg.calendarioId,
     telefono, fecha, hora,
-    parametros: (CON_SALUDO ? [SALUDO] : []).concat([CON_QUIEN, fecha, hora].map(limpiar)),
+    parametros,
     plantilla: cfg.plantilla, idioma: cfg.idiomaPlantilla, phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion,
     descripcionMarcada: (desc ? desc + '\n' : '') + MARCA + ' ' + new Date().toISOString(),
   }, pairedItem: { item: 0 } });

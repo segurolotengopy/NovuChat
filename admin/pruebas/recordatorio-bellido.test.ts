@@ -27,7 +27,7 @@ const FLUJO = JSON.parse(readFileSync(join(RAIZ, 'recordatorio-bellido.prueba.js
 };
 
 const TEL = '59100000021';
-const SALUDO = 'te escribimos del consultorio del Dr. Bellido';
+const SALUDO = 'te escribimos del Dr. Bellido';
 // Cómo lo lee el paciente: el cuerpo aprobado de la plantilla con las 4 variables puestas.
 const leido = (p: string[]): string =>
   `Hola ${p[0]}, Este es un recordatorio sobre tu próxima cita con ${p[1]} el ${p[2]} a las ${p[3]}. ¡Esperamos verte!`;
@@ -168,7 +168,7 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
     expect(cuerpo['template'].name).toBe('recordatorio_cita_consultorio');
     expect(cuerpo['template'].language.code).toBe('es');
     expect(parametros).toEqual([SALUDO, 'tu peque 👶', 'martes 6 de octubre', '11:00']);
-    expect(leido(parametros)).toBe('Hola te escribimos del consultorio del Dr. Bellido, Este es un recordatorio sobre tu próxima cita con tu peque 👶 el martes 6 de octubre a las 11:00. ¡Esperamos verte!');
+    expect(leido(parametros)).toBe('Hola te escribimos del Dr. Bellido, Este es un recordatorio sobre tu próxima cita con tu peque 👶 el martes 6 de octubre a las 11:00. ¡Esperamos verte!');
     // el botón de la plantilla es una URL fija: no se manda ningún componente de botón, solo el cuerpo
     expect(cuerpo['template'].components).toHaveLength(1);
     expect(cuerpo['template'].components[0].type).toBe('body');
@@ -196,7 +196,7 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
   });
 
   it('ninguna variable lleva saltos de línea, tabuladores ni 4 o más espacios seguidos (límite de Meta)', () => {
-    const sucia = { ...CFG, saludoVariable: 'te escribimos\ndel consultorio\t\tdel Dr.      Bellido\r\n', conQuienVariable: ' tu\n\n peque    ' };
+    const sucia = { ...CFG, saludoVariable: 'te escribimos\n\tdel   Dr.      Bellido\r\n', conQuienVariable: ' tu\n\n peque    ' };
     for (const cfg of [CFG, sucia]) {
       const p = correrPreparar([evento()], cfg)[0]['parametros'] as string[];
       expect(p).toHaveLength(4);
@@ -208,7 +208,7 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
       }
     }
     // la sucia se limpia, no se descarta: el texto queda legible
-    expect(correrPreparar([evento()], sucia)[0]['parametros'].slice(0, 2)).toEqual(['te escribimos del consultorio del Dr. Bellido', 'tu peque']);
+    expect(correrPreparar([evento()], sucia)[0]['parametros'].slice(0, 2)).toEqual(['te escribimos del Dr. Bellido', 'tu peque']);
   });
 
   it('con una plantilla de 3 variables la lista no lleva el saludo; con 4 sí', () => {
@@ -244,4 +244,14 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
     expect(texto).toContain('REEMPLAZAR_TELEFONO_PRUEBA_ANDRES');
     expect(texto).not.toMatch(/\b591[67]\d{7}\b/);
   });
+  it('Meta rechaza una variable de más de 30 caracteres: las de por omisión caben y una más larga omite la cita con su causa', () => {
+    const r = correrPreparar([evento()], CFG);
+    for (const v of r[0]['parametros'] as string[]) expect(v.length, v).toBeLessThanOrEqual(30);
+    expect(SALUDO.length).toBeLessThanOrEqual(30);
+    const larga = correrPreparar([evento()], { ...CFG, saludoVariable: 'te escribimos del consultorio del Dr. Bellido' });
+    expect(larga).toHaveLength(1);
+    expect(larga[0]['sinRecordatorios']).toBe(true);
+    expect(larga[0]['omitidas']).toContain('variable de plantilla de mas de 30 caracteres');
+  });
+
 });

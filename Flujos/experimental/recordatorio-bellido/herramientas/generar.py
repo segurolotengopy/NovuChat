@@ -21,7 +21,7 @@ CONFIG_PARAMS={"assignments":{"assignments":[
    {"id":"c8","name":"estadoComercio","type":"string","value":"operativo"},
    {"id":"c9","name":"telefonoPruebaAndres","type":"string","value":"REEMPLAZAR_TELEFONO_PRUEBA_ANDRES"},
    {"id":"c10","name":"telefonoPruebaSilvana","type":"string","value":"REEMPLAZAR_TELEFONO_PRUEBA_SILVANA"},
-   {"id":"c11","name":"saludoVariable","type":"string","value":"te escribimos del consultorio del Dr. Bellido"},
+   {"id":"c11","name":"saludoVariable","type":"string","value":"te escribimos del Dr. Bellido"},
    {"id":"c12","name":"variablesCuerpo","type":"string","value":"4"}]},"options":{}}
 nodos=[
  nodo("Todos los días 17:00 (apagado en la prueba)","n8n-nodes-base.scheduleTrigger",1.2,[0,300],{"rule":{"interval":[{"field":"cronExpression","expression":"0 17 * * *"}]}},disabled=True),
