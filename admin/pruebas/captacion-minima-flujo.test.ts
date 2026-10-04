@@ -22,11 +22,11 @@
  *     memoria (encabezados en la fila 3, datos desde la 4) que EVALÚA los parámetros del JSON (planilla, hoja, rango, filtro,
  *     formato de escritura) y emula `USER_ENTERED` (un texto con «=» al inicio sería una fórmula) y `RAW`.
  *
- * LA SUITE SE OMITE si el flujo todavía no está armado (`describe.skipIf`): corre sola cuando `construir.mjs` genere los JSON.
+ * LA SUITE NO SE OMITE: si falta algún JSON armado, falla al cargar (un flujo sin armar no puede dar «verde»).
  *
  * LAS PROPIEDADES SOBRE TODAS LAS SALIDAS (§9) se comprueban en CADA turno de CADA caso, dentro de `jugar().turno()`, no en un
  * bloque aparte: así nunca dependen del orden de las pruebas ni de que alguien corra solo un caso (`-t`). Son: a lo más una «?» por
- * mensaje; hasta 3 oraciones y unas 45 palabras (la prueba tolera 60: «unas»); toda oferta del asesor con botón, fila o enlace;
+ * mensaje; hasta 3 oraciones y unas 45 palabras (la prueba tolera 50: «unas»); toda oferta del asesor con botón, fila o enlace;
  * ninguna promesa del tipo «ya le pasé», «te escribirán» ni «lo consulto»; nunca negar ser una IA; solo el mensaje de PLANES trae
  * `header` (imagen o documento) y es el único con imagen; los límites de Meta; una llamada a la ingesta por entrante y una por
  * cada saliente que Meta aceptó; el entrante se reporta antes de llamar al modelo; una sola llamada al modelo por turno, con
@@ -51,11 +51,10 @@ const CARPETA = join(AQUI, '../../Flujos/experimental/captacion-minima');
 const DATOS = join(AQUI, '../scripts/datos/captacion-minima');
 const RUTA_PRODUCCION = join(CARPETA, 'captacion-minima.novuchat.json');
 const RUTA_PRUEBA = join(CARPETA, 'captacion-minima.prueba.json');
-const HAY_FLUJO = existsSync(RUTA_PRODUCCION) && existsSync(RUTA_PRUEBA);
+// Sin los dos JSON armados la suite FALLA (no se omite): `readFileSync` lanza al cargar el archivo.
 const leerFlujo = (ruta: string): Flujo => JSON.parse(readFileSync(ruta, 'utf8')) as Flujo;
-// Con skipIf el cuerpo del `describe` igual se recorre: nada de abajo toca el flujo al cargar el archivo.
-const PRODUCCION: Flujo = HAY_FLUJO ? leerFlujo(RUTA_PRODUCCION) : ({} as Flujo);
-const PRUEBA: Flujo = HAY_FLUJO ? leerFlujo(RUTA_PRUEBA) : ({} as Flujo);
+const PRODUCCION: Flujo = leerFlujo(RUTA_PRODUCCION);
+const PRUEBA: Flujo = leerFlujo(RUTA_PRUEBA);
 
 // ------------------------------------------------------------------------------ datos de ejemplo
 // Teléfonos sintéticos (seis ceros seguidos) y un negocio inventado: nada real.
@@ -570,7 +569,7 @@ const SOLO_TEXTO = (t: T): Enviado[] => t.aMi.filter((e) => e.tipo === 'text');
 const CUERPO = (t: T, k = 0): string => t.aMi[k]!.cuerpo;
 
 // =================================================================================================
-describe.skipIf(!HAY_FLUJO)('Captación mínima v0: el flujo, de punta a punta', () => {
+describe('Captación mínima v0: el flujo, de punta a punta', () => {
   // ----------------------------------------------------------------------------------------- 1
   describe('(1) el flujo armado: lo que se versiona', () => {
     const tipos = (f: Flujo): string[] => f.nodes.map((n) => n.type);
@@ -651,12 +650,13 @@ describe.skipIf(!HAY_FLUJO)('Captación mínima v0: el flujo, de punta a punta',
         }
       }
     });
-    it('las opciones del flujo: ejecución en orden v1, zona de La Paz, retención «none» y solo dos URL por expresión', () => {
+    it('las opciones del flujo: ejecución en orden v1, zona de La Paz, retención de solo lo que falla y solo dos URL por expresión', () => {
       for (const f of [PRODUCCION, PRUEBA]) {
         expect(f.settings?.['executionOrder']).toBe('v1');
         expect(f.settings?.['timezone']).toBe('America/La_Paz');
         expect(f.settings?.['saveDataSuccessExecution']).toBe('none');
-        expect(f.settings?.['saveDataErrorExecution']).toBe('none');
+        expect(f.settings?.['saveDataErrorExecution']).toBe('all'); // D13: se guardan solo las ejecuciones que fallan
+        expect(f.settings?.['errorWorkflow']).toBeUndefined();
         expect(f.settings?.['saveExecutionProgress']).toBe(false);
         const urlsPorExpresion = f.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /^=\{\{[^}]*\}\}$/.test(String(n.parameters['url'] ?? ''))).map((n) => n.name).sort();
         expect(urlsPorExpresion).toEqual(['Descargar medio', 'Guardar prospecto']);
@@ -1527,7 +1527,7 @@ describe.skipIf(!HAY_FLUJO)('Captación mínima v0: el flujo, de punta a punta',
     it('un monto en la respuesta del modelo (pregunta suelta): se trata como «no lo tengo» y NINGÚN precio sale de su redacción', () => {
       const w = crear(); const j = hastaElDolor(w);
       modelo(w, { tipo: 'pregunta', respuesta: 'El plan Impulso cuesta USD 25 al mes.', enLosDatos: true });
-      const t = j.texto('¿cuánto sale lo más básico?');
+      const t = j.texto('¿qué incluye lo más básico?'); // (una pregunta por el PRECIO va a los planes: R2)
       expect(CUERPO(t)).toMatch(/Eso no lo tengo en mis datos/);
       expect(todoElTexto(t)).not.toMatch(/USD|d[oó]lares/i);
       expect(idsBotones(t.aMi[0]!).concat(idsFilas(t.aMi[0]!))).toContain('asesor');
@@ -1682,8 +1682,8 @@ describe.skipIf(!HAY_FLUJO)('Captación mínima v0: el flujo, de punta a punta',
       modelo(w2, { tipo: 'respuesta', empatia: EMP });
       expect(j2.imagen().ejecutados.has('Describir imagen')).toBe(true);
     });
-    it('tipo no admitido (ubicación, sticker): «Por ahora atiendo texto, audio, fotos y documentos. ¿Me lo escribes?», sin modelo ni medios', () => {
-      for (const msg of [mUbicacion(), mSticker()]) {
+    it('tipo no admitido (ubicación): «Por ahora atiendo texto, audio, fotos y documentos. ¿Me lo escribes?», sin modelo ni medios', () => {
+      for (const msg of [mUbicacion()]) {
         const w = crear(); const j = hastaElDolor(w);
         const t = j.turno(msg);
         expect(t.modelo, String(msg['type'])).toHaveLength(0);
@@ -1803,15 +1803,18 @@ describe.skipIf(!HAY_FLUJO)('Captación mínima v0: el flujo, de punta a punta',
       j.texto('otra cosa');
       expect(j.texto('Hola', { wamid: 'wamid.A' }).mensajes).toHaveLength(0);
     });
-    it('un estado viejo en `conversaciones` (el del flujo anterior) no afecta ni se toca: el flujo nuevo empieza de cero', () => {
+    it('un estado viejo en `conversaciones` (el del flujo anterior) no afecta y se BORRA (S6): el flujo nuevo empieza de cero', () => {
       const w = crear();
       const viejo = { [MAMA]: { etapa: 'cerrado', avisado: true, desde: 1, ultimo: 2, respuestas: 40, lead: { empresa: 'Zeta SRL' }, hechos: { pidioAsesor: true, pidioPlanes: true } } };
       w.mundo.sd['conversaciones'] = JSON.parse(JSON.stringify(viejo)) as J;
+      w.mundo.sd['vistos'] = { 'wamid.viejo': 1 };
       const j = jugar(w);
       const t = j.texto('Hola');
       expect(tipoInter(t.aMi[0]!)).toBe('list');
       expect(califDe(w, MAMA)).toBe('Baja');
-      expect(w.mundo.sd['conversaciones']).toEqual(viejo);
+      // S6: lo que dejó el flujo viejo en los datos estáticos (el mismo workflow se publica encima) se borra: tenía datos de prospectos.
+      expect(w.mundo.sd['conversaciones']).toBeUndefined();
+      expect(w.mundo.sd['vistos']).toBeUndefined();
       const a = j.asesor();
       expect(a.plantillas).toHaveLength(1); // `avisado` del estado viejo no cuenta
       expect(CUERPO(a)).toMatch(/¿Cómo se llama tu negocio\?/); // la empresa del estado viejo tampoco
@@ -2022,7 +2025,7 @@ describe.skipIf(!HAY_FLUJO)('Captación mínima v0: el flujo, de punta a punta',
 // =================================================================================================
 // `construir.mjs --verificar`: sale 0 con lo versionado y 1 ante cada dato inválido, guardia violada o huérfano.
 // Corre sobre una COPIA de la carpeta y de los datos: lo que se altere es de la copia, nunca del repositorio.
-describe.skipIf(!HAY_FLUJO)('construir.mjs: el flujo armado es el que sale de la plantilla y los datos, y las guardias fallan cerrado', () => {
+describe('construir.mjs: el flujo armado es el que sale de la plantilla y los datos, y las guardias fallan cerrado', () => {
   function enCopia(modifica: (cm: string, datos: string) => void, args: string[] = ['--verificar']) {
     const tmp = mkdtempSync(join(tmpdir(), 'cm-'));
     try {
@@ -2109,7 +2112,8 @@ describe.skipIf(!HAY_FLUJO)('construir.mjs: el flujo armado es el que sale de la
   it('--verificar FALLA si la retención o el orden de ejecución cambian, o si los rangos y formatos de la planilla se alteran', () => {
     const cambios: [string, (f: Flujo) => void, RegExp][] = [
       ['retención de éxitos', (f) => { f.settings!['saveDataSuccessExecution'] = 'all'; }, /saveDataSuccessExecution/],
-      ['retención de errores', (f) => { f.settings!['saveDataErrorExecution'] = 'all'; }, /saveDataErrorExecution/],
+      ['retención de errores (tiene que ser «all»)', (f) => { f.settings!['saveDataErrorExecution'] = 'none'; }, /saveDataErrorExecution/],
+      ['un `errorWorkflow`', (f) => { f.settings!['errorWorkflow'] = 'abc'; }, /errorWorkflow/],
       ['progreso guardado', (f) => { f.settings!['saveExecutionProgress'] = true; }, /saveExecutionProgress/],
       ['orden de ejecución', (f) => { f.settings!['executionOrder'] = 'v0'; }, /executionOrder/],
       ['zona horaria', (f) => { f.settings!['timezone'] = 'UTC'; }, /timezone/],
@@ -2162,5 +2166,265 @@ describe.skipIf(!HAY_FLUJO)('construir.mjs: el flujo armado es el que sale de la
     // Negativo: sin tocar, la construcción da 0.
     const ok = construirEnCopia(() => undefined);
     expect(ok.status, ok.stderr).toBe(0);
+  });
+});
+
+// =================================================================================================
+// CONTRATO §12 (correcciones de la revisión, 03/10/2026): cada punto con su prueba negando.
+describe('§12: correcciones de la revisión de código y de seguridad', () => {
+  const FIJO_IA = 'Soy el asistente virtual de NovuChat, con inteligencia artificial.';
+
+  it('S1: «¿eres Silvana?», «¿es un robot?», «¿me atiende una persona?» y «¿esto es automático?» los contesta el código, sin modelo', () => {
+    for (const q of [`¿eres ${QUIEN}?`, '¿es un robot?', '¿me atiende una persona?', '¿esto es automático?']) {
+      const w = crear(); const j = hastaElDolor(w);
+      const t = j.texto(q);
+      expect(t.modelo, q).toHaveLength(0);
+      expect(CUERPO(t), q).toContain(FIJO_IA);
+    }
+  });
+  it('S1/S2: el modelo no puede hablar como Silvana, decir que no hay robot ni prometer contacto: sale «Te entiendo.»', () => {
+    for (const empatia of [`Sí, soy ${QUIEN}.`, `Te habla ${QUIEN}, del equipo.`, 'Soy una asesora del equipo.', 'Aquí no hay ningún robot.', 'Se pondrá en contacto contigo.',
+      `${QUIEN} te escribe hoy mismo.`, 'Te responde en menos de 2 horas.', 'Se comunicará contigo pronto.']) {
+      const w = crear(); const j = hastaElDolor(w);
+      modelo(w, { tipo: 'respuesta', empatia });
+      const t = j.texto('Sí, mucho tiempo');
+      expect(CUERPO(t), empatia).toMatch(/^Te entiendo\./);
+      expect(todoElTexto(t), empatia).not.toMatch(new RegExp(`${esc(QUIEN)}, del equipo|soy una asesora|ningún robot|en contacto contigo|menos de 2 horas`, 'i'));
+    }
+  });
+  it('S3: ni un dígito en la empatía ni un número ajeno en la respuesta; «cuánto me cuesta» pide los planes', () => {
+    const w = crear(); const j = hastaElDolor(w);
+    modelo(w, { tipo: 'respuesta', empatia: 'Te cuento que hay 3 formas de resolverlo.' });
+    expect(CUERPO(j.texto('Sí, mucho tiempo'))).toMatch(/^Te entiendo\./);
+    const w2 = crear(); const j2 = hastaElDolor(w2);
+    modelo(w2, { tipo: 'pregunta', respuesta: 'Tenemos 7 sucursales en todo el país.', enLosDatos: true });
+    expect(CUERPO(j2.texto('¿cuántas sucursales tienen?'))).toMatch(/Eso no lo tengo en mis datos/);
+    for (const q of ['Hola, ¿cuánto me cuesta?', 'cuánto nos cobran']) {
+      const w3 = crear(); const t = jugar(w3).texto(q);
+      expect(CUERPO(t), q).toMatch(/planes/i);
+      expect(tipoInter(t.aMi[0]!), q).toBe('list');
+    }
+  });
+  it('S4: un rubroLibre o una empresa con un enlace o con 6 o más dígitos no se guardan', () => {
+    for (const rubroLibre of ['tienda en www.malo.com', 'ventas 70123456']) {
+      const w = crear(); const j = jugar(w);
+      j.texto('Hola'); j.rubro('otro');
+      modelo(w, { tipo: 'respuesta', rubroLibre, empatia: EMP });
+      j.texto(`Tengo ${rubroLibre} y me falta tiempo`);
+      expect(estadoDe(w, MAMA)!['rubroLibre'], rubroLibre).toBe('');
+    }
+    for (const empresa of ['Mi Tienda www.malo.com', 'Tienda 70123456', 'https://malo.example']) {
+      const w = crear(); const j = jugar(w);
+      j.texto('Hola'); j.asesor(); j.texto(empresa);
+      expect(estadoDe(w, MAMA)!['empresa'], empresa).toBe('');
+    }
+  });
+  it('S5: un medio cuya URL no es de lookaside.fbsbx.com no se descarga (el token de Meta no sale)', () => {
+    for (const url of ['https://evil.example/m', 'http://lookaside.fbsbx.com/m', 'https://lookaside.fbsbx.com.evil.example/m']) {
+      const w = crear(); const j = hastaElDolor(w);
+      w.mundo.dobles['Obtener URL del medio (general)'] = () => ({ url, mime_type: 'audio/ogg', file_size: 1000 });
+      const t = j.audio();
+      expect(t.ejecutados.has('Descargar medio'), url).toBe(false);
+      expect(CUERPO(t), url).toBe('No pude escuchar tu audio. ¿Me lo escribes?');
+    }
+  });
+  it('S7: en la variante de prueba la planilla NO se escribe, y `telefonosDePrueba` limita a qué números puede ir una ejecución de prueba', () => {
+    const prueba = { modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true };
+    const w = crear({ flujo: PRUEBA }); const t = jugar(w, MAMA, { prueba, sinReporte: true }).texto('Hola');
+    expect(t.mensajes.length).toBeGreaterThan(0);
+    expect(w.hoja.llamadas).toHaveLength(0);
+    // Con la lista, un teléfono que no está no recibe nada; uno que sí está, sí.
+    const fuera = crear({ flujo: PRUEBA, config: { telefonosDePrueba: '59100000099,59100000098' } });
+    expect(jugar(fuera, MAMA, { prueba, sinReporte: true }).texto('Hola').mensajes).toHaveLength(0);
+    const dentro = crear({ flujo: PRUEBA, config: { telefonosDePrueba: `59100000099,${PRUEBA_TEL}` } });
+    expect(jugar(dentro, MAMA, { prueba, sinReporte: true }).texto('Hola').mensajes.every((e) => e.a === PRUEBA_TEL)).toBe(true);
+    // NIEGA: en producción la planilla sí se escribe.
+    const prod = crear(); jugar(prod).texto('Hola');
+    expect(prod.hoja.llamadas.length).toBeGreaterThan(0);
+  });
+  it('S8: se recuerdan 5 ids de Meta por ficha, y lo leído en la imagen y el rubro van en un bloque delimitado', () => {
+    const w = crear(); const j = jugar(w);
+    for (let i = 0; i < 8; i++) j.texto('Hola', { wamid: `wamid.S8-${i}` });
+    expect(estadoDe(w, MAMA)!['ultimosIds']).toHaveLength(5);
+    const w2 = crear(); const j2 = hastaElDolor(w2);
+    w2.medio.categoria = 'otro'; w2.medio.texto = 'Peluquería Luna';
+    modelo(w2, { tipo: 'respuesta', empatia: EMP });
+    const turno = String(((j2.imagen().modelo[0]!.cuerpo['contents'] as J[])[0]!['parts'] as J[])[0]!['text']);
+    expect(turno).toContain('RUBRO: [[[Salud y belleza]]]');
+    expect(turno).toContain('[[[Peluquería Luna]]]');
+  });
+
+  it('R1: «vendo ropa y mis clientes me preguntan precios todo el día» NO pide planes, ni en el primer mensaje ni en la lista de rubros', () => {
+    const dicho = 'Hola, vendo ropa y mis clientes me preguntan precios todo el día';
+    const w = crear(); const j = jugar(w);
+    const t1 = j.texto(dicho);
+    expect(tipoInter(t1.aMi[0]!)).toBe('list');
+    expect(CUERPO(t1)).not.toMatch(/planes/i);
+    expect(estadoDe(w, MAMA)!['planesPendientes']).toBe(false);
+    modelo(w, { tipo: 'respuesta', empatia: EMP });
+    const t2 = j.texto(dicho);
+    expect(t2.modelo).toHaveLength(1);
+    expect(estadoDe(w, MAMA)!['planesPendientes']).toBe(false);
+    expect(estadoDe(w, MAMA)!.hechos['pidioPlanes']).toBe(false);
+  });
+  it('R2: una pregunta por el precio nunca recibe «Eso no lo tengo en mis datos»: va a los planes, en cualquier paso', () => {
+    for (const paso of ['eligiendo', 'dolor', 'negocio', 'empresa']) {
+      const w = crear(); const j = jugar(w);
+      j.texto('Hola');
+      if (paso === 'dolor') j.rubro('comercio');
+      if (paso === 'negocio') j.rubro('otro');
+      if (paso === 'empresa') { j.rubro('comercio'); j.asesor(); }
+      modelo(w, { tipo: 'pregunta', respuesta: '', enLosDatos: false });
+      const t = j.texto('¿y cuánto sale el servicio completo?');
+      expect(todoElTexto(t), paso).not.toMatch(/Eso no lo tengo/);
+      expect(todoElTexto(t), paso).toMatch(/planes|Impulso/i);
+    }
+  });
+  it('R3: «Perfecto», «Excelente», «Entendido», «Muy amable», «Ya le escribí» y «Ahorita le escribo» no son el nombre de una empresa', () => {
+    for (const dicho of ['Perfecto', 'Excelente', 'Bueno', 'Entendido', 'Vale', 'Genial', 'De acuerdo', 'Muy amable', 'Ya le escribí', 'Ahorita le escribo']) {
+      const w = crear(); const j = jugar(w);
+      j.texto('Hola'); j.asesor(); j.texto(dicho);
+      expect(estadoDe(w, MAMA)!['empresa'], dicho).toBe('');
+    }
+  });
+  it('R4: «¿El plan incluye soporte?» no es un cliente pidiendo soporte (sin botón directo, la ficha no queda como soporte); «necesito soporte» sí', () => {
+    const w = crear(); const j = hastaElDolor(w);
+    modelo(w, { tipo: 'pregunta', respuesta: 'Incluye atención por WhatsApp.', enLosDatos: true });
+    const t = j.texto('¿El plan incluye soporte?');
+    expect(t.aMi.every((e) => tipoInter(e) !== 'cta_url')).toBe(true);
+    expect(estadoDe(w, MAMA)!['soporte']).toBe(false);
+    const t2 = j.texto('necesito soporte de mi cuenta');
+    expect(tipoInter(t2.aMi[0]!)).toBe('cta_url');
+  });
+  it('R5: «Perdón, número equivocado» (con o sin tildes) descalifica; la palabra del motivo con guion bajo, no', () => {
+    for (const dicho of ['Perdón, número equivocado', 'Perdon, numero equivocado']) {
+      const w = crear(); const j = jugar(w);
+      j.texto('Hola');
+      modelo(w, { tipo: 'descarte', descarte: 'numero_equivocado' });
+      j.texto(dicho);
+      expect(califDe(w, MAMA), dicho).toBe('Descalificado');
+    }
+    const w = crear(); const j = jugar(w);
+    j.texto('Hola');
+    modelo(w, { tipo: 'descarte', descarte: 'numero_equivocado' });
+    j.texto('numero_equivocado por favor');
+    expect(estadoDe(w, MAMA)!.hechos['descarte']).toBe('');
+  });
+  it('R6: con `pide_asesor` del modelo, la lista sale CON la fila del asesor y los textos con el botón; «Hola, quiero hablar con una persona» es un pedido', () => {
+    const w = crear(); const j = jugar(w);
+    j.texto('Hola');
+    modelo(w, { tipo: 'pide_asesor', empatia: 'Claro.' });
+    const t = j.texto('me gustaría que alguien me explique mejor');
+    expect(tipoInter(t.aMi[0]!)).toBe('list');
+    expect(idsFilas(t.aMi[0]!).at(-1)).toBe('asesor');
+    expect(t.plantillas).toHaveLength(0);
+    const w2 = crear(); const j2 = hastaElDolor(w2);
+    modelo(w2, { tipo: 'pide_asesor', empatia: 'Claro.' });
+    const t2 = j2.texto('prefiero que me atienda alguien del equipo');
+    expect(idsBotones(t2.aMi[0]!)).toContain('asesor');
+    expect(CUERPO(t2)).toContain(preguntaDe('salud-belleza'));
+    expect(t2.plantillas).toHaveLength(0);
+    const w3 = crear();
+    const t3 = jugar(w3).texto('Hola, quiero hablar con una persona');
+    expect(tipoInter(t3.aMi[0]!)).toBe('cta_url');
+    expect(t3.plantillas).toHaveLength(1);
+  });
+  it('R7: «Otro» con el rubro ya dicho no vuelve a preguntar de qué trata el negocio: pregunta lo que más tiempo le quita', () => {
+    const w = crear(); const j = jugar(w);
+    j.texto('Hola');
+    modelo(w, { tipo: 'respuesta', rubroLibre: 'estudio contable', empatia: 'Entiendo.' });
+    const t = j.texto('Tengo un estudio contable');
+    expect(CUERPO(t)).toMatch(/más tiempo te quita hoy en tu negocio/);
+    expect(CUERPO(t)).not.toContain(preguntaDe('otro'));
+    expect(estadoDe(w, MAMA)!['rubroLibre']).toBe('estudio contable');
+    // NIEGA: con el toque en «Otro» y sin rubro dicho, sí se pregunta de qué trata.
+    const w2 = crear(); const j2 = jugar(w2);
+    j2.texto('Hola');
+    expect(CUERPO(j2.rubro('otro'))).toContain(preguntaDe('otro'));
+  });
+  it('R8: si Meta rechaza el mensaje y su respaldo, la ficha vuelve a la de antes: el siguiente pedido de planes los recibe', () => {
+    const w = crear(); const j = hastaLaOferta(w).j;
+    w.graph.falla = (p) => p['to'] === MAMA;
+    const t = j.planes({ tolerarFallo: true });
+    expect(t.fallo).not.toBeNull();
+    expect(estadoDe(w, MAMA)!['planesMostrados']).toBe(false);
+    expect(estadoDe(w, MAMA)!.hechos['pidioPlanes']).toBe(false);
+    expect(estadoDe(w, MAMA)!.paso).toBe('oferta');
+    w.graph.falla = () => false;
+    const t2 = j.planes();
+    expect(encabezadoDe(t2.aMi[0]!)).toBeDefined();
+    // NIEGA: sin falla, la ficha avanza.
+    expect(estadoDe(w, MAMA)!['planesMostrados']).toBe(true);
+  });
+  it('R8: el aviso que Meta SÍ aceptó no se pierde aunque el mensaje al cliente falle; el reenvío del mismo id sigue siendo un repetido', () => {
+    const w = crear(); const j = jugar(w);
+    j.texto('Hola');
+    w.graph.falla = (p) => p['to'] === MAMA;
+    j.asesor({ tolerarFallo: true, wamid: 'wamid.R8' });
+    expect(estadoDe(w, MAMA)!['avisado']).toBe(true);
+    expect(estadoDe(w, MAMA)!.hechos['pidioAsesor']).toBe(false);
+    w.graph.falla = () => false;
+    expect(j.asesor({ wamid: 'wamid.R8' }).mensajes).toHaveLength(0);
+  });
+  it('R10: una reacción y un sticker no se reportan ni se responden', () => {
+    const w = crear(); const j = hastaElDolor(w);
+    for (const msg of [mSticker(), { type: 'reaction', reaction: { message_id: 'wamid.X', emoji: '👍' } }, { type: 'system', system: { body: 'x' } }]) {
+      const t = j.turno(msg);
+      expect(t.mensajes, String(msg['type'])).toHaveLength(0);
+      expect(t.llamadas.ingesta, String(msg['type'])).toHaveLength(0);
+    }
+    expect(estadoDe(w, MAMA)!.paso).toBe('esperando_dolor');
+  });
+  it('R12: campaña con destino vencido en el primer mensaje se presenta sin decir «Esa opción ya no está»', () => {
+    const w = crear({ panel: panel({ campanas: [campana('Hola, quiero info de la oferta', 'rubro:rubro-borrado')] }) });
+    const t = jugar(w).texto('Hola, quiero info de la oferta');
+    expect(tipoInter(t.aMi[0]!)).toBe('list');
+    expect(CUERPO(t)).not.toMatch(/ya no está/);
+    expect(CUERPO(t)).toMatch(/asistente virtual/);
+  });
+  it('R12: en la oferta el modelo recibe la pregunta de la oferta como «PREGUNTA QUE HICISTE»', () => {
+    const w = crear(); const { j } = hastaLaOferta(w);
+    modelo(w, { tipo: 'respuesta', empatia: EMP });
+    const t = j.texto('ok');
+    expect(JSON.stringify(t.modelo[0]!.cuerpo['contents'])).toContain(`¿Quieres ver los planes o hablar con ${QUIEN}?`);
+  });
+  it('R12: el modo «negocio» respeta el rubro de la consola que el modelo reconoce', () => {
+    const w = crear(); const j = jugar(w);
+    j.texto('Hola'); j.rubro('otro');
+    modelo(w, { tipo: 'respuesta', rubroId: 'comercio', empatia: EMP });
+    j.texto('Vendo ropa por internet');
+    expect(estadoDe(w, MAMA)!.rubroId).toBe('comercio');
+  });
+  it('R12: en libre, un agradecimiento no repite «¿Quieres hablar con X?» y no llama al modelo', () => {
+    const w = crear(); const j = jugar(w);
+    j.texto('Hola'); j.asesor(); j.texto('Salón Rosa');
+    const t = j.texto('Muchas gracias');
+    expect(t.modelo).toHaveLength(0);
+    expect(CUERPO(t)).not.toMatch(/Quieres hablar/);
+    expect(t.aMi).toHaveLength(1);
+  });
+  it('R12: una aclaración larga al retomar se recorta para no pasar de 3 oraciones ni 50 palabras', () => {
+    const larga = Array.from({ length: 6 }, (_, i) => `Esta es la frase número ${i} de una aclaración muy larga que llena el espacio.`).join(' ');
+    const w = crear({ panel: panel({}, { aclaraciones: [{ tema: 'Larga', texto: larga }] }) }); const j = hastaElDolor(w);
+    modelo(w, { tipo: 'pregunta', aclaracion: 'a1', respuesta: 'x', enLosDatos: true });
+    const t = j.texto('¿cómo funciona?'); // las propiedades de cada turno (≤3 oraciones, ≤50 palabras) se comprueban solas
+    expect(CUERPO(t)).toContain('Esta es la frase número 0');
+    expect(CUERPO(t)).toContain(preguntaDe('salud-belleza'));
+  });
+  it('R12: «No pude leer tu documento» distingue un documento de una imagen', () => {
+    const w = crear(); const j = hastaElDolor(w);
+    w.medio.categoria = null;
+    expect(CUERPO(j.documento())).toBe('No pude leer tu documento. ¿Me lo escribes?');
+    expect(CUERPO(j.imagen())).toBe('No pude leer tu imagen. ¿Me lo escribes?');
+  });
+  it('R12: «Reportar mensaje (saliente)» y «(entrante)» llevan timeout de 4000; «Traer configuración» no escribe datos estáticos si solo lee', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      for (const n of ['Reportar mensaje (saliente)', 'Reportar mensaje (entrante)']) expect(f.nodes.find((x) => x.name === n)!.parameters['options']['timeout'], n).toBe(4000);
+    }
+    // Un turno descartado (repetido) no crea el mapa de fichas: «Interpretar entrada» solo lee.
+    const w = crear();
+    const t = w.mundo.turno(valorMeta(mTexto('Hola'), '59100000011', { phoneId: '59199999999' }));
+    expect(t.mensajes).toHaveLength(0);
+    expect(w.mundo.sd['captacionMinima']).toBeUndefined();
   });
 });
