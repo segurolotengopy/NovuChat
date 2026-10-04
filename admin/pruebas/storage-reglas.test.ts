@@ -512,4 +512,51 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       });
     });
   });
+
+  // ===========================================================================
+  // COMPROBANTES DE PAGO DE UNA VENTA (storage.rules, /tenants/{t}/comprobantes/**;
+  // Cobros, regla 2, 03/10/2026). Los escribe y los borra solo el servidor con el
+  // SDK Admin: ninguna persona los lee ni los escribe desde el navegador. Esta
+  // prueba vive acá y no en `pruebas/modulos/cobros/` porque `correr-storage.sh`
+  // corre únicamente este archivo. Se escribe negando.
+  // ===========================================================================
+  describe('Comprobantes de pago (Cobros)', () => {
+    const rc = (t: string, dia = '2026-10-03', nombre = 'wamidX.jpg') => `tenants/${t}/comprobantes/${dia}/${nombre}`;
+    beforeEach(async () => { await sembrarArchivo(rc(A), 'image/jpeg'); });
+
+    it('ni el administrador, ni el operador, ni el propietario, ni la ingesta leen un comprobante', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(getMetadata(ref(quien, rc(A))));
+        await assertFails(getDownloadURL(ref(quien, rc(A))));
+      }
+    });
+
+    it('nadie lo escribe: ni una imagen válida, ni reemplazar el existente, ni con el flujo de captación', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(subir(quien, rc(A, '2026-10-04', 'nuevo.jpg'), 1024, 'image/jpeg'));
+        await assertFails(subir(quien, rc(A), 1024, 'image/jpeg'));
+        await assertFails(subir(quien, rc(A, '2026-10-04', 'doc.pdf'), 1024, 'application/pdf'));
+      }
+    });
+
+    it('nadie lo borra ni lo lista, ni siquiera el propietario', async () => {
+      for (const quien of [adminA(), operA(), propietario(), ingestaA(), anonimo()]) {
+        await assertFails(deleteObject(ref(quien, rc(A))));
+        await assertFails(listAll(ref(quien, `tenants/${A}/comprobantes`)));
+        await assertFails(listAll(ref(quien, `tenants/${A}/comprobantes/2026-10-03`)));
+      }
+    });
+
+    it('el administrador de otro comercio tampoco, ni con una ruta de su propio comercio mal escrita', async () => {
+      await assertFails(getMetadata(ref(adminB(), rc(A))));
+      await assertFails(subir(adminB(), rc(B), 1024, 'image/jpeg'));
+      await assertFails(subir(adminB(), `tenants/${B}/comprobantes/x.jpg`, 1024, 'image/jpeg'));
+    });
+
+    it('un comercio dado de baja o suspendido tampoco', async () => {
+      await sembrarArchivo(rc(X), 'image/jpeg');
+      await assertFails(getMetadata(ref(adminX(), rc(X))));
+      await assertFails(getMetadata(ref(adminD(), rc(D))));
+    });
+  });
 });
