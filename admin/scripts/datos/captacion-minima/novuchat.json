@@ -33,7 +33,7 @@
       "salud-y-belleza": {
         "dolor": "¡Excelente! 💅 En los salones y consultorios, la gente olvida su turno y ese hueco ya no se recupera.",
         "pregunta": "Cuéntame, ¿actualmente pierdes mucho tiempo agendando y recordando citas a mano?",
-        "impacto": "Nuestra IA responde al instante y agenda sola, incluso cuando estás atendiendo.",
+        "impacto": "Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.",
         "cierre": "¿Qué te parece si Silvana te cuenta cómo armaríamos esto para tu negocio? 👇"
       },
       "gastronomia": {
@@ -45,19 +45,19 @@
       "comercio-y-retail": {
         "dolor": "¡Genial! 🛍️ Cuando un cliente escribe fuera de horario y nadie responde rápido, le compra a otro.",
         "pregunta": "¿Se te escapan ventas de noche o los fines de semana?",
-        "impacto": "Responde por tu catálogo a cualquier hora y deja el pedido listo con el QR.",
+        "impacto": "Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.",
         "cierre": "¿Hablamos con Silvana para ver cómo cargaríamos tu catálogo? 👇"
       },
       "educacion": {
         "dolor": "¡Qué bien! 🎓 Responder las mismas dudas de padres y alumnos todos los días quita muchísimo tiempo.",
         "pregunta": "¿Te llegan las mismas consultas una y otra vez?",
-        "impacto": "Responde sobre horarios e inscripciones y agenda visitas en tu calendario.",
+        "impacto": "Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.",
         "cierre": "¿Hablamos con Silvana para ver cómo armaríamos las respuestas para tu institución? 👇"
       },
       "otro": {
         "pregunta": "¡Perfecto! 😊 Cuéntame un poquito, ¿de qué trata tu negocio y qué es lo que más tiempo te quita hoy?",
         "preguntaDolor": "🤔 ¿Y qué es lo que más tiempo te quita hoy en tu negocio?",
-        "impacto": "Armamos flujos a medida para lo que necesitas lograr, incluso conectados a tu sistema.",
+        "impacto": "Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.",
         "cierre": "Para negocios como el tuyo diseñamos flujos a medida. ¿Te animas a hablar con Silvana para ver cómo estructuraríamos tus respuestas? 👇"
       }
     }

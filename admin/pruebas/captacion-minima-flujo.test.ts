@@ -2584,7 +2584,7 @@ describe('§13: la consola viva y el tono (C1 y C2)', () => {
     expect(CUERPO(t2)).toBe('¡Excelente! 💅 En los salones y consultorios, la gente olvida su turno y ese hueco ya no se recupera. Cuéntame, ¿actualmente pierdes mucho tiempo agendando y recordando citas a mano?');
     modelo(w, { tipo: 'respuesta', empatia: '¡Uff, te entiendo! 😅 Estar pegada al celular todo el día le quita tiempo a cualquiera.' });
     const t3 = j.texto('Uff sí, todo el día estoy pegada al celular y a veces me dejan plantada.');
-    expect(CUERPO(t3)).toBe('¡Uff, te entiendo! 😅 Estar pegada al celular todo el día le quita tiempo a cualquiera. Nuestra IA responde al instante y agenda sola, incluso cuando estás atendiendo. ¿Te gustaría ver los planes o prefieres hablar con Silvana?');
+    expect(CUERPO(t3)).toBe('¡Uff, te entiendo! 😅 Estar pegada al celular todo el día le quita tiempo a cualquiera. Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar. ¿Te gustaría ver los planes o prefieres hablar con Silvana?');
     expect(idsBotones(t3.aMi[0]!)).toEqual(['planes', 'asesor']);
     const t4 = j.texto('Planes por favor.');
     expect(CUERPO(t4)).toBe('¡Claro! 😊 La instalación sale desde USD 65 (pago único) y los planes mensuales desde USD 25, cobrados en bolivianos. ¿Qué te parece si Silvana te cuenta cómo armaríamos esto para tu negocio? 👇');
@@ -2617,7 +2617,7 @@ describe('§13: la consola viva y el tono (C1 y C2)', () => {
     expect(CUERPO(t2)).toBe('¡Perfecto! 😊 Cuéntame un poquito, ¿de qué trata tu negocio y qué es lo que más tiempo te quita hoy?');
     modelo(w, { tipo: 'respuesta', rubroLibre: 'estudio contable', empatia: '¡Te entiendo! 📊 En servicios profesionales se pierden horas respondiendo lo mismo.' });
     const t3 = j.texto('Tengo un estudio contable. Pierdo mucho tiempo respondiendo consultas básicas sobre impuestos por WhatsApp.');
-    expect(CUERPO(t3)).toBe('¡Te entiendo! 📊 En servicios profesionales se pierden horas respondiendo lo mismo. Armamos flujos a medida para lo que necesitas lograr, incluso conectados a tu sistema. ¿Te gustaría ver los planes o prefieres hablar con Silvana?');
+    expect(CUERPO(t3)).toBe('¡Te entiendo! 📊 En servicios profesionales se pierden horas respondiendo lo mismo. Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar. ¿Te gustaría ver los planes o prefieres hablar con Silvana?');
     expect(estadoDe(w, MAMA)!['rubroLibre']).toBe('estudio contable');
     const t4 = j.planes();
     expect(CUERPO(t4)).toMatch(/\? 👇$/);
