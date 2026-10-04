@@ -10,11 +10,11 @@
  * F2 y F3, las siete copias de hoy (`Analisis/41` §3.3): la tabla de flujos de
  * la consola (`web/src/central/lib/flujos.ts`), `VERTICALES` de `plataforma/tenants.ts`,
  * `VERTICALES_CONOCIDOS` y `documentoDeVertical` de `prompt.ts`, las
- * capacidades de `firestore.rules`, y las elecciones a mano de `cobro.ts`,
- * `catalogoWeb.ts` y `captacion.ts`.
+ * capacidades de `firestore.rules` y la elección a mano de `cobro.ts`.
  *
- * Hoy lo importan `pruebas/frontera/frontera.ts` y sus suites y, desde H2b-2,
- * `prompt.ts`; se verifica contra el código de hoy
+ * Hoy lo importan `pruebas/frontera/frontera.ts` y sus suites y, ya derivados,
+ * `prompt.ts` (H2b-2, #408), `captacion.ts` (#409) y `catalogoWeb.ts` (#410, por
+ * `tieneModulo`); se verifica contra el código de hoy
  * (`pruebas/core/registro.test.ts`). Las demás copias de la lista de flujos
  * (consola, `tenants.ts`, scripts de alta, reglas, `cobro.ts`…) se van
  * reemplazando por una lectura de este archivo, una por PR de H2b.

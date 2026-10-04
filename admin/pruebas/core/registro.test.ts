@@ -115,11 +115,7 @@ const documentoQueCobraHoy = (ficha: { get(campo: string): unknown }): 'venta' |
   if (flujos.includes('agendamiento')) return 'agendamiento';
   return null;
 };
-/**
- * Símbolos del registro que una copia puede usar para DERIVARSE de él en vez de llevar su literal (H2b). Una copia
- * que deja el literal tiene que importar uno de estos y definir su constante a partir de él.
- */
-const SIMBOLOS_DE_DERIVACION = ['IDS_FLUJOS', 'esFlujo', 'documentoDeFlujo'] as const;
+/** ¿El código importa `simbolo` POR SU NOMBRE de `registro`? (El alias `X as Y` no cuenta.) */
 const importaSimbolo = (codigo: string, simbolo: string) =>
   new RegExp(`import\\s*(?:type\\s*)?\\{[^}]*\\b${simbolo}\\b[^}]*\\}\\s*from\\s*['"][^'"]*/registro(?:\\.[tj]s)?['"]`).test(codigo);
 
@@ -232,13 +228,19 @@ function bloqueDeColeccion(ruta: string): string | null {
 
 type Escritura = 'solo-servidor' | 'exige-capacidad' | 'sin-exigir';
 /** Qué exigen los `allow` de escritura de un bloque (sin los anidados). */
-function escrituraDe(cuerpo: string): Escritura {
+function escrituraDe(cuerpo: string, modulosPermitidos: readonly string[] = []): Escritura {
   const condiciones = [...sinAnidados(cuerpo).matchAll(/allow\s+([\w,\s]+?)\s*:\s*if\s+([\s\S]*?);/g)]
     .filter((m) => /create|update|delete|write/.test(m[1] as string))
     .map((m) => (m[2] as string).trim())
     .filter((c) => c !== 'false');
   if (condiciones.length === 0) return 'solo-servidor';
-  return condiciones.every((c) => /\btiene\w+\(tenantId\)|\btieneModulo\(tenantId,\s*'[\w-]+'\)/.test(c)) ? 'exige-capacidad' : 'sin-exigir';
+  /**
+   * `tieneModulo(tenantId, 'm')` solo cuenta si es UN TÉRMINO de la cadena de `&&` (ni dentro de un paréntesis ni
+   * con `||` al lado) y `m` es el módulo dueño de la colección o un módulo propio de su flujo.
+   */
+  const exigeModulo = (c: string) => [...c.matchAll(/(?:^|&&)\s*tieneModulo\(tenantId,\s*'([\w-]+)'\)\s*(?=&&|$)/g)]
+    .some((m) => modulosPermitidos.includes(m[1] as string));
+  return condiciones.every((c) => /\btiene\w+\(tenantId\)/.test(c) || exigeModulo(c)) ? 'exige-capacidad' : 'sin-exigir';
 }
 
 // ======================================================================= 1
@@ -495,6 +497,9 @@ describe('4. colecciones y almacenamiento: el registro contra las reglas', () =>
     'agenda',
   ];
   const colecciones = MANIFIESTOS.flatMap((m) => m.colecciones.map((c) => ({ modulo: m.modulo, c })));
+  /** `tieneModulo(tenantId, 'm')` vale para una colección si `m` es su módulo dueño o propio de un flujo que lo lleva. */
+  const modulosDeLaColeccion = (modulo: IdModulo): string[] => [modulo,
+    ...FLUJOS_HOY.filter((f) => (PUENTE_DE_FLUJOS[f].modulos as readonly string[]).includes(modulo)).flatMap(propiosDe)];
 
   it.each(colecciones)('$modulo: $c tiene su match en las reglas del tenant', ({ c }) => {
     expect(bloqueDeColeccion(c)).not.toBeNull();
@@ -502,9 +507,26 @@ describe('4. colecciones y almacenamiento: el registro contra las reglas', () =>
 
   // TODO(H2b-cierre): el PR de cierre de H2b devuelve el «exactamente» de esta prueba. Mientras los PR de H2b
   // enchufan `tieneModulo` en las reglas, una colección puede salir de la lista sin que cada PR edite esta suite.
+  // TODO(H2b-6): la forma derivada de las reglas `return tieneModulo(tenantId, 'm');` se acepta SIN comprobar que
+  // las reglas definan `function tieneModulo(`; el PR que la enchufe debe probar que existe y qué hace.
   it('la lista «escritura sin exigir módulo» es un subconjunto de la de hoy (nada nuevo sin exigir)', () => {
-    const hoy = colecciones.filter(({ c }) => escrituraDe(bloqueDeColeccion(c) as string) === 'sin-exigir').map(({ c }) => c);
+    const hoy = colecciones.filter(({ modulo, c }) => escrituraDe(bloqueDeColeccion(c) as string, modulosDeLaColeccion(modulo)) === 'sin-exigir').map(({ c }) => c);
     for (const c of hoy) expect(ESCRITURA_SIN_EXIGIR_MODULO_HOY, `${c}: escritura sin exigir módulo que la lista no declara`).toContain(c);
+  });
+
+  it('escrituraDe: tieneModulo solo cuenta como término propio de `&&` y con un módulo de la colección', () => {
+    const bloque = (cond: string) => `allow create, update: if ${cond};`;
+    const funcionarios = ['agenda'];
+    expect(escrituraDe(bloque('esAdmin(tenantId) && tieneAgenda(tenantId)'), funcionarios)).toBe('exige-capacidad');
+    expect(escrituraDe(bloque("esAdmin(tenantId) && tieneModulo(tenantId, 'agenda') && valido()"), funcionarios)).toBe('exige-capacidad');
+    expect(escrituraDe(bloque("tieneModulo(tenantId, 'agenda')"), funcionarios)).toBe('exige-capacidad');
+    // h5: módulo ajeno
+    expect(escrituraDe(bloque("esAdmin(tenantId) && tieneModulo(tenantId, 'pedidos') && valido()"), funcionarios)).toBe('sin-exigir');
+    // h7: con `||`, dentro de un paréntesis o a la derecha de un `||`
+    expect(escrituraDe(bloque("esAdmin(tenantId) && (tieneModulo(tenantId, 'agenda') || true) && valido()"), funcionarios)).toBe('sin-exigir');
+    expect(escrituraDe(bloque("tieneModulo(tenantId, 'agenda') || esAdmin(tenantId)"), funcionarios)).toBe('sin-exigir');
+    expect(escrituraDe(bloque("esAdmin(tenantId) || tieneModulo(tenantId, 'agenda')"), funcionarios)).toBe('sin-exigir');
+    expect(escrituraDe(bloque("esAdmin(tenantId) && tieneModulo(tenantId, 'agenda')"), [])).toBe('sin-exigir');
   });
 
   it('las colecciones de la raíz tienen su match fuera del tenant', () => {
@@ -618,27 +640,48 @@ describe('8. las copias de la lista de flujos coinciden con el puente', () => {
     return m ? ordenado([...(m[1] as string).matchAll(/'(\w+)'/g)].map((x) => x[1] as string)) : null;
   };
   /**
+   * Formas derivadas EXACTAS que una copia puede tener en lugar de su literal (H2b-0). Los símbolos se importan
+   * por su nombre (los imports con alias, `IDS_FLUJOS as F`, se rechazan a propósito: no se pueden anclar).
+   */
+  const DERIVADO_CONJUNTO = {
+    simbolos: ['IDS_FLUJOS'],
+    definicion: /^\s*new Set(?:<string>)?\(\s*IDS_FLUJOS\s*\)\s*$/,
+    usos: [/\bIDS_FLUJOS\.includes\(/, /\besFlujo\(/],
+    importes: ['IDS_FLUJOS', 'esFlujo'],
+    forma: '`new Set(IDS_FLUJOS)`',
+  };
+  const DERIVADO_DOCUMENTO = {
+    simbolos: ['IDS_FLUJOS', 'documentoDeFlujo'],
+    definicion: /^\s*Object\.fromEntries\(\s*IDS_FLUJOS\.map\(\((\w+)\) => \[\1, documentoDeFlujo\(\1\)\]\)\s*\)\s*$/,
+    usos: [/\bdocumentoDeFlujo\(/],
+    importes: ['documentoDeFlujo'],
+    forma: '`Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]))`',
+  };
+  /**
    * Tolerante a los dos estados de la copia (H2b-0), pero sin hueco:
    *  1. con el literal `const <X> = new Set([...])` (o el objeto `DOCUMENTO`): tiene que ser el del puente;
-   *  2. sin ese literal: la constante, si existe, tiene que definirse a partir de un símbolo concreto del
-   *     registro (`IDS_FLUJOS`, `esFlujo` o `documentoDeFlujo`) importado de verdad (los comentarios no cuentan);
-   *     si ya no existe, el archivo tiene que importar y USAR uno de esos símbolos.
-   * Una constante con cualquier otra forma (`new Set<string>([...])`, `Object.freeze({...})`) FALLA: no se la
-   * trata como «sin literal».
+   *  2. sin ese literal, y sin comentarios: la constante, si existe, tiene que ser EXACTAMENTE la forma derivada
+   *     (`new Set(IDS_FLUJOS)`; para DOCUMENTO, `Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]))`)
+   *     con sus símbolos importados por nombre de `registro`; si ya no existe, el archivo tiene que importar y
+   *     LLAMAR a `esFlujo(`, `IDS_FLUJOS.includes(` o `documentoDeFlujo(`.
+   * Cualquier otra forma de la constante (`new Set([...IDS_FLUJOS, 'x'])`, `.filter(...)`, `Object.freeze({...})`)
+   * FALLA: no se la trata como «sin literal» ni como derivada.
    */
-  const copiaCoincide = (texto: string, nombre: string, constante: string, esperado: unknown, leido: (t: string) => unknown) => {
+  const copiaCoincide = (
+    texto: string, nombre: string, constante: string, esperado: unknown, leido: (t: string) => unknown,
+    derivado: typeof DERIVADO_CONJUNTO | typeof DERIVADO_DOCUMENTO,
+  ) => {
     const codigo = sinComentarios(texto);
     const literal = leido(codigo);
     if (literal !== null) { expect(literal, `${nombre}: el literal ya no es el del puente`).toEqual(esperado); return; }
-    const importados = SIMBOLOS_DE_DERIVACION.filter((x) => importaSimbolo(codigo, x));
-    expect(importados, `${nombre}: sin literal del puente y sin importar ${SIMBOLOS_DE_DERIVACION.join('/')} de registro`).not.toEqual([]);
     const definicion = new RegExp(`\\bconst\\s+${constante}\\b\\s*(?::[^=]+)?=([^;]*);`).exec(codigo);
     if (definicion) {
-      expect(importados.some((x) => new RegExp(`\\b${x}\\b`).test(definicion[1] as string)),
-        `${nombre}: ${constante} tiene una forma que no es el literal ni se define a partir de ${importados.join('/')}`).toBe(true);
+      expect(derivado.definicion.test(definicion[1] as string),
+        `${nombre}: ${constante} no es el literal del puente ni exactamente ${derivado.forma}`).toBe(true);
+      for (const x of derivado.simbolos) expect(importaSimbolo(codigo, x), `${nombre}: no importa ${x} de registro`).toBe(true);
     } else {
-      expect(importados.some((x) => (codigo.match(new RegExp(`\\b${x}\\b`, 'g')) ?? []).length >= 2),
-        `${nombre}: importa ${importados.join('/')} pero no lo usa`).toBe(true);
+      expect(derivado.importes.some((x) => importaSimbolo(codigo, x)) && derivado.usos.some((u) => u.test(codigo)),
+        `${nombre}: sin literal ni constante, tiene que importar y llamar ${derivado.importes.join('/')}`).toBe(true);
     }
   };
 
@@ -646,7 +689,45 @@ describe('8. las copias de la lista de flujos coinciden con el puente', () => {
     expect(ordenado(VERTICALES_CONOCIDOS)).toEqual(claves);
     expect(ordenado(Object.keys(FLUJOS))).toEqual(claves);
     copiaCoincide(leer('admin/functions/src/plataforma/tenants.ts'), 'tenants.ts VERTICALES', 'VERTICALES', claves,
-      (t) => conjuntoOpcional(t, 'VERTICALES'));
+      (t) => conjuntoOpcional(t, 'VERTICALES'), DERIVADO_CONJUNTO);
+  });
+
+  it('copiaCoincide: las formas derivadas exactas pasan; todo lo demás FALLA (g1-g5, a2-a4, b3-b4)', () => {
+    const imp = (...x: string[]) => `import { ${x.join(', ')} } from '../registro.js';\n`;
+    const conj = (nombre: string, expr: string, ...simbolos: string[]) => `${imp(...simbolos)}const ${nombre} = ${expr};\n`;
+    const leerConjunto = (nombre: string) => (t: string) => conjuntoOpcional(t, nombre);
+    const leerDocumento = (t: string) => {
+      const doc = /const DOCUMENTO = \{([^}]*)\}/.exec(t);
+      return doc ? Object.fromEntries([...(doc[1] as string).matchAll(/(\w+):\s*'(\w+)'/g)].map((m) => [m[1], m[2]])) : null;
+    };
+    const esperadoDoc = Object.fromEntries(FLUJOS_HOY.map((f) => [f, PUENTE_DE_FLUJOS[f].documento]));
+    const conjunto = (nombre: string, texto: string) => () =>
+      copiaCoincide(texto, 'x', nombre, claves, leerConjunto(nombre), DERIVADO_CONJUNTO);
+    const documento = (texto: string) => () =>
+      copiaCoincide(texto, 'x', 'DOCUMENTO', esperadoDoc, leerDocumento, DERIVADO_DOCUMENTO);
+    // pasan
+    expect(conjunto('VERTICALES', conj('VERTICALES', 'new Set(IDS_FLUJOS)', 'IDS_FLUJOS'))).not.toThrow();
+    expect(conjunto('VERTICALES', conj('VERTICALES', 'new Set<string>(IDS_FLUJOS)', 'IDS_FLUJOS'))).not.toThrow();
+    expect(conjunto('FLUJOS_VALIDOS', `${imp('esFlujo')}if (!esFlujo(x)) throw 1;\n`)).not.toThrow();
+    expect(conjunto('FLUJOS_VALIDOS', `const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);`)).not.toThrow();
+    expect(documento(conj('DOCUMENTO', 'Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]))', 'IDS_FLUJOS', 'documentoDeFlujo'))).not.toThrow();
+    // fallan
+    const malas: [string, () => void][] = [
+      ['g1', conjunto('VERTICALES', conj('VERTICALES', "new Set<string>([...IDS_FLUJOS, 'x'])", 'IDS_FLUJOS'))],
+      ['g2', conjunto('VERTICALES', conj('VERTICALES', "new Set([...IDS_FLUJOS, 'x'])", 'IDS_FLUJOS'))],
+      ['g3', conjunto('VERTICALES', conj('VERTICALES', "new Set(IDS_FLUJOS.filter((f) => f !== 'onboarding'))", 'IDS_FLUJOS'))],
+      ['g4', documento(conj('DOCUMENTO', "Object.fromEntries(IDS_FLUJOS.map((f) => [f, 'captacion']))", 'IDS_FLUJOS', 'documentoDeFlujo'))],
+      ['g5', conjunto('FLUJOS_VALIDOS', conj('FLUJOS_VALIDOS', "new Set([...IDS_FLUJOS].concat('x'))", 'IDS_FLUJOS'))],
+      ['a2', conjunto('VERTICALES', "const VERTICALES = new Set<string>(['agendamiento', 'venta']);")],
+      ['a3', conjunto('VERTICALES', `${imp('esFlujo')}const VERTICALES = new Set<string>(['agendamiento', 'venta']);`)],
+      ['a4', conjunto('VERTICALES', "// import { IDS_FLUJOS } from '../registro.js';\nconst VERTICALES = new Set<string>(['agendamiento']);")],
+      ['b4', documento(`${imp('IDS_FLUJOS')}const DOCUMENTO = Object.freeze({ agendamiento: 'agendamiento', venta: 'venta', onboarding: 'captacion' });`)],
+      ['sin import', conjunto('VERTICALES', 'const VERTICALES = new Set(IDS_FLUJOS);')],
+      ['alias', conjunto('VERTICALES', "import { IDS_FLUJOS as F } from '../registro.js';\nconst VERTICALES = new Set(F);")],
+      ['importa y no llama', conjunto('FLUJOS_VALIDOS', `${imp('esFlujo')}`)],
+      ['sin constante y sin nada', conjunto('FLUJOS_VALIDOS', 'const otra = 1;')],
+    ];
+    for (const [id, f] of malas) expect(f, id).toThrow();
   });
 
   it('flujos.ts, literal o fachada, produce lo mismo que la fixture del 03/10; el nombre del puente es el de la consola', async () => {
@@ -691,12 +772,12 @@ describe('8. las copias de la lista de flujos coinciden con el puente', () => {
   ])(
     '%s: FLUJOS_VALIDOS y DOCUMENTO', (nombre, leerScript) => {
       const texto = leerScript();
-      copiaCoincide(texto, `${nombre} FLUJOS_VALIDOS`, 'FLUJOS_VALIDOS', claves, (t) => conjuntoOpcional(t, 'FLUJOS_VALIDOS'));
+      copiaCoincide(texto, `${nombre} FLUJOS_VALIDOS`, 'FLUJOS_VALIDOS', claves, (t) => conjuntoOpcional(t, 'FLUJOS_VALIDOS'), DERIVADO_CONJUNTO);
       const esperado = Object.fromEntries(FLUJOS_HOY.map((f) => [f, PUENTE_DE_FLUJOS[f].documento]));
       copiaCoincide(texto, `${nombre} DOCUMENTO`, 'DOCUMENTO', esperado, (t) => {
         const doc = /const DOCUMENTO = \{([^}]*)\}/.exec(t);
         return doc ? Object.fromEntries([...(doc[1] as string).matchAll(/(\w+):\s*'(\w+)'/g)].map((m) => [m[1], m[2]])) : null;
-      });
+      }, DERIVADO_DOCUMENTO);
     });
 
   it('el puente solo nombra módulos del registro', () => {
