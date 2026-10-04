@@ -57,6 +57,9 @@ if [ "$VENTA" = 0 ] && { [ -n "$INGESTA_SECRETO" ] || [ -n "$INGESTA_VERSION" ];
   echo "✗ --ingesta-secreto y --ingesta-version solo valen con --venta" >&2; exit 2
 fi
 if [ "$VENTA" = 1 ]; then
+  # Con `bash -x` la traza imprimiría los valores (WA_TOKEN al leer el .env y el secreto): se niega ANTES de
+  # leer nada (revisión de seguridad del PR #398, L1).
+  case "$-" in *x*) echo "✗ No corra este script con -x: la traza mostraría los secretos" >&2; exit 2 ;; esac
   [[ "$INGESTA_SECRETO" =~ ^INGESTA_[A-Z0-9]+$ ]] || { echo "✗ --ingesta-secreto tiene que ser INGESTA_<ALIAS>" >&2; exit 2; }
   [[ "$INGESTA_VERSION" =~ ^[0-9]+$ ]] || { echo "✗ --ingesta-version tiene que ser un número" >&2; exit 2; }
 fi
@@ -75,11 +78,15 @@ set +a
 # centinela «x» evita que la sustitución de comandos se coma un salto de línea final que hay que detectar.
 INGESTA_VALOR=""
 if [ "$VENTA" = 1 ] && [ "$APLICAR" = 1 ]; then
+  # El proyecto es el de la consola, fijo (no se toma del entorno: PR #398, L3); se dice cuál secreto se lee, sin su valor.
+  PROYECTO_SECRETO="novuchat-demo"
   export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"
   unset CLOUDSDK_ACTIVE_CONFIG_NAME
-  crudo="$(gcloud secrets versions access "$INGESTA_VERSION" --secret="$INGESTA_SECRETO" --project "${PROYECTO:-novuchat-demo}"; printf x)"
+  echo "• Se lee el secreto $INGESTA_SECRETO (versión $INGESTA_VERSION) del proyecto $PROYECTO_SECRETO; el valor no se muestra."
+  crudo="$(gcloud secrets versions access "$INGESTA_VERSION" --secret="$INGESTA_SECRETO" --project "$PROYECTO_SECRETO"; printf x)"
   crudo="${crudo%x}"
-  [ "${#crudo}" -eq 64 ] || { echo "✗ El secreto de ingesta no mide 64 caracteres (o termina en salto de línea)" >&2; exit 1; }
+  # 64 caracteres hexadecimales y sin salto de línea (igual que `rotar-ingesta.sh verificar`, PR #398, L2).
+  [[ "$crudo" =~ ^[0-9a-f]{64}$ ]] || { echo "✗ El secreto de ingesta no son 64 caracteres hexadecimales sin salto de línea" >&2; exit 1; }
   INGESTA_VALOR="$crudo"; unset crudo
 fi
 
@@ -124,6 +131,15 @@ if venta:
         print(f"{ROJO}✗ Los tres nombres de credencial tienen que ser distintos{FIN}"); sys.exit(1)
     extra = [(ingestas[0], "httpHeaderAuth", lambda: {"name": "Authorization", "value": "Bearer " + os.environ["INGESTA_VALOR"]}),
              (envios[0], "whatsAppApi", lambda: {"accessToken": os.environ["WA_TOKEN"], "businessAccountId": os.environ["WABA_ID"]})]
+    # M1 (revisión del PR #398): cada nombre del JSON tiene que ser DE ESTE CLIENTE; si no, una credencial
+    # existente de otro cliente se reutilizaría en silencio y el flujo quedaría con la credencial ajena.
+    for nombre in (ingestas[0], envios[0]):
+        if cliente.lower() not in nombre.lower():
+            print(f"{ROJO}✗ El nombre de credencial «{nombre}» del JSON no nombra al cliente «{cliente}»: no se crea ni se reutiliza nada{FIN}"); sys.exit(1)
+    # L4: el tipo de la de Graph también se comprueba ANTES de crear nada.
+    e = por_nombre.get(nombre_graph)
+    if e and e["type"] != "httpHeaderAuth":
+        print(f"{ROJO}✗ «{nombre_graph}» ya existe con otro tipo ({e['type']}): no se toca{FIN}"); sys.exit(1)
     for nombre, tipo, _ in extra:
         e = por_nombre.get(nombre)
         if e and e["type"] != tipo:
@@ -145,7 +161,7 @@ else:
 
 for nombre, tipo, datos in extra:
     if nombre in por_nombre:
-        print(f"{GRIS}= {nombre} ya existe (no se modifica){FIN}")
+        print(f"{GRIS}= {nombre} ya existe, id {por_nombre[nombre].get('id')} (no se modifica){FIN}")
         continue
     print(f"{VERDE}+ {nombre}  ({tipo}){FIN}" + ("" if aplicar else "  (se crearía)"))
     if aplicar:

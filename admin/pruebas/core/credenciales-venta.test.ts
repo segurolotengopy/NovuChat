@@ -208,13 +208,65 @@ describe('credenciales-cliente.sh --venta', () => {
     expect(llamadasGcloud()).toEqual([]);
   });
 
-  it('un secreto de largo distinto de 64, o que termina en salto de línea, es error y no crea nada', async () => {
-    for (const valor of ['a'.repeat(63), `${'a'.repeat(64)}\n`, 'a'.repeat(65)]) {
+  it('un secreto que no son 64 hexadecimales sin salto de línea es error y no crea nada (también 63 + salto, y 64 no hexadecimales)', async () => {
+    for (const valor of ['a'.repeat(63), `${'a'.repeat(64)}\n`, 'a'.repeat(65), `${'a'.repeat(63)}\n`, 'z'.repeat(64)]) {
       escribirGcloud(valor);
       const r = await correr([...VENTA, '--aplicar']);
       expect(r.codigo, JSON.stringify(valor.length)).not.toBe(0);
       expect(r.salida).not.toContain('aaaaaaaa');
     }
+    expect(posts).toEqual([]);
+  });
+
+  it('M1: un nombre de credencial del JSON que no nombra al cliente (la credencial de OTRO cliente) no se crea ni se reutiliza', async () => {
+    // Existe «NovuChat ingesta (Bellido)» en la instancia y el JSON (por error de copia) la nombra: no debe reutilizarse.
+    lista.push({ id: 'AJENA', name: 'NovuChat ingesta (Bellido)', type: 'httpHeaderAuth' });
+    escribirFlujo((f) => {
+      for (const n of f.nodes) {
+        const c = (n.credentials as Record<string, { name: string }> | undefined)?.httpHeaderAuth;
+        if (c && c.name === INGESTA) c.name = 'NovuChat ingesta (Bellido)';
+      }
+    });
+    const r = await correr([...VENTA, '--aplicar']);
+    expect(r.codigo).not.toBe(0);
+    expect(posts).toEqual([]);
+    expect(r.salida).toContain('no nombra al cliente');
+    expect(JSON.stringify(flujoEscrito())).not.toContain('"AJENA"');
+    // y lo mismo con el nombre de envío ajeno
+    escribirFlujo((f) => {
+      for (const n of f.nodes) {
+        const c = (n.credentials as Record<string, { name: string }> | undefined)?.whatsAppApi;
+        if (c) c.name = 'WhatsApp Bellido (envío)';
+      }
+    });
+    const r2 = await correr([...VENTA, '--aplicar']);
+    expect(r2.codigo).not.toBe(0);
+    expect(posts).toEqual([]);
+  });
+
+  it('L4: si la de Graph ya existe con OTRO tipo, falla antes de crear las otras dos', async () => {
+    lista.push({ id: 'G9', name: GRAPH, type: 'whatsAppApi' });
+    const r = await correr([...VENTA, '--aplicar']);
+    expect(r.codigo).not.toBe(0);
+    expect(posts).toEqual([]);
+    expect(r.salida).toContain('otro tipo');
+  });
+
+  it('L1: con bash -x se niega a correr con --aplicar (la traza mostraría el secreto) y no llama a gcloud', async () => {
+    const r = await new Promise<{ codigo: number | null; salida: string }>((ok) => {
+      const hijo = spawn('bash', ['-x', 'scripts/credenciales-cliente.sh', '--cliente', "Q'Taco", '--env-cliente', '.env.cliente', '--env-n8n', '.env.n8n',
+        '--flujo', 'Flujos/q.local.json', ...VENTA, '--aplicar'], {
+        cwd: raiz,
+        env: entornoDelEmulador(undefined, { PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`, HOME: dir, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1', BASH_ENV: '', ENV: '' }),
+      });
+      let salida = '';
+      hijo.stdout.on('data', (c) => { salida += String(c); });
+      hijo.stderr.on('data', (c) => { salida += String(c); });
+      hijo.on('close', (codigo) => ok({ codigo, salida }));
+    });
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('No corra este script con -x');
+    expect(llamadasGcloud()).toEqual([]);
     expect(posts).toEqual([]);
   });
 
