@@ -439,7 +439,7 @@ function cbDiferencia(diferencias) {
 //   entrega     'delivery' o 'recojo' (para `sin_qr`).
 // Devuelve {cuerpo, enlace, aviso}: `enlace` = lleva el botón «Escribir al local»;
 // `aviso` = hay que avisar al restaurante (y de ahí depende `avisoSalio`).
-// «Ya pasé tu pedido» solo sale con `avisoSalio === true`: nunca se promete lo que
+// «Ya lo pasé al restaurante» solo sale con `avisoSalio === true`: nunca se promete lo que
 // no se cumplió. El texto nunca llama «pago» a un comprobante que no es el banco.
 function cbTextoAlCliente(resultado, opciones) {
   const o = cbEsObjeto(opciones) ? opciones : {};
