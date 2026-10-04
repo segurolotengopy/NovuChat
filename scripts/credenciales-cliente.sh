@@ -19,24 +19,47 @@
 #       --flujo Flujos/bellido-agendamiento.local.json [--aplicar]
 #
 # Sin --aplicar: informa qué crearía y qué nodos quedarían resueltos.
+#
+# --venta (flujo de «Venta mínima», p. ej. Q'Taco, 04/10/2026). Además de la de Graph
+# crea, SI FALTAN, las otras dos que ese flujo declara y que ningún otro script crea:
+#     httpHeaderAuth  «<nombre que declaran los nodos de ingesta>»   Authorization: Bearer <secreto del alias>
+#     whatsAppApi     «<nombre que declaran los nodos whatsApp>»     accessToken + businessAccountId
+#   Uso:  --venta --ingesta-secreto INGESTA_<ALIAS> --ingesta-version N
+#   (el alias y la versión los da `asignar-numero`/`rotar-ingesta.sh`). `--cliente` tiene que tener
+#   la grafía exacta del nombre de Graph del JSON (p. ej. «Q'Taco», no «QTACO»). Pide WABA_ID en el
+#   .env del cliente. NUNCA modifica una credencial existente (solo crea las que faltan) y nunca
+#   imprime un valor. El valor de ingesta se lee SOLO con --aplicar, del Secret Manager con las
+#   credenciales aisladas del proyecto, y viaja a python por el entorno, no por la línea de comandos.
+#   No crea ningún Trigger ni pide WA_APP_SECRET: no sirve para flujos de agenda ni de captación.
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 CLIENTE=""; ENV_CLIENTE=""; FLUJO=""; ENV_N8N=".env"; APLICAR=0
+VENTA=0; INGESTA_SECRETO=""; INGESTA_VERSION=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --cliente)     CLIENTE="$2"; shift 2 ;;
     --env-cliente) ENV_CLIENTE="$2"; shift 2 ;;
     --flujo)       FLUJO="$2"; shift 2 ;;
     --env-n8n)     ENV_N8N="$2"; shift 2 ;;
+    --venta)       VENTA=1; shift ;;
+    --ingesta-secreto) INGESTA_SECRETO="${2:?}"; shift 2 ;;
+    --ingesta-version) INGESTA_VERSION="${2:?}"; shift 2 ;;
     --aplicar)     APLICAR=1; shift ;;
     *) echo "Argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
 [ -n "$CLIENTE" ] && [ -f "$ENV_CLIENTE" ] && [ -f "$FLUJO" ] && [ -f "$ENV_N8N" ] \
-  || { echo "Uso: --cliente NOMBRE --env-cliente <.env.x> --flujo <.local.json> [--aplicar]" >&2; exit 2; }
+  || { echo "Uso: --cliente NOMBRE --env-cliente <.env.x> --flujo <.local.json> [--venta --ingesta-secreto INGESTA_X --ingesta-version N] [--aplicar]" >&2; exit 2; }
 [[ "$FLUJO" == *.local.json ]] || { echo "✗ El flujo tiene que ser el .local.json preparado" >&2; exit 1; }
+if [ "$VENTA" = 0 ] && { [ -n "$INGESTA_SECRETO" ] || [ -n "$INGESTA_VERSION" ]; }; then
+  echo "✗ --ingesta-secreto y --ingesta-version solo valen con --venta" >&2; exit 2
+fi
+if [ "$VENTA" = 1 ]; then
+  [[ "$INGESTA_SECRETO" =~ ^INGESTA_[A-Z0-9]+$ ]] || { echo "✗ --ingesta-secreto tiene que ser INGESTA_<ALIAS>" >&2; exit 2; }
+  [[ "$INGESTA_VERSION" =~ ^[0-9]+$ ]] || { echo "✗ --ingesta-version tiene que ser un número" >&2; exit 2; }
+fi
 
 set -a
 # shellcheck disable=SC1090  # ruta variable: la elige un argumento
@@ -45,8 +68,23 @@ source "$ENV_N8N"
 source "$ENV_CLIENTE"
 set +a
 : "${N8N_BASE_URL:?}" "${N8N_API_KEY:?}" "${WA_TOKEN:?}"
+[ "$VENTA" = 0 ] || : "${WABA_ID:?con --venta el .env del cliente tiene que traer WABA_ID}"
 
-export CLIENTE FLUJO APLICAR N8N_BASE_URL N8N_API_KEY WA_TOKEN
+# El valor de ingesta: SOLO con --aplicar y --venta. Sale del Secret Manager con las credenciales
+# aisladas del proyecto (igual que rotar-ingesta.sh) y se comprueba su forma sin mostrarlo. El
+# centinela «x» evita que la sustitución de comandos se coma un salto de línea final que hay que detectar.
+INGESTA_VALOR=""
+if [ "$VENTA" = 1 ] && [ "$APLICAR" = 1 ]; then
+  export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"
+  unset CLOUDSDK_ACTIVE_CONFIG_NAME
+  crudo="$(gcloud secrets versions access "$INGESTA_VERSION" --secret="$INGESTA_SECRETO" --project "${PROYECTO:-novuchat-demo}"; printf x)"
+  crudo="${crudo%x}"
+  [ "${#crudo}" -eq 64 ] || { echo "✗ El secreto de ingesta no mide 64 caracteres (o termina en salto de línea)" >&2; exit 1; }
+  INGESTA_VALOR="$crudo"; unset crudo
+fi
+
+export CLIENTE FLUJO APLICAR N8N_BASE_URL N8N_API_KEY WA_TOKEN VENTA INGESTA_VALOR
+[ "$VENTA" = 0 ] || export WABA_ID
 python3 - <<'PY'
 import json, os, sys, urllib.request, urllib.error
 VERDE, ROJO, GRIS, FIN = "\033[1;32m", "\033[1;31m", "\033[0;90m", "\033[0m"
@@ -62,9 +100,37 @@ def llamar(metodo, r, cuerpo=None):
 cod, rta = llamar("GET", "/credentials?limit=250")
 if cod != 200: print(f"{ROJO}✗ GET /credentials → {cod}{FIN}"); sys.exit(1)
 lista = rta.get("data", [])
+venta = os.environ.get("VENTA") == "1"
+if venta and rta.get("nextCursor"):
+    print(f"{ROJO}✗ La lista de credenciales de n8n viene partida (nextCursor): no se crea nada para no duplicar{FIN}"); sys.exit(1)
 por_nombre = {c["name"]: c for c in lista}
 
 nombre_graph = f"Graph WhatsApp {cliente.title()} (Bearer)"
+
+# --venta: los nombres de las otras dos credenciales los declara el JSON (no se inventan), y se
+# validan ANTES de crear nada: un solo nombre de ingesta (distinto del de Graph) y un solo nombre
+# whatsAppApi (mirando todos los nodos: `Descargar medio` es un httpRequest con whatsAppApi).
+extra = []  # (nombre, tipo, datos) que se crearían si faltan
+if venta:
+    flujo0 = json.load(open(ruta, encoding="utf-8"))
+    def nombres(tipo):
+        return sorted({c.get("name", "") for n in flujo0["nodes"] for t, c in (n.get("credentials") or {}).items()
+                       if t == tipo and c.get("name")})
+    ingestas = [x for x in nombres("httpHeaderAuth") if x != nombre_graph]
+    envios = nombres("whatsAppApi")
+    if len(ingestas) != 1 or len(envios) != 1:
+        print(f"{ROJO}✗ El JSON tiene que declarar UN nombre de ingesta (distinto del de Graph «{nombre_graph}») y UN nombre whatsAppApi: ingesta={ingestas} envío={envios}{FIN}"); sys.exit(1)
+    if len({nombre_graph, ingestas[0], envios[0]}) != 3:
+        print(f"{ROJO}✗ Los tres nombres de credencial tienen que ser distintos{FIN}"); sys.exit(1)
+    extra = [(ingestas[0], "httpHeaderAuth", lambda: {"name": "Authorization", "value": "Bearer " + os.environ["INGESTA_VALOR"]}),
+             (envios[0], "whatsAppApi", lambda: {"accessToken": os.environ["WA_TOKEN"], "businessAccountId": os.environ["WABA_ID"]})]
+    for nombre, tipo, _ in extra:
+        e = por_nombre.get(nombre)
+        if e and e["type"] != tipo:
+            print(f"{ROJO}✗ «{nombre}» ya existe con otro tipo ({e['type']}): no se toca{FIN}"); sys.exit(1)
+    if len([c for c in lista if c["name"] in {nombre_graph, ingestas[0], envios[0]}]) != len({c["name"] for c in lista if c["name"] in {nombre_graph, ingestas[0], envios[0]}}):
+        print(f"{ROJO}✗ Hay credenciales repetidas con alguno de esos nombres: no se crea nada{FIN}"); sys.exit(1)
+
 if nombre_graph in por_nombre:
     print(f"{GRIS}= {nombre_graph} ya existe{FIN}")
 else:
@@ -74,6 +140,22 @@ else:
                           "data": {"name": "Authorization", "value": "Bearer " + os.environ["WA_TOKEN"]}})
         if cod not in (200, 201): print(f"{ROJO}✗ POST /credentials → {cod}: {rta.get('message', rta)}{FIN}"); sys.exit(1)
         por_nombre[nombre_graph] = {"id": rta["id"], "name": nombre_graph, "type": "httpHeaderAuth"}
+    elif venta:
+        por_nombre[nombre_graph] = {"id": "(seco)", "name": nombre_graph, "type": "httpHeaderAuth"}
+
+for nombre, tipo, datos in extra:
+    if nombre in por_nombre:
+        print(f"{GRIS}= {nombre} ya existe (no se modifica){FIN}")
+        continue
+    print(f"{VERDE}+ {nombre}  ({tipo}){FIN}" + ("" if aplicar else "  (se crearía)"))
+    if aplicar:
+        cod, rta = llamar("POST", "/credentials", {"name": nombre, "type": tipo, "data": datos()})
+        if cod not in (200, 201):
+            m = rta.get("message", "") if isinstance(rta, dict) else ""
+            print(f"{ROJO}✗ POST /credentials → {cod}: {m if isinstance(m, str) else ''}{FIN}"); sys.exit(1)
+        por_nombre[nombre] = {"id": rta["id"], "name": nombre, "type": tipo}
+    else:
+        por_nombre[nombre] = {"id": "(seco)", "name": nombre, "type": tipo}
 
 por_tipo = {}
 for c in lista: por_tipo.setdefault(c["type"], []).append(c)
