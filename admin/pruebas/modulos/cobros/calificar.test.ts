@@ -144,9 +144,11 @@ describe('P1b: el nombre solo vale por sí solo con DOS palabras que coincidan',
   it('orden invertido con dos palabras: válido', () => {
     expect(nombre('PEREZ JUAN').estado).toBe('valido');
   });
-  it('truncado con dos palabras: «Juan Pér» frente a «Juan Perez Gomez» es válido', () => {
-    expect(nombre('Juan Pér').estado).toBe('valido');
-    expect(nombre('JUAN PEREZ GOM').estado).toBe('valido');
+  it('truncado con dos palabras: «Juan Pér» frente a «Juan Perez Gomez» vale, como aproximado (prefijo de 3 letras)', () => {
+    expect(nombre('Juan Pér').estado).toBe('aproximado');
+    expect(nombre('JUAN PEREZ GOM').estado).toBe('aproximado');
+    // Con 4 letras o más del principio es completo.
+    expect(nombre('Juan Pere').estado).toBe('valido');
   });
   it('«PERES GOMES» frente a «Perez Gomez»: aproximado (dos palabras con una letra cada una)', () => {
     expect(nombre('PERES GOMES', 'Perez Gomez')).toMatchObject({ estado: 'aproximado', motivo: 'nombre_aproximado' });
@@ -159,6 +161,47 @@ describe('P1b: el nombre solo vale por sí solo con DOS palabras que coincidan',
     expect(nombreCoincideConUnaLetra('Perez Gomez', 'PERES GOMES')).toBe('aproximado');
     expect(nombreCoincideConUnaLetra('Juan Perez', 'JUAN')).toBe('insuficiente');
     expect(nombreCoincideConUnaLetra('Juan Perez', 'Juan Lopez')).toBe('no');
+  });
+});
+
+describe('P1b: el emparejamiento es uno a uno y la dirección importa (esperado, leído)', () => {
+  const no = (esp: string, leido: string) => expect(nombreCoincideConUnaLetra(esp, leido), `${esp} / ${leido}`).not.toMatch(/^(exacto|aproximado)$/);
+  it('NO válidos: una palabra repetida, o una palabra del esperado que no está', () => {
+    no('Rosa Rosales', 'ROSA MAMANI');
+    no('Ana Anaya', 'ANA LOPEZ');
+    no('Juan Carlos Perez', 'PEREZ PEREZ');
+  });
+  it('NO válidos: el prefijo vale solo si lo TRUNCADO es lo leído (ANA no valida ANABEL)', () => {
+    no('Ana Rojas', 'ANABEL ROJAS');
+    no('Pedro Paz', 'PEDRO PAZOS');
+    no('Eva Mendoza', 'EVANGELINA MENDOZA');
+    no('Ana Paz', 'ANABEL PAZOS');
+  });
+  it('NO válidos: iniciales y prefijos de 3 letras, solos, no alcanzan', () => {
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'J P')).toBe('insuficiente');
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'JUA PER')).toBe('insuficiente');
+    no('Juan Carlos Perez', 'J J');
+  });
+  it('el mismo caso por la calificación completa: inválido con `destino_no_coincide` o `nombre_distinto`', () => {
+    for (const [esp, leido] of [['Juan Perez', 'J P'], ['Juan Perez', 'JUA PER'], ['Ana Rojas', 'ANABEL ROJAS'], ['Pedro Paz', 'PEDRO PAZOS']] as const) {
+      expect(califica({ cuentaDestino: '', nombreCuenta: leido }, { nombreCuenta: esp }).estado, `${esp}/${leido}`).toBe('invalido');
+    }
+  });
+  it('una inicial o un prefijo de 3 NUNCA dan exacto, y un prefijo de 2 letras no es nada', () => {
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'J PEREZ')).toBe('aproximado');
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'JUA PEREZ')).toBe('aproximado');
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'JU PEREZ')).toBe('no');
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'JUAN PEREZ')).toBe('exacto');
+  });
+  it('distancia 2 no vale, aunque las palabras sean largas', () => {
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'Juan Perso')).toBe('no');
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'Juan Perea')).toBe('aproximado');
+  });
+  it('los positivos de Andres siguen: invertido, truncado a 4+ y una letra por palabra', () => {
+    expect(nombreCoincideConUnaLetra('Juan Perez Gomez', 'PEREZ JUAN')).toBe('exacto');
+    expect(nombreCoincideConUnaLetra('Juan Perez Gomez', 'Juan Pér')).toBe('aproximado');
+    expect(nombreCoincideConUnaLetra('Perez Gomez', 'PERES GOMES')).toBe('aproximado');
+    expect(nombreCoincideConUnaLetra('Juan Carlos Perez Gomez', 'PEREZ GOMEZ JUAN CARL')).toBe('exacto');
   });
 });
 

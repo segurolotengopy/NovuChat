@@ -464,38 +464,85 @@ export function instanteConPrecision(leido: Leido): { ms: number; conHora: boole
 }
 
 /**
- * ¿Es el mismo titular? Regla de Andres (P1b, 03/10/2026): el nombre vale POR
- * SÍ SOLO únicamente si coinciden al menos DOS palabras (sin contar partículas
- * como «de», «del», «la»); con una sola palabra coincidente hace falta que
- * coincida la cuenta. Todas las palabras del nombre más corto tienen que estar
- * en el más largo, en cualquier orden (invertido), con estas tolerancias por
- * palabra: truncada (una inicial, o un principio de 3 letras o más), o una
- * letra de diferencia en palabras de 5 o más.
+ * ¿Es el mismo titular? Regla de Andres (P1b, 03/10/2026, afinada tras la
+ * revisión): el nombre vale POR SÍ SOLO únicamente si coinciden al menos DOS
+ * palabras (sin partículas como «de», «del», «la»); con una sola hace falta que
+ * coincida la cuenta.
  *
- *  - `exacto`: dos o más palabras, sin necesitar la letra de diferencia.
- *  - `aproximado`: dos o más palabras, alguna con una letra de diferencia.
- *  - `insuficiente`: coincide, pero con una sola palabra (no basta sin cuenta).
+ * EMPAREJAMIENTO UNO A UNO: cada palabra del nombre más corto se empareja con
+ * una palabra DISTINTA del más largo (se prueban las combinaciones; «Juan
+ * Carlos Pérez» frente a «PEREZ PEREZ» no vale). Una palabra esperada `e` y una
+ * leída `l` coinciden así, y la DIRECCIÓN importa:
+ *  - iguales, o `l` es el principio de `e` con 4 letras o más (el banco trunca
+ *    lo que imprime: «CARL» por «CARLOS»): completa;
+ *  - una letra de diferencia, con las dos de 5 letras o más: completa pero
+ *    aproximada;
+ *  - `l` es el principio de `e` con 3 letras, o una sola inicial: DÉBIL.
+ *  Nunca al revés: «ANA» esperada no valida «ANABEL» leída, ni «PAZ» a «PAZOS»,
+ *  ni «EVA» a «EVANGELINA». Un prefijo de 2 letras no es nada.
+ *
+ * Una coincidencia DÉBIL solo puede dar `aproximado`, nunca `exacto`, y solo
+ * cuenta para el mínimo de dos palabras si hay al menos una completa: si todas
+ * son débiles («Juan Perez» frente a «J P» o «JUA PER»), `insuficiente`.
+ *
+ *  - `exacto`: dos o más palabras, todas completas y sin diferencia de letra.
+ *  - `aproximado`: dos o más palabras, con alguna débil o con una letra de diferencia.
+ *  - `insuficiente`: coincide pero no alcanza (una palabra, o solo débiles).
  *  - `no`: alguna palabra no coincide («Juan Pérez» frente a «Juan López»).
  *
  * `nombreCoincide` (la seña) no se toca.
  */
+type TipoDeParEnNombre = 'completa' | 'una_letra' | 'debil';
+
+function tipoDePar(e: string, l: string): TipoDeParEnNombre | null {
+  if (e === l) return 'completa';
+  if (l.length === 1) return e.startsWith(l) ? 'debil' : null;
+  if (e.startsWith(l)) {
+    if (l.length >= 4) return 'completa';
+    if (l.length === 3) return 'debil';
+    return null;
+  }
+  if (e.length >= 5 && l.length >= 5 && distanciaDeEdicion(e, l) <= 1) return 'una_letra';
+  return null;
+}
+
 export function nombreCoincideConUnaLetra(
   esperado: string, leido: string,
 ): 'exacto' | 'aproximado' | 'insuficiente' | 'no' {
-  const a = palabras(esperado);
-  const b = palabras(leido);
-  if (a.length === 0 || b.length === 0) return 'no';
-  const [corto, largo] = a.length <= b.length ? [a, b] : [b, a];
-  let aproximado = false;
-  for (const p of corto) {
-    const exacta = largo.some((q) => mismaPalabra(p, q)
-      || (Math.min(p.length, q.length) >= 3 && (p.startsWith(q) || q.startsWith(p))));
-    if (exacta) continue;
-    if (largo.some((q) => p.length >= 5 && q.length >= 5 && distanciaDeEdicion(p, q) <= 1)) { aproximado = true; continue; }
-    return 'no';
-  }
-  if (corto.length < 2) return 'insuficiente';
-  return aproximado ? 'aproximado' : 'exacto';
+  const e = palabras(esperado);
+  const l = palabras(leido);
+  if (e.length === 0 || l.length === 0) return 'no';
+  const esperadoEsCorto = e.length <= l.length;
+  const corto = esperadoEsCorto ? e : l;
+  const largo = esperadoEsCorto ? l : e;
+  const par = (pc: string, pl: string) => (esperadoEsCorto ? tipoDePar(pc, pl) : tipoDePar(pl, pc));
+
+  // Busca el mejor emparejamiento completo: primero el que tenga alguna
+  // coincidencia fuerte, y entre esos el de menos diferencias.
+  let mejor: { fuertes: number; imperfectas: number } | null = null;
+  const usada = new Array<boolean>(largo.length).fill(false);
+  const buscar = (i: number, fuertes: number, imperfectas: number): void => {
+    if (i === corto.length) {
+      const mejora = mejor === null
+        || (fuertes > 0 && mejor.fuertes === 0)
+        || ((fuertes > 0) === (mejor.fuertes > 0) && imperfectas < mejor.imperfectas);
+      if (mejora) mejor = { fuertes, imperfectas };
+      return;
+    }
+    for (let k = 0; k < largo.length; k++) {
+      if (usada[k]) continue;
+      const t = par(corto[i] as string, largo[k] as string);
+      if (t === null) continue;
+      usada[k] = true;
+      buscar(i + 1, fuertes + (t === 'debil' ? 0 : 1), imperfectas + (t === 'completa' ? 0 : 1));
+      usada[k] = false;
+    }
+  };
+  buscar(0, 0, 0);
+  if (mejor === null) return 'no';
+  const { fuertes, imperfectas } = mejor as { fuertes: number; imperfectas: number };
+  if (fuertes === 0 || corto.length < 2) return 'insuficiente';
+  return imperfectas > 0 ? 'aproximado' : 'exacto';
 }
 
 function noEsComprobante(motivo: MotivoCalificacion, montoLeido: number | null): Calificacion {
