@@ -21,7 +21,10 @@ const decidir = cnPrimero('Decidir turno');
 const noOperativo = cnPrimero('Comercio no operativo');
 const usoExtendido = cnPrimero('Uso extendido');
 
-const fichas = cnMapaDeFichas();
+const fichas = cnMapaDeFichas(true);
+// S6: este flujo se publica ENCIMA del anterior (mismo workflow): lo que el flujo viejo dejo en los datos estaticos (`conversaciones`
+// y `vistos`, con datos de prospectos) no se lee y se borra. La ficha de este flujo vive en otra clave (`captacionMinima`).
+if (fichas.sd) { delete fichas.sd.conversaciones; delete fichas.sd.vistos; }
 const claveOk = cnClaveValida(from);
 const previa = claveOk && Object.prototype.hasOwnProperty.call(fichas.mapa, from) ? fichas.mapa[from] : null;
 const antes = ccEstadoVigente(previa, ahora);
@@ -38,6 +41,8 @@ if (decidir && decidir.plan) {
     ? ccLeerModelo(cnPrimero('Llamar al modelo') || {}, {
       rubroIds: ccIdsDeRubros(cfg), aclaracionIds: ids, aclaraciones: aclaraciones,
       textoCliente: decidir.plan.texto, textoDeImagen: decidir.plan.textoDeImagen, nombreNegocio: cfg.nombreNegocio, asesor: cfg.asesor,
+      // Lo que ve el modelo: una `respuesta` solo puede traer los numeros que estan ahi (S3).
+      datos: String((((decidir.cuerpoModelo || {}).systemInstruction || {}).parts || [{}])[0].text || ''),
     }) : null;
   const r = ccCompletar({ plan: decidir.plan, modelo: modelo, cfg: cfg });
   mensajes = r.mensajes;
@@ -92,12 +97,14 @@ if (claveOk) {
   const nueva = ccClon(estado);
   nueva.ultimoMensajeMs = ahora;
   ccRecordarId(nueva, t.mensajeId);
-  ccBarrer(fichas.mapa, ahora);
   fichas.mapa[from] = nueva;
+  // Primero se escribe y despues se barre: asi el total nunca pasa del tope (5.000), contando esta ficha.
+  ccBarrer(fichas.mapa, ahora);
 }
 
 // ============================================ el prospecto: planilla y CRM, solo si la ficha cambio
-const planillaOk = String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
+// En modo prueba la planilla NO se escribe (S7): una prueba no puede llenar la hoja de prospectos de nadie.
+const planillaOk = !prueba && String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
 const crmOk = /^https:\/\//.test(String(cfg.crmUrl || ''));
 const datosDe = (e) => ({ from: from, nombrePerfil: t.nombrePerfil, rubros: cfg.rubros });
 const despues = conversacion ? ccProspecto(estado, datosDe(estado)) : null;
@@ -107,13 +114,16 @@ const guardarPlanilla = cambio && planillaOk;
 const guardarCrm = cambio && crmOk;
 const celda = (v) => String(v === undefined || v === null ? '' : v).replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 200);
 
+// R8: la ficha de ANTES de este turno viaja en el primer item: si Meta rechaza el mensaje y su respaldo, «Confirmar envío» la restaura.
+const fichaAntes = claveOk ? antes : null;
 const resumen = { plan: accion, estadoDespues: claveOk ? estado : null, mensajes: salida.length, hechos: estado.hechos, paso: estado.paso };
 if (!salida.length) {
-  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: accion, resumen: resumen,
+  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: accion, resumen: resumen, fichaAntes: fichaAntes,
     guardarPlanilla: guardarPlanilla, prospectoPlanilla: guardarPlanilla ? despues : null, guardarCrm: false, cuerpoCrm: null } }];
 }
 const primero = salida[0].json;
 primero.resumen = resumen;
+primero.fichaAntes = fichaAntes;
 primero.guardarPlanilla = guardarPlanilla;
 primero.prospectoPlanilla = guardarPlanilla ? despues : null;
 primero.guardarCrm = guardarCrm;

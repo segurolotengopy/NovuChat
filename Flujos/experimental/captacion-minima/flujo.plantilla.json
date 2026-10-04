@@ -5,7 +5,7 @@
     "timezone": "America/La_Paz",
     "executionTimeout": 60,
     "saveDataSuccessExecution": "none",
-    "saveDataErrorExecution": "none",
+    "saveDataErrorExecution": "all",
     "saveExecutionProgress": false,
     "saveManualExecutions": false
   },
@@ -193,7 +193,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "@@todo:nodos/interpretar-entrada.js"
+        "jsCode": "@@comun:nodos/interpretar-entrada.js"
       },
       "notes": "Normaliza text, interactive, button, audio, image, document y cualquier otro tipo. La clave es `messages[0].from` (solo digitos). Descarta (devuelve vacio) numeros invalidos, prefijos no permitidos y repetidos de Meta. Solo LEE la ficha."
     },
@@ -459,7 +459,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ String($json.url || '').startsWith('https://') && Number($json.file_size) > 0 && Number($json.file_size) <= ($('Interpretar entrada').first().json.esAudio === true ? 720000 : 5000000) }}",
+              "leftValue": "={{ String($json.url || '').startsWith('https://lookaside.fbsbx.com/') && Number($json.file_size) > 0 && Number($json.file_size) <= ($('Interpretar entrada').first().json.esAudio === true ? 720000 : 5000000) }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -472,7 +472,7 @@
         },
         "options": {}
       },
-      "notes": "Audio hasta 720.000 bytes; imagen o PDF hasta 5.000.000. Con una URL que no es https, el token de Meta no se manda."
+      "notes": "Audio hasta 720.000 bytes; imagen o PDF hasta 5.000.000. Solo se descarga de lookaside.fbsbx.com (S5): con otra URL, el token de Meta no se manda."
     },
     {
       "id": "descargar-medio",
@@ -696,7 +696,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "@@todo+mensajes+filtro:nodos/decidir-turno.js"
+        "jsCode": "@@todo:nodos/decidir-turno.js"
       },
       "notes": "Lee la ficha, convierte los medios en texto, aplica las reglas globales y las del paso y decide el plan. Recibe el corpus en la linea marcadora del corpus."
     },
@@ -1360,7 +1360,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ telefono: $json.from, direccion: 'saliente', tipo: $json.tipo, texto: $json.texto || '', idMeta: $json.idMeta || '', evento: $json.evento || undefined }) }}",
-        "options": {}
+        "options": {
+          "timeout": 4000
+        }
       },
       "credentials": {
         "httpHeaderAuth": {

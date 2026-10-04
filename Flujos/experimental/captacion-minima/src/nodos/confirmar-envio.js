@@ -53,11 +53,12 @@ const prueba = cnCfg().modoPrueba === true;
 const envios = cnTodos('Enviar a WhatsApp');
 const respaldos = cnTodos('Enviar texto de respaldo');
 const from = String((enviables[0] && enviables[0].from) || '');
-const fichas = cnMapaDeFichas();
+const fichas = cnMapaDeFichas(true);
 const ficha = cnClaveValida(from) && Object.prototype.hasOwnProperty.call(fichas.mapa, from) ? fichas.mapa[from] : null;
 
 const salen = [];
 const fallas = [];
+let avisoAceptado = false;
 let usados = 0;
 enviables.forEach((it) => {
   const k = enviables.indexOf(it);
@@ -67,7 +68,7 @@ enviables.forEach((it) => {
   const final = porRespaldo ? respaldos[usados++] : envio;
   if (it.destino === 'recepcion') {
     if (it.marcaAvisado === true && ficha) {
-      if (acepto(final)) { ficha.avisado = true; ficha.avisoFalla = ''; } else ficha.avisoFalla = 'aviso_rechazado: ' + detalle(final, from);
+      if (acepto(final)) { ficha.avisado = true; ficha.avisoFalla = ''; avisoAceptado = true; } else ficha.avisoFalla = 'aviso_rechazado: ' + detalle(final, from);
     }
     return;
   }
@@ -85,5 +86,20 @@ enviables.forEach((it) => {
   }, pairedItem: { item: items.indexOf(it) } });
 });
 
-if (fallas.length) throw new Error('Meta rechazó el mensaje al cliente: ' + fallas.join(' | '));
+if (fallas.length) {
+  // R8: si Meta rechazo el mensaje al cliente (y su respaldo), la conversacion NO avanzo para el: se restaura la ficha de antes del
+  // turno, conservando `ultimosIds` y `ultimoMensajeMs` (el reenvio de Meta sigue siendo un repetido). Lo que ya salio de verdad —el
+  // aviso a recepcion— se conserva: `avisado` no se pierde.
+  const previa = items[0] && items[0].fichaAntes;
+  if (ficha && previa && typeof previa === 'object') {
+    const ids = Array.isArray(ficha.ultimosIds) ? ficha.ultimosIds.slice() : [];
+    const hora = ficha.ultimoMensajeMs;
+    const restaurada = JSON.parse(JSON.stringify(previa));
+    restaurada.ultimosIds = ids;
+    restaurada.ultimoMensajeMs = hora;
+    if (avisoAceptado) { restaurada.avisado = true; restaurada.avisoFalla = ''; }
+    fichas.mapa[from] = restaurada;
+  }
+  throw new Error('Meta rechazó el mensaje al cliente: ' + fallas.join(' | '));
+}
 return salen;

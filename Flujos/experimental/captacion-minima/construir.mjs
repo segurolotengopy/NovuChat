@@ -125,9 +125,12 @@ const FORMAS_CONFIG = {
   numeroRecepcion: o(/\d{6,20}/),
   plantillaAviso: /^[a-z0-9_]{1,64}$/,
   idiomaPlantillaAviso: /^[a-z]{2}(_[A-Z]{2})?$/,
-  planillaProspectosId: o(/[A-Za-z0-9_-]{25,100}/),
+  // Vacío solo para el ensayo (S7): sin planilla, la prueba no puede escribir en la de nadie.
+  planillaProspectosId: o(/[A-Za-z0-9_-]{25,100}|/),
   prefijosPermitidos: /^\d{1,4}(,\d{1,4})*$/,
   nivelEmojis: /^(ninguno|pocos|muchos)$/,
+  // Opcional (S7): los números a los que una ejecución de PRUEBA puede dirigirse, separados por comas; el marcador no restringe.
+  telefonosDePrueba: o(/\d{6,20}(,\d{6,20})*/),
 };
 const CAMPOS_CONFIG = ['waGraphVersion', 'phoneNumberIdEsperado', 'numeroRecepcion', 'nombreNegocio', 'horarioAtencion', 'plantillaAviso',
   'idiomaPlantillaAviso', 'planillaProspectosId', 'planillaProspectosHoja', 'crmUrl', 'prefijosPermitidos', 'nivelEmojis',
@@ -135,7 +138,14 @@ const CAMPOS_CONFIG = ['waGraphVersion', 'phoneNumberIdEsperado', 'numeroRecepci
 const CREDENCIALES = ['trigger', 'ingesta', 'graph', 'planilla', 'crm'];
 const MOTIVOS = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
 const ID_RUBRO = /^[a-z0-9_-]{1,40}$/;
-const PRECIO = /USD\s*\d|\$\s*\d|\d+\s*(d[oó]lares|bs|bolivianos)/i;
+// UN SOLO patrón de precios: el de la librería (`CC_PRECIO`, una línea de `src/lib/captacion.js`), leído de allí.
+function patronDePrecios() {
+  const fuente = leerSiExiste(join(AQUI, 'src/lib/captacion.js'), 'src/lib/captacion.js') || '';
+  const m = /^const CC_PRECIO = \/(.+)\/([a-z]*);$/m.exec(fuente);
+  if (!m) throw new Error('src/lib/captacion.js: no se encontró la línea «const CC_PRECIO = /…/;»');
+  return new RegExp(m[1], m[2]);
+}
+export const PRECIO = patronDePrecios();
 const CONTROLES = /[\u0000-\u001f\u007f\u2028\u2029]/;
 const URL_EN_TEXTO = /[a-z][a-z0-9+.-]*:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|site|app|io|bo|me|co|ly|dev|xyz|info|biz|link|page)\b/i;
 
@@ -223,11 +233,12 @@ export function validarDatos(datos, archivo) {
       for (const id of ids) {
         const ruta = `guion.rubros.${id}`;
         if (!ID_RUBRO.test(id)) { e(ruta, 'tiene un id que no cumple /^[a-z0-9_-]{1,40}$/'); continue; }
+        if (/^(__proto__|constructor|prototype)$/.test(id)) { e(ruta, 'tiene un id que toca el prototipo de los objetos'); continue; }
         const r = rubros[id];
         if (!r || typeof r !== 'object' || Array.isArray(r)) { e(ruta, 'tiene que ser un objeto'); continue; }
         // D16: la única imagen que envía el flujo es la de los planes (`archivoPlanes` de la consola); el guion no lleva imágenes.
         if ('imagen' in r) e(`${ruta}.imagen`, 'no se admite: la única imagen que envía el flujo es la de los planes, y viene de la consola');
-        for (const k of Object.keys(r)) if (k !== 'imagen' && !['dolor', 'pregunta', 'impacto'].includes(k)) e(`${ruta}.${k}`, 'no es un campo del guion (dolor, pregunta, impacto)');
+        for (const k of Object.keys(r)) if (k !== 'imagen' && !['dolor', 'pregunta', 'impacto', 'preguntaDolor'].includes(k)) e(`${ruta}.${k}`, 'no es un campo del guion (dolor, pregunta, impacto, preguntaDolor)');
         // Texto: de qué se compone cada campo.
         const texto = (k, { requerido, max }) => {
           const v = r[k];
@@ -242,6 +253,10 @@ export function validarDatos(datos, archivo) {
         const dolor = texto('dolor', { requerido: id !== 'otro', max: 200 });
         const pregunta = texto('pregunta', { requerido: true, max: 140 });
         const impacto = texto('impacto', { requerido: false, max: 160 });
+        // R7: la pregunta de «Otro» cuando el rubro ya se conoce (solo «otro»), validada como `pregunta`.
+        const preguntaDolor = texto('preguntaDolor', { requerido: false, max: 140 });
+        if (preguntaDolor && ((preguntaDolor.match(/\?/g) || []).length !== 1 || !preguntaDolor.endsWith('?'))) e(`${ruta}.preguntaDolor`, 'tiene que terminar en una sola «?»');
+        if (preguntaDolor && id !== 'otro') e(`${ruta}.preguntaDolor`, 'solo lo lleva «otro»');
         if (dolor) {
           if (contarTexto(dolor).oraciones !== 1) e(`${ruta}.dolor`, 'tiene que ser una sola oración');
           if (dolor.includes('?')) e(`${ruta}.dolor`, 'no lleva «?»: la pregunta es otro campo');
@@ -391,9 +406,10 @@ export function guardias(entrada, flujo, datos = {}) {
   for (const n of nodos) {
     if (/langchain\.(agent|memoryBufferWindow|lmChat\w*)$/i.test(String(n.type))) h.push(`el nodo «${n.name}» es de tipo ${n.type}: este flujo no lleva agente, memoria ni modelo de chat`);
   }
-  // Retención de ejecuciones, orden y zona horaria (decisión de Andres, 02/10/2026: las ejecuciones llevan texto de clientes).
+  // Retención de ejecuciones, orden y zona horaria (decisión de Andres, 03/10/2026: se guardan solo las ejecuciones que fallan).
   const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution y saveDataErrorExecution «none» y saveExecutionProgress false (las ejecuciones llevan texto de clientes)');
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false (solo se guardan las ejecuciones que fallan; llevan el texto del turno)');
+  if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow` (D13)');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
   // La planilla: lecturas mínimas, y la forma de escribir de cada nodo.

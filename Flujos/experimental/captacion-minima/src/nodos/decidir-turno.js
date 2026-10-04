@@ -17,7 +17,7 @@ const cfg = cnCfg();
 const ahoraMs = Number(t.ahoraMs) || Date.now();
 
 // --- La ficha vigente ------------------------------------------------------------------------------------------------
-const mapa = cnMapaDeFichas().mapa;
+const mapa = cnMapaDeFichas(false).mapa;
 const e = ccEstadoVigente(cnClaveValida(t.from) && Object.prototype.hasOwnProperty.call(mapa, t.from) ? mapa[t.from] : null, ahoraMs);
 
 // --- Los medios, convertidos en texto --------------------------------------------------------------------------------
@@ -33,7 +33,7 @@ if (t.tipo === 'audio') {
   const o = lectura ? cnJsonDeGemini(lectura) : null;
   // La categoria es de lista cerrada: cualquier otra cosa es `otro`, y no abre ninguna rama nueva.
   if (o) { categoria = o.categoria === 'comprobante' ? 'comprobante' : 'otro'; textoDeImagen = typeof o.texto === 'string' ? ccPlano(o.texto, 500) : ''; }
-  if (texto.trim() === '' && textoDeImagen === '' && categoria !== 'comprobante') medioFallo = 'imagen';
+  if (texto.trim() === '' && textoDeImagen === '' && categoria !== 'comprobante') medioFallo = t.tipo === 'document' ? 'documento' : 'imagen';
 } else if (t.via === 'otro') {
   medioFallo = 'tipo';
 }
@@ -51,7 +51,7 @@ if (plan.llamarModelo === true) {
     paso: plan.paso0,
     cfg: cfg,
     mensaje: plan.texto,
-    preguntaHecha: ccPreguntaDelPaso(plan.e, cfg).texto,
+    preguntaHecha: ccPreguntaHecha(plan.e, cfg),
     textoDeImagen: plan.textoDeImagen,
     rubro: ccNombreDelRubro(plan.e, cfg),
     ahoraMs: ahoraMs,

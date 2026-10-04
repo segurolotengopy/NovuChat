@@ -5,5 +5,9 @@
   "credenciales": {
     "graph": "Graph WhatsApp — pruebas (no producción)",
     "entradaPrueba": "Entrada de prueba NovuChat (captación)"
+  },
+  "configBase": {
+    "planillaProspectosId": "",
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA"
   }
 }

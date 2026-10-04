@@ -13,6 +13,9 @@ const carga = cnPrimero('Carga de entrada') || {};
 const cfg = cnCfg();
 const msg = Array.isArray(carga.messages) ? carga.messages[0] : undefined;
 if (!msg || typeof msg !== 'object') return [];
+// Lo que no es una conversacion (R10): una reaccion, un sticker, un saludo de bienvenida, un mensaje de sistema o uno efimero
+// no se reporta ni se responde.
+if (['reaction', 'sticker', 'request_welcome', 'system', 'ephemeral'].indexOf(String(msg.type || '')) >= 0) return [];
 
 const from = String(msg.from || '');
 if (!cnClaveValida(from)) return [];
@@ -20,8 +23,8 @@ const prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.tr
 if (prefijos.length && !prefijos.some((p) => from.startsWith(p))) return [];
 
 const mensajeId = String(msg.id || '').slice(0, 200);
-const ficha = cnMapaDeFichas().mapa;
-if (mensajeId && Object.prototype.hasOwnProperty.call(ficha, from) && ccYaVisto(ficha[from], mensajeId)) return [];
+const ficha = cnMapaDeFichas(false).mapa;
+if (mensajeId && Object.prototype.hasOwnProperty.call(ficha, from) && cnYaVisto(ficha[from], mensajeId)) return [];
 
 const tipo = msg.type === 'voice' ? 'audio' : String(msg.type || 'desconocido');
 const sel = msg.interactive ? (msg.interactive.list_reply || msg.interactive.button_reply) : null;

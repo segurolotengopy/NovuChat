@@ -38,10 +38,6 @@ function cnTodos(nombre) {
 function cnCfg() {
   return cnPrimero('Config del negocio') || {};
 }
-function cnNorm(t) {
-  return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .toLowerCase().replace(/\s+/g, ' ').trim();
-}
 function cnDigitos(v) {
   return String(v === undefined || v === null ? '' : v).replace(/\D/g, '');
 }
@@ -82,13 +78,24 @@ function cnJsonDeGemini(j) {
 function cnClaveValida(from) {
   return /^\d{6,20}$/.test(String(from || ''));
 }
-// Las fichas de los telefonos (`staticData.global.captacionMinima`, §4); un mapa que no lo es se vuelve vacio.
-function cnMapaDeFichas() {
+// Las fichas de los telefonos (`staticData.global.captacionMinima`, §4). Un nodo que SOLO LEE no escribe nada en los datos
+// estaticos: con `escribir` falso, un mapa que no existe (o no es un objeto) se vuelve vacio solo en memoria. Los dos nodos que
+// escriben —«Armar mensajes» y «Confirmar envío»— lo piden con `escribir` verdadero.
+function cnMapaDeFichas(escribir) {
   let sd = null;
   try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }
   if (!sd) return { sd: null, mapa: {} };
-  if (!sd.captacionMinima || typeof sd.captacionMinima !== 'object' || Array.isArray(sd.captacionMinima)) sd.captacionMinima = {};
+  const valido = sd.captacionMinima && typeof sd.captacionMinima === 'object' && !Array.isArray(sd.captacionMinima);
+  if (!valido) {
+    if (escribir !== true) return { sd: sd, mapa: {} };
+    sd.captacionMinima = {};
+  }
   return { sd: sd, mapa: sd.captacionMinima };
+}
+// ¿Meta ya entrego este mensaje? (lee los ultimos ids de la ficha del telefono; nunca la toca)
+function cnYaVisto(ficha, id) {
+  const x = String(id === undefined || id === null ? '' : id);
+  return x !== '' && !!ficha && typeof ficha === 'object' && Array.isArray(ficha.ultimosIds) && ficha.ultimosIds.indexOf(x) >= 0;
 }
 // La atencion del telefono: lo que devolvio la ingesta del entrante si lo trae, y si no, lo que dijo `configuracionFlujo`.
 // Ante la duda, normal.

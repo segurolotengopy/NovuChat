@@ -136,8 +136,9 @@ if (codigo === 409) {
       return Number.isFinite(desde) && Number.isFinite(hasta) && desde <= ahora && ahora < hasta;
     })
     .slice(0, 10)
+    // El `destino` pasa tal cual (hasta 60 caracteres): la libreria (`ccCampana`) es quien lo valida contra su vocabulario.
     .map((k) => Object.assign({ id: String(k.id || '').slice(0, 60), texto: k.texto.trim() },
-      typeof k.destino === 'string' && /^(rubro:[a-z0-9_-]{1,40}|planes|asesor)$/.test(k.destino) ? { destino: k.destino } : {}));
+      typeof k.destino === 'string' ? { destino: k.destino.slice(0, 60) } : {}));
   cfg = Object.assign({}, deBase, deLaConsola, limpiarOferta(ob), atencion, {
     // Mandan aunque vengan vacios: el nombre del asistente y el horario.
     nombreAsistente: linea(voz.nombreAsistente, 40),
@@ -151,6 +152,11 @@ if (codigo === 409) {
 const guion = CM_GUION && typeof CM_GUION === 'object' ? CM_GUION : { asesor: { nombre: '' }, rubros: {} };
 const nombreAsesor = guion.asesor && typeof guion.asesor.nombre === 'string' ? guion.asesor.nombre : '';
 const prueba = carga.prueba && carga.prueba.modoPrueba === true ? carga.prueba : null;
+// S7: `telefonosDePrueba` (opcional, en «Config base») limita a que numeros puede dirigirse una ejecucion de PRUEBA: si el telefono
+// pedido no esta en la lista, no se envia nada. Sin lista (o con el marcador sin llenar), no se restringe.
+const permitidos = valor(base.telefonosDePrueba).split(',').map((x) => cnDigitos(x)).filter((x) => x.length >= 6);
+const telefonoDePrueba = prueba ? cnDigitos(prueba.telefonoDePrueba) : '';
+const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefonoDePrueba) >= 0;
 
 return [{ json: Object.assign({}, cfg, planilla, {
   guion: guion,
@@ -159,6 +165,6 @@ return [{ json: Object.assign({}, cfg, planilla, {
   phoneNumberId: String(carga.phoneNumberId || ''),
   // El modo prueba. Solo lo trae `Carga de entrada` cuando corrio «Entrada de prueba».
   modoPrueba: prueba !== null,
-  telefonoDePrueba: prueba ? String(prueba.telefonoDePrueba || '') : '',
-  enviarDeVerdad: prueba ? prueba.enviarDeVerdad === true : true,
+  telefonoDePrueba: prueba && telefonoPermitido ? telefonoDePrueba : '',
+  enviarDeVerdad: prueba ? prueba.enviarDeVerdad === true && telefonoPermitido : true,
 }) }];
