@@ -301,7 +301,7 @@ cambia ningún flujo publicado. La regla 1 se retira cuando ningún flujo la use
   ANABEL, PAZ no valida PAZOS, EVA no valida EVANGELINA. Las iniciales y los
   prefijos de 3 letras son **débiles**: solo dan `aproximado`, y si todas las
   coincidencias son débiles («Juan Perez» frente a «J P» o «JUA PER») el nombre
-  es `insuficiente`. Un prefijo de 2 letras no es nada. El nombre del destinatario vale **por sí solo** solo si
+  es `insuficiente`. Un prefijo de 2 letras no es nada. **Una inicial, de cualquiera de los dos lados, es siempre débil** (dos iniciales iguales tampoco dan `exacto`). **Nota:** el nombre esperado con más de 8 palabras se trunca a 8 y lo leído con más de 8 se rechaza (un nombre real no llega a tanto, no es un hallazgo). Mejora posible para C4, no se construye: que la consola advierta cuando el nombre configurado lleva iniciales. El nombre del destinatario vale **por sí solo** solo si
   coinciden al menos **dos palabras** (sin partículas); con una sola palabra
   coincidente hace falta que coincida la cuenta, y si no el resultado es
   inválido con motivo `destino_no_coincide`. Orden invertido y nombre truncado
@@ -405,7 +405,7 @@ tercero pasa a `en_revision` con `avisarComercio`; un tardío no cierra la venta
 Un `idMeta` repetido (reintento de n8n, porque la primera respuesta se perdió)
 **repite lo que se contestó** —`estado` (`invalido` sale como `reintentar`),
 `motivo`, `intentos` e `intentosRestantes` **de entonces**, `montoLeido`,
-`cierreId` y el `avisarComercio` original— con `repetido: true`. **con `repetido: true` el flujo avisa al comercio solo si en ESTA ejecución
+`cierreId` y el `avisarComercio` original— con `repetido: true`. **Con `repetido: true` el flujo avisa al comercio solo si en ESTA ejecución
 todavía no avisó** (el reintento existe porque se pudo perder la primera
 respuesta); un `idMeta` ya procesado por OTRA ejecución se descarta antes, con el
 filtro de repetidos de la entrada; no cuenta ni escribe nada. Un comprobante recibido en
