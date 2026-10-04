@@ -66,6 +66,35 @@ seguridad:
   # ---------------------------------------------------------------------------
 
   # ---------------------------------------------------------------------------
+  # RIESGO ACEPTADO (04/10/2026), no es excepcion de escaner: ninguna herramienta
+  # del pipeline lo detecta, y el esquema no admite herramienta «manual» ni un
+  # archivo como componente. Lo hace cumplir construir.mjs --verificar.
+  #   id:           EXC-QTACO-EJEC-ERROR
+  #   herramienta:  manual (revision de seguridad M-1, PR #382 y PR #395)
+  #   componente:   Flujos/experimental/venta-minima/venta-minima.qtaco.json
+  #   severidad:    MEDIUM
+  #   justificacion: Andres decidio el 04/10/2026 que el flujo de Q'Taco guarde
+  #     TODAS las ejecuciones (saveDataSuccessExecution=all, saveDataErrorExecution=all,
+  #     saveExecutionProgress=false), por lo menos 24 horas, para diagnosticar el
+  #     piloto. La base de n8n guardara por ejecucion: el encabezado Authorization
+  #     del webhook «Carrito del catalogo» (credencial NovuChat ingesta (Q'Taco), la
+  #     misma de la ingesta, la configuracion, el cotejo y el cierre), telefonos,
+  #     nombres, textos, direcciones y pedidos de clientes, enlaces del catalogo con
+  #     ficha de 128 bits, la URL del QR de cobro, notas de voz y comprobantes de
+  #     pago (imagen o PDF), y la copia del flujo con sus rutas de webhook.
+  #     Mitigaciones: acceso solo del propietario a n8n y su API; poda
+  #     EXECUTIONS_DATA_PRUNE=true con EXECUTIONS_DATA_MAX_AGE de 24 a 72 horas y
+  #     modo de datos binarios en filesystem con permisos 700, verificados en la VM
+  #     antes de publicar (ver DISENO.md de venta-minima); rotacion del secreto de
+  #     ingesta (scripts/rotar-ingesta.sh) al vencer y ante cualquier exportacion o
+  #     captura; el resto de los JSON (prueba, ensayo en el Demo A, otros tenants)
+  #     siguen en none.
+  #   aprobado_por: Andres Alberdi (04/10/2026, en el chat de Cartera)
+  #   creado:       2026-10-04
+  #   vence:        2026-12-31
+  #   Al vencer: o se baja a none, o se renueva con nueva justificacion; no se
+  #   prorroga en silencio.
+  # ---------------------------------------------------------------------------
   # ACTIVA (01/10/2026): CKV_GHA_7 de Checkov sobre release.yml y
   # ci-node-firebase.yml. Desde el reusable de seguridad 2.7, el job
   # `workflows` analiza los workflows (antes Checkov los descartaba sin avisar).
