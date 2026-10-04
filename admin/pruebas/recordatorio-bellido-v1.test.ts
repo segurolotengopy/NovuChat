@@ -74,7 +74,11 @@ describe('recordatorio de Bellido v1: nada de la prueba', () => {
   });
 
   it('no trae teléfonos de prueba ni reales, ni ids, ni credenciales con valor', () => {
-    expect(TEXTO).not.toMatch(/TELEFONO_PRUEBA|telefonoPrueba|REEMPLAZAR_CALENDARIO_ENSAYO/);
+    // El Code compartido con la prueba nombra `telefonoPrueba…` solo para filtrar SI el Config las trae (no las trae):
+    // lo que no puede haber es el marcador, el valor ni la clave en el Config.
+    expect(TEXTO).not.toMatch(/TELEFONO_PRUEBA|REEMPLAZAR_CALENDARIO_ENSAYO/);
+    const claves = (nodo('Config del recordatorio').parameters['assignments'].assignments as { name: string }[]).map((x) => x.name);
+    expect(claves.filter((k) => /prueba/i.test(k))).toEqual([]);
     expect(TEXTO).not.toMatch(/\b\d{8,}\b/);
     expect(TEXTO).not.toMatch(/\b591[67]\d{7}\b/);
     for (const n of FLUJO.nodes) for (const c of Object.values(n.credentials ?? {})) expect(c.id).toBe('');
@@ -183,6 +187,72 @@ describe('recordatorio de Bellido v1: si Meta rechaza, no se marca y la ejecuci�
     expect(aMarcar).toHaveLength(1);
     expect(aError).toHaveLength(2);
     expect(() => ejecutar(codigo('Recordatorio no enviado'), aError)).toThrow(/2 cita\(s\) sin recordar/);
+  });
+});
+
+describe('recordatorio de Bellido v1: si la marca falla después de enviar, o la configuración es inválida, la ejecución termina en error', () => {
+  const PREPARAR_CFG: J = {
+    calendarioId: 'cal', phoneNumberId: 'pn', waGraphVersion: 'v26.0', plantilla: 'recordatorio_cita_consultorio', idiomaPlantilla: 'es',
+    conQuienVariable: 'el Doctor Bellido', prefijosPermitidos: '591', estadoComercio: 'operativo', saludoVariable: 'te escribimos del consultorio',
+    variablesCuerpo: '4',
+  };
+  const preparar = (cfg: J): J[] => ejecutar(codigo('Preparar recordatorios'), [{
+    id: 'ev-9', status: 'confirmed', iCalUID: ['x', 'google.com'].join('@'), start: { dateTime: '2026-10-06T11:00:00-04:00' },
+    description: ['Cliente: Valentina Quispe', `Telefono: ${TEL}`, 'Agendado por NovuChat.'].join('\n'),
+  }], { 'Config del recordatorio': cfg });
+
+  it('«Marcar como recordada» usa la salida de error, que va a «Enviado pero no marcado»', () => {
+    expect(nodo('Marcar como recordada')).toMatchObject({ onError: 'continueErrorOutput' });
+    expect(destinos('Marcar como recordada', 0)).toEqual([]);
+    expect(destinos('Marcar como recordada', 1)).toEqual(['Enviado pero no marcado']);
+    expect(FLUJO.connections['Enviado pero no marcado']).toBeUndefined();
+  });
+
+  it('«Enviado pero no marcado» lanza con la cuenta y el eventoId, sin teléfono ni datos del paciente, y manda a Retry', () => {
+    const falladas = [{ eventoId: 'ev-1', telefono: TEL, descripcionMarcada: 'Cliente: Valentina Quispe', error: 'x' }, { eventoId: 'ev-2', telefono: TEL }];
+    let mensaje = '';
+    try { ejecutar(codigo('Enviado pero no marcado'), falladas); } catch (e) { mensaje = (e as Error).message; }
+    expect(mensaje).toMatch(/^Enviado pero no marcado: 2 cita\(s\) \(eventoId: ev-1, ev-2\)/);
+    expect(mensaje).toContain('Retry');
+    expect(mensaje).not.toContain(TEL);
+    expect(mensaje).not.toMatch(/Valentina|Quispe/);
+    // sin eventoId en la salida de error, igual lanza
+    expect(() => ejecutar(codigo('Enviado pero no marcado'), [{ error: 'x' }])).toThrow(/^Enviado pero no marcado: 1 cita\(s\)\./);
+  });
+
+  it('el LEEME dice que ante un error se usa «Retry» desde el nodo que falló, nunca una ejecución completa', () => {
+    const leeme = readFileSync(join(RAIZ, 'LEEME.md'), 'utf8');
+    expect(leeme).toMatch(/Retry/);
+    expect(leeme).toMatch(/nunca una ejecución completa/);
+  });
+
+  it('una variable de más de 30 caracteres o los prefijos vacíos llegan a «Revisar omisión», que lanza; una omisión normal termina en verde', () => {
+    expect(destinos('¿Hay recordatorios?', 1)).toEqual(['Revisar omisión']);
+    expect(FLUJO.connections['Revisar omisión']).toBeUndefined();
+    const larga = preparar({ ...PREPARAR_CFG, saludoVariable: 'te escribimos del consultorio del Dr. Bellido' });
+    expect(() => ejecutar(codigo('Revisar omisión'), larga)).toThrow(/^Recordatorio no enviado: configuracion invalida \(variable de plantilla de mas de 30 caracteres\)/);
+    const sinPrefijos = preparar({ ...PREPARAR_CFG, prefijosPermitidos: '' });
+    expect(() => ejecutar(codigo('Revisar omisión'), sinPrefijos)).toThrow(/sin prefijos configurados/);
+    // el opuesto: no hay citas que correspondan -> verde
+    const ninguna = ejecutar(codigo('Preparar recordatorios'), [{ id: 'a', status: 'cancelled' }], { 'Config del recordatorio': PREPARAR_CFG });
+    expect(ejecutar(codigo('Revisar omisión'), ninguna)).toEqual([]);
+    // y el mensaje no trae datos del paciente
+    let m = '';
+    try { ejecutar(codigo('Revisar omisión'), larga); } catch (e) { m = (e as Error).message; }
+    expect(m).not.toContain(TEL);
+  });
+
+  it('el flujo guarda solo las ejecuciones con error (no las exitosas, que llevan teléfonos y la descripción de la cita)', () => {
+    expect(FLUJO.settings['saveDataSuccessExecution']).toBe('none');
+    expect(FLUJO.settings).not.toHaveProperty('saveDataErrorExecution');
+  });
+});
+
+describe('recordatorio de Bellido (prueba): el archivo de estado se crea con permisos 0600', () => {
+  it('aplicar-prueba.py lo abre con os.open(…, 0o600), no con open(…, "w") seguido de chmod', () => {
+    const py = readFileSync(join(RAIZ, 'herramientas/aplicar-prueba.py'), 'utf8');
+    expect(py).toMatch(/os\.open\(estado_ruta, [^)]*0o600\)/);
+    expect(py).not.toMatch(/\bopen\(estado_ruta, 'w'\)/);
   });
 });
 

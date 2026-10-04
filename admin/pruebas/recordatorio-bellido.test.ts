@@ -255,3 +255,110 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
   });
 
 });
+
+describe('recordatorio de Bellido: el teléfono se lee posicional y anclado (hallazgo MEDIUM de la revisión de seguridad del PR 405)', () => {
+  const ATACANTE = '59100000099';
+  const conDescripcion = (d: string): J[] => correrPreparar([evento({ description: d })]);
+
+  it('un perfil con «\nTelefono: …» antes de la línea real NO sale: la cita es ambigua y se omite', () => {
+    const inyectada = desc(`Cliente: Valentina`, `Telefono: ${ATACANTE}`, `Telefono: ${TEL}`, 'Servicio: Control del niño sano', MARCA);
+    expect(conDescripcion(inyectada)).toEqual([{ sinRecordatorios: true, omitidas: ['telefono ambiguo'] }]);
+    // aunque la línea inyectada vaya después de la real
+    expect(conDescripcion(desc('Cliente: Valentina', `Telefono: ${TEL}`, `Telefono: ${ATACANTE}`, MARCA)))
+      .toEqual([{ sinRecordatorios: true, omitidas: ['telefono ambiguo'] }]);
+    // el opuesto: con una sola línea, sale a ese número
+    expect(conDescripcion(GESTIONADA)[0]).toMatchObject({ telefono: TEL });
+  });
+
+  it('solo cuenta la línea que le toca: la 2 si la 1 es «Cliente:», la 1 si no; una línea «Telefono:» más abajo NO sirve', () => {
+    expect(conDescripcion(desc('Cliente: Perfil', 'Servicio: Control del niño sano', `Telefono: ${TEL}`, MARCA)))
+      .toEqual([{ sinRecordatorios: true, omitidas: ['sin telefono'] }]);
+    expect(conDescripcion(desc('Nota del doctor', `Telefono: ${TEL}`, MARCA)))
+      .toEqual([{ sinRecordatorios: true, omitidas: ['sin telefono'] }]);
+    // los opuestos
+    expect(conDescripcion(desc(`Telefono: ${TEL}`, 'Servicio: x', MARCA))[0]).toMatchObject({ telefono: TEL });
+    expect(conDescripcion(desc('Cliente: Perfil', `Teléfono: +${TEL}`, MARCA))[0]).toMatchObject({ telefono: TEL });
+  });
+
+  it('la línea es entera: texto antes o después del número no vale; 16 o más dígitos NO es un teléfono', () => {
+    const con = (linea: string): J[] => conDescripcion(desc('Cliente: Perfil', linea, MARCA));
+    const noValida = [{ sinRecordatorios: true, omitidas: ['sin telefono'] }];
+    expect(con(`Telefono: ${TEL}0000000`)).toEqual(noValida);            // 18 dígitos
+    expect(con(`Telefono: ${'5910000002100000'}`)).toEqual(noValida);     // 16 dígitos
+    expect(con(`Telefono: ${TEL} y otro`)).toEqual(noValida);
+  });
+
+  it('con 15 dígitos y prefijo permitido sale; con 7 no', () => {
+    const con = (n: string): J[] => conDescripcion(desc('Cliente: Perfil', `Telefono: ${n}`, MARCA));
+    expect(con('591000000212345')[0]).toMatchObject({ telefono: '591000000212345' });
+    expect(con('5910000')).toEqual([{ sinRecordatorios: true, omitidas: ['sin telefono'] }]);
+  });
+
+  it('sin prefijos configurados falla cerrado: no sale nada a ningún prefijo y se marca como falla de configuración', () => {
+    for (const prefijosPermitidos of ['', '  ', ' , ']) {
+      expect(correrPreparar([evento()], { ...CFG, prefijosPermitidos })).toEqual([
+        { sinRecordatorios: true, omitidas: ['sin prefijos configurados'], fallaConfiguracion: ['sin prefijos configurados'] },
+      ]);
+    }
+    const { prefijosPermitidos: _p, ...sinClave } = CFG;
+    expect(correrPreparar([evento()], sinClave)[0]['fallaConfiguracion']).toEqual(['sin prefijos configurados']);
+    expect(correrPreparar([evento()], { ...CFG, prefijosPermitidos: '591' })).toHaveLength(1);
+  });
+});
+
+describe('recordatorio de Bellido: calendario, descripción completa y fallas de configuración', () => {
+  it('el calendario del evento es siempre el configurado, nunca el organizer', () => {
+    const s = correrPreparar([evento({ organizer: { email: 'otro-calendario@example.org' } })]);
+    expect(s[0]['calendarioDelEvento']).toBe('cal-de-prueba');
+    expect(JSON.stringify(s)).not.toContain('otro-calendario');
+  });
+
+  it('la descripción NO se trunca al marcar: vuelve entera con la marca; solo se trunca para analizarla', () => {
+    const larga = GESTIONADA + '\n' + 'x'.repeat(6000) + '\nfin-de-la-descripcion';
+    const [s] = correrPreparar([evento({ description: larga })]);
+    expect(String(s!['descripcionMarcada']).startsWith(larga + '\n[recordado] ')).toBe(true);
+    expect(String(s!['descripcionMarcada'])).toContain('fin-de-la-descripcion');
+    // una marca [recordado] o [no recordar] más allá de los 4000 caracteres tampoco se pierde
+    const marcadaAlFinal = GESTIONADA + '\n' + 'x'.repeat(5000) + '\n[recordado] 2026-10-05T21:00:00.000Z';
+    expect(omitidasDe(correrPreparar([evento({ description: marcadaAlFinal })]))).toEqual(['ya recordada']);
+    expect(omitidasDe(correrPreparar([evento({ description: GESTIONADA + '\n' + 'x'.repeat(5000) + '\n[no recordar]' })]))).toEqual(['no recordar']);
+  });
+
+  it('una variable de más de 30 caracteres es una falla de CONFIGURACIÓN (el flujo termina en error); una cita que no corresponde no', () => {
+    const larga = correrPreparar([evento()], { ...CFG, saludoVariable: 'te escribimos del consultorio del Dr. Bellido' });
+    expect(larga[0]['fallaConfiguracion']).toEqual(['variable de plantilla de mas de 30 caracteres']);
+    expect(correrPreparar([evento({ status: 'cancelled' })])[0]).not.toHaveProperty('fallaConfiguracion');
+    expect(correrPreparar([evento({ description: 'sin marca' })])[0]).not.toHaveProperty('fallaConfiguracion');
+  });
+});
+
+describe('recordatorio de Bellido (prueba): nada sale a un número que no sea de prueba', () => {
+  const OTRO = '59100000055';
+  const conLista: J = { ...CFG, telefonoPruebaAndres: TEL, telefonoPruebaSilvana: '59100000022' };
+  const de = (tel: string): J => evento({ description: desc('Cliente: Perfil', `Telefono: ${tel}`, MARCA) });
+
+  it('con la lista de prueba en el Config solo salen Andres y Silvana; cualquier otro número se omite con su causa', () => {
+    const s = correrPreparar([de(TEL), de('59100000022'), de(OTRO)], conLista);
+    expect(s.map((x) => x['telefono'])).toEqual([TEL, '59100000022']);
+    expect(omitidasDe(s)).toEqual(['fuera de la lista de prueba']);
+    expect(correrPreparar([de(OTRO)], conLista)).toEqual([{ sinRecordatorios: true, omitidas: ['fuera de la lista de prueba'] }]);
+  });
+
+  it('con la lista de prueba vacía (marcador sin resolver) falla cerrado; sin las claves (flujo definitivo) no filtra', () => {
+    const vacia = { ...CFG, telefonoPruebaAndres: '', telefonoPruebaSilvana: '' };
+    expect(correrPreparar([de(TEL)], vacia)).toEqual([{ sinRecordatorios: true, omitidas: ['fuera de la lista de prueba'] }]);
+    expect(correrPreparar([de(OTRO)], CFG)).toHaveLength(1);
+  });
+
+  it('las citas ficticias del flujo de prueba, con el formato del chat, dejan salir SOLO a Andres y a Silvana', () => {
+    const fuente = readFileSync(join(RAIZ, 'src/citas-ficticias.js'), 'utf8');
+    const cfgPrueba = { calendarioId: 'cal-de-prueba', telefonoPruebaAndres: TEL, telefonoPruebaSilvana: '59100000022' };
+    const citas = ejecutar(fuente, [{}], { 'Config de la prueba': cfgPrueba });
+    expect(citas).toHaveLength(6);
+    const eventos = citas.map((c, i) => ({
+      id: `f${i}`, status: 'confirmed', iCalUID: `f${i}@google.com`, start: { dateTime: c['start'] }, description: c['description'],
+    }));
+    const s = correrPreparar(eventos, conLista);
+    expect(s.map((x) => x['telefono'])).toEqual([TEL, '59100000022']);
+  });
+});

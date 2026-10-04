@@ -26,12 +26,20 @@ regla anterior («toda cita con la línea `Telefono:`, sea cual sea su origen»)
 1. su descripción tiene la línea completa `Agendado por NovuChat.` (la escribe `agendar_cita` y el flujo de agenda);
 2. su `iCalUID` **no** empieza por `novuchat-importada-` (las que carga `admin/scripts/datos/citas-a-calendario.mjs`
    llevan la misma línea de marca, y por eso se distinguen por el `iCalUID`);
-3. trae la línea `Telefono:` (o `Teléfono:`) con un número de 8 a 15 dígitos y prefijo permitido (591);
+3. trae el teléfono **en la línea que le toca** (la 2 si la 1 empieza por `Cliente:`, si no la 1; el mismo criterio de
+   `citasDelTelefono` de Agenda mínima): una línea entera `Telefono:` (o `Teléfono:`, con `+` opcional) con 8 a 15
+   dígitos (16 o más no es un teléfono) y prefijo permitido (591). Si la descripción tiene **más de una** línea
+   `Telefono:` (un nombre de perfil con un salto de línea puede colar otra) la cita es ambigua y se omite. Con
+   `prefijosPermitidos` vacío **falla cerrado**: no se envía a ningún prefijo y la ejecución termina en error;
 4. no lleva `[recordado]` ni `[no recordar]` (esta última, sin distinguir mayúsculas; es la forma de que recepción
    saque una cita del recordatorio) y no está cancelada (`status` `cancelled`; Google además no devuelve las borradas).
 
 Cada cita omitida deja su causa en `omitidas` de la ejecución (`cancelada`, `ya recordada`, `no recordar`,
-`importada`, `no gestionada por NovuChat`, `sin telefono`, `prefijo no permitido`, `evento sin hora`), sin nombres.
+`importada`, `no gestionada por NovuChat`, `telefono ambiguo`, `sin telefono`, `prefijo no permitido`, `evento sin hora`,
+`variable de plantilla de mas de 30 caracteres`, `sin prefijos configurados`, y en la prueba `fuera de la lista de
+prueba`), sin nombres. La descripción solo se trunca (a 4000 caracteres) para analizarla: al marcar vuelve entera, y
+las marcas `[recordado]` y `[no recordar]` se buscan en la completa. El calendario donde se marca es siempre el
+configurado (`calendarioId`), nunca el `organizer` del evento.
 
 **Sin datos del paciente.** La plantilla `recordatorio_cita_consultorio` (idioma `es`) dice: «Hola {{1}}, Este es un
 recordatorio sobre tu próxima cita con {{2}} el {{3}} a las {{4}}. ¡Esperamos verte!». Su botón es de URL fija y **no
@@ -78,9 +86,10 @@ corregirse aparte (no es de este PR).
 ## Salida definitiva: `recordatorio-bellido.v1.json`
 Se genera con el mismo `herramientas/generar.py` y el mismo código de `src/` (una sola fuente):
 `python3 herramientas/generar.py v1 > recordatorio-bellido.v1.json`. Nombre: «NovuChat Bellido — Recordatorio de citas
-(24 h)». Diez nodos: `Todos los días 17:00` → `Config del recordatorio` → `Citas de mañana` → `Preparar recordatorios` →
-`¿Hay recordatorios?` → `Enviar plantilla` → `Después del envío` → `¿Se envió?` → (sí) `Marcar como recordada` /
-(no) `Recordatorio no enviado`.
+(24 h)». Doce nodos: `Todos los días 17:00` → `Config del recordatorio` → `Citas de mañana` → `Preparar recordatorios` →
+`¿Hay recordatorios?` → (sí) `Enviar plantilla` → `Después del envío` → `¿Se envió?` → (sí) `Marcar como recordada`
+→ (si falla) `Enviado pero no marcado` / (no se envió) `Recordatorio no enviado`; y (no hay recordatorios)
+`Revisar omisión`.
 
 - **Sin lo de la prueba:** ni los dos webhooks, ni «Crear citas ficticias», ni la Config de la prueba, ni teléfonos de
   prueba. Lo único por reemplazar al aplicar son `REEMPLAZAR_CALENDARIO_BELLIDO` (el calendario real) y
@@ -96,6 +105,15 @@ Se genera con el mismo `herramientas/generar.py` y el mismo código de `src/` (u
   `Recordatorio no enviado: N cita(s) sin recordar. Causas: …`, con las causas de Meta y sin teléfono, título ni
   descripción del paciente. Con `executionOrder: v1` la rama de marcar (salida de arriba) corre antes que la del error,
   de modo que las citas enviadas en la misma corrida sí quedan marcadas.
+- **Si la marca falla después de enviar:** `Marcar como recordada` tiene salida de error y va a `Enviado pero no
+  marcado`, que lanza `Enviado pero no marcado: N cita(s) (eventoId: …)` sin teléfono ni datos del paciente. La plantilla
+  ya salió, así que **repetir la ejecución completa la reenviaría al paciente**: ante cualquier error de este flujo se usa
+  «Retry» desde el nodo que falló, nunca una ejecución completa.
+- **Si la omisión es por configuración** (una variable de la plantilla de más de 30 caracteres, o `prefijosPermitidos`
+  vacío), `Revisar omisión` lanza `Recordatorio no enviado: configuracion invalida (…)`: no termina en verde. Si no hay
+  citas que correspondan (o el comercio no está operativo), sí termina en verde.
+- **Ejecuciones guardadas:** `settings.saveDataSuccessExecution` = `none`: las ejecuciones exitosas no se guardan (llevan
+  teléfonos y la descripción de la cita); las de error se siguen guardando.
 - **Credenciales por nombre:** `Google Calendar account` (nodos de Calendar) y `Graph WhatsApp Bellido (Bearer)`
   (`Enviar plantilla`). Ninguna otra.
 - **Estado del comercio:** `estadoComercio` es una clave de datos del Config, fija en `operativo` (con otro valor, el
@@ -111,6 +129,11 @@ Se genera con el mismo `herramientas/generar.py` y el mismo código de `src/` (u
   de las 17:00).
 
 ## Cómo se aplica la prueba
+En la prueba, `Preparar recordatorios` solo deja salir a `telefonoPruebaAndres` y `telefonoPruebaSilvana` del Config
+(cualquier otro número se omite con `fuera de la lista de prueba`; con la lista vacía falla cerrado). El flujo
+definitivo no trae esas claves y no filtra. `aplicar-prueba.py` crea el archivo de estado (con las rutas de los
+webhooks) con `os.open(…, 0o600)`.
+
 `herramientas/generar.py` arma el JSON con marcadores; `herramientas/aplicar-prueba.py` los resuelve en memoria y crea o
 actualiza el flujo en n8n con las credenciales de Bellido por nombre (ver el encabezado del script). El repositorio no
 guarda ids, teléfonos ni rutas de webhook.

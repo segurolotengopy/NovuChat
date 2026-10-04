@@ -14,7 +14,8 @@ const fin = (hh) => {
 const cita = (hh, summary, tel, extra) => ({ json: {
   calendario: cfg.calendarioId, summary,
   start: `${manana}T${hh}:00-04:00`, end: `${manana}T${fin(hh)}:00-04:00`,
-  description: 'Cita FICTICIA de prueba del recordatorio\n' + (tel ? 'Telefono: ' + tel + '\n' : '')
+  // Mismo orden que escribe el chat: «Cliente:» en la linea 1 y «Telefono:» en la 2 (el recordatorio lo lee posicional).
+  description: 'Cliente: Cita FICTICIA de prueba del recordatorio\n' + (tel ? 'Telefono: ' + tel + '\n' : '')
     + 'Servicio: control-del-nino-sano' + (extra && extra.gestionada === false ? '' : '\nAgendado por NovuChat.')
     + (extra && extra.linea ? '\n' + extra.linea : ''),
 } });

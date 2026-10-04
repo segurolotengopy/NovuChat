@@ -4,7 +4,11 @@
 // Funcionalidades (CLIENTES/BELLIDO/solicitudes/recordatorio-al-paciente-funcionalidades):
 //  1. la cita la creó NovuChat: la descripcion trae la linea «Agendado por NovuChat.» y su iCalUID NO empieza por
 //     «novuchat-importada-» (las que carga admin/scripts/datos/citas-a-calendario.mjs no cuentan);
-//  2. con telefono (linea «Telefono: <numero>», con o sin tilde) y prefijo permitido;
+//  2. con telefono y prefijo permitido. El telefono se lee POSICIONAL y anclado, como `citasDelTelefono` de Agenda minima:
+//     la linea 2 si la 1 empieza por «Cliente:», si no la 1, y la linea es entera «Telefono: <8 a 15 digitos>» (con o
+//     sin tilde y con «+» opcional). Una descripcion con mas de una linea «Telefono:» (un nombre de perfil con un salto
+//     de linea puede colar otra) es AMBIGUA y se omite. Con `prefijosPermitidos` vacio falla cerrado: no se envia a
+//     ningun prefijo;
 //  3. una vez por cita: la marca [recordado]; y nunca si lleva [no recordar] (sin distinguir mayusculas);
 //  4. una cita cancelada o borrada no se recuerda; solo si el comercio esta operativo;
 //  5. el mensaje no lleva datos del paciente. Plantilla: «Hola {{1}}, Este es un recordatorio sobre tu proxima cita con
@@ -19,6 +23,12 @@ const cfg = $('Config del recordatorio').first().json;
 const omitidas = [];
 if (String(cfg.estadoComercio || 'operativo') !== 'operativo') return [];
 const prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.trim()).filter(Boolean);
+// Falla cerrado: sin prefijos configurados no se envia a nadie, y el flujo termina en error (`fallaConfiguracion`).
+if (!prefijos.length) return [{ json: { sinRecordatorios: true, omitidas: ['sin prefijos configurados'], fallaConfiguracion: ['sin prefijos configurados'] } }];
+// Solo en el flujo de PRUEBA: si el Config trae la lista de telefonos de prueba, nada sale a otro numero (con la lista
+// vacia, falla cerrado). El flujo definitivo no trae estas claves y no filtra.
+const hayListaDePrueba = 'telefonoPruebaAndres' in cfg || 'telefonoPruebaSilvana' in cfg;
+const soloPrueba = [cfg.telefonoPruebaAndres, cfg.telefonoPruebaSilvana].map((t) => String(t || '').replace(/\D/g, '')).filter(Boolean);
 const MARCA = '[recordado]';
 const MARCA_NOVUCHAT = 'Agendado por NovuChat.';
 const PREFIJO_IMPORTADA = 'novuchat-importada-';
@@ -32,17 +42,24 @@ const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', '
 const salida = [];
 for (const item of $input.all()) {
   const ev = item.json;
-  const desc = String(ev.description || '').slice(0, 4000);
+  // La descripcion completa es la que vuelve al calendario con la marca; solo se trunca para ANALIZARLA. Las marcas
+  // [recordado] y [no recordar] se buscan en la completa: una marca pasada de 4000 caracteres no se puede perder.
+  const descCompleta = String(ev.description || '');
+  const desc = descCompleta.slice(0, 4000);
   if (ev.status === 'cancelled') { omitidas.push('cancelada'); continue; }
-  if (desc.includes(MARCA)) { omitidas.push('ya recordada'); continue; }
-  if (/\[no recordar\]/i.test(desc)) { omitidas.push('no recordar'); continue; }
+  if (descCompleta.includes(MARCA)) { omitidas.push('ya recordada'); continue; }
+  if (/\[no recordar\]/i.test(descCompleta)) { omitidas.push('no recordar'); continue; }
   if (String(ev.iCalUID || '').startsWith(PREFIJO_IMPORTADA)) { omitidas.push('importada'); continue; }
   if (!desc.split(/\r?\n/).some((l) => l.trim() === MARCA_NOVUCHAT)) { omitidas.push('no gestionada por NovuChat'); continue; }
-  const linea = desc.split(/\r?\n/).find((l) => /^\s*Tel[eé]fono\s*:/i.test(l));
-  const m = linea && /(\d{8,15})/.exec(linea);
+  // Los saltos son `\n`; solo una descripcion SIN ningun `\n` (la que Calendar convierte a HTML al editarla) se parte por `<br>`.
+  const lineas = /\n/.test(desc) ? desc.split(/\r?\n/) : desc.split(/<br\s*\/?>/i);
+  if (lineas.filter((l) => /^\s*Tel(?:[eé]fono)?\s*:/i.test(l)).length > 1) { omitidas.push('telefono ambiguo'); continue; }
+  const lineaTel = lineas.length > 1 && /^\s*Cliente\s*:/i.test(lineas[0]) ? lineas[1] : lineas[0];
+  const m = /^\s*Tel(?:[eé]fono)?\s*:\s*\+?(\d{8,15})\s*$/i.exec(lineaTel || '');
   if (!m) { omitidas.push('sin telefono'); continue; }
   const telefono = m[1];
-  if (prefijos.length && !prefijos.some((p) => telefono.startsWith(p))) { omitidas.push('prefijo no permitido'); continue; }
+  if (!prefijos.some((p) => telefono.startsWith(p))) { omitidas.push('prefijo no permitido'); continue; }
+  if (hayListaDePrueba && !soloPrueba.includes(telefono)) { omitidas.push('fuera de la lista de prueba'); continue; }
   const inicio = Date.parse(String((ev.start || {}).dateTime || ''));
   if (!Number.isFinite(inicio)) { omitidas.push('evento sin hora'); continue; }
   const lp = new Date(inicio - 4 * 3600000);               // UTC-4 fijo (La Paz)
@@ -53,13 +70,17 @@ for (const item of $input.all()) {
   // (comprobado el 04/10/2026 con «te escribimos del consultorio del Dr. Bellido», 44): se omite con su causa, no se envia.
   if (parametros.some((v) => v.length > 30)) { omitidas.push('variable de plantilla de mas de 30 caracteres'); continue; }
   salida.push({ json: {
-    eventoId: ev.id, calendarioDelEvento: (ev.organizer || {}).email || cfg.calendarioId,
+    eventoId: ev.id, calendarioDelEvento: cfg.calendarioId,   // siempre el calendario configurado, nunca el organizer del evento
     telefono, fecha, hora,
     parametros,
     plantilla: cfg.plantilla, idioma: cfg.idiomaPlantilla, phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion,
-    descripcionMarcada: (desc ? desc + '\n' : '') + MARCA + ' ' + new Date().toISOString(),
+    descripcionMarcada: (descCompleta ? descCompleta + '\n' : '') + MARCA + ' ' + new Date().toISOString(),
   }, pairedItem: { item: 0 } });
 }
-if (!salida.length) return [{ json: { sinRecordatorios: true, omitidas } }];
+if (!salida.length) {
+  // Una omision por CONFIGURACION (variable de mas de 30 caracteres) no es una cita que no corresponde: el flujo termina en error.
+  const porConfig = [...new Set(omitidas.filter((o) => o === 'variable de plantilla de mas de 30 caracteres'))];
+  return [{ json: porConfig.length ? { sinRecordatorios: true, omitidas, fallaConfiguracion: porConfig } : { sinRecordatorios: true, omitidas } }];
+}
 salida[0].json.omitidas = omitidas;
 return salida;

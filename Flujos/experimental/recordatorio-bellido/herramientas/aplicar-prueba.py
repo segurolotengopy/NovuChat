@@ -45,5 +45,9 @@ if '__error' in r: raise SystemExit('n8n respondió %s: %s' % (r['__error'], r['
 wid = r['id']
 llamar('POST', '/api/v1/workflows/%s/deactivate' % wid)
 a = llamar('POST', '/api/v1/workflows/%s/activate' % wid)
-open(estado_ruta, 'w').write(json.dumps({'id': wid, **rutas})); os.chmod(estado_ruta, 0o600)
+# El archivo de estado trae las rutas de los webhooks (URL de capacidad): se crea con permisos 0600 desde el
+# principio (sin ventana con permisos de la umask) y, si ya existia, se vuelve a dejar en 0600.
+fd = os.open(estado_ruta, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+os.fchmod(fd, 0o600)
+with os.fdopen(fd, 'w') as f: f.write(json.dumps({'id': wid, **rutas}))
 print('flujo %s, %d nodos, activo=%s' % ('actualizado' if prev else 'creado', len(r['nodes']), a.get('active')))
