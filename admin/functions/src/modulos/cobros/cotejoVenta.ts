@@ -8,8 +8,8 @@ import {
   calificarComprobante, parsearMonto, type Calificacion, type Leido,
 } from './cotejo.js';
 import {
-  detalleDeLaVentaCalificada, esperadoDeLaVenta, esReglaDos, idDeCierreDeVenta,
-  solicitudDeCobroTras, totalUtilizable, type EfectoDeCobro, type TransicionDeCobro,
+  MAX_INTENTOS_INVALIDOS, detalleDeLaVentaCalificada, esperadoDeLaVenta, esReglaDos, idDeCierreDeVenta,
+  solicitudDeCobroTras, totalUtilizable, type ComprobanteAnotado, type EfectoDeCobro, type TransicionDeCobro,
 } from './cobroVenta.js';
 import { rutaValidaDe } from './comprobantes.js';
 
@@ -65,7 +65,7 @@ export function leidoDeLaVenta(crudo: unknown): Leido {
 }
 
 export type EstadoDeRespuesta = 'valido' | 'aproximado' | 'reintentar' | 'en_revision' | 'tardio' | 'ya_resuelto';
-export type Rechazo = 'sin_cobro_pendiente' | 'cobro_cancelado' | 'sin_total' | 'regla_1';
+export type Rechazo = 'sin_cobro_pendiente' | 'cobro_cancelado' | 'sin_total' | 'regla_1' | 'cobro_simulado';
 
 export interface RespuestaDelCotejo {
   estado: EstadoDeRespuesta;
@@ -79,6 +79,8 @@ export interface RespuestaDelCotejo {
   cierreId: string | null;
   evento: { id: string; calendario: string } | null;
   avisarComercio: boolean;
+  /** Es el mismo comprobante otra vez (reintento de n8n): se repite lo que se contestó, sin contar. */
+  repetido: boolean;
 }
 
 /** De lo que decidió la máquina de estados, el estado que se le contesta al flujo. */
@@ -89,13 +91,6 @@ export function estadoDeRespuesta(t: TransicionDeCobro, etapaPrevia: string, cal
     ya_resuelto: 'ya_resuelto', sin_cobro: 'sin_cobro_pendiente',
     cobro_cancelado: 'cobro_cancelado', regla_1: 'regla_1',
   };
-  if (t.efecto === 'repetido') {
-    // El mismo comprobante otra vez (reintento de n8n): se repite el resultado, sin contar.
-    if (etapaPrevia === 'agendada') return 'ya_resuelto';
-    if (etapaPrevia === 'en_revision') return 'en_revision';
-    if (etapaPrevia === 'vencida') return 'tardio';
-    return 'reintentar';
-  }
   return porEfecto[t.efecto] ?? 'sin_cobro_pendiente';
 }
 
@@ -138,6 +133,12 @@ export const cotejarComprobanteVenta = onRequest(
     ]);
     const moneda = String(negocio.get('moneda') ?? 'BOB');
     const cobroReal = venta.get('cobroReal') as Record<string, unknown> | undefined;
+    // EL COTEJO ES DEL COBRO REAL. En modo simulado no hay intentos ni
+    // validación (P2): el flujo no debería llamar, y si llama se le dice que no.
+    // Mismo criterio que `configuracionFlujo`: encendido y con ficha y código.
+    const cobroRealActivo = cobroReal?.['activo'] === true
+      && String(cobroReal?.['ficha'] ?? '') !== '' && String(cobroReal?.['cargaUtil'] ?? '') !== '';
+    if (!cobroRealActivo) { respuesta.status(409).json({ error: 'cobro_simulado' }); return; }
 
     const salida = await db.runTransaction(async (tx): Promise<
       { codigo: 200; cuerpo: RespuestaDelCotejo } | { codigo: 409 | 400; cuerpo: { error: string } }
@@ -153,6 +154,28 @@ export const cotejarComprobanteVenta = onRequest(
       const evento = solicitud['evento'] as { id?: unknown; calendario?: unknown } | null | undefined;
       const pedidoId = typeof evento?.id === 'string' ? evento.id.trim() : '';
       const eventoDevuelto = pedidoId ? { id: pedidoId, calendario: String(evento?.calendario ?? '') } : null;
+
+      // EL MISMO COMPROBANTE OTRA VEZ (reintento de n8n, porque la primera
+      // respuesta se perdió): se repite lo que se contestó, con su aviso
+      // original, y no se cuenta ni se escribe nada.
+      const anotados = Array.isArray(solicitud['comprobantes']) ? (solicitud['comprobantes'] as ComprobanteAnotado[]) : [];
+      const previoAnotado = anotados.find((c) => c.idMeta === idMeta);
+      if (previoAnotado) {
+        const estadoRepetido: EstadoDeRespuesta = previoAnotado.estado === 'invalido' ? 'reintentar' : previoAnotado.estado;
+        const conCierre = previoAnotado.estado === 'valido' || previoAnotado.estado === 'aproximado';
+        const n = typeof solicitud['intentosInvalidos'] === 'number' ? (solicitud['intentosInvalidos'] as number) : 0;
+        return {
+          codigo: 200,
+          cuerpo: {
+            estado: estadoRepetido, motivo: previoAnotado.motivo,
+            intentos: n, intentosRestantes: Math.max(0, MAX_INTENTOS_INVALIDOS - n),
+            importe: previoAnotado.importe ?? totalUtilizable(solicitud['monto']), moneda,
+            montoLeido: previoAnotado.montoLeido ?? null, montoDistinto: previoAnotado.montoDistinto ?? false,
+            cierreId: conCierre ? idDeCierreDeVenta(pedidoId || idMeta) : null, evento: eventoDevuelto,
+            avisarComercio: previoAnotado.avisar === true, repetido: true,
+          },
+        };
+      }
 
       // ¿Corre en plazo? Solo entonces hace falta el total, el cierre y calificar.
       const probe = solicitudDeCobroTras(solicitud, { tipo: 'lectura' }, ahoraMs);
@@ -190,10 +213,12 @@ export const cotejarComprobanteVenta = onRequest(
         estado: cal === null ? 'invalido' : cal.estado === 'no_es_comprobante' ? 'invalido' : cal.estado,
         motivo: cal?.motivo ?? 'tardio',
         idMeta, ruta: rutaImagen,
+        importe: esperado > 0 ? esperado : null, montoLeido: cal?.montoLeido ?? null,
+        montoDistinto: cal?.montoDistinto ?? false,
       }, ahoraMs);
 
       const estado = estadoDeRespuesta(transicion, etapa, cal);
-      if (estado === 'sin_cobro_pendiente' || estado === 'cobro_cancelado' || estado === 'regla_1' || estado === 'sin_total') {
+      if (estado === 'sin_cobro_pendiente' || estado === 'cobro_cancelado' || estado === 'regla_1' || estado === 'sin_total' || estado === 'cobro_simulado') {
         // Aunque se rechace, un vencimiento perezoso que se descubrió se anota (una sola vez).
         if (transicion.cambios) tx.set(refConversacion, { solicitud: transicion.cambios }, { merge: true });
         if (Object.keys(transicion.metricas).length > 0) escribirMetricas(tx, refMetricas, transicion.metricas, false);
@@ -245,10 +270,10 @@ export const cotejarComprobanteVenta = onRequest(
           estado, motivo,
           intentos: transicion.intentosInvalidos, intentosRestantes: transicion.intentosRestantes,
           importe, moneda,
-          montoLeido: cal?.montoLeido ?? (legible ? parsearMonto(String(leido.monto ?? '')) : null),
+          montoLeido: cal?.montoLeido ?? (legible ? parsearMonto(leido.monto as string) : null),
           montoDistinto: cal?.montoDistinto ?? false,
           cierreId: idCierre, evento: eventoDevuelto,
-          avisarComercio: transicion.avisarComercio,
+          avisarComercio: transicion.avisarComercio, repetido: false,
         },
       };
     });
