@@ -119,6 +119,15 @@ describe('abrir el cobro', () => {
     r = aplicar(r, solicitudDeCobroTras(r, comp('invalido', 'i1'), T0 + MIN));
     expect((r['comprobantes'] as { avisar: boolean }[])[0]?.avisar).toBe(false);
   });
+  it('un cobro NUEVO reinicia `subidas: []`; un reenvío no las toca', () => {
+    const conSubidas = abierta({ subidas: [{ idMeta: 'a', ruta: 'r' }] });
+    const nuevo = solicitudDeCobroTras(conSubidas, { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'w9', referencia: 'otro', monto: 100 }, T0 + MIN);
+    expect(nuevo.cambios).toMatchObject({ subidas: [] });
+    expect(aplicar(conSubidas, nuevo)['subidas']).toEqual([]);
+    const reenvio = solicitudDeCobroTras(conSubidas, { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'w8', referencia: 'wamid.qr', monto: 100 }, T0 + MIN);
+    expect(reenvio.efecto).toBe('reenvio');
+    expect(aplicar(conSubidas, reenvio)['subidas']).toEqual([{ idMeta: 'a', ruta: 'r' }]);
+  });
   it('un QR nuevo sobre uno vencido sin cerrar abre de nuevo y cuenta el vencido una vez', () => {
     const t = solicitudDeCobroTras(abierta(), { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'wamid.n' }, T0 + 30 * MIN);
     expect(t.efecto).toBe('abierto');

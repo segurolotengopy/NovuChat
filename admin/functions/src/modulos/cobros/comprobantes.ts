@@ -66,10 +66,21 @@ export interface Almacen {
   borrarPrefijo(prefijo: string): Promise<number>;
 }
 
-const almacenDeStorage: Almacen = {
+/** Lo mínimo que se usa de un bucket de Storage (así se puede probar sin Storage). */
+export interface BucketMinimo {
+  file(ruta: string): {
+    save(bytes: Buffer, opciones: Record<string, unknown>): Promise<unknown>;
+    exists(): Promise<[boolean]>;
+  };
+  getFiles(opciones: Record<string, unknown>): Promise<unknown[]>;
+  deleteFiles(opciones: Record<string, unknown>): Promise<unknown>;
+}
+
+export function crearAlmacenDeStorage(bucket: () => BucketMinimo): Almacen {
+  return {
   async guardar(ruta, bytes, contentType) {
     try {
-      await getStorage().bucket().file(ruta).save(bytes, {
+      await bucket().file(ruta).save(bytes, {
         contentType, resumable: false, metadata: { cacheControl: 'private, max-age=0' },
         preconditionOpts: { ifGenerationMatch: 0 },
       });
@@ -82,22 +93,25 @@ const almacenDeStorage: Almacen = {
     }
   },
   async existe(ruta) {
-    const [hay] = await getStorage().bucket().file(ruta).exists();
+    const [hay] = await bucket().file(ruta).exists();
     return hay;
   },
   async subcarpetas(prefijo) {
-    const [, , api] = await getStorage().bucket()
-      .getFiles({ prefix: prefijo, delimiter: '/', autoPaginate: false });
+    const [, , api] = await bucket()
+      .getFiles({ prefix: prefijo, delimiter: '/', autoPaginate: false }) as [unknown, unknown, unknown];
     const prefijos = ((api as { prefixes?: string[] } | undefined)?.prefixes ?? []);
     return prefijos.map((p) => p.slice(prefijo.length).replace(/\/$/, '')).filter((n) => n !== '');
   },
   async borrarPrefijo(prefijo) {
-    const bucket = getStorage().bucket();
-    const [archivos] = await bucket.getFiles({ prefix: prefijo });
-    await bucket.deleteFiles({ prefix: prefijo, force: true });
+    const b = bucket();
+    const [archivos] = await b.getFiles({ prefix: prefijo }) as [unknown[]];
+    await b.deleteFiles({ prefix: prefijo, force: true });
     return archivos.length;
   },
-};
+  };
+}
+
+const almacenDeStorage: Almacen = crearAlmacenDeStorage(() => getStorage().bucket() as unknown as BucketMinimo);
 
 let almacenDePrueba: Almacen | null = null;
 /** Solo con `COMPROBANTES_DOBLE` en el entorno: en producción no hay cómo sustituirlo. */
@@ -264,23 +278,34 @@ export const guardarComprobante = onRequest(
     const reservar: Reservar = async (rutaNueva) => {
       const previa = entradaDe(solicitud, idMeta);
       if (previa && await a.existe(previa.ruta)) return { ruta: previa.ruta, guardada: true };
-      return getFirestore().runTransaction(async (tx) => {
-        const actual = (await tx.get(refConversacion)).get('solicitud') as Record<string, unknown> | undefined;
-        if (!puedeSubir(actual, Date.now())) return 'lleno' as const;
-        const lista = subidasDe(actual);
-        const i = lista.findIndex((x) => x.idMeta === idMeta);
-        if (i < 0 && lista.length >= MAX_COMPROBANTES) return 'lleno' as const;
-        const nueva = i < 0 ? [...lista, { idMeta, ruta: rutaNueva }]
-          : lista.map((x, k) => (k === i ? { idMeta, ruta: rutaNueva } : x));
-        tx.set(refConversacion, { solicitud: { subidas: nueva } }, { merge: true });
-        return { ruta: rutaNueva, guardada: false };
-      });
+      return reservarSubida(refConversacion, idMeta, rutaNueva, Date.now());
     };
     const r = await guardarBytesDeComprobante(
       ruta.tenantId, idMeta, bytes, String(peticion.get('Content-Type') ?? ''), { almacen: a, reservar });
     respuesta.status(r.codigo).json(r.cuerpo);
   },
 );
+
+/**
+ * La reserva de cupo, en una transacción (una escritura por imagen nueva). Se
+ * vuelve a comprobar `puedeSubir` ADENTRO: entre la lectura de la petición y la
+ * transacción el cobro pudo cambiar. Si el `idMeta` ya tenía entrada, se
+ * CONSERVA su ruta (una sola extensión por idMeta).
+ */
+export async function reservarSubida(
+  refConversacion: FirebaseFirestore.DocumentReference, idMeta: string, rutaNueva: string, ahoraMs: number,
+): Promise<{ ruta: string; guardada: boolean } | 'lleno'> {
+  return getFirestore().runTransaction(async (tx) => {
+    const actual = (await tx.get(refConversacion)).get('solicitud') as Record<string, unknown> | undefined;
+    if (!puedeSubir(actual, ahoraMs)) return 'lleno' as const;
+    const lista = subidasDe(actual);
+    const previa = lista.find((x) => x.idMeta === idMeta);
+    if (previa) return { ruta: previa.ruta, guardada: false };
+    if (lista.length >= MAX_COMPROBANTES) return 'lleno' as const;
+    tx.set(refConversacion, { solicitud: { subidas: [...lista, { idMeta, ruta: rutaNueva }] } }, { merge: true });
+    return { ruta: rutaNueva, guardada: false };
+  });
+}
 
 /** Las imágenes ya subidas para este cobro: `{idMeta, ruta}`, hasta seis. */
 function subidasDe(s: Record<string, unknown> | undefined): { idMeta: string; ruta: string }[] {

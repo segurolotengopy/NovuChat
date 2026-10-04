@@ -266,6 +266,57 @@ describe('POST guardarComprobante', () => {
   });
 });
 
+describe('almacenDeStorage con un bucket simulado', () => {
+  const crear = (comportamiento: (ruta: string, opciones: Record<string, any>) => Promise<unknown>) => {
+    const llamadas: { ruta: string; opciones: Record<string, any> }[] = [];
+    const bucket = {
+      file: (ruta: string) => ({
+        save: async (_b: Buffer, opciones: Record<string, any>) => { llamadas.push({ ruta, opciones }); return comportamiento(ruta, opciones); },
+        exists: async () => [true] as [boolean],
+      }),
+      getFiles: async () => [[]], deleteFiles: async () => undefined,
+    };
+    return { almacen: m.crearAlmacenDeStorage(() => bucket as any), llamadas };
+  };
+  it('guarda con `ifGenerationMatch: 0`, cacheControl privado y sin reanudable', async () => {
+    const { almacen: a, llamadas } = crear(async () => undefined);
+    expect(await a.guardar('tenants/x/comprobantes/2026-10-03/h.jpg', JPG(), 'image/jpeg')).toBe('creado');
+    expect(llamadas[0]?.opciones).toMatchObject({
+      contentType: 'image/jpeg', resumable: false,
+      preconditionOpts: { ifGenerationMatch: 0 }, metadata: { cacheControl: 'private, max-age=0' },
+    });
+  });
+  it('un 412 (el objeto ya existía) se traduce a `existe`; cualquier otro error sube', async () => {
+    const { almacen: a } = crear(async () => { throw Object.assign(new Error('precondition'), { code: 412 }); });
+    expect(await a.guardar('r', JPG(), 'image/jpeg')).toBe('existe');
+    const { almacen: b } = crear(async () => { throw Object.assign(new Error('boom'), { code: 500 }); });
+    await expect(b.guardar('r', JPG(), 'image/jpeg')).rejects.toThrow('boom');
+  });
+});
+
+describe('reservarSubida: se vuelve a comprobar ADENTRO de la transacción', () => {
+  beforeAll(async () => { await db.doc(`tenants/${T}`).set({ nombre: 'Tienda', estado: 'activo', flujos: ['venta'] }); });
+  const MIN = 60_000;
+  it('un cobro que ya pasó las 24 h del límite no reserva, aunque se haya leído antes como abierto', async () => {
+    const ref = db.doc(`tenants/${T}/conversaciones/wa_59100000080`);
+    await ref.set({ solicitud: solicitudDe('vencida', { venceEn: Timestamp.fromMillis(Date.now() - 30 * 60 * MIN) }) });
+    expect(await m.reservarSubida(ref, 'wamid.tarde', 'ruta/x.jpg', Date.now())).toBe('lleno');
+    expect(((await ref.get()).get('solicitud') as any).subidas).toBeUndefined();
+  });
+  it('si el idMeta ya tenía entrada conserva SU ruta y no suma otra', async () => {
+    const ref = db.doc(`tenants/${T}/conversaciones/wa_59100000081`);
+    await ref.set({ solicitud: solicitudDe('qr_enviado', { subidas: [{ idMeta: 'wamid.u', ruta: 'ruta/vieja.jpg' }] }) });
+    expect(await m.reservarSubida(ref, 'wamid.u', 'ruta/nueva.png', Date.now())).toEqual({ ruta: 'ruta/vieja.jpg', guardada: false });
+    expect(((await ref.get()).get('solicitud') as any).subidas).toEqual([{ idMeta: 'wamid.u', ruta: 'ruta/vieja.jpg' }]);
+  });
+  it('reserva una entrada nueva con su ruta', async () => {
+    const ref = db.doc(`tenants/${T}/conversaciones/wa_59100000082`);
+    await ref.set({ solicitud: solicitudDe('qr_enviado') });
+    expect(await m.reservarSubida(ref, 'wamid.n', 'ruta/n.jpg', Date.now())).toEqual({ ruta: 'ruta/n.jpg', guardada: false });
+    expect(((await ref.get()).get('solicitud') as any).subidas).toEqual([{ idMeta: 'wamid.n', ruta: 'ruta/n.jpg' }]);
+  });
+});
+
 describe('la purga diaria', () => {
   const hoy = Date.UTC(2026, 9, 3, 16, 0);
   const diaHace = (n: number) => diaDeLaPaz(hoy - n * DIA_MS);
