@@ -65,7 +65,7 @@ export function leidoDeLaVenta(crudo: unknown): Leido {
 }
 
 export type EstadoDeRespuesta = 'valido' | 'aproximado' | 'reintentar' | 'en_revision' | 'tardio' | 'ya_resuelto';
-export type Rechazo = 'sin_cobro_pendiente' | 'cobro_cancelado' | 'sin_total' | 'regla_1' | 'cobro_simulado';
+export type Rechazo = 'sin_cobro_pendiente' | 'cobro_cancelado' | 'sin_total' | 'regla_1';
 
 export interface RespuestaDelCotejo {
   estado: EstadoDeRespuesta;
@@ -118,6 +118,9 @@ export const cotejarComprobanteVenta = onRequest(
     if (idMeta === '') { respuesta.status(400).json({ error: 'falta_idmeta' }); return; }
     const legible = cuerpo['legible'] === true;
     const leido = leidoDeLaVenta(cuerpo['leido']);
+    // El monto que se leyó, en toda respuesta con un comprobante legible (tardío
+    // e inválido incluidos): el flujo decide qué decirle al cliente.
+    const montoDeLoLeido = legible ? parsearMonto(leido.monto as string) : null;
     const rutaImagen = rutaValidaDe(cuerpo['ruta'], ruta.tenantId, idMeta);
 
     const db = getFirestore();
@@ -163,12 +166,14 @@ export const cotejarComprobanteVenta = onRequest(
       if (previoAnotado) {
         const estadoRepetido: EstadoDeRespuesta = previoAnotado.estado === 'invalido' ? 'reintentar' : previoAnotado.estado;
         const conCierre = previoAnotado.estado === 'valido' || previoAnotado.estado === 'aproximado';
-        const n = typeof solicitud['intentosInvalidos'] === 'number' ? (solicitud['intentosInvalidos'] as number) : 0;
+        const actuales = typeof solicitud['intentosInvalidos'] === 'number' ? (solicitud['intentosInvalidos'] as number) : 0;
+        const nAnotado = typeof previoAnotado.intentos === 'number' ? previoAnotado.intentos : actuales;
         return {
           codigo: 200,
           cuerpo: {
             estado: estadoRepetido, motivo: previoAnotado.motivo,
-            intentos: n, intentosRestantes: Math.max(0, MAX_INTENTOS_INVALIDOS - n),
+            // Los intentos de ENTONCES (lo que se contestó), no los de ahora.
+            intentos: nAnotado, intentosRestantes: Math.max(0, MAX_INTENTOS_INVALIDOS - nAnotado),
             importe: previoAnotado.importe ?? totalUtilizable(solicitud['monto']), moneda,
             montoLeido: previoAnotado.montoLeido ?? null, montoDistinto: previoAnotado.montoDistinto ?? false,
             cierreId: conCierre ? idDeCierreDeVenta(pedidoId || idMeta) : null, evento: eventoDevuelto,
@@ -213,12 +218,12 @@ export const cotejarComprobanteVenta = onRequest(
         estado: cal === null ? 'invalido' : cal.estado === 'no_es_comprobante' ? 'invalido' : cal.estado,
         motivo: cal?.motivo ?? 'tardio',
         idMeta, ruta: rutaImagen,
-        importe: esperado > 0 ? esperado : null, montoLeido: cal?.montoLeido ?? null,
+        importe: esperado > 0 ? esperado : null, montoLeido: cal?.montoLeido ?? montoDeLoLeido,
         montoDistinto: cal?.montoDistinto ?? false,
       }, ahoraMs);
 
       const estado = estadoDeRespuesta(transicion, etapa, cal);
-      if (estado === 'sin_cobro_pendiente' || estado === 'cobro_cancelado' || estado === 'regla_1' || estado === 'sin_total' || estado === 'cobro_simulado') {
+      if (estado === 'sin_cobro_pendiente' || estado === 'cobro_cancelado' || estado === 'regla_1' || estado === 'sin_total') {
         // Aunque se rechace, un vencimiento perezoso que se descubrió se anota (una sola vez).
         if (transicion.cambios) tx.set(refConversacion, { solicitud: transicion.cambios }, { merge: true });
         if (Object.keys(transicion.metricas).length > 0) escribirMetricas(tx, refMetricas, transicion.metricas, false);
@@ -270,7 +275,7 @@ export const cotejarComprobanteVenta = onRequest(
           estado, motivo,
           intentos: transicion.intentosInvalidos, intentosRestantes: transicion.intentosRestantes,
           importe, moneda,
-          montoLeido: cal?.montoLeido ?? (legible ? parsearMonto(leido.monto as string) : null),
+          montoLeido: cal?.montoLeido ?? montoDeLoLeido,
           montoDistinto: cal?.montoDistinto ?? false,
           cierreId: idCierre, evento: eventoDevuelto,
           avisarComercio: transicion.avisarComercio, repetido: false,

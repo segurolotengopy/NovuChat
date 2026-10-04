@@ -328,6 +328,8 @@ export interface ComprobanteAnotado {
   importe?: number | null;
   montoLeido?: number | null;
   montoDistinto?: boolean;
+  /** Intentos inválidos que llevaba el cobro después de este comprobante. */
+  intentos?: number;
 }
 
 function numeroEntero(v: unknown): number {
@@ -353,7 +355,7 @@ export function limiteDe(s: Record<string, unknown> | null | undefined): number 
  */
 export const CAMPOS_REGLA_2_EN_NULO = {
   reglaCobro: null, venceEn: null, prorrogaHasta: null, intentosInvalidos: null,
-  comprobantes: null, anulacionAvisadaEn: null,
+  comprobantes: null, anulacionAvisadaEn: null, subidas: null,
 } as const;
 
 export type EventoDeCobro =
@@ -476,6 +478,8 @@ export function solicitudDeCobroTras(
         reglaCobro: 2,
         venceEn: Timestamp.fromMillis(ahoraMs + MINUTOS_QR_VENTA_REGLA_2 * 60_000),
         prorrogaHasta: null, intentosInvalidos: 0, comprobantes: [], anulacionAvisadaEn: null,
+        // Las imágenes que se subieron para ESTE cobro (`guardarComprobante`).
+        subidas: [],
       },
       efecto: 'abierto',
       // Un QR anterior que venció sin que nadie lo cerrara se cuenta ahora, una vez.
@@ -523,12 +527,13 @@ export function solicitudDeCobroTras(
   const repetido = lista.find((c) => c.idMeta === evento.idMeta);
   if (repetido) return { ...sinCambios('repetido', s), previo: repetido };
 
-  const anotar = (estado: EstadoDeComprobante, motivo: string, avisar: boolean): ComprobanteAnotado[] =>
+  const anotar = (estado: EstadoDeComprobante, motivo: string, avisar: boolean,
+    intentosTras: number = numeroEntero(s['intentosInvalidos'])): ComprobanteAnotado[] =>
     lista.length >= MAX_COMPROBANTES ? lista
       : [...lista, {
           idMeta: evento.idMeta, estado, motivo, en: ahora, ruta: evento.ruta, avisar,
           importe: evento.importe ?? null, montoLeido: evento.montoLeido ?? null,
-          montoDistinto: evento.montoDistinto ?? false,
+          montoDistinto: evento.montoDistinto ?? false, intentos: intentosTras,
         }];
   const cotejos = numeroEntero(s['cotejos']) + 1;
 
@@ -583,7 +588,7 @@ export function solicitudDeCobroTras(
   const base = {
     cotejos, prorrogaHasta: prorroga, intentosInvalidos: intentos,
     // El tercero se anota ya como `en_revision` (con su motivo): así un reintento lo repite igual.
-    comprobantes: anotar(alLimite ? 'en_revision' : 'invalido', evento.motivo, alLimite),
+    comprobantes: anotar(alLimite ? 'en_revision' : 'invalido', evento.motivo, alLimite, intentos),
   };
   if (intentos >= MAX_INTENTOS_INVALIDOS) {
     return {

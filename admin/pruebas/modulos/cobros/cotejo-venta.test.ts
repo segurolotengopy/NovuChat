@@ -265,6 +265,28 @@ describe('el mismo comprobante otra vez repite lo que se contestó', () => {
     const otra = await comp('59100000073', leidoDe('50'), 'wamid.z1');
     expect(otra.cuerpo).toMatchObject({ estado: 'reintentar', avisarComercio: false, repetido: true, intentos: 1 });
   });
+  it('el repetido devuelve los intentos de ENTONCES, no los de ahora', async () => {
+    await sembrar('59100000075', 2);
+    await comp('59100000075', leidoDe('50'), 'wamid.h1');
+    await comp('59100000075', leidoDe('50'), 'wamid.h2');
+    const otra = await comp('59100000075', leidoDe('50'), 'wamid.h1');
+    expect(otra.cuerpo).toMatchObject({ estado: 'reintentar', repetido: true, intentos: 1, intentosRestantes: 2 });
+  });
+  it('el repetido de un TARDÍO conserva el monto leído y su aviso; el segundo tardío distinto no avisa', async () => {
+    await sembrar('59100000076', 20);
+    const primera = await comp('59100000076', leidoDe('100'), 'wamid.td1');
+    const otra = await comp('59100000076', leidoDe('100'), 'wamid.td1');
+    const segundo = await comp('59100000076', leidoDe('100'), 'wamid.td2');
+    expect(primera.cuerpo).toMatchObject({ estado: 'tardio', avisarComercio: true, montoLeido: 100 });
+    expect(otra.cuerpo).toMatchObject({ estado: 'tardio', avisarComercio: true, repetido: true, montoLeido: 100 });
+    expect(segundo.cuerpo).toMatchObject({ estado: 'tardio', avisarComercio: false, repetido: false });
+    const lista = (await conversacion('59100000076'))['solicitud'].comprobantes as any[];
+    expect(lista.map((c) => c.avisar)).toEqual([true, false]);
+  });
+  it('un inválido devuelve el monto leído (el flujo decide qué decir)', async () => {
+    await sembrar('59100000077', 2);
+    expect((await comp('59100000077', leidoDe('50'), 'wamid.ml1')).cuerpo).toMatchObject({ estado: 'reintentar', montoLeido: 50, montoDistinto: false });
+  });
 });
 
 describe('el cotejo es del cobro REAL', () => {

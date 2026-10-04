@@ -216,7 +216,9 @@ describe('comprobantes: válido, aproximado, inválidos y tardío', () => {
     expect(t.avisarComercio).toBe(true);
     expect(t.metricas).toEqual({ cobrosVencidos: 1, cobrosTardios: 1 });
     const s = aplicar(abierta(), t);
+    expect((s['comprobantes'] as { avisar: boolean; intentos: number }[]).map((c) => c.avisar)).toEqual([true]);
     const otro = solicitudDeCobroTras(s, comp('valido', 'c2', 'ok'), T0 + 50 * MIN);
+    expect((aplicar(s, otro)['comprobantes'] as { avisar: boolean }[]).map((c) => c.avisar)).toEqual([true, false]);
     expect(otro).toMatchObject({ efecto: 'tardio', avisarComercio: false });
     expect(otro.metricas).toEqual({});
   });
