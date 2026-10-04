@@ -83,14 +83,13 @@ const WEBHOOK_DEL_RECEPTOR = 'Entrega del receptor';
 const MARCADORES_FIJOS = { REEMPLAZAR_RUTA_CARRITO_QTACO: /^REEMPLAZAR_[A-Z0-9_]+$/ };
 const MARCADOR_DEL_CARRITO = 'REEMPLAZAR_RUTA_CARRITO_QTACO';
 
-// RETENCIÓN DE EJECUCIONES POR SALIDA (Andres, 03/10/2026; D5 de rearquitectura; M-1 de la revisión de seguridad del PR #382).
-// TEMPORAL, POR DECISIÓN DE ANDRES (03/10/2026): Q'Taco NO guarda ejecuciones, ni las de error (`none` en todo). Un `all` en errores
-// dejaría en la base de n8n el token de cabecera de la ingesta, los enlaces, la URL del QR y datos de clientes (M-1). Se vuelve a revisar TRAS EL
-// PILOTO, con ese dato sobre la mesa; el diagnóstico de fallas va por el servidor. La entrada por salida queda para esa revisión: si se
-// decide volver a guardar errores en UN archivo, se cambia SOLO aquí, con la decisión de Andres, y la prueba de retención lo exige.
-// Las variantes de prueba y de ensayo y cualquier otro tenant conservan `none` en todo (llevan texto de clientes).
-const RETENCION_POR_SALIDA = { 'venta-minima.qtaco.json': { exito: 'none', error: 'none' } };
-const RETENCION_TEMPORAL = new Set(['venta-minima.qtaco.json']);
+// RETENCIÓN DE EJECUCIONES POR SALIDA. DECISIÓN DE ANDRES (04/10/2026, reemplaza la del 03/10): en el flujo de Q'Taco se guarda TODO, las fallas Y los
+// éxitos (`all`/`all`), por lo menos 24 horas, para poder diagnosticar. El riesgo (M-1 de la revisión de seguridad del PR #382) está ACEPTADO por Andres y
+// declarado en DISENO.md (sección «Retención de ejecuciones»): n8n guardará en su base el encabezado `Authorization` del webhook del carrito, los enlaces, la
+// URL del QR y datos de clientes. Es la excepción de UN solo archivo: las variantes de prueba y de ensayo y cualquier otro tenant conservan `none` en todo
+// (llevan texto de clientes) y no pueden guardar nada sin declararlo aquí. Cambiar esta entrada exige la decisión de Andres y una revisión de `seguridad`.
+const RETENCION_POR_SALIDA = { 'venta-minima.qtaco.json': { exito: 'all', error: 'all' } };
+const RETENCION_DECLARADA = new Set(['venta-minima.qtaco.json']);
 const RETENCION_POR_OMISION = { exito: 'none', error: 'none' };
 const retencionDe = (destino) => RETENCION_POR_SALIDA[destino] || RETENCION_POR_OMISION;
 
@@ -405,14 +404,15 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   for (const solo of SOLO_PRUEBA) {
     if (entrada !== 'prueba' && nombres.has(solo)) hallazgos.push(`contiene el nodo «${solo}» (inventa avisos «salidos»): solo va en el JSON de prueba`);
   }
-  // Retención de ejecuciones (decisión de Andres, 02/10/2026; Q'Taco, 03/10/2026): las ejecuciones llevan texto de clientes (y, en
-  // errores, el token de cabecera de la ingesta, enlaces y la URL del QR), así que NADA se guarda, ni errores, y el progreso nunca se guarda.
-  // En `venta-minima.qtaco.json` es TEMPORAL por decisión de Andres (03/10): se revisa tras el piloto (M-1).
+  // Retención de ejecuciones: por omisión NADA se guarda (las ejecuciones llevan texto de clientes) y el progreso y las ejecuciones manuales nunca se guardan. La UNICA excepción
+  // declarada es el JSON de Q'Taco, que guarda todo (`all`/`all`) por decisión de Andres (04/10/2026): ver `RETENCION_POR_SALIDA`.
   const st = flujo.settings || {};
   const ret = retencionDe(destino);
-  if (st.saveDataSuccessExecution !== ret.exito || st.saveDataErrorExecution !== ret.error || st.saveExecutionProgress !== false) {
-    hallazgos.push(`los ajustes de retención de ${destino || 'este archivo'} deben ser saveDataSuccessExecution «${ret.exito}», saveDataErrorExecution «${ret.error}» y saveExecutionProgress false (las ejecuciones llevan texto de clientes)`
-      + (RETENCION_TEMPORAL.has(destino) ? '; es TEMPORAL por decisión de Andres (03/10/2026): se vuelve a revisar tras el piloto (M-1) y no se sube a «all» sin su excepción' : ''));
+  if (st.saveDataSuccessExecution !== ret.exito || st.saveDataErrorExecution !== ret.error || st.saveExecutionProgress !== false || st.saveManualExecutions !== false) {
+    hallazgos.push(`los ajustes de retención de ${destino || 'este archivo'} deben ser saveDataSuccessExecution «${ret.exito}», saveDataErrorExecution «${ret.error}», saveExecutionProgress false y saveManualExecutions false`
+      + (RETENCION_DECLARADA.has(destino)
+        ? '; decisión de Andres (04/10/2026): Q\'Taco guarda TODO (fallas y éxitos) por lo menos 24 horas para diagnosticar; el riesgo está aceptado y declarado en DISENO.md (no se baja a «none» ni a «default» sin su decisión)'
+        : '; las ejecuciones llevan texto de clientes: este archivo no guarda nada y no puede hacerlo sin declararlo en RETENCION_POR_SALIDA'));
   }
   // Presupuesto de nodos de producción.
   if (entrada !== 'prueba' && flujo.nodes.length > TOPE_DE_NODOS) {
