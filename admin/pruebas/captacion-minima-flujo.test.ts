@@ -689,7 +689,7 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
           expect(url, n.name).toMatch(/^(https:\/\/graph\.facebook\.com\/|https:\/\/generativelanguage\.googleapis\.com\/|https:\/\/us-east1-novuchat-demo\.cloudfunctions\.net\/|REEMPLAZAR_)/);
         }
         const graph = String(nodo(f, 'Enviar a WhatsApp')!.parameters['url']);
-        expect(graph).toMatch(/^https:\/\/graph\.facebook\.com\//);
+        expect(graph).toMatch(/^=?https:\/\/graph\.facebook\.com\//);
         const opts = nodo(f, 'Enviar a WhatsApp')!.parameters['options']?.['response']?.['response'];
         expect(opts?.['fullResponse'], '«Enviar a WhatsApp» devuelve la respuesta completa').toBe(true);
         expect(opts?.['neverError'], '«Enviar a WhatsApp» no corta si Meta rechaza (hay respaldo)').toBe(true);
