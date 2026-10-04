@@ -148,7 +148,7 @@ flujo viejo (`conversaciones`, `vistos`) no se lee y «Armar mensajes» lo borra
 
 ## Decisiones del diseño que el contrato no fijaba
 
-- **Mensajes del flujo propios del código** (fijos, en tuteo, sin nombre de comercio; los textos exactos son los del §13): «Ya te mostré los planes.» + «¿Te gustaría hablar con {asesor}?»
+- **Mensajes del flujo propios del código** (fijos, en tuteo, sin nombre de comercio; los textos exactos son los del §13): «¡Ya te los mostré arriba! 😊» + «¿Te gustaría hablar con {asesor}?»
   (un segundo pedido de planes no los repite), el texto de cada descarte, el de comprobante, el de medios ilegibles y el de falla. Todos pasan por `ccConEmojis` según el nivel de la consola.
 - **Empresa:** mientras el cliente no diga un nombre válido el paso sigue en `esperando_empresa` (el nombre se anota cuando llegue); lo que se repregunta
   UNA sola vez es la pregunta.

@@ -740,7 +740,7 @@ function ccCierreDePlanes(cierre, asesor) {
   return ccPlano(cierre) || '¿Qué te parece si ' + ccQuien(asesor) + ' te cuenta cómo armaríamos esto para tu negocio? 👇';
 }
 // Los planes (§13): con `archivoPlanes` válido, encabezado imagen o documento + «¡Claro! 😊 {resumen} {cierre}» + el botón del asesor; sin
-// archivo, el bloque de planes en texto + el mismo cierre; sin planes, «Los planes te los pasa {asesor}.» + el botón. Si el bloque no
+// archivo, el bloque de planes en texto + el mismo cierre; sin planes, «Los planes te los pasa {asesor} directamente 😊» + el botón. Si el bloque no
 // cabe en 1.024 ni compacto, sale como texto con la instrucción de escribir «asesor» (nunca se recorta un precio). `cierre`: el del rubro.
 function ccPlanes(cfg, asesor, cierre) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
@@ -760,7 +760,7 @@ function ccPlanes(cfg, asesor, cierre) {
   const pregunta = cierreTexto;
   const completo = ccBloquePlanes(c, false);
   if (!completo) {
-    const cuerpo = 'Los planes te los pasa ' + quien + '.';
+    const cuerpo = ccEm('Los planes te los pasa ' + quien + ' directamente 😊', c);
     return cmMensaje('cliente', cmBotones(cuerpo, boton), cuerpo, cuerpo + ' Escribe «asesor».', extra);
   }
   for (const bloque of [completo, ccBloquePlanes(c, true)]) {
@@ -1097,7 +1097,7 @@ function ccDecidir(a) {
   if (paso0 !== 'inicio') {
     if (dichoOEscrito && ccEsIdentidad(texto, cfg.asesor)) return delPaso('identidad', {});
     if (t.categoria === 'comprobante') {
-      return delPaso('fijo', { texto: 'Recibí tu archivo, pero por este medio no puedo revisar comprobantes. Si lo necesitas, toca el botón para hablar con ' + quien + '.', conAsesor: true });
+      return delPaso('fijo', { texto: '¡Recibí tu archivo! 📎 Por este medio no puedo revisar comprobantes. Si lo necesitas, toca el botón para hablar con ' + quien + ' 😊', conAsesor: true });
     }
     if (t.medioFallo && !hay && CC_FIJOS[t.medioFallo]) return delPaso('fijo', { texto: CC_FIJOS[t.medioFallo], conAsesor: false });
   }
@@ -1132,7 +1132,7 @@ function ccDecidir(a) {
       // H2: un «sí» corto a la oferta va a los planes (que ya traen el botón del asesor): sin planes que mostrar, es un «sí» al asesor.
       if (dichoOEscrito && ccEsAfirmativo(texto)) return ccHayPlanes(cfg) ? resolver(ccPedirPlanes(e)) : traspaso();
       // En libre, un agradecimiento o una despedida no repite la oferta del asesor.
-      if (paso0 === 'libre' && dichoOEscrito && ccEsAgradecimiento(texto)) return delPaso('fijo', { texto: 'Con gusto. Aquí estoy si necesitas algo más.', conAsesor: false });
+      if (paso0 === 'libre' && dichoOEscrito && ccEsAgradecimiento(texto)) return delPaso('fijo', { texto: '¡Con gusto! 😊 Aquí estoy si necesitas algo más.', conAsesor: false });
       return hay ? modelo('libre') : delPaso('oferta', { empatia: '', impacto: '' });
   }
 }
@@ -1158,7 +1158,7 @@ function ccMensajesDe(accion, e, cfg, t, x) {
       return [ccFijo(texto, false, cfg, 'abierta')];
     }
     case 'planes': return [ccPlanes(cfg, cfg.asesor, ccCierreDelRubro(e, cfg))];
-    case 'planes_ya': return [ccOferta({ empatia: 'Ya te mostré los planes.', impacto: '', asesor: cfg.asesor, conPlanes: false, nivel: cfg.nivelEmojis })];
+    case 'planes_ya': return [ccOferta({ empatia: '¡Ya te los mostré arriba! 😊', impacto: '', asesor: cfg.asesor, conPlanes: false, nivel: cfg.nivelEmojis })];
     case 'traspaso':
     case 'soporte':
       return [ccTraspaso({ numero: cfg.numeroRecepcion, desde: t.from, negocio: negocio, asesor: cfg.asesor, pideEmpresa: accion === 'traspaso' && extra.pideEmpresa === true, nivel: cfg.nivelEmojis })];

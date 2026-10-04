@@ -888,14 +888,16 @@ describe('los mensajes que arma el código', () => {
     for (const p of enormes) expect(texto.payload.text.body).toContain(`USD ${p.precioUsd}/año`);
     expect(texto.conBoton ?? texto.botones).toEqual([]);
   });
-  it('ccPlanes: sin planes ni archivo, «Los planes te los pasa {asesor}.» con el botón; los montos con decimales llevan coma', () => {
+  it('ccPlanes: sin planes ni archivo, «Los planes te los pasa {asesor} directamente 😊» con el botón; los montos con decimales llevan coma', () => {
     const m = f('ccPlanes')({ ...CFG, planes: [], cargosUnicos: [] }, 'Silvana');
-    expect(cuerpoDe(m)).toBe('Los planes te los pasa Silvana.');
+    expect(cuerpoDe(m)).toBe('Los planes te los pasa Silvana directamente 😊');
     expect(m.payload.interactive.action.buttons.map((b: J) => b.reply.id)).toEqual(['asesor']);
-    expect(cuerpoDe(f('ccPlanes')({ ...CFG, planes: [], cargosUnicos: [] }, ''))).toBe('Los planes te los pasa un asesor.');
+    expect(cuerpoDe(f('ccPlanes')({ ...CFG, planes: [], cargosUnicos: [] }, ''))).toBe('Los planes te los pasa un asesor directamente 😊');
     expect(cuerpoDe(f('ccPlanes')({ ...CFG, planes: [{ nombre: 'X', precioUsd: 12.5, periodo: 'unico', incluye: '' }], cargosUnicos: [{ nombre: 'Y', precioUsd: 7.25, desde: true, detalle: '' }] }, 'Silvana')))
       .toMatch(/X \(USD 12,50, pago único\)\.[\s\S]*Y \(pago único\): desde USD 7,25\./);
-    expect(f('ccPlanes')(undefined, undefined).payload.interactive.body.text).toBe('Los planes te los pasa un asesor.');
+    expect(f('ccPlanes')(undefined, undefined).payload.interactive.body.text).toBe('Los planes te los pasa un asesor directamente 😊');
+    // El nivel de la consola manda: «ninguno» quita el emoji sin dejar un espacio de más.
+    expect(cuerpoDe(f('ccPlanes')({ ...CFG, planes: [], cargosUnicos: [], nivelEmojis: 'ninguno' }, 'Silvana'))).toBe('Los planes te los pasa Silvana directamente');
   });
 
   const TR = { numero: '59170000001', desde: '59170000002', negocio: 'Tienda Ejemplo', asesor: 'Silvana', pideEmpresa: true };
@@ -2336,6 +2338,37 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
       expect(r['cierre'].length, id).toBeLessThanOrEqual(160);
       expect(preguntas(r['cierre']), id).toBeLessThanOrEqual(1);
     }
+  });
+  it('los textos fijos que antes eran secos ahora son cálidos: planes ya mostrados, comprobante, agradecimiento y «sin planes» (emoji, exclamación, una sola «?», sin promesas)', () => {
+    const E = (extra: J = {}): J => { const e = f('ccEstadoBase')(); return { ...e, ...extra, hechos: { ...e.hechos, ...(extra['hechos'] ?? {}) } }; };
+    const t = (texto: string, extra: J = {}): J => ({ from: '59100000011', nombrePerfil: 'Ana', tipo: 'text', texto, via: 'texto', idToque: '', anuncio: false, textoDeImagen: '', categoria: '', medioFallo: '', ...extra });
+    const salida = (e: J, dicho: J, cfg: J = CFGV): J => (f('ccCompletar')({ plan: f('ccDecidir')({ e, t: dicho, cfg }), modelo: null, cfg })['mensajes'] as J[])[0]!;
+    // Pedir los planes dos veces: la segunda no los repite y lo dice con calidez, con la pregunta del asesor y su botón.
+    const ya = salida(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true }), t('precios'));
+    expect(cuerpo(ya)).toBe('¡Ya te los mostré arriba! 😊 ¿Te gustaría hablar con Silvana?');
+    expect(ya['botones']).toEqual(['asesor']);
+    const comp = salida(E({ paso: 'oferta', rubroId: 'educacion' }), t('', { tipo: 'image', via: 'imagen', categoria: 'comprobante', textoDeImagen: 'x' }));
+    expect(cuerpo(comp)).toBe('¡Recibí tu archivo! 📎 Por este medio no puedo revisar comprobantes. Si lo necesitas, toca el botón para hablar con Silvana 😊');
+    expect(comp['botones']).toEqual(['asesor']);
+    const gracias = salida(E({ paso: 'libre', rubroId: 'educacion', empresa: 'Colegio Sol' }), t('muchas gracias'));
+    expect(cuerpo(gracias)).toBe('¡Con gusto! 😊 Aquí estoy si necesitas algo más.');
+    const sinPlanes = salida(E({ paso: 'oferta', rubroId: 'educacion' }), t('planes por favor'), { ...CFGV, planes: [], cargosUnicos: [], archivoPlanes: null });
+    expect(cuerpo(sinPlanes)).toBe('Los planes te los pasa Silvana directamente 😊');
+    expect(sinPlanes['botones']).toEqual(['asesor']);
+    for (const m of [ya, comp, gracias, sinPlanes]) {
+      expect(preguntas(cuerpo(m)), cuerpo(m)).toBeLessThanOrEqual(1);
+      expect(cuerpo(m)).toMatch(/\p{Extended_Pictographic}/u);
+      expect(cuerpo(m)).not.toMatch(/\b(usted|querés|tenés|podés)\b|ya le pas|te escribir|te llamar|te avis|lo consult|acredit|verific/i);
+    }
+    // Con el nivel «ninguno» salen sin un solo emoji y sin espacios de más (la negación no es vacía: con «muchos» sí los traen).
+    const sin = { ...CFGV, nivelEmojis: 'ninguno' };
+    const s1 = salida(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true }), t('precios'), sin);
+    const s2 = salida(E({ paso: 'oferta', rubroId: 'educacion' }), t('', { tipo: 'image', via: 'imagen', categoria: 'comprobante', textoDeImagen: 'x' }), sin);
+    const s3 = salida(E({ paso: 'libre', rubroId: 'educacion', empresa: 'Colegio Sol' }), t('muchas gracias'), sin);
+    expect(cuerpo(s1)).toBe('¡Ya te los mostré arriba! ¿Te gustaría hablar con Silvana?');
+    expect(cuerpo(s2)).toBe('¡Recibí tu archivo! Por este medio no puedo revisar comprobantes. Si lo necesitas, toca el botón para hablar con Silvana');
+    expect(cuerpo(s3)).toBe('¡Con gusto! Aquí estoy si necesitas algo más.');
+    for (const m of [s1, s2, s3]) expect(cuerpo(m)).not.toMatch(/\p{Extended_Pictographic}| {2}| [,;.!?]/u);
   });
   it('TODOS los mensajes fijos con el guion real y nivel «muchos»: ≤4 oraciones y ≤60 palabras (los planes, ≤5 y ≤70), una sola «?», con emojis, tuteo', () => {
     const archivo = { url: ARCHIVO_IMG, tipo: 'imagen', nombreArchivo: 'Planes.png' };
