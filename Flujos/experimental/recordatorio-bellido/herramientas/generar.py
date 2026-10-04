@@ -14,13 +14,15 @@ CONFIG_PARAMS={"assignments":{"assignments":[
    {"id":"c1","name":"calendarioId","type":"string","value":CAL},
    {"id":"c2","name":"phoneNumberId","type":"string","value":"REEMPLAZAR_PHONE_NUMBER_ID_BELLIDO"},
    {"id":"c3","name":"waGraphVersion","type":"string","value":"v26.0"},
-   {"id":"c4","name":"plantilla","type":"string","value":"recordatorio_cita"},
+   {"id":"c4","name":"plantilla","type":"string","value":"recordatorio_cita_consultorio"},
    {"id":"c5","name":"idiomaPlantilla","type":"string","value":"es"},
-   {"id":"c6","name":"nombreNegocio","type":"string","value":"Dr. Andres Bellido"},
+   {"id":"c6","name":"nombreNegocio","type":"string","value":"Consultorio del Dr. Bellido"},
    {"id":"c7","name":"prefijosPermitidos","type":"string","value":"591"},
    {"id":"c8","name":"estadoComercio","type":"string","value":"operativo"},
    {"id":"c9","name":"telefonoPruebaAndres","type":"string","value":"REEMPLAZAR_TELEFONO_PRUEBA_ANDRES"},
-   {"id":"c10","name":"telefonoPruebaSilvana","type":"string","value":"REEMPLAZAR_TELEFONO_PRUEBA_SILVANA"}]},"options":{}}
+   {"id":"c10","name":"telefonoPruebaSilvana","type":"string","value":"REEMPLAZAR_TELEFONO_PRUEBA_SILVANA"},
+   {"id":"c11","name":"saludoVariable","type":"string","value":"paciente"},
+   {"id":"c12","name":"variablesCuerpo","type":"string","value":"4"}]},"options":{}}
 nodos=[
  nodo("Todos los días 17:00 (apagado en la prueba)","n8n-nodes-base.scheduleTrigger",1.2,[0,300],{"rule":{"interval":[{"field":"cronExpression","expression":"0 17 * * *"}]}},disabled=True),
  nodo("Correr recordatorio ahora","n8n-nodes-base.webhook",2,[0,500],{"httpMethod":"POST","path":"REEMPLAZAR_RUTA_CORRER","responseMode":"onReceived","responseData":"allEntries","options":{}},webhookId="rec-correr"),
@@ -32,7 +34,7 @@ nodos=[
  nodo("Citas de mañana","n8n-nodes-base.googleCalendar",1.3,[600,300],{"operation":"getAll","calendar":{"__rl":True,"mode":"id","value":"={{ $json.calendarioId }}"},"returnAll":True,"timeMin":"={{ $now.setZone('America/La_Paz').plus({days:1}).startOf('day').toISO() }}","timeMax":"={{ $now.setZone('America/La_Paz').plus({days:1}).endOf('day').toISO() }}","options":{"singleEvents":True}},alwaysOutputData=True),
  nodo("Preparar recordatorios","n8n-nodes-base.code",2,[900,300],{"jsCode":j("preparar-recordatorios.js")}),
  nodo("¿Hay recordatorios?","n8n-nodes-base.if",2.2,[1200,300],{"conditions":{"options":{"caseSensitive":True,"typeValidation":"loose","version":2},"conditions":[{"id":"h1","leftValue":"={{ $json.sinRecordatorios !== true }}","rightValue":"","operator":{"type":"boolean","operation":"true","singleValue":True}}],"combinator":"and"},"options":{}}),
- nodo("Enviar plantilla","n8n-nodes-base.httpRequest",4.2,[1500,200],{"method":"POST","url":"=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages","authentication":"genericCredentialType","genericAuthType":"httpHeaderAuth","sendBody":True,"specifyBody":"json","jsonBody":"={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.telefono, type: 'template', template: { name: $json.plantilla, language: { code: $json.idioma || 'es' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json.paciente }, { type: 'text', text: $json.negocio }, { type: 'text', text: $json.fecha }, { type: 'text', text: $json.hora } ] }] } }) }}","options":{"response":{"response":{"neverError":True,"fullResponse":False}}}},onError="continueRegularOutput"),
+ nodo("Enviar plantilla","n8n-nodes-base.httpRequest",4.2,[1500,200],{"method":"POST","url":"=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages","authentication":"genericCredentialType","genericAuthType":"httpHeaderAuth","sendBody":True,"specifyBody":"json","jsonBody":"={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.telefono, type: 'template', template: { name: $json.plantilla, language: { code: $json.idioma || 'es' }, components: [{ type: 'body', parameters: $json.parametros.map((t) => ({ type: 'text', text: t })) }] } }) }}","options":{"response":{"response":{"neverError":True,"fullResponse":False}}}},onError="continueRegularOutput"),
  nodo("Después del envío","n8n-nodes-base.code",2,[1800,200],{"jsCode":j("despues-del-envio.js")}),
  nodo("¿Se envió?","n8n-nodes-base.if",2.2,[2100,200],{"conditions":{"options":{"caseSensitive":True,"typeValidation":"loose","version":2},"conditions":[{"id":"e1","leftValue":"={{ $json.enviado }}","rightValue":"","operator":{"type":"boolean","operation":"true","singleValue":True}}],"combinator":"and"},"options":{}}),
  nodo("Marcar como recordada","n8n-nodes-base.googleCalendar",1.3,[2400,100],{"operation":"update","eventId":"={{ $json.eventoId }}","calendar":{"__rl":True,"mode":"id","value":"={{ $json.calendarioDelEvento }}"},"updateFields":{"description":"={{ $json.descripcionMarcada }}"}}),

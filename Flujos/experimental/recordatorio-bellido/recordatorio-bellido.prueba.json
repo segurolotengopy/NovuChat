@@ -92,7 +92,7 @@
        "id": "c4",
        "name": "plantilla",
        "type": "string",
-       "value": "recordatorio_cita"
+       "value": "recordatorio_cita_consultorio"
       },
       {
        "id": "c5",
@@ -104,7 +104,7 @@
        "id": "c6",
        "name": "nombreNegocio",
        "type": "string",
-       "value": "Dr. Andres Bellido"
+       "value": "Consultorio del Dr. Bellido"
       },
       {
        "id": "c7",
@@ -129,6 +129,18 @@
        "name": "telefonoPruebaSilvana",
        "type": "string",
        "value": "REEMPLAZAR_TELEFONO_PRUEBA_SILVANA"
+      },
+      {
+       "id": "c11",
+       "name": "saludoVariable",
+       "type": "string",
+       "value": "paciente"
+      },
+      {
+       "id": "c12",
+       "name": "variablesCuerpo",
+       "type": "string",
+       "value": "4"
       }
      ]
     },
@@ -169,7 +181,7 @@
        "id": "c4",
        "name": "plantilla",
        "type": "string",
-       "value": "recordatorio_cita"
+       "value": "recordatorio_cita_consultorio"
       },
       {
        "id": "c5",
@@ -181,7 +193,7 @@
        "id": "c6",
        "name": "nombreNegocio",
        "type": "string",
-       "value": "Dr. Andres Bellido"
+       "value": "Consultorio del Dr. Bellido"
       },
       {
        "id": "c7",
@@ -206,6 +218,18 @@
        "name": "telefonoPruebaSilvana",
        "type": "string",
        "value": "REEMPLAZAR_TELEFONO_PRUEBA_SILVANA"
+      },
+      {
+       "id": "c11",
+       "name": "saludoVariable",
+       "type": "string",
+       "value": "paciente"
+      },
+      {
+       "id": "c12",
+       "name": "variablesCuerpo",
+       "type": "string",
+       "value": "4"
       }
      ]
     },
@@ -222,7 +246,7 @@
     0
    ],
    "parameters": {
-    "jsCode": "// Citas FICTICIAS de prueba para MAÑANA (La Paz), en el calendario de pruebas. Con el formato del chat:\n// titulo «Apellidos, Nombres (CNS|RN)» y descripcion con la linea «Telefono: <numero>».\nconst cfg = $('Config de la prueba').first().json;\nconst manana = new Date(Date.now() - 4 * 3600000 + 86400000).toISOString().slice(0, 10);   // mañana, en hora de La Paz\nconst fin = (hh) => {\n  const [h, mi] = hh.split(':').map(Number);\n  const t = h * 60 + mi + 30;\n  return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');\n};\nconst cita = (hh, summary, tel) => ({ json: {\n  calendario: cfg.calendarioId, summary,\n  start: `${manana}T${hh}:00-04:00`, end: `${manana}T${fin(hh)}:00-04:00`,\n  description: 'Cita FICTICIA de prueba del recordatorio\\n' + (tel ? 'Telefono: ' + tel + '\\n' : '') + 'Servicio: control-del-nino-sano',\n} });\nreturn [\n  cita('11:00', 'Prueba Recordatorio, Andres (CNS)', cfg.telefonoPruebaAndres),\n  cita('11:30', 'Prueba Recordatorio, Silvana (RN)', cfg.telefonoPruebaSilvana),\n  cita('12:00', 'Prueba Sin Telefono, Paciente (CNS)', ''),\n  cita('12:30', 'Prueba Extranjera, Paciente (CNS)', ['54', '911', '1234', '5678'].join('')),\n];\n"
+    "jsCode": "// Citas FICTICIAS de prueba para MAÑANA (La Paz), en el calendario de pruebas. Con el formato del chat:\n// titulo «Apellidos, Nombres (CNS|RN)» y descripcion con la linea «Telefono: <numero>». Las que NovuChat gestiona\n// llevan ademas la linea «Agendado por NovuChat.»; una cita manual del doctor no la lleva.\n// Deben salir SOLO las dos primeras (Andres y Silvana). Las demas ejercitan el criterio y no deben recibir nada.\n// No se pueden crear con este nodo, y las cubre la suite (admin/pruebas/recordatorio-bellido.test.ts): una cita con\n// iCalUID «novuchat-importada-…» (el nodo no permite fijar el iCalUID) y una cancelada (no se crea ya cancelada).\nconst cfg = $('Config de la prueba').first().json;\nconst manana = new Date(Date.now() - 4 * 3600000 + 86400000).toISOString().slice(0, 10);   // mañana, en hora de La Paz\nconst fin = (hh) => {\n  const [h, mi] = hh.split(':').map(Number);\n  const t = h * 60 + mi + 30;\n  return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');\n};\nconst cita = (hh, summary, tel, extra) => ({ json: {\n  calendario: cfg.calendarioId, summary,\n  start: `${manana}T${hh}:00-04:00`, end: `${manana}T${fin(hh)}:00-04:00`,\n  description: 'Cita FICTICIA de prueba del recordatorio\\n' + (tel ? 'Telefono: ' + tel + '\\n' : '')\n    + 'Servicio: control-del-nino-sano' + (extra && extra.gestionada === false ? '' : '\\nAgendado por NovuChat.')\n    + (extra && extra.linea ? '\\n' + extra.linea : ''),\n} });\nreturn [\n  // Deben salir: gestionadas por NovuChat, con telefono y prefijo permitido.\n  cita('11:00', 'Prueba Recordatorio, Andres (CNS)', cfg.telefonoPruebaAndres),\n  cita('11:30', 'Prueba Recordatorio, Silvana (RN)', cfg.telefonoPruebaSilvana),\n  // NO deben salir.\n  cita('12:00', 'Prueba Manual Sin Marca, Paciente (CNS)', cfg.telefonoPruebaAndres, { gestionada: false }),\n  cita('12:30', 'Prueba No Recordar, Paciente (RN)', cfg.telefonoPruebaSilvana, { linea: '[no recordar]' }),\n  cita('13:00', 'Prueba Sin Telefono, Paciente (CNS)', ''),\n  cita('13:30', 'Prueba Extranjera, Paciente (CNS)', ['54', '911', '1234', '5678'].join('')),\n];\n"
    }
   },
   {
@@ -284,7 +308,7 @@
     300
    ],
    "parameters": {
-    "jsCode": "// RECORDATORIO DE CITA AL PACIENTE (Bellido): prepara un item por cita que se debe recordar.\n// Funcionalidades (CLIENTES/BELLIDO/solicitudes/recordatorio-al-paciente-funcionalidades):\n//  2. solo citas con telefono (linea «Telefono: <numero>») y prefijo permitido;\n//  3. una vez por cita: la marca [recordado] en su descripcion;\n//  4. solo si el comercio esta operativo;\n//  5. el paciente en forma natural, el consultorio, la fecha escrita y la hora en 24 h.\nconst cfg = $('Config del recordatorio').first().json;\nconst omitidas = [];\nif (String(cfg.estadoComercio || 'operativo') !== 'operativo') return [];\nconst prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.trim()).filter(Boolean);\nconst MARCA = '[recordado]';\nconst DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];\nconst MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];\n// «Apellidos, Nombres (CNS|RN)» -> «Nombres Apellidos»; sin coma, tal cual (sin la marca).\nconst natural = (titulo) => {\n  const t = String(titulo || '').replace(/^\\s*Cita\\s*:?\\s*/i, '').split(/\\s+[—–]\\s+/)[0].replace(/\\(\\s*(?:CNS|RN)\\s*\\)/gi, ' ').replace(/\\s+/g, ' ').trim();\n  const i = t.indexOf(',');\n  return (i < 0 ? t : (t.slice(i + 1).trim() + ' ' + t.slice(0, i).trim())).trim() || 'paciente';\n};\nconst salida = [];\nfor (const item of $input.all()) {\n  const ev = item.json;\n  const desc = String(ev.description || '').slice(0, 4000);\n  if (desc.includes(MARCA)) { omitidas.push('ya recordada'); continue; }\n  const linea = desc.split(/\\r?\\n/).find((l) => /^\\s*Tel[eé]fono\\s*:/i.test(l));\n  const m = linea && /(\\d{8,15})/.exec(linea);\n  if (!m) { omitidas.push('sin telefono'); continue; }\n  const telefono = m[1];\n  if (prefijos.length && !prefijos.some((p) => telefono.startsWith(p))) { omitidas.push('prefijo no permitido'); continue; }\n  const inicio = Date.parse(String((ev.start || {}).dateTime || ''));\n  if (!Number.isFinite(inicio)) { omitidas.push('evento sin hora'); continue; }\n  const lp = new Date(inicio - 4 * 3600000);               // UTC-4 fijo (La Paz)\n  const fecha = `${DIAS[lp.getUTCDay()]} ${lp.getUTCDate()} de ${MESES[lp.getUTCMonth()]}`;\n  const hora = String(lp.getUTCHours()).padStart(2, '0') + ':' + String(lp.getUTCMinutes()).padStart(2, '0');\n  salida.push({ json: {\n    eventoId: ev.id, calendarioDelEvento: (ev.organizer || {}).email || cfg.calendarioId,\n    telefono, paciente: natural(ev.summary), negocio: String(cfg.nombreNegocio || ''), fecha, hora,\n    plantilla: cfg.plantilla, idioma: cfg.idiomaPlantilla, phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion,\n    descripcionMarcada: (desc ? desc + '\\n' : '') + MARCA + ' ' + new Date().toISOString(),\n  }, pairedItem: { item: 0 } });\n}\nif (!salida.length) return [{ json: { sinRecordatorios: true, omitidas } }];\nsalida[0].json.omitidas = omitidas;\nreturn salida;\n"
+    "jsCode": "// RECORDATORIO DE CITA AL PACIENTE (Bellido): prepara un item por cita que se debe recordar.\n// Criterio vigente (Andres, 03/10/2026): solo se recuerda a pacientes que NovuChat gestionó. Haber agendado\n// por el sistema habilita el recordatorio (no se le avisa al paciente de antemano) mientras no lo haya cancelado.\n// Funcionalidades (CLIENTES/BELLIDO/solicitudes/recordatorio-al-paciente-funcionalidades):\n//  1. la cita la creó NovuChat: la descripcion trae la linea «Agendado por NovuChat.» y su iCalUID NO empieza por\n//     «novuchat-importada-» (las que carga admin/scripts/datos/citas-a-calendario.mjs no cuentan);\n//  2. con telefono (linea «Telefono: <numero>», con o sin tilde) y prefijo permitido;\n//  3. una vez por cita: la marca [recordado]; y nunca si lleva [no recordar] (sin distinguir mayusculas);\n//  4. una cita cancelada o borrada no se recuerda; solo si el comercio esta operativo;\n//  5. el mensaje no lleva datos del paciente: la variable del saludo es un valor de configuracion (por omision\n//     «paciente», que lee «Hola paciente,»), el negocio es su nombre, mas la fecha escrita y la hora en 24 h. Ni el\n//     titulo ni el nombre salen en ningun campo del item (ni hacia Meta ni a los registros).\n//  6. cuantas variables lleva el cuerpo de la plantilla es configuracion (`variablesCuerpo`: 4 hoy; 3 si se aprueba una\n//     plantilla sin la variable del saludo): el item trae `parametros`, la lista ya armada que usa «Enviar plantilla».\nconst cfg = $('Config del recordatorio').first().json;\nconst omitidas = [];\nif (String(cfg.estadoComercio || 'operativo') !== 'operativo') return [];\nconst prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.trim()).filter(Boolean);\nconst MARCA = '[recordado]';\nconst MARCA_NOVUCHAT = 'Agendado por NovuChat.';\nconst PREFIJO_IMPORTADA = 'novuchat-importada-';\nconst SALUDO = String(cfg.saludoVariable === undefined || cfg.saludoVariable === null ? 'paciente' : cfg.saludoVariable);\nconst CON_SALUDO = Number(cfg.variablesCuerpo || 4) !== 3;\nconst DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];\nconst MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];\nconst salida = [];\nfor (const item of $input.all()) {\n  const ev = item.json;\n  const desc = String(ev.description || '').slice(0, 4000);\n  if (ev.status === 'cancelled') { omitidas.push('cancelada'); continue; }\n  if (desc.includes(MARCA)) { omitidas.push('ya recordada'); continue; }\n  if (/\\[no recordar\\]/i.test(desc)) { omitidas.push('no recordar'); continue; }\n  if (String(ev.iCalUID || '').startsWith(PREFIJO_IMPORTADA)) { omitidas.push('importada'); continue; }\n  if (!desc.split(/\\r?\\n/).some((l) => l.trim() === MARCA_NOVUCHAT)) { omitidas.push('no gestionada por NovuChat'); continue; }\n  const linea = desc.split(/\\r?\\n/).find((l) => /^\\s*Tel[eé]fono\\s*:/i.test(l));\n  const m = linea && /(\\d{8,15})/.exec(linea);\n  if (!m) { omitidas.push('sin telefono'); continue; }\n  const telefono = m[1];\n  if (prefijos.length && !prefijos.some((p) => telefono.startsWith(p))) { omitidas.push('prefijo no permitido'); continue; }\n  const inicio = Date.parse(String((ev.start || {}).dateTime || ''));\n  if (!Number.isFinite(inicio)) { omitidas.push('evento sin hora'); continue; }\n  const lp = new Date(inicio - 4 * 3600000);               // UTC-4 fijo (La Paz)\n  const fecha = `${DIAS[lp.getUTCDay()]} ${lp.getUTCDate()} de ${MESES[lp.getUTCMonth()]}`;\n  const hora = String(lp.getUTCHours()).padStart(2, '0') + ':' + String(lp.getUTCMinutes()).padStart(2, '0');\n  salida.push({ json: {\n    eventoId: ev.id, calendarioDelEvento: (ev.organizer || {}).email || cfg.calendarioId,\n    telefono, negocio: String(cfg.nombreNegocio || ''), fecha, hora,\n    parametros: (CON_SALUDO ? [SALUDO] : []).concat([String(cfg.nombreNegocio || ''), fecha, hora]),\n    plantilla: cfg.plantilla, idioma: cfg.idiomaPlantilla, phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion,\n    descripcionMarcada: (desc ? desc + '\\n' : '') + MARCA + ' ' + new Date().toISOString(),\n  }, pairedItem: { item: 0 } });\n}\nif (!salida.length) return [{ json: { sinRecordatorios: true, omitidas } }];\nsalida[0].json.omitidas = omitidas;\nreturn salida;\n"
    }
   },
   {
@@ -336,7 +360,7 @@
     "genericAuthType": "httpHeaderAuth",
     "sendBody": true,
     "specifyBody": "json",
-    "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.telefono, type: 'template', template: { name: $json.plantilla, language: { code: $json.idioma || 'es' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json.paciente }, { type: 'text', text: $json.negocio }, { type: 'text', text: $json.fecha }, { type: 'text', text: $json.hora } ] }] } }) }}",
+    "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.telefono, type: 'template', template: { name: $json.plantilla, language: { code: $json.idioma || 'es' }, components: [{ type: 'body', parameters: $json.parametros.map((t) => ({ type: 'text', text: t })) }] } }) }}",
     "options": {
      "response": {
       "response": {

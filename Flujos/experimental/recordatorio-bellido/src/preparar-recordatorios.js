@@ -1,27 +1,37 @@
 // RECORDATORIO DE CITA AL PACIENTE (Bellido): prepara un item por cita que se debe recordar.
+// Criterio vigente (Andres, 03/10/2026): solo se recuerda a pacientes que NovuChat gestionó. Haber agendado
+// por el sistema habilita el recordatorio (no se le avisa al paciente de antemano) mientras no lo haya cancelado.
 // Funcionalidades (CLIENTES/BELLIDO/solicitudes/recordatorio-al-paciente-funcionalidades):
-//  2. solo citas con telefono (linea «Telefono: <numero>») y prefijo permitido;
-//  3. una vez por cita: la marca [recordado] en su descripcion;
-//  4. solo si el comercio esta operativo;
-//  5. el paciente en forma natural, el consultorio, la fecha escrita y la hora en 24 h.
+//  1. la cita la creó NovuChat: la descripcion trae la linea «Agendado por NovuChat.» y su iCalUID NO empieza por
+//     «novuchat-importada-» (las que carga admin/scripts/datos/citas-a-calendario.mjs no cuentan);
+//  2. con telefono (linea «Telefono: <numero>», con o sin tilde) y prefijo permitido;
+//  3. una vez por cita: la marca [recordado]; y nunca si lleva [no recordar] (sin distinguir mayusculas);
+//  4. una cita cancelada o borrada no se recuerda; solo si el comercio esta operativo;
+//  5. el mensaje no lleva datos del paciente: la variable del saludo es un valor de configuracion (por omision
+//     «paciente», que lee «Hola paciente,»), el negocio es su nombre, mas la fecha escrita y la hora en 24 h. Ni el
+//     titulo ni el nombre salen en ningun campo del item (ni hacia Meta ni a los registros).
+//  6. cuantas variables lleva el cuerpo de la plantilla es configuracion (`variablesCuerpo`: 4 hoy; 3 si se aprueba una
+//     plantilla sin la variable del saludo): el item trae `parametros`, la lista ya armada que usa «Enviar plantilla».
 const cfg = $('Config del recordatorio').first().json;
 const omitidas = [];
 if (String(cfg.estadoComercio || 'operativo') !== 'operativo') return [];
 const prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.trim()).filter(Boolean);
 const MARCA = '[recordado]';
+const MARCA_NOVUCHAT = 'Agendado por NovuChat.';
+const PREFIJO_IMPORTADA = 'novuchat-importada-';
+const SALUDO = String(cfg.saludoVariable === undefined || cfg.saludoVariable === null ? 'paciente' : cfg.saludoVariable);
+const CON_SALUDO = Number(cfg.variablesCuerpo || 4) !== 3;
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-// «Apellidos, Nombres (CNS|RN)» -> «Nombres Apellidos»; sin coma, tal cual (sin la marca).
-const natural = (titulo) => {
-  const t = String(titulo || '').replace(/^\s*Cita\s*:?\s*/i, '').split(/\s+[—–]\s+/)[0].replace(/\(\s*(?:CNS|RN)\s*\)/gi, ' ').replace(/\s+/g, ' ').trim();
-  const i = t.indexOf(',');
-  return (i < 0 ? t : (t.slice(i + 1).trim() + ' ' + t.slice(0, i).trim())).trim() || 'paciente';
-};
 const salida = [];
 for (const item of $input.all()) {
   const ev = item.json;
   const desc = String(ev.description || '').slice(0, 4000);
+  if (ev.status === 'cancelled') { omitidas.push('cancelada'); continue; }
   if (desc.includes(MARCA)) { omitidas.push('ya recordada'); continue; }
+  if (/\[no recordar\]/i.test(desc)) { omitidas.push('no recordar'); continue; }
+  if (String(ev.iCalUID || '').startsWith(PREFIJO_IMPORTADA)) { omitidas.push('importada'); continue; }
+  if (!desc.split(/\r?\n/).some((l) => l.trim() === MARCA_NOVUCHAT)) { omitidas.push('no gestionada por NovuChat'); continue; }
   const linea = desc.split(/\r?\n/).find((l) => /^\s*Tel[eé]fono\s*:/i.test(l));
   const m = linea && /(\d{8,15})/.exec(linea);
   if (!m) { omitidas.push('sin telefono'); continue; }
@@ -34,7 +44,8 @@ for (const item of $input.all()) {
   const hora = String(lp.getUTCHours()).padStart(2, '0') + ':' + String(lp.getUTCMinutes()).padStart(2, '0');
   salida.push({ json: {
     eventoId: ev.id, calendarioDelEvento: (ev.organizer || {}).email || cfg.calendarioId,
-    telefono, paciente: natural(ev.summary), negocio: String(cfg.nombreNegocio || ''), fecha, hora,
+    telefono, negocio: String(cfg.nombreNegocio || ''), fecha, hora,
+    parametros: (CON_SALUDO ? [SALUDO] : []).concat([String(cfg.nombreNegocio || ''), fecha, hora]),
     plantilla: cfg.plantilla, idioma: cfg.idiomaPlantilla, phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion,
     descripcionMarcada: (desc ? desc + '\n' : '') + MARCA + ' ' + new Date().toISOString(),
   }, pairedItem: { item: 0 } });
