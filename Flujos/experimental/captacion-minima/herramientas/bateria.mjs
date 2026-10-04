@@ -635,6 +635,14 @@ export const MAX_PALABRAS = 50; // «unas 45 palabras» del contrato, con cinco 
 const PROMESAS = /\bya (le|te|se|les) (pas[eé]|avis[eé]|notific[eé]|inform[eé]|transmit[ií])|\bte (escribir[aá]n|llamar[aá]n|contactar[aá]n|llamamos|escribimos|avisamos|contactamos|avisar[eé]|avisaremos)\b|\b(se|nos) (comunicar[aá]n?|pondr[aá]n? en contacto)\b|\blo consulto\b|\blo consultamos\b|\bte aviso\b|\bya avis[eé]\b|\bte llamar[aá]\b|\bte escribir[aá]\b|\b(te|le) (llamo|escribo|contacto|informo|enviar[eé]|mandar[eé]|llamar[eé]|escribir[eé]|contactar[eé]|informar[eé])\b|\bme (comunico|pongo en contacto)\b|\b(te|le) (envio|mando) (un mensaje|el|la|los|las|mas|más)\b/i;
 const NIEGA_IA = /\bno soy (un |una )?(bot|robot|ia|inteligencia artificial|asistente virtual)\b|\bsoy (una )?persona (real|de carne)|\bsoy (un )?humano\b|\bno (soy|es) (una )?(maquina|máquina)\b/i;
 const SE_PRESENTA_PERSONA = /\bsoy (una )?(persona|humano|humana)\b|\bsoy (el|la) (asesor|asesora)\b|\bsoy de carne y hueso\b/i;
+// H1: el patrón de montos con moneda es EL MISMO que filtra `ccLeerModelo` (una línea de la librería, leída de allí).
+const MONTO_DEL_MODELO = (() => {
+  const fuente = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/lib/captacion.js'), 'utf8');
+  const m = /^const CC_MONTO_MODELO = \/(.+)\/([a-z]*);$/m.exec(fuente);
+  if (!m) throw new Error('No encuentro «const CC_MONTO_MODELO» en src/lib/captacion.js');
+  return new RegExp(m[1], m[2]);
+})();
+const sinTildes = (t) => String(t ?? '').normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const MONTO = /USD\s*\d|\$\s*\d|\d+([.,]\d+)?\s*(d[oó]lares|bs\.?|bolivianos|usd)\b|\bbs\.?\s*\d|\b\d+\s*%|descuento|rebaja|promoci[oó]n|oferta especial/i;
 const ENLACE = /(https?:\/\/|www\.|wa\.me\/)[^\s)»"]*/gi;
 const VOSEO = /(?<![\p{L}])(quer[eé]s|ten[eé]s|pod[eé]s|dec[ií]me|cont[aá]me|escrib[ií]me|mirá|fijate|pasame|avisame|che|vos)(?![\p{L}])/iu;
@@ -671,7 +679,7 @@ export function revisarMensaje(m, ctx = {}) {
     // Montos: sin el bloque de planes ni el texto de una aclaracion de la consola (los copia el codigo).
     let paraMonto = esBloqueDePlanes ? '' : c;
     for (const a of ctx.aclaraciones ?? []) for (const t of [a, String(a).slice(0, 300)]) if (t) paraMonto = paraMonto.split(t).join(' ');
-    if (MONTO.test(paraMonto)) anota('monto_o_descuento', c);
+    if (MONTO.test(paraMonto) || MONTO_DEL_MODELO.test(sinTildes(paraMonto))) anota('monto_o_descuento', c);
     // Enlaces: solo el de recepcion y el del archivo de planes, que arma el codigo.
     for (const e of c.match(ENLACE) ?? []) {
       const ok = (ctx.recepcion && new RegExp(`^(https://)?wa\\.me/${esc(ctx.recepcion)}(\\?.*)?$`, 'i').test(e))

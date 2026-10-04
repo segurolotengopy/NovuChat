@@ -557,6 +557,12 @@ function ccObjetoDelModelo(x) {
 //   opciones: { rubroIds, aclaracionIds, textoCliente, textoDeImagen, nombreNegocio?, asesor?, aclaraciones?, datos? }
 //   datos: el texto que ve el modelo (`systemInstruction`): una `respuesta` solo puede traer números que estén ahí, literalmente.
 //   aclaraciones: [{id,texto}] (con los textos de la consola): con una aclaración válida, `respuesta` es ese texto.
+// H1: un MONTO CON MONEDA no sale de la redacción del modelo en ninguna forma, esté o no el número en los datos que ve (el «25» de «hasta 25
+// respuestas» no puede volverse «USD 25»). Sobre el texto sin tildes y en minúsculas; una sola línea (la batería lo lee de aquí).
+const CC_MONTO_MODELO = /(?:\b(?:usd|us\$|u\$s|bs\.?|bolivianos?|dolar(?:es)?|euros?)|\$us|\$)\s*\d|\d[\d.,]*\s*(?:usd\b|us\$|u\$s|\$us|\$|bs\b|bolivianos?\b|dolar(?:es)?\b|euros?\b)|\b(?:usd|dolar(?:es)?)\b[^\w\s]*(?:\s+\S+){0,3}\s+\d/;
+function ccMontoDelModelo(t) {
+  return CC_MONTO_MODELO.test(ccTexto(t).normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
+}
 const CC_YO_DEL_MODELO = /\bsoy\b|\bsomos\b|\bte habla\b|aqui no hay (ningun )?(robot|bot)/;
 const CC_PROMESA_DEL_MODELO = /\b(se|te) (pondra|pondran|contacta|contactara|comunica|comunicara|llama|llamara|escribe|escribira|responde|respondera|responderan)\b|\bte respond(emos|eremos)\b|\ben contacto contigo\b|\bse comunica\w* contigo\b|\bmenos de \d+ horas\b/;
 function ccLeerModelo(jsonGemini, opciones) {
@@ -589,7 +595,7 @@ function ccLeerModelo(jsonGemini, opciones) {
     if (!t || r.motivo !== '' || /[?¿]/.test(t) || t.length > maxLargo || ccContar(t).oraciones > maxOraciones) return '';
     const n = cmNorm(t);
     // S1 (hablar en primera persona como alguien), S2 (promesas de contacto), S3 (montos y ofertas): nada de eso sale del modelo.
-    if (CC_YO_DEL_MODELO.test(n) || CC_PROMESA_DEL_MODELO.test(n) || ccTieneMonto(t) || /%|gratis|descuento/.test(n)) return '';
+    if (CC_YO_DEL_MODELO.test(n) || CC_PROMESA_DEL_MODELO.test(n) || ccTieneMonto(t) || ccMontoDelModelo(t) || /%|gratis|descuento/.test(n)) return '';
     if (esEmpatia) {
       if (/\d|promo|oferta/.test(n) || /\b(asesor|asesora|ejecutiv[oa])\b/.test(n)) return '';
       if (asesorNorm && new RegExp('\\b' + asesorNorm.replace(/[.*+?^${}()[\]\\|]/g, '\\$&') + '\\b').test(n)) return '';
@@ -924,6 +930,14 @@ function ccAplicarRubro(e, cfg, tipo, id) {
   return 'abierta';
 }
 
+// H2: un «sí» corto a la oferta («sí», «claro», «dale», «ok», «me interesa», «bueno»): hasta 4 palabras, todas de afirmación y ninguna que
+// pida otra cosa («sí, pero antes dime si se integra con mi ERP» no lo es: lo resuelve el modelo).
+const CC_AFIRMA = new Set('si sii sip claro dale ok okey okay bueno vale perfecto listo genial me interesa que por favor seguro adelante'.split(' '));
+function ccEsAfirmativo(t) {
+  const n = ccNorm(t);
+  const p = n.split(' ');
+  return n !== '' && p.length <= 4 && p.every((w) => CC_AFIRMA.has(w)) && /\b(si|sii|sip|claro|dale|ok|okey|okay|bueno|vale|perfecto|listo|genial|interesa|seguro|adelante)\b/.test(n);
+}
 const CC_GRACIAS = new Set(('gracias muchas muchisimas ok okey vale listo perfecto genial excelente entendido bueno de nada muy amable chau chao adios hasta luego un saludo ' +
   'buen dia tarde noche buenas buenos dias tardes noches').split(' '));
 // Un agradecimiento o una despedida (hasta 6 palabras, todas de cortesía): no necesita otra oferta.
@@ -1044,6 +1058,8 @@ function ccDecidir(a) {
     }
     default: // oferta y libre
       if (dichoOEscrito && ccPidePlanesCorto(texto)) return resolver(ccPedirPlanes(e));
+      // H2: un «sí» corto a la oferta va a los planes (que ya traen el botón del asesor): sin planes que mostrar, es un «sí» al asesor.
+      if (dichoOEscrito && ccEsAfirmativo(texto)) return ccHayPlanes(cfg) ? resolver(ccPedirPlanes(e)) : traspaso();
       // En libre, un agradecimiento o una despedida no repite la oferta del asesor.
       if (paso0 === 'libre' && dichoOEscrito && ccEsAgradecimiento(texto)) return delPaso('fijo', { texto: 'Con gusto. Aquí estoy si necesitas algo más.', conAsesor: false });
       return hay ? modelo('libre') : delPaso('oferta', { empatia: '', impacto: '' });
