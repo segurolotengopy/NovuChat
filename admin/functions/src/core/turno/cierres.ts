@@ -9,24 +9,28 @@ import { solicitudTras } from '../../ingesta.js';
  * REGISTRO DE CIERRES — el endpoint que llama n8n cuando algo TERMINÓ BIEN
  * =============================================================================
  *
- * Un cierre es la unidad que se factura, así que este endpoint es el más
- * delicado del sistema en términos comerciales: lo que entra acá es lo que el
- * cliente va a pagar.
+ * Un cierre NO se factura: desde el 13/09/2026 la unidad de cobro es la
+ * conversación (`docs/base-comercial.md` §2; los comentarios que decían lo
+ * contrario se corrigieron el 03/10). El cierre es el registro verificable de
+ * lo que terminó bien —el indicador de Consumo y, en Cobros, el respaldo del
+ * importe que el comercio cobró a su cliente—, y por eso tiene que ser exacto:
+ * un indicador inflado o un importe duplicado se discuten con el comercio igual
+ * que una factura.
  *
- * TRES DEFENSAS CONTRA COBRAR DE MÁS, en orden de importancia:
+ * TRES DEFENSAS CONTRA CONTAR DE MÁS, en orden de importancia:
  *
  *  1. REFERENCIA OBLIGATORIA. Sin un identificador de algo externo que lo
  *     pruebe —el evento del calendario, el mensaje del comprobante, la fila de
- *     la planilla— no hay cierre. Es lo que deja afuera los casos que el
- *     negocio no debe pagar: mandar información que nadie confirmó, mandar el
- *     QR sin que el cliente pague, una conversación incompleta.
+ *     la planilla— no hay cierre. Es lo que deja afuera los casos que no
+ *     terminaron bien: mandar información que nadie confirmó, mandar el QR sin
+ *     que el cliente pague, una conversación incompleta.
  *
  *  2. IDEMPOTENCIA POR REFERENCIA. El identificador del documento se DERIVA de
  *     la referencia, no se genera al azar. Si n8n reintenta —y n8n reintenta:
  *     el flujo tiene reintentos configurados— el segundo intento escribe sobre
  *     el mismo documento y el contador no se mueve. Sin esto, un error de red
- *     transitorio se factura dos veces, y es el tipo de defecto que se descubre
- *     en la factura y no en la prueba.
+ *     transitorio cuenta dos veces el mismo cierre, y es el tipo de defecto que
+ *     descubre el comercio mirando Consumo y no la prueba.
  *
  *  3. EL TENANT SALE DE LA FIRMA. Nunca del cuerpo. Un flujo mal configurado
  *     —o alguien con el secreto de un comercio— no puede anotarle un cierre a
@@ -72,8 +76,8 @@ export const registrarCierre = onRequest(
     if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
 
     if (ruta.estado !== 'activo') {
-      // Un comercio suspendido deja de acumular cierres. No es solo cobranza:
-      // es dejar de facturar un servicio que no se está prestando.
+      // Un comercio suspendido deja de acumular cierres: un servicio que no se
+      // está prestando no tiene resultados que registrar.
       respuesta.status(409).json({ estado: ruta.estado });
       return;
     }
@@ -108,7 +112,8 @@ export const registrarCierre = onRequest(
 
     // Transacción: el documento y el contador se mueven juntos o no se mueve
     // ninguno. Si se escribiera el cierre y fallara el contador, la pantalla
-    // mostraría un número y el detalle mostraría otro, y sobre eso se factura.
+    // mostraría un número y el detalle mostraría otro, y el comercio vería dos
+    // cifras distintas para lo mismo.
     // LA SOLICITUD PENDIENTE DEL TELÉFONO SE CIERRA CON LA CITA (bloque 4).
     // Un cierre tipo `cita` con teléfono marca `solicitud.etapa = 'agendada'`
     // en la conversación: es lo que saca a ese paciente del barrido de

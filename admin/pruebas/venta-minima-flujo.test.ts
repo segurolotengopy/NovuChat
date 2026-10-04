@@ -1266,7 +1266,7 @@ describe('no negociable 4: el pedido queda guardado y, sin QR, queda registrado'
     expect(String(cierre['referencia'])).toMatch(/^ped-/);
   });
 
-  it('en modo prueba nunca se registra un cierre (es la unidad que se factura)', () => {
+  it('en modo prueba nunca se registra un cierre (el comercio lo ve en Consumo)', () => {
     const w = crear({ flujo: PRUEBA, panel: panel(), config: NUMERO_DE_ENSAYO });
     const e = { headers: {}, body: { ...(entrega(PRUEBA_TEL, mTexto('x'))['body'].value as J), modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true } };
     w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
