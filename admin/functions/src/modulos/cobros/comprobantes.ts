@@ -27,6 +27,7 @@
  * inyectable, porque el emulador de Firestore no trae Storage).
  */
 
+import { createHash } from 'node:crypto';
 import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -57,6 +58,8 @@ export interface Almacen {
    * sobrescribe. Devuelve `existe` si ya estaba, y no la toca.
    */
   guardar(ruta: string, bytes: Buffer, contentType: string): Promise<'creado' | 'existe'>;
+  /** ¿Ya hay un objeto en esa ruta? */
+  existe(ruta: string): Promise<boolean>;
   /** Los nombres de las subcarpetas inmediatas de un prefijo que termina en «/». */
   subcarpetas(prefijo: string): Promise<string[]>;
   /** Borra todo lo que cuelga del prefijo. Devuelve cuántos objetos había. */
@@ -77,6 +80,10 @@ const almacenDeStorage: Almacen = {
       if (codigo === 412 || codigo === '412') return 'existe';
       throw e;
     }
+  },
+  async existe(ruta) {
+    const [hay] = await getStorage().bucket().file(ruta).exists();
+    return hay;
   },
   async subcarpetas(prefijo) {
     const [, , api] = await getStorage().bucket()
@@ -106,15 +113,23 @@ const almacen = (): Almacen => almacenDePrueba ?? almacenDeStorage;
 // LA RUTA Y EL TIPO
 // ---------------------------------------------------------------------------
 
-/** El id de Meta del mensaje, reducido a `[a-zA-Z0-9_-]`. Es el nombre del archivo. */
-export function idMetaSaneado(idMeta: string): string {
-  return String(idMeta ?? '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 100);
+/** El id de Meta tal como llega: recortado, sin espacios en los bordes. */
+export const idMetaCrudo = (idMeta: unknown): string => String(idMeta ?? '').trim().slice(0, 120);
+
+/**
+ * El NOMBRE del objeto: sha256 del idMeta CRUDO en base64url (43 caracteres).
+ * El saneo con pérdida de antes hacía chocar a `wamid.a+b` con `wamid.a/b`, y un
+ * choque con `ifGenerationMatch: 0` es una evidencia que no se puede guardar.
+ * El hash no es reversible a un teléfono ni a nada: es solo un nombre.
+ */
+export function nombreDeObjeto(idMeta: string): string {
+  return createHash('sha256').update(idMetaCrudo(idMeta)).digest('base64url');
 }
 
 export type ExtensionDeComprobante = 'jpg' | 'png' | 'webp' | 'pdf';
 
 export function rutaDeComprobante(tenantId: string, dia: string, idMeta: string, ext: ExtensionDeComprobante): string {
-  return `tenants/${tenantId}/comprobantes/${dia}/${idMetaSaneado(idMeta)}.${ext}`;
+  return `tenants/${tenantId}/comprobantes/${dia}/${nombreDeObjeto(idMeta)}.${ext}`;
 }
 
 const escapar = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -126,9 +141,8 @@ const escapar = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  */
 export function rutaValidaDe(ruta: unknown, tenantId: string, idMeta: string): string | null {
   if (typeof ruta !== 'string' || ruta.length > 300) return null;
-  const id = idMetaSaneado(idMeta);
-  if (id === '' || !ID_TENANT.test(tenantId)) return null;
-  const patron = new RegExp(`^tenants/${escapar(tenantId)}/comprobantes/\\d{4}-\\d{2}-\\d{2}/${escapar(id)}\\.(jpg|png|webp|pdf)$`);
+  if (idMetaCrudo(idMeta) === '' || !ID_TENANT.test(tenantId)) return null;
+  const patron = new RegExp(`^tenants/${escapar(tenantId)}/comprobantes/\\d{4}-\\d{2}-\\d{2}/${nombreDeObjeto(idMeta)}\\.(jpg|png|webp|pdf)$`);
   return patron.test(ruta) ? ruta : null;
 }
 
@@ -152,7 +166,14 @@ export function tipoPorFirma(bytes: Buffer): { ext: ExtensionDeComprobante; mime
 
 export type ResultadoDeGuardar =
   | { codigo: 200; cuerpo: { ruta: string } }
-  | { codigo: 400 | 413 | 415 | 502; cuerpo: { error: string } };
+  | { codigo: 400 | 409 | 413 | 415 | 502; cuerpo: { error: string } };
+
+/**
+ * Antes de escribir en Storage: ¿hay cupo y ya estaba? Devuelve la ruta que se
+ * usará, `guardada: true` si ya existe un objeto (no se reescribe, aunque sea de
+ * otra extensión: una sola extensión por idMeta), o `'lleno'`.
+ */
+export type Reservar = (ruta: string) => Promise<{ ruta: string; guardada: boolean } | 'lleno'>;
 
 /**
  * Valida y guarda. Pura salvo el almacén. Nunca escribe el teléfono.
@@ -161,9 +182,9 @@ export type ResultadoDeGuardar =
  */
 export async function guardarBytesDeComprobante(
   tenantId: string, idMeta: string, bytes: Buffer, tipoDeclarado: string,
-  deps: { almacen?: Almacen; ahoraMs?: number } = {},
+  deps: { almacen?: Almacen; ahoraMs?: number; reservar?: Reservar } = {},
 ): Promise<ResultadoDeGuardar> {
-  if (idMetaSaneado(idMeta) === '') return { codigo: 400, cuerpo: { error: 'falta_idmeta' } };
+  if (idMetaCrudo(idMeta) === '') return { codigo: 400, cuerpo: { error: 'falta_idmeta' } };
   if (bytes.length === 0) return { codigo: 400, cuerpo: { error: 'vacio' } };
   if (bytes.length > MAXIMO_PDF) return { codigo: 413, cuerpo: { error: 'demasiado_grande' } };
   const tipo = tipoPorFirma(bytes);
@@ -172,9 +193,15 @@ export async function guardarBytesDeComprobante(
   if (tipo.ext !== 'pdf' && bytes.length > MAXIMO_IMAGEN) {
     return { codigo: 413, cuerpo: { error: 'demasiado_grande' } };
   }
-  const ruta = rutaDeComprobante(tenantId, diaDeLaPaz(deps.ahoraMs ?? Date.now()), idMeta, tipo.ext);
+  let ruta = rutaDeComprobante(tenantId, diaDeLaPaz(deps.ahoraMs ?? Date.now()), idMeta, tipo.ext);
+  if (deps.reservar) {
+    const r = await deps.reservar(ruta);
+    if (r === 'lleno') return { codigo: 409, cuerpo: { error: 'demasiados_comprobantes' } };
+    if (r.guardada) return { codigo: 200, cuerpo: { ruta: r.ruta } };
+    ruta = r.ruta;
+  }
   try {
-    // Si ya estaba (el mismo idMeta otra vez), responde la misma ruta sin reescribir.
+    // Con `ifGenerationMatch: 0` una evidencia nunca se sobrescribe.
     await (deps.almacen ?? almacen()).guardar(ruta, bytes, tipo.mime);
   } catch {
     // El cotejo no depende de esto: el flujo sigue con `ruta: null`.
@@ -218,38 +245,75 @@ export const guardarComprobante = onRequest(
     if (ruta.estado !== 'activo') { respuesta.status(409).json({ estado: ruta.estado }); return; }
 
     const telefono = String(peticion.get('X-NovuChat-Telefono') ?? '').trim();
-    const idMeta = String(peticion.get('X-NovuChat-IdMeta') ?? '').trim().slice(0, 120);
+    const idMeta = idMetaCrudo(peticion.get('X-NovuChat-IdMeta'));
     if (!TELEFONO.test(telefono)) { respuesta.status(400).json({ error: 'telefono invalido' }); return; }
-    if (idMetaSaneado(idMeta) === '') { respuesta.status(400).json({ error: 'falta_idmeta' }); return; }
+    if (idMeta === '') { respuesta.status(400).json({ error: 'falta_idmeta' }); return; }
     const bytes = Buffer.isBuffer(peticion.rawBody) ? peticion.rawBody : Buffer.alloc(0);
 
     // ¿Hay un cobro de regla 2 al que este comprobante pueda pertenecer?
-    const conversacion = await getFirestore()
-      .doc(`tenants/${ruta.tenantId}/conversaciones/wa_${telefono}`).get();
+    const refConversacion = getFirestore().doc(`tenants/${ruta.tenantId}/conversaciones/wa_${telefono}`);
+    const conversacion = await refConversacion.get();
     const solicitud = conversacion.get('solicitud') as Record<string, unknown> | undefined;
-    const etapa = String(solicitud?.['etapa'] ?? '');
-    if (!conversacion.exists || !esReglaDos(solicitud)
-      || !['qr_enviado', 'en_revision', 'vencida'].includes(etapa)) {
-      respuesta.status(409).json({ error: 'sin_cobro_pendiente' }); return;
-    }
-    // Un tope por cobro (seis comprobantes anotados) y la misma ventana del
-    // tardío (24 h desde el límite): sin eso, el token de un comercio llena el
-    // depósito con un cobro viejo. Un idMeta ya anotado sí pasa (reintento).
-    const anotados = Array.isArray(solicitud?.['comprobantes'])
-      ? (solicitud?.['comprobantes'] as { idMeta?: unknown }[]) : [];
-    if (anotados.length >= MAX_COMPROBANTES && !anotados.some((c) => c.idMeta === idMeta)) {
-      respuesta.status(409).json({ error: 'demasiados_comprobantes' }); return;
-    }
-    const limite = limiteDe(solicitud);
-    if (etapa === 'vencida' && (limite === null || Date.now() - limite > 24 * 60 * 60_000)) {
+    if (!conversacion.exists || !puedeSubir(solicitud, Date.now())) {
       respuesta.status(409).json({ error: 'sin_cobro_pendiente' }); return;
     }
 
+    // EL TOPE CUENTA SUBIDAS (no solo cotejos): cada imagen nueva anota su
+    // idMeta en la solicitud, en una transacción (una escritura por imagen).
+    const a = almacen();
+    const reservar: Reservar = async (rutaNueva) => {
+      const previa = entradaDe(solicitud, idMeta);
+      if (previa && await a.existe(previa.ruta)) return { ruta: previa.ruta, guardada: true };
+      return getFirestore().runTransaction(async (tx) => {
+        const actual = (await tx.get(refConversacion)).get('solicitud') as Record<string, unknown> | undefined;
+        if (!puedeSubir(actual, Date.now())) return 'lleno' as const;
+        const lista = subidasDe(actual);
+        const i = lista.findIndex((x) => x.idMeta === idMeta);
+        if (i < 0 && lista.length >= MAX_COMPROBANTES) return 'lleno' as const;
+        const nueva = i < 0 ? [...lista, { idMeta, ruta: rutaNueva }]
+          : lista.map((x, k) => (k === i ? { idMeta, ruta: rutaNueva } : x));
+        tx.set(refConversacion, { solicitud: { subidas: nueva } }, { merge: true });
+        return { ruta: rutaNueva, guardada: false };
+      });
+    };
     const r = await guardarBytesDeComprobante(
-      ruta.tenantId, idMeta, bytes, String(peticion.get('Content-Type') ?? ''));
+      ruta.tenantId, idMeta, bytes, String(peticion.get('Content-Type') ?? ''), { almacen: a, reservar });
     respuesta.status(r.codigo).json(r.cuerpo);
   },
 );
+
+/** Las imágenes ya subidas para este cobro: `{idMeta, ruta}`, hasta seis. */
+function subidasDe(s: Record<string, unknown> | undefined): { idMeta: string; ruta: string }[] {
+  return Array.isArray(s?.['subidas']) ? (s?.['subidas'] as { idMeta: string; ruta: string }[]) : [];
+}
+const entradaDe = (s: Record<string, unknown> | undefined, idMeta: string) =>
+  subidasDe(s).find((x) => x.idMeta === idMeta);
+
+const VEINTICUATRO_HORAS = 24 * 60 * 60_000;
+const milis = (v: unknown): number | null => {
+  const t = v as { toMillis?: () => number } | null | undefined;
+  return typeof t?.toMillis === 'function' ? t.toMillis() : null;
+};
+
+/**
+ * ¿Todavía se aceptan imágenes para este cobro? Regla 2 y la misma ventana que
+ * la máquina de estados para el tardío: hasta 24 h después del límite efectivo
+ * (`qr_enviado`, aunque venza por reloj sin que nadie lo haya anotado, y
+ * `vencida`) o, en `en_revision`, 24 h desde que entró en revisión (`desde`).
+ */
+export function puedeSubir(s: Record<string, unknown> | undefined, ahoraMs: number): boolean {
+  if (!s || !esReglaDos(s)) return false;
+  const etapa = String(s['etapa'] ?? '');
+  if (etapa === 'qr_enviado' || etapa === 'vencida') {
+    const limite = limiteDe(s);
+    return limite !== null && ahoraMs - limite <= VEINTICUATRO_HORAS;
+  }
+  if (etapa === 'en_revision') {
+    const desde = milis(s['desde']) ?? limiteDe(s);
+    return desde !== null && ahoraMs - desde <= VEINTICUATRO_HORAS;
+  }
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // LA PURGA DIARIA
