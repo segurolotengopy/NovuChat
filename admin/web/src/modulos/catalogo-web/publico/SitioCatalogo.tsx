@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CatalogoPublico, ItemPublico, RespuestaCheckout } from './tipos';
-import { imagenSegura, logoSeguro, precioTexto } from './saneo';
+import { enlaceAlChat, imagenSegura, logoSeguro, precioTexto } from './saneo';
 import { variablesDe } from '../../../central/lib/paletas';
 
 /**
@@ -148,7 +148,8 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
       <Cabecera negocio={datos.negocio} />
 
       {vista === 'listo' && recibo ? (
-        <Confirmacion recibo={recibo} negocio={datos.negocio.nombre} />
+        <Confirmacion recibo={recibo} negocio={datos.negocio.nombre}
+                      chat={enlaceAlChat(datos.negocio.whatsapp)} />
       ) : vista === 'pedido' ? (
         <Pedido
           ficha={ficha} items={items} carrito={carrito} entrega={datos.entrega}
@@ -480,7 +481,7 @@ function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVo
       {bajoMinimo && (
         <p className="cat-nota">
           El pedido mínimo para envío es {precioTexto(entrega.pedidoMinimo, moneda)}.
-          Podés mandarlo igual y te confirmamos por WhatsApp.
+          Puedes mandarlo igual y te confirmamos por WhatsApp.
         </p>
       )}
 
@@ -500,12 +501,41 @@ function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVo
   );
 }
 
-function Confirmacion({ recibo, negocio }: { recibo: RespuestaCheckout; negocio: string }) {
+/**
+ * Cuánto se ve la confirmación antes de abrir el chat solo. Lo justo para leer
+ * «Listo» y entender por qué cambió la pantalla; el botón queda por si el
+ * navegador bloquea la apertura o la persona vuelve con la flecha.
+ */
+const ESPERA_ANTES_DE_ABRIR_EL_CHAT_MS = 1200;
+
+/**
+ * LA PANTALLA FINAL. `chat` es el enlace `https://wa.me/<número>` ya validado
+ * por `enlaceAlChat`, o `''` si el servidor no mandó un número usable.
+ *
+ * Con enlace: se abre el chat del negocio a los pocos instantes (en un
+ * teléfono, la app de WhatsApp) Y queda un botón grande «Volver al chat»,
+ * porque la apertura automática no es confiable: la bloquean algunos
+ * navegadores, y quien regresa con la flecha encuentra esta pantalla. El
+ * enlace es una NAVEGACIÓN a una dirección fija: no es un origen de script ni
+ * de conexión, así que la CSP del sitio (`default-src 'none'`) no cambia.
+ *
+ * Sin enlace: la pantalla es la de antes, con el texto que ya decía qué hacer.
+ */
+export function Confirmacion({ recibo, negocio, chat }: {
+  recibo: RespuestaCheckout; negocio: string; chat: string;
+}) {
+  useEffect(() => {
+    if (chat === '') return;
+    const reloj = window.setTimeout(
+      () => window.location.assign(chat), ESPERA_ANTES_DE_ABRIR_EL_CHAT_MS);
+    return () => window.clearTimeout(reloj);
+  }, [chat]);
+
   return (
     <main className="cat-cuerpo cat-fin">
       <h2>Listo, {negocio} ya tiene tu pedido</h2>
       {recibo.siguiente === 'respuesta' ? (
-        <p>Volvé a WhatsApp: te estamos contestando ahí mismo.</p>
+        <p>Vuelve a WhatsApp: te estamos contestando ahí mismo.</p>
       ) : (
         // VENTANA DE 24 HORAS CERRADA. Se lo decimos con todas las letras, sin
         // tecnicismos: la persona no tiene por qué saber qué es una ventana de
@@ -513,7 +543,7 @@ function Confirmacion({ recibo, negocio }: { recibo: RespuestaCheckout; negocio:
         // hasta que no lo responda no hay nadie del otro lado.
         <p>
           Te va a llegar un mensaje nuestro por WhatsApp en un momento.
-          <strong> Respondelo</strong> y seguimos con tu pedido desde ahí.
+          <strong> Respóndelo</strong> y seguimos con tu pedido desde ahí.
         </p>
       )}
       {/* «No pudimos incluir» y no «ya no estaba disponible»: son dos causas
@@ -527,6 +557,11 @@ function Confirmacion({ recibo, negocio }: { recibo: RespuestaCheckout; negocio:
             : `${recibo.descartados.length} ítems de tu pedido no los pudimos incluir.`}
           {' '}Te lo aclaramos por WhatsApp.
         </p>
+      )}
+      {chat !== '' && (
+        <a className="cat-confirmar cat-chat" href={chat} rel="noopener noreferrer">
+          Volver al chat
+        </a>
       )}
     </main>
   );
@@ -625,10 +660,10 @@ function mensajeDeFallo(estado: number, codigo: unknown): string {
   if (estado === 429) return 'Ya enviaste varios pedidos con este enlace. Escríbenos por WhatsApp y seguimos por ahí.';
   if (codigo === 'falta la direccion') return 'Falta la dirección de entrega.';
   if (codigo === 'nada de lo pedido sigue disponible') {
-    return 'Lo que elegiste ya no se puede pedir por acá. Actualizá la página para ver el catálogo de ahora.';
+    return 'Lo que elegiste ya no se puede pedir por acá. Actualiza la página para ver el catálogo de ahora.';
   }
   if (codigo === 'monedas mezcladas') {
-    return 'Tu pedido mezcla precios en bolivianos y en dólares. Separalos en dos pedidos.';
+    return 'Tu pedido mezcla precios en bolivianos y en dólares. Sepáralos en dos pedidos.';
   }
   return 'No pudimos registrar el pedido. Inténtalo de nuevo en un momento.';
 }
