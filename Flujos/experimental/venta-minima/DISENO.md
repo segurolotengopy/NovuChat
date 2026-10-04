@@ -80,17 +80,14 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
     cuenta y monto) y las **salidas de Gemini** (la transcripción del audio y los datos extraídos del pedido y del comprobante), además de los enlaces de la carta y la URL del QR;
     (c) **cada ejecución guarda una copia del flujo con sus valores reales**: las rutas de los DOS webhooks (el del receptor y el del carrito, que son URL de capacidad) y la URL
     del verificador interno (también una URL de capacidad).
-  - **Techo, además del piso (n8n 2.36.5):** la poda la fijan variables de entorno de n8n (se comprobó el nombre en el paquete `@n8n/config` de las dependencias de n8n 2.36.5):
-    `EXECUTIONS_DATA_PRUNE=true` (por omisión ya es `true`) y `EXECUTIONS_DATA_MAX_AGE` **en horas, entre 24 (piso) y 72 (techo)**. El valor por omisión del paquete es **336 horas
-    (14 días)**: sin fijarlo, la retención sería de dos semanas. También existe `EXECUTIONS_DATA_PRUNE_MAX_COUNT` (10.000 por omisión). La poda es del despliegue de n8n, NO de este
-    flujo ni de este PR.
-  - **Condición para publicar el flujo en producción** (con ventana de mantenimiento y el «sí» de Andres), verificada en la VM y NO hecha todavía (`docs/arquitectura/core.md`, §
-    sobre medios): (1) `EXECUTIONS_DATA_PRUNE=true` y `EXECUTIONS_DATA_MAX_AGE` entre 24 y 72; (2) los datos binarios (audio, fotos, PDF) en el sistema de archivos con permisos 700
+  - **Poda de n8n (n8n 2.36.5), DECIDIDO por Andres el 04/10:** la poda la fijan variables de entorno de n8n (el nombre se comprobó en el paquete `@n8n/config` de las dependencias de n8n 2.36.5): `EXECUTIONS_DATA_PRUNE` (por omisión `true`) y `EXECUTIONS_DATA_MAX_AGE`, **en horas**; el valor por omisión es **336 horas (14 días)** y `EXECUTIONS_DATA_PRUNE_MAX_COUNT` es 10.000. **Andres aceptó la poda actual de la instancia (unos 14 días, 10.000 como máximo) para el piloto; no se baja**, porque es global de la instancia y la comparte Bellido. El piso de 24 horas se cumple de sobra; el techo de 72 horas que había propuesto la revisión de seguridad NO se adopta, y el riesgo que eso implica (datos de clientes guardados hasta 14 días) queda declarado y aceptado, con revisión el 2026-12-31. La poda es del despliegue de n8n, NO de este flujo ni de este PR.
+  - **Verificación en la VM, solo lectura (autorizada por Andres el 04/10; la hace la sesión que tiene el acceso)**, antes de dar por cumplido el riesgo declarado (`docs/arquitectura/core.md`, §
+    sobre medios): (1) anotar los valores reales de `EXECUTIONS_DATA_PRUNE` y `EXECUTIONS_DATA_MAX_AGE` (se acepta la poda actual de ~14 días); (2) los datos binarios (audio, fotos, PDF) en el sistema de archivos con permisos 700
     en su directorio. **Nota sobre el nombre de la variable binaria:** los documentos del repositorio dicen `N8N_DEFAULT_BINARY_MODE=filesystem`, pero en el código de `n8n-core`
     de n8n 2.36.5 la variable es `N8N_DEFAULT_BINARY_DATA_MODE` (valores `default`, `filesystem`, `s3`, `azure`, `database`; y, sin configurar y sin modo cola, el código elige
     `filesystem`) y el directorio lo fija `N8N_BINARY_DATA_STORAGE_PATH`; el nombre que figura en los documentos NO se encontró en el código: **hay que confirmar en la VM, con
     `docker exec … env` y mirando el directorio real, cuál modo y cuál directorio están en uso** antes de dar la condición por cumplida.
-  - **Mitigaciones:** (1) acceso a n8n y a su API solo del propietario; (2) la poda con techo de 72 horas (arriba); (3) los **respaldos de la VM que incluyan la base de n8n retienen
+  - **Mitigaciones:** (1) acceso a n8n y a su API solo del propietario; (2) la poda actual de ~14 días, aceptada por Andres (arriba); (3) los **respaldos de la VM que incluyan la base de n8n retienen
     más allá de la poda**: hay que saberlo y decidirlo; (4) **rotación del secreto de ingesta con `scripts/rotar-ingesta.sh`** al vencer la revisión (**2026-12-31**), tras el piloto, ante
     cualquier sospecha y ante cualquier exportación o captura de ejecuciones; (5) no compartir exportaciones de ejecuciones ni capturas de ellas; (6) **sugerencia para después (requiere
     servidor):** una credencial propia para el webhook del carrito, distinta de la de la ingesta, para que su exposición no abra los otros cinco usos.

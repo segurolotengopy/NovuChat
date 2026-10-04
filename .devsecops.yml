@@ -82,10 +82,11 @@ seguridad:
   #     nombres, textos, direcciones y pedidos de clientes, enlaces del catalogo con
   #     ficha de 128 bits, la URL del QR de cobro, notas de voz y comprobantes de
   #     pago (imagen o PDF), y la copia del flujo con sus rutas de webhook.
-  #     Mitigaciones: acceso solo del propietario a n8n y su API; poda
-  #     EXECUTIONS_DATA_PRUNE=true con EXECUTIONS_DATA_MAX_AGE de 24 a 72 horas y
-  #     modo de datos binarios en filesystem con permisos 700, verificados en la VM
-  #     antes de publicar (ver DISENO.md de venta-minima); rotacion del secreto de
+  #     Mitigaciones: acceso solo del propietario a n8n y su API; poda actual de la
+  #     instancia (unos 14 dias, 10.000 maximo) ACEPTADA por Andres el 04/10 para el
+  #     piloto (global y compartida con Bellido: no se baja); modo de datos binarios
+  #     en filesystem con permisos 700, verificado en la VM en solo lectura (ver
+  #     DISENO.md de venta-minima); rotacion del secreto de
   #     ingesta (scripts/rotar-ingesta.sh) al vencer y ante cualquier exportacion o
   #     captura; el resto de los JSON (prueba, ensayo en el Demo A, otros tenants)
   #     siguen en none.
