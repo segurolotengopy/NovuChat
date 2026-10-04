@@ -434,7 +434,8 @@ const todosLosTurnos = (): { nombre: string; turno: Turno }[] =>
 // =====================================================================================================
 // 1. EL FLUJO ARMADO: lo que se versiona
 // =====================================================================================================
-describe('el flujo armado es el que sale de la plantilla y de los datos', () => {
+// Timeout de 60 s: cada prueba lanza `construir.mjs --verificar` varias veces (hasta 16 s con la máquina cargada; el límite global es 20 s).
+describe('el flujo armado es el que sale de la plantilla y de los datos', { timeout: 60_000 }, () => {
   /** `construir.mjs --verificar` sobre una COPIA de la carpeta y de los datos, que `modifica` puede alterar antes de verificar. */
   function verificarEnCopia(modifica: (vm: string, datos: string) => void, args: string[] = ['--verificar']) {
     const tmp = mkdtempSync(join(tmpdir(), 'vm-'));
@@ -1493,9 +1494,10 @@ describe('B1: el orden de las variables de la plantilla es un dato de «Config b
   });
   it('`ordenReserva` también llega (la reserva de Q\'Taco usa la forma `pedido`: sus cuatro variables son las del pedido)', () => {
     const normal = armarReserva({ ventana: 5 });
-    const a = parametrosDe(plantillasA(enviarReserva(normal), AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>);
+    // Se mira al rol `cocina` (AV2): el rol `completo` de Q'Taco usa la forma `solicitud` (5 variables, su propio orden).
+    const a = parametrosDe(plantillasA(enviarReserva(normal), AV2)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>);
     const r2 = armarReserva({ ventana: 5, config: { ordenReserva: 'cotejo,modalidad,total,items' } });
-    const b = parametrosDe(plantillasA(enviarReserva(r2), AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>);
+    const b = parametrosDe(plantillasA(enviarReserva(r2), AV2)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>);
     expect(b).toEqual([...a].reverse());
     expect(b).not.toEqual(a);
   });
@@ -1551,8 +1553,9 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     // Redacción: el texto sale sin la frase de «menú» ni «Todavía es una solicitud» (el texto viejo).
     expect(cuerpos(enviada)[0]).not.toContain('Todavía es una solicitud');
     expect(cuerpos(enviada)[0]).not.toContain('escribe «menú»');
-    // La plantilla es `pedido_registrado` con la forma `pedido`: la variable 1 se rotula «SOLICITUD DE RESERVA», nunca «confirmada».
-    const plantillaReserva = plantillasA(enviada, AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>;
+    // El rol cocina usa `pedido_registrado` con la forma `pedido`: la variable 1 se rotula «SOLICITUD DE RESERVA», nunca «confirmada».
+    // (El rol completo de Q'Taco usa `solicitud_reserva`: ver la prueba «plantilla por rol».)
+    const plantillaReserva = plantillasA(enviada, AV2)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>;
     expect(plantillaReserva.payload['template']?.name).toBe('pedido_registrado');
     expect(plantillaReserva.payload['template']?.language?.code).toBe('es');
     const vars = parametrosDe(plantillaReserva);
@@ -1568,14 +1571,21 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     expect(cuerpos(r2.resumen)[0]).not.toMatch(/lunes/);
   });
 
-  it('plantilla por rol (04/10): con las claves `*ReservaCompleto` el rol completo recibe `solicitud_reserva` (5 variables, con teléfono) y cocina sigue como hoy, con el mismo número de avisos', () => {
-    const hoy = enviarReserva(armarReserva({ ventana: 5, from: CLIENTE }));
-    const por = enviarReserva(armarReserva({
-      ventana: 5, from: CLIENTE,
-      config: { plantillaReservaCompleto: 'solicitud_reserva', formaPlantillaReservaCompleto: 'solicitud', idiomaPlantillaReservaCompleto: 'es' },
-    }));
+  it('el ensayo en el Demo A hereda de Q\'Taco pero SIN plantilla de reserva por rol (el Demo A no tiene `solicitud_reserva`)', () => {
+    const demoA = configBase(leer('venta-minima.ensayo-demo-a.json'));
+    expect(demoA['plantillaReserva']).toBe('');
+    expect(demoA['plantillaReservaCompleto']).toBe('');
+  });
+
+  it('plantilla por rol con la config REAL de qtaco.json: completo recibe `solicitud_reserva` (5 variables, con teléfono) y cocina `pedido_registrado` sin teléfono, con el mismo número de avisos', () => {
+    // Sin ninguna clave puesta por la prueba: lo que rige es la «Config base» del JSON versionado de Q'Taco.
+    const dato = (k: string): unknown => configBase(QTACO)[k];
+    expect([dato('plantillaReservaCompleto'), dato('idiomaPlantillaReservaCompleto'), dato('formaPlantillaReservaCompleto')]).toEqual(['solicitud_reserva', 'es', 'solicitud']);
+    expect([dato('plantillaReserva'), dato('formaPlantillaReserva')]).toEqual(['pedido_registrado', 'pedido']);
+    const por = enviarReserva(armarReserva({ ventana: 5, from: CLIENTE }));
     const completo = plantillasA(por, AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>;
     expect(completo.payload['template']?.name).toBe('solicitud_reserva');
+    expect(completo.payload['template']?.language?.code).toBe('es');
     const v = parametrosDe(completo);
     expect(v).toHaveLength(5);
     expect(v[0]).toMatch(/ · Carlos Pérez$/);
@@ -1588,9 +1598,14 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     expect(cocina.payload['template']?.name).toBe('pedido_registrado');
     expect(parametrosDe(cocina)).toHaveLength(4);
     expect(JSON.stringify(cocina.payload)).not.toContain(CLIENTE);
-    // Mismo número de avisos que sin las claves nuevas: solo cambia el contenido del aviso al rol completo.
-    expect(por.avisos.length).toBe(hoy.avisos.length);
+    // Un aviso (plantilla) por destinatario, como siempre.
+    expect(plantillasA(por, AV1)).toHaveLength(1);
+    expect(plantillasA(por, AV2)).toHaveLength(1);
+    // Negando: sin las claves por rol (como cualquier otro cliente) el rol completo sale con `pedido_registrado`, igual que antes.
+    const hoy = enviarReserva(armarReserva({ ventana: 5, from: CLIENTE, config: { plantillaReservaCompleto: '', formaPlantillaReservaCompleto: '', idiomaPlantillaReservaCompleto: '' } }));
     expect(plantillasA(hoy, AV1)[0]!.payload['template']?.name).toBe('pedido_registrado');
+    expect(parametrosDe(plantillasA(hoy, AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>)).toHaveLength(4);
+    expect(hoy.avisos.length).toBe(por.avisos.length);
     expect(cuerpos(por)).toEqual(cuerpos(hoy));
   });
 

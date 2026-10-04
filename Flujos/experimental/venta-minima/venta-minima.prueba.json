@@ -250,6 +250,24 @@
               "value": "pedido"
             },
             {
+              "id": "cb_plantillaReservaCompleto",
+              "name": "plantillaReservaCompleto",
+              "type": "string",
+              "value": "solicitud_reserva"
+            },
+            {
+              "id": "cb_idiomaPlantillaReservaCompleto",
+              "name": "idiomaPlantillaReservaCompleto",
+              "type": "string",
+              "value": "es"
+            },
+            {
+              "id": "cb_formaPlantillaReservaCompleto",
+              "name": "formaPlantillaReservaCompleto",
+              "type": "string",
+              "value": "solicitud"
+            },
+            {
               "id": "cb_plantillaDerivacion",
               "name": "plantillaDerivacion",
               "type": "string",

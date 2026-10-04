@@ -602,6 +602,17 @@ repetidos, números fuera del prefijo, acuses de estado, reacciones y stickers.
 una conversación** (la ingesta cuenta el entrante y el saliente como cualquier otro número): es el precio de que el detalle
 en texto llegue; sin esa conversación, el destinatario solo recibe la plantilla. La suite lo mide.
 
+## Correcciones de conversación y de redacción (04/10/2026, ejecuciones reales de Q'Taco)
+
+**Costo: 0 mensajes por conversación agregados o quitados.** Cambia el contenido de mensajes que ya salían; el número de avisos por reserva tampoco cambia.
+
+- **Hora suelta en la reserva** (`rsHoraSuelta`, `reserva.js`, la llama `aExtraerReserva`). Con personas ya dichas y la hora pendiente, una respuesta que es solo una hora («19», «7 pm», «a las 7», «19:30») la toma el código, sin fiarse del modelo. Sin marca de am/pm elige entre tarde y mañana según el horario de reservas del día; `rsValidar` sigue decidiendo si hay mesa. `rsPreguntaFaltantes` ahora recibe la reserva y muestra lo entendido («Tengo: … Me falta: …»); con «ya te dije…» (`rsReclamo`) pide perdón y da el ejemplo «19:00».
+- **«Cambiar algo» y `carritoAnterior`.** El pedido guardado pasa a `carritoAnterior` (campo nuevo del estado) y la carta avisa que lo que se elija lo reemplaza. El último mensaje lleva el botón «Dejarlo como estaba» (`p|dejar`); con la carta como botón de enlace, o si el mensaje no cabe, se ofrece escribir «dejarlo como estaba». Devuelve el resumen guardado. Al llegar a un resumen nuevo o a un carrito de la página, `carritoAnterior` se borra (ya fue reemplazado).
+- **Pedido a medias** (`decidir-turno.js`). «Quiero confirmar», «confirmo», «sí», «ok»… con la entrega o los datos pendientes vuelven a mostrar el paso (no derivan ni confirman solos). «Prefiero recoger», «paso a buscar» con delivery pendiente pasan a recojo. La pregunta por el costo del delivery sigue derivando, sin la frase de «menú» (`sinFraseMenu`).
+- **Esperando comprobante.** Un texto suelto recibe una frase: «Tu pedido #N está guardado; falta tu comprobante: envíame aquí la foto o el PDF.», sin la carta.
+- **Redacción.** Frase de menú «Para volver al inicio, escribe «menú».»; horario sin doble punto y «Atendemos» en minúscula (`horarioEnFrase`); comprobante «Ya lo pasé al restaurante…» (la defensa `AM_PASE` también reconoce «ya lo pasé»); reserva enviada sin la palabra «confirmada» (la red la rechaza incluso negada).
+- **Forma `solicitud` y claves por rol** (`avisos.js`). La reserva admite la forma `solicitud` (plantilla `solicitud_reserva`, 5 variables: `cliente,personas,cuando,telefono,nota`; cada una recortada por campo). El teléfono del cliente va solo al rol `completo`. Las claves `plantillaReservaCompleto`, `idiomaPlantillaReservaCompleto` y `formaPlantillaReservaCompleto` cambian solo lo que recibe el rol `completo` en la reserva, cada una por separado; sin ellas rige lo de siempre (compatible hacia atrás; `cocina` no las lee). Q'Taco las trae en `qtaco.json`; el ensayo del Demo A las deja vacías (no tiene esa plantilla). Un `ordenReserva` de 4 variables no vale para la forma `solicitud` (se anota `orden_invalido_reserva` y rige el orden por omisión).
+
 ## Lo que falta para publicar (pendientes de la persona)
 
 - **Credenciales en n8n** (id vacío en el JSON): «NovuChat ingesta (Q'Taco)», «Graph WhatsApp Q'Taco (Bearer)» (con un
