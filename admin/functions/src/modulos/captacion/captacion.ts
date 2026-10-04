@@ -28,6 +28,7 @@
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { REGION } from '../../core/region.js';
+import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 import { textoPlano, textoConSaltos, sinMarcas } from '../../central/servicios/saneo.js';
 import { pedirConFrenos, tipoDeContenido, type MotivoFalla } from '../../central/servicios/pedidoSeguro.js';
 
@@ -342,6 +343,17 @@ export function puedeComprobar(token: unknown, tenantId: string): boolean {
 }
 
 /**
+ * ¿El comercio tiene captación? Lo decide el registro (`tieneModulo`), no una
+ * lista propia. Diferencia con la comprobación anterior, que leía
+ * `tenant.get('flujos') ?? [vertical]`: con `flujos` en `null` caía a
+ * `vertical`; ahora `flujos` que no es lista (null, cadena, objeto) da «no»
+ * (falla cerrado, como las reglas). Con `flujos` ausente sigue valiendo
+ * `[vertical]`. Además, una lista `modulos` explícita manda sobre los flujos.
+ */
+export const tieneCaptacion = (ficha: FichaConCapacidades | null | undefined): boolean =>
+  tieneModulo(ficha, 'captacion');
+
+/**
  * `comprobarArchivoPlanes({ tenantId })` → `{ ok, motivo }`.
  *
  * Lee `archivoPlanes` del documento guardado, no una URL que mande el
@@ -366,10 +378,7 @@ export const comprobarArchivoPlanes = onCall(
       db.doc(`tenants/${tenantId}/config/onboarding`).get(),
     ]);
     if (!tenant.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
-    // La misma lectura de capacidades que las reglas (`flujosTenant`): sin
-    // `flujos`, vale `[vertical]`.
-    const flujos = tenant.get('flujos') ?? [tenant.get('vertical')];
-    if (!Array.isArray(flujos) || !flujos.includes('onboarding')) {
+    if (!tieneCaptacion(tenant.data())) {
       throw new HttpsError('failed-precondition', 'Ese comercio no tiene el flujo de captación.');
     }
 
