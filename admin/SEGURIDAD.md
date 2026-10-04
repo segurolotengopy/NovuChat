@@ -1428,6 +1428,40 @@ dicen nada por sí mismos y que solo la función sabe traducir a una conversaci�
 | **Cinco carritos por ficha, y no uno** | uno solo convertiría «me arrepentí y pedí de nuevo» en «el enlace ya no funciona», que el cliente le atribuye al comercio. Cinco cubre el uso legítimo y frena al grupo |
 | **`fichaCompartida` a partir del segundo** | el pedido viaja marcado y el asistente lo confirma antes de despachar. Es lo que convierte un dato incierto en una pregunta, en vez de en un despacho equivocado |
 
+**Cambio del 03/10/2026 (Q'Taco): el enlace que entrega `configuracionFlujo` no se
+reutiliza después del primer carrito.** «Venta mínima v0» recibe el enlace en la
+respuesta de `configuracionFlujo` (con `catalogoCompleto: true`), y la ficha se
+reutiliza entre turnos para no abrir una por mensaje. Pero solo mientras no tuvo
+ningún carrito: el segundo pedido legítimo del mismo cliente (almuerzo y cena) abre
+una ficha nueva y no llega marcado como `fichaCompartida` (eso obligaría a confirmar
+antes de despachar, y cada confirmación es un mensaje pagado). Lo que esto cambia
+en seguridad: la conversación recibe una ficha nueva tras cada pedido; la ficha
+reenviada conserva su tope de cinco carritos y del segundo en adelante llegan
+marcados como compartidos. **El tope de cinco carritos por
+ficha no cambia** (lo siguen usando `enlaceCatalogo` y el checkout): cambia a quién
+se le vuelve a dar la ficha. La reutilización además exige el mismo comercio, el
+mismo teléfono, el mismo número (`phoneNumberId`) y el mismo flujo, y al menos seis
+horas de vida: sin eso, un comercio con dos líneas, o un número reasignado dentro
+de las 72 horas, mandaría el carrito al webhook del número viejo. Probado en
+`pruebas/catalogo-completo-servidor.test.ts`.
+
+**Dato personal nuevo y su retención: TTL sobre `caducaEn`.** Para reutilizar,
+existe un documento puntero `fichasCatalogo/ult_<comercio>_<teléfono>` que lleva el
+teléfono completo, como cada ficha. Ambos documentos llevan `caducaEn` como
+**Timestamp de Firestore** (probado en el emulador: ni número ni texto, que el TTL
+ignoraría) y `admin/firestore.indexes.json` declara la política TTL del grupo de
+colecciones `fichasCatalogo`, campo `caducaEn`; una prueba estática
+(`pruebas/modulos/catalogo-web/retencion-fichas.test.ts`) falla si alguien la quita.
+**La política solo existe en el Firestore real cuando se despliegan los índices**
+(`firestore:indexes`); hasta entonces el teléfono se sigue acumulando. **Advertencia:**
+Firestore borra con una demora de hasta unos días después del vencimiento (no es
+exacto), así que una ficha vencida puede seguir presente. Por eso el flujo **no debe
+depender de que una ficha vencida haya desaparecido**: `catalogoPublico`, el checkout
+y la reutilización comparan `caducaEn` con el reloj y tratan la vencida como
+inexistente (404), y una ficha ya purgada da el mismo 404 (probado). El
+identificador del puntero no tiene forma de ficha (32 hexadecimales), así que
+`catalogoPublico` y `checkoutCatalogo` lo rechazan con 404 (probado).
+
 **Lo que NO se hizo, y por qué.** Atar la ficha a la dirección IP o al navegador:
 una persona que abre el enlace con datos móviles y confirma con el wifi de su casa
 cambia de IP en el medio, y el sistema le diría que su carrito no existe. La

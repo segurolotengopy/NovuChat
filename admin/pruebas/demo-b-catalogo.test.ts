@@ -1588,3 +1588,22 @@ describe('las formas con las que un modelo anuncia una página', () => {
     expect(s['avisos']).not.toContain('anuncio_de_enlace_quitado');
   });
 });
+
+describe('`catalogoCompleto` (Q\'Taco, 03/10/2026): el Demo B NO la manda y conserva su resumen', () => {
+  // La bandera se la pide a `configuracionFlujo` el flujo que necesita la carta
+  // entera («Venta mínima v0»). El Demo B entrega el pedido por la página y el
+  // agente solo recibe el resumen: si algún día su cuerpo empezara a llevarla,
+  // el asistente recibiría 40 o más ítems en cada turno sin que nadie lo
+  // decidiera. El lado del servidor (booleano estricto, solo `venta`, el
+  // comercio de la ruta) está en `catalogo-completo-servidor.test.ts`, que
+  // necesita el emulador.
+  const cuerposDeConfiguracion = (): string[] => f.nodes
+    .filter((n) => String(n.parameters['url'] ?? '').endsWith('/configuracionFlujo'))
+    .map((n) => String(n.parameters['jsonBody'] ?? ''));
+
+  it('ningún nodo del Demo B que llama a `configuracionFlujo` manda `catalogoCompleto`', () => {
+    const cuerpos = cuerposDeConfiguracion();
+    expect(cuerpos.length).toBeGreaterThan(0);
+    for (const c of cuerpos) expect(c).not.toMatch(/catalogoCompleto/);
+  });
+});
