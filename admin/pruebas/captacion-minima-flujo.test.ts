@@ -2385,7 +2385,7 @@ describe('§12: correcciones de la revisión de código y de seguridad', () => {
   it('R12: en la oferta el modelo recibe la pregunta de la oferta como «PREGUNTA QUE HICISTE»', () => {
     const w = crear(); const { j } = hastaLaOferta(w);
     modelo(w, { tipo: 'respuesta', empatia: EMP });
-    const t = j.texto('ok');
+    const t = j.texto('cuéntame algo más');
     expect(JSON.stringify(t.modelo[0]!.cuerpo['contents'])).toContain(`¿Quieres ver los planes o hablar con ${QUIEN}?`);
   });
   it('R12: el modo «negocio» respeta el rubro de la consola que el modelo reconoce', () => {
@@ -2426,5 +2426,53 @@ describe('§12: correcciones de la revisión de código y de seguridad', () => {
     const t = w.mundo.turno(valorMeta(mTexto('Hola'), '59100000011', { phoneId: '59199999999' }));
     expect(t.mensajes).toHaveLength(0);
     expect(w.mundo.sd['captacionMinima']).toBeUndefined();
+  });
+});
+
+// =================================================================================================
+// Hallazgos de la batería real contra el modelo (H1 y H2).
+describe('H1 y H2: lo que encontró la batería contra el modelo', () => {
+  it('H1: «¿En qué moneda se paga?»: el modelo arma «USD 25» con el 25 de «hasta 25 respuestas»; el cliente NO lo recibe y se le da la aclaración de la consola o «Eso no lo tengo»', () => {
+    const w = crear({ panel: panel({}, { aclaraciones: [{ tema: 'Conversaciones', texto: 'Cada conversación son hasta 25 respuestas del asistente.' }, { tema: 'Moneda', texto: 'Los precios son en dólares: USD 25 el plan más bajo.' }] }) });
+    const j = hastaElDolor(w);
+    modelo(w, { tipo: 'pregunta', respuesta: 'Los precios son en dólares: USD 25 el plan más bajo.', enLosDatos: true });
+    const t = j.texto('¿En qué moneda se paga?');
+    expect(CUERPO(t)).toMatch(/Eso no lo tengo en mis datos/);
+    expect(todoElTexto(t)).not.toMatch(/USD|d[oó]lares/i);
+    // Con la aclaración de la consola, la copia el código (D2).
+    modelo(w, { tipo: 'pregunta', aclaracion: 'a2', respuesta: 'x', enLosDatos: true });
+    expect(CUERPO(j.texto('¿En qué moneda se paga?'))).toContain('Los precios son en dólares: USD 25 el plan más bajo.');
+    // Lo que sí puede decir con números: cantidades sin moneda que están en los datos.
+    modelo(w, { tipo: 'pregunta', respuesta: 'Una conversación son hasta 25 respuestas.', enLosDatos: true });
+    expect(CUERPO(j.texto('¿cuánto dura una conversación?'))).toContain('hasta 25 respuestas');
+  });
+  it('H2: un «sí» tras la oferta muestra los planes y es Alta; un segundo «sí» no los repite y ofrece al asesor con botón', () => {
+    for (const afirma of ['sí', 'claro', 'dale', 'ok', 'me interesa', 'bueno']) {
+      const w = crear(); const { j } = hastaLaOferta(w);
+      const t = j.texto(afirma);
+      expect(t.modelo, afirma).toHaveLength(0);
+      expect(encabezadoDe(t.aMi[0]!), afirma).toBeDefined();
+      expect(idsBotones(t.aMi[0]!), afirma).toEqual(['asesor']);
+      expect(califDe(w, MAMA), afirma).toBe('Alta');
+      const t2 = j.texto(afirma);
+      expect(t2.aMi.every((e) => encabezadoDe(e) === undefined), afirma).toBe(true);
+      expect(idsBotones(t2.aMi[0]!), afirma).toEqual(['asesor']);
+      expect(t2.plantillas).toHaveLength(0);
+    }
+  });
+  it('H2 NIEGA: «sí, pero antes dime si se integra con mi ERP» no va a los planes: lo resuelve el modelo', () => {
+    const w = crear(); const { j } = hastaLaOferta(w);
+    modelo(w, { tipo: 'pregunta', respuesta: '', enLosDatos: false });
+    const t = j.texto('sí, pero antes dime si se integra con mi ERP');
+    expect(t.modelo).toHaveLength(1);
+    expect(t.aMi.every((e) => encabezadoDe(e) === undefined)).toBe(true);
+    expect(estadoDe(w, MAMA)!.hechos['pidioPlanes']).toBe(false);
+    expect(CUERPO(t)).toMatch(/Eso no lo tengo en mis datos/);
+  });
+  it('H2: sin planes que mostrar, el «sí» a «¿Quieres hablar con X?» es un sí al asesor (traspaso con aviso), no un bucle', () => {
+    const w = crear({ panel: panel({}, { planes: [], cargosUnicos: [], archivoPlanes: null }) }); const { j } = hastaLaOferta(w, 'gastronomia');
+    const t = j.texto('sí');
+    expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
+    expect(t.plantillas).toHaveLength(1);
   });
 });

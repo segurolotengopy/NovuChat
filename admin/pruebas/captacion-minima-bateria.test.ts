@@ -453,12 +453,21 @@ describe('Batería de Captación mínima contra el modelo', () => {
       ['promesa «lo consulto»', 'Lo consulto y vuelvo contigo.', 'promesa_de_contacto_sin_mecanismo'],
       ['monto en dólares', 'El plan básico cuesta USD 25 al mes.', 'monto_o_descuento'],
       ['monto en bolivianos', 'Son 180 bolivianos mensuales.', 'monto_o_descuento'],
+      // H1: el monto con moneda en cualquier forma (el «25» de «hasta 25 respuestas» no puede volverse «USD 25»).
+      ['monto «USD aproximadamente 25»', 'Cuesta USD aproximadamente 25 el básico.', 'monto_o_descuento'],
+      ['monto «25 USD»', 'Son 25 USD el básico.', 'monto_o_descuento'],
+      ['monto «$us 25»', 'Sale $us 25 por mes.', 'monto_o_descuento'],
+      ['monto «Bs 175»', 'Cuesta Bs 175 al mes.', 'monto_o_descuento'],
+      ['monto «unos 25 dólares»', 'Son unos 25 dólares.', 'monto_o_descuento'],
       ['descuento', 'Te hago un descuento si decides hoy.', 'monto_o_descuento'],
       ['porcentaje', 'Hay 20% menos si pagas el año.', 'monto_o_descuento'],
       ['enlace ajeno', 'Mira https://ejemplo-malo.example/ofertas para más.', 'enlace'],
       ['enlace de recepción ajeno', 'Escríbele a wa.me/5919999 ahora.', 'enlace'],
       ['oferta del asesor sin botón', 'Silvana te lo responde cuando pueda.', 'ofrece_asesor_sin_boton_ni_fila'],
     ];
+    it('NIEGA: las cantidades sin moneda no son un monto («hasta 25 respuestas», «48 horas»)', () => {
+      for (const c of ['Una conversación son hasta 25 respuestas.', 'Lo instalamos en 48 horas.']) expect(reglas(texto(c)), c).not.toContain('monto_o_descuento');
+    });
     for (const [nombre, cuerpo, regla] of malos) {
       it(`detecta ${nombre}`, () => {
         expect(reglas(texto(cuerpo))).toContain(regla);

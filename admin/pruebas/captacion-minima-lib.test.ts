@@ -2059,3 +2059,67 @@ describe('§12: correcciones de la revisión (S1 a S4, S8, R1 a R7, R11, R12), u
     }
   });
 });
+
+
+// ================================================================================================
+describe('H1 y H2 (batería contra el modelo): montos con moneda y el «sí» a la oferta', () => {
+  const OPM = { rubroIds: [], aclaracionIds: ['a1'], aclaraciones: [{ id: 'a1', texto: 'Los precios son en dólares: USD 25 el plan más bajo.' }], textoCliente: 'hola', textoDeImagen: '', nombreNegocio: 'Tienda Ejemplo', asesor: 'Silvana', datos: 'Una conversación son hasta 25 respuestas. Se instala en 48 horas.' };
+  const val = (extra: J): J => ({ tipo: 'pregunta', rubroId: 'ninguno', rubroLibre: '', empatia: 'Entiendo.', respuesta: '', aclaracion: 'ninguno', enLosDatos: true, descarte: 'ninguno', ...extra });
+  const leer = (extra: J): J => f('ccLeerModelo')(JSON.stringify(val(extra)), OPM);
+
+  it('H1: un monto con moneda, en cualquier forma, se rechaza en la respuesta aunque el número esté en los datos', () => {
+    for (const t of ['USD 25', 'Cuesta 25 USD el básico.', 'Sale $us 25 al mes.', 'Son Bs 175 el básico.', 'Son unos 25 dólares.', 'USD aproximadamente 25 el básico.', 'Cuesta US$ 25.', 'Son 25 euros.', 'Vale 25$.', 'Los precios son en dólares: 25 el básico.']) {
+      const r = leer({ respuesta: t });
+      expect(r['respuesta'], t).toBe('');
+      expect(r['enLosDatos'], t).toBe(false);
+    }
+  });
+  it('H1: lo mismo en la empatía', () => {
+    for (const t of ['Son 25 USD.', 'USD aproximadamente 25.', 'Unos 25 dólares.']) expect(leer({ empatia: t })['empatia'], t).toBe('Te entiendo.');
+  });
+  it('H1 NIEGA: las cantidades sin moneda que están en los datos pasan («hasta 25 respuestas», «48 horas»)', () => {
+    expect(leer({ respuesta: 'Una conversación son hasta 25 respuestas.' })['respuesta']).toBe('Una conversación son hasta 25 respuestas.');
+    expect(leer({ respuesta: 'Se instala en 48 horas.' })['respuesta']).toBe('Se instala en 48 horas.');
+  });
+  it('H1: el texto que COPIA el código de una aclaración de la consola sí puede traer un monto (D2)', () => {
+    const r = leer({ respuesta: 'lo que sea', aclaracion: 'a1' });
+    expect(r['respuesta']).toBe('Los precios son en dólares: USD 25 el plan más bajo.');
+    expect(r['enLosDatos']).toBe(true);
+  });
+  it('H1: ccMontoDelModelo es el mismo patrón que lee la batería de la librería', () => {
+    const linea = /^const CC_MONTO_MODELO = (\/.+\/[a-z]*);$/m.exec(LIB)![1]!;
+    expect(linea).toMatch(/usd/);
+    for (const t of ['USD 25', '25 USD', '$us 25', 'Bs 175', 'unos 25 dólares', 'USD aproximadamente 25 el básico']) expect(f('ccMontoDelModelo')(t), t).toBe(true);
+    for (const t of ['hasta 25 respuestas', '48 horas', 'los dólares son moneda']) expect(f('ccMontoDelModelo')(t), t).toBe(false);
+  });
+
+  const CFGH = { ...CFG, rubros: RUBROS, guion: { asesor: { nombre: 'Silvana' }, rubros: { 'salud-belleza': { dolor: 'Los turnos se olvidan.', pregunta: '¿Pierdes tiempo agendando?', impacto: '' }, otro: { pregunta: '¿De qué trata tu negocio?' } } }, numeroRecepcion: '59100000001' };
+  const dec = (e: J, texto: string, cfg: J = CFGH): J => f('ccDecidir')({ e: { ...f('ccEstadoBase')(), ...e, hechos: { ...f('ccEstadoBase')().hechos, ...(e['hechos'] ?? {}) } }, t: { from: '59100000011', nombrePerfil: 'Ana', tipo: 'text', texto, via: 'texto', idToque: '', anuncio: false, textoDeImagen: '', categoria: '', medioFallo: '' }, cfg });
+  it('H2: ccEsAfirmativo: hasta 4 palabras, todas de afirmación; NIEGA lo que pide otra cosa', () => {
+    for (const t of ['sí', 'Claro', 'dale', 'ok', 'me interesa', 'bueno', 'claro que sí', 'sí por favor']) expect(f('ccEsAfirmativo')(t), t).toBe(true);
+    for (const t of ['sí, pero antes dime si se integra con mi ERP', 'no', 'no gracias', 'sí claro que quiero verlos ahora', 'por favor', 'hola', '']) expect(f('ccEsAfirmativo')(t), t).toBe(false);
+  });
+  it('H2: un «sí» tras la oferta muestra los planes (Alta); tras haberlos mostrado no los repite y ofrece al asesor con botón', () => {
+    const e = { paso: 'oferta', rubroId: 'salud-belleza' };
+    const p = dec(e, 'sí');
+    expect(p['accion']).toBe('planes');
+    expect(p['e'].hechos.pidioPlanes).toBe(true);
+    expect(p['e'].planesMostrados).toBe(true);
+    const otra = dec(p['e'], 'claro');
+    expect(otra['accion']).toBe('planes_ya');
+    expect(f('ccCompletar')({ plan: otra, modelo: null, cfg: CFGH })['mensajes'][0]['botones']).toEqual(['asesor']);
+    for (const paso of ['oferta', 'libre']) expect(dec({ paso, rubroId: 'salud-belleza' }, 'dale')['accion'], paso).toBe('planes');
+  });
+  it('H2 NIEGA: «sí, pero antes dime si se integra con mi ERP» va al modelo, no a los planes', () => {
+    const p = dec({ paso: 'oferta', rubroId: 'salud-belleza' }, 'sí, pero antes dime si se integra con mi ERP');
+    expect(p['accion']).toBe('modelo');
+    expect(p['e'].hechos.pidioPlanes).toBe(false);
+    // En otros pasos un «sí» no es un pedido de planes.
+    expect(dec({ paso: 'esperando_dolor', rubroId: 'salud-belleza' }, 'sí')['accion']).toBe('modelo');
+  });
+  it('H2: sin planes que mostrar, un «sí» a «¿Quieres hablar con X?» es un «sí» al asesor (no un bucle)', () => {
+    const p = dec({ paso: 'oferta', rubroId: 'salud-belleza' }, 'sí', { ...CFGH, planes: [], archivoPlanes: null });
+    expect(p['accion']).toBe('traspaso');
+    expect(p['e'].hechos.pidioPlanes).toBe(false);
+  });
+});
