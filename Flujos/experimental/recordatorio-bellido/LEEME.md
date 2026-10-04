@@ -12,7 +12,7 @@ comercio `ensayo`) y envía solo a los teléfonos de prueba de Andres y de Silva
   marca, una con `[no recordar]`, una sin teléfono y una con prefijo extranjero.
 - **«Correr recordatorio ahora»** (webhook; y el disparador diario de las 17:00, **apagado** en la prueba): lee las citas
   de mañana, deja solo las que cumplen el criterio de abajo, y envía la plantilla `recordatorio_cita_consultorio`
-  (idioma `es`; 4 parámetros de cuerpo: saludo, negocio, fecha, hora; ver «Variables de la plantilla»). Si Meta acepta el mensaje, marca la cita con
+  (idioma `es`; 4 parámetros de cuerpo; ver «Sin datos del paciente»). Si Meta acepta el mensaje, marca la cita con
   `[recordado]`; si no, deja la causa en la ejecución y no marca nada.
 - Funcionalidades cubiertas: 1 (corrida diaria; apagada en la prueba), 2, 3, 4 (con `estadoComercio` fijo en el Set),
   5, 6 (cada envío es un mensaje de utilidad), 7 (la causa queda por cita). **Faltan para producción:** el aviso a
@@ -33,19 +33,26 @@ regla anterior («toda cita con la línea `Telefono:`, sea cual sea su origen»)
 Cada cita omitida deja su causa en `omitidas` de la ejecución (`cancelada`, `ya recordada`, `no recordar`,
 `importada`, `no gestionada por NovuChat`, `sin telefono`, `prefijo no permitido`, `evento sin hora`), sin nombres.
 
-**Sin datos del paciente.** El mensaje lleva «Hola paciente,», el nombre del negocio («Consultorio del Dr. Bellido»,
-que no es dato del paciente), la fecha escrita y la hora en 24 h. No lleva servicio, motivo ni nombre; lo acordado
-queda en el texto de la plantilla. El título de la cita no se copia a ningún campo del item. Lo que sí queda en los
-datos de la ejecución es lo que el calendario ya tenía: la salida del nodo de Google Calendar y la
-`descripcionMarcada` (la descripción original más `[recordado]`), que se necesita para marcar la cita sin pisar su texto.
+**Sin datos del paciente.** La plantilla `recordatorio_cita_consultorio` (idioma `es`) dice: «Hola {{1}}, Este es un
+recordatorio sobre tu próxima cita con {{2}} el {{3}} a las {{4}}. ¡Esperamos verte!». Su botón es de URL fija y **no
+lleva parámetro al enviar** (el `jsonBody` solo manda el componente `body`). Los valores:
+- {{1}} = `saludoVariable` del Config del recordatorio; por omisión «te escribimos del consultorio del Dr. Bellido».
+- {{2}} = `conQuienVariable` del Config; por omisión «tu peque».
+- {{3}} = solo la fecha escrita, p. ej. «lunes 5 de octubre» (sin «el»). {{4}} = solo la hora en 24 h, p. ej. «10:30»
+  (sin «a las»).
+Se leería: «Hola te escribimos del consultorio del Dr. Bellido, Este es un recordatorio sobre tu próxima cita con tu peque
+el lunes 5 de octubre a las 10:30. ¡Esperamos verte!». Ninguna variable lleva saltos de línea, tabuladores ni 4 o más
+espacios seguidos (límite de Meta): el nodo las limpia. No hay servicio, motivo ni nombre del paciente; lo acordado queda
+en el texto de la plantilla. El título de la cita no se copia a ningún campo del item. Lo que sí queda en los datos de la
+ejecución es lo que el calendario ya tenía: la salida del nodo de Google Calendar y la `descripcionMarcada` (la
+descripción original más `[recordado]`), que se necesita para marcar la cita sin pisar su texto.
 
-**Variables de la plantilla, por configuración.** `recordatorio_cita_consultorio` (idioma `es`) **no está definida
-en este repositorio**: se supone con **4 variables de cuerpo** en este orden (saludo, negocio, fecha, hora). La plantilla
-empieza con «Hola {{1}},» y Meta no admite una variable vacía, así que la 1 vale `saludoVariable` (en el Config del
-recordatorio; por omisión «paciente»). Si se aprueba una plantilla sin esa variable, se pone `variablesCuerpo = 3` en el
-Config (y la plantilla nueva en `plantilla`): `Preparar recordatorios` arma `parametros` sin el saludo y `Enviar plantilla`
-envía esa lista, sin tocar más lógica. Con un número de variables distinto del real, Meta rechaza el envío (la causa queda
-en la ejecución). Pendiente: confirmar el texto y la categoría (utilidad) de la plantilla antes de producción.
+**Variables de la plantilla, por configuración.** La definición de la plantilla **no está en este repositorio**: se
+supone con **4 variables de cuerpo** en el orden de arriba. Si se aprueba una plantilla sin la variable del saludo, se
+pone `variablesCuerpo = 3` en el Config (y la plantilla nueva en `plantilla`): `Preparar recordatorios` arma `parametros`
+sin el saludo y `Enviar plantilla` envía esa lista, sin tocar más lógica. Con un número de variables distinto del real,
+Meta rechaza el envío (la causa queda en la ejecución). Pendiente: confirmar el texto y la categoría (utilidad) de la
+plantilla antes de producción.
 
 ### Dónde el criterio puede NO alcanzar
 - **Una cita creada por NovuChat y luego editada a mano en Calendar** puede perder la línea de marca (por ejemplo si la

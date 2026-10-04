@@ -7,9 +7,12 @@
 //  2. con telefono (linea «Telefono: <numero>», con o sin tilde) y prefijo permitido;
 //  3. una vez por cita: la marca [recordado]; y nunca si lleva [no recordar] (sin distinguir mayusculas);
 //  4. una cita cancelada o borrada no se recuerda; solo si el comercio esta operativo;
-//  5. el mensaje no lleva datos del paciente: la variable del saludo es un valor de configuracion (por omision
-//     «paciente», que lee «Hola paciente,»), el negocio es su nombre, mas la fecha escrita y la hora en 24 h. Ni el
-//     titulo ni el nombre salen en ningun campo del item (ni hacia Meta ni a los registros).
+//  5. el mensaje no lleva datos del paciente. Plantilla: «Hola {{1}}, Este es un recordatorio sobre tu proxima cita con
+//     {{2}} el {{3}} a las {{4}}. ¡Esperamos verte!». {{1}} y {{2}} son valores de configuracion (`saludoVariable`, por
+//     omision «te escribimos del consultorio del Dr. Bellido»; `conQuienVariable`, por omision «tu peque»), {{3}} es solo
+//     la fecha escrita y {{4}} solo la hora en 24 h. Ni el titulo ni el nombre salen en ningun campo del item (ni hacia
+//     Meta ni a los registros). Ninguna variable lleva saltos de linea, tabuladores ni 4 o mas espacios seguidos (limite
+//     de Meta): se limpian aca.
 //  6. cuantas variables lleva el cuerpo de la plantilla es configuracion (`variablesCuerpo`: 4 hoy; 3 si se aprueba una
 //     plantilla sin la variable del saludo): el item trae `parametros`, la lista ya armada que usa «Enviar plantilla».
 const cfg = $('Config del recordatorio').first().json;
@@ -19,7 +22,10 @@ const prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.tr
 const MARCA = '[recordado]';
 const MARCA_NOVUCHAT = 'Agendado por NovuChat.';
 const PREFIJO_IMPORTADA = 'novuchat-importada-';
-const SALUDO = String(cfg.saludoVariable === undefined || cfg.saludoVariable === null ? 'paciente' : cfg.saludoVariable);
+const limpiar = (t) => String(t).replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim();
+const deConfig = (valor, porOmision) => limpiar(valor === undefined || valor === null || limpiar(valor) === '' ? porOmision : valor);
+const SALUDO = deConfig(cfg.saludoVariable, 'te escribimos del consultorio del Dr. Bellido');
+const CON_QUIEN = deConfig(cfg.conQuienVariable, 'tu peque');
 const CON_SALUDO = Number(cfg.variablesCuerpo || 4) !== 3;
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -44,8 +50,8 @@ for (const item of $input.all()) {
   const hora = String(lp.getUTCHours()).padStart(2, '0') + ':' + String(lp.getUTCMinutes()).padStart(2, '0');
   salida.push({ json: {
     eventoId: ev.id, calendarioDelEvento: (ev.organizer || {}).email || cfg.calendarioId,
-    telefono, negocio: String(cfg.nombreNegocio || ''), fecha, hora,
-    parametros: (CON_SALUDO ? [SALUDO] : []).concat([String(cfg.nombreNegocio || ''), fecha, hora]),
+    telefono, fecha, hora,
+    parametros: (CON_SALUDO ? [SALUDO] : []).concat([CON_QUIEN, fecha, hora].map(limpiar)),
     plantilla: cfg.plantilla, idioma: cfg.idiomaPlantilla, phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion,
     descripcionMarcada: (desc ? desc + '\n' : '') + MARCA + ' ' + new Date().toISOString(),
   }, pairedItem: { item: 0 } });
