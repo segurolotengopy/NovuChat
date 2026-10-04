@@ -32,12 +32,16 @@ const P_PART = String.raw`(?:recibid|acreditad|confirmad|registrad|verificad|apr
 const P_ADV = String.raw`(?:\p{L}+mente\s+)?`;
 const P_MEDIOS = String.raw`(?!\s+(?:por|en|mediante|con|v[ií]a)\s+(?:\p{L}+\s+){0,3}o\s+(?:en|por|con|mediante|v[ií]a)(?![\p{L}]))`;
 const P_VERBO = String.raw`(?:recibimos|hemos\s+recibido|he\s+recibido|recib[ií]|registramos|registré|confirmamos|confirmé|verificamos|verifiqué|acreditamos|acredité|aprobamos|(?:ya\s+)?tenemos)`;
+// Futuros y subjuntivo que NO afirman: «una vez recibido tu pago», «cuando hayamos recibido…».
+const P_FUT = String.raw`(?<!(?:una\s+vez|apenas|tras|luego\s+de|despu[eé]s\s+de|cuando\s+(?:hayamos|haya|hayan|est[eé])|hayamos|haya|hayan|habiendo|sea)\s+)`;
 const P_LLEGO = String.raw`(?:lleg[oó]|cay[oó]|se\s+(?:reflej|registr|acredit|recibi)[oó])`;
 const AFIRMA_RECIBIDO = new RegExp(
   String.raw`(?<![\p{L}])(?<!(?<![\p{L}])no\s(?:(?:ya|nos|se|hemos|he)\s){0,3})(?:`
   + [
     // recibimos / registramos / confirmamos / tenemos [correctamente] [ya] tu pago
     `${P_VERBO}\\s+${P_ADV}(?:ya\\s+)?(?:(?:tu|su|la|un)\\s+${P_PAGO}(?![\\p{L}])|el\\s+${P_PAGO}(?![\\p{L}])${P_MEDIOS})`,
+    // «recibido tu pago» en cualquier posición («Listo, recibido tu pago.»), salvo futuros
+    `${P_FUT}recibid[oa]\\s+(?:ya\\s+)?${P_ART}\\s+${P_PAGO}(?![\\p{L}])`,
     // recibimos los 80 Bs
     String.raw`(?:recibimos|hemos\s+recibido|he\s+recibido|recib[ií])\s+(?:ya\s+)?(?:los\s+|las\s+)?\d[\d.,]*\s*(?:bs|bolivianos|usd|d[oó]lares)(?![\p{L}])`,
     // quedó acreditado tu pago
@@ -49,26 +53,40 @@ const AFIRMA_RECIBIDO = new RegExp(
     // pago registrado / completado / recibido (el participio de «pago recibido|acreditado|
     // verificado…» ya lo cubre AFIRMA_COBRO; se repite acá para que no dependa de él)
     `${P_PAGO}\\s+(?:ya\\s+)?${P_PART}(?![\\p{L}])`,
-    // acreditado / se acreditó / acreditamos / acreditaron, sin más; solo se exceptúa «un local acreditado»
-    String.raw`(?<!(?:local|negocio|empresa|comercio)\s)acredit(?:amos|aron|ad[oa]s?|[oó])(?![\p{L}])`,
+    // acreditado / se acreditó / acreditamos / acreditaron, sin más; no entran los futuros ni el adjetivo («una tienda acreditada», «estamos acreditados por ASFI»)
+    `${P_FUT}(?<!(?:local|tienda|negocio|empresa|comercio|somos|estamos)\\s)acredit(?:amos|aron|ad[oa]s?|[oó])(?![\\p{L}])`,
     String.raw`ya\s+pagaste(?![\p{L}])`,
     `gracias\\s+por\\s+${P_ART}\\s+${P_PAGO}(?![\\p{L}])`,
     String.raw`(?:ya\s+)?(?:est[aá]|qued[oó])\s+pagad[oa]s?(?![\p{L}])`,
   ].join('|') + ')', 'iu');
-// «Pagado ✅» y «Recibido tu pago» solo al empezar la oración («Una vez recibido tu pago,
-// despachamos» es un futuro y no entra).
-const AFIRMA_PAGADO_SUELTO = /^[^\p{L}\p{N}]*(?:pagad[oa]s?(?![\p{L}])|recibid[oa]\s+(?:ya\s+)?(?:tu|su|el|la|un)\s+(?:pago|dep[oó]sito|transferencia|abono)s?(?![\p{L}]))/iu;
+// «Pagado ✅» al empezar la oración.
+const AFIRMA_PAGADO_SUELTO = /^[^\p{L}\p{N}]*pagad[oa]s?(?![\p{L}])/iu;
+// Condicional POSPUESTO tras una cláusula principal en primera persona o futuro
+// («Despachamos tu pedido si recibimos tu pago.», «Te aviso si tu pago llegó.»): se juzga
+// solo la cabeza. No vale tras coma, dos puntos ni «que» («Te confirmo que si recibimos
+// tu pago» es un «sí»): ahí el «si» afirma.
+const CABEZA_PRINCIPAL = /^[^,;:]*?(?<![\p{L}])(?:despachamos|despacho|te\s+(?:aviso|avisamos|confirmo|confirmamos|escribe|escribo|escribimos|mando|mandamos|env[ií]o|enviamos|llamo|llamamos|contacto)|\p{L}{3,}(?:ar[eé]|er[eé]|ir[eé]|[aei]r[aá]n?|[aei]remos))(?![\p{L}])[^,;:]*$/iu;
+const sinCondicionalPospuesto = (s) => {
+  const k = s.toLowerCase().lastIndexOf(' si ');
+  if (k < 0) return s;
+  // La cola sin su puntuación final (a mano: una expresión `+$` sería cuadrática con 50 000 espacios).
+  let cola = s.slice(k + 4).trimEnd();
+  while (cola.length > 0 && '.!?…'.includes(cola[cola.length - 1])) cola = cola.slice(0, -1).trimEnd();
+  if (/[,;:.!?]/.test(cola)) return s;
+  const cabeza = s.slice(0, k);
+  return CABEZA_PRINCIPAL.test(cabeza) && !/(?:^|[^\p{L}])(?:que|no)\s*$/iu.test(cabeza) ? cabeza : s;
+};
 // «Si …, <principal>»: la cláusula condicional («Si ya pagaste,») no afirma nada y se quita
 // antes de juzgar; lo que sigue a la coma SÍ se juzga. Un «si» sin coma después («Si
 // recibimos tu pago.», «Claro, si ya nos llegó tu pago.») no es condicional con principal.
-const CONDICIONAL_SI = /(^|[,;:]\s*)[¡"'*]*si\s[^,;:]+,\s*(?=\S)/giu;
+const CONDICIONAL_SI = /(^|[,;:]\s*)[¡"'*]*(?:(?:y|pero|solo|s[oó]lo|o)\s+)?si\s[^,;:]+,\s*(?=\S)/giu;
 // Oraciones: por puntuación final y ANTES de cualquier «¿», para que una afirmación
 // pegada a una pregunta («Recibimos tu pago, ¿algo más?») se juzgue sola.
 const trocearPago = (t) => t.split(/(?<=[.!?…])\s+|,?\s*(?=¿)/u);
 // ¿Esta oración afirma un pago? (se juzga sin marcas de formato). La pregunta no afirma.
 const afirmaPagoOracion = (o) => {
   const s = o.replace(/[*_~]/g, '');
-  const sinSi = s.replace(CONDICIONAL_SI, '$1');
+  const sinSi = sinCondicionalPospuesto(s.replace(CONDICIONAL_SI, '$1'));
   return AFIRMA_COBRO.test(s)
     || (!/\?\s*$/.test(s.trim()) && (AFIRMA_RECIBIDO.test(sinSi) || AFIRMA_PAGADO_SUELTO.test(sinSi)));
 };
@@ -306,7 +324,7 @@ for (let i = 0; i < $input.all().length; i++) {
   //     si van a un destinatario o sin complemento («Ya les informé,»); «Como le
   //     informé, el envío cuesta 10 Bs.» y «Le informé el precio» quedan.
   // Con `u` y `(?<![\p{L}])` / `(?![\p{L}])` porque `\b` no ve las vocales con tilde.
-  const AVISO_FUTURO = /(?<![\p{L}])(?:(?:le|les)\s+(?:(?:aviso|notifico)(?![\p{L}])(?!\s+que(?![\p{L}])|\s*:)|avisar[eé](?![\p{L}])|avisaremos(?![\p{L}])|avisamos(?![\p{L}])|notificar[eé](?![\p{L}])|estoy\s+avisando(?![\p{L}]))|avisarl[eo]s?(?![\p{L}])|el\s+sistema\s+(?:le\s+|les\s+)?(?:avisa|avisar[aá]|notifica|notificar[aá])(?![\p{L}])|^\s*(?:ahora\s+)?aviso\s+(?:a|al)(?![\p{L}])|(?:estoy|estamos)\s+avisando(?![\p{L}])(?=\s*(?:[,.;:!?…]|$)|\s+(?:a|al)\s+(?:(?!(?:todos|todas|nuestros\s+clientes|los\s+clientes)(?![\p{L}]))|(?=(?:todos|todas|nuestros\s+clientes|los\s+clientes)(?![\p{L}])[^.!?…\n]{0,60}?(?:encargad|due[ñn]|emplead|personal|cocina|recepci[oó]n|vendedor|equipo|administraci[oó]n))))|(?:le|les)\s+(?:paso|estoy\s+pasando)\s+(?:tu|su)\s+\p{L}+\s+(?:a|al)(?![\p{L}]))/iu;
+  const AVISO_FUTURO = /(?<![\p{L}])(?:(?:le|les)\s+(?:(?:aviso|notifico)(?![\p{L}])(?!\s+que(?![\p{L}])|\s*:)|avisar[eé](?![\p{L}])|avisaremos(?![\p{L}])|avisamos(?![\p{L}])|notificar[eé](?![\p{L}])|estoy\s+avisando(?![\p{L}]))|avisarl[eo]s?(?![\p{L}])|el\s+sistema\s+(?:le\s+|les\s+)?(?:avisa|avisar[aá]|notifica|notificar[aá])(?![\p{L}])|^\s*(?:ahora\s+)?aviso\s+(?:a|al)(?![\p{L}])|(?:estoy|estamos)\s+avisando(?![\p{L}])(?!\s*:|\s+(?:que(?![\p{L}])|con\s+tiempo|por\s+este\s+medio\s+que(?![\p{L}])))(?!\s+(?:\p{L}+\s+){0,3}a\s+(?:todos|todas|nuestros\s+clientes|los\s+clientes)(?![\p{L}])(?!\s+(?:(?:los|las)\s+(?:encargad|due[ñn]|emplead|personal|cocina|recepci[oó]n|vendedor|equipo|administraci[oó]n)|y\s+(?:al|a\s+la)\s+(?:encargad|due[ñn]|emplead|personal|cocina|recepci[oó]n|vendedor|equipo|administraci[oó]n))))|(?:le|les)\s+(?:paso|estoy\s+pasando)\s+(?:tu|su)\s+\p{L}+\s+(?:a|al)(?![\p{L}]))/iu;
   const AVISO_PASADO = /(?<![\p{L}])(?:(?<!como\s(?:ya\s)?)(?<!te\s)(?:le|les|lo|los)\s+(?:(?:avis[eé]|avisó|he\s+avisado|hemos\s+avisado|he\s+notificado|hemos\s+notificado|notifiqu[eé]|pas[eé]\s+(?:tu|el|su)\s+(?:mensaje|pedido|consulta|caso))(?![\p{L}])|(?:inform|comuniqu)[eé](?=\s*(?:[,.;!]|$)|\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa])(?![\p{L}])|\s+(?:tu|su)\s+(?:pedido|consulta|caso|mensaje|solicitud)(?![\p{L}])))|(?:ya\s+)?(?<!te\s(?:lo\s|la\s)?)(?:avis|notifiqu)[eé]\s+(?:a|al)(?![\p{L}])(?!\s+(?:\d|las?\s+\d))|(?:ya\s+)?(?:avis|notifiqu)[eé]\s+a\s+las?\s+\d+(?::\d+)?\s*(?:h|hs|horas)?\s+(?:a|al)\s+(?:la\s+|el\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa]|equipo)(?![\p{L}])|(?:ya\s+)?(?:inform|comuniqu)[eé]\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+|nuestr[oa]\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa]|equipo)(?![\p{L}])|(?<!como\s)(?:ya\s+)?(?<!te\s(?:lo\s|la\s)?)(?:avis|notifiqu)[eé](?=\s*(?:[.,;!…]|$)|\s*[^\p{L}\p{N}\s:?¿])|(?<!te\s(?:lo\s|la\s)?)(?:ya\s+)?(?:he|hemos)\s+(?:avisado|notificado|informado)(?![\p{L}])|acabo\s+de\s+(?:avisar|notificar)(?![\p{L}])|(?:pas|mand|envi)[eé]\s+(?:(?:tu|su)\s+[\p{L}]+\s+)?(?:a|al)\s+(?:la\s+|el\s+)?(?:due[ñn][oa]|negocio|recepci[oó]n|encargad[oa])(?![\p{L}])|escrib[ií]\s+(?:a|al)\s+(?:la\s+|el\s+)?(?:due[ñn][oa]|negocio|recepci[oó]n|encargad[oa])(?![\p{L}])|se\s+(?:le\s+|les\s+)?(?:avisó|informó|notificó)(?![\p{L}])|fue(?:ron)?\s+(?:avisad|notificad|informad)[oa]s?(?![\p{L}])|est[aá]n?\s+(?:ya\s+)?(?:avisad|notificad|informad)[oa]s?(?![\p{L}])|(?:ya\s+)?est[aá]n?\s+al\s+tanto(?![\p{L}])|el\s+sistema\s+(?:ya\s+)?(?:le\s+|les\s+)?(?:avisó|notificó)(?![\p{L}]))/iu;
   {
     // Solo se LEE (no se crea nada): sin transferencia el estado no se toca.

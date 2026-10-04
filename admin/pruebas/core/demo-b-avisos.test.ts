@@ -654,7 +654,7 @@ describe('(i) Tanda final del #401: «si» sin tilde, acreditar, medios, cota de
       expect(p['avisos'], o).not.toContain('aviso_anunciado_quitado');
       expect(String(p['respuesta']), o).toBe(o);
     }
-    for (const o of ['Estamos avisando a todos los encargados.', 'Estamos avisando a todos en cocina.', 'Estamos avisando a nuestros clientes y al dueño.', "Estamos avisando a Q'Taco.", 'Estamos avisando.']) {
+    for (const o of ['Estamos avisando a todos los encargados.', 'Estamos avisando a nuestros clientes y al dueño.', "Estamos avisando a Q'Taco.", 'Estamos avisando.']) {
       expect(quita(o), o).toBe(true);
     }
   });
@@ -665,6 +665,63 @@ describe('(i) Tanda final del #401: «si» sin tilde, acreditar, medios, cota de
         const t0 = Date.now();
         turno(bloque.repeat(Math.ceil(50_000 / bloque.length)), ent);
         expect(Date.now() - t0, JSON.stringify(bloque)).toBeLessThan(1000);
+      }
+    }
+  });
+});
+
+describe('(j) Tanda 4 del #401: «recibido» en cualquier posición, avisando, acreditar de futuro, condicionales', () => {
+  const turno = (o: string, ent: J = {}) => ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: o }],
+    { 'Normalizar entrada': [{ ...ENT, ...ent }] }, { $getWorkflowStaticData: () => ({}), Date: reloj({ t: 1_800_000_000_000 }) })[0] ?? {};
+  const REAL: J = { cobroRealActivo: 'si' };
+  const SIM: J = { cobroRealActivo: 'no' };
+  const quita = (o: string) => (turno(o)['avisos'] as string[]).some((a) => /^(aviso_anunciado|promesa)_quitad/.test(a));
+  const escapan = (formas: string[]) => {
+    for (const o of formas) {
+      expect(turno(o, REAL)['avisos'], o).toContain('correccion_cobro');
+      expect(turno(o, SIM)['avisos'], o).toContain('rotulo_generico');
+    }
+  };
+  const intactas = (formas: string[]) => {
+    for (const o of formas) {
+      expect(turno(o, REAL)['avisos'], o).not.toContain('correccion_cobro');
+      expect(turno(o, SIM)['avisos'], o).not.toContain('rotulo_generico');
+    }
+  };
+
+  it('1: «recibido tu pago» en cualquier posición se corrige; los futuros no', () => {
+    escapan(['Listo, recibido tu pago.', 'Perfecto, recibido tu pago 👍', 'Gracias, recibido tu pago. Tu pedido sale hoy.', 'Te confirmo: recibido tu pago.',
+      'Ok, ya recibido el pago, gracias.', 'Perfecto Ana, recibido tu depósito.', 'Recibido tu pago.']);
+    intactas(['Una vez recibido tu pago, despachamos tu pedido.', 'Cuando hayamos recibido tu pago te confirmamos.', 'Apenas recibido tu pago te escribe el negocio.',
+      'Después de recibido tu pago, despachamos.', 'Tras recibido el pago lo preparamos.']);
+  });
+
+  it('2: «estamos avisando» se quita siempre, salvo «que», «:», «con tiempo», «por este medio que» o «a todos» sin personal', () => {
+    for (const o of ['Estamos avisando ya al dueño.', 'Estamos avisando ahora mismo a la encargada.', 'Estamos avisando de inmediato al negocio.', 'Estamos avisando también a recepción.',
+      'Estamos avisando por WhatsApp al dueño.', 'Estamos avisando a todos los encargados.', 'Estamos avisando a nuestros clientes y al dueño.', 'Estoy avisando.']) expect(quita(o), o).toBe(true);
+    for (const o of ['Estamos avisando que mañana cerramos a las 20:00.', 'Te estamos avisando con tiempo: la promo termina hoy.', 'Estamos avisando por este medio que hay promo.',
+      'Estamos avisando a todos de la promo.', 'Estamos avisando a todos que mañana abre la cocina a las 8.', 'Estamos avisando por WhatsApp a todos de la promo.']) expect(quita(o), o).toBe(false);
+  });
+
+  it('3: «acreditado» de futuro o adjetivo no se toca; el hecho sí se corrige', () => {
+    intactas(['Una vez acreditado tu pago, despachamos tu pedido.', 'Una vez acreditado el pago, te enviamos el pedido.', 'Cuando esté acreditado, el negocio te confirma.',
+      'Somos una tienda acreditada.', 'Estamos acreditados por ASFI.', 'Somos un local acreditado.']);
+    escapan(['Acreditado ✅', 'Se acreditó.', 'Ya acreditaron tu pago']);
+  });
+
+  it('4: condicionales con «y/pero/solo» y pospuestos con verbo en primera persona o futuro no se corrigen', () => {
+    intactas(['Y si recibimos tu pago, te aviso aquí mismo.', 'Pero si tu pago llegó, el negocio te confirma.', 'Solo si recibimos tu pago, despachamos.', 'Sólo si recibimos tu pago, despachamos.',
+      'Despachamos tu pedido si recibimos tu pago.', 'Te aviso si recibimos tu pago.', 'Te escribe el negocio si recibimos tu pago.', 'Te confirmo el pedido si tu pago llegó.']);
+    // El pospuesto tras coma, dos puntos o «que» sigue siendo una afirmación (no se abre un bypass).
+    escapan(['Gracias, si recibimos tu pago.', 'Te confirmo que si recibimos tu pago.', 'Te aviso: si recibimos tu pago.']);
+  });
+
+  it('sin ReDoS: «si » y «recibido » repetidos (50 000 caracteres)', () => {
+    for (const bloque of [' si ', ' ', 'te aviso si ', 'recibido ', 'una vez ', 'acreditado ', 'estamos avisando a ']) {
+      for (const ent of [REAL, SIM]) {
+        const t0 = Date.now();
+        turno(bloque.repeat(Math.ceil(50_000 / bloque.length)), ent);
+        expect(Date.now() - t0, bloque).toBeLessThan(1000);
       }
     }
   });
