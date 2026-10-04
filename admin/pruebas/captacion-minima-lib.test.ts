@@ -1041,7 +1041,7 @@ describe('los datos del tenant que se versionan', () => {
     expect(g.rubros['salud-y-belleza']).toMatchObject({
       dolor: '¡Excelente! 💅 En los salones y consultorios, la gente olvida su turno y ese hueco ya no se recupera.',
       pregunta: 'Cuéntame, ¿actualmente pierdes mucho tiempo agendando y recordando citas a mano?',
-      impacto: 'Nuestra IA responde al instante y agenda sola, incluso cuando estás atendiendo.',
+      impacto: 'Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.',
       cierre: '¿Qué te parece si Silvana te cuenta cómo armaríamos esto para tu negocio? 👇',
     });
     expect(g.rubros['otro']).toMatchObject({
@@ -1049,9 +1049,16 @@ describe('los datos del tenant que se versionan', () => {
       preguntaDolor: '🤔 ¿Y qué es lo que más tiempo te quita hoy en tu negocio?',
     });
     expect(g.rubros['otro'].dolor).toBeUndefined();
-    // Cada rubro lleva su impacto y su cierre (la cifra de Harvard no entra: se carga después, verificada).
+    // Cada rubro lleva su impacto y su cierre, y ninguno trae imagen.
     for (const r of Object.values(g.rubros) as J[]) { expect(r['impacto']).not.toBe(''); expect(r['cierre']).not.toBe(''); expect('imagen' in r).toBe(false); }
-    expect(JSON.stringify(g)).not.toMatch(/imagen|Harvard/);
+    expect(JSON.stringify(g)).not.toMatch(/imagen/);
+    // La frase de Harvard (verificada el 03/10/2026: contactar al prospecto en la primera hora lo hace siete veces más
+    // probable de calificar, no «en el primer minuto» ni «de vender») va en todos los rubros menos gastronomía, que
+    // conserva su línea concreta del PDF (toma el pedido, suma el envío y manda el QR).
+    const HARVARD = 'Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.';
+    for (const id of ['salud-y-belleza', 'comercio-y-retail', 'educacion', 'otro']) expect(g.rubros[id]['impacto'], id).toBe(HARVARD);
+    expect(g.rubros['gastronomia']['impacto']).not.toMatch(/Harvard/);
+    expect(JSON.stringify(g)).not.toMatch(/primer minuto|multiplica por (7|siete)/i);
     expect(C.cargarDatos('novuchat.json')['configBase'].nivelEmojis).toBe('muchos');
   });
   it('el corpus viene de la cantera: sin `vector`, con huella y fecha, y ningún fragmento incluido trae un precio', () => {
