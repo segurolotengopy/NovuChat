@@ -452,6 +452,40 @@ describe('Con la bandera, `catalogoWeb.enlace` es el de ESTA conversación', () 
     expect((await llamar(catalogoPublico, { metodo: 'GET', ruta: `/api/catalogo/${idDeFicha(a)}` })).codigo).toBe(200);
   });
 
+  it('`caducaEn` es un Timestamp de Firestore en la ficha y en el puntero: es lo único sobre lo que el TTL actúa (revisión del PR #380)', async () => {
+    const tel = '70010012';
+    const enlace = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+    const ficha = await db.doc(`fichasCatalogo/${idDeFicha(enlace)}`).get();
+    const puntero = await db.doc(`fichasCatalogo/ult_${T_VENTA}_${tel}`).get();
+    for (const doc of [ficha, puntero]) {
+      // Ni un número (milisegundos) ni un texto ISO: TTL ignora cualquier valor que no sea Timestamp.
+      expect(doc.get('caducaEn'), doc.id).toBeInstanceOf(Timestamp);
+      expect(typeof doc.get('caducaEn')).toBe('object');
+    }
+    // El puntero vence con la ficha a la que apunta: ninguno de los dos sobrevive al otro por diseño.
+    expect((puntero.get('caducaEn') as InstanceType<typeof Timestamp>).toMillis())
+      .toBe((ficha.get('caducaEn') as InstanceType<typeof Timestamp>).toMillis());
+    // Y vence en el futuro, dentro de la vida de la ficha (72 h).
+    const resta = (ficha.get('caducaEn') as InstanceType<typeof Timestamp>).toMillis() - Date.now();
+    expect(resta).toBeGreaterThan(71 * 3_600_000);
+    expect(resta).toBeLessThanOrEqual(72 * 3_600_000);
+  });
+
+  it('una ficha ya vencida, y purgada o no por el TTL, no abre: 404 en la página y el turno siguiente abre ficha nueva', async () => {
+    const tel = '70010013';
+    const a = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+    const ruta = `/api/catalogo/${idDeFicha(a)}`;
+    // Vencida pero todavía presente (el TTL borra con demora de hasta unos días): no abre.
+    await db.doc(`fichasCatalogo/${idDeFicha(a)}`).update({ caducaEn: Timestamp.fromMillis(Date.now() - 1000) });
+    expect((await llamar(catalogoPublico, { metodo: 'GET', ruta })).codigo).toBe(404);
+    // Ya purgada (lo que hace el TTL): sigue siendo 404, y el puntero que quedó apuntando a la nada no sirve.
+    await db.doc(`fichasCatalogo/${idDeFicha(a)}`).delete();
+    expect((await llamar(catalogoPublico, { metodo: 'GET', ruta })).codigo).toBe(404);
+    const b = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
+    expect(b).not.toBe(a);
+    expect((await llamar(catalogoPublico, { metodo: 'GET', ruta: `/api/catalogo/${idDeFicha(b)}` })).codigo).toBe(200);
+  });
+
   it('la ficha de OTRO número, o de otro flujo, no se reutiliza (dos líneas, número reasignado)', async () => {
     const tel = '70010011';
     const a = enlaceDe(await configuracion(T_VENTA, { telefono: tel, catalogoCompleto: true }))!;
@@ -679,6 +713,7 @@ describe('`enlaceCatalogo` (el Demo B) no cambió: una ficha nueva por llamada y
     for (const f of fichas) {
       expect(Object.keys(f.data()).sort()).toEqual(
         ['caducaEn', 'checkouts', 'creadaEn', 'flujo', 'phoneNumberId', 'telefono', 'tenantId']);
+      expect(f.get('caducaEn')).toBeInstanceOf(Timestamp);
       expect(f.get('checkouts')).toBe(0);
     }
   });

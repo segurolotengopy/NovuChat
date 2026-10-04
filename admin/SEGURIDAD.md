@@ -1444,12 +1444,22 @@ horas de vida: sin eso, un comercio con dos líneas, o un número reasignado den
 de las 72 horas, mandaría el carrito al webhook del número viejo. Probado en
 `pruebas/catalogo-completo-servidor.test.ts`.
 
-**Dato personal nuevo y retención pendiente.** Para reutilizar, existe un documento
-puntero `fichasCatalogo/ult_<comercio>_<teléfono>` que lleva el teléfono completo,
-como cada ficha. **No tiene TTL** y la ficha a la que apunta tampoco se purga hoy:
-queda como retención pendiente junto con la purga de fichas caducadas. Su
-identificador no tiene forma de ficha (32 hexadecimales), así que `catalogoPublico`
-y `checkoutCatalogo` lo rechazan con 404 (probado).
+**Dato personal nuevo y su retención: TTL sobre `caducaEn`.** Para reutilizar,
+existe un documento puntero `fichasCatalogo/ult_<comercio>_<teléfono>` que lleva el
+teléfono completo, como cada ficha. Ambos documentos llevan `caducaEn` como
+**Timestamp de Firestore** (probado en el emulador: ni número ni texto, que el TTL
+ignoraría) y `admin/firestore.indexes.json` declara la política TTL del grupo de
+colecciones `fichasCatalogo`, campo `caducaEn`; una prueba estática
+(`pruebas/modulos/catalogo-web/retencion-fichas.test.ts`) falla si alguien la quita.
+**La política solo existe en el Firestore real cuando se despliegan los índices**
+(`firestore:indexes`); hasta entonces el teléfono se sigue acumulando. **Advertencia:**
+Firestore borra con una demora de hasta unos días después del vencimiento (no es
+exacto), así que una ficha vencida puede seguir presente. Por eso el flujo **no debe
+depender de que una ficha vencida haya desaparecido**: `catalogoPublico`, el checkout
+y la reutilización comparan `caducaEn` con el reloj y tratan la vencida como
+inexistente (404), y una ficha ya purgada da el mismo 404 (probado). El
+identificador del puntero no tiene forma de ficha (32 hexadecimales), así que
+`catalogoPublico` y `checkoutCatalogo` lo rechazan con 404 (probado).
 
 **Lo que NO se hizo, y por qué.** Atar la ficha a la dirección IP o al navegador:
 una persona que abre el enlace con datos móviles y confirma con el wifi de su casa

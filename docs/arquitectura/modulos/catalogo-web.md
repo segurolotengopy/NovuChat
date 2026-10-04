@@ -12,7 +12,7 @@
 | **Depende de** | Productos, Pedidos, Inventario (declarado el 01/10/2026: el catálogo muestra el stock y no ofrece lo agotado, y descuenta el stock al tomar el pedido) |
 | **Límite por plan** | — |
 | **Configuración** | `config/marca` (logo, colores) |
-| **Colecciones** | `/fichasCatalogo` (fichas, y el puntero `ult_<tenant>_<teléfono>`: lleva el teléfono completo y no tiene TTL, retención pendiente) |
+| **Colecciones** | `/fichasCatalogo` (fichas, y el puntero `ult_<tenant>_<teléfono>`: lleva el teléfono completo; ambos con TTL de Firestore sobre `caducaEn`, declarado en `admin/firestore.indexes.json` y activo al desplegar los índices. TTL borra con demora de hasta unos días: el flujo no debe depender de fichas vencidas, y las vencidas se tratan como inexistentes) |
 | **Pestañas** | la vista previa del catálogo web como ranura en Catálogo; el logo y los colores en Configuración del módulo |
 | **Prompt** | el enlace al catálogo web en el resumen de Productos cuando el catálogo pasa de 40 ítems |
 | **Herramientas** | — |
