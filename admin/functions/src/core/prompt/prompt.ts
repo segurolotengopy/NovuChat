@@ -31,6 +31,7 @@
  *    comportamiento del agente.
  */
 import { textoPlano, sinMarcas } from './texto.js';
+import { IDS_FLUJOS, documentoDeFlujo, type IdFlujo } from '../../registro.js';
 
 /**
  * Campos de texto libre del comercio que llegan al prompt. La lista es cerrada.
@@ -382,16 +383,16 @@ export function ranurasDe(funcionarioId: string, inicio: Date, fin: Date): strin
 // estaba reservado para esto y que nadie usaba. Su documento es de NovuChat y
 // no del comercio: solo lo lee y lo escribe el propietario (`tieneOnboarding`
 // en firestore.rules). Ver `CLIENTES/NOVUCHAT/01-…` §3.
-export const VERTICALES_CONOCIDOS = ['agendamiento', 'venta', 'onboarding'] as const;
-export type Vertical = (typeof VERTICALES_CONOCIDOS)[number];
+/** Los flujos conocidos salen del registro: acá no hay otra lista que mantener. */
+export const VERTICALES_CONOCIDOS = IDS_FLUJOS;
+export type Vertical = IdFlujo;
 
-/** Qué documento de configuración específico le toca a cada vertical. */
-export function documentoDeVertical(vertical: string): string | null {
-  return vertical === 'agendamiento' ? 'agendamiento'
-    : vertical === 'venta' ? 'venta'
-    : vertical === 'onboarding' ? 'onboarding'
-    : null;
-}
+/**
+ * Qué documento de configuración específico le toca a cada vertical.
+ * @deprecated alias de `documentoDeFlujo` del registro; se conserva porque lo
+ * usan ingesta, seña, seguimientos y tenants, siempre sobre el flujo del número.
+ */
+export const documentoDeVertical = (vertical: string): string | null => documentoDeFlujo(vertical);
 
 /**
  * RÓTULOS DEL COBRO SIMULADO — la prohibición 3 de CLAUDE.md, en código.
