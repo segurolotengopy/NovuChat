@@ -294,8 +294,17 @@ cambia ningún flujo publicado. La regla 1 se retira cuando ningún flujo la use
   invertido, truncado y con **una letra de diferencia** en palabras de 5 o más
   letras (aproximado). «Juan Pérez» frente a «Juan López» es inválido; un nombre
   muy distinto sin cuenta visible, también.
+- **P1b (03/10/2026).** El nombre del destinatario vale **por sí solo** solo si
+  coinciden al menos **dos palabras** (sin partículas); con una sola palabra
+  coincidente hace falta que coincida la cuenta, y si no el resultado es
+  inválido con motivo `destino_no_coincide`. Orden invertido y nombre truncado
+  siguen valiendo con dos o más palabras; la letra de diferencia aplica por
+  palabra, con al menos dos coincidentes («PERES GOMES» frente a «Perez Gomez»
+  es aproximado; «JUAN» solo frente a «Juan Perez», inválido).
 - **P2.** Modo simulado: el **plazo** aplica; los intentos y la validación, no
-  (eso es del flujo, C3).
+  (eso es del flujo, C3). Por eso `cotejarComprobanteVenta` contesta **409
+  `cobro_simulado`** (defensivo) cuando el comercio no tiene cobro real activo
+  (encendido y con ficha y código, el mismo criterio de `configuracionFlujo`).
 - **P3.** Los pedidos del carrito web (`pedidos/cat_…`) **no se anulan**: quedan
   «recibido».
 - **P4.** El borrado por baja ocurre **dentro de las 24 h** siguientes (la
@@ -309,7 +318,8 @@ cambia ningún flujo publicado. La regla 1 se retira cuando ningún flujo la use
 | Plazo base | `venceEn` = envío del QR + **15 min** (`MINUTOS_QR_VENTA_REGLA_2`) |
 | Prórroga | **una sola**, `prorrogaHasta` = primer comprobante recibido a tiempo + **10 min** (`MINUTOS_PRORROGA`), fijada una vez |
 | Límite efectivo | `max(venceEn, prorrogaHasta)` (`limiteDe`) |
-| Reenvío del QR | **no estira** nada: conserva `venceEn`, intentos, comprobantes y `qrEnviadoEn` |
+| Reenvío del QR | **no estira** nada, pero **solo es reenvío si la referencia Y el total coinciden** con los del cobro abierto: conserva `venceEn`, intentos, comprobantes y `qrEnviadoEn`. Con otro total u otra referencia es un **cobro nuevo, con plazo nuevo** |
+| `qr_enviado` sobre `en_revision` | **no reabre el cobro**: el mismo pedido (misma referencia y total) es `ignorado` y no cambia nada; un pedido distinto es un cobro nuevo |
 | Intentos | **3** comprobantes inválidos (`MAX_INTENTOS_INVALIDOS`); el tercero pasa a `en_revision` |
 | Vencimiento | **perezoso**: se calcula al leer; se anota cuando alguien lo toca (un comprobante, `anulacion_avisada`, `cobro_cancelado` o un QR nuevo) y se cuenta una vez |
 | Tardío | un comprobante pasado el límite y hasta **24 h** después: `tardio`, **sin cierre**, se deriva al comercio; después de eso, otra conversación (409) |
@@ -323,6 +333,19 @@ coincide con el día de La Paz del QR o de la recepción. «No es comprobante»
 nombre. `cotejarComprobante` (la seña) **no se toca**.
 
 **Contratos.**
+
+*Obligaciones de C1b (la coordinadora; los puntos c y d son de otras zonas y
+NO los toca C1a).*
+(a) Los `cambios` de `solicitudDeCobroTras` se **mezclan DESPUÉS** de lo que
+arma `solicitudTras`. (b) `solicitudDeCobroTras` se llama en **TODO
+`qr_enviado` de cualquier módulo** (agenda y venta comparten
+`conversaciones/{t}.solicitud`); con efecto `ignorado` o `sin_id_meta` la
+ingesta **no toca la solicitud ni cuenta el QR**, y con `qr_enviado` debe pasar
+`reglaCobro`, `idMeta`, `referencia` y `monto`. (c) `registrarCierre` con
+`cita_agendada` (`core/turno/cierres.ts:140-142`) **no debe pasar a `agendada`**
+una solicitud de regla 2 en `en_revision`, `cancelada` o vencida por reloj.
+(d) `seguimientos.ts:128` **no debe emitir recordatorio** sobre una regla 2
+vencida de forma perezosa que sigue escrita `qr_enviado`.
 
 *Ingesta (C1b).* `reglaCobro?: 2` solo con `qr_enviado`; eventos nuevos
 `cobro_cancelado` y `anulacion_avisada`; con regla 2, un `qr_enviado` **sin
@@ -353,10 +376,12 @@ autenticación que `cotejarComprobante`). Cuerpo `{telefono, legible, leido:
 en_revision | tardio | ya_resuelto`), `motivo` (código fijo), `intentos`,
 `intentosRestantes`, `importe`, `moneda`, `montoLeido`, `montoDistinto`,
 `cierreId | null`, `evento`, `avisarComercio`. 409 con `sin_cobro_pendiente |
-cobro_cancelado | sin_total | regla_1` (**nunca `sin_sena_pendiente`**). Motivos:
+cobro_cancelado | sin_total | regla_1 | cobro_simulado` (**nunca
+`sin_sena_pendiente`**). Motivos:
 `ok`; aproximado: `monto_distinto`, `fecha_sin_hora`, `nombre_aproximado`;
 inválido: `monto_menor`, `monto_mayor`, `fecha_anterior`, `fecha_posterior`,
-`cuenta_distinta`, `nombre_distinto`, `destino_no_verificable`; no es
+`cuenta_distinta`, `nombre_distinto`, `destino_no_coincide`,
+`destino_no_verificable`; no es
 comprobante: `falta_monto`, `falta_fecha`, `falta_destino`, `ilegible`; y
 `tardio`, `en_revision`, `ya_resuelto`. Nada de lo leído de la imagen vuelve al
 cliente, salvo `montoLeido` cuando hay `montoDistinto`.
@@ -364,7 +389,12 @@ cliente, salvo `montoLeido` cuando hay `montoDistinto`.
 `cotejo.resultado: 'cuadra'` y `cotejo.calidad`) y suman `cierres`; un
 **inválido NO crea cierre ni suma `cierres`**, suma `cobrosInvalidos`; el
 tercero pasa a `en_revision` con `avisarComercio`; un tardío no cierra la venta.
-Un `idMeta` repetido (reintento de n8n) repite el resultado sin contar de nuevo.
+Un `idMeta` repetido (reintento de n8n, porque la primera respuesta se perdió)
+**repite lo que se contestó** —`estado` (`invalido` sale como `reintentar`),
+`motivo`, `cierreId` y el `avisarComercio` original— con `repetido: true`, para
+que el flujo decida; no cuenta ni escribe nada. Un comprobante recibido en
+`en_revision` se anota con motivo `en_revision`; el tercer inválido se anota ya
+como `en_revision`.
 La `ruta` solo se anota si coincide con el patrón del comercio y del `idMeta`.
 
 *`POST guardarComprobante`* (`comprobantes.ts`). Binario; cabeceras
@@ -372,12 +402,18 @@ La `ruta` solo se anota si coincide con el patrón del comercio y del `idMeta`.
 hasta **5 MB**, pdf hasta **10 MB**; el tipo se comprueba **por los bytes** y
 debe coincidir con el declarado. 200 `{ruta}`, o 400, 401, **413**, **415**,
 **409** (no hay cobro de regla 2 abierto, en revisión o recién vencido para ese
-teléfono) o 502 (Storage falló: el flujo sigue con `ruta: null`). Ruta:
+teléfono) o 502 (Storage falló: el flujo sigue con `ruta: null`). El 409 cubre: sin cobro
+de regla 2 abierto, en revisión o vencido; `vencida` con más de 24 h desde el
+límite; y seis comprobantes ya anotados (`demasiados_comprobantes`; un `idMeta`
+ya anotado sí pasa). **Una evidencia nunca se sobrescribe**: se guarda con
+`ifGenerationMatch: 0` y el mismo `idMeta` repetido responde 200 con la misma
+ruta sin reescribir. Ruta:
 `tenants/{t}/comprobantes/{aaaa-mm-dd}/{idMetaSaneado}.{jpg|png|webp|pdf}`, con
 el día de La Paz y **sin el teléfono**; `cacheControl: private`. **Solo
 autentica con el token por número**: la firma HMAC cubre el cuerpo y
 `firma.ts` se niega a verificar más de 64 KB, así que una imagen no puede
-firmarse (n8n usa el token).
+firmarse (n8n usa el token). Una petición que trae `X-NovuChat-Signature` se
+rechaza con 401 antes de autenticar, aunque la firma sea válida.
 
 *`purgarComprobantes`* (`onSchedule`, 03:30 `America/La_Paz`): borra las
 carpetas de **más de 90 días** (91 sí, 90 y 89 no) y **toda** la carpeta de un
