@@ -718,7 +718,7 @@ mitad.
 |---|---|---|
 | `conversaciones/{id}` y sus mensajes | **se borra** | es el contenido personal: lo que la persona escribió |
 | `cierres/{id}/privado/datos` | **se borra** | nombre y teléfono completo del cliente final |
-| `cierres/{id}` (público) | **se conserva** | teléfono enmascarado, importe y tipo: es el respaldo de lo que se facturó |
+| `cierres/{id}` (público) | **se conserva** | teléfono enmascarado, importe y tipo: es el respaldo del indicador de Consumo y de lo que el comercio cobró en Cobros (no se factura) |
 | `metricas/{periodo}` | **se conserva** | son cuentas, no personas |
 | `contactos` del comercio | **no caduca** | son del negocio, no de sus clientes; los borra el comercio |
 | `bitacora` y `auditoria` | **se conserva 24 meses** | es el registro de quién cambió qué, y protege al comercio tanto como a NovuChat |
