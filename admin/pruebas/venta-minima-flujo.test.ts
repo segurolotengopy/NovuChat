@@ -819,40 +819,47 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     expect(Object.keys(base)).not.toContain('catalogoWebActivo');
   });
 
-  it('settings: executionOrder v1, zona de La Paz, 60 s, y NADA de ejecuciones guardadas, ni las de error, tampoco en Q\'Taco (TEMPORAL, decisión de Andres del 03/10; M-1); el progreso nunca', () => {
-    for (const [f, error] of [[PLANTILLA, 'none'], [QTACO, 'none'], [PRUEBA, 'none']] as [Flujo, string][]) {
+  it('settings: executionOrder v1, zona de La Paz, 60 s; la plantilla, la prueba y el ensayo NO guardan ejecuciones y Q\'Taco guarda TODO (all/all, decisión de Andres del 04/10); el progreso nunca', () => {
+    // [archivo, éxitos, errores]
+    for (const [f, exito, error] of [[PLANTILLA, 'none', 'none'], [QTACO, 'all', 'all'], [PRUEBA, 'none', 'none'], [leer('venta-minima.ensayo-demo-a.json'), 'none', 'none']] as [Flujo, string, string][]) {
       expect(f.settings).toMatchObject({
         executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
-        saveDataSuccessExecution: 'none', saveDataErrorExecution: error, saveExecutionProgress: false,
+        saveDataSuccessExecution: exito, saveDataErrorExecution: error, saveExecutionProgress: false,
       });
     }
   });
 
-  it('--verificar FALLA si un JSON versionado guarda ejecuciones de errores, de éxitos o su progreso (cada uno, por separado)', () => {
-    // Q'Taco NO guarda nada (TEMPORAL, decisión de Andres del 03/10; M-1): subir los errores a `all` (la excepción vieja) o los éxitos falla,
-    // y el mensaje dice que es temporal y que se revisa tras el piloto.
-    for (const [clave, valor] of [['saveDataErrorExecution', 'all'], ['saveDataSuccessExecution', 'all'], ['saveExecutionProgress', true], ['saveDataErrorExecution', 'default']] as const) {
+  it('--verificar EXIGE all/all en Q\'Taco (bajar a none o a default falla citando la decisión de Andres) y no deja que otro archivo guarde sin declararlo', () => {
+    // Q'Taco guarda TODO (decisión de Andres, 04/10; riesgo M-1 aceptado). La copia sin tocar da 0 (lo prueba la contraprueba de arriba); cada cambio da 1.
+    const sin = verificarEnCopia(() => undefined);
+    expect(sin.status, sin.stderr).toBe(0);
+    for (const [clave, valor] of [['saveDataErrorExecution', 'none'], ['saveDataSuccessExecution', 'none'], ['saveDataErrorExecution', 'default'], ['saveDataSuccessExecution', 'default'], ['saveDataSuccessExecution', 'DEFAULT'], ['saveExecutionProgress', true]] as const) {
       const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => { (f.settings as J)[clave] = valor; }));
       expect(r.status, `${clave}=${String(valor)}`).toBe(1);
       expect(r.stderr, clave).toContain('retención');
-      expect(r.stderr, clave).toContain('TEMPORAL por decisión de Andres');
-      expect(r.stderr, clave).toContain('saveDataErrorExecution «none»');
+      expect(r.stderr, clave).toContain('saveDataSuccessExecution «all»');
+      expect(r.stderr, clave).toContain('saveDataErrorExecution «all»');
+      expect(r.stderr, clave).toContain('decisión de Andres (04/10/2026)');
+      expect(r.stderr, clave).not.toContain('TEMPORAL');
     }
-    // Y la excepción no se cuela por otro archivo: el mensaje temporal es solo del JSON de Q'Taco.
-    const prueba = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.prueba.json', (f) => { (f.settings as J)['saveDataErrorExecution'] = 'all'; }));
-    expect(prueba.stderr).not.toContain('TEMPORAL');
-    // Las variantes de prueba y de ensayo no guardan nada: ni siquiera errores.
+    // Una clave que falta también falla (n8n tomaría el valor de la instancia), en Q'Taco.
+    const falta = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => { delete (f.settings as J)['saveDataSuccessExecution']; }));
+    expect(falta.status).toBe(1);
+    expect(falta.stderr).toContain('retención');
+    // La excepción NO se cuela por otro archivo: la prueba y el ensayo en el Demo A no guardan nada (ni errores ni éxitos), y su mensaje no cita la decisión de Q'Taco.
     for (const archivo of ['venta-minima.prueba.json', 'venta-minima.ensayo-demo-a.json']) {
       for (const [clave, valor] of [['saveDataErrorExecution', 'all'], ['saveDataSuccessExecution', 'all']] as const) {
         const r = verificarEnCopia((vm) => editarJson(vm, archivo, (f) => { (f.settings as J)[clave] = valor; }));
         expect(r.status, `${archivo} ${clave}`).toBe(1);
         expect(r.stderr, `${archivo} ${clave}`).toContain('retención');
+        expect(r.stderr, `${archivo} ${clave}`).toContain('no guarda nada y no puede hacerlo sin declararlo');
+        expect(r.stderr, `${archivo} ${clave}`).not.toContain('Q\'Taco guarda TODO');
       }
     }
-    // Una clave que falta también falla (n8n tomaría el valor de la instancia).
-    const sin = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.prueba.json', (f) => { delete (f.settings as J)['saveExecutionProgress']; }));
-    expect(sin.status).toBe(1);
-    expect(sin.stderr).toContain('retención');
+    const sinProgreso = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.prueba.json', (f) => { delete (f.settings as J)['saveExecutionProgress']; }));
+    expect(sinProgreso.status).toBe(1);
+    expect(sinProgreso.stderr).toContain('retención');
+    // (La excepción tampoco se HEREDA: `ensayo.json` y `ensayo-demo-a.json` heredan los datos de `qtaco.json` y se arman con `none`; lo afirma la prueba de `settings` de arriba.)
   });
 
   // COBRO SIMULADO (piloto de Q'Taco, 03/10/2026). Cada caso se prueba NEGANDO: la copia sin tocar da 0 y la alterada da 1 con SU mensaje.
