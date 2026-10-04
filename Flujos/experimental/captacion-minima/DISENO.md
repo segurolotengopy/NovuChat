@@ -237,3 +237,20 @@ Se sigue `CLIENTES/NOVUCHAT/Opciones de Conversaciones Novuchat.pdf`: cálido, c
 - **Mensajes por conversación: 0 agregados y 0 quitados** (los mismos mensajes, con otro texto).
 - **Batería** (`herramientas/bateria.mjs`, `bateria-casos.json`): la consola ficticia usa los ids y los nombres VIVOS, el nivel «muchos» y un cargo de instalación; los casos `P1` a `P5` son las conversaciones del PDF (belleza completa, gastronomía,
   estudio contable, importadora con ERP y comercio); el resumen de precios del código no cuenta como monto del modelo; `rubro_sin_guion` cuenta como violación; el informe mide también la calidez (mensajes sin ningún emoji, empatías con emoji). La corrida contra el modelo real es de la coordinadora.
+
+## Cordialidad, sin repeticiones innecesarias (§14, 04/10/2026)
+
+Andres probó el flujo real y dijo «hay repeticiones innecesarias, poca cordialidad». Lo que se corrigió (0 mensajes agregados o quitados; mismos límites de longitud):
+- **A. El traspaso no repite «negocio»:** «¡Perfecto! 🙌 Toca el botón para escribirle directo a {asesor}, que te cuenta cómo armarlo. Y para dejarlo anotado, ¿cómo se llama tu negocio? 😊» (sin pregunta del negocio: «…cómo armarlo para tu negocio.»).
+- **B. Un acuse** (`ccEsAcuse`: «ok», «gracias», «listo», «dale», «vale», «perfecto», «entendido», «de acuerdo», «muchas gracias», un 👍…, sin «?» ni otra palabra) **en `esperando_empresa`** no repite la pregunta ni llama al modelo: «¡Con gusto! 😊 Cuando quieras, toca el botón para escribirle directo a {asesor}.»
+  (con el `cta_url`: toda oferta del asesor lleva su botón; sin recepción, «…cuéntame el nombre de tu negocio.» sin botón ni promesa). El paso sigue en `esperando_empresa`, la repregunta no se gasta, no se avisa a recepción y, si llega el nombre, se anota.
+  Una pregunta o algo distinto sigue por el camino de antes (modelo y UNA sola repregunta).
+- **C. Cierre tras el nombre:** «¡Gracias! 😊 Anoté «{empresa}». ¡Cuando quieras, escríbele a {asesor} con el botón!» (con el `cta_url`; sin recepción, solo «¡Gracias! 😊 Anoté «{empresa}».»). La empresa ya pasó `ccNombreDeEmpresa`; para mostrarla `ccEmpresaVisible` quita
+  `«»"“”` ` ` `[]{}<>*_~` y la corta a 60 caracteres; si no queda nada, «Quedó anotado.».
+- **D. La pregunta de la oferta rota** entre tres formulaciones (`ccPreguntaDeOferta`) con `ofertas` (0 a 2) en la ficha: «¿Te gustaría ver los planes o prefieres hablar con {asesor}?», «¿Quieres que te muestre los planes o prefieres hablar con {asesor}?», «¿Te cuento los planes o prefieres hablar directo con {asesor}?»
+  (sin planes: «¿Te gustaría hablar con…?», «¿Quieres hablar directo con…?», «¿Te animas a hablar con…?»). **Tras una respuesta suelta** en la oferta la pregunta no se repite cada vez: `sueltas` (0 o 1) cuenta las respuestas sueltas desde la última pregunta; la 1.ª cierra sin pregunta (los botones siguen),
+  la 2.ª la hace (con la formulación que toca) y reinicia la cuenta; una oferta con su pregunta también la reinicia. En los demás pasos la pregunta del paso siempre se retoma. La identidad y «sin datos» no cambian esto. `ofertas` y `sueltas` los escribe «Armar mensajes» como el resto de la ficha, `ccEstadoVigente` los sanea (enteros acotados) y vencen con la ventana de 24 h.
+  «PREGUNTA QUE HICISTE» para el modelo es la formulación que salió (`ccPreguntaHecha`).
+- **E. Empatía natural:** la sección de tono de `ccInstrucciones` pide frases simples y cotidianas, sin dramatizar ni rebuscar («da una pena tremenda» es lo que NO debe salir), una sola idea y no repetir lo del cliente palabra por palabra. Los ejemplos se mantienen.
+- **F. Otras correcciones:** el segundo pedido del botón no recibe el mismo texto («¡Claro! 😊 Aquí tienes otra vez el botón para escribirle directo a {asesor}.»); quien ya es cliente (soporte) recibe «¡Claro! 😊 Toca el botón para escribirle directo a {asesor} y contarle lo que necesitas.»
+  (antes le decían «cómo armarlo»); la pregunta de los rubros repetida tras algo que no es un rubro es «Para ayudarte mejor, ¿de qué rubro es tu negocio? 😊» (antes, la frase seca de siempre, siete veces seguidas ante una orden del cliente).

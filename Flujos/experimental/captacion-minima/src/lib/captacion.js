@@ -270,11 +270,13 @@ function ccEstadoBase() {
     hechos: { pidioAsesor: false, pidioPlanes: false, eligioOtro: false, respondioDolor: false, descarte: '' },
     planesPendientes: false, planesMostrados: false, soporte: false, anuncio: false,
     avisado: false, avisoFalla: '', ultimoMensajeMs: 0, ultimosIds: [],
+    // Cordialidad (§14): qué formulación de la pregunta de la oferta toca (0 a 2) y cuántas respuestas sueltas van desde la última vez que se preguntó (0 o 1).
+    ofertas: 0, sueltas: 0,
   };
 }
 // La ficha tal como queda vigente en `ahoraMs`, SIN tocar la que se pasa. Cada campo se vuelve a sanear: lo que
 // está en los datos estáticos es lo que escribió un turno anterior, y una forma rara no entra al turno.
-//  - a las 24 h vencen `paso`, `planesPendientes`, `planesMostrados`, `soporte`, `avisado` y `reintentoEmpresa`;
+//  - a las 24 h vencen `paso`, `planesPendientes`, `planesMostrados`, `soporte`, `avisado`, `reintentoEmpresa`, `ofertas` y `sueltas`;
 //    los hechos, el rubro, la empresa y el origen del anuncio no;
 //  - a más de 48 h sin mensajes la ficha se olvida entera.
 function ccEstadoVigente(e, ahoraMs) {
@@ -301,6 +303,8 @@ function ccEstadoVigente(e, ahoraMs) {
     anuncio: e.anuncio === true,
     avisado: e.avisado === true,
     avisoFalla: ccPlano(e.avisoFalla, 200),
+    ofertas: Number.isInteger(e.ofertas) && e.ofertas >= 0 && e.ofertas <= 2 ? e.ofertas : 0,
+    sueltas: Number.isInteger(e.sueltas) && e.sueltas >= 0 && e.sueltas <= 1 ? e.sueltas : 0,
     ultimoMensajeMs: ultimo,
     ultimosIds: (Array.isArray(e.ultimosIds) ? e.ultimosIds : []).filter((x) => typeof x === 'string' && x !== '' && x.length <= 200).slice(-CC_TOPE_IDS),
   };
@@ -311,6 +315,8 @@ function ccEstadoVigente(e, ahoraMs) {
     s.soporte = false;
     s.avisado = false;
     s.reintentoEmpresa = false;
+    s.ofertas = 0;
+    s.sueltas = 0;
   }
   return s;
 }
@@ -485,7 +491,8 @@ function ccInstrucciones(cfg, conocimiento) {
     '',
     'Tono (lo que escribes en «empatia» y en «respuesta»):',
     '- Escribe como una persona cercana y entusiasta de Bolivia: cálida, con exclamaciones y un emoji cuando aporta. Nunca suenes seco, administrativo ni como un formulario.',
-    '- Refleja con tus palabras lo que el cliente te contó, para que se sienta escuchado; no lo copies tal cual.',
+    '- Refleja con tus palabras lo que el cliente te contó, para que se sienta escuchado; no lo copies tal cual ni repitas sus palabras una por una.',
+    '- Usa frases simples y cotidianas, como hablaría cualquier persona: sin dramatizar ni rebuscar (algo como «da una pena tremenda» es lo que NO debe salir) y con UNA sola idea.',
     '- Ejemplos del tono (genéricos; no los copies, adáptalos a lo que dijo el cliente): «¡Uff, te entiendo! 😅 Responder todo a mano le quita tiempo a cualquiera.» y «¡Qué buena señal que ya vendas por WhatsApp! 🙌».',
     '',
     'Reglas:',
@@ -656,7 +663,7 @@ function ccCuerpoLista(a) {
   const presenta = ccPresentacion({ nombreNegocio: o.negocio, nombreAsistente: o.nombreAsistente, nivelEmojis: o.nivel });
   // §13: con la presentación, la pregunta del guion («Para darte la info exacta, …»); sin ella, la corta.
   const pregunta = o.promesa ? 'Para mostrarte los planes que te sirven, ¿de qué rubro es tu negocio?'
-    : (!o.vencida && o.presentar !== false ? 'Para darte la info exacta, ¿de qué rubro es tu negocio?' : CC_PREGUNTA_RUBRO);
+    : (!o.vencida && o.presentar !== false ? 'Para darte la info exacta, ¿de qué rubro es tu negocio?' : (o.vencida ? CC_PREGUNTA_RUBRO : 'Para ayudarte mejor, ¿de qué rubro es tu negocio? 😊'));
   const partes = [];
   if (o.vencida) partes.push('Esa opción ya no está.');
   else if (o.presentar !== false) partes.push(presenta);
@@ -687,10 +694,18 @@ function ccLista(cuerpo, rubros, conAsesor, tituloAsesor) {
 // La oferta: botones de respuesta, SIN encabezado (la única imagen del flujo es la de los planes, D16). Cuerpo = empatía + impacto + «¿Te gustaría
 // ver los planes o prefieres hablar con {asesor}?». El botón `planes` solo si `conPlanes` (hay planes o archivo y no se mostraron);
 // sin él, la pregunta ofrece solo al asesor: solo se ofrece lo que se cumple.
+// La pregunta de la oferta tiene tres formulaciones que rotan (`indice`, de la ficha) para que no sea idéntica una y otra vez (§14).
+function ccPreguntaDeOferta(quien, conPlanes, indice) {
+  const i = Number.isInteger(indice) && indice >= 0 ? indice % 3 : 0;
+  return (conPlanes
+    ? ['¿Te gustaría ver los planes o prefieres hablar con ' + quien + '?', '¿Quieres que te muestre los planes o prefieres hablar con ' + quien + '?', '¿Te cuento los planes o prefieres hablar directo con ' + quien + '?']
+    : ['¿Te gustaría hablar con ' + quien + '?', '¿Quieres hablar directo con ' + quien + '?', '¿Te animas a hablar con ' + quien + '?'])[i];
+}
+// `indice`: la formulación que toca; `sinPregunta`: tras una respuesta suelta se cierra sin repetir la pregunta (los botones siguen ahí).
 function ccOferta(a) {
   const o = a || {};
   const quien = ccQuien(o.asesor);
-  const pregunta = o.conPlanes ? '¿Te gustaría ver los planes o prefieres hablar con ' + quien + '?' : '¿Te gustaría hablar con ' + quien + '?';
+  const pregunta = o.sinPregunta === true ? '' : ccPreguntaDeOferta(quien, o.conPlanes, o.indice);
   // Una sola «?» por mensaje: lo que venga del modelo o del guion no puede agregar otra.
   const cuerpo = ccEm([ccPunto(ccSinPregunta(o.empatia)), ccPunto(ccSinPregunta(o.impacto)), pregunta].filter((x) => x !== '').join(' '), { nivelEmojis: o.nivel });
   const botones = (o.conPlanes ? [{ id: 'planes', title: 'Ver planes' }] : []).concat([{ id: 'asesor', title: ccTituloAsesor(o.asesor) }]);
@@ -776,22 +791,38 @@ function ccPlanes(cfg, asesor, cierre) {
 //   { numero, desde, negocio, asesor, pideEmpresa }
 function ccTraspaso(a) {
   const o = a || {};
+  const quien = ccQuien(o.asesor);
+  const pide = o.pideEmpresa ? ' ¿Cómo se llama tu negocio?' : '';
+  // §13/§14: cálido y sin afirmar que se avisó a nadie (D7): el botón es el mecanismo. «negocio» no se repite en el mismo mensaje.
+  // Quien ya es cliente no viene a «armar» nada (soporte); y quien pide el botón por segunda vez no recibe el mismo texto otra vez (`repite`).
+  let cabeza = '¡Perfecto! 🙌 Toca el botón para escribirle directo a ' + quien + ', que te cuenta cómo armarlo';
+  if (o.soporte === true) cabeza = '¡Claro! 😊 Toca el botón para escribirle directo a ' + quien + ' y contarle lo que necesitas';
+  else if (o.repite === true) cabeza = '¡Claro! 😊 Aquí tienes otra vez el botón para escribirle directo a ' + quien;
+  const cierre = o.pideEmpresa ? '. Y para dejarlo anotado, ¿cómo se llama tu negocio? 😊' : (o.soporte === true || o.repite === true ? '.' : ' para tu negocio.');
+  return ccContacto(o, 'traspaso', cabeza + cierre, 'Por ahora no puedo ponerte en contacto con ' + quien + ' desde este chat.' + pide);
+}
+// Un mensaje con el botón `cta_url` que abre el chat de recepción (`conBoton`) o, si no hay número —o quien escribe ES recepción—, el
+// texto sin botón (`sinBoton`, que nunca nombra un botón). Lo usan el traspaso, el acuse y el cierre tras el nombre del negocio.
+function ccContacto(o, evento, conBoton, sinBoton) {
   const numero = ccTexto(o.numero).replace(/\D/g, '');
   const desde = ccTexto(o.desde).replace(/\D/g, '');
   const quien = ccQuien(o.asesor);
   const negocio = ccPlano(o.negocio, 60) || 'el negocio';
-  const pide = o.pideEmpresa ? ' ¿Cómo se llama tu negocio?' : '';
   if (numero && numero !== desde) {
     return cmContactoConBoton({
-      numero: numero, desde: desde, para: 'cliente', evento: 'traspaso',
-      // §13: cálido y sin afirmar que se avisó a nadie (D7): el botón es el mecanismo.
-      cuerpo: ccConEmojis('¡Perfecto! 🙌 Toca el botón para escribirle directo a ' + quien + ', que te cuenta cómo armarlo para tu negocio.' + (o.pideEmpresa ? ' Y para dejarlo anotado, ¿cómo se llama tu negocio?' : ''), o.nivel),
+      numero: numero, desde: desde, para: 'cliente', evento: evento,
+      cuerpo: ccConEmojis(conBoton, o.nivel),
       botonTexto: 'Escribir ahora', textoDelRespaldo: 'Escríbele aquí:',
       saludo: 'Hola, escribo desde el WhatsApp de ' + negocio + '. Quiero hablar con ' + quien + '.',
     });
   }
-  const t = 'Por ahora no puedo ponerte en contacto con ' + quien + ' desde este chat.' + pide;
-  return cmMensaje('cliente', cmTexto(t), t, t, { tipoReporte: 'text', evento: 'traspaso', conBoton: false });
+  const t = ccConEmojis(sinBoton, o.nivel);
+  return cmMensaje('cliente', cmTexto(t), t, t, { tipoReporte: 'text', evento: evento, conBoton: false });
+}
+// El nombre del negocio como se muestra de vuelta (§14): ya pasó `ccNombreDeEmpresa`; aun así, sin comillas, corchetes ni marcas de formato
+// que rompan el texto, y hasta 60 caracteres.
+function ccEmpresaVisible(nombre) {
+  return ccPlano(ccTexto(nombre).replace(/[«»"“”`\[\]{}<>*_~]/g, ''), 60);
 }
 // Una variable de plantilla no admite saltos de línea, tabuladores ni más de cuatro espacios, y no puede ir vacía:
 // Meta rechaza el envío entero.
@@ -936,7 +967,8 @@ function ccPreguntaDelPaso(e, cfg) {
 // La pregunta que se le pasa al modelo como «PREGUNTA QUE HICISTE»: la del paso, o la de la oferta (R12).
 function ccPreguntaHecha(e, cfg) {
   const q = ccPreguntaDelPaso(e, cfg);
-  return q.tipo === 'oferta' ? '¿Te gustaría ver los planes o prefieres hablar con ' + ccQuien(cfg && cfg.asesor) + '?' : q.texto;
+  // La formulación de la última oferta: la que ya salió (el contador de la ficha apunta a la siguiente).
+  return q.tipo === 'oferta' ? ccPreguntaDeOferta(ccQuien(cfg && cfg.asesor), true, ((e && e.ofertas) || 0) + 2) : q.texto;
 }
 function ccPresentacion(cfg) {
   const nombre = ccPlano(cfg && cfg.nombreAsistente, 40);
@@ -958,6 +990,13 @@ function ccAcotar(texto, maxOraciones, maxPalabras) {
   const palabras = t.split(' ');
   return palabras.length > maxPalabras ? palabras.slice(0, maxPalabras).join(' ').replace(/[,;:.\-]+$/, '') + '…' : t;
 }
+// La formulación de la pregunta de la oferta que toca, y deja la ficha apuntando a la siguiente (y sin respuestas sueltas pendientes). Escribe en `e`.
+function ccIndiceDeOferta(e) {
+  const i = Number.isInteger(e.ofertas) && e.ofertas >= 0 ? e.ofertas % 3 : 0;
+  e.ofertas = (i + 1) % 3;
+  e.sueltas = 0;
+  return i;
+}
 // Un mensaje que antepone `prefijo` a la pregunta pendiente del paso (una sola «?»: si el prefijo ya trae una, no se agrega la
 // del paso). `conAsesor`: el mensaje ofrece al asesor, con botón o con fila.
 function ccRetomar(e, cfg, prefijo, opc) {
@@ -967,7 +1006,15 @@ function ccRetomar(e, cfg, prefijo, opc) {
   // (con un margen de 4; la oferta mide 11 palabras con planes).
   const palabrasDeLaPregunta = q.tipo === 'oferta' ? 11 : ccContar(q.texto).palabras;
   const pre = ccPunto(ccAcotar(prefijo, 2, Math.max(10, CC_LIMITE_GENERAL.palabras - 4 - palabrasDeLaPregunta)));
-  if (q.tipo === 'oferta') return ccOferta({ empatia: pre, impacto: '', asesor: cfg.asesor, conPlanes: ccPuedePlanes(e, cfg), nivel: cfg.nivelEmojis });
+  if (q.tipo === 'oferta') {
+    // §14: tras una respuesta SUELTA la pregunta de la oferta no se repite cada vez: se omite en la 1.ª y se hace en la 2.ª (y así), con los botones siempre.
+    let pregunta = true;
+    if (o.suelta === true) {
+      const n = (e.sueltas || 0) + 1;
+      if (n < 2) { e.sueltas = n; pregunta = false; }
+    }
+    return ccOferta({ empatia: pre, impacto: '', asesor: cfg.asesor, conPlanes: ccPuedePlanes(e, cfg), nivel: cfg.nivelEmojis, indice: pregunta ? ccIndiceDeOferta(e) : 0, sinPregunta: !pregunta });
+  }
   const cuerpo = [pre, ccUnaPregunta(pre) && !/\?/.test(pre) ? q.texto : ''].filter(Boolean).join(' ');
   if (q.tipo === 'lista') return ccLista(ccEm(cuerpo, cfg), ccRubrosComunes(cfg), o.conAsesor === true, ccTituloAsesor(cfg.asesor));
   return ccFijo(cuerpo, o.conAsesor === true, cfg, 'retomar');
@@ -1016,6 +1063,17 @@ function ccEsAgradecimiento(t) {
   const n = ccNorm(t);
   const p = n.split(' ');
   return n !== '' && p.length <= 6 && p.every((w) => CC_GRACIAS.has(w)) && /\b(gracias|ok|okey|vale|listo|perfecto|genial|excelente|entendido|chau|chao|adios)\b/.test(n);
+}
+// Un acuse (§14): «ok», «gracias», «listo», «dale», «vale», «perfecto», «entendido», «muchas gracias», un 👍… Contesta a lo que se dijo antes, no pide
+// nada: en el paso de la empresa no se repite la pregunta. Una pregunta o cualquier otra palabra NO es un acuse.
+const CC_ACUSE_PALABRAS = new Set((Array.from(CC_GRACIAS).join(' ') + ' dale acuerdo').split(' '));
+function ccEsAcuse(t) {
+  const crudo = ccTexto(t).trim();
+  if (crudo === '') return false;
+  if (/^(?:[\s\uFE0F]|[👍👌🙏🙌👏🤝😊])+$/u.test(crudo)) return true;
+  const n = ccNorm(crudo);
+  const p = n.split(' ');
+  return n !== '' && !/[?¿]/.test(crudo) && p.length <= 4 && p.every((w) => CC_ACUSE_PALABRAS.has(w)) && /\b(gracias|ok|okey|vale|listo|perfecto|genial|excelente|entendido|bueno|dale|acuerdo)\b/.test(n);
 }
 const CC_FIJOS = {
   audio: 'No pude escuchar tu audio. 😊 ¿Me lo escribes?',
@@ -1068,10 +1126,11 @@ function ccDecidir(a) {
   const modelo = (modo) => plan('modelo', {}, { modo: modo, llamarModelo: true });
   const traspaso = () => {
     const soporte = e.soporte === true || soporteAntes;
+    const repite = !soporte && e.hechos.pidioAsesor === true;   // ya había pedido el botón: no se le repite el mismo texto
     if (!soporte) e.hechos.pidioAsesor = true;
     const pideEmpresa = !soporte && e.empresa === '';
     if (pideEmpresa) { e.paso = 'esperando_empresa'; e.reintentoEmpresa = false; }
-    return delPaso('traspaso', { pideEmpresa: pideEmpresa, soporte: soporte });
+    return delPaso('traspaso', { pideEmpresa: pideEmpresa, soporte: soporte, repite: repite });
   };
 
   // 0. La campaña por texto (solo la primera vez de la ventana): se trata como el toque de su destino.
@@ -1124,6 +1183,8 @@ function ccDecidir(a) {
     case 'esperando_empresa': {
       const empresa = dichoOEscrito ? ccNombreDeEmpresa(texto) : '';
       if (empresa) { e.empresa = empresa; e.paso = 'libre'; return delPaso('empresa', {}); }
+      // §14: un acuse no repite la pregunta ni llama al modelo: se contesta con cordialidad y el paso sigue esperando el nombre.
+      if (dichoOEscrito && ccEsAcuse(texto)) return delPaso('acuse', {});
       if (dichoOEscrito && ccPidePlanesCorto(texto)) return resolver(ccPedirPlanes(e));
       return hay ? modelo('empresa') : delPaso('retomar', { prefijo: '' });
     }
@@ -1158,15 +1219,25 @@ function ccMensajesDe(accion, e, cfg, t, x) {
       return [ccFijo(texto, false, cfg, 'abierta')];
     }
     case 'planes': return [ccPlanes(cfg, cfg.asesor, ccCierreDelRubro(e, cfg))];
-    case 'planes_ya': return [ccOferta({ empatia: '¡Ya te los mostré arriba! 😊', impacto: '', asesor: cfg.asesor, conPlanes: false, nivel: cfg.nivelEmojis })];
+    case 'planes_ya': return [ccOferta({ empatia: '¡Ya te los mostré arriba! 😊', impacto: '', asesor: cfg.asesor, conPlanes: false, nivel: cfg.nivelEmojis, indice: ccIndiceDeOferta(e) })];
     case 'traspaso':
     case 'soporte':
-      return [ccTraspaso({ numero: cfg.numeroRecepcion, desde: t.from, negocio: negocio, asesor: cfg.asesor, pideEmpresa: accion === 'traspaso' && extra.pideEmpresa === true, nivel: cfg.nivelEmojis })];
+      return [ccTraspaso({ numero: cfg.numeroRecepcion, desde: t.from, negocio: negocio, asesor: cfg.asesor, pideEmpresa: accion === 'traspaso' && extra.pideEmpresa === true, soporte: accion === 'soporte' || extra.soporte === true, repite: extra.repite === true, nivel: cfg.nivelEmojis })];
     case 'identidad': return [ccRetomar(e, cfg, 'Soy el asistente virtual de ' + negocio + ', con inteligencia artificial 🤖.')];
     case 'fijo': return [ccFijo(extra.texto, extra.conAsesor === true, cfg, 'fijo')];
-    case 'empresa': return [ccFijo('¡Gracias! 😊 Quedó anotado.', false, cfg, 'empresa')];
-    case 'oferta': return [ccOferta({ empatia: extra.empatia, impacto: extra.impacto, asesor: cfg.asesor, conPlanes: ccPuedePlanes(e, cfg), nivel: cfg.nivelEmojis })];
-    case 'retomar': return [ccRetomar(e, cfg, extra.prefijo, { conAsesor: extra.conAsesor === true })];
+    case 'acuse': {
+      const o = { numero: cfg.numeroRecepcion, desde: t.from, negocio: negocio, asesor: cfg.asesor, nivel: cfg.nivelEmojis };
+      return [ccContacto(o, 'acuse', '¡Con gusto! 😊 Cuando quieras, toca el botón para escribirle directo a ' + quien + '.', '¡Con gusto! 😊 Cuando quieras, cuéntame el nombre de tu negocio.')];
+    }
+    case 'empresa': {
+      // §14: un cierre cálido que repite el nombre (ya validado y sin comillas ni corchetes) y, si hay botón, lo vuelve a ofrecer.
+      const nombre = ccEmpresaVisible(e.empresa);
+      const anotado = nombre ? 'Anoté «' + nombre + '».' : 'Quedó anotado.';
+      const o = { numero: cfg.numeroRecepcion, desde: t.from, negocio: negocio, asesor: cfg.asesor, nivel: cfg.nivelEmojis };
+      return [ccContacto(o, 'empresa', '¡Gracias! 😊 ' + anotado + ' ¡Cuando quieras, escríbele a ' + quien + ' con el botón!', '¡Gracias! 😊 ' + anotado)];
+    }
+    case 'oferta': return [ccOferta({ empatia: extra.empatia, impacto: extra.impacto, asesor: cfg.asesor, conPlanes: ccPuedePlanes(e, cfg), nivel: cfg.nivelEmojis, indice: ccIndiceDeOferta(e) })];
+    case 'retomar': return [ccRetomar(e, cfg, extra.prefijo, { conAsesor: extra.conAsesor === true, suelta: extra.suelta === true })];
     case 'descarte': return [ccFijo(ccTextoDelDescarte(extra.motivo, negocio), false, cfg, 'descarte')];
     default: // falla
       return [ccFijo('¡Uy, tuve un problema para procesar tu mensaje! 😅 Si quieres, ' + quien + ' te ayuda directamente.', true, cfg, 'falla')];
@@ -1190,7 +1261,7 @@ function ccResolverModelo(plan, r, e, cfg) {
   const pregunta = r.tipo === 'pregunta';
   const conDatos = r.respuesta !== '' && r.enLosDatos === true;
   const prefijoDePregunta = conDatos ? ccConEmojis(r.respuesta, cfg.nivelEmojis) : 'Esa no la tengo a la mano 🤔; ' + quien + ' te lo responde.';
-  const retomar = () => ({ accion: 'retomar', extra: { prefijo: prefijoDePregunta, conAsesor: !conDatos } });
+  const retomar = () => ({ accion: 'retomar', extra: { prefijo: prefijoDePregunta, conAsesor: !conDatos, suelta: true } });
   // R2: una pregunta por el precio nunca recibe «Eso no lo tengo en mis datos»: va a los planes, en cualquier paso.
   if ((r.tipo === 'pregunta' || r.tipo === 'pide_planes') && ccPideListaPlanes(plan.texto)) return ccPedirPlanes(e);
   // R6: pidió una persona con otras palabras: se le ofrece el botón (o la fila), sin traspaso ni aviso.
