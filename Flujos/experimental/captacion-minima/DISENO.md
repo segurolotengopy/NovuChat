@@ -32,14 +32,15 @@ Para cambiar el flujo: editar la plantilla o un archivo de `src/nodos/`, correr 
    `configBase` y deja que el armador genérico pegue DELANTE de cada nodo, en este orden: `src/lib/captacion.js`,
    `src/nodos/_comun.js`, y los paquetes `mensajes` y `filtro` de `comun-sin-agente` (el Code de n8n no tiene módulos).
 3. Marcas de la plantilla: `@@todo+mensajes+filtro:` (librería + comunes + `cm*`), `@@todo:` (librería + comunes), `@@comun:` (solo
-   comunes) y `@@solo:` (solo el archivo). **Quien use `ccLeerModelo`, `ccLista`, `ccOferta`, `ccPlanes`, `ccTraspaso`, `ccFijo`,
-   `ccCompletar` o `ccDecidir` pega `+mensajes+filtro`**: las usan al ser llamadas, no al cargarse.
+   comunes) y `@@solo:` (solo el archivo). **Quien use `ccLeerModelo`, `ccLista`, `ccOferta`, `ccPlanes`, `ccTraspaso`, `ccFijo` o
+   `ccCompletar` pega `+mensajes+filtro`** (hoy solo «Armar mensajes»): las usan al ser llamadas, no al cargarse. «Decidir turno» no usa
+   ninguna `cm*` y pega solo la librería y los comunes; «Interpretar entrada» solo los comunes (`cnYaVisto`).
 4. Inyección: la línea `const CM_GUION = null; // @@guion` (en «Config del negocio») y `const CM_CONOCIMIENTO = null; // @@conocimiento`
    (en «Decidir turno») se reemplazan por el literal del archivo de datos; cada una tiene que aparecer EXACTAMENTE una vez.
 5. Guardias (sobre lo armado y sobre lo versionado): «Entrada de prueba» nunca en producción; «WhatsApp Trigger» nunca en la prueba y con
    credencial explícita que no coincida con `/aab1|wa-prod/i`; ni `subscriptions` ni `subscribed_apps`; anfitriones HTTP
    `graph.facebook.com`, `generativelanguage.googleapis.com` y `us-east1-novuchat-demo.cloudfunctions.net`, y solo dos URL por
-   expresión («Descargar medio» y «Guardar prospecto»); ningún `agent`, memoria ni `lmChat*`; retención `none`, `executionOrder: v1` y
+   expresión («Descargar medio» y «Guardar prospecto»); ningún `agent`, memoria ni `lmChat*`; retención de solo lo que falla (éxito `none`, error `all`, sin `errorWorkflow`), `executionOrder: v1` y
    zona de La Paz; rangos `A3:J` y `A3:A`, `USER_ENTERED` y `RAW`; `REEMPLAZAR_` solo en «Config base» y en la ruta de prueba; huérfanos.
 
 ## Total de nodos
@@ -120,10 +121,13 @@ se dice. Los campos que viajan:
 
 ## La ficha por teléfono
 
-`$getWorkflowStaticData('global').captacionMinima[<messages[0].from>]`, clave `^\d{6,20}$` (§4 del contrato). **Un solo escritor:** «Armar
-mensajes» (la ficha completa, el id de Meta, `ultimoMensajeMs` y el barrido de las de más de 48 h, con tope de 5.000). «Confirmar envío»
-escribe solo `avisado` y `avisoFalla` con lo que contestó Meta. «Interpretar entrada» y «Decidir turno» solo leen. Una ficha ilegible se
-sanea campo por campo (`ccEstadoVigente`); `conversaciones` (la del flujo viejo) no se lee ni se toca.
+`$getWorkflowStaticData('global').captacionMinima[<messages[0].from>]`, clave `^\d{6,20}$` (§4 del contrato). **Un solo escritor** de la
+conversación: «Armar mensajes» (la ficha completa, los últimos 5 ids de Meta, `ultimoMensajeMs` y el barrido de las de más de 48 h: escribe
+primero y barra después, así el total no pasa de 5.000). «Confirmar envío» escribe `avisado` y `avisoFalla` con lo que contestó Meta y,
+**si Meta rechaza el mensaje al cliente y su respaldo, restaura la ficha de antes del turno** (R8: «Armar mensajes» la deja en el primer
+ítem, `fichaAntes`), conservando `ultimosIds` y `ultimoMensajeMs` y el `avisado` de un aviso que sí salió. «Interpretar entrada» y «Decidir
+turno» solo leen y no crean el mapa en los datos estáticos. Una ficha ilegible se sanea campo por campo (`ccEstadoVigente`). Lo que dejó el
+flujo viejo (`conversaciones`, `vistos`) no se lee y «Armar mensajes» lo borra (S6: se publica en el mismo workflow).
 
 ## Firmas que precisé respecto del contrato
 
@@ -151,7 +155,7 @@ sanea campo por campo (`ccEstadoVigente`); `conversaciones` (la del flujo viejo)
 - **Un toque no es texto:** un id de lista o de botón con forma rara no elige nada ni llama al modelo; el paso se repite.
 - **Un modelo que dice `pide_planes`** solo lleva a los planes si el texto también los pide por palabra entera; `pide_asesor` ofrece el botón, no el traspaso.
 - **En la variante de prueba** la planilla también se escribe (si «Config base» trae un id válido); no se reporta nada a la ingesta; todo va al teléfono de prueba.
-- `Armar mensajes` escribe la ficha antes de que Meta conteste; si Meta rechaza el mensaje, «Confirmar envío» corta la ejecución pero la ficha ya avanzó.
+- `Armar mensajes` escribe la ficha antes de que Meta conteste; si Meta rechaza el mensaje y su respaldo, «Confirmar envío» restaura la ficha de antes (R8) y corta la ejecución.
 
 ## Mensajes por conversación
 
@@ -171,8 +175,34 @@ enlace). No lee `conversaciones`.
 
 - **Credencial del disparador:** `credenciales.trigger` vale «WhatsApp Trigger NovuChat», un nombre provisional (el flujo viejo no trae la credencial en el JSON).
   Confirmarlo contra n8n; nunca la de AAB1-WA-Prod.
-- **Retención `none` (D13):** pendiente de ratificar por Andres antes de publicar.
+- **Retención (D13, Andres 03/10/2026):** se guardan solo las ejecuciones que fallan; una ejecución fallida guarda el texto del turno que falló.
 - Cargar `impacto` por rubro (hoy vacío) y los identificadores reales en una copia `*.local.json` (ignorada por git).
 - `cmLista` (común) manda `description: ''` en las filas sin descripción; `ccLista` evita la clave. Revisar `cmLista` antes de que otro flujo la use.
 - La plantilla `solicitud_contacto` debe estar aprobada en el WABA del tenant (seis parámetros).
 - Probar contra un teléfono real y ensayar en el número del Demo A antes de publicar.
+
+## Correcciones de la revisión (§12 del contrato)
+
+Resumen de lo que cambió respecto de la primera entrega (cada punto tiene su prueba en `captacion-minima-lib.test.ts` o en
+`captacion-minima-flujo.test.ts`, la segunda ya no se omite si falta el JSON):
+
+- **Identidad, promesas y montos (S1 a S3):** `ccEsIdentidad(t, asesor)` reconoce «¿eres Silvana?», «¿me atiende una persona?», «¿esto es
+  automático?»; `ccLeerModelo` rechaza en `empatia` y `respuesta` la primera persona, «te habla», las promesas de contacto y los montos, y
+  en la `empatia` todo dígito, el nombre del asesor y «gratis», «descuento», «promo», «oferta»; una `respuesta` solo trae números que
+  están en lo que ve el modelo (`opciones.datos`). Un solo patrón de precios (`CC_PRECIO`, que `construir.mjs` lee de la librería) para
+  `ccTieneMonto` y el corpus. El fragmento `contacto` del corpus va en `excluidos`.
+- **Enlaces y dígitos (S4), medios (S5), datos viejos (S6), prueba (S7), delimitadores (S8):** `rubroLibre` y `empresa` rechazan enlaces y
+  6 o más dígitos; «¿Tamaño aceptable?» exige `https://lookaside.fbsbx.com/`; «Armar mensajes» borra `conversaciones` y `vistos`; en
+  prueba no se escribe la planilla, `ensayo.json` no trae planilla y `configBase.telefonosDePrueba` (opcional; el marcador no restringe)
+  limita a qué números puede ir una ejecución de prueba; `RUBRO` y lo leído en la imagen van en `[[[…]]]`; ids de rubro `__proto__`,
+  `constructor` y `prototype` se rechazan; se recuerdan 5 ids por ficha.
+- **Guion (R1 a R7):** el pedido de planes del primer mensaje y de la lista exige `ccPideListaPlanes` (mensaje corto, «?» o verbo de pedido);
+  una pregunta por el precio va a los planes en cualquier paso; cortesías y evasivas nuevas no son una empresa; «soporte» solo con forma de
+  cliente; el descarte solo se bloquea con la palabra «descarte» o un motivo literal con guion bajo; `pide_asesor` ofrece la fila o el botón
+  sin traspaso; `guion.rubros.otro.preguntaDolor` evita volver a preguntar de qué trata el negocio.
+- **Ficha adelantada (R8), retención (R9), medios sin conversación (R10):** ver «La ficha por teléfono»; retención éxito `none` / error
+  `all`; `reaction`, `sticker`, `request_welcome`, `system` y `ephemeral` no se reportan ni se responden.
+- **Tamaño (R11) y menores (R12):** se quitaron `ccEsSaludo` y `cnNorm`; una sola `ccQuien`, `ccPresentacion`, `ccArchivoDePlanes` y
+  `ccRubrosComunes`; la campaña con destino vencido se presenta sin «Esa opción ya no está»; en la oferta el modelo recibe la pregunta de la
+  oferta (`ccPreguntaHecha`); el modo `negocio` respeta `rubroId`; un agradecimiento en `libre` no repite la oferta (`ccEsAgradecimiento`); una
+  aclaración se recorta (`ccAcotar`); «No pude leer tu documento»; `cnMapaDeFichas(escribir)`; «Reportar mensaje (saliente)» con `timeout` de 4000.
