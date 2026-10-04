@@ -40,6 +40,7 @@ export const SUITES_PURAS = [
   'pruebas/agenda-minima-lib.test.ts',
   'pruebas/agenda-minima-herramienta-actualizar.test.ts',
   'pruebas/recordatorio-bellido.test.ts',
+  'pruebas/recordatorio-bellido-v1.test.ts',
   'pruebas/venta-minima-comun.test.ts',
   'pruebas/venta-minima-pedido.test.ts',
   'pruebas/venta-minima-reserva.test.ts',

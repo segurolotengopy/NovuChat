@@ -41,7 +41,7 @@ lleva parámetro al enviar** (el `jsonBody` solo manda el componente `body`). Lo
 - {{3}} = solo la fecha escrita, p. ej. «lunes 5 de octubre» (sin «el»). {{4}} = solo la hora en 24 h, p. ej. «10:30»
   (sin «a las»).
 Se lee: «Hola te escribimos del consultorio, Este es un recordatorio sobre tu próxima cita con el Doctor Bellido el domingo 4 de octubre a las 11:00. ¡Esperamos verte!» (la coma tras «Hola …» es de la plantilla aprobada). Meta limita a 30 caracteres cada variable de texto: una más larga se omite con su causa.
-el lunes 5 de octubre a las 10:30. ¡Esperamos verte!». Ninguna variable lleva saltos de línea, tabuladores ni 4 o más
+Ninguna variable lleva saltos de línea, tabuladores ni 4 o más
 espacios seguidos (límite de Meta): el nodo las limpia. No hay servicio, motivo ni nombre del paciente; lo acordado queda
 en el texto de la plantilla. El título de la cita no se copia a ningún campo del item. Lo que sí queda en los datos de la
 ejecución es lo que el calendario ya tenía: la salida del nodo de Google Calendar y la `descripcionMarcada` (la
@@ -75,7 +75,42 @@ En el nodo Google Calendar «Obtener varios» las fechas «After/Before» son pa
 `options`: ese flujo recordaría **todas** las citas futuras con teléfono, no solo las de mañana. Está anotado para
 corregirse aparte (no es de este PR).
 
-## Cómo se aplica
+## Salida definitiva: `recordatorio-bellido.v1.json`
+Se genera con el mismo `herramientas/generar.py` y el mismo código de `src/` (una sola fuente):
+`python3 herramientas/generar.py v1 > recordatorio-bellido.v1.json`. Nombre: «NovuChat Bellido — Recordatorio de citas
+(24 h)». Diez nodos: `Todos los días 17:00` → `Config del recordatorio` → `Citas de mañana` → `Preparar recordatorios` →
+`¿Hay recordatorios?` → `Enviar plantilla` → `Después del envío` → `¿Se envió?` → (sí) `Marcar como recordada` /
+(no) `Recordatorio no enviado`.
+
+- **Sin lo de la prueba:** ni los dos webhooks, ni «Crear citas ficticias», ni la Config de la prueba, ni teléfonos de
+  prueba. Lo único por reemplazar al aplicar son `REEMPLAZAR_CALENDARIO_BELLIDO` (el calendario real) y
+  `REEMPLAZAR_PHONE_NUMBER_ID_BELLIDO` (el id del número de Bellido). El JSON no trae ids ni teléfonos.
+- **Disparador:** `scheduleTrigger` con cron `0 17 * * *`, **habilitado en el JSON**, y `settings.timezone` =
+  `America/La_Paz` (17:00 de La Paz = 21:00 UTC). El despliegue lo deja **inactivo** hasta que Andres lo active.
+- **Lee** solo las citas de mañana del calendario real (`timeMin`/`timeMax` al nivel del nodo, `singleEvents`), aplica el
+  criterio de arriba y envía la plantilla.
+- **Escribe solo dos cosas:** el envío de la plantilla y la marca `[recordado]` en la `description` de la cita
+  (`updateFields` con solo `description`). No crea, no borra, no mueve ni cambia el título de ninguna cita.
+- **Si Meta rechaza el envío** (la respuesta no trae id de mensaje): la cita **no** se marca `[recordado]` (un
+  reintento la vuelve a intentar) y la ejecución termina en **ERROR visible** en n8n: `Recordatorio no enviado` lanza
+  `Recordatorio no enviado: N cita(s) sin recordar. Causas: …`, con las causas de Meta y sin teléfono, título ni
+  descripción del paciente. Con `executionOrder: v1` la rama de marcar (salida de arriba) corre antes que la del error,
+  de modo que las citas enviadas en la misma corrida sí quedan marcadas.
+- **Credenciales por nombre:** `Google Calendar account` (nodos de Calendar) y `Graph WhatsApp Bellido (Bearer)`
+  (`Enviar plantilla`). Ninguna otra.
+- **Estado del comercio:** `estadoComercio` es una clave de datos del Config, fija en `operativo` (con otro valor, el
+  flujo no manda nada). **Mejora posterior, no incluida:** leerla del servidor como los demás flujos (el nodo «Traer
+  configuración» con la credencial de ingesta que usa `bellido-agendamiento.json`, antes de `Citas de mañana`, y
+  escribir su resultado en esa clave). No se agregó aquí porque es un nodo de red nuevo.
+- **Costo en mensajes (`docs/base-comercial.md` §1):** agrega **1 mensaje de utilidad por cita recordada** (unos
+  0,0113 USD por mensaje) a la conversación del paciente; no agrega ni quita ningún otro mensaje del asistente de
+  Bellido. Una cita se recuerda una sola vez (la marca `[recordado]`) y solo si cumple el criterio.
+- **Pendientes antes de activar:** el aviso a recepción cuando una corrida falla (hoy basta el error visible en n8n) y
+  leer el estado del comercio del servidor. La suite `admin/pruebas/recordatorio-bellido-v1.test.ts` prueba lo anterior;
+  no puede probar el orden de ramas de n8n ni el disparo del cron (se ven en la primera corrida manual y en la primera
+  de las 17:00).
+
+## Cómo se aplica la prueba
 `herramientas/generar.py` arma el JSON con marcadores; `herramientas/aplicar-prueba.py` los resuelve en memoria y crea o
 actualiza el flujo en n8n con las credenciales de Bellido por nombre (ver el encabezado del script). El repositorio no
 guarda ids, teléfonos ni rutas de webhook.

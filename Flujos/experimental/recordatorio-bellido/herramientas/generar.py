@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# Genera el flujo de PRUEBA del recordatorio de Bellido con marcadores (sin ids ni teléfonos):
+# Genera, con una sola fuente (src/), el flujo de PRUEBA y el DEFINITIVO del recordatorio de Bellido con marcadores
+# (sin ids ni teléfonos):
 #   python3 herramientas/generar.py > recordatorio-bellido.prueba.json
+#   python3 herramientas/generar.py v1 > recordatorio-bellido.v1.json
 import json,sys
 import os
 AQUI=os.path.dirname(os.path.abspath(__file__))
@@ -53,4 +55,46 @@ con={
  "Después del envío":{"main":[[{"node":"¿Se envió?","type":"main","index":0}]]},
  "¿Se envió?":{"main":[[{"node":"Marcar como recordada","type":"main","index":0}],[]]},
 }
+def v1():
+    """Flujo DEFINITIVO: mismos nodos y mismo código que la prueba, sin lo que es de prueba, con disparador diario."""
+    import copy
+    por={n["name"]:copy.deepcopy(n) for n in nodos}
+    cal_def="REEMPLAZAR_CALENDARIO_BELLIDO"
+    # Config: sin teléfonos de prueba y con el calendario real. «estadoComercio» queda como clave de datos (ver LEEME).
+    cfg=copy.deepcopy(CONFIG_PARAMS)
+    cfg["assignments"]["assignments"]=[a for a in cfg["assignments"]["assignments"] if not a["name"].startswith("telefonoPrueba")]
+    for a in cfg["assignments"]["assignments"]:
+        if a["name"]=="calendarioId": a["value"]=cal_def
+    disparador=nodo("Todos los días 17:00","n8n-nodes-base.scheduleTrigger",1.2,[0,300],{"rule":{"interval":[{"field":"cronExpression","expression":"0 17 * * *"}]}})
+    config=nodo("Config del recordatorio","n8n-nodes-base.set",3.4,[300,300],cfg,
+        notes="estadoComercio: clave de datos, fija en operativo. Mejora posterior: leer el estado del comercio del servidor (ver LEEME).")
+    manana=por["Citas de mañana"]
+    manana["credentials"]={"googleCalendarOAuth2Api":{"id":"","name":"Google Calendar account"}}
+    envio=por["Enviar plantilla"]
+    envio["credentials"]={"httpHeaderAuth":{"id":"","name":"Graph WhatsApp Bellido (Bearer)"}}
+    marcar=por["Marcar como recordada"]
+    marcar["credentials"]={"googleCalendarOAuth2Api":{"id":"","name":"Google Calendar account"}}
+    rechazo=nodo("Recordatorio no enviado","n8n-nodes-base.code",2,[2400,300],{"jsCode":j("envio-rechazado.js")})
+    nodos1=[disparador,config,manana,por["Preparar recordatorios"],por["¿Hay recordatorios?"],envio,por["Después del envío"],por["¿Se envió?"],marcar,rechazo]
+    def sig(a,b): return {"main":[[{"node":b,"type":"main","index":0}]]}
+    con1={
+     "Todos los días 17:00":sig(0,"Config del recordatorio"),
+     "Config del recordatorio":sig(0,"Citas de mañana"),
+     "Citas de mañana":sig(0,"Preparar recordatorios"),
+     "Preparar recordatorios":sig(0,"¿Hay recordatorios?"),
+     "¿Hay recordatorios?":{"main":[[{"node":"Enviar plantilla","type":"main","index":0}],[]]},
+     "Enviar plantilla":sig(0,"Después del envío"),
+     "Después del envío":sig(0,"¿Se envió?"),
+     # Salida 0 (arriba): se marcan las enviadas; salida 1 (abajo, corre después con executionOrder v1): error visible.
+     "¿Se envió?":{"main":[[{"node":"Marcar como recordada","type":"main","index":0}],[{"node":"Recordatorio no enviado","type":"main","index":0}]]},
+    }
+    # El saneo del repositorio público rechaza 10 o más dígitos seguidos (también en un id de nodo): se vuelve a calcular
+    # el id, de forma determinista, solo si el hash cayó en ese caso.
+    for n in nodos1:
+        k=0
+        while __import__("re").search(r"\d{10}",n["id"]):
+            k+=1; n["id"]="rec-"+__import__("hashlib").md5((n["name"]+"#"+str(k)).encode()).hexdigest()[:12]
+    return {"name":"NovuChat Bellido — Recordatorio de citas (24 h)","nodes":nodos1,"connections":con1,"settings":{"executionOrder":"v1","timezone":"America/La_Paz"}}
+if len(sys.argv)>1 and sys.argv[1]=="v1":
+    print(json.dumps(v1(),ensure_ascii=False,indent=1)); sys.exit(0)
 print(json.dumps({"name":"ZZ Recordatorio Bellido (prueba)","nodes":nodos,"connections":con,"settings":{"executionOrder":"v1"}},ensure_ascii=False,indent=1))
