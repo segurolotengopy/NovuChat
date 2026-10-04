@@ -35,6 +35,9 @@ describe('seguimiento con regla 2', () => {
   it('reglaCobro 2 sin venceEn legible no es regla 2: no cambia nada', () => {
     expect(esPendienteDeSeguimiento(conv({ etapa: 'qr_enviado', reglaCobro: 2 }), AHORA)).toBe('texto');
   });
+  it('horarios con restos de regla 2 vencidos sigue siendo texto', () => {
+    expect(esPendienteDeSeguimiento(conv({ etapa: 'horarios', reglaCobro: 2, venceEn: AHORA - HORA }), AHORA)).toBe('texto');
+  });
   it('en_revision y cancelada no son pendientes, vencidas o no', () => {
     for (const etapa of ['en_revision', 'cancelada']) {
       expect(esPendienteDeSeguimiento(conv({ etapa }), AHORA)).toBeNull();
