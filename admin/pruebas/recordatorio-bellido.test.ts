@@ -40,7 +40,7 @@ const INICIO = '2026-10-06T11:00:00-04:00';
 
 const CFG: J = {
   calendarioId: 'cal-de-prueba', phoneNumberId: 'pnid-de-prueba', waGraphVersion: 'v26.0',
-  plantilla: 'recordatorio_cita_consultorio', idiomaPlantilla: 'es', conQuienVariable: 'tu peque',
+  plantilla: 'recordatorio_cita_consultorio', idiomaPlantilla: 'es', conQuienVariable: 'tu peque 👶',
   prefijosPermitidos: '591', estadoComercio: 'operativo', saludoVariable: SALUDO, variablesCuerpo: '4',
 };
 
@@ -64,7 +64,7 @@ describe('recordatorio de Bellido: solo pacientes gestionados por NovuChat', () 
     expect(s[0]).toMatchObject({
       eventoId: 'ev-1', telefono: TEL,
       fecha: 'martes 6 de octubre', hora: '11:00', plantilla: 'recordatorio_cita_consultorio', idioma: 'es',
-      parametros: [SALUDO, 'tu peque', 'martes 6 de octubre', '11:00'],
+      parametros: [SALUDO, 'tu peque 👶', 'martes 6 de octubre', '11:00'],
     });
   });
 
@@ -146,7 +146,7 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
     const s = correrPreparar([conNombre]);
     expect(s).toHaveLength(1);
     expect(s[0]['parametros'][0]).toBe(SALUDO);
-    expect(s[0]['parametros'][1]).toBe('tu peque');
+    expect(s[0]['parametros'][1]).toBe('tu peque 👶');
     expect(s[0]['parametros'].join(' ')).not.toContain(NOMBRE);
     // Todo lo que sale a Meta o viaja por el flujo, salvo la descripción que ya era del calendario.
     const { descripcionMarcada, ...resto } = s[0];
@@ -167,8 +167,8 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
     const parametros = cuerpo['template'].components[0].parameters.map((p: J) => p['text']);
     expect(cuerpo['template'].name).toBe('recordatorio_cita_consultorio');
     expect(cuerpo['template'].language.code).toBe('es');
-    expect(parametros).toEqual([SALUDO, 'tu peque', 'martes 6 de octubre', '11:00']);
-    expect(leido(parametros)).toBe('Hola te escribimos del consultorio del Dr. Bellido, Este es un recordatorio sobre tu próxima cita con tu peque el martes 6 de octubre a las 11:00. ¡Esperamos verte!');
+    expect(parametros).toEqual([SALUDO, 'tu peque 👶', 'martes 6 de octubre', '11:00']);
+    expect(leido(parametros)).toBe('Hola te escribimos del consultorio del Dr. Bellido, Este es un recordatorio sobre tu próxima cita con tu peque 👶 el martes 6 de octubre a las 11:00. ¡Esperamos verte!');
     // el botón de la plantilla es una URL fija: no se manda ningún componente de botón, solo el cuerpo
     expect(cuerpo['template'].components).toHaveLength(1);
     expect(cuerpo['template'].components[0].type).toBe('body');
@@ -178,11 +178,11 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
   });
 
   it('las variables 1 y 2 son configurables; sin la clave rigen los valores por omisión', () => {
-    expect(correrPreparar([evento()])[0]['parametros'].slice(0, 2)).toEqual([SALUDO, 'tu peque']);
+    expect(correrPreparar([evento()])[0]['parametros'].slice(0, 2)).toEqual([SALUDO, 'tu peque 👶']);
     const otras = correrPreparar([evento()], { ...CFG, saludoVariable: 'le escribimos', conQuienVariable: 'su hijo' })[0];
     expect(otras['parametros'].slice(0, 2)).toEqual(['le escribimos', 'su hijo']);
     const { saludoVariable: _a, conQuienVariable: _b, ...sinClaves } = CFG;
-    expect(correrPreparar([evento()], sinClaves)[0]['parametros'].slice(0, 2)).toEqual([SALUDO, 'tu peque']);
+    expect(correrPreparar([evento()], sinClaves)[0]['parametros'].slice(0, 2)).toEqual([SALUDO, 'tu peque 👶']);
     // una clave vacía no manda una variable vacía (Meta la rechaza): rige el valor por omisión
     expect(correrPreparar([evento()], { ...CFG, saludoVariable: '  ' })[0]['parametros'][0]).toBe(SALUDO);
   });
@@ -208,12 +208,12 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
       }
     }
     // la sucia se limpia, no se descarta: el texto queda legible
-    expect(correrPreparar([evento()], sucia)[0]['parametros'].slice(0, 2)).toEqual(['te escribimos del consultorio del Dr. Bellido', 'tu peque']);
+    expect(correrPreparar([evento()], sucia)[0]['parametros'].slice(0, 2)).toEqual(['te escribimos del consultorio del Dr. Bellido', 'tu peque 👶']);
   });
 
   it('con una plantilla de 3 variables la lista no lleva el saludo; con 4 sí', () => {
     const tres = correrPreparar([evento()], { ...CFG, variablesCuerpo: '3' })[0]['parametros'];
-    expect(tres).toEqual(['tu peque', 'martes 6 de octubre', '11:00']);
+    expect(tres).toEqual(['tu peque 👶', 'martes 6 de octubre', '11:00']);
     expect(tres).not.toContain(SALUDO);
     expect(correrPreparar([evento()], { ...CFG, variablesCuerpo: '4' })[0]['parametros']).toHaveLength(4);
     // y el cuerpo que se envía a Meta sigue esa lista
@@ -233,7 +233,7 @@ describe('recordatorio de Bellido: el mensaje no lleva datos del paciente', () =
     );
     expect(valores['plantilla']).toBe('recordatorio_cita_consultorio');
     expect(valores['idiomaPlantilla']).toBe('es');
-    expect(valores['conQuienVariable']).toBe('tu peque');
+    expect(valores['conQuienVariable']).toBe('tu peque 👶');
     expect(valores['saludoVariable']).toBe(SALUDO);
     expect(valores).not.toHaveProperty('nombreNegocio');
     expect(valores['variablesCuerpo']).toBe('4');

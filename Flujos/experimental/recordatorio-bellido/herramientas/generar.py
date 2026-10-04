@@ -16,7 +16,7 @@ CONFIG_PARAMS={"assignments":{"assignments":[
    {"id":"c3","name":"waGraphVersion","type":"string","value":"v26.0"},
    {"id":"c4","name":"plantilla","type":"string","value":"recordatorio_cita_consultorio"},
    {"id":"c5","name":"idiomaPlantilla","type":"string","value":"es"},
-   {"id":"c6","name":"conQuienVariable","type":"string","value":"tu peque"},
+   {"id":"c6","name":"conQuienVariable","type":"string","value":"tu peque 👶"},
    {"id":"c7","name":"prefijosPermitidos","type":"string","value":"591"},
    {"id":"c8","name":"estadoComercio","type":"string","value":"operativo"},
    {"id":"c9","name":"telefonoPruebaAndres","type":"string","value":"REEMPLAZAR_TELEFONO_PRUEBA_ANDRES"},

@@ -37,7 +37,7 @@ Cada cita omitida deja su causa en `omitidas` de la ejecución (`cancelada`, `ya
 recordatorio sobre tu próxima cita con {{2}} el {{3}} a las {{4}}. ¡Esperamos verte!». Su botón es de URL fija y **no
 lleva parámetro al enviar** (el `jsonBody` solo manda el componente `body`). Los valores:
 - {{1}} = `saludoVariable` del Config del recordatorio; por omisión «te escribimos del consultorio del Dr. Bellido».
-- {{2}} = `conQuienVariable` del Config; por omisión «tu peque».
+- {{2}} = `conQuienVariable` del Config; por omisión «tu peque 👶» (con el emoji de bebé; es texto de parámetro, no de la plantilla: no requiere otra aprobación de Meta).
 - {{3}} = solo la fecha escrita, p. ej. «lunes 5 de octubre» (sin «el»). {{4}} = solo la hora en 24 h, p. ej. «10:30»
   (sin «a las»).
 Se leería: «Hola te escribimos del consultorio del Dr. Bellido, Este es un recordatorio sobre tu próxima cita con tu peque
