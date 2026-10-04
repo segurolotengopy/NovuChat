@@ -13,11 +13,11 @@
  * capacidades de `firestore.rules`, y las elecciones a mano de `cobro.ts`,
  * `catalogoWeb.ts` y `captacion.ts`.
  *
- * Hoy lo importan `pruebas/frontera/frontera.ts` y sus suites, y se verifica
- * contra el código de hoy (`pruebas/core/registro.test.ts`); el código de
- * producción (Functions, consola y scripts) todavía conserva sus copias de la
- * lista de flujos, que los PR de H2b van cambiando por una lectura de este
- * archivo, una por PR.
+ * Hoy lo importan `pruebas/frontera/frontera.ts` y sus suites y, desde H2b-2,
+ * `prompt.ts`; se verifica contra el código de hoy
+ * (`pruebas/core/registro.test.ts`). Las demás copias de la lista de flujos
+ * (consola, `tenants.ts`, scripts de alta, reglas, `cobro.ts`…) se van
+ * reemplazando por una lectura de este archivo, una por PR de H2b.
  *
  * CERO `import`, Y ES A PROPÓSITO. Lo importan cuatro mundos que no comparten
  * resolución de módulos: las Functions (compilan con `rootDir: src` e importan
@@ -563,6 +563,12 @@ export function etiquetaDeCatalogo(modulos: readonly IdModulo[]): string {
  * sin `cobros`, `null`; con `pedidos`, `venta` (gana); con `agenda`,
  * `agendamiento`; si no, `null`. Equivale a `documentoQueCobra` de
  * `modulos/cobros/cobro.ts` sobre los flujos del puente.
+ *
+ * DIFERENCIA CONOCIDA: con `flujos` que NO es lista (p. ej.
+ * `{flujos: 'venta', vertical: 'agendamiento'}`) este registro da `null`
+ * (`flujosDeFicha` falla cerrado) y `documentoQueCobra` de `cobro.ts` da
+ * `'agendamiento'` (cae a `vertical`). El PR que reemplace `documentoQueCobra`
+ * (H2b-4a) debe declararlo y probarlo.
  */
 export function documentoDeCobro(modulos: readonly IdModulo[]): 'venta' | 'agendamiento' | null {
   if (!modulos.includes('cobros')) return null;
