@@ -2111,7 +2111,7 @@ describe('§12: correcciones de la revisión (S1 a S4, S8, R1 a R7, R11, R12), u
   it('R12: ccAcotar recorta a 2 oraciones y las palabras que quepan; ccPreguntaHecha da la pregunta de la oferta', () => {
     expect(f('ccAcotar')('Uno dos. Tres cuatro. Cinco seis.', 2, 50)).toBe('Uno dos. Tres cuatro.');
     expect(f('ccAcotar')('a b c d e f g h', 2, 5)).toBe('a b c d e…');
-    const cfg = { asesor: 'Silvana', guion: { rubros: { otro: {} } }, rubros: [] };
+    const cfg = { asesor: 'Silvana', guion: { rubros: { otro: {} } }, rubros: [], planes: [{ nombre: 'Impulso', precioUsd: 25 }] };
     // La pregunta que se le pasa al modelo es la formulación de la ÚLTIMA oferta (el contador de la ficha apunta a la siguiente).
     const ultima = (ofertas: number): string => f('ccPreguntaHecha')({ ...f('ccEstadoBase')(), paso: 'oferta', ofertas }, cfg);
     expect(ultima(1)).toBe('¿Te gustaría ver los planes o prefieres hablar con Silvana?');
@@ -2457,8 +2457,40 @@ describe('§14: cordialidad (sin repeticiones innecesarias)', () => {
   });
 
   it('ccEsAcuse: «ok», «gracias», «listo», «dale», «vale», «perfecto», «entendido», «muchas gracias» y un 👍 lo son; una pregunta, un nombre o un pedido NO', () => {
-    for (const t of ['ok', 'Ok!', 'gracias', 'Muchas gracias', 'listo', 'Dale', 'vale', 'Perfecto', 'entendido', 'de acuerdo', 'ok 👍', '👍', '🙏', '👌👍', 'Genial, gracias']) expect(f('ccEsAcuse')(t), t).toBe(true);
+    for (const t of ['ok', 'Ok!', 'gracias', 'Muchas gracias', 'listo', 'Dale', 'vale', 'Perfecto', 'entendido', 'de acuerdo', 'ok 👍', '👍', '🙏', '👌👍', 'Genial, gracias', '👍🏽', '🙏🏿', 'Hasta luego ok', 'Chau listo']) expect(f('ccEsAcuse')(t), t).toBe(true);
     for (const t of ['', '   ', '¿ok?', 'ok, ¿y los planes?', 'ok pero cuánto cuesta', 'gracias, ¿y los planes?', 'Tacos Pastor', 'Salón Rosa', 'no', 'sí', 'hola', '😩', '😩😩', 'ok ok ok ok ok', 'ya le escribí a Silvana']) expect(f('ccEsAcuse')(t), t).toBe(false);
+  });
+  it('Revisión #412: una despedida o un acuse compuesto NO se anota como nombre del negocio (el nombre no le gana al acuse)', () => {
+    for (const dicho of ['Chau listo', 'Adios ok', 'Hasta luego ok', 'Muchisimas gracias ok', 'Dale Dale', 'Buen dia ok']) {
+      expect(f('ccNombreDeEmpresa')(dicho), dicho).toBe('');
+      const p = decidir(E({ paso: 'esperando_empresa', hechos: { pidioAsesor: true } }), T(dicho));
+      expect(p['accion'], dicho).toBe('acuse');
+      expect(p['e'].empresa, dicho).toBe('');
+    }
+    // Un nombre de verdad que lleva una palabra de cortesía junto a otra que no lo es sigue siendo un nombre.
+    for (const nombre of ['Pan Perfecto', 'Gas Listo', 'Eventos Genial']) expect(f('ccNombreDeEmpresa')(nombre), nombre).toBe(nombre);
+  });
+  it('Revisión #412: lo que se muestra del nombre se valida DESPUÉS de limpiarlo: sin enlaces armados con *_~, ni caracteres invisibles, ni promesas en boca del negocio', () => {
+    const v = f('ccEmpresaVisible');
+    // El medio de seguridad: el filtro miraba «wa*.*me/…», el eco mostraba «wa.me/…».
+    for (const nombre of ['wa*.*me/76*98*86*63', 'evil*.*com', 'evil_.com', 'mi~sitio.~com', 'Tienda\u200B.com', 'Tienda．com', 'www*.*x*.*bo', '7*6*9*8*8*6*6*3']) expect(v(nombre), nombre).toBe('');
+    // Control bidireccional y espacios de ancho cero: se quitan, y el nombre queda legible.
+    expect(v('\u202ETacos\u200B Pastor\u202C')).toBe('Tacos Pastor');
+    expect(v('Ｔａｃｏｓ Ｐａｓｔｏｒ')).toBe('Tacos Pastor');
+    // El eco no dice por el negocio lo que el negocio no puede decir.
+    for (const nombre of ['Pago acreditado', 'Te llamamos hoy', 'USD 1 por año', 'Bs 100 gratis', 'Soy Silvana', 'Descuento total 50%', 'Pago verificado']) expect(v(nombre), nombre).toBe('');
+    // Lo normal pasa.
+    for (const nombre of ['Tacos Pastor', 'Panadería La Esquina', 'Salón Rosa', 'Café 24 Horas']) expect(v(nombre), nombre).toBe(nombre);
+    // Y en el mensaje: «Quedó anotado.» sin el nombre, que la ficha conserva.
+    const e = E({ paso: 'libre', empresa: 'wa*.*me/76*98*86*63' });
+    const m = f('ccCompletar')({ plan: { accion: 'empresa', e, from: '59100000011', nombrePerfil: 'Ana', extra: {} }, modelo: null, cfg: CFGC })['mensajes'][0];
+    expect(cuerpo(m)).toBe('¡Gracias! 😊 Quedó anotado. ¡Cuando quieras, escríbele a Silvana con el botón!');
+    expect(cuerpo(m)).not.toMatch(/wa\.me|\d{6}/);
+  });
+  it('Revisión #412: ccPreguntaHecha nombra la variante que salió (sin planes, «hablar con…»)', () => {
+    const cfg = { asesor: 'Silvana', guion: { rubros: { otro: {} } }, rubros: [], planes: [{ nombre: 'Impulso', precioUsd: 25 }] };
+    const sinPlanes = { ...f('ccEstadoBase')(), paso: 'oferta', planesMostrados: true, ofertas: 1 };
+    expect(f('ccPreguntaHecha')(sinPlanes, cfg)).toBe('¿Te gustaría hablar con Silvana?');
   });
   it('B: un acuse en el paso de la empresa NO repite la pregunta ni llama al modelo: texto cordial sin «?», con el botón, y el paso sigue en la empresa', () => {
     for (const dicho of ['ok', 'gracias', 'Dale', 'listo', 'vale', 'perfecto', 'entendido', 'muchas gracias', '👍']) {

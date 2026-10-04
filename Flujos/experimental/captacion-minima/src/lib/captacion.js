@@ -406,7 +406,7 @@ function ccNombreDeEmpresa(t) {
   const letras = (n.match(/\p{L}/gu) || []).length;
   const nn = ccNorm(n);
   return letras >= 2 && n.length <= 60 && n.split(/\s+/).length <= 6 && !/[?¿,;:]|\.\s/.test(n) &&
-    !CC_NO_ES_RUBRO.test(nn) && !CC_PEDIDO.test(nn) && !CC_CORTESIA.test(nn) ? n : '';
+    !CC_NO_ES_RUBRO.test(nn) && !CC_PEDIDO.test(nn) && !CC_CORTESIA.test(nn) && !nn.split(' ').every((w) => CC_ACUSE_PALABRAS.has(w)) ? n : '';
 }
 // ¿Se acepta el descarte que propuso el modelo? Devuelve el motivo o ''. Solo si:
 //  - el turno es texto escrito, audio transcrito o campaña (`via`: no un toque, una imagen ni un documento);
@@ -819,10 +819,17 @@ function ccContacto(o, evento, conBoton, sinBoton) {
   const t = ccConEmojis(sinBoton, o.nivel);
   return cmMensaje('cliente', cmTexto(t), t, t, { tipoReporte: 'text', evento: evento, conBoton: false });
 }
-// El nombre del negocio como se muestra de vuelta (§14): ya pasó `ccNombreDeEmpresa`; aun así, sin comillas, corchetes ni marcas de formato
-// que rompan el texto, y hasta 60 caracteres.
+// El nombre del negocio como se muestra de vuelta (§14). Ya pasó `ccNombreDeEmpresa`, pero lo que se muestra es OTRA cadena (sin marcas
+// de formato, sin caracteres invisibles, en NFKC), así que se vuelve a validar: sin enlace ni teléfono, y sin que el eco ponga en boca
+// del negocio una promesa, un monto, una oferta o una acreditación. Si no pasa, '' (el mensaje dice «Quedó anotado.»; la ficha conserva el nombre).
+const CC_INVISIBLES = /[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
+const CC_PROMESA_EN_NOMBRE = /\b(te|les?|los|nos) (llamamos|escribimos|contactamos|avisamos|respondemos)\b|acreditad|verificad|garantiz|\bgratis\b|\bdescuento|\bpromo|%/;
 function ccEmpresaVisible(nombre) {
-  return ccPlano(ccTexto(nombre).replace(/[«»"“”`\[\]{}<>*_~]/g, ''), 60);
+  const v = ccPlano(ccTexto(nombre).normalize('NFKC').replace(CC_INVISIBLES, '').replace(/[«»"“”`\[\]{}<>*_~]/g, ''), 60);
+  if (v === '' || CC_ENLACE.test(v) || /\d{6,}/.test(v.replace(/[\s.\-]/g, ''))) return '';
+  const n = cmNorm(v);
+  if (CC_YO_DEL_MODELO.test(n) || CC_PROMESA_DEL_MODELO.test(n) || CC_PROMESA_EN_NOMBRE.test(n) || ccTieneMonto(v) || ccMontoDelModelo(v)) return '';
+  return v;
 }
 // Una variable de plantilla no admite saltos de línea, tabuladores ni más de cuatro espacios, y no puede ir vacía:
 // Meta rechaza el envío entero.
@@ -968,7 +975,7 @@ function ccPreguntaDelPaso(e, cfg) {
 function ccPreguntaHecha(e, cfg) {
   const q = ccPreguntaDelPaso(e, cfg);
   // La formulación de la última oferta: la que ya salió (el contador de la ficha apunta a la siguiente).
-  return q.tipo === 'oferta' ? ccPreguntaDeOferta(ccQuien(cfg && cfg.asesor), true, ((e && e.ofertas) || 0) + 2) : q.texto;
+  return q.tipo === 'oferta' ? ccPreguntaDeOferta(ccQuien(cfg && cfg.asesor), ccPuedePlanes(e, cfg), ((e && e.ofertas) || 0) + 2) : q.texto;
 }
 function ccPresentacion(cfg) {
   const nombre = ccPlano(cfg && cfg.nombreAsistente, 40);
@@ -1070,7 +1077,7 @@ const CC_ACUSE_PALABRAS = new Set((Array.from(CC_GRACIAS).join(' ') + ' dale acu
 function ccEsAcuse(t) {
   const crudo = ccTexto(t).trim();
   if (crudo === '') return false;
-  if (/^(?:[\s\uFE0F]|[👍👌🙏🙌👏🤝😊])+$/u.test(crudo)) return true;
+  if (/^(?:[\s\uFE0F]|[👍👌🙏🙌👏🤝😊\u{1F3FB}-\u{1F3FF}])+$/u.test(crudo)) return true;
   const n = ccNorm(crudo);
   const p = n.split(' ');
   return n !== '' && !/[?¿]/.test(crudo) && p.length <= 4 && p.every((w) => CC_ACUSE_PALABRAS.has(w)) && /\b(gracias|ok|okey|vale|listo|perfecto|genial|excelente|entendido|bueno|dale|acuerdo)\b/.test(n);
