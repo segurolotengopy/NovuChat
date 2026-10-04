@@ -208,22 +208,26 @@ describe('recordatorio de Bellido v1: si la marca falla después de enviar, o la
     expect(FLUJO.connections['Enviado pero no marcado']).toBeUndefined();
   });
 
-  it('«Enviado pero no marcado» lanza con la cuenta y el eventoId, sin teléfono ni datos del paciente, y manda a Retry', () => {
+  it('«Enviado pero no marcado» lanza con la cuenta y el eventoId, sin teléfono ni datos del paciente, y manda a recepción a marcar a mano', () => {
     const falladas = [{ eventoId: 'ev-1', telefono: TEL, descripcionMarcada: 'Cliente: Valentina Quispe', error: 'x' }, { eventoId: 'ev-2', telefono: TEL }];
     let mensaje = '';
     try { ejecutar(codigo('Enviado pero no marcado'), falladas); } catch (e) { mensaje = (e as Error).message; }
     expect(mensaje).toMatch(/^Enviado pero no marcado: 2 cita\(s\) \(eventoId: ev-1, ev-2\)/);
-    expect(mensaje).toContain('Retry');
+    expect(mensaje).toContain('Recepcion agrega [recordado] a mano en la descripcion de los eventos listados');
+    expect(mensaje).toContain('No se usa Retry ni una ejecucion completa el mismo dia (reenviaria la plantilla)');
+    expect(mensaje).not.toMatch(/Usar Retry/);
     expect(mensaje).not.toContain(TEL);
     expect(mensaje).not.toMatch(/Valentina|Quispe/);
     // sin eventoId en la salida de error, igual lanza
     expect(() => ejecutar(codigo('Enviado pero no marcado'), [{ error: 'x' }])).toThrow(/^Enviado pero no marcado: 1 cita\(s\)\./);
   });
 
-  it('el LEEME dice que ante un error se usa «Retry» desde el nodo que falló, nunca una ejecución completa', () => {
-    const leeme = readFileSync(join(RAIZ, 'LEEME.md'), 'utf8');
-    expect(leeme).toMatch(/Retry/);
+  it('el LEEME manda a recepción a agregar [recordado] a mano y dice que no se usa Retry ni una ejecución completa', () => {
+    const leeme = readFileSync(join(RAIZ, 'LEEME.md'), 'utf8').replace(/\s+/g, ' ');
+    expect(leeme).toContain('Recepción agrega [recordado] a mano en la descripción de los eventos listados. No se usa Retry ni una ejecución completa el mismo día (reenviaría la plantilla).');
     expect(leeme).toMatch(/nunca una ejecución completa/);
+    // la instrucción vieja («Retry» desde el nodo que falló) ya no está
+    expect(leeme).not.toMatch(/se usa «Retry» desde el nodo que falló/);
   });
 
   it('una variable de más de 30 caracteres o los prefijos vacíos llegan a «Revisar omisión», que lanza; una omisión normal termina en verde', () => {

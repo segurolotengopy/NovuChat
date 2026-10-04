@@ -107,8 +107,10 @@ Se genera con el mismo `herramientas/generar.py` y el mismo código de `src/` (u
   de modo que las citas enviadas en la misma corrida sí quedan marcadas.
 - **Si la marca falla después de enviar:** `Marcar como recordada` tiene salida de error y va a `Enviado pero no
   marcado`, que lanza `Enviado pero no marcado: N cita(s) (eventoId: …)` sin teléfono ni datos del paciente. La plantilla
-  ya salió, así que **repetir la ejecución completa la reenviaría al paciente**: ante cualquier error de este flujo se usa
-  «Retry» desde el nodo que falló, nunca una ejecución completa.
+  ya salió, así que **repetir la ejecución completa la reenviaría al paciente**. «Retry» tampoco sirve: reintenta el
+  nodo que lanzó el error y repite el `throw`. Recepción agrega [recordado] a mano en la descripción de los eventos
+  listados. No se usa Retry ni una ejecución completa el mismo día (reenviaría la plantilla). En resumen: nunca una
+  ejecución completa.
 - **Si la omisión es por configuración** (una variable de la plantilla de más de 30 caracteres, o `prefijosPermitidos`
   vacío), `Revisar omisión` lanza `Recordatorio no enviado: configuracion invalida (…)`: no termina en verde. Si no hay
   citas que correspondan (o el comercio no está operativo), sí termina en verde.

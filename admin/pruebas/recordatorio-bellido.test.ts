@@ -270,6 +270,15 @@ describe('recordatorio de Bellido: el teléfono se lee posicional y anclado (hal
     expect(conDescripcion(GESTIONADA)[0]).toMatchObject({ telefono: TEL });
   });
 
+  it('la ambigüedad se cuenta sobre la descripción COMPLETA: una segunda línea «Telefono:» pasada de los 4000 caracteres también omite la cita', () => {
+    const relleno = 'x'.repeat(4100);
+    const tarde = desc('Cliente: Valentina', `Telefono: ${TEL}`, MARCA, relleno, `Telefono: ${ATACANTE}`);
+    expect(tarde.indexOf(`Telefono: ${ATACANTE}`)).toBeGreaterThan(4000);
+    expect(conDescripcion(tarde)).toEqual([{ sinRecordatorios: true, omitidas: ['telefono ambiguo'] }]);
+    // el opuesto: el mismo relleno sin la segunda línea sale
+    expect(conDescripcion(desc('Cliente: Valentina', `Telefono: ${TEL}`, MARCA, relleno))[0]).toMatchObject({ telefono: TEL });
+  });
+
   it('solo cuenta la línea que le toca: la 2 si la 1 es «Cliente:», la 1 si no; una línea «Telefono:» más abajo NO sirve', () => {
     expect(conDescripcion(desc('Cliente: Perfil', 'Servicio: Control del niño sano', `Telefono: ${TEL}`, MARCA)))
       .toEqual([{ sinRecordatorios: true, omitidas: ['sin telefono'] }]);

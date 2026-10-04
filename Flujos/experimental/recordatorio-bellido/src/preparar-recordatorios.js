@@ -53,7 +53,9 @@ for (const item of $input.all()) {
   if (!desc.split(/\r?\n/).some((l) => l.trim() === MARCA_NOVUCHAT)) { omitidas.push('no gestionada por NovuChat'); continue; }
   // Los saltos son `\n`; solo una descripcion SIN ningun `\n` (la que Calendar convierte a HTML al editarla) se parte por `<br>`.
   const lineas = /\n/.test(desc) ? desc.split(/\r?\n/) : desc.split(/<br\s*\/?>/i);
-  if (lineas.filter((l) => /^\s*Tel(?:[eé]fono)?\s*:/i.test(l)).length > 1) { omitidas.push('telefono ambiguo'); continue; }
+  // La ambiguedad se cuenta sobre la descripcion COMPLETA: una segunda linea «Telefono:» pasada de los 4000 caracteres cuenta.
+  const lineasCompletas = /\n/.test(descCompleta) ? descCompleta.split(/\r?\n/) : descCompleta.split(/<br\s*\/?>/i);
+  if (lineasCompletas.filter((l) => /^\s*Tel(?:[eé]fono)?\s*:/i.test(l)).length > 1) { omitidas.push('telefono ambiguo'); continue; }
   const lineaTel = lineas.length > 1 && /^\s*Cliente\s*:/i.test(lineas[0]) ? lineas[1] : lineas[0];
   const m = /^\s*Tel(?:[eé]fono)?\s*:\s*\+?(\d{8,15})\s*$/i.exec(lineaTel || '');
   if (!m) { omitidas.push('sin telefono'); continue; }
