@@ -439,3 +439,60 @@ describe('(f) Prohibición 3: «Recibimos tu pago» con cobro REAL se corrige y 
     }
   });
 });
+
+describe('(g) Seguimiento del #391: destinatarios, monto, falsos positivos y borde', () => {
+  const turno = (o: string, ent: J = {}, sd: J = {}) => ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: o }],
+    { 'Normalizar entrada': [{ ...ENT, ...ent }] }, { $getWorkflowStaticData: () => sd, Date: reloj({ t: 1_800_000_000_000 }) })[0] ?? {};
+  const quita = (o: string) => (turno(o)['avisos'] as string[]).some((a) => /^(aviso_anunciado|promesa)_quitad/.test(a));
+
+  it('(a) «avisé/notifiqué» a cualquier destinatario se quita; «informé/comuniqué» solo a la lista cerrada', () => {
+    for (const o of ['Ya avisé al local.', 'Ya avisé al equipo.', 'Ya avisé a la tienda.', 'Ya avisé al vendedor.', 'Ya avisé a nuestro equipo.',
+      'Ya avisé a la cocina.', 'Ya avisé al personal.', 'Avisé al local.', 'Notifiqué al equipo.', 'Ya informé al equipo.', 'Comuniqué a nuestro equipo.']) {
+      expect(quita(o), o).toBe(true);
+    }
+    // La lista cerrada sigue valiendo para informar: al cliente se le informa, no se le «avisa al negocio».
+    for (const o of ['Ya informé al cliente del precio.', 'Ya informé al vendedor del precio.', 'Te avisé a las 5 que ya estaba.', 'Te avisé al mediodía.']) {
+      expect(quita(o), o).toBe(false);
+    }
+  });
+
+  it('(b) el monto sobrevive a un anuncio pegado por coma, «y», raya o punto y coma (también el futuro)', () => {
+    for (const o of ['Total: 80 Bs, ya avisé al negocio.', 'Total 80 Bs y ya le avisé al negocio.', 'Total: 80 Bs — ya le avisé al negocio.',
+      'Total: 80 Bs; le avisaré al negocio.', 'Total: 80 Bs, le avisaré al negocio.', 'Total 80 Bs y le aviso a recepción.', 'Total: 80 Bs - ya informé al negocio.']) {
+      const p = turno(o);
+      expect(String(p['respuesta']), o).toContain('80 Bs');
+      expect(String(p['respuesta']), o).not.toMatch(/avis|inform/i);
+    }
+  });
+
+  it('(c) falsos positivos: lo que informa o no anuncia se conserva', () => {
+    for (const o of ['Estamos avisando a todos de la promo.', 'Te lo he notificado arriba.', 'Ya te lo he avisado: el envío cuesta 10 Bs.',
+      'Te lo avisé arriba.', 'Estamos avisando a todos los clientes de la promo.']) {
+      const p = turno(o);
+      expect(p['avisos'], o).not.toContain('aviso_anunciado_quitado');
+      expect(String(p['respuesta']), o).toBe(o);
+    }
+    // Y con destinatario de la lista o sin complemento, «estamos avisando» sigue siendo un anuncio.
+    for (const o of ['Estamos avisando al negocio.', 'Estamos avisando.', 'Estoy avisando a recepción.', 'Estamos avisando a nuestro equipo.']) expect(quita(o), o).toBe(true);
+  });
+
+  it('(d) «Ya avisé ✅» y «Avisé, toca el botón.» se filtran; con una palabra detrás, no', () => {
+    for (const o of ['Ya avisé ✅', 'Ya avisé ✅.', 'Avisé, toca el botón.', 'Avisé.', 'Avisé 👍', 'Ya notifiqué ✔️', 'Avisé']) expect(quita(o), o).toBe(true);
+    for (const o of ['Como avisé, el envío cuesta 10 Bs.', 'Avisé que el envío cuesta 10 Bs.', 'Ya avisé que el envío cuesta 10 Bs.', 'Te avisé.']) expect(quita(o), o).toBe(false);
+  });
+
+  it('con la marca vigente se conserva el pasado también en las formas nuevas', () => {
+    const sd: J = { avisosTransferencia: { [CLIENTE]: 1_800_000_000_000 - 60_000 } };
+    for (const o of ['Ya avisé al local.', 'Ya avisé ✅', 'Avisé, toca el botón.']) {
+      expect(turno(o, {}, sd)['avisos'], o).not.toContain('aviso_anunciado_quitado');
+    }
+  });
+
+  it('sin ReDoS: 50 000 caracteres de casi-coincidencias terminan rápido', () => {
+    for (const bloque of ['ya avisé a ', 'estamos avisando ', 'Total 80 Bs y ya le ', 'avisé ', ', ya le avis ', ' - ya ']) {
+      const t0 = Date.now();
+      turno(bloque.repeat(Math.ceil(50_000 / bloque.length)));
+      expect(Date.now() - t0, bloque).toBeLessThan(3000);
+    }
+  });
+});
