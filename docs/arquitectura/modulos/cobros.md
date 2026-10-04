@@ -459,10 +459,18 @@ ni «recibimos tu pago»: los motivos son códigos y el detalle del cierre dice 
 los datos coinciden o que son aproximados. Quien confirma que entró la plata es
 el banco, y el negocio.
 
-**Integración pendiente (C1b, de la coordinadora).** Las tres Functions
+**Integrado (C1b, de la coordinadora, 04/10/2026).** Las tres Functions
 (`cotejarComprobanteVenta`, `guardarComprobante`, `purgarComprobantes`) están
-escritas y probadas pero **no exportadas**: faltan los tres exports en
-`index.ts`, el manifiesto de `cobros` en `registro.ts` (`functions`,
-`almacenamiento: ['comprobantes']`, `mensajes: 0`) y, en `ingesta.ts`, los
-eventos y la llamada a `solicitudDeCobroTras`. Hasta entonces nada de esto corre
-en producción.
+exportadas en `index.ts` y declaradas en el manifiesto de `cobros` en
+`registro.ts` (`functions`, `almacenamiento: ['comprobantes']`, `mensajes: 0`),
+y `ingesta.ts` entiende `reglaCobro`, `cobro_cancelado` y `anulacion_avisada`
+y llama a `solicitudDeCobroTras` en todo `qr_enviado` (obligaciones (a) y (b));
+`solicitudTras` no pasa a `agendada` una regla 2 en `en_revision`, `cancelada`
+o vencida, escrita o por reloj (obligación (c)). La suite es
+`pruebas/cobro-v2-ingesta.test.ts`. **Nada de esto corre en producción hasta el
+despliegue** (3 Functions, 1 job de Scheduler, invocador para las 2 HTTP), que
+es posterior al 05/10, en ventana y con el «sí» de Andres; y la regla 2 la
+elige el flujo, así que desplegar no cambia ningún flujo publicado. **Falta la
+obligación (d)** (`seguimientos.ts`, otro PR): hasta entonces, una regla 2
+vencida de forma perezosa que sigue escrita `qr_enviado` todavía podría recibir
+un recordatorio.
