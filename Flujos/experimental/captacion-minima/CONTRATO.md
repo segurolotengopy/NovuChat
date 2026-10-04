@@ -68,7 +68,7 @@ Cantera (solo en la rama del PR 389, commit `8173a00`; se lee con `git show 8173
 | D10 | Ofrecer al asesor = botón de respuesta `asesor` (o fila `asesor` en una lista); al tocarlo, el traspaso |
 | D11 | «¿Eres una persona?» la contesta el código con texto fijo |
 | D12 | Se conservan los nombres de nodo del flujo viejo donde la función es la misma (`publicar-flujo.sh` injerta `webhookId` y credenciales por nombre) |
-| D13 | Retención de ejecuciones `none` en todas las variantes (pendiente de ratificar por Andres antes de publicar) |
+| D13 | **Retención (Andres, 03/10/2026): se guardan solo las ejecuciones que fallan.** `saveDataSuccessExecution: none`, `saveDataErrorExecution: all`, `saveExecutionProgress: false`. Una ejecución fallida guarda el texto del turno que falló; sin `errorWorkflow` |
 | D14 | Textos fijos genéricos en el código, en tuteo, con `{negocio}` y `{asesor}`; textos por rubro y nombre del asesor, en datos. Ningún nombre de comercio ni de persona en `src/` |
 | D15 | Primer mensaje con una pregunta: sale la lista fija (si pide precios, con la promesa de mostrarlos) |
 | D16 | **La única imagen que se envía es la de precios, solo cuando el prospecto pregunta por ellos** (Andres, 03/10/2026: las demás no se pueden mantener). Ni la oferta ni los rubros llevan imagen; si no hay `archivoPlanes` válido, los planes salen en texto desde la consola. Los medios que ENVÍA el prospecto se siguen procesando (funcionalidad 12) |
@@ -287,8 +287,8 @@ Tras `armarVariante`, cada línea se reemplaza exactamente una vez (0 o 2 aparic
   `us-east1-novuchat-demo.cloudfunctions.net` (o un marcador). Solo dos URL por expresión:
   «Descargar medio» `={{ $json.url }}` y «Guardar prospecto» `={{ $json.crmUrl }}`.
 - Ningún nodo `agent`, `memoryBufferWindow` ni `lmChat*`.
-- `saveDataSuccessExecution` y `saveDataErrorExecution` en `none`, `saveExecutionProgress:
-  false`, `executionOrder: v1`, `timezone: America/La_Paz`.
+- `saveDataSuccessExecution` en `none`, `saveDataErrorExecution` en `all`, sin `errorWorkflow`,
+  `saveExecutionProgress: false`, `executionOrder: v1`, `timezone: America/La_Paz`.
 - Planilla: rangos `A3:J` y `A3:A`; «Agregar fila» en `USER_ENTERED`; «Actualizar fila» en `RAW`.
 - `REEMPLAZAR_` solo en «Config base» (y la ruta de prueba).
 - Huérfanos: todo `captacion-minima.*.json` tiene su archivo de datos, salvo `*.local.json`.
@@ -394,3 +394,37 @@ Imágenes por rubro o en la oferta (la única imagen es la de precios); guion en
 memoria de conversación; consulta del cliente en la planilla; CRM real; segundo tenant;
 batería contra el modelo (bloque siguiente); ensayo y publicación (bloque siguiente, con el
 «sí» de Andres); retirar el flujo viejo y cerrar el PR 389.
+
+## 12. Correcciones de la revisión (03/10/2026) — mandan sobre lo anterior donde difieran
+
+Dos revisiones (código y seguridad: 0 críticos, 0 altos; 3 medios de seguridad y 7 importantes
+de código). Cada punto lleva su prueba negando. «Interpretar entrada» y los demás nodos siguen
+siendo de quien implementa; la suite de punta a punta pasa a ser editable por él (su autor ya
+terminó).
+
+### Seguridad
+- **S1 (identidad).** `ccEsIdentidad` reconoce `(eres|es|sos|hablo con|me atiende|me escribe) (el |la |un |una )?(<asesor>|persona|humano|robot|bot|automatico|real)` (con el nombre del asesor normalizado). `ccLeerModelo` rechaza en `empatia` y `respuesta` `\bsoy\b|\bsomos\b|\bte habla\b|aqui no hay (ningun )?(robot|bot)`, y en `empatia` además el nombre del asesor y `\b(asesor|asesora|ejecutiv[oa])\b`. Pruebas: «Sí, soy Silvana.», «Te habla Silvana, del equipo.», «Soy una asesora del equipo.» y «Aquí no hay ningún robot.» se rechazan; «¿eres Silvana?», «¿es un robot?», «¿me atiende una persona?», «¿esto es automático?» las contesta el código con el texto fijo de identidad.
+- **S2 (promesas).** Se rechaza en `empatia` y `respuesta`: `\b(se|te) (pondra|pondran|contacta|contactara|comunica|comunicara|llama|llamara|escribe|escribira|respond(e|era|eran))\b|\bte respond(emos|eremos)\b|\ben contacto contigo\b|\bse comunica\w* contigo\b|\bmenos de \d+ horas\b`. El fragmento `contacto` del corpus se agrega a los excluidos. Pruebas con las cuatro frases del informe.
+- **S3 (montos y ofertas).** `empatia` rechaza todo dígito y `%|gratis|descuento|promo|oferta`. `respuesta` solo acepta números que aparezcan literalmente en los datos que ve el modelo y rechaza `\d+\s*(\$|u\$s|\$us|usd|euros?|al mes|mensual|por mes|anual)`, `%`, `gratis`, `descuento`. `CC_PIDE_PLANES` acepta `cuanto (me |nos )?(cuesta|sale|cobran|vale)`. `ccTieneMonto` y la validación del corpus en `construir.mjs` reutilizan un único patrón que reconoce «25 USD», «$us 65», «150$», «U$S 150», «1 dólar», «150 euros», «99,90 mensuales». Pruebas con cada forma.
+- **S4 (L1).** `rubroLibre` y `empresa` rechazan enlaces (`cmEnlacesDe`) y secuencias de 6 o más dígitos.
+- **S5 (L2).** «¿Tamaño aceptable?» exige además `^https://lookaside\.fbsbx\.com/` en la `url` del medio.
+- **S6 (L3).** «Armar mensajes» borra `sd.conversaciones` y `sd.vistos` del flujo viejo (el mismo workflow se publica encima). Prueba.
+- **S7 (L6, I11).** `ensayo.json` pone `planillaProspectosId: ''`; con `modoPrueba` NO se escribe la planilla; y `configBase.telefonosDePrueba` (lista opcional) limita a qué números puede dirigirse una ejecución de prueba. Pruebas.
+- **S8.** `textoDeImagen` y `RUBRO` van dentro de un bloque delimitado, no sueltos. `validarDatos` rechaza ids de rubro `__proto__|constructor|prototype`. Se recuerdan 5 ids por ficha (no 20) y `ccBarrer` respeta el tope exacto de 5.000.
+
+### Código
+- **R1.** «Hola, vendo ropa y mis clientes me preguntan precios todo el día» NO es pedir planes: en el primer mensaje y en `eligiendo_rubro`, un pedido de planes exige `ccPidePlanesCorto`, o `ccPidePlanes` junto con «?» o un verbo de pedido (quiero, necesito, dame, mándame, pásame, cuál, cuánto, ver, cotiza). Pruebas en los dos pasos.
+- **R2.** Una pregunta por precio nunca recibe «Eso no lo tengo en mis datos»: en `ccResolverModelo`, si el texto pide planes (R1) y el tipo es `pregunta` o `pide_planes`, va a `ccPedirPlanes` en cualquier paso. `esperando_negocio` y `esperando_empresa` también miran `ccPidePlanesCorto`.
+- **R3.** «Perfecto», «Excelente», «Bueno», «Entendido», «Vale», «Genial», «De acuerdo», «Muy amable», «Ya le escribí», «Ahorita le escribo» no son el nombre de una empresa (ampliar cortesías y evasivas). Pruebas negando.
+- **R4.** «¿El plan incluye soporte?» no es un cliente pidiendo soporte: `ccEsSoporte` exige una forma de cliente («necesito soporte», «soporte de mi cuenta», «ya soy cliente…»); la palabra suelta la resuelve el modelo.
+- **R5 (descarte y tildes).** Se bloquea el descarte solo si el texto del cliente, sin tildes y en minúsculas, contiene la palabra `descarte` o un motivo literal con guion bajo (`numero_equivocado`, `vende_o_busca_trabajo`, `sin_negocio`, `spam_o_prueba`). «Perdón, número equivocado» y «Perdon, numero equivocado» descalifican igual (con `numero_equivocado` del modelo).
+- **R6.** Con `pide_asesor` del modelo: en `eligiendo_rubro` sale la lista CON la fila del asesor; en los modos de texto, la pregunta del paso con el botón. `ccPideAsesor` reconoce «Hola, quiero hablar con una persona» (se admite un saludo delante); una campaña sigue sin elegir al asesor.
+- **R7.** «Otro» con `rubroLibre` ya conocido: no se vuelve a preguntar de qué trata el negocio. Campo nuevo `guion.rubros.otro.preguntaDolor` (se valida como `pregunta`; en `novuchat.json`: «¿Qué es lo que más tiempo te quita hoy en tu negocio?»).
+- **R8 (ficha adelantada).** «Armar mensajes» guarda la ficha previa en el primer ítem (`fichaAntes`). Si «Confirmar envío» va a hacer `throw` porque Meta rechazó el mensaje y su respaldo, restaura la ficha previa conservando `ultimosIds` y `ultimoMensajeMs`. Se enmienda el «un solo escritor» del §4 y D8: «Confirmar envío» también restaura la ficha cuando el envío falla. Prueba: tras un rechazo total, el siguiente «precios» vuelve a recibir los planes.
+- **R9.** Retención de D13: `construir.mjs`, la plantilla, los JSON, `DISENO.md` y las pruebas pasan de «none/none» a «none/all».
+- **R10.** «Interpretar entrada» devuelve `[]` (ni se reporta ni se responde) para `reaction`, `sticker`, `request_welcome`, `system` y `ephemeral`, como Venta mínima.
+- **R11 (tamaño).** «Interpretar entrada» usa `@@comun` y un `cnYaVisto` en lugar de pegar la librería entera; «Decidir turno» no pega `+mensajes+filtro` si no usa ninguna `cm*` (ajustar la prueba que lo exige); se quitan `ccEsSaludo` y `cnNorm` si no se usan; se unifican `ccQuien` (tres copias de `ccPlano(cfg.asesor,20)||'un asesor'`), la presentación (dos copias), la validación del archivo de planes (dos copias), el filtro de rubros comunes (tres copias, ya existe `ccRubrosComunes`) y la expresión de destino de campaña (dos copias).
+- **R12 (menores baratos).** Campaña con destino vencido en el primer mensaje: se presenta sin decir «Esa opción ya no está». En oferta y libre se le pasa al modelo la pregunta de la oferta como «PREGUNTA QUE HICISTE». El modo `negocio` respeta `r.rubroId`. En libre, un agradecimiento no repite «¿Quieres hablar con X?». Una aclaración al retomar se recorta para no pasar de 3 oraciones ni 50 palabras. «No pude leer tu imagen» distingue documento. `cnMapaDeFichas` no escribe desde nodos que solo leen. «Reportar mensaje (saliente)» con `timeout` de 4000. En `captacion-minima-flujo.test.ts`: quitar `describe.skipIf` (la suite debe fallar si falta el JSON) y corregir el comentario «tolera 60».
+
+### Fuera de esta ronda
+Tokens de razonamiento dentro de `maxOutputTokens: 400` y el pedido de baja («no me escriban más»): los mide la batería. Concurrencia de `staticData` entre ejecuciones y credencial del disparador por id de app: se verifican contra n8n antes de publicar.
