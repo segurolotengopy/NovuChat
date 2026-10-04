@@ -55,8 +55,12 @@ d = json.load(open(flujo, encoding="utf-8"))
 # termina en "trigger" pero no expone ninguna URL: ponerle un webhookId es
 # ruido en el mejor caso y una colision de rutas en el peor.
 CON_WEBHOOK = ("whatsapptrigger", "webhook", "formtrigger", "chattrigger")
+# `respondToWebhook` (Aceptar (200), Rechazar (401) del flujo de Q'Taco) CONTIENE «webhook» pero NO es un
+# disparador: responde al que ya recibio. Contarlo como disparador hacia fallar el import de Q'Taco con
+# «hay 2 disparadores sin ruta propia» (04/10/2026).
 disparadores = [n for n in d["nodes"]
-                if any(c in n["type"].lower() for c in CON_WEBHOOK)]
+                if any(c in n["type"].lower() for c in CON_WEBHOOK)
+                and "respondtowebhook" not in n["type"].lower()]
 
 # UN FLUJO PUEDE TENER DOS DISPARADORES CON URL, Y NO COMPARTEN RUTA.
 #
