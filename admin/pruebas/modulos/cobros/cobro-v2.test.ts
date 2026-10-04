@@ -72,7 +72,7 @@ describe('abrir el cobro', () => {
     let s = abierta();
     s = aplicar(s, solicitudDeCobroTras(s, comp('invalido', 'c1'), T0 + 2 * MIN));
     const antes = { venceEn: ms(s['venceEn']), prorrogaHasta: ms(s['prorrogaHasta']), intentos: s['intentosInvalidos'] };
-    const t = solicitudDeCobroTras(s, { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'wamid.reenvio' }, T0 + 5 * MIN);
+    const t = solicitudDeCobroTras(s, { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'wamid.reenvio', referencia: 'wamid.qr', monto: 100 }, T0 + 5 * MIN);
     expect(t.efecto).toBe('reenvio');
     expect(t.metricas).toEqual({});
     const despues = aplicar(s, t);
@@ -81,6 +81,43 @@ describe('abrir el cobro', () => {
     expect(despues['intentosInvalidos']).toBe(antes.intentos);
     expect(ms(despues['qrEnviadoEn'])).toBe(T0);
     expect(limiteDe(despues)).toBe(limiteDe(s));
+  });
+  it('REENVÍO solo si la referencia Y el total coinciden: con otro total es un cobro nuevo, con plazo nuevo', () => {
+    let s = abierta();
+    s = aplicar(s, solicitudDeCobroTras(s, comp('invalido', 'c1'), T0 + 2 * MIN));
+    const otroTotal = solicitudDeCobroTras(s, { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'w2', referencia: 'wamid.qr', monto: 150 }, T0 + 5 * MIN);
+    expect(otroTotal.efecto).toBe('abierto');
+    expect(ms(otroTotal.cambios?.['venceEn'])).toBe(T0 + 20 * MIN);
+    expect(otroTotal.cambios).toMatchObject({ intentosInvalidos: 0, comprobantes: [], prorrogaHasta: null });
+    const otraReferencia = solicitudDeCobroTras(s, { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'w3', referencia: 'otro-pedido', monto: 100 }, T0 + 5 * MIN);
+    expect(otraReferencia.efecto).toBe('abierto');
+    const igual = solicitudDeCobroTras(s, { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'w4', referencia: 'wamid.qr', monto: 100 }, T0 + 5 * MIN);
+    expect(igual.efecto).toBe('reenvio');
+  });
+  it('un `qr_enviado` sobre `en_revision` NO reabre el cobro: mismo pedido, ignorado; otro pedido, cobro nuevo', () => {
+    let s = abierta();
+    for (const id of ['c1', 'c2', 'c3']) s = aplicar(s, solicitudDeCobroTras(s, comp('invalido', id), T0 + MIN));
+    expect(s['etapa']).toBe('en_revision');
+    const mismo = solicitudDeCobroTras(s, { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'w5', referencia: 'wamid.qr', monto: 100 }, T0 + 5 * MIN);
+    expect(mismo).toMatchObject({ efecto: 'ignorado', cambios: null, metricas: {} });
+    const otro = solicitudDeCobroTras(s, { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'w6', referencia: 'pedido-2', monto: 100 }, T0 + 5 * MIN);
+    expect(otro.efecto).toBe('abierto');
+    expect(otro.cambios).toMatchObject({ intentosInvalidos: 0, comprobantes: [] });
+  });
+  it('un comprobante recibido en `en_revision` se anota con motivo `en_revision`, no `tardio`', () => {
+    let s = abierta();
+    for (const id of ['c1', 'c2', 'c3']) s = aplicar(s, solicitudDeCobroTras(s, comp('invalido', id), T0 + MIN));
+    s = aplicar(s, solicitudDeCobroTras(s, comp('invalido', 'c4', 'tardio'), T0 + 2 * MIN));
+    const ultimo = (s['comprobantes'] as { motivo: string; estado: string }[]).at(-1);
+    expect(ultimo).toMatchObject({ estado: 'en_revision', motivo: 'en_revision' });
+  });
+  it('se anota con qué aviso se contestó, para poder repetirlo', () => {
+    let s = abierta();
+    s = aplicar(s, solicitudDeCobroTras(s, comp('valido', 'v1', 'ok'), T0 + MIN));
+    expect((s['comprobantes'] as { avisar: boolean }[])[0]?.avisar).toBe(true);
+    let r = abierta();
+    r = aplicar(r, solicitudDeCobroTras(r, comp('invalido', 'i1'), T0 + MIN));
+    expect((r['comprobantes'] as { avisar: boolean }[])[0]?.avisar).toBe(false);
   });
   it('un QR nuevo sobre uno vencido sin cerrar abre de nuevo y cuenta el vencido una vez', () => {
     const t = solicitudDeCobroTras(abierta(), { tipo: 'qr_enviado', reglaCobro: 2, idMeta: 'wamid.n' }, T0 + 30 * MIN);
@@ -258,6 +295,30 @@ describe('`configuracionFlujo.cobro`: la regla 1 idéntica y la regla 2 con sus 
   });
   it('el plazo aplica también en modo simulado (activo: false)', () => {
     expect(cobroParaElFlujo({}, false, 'BOB', url, abierta(), T0 + 20 * MIN)).toMatchObject({ activo: false, pendiente: false });
+  });
+});
+
+describe('la regla 1 sigue igual: las claves de siempre, con igualdad estricta', () => {
+  const VIEJAS = ['activo', 'moneda', 'montoFijo', 'qr', 'pendiente', 'monto', 'pedido', 'qrEnviadoEn', 'vencidoHaceMin'] as const;
+  const viejas = (o: Record<string, unknown>) => Object.fromEntries(VIEJAS.map((k) => [k, o[k]]));
+  const enviado = Timestamp.fromMillis(T0);
+  const base = { etapa: 'qr_enviado', qrEnviadoEn: enviado, monto: 100, evento: { id: 'p1', calendario: '' } };
+  it('pendiente, vencido, otra etapa y sin solicitud: los valores de la base', () => {
+    const iso = new Date(T0).toISOString();
+    const venta = { cobroReal: { ficha: 'f', nombreCuenta: 'N', banco: 'B', montoFijo: 7 } };
+    expect(viejas(cobroParaElFlujo(venta, true, 'BOB', url, base, T0 + 60 * MIN))).toStrictEqual({
+      activo: true, moneda: 'BOB', montoFijo: 7, qr: { url: url('f'), nombreCuenta: 'N', banco: 'B' },
+      pendiente: true, monto: 100, pedido: 'p1', qrEnviadoEn: iso, vencidoHaceMin: null,
+    });
+    expect(viejas(cobroParaElFlujo(undefined, false, 'BOB', url, base, T0 + (24 * 60 + 30) * MIN))).toStrictEqual({
+      activo: false, moneda: 'BOB', montoFijo: null, qr: null,
+      pendiente: false, monto: 100, pedido: 'p1', qrEnviadoEn: iso, vencidoHaceMin: 30,
+    });
+    expect(viejas(cobroParaElFlujo(undefined, false, 'BOB', url, { ...base, etapa: 'agendada' }, T0 + MIN))).toMatchObject({ pendiente: false, vencidoHaceMin: null });
+    expect(viejas(cobroParaElFlujo(undefined, false, 'BOB', url, null, T0))).toStrictEqual({
+      activo: false, moneda: 'BOB', montoFijo: null, qr: null,
+      pendiente: false, monto: null, pedido: null, qrEnviadoEn: null, vencidoHaceMin: null,
+    });
   });
 });
 

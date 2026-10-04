@@ -323,6 +323,11 @@ export interface ComprobanteAnotado {
   motivo: string;
   en: Timestamp;
   ruta: string | null;
+  /** Lo que se contestó entonces, para repetirlo si el mismo comprobante llega otra vez. */
+  avisar?: boolean;
+  importe?: number | null;
+  montoLeido?: number | null;
+  montoDistinto?: boolean;
 }
 
 function numeroEntero(v: unknown): number {
@@ -352,7 +357,11 @@ export const CAMPOS_REGLA_2_EN_NULO = {
 } as const;
 
 export type EventoDeCobro =
-  | { tipo: 'qr_enviado'; reglaCobro?: unknown; idMeta?: string }
+  | {
+      tipo: 'qr_enviado'; reglaCobro?: unknown; idMeta?: string;
+      /** La referencia del pedido y su total: deciden si es un reenvío o un cobro nuevo. */
+      referencia?: string; monto?: number | null;
+    }
   | { tipo: 'cobro_cancelado' }
   | { tipo: 'anulacion_avisada' }
   /** Una lectura: solo materializa el vencimiento perezoso. */
@@ -364,6 +373,10 @@ export type EventoDeCobro =
       motivo: string;
       idMeta: string;
       ruta: string | null;
+      /** Lo que se calificó, para poder repetir la respuesta de un reintento. */
+      importe?: number | null;
+      montoLeido?: number | null;
+      montoDistinto?: boolean;
     };
 
 export type EfectoDeCobro =
@@ -431,9 +444,20 @@ export function solicitudDeCobroTras(
     if (typeof evento.idMeta !== 'string' || evento.idMeta.trim() === '') {
       return sinCambios('sin_id_meta', s);
     }
+    const refNueva = (evento.referencia ?? '').trim();
+    const refVieja = String((s?.['evento'] as { id?: unknown } | null | undefined)?.id ?? '').trim();
+    const montoNuevo = totalUtilizable(evento.monto);
+    const montoViejo = totalUtilizable(s?.['monto']);
+    const mismoPedido = refNueva === refVieja && montoNuevo === montoViejo;
+    // UN COBRO EN REVISIÓN NO SE REABRE: el mismo pedido otra vez no cambia nada
+    // (los intentos y los comprobantes siguen siendo los suyos); un pedido
+    // DISTINTO es un cobro nuevo.
+    if (regla2 && etapa === 'en_revision' && mismoPedido) return sinCambios('ignorado', s);
     // EL REENVÍO DEL QR NO ESTIRA EL PLAZO: mientras el cobro sigue abierto, el
     // reloj, los intentos y los comprobantes son los de la solicitud en curso.
-    if (regla2 && etapa === 'qr_enviado' && !vencidaPorReloj) {
+    // Solo es reenvío si es el MISMO pedido y el MISMO total: con otro total es
+    // un cobro nuevo, con plazo nuevo.
+    if (regla2 && etapa === 'qr_enviado' && !vencidaPorReloj && mismoPedido) {
       return {
         ...sinCambios('reenvio', s),
         cambios: {
@@ -499,9 +523,13 @@ export function solicitudDeCobroTras(
   const repetido = lista.find((c) => c.idMeta === evento.idMeta);
   if (repetido) return { ...sinCambios('repetido', s), previo: repetido };
 
-  const anotar = (estado: EstadoDeComprobante, motivo: string): ComprobanteAnotado[] =>
+  const anotar = (estado: EstadoDeComprobante, motivo: string, avisar: boolean): ComprobanteAnotado[] =>
     lista.length >= MAX_COMPROBANTES ? lista
-      : [...lista, { idMeta: evento.idMeta, estado, motivo, en: ahora, ruta: evento.ruta }];
+      : [...lista, {
+          idMeta: evento.idMeta, estado, motivo, en: ahora, ruta: evento.ruta, avisar,
+          importe: evento.importe ?? null, montoLeido: evento.montoLeido ?? null,
+          montoDistinto: evento.montoDistinto ?? false,
+        }];
   const cotejos = numeroEntero(s['cotejos']) + 1;
 
   if (etapa === 'cancelada') return sinCambios('cobro_cancelado', s);
@@ -509,7 +537,7 @@ export function solicitudDeCobroTras(
 
   if (etapa === 'en_revision') {
     // Ya está con una persona: el comprobante se anota y no se avisa de nuevo.
-    return { ...sinCambios('en_revision', s), cambios: { comprobantes: anotar('en_revision', evento.motivo), cotejos } };
+    return { ...sinCambios('en_revision', s), cambios: { comprobantes: anotar('en_revision', 'en_revision', false), cotejos } };
   }
 
   // Vencida (guardada o por reloj): el comprobante llega tarde.
@@ -524,7 +552,7 @@ export function solicitudDeCobroTras(
     const primero = !lista.some((c) => c.estado === 'tardio');
     return {
       ...sinCambios('tardio', s),
-      cambios: { ...(vencidaPorReloj ? vencimiento() : {}), comprobantes: anotar('tardio', evento.motivo), cotejos },
+      cambios: { ...(vencidaPorReloj ? vencimiento() : {}), comprobantes: anotar('tardio', 'tardio', primero), cotejos },
       metricas: { ...(vencidaPorReloj ? { cobrosVencidos: 1 } : {}), ...(primero ? { cobrosTardios: 1 } : {}) },
       avisarComercio: primero,
     };
@@ -541,7 +569,7 @@ export function solicitudDeCobroTras(
       ...sinCambios('cerrado', s),
       cambios: {
         etapa: 'agendada', desde: ahora, cotejos, prorrogaHasta: prorroga,
-        comprobantes: anotar(evento.estado, evento.motivo),
+        comprobantes: anotar(evento.estado, evento.motivo, true),
       },
       metricas: {
         cobrosCotejados: 1, ...(evento.estado === 'valido' ? { cobrosValidos: 1 } : { cobrosAproximados: 1 }),
@@ -551,9 +579,11 @@ export function solicitudDeCobroTras(
   }
 
   const intentos = numeroEntero(s['intentosInvalidos']) + 1;
+  const alLimite = intentos >= MAX_INTENTOS_INVALIDOS;
   const base = {
     cotejos, prorrogaHasta: prorroga, intentosInvalidos: intentos,
-    comprobantes: anotar('invalido', evento.motivo),
+    // El tercero se anota ya como `en_revision` (con su motivo): así un reintento lo repite igual.
+    comprobantes: anotar(alLimite ? 'en_revision' : 'invalido', evento.motivo, alLimite),
   };
   if (intentos >= MAX_INTENTOS_INVALIDOS) {
     return {
