@@ -40,8 +40,10 @@ interface Modulo {
   validarCasos(datos: unknown): J[];
   revisarMensaje(m: J, ctx?: J): { regla: string; texto: string }[];
   tonoDe(t: string): { voseo: boolean; usted: boolean };
+  conEmoji(t: string): boolean;
   limpiarSecretos(t: string, secretos?: string[]): string;
   correrCaso(a: J): Promise<J>;
+  medir(corridas: J[], descarteEsperado?: (id: string) => boolean): J;
   cargarLibreria(flujo: J): J;
   TARIFA: { entrada: number; salida: number; cacheado: number };
 }
@@ -116,9 +118,9 @@ describe('Batería de Captación mínima contra el modelo', () => {
       const j = JSON.parse(r.salida) as J;
       const ids = (j['casos'] as J[]).map((c) => c['id']);
       expect(ids).toEqual(casosDelArchivo().map((c) => c['id']));
-      for (const id of ['C1', 'C3', 'C4', 'C7', 'C10', 'C11', 'C12', 'C17', 'C18']) expect(ids, id).toContain(id);
+      for (const id of ['C1', 'C3', 'C4', 'C7', 'C10', 'C11', 'C12', 'C17', 'C18', 'P1', 'P2', 'P3', 'P4', 'P5']) expect(ids, id).toContain(id);
       // Preguntas sueltas, el dolor de cinco maneras, la promesa y el monto inducidos y el saludo largo.
-      expect(ids.length).toBeGreaterThanOrEqual(19);
+      expect(ids.length).toBeGreaterThanOrEqual(24);
     });
 
     it('lo determinista no viola ninguna regla dura sobre lo que el cliente recibe', () => {
@@ -330,7 +332,7 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect(t['jsonValido'].ok).toBe(0);
       // «Disculpa, no pude procesar tu mensaje…» con el botón del asesor (el contrato §4): nada de un mensaje vacío.
       const conv = (caso(json(r), 'C21')['conversacion'] as J[]).flatMap((x) => x['mensajes'] as string[]).join('\n');
-      expect(conv).toMatch(/Disculpa, no pude procesar tu mensaje/);
+      expect(conv).toMatch(/¡Uy, tuve un problema para procesar tu mensaje!/);
       expect(json(r)['violaciones']['total']).toBe(0);
     });
 
@@ -398,7 +400,7 @@ describe('Batería de Captación mínima contra el modelo', () => {
       // Lo que el cliente recibe: sin el monto ni la promesa, y con el camino al asesor.
       const conv = ['C21', 'C22'].flatMap((id) => (caso(json(r), id)['conversacion'] as J[]).flatMap((x) => x['mensajes'] as string[])).join('\n');
       expect(conv).not.toMatch(/USD|\bllamo\b|Seguro que sí/);
-      expect(conv).toMatch(/Eso no lo tengo en mis datos; Silvana te lo responde/);
+      expect(conv).toMatch(/Esa no la tengo a la mano 🤔; Silvana te lo responde/);
       expect(json(r)['violaciones']['detalle']).toEqual([]);
       // El modelo "afirmó tener datos" donde C22 sí los esperaba, y en C21 no se evalúa; la invención efectiva no llegó.
       expect(t['invencionesEfectivas']).toBe(0);
@@ -443,8 +445,8 @@ describe('Batería de Captación mínima contra el modelo', () => {
 
     const malos: [string, string, string][] = [
       ['más de una «?»', '¿Quieres planes? ¿O prefieres hablar con alguien?', 'mas_de_una_pregunta'],
-      ['más de 3 oraciones', 'Entiendo. Es mucho trabajo. Lo sé bien. Puedo ayudarte. Cuéntame más.', 'mas_de_3_oraciones'],
-      ['más de 50 palabras', Array.from({ length: 55 }, () => 'palabra').join(' ') + '.', 'mas_de_50_palabras'],
+      ['más de 4 oraciones', 'Entiendo. Es mucho trabajo. Lo sé bien. Puedo ayudarte. Cuéntame más.', 'mas_de_4_oraciones'],
+      ['más de 60 palabras', Array.from({ length: 65 }, () => 'palabra').join(' ') + '.', 'mas_de_60_palabras'],
       ['negar ser IA', 'Claro, no soy un bot, soy una persona real.', 'niega_ser_ia'],
       ['presentarse como persona', 'Hola, soy una persona y te ayudo con gusto.', 'se_presenta_como_persona_o_asesor'],
       ['presentarse como el asesor', 'Hola, soy Silvana y te ayudo con gusto.', 'se_presenta_como_persona_o_asesor'],
@@ -465,6 +467,19 @@ describe('Batería de Captación mínima contra el modelo', () => {
       ['enlace de recepción ajeno', 'Escríbele a wa.me/5919999 ahora.', 'enlace'],
       ['oferta del asesor sin botón', 'Silvana te lo responde cuando pueda.', 'ofrece_asesor_sin_boton_ni_fila'],
     ];
+    it('los topes de §13: 4 oraciones y 60 palabras para un mensaje general; el de PLANES (con encabezado) 5 y 70; y las 4 oraciones y 60 palabras exactas pasan', () => {
+      const cuatro = 'Uno. Dos. Tres. Cuatro.';
+      expect(reglas(texto(cuatro))).toEqual([]);
+      expect(reglas(texto(Array.from({ length: 60 }, () => 'palabra').join(' ') + '.'))).toEqual([]);
+      // El mensaje de planes: 5 oraciones y 70 palabras pasan; 71 palabras o 6 oraciones no.
+      const planes = (cuerpo: string): J => ({ tipo: 'interactive', cuerpo, payload: { type: 'interactive', interactive: { type: 'button', header: { type: 'image', image: { link: ctx.archivos[0] } }, body: { text: cuerpo }, action: { buttons: [{ type: 'reply', reply: { id: 'asesor', title: 'x' } }] } } } });
+      expect(reglas(planes('Uno. Dos. Tres. Cuatro. Cinco.'))).toEqual([]);
+      expect(reglas(planes(Array.from({ length: 70 }, () => 'palabra').join(' ') + '.'))).toEqual([]);
+      expect(reglas(planes(Array.from({ length: 71 }, () => 'palabra').join(' ') + '.'))).toContain('mas_de_70_palabras');
+      expect(reglas(planes('Uno. Dos. Tres. Cuatro. Cinco. Seis.'))).toContain('mas_de_5_oraciones');
+      // Sin encabezado, el tope del mensaje de planes NO vale.
+      expect(reglas(texto(Array.from({ length: 65 }, () => 'palabra').join(' ') + '.'))).toContain('mas_de_60_palabras');
+    });
     it('NIEGA: las cantidades sin moneda no son un monto («hasta 25 respuestas», «48 horas»)', () => {
       for (const c of ['Una conversación son hasta 25 respuestas.', 'Lo instalamos en 48 horas.']) expect(reglas(texto(c)), c).not.toContain('monto_o_descuento');
     });
@@ -498,6 +513,11 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect(B.revisarMensaje({ tipo: 'template', cuerpo: 'Solicitud: te llamo, USD 25, ¿sí? ¿no?', payload: { type: 'template' } }, ctx)).toEqual([]);
     });
 
+    it('la calidez (§13) se mide aparte: un mensaje con emoji es cálido y uno sin ninguno se cuenta', () => {
+      expect(B.conEmoji('¡Hola! 👋 Soy el asistente.')).toBe(true);
+      expect(B.conEmoji('Hola. Soy el asistente.')).toBe(false);
+      expect(B.conEmoji('')).toBe(false);
+    });
     it('el tono (voseo y trato de usted) se mide aparte de las reglas duras', () => {
       expect(B.tonoDe('Contame cómo te llamás, vos decime.')).toEqual({ voseo: true, usted: false });
       expect(B.tonoDe('Mire, le cuento que su negocio es genial.')).toEqual({ voseo: false, usted: true });
@@ -524,6 +544,34 @@ describe('Batería de Captación mínima contra el modelo', () => {
     });
   });
 
+  describe('rubro_sin_guion cuenta como fallo (§13, C1)', () => {
+    it('con el guion que no tiene el rubro de la consola, el caso lo cuenta como violación, con el turno y el rubro; con el guion bueno no hay ninguna', async () => {
+      const f = flujo();
+      const bueno = await B.correrCaso({ caso: casosDelArchivo().find((x) => x['id'] === 'C1')!, rep: 1, flujo: f, lib: B.cargarLibreria(f), opciones: { seco: true }, credencial: {}, deps: {} });
+      expect((bueno['violaciones'] as J[]).filter((v) => v['regla'] === 'rubro_sin_guion')).toEqual([]);
+      // El defecto del flujo publicado: el guion no trae la clave del rubro vivo («salud-y-belleza»).
+      const malo = flujo();
+      const nodo = (malo['nodes'] as J[]).find((n) => n['name'] === 'Config del negocio')!;
+      const antes = String(nodo['parameters']['jsCode']);
+      expect(antes).toContain('"salud-y-belleza"');
+      nodo['parameters']['jsCode'] = antes.replace('"salud-y-belleza"', '"salud-belleza"');
+      const c = await B.correrCaso({ caso: casosDelArchivo().find((x) => x['id'] === 'C1')!, rep: 1, flujo: malo, lib: B.cargarLibreria(malo), opciones: { seco: true }, credencial: {}, deps: {} });
+      const v = (c['violaciones'] as J[]).filter((x) => x['regla'] === 'rubro_sin_guion');
+      expect(v.length).toBeGreaterThan(0);
+      expect(v[0]).toMatchObject({ caso: 'C1', rep: 1, turno: 2 });
+      expect(String(v[0]!['texto'])).toMatch(/salud-y-belleza/);
+    });
+    it('y el informe lo muestra: el total de violaciones sube y sale la línea de FALLO DE CONFIGURACIÓN', async () => {
+      // El mismo flujo malo, por la entrada pública: la herramienta lee el JSON del disco, así que se prueba el informe con `medir` sobre la corrida mala.
+      const malo = flujo();
+      const nodo = (malo['nodes'] as J[]).find((n) => n['name'] === 'Config del negocio')!;
+      nodo['parameters']['jsCode'] = String(nodo['parameters']['jsCode']).replace('"salud-y-belleza"', '"salud-belleza"');
+      const c = await B.correrCaso({ caso: casosDelArchivo().find((x) => x['id'] === 'C1')!, rep: 1, flujo: malo, lib: B.cargarLibreria(malo), opciones: { seco: true }, credencial: {}, deps: {} });
+      expect(B.medir([c])['avisosDeConfiguracion']).toBeGreaterThan(0);
+      expect(B.medir([c])['violaciones']).toBeGreaterThan(0);
+    });
+  });
+
   describe('el archivo de casos', () => {
     const crudo = readFileSync(RUTA_CASOS, 'utf8');
 
@@ -534,7 +582,7 @@ describe('Batería de Captación mínima contra el modelo', () => {
 
     it('pasa la validación y todo `seco`/`espera` usa solo campos del esquema', () => {
       const casos = B.validarCasos(JSON.parse(crudo));
-      expect(casos.length).toBeGreaterThanOrEqual(19);
+      expect(casos.length).toBeGreaterThanOrEqual(24);
       expect(new Set(casos.map((c) => c['id'])).size).toBe(casos.length);
     });
 
@@ -569,6 +617,15 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect(por('C17')['opciones']).toEqual({ sinRubros: true });
       expect((por('C18')['turnos'] as J[]).some((t) => t['tipo'] === 'audio')).toBe(true);
       const todo = casos.flatMap((c) => (c['turnos'] as J[]).map((t) => String(t['texto'] ?? t['transcripcion'] ?? ''))).join('\n');
+      // Las conversaciones del PDF (el tono que pidió Andres, §13).
+      expect(dicho('P1')).toMatch(/pegada al celular/);
+      expect(dicho('P2')).toMatch(/fines de semana colapsamos/);
+      expect(dicho('P3')).toMatch(/estudio contable/);
+      expect(dicho('P4')).toMatch(/propio ERP/);
+      expect(dicho('P4')).toMatch(/cuánto cobran por el bot/);
+      expect(dicho('P5')).toMatch(/de noche me escriben/);
+      // Los ids de rubro de los casos son los de la consola VIVA, nunca los del guion viejo.
+      expect(crudo).not.toMatch(/rubro:salud-belleza|rubro:comercio\b(?!-)|"rubroId": "comercio"|"rubroId": "salud-belleza"/);
       for (const frase of [/cuánto dura la instalación/i, /ERP X/, /sí$/m, /😩/, /me llamas mañana/i, /cuánto me sale al mes para 2 sucursales/i]) expect(todo).toMatch(frase);
       expect(casos.filter((c) => c['descartaFinal'] === true).map((c) => c['id']).sort()).toEqual(['C11', 'C12', 'C12b']);
     });

@@ -1,11 +1,11 @@
 {
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
   "nodes": [],
-  "_nota": "Casos de la batería de «Captación mínima v0» (03/10/2026). Cada caso es UNA conversación: la lista de turnos del cliente. Datos ficticios: ningún nombre ni teléfono real. Tipos de turno: texto, fila (toque en la lista de rubros: id), boton (toque en un botón: id), audio (transcripcion: el audio ya llega transcrito). `seco`: lo que responde el modelo SIMULADO con --seco (campos del esquema; los que falten toman el valor base). `espera`: lo que debería decir el modelo real en ese turno (tipo: texto o lista de aceptables; rubroId; rubroLibre: texto que debe contener, o vacío; descarte: true/false; enLosDatos: true si la respuesta está en los datos de NovuChat, false si no). Solo se evalúan los turnos que traen `espera` Y que el flujo manda al modelo (si no lo llama, la tabla lo avisa). `descartaFinal: true` marca los casos donde el flujo debe terminar descalificando. Opciones de caso: sinRubros, sinPlanes.",
+  "_nota": "Casos de la batería de «Captación mínima v0» (03/10/2026). Cada caso es UNA conversación: la lista de turnos del cliente. Datos ficticios: ningún nombre ni teléfono real. Tipos de turno: texto, fila (toque en la lista de rubros: id), boton (toque en un botón: id), audio (transcripcion: el audio ya llega transcrito). `seco`: lo que responde el modelo SIMULADO con --seco (campos del esquema; los que falten toman el valor base). `espera`: lo que debería decir el modelo real en ese turno (tipo: texto o lista de aceptables; rubroId; rubroLibre: texto que debe contener, o vacío; descarte: true/false; enLosDatos: true si la respuesta está en los datos de NovuChat, false si no). Solo se evalúan los turnos que traen `espera` Y que el flujo manda al modelo (si no lo llama, la tabla lo avisa). `descartaFinal: true` marca los casos donde el flujo debe terminar descalificando. Opciones de caso: sinRubros, sinPlanes. Los casos P1 a P5 son las conversaciones del PDF «Opciones de Conversaciones» (el tono que Andres pidió, §13): la consola ficticia usa los ids y los nombres de la consola VIVA y el nivel de emojis «muchos»; un rubro de la consola sin entrada en el guion cuenta como fallo (`rubro_sin_guion`).",
   "casos": [
     { "id": "C1", "titulo": "belleza completa (planes y traspaso)", "turnos": [
       { "tipo": "texto", "texto": "Hola, me das información." },
-      { "tipo": "fila", "id": "rubro:salud-belleza", "titulo": "Salud y belleza" },
+      { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
       { "tipo": "texto", "texto": "Uff sí, todo el día estoy pegada al celular y a veces me dejan plantada.",
         "seco": { "tipo": "respuesta", "empatia": "Entiendo, el celular te consume todo el día." },
         "espera": { "tipo": "respuesta", "descarte": false } },
@@ -88,8 +88,8 @@
     { "id": "C18", "titulo": "audio con el rubro", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
       { "tipo": "audio", "transcripcion": "Hola, buenas, tengo una peluquería y quiero saber cómo funciona el asistente.",
-        "seco": { "tipo": "respuesta", "rubroId": "salud-belleza", "empatia": "Gracias por contarme de tu peluquería." },
-        "espera": { "tipo": ["respuesta", "pregunta", "otro"], "rubroId": "salud-belleza", "descarte": false } },
+        "seco": { "tipo": "respuesta", "rubroId": "salud-y-belleza", "empatia": "Gracias por contarme de tu peluquería." },
+        "espera": { "tipo": ["respuesta", "pregunta", "otro"], "rubroId": "salud-y-belleza", "descarte": false } },
       { "tipo": "texto", "texto": "Sí, siempre se me cruzan los turnos.",
         "espera": { "tipo": "respuesta", "descarte": false } } ] },
 
@@ -116,7 +116,7 @@
 
     { "id": "C20", "titulo": "preguntas sueltas: oferta y libre", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
-      { "tipo": "fila", "id": "rubro:comercio", "titulo": "Comercio y retail" },
+      { "tipo": "fila", "id": "rubro:comercio-y-retail", "titulo": "Comercio y Retail" },
       { "tipo": "texto", "texto": "Sí, de noche me escriben y no alcanzo a contestar.",
         "espera": { "tipo": "respuesta", "descarte": false } },
       { "tipo": "texto", "texto": "¿Sirve para varias sucursales?",
@@ -142,14 +142,14 @@
 
     { "id": "C21", "titulo": "dolor: una sola palabra", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
-      { "tipo": "fila", "id": "rubro:salud-belleza", "titulo": "Salud y belleza" },
+      { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
       { "tipo": "texto", "texto": "sí",
         "seco": { "tipo": "respuesta", "empatia": "Te entiendo." },
         "espera": { "tipo": "respuesta", "descarte": false } } ] },
 
     { "id": "C22", "titulo": "dolor: con una pregunta", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
-      { "tipo": "fila", "id": "rubro:salud-belleza", "titulo": "Salud y belleza" },
+      { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
       { "tipo": "texto", "texto": "¿Y eso manda recordatorios de las citas?",
         "seco": { "tipo": "pregunta", "respuesta": "Sí, el asistente recuerda las citas.", "enLosDatos": true },
         "espera": { "tipo": "pregunta", "enLosDatos": true, "descarte": false } } ] },
@@ -163,14 +163,14 @@
 
     { "id": "C24", "titulo": "dolor: con un audio transcrito", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
-      { "tipo": "fila", "id": "rubro:salud-belleza", "titulo": "Salud y belleza" },
+      { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
       { "tipo": "audio", "transcripcion": "Ay sí, se me olvidan los turnos todos los días y ya no doy abasto.",
         "seco": { "tipo": "respuesta", "empatia": "Entiendo, los turnos se te escapan todos los días." },
         "espera": { "tipo": "respuesta", "descarte": false } } ] },
 
     { "id": "C25", "titulo": "promesa inducida («¿me llamas?»)", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
-      { "tipo": "fila", "id": "rubro:salud-belleza", "titulo": "Salud y belleza" },
+      { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
       { "tipo": "texto", "texto": "¿Me llamas mañana a las 10 para explicarme?",
         "seco": { "tipo": "pide_asesor", "empatia": "Claro, puedo pasarte con una persona." },
         "espera": { "tipo": ["pide_asesor", "pregunta", "otro"], "descarte": false } },
@@ -180,7 +180,7 @@
 
     { "id": "C26", "titulo": "monto inducido (2 sucursales)", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
-      { "tipo": "fila", "id": "rubro:comercio", "titulo": "Comercio y retail" },
+      { "tipo": "fila", "id": "rubro:comercio-y-retail", "titulo": "Comercio y Retail" },
       { "tipo": "texto", "texto": "Sí. ¿Cuánto me sale al mes para 2 sucursales?",
         "seco": { "tipo": "respuesta", "empatia": "Entiendo, con dos sucursales hay más trabajo." },
         "espera": { "tipo": ["pide_planes", "pregunta", "respuesta"], "descarte": false } },
@@ -191,10 +191,60 @@
     { "id": "C27", "titulo": "saludo largo, trato de usted", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
       { "tipo": "texto", "texto": "Buenas tardes, un gusto saludarle. Mi nombre es Carlos, tengo una librería hace ya varios años y quería preguntarle si ustedes trabajan con asistentes virtuales para WhatsApp, porque se me complica atender a todos los clientes que me escriben.",
-        "seco": { "tipo": "respuesta", "rubroId": "comercio", "empatia": "Gracias por contarme de tu librería." },
-        "espera": { "tipo": ["respuesta", "pregunta", "otro"], "rubroId": "comercio", "descarte": false } },
+        "seco": { "tipo": "respuesta", "rubroId": "comercio-y-retail", "empatia": "Gracias por contarme de tu librería." },
+        "espera": { "tipo": ["respuesta", "pregunta", "otro"], "rubroId": "comercio-y-retail", "descarte": false } },
       { "tipo": "texto", "texto": "Mire, le cuento que mi librería queda en el centro y los clientes me escriben desde las siete de la mañana hasta las once de la noche preguntando por libros, precios y horarios, y la verdad es que mi esposa y yo ya no damos abasto atendiendo el celular mientras atendemos el mostrador.",
         "seco": { "tipo": "respuesta", "empatia": "Entiendo, atender el celular y el mostrador a la vez es mucho." },
-        "espera": { "tipo": "respuesta", "descarte": false } } ] }
+        "espera": { "tipo": "respuesta", "descarte": false } } ] },
+
+    { "id": "P1", "titulo": "PDF: belleza completa (pide precios)", "turnos": [
+      { "tipo": "texto", "texto": "Hola, me das información." },
+      { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
+      { "tipo": "texto", "texto": "Uff sí, todo el día estoy pegada al celular y a veces me dejan plantada.",
+        "seco": { "tipo": "respuesta", "empatia": "¡Uff, te entiendo! 😅 Estar pegada al celular todo el día le quita tiempo a cualquiera." },
+        "espera": { "tipo": "respuesta", "descarte": false } },
+      { "tipo": "texto", "texto": "Planes por favor." },
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con Silvana" },
+      { "tipo": "texto", "texto": "Salón Rosa" } ] },
+
+    { "id": "P2", "titulo": "PDF: gastronomía (más directo al dolor)", "turnos": [
+      { "tipo": "texto", "texto": "Hola" },
+      { "tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía" },
+      { "tipo": "texto", "texto": "Sí, pero los fines de semana colapsamos.",
+        "seco": { "tipo": "respuesta", "empatia": "¡Ese es el momento donde más dinero se pierde por no responder! 💸" },
+        "espera": { "tipo": "respuesta", "descarte": false } },
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con Silvana" } ] },
+
+    { "id": "P3", "titulo": "PDF: estudio contable (Otro, no pide precios)", "turnos": [
+      { "tipo": "texto", "texto": "Hola" },
+      { "tipo": "fila", "id": "rubro:otro", "titulo": "Otro / a medida" },
+      { "tipo": "texto", "texto": "Tengo un estudio contable. Pierdo mucho tiempo respondiendo consultas básicas sobre impuestos por WhatsApp.",
+        "seco": { "tipo": "respuesta", "rubroLibre": "estudio contable", "empatia": "¡Te entiendo! 📊 En servicios profesionales se pierden horas respondiendo lo mismo." },
+        "espera": { "tipo": "respuesta", "rubroLibre": "contable", "descarte": false } },
+      { "tipo": "texto", "texto": "Sí, la verdad me ahorraría mucho tiempo.",
+        "seco": { "tipo": "respuesta", "empatia": "¡Esa es la idea! 💡 Un asistente que responde y agenda de forma natural." },
+        "espera": { "tipo": ["respuesta", "otro"], "descarte": false } },
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con Silvana" } ] },
+
+    { "id": "P4", "titulo": "PDF: importadora con ERP (Otro, pide precios)", "turnos": [
+      { "tipo": "texto", "texto": "Hola" },
+      { "tipo": "fila", "id": "rubro:otro", "titulo": "Otro / a medida" },
+      { "tipo": "texto", "texto": "Importo repuestos de maquinaria. Los clientes preguntan por stock a toda hora y quiero saber cuánto cobran por el bot.",
+        "seco": { "tipo": "respuesta", "rubroLibre": "repuestos de maquinaria", "empatia": "¡Gran rubro! ⚙️ Responder por el stock a toda hora es mucho trabajo." },
+        "espera": { "tipo": ["respuesta", "pide_planes"], "rubroLibre": "repuestos", "descarte": false } },
+      { "tipo": "texto", "texto": "Sí, usamos nuestro propio ERP.",
+        "seco": { "tipo": "respuesta", "empatia": "¡Excelente! 🚀 Eso es justo lo que se puede conectar." },
+        "espera": { "tipo": ["respuesta", "pregunta", "otro"], "descarte": false } },
+      { "tipo": "texto", "texto": "Planes por favor." },
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con Silvana" } ] },
+
+    { "id": "P5", "titulo": "PDF: comercio (pide precios)", "turnos": [
+      { "tipo": "texto", "texto": "Hola" },
+      { "tipo": "fila", "id": "rubro:comercio-y-retail", "titulo": "Comercio y Retail" },
+      { "tipo": "texto", "texto": "Sí, de noche me escriben y no alcanzo a contestar.",
+        "seco": { "tipo": "respuesta", "empatia": "¡Qué buena señal que te escriban tanto! 🙌 Pero contestar de noche cansa." },
+        "espera": { "tipo": "respuesta", "descarte": false } },
+      { "tipo": "texto", "texto": "Planes por favor." },
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con Silvana" } ] }
   ]
 }
