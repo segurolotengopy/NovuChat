@@ -241,7 +241,7 @@ export function validarDatos(datos, archivo) {
         };
         const dolor = texto('dolor', { requerido: id !== 'otro', max: 200 });
         const pregunta = texto('pregunta', { requerido: true, max: 140 });
-        const impacto = texto('impacto', { requerido: false, max: 200 });
+        const impacto = texto('impacto', { requerido: false, max: 160 });
         if (dolor) {
           if (contarTexto(dolor).oraciones !== 1) e(`${ruta}.dolor`, 'tiene que ser una sola oración');
           if (dolor.includes('?')) e(`${ruta}.dolor`, 'no lleva «?»: la pregunta es otro campo');
@@ -254,7 +254,7 @@ export function validarDatos(datos, archivo) {
         if (impacto) {
           const c = contarTexto(impacto);
           if (c.oraciones > 1) e(`${ruta}.impacto`, 'tiene que ser una sola oración');
-          if (c.palabras > 25) e(`${ruta}.impacto`, `tiene ${c.palabras} palabras (hasta 25)`);
+          if (c.palabras > 20) e(`${ruta}.impacto`, `tiene ${c.palabras} palabras (hasta 20)`);
           if (impacto.includes('?')) e(`${ruta}.impacto`, 'no lleva «?»');
         }
       }
