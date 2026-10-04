@@ -38,6 +38,8 @@ process.env['GCLOUD_PROJECT'] = PROYECTO;
 // esta suite no puede depender de que el proyecto lo derive.
 const SITIO_DE_PRUEBA = 'https://catalogo.ejemplo.test';
 process.env['SITIO_PUBLICO'] = SITIO_DE_PRUEBA;
+/** Escapa todo metacaracter de una expresión regular, la barra invertida incluida (CodeQL js/incomplete-sanitization). */
+const escaparRegex = (t: string): string => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const TOKEN = 'valor-de-prueba-del-catalogo-completo';
 process.env['INGESTA_CLIENTE16'] = TOKEN;
 
@@ -803,7 +805,7 @@ describe('Si no hay enlace, el registro dice por qué (`catalogoEnlaceMotivo`) y
     } finally { restaurar(); }
     // Y con el sitio configurado, el enlace sale en ESE sitio.
     const r = await configuracion(T_VENTA, { telefono: '70010042', catalogoCompleto: true });
-    expect(enlaceDe(r)).toMatch(new RegExp(`^${SITIO_DE_PRUEBA.split('\\').join('\\\\').split('.').join('\\.')}/c/[0-9a-f]{32}$`));
+    expect(enlaceDe(r)).toMatch(new RegExp(`^${escaparRegex(SITIO_DE_PRUEBA)}/c/[0-9a-f]{32}$`));
   });
 
   it('un error al abrir la ficha: `error`, con el código y el teléfono (últimos 4), sin el mensaje ni la ruta', async () => {
