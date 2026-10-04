@@ -3,5 +3,19 @@
     "default": "${GCP_PROJECT_ID_STAGING}",
     "staging": "${GCP_PROJECT_ID_STAGING}",
     "prod": "${GCP_PROJECT_ID}"
+  },
+  "targets": {
+    "${GCP_PROJECT_ID_STAGING}": {
+      "hosting": {
+        "consola": ["${GCP_PROJECT_ID_STAGING}"],
+        "catalogo": ["${HOSTING_SITIO_CATALOGO_STAGING}"]
+      }
+    },
+    "${GCP_PROJECT_ID}": {
+      "hosting": {
+        "consola": ["${FIREBASE_SITE_ID}"],
+        "catalogo": ["${HOSTING_SITIO_CATALOGO}"]
+      }
+    }
   }
 }

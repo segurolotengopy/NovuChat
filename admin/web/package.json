@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build --config vite.catalogo.config.ts && vite build",
+    "build:catalogo": "vite build --config vite.catalogo.config.ts",
     "preview": "vite preview",
     "lint": "eslint src --max-warnings 0",
     "dev:sondeo": "VITE_SONDEO=true vite",

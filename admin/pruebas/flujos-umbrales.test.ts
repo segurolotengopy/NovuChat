@@ -83,8 +83,9 @@ function expresion(texto: unknown, $json: Record<string, unknown>): unknown {
   // Se evalúa la expresión VERSIONADA, por la misma razón que el código de los
   // nodos: copiarla dejaría la prueba en verde mientras el flujo se rompe.
   // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$json', `return (${m[1]});`) as (j: unknown) => unknown;
-  return fn($json);
+  const fn = new Function('$json', '$', `return (${m[1]});`) as (j: unknown, d: unknown) => unknown;
+  // Ningún otro nodo corrió en esta evaluación (`$('X').isExecuted` es falso).
+  return fn($json, () => ({ isExecuted: false }));
 }
 
 /** Ejecuta un nodo Code; `$(nombre).first()` devuelve `referencias[nombre]`. */

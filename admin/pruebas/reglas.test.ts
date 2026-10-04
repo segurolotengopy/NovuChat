@@ -2473,9 +2473,10 @@ describe('Rótulos del cobro simulado', () => {
 });
 
 /**
- * CIERRES — la unidad que se factura.
+ * CIERRES — lo que terminó bien. No se factura (la unidad es la conversación,
+ * docs/base-comercial.md §2), pero el comercio lo ve en Consumo y en Cobros.
  *
- * Estas pruebas cuidan dos cosas distintas y las dos son plata. La primera es
+ * Estas pruebas cuidan dos cosas distintas. La primera es
  * que no se pueda inventar un cierre: sin una referencia externa que lo pruebe,
  * no entra. La segunda es que el detalle de la persona no se filtre a NovuChat
  * cuando mira una factura.
@@ -3071,7 +3072,7 @@ describe('Atenciones e interacciones · las marcas no las toca nadie más', () =
  * prueba miraba: `bajaTenant` no propagaba el estado a /rutasWhatsApp, mientras
  * `suspenderTenant` y `reactivarTenant` sí. Como `registrarCierre` decide con
  * `ruta.estado`, un comercio dado de baja conservaba su ruta en `activo` y podía
- * seguir sumando la unidad que se factura.
+ * seguir sumando cierres.
  *
  * OJO CON EL ALCANCE DE ESTA PRUEBA. Cubre la capa de reglas, que es la que
  * frena a cualquier cliente. NO cubre a `registrarCierre`, que escribe con el

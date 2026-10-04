@@ -77,6 +77,7 @@ function vmEstadoBase() { return { paso: 'inicio' }; }
 function vmEscribirEstado(sd, from, e, ms) { __bit.push(['escribirEstado', from, e.paso]); sd.estados = sd.estados || {}; sd.estados[from] = Object.assign({}, e, { ultimoMensajeMs: ms }); }
 function vmBarrer(sd, ms) { __bit.push(['barrer']); }
 function vmCodigoCorto(ms) { return 'ABCD'; }
+function vmIdDeBoton() { return Array.prototype.slice.call(arguments).join('|'); }
 function avDestinatarios(csv, from, pref) {
   const out = []; const visto = {};
   const prefijos = String(pref || '591').split(',').map((s) => s.trim()).filter(Boolean);
@@ -174,7 +175,7 @@ function textosDe(j: J): string[] {
   if (typeof j['texto'] === 'string') out.push(j['texto']);
   return out;
 }
-const GENERICO = 'Eso lo ve directamente el restaurante. Toca el botón para escribirles.';
+const GENERICO = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
 const cuerpoDe = (j: J): string => String(j['payload'].text?.body ?? j['payload'].interactive?.body.text ?? j['payload'].image?.caption);
 
 // =================================================================================================
@@ -282,6 +283,17 @@ describe('Armar avisos', () => {
     expect(libre.items[0]).toMatchObject({ sinAviso: false });
     const propio = avisos({ aviso: { tipo: 'pedido', datos: {} } }, { cfg: { topeAvisosDia: 3 }, g: { ventaMinima: { avisosDia: 3 } } });
     expect(propio.items[0]).toMatchObject({ sinAviso: true });
+  });
+
+  it('una derivación `comprobante: true` (cambio de modo de cobro) NO la suprime el tope de derivaciones: un comprobante no se queda sin avisar', () => {
+    const reciente = { ventaMinima: { transferencias: { [CLIENTE]: [AHORA - 30 * MIN] } } };
+    const datos = { codigo: 'K7P2', comprobante: true, motivo: 'comprobante enviado por el cliente (pedido de PRUEBA #K7P2); cambió el modo de cobro y no se revisó' };
+    expect(avisos({ aviso: { tipo: 'transferencia', datos } }, { g: reciente }).items[0]).toMatchObject({ sinAviso: false });
+    expect(avisos({ aviso: { tipo: 'transferencia', datos } }, { cfg: { topeTransferenciasHora: 0 } }).items[0]).toMatchObject({ sinAviso: false });
+    // NEGANDO: la misma derivación SIN la marca sigue suprimida por el tope (y `comprobante: 'true'` o un valor que no es true no la exime).
+    for (const marca of [undefined, false, 'true', 1]) {
+      expect(avisos({ aviso: { tipo: 'transferencia', datos: { ...datos, comprobante: marca } } }, { g: reciente }).items[0], String(marca)).toMatchObject({ sinAviso: true });
+    }
   });
 
   it('una segunda derivación del mismo teléfono dentro de la hora no avisa; un pedido sí', () => {
@@ -438,12 +450,12 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
   });
 
   it('botones: como mucho 3, título de 20 caracteres, y un respaldo en texto', () => {
-    const r = mensajes({ mensajes: [botones('¿Qué quieres hacer?', 'Hacer un pedido', 'Reservar mesa', 'Un título larguísimo que no cabe', 'Cuarto')] });
+    const r = mensajes({ mensajes: [botones('¿Qué te gustaría hacer?', 'Hacer un pedido', 'Reservar mesa', 'Un título larguísimo que no cabe', 'Cuarto')] });
     const bs = r.items[0]!['payload'].interactive.action.buttons;
     expect(bs).toHaveLength(3);
     expect(bs[2].reply.title.length).toBeLessThanOrEqual(20);
     expect(r.items[0]).toMatchObject({ tipoReporte: 'interactive' });
-    expect(r.items[0]!['respaldo']).toContain('¿Qué quieres hacer?');
+    expect(r.items[0]!['respaldo']).toContain('¿Qué te gustaría hacer?');
     expect(r.items[0]!['respaldo']).toContain('escribe «menu»');
   });
 
@@ -486,15 +498,16 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
       const r = mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { numeroRecepcion } });
       const i = r.items[0]!;
       expect(i['payload'].type).toBe('text');
-      expect(i['payload'].text.body).toBe('Eso lo ve directamente el restaurante.');
+      // Sin botón no se nombra el botón («Escribir al local»): queda lo demás, con el camino de vuelta al menú.
+      expect(i['payload'].text.body).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
       expect(i['tipoReporte']).toBe('text');
       expect(JSON.stringify(i)).not.toMatch(/bot[oó]n/i);
     }
     // el texto con «:» conserva lo que viene antes del «:»
     const r = mensajes({ mensajes: [enlace('No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido al restaurante en este momento.');
+    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido al restaurante en este momento. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
     const dos = mensajes({ mensajes: [enlace('Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2.');
+    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
   });
 
   it('modo prueba: a telefonoDePrueba, sin prefijo y sin reportar; fuera de prueba, reportable', () => {
@@ -596,13 +609,83 @@ describe('Armar mensajes — el QR', () => {
   });
 });
 
+// -------------------------------------------------------------------------------------------------
+// El QR SIMULADO: los dos modos son excluyentes y el modo coherente con el pie es lo último que se mira.
+describe('Armar mensajes — el QR del cobro simulado', () => {
+  // La imagen permitida del QR simulado (la misma que fija `construir.mjs`); `URL_OTRA` es https pero NO es esa imagen.
+  const URL_SIM = 'https://raw.githubusercontent.com/segurolotengopy/NovuChat/v0.11.0/Demo-Recursos/qr-demo.png';
+  const URL_OTRA = 'https://qr.ejemplo.test/qr-demo.png';
+  const COBRO_SIM: J = { activo: false, modo: 'simulado', qrUrl: URL_SIM };
+  const PIE_SIM = 'PRUEBA · COBRO SIMULADO: este QR es de demostración, no cobra ni mueve dinero.\nPedido #K7Q2. Total de la prueba: 55 Bs (solo la comida).\nNo intentes pagarlo: tu banco lo va a rechazar. Para seguir con la prueba, envíame aquí cualquier foto como comprobante simulado.';
+  const planQr = (mensaje: J = qr({ cuerpo: PIE_SIM }), extra: J = {}): J => ({
+    ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [mensaje], ...extra,
+  });
+
+  it('simulado con el pie correcto: sale la imagen con el enlace de `cfg.cobro.qrUrl` y el evento `qr_enviado`', () => {
+    const r = mensajes(planQr(), { cfg: { cobro: COBRO_SIM } });
+    const i = r.items[0]!;
+    expect(i['payload']).toMatchObject({ type: 'image', to: CLIENTE, image: { link: URL_SIM, caption: PIE_SIM } });
+    expect(i).toMatchObject({ evento: 'qr_enviado', referencia: PEDIDO['pedidoId'], monto: 55, tipoReporte: 'image' });
+    expect(r.sd['estados'][CLIENTE].paso).toBe('esperando_comprobante');
+    // el enlace no sale de lo que traiga el mensaje del plan
+    const otro = mensajes(planQr(qr({ cuerpo: PIE_SIM, url: 'https://otro.ejemplo.test/falso.png' })), { cfg: { cobro: COBRO_SIM } });
+    expect(otro.items[0]!['payload'].image.link).toBe(URL_SIM);
+  });
+
+  it.each([
+    ['los dos modos a la vez (`activo:true` con `modo:simulado`)', { cfg: { cobro: { ...COBRO_SIM, activo: true } } }, qr({ cuerpo: PIE_SIM }), 'cobro_en_dos_modos'],
+    ['simulado con un pie SIN la palabra «simulado»', { cfg: { cobro: COBRO_SIM } }, qr({ cuerpo: PIE }), 'qr_simulado_sin_rotulo'],
+    ['simulado con un pie «simulado» pero sin «no cobra»', { cfg: { cobro: COBRO_SIM } }, qr({ cuerpo: 'Pedido #K7Q2. Total: 55 Bs. Cobro simulado, envía una foto.' }), 'qr_simulado_sin_rotulo'],
+    ['real con un pie que dice «PRUEBA»', { cfg: { cobro: { activo: true, modo: 'real', qrUrl: URL_SIM } } }, qr({ cuerpo: `${PIE} PRUEBA` }), 'qr_real_con_rotulo_simulado'],
+    ['real con un pie que dice «demostración»', {}, qr({ cuerpo: `${PIE} Es una demostración.` }), 'qr_real_con_rotulo_simulado'],
+    ['real con el pie del cobro simulado', {}, qr({ cuerpo: PIE_SIM }), 'qr_real_con_rotulo_simulado'],
+    // H7 (defensa en profundidad): una imagen https que no es el QR de demostración del repositorio no sale con la marca «SIMULADO».
+    ['simulado con otra imagen https (otro anfitrión)', { cfg: { cobro: { ...COBRO_SIM, qrUrl: URL_OTRA } } }, qr({ cuerpo: PIE_SIM }), 'qr_simulado_imagen_no_permitida'],
+    ['simulado con la imagen del repositorio en otra ruta', { cfg: { cobro: { ...COBRO_SIM, qrUrl: URL_SIM.replace('qr-demo.png', 'otra.png') } } }, qr({ cuerpo: PIE_SIM }), 'qr_simulado_imagen_no_permitida'],
+    ['simulado con la imagen de otro repositorio', { cfg: { cobro: { ...COBRO_SIM, qrUrl: URL_SIM.replace('segurolotengopy/NovuChat', 'otro/Repo') } } }, qr({ cuerpo: PIE_SIM }), 'qr_simulado_imagen_no_permitida'],
+    ['simulado sin enlace https', { cfg: { cobro: { ...COBRO_SIM, qrUrl: 'http://qr.ejemplo.test/a.png' } } }, qr({ cuerpo: PIE_SIM }), 'qr_sin_https'],
+    ['simulado con un monto distinto del total', { cfg: { cobro: COBRO_SIM } }, qr({ cuerpo: PIE_SIM, monto: 999 }), 'qr_monto_distinto_del_total'],
+    ['modo desconocido sin `activo`', { cfg: { cobro: { activo: false, modo: 'apagado', qrUrl: URL_SIM } } }, qr({ cuerpo: PIE_SIM }), 'cobro_no_activo'],
+  ])('rechaza el QR: %s. No sale `type:image`, sale el genérico y no se guarda esperando_comprobante', (_n, ent, mensaje, motivo) => {
+    const r = mensajes(planQr(mensaje as J), ent as Entrada);
+    const i = r.items[0]!;
+    expect(i['payload'].type).not.toBe('image');
+    expect(i['evento']).toBeUndefined();
+    expect(i['monto']).toBeUndefined();
+    expect(cuerpoDe(i)).toBe(GENERICO);
+    expect((i['errores'] as string[]).some((e) => e === `qr_rechazado: ${motivo}`), String(i['errores'])).toBe(true);
+    expect(i['resumen']).toMatchObject({ qrRechazado: true });
+    expect(r.sd['estados']).toBeUndefined();
+    expect(r.sd['pedidos']).toBeUndefined();
+  });
+
+  it('negativo: el real con su pie de siempre sigue saliendo (el rótulo de prueba solo se exige y se prohíbe donde corresponde)', () => {
+    const r = mensajes(planQr(qr()), { cfg: { cobro: { activo: true, modo: 'real', qrUrl: URL_SIM } } });
+    expect(r.items[0]!['payload'].type).toBe('image');
+  });
+
+  it('el titular de la cuenta real («Pruebas SRL») no es un rótulo: su QR sale; pero un «PRUEBA» fuera del titular sí lo rechaza', () => {
+    const cobro = { activo: true, modo: 'real', qrUrl: URL_SIM, titular: 'Pruebas y Demostraciones SRL' };
+    const pie = PIE.replace('Escanea el QR', 'Titular: Pruebas y Demostraciones SRL. Escanea el QR');
+    expect(mensajes(planQr(qr({ cuerpo: pie })), { cfg: { cobro } }).items[0]!['payload'].type).toBe('image');
+    const malo = mensajes(planQr(qr({ cuerpo: `${pie} PRUEBA` })), { cfg: { cobro } });
+    expect(malo.items[0]!['payload'].type).not.toBe('image');
+    expect((malo.items[0]!['errores'] as string[])).toContain('qr_rechazado: qr_real_con_rotulo_simulado');
+    // sin titular declarado, la misma palabra en el pie sí cuenta como rótulo
+    const sin = mensajes(planQr(qr({ cuerpo: pie })), { cfg: { cobro: { ...cobro, titular: '' } } });
+    expect(sin.items[0]!['payload'].type).not.toBe('image');
+  });
+});
+
 // =================================================================================================
 describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', () => {
   const PASE = 'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.';
-  const NO_PASE = 'No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.';
+  const NO_PASE_PLAN = 'No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.';
+  // Lo que sale: el mensaje con botón de enlace lleva al final el camino de vuelta al menú (03/10).
+  const NO_PASE = NO_PASE_PLAN + ' Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
   const plan = (): J => ({
     ruta: 'confirmar', pedido: PEDIDO, aviso: { tipo: 'pedido', datos: {} }, mensajes: [],
-    condicionados: { siSalio: [texto(PASE)], siNoSalio: [enlace(NO_PASE)] },
+    condicionados: { siSalio: [texto(PASE)], siNoSalio: [enlace(NO_PASE_PLAN)] },
   });
   const armados = [armado('pedido', { para: AV1 }), armado('pedido', { para: AV2, rol: 'cocina' })];
 
@@ -1035,8 +1118,12 @@ describe('Los tres nodos son JavaScript plano', () => {
     }
   });
 
-  it('solo Armar mensajes escribe estado: los otros dos no llaman a las funciones que escriben', () => {
-    for (const f of [AVISOS, RESUMEN]) expect(f).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
+  it('solo Armar mensajes escribe estado: los otros dos no llaman a las funciones que escriben (salvo que Resumen del turno DEVUELVE el estado previo si la entrega falla del todo: R3)', () => {
+    expect(AVISOS).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
+    expect(RESUMEN).not.toMatch(/vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
+    // La única escritura de Resumen es la reversión, y va justo antes del `throw` de la entrega fallida.
+    expect(RESUMEN.match(/vmEscribirEstado/g)).toHaveLength(1);
+    expect(RESUMEN).toMatch(/vmEscribirEstado\([\s\S]{0,200}\}\s*throw new Error\('Entrega fallida/);
     expect(MENSAJES).toMatch(/vmEscribirEstado/);
     expect(MENSAJES).toMatch(/avContar/);
   });
@@ -1190,5 +1277,99 @@ describe('Armar avisos — R3: el tope de derivaciones respeta el 0 y lee solo l
     // Negado: sin el dato rige 1 (avisa la primera) y con 1 marca reciente ya no.
     expect(avisos({ aviso: { tipo: 'transferencia', datos: {} } }).items[0]).toMatchObject({ sinAviso: false });
     expect(avisos({ aviso: { tipo: 'transferencia', datos: {} } }, { g: { ventaMinima: { transferencias: { [CLIENTE]: [AHORA - MIN] } } } }).items[0]).toMatchObject({ sinAviso: true });
+  });
+});
+
+// =================================================================================================
+describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (03/10)', () => {
+  const titulos = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.title));
+  const ids = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.id));
+  const SEGUIR = 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+
+  it('todo mensaje con botones y lugar (menos de tres) sale con «Menú» (`m|menu`) al final; con tres, no se agrega nada', () => {
+    const uno = mensajes({ mensajes: [botones('Elige', 'A')] }).items[0]!;
+    expect(titulos(uno)).toEqual(['A', 'Menú']);
+    expect(ids(uno)).toEqual(['b|0', 'm|menu']);
+    const dos = mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items[0]!;
+    expect(titulos(dos)).toEqual(['A', 'B', 'Menú']);
+    // Negado: con tres no hay lugar; con el propio menú (`sinMenu`) no se repite; sin botones sigue siendo un texto.
+    expect(titulos(mensajes({ mensajes: [botones('Elige', 'A', 'B', 'C')] }).items[0]!)).toEqual(['A', 'B', 'C']);
+    expect(titulos(mensajes({ mensajes: [{ ...botones('Elige', 'A', 'B'), sinMenu: true }] }).items[0]!)).toEqual(['A', 'B']);
+    expect(mensajes({ mensajes: [texto('Hola')] }).items[0]!['payload'].type).toBe('text');
+    // Un botón «m|menu» que el plan ya trae no se duplica.
+    const ya = mensajes({ mensajes: [{ tipo: 'botones', cuerpo: 'Elige', botones: [{ id: 'm|menu', title: 'Menú' }] }] }).items[0]!;
+    expect(ids(ya)).toEqual(['m|menu']);
+    // Agregar el botón no agrega mensajes.
+    expect(mensajes({ mensajes: [botones('Elige', 'A', 'B')] }).items).toHaveLength(1);
+  });
+
+  it('el mensaje con botón de enlace lleva al final «escribe «menú»», sin repetirlo si ya lo trae', () => {
+    const e = mensajes({ mensajes: [enlace('Texto del plan.')] }).items[0]!;
+    expect(e['texto']).toBe(`Texto del plan. ${SEGUIR}`);
+    expect(e['payload'].interactive.body.text).toBe(`Texto del plan. ${SEGUIR}`);
+    const ya = mensajes({ mensajes: [enlace(`Texto del plan. ${SEGUIR}`)] }).items[0]!;
+    expect(ya['texto']).toBe(`Texto del plan. ${SEGUIR}`);
+  });
+
+  it('solo en la conversación: el aviso fijo de «Uso extendido» y de «Comercio no operativo» NO ofrece «menú» (ahí no funciona)', () => {
+    for (const nombrePlan of ['Uso extendido', 'Comercio no operativo']) {
+      const r = mensajes({ ruta: 'uso_extendido', mensajes: [enlace('Una persona del equipo sigue contigo.'), botones('Elige', 'A')] }, { nombrePlan }).items;
+      expect(r[0]!['texto'], nombrePlan).toBe('Una persona del equipo sigue contigo.');
+      expect(titulos(r[1]!), nombrePlan).toEqual(['A']);
+      expect(JSON.stringify(r), nombrePlan).not.toMatch(/«menú»/);
+    }
+  });
+
+  it('el texto sin botón (recepción igual al cliente) nombra «menú» y NO el botón «Escribir al local»', () => {
+    const r = mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { numeroRecepcion: CLIENTE } }).items[0]!;
+    expect(r['payload'].type).toBe('text');
+    expect(r['texto']).toContain('escribe «menú»');
+    expect(r['texto']).not.toMatch(/escribir al local|bot[oó]n/i);
+  });
+
+  it('el enlace a la carta del catálogo abre ESA URL (no el chat del local); sin URL segura se pasa con el local y no se promete una carta', () => {
+    const URL_CARTA = 'https://carta.ejemplo.invalid/c?t=abc123';
+    const carta = (extra: J = {}): J => ({ tipo: 'enlace', catalogo: true, cuerpo: 'Mira nuestra carta y arma tu pedido.', botones: [{ id: '', title: 'Ver la carta' }], url: URL_CARTA, ...extra });
+    const ok = mensajes({ mensajes: [carta()] }).items[0]!;
+    expect(ok['payload'].interactive.type).toBe('cta_url');
+    expect(ok['payload'].interactive.action.parameters).toEqual({ display_text: 'Ver la carta', url: URL_CARTA });
+    expect(ok['payload'].interactive.action.parameters.url).not.toContain(REC);
+    expect(ok['texto']).toBe(`Mira nuestra carta y arma tu pedido. ${SEGUIR}`);
+    expect(ok['respaldo']).toContain(`Ver la carta: ${URL_CARTA}`);
+    expect(ok['tipoReporte']).toBe('interactive');
+    // Negativos: http, IP, usuario, puerto, vacío, otra cosa → la derivación (nunca un botón «Ver la carta» que abre el chat del local).
+    for (const mala of ['http://carta.ejemplo.invalid/c', 'https://10.0.0.1/c', ['https://usuario', 'carta.ejemplo.invalid/c'].join('@'), 'https://carta.ejemplo.invalid:8443/c', '', 'ftp://carta.ejemplo.invalid/c']) {
+      const i = mensajes({ mensajes: [carta({ url: mala })] }).items[0]!;
+      expect(i['texto'], mala).toBe(GENERICO);
+      expect(JSON.stringify(i['payload']), mala).not.toContain('Ver la carta');
+    }
+    // Sin la marca `catalogo`, un enlace con otra URL sigue siendo el chat del local (la regla de siempre).
+    const chat = mensajes({ mensajes: [enlace(GENERICO, { url: URL_CARTA })] }).items[0]!;
+    expect(chat['payload'].interactive.action.parameters.url).toMatch(new RegExp(`^https://wa\\.me/${REC}`));
+  });
+
+  it('`nivelEmojis`: «pocos» deja el primer emoji de cada mensaje, «ninguno» los quita todos, «muchos» no toca nada', () => {
+    const t = '¡Hola! 👋 Soy el asistente 🌮 de Q. ¿Qué te gustaría hacer? 😅';
+    const cuerpo = (nivel: string) => mensajes({ mensajes: [texto(t)] }, { cfg: { nivelEmojis: nivel } }).items[0]!['payload'].text.body;
+    expect(cuerpo('pocos')).toBe('¡Hola! 👋 Soy el asistente de Q. ¿Qué te gustaría hacer?');
+    expect(cuerpo('ninguno')).toBe('¡Hola! Soy el asistente de Q. ¿Qué te gustaría hacer?');
+    expect(cuerpo('muchos')).toBe(t);
+    // Sin el dato rige «pocos»; y un emoji al principio no deja un espacio suelto.
+    expect(mensajes({ mensajes: [texto(t)] }).items[0]!['payload'].text.body).toBe('¡Hola! 👋 Soy el asistente de Q. ¿Qué te gustaría hacer?');
+    expect(mensajes({ mensajes: [texto('🙂 Hola')] }, { cfg: { nivelEmojis: 'ninguno' } }).items[0]!['payload'].text.body).toBe('Hola');
+    // También en el mensaje con botón de enlace.
+    expect(mensajes({ mensajes: [enlace(GENERICO)] }, { cfg: { nivelEmojis: 'ninguno' } }).items[0]!['texto']).not.toContain('🙂');
+  });
+
+  it('el mensaje GENÉRICO (palabra prohibida, QR rechazado…) también respeta `nivelEmojis`: con «ninguno» no sale el 🙂, en ningún texto del ítem', () => {
+    for (const mal of [texto('Ya va en camino.'), texto('Pagado')]) {
+      const r = mensajes({ mensajes: [mal] }, { cfg: { nivelEmojis: 'ninguno' } }).items[0]!;
+      expect(JSON.stringify([r['payload'], r['texto'], r['respaldo']]), JSON.stringify(mal)).not.toContain('🙂');
+      expect(r['texto']).toContain('Esto prefiero que lo vea una persona del restaurante.'); // la frase queda entera, sin el emoji ni un espacio suelto
+    }
+    // NEGANDO: con «pocos» (o sin el dato) el 🙂 sigue; con «muchos» también.
+    for (const cfg of [{ nivelEmojis: 'pocos' }, { nivelEmojis: 'muchos' }, {}]) {
+      expect(mensajes({ mensajes: [texto('Ya va en camino.')] }, { cfg }).items[0]!['texto'], JSON.stringify(cfg)).toContain('🙂');
+    }
   });
 });

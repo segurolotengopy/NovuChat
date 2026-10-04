@@ -22,7 +22,7 @@
 | **Mensajes por conversación** | 0. **Mandar el enlace no ahorra si el asistente conversa el pedido igual**: el ahorro aparece cuando el enlace reemplaza la conversación (`docs/base-comercial.md` §5) |
 | **Pruebas** | `catalogo-web.test.ts`, `demo-b-catalogo.test.ts` |
 
-**Observación:** exige el segundo sitio de Hosting antes del primer comercio que lo encienda (`admin/SEGURIDAD.md`). `catalogoWeb.ts` **se parte**: el checkout que escribe `pedidos` va a Pedidos. `config/marca` y el logo (hoy en `Configuracion.tsx`) pasan acá. `publico/` sigue sin cargar Firebase
+**Observación:** exige el segundo sitio de Hosting antes del primer comercio que lo encienda (`admin/SEGURIDAD.md`). **Implementado el 03/10/2026** (T-37): `firebase.json` con los destinos `consola` y `catalogo`, `publico/entrada.tsx` como única entrada del paquete público (`web/dist-catalogo`), `SITIO_PUBLICO` obligatoria; falta operarlo (`docs/produccion/sitio-publico-catalogo.md`). `catalogoWeb.ts` **se parte**: el checkout que escribe `pedidos` va a Pedidos. `config/marca` y el logo (hoy en `Configuracion.tsx`) pasan acá. `publico/` sigue sin cargar Firebase
 
 Carpetas destino (F2): `admin/functions/src/modulos/<m>/`,
 `admin/web/src/modulos/<m>/`, `Flujos/src/modulos/<m>/`,

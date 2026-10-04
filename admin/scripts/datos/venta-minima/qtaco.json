@@ -1,6 +1,7 @@
 {
   "nombreFlujo": "NovuChat — Venta mínima (v0) — Q'Taco",
   "entrada": "receptor",
+  "modoCobro": "simulado",
   "credenciales": {
     "ingesta": "NovuChat ingesta (Q'Taco)",
     "graph": "Graph WhatsApp Q'Taco (Bearer)",
@@ -28,6 +29,7 @@
     "reservasActivo": true,
     "promosActivo": true,
     "areasExcluidas": "cocteleria,cervezas,postres",
+    "palabrasExcluidas": "helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,heladito",
     "areasSinDelivery": "Bebidas",
     "horario": "REEMPLAZAR_HORARIO_PEDIDOS_QTACO",
     "zonasReserva": "salón,terraza",
@@ -45,6 +47,8 @@
     "formaPlantillaReserva": "pedido",
     "plantillaDerivacion": "pedido_registrado",
     "idiomaPlantillaDerivacion": "es",
-    "formaPlantillaDerivacion": "pedido"
+    "formaPlantillaDerivacion": "pedido",
+    "cobroSimuladoActivo": true,
+    "qrSimuladoUrl": "https://raw.githubusercontent.com/segurolotengopy/NovuChat/v0.11.0/Demo-Recursos/qr-demo.png"
   }
 }

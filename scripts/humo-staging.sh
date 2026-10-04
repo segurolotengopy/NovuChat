@@ -44,7 +44,8 @@
 #      usan estas rutas: llaman a las Functions por su URL directa.
 #        GET  /api/qr/<ficha inválida> 404   cobro.ts
 #        POST /api/catalogo/enlace     401   catalogoWeb.ts
-#        GET  /api/catalogo/<vencido>  404   catalogoWeb.ts (enlace vencido)
+#      (el resto de /api/catalogo/** ya NO está en la consola: desde T-37 vive
+#      en el segundo sitio de Hosting, ver el punto 5.)
 #   3. Reglas: la API REST de Firestore sin credenciales devuelve 403 en
 #      /tenants, /plataforma y /rutasWhatsApp (negación por defecto). 404
 #      significaría que la base no existe; 200, que las reglas están abiertas.
@@ -54,6 +55,12 @@
 #      proyecto y el appId de staging y NO los de producción; y lleva la apiKey
 #      y el appId que Hosting sirve en /__/firebase/init.json (la configuración
 #      pública del SDK, la misma de `apps:sdkconfig`, sin credenciales).
+#   5. El sitio público del catálogo (SITIO_PUBLICO_URL; T-37, admin/SEGURIDAD.md):
+#      otro origen que la consola. Lo hace `scripts/humo-sitio-publico.sh`, la
+#      única fuente de esa comprobación (también se corre contra producción):
+#      `/c/<ficha>` con su CSP propia, la consola NO en ese origen, las
+#      Functions del catálogo vivas y las demás sin exponer, y el JavaScript
+#      publicado sin el SDK de Firebase.
 #
 # En CI (GITHUB_ACTIONS=true) las entradas «opcionales» son obligatorias:
 # faltar es salida 2. El aviso queda para la ejecución manual.
@@ -83,6 +90,7 @@ if [[ -z "${STAGING_URL:-}" || -z "${GCP_PROJECT_ID_STAGING:-}" ]]; then
   GCP_PROJECT_ID_PROD="${GCP_PROJECT_ID_PROD:-$(leer_variable GCP_PROJECT_ID_PROD)}"
   APP_ID_STAGING="${APP_ID_STAGING:-$(leer_variable VITE_FIREBASE_APP_ID staging)}"
   APP_ID_PROD="${APP_ID_PROD:-$(leer_variable VITE_FIREBASE_APP_ID)}"
+  SITIO_PUBLICO_URL="${SITIO_PUBLICO_URL:-$(leer_variable SITIO_PUBLICO staging)}"
 fi
 [[ -n "${STAGING_URL:-}" && -n "${GCP_PROJECT_ID_STAGING:-}" ]] \
   || { echo "Sin STAGING_URL o GCP_PROJECT_ID_STAGING: ¿existe ya el proyecto de staging? (docs/staging/DISENO.md)" >&2; exit 2; }
@@ -90,6 +98,7 @@ URL="${STAGING_URL%/}"
 P="$GCP_PROJECT_ID_STAGING"
 BUCKET="${FIREBASE_STORAGE_BUCKET:-}"; BUCKET="${BUCKET#gs://}"
 APP_ID_STAGING="${APP_ID_STAGING:-}"; APP_ID_PROD="${APP_ID_PROD:-}"
+PUBLICO="${SITIO_PUBLICO_URL:-}"; PUBLICO="${PUBLICO%/}"
 EN_CI=0; [[ "${GITHUB_ACTIONS:-}" == "true" ]] && EN_CI=1
 if (( EN_CI )); then
   for v in "$P" "${GCP_PROJECT_ID_PROD:-}" "$APP_ID_STAGING" "$APP_ID_PROD"; do
@@ -97,7 +106,7 @@ if (( EN_CI )); then
   done
   # En CI las entradas opcionales NO son opcionales: llegan de desplegar-staging
   # y del repositorio, y si faltan es un defecto del pipeline, no un aviso.
-  for par in APP_ID_STAGING:"$APP_ID_STAGING" FIREBASE_STORAGE_BUCKET:"$BUCKET" APP_ID_PROD:"$APP_ID_PROD" GCP_PROJECT_ID_PROD:"${GCP_PROJECT_ID_PROD:-}"; do
+  for par in APP_ID_STAGING:"$APP_ID_STAGING" FIREBASE_STORAGE_BUCKET:"$BUCKET" APP_ID_PROD:"$APP_ID_PROD" GCP_PROJECT_ID_PROD:"${GCP_PROJECT_ID_PROD:-}" SITIO_PUBLICO_URL:"$PUBLICO"; do
     [[ -n "${par#*:}" ]] || { echo "::error::En CI falta ${par%%:*}: humo-staging no puede verificar el paquete." >&2; exit 2; }
   done
 fi
@@ -150,11 +159,15 @@ if [[ -n "$activo" ]] && grep -q '^cache-control:.*immutable' <<< "$(cabeceras_d
 else
   mal "${activo:-/assets/*.js} sin Cache-Control inmutable (¿se reordenaron las reglas de firebase.json?)"
 fi
+# T-37: la consola YA NO sirve la página pública. `/c/<ficha>` en su origen cae
+# en la CSP general de la consola (la que tiene `frame-src` para el inicio de
+# sesión), no en la del catálogo; si trajera la del catálogo, el catálogo
+# seguiría en el origen de las sesiones de administrador.
 csp_c="$(grep '^content-security-policy:' <<< "$(cabeceras_de "$URL/c/00000000000000000000000000000000")")"
-if grep -q "form-action 'none'" <<< "$csp_c" && ! grep -q 'frame-src' <<< "$csp_c"; then
-  ok "/c/** con su CSP propia"
+if grep -q 'frame-src' <<< "$csp_c" && ! grep -q "form-action 'none'" <<< "$csp_c"; then
+  ok "/c/** en la consola ya no lleva la CSP del catálogo (el catálogo salió de este origen)"
 else
-  mal "/c/** sin su CSP propia (¿cae en la general?)"
+  mal "/c/** en la consola sigue con la CSP del catálogo: la página pública no salió del origen de la consola (T-37)"
 fi
 
 echo "2. Functions detrás de Hosting (los códigos que el código fuente da a un anónimo)"
@@ -164,7 +177,6 @@ esperar 405 "GET  /api/configuracion/ (Function viva)" GET  "$URL/api/configurac
 esperar 401 "POST /api/configuracion/ sin firma"       POST "$URL/api/configuracion/" -H 'Content-Type: application/json' -d '{}'
 esperar 404 "GET  /api/qr/<ficha inválida>"           GET  "$URL/api/qr/no-es-una-ficha"
 esperar 401 "POST /api/catalogo/enlace sin firma"     POST "$URL/api/catalogo/enlace" -H 'Content-Type: application/json' -d '{}'
-esperar 404 "GET  /api/catalogo/<enlace vencido>"     GET  "$URL/api/catalogo/no-es-una-ficha"
 
 echo "3. Reglas desplegadas (el anónimo no lee nada)"
 FS="https://firestore.googleapis.com/v1/projects/$P/databases/(default)/documents"
@@ -249,6 +261,18 @@ else
     if [[ -n "$APP_ID_STAGING" && "$cfg_app_id" != "$APP_ID_STAGING" ]]; then
       mal "init.json sirve una app distinta de la del Environment staging"
     fi
+  fi
+fi
+
+echo "5. Sitio público del catálogo (segundo sitio de Hosting, otro origen que la consola · T-37)"
+if [[ -z "$PUBLICO" ]]; then
+  faltante "sin SITIO_PUBLICO_URL: no se comprueba el sitio público del catálogo"
+else
+  # Una sola fuente de esa comprobación: la misma que se corre contra producción.
+  if SITIO_PUBLICO_URL="$PUBLICO" CONSOLA_URL="$URL" ./scripts/humo-sitio-publico.sh; then
+    ok "sitio público del catálogo verificado (scripts/humo-sitio-publico.sh)"
+  else
+    mal "el sitio público del catálogo no pasó su humo (ver arriba)"
   fi
 fi
 

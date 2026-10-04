@@ -204,7 +204,7 @@ export const ejecutar = (
 export function expresion(texto: unknown, $json: J, referencias: Referencias = {}, deLaIA: J = {}): unknown {
   const m = /^=\{\{([\s\S]*)\}\}$/.exec(String(texto).trim());
   if (!m) throw new Error(`no es una expresión simple: ${String(texto).slice(0, 60)}`);
-  const $ = (n: string) => ({ first: () => ({ json: items(referencias[n])[0] ?? {} }), item: { json: items(referencias[n])[0] ?? {} } });
+  const $ = (n: string) => ({ first: () => ({ json: items(referencias[n])[0] ?? {} }), item: { json: items(referencias[n])[0] ?? {} }, isExecuted: referencias[n] !== undefined });
   const $fromAI = (clave: string) => deLaIA[clave] ?? '';
   // nosemgrep: devsecops.js-eval-prohibido
   const fn = new Function('$json', '$', '$fromAI', `return (${m[1]});`) as (...a: unknown[]) => unknown;
@@ -215,7 +215,7 @@ export function expresion(texto: unknown, $json: J, referencias: Referencias = {
 export function plantilla(texto: unknown, $json: J, referencias: Referencias = {}): string {
   const t = String(texto);
   if (!t.startsWith('=')) throw new Error('no es una plantilla de n8n');
-  const $ = (n: string) => ({ first: () => ({ json: items(referencias[n])[0] ?? {} }), item: { json: items(referencias[n])[0] ?? {} } });
+  const $ = (n: string) => ({ first: () => ({ json: items(referencias[n])[0] ?? {} }), item: { json: items(referencias[n])[0] ?? {} }, isExecuted: referencias[n] !== undefined });
   return t.slice(1).replace(/\{\{([\s\S]*?)\}\}/g, (_, expr: string) => {
     // nosemgrep: devsecops.js-eval-prohibido
     const v = (new Function('$json', '$', `return (${expr});`) as (j: unknown, r: unknown) => unknown)($json, $);

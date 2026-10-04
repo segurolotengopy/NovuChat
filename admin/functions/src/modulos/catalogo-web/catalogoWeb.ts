@@ -73,19 +73,24 @@ const TELEFONO = /^[0-9]{8,15}$/;
 
 /**
  * DÓNDE VIVE EL SITIO PÚBLICO. Se configura al desplegar
- * (`SITIO_PUBLICO=https://catalogo.ejemplo.com`) y, si no se configura, se
- * deriva del proyecto: `https://<proyecto>.web.app`. El valor por defecto
- * existe para que el sistema funcione recién desplegado y sin ceremonia; el
- * parámetro existe porque el día que el catálogo tenga dominio propio, cambiarlo
- * no puede exigir tocar código.
+ * (`SITIO_PUBLICO=https://catalogo.ejemplo.com`): es la dirección del SEGUNDO
+ * sitio de Hosting (target `catalogo` de `firebase.json`), que tiene otro origen
+ * que la consola (admin/SEGURIDAD.md, T-37). El parámetro existe porque el día
+ * que el catálogo tenga dominio propio, cambiarlo no puede exigir tocar código.
+ *
+ * YA NO HAY VALOR POR DEFECTO DERIVADO DEL PROYECTO. Antes, sin configurar, el
+ * enlace salía como `https://<proyecto>.web.app/c/<ficha>`, que era el sitio de
+ * la consola y servía la página. Desde T-37 ese sitio NO sirve `/c/**`: un
+ * enlace derivado así llegaría al cliente final a la pantalla de ingreso de la
+ * consola, y el fallo se descubriría con el cliente adentro. Sin `SITIO_PUBLICO`
+ * `enlaceCatalogo` responde 500 «sitio no configurado» (falla ruidosa y
+ * temprana) y `vistaPreviaCatalogo` dice que falta configurar la dirección.
  */
 const SITIO_PUBLICO = defineString('SITIO_PUBLICO', { default: '' });
 
 function baseDelSitio(): string {
   const configurado = SITIO_PUBLICO.value().trim().replace(/\/+$/, '');
-  if (configurado.startsWith('https://')) return configurado;
-  const proyecto = process.env['GCLOUD_PROJECT'] ?? process.env['GCP_PROJECT'] ?? '';
-  return proyecto ? `https://${proyecto}.web.app` : '';
+  return configurado.startsWith('https://') ? configurado : '';
 }
 
 /**

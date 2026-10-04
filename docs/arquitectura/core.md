@@ -38,7 +38,9 @@ implementación actual del pipeline de turno. Los cuatro contratos:
    ni de modalidades.
 3. **Reporte de turno y ganchos**: `ingesta`, partida por dentro en el
    coordinador más los ganchos de los módulos (ver `coordinador.md`).
-4. **Cierre**: `registrarCierre` no cambia; es la unidad que se factura.
+4. **Cierre**: `registrarCierre` no cambia. No es la unidad que se factura
+   (es la conversación, `docs/base-comercial.md` §2): es el registro
+   verificable de lo que terminó bien.
 5. **Envío** (salida): `{ tenantId, contactoId, tipo, contenido, opciones }`,
    implementado por una Function `enviar` con la credencial en Secret Manager
    (F4). Hoy vive en cada flujo.

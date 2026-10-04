@@ -155,7 +155,9 @@ function aaPrefijar(payload) {
 if (AA_armar) {
   for (const a of aaPedidos) {
     const tipo = String(a.tipo);
-    if (tipo === 'transferencia' && aaTopeAlcanzado('transferencias', aaTope(AA_CFG.topeTransferenciasHora, 1))) {
+    // Una derivación `comprobante: true` (la foto de un comprobante que no se pudo revisar por el cambio de modo de cobro) NO es una consulta: el tope
+    // de derivaciones por hora no la suprime (un pago real no puede quedar sin avisar porque el cliente ya había escrito).
+    if (tipo === 'transferencia' && !(a.datos && a.datos.comprobante === true) && aaTopeAlcanzado('transferencias', aaTope(AA_CFG.topeTransferenciasHora, 1))) {
       AA_errores.push('derivacion_repetida: ya se avisó una derivación de este teléfono en la última hora');
       continue;
     }
