@@ -396,6 +396,11 @@ export async function emitirFicha(o: {
   tenantId: string; phoneNumberId: string; flujo: string; telefono: string;
   reutilizar: boolean;
 }): Promise<FichaEmitida> {
+  // El comercio y el teléfono forman el identificador del puntero y quedan dentro
+  // de la ficha. Los dos llamadores ya los validan; esto es la segunda barrera,
+  // para que un llamador futuro no pueda escribir un identificador armado con
+  // «/», espacios o un teléfono que no es un teléfono.
+  if (!ID_TENANT.test(o.tenantId) || !TELEFONO.test(o.telefono)) throw new Error('entrada invalida');
   const nueva = () => ({
     id: randomBytes(16).toString('hex'),
     caducaEn: Timestamp.fromMillis(Date.now() + VIDA_FICHA_HORAS * 3_600_000),

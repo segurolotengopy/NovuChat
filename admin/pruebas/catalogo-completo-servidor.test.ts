@@ -51,7 +51,7 @@ const { logger } = createRequire(new URL('../functions/package.json', import.met
   'firebase-functions') as { logger: Record<'info' | 'warn' | 'error', (...a: unknown[]) => void> };
 const db = getFirestore();
 const { configuracionFlujo } = await import('../functions/src/ingesta.ts');
-const { enlaceCatalogo, catalogoPublico, checkoutCatalogo } =
+const { enlaceCatalogo, catalogoPublico, checkoutCatalogo, emitirFicha } =
   await import('../functions/src/modulos/catalogo-web/catalogoWeb.ts');
 const { UMBRAL_CATALOGO_AL_PROMPT } = await import('../functions/src/core/prompt/prompt.ts');
 const { limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
@@ -690,6 +690,34 @@ describe('El puntero `ult_…` no abre nada desde afuera', () => {
       expect(c.codigo, `${ruta}/checkout`).toBe(404);
     }
     expect((await db.collection(`tenants/${T_VENTA}/pedidos`).get()).size).toBe(pedidosAntes);
+  });
+});
+
+describe('`emitirFicha` rechaza una entrada que no tiene forma de comercio y teléfono', () => {
+  it('un comercio o un teléfono mal formados lanzan «entrada invalida» y no escriben nada, con y sin reutilizar', async () => {
+    const antes = (await db.collection('fichasCatalogo').get()).size;
+    const base = { phoneNumberId: NUMEROS[T_VENTA], flujo: 'venta' };
+    const malas = [
+      { tenantId: T_VENTA, telefono: '' },
+      { tenantId: T_VENTA, telefono: '7001' },
+      { tenantId: T_VENTA, telefono: '70010050/../x' },
+      { tenantId: T_VENTA, telefono: '+591' + '70010050' },
+      { tenantId: T_VENTA, telefono: '1'.repeat(16) },
+      { tenantId: '', telefono: '70010050' },
+      { tenantId: 'a/b', telefono: '70010050' },
+      { tenantId: 'CC-VENTA', telefono: '70010050' },
+      { tenantId: `${T_VENTA}_ult`, telefono: '70010050' },
+    ];
+    for (const m of malas) {
+      for (const reutilizar of [true, false]) {
+        await expect(emitirFicha({ ...base, ...m, reutilizar }), `${m.tenantId}|${m.telefono}|${reutilizar}`)
+          .rejects.toThrow('entrada invalida');
+      }
+    }
+    expect((await db.collection('fichasCatalogo').get()).size).toBe(antes);
+    // Y con la forma correcta, sigue funcionando.
+    const ok = await emitirFicha({ ...base, tenantId: T_VENTA, telefono: '70010051', reutilizar: true });
+    expect(ok.id).toMatch(/^[0-9a-f]{32}$/);
   });
 });
 
