@@ -56,6 +56,12 @@ const HONESTAS = [
   'Envíame aquí la foto o el PDF de tu comprobante.', 'Si ya hiciste tu pago, envíame el comprobante.',
   'Total de la comida: 155 Bs.', 'Escanea el QR con la app de tu banco.', 'Tu pedido sigue guardado.',
   'Estoy esperando el comprobante de tu pedido.',
+  // Redacción de Venta mínima (04/10): los textos nuevos de cara al cliente no disparan la red.
+  'Ya lo pasé al restaurante; ellos revisan el pago en su banco antes de despacharlo.',
+  'Ya lo pasé al restaurante, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
+  'Ya lo pasé al restaurante como pedido de PRUEBA.',
+  'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
+  'No pude incluir tu nota: «tequila» no está disponible por este medio.', 'Para volver al inicio, escribe «menú».',
   'Cuando tu pago llegue al banco, ellos lo revisan.', 'Tu depósito ingresará en 24 horas según tu banco.', 'Si ya pagaste, envíame el comprobante.', 'Cancelar pedido', 'Hemos recibido tu comprobante de pago.', 'El delivery no está incluido: se lo pagas al repartidor al recibir.',
 ];
 

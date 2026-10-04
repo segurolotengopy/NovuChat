@@ -728,7 +728,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     ];
     expect(frases.length).toBeGreaterThanOrEqual(12);
     for (const f of frases) expect(PROHIBIDAS.test(f), f).toBe(true);
-    for (const ok of ['Recibí tu comprobante y los datos coinciden con tu pedido', 'Ya pasé tu pedido al restaurante', 'Escríbeles con el botón']) {
+    for (const ok of ['Recibí tu comprobante y los datos coinciden con tu pedido', 'Ya lo pasé al restaurante', 'Escríbeles con el botón']) {
       expect(PROHIBIDAS.test(ok), ok).toBe(false);
     }
   });
@@ -1280,12 +1280,12 @@ describe('no negociable 2: ningún texto presenta lo no verificado como un hecho
 });
 
 describe('no negociable 3: «pasé tu pedido al restaurante» solo si un aviso salió (por el hecho, no por lo dicho)', () => {
-  it('comprobante que cuadra → una plantilla a cada destinatario y el texto «Ya pasé tu pedido»', () => {
+  it('comprobante que cuadra → una plantilla a cada destinatario y el texto «Ya lo pasé»', () => {
     const p = pedidoConComprobante();
     expect(plantillasA(p.comp, AV1)).toHaveLength(1);
     expect(plantillasA(p.comp, AV2)).toHaveLength(1);
     expect(p.comp.avisos.every((a) => a.ok)).toBe(true);
-    expect(cuerpos(p.comp)[0]).toContain('Ya pasé tu pedido al restaurante');
+    expect(cuerpos(p.comp)[0]).toContain('Ya lo pasé al restaurante');
   });
 
   it('las plantillas y los respaldos fallan (Graph rechaza) → «No pude pasarle…» con botón, y nunca «Ya pasé»', () => {
@@ -1294,7 +1294,7 @@ describe('no negociable 3: «pasé tu pedido al restaurante» solo si un aviso s
     expect(p.comp.avisos.every((a) => !a.ok)).toBe(true);
     const texto = cuerpos(p.comp).join('\n');
     expect(texto).toContain('No pude pasarle tu pedido al restaurante');
-    expect(texto).not.toMatch(/ya pas[eé]/i);
+    expect(texto).not.toMatch(/ya (lo |la )?pas[eé]/i);
     expect(tieneEnlace(p.comp)).toBe(true);
     expect(p.comp.mensajes.map(urlDeEnlace).join()).toContain(`https://wa.me/${REC}`);
     // El estado no queda «esperando comprobante» eternamente: el pedido se guardó como lo que pasó.
@@ -1312,7 +1312,7 @@ describe('no negociable 3: «pasé tu pedido al restaurante» solo si un aviso s
     w.estado.panel = panel(conCobroPendiente(ref, 84));
     const comp = c.imagen('media-9');
     expect(comp.avisos.map((a) => a.ok)).toEqual([false, true]);
-    expect(cuerpos(comp)[0]).toContain('Ya pasé tu pedido');
+    expect(cuerpos(comp)[0]).toContain('Ya lo pasé al restaurante');
   });
 
   it('el respaldo de un aviso que cae SÍ se usa y cuenta; uno sin respaldo no se reintenta; y «Armar mensajes» corre una sola vez', () => {
@@ -1372,7 +1372,7 @@ describe('no negociable 3: «pasé tu pedido al restaurante» solo si un aviso s
         expect(t.avisos.some((a) => a.respaldo), nombre).toBe(false);
         expect(t.avisos.every((a) => !a.ok), nombre).toBe(true);
         expect(cuerpos(t).join('\n'), nombre).toMatch(/No pude (pasarle|hacer llegar)|Esto prefiero que lo vea una persona del restaurante/);
-        expect(cuerpos(t).join('\n'), nombre).not.toMatch(/ya pas[eé]|llegó al restaurante/i);
+        expect(cuerpos(t).join('\n'), nombre).not.toMatch(/ya (lo |la )?pas[eé]|llegó al restaurante/i);
         expect(tieneEnlace(t), nombre).toBe(true);
       }
     }
@@ -1381,7 +1381,7 @@ describe('no negociable 3: «pasé tu pedido al restaurante» solo si un aviso s
   it('la misma regla para la reserva: «llegó al restaurante» solo con el aviso salido', () => {
     const buena = armarReserva({ ventana: 5 });
     const enviada = enviarReserva(buena);
-    expect(cuerpos(enviada).join('\n')).toContain('tu solicitud de reserva llegó al restaurante');
+    expect(cuerpos(enviada).join('\n')).toContain('tu solicitud llegó al restaurante');
     expect(enviada.avisos.some((a) => a.ok)).toBe(true);
     const caida = armarReserva({ fallan: ['Enviar aviso', 'Aviso de respaldo'] });
     const fallida = enviarReserva(caida);
@@ -1392,7 +1392,7 @@ describe('no negociable 3: «pasé tu pedido al restaurante» solo si un aviso s
   });
 
   it('en TODOS los escenarios: si ningún aviso salió, ningún texto al cliente dice que se pasó al restaurante', () => {
-    const PASE = /\bya pas[eé]\b|pas[eé] tu (pedido|solicitud|comprobante)|llegó al restaurante|hice llegar/i;
+    const PASE = /\bya (lo |la )?pas[eé]\b|pas[eé] tu (pedido|solicitud|comprobante)|llegó al restaurante|hice llegar/i;
     let conPase = 0;
     let sinPase = 0;
     for (const { nombre, turno } of todosLosTurnos()) {
@@ -1522,7 +1522,7 @@ describe('no negociable 6: el aviso pide revisar el banco; un comprobante ya ace
     expect(cuerpos(otra)[0]).toContain('Ya tengo el comprobante de tu pedido');
     expect(otra.avisos).toHaveLength(0);
     expect(otra.llamadas.cierre).toHaveLength(0);
-    expect(cuerpos(otra)[0]).not.toMatch(/ya pas[eé]/i);
+    expect(cuerpos(otra)[0]).not.toMatch(/ya (lo |la )?pas[eé]/i);
   });
 
   it('un 409 SIN que antes haya cuadrado (el QR venció) no se lee como «ya tengo el comprobante»', () => {
@@ -1547,7 +1547,10 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     expect(plantillasA(enviada, AV1)).toHaveLength(1);
     expect(plantillasA(enviada, AV2)).toHaveLength(1);
     expect(detallesA(enviada, AV1)[0]?.cuerpo).toMatch(/Solicitud de reserva/);
-    expect(cuerpos(enviada)[0]).toContain('Todavía es una solicitud');
+    expect(cuerpos(enviada)[0]).toContain('todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.');
+    // Redacción: el texto sale sin la frase de «menú» ni «Todavía es una solicitud» (el texto viejo).
+    expect(cuerpos(enviada)[0]).not.toContain('Todavía es una solicitud');
+    expect(cuerpos(enviada)[0]).not.toContain('escribe «menú»');
     // La plantilla es `pedido_registrado` con la forma `pedido`: la variable 1 se rotula «SOLICITUD DE RESERVA», nunca «confirmada».
     const plantillaReserva = plantillasA(enviada, AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>;
     expect(plantillaReserva.payload['template']?.name).toBe('pedido_registrado');
@@ -1694,7 +1697,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     expect(b.t.avisos).toHaveLength(0);
     expect((b.t.resumen as J)['resumen'].errores.join(' ')).toMatch(/tope_diario_de_avisos/);
     expect(cuerpos(b.t).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
-    expect(cuerpos(b.t).join('\n')).not.toMatch(/ya pas[eé]|pasé tu pedido/i);
+    expect(cuerpos(b.t).join('\n')).not.toMatch(/ya (lo |la )?pas[eé]|pasé tu pedido/i);
     // Negativo: con el tope por omisión (150), el segundo pedido sí avisa.
     const w2 = crear();
     const c2 = con(w2);
@@ -1872,6 +1875,23 @@ describe('pedido', () => {
     expect(cuerpos(con(cerrado).toca('g|pedir|promo', 'Pedir la promo'))[0]).toMatch(/Por ahora no estamos tomando pedidos/);
   });
 
+  it('redacción del horario fuera de hora: un solo punto y «Atendemos» en minúscula, con el texto de la consola y con el de la configuración', () => {
+    const conTexto = (horarioAtencion: string) => crear({
+      panel: panel({ operacion: { horarioAtencion, moneda: 'BOB', numeroRecepcion: REC, prefijosPermitidos: ['591'] } }),
+      config: { horario: HORARIO_SIN_LUNES },
+    });
+    const consola = conTexto('Lunes a Domingo de 12:00 a 22:00.');
+    const t = cuerpos(con(consola).escribe('quiero pedir unos tacos'))[0]!;
+    expect(t).toContain(' Atendemos lunes a Domingo de 12:00 a 22:00.');
+    expect(t).not.toContain('..');
+    expect(t).not.toContain('Atendemos Lunes');
+    // Sin el texto de la consola, el horario de la configuración dicho en palabras, también con un solo punto.
+    const legible = conTexto('');
+    const u = cuerpos(con(legible).escribe('quiero pedir unos tacos'))[0]!;
+    expect(u).toMatch(/ Atendemos [a-záéíóú]/);
+    expect(u).not.toContain('..');
+  });
+
   it('«Cambiar algo» reinicia el carrito', () => {
     const r = armarPedido();
     expect(((estadoDe(r.w.mundo)['carrito'] ?? []) as unknown[]).length).toBeGreaterThan(0);
@@ -1909,7 +1929,7 @@ describe('pedido', () => {
       expect(t.llamadas.extraer).toHaveLength(0);
       expect(tieneEnlace(t)).toBe(true);
       expect(plantillasA(t, AV1)).toHaveLength(1); // el aviso de la derivación
-      expect(cuerpos(t)[0]).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
+      expect(cuerpos(t)[0]).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Para volver al inicio, escribe «menú».');
     }
   });
 
@@ -2366,7 +2386,7 @@ describe('avisos y ventana de 24 horas', () => {
     expect(t2.avisos).toHaveLength(0);
     expect((t2.resumen as J)['resumen'].errores.join(' ')).toContain('sin_destinatarios_de_aviso');
     expect(cuerpos(t2).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
-    expect(cuerpos(t2).join('\n')).not.toMatch(/ya pas[eé]|pasé tu pedido/i);
+    expect(cuerpos(t2).join('\n')).not.toMatch(/ya (lo |la )?pas[eé]|pasé tu pedido/i);
   });
 
   it('los avisos NO se reportan a la ingesta: un reporte por cada mensaje entrante y uno por cada mensaje que sí salió al cliente', () => {
@@ -2812,11 +2832,11 @@ describe('mensajes por conversación: los números que declara DISENO.md', () =>
     // Que Meta rechace la imagen no cambia lo que lee el cliente (el aviso salió por la plantilla y el detalle)…
     const soloImagenCae = pedidoConComprobante({ ventana: 5, dobles: { 'Enviar aviso': (ll) => (ll.cuerpo?.['type'] === 'image' ? { error: { message: 'no acepta ese id' } } : aceptado('Enviar aviso', ll.n)) } });
     expect(soloImagenCae.comp.avisos.filter((a) => !a.ok).map((a) => a.tipo)).toEqual(['image']);
-    expect(cuerpos(soloImagenCae.comp)[0]).toContain('Ya pasé tu pedido');
+    expect(cuerpos(soloImagenCae.comp)[0]).toContain('Ya lo pasé al restaurante');
     // …y que SOLO la imagen salga no cuenta como aviso: la imagen nunca prueba que el restaurante se enteró.
     const soloImagenSale = pedidoConComprobante({ ventana: 5, dobles: { 'Enviar aviso': (ll) => (ll.cuerpo?.['type'] === 'image' ? aceptado('Enviar aviso', ll.n) : { error: { message: 'rechazado' } }) } });
     expect(cuerpos(soloImagenSale.comp).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
-    expect(cuerpos(soloImagenSale.comp).join('\n')).not.toMatch(/ya pas[eé]/i);
+    expect(cuerpos(soloImagenSale.comp).join('\n')).not.toMatch(/ya (lo |la )?pas[eé]/i);
   });
 
   it('pedido sin QR (plan B): 4 mensajes al cliente (menú, carta, resumen, pase) y los mismos avisos', () => {
@@ -3354,7 +3374,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     ...op,
   });
   const titulosDelPrimero = (t: ResultadoTurno): string[] => titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>);
-  const TEXTO_SIN_BOTON = 'Esto prefiero que lo vea una persona del restaurante 🙂. Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+  const TEXTO_SIN_BOTON = 'Esto prefiero que lo vea una persona del restaurante 🙂. Para volver al inicio, escribe «menú».';
 
   it('la conversación de las capturas: hola, carta, audio, helado, imagen, reserva, menú y de nuevo el pedido; ningún turno se derivó', () => {
     const w = ensayo();
@@ -4005,7 +4025,7 @@ describe('ensayo en el Demo A: la variante `trigger` con las credenciales del De
     expect(p.confirmar.avisos).toHaveLength(0);
     const aCliente = cuerpos(p.confirmar).join('\n');
     expect(aCliente).toContain('No pude pasarle tu pedido al restaurante');
-    expect(aCliente).not.toMatch(/ya pas[eé]|pasé tu pedido/i);
+    expect(aCliente).not.toMatch(/ya (lo |la )?pas[eé]|pasé tu pedido/i);
     expect(tieneEnlace(p.confirmar)).toBe(true);
     expect(p.confirmar.mensajes.map(urlDeEnlace).join(' ')).toContain(REC); // el botón sale de la recepción de la consola (en el ensayo, el teléfono del restaurante)
     // Y la ventana vencida (25 horas) tampoco abre una plantilla.

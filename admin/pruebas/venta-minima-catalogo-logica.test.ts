@@ -165,7 +165,7 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     const t = turno(m, { mensaje: texto('quiero ver la carta') }, conEnlace(URL_CATALOGO));
     expect(mensajes(t)).toEqual([{
       tipo: 'enlace', catalogo: true,
-      cuerpo: 'Esta es nuestra carta. Elige ahí tus productos y vuelve al chat para confirmar el pedido, o escríbeme lo que quieres. Si quieres seguir con tu pedido o tu reserva, escribe «menú».',
+      cuerpo: 'Esta es nuestra carta. Elige ahí tus productos y vuelve al chat para confirmar, o escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
       botones: [{ id: '', title: 'Ver la carta' }], url: URL_CATALOGO,
     }]);
     expect(estadoDe(m)['paso']).toBe('pedido');
@@ -177,7 +177,8 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     const sin = turno(m, { mensaje: texto('quiero ver la carta') }, conEnlace(URL_CATALOGO));
     const cuerpoSin = String(mensajes(sin)[0]!['cuerpo']);
     expect(cuerpoSin).not.toMatch(/confirma ah|confirmar ah/i);
-    expect(cuerpoSin).toContain('vuelve al chat para confirmar el pedido');
+    expect(cuerpoSin).toContain('vuelve al chat para confirmar, o escríbeme');
+    expect(cuerpoSin).not.toContain('confirmar el pedido'); // redacción: «confirmar el pedido» se repetía con «tu pedido sigue guardado»
     expect(cuerpoSin).not.toContain('sigue guardado');
     // Un pedido en curso (llegó un carrito) y luego «carta»: el enlace lleva el aviso, en el mismo mensaje (0 mensajes de más).
     const c = crear();
@@ -187,6 +188,8 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     expect(mensajes(t)).toHaveLength(1);
     expect(mensajes(t)[0]!['tipo']).toBe('enlace');
     expect(String(mensajes(t)[0]!['cuerpo'])).toMatch(/^Tu pedido sigue guardado \(\d+ productos?\)\. Esta es nuestra carta\./);
+    expect(String(mensajes(t)[0]!['cuerpo'])).toContain('vuelve al chat para confirmar, o escríbeme');
+    expect(String(mensajes(t)[0]!['cuerpo'])).not.toContain('confirmar el pedido');
     expect(mensajes(t)[0]!['url']).toBe(URL_CATALOGO);
     // Sin enlace, la carta en texto lleva el mismo aviso (como siempre).
     const d = crear();
@@ -407,8 +410,9 @@ describe('el carrito que vuelve de la página', () => {
       const t = carrito(m, { nota });
       const cuerpo = String(mensajes(t)[0]!['cuerpo']);
       expect(cuerpo, nota).not.toContain('Tu nota');
-      expect(cuerpo, nota).toMatch(/No pude incluir tu nota: «(tequila|cerveza|shot)» no lo podemos incluir en el pedido\./);
-      expect(cuerpo, nota).not.toContain('no está disponible'); // no culpa al producto: la línea sigue y solo se quitó la nota
+      expect(cuerpo, nota).toMatch(/No pude incluir tu nota: «(tequila|cerveza|shot)» no está disponible por este medio\./);
+      expect(cuerpo, nota).not.toContain('no lo podemos incluir'); // redacción: la frase vieja («no lo podemos incluir en el pedido») ya no sale
+      expect(cuerpo, nota).not.toMatch(/No pude incluir «/); // no culpa al producto: la línea sigue y solo se quitó la nota
       expect(estadoDe(m)['entrega']?.['notaPedido'], nota).toBeUndefined();
       // el resto del pedido sigue: se confirma con el botón y el aviso NO lleva la nota
       const c = turno(m, { mensaje: boton('p|confirmar', 'Confirmar pedido') });
@@ -438,10 +442,11 @@ describe('el carrito que vuelve de la página', () => {
       const cuerpo = String(mensajes(t)[0]!['cuerpo']);
       expect(cuerpo, nota).toContain(`Tu nota: ${nota}\nTotal de la comida:`);
       expect(cuerpo, nota).not.toContain('no lo podemos incluir');
+      expect(cuerpo, nota).not.toContain('No pude incluir tu nota');
     }
     // NEGANDO: la bebida en la nota sigue sin pasar.
     const bebida = carrito(crear({ palabrasExcluidas: 'margarita,paloma,ron,chop,tequila' }), { nota: 'con una margarita' });
-    expect(String(mensajes(bebida)[0]!['cuerpo'])).toContain('«margarita» no lo podemos incluir');
+    expect(String(mensajes(bebida)[0]!['cuerpo'])).toContain('No pude incluir tu nota: «margarita» no está disponible por este medio.');
   });
 
   it('el carrito sin nota no deja rastro de nota, y una nota con palabras de la red se sanea', () => {

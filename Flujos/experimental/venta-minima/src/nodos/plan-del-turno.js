@@ -346,7 +346,7 @@ function capacidades() {
 function derivar(razon, conservarPaso, extra) {
   // (Las constantes van DENTRO de la función: lo que se declara después del `return` del nodo no llega a inicializarse.)
   const TEXTO_DERIVACION = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. '
-    + (conservarPaso ? 'Tu pedido sigue esperando el comprobante.' : 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
+    + (conservarPaso ? 'Tu pedido sigue esperando el comprobante.' : 'Para volver al inicio, escribe «menú».');
   ruta = 'transferir:' + razon;
   aviso = { tipo: 'transferencia', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: vmLinea(t.nombrePerfil, 60),
@@ -403,7 +403,7 @@ function mensajesDeCarta(enlace) {
   if (url) {
     return [{
       tipo: 'enlace', catalogo: true,
-      cuerpo: 'Esta es nuestra carta. Elige ahí tus productos y vuelve al chat para confirmar el pedido, o escríbeme lo que quieres. Si quieres seguir con tu pedido o tu reserva, escribe «menú».',
+      cuerpo: 'Esta es nuestra carta. Elige ahí tus productos y vuelve al chat para confirmar, o escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
       botones: [{ id: '', title: 'Ver la carta' }], url: url,
     }];
   }
@@ -429,13 +429,20 @@ function aCarta() {
   mensajes = m;
 }
 
+// El horario del negocio (texto de la consola, escrito a mano) para «Atendemos …»: sin el punto final que traiga (el de la frase es el
+// propio) y con la primera letra en minúscula («Atendemos Lunes» suena a error), salvo una sigla («LUN a VIE»).
+function horarioEnFrase(h) {
+  const x = String(h || '').trim().replace(/[\s.]+$/, '');
+  return /^\p{Lu}(?!\p{Lu})/u.test(x) ? x.charAt(0).toLowerCase() + x.slice(1) : x;
+}
+
 function aConsulta(clave) {
   let cuerpo = '';
   if (clave === 'direccion') {
     const x = vmLinea(cfg.direccion, 200);
     cuerpo = x ? 'Estamos en ' + x + '.' : '';
   } else if (clave === 'horario') {
-    const x = vmLinea(cfg.horarioAtencion, 200);
+    const x = horarioEnFrase(vmLinea(cfg.horarioAtencion, 200));
     cuerpo = x ? 'Atendemos ' + x + '.' : '';
   } else if (clave === 'delivery') {
     // Con el panel sin respuesta no se sabe si hay delivery: no se afirma ni se niega, se pasa con el local.
@@ -491,7 +498,7 @@ function aMedioNoLeido() {
 
 function aFueraDeHorario() {
   // El texto de la consola manda; sin él, el horario de la configuración dicho en palabras (`vmHorarioLegible`).
-  const h = vmLinea(cfg.horarioAtencion, 200) || vmLinea(vmHorarioLegible(cfg.horario), 200);
+  const h = horarioEnFrase(vmLinea(cfg.horarioAtencion, 200)) || horarioEnFrase(vmLinea(vmHorarioLegible(cfg.horario), 200));
   const cuerpo = 'Por ahora no estamos tomando pedidos 🕒.' + (h ? ' Atendemos ' + h + '.' : '');
   irA('menu');
   mensajes = [conBotones(cuerpo, reservasOn ? [{ id: vmIdDeBoton('m', 'reserva'), title: 'Reservar mesa' }] : [])];
@@ -1067,7 +1074,8 @@ function enviarReserva() {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: reserva.nombre, codigo: codigo, reserva: reserva,
   } };
   condicionados = {
-    siSalio: [enlace('Listo, ' + nombre + ': tu solicitud de reserva llegó al restaurante. Todavía es una solicitud: el restaurante la revisa según sus mesas. Si quieres hablar con ellos, toca el botón.')],
+    // `sinMenu`: el texto termina en el botón; no se le agrega la frase de «menú». (Sin «confirmada»: la red de palabras prohibidas la rechaza, incluso negada.)
+    siSalio: [Object.assign(enlace('Listo, ' + nombre + ': tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.'), { sinMenu: true })],
     siNoSalio: [enlace('No pude hacer llegar tu solicitud al restaurante en este momento. Escríbeles con el botón para reservar.')],
   };
   cierre = { tipo: 'registro', detalle: vmRecorte('Solicitud de reserva #' + codigo + ': ' + rsLineaCompacta(reserva, 'completo'), 300), referencia: clave.id };
@@ -1179,7 +1187,7 @@ function aCarrito() {
   const nota = delCliente(c.nota, 200);
   const notaExcluida = nota ? pdPalabraExcluida(nota, lista(cfg.palabrasExcluidas)) : '';
   if (nota && !notaExcluida) en.entrega.notaPedido = nota;
-  if (notaExcluida) notas.push('No pude incluir tu nota: «' + notaExcluida + '» no lo podemos incluir en el pedido.');
+  if (notaExcluida) notas.push('No pude incluir tu nota: «' + notaExcluida + '» no está disponible por este medio.');
 
   const nombres = (l) => unirY(l.slice(0, 3).map((n) => '«' + n + '»')) + (l.length > 3 ? ' y ' + (l.length - 3) + ' más' : '');
   if (fuera.length) notas.push('No pude incluir ' + nombres(fuera) + ' en tu pedido: no está disponible por este medio.');
