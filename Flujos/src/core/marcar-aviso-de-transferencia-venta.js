@@ -24,8 +24,11 @@ const resultado = salidas.map((s, i) => {
   const origen = (previos[i] ?? previos[previos.length - 1] ?? { json: {} }).json ?? {};
   const salio = String((((s.json ?? {}).messages ?? [])[0] ?? {}).id ?? '') !== '';
   if (salio && origen.from) sd.avisosTransferencia[origen.from] = Date.now();
+  // `json.error` es TEXTO en n8n 2.36.5 («(#131047) …»): el codigo se saca del texto, igual que en
+  // `Verificar aviso al dueño`. El item conserva el `error` de n8n, que queda en los datos de la ejecucion.
   const e = (s.json ?? {}).error;
-  const avisoError = salio ? undefined : { code: (e && e.code) ?? null, subcode: (e && e.error_subcode) ?? null };
+  const textoError = (e && typeof e === 'object') ? String(e.message ?? '') : String(e ?? '');
+  const avisoError = salio ? undefined : { code: Number((/\(#(\d+)\)/.exec(textoError) ?? [])[1]) || null };
   return { json: { ...(s.json ?? {}), avisoAceptado: salio, ...(avisoError ? { avisoError } : {}) }, pairedItem: { item: i } };
 });
 return resultado;

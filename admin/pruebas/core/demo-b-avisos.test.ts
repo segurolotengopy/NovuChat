@@ -53,11 +53,16 @@ describe('(a) «Avisar al dueño»: su salida se verifica', () => {
     return { s, registro };
   };
 
-  it('Meta rechaza el aviso: queda `avisoAceptado: false` y el código de Meta EN LOS DATOS de la ejecución (sin su mensaje)', () => {
-    const { s } = verificar({ error: { code: 131047, error_subcode: 2494, message: 'texto de Meta con datos' } });
+  it('Meta rechaza el aviso: queda `avisoAceptado: false` y el código de Meta EN LOS DATOS de la ejecución', () => {
+    // Forma REAL en n8n 2.36.5 con continueOnFail: `error` es TEXTO.
+    const { s } = verificar({ error: '(#131047) Re-engagement message' });
     expect(s['avisoAceptado']).toBe(false);
-    expect(s['avisoError']).toEqual({ code: 131047, subcode: 2494 });
-    expect(JSON.stringify(s['avisoError'])).not.toContain('texto de Meta');
+    expect(s['avisoError']).toEqual({ code: 131047 });
+    // Mismo criterio en «Marcar aviso de transferencia».
+    const m = marcar({}, { t: 1_800_000_000_000 }, procesar({ output: '[TRANSFERIR]' }, {}, { t: 1_800_000_000_000 }), { error: '(#131047) Re-engagement message' });
+    expect(m['avisoError']).toEqual({ code: 131047 });
+    // Sin código reconocible: null, nunca un error.
+    expect(verificar({ error: 'timeout' }).s['avisoError']).toEqual({ code: null });
   });
 
   it('el módulo no promete una línea en el registro del servidor', () => {
@@ -217,7 +222,7 @@ describe('(b3) Más formas, troceo, falsos positivos y líneas', () => {
   const FORMAS = ['Notifiqué al negocio.', 'Ya informé a la dueña.', 'Comuniqué al negocio tu caso.', 'Ya he notificado al negocio.', 'Hemos informado al negocio.',
     'Acabo de avisar a recepción.', 'Le estoy avisando a Un Negocio.', 'Le avisó a la dueña.', 'Pasé tu pedido al negocio.', 'Mandé tu consulta a recepción.',
     'Envié tu mensaje al negocio.', 'Escribí a la dueña.', 'Aviso al negocio ahora mismo.', 'Ahora aviso a recepción.', 'Le hemos notificado.', 'Ya está al tanto.',
-    'Le avisaremos que llegaste.', 'Ya les informé,', 'Ya le comuniqué tu pedido.', 'Te avisamos por aquí cuando esté listo.', 'Te avisamos cuando esté listo.'];
+    'Le avisaremos que llegaste.', 'Estamos avisando al negocio.', 'Le paso tu consulta al negocio.', 'Le estoy pasando tu pedido a recepción.', 'Ya avisé.', 'Ya les informé,', 'Ya le comuniqué tu pedido.', 'Te avisamos por aquí cuando esté listo.', 'Te avisamos cuando esté listo.'];
 
   it('cada forma se quita', () => {
     for (const o of FORMAS) expect(quita(o + ' Toca el botón. [TRANSFERIR]'), o).toBe(true);
@@ -232,9 +237,18 @@ describe('(b3) Más formas, troceo, falsos positivos y líneas', () => {
     }
   });
 
+  it('un anuncio pegado a un monto no se lleva el monto', () => {
+    for (const o of ['Tu total es 80 Bs; ya le avisé al negocio.', 'Total: 80 Bs, ya le avisé al negocio.', 'Total: 80 Bs, le avisé al negocio.']) {
+      const p = turno(o + ' [TRANSFERIR]');
+      expect(p['avisos'], o).toContain('aviso_anunciado_quitado');
+      expect(String(p['respuesta']), o).toContain('80 Bs');
+      expect(String(p['respuesta']), o).not.toMatch(/avis/i);
+    }
+  });
+
   it('falsos positivos: lo que informa, no anuncia, se conserva', () => {
     for (const o of ['Le informé el precio antes: 10 Bs.', 'Le aviso: el pedido mínimo es 30 Bs.', 'Como le comuniqué, el total es 70 Bs.',
-      'Como le informé, el envío cuesta 10 Bs.', 'Ya le comuniqué el total: 70 Bs.', 'Le aviso que el pedido mínimo es 30 Bs.', 'Ya te he informado del precio: 10 Bs.']) {
+      'Como le informé, el envío cuesta 10 Bs.', 'Ya le comuniqué el total: 70 Bs.', 'Le aviso que el pedido mínimo es 30 Bs.', 'Ya te he informado del precio: 10 Bs.', 'Ya te lo he informado.', 'Ya informé al cliente del precio.', 'Como ya le informé, el envío cuesta 10 Bs.', 'Ya te la he notificado.']) {
       const p = turno(o);
       expect(p['avisos'], o).not.toContain('aviso_anunciado_quitado');
       expect(String(p['respuesta']), o).toBe(o);
@@ -242,7 +256,7 @@ describe('(b3) Más formas, troceo, falsos positivos y líneas', () => {
   });
 
   it('«cuando» no rompe lo legítimo (y «te mando» sin tiempo sigue igual)', () => {
-    for (const o of ['Cuando quieras te muestro el catálogo.', 'Te mando el catálogo ahora.', 'Escríbeme cuando decidas.']) {
+    for (const o of ['Cuando quieras te muestro el catálogo.', 'Te mando el catálogo ahora.', 'Escríbeme cuando decidas.', 'Te aviso cuando me digas la dirección.', 'Te confirmo cuando me envíes el comprobante.']) {
       expect(turno(o)['avisos'], o).not.toContain('promesa_quitada');
     }
   });

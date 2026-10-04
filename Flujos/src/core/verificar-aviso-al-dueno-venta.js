@@ -9,10 +9,10 @@
 //
 // NO CORTA LA EJECUCION a proposito: un `throw` aca detendria las ramas que
 // siguen (registrar el cierre de la venta). Deja `avisoAceptado: false` y, en
-// `avisoError`, solo el codigo y el subcodigo de Meta (nunca su mensaje, que
-// puede traer datos). Eso queda EN LOS DATOS DE LA EJECUCION: no se promete
-// ninguna linea en el registro del servidor (depende de la configuracion de la
-// VM).
+// `avisoError`, el codigo de Meta sacado del texto del error. El item conserva
+// ademas el `error` que n8n puso (con el mensaje de Meta): todo queda EN LOS
+// DATOS DE LA EJECUCION. No se promete ninguna linea en el registro del
+// servidor (depende de la configuracion de la VM).
 //
 // LIMITE: el id de Meta prueba que Meta ACEPTO el mensaje, no que el dueño lo
 // recibio (la entrega real llega despues por un acuse asincrono, y fuera de la
@@ -23,7 +23,9 @@
 return $input.all().map((s, i) => {
   const j = s.json ?? {};
   const aceptado = String((((j.messages ?? [])[0]) ?? {}).id ?? '') !== '';
-  const e = (j.error && typeof j.error === 'object') ? j.error : {};
-  const avisoError = aceptado ? undefined : { code: e.code ?? e.httpCode ?? null, subcode: e.error_subcode ?? null };
+  // En n8n 2.36.5, con `continueRegularOutput`, `json.error` es TEXTO («(#131047) …»), no un
+  // objeto: el codigo de Meta se saca del texto. Mismo criterio que `Marcar aviso de transferencia`.
+  const textoError = (j.error && typeof j.error === 'object') ? String(j.error.message ?? '') : String(j.error ?? '');
+  const avisoError = aceptado ? undefined : { code: Number((/\(#(\d+)\)/.exec(textoError) ?? [])[1]) || null };
   return { json: { ...j, avisoAceptado: aceptado, ...(avisoError ? { avisoError } : {}) }, pairedItem: { item: i } };
 });
