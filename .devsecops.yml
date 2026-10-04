@@ -130,3 +130,26 @@ seguridad:
       aprobado_por: Andres Alberdi
       creado: "2026-10-01"
       vence: "2026-12-30"
+  # ---------------------------------------------------------------------------
+  # ACTIVA (03/10/2026): braces@3.0.3 en admin/pnpm-lock.yaml (GHSA-vfj7-8cjw-p6xm,
+  # CVE-2026-93687, CVSS 8.7, HIGH). En origin/main desde el 28/08 (f03c258c);
+  # entra por firebase-tools@15.29.0 -> chokidar@3.6.0 -> braces: tooling de
+  # desarrollo y CLI, sin entrada no confiable. osv-scanner no informa version
+  # corregida. El `id` es el CVE porque security-local.sh identifica el hallazgo
+  # de osv-scanner por su primer alias CVE- y compara contra ese valor; un id
+  # propio (osv-braces-GHSA-...) o el GHSA no lo exceptuarian. En CI
+  # osv-scanner es informativo y no lee excepciones: esta entrada surte efecto
+  # en el analisis local (paridad con el umbral bloquear_en).
+  # Al vencer: revisar si salio version corregida de braces o si firebase-tools
+  # ya trae chokidar@4 (que no depende de braces); no se prorroga en silencio.
+  # ---------------------------------------------------------------------------
+    - id: CVE-2026-93687
+      herramienta: osv-scanner
+      justificacion: >-
+        DoS por patrones anidados; solo en tooling de desarrollo/CLI, sin
+        entrada no confiable; sin version corregida publicada. braces@3.0.3
+        (GHSA-vfj7-8cjw-p6xm) entra por firebase-tools@15.29.0 ->
+        chokidar@3.6.0 en admin/pnpm-lock.yaml.
+      aprobado_por: Andres Alberdi
+      creado: "2026-10-03"
+      vence: "2026-12-31"
