@@ -599,3 +599,73 @@ describe('(h) Tanda de la revisión del #401: preguntas pegadas, negaciones, for
     }
   });
 });
+
+describe('(i) Tanda final del #401: «si» sin tilde, acreditar, medios, cota del lookbehind, «estamos avisando», futuros', () => {
+  const turno = (o: string, ent: J = {}, sd: J = {}) => ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: o }],
+    { 'Normalizar entrada': [{ ...ENT, ...ent }] }, { $getWorkflowStaticData: () => sd, Date: reloj({ t: 1_800_000_000_000 }) })[0] ?? {};
+  const REAL: J = { cobroRealActivo: 'si' };
+  const SIM: J = { cobroRealActivo: 'no' };
+  const quita = (o: string) => (turno(o)['avisos'] as string[]).some((a) => /^(aviso_anunciado|promesa)_quitad/.test(a));
+  const escapan = (formas: string[]) => {
+    for (const o of formas) {
+      expect(turno(o, REAL)['avisos'], o).toContain('correccion_cobro');
+      expect(turno(o, SIM)['avisos'], o).toContain('rotulo_generico');
+    }
+  };
+
+  it('A: «si» sin tilde que afirma (no condiciona con cláusula principal) se corrige', () => {
+    escapan(['Por supuesto que si recibimos tu pago.', 'No te preocupes, si recibimos tu pago.', 'Claro, si ya nos llegó tu pago.', 'Claro que si tu pago llegó',
+      'Que si recibimos tu pago, tranquila', 'Te confirmo que si recibimos tu pago 👍', 'Si recibimos tu pago.', 'Si hemos recibido tu pago', 'Sí, recibimos tu pago.']);
+    // La principal que sigue a un condicional SÍ se juzga.
+    escapan(['Si quieres, recibimos tu pago.', 'Si ya pagaste, recibimos tu pago.']);
+  });
+
+  it('A: el condicional con principal y la negación siguen sin corregirse', () => {
+    for (const o of ['Si ya pagaste, envíame el comprobante.', 'Si tu pago llegó, el negocio te confirma.', 'Aún no recibimos tu pago.', 'Si recibimos tu pago, te aviso aquí mismo.',
+      'Listo, si ya pagaste, envíame la foto del comprobante.']) {
+      expect(turno(o, REAL)['avisos'], o).not.toContain('correccion_cobro');
+      expect(turno(o, SIM)['avisos'], o).not.toContain('rotulo_generico');
+    }
+  });
+
+  it('B: «acreditado» suelto se corrige; «un local acreditado» no', () => {
+    escapan(['Acreditado ✅', 'El monto fue acreditado.', 'Se acreditó.', 'Acreditamos.', 'Acreditado tu pago', 'Ya acreditaron tu pago', 'Tus 80 Bs se acreditaron']);
+    for (const o of ['Somos un local acreditado.', 'Somos un negocio acreditado.', 'No acreditamos nada hasta que el negocio lo vea.']) {
+      expect(turno(o, REAL)['avisos'], o).not.toContain('correccion_cobro');
+    }
+  });
+
+  it('C: «por QR o en efectivo» solo exceptúa «el pago» genérico, nunca «tu pago»', () => {
+    escapan(['Recibimos tu pago por QR o en efectivo, gracias', 'Recibimos tu pago vía QR o con tarjeta. Ya está listo.', 'Recibimos tu pago por QR o por efectivo y ya se confirmó']);
+    expect(turno('Recibimos el pago por QR o en efectivo.', REAL)['avisos']).not.toContain('correccion_cobro');
+  });
+
+  it('F: «recibido tu pago» dentro de un futuro no se toca; al empezar la oración, sí', () => {
+    for (const o of ['Una vez recibido tu pago, despachamos tu pedido.', 'Cuando hayamos recibido tu pago te confirmamos.', 'Apenas haya recibido tu pago te escribe el negocio.']) {
+      expect(turno(o, REAL)['avisos'], o).not.toContain('correccion_cobro');
+    }
+    escapan(['Recibido tu pago.', 'Listo. Recibido tu pago, gracias.']);
+  });
+
+  it('E: «estamos avisando» + complemento que no es destinatario se conserva; con personal se quita', () => {
+    for (const o of ['Estamos avisando que mañana cerramos a las 20:00.', 'Te estamos avisando con tiempo: la promo termina hoy.', 'Estamos avisando por este medio que hay promo.',
+      'Estamos avisando a todos de la promo.']) {
+      const p = turno(o);
+      expect(p['avisos'], o).not.toContain('aviso_anunciado_quitado');
+      expect(String(p['respuesta']), o).toBe(o);
+    }
+    for (const o of ['Estamos avisando a todos los encargados.', 'Estamos avisando a todos en cocina.', 'Estamos avisando a nuestros clientes y al dueño.', "Estamos avisando a Q'Taco.", 'Estamos avisando.']) {
+      expect(quita(o), o).toBe(true);
+    }
+  });
+
+  it('D: el lookbehind del «no» está acotado (ReDoS con «ya », «nos », «ya\\n»)', () => {
+    for (const bloque of ['ya ', 'nos ', 'ya\n', 'no ya ', 'si ya ']) {
+      for (const ent of [REAL, SIM]) {
+        const t0 = Date.now();
+        turno(bloque.repeat(Math.ceil(50_000 / bloque.length)), ent);
+        expect(Date.now() - t0, JSON.stringify(bloque)).toBeLessThan(1000);
+      }
+    }
+  });
+});
