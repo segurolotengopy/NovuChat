@@ -492,10 +492,15 @@ export function instanteConPrecision(leido: Leido): { ms: number; conHora: boole
  *
  * `nombreCoincide` (la seña) no se toca.
  */
+/** Máximo de palabras de un nombre que se compara (por lado). */
+export const MAXIMO_DE_PALABRAS = 8;
+
 type TipoDeParEnNombre = 'completa' | 'una_letra' | 'debil';
 
 function tipoDePar(e: string, l: string): TipoDeParEnNombre | null {
   if (e === l) return 'completa';
+  // Una inicial del lado ESPERADO («Juan C. Perez») también es débil.
+  if (e.length === 1) return l.startsWith(e) ? 'debil' : null;
   if (l.length === 1) return e.startsWith(l) ? 'debil' : null;
   if (e.startsWith(l)) {
     if (l.length >= 4) return 'completa';
@@ -509,9 +514,12 @@ function tipoDePar(e: string, l: string): TipoDeParEnNombre | null {
 export function nombreCoincideConUnaLetra(
   esperado: string, leido: string,
 ): 'exacto' | 'aproximado' | 'insuficiente' | 'no' {
-  const e = palabras(esperado);
+  // TOPE DE PALABRAS: la búsqueda de abajo es combinatoria y esto corre dentro de
+  // una transacción. Lo leído viene de una imagen que mandó un tercero: con más
+  // de 8 palabras no es un nombre y se rechaza sin buscar.
+  const e = palabras(esperado).slice(0, MAXIMO_DE_PALABRAS);
   const l = palabras(leido);
-  if (e.length === 0 || l.length === 0) return 'no';
+  if (e.length === 0 || l.length === 0 || l.length > MAXIMO_DE_PALABRAS) return 'no';
   const esperadoEsCorto = e.length <= l.length;
   const corto = esperadoEsCorto ? e : l;
   const largo = esperadoEsCorto ? l : e;
@@ -521,12 +529,16 @@ export function nombreCoincideConUnaLetra(
   // coincidencia fuerte, y entre esos el de menos diferencias.
   let mejor: { fuertes: number; imperfectas: number } | null = null;
   const usada = new Array<boolean>(largo.length).fill(false);
+  let perfecto = false;
   const buscar = (i: number, fuertes: number, imperfectas: number): void => {
+    if (perfecto) return;
     if (i === corto.length) {
       const mejora = mejor === null
         || (fuertes > 0 && mejor.fuertes === 0)
         || ((fuertes > 0) === (mejor.fuertes > 0) && imperfectas < mejor.imperfectas);
       if (mejora) mejor = { fuertes, imperfectas };
+      // Un emparejamiento perfecto no se puede mejorar: se corta la búsqueda.
+      if (fuertes > 0 && imperfectas === 0) perfecto = true;
       return;
     }
     for (let k = 0; k < largo.length; k++) {

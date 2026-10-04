@@ -205,6 +205,36 @@ describe('P1b: el emparejamiento es uno a uno y la dirección importa (esperado,
   });
 });
 
+describe('P1b: iniciales del lado ESPERADO y tope contra la búsqueda explosiva', () => {
+  it('«Juan C. Perez» frente a «JUAN CARLOS PEREZ» vale como aproximado, nunca exacto', () => {
+    expect(nombreCoincideConUnaLetra('Juan C. Perez', 'JUAN CARLOS PEREZ')).toBe('aproximado');
+    expect(nombreCoincideConUnaLetra('Maria J. Rodriguez', 'MARIA JOSE RODRIGUEZ')).toBe('aproximado');
+    expect(nombreCoincideConUnaLetra('J. Perez', 'JUAN PEREZ')).toBe('aproximado');
+    expect(califica({ cuentaDestino: '', nombreCuenta: 'JUAN CARLOS PEREZ' }, { nombreCuenta: 'Juan C. Perez' }).estado).toBe('aproximado');
+  });
+  it('si TODAS las coincidencias son iniciales, insuficiente; y una inicial que no es la de la palabra, no', () => {
+    expect(nombreCoincideConUnaLetra('J. P.', 'JUAN PEREZ')).toBe('insuficiente');
+    expect(nombreCoincideConUnaLetra('Juan K. Perez', 'JUAN CARLOS PEREZ')).toBe('no');
+  });
+  it('el emparejamiento prefiere el que tiene una coincidencia fuerte: «Jose Jaime» frente a «J JAI JOSE»', () => {
+    expect(nombreCoincideConUnaLetra('Jose Jaime', 'J JAI JOSE')).toBe('aproximado');
+  });
+  it('60 iniciales «M» no cuelgan la transacción: responde en menos de 50 ms', () => {
+    for (const esp of ['Maria Mercedes Mamani Mendoza Molina', 'Maria Magdalena Mamani Mendoza Mercado']) {
+      const t0 = performance.now();
+      expect(nombreCoincideConUnaLetra(esp, 'M '.repeat(60))).toBe('no');
+      expect(performance.now() - t0).toBeLessThan(50);
+    }
+    // Y con el máximo permitido (8 contra 8, todas con la misma inicial) tampoco.
+    const t1 = performance.now();
+    nombreCoincideConUnaLetra('Mario Marta Mateo Maria Mabel Magno Mavil Maxi', 'M M M M M M M M');
+    expect(performance.now() - t1).toBeLessThan(200);
+  });
+  it('un nombre leído de más de 8 palabras no es un nombre', () => {
+    expect(nombreCoincideConUnaLetra('Juan Perez', 'JUAN PEREZ AA BB CC DD FF GG HH')).toBe('no');
+  });
+});
+
 describe('el monto numérico llega como lo da el modelo, sin pasar por texto', () => {
   it('100.004 es 100 y 350.00000000000006 es 350 (con String() se leían mal)', () => {
     expect(califica({ monto: 100.004 }).estado).toBe('valido');
