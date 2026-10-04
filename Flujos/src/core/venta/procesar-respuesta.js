@@ -12,23 +12,69 @@ const entradas = $('Normalizar entrada').all();
 // Frases que, si aparecen sin la palabra "simulad…", harían pasar el cobro por real.
 const AFIRMA_COBRO = /((pago|cobro|transferencia|dep[oó]sito|abono)\s+(\S+\s+){0,3}(verificad|confirmad|recibid|acreditad|procesad|aprobad|realizad|efectuad|exitos)|ya\s+(recibimos|se\s+acredit|te\s+cobr|se\s+cobr)|(pago|cobro)\s+(\S+\s+){0,2}(real|de\s+verdad))/i;
 // «Recibimos tu pago» y las demás formas que AFIRMAN un pago ya hecho y que
-// AFIRMA_COBRO no cubre (prohibición 3 de CLAUDE.md, hallazgo de seguridad sobre
-// main). Va APARTE y no dentro de AFIRMA_COBRO porque ese regex es letra por letra
-// el de Platinum (una prueba lo exige) y este módulo no puede tocarlo. Con `u` y
-// límites `(?<![\p{L}])` / `(?![\p{L}])` porque `\b` no ve las vocales con tilde.
-// Los futuros («cuando recibamos tu pago te confirmamos», «te aviso cuando
-// recibamos tu comprobante») NO entran: «recibamos» es subjuntivo y «comprobante»
-// no es un pago. Una oración que es pregunta («¿Ya pagaste?») tampoco se toca.
-const AFIRMA_RECIBIDO = /(?<![\p{L}])(?:(?:recibimos|hemos\s+recibido|he\s+recibido|recib[ií])\s+(?:ya\s+)?(?:tu|su|el|un)\s+(?:pago|dep[oó]sito|transferencia|abono)s?(?![\p{L}])|(?:pago|dep[oó]sito|transferencia|abono)s?\s+(?:ya\s+)?(?:recibid|acreditad|verificad|confirmad|aprobad|realizad|exitos)[oa]s?(?![\p{L}])|acredit(?:amos|ad[oa]s?|[oó])(?![\p{L}])|(?:tu|su|el)\s+(?:pago|dep[oó]sito|transferencia|abono)\s+(?:ya\s+)?(?:lleg[oó]|fue\s+(?:recibid|acreditad|confirmad)[oa]|se\s+(?:recibi[oó]|acredit[oó]|confirm[oó]))(?![\p{L}])|ya\s+(?:nos\s+)?lleg[oó]\s+(?:tu|su|el)\s+(?:pago|dep[oó]sito|transferencia|abono)(?![\p{L}])|ya\s+pagaste(?![\p{L}])|gracias\s+por\s+(?:tu|su|el)\s+(?:pago|dep[oó]sito|transferencia|abono)(?![\p{L}]))/iu;
-// ¿Esta oración afirma un pago? (se juzga sin marcas de formato).
+// AFIRMA_COBRO no cubre (prohibición 3 de CLAUDE.md). Va APARTE y no dentro de
+// AFIRMA_COBRO porque ese regex es letra por letra el de Platinum (una prueba lo
+// exige) y este módulo no puede tocarlo. Con `u` y límites `(?<![\p{L}])` /
+// `(?![\p{L}])` porque `\b` no ve las vocales con tilde. Vocabulario contrastado con
+// `CB_PROHIBIDAS` de Venta mínima, pero restringido a un sustantivo de pago: «confirmamos
+// tu pedido» o «un local acreditado» no son afirmaciones de pago.
+// NO entran, a propósito:
+//   - los futuros y el subjuntivo («cuando recibamos tu pago te confirmamos», «te aviso
+//     cuando recibamos tu comprobante») ni «recibimos tu comprobante» (no es un pago);
+//   - lo precedido por «si» o «no» («Si ya pagaste, envíame el comprobante», «Aún no
+//     recibimos tu pago», «No acreditamos nada hasta que el negocio lo vea»);
+//   - «Recibimos el pago por QR o en efectivo» (medios que se aceptan, no un pago hecho);
+//   - las preguntas («¿Ya pagaste?»): ver `trocearPago`.
+const P_ART = String.raw`(?:tu|su|el|la|un)`;
+const P_PAGO = String.raw`(?:pago|dep[oó]sito|transferencia|abono)s?`;
+const P_NOUN = String.raw`(?:pago|dep[oó]sito|transferencia|abono|dinero|plata)s?`;
+const P_PART = String.raw`(?:recibid|acreditad|confirmad|registrad|verificad|aprobad|completad|realizad|pagad|exitos)[oa]s?`;
+const P_ADV = String.raw`(?:\p{L}+mente\s+)?`;
+const P_MEDIOS = String.raw`(?!\s+(?:por|en|mediante|con|v[ií]a)\s+(?:\p{L}+\s+){0,3}o\s+(?:en|por|con|mediante|v[ií]a)(?![\p{L}]))`;
+const P_VERBO = String.raw`(?:recibimos|hemos\s+recibido|he\s+recibido|recib[ií]|recibido|registramos|registré|confirmamos|confirmé|verificamos|verifiqué|acreditamos|acredité|aprobamos|(?:ya\s+)?tenemos)`;
+const P_LLEGO = String.raw`(?:lleg[oó]|cay[oó]|se\s+(?:reflej|registr|acredit|recibi)[oó])`;
+const AFIRMA_RECIBIDO = new RegExp(
+  String.raw`(?<![\p{L}])(?<!(?<![\p{L}])(?:si|no)\s(?:(?:ya|nos|se|hemos|he)\s)*)(?:`
+  + [
+    // recibimos / registramos / confirmamos / tenemos [correctamente] [ya] tu pago
+    `${P_VERBO}\\s+${P_ADV}(?:ya\\s+)?${P_ART}\\s+${P_PAGO}(?![\\p{L}])${P_MEDIOS}`,
+    // recibimos los 80 Bs
+    String.raw`(?:recibimos|hemos\s+recibido|he\s+recibido|recib[ií])\s+(?:ya\s+)?(?:los\s+|las\s+)?\d[\d.,]*\s*(?:bs|bolivianos|usd|d[oó]lares)(?![\p{L}])`,
+    // quedó acreditado tu pago
+    `(?:qued[oó]|est[aá]|fue)\\s+${P_PART}\\s+${P_ART}\\s+${P_PAGO}(?![\\p{L}])`,
+    // tu pago llegó / se reflejó / fue recibido / quedó registrado
+    `${P_ART}\\s+${P_NOUN}\\s+(?:ya\\s+)?(?:nos\\s+)?(?:${P_LLEGO}|se\\s+confirm[oó]|(?:fue|est[aá]|qued[oó])\\s+${P_PART})(?![\\p{L}])`,
+    // ya nos llegó / ya cayó tu pago
+    `(?:ya\\s+)?(?:nos\\s+)?${P_LLEGO}\\s+(?:ya\\s+)?${P_ART}\\s+${P_NOUN}(?![\\p{L}])`,
+    // pago registrado / completado / recibido (el participio de «pago recibido|acreditado|
+    // verificado…» ya lo cubre AFIRMA_COBRO; se repite acá para que no dependa de él)
+    `${P_PAGO}\\s+(?:ya\\s+)?${P_PART}(?![\\p{L}])`,
+    String.raw`ya\s+pagaste(?![\p{L}])`,
+    `gracias\\s+por\\s+${P_ART}\\s+${P_PAGO}(?![\\p{L}])`,
+    String.raw`(?:ya\s+)?(?:est[aá]|qued[oó])\s+pagad[oa]s?(?![\p{L}])`,
+  ].join('|') + ')', 'iu');
+// «Pagado ✅» al empezar la oración.
+const AFIRMA_PAGADO_SUELTO = /^[^\p{L}\p{N}]*pagad[oa]s?(?![\p{L}])/iu;
+// Oraciones: por puntuación final y ANTES de cualquier «¿», para que una afirmación
+// pegada a una pregunta («Recibimos tu pago, ¿algo más?») se juzgue sola.
+const trocearPago = (t) => t.split(/(?<=[.!?…])\s+|,?\s*(?=¿)/u);
+// ¿Esta oración afirma un pago? (se juzga sin marcas de formato). La pregunta no afirma.
 const afirmaPagoOracion = (o) => {
   const s = o.replace(/[*_~]/g, '');
-  return AFIRMA_COBRO.test(s) || (!/\?\s*$/.test(s.trim()) && AFIRMA_RECIBIDO.test(s));
+  return AFIRMA_COBRO.test(s)
+    || (!/\?\s*$/.test(s.trim()) && (AFIRMA_RECIBIDO.test(s) || AFIRMA_PAGADO_SUELTO.test(s)));
 };
-// ¿Algún tramo del texto afirma un pago? Conserva el criterio de siempre
-// (AFIRMA_COBRO sobre el texto entero) y suma el de oración por oración.
-const afirmaPago = (t) => AFIRMA_COBRO.test(t.replace(/[*_~]/g, ''))
-  || t.split('\n').some((l) => l.split(/(?<=[.!?…])\s+/).some(afirmaPagoOracion));
+// ¿Algún tramo del texto afirma un pago? Criterio de siempre (AFIRMA_COBRO sobre el
+// texto entero) más el de oración por oración, línea por línea y también con los saltos
+// de línea como espacio («Recibimos\ntu pago.», «Pago\nrecibido»).
+const afirmaPago = (t) => {
+  const s = t.replace(/[*_~]/g, '');
+  return AFIRMA_COBRO.test(s)
+    || s.split('\n').some((l) => trocearPago(l).some(afirmaPagoOracion))
+    || trocearPago(s.replace(/\s*\n\s*/g, ' ')).some(afirmaPagoOracion);
+};
+// Primera letra en mayúscula (para cuando se quita la primera mitad de una línea).
+const mayus = (t) => t.replace(/^([\s"'«*_–—-]*)(\p{Ll})/u, (m, a, b) => a + b.toUpperCase());
 const DICE_SIMULADO = /(simulad|simulacr|demostraci[oó]n|\bdemo\b|no\s+cobra)/i;
 // Negaciones de ser IA (prohibición 4).
 const NIEGA_IA = /(no\s+soy\s+(un[ao]?\s+)?(bot|robot|m[aá]quina|programa|inteligencia\s+artificial|\bia\b|asistente\s+virtual|autom[aá]tic[ao])|soy\s+(un[ao]?\s+)?(persona|humano|humana|ser\s+humano)|habl(as|[aá]s|a)\s+con\s+(un[ao]?\s+)?(persona|humano|humana))/i;
@@ -148,15 +194,34 @@ for (let i = 0; i < $input.all().length; i++) {
     }
   } else {
     // CON DINERO DE VERDAD: la oración que afirma un pago se reemplaza por lo
-    // único cierto. Es LETRA POR LETRA la corrección de los flujos de reservas
-    // (`Flujos/src/comun/procesar-respuesta.js`), con el mismo regex y el mismo
-    // troceado por oración; una prueba exige que las dos sigan siendo iguales.
+    // único cierto. La frase y el espíritu son los de los flujos de reservas
+    // (`Flujos/src/comun/procesar-respuesta.js`), pero el juicio de venta es más
+    // ancho (`afirmaPagoOracion`: AFIRMA_COBRO y AFIRMA_RECIBIDO, y corta antes de «¿»);
+    // AFIRMA_COBRO sigue siendo el mismo que el de Platinum.
     // Se juzga sin marcas de formato: «*pago verificado*» también cuenta.
     if (afirmaPago(texto)) {
       const quienRevisa = String(ent.nombreNegocio || '').trim() || 'el negocio';
       const CORRECCION = `El comprobante lo revisa ${quienRevisa} y ellos confirman el pago.`;
-      texto = texto.split('\n').map((linea) => linea.split(/(?<=[.!?…])\s+/)
-        .map((o) => (afirmaPagoOracion(o) ? CORRECCION : o)).join(' ')).join('\n').trim();
+      // Solo se rearma una línea si alguna de sus oraciones afirma: el resto del texto
+      // (comas, espacios, listas) queda como lo escribió el modelo.
+      const lineas = texto.split('\n').map((linea) => {
+        const tr = trocearPago(linea);
+        return tr.some(afirmaPagoOracion)
+          ? tr.map((o) => (afirmaPagoOracion(o) ? CORRECCION : o)).join(' ')
+          : linea;
+      });
+      // Una afirmación partida en dos líneas («Recibimos» / «tu pago.») no la ve
+      // ninguna de las dos: se juntan de a dos y se reemplazan por la frase fija.
+      for (let k = 0; k < lineas.length - 1; k++) {
+        if (!afirmaPago(lineas[k]) && !afirmaPago(lineas[k + 1]) && afirmaPago(lineas[k] + '\n' + lineas[k + 1])) {
+          lineas.splice(k, 2, CORRECCION);
+        }
+      }
+      texto = lineas.join('\n').trim();
+      // Si aun así algo afirma (tres líneas, o AFIRMA_COBRO a través de oraciones),
+      // el bloque entero se reemplaza: nunca queda una afirmación ni se anota una
+      // corrección que no cambió nada.
+      if (afirmaPago(texto)) texto = CORRECCION;
       avisos.push('correccion_cobro');
     }
     // Y NADA DE «SIMULADO» CON UN COBRO REAL: el rótulo diría que un QR que sí
@@ -182,7 +247,7 @@ for (let i = 0; i < $input.all().length; i++) {
   const oraciones = texto.split(/(?<=[.!?…])\s+|;\s+|,\s*(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))|\s+y\s+(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))|\s+[—–-]\s+(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))/iu);
   const sinPromesas = oraciones.filter((o) => /\?\s*$/.test(o.trim()) || !PROMESA.test(o));
   if (sinPromesas.length < oraciones.length) {
-    texto = sinPromesas.join(' ').trim();
+    texto = sinPromesas[0] === oraciones[0] ? sinPromesas.join(' ').trim() : mayus(sinPromesas.join(' ').trim());
     avisos.push('promesa_quitada');
   }
 
@@ -233,8 +298,8 @@ for (let i = 0; i < $input.all().length; i++) {
   //     si van a un destinatario o sin complemento («Ya les informé,»); «Como le
   //     informé, el envío cuesta 10 Bs.» y «Le informé el precio» quedan.
   // Con `u` y `(?<![\p{L}])` / `(?![\p{L}])` porque `\b` no ve las vocales con tilde.
-  const AVISO_FUTURO = /(?<![\p{L}])(?:(?:le|les)\s+(?:(?:aviso|notifico)(?![\p{L}])(?!\s+que(?![\p{L}])|\s*:)|avisar[eé](?![\p{L}])|avisaremos(?![\p{L}])|avisamos(?![\p{L}])|notificar[eé](?![\p{L}])|estoy\s+avisando(?![\p{L}]))|avisarl[eo]s?(?![\p{L}])|el\s+sistema\s+(?:le\s+|les\s+)?(?:avisa|avisar[aá]|notifica|notificar[aá])(?![\p{L}])|^\s*(?:ahora\s+)?aviso\s+(?:a|al)(?![\p{L}])|(?:estoy|estamos)\s+avisando(?![\p{L}])(?=\s*(?:[,.;:!?…]|$)|\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+|nuestr[oa]\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa]|equipo)(?![\p{L}]))|(?:le|les)\s+(?:paso|estoy\s+pasando)\s+(?:tu|su)\s+\p{L}+\s+(?:a|al)(?![\p{L}]))/iu;
-  const AVISO_PASADO = /(?<![\p{L}])(?:(?<!como\s(?:ya\s)?)(?<!te\s)(?:le|les|lo|los)\s+(?:(?:avis[eé]|avisó|he\s+avisado|hemos\s+avisado|he\s+notificado|hemos\s+notificado|notifiqu[eé]|pas[eé]\s+(?:tu|el|su)\s+(?:mensaje|pedido|consulta|caso))(?![\p{L}])|(?:inform|comuniqu)[eé](?=\s*(?:[,.;!]|$)|\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa])(?![\p{L}])|\s+(?:tu|su)\s+(?:pedido|consulta|caso|mensaje|solicitud)(?![\p{L}])))|(?:ya\s+)?(?<!te\s(?:lo\s|la\s)?)(?:avis|notifiqu)[eé]\s+(?:a|al)(?![\p{L}])(?!\s+(?:\d|las?\s+\d))|(?:ya\s+)?(?:inform|comuniqu)[eé]\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+|nuestr[oa]\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa]|equipo)(?![\p{L}])|(?<!como\s)(?:ya\s+)?(?<!te\s(?:lo\s|la\s)?)(?:avis|notifiqu)[eé](?=\s*(?:[.,;!…]|$)|\s*[^\p{L}\p{N}\s:?¿])|(?<!te\s(?:lo\s|la\s)?)(?:ya\s+)?(?:he|hemos)\s+(?:avisado|notificado|informado)(?![\p{L}])|acabo\s+de\s+(?:avisar|notificar)(?![\p{L}])|(?:pas|mand|envi)[eé]\s+(?:(?:tu|su)\s+[\p{L}]+\s+)?(?:a|al)\s+(?:la\s+|el\s+)?(?:due[ñn][oa]|negocio|recepci[oó]n|encargad[oa])(?![\p{L}])|escrib[ií]\s+(?:a|al)\s+(?:la\s+|el\s+)?(?:due[ñn][oa]|negocio|recepci[oó]n|encargad[oa])(?![\p{L}])|se\s+(?:le\s+|les\s+)?(?:avisó|informó|notificó)(?![\p{L}])|fue(?:ron)?\s+(?:avisad|notificad|informad)[oa]s?(?![\p{L}])|est[aá]n?\s+(?:ya\s+)?(?:avisad|notificad|informad)[oa]s?(?![\p{L}])|(?:ya\s+)?est[aá]n?\s+al\s+tanto(?![\p{L}])|el\s+sistema\s+(?:ya\s+)?(?:le\s+|les\s+)?(?:avisó|notificó)(?![\p{L}]))/iu;
+  const AVISO_FUTURO = /(?<![\p{L}])(?:(?:le|les)\s+(?:(?:aviso|notifico)(?![\p{L}])(?!\s+que(?![\p{L}])|\s*:)|avisar[eé](?![\p{L}])|avisaremos(?![\p{L}])|avisamos(?![\p{L}])|notificar[eé](?![\p{L}])|estoy\s+avisando(?![\p{L}]))|avisarl[eo]s?(?![\p{L}])|el\s+sistema\s+(?:le\s+|les\s+)?(?:avisa|avisar[aá]|notifica|notificar[aá])(?![\p{L}])|^\s*(?:ahora\s+)?aviso\s+(?:a|al)(?![\p{L}])|(?:estoy|estamos)\s+avisando(?![\p{L}])(?!\s+a\s+(?:todos|todas|nuestros\s+clientes|los\s+clientes)(?![\p{L}]))|(?:le|les)\s+(?:paso|estoy\s+pasando)\s+(?:tu|su)\s+\p{L}+\s+(?:a|al)(?![\p{L}]))/iu;
+  const AVISO_PASADO = /(?<![\p{L}])(?:(?<!como\s(?:ya\s)?)(?<!te\s)(?:le|les|lo|los)\s+(?:(?:avis[eé]|avisó|he\s+avisado|hemos\s+avisado|he\s+notificado|hemos\s+notificado|notifiqu[eé]|pas[eé]\s+(?:tu|el|su)\s+(?:mensaje|pedido|consulta|caso))(?![\p{L}])|(?:inform|comuniqu)[eé](?=\s*(?:[,.;!]|$)|\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa])(?![\p{L}])|\s+(?:tu|su)\s+(?:pedido|consulta|caso|mensaje|solicitud)(?![\p{L}])))|(?:ya\s+)?(?<!te\s(?:lo\s|la\s)?)(?:avis|notifiqu)[eé]\s+(?:a|al)(?![\p{L}])(?!\s+(?:\d|las?\s+\d))|(?:ya\s+)?(?:avis|notifiqu)[eé]\s+a\s+las?\s+\d+(?::\d+)?\s*(?:h|hs|horas)?\s+(?:a|al)\s+(?:la\s+|el\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa]|equipo)(?![\p{L}])|(?:ya\s+)?(?:inform|comuniqu)[eé]\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+|nuestr[oa]\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa]|equipo)(?![\p{L}])|(?<!como\s)(?:ya\s+)?(?<!te\s(?:lo\s|la\s)?)(?:avis|notifiqu)[eé](?=\s*(?:[.,;!…]|$)|\s*[^\p{L}\p{N}\s:?¿])|(?<!te\s(?:lo\s|la\s)?)(?:ya\s+)?(?:he|hemos)\s+(?:avisado|notificado|informado)(?![\p{L}])|acabo\s+de\s+(?:avisar|notificar)(?![\p{L}])|(?:pas|mand|envi)[eé]\s+(?:(?:tu|su)\s+[\p{L}]+\s+)?(?:a|al)\s+(?:la\s+|el\s+)?(?:due[ñn][oa]|negocio|recepci[oó]n|encargad[oa])(?![\p{L}])|escrib[ií]\s+(?:a|al)\s+(?:la\s+|el\s+)?(?:due[ñn][oa]|negocio|recepci[oó]n|encargad[oa])(?![\p{L}])|se\s+(?:le\s+|les\s+)?(?:avisó|informó|notificó)(?![\p{L}])|fue(?:ron)?\s+(?:avisad|notificad|informad)[oa]s?(?![\p{L}])|est[aá]n?\s+(?:ya\s+)?(?:avisad|notificad|informad)[oa]s?(?![\p{L}])|(?:ya\s+)?est[aá]n?\s+al\s+tanto(?![\p{L}])|el\s+sistema\s+(?:ya\s+)?(?:le\s+|les\s+)?(?:avisó|notificó)(?![\p{L}]))/iu;
   {
     // Solo se LEE (no se crea nada): sin transferencia el estado no se toca.
     let marcas = {};
@@ -250,7 +315,11 @@ for (let i = 0; i < $input.all().length; i++) {
       const dejar = trozos.filter((o) => /\?\s*$/.test(o.trim())
         || !(AVISO_FUTURO.test(o) || (!marcaVigente && AVISO_PASADO.test(o))));
       if (dejar.length < trozos.length) quitado = true;
-      return dejar.length < trozos.length ? dejar.join(' ').trim() : linea;
+      if (dejar.length < trozos.length) {
+        const r = dejar.join(' ').trim();
+        return dejar[0] === trozos[0] ? r : mayus(r);
+      }
+      return linea;
     });
     if (quitado) {
       texto = lineas.join('\n').replace(/\n{3,}/g, '\n\n').trim();

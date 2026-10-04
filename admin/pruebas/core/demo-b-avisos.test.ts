@@ -496,3 +496,106 @@ describe('(g) Seguimiento del #391: destinatarios, monto, falsos positivos y bor
     }
   });
 });
+
+describe('(h) Tanda de la revisión del #401: preguntas pegadas, negaciones, formas nuevas y saltos de línea', () => {
+  const turno = (o: string, ent: J = {}, sd: J = {}) => ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: o }],
+    { 'Normalizar entrada': [{ ...ENT, ...ent }] }, { $getWorkflowStaticData: () => sd, Date: reloj({ t: 1_800_000_000_000 }) })[0] ?? {};
+  const REAL: J = { cobroRealActivo: 'si' };
+  const SIM: J = { cobroRealActivo: 'no' };
+  const CORRECCION = 'El comprobante lo revisa Un Negocio y ellos confirman el pago.';
+  const quita = (o: string) => (turno(o)['avisos'] as string[]).some((a) => /^(aviso_anunciado|promesa)_quitad/.test(a));
+
+  it('MEDIUM-1: una afirmación pegada a una pregunta se corrige (real) o lleva rótulo (simulado)', () => {
+    for (const o of ['Recibimos tu pago, ¿algo más?', 'Listo, recibimos tu pago, ¿te ayudo con algo más?', 'Recibimos tu pago ¿deseas algo más?', '¡Recibimos tu pago!¿Algo más?']) {
+      const r = turno(o, REAL);
+      expect(r['avisos'], o).toContain('correccion_cobro');
+      expect(String(r['respuesta']), o).toContain(CORRECCION);
+      expect(String(r['respuesta']), o).toContain('¿');
+      expect(String(r['respuesta']), o).not.toMatch(/recibimos/i);
+      expect(turno(o, SIM)['avisos'], o).toContain('rotulo_generico');
+    }
+    // La pregunta sola sigue sin tocarse.
+    expect(turno('¿Ya pagaste, o te ayudo con algo más?', REAL)['avisos']).not.toContain('correccion_cobro');
+  });
+
+  it('IMPORTANTE-1: condicionales y negaciones verdaderas no se tocan (borrarían una instrucción)', () => {
+    for (const o of ['Si ya pagaste, envíame el comprobante.', 'Si ya pagaste, mándame la foto del comprobante por favor.', 'Si tu pago llegó, el negocio te confirma.',
+      'No acreditamos nada hasta que el negocio lo vea.', 'Aún no recibimos tu pago.', 'Todavía no hemos recibido tu pago.', 'Recibimos el pago por QR o en efectivo.',
+      'Somos un local acreditado.', 'Si recibimos tu pago, te aviso aquí mismo.', 'Si ya nos llegó tu pago, el negocio te confirma.']) {
+      for (const ent of [REAL, SIM]) {
+        const r = turno(o, ent);
+        expect(r['avisos'], o).not.toContain('correccion_cobro');
+        expect(r['avisos'], o).not.toContain('rotulo_generico');
+      }
+      expect(String(turno(o, REAL)['respuesta']), o).toBe(o);
+    }
+  });
+
+  it('IMPORTANTE-2: formas nuevas (artículo «la», adverbio, verbos, participios, «pagado», dinero, monto)', () => {
+    for (const o of ['Recibimos la transferencia.', 'La transferencia llegó.', 'Ya nos llegó la transferencia.', 'Recibimos correctamente tu pago.', 'Confirmamos tu pago.',
+      'Confirmé tu pago.', 'Verificamos tu pago.', 'Ya registramos tu pago.', 'Tu pago quedó registrado.', 'Pago registrado.', 'Pago completado.', 'Recibido tu pago.',
+      'Ya tenemos tu pago.', 'Ya está pagado.', 'Quedó pagado.', 'Pagado ✅', 'Ya cayó tu pago.', 'Se reflejó tu pago.', 'Ya se reflejó el depósito.', 'Tu dinero llegó.',
+      'Recibimos los 80 Bs.', 'Quedó acreditado tu pago.', 'Registramos exitosamente el pago.']) {
+      const r = turno('Listo. ' + o + ' Gracias.', REAL);
+      expect(r['avisos'], o).toContain('correccion_cobro');
+      expect(String(r['respuesta']), o).toContain(CORRECCION);
+      expect(turno('Listo. ' + o, SIM)['avisos'], o).toContain('rotulo_generico');
+    }
+  });
+
+  it('los futuros legítimos de siempre siguen sin tocarse', () => {
+    for (const o of ['Te aviso cuando recibamos tu comprobante.', 'Cuando recibamos tu pago te confirmamos.', 'Recibimos tu comprobante.', '¿Ya pagaste?', 'Gracias por tu pedido.',
+      'Para que el negocio confirme el pago, envía el comprobante.', 'Quedó agendado tu pedido.']) {
+      expect(turno(o, REAL)['avisos'], o).not.toContain('correccion_cobro');
+    }
+  });
+
+  it('LOW: una afirmación partida en dos líneas se detecta y SÍ se corrige (nunca se anota sin cambio)', () => {
+    for (const o of ['Pago\nrecibido', 'Recibimos\ntu pago.', 'Tu pedido:\n- 2 pizzas: 70 Bs\nRecibimos\ntu pago.\nGracias.']) {
+      const r = turno(o, REAL);
+      expect(r['avisos'], o).toContain('correccion_cobro');
+      expect(String(r['respuesta']), o).toContain(CORRECCION);
+      expect(String(r['respuesta']), o).not.toMatch(/recibimos|recibido/i);
+      expect(turno(o, SIM)['avisos'], o).toContain('rotulo_generico');
+    }
+    // El resumen del pedido no se pierde.
+    expect(String(turno('Tu pedido:\n- 2 pizzas: 70 Bs\nRecibimos\ntu pago.\nGracias.', REAL)['respuesta'])).toBe('Tu pedido:\n- 2 pizzas: 70 Bs\n' + CORRECCION + '\nGracias.');
+    // Partida en tres líneas: el bloque entero se reemplaza por la frase fija.
+    const tres = turno('Hola.\nPago\nya\nrecibido', REAL);
+    expect(tres['avisos']).toContain('correccion_cobro');
+    expect(String(tres['respuesta'])).toBe(CORRECCION);
+    // Y la corrección nunca se anota sin cambio.
+    for (const o of ['Hola.', 'Pedido listo.\nGracias.']) expect(turno(o, REAL)['avisos'], o).not.toContain('correccion_cobro');
+  });
+
+  it('MEDIUM-2: «estamos avisando» a un destinatario cualquiera se quita; a «todos/clientes», no', () => {
+    for (const o of ["Estamos avisando a Q'Taco.", 'Estamos avisando al local.', 'Estamos avisando a la administración.', 'Estamos avisando a cocina.', 'Estamos avisando a un asesor.',
+      'Estoy avisando al vendedor ahora mismo.', 'Estamos avisando a Casa Rosa.']) expect(quita(o), o).toBe(true);
+    for (const o of ['Estamos avisando a todos de la promo.', 'Estamos avisando a todas las clientas.', 'Estamos avisando a nuestros clientes de la promo.', 'Estamos avisando a los clientes.']) {
+      expect(quita(o), o).toBe(false);
+    }
+  });
+
+  it('menores: la hora sin «te» y «Avisé a las 5 al negocio»', () => {
+    for (const o of ['Avisé a las 5 que ya estaba.', 'Ya avisé a las 5:30 que llegó.', 'Avisé a la 1 que ya salía.']) expect(quita(o), o).toBe(false);
+    for (const o of ['Avisé a las 5 al negocio.', 'Ya avisé a las 5:30 a la dueña.']) expect(quita(o), o).toBe(true);
+  });
+
+  it('menores: al quitar la primera mitad, la segunda empieza con mayúscula', () => {
+    const p = turno('Ya le avisé al negocio; toca el botón.');
+    expect(String(p['respuesta'])).toBe('Toca el botón.');
+    expect(String(turno('Ya avisé al local, toca el botón. Gracias.')['respuesta'])).toBe('Gracias.');
+    // Con transferencia vacía no se toca: sigue el texto fijo.
+    expect(String(turno('Ya le avisé al negocio; toca el botón. [TRANSFERIR]')['respuesta'])).toBe('Toca el botón.');
+  });
+
+  it('sin ReDoS: 50 000 caracteres de casi-coincidencias, también con saltos de línea', () => {
+    for (const bloque of ['recibimos correctamente ', 'tu pago ya nos ', 'recibimos el pago por QR ', 'Recibimos\n', 'si ya ', 'recibimos los 80 ', 'estamos avisando a ', 'avisé a las 5 ']) {
+      for (const ent of [REAL, SIM]) {
+        const t0 = Date.now();
+        turno(bloque.repeat(Math.ceil(50_000 / bloque.length)), ent);
+        expect(Date.now() - t0, bloque).toBeLessThan(3000);
+      }
+    }
+  });
+});
