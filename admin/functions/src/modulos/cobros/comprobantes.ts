@@ -34,7 +34,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { REGION } from '../../core/region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
 import { diaDeLaPaz } from './cotejo.js';
-import { esReglaDos } from './cobroVenta.js';
+import { MAX_COMPROBANTES, esReglaDos, limiteDe } from './cobroVenta.js';
 
 export const MB = 1024 * 1024;
 /** Tope de una imagen (el de WhatsApp Cloud API) y de un PDF. */
@@ -52,7 +52,11 @@ const CARPETA_DE_DIA = /^\d{4}-\d{2}-\d{2}$/;
 // ---------------------------------------------------------------------------
 
 export interface Almacen {
-  guardar(ruta: string, bytes: Buffer, contentType: string): Promise<void>;
+  /**
+   * Guarda SOLO si no existe (`ifGenerationMatch: 0`): una evidencia nunca se
+   * sobrescribe. Devuelve `existe` si ya estaba, y no la toca.
+   */
+  guardar(ruta: string, bytes: Buffer, contentType: string): Promise<'creado' | 'existe'>;
   /** Los nombres de las subcarpetas inmediatas de un prefijo que termina en «/». */
   subcarpetas(prefijo: string): Promise<string[]>;
   /** Borra todo lo que cuelga del prefijo. Devuelve cuántos objetos había. */
@@ -61,9 +65,18 @@ export interface Almacen {
 
 const almacenDeStorage: Almacen = {
   async guardar(ruta, bytes, contentType) {
-    await getStorage().bucket().file(ruta).save(bytes, {
-      contentType, resumable: false, metadata: { cacheControl: 'private, max-age=0' },
-    });
+    try {
+      await getStorage().bucket().file(ruta).save(bytes, {
+        contentType, resumable: false, metadata: { cacheControl: 'private, max-age=0' },
+        preconditionOpts: { ifGenerationMatch: 0 },
+      });
+      return 'creado';
+    } catch (e) {
+      // 412: la precondición falló, o sea que el objeto ya existía.
+      const codigo = (e as { code?: unknown }).code;
+      if (codigo === 412 || codigo === '412') return 'existe';
+      throw e;
+    }
   },
   async subcarpetas(prefijo) {
     const [, , api] = await getStorage().bucket()
@@ -161,6 +174,7 @@ export async function guardarBytesDeComprobante(
   }
   const ruta = rutaDeComprobante(tenantId, diaDeLaPaz(deps.ahoraMs ?? Date.now()), idMeta, tipo.ext);
   try {
+    // Si ya estaba (el mismo idMeta otra vez), responde la misma ruta sin reescribir.
     await (deps.almacen ?? almacen()).guardar(ruta, bytes, tipo.mime);
   } catch {
     // El cotejo no depende de esto: el flujo sigue con `ruta: null`.
@@ -195,7 +209,10 @@ export const guardarComprobante = onRequest(
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
 
-    // Sin `rawBody`: la autenticación queda en el token (ver arriba).
+    // SOLO VALE EL TOKEN. Una firma no puede cubrir una imagen (`firma.ts` se
+    // niega a más de 64 KB), así que una petición que trae `X-NovuChat-Signature`
+    // se rechaza antes de mirar nada más: no hay un segundo camino a probar.
+    if (peticion.get('X-NovuChat-Signature')) { respuesta.status(401).send('no autorizado'); return; }
     const ruta = await rutaAutenticada({ get: (n: string) => peticion.get(n) });
     if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
     if (ruta.estado !== 'activo') { respuesta.status(409).json({ estado: ruta.estado }); return; }
@@ -213,6 +230,18 @@ export const guardarComprobante = onRequest(
     const etapa = String(solicitud?.['etapa'] ?? '');
     if (!conversacion.exists || !esReglaDos(solicitud)
       || !['qr_enviado', 'en_revision', 'vencida'].includes(etapa)) {
+      respuesta.status(409).json({ error: 'sin_cobro_pendiente' }); return;
+    }
+    // Un tope por cobro (seis comprobantes anotados) y la misma ventana del
+    // tardío (24 h desde el límite): sin eso, el token de un comercio llena el
+    // depósito con un cobro viejo. Un idMeta ya anotado sí pasa (reintento).
+    const anotados = Array.isArray(solicitud?.['comprobantes'])
+      ? (solicitud?.['comprobantes'] as { idMeta?: unknown }[]) : [];
+    if (anotados.length >= MAX_COMPROBANTES && !anotados.some((c) => c.idMeta === idMeta)) {
+      respuesta.status(409).json({ error: 'demasiados_comprobantes' }); return;
+    }
+    const limite = limiteDe(solicitud);
+    if (etapa === 'vencida' && (limite === null || Date.now() - limite > 24 * 60 * 60_000)) {
       respuesta.status(409).json({ error: 'sin_cobro_pendiente' }); return;
     }
 

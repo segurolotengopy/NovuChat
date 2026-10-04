@@ -25,16 +25,19 @@ const { diaDeLaPaz } = await import('../../../functions/src/modulos/cobros/cotej
 const T = 'comprobantes-tienda';
 const T_BAJA = 'comprobantes-de-baja';
 const NUMERO = '1000000013';
-const TEL = '59170000061';
+const TEL = '59100000061';
 const DIA_MS = 86_400_000;
 
 /** Un almacén en memoria con la misma forma que el de Storage. */
 class AlmacenDeMentira implements m.Almacen {
   objetos = new Map<string, { bytes: Buffer; contentType: string }>();
   falla = false;
+  reescrituras = 0;
   async guardar(ruta: string, bytes: Buffer, contentType: string) {
     if (this.falla) throw new Error('storage caído');
+    if (this.objetos.has(ruta)) { this.reescrituras++; return 'existe' as const; }
     this.objetos.set(ruta, { bytes, contentType });
+    return 'creado' as const;
   }
   async subcarpetas(prefijo: string) {
     const nombres = new Set<string>();
@@ -155,9 +158,9 @@ describe('POST guardarComprobante', () => {
     await db.doc(`rutasWhatsApp/${NUMERO}`).set({ tenantId: T, flujo: 'venta', aliasSecreto: 'cliente13', estado: 'activo' });
     await db.doc(`tenants/${T}`).set({ nombre: 'Tienda', estado: 'activo', flujos: ['venta'] });
     await db.doc(`tenants/${T}/conversaciones/wa_${TEL}`).set({ solicitud: solicitudDe('qr_enviado') });
-    await db.doc(`tenants/${T}/conversaciones/wa_59170000062`).set({ solicitud: { etapa: 'qr_enviado', qrEnviadoEn: Timestamp.now() } });
-    await db.doc(`tenants/${T}/conversaciones/wa_59170000063`).set({ solicitud: solicitudDe('agendada') });
-    await db.doc(`tenants/${T}/conversaciones/wa_59170000064`).set({ solicitud: solicitudDe('en_revision') });
+    await db.doc(`tenants/${T}/conversaciones/wa_59100000062`).set({ solicitud: { etapa: 'qr_enviado', qrEnviadoEn: Timestamp.now() } });
+    await db.doc(`tenants/${T}/conversaciones/wa_59100000063`).set({ solicitud: solicitudDe('agendada') });
+    await db.doc(`tenants/${T}/conversaciones/wa_59100000064`).set({ solicitud: solicitudDe('en_revision') });
   });
   it('con token y un cobro abierto: 200 {ruta}, sin teléfono en el nombre', async () => {
     const r = await peticion(JPG(), buenas());
@@ -166,15 +169,21 @@ describe('POST guardarComprobante', () => {
     expect(r.cuerpo.ruta).not.toContain(TEL);
     expect([...almacen.objetos.keys()].join()).not.toContain(TEL);
   });
+  it('una petición con firma HMAC VÁLIDA sobre cuerpo vacío tampoco pasa: solo vale el token', async () => {
+    const { createHmac } = await import('node:crypto');
+    const marca = String(Date.now());
+    const firma = createHmac('sha256', TOKEN).update(`${marca}.`).update(Buffer.alloc(0)).digest('hex');
+    const r = await peticion(Buffer.alloc(0), buenas({ 'x-novuchat-signature': `sha256=${firma}`, 'x-novuchat-timestamp': marca }), null);
+    expect(r.codigo).toBe(401);
+    // Y con el token correcto MÁS una firma, tampoco: un solo camino.
+    expect((await peticion(JPG(), buenas({ 'x-novuchat-signature': `sha256=${firma}` }))).codigo).toBe(401);
+    expect(almacen.objetos.size).toBe(0);
+  });
   it('sin firma ni token: 401; con otro método: 405', async () => {
     expect((await peticion(JPG(), buenas(), null)).codigo).toBe(401);
     expect((await peticion(JPG(), buenas(), 'otro')).codigo).toBe(401);
     expect((await peticion(JPG(), buenas(), TOKEN, 'GET')).codigo).toBe(405);
     expect(almacen.objetos.size).toBe(0);
-  });
-  it('una petición con firma HMAC no pasa: la firma cubre el cuerpo y no puede cubrir una imagen', async () => {
-    const r = await peticion(JPG(), buenas({ 'x-novuchat-signature': 'sha256=00', 'x-novuchat-timestamp': String(Date.now()) }));
-    expect(r.codigo).toBe(401);
   });
   it('6 MB: 413; HTML declarado PDF: 415', async () => {
     expect((await peticion(JPG(6 * 1024 * 1024), buenas())).codigo).toBe(413);
@@ -182,12 +191,37 @@ describe('POST guardarComprobante', () => {
     expect(almacen.objetos.size).toBe(0);
   });
   it('sin cobro de regla 2 abierto (regla 1, cerrado o sin conversación): 409', async () => {
-    for (const tel of ['59170000062', '59170000063', '59170000099']) {
+    for (const tel of ['59100000062', '59100000063', '59100000099']) {
       expect((await peticion(JPG(), buenas({ 'x-novuchat-telefono': tel }))).codigo, tel).toBe(409);
     }
     expect(almacen.objetos.size).toBe(0);
     // En revisión sí: la imagen es evidencia.
-    expect((await peticion(JPG(), buenas({ 'x-novuchat-telefono': '59170000064' }))).codigo).toBe(200);
+    expect((await peticion(JPG(), buenas({ 'x-novuchat-telefono': '59100000064' }))).codigo).toBe(200);
+  });
+  it('con seis comprobantes ya anotados: 409; el mismo idMeta ya anotado sí pasa', async () => {
+    const lista = Array.from({ length: 6 }, (_, i) => ({ idMeta: `ya${i}`, estado: 'invalido', motivo: 'm', en: Timestamp.now(), ruta: null }));
+    await db.doc(`tenants/${T}/conversaciones/wa_59100000065`).set({ solicitud: solicitudDe('qr_enviado', { comprobantes: lista }) });
+    expect((await peticion(JPG(), buenas({ 'x-novuchat-telefono': '59100000065' }))).codigo).toBe(409);
+    expect((await peticion(JPG(), buenas({ 'x-novuchat-telefono': '59100000065', 'x-novuchat-idmeta': 'ya3' }))).codigo).toBe(200);
+  });
+  it('`vencida` hace más de 24 h del límite: 409; dentro de las 24 h, 200', async () => {
+    const MIN = 60_000;
+    const viejo = Timestamp.fromMillis(Date.now() - (25 * 60 + 15) * MIN);
+    await db.doc(`tenants/${T}/conversaciones/wa_59100000066`).set({ solicitud: solicitudDe('vencida', { venceEn: viejo }) });
+    expect((await peticion(JPG(), buenas({ 'x-novuchat-telefono': '59100000066' }))).codigo).toBe(409);
+    const reciente = Timestamp.fromMillis(Date.now() - 60 * MIN);
+    await db.doc(`tenants/${T}/conversaciones/wa_59100000067`).set({ solicitud: solicitudDe('vencida', { venceEn: reciente }) });
+    expect((await peticion(JPG(), buenas({ 'x-novuchat-telefono': '59100000067' }))).codigo).toBe(200);
+  });
+  it('una evidencia nunca se sobrescribe: el mismo idMeta otra vez responde la misma ruta sin reescribir', async () => {
+    const a = await peticion(JPG(), buenas({ 'x-novuchat-idmeta': 'wamid.unica' }));
+    const b = await peticion(PNG(), buenas({ 'x-novuchat-idmeta': 'wamid.unica', 'content-type': 'image/png' }));
+    const c = await peticion(JPG(2048), buenas({ 'x-novuchat-idmeta': 'wamid.unica' }));
+    expect(a.codigo).toBe(200);
+    expect(c).toMatchObject({ codigo: 200, cuerpo: { ruta: a.cuerpo.ruta } });
+    expect(almacen.reescrituras).toBe(1);
+    expect(almacen.objetos.get(a.cuerpo.ruta)?.bytes.length).toBe(JPG().length);
+    expect(b.codigo).toBe(200);   // otro tipo, otra extensión: otro objeto, no una sobrescritura
   });
   it('sin teléfono o sin idMeta: 400', async () => {
     expect((await peticion(JPG(), buenas({ 'x-novuchat-telefono': 'abc' }))).codigo).toBe(400);
