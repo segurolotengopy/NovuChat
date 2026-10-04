@@ -198,6 +198,29 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     expect(String(mensajes(texto2)[0]!['cuerpo'])).toMatch(/^Tu pedido sigue guardado/);
   });
 
+  it('«Cambiar algo» con la carta como enlace: UN mensaje que dice que lo que elija reemplaza el pedido y cómo dejarlo como estaba (escribiéndolo)', () => {
+    const c = crear();
+    carrito(c, {}, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['paso']).toBe('pedido_confirmar');
+    const resumen = String(mensajes(turno(c, { mensaje: texto('ok') }, conEnlace(URL_CATALOGO)))[0]!['cuerpo']);
+    const t = turno(c, { mensaje: boton('p|cambiar', 'Cambiar algo') }, conEnlace(URL_CATALOGO));
+    expect(mensajes(t)).toHaveLength(1);
+    expect(mensajes(t)[0]!['tipo']).toBe('enlace');
+    expect(mensajes(t)[0]!['catalogo']).toBe(true);
+    expect(String(mensajes(t)[0]!['cuerpo'])).toBe('Esta es nuestra carta. Lo que elijas ahí reemplaza tu pedido actual. Si prefieres dejarlo como estaba, escribe «dejarlo como estaba». Para volver al inicio, escribe «menú».');
+    expect(mensajes(t)[0]!['url']).toBe(URL_CATALOGO);
+    // Escribirlo devuelve el resumen guardado.
+    const vuelve = turno(c, { mensaje: texto('Dejarlo como estaba') }, conEnlace(URL_CATALOGO));
+    expect(String(mensajes(vuelve)[0]!['cuerpo'])).toBe(resumen);
+    expect(estadoDe(c)['paso']).toBe('pedido_confirmar');
+    // Negando: si el carrito de la página llega antes, REEMPLAZA el pedido y ya no hay nada que dejar como estaba.
+    turno(c, { mensaje: boton('p|cambiar', 'Cambiar algo') }, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['carritoAnterior']).not.toBeNull();
+    carrito(c, { pedidoId: 'cat_otro_11aa' }, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['carritoAnterior']).toBeNull();
+    expect(estadoDe(c)['paso']).toBe('pedido_confirmar');
+  });
+
   it('el botón «Hacer un pedido» y «Cambiar algo» también dan el enlace', () => {
     const m = crear();
     const a = turno(m, { mensaje: boton('m|pedido', 'Hacer un pedido') }, conEnlace(URL_CATALOGO));

@@ -26,7 +26,7 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [
   'rsCuerpoExtraccion', 'rsValidarExtraccion', 'rsFusionar', 'rsValidar', 'rsPreguntaFaltantes',
-  'rsResumen', 'rsLineaCompacta', 'rsDentroDelTope', 'rsAnotar',
+  'rsResumen', 'rsLineaCompacta', 'rsDentroDelTope', 'rsAnotar', 'rsHoraSuelta', 'rsReclamo',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -719,5 +719,65 @@ describe('rsDentroDelTope / rsAnotar: el tope diario por teléfono', () => {
     expect(ida.estados).toEqual({ [TEL]: { paso: 'reserva' } });
     expect(L.rsDentroDelTope(ida, TEL, AHORA, 2)).toBe(true);
     expect(L.rsDentroDelTope(ida, TEL, AHORA, 1)).toBe(false);
+  });
+});
+
+describe('rsHoraSuelta y rsReclamo (04/10): la hora suelta la toma el código', () => {
+  const JUE = '2026-10-08';
+  const previa = { personas: 2, fecha: JUE, hora: '', zona: '', nombre: '', celebracion: 'aniversario', requerimiento: '' };
+  const hora = (texto: string, r: Record<string, unknown> = previa, cfg: Record<string, unknown> = CFG) => L.rsHoraSuelta(texto, r, cfg, AHORA);
+
+  it.each([
+    ['19', '19:00'], ['7', '19:00'], ['7 pm', '19:00'], ['7pm', '19:00'], ['a las 7', '19:00'], ['para las 7 de la noche', '19:00'],
+    ['19:30', '19:30'], ['7:30 pm', '19:30'], ['19 hrs', '19:00'], ['ya te dije 19', '19:00'], ['a las 19 por favor', '19:00'],
+    ['12', '12:00'], ['12 pm', '12:00'], ['1 pm', '13:00'], ['2', '14:00'], ['13', '13:00'],
+  ])('«%s» es %s', (dicho, esperado) => {
+    expect(hora(dicho)).toBe(esperado);
+  });
+
+  it('11 se lee según el horario del día: con apertura a las 12 no cabe a las 11 y cae a las 23 si cabe; si ninguna cabe queda la habitual', () => {
+    expect(hora('11')).toBe('11:00');
+    expect(hora('11 am')).toBe('11:00');
+    expect(hora('11', previa, { ...CFG, horario: 'jue=10:00-23:59' })).toBe('11:00');
+    expect(hora('11', previa, { ...CFG, horario: 'jue=15:00-24:00' })).toBe('23:00');
+    // «7» sin marca, con un restaurante que abre de mañana y cierra al mediodía: cae a las 7 de la mañana.
+    expect(hora('7', previa, { ...CFG, horario: 'jue=06:00-13:00' })).toBe('07:00');
+  });
+
+  it('no es una hora: texto, números fuera de rango, pm con 13+, y los casos que no son «hora pendiente»', () => {
+    for (const x of ['hola', '25', '7:75', 'a las 7 y media de la tarde', '2 personas', 'somos 4', '', '19 am', '1930x']) {
+      expect(hora(x), x).toBe('');
+    }
+    expect(hora('19', { ...previa, personas: 0 })).toBe(''); // sin personas el número puede ser eso
+    expect(hora('19', { ...previa, hora: '20:00' })).toBe(''); // la hora ya está
+    expect(hora('19', null as unknown as Record<string, unknown>)).toBe('');
+  });
+
+  it('rsReclamo reconoce «ya te dije…» y no confunde una frase normal', () => {
+    for (const x of ['ya te dije 19', 'Ya te lo dije', 'te dije que a las 7', 'ya lo dije', 'ya te puse la hora']) expect(L.rsReclamo(x), x).toBe(true);
+    for (const x of ['a las 7', 'dime la hora', 'ya', 'hola']) expect(L.rsReclamo(x), x).toBe(false);
+  });
+});
+
+describe('rsPreguntaFaltantes con lo ya entendido (04/10)', () => {
+  const r = { personas: 2, fecha: '2026-10-08', hora: '', zona: '', nombre: '', celebracion: 'aniversario', requerimiento: '' };
+  it('muestra lo entendido y pide solo lo que falta', () => {
+    expect(L.rsPreguntaFaltantes(['hora', 'nombre'], { reserva: r }))
+      .toBe('Tengo: jueves 8 de octubre, 2 personas, aniversario. Me falta: la hora y a nombre de quién (nombre y apellido).');
+    expect(L.rsPreguntaFaltantes(['hora'], { reserva: { ...r, nombre: 'Daniela Ortega' } }))
+      .toBe('Tengo: jueves 8 de octubre, 2 personas, aniversario, a nombre de Daniela Ortega. Me falta: la hora.');
+  });
+  it('con reclamo se pide perdón y se da el ejemplo de la hora; sin reclamo no', () => {
+    const t = L.rsPreguntaFaltantes(['hora'], { reserva: r, reclamo: true });
+    expect(t).toBe('Disculpa, no me quedó claro. Tengo: jueves 8 de octubre, 2 personas, aniversario. Me falta: la hora. Escribe la hora así: «19:00».');
+    expect(L.rsPreguntaFaltantes(['hora'], { reserva: r })).not.toContain('Disculpa');
+  });
+  it('sin la reserva (o sin nada entendido) rige el texto de siempre, y ninguno se dispara con la red de prohibidas', () => {
+    expect(L.rsPreguntaFaltantes(['hora', 'nombre'], {})).toBe('Para tu solicitud de reserva me falta saber a qué hora y a nombre de quién (nombre y apellido).');
+    expect(L.rsPreguntaFaltantes(['hora'], { reserva: { personas: 0, fecha: '', hora: '', zona: '', nombre: '', celebracion: '', requerimiento: '' } }))
+      .toBe('Para tu solicitud de reserva me falta saber a qué hora.');
+    for (const t of [L.rsPreguntaFaltantes(['hora', 'nombre'], { reserva: r }), L.rsPreguntaFaltantes(['hora'], { reserva: r, reclamo: true })]) {
+      expect(t).not.toMatch(VM_PROHIBIDAS);
+    }
   });
 });

@@ -2271,7 +2271,7 @@ describe('cobro', () => {
     const r = armarPedido({ ventana: 5 });
     confirmarPedido(r);
     const recuerdo = r.c.escribe('¿ya llegó?');
-    expect(cuerpos(recuerdo)[0]).toMatch(/Estoy esperando el comprobante de tu pedido #\w+/);
+    expect(cuerpos(recuerdo)[0]).toMatch(/^Tu pedido #\w+ está guardado; falta tu comprobante: envíame aquí la foto o el PDF\.$/);
     // Cambio de la revisión del PR #382: sin botón «Menú» (con un QR pendiente el menú no está disponible; solo se ofrece lo que se cumple).
     expect(recuerdo.mensajes.flatMap(titulosDe)).toEqual(['Reenviar QR', 'Cancelar pedido']);
     expect(recuerdo.avisos).toHaveLength(0);
@@ -3522,7 +3522,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     // Con un QR pendiente: «carta», «reserva», «cancelar» y los botones del menú no hacen nada nuevo (recordatorio).
     for (const palabra of ['carta', 'quiero reservar una mesa', 'cancelar', 'cancelar pedido', 'hola gracias']) {
       const t = r.c.escribe(palabra);
-      expect(cuerpos(t)[0], palabra).toMatch(/Estoy esperando el comprobante/);
+      expect(cuerpos(t)[0], palabra).toMatch(/Estoy esperando el comprobante|falta tu comprobante/);
       expect(t.llamadas.extraer, palabra).toHaveLength(0);
       expect(estadoDe(r.w.mundo)['paso'], palabra).toBe('esperando_comprobante');
     }
@@ -4653,5 +4653,249 @@ describe('R3 con hecho externo: no pisa el paso de un turno de «Uso extendido»
     expect(t.fallo?.mensaje).toMatch(/Entrega fallida/);
     expect(t.llamadas.cierre.length).toBeGreaterThan(0);
     expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+  });
+});
+
+// ================================================================================================
+// CORRECCIONES DE CONVERSACIÓN del 04/10 (ejecuciones reales de Q'Taco): cada prueba reproduce la secuencia que falló.
+// Ninguna agrega ni quita mensajes: el cliente recibe lo mismo en número, con otro contenido.
+// ================================================================================================
+describe('A. reserva: una hora suelta se toma como la hora (la toma el código, no el modelo)', () => {
+  const HORARIO_12_22 = 'lun=12:00-22:00,mar=12:00-22:00,mie=12:00-22:00,jue=12:00-22:00,vie=12:00-22:00,sab=12:00-22:00,dom=12:00-22:00';
+  const vacia: J = { personas: 0, fecha: '', hora: '', zona: '', nombre: '', celebracion: '', requerimiento: '' };
+  /** «2 personas, aniversario el jueves a las 11 am»: a las 11 el restaurante no recibe reservas (abre a las 12). */
+  function conHoraPendiente(perfil = 'Daniela') {
+    const w = crear({ config: { horario: HORARIO_12_22 } });
+    const c = con(w, CLIENTE, perfil);
+    c.escribe('hola');
+    c.toca('m|reserva', 'Reservar mesa');
+    w.estado.extraccion = { ...vacia, personas: 2, fecha: '2026-10-08', hora: '11:00', celebracion: 'aniversario' };
+    const primera = c.escribe('2 personas, aniversario el jueves a las 11 am');
+    return { w, c, primera };
+  }
+
+  it('la secuencia real: «11 am» no se acepta, y «19» ES la hora; ya no pide la hora otra vez', () => {
+    const { w, c, primera } = conHoraPendiente();
+    expect(cuerpos(primera)[0]).toContain('el restaurante recibe reservas de 12:00 a 21:30');
+    expect((estadoDe(w.mundo)['reserva'] as J)['hora']).toBe('');
+    // El modelo no entendió el «19» (devuelve todo vacío, como en la ejecución real): la hora la pone el código.
+    w.estado.extraccion = vacia;
+    const t = c.escribe('19');
+    expect((estadoDe(w.mundo)['reserva'] as J)['hora']).toBe('19:00');
+    expect(t.avisos).toHaveLength(0);
+    expect(t.mensajes).toHaveLength(1);
+    expect(cuerpos(t)[0]).toBe('Tengo: jueves 8 de octubre a las 19:00, 2 personas, aniversario. Me falta: a nombre de quién (nombre y apellido).');
+    expect(cuerpos(t)[0]).not.toMatch(/a qué hora/);
+    // El nombre completa la solicitud: sale el resumen para enviar, con la hora.
+    w.estado.extraccion = { ...vacia, nombre: 'Daniela Ortega' };
+    const resumen = c.escribe('Daniela ortega');
+    expect(resumen.mensajes.flatMap(titulosDe)).toContain('Enviar solicitud');
+    expect(cuerpos(resumen)[0]).toContain('jueves 8 de octubre a las 19:00');
+    expect(estadoDe(w.mundo)['paso']).toBe('reserva_confirmar');
+  });
+
+  it.each([
+    ['19', '19:00'], ['7', '19:00'], ['7 pm', '19:00'], ['7pm', '19:00'], ['a las 7', '19:00'], ['a las 7 de la noche', '19:00'],
+    ['19:30', '19:30'], ['7:30 pm', '19:30'], ['19 hrs', '19:00'], ['Ya te dije 19', '19:00'], ['12', '12:00'],
+  ])('«%s» como respuesta a la hora pendiente da %s', (dicho, hora) => {
+    const { w, c } = conHoraPendiente();
+    w.estado.extraccion = vacia;
+    c.escribe(dicho);
+    expect((estadoDe(w.mundo)['reserva'] as J)['hora'], dicho).toBe(hora);
+  });
+
+  it('el modelo no manda: si lee «19» como 19 personas, el código conserva las 2 personas y toma 19:00 como hora', () => {
+    const { w, c } = conHoraPendiente();
+    w.estado.extraccion = { ...vacia, personas: 19 };
+    c.escribe('19');
+    const r = estadoDe(w.mundo)['reserva'] as J;
+    expect(r['personas']).toBe(2);
+    expect(r['hora']).toBe('19:00');
+  });
+
+  it('una hora que el restaurante no recibe no se acepta: se dice el horario («23» con cierre a las 22)', () => {
+    const { w, c } = conHoraPendiente();
+    w.estado.extraccion = vacia;
+    const t = c.escribe('23');
+    expect((estadoDe(w.mundo)['reserva'] as J)['hora']).toBe('');
+    expect(cuerpos(t)[0]).toContain('el restaurante recibe reservas de 12:00 a 21:30');
+  });
+
+  it('negando: sin personas conocidas un número suelto no es la hora (queda para el modelo), y con la hora ya puesta no se pisa', () => {
+    const w = crear({ config: { horario: HORARIO_12_22 } });
+    const c = con(w, CLIENTE, 'Daniela');
+    c.escribe('hola');
+    c.toca('m|reserva', 'Reservar mesa');
+    w.estado.extraccion = { ...vacia, personas: 4 };
+    c.escribe('19');
+    const r = estadoDe(w.mundo)['reserva'] as J;
+    expect(r['personas']).toBe(4); // lo que dijo el modelo
+    expect(r['hora']).toBe('');
+    const { w: w2, c: c2 } = conHoraPendiente();
+    w2.estado.extraccion = vacia;
+    c2.escribe('19');
+    c2.escribe('20');
+    expect((estadoDe(w2.mundo)['reserva'] as J)['hora']).toBe('19:00');
+  });
+
+  it('el mensaje de «me falta» muestra lo entendido y no se repite igual; si el cliente reclama («ya te dije»), cambia', () => {
+    const { w, c, primera } = conHoraPendiente();
+    w.estado.extraccion = { ...vacia, nombre: 'Daniela Ortega' };
+    const segunda = c.escribe('Daniela ortega');
+    expect(cuerpos(segunda)[0]).toBe('Tengo: jueves 8 de octubre, 2 personas, aniversario, a nombre de Daniela Ortega. Me falta: la hora.');
+    expect(cuerpos(segunda)[0]).not.toBe(cuerpos(primera)[0]);
+    w.estado.extraccion = vacia;
+    const reclamo = c.escribe('ya te dije');
+    expect(cuerpos(reclamo)[0]).not.toBe(cuerpos(segunda)[0]);
+    expect(cuerpos(reclamo)[0]).toContain('Disculpa');
+    expect(cuerpos(reclamo)[0]).toContain('«19:00»');
+    expect(cuerpos(reclamo)[0]).toContain('Tengo: jueves 8 de octubre');
+    expect(reclamo.mensajes).toHaveLength(1);
+    expect(reclamo.avisos).toHaveLength(0);
+  });
+});
+
+describe('B. «Cambiar algo»: lo que se elija reemplaza el pedido, se dice, y «Dejarlo como estaba» lo devuelve', () => {
+  it('la carta dice que reemplaza el pedido actual y lleva el botón «Dejarlo como estaba», sin agregar mensajes', () => {
+    const r = armarPedido({ ventana: 5 });
+    const t = r.c.toca('p|cambiar', 'Cambiar algo');
+    expect(cuerpos(t)[0]).toMatch(/^Ojo: lo que pidas ahora reemplaza tu pedido actual\./);
+    expect(cuerpos(t).join('\n')).not.toContain('Tu pedido sigue guardado');
+    const ultimo = t.mensajes[t.mensajes.length - 1] as NonNullable<(typeof t.mensajes)[number]>;
+    expect(titulosDe(ultimo)).toContain('Dejarlo como estaba');
+    expect(t.mensajes.length).toBe(1);
+    expect(estadoDe(r.w.mundo)['carrito']).toEqual([]);
+  });
+
+  it('«Dejarlo como estaba» vuelve a mostrar el resumen guardado, con sus botones y el mismo total', () => {
+    const r = armarPedido({ ventana: 5 });
+    const resumenAntes = cuerpos(r.resumen)[0];
+    const cambio = r.c.toca('p|cambiar', 'Cambiar algo');
+    const t = r.c.toca(idDeBoton(cambio, 'Dejarlo como estaba'), 'Dejarlo como estaba');
+    expect(cuerpos(t)[0]).toBe(resumenAntes);
+    expect(t.mensajes.flatMap(titulosDe)).toEqual(expect.arrayContaining(['Confirmar pedido', 'Cambiar algo']));
+    expect(t.mensajes).toHaveLength(1);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    expect((estadoDe(r.w.mundo)['carrito'] as unknown[]).length).toBe(1);
+    expect(estadoDe(r.w.mundo)['carritoAnterior']).toBeNull();
+    expect(t.avisos).toHaveLength(0);
+  });
+
+  it('escrito también vale: «dejarlo como estaba» (la carta con botón de enlace no admite otro botón)', () => {
+    const r = armarPedido({ ventana: 5 });
+    const resumenAntes = cuerpos(r.resumen)[0];
+    r.c.toca('p|cambiar', 'Cambiar algo');
+    const t = r.c.escribe('Dejarlo como estaba');
+    expect(cuerpos(t)[0]).toBe(resumenAntes);
+    expect(t.llamadas.extraer).toHaveLength(0);
+  });
+
+  it('negando: si ya eligió otro pedido, el botón viejo NO devuelve el anterior (lo reemplazó, como se avisó)', () => {
+    const r = armarPedido({ ventana: 5 });
+    const cambio = r.c.toca('p|cambiar', 'Cambiar algo');
+    const idDejar = idDeBoton(cambio, 'Dejarlo como estaba');
+    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'recojo' });
+    const nuevo = r.c.escribe('quiero 2 tacos de birria para recoger');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(estadoDe(r.w.mundo)['carritoAnterior']).toBeNull();
+    const viejo = r.c.toca(idDejar, 'Dejarlo como estaba');
+    expect(cuerpos(viejo)[0]).toBe(cuerpos(nuevo)[0]);
+    expect((estadoDe(r.w.mundo)['carrito'] as J[])[0]!['cantidad']).toBe(2);
+  });
+
+  it('sin pedido guardado, la carta no ofrece «Dejarlo como estaba»', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    const t = c.toca('m|pedido', 'Hacer un pedido');
+    expect(cuerpos(t).join('\n')).not.toContain('reemplaza');
+    expect(t.mensajes.flatMap(titulosDe)).not.toContain('Dejarlo como estaba');
+  });
+});
+
+describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger; el costo del delivery sin frase de «menú»', () => {
+  /** Un delivery al que le faltan la referencia y el nombre (paso `pedido_datos`). */
+  function deliveryPendiente() {
+    const w = crear({ panel: panel(COBRO_REAL) });
+    const c = con(w, CLIENTE, 'Carlos');
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery', direccion: 'Calle Falsa 123' });
+    const t = c.escribe('quiero 4 tacos de birria con delivery a Calle Falsa 123');
+    return { w, c, t };
+  }
+
+  it.each(['Quiero confirmar', 'confirmo', 'sí', 'listo', 'ok', 'dale', 'ya', 'quiero confirmar mi pedido'])(
+    '«%s» con el delivery pendiente de datos vuelve a mostrar el paso y NO transfiere ni confirma',
+    (dicho) => {
+      const { w, c } = deliveryPendiente();
+      expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+      w.estado.extraccion = EX([], { quiereHablar: true }); // aunque el modelo lo tomara por una pregunta, el código no le pregunta
+      const t = c.escribe(dicho);
+      expect(cuerpos(t).join('\n'), dicho).not.toContain('Esto prefiero que lo vea una persona');
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(t.llamadas.extraer, dicho).toHaveLength(0);
+      expect(estadoDe(w.mundo)['paso'], dicho).toBe('pedido_datos');
+      expect(estadoDe(w.mundo)['pedido'], dicho).toBeNull();
+    },
+  );
+
+  it.each(['Quiero confirmar', 'confirmo', 'sí', 'listo', 'ok', 'dale', 'ya'])('«%s» con el resumen delante vuelve a mostrar el resumen con «Confirmar pedido» y no confirma solo', (dicho) => {
+    const r = armarPedido({ ventana: 5 });
+    const t = r.c.escribe(dicho);
+    expect(t.mensajes.flatMap(titulosDe), dicho).toContain('Confirmar pedido');
+    expect(cuerpos(t)[0], dicho).toBe(cuerpos(r.resumen)[0]);
+    expect(t.avisos, dicho).toHaveLength(0);
+    expect(estadoDe(r.w.mundo)['pedido'], dicho).toBeNull();
+    expect(estadoDe(r.w.mundo)['paso'], dicho).toBe('pedido_confirmar');
+  });
+
+  it.each(['¿puedo cambiar a recoger?', 'prefiero recoger', 'paso a buscar', 'mejor lo recojo yo'])(
+    '«%s» con el delivery pendiente cambia a recojo en el local y muestra el resumen (no el saludo inicial)',
+    (dicho) => {
+      const { w, c } = deliveryPendiente();
+      w.estado.extraccion = EX([]);
+      const t = c.escribe(dicho);
+      expect(estadoDe(w.mundo)['paso'], dicho).toBe('pedido_confirmar');
+      expect((estadoDe(w.mundo)['entrega'] as J)['entrega'], dicho).toBe('recojo');
+      expect(t.mensajes.flatMap(titulosDe), dicho).toContain('Confirmar pedido');
+      expect(cuerpos(t).join('\n'), dicho).not.toContain('Soy Taqui');
+      expect(cuerpos(t).join('\n'), dicho).toContain('Total de la comida: 84 Bs.');
+      expect(t.llamadas.extraer, dicho).toHaveLength(0);
+    },
+  );
+
+  it('negando: «no quiero recoger» no cambia a recojo', () => {
+    const { w, c } = deliveryPendiente();
+    w.estado.extraccion = EX([], { entrega: '' });
+    c.escribe('no quiero recoger');
+    expect((estadoDe(w.mundo)['entrega'] as J)['entrega']).toBe('delivery');
+  });
+
+  it('«¿no me puedes cobrar el delivery?» sigue transfiriendo (aviso + botón), pero SIN la frase de «menú»', () => {
+    const { w, c } = deliveryPendiente();
+    const t = c.escribe('¿no me puedes cobrar el delivery?');
+    expect(cuerpos(t)[0]).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos.');
+    expect(cuerpos(t)[0]).not.toContain('menú');
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(t.mensajes).toHaveLength(1);
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1); // el pedido sigue guardado
+    // El opuesto: otra derivación (pedir una persona) conserva la frase de «menú».
+    const otra = deliveryPendiente();
+    expect(cuerpos(otra.c.escribe('quiero hablar con una persona'))[0]).toContain('Para volver al inicio, escribe «menú».');
+  });
+});
+
+describe('D. esperando el comprobante: un texto suelto recibe UNA frase honesta, sin la carta', () => {
+  it('«A media cuadra de la plaza…» responde que el pedido está guardado y falta el comprobante; no muestra la carta', () => {
+    const r = armarPedido({ ventana: 5 });
+    confirmarPedido(r);
+    const t = r.c.escribe('A media cuadra de la plaza, casa azul');
+    expect(t.mensajes).toHaveLength(1);
+    expect(cuerpos(t)[0]).toMatch(/^Tu pedido #\w+ está guardado; falta tu comprobante: envíame aquí la foto o el PDF\.$/);
+    expect(cuerpos(t).join('\n')).not.toContain('Esta es nuestra carta');
+    expect(cuerpos(t).join('\n')).not.toMatch(/confirmad|acreditad|pagad|recibimos/i);
+    expect(t.llamadas.extraer).toHaveLength(0);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
   });
 });

@@ -94,6 +94,8 @@ function rsValidar(r, c, perfil, ahora){ const x = rsValidarExtraccion(r); const
 function rsPreguntaFaltantes(f, o){ if (f.indexOf('personas') >= 0 && f.indexOf('fecha') >= 0 && f.indexOf('hora') >= 0) return 'Para tu solicitud de reserva dime, en un solo mensaje: cuántas personas, qué día y a qué hora, si prefieres ' + (o.zonas || []).join(' o ') + ' y a nombre de quién.'; return f.length ? 'Para tu solicitud de reserva me falta saber ' + f.join(', ') + '.' : ''; }
 function rsResumen(r){ return 'Tu solicitud de reserva:\n• ' + r.fecha + ' ' + r.hora + '\n• ' + r.personas + ' personas' + (r.zona ? ', ' + r.zona : '') + '\n• A nombre de ' + r.nombre; }
 function rsLineaCompacta(r, rol){ return (rol === 'completo' ? r.nombre : r.nombre.split(' ')[0]) + ' · ' + r.fecha + ' ' + r.hora + ' · ' + r.personas + ' personas'; }
+function rsReclamo(t){ return false; }
+function rsHoraSuelta(t, r, c, a){ return ''; }
 function rsDentroDelTope(sd, from, ahora, tope){ const max = Number(tope); if (!sd || !isFinite(max)) return false; const hoy = new Date(ahora - 4 * 3600000).toISOString().slice(0, 10); const t = sd.reservasDelDia && sd.reservasDelDia[from]; return (t && t.dia === hoy ? t.n : 0) < max; }
 function rsAnotar(sd, from, ahora){ const hoy = new Date(ahora - 4 * 3600000).toISOString().slice(0, 10); sd.reservasDelDia = sd.reservasDelDia || {}; const t = sd.reservasDelDia[from]; const n = (t && t.dia === hoy ? t.n : 0) + 1; sd.reservasDelDia[from] = { dia: hoy, n: n }; return n; }
 
@@ -714,7 +716,7 @@ describe('Plan del turno: el pedido', () => {
     const m = crearMundo();
     hastaResumen(m, 'delivery');
     const s = turno(m, { boton: 'p|cambiar' });
-    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^Esta es nuestra carta:/);
+    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^Ojo: lo que pidas ahora reemplaza tu pedido actual\. [\s\S]*Esta es nuestra carta:/);
     const e = estadoDe(m);
     expect(e['paso']).toBe('pedido');
     expect(e['carrito']).toEqual([]);
@@ -1015,7 +1017,7 @@ describe('Plan del turno: el comprobante', () => {
   it('recordatorio y reenvío del QR: dos botones; el reenvío no vuelve a reportar `qr_enviado`', () => {
     const m = enEspera();
     const r = registrar(turno(m, { texto: 'ya pagué' }));
-    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Estoy esperando el comprobante de tu pedido #\w+\./);
+    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Tu pedido #\w+ está guardado; falta tu comprobante: envíame aquí la foto o el PDF\.$/);
     expect(ids(r.p!['mensajes'][0])).toEqual(['q|reenviar', 'q|cancelar']);
     expect(titulos(r.p!['mensajes'][0])).toEqual(['Reenviar QR', 'Cancelar pedido']);
     const q = turno(m, { boton: 'q|reenviar' });
@@ -1485,7 +1487,7 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     const real = enEsperaReal();
     real.cfg['cobro'] = { ...CFG_SIM.cobro, pendiente: true };
     const r = registrar(turno(real, { texto: '¿ya llegó?' }));
-    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Estoy esperando el comprobante de tu pedido #/);
+    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Tu pedido #\w+ está guardado; falta tu comprobante: envíame aquí la foto o el PDF\.$/);
     expect(JSON.stringify(r.p!['mensajes'])).not.toMatch(/SIMULADO|prueba/i);
     // Un pedido simulado con el modo vigente ya REAL: no se pide otra foto (volvería a derivar): se pasa con una persona y se suelta (ver «sin callejón»).
     const sim = enEsperaSim();
@@ -1545,7 +1547,7 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
   it('el recordatorio en simulado dice «SIMULADO»; en real no', () => {
     const m = enEsperaSim();
     const r = registrar(turno(m, { texto: 'ya pagué' }));
-    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Estoy esperando el comprobante SIMULADO de tu pedido #\w+ \(es una prueba: no se paga nada\)/);
+    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Tu pedido #\w+ está guardado; falta tu comprobante SIMULADO \(es una prueba: no se paga nada\): envíame aquí cualquier foto\./);
     expect(ids(r.p!['mensajes'][0])).toEqual(['q|reenviar', 'q|cancelar']);
     const real = turno(enEsperaReal(), { texto: 'ya pagué' });
     expect(real.p!['mensajes'][0]['cuerpo']).not.toMatch(/simulad|prueba/i);
