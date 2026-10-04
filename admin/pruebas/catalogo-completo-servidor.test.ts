@@ -740,7 +740,7 @@ describe('Si no hay enlace, el registro dice por qué (`catalogoEnlaceMotivo`) y
     } finally { restaurar(); }
     // Y con el sitio configurado, el enlace sale en ESE sitio.
     const r = await configuracion(T_VENTA, { telefono: '70010042', catalogoCompleto: true });
-    expect(enlaceDe(r)).toMatch(new RegExp(`^${SITIO_DE_PRUEBA.replace(/\./g, '\\.')}/c/[0-9a-f]{32}$`));
+    expect(enlaceDe(r)).toMatch(new RegExp(`^${SITIO_DE_PRUEBA.split('\\').join('\\\\').split('.').join('\\.')}/c/[0-9a-f]{32}$`));
   });
 
   it('un error al abrir la ficha: `error`, con el código y el teléfono (últimos 4), sin el mensaje ni la ruta', async () => {
