@@ -343,6 +343,32 @@ service firebase.storage {
     }
 
     // =========================================================================
+    // /tenants/{tenantId}/comprobantes/** — LA IMAGEN DE UN COMPROBANTE DE VENTA
+    // (Cobros, regla 2; decisión de Andres del 03/10/2026).
+    //
+    // NINGUNA PERSONA LEE NI ESCRIBE AQUÍ, y esa es toda la regla. Quien escribe
+    // es la Function `guardarComprobante` con el SDK Admin, que se salta estas
+    // reglas, y quien borra es `purgarComprobantes` (90 días, y la carpeta
+    // entera de un comercio dado de baja). Nada se muestra en la consola.
+    //
+    // POR QUÉ SE NIEGA TAMBIÉN AL ADMINISTRADOR, AL OPERADOR Y AL PROPIETARIO.
+    // Es el comprobante bancario de un TERCERO —el cliente final del comercio—:
+    // nombre, cuenta y montos. NovuChat lo guarda como evidencia de un pago, no
+    // para repartirlo. Si el comercio necesita ver una imagen, es un
+    // procedimiento con el SDK Admin y el «sí» de Andres, no un camino de la
+    // consola. Y como no hay URL de descarga con token, tampoco existe una
+    // capacidad que se pueda reenviar.
+    //
+    // LA NEGACIÓN FINAL de abajo ya lo cubriría; este bloque existe para que la
+    // decisión esté escrita donde alguien iría a «habilitar» un camino, y para
+    // que la prueba negativa (`storage-reglas.test.ts`, «Comprobantes de pago»)
+    // falle si alguien lo abre por error.
+    // =========================================================================
+    match /tenants/{tenantId}/comprobantes/{resto=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
     // NEGACIÓN FINAL. Todo lo que no coincidió arriba queda prohibido: otros
     // caminos, otros nombres, carpetas ajenas del mismo comercio, rutas con
     // `..`. Es la red de seguridad del archivo. No borrarla.

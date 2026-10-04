@@ -368,3 +368,196 @@ export function cotejarComprobante(esperado: Esperado, leido: Leido): Cotejo {
     montoOk, fechaOk, destinoOk, destinoPor, diferencias,
   };
 }
+
+/**
+ * =============================================================================
+ * CALIFICAR UN COMPROBANTE DE VENTA (regla 2, 03/10/2026)
+ * =============================================================================
+ *
+ * Lo de arriba (`cotejarComprobante`) NO SE TOCA: lo usa la seña, que no
+ * cambia. Lo de acá lo usa solo `cotejoVenta.ts`, y responde con CUATRO
+ * estados en vez de tres porque la regla nueva distingue entre un dato que
+ * coincide, uno que coincide «más o menos» y uno que no:
+ *
+ *  - `valido`: monto igual, fecha con hora dentro de la ventana, y destinatario
+ *    por cuenta o por nombre exacto.
+ *  - `aproximado`: algo no es exacto pero entra en lo que Andres aceptó
+ *    (03/10): leído MAYOR por una diferencia chica (`montoDistinto`), fecha sin
+ *    hora que cae en el día del QR o de la recepción, o un nombre con una letra
+ *    de diferencia. Cuenta como comprobante y se avisa al comercio.
+ *  - `invalido`: un dato que figura y NO coincide, o pagar de menos. Cuenta
+ *    como un intento y no crea cierre.
+ *  - `no_es_comprobante`: falta el monto, o la fecha, o a la vez la cuenta y el
+ *    nombre. También cuenta como intento.
+ *
+ * PAGAR DE MENOS NUNCA ES APROXIMADO: la tolerancia es solo hacia arriba.
+ * UN DATO QUE FIGURA Y NO COINCIDE DESCALIFICA (P1): la cuenta que coincide no
+ * compensa un nombre distinto, y «Juan Pérez» frente a «Juan López» es inválido.
+ *
+ * Los motivos son CÓDIGOS FIJOS: nada de lo que se leyó de la imagen sale de
+ * acá hacia el cliente.
+ */
+
+export type EstadoCalificacion = 'valido' | 'aproximado' | 'invalido' | 'no_es_comprobante';
+
+export type MotivoCalificacion =
+  | 'ok'
+  // aproximado
+  | 'monto_distinto' | 'fecha_sin_hora' | 'nombre_aproximado'
+  // inválido
+  | 'monto_menor' | 'monto_mayor' | 'fecha_anterior' | 'fecha_posterior'
+  | 'cuenta_distinta' | 'nombre_distinto' | 'destino_no_coincide' | 'destino_no_verificable'
+  // no es comprobante
+  | 'falta_monto' | 'falta_fecha' | 'falta_destino' | 'ilegible';
+
+export interface Calificacion {
+  estado: EstadoCalificacion;
+  /** El motivo principal (el primero por prioridad: monto, fecha, destino). */
+  motivo: MotivoCalificacion;
+  /** Todos los motivos que aplican, en el mismo orden. */
+  motivos: MotivoCalificacion[];
+  montoLeido: number | null;
+  /** El monto leído es mayor que el esperado y se aceptó por la tolerancia. */
+  montoDistinto: boolean;
+}
+
+/** Tolerancia hacia arriba del monto: lo mayor entre 1,00 Bs y el 2 % del esperado. */
+export const TOLERANCIA_MONTO_FIJA = 1;
+export const TOLERANCIA_MONTO_PORCENTAJE = 0.02;
+
+/** Distancia de edición (Levenshtein) entre dos cadenas. */
+export function distanciaDeEdicion(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let previa = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const actual = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const costo = a[i - 1] === b[j - 1] ? 0 : 1;
+      actual[j] = Math.min((actual[j - 1] as number) + 1, (previa[j] as number) + 1, (previa[j - 1] as number) + costo);
+    }
+    previa = actual;
+  }
+  return previa[b.length] as number;
+}
+
+/** El día calendario de La Paz (`aaaa-mm-dd`) de un instante. */
+export function diaDeLaPaz(ms: number): string {
+  return new Date(ms + OFFSET_LA_PAZ_HORAS * 3_600_000).toISOString().slice(0, 10);
+}
+
+/**
+ * El instante del comprobante y si traía HORA. Sin hora, `parsearFechaHora`
+ * devuelve las 00:00, y comparar eso con una ventana de minutos daba «anterior
+ * al pedido» a un comprobante del mismo día: por eso se distingue.
+ */
+export function instanteConPrecision(leido: Leido): { ms: number; conHora: boolean; dia: string } | null {
+  const junto = [leido.fechaHora, leido.fecha, leido.hora]
+    .filter((v) => typeof v === 'string' && v.trim() !== '').join(' ');
+  if (junto === '') return null;
+  const ms = parsearFechaHora(junto);
+  if (ms === null) return null;
+  const limpio = junto.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9\s:/-]/g, ' ');
+  const conHora = /\b\d{1,2}:\d{2}/.test(limpio);
+  return { ms, conHora, dia: diaDeLaPaz(ms) };
+}
+
+/**
+ * ¿Es el mismo titular? Regla de Andres (P1b, 03/10/2026): el nombre vale POR
+ * SÍ SOLO únicamente si coinciden al menos DOS palabras (sin contar partículas
+ * como «de», «del», «la»); con una sola palabra coincidente hace falta que
+ * coincida la cuenta. Todas las palabras del nombre más corto tienen que estar
+ * en el más largo, en cualquier orden (invertido), con estas tolerancias por
+ * palabra: truncada (una inicial, o un principio de 3 letras o más), o una
+ * letra de diferencia en palabras de 5 o más.
+ *
+ *  - `exacto`: dos o más palabras, sin necesitar la letra de diferencia.
+ *  - `aproximado`: dos o más palabras, alguna con una letra de diferencia.
+ *  - `insuficiente`: coincide, pero con una sola palabra (no basta sin cuenta).
+ *  - `no`: alguna palabra no coincide («Juan Pérez» frente a «Juan López»).
+ *
+ * `nombreCoincide` (la seña) no se toca.
+ */
+export function nombreCoincideConUnaLetra(
+  esperado: string, leido: string,
+): 'exacto' | 'aproximado' | 'insuficiente' | 'no' {
+  const a = palabras(esperado);
+  const b = palabras(leido);
+  if (a.length === 0 || b.length === 0) return 'no';
+  const [corto, largo] = a.length <= b.length ? [a, b] : [b, a];
+  let aproximado = false;
+  for (const p of corto) {
+    const exacta = largo.some((q) => mismaPalabra(p, q)
+      || (Math.min(p.length, q.length) >= 3 && (p.startsWith(q) || q.startsWith(p))));
+    if (exacta) continue;
+    if (largo.some((q) => p.length >= 5 && q.length >= 5 && distanciaDeEdicion(p, q) <= 1)) { aproximado = true; continue; }
+    return 'no';
+  }
+  if (corto.length < 2) return 'insuficiente';
+  return aproximado ? 'aproximado' : 'exacto';
+}
+
+function noEsComprobante(motivo: MotivoCalificacion, montoLeido: number | null): Calificacion {
+  return { estado: 'no_es_comprobante', motivo, motivos: [motivo], montoLeido, montoDistinto: false };
+}
+
+/** Califica lo leído contra lo esperado. Pura. */
+export function calificarComprobante(esperado: Esperado, leido: Leido): Calificacion {
+  const tolerancia = (esperado.toleranciaMin ?? 10) * 60_000;
+  const montoLeido = parsearMonto(leido.monto as string);
+  const instante = instanteConPrecision(leido);
+  const cuentaLeida = (leido.cuentaDestino ?? '').trim();
+  const nombreLeido = (leido.nombreCuenta ?? '').trim();
+
+  // --- ¿Es un comprobante? Falta monto, o fecha, o cuenta y nombre a la vez.
+  if (montoLeido === null || montoLeido <= 0) return noEsComprobante('falta_monto', null);
+  if (instante === null) return noEsComprobante('falta_fecha', montoLeido);
+  if (cuentaLeida === '' && nombreLeido === '') return noEsComprobante('falta_destino', montoLeido);
+
+  const invalidos: MotivoCalificacion[] = [];
+  const aproximados: MotivoCalificacion[] = [];
+  let montoDistinto = false;
+
+  // --- Monto: solo hacia arriba y dentro de la tolerancia.
+  const esperadoCent = Math.round(esperado.monto * 100);
+  const leidoCent = Math.round(montoLeido * 100);
+  if (leidoCent < esperadoCent) {
+    invalidos.push('monto_menor');
+  } else if (leidoCent > esperadoCent) {
+    const margen = Math.max(Math.round(TOLERANCIA_MONTO_FIJA * 100), Math.round(esperadoCent * TOLERANCIA_MONTO_PORCENTAJE));
+    if (leidoCent - esperadoCent <= margen) { aproximados.push('monto_distinto'); montoDistinto = true; }
+    else invalidos.push('monto_mayor');
+  }
+
+  // --- Fecha: con hora, la ventana; sin hora, el día del QR o de la recepción.
+  if (instante.conHora) {
+    if (instante.ms < esperado.qrEnviadoEn - tolerancia) invalidos.push('fecha_anterior');
+    else if (instante.ms > esperado.comprobanteRecibidoEn + tolerancia) invalidos.push('fecha_posterior');
+  } else if (instante.dia === diaDeLaPaz(esperado.qrEnviadoEn) || instante.dia === diaDeLaPaz(esperado.comprobanteRecibidoEn)) {
+    aproximados.push('fecha_sin_hora');
+  } else {
+    invalidos.push(instante.dia < diaDeLaPaz(esperado.qrEnviadoEn) ? 'fecha_anterior' : 'fecha_posterior');
+  }
+
+  // --- Destinatario: un dato que figura y no coincide descalifica.
+  const cuentas = esperado.cuentas ?? [];
+  const cuentaFigura = cuentaLeida !== '' && cuentas.length > 0;
+  const cuentaOk = cuentaFigura && cuentas.some((c) => cuentaCoincide(c, cuentaLeida));
+  const nombreFigura = nombreLeido !== '' && (esperado.nombreCuenta ?? '').trim() !== '';
+  const nombre = nombreFigura ? nombreCoincideConUnaLetra(esperado.nombreCuenta, nombreLeido) : 'no';
+  if (cuentaFigura && !cuentaOk) invalidos.push('cuenta_distinta');
+  if (nombreFigura && nombre === 'no') invalidos.push('nombre_distinto');
+  // Una sola palabra coincidente no basta sin la cuenta (P1b).
+  if (nombreFigura && nombre === 'insuficiente' && !cuentaOk) invalidos.push('destino_no_coincide');
+  if (!cuentaFigura && !nombreFigura) invalidos.push('destino_no_verificable');
+  if ((cuentaFigura ? cuentaOk : true) && nombre === 'aproximado') aproximados.push('nombre_aproximado');
+
+  if (invalidos.length > 0) {
+    return { estado: 'invalido', motivo: invalidos[0] as MotivoCalificacion, motivos: invalidos, montoLeido, montoDistinto: false };
+  }
+  if (aproximados.length > 0) {
+    return { estado: 'aproximado', motivo: aproximados[0] as MotivoCalificacion, motivos: aproximados, montoLeido, montoDistinto };
+  }
+  return { estado: 'valido', motivo: 'ok', motivos: ['ok'], montoLeido, montoDistinto: false };
+}

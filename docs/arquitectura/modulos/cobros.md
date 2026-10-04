@@ -19,7 +19,7 @@
 | **Nodos (lo que queda en n8n)** | `preparar-sena`, `respuesta-de-la-sena`, `mensaje-de-la-sena`, `interpretar-lectura` (en `Flujos/src/modulos/cobros/` desde FL1), más los nodos de cobro del Demo B; dibujo del QR y cotejo del comprobante como servicios internos del módulo |
 | **Ganchos** | `despuesDelTurno` (cotejo), `alCierre` con Pedidos o Agenda |
 | **Mensajes por conversación** | 0 en la venta; la seña agrega los mensajes declarados en §4duodecies (abajo) |
-| **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts` |
+| **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts`; regla 2 (§4duodecies.6): `calificar.test.ts`, `cobro-v2.test.ts`, `cotejo-venta.test.ts`, `comprobantes.test.ts` (en `pruebas/modulos/cobros/`) y «Comprobantes de pago» en `storage-reglas.test.ts` |
 
 **Observación:** declarado por dos verticales «y gana venta»; con módulo, es uno solo con su propio `config/cobros`. **Los rótulos del cobro simulado son de Plataforma** (§4sexies.3, abajo). **Nunca confundir con Pagar** (NovuChat cobra al comercio), que es de Central. La prohibición 3 de `CLAUDE.md` manda: cobro simulado con rótulo, cobro real sin «pago acreditado», y los dos modos son excluyentes
 
@@ -132,9 +132,16 @@ lo confirmó el negocio, no NovuChat.
 5. **El cierre con seña lo crea el servidor al cotejar**, con `monto` y
    `cotejo`. Con seña activa el flujo no registra cierre al agendar: una cita
    pendiente que vence no es un cierre. Sin seña, todo sigue como hoy.
-6. **Los comprobantes no se guardan.** Ni la imagen ni el PDF van a Storage ni
-   a Firestore: solo el JSON leído y el resultado. Ver la revisión al cierre de
-   §4nonies.3.
+6. **De la seña, los comprobantes no se guardan; de la venta con regla 2, sí
+   (decisión de Andres, 03/10/2026, que REEMPLAZA a «los comprobantes no se
+   guardan»).** Se guarda la IMAGEN del comprobante de una venta durante **90
+   días**, como evidencia: el OCR puede fallar y la foto puede salir borrosa.
+   **Solo la lee el servidor**: `storage.rules` niega todo acceso a
+   `tenants/{t}/comprobantes/**`, también al administrador, al operador y al
+   propietario; **nada en la consola**; y se **borra con la baja** del comercio
+   (la purga diaria, dentro de las 24 h). Contrato en §4duodecies.6. La **seña**
+   no cambia: sigue sin guardar la imagen, solo el JSON leído y el resultado
+   (ver la revisión al cierre de §4nonies.3).
 7. **Mensajes por conversación**: +1 (el QR, imagen con caption) en las que
    llegan a reservar. La confirmación del comprobante es un mensaje fijo, sin
    modelo. El aviso a recepción por cita pagada, con diferencia o ilegible lo
@@ -218,7 +225,9 @@ Los dos primeros están hechos: §4terdecies (medios) y §4quaterdecies (seguimi
 3. **Sin total no se coteja contra cero.** `409 sin_total`, y el comprobante lo
    mira una persona. Con cero, el cliente leería «el comprobante dice 350 y el
    pedido es de 0», que es un motivo falso.
-4. **El QR pendiente caduca a las 24 h** (`MINUTOS_QR_VENTA`), que es la
+4. **El QR pendiente caduca a las 24 h** (`MINUTOS_QR_VENTA`; **esta es la
+   «regla 1»**, la de todo flujo que no mande `reglaCobro: 2`; la regla 2, de 15
+   minutos, está en §4duodecies.6), que es la
    ventana de la conversación. No hay horario que liberar —eso es de la
    agenda—, pero un pendiente que no caduca convierte cualquier imagen en un
    pago. No hace falta un flujo programado: lo resuelve el reloj en el cotejo.
@@ -262,3 +271,175 @@ modelo. Los avisos al negocio los paga NovuChat.
 
 `admin/functions/src/modulos/cobros/cobroVenta.ts`; pruebas en `pruebas/cobro-venta.test.ts`
 (el servidor) y `pruebas/demo-b-cobro.test.ts` (el flujo, escrita negando).
+
+
+### 4duodecies.6 La regla 2 del cobro de venta: plazo de 15 minutos, tres intentos y la imagen guardada (03/10/2026)
+
+> **Origen:** reglas dictadas por Andres el 03/10/2026 para todo cobro con QR,
+> no solo de un cliente; plan en `NOVUCHAT_plan-consolidado-C1-C4-comprobante`
+> (C1a es esta sección más el servidor; C1b, de la coordinadora, es la
+> integración en `ingesta.ts`, `index.ts` y `registro.ts`). **Cero mensajes por
+> conversación agregados o quitados por el servidor**: los textos al cliente
+> son del flujo (C3).
+
+**D1. La regla nueva se ELIGE POR FLUJO, no se activa al desplegar.** El flujo
+manda `reglaCobro: 2` con `qr_enviado`; **sin ese campo, la regla de 24 h
+(§4duodecies.5.4, la «regla 1») sigue exactamente igual**. Desplegar C1 no
+cambia ningún flujo publicado. La regla 1 se retira cuando ningún flujo la use.
+
+**Decisiones de Andres que fijan los umbrales (03/10/2026).**
+
+- **P1.** El destinatario se acepta por cuenta o por nombre, como hoy: **un dato
+  que figura y no coincide descalifica**. Se aceptan el nombre en orden
+  invertido, truncado y con **una letra de diferencia** en palabras de 5 o más
+  letras (aproximado). «Juan Pérez» frente a «Juan López» es inválido; un nombre
+  muy distinto sin cuenta visible, también.
+- **P1b (03/10/2026).** El nombre del destinatario vale **por sí solo** solo si
+  coinciden al menos **dos palabras** (sin partículas); con una sola palabra
+  coincidente hace falta que coincida la cuenta, y si no el resultado es
+  inválido con motivo `destino_no_coincide`. Orden invertido y nombre truncado
+  siguen valiendo con dos o más palabras; la letra de diferencia aplica por
+  palabra, con al menos dos coincidentes («PERES GOMES» frente a «Perez Gomez»
+  es aproximado; «JUAN» solo frente a «Juan Perez», inválido).
+- **P2.** Modo simulado: el **plazo** aplica; los intentos y la validación, no
+  (eso es del flujo, C3). Por eso `cotejarComprobanteVenta` contesta **409
+  `cobro_simulado`** (defensivo) cuando el comercio no tiene cobro real activo
+  (encendido y con ficha y código, el mismo criterio de `configuracionFlujo`).
+- **P3.** Los pedidos del carrito web (`pedidos/cat_…`) **no se anulan**: quedan
+  «recibido».
+- **P4.** El borrado por baja ocurre **dentro de las 24 h** siguientes (la
+  purga diaria).
+- **P5.** `en_revision` no tiene cierre.
+
+**Qué hace la regla 2.**
+
+| Cosa | Valor |
+|---|---|
+| Plazo base | `venceEn` = envío del QR + **15 min** (`MINUTOS_QR_VENTA_REGLA_2`) |
+| Prórroga | **una sola**, `prorrogaHasta` = primer comprobante recibido a tiempo + **10 min** (`MINUTOS_PRORROGA`), fijada una vez |
+| Límite efectivo | `max(venceEn, prorrogaHasta)` (`limiteDe`) |
+| Reenvío del QR | **no estira** nada, pero **solo es reenvío si la referencia Y el total coinciden** con los del cobro abierto: conserva `venceEn`, intentos, comprobantes y `qrEnviadoEn`. Con otro total u otra referencia es un **cobro nuevo, con plazo nuevo** |
+| `qr_enviado` sobre `en_revision` | **no reabre el cobro**: el mismo pedido (misma referencia y total) es `ignorado` y no cambia nada; un pedido distinto es un cobro nuevo |
+| Intentos | **3** comprobantes inválidos (`MAX_INTENTOS_INVALIDOS`); el tercero pasa a `en_revision` |
+| Vencimiento | **perezoso**: se calcula al leer; se anota cuando alguien lo toca (un comprobante, `anulacion_avisada`, `cobro_cancelado` o un QR nuevo) y se cuenta una vez |
+| Tardío | un comprobante pasado el límite y hasta **24 h** después: `tardio`, **sin cierre**, se deriva al comercio; después de eso, otra conversación (409) |
+
+**Calificar (`calificarComprobante`, `cotejo.ts`).** Monto igual: válido. Leído
+**mayor** con diferencia ≤ `max(1,00 Bs, 2 % del esperado)`: aproximado, con
+`montoDistinto`. Leído **menor: siempre inválido**. Fecha con hora: dentro de
+`qrEnviadoEn − 10 min` y `recibido + 10 min`; **sin hora**: aproximada si
+coincide con el día de La Paz del QR o de la recepción. «No es comprobante»
+(cuenta como intento): falta el monto, o la fecha, o a la vez la cuenta y el
+nombre. `cotejarComprobante` (la seña) **no se toca**.
+
+**Contratos.**
+
+*Obligaciones de C1b (la coordinadora; los puntos c y d son de otras zonas y
+NO los toca C1a).*
+(a) Los `cambios` de `solicitudDeCobroTras` se **mezclan DESPUÉS** de lo que
+arma `solicitudTras`. (b) `solicitudDeCobroTras` se llama en **TODO
+`qr_enviado` de cualquier módulo** (agenda y venta comparten
+`conversaciones/{t}.solicitud`); con efecto `ignorado` o `sin_id_meta` la
+ingesta **no toca la solicitud ni cuenta el QR**, y con `qr_enviado` debe pasar
+`reglaCobro`, `idMeta`, `referencia` y `monto`. (c) `registrarCierre` con
+`cita_agendada` (`core/turno/cierres.ts:140-142`) **no debe pasar a `agendada`**
+una solicitud de regla 2 en `en_revision`, `cancelada` o vencida por reloj.
+(d) `seguimientos.ts:128` **no debe emitir recordatorio** sobre una regla 2
+vencida de forma perezosa que sigue escrita `qr_enviado`.
+
+*Ingesta (C1b).* `reglaCobro?: 2` solo con `qr_enviado`; eventos nuevos
+`cobro_cancelado` y `anulacion_avisada`; con regla 2, un `qr_enviado` **sin
+`idMeta` no abre cobro** (ni solicitud ni `senasEnviadas`). La ingesta llama a
+`solicitudDeCobroTras(previa, evento, ahoraMs)` (pura, `cobroVenta.ts`), que
+devuelve `{ cambios, efecto, metricas, … }`: `cambios` se **mezcla** sobre
+`solicitud` y `metricas` se suman al mes, **dentro de la transacción que ya
+existe** (0 escrituras extra). **Cuidado con `merge`:** una solicitud nueva de
+regla 1 que reemplaza a una de regla 2 debe mezclar `CAMPOS_REGLA_2_EN_NULO`
+(lo devuelve `solicitudDeCobroTras` con efecto `regla_1`), o el `reglaCobro: 2`
+anterior sobreviviría.
+
+*`solicitud` con regla 2.* `reglaCobro`, `venceEn`, `prorrogaHasta`,
+`intentosInvalidos`, `comprobantes` (hasta 6: `{idMeta, estado, motivo, en,
+ruta|null}`), `anulacionAvisadaEn`; etapas nuevas `en_revision` (no vence por
+reloj) y `cancelada`; `agendada` es la venta cerrada.
+
+*`configuracionFlujo.cobro`* (`cobroParaElFlujo`): los campos de siempre,
+idénticos en regla 1, y además `regla` (1|2), `venceEn`, `prorrogaHasta`,
+`intentosInvalidos`, `intentosRestantes`, `enRevision`, `anulado: {pedido,
+haceMin} | null` (solo si la etapa es `vencida`, sin aviso previo y a lo sumo
+24 h después del límite). Sale en los dos modos, real y simulado.
+
+*`POST cotejarComprobanteVenta`* (`cotejoVenta.ts`; mismas opciones y misma
+autenticación que `cotejarComprobante`). Cuerpo `{telefono, legible, leido:
+{monto, cuentaDestino, nombreCuenta, fecha, hora, banco}, idMeta, ruta?}`;
+`idMeta` es obligatorio. 200 con `estado` (`valido | aproximado | reintentar |
+en_revision | tardio | ya_resuelto`), `motivo` (código fijo), `intentos`,
+`intentosRestantes`, `importe`, `moneda`, `montoLeido`, `montoDistinto`,
+`cierreId | null`, `evento`, `avisarComercio`. 409 con `sin_cobro_pendiente |
+cobro_cancelado | sin_total | regla_1 | cobro_simulado` (**nunca
+`sin_sena_pendiente`**). Motivos:
+`ok`; aproximado: `monto_distinto`, `fecha_sin_hora`, `nombre_aproximado`;
+inválido: `monto_menor`, `monto_mayor`, `fecha_anterior`, `fecha_posterior`,
+`cuenta_distinta`, `nombre_distinto`, `destino_no_coincide`,
+`destino_no_verificable`; no es
+comprobante: `falta_monto`, `falta_fecha`, `falta_destino`, `ilegible`; y
+`tardio`, `en_revision`, `ya_resuelto`. Nada de lo leído de la imagen vuelve al
+cliente, salvo `montoLeido` cuando hay `montoDistinto`.
+**Una transacción:** `valido`/`aproximado` crean `cierres/venta_<ref>` (con
+`cotejo.resultado: 'cuadra'` y `cotejo.calidad`) y suman `cierres`; un
+**inválido NO crea cierre ni suma `cierres`**, suma `cobrosInvalidos`; el
+tercero pasa a `en_revision` con `avisarComercio`; un tardío no cierra la venta.
+Un `idMeta` repetido (reintento de n8n, porque la primera respuesta se perdió)
+**repite lo que se contestó** —`estado` (`invalido` sale como `reintentar`),
+`motivo`, `cierreId` y el `avisarComercio` original— con `repetido: true`, para
+que el flujo decida; no cuenta ni escribe nada. Un comprobante recibido en
+`en_revision` se anota con motivo `en_revision`; el tercer inválido se anota ya
+como `en_revision`.
+La `ruta` solo se anota si coincide con el patrón del comercio y del `idMeta`.
+
+*`POST guardarComprobante`* (`comprobantes.ts`). Binario; cabeceras
+`X-NovuChat-Telefono`, `X-NovuChat-IdMeta`, `Content-Type`. jpeg, png y webp
+hasta **5 MB**, pdf hasta **10 MB**; el tipo se comprueba **por los bytes** y
+debe coincidir con el declarado. 200 `{ruta}`, o 400, 401, **413**, **415**,
+**409** (no hay cobro de regla 2 abierto, en revisión o recién vencido para ese
+teléfono) o 502 (Storage falló: el flujo sigue con `ruta: null`). El 409 cubre: sin cobro
+de regla 2 abierto, en revisión o vencido; `vencida` con más de 24 h desde el
+límite; y seis comprobantes ya anotados (`demasiados_comprobantes`; un `idMeta`
+ya anotado sí pasa). **Una evidencia nunca se sobrescribe**: se guarda con
+`ifGenerationMatch: 0` y el mismo `idMeta` repetido responde 200 con la misma
+ruta sin reescribir. Ruta:
+`tenants/{t}/comprobantes/{aaaa-mm-dd}/{idMetaSaneado}.{jpg|png|webp|pdf}`, con
+el día de La Paz y **sin el teléfono**; `cacheControl: private`. **Solo
+autentica con el token por número**: la firma HMAC cubre el cuerpo y
+`firma.ts` se niega a verificar más de 64 KB, así que una imagen no puede
+firmarse (n8n usa el token). Una petición que trae `X-NovuChat-Signature` se
+rechaza con 401 antes de autenticar, aunque la firma sea válida.
+
+*`purgarComprobantes`* (`onSchedule`, 03:30 `America/La_Paz`): borra las
+carpetas de **más de 90 días** (91 sí, 90 y 89 no) y **toda** la carpeta de un
+comercio `dado_de_baja`. Una lectura por comercio y un listado por comercio
+activo. El `Almacen` es inyectable (`fijarAlmacenDeComprobantesDePrueba`, solo
+con `COMPROBANTES_DOBLE`), como el de `cobroPrepago.ts`.
+
+*Métricas* `metricas/{aaaa-mm}`: `cobrosQrEnviados`, `cobrosValidos`,
+`cobrosAproximados`, `cobrosInvalidos`, `cobrosEnRevision`, `cobrosCancelados`,
+`cobrosTardios` (se mantienen `cobrosCotejados` y `cobrosVencidos`).
+
+**El contador `cierres` baja para los flujos con regla 2.** Los inválidos dejan
+de crear cierre, así que la tasa cierres/conversaciones de los comercios que
+usen la regla 2 baja desde que se despliegue y un flujo la use. **Los períodos
+anteriores no cambian** (`/cierres` no se borra). El cierre es un registro de lo
+que terminó bien: **no se factura** (se factura la conversación).
+
+**Prohibición 3.** Ninguna frase de este módulo dice «acreditado», «verificado»
+ni «recibimos tu pago»: los motivos son códigos y el detalle del cierre dice que
+los datos coinciden o que son aproximados. Quien confirma que entró la plata es
+el banco, y el negocio.
+
+**Integración pendiente (C1b, de la coordinadora).** Las tres Functions
+(`cotejarComprobanteVenta`, `guardarComprobante`, `purgarComprobantes`) están
+escritas y probadas pero **no exportadas**: faltan los tres exports en
+`index.ts`, el manifiesto de `cobros` en `registro.ts` (`functions`,
+`almacenamiento: ['comprobantes']`, `mensajes: 0`) y, en `ingesta.ts`, los
+eventos y la llamada a `solicitudDeCobroTras`. Hasta entonces nada de esto corre
+en producción.
