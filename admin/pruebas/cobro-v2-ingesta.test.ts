@@ -103,7 +103,7 @@ beforeAll(async () => {
 
 describe('EQUIVALENCIA: sin reglaCobro, la ingesta escribe lo de siempre', () => {
   it('agenda: la solicitud tiene exactamente los campos de hoy, ninguno de la regla 2, y suma senasEnviadas', async () => {
-    const tel = '59170100001';
+    const tel = '5910000001001';
     const d = await delta(async () => {
       expect((await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'evento-1', calendario: 'cal-1' })).codigo).toBe(200);
     });
@@ -117,7 +117,7 @@ describe('EQUIVALENCIA: sin reglaCobro, la ingesta escribe lo de siempre', () =>
   });
 
   it('venta: el total cotizado queda en solicitud.monto, con los mismos campos y la misma seña contada', async () => {
-    const tel = '59170100002';
+    const tel = '5910000001002';
     const d = await delta(async () => {
       await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_abc', monto: 200 });
     });
@@ -130,7 +130,7 @@ describe('EQUIVALENCIA: sin reglaCobro, la ingesta escribe lo de siempre', () =>
 
   it('un reglaCobro que no es el número 2 se toma como regla 1, sin 400 y sin campos de regla 2', async () => {
     for (const [i, valor] of ([3, '2', 1, null, true, [2]] as unknown[]).entries()) {
-      const tel = `5917010001${i}`;
+      const tel = `591000000101${i}`;
       const r = await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_x', monto: 50, reglaCobro: valor, idMeta: 'wamid.X' });
       expect(r.codigo, String(valor)).toBe(200);
       const s = await solicitud(tel);
@@ -139,7 +139,7 @@ describe('EQUIVALENCIA: sin reglaCobro, la ingesta escribe lo de siempre', () =>
   });
 
   it('un reglaCobro: 2 que acompaña a OTRO evento se toma como regla 1: no abre cobro ni cuenta', async () => {
-    const tel = '59170100020';
+    const tel = '5910000001020';
     const d = await delta(async () => {
       expect((await reportar({ telefono: tel, evento: 'horarios_ofrecidos', reglaCobro: 2, idMeta: 'wamid.H' })).codigo).toBe(200);
     });
@@ -152,7 +152,7 @@ describe('EQUIVALENCIA: sin reglaCobro, la ingesta escribe lo de siempre', () =>
 
 describe('regla 2: qr_enviado', () => {
   it('con idMeta abre el cobro: venceEn = envío + 15 min, cuenta cobrosQrEnviados y NO senasEnviadas', async () => {
-    const tel = '59170200001';
+    const tel = '5910000002001';
     const d = await delta(async () => {
       expect((await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_r2', monto: 120, reglaCobro: 2, idMeta: 'wamid.QR1' })).codigo).toBe(200);
     });
@@ -168,7 +168,7 @@ describe('regla 2: qr_enviado', () => {
   });
 
   it('NIEGA: sin idMeta no abre cobro ni cuenta (ni solicitud, ni cobrosQrEnviados, ni senasEnviadas)', async () => {
-    const tel = '59170200002';
+    const tel = '5910000002002';
     const d = await delta(async () => {
       expect((await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_sin', monto: 90, reglaCobro: 2 })).codigo).toBe(200);
     });
@@ -180,7 +180,7 @@ describe('regla 2: qr_enviado', () => {
   });
 
   it('NIEGA: un reenvío (misma referencia y monto) no mueve venceEn, no vuelve a contar y conserva los intentos', async () => {
-    const tel = '59170200003';
+    const tel = '5910000002003';
     await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_re', monto: 75, reglaCobro: 2, idMeta: 'wamid.A' });
     const antes = (await solicitud(tel))!;
     // Un intento ya anotado: el reenvío no puede borrarlo.
@@ -198,7 +198,7 @@ describe('regla 2: qr_enviado', () => {
   });
 
   it('otro total u otro pedido es un cobro NUEVO, con plazo nuevo y cuenta de nuevo', async () => {
-    const tel = '59170200004';
+    const tel = '5910000002004';
     await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_n', monto: 75, reglaCobro: 2, idMeta: 'wamid.A' });
     const antes = (await solicitud(tel))!;
     await new Promise((r) => setTimeout(r, 15));
@@ -212,7 +212,7 @@ describe('regla 2: qr_enviado', () => {
   });
 
   it('NIEGA: regla 1 después de regla 2 mezcla CAMPOS_REGLA_2_EN_NULO (el reglaCobro: 2 anterior no sobrevive)', async () => {
-    const tel = '59170200005';
+    const tel = '5910000002005';
     await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_a', monto: 60, reglaCobro: 2, idMeta: 'wamid.A' });
     expect((await solicitud(tel))!['reglaCobro']).toBe(2);
     const d = await delta(async () => {
@@ -229,7 +229,7 @@ describe('regla 2: qr_enviado', () => {
 
 describe('regla 2: una solicitud nueva posterior no arrastra los restos', () => {
   it('NIEGA: una solicitud horarios posterior a un cobro de regla 2 no conserva reglaCobro/venceEn/prorrogaHasta/subidas/comprobantes', async () => {
-    const tel = '59170500001';
+    const tel = '5910000005001';
     await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_h', monto: 20, reglaCobro: 2, idMeta: 'wamid.H1' });
     // El cobro termina hace más de 24 h: una solicitud horarios nueva es posible.
     await db.doc(`tenants/${T}/conversaciones/wa_${tel}`).update({
@@ -243,7 +243,7 @@ describe('regla 2: una solicitud nueva posterior no arrastra los restos', () => 
 
 describe('regla 2: cobro_cancelado y anulacion_avisada', () => {
   it('cobro_cancelado cancela el cobro abierto y cuenta cobrosCancelados', async () => {
-    const tel = '59170300001';
+    const tel = '5910000003001';
     await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_c', monto: 40, reglaCobro: 2, idMeta: 'wamid.C' });
     const d = await delta(async () => {
       expect((await reportar({ telefono: tel, direccion: 'entrante', tipo: 'text', texto: 'cancelar', evento: 'cobro_cancelado' })).codigo).toBe(200);
@@ -253,7 +253,7 @@ describe('regla 2: cobro_cancelado y anulacion_avisada', () => {
   });
 
   it('NIEGA: cobro_cancelado sobre una solicitud de regla 1 no toca nada', async () => {
-    const tel = '59170300002';
+    const tel = '5910000003002';
     await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_d', monto: 40 });
     const antes = (await solicitud(tel))!;
     const d = await delta(async () => {
@@ -266,13 +266,13 @@ describe('regla 2: cobro_cancelado y anulacion_avisada', () => {
   });
 
   it('NIEGA: cobro_cancelado sin ninguna solicitud no crea una', async () => {
-    const tel = '59170300003';
+    const tel = '5910000003003';
     expect((await reportar({ telefono: tel, evento: 'cobro_cancelado' })).codigo).toBe(200);
     expect(await solicitud(tel)).toBeUndefined();
   });
 
   it('anulacion_avisada materializa el vencimiento perezoso: vencida, con el aviso anotado, una sola vez', async () => {
-    const tel = '59170300004';
+    const tel = '5910000003004';
     await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_e', monto: 40, reglaCobro: 2, idMeta: 'wamid.E' });
     // Nadie lo anotó, pero el plazo ya pasó: vence por reloj.
     const hace = Timestamp.fromMillis(Date.now() - 20 * 60_000);
@@ -301,7 +301,7 @@ describe('regla 2: cita_agendada (registrarCierre) no resucita un cobro que ya n
   }
 
   it('NIEGA: sobre en_revision, cancelada y vencida (escrita) la etapa no pasa a agendada', async () => {
-    const casos: Array<[string, string]> = [['59170400001', 'en_revision'], ['59170400002', 'cancelada'], ['59170400003', 'vencida']];
+    const casos: Array<[string, string]> = [['5910000004001', 'en_revision'], ['5910000004002', 'cancelada'], ['5910000004003', 'vencida']];
     for (const [tel, etapa] of casos) {
       await abrir(tel, `cat_${etapa}`);
       await db.doc(`tenants/${T}/conversaciones/wa_${tel}`).update({ 'solicitud.etapa': etapa });
@@ -311,7 +311,7 @@ describe('regla 2: cita_agendada (registrarCierre) no resucita un cobro que ya n
   });
 
   it('NIEGA: sobre un qr_enviado vencido por reloj (nadie lo anotó) tampoco pasa a agendada', async () => {
-    const tel = '59170400004';
+    const tel = '5910000004004';
     await abrir(tel, 'cat_reloj');
     await db.doc(`tenants/${T}/conversaciones/wa_${tel}`).update({
       'solicitud.venceEn': Timestamp.fromMillis(Date.now() - 60_000) });
@@ -320,11 +320,11 @@ describe('regla 2: cita_agendada (registrarCierre) no resucita un cobro que ya n
   });
 
   it('un cobro de regla 2 todavía a tiempo SÍ se cierra como agendada, y la regla 1 no cambia', async () => {
-    const tel = '59170400005';
+    const tel = '5910000004005';
     await abrir(tel, 'cat_ok');
     await cerrar(tel, 'ev-ok');
     expect((await solicitud(tel))!['etapa']).toBe('agendada');
-    const tel1 = '59170400006';
+    const tel1 = '5910000004006';
     await reportar({ telefono: tel1, evento: 'qr_enviado', referencia: 'ev-1', calendario: 'cal' });
     await cerrar(tel1, 'ev-1b');
     expect((await solicitud(tel1))!['etapa']).toBe('agendada');
