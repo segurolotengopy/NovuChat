@@ -737,7 +737,8 @@ describe('(9) El orden del lienzo y el costo en mensajes', () => {
   it('NINGÚN mensaje de WhatsApp agregado: los mismos dos emisores de siempre', () => {
     const emisores = f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp'
       && n.parameters['operation'] === 'send').map((n) => n.name).sort();
-    expect(emisores).toEqual(['Avisar al dueño', 'Responder al cliente']);
+    // +1 NODO, +0 mensajes: el aviso por transferencia tiene su propio envío (PR-4, 03/10).
+    expect(emisores).toEqual(['Avisar al dueño', 'Avisar al dueño (transferencia)', 'Responder al cliente']);
     // Y el único HTTP que le manda un mensaje al cliente es el del QR, que
     // reemplaza al que ya existía: no hay un segundo envío nuevo.
     //

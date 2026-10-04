@@ -463,10 +463,56 @@ function enviosSinPuerta(f: Flujo, reporte: string): string[] {
 export const marcasDelPrompt = (prompt: string): string[] =>
   [...new Set([...prompt.matchAll(/\[([A-ZÁÉÍÓÚ]{3,}(?:_[A-ZÁÉÍÓÚ]+)*)\]/g)].map((m) => `[${m[1]}]`))];
 
-const ANUNCIOS_CODIGO: { id: 'qr' | 'boton' | 'aviso'; re: RegExp }[] = [
+/**
+ * «Ya le avisé» de un turno POSTERIOR al aviso (SOLO esa frase en pasado: «le aviso a» del mismo turno no se absuelve
+ * nunca). El texto lee una marca del estado de la ejecución (`$getWorkflowStaticData`, p. ej. `sd.avisosTransferencia`)
+ * y esa marca la escribe un Code que cumple las TRES condiciones:
+ *   1. lee el id de Meta (`leeWamid`);
+ *   2. es alcanzable desde un envío con destino `negocio` (no de un envío al cliente);
+ *   3. la escritura `sd.X[clave] = Date.now()` está BAJO un `if (...)` cuya condición lee el id, directamente o por
+ *      una variable que se calculó leyéndolo (`const salio = ...messages[0].id... !== ''`).
+ * LÍMITES DEL ANÁLISIS ESTÁTICO (a propósito, documentados): (P4) una condición que lee el id pero no lo exige
+ * (`id || true`), (P5) un `if` cuyo else también marca, y (P6) un `if (!salio && …)` que marca justo cuando NO salió, no se distinguen; los vería el ensayo con el teléfono.
+ * Demo B, `Procesar respuesta`, 03/10.
+ */
+export function dependeDeMarcaVerificada(f: Flujo, c: Nodo): boolean {
+  const lee = (n: Nodo, p: string): boolean => new RegExp(`\\bsd\\.${p}\\b`).test(codigo(n));
+  if (!/\$getWorkflowStaticData/.test(codigo(c))) return false;
+  const envios_ = enviosDe(f).filter((e) => destino(e) === 'negocio');
+  const escritaCondicionada = (n: Nodo): Set<string> => {
+    const src = codigo(n);
+    const idVars = new Set<string>();
+    for (const sent of src.split(/[;\n]/)) {
+      const m = /\b(?:const|let|var)\s+(\w+)\s*=/.exec(sent);
+      if (m && leeWamid(sent)) idVars.add(m[1] as string);
+    }
+    const ifs: { fin: number; operando: string }[] = [];
+    for (const m of src.matchAll(/\bif\s*\(/g)) {
+      let nivel = 1;
+      let k = (m.index ?? 0) + m[0].length;
+      for (; k < src.length && nivel > 0; k++) { if (src[k] === '(') nivel++; else if (src[k] === ')') nivel--; }
+      ifs.push({ fin: k, operando: src.slice((m.index ?? 0) + m[0].length, k - 1) });
+    }
+    const salida = new Set<string>();
+    for (const w of src.matchAll(/\bsd\.(\w+)\[[^\]]+\]\s*=\s*Date\.now\(\)/g)) {
+      const antes = ifs.filter((x) => x.fin <= (w.index ?? 0)).at(-1);
+      if (!antes) continue;
+      if (!/^\s*\{?\s*$/.test(src.slice(antes.fin, w.index))) continue; // la escritura es el cuerpo de ESE if
+      const lee_ = LEE_ID_CODIGO.test(antes.operando) || [...idVars].some((v) => new RegExp(`\\b${v}\\b`).test(antes.operando));
+      if (lee_) salida.add(w[1] as string);
+    }
+    return salida;
+  };
+  return f.nodes.some((v) => v !== c && esCode(v) && leeWamid(codigo(v))
+    && envios_.some((e) => alcanza(f, e.name).has(v.name))
+    && [...escritaCondicionada(v)].some((p) => lee(c, p)));
+}
+
+const ANUNCIOS_CODIGO: { id: 'qr' | 'boton' | 'aviso' | 'aviso-pasado'; re: RegExp }[] = [
   { id: 'qr', re: /aqu[ií] tienes el (c[oó]digo )?qr|te (env[ií]o|mando) el qr|a continuaci[oó]n (te|le) llega/i },
   { id: 'boton', re: /toca(r|ndo)? el bot[oó]n|t[oó]cale el bot[oó]n/i },
-  { id: 'aviso', re: /ya le avis[eé]|le aviso a|ya le pas[eé]|te escribe por ac[aá]|tomar[aá] el chat/i },
+  { id: 'aviso', re: /le aviso a|ya le pas[eé]|te escribe por ac[aá]|tomar[aá] el chat/i },
+  { id: 'aviso-pasado', re: /ya le avis[eé]/i },
 ];
 
 type Mecanismo = 'qr' | 'contacto' | 'aviso';
@@ -532,10 +578,10 @@ export function violaciones(f: Flujo): Violacion[] {
       if (id === 'boton' && !f.nodes.some((n) => texto(n).includes('cta_url'))) {
         v.push({ regla: 5, nodo: `${c.name}::boton`, detalle: `«${c.name}» anuncia un botón y el flujo no tiene ningún nodo con cta_url` });
       }
-      if (id === 'aviso') {
+      if (id === 'aviso' || id === 'aviso-pasado') {
         const alcanzableDesdeAviso = envios.some((e) => destino(e) === 'negocio' && alcanza(f, e.name).has(c.name));
         const nombraAviso = envios.some((e) => destino(e) === 'negocio' && codigo(c).includes(`'${e.name}'`) && leeWamid(codigo(c)));
-        if (!alcanzableDesdeAviso && !nombraAviso) {
+        if (!alcanzableDesdeAviso && !nombraAviso && !(id === 'aviso-pasado' && dependeDeMarcaVerificada(f, c))) {
           v.push({ regla: 5, nodo: `${c.name}::aviso`, detalle: `«${c.name}» dice que ya se avisó, pero no es alcanzable desde un envío al negocio ni lo nombra leyendo el id` });
         }
       }
@@ -581,7 +627,7 @@ export interface Excepcion { porque: string; vence: string }
  * La fecha de alta del mapa: ninguna excepción vence más de 90 días después (2026-10-03 + 90 = 2027-01-01). */
 export const ALTA_DE_EXCEPCIONES = '2026-10-03';
 /** ATENCIÓN: cambiar este tope exige pasar por el agente `seguridad`. Cuántas excepciones hay hoy. SOLO BAJA: una excepción nueva exige bajar otra, o un PR que cambie este tope y lo justifique. */
-export const TOPE_DE_EXCEPCIONES = 47; // 49 menos las dos de Venta mínima (qtaco.json y ensayo-demo-a.json, regla 2, «Enviar respaldo») que cerró el PR-7
+export const TOPE_DE_EXCEPCIONES = 45; // 49 menos las 2 de Venta mínima (PR-7) y las 2 del Demo B (PR-4, #391)
 
 /**
  * `archivo#regla#nodo` → { por qué; qué PR la cierra, y hasta cuándo vale }. EMPIEZA con cada
@@ -686,14 +732,6 @@ export const EXCEPCIONES: Record<string, Excepcion> = {
   },
   'demo-a-agendamiento.json#6#AI Agent (Sofía)::se-lo-mandas-de-nuevo': {
     porque: 'el prompt promete un mecanismo (QR, contacto, aviso) sin respaldo de entrega; la cierra PR-5 (Demo A)',
-    vence: '2027-01-01',
-  },
-  'demo-b-venta-cobro.json#1#Avisar al dueño': {
-    porque: 'falla callada del aviso en pedido, cobro y uso extendido: el único verificador (Marcar aviso de transferencia) actúa solo para la transferencia; la cierra PR-4 (Demo B resto)',
-    vence: '2027-01-01',
-  },
-  'demo-b-venta-cobro.json#5#Procesar respuesta::aviso': {
-    porque: '«le aviso» / «ya le avisé» se dice en el mismo texto antes de que el aviso salga y sin depender de él (R4); la cierra PR-4 (Demo B resto)',
     vence: '2027-01-01',
   },
   'experimental/agenda-minima/agenda-minima.v0.json#1#Enviar a WhatsApp': {
@@ -1019,6 +1057,40 @@ describe('Entregas: contrapruebas (cada una falla nombrando el nodo)', () => {
       avisoWa('Avisar al doctor'), code('Armar mensajes', "const t = 'Comunícate ahora. Ya le avisé al doctor.'; return [{ json: { t } }];"), clienteWa('Responder al cliente'),
     ], [['Avisar al doctor', 'Armar mensajes'], ['Armar mensajes', 'Responder al cliente']]);
     expect(reglasDe(antes)).not.toContain('5:Armar mensajes::aviso');
+  });
+
+  it('regla 5: «ya le avisé» de un turno posterior cumple solo con una marca escrita CON el id, tras un envío al negocio', () => {
+    const texto = "const sd = $getWorkflowStaticData('global'); const t = sd.avisos[tel] ? 'Ya le avisé a Un Negocio.' : ''; return [{ json: { t } }];";
+    const marca = (cuerpo: string) => code('Marcar', "const sd = $getWorkflowStaticData('global'); " + cuerpo + ' return $input.all();');
+    const flujo = (marcador: Nodo, deQuien = 'Avisar al doctor') => mem(
+      [code('Armar mensajes', texto), clienteWa('Responder al cliente'), avisoWa('Avisar al doctor'), marcador],
+      [['Armar mensajes', 'Responder al cliente'], [deQuien, 'Marcar']]);
+    const IF_ID = "if ((($input.first().json.messages || [])[0] || {}).id) sd.avisos[tel] = Date.now();";
+    expect(reglasDe(flujo(marca(IF_ID)))).not.toContain('5:Armar mensajes::aviso');
+    // También por una variable calculada leyendo el id.
+    const porVariable = "const salio = (($input.first().json.messages || [])[0] || {}).id !== undefined; if (salio) { sd.avisos[tel] = Date.now(); }";
+    expect(reglasDe(flujo(marca(porVariable)))).not.toContain('5:Armar mensajes::aviso');
+    // Contraprueba: la marca no mira el id.
+    expect(reglasDe(flujo(marca('sd.avisos[tel] = Date.now();')))).toContain('5:Armar mensajes::aviso');
+    // P2: lee el id aparte y marca SIEMPRE.
+    const aparte = "const ok = (($input.first().json.messages || [])[0] || {}).id !== undefined; sd.avisos[tel] = Date.now();";
+    expect(reglasDe(flujo(marca(aparte)))).toContain('5:Armar mensajes::aviso');
+    // P2b: tiene un `if` que no tiene que ver con el id.
+    expect(reglasDe(flujo(marca("const ok = (($input.first().json.messages || [])[0] || {}).id !== undefined; if (tel) sd.avisos[tel] = Date.now();"))))
+      .toContain('5:Armar mensajes::aviso');
+    // P3: la marca cuelga del envío al CLIENTE, no del aviso al negocio.
+    expect(reglasDe(flujo(marca(IF_ID), 'Responder al cliente'))).toContain('5:Armar mensajes::aviso');
+    // Nadie escribe la marca.
+    const sinMarca = mem([code('Armar mensajes', texto), clienteWa('Responder al cliente'), avisoWa('Avisar al doctor')], [['Armar mensajes', 'Responder al cliente']]);
+    expect(reglasDe(sinMarca)).toContain('5:Armar mensajes::aviso');
+  });
+
+  it('regla 5 (P1): «le aviso a» en el MISMO turno no se absuelve con ninguna marca', () => {
+    const texto = "const sd = $getWorkflowStaticData('global'); const t = 'Le aviso a Un Negocio.'; return [{ json: { t, v: sd.avisos[tel] } }];";
+    const f = mem([code('Armar mensajes', texto), clienteWa('Responder al cliente'), avisoWa('Avisar al doctor'),
+      code('Marcar', "const sd = $getWorkflowStaticData('global'); if ((($input.first().json.messages || [])[0] || {}).id) sd.avisos[tel] = Date.now(); return $input.all();")],
+    [['Armar mensajes', 'Responder al cliente'], ['Avisar al doctor', 'Marcar']]);
+    expect(reglasDe(f)).toContain('5:Armar mensajes::aviso');
   });
 
   it('regla 5: «aquí tienes el QR» exige una imagen con respaldo; «toca el botón» exige un nodo con cta_url', () => {
