@@ -726,3 +726,49 @@ describe('(j) Tanda 4 del #401: «recibido» en cualquier posición, avisando, a
     }
   });
 });
+
+describe('(k) Micro-commit final del #401: ReDoS por espacios, «habiendo», ventana de personal, guarda de puntuación', () => {
+  const turno = (o: string, ent: J = {}) => ejecutar(codigoDe(f, 'Procesar respuesta'), [{ output: o }],
+    { 'Normalizar entrada': [{ ...ENT, ...ent }] }, { $getWorkflowStaticData: () => ({}), Date: reloj({ t: 1_800_000_000_000 }) })[0] ?? {};
+  const REAL: J = { cobroRealActivo: 'si' };
+  const SIM: J = { cobroRealActivo: 'no' };
+  const quita = (o: string) => (turno(o)['avisos'] as string[]).some((a) => /^(aviso_anunciado|promesa)_quitad/.test(a));
+
+  it('ReDoS: espacios, tabuladores y NBSP entre dos letras, y la cabeza larga del condicional pospuesto', () => {
+    const casos = ['x' + ' '.repeat(50_000) + 'x', 'x' + '\t'.repeat(50_000) + 'x', 'x' + ' '.repeat(50_000) + 'x', 'x' + ' \n'.repeat(25_000) + 'x',
+      'te aviso '.repeat(5555) + ', x si y', 'te aviso '.repeat(5555) + ' si recibimos tu pago'];
+    for (const t of casos) for (const ent of [REAL, SIM]) {
+      const t0 = Date.now();
+      turno(t, ent);
+      expect(Date.now() - t0, t.slice(0, 12)).toBeLessThan(1000);
+    }
+  });
+
+  it('un texto largo se juzga por tramos: la afirmación al final de 20 000 caracteres se corrige', () => {
+    const largo = 'x'.repeat(20_000) + ' Recibimos tu pago.';
+    expect(turno(largo, REAL)['avisos']).toContain('correccion_cobro');
+    expect(turno('Recibimos tu pago. ' + 'y'.repeat(20_000), SIM)['avisos']).toContain('rotulo_generico');
+  });
+
+  it('«Habiendo recibido tu pago» afirma y se corrige', () => {
+    for (const o of ['Habiendo recibido tu pago, despachamos hoy.', 'Habiendo recibido tu pago despachamos hoy']) {
+      expect(turno(o, REAL)['avisos'], o).toContain('correccion_cobro');
+      expect(turno(o, SIM)['avisos'], o).toContain('rotulo_generico');
+    }
+  });
+
+  it('la guarda de puntuación de la cola: «Te aviso si quieres, recibimos tu pago.» afirma', () => {
+    for (const o of ['Te aviso si quieres, recibimos tu pago.', 'Despachamos si quieres; recibimos tu pago.']) {
+      expect(turno(o, REAL)['avisos'], o).toContain('correccion_cobro');
+      expect(turno(o, SIM)['avisos'], o).toContain('rotulo_generico');
+    }
+  });
+
+  it('«estamos avisando»: las excepciones no valen si en seguida aparece personal', () => {
+    for (const o of ['Estamos avisando a todos en cocina.', 'Estoy avisando a todos en recepción.', 'Estamos avisando a todos que el encargado viene.',
+      'Estamos avisando que el encargado te escribe.', 'Estamos avisando que ya le pasamos al encargado.', 'Estamos avisando: el encargado ya viene.',
+      'Estamos avisando con tiempo a la cocina.', 'Estamos avisando que ya viene alguien.']) expect(quita(o), o).toBe(true);
+    for (const o of ['Estamos avisando que mañana cerramos a las 20:00.', 'Te estamos avisando con tiempo: la promo termina hoy.', 'Estamos avisando por este medio que hay promo.',
+      'Estamos avisando a todos que mañana abre la cocina a las 8.']) expect(quita(o), o).toBe(false);
+  });
+});

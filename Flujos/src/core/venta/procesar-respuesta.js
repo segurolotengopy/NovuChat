@@ -33,7 +33,7 @@ const P_ADV = String.raw`(?:\p{L}+mente\s+)?`;
 const P_MEDIOS = String.raw`(?!\s+(?:por|en|mediante|con|v[ií]a)\s+(?:\p{L}+\s+){0,3}o\s+(?:en|por|con|mediante|v[ií]a)(?![\p{L}]))`;
 const P_VERBO = String.raw`(?:recibimos|hemos\s+recibido|he\s+recibido|recib[ií]|registramos|registré|confirmamos|confirmé|verificamos|verifiqué|acreditamos|acredité|aprobamos|(?:ya\s+)?tenemos)`;
 // Futuros y subjuntivo que NO afirman: «una vez recibido tu pago», «cuando hayamos recibido…».
-const P_FUT = String.raw`(?<!(?:una\s+vez|apenas|tras|luego\s+de|despu[eé]s\s+de|cuando\s+(?:hayamos|haya|hayan|est[eé])|hayamos|haya|hayan|habiendo|sea)\s+)`;
+const P_FUT = String.raw`(?<!(?:una\s+vez|apenas|tras|luego\s+de|despu[eé]s\s+de|cuando\s+(?:hayamos|haya|hayan|est[eé])|hayamos|haya|hayan|sea)\s+)`;
 const P_LLEGO = String.raw`(?:lleg[oó]|cay[oó]|se\s+(?:reflej|registr|acredit|recibi)[oó])`;
 const AFIRMA_RECIBIDO = new RegExp(
   String.raw`(?<![\p{L}])(?<!(?<![\p{L}])no\s(?:(?:ya|nos|se|hemos|he)\s){0,3})(?:`
@@ -74,6 +74,7 @@ const sinCondicionalPospuesto = (s) => {
   while (cola.length > 0 && '.!?…'.includes(cola[cola.length - 1])) cola = cola.slice(0, -1).trimEnd();
   if (/[,;:.!?]/.test(cola)) return s;
   const cabeza = s.slice(0, k);
+  if (cabeza.length > 500) return s;
   return CABEZA_PRINCIPAL.test(cabeza) && !/(?:^|[^\p{L}])(?:que|no)\s*$/iu.test(cabeza) ? cabeza : s;
 };
 // «Si …, <principal>»: la cláusula condicional («Si ya pagaste,») no afirma nada y se quita
@@ -82,22 +83,30 @@ const sinCondicionalPospuesto = (s) => {
 const CONDICIONAL_SI = /(^|[,;:]\s*)[¡"'*]*(?:(?:y|pero|solo|s[oó]lo|o)\s+)?si\s[^,;:]+,\s*(?=\S)/giu;
 // Oraciones: por puntuación final y ANTES de cualquier «¿», para que una afirmación
 // pegada a una pregunta («Recibimos tu pago, ¿algo más?») se juzgue sola.
-const trocearPago = (t) => t.split(/(?<=[.!?…])\s+|,?\s*(?=¿)/u);
-// ¿Esta oración afirma un pago? (se juzga sin marcas de formato). La pregunta no afirma.
+const trocearPago = (t) => t.split(/(?<=[.!?…])\s+|,? ?(?=¿)/u);
+// Se juzga por tramos de 4000 caracteres (con solape) para que un texto enorme no cueste
+// tiempo cuadrático ni se recorte sin juzgar: lo que excede se juzga igual, tramo a tramo.
+const juzgarPorTramos = (t, f) => {
+  if (t.length <= 4000) return f(t);
+  for (let i = 0; i < t.length; i += 3800) if (f(t.slice(i, i + 4000))) return true;
+  return false;
+};
+// ¿Esta oración afirma un pago? (se juzga sin marcas de formato y con los espacios
+// normalizados). La pregunta no afirma.
 const afirmaPagoOracion = (o) => {
-  const s = o.replace(/[*_~]/g, '');
+  const s = o.replace(/[*_~]/g, '').replace(/[^\S\n]+/g, ' ');
   const sinSi = sinCondicionalPospuesto(s.replace(CONDICIONAL_SI, '$1'));
   return AFIRMA_COBRO.test(s)
-    || (!/\?\s*$/.test(s.trim()) && (AFIRMA_RECIBIDO.test(sinSi) || AFIRMA_PAGADO_SUELTO.test(sinSi)));
+    || (!/\?\s*$/.test(s.trim()) && (AFIRMA_PAGADO_SUELTO.test(sinSi) || juzgarPorTramos(sinSi, (w) => AFIRMA_RECIBIDO.test(w))));
 };
 // ¿Algún tramo del texto afirma un pago? Criterio de siempre (AFIRMA_COBRO sobre el
 // texto entero) más el de oración por oración, línea por línea y también con los saltos
 // de línea como espacio («Recibimos\ntu pago.», «Pago\nrecibido»).
 const afirmaPago = (t) => {
-  const s = t.replace(/[*_~]/g, '');
+  const s = t.replace(/[*_~]/g, '').replace(/[^\S\n]+/g, ' ');
   return AFIRMA_COBRO.test(s)
     || s.split('\n').some((l) => trocearPago(l).some(afirmaPagoOracion))
-    || trocearPago(s.replace(/\s*\n\s*/g, ' ')).some(afirmaPagoOracion);
+    || trocearPago(s.replace(/ ?\n ?/g, ' ')).some(afirmaPagoOracion);
 };
 // Primera letra en mayúscula (para cuando se quita la primera mitad de una línea).
 const mayus = (t) => t.replace(/^([\s"'«*_–—-]*)(\p{Ll})/u, (m, a, b) => a + b.toUpperCase());
@@ -270,7 +279,7 @@ for (let i = 0; i < $input.all().length; i++) {
   const PROMESA = /(consult|averigu|pregunt|verific|revis|coordin)[a-záéíóúñ]*\s+(lo\s+|eso\s+)?(con|a)\s+(recepci|la\s+cl[ií]nica|el\s+equipo|el\s+personal|(el|la)\s+(doctor|doctora|dr|dra)(?![a-záéíóúñ])|administraci|caja|alguien|una\s+persona|la\s+empresa|el\s+negocio|mis\s+compa)|(te|le)\s+(avis|escrib|llam|contact|confirm|mand|env[ií]|respond)[a-záéíóúñ]*\s+(?:por\s+(?:aqu[ií]|ac[aá]|este\s+chat|whatsapp)\s+)?(luego|despu[eé]s|m[aá]s\s+tarde|ma[ñn]ana|en\s+cuanto|apenas|pronto|en\s+un\s+rato|en\s+breve|a\s+la\s+brevedad|cuando(?![a-záéíóúñ])(?!\s+(?:me|nos)\s+(?:digas|confirmes|env[ií]es|mandes|escribas|pases)))|(te|le)\s+(avisar|escribir|llamar|contactar|confirmar|responder)([eé]|[aá]n?)(?![a-záéíóúñ])|voy\s+a\s+(consultar|averiguar|preguntar|avisar|escribir|llamar|contactar|confirmar)/i;
   // El mismo troceo que el del filtro de avisos (por coma, «y», raya o punto y coma
   // ante «ya le avisé», «le informo»…): una promesa pegada a un monto no se lleva el monto.
-  const oraciones = texto.split(/(?<=[.!?…])\s+|;\s+|,\s*(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))|\s+y\s+(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))|\s+[—–-]\s+(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))/iu);
+  const oraciones = texto.replace(/\s{2,}/g, ' ').split(/(?<=[.!?…])\s+|;\s+|,\s*(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))|\s+y\s+(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))|\s+[—–-]\s+(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))/iu);
   const sinPromesas = oraciones.filter((o) => /\?\s*$/.test(o.trim()) || !PROMESA.test(o));
   if (sinPromesas.length < oraciones.length) {
     texto = sinPromesas[0] === oraciones[0] ? sinPromesas.join(' ').trim() : mayus(sinPromesas.join(' ').trim());
@@ -324,7 +333,7 @@ for (let i = 0; i < $input.all().length; i++) {
   //     si van a un destinatario o sin complemento («Ya les informé,»); «Como le
   //     informé, el envío cuesta 10 Bs.» y «Le informé el precio» quedan.
   // Con `u` y `(?<![\p{L}])` / `(?![\p{L}])` porque `\b` no ve las vocales con tilde.
-  const AVISO_FUTURO = /(?<![\p{L}])(?:(?:le|les)\s+(?:(?:aviso|notifico)(?![\p{L}])(?!\s+que(?![\p{L}])|\s*:)|avisar[eé](?![\p{L}])|avisaremos(?![\p{L}])|avisamos(?![\p{L}])|notificar[eé](?![\p{L}])|estoy\s+avisando(?![\p{L}]))|avisarl[eo]s?(?![\p{L}])|el\s+sistema\s+(?:le\s+|les\s+)?(?:avisa|avisar[aá]|notifica|notificar[aá])(?![\p{L}])|^\s*(?:ahora\s+)?aviso\s+(?:a|al)(?![\p{L}])|(?:estoy|estamos)\s+avisando(?![\p{L}])(?!\s*:|\s+(?:que(?![\p{L}])|con\s+tiempo|por\s+este\s+medio\s+que(?![\p{L}])))(?!\s+(?:\p{L}+\s+){0,3}a\s+(?:todos|todas|nuestros\s+clientes|los\s+clientes)(?![\p{L}])(?!\s+(?:(?:los|las)\s+(?:encargad|due[ñn]|emplead|personal|cocina|recepci[oó]n|vendedor|equipo|administraci[oó]n)|y\s+(?:al|a\s+la)\s+(?:encargad|due[ñn]|emplead|personal|cocina|recepci[oó]n|vendedor|equipo|administraci[oó]n))))|(?:le|les)\s+(?:paso|estoy\s+pasando)\s+(?:tu|su)\s+\p{L}+\s+(?:a|al)(?![\p{L}]))/iu;
+  const AVISO_FUTURO = /(?<![\p{L}])(?:(?:le|les)\s+(?:(?:aviso|notifico)(?![\p{L}])(?!\s+que(?![\p{L}])|\s*:)|avisar[eé](?![\p{L}])|avisaremos(?![\p{L}])|avisamos(?![\p{L}])|notificar[eé](?![\p{L}])|estoy\s+avisando(?![\p{L}]))|avisarl[eo]s?(?![\p{L}])|el\s+sistema\s+(?:le\s+|les\s+)?(?:avisa|avisar[aá]|notifica|notificar[aá])(?![\p{L}])|^\s*(?:ahora\s+)?aviso\s+(?:a|al)(?![\p{L}])|(?:estoy|estamos)\s+avisando(?![\p{L}])(?!(?:\s*:|\s+(?:que(?![\p{L}])|con\s+tiempo|por\s+este\s+medio\s+que(?![\p{L}])))(?![^.!?…\n]{0,60}?(?:encargad|due[ñn]|emplead|personal|cocina|recepci[oó]n|vendedor|equipo|administraci[oó]n|te\s+(?:escribe|llama)|ya\s+viene)))(?!\s+(?:\p{L}+\s+){0,3}a\s+(?:todos|todas|nuestros\s+clientes|los\s+clientes)(?![\p{L}])(?!\s+(?:(?:los|las|en)\s+(?:encargad|due[ñn]|emplead|personal|cocina|recepci[oó]n|vendedor|equipo|administraci[oó]n)|y\s+(?:al|a\s+la)\s+(?:encargad|due[ñn]|emplead|personal|cocina|recepci[oó]n|vendedor|equipo|administraci[oó]n)|que\s+(?:el|la|los|las)\s+(?:encargad|due[ñn]|emplead|personal|cocina|recepci[oó]n|vendedor|equipo|administraci[oó]n))))|(?:le|les)\s+(?:paso|estoy\s+pasando)\s+(?:tu|su)\s+\p{L}+\s+(?:a|al)(?![\p{L}]))/iu;
   const AVISO_PASADO = /(?<![\p{L}])(?:(?<!como\s(?:ya\s)?)(?<!te\s)(?:le|les|lo|los)\s+(?:(?:avis[eé]|avisó|he\s+avisado|hemos\s+avisado|he\s+notificado|hemos\s+notificado|notifiqu[eé]|pas[eé]\s+(?:tu|el|su)\s+(?:mensaje|pedido|consulta|caso))(?![\p{L}])|(?:inform|comuniqu)[eé](?=\s*(?:[,.;!]|$)|\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa])(?![\p{L}])|\s+(?:tu|su)\s+(?:pedido|consulta|caso|mensaje|solicitud)(?![\p{L}])))|(?:ya\s+)?(?<!te\s(?:lo\s|la\s)?)(?:avis|notifiqu)[eé]\s+(?:a|al)(?![\p{L}])(?!\s+(?:\d|las?\s+\d))|(?:ya\s+)?(?:avis|notifiqu)[eé]\s+a\s+las?\s+\d+(?::\d+)?\s*(?:h|hs|horas)?\s+(?:a|al)\s+(?:la\s+|el\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa]|equipo)(?![\p{L}])|(?:ya\s+)?(?:inform|comuniqu)[eé]\s+(?:a|al)\s+(?:la\s+|el\s+|un\s+|nuestr[oa]\s+)?(?:negocio|due[ñn][oa]|recepci[oó]n|encargad[oa]|equipo)(?![\p{L}])|(?<!como\s)(?:ya\s+)?(?<!te\s(?:lo\s|la\s)?)(?:avis|notifiqu)[eé](?=\s*(?:[.,;!…]|$)|\s*[^\p{L}\p{N}\s:?¿])|(?<!te\s(?:lo\s|la\s)?)(?:ya\s+)?(?:he|hemos)\s+(?:avisado|notificado|informado)(?![\p{L}])|acabo\s+de\s+(?:avisar|notificar)(?![\p{L}])|(?:pas|mand|envi)[eé]\s+(?:(?:tu|su)\s+[\p{L}]+\s+)?(?:a|al)\s+(?:la\s+|el\s+)?(?:due[ñn][oa]|negocio|recepci[oó]n|encargad[oa])(?![\p{L}])|escrib[ií]\s+(?:a|al)\s+(?:la\s+|el\s+)?(?:due[ñn][oa]|negocio|recepci[oó]n|encargad[oa])(?![\p{L}])|se\s+(?:le\s+|les\s+)?(?:avisó|informó|notificó)(?![\p{L}])|fue(?:ron)?\s+(?:avisad|notificad|informad)[oa]s?(?![\p{L}])|est[aá]n?\s+(?:ya\s+)?(?:avisad|notificad|informad)[oa]s?(?![\p{L}])|(?:ya\s+)?est[aá]n?\s+al\s+tanto(?![\p{L}])|el\s+sistema\s+(?:ya\s+)?(?:le\s+|les\s+)?(?:avisó|notificó)(?![\p{L}]))/iu;
   {
     // Solo se LEE (no se crea nada): sin transferencia el estado no se toca.
@@ -337,7 +346,7 @@ for (let i = 0; i < $input.all().length; i++) {
     // dentro de cada linea, por oracion y antes de cualquier «¿».
     let quitado = false;
     const lineas = texto.split('\n').map((linea) => {
-      const trozos = linea.split(/(?<=[.!?…])\s+|;\s+|,?\s*(?=¿)|,\s*(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))|\s+y\s+(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))|\s+[—–-]\s+(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))/iu);
+      const trozos = linea.replace(/\s{2,}/g, ' ').split(/(?<=[.!?…])\s+|;\s+|,?\s*(?=¿)|,\s*(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))|\s+y\s+(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))|\s+[—–-]\s+(?=(?:ya\s+)?(?:(?:le|les)\s+)?(?:avis|notifiqu|inform|comuniqu))/iu);
       const dejar = trozos.filter((o) => /\?\s*$/.test(o.trim())
         || !(AVISO_FUTURO.test(o) || (!marcaVigente && AVISO_PASADO.test(o))));
       if (dejar.length < trozos.length) quitado = true;
