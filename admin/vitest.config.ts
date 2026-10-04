@@ -70,6 +70,7 @@ export const SUITES_PURAS = [
   'pruebas/core/clave-n8n-fuera-de-argumentos.test.ts',
   'pruebas/core/publicar-flujo-credencial-ambigua.test.ts',
   'pruebas/core/credenciales-venta.test.ts',
+  'pruebas/core/preparar-import-respond.test.ts',
   'pruebas/core/env-nace-cerrado.test.ts',
   'pruebas/core/gancho-sistemas-ajenos.test.ts',
   'pruebas/core/hijos-hermeticos.test.ts',
