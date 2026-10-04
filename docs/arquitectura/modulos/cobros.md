@@ -405,10 +405,10 @@ tercero pasa a `en_revision` con `avisarComercio`; un tardío no cierra la venta
 Un `idMeta` repetido (reintento de n8n, porque la primera respuesta se perdió)
 **repite lo que se contestó** —`estado` (`invalido` sale como `reintentar`),
 `motivo`, `intentos` e `intentosRestantes` **de entonces**, `montoLeido`,
-`cierreId` y el `avisarComercio` original— con `repetido: true`. **El flujo no
-debe volver a avisar al comercio cuando llega `repetido: true`** (la solicitud
-ya lo decidió; el reintento existe por si se perdió la respuesta, y el flujo
-decide si el aviso original llegó); no cuenta ni escribe nada. Un comprobante recibido en
+`cierreId` y el `avisarComercio` original— con `repetido: true`. **con `repetido: true` el flujo avisa al comercio solo si en ESTA ejecución
+todavía no avisó** (el reintento existe porque se pudo perder la primera
+respuesta); un `idMeta` ya procesado por OTRA ejecución se descarta antes, con el
+filtro de repetidos de la entrada; no cuenta ni escribe nada. Un comprobante recibido en
 `en_revision` se anota con motivo `en_revision`; el tercer inválido se anota ya
 como `en_revision`.
 La `ruta` solo se anota si coincide con el patrón del comercio y del `idMeta`.
@@ -431,7 +431,7 @@ evidencia nunca se sobrescribe**: se guarda con `ifGenerationMatch: 0`, hay una
 sola extensión por `idMeta` y el mismo `idMeta` repetido responde 200 con la
 misma ruta sin reescribir (si la primera vez Storage falló, el reintento sí
 guarda). Ruta:
-`tenants/{t}/comprobantes/{aaaa-mm-dd}/{idMetaSaneado}.{jpg|png|webp|pdf}`, con
+`tenants/{t}/comprobantes/{aaaa-mm-dd}/{sha256 del idMeta en base64url}.{jpg|png|webp|pdf}`, con
 el día de La Paz y **sin el teléfono**; `cacheControl: private`. **Solo
 autentica con el token por número**: la firma HMAC cubre el cuerpo y
 `firma.ts` se niega a verificar más de 64 KB, así que una imagen no puede
