@@ -149,6 +149,47 @@ const texto = (v: unknown, max: number): string =>
   typeof v === 'string' ? v.slice(0, max).trim() : '';
 
 /**
+ * UNA LÍNEA DE TEXTO LIBRE DEL CLIENTE, lista para guardar y para reenviar al
+ * flujo (hoy, las referencias para llegar). A diferencia de `texto`, que solo
+ * recorta, esta limpia:
+ *
+ *  - caracteres de control (saltos de línea, NUL), de formato (la marca de
+ *    derecha a izquierda U+202E y compañía), separadores de línea y de párrafo,
+ *    y `<`, `>` y `&`, se vuelven un espacio;
+ *  - los enlaces (`http(s)://…`, `www.…`) se borran: una referencia para llegar
+ *    no lleva enlaces, y un enlace en un mensaje de WhatsApp al repartidor es la
+ *    forma más barata de colar un engaño;
+ *  - los espacios se colapsan en uno;
+ *  - se recorta por PUNTOS DE CÓDIGO, no por unidades UTF-16: `slice` partiría
+ *    un emoji por la mitad y dejaría un carácter suelto e ilegible.
+ *
+ * Lo que no es texto da cadena vacía.
+ */
+export function lineaLimpia(v: unknown, max: number): string {
+  if (typeof v !== 'string') return '';
+  // Tope previo solo para acotar el trabajo de las expresiones regulares sobre
+  // un cuerpo hostil; el recorte que vale es el de abajo.
+  const limpio = v.slice(0, 1000)
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}<>&]/gu, ' ')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/www\.\S+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return Array.from(limpio).slice(0, max).join('').trim();
+}
+
+/** Tope de las referencias para llegar (el mismo número está en la página). */
+export const MAX_REFERENCIA = 150;
+
+/**
+ * Las referencias del pedido: solo con envío. Con retiro no se guardan aunque
+ * el cuerpo las traiga, porque no hay a dónde llegar.
+ */
+export function referenciaDelPedido(cuerpo: Record<string, unknown>, entrega: string): string {
+  return entrega === 'envio' ? lineaLimpia(cuerpo['referencia'], MAX_REFERENCIA) : '';
+}
+
+/**
  * =============================================================================
  * SIN PRECIO NO SE PUBLICA
  * =============================================================================
@@ -974,6 +1015,8 @@ export const checkoutCatalogo = onRequest(
     const entrega = cuerpo['entrega'] === 'envio' ? 'envio' : 'retiro';
     const direccion = texto(cuerpo['direccion'], 200);
     const nota = texto(cuerpo['nota'], 300);
+    // Opcional. Una página vieja no la manda y el pedido sale igual que antes.
+    const referencia = referenciaDelPedido(cuerpo, entrega);
     if (entrega === 'envio' && direccion === '') {
       respuesta.status(400).json({ error: 'falta la direccion' }); return;
     }
@@ -1099,6 +1142,7 @@ export const checkoutCatalogo = onRequest(
       entrega,
       ...(direccion ? { direccion } : {}),
       ...(nota ? { nota } : {}),
+      ...(referencia ? { referencia } : {}),
       ...(descartados.length ? { descartados } : {}),
       estado: 'recibido',
       ventanaAbierta,
@@ -1167,6 +1211,8 @@ export const checkoutCatalogo = onRequest(
       tipo: 'carrito',
       pedidoId, conversacionId, telefono: ficha.telefono,
       items, total, moneda: monedaPedido, costoEnvio, entrega, direccion, nota,
+      // Solo si hay: sin referencia la carga firmada es idéntica a la de antes.
+      ...(referencia ? { referencia } : {}),
       descartados,
       ventanaAbierta,
       // Fuera de la ventana, el flujo NO puede mandar un mensaje libre. Se le
