@@ -6,7 +6,7 @@
  * sin token no entra, el teléfono nunca está en el nombre, y la purga borra a
  * los 91 días, conserva a los 89 y borra todo de un comercio dado de baja.
  */
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -303,11 +303,23 @@ describe('reservarSubida: se vuelve a comprobar ADENTRO de la transacción', () 
     expect(await m.reservarSubida(ref, 'wamid.tarde', 'ruta/x.jpg', Date.now())).toBe('lleno');
     expect(((await ref.get()).get('solicitud') as any).subidas).toBeUndefined();
   });
-  it('si el idMeta ya tenía entrada conserva SU ruta y no suma otra', async () => {
+  it('si el idMeta ya tenía entrada VÁLIDA conserva SU ruta y no suma otra', async () => {
     const ref = db.doc(`tenants/${T}/conversaciones/wa_59100000081`);
-    await ref.set({ solicitud: solicitudDe('qr_enviado', { subidas: [{ idMeta: 'wamid.u', ruta: 'ruta/vieja.jpg' }] }) });
-    expect(await m.reservarSubida(ref, 'wamid.u', 'ruta/nueva.png', Date.now())).toEqual({ ruta: 'ruta/vieja.jpg', guardada: false });
-    expect(((await ref.get()).get('solicitud') as any).subidas).toEqual([{ idMeta: 'wamid.u', ruta: 'ruta/vieja.jpg' }]);
+    const vieja = m.rutaDeComprobante(T, '2026-10-04', 'wamid.u', 'jpg');
+    await ref.set({ solicitud: solicitudDe('qr_enviado', { subidas: [{ idMeta: 'wamid.u', ruta: vieja }] }) });
+    expect(await m.reservarSubida(ref, 'wamid.u', m.rutaDeComprobante(T, '2026-10-04', 'wamid.u', 'png'), Date.now()))
+      .toEqual({ ruta: vieja, guardada: false });
+    expect(((await ref.get()).get('solicitud') as any).subidas).toEqual([{ idMeta: 'wamid.u', ruta: vieja }]);
+  });
+  it('NIEGA: una entrada con una ruta que no es de este comercio y este idMeta se IGNORA: se reemplaza, sin sumar otra', async () => {
+    const ref = db.doc(`tenants/${T}/conversaciones/wa_59100000083`);
+    const ajena = m.rutaDeComprobante('otro-comercio', '2026-10-04', 'wamid.x', 'jpg');
+    await ref.set({ solicitud: solicitudDe('qr_enviado', { subidas: [{ idMeta: 'wamid.x', ruta: ajena }, { idMeta: 'wamid.y', ruta: 'ruta/cualquiera.jpg' }] }) });
+    const nueva = m.rutaDeComprobante(T, '2026-10-04', 'wamid.x', 'png');
+    expect(await m.reservarSubida(ref, 'wamid.x', nueva, Date.now())).toEqual({ ruta: nueva, guardada: false });
+    const subidas = ((await ref.get()).get('solicitud') as any).subidas;
+    expect(subidas.filter((x: any) => x.idMeta === 'wamid.x')).toEqual([{ idMeta: 'wamid.x', ruta: nueva }]);
+    expect(subidas).toHaveLength(2);
   });
   it('reserva una entrada nueva con su ruta', async () => {
     const ref = db.doc(`tenants/${T}/conversaciones/wa_59100000082`);
@@ -349,6 +361,24 @@ describe('la purga diaria', () => {
     poner(T, 'cualquier-cosa');
     await m.purgarComprobantesDe({ almacen, ahoraMs: hoy });
     expect(almacen.objetos.has(`tenants/${T}/comprobantes/cualquier-cosa/a.jpg`)).toBe(true);
+  });
+  it('un comercio que falla no detiene la purga de los demás: cuenta el error y sigue', async () => {
+    poner(T_BAJA, diaHace(1)); poner(T, diaHace(91));
+    const base = almacen.borrarPrefijo.bind(almacen);
+    almacen.borrarPrefijo = async (prefijo: string) => {
+      if (prefijo.startsWith(`tenants/${T_BAJA}/`)) throw Object.assign(new Error(`ruta con datos ${prefijo}`), { code: 503 });
+      return base(prefijo);
+    };
+    const espia = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await m.purgarComprobantesDe({ almacen, ahoraMs: hoy });
+    const registro = espia.mock.calls.map((c) => String(c[0])).join('\n');
+    espia.mockRestore();
+    expect(r.errores).toBe(1);
+    expect(r.carpetasBorradas).toBe(1);
+    expect([...almacen.objetos.keys()].some((k) => k.includes(`/${diaHace(91)}/`))).toBe(false);
+    // Solo el código: ni el mensaje ni la ruta.
+    expect(registro).toContain('503');
+    expect(registro).not.toContain(T_BAJA);
   });
   it('la purga es una Function programada a las 03:30 de La Paz', () => {
     expect(typeof m.purgarComprobantes).toBe('function');
