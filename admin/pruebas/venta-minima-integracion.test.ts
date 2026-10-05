@@ -427,7 +427,7 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
   it('reserva con plantilla configurada y ventana cerrada: dos plantillas, y el cliente lee que llegó', () => {
     const s = reservar(crear());
     expect(nombresDePlantilla(s)).toEqual(['plantilla_reserva_x', 'plantilla_reserva_x']);
-    expect(cuerpos(s).join('\n')).toContain('tu solicitud de reserva llegó al restaurante');
+    expect(cuerpos(s).join('\n')).toContain('tu solicitud llegó al restaurante');
     expect(s.armados.map((a) => a['para']).sort()).toEqual([AV1, AV2]);
   });
 
@@ -448,7 +448,7 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
     expect(plantillas(s)).toEqual([]);
     expect(s.armados.map((a) => [a['para'], a['clase']])).toEqual([[AV1, 'detalle']]);
     expect(cuerpoDe(s.armados[0]!)).toContain('Solicitud de reserva');
-    expect(cuerpos(s).join('\n')).toContain('tu solicitud de reserva llegó al restaurante');
+    expect(cuerpos(s).join('\n')).toContain('tu solicitud llegó al restaurante');
   });
 
   it('derivación SIN plantilla y ventana cerrada: ningún ítem de plantilla; NO hereda la de reserva, solo el respaldo común `plantillaAviso`', () => {
@@ -473,7 +473,7 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
     expect(s.armados).toEqual([]);
     expect(erroresAvisos(s)).toContain('plantilla_no_configurada_pedido');
     expect(cuerpos(s).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
-    expect(cuerpos(s).join('\n')).not.toMatch(/pas[ée] tu pedido|ya pas/i);
+    expect(cuerpos(s).join('\n')).not.toMatch(/pas[ée] tu pedido|ya (lo |la )?pas/i);
   });
 
   it('ningún nombre de plantilla de Meta sale del código: ni «pedido_registrado» ni «appointment_confirmed»', () => {
@@ -533,7 +533,7 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
     expect(s.d['accion']).toBe('comprobante');
     const texto = cuerpos(s).join('\n');
     expect(texto).toContain('los datos coinciden');
-    expect(texto).toMatch(/pas[ée] tu pedido/i);
+    expect(texto).toMatch(/ya lo pas[ée] al restaurante; ellos revisan el pago en su banco/i);
     expect(texto).not.toMatch(PROHIBIDAS);
     expect(params(plantillas(s).find((a) => a['para'] === AV1)!)[3]).toBe('comprobante: datos coinciden');
     const clases = s.armados.filter((a) => a['para'] === AV1).map((a) => a['clase']);
@@ -791,7 +791,7 @@ describe('I1: «reservado» como dato de la carta o de una zona no traba el fluj
     expect(cuerpos(resumen).join('\n')).toContain('sala reservada');
     const enviada = turno(m, { boton: 'r|enviar' });
     expect(enviada.armados.length).toBeGreaterThan(0);
-    expect(cuerpos(enviada).join('\n')).toContain('tu solicitud de reserva llegó al restaurante');
+    expect(cuerpos(enviada).join('\n')).toContain('tu solicitud llegó al restaurante');
   });
 });
 
@@ -1124,7 +1124,7 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
     // El cliente
     const texto = cuerpos(s).join('\n');
     expect(texto).toContain('SIMULADO');
-    expect(texto).toMatch(/pas[ée] tu pedido al restaurante como pedido de PRUEBA/);
+    expect(texto).toMatch(/Ya lo pasé al restaurante como pedido de PRUEBA\./);
     expect(texto).not.toMatch(PROHIBIDAS);
     expect(texto).not.toMatch(/pago (acreditado|verificado)|recibimos\s+tu\s+pago|los datos coinciden/i);
     // El restaurante: plantilla con PRUEBA, detalle de PRUEBA y NUNCA la imagen del comprobante ni «revisen el pago»
