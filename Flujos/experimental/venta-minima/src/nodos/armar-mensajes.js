@@ -29,7 +29,7 @@
 //
 // BOTÓN «MENÚ» (03/10): todo mensaje interactivo con botones de respuesta que tenga lugar (menos de tres) sale con `m|menu`
 // como último botón (salvo el propio menú: `sinMenu`), para que el cliente siempre pueda volver al inicio; el mensaje con botón de enlace (uno solo) lleva al
-// final «Si quieres seguir con tu pedido o tu reserva, escribe «menú».». Solo en la conversación (`Plan del turno`): el aviso fijo
+// final «Para volver al inicio, escribe «menú».». Solo en la conversación (`Plan del turno`): el aviso fijo
 // de «Uso extendido» y el de «Comercio no operativo» no llegan a `Decidir turno`, así que no ofrecen «menú». No agrega mensajes.
 // `nivelEmojis` (la voz del negocio): `ninguno` quita los emojis de todo texto al cliente, `pocos` deja a lo sumo uno por
 // mensaje (el primero) y `muchos` no toca nada.
@@ -56,9 +56,9 @@ const AM_REC = vmDigitos(AM_CFG.numeroRecepcion);
 const AM_REC_OK = AM_REC.length >= 8 && AM_REC.length <= 15 && AM_REC !== AM_FROM_DIG;
 const AM_GEN_CUERPO = AM_CONVERSA
   ? 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. '
-    + 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».'
+    + 'Para volver al inicio, escribe «menú».'
   : 'Eso lo ve directamente el restaurante. Toca el botón para escribirles.';
-const AM_SEGUIR = 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+const AM_SEGUIR = 'Para volver al inicio, escribe «menú».';
 const AM_GEN_BOTON = 'Escribir al local';
 const AM_HORA_MS = 60 * 60 * 1000;
 const AM_PEDIDOS_MS = 72 * AM_HORA_MS;
@@ -114,7 +114,7 @@ function amSeguro(x) {
   return vmTextoSeguro(s) === true && !VM_PROHIBIDAS.test(vmNorm(s));
 }
 // Una frase que afirma que el pedido o la solicitud se pasó al restaurante.
-const AM_PASE = /\bya pase\b|\bpase tu (pedido|solicitud|comprobante)|\bpase el pedido|llego al restaurante|llegaron al restaurante|\bhice llegar tu/;
+const AM_PASE = /\bya (lo |la )?pase\b|\b(lo|la) pase al restaurante|\bpase tu (pedido|solicitud|comprobante)|\bpase el pedido|llego al restaurante|llegaron al restaurante|\bhice llegar tu/;
 const AM_NEGADO = /\bno (pude|pase|he pasado|logre)\b/;
 function amAfirmaPase(texto) {
   const n = vmNorm(texto);

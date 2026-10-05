@@ -52,6 +52,7 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { defineString } from 'firebase-functions/params';
 import { REGION } from '../../core/region.js';
+import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 import { descontarPedido, hayParaVender } from '../inventario/inventario.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
 // `enmascarar` sale de `ingesta.ts` y no de `firma.ts`, que tiene la suya con
@@ -148,6 +149,57 @@ const texto = (v: unknown, max: number): string =>
   typeof v === 'string' ? v.slice(0, max).trim() : '';
 
 /**
+ * UNA LÍNEA DE TEXTO LIBRE DEL CLIENTE, lista para guardar y para reenviar al
+ * flujo (hoy, las referencias para llegar). A diferencia de `texto`, que solo
+ * recorta, esta limpia:
+ *
+ *  - caracteres de control (saltos de línea, NUL), de formato (la marca de
+ *    derecha a izquierda U+202E y compañía), surrogates sueltos, uso privado,
+ *    separadores de línea y de párrafo, y `<`, `>` y `&`, se vuelven un espacio;
+ *  - los enlaces (`http(s)://…`, `www.…`) se borran: una referencia para llegar
+ *    no lleva enlaces, y un enlace en un mensaje de WhatsApp al repartidor es la
+ *    forma más barata de colar un engaño;
+ *  - los espacios se colapsan en uno;
+ *  - se recorta por PUNTOS DE CÓDIGO, no por unidades UTF-16: `slice` partiría
+ *    un emoji por la mitad y dejaría un carácter suelto e ilegible.
+ *
+ * Lo que no es texto da cadena vacía.
+ */
+export function lineaLimpia(v: unknown, max: number): string {
+  if (typeof v !== 'string') return '';
+  // Tope previo solo para acotar el trabajo de las expresiones regulares sobre
+  // un cuerpo hostil; el recorte que vale es el de abajo. Si el corte cae entre
+  // las dos mitades de un emoji, se descarta la mitad que quedó, para no dejar
+  // un surrogate suelto.
+  let tope = v.slice(0, 1000);
+  if (/[\ud800-\udbff]$/.test(tope)) tope = tope.slice(0, -1);
+  const limpio = tope
+    // Cs: surrogates sueltos; Co: uso privado. Ninguno es texto legible.
+    .replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}<>&]/gu, ' ')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/www\.\S+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Bien formado por construcción: `\p{Cs}` con la bandera `u` solo casa los
+  // surrogates SUELTOS (una pareja válida es un solo punto de código), y ya se
+  // volvieron espacio arriba; el corte por puntos de código de abajo no parte
+  // parejas. Es el equivalente de `toWellFormed()` sin U+FFFD y sin pedir la
+  // biblioteca ES2024 que el `tsconfig` de Functions no declara.
+  return Array.from(limpio).slice(0, max).join('').trim();
+}
+
+/** Tope de las referencias para llegar (el mismo número está en la página). */
+export const MAX_REFERENCIA = 150;
+
+/**
+ * Las referencias del pedido: solo con envío. Con retiro no se guardan aunque
+ * el cuerpo las traiga, porque no hay a dónde llegar.
+ */
+export function referenciaDelPedido(cuerpo: Record<string, unknown>, entrega: string): string {
+  return entrega === 'envio' ? lineaLimpia(cuerpo['referencia'], MAX_REFERENCIA) : '';
+}
+
+/**
  * =============================================================================
  * SIN PRECIO NO SE PUBLICA
  * =============================================================================
@@ -208,13 +260,19 @@ const texto = (v: unknown, max: number): string =>
 async function tieneVenta(tenantId: string): Promise<boolean> {
   const tenant = await db().doc(`tenants/${tenantId}`).get();
   if (!tenant.exists) return false;
-  const flujos = tenant.get('flujos');
-  // Igual que en las reglas y en `flujos.ts`: manda la lista, y una ficha
-  // anterior a la lista se lee por `vertical`. Así nada de lo ya cargado
-  // cambia de comportamiento.
-  if (Array.isArray(flujos)) return flujos.includes('venta');
-  return tenant.get('vertical') === 'venta';
+  return fichaVende(tenant.data());
 }
+
+/**
+ * La decisión, pura: la ficha vende si el registro le da el módulo
+ * `catalogo-web` (H2b-4d; antes una lista propia de `flujos`/`vertical`).
+ * Para fichas reales (`flujos: ['venta']`, `vertical: 'venta'`) el resultado es
+ * el de siempre, porque `venta` trae `catalogo-web` en el registro. Diferencias
+ * a propósito: con `modulos` (lista) manda la lista, y un `flujos` que no es
+ * lista (null, cadena) ya no cae a `vertical`: falla cerrado, como las reglas.
+ */
+export const fichaVende = (ficha: FichaConCapacidades | null | undefined): boolean =>
+  tieneModulo(ficha, 'catalogo-web');
 
 export const sePuedeComprar = (d: Record<string, unknown> | undefined): boolean =>
   Number.isFinite(d?.['precio']);
@@ -277,6 +335,40 @@ const PALETA_POR_DEFECTO = 'indigo';
 export function paletaValida(valor: unknown): string {
   return typeof valor === 'string' && (PALETAS as readonly string[]).includes(valor)
     ? valor : PALETA_POR_DEFECTO;
+}
+
+/**
+ * EL NÚMERO PÚBLICO DE LA LÍNEA DEL NEGOCIO (`rutasWhatsApp/<phoneNumberId>.numeroPublico`,
+ * 04/10/2026), para que el cliente vuelva al chat con `https://wa.me/<número>`.
+ *
+ * Es el número que el negocio ya publica como su WhatsApp, y NINGÚN otro: ni el
+ * de recepción interna (`config/negocio.numeroRecepcion`), ni el de avisos, ni
+ * el id de Meta. Solo viaja si es una cadena de 8 a 15 dígitos, sin `+` ni
+ * espacios y sin cero inicial; cualquier otra cosa devuelve `''` y la respuesta
+ * simplemente no lo trae (la página ya sabe vivir sin él). Es la misma forma
+ * que valida el navegador (`enlaceAlChat`): dos vallas para un valor que
+ * termina en un `href`.
+ */
+const NUMERO_PUBLICO = /^[1-9][0-9]{7,14}$/;
+
+export function numeroPublicoValido(valor: unknown): string {
+  return typeof valor === 'string' && NUMERO_PUBLICO.test(valor) ? valor : '';
+}
+
+/**
+ * El número público de la línea por la que entró la conversación de la ficha.
+ *
+ * Se lee por el `phoneNumberId` de la ficha, con el SDK Admin (`rutasWhatsApp`
+ * está cerrada a todo navegador). Y SOLO se acepta si la ruta es del MISMO
+ * comercio que la ficha: un número reasignado a otro comercio dentro de las 72
+ * horas no puede mostrarle al cliente el WhatsApp de otro negocio. De ese
+ * documento no sale ningún otro campo.
+ */
+async function numeroPublicoDeLaLinea(ficha: Ficha): Promise<string> {
+  if (!/^[0-9]{6,25}$/.test(ficha.phoneNumberId)) return '';
+  const ruta = await db().doc(`rutasWhatsApp/${ficha.phoneNumberId}`).get();
+  if (!ruta.exists || ruta.get('tenantId') !== ficha.tenantId) return '';
+  return numeroPublicoValido(ruta.get('numeroPublico'));
 }
 
 /**
@@ -714,7 +806,7 @@ export const catalogoPublico = onRequest(
     const ficha = await fichaVigente(id);
     if (!ficha) { respuesta.status(404).json({ error: 'enlace vencido' }); return; }
 
-    const [config, venta, marca, catalogo, fotos] = await Promise.all([
+    const [config, venta, marca, catalogo, fotos, whatsapp] = await Promise.all([
       db().doc(`tenants/${ficha.tenantId}/config/negocio`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/venta`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/marca`).get(),
@@ -735,6 +827,7 @@ export const catalogoPublico = onRequest(
       // byte de imagen. Sin esto, saber qué ítems tienen foto costaría bajarlas
       // todas para después tirarlas.
       db().collection(`tenants/${ficha.tenantId}/fotosCatalogo`).select().get(),
+      numeroPublicoDeLaLinea(ficha),
     ]);
     const conFoto = new Set(fotos.docs.map((d) => d.id));
 
@@ -771,6 +864,9 @@ export const catalogoPublico = onRequest(
         // pueda fallar— para el elemento que está más arriba de la página.
         logo: logoValido(marca.get('logo')) ? String(marca.get('logo')) : '',
         paleta: paletaValida(config.get('paleta')),
+        // El número público de la línea, o NADA: sin esa clave la página no
+        // ofrece «Volver al chat». Ver `numeroPublicoDeLaLinea`.
+        ...(whatsapp !== '' ? { whatsapp } : {}),
       },
       // Condiciones de entrega, si el comercio vende. Se muestran ANTES del
       // checkout: enterarse del costo de envío después de confirmar es la queja
@@ -929,6 +1025,8 @@ export const checkoutCatalogo = onRequest(
     const entrega = cuerpo['entrega'] === 'envio' ? 'envio' : 'retiro';
     const direccion = texto(cuerpo['direccion'], 200);
     const nota = texto(cuerpo['nota'], 300);
+    // Opcional. Una página vieja no la manda y el pedido sale igual que antes.
+    const referencia = referenciaDelPedido(cuerpo, entrega);
     if (entrega === 'envio' && direccion === '') {
       respuesta.status(400).json({ error: 'falta la direccion' }); return;
     }
@@ -1054,6 +1152,7 @@ export const checkoutCatalogo = onRequest(
       entrega,
       ...(direccion ? { direccion } : {}),
       ...(nota ? { nota } : {}),
+      ...(referencia ? { referencia } : {}),
       ...(descartados.length ? { descartados } : {}),
       estado: 'recibido',
       ventanaAbierta,
@@ -1122,6 +1221,8 @@ export const checkoutCatalogo = onRequest(
       tipo: 'carrito',
       pedidoId, conversacionId, telefono: ficha.telefono,
       items, total, moneda: monedaPedido, costoEnvio, entrega, direccion, nota,
+      // Solo si hay: sin referencia la carga firmada es idéntica a la de antes.
+      ...(referencia ? { referencia } : {}),
       descartados,
       ventanaAbierta,
       // Fuera de la ventana, el flujo NO puede mandar un mensaje libre. Se le

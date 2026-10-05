@@ -18,7 +18,10 @@ import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { closeSync, fstatSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { enlaceAlChat } from '../../../web/src/modulos/catalogo-web/publico/saneo.ts';
+import { Confirmacion, LIMITE_REFERENCIA, Pedido } from '../../../web/src/modulos/catalogo-web/publico/SitioCatalogo.tsx';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -592,5 +595,232 @@ describe('comprobar-origen-catalogo.sh: SITIO_PUBLICO no puede ser un origen de 
 
   it('sin el id del sitio del catálogo no hay con qué comparar: sale 2', () => {
     expect(corre('https://cat-sitio.web.app', { SITIO_CATALOGO: '' }).codigo).toBe(2);
+  });
+});
+
+// =============================================================================
+// VOLVER AL CHAT (Andres, 04/10/2026, Q'Taco): al confirmar el pedido el cliente
+// vuelve a la conversación de WhatsApp del negocio, y la pantalla final tiene un
+// botón «Volver al chat» por si el navegador bloquea la apertura automática.
+// =============================================================================
+const PUBLICO = ['web', 'src', 'modulos', 'catalogo-web', 'publico'] as const;
+const sitioFuente = () => leer(...PUBLICO, 'SitioCatalogo.tsx');
+/** Sin las líneas de comentario: los comentarios explican, no se muestran. */
+const sinComentarios = (t: string) => t.split('\n')
+  .filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n');
+
+describe('volver al chat: el enlace wa.me', () => {
+  it('un número válido (solo dígitos, con prefijo) da https://wa.me/<número> y NADA más, sin texto precargado', () => {
+    const f = enlaceAlChat;
+    expect(f('59100000031')).toBe('https://wa.me/59100000031');
+    expect(f('12345678')).toBe('https://wa.me/12345678');
+    expect(f('59100000031')).not.toContain('?');
+    expect(f('59100000031')).not.toContain('text=');
+  });
+
+  it('NEGANDO: ni inyección en el href ni formas raras: todo lo que no sea 8 a 15 dígitos da vacío', () => {
+    const f = enlaceAlChat;
+    for (const malo of [
+      '', ' ', '+59100000031', '591 0000 0031', '591-0000-0031', '0059100000031', '059100000031',
+      '1234567', '1234567890123456', '59100000031\n', ' 59100000031', '59100000031 ',
+      '59100000031/../x', '59100000031?text=hola', '59100000031#x', '59100000031@malo.test',
+      '59100000031"onclick="x', '59100000031<script>', 'javascript:alert(1)', 'https://malo.test',
+      '//malo.test', '５９１００００００３１', '5.9100000031e10',
+      null, undefined, 59100000031, {}, [], ['59100000031'], true,
+    ]) {
+      expect(f(malo), JSON.stringify(malo)).toBe('');
+    }
+  });
+
+  it('el href y la navegación solo reciben el valor que devuelve enlaceAlChat', () => {
+    const fuente = sinComentarios(sitioFuente());
+    expect(fuente).toContain('chat={enlaceAlChat(datos.negocio.whatsapp)}');
+    expect(fuente).toContain('href={chat}');
+    expect(fuente).toContain('window.location.assign(chat)');
+    // Ni un `wa.me` armado a mano en la página, ni otra navegación.
+    expect(fuente).not.toMatch(/wa\.me|api\.whatsapp\.com|whatsapp:\/\//);
+    expect(fuente).not.toMatch(/location\.(href|replace)\s*=|window\.open\(/);
+  });
+
+  it('la CSP del sitio público NO necesita cambios: el enlace es navegación, no origen de script ni de conexión', () => {
+    const csp = valorDe(catalogo as Sitio, '**', 'Content-Security-Policy');
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("connect-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("form-action 'none'");
+    // WhatsApp no aparece en ninguna directiva: abrir un enlace no la consulta.
+    expect(csp).not.toMatch(/wa\.me|whatsapp/i);
+  });
+});
+
+describe('volver al chat: la pantalla final', () => {
+  // `react` y `react-dom/server` viven en `web/node_modules`, no en el de admin/.
+  const desdeWeb = createRequire(join(ADMIN, 'web', 'package.json'));
+  const renderizar = (chat: string, siguiente: 'respuesta' | 'notificacion', descartados: string[] = []) => {
+    const servidor = desdeWeb('react-dom/server');
+    const React = desdeWeb('react');
+    const recibo = { ok: true, pedidoId: 'p1', total: 10, moneda: 'BOB', descartados, siguiente };
+    return servidor.renderToStaticMarkup(
+      React.createElement(Confirmacion, { recibo, negocio: 'Negocio de prueba', chat }));
+  };
+
+  it('con número: hay un botón grande «Volver al chat» que apunta a https://wa.me/<número>', () => {
+    const html = renderizar('https://wa.me/59100000031', 'respuesta');
+    expect(html).toContain('href="https://wa.me/59100000031"');
+    expect(html).toContain('Volver al chat');
+    expect(html).toContain('cat-confirmar');
+    expect(html).toContain('Listo, Negocio de prueba ya tiene tu pedido');
+    expect(html).toContain('Vuelve a WhatsApp');
+  });
+
+  it('con la ventana cerrada: dice «Respóndelo» y también ofrece el botón', () => {
+    const html = renderizar('https://wa.me/59100000031', 'notificacion');
+    expect(html).toContain('Respóndelo');
+    expect(html).toContain('Volver al chat');
+  });
+
+  it('NEGANDO: sin número usable no hay botón ni enlace (no se ofrece lo que no se cumple)', async () => {
+    for (const siguiente of ['respuesta', 'notificacion'] as const) {
+      const html = renderizar('', siguiente);
+      expect(html).not.toContain('Volver al chat');
+      expect(html).not.toContain('<a ');
+      expect(html).not.toContain('wa.me');
+    }
+  });
+});
+
+describe('volver al chat: lo que viaja del servidor al navegador', () => {
+  /** El objeto `negocio: { … }` de la respuesta de `catalogoPublico`. */
+  const bloqueNegocio = () => {
+    const f = sinComentarios(leer('functions', 'src', 'modulos', 'catalogo-web', 'catalogoWeb.ts'));
+    const desde = f.indexOf('negocio: {', f.indexOf('export const catalogoPublico'));
+    expect(desde).toBeGreaterThan(0);
+    return f.slice(desde, f.indexOf('entrega: {', desde));
+  };
+
+  it('NEGANDO: la respuesta pública del negocio no trae teléfonos de recepción, de avisos ni ids de Meta', () => {
+    const b = bloqueNegocio();
+    for (const prohibido of [
+      'numeroRecepcion', 'telefono', 'phoneNumberId', 'waPhoneNumberId', 'waWabaId', 'wabaId',
+      'token', 'secreto', 'recepcion', 'avisos', 'calendario',
+    ]) expect(b, prohibido).not.toMatch(new RegExp(prohibido, 'i'));
+  });
+
+  it('los campos de NegocioPublico del navegador son una lista cerrada; `whatsapp` es opcional', () => {
+    const t = sinComentarios(leer(...PUBLICO, 'tipos.ts'));
+    const cuerpo = /export interface NegocioPublico \{([\s\S]*?)\n\}/.exec(t)?.[1] ?? '';
+    const campos = [...cuerpo.matchAll(/^\s{2}(\w+)(\??):/gm)].map((m) => `${m[1]}${m[2]}`);
+    expect(campos.sort()).toEqual(
+      ['descripcion', 'direccion', 'logo', 'moneda', 'nombre', 'paleta', 'whatsapp?']);
+  });
+});
+
+describe('textos de cara al cliente: español de Bolivia, sin voseo', () => {
+  const VOSEO = [
+    'volvé', 'respondelo', 'podés', 'actualizá', 'separalos', 'mandalo', 'contame', 'fijate',
+    'mirá', 'tocá', 'elegí', 'escribí', 'pedí', 'probá', 'seguí', 'avisá', 'intentá', 'revisá',
+    'agregá', 'confirmá', 'esperá', 'decime', 'dale', 'querés', 'tenés', 'sabés', 'necesitás',
+    'vos',
+  ];
+
+  it('NEGANDO: ninguna forma de voseo en la página pública, fuera de los comentarios', () => {
+    for (const archivo of ['SitioCatalogo.tsx', 'saneo.ts', 'montar.tsx', 'entrada.tsx']) {
+      const texto = sinComentarios(leer(...PUBLICO, archivo)).toLowerCase();
+      for (const forma of VOSEO) {
+        expect(texto, `${archivo}: «${forma}»`).not.toMatch(new RegExp(`(^|[^a-záéíóúñ])${forma}([^a-záéíóúñ]|$)`));
+      }
+    }
+  });
+
+  it('los textos corregidos dicen lo que Andres pidió', () => {
+    const t = sinComentarios(sitioFuente());
+    for (const bueno of ['Vuelve a WhatsApp', 'Respóndelo', 'Puedes mandarlo igual',
+      'Actualiza la página', 'Sepáralos en dos pedidos', 'Volver al chat']) {
+      expect(t, bueno).toContain(bueno);
+    }
+  });
+});
+
+// =============================================================================
+// REFERENCIAS PARA LLEGAR Y AVISO DEL DELIVERY (Andres y Silvana, 04/10/2026,
+// Q'Taco): un campo opcional con envío, un aviso cuando la página no suma el
+// costo del delivery, y el ejemplo del cuadro de notas sin la referencia.
+// =============================================================================
+describe('pedido: referencias para llegar, aviso del delivery y ejemplo de la nota', () => {
+  const desdeWeb = createRequire(join(ADMIN, 'web', 'package.json'));
+  const AVISO = 'El delivery se paga aparte, al repartidor, al recibir tu pedido.';
+  type Entrega = {
+    aceptaRetiroEnLocal: boolean; aceptaDelivery: boolean;
+    costoDelivery: number | null; pedidoMinimo: number | null;
+  };
+  const ENVIO: Entrega = {
+    aceptaRetiroEnLocal: false, aceptaDelivery: true, costoDelivery: null, pedidoMinimo: null,
+  };
+  const pintar = (entrega: Partial<Entrega>) => {
+    const servidor = desdeWeb('react-dom/server');
+    const React = desdeWeb('react');
+    return servidor.renderToStaticMarkup(React.createElement(Pedido, {
+      ficha: 'f1', items: [], carrito: {}, moneda: 'BOB', total: 0,
+      entrega: { ...ENVIO, ...entrega },
+      alCambiar: () => undefined, alVolver: () => undefined, alConfirmar: () => undefined,
+    }));
+  };
+
+  it('con envío: aparece el campo opcional, de texto y con tope de 150', () => {
+    const html = pintar({});
+    expect(html).toContain('Referencias para llegar (opcional)');
+    expect(LIMITE_REFERENCIA).toBe(150);
+    expect(html).toMatch(/<input[^>]*type="text"[^>]*maxLength="150"|<input[^>]*maxLength="150"[^>]*type="text"/i);
+  });
+
+  it('la ayuda de la dirección pasa a «Calle, número y zona»', () => {
+    const html = pintar({});
+    expect(html).toContain('placeholder="Calle, número y zona"');
+    expect(html).not.toContain('alguna referencia');
+  });
+
+  it('NEGANDO: con retiro elegido no hay campo de referencias, ni dirección, ni aviso', () => {
+    const html = pintar({ aceptaRetiroEnLocal: true, aceptaDelivery: true });
+    expect(html).not.toContain('Referencias para llegar');
+    expect(html).not.toContain('¿A dónde lo llevamos?');
+    expect(html).not.toContain(AVISO);
+  });
+
+  it('el aviso sale solo cuando la página no suma costo de envío: null o 0', () => {
+    expect(pintar({ costoDelivery: null })).toContain(AVISO);
+    expect(pintar({ costoDelivery: 0 })).toContain(AVISO);
+  });
+
+  it('NEGANDO: con un costo de delivery mayor que cero el aviso no sale (el total ya lo suma)', () => {
+    for (const costo of [1, 5, 10.5]) {
+      const html = pintar({ costoDelivery: costo });
+      expect(html, String(costo)).not.toContain(AVISO);
+      expect(html).toContain('Referencias para llegar (opcional)');
+    }
+  });
+
+  it('con costo > 0 el total sigue sumando el envío (el aviso no cambia la cuenta)', () => {
+    expect(pintar({ costoDelivery: 7 })).toContain('Total Bs');
+  });
+
+  it('el cuadro de notas trae el ejemplo nuevo y ya no el del timbre', () => {
+    const html = pintar({});
+    expect(html).toContain('placeholder="Sin cebolla, tipo de carne, tipo de gaseosa…"');
+    expect(html).not.toContain('timbre');
+  });
+
+  it('el cuerpo del pedido manda `referencia` solo con envío y con texto, recortada', () => {
+    const t = sinComentarios(sitioFuente());
+    expect(t).toContain("...(modo === 'envio' && referencia.trim() ? { referencia: referencia.trim() } : {})");
+    // Ninguna otra forma de mandarla: sin el campo, el cuerpo es el de antes.
+    expect(t.match(/referencia:/g)?.length).toBe(1);
+  });
+
+  it('la CSP del sitio público no cambia: un input de texto no pide ningún origen', () => {
+    const csp = valorDe(catalogo as Sitio, '**', 'Content-Security-Policy');
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("connect-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("form-action 'none'");
   });
 });

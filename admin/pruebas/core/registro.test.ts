@@ -31,11 +31,10 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../web/src/core/lib/firebase', () => ({ db: {} }));
 
 import {
-  IDS_FLUJOS, IDS_MODULOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS, REGISTRO, carpetasDe, documentoDeFlujo, esFlujo,
-  esModulo, etiquetaDeCatalogo, flujosDeFicha, manifiestoDe, modulosDeFicha, modulosDeFlujos, pestanasDe, tieneModulo,
+  IDS_FLUJOS, IDS_MODULOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS, REGISTRO, carpetasDe, documentoDeCobro,
+  documentoDeFlujo, esFlujo, esModulo, etiquetaDeCatalogo, flujosDeFicha, manifiestoDe, modulosDeFicha, modulosDeFlujos, pestanasDe, tieneModulo,
   type FichaConCapacidades, type IdFlujo, type IdModulo, type Manifiesto, type Pestana,
 } from '../../functions/src/registro.ts';
-import { FLUJOS, esFlujo as esFlujoConsola, etiquetaCatalogo, flujosDe } from '../../web/src/central/lib/flujos.ts';
 import { VERTICALES_CONOCIDOS, documentoDeVertical } from '../../functions/src/core/prompt/prompt.ts';
 import { PLANES } from '../../functions/src/central/cuenta/planes.ts';
 import { zonaDeCodigo } from '../frontera/frontera.ts';
@@ -51,6 +50,74 @@ const MANIFIESTOS = REGISTRO as readonly Manifiesto[];
 const FLUJOS_HOY = Object.keys(PUENTE_DE_FLUJOS) as (keyof typeof PUENTE_DE_FLUJOS)[];
 const comunes = MODULOS_COMUNES_HOY as readonly IdModulo[];
 const ordenado = <T>(xs: Iterable<T>) => [...xs].sort();
+
+// ------------------------------------------------- la consola, congelada al 03/10
+/**
+ * H2b-0: lo que `web/src/central/lib/flujos.ts` declaraba el 03/10/2026, copiado
+ * LITERAL de `origin/main` (sin comentarios). Es la base contra la que se compara
+ * el registro: así `flujos.ts` puede convertirse en una fachada derivada de
+ * `registro.ts` sin que esta suite se rompa ni se la reescriba en cada PR de H2b.
+ * Mientras `flujos.ts` conserve sus literales, la sección 8 comprueba que siguen
+ * siendo esta fixture. No se edita: lo que el registro cambie a propósito se
+ * decide en un PR aparte, con la coordinadora.
+ */
+type PestanaDeConsola = { ruta: string; etiqueta: string; roles?: ('admin' | 'oper')[]; tambienPropietario?: boolean };
+const PESTANAS_DE_LA_CONSOLA_AL_03_10: Record<IdFlujo, {
+  nombre: string; pestanas: PestanaDeConsola[]; catalogo: string; documento: string;
+}> = {
+  agendamiento: {
+    nombre: 'Reservas y citas',
+    pestanas: [
+      { ruta: 'agenda', etiqueta: 'Agenda' },
+      { ruta: 'cobros', etiqueta: 'Cobros' },
+      { ruta: 'cobro', etiqueta: 'Configuración de QR' },
+    ],
+    catalogo: 'Servicios',
+    documento: 'agendamiento',
+  },
+  venta: {
+    nombre: 'Pedidos y cobro',
+    pestanas: [
+      { ruta: 'pedidos', etiqueta: 'Pedidos', roles: ['admin', 'oper'] },
+      { ruta: 'cobros', etiqueta: 'Cobros' },
+      { ruta: 'inventario', etiqueta: 'Inventario' },
+      { ruta: 'cobro', etiqueta: 'Configuración de QR' },
+    ],
+    catalogo: 'Productos',
+    documento: 'venta',
+  },
+  onboarding: {
+    nombre: 'Captación de clientes',
+    pestanas: [{ ruta: 'captacion', etiqueta: 'Captación', tambienPropietario: true }],
+    catalogo: 'Catálogo',
+    documento: 'onboarding',
+  },
+};
+/** Alias corto: la consola de hoy es la fixture. */
+const FLUJOS = PESTANAS_DE_LA_CONSOLA_AL_03_10;
+/** `esFlujo`, `flujosDe` y `etiquetaCatalogo` de la consola al 03/10, sobre la fixture. */
+const esFlujoConsola = (v: unknown): boolean =>
+  typeof v === 'string' && Object.prototype.hasOwnProperty.call(FLUJOS, v);
+const flujosDe = (ficha: { flujos?: unknown; vertical?: unknown } | undefined): string[] => {
+  if (!ficha) return [];
+  if (Array.isArray(ficha.flujos)) return ficha.flujos.filter(esFlujoConsola) as string[];
+  return esFlujoConsola(ficha.vertical) ? [ficha.vertical as string] : [];
+};
+const etiquetaCatalogo = (flujos: string[]): string => {
+  const nombres = new Set(flujos.map((f) => FLUJOS[f as IdFlujo].catalogo));
+  return nombres.size === 1 ? [...nombres][0] as string : 'Catálogo';
+};
+/** `documentoQueCobra` de `modulos/cobros/cobro.ts` (líneas 174-183 al 03/10), copiada LITERAL. */
+const documentoQueCobraHoy = (ficha: { get(campo: string): unknown }): 'venta' | 'agendamiento' | null => {
+  const lista = ficha.get('flujos');
+  const flujos = Array.isArray(lista) ? lista.map(String) : [String(ficha.get('vertical') ?? '')];
+  if (flujos.includes('venta')) return 'venta';
+  if (flujos.includes('agendamiento')) return 'agendamiento';
+  return null;
+};
+/** ¿El código importa `simbolo` POR SU NOMBRE de `registro`? (El alias `X as Y` no cuenta.) */
+const importaSimbolo = (codigo: string, simbolo: string) =>
+  new RegExp(`import\\s*(?:type\\s*)?\\{[^}]*\\b${simbolo}\\b[^}]*\\}\\s*from\\s*['"][^'"]*/registro(?:\\.[tj]s)?['"]`).test(codigo);
 
 // ------------------------------------------------------------ lectura de textos
 /**
@@ -82,6 +149,32 @@ function cuerpoDeFuncion(texto: string, nombre: string): string {
   const i = texto.indexOf(`function ${nombre}(`);
   if (i < 0) throw new Error(`No existe la función ${nombre} en las reglas`);
   return hastaLaLlave(texto, texto.indexOf('{', i)).cuerpo;
+}
+
+/**
+ * Los módulos que son SOLO de un flujo según el puente (ni comunes ni de otro flujo): lo que una capacidad de las
+ * reglas puede nombrar para decir «este flujo».
+ */
+const propiosDe = (f: IdFlujo): string[] => (PUENTE_DE_FLUJOS[f].modulos as readonly string[]).filter((m) =>
+  !(MODULOS_COMUNES_HOY as readonly string[]).includes(m)
+  && !FLUJOS_HOY.some((o) => o !== f && (PUENTE_DE_FLUJOS[o].modulos as readonly string[]).includes(m)));
+/**
+ * Las dos únicas formas que una capacidad (`tieneAgenda`, `tieneCobro`, `tieneOnboarding`) puede tener en las
+ * reglas, con el cuerpo ENTERO y nada más:
+ *   hoy:      `return tieneFlujo(tenantId, '<flujo>');`
+ *   derivada: `return tieneModulo(tenantId, '<módulo propio del flujo>');`   (la que enchufan los PR de H2b)
+ * Cualquier otro cuerpo (`return true;`, `flujosTenant(tenantId).size() > 0`) es una capacidad rota.
+ */
+const FORMA_LITERAL = /^\s*return tieneFlujo\(tenantId, '(\w+)'\);\s*$/;
+const FORMA_DERIVADA = /^\s*return tieneModulo\(tenantId, '([\w-]+)'\);\s*$/;
+const MODULO_EN_REGLAS = /\btieneModulo\(tenantId,\s*'([\w-]+)'\)/g;
+/** El flujo que abre una capacidad según su cuerpo en las reglas, o null si el cuerpo no es ninguna de las dos formas. */
+function flujoQueAbre(reglas: string, capacidad: string): IdFlujo | null {
+  const cuerpo = cuerpoDeFuncion(reglas, capacidad);
+  const literal = FORMA_LITERAL.exec(cuerpo);
+  if (literal) return esFlujo(literal[1]) ? literal[1] as IdFlujo : null;
+  const modulo = FORMA_DERIVADA.exec(cuerpo)?.[1];
+  return modulo ? FLUJOS_HOY.find((f) => propiosDe(f).includes(modulo)) ?? null : null;
 }
 
 /** La primera lista blanca de una validación: `soloCampos([…])`, `hasOnly([…])` o `clavesPermitidas = […]`. */
@@ -135,13 +228,19 @@ function bloqueDeColeccion(ruta: string): string | null {
 
 type Escritura = 'solo-servidor' | 'exige-capacidad' | 'sin-exigir';
 /** Qué exigen los `allow` de escritura de un bloque (sin los anidados). */
-function escrituraDe(cuerpo: string): Escritura {
+function escrituraDe(cuerpo: string, modulosPermitidos: readonly string[] = []): Escritura {
   const condiciones = [...sinAnidados(cuerpo).matchAll(/allow\s+([\w,\s]+?)\s*:\s*if\s+([\s\S]*?);/g)]
     .filter((m) => /create|update|delete|write/.test(m[1] as string))
     .map((m) => (m[2] as string).trim())
     .filter((c) => c !== 'false');
   if (condiciones.length === 0) return 'solo-servidor';
-  return condiciones.every((c) => /\btiene\w+\(tenantId\)/.test(c)) ? 'exige-capacidad' : 'sin-exigir';
+  /**
+   * `tieneModulo(tenantId, 'm')` solo cuenta si es UN TÉRMINO de la cadena de `&&` (ni dentro de un paréntesis ni
+   * con `||` al lado) y `m` es el módulo dueño de la colección o un módulo propio de su flujo.
+   */
+  const exigeModulo = (c: string) => [...c.matchAll(/(?:^|&&)\s*tieneModulo\(tenantId,\s*'([\w-]+)'\)\s*(?=&&|$)/g)]
+    .some((m) => modulosPermitidos.includes(m[1] as string));
+  return condiciones.every((c) => /\btiene\w+\(tenantId\)/.test(c) || exigeModulo(c)) ? 'exige-capacidad' : 'sin-exigir';
 }
 
 // ======================================================================= 1
@@ -335,7 +434,10 @@ describe('3. configuración: el registro contra las listas blancas de firestore.
     const ramas = REGLAS.split(`documento == '${nombre}'`).slice(1)
       .map((r) => r.split(/documento ==|;/)[0] as string);
     expect(ramas.length, `ninguna rama de la regla nombra ${documento}`).toBeGreaterThan(0);
-    const capacidades = new Set(ramas.flatMap((r) => [...r.matchAll(/\b(tiene\w+)\(tenantId\)/g)].map((m) => m[1])));
+    const capacidades = new Set(ramas.flatMap((r) => [
+      ...[...r.matchAll(/\b(tiene\w+)\(tenantId\)/g)].map((m) => m[1] as string),
+      ...[...r.matchAll(MODULO_EN_REGLAS)].map((m) => `tieneModulo:${m[1]}`),
+    ]));
     if (flujos.length === 0) {
       expect(DOCUMENTOS_SIN_CAPACIDAD_HOY, `${documento} no es de ningún flujo y la lista no lo dice`).toContain(documento);
       expect([...capacidades], `${documento} ya exige capacidad: sacarlo de DOCUMENTOS_SIN_CAPACIDAD_HOY`).toEqual([]);
@@ -343,8 +445,16 @@ describe('3. configuración: el registro contra las listas blancas de firestore.
     }
     expect(flujos.length, `${documento}: más de un flujo reúne a ${declarantes.join(', ')}`).toBe(1);
     const esperada = PUENTE_DE_FLUJOS[flujos[0]!].capacidadEnReglas;
-    for (const r of ramas) expect(r, `${documento}: una rama no exige ${esperada}`).toContain(`${esperada}(tenantId)`);
-    expect([...capacidades]).toEqual([esperada]);
+    const propios = propiosDe(flujos[0]!);
+    const modulosDe = (r: string) => [...r.matchAll(MODULO_EN_REGLAS)].map((m) => m[1] as string);
+    for (const r of ramas) {
+      expect(r.includes(`${esperada}(tenantId)`) || modulosDe(r).some((m) => propios.includes(m)),
+        `${documento}: una rama no exige ${esperada} ni tieneModulo de un módulo propio (${propios.join(', ')})`).toBe(true);
+    }
+    for (const c of capacidades) {
+      expect(c === esperada || (c.startsWith('tieneModulo:') && propios.includes(c.slice('tieneModulo:'.length))),
+        `${documento}: exige ${c}, que no es la capacidad del flujo`).toBe(true);
+    }
   });
 
   it('los campos que el módulo tiene en config/negocio están en su lista blanca', () => {
@@ -370,8 +480,10 @@ describe('3. configuración: el registro contra las listas blancas de firestore.
 describe('4. colecciones y almacenamiento: el registro contra las reglas', () => {
   /**
    * Colecciones de módulo cuya escritura HOY no exige la capacidad del flujo.
-   * Solo puede achicarse: si la regla empieza a exigirla, la prueba pide
-   * sacar la entrada.
+   * Solo puede achicarse, pero la prueba es de SUBCONJUNTO (H2b-0): una colección
+   * que la regla empieza a exigir (`tieneX(tenantId)` o `tieneModulo(tenantId, 'm')`)
+   * puede quedar en la lista sin que falle; lo que falla es una colección NUEVA sin
+   * exigir. El PR `H2b-cierre` devuelve el «exactamente» y obliga a sacar la entrada.
    */
   const ESCRITURA_SIN_EXIGIR_MODULO_HOY = [
     // Productos es común a todo comercio hoy; F2 agrega tieneModulo('productos').
@@ -385,14 +497,36 @@ describe('4. colecciones y almacenamiento: el registro contra las reglas', () =>
     'agenda',
   ];
   const colecciones = MANIFIESTOS.flatMap((m) => m.colecciones.map((c) => ({ modulo: m.modulo, c })));
+  /** `tieneModulo(tenantId, 'm')` vale para una colección si `m` es su módulo dueño o propio de un flujo que lo lleva. */
+  const modulosDeLaColeccion = (modulo: IdModulo): string[] => [modulo,
+    ...FLUJOS_HOY.filter((f) => (PUENTE_DE_FLUJOS[f].modulos as readonly string[]).includes(modulo)).flatMap(propiosDe)];
 
   it.each(colecciones)('$modulo: $c tiene su match en las reglas del tenant', ({ c }) => {
     expect(bloqueDeColeccion(c)).not.toBeNull();
   });
 
-  it('la lista «escritura sin exigir módulo» es exactamente la de hoy', () => {
-    const hoy = colecciones.filter(({ c }) => escrituraDe(bloqueDeColeccion(c) as string) === 'sin-exigir').map(({ c }) => c);
-    expect(ordenado(hoy)).toEqual(ordenado(ESCRITURA_SIN_EXIGIR_MODULO_HOY));
+  // TODO(H2b-cierre): el PR de cierre de H2b devuelve el «exactamente» de esta prueba. Mientras los PR de H2b
+  // enchufan `tieneModulo` en las reglas, una colección puede salir de la lista sin que cada PR edite esta suite.
+  // TODO(H2b-6): la forma derivada de las reglas `return tieneModulo(tenantId, 'm');` se acepta SIN comprobar que
+  // las reglas definan `function tieneModulo(`; el PR que la enchufe debe probar que existe y qué hace.
+  it('la lista «escritura sin exigir módulo» es un subconjunto de la de hoy (nada nuevo sin exigir)', () => {
+    const hoy = colecciones.filter(({ modulo, c }) => escrituraDe(bloqueDeColeccion(c) as string, modulosDeLaColeccion(modulo)) === 'sin-exigir').map(({ c }) => c);
+    for (const c of hoy) expect(ESCRITURA_SIN_EXIGIR_MODULO_HOY, `${c}: escritura sin exigir módulo que la lista no declara`).toContain(c);
+  });
+
+  it('escrituraDe: tieneModulo solo cuenta como término propio de `&&` y con un módulo de la colección', () => {
+    const bloque = (cond: string) => `allow create, update: if ${cond};`;
+    const funcionarios = ['agenda'];
+    expect(escrituraDe(bloque('esAdmin(tenantId) && tieneAgenda(tenantId)'), funcionarios)).toBe('exige-capacidad');
+    expect(escrituraDe(bloque("esAdmin(tenantId) && tieneModulo(tenantId, 'agenda') && valido()"), funcionarios)).toBe('exige-capacidad');
+    expect(escrituraDe(bloque("tieneModulo(tenantId, 'agenda')"), funcionarios)).toBe('exige-capacidad');
+    // h5: módulo ajeno
+    expect(escrituraDe(bloque("esAdmin(tenantId) && tieneModulo(tenantId, 'pedidos') && valido()"), funcionarios)).toBe('sin-exigir');
+    // h7: con `||`, dentro de un paréntesis o a la derecha de un `||`
+    expect(escrituraDe(bloque("esAdmin(tenantId) && (tieneModulo(tenantId, 'agenda') || true) && valido()"), funcionarios)).toBe('sin-exigir');
+    expect(escrituraDe(bloque("tieneModulo(tenantId, 'agenda') || esAdmin(tenantId)"), funcionarios)).toBe('sin-exigir');
+    expect(escrituraDe(bloque("esAdmin(tenantId) || tieneModulo(tenantId, 'agenda')"), funcionarios)).toBe('sin-exigir');
+    expect(escrituraDe(bloque("esAdmin(tenantId) && tieneModulo(tenantId, 'agenda')"), [])).toBe('sin-exigir');
   });
 
   it('las colecciones de la raíz tienen su match fuera del tenant', () => {
@@ -500,28 +634,129 @@ describe('7. Functions: el registro contra index.ts', () => {
 describe('8. las copias de la lista de flujos coinciden con el puente', () => {
   const claves = ordenado(FLUJOS_HOY);
   const literales = (texto: string, re: RegExp) => ordenado(new Set([...texto.matchAll(re)].map((m) => m[1] as string)));
-  const conjunto = (texto: string, nombre: string) => {
+  /** Los literales de `const <nombre> = new Set([...])`, o null si el literal ya no está. */
+  const conjuntoOpcional = (texto: string, nombre: string) => {
     const m = new RegExp(`const ${nombre} = new Set\\(\\[([^\\]]*)\\]\\)`).exec(texto);
-    if (!m) throw new Error(`sin ${nombre}`);
-    return ordenado([...(m[1] as string).matchAll(/'(\w+)'/g)].map((x) => x[1] as string));
+    return m ? ordenado([...(m[1] as string).matchAll(/'(\w+)'/g)].map((x) => x[1] as string)) : null;
+  };
+  /**
+   * Formas derivadas EXACTAS que una copia puede tener en lugar de su literal (H2b-0). Los símbolos se importan
+   * por su nombre (los imports con alias, `IDS_FLUJOS as F`, se rechazan a propósito: no se pueden anclar).
+   */
+  const DERIVADO_CONJUNTO = {
+    simbolos: ['IDS_FLUJOS'],
+    definicion: /^\s*new Set(?:<string>)?\(\s*IDS_FLUJOS\s*\)\s*$/,
+    usos: [/\bIDS_FLUJOS\.includes\(/, /\besFlujo\(/],
+    importes: ['IDS_FLUJOS', 'esFlujo'],
+    forma: '`new Set(IDS_FLUJOS)`',
+  };
+  const DERIVADO_DOCUMENTO = {
+    simbolos: ['IDS_FLUJOS', 'documentoDeFlujo'],
+    definicion: /^\s*Object\.fromEntries\(\s*IDS_FLUJOS\.map\(\((\w+)\) => \[\1, documentoDeFlujo\(\1\)\]\)\s*\)\s*$/,
+    usos: [/\bdocumentoDeFlujo\(/],
+    importes: ['documentoDeFlujo'],
+    forma: '`Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]))`',
+  };
+  /**
+   * Tolerante a los dos estados de la copia (H2b-0), pero sin hueco:
+   *  1. con el literal `const <X> = new Set([...])` (o el objeto `DOCUMENTO`): tiene que ser el del puente;
+   *  2. sin ese literal, y sin comentarios: la constante, si existe, tiene que ser EXACTAMENTE la forma derivada
+   *     (`new Set(IDS_FLUJOS)`; para DOCUMENTO, `Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]))`)
+   *     con sus símbolos importados por nombre de `registro`; si ya no existe, el archivo tiene que importar y
+   *     LLAMAR a `esFlujo(`, `IDS_FLUJOS.includes(` o `documentoDeFlujo(`.
+   * Cualquier otra forma de la constante (`new Set([...IDS_FLUJOS, 'x'])`, `.filter(...)`, `Object.freeze({...})`)
+   * FALLA: no se la trata como «sin literal» ni como derivada.
+   */
+  const copiaCoincide = (
+    texto: string, nombre: string, constante: string, esperado: unknown, leido: (t: string) => unknown,
+    derivado: typeof DERIVADO_CONJUNTO | typeof DERIVADO_DOCUMENTO,
+  ) => {
+    const codigo = sinComentarios(texto);
+    const literal = leido(codigo);
+    if (literal !== null) { expect(literal, `${nombre}: el literal ya no es el del puente`).toEqual(esperado); return; }
+    const definicion = new RegExp(`\\bconst\\s+${constante}\\b\\s*(?::[^=]+)?=([^;]*);`).exec(codigo);
+    if (definicion) {
+      expect(derivado.definicion.test(definicion[1] as string),
+        `${nombre}: ${constante} no es el literal del puente ni exactamente ${derivado.forma}`).toBe(true);
+      for (const x of derivado.simbolos) expect(importaSimbolo(codigo, x), `${nombre}: no importa ${x} de registro`).toBe(true);
+    } else {
+      expect(derivado.importes.some((x) => importaSimbolo(codigo, x)) && derivado.usos.some((u) => u.test(codigo)),
+        `${nombre}: sin literal ni constante, tiene que importar y llamar ${derivado.importes.join('/')}`).toBe(true);
+    }
   };
 
-  it('prompt.ts (VERTICALES_CONOCIDOS), flujos.ts (FLUJOS) y plataforma/tenants.ts (VERTICALES)', () => {
+  it('prompt.ts (VERTICALES_CONOCIDOS), la consola (FLUJOS) y plataforma/tenants.ts (VERTICALES)', () => {
     expect(ordenado(VERTICALES_CONOCIDOS)).toEqual(claves);
     expect(ordenado(Object.keys(FLUJOS))).toEqual(claves);
-    expect(conjunto(leer('admin/functions/src/plataforma/tenants.ts'), 'VERTICALES')).toEqual(claves);
+    copiaCoincide(leer('admin/functions/src/plataforma/tenants.ts'), 'tenants.ts VERTICALES', 'VERTICALES', claves,
+      (t) => conjuntoOpcional(t, 'VERTICALES'), DERIVADO_CONJUNTO);
   });
 
-  it('firestore.rules: los literales de tieneFlujo y la capacidad de cada flujo', () => {
-    expect(literales(REGLAS, /tieneFlujo\(tenantId, '(\w+)'\)/g)).toEqual(claves);
-    for (const f of FLUJOS_HOY) {
-      const cap = PUENTE_DE_FLUJOS[f].capacidadEnReglas;
-      expect(REGLAS, `${cap} no abre ${f}`).toMatch(
-        new RegExp(`function ${cap}\\(tenantId\\)\\s*\\{\\s*return tieneFlujo\\(tenantId, '${f}'\\);`));
+  it('copiaCoincide: las formas derivadas exactas pasan; todo lo demás FALLA (g1-g5, a2-a4, b3-b4)', () => {
+    const imp = (...x: string[]) => `import { ${x.join(', ')} } from '../registro.js';\n`;
+    const conj = (nombre: string, expr: string, ...simbolos: string[]) => `${imp(...simbolos)}const ${nombre} = ${expr};\n`;
+    const leerConjunto = (nombre: string) => (t: string) => conjuntoOpcional(t, nombre);
+    const leerDocumento = (t: string) => {
+      const doc = /const DOCUMENTO = \{([^}]*)\}/.exec(t);
+      return doc ? Object.fromEntries([...(doc[1] as string).matchAll(/(\w+):\s*'(\w+)'/g)].map((m) => [m[1], m[2]])) : null;
+    };
+    const esperadoDoc = Object.fromEntries(FLUJOS_HOY.map((f) => [f, PUENTE_DE_FLUJOS[f].documento]));
+    const conjunto = (nombre: string, texto: string) => () =>
+      copiaCoincide(texto, 'x', nombre, claves, leerConjunto(nombre), DERIVADO_CONJUNTO);
+    const documento = (texto: string) => () =>
+      copiaCoincide(texto, 'x', 'DOCUMENTO', esperadoDoc, leerDocumento, DERIVADO_DOCUMENTO);
+    // pasan
+    expect(conjunto('VERTICALES', conj('VERTICALES', 'new Set(IDS_FLUJOS)', 'IDS_FLUJOS'))).not.toThrow();
+    expect(conjunto('VERTICALES', conj('VERTICALES', 'new Set<string>(IDS_FLUJOS)', 'IDS_FLUJOS'))).not.toThrow();
+    expect(conjunto('FLUJOS_VALIDOS', `${imp('esFlujo')}if (!esFlujo(x)) throw 1;\n`)).not.toThrow();
+    expect(conjunto('FLUJOS_VALIDOS', `const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);`)).not.toThrow();
+    expect(documento(conj('DOCUMENTO', 'Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]))', 'IDS_FLUJOS', 'documentoDeFlujo'))).not.toThrow();
+    // fallan
+    const malas: [string, () => void][] = [
+      ['g1', conjunto('VERTICALES', conj('VERTICALES', "new Set<string>([...IDS_FLUJOS, 'x'])", 'IDS_FLUJOS'))],
+      ['g2', conjunto('VERTICALES', conj('VERTICALES', "new Set([...IDS_FLUJOS, 'x'])", 'IDS_FLUJOS'))],
+      ['g3', conjunto('VERTICALES', conj('VERTICALES', "new Set(IDS_FLUJOS.filter((f) => f !== 'onboarding'))", 'IDS_FLUJOS'))],
+      ['g4', documento(conj('DOCUMENTO', "Object.fromEntries(IDS_FLUJOS.map((f) => [f, 'captacion']))", 'IDS_FLUJOS', 'documentoDeFlujo'))],
+      ['g5', conjunto('FLUJOS_VALIDOS', conj('FLUJOS_VALIDOS', "new Set([...IDS_FLUJOS].concat('x'))", 'IDS_FLUJOS'))],
+      ['a2', conjunto('VERTICALES', "const VERTICALES = new Set<string>(['agendamiento', 'venta']);")],
+      ['a3', conjunto('VERTICALES', `${imp('esFlujo')}const VERTICALES = new Set<string>(['agendamiento', 'venta']);`)],
+      ['a4', conjunto('VERTICALES', "// import { IDS_FLUJOS } from '../registro.js';\nconst VERTICALES = new Set<string>(['agendamiento']);")],
+      ['b4', documento(`${imp('IDS_FLUJOS')}const DOCUMENTO = Object.freeze({ agendamiento: 'agendamiento', venta: 'venta', onboarding: 'captacion' });`)],
+      ['sin import', conjunto('VERTICALES', 'const VERTICALES = new Set(IDS_FLUJOS);')],
+      ['alias', conjunto('VERTICALES', "import { IDS_FLUJOS as F } from '../registro.js';\nconst VERTICALES = new Set(F);")],
+      ['importa y no llama', conjunto('FLUJOS_VALIDOS', `${imp('esFlujo')}`)],
+      ['sin constante y sin nada', conjunto('FLUJOS_VALIDOS', 'const otra = 1;')],
+    ];
+    for (const [id, f] of malas) expect(f, id).toThrow();
+  });
+
+  it('flujos.ts, literal o fachada, produce lo mismo que la fixture del 03/10; el nombre del puente es el de la consola', async () => {
+    for (const f of FLUJOS_HOY) expect(PUENTE_DE_FLUJOS[f].nombre, f).toBe(FLUJOS[f].nombre);
+    // SIEMPRE se compara: una fachada correcta produce el mismo objeto que la fixture.
+    const real = await import('../../web/src/central/lib/flujos.ts');
+    expect(real.FLUJOS).toEqual(FLUJOS);
+    for (const v of [...IDS_FLUJOS, 'interno', '', null, undefined, 3, 'toString']) expect(real.esFlujo(v), String(v)).toBe(esFlujoConsola(v));
+    for (const f of [{ flujos: ['venta', 'x'] }, { vertical: 'agendamiento' }, { flujos: 'venta' }, undefined]) {
+      expect(real.flujosDe(f)).toEqual(flujosDe(f));
+    }
+    for (const l of [['venta'], ['agendamiento'], ['venta', 'agendamiento'], ['onboarding'], []] as const) {
+      expect(real.etiquetaCatalogo([...l])).toBe(etiquetaCatalogo([...l]));
     }
   });
 
-  it('documento y etiqueta de catálogo: prompt.ts y flujos.ts contra el puente', () => {
+  it('firestore.rules: cada capacidad abre SU flujo, con el literal de hoy o con tieneModulo de un módulo propio', () => {
+    const cuerpos = FLUJOS_HOY.map((f) => cuerpoDeFuncion(REGLAS, PUENTE_DE_FLUJOS[f].capacidadEnReglas));
+    FLUJOS_HOY.forEach((f) => {
+      const cap = PUENTE_DE_FLUJOS[f].capacidadEnReglas;
+      expect(flujoQueAbre(REGLAS, cap),
+        `${cap} no abre ${f}: su cuerpo no es «return tieneFlujo(tenantId, '${f}');» ni «return tieneModulo(tenantId, '<módulo propio de ${f}>');»`).toBe(f);
+    });
+    const delTexto = literales(REGLAS, /tieneFlujo\(tenantId, '(\w+)'\)/g);
+    if (cuerpos.every((c) => FORMA_LITERAL.test(c))) expect(delTexto).toEqual(claves);
+    else for (const l of delTexto) expect(claves, `tieneFlujo con un flujo desconocido: ${l}`).toContain(l);
+  });
+
+  it('documento y etiqueta de catálogo: prompt.ts y la consola (fixture) contra el puente', () => {
     for (const f of FLUJOS_HOY) {
       expect(documentoDeVertical(f)).toBe(PUENTE_DE_FLUJOS[f].documento);
       expect(FLUJOS[f].documento).toBe(PUENTE_DE_FLUJOS[f].documento);
@@ -537,11 +772,12 @@ describe('8. las copias de la lista de flujos coinciden con el puente', () => {
   ])(
     '%s: FLUJOS_VALIDOS y DOCUMENTO', (nombre, leerScript) => {
       const texto = leerScript();
-      expect(conjunto(texto, 'FLUJOS_VALIDOS')).toEqual(claves);
-      const doc = /const DOCUMENTO = \{([^}]*)\}/.exec(texto);
-      expect(doc, `${nombre} sin DOCUMENTO`).not.toBeNull();
-      const pares = Object.fromEntries([...(doc![1] as string).matchAll(/(\w+):\s*'(\w+)'/g)].map((m) => [m[1], m[2]]));
-      expect(pares).toEqual(Object.fromEntries(FLUJOS_HOY.map((f) => [f, PUENTE_DE_FLUJOS[f].documento])));
+      copiaCoincide(texto, `${nombre} FLUJOS_VALIDOS`, 'FLUJOS_VALIDOS', claves, (t) => conjuntoOpcional(t, 'FLUJOS_VALIDOS'), DERIVADO_CONJUNTO);
+      const esperado = Object.fromEntries(FLUJOS_HOY.map((f) => [f, PUENTE_DE_FLUJOS[f].documento]));
+      copiaCoincide(texto, `${nombre} DOCUMENTO`, 'DOCUMENTO', esperado, (t) => {
+        const doc = /const DOCUMENTO = \{([^}]*)\}/.exec(t);
+        return doc ? Object.fromEntries([...(doc[1] as string).matchAll(/(\w+):\s*'(\w+)'/g)].map((m) => [m[1], m[2]])) : null;
+      }, DERIVADO_DOCUMENTO);
     });
 
   it('el puente solo nombra módulos del registro', () => {
@@ -560,9 +796,9 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
 
   /** Lo que las reglas de Firestore deciden por texto: la función `tieneX` abre el flujo que dice su cuerpo. */
   const flujoDeCapacidad = (cap: string) => {
-    const m = /return tieneFlujo\(tenantId, '(\w+)'\);/.exec(cuerpoDeFuncion(REGLAS, cap));
-    if (!m) throw new Error(`${cap} no delega en tieneFlujo`);
-    return m[1] as string;
+    const f = flujoQueAbre(REGLAS, cap);
+    if (!f) throw new Error(`${cap}: su cuerpo no es tieneFlujo(tenantId, '<flujo>') ni tieneModulo(tenantId, '<módulo propio>')`);
+    return f;
   };
   /** `flujo in get('flujos', [vertical])` de `flujosTenant`/`tieneFlujo`, sobre la ficha cruda. */
   const tieneFlujoEnReglas = (ficha: FichaConCapacidades, flujo: string) => {
@@ -740,6 +976,22 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
     expect(modulosDeFicha(undefined)).toEqual([]);
     expect(modulosDeFicha(null)).toEqual([]);
     expect(modulosDeFicha({})).toEqual(['productos', 'campanas']);
+  });
+
+  it.each(subconjuntos.map((s) => [nombre(s), s] as const))(
+    'flujos %s: documentoDeCobro coincide con documentoQueCobra de cobro.ts', (_n, s) => {
+      const ficha = { get: (campo: string) => (campo === 'flujos' ? s : undefined) };
+      expect(documentoDeCobro(modulosDeFlujos(s))).toBe(documentoQueCobraHoy(ficha));
+    });
+
+  it('documentoDeCobro: sin cobros no hay documento, y venta gana sobre agendamiento', () => {
+    expect(documentoDeCobro(['pedidos'])).toBeNull();
+    expect(documentoDeCobro(['agenda'])).toBeNull();
+    expect(documentoDeCobro([])).toBeNull();
+    expect(documentoDeCobro(['cobros'])).toBeNull();
+    expect(documentoDeCobro(['cobros', 'pedidos'])).toBe('venta');
+    expect(documentoDeCobro(['cobros', 'agenda'])).toBe('agendamiento');
+    expect(documentoDeCobro(['cobros', 'agenda', 'pedidos'])).toBe('venta');
   });
 
   it('registro.ts sigue sin `import` y las derivaciones no tocan nada del exterior', () => {
