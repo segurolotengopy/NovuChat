@@ -1898,27 +1898,40 @@ describe('pedido', () => {
     expect(cuerpos(sug).join('\n')).toMatch(/Queso Fundido/);
   });
 
-  it('delivery sin dirección → la pide (y el delivery no va en el QR); con los datos, sigue al resumen', () => {
+  it('delivery sin dirección → la pide, SOLO la dirección (la referencia es opcional); con la dirección sola, sigue al resumen', () => {
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
-    expect(cuerpos(r.resumen)[0]).toMatch(/Para el delivery necesito la dirección/);
-    expect(cuerpos(r.resumen)[0]).toContain('El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.');
+    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
+    expect(cuerpos(r.resumen)[0]).not.toContain('QR');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     expect(r.resumen.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
-    r.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: 'portón verde', nombre: '' });
-    const siguiente = r.c.escribe('Calle Falsa 123, portón verde');
-    ver('delivery: datos', siguiente);
+    // Con la dirección y SIN referencia ni nombre: directo al resumen (la referencia ya no se pide).
+    r.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: '', nombre: '' });
+    const siguiente = r.c.escribe('Calle Falsa 123');
+    ver('delivery: dirección sola', siguiente);
     expect(cuerpos(siguiente).join('\n')).toContain('Entrega: delivery a Calle Falsa 123');
     expect(siguiente.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(cuerpos(siguiente).join('\n')).not.toMatch(/referencia|\(\)/);
+    // Con la referencia opcional, el resumen la muestra.
+    const conRef = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
+    conRef.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: 'portón verde', nombre: '' });
+    expect(cuerpos(conRef.c.escribe('Calle Falsa 123, portón verde')).join('\n')).toContain('Entrega: delivery a Calle Falsa 123 (portón verde)');
+    // Una dirección inválida («calle») se sigue pidiendo.
+    const mala = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
+    mala.w.estado.extraccion = EX([], { entrega: '', direccion: 'calle', referencia: '', nombre: '' });
+    const t = mala.c.escribe('calle');
+    expect(cuerpos(t)[0]).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
+    expect(estadoDe(mala.w.mundo)['paso']).toBe('pedido_datos');
   });
 
-  it('una ubicación compartida cuenta como la dirección (decisión de la integración): falta la referencia, que se pide, y no se confirma nada', () => {
+  it('una ubicación compartida cuenta como la dirección: va directo al resumen (sin pedir referencia ni nombre), y sin confirmar nada', () => {
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
     const t = r.c.ubicacion();
-    expect(cuerpos(t).join('\n')).toMatch(/Para el delivery necesito una referencia para llegar/);
-    expect(cuerpos(t).join('\n')).not.toMatch(/dirección exacta/);
-    expect(t.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
+    expect(cuerpos(t).join('\n')).toContain('Entrega: delivery a ubicación compartida');
+    expect(cuerpos(t).join('\n')).not.toMatch(/necesito/);
+    expect(t.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
     expect(t.avisos).toHaveLength(0);
-    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
   });
 
   it('fuera de horario → «Por ahora no estamos tomando pedidos», sin carrito y sin llamar al modelo; con el horario abierto, sí', () => {
@@ -4904,7 +4917,7 @@ describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger;
     const c = con(w, CLIENTE, 'Carlos');
     c.escribe('hola');
     c.toca('m|pedido', 'Hacer un pedido');
-    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery', direccion: 'Calle Falsa 123' });
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery' });
     const t = c.escribe('quiero 4 tacos de birria con delivery a Calle Falsa 123');
     return { w, c, t };
   }
@@ -5206,7 +5219,7 @@ describe('M1/M2. «dejarlo como estaba» solo con formas cerradas y sin trabar e
   /** Un pedido NUEVO a medias (delivery sin referencia ni nombre) con el pedido anterior todavía guardado. */
   function nuevoADelivery() {
     const r = trasCambiar();
-    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery', direccion: 'Calle Sucre 12' });
+    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery' });
     r.c.escribe('quiero 2 tacos de birria con delivery a Calle Sucre 12');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     expect(estadoDe(r.w.mundo)['carritoAnterior']).not.toBeNull();
@@ -5331,7 +5344,7 @@ describe('N2. un «no» seguido del verbo dejar es un rechazo, nunca «volver al
 
   it.each(RECHAZOS)('estricto («%s» con un pedido nuevo en curso): NO vuelve al anterior ni pregunta; sigue su camino al modelo', (dicho) => {
     const r = trasCambiar();
-    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery', direccion: 'Calle Sucre 12' });
+    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery' });
     r.c.escribe('quiero 2 tacos de birria con delivery a Calle Sucre 12');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     r.w.estado.extraccion = EX([], { entrega: '' });

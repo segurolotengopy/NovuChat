@@ -123,6 +123,8 @@ const monedaTxt = /^(bob|bs\.?)?$/i.test(String(cfg.moneda || '').trim()) ? 'Bs'
 const pedidosOn = cfg.pedidosActivo === true;
 const reservasOn = cfg.reservasActivo === true;
 const notas = [];
+// El nombre de perfil de WhatsApp: el de este turno o, en el turno del carrito del catálogo web (que no lo trae), el último visto (`en.nombrePerfil`).
+const perfil = String(t.nombrePerfil || '').trim() ? t.nombrePerfil : (typeof en.nombrePerfil === 'string' ? en.nombrePerfil : '');
 
 let mensajes = [];
 let condicionados = null;
@@ -133,6 +135,8 @@ let anotarReserva = false;
 let ruta = String(d.accion || '');
 
 despachar();
+// Se guarda el último nombre de perfil visto (solo de un turno de WhatsApp) para el turno del carrito web, que no lo trae.
+if (String(t.nombrePerfil || '').trim()) en.nombrePerfil = delCliente(t.nombrePerfil, 60);
 if (d.accion === 'carta') notaDelPedidoGuardado();
 // Al volver a un paso de pedido el carrito guardado deja de estar «guardado»: ya se retomó.
 if (en.paso.indexOf('pedido') === 0) en.carritoGuardado = 0;
@@ -750,17 +754,17 @@ function siguientePasoPedido() {
     ] }];
   }
   if (en.entrega.entrega === 'delivery') {
-    const faltan = pdFaltanEntrega(en.entrega, t.nombrePerfil);
+    const faltan = pdFaltanEntrega(en.entrega, perfil);
     if (faltan.length) {
       en.paso = 'pedido_datos';
       return [texto(pdTextoFaltanEntrega(faltan))];
     }
   }
-  if (!en.entrega.nombre) en.entrega.nombre = vmLinea(t.nombrePerfil, 60);
+  if (!en.entrega.nombre) en.entrega.nombre = vmLinea(perfil, 60);
   en.paso = 'pedido_confirmar';
   en.carritoAnterior = null; // ya hay un pedido nuevo: el de antes de «Cambiar algo» quedó reemplazado
   en.preguntoDejar = false;
-  return [{ tipo: 'botones', cuerpo: pdResumen(en.carrito, en.entrega, { moneda: monedaTxt, nombrePerfil: t.nombrePerfil, maxDetalle: 3000 }), botones: [
+  return [{ tipo: 'botones', cuerpo: pdResumen(en.carrito, en.entrega, { moneda: monedaTxt, nombrePerfil: perfil, maxDetalle: 3000 }), botones: [
     { id: vmIdDeBoton('p', 'confirmar'), title: 'Confirmar pedido' },
     { id: vmIdDeBoton('p', 'cambiar'), title: 'Cambiar algo' },
   ] }];
@@ -825,9 +829,12 @@ function aExtraerPedido() {
     return derivar('el modelo no devolvió un pedido legible');
   }
   const x = pdValidarExtraccion(j);
-  if (x.quiereHablar === true) return derivar('pidió hablar con una persona');
   const lineas = Array.isArray(x.lineas) ? x.lineas : [];
   const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
+  // El modelo no asignó el texto a ningún campo: con el delivery a medias lo toma el CÓDIGO (la dirección que falta o, ya dada la dirección, la referencia
+  // opcional), SIN depender del modelo: ni se pierde ni se repite la pregunta ni se deriva («Déjale al portero», «Donde dije»). Una petición explícita de persona no se toma.
+  if (!lineas.length && !datosEntrega && adoptarTextoLibre()) return;
+  if (x.quiereHablar === true) return derivar('pidió hablar con una persona');
   if (!lineas.length && !datosEntrega) {
     // Dos extracciones seguidas sin nada que tomar: se pasa con el local.
     en.vacias += 1;
@@ -855,6 +862,34 @@ function aExtraerPedido() {
   mostrarPedido();
 }
 
+// ¿El texto pide EXPLÍCITAMENTE a una persona o atención? (lo que NO se toma como dato de entrega).
+function pideUnaPersonaElTexto() {
+  return /\b(hablar con|conversar con|persona|personas|humano|humana|encargad[oa]|asesor|asesora|atencion|llamen|llamenme|llamame|llamar|gerente|duen[oa]|administrador)\b/.test(vmNorm(d.texto));
+}
+
+// Con el delivery a medias y un texto libre sin líneas ni campos: si falta la dirección, el texto con letras o dígitos ES la dirección (si no alcanza para
+// una dirección válida, se vuelve a pedir: «Plan del turno» no inventa nada); con la dirección ya dada y sin referencia, el texto es la referencia (opcional,
+// saneada, ≤150). Nunca: una pregunta, un enlace, una cortesía o negación suelta («ok», «gracias», «no»: siguen al resumen porque el dato ya no es obligatorio),
+// ni una petición explícita de persona. `false` si no se tomó nada.
+function adoptarTextoLibre() {
+  if (en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length) return false;
+  const crudo = String(d.texto || '');
+  const n = vmNorm(crudo);
+  if (!n || !/[\p{L}\p{N}]/u.test(crudo) || pideUnaPersonaElTexto()) return false;
+  if (/[?¿]/.test(crudo) || /https?:|www\./i.test(crudo) || /^(no|si|gracias|muchas|ok|okey|listo|hola|buenas|buenos|dale|ya|bueno|nada|menu)\b/.test(n)) return false;
+  if (pdFaltanEntrega(en.entrega, perfil).length) {
+    en.entrega.direccion = delCliente(crudo, 160);
+    ruta = 'boton:direccion_del_texto';
+    mostrarPedido();
+    return true;
+  }
+  if (en.entrega.referencia || !/\p{L}{3}/u.test(crudo)) return false;
+  en.entrega.referencia = delCliente(crudo, 150);
+  ruta = 'boton:referencia_del_texto';
+  mostrarPedido();
+  return true;
+}
+
 // El pedido a guardar y a avisar: los campos del código (nunca un precio del modelo).
 // La huella del carrito (ids, cantidades, notas Y la modalidad de entrega): si el cliente lo cambia despues de llegar de la pagina (otra cantidad,
 // un producto de mas, una bebida quitada por delivery, o retiro por delivery), ya no es el pedido que escribio el checkout y deja de usar su
@@ -867,7 +902,7 @@ function huellaDelCarrito() {
 function armarPedido() {
   const total = pdTotal(en.carrito);
   if (!(total > 0)) return null;
-  let nuevo = pdNuevoPedido(t.from, t.nombrePerfil, en.carrito, en.entrega, total, monedaTxt, ahora, ancla) || {};
+  let nuevo = pdNuevoPedido(t.from, perfil, en.carrito, en.entrega, total, monedaTxt, ahora, ancla) || {};
   if (!nuevo.pedidoId) return null;
   // Un pedido que llego de la pagina y sigue intacto conserva el `cat_…` del checkout; el codigo sale de ESE id (estable al reconfirmar).
   const web = en.pedidoWeb;
@@ -883,7 +918,7 @@ function armarPedido() {
   return Object.assign({}, nuevo, {
     lineas: pdLineasAviso(en.carrito),
     total: total, modalidad: en.entrega.entrega, moneda: monedaTxt,
-    nombre: en.entrega.nombre || vmLinea(t.nombrePerfil, 60), direccion: delivery ? en.entrega.direccion : '', coordenadas: coordenadas,
+    nombre: en.entrega.nombre || vmLinea(perfil, 60), direccion: delivery ? en.entrega.direccion : '', coordenadas: coordenadas,
     notaPedido: en.entrega.notaPedido || '', // la nota del carrito del catalogo web (texto del cliente, ya saneado)
     referencia: delivery ? en.entrega.referencia : '',
     from: t.from, nombrePerfil: t.nombrePerfil,
@@ -912,7 +947,7 @@ function confirmarPedido() {
   quitarSinDelivery();
   if (cambio) return mostrarPedido();
   const completo = en.pendiente.length === 0 && en.carrito.length > 0 && en.entrega.entrega
-    && !(en.entrega.entrega === 'delivery' && pdFaltanEntrega(en.entrega, t.nombrePerfil).length);
+    && !(en.entrega.entrega === 'delivery' && pdFaltanEntrega(en.entrega, perfil).length);
   if (!completo) return mostrarPedido();
   const ped = armarPedido();
   if (!ped) {
@@ -1284,6 +1319,13 @@ function aCarrito() {
   irA('pedido');
   en.entrega = Object.assign(entregaVacia(), { direccion: entregaPrevia.direccion, referencia: entregaPrevia.referencia, nombre: entregaPrevia.nombre });
   if (entregaPrevia.ubicacion) en.entrega.ubicacion = entregaPrevia.ubicacion;
+  // Si el carrito trae dirección, se reemplaza el PAR dirección + referencia: la referencia de antes NO se hereda (era de otra dirección); la
+  // referencia es opcional y solo la manda la página nueva (`carrito.referencia`).
+  if (c.entrega === 'envio' && String(c.direccion || '').trim()) {
+    en.entrega.direccion = delCliente(c.direccion, 160);
+    en.entrega.referencia = delCliente(c.referencia, 150);
+    delete en.entrega.ubicacion;
+  }
 
   const carta = cartaDelNegocio();
   const lineas = [];
