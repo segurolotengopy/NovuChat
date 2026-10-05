@@ -49,6 +49,15 @@ export interface NegocioPublico {
   logo: string;
   /** Una de las cinco de `web/src/central/lib/paletas.ts`. Nunca un color suelto. */
   paleta: string;
+  /**
+   * EL NÚMERO PÚBLICO DE LA LÍNEA DEL NEGOCIO, solo dígitos con prefijo de país
+   * (`591…`), para armar `https://wa.me/<número>` y devolver al cliente a SU
+   * conversación. Es opcional A PROPÓSITO: un servidor desplegado a otra
+   * versión puede no mandarlo, y la página sigue funcionando sin el botón.
+   * Nunca viaja otro teléfono (ni el de recepción, ni el de avisos).
+   * `enlaceAlChat` (saneo.ts) lo valida antes de usarlo.
+   */
+  whatsapp?: string;
 }
 
 /** Mismos nombres que `/config/venta`: un solo vocabulario de punta a punta. */

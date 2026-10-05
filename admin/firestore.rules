@@ -2384,12 +2384,19 @@ service cloud.firestore {
     // de validar la firma HMAC. Que un comercio pudiera leerla le diría con qué
     // números operan los demás.
     //
-    // Documento: { tenantId, flujo, wabaId, estado }
+    // Documento: { tenantId, flujo, wabaId, estado, titularidad, asignadoEn,
+    // asignadoPor } y, escritas por otras piezas, propiedades de la LÍNEA:
+    // aliasSecreto, numeroPublico, webhookCarrito.
     // =========================================================================
     match /rutasWhatsApp/{phoneNumberId} {
       allow get, list: if esPropietario();
-      // La escribe únicamente la Function `asignarNumero`, que además garantiza
-      // que un mismo phone_number_id no apunte nunca a dos comercios.
+      // Ningún navegador escribe este documento; lo escriben solo el SDK Admin
+      // (que se salta estas reglas): la Function `asignarNumero` (con merge, para
+      // no borrar las propiedades de la línea al reasignarla al mismo comercio, y
+      // además garantiza que un mismo phone_number_id no apunte nunca a dos
+      // comercios), `liberarNumero` (borra el documento entero), `asignarEjes`
+      // (la titularidad), `fijarWebhookCarrito` y los scripts de operador
+      // (`asignar-numero`, `fijar-numero-publico`, `fijar-webhook-carrito`).
       allow create, update, delete: if false;
     }
 
