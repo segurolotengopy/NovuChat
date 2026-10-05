@@ -131,7 +131,7 @@ export class ErrorDeUso extends Error {
 }
 
 /** El reloj congelado: `new Date()` y `Date.now()` dan siempre `ms` (los Code de n8n mantienen una fecha fija por turno). */
-function relojFijo(ms) {
+export function relojFijo(ms) {
   return class extends Date {
     constructor(...a) { if (a.length === 0) super(ms); else super(...a); }
     static now() { return ms; }
@@ -294,7 +294,7 @@ export function textoDeEnvio(payload) {
   return JSON.stringify(payload);
 }
 
-function crearMundo({ flujo: original, dobles, ahoraMs: ahoraInicial, configBase }) {
+export function crearMundo({ flujo: original, dobles, ahoraMs: ahoraInicial, configBase }) {
   const flujo = clonar(original);
   const nodos = new Map(flujo.nodes.map((n) => [n.name, n]));
   for (const [desde, salidas] of Object.entries(flujo.connections)) {
@@ -523,20 +523,25 @@ function crearMundo({ flujo: original, dobles, ahoraMs: ahoraInicial, configBase
     return salidas;
   }
 
-  function entradaDelFlujo() {
+  function entradaDelFlujo(via) {
+    // `via` (opcional, lo usa la bateria de Venta minima, que tiene dos Webhooks): el disparador que se pide por su nombre.
+    if (via !== undefined) {
+      if (!nodos.has(via)) throw new Error(`la entrada «${via}» no existe en el flujo`);
+      return via;
+    }
     const reciben = new Set();
     for (const s of Object.values(flujo.connections)) for (const ds of s.main ?? []) for (const d of ds ?? []) reciben.add(d.node);
     const raices = Object.entries(flujo.connections).filter(([desde, s]) => !reciben.has(desde) && (s.main ?? []).some((d) => (d ?? []).length > 0)).map(([d]) => d);
-    const conocida = ['WhatsApp Trigger', 'Entrada de prueba'].find((c) => raices.includes(c));
+    const conocida = ['WhatsApp Trigger', 'Entrada de prueba', 'Entrega del receptor'].find((c) => raices.includes(c));
     if (!conocida) throw new Error(`no se sabe cuál es la entrada del flujo (raíces: ${raices.join(', ') || 'ninguna'})`);
     return conocida;
   }
 
   /** Un turno: una entrada de WhatsApp (el `value` de Meta) por el disparador. Un fallo de nodo queda en `fallo` y el turno termina ahí. */
-  async function turno(entrada, avanzarMin = turnos > 0 ? 1 : 0) {
+  async function turno(entrada, avanzarMin = turnos > 0 ? 1 : 0, via0 = undefined) {
     ahoraMs += avanzarMin * 60_000;
     turnos++;
-    const via = entradaDelFlujo();
+    const via = entradaDelFlujo(via0);
     refs = {};
     const orden = [];
     const porNodo = {};
@@ -569,18 +574,18 @@ function crearMundo({ flujo: original, dobles, ahoraMs: ahoraInicial, configBase
 }
 
 // ------------------------------------------------------------------------------------------------------- el modelo
-const textoDeGemini = (r) => {
+export const textoDeGemini = (r) => {
   const partes = r && typeof r === 'object' && Array.isArray(r.candidates) ? r.candidates[0]?.content?.parts : null;
   return Array.isArray(partes) ? partes.map((p) => (p && typeof p.text === 'string' ? p.text : '')).join('') : '';
 };
-const objetoDelTexto = (t) => {
+export const objetoDelTexto = (t) => {
   const s = String(t ?? '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   if (!s) return null;
   try { const v = JSON.parse(s); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; } catch { return null; }
 };
 
 /** La respuesta real: `generateContent` por AI Studio (clave en el encabezado) o por Vertex (token). Reintenta como el nodo (2 intentos). */
-async function llamarGemini({ cuerpo, urlDelNodo, credencial, opciones, deps, nodo }) {
+export async function llamarGemini({ cuerpo, urlDelNodo, credencial, opciones, deps, nodo }) {
   const modelo = /\/models\/([A-Za-z0-9._-]+):generateContent$/.exec(urlDelNodo)?.[1];
   if (!modelo) throw new Error('La URL de «Llamar al modelo» no es de generateContent: no se llama.');
   let url; let cabeceras;

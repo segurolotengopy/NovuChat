@@ -1,0 +1,130 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "A",
+  "casos": [
+    {
+      "id": "A9",
+      "titulo": "Delivery pendiente de datos: «quiero cambiar a recoger» pasa a recojo y muestra el resumen",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [{"id": "cat_birria3", "cantidad": 2}, {"id": "cat_gaseosas", "cantidad": 1}],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {"mensajes": 1, "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery"}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "quiero cambiar a recoger"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["recojo en el local", "2 × Tacos de Birria"],
+            "textosNo": ["referencia para llegar"],
+            "titulos": ["Confirmar pedido"],
+            "botones": ["p|confirmar"],
+            "estado": {"paso": "pedido_confirmar", "entrega.entrega": "recojo", "carrito": {"longitud": 2}},
+            "efectos": {"derivacion": false, "aviso": false, "modelo": false}
+          }
+        }
+      ],
+      "variantes": {"turno": 1, "frases": ["quiero cambiar a recoger", "prefiero recoger"]}
+    },
+    {
+      "id": "A10",
+      "titulo": "«no quiero delivery», «delivery no», «sin delivery» NO cambian la entrega",
+      "estadoPrevio": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "envio", "direccion": ""},
+          "esperado": {"mensajes": 1, "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery"}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "no quiero delivery"},
+          "seco": {"lineas": []},
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": ["recojo en el local"],
+            "titulosNo": ["Confirmar pedido"],
+            "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery", "entrega.modalidad": "delivery"},
+            "igualAntes": ["entrega.entrega", "carrito"],
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {"turno": 1, "frases": ["no quiero delivery", "delivery no", "sin delivery"]}
+    },
+    {
+      "id": "A11",
+      "titulo": "Una dirección o una instrucción de entrega con «retiro»/«recoger» NO cambia a recojo",
+      "estadoPrevio": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "envio", "direccion": ""},
+          "esperado": {"mensajes": 1, "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery"}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "Barrio El Retiro, calle 3 casa 5"},
+          "seco": {"lineas": [], "direccion": "Barrio El Retiro, calle 3 casa 5"},
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": ["recojo en el local"],
+            "titulosNo": ["Confirmar pedido"],
+            "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery", "entrega.modalidad": "delivery"},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {"texto": "Barrio El Retiro, calle 3 casa 5", "seco": {"lineas": [], "direccion": "Barrio El Retiro, calle 3 casa 5"}},
+          {"texto": "Av. Busch frente al retiro de jubilados", "seco": {"lineas": [], "direccion": "Av. Busch frente al retiro de jubilados"}},
+          {"texto": "ella va a recoger en portería", "seco": {"lineas": [], "referencia": "ella va a recoger en portería"}}
+        ]
+      }
+    },
+    {
+      "id": "A12",
+      "titulo": "Carrito con Gaseosas y Horchata por delivery: NO se quitan las bebidas (areasSinDelivery vacío)",
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [{"id": "cat_pastor3", "cantidad": 2}, {"id": "cat_horchata", "cantidad": 1}, {"id": "cat_gaseosas", "cantidad": 2}],
+            "entrega": "envio",
+            "direccion": "Calle Ejemplo 5"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": ["no enviamos", "quit[eé]"],
+            "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery", "carrito": {"longitud": 3}},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        },
+        {
+          "cliente": {"tipo": "texto", "texto": "quiero cambiar a recoger"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["recojo en el local", "Horchata", "Gaseosas"],
+            "estado": {"paso": "pedido_confirmar", "entrega.entrega": "recojo", "carrito": {"longitud": 3}}
+          }
+        },
+        {
+          "cliente": {"tipo": "texto", "texto": "quiero delivery"},
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": ["no enviamos", "quit[eé]"],
+            "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery", "carrito": {"longitud": 3}},
+            "efectos": {"derivacion": false, "aviso": false, "modelo": false}
+          }
+        }
+      ]
+    }
+  ]
+}

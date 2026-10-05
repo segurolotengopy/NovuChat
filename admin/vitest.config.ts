@@ -44,6 +44,7 @@ export const SUITES_PURAS = [
   'pruebas/captacion-minima-lib.test.ts',
   'pruebas/captacion-minima-flujo.test.ts',
   'pruebas/captacion-minima-bateria.test.ts',
+  'pruebas/venta-minima-bateria.test.ts',
   'pruebas/venta-minima-comun.test.ts',
   'pruebas/venta-minima-pedido.test.ts',
   'pruebas/venta-minima-reserva.test.ts',

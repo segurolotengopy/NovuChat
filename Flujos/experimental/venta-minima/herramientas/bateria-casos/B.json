@@ -1,0 +1,120 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "B",
+  "casos": [
+    {
+      "id": "B1",
+      "titulo": "«Cambiar algo» explica que se elige de nuevo desde la carta y cómo dejarlo como estaba, en un solo mensaje",
+      "estadoPrevio": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"},
+          "esperado": {"mensajes": 1, "titulos": ["Cambiar algo"], "estado": {"paso": "pedido_confirmar"}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["vuelve a elegir todo desde la carta", "hoy tienes:.*Tacos de Birria", "Dejarlo como estaba"],
+            "titulos": ["Dejarlo como estaba"],
+            "botones": ["p|dejar"],
+            "estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}},
+            "efectos": {"derivacion": false, "aviso": false, "modelo": false}
+          }
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "titulo": "Tras «Cambiar algo», «dejarlo como estaba» (y sus formas) devuelve el resumen guardado con botones",
+      "estadoPrevio": [
+        {"cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
+          "esperado": {"estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "dejarlo como estaba"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Tu pedido", "2 × Tacos de Birria"],
+            "titulos": ["Confirmar pedido"],
+            "botones": ["p|confirmar", "p|cambiar"],
+            "estado": {"paso": "pedido_confirmar", "carrito": {"longitud": 1}},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {"turno": 1, "frases": ["dejarlo como estaba", "déjalo como estaba", "dejalo asi", "dejarlo como estava"]}
+    },
+    {
+      "id": "B3",
+      "titulo": "Tras «Cambiar algo», un audio o una frase torpe de «déjalo como estaba» devuelve el resumen, sin derivar ni saludar",
+      "estadoPrevio": [
+        {"cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
+          "esperado": {"estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "audio", "transcripcion": "No déjalo como estaba no más."},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Tu pedido", "2 × Tacos de Birria"],
+            "textosNo": ["hola", "bienvenid", "asistente virtual"],
+            "titulos": ["Confirmar pedido"],
+            "estado": {"paso": "pedido_confirmar", "carrito": {"longitud": 1}},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [{"texto": "No déjalo como estaba no más.", "audio": true}, {"texto": "te dije que lo deses como estaba", "audio": false}]
+      }
+    },
+    {
+      "id": "B5",
+      "titulo": "«no dejes como estaba» y sus negaciones NO restauran: se pregunta UNA vez con botones",
+      "estadoPrevio": [
+        {"cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
+          "esperado": {"estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "no dejes como estaba"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta\\?"],
+            "textosNo": ["Tu pedido:"],
+            "titulos": ["Dejarlo como estaba", "Elegir otra vez"],
+            "botones": ["p|dejar", "m|pedido"],
+            "titulosNo": ["Confirmar pedido"],
+            "estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}, "preguntoDejar": true},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "no dejes como estaba",
+          "ya no dejes como estaba",
+          "mejor no dejes como estaba",
+          "no la dejes como estaba",
+          "no lo dejen como estaba",
+          "no dejarlo como estaba"
+        ]
+      }
+    }
+  ]
+}
