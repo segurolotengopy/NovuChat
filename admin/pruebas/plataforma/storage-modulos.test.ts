@@ -72,6 +72,14 @@ const tenants: Tenant[] = [
   { id: 'vacia', ficha: { ...base }, captacion: false },
   { id: 'mx', ficha: { ...base, flujos: ['onboarding'], modulos: 'captacion' }, captacion: true },
   { id: 'mx2', ficha: { ...base, flujos: ['venta'], modulos: 'captacion' }, captacion: false },
+  // `modulos` que no es lista (mapa, null, número) se trata como ausente: manda `flujos`.
+  { id: 'mmapa', ficha: { ...base, flujos: ['onboarding'], modulos: { captacion: true } }, captacion: true },
+  { id: 'mmapa2', ficha: { ...base, flujos: ['venta'], modulos: { captacion: true } }, captacion: false },
+  { id: 'mnull', ficha: { ...base, flujos: ['onboarding'], modulos: null }, captacion: true },
+  { id: 'mnum', ficha: { ...base, flujos: ['onboarding'], modulos: 5 }, captacion: true },
+  { id: 'mnum2', ficha: { ...base, flujos: ['venta'], modulos: 5 }, captacion: false },
+  // Lista SIN captación aunque `flujos` diga onboarding: manda la lista.
+  { id: 'mlista', ficha: { ...base, flujos: ['onboarding'], modulos: ['agenda', 'pedidos'] }, captacion: false },
   { id: 'ma', ficha: { ...base, flujos: FLUJOS_TODOS, modulos: ['agenda'] }, captacion: false },
   { id: 'mv', ficha: { ...base, flujos: FLUJOS_TODOS, modulos: [] }, captacion: false },
   { id: 'mp', ficha: { ...base, flujos: ['venta'], modulos: ['captacion'] }, captacion: true },
@@ -162,11 +170,11 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules por módulo: archivo de planes',
 
   const mutaciones: Array<[string, (r: string) => string]> = [
     ['tieneOnboardingEn ignora la lista `modulos` (solo lee flujos)',
-      (r) => r.replace("ficha.data.get('modulos', null) is list", "ficha.data.get('modulos', null) is string")],
+      (r) => r.replaceAll('m is list', 'false')],
     ['tieneOnboardingEn abre con cualquier lista (`modulos` presente basta)',
-      (r) => r.replace("'captacion' in ficha.data.modulos", 'true')],
+      (r) => r.replace("'captacion' in m", 'true')],
     ['tieneOnboardingEn devuelve true para toda ficha',
-      (r) => r.replace('return ficha != null\n        && (ficha.data.get(\'modulos\'', 'return true || ficha != null\n        && (ficha.data.get(\'modulos\'')],
+      (r) => r.replace('return ficha != null\n        && ((m is list', 'return true || ficha != null\n        && ((m is list')],
   ];
   for (const [nombre, cambio] of mutaciones) {
     it(`mutación: ${nombre}`, async () => {

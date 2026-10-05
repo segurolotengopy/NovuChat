@@ -155,10 +155,12 @@ service firebase.storage {
     // flujos como hasta hoy: MANDA LA LISTA `flujos`, y una ficha sin lista se
     // lee como `[vertical]`.
     function tieneOnboardingEn(ficha) {
+      // `m` se lee UNA vez y la rama que no corresponde no se evalúa: sin `let`, el
+      // emulador de Storage avisaba «Function not found: in» con `modulos` en cadena.
+      let m = ficha != null ? ficha.data.get('modulos', null) : null;
       return ficha != null
-        && (ficha.data.get('modulos', null) is list
-            ? 'captacion' in ficha.data.modulos
-            : 'onboarding' in ficha.data.get('flujos', [ficha.data.get('vertical', '')]));
+        && ((m is list && 'captacion' in m)
+            || (!(m is list) && 'onboarding' in ficha.data.get('flujos', [ficha.data.get('vertical', '')])));
     }
 
     // Misma lógica que `tenantOperativo`: solo 'activo' habilita escritura.
