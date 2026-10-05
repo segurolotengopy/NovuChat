@@ -82,3 +82,16 @@ export const COLUMNAS: { titulo: string; valor: (l: LineaDeCobros) => number }[]
   { titulo: 'Vencidos', valor: (l) => l.vencidos },
   { titulo: 'Tardíos', valor: (l) => l.tardios },
 ];
+
+/**
+ * ¿El comercio cobra con su QR real? Mismo criterio que el servidor
+ * (`cotejoVenta.ts`): `config/venta.cobroReal` encendido y con ficha y código.
+ * En simulado el cotejo responde 409 y los contadores (QR enviados, vencidos,
+ * tardíos, cancelados) no hablan de clientes que no pagaron: no se pintan.
+ */
+export function cobroRealActivo(venta: unknown): boolean {
+  const c = (venta as { cobroReal?: Record<string, unknown> } | undefined)?.cobroReal;
+  if (!c || typeof c !== 'object') return false;
+  const hay = (v: unknown) => typeof v === 'string' && v !== '';
+  return c['activo'] === true && hay(c['ficha']) && hay(c['cargaUtil']);
+}

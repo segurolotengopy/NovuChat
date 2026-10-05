@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, documentId, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, documentId, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../core/lib/firebase';
-import { COLUMNAS, lineasDeCobros, mesLegible, ultimosMesesDeCobro } from './contadoresDeCobro';
+import { COLUMNAS, cobroRealActivo, lineasDeCobros, mesLegible, ultimosMesesDeCobro } from './contadoresDeCobro';
 
 /**
  * CONTADORES DE COBRO — solo números, una línea por mes.
@@ -20,18 +20,35 @@ export function ContadoresDeCobro({ tenantId }: { tenantId: string }) {
   const [fallo, setFallo] = useState(false);
   const meses = useMemo(() => ultimosMesesDeCobro(6), []);
 
+  // Lectura única, no en vivo: el documento del mes en curso cambia con cada
+  // mensaje y los contadores no necesitan estar al segundo.
+  const [real, setReal] = useState<boolean | null>(null);
   useEffect(() => {
     if (!tenantId) return;
-    return onSnapshot(
-      query(collection(db, 'tenants', tenantId, 'metricas'), where(documentId(), 'in', meses)),
-      (s) => { setFallo(false); setPeriodos(s.docs.map((d) => ({ id: d.id, ...d.data() }))); },
-      () => { setPeriodos([]); setFallo(true); },
-    );
+    let vivo = true;
+    void (async () => {
+      try {
+        const [m, v] = await Promise.all([
+          getDocs(query(collection(db, 'tenants', tenantId, 'metricas'), where(documentId(), 'in', meses))),
+          getDoc(doc(db, 'tenants', tenantId, 'config', 'venta')),
+        ]);
+        if (!vivo) return;
+        setPeriodos(m.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setReal(cobroRealActivo(v.data()));
+        setFallo(false);
+      } catch {
+        if (vivo) { setPeriodos([]); setFallo(true); }
+      }
+    })();
+    return () => { vivo = false; };
   }, [tenantId, meses]);
 
   const lineas = lineasDeCobros(periodos);
   if (fallo) return <p role="alert">No se pudieron leer los contadores de comprobantes.</p>;
-  if (lineas.length === 0) return null;
+  if (lineas.length === 0 || real === null) return null;
+  if (!real) {
+    return <p className="ayuda">Cobro simulado: los comprobantes no se cotejan.</p>;
+  }
   const mesEnCurso = ultimosMesesDeCobro(1)[0];
 
   return (
@@ -53,7 +70,7 @@ export function ContadoresDeCobro({ tenantId }: { tenantId: string }) {
         </table>
       </div>
       {lineas.some((l) => l.periodo === mesEnCurso && l.porConfirmar > 0) && (
-        <p><span className="tag tag-aviso">Este mes hay comprobantes aproximados o en revisión</span></p>
+        <p><span className="tag tag-aviso">Este mes hubo comprobantes aproximados o en revisión</span></p>
       )}
       <p className="ayuda tarjeta-pie">
         Cifras del mes: cada comprobante rechazado se cuenta, y un cobro puede

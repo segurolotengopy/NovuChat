@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { COLUMNAS, lineasDeCobros, mesLegible, ultimosMesesDeCobro } from '../../../web/src/modulos/cobros/contadoresDeCobro.ts';
+import { COLUMNAS, cobroRealActivo, lineasDeCobros, mesLegible, ultimosMesesDeCobro } from '../../../web/src/modulos/cobros/contadoresDeCobro.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const carpeta = join(aqui, '../../../web/src/modulos/cobros');
@@ -64,7 +64,7 @@ describe('la pantalla de contadores', () => {
   });
 
   it('devuelve null cuando no hay líneas y avisa si la lectura falla', () => {
-    expect(texto).toMatch(/lineas\.length === 0\) return null/);
+    expect(texto).toMatch(/lineas\.length === 0 \|\| real === null\) return null/);
     expect(texto).toMatch(/role="alert"/);
     expect(texto).toMatch(/overflowX: 'auto'/);
   });
@@ -94,5 +94,25 @@ describe('columnas y meses', () => {
   it('el mes se lee legible', () => {
     expect(mesLegible('2026-10')).toBe('octubre 2026');
     expect(mesLegible('raro')).toBe('raro');
+  });
+});
+
+describe('solo con cobro real (prohibición 3)', () => {
+  it('encendido y con ficha y código: sí; apagado, ausente o ilegible: no', () => {
+    expect(cobroRealActivo({ cobroReal: { activo: true, ficha: 'f', cargaUtil: 'c' } })).toBe(true);
+    expect(cobroRealActivo({ cobroReal: { activo: false, ficha: 'f', cargaUtil: 'c' } })).toBe(false);
+    expect(cobroRealActivo({ cobroReal: { activo: true, ficha: '', cargaUtil: 'c' } })).toBe(false);
+    expect(cobroRealActivo({ cobroReal: { activo: 'true', ficha: 'f', cargaUtil: 'c' } })).toBe(false);
+    expect(cobroRealActivo({})).toBe(false);
+    expect(cobroRealActivo(undefined)).toBe(false);
+    expect(cobroRealActivo('raro')).toBe(false);
+  });
+
+  it('la pantalla lee config/venta, usa lectura única y dice «simulado» si no es real', () => {
+    const f = readFileSync(join(carpeta, 'ContadoresDeCobro.tsx'), 'utf8');
+    expect(f).toMatch(/'config', 'venta'/);
+    expect(f).toMatch(/Cobro simulado: los comprobantes no se cotejan/);
+    expect(f).not.toMatch(/onSnapshot/);
+    expect(f).toMatch(/Este mes hubo/);
   });
 });
