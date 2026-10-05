@@ -499,28 +499,13 @@
       "variantes": {
         "turno": 1,
         "frases": [
-          "a media cuadra de la calle Foton",
-          {
-            "texto": "Donde dije",
-            "seco": {
-              "lineas": [],
-              "quiereHablar": true
-            },
-            "esperado": {
-              "textos": [
-                "Entrega: delivery a calle 1 numerro 2 Irpavi \\(Donde dije\\)"
-              ],
-              "estado": {
-                "entrega.referencia": "Donde dije"
-              }
-            }
-          }
+          "a media cuadra de la calle Foton"
         ]
       }
     },
     {
       "id": "A11",
-      "titulo": "Delivery pendiente de datos: una dirección o instrucción con «retiro»/«recoger» (por el modelo o por el código) es la dirección y sigue al resumen en delivery",
+      "titulo": "Delivery pendiente de datos: una dirección con «retiro» (por el modelo o por el código) es la dirección y sigue al resumen en delivery («ella va a recoger en portería» ya NO es una dirección: ver FB2 y R1)",
       "estadoPrevio": [
         {
           "cliente": {
@@ -625,20 +610,6 @@
               ],
               "estado": {
                 "entrega.direccion": "Av. Busch esquina retiro de jubilados"
-              }
-            }
-          },
-          {
-            "texto": "ella va a recoger en portería",
-            "seco": {
-              "lineas": []
-            },
-            "esperado": {
-              "textos": [
-                "Entrega: delivery a ella va a recoger en portería"
-              ],
-              "estado": {
-                "entrega.direccion": "ella va a recoger en portería"
               }
             }
           }
@@ -813,6 +784,153 @@
           }
         }
       ]
+    },
+    {
+      "id": "A14",
+      "titulo": "Cliente con nombre de perfil y carrito de delivery SIN dirección: pide SOLO la dirección (sin referencia ni frase del QR)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n"
+            ],
+            "textosNo": [
+              "referencia",
+              "nombre de quien",
+              "no va en el QR",
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "A4b",
+      "titulo": "Dirección pendiente y el modelo devuelve líneas vacías: «A media cuadra del gas» y «Déjale al portero» el código las pasa a REFERENCIA y se vuelve a pedir la dirección (no se toman como dirección)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "A media cuadra del gas"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "textosNo": [
+              "Confirmar pedido",
+              "Esto prefiero",
+              "no va en el QR"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              },
+              "entrega.referencia": "A media cuadra del gas"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "A media cuadra del gas",
+          {
+            "texto": "Déjale al portero",
+            "esperado": {
+              "estado": {
+                "entrega.referencia": "Déjale al portero"
+              }
+            }
+          }
+        ]
+      }
     }
   ]
 }

@@ -37,20 +37,28 @@ const RUTA_FLUJO = join(CARPETA, 'venta-minima.qtaco.json');
  * «cero fallos» y fija, con un control negativo, que fallan: se ponen en rojo cuando llegue lo que esperan y entonces el caso pasa a `A.json`.
  * `D-reserva-confirmada.json` (D5 a D8) pasa contra la rama de RESERVA CONFIRMADA (PR #437, head 90334306) y falla contra main (todavía dice «solicitud» y deriva).
  */
-const ARCHIVOS_DE_RAMA = ['A-delivery-opcional.json', 'A-pendiente-de-rama.json', 'D-reserva-confirmada.json', 'A-seguridad-delivery-2.json'];
 /**
- * Los casos de esos archivos que PASAN contra main (main no toma texto libre como dato: M1p y L1 derivan igual, M2p no guarda nada, y M1refp no duplica la
- * referencia como dirección). Solo protegen a la rama de delivery opcional: contra su head 542d5f7e M1p, M2p y L1 pasan y M1refp FALLA (ver su nota).
+ * ¿El flujo armado ya trae la RESERVA CONFIRMADA (#437)? Se sabe por la marca que su aviso al local lleva. Con ella, `D-reserva-confirmada.json` son casos normales (deben
+ * pasar); sin ella (una base anterior a #437) son casos de rama y fallan. Así la misma suite sirve antes y después de que la rama llegue a main.
  */
-const PASAN_EN_MAIN_DE_RAMA = ['L1', 'M1p', 'M1refp', 'M2p'];
+const RESERVA_EN_EL_FLUJO = readFileSync(RUTA_FLUJO, 'utf8').includes('VARIAS RESERVAS HOY DE ESTE NÚMERO');
+const ARCHIVOS_DE_RAMA = [
+  'A-delivery-opcional.json', 'A-pendiente-de-rama.json', 'A-seguridad-delivery-2.json', 'A-seguridad-delivery-3.json',
+  ...(RESERVA_EN_EL_FLUJO ? [] : ['D-reserva-confirmada.json']),
+];
+/**
+ * Los casos de esos archivos que PASAN contra main (main no toma texto libre como dato: M1p y L1 derivan igual, M2p, M2bP y FPnp no guardan nada, y M1refp no
+ * duplica la referencia como dirección). Solo protegen a la rama de delivery opcional (contra su head 0c4bf930 también pasan).
+ */
+const PASAN_EN_MAIN_DE_RAMA = ['FPnp', 'L1', 'M1p', 'M1refp', 'M2bP', 'M2p'];
 const idsDeRama = (): string[] => ARCHIVOS_DE_RAMA.flatMap((f) => ((JSON.parse(readFileSync(join(CARPETA_CASOS, f), 'utf8')) as J)['casos'] as J[]).map((c) => String(c['id'])));
 /**
  * Los casos de SEGURIDAD del texto libre (la cartera, 05/10/2026): el código no debe tomar como dirección ni como referencia lo que no lo es. Fallan contra la rama de
- * delivery opcional en f065863b y deben pasar con su head nuevo. Contra main S1, S2 y S3 fallan (main pide referencia y nombre, y no muestra la carta ahí); S2b y S2c
+ * delivery opcional en f065863b y deben pasar con su head nuevo. Contra main S1 y S3 fallan (main pide referencia y nombre); S2 (sin «dame la carta», que pasó a S2d), S2b y S2c
  * (un número suelto dicho dos veces) PASAN: main nunca lo toma como dirección y a la segunda vez pasa con el local. Esos dos solo protegen a la rama.
  */
 const ARCHIVO_SEGURIDAD = 'A-seguridad-texto-libre.json';
-const PASAN_EN_MAIN_DE_SEGURIDAD = ['S2b', 'S2c'];
+const PASAN_EN_MAIN_DE_SEGURIDAD = ['S2', 'S2b', 'S2c'];
 const idsDeSeguridad = (): string[] => ((JSON.parse(readFileSync(join(CARPETA_CASOS, ARCHIVO_SEGURIDAD), 'utf8')) as J)['casos'] as J[]).map((c) => String(c['id']));
 /** Los casos que HOY fallan contra main (los de rama y los de seguridad que main no cumple). */
 const idsQueFallanEnMain = (): string[] => [...idsDeRama().filter((x) => !PASAN_EN_MAIN_DE_RAMA.includes(x)), ...idsDeSeguridad().filter((x) => !PASAN_EN_MAIN_DE_SEGURIDAD.includes(x))];
@@ -137,16 +145,16 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     // A10d es la variante de A10 con el delivery pendiente (ahí «no quiero delivery» SÍ pasa a recojo). El lote 3 es el de delivery opcional (A11 se redefinió con él).
     const lote1 = ['A9', 'A10', 'A10d', 'A12', 'B1', 'B2', 'B3', 'B5'];
     const lote2 = ['B6', 'B7', 'B8', 'B9', 'C7', 'C8', 'C10', 'D1', 'D2', 'D3', 'D4', 'D9', 'E2', 'E3', 'E5', 'E7', 'F2', 'F3', 'F4'];
-    const lote3 = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A11', 'A13', 'A14', 'A15'];
+    const lote3 = ['A1', 'A2', 'A3', 'A4', 'A4b', 'A5', 'A6', 'A6b', 'A7', 'A8', 'A11', 'A13', 'A14', 'A15']; // A7, A8 y A6b esperan otra rama o decisión
+    const lote7 = ['R1r', 'R1p', 'M2bR', 'M2bP', 'FPnr', 'FPnp', 'FPdr', 'FPdp', 'M2bX', 'S2d']; // seguridad del delivery, 3.ª ronda (M2bX y S2d fallan hoy)
     const lote4 = ['S1', 'S2', 'S2b', 'S2c', 'S3']; // seguridad del texto libre
     const lote5 = ['D5', 'D5b', 'D6', 'D6b', 'D6d', 'D7', 'D7b', 'D7c', 'D8']; // reserva confirmada (rama #437); D8c, su control, ya pasa en main y vive en D.json
-    const lote6 = ['M1r', 'M1p', 'M1ref', 'M2r', 'M2p', 'L1', 'FB1', 'FB2', 'SV2', 'SV2b']; // seguridad del delivery, 2.ª ronda: pasan contra 542d5f7e
-    const lote6x = ['M1s', 'M1sp', 'FB3', 'M1refp']; // los que HOY fallan también contra 542d5f7e (ver A-pendiente-de-rama.json)
+    const lote6 = ['M1r', 'M1p', 'M1ref', 'M1s', 'M1sp', 'M1refp', 'M2r', 'M2p', 'L1', 'FB1', 'FB2', 'SV2', 'SV2b']; // seguridad del delivery, 2.ª ronda
     const control = ['D8c'];
     const { casos, global: g } = casosDeLaCarpeta();
     const ids = casos.map((c) => String(c['id']));
-    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote6x, ...control].sort());
-    expect([...idsDeRama()].sort(), 'los casos de rama son los de los lotes 3, 5 y 6').toEqual([...lote3, ...lote5, ...lote6, ...lote6x].sort());
+    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote7, ...control].sort());
+    expect([...idsDeRama()].sort(), 'los casos de rama son los de los lotes 3, 6 y 7 (y el 5 mientras el flujo no traiga la reserva confirmada)').toEqual([...lote3, ...lote6, ...lote7, ...(RESERVA_EN_EL_FLUJO ? [] : lote5)].sort());
     expect(idsDeSeguridad().sort(), 'los de seguridad son exactamente los del lote 4').toEqual([...lote4].sort());
     const pendientes = ((JSON.parse(readFileSync(join(CARPETA_CASOS, 'pendientes.json'), 'utf8')) as J)['pendientes'] as J[]).map((p) => String(p['id']));
     const grilla: string[] = [];
@@ -236,7 +244,7 @@ describe('lote 3 (delivery y entrega): los casos de la rama FALLAN contra main (
     expect(String(a7.por)).toMatch(/persona|direcci/);
   });
 
-  it('A14 falla por la referencia: la pregunta de la dirección menciona una referencia y el escenario dice que NUNCA se pide en el chat', async () => {
+  it('A14 falla contra main por la referencia: la pregunta de la dirección la pide y el escenario dice que NUNCA se pide en el chat (la rama ya no la pide)', async () => {
     const s = await correr(mundo(), ['--seco', '--json', '--casos', 'A14']);
     const a14 = json(s).casos.find((c: J) => c.id === 'A14') as J;
     expect(a14.ok).toBe(false);
@@ -244,11 +252,11 @@ describe('lote 3 (delivery y entrega): los casos de la rama FALLAN contra main (
   });
 
   // ---- seguridad del texto libre (A-seguridad-texto-libre.json)
-  it('seguridad: contra main S1, S2 y S3 fallan (pasan con el head nuevo de la rama) y S2b y S2c pasan (main nunca toma un número suelto como dirección)', async () => {
+  it('seguridad: contra main S1 y S3 fallan (pasan con el head de la rama) y S2, S2b y S2c pasan (main nunca toma texto libre ni un número suelto como dirección)', async () => {
     const s = await correr(mundo(), ['--seco', '--json', '--casos', idsDeSeguridad().join(',')]);
     const r = json(s);
     const estado = Object.fromEntries(r.casos.map((c: J) => [c.id, c.ok]));
-    expect(estado).toEqual({ S1: false, S2: false, S2b: true, S2c: true, S3: false });
+    expect(estado).toEqual({ S1: false, S2: true, S2b: true, S2c: true, S3: false });
   });
 
   it('seguridad: el texto libre que NO es un dato (órdenes, ayuda, consultas, carta, comprobante, números sueltos) se mide con invariantes de estado, no con frases', () => {
@@ -548,7 +556,8 @@ describe('E8, el negativo global: ninguna frase prohibida en lo que el cliente r
     expect([...new Set(v.map((x) => x['frase']))]).toEqual(['\\bellos\\b']);
     // A7 se suma desde el lote 3: «quiero que me manden» deriva hoy con el texto genérico («para hablar con ellos»), el defecto que espera la rama funcional.
     // S2b, S2c y S3 se suman con el lote 4 por lo mismo: la segunda vez sin líneas (o la tercera, en S3) main pasa con el local con el texto genérico.
-    expect([...new Set(v.map((x) => x['caso']))].sort()).toEqual(['A7', 'B9', 'C10', 'C7', 'E2', 'E7', 'L1', 'M1p', 'S2b', 'S2c', 'S3', 'SV2']);
+    expect([...new Set(v.map((x) => x['caso']))].sort()).toEqual(['A7', 'B9', 'C10', 'C7', ...(RESERVA_EN_EL_FLUJO ? ['D6d'] : []), 'E2', 'E7', 'L1', 'M1p', 'M2bP', 'S2b', 'S2c', 'S3', 'SV2']);
+    // M2bP se suma con la 3.ª ronda («cuánto es el delivery» deriva); D6d, cuando el flujo trae la reserva confirmada (su derivación genérica también dice «ellos»).
     // L1, M1p y SV2 (seguridad del delivery, 2.ª ronda) también derivan con el texto genérico, por lo mismo.
     // Los textos de respaldo (solo si Meta rechaza el interactivo) además dicen «Escríbeles aquí»: aviso, no fallo.
     const latentes = json(s).negativoGlobal.latentes as J[];

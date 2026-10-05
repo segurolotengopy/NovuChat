@@ -1,0 +1,769 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "R",
+  "nota": "Seguridad del delivery, 3.ª ronda (la cartera, 05/10/2026; head final de la rama de delivery opcional, PR #435): recojo propio (R1), intención ajena ampliada (M2b) y falsos positivos de ayuda (FP). Pasan contra 0c4bf930; contra main fallan o pasan según el caso (la suite fija cuáles).",
+  "casos": [
+    {
+      "id": "R1r",
+      "titulo": "Resumen de delivery dado y el modelo devuelve entrega «recojo»: «voy a recoger el pedido», «mejor lo retiro yo en el local» y «el lo recoge» PASAN A RECOJO (resumen de recojo); «ella va a recoger en portería» (otra persona recoge) sigue en DELIVERY",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "voy a recoger el pedido"
+          },
+          "seco": {
+            "lineas": [],
+            "entrega": "recojo"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: recojo en el local"
+            ],
+            "textosNo": [
+              "Esto prefiero",
+              "necesito"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "entrega.modalidad": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "voy a recoger el pedido",
+          "mejor lo retiro yo en el local",
+          "el lo recoge",
+          {
+            "texto": "ella va a recoger en portería",
+            "seco": {
+              "lineas": [],
+              "entrega": "recojo"
+            },
+            "esperado": {
+              "textos": [
+                "Entrega: delivery a Av\\. Banzer 1234"
+              ],
+              "estado": {
+                "paso": "pedido_confirmar",
+                "entrega.entrega": "delivery",
+                "entrega.modalidad": "delivery"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "R1p",
+      "titulo": "Delivery pendiente de dirección y el modelo devuelve entrega «recojo»: «voy a recoger el pedido», «mejor lo retiro yo en el local» y «el lo recoge» PASAN A RECOJO (resumen de recojo); «ella va a recoger en portería» (otra persona recoge) sigue en DELIVERY",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "voy a recoger el pedido"
+          },
+          "seco": {
+            "lineas": [],
+            "entrega": "recojo"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: recojo en el local"
+            ],
+            "textosNo": [
+              "Esto prefiero",
+              "necesito"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "entrega.modalidad": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "voy a recoger el pedido",
+          "mejor lo retiro yo en el local",
+          "el lo recoge",
+          {
+            "texto": "ella va a recoger en portería",
+            "seco": {
+              "lineas": [],
+              "entrega": "recojo"
+            },
+            "esperado": {
+              "textos": [
+                "direcci[oó]n exacta"
+              ],
+              "titulos": [],
+              "titulosNo": [
+                "Confirmar pedido"
+              ],
+              "estado": {
+                "paso": "pedido_datos",
+                "entrega.entrega": "delivery",
+                "entrega.modalidad": "delivery"
+              },
+              "textosNo": [
+                "Esto prefiero"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "M2bR",
+      "titulo": "Resumen dado: 20 frases de intención ajena (las 14 de la ronda anterior y «cuánto es el delivery», «tienen sucursal», «gracias», «ok gracias», «hola», «buenas tardes») no se guardan como dirección ni como referencia",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "cancela el pedido"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "igualAntes": [
+              "entrega.entrega",
+              "entrega.direccion",
+              "entrega.referencia",
+              "carrito"
+            ],
+            "efectos": {
+              "qr": false
+            },
+            "textosNo": [
+              "Entrega: delivery a [^\\n]*\\(",
+              "referencia:"
+            ]
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "cancela el pedido",
+          "cancela todo",
+          "mejor no",
+          "a que hora llega",
+          "puedo pagar con tarjeta",
+          "Pague 110 Bs comprobante 123456789",
+          "dame la carta",
+          "quiero 2 tacos",
+          "quiero 60 tacos",
+          "mejor paso a recogerlo yo mismo",
+          "delivery no",
+          "sin delivery",
+          "prefiero delivery",
+          "quiero que me manden",
+          "cuánto es el delivery",
+          "tienen sucursal",
+          "gracias",
+          "ok gracias",
+          "hola",
+          "buenas tardes"
+        ]
+      }
+    },
+    {
+      "id": "M2bP",
+      "titulo": "Dirección pendiente: las 22 frases (las 14 de antes y «cuánto es el delivery», «tienen sucursal», «gracias», «ok gracias», «hola», «buenas tardes», «eso es todo», «cámbiame el pedido») no se guardan como dirección ni como referencia",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "cancela el pedido"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              },
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "igualAntes": [
+              "entrega.entrega",
+              "entrega.direccion",
+              "entrega.referencia",
+              "carrito"
+            ],
+            "efectos": {
+              "qr": false
+            },
+            "textosNo": [
+              "Entrega: delivery a"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ]
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "cancela el pedido",
+          "cancela todo",
+          "mejor no",
+          "a que hora llega",
+          "puedo pagar con tarjeta",
+          "Pague 110 Bs comprobante 123456789",
+          "dame la carta",
+          "quiero 2 tacos",
+          "quiero 60 tacos",
+          "mejor paso a recogerlo yo mismo",
+          "delivery no",
+          "sin delivery",
+          "prefiero delivery",
+          "quiero que me manden",
+          "cuánto es el delivery",
+          "tienen sucursal",
+          "gracias",
+          "ok gracias",
+          "hola",
+          "buenas tardes",
+          "eso es todo",
+          "cámbiame el pedido"
+        ]
+      }
+    },
+    {
+      "id": "FPnr",
+      "titulo": "Falsos positivos de ayuda con el resumen dado: «no hay problema», «sin problema», «alguien lo recibe» y «es para una persona» NO derivan",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "no hay problema"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "ruta": "^(?!transferir)",
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "textosNo": [
+              "Esto prefiero"
+            ],
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "no hay problema",
+          "sin problema",
+          "alguien lo recibe",
+          "es para una persona"
+        ]
+      }
+    },
+    {
+      "id": "FPnp",
+      "titulo": "Falsos positivos de ayuda con la dirección pendiente: las mismas cuatro frases NO derivan",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "no hay problema"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "ruta": "^(?!transferir)",
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "textosNo": [
+              "Esto prefiero"
+            ],
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "no hay problema",
+          "sin problema",
+          "alguien lo recibe",
+          "es para una persona"
+        ]
+      }
+    },
+    {
+      "id": "FPdr",
+      "titulo": "Con el resumen dado, «ayúdenme» y «auxilio» SÍ derivan (aviso y «Escribir al local»)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "ayúdenme"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "ruta": "^transferir",
+            "titulos": [
+              "Escribir al local"
+            ],
+            "enlaces": [
+              "wa\\.me/59100000031"
+            ],
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234"
+            },
+            "efectos": {
+              "derivacion": true,
+              "aviso": true,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "ayúdenme",
+          "auxilio"
+        ]
+      }
+    },
+    {
+      "id": "FPdp",
+      "titulo": "Con la dirección pendiente, «ayúdenme» y «auxilio» SÍ derivan",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "ayúdenme"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "ruta": "^transferir",
+            "titulos": [
+              "Escribir al local"
+            ],
+            "enlaces": [
+              "wa\\.me/59100000031"
+            ],
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": true,
+              "aviso": true,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "ayúdenme",
+          "auxilio"
+        ]
+      }
+    }
+  ]
+}

@@ -2,7 +2,7 @@
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
   "nodes": [],
   "seccion": "A",
-  "nota": "Escenarios A7, A8 y A14 de «Delivery y entrega» que HOY FALLAN tanto contra main como contra la rama de delivery opcional (PR #435): A7 (la variante «quiero que me manden») y A8 (el tipeo «quiero que me mandn») esperan la rama FUNCIONAL (la intención de delivery por código, nunca una derivación); A14 choca con la rama #435: su pregunta de la dirección dice «(y, si quieres, una referencia para llegar)» y el escenario dice que la referencia NUNCA se pide en el chat. Se dejan implementados y fallando, con la suite que lo fija: se ponen en verde cuando la rama o la decisión correspondiente llegue, y entonces pasan a A.json. M1s y M1sp (cartera, 05/10): con el modelo devolviendo solo `{\"lineas\":[]}` el código NO deriva ante «necesito ayuda» y similares (la primera vez vuelve a pedir lo que falta o al resumen; con dos seguidas deriva), y «quiero que me atienda alguien» y «comuníquenme con el local» con el resumen dado se guardan como REFERENCIA; solo deriva si el modelo marca `quiereHablar`. FB3: en el head 542d5f7e, «ella va a recoger en portería» con la dirección pendiente NO se toma como dirección (se vuelve a pedir; sigue siendo delivery, FB2). M1refp: ver la nota del caso (la misma duplicación afecta a A4).",
+  "nota": "Escenarios que HOY fallan contra el head de la rama de delivery opcional (0c4bf930) y contra main: A7 y A8 esperan la rama funcional (la intención de delivery por código, nunca derivar); A6b: «Donde dije» con quiereHablar deriva; S2d: «dame la carta» con la dirección pendiente no muestra la carta; M2bX: «eso es todo» y «cámbiame el pedido» con el resumen dado se guardan como referencia.",
   "casos": [
     {
       "id": "A7",
@@ -144,22 +144,9 @@
       ]
     },
     {
-      "id": "A14",
-      "titulo": "Cliente con nombre de perfil y carrito de delivery SIN dirección: pide SOLO la dirección (sin referencia ni frase del QR)",
-      "perfil": "Lucía Ejemplo",
+      "id": "A6b",
+      "titulo": "Dirección dada y «Donde dije» con el modelo marcando quiereHablar: la cartera esperaba que quede como referencia sin derivar",
       "estadoPrevio": [
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "hola"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "ruta": "menu"
-          }
-        }
-      ],
-      "turnos": [
         {
           "cliente": {
             "tipo": "carrito",
@@ -174,34 +161,179 @@
           },
           "esperado": {
             "mensajes": 1,
-            "textos": [
-              "direcci[oó]n"
-            ],
-            "textosNo": [
-              "referencia",
-              "nombre de quien",
-              "no va en el QR",
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "calle 1 numerro 2 Irpavi"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": "calle 1 numerro 2 Irpavi"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
               "Confirmar pedido"
             ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "calle 1 numerro 2 Irpavi"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "a media cuadra de la calle Foton"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a calle 1 numerro 2 Irpavi \\(a media cuadra de la calle Foton\\)"
+            ],
+            "textosNo": [
+              "necesito",
+              "direcci[oó]n exacta",
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "calle 1 numerro 2 Irpavi",
+              "entrega.referencia": "a media cuadra de la calle Foton"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {
+            "texto": "Donde dije",
+            "seco": {
+              "lineas": [],
+              "quiereHablar": true
+            },
+            "esperado": {
+              "textos": [
+                "Entrega: delivery a calle 1 numerro 2 Irpavi \\(Donde dije\\)"
+              ],
+              "estado": {
+                "entrega.referencia": "Donde dije"
+              }
+            }
+          }
+        ]
+      },
+      "nota": "En el head 0c4bf930 una marca quiereHablar del modelo sobre un texto sin rasgos de dato de entrega DERIVA siempre (diseño endurecido de la rama); «Donde dije» ya no queda como referencia."
+    },
+    {
+      "id": "S2d",
+      "titulo": "Delivery pendiente de dirección: «dame la carta» no se guarda como dirección y MUESTRA LA CARTA",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
             "estado": {
               "paso": "pedido_datos",
               "entrega.entrega": "delivery",
               "entrega.direccion": {
                 "vacio": true
               }
-            },
-            "efectos": {
-              "modelo": false,
-              "derivacion": false,
-              "aviso": false
             }
           }
         }
-      ]
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "dame la carta"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "textosNo": [
+              "Entrega: delivery a"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "entrega.direccion": {
+                "vacio": true
+              },
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {
+            "texto": "dame la carta",
+            "esperado": {
+              "textos": [
+                "carta"
+              ]
+            }
+          }
+        ]
+      },
+      "nota": "En el head 0c4bf930 «dame la carta» con la dirección pendiente no se guarda como dirección pero no muestra la carta: solo repite «Para el delivery necesito la dirección exacta.»."
     },
     {
-      "id": "M1s",
-      "titulo": "Resumen dado y el modelo NO marca nada (solo líneas vacías): «necesito ayuda», «quiero que me atienda alguien», «tengo un problema con mi pedido», «comuníquenme con el local» y «esto es un robo» deberían DERIVAR",
+      "id": "M2bX",
+      "titulo": "Resumen dado: «eso es todo» y «cámbiame el pedido» NO deberían guardarse como referencia",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -246,7 +378,7 @@
         {
           "cliente": {
             "tipo": "texto",
-            "texto": "necesito ayuda"
+            "texto": "eso es todo"
           },
           "seco": {
             "lineas": []
@@ -255,16 +387,6 @@
             "mensajes": {
               "min": 1
             },
-            "ruta": "^transferir",
-            "titulos": [
-              "Escribir al local"
-            ],
-            "enlaces": [
-              "wa\\.me/59100000031"
-            ],
-            "textosNo": [
-              "Entrega: delivery a"
-            ],
             "estado": {
               "entrega.entrega": "delivery",
               "entrega.direccion": "Av. Banzer 1234",
@@ -279,262 +401,23 @@
               "carrito"
             ],
             "efectos": {
-              "derivacion": true,
-              "aviso": true,
               "qr": false
-            }
-          }
-        }
-      ],
-      "variantes": {
-        "turno": 1,
-        "frases": [
-          "necesito ayuda",
-          "quiero que me atienda alguien",
-          "tengo un problema con mi pedido",
-          "comuníquenme con el local",
-          "esto es un robo"
-        ]
-      }
-    },
-    {
-      "id": "M1sp",
-      "titulo": "Dirección pendiente y el modelo NO marca nada: las mismas cinco frases deberían DERIVAR",
-      "perfil": "Lucía Ejemplo",
-      "estadoPrevio": [
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "hola"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "ruta": "menu"
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "carrito",
-            "items": [
-              {
-                "id": "cat_birria3",
-                "cantidad": 2
-              }
-            ],
-            "entrega": "envio",
-            "direccion": ""
-          },
-          "esperado": {
-            "mensajes": 1,
-            "estado": {
-              "paso": "pedido_datos",
-              "entrega.entrega": "delivery",
-              "entrega.direccion": {
-                "vacio": true
-              }
-            }
-          }
-        }
-      ],
-      "turnos": [
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "necesito ayuda"
-          },
-          "seco": {
-            "lineas": []
-          },
-          "esperado": {
-            "mensajes": {
-              "min": 1
             },
-            "ruta": "^transferir",
-            "titulos": [
-              "Escribir al local"
-            ],
-            "enlaces": [
-              "wa\\.me/59100000031"
-            ],
             "textosNo": [
-              "Entrega: delivery a"
-            ],
-            "estado": {
-              "entrega.entrega": "delivery",
-              "entrega.direccion": {
-                "vacio": true
-              },
-              "entrega.referencia": {
-                "vacio": true
-              }
-            },
-            "igualAntes": [
-              "entrega.entrega",
-              "entrega.direccion",
-              "entrega.referencia",
-              "carrito"
-            ],
-            "efectos": {
-              "derivacion": true,
-              "aviso": true,
-              "qr": false
-            }
+              "Entrega: delivery a [^\\n]*\\(",
+              "referencia:"
+            ]
           }
         }
       ],
       "variantes": {
         "turno": 1,
         "frases": [
-          "necesito ayuda",
-          "quiero que me atienda alguien",
-          "tengo un problema con mi pedido",
-          "comuníquenme con el local",
-          "esto es un robo"
+          "eso es todo",
+          "cámbiame el pedido"
         ]
-      }
-    },
-    {
-      "id": "FB3",
-      "titulo": "Dirección pendiente y el modelo devuelve la dirección vacía: «ella va a recoger en portería» se toma como dirección (delivery con ese texto) y pasa al resumen",
-      "perfil": "Lucía Ejemplo",
-      "estadoPrevio": [
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "hola"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "ruta": "menu"
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "carrito",
-            "items": [
-              {
-                "id": "cat_birria3",
-                "cantidad": 2
-              }
-            ],
-            "entrega": "envio",
-            "direccion": ""
-          },
-          "esperado": {
-            "mensajes": 1,
-            "estado": {
-              "paso": "pedido_datos",
-              "entrega.entrega": "delivery",
-              "entrega.direccion": {
-                "vacio": true
-              }
-            }
-          }
-        }
-      ],
-      "turnos": [
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "ella va a recoger en portería"
-          },
-          "seco": {
-            "lineas": []
-          },
-          "esperado": {
-            "mensajes": 1,
-            "textos": [
-              "Entrega: delivery a ella va a recoger en portería"
-            ],
-            "titulos": [
-              "Confirmar pedido"
-            ],
-            "estado": {
-              "paso": "pedido_confirmar",
-              "entrega.entrega": "delivery",
-              "entrega.direccion": "ella va a recoger en portería"
-            },
-            "efectos": {
-              "derivacion": false,
-              "aviso": false
-            }
-          }
-        }
-      ]
-    },
-    {
-      "id": "M1refp",
-      "titulo": "Dirección pendiente: «Déjale al portero» (el modelo la asigna como referencia) se guarda como REFERENCIA, se pide la dirección y no deriva",
-      "perfil": "Lucía Ejemplo",
-      "estadoPrevio": [
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "hola"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "ruta": "menu"
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "carrito",
-            "items": [
-              {
-                "id": "cat_birria3",
-                "cantidad": 2
-              }
-            ],
-            "entrega": "envio",
-            "direccion": ""
-          },
-          "esperado": {
-            "mensajes": 1,
-            "estado": {
-              "paso": "pedido_datos",
-              "entrega.entrega": "delivery",
-              "entrega.direccion": {
-                "vacio": true
-              }
-            }
-          }
-        }
-      ],
-      "turnos": [
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "Déjale al portero"
-          },
-          "seco": {
-            "lineas": [],
-            "referencia": "Déjale al portero"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "textos": [
-              "direcci[oó]n exacta"
-            ],
-            "titulosNo": [
-              "Confirmar pedido",
-              "Escribir al local"
-            ],
-            "estado": {
-              "paso": "pedido_datos",
-              "entrega.direccion": {
-                "vacio": true
-              },
-              "entrega.referencia": "Déjale al portero"
-            },
-            "efectos": {
-              "derivacion": false,
-              "aviso": false
-            }
-          }
-        }
-      ],
-      "nota": "En el head 542d5f7e, con la dirección pendiente y el modelo asignando «Déjale al portero» como referencia, el código ADEMÁS la toma como dirección (resumen «Entrega: delivery a Déjale al portero (Déjale al portero)»). Lo esperado por la cartera es referencia guardada y pedir la dirección."
+      },
+      "nota": "En el head 0c4bf930 esas dos frases con el resumen dado se guardan como REFERENCIA («Entrega: delivery a … (eso es todo)»)."
     }
   ]
 }

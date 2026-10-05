@@ -115,7 +115,7 @@
     },
     {
       "id": "S2",
-      "titulo": "Delivery pendiente de dirección: «dame la carta», «mejor no» y un comprobante en texto no se guardan como dirección ni referencia, y no avanzan al resumen",
+      "titulo": "Delivery pendiente de dirección: «mejor no» y un comprobante en texto no se guardan como dirección ni referencia, y no avanzan al resumen",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -188,14 +188,6 @@
       "variantes": {
         "turno": 1,
         "frases": [
-          {
-            "texto": "dame la carta",
-            "esperado": {
-              "textos": [
-                "carta"
-              ]
-            }
-          },
           "mejor no",
           "Pague 110 Bs comprobante 123456789"
         ]
