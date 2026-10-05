@@ -9,6 +9,8 @@
  *   - las tres de hoy (`agendamiento`, `venta`, `onboarding`): lo que cada
  *     script permite o rechaza es lo de antes;
  *   - dos flujos a la vez (`agendamiento` + `venta`);
+ *   - fichas con la lista `modulos` (lo próximo que existirá, `migrar-modulos.mjs`):
+ *     manda sobre `flujos`, y las dos direcciones se prueban;
  *   - NEGATIVAS: un flujo desconocido no habilita nada.
  *
  * Los resultados esperados son los de los scripts ANTES del cambio (la tabla de
@@ -40,7 +42,10 @@ const CAPTACION = 'reg-captacion';
 const DOS = 'reg-dos-flujos';
 const RARO = 'reg-flujo-raro';
 const SOLO_VERTICAL = 'reg-solo-vertical';
-const TENANTS = [AGENDA, VENTA, CAPTACION, DOS, RARO, SOLO_VERTICAL];
+// Con `modulos`, la lista manda sobre `flujos`: dicen lo contrario a propósito.
+const MOD_AGENDA = 'reg-modulos-agenda'; // flujos venta, módulos de agenda
+const MOD_VENTA = 'reg-modulos-venta';   // flujos agendamiento, módulos de venta
+const TENANTS = [AGENDA, VENTA, CAPTACION, DOS, RARO, SOLO_VERTICAL, MOD_AGENDA, MOD_VENTA];
 
 const tmp = mkdtempSync(join(tmpdir(), 'scripts-registro-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -62,6 +67,10 @@ beforeAll(async () => {
   await ficha(DOS, ['agendamiento', 'venta'], 'agendamiento');
   await ficha(RARO, ['recordatorios'], 'recordatorios');
   await ficha(SOLO_VERTICAL, undefined, 'venta');
+  await db.doc(`tenants/${MOD_AGENDA}`).set({ nombre: MOD_AGENDA, estado: 'activo', vertical: 'venta', flujos: ['venta'],
+    modulos: ['productos', 'cobros', 'agenda'] });
+  await db.doc(`tenants/${MOD_VENTA}`).set({ nombre: MOD_VENTA, estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'],
+    modulos: ['productos', 'cobros', 'pedidos', 'catalogo-web'] });
 }, 60_000);
 
 // ======================================================================= activar-cobro-real
@@ -74,6 +83,8 @@ describe('activar-cobro-real.mjs: el documento que cobra lo decide el registro',
     await db.doc(`tenants/${DOS}/config/venta`).set(qr);
     await db.doc(`tenants/${DOS}/config/agendamiento`).set({ ...qr, senaImporte: 50 });
     await db.doc(`tenants/${SOLO_VERTICAL}/config/venta`).set(qr);
+    await db.doc(`tenants/${MOD_AGENDA}/config/agendamiento`).set({ ...qr, senaImporte: 50 });
+    await db.doc(`tenants/${MOD_VENTA}/config/venta`).set(qr);
   }, 60_000);
 
   const seco = (t: string) => correr('plataforma/activar-cobro-real.mjs', '--tenant', t);
@@ -88,6 +99,15 @@ describe('activar-cobro-real.mjs: el documento que cobra lo decide el registro',
     expect(r.salida).toContain(`Documento : ${documento}`);
     expect(r.salida).toMatch(/Seco: no se escribió nada/);
     expect((await db.doc(`tenants/${tenant}/${documento}`).get()).get('cobroReal')).toMatchObject({ activo: false });
+  });
+
+  it.each([
+    ['flujos [venta] y módulos de agenda', MOD_AGENDA, 'config/agendamiento'],
+    ['flujos [agendamiento] y módulos de pedidos', MOD_VENTA, 'config/venta'],
+  ])('con `modulos` manda la lista: un comercio de %s cobra por %s', (_n, tenant, documento) => {
+    const r = seco(tenant);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toContain(`Documento : ${documento}`);
   });
 
   it('NEGATIVA: un comercio de captación no tiene un flujo que cobre', () => {
@@ -113,7 +133,7 @@ describe('activar-cobro-real.mjs: el documento que cobra lo decide el registro',
 describe('fijar-webhook-carrito.mjs: solo un comercio con catálogo web (venta) acepta el webhook', () => {
   const NUMEROS: Record<string, string> = {
     [AGENDA]: '1000000071', [VENTA]: '1000000072', [CAPTACION]: '1000000073', [DOS]: '1000000074',
-    [RARO]: '1000000075', [SOLO_VERTICAL]: '1000000076',
+    [RARO]: '1000000075', [SOLO_VERTICAL]: '1000000076', [MOD_AGENDA]: '1000000077', [MOD_VENTA]: '1000000078',
   };
   beforeAll(async () => {
     for (const [tenant, numero] of Object.entries(NUMEROS)) {
@@ -132,6 +152,19 @@ describe('fijar-webhook-carrito.mjs: solo un comercio con catálogo web (venta) 
       expect(r.salida).toMatch(/Seco: no se escribió nada/);
       expect((await db.doc(`rutasWhatsApp/${NUMEROS[tenant]}`).get()).get('webhookCarrito')).toBeUndefined();
     });
+
+  it('con `modulos` manda la lista: flujos [agendamiento] con catalogo-web lo acepta', () => {
+    const r = seco(MOD_VENTA);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/Seco: no se escribió nada/);
+  });
+
+  it('con `modulos` manda la lista: flujos [venta] sin catalogo-web lo rechaza', () => {
+    const r = seco(MOD_AGENDA);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/no tiene el flujo «venta»/);
+    expect(r.salida).not.toMatch(/Seco: no se escribió nada/);
+  });
 
   it.each([['agendamiento', AGENDA, 'agendamiento'], ['captación', CAPTACION, 'onboarding'], ['un flujo desconocido', RARO, '']])(
     'NEGATIVA: un comercio de %s lo rechaza', (_n, tenant, flujos) => {
@@ -196,6 +229,23 @@ describe('cargar-negocio.mjs: las secciones por flujo las decide el registro', (
     const r = seco(tenant, CON_AGENDA);
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(/Seco: no se escribió nada/);
+  });
+
+  // DIFERENCIA CONOCIDA CON LAS REGLAS: `cargar-negocio` usa el SDK de administrador (salta las reglas) y
+  // decide por módulos; la regla de `config/negocio.catalogoWebActivo` en firestore.rules sigue con
+  // `tieneFlujo(tenantId, 'venta')` (TODO de H2b). Con `modulos` y `flujos` en desacuerdo, el script y la regla divergen.
+  it('con `modulos` manda la lista: la sección agendamiento entra con módulos de agenda y NO con los de venta', () => {
+    expect(seco(MOD_AGENDA, CON_AGENDA).codigo).toBe(0);
+    const r = seco(MOD_VENTA, CON_AGENDA);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/no tiene el flujo agendamiento/);
+  });
+
+  it('con `modulos` manda la lista: catalogoWebActivo entra con catalogo-web y NO sin él', () => {
+    expect(seco(MOD_VENTA, CON_CATALOGO_WEB).codigo).toBe(0);
+    const r = seco(MOD_AGENDA, CON_CATALOGO_WEB);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/no tiene el flujo venta: catalogoWebActivo no puede ser true/);
   });
 
   it.each([[VENTA], [CAPTACION], [RARO]])('NEGATIVA: la sección agendamiento NO entra en %s', (tenant) => {

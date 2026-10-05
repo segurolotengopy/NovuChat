@@ -70,7 +70,7 @@ const TITULARIDAD = (opcion('titularidad') ?? '').trim();
 const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
 const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-// Mismos formatos que `ID_TENANT` e `ID_NUMERO` de functions/src/index.ts (los flujos válidos, del registro).
+// Mismos formatos que `ID_TENANT` e `ID_NUMERO` de functions/src/plataforma/tenants.ts; los flujos válidos salen del registro.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_NUMERO = /^[0-9]{6,25}$/;
 // `central/ejes.ts` importa `./cuenta/planes.js` y `./cuenta/prepago.js`: se resuelve con el

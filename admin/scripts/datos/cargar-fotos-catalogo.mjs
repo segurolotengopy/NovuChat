@@ -177,8 +177,8 @@ console.log(`\n  Proyecto : ${PROYECTO}`);
 console.log(`  Comercio : ${TENANT} — ${ficha.get('nombre')}  ${G}(${flujosDeFicha(ficha.data()).join(', ')})${F}`);
 
 // EL LOGO ES CAPACIDAD DE VENTA, igual que el catálogo web: `config/marca` es del
-// módulo `catalogo-web` y solo se acepta con `tieneCobro` (firestore.rules
-// §/config/marca). Escribirlo en un comercio sin el flujo dejaría un documento
+// módulo `catalogo-web` y solo se acepta con `tieneModulo(tenantId, 'catalogo-web')`
+// (firestore.rules §/config/marca). Escribirlo en un comercio sin el flujo dejaría un documento
 // que la consola no puede editar.
 if (ARCHIVO_LOGO && !tieneModulo(ficha.data(), 'catalogo-web')) {
   salir(`El comercio ${TENANT} no tiene el flujo venta: /config/marca no le corresponde.`);

@@ -16,8 +16,8 @@
  *      de `alta-comercio.mjs` y de `asignar-numero.mjs`, que corta antes de
  *      abrirlo.
  *
- * `completar-flujos.mjs` NO está acá: lo modifica el PR #421 (que le agrega
- * `onboarding` a su tabla) y se alinea con el registro después de fusionarlo.
+ * `completar-flujos.mjs` NO está acá: ya lo cubrió el PR #421 (fusionado), que le
+ * agregó `onboarding` a su tabla y su propia prueba.
  *
  * Los scripts que sí necesitan Firestore (`activar-cobro-real`,
  * `fijar-webhook-carrito`, `pase-a-produccion`, `cargar-*`) se ejecutan contra
@@ -52,9 +52,15 @@ const documentoQueCobraAntes = (ficha: { flujos?: unknown }): string | null => {
   const flujos = (ficha.flujos ?? []) as string[];
   return flujos.includes('venta') ? 'venta' : (flujos.includes('agendamiento') ? 'agendamiento' : null);
 };
-/** `pase-a-produccion.mjs`, `fijar-webhook-carrito.mjs`, `cargar-*`: los flujos de la ficha. */
+/** `pase-a-produccion.mjs` y `fijar-webhook-carrito.mjs`: los flujos de la ficha. */
 const flujosDeLaFichaAntes = (f: { flujos?: unknown; vertical?: unknown }): unknown[] =>
   (Array.isArray(f.flujos) ? f.flujos : [f.vertical].filter(Boolean));
+/** `cargar-negocio.mjs`, `cargar-captacion.mjs`: `tenant.get('flujos') ?? [vertical].filter(Boolean)`, SIN `Array.isArray`. */
+const flujosDeLaFichaAntesCargar = (f: { flujos?: unknown; vertical?: unknown }): any =>
+  (f.flujos ?? [f.vertical].filter(Boolean));
+/** El `includes` de esos dos scripts sobre lo anterior: en una cadena es `String.includes`; en `{}` no existe. */
+const incluyeAntesCargar = (f: { flujos?: unknown; vertical?: unknown }, flujo: string): boolean =>
+  flujosDeLaFichaAntesCargar(f).includes(flujo);
 
 // Los ocho subconjuntos de los tres flujos, en el orden en que los lista una ficha.
 const SUBCONJUNTOS: IdFlujo[][] = Array.from({ length: 1 << IDS_FLUJOS.length },
@@ -129,6 +135,25 @@ describe('1. el registro da lo mismo que las listas de antes', () => {
       expect(documentoQueCobraAntes({})).toBeNull();
       expect(documentoDeCobro(modulosDeFicha({ vertical: 'venta' }))).toBe('venta');
       expect(documentoDeCobro(modulosDeFicha({ vertical: 'agendamiento' }))).toBe('agendamiento');
+    });
+
+    it('cargar-negocio y cargar-captacion: `flujos` null caía a `vertical`, una cadena iba por String.includes y `{}` era un TypeError; ahora todo cierra', () => {
+      // null: antes el `??` lo mandaba a `vertical`.
+      const nulo = { flujos: null, vertical: 'onboarding' };
+      expect(incluyeAntesCargar(nulo, 'onboarding')).toBe(true);
+      expect(tieneModulo(nulo, 'captacion')).toBe(false);
+      // cadena: antes `'onboarding'.includes('onboarding')` (y también una subcadena: 'x-venta-x').
+      const cadena = { flujos: 'x-onboarding-x' };
+      expect(incluyeAntesCargar(cadena, 'onboarding')).toBe(true);
+      expect(tieneModulo(cadena, 'captacion')).toBe(false);
+      // objeto: antes `{}.includes is not a function`, un TypeError dentro de la transacción.
+      expect(() => incluyeAntesCargar({ flujos: {} }, 'venta')).toThrow(TypeError);
+      expect(tieneModulo({ flujos: {} }, 'catalogo-web')).toBe(false);
+      // y con una lista conocida, igual que antes.
+      for (const f of IDS_FLUJOS) {
+        const ficha = { flujos: [f], vertical: f };
+        expect(flujosDeLaFichaAntesCargar(ficha)).toEqual(flujosDeFicha(ficha));
+      }
     });
 
     it('`flujos` que no es lista cierra: ningún flujo, ningún módulo propio, nada que cobre', () => {
