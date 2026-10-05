@@ -8,18 +8,18 @@
 
 | Campo | Valor hoy |
 |---|---|
-| **Qué contiene hoy** | `cobro.ts`, `qrSimple.ts`, `dibujoQr.ts`, `cotejo.ts`, `cobroVenta.ts`, `mediaIdQr`, `cobroReal`; `Cobros.tsx`, `Cobro.tsx` (QR) |
+| **Qué contiene hoy** | `cobro.ts`, `qrSimple.ts`, `dibujoQr.ts`, `cotejo.ts`, `cobroVenta.ts`, `cotejoVenta.ts`, `comprobantes.ts`, `mediaIdQr`, `cobroReal`; `Cobros.tsx`, `Cobro.tsx` (QR) |
 | **Depende de** | Pedidos o Agenda (quien cierra) |
 | **Límite por plan** | — |
 | **Configuración** | `config/cobros` (hoy repartido entre `config/venta` y `config/agendamiento`): `mediaIdQr`, `cobroReal`, montos de seña, … |
-| **Colecciones** | las de cobro dentro de `cierres` y `pedidos`; `fotosCatalogo` no |
+| **Colecciones** | las de cobro dentro de `cierres` y `pedidos`; `fotosCatalogo` no. Almacenamiento: `comprobantes` (Storage, regla 2) |
 | **Pestañas** | Cobros (`admin`), Cobro / QR (`admin`) |
 | **Prompt** | fragmento de cobro del prompt (QR, comprobante) |
 | **Herramientas** | las de la seña y del comprobante en los flujos de reservas y venta |
 | **Nodos (lo que queda en n8n)** | `preparar-sena`, `respuesta-de-la-sena`, `mensaje-de-la-sena`, `interpretar-lectura` (en `Flujos/src/modulos/cobros/` desde FL1), más los nodos de cobro del Demo B; dibujo del QR y cotejo del comprobante como servicios internos del módulo |
 | **Ganchos** | `despuesDelTurno` (cotejo), `alCierre` con Pedidos o Agenda |
 | **Mensajes por conversación** | 0 en la venta; la seña agrega los mensajes declarados en §4duodecies (abajo) |
-| **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts`; regla 2 (§4duodecies.6): `calificar.test.ts`, `cobro-v2.test.ts`, `cotejo-venta.test.ts`, `comprobantes.test.ts` (en `pruebas/modulos/cobros/`) y «Comprobantes de pago» en `storage-reglas.test.ts` |
+| **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts`; regla 2 (§4duodecies.6): `calificar.test.ts`, `cobro-v2.test.ts`, `cotejo-venta.test.ts`, `comprobantes.test.ts` (en `pruebas/modulos/cobros/`) «Comprobantes de pago» en `storage-reglas.test.ts` y, en la ingesta, `pruebas/cobro-v2-ingesta.test.ts` |
 
 **Observación:** declarado por dos verticales «y gana venta»; con módulo, es uno solo con su propio `config/cobros`. **Los rótulos del cobro simulado son de Plataforma** (§4sexies.3, abajo). **Nunca confundir con Pagar** (NovuChat cobra al comercio), que es de Central. La prohibición 3 de `CLAUDE.md` manda: cobro simulado con rótulo, cobro real sin «pago acreditado», y los dos modos son excluyentes
 
@@ -466,7 +466,13 @@ exportadas en `index.ts` y declaradas en el manifiesto de `cobros` en
 y `ingesta.ts` entiende `reglaCobro`, `cobro_cancelado` y `anulacion_avisada`
 y llama a `solicitudDeCobroTras` en todo `qr_enviado` (obligaciones (a) y (b));
 `solicitudTras` no pasa a `agendada` una regla 2 en `en_revision`, `cancelada`
-o vencida, escrita o por reloj (obligación (c)). La suite es
+o vencida, escrita o por reloj (obligación (c)), con el predicado puro exportado
+`cierreBloqueadoPorCobro(previa, ahoraMs)` de `ingesta.ts`. **Falta:
+`registrarCierre` (`core/turno/cierres.ts`) consulta ese predicado (PR C1c, de
+`core-functions`): hoy crea el cierre y suma `cierres` aunque la solicitud no
+se mueva.** Un `horarios_ofrecidos` no reemplaza un cobro `en_revision`, y con
+`reglaCobro: 2` una `referencia` vacía o igual al `idMeta` se trata como
+`sin_id_meta`. La suite es
 `pruebas/cobro-v2-ingesta.test.ts`. **Nada de esto corre en producción hasta el
 despliegue** (3 Functions, 1 job de Scheduler, invocador para las 2 HTTP), que
 es posterior al 05/10, en ventana y con el «sí» de Andres; y la regla 2 la

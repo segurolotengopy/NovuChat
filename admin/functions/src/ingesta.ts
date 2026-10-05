@@ -379,6 +379,22 @@ function solicitudNueva(etapa: Solicitud['etapa'], ahora: Timestamp): Solicitud 
  * solicitud nueva escribe TODOS sus campos, incluidos los nulos: si no, el
  * `seguimientoEn` de la solicitud anterior sobreviviría en la nueva.
  */
+/**
+ * ¿Un cierre (`cita_agendada`, o el de una venta) NO debe mover esta solicitud?
+ * Sí cuando es un cobro de regla 2 que ya no está en curso: `en_revision`,
+ * `cancelada`, `vencida`, o `qr_enviado` con el límite efectivo ya pasado
+ * (vencida por reloj sin que nadie la anotara; D6). Pura. Con regla 1, nunca.
+ * La consume `solicitudTras` y, en el PR C1c, `registrarCierre`.
+ */
+export function cierreBloqueadoPorCobro(previa: unknown, ahoraMs: number): boolean {
+  const p = (typeof previa === 'object' && previa !== null ? previa : null) as Record<string, unknown> | null;
+  if (!esReglaDos(p)) return false;
+  const etapa = typeof p?.['etapa'] === 'string' ? p['etapa'] : '';
+  const limite = limiteDe(p);
+  return etapa === 'en_revision' || etapa === 'cancelada' || etapa === 'vencida'
+    || (etapa === 'qr_enviado' && limite !== null && ahoraMs >= limite);
+}
+
 export function solicitudTras(
   previa: unknown,
   evento: string | undefined,
@@ -398,8 +414,9 @@ export function solicitudTras(
       // corre (el cierre se referencia con el mensaje del comprobante), pero
       // `senaVencida` no tiene qué borrar. El flujo siempre lo manda.
       //
-      // EN VENTA, `referencia` es el PEDIDO (el `cat_…` del carrito web, o el
-      // id del mensaje del QR) y `calendario` no viene: no hay agenda. La forma
+      // EN VENTA, `referencia` es SIEMPRE el pedido (el `cat_…` del carrito web
+      // o su id; con `reglaCobro: 2` nunca el id del mensaje del QR: la
+      // ingesta lo trata como `sin_id_meta`) y `calendario` no viene: no hay agenda. La forma
       // del campo no cambia porque lo que significa es lo mismo —qué quedó
       // reservado esperando este pago— y duplicarlo por vertical partiría en
       // dos una regla que es una sola.
@@ -418,6 +435,9 @@ export function solicitudTras(
       : solicitudNueva('horarios', ahora);
     if (!p || etapaPrevia === '') return nueva();
     if (ETAPAS_PENDIENTES.has(etapaPrevia)) return null;
+    // Un cobro de regla 2 EN REVISIÓN está con una persona: no se reemplaza,
+    // ni siquiera pasadas 24 h (perdería sus comprobantes y subidas).
+    if (etapaPrevia === 'en_revision' && esReglaDos(p as Record<string, unknown>)) return null;
     const desdeMs = milisegundosDe(p.desde);
     const cerradaHaceMas24h = desdeMs === null || ahoraMs - desdeMs >= MS_VENTANA_ATENCION;
     return cerradaHaceMas24h ? nueva() : null;
@@ -473,11 +493,7 @@ export function solicitudTras(
     // revisión, cancelado o vencido (escrito, o por reloj sin que nadie lo
     // anotara) NO se cierra como agendado: el cierre de la cita no resucita un
     // pedido que ya no está en curso. Con regla 1 nada cambia.
-    if (esReglaDos(p as Record<string, unknown> | null)) {
-      const limite = limiteDe(p as Record<string, unknown>);
-      if (etapaPrevia === 'en_revision' || etapaPrevia === 'cancelada' || etapaPrevia === 'vencida'
-        || (etapaPrevia === 'qr_enviado' && limite !== null && ahoraMs >= limite)) return null;
-    }
+    if (cierreBloqueadoPorCobro(previa, ahoraMs)) return null;
     if (!p || etapaPrevia === '') return solicitudNueva('agendada', ahora);
     return { ...solicitudNueva('agendada', ahora), ...p, etapa: 'agendada', desde: ahora };
   }
@@ -1372,9 +1388,14 @@ export const ingesta = onRequest(
       // efecto `ignorado` o `sin_id_meta` no se escribe solicitud ni se cuenta
       // el QR. Sin `reglaCobro` y sin restos de regla 2, el resultado es
       // idéntico al de siempre.
+      // Con regla 2, una `referencia` vacía o igual al `idMeta` no identifica un
+      // pedido (cada reenvío sería un cobro nuevo con plazo nuevo): se trata
+      // como `sin_id_meta` y no abre cobro.
+      const sinPedido = mensaje.reglaCobro === 2
+        && (!mensaje.referencia || mensaje.referencia === mensaje.idMeta);
       const eventoDeCobro: EventoDeCobro | null =
         mensaje.evento === 'qr_enviado'
-          ? { tipo: 'qr_enviado', reglaCobro: mensaje.reglaCobro, idMeta: mensaje.idMeta,
+          ? { tipo: 'qr_enviado', reglaCobro: mensaje.reglaCobro, idMeta: sinPedido ? undefined : mensaje.idMeta,
               referencia: mensaje.referencia, monto: mensaje.monto }
           : mensaje.evento === 'cobro_cancelado' ? { tipo: 'cobro_cancelado' }
           : mensaje.evento === 'anulacion_avisada' ? { tipo: 'anulacion_avisada' } : null;
@@ -1432,7 +1453,11 @@ export const ingesta = onRequest(
         // Una solicitud nueva trae TODOS sus campos (los nulos también): con
         // `merge: true` los mapas se fusionan campo a campo, y un campo que no
         // viniera sobreviviría de la solicitud anterior.
-        ...(solicitud ? { solicitud }
+        // Si la solicitud viene de `cambios` PARCIALES del cobro (sin base), y el
+        // mensaje reactiva, se escribe también `reactivadaEn`: si no, la marca
+        // faltaría y `reactivadas` contaría dos veces.
+        ...(solicitud ? { solicitud: !base && reactivada
+          ? { ...solicitud, reactivadaEn: Timestamp.fromMillis(ahoraMs) } : solicitud }
           : reactivada ? { solicitud: { reactivadaEn: Timestamp.fromMillis(ahoraMs) } } : {}),
         // NO CONTACTAR (bloque 4): el paciente pidió que no le escriban, o el
         // turno pasó a una persona. Solo se ENCIENDE desde acá; apagarlo es un

@@ -27,6 +27,7 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { ingesta } = await import('../functions/src/ingesta.ts');
+const { cierreBloqueadoPorCobro } = await import('../functions/src/ingesta.ts');
 const { registrarCierre } = await import('../functions/src/core/turno/cierres.ts');
 
 const T = 'cobro-v2-ingesta';
@@ -328,5 +329,115 @@ describe('regla 2: cita_agendada (registrarCierre) no resucita un cobro que ya n
     await reportar({ telefono: tel1, evento: 'qr_enviado', referencia: 'ev-1', calendario: 'cal' });
     await cerrar(tel1, 'ev-1b');
     expect((await solicitud(tel1))!['etapa']).toBe('agendada');
+  });
+});
+
+describe('regla 2: el camino ignorado y sus bordes', () => {
+  const abrir = (tel: string, ref: string, monto = 30) =>
+    reportar({ telefono: tel, evento: 'qr_enviado', referencia: ref, monto, reglaCobro: 2, idMeta: `wamid.${ref}.${monto}` });
+  const fijar = (tel: string, campos: Record<string, unknown>) =>
+    db.doc(`tenants/${T}/conversaciones/wa_${tel}`).update(campos);
+
+  it('NIEGA: un qr_enviado del MISMO pedido sobre un cobro en_revision lo deja intacto y no cuenta; un pedido DISTINTO abre un cobro nuevo', async () => {
+    const tel = '5910000006001';
+    await abrir(tel, 'cat_rev');
+    await fijar(tel, { 'solicitud.etapa': 'en_revision', 'solicitud.intentosInvalidos': 3 });
+    const antes = (await solicitud(tel))!;
+    const d = await delta(async () => {
+      await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_rev', monto: 30, reglaCobro: 2, idMeta: 'wamid.OTRO' });
+    });
+    const despues = (await solicitud(tel))!;
+    expect(despues).toEqual(antes);
+    expect(d['cobrosQrEnviados']).toBeUndefined();
+    expect(d['senasEnviadas']).toBeUndefined();
+    const d2 = await delta(async () => { await abrir(tel, 'cat_rev_2', 55); });
+    const nuevo = (await solicitud(tel))!;
+    expect(nuevo).toMatchObject({ etapa: 'qr_enviado', intentosInvalidos: 0, monto: 55, evento: { id: 'cat_rev_2' } });
+    expect(d2['cobrosQrEnviados']).toBe(1);
+  });
+
+  it('NIEGA: un sin_id_meta CON solicitud previa no la toca', async () => {
+    const tel = '5910000006002';
+    await abrir(tel, 'cat_prev');
+    const antes = (await solicitud(tel))!;
+    const d = await delta(async () => {
+      await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_otro', monto: 99, reglaCobro: 2 });
+    });
+    expect(await solicitud(tel)).toEqual(antes);
+    expect(d['cobrosQrEnviados']).toBeUndefined();
+    expect(d['senasEnviadas']).toBeUndefined();
+  });
+
+  it('NIEGA: con regla 2, una referencia vacía o igual al idMeta no abre cobro (se trata como sin_id_meta)', async () => {
+    for (const [i, cuerpo] of ([
+      { monto: 30 }, { referencia: 'wamid.IGUAL', monto: 30 },
+    ] as Array<Record<string, unknown>>).entries()) {
+      const tel = `591000000600${3 + i}`;
+      const d = await delta(async () => {
+        await reportar({ telefono: tel, evento: 'qr_enviado', reglaCobro: 2, idMeta: 'wamid.IGUAL', ...cuerpo });
+      });
+      expect(await solicitud(tel), String(i)).toBeUndefined();
+      expect(d['cobrosQrEnviados'], String(i)).toBeUndefined();
+    }
+  });
+
+  it('NIEGA: horarios_ofrecidos, aun pasadas 24 h, NO reemplaza un cobro en_revision (conserva comprobantes y subidas)', async () => {
+    const tel = '5910000006005';
+    await abrir(tel, 'cat_hr');
+    await fijar(tel, { 'solicitud.etapa': 'en_revision', 'solicitud.desde': Timestamp.fromMillis(Date.now() - 30 * 3_600_000),
+      'solicitud.subidas': [{ idMeta: 'wamid.S', ruta: 'x' }] });
+    expect((await reportar({ telefono: tel, evento: 'horarios_ofrecidos' })).codigo).toBe(200);
+    const s = (await solicitud(tel))!;
+    expect(s['etapa']).toBe('en_revision');
+    expect(s['reglaCobro']).toBe(2);
+    expect(s['subidas']).toEqual([{ idMeta: 'wamid.S', ruta: 'x' }]);
+  });
+
+  it('registrarCierre tipo venta sobre cada etapa bloqueada: la etapa no se mueve (contrato de (c)); el cierre se crea hasta el PR C1c', async () => {
+    const casos: Array<[string, string]> = [['5910000006006', 'en_revision'], ['5910000006007', 'cancelada'], ['5910000006008', 'vencida']];
+    for (const [tel, etapa] of casos) {
+      await abrir(tel, `cat_v_${etapa}`);
+      await fijar(tel, { 'solicitud.etapa': etapa });
+      const d = await delta(async () => {
+        expect((await llamar(registrarCierre, { tipo: 'venta', referencia: `v-${etapa}`, telefono: tel })).codigo, etapa).toBe(200);
+      });
+      expect((await solicitud(tel))!['etapa'], etapa).toBe(etapa);
+      // Hoy `registrarCierre` no consulta el predicado: el cierre se crea. C1c lo cambia.
+      expect(d['cierres'], etapa).toBe(1);
+    }
+  });
+
+  it('reactivada con cambios parciales del cobro: escribe reactivadaEn y cuenta UNA vez', async () => {
+    const tel = '5910000006009';
+    await abrir(tel, 'cat_re2');
+    await fijar(tel, { 'solicitud.seguimientoEn': Timestamp.fromMillis(Date.now() - 3_600_000), 'solicitud.seguimientos': 1 });
+    const d = await delta(async () => {
+      await reportar({ telefono: tel, direccion: 'entrante', tipo: 'text', texto: 'cancelar', evento: 'cobro_cancelado' });
+    });
+    const s = (await solicitud(tel))!;
+    expect(s['etapa']).toBe('cancelada');
+    expect(s['reactivadaEn']).not.toBeNull();
+    expect(d['reactivadas']).toBe(1);
+    const d2 = await delta(async () => {
+      await reportar({ telefono: tel, direccion: 'entrante', tipo: 'text', texto: 'hola', evento: 'cobro_cancelado' });
+    });
+    expect(d2['reactivadas']).toBeUndefined();
+  });
+});
+
+describe('cierreBloqueadoPorCobro (puro)', () => {
+  const ahora = Date.now();
+  const r2 = (etapa: string, venceEnMs: number) => ({ etapa, reglaCobro: 2, venceEn: Timestamp.fromMillis(venceEnMs) });
+  it('regla 2: en_revision, cancelada, vencida y qr_enviado vencido por reloj bloquean', () => {
+    for (const e of ['en_revision', 'cancelada', 'vencida']) expect(cierreBloqueadoPorCobro(r2(e, ahora + 60_000), ahora), e).toBe(true);
+    expect(cierreBloqueadoPorCobro(r2('qr_enviado', ahora - 1), ahora)).toBe(true);
+    expect(cierreBloqueadoPorCobro(r2('qr_enviado', ahora), ahora)).toBe(true);
+  });
+  it('NIEGA: a tiempo, agendada, regla 1 y entradas raras no bloquean', () => {
+    expect(cierreBloqueadoPorCobro(r2('qr_enviado', ahora + 60_000), ahora)).toBe(false);
+    expect(cierreBloqueadoPorCobro(r2('agendada', ahora - 60_000), ahora)).toBe(false);
+    expect(cierreBloqueadoPorCobro({ etapa: 'en_revision' }, ahora)).toBe(false);
+    expect(cierreBloqueadoPorCobro({ etapa: 'vencida', reglaCobro: null }, ahora)).toBe(false);
+    for (const v of [null, undefined, 'x', 3]) expect(cierreBloqueadoPorCobro(v, ahora)).toBe(false);
   });
 });
