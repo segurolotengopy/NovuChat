@@ -27,8 +27,8 @@ import { Inventario } from './modulos/inventario/Inventario';
 import { Pedidos } from './modulos/pedidos/Pedidos';
 import { Cobros } from './modulos/cobros/Cobros';
 import { Captacion } from './modulos/captacion/Captacion';
-import { FLUJOS, etiquetaCatalogo, useFlujos } from './central/lib/flujos';
-import type { FlujoId } from './central/lib/flujos';
+import { etiquetaDeCatalogoDe, pestanasVisibles, useModulos } from './central/lib/flujos';
+import type { IdModulo } from './central/lib/flujos';
 
 /**
  * Menú, filtrado por rol.
@@ -41,7 +41,7 @@ import type { FlujoId } from './central/lib/flujos';
  * exactamente lo que no se quiere. Se detectó probando a mano con la siembra.
  *
  * PESTAÑAS POR FLUJO. Un negocio tiene uno o más flujos y cada flujo trae las
- * suyas (`web/src/central/lib/flujos.ts`): «Agenda» solo con reservas, «Pedidos y cobro» solo
+ * suyas, del registro (`functions/src/registro.ts`): «Agenda» solo con reservas, «Pedidos y cobro» solo
  * con venta. Antes «Funcionarios» se ofrecía a todo administrador, y el de un
  * restaurante entraba a una pantalla cuyo alta el servidor le rechazaba.
  *
@@ -92,10 +92,10 @@ const TITULOS: Record<string, string> = {
   ingresar: 'Ingresar',
 };
 
-function useTituloDePagina(flujos: FlujoId[] | null): void {
+function useTituloDePagina(modulos: IdModulo[] | null): void {
   const { pathname } = useLocation();
   const tramo = pathname.replace(/\/+$/, '').split('/').pop() ?? '';
-  const nombre = tramo === 'catalogo' ? etiquetaCatalogo(flujos ?? []) : TITULOS[tramo];
+  const nombre = tramo === 'catalogo' ? etiquetaDeCatalogoDe(modulos ?? []) : TITULOS[tramo];
   useEffect(() => {
     document.title = nombre ? `${nombre} · NovuChat` : 'NovuChat · Panel administrativo';
   }, [nombre]);
@@ -106,8 +106,8 @@ function Cabecera() {
   const { tenantId: tenantDeLaRuta } = useParams();
   const negocios = Object.keys(permisos.tenants);
   const tenantId = tenantDeLaRuta ?? (negocios.length === 1 ? negocios[0] : undefined);
-  const flujos = useFlujos(tenantId);
-  useTituloDePagina(flujos);
+  const modulos = useModulos(tenantId);
+  useTituloDePagina(modulos);
   if (!usuario) return null;
 
   const rol = tenantId ? rolEn(permisos, tenantId) : null;
@@ -132,34 +132,26 @@ function Cabecera() {
         {!tenantId && negocios.length > 1 && <NavLink to="/" end>Mis negocios</NavLink>}
         {tenantId && esAdminDelNegocio &&
           <NavLink to={`/negocio/${tenantId}/configuracion`}>Configuración</NavLink>}
-        {tenantId && esAdminDelNegocio && flujos &&
-          <NavLink to={`/negocio/${tenantId}/catalogo`}>{etiquetaCatalogo(flujos)}</NavLink>}
+        {tenantId && esAdminDelNegocio && modulos &&
+          <NavLink to={`/negocio/${tenantId}/catalogo`}>{etiquetaDeCatalogoDe(modulos)}</NavLink>}
         {/* CAMPAÑAS: capa común (24/09/2026). Un anuncio lleva al número del
             comercio, no a un flujo, así que va con el catálogo y no en
             `web/src/central/lib/flujos.ts`. Solo el administrador: la regla no deja escribir
             a nadie más. */}
         {tenantId && esAdminDelNegocio &&
           <NavLink to={`/negocio/${tenantId}/campanas`}>Campañas</NavLink>}
-        {/* LA COMPUERTA DE ROLES YA NO DA POR SENTADO QUE PESTAÑA DE FLUJO =
-            ADMINISTRADOR. Lo era hasta el 09/09, y «Pedidos» rompe la regla: la
-            mira el cocinero o el repartidor. Cada pestaña declara sus roles en
-            `web/src/central/lib/flujos.ts`; sin declararlos, sigue siendo solo del admin, que es
-            el comportamiento que ya había.
+        {/* PESTAÑAS DE MÓDULO, del registro (`functions/src/registro.ts`, por la
+            fachada `web/src/central/lib/flujos.ts`): la lista, el orden y los
+            roles de cada una salen de los manifiestos, no de esta pantalla.
+            La compuerta de roles no da por sentado que pestaña de módulo =
+            administrador («Pedidos» la mira el cocinero; «Captación» la ve
+            además el propietario). Una por ruta, aunque dos flujos la
+            compartan (la seña de reservas y el cobro de venta).
             Esto es COSMÉTICO, como todo el menú: quien autoriza es
-            `firestore.rules`. Lo que evita es ofrecerle a un operador una puerta
-            que el servidor le va a cerrar. */}
-        {tenantId && (flujos ?? []).flatMap((f) =>
-          FLUJOS[f].pestanas
-            .filter((p) => (p.tambienPropietario === true && permisos.propietario)
-              || (p.roles ?? ['admin']).includes(rol as 'admin' | 'oper')))
-          // UNA PESTAÑA POR RUTA, aunque la declaren dos flujos. Desde el 17/09
-          // reservas y venta comparten «Cobros» y «Configuración de QR» (la
-          // seña, `web/src/central/lib/flujos.ts`): un negocio con los dos flujos las veía
-          // repetidas, y React se quejaba de la clave duplicada. Se queda la
-          // primera, que es la del flujo que va antes en la lista.
-          .filter((p, i, todas) => todas.findIndex((q) => q.ruta === p.ruta) === i)
-          .map((p) =>
-            <NavLink key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.etiqueta}</NavLink>)}
+            `firestore.rules`. Lo que evita es ofrecerle a un operador una
+            puerta que el servidor le va a cerrar. */}
+        {tenantId && pestanasVisibles(modulos ?? [], { rol, propietario: permisos.propietario }).map((p) =>
+          <NavLink key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.titulo}</NavLink>)}
         {tenantId && esPersona &&
           <NavLink to={`/negocio/${tenantId}/conversaciones`}>Conversaciones</NavLink>}
         {tenantId && esAdminDelNegocio &&
