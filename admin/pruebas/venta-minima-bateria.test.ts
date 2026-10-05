@@ -586,7 +586,17 @@ describe('--vertex (con un fetch y un token de mentira): el cuerpo es el del flu
     const s = await correr(m, ['--vertex', 'mi-proyecto-de-prueba', '--casos', 'A10']);
     expect(s.salida).not.toContain(TOKEN);
     expect(s.error).not.toContain(TOKEN);
-    expect([0, 1]).toContain(s.codigo);
+    expect(s.codigo).toBe(3); // el modelo devolvio error: los resultados no sirven para juzgar el flujo
+  });
+
+  it('un 404 del modelo (p. ej. el modelo no existe en esa ubicación) se SEÑALA y sale con 3; no se confunde con un defecto del flujo', async () => {
+    const m = mundo(() => 'HTTP 404 {"error":{"message":"Publisher model was not found"}}');
+    const s = await correr(m, ['--vertex', 'mi-proyecto-de-prueba', '--casos', 'A10']);
+    expect(s.codigo).toBe(3);
+    expect(s.salida).toMatch(/MODELO NO DISPONIBLE/);
+    expect(s.salida).toMatch(/--locacion global/);
+    expect(s.salida).toMatch(/404/);
+    expect(s.salida).not.toContain(TOKEN);
   });
 
   it('sin token de gcloud es un error de uso (2), sin llamar a la red', async () => {

@@ -28,7 +28,7 @@
 //   --tabla             la tabla en formato Markdown (para pegarla en un informe) en lugar de la tabla de texto.
 //   --ayuda             este resumen.
 // SALIDA: una tabla por escenario (id, titulo, corridas, aprobo/fallo y POR QUE, en una linea) y un resumen (turnos, llamadas al
-// modelo, avisos, costo). Codigo de salida: 0 todo aprobo; 1 algun caso fallo; 2 uso incorrecto o casos mal formados.
+// modelo, avisos, costo). Codigo de salida: 0 todo aprobo; 1 algun caso fallo; 2 uso incorrecto o casos mal formados; 3 el modelo devolvio error en alguna llamada (resultados no validos).
 // NO ESCRIBE ARCHIVOS (solo la salida estandar) y NUNCA imprime ni guarda un secreto.
 //
 // =================================================================================================================================
@@ -549,6 +549,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
       }
       const r = await llamarGemini({ cuerpo: ll.cuerpo, urlDelNodo: ll.url, credencial, opciones, deps, nodo: nodoExtraer });
       const u = objeto(r.json.usageMetadata);
+      if (r.fallo) captura.erroresModelo.push(String(objeto(r.json.error).message ?? 'error del modelo').replace(/\s+/g, ' ').slice(0, 160));
       if (!r.fallo) captura.usos.push({ entrada: Number(u.promptTokenCount) || 0, salida: Number(u.candidatesTokenCount) || 0, cacheados: Number(u.cachedContentTokenCount) || 0, razonamiento: Number(u.thoughtsTokenCount) || 0, ms: r.ms });
       return r.json;
     },
@@ -583,7 +584,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
   });
 
   const estadoDe = () => clonar(objeto(objeto(objeto(mundo.sd.ventaMinima).estados)[CLIENTE]));
-  const corrida = { caso: caso.id, rep, ok: true, fallas: [], turnos: 0, llamadasModelo: 0, lecturas: 0, avisos: 0, mensajes: 0, usos: [], bytesModelo: 0, conversacion: [], textos: [], respaldos: [], previoLogrado: true };
+  const corrida = { caso: caso.id, rep, ok: true, fallas: [], turnos: 0, llamadasModelo: 0, lecturas: 0, avisos: 0, mensajes: 0, usos: [], erroresModelo: [], bytesModelo: 0, conversacion: [], textos: [], respaldos: [], previoLogrado: true };
   const vistos = []; // lo que el cliente recibio, por turno: [{id, title}] de botones y filas (para tocarlos por titulo)
   let reloj = inicio;
   let n = 0;
@@ -609,7 +610,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
       }
       throw new ErrorSinBoton(cc.titulo);
     };
-    captura = { mensajes: [], avisos: [], ingesta: [], cierre: [], respuestasWebhook: [], extraer: 0, extraerBytes: 0, usos: [], lecturas: 0 };
+    captura = { mensajes: [], avisos: [], ingesta: [], cierre: [], respuestasWebhook: [], extraer: 0, extraerBytes: 0, usos: [], lecturas: 0, erroresModelo: [] };
     turnoActual.t = t;
     const avanzar = n === 1 ? 0 : (t.avanzarMin ?? 1);
     reloj += avanzar * 60_000;
@@ -651,6 +652,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     corrida.avisos += avisosSalidos;
     corrida.mensajes += entregados.length;
     corrida.usos.push(...captura.usos);
+    corrida.erroresModelo.push(...captura.erroresModelo);
     const dicho = c.tipo === 'texto' ? c.texto : c.tipo === 'audio' ? `(audio) ${c.transcripcion}` : c.tipo === 'carrito' ? `(carrito) ${c.items.map((x) => `${x.cantidad ?? 1}× ${x.id}`).join(', ')}` : c.tipo === 'imagen' || c.tipo === 'documento' ? `(${c.tipo})${c.pie ? ' ' + c.pie : ''}` : `(toca) ${c.titulo ?? c.id}`;
     for (const m of entregados) corrida.textos.push({ turno: n, previo, texto: m.piezas.join(' ') });
     for (const it of r.porNodo['Armar mensajes'] ?? []) if (it && it.destino === 'cliente' && typeof it.respaldo === 'string' && it.respaldo) corrida.respaldos.push({ turno: n, previo, texto: it.respaldo });
@@ -753,7 +755,7 @@ function informe({ opciones, flujo, casos, corridas, global, pendientes }) {
     corridasPorCaso: opciones.seco ? 1 : opciones.n,
     casos: todos, aprobaron: todos.filter((x) => x.ok).length, fallaron: todos.filter((x) => !x.ok).length,
     total: {
-      corridas: corridas.length, turnos: suma(corridas.map((c) => c.turnos)), llamadasModelo: llamadas, mensajesAlCliente: suma(corridas.map((c) => c.mensajes)),
+      corridas: corridas.length, turnos: suma(corridas.map((c) => c.turnos)), llamadasModelo: llamadas, erroresDelModelo: corridas.reduce((n, c) => n + c.erroresModelo.length, 0), primerErrorDelModelo: corridas.flatMap((c) => c.erroresModelo)[0] ?? null, mensajesAlCliente: suma(corridas.map((c) => c.mensajes)),
       avisosAlLocal: suma(corridas.map((c) => c.avisos)), lecturasSimuladas: suma(corridas.map((c) => c.lecturas)), usoModelo: opciones.seco ? null : uso,
     },
     negativoGlobal: global ? { id: global.id, violaciones, latentes } : null,
@@ -788,6 +790,9 @@ function textoDelInforme(r, opciones) {
   o.push('');
   const t = r.total;
   o.push(`Escenarios: ${r.aprobaron} aprobaron · ${r.fallaron} fallaron · turnos totales: ${t.turnos} · llamadas al modelo («Extraer»): ${t.llamadasModelo} · mensajes al cliente (todos los turnos): ${t.mensajesAlCliente} · avisos al local: ${t.avisosAlLocal} · lecturas de comprobante simuladas: ${t.lecturasSimuladas}`);
+  if (t.erroresDelModelo > 0) {
+    o.push(`⚠ MODELO NO DISPONIBLE: ${t.erroresDelModelo} de ${t.llamadasModelo} llamadas a «Extraer» devolvieron error (la primera: ${t.primerErrorDelModelo}). Estos resultados NO sirven para juzgar el flujo: el flujo cayó en su camino de error. Si es un 404, prueba con --locacion global.`);
+  }
   if (r.negativoGlobal) {
     o.push(`Negativo global ${r.negativoGlobal.id}: ${r.negativoGlobal.violaciones.length === 0 ? 'ninguna frase prohibida en lo que el cliente recibe' : `${r.negativoGlobal.violaciones.length} violación(es)`}`);
     for (const v of r.negativoGlobal.violaciones.slice(0, 20)) o.push(`  [${v.caso} T${v.turno}] «${v.frase}» → ${v.texto}`);
@@ -849,6 +854,9 @@ export async function main(argv, deps = {}) {
   let credencial = { clave: null, token: null, nombre: '' };
   try {
     opciones = leerArgumentos(argv);
+    // El modelo del flujo (gemini-3.5-flash-lite) existe en la ubicación `global` y NO en `us-central1` (404, comprobado el 05/10/2026):
+    // por omisión se usa `global`; `--locacion` la cambia.
+    if (!argv.includes('--locacion')) opciones.locacion = 'global';
     if (opciones.ayuda) { d.salida(AYUDA + '\n'); return 0; }
     const flujo = JSON.parse(readFileSync(RUTA_FLUJO, 'utf8'));
     const { casos: todos, global } = d.leerCasos();
@@ -879,7 +887,7 @@ export async function main(argv, deps = {}) {
     }
     const r = informe({ opciones, flujo, casos: elegidos, corridas, global: conGlobal, pendientes: leerPendientes(CARPETA_CASOS) });
     d.salida(opciones.json ? JSON.stringify(r) + '\n' : textoDelInforme(r, opciones) + '\n');
-    return r.fallaron > 0 ? 1 : 0;
+    return r.total.erroresDelModelo > 0 ? 3 : r.fallaron > 0 ? 1 : 0;
   } catch (e) {
     const secretos = [credencial.clave, credencial.token];
     if (e instanceof ErrorDeUso) { d.error(`✗ ${limpiarSecretos(e.message, secretos)}\n`); return 2; }
