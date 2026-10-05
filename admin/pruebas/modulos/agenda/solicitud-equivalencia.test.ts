@@ -34,9 +34,10 @@ import { describe, expect, it } from 'vitest';
 import { milisegundosDe } from '../../../functions/src/core/turno/tiempo.ts';
 import { MINUTOS_RETENCION_POR_DEFECTO } from '../../../functions/src/modulos/agenda/retencion.ts';
 import {
-  DIAS_ADELANTO_A_FAVOR, ETAPAS_PENDIENTES, HORAS_ANTICIPACION_PARA_CANCELAR,
-  cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo, reactivaTras, solicitudTras,
+  DIAS_ADELANTO_A_FAVOR, ETAPAS_PENDIENTES, HORAS_ANTICIPACION_PARA_CANCELAR, reactivaTras, solicitudTras,
 } from '../../../functions/src/modulos/agenda/solicitud.ts';
+// F3b-1b: los predicados de cobro viven en Cobros; el golden se generó antes de moverlos.
+import { cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo } from '../../../functions/src/modulos/cobros/alCierre.ts';
 import { AHORA, H, PREVIAS, previa, regla2, rejilla, ts } from './rejilla-solicitud.ts';
 
 const GOLDEN = new URL('./solicitud-equivalencia.golden.json', import.meta.url);
