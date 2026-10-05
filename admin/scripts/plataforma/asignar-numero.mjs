@@ -43,8 +43,9 @@
  */
 import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
-// `registro.ts` no importa nada: se carga directo, sin el hook de abajo.
-import { IDS_FLUJOS, documentoDeFlujo } from '../../functions/src/registro.ts';
+// EL FLUJO VÁLIDO Y SU DOCUMENTO DE CONFIGURACIÓN SALEN DEL REGISTRO (H2b-4e), no de
+// una lista propia: `registro.ts` no tiene `import`, así que no necesita el gancho de abajo.
+import { documentoDeFlujo, esFlujo } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -86,11 +87,8 @@ registerHooks({
     }
   },
 });
-const FLUJOS_VALIDOS = new Set(IDS_FLUJOS);
 const { TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } = await import('../../functions/src/central/ejes.ts');
 const titularidad = TITULARIDAD || TITULARIDAD_POR_DEFECTO;
-// El documento de cada flujo sale del registro.
-const DOCUMENTO = Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]));
 
 const firma = readFileSync(new URL('../../functions/src/core/seguridad/firma.ts', import.meta.url), 'utf8');
 const RESERVA = [...firma.matchAll(/^\s*(\w+):\s*defineSecret\('([A-Z0-9_]+)'\)/gm)]
@@ -108,7 +106,7 @@ if (!LISTAR) {
   if (!ID_NUMERO.test(NUMERO)) problemas.push('--numero no es un phone_number_id (solo dígitos, 6 a 25)');
   if (!ID_NUMERO.test(WABA)) problemas.push('--waba no es un WABA ID (solo dígitos, 6 a 25)');
   if (NUMERO && NUMERO === WABA) problemas.push('--numero y --waba son iguales: son dos IDs distintos');
-  if (!FLUJOS_VALIDOS.has(FLUJO)) problemas.push(`--flujo desconocido: ${FLUJO || '(vacío)'}`);
+  if (!esFlujo(FLUJO)) problemas.push(`--flujo desconocido: ${FLUJO || '(vacío)'}`);
   if (!ALIAS_VALIDOS.has(ALIAS)) problemas.push(`--alias no está en la reserva de firma.ts: ${ALIAS || '(vacío)'}`);
   if (REEMPLAZA && !ID_NUMERO.test(REEMPLAZA)) problemas.push('--reemplaza no es un phone_number_id (solo dígitos, 6 a 25)');
   if (REEMPLAZA && REEMPLAZA === NUMERO) problemas.push('--reemplaza es el mismo número que --numero');
@@ -151,7 +149,7 @@ if (LISTAR) {
 const refRuta = db.doc(`rutasWhatsApp/${NUMERO}`);
 const refVieja = REEMPLAZA ? db.doc(`rutasWhatsApp/${REEMPLAZA}`) : null;
 const refTenant = db.doc(`tenants/${TENANT}`);
-const documento = DOCUMENTO[FLUJO] ?? null;
+const documento = documentoDeFlujo(FLUJO);
 const refConfig = documento ? db.doc(`tenants/${TENANT}/config/${documento}`) : null;
 const secreto = RESERVA.find((r) => r.alias === ALIAS)?.secreto;
 

@@ -43,6 +43,9 @@
  */
 import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+// QUIÉN TIENE CATÁLOGO WEB LO DECIDE EL REGISTRO (`tieneModulo`, H2b-4e), no una
+// lista propia de flujos. `registro.ts` no tiene `import`: Node lo carga quitando los tipos.
+import { flujosDeFicha, tieneModulo } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const leer = (bandera) => {
@@ -154,13 +157,13 @@ console.log(`  Estado   : ${actual.get('estado')}`);
 console.log(`  Antes    : ${antes ? ocultarUrl(antes) : `${G}(sin webhook)${F}`}`);
 console.log(`  Después  : ${QUITAR ? `${G}(sin webhook)${F}` : ocultarUrl(URL_DESTINO)}\n`);
 
-// EL COMERCIO TIENE QUE VENDER. El catálogo web es capacidad de venta y nada
-// más (decisión del 08/09): fijarle el webhook a un comercio de agendamiento
-// sería dejar puesto un destino que ninguna función va a usar nunca.
+// EL COMERCIO TIENE QUE TENER CATÁLOGO WEB. Es capacidad de venta y nada más
+// (decisión del 08/09): fijarle el webhook a un comercio de agendamiento sería
+// dejar puesto un destino que ninguna función va a usar nunca. Hoy el módulo
+// `catalogo-web` lo traen los comercios con el flujo «venta».
 const ficha = await db.doc(`tenants/${tenant}`).get();
-const flujos = Array.isArray(ficha.get('flujos')) ? ficha.get('flujos') : [ficha.get('vertical')];
-if (!flujos.includes('venta')) {
-  salir(`El comercio ${tenant} no tiene el flujo «venta» (${flujos.join(', ')}). `
+if (!tieneModulo(ficha.data(), 'catalogo-web')) {
+  salir(`El comercio ${tenant} no tiene el flujo «venta» (${flujosDeFicha(ficha.data()).join(', ')}). `
     + 'El catálogo web es una capacidad de venta: no hay carrito que devolver.');
 }
 
