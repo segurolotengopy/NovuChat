@@ -8,6 +8,7 @@ import { useFlujos } from '../lib/flujos';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { PALETAS, PALETA_POR_DEFECTO, type PaletaId } from '../lib/paletas';
 import { ErrorDeImagen, mensajeDeErrorDeLogo } from '../lib/errorLogo';
+import { decodificarImagen } from '../lib/decodificarImagen';
 
 /**
  * Edición de la configuración del negocio: lo que hoy vive a mano en el nodo
@@ -934,23 +935,19 @@ const TOPE_LOGO = 200_000;
  * saber qué es un kilobyte. Si aun así no entra, se lo dice con una salida.
  */
 async function recortar(archivo: File): Promise<string> {
-  const url = URL.createObjectURL(archivo);
+  // Sin `URL.createObjectURL`: la CSP no admite `blob:` en `img-src` y esa
+  // carga fallaba siempre (ver `lib/decodificarImagen.ts`).
+  const img = await decodificarImagen(archivo);
   try {
-    const img = await new Promise<HTMLImageElement>((resolver, rechazar) => {
-      const i = new Image();
-      i.onload = () => resolver(i);
-      i.onerror = () => rechazar(new ErrorDeImagen('ilegible'));
-      i.src = url;
-    });
-
+    if (img.ancho < 1 || img.alto < 1) throw new ErrorDeImagen('ilegible');
     const LADO = 320;
-    const escala = Math.min(1, LADO / Math.max(img.naturalWidth, img.naturalHeight));
+    const escala = Math.min(1, LADO / Math.max(img.ancho, img.alto));
     const lienzo = document.createElement('canvas');
-    lienzo.width = Math.max(1, Math.round(img.naturalWidth * escala));
-    lienzo.height = Math.max(1, Math.round(img.naturalHeight * escala));
+    lienzo.width = Math.max(1, Math.round(img.ancho * escala));
+    lienzo.height = Math.max(1, Math.round(img.alto * escala));
     const ctx = lienzo.getContext('2d');
     if (!ctx) throw new ErrorDeImagen('sin-lienzo');
-    ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
+    ctx.drawImage(img.fuente, 0, 0, lienzo.width, lienzo.height);
 
     // WebP primero por tamaño; si el navegador no sabe codificarlo, `toDataURL`
     // devuelve un PNG en silencio, que la validación acepta igual.
@@ -960,6 +957,6 @@ async function recortar(archivo: File): Promise<string> {
     }
     throw new ErrorDeImagen('pesada');
   } finally {
-    URL.revokeObjectURL(url);
+    img.cerrar();
   }
 }
