@@ -38,6 +38,17 @@
  *     --proyecto <id> --tenant <id> --numero <dígitos con prefijo, sin +> \
  *     --operador <correo de quien lo corre> [--aplicar]
  *
+ *   node scripts/modulos/catalogo-web/fijar-numero-publico.mjs \
+ *     --proyecto <id> --tenant <id> --quitar \
+ *     --operador <correo de quien lo corre> [--aplicar]
+ *
+ * `--quitar` es la vuelta atrás: elimina SOLO el campo `numeroPublico` de la
+ * ruta (sin el campo la página no ofrece «Volver al chat»), con los mismos
+ * negados que fijar. Es excluyente con `--numero`. Deja `actualizadoPor` = el
+ * operador y una entrada de auditoría `quitar_numero_publico` con el valor
+ * anterior y los últimos cuatro de la línea. Si ya no hay campo, dice «Ya estaba
+ * así» y no escribe ni audita. No toca el alias, la WABA ni el webhook.
+ *
  * `--operador` es obligatorio (la misma validación que `asignar-numero.mjs`): es
  * quien queda como `actualizadoPor` de la ruta y como `uid` de la auditoría.
  *
@@ -45,12 +56,11 @@
  *   - `asignarNumero` (la callable) REEMPLAZA el documento de la ruta y borraría
  *     este campo; `asignar-numero.mjs` escribe con merge y lo conserva. Con un
  *     número nuevo (`--reemplaza`) la ruta es otra: hay que volver a fijarlo.
- *   - Para sacarlo, borre el campo en la ruta con una herramienta de
- *     administración; sin el campo la página simplemente no ofrece el botón.
  */
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
 const APLICAR = args.includes('--aplicar');
+const QUITAR = args.includes('--quitar');
 const PROYECTO = (opcion('proyecto') ?? '').trim();
 const TENANT = (opcion('tenant') ?? '').trim();
 const NUMERO = (opcion('numero') ?? '').trim();
@@ -72,7 +82,10 @@ const problemas = [];
 if (PROYECTO === '') problemas.push('falta --proyecto');
 if (!ID_TENANT.test(TENANT)) problemas.push('--tenant no es un identificador válido');
 if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: es quien queda en la auditoría');
-if (!NUMERO_PUBLICO.test(NUMERO)) {
+if (QUITAR) {
+  // Excluyente con `--numero`: o se fija, o se quita; nunca las dos cosas.
+  if (args.includes('--numero')) problemas.push('--quitar y --numero son excluyentes');
+} else if (!NUMERO_PUBLICO.test(NUMERO)) {
   problemas.push('--numero tiene que ser solo dígitos, de 8 a 15, con el prefijo del país '
     + '(sin +, sin espacios, sin cero inicial)');
 } else if (/^[67][0-9]{7}$/.test(NUMERO)) {
@@ -85,12 +98,12 @@ if (!NUMERO_PUBLICO.test(NUMERO)) {
 if (problemas.length > 0) {
   rojo(`\n  ✗ ${problemas.join('\n  ✗ ')}\n`);
   console.error('  node scripts/modulos/catalogo-web/fijar-numero-publico.mjs --proyecto <id> '
-    + '--tenant <id> --numero <dígitos con prefijo, sin +> --operador <correo> [--aplicar]\n');
+    + '--tenant <id> (--numero <dígitos con prefijo, sin +> | --quitar) --operador <correo> [--aplicar]\n');
   process.exit(2);
 }
 
 const { initializeApp } = await import('firebase-admin/app');
-const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
+const { getFirestore, Timestamp, FieldValue } = await import('firebase-admin/firestore');
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 
@@ -120,19 +133,21 @@ try {
     const resumen = {
       phoneNumberId,
       antes: typeof antes === 'string' ? antes : '',
-      igual: antes === NUMERO,
+      // Quitar: ya está si el campo no existe (aunque hubiera basura, se quita).
+      igual: QUITAR ? antes === undefined : antes === NUMERO,
     };
     if (!APLICAR || resumen.igual) return resumen;
 
     tx.update(refRuta, {
-      numeroPublico: NUMERO,
+      numeroPublico: QUITAR ? FieldValue.delete() : NUMERO,
       actualizadoPor: OPERADOR,
       actualizadoEn: Timestamp.now(),
     });
     tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
-      accion: 'fijar_numero_publico', uid: OPERADOR, origen: 'script', script: 'fijar-numero-publico',
+      accion: QUITAR ? 'quitar_numero_publico' : 'fijar_numero_publico',
+      uid: OPERADOR, origen: 'script', script: 'fijar-numero-publico',
       en: Timestamp.now(), phoneNumberId: ult4(phoneNumberId),
-      antes: resumen.antes, despues: NUMERO,
+      antes: resumen.antes, despues: QUITAR ? '' : NUMERO,
     });
     return { ...resumen, escrito: true };
   });
@@ -151,7 +166,7 @@ console.log(`  Proyecto : ${PROYECTO}`);
 console.log(`  Comercio : ${TENANT}  ·  línea ${ult4(plan.phoneNumberId)}`);
 console.log(`  Operador : ${OPERADOR}`);
 console.log(`  Antes    : ${plan.antes === '' ? '(sin número público)' : plan.antes}`);
-console.log(`  Después  : ${NUMERO}`);
+console.log(`  Después  : ${QUITAR ? '(sin número público)' : NUMERO}`);
 console.log();
 
 if (plan.igual) {
@@ -164,5 +179,5 @@ if (!plan.escrito) {
 }
 
 const releido = (await db.doc(`rutasWhatsApp/${plan.phoneNumberId}`).get()).get('numeroPublico');
-if (releido !== NUMERO) { rojo('  ✗ La relectura no coincide. Revíselo a mano.\n'); process.exit(1); }
-verde(`  ✓ Número público fijado para ${TENANT}, y anotado en la auditoría.\n`);
+if (releido !== (QUITAR ? undefined : NUMERO)) { rojo('  ✗ La relectura no coincide. Revíselo a mano.\n'); process.exit(1); }
+verde(`  ✓ Número público ${QUITAR ? 'quitado' : 'fijado'} para ${TENANT}, y anotado en la auditoría.\n`);
