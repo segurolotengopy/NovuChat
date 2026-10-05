@@ -1,0 +1,2409 @@
+rules_version = '2';
+
+// =============================================================================
+// NovuChat — Panel administrativo multi-tenant
+// Reglas de seguridad de Cloud Firestore
+// =============================================================================
+//
+// PRINCIPIOS (el porqué, no solo el cómo — ver admin/SEGURIDAD.md):
+//
+//  1. NEGAR POR DEFECTO. No existe ninguna regla comodín que permita. La última
+//     coincidencia de este archivo deniega todo lo que no se habilitó arriba de
+//     forma explícita. Una colección nueva nace inaccesible.
+//
+//  2. EL TENANT VIVE EN LA RUTA, NUNCA EN UN CAMPO. Todo dato de un negocio
+//     cuelga de /tenants/{tenantId}/... El identificador del tenant que la regla
+//     compara sale del *path* de la petición y del *token*: jamás del cuerpo del
+//     documento ni de un parámetro que el cliente pueda elegir.
+//
+//  3. LA PERTENENCIA Y EL ROL VIVEN EN CUSTOM CLAIMS. Los emite exclusivamente
+//     una Cloud Function con el SDK Admin. El navegador no puede escribirlos ni
+//     falsificarlos: van firmados dentro del ID token por Google.
+//     El documento /tenants/{t}/miembros/{uid} es un ESPEJO para pintar la
+//     interfaz; no otorga ningún permiso y es de solo lectura para todos.
+//
+//  4. MÍNIMO PRIVILEGIO. El propietario de NovuChat administra tenants pero NO
+//     lee conversaciones de clientes salvo con un permiso de soporte explícito,
+//     otorgado por el negocio y con vencimiento.
+//
+//  5. LAS REGLAS DE FIRESTORE NO FILTRAN RESULTADOS. Una consulta se permite o
+//     se rechaza entera. Por eso el aislamiento se apoya en la ruta: una consulta
+//     que no está anclada bajo el tenant del token simplemente falla.
+//
+//  6. LAS REGLAS NO PUEDEN OCULTAR CAMPOS SUELTOS EN LECTURA. Lo que un rol no
+//     debe ver va en OTRO documento, no en otro campo. Por eso los datos
+//     personales ampliados del contacto viven en .../conversaciones/{c}/privado.
+//
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Ayudantes de identidad
+    // -------------------------------------------------------------------------
+
+    // Espacio de nombres corto `nc` dentro de los custom claims. Los custom
+    // claims tienen un tope duro de 1000 bytes: las claves cortas son lo que
+    // permite que un usuario pertenezca a varios negocios sin reventarlo.
+    //
+    // Forma: { nc: { p: true, t: { "<tenantId>": "admin" | "oper" | "ingesta" }, v: 3 } }
+    //   p → propietario de plataforma (NovuChat)
+    //   t → mapa tenantId -> rol
+    //   v → versión de claims, para forzar refresco del token desde el cliente
+    function autenticado() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function nc() {
+      return request.auth.token.get('nc', {});
+    }
+
+    // Propietario de NovuChat. NO implica acceso a conversaciones (ver punto 4).
+    // -------------------------------------------------------------------------
+    // VÍNCULO ROL ↔ PROVEEDOR DE IDENTIDAD
+    //
+    // Regla de seguridad, no preferencia:
+    //   superadministrador de NovuChat  →  SOLO cuenta de Google
+    //   administrador / operador de un comercio  →  SOLO usuario y contraseña
+    //   principal de ingesta (n8n)  →  SOLO token personalizado
+    //
+    // `firebase.sign_in_provider` viaja DENTRO del ID token firmado por Google:
+    // dice con qué proveedor se abrió ESTA sesión y el cliente no lo puede
+    // alterar. Al meterlo dentro de los predicados base —y no en cada `allow`—
+    // el vínculo se vuelve imposible de eludir por olvido: toda regla del
+    // archivo pasa por `esPropietario`, `esAdmin`, `esOperador` o `esIngesta`.
+    //
+    // EFECTO: un claim mal puesto queda INERTE. Si por un error operativo o un
+    // fallo en una Function un administrador de comercio recibiera `p: true`,
+    // su sesión de contraseña nunca satisface `proveedor() == 'google.com'` y no
+    // obtiene nada. El claim solo se activa desde una sesión de Google, que es
+    // la que protege el segundo factor de la cuenta de Andres o de Silvana.
+    // Ver SEGURIDAD.md, amenaza T-19.
+    // -------------------------------------------------------------------------
+    function proveedor() {
+      return request.auth.token.get('firebase', {}).get('sign_in_provider', '');
+    }
+
+    // Correo verificado. Con Google siempre es verdadero; con contraseña es falso
+    // hasta que la persona hace clic en el enlace. Exigirlo acá convierte la
+    // verificación de correo en un control REAL —el servidor niega los datos—
+    // y no en un aviso de la interfaz que se saltea recargando la página.
+    function correoVerificado() {
+      return request.auth.token.get('email_verified', false) == true;
+    }
+
+    function esPropietario() {
+      return autenticado()
+        && nc().get('p', false) == true
+        && proveedor() == 'google.com';
+    }
+
+    // Rol del usuario EN ESTE tenant, o cadena vacía. `tenantId` viene siempre
+    // del path, nunca de un dato que el cliente pueda elegir.
+    //
+    // EL DEFECTO QUE SE ARREGLÓ ACÁ. Antes esta función devolvía `null` cuando el
+    // usuario no tenía rol en el tenant. Comparar `null == 'admin'` no da falso
+    // en el lenguaje de reglas: lanza *Null value error*, que deniega la
+    // operación por error de evaluación en vez de por la condición. El efecto
+    // real era que el propietario de NovuChat NO podía leer `/auditoria`,
+    // `/invitaciones` ni `/accesosSoporte` —todas reglas de la forma
+    // `esAdmin(t) || esPropietario()`, donde `esAdmin` se evalúa primero y
+    // reventaba antes de llegar a la segunda rama—. Con la cadena vacía como
+    // valor por defecto, la comparación es siempre entre cadenas y da falso
+    // limpio. Lo destapó la prueba de contactos del propietario.
+    function rolEn(tenantId) {
+      return nc().get('t', {}).get(tenantId, '');
+    }
+
+    // Se compone de los predicados de arriba para HEREDAR el vínculo con el
+    // proveedor. Si se definiera otra vez a partir de `rolEn`, sería el agujero
+    // por el que se cuela todo: un rol sin proveedor comprobado.
+    function esMiembro(tenantId) {
+      return esPersonaDelNegocio(tenantId) || esIngesta(tenantId);
+    }
+
+    // Las personas del comercio entran SOLO con usuario y contraseña, y solo con
+    // el correo ya verificado.
+    function esAdmin(tenantId) {
+      return autenticado()
+        && rolEn(tenantId) == 'admin'
+        && proveedor() == 'password'
+        && correoVerificado();
+    }
+
+    function esOperador(tenantId) {
+      return autenticado()
+        && rolEn(tenantId) == 'oper'
+        && proveedor() == 'password'
+        && correoVerificado();
+    }
+
+    // Principal de servicio de n8n, acotado a UN tenant. Se obtiene con un token
+    // efímero (1 h) que emite la Cloud Function de intercambio; n8n nunca guarda
+    // una clave de cuenta de servicio con alcance de proyecto.
+    // El principal de servicio llega con un token personalizado emitido por la
+    // Cloud Function tras validar la firma HMAC. Atarlo a `custom` impide que
+    // una persona —con Google o con contraseña— use un claim de ingesta para
+    // escribir en el historial de conversaciones, que es inmutable justamente
+    // para que sirva como evidencia.
+    function esIngesta(tenantId) {
+      return autenticado()
+        && rolEn(tenantId) == 'ingesta'
+        && proveedor() == 'custom';
+    }
+
+    // Persona (admin u operador). Excluye al principal de servicio, que es
+    // ciego por diseño: escribe conversaciones y no puede leerlas.
+    function esPersonaDelNegocio(tenantId) {
+      return esAdmin(tenantId) || esOperador(tenantId);
+    }
+
+    // -------------------------------------------------------------------------
+    // Ayudantes de estado (cuestan una lectura documental cada uno)
+    // -------------------------------------------------------------------------
+
+    // ESTADOS DE UN COMERCIO — la palanca comercial de NovuChat.
+    //
+    //   'activo'        opera con normalidad.
+    //   'suspendido'    palanca por falta de pago. El asistente DEJA de atender
+    //                   a los clientes finales y el comercio deja de poder
+    //                   editar nada, pero SIGUE VIENDO SUS DATOS. Reversible al
+    //                   instante y sin tocar los claims.
+    //   'dado_de_baja'  fin de contrato. Ni lectura ni escritura desde el panel.
+    //
+    // Consultar el estado en cada operación cuesta UNA lectura documental (que
+    // además se cachea dentro de la misma petición) y compra algo que no se
+    // puede comprar de otro modo: EFECTO INMEDIATO. Un ID token vive hasta una
+    // hora; si la suspensión dependiera de los claims, el comercio seguiría
+    // operando durante todo ese rato después de que se le cortó el servicio.
+    // Para una palanca de cobranza, una hora de retraso la vuelve inútil.
+    function estadoTenant(tenantId) {
+      return exists(/databases/$(database)/documents/tenants/$(tenantId))
+        ? get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('estado', '')
+        : '';
+    }
+
+    // -------------------------------------------------------------------------
+    // VERTICAL DEL COMERCIO — qué capacidades tiene.
+    //
+    // Lo fija NovuChat al dar de alta o al asignar el número; el comercio no lo
+    // escribe. De acá cuelga qué documentos de configuración puede tocar y qué
+    // colecciones le corresponden.
+    //
+    // El objetivo no es cosmético. Un comercio de gastronomía **no puede
+    // escribir** configuración de calendario, y uno de belleza **no puede
+    // escribir** el recargo de flota — no es que la pantalla se los esconda: las
+    // reglas los rechazan. Esconder en la interfaz no protege de nada; lo que
+    // protege es que el campo no exista para ese comercio.
+    // -------------------------------------------------------------------------
+    function verticalTenant(tenantId) {
+      return exists(/databases/$(database)/documents/tenants/$(tenantId))
+        ? get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('vertical', '')
+        : '';
+    }
+
+    // LOS FLUJOS DE UN NEGOCIO SON UNA LISTA, NO UN VALOR. Un negocio puede
+    // tener reservas Y pedidos —cada flujo con su número de WhatsApp— y la
+    // consola le habilita una pestaña por cada uno. `vertical` (valor único) se
+    // conserva como el flujo principal y como respaldo para las fichas escritas
+    // antes de que existiera la lista: una ficha sin `flujos` se lee como
+    // `[vertical]`, así nada de lo ya cargado cambia de comportamiento.
+    //
+    // Cuando las dos cosas están, MANDA LA LISTA. Es lo que evita que una ficha
+    // con `vertical: 'agendamiento'` y `flujos: ['venta']` abra la agenda por
+    // la puerta del valor viejo.
+    function flujosTenant(tenantId) {
+      return exists(/databases/$(database)/documents/tenants/$(tenantId))
+        ? get(/databases/$(database)/documents/tenants/$(tenantId)).data
+            .get('flujos', [verticalTenant(tenantId)])
+        : [];
+    }
+
+    function tieneFlujo(tenantId, flujo) {
+      return flujo in flujosTenant(tenantId);
+    }
+
+    // Capacidades, expresadas como tabla y no como condiciones sueltas: agregar
+    // un flujo es tocar estas líneas, no cazar `if` por el archivo. La misma
+    // tabla vive en `functions/src/core/prompt/prompt.ts` (VERTICALES_CONOCIDOS) y en
+    // `web/src/central/lib/flujos.ts`: si se agrega un flujo en un solo lado, se nota.
+    function tieneAgenda(tenantId) {
+      return tieneFlujo(tenantId, 'agendamiento');
+    }
+
+    function tieneCobro(tenantId) {
+      return tieneFlujo(tenantId, 'venta');
+    }
+
+    // El flujo de CAPTACIÓN: capta y atiende a quien quiere contratar lo que
+    // vende el comercio. Nació como el flujo propio de NovuChat y desde el
+    // 15/09 es un flujo GENÉRICO, igual que agendamiento y venta: su documento
+    // `/config/onboarding` lo leen los miembros del comercio y lo escribe su
+    // administrador, además del propietario de la plataforma.
+    function tieneOnboarding(tenantId) {
+      return tieneFlujo(tenantId, 'onboarding');
+    }
+
+    // Habilita ESCRITURA y la ingesta desde n8n. Solo 'activo'.
+    function tenantOperativo(tenantId) {
+      return estadoTenant(tenantId) == 'activo';
+    }
+
+    // Habilita LECTURA en el panel. Un comercio suspendido sigue viendo lo suyo:
+    // son sus datos, y cortarle la vista no ayuda a cobrarle — le quita la
+    // manera de verificar lo que se le factura.
+    function tenantLegible(tenantId) {
+      return estadoTenant(tenantId) in ['activo', 'suspendido'];
+    }
+
+    // Acceso de soporte: el propietario de NovuChat solo lee conversaciones si
+    // el negocio le concedió una ventana con vencimiento. La concesión la crea
+    // una Cloud Function a pedido de un admin del negocio y queda auditada.
+    function soporteVigente(tenantId) {
+      return esPropietario()
+        && exists(/databases/$(database)/documents/tenants/$(tenantId)/accesosSoporte/$(request.auth.uid))
+        && get(/databases/$(database)/documents/tenants/$(tenantId)/accesosSoporte/$(request.auth.uid))
+             .data.get('expira', request.time) > request.time;
+    }
+
+    function puedeLeerConversaciones(tenantId) {
+      return (esPersonaDelNegocio(tenantId) && tenantLegible(tenantId))
+        || soporteVigente(tenantId);
+    }
+
+    // -------------------------------------------------------------------------
+    // Ayudantes de validación
+    // -------------------------------------------------------------------------
+
+    function soloCampos(permitidos) {
+      return resource != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(permitidos);
+    }
+
+    // NOTA IMPORTANTE SOBRE EL ESTILO DE ESTAS VALIDACIONES
+    // -----------------------------------------------------
+    // En el lenguaje de reglas, leer una clave ausente de un mapa (`d.campo`)
+    // NO devuelve nulo: lanza un error de evaluación. Un error de evaluación
+    // deniega la operación, así que "parece" seguro, pero deniega por el motivo
+    // equivocado: la misma expresión puede tumbar una escritura legítima y deja
+    // ruido de diagnóstico imposible de leer. Por eso acá TODO acceso a campos
+    // usa `d.get(clave, valorPorDefecto)`, que sí devuelve el valor por defecto
+    // cuando la clave falta. El valor por defecto se elige de modo que un campo
+    // opcional ausente PASE la validación y uno obligatorio ausente la falle.
+
+    function cadena(valor, maxLargo) {
+      return valor is string && valor.size() <= maxLargo;
+    }
+
+    // Campo obligatorio de texto, no vacío.
+    function textoReq(datos, campo, maxLargo) {
+      return cadena(datos.get(campo, null), maxLargo)
+        && datos.get(campo, '').size() > 0;
+    }
+
+    // Campo opcional de texto: ausente equivale a cadena vacía y pasa.
+    function textoOpc(datos, campo, maxLargo) {
+      return cadena(datos.get(campo, ''), maxLargo);
+    }
+
+    // -------------------------------------------------------------------------
+    // ENLACE DE GOOGLE MAPS (`direccionMaps`, Analisis/34 §2).
+    //
+    // Es el único texto del comercio que el asistente REENVÍA TAL CUAL a un
+    // cliente final, dentro de la confirmación de la cita y ante «¿dónde
+    // quedan?». Un texto libre acá sería un enlace a cualquier sitio, firmado
+    // con el nombre del negocio, en el WhatsApp de un tercero. Por eso no es
+    // texto libre: vacío, o `https://` de un dominio de mapas de Google y nada
+    // más. El servidor (`enlaceDeMapaValido`, prompt.ts) lo vuelve a comprobar
+    // antes de mandarlo al flujo: dos barreras, a propósito, como con los
+    // derivados. El punto se escribe `[.]`, como en `calendarioValido`.
+    // -------------------------------------------------------------------------
+    function enlaceDeMapaValido(datos, campo) {
+      return textoOpc(datos, campo, 200)
+        && (datos.get(campo, '') == ''
+            || datos.get(campo, '').matches(
+                 '^https://(maps[.]app[.]goo[.]gl|goo[.]gl/maps|www[.]google[.]com/maps|google[.]com/maps|maps[.]google[.]com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$'));
+    }
+
+    // -------------------------------------------------------------------------
+    // COORDENADAS DEL LOCAL (`ubicacion`): exactamente `lat` y `lng`, números
+    // dentro del rango de la Tierra. Solo se usan para el mensaje `location`
+    // nativo de WhatsApp cuando el cliente pide el pin (un mensaje más, y solo
+    // en ese caso). Ausente = no hay pin: el flujo manda la dirección en texto.
+    // Con una sola de las dos, o con texto adentro, el pin saldría en el mar o
+    // Meta lo rechazaría después de haberlo contado: se frena acá.
+    // -------------------------------------------------------------------------
+    function ubicacionValida(datos) {
+      return !('ubicacion' in datos)
+        || (datos.ubicacion is map
+            && datos.ubicacion.keys().hasOnly(['lat', 'lng'])
+            && datos.ubicacion.keys().hasAll(['lat', 'lng'])
+            && datos.ubicacion.lat is number
+            && datos.ubicacion.lng is number
+            && datos.ubicacion.lat >= -90 && datos.ubicacion.lat <= 90
+            && datos.ubicacion.lng >= -180 && datos.ubicacion.lng <= 180);
+    }
+
+    // -------------------------------------------------------------------------
+    // ID DE CALENDARIO DE GOOGLE — el dato que más caro salió en este proyecto.
+    //
+    // Un ID pegado a mano con UN carácter de menos hizo que Google devolviera 404
+    // al crear la cita, que el agente la confirmara igual, y que la lectura de
+    // disponibilidad fallara en silencio: el agente pasó a INVENTAR los horarios
+    // y llegó a ofrecer las 15:00 pisando una cita de las 15:30. El síntoma no
+    // apuntaba a la causa por ninguna parte.
+    //
+    // Ahora que va a haber un calendario POR FUNCIONARIO cargado desde el panel,
+    // la validación no puede quedar confiada al cuidado de quien lo pega.
+    //
+    // DOS TRAMPAS, las dos aprendidas escribiendo `scripts/fijar-calendario.sh`:
+    //
+    //  1. EXACTAMENTE 64 hexadecimales. No «32 o más». La primera versión de
+    //     aquel script aceptaba un ID truncado, que es justo el caso que existía
+    //     para impedir. Un validador que no rechaza el caso que motivó
+    //     escribirlo no valida nada.
+    //
+    //  2. EL ORDEN IMPORTA. Un ID de calendario TIENE forma de correo. Si se
+    //     prueba primero la forma de correo, un ID de grupo malformado cae ahí y
+    //     pasa. Acá esa precedencia se expresa con la negación de la segunda
+    //     rama: lo que termina en `@group.calendar.google.com` se juzga
+    //     ÚNICAMENTE con la regla estricta, sin red de rescate.
+    // -------------------------------------------------------------------------
+    function calendarioValido(valor) {
+      return valor is string
+        && (valor.matches('^[0-9a-fA-F]{64}@group[.]calendar[.]google[.]com$')
+            || (!valor.matches('^.*@group[.]calendar[.]google[.]com$')
+                && valor.matches('^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,24}$')));
+    }
+
+    // Vacío es válido: significa «este funcionario no tiene agenda propia» o
+    // «el comercio todavía no cargó la suya». Lo que NO puede pasar es que haya
+    // un valor con forma equivocada, porque eso falla en silencio.
+    function calendarioValidoOpcional(datos, campo) {
+      return !datos.keys().hasAny([campo])
+        || datos[campo] == ''
+        || calendarioValido(datos[campo]);
+    }
+
+    // -------------------------------------------------------------------------
+    // URL DE IMAGEN — la única clase de dato del comercio que NO termina como
+    // texto: va a un atributo `src` del navegador de un cliente final.
+    //
+    // POR ESO SE VALIDA ACÁ Y NO SOLO EN LA PANTALLA. `javascript:` en un `src`
+    // es ejecución de código, y `http://` hace que el navegador bloquee la
+    // imagen por contenido mixto sin decir nada —que para el comercio se ve
+    // como «no se ven mis fotos» y no hay pista de por qué—. Exigir `https://`
+    // resuelve los dos de una vez.
+    //
+    // LO QUE ESTA REGLA NO PUEDE HACER, dicho para que nadie suponga de más: no
+    // comprueba que la URL exista ni que devuelva una imagen. Eso lo mira la
+    // consola al importar y, en última instancia, el ojo del comercio en la
+    // vista previa. Vacío vale: significa «este ítem no tiene foto».
+    // -------------------------------------------------------------------------
+    function urlImagenValida(datos, campo) {
+      return cadena(datos.get(campo, ''), 500)
+        && (datos.get(campo, '') == ''
+            // Sin espacios y sin comillas. No es la defensa contra la inyección
+            // —esa la da React, que escapa todo atributo— sino el filtro de las
+            // URL mal pegadas, que son el caso frecuente: una copia con un salto
+            // de línea adentro produce una imagen rota y ninguna pista.
+            || datos.get(campo, '').matches("^https://[^ '\"<>]+$"));
+    }
+
+    // Sello de auditoría: quien escribe no puede mentir sobre quién es ni sobre
+    // cuándo escribió. Sin esto, la pista de auditoría es decorativa.
+    function selloValido(datos) {
+      return datos.get('actualizadoPor', '') == request.auth.uid
+        && datos.get('actualizadoEn', null) == request.time;
+    }
+
+    // =========================================================================
+    // /tenants/{tenantId} — ficha del negocio
+    // =========================================================================
+    match /tenants/{tenantId} {
+
+      // `get` puntual: miembros del propio tenant y el propietario de NovuChat.
+      allow get: if esMiembro(tenantId) || esPropietario();
+
+      // `list` (consulta sobre la colección): SOLO el propietario. Sin esta
+      // separación, cualquier usuario autenticado podría enumerar la cartera
+      // completa de clientes de NovuChat, que es información comercial sensible
+      // aunque no incluya conversaciones.
+      allow list: if esPropietario();
+
+      // Alta, baja y cambio de plan pasan SIEMPRE por Cloud Functions con el SDK
+      // Admin, que además emiten los custom claims, escriben la auditoría e
+      // impiden reutilizar un tenantId dado de baja. Ningún navegador escribe acá.
+      allow create, update, delete: if false;
+
+      // -----------------------------------------------------------------------
+      // /config/{documento} — la configuración que hoy vive en el nodo
+      // `Config del negocio` de los flujos de n8n.
+      // -----------------------------------------------------------------------
+      match /config/{documento} {
+
+        // Todo documento de configuración lo lee la gente del comercio,
+        // `onboarding` incluido desde que la captación es un flujo genérico
+        // (15/09). El propietario lee además el de captación, como antes: es
+        // quien configura el de NovuChat.
+        allow get, list: if esMiembro(tenantId)
+                         || (documento == 'onboarding' && esPropietario()
+                             && tieneOnboarding(tenantId));
+
+        // Solo el admin del negocio edita la configuración, y solo el documento
+        // `negocio`. La creación y el borrado los hace la Function de alta/baja:
+        // así el documento nunca queda a medio formar ni desaparece por error.
+        // TRES DOCUMENTOS, NO UNO CON LA UNIÓN DE TODOS LOS CAMPOS.
+        //
+        //   `negocio`       lo COMÚN a cualquier comercio: identidad, horarios,
+        //                   voz del asistente, mensajes fijos.
+        //   `agendamiento`  solo para el vertical de citas: duración por
+        //                   defecto, anticipación mínima, recordatorios.
+        //   `venta`         solo para venta y cobro: delivery, tiempos de
+        //                   cocina y despacho, y el QR del cobro SIMULADO.
+        //
+        // POR QUÉ PARTIDO Y NO UN SOLO DOCUMENTO GRANDE. Tres razones, en orden
+        // de importancia:
+        //
+        //  1. La validación queda POR DOCUMENTO, con su propia lista blanca. Un
+        //     único esquema obligaría a escribir «si el vertical es X entonces
+        //     el campo Y es válido» dentro de las reglas, que es exactamente el
+        //     tipo de condición que se rompe al agregar el tercer vertical.
+        //  2. **El comercio no puede escribir el documento del vertical que no
+        //     le toca.** Un salón de belleza no puede fijar el recargo de flota
+        //     ni por accidente ni a propósito. Eso no se logra escondiendo el
+        //     campo en la pantalla.
+        //  3. La pantalla muestra lo que corresponde sin ninguna lógica de
+        //     ramas: lee el documento común y el de su vertical, y ya.
+        allow update: if esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && (
+                        (documento == 'negocio' && configNegocioValida())
+                        || (documento == 'agendamiento' && tieneAgenda(tenantId)
+                            && configAgendamientoValida())
+                        || (documento == 'venta' && tieneCobro(tenantId)
+                            && configVentaValida())
+                        || (documento == 'marca' && tieneCobro(tenantId)
+                            && logoValido())
+                        // Captación: igual que los otros documentos de flujo,
+                        // solo con la capacidad. El operador no escribe.
+                        || (documento == 'onboarding' && tieneOnboarding(tenantId)
+                            && configOnboardingValida())
+                      );
+        // Los crea `altaTenant` según el vertical, para que ningún documento
+        // quede a medio formar ni exista uno que no corresponde.
+        //
+        // `marca` ES LA EXCEPCIÓN, y por una razón concreta: el alta no puede
+        // crearlo porque nace cuando el comercio sube su primer logo, que puede
+        // ser meses después. Se le permite crearlo a él, con la misma
+        // validación que la actualización.
+        allow create: if esAdmin(tenantId) && tenantOperativo(tenantId)
+                      && documento == 'marca' && tieneCobro(tenantId) && logoValido();
+        allow delete: if false;
+
+        // =====================================================================
+        // /config/campanas — LAS CAMPAÑAS DE META (Andres, 24/09/2026)
+        //
+        // Capa COMÚN (DISENO.md §4sexies): un anuncio lleva al número del
+        // comercio, no a un flujo. El admin la crea al cargar su primera
+        // campaña y la edita después; nunca la borra (vaciar la lista alcanza).
+        //
+        // `lista` es lo PROPUESTO. `revision` y `vigentes` los escribe SOLO el
+        // servidor (`verificarCampanas`), con el mismo contrato que
+        // `instruccionesVigentes`: se mira el DIFF, no las claves, porque en
+        // una edición el documento resultante los trae aunque el parche no.
+        //
+        // EL TOPE DEL PLAN SE HACE CUMPLIR ACÁ (CLAUDE.md, base comercial §7),
+        // con el tamaño de la lista. Una excepción, a propósito: si el plan
+        // BAJÓ con campañas cargadas, el comercio tiene que poder BORRAR
+        // aunque siga por encima del tope; por eso pasa también una escritura
+        // que achica la lista. Lo que sobra no se aplica igual:
+        // `configuracionFlujo` recorta al tope de hoy.
+        // =====================================================================
+        allow create, update: if documento == 'campanas'
+                              && esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && configCampanasValida();
+
+        // El tope escrito a mano, porque las reglas no importan TypeScript;
+        // `pruebas/campanas-reglas.test.ts` compara esta tabla y el rango con
+        // `limiteDeCampanas` de `functions/src/central/cuenta/planes.ts`.
+        // RESPALDO-CAMPANAS-POR-PLAN
+        function limiteCampanas() {
+          let ruta = /databases/$(database)/documents/tenants/$(tenantId)/cuenta/estado;
+          let cuenta = exists(ruta) ? get(ruta).data : {};
+          let limites = cuenta.get('limites', {});
+          let propio = limites is map ? limites.get('campanas', null) : null;
+          return propio is int && propio >= 0 && propio <= 10
+            ? propio
+            : {'impulso': 0, 'crecimiento': 3, 'pro': 10, 'byoc': 10}
+                .get(cuenta.get('plan', ''), 0);
+        }
+
+        // LA FORMA MÍNIMA DE UNA CAMPAÑA: un mapa de cuatro claves con un texto
+        // de hasta 300 caracteres. Nada más, y a propósito: una petición tiene
+        // un tope de 1.000 expresiones evaluadas, y validar campo por campo diez
+        // campañas lo agotaba desde la quinta (claves) o la séptima (formato);
+        // medido en el emulador el 24/09. El formato del id y de las fechas, el
+        // orden de las fechas, que no sean pasadas ni muy futuras, los
+        // duplicados y el contenido los decide el SERVIDOR (`campanas.ts`) antes
+        // de aplicar: una campaña mal escrita queda cargada y NUNCA viaja al
+        // flujo. Lo que la regla sí tiene que hacer cumplir, que es el tope del
+        // plan, lo hace con el tamaño de la lista.
+        function unaCampanaValida(c) {
+          return c is map && c.size() == 4 && c.get('texto', 0) is string && c.texto.size() <= 300;
+        }
+
+        function campanaValida(lista, i) {
+          return i >= lista.size() || unaCampanaValida(lista[i]);
+        }
+
+        function configCampanasValida() {
+          let d = request.resource.data;
+          let lista = d.get('lista', null);
+          let antes = resource == null ? [] : resource.data.get('lista', []);
+          return (resource == null
+                    ? d.keys().hasOnly(['lista', 'actualizadoPor', 'actualizadoEn'])
+                    : request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['lista', 'actualizadoPor', 'actualizadoEn']))
+            && selloValido(d)
+            && lista is list
+            && lista.size() <= 10
+            && (lista.size() <= limiteCampanas() || lista.size() < antes.size())
+            && campanaValida(lista, 0) && campanaValida(lista, 1) && campanaValida(lista, 2)
+            && campanaValida(lista, 3) && campanaValida(lista, 4) && campanaValida(lista, 5)
+            && campanaValida(lista, 6) && campanaValida(lista, 7) && campanaValida(lista, 8)
+            && campanaValida(lista, 9);
+        }
+
+        // EL DOCUMENTO DEL FLUJO DE CAPTACIÓN, POR EL PROPIETARIO. Además del
+        // administrador (arriba, solo `update`, como todo documento de flujo),
+        // lo escribe el propietario. El alta lo crea vacío, pero el propietario
+        // puede crearlo si falta —el tenant `novuchat` pudo darse de alta antes
+        // de que existiera el flujo—. Nunca en un tenant que no tiene el flujo
+        // en su lista.
+        //
+        // Y SOLO CON EL COMERCIO OPERATIVO, como todas las demás escrituras de
+        // config: un tenant suspendido o dado de baja no se reconfigura, ni
+        // siquiera por el propietario (observación de la revisión del 14/09).
+        allow create, update: if documento == 'onboarding'
+                              && esPropietario()
+                              && tieneOnboarding(tenantId)
+                              && tenantOperativo(tenantId)
+                              && configOnboardingValida();
+
+        // =====================================================================
+        // /config/marca — EL LOGO DEL COMERCIO, EN SU PROPIO DOCUMENTO
+        //
+        // POR QUÉ NO ESTÁ EN `negocio`, que sería lo natural. Porque el logo es
+        // una imagen incrustada de decenas de kilobytes, y `/config/negocio` lo
+        // lee `configuracionFlujo` en CADA consulta del flujo de n8n. Meter el
+        // logo ahí le agregaría ese peso a cada mensaje que responde el
+        // asistente, para un dato que el asistente no usa jamás. En documento
+        // aparte, quien lo lee es solo la página del catálogo.
+        //
+        // POR QUÉ INCRUSTADO Y NO EN UN DEPÓSITO DE ARCHIVOS. Montar Firebase
+        // Storage —con su bucket, sus reglas, su CORS— para UN archivo por
+        // comercio es caro en superficie y convierte a NovuChat en custodio de
+        // archivos de terceros. Un logo recortado a 320 px entra en unas
+        // decenas de kilobytes, muy por debajo del máximo de 1 MiB de un
+        // documento. Es la misma economía que llevó a referenciar las fotos de
+        // los productos por URL en vez de alojarlas: la diferencia es que un
+        // logo es uno solo, y el comercio no siempre tiene dónde publicarlo.
+        //
+        // LO QUE VALIDA LA REGLA es que sea una imagen incrustada y que no
+        // exceda el tamaño. Que la imagen sea *válida* no se puede comprobar
+        // acá; lo hace el navegador al recortarla antes de guardar, y en última
+        // instancia el ojo del comercio en la vista previa.
+        // =====================================================================
+        function logoValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['logo', 'actualizadoPor', 'actualizadoEn'])
+            // `data:image/…` y nada más. Sin esto, el campo aceptaría un
+            // `data:text/html` que la página pintaría en un `src`.
+            && d.get('logo', '') is string
+            // Vacío VALE: es como el comercio quita su logo. Sin esto no habría
+            // forma de sacarlo, porque el borrado del documento está cerrado.
+            && (d.get('logo', '') == ''
+                || d.get('logo', '').matches('^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$'))
+            // 200.000 caracteres de base64 son unos 150 KB de imagen: de sobra
+            // para un logo de 320 px y lejos del tope de 1 MiB del documento.
+            // El tope existe para que nadie use este campo como depósito.
+            && d.get('logo', '').size() <= 200000
+            && selloValido(d);
+        }
+
+        // =====================================================================
+        // ESQUEMA DE LA CONFIGURACIÓN DEL NEGOCIO
+        //
+        // El panel es la FUENTE DE VERDAD: n8n ya no tiene estos valores escritos
+        // a mano en el nodo `Config del negocio`, los consulta. Eso invierte la
+        // responsabilidad y convierte a esta pantalla en **la superficie por
+        // donde entra lo que el asistente va a afirmar como verdad ante un
+        // cliente final**. La validación de acá no es higiene: es el único punto
+        // donde se puede frenar un dato que después sale por WhatsApp.
+        //
+        // TRES CLASES DE CAMPO, Y LA DIFERENCIA IMPORTA:
+        //
+        //  1. ENUMERADOS (`tratamiento`, `estiloEmojis`, `zonaHoraria`,
+        //     `moneda`). Lista cerrada. El código los traduce a una frase fija
+        //     antes de armar el prompt: el texto del cliente NUNCA se interpola.
+        //     Convertir un campo libre en un enumerado es la defensa más fuerte
+        //     que existe contra la inyección de prompt, porque elimina el texto
+        //     libre en vez de intentar limpiarlo.
+        //
+        //  2. TEXTO LIBRE que viaja al prompt (`direccion`, `politicaCancelacion`,
+        //     `datosQueNoTenemos`, `instruccionesExtra`, los `mensaje*`). Van
+        //     TOPEADOS y el flujo los inserta en una sección delimitada y
+        //     rotulada como DATO DEL NEGOCIO, nunca por delante de las reglas de
+        //     comportamiento del agente. La lista completa está en DISENO.md
+        //     §4quater.2.
+        //
+        //  3. DERIVADOS, QUE NO SE GUARDAN ACÁ. `estadoComercio`,
+        //     `phoneNumberId` y `horarioAtencion` los calcula
+        //     `configuracionFlujo` leyendo la ficha del tenant. Que NO estén en
+        //     la lista blanca es una defensa, no un olvido: ver más abajo.
+        // =====================================================================
+        // HORARIO DE UN DÍA: 'cerrado', o 'HH:MM-HH:MM' con «desde» antes que
+        // «hasta». Un día AUSENTE también pasa (el valor por defecto es
+        // 'cerrado'): la consola no escribe la clave de un día sin datos, y
+        // `horarioAtencion()` (functions/src/core/prompt/prompt.ts) lo omite de la frase.
+        //
+        // POR QUÉ UN FORMATO CERRADO Y NO TEXTO LIBRE. El valor entra tal cual
+        // en la frase que el asistente le lee al cliente, y en el Tablero. «9 a
+        // 7» obliga al modelo a adivinar si son las 7 de la tarde; un texto
+        // libre de 40 caracteres es, además, una puerta de inyección al prompt.
+        //
+        // POR QUÉ «desde < hasta» TAMBIÉN ACÁ. La pantalla lo valida, y un
+        // límite que solo existe en la pantalla no existe (CLAUDE.md, base
+        // comercial §7). Consecuencia buscada: un horario que cruza la
+        // medianoche (18:00-02:00) no se puede expresar hoy. Se compara como
+        // texto, y funciona porque las dos horas tienen el mismo largo fijo.
+        function horarioDiaValido(h, dia) {
+          let v = h.get(dia, 'cerrado');
+          return v == 'cerrado'
+            || (v is string
+                && v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$')
+                && v.split('-')[0] < v.split('-')[1]);
+        }
+
+        // LO VIGENTE Y SU REVISIÓN NO SE TOCAN DESDE EL NAVEGADOR, con ningún
+        // rol: ni el admin del comercio, ni el propietario, ni la ingesta. Se
+        // mira el DIFF y no las claves del documento, por la misma razón que
+        // con `stock`: en una edición `request.resource.data` es el documento
+        // resultante y trae lo vigente aunque el parche no lo mencione; mirar
+        // las claves negaría toda edición de un comercio con texto aprobado.
+        // Borrar también es afectar: un `setDoc` con el documento entero que
+        // omita `instruccionesVigentes` se rechaza, y la consola usa
+        // `updateDoc` por eso. Ver DISENO.md §4quater.5.
+        function instruccionesVerificadasIntactas() {
+          return resource != null
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['instruccionesVigentes', 'instruccionesRevision']);
+        }
+
+        function configNegocioValida() {
+          let d = request.resource.data;
+          let clavesPermitidas = [
+            // Identidad y contacto
+            'nombreNegocio', 'descripcion', 'direccion', 'numeroRecepcion',
+            'zonaHoraria', 'moneda', 'calendarioId',
+            // Dónde queda: el enlace de Google Maps y las coordenadas del pin
+            // (Analisis/34 §2). Capa común, como la dirección.
+            'direccionMaps', 'ubicacion',
+            // Operación
+            'horarios', 'politicaCancelacion', 'prefijosPermitidos',
+            'datosQueNoTenemos',
+            // Voz del asistente (enumerados, y el nombre)
+            'tratamiento', 'estiloEmojis', 'nombreAsistente',
+            // Mensajes fijos
+            'mensajes', 'mensajeCierre', 'mensajeErrorTemporal',
+            'mensajeReservaNoConfirmada', 'mensajeComercioSuspendido',
+            'instruccionesExtra',
+            // COMPORTAMIENTO GENERAL VERIFICADO EN EL SERVIDOR (17/09/2026).
+            // `instruccionesExtra` es lo PROPUESTO y lo escribe el admin del
+            // comercio. `instruccionesVigentes` (lo que el flujo lee) e
+            // `instruccionesRevision` (estado, motivo, hash) los escribe SOLO
+            // el SDK Admin: la Function `verificarComportamiento` o los scripts
+            // de NovuChat. Están en la lista porque el documento RESULTANTE de
+            // una edición los trae; que el navegador no los toque lo garantiza
+            // `instruccionesVerificadasIntactas()`, igual que `stock` en el
+            // catálogo. Ver DISENO.md §4quater.5.
+            'instruccionesVigentes', 'instruccionesRevision',
+            // CATÁLOGO WEB PROPIO. La identidad visual del sitio público es
+            // IDENTIDAD DEL NEGOCIO —igual que el nombre y la dirección—, así
+            // que vive en el documento común y no en el de un flujo: el día que
+            // el catálogo web sirva también para reservas, no hay nada que
+            // mudar. Ver DISENO.md §4octies.
+            'catalogoWebActivo', 'paleta',
+            // Sello
+            'actualizadoPor', 'actualizadoEn'
+          ];
+          return d.keys().hasOnly(clavesPermitidas)
+            && d.keys().hasAll(['nombreNegocio', 'actualizadoPor', 'actualizadoEn'])
+            && textoReq(d, 'nombreNegocio', 80)
+            && textoOpc(d, 'descripcion', 400)
+
+            // DIRECCIÓN — el campo del incidente del 28/08.
+            // Ante «donde queda su clinica?» el agente INVENTO una direccion:
+            // zona y avenida que no figuraban en ninguna parte. Para una demo
+            // comercial es el peor defecto posible, porque un cliente puede
+            // presentarse en un lugar que no existe.
+            //
+            // Es OPCIONAL a propósito. Obligarla tentaría a rellenarla con
+            // cualquier cosa para poder guardar, y un dato inventado por el
+            // comercio es igual de dañino que uno inventado por el modelo. Vacía
+            // significa «no la tenemos», y `configuracionFlujo` la agrega
+            // automáticamente a `datosQueNoTenemos` para que el agente responda
+            // que la va a consultar. Ver DISENO.md §4quater.3.
+            && textoOpc(d, 'direccion', 200)
+            // El enlace del mapa acompaña a la dirección en el MISMO mensaje
+            // (cero mensajes nuevos); las coordenadas solo salen como pin
+            // cuando el cliente lo pide. Validados arriba, no texto libre.
+            && enlaceDeMapaValido(d, 'direccionMaps')
+            && ubicacionValida(d)
+
+            && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
+            && d.get('moneda', 'BOB') in ['BOB', 'USD']
+            // Teléfono en formato E.164 sin '+', igual que lo espera la Cloud API.
+            && d.get('numeroRecepcion', '59100000000') is string
+            && d.get('numeroRecepcion', '59100000000').matches('^[0-9]{8,15}$')
+            // Misma validación estricta que para los funcionarios: un ID mal
+            // pegado acá tiene exactamente las mismas consecuencias.
+            && calendarioValidoOpcional(d, 'calendarioId')
+            // HORARIOS. Solo los siete días, y cada uno con formato válido. Las
+            // reglas no recorren mapas, así que cada día se nombra a mano.
+            && d.get('horarios', {}) is map
+            && d.get('horarios', {}).keys().hasOnly(
+                 ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'])
+            && horarioDiaValido(d.get('horarios', {}), 'lun')
+            && horarioDiaValido(d.get('horarios', {}), 'mar')
+            && horarioDiaValido(d.get('horarios', {}), 'mie')
+            && horarioDiaValido(d.get('horarios', {}), 'jue')
+            && horarioDiaValido(d.get('horarios', {}), 'vie')
+            && horarioDiaValido(d.get('horarios', {}), 'sab')
+            && horarioDiaValido(d.get('horarios', {}), 'dom')
+
+            && textoOpc(d, 'politicaCancelacion', 600)
+
+            // Listas. Las reglas NO saben recorrer los elementos de una lista, así
+            // que acá solo se comprueba el tipo y el tamaño; el contenido lo
+            // valida y recorta la Cloud Function antes de que llegue al prompt.
+            // Está dicho en SEGURIDAD.md, T-27, para que nadie suponga más de lo
+            // que esta línea garantiza.
+            && d.get('prefijosPermitidos', []) is list
+            && d.get('prefijosPermitidos', []).size() <= 10
+            && d.get('datosQueNoTenemos', []) is list
+            && d.get('datosQueNoTenemos', []).size() <= 20
+
+            // VOZ DEL ASISTENTE — enumerados, no texto libre.
+            // `tratamiento` cierra además el defecto de estilo de ESTADO.md: el
+            // agente alternaba «usted» y «tú» con el mismo cliente.
+            // «vos» se agregó el 2026-09-07: en La Paz se trata de usted o de
+            // tú, y en Santa Cruz se vosea. Un asistente que tutea a un cruceño
+            // suena de afuera, y uno que vosea a un paceño suena impostado. Es
+            // una lista cerrada y no texto libre, como el resto de la voz: lo
+            // que se elige acá entra en las instrucciones del asistente.
+            && d.get('tratamiento', 'usted') in ['usted', 'tu', 'vos', 'neutro']
+            && d.get('estiloEmojis', 'pocos') in ['ninguno', 'pocos', 'muchos']
+            // EL NOMBRE DEL ASISTENTE («Kenji»), para TODOS los flujos del
+            // negocio: es identidad, capa común. Texto libre, así que corto y de
+            // UNA línea: los flujos lo interpolan en textos fijos que no pasan
+            // por el modelo, y un salto de línea ahí rompe el mensaje. El
+            // servidor lo vuelve a sanear antes de mandarlo (`vozFija`).
+            && textoOpc(d, 'nombreAsistente', 40)
+            && d.get('nombreAsistente', '').matches('[^\\r\\n]*')
+
+            && d.get('mensajes', {}) is map
+            && textoOpc(d, 'mensajeCierre', 300)
+            && textoOpc(d, 'mensajeErrorTemporal', 300)
+            && textoOpc(d, 'mensajeReservaNoConfirmada', 300)
+            // Se puede escribir MIENTRAS EL COMERCIO ESTÁ ACTIVO, porque toda
+            // escritura de configuración exige `tenantOperativo`. Consecuencia
+            // buscada: nadie redacta el mensaje de suspensión DESPUÉS de que lo
+            // suspendieron. Ver SEGURIDAD.md, T-26.
+            && textoOpc(d, 'mensajeComercioSuspendido', 300)
+
+            && textoOpc(d, 'instruccionesExtra', 1500)
+            && instruccionesVerificadasIntactas()
+
+            // CATÁLOGO WEB. Nace APAGADO y encenderlo es un acto deliberado del
+            // comercio: publicar los precios de alguien en una dirección
+            // pública no puede ser el valor por defecto de nada.
+            && d.get('catalogoWebActivo', false) is bool
+            // SOLO CON EL FLUJO DE VENTA, decidido el 08/09. Un catálogo web
+            // con carrito y checkout es una tienda; el flujo de agendamiento no
+            // vende, su catálogo es referencial y sus ítems son en buena parte
+            // «a consultar», que ni siquiera se publican. Es la misma decisión
+            // que se tomó para el catálogo nativo de Meta (§4sexies.3bis) y por
+            // las mismas razones.
+            //
+            // Se escribe como implicación —o está apagado, o el negocio vende—
+            // para que un salón pueda seguir guardando su configuración con el
+            // campo en falso, en vez de que la regla le rechace la pantalla
+            // entera por un campo que no le corresponde.
+            && (d.get('catalogoWebActivo', false) == false || tieneCobro(tenantId))
+            // PALETA: una de cinco, y NADA más.
+            //
+            // Antes esto era un `colorMarca` en `#rrggbb`. Aun con esa
+            // validación era el único dato del comercio que terminaba dentro de
+            // una propiedad de CSS de la página pública; el enumerado elimina el
+            // problema en vez de validarlo, que es el mismo criterio con el que
+            // la voz del asistente es una lista cerrada.
+            //
+            // Y hay una razón de diseño que pesa más: un comercio elige UN
+            // color y la página necesita TRES —el botón, su estado presionado y
+            // el fondo de los chips— que tienen que contrastar entre sí. Las
+            // cinco combinaciones están calculadas y medidas en
+            // `web/src/central/lib/paletas.ts`. Agregar una es tocar esta línea y esa
+            // tabla; si se toca una sola, se nota.
+            && d.get('paleta', 'indigo') in ['terracota', 'bosque', 'indigo', 'vino', 'oceano']
+
+            && selloValido(d);
+        }
+
+        // =====================================================================
+        // VERTICAL DE AGENDAMIENTO — lo que el Demo B no necesita.
+        // El calendario del comercio y los funcionarios ya viven en otro lado;
+        // acá van los parámetros de cómo se agenda.
+        // =====================================================================
+        function configAgendamientoValida() {
+          let d = request.resource.data;
+          return
+            // Lista blanca sobre las claves AFECTADAS, como en `venta`, y no
+            // sobre todas las del documento. Desde la seña por QR (bloque 2,
+            // 17/09) este documento también lleva `cobroReal`, que lo escribe
+            // SOLO `registrarQrDeCobro` con el SDK Admin: si la lista fuera
+            // sobre `keys()`, el día que el comercio registra su QR ya no
+            // podría guardar ni la duración de la cita, porque el documento
+            // tendría una clave que la lista no admite. Con `affectedKeys`,
+            // `cobroReal` queda fuera del alcance del navegador —ni escribirlo,
+            // ni encenderlo, ni borrarlo con un `setDoc`— y el resto se edita.
+            soloCampos([
+              'duracionPorDefectoMin', 'anticipacionMinimaMin',
+              'anticipacionMaximaDias', 'permitirCancelacion',
+              'horasRecordatorio', 'mensajeRecordatorio',
+              // SEÑA PARA RESERVAR (`Analisis/30` §4). El importe en la moneda
+              // del negocio; 0 = sin seña. Y cuántos minutos queda retenido el
+              // horario a la espera del comprobante. Son parámetros del flujo
+              // de agendamiento (política de capas, DISENO §4sexies), por eso
+              // viven acá y no en `negocio`.
+              'senaImporte', 'senaMinutosRetencion',
+              'actualizadoPor', 'actualizadoEn'
+            ])
+            // Entero y con techo: una seña es una fracción del tratamiento, no
+            // un importe libre. Diez mil cubre cualquier tratamiento dental del
+            // país; un decimal no entra porque el cotejo compara centavos
+            // contra lo leído del comprobante y un importe con decimales es un
+            // rechazo asegurado por redondeo.
+            && d.get('senaImporte', 0) is int
+            && d.get('senaImporte', 0) >= 0
+            && d.get('senaImporte', 0) <= 10000
+            // Menos de cinco minutos no le da tiempo al paciente ni de abrir la
+            // aplicación del banco; más de tres horas es un horario bloqueado
+            // para todos los demás por un pago que probablemente no llega.
+            && d.get('senaMinutosRetencion', 30) is int
+            && d.get('senaMinutosRetencion', 30) >= 5
+            && d.get('senaMinutosRetencion', 30) <= 180
+            && d.get('duracionPorDefectoMin', 30) is int
+            && d.get('duracionPorDefectoMin', 30) > 0
+            && d.get('duracionPorDefectoMin', 30) <= 480
+            // Anticipación mínima: evita que alguien reserve para dentro de dos
+            // minutos y el negocio se entere cuando el cliente ya está en la puerta.
+            && d.get('anticipacionMinimaMin', 60) is int
+            && d.get('anticipacionMinimaMin', 60) >= 0
+            && d.get('anticipacionMinimaMin', 60) <= 10080
+            && d.get('anticipacionMaximaDias', 60) is int
+            && d.get('anticipacionMaximaDias', 60) > 0
+            && d.get('anticipacionMaximaDias', 60) <= 365
+            && d.get('permitirCancelacion', true) is bool
+            && d.get('horasRecordatorio', 24) is int
+            && d.get('horasRecordatorio', 24) >= 0
+            && d.get('horasRecordatorio', 24) <= 168
+            && textoOpc(d, 'mensajeRecordatorio', 400)
+            && selloValido(d);
+        }
+
+        // =====================================================================
+        // VERTICAL DE VENTA Y COBRO — lo que el Demo A no necesita.
+        //
+        // ⚠️ ACÁ ESTÁ EL CAMPO MÁS DELICADO DEL PROYECTO. La prohibición 3 de
+        // CLAUDE.md dice que un cobro simulado NUNCA se presenta como real. Los
+        // rótulos que lo sostienen —el texto impreso en el QR, el epígrafe y la
+        // confirmación— **NO son configurables por el comercio**: viven en
+        // `/plataforma/cobroSimulado`, son de NovuChat y son iguales para todos.
+        //
+        // Y `mediaIdQr` TAMPOCO lo escribe el comercio, aunque parezca un dato
+        // técnico inocente. Es el identificador de la IMAGEN, y la imagen lleva
+        // el rótulo impreso: quien pueda cambiarlo puede subir un QR sin rótulo
+        // y saltear la prohibición por la puerta de atrás, sin tocar un solo
+        // texto. Lo carga NovuChat con `registrarQr`, que además es coherente
+        // con el hallazgo 19 de ESTADO.md — un media ID queda ligado al número
+        // que lo sube, y el número también lo asigna NovuChat.
+        //
+        // Lo que el comercio SÍ decide es lo comercial: cuánto cobra de envío,
+        // cuánto recarga por flota y cuánto tarda.
+        // =====================================================================
+        function configVentaValida() {
+          let d = request.resource.data;
+          return
+            // Lista blanca de lo que el comercio puede TOCAR. `mediaIdQr` y los
+            // rótulos no están, así que un intento de cambiarlos no coincide.
+            soloCampos([
+              'costoDelivery', 'recargoFlota', 'radioEntregaKm',
+              'tiempoCocinaMin', 'tiempoDespachoMin', 'pedidoMinimo',
+              'aceptaDelivery', 'aceptaRetiroEnLocal',
+              'actualizadoPor', 'actualizadoEn'
+            ])
+            && d.get('costoDelivery', 0) is number
+            && d.get('costoDelivery', 0) >= 0 && d.get('costoDelivery', 0) <= 1000
+            && d.get('recargoFlota', 0) is number
+            && d.get('recargoFlota', 0) >= 0 && d.get('recargoFlota', 0) <= 1000
+            && d.get('pedidoMinimo', 0) is number
+            && d.get('pedidoMinimo', 0) >= 0 && d.get('pedidoMinimo', 0) <= 100000
+            && d.get('radioEntregaKm', 5) is number
+            && d.get('radioEntregaKm', 5) > 0 && d.get('radioEntregaKm', 5) <= 100
+            && d.get('tiempoCocinaMin', 20) is int
+            && d.get('tiempoCocinaMin', 20) >= 0 && d.get('tiempoCocinaMin', 20) <= 480
+            && d.get('tiempoDespachoMin', 30) is int
+            && d.get('tiempoDespachoMin', 30) >= 0 && d.get('tiempoDespachoMin', 30) <= 480
+            && d.get('aceptaDelivery', true) is bool
+            && d.get('aceptaRetiroEnLocal', true) is bool
+            && selloValido(d);
+        }
+
+        // =====================================================================
+        // /config/onboarding — EL FLUJO DE CAPTACIÓN (genérico desde el 15/09)
+        //
+        // La lista blanca va sobre las CLAVES (sirve para crear y para
+        // actualizar), no sobre las afectadas. NINGÚN SECRETO: el token del CRM
+        // y el de Meta viven en las credenciales de n8n, y un campo que no está
+        // en la lista no entra.
+        //
+        // LA OFERTA DEL COMERCIO: `rubros`, `planes`, `cargosUnicos`,
+        // `aclaraciones` y `archivoPlanes`. Las reglas NO recorren elementos de
+        // una lista: acá se comprueba el tipo y el tope de cada una; la forma
+        // de cada elemento la valida y recorta `sanearCaptacion`
+        // (functions/src/modulos/captacion/captacion.ts) antes de mandarla al flujo, y descarta
+        // lo que no cumple. Mismo reparto que `datosQueNoTenemos` (T-27).
+        //
+        // MÁS DE CINCO PLANES EXIGEN EL ARCHIVO. Recitar veinte planes por chat
+        // es un mensaje larguísimo que nadie lee (y varios en la factura de
+        // Meta): se manda el PDF o la imagen. La condición vive ACÁ y no solo en
+        // la pantalla, porque un límite que solo existe en la pantalla no
+        // existe (CLAUDE.md, base comercial §7).
+        //
+        // `topeAviso` es propio de este flujo: en esa respuesta el asistente
+        // ofrece un asesor con un botón y la conversación sigue. EL TECHO DE
+        // COSTO NO VIVE ACÁ: son los umbrales de operador y de bloqueo de
+        // `cuenta/estado`, los mismos para todos los flujos (`atencion.ts`). Un
+        // segundo techo en este documento podría contradecirlos, y no se admite.
+        // =====================================================================
+        function configOnboardingValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+              'mensajeClienteActual', 'enlaceConsola', 'topeAviso',
+              'plantillaAviso',
+              'rubros', 'planes', 'cargosUnicos', 'aclaraciones', 'archivoPlanes',
+              'actualizadoPor', 'actualizadoEn'
+            ])
+            && d.get('rubros', []) is list
+            && d.get('rubros', []).size() <= 8
+            && d.get('planes', []) is list
+            && d.get('planes', []).size() <= 20
+            && d.get('cargosUnicos', []) is list
+            && d.get('cargosUnicos', []).size() <= 5
+            && d.get('aclaraciones', []) is list
+            && d.get('aclaraciones', []).size() <= 15
+            // Ausente o `null` es «sin archivo»; si está, con su forma.
+            && (d.get('archivoPlanes', null) == null
+                || archivoPlanesValido(d.get('archivoPlanes', null)))
+            && (d.get('planes', []).size() <= 5
+                || d.get('archivoPlanes', null) is map)
+            && d.get('mensajeClienteActual', '') is string
+            && d.get('mensajeClienteActual', '').size() <= 600
+            && d.get('enlaceConsola', '') is string
+            && d.get('enlaceConsola', '').size() <= 200
+            && (d.get('enlaceConsola', '') == ''
+                || d.get('enlaceConsola', '').matches('https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/?#=&%-]*)?'))
+            && d.get('topeAviso', 25) is int
+            && d.get('topeAviso', 25) >= 3 && d.get('topeAviso', 25) <= 100
+            && d.get('plantillaAviso', 'solicitud_contacto') is string
+            && d.get('plantillaAviso', 'solicitud_contacto').matches('[a-z0-9_]{1,64}')
+            && selloValido(d);
+        }
+
+        // El archivo de planes: una dirección `https://` que el asistente manda
+        // por WhatsApp. Que responda y sea del tipo y del tamaño que acepta
+        // Meta no se puede ver desde acá: lo comprueba `comprobarArchivoPlanes`.
+        function archivoPlanesValido(a) {
+          return a is map
+            && a.keys().hasOnly(['url', 'tipo', 'nombreArchivo'])
+            && a.keys().hasAll(['url', 'tipo'])
+            && cadena(a.get('url', null), 500)
+            && a.get('url', '').matches("^https://[^ '\"<>]+$")
+            && a.get('tipo', '') in ['pdf', 'imagen']
+            && cadena(a.get('nombreArchivo', ''), 80);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /catalogo/{itemId} — productos o servicios con precio.
+      // Va en subcolección, no como lista dentro de config, para que cada ítem
+      // se pueda validar de verdad: las reglas no saben recorrer listas de mapas.
+      // -----------------------------------------------------------------------
+      // COMPROBACIÓN DE LA FOTO DE UN ÍTEM. La escribe el servidor y NADIE más:
+      // es un sello sobre el trabajo del comercio y lo firma quien comprueba,
+      // no el comprobado. Si viviera dentro del ítem habría que ponerlo en la
+      // lista blanca de `itemValido()`, y desde ese momento el propio comercio
+      // podría escribirse un «coincide: sí». Un sello que puede firmar el
+      // verificado no vale nada.
+      // FOTO SUBIDA POR EL COMERCIO, en su propio documento y no dentro del ítem.
+      //
+      // El ítem lo leen la consola, el sitio público Y `configuracionFlujo`, que
+      // corre en la ruta de CADA MENSAJE de WhatsApp. Con la foto adentro, un
+      // catálogo de 40 ítems mandaría varios megas en cada consulta del
+      // asistente. Acá la foto se lee solo donde se muestra.
+      //
+      // El tope de 210.000 caracteres no es decorativo: un documento de
+      // Firestore admite 1 MB, y sin límite el navegador podría escribir una
+      // foto sin encoger y dejar el documento al borde. El preproceso del
+      // navegador corta en 150 KB; este número deja aire para el base64 y para
+      // el resto de los campos, y sigue muy por debajo del límite duro.
+      match /fotosCatalogo/{itemId} {
+        allow get, list: if esMiembro(tenantId);
+        allow create, update: if esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && fotoValida();
+        allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId);
+
+        function fotoValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['datos', 'ancho', 'alto', 'bytes', 'tipo',
+                                   'actualizadoPor', 'actualizadoEn'])
+            && d.datos is string
+            && d.datos.size() > 0 && d.datos.size() <= 210000
+            // Solo imágenes en línea. Sin esto, `datos` podría ser cualquier
+            // texto y la consola lo pondría en un `src`.
+            && d.datos.matches('^data:image/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$')
+            && d.ancho is int && d.ancho > 0 && d.ancho <= 4000
+            && d.alto is int && d.alto > 0 && d.alto <= 4000
+            && d.bytes is int && d.bytes > 0 && d.bytes <= 210000
+            && d.actualizadoPor == request.auth.uid
+            && d.actualizadoEn == request.time;
+        }
+      }
+
+      // MOVIMIENTOS DE INVENTARIO. Los escribe el servidor y NADIE más: son el
+      // historial contra el que se contrasta el saldo. Si el comercio pudiera
+      // escribirlos, el reporte diría lo que el comercio quisiera que dijera.
+      match /movimientosStock/{movimientoId} {
+        allow get, list: if esMiembro(tenantId);
+        allow write: if false;
+      }
+
+      match /comprobacionesImagen/{itemId} {
+        allow get, list: if esMiembro(tenantId);
+        allow write: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // LÍMITE DE PRODUCTOS DEL CATÁLOGO POR PLAN (decisión del 15/09/2026).
+      //
+      // POR QUÉ UN CONTADOR Y NO CONTAR. Las reglas no pueden contar los
+      // documentos de una colección: solo leen documentos sueltos. Por eso el
+      // conteo vive en `/contadores/catalogo` y se mueve EN EL MISMO LOTE que
+      // el alta o la baja del producto. Las dos reglas se exigen entre sí:
+      //
+      //   crear un producto  → el contador sube exactamente 1, nombra a ESTE
+      //                        producto en `ultimoItem` y no pasa del límite;
+      //   borrar un producto → el contador baja exactamente 1 y lo nombra;
+      //   tocar el contador  → +1 o −1, y `ultimoItem` tiene que ser un
+      //                        producto que nace (o muere) en ese mismo lote.
+      //
+      // `ultimoItem` es lo que impide colar DOS productos con un solo +1: cada
+      // alta exige que el contador la nombre a ella, y el contador nombra uno.
+      // Un lote crea o borra, entonces, un producto a la vez. La importación
+      // masiva va por `importarCatalogo` (functions/src/modulos/productos/limiteCatalogo.ts), que
+      // cuenta en una transacción con el SDK Admin.
+      //
+      // SIN CONTADOR NO SE CREA NI SE BORRA desde el navegador. Las reglas no
+      // pueden saber si un comercio sin contador tiene cero productos o
+      // doscientos, y tratar la ausencia como cero regalaría el cupo entero a
+      // quien ya lo tiene lleno. Por eso: el contador lo crea
+      // `scripts/modulos/productos/contar-catalogo.mjs` ANTES de desplegar estas reglas, y para
+      // un comercio nuevo lo crea `importarCatalogo` (con `items: []` basta),
+      // que sí puede contar. Nadie lo crea ni lo borra desde el navegador.
+      // -----------------------------------------------------------------------
+      function rutaContadorCatalogo() {
+        return /databases/$(database)/documents/tenants/$(tenantId)/contadores/catalogo;
+      }
+
+      // EL LÍMITE SE LEE DEL PLAN, NO DEL CÓDIGO (CLAUDE.md, base comercial §7).
+      //
+      // Primero `cuenta/estado.limites.productos`, la copia que escribe
+      // NovuChat al asignar el plan (`actualizarEstadoCuenta`,
+      // `scripts/plataforma/asignar-plan.mjs`). Vale si es un entero de 1 a 100000
+      // (`LIMITE_MAXIMO` de `planes.ts`): fuera de ese rango es un dato
+      // corrupto y rige el plan, igual que en `limitesDeCuenta()`. Si no está,
+      // la TABLA DE RESPALDO de abajo según `cuenta/estado.plan`; y si el plan
+      // no se conoce, el más chico: ante la duda se falla hacia el plan más
+      // chico, nunca hacia el más grande.
+      //
+      // ESTA TABLA ES SOLO EL RESPALDO. La fuente de los números es
+      // `functions/src/central/cuenta/planes.ts` (`PLANES_ASIGNABLES`); las reglas no pueden
+      // importar TypeScript, así que acá van escritos a mano y
+      // `pruebas/limite-catalogo.test.ts` compara esta línea, el rango y el
+      // mínimo con aquel archivo. Si se toca uno solo, se nota.
+      // RESPALDO-PRODUCTOS-POR-PLAN
+      function limiteProductos() {
+        let ruta = /databases/$(database)/documents/tenants/$(tenantId)/cuenta/estado;
+        let cuenta = exists(ruta) ? get(ruta).data : {};
+        let limites = cuenta.get('limites', {});
+        let propio = limites is map ? limites.get('productos', null) : null;
+        return propio is int && propio >= 1 && propio <= 100000
+          ? propio
+          : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'byoc': 500}
+              .get(cuenta.get('plan', ''), 20);
+      }
+
+      function altaContada(itemId) {
+        let ruta = rutaContadorCatalogo();
+        return exists(ruta)
+          && getAfter(ruta).data.get('ultimoItem', '') == itemId
+          && getAfter(ruta).data.get('items', -1) == get(ruta).data.get('items', -1) + 1
+          && getAfter(ruta).data.get('items', -1) <= limiteProductos();
+      }
+
+      function bajaContada(itemId) {
+        let ruta = rutaContadorCatalogo();
+        return exists(ruta)
+          && getAfter(ruta).data.get('ultimoItem', '') == itemId
+          && getAfter(ruta).data.get('items', -1) == get(ruta).data.get('items', -1) - 1;
+      }
+
+      match /catalogo/{itemId} {
+
+        allow get, list: if esMiembro(tenantId);
+
+        // Crear y editar van SEPARADOS por el stock, y solo por eso.
+        //
+        // EL COMERCIO NO ESCRIBE `stock`: tiene que pasar por `ajustarStock`,
+        // que mueve el número y anota el movimiento en la MISMA transacción. Si
+        // pudiera escribirlo a mano, el reporte diría «se vendieron 8» y el
+        // saldo diría otra cosa, y desde ahí el reporte no sirve para nada. Es
+        // la misma razón por la que el veredicto de las fotos vive donde el
+        // comercio no escribe.
+        //
+        // Al CREAR: el campo no puede venir. Al EDITAR: `affectedKeys()` es lo
+        // que hay que mirar y no las claves del documento, porque en una
+        // edición `request.resource.data` es el documento RESULTANTE y trae
+        // `stock` aunque el parche no lo mencione. Preguntar por las claves
+        // daba siempre que sí y dejaba fuera cualquier edición de un ítem con
+        // existencias: no se podía ni corregirle el precio.
+        //
+        // LÍMITE DE PRODUCTOS POR PLAN (decisión del 15/09: 20 / 100 / 500).
+        // Crear exige que EN EL MISMO LOTE el contador suba exactamente uno,
+        // nombre a ESTE ítem y no pase del límite del plan. Ver
+        // `altaContada()` y el bloque `/contadores/{contador}` más abajo.
+        allow create: if esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && itemValido()
+                      && !request.resource.data.keys().hasAny(['stock'])
+                      && altaContada(itemId);
+        allow update: if esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && itemValido()
+                      // `resource != null` no es defensa contra nadie: es que
+                      // `resource.data` sobre un documento que no existe NO da
+                      // falso, da error de evaluación, y un error de evaluación
+                      // en medio de una condición se lee como un permiso mal
+                      // escrito cuando se está depurando. Un `update` sobre algo
+                      // inexistente falla igual, pero falla diciendo qué pasó.
+                      && resource != null
+                      && !request.resource.data.diff(resource.data)
+                            .affectedKeys().hasAny(['stock']);
+        // Borrar exige que en el mismo lote el contador BAJE uno y nombre a
+        // este ítem: sin eso, cada baja dejaría el contador inflado y el
+        // comercio perdería cupo que pagó.
+        allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId)
+                      && bajaContada(itemId);
+
+        function itemValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'nombre', 'descripcion', 'area', 'precio', 'moneda', 'duracionMin',
+                   'activo', 'actualizadoPor', 'actualizadoEn',
+                   // FOTO DEL ÍTEM, POR REFERENCIA. No se guarda ninguna imagen:
+                   // se guarda una URL a la que el comercio ya tiene alojada.
+                   // Eso ahorra montar un depósito de archivos con su subida,
+                   // sus reglas y su CORS —día y medio de trabajo— y, sobre
+                   // todo, evita que NovuChat pase a custodiar archivos de
+                   // terceros. Ver Analisis/11-catalogo-web-propio.md §2.
+                   'imagenUrl',
+                   // EXISTENCIAS. Está en la lista porque el documento
+                   // RESULTANTE la trae cuando el ítem lleva control, y sin
+                   // esto un comercio no podría ni corregir el nombre de algo
+                   // que tiene stock. Pero NO la puede tocar: ver `stockIntacto()`.
+                   'stock'
+                 ])
+            && textoReq(d, 'nombre', 80)
+            && textoOpc(d, 'descripcion', 300)
+            // `area` agrupa el catálogo («gastronomia», «retail», «belleza»):
+            // el flujo de venta separa el menú del catálogo de retail con esto.
+            // Sin el campo en la lista blanca, un ítem sembrado con área no se
+            // podía ni dar de baja desde la consola: la lista blanca evalúa el
+            // documento RESULTANTE, y el área ya estaba ahí.
+            && textoOpc(d, 'area', 40)
+            // EL PRECIO PUEDE FALTAR, y no es un descuido: hay servicios que se
+            // cotizan después de evaluar —un tratamiento dental, una reforma— y
+            // ponerles un número sería inventarlo. Ausente significa «a
+            // consultar», y así lo muestra la consola y lo dice el asistente.
+            //
+            // Si ESTÁ, tiene que ser un número no negativo: un precio negativo
+            // llega al cliente final como una promesa que el negocio no hizo.
+            && (d.get('precio', null) == null || (
+                 d.get('precio', -1) is number
+                 && d.get('precio', -1) >= 0 && d.get('precio', -1) <= 1000000))
+            // La moneda solo tiene sentido junto al precio: si el servicio se
+            // cotiza, no hay nada que denominar. Ausente vale, y por defecto es
+            // la del negocio.
+            && d.get('moneda', 'BOB') in ['BOB', 'USD']
+            // EN MÚLTIPLOS DE 15 MINUTOS, decisión de Andrés del 2026-09-07.
+            // Una agenda se lee y se ofrece de a cuartos de hora: un servicio de
+            // 50 minutos deja huecos de 10 que no se pueden vender y hace que el
+            // asistente proponga horarios como «14:50», que nadie usa.
+            && d.get('duracionMin', 30) is int
+            && d.get('duracionMin', 30) > 0 && d.get('duracionMin', 30) <= 1440
+            && d.get('duracionMin', 30) % 15 == 0
+            && d.get('activo', null) is bool
+            && urlImagenValida(d, 'imagenUrl')
+            && selloValido(d);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /contadores/{contador} — CUÁNTOS HAY, PARA LOS LÍMITES DEL PLAN.
+      //
+      // Hoy uno solo: `catalogo = { items, ultimoItem, actualizadoEn }`. Lo
+      // leen las personas del comercio (la consola muestra «8 de 20») y
+      // NovuChat. Lo mueve el administrador SOLO en el mismo lote que un alta
+      // o una baja de producto; ver el bloque del límite, arriba de
+      // `/catalogo`. Ni se crea ni se borra desde el navegador: sin él no hay
+      // cómo saber cuánto cupo queda, y la regla del producto niega.
+      // -----------------------------------------------------------------------
+      match /contadores/{contador} {
+        allow get, list: if (esPersonaDelNegocio(tenantId) && tenantLegible(tenantId))
+                         || esPropietario();
+
+        allow update: if contador == 'catalogo'
+                      && esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && contadorCatalogoValido();
+        allow create, delete: if false;
+
+        function rutaItem(id) {
+          return /databases/$(database)/documents/tenants/$(tenantId)/catalogo/$(id);
+        }
+
+        function contadorCatalogoValido() {
+          let antes = resource.data;
+          let d = request.resource.data;
+          let id = d.get('ultimoItem', '');
+          return d.keys().hasOnly(['items', 'ultimoItem', 'actualizadoEn'])
+            && antes.get('items', null) is int
+            && d.get('items', null) is int
+            && d.get('items', -1) >= 0
+            && id is string
+            && id.matches('^[^/]{1,200}$')
+            && d.get('actualizadoEn', null) == request.time
+            // +1: el producto que nombra NO existía y existe al terminar el lote.
+            && ((d.get('items', -1) == antes.get('items', 0) + 1
+                  && !exists(rutaItem(id)) && existsAfter(rutaItem(id)))
+            // −1: el producto que nombra existía y deja de existir.
+                || (d.get('items', -1) == antes.get('items', 0) - 1
+                  && exists(rutaItem(id)) && !existsAfter(rutaItem(id))));
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /pedidos/{pedidoId} — CARRITOS QUE LLEGARON DEL CATÁLOGO WEB.
+      //
+      // LOS ESCRIBE EL SERVIDOR Y NADIE MÁS. `checkoutCatalogo` recalcula cada
+      // precio leyendo /catalogo antes de guardar: el navegador del cliente
+      // final manda identificadores y cantidades, nunca importes. Que acá la
+      // escritura esté cerrada para TODOS —incluido el admin del comercio y
+      // NovuChat— es lo que hace que un pedido guardado sea evidencia de lo que
+      // el catálogo decía en ese momento, y no una cifra que alguien pudo tocar
+      // después. Corregir un pedido se hace hablando con el cliente, que es
+      // donde tiene que hacerse.
+      //
+      // QUIÉN LO LEE: los mismos que pueden leer conversaciones. Un pedido dice
+      // qué compró una persona identificable por su conversación; es
+      // exactamente el mismo dato personal y no merece una puerta más ancha.
+      // Por eso también el teléfono va ENMASCARADO: el completo ya está en la
+      // conversación, y repetirlo acá sería duplicar un dato personal sin
+      // ninguna razón.
+      // -----------------------------------------------------------------------
+      match /pedidos/{pedidoId} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /funcionarios/{funcionarioId} — QUIÉN ATIENDE.
+      //
+      // EL PROBLEMA QUE RESUELVE. El modelo asumía un calendario por comercio, y
+      // eso produce un error visible: una cita de manicure a las 11:30 bloquea
+      // una de ortodoncia a las 11:30, cuando las atienden personas distintas.
+      // Lo que hay que impedir es que UN MISMO FUNCIONARIO tenga dos citas
+      // simultáneas, no que el comercio tenga dos.
+      //
+      // EL CASO DE UNA SOLA PERSONA SIGUE SIENDO TRIVIAL. Muchas PyMEs bolivianas
+      // son una persona sola. Esta colección puede estar VACÍA: si no hay ningún
+      // funcionario activo, `configuracionFlujo` fabrica uno por defecto con el
+      // calendario y los horarios del comercio, y el flujo ve siempre al menos
+      // uno. **La complejidad la paga quien la necesita.**
+      //
+      // HORARIO PROPIO. `horarioTrabajo` puede diferir del horario del comercio,
+      // y ahí está la mitad de la gracia: el salón abre de 9 a 19 pero el
+      // odontólogo va martes y jueves de 14 a 18.
+      //
+      // DATOS PERSONALES. El teléfono y el correo del funcionario son datos de
+      // un tercero que NO es el cliente final. Como las reglas no pueden ocultar
+      // campos sueltos en una lectura, van en `/privado/datos`, igual que con los
+      // contactos y con los datos ampliados de las conversaciones. El operador ve
+      // quién atiende qué —lo necesita para responder— pero no el teléfono
+      // personal de la manicurista, que no necesita para nada.
+      // -----------------------------------------------------------------------
+      match /funcionarios/{funcionarioId} {
+
+        // Lo operativo lo ve toda persona del negocio: es lo que hace falta para
+        // contestar «¿quién atiende ortodoncia?».
+        allow get, list: if (esPersonaDelNegocio(tenantId) && tenantLegible(tenantId))
+                         || esIngesta(tenantId)
+                         || soporteVigente(tenantId);
+
+        // Solo el vertical de agendamiento. Una parrilla no tiene profesionales
+        // con calendario propio, y ofrecerle la pantalla sería ruido. Si algún
+        // día un vertical nuevo los necesita, se agrega a `tieneAgenda`: una
+        // línea, y por eso las capacidades están en una tabla y no dispersas.
+        allow create, update: if esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && tieneAgenda(tenantId)
+                              && funcionarioValido();
+        // Baja LÓGICA con `activo: false`, no borrado: un funcionario borrado
+        // dejaría citas pasadas apuntando a un identificador que ya no existe.
+        allow delete: if false;
+
+        function funcionarioValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'nombre', 'especialidad', 'calendarioId', 'horarioTrabajo',
+                   'servicios', 'activo', 'actualizadoPor', 'actualizadoEn'
+                 ])
+            && textoReq(d, 'nombre', 120)
+            && textoOpc(d, 'especialidad', 80)
+            // EL CAMPO CARO. Ver `calendarioValido` arriba: 64 hexadecimales
+            // exactos, y el sufijo decide antes que la forma de correo.
+            && calendarioValidoOpcional(d, 'calendarioId')
+            && d.get('horarioTrabajo', {}) is map
+            // Relación servicio -> funcionario, denormalizada de este lado.
+            // Las reglas no saben recorrer una lista: acá solo el tipo y el
+            // tamaño. Que los identificadores existan lo resuelve la Function,
+            // que descarta las referencias colgadas (ver DISENO.md §4quinquies.2).
+            && d.get('servicios', []) is list
+            && d.get('servicios', []).size() <= 50
+            && d.get('activo', null) is bool
+            && selloValido(d);
+        }
+
+        // Teléfono y correo del funcionario. Solo el administrador del negocio.
+        match /privado/{documento} {
+          allow get, list: if esAdmin(tenantId) && tenantLegible(tenantId);
+          allow create, update: if esAdmin(tenantId) && tenantOperativo(tenantId)
+                                && datosPersonalesValidos();
+          allow delete: if false;
+
+          function datosPersonalesValidos() {
+            let d = request.resource.data;
+            return d.keys().hasOnly(['telefono', 'correo', 'notas',
+                                     'actualizadoPor', 'actualizadoEn'])
+              && (!d.keys().hasAny(['telefono'])
+                  || d.telefono.matches('^[0-9]{8,15}$'))
+              && textoOpc(d, 'correo', 254)
+              && textoOpc(d, 'notas', 300)
+              && selloValido(d);
+          }
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /agenda/{ranuraId} — EL CANDADO CONTRA LA DOBLE RESERVA.
+      //
+      // POR QUÉ EXISTE. Google Calendar **no impide eventos superpuestos**: si
+      // dos clientes reservan a la vez, crea las dos citas sin chistar. Y entre
+      // «consultar disponibilidad» y «crear la cita» pasan segundos, que es
+      // tiempo de sobra para que otro cliente tome el mismo horario. La garantía
+      // no puede vivir en Calendar.
+      //
+      // CÓMO FUNCIONA. El día se parte en RANURAS fijas de 15 minutos. Una cita
+      // de 60 minutos ocupa cuatro. El identificador del documento es
+      // determinista —`{funcionarioId}_{aaaammdd}_{ranura}`— y la reserva se hace
+      // con `create` DENTRO DE UNA TRANSACCIÓN: `create` falla si el documento ya
+      // existe, y la transacción hace que las cuatro ranuras se tomen todas o
+      // ninguna. Eso es exclusión mutua de verdad, no una comprobación previa.
+      //
+      // La superposición parcial queda cubierta porque el choque no se busca por
+      // hora de inicio sino por ranura: 11:00–12:00 y 11:30–12:30 comparten dos.
+      //
+      // LO QUE ESTE CANDADO **NO** GARANTIZA, dicho sin adornos: solo conoce las
+      // citas que pasaron por el asistente. Si alguien del comercio carga una
+      // cita A MANO en Google Calendar, esta colección no se entera y el choque
+      // vuelve a ser posible. Por eso el flujo sigue consultando Calendar antes
+      // de ofrecer horarios: Calendar cubre lo manual, el candado cubre la
+      // concurrencia. Ninguno de los dos alcanza solo. Ver SEGURIDAD.md, T-30.
+      //
+      // NO LLEVA DATOS PERSONALES: ni teléfono ni nombre del cliente. Es un
+      // candado, no un registro.
+      // -----------------------------------------------------------------------
+      match /agenda/{ranuraId} {
+
+        allow get, list: if (esPersonaDelNegocio(tenantId) && tenantLegible(tenantId))
+                         || esIngesta(tenantId);
+
+        allow create: if esIngesta(tenantId)
+                      && tenantOperativo(tenantId)
+                      && ranuraValida();
+
+        // NO se actualiza: mover una cita es liberar y volver a tomar, para que
+        // la operación siga siendo atómica.
+        allow update: if false;
+        // SÍ se borra: una cita cancelada tiene que liberar sus ranuras o el
+        // horario queda bloqueado para siempre. La cancelación queda en la
+        // bitácora, que es donde vive la evidencia.
+        allow delete: if esIngesta(tenantId);
+
+        function ranuraValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'funcionarioId', 'inicio', 'fin', 'servicioId',
+                   'conversacionId', 'creadoEn'
+                 ])
+            && textoReq(d, 'funcionarioId', 80)
+            && d.get('inicio', null) is timestamp
+            && d.get('fin', null) is timestamp
+            && d.get('fin', null) > d.get('inicio', null)
+            && textoOpc(d, 'servicioId', 80)
+            && textoOpc(d, 'conversacionId', 80)
+            && d.get('creadoEn', null) == request.time;
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /contactos/{contactoId} — PERSONAS DE REFERENCIA DEL COMERCIO.
+      //
+      // No confundir con /miembros: aquéllos son usuarios DEL PANEL. Éstos son
+      // las personas de contacto del negocio —el dueño, quien atiende recepción,
+      // quien factura— que en general NO tienen acceso al panel y que muchas
+      // veces ni saben que están anotadas acá.
+      //
+      // Son DATOS PERSONALES DE TERCEROS y se les aplica el mismo criterio que a
+      // /conversaciones/{c}/privado: como las reglas de Firestore no pueden
+      // ocultar campos sueltos en una lectura, lo que un rol no debe ver va en
+      // OTRA colección. Por eso viven acá y no como campos de la ficha del
+      // tenant, que la leen todos los miembros.
+      //
+      // QUIÉN ENTRA:
+      //   admin del negocio  → todo. Es su agenda.
+      //   operador           → NADA. Atender conversaciones no requiere el
+      //                        teléfono del contador del negocio. Mínimo
+      //                        privilegio, sin excepción cómoda.
+      //   NovuChat           → SOLO los marcados `esContactoComercial`. Es a
+      //                        quién llamar por la factura, y nada más. Para el
+      //                        resto necesita acceso de soporte vigente, igual
+      //                        que para las conversaciones.
+      //
+      // ⚠️ SOBRE `list` Y EL FILTRO: en Firestore las reglas NO filtran
+      // resultados. Para que el propietario pueda listar, su consulta tiene que
+      // traer `where('esContactoComercial','==',true)`; si no lo trae, la
+      // consulta falla ENTERA. Eso es correcto y deliberado: el modo de fallar
+      // es negar, nunca devolver de más. El `get` puntual de un contacto
+      // comercial sí funciona sin ninguna condición extra.
+      // -----------------------------------------------------------------------
+      match /contactos/{contactoId} {
+
+        allow get, list: if (esAdmin(tenantId) && tenantLegible(tenantId))
+                         || soporteVigente(tenantId)
+                         || (esPropietario()
+                             && resource.data.get('esContactoComercial', false) == true);
+
+        allow create, update: if esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && contactoValido();
+        allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId);
+
+        function contactoValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'nombre', 'rolNegocio', 'telefono', 'correo', 'notas',
+                   'esContactoComercial', 'actualizadoPor', 'actualizadoEn'
+                 ])
+            && textoReq(d, 'nombre', 120)
+            // Lista cerrada de roles: evita que este campo se convierta en un
+            // texto libre más donde acabe cayendo información que nadie previó.
+            && d.get('rolNegocio', '') in ['dueno', 'recepcion', 'facturacion',
+                                           'tecnico', 'otro']
+            && d.get('telefono', '') is string
+            && d.get('telefono', '').matches('^[0-9]{8,15}$')
+            && textoOpc(d, 'correo', 254)
+            // Tope corto en las notas: este campo NO es una ficha clínica ni un
+            // historial. Cuanto menos dato personal de terceros se acumule, menor
+            // es el daño de cualquier fuga.
+            && textoOpc(d, 'notas', 500)
+            && d.get('esContactoComercial', false) is bool
+            && selloValido(d);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /cuenta/estado — ESTADO DE CUENTA, VISIBLE PARA EL COMERCIO.
+      //
+      // Plan, situación de pago y próximo vencimiento. El comercio necesita
+      // poder responder solo la pregunta "¿estoy al día?" sin llamar a nadie.
+      //
+      // ES DE SOLO LECTURA PARA ÉL. Cambiarlo es de NovuChat, por Cloud
+      // Function, y queda auditado. Si el comercio pudiera escribirlo, se
+      // pondría `al_dia` y el estado de cuenta dejaría de significar nada.
+      //
+      // SE LEE CON `tenantLegible`, NO CON `tenantOperativo`: es JUSTAMENTE
+      // cuando el comercio está suspendido cuando más necesita ver esta
+      // pantalla. Un corte de servicio sin explicación visible es una llamada
+      // de reclamo garantizada.
+      //
+      // DOS PÚBLICOS DISTINTOS, NO CONFUNDIRLOS:
+      //   `motivoVisible`     → lo lee el COMERCIO. Explica su situación. Es su
+      //                         relación comercial y tiene derecho a conocerla.
+      //   `motivoSuspension`  → campo de la ficha del tenant, INTERNO, para la
+      //                         auditoría de NovuChat.
+      // Y ninguno de los dos llega jamás al CLIENTE FINAL de WhatsApp, que
+      // recibe un mensaje de cortesía neutro (ver DISENO.md §4bis.3 y T-18).
+      //
+      // El operador queda afuera: la situación financiera del negocio no es
+      // asunto de quien atiende el chat.
+      // -----------------------------------------------------------------------
+      match /cuenta/{documento} {
+        allow get, list: if (esAdmin(tenantId) && tenantLegible(tenantId))
+                         || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /pagos/{pagoId} — LOS PAGOS DEL PREPAGO: mensualidades, bolsas e
+      // instalación, con su TCO (DISENO.md §4undecies.1). Solo los escribe el
+      // SDK Admin; nadie desde el navegador, ni el propietario (quedaría sin
+      // auditoría de quién confirmó qué). Los lee el administrador del
+      // comercio, también cortado (tenantLegible: un comercio sin servicio
+      // tiene que poder ver qué debe y qué pagó), y NovuChat.
+      //
+      // Es el mismo criterio que /cuenta, y por la misma razón: si el comercio
+      // pudiera escribir `estado: 'confirmado'`, el pago dejaría de significar
+      // nada. Las puertas son `crearCobroPrepago`, `avisoCobrador` y
+      // `barridoCobros` (cobroPrepago.ts) y, cuando existan, las de pagos.ts.
+      // -----------------------------------------------------------------------
+      match /pagos/{pagoId} {
+        allow get, list: if (esAdmin(tenantId) && tenantLegible(tenantId))
+                         || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /reclamos/{reclamoId} — RECLAMOS DEL COMERCIO HACIA NOVUCHAT.
+      //
+      // Se guardan en Firestore ANTES de enviarse por correo. Si el proveedor de
+      // correo falla, el reclamo no se pierde: queda acá y se ve en el panel de
+      // NovuChat igual. El correo es una notificación, no el registro.
+      //
+      // INMUTABLES para el cliente. El comercio crea y lee; no edita ni borra.
+      // Un reclamo que se puede editar después de enviado no sirve para dirimir
+      // nada, y uno que se puede borrar tampoco.
+      //
+      // El campo `texto` es ENTRADA NO CONFIABLE aunque lo escriba un usuario
+      // autenticado: se muestra en el panel y viaja en un correo. Ver T-20.
+      // -----------------------------------------------------------------------
+      match /reclamos/{reclamoId} {
+
+        allow get, list: if (esPersonaDelNegocio(tenantId) && tenantLegible(tenantId))
+                         || esPropietario();
+
+        // Un comercio suspendido SÍ puede reclamar. Sería absurdo cortarle el
+        // canal de reclamo justo cuando tiene el motivo más probable para usarlo.
+        allow create: if esPersonaDelNegocio(tenantId)
+                      && tenantLegible(tenantId)
+                      && reclamoValido();
+
+        // Ni el comercio ni NovuChat lo tocan desde el navegador. El cambio de
+        // estado (nuevo → en_curso → resuelto) lo hace una Cloud Function, que
+        // además audita quién lo movió.
+        allow update, delete: if false;
+
+        function reclamoValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'asunto', 'texto', 'categoria', 'estado',
+                   'creadoPor', 'creadoEn', 'correoNotificado'
+                 ])
+            && textoReq(d, 'asunto', 120)
+            && textoReq(d, 'texto', 4000)
+            && d.get('categoria', '') in ['facturacion', 'falla', 'configuracion',
+                                          'sugerencia', 'otro']
+            // El estado nace SIEMPRE en 'nuevo'. Que el cliente pudiera crearlo
+            // como 'resuelto' vaciaría de sentido la bandeja de NovuChat.
+            && d.get('estado', '') == 'nuevo'
+            // Sello: quien reclama no puede reclamar en nombre de otro ni
+            // antedatar el reclamo.
+            && d.get('creadoPor', '') == request.auth.uid
+            && d.get('creadoEn', null) == request.time
+            // La marca de correo enviado la pone la Function, nunca el cliente.
+            && !d.keys().hasAny(['correoNotificado']);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /miembros/{uid} — espejo de los custom claims, para la interfaz.
+      // NO otorga permisos. Es de solo lectura para TODOS los clientes: si fuera
+      // escribible, la interfaz mostraría un rol falso y, peor, el patrón
+      // invitaría a que alguien lo usara como fuente de autorización.
+      // -----------------------------------------------------------------------
+      match /miembros/{uid} {
+        allow get, list: if esMiembro(tenantId) || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /invitaciones/{invitacionId} — alta de usuarios del negocio.
+      // El token de invitación NO se guarda en claro: se guarda su hash. Quien
+      // lea esta colección no puede aceptar invitaciones ajenas.
+      // -----------------------------------------------------------------------
+      match /invitaciones/{invitacionId} {
+        allow get, list: if esAdmin(tenantId) || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /conversaciones/{conversacionId} — visor de conversaciones.
+      // Es el dato más sensible del sistema: mensajes de clientes finales.
+      // -----------------------------------------------------------------------
+      match /conversaciones/{conversacionId} {
+
+        allow get, list: if puedeLeerConversaciones(tenantId);
+
+        // Alta y actualización del hilo: solo el principal de servicio de n8n,
+        // acotado a ESTE tenant por su claim. Un token de ingesta del tenant A
+        // no satisface `esIngesta(B)`.
+        //
+        // `tenantOperativo` acá tiene un efecto que conviene entender: cuando se
+        // suspende un comercio por falta de pago, la ingesta se cierra y NovuChat
+        // deja de acumular datos personales de clientes finales de un comercio
+        // que ya no presta el servicio. No es solo una palanca de cobranza: es
+        // minimización de datos.
+        allow create: if esIngesta(tenantId)
+                      && tenantOperativo(tenantId)
+                      && conversacionValida();
+        allow delete: if false;
+
+        // Dos ramas de actualización disjuntas:
+        //  a) n8n actualiza el resumen del hilo;
+        //  b) una persona del negocio marca gestión interna, y SOLO puede tocar
+        //     los tres campos de gestión. Sin `hasOnly`, un operador podría
+        //     reescribir `ultimoMensaje` o `telefono` y falsear el historial.
+        allow update: if (esIngesta(tenantId) && tenantOperativo(tenantId)
+                          && conversacionValida())
+                      || (esPersonaDelNegocio(tenantId)
+                          && tenantOperativo(tenantId)
+                          // `noContactar` es la lista de no molestar (bloque 4): una
+                          // persona del negocio la enciende o la apaga desde la
+                          // consola. Es el ÚNICO campo de gestión que cambia lo que
+                          // el sistema hace —saca al teléfono del barrido de
+                          // seguimientos— y por eso se valida su tipo abajo.
+                          && soloCampos(['etiquetas', 'atendidaPor', 'notaInterna',
+                                         'noContactar'])
+                          && request.resource.data.get('noContactar', false) is bool
+                          && textoOpc(request.resource.data, 'notaInterna', 1000));
+
+        function conversacionValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'telefono', 'nombreContacto', 'ultimoMensaje', 'ultimoEn',
+                   'canal', 'mensajesTotal', 'etiquetas', 'atendidaPor',
+                   'notaInterna',
+                   // Marca del último período en que esta persona ya fue contada
+                   // como "atendida" (formato 'aaaa-mm'). La escribe SOLO la
+                   // ingesta; no está en la lista de campos de gestión, así que
+                   // ninguna persona del negocio puede tocarla para inflar la
+                   // métrica que se le factura.
+                   'periodoContado',
+                   // Las otras dos marcas de conteo, con la misma protección y
+                   // por el mismo motivo: son la deduplicación de `atenciones` e
+                   // `interacciones`, que se facturan. `respuestasDelPeriodo`
+                   // cuenta las respuestas salientes del mes y
+                   // `periodoInteraccion` recuerda el período en que esta
+                   // conversación ya sumó su interacción, para que la tercera
+                   // respuesta no vuelva a sumarla.
+                   'respuestasDelPeriodo', 'periodoInteraccion'
+                 // `atencionDesde` es el ancla de la ventana de 24 horas: marca
+                 // CUANDO EMPEZO la atencion vigente, no el ultimo mensaje. Todo
+                 // lo que cae dentro de esa ventana es la misma atencion; lo que
+                 // llega despues abre otra.
+                 , 'atencionDesde'
+                 // `solicitud` es la SEÑA EN CURSO de este teléfono (bloque 2):
+                 // en qué etapa va (`qr_enviado`, `agendada`, `vencida`), desde
+                 // cuándo, qué cita del calendario está retenida y cuántos
+                 // comprobantes llegaron. La escriben la ingesta (al reportar
+                 // el QR enviado) y `cotejarComprobante`/`senaVencida`, nunca
+                 // una persona: es lo que decide si el próximo archivo que
+                 // manda el paciente se lee como comprobante o no.
+                 , 'solicitud'
+                 // `noContactar` es la LISTA DE NO MOLESTAR (bloque 4,
+                 // `Analisis/31` §4): el paciente pidió que no le escriban, o el
+                 // turno pasó a una persona. La enciende la ingesta con
+                 // `evento: 'no_contactar'` y la apaga —o la enciende a mano— una
+                 // persona del negocio desde la consola. Mientras esté en `true`
+                 // no le sale ningún seguimiento automático.
+                 , 'noContactar'])
+            && (!d.keys().hasAny(['solicitud'])
+                || (d.solicitud is map
+                    // `horarios` es la etapa del bloque 4: el asistente ofreció
+                    // horarios y el paciente no eligió. Junto con `qr_enviado` son
+                    // las dos etapas PENDIENTES, las únicas que el barrido mira.
+                    && d.solicitud.get('etapa', '') in ['horarios', 'qr_enviado',
+                                                        'agendada', 'vencida']))
+            // Si viene, es booleano: un `noContactar: 'no'` —que en JavaScript es
+            // verdadero— dejaría a un paciente sin seguimientos por un defecto de
+            // tipo, y al revés. Se valida acá y no en la pantalla.
+            && d.get('noContactar', false) is bool
+            && d.get('telefono', '') is string
+            && d.get('telefono', '').matches('^[0-9]{8,15}$')
+            && textoOpc(d, 'nombreContacto', 120)
+            // El resumen se recorta en origen: un mensaje entrante de 4 KB no
+            // debe poder inflar cada documento del listado.
+            && textoOpc(d, 'ultimoMensaje', 300)
+            // Entero y no negativo. La ingesta lo CALCULA dentro de la
+            // transacción en vez de incrementarlo, así que acá tiene que llegar
+            // un número común y corriente: cualquier otra cosa es un defecto.
+            && d.get('respuestasDelPeriodo', 0) is int
+            && d.get('respuestasDelPeriodo', 0) >= 0
+            && d.get('canal', '') in ['whatsapp'];
+        }
+
+        // ---------------------------------------------------------------------
+        // /mensajes/{mensajeId} — el registro conversacional.
+        // INMUTABLE: se crea y no se modifica ni se borra. Un historial que se
+        // puede editar no sirve como evidencia ante un reclamo del cliente.
+        // ---------------------------------------------------------------------
+        match /mensajes/{mensajeId} {
+          allow get, list: if puedeLeerConversaciones(tenantId);
+          allow create: if esIngesta(tenantId)
+                        && tenantOperativo(tenantId)
+                        && mensajeValido();
+          allow update, delete: if false;
+
+          function mensajeValido() {
+            let d = request.resource.data;
+            return d.keys().hasOnly(['direccion', 'tipo', 'texto', 'ts', 'idMeta'])
+              && d.get('direccion', '') in ['entrante', 'saliente']
+              && d.get('tipo', '') in ['text', 'interactive', 'image', 'audio',
+                                       'document', 'order', 'location', 'otro']
+              // Tope de tamaño del texto. El contenido es DATO NO CONFIABLE:
+              // lo escribe un cliente final de WhatsApp. Se guarda tal cual y se
+              // escapa al renderizar (ver admin/SEGURIDAD.md, §Regla de Dos).
+              && cadena(d.get('texto', null), 4096)
+              && d.get('ts', null) is timestamp
+              && textoOpc(d, 'idMeta', 120);
+          }
+        }
+
+        // ---------------------------------------------------------------------
+        // /privado/{documento} — datos personales ampliados del contacto.
+        // Vive aparte porque las reglas NO pueden ocultar campos sueltos en una
+        // lectura: si el dato estuviera en el documento de la conversación,
+        // cualquiera que pueda leerla lo vería. Solo el admin del negocio entra.
+        // ---------------------------------------------------------------------
+        match /privado/{documento} {
+          allow get, list: if esAdmin(tenantId) && tenantLegible(tenantId);
+          allow create, update: if esIngesta(tenantId) && tenantOperativo(tenantId);
+          allow delete: if false;
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /metricas/{periodo} — contadores agregados (uno por mes: '2026-09').
+      // Los agrega la ruta de ingesta con incrementos atómicos. El panel LEE
+      // agregados en vez de contar conversaciones en el cliente: así el visor de
+      // métricas no necesita permiso de lectura sobre los mensajes.
+      // -----------------------------------------------------------------------
+      match /metricas/{periodo} {
+        allow get, list: if esMiembro(tenantId) || esPropietario();
+        allow create, update: if esIngesta(tenantId)
+                              && tenantOperativo(tenantId)
+                              && metricaValida();
+        allow delete: if false;
+
+        // Lista blanca también acá: si el principal de ingesta quedara
+        // comprometido, no debe poder sembrar campos arbitrarios en la colección
+        // que sostiene la facturación.
+        function metricaValida() {
+          return request.resource.data.keys().hasOnly([
+            'mensajes', 'entrantes', 'salientes',
+            'personasAtendidas',   // conteo de ÚNICOS, no un incremento por mensaje
+            'citasAgendadas', 'conversaciones',
+            // LAS TRES CIFRAS DE LA OFERTA COMERCIAL. Definiciones exactas en
+            // /cierres, más abajo. Están acá porque son el agregado por período
+            // que se muestra (y, de las tres, solo `conversaciones` se
+            // factura); el detalle auditable vive en la colección, no en este
+            // contador.
+            // `conversaciones` es la unidad que se factura --ventana de 24 h,
+            // el mismo nombre que usa la pagina de precios. `atenciones` queda
+            // admitida para no romper los documentos ya escritos con ese
+            // nombre; no se escribe mas.
+            'cierres', 'conversaciones', 'atenciones', 'interacciones',
+            // BLOQUES Y UMBRALES (13/09). `bloquesAdicionales` = de esas
+            // conversaciones, cuántas vinieron de exceder las 25 respuestas en
+            // una misma ventana. `derivadasAOperador` y `bloqueadas` = ventanas
+            // que cruzaron cada umbral de uso extendido (`atencion.ts`). Los
+            // tres los escribe la ingesta desde que existen los bloques y
+            // faltaban en esta lista: con el principal de ingesta sano no se
+            // notaba —el Admin SDK no pasa por las reglas—, pero es justo el
+            // caso que esta lista blanca existe para cubrir.
+            'bloquesAdicionales', 'derivadasAOperador', 'bloqueadas',
+            // POR ANUNCIO (`Analisis/38` §2). Subconjunto de `conversaciones`:
+            // las que nacieron de un anuncio de clic a WhatsApp y abren la
+            // ventana de punto de entrada gratuito de Meta.
+            'conversacionesPorAnuncio',
+            // SEÑA POR QR (bloque 2, 17/09). Las tres cuentan el embudo de la
+            // reserva con seña: QR enviados, comprobantes cotejados —cualquiera
+            // sea el resultado— y retenciones que vencieron sin comprobante.
+            // Con las tres la consola puede decir cuántos horarios se bloquean
+            // por pagos que no llegan, que es lo que decide si la retención de
+            // 30 minutos es corta o larga.
+            'senasEnviadas', 'senasCotejadas', 'senasVencidas',
+            // SEGUIMIENTO DE SOLICITUD PENDIENTE (bloque 4, 17/09).
+            // `seguimientos` = recordatorios que salieron (uno por solicitud como
+            // máximo, lo hace cumplir `seguimientoEnviado`). `reactivadas` = de
+            // esos, en cuántos el paciente volvió a escribir dentro de las 24 h.
+            // Con los dos se sabe si el recordatorio recupera a alguien o solo
+            // cuesta; ninguno de los dos se factura.
+            'seguimientos', 'reactivadas',
+            // ENTRANTES POR TIPO (bloque 3, 17/09). Mapa `{ audio: 4, image: 2,
+            // ... }` con los mensajes que mandó el cliente, por clase. Es un
+            // mapa y no un campo por tipo porque los tipos los fija Meta; por
+            // eso las claves se validan abajo, una por una: si el principal de
+            // ingesta quedara comprometido, un mapa libre sería exactamente el
+            // campo arbitrario que esta lista blanca existe para impedir.
+            'entrantesPorTipo'
+          ]) && entrantesPorTipoValido();
+        }
+
+        /** El mapa, si viene, trae SOLO los tipos que la ingesta normaliza
+         *  (`TIPOS` de `ingesta.ts`): cualquier otro ya cayó en `otro`. */
+        function entrantesPorTipoValido() {
+          return !('entrantesPorTipo' in request.resource.data)
+            || (request.resource.data.entrantesPorTipo is map
+                && request.resource.data.entrantesPorTipo.keys().hasOnly([
+                     'text', 'interactive', 'image', 'audio',
+                     'document', 'order', 'location', 'otro'
+                   ]));
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /cierres/{cierreId} — LO QUE TERMINÓ BIEN. NO SE FACTURA: desde el
+      // 13/09/2026 la unidad de cobro es la conversación (docs/base-comercial.md
+      // §2; corregido el 03/10, este encabezado decía «la unidad que se cobra»).
+      //
+      // Un CIERRE es una atención de WhatsApp que TERMINÓ BIEN y quedó
+      // registrada en algún lado verificable: una cita en el calendario, una
+      // venta con su comprobante recibido, una fila escrita en la planilla.
+      //
+      // NO son cierres, y esto importa más que la definición positiva porque es
+      // lo que evita contar de más:
+      //   - mandar información y que el cliente no confirme nada;
+      //   - mandar el QR y que el cliente no pague;
+      //   - una conversación que quedó a medias con datos incompletos.
+      // La regla práctica: si no hay un registro externo que lo pruebe, no es
+      // un cierre. Por eso `referencia` es OBLIGATORIA y no puede ir vacía.
+      //
+      // POR QUÉ EXISTE EL DOCUMENTO Y NO SOLO EL CONTADOR. El comercio ve esta
+      // cifra en Consumo y el importe en Cobros. Un número que nadie puede
+      // desglosar no se puede discutir con un cliente que reclama, ni auditar
+      // cuando la cuenta no cierra.
+      //
+      // PRIVACIDAD. NovuChat puede leer ESTE documento para explicar una
+      // cifra, y por eso acá NO hay nada del contenido de la conversación ni
+      // el teléfono completo: el número va enmascarado, igual que en la
+      // bitácora. Lo que identifica a la persona vive en `/privado`, que solo
+      // abre el administrador del negocio. Es el mismo reparto que ya usan
+      // contactos y funcionarios, y la razón es la misma: las reglas no pueden
+      // ocultar campos sueltos en una lectura.
+      // -----------------------------------------------------------------------
+      match /cierres/{cierreId} {
+        allow get, list: if esMiembro(tenantId) || esPropietario();
+        allow create: if esIngesta(tenantId) && tenantOperativo(tenantId) && cierreValido();
+        // No se corrige ni se borra un cierre: es un registro de auditoría. Un
+        // error se compensa con otro asiento, no reescribiendo el original.
+        allow delete: if false;
+
+        // LA ÚNICA ESCRITURA PERMITIDA SOBRE UN CIERRE: el sello de que una
+        // persona del negocio comprobó el pago contra su banco.
+        //
+        // ES LA PROHIBICIÓN 3 EN LAS REGLAS. El cotejo automático mira un
+        // comprobante, y un comprobante es una imagen que se edita: quien
+        // afirma que la plata entró es el comercio mirando su cuenta. Por eso
+        // este sello NO lo puede poner la ingesta —el servidor no sabe si el
+        // dinero llegó— y sí el administrador, con su uid y la hora del
+        // servidor, igual que cualquier otro sello de la consola.
+        //
+        // SE MARCA UNA VEZ Y NO SE DESMARCA. Un cierre ya comprobado no admite
+        // otra escritura: borrar el sello borraría el rastro de que alguien
+        // afirmó algo, y ese rastro es justo lo que sirve el día que el cobro
+        // se discute. Si se marcó por error, se corrige con un reclamo, que
+        // deja su propio registro.
+        allow update: if (esAdmin(tenantId)
+                          && !('comprobadoPor' in resource.data)
+                          && request.resource.data.diff(resource.data).affectedKeys()
+                               .hasOnly(['comprobadoPor', 'comprobadoEn'])
+                          && request.resource.data.comprobadoPor == request.auth.uid
+                          && request.resource.data.comprobadoEn == request.time)
+                      // LA SEGUNDA ESCRITURA: otro comprobante para la misma
+                      // cita. Cuando el primero no cuadró o no se pudo leer, el
+                      // paciente manda otro y el cotejo se reescribe con el
+                      // intento siguiente. SOLO `cotejo`: la referencia, el
+                      // importe y el teléfono del cierre no se corrigen por
+                      // esta vía, porque son el registro de lo que se cobró.
+                      || (esIngesta(tenantId) && tenantOperativo(tenantId)
+                          && request.resource.data.diff(resource.data).affectedKeys()
+                               .hasOnly(['cotejo'])
+                          && cotejoValido(request.resource.data));
+
+        // EL COTEJO DEL COMPROBANTE DE LA SEÑA (bloque 2, 17/09): lo que el
+        // servidor comparó y con qué resultado. Es un mapa dentro del cierre y
+        // no un documento aparte porque se lee siempre junto con él —la
+        // pantalla de cobros muestra el importe y al lado si los datos
+        // coinciden— y porque nace en la misma transacción.
+        //
+        // `resultado` es un enumerado de TRES valores y ninguno se llama
+        // «pagado» ni «acreditado»: `cuadra` dice que lo leído coincide con lo
+        // esperado, y nada más. Quien confirma que el dinero entró es el
+        // comercio, con el sello de arriba. Prohibición 3 de CLAUDE.md.
+        //
+        // `diferencias` es una lista de frases cortas del servidor
+        // (`cotejo.ts`), `montoLeido` lo que el modelo leyó (o nulo), `banco`
+        // el de destino tal como figura, `idMeta` el identificador del mensaje
+        // con el comprobante —la prueba externa de que llegó— e `intentos`
+        // cuántos comprobantes se cotejaron para esta cita. LA IMAGEN NO SE
+        // GUARDA en ninguna parte: solo estos datos.
+        function cotejoValido(d) {
+          return !d.keys().hasAny(['cotejo'])
+            || (d.cotejo is map
+                && d.cotejo.keys().hasOnly([
+                     'resultado', 'diferencias', 'montoLeido', 'banco',
+                     'idMeta', 'intentos', 'en'
+                   ])
+                && d.cotejo.get('resultado', '') in ['cuadra', 'no_cuadra', 'ilegible']
+                && d.cotejo.get('diferencias', []) is list
+                && d.cotejo.get('diferencias', []).size() <= 10
+                && (d.cotejo.get('montoLeido', null) == null
+                    || d.cotejo.get('montoLeido', 0) is number)
+                && textoOpc(d.cotejo, 'banco', 80)
+                && textoOpc(d.cotejo, 'idMeta', 120)
+                && d.cotejo.get('intentos', 1) is int
+                && d.cotejo.get('intentos', 1) >= 1
+                && d.cotejo.get('intentos', 1) <= 100
+                && d.cotejo.get('en', null) is timestamp);
+        }
+
+        function cierreValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'tipo', 'ocurridoEn', 'referencia', 'telefonoEnmascarado',
+                   'monto', 'moneda',
+                   // El sello del comprobante. La INGESTA no lo puede escribir
+                   // —está en la lista para que el documento resultante lo
+                   // admita, no para que ella lo ponga— y su regla de
+                   // actualización es la de arriba.
+                   'comprobadoPor', 'comprobadoEn',
+                   // El cotejo de la seña, opcional: un cierre sin seña no lo
+                   // trae. Su forma la valida `cotejoValido`.
+                   'cotejo'
+                 ])
+              && !('comprobadoPor' in d)
+              // El importe, si viene, es un número no negativo con techo. Un
+              // cierre de venta puede no traerlo; el de una seña lo trae
+              // siempre, porque es lo que se cotejó.
+              && d.get('monto', 0) is number
+              && d.get('monto', 0) >= 0
+              && d.get('monto', 0) <= 1000000
+              && textoOpc(d, 'moneda', 8)
+              && cotejoValido(d)
+              // `conversacionId` NO esta en la lista, y es deliberado: vale
+              // `wa_<telefono>`, o sea el numero COMPLETO. Enmascarar el
+              // telefono en un campo y publicarlo entero en otro no protege
+              // nada. Va en /privado.
+              && d.tipo in ['cita', 'venta', 'registro']
+              && d.referencia is string && d.referencia.size() > 0
+              && d.referencia.size() <= 200
+              && d.ocurridoEn is timestamp
+              // Mismo enmascarado que exige la bitácora: acá no entra un
+              // teléfono completo aunque el principal de ingesta lo tenga.
+              && d.telefonoEnmascarado is string
+              && d.telefonoEnmascarado.matches('^[0-9]{0,4}[*]{3,}[0-9]{0,4}$');
+        }
+
+        // El detalle que identifica a la persona o al servicio. Del negocio, y
+        // de nadie más: NovuChat no lo lee.
+        match /privado/{documento} {
+          allow get, list: if esAdmin(tenantId) && tenantLegible(tenantId);
+          allow create: if esIngesta(tenantId) && tenantOperativo(tenantId);
+          allow update, delete: if false;
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /bitacora/{eventoId} — REGISTRO OPERATIVO. Qué se envió, a quién,
+      // cuándo y con qué resultado.
+      //
+      // POR QUÉ ES UNA COLECCIÓN NUEVA Y NO UNA EXTENSIÓN DE /auditoria
+      // ---------------------------------------------------------------
+      // Las dos son inmutables y las dos son evidencia, pero responden preguntas
+      // distintas y, sobre todo, CRECEN A RITMOS DISTINTOS:
+      //
+      //   /auditoria  «quién cambió qué». Unas pocas decenas de eventos por
+      //               comercio y por año: altas, bajas, cambios de rol,
+      //               suspensiones. Se lee entera de un vistazo.
+      //   /bitacora   «qué hizo el sistema». Varios eventos por CADA mensaje.
+      //               Miles por mes y por comercio.
+      //
+      // Mezclarlas tendría tres costos concretos: la pista de auditoría —que es
+      // la que se mira cuando hay una disputa— quedaría ahogada en ruido de
+      // entregas; cualquier consulta sobre /auditoria pasaría a costar lo que
+      // cuesta recorrer la bitácora; y los índices compuestos que la bitácora
+      // necesita se aplicarían también a una colección que no los usa. Además
+      // piden políticas de retención distintas: la auditoría se guarda años, la
+      // bitácora meses.
+      //
+      // QUÉ NO GUARDA, Y ESTO ES LO IMPORTANTE
+      // --------------------------------------
+      // **NO guarda el texto de los mensajes.** Solo metadatos: tipo, resultado,
+      // código, latencia, tamaño y el teléfono ENMASCARADO.
+      //
+      // El motivo es de coherencia, no de espacio. Ya está decidido que el
+      // propietario de NovuChat NO lee conversaciones sin una ventana de soporte
+      // otorgada por el comercio (T-5). Si la bitácora llevara el texto, sería
+      // una puerta trasera a exactamente eso: una colección legible por el
+      // propietario, consultable entre TODOS los comercios a la vez, con el
+      // contenido de las conversaciones adentro. Sería la peor versión de lo que
+      // el diseño entero evita.
+      //
+      // Cuando hace falta el texto, la bitácora lleva `conversacionId`: con una
+      // ventana de soporte vigente se salta al hilo en un clic. La regla no
+      // cambia; el camino sigue siendo el mismo y sigue quedando auditado.
+      //
+      // QUIÉN LA LEE
+      // -----------
+      // El administrador del comercio y el propietario. El operador queda afuera:
+      // ya tiene la vista de conversaciones, que es la misma información con más
+      // contexto y acotada a los hilos. La bitácora es una lista de destinos y no
+      // le agrega nada para atender.
+      //
+      // Se lee con `tenantLegible`: un comercio suspendido conserva su evidencia.
+      // -----------------------------------------------------------------------
+      match /bitacora/{eventoId} {
+
+        allow get, list: if (esAdmin(tenantId) && tenantLegible(tenantId))
+                         || esPropietario();
+
+        // La escribe la ruta de ingesta. A diferencia de las conversaciones, se
+        // admite TAMBIÉN con el comercio suspendido: la evidencia no puede tener
+        // agujeros justo en el tramo más conflictivo, que es el del corte de
+        // servicio. Se puede porque acá no hay contenido personal acumulándose:
+        // solo metadatos y un teléfono enmascarado.
+        allow create: if esIngesta(tenantId) && eventoValido();
+
+        // INMUTABLE PARA TODOS, incluido el propietario de NovuChat. Una bitácora
+        // que el proveedor puede editar no sirve como evidencia contra el
+        // proveedor, que es justamente cuando más se la necesita.
+        allow update, delete: if false;
+
+        function eventoValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'ts', 'tipo', 'resultado', 'canal', 'codigo',
+                   'destinoEnmascarado', 'conversacionId', 'detalle',
+                   'tamanoTexto', 'latenciaMs'
+                 ])
+            && d.get('ts', null) is timestamp
+            && d.get('tipo', '') in [
+                 'mensaje_entrante', 'mensaje_saliente', 'plantilla_enviada',
+                 'cita_agendada', 'cita_rechazada', 'cobro_simulado',
+                 'transferencia_humano', 'config_publicada', 'suspension',
+                 'reactivacion', 'error_flujo', 'entrada_descartada',
+                 // Catálogo web: se derivó a alguien al sitio, y volvió un
+                 // carrito. Hacen falta LOS DOS para poder contestar «mandé el
+                 // enlace y no me llegó ningún pedido»: con uno solo no se
+                 // distingue «nunca se derivó» de «se derivó y nadie compró».
+                 'catalogo_enlace', 'carrito_recibido',
+                 // Umbrales de atención (`Analisis/27` §5): la ventana pasó al
+                 // operador, o llegó al bloqueo. Explican «el asistente dejó de
+                 // contestarle a mi cliente». Faltaban desde el 13/09.
+                 'derivacion_operador', 'bloqueo_ventana',
+                 // Aviso de consumo al 80 % del plan (15/09), una vez por mes.
+                 'aviso_consumo',
+                 // Seña por QR (bloque 2, 17/09): llegó un comprobante y el
+                 // servidor lo cotejó (el resultado va en `codigo`), y una
+                 // retención que venció sin comprobante y cuya cita se borró.
+                 'cobro_cotejado', 'sena_vencida',
+                 // Seguimiento de solicitud pendiente (bloque 4, `Analisis/31` §4):
+                 // salió el recordatorio único; `codigo` lleva el modo (`texto`
+                 // en ventana, `plantilla` fuera). Lo escribe `seguimientos.ts`.
+                 'seguimiento_enviado',
+                 // Prepago (bloques A-0 y A-2, 20/09, DISENO §4undecies): el
+                 // servicio se cortó por falta de pago o de conversaciones
+                 // (`codigo` lleva el motivo), volvió, y entró un pago (`codigo`
+                 // lleva quién confirmó: `banco` o `propietario`; lo escribe
+                 // `cobroPrepago.ts`). Un corte solo observado NO llega acá:
+                 // queda en la auditoría.
+                 'corte_servicio', 'reanudacion_servicio', 'pago_registrado'
+                 // CRITERIO: esta lista es `TipoEvento` de la ingesta, entera.
+                 // `pruebas/bitacora-tipos.test.ts` exige que sean iguales.
+               ]
+            && d.get('resultado', '') in ['ok', 'fallo', 'rechazado', 'reintento']
+            && d.get('canal', 'whatsapp') in ['whatsapp', 'panel', 'sistema']
+            // Teléfono ENMASCARADO. El patrón exige los asteriscos: si alguien
+            // intentara escribir el número completo, la regla lo rechaza. Es la
+            // diferencia entre «acordarse de enmascarar» y «no poder no hacerlo».
+            && (!d.keys().hasAny(['destinoEnmascarado'])
+                || d.destinoEnmascarado.matches('^[0-9]{0,4}[*]{3,}[0-9]{0,4}$'))
+            && textoOpc(d, 'conversacionId', 80)
+            // `detalle` es un CÓDIGO CORTO de vocabulario técnico, no un lugar
+            // para volcar la respuesta del proveedor ni el mensaje del cliente.
+            // El tope de 120 lo hace incómodo de abusar y es deliberado.
+            && textoOpc(d, 'codigo', 24)
+            && textoOpc(d, 'detalle', 120)
+            && (!d.keys().hasAny(['tamanoTexto'])
+                || (d.tamanoTexto is int && d.tamanoTexto >= 0 && d.tamanoTexto <= 100000))
+            && (!d.keys().hasAny(['latenciaMs'])
+                || (d.latenciaMs is int && d.latenciaMs >= 0 && d.latenciaMs <= 600000));
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /auditoria/{eventoId} — quién cambió qué y cuándo.
+      // Solo escribe el SDK Admin (que se salta estas reglas por diseño).
+      // Denegar la escritura acá impide que alguien fabrique o borre evidencia.
+      // -----------------------------------------------------------------------
+      match /auditoria/{eventoId} {
+        allow get, list: if esAdmin(tenantId) || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /accesosSoporte/{uid} — ventanas de acceso de NovuChat al negocio.
+      // Las otorga una Cloud Function a pedido de un admin del negocio. Que sean
+      // de solo lectura evita que el propietario se auto-conceda acceso desde el
+      // navegador: tiene que pasar por la Function, que lo audita.
+      // -----------------------------------------------------------------------
+      match /accesosSoporte/{uid} {
+        allow get, list: if esAdmin(tenantId) || esPropietario();
+        allow create, update, delete: if false;
+      }
+    }
+
+    // =========================================================================
+    // /plataforma/{documento} — configuración de NovuChat, no de ningún comercio.
+    //
+    // Hoy guarda `notificaciones.correosReclamos`: a qué casillas se avisa
+    // cuando entra un reclamo. Es configurable, y por eso mismo es delicado.
+    //
+    // POR QUÉ NADIE LO ESCRIBE DESDE EL NAVEGADOR. Esta lista es el DESTINO de
+    // un correo que lleva texto escrito por un usuario. Si alguien pudiera
+    // agregarle una dirección, convertiría el sistema en un reenviador: escribe
+    // un reclamo con lo que quiera y lo hace salir, firmado por NovuChat, hacia
+    // donde quiera. La escribe solo una Cloud Function, y la Function que envía
+    // el correo la lee con el SDK Admin. El destino NUNCA sale del reclamo.
+    // =========================================================================
+    match /plataforma/{documento} {
+      allow get, list: if esPropietario();
+      allow create, update, delete: if false;
+    }
+
+    // /plataforma/tipoCambio — EL TIPO DE CAMBIO OFICIAL DEL BCB, que es
+    // informacion publica. Lo lee tambien el administrador de un comercio, y
+    // tiene que poder leerlo: la pantalla «Pagar» le muestra cuantos bolivianos
+    // se le van a cobrar ANTES de emitir el QR, y ese numero se arma con
+    // `importeBs` sobre este documento, la misma funcion y el mismo dato que
+    // usa el servidor al emitir. Sin esta regla la pantalla tendria que
+    // estimar el importe por su cuenta, y la diferencia entre lo estimado y lo
+    // impreso en el QR aparece recien en el banco, con el cliente mirando.
+    //
+    // Es una excepcion acotada a la regla de arriba, y es segura porque el TCO
+    // no es de nadie: lo publica el BCB todos los dias. Lo que la regla de
+    // arriba protege es `notificaciones.correosReclamos`, que sigue cerrado.
+    // Escribir sigue negado para todos: lo carga una Function con auditoria.
+    match /plataforma/tipoCambio {
+      allow get: if request.auth != null;
+      allow list, create, update, delete: if false;
+    }
+
+    // /plataforma/prepago/historial/{id} — cada cambio de la bandera del modo
+    // observación del prepago (DISENO §4undecies.4): quién, cuándo, por qué y
+    // sobre qué tenant. La escribe solo `fijarCortePrepago` (SDK Admin); la
+    // lee el propietario. Es una subcolección: la regla de arriba no la cubre.
+    match /plataforma/prepago/historial/{id} {
+      allow get, list: if esPropietario();
+      allow create, update, delete: if false;
+    }
+
+    // =========================================================================
+    // /cobrosPendientes/{pagoId} y /cobrosResueltos/{pagoId} — ÍNDICES DEL
+    // COBRADOR (DISENO.md §4undecies.1). Resuelven «referencia externa →
+    // comercio» cuando llega el aviso del cobrador, y son la lista de trabajo
+    // del barrido horario. Los escribe y los lee SOLO el SDK Admin: no hay
+    // pantalla que los necesite, y una lectura desde el navegador revelaría
+    // qué comercios tienen un cobro abierto. Negados enteros, sin excepción.
+    // =========================================================================
+    match /cobrosPendientes/{pagoId} {
+      allow read, write: if false;
+    }
+    match /cobrosResueltos/{pagoId} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // CONSULTA DE GRUPO DE COLECCIONES SOBRE LA BITÁCORA
+    //
+    // ⚠️ TRAMPA DE FIRESTORE QUE COSTÓ UN RATO ENCONTRAR. Una consulta de grupo
+    // (`collectionGroup('bitacora')`) **NO la autoriza la regla anidada en
+    // `/tenants/{tenantId}/bitacora`**. Firestore la evalúa contra un patrón
+    // distinto, y hace falta una regla con comodín recursivo. Sin esto, la
+    // pantalla de plataforma falla con «Missing or insufficient permissions»
+    // aunque el propietario tenga permiso documento por documento.
+    //
+    // No lo detectó ninguna de las 137 pruebas anteriores: apareció al abrir la
+    // pantalla. Ahora hay tres pruebas que lo cubren.
+    //
+    // POR QUÉ ESTÁ ACOTADO AL PROPIETARIO. Una consulta de grupo SE SALTEA LA
+    // RUTA, que es donde vive todo el aislamiento de este diseño. Si un comercio
+    // pudiera hacerla, leería la bitácora de todos. Por eso el comodín admite
+    // únicamente a `esPropietario()`, y no otorga nada nuevo: el propietario ya
+    // podía leer cada bitácora por la regla anidada.
+    //
+    // POR QUÉ SOLO PARA LA BITÁCORA. Es la única colección sin contenido
+    // personal —solo metadatos y teléfonos enmascarados—. Un comodín equivalente
+    // sobre `conversaciones` o `mensajes` sería exactamente la puerta trasera a
+    // T-5 que el diseño entero evita. Hay una prueba que lo verifica.
+    // =========================================================================
+    match /{ruta=**}/bitacora/{eventoId} {
+      allow list: if esPropietario();
+    }
+
+    // =========================================================================
+    // /rutasWhatsApp/{phoneNumberId} — ÍNDICE INVERSO NÚMERO → COMERCIO.
+    //
+    // POR QUÉ EXISTE
+    // --------------
+    // El webhook de Meta no trae el identificador del comercio: trae
+    // `entry[0].changes[0].value.metadata.phone_number_id`. Con varios flujos
+    // (agendamiento, venta y cobro, interno) y un número por comercio, n8n
+    // necesita resolver ese número a un tenant y a un flujo antes de hacer
+    // cualquier otra cosa.
+    //
+    // POR QUÉ UNA COLECCIÓN Y NO UNA CONSULTA SOBRE /tenants
+    // ------------------------------------------------------
+    // Un `where('waPhoneNumberId','==',id)` sobre /tenants exigiría permiso de
+    // listado sobre la cartera entera de clientes —justo lo que T-12 prohíbe— y
+    // además un índice compuesto. Acá el identificador del número ES la clave
+    // del documento: la resolución es una lectura directa, sin índice y sin
+    // abrir ningún listado.
+    //
+    // QUIÉN ENTRA
+    // -----------
+    // Nadie desde el navegador salvo el propietario de NovuChat. n8n NO lee esta
+    // colección: la consulta la hace la Cloud Function con el SDK Admin, después
+    // de validar la firma HMAC. Que un comercio pudiera leerla le diría con qué
+    // números operan los demás.
+    //
+    // Documento: { tenantId, flujo, wabaId, estado, titularidad, asignadoEn,
+    // asignadoPor } y, escritas por otras piezas, propiedades de la LÍNEA:
+    // aliasSecreto, numeroPublico, webhookCarrito.
+    // =========================================================================
+    match /rutasWhatsApp/{phoneNumberId} {
+      allow get, list: if esPropietario();
+      // Ningún navegador escribe este documento; lo escriben solo el SDK Admin
+      // (que se salta estas reglas): la Function `asignarNumero` (con merge, para
+      // no borrar las propiedades de la línea al reasignarla al mismo comercio, y
+      // además garantiza que un mismo phone_number_id no apunte nunca a dos
+      // comercios), `liberarNumero` (borra el documento entero), `asignarEjes`
+      // (la titularidad), `fijarWebhookCarrito` y los scripts de operador
+      // (`asignar-numero`, `fijar-numero-publico`, `fijar-webhook-carrito`).
+      allow create, update, delete: if false;
+    }
+
+    // =========================================================================
+    // /fichasCatalogo/{ficha} — EL ENLACE DE UNA CONVERSACIÓN AL CATÁLOGO WEB.
+    //
+    // CERRADA PARA TODO EL MUNDO, y por eso está escrita: la negación final ya
+    // la cubriría, pero una colección que guarda teléfonos merece una regla que
+    // se lea, no una que se deduzca. Cuando alguien busque «quién puede leer
+    // esto», tiene que encontrar la respuesta acá y no razonando por descarte.
+    //
+    // QUÉ GUARDA: `{ tenantId, telefono, phoneNumberId, flujo, creadaEn,
+    // caducaEn, checkouts }`, y además UN puntero por conversación,
+    // `ult_<tenant>_<teléfono>` con `{ ficha, tenantId, telefono, caducaEn }`,
+    // que recuerda la ficha vigente para que `configuracionFlujo` no abra una
+    // por mensaje (03/10/2026). El puntero lleva el teléfono COMPLETO, igual que
+    // la ficha, y NO tiene TTL: es retención pendiente (ver `SEGURIDAD.md` T-36).
+    // Su identificador no tiene la forma de una ficha (32 hexadecimales), así que
+    // la página pública y el checkout lo rechazan.
+    // El identificador del documento son 128 bits al azar y es lo único que
+    // viaja en la URL que recibe el cliente final: el teléfono NO va en el
+    // enlace, porque una URL termina en el historial del navegador, en el
+    // `Referer` de las imágenes alojadas por terceros y en los registros de
+    // cualquier intermediario.
+    //
+    // QUIÉN LA USA: únicamente las Cloud Functions del catálogo web, con el SDK
+    // Admin. Ni el navegador del comercio ni el del propietario tienen nada que
+    // hacer acá: el comercio ve el PEDIDO que llegó, que es lo que necesita.
+    // =========================================================================
+    match /fichasCatalogo/{ficha} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // /usuarios/{uid} — perfil propio. NO contiene roles: los roles son claims.
+    // =========================================================================
+    match /usuarios/{uid} {
+      allow get: if autenticado() && (request.auth.uid == uid || esPropietario());
+      allow list: if esPropietario();
+
+      // El usuario edita su propio nombre y preferencias, nada más. La lista
+      // blanca de campos es lo que impide la escalada de privilegios clásica:
+      // el usuario agregándose a sí mismo un campo `rol: "admin"` con la
+      // esperanza de que alguna pantalla lo tome como autorización.
+      allow update: if autenticado()
+                    && request.auth.uid == uid
+                    && soloCampos(['nombre', 'preferencias'])
+                    && textoOpc(request.resource.data, 'nombre', 120);
+      allow create, delete: if false;
+    }
+
+    // =========================================================================
+    // NEGACIÓN FINAL. Todo lo que no coincidió con una regla de arriba queda
+    // prohibido: colecciones nuevas, rutas mal escritas, experimentos olvidados.
+    // Esta regla es la red de seguridad del diseño entero. No borrarla.
+    // =========================================================================
+    match /{documento=**} {
+      allow read, write: if false;
+    }
+  }
+}

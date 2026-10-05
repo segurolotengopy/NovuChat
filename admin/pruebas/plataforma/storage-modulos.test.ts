@@ -77,7 +77,7 @@ const tenants: Tenant[] = [
   { id: 'mp', ficha: { ...base, flujos: ['venta'], modulos: ['captacion'] }, captacion: true },
   { id: 'ab', ficha: { ...base, flujos: [], modulos: ['agenda', 'pedidos', 'catalogo-web', 'captacion', 'productos', 'campanas'] },
     captacion: true },
-  { id: 'susp', ficha: { ...base, estado: 'suspendido', flujos: [], modulos: ['captacion'] }, captacion: false },
+  { id: 'susp', ficha: { ...base, estado: 'suspendido', flujos: [], modulos: ['captacion'] }, captacion: false }, // escribir exige activo; leer (propietario) solo la capacidad,
   { id: 'fantasma', ficha: null, captacion: false },
 ];
 for (const bits of ['000', '100', '010', '001', '110', '101', '011', '111']) {
@@ -122,7 +122,7 @@ const casos = (nucleo: boolean): Caso[] => {
     lista.push({ nombre: `${t.id}: el administrador borra planes.pdf`, esperado: t.captacion,
       correr: async () => { await sembrar(t, true); return permitida(() => deleteObject(ref(comoAdmin(t.id), camino(t.id)))); } });
     // El propietario LEE solo si el comercio tiene captación (como config/onboarding).
-    lista.push({ nombre: `${t.id}: el propietario lee planes.pdf`, esperado: t.captacion,
+    lista.push({ nombre: `${t.id}: el propietario lee planes.pdf`, esperado: t.captacion || t.id === 'susp',
       correr: async () => { await sembrar(t, true); return permitida(() => getMetadata(ref(comoPropietario(), camino(t.id)))); } });
   }
   // Controles que no dependen del módulo.
