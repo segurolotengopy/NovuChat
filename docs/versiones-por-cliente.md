@@ -31,7 +31,7 @@ Una excepción necesita las tres cosas, o no es una excepción:
 | Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | Atrasado en 1 nodo: `Procesar respuesta` (el #284, detector de «ya», `5aad7da`; código compartido). Por qué: el Demo A es el número de ensayo y no tiene pacientes; decidido por Andres el 30/09/2026 (según la sesión Principal) mientras Bellido sale a piloto, y Bellido ya lo tiene. Lo cierra: la próxima publicación de flujos, que llevará también el #286. **Además, F3a (02/10/2026):** `Procesar respuesta` lleva la corrección `NIEGA_IA` (#359) en `main` sin publicar. Por qué: Andres decidió el 02/10 preparar y fusionar F3a en `main` y publicar solo tras el veredicto H2 de la revisora, con ensayo previo. Lo cierra: la publicación de F3a en la ventana de 02:00 a 03:00 después de H2. |
 | Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | Atrasado en 1 nodo: `Procesar respuesta` (el #284, detector de «ya», `5aad7da`; código compartido). Por qué: Platinum es un demo, sin pacientes; decidido por Andres el 30/09/2026 (según la sesión Principal) mientras Bellido sale a piloto, y Bellido ya lo tiene. Lo cierra: la próxima publicación de flujos, que llevará también el #286. **Además, F3a (02/10/2026):** `Procesar respuesta` lleva `NIEGA_IA` (#359) en `main` y **Platinum no se publica con F3a** (decisión de Andres del 02/10, D7): su JSON versionado no está alineado con lo que corre en producción y publicarlo lo haría retroceder. Lo cierra: F3b (núcleo unificado de reservas), que lo publica alineado. |
 | Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | **Corre otro flujo, el piloto «Agenda mínima v0»** (publicado el 01/10/2026 a la 01:24 con autorización de Andres): `Flujos/experimental/agenda-minima/agenda-minima.v0.json`, 45 nodos, de `e3d4af9` (PR #354; el piloto se publicó el 01/10 desde `f3f7411`, PR #293, fusionado en `c0ea17e`; el cambio de `e3d4af9` es solo el código de los 11 nodos Code que pegan `_comun.js`, la corrección de `cnAtencion`, y su prueba real con teléfono está pendiente), no el JSON versionado de esta fila (el de A, 96 nodos, descartado). Se publica con `herramientas/flujo-de-prueba.mjs --sobre-bellido`, **no** con `publicar-flujo.sh`. Por qué: es el piloto que Andres decidió el 30/09/2026 tras el concurso entre el flujo actual y este. **Plan ante una falla de B (Andres, 01/10/2026): se corrige B; no se vuelve al flujo anterior ni al candidato A, que se descartó.** El respaldo del flujo anterior de 96 nodos no es plan del piloto. Lo cierra: la decisión de Andres sobre el piloto (y cambiar esta columna al JSON de B cuando `estado-de-versiones.sh` sepa compararlo contra el vivo); hasta entonces `estado-de-versiones.sh` lo verá «atrasado, CON excepción declarada», que es lo esperado. Historia: hasta el 30/09 corría el flujo publicado desde `main` con #284 (96 nodos, hotfix de protección del 27/09 más mejoras adelantadas, sobre la base `e02a756`); esa versión queda como respaldo |
-| Q'Taco (piloto) | `.env.qtaco` | `Flujos/experimental/venta-minima/venta-minima.qtaco.json` | En construcción: se publicará con `publicar-flujo.sh --crear`, excepción experimental como Bellido. |
+| Q'Taco (piloto) | `.env.qtaco` | `Flujos/experimental/venta-minima/venta-minima.qtaco.json` | — |
 | Demo B (venta y cobro) | `.env.demo-b` | `Flujos/demo-b-venta-cobro.json` | — |
 | NovuChat (captación) | `.env.novuchat` | `Flujos/novuchat-onboarding.json` | **F3a en `main` sin publicar (02/10/2026):** fallo del modelo con botón (#360) y campaña por texto, según se fusionen. Por qué: Andres decidió el 02/10 publicar F3a solo tras el veredicto H2; además la publicación de captación no puede caer durante el traspaso del chat interno al portafolio de Silvana (D10). Lo cierra: la publicación de F3a después de H2 y fuera del traspaso. |
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |
@@ -40,6 +40,28 @@ Una excepción necesita las tres cosas, o no es una excepción:
 
 > El guion `—` significa **sin excepción**: ese flujo tiene que estar al día con
 > su JSON versionado, y el script falla si no lo está.
+
+## Estado al 04/10/2026 (Q'Taco publicado; recordatorio de Bellido)
+
+**Q'Taco.** El flujo «Venta mínima (v0)» de Q'Taco está publicado en n8n desde `main`
+(`e3107fd6`, PR #417 con head `9b638c32`; antes, el 04/10, la red de frases del PR #403): 50 nodos, retención
+`all/all`, `executionTimeout` de 120 s (solo Q'Taco; ensayo y prueba siguen en 60 s) y las claves
+`plantillaReservaCompleto`/`idiomaPlantillaReservaCompleto`/`formaPlantillaReservaCompleto`
+(`solicitud_reserva` solo para el rol `completo`, con teléfono; cocina sigue con `pedido_registrado`).
+Con eso la fila deja de ser «en construcción» y pasa a `—`: tiene que estar al día con su JSON versionado.
+Costo: 0 mensajes por conversación agregados o quitados.
+
+**Recordatorio de 24 h de Bellido (flujo propio, activo desde el 04/10/2026).**
+`Flujos/experimental/recordatorio-bellido/recordatorio-bellido.v1.json` (PR #405, fusionado en `42db7f9c`,
+head `37442768`), 12 nodos, cron diario a las 17:00 de La Paz, plantilla `recordatorio_cita_consultorio`
+sin cambios, solo citas de mañana creadas por NovuChat. Es un flujo aparte del de agenda (45 nodos,
+«Agenda mínima v0»), que no se tocó. **No tiene fila en la tabla** porque sus dos marcadores
+(`REEMPLAZAR_CALENDARIO_BELLIDO`, `REEMPLAZAR_PHONE_NUMBER_ID_BELLIDO`) no están en
+`CONFIGURACION.local.md`: se resolvieron en memoria con un script de publicación con valores de Bellido
+(calendario del tenant, phone number id de su línea), y `estado-de-versiones.sh` no podría
+reponerlos. Todavía no hay comprobación automática contra el JSON versionado: se tomó la huella de nodos
+del flujo vivo al publicarlo. Cuando haya un `.env` propio y filas para los marcadores, se agrega la fila. Costo: 1 mensaje de utilidad
+(unos 0,0113 USD) por cita recordada.
 
 ## Estado al 28/09/2026 (medios entrantes en el Demo B y la captación)
 
