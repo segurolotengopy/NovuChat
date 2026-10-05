@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { auth, db } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
+import { ContadoresDeCobro } from './ContadoresDeCobro';
 
 /**
  * =============================================================================
@@ -191,6 +192,8 @@ export function Cobros() {
           </p>
         </article>
       </div>
+
+      <ContadoresDeCobro tenantId={tenantId} />
 
       {error && <p role="alert">{error}</p>}
       {cobros === null && <p>Cargando…</p>}
