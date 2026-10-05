@@ -35,8 +35,9 @@ const RUTA_FLUJO = join(CARPETA, 'venta-minima.qtaco.json');
  * Los casos que NO pasan contra main y esperan una rama (05/10/2026). `A-delivery-opcional.json` pasa contra la rama de delivery opcional (PR #435) y falla contra
  * main; `A-pendiente-de-rama.json` falla contra las dos hoy (A7 y A8 esperan la rama funcional; A14 choca con el texto de la #435). La suite los saca del
  * «cero fallos» y fija, con un control negativo, que fallan: se ponen en rojo cuando llegue lo que esperan y entonces el caso pasa a `A.json`.
+ * `D-reserva-confirmada.json` (D5 a D8) pasa contra la rama de RESERVA CONFIRMADA (PR #437, fc7621ac) y falla contra main (todavía dice «solicitud» y deriva).
  */
-const ARCHIVOS_DE_RAMA = ['A-delivery-opcional.json', 'A-pendiente-de-rama.json'];
+const ARCHIVOS_DE_RAMA = ['A-delivery-opcional.json', 'A-pendiente-de-rama.json', 'D-reserva-confirmada.json'];
 const idsDeRama = (): string[] => ARCHIVOS_DE_RAMA.flatMap((f) => ((JSON.parse(readFileSync(join(CARPETA_CASOS, f), 'utf8')) as J)['casos'] as J[]).map((c) => String(c['id'])));
 /**
  * Los casos de SEGURIDAD del texto libre (la cartera, 05/10/2026): el código no debe tomar como dirección ni como referencia lo que no lo es. Fallan contra la rama de
@@ -132,10 +133,12 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     const lote2 = ['B6', 'B7', 'B8', 'B9', 'C7', 'C8', 'C10', 'D1', 'D2', 'D3', 'D4', 'D9', 'E2', 'E3', 'E5', 'E7', 'F2', 'F3', 'F4'];
     const lote3 = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A11', 'A13', 'A14', 'A15'];
     const lote4 = ['S1', 'S2', 'S2b', 'S2c', 'S3']; // seguridad del texto libre
+    const lote5 = ['D5', 'D5b', 'D6', 'D7', 'D7b', 'D8']; // reserva confirmada (rama #437); D8c, su control, ya pasa en main y vive en D.json
+    const control = ['D8c'];
     const { casos, global: g } = casosDeLaCarpeta();
     const ids = casos.map((c) => String(c['id']));
-    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4].sort());
-    expect([...idsDeRama()].sort(), 'los casos de rama son exactamente los del lote 3').toEqual([...lote3].sort());
+    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...control].sort());
+    expect([...idsDeRama()].sort(), 'los casos de rama son los de los lotes 3 y 5').toEqual([...lote3, ...lote5].sort());
     expect(idsDeSeguridad().sort(), 'los de seguridad son exactamente los del lote 4').toEqual([...lote4].sort());
     const pendientes = ((JSON.parse(readFileSync(join(CARPETA_CASOS, 'pendientes.json'), 'utf8')) as J)['pendientes'] as J[]).map((p) => String(p['id']));
     const grilla: string[] = [];

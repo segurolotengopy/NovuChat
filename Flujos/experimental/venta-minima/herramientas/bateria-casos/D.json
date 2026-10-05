@@ -8,7 +8,7 @@
       "titulo": "Reserva «el jueves a las 11 am»: dice el horario de ese día y pide la hora",
       "estadoPrevio": [
         {"cliente": {"tipo": "texto", "texto": "hola"}},
-        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["solicitud de reserva"], "estado": {"paso": "reserva"}}}
+        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["cu[eé]ntame en un solo mensaje"], "estado": {"paso": "reserva"}}}
       ],
       "turnos": [
         {
@@ -17,7 +17,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": ["El jueves el restaurante recibe reservas de 12:00 a 15:30 y de 18:00 a 21:30", "¿A qué hora"],
-            "titulosNo": ["Enviar solicitud"],
+            "titulosNo": ["Enviar solicitud|^Reservar$"],
             "estado": {"reserva.hora": {"vacio": true}, "reserva.personas": 2, "reserva.fecha": "2026-10-08"},
             "efectos": {"derivacion": false, "aviso": false}
           }
@@ -29,7 +29,7 @@
       "titulo": "Tras pedirle la hora, «19», «7 pm», «a las 7», «19:30» se toman como la hora (no se vuelve a pedir)",
       "estadoPrevio": [
         {"cliente": {"tipo": "texto", "texto": "hola"}},
-        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["solicitud de reserva"], "estado": {"paso": "reserva"}}},
+        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["cu[eé]ntame en un solo mensaje"], "estado": {"paso": "reserva"}}},
         {
           "cliente": {"tipo": "texto", "texto": "2 personas, aniversario el jueves a las 11 am"},
           "seco": {"personas": 2, "fecha": "2026-10-08", "hora": "11:00", "celebracion": "aniversario"},
@@ -42,9 +42,9 @@
           "seco": {},
           "esperado": {
             "mensajes": 1,
-            "textos": ["Tu solicitud de reserva", "a las 19:"],
+            "textos": ["Tu (solicitud de )?reserva:", "a las 19:"],
             "textosNo": ["¿A qué hora", "recibe reservas"],
-            "titulos": ["Enviar solicitud"],
+            "titulos": ["Enviar solicitud|^Reservar$"],
             "estado": {"paso": "reserva_confirmar", "reserva.hora": {"regex": "^19:"}, "reserva.personas": 2},
             "efectos": {"derivacion": false, "aviso": false}
           }
@@ -57,7 +57,7 @@
       "titulo": "Tras pedirle la hora, «para 3» NO es una hora: cambia las personas y la hora sigue pendiente",
       "estadoPrevio": [
         {"cliente": {"tipo": "texto", "texto": "hola"}},
-        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["solicitud de reserva"], "estado": {"paso": "reserva"}}},
+        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["cu[eé]ntame en un solo mensaje"], "estado": {"paso": "reserva"}}},
         {
           "cliente": {"tipo": "texto", "texto": "2 personas, aniversario el jueves a las 11 am"},
           "seco": {"personas": 2, "fecha": "2026-10-08", "hora": "11:00", "celebracion": "aniversario"},
@@ -71,7 +71,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": ["Me falta: la hora"],
-            "titulosNo": ["Enviar solicitud"],
+            "titulosNo": ["Enviar solicitud|^Reservar$"],
             "estado": {"reserva.hora": {"vacio": true}, "reserva.personas": 3, "paso": {"regex": "^reserva$"}},
             "efectos": {"derivacion": false, "aviso": false}
           }
@@ -84,7 +84,7 @@
       "perfil": "",
       "estadoPrevio": [
         {"cliente": {"tipo": "texto", "texto": "hola"}},
-        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["solicitud de reserva"], "estado": {"paso": "reserva"}}},
+        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["cu[eé]ntame en un solo mensaje"], "estado": {"paso": "reserva"}}},
         {
           "cliente": {"tipo": "texto", "texto": "somos 2 el jueves"},
           "seco": {"personas": 2, "fecha": "2026-10-08"},
@@ -102,7 +102,7 @@
             "mensajes": 1,
             "textos": ["tengo: .*a las 19:00, 2 personas", "Me falta: a nombre de quién"],
             "textosNo": ["Me falta: la hora", "¿A qué hora"],
-            "titulosNo": ["Enviar solicitud"],
+            "titulosNo": ["Enviar solicitud|^Reservar$"],
             "estado": {"reserva.hora": "19:00", "reserva.nombre": {"vacio": true}},
             "efectos": {"derivacion": false, "aviso": false}
           }
@@ -117,7 +117,7 @@
       },
       "estadoPrevio": [
         {"cliente": {"tipo": "texto", "texto": "hola"}},
-        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["solicitud de reserva"], "estado": {"paso": "reserva"}}}
+        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["cu[eé]ntame en un solo mensaje"], "estado": {"paso": "reserva"}}}
       ],
       "turnos": [
         {
@@ -126,7 +126,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": ["recibe reservas de 12:00 a 15:30 y de 18:00 a 21:30", "¿A qué hora"],
-            "titulosNo": ["Enviar solicitud"],
+            "titulosNo": ["Enviar solicitud|^Reservar$"],
             "estado": {"reserva.hora": {"vacio": true}},
             "efectos": {"derivacion": false, "aviso": false}
           }
@@ -137,8 +137,30 @@
           "esperado": {
             "mensajes": 1,
             "textos": ["no abre el domingo", "otro día"],
-            "titulosNo": ["Enviar solicitud"],
+            "titulosNo": ["Enviar solicitud|^Reservar$"],
             "estado": {"reserva.fecha": {"vacio": true}},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ]
+    },
+    {
+      "id": "D8c",
+      "titulo": "Control de D8: más de 24 personas (el doble del máximo normal) SÍ sigue pidiendo reducir el grupo; no se anota ni se avisa al local",
+      "estadoPrevio": [
+        {"cliente": {"tipo": "texto", "texto": "hola"}},
+        {"cliente": {"tipo": "boton", "titulo": "Reservar mesa"}, "esperado": {"textos": ["cu[eé]ntame en un solo mensaje"], "estado": {"paso": "reserva"}}}
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "mesa para 25 el jueves a las 7 pm, a nombre de Ana Duran"},
+          "seco": {"personas": 25, "fecha": "2026-10-08", "hora": "19:00", "zona": "", "nombre": "Ana Duran", "celebracion": "", "requerimiento": ""},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["hasta 24 personas"],
+            "textosNo": ["Anotamos", "todav[ií]a no es una reserva", "seg[uú]n sus mesas"],
+            "titulosNo": ["Enviar solicitud|^Reservar$"],
+            "estado": {"paso": {"regex": "^reserva$"}, "reserva.personas": 0},
             "efectos": {"derivacion": false, "aviso": false}
           }
         }

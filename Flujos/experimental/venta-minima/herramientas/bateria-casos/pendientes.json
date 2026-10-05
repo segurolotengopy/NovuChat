@@ -16,10 +16,6 @@
     {"id": "C5", "espera": "rama funcional", "titulo": "«Qué tengo guardado» muestra el resumen con botones"},
     {"id": "C6", "espera": "rama funcional", "titulo": "«Qué tengo guardado» sin carrito"},
     {"id": "C9", "espera": "rama funcional", "titulo": "Frase que no se entiende: una aclaración con botones, deriva solo si insiste"},
-    {"id": "D5", "espera": "rama voz+tono+reserva", "titulo": "Confirmación de la reserva con el texto nuevo y el botón de ubicación"},
-    {"id": "D6", "espera": "rama voz", "titulo": "Reserva con el aviso al local caído: texto honesto, sin decir que se anotó"},
-    {"id": "D7", "espera": "rama voz", "titulo": "Día lleno: se anota igual y el aviso lo marca"},
-    {"id": "D8", "espera": "rama voz", "titulo": "Grupo grande: se anota igual y el aviso lo marca"},
     {"id": "E1", "espera": "rama voz", "titulo": "Comprobante que coincide: el texto nuevo, nunca «pago acreditado»"},
     {"id": "E4", "espera": "rama voz", "titulo": "Comprobante ilegible por segunda vez o sin cotejo: pasa al local con aviso"},
     {
