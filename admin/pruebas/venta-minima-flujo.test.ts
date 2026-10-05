@@ -56,6 +56,8 @@ const PRUEBA_TEL = '59100000041';
 const NUMERO_DE_ENSAYO: J = { numeroEnsayo: PRUEBA_TEL };
 const PHONE_ID = '100000000000042';
 const QR_URL = 'https://qr.ejemplo.invalid/qtaco.png';
+/** Cualquiera de los textos de derivación a una persona (el de ahora y el de la rama de voz): el negativo «no deriva» no pasa solo si el texto cambia. */
+const DERIVA_FLUJO = /Esto prefiero que lo vea una persona|Disculpa, eso no lo puedo resolver|¡Claro! 🙂 Toca «Escribir al local»|El costo del delivery no lo tengo/;
 const HORARIO_TODOS = 'lun=08:00-23:00,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00';
 const HORARIO_SIN_LUNES = 'lun=cerrado,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00';
 
@@ -2039,7 +2041,7 @@ describe('pedido', () => {
   it('el modelo dice que el cliente quiere hablar con alguien, o no saca líneas dos veces seguidas → pasar con el restaurante', () => {
     const w = crear();
     w.estado.extraccion = EX([ln('tacos de birria', 4)], { quiereHablar: true });
-    const t = con(w).escribe('quiero 4 tacos y una consulta');
+    const t = con(w).escribe('quiero 4 tacos y hablar con una persona');
     expect(tieneEnlace(t)).toBe(true);
     expect(t.avisos.length).toBeGreaterThan(0);
     const w2 = crear();
@@ -5661,5 +5663,224 @@ describe('E. delivery OPCIONAL (decisión de Andres y Silvana, 04/10): referenci
     const texto = JSON.stringify(t.avisos);
     expect(texto).toContain('Calle Falsa 123');
     expect(texto).not.toMatch(/sin referencia|\(\)/);
+  });
+});
+
+// ================================================================================================
+// DEFECTOS DE LAS PRUEBAS REALES DE ANDRES, 05/10 (ejecuciones n8n #20607–#20632): cambio de entrega con tipeo, texto libre sin asignar, derivación a la primera,
+// modismos al volver al pedido anterior.
+// ================================================================================================
+describe('(1) cambio de entrega con tipeo y variantes naturales; nunca deriva ante algo que se parece', () => {
+  it.each([
+    'quiero que me mandn', 'que me manden', 'mándamelo', 'envíenmelo', 'a domicilio', 'para llevar a mi casa', 'prefiero que me lo traigan', 'me lo traen',
+    'quiero que me lo envien', 'mejor delivery',
+  ])('«%s» con el resumen de recojo pasa a delivery (sin derivar, sin avisar, sin llamar al modelo)', (dicho) => {
+    const r = armarPedido({ ventana: 5 });
+    const t = r.c.escribe(dicho);
+    expect((estadoDe(r.w.mundo)['entrega'] as J)['entrega'], dicho).toBe('delivery');
+    expect(cuerpos(t).join('\n'), dicho).not.toMatch(DERIVA_FLUJO);
+    expect(t.avisos, dicho).toHaveLength(0);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+  });
+
+  it.each(['mejor recojo', 'mejor recojer', 'prefiero recoger', 'paso a buscar', 'quiero recogerlo yo'])(
+    '«%s» con un delivery a medias pasa a recojo y muestra el resumen', (dicho) => {
+      const w = crear({ panel: panel(COBRO_REAL) });
+      const c = con(w, CLIENTE, 'Carlos');
+      c.escribe('hola');
+      c.toca('m|pedido', 'Hacer un pedido');
+      w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery' });
+      c.escribe('quiero 4 tacos de birria con delivery');
+      expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+      w.estado.extraccion = EX([]);
+      const t = c.escribe(dicho);
+      expect((estadoDe(w.mundo)['entrega'] as J)['entrega'], dicho).toBe('recojo');
+      expect(estadoDe(w.mundo)['paso'], dicho).toBe('pedido_confirmar');
+      expect(t.mensajes.flatMap(titulosDe), dicho).toContain('Confirmar pedido');
+    },
+  );
+
+  it.each(['no quiero que me manden', 'sin delivery', 'delivery no', 'Av. Busch esquina Delivery Express', 'Calle Domicilio 5', 'mándalo', 'enviar'])(
+    'negando: «%s» NO cambia la entrega a delivery', (dicho) => {
+      const r = armarPedido({ ventana: 5 });
+      r.w.estado.extraccion = EX([], { entrega: '' });
+      r.c.escribe(dicho);
+      expect((estadoDe(r.w.mundo)['entrega'] as J)['entrega'], dicho).toBe('recojo');
+    },
+  );
+
+  it('si el modelo marca `quiereHablar` ante una orden que se parece a un cambio de entrega, NO deriva: pregunta «¿Es para delivery o para recoger en el local?» con los dos botones', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.estado.extraccion = EX([], { entrega: '', quiereHablar: true });
+    for (const dicho of ['quiero que me mandn por favor ahorita', 'ahorita mismo que me manden pues']) {
+      const t = r.c.escribe(dicho);
+      expect(cuerpos(t)[0], dicho).toBe('¿Es para delivery o para recoger en el local?');
+      expect(t.mensajes.flatMap(titulosDe), dicho).toEqual(expect.arrayContaining(['Delivery', 'Recoger en el local']));
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(cuerpos(t).join('\n'), dicho).not.toMatch(DERIVA_FLUJO);
+      expect(t.mensajes, dicho).toHaveLength(1);
+    }
+    // El botón «Delivery» sigue el camino normal.
+    const q = r.c.escribe('quiero que me mandn por favor ahorita');
+    const d = r.c.toca(idDeBoton(q, 'Delivery'), 'Delivery');
+    expect((estadoDe(r.w.mundo)['entrega'] as J)['entrega']).toBe('delivery');
+    expect(cuerpos(d)[0]).toMatch(/necesito la dirección/);
+  });
+});
+
+describe('(3) el texto libre que el modelo no asignó lo toma el código (dirección o referencia), sin bucles', () => {
+  const vacio = EX([], { entrega: '' });
+  function deliverySinDireccion() {
+    const w = crear({ panel: panel(COBRO_REAL) });
+    const c = con(w, CLIENTE, 'Carlos');
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery' });
+    c.escribe('quiero 2 tacos de birria con delivery');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+    return { w, c };
+  }
+
+  it('«calle 1 numerro 2 Irpavi»: si el modelo devuelve solo `{lineas: []}`, el código la toma como la dirección y sigue al resumen', () => {
+    const { w, c } = deliverySinDireccion();
+    w.estado.extraccion = vacio;
+    const t = c.escribe('calle 1 numerro 2 Irpavi');
+    expect((estadoDe(w.mundo)['entrega'] as J)['direccion']).toBe('calle 1 numerro 2 Irpavi');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(cuerpos(t).join('\n')).toContain('Entrega: delivery a calle 1 numerro 2 Irpavi');
+    expect(t.mensajes).toHaveLength(1);
+  });
+
+  it('dirección en un mensaje y referencia en otro: «a media cuadra de la calle foton» (sin asignar por el modelo) queda como referencia y sale en el resumen', () => {
+    const { w, c } = deliverySinDireccion();
+    w.estado.extraccion = vacio;
+    c.escribe('calle 1 numerro 2 Irpavi');
+    const t = c.escribe('a media cuadra de la calle foton');
+    expect((estadoDe(w.mundo)['entrega'] as J)['referencia']).toBe('a media cuadra de la calle foton');
+    expect(cuerpos(t).join('\n')).toContain('Entrega: delivery a calle 1 numerro 2 Irpavi (a media cuadra de la calle foton)');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(t.avisos).toHaveLength(0);
+    expect(t.llamadas.extraer).toHaveLength(1); // el modelo corrió y no asignó nada; el código no perdió el texto
+  });
+
+  it('negando: lo que no es dato NO se toma («ok gracias», «no gracias», una pregunta, un enlace, una cortesía suelta); con la dirección ya dada, tampoco pisa la referencia', () => {
+    // Decisión del 05/10 (delivery opcional): si falta la dirección, cualquier texto con letras o dígitos ES la dirección (se prefiere tomarlo a perder el dato);
+    // lo que nunca se toma son las cortesías, las negaciones, las preguntas y los enlaces.
+    for (const dicho of ['ok gracias', 'no gracias', '¿cuánto demora el delivery?', 'mira https://malo.test/x', 'hola']) {
+      const { w, c } = deliverySinDireccion();
+      w.estado.extraccion = vacio;
+      c.escribe(dicho);
+      expect((estadoDe(w.mundo)['entrega'] as J)['direccion'], dicho).toBe('');
+      expect((estadoDe(w.mundo)['entrega'] as J)['referencia'], dicho).toBe('');
+    }
+    const { w, c } = deliverySinDireccion();
+    w.estado.extraccion = vacio;
+    c.escribe('calle 1 numerro 2 Irpavi');
+    for (const dicho of ['ok gracias', 'no gracias', '¿cuánto demora?']) {
+      c.escribe(dicho);
+      expect((estadoDe(w.mundo)['entrega'] as J)['referencia'], dicho).toBe('');
+    }
+  });
+});
+
+describe('(4) `quiereHablar` del modelo no deriva a la primera: una aclaración corta; deriva con petición explícita o al insistir', () => {
+  const quiere = (extra: J = {}) => EX([], { entrega: '', quiereHablar: true, ...extra });
+  it('«Donde dije» (quiereHablar:true, sin pedir a nadie): UNA aclaración con «Seguir con mi pedido» y «Escribir al local»; sin aviso', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.estado.extraccion = quiere();
+    const t = r.c.escribe('Donde dije');
+    expect(cuerpos(t)[0]).toBe('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?');
+    expect(t.mensajes.flatMap(titulosDe)).toEqual(expect.arrayContaining(['Seguir con mi pedido', 'Escribir al local']));
+    expect(t.avisos).toHaveLength(0);
+    expect(tieneEnlace(t)).toBe(false);
+    expect(t.mensajes).toHaveLength(1);
+    expect(estadoDe(r.w.mundo)['carrito']).toHaveLength(1); // el pedido sigue guardado
+    // «Seguir con mi pedido» vuelve al resumen.
+    const sigue = r.c.toca(idDeBoton(t, 'Seguir con mi pedido'), 'Seguir con mi pedido');
+    expect(sigue.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
+    // «Escribir al local» (el botón de la aclaración) sí pasa con el local: aviso + botón.
+    const otra = armarPedido({ ventana: 5 });
+    otra.w.estado.extraccion = quiere();
+    const a = otra.c.escribe('Donde dije');
+    const pasa = otra.c.toca(idDeBoton(a, 'Escribir al local'), 'Escribir al local');
+    expect(tieneEnlace(pasa)).toBe(true);
+    expect(pasa.avisos.length).toBeGreaterThan(0);
+    expect(cuerpos(pasa)[0]).toContain('Toca «Escribir al local»');
+  });
+
+  it('si insiste (la segunda vez seguida) se pasa con el local; una petición explícita deriva a la primera', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.estado.extraccion = quiere();
+    r.c.escribe('Donde dije');
+    const segunda = r.c.escribe('Donde dije que no entiendes');
+    expect(tieneEnlace(segunda)).toBe(true);
+    expect(segunda.avisos.length).toBeGreaterThan(0);
+    const e = armarPedido({ ventana: 5 });
+    e.w.estado.extraccion = quiere();
+    const t = e.c.escribe('necesito ayuda de un encargado');
+    expect(tieneEnlace(t)).toBe(true);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(cuerpos(t)[0]).toMatch(DERIVA_FLUJO);
+  });
+
+  it('con productos en el mismo mensaje se atiende el pedido (no se descarta por una marca dudosa del modelo); sin pedido, la aclaración ofrece solo «Escribir al local»', () => {
+    const w = crear();
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { quiereHablar: true });
+    const t = con(w).escribe('quiero 4 tacos de birria y una duda');
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
+    expect(t.avisos).toHaveLength(0);
+    const v = crear();
+    const c = con(v);
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido'); // en el paso de pedido, todavía sin productos
+    v.estado.extraccion = EX([], { entrega: '', quiereHablar: true });
+    const a = c.escribe('Donde dije');
+    expect(cuerpos(a)[0]).toBe('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?');
+    expect(a.mensajes.flatMap(titulosDe)).not.toContain('Seguir con mi pedido');
+  });
+});
+
+describe('(5) modismos al volver al pedido anterior (solo al elegir de nuevo, mensaje entero de vocabulario cerrado)', () => {
+  function trasCambiar() {
+    const r = armarPedido({ ventana: 5 });
+    const resumen = cuerpos(r.resumen)[0]!;
+    r.c.toca('p|cambiar', 'Cambiar algo');
+    return { r, resumen };
+  }
+  it.each([
+    'así nomás, está bien', 'asi nomas esta bien', 'está bien así', 'así está bien', 'nomás', 'déjalo nomás', 'sin cambios', 'no cambies nada', 'así', 'está bien',
+    'como estaba', 'mejor lo que tenía', 'no quiero cambiar nada', 'dejarlo asi',
+  ])('«%s» vuelve al pedido anterior (la carta no se vuelve a mostrar)', (dicho) => {
+    const { r, resumen } = trasCambiar();
+    const t = r.c.escribe(dicho);
+    expect(cuerpos(t)[0], dicho).toBe(resumen);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+    expect(t.mensajes, dicho).toHaveLength(1);
+  });
+  it.each(['no está bien', 'no así', 'no esta bien asi'])('negando: «%s» es un rechazo: no vuelve; se pregunta una vez', (dicho) => {
+    const { r, resumen } = trasCambiar();
+    const t = r.c.escribe(dicho);
+    expect(cuerpos(t)[0], dicho).not.toBe(resumen);
+    expect(cuerpos(t)[0], dicho).toBe('¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?');
+  });
+  it('negando (M1): con palabras ajenas o con un pedido nuevo en curso, los modismos NO valen («déjalo antes de las 8», «así nomás» en pedido_datos)', () => {
+    const { r } = trasCambiar();
+    r.w.estado.extraccion = EX([], { entrega: '' });
+    const t = r.c.escribe('déjalo antes de las 8');
+    expect(t.llamadas.extraer).toHaveLength(1);
+    const w = crear({ panel: panel(COBRO_REAL) });
+    const c = con(w, CLIENTE, 'Carlos');
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'recojo' });
+    c.escribe('quiero 4 tacos de birria para recoger');
+    c.toca('p|cambiar', 'Cambiar algo');
+    w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery' });
+    c.escribe('quiero 2 tacos de birria con delivery');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+    w.estado.extraccion = EX([], { entrega: '' });
+    const x = c.escribe('así nomás');
+    expect(x.llamadas.extraer).toHaveLength(1);
+    expect((estadoDe(w.mundo)['carrito'] as J[])[0]!['cantidad']).toBe(2);
   });
 });

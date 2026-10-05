@@ -63,6 +63,7 @@ const HONESTAS = [
   'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
   'No pude incluir tu nota: «tequila» no está disponible para pedir por WhatsApp.', 'Para volver al inicio, escribe «menú».',
   // Correcciones de conversación (04/10).
+  'Disculpa, no te entendí bien. ¿Qué te gustaría hacer?', 'Seguir con mi pedido',
   '¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?', 'Elegir otra vez',
   'Quité «Horchata» de tu pedido porque no lo enviamos por delivery. Si cambias a recoger, puedes volver a agregarlo. Tu pedido quedó vacío: elige otra vez desde la carta.',
   'Ya no tenemos «Horchata»: lo quité de tu pedido. Tu pedido quedó vacío: elige otra vez desde la carta.',

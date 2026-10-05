@@ -534,3 +534,97 @@ describe('el recordatorio SIMULADO sale de punta a punta con el enlace del QR (H
   });
 });
 
+
+// =====================================================================================================
+// DELIVERY OPCIONAL (decisión de Andres y Silvana, 05/10): la secuencia real de las 04:25–04:27 UTC, con el tercer teléfono
+// =====================================================================================================
+describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta en el catálogo; «Ok», «Déjale al portero», «A media cuadra del gas»)', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  const conDireccion = (extra: J = {}): J => cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_seq_0001', ...extra });
+
+  it('el carrito con dirección y SIN referencia (página vieja) va directo al resumen: UN mensaje, 0 de `pedido_datos`, 0 llamadas al modelo', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: conDireccion() });
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234');
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/necesito|referencia|no va en el QR/i);
+    expect(titulos(t)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Menú']);
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+    expect(t.llamadas.extraer).toHaveLength(0);
+  });
+
+  it('«Ok» sigue al resumen; «Déjale al portero» queda como la referencia (aunque el modelo no asigne nada); un segundo texto no pisa la referencia; y se confirma sin más vueltas', () => {
+    const w = crear();
+    const t0 = carrito(w, { headers: cabeceras(), body: conDireccion() });
+    w.estado.extraccion = NADA;
+    const ok = turno(w, texto('Ok'));
+    expect(ok.mensajes).toHaveLength(1);
+    expect(botonesDe(ok.mensajes[0]!).map((b) => b.title)).toContain('Confirmar pedido');
+    expect(ok.llamadas.extraer).toHaveLength(0); // «Ok» no llama al modelo ni se toma como dato
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('');
+    const portero = turno(w, texto('Déjale al portero'));
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('Déjale al portero');
+    expect(portero.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234 (Déjale al portero)');
+    expect(portero.avisos).toHaveLength(0);
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+    const gas = turno(w, texto('A media cuadra del gas'));
+    expect((estadoDe(w)['entrega'] as J)['referencia'], 'ya hay referencia: un segundo texto no la pisa').toBe('Déjale al portero');
+    expect(gas.avisos).toHaveLength(0);
+    expect(gas.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234');
+    // El pedido sigue y se confirma: el QR sale y la referencia viaja al pedido.
+    const confirmar = turno(w, boton(idDeBoton(t0, 'Confirmar pedido'), 'Confirmar pedido'));
+    expect(confirmar.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    expect(JSON.stringify(estadoDe(w)['pedido'])).toContain('Déjale al portero');
+  });
+
+  it('con una referencia que manda la página nueva, el resumen la muestra desde el primer mensaje', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: conDireccion({ referencia: 'portón verde', pedidoId: 'cat_seq_0002' }) });
+    expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234 (portón verde)');
+    expect(t.mensajes).toHaveLength(1);
+  });
+
+  it('si FALTA la dirección, cualquier texto con letras o dígitos es la dirección (sin depender del modelo) y sigue al resumen; algo sin letras ni dígitos se vuelve a pedir', () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_seq_0003' }) });
+    expect(estadoDe(w)['paso']).toBe('pedido_datos');
+    w.estado.extraccion = NADA;
+    const raro = turno(w, texto('...'));
+    expect(raro.mensajes[0]!.cuerpo).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
+    expect((estadoDe(w)['entrega'] as J)['direccion']).toBe('');
+    const t = turno(w, texto('calle 1 numerro 2 Irpavi'));
+    expect((estadoDe(w)['entrega'] as J)['direccion']).toBe('calle 1 numerro 2 Irpavi');
+    expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a calle 1 numerro 2 Irpavi');
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+  });
+
+  it('dirección en un mensaje y referencia en otro: sin bucle («a media cuadra de la calle foton» queda como referencia); una pregunta, un enlace o «no gracias» NO se toman', () => {
+    const nuevo = (id: string) => {
+      const x = crear();
+      carrito(x, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id }) });
+      x.estado.extraccion = NADA;
+      turno(x, texto('calle 1 numerro 2 Irpavi'));
+      return x;
+    };
+    for (const [i, dicho] of ['¿cuánto demora?', 'mira https://malo.test/x', 'no gracias'].entries()) {
+      const x = nuevo(`cat_seq_010${i}`);
+      turno(x, texto(dicho));
+      expect((estadoDe(x)['entrega'] as J)['referencia'], dicho).toBe('');
+      expect((estadoDe(x)['entrega'] as J)['direccion'], dicho).toBe('calle 1 numerro 2 Irpavi');
+    }
+    const w = nuevo('cat_seq_0004');
+    const t = turno(w, texto('a media cuadra de la calle foton'));
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('a media cuadra de la calle foton');
+    expect(t.mensajes[0]!.cuerpo).toContain('(a media cuadra de la calle foton)');
+    expect(t.avisos).toHaveLength(0);
+  });
+
+  it('una petición explícita de persona no se toma como dato de entrega (deriva como siempre)', () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: conDireccion({ pedidoId: 'cat_seq_0005' }) });
+    w.estado.extraccion = { ...NADA, quiereHablar: true };
+    const t = turno(w, texto('necesito ayuda de un encargado'));
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('');
+    expect(t.mensajes[0]!.cuerpo).toMatch(/¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo/);
+  });
+});
