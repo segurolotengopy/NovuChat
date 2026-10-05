@@ -1,0 +1,80 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "F",
+  "casos": [
+    {
+      "id": "F2",
+      "titulo": "«Hacer un pedido» con horario 7×24, a las 3 de la mañana: la carta (no «no estamos tomando pedidos»)",
+      "reloj": "2026-10-06T03:00:00-04:00",
+      "config": {"horario": "lun=00:00-24:00,mar=00:00-24:00,mie=00:00-24:00,jue=00:00-24:00,vie=00:00-24:00,sab=00:00-24:00,dom=00:00-24:00"},
+      "turnos": [
+        {"cliente": {"tipo": "texto", "texto": "hola"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Hacer un pedido"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Esta es nuestra carta", "Nachos Supremos"],
+            "textosNo": ["no estamos tomando pedidos"],
+            "ruta": "^carta",
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ]
+    },
+    {
+      "id": "F3",
+      "titulo": "La carta como enlace: el texto de la carta, el botón «Ver la carta» y la cola literal «Para volver al inicio, escribe «menú».»",
+      "panel": {"catalogoWeb": {"enlace": "https://carta.ejemplo.invalid/qtaco"}},
+      "turnos": [
+        {"cliente": {"tipo": "texto", "texto": "hola"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Hacer un pedido"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Esta es nuestra carta", "Para volver al inicio, escribe «menú»\\."],
+            "titulos": ["Ver la carta"],
+            "ruta": "^carta",
+            "efectos": {"derivacion": false, "aviso": false, "modelo": false}
+          }
+        }
+      ]
+    },
+    {
+      "id": "F4",
+      "titulo": "Un audio con un pedido, una foto sin comprobante pendiente y un audio que no se entiende: cada uno su respuesta, sin derivar",
+      "turnos": [
+        {
+          "cliente": {"tipo": "audio", "transcripcion": "quiero pedir 4 tacos de birria para recoger"},
+          "seco": {"lineas": [{"producto": "tacos de birria", "cantidad": 4, "forma": "unidad", "detalle": ""}], "entrega": "recojo"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Tu pedido", "4 × Taco de Birria"],
+            "titulos": ["Confirmar pedido"],
+            "estado": {"paso": "pedido_confirmar"},
+            "efectos": {"derivacion": false, "aviso": false, "modelo": true}
+          }
+        },
+        {
+          "cliente": {"tipo": "imagen"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["solo leo comprobantes"],
+            "ruta": "^imagen_sin_pendiente",
+            "estado": {"carrito": {"longitud": 1}},
+            "efectos": {"derivacion": false, "aviso": false, "modelo": false, "qr": false}
+          }
+        },
+        {
+          "cliente": {"tipo": "audio", "transcripcion": ""},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["No pude escuchar bien ese mensaje"],
+            "ruta": "^medio_no_leido",
+            "efectos": {"derivacion": false, "aviso": false, "qr": false}
+          }
+        }
+      ]
+    }
+  ]
+}
