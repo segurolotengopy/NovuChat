@@ -248,42 +248,43 @@ service cloud.firestore {
     // LOS MÓDULOS ENCENDIDOS DE UN NEGOCIO (H2b-6). La ficha puede traer
     // `modulos`, una lista (`Analisis/41` §3, el registro de módulos). MIENTRAS
     // NO LA TRAIGA —hoy ninguna ficha viva la trae— TODO se decide como antes,
-    // por `flujos`: `modulo` se traduce a su flujo de respaldo y se pregunta
-    // `tieneFlujo`. Cuando la lista existe MANDA, igual que `flujos` manda sobre
-    // `vertical`: un módulo apagado en la lista no se reabre por la puerta del
-    // flujo viejo. Una ficha que no existe no abre nada.
+    // por `flujos`: el módulo se traduce a su flujo y se pregunta `tieneFlujo`.
+    // Cuando la lista existe MANDA, igual que `flujos` manda sobre `vertical`:
+    // un módulo apagado en la lista no se reabre por la puerta del flujo viejo.
+    // `modulos` que no es una lista (cadena, mapa, número, null) se trata como
+    // ausente: cae a `flujos`, nunca abre de más.
     //
-    // `modulos` que no es una lista (cadena, mapa, null) se trata como ausente:
-    // cae al respaldo, nunca abre de más. El respaldo de un módulo que no está
-    // en la tabla es `null` y niega: sin esa guarda, `''` (el vertical de una
-    // ficha sin vertical) estaría «en» `['']` y abriría todo.
-    function tieneModuloEnReglas(tenantId, modulo, flujoDeRespaldo) {
-      return exists(/databases/$(database)/documents/tenants/$(tenantId))
-        && (get(/databases/$(database)/documents/tenants/$(tenantId)).data
-              .get('modulos', null) is list
-            ? modulo in get(/databases/$(database)/documents/tenants/$(tenantId)).data.modulos
-            : (flujoDeRespaldo != null && tieneFlujo(tenantId, flujoDeRespaldo)));
-    }
-
-    // Los módulos PROPIOS de un flujo y el flujo que los lleva hoy. Es la
-    // misma correspondencia de `PUENTE_DE_FLUJOS` en `functions/src/registro.ts`
-    // (`pruebas/core/registro.test.ts` la compara): agenda ⇒ agendamiento,
-    // pedidos y catalogo-web ⇒ venta, captacion ⇒ onboarding.
+    // SOLO PARA MÓDULOS PROPIOS DE UN FLUJO. La tabla de respaldo es PARCIAL a
+    // propósito y se cierra con `false`: agenda ⇒ agendamiento, pedidos y
+    // catalogo-web ⇒ venta, captacion ⇒ onboarding (los `propiosDe(flujo)` de
+    // `PUENTE_DE_FLUJOS` en `functions/src/registro.ts`; `reglas-modulos.test.ts`
+    // compara este cuerpo con el registro). Un módulo COMÚN o de otro tipo
+    // (`productos`, `campanas`, `cobros`, `inventario`) NO va por acá: los comunes
+    // usan `tieneModuloComun`, y preguntar por uno de los demás da `false` para
+    // todo comercio de hoy aunque el registro diga que lo tienen.
+    //
+    // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y la regla de
+    // `config/negocio` de Q'Taco está a ~10 de ese tope; por eso la ficha se lee
+    // UNA vez (`let`), sin mapa ni `exists`: una ficha inexistente hace fallar el
+    // `get` y la regla deniega, igual que antes. Medido en
+    // `pruebas/plataforma/reglas-presupuesto.test.ts`.
     function tieneModulo(tenantId, m) {
-      return tieneModuloEnReglas(tenantId, m,
-        {'agenda': 'agendamiento', 'pedidos': 'venta',
-         'catalogo-web': 'venta', 'captacion': 'onboarding'}.get(m, null));
+      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
+      return ficha.get('modulos', null) is list
+        ? m in ficha.modulos
+        : (m == 'agenda' ? tieneFlujo(tenantId, 'agendamiento')
+           : m == 'captacion' ? tieneFlujo(tenantId, 'onboarding')
+           : (m == 'pedidos' || m == 'catalogo-web') ? tieneFlujo(tenantId, 'venta')
+           : false);
     }
 
     // Los módulos COMUNES (`productos`, `campanas`) los tiene todo comercio hoy:
     // sin `modulos` en la ficha, abre como antes (todo comercio activo); con la
-    // lista, solo si el módulo está en ella. Un negocio que no existe no abre.
+    // lista, solo si el módulo está en ella. Un negocio que no existe no abre (el
+    // `get` falla y la regla deniega).
     function tieneModuloComun(tenantId, m) {
-      return exists(/databases/$(database)/documents/tenants/$(tenantId))
-        && (get(/databases/$(database)/documents/tenants/$(tenantId)).data
-              .get('modulos', null) is list
-            ? m in get(/databases/$(database)/documents/tenants/$(tenantId)).data.modulos
-            : true);
+      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
+      return !(ficha.get('modulos', null) is list) || m in ficha.modulos;
     }
 
     // Habilita ESCRITURA y la ingesta desde n8n. Solo 'activo'.
@@ -886,8 +887,13 @@ service cloud.firestore {
             // para que un salón pueda seguir guardando su configuración con el
             // campo en falso, en vez de que la regla le rechace la pantalla
             // entera por un campo que no le corresponde.
+            // TODO(H2b, PR que escriba `modulos`): aquí va
+            // `tieneModulo(tenantId, 'catalogo-web')`. Hoy se conserva el costo
+            // de la base (`tieneFlujo`): esta línea corre dentro de la regla más
+            // cara (config/negocio completo de Q'Taco está a ~10 expresiones del
+            // tope de 1.000) y ninguna ficha viva trae `modulos`.
             && (d.get('catalogoWebActivo', false) == false
-                || tieneModulo(tenantId, 'catalogo-web'))
+                || tieneFlujo(tenantId, 'venta'))
             // PALETA: una de cinco, y NADA más.
             //
             // Antes esto era un `colorMarca` en `#rrggbb`. Aun con esa

@@ -189,7 +189,13 @@ const sembrar = async (t: Tenant): Promise<void> => {
 // ---------------------------------------------------------------------------
 // Las operaciones. Cada una es la petición que haría un navegador.
 // ---------------------------------------------------------------------------
-type Operacion = { nombre: string; cap: Cap; ejecutar: (t: string) => Promise<unknown> };
+type Operacion = { nombre: string; cap: Cap | 'catalogoWebActivo'; ejecutar: (t: string) => Promise<unknown> };
+/** Lo que el oráculo espera de cada operación para un tenant. `catalogoWebActivo` (config/negocio) se decide HOY por `flujos`, no por `modulos`: TODO(H2b) con el PR que escriba `modulos`. */
+const abreOp = (t: Tenant, cap: Operacion['cap']): boolean => {
+  if (cap !== 'catalogoWebActivo') return t.abre.includes(cap);
+  const f = t.ficha['flujos'];
+  return Array.isArray(f) ? f.includes('venta') : t.ficha['vertical'] === 'venta';
+};
 const T = (t: string, p: string): string => `tenants/${t}/${p}`;
 
 const operaciones: Operacion[] = [
@@ -212,7 +218,7 @@ const operaciones: Operacion[] = [
   { nombre: 'el administrador cambia el logo (config/marca)', cap: 'marca',
     ejecutar: (t) => updateDoc(doc(comoAdmin(t), T(t, 'config/marca')),
       { logo: 'data:image/png;base64,AAAA', ...sello(`u-admin-${t}`) }) },
-  { nombre: 'el administrador enciende el catálogo web en config/negocio', cap: 'marca',
+  { nombre: 'el administrador enciende el catálogo web en config/negocio', cap: 'catalogoWebActivo',
     ejecutar: (t) => updateDoc(doc(comoAdmin(t), T(t, 'config/negocio')),
       { catalogoWebActivo: true, ...sello(`u-admin-${t}`) }) },
   { nombre: 'el administrador edita config/onboarding', cap: 'onb',
@@ -265,7 +271,7 @@ const casos = (nucleo = false): Caso[] => {
     for (const op of operaciones) {
       lista.push({
         nombre: `${t.id}: ${op.nombre}`,
-        esperado: t.abre.includes(op.cap),
+        esperado: abreOp(t, op.cap),
         correr: async () => { await sembrar(t); return permitida(() => op.ejecutar(t.id)); },
       });
     }
@@ -366,7 +372,7 @@ describe('reglas por módulo: batería de capacidades (emulador)', () => {
 
   it('el oráculo no es vacío: hay casos que permiten y casos que niegan por cada operación', () => {
     for (const op of operaciones) {
-      const permiten = tenants.filter((t) => t.abre.includes(op.cap)).length;
+      const permiten = tenants.filter((t) => abreOp(t, op.cap)).length;
       expect(permiten, `${op.nombre}: tenants que la abren`).toBeGreaterThan(0);
       expect(tenants.length - permiten, `${op.nombre}: tenants que la niegan`).toBeGreaterThan(0);
     }
@@ -390,18 +396,15 @@ const mutarFuncion = (reglas: string, nombre: string, cambio: (cuerpo: string) =
 
 const mutaciones: Array<{ nombre: string; reglas: () => string }> = [
   { nombre: 'tieneModulo devuelve true',
-    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace('return tieneModuloEnReglas(', 'return true || tieneModuloEnReglas(')) },
-  { nombre: 'tieneModulo ignora al tenant (mira siempre al de todos los módulos)',
-    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace('tieneModuloEnReglas(tenantId, m,', "tieneModuloEnReglas('ab', m,")) },
+    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace('return ficha.get(', 'return true || ficha.get(')) },
+  { nombre: 'tieneModulo ignora al tenant (mira siempre la ficha del de todos los módulos)',
+    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace('tenants/$(tenantId)', 'tenants/ab')) },
   { nombre: 'tieneModulo ignora la lista `modulos`',
-    reglas: () => mutarFuncion(REGLAS, 'tieneModuloEnReglas', (c) => c.replace(".get('modulos', null) is list", ".get('modulos', null) is string")) },
-  { nombre: 'tieneModulo: con respaldo desconocido abre (sin la guarda de null)',
-    reglas: () => {
-      const sinGuarda = mutarFuncion(REGLAS, 'tieneModuloEnReglas', (c) => c.replace('flujoDeRespaldo != null && ', ''));
-      return mutarFuncion(sinGuarda, 'tieneModulo', (c) => c.replace('.get(m, null)', ".get(m, '')"));
-    } },
+    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace(".get('modulos', null) is list", ".get('modulos', null) is string")) },
+  { nombre: 'tieneModulo: con respaldo desconocido abre (la tabla ya no cierra con false)',
+    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace(': false);', ": tieneFlujo(tenantId, ''));")) },
   { nombre: 'tieneModuloComun devuelve true',
-    reglas: () => mutarFuncion(REGLAS, 'tieneModuloComun', (c) => c.replace('return exists(', 'return true || exists(')) },
+    reglas: () => mutarFuncion(REGLAS, 'tieneModuloComun', (c) => c.replace('return !(', 'return true || !(')) },
   { nombre: 'tieneModuloComun ignora al tenant (mira siempre al de todos los módulos)',
     reglas: () => mutarFuncion(REGLAS, 'tieneModuloComun', (c) => c.replaceAll('tenants/$(tenantId)', 'tenants/ab')) },
   { nombre: 'tieneModuloComun ignora la lista `modulos`',
