@@ -607,7 +607,7 @@ function rsLineaCompacta(r, rol) {
   if (cuando) partes.push(cuando);
   if (x.personas) partes.push(_rsPersonas(x.personas) + (r && r.grupoGrande === true ? ' (grupo grande)' : ''));
   if (x.zona) partes.push(x.zona);
-  if (r && r.diaLleno === true) partes.push('DÍA LLENO/revisar');
+  if (r && r.diaLleno === true) partes.push('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
   if (x.celebracion) partes.push('Celebración: ' + x.celebracion);
   if (x.requerimiento) partes.push('Pedido especial: ' + x.requerimiento);
   return partes.join(' · ');

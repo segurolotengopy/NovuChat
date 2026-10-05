@@ -1367,6 +1367,40 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     expect(chat['payload'].interactive.action.parameters.url).toMatch(new RegExp(`^https://wa\\.me/${REC}`));
   });
 
+  it('M1: una reserva exige el aviso del rol `completo`: con solo el de `cocina` salido rige siNoSalio; el respaldo del completo cuenta', () => {
+    const cond = { siSalio: [texto('¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre.')], siNoSalio: [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento.')] };
+    const plan = { ruta: 'reserva:enviada', mensajes: [], condicionados: cond, aviso: { tipo: 'reserva', datos: {} } };
+    const completo = armado('reserva', { para: AV1, rol: 'completo', respaldo: { type: 'text' } });
+    const cocina = armado('reserva', { para: AV2, rol: 'cocina', respaldo: { type: 'text' } });
+    const textos = (e: Entrada): string => mensajes(plan, e).items.map((i) => String(i['texto'])).join('|');
+    // completo cae, cocina sale: NO se anota.
+    expect(textos({ armados: [completo, cocina], enviados: [FALLA, OK(2)] })).toMatch(/^No pude hacer llegar/);
+    // completo sale, cocina cae: sí.
+    expect(textos({ armados: [completo, cocina], enviados: [OK(1), FALLA] })).toMatch(/^¡Listo, Ana! Anotamos/);
+    // los dos caen y el respaldo de cocina sale: NO (el respaldo es del ítem que cayó, y ese era de cocina).
+    expect(textos({ armados: [completo, cocina], enviados: [FALLA, FALLA], respaldos: [OK(3)] })).toMatch(/^No pude hacer llegar/);
+    // el completo cae pero su respaldo sale: sí.
+    expect(textos({ armados: [completo, { ...cocina, respaldo: null }], enviados: [FALLA, OK(2)], respaldos: [OK(3)] })).toMatch(/^¡Listo, Ana! Anotamos/);
+    // solo un destinatario de cocina: nunca se anota (nadie tendría el teléfono).
+    expect(textos({ armados: [cocina], enviados: [OK(1)] })).toMatch(/^No pude hacer llegar/);
+    // Una turno que no es de reserva no cambia: con el de cocina salido, sale siSalio.
+    const otro = mensajes({ ...plan, aviso: { tipo: 'pedido', datos: {} } }, { armados: [armado('pedido', { rol: 'cocina' })], enviados: [OK(1)] });
+    expect(otro.items.map((i) => String(i['texto'])).join('|')).toMatch(/^¡Listo, Ana! Anotamos/);
+  });
+
+  it('L3: sin aviso salido, ninguna forma de «anotar la reserva» llega al cliente (la derivación la reemplaza)', () => {
+    for (const frase of ['Anotamos su reserva para el viernes.', 'Tu reserva quedó anotada.', 'Reserva anotada.', 'Anoté tu reserva para el viernes.',
+      'Anotamos tu reservación para el viernes.', 'Anotamos tu reserva para el viernes.', 'Su reserva ya está anotada.', 'La reserva queda anotada.']) {
+      const sin = mensajes({ mensajes: [texto(frase)] });
+      expect(cuerpoDe(sin.items[0]!), frase).toBe(GENERICO);
+      const con = mensajes({ mensajes: [texto(frase)] }, { armados: [armado('pedido')], enviados: [OK()] });
+      expect(con.items[0]!['texto'], frase).toBe(frase);
+    }
+    // La frase honesta no se toca.
+    const honesta = 'No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.';
+    expect(mensajes({ mensajes: [texto(honesta)] }).items[0]!['texto']).toBe(honesta);
+  });
+
   it('«Ver ubicación»: abre el mapa de la configuración (no el chat); con otra URL, o sin mapa en la configuración, el MISMO texto sin botón', () => {
     const MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
     const CONF = '¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Ejemplo 123.';

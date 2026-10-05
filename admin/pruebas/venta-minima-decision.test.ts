@@ -1172,7 +1172,7 @@ describe('Plan del turno: la reserva', () => {
     expect(s.p!['mensajes'][0]['cuerpo']).toContain('Esa fecha ya pasó');
   });
 
-  it('día lleno: la cuarta reserva del día YA NO se deriva: se anota igual y el aviso al local la marca «DÍA LLENO/revisar»', () => {
+  it('varias reservas hoy del mismo número: de la 4.ª a la 6.ª se anotan y el aviso al local las marca «VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar»; la 7.ª (techo duro) no arma aviso', () => {
     const m = crearMundo();
     const enviar = (): Salida => {
       turno(m, { boton: 'm|reserva' });
@@ -1189,6 +1189,20 @@ describe('Plan del turno: la reserva', () => {
     expect(cuarta.p!['condicionados']['siSalio'][0]['cuerpo']).toMatch(/^¡Listo, Ana! Anotamos tu reserva para /);
     expect(cuarta.p!['condicionados']['siSalio'][0]['tipo']).toBe('texto');
     expect(JSON.stringify(cuarta.p!['condicionados'])).not.toMatch(/lleno|tope|ya no puedo tomar/i);
+    for (let i = 0; i < 2; i++) {
+      const s = registrar(enviar());
+      expect(s.p!['aviso']['datos']['reserva']['diaLleno'], `reserva ${5 + i}`).toBe(true);
+    }
+    // TECHO DURO (2 × topeReservasDia = 6): la séptima NO arma aviso y NO dice que se anotó; texto honesto con «Escribir al local».
+    const septima = registrar(enviar());
+    expect(septima.p!['aviso']).toBeNull();
+    expect(septima.p!['anotarReserva']).toBe(false);
+    expect(septima.p!['cierre']).toBeNull();
+    expect(septima.p!['condicionados']).toBeNull();
+    expect(septima.p!['mensajes'][0]['tipo']).toBe('enlace');
+    expect(septima.p!['mensajes'][0]['cuerpo']).toBe('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.');
+    expect(septima.p!['mensajes'][0]['botones'][0]['title']).toBe('Escribir al local');
+    expect(JSON.stringify(septima.p)).not.toMatch(/Anotamos|Te esperamos/);
     // Otro teléfono tiene su propio conteo; al día siguiente se reinicia.
     turno(m, { from: OTRO, boton: 'm|reserva' });
     turno(m, { from: OTRO, texto: 'mesa', extraccion: datos() });
@@ -1224,14 +1238,15 @@ describe('Plan del turno: la reserva', () => {
     expect(sdDe(m)['reservasDelDia']).toBeUndefined();
   });
 
-  it('sin datos estáticos el tope falla cerrado (`rsDentroDelTope` da false): se anota igual y el aviso lleva la marca de día lleno', () => {
+  it('sin tope en la configuración el techo duro falla cerrado (`rsDentroDelTope` da false): sin aviso y sin decir que se anotó', () => {
     const m = crearMundo();
     turno(m, { boton: 'm|reserva' });
     turno(m, { texto: 'mesa', extraccion: datos() });
     delete m.cfg['topeReservasDia'];
     const s = turno(m, { boton: 'r|enviar' });
-    expect(s.p!['aviso']['tipo']).toBe('reserva');
-    expect(s.p!['aviso']['datos']['reserva']['diaLleno']).toBe(true);
+    expect(s.p!['aviso']).toBeNull();
+    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^No pude hacer llegar tu reserva/);
+    expect(s.p!['mensajes'][0]['tipo']).toBe('enlace');
   });
 });
 

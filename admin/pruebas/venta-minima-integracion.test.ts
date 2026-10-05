@@ -431,6 +431,27 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
     expect(s.armados.map((a) => a['para']).sort()).toEqual([AV1, AV2]);
   });
 
+  it('M1: si el aviso del rol `completo` (con el teléfono) FALLA y solo sale el de `cocina`, el cliente NO lee «Anotamos» ni recibe el mapa: «No pude…» con «Escribir al local»', () => {
+    const MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
+    const m = crear({ panel: panel({ datosDelNegocio: { nombreNegocio: 'Casa de Tacos', direccion: 'Av. Ejemplo 123', direccionMaps: MAPA } }) });
+    turno(m, { boton: 'm|reserva' });
+    turno(m, { texto: 'mesa para 4', extraccion: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'terraza', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' } });
+    const s = turno(m, { boton: 'r|enviar', envio: (a) => a.map((x, i) => (x['rol'] === 'completo' ? FALLA : OK(i + 1))) });
+    expect(s.armados.some((a) => a['rol'] === 'cocina')).toBe(true);
+    expect(s.armados.some((a) => a['rol'] === 'completo')).toBe(true);
+    const t = cuerpos(s).join('\n');
+    expect(t).toContain('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.');
+    expect(t).not.toMatch(/Anotamos|Te esperamos/);
+    expect(JSON.stringify(clientes(s))).toContain('Escribir al local');
+    expect(JSON.stringify(clientes(s))).not.toContain('google.com');
+    // El negativo: si el de `completo` sale (y el de cocina cae), sí se anota.
+    const n = crear({ panel: panel() });
+    turno(n, { boton: 'm|reserva' });
+    turno(n, { texto: 'mesa para 4', extraccion: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'terraza', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' } });
+    const ok = turno(n, { boton: 'r|enviar', envio: (a) => a.map((x, i) => (x['rol'] === 'cocina' ? FALLA : OK(i + 1))) });
+    expect(cuerpos(ok).join('\n')).toContain('Anotamos tu reserva para ');
+  });
+
   it('«Ver ubicación»: con direccionMaps válido en el panel y el aviso salido, la confirmación sale como botón de enlace al mapa (sin «Escribir al local»)', () => {
     const MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
     const s = reservar(crear({ panel: panel({ datosDelNegocio: { nombreNegocio: 'Casa de Tacos', direccion: 'Av. Ejemplo 123', direccionMaps: MAPA } }) }));
@@ -950,11 +971,11 @@ describe('M1: los topes en 0 se respetan de punta a punta', () => {
     turno(r, { texto: 'mesa para 4 el viernes a las 8 de la noche en la terraza', extraccion: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'terraza', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' } });
     const e = turno(r, { boton: 'r|enviar' });
     expect(e.cfg['topeReservasDia']).toBe(0);
-    // El día lleno YA NO deriva: se anota igual, el aviso sale marcado y el cliente lee la misma confirmación.
-    expect(e.armados.length).toBeGreaterThan(0);
-    expect(JSON.stringify(e.armados)).toContain('DÍA LLENO/revisar');
-    expect(cuerpos(e).join('\n')).toContain('Anotamos tu reserva para ');
-    expect(cuerpos(e).join('\n')).not.toMatch(/Por hoy ya no puedo|lleno/i);
+    // Con el tope en 0 el techo duro (2 × tope = 0) corta de inmediato: sin aviso y sin decir que se anotó (falla cerrado).
+    expect(e.armados).toEqual([]);
+    expect(cuerpos(e).join('\n')).toContain('No pude hacer llegar tu reserva a nuestro equipo');
+    expect(cuerpos(e).join('\n')).not.toMatch(/Anotamos tu reserva|Te esperamos/);
+    expect(JSON.stringify(clientes(e))).toContain('Escribir al local');
   });
 });
 

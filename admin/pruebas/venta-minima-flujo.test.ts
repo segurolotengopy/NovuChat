@@ -1705,7 +1705,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     expect(con(w, CLIENTE).escribe('hola').mensajes.length).toBeGreaterThan(0);
   });
 
-  it('una cuarta reserva del mismo teléfono el mismo día YA NO se deriva: se anota igual y el aviso sale marcado «DÍA LLENO/revisar»', () => {
+  it('de la 4.ª a la 6.ª reserva del mismo teléfono el mismo día se anotan con la marca; la 7.ª no arma aviso', () => {
     const w = crear();
     abrirVentanas(w);
     const c = con(w);
@@ -1719,14 +1719,25 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     for (const h of ['18:00', '19:00', '20:00']) {
       const ok = hacer(h);
       expect(ok.avisos.some((a) => a.ok), `reserva de las ${h}`).toBe(true);
-      expect(JSON.stringify(ok.avisos), `reserva de las ${h}`).not.toContain('DÍA LLENO');
+      expect(JSON.stringify(ok.avisos), `reserva de las ${h}`).not.toContain('VARIAS RESERVAS');
     }
     const cuarta = hacer('21:00');
     expect(cuarta.avisos.some((a) => a.ok)).toBe(true);
-    expect(JSON.stringify(cuarta.avisos)).toContain('DÍA LLENO/revisar');
+    expect(JSON.stringify(cuarta.avisos)).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
     expect(cuerpos(cuarta)[0]).toContain('Anotamos tu reserva para ');
     expect(cuerpos(cuarta).join('\n')).not.toMatch(/Por hoy ya no puedo|lleno|tope/i);
     expect(tieneEnlace(cuarta)).toBe(false);
+    for (const h of ['17:00', '16:00']) {
+      const mas = hacer(h);
+      expect(mas.avisos.some((a) => a.ok), `reserva de las ${h}`).toBe(true);
+      expect(JSON.stringify(mas.avisos)).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    }
+    // TECHO DURO: la séptima del día del mismo teléfono NO arma aviso y NO dice que se anotó.
+    const septima = hacer('15:00');
+    expect(septima.avisos).toHaveLength(0);
+    expect(cuerpos(septima).join('\n')).toContain('No pude hacer llegar tu reserva a nuestro equipo');
+    expect(cuerpos(septima).join('\n')).not.toMatch(/Anotamos|Te esperamos/);
+    expect(tieneEnlace(septima)).toBe(true);
     // El negativo: otro teléfono, el mismo día, sí puede reservar.
     const otro = con(w, OTRO, 'Luis Mamani');
     otro.escribe('hola'); otro.toca('m|reserva', 'Reservar mesa');

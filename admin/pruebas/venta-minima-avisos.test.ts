@@ -446,27 +446,27 @@ describe('reserva: plantilla `appointment_confirmed` y su orden', () => {
   });
 });
 
-describe('reserva: marcas «GRUPO GRANDE» y «DÍA LLENO/revisar» en el aviso al local', () => {
+describe('reserva: marcas «GRUPO GRANDE» y «VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar» en el aviso al local', () => {
   const con = (m: J): J => reserva({ reserva: { ...reserva().reserva, ...m } });
   it('forma cita (plantilla de 4 variables): el detalle lleva las marcas; sin ellas, nada cambia', () => {
     const p = (r: J): string[] => params(plantillaDe(L.avArmar('reserva', r, CSV, CFG, sdCon(), AHORA), ANDRES));
     expect(p(con({ grupoGrande: true, personas: 15 }))[2]).toBe('Reserva 15 personas · Ana Pérez · terraza · GRUPO GRANDE');
-    expect(p(con({ diaLleno: true }))[2]).toBe('Reserva 4 personas · Ana Pérez · terraza · DÍA LLENO/revisar');
-    expect(p(con({ grupoGrande: true, diaLleno: true, personas: 15 }))[2]).toContain('GRUPO GRANDE · DÍA LLENO/revisar');
+    expect(p(con({ diaLleno: true }))[2]).toBe('Reserva 4 personas · Ana Pérez · terraza · VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    expect(p(con({ grupoGrande: true, diaLleno: true, personas: 15 }))[2]).toContain('GRUPO GRANDE · VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
     expect(p(reserva())[2]).toBe('Reserva 4 personas · Ana Pérez · terraza');
   });
   it('con ventana abierta, el texto del detalle lleva una línea con las marcas', () => {
     const c = (r: J): string => cuerpo(L.avArmar('reserva', r, CSV, CFG, abierta(), AHORA), ANDRES);
-    expect(c(con({ diaLleno: true }))).toContain('• DÍA LLENO/revisar');
+    expect(c(con({ diaLleno: true }))).toContain('• VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
     expect(c(con({ grupoGrande: true, personas: 15 }))).toContain('• GRUPO GRANDE');
-    expect(c(reserva())).not.toMatch(/DÍA LLENO|GRUPO GRANDE/);
+    expect(c(reserva())).not.toMatch(/VARIAS RESERVAS|GRUPO GRANDE/);
   });
   it('forma solicitud (5 variables, rol completo) y forma pedido: también las llevan', () => {
     const cfg = { ...CFG, formaPlantillaReservaCompleto: 'solicitud' };
     const items = L.avArmar('reserva', con({ diaLleno: true, grupoGrande: true, personas: 15 }), CSV, cfg, sdCon(), AHORA);
-    expect(params(plantillaDe(items, ANDRES)).join(' | ')).toContain('GRUPO GRANDE · DÍA LLENO/revisar');
+    expect(params(plantillaDe(items, ANDRES)).join(' | ')).toContain('GRUPO GRANDE · VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
     const ped = L.avArmar('reserva', con({ diaLleno: true }), CSV, { ...CFG, formaPlantillaReserva: 'pedido' }, sdCon(), AHORA);
-    expect(params(plantillaDe(ped, ANDRES)).join(' | ')).toContain('DÍA LLENO/revisar');
+    expect(params(plantillaDe(ped, ANDRES)).join(' | ')).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
   });
 });
 

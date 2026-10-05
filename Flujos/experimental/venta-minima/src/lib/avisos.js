@@ -691,7 +691,7 @@ function avModalidadVariable(d, dest, opc) {
 function avMarcasReserva(r) {
   const m = [];
   if (r && r.grupoGrande === true) m.push('GRUPO GRANDE');
-  if (r && r.diaLleno === true) m.push('DÍA LLENO/revisar');
+  if (r && r.diaLleno === true) m.push('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
   return m;
 }
 function avVariablesDeForma(tipo, d, dest, ahoraMs) {

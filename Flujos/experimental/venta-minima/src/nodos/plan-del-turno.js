@@ -1189,7 +1189,16 @@ function enviarReserva() {
   // El tiempo pasó desde el resumen: se vuelve a validar antes de avisar.
   const v = rsValidar(en.reserva || {}, limitesReserva(), t.nombrePerfil, ahora);
   if (v.error || !v.completa) return evaluarReserva(en.reserva || {});
-  // DÍA LLENO (`topeReservasDia`): ya NO se deriva. Se anota igual y el aviso al local lo marca «DÍA LLENO/revisar».
+  // VARIAS RESERVAS HOY DE ESTE NÚMERO (`topeReservasDia`, tope BLANDO): ya NO se deriva. Se anota igual y el aviso al local lo marca
+  // «VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar» (mide reservas del mismo teléfono el día en que se pide, no la ocupación del local).
+  // TECHO DURO: con 2 × `topeReservasDia` reservas (con aviso salido) del mismo teléfono en el día, NO se arma aviso (un número no puede gastar el
+  // cupo diario de avisos, `topeAvisosDia`, con reservas falsas): texto honesto con «Escribir al local» y SIN decir que se anotó. Falla cerrado.
+  if (!rsDentroDelTope(sd, t.from, ahora, 2 * Number(cfg.topeReservasDia))) {
+    ruta = 'reserva:tope';
+    limpiarReserva();
+    irA('menu');
+    return (mensajes = [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.')]);
+  }
   const diaLleno = !rsDentroDelTope(sd, t.from, ahora, Number(cfg.topeReservasDia));
   const reserva = diaLleno ? Object.assign({}, v.reserva, { diaLleno: true }) : v.reserva;
   // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Reservar»

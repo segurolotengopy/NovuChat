@@ -611,10 +611,10 @@ describe('rsPreguntaFaltantes', () => {
 });
 
 describe('rsResumen y rsLineaCompacta', () => {
-  it('día lleno: la línea del aviso lo marca («DÍA LLENO/revisar»); sin la marca, no', () => {
+  it('día lleno: la línea del aviso lo marca («VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar»); sin la marca, no', () => {
     const r = { personas: 4, fecha: VIE, hora: '20:00', nombre: 'Ana Pérez', zona: 'salón' };
-    expect(L.rsLineaCompacta(Object.assign({}, r, { diaLleno: true }), 'completo')).toContain('DÍA LLENO/revisar');
-    expect(L.rsLineaCompacta(r, 'completo')).not.toContain('DÍA LLENO');
+    expect(L.rsLineaCompacta(Object.assign({}, r, { diaLleno: true }), 'completo')).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    expect(L.rsLineaCompacta(r, 'completo')).not.toContain('VARIAS RESERVAS');
     // El resumen al cliente nunca lo muestra.
     expect(L.rsResumen(Object.assign({}, r, { diaLleno: true }))).not.toMatch(/lleno/i);
   });
