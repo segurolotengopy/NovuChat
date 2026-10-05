@@ -24,10 +24,12 @@
  *                                el de otro proyecto (producción).
  *   --conservar                  no limpia al terminar (por omisión, SIEMPRE se limpia, también
  *                                si algo falla a la mitad); sirve para mirar lo sembrado
- *   --storage-ruta-propia <p>    ruta de Storage que el comercio de venta SÍ puede escribir y
- *                                leer, con {t} por el tenant (p. ej. la del logo o del
- *                                catálogo que defina H2b-6). Sin ella esas filas salen
- *                                «SIN VERIFICAR» (no cuentan como fallo, pero se dicen).
+ *   --storage-ruta-propia <p>    EXTRA, opcional: otra ruta de Storage (empieza por tenants/{t}/) que
+ *                                el comercio de venta puede escribir y leer. Hoy `storage.rules` solo
+ *                                tiene el camino de captación y #422 no le da ninguno al comercio de
+ *                                venta: esta opción NO es lo que cierra el control positivo de
+ *                                Storage, que corre siempre con el comercio de agenda (que sí tiene
+ *                                captación). Añade 6 filas.
  *   --fecha <aaaammdd>           fecha del identificador (por omisión, hoy en La Paz)
  *
  * CONDICIONES DE EJECUCIÓN (contra staging):
@@ -43,8 +45,9 @@
  * GCP_PROJECT_ID_PROD, FIREBASE_PROJECT_ID ni GCP_PROJECT_ID, y su nombre tiene que
  * contener «staging». Contra la nube, el bucket tiene que ser del mismo proyecto y,
  * al iniciar sesión, el `aud` del token tiene que ser el proyecto. Contra el
- * emulador, el proyecto tiene que empezar con `demo-` y las variables
- * FIRESTORE_EMULATOR_HOST y FIREBASE_AUTH_EMULATOR_HOST tienen que estar puestas.
+ * emulador, el proyecto tiene que empezar con `demo-`, las variables
+ * FIRESTORE_EMULATOR_HOST, FIREBASE_AUTH_EMULATOR_HOST y FIREBASE_STORAGE_EMULATOR_HOST tienen
+ * que estar puestas, y el bucket es siempre <proyecto>.appspot.com (se ignora --bucket).
  * Cualquier otra cosa se rechaza (salida 2), también en seco. El id del proyecto real
  * nunca se imprime (el repositorio es público).
  *
@@ -59,14 +62,21 @@
  * --limpiar). 0 mensajes por conversación.
  *
  * LIMITACIONES CONOCIDAS (dichas, no escondidas):
- *   · `--limpiar` no borra los objetos de Storage que sube `--storage-ruta-propia` (unos
- *     4 bytes sintéticos por tenant de prueba): quedan en el bucket de staging.
- *   · La siembra dispara en staging `verificarComportamiento`, `verificarCampanas` y
- *     `comprobarImagenDelCatalogo`, que llaman a Gemini: costo marginal, y escriben
- *     dentro del tenant de prueba (que se borra).
+ *   · Las fichas NO llevan `modulos`: solo se ejercita el respaldo por `flujos` que tienen
+ *     las reglas de #422. La única fila que distingue las reglas de main de las de #422 es
+ *     el privado de funcionarios del comercio de venta.
+ *   · La siembra dispara en staging `registrarCambioConfig` (escribe `bitacora/*` dentro del
+ *     tenant de prueba, a veces DESPUÉS de borrarlo: la limpieza barre esos huérfanos con
+ *     id de prueba y espera unos segundos antes de la limpieza final). Los demás
+ *     disparadores (`verificarComportamiento`, `verificarCampanas`, `comprobarImagenDelCatalogo`)
+ *     salen sin trabajar con estos datos.
+ *   · Si la matriz falla (1) y además la limpieza falla, el código sigue siendo 1 y se
+ *     imprime el aviso «corra --limpiar».
+ *   · Cada operación tiene un tope de 20 s (`error:timeout`, cuenta como fallo).
  *
  * SALIDA: 0 todo como se esperaba; 1 la matriz difiere de lo esperado; 2 salvaguarda o
- * argumentos; 3 error inesperado (la siembra o la matriz no terminaron; igual se limpia).
+ * argumentos; 3 error inesperado (la siembra o la matriz no terminaron; igual se limpia);
+ * 130 interrumpido con Ctrl-C (limpia si puede; si no, corra --limpiar).
  */
 import { randomBytes } from 'node:crypto';
 
@@ -83,33 +93,37 @@ const DOMINIO = ['verif-reglas', 'invalid'].join('.');
  * ¿Este proyecto es un destino permitido? Devuelve { ok, motivo, emulador }.
  * Pura: recibe el entorno en vez de leer process.env, para probarla negando.
  */
-export function comprobarProyecto(proyecto, env = process.env) {
-  if (!proyecto || typeof proyecto !== 'string') return { ok: false, motivo: 'falta --proyecto' };
-  const emuladorFs = !!env.FIRESTORE_EMULATOR_HOST;
-  const emuladorAuth = !!env.FIREBASE_AUTH_EMULATOR_HOST;
+export function comprobarProyecto(proyectoCrudo, env = process.env) {
+  if (!proyectoCrudo || typeof proyectoCrudo !== 'string') return { ok: false, motivo: 'falta --proyecto' };
+  const proyecto = proyectoCrudo.trim();
+  // Un espacio o un salto de línea de más en una variable no puede esquivar la comparación.
+  const v = (k) => (typeof env[k] === 'string' ? env[k].trim() : '');
+  const emuladorFs = !!v('FIRESTORE_EMULATOR_HOST');
+  const emuladorAuth = !!v('FIREBASE_AUTH_EMULATOR_HOST');
+  const emuladorSt = !!v('FIREBASE_STORAGE_EMULATOR_HOST');
   if (proyecto.startsWith('demo-')) {
-    if (emuladorFs && emuladorAuth) return { ok: true, emulador: true };
+    if (emuladorFs && emuladorAuth && emuladorSt) return { ok: true, emulador: true };
     return {
       ok: false,
-      motivo: 'un proyecto demo-* solo se usa contra el emulador (faltan FIRESTORE_EMULATOR_HOST y FIREBASE_AUTH_EMULATOR_HOST)',
+      motivo: 'un proyecto demo-* solo se usa contra el emulador (faltan FIRESTORE_EMULATOR_HOST, FIREBASE_AUTH_EMULATOR_HOST o FIREBASE_STORAGE_EMULATOR_HOST)',
     };
   }
   // Un proyecto real con un emulador a medio configurar es una trampa: el SDK
   // Admin iría al emulador y el de cliente a la nube (o al revés).
-  if (emuladorFs || emuladorAuth) {
+  if (emuladorFs || emuladorAuth || emuladorSt) {
     return { ok: false, motivo: 'hay variables de emulador puestas y el proyecto no es demo-*: se rechaza por ambiguo' };
   }
   // GCP_PROJECT_ID es el proyecto de DEMOS; el de producción es GCP_PROJECT_ID_PROD, y sin
   // él no hay contra qué comparar: se rechaza en vez de confiar solo en el nombre.
-  if (!env.GCP_PROJECT_ID_PROD) {
+  if (!v('GCP_PROJECT_ID_PROD')) {
     return { ok: false, motivo: 'falta GCP_PROJECT_ID_PROD: sin el proyecto de producción no se puede descartar' };
   }
-  for (const v of ['GCP_PROJECT_ID_PROD', 'FIREBASE_PROJECT_ID', 'GCP_PROJECT_ID']) {
-    if (env[v] && proyecto === env[v]) {
-      return { ok: false, motivo: `coincide con ${v} (producción o demos)` };
+  for (const k of ['GCP_PROJECT_ID_PROD', 'FIREBASE_PROJECT_ID', 'GCP_PROJECT_ID']) {
+    if (v(k) && proyecto === v(k)) {
+      return { ok: false, motivo: `coincide con ${k} (producción o demos)` };
     }
   }
-  const blanca = env.GCP_PROJECT_ID_STAGING;
+  const blanca = v('GCP_PROJECT_ID_STAGING');
   if (!blanca) {
     return { ok: false, motivo: 'falta GCP_PROJECT_ID_STAGING: la lista blanca de proyectos de staging está vacía' };
   }
@@ -144,6 +158,15 @@ export function esTenantDePrueba(id, ficha) {
   return typeof id === 'string' && id.startsWith(PREFIJO) && ficha?.creadoPor === CREADOR;
 }
 
+/**
+ * Un documento que NO existe pero cuyo id tiene la forma exacta de los de esta prueba
+ * (prefijo + fecha de 8 dígitos + «-ag» opcional): es un padre huérfano, con subcolecciones
+ * que un disparador (`registrarCambioConfig`) escribió después de borrar el tenant.
+ */
+export function esHuerfanoDePrueba(id, existe) {
+  return existe === false && typeof id === 'string' && /^zz-verif-reglas-[0-9]{8}(-ag)?$/.test(id);
+}
+
 /** Identificadores y correos de prueba para una fecha aaaammdd. */
 export function nombresDePrueba(fecha) {
   const venta = `${PREFIJO}${fecha}`;
@@ -176,7 +199,10 @@ export function fichaDeAgenda(creadoEn) {
     creadoEn,
     creadoPor: CREADOR,
     estado: 'activo',
-    flujos: ['agendamiento'],
+    // Con captación a propósito: es el comercio que SÍ tiene la capacidad de `config/onboarding`
+    // y del camino de Storage, y así las negativas del comercio de venta (sin esa capacidad)
+    // se contrastan con un positivo real y no pueden pasar por una denegación general.
+    flujos: ['agendamiento', 'onboarding'],
     nombre: 'Verificación de reglas (agenda)',
     plan: 'crecimiento',
     vertical: 'agendamiento',
@@ -195,7 +221,7 @@ async function principal() {
   const APLICAR = args.includes('--aplicar');
   const LIMPIAR = args.includes('--limpiar');
   const CONSERVAR = args.includes('--conservar');
-  const PROYECTO = opcion('proyecto');
+  const PROYECTO = (opcion('proyecto') ?? '').trim();
 
   const salir = (codigo, ...lineas) => {
     for (const l of lineas) console.error(l);
@@ -215,19 +241,23 @@ async function principal() {
   if (!/^[0-9]{8}$/.test(FECHA)) salir(2, '\n  ✗ --fecha tiene que ser aaaammdd.\n');
   const N = nombresDePrueba(FECHA);
   const RUTA_PROPIA = opcion('storage-ruta-propia');
-  if (RUTA_PROPIA && (!RUTA_PROPIA.includes('{t}') || RUTA_PROPIA.includes('..'))) {
-    salir(2, '\n  ✗ --storage-ruta-propia necesita {t} y no puede llevar «..».\n');
+  if (RUTA_PROPIA && (!RUTA_PROPIA.startsWith('tenants/{t}/') || RUTA_PROPIA.includes('..'))) {
+    // Bajo tenants/<id>/ para que la limpieza la alcance; sin «..» para que no salga de ahí.
+    salir(2, '\n  ✗ --storage-ruta-propia tiene que empezar por tenants/{t}/ y no puede llevar «..».\n');
   }
 
   // Bucket y clave, ANTES de cualquier import o escritura.
-  const bucket = opcion('bucket') ?? process.env.VITE_FIREBASE_STORAGE_BUCKET?.replace(/^gs:\/\//, '')
-    ?? (guarda.emulador ? `${PROYECTO}.appspot.com` : `${PROYECTO}.firebasestorage.app`);
+  // Contra el emulador el bucket es SIEMPRE el del proyecto demo: ni --bucket ni VITE_* lo cambian.
+  const bucket = guarda.emulador
+    ? `${PROYECTO}.appspot.com`
+    : (opcion('bucket') ?? process.env.VITE_FIREBASE_STORAGE_BUCKET ?? `${PROYECTO}.firebasestorage.app`)
+      .trim().replace(/^gs:\/\//, '');
   const cb = comprobarBucket(PROYECTO, bucket, guarda.emulador);
   if (!cb.ok) salir(2, `\n  ✗ Bucket rechazado: ${cb.motivo}.\n`);
   if (args.includes('--api-key')) {
     console.error('  ! --api-key queda en el historial y en `ps`: use la variable VITE_FIREBASE_API_KEY.');
   }
-  const apiKey = opcion('api-key') ?? process.env.VITE_FIREBASE_API_KEY ?? (guarda.emulador ? 'clave-de-emulador' : '');
+  const apiKey = (opcion('api-key') ?? process.env.VITE_FIREBASE_API_KEY ?? (guarda.emulador ? 'clave-de-emulador' : '')).trim();
   if ((APLICAR) && !apiKey) {
     salir(2, '\n  ✗ Falta la clave web de la app de staging (variable VITE_FIREBASE_API_KEY).\n');
   }
@@ -240,17 +270,16 @@ async function principal() {
 
   if (!APLICAR && !LIMPIAR) {
     console.log('  Plan (con --aplicar):');
-    console.log('    1. Sembrar con el SDK Admin: 2 fichas (la de venta con la forma de Q\'Taco, sin `modulos`),');
-    console.log('       su config, cuenta/estado, contador de catálogo, un funcionario y su privado.');
+    console.log('    1. Sembrar con el SDK Admin: 2 fichas (la de venta con la forma de Q\'Taco, sin `modulos`; la de');
+    console.log('       agenda CON captación), su config, cuenta/estado, contador de catálogo, un funcionario y su privado.');
     console.log('    2. Crear 2 usuarios de prueba (administrador de cada tenant) con claims nc.t y contraseña');
     console.log('       aleatoria en memoria; correo verificado.');
     console.log('    3. Entrar con el SDK de cliente y verificar la matriz de Firestore y de Storage.');
     console.log('    4. Imprimir solo la tabla de aciertos y fallos; salir con código distinto de 0 si algo difiere.');
     console.log('    5. Limpiar siempre al terminar (también si algo falla), salvo --conservar; entonces --limpiar.');
     console.log('       Solo se borra lo que lleva el prefijo ' + PREFIJO + ', el dominio reservado y la marca de este script.');
-    console.log(RUTA_PROPIA
-      ? `    Storage: ruta propia indicada (${RUTA_PROPIA}).`
-      : '    Storage: sin --storage-ruta-propia, las filas de subir/leer lo propio salen «SIN VERIFICAR».');
+    console.log('    Storage: control positivo con el comercio de agenda (captación): subir y leer lo propio, y negado en lo ajeno.');
+    if (RUTA_PROPIA) console.log('    Storage extra: ruta propia del comercio de venta indicada.');
     console.log('\n  Seco: no se escribió nada ni se abrió ninguna conexión.\n');
     process.exit(0);
   }
@@ -258,21 +287,24 @@ async function principal() {
   const { initializeApp, deleteApp } = await import('firebase-admin/app');
   const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
   const { getAuth } = await import('firebase-admin/auth');
-  const adminApp = initializeApp({ projectId: PROYECTO }, 'verif-admin');
+  const { getStorage } = await import('firebase-admin/storage');
+  const adminApp = initializeApp({ projectId: PROYECTO, storageBucket: bucket }, 'verif-admin');
   const db = getFirestore(adminApp);
   const auth = getAuth(adminApp);
+  const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+  /** Tope de tiempo: una operación colgada no cuelga el script. */
+  const conTope = (promesa, ms) => {
+    let t;
+    return Promise.race([
+      promesa,
+      new Promise((_, rechazar) => { t = setTimeout(() => rechazar(Object.assign(new Error('timeout'), { code: 'timeout' })), ms); }),
+    ]).finally(() => clearTimeout(t));
+  };
 
   // ---- limpiar ------------------------------------------------------------
   async function limpiar() {
-    let tenants = 0; let usuarios = 0;
-    const refs = await db.collection('tenants').listDocuments();
-    for (const r of refs) {
-      if (!r.id.startsWith(PREFIJO)) continue; // ni se lee lo que no lleva el prefijo
-      const ficha = (await r.get()).data();
-      if (!esTenantDePrueba(r.id, ficha)) continue; // JAMÁS algo sin la marca de este script
-      await db.recursiveDelete(r);
-      tenants += 1;
-    }
+    let tenants = 0; let usuarios = 0; let falloStorage = null;
+    // 1. Los USUARIOS primero: sin ellos, una sesión viva no puede seguir escribiendo mientras se borra.
     let token;
     do {
       const pagina = await auth.listUsers(1000, token);
@@ -281,18 +313,53 @@ async function principal() {
       }
       token = pagina.pageToken;
     } while (token);
+    // 2. Los tenants: con marca de este script, o padres HUÉRFANOS con id de prueba (un disparador
+    //    escribió bitacora/* después de borrarlos). Antes, sus objetos de Storage.
+    const refs = await db.collection('tenants').listDocuments();
+    for (const r of refs) {
+      if (!r.id.startsWith(PREFIJO)) continue; // ni se lee lo que no lleva el prefijo
+      const snap = await r.get();
+      if (!esTenantDePrueba(r.id, snap.data()) && !esHuerfanoDePrueba(r.id, snap.exists)) continue; // JAMÁS lo demás
+      try {
+        await getStorage(adminApp).bucket(bucket).deleteFiles({ prefix: `tenants/${r.id}/`, force: true });
+      } catch (e) {
+        if (e?.code !== 404) falloStorage = e; // se sigue con lo demás y se avisa al final
+      }
+      await db.recursiveDelete(r);
+      tenants += 1;
+    }
+    if (falloStorage) {
+      throw Object.assign(new Error('storage'), { code: `storage:${falloStorage.code ?? falloStorage.name ?? 'desconocido'}` });
+    }
     return { tenants, usuarios };
   }
 
   if (LIMPIAR) {
-    const r = await limpiar();
-    console.log(`  ✓ borrados ${r.tenants} tenants y ${r.usuarios} usuarios de prueba.\n`);
-    await deleteApp(adminApp);
-    process.exit(0);
+    let codigoL = 0;
+    try {
+      const r = await limpiar();
+      console.log(`  ✓ borrados ${r.tenants} tenants y ${r.usuarios} usuarios de prueba.\n`);
+    } catch (e) {
+      codigoL = 3; // solo el código: el mensaje del SDK puede traer rutas o valores
+      console.error(`  ✗ La limpieza falló (${e?.code ?? e?.name ?? 'desconocido'}): corra --limpiar otra vez.\n`);
+    }
+    try { await deleteApp(adminApp); } catch (e) {
+      codigoL = codigoL || 3;
+      console.error(`  ✗ El cierre falló (${e?.code ?? e?.name ?? 'desconocido'}).\n`);
+    }
+    process.exit(codigoL);
   }
 
   let codigo = 0;
   let fallos = [];
+  // Ctrl-C: avisa y limpia si puede (con tope), en vez de dejar lo sembrado sin decirlo.
+  process.once('SIGINT', async () => {
+    console.error('\n  ! Interrumpido. Si algo quedó sembrado, corra --limpiar.');
+    if (!CONSERVAR) {
+      try { await conTope(limpiar(), 15000); console.error('  Limpieza hecha.'); } catch { console.error('  La limpieza no terminó: corra --limpiar.'); }
+    }
+    process.exit(130);
+  });
   try {
     // ---- sembrar --------------------------------------------------------------
     const previa = await limpiar(); // parte de cero: la matriz es determinista
@@ -345,6 +412,8 @@ async function principal() {
       const a = authCliente(app);
       const dbc = fsdk.getFirestore(app);
       const st = ssdk.getStorage(app);
+      st.maxUploadRetryTime = 10000; // sin reintentos eternos: el tope por operación es de 20 s
+      st.maxOperationRetryTime = 10000;
       if (guarda.emulador) {
         const [hostA, puertoA] = process.env.FIREBASE_AUTH_EMULATOR_HOST.split(':');
         connectAuthEmulator(a, `http://${hostA}:${puertoA}`, { disableWarnings: true });
@@ -367,10 +436,10 @@ async function principal() {
 
     // ---- la matriz ----------------------------------------------------------
     const filas = [];
-    /** Corre `fn`; 'permitir' si no lanza, 'negar' si lanza permission-denied / unauthorized. */
+    /** Corre `fn` (tope 20 s: `error:timeout`); 'permitir' si no lanza, 'negar' si lanza permission-denied / unauthorized. */
     async function correr(operacion, ruta, esperado, fn) {
       let obtenido;
-      try { await fn(); obtenido = 'permitir'; } catch (e) {
+      try { await conTope((async () => fn())(), 20000); obtenido = 'permitir'; } catch (e) {
         const c = String(e?.code ?? '');
         obtenido = /permission-denied|unauthorized|unauthenticated/.test(c) ? 'negar' : `error:${c || 'desconocido'}`;
       }
@@ -457,55 +526,56 @@ async function principal() {
       () => getDoc(R(sA, N.agenda, 'config', 'agendamiento')));
     await correr('agenda→propio escribir', '{propio}/funcionarios/{f}/privado/datos', 'permitir',
       () => setDoc(R(sA, N.agenda, 'funcionarios', 'f1', 'privado', 'datos'), { telefono: '70000002', ...sello2(sA) }));
+    // Controles positivos de lo que el comercio de venta NO puede: el comercio de agenda (con la
+    // capacidad) sí. Sin ellos, «venta→propio negar» no distingue «sin capacidad» de «todo negado».
+    await correr('agenda→propio escribir', '{propio}/config/onboarding', 'permitir',
+      () => updateDoc(R(sA, N.agenda, 'config', 'onboarding'), { rubros: [], ...sello2(sA) }));
+    await correr('agenda→propio escribir', '{propio}/funcionarios/{f}', 'permitir',
+      () => setDoc(R(sA, N.agenda, 'funcionarios', 'f1'), { nombre: 'Y', activo: true, ...sello2(sA) }));
 
-    // 4. Storage.
-    const bytes = new Uint8Array([137, 80, 78, 71]);
-    const rutaDe = (plantilla, t) => plantilla.replace('{t}', t);
+    // 4. Storage. El comercio de agenda tiene captación: su subida y su lectura son el control
+    //    positivo que ejercita `firestore.get()` desde Storage y el rol del agente de Storage. Si
+    //    Storage negara todo, esta fila falla y la corrida sale 1.
+    const bytes = new Uint8Array([37, 80, 68, 70]);
     const captacion = (t) => `tenants/${t}/captacion/planes.pdf`;
     const subir = (s, ruta, tipo) => ssdk.uploadBytes(ssdk.ref(s.st, ruta), bytes, { contentType: tipo });
     const leer = (s, ruta) => ssdk.getMetadata(ssdk.ref(s.st, ruta));
-    if (RUTA_PROPIA) {
-      const tipo = RUTA_PROPIA.endsWith('.pdf') ? 'application/pdf' : RUTA_PROPIA.endsWith('.png') ? 'image/png' : 'image/jpeg';
-      await correr('storage venta→propio subir', RUTA_PROPIA.replace('{t}', '{propio}'), 'permitir',
-        () => subir(sV, rutaDe(RUTA_PROPIA, N.venta), tipo));
-      await correr('storage venta→propio leer', RUTA_PROPIA.replace('{t}', '{propio}'), 'permitir',
-        () => leer(sV, rutaDe(RUTA_PROPIA, N.venta)));
-      await correr('storage venta→ajeno subir', RUTA_PROPIA.replace('{t}', '{ajeno}'), 'negar',
-        () => subir(sV, rutaDe(RUTA_PROPIA, N.agenda), tipo));
-      await correr('storage venta→ajeno leer', RUTA_PROPIA.replace('{t}', '{ajeno}'), 'negar',
-        () => leer(sV, rutaDe(RUTA_PROPIA, N.agenda)));
-      await correr('storage agenda→ajeno subir', RUTA_PROPIA.replace('{t}', '{ajeno}'), 'negar',
-        () => subir(sA, rutaDe(RUTA_PROPIA, N.venta), tipo));
-      await correr('storage agenda→ajeno leer', RUTA_PROPIA.replace('{t}', '{ajeno}'), 'negar',
-        () => leer(sA, rutaDe(RUTA_PROPIA, N.venta)));
-    } else {
-      filas.push({ operacion: 'storage venta→propio subir/leer', ruta: '(sin --storage-ruta-propia)',
-        esperado: 'permitir', obtenido: 'SIN VERIFICAR', ok: true, sinVerificar: true });
-    }
-    // Lo que ya se sabe, con la ruta de la captación (el único camino de storage.rules hoy):
-    // ningún comercio sin el flujo de captación escribe ahí, y nadie cruza de comercio.
-    await correr('storage venta→propio subir (sin flujo captación)', '{propio}/captacion/planes.pdf', 'negar',
+    await correr('storage agenda→propio subir', 'tenants/{propio}/captacion/planes.pdf', 'permitir',
+      () => subir(sA, captacion(N.agenda), 'application/pdf'));
+    await correr('storage agenda→propio leer', 'tenants/{propio}/captacion/planes.pdf', 'permitir',
+      () => leer(sA, captacion(N.agenda)));
+    // Las negativas, ahora contra un objeto que EXISTE y un comercio que SÍ tiene la capacidad:
+    await correr('storage venta→propio subir (sin flujo captación)', 'tenants/{propio}/captacion/planes.pdf', 'negar',
       () => subir(sV, captacion(N.venta), 'application/pdf'));
-    await correr('storage venta→ajeno subir', '{ajeno}/captacion/planes.pdf', 'negar',
+    await correr('storage venta→ajeno subir', 'tenants/{ajeno}/captacion/planes.pdf', 'negar',
       () => subir(sV, captacion(N.agenda), 'application/pdf'));
-    await correr('storage venta→ajeno leer', '{ajeno}/captacion/planes.pdf', 'negar',
+    await correr('storage venta→ajeno leer', 'tenants/{ajeno}/captacion/planes.pdf', 'negar',
       () => leer(sV, captacion(N.agenda)));
-    await correr('storage agenda→ajeno subir', '{ajeno}/captacion/planes.pdf', 'negar',
+    await correr('storage agenda→ajeno subir', 'tenants/{ajeno}/captacion/planes.pdf', 'negar',
       () => subir(sA, captacion(N.venta), 'application/pdf'));
-    await correr('storage agenda→ajeno leer', '{ajeno}/captacion/planes.pdf', 'negar',
+    await correr('storage agenda→ajeno leer', 'tenants/{ajeno}/captacion/planes.pdf', 'negar',
       () => leer(sA, captacion(N.venta)));
+    if (RUTA_PROPIA) {
+      // EXTRA: una ruta propia del comercio de venta, si alguna regla futura se la da.
+      const tipo = RUTA_PROPIA.endsWith('.pdf') ? 'application/pdf' : RUTA_PROPIA.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      const rutaDe = (t) => RUTA_PROPIA.replace('{t}', t);
+      const mostrar = (m) => RUTA_PROPIA.replace('{t}', m);
+      await correr('storage venta→propio subir (ruta extra)', mostrar('{propio}'), 'permitir', () => subir(sV, rutaDe(N.venta), tipo));
+      await correr('storage venta→propio leer (ruta extra)', mostrar('{propio}'), 'permitir', () => leer(sV, rutaDe(N.venta)));
+      await correr('storage venta→ajeno subir (ruta extra)', mostrar('{ajeno}'), 'negar', () => subir(sV, rutaDe(N.agenda), tipo));
+      await correr('storage venta→ajeno leer (ruta extra)', mostrar('{ajeno}'), 'negar', () => leer(sV, rutaDe(N.agenda)));
+      await correr('storage agenda→ajeno subir (ruta extra)', mostrar('{ajeno}'), 'negar', () => subir(sA, rutaDe(N.venta), tipo));
+      await correr('storage agenda→ajeno leer (ruta extra)', mostrar('{ajeno}'), 'negar', () => leer(sA, rutaDe(N.venta)));
+    }
 
     // ---- el informe: solo operación, ruta con marcadores, esperado y obtenido ---------
     const ancho = (k) => Math.max(...filas.map((f) => String(f[k]).length), k.length);
     const w = { operacion: ancho('operacion'), ruta: ancho('ruta'), esperado: 9, obtenido: ancho('obtenido') };
     const linea = (f, marca) => `  ${marca} ${String(f.operacion).padEnd(w.operacion)}  ${String(f.ruta).padEnd(w.ruta)}  ${String(f.esperado).padEnd(w.esperado)}  ${f.obtenido}`;
     console.log(`  ${' '} ${'operación'.padEnd(w.operacion)}  ${'ruta'.padEnd(w.ruta)}  ${'esperado'.padEnd(w.esperado)}  obtenido`);
-    for (const f of filas) console.log(linea(f, f.sinVerificar ? '?' : f.ok ? '✓' : '✗'));
+    for (const f of filas) console.log(linea(f, f.ok ? '✓' : '✗'));
     fallos = filas.filter((f) => !f.ok);
-    const sinVerificar = filas.filter((f) => f.sinVerificar);
-    const aciertos = filas.length - fallos.length - sinVerificar.length;
-    console.log(`\n  Resumen: ${aciertos} aciertos, ${fallos.length} fallos, ${sinVerificar.length} sin verificar, de ${filas.length} filas.`);
-    if (sinVerificar.length) console.log('  Hay filas SIN VERIFICAR: indique --storage-ruta-propia para cerrarlas.');
+    console.log(`\n  Resumen: ${filas.length - fallos.length} aciertos, ${fallos.length} fallos, de ${filas.length} filas.`);
 
     codigo = fallos.length ? 1 : 0;
   } catch (e) {
@@ -517,6 +587,9 @@ async function principal() {
       console.log('  --conservar: lo sembrado queda en el proyecto; --limpiar lo borra.\n');
     } else {
       try {
+        // Un disparador (registrarCambioConfig) puede escribir bitacora/* unos segundos DESPUÉS de la
+        // siembra, incluso con el tenant ya borrado: se espera antes de barrer (en el emulador no hay).
+        if (!guarda.emulador) await esperar(5000);
         const f = await limpiar();
         console.log(`  Limpieza final: ${f.tenants} tenants y ${f.usuarios} usuarios de prueba borrados.\n`);
       } catch (e) {
@@ -525,6 +598,9 @@ async function principal() {
       }
     }
   }
-  await deleteApp(adminApp);
+  try { await deleteApp(adminApp); } catch (e) {
+    codigo = codigo || 3; // si la matriz falló (1), ese código manda; el cierre solo avisa
+    console.error(`  ✗ El cierre falló (${e?.code ?? e?.name ?? 'desconocido'}).\n`);
+  }
   process.exit(codigo);
 }
