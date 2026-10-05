@@ -231,3 +231,10 @@
 @media (prefers-reduced-motion: reduce) {
   .cat * { animation: none !important; transition: none !important; }
 }
+
+/* «Volver al chat»: es un enlace que se ve como el botón de confirmar. */
+.cat-chat {
+  display: flex; align-items: center; justify-content: center;
+  margin-top: var(--space-6); text-decoration: none;
+}
+.cat-chat:hover { background: var(--marca-oscura); }
