@@ -104,6 +104,9 @@
 //                                                    aviso = salio un aviso al local; derivacion = la ruta del plan es `transferir`
 //                                                    (aviso + boton para escribir directo); qr = se envio la imagen del QR;
 //                                                    modelo = el flujo llamo a «Extraer»; cierre = se registro un cierre
+//   "avisoTextos": ["VARIAS RESERVAS"], "avisoTextosNo": ["Tel"]   regex sobre el TEXTO de los avisos al local que SALIERON (Meta los acepto): de una
+//                                                    plantilla, su nombre y sus parametros de cuerpo (ahi viajan las marcas, el telefono, la referencia); de un
+//                                                    texto, lo visible. `avisoTextos` exige que alguno coincida; `avisoTextosNo`, que ninguno.
 //   "ruta": "regex"                                  la ruta que el plan reporta («pedido:qr», «transferir:…»)
 //   "fallo": "Resumen del turno"                     un turno SIN `fallo` exige que ningun nodo falle; con el nombre, lo exige
 //
@@ -238,7 +241,7 @@ export function leerArgumentos(argv) {
 
 // ------------------------------------------------------------------------------------------------------- los casos
 const TIPOS_CLIENTE = ['texto', 'boton', 'fila', 'audio', 'imagen', 'documento', 'carrito'];
-const CLAVES_ESPERADO = ['mensajes', 'textos', 'textosNo', 'botones', 'botonesNo', 'titulos', 'titulosNo', 'enlaces', 'estado', 'reporteQr', 'igualAntes', 'efectos', 'ruta', 'fallo'];
+const CLAVES_ESPERADO = ['mensajes', 'textos', 'textosNo', 'botones', 'botonesNo', 'titulos', 'titulosNo', 'enlaces', 'estado', 'reporteQr', 'igualAntes', 'efectos', 'ruta', 'fallo', 'avisoTextos', 'avisoTextosNo'];
 const CLAVES_EFECTOS = ['aviso', 'derivacion', 'qr', 'modelo', 'cierre'];
 const CLAVES_ESTADO_MATCH = ['regex', 'noRegex', 'vacio', 'existe', 'longitud', 'contiene'];
 
@@ -246,10 +249,10 @@ function validarEsperado(e, donde) {
   if (e === undefined) return;
   if (!e || typeof e !== 'object' || Array.isArray(e)) throw new ErrorDeUso(`${donde}: «esperado» debe ser un objeto.`);
   for (const k of Object.keys(e)) if (!CLAVES_ESPERADO.includes(k)) throw new ErrorDeUso(`${donde}: «esperado» con una clave desconocida («${recorta(k, 30)}»).`);
-  for (const k of ['textos', 'textosNo', 'botones', 'botonesNo', 'titulos', 'titulosNo', 'enlaces', 'igualAntes']) {
+  for (const k of ['textos', 'textosNo', 'botones', 'botonesNo', 'titulos', 'titulosNo', 'enlaces', 'igualAntes', 'avisoTextos', 'avisoTextosNo']) {
     if (e[k] !== undefined && (!Array.isArray(e[k]) || e[k].some((x) => typeof x !== 'string'))) throw new ErrorDeUso(`${donde}: «${k}» debe ser una lista de textos.`);
   }
-  for (const k of ['textos', 'textosNo', 'titulos', 'titulosNo', 'enlaces']) for (const x of e[k] ?? []) regexDe(x, donde);
+  for (const k of ['textos', 'textosNo', 'titulos', 'titulosNo', 'enlaces', 'avisoTextos', 'avisoTextosNo']) for (const x of e[k] ?? []) regexDe(x, donde);
   if (e.ruta !== undefined) { if (typeof e.ruta !== 'string') throw new ErrorDeUso(`${donde}: «ruta» debe ser un texto.`); regexDe(e.ruta, donde); }
   if (e.mensajes !== undefined) {
     const m = e.mensajes;
@@ -356,6 +359,19 @@ export function leerCasosDeCarpeta(carpeta = CARPETA_CASOS) {
 
 // ------------------------------------------------------------------------------------------------------- lo que recibe el cliente
 /** Los textos visibles de un payload de la Graph API: cuerpo, encabezado, pie, titulos de boton y fila, boton de enlace y pie de imagen. */
+/**
+ * El texto de un AVISO al local (no es un mensaje al cliente): si es una PLANTILLA, su nombre y los parametros de cuerpo, que es donde viajan las marcas
+ * («GRUPO GRANDE», «VARIAS RESERVAS HOY…», el telefono, la referencia); si es texto o interactivo, sus piezas visibles.
+ */
+export function textoDeAviso(p) {
+  if (p?.type === 'template') {
+    const t = objeto(p.template);
+    const parametros = (Array.isArray(t.components) ? t.components : []).flatMap((c) => (Array.isArray(objeto(c).parameters) ? c.parameters : []));
+    return [String(t.name ?? ''), ...parametros.map((x) => String(objeto(x).text ?? ''))].join(' ¦ ');
+  }
+  return piezasDeEnvio(p).join(' ');
+}
+
 export function piezasDeEnvio(p) {
   const piezas = [];
   const t = p?.type;
@@ -493,6 +509,9 @@ export function evaluarEsperado(e, r, donde = 'esperado') {
     const despues = JSON.stringify(valorEn(r.estado, ruta) ?? null);
     if (antes !== despues) f.push(`estado.${ruta} debía quedar igual y cambió: ${recorta(antes, 60)} → ${recorta(despues, 60)}`);
   }
+  const avisos = r.avisosTextos ?? [];
+  for (const x of e.avisoTextos ?? []) if (!avisos.some((v) => aparece(regexDe(x, donde), v))) f.push(`esperaba un aviso al local con /${x}/; ${avisos.length ? 'avisos: ' + recorta(avisos.join(' ‖ '), 200) : 'no salió ningún aviso'}`);
+  for (const x of e.avisoTextosNo ?? []) { const v = avisos.find((y) => aparece(regexDe(x, donde), y)); if (v !== undefined) f.push(`no debía aparecer en un aviso al local /${x}/ y apareció en: ${recorta(v, 160)}`); }
   const ef = e.efectos ?? {};
   const real = { aviso: r.avisos > 0, derivacion: /^transferir/.test(r.ruta), qr: r.qr, modelo: r.modelo > 0, cierre: r.cierre > 0 };
   for (const k of CLAVES_EFECTOS) if (ef[k] !== undefined && ef[k] !== real[k]) f.push(`efecto «${k}»: se esperaba ${ef[k] ? 'que ocurriera' : 'que NO ocurriera'} y ${real[k] ? 'ocurrió' : 'no ocurrió'}${k === 'derivacion' ? ` (ruta «${r.ruta || 'ninguna'}»)` : ''}`);
@@ -662,7 +681,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     });
 
     const fallas = evaluarEsperado(t.esperado, {
-      mensajes: entregados, estado, estadoAntes, avisos: avisosSalidos, ruta, qr, modelo: captura.extraer, cierre: captura.cierre.length,
+      mensajes: entregados, estado, estadoAntes, avisos: avisosSalidos, avisosTextos: captura.avisos.filter((a) => a.ok && a.nodo === 'Enviar aviso').map((a) => textoDeAviso(a.payload)), ruta, qr, modelo: captura.extraer, cierre: captura.cierre.length,
       fallo: r.fallo, reporteQr,
     }, `${caso.id}, ${donde}`);
     // Un fallo de nodo que el turno no esperaba tambien cuenta aunque el turno no declare `esperado`.

@@ -57,6 +57,7 @@ interface Modulo {
   leerCasosDeCarpeta(carpeta?: string): { casos: J[]; global: J | null };
   expandirVariantes(caso: J): { etiqueta: string; caso: J }[];
   evaluarEsperado(e: J, r: J, donde?: string): string[];
+  textoDeAviso(p: J): string;
   revisarNegativoGlobal(frases: string[], corridas: J[], campo?: string): J[];
   piezasDeEnvio(p: J): string[];
   correrCaso(a: J): Promise<J>;
@@ -741,5 +742,55 @@ describe('higiene: la herramienta no escribe archivos y los casos no llevan dato
     const pendientes = (JSON.parse(readFileSync(join(CARPETA_CASOS, 'pendientes.json'), 'utf8')) as J)['pendientes'] as J[];
     expect(pendientes.length).toBeGreaterThan(0);
     for (const p of pendientes) { expect(ids.has(p['id']), `${p['id']} está en los pendientes y también implementado`).toBe(false); expect(String(p['espera'])).toMatch(/rama|sin asignar/); }
+  });
+});
+
+// ------------------------------------------------------------------------------ el texto de los AVISOS al local (05/10/2026)
+describe('avisoTextos / avisoTextosNo: el aviso al local se lee (plantilla: nombre y parámetros de cuerpo)', () => {
+  const plantilla = (nombre: string, ...parametros: string[]): J => ({
+    messaging_product: 'whatsapp', type: 'template',
+    template: { name: nombre, language: { code: 'es' }, components: [{ type: 'body', parameters: parametros.map((text) => ({ type: 'text', text })) }] },
+  });
+  const base = (avisosTextos: string[]): J => ({ mensajes: [], estado: {}, estadoAntes: {}, avisos: avisosTextos.length, ruta: '', qr: false, modelo: 0, cierre: 0, fallo: null, avisosTextos });
+
+  it('textoDeAviso junta el nombre de la plantilla y los parámetros; un texto o interactivo da sus piezas', () => {
+    const t = B.textoDeAviso(plantilla('aviso_reserva', 'GRUPO GRANDE', 'mesa para 15'));
+    expect(t).toContain('aviso_reserva');
+    expect(t).toContain('GRUPO GRANDE');
+    expect(t).toContain('mesa para 15');
+    expect(B.textoDeAviso({ type: 'text', text: { body: 'Hola equipo' } })).toBe('Hola equipo');
+    expect(B.textoDeAviso({})).toBe('');
+  });
+
+  it('avisoTextos exige que ALGÚN aviso que salió coincida; sin avisos, falla diciendo que no salió ninguno', () => {
+    const t = B.textoDeAviso(plantilla('aviso_reserva', 'GRUPO GRANDE'));
+    expect(B.evaluarEsperado({ avisoTextos: ['GRUPO GRANDE'] }, base([t]))).toEqual([]);
+    expect(B.evaluarEsperado({ avisoTextos: ['VARIAS RESERVAS'] }, base([t])).join(' ')).toMatch(/esperaba un aviso al local con \/VARIAS RESERVAS\//);
+    expect(B.evaluarEsperado({ avisoTextos: ['GRUPO GRANDE'] }, base([])).join(' ')).toMatch(/no salió ningún aviso/);
+  });
+
+  it('avisoTextosNo exige que NINGÚN aviso coincida (p. ej. una marca que ya no debe existir)', () => {
+    const t = B.textoDeAviso(plantilla('aviso_reserva', 'DÍA LLENO'));
+    expect(B.evaluarEsperado({ avisoTextosNo: ['DÍA LLENO'] }, base([t])).join(' ')).toMatch(/no debía aparecer en un aviso al local \/DÍA LLENO\//);
+    expect(B.evaluarEsperado({ avisoTextosNo: ['DÍA LLENO'] }, base([B.textoDeAviso(plantilla('x', 'VARIAS RESERVAS'))]))).toEqual([]);
+  });
+
+  const caso = (e: J): J => ({ casos: [{ id: 'ZZ9', titulo: 'aviso', turnos: [{ cliente: { tipo: 'texto', texto: 'hola' } }, { cliente: { tipo: 'texto', texto: 'quiero hablar con una persona' }, esperado: e }] }] });
+
+  it('las claves se validan: lista de textos y regex válida; un caso mal formado da error de uso', () => {
+    expect(() => B.validarCasos(caso({ avisoTextos: 'GRUPO' }))).toThrow(/lista de textos/);
+    expect(() => B.validarCasos(caso({ avisoTextos: ['(sin cerrar'] }))).toThrow();
+    expect(() => B.validarCasos(caso({ avisoTextosNo: [1] }))).toThrow(/lista de textos/);
+    expect(B.validarCasos(caso({ avisoTextos: ['.'], avisoTextosNo: ['ZZZ'] }))).toHaveLength(1);
+  });
+
+  it('de punta a punta con --seco: el aviso al local de «quiero hablar con una persona» SALE y se lee (cualquier texto); una marca inexistente falla', async () => {
+    const correrCon = async (e: J): Promise<number> => {
+      const casos = B.validarCasos(caso(e));
+      return B.main(['--seco', '--casos', 'ZZ9', '--json'], { salida: () => undefined, error: () => undefined, fetch: () => { throw new Error('sin red'); }, leerCasos: () => ({ casos, global: null }) });
+    };
+    expect(await correrCon({ avisoTextos: ['.'], efectos: { aviso: true } })).toBe(0); // salió un aviso y tiene texto
+    expect(await correrCon({ avisoTextos: ['MARCA-QUE-NO-EXISTE'] })).toBe(1); // ningún aviso la trae
+    expect(await correrCon({ avisoTextosNo: ['.'] })).toBe(1); // hay un aviso con texto: «ninguno coincide con cualquier cosa» falla
   });
 });
