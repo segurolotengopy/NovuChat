@@ -21,7 +21,7 @@
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
 //   reserva: rsValidarExtraccion, rsFusionar, rsValidar, rsPreguntaFaltantes, rsResumen,
 //     rsLineaCompacta, rsDentroDelTope.   promos: prFicha, prTexto.
-//   cobro: cbCaption, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
+//   cobro: cbCaption, cbResumenCorto, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
 //  1. `entrega` = {entrega, modalidad, direccion, referencia, nombre} (`entrega` y `modalidad`
@@ -419,7 +419,13 @@ function aCancelar() {
   const tenia = !!ped || en.carrito.length > 0 || en.pendiente.length > 0 || !!en.carritoAnterior;
   // Solo la reserva (o nada que cancelar con `todo`): como siempre, el menú.
   const pasado = !tenia && alcance !== 'reserva' ? pedidoYaPasado() : null;
-  if (alcance === 'reserva' || (alcance === 'todo' && !tenia && !pasado && en.reserva)) return aMenu();
+  if (alcance === 'reserva' || (alcance === 'todo' && !tenia && !pasado && en.reserva)) {
+    // Voz 05/10: con datos de reserva a medias, se dice que se borraron (antes volvía al menú sin decir nada). Es el mismo mensaje del menú, con una frase delante.
+    const habia = !!en.reserva;
+    aMenu();
+    if (habia && mensajes.length === 1 && mensajes[0].tipo === 'botones') mensajes[0].cuerpo = 'Listo, borré los datos de esa reserva. ' + mensajes[0].cuerpo;
+    return;
+  }
   if (tenia) {
     const cod = ped && ped.codigo ? cbCodigo(ped.codigo) : '';
     limpiarSegun(alcance === 'todo' ? 'todo' : 'pedido');
@@ -1238,7 +1244,7 @@ function aComprobante() {
     if (lectura && lectura.legible === false) resultado = 'ilegible';
   }
   const ilegibles = resultado === 'ilegible' ? en.ilegibles + 1 : en.ilegibles;
-  const base = { codigo: ped.codigo, diferencia: diferencias, ilegibles: ilegibles, entrega: ped.modalidad, moneda: monedaTxt };
+  const base = { codigo: ped.codigo, diferencia: diferencias, ilegibles: ilegibles, entrega: ped.modalidad, moneda: monedaTxt, resumen: cbResumenCorto(ped.lineas, ped.modalidad) };
   const conAviso = cbTextoAlCliente(resultado, Object.assign({ avisoSalio: true }, base));
   ruta = 'comprobante:' + resultado;
 

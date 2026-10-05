@@ -57,7 +57,7 @@ const NOMBRES = [
   'vmTextoDeGemini', 'vmJsonDeGemini', 'vmTextoSeguro', 'vmSd', 'vmEstadoBase', 'vmLeerEstado', 'vmEscribirEstado',
   'vmBarrer', 'vmYaVisto', 'vmMarcarVisto', 'vmAtencion', 'vmPrefijoPermitido', 'vmIdDeBoton', 'vmLeerBoton',
   'vmCodigoCorto', 'vmHuella', 'vmIdEstable', 'vmFechaLocal', 'vmHoraLocal', 'vmDiaSemana', 'vmMsLocal', 'vmFechaLegible', 'vmTablaDeDias',
-  'vmHorario', 'vmAbierto', 'vmHorarioLegible', 'VM_PROHIBIDAS', 'vmCanon', 'vmSinProhibidas',
+  'vmHorario', 'vmAbierto', 'vmHorarioLegible', 'VM_PROHIBIDAS', 'vmCanon', 'vmSinProhibidas', 'VM_ENLACE_DE_MAPA', 'vmEnlaceDeMapa',
 ] as const;
 type Lib = Record<(typeof NOMBRES)[number], Fn>;
 
@@ -1418,6 +1418,31 @@ describe('Config del negocio', () => {
   it('waGraphVersion: la de «Config base» o v26.0', () => {
     expect(ok()['waGraphVersion']).toBe('v25.0');
     expect(ok(PANEL, { base: {} })['waGraphVersion']).toBe('v26.0');
+  });
+  it('voz 05/10: `direccionMaps` del panel solo pasa si es un enlace de Google Maps https de hasta 200 caracteres (segunda barrera tras el servidor)', () => {
+    const conMaps = (v: unknown): J => ok({ ...PANEL, datosDelNegocio: { ...(PANEL['datosDelNegocio'] as J), direccionMaps: v } });
+    for (const v of ['https://maps.app.goo.gl/AbC123', 'https://www.google.com/maps/place/Q+Taco/@-16.5,-68.1,17z', 'https://goo.gl/maps/xyz', '  https://maps.app.goo.gl/AbC123  ']) {
+      expect(conMaps(v)['direccionMaps'], String(v)).toBe(String(v).trim());
+    }
+    // negativos: http, otro dominio, un dominio que solo CONTIENE el de mapas, un javascript:, un enlace de 201 caracteres, algo que no es texto o ausente
+    const largo = 'https://www.google.com/maps/place/' + 'a'.repeat(170);
+    expect(largo.length).toBeGreaterThan(200);
+    for (const v of ['http://maps.app.goo.gl/AbC123', 'https://malo.test/maps', 'https://maps.app.goo.gl.malo.test/x', 'https://evil.test/?u=https://maps.app.goo.gl/x',
+      'javascript:alert(1)', 'https://user@maps.app.goo.gl/x', 'https://maps.app.goo.gl/a b', largo, 5, null, { url: 'https://maps.app.goo.gl/x' }, '']) {
+      expect(conMaps(v)['direccionMaps'] || '', JSON.stringify(v)).toBe('');
+    }
+    expect(ok()['direccionMaps'] || '').toBe('');
+    // el respaldo (panel caído) no trae enlace de mapas: la reserva anotada sale sin botón
+    expect(correr({ statusCode: 500, body: {} })['direccionMaps'] || '').toBe('');
+  });
+  it('voz 05/10: la regla de `vmEnlaceDeMapa` es la MISMA que la del servidor (`ENLACE_DE_MAPA` de prompt.ts): el patrón y el tope', () => {
+    const servidor = readFileSync(join(RAIZ, '../../../../admin/functions/src/core/prompt/prompt.ts'), 'utf8');
+    const m = /export const ENLACE_DE_MAPA =\s*\/(.+)\/;/.exec(servidor);
+    expect(m, 'no se encontró ENLACE_DE_MAPA en prompt.ts').not.toBeNull();
+    expect(L.VM_ENLACE_DE_MAPA.source).toBe(new RegExp(m![1]!).source);
+    expect(servidor).toMatch(/t\.length <= 200 && ENLACE_DE_MAPA\.test\(t\)/);
+    expect(L.vmEnlaceDeMapa('https://maps.app.goo.gl/' + 'a'.repeat(176))).toBe('https://maps.app.goo.gl/' + 'a'.repeat(176)); // 200 justos
+    expect(L.vmEnlaceDeMapa('https://maps.app.goo.gl/' + 'a'.repeat(177))).toBe(''); // 201
   });
 });
 

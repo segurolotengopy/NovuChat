@@ -1416,3 +1416,152 @@ describe('D (04/10): ningún texto nombra un botón que no se envía', () => {
     }
   });
 });
+
+// =================================================================================================
+// VOZ Y TONO (05/10): «Anotamos tu reserva», «Gracias por enviar tu comprobante», la derivación sin «ellos» y el botón «Ver ubicación».
+// Los textos son los de la guía de tono; aquí se fija cómo los trata `Armar mensajes` (`AM_PASE`, `AM_NEGADO`, `amSinBoton`, `amConSeguir`, `amQr`).
+// =================================================================================================
+describe('Voz y tono (05/10): lo que afirma un pase a nuestro equipo solo sale si el aviso salió', () => {
+  const COD = 'K7Q2';
+  const CUADRA = `Gracias por enviar tu comprobante. Los datos coinciden con tu pedido #${COD}. Ya lo pasé a nuestro equipo, que revisa el pago en nuestro banco antes de despachar tu pedido.`;
+  const NO_CUADRA = `Gracias por enviar tu comprobante. Veo una diferencia con tu pedido #${COD}: el comprobante dice 1 Bs y tu pedido es de 21 Bs. Ya lo pasé a nuestro equipo para que lo revise; guárdalo por si te lo pedimos. Si quieres escribirnos directamente, toca el botón.`;
+  const ILEGIBLE = `Gracias por enviarlo de nuevo. Como no se lee bien, ya lo pasé a nuestro equipo para que revise tu pedido #${COD} directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.`;
+  const SIN_COTEJO = `Gracias por enviar el comprobante de tu pedido #${COD}. Ya lo pasé a nuestro equipo para que lo revise directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.`;
+  const SIMULADO = `Recibí tu comprobante SIMULADO de tu pedido #${COD}. Es una prueba: no se movió dinero. Ya lo pasé a nuestro equipo como pedido de PRUEBA.`;
+  const RESERVA = '¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Arce 2345 🙌';
+  const LLEGO = 'Tu solicitud llegó a nuestro equipo.';
+  const TEXTOS: Array<[string, string]> = [
+    ['comprobante que cuadra (fila 15)', CUADRA], ['comprobante que no cuadra (fila 16)', NO_CUADRA], ['comprobante ilegible la 2.ª vez (fila 17)', ILEGIBLE],
+    ['comprobante sin cotejo (fila 17)', SIN_COTEJO], ['comprobante simulado', SIMULADO], ['reserva anotada (fila 20)', RESERVA], ['«llegó a nuestro equipo»', LLEGO],
+  ];
+
+  it.each(TEXTOS)('%s: SIN aviso salido se reemplaza por la derivación (nunca promete lo que no se cumplió)', (_n, t) => {
+    const r = mensajes({ mensajes: [texto(t)] });
+    expect(r.items).toHaveLength(1);
+    expect(String(r.items[0]!['texto'])).not.toMatch(/ya lo pas[eé]|anotamos tu reserva|llegó a nuestro equipo/i);
+    expect(String(r.items[0]!['texto'])).toContain('Disculpa, eso no lo puedo resolver por aquí');
+    expect(r.items[0]!['payload'].interactive.action.parameters.display_text).toBe('Escribir al local');
+  });
+
+  it.each(TEXTOS)('%s: CON un aviso salido (wamid) el texto sale tal cual (el caso opuesto)', (_n, t) => {
+    const r = mensajes({ mensajes: [texto(t)], aviso: { tipo: 'pedido', datos: {} } }, { armados: [armado('pedido')], enviados: [OK(1)] });
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0]!['texto']).toBe(t);
+    expect(r.items[0]!['resumen']).toMatchObject({ avisoSalio: true });
+  });
+
+  it('AM_NEGADO: los textos «no pude…» que acompañan al pase caído NO se toman por una afirmación, y salen aunque el aviso no haya salido', () => {
+    const NEGADOS = [
+      'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.',
+      'No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.',
+      `Gracias por enviar tu comprobante. Los datos coinciden con tu pedido #${COD}. No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.`,
+      'Gracias por enviarlo. No pude leer bien tu comprobante: ¿me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?',
+    ];
+    for (const t of NEGADOS) {
+      const r = mensajes({ mensajes: [texto(t)] });
+      expect(r.items[0]!['texto'], t).toBe(t);
+    }
+  });
+});
+
+describe('Voz y tono (05/10): sin número de recepción el texto no nombra el botón y queda una frase útil (`amSinBoton`)', () => {
+  const SIN_NUMERO = { numeroRecepcion: '' };
+  const quedo = (t: string): string => String(mensajes({ mensajes: [enlace(t, { sinMenu: true })] }, { cfg: SIN_NUMERO }).items[0]!['texto']);
+  const CASOS: Array<[string, string]> = [
+    ['no cuadra (fila 16)', 'Gracias por enviar tu comprobante. Veo una diferencia con tu pedido #K7Q2: el comprobante dice 1 Bs y tu pedido es de 21 Bs. Si quieres escribirnos directamente, toca el botón.'],
+    ['ilegible 2.ª vez (fila 17)', 'Gracias por enviarlo de nuevo. Como no se lee bien, ya lo pasé a nuestro equipo para que revise tu pedido #K7Q2 directamente. Si quieres escribirnos, toca el botón.'],
+    ['sin cotejo (fila 17)', 'Gracias por enviar el comprobante de tu pedido #K7Q2. Si quieres escribirnos, toca el botón.'],
+    ['derivación genérica (fila 19)', 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.'],
+    ['costo del delivery (fila 19)', 'El costo del delivery no lo tengo por aquí 🙏. Toca «Escribir al local» y consúltalo con nuestro equipo.'],
+    ['pidió persona (fila 19)', '¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo.'],
+  ];
+  it.each(CASOS)('%s: sin botón no queda «Escribir al local» ni «botón», y queda algo que decir', (_n, t) => {
+    const q = quedo(t);
+    expect(q).not.toMatch(/Escribir al local|bot[oó]n/i);
+    expect(q.replace(/[^\p{L}]/gu, '').length).toBeGreaterThan(20);
+  });
+  it('un saludo suelto («¡Claro! 🙂») se completa con lo que sí es cierto: «Eso lo ve directamente nuestro equipo.»', () => {
+    expect(quedo('¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo.')).toContain('Eso lo ve directamente nuestro equipo.');
+    // el caso opuesto: con número válido el texto conserva el botón y no se le agrega nada
+    const con = String(mensajes({ mensajes: [enlace('¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo.', { sinMenu: true })] }).items[0]!['texto']);
+    expect(con).toContain('«Escribir al local»');
+    expect(con).not.toContain('Eso lo ve directamente');
+  });
+});
+
+describe('Voz y tono (05/10): la cola «Para volver al inicio, escribe «menú».» (`amConSeguir`)', () => {
+  const COLA = 'Para volver al inicio, escribe «menú».';
+  const veces = (t: string): number => t.split(COLA).length - 1;
+  it('se agrega UNA vez al mensaje con botón de enlace, y no se duplica si el texto ya la trae (fila 5 y la derivación genérica)', () => {
+    const sin = String(mensajes({ mensajes: [enlace('Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.')] }).items[0]!['texto']);
+    expect(veces(sin)).toBe(1);
+    const ya = String(mensajes({ mensajes: [enlace(`Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. ${COLA}`)] }).items[0]!['texto']);
+    expect(veces(ya)).toBe(1);
+    const carta = '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. ' + COLA;
+    const c = mensajes({ mensajes: [{ tipo: 'enlace', catalogo: true, cuerpo: carta, url: 'https://carta.ejemplo.test/qtaco', botones: [{ id: '', title: 'Ver la carta' }] }] }).items[0]!;
+    expect(veces(String(c['texto']))).toBe(1);
+    expect(c['payload'].interactive.action.parameters.display_text).toBe('Ver la carta');
+  });
+  it('con `sinMenu` (comprobante en espera) no se agrega: el menú no está disponible', () => {
+    const t = String(mensajes({ mensajes: [enlace('Tu pedido #K7Q2 ya está con nuestro equipo. Para cancelarlo, toca «Escribir al local».', { sinMenu: true })] }).items[0]!['texto']);
+    expect(veces(t)).toBe(0);
+  });
+});
+
+describe('Voz y tono (05/10): el pie del QR con el resumen del pedido (`amQr`)', () => {
+  const PIE_REAL = '¡Gracias por tu pedido! Es el #K7Q2: 1 × Orden de 3 tacos de birria, recojo en el local.\nTotal a pagar con este QR: 55 Bs (solo la comida).\nEscanéalo con la app de tu banco (la cuenta es de Q\' Taco SRL) y después envíame aquí la foto o el PDF del comprobante.';
+  const COBRO = { activo: true, qrUrl: 'https://qr.ejemplo.test/qtaco.png', titular: "Q' Taco SRL" };
+  it('el pie nuevo del cobro real sale como imagen con su pie íntegro (no dispara «qr_real_con_rotulo_simulado»)', () => {
+    const r = mensajes({ ruta: 'confirmar', pedido: PEDIDO, mensajes: [qr({ cuerpo: PIE_REAL })] }, { cfg: { cobro: COBRO } });
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0]!['payload'].type).toBe('image');
+    expect(r.items[0]!['payload'].image.caption).toBe(PIE_REAL);
+    expect(JSON.stringify(r.items[0]!['resumen'])).not.toContain('qr_rechazado');
+  });
+  it('el caso opuesto: un producto llamado «prueba» o «simulado» en el pie REAL sí lo rechaza (la red del QR real sigue en pie); por eso el resumen se omite en código', () => {
+    for (const nombre of ['Combo prueba', 'Taco simulado']) {
+      const pie = PIE_REAL.replace('Orden de 3 tacos de birria', nombre);
+      const r = mensajes({ ruta: 'confirmar', pedido: PEDIDO, mensajes: [qr({ cuerpo: pie })] }, { cfg: { cobro: COBRO } });
+      expect(r.items[0]!['payload'].type, nombre).toBe('interactive');
+      expect(String(r.items[0]!['texto']), nombre).toContain('Disculpa, eso no lo puedo resolver por aquí');
+    }
+  });
+});
+
+describe('Voz y tono (05/10): la reserva anotada con el botón «Ver ubicación» (Google Maps)', () => {
+  const MAPA = 'https://maps.app.goo.gl/AbC123';
+  const ANOTADA = '¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Arce 2345 🙌';
+  // La regla real de `comun.js` (`vmEnlaceDeMapa`): se corta del archivo de producción, no se reescribe aquí.
+  const comun = readFileSync(join(CARPETA, '../lib/comun.js'), 'utf8');
+  const REGLA = comun.slice(comun.indexOf('const VM_ENLACE_DE_MAPA'), comun.indexOf('// Una lista (arreglo o CSV)'));
+  const mapa = (url: unknown, enviados: J[] = [OK(1)]) => mensajes(
+    { mensajes: [{ tipo: 'enlace', mapa: true, cuerpo: ANOTADA, url }], aviso: { tipo: 'reserva', datos: {} } },
+    { armados: [armado('reserva')], enviados, extra: REGLA });
+
+  it('la regla se cortó bien del archivo de producción', () => {
+    expect(REGLA).toContain('function vmEnlaceDeMapa');
+  });
+  it('con un enlace de mapas válido sale UN solo botón «Ver ubicación» que abre ESE enlace (nunca el chat del local)', () => {
+    const r = mapa(MAPA);
+    const i = r.items[0]!;
+    expect(r.items).toHaveLength(1);
+    expect(i['payload'].interactive.type).toBe('cta_url');
+    expect(i['payload'].interactive.action.parameters).toEqual({ display_text: 'Ver ubicación', url: MAPA });
+    expect(i['texto']).toBe(ANOTADA);
+    expect(JSON.stringify(i['payload'])).not.toMatch(/wa\.me|Escribir al local/);
+    expect(i['respaldo']).toContain(`Ver ubicación: ${MAPA}`);
+  });
+  it('sin enlace válido sale el texto SIN botón (ni «Escribir al local»)', () => {
+    for (const malo of ['', undefined, 'http://maps.app.goo.gl/AbC123', 'https://malo.test/maps', 'https://maps.app.goo.gl.malo.test/x', 'javascript:alert(1)', 'https://www.google.com/maps/' + 'a'.repeat(200)]) {
+      const i = mapa(malo).items[0]!;
+      expect(i['payload'].type, String(malo)).toBe('text');
+      expect(i['payload'].text.body, String(malo)).toBe(ANOTADA);
+      expect(JSON.stringify(i['payload']), String(malo)).not.toMatch(/cta_url|Ver ubicación|wa\.me/);
+    }
+  });
+  it('la reserva anotada con el aviso CAÍDO no sale: cae en la derivación (AM_PASE), con o sin enlace de mapas', () => {
+    const i = mapa(MAPA, [FALLA]).items[0]!;
+    expect(String(i['texto'])).toContain('Disculpa, eso no lo puedo resolver por aquí');
+    expect(JSON.stringify(i['payload'])).not.toContain('Ver ubicación');
+  });
+});

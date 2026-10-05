@@ -211,6 +211,29 @@ function cbHayQr(cobro) {
 // El QR: pie y mensaje
 // ---------------------------------------------------------------------------
 
+// Voz 05/10 (6a): el resumen corto del pedido para el pie del QR y para la confirmación del comprobante: «1 × Birriamen, 2 × Taco de birria, recojo en el local»
+// (hasta 3 productos y «… y N más»; sin dirección, sin precios ni notas: la dirección es un dato personal y el pie del QR sale al chat). `lineas` = las del pedido
+// (nunca un precio del modelo, solo `cantidad` y `nombre`). '' si no hay nada que decir o si el texto cae en la red de frases prohibidas (el resumen se omite, no
+// el mensaje); con `real` también se omite si un producto se llama «prueba»/«simulado»: el pie del QR real no puede traer esas palabras (`amQr`).
+function cbResumenCorto(lineas, modalidad, opciones) {
+  const o = cbEsObjeto(opciones) ? opciones : {};
+  const partes = [];
+  for (const l of Array.isArray(lineas) ? lineas : []) {
+    if (!cbEsObjeto(l)) continue;
+    const nombre = cbLinea(l.nombre, 40);
+    const cant = Math.floor(Number(l.cantidad));
+    if (nombre && cant >= 1) partes.push(cant + ' × ' + nombre);
+  }
+  if (!partes.length) return '';
+  let txt = partes.slice(0, 3).join(', ') + (partes.length > 3 ? ', … y ' + (partes.length - 3) + ' más' : '');
+  const entrega = modalidad === 'delivery' ? 'delivery' : (modalidad === 'recojo' ? 'recojo en el local' : '');
+  if (entrega) txt += ', ' + entrega;
+  const canon = cbCanon(txt);
+  if (CB_PROHIBIDAS.test(canon)) return '';
+  if (o.real === true && /simulad|simulacr|demostracion|prueba/.test(canon)) return '';
+  return txt;
+}
+
 // El pie del QR (hasta 1.024 caracteres, el tope de Meta). `pedido` = {codigo, total}.
 // Sin un total válido devuelve '': no se manda un QR sin decir cuánto se paga.
 function cbCaption(pedido, opciones) {
@@ -223,9 +246,11 @@ function cbCaption(pedido, opciones) {
   // sanea, y si cae en la red de palabras prohibidas se omite.
   let titular = cbLinea(o.titular, 120);
   if (CB_PROHIBIDAS.test(cbCanon(titular))) titular = '';
-  const cabeza = codigo ? 'Pedido #' + codigo + '. ' : '';
+  const resumenReal = cbResumenCorto(p.lineas, p.modalidad, { real: true });
+  const resumenSim = cbResumenCorto(p.lineas, p.modalidad);
+  const cabeza = codigo ? 'Pedido #' + codigo + (resumenSim ? ' (' + resumenSim + ')' : '') + '. ' : '';
   // Voz 05/10: el QR real abre agradeciendo y nombrando el pedido («¡Gracias por tu pedido! Es el #YZBL.»); el simulado conserva su rótulo y no se toca.
-  const cabezaReal = codigo ? '¡Gracias por tu pedido! Es el #' + codigo + '.\n' : '¡Gracias por tu pedido!\n';
+  const cabezaReal = codigo ? '¡Gracias por tu pedido! Es el #' + codigo + (resumenReal ? ': ' + resumenReal : '') + '.\n' : '¡Gracias por tu pedido!' + (resumenReal ? ' ' + resumenReal + '.' : '') + '\n';
   const delivery = o.delivery === true ? '; el delivery se paga aparte, al repartidor' : '';
   if (o.simulado === true) {
     // Simulado: el rótulo va primero y no se nombra al titular (no hay cuenta a la que pagar).
@@ -253,7 +278,7 @@ function cbMensajeQr(pedido, cobro, opciones) {
   const url = typeof c.qrUrl === 'string' ? c.qrUrl : '';
   if (c.activo !== true || !cbUrlSegura(url) || total === null || id === '') return null;
   const o = cbEsObjeto(opciones) ? opciones : {};
-  const cuerpo = cbCaption({ codigo: p.codigo, total: total }, {
+  const cuerpo = cbCaption({ codigo: p.codigo, total: total, lineas: p.lineas, modalidad: p.modalidad }, {
     titular: c.titular, moneda: o.moneda, delivery: o.delivery === true,
   });
   return {
@@ -449,6 +474,9 @@ function cbTextoAlCliente(resultado, opciones) {
   const o = cbEsObjeto(opciones) ? opciones : {};
   const cod = cbCodigo(o.codigo);
   const pedido = cod ? 'tu pedido #' + cod : 'tu pedido';
+  // Voz 05/10 (6a): cuando los datos coinciden, la confirmación dice de qué pedido se trata («tu pedido #X (1 × …, recojo en el local)»).
+  const resumen = cbLinea(o.resumen, 200);
+  const pedidoCon = resumen && cod ? pedido + ' (' + resumen + ')' : pedido;
   const salio = o.avisoSalio === true;
   const sinAviso = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.';
   const guardar = 'Guarda tu comprobante por si te lo pedimos.';
@@ -457,11 +485,11 @@ function cbTextoAlCliente(resultado, opciones) {
   if (resultado === 'cuadra') {
     return salio
       ? {
-        cuerpo: gracias + ' Los datos coinciden con ' + pedido + '. Ya lo pasé a nuestro equipo, que revisa el pago en nuestro banco antes de despachar tu pedido.',
+        cuerpo: gracias + ' Los datos coinciden con ' + pedidoCon + '. Ya lo pasé a nuestro equipo, que revisa el pago en nuestro banco antes de despachar tu pedido.',
         enlace: false, aviso: true,
       }
       : {
-        cuerpo: gracias + ' Los datos coinciden con ' + pedido + '. ' + sinAviso,
+        cuerpo: gracias + ' Los datos coinciden con ' + pedidoCon + '. ' + sinAviso,
         enlace: true, aviso: true,
       };
   }

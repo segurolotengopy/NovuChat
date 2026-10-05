@@ -48,6 +48,8 @@ const PROHIBIDAS = [
   'tu pago se reflejó', 'pago listo', 'pago ok', 'tu pago está ok', 'tu pago está completo', 'todo en orden con tu pago', 'quedó saldado',
   'tu cuenta quedó saldada', 'tu pedido está cancelado', 'ya nos pagaste', 'gracias por pagar', 'ya pagaste, gracias', 'PAGO ACEPTADO POR EL BANCO',
   'gracias por tu pago jeje',
+  // Voz y tono (05/10): lo que NO se puede decir al anotar una reserva ni al cancelar un pedido.
+  'tu pedido quedó cancelado', 'Listo, Ana: reservamos tu mesa para el viernes 9 de octubre a las 20:00.', 'tu reserva quedó confirmada', 'tu pedido quedó cancelado y no se cobra',
 ];
 // Lo honesto: el comprobante llegó, los datos coinciden o no, y quien confirma es el banco.
 const HONESTAS = [
@@ -78,6 +80,27 @@ const HONESTAS = [
   'Para tu solicitud de reserva tengo: jueves 8 de octubre a las 19:00, 2 personas, celebración: aniversario, pedido especial: mesa tranquila. Me falta: a nombre de quién (nombre y apellido).',
   'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Tu pedido sigue guardado.',
   'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.',
+  // Voz y tono (05/10): los textos nuevos de cara al cliente (guía de tono, filas 4 a 20 y reserva) pasan las tres redes.
+  '¡Hola! 👋 Gracias por escribir a Q\' Taco. Soy el asistente virtual. ¿Qué te gustaría hacer?', '¿Qué te gustaría hacer ahora?', '¡Hola de nuevo! 👋 ¿Qué te gustaría hacer?',
+  'Listo, cancelé tu pedido. Cuando quieras empezar otro, toca «Hacer un pedido».', 'Cancelé tu pedido #K7Q2. Cuando quieras empezar otro, toca «Hacer un pedido».',
+  'Listo, borré los datos de esa reserva. ¿Qué te gustaría hacer ahora?',
+  '¡Gracias por escribirnos! 🕒 Ahora estamos fuera de nuestro horario de pedidos. Atendemos de 11:00 a 22:00. Mientras tanto, puedes reservar una mesa con el botón.',
+  '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
+  'Todavía tienes un pedido sin confirmar: 1 × Birriamen, 2 × Taco de birria.', 'Si está todo bien, toca «Confirmar pedido».',
+  'Listo, cambié tu pedido a recojo en el local.', 'Listo, cambié tu pedido a delivery.',
+  '¡Gracias por tu pedido! Es el #K7Q2: 1 × Birriamen, recojo en el local.\nTotal a pagar con este QR: 21 Bs (solo la comida).\nEscanéalo con la app de tu banco (la cuenta es de Q\' Taco SRL) y después envíame aquí la foto o el PDF del comprobante.',
+  'Sigo esperando el comprobante de tu pedido #K7Q2: envíame aquí la foto o el PDF. Si necesitas el QR otra vez, toca «Reenviar QR».',
+  'Gracias por enviar tu comprobante. Los datos coinciden con tu pedido #K7Q2 (1 × Birriamen, recojo en el local). Ya lo pasé a nuestro equipo, que revisa el pago en nuestro banco antes de despachar tu pedido.',
+  'Gracias por enviar tu comprobante. Veo una diferencia con tu pedido #K7Q2: el comprobante dice 1 Bs y tu pedido es de 21 Bs. Ya lo pasé a nuestro equipo para que lo revise; guárdalo por si te lo pedimos. Si quieres escribirnos directamente, toca el botón.',
+  'Gracias por enviarlo de nuevo. Como no se lee bien, ya lo pasé a nuestro equipo para que revise tu pedido #K7Q2 directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.',
+  'Gracias por enviar el comprobante de tu pedido #K7Q2. Ya lo pasé a nuestro equipo para que lo revise directamente; guárdalo por si te lo pedimos.',
+  'Gracias por enviarlo. No pude leer bien tu comprobante: ¿me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?',
+  'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.', '¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo.',
+  'El costo del delivery no lo tengo por aquí 🙏. Toca «Escribir al local» y consúltalo con nuestro equipo.',
+  '¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Arce 2345 🙌',
+  '¡Con gusto! 🙌 Cuéntame en un mensaje para cuántas personas, qué día y a qué hora, y a nombre de quién (nombre y apellido).',
+  'Gracias, ya tengo: jueves 8 de octubre, 2 personas. Solo me falta: la hora.',
+  'No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.',
   'Cuando tu pago llegue al banco, ellos lo revisan.', 'Tu depósito ingresará en 24 horas según tu banco.', 'Si ya pagaste, envíame el comprobante.', 'Cancelar pedido', 'Hemos recibido tu comprobante de pago.', 'El delivery no está incluido: se lo pagas al repartidor al recibir.',
 ];
 
