@@ -395,7 +395,10 @@ function intencionDeVolver(norm, tolerante) {
   const hayDejar = palabras.some(esDejar);
   const hayEstaba = palabras.some(esEstaba);
   // Un rechazo («no lo dejes como estaba», «no quiero dejarlo») NUNCA es «volver»: con pedido nuevo en curso no es nada; al elegir de nuevo, se pregunta.
-  const rechazo = /\bno (quiero|queremos|lo|me|vayas a|deseo)( (lo|me))? (dejar|dejarlo|dejalo|dejes|deje|deses)\b/.test(norm) || /\bno (quiero|queremos) (que )?(lo )?(dejes|dejen|dejemos)\b/.test(norm);
+  const rechazo = /\bno (quiero|queremos|lo|me|vayas a|deseo)( (lo|me))? (dejar|dejarlo|dejalo|dejes|deje|deses)\b/.test(norm) || /\bno (quiero|queremos) (que )?(lo )?(dejes|dejen|dejemos)\b/.test(norm)
+    // «no dejes como estaba», «ya no dejes…», «mejor no dejes…», «no la dejes», «no lo dejen», «no dejarlo», «no dejar…»: un «no» seguido (con «lo/la/me/se/te» a lo sumo) del verbo.
+    // El imperativo afirmativo («no, déjalo…», «dejala», «deja») no está en la lista: «No déjalo como estaba no más.» sigue siendo «volver».
+    || /\bno (lo |la |me |se |te )*(dejes|dejen|deje|deses|dejar|dejarlo|dejarla)\b/.test(norm);
   if (rechazo) return tolerante && !/\d/.test(norm) && palabras.length <= 6 && todas(VOCAB_DUDA) ? 'duda' : '';
   // Formas que no llevan el verbo (cerradas).
   const SIN_VERBO = /^((ya|no|si|mejor|pues|es que|entonces) )*(como estaba( antes)?|como antes|lo que tenia|lo anterior|el anterior|mi pedido anterior|(volver|vuelve|volvamos|regresa|regresar) (al|a mi|a el) (pedido )?(anterior|de antes)|(volver|vuelve|volvamos|regresa|regresar) a mi pedido|(manten|mantener|mantenlo|mantengamoslo|mantenga)( mi| el)?( pedido)?|(no|ya no) (quiero )?(cambiar|cambio)( nada)?|no cambiar nada|cancelar( el)? cambio|cancela( el)? cambio|olvida el cambio)( no mas| nomas| igual)?( por favor)?$/;

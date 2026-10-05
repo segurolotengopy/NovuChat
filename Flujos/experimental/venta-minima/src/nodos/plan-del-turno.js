@@ -597,11 +597,13 @@ function dejarComoEstaba() {
   if (!a || !Array.isArray(a.carrito) || !a.carrito.length) return mostrarPaso();
   en.carrito = a.carrito;
   // El pedido guardado pudo quedar viejo (hay hasta 60 min): se revalida contra la carta de AHORA (precio, productos que ya no están) y se avisa.
-  revalidarCarrito();
+  // El orden importa: primero se revalida y recién entonces se decide si el id `cat_…` del checkout sigue valiendo (si algo cambió, NO: el servidor
+  // coteja el comprobante contra el total de ESE id, que ya no es el del pedido).
+  const cambio = revalidarCarrito();
   en.entrega = Object.assign(entregaVacia(), a.entrega && typeof a.entrega === 'object' ? a.entrega : {});
   en.pendiente = [];
   // El `cat_…` del checkout vuelve con el pedido: `armarPedido` lo usa solo si la huella sigue coincidiendo (el carrito no cambió).
-  en.pedidoWeb = a.pedidoWeb && typeof a.pedidoWeb === 'object' ? a.pedidoWeb : null;
+  en.pedidoWeb = !cambio && a.pedidoWeb && typeof a.pedidoWeb === 'object' ? a.pedidoWeb : null;
   en.carritoAnterior = null;
   en.preguntoDejar = false;
   ruta = 'boton:dejar_como_estaba';
@@ -677,6 +679,12 @@ function revalidarCarrito() {
     vigentes.push(Object.assign({}, l, { nombre: item.nombre, precio: item.precio, forma: item.forma, piezas: item.piezas, area: item.area, moneda: item.moneda }));
   }
   en.carrito = vigentes;
+  // Si algo cambió, el pedido ya no es el que escribió el checkout: se suelta su id `cat_…` (el servidor coteja contra el total de ese id) y el pedido
+  // sigue con id propio (`ped-…`) y el total de AHORA.
+  if (quitadas.length || conPrecioNuevo.length) {
+    if (en.pedidoWeb) errores.push('carrito_con_id_propio: revalidado');
+    en.pedidoWeb = null;
+  }
   if (quitadas.length) notas.push('Ya no tenemos ' + unirY(quitadas.map((n) => '«' + n + '»')) + ': ' + (quitadas.length > 1 ? 'los' : 'lo') + ' quité de tu pedido.'
     + (vigentes.length ? '' : ' Tu pedido quedó vacío: elige otra vez desde la carta.'));
   if (conPrecioNuevo.length) notas.push('Cambió el precio de ' + unirY(conPrecioNuevo.map((n) => '«' + n + '»')) + ': revisa el total antes de confirmar.');
@@ -895,9 +903,14 @@ function confirmarPedido() {
   // Sin respuesta del panel no se confirma nada: no se sabe si hay delivery ni qué cobro corresponde (se deriva).
   if (cfg.panelSinRespuesta === true) return derivar('panel sin respuesta: no se confirma el pedido');
   // Si falta algo (carrito, forma, entrega, datos), se muestra lo que falta: no se confirma.
+  // Con la carta vacía (todo agotado o inactivo, aunque la consola haya contestado 200) no hay con qué validar precios: se pasa con el local en lugar de
+  // confirmar con precios guardados.
+  if (!cartaDelNegocio().length) return derivar('carta sin cargar: no se confirma el pedido');
+  // Antes de confirmar se revalida contra la carta de ahora (primero, para que `quitarSinDelivery` use el área ya revalidada): si cambió un precio o un
+  // producto ya no está, se muestra el resumen con la nota (no se confirma). Solo en ese caso raro el cliente recibe un mensaje más.
+  const cambio = revalidarCarrito();
   quitarSinDelivery();
-  // Antes de confirmar se revalida contra la carta de ahora: si cambió un precio o un producto ya no está, se muestra el resumen con la nota (no se confirma).
-  if (revalidarCarrito()) return mostrarPedido();
+  if (cambio) return mostrarPedido();
   const completo = en.pendiente.length === 0 && en.carrito.length > 0 && en.entrega.entrega
     && !(en.entrega.entrega === 'delivery' && pdFaltanEntrega(en.entrega, t.nombrePerfil).length);
   if (!completo) return mostrarPedido();

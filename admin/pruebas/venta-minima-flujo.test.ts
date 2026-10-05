@@ -5310,6 +5310,67 @@ describe('M1/M2. «dejarlo como estaba» solo con formas cerradas y sin trabar e
   });
 });
 
+describe('N2. un «no» seguido del verbo dejar es un rechazo, nunca «volver al pedido anterior»', () => {
+  const RECHAZOS = [
+    'no dejes como estaba', 'ya no dejes como estaba', 'mejor no dejes como estaba', 'no la dejes como estaba', 'no lo dejen como estaba',
+    'no dejes el pedido como estaba', 'no dejarlo como estaba', 'no dejar como estaba', 'no dejes así', 'no dejes igual', 'no la dejes así',
+  ];
+  function trasCambiar() {
+    const r = armarPedido({ ventana: 5 });
+    r.c.toca('p|cambiar', 'Cambiar algo');
+    return r;
+  }
+
+  it.each(RECHAZOS)('tolerante («%s» justo después de «Cambiar algo»): NO vuelve al anterior; se pregunta una vez', (dicho) => {
+    const r = trasCambiar();
+    const t = r.c.escribe(dicho);
+    expect(cuerpos(t).join('\n'), dicho).not.toContain('Total de la comida');
+    expect(cuerpos(t)[0], dicho).toBe('¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?');
+    expect(estadoDe(r.w.mundo)['carritoAnterior'], dicho).not.toBeNull();
+  });
+
+  it.each(RECHAZOS)('estricto («%s» con un pedido nuevo en curso): NO vuelve al anterior ni pregunta; sigue su camino al modelo', (dicho) => {
+    const r = trasCambiar();
+    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery', direccion: 'Calle Sucre 12' });
+    r.c.escribe('quiero 2 tacos de birria con delivery a Calle Sucre 12');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
+    r.w.estado.extraccion = EX([], { entrega: '' });
+    const t = r.c.escribe(dicho);
+    expect(t.llamadas.extraer, dicho).toHaveLength(1);
+    expect(cuerpos(t).join('\n'), dicho).not.toContain('¿Quieres dejar tu pedido como estaba');
+    expect((estadoDe(r.w.mundo)['carrito'] as J[])[0]!['cantidad'], dicho).toBe(2);
+  });
+
+  it.each(['No déjalo como estaba no más.', 'no, déjalo como estaba', 'déjalo como estaba', 'dejala como estaba', 'deja como estaba', 'no dejalo', 'no, déjalo no más'])(
+    'negando: la imperativa afirmativa («%s») SIGUE siendo volver al pedido anterior', (dicho) => {
+      const r = armarPedido({ ventana: 5 });
+      const antes = cuerpos(r.resumen)[0]!;
+      r.c.toca('p|cambiar', 'Cambiar algo');
+      expect(cuerpos(r.c.escribe(dicho))[0], dicho).toBe(antes);
+    },
+  );
+});
+
+describe('N3. carta vacía con respuesta 200 al confirmar: se pasa con el local, no se confirma con precios guardados', () => {
+  it('con todo agotado/inactivo, «Confirmar pedido» deriva (aviso + botón) y no manda QR ni confirma', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.estado.panel = panel({ ...COBRO_REAL, catalogo: [] });
+    const t = confirmarPedido(r);
+    expect(cuerpos(t)[0]).toContain('Esto prefiero que lo vea una persona del restaurante');
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(t.mensajes).toHaveLength(1);
+    expect(estadoDe(r.w.mundo)['pedido']).toBeNull();
+    expect(estadoDe(r.w.mundo)['paso']).not.toBe('esperando_comprobante');
+  });
+  it('guarda del orden (revalidar y luego quitarSinDelivery): un producto que cambió de área se trata con la del momento de confirmar (hoy `pdQuitarSinDelivery` ya mira la carta viva: esta prueba lo fija, no lo distingue del orden anterior)', () => {
+    const r = armarPedido({ ventana: 5, entrega: 'delivery', config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('tacos de birria', 2, 'unidad'), ln('horchata', 1)] });
+    // Antes de confirmar la horchata deja de estar en «Bebidas» (cambia de área): la revalidación va primero, así que ya no se quita por delivery.
+    r.w.estado.panel = panel({ ...COBRO_REAL, catalogo: CATALOGO.map((i) => (i['id'] === 'horchata' ? { ...i, area: 'Postres' } : i)) });
+    const t = confirmarPedido(r);
+    expect(cuerpos(t).join('\n')).not.toContain('Por delivery no enviamos Horchata');
+  });
+});
+
 describe('L1. «Dejarlo como estaba» y «Confirmar» revalidan el pedido contra la carta de ahora', () => {
   const catalogoCon = (cambia: (i: J) => J | null): J[] => CATALOGO.map(cambia).filter((i): i is J => i !== null);
 
