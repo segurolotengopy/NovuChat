@@ -34,6 +34,7 @@
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
 import { randomBytes } from 'node:crypto';
+import { IDS_FLUJOS, documentoDeFlujo } from '../../functions/src/registro.ts';
 import {
   ID_CLIENTE, clienteDeTenant, comprobarDestino, guardarEnlaceDeContrasena, raizDelProyecto,
 } from './enlace-privado.mjs';
@@ -50,7 +51,8 @@ const NOMBRE_ADMIN = opcion('nombre-admin') ?? '';
 const FLUJOS = (opcion('flujos') ?? 'agendamiento').split(',').map((f) => f.trim()).filter(Boolean);
 const CLIENTE = opcion('cliente') ?? clienteDeTenant(TENANT);
 
-const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);
+// Los flujos válidos salen del registro: no se repiten aquí.
+const FLUJOS_VALIDOS = new Set(IDS_FLUJOS);
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 
@@ -87,8 +89,8 @@ initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 const auth = getAuth();
 
-// Mismo mapa que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
-const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
+// El documento de cada flujo sale del registro.
+const DOCUMENTO = Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]));
 
 console.log(`\n  Negocio    : ${TENANT} · ${NOMBRE}`);
 console.log(`  Flujos     : ${FLUJOS.join(', ')}`);
