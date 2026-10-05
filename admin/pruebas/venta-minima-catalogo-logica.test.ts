@@ -401,30 +401,77 @@ describe('el carrito que vuelve de la página', () => {
     expect(estadoDe(m)['carrito']).toEqual([expect.objectContaining({ id: 'nachos', cantidad: 50 })]);
   });
 
-  it('delivery: con la dirección del carrito y sin referencia, el flujo la pide (y el nombre, si el perfil no lo da)', () => {
+  it('delivery OPCIONAL (04/10): con la dirección del carrito y sin referencia va DIRECTO al resumen (sin el mensaje de `pedido_datos`); con referencia la muestra', () => {
     const m = crear();
     const t = carrito(m, { entrega: 'envio', direccion: 'Av. Arce 2345, San Jorge' });
     const e = estadoDe(m);
-    expect(e['paso']).toBe('pedido_datos');
-    expect(e['entrega']).toMatchObject({ entrega: 'delivery', modalidad: 'delivery', direccion: 'Av. Arce 2345, San Jorge' });
-    expect(t.textos[0]).toContain('una referencia para llegar');
-    expect(t.textos[0]).not.toContain('la dirección exacta');
-    // sin dirección en el carrito, también la pide
+    expect(e['paso']).toBe('pedido_confirmar');
+    expect(e['entrega']).toMatchObject({ entrega: 'delivery', modalidad: 'delivery', direccion: 'Av. Arce 2345, San Jorge', referencia: '' });
+    expect(t.textos).toHaveLength(1); // un solo mensaje: el resumen (0 de `pedido_datos`)
+    expect(t.textos[0]).toContain('Entrega: delivery a Av. Arce 2345, San Jorge');
+    expect(t.textos[0]).not.toMatch(/necesito|referencia/);
+    // Con la referencia que manda la página nueva, el resumen la muestra y el aviso la lleva.
+    const r = crear();
+    const conRef = carrito(r, { entrega: 'envio', direccion: 'Av. Arce 2345, San Jorge', referencia: 'portón verde' });
+    expect(estadoDe(r)['entrega']).toMatchObject({ direccion: 'Av. Arce 2345, San Jorge', referencia: 'portón verde' });
+    expect(conRef.textos[0]).toContain('Entrega: delivery a Av. Arce 2345, San Jorge (portón verde)');
+    const confirmado = turno(r, { mensaje: boton('p|confirmar', 'Confirmar pedido') });
+    expect(JSON.stringify(confirmado.plan!['aviso'])).toContain('portón verde');
+    // La referencia de más de 150 caracteres se recorta y la de un salto de línea queda en una línea.
+    const largo = crear();
+    carrito(largo, { entrega: 'envio', direccion: 'Av. Arce 2345', referencia: 'x'.repeat(300) });
+    expect(String((estadoDe(largo)['entrega'] as J)['referencia']).length).toBeLessThanOrEqual(150);
+    // Un carrito de la página VIEJA (sin la clave `referencia`) sigue igual: dirección sin referencia, directo al resumen.
+    // Y sin dirección, la pide (la única exigencia).
     const m2 = crear();
-    expect(carrito(m2, { entrega: 'envio', direccion: '' }).textos[0]).toContain('la dirección exacta');
+    const sin = carrito(m2, { entrega: 'envio', direccion: '' });
+    expect(sin.textos[0]).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
+    expect(estadoDe(m2)['paso']).toBe('pedido_datos');
+    // Una dirección inválida («calle») sigue pidiéndose.
+    const m3 = crear();
+    const mala = carrito(m3, { entrega: 'envio', direccion: 'calle' });
+    expect(mala.textos[0]).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
   });
 
-  it('delivery: lo que no sale por delivery (Bebidas) se quita con su nota; con recojo se queda', () => {
+  it('un carrito NUEVO con dirección no hereda la referencia del anterior (la referencia viaja con su dirección)', () => {
+    const m = crear();
+    carrito(m, { entrega: 'envio', direccion: 'Av. Arce 2345', referencia: 'portón verde' });
+    expect((estadoDe(m)['entrega'] as J)['referencia']).toBe('portón verde');
+    const t = carrito(m, { pedidoId: 'cat_otro_0777', entrega: 'envio', direccion: 'Calle 21 de Calacoto 100' });
+    expect(estadoDe(m)['entrega']).toMatchObject({ direccion: 'Calle 21 de Calacoto 100', referencia: '' });
+    expect(t.textos[0]).toContain('Entrega: delivery a Calle 21 de Calacoto 100');
+    expect(t.textos[0]).not.toContain('portón verde');
+    // Un carrito de retiro conserva lo anterior (como siempre): no trae dirección que reemplace nada.
+    const r = carrito(m, { pedidoId: 'cat_otro_0778', entrega: 'retiro' });
+    expect(estadoDe(m)['entrega']).toMatchObject({ direccion: 'Calle 21 de Calacoto 100' });
+    expect(r.textos[0]).toContain('Entrega: recojo');
+  });
+
+  it('el nombre de quien recibe sale del último nombre de perfil visto (`nombrePerfil` del estado) sin bloquear el pedido', () => {
+    const m = crear();
+    turno(m, { mensaje: texto('hola') }); // un turno de WhatsApp: guarda el nombre de perfil
+    expect(typeof estadoDe(m)['nombrePerfil']).toBe('string');
+    const t = carrito(m, { entrega: 'envio', direccion: 'Av. Arce 2345, San Jorge' });
+    expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
+    expect(t.textos).toHaveLength(1);
+  });
+
+  it('delivery: con `areasSinDelivery` configurada, lo que no sale por delivery se quita con su nota; con recojo se queda (Q\'Taco ya NO la tiene: 04/10)', () => {
     const items = [
       { id: 'nachos', nombre: 'Nachos Supremos', cantidad: 1, subtotal: 58 }, { id: 'horchata', nombre: 'Horchata', cantidad: 1, subtotal: 20 },
     ];
-    const m = crear();
+    const m = crear({ areasSinDelivery: 'Bebidas' });
     const t = carrito(m, { items, total: 78, entrega: 'envio', direccion: 'Av. Arce 2345, San Jorge' });
     expect(estadoDe(m)['carrito'].map((l: J) => l['id'])).toEqual(['nachos']);
     expect(t.textos.join('\n')).toContain('Por delivery no enviamos Horchata');
-    const m2 = crear();
+    const m2 = crear({ areasSinDelivery: 'Bebidas' });
     carrito(m2, { items, total: 78, entrega: 'retiro' });
     expect(estadoDe(m2)['carrito'].map((l: J) => l['id'])).toEqual(['nachos', 'horchata']);
+    // Con la config REAL de Q'Taco (sin áreas) nada se quita por delivery.
+    const m3 = crear();
+    const real = carrito(m3, { items, total: 78, entrega: 'envio', direccion: 'Av. Arce 2345, San Jorge' });
+    expect(estadoDe(m3)['carrito'].map((l: J) => l['id'])).toEqual(['nachos', 'horchata']);
+    expect(real.textos.join('\n')).not.toContain('no enviamos');
   });
 
   it('si el local no hace delivery y el carrito pedía envío, se dice y se toma el recojo', () => {

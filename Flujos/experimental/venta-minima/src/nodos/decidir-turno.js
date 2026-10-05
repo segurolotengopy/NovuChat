@@ -167,7 +167,7 @@ if (idBoton) {
   if (b.tipo === 'r' && paso === 'reserva_confirmar' && (p0 === 'enviar' || p0 === 'corregir')) return salir('boton', { boton: b });
   if (b.tipo === 'q' && paso === 'esperando_comprobante') {
     if (p0 === 'reenviar') return salir('reenviar_qr', { boton: b });
-    if (p0 === 'cancelar') return salir('menu', { boton: b, motivo: 'cancelar_pedido', limpiar: 'pedido' });
+    if (p0 === 'cancelar') return salir('cancelar', { boton: b, motivo: 'cancelar_pedido', limpiar: 'pedido' });
   }
   return viejo();
 }
@@ -190,6 +190,20 @@ if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar
 // Con un comprobante en espera (`esperando_comprobante`) «menú» no sale del cobro (muestra el recordatorio) y lo
 // demás recibe el recordatorio. «Menú» no borra nada; «cancelar» y «empezar de nuevo» sí limpian.
 const enComprobante = paso === 'esperando_comprobante';
+// CANCELAR (04/10): «cancela mi pedido» y sus variantes naturales CANCELAN el pedido guardado (`Plan del turno`: `aCancelar`), no derivan a una persona.
+// Un rechazo («no cancela», «no quiero cancelar») NO cancela: el pedido sigue donde estaba.
+const cancelacion = intencionDeCancelar(norm);
+if (cancelacion === 'no') {
+  if (enComprobante || (paso.indexOf('pedido') === 0 && (previo.carrito.length > 0 || previo.carritoAnterior))) return salir('boton', { motivo: 'no_cancela' });
+} else if (cancelacion && enComprobante) {
+  // Con el QR enviado, escribir «cancela mi pedido» es lo mismo que tocar «Cancelar pedido».
+  if (cancelacion !== 'reserva') return salir('cancelar', { motivo: 'cancelar_pedido', limpiar: 'pedido' });
+}
+// «¿Qué tengo guardado?»: muestra el pedido guardado con sus botones (sin pedido, lo dice). Con un QR esperando comprobante rige el recordatorio de siempre.
+if (pedidosOn && !enComprobante && /^(ver |mostrar |muestrame |dime |cual es |quiero ver )?(mi |el )?(pedido|carrito)( guardado| actual)?$|^(que|cual) (tengo|llevo|pedi)( guardado| en mi pedido| en el pedido| pedido)?$|^cuanto (va|llevo)( en mi pedido| en el pedido| mi pedido)?$|^(mi pedido|mi carrito)$/.test(norm)
+  && /\b(pedido|carrito|tengo|llevo|pedi|va)\b/.test(norm) && norm !== 'pedido' && norm.length <= 40) {
+  return salir('boton', { motivo: 'ver_pedido' });
+}
 const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm);
 const quiereReservar = /reserv|\bmesa\b/.test(norm);
 // FALSOS POSITIVOS (revisión del PR #382): las intenciones globales de CARTA y RESERVA valen en `inicio` y `menu` sin límite de largo, pero
@@ -206,11 +220,13 @@ if (/^(menu|menu principal|inicio|volver al menu)$/.test(norm) || (!enComprobant
 }
 if (!enComprobante) {
   if (/^(empezar de nuevo|empezar otra vez|volver a empezar|reiniciar)$/.test(norm)) return salir('menu', { motivo: 'reinicio', limpiar: 'todo' });
-  if (/^(cancelar pedido)$/.test(norm)) return salir('menu', { motivo: 'reinicio', limpiar: 'pedido' });
-  if (/^(cancelar reserva)$/.test(norm)) return salir('menu', { motivo: 'reinicio', limpiar: 'reserva' });
+  if (cancelacion === 'pedido') return salir('cancelar', { motivo: 'reinicio', limpiar: 'pedido' });
+  if (cancelacion === 'reserva') return salir('menu', { motivo: 'reinicio', limpiar: 'reserva' });
+  if (cancelacion === 'todo') return salir('cancelar', { motivo: 'reinicio', limpiar: 'todo' });
   // «cancelar» a secas cancela lo que se está haciendo; sin nada en curso, todo.
-  if (/^(cancelar|cancela)$/.test(norm)) {
-    return salir('menu', { motivo: 'reinicio', limpiar: paso.indexOf('reserva') === 0 ? 'reserva' : (paso.indexOf('pedido') === 0 ? 'pedido' : 'todo') });
+  if (cancelacion === 'solo') {
+    if (paso.indexOf('reserva') === 0) return salir('menu', { motivo: 'reinicio', limpiar: 'reserva' });
+    return salir('cancelar', { motivo: 'reinicio', limpiar: paso.indexOf('pedido') === 0 ? 'pedido' : 'todo' });
   }
   // La carta, en cualquier paso. Un pedido que la nombra («tres tacos de la carta») no es esta intención.
   if (pedidosOn && globalCorto && norm.length <= 80 && !/\d/.test(norm) && (/\b(carta|catalogo)\b/.test(norm) || (/\bque tienen\b/.test(norm) && !pideAlgo))
@@ -355,6 +371,22 @@ function estadoBase() {
     reserva: null, pedido: null, vacias: 0, ilegibles: 0, transferencias: [],
     carritoGuardado: 0,
   });
+}
+
+// ¿Qué quiere cancelar? '' = nada; 'no' = lo rechaza («no cancela», «no quiero cancelar»); 'pedido' («cancela mi pedido», «ya no quiero el pedido»);
+// 'reserva'; 'todo' («cancela todo»); 'solo' = la palabra a secas («cancelar», «quiero cancelar»: se cancela lo que se está haciendo). Mensaje ENTERO
+// y corto: «cancelar» dentro de otra frase («¿se puede cancelar después?») no cancela nada.
+function intencionDeCancelar(norm) {
+  if (!norm || norm.length > 50 || /\d/.test(norm)) return '';
+  if (/\bno\b.{0,20}\b(cancel\w*|anul\w*)\b/.test(norm) || /\b(cancel\w*|anul\w*)\b.{0,12}\bno\b/.test(norm)) return /\b(cancel|anul)/.test(norm) ? 'no' : '';
+  const V = '(cancelar|cancela|cancelo|cancelame|anular|anula|anulame)';
+  if (new RegExp('^(quiero |quisiera |deseo |necesito |voy a |por favor |ya |entonces )*' + V + ' (la |mi |esta |esa )?reserva( por favor)?$').test(norm)) return 'reserva';
+  if (new RegExp('^(quiero |quisiera |deseo |necesito |voy a |por favor |ya |entonces )*' + V + ' (todo|todo mi pedido|todo el pedido|todo por favor)( por favor)?$').test(norm)) return 'todo';
+  if (new RegExp('^(quiero |quisiera |deseo |necesito |voy a |por favor |ya |entonces )*' + V + '( me)? ?(mi |el |este |ese )(pedido|orden)( por favor)?$').test(norm)
+    || /^(cancelar|cancela) pedido( por favor)?$/.test(norm)) return 'pedido';
+  if (/^(ya )?no quiero (el |mi |este |ese )?(pedido|nada)( por favor)?$/.test(norm)) return 'pedido';
+  if (new RegExp('^(quiero |quisiera |deseo |necesito |voy a |por favor |ya |entonces )*' + V + '(lo|la|melo)?( por favor)?$').test(norm)) return 'solo';
+  return '';
 }
 
 // Distancia de edición (Levenshtein) entre dos palabras cortas.

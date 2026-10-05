@@ -742,23 +742,26 @@ describe('pdFaltanEntrega y pdFusionarEntrega', () => {
     expect(L.pdFaltanEntrega(undefined, 'Juan')).toEqual([]);
     expect(L.pdFaltanEntrega(null, '')).toEqual([]);
   });
-  it('delivery sin datos pide direccion, referencia y nombre, en ese orden', () => {
-    expect(L.pdFaltanEntrega(deliv(), 'Juan')).toEqual(['direccion', 'referencia', 'nombre']);
-    expect(L.pdFaltanEntrega(deliv(), '')).toEqual(['direccion', 'referencia', 'nombre']);
+  it('delivery sin datos pide SOLO la direccion: la referencia y el nombre ya no se exigen (decision del 04/10: delivery opcional)', () => {
+    expect(L.pdFaltanEntrega(deliv(), 'Juan')).toEqual(['direccion']);
+    expect(L.pdFaltanEntrega(deliv(), '')).toEqual(['direccion']);
   });
-  it('el nombre de perfil vale como nombre solo con dos palabras o mas', () => {
-    expect(L.pdFaltanEntrega(deliv(), 'Juan Pérez')).toEqual(['direccion', 'referencia']);
-    expect(L.pdFaltanEntrega(deliv(), 'Juan')).toContain('nombre');
-    expect(L.pdFaltanEntrega(deliv({ nombre: 'Ana' }), 'Juan')).toEqual(['direccion', 'referencia']);
-    expect(L.pdFaltanEntrega(deliv({ nombre: 'x' }), 'Juan')).toContain('nombre'); // una letra no es un nombre
-  });
-  it('una direccion de verdad (5 o mas caracteres, con letras y al menos dos palabras o numeros) y una referencia de 3 o mas completan los datos', () => {
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana' }), '')).toEqual([]);
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'calle 21 de Calacoto', referencia: 'casa verde', nombre: 'Ana' }), '')).toEqual([]);
-    for (const mala of ['', 'x', 'calle', 'Calacoto', 'a 1', '12345', '#### 123']) {
-      expect(L.pdFaltanEntrega(deliv({ direccion: mala, referencia: 'casa', nombre: 'Ana' }), '')).toContain('direccion');
+  it('el nombre (de perfil o dado) ya no cuenta para lo que falta: nunca aparece «nombre» ni «referencia»', () => {
+    for (const perfil of ['Juan Pérez', 'Juan', '']) {
+      for (const extra of [{}, { nombre: 'Ana' }, { nombre: 'x' }, { referencia: 'ab' }, { referencia: 'casa verde' }]) {
+        const falta = L.pdFaltanEntrega(deliv(extra), perfil);
+        expect(falta, `${perfil} ${JSON.stringify(extra)}`).toEqual(['direccion']);
+      }
     }
-    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'ab', nombre: 'Ana' }), '')).toEqual(['referencia']);
+  });
+  it('una direccion de verdad (5 o mas caracteres, con letras y al menos dos palabras o numeros) completa los datos, con o sin referencia ni nombre; una mala sigue pidiendose', () => {
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345' }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana' }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'calle 21 de Calacoto' }), '')).toEqual([]);
+    expect(L.pdFaltanEntrega(deliv({ direccion: 'Av. Arce 2345', referencia: 'ab' }), '')).toEqual([]);
+    for (const mala of ['', 'x', 'calle', 'Calacoto', 'a 1', '12345', '#### 123']) {
+      expect(L.pdFaltanEntrega(deliv({ direccion: mala, referencia: 'casa', nombre: 'Ana' }), '')).toEqual(['direccion']);
+    }
   });
   it('una ubicacion compartida valida vale como direccion; una invalida no', () => {
     const ok = deliv({ ubicacion: { lat: -16.5, lng: -68.15 }, referencia: 'frente al parque', nombre: 'Ana' });
@@ -768,9 +771,9 @@ describe('pdFaltanEntrega y pdFusionarEntrega', () => {
     }
   });
   it('la forma principal es {entrega, modalidad, ...}; `tipo` solo se acepta por compatibilidad, y manda `entrega` > `modalidad` > `tipo`', () => {
-    expect(L.pdFaltanEntrega({ entrega: 'delivery' }, 'Juan')).toHaveLength(3);
-    expect(L.pdFaltanEntrega({ modalidad: 'delivery' }, 'Juan')).toHaveLength(3);
-    expect(L.pdFaltanEntrega({ tipo: 'delivery' }, 'Juan')).toHaveLength(3); // estado guardado antes del cambio
+    expect(L.pdFaltanEntrega({ entrega: 'delivery' }, 'Juan')).toEqual(['direccion']);
+    expect(L.pdFaltanEntrega({ modalidad: 'delivery' }, 'Juan')).toEqual(['direccion']);
+    expect(L.pdFaltanEntrega({ tipo: 'delivery' }, 'Juan')).toEqual(['direccion']); // estado guardado antes del cambio
     // negando: con recojo en la forma principal, un `tipo` viejo no lo vuelve delivery
     expect(L.pdFaltanEntrega({ entrega: 'recojo', modalidad: 'recojo', tipo: 'delivery' }, 'Juan')).toEqual([]);
     expect(L.pdFaltanEntrega({ modalidad: 'recojo', tipo: 'delivery' }, 'Juan')).toEqual([]);
@@ -873,12 +876,10 @@ describe('pdResumen y pdLineaCompacta', () => {
 });
 
 describe('textos fijos del pedido', () => {
-  it('«Para el delivery necesito …» con la lista en espanol y la aclaracion del delivery', () => {
-    expect(L.pdTextoFaltanEntrega(['direccion', 'referencia', 'nombre'])).toBe(
-      'Para el delivery necesito la dirección exacta, una referencia para llegar y el nombre de quien recibe. El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.');
-    expect(L.pdTextoFaltanEntrega(['referencia'])).toContain('necesito una referencia para llegar.');
-    expect(L.pdTextoFaltanEntrega(['direccion', 'nombre'])).toContain('la dirección exacta y el nombre de quien recibe.');
-    expect(L.pdTextoFaltanEntrega([])).toContain('los datos de entrega');
+  it('«Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).»: sin la frase del QR y sin pedir el nombre', () => {
+    const txt = 'Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).';
+    for (const f of [['direccion'], ['direccion', 'referencia', 'nombre'], [], undefined]) expect(L.pdTextoFaltanEntrega(f as string[])).toBe(txt);
+    expect(txt).not.toMatch(/QR|nombre de quien|repartidor/);
   });
   it('«No encontré …»: con 1, 2 o 3 sugerencias (sin repetir, con su precio) y sin ellas', () => {
     const s = (k: string) => porId(k);
@@ -1053,7 +1054,7 @@ describe('las pruebas negando de §7 (diez no negociables), de punta a punta en 
     expect(t.resumen).not.toMatch(/\b90\b/);
     const p = L.pdNuevoPedido(TEL, 'Ana Soria', t.r.carrito, entrega, 80, 'BOB', AHORA);
     expect(p.total).toBe(80);
-    expect(L.pdTextoFaltanEntrega(['direccion'])).toContain('El delivery no va en el QR');
+    expect(L.pdTextoFaltanEntrega(['direccion'])).not.toContain('QR'); // la frase del QR ya no va en la pregunta (decisión del 04/10)
     // negando: en recojo no hay delivery que aclarar
     expect(turno({ lineas: [{ producto: 'plato huasteco', cantidad: 1 }] }).resumen).not.toContain('delivery');
   });

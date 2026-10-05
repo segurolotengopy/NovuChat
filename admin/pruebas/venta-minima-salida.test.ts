@@ -1018,7 +1018,7 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
       '¿«3 tacos de birria» es 1 orden de 3 (55 Bs) o 3 sueltos (63 Bs)?',
       'No encuentro «micheladas» en la carta. ¿Me lo escribes como figura en la carta?',
       '¿Es para delivery o para recoger en el local?',
-      'Para el delivery necesito la dirección. El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.',
+      'Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).',
       'Tu pedido:\n• 1 × Orden de 3 tacos de birria (sin cebolla): 55 Bs\nEntrega: recojo en el local.\nTotal de la comida: 55 Bs.',
       PIE,
       'Recibí tu comprobante y los datos coinciden con tu pedido #K7Q2. Ya lo pasé al restaurante; ellos revisan el pago en su banco antes de despacharlo.',
@@ -1385,6 +1385,33 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     // NEGANDO: con «pocos» (o sin el dato) el 🙂 sigue; con «muchos» también.
     for (const cfg of [{ nivelEmojis: 'pocos' }, { nivelEmojis: 'muchos' }, {}]) {
       expect(mensajes({ mensajes: [texto('Ya va en camino.')] }, { cfg }).items[0]!['texto'], JSON.stringify(cfg)).toContain('🙂');
+    }
+  });
+});
+
+describe('D (04/10): ningún texto nombra un botón que no se envía', () => {
+  const TEXTOS = [
+    GENERICO,
+    'Tu pedido #K7Q2 ya está con nuestro equipo. Para cancelarlo, toca «Escribir al local».',
+    'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Tu pedido sigue guardado.',
+  ];
+  it('con número de recepción válido el texto nombra «Escribir al local» Y el payload lleva ese botón (cta_url al chat del local)', () => {
+    for (const t of TEXTOS) {
+      const i = mensajes({ mensajes: [enlace(t, { sinMenu: true })] }).items[0]!;
+      expect(i['payload'].interactive.type, t).toBe('cta_url');
+      expect(i['payload'].interactive.action.parameters.display_text, t).toBe('Escribir al local');
+      expect(i['payload'].interactive.action.parameters.url, t).toContain(`https://wa.me/${REC}`);
+      expect(String(i['texto']), t).toContain('«Escribir al local»');
+    }
+  });
+  it('sin número válido (marcador, vacío o el propio cliente) el texto NO nombra el botón ni lo promete, y el payload es solo texto', () => {
+    for (const numeroRecepcion of ['REEMPLAZAR_NUMERO_RECEPCION_QTACO', '', CLIENTE]) {
+      for (const t of TEXTOS) {
+        const i = mensajes({ mensajes: [enlace(t, { sinMenu: true })] }, { cfg: { numeroRecepcion } }).items[0]!;
+        expect(i['payload'].type, t).toBe('text');
+        expect(String(i['payload'].text.body), `${numeroRecepcion} ${t}`).not.toMatch(/Escribir al local|bot[oó]n/i);
+        expect(JSON.stringify(i), t).not.toMatch(/cta_url|wa\.me/);
+      }
     }
   });
 });

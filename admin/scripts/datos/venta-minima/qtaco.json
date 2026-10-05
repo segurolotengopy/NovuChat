@@ -30,7 +30,7 @@
     "promosActivo": true,
     "areasExcluidas": "cocteleria,cervezas,postres",
     "palabrasExcluidas": "helado,paleta,postre,cerveza,chela,michelada,coctel,cocktail,trago,vino,shot,tequila,ron,whisky,pisco,singani,bebida alcoholica,vodka,gin,fernet,mojito,margarita,chop,cuba libre,champan,paloma,pina colada,cubita,azulito,pils,hoppy,ipa,lemon drop,pispireta,ginebra,whiskey,wiski,licor,sangria,caipirinha,aperol,daiquiri,heladito",
-    "areasSinDelivery": "Bebidas",
+    "areasSinDelivery": "",
     "horario": "REEMPLAZAR_HORARIO_PEDIDOS_QTACO",
     "zonasReserva": "salón,terraza",
     "maxPersonasReserva": 12,

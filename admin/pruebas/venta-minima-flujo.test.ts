@@ -1771,14 +1771,28 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
   });
 
   it('una bebida suelta por delivery se quita con su texto; en recojo, queda', () => {
-    const delivery = armarPedido({ entrega: 'delivery', lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
+    // `areasSinDelivery` ya no es «Bebidas» en Q'Taco (04/10: es falso, el área solo tiene bebidas sin alcohol que SÍ se envían): la regla sigue vigente
+    // para quien la configure, y se prueba poniéndola.
+    const delivery = armarPedido({ entrega: 'delivery', config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
     const texto = cuerpos(delivery.resumen).join('\n');
     expect(texto).not.toMatch(/× Horchata/); // no queda en el pedido…
     expect(texto).toMatch(/1 × Queso Fundido/);
     expect(texto).toContain('Por delivery no enviamos Horchata: lo quité de tu pedido.'); // …y se le dice que se quitó
     expect(texto).toContain('Total de la comida: 75 Bs.'); // el total es solo lo que queda
-    const recojo = armarPedido({ entrega: 'recojo', lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
+    const recojo = armarPedido({ entrega: 'recojo', config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
     expect(cuerpos(recojo.resumen).join('\n')).toMatch(/2 × Horchata/);
+  });
+
+  it('C (04/10): con la config REAL de Q\'Taco (`areasSinDelivery` vacío) una bebida SÍ va por delivery y no se afirma «por delivery no enviamos»', () => {
+    expect(configBase(QTACO)['areasSinDelivery']).toBe('');
+    const delivery = armarPedido({ entrega: 'delivery', lineas: [ln('gaseosas', 2), ln('queso fundido', 1)] });
+    const texto = cuerpos(delivery.resumen).join('\n');
+    expect(texto).toMatch(/2 × Gaseosas/);
+    expect(texto).not.toMatch(/no enviamos|lo quité/);
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    expect(cuerpos(c.toca('m|pedido', 'Hacer un pedido')).join('\n')).not.toMatch(/no enviamos/);
   });
 
   it('una campaña vencida (el servidor no la manda) → menú normal, sin ficha', () => {
@@ -1898,27 +1912,40 @@ describe('pedido', () => {
     expect(cuerpos(sug).join('\n')).toMatch(/Queso Fundido/);
   });
 
-  it('delivery sin dirección → la pide (y el delivery no va en el QR); con los datos, sigue al resumen', () => {
+  it('delivery sin dirección → la pide, SOLO la dirección (la referencia es opcional); con la dirección sola, sigue al resumen', () => {
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
-    expect(cuerpos(r.resumen)[0]).toMatch(/Para el delivery necesito la dirección/);
-    expect(cuerpos(r.resumen)[0]).toContain('El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.');
+    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
+    expect(cuerpos(r.resumen)[0]).not.toContain('QR');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     expect(r.resumen.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
-    r.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: 'portón verde', nombre: '' });
-    const siguiente = r.c.escribe('Calle Falsa 123, portón verde');
-    ver('delivery: datos', siguiente);
+    // Con la dirección y SIN referencia ni nombre: directo al resumen (la referencia ya no se pide).
+    r.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: '', nombre: '' });
+    const siguiente = r.c.escribe('Calle Falsa 123');
+    ver('delivery: dirección sola', siguiente);
     expect(cuerpos(siguiente).join('\n')).toContain('Entrega: delivery a Calle Falsa 123');
     expect(siguiente.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(cuerpos(siguiente).join('\n')).not.toMatch(/referencia|\(\)/);
+    // Con la referencia opcional, el resumen la muestra.
+    const conRef = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
+    conRef.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: 'portón verde', nombre: '' });
+    expect(cuerpos(conRef.c.escribe('Calle Falsa 123, portón verde')).join('\n')).toContain('Entrega: delivery a Calle Falsa 123 (portón verde)');
+    // Una dirección inválida («calle») se sigue pidiendo.
+    const mala = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
+    mala.w.estado.extraccion = EX([], { entrega: '', direccion: 'calle', referencia: '', nombre: '' });
+    const t = mala.c.escribe('calle');
+    expect(cuerpos(t)[0]).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
+    expect(estadoDe(mala.w.mundo)['paso']).toBe('pedido_datos');
   });
 
-  it('una ubicación compartida cuenta como la dirección (decisión de la integración): falta la referencia, que se pide, y no se confirma nada', () => {
+  it('una ubicación compartida cuenta como la dirección: va directo al resumen (sin pedir referencia ni nombre), y sin confirmar nada', () => {
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
     const t = r.c.ubicacion();
-    expect(cuerpos(t).join('\n')).toMatch(/Para el delivery necesito una referencia para llegar/);
-    expect(cuerpos(t).join('\n')).not.toMatch(/dirección exacta/);
-    expect(t.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
+    expect(cuerpos(t).join('\n')).toContain('Entrega: delivery a ubicación compartida');
+    expect(cuerpos(t).join('\n')).not.toMatch(/necesito/);
+    expect(t.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
     expect(t.avisos).toHaveLength(0);
-    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
   });
 
   it('fuera de horario → «Por ahora no estamos tomando pedidos», sin carrito y sin llamar al modelo; con el horario abierto, sí', () => {
@@ -2095,7 +2122,7 @@ describe('carta', () => {
     const texto = cuerpos(carta).join('\n');
     for (const quedan of ['Promo Dúo', 'Nachos Supremos', 'Queso Fundido', 'Tacos de Birria', 'Enchiladas Suizas', 'Horchata']) expect(texto, quedan).toContain(quedan);
     for (const sale of ['Michelada', 'Pils', 'Rompope', 'Helado', 'Cervezas', 'Cócteles']) expect(texto, sale).not.toContain(sale);
-    expect(texto).toContain('Por delivery no enviamos bebidas.');
+    expect(texto).not.toContain('Por delivery no enviamos'); // sin `areasSinDelivery` no se afirma nada del delivery (04/10)
     w.estado.extraccion = EX([ln('michelada', 2)]);
     const t = c.escribe('quiero 2 micheladas');
     // Es un producto EXCLUIDO a propósito: su texto amable (no «no lo encuentro»), con la carta a un toque y sin aviso al restaurante.
@@ -3581,8 +3608,9 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     const qr = confirmarPedido(r);
     expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
     const abierto = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado');
-    // Con un QR pendiente: «carta», «reserva», «cancelar» y los botones del menú no hacen nada nuevo (recordatorio).
-    for (const palabra of ['carta', 'quiero reservar una mesa', 'cancelar', 'cancelar pedido', 'hola gracias']) {
+    // Con un QR pendiente: «carta», «reserva» y los botones del menú no hacen nada nuevo (recordatorio).
+    // («cancelar» y «cancelar pedido» ya no están aquí: con el QR enviado CANCELAN el pedido y lo dicen, 04/10; ver «A. cancelar»)
+    for (const palabra of ['carta', 'quiero reservar una mesa', 'hola gracias']) {
       const t = r.c.escribe(palabra);
       expect(cuerpos(t)[0], palabra).toMatch(/Estoy esperando el comprobante|falta tu comprobante/);
       expect(t.llamadas.extraer, palabra).toHaveLength(0);
@@ -4904,7 +4932,7 @@ describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger;
     const c = con(w, CLIENTE, 'Carlos');
     c.escribe('hola');
     c.toca('m|pedido', 'Hacer un pedido');
-    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery', direccion: 'Calle Falsa 123' });
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery' });
     const t = c.escribe('quiero 4 tacos de birria con delivery a Calle Falsa 123');
     return { w, c, t };
   }
@@ -5206,7 +5234,7 @@ describe('M1/M2. «dejarlo como estaba» solo con formas cerradas y sin trabar e
   /** Un pedido NUEVO a medias (delivery sin referencia ni nombre) con el pedido anterior todavía guardado. */
   function nuevoADelivery() {
     const r = trasCambiar();
-    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery', direccion: 'Calle Sucre 12' });
+    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery' });
     r.c.escribe('quiero 2 tacos de birria con delivery a Calle Sucre 12');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     expect(estadoDe(r.w.mundo)['carritoAnterior']).not.toBeNull();
@@ -5331,7 +5359,7 @@ describe('N2. un «no» seguido del verbo dejar es un rechazo, nunca «volver al
 
   it.each(RECHAZOS)('estricto («%s» con un pedido nuevo en curso): NO vuelve al anterior ni pregunta; sigue su camino al modelo', (dicho) => {
     const r = trasCambiar();
-    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery', direccion: 'Calle Sucre 12' });
+    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery' });
     r.c.escribe('quiero 2 tacos de birria con delivery a Calle Sucre 12');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     r.w.estado.extraccion = EX([], { entrega: '' });
@@ -5464,5 +5492,168 @@ describe('L3. el delivery que quita productos dice que no vuelven solos', () => 
     expect(cuerpos(u).join('\n')).toContain('Si vuelves a recojo, vuelve a agregarlo. Tu pedido quedó vacío: elige otra vez desde la carta.');
     expect(cuerpos(u).join('\n')).toContain('Esta es nuestra carta');
     expect(estadoDe(v.w.mundo)['paso']).toBe('pedido');
+  });
+});
+
+// ================================================================================================
+// PRUEBAS REALES DE ANDRES (04/10; ejecuciones n8n #20589, #20593, #20588, #20570, #20597): cancelar, «¿qué tengo guardado?», delivery opcional.
+// ================================================================================================
+describe('A. «cancela mi pedido» cancela el pedido guardado (no deriva) y lo dice', () => {
+  const CANCELADO = 'Listo, cancelé tu pedido. Cuando quieras empezar otro, toca «Hacer un pedido».';
+
+  it.each([
+    'cancela mi pedido', 'cancelar pedido', 'cancela', 'ya no quiero el pedido', 'cancela todo', 'quiero cancelar', 'Cancelar mi pedido por favor', 'cancelalo',
+    'quiero cancelar mi pedido', 'cancélame el pedido', 'ya no quiero nada',
+  ])('«%s» con el resumen guardado: vacía el carrito, vuelve al menú y dice que quedó cancelado (un mensaje, con los botones del menú)', (dicho) => {
+    const r = armarPedido({ ventana: 5 });
+    const t = r.c.escribe(dicho);
+    expect(cuerpos(t)[0], dicho).toBe(CANCELADO);
+    expect(t.mensajes, dicho).toHaveLength(1);
+    expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>), dicho).toEqual(expect.arrayContaining(['Hacer un pedido', 'Reservar mesa']));
+    expect(t.avisos, dicho).toHaveLength(0);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+    const e = estadoDe(r.w.mundo);
+    expect(e['carrito'], dicho).toEqual([]);
+    expect(e['pedido'], dicho).toBeNull();
+    expect(e['carritoAnterior'], dicho).toBeNull();
+    expect(e['paso'], dicho).toBe('menu');
+    expect(cuerpos(t).join('\n'), dicho).not.toContain('Esto prefiero que lo vea una persona');
+  });
+
+  it('también cancela lo que dejó «Cambiar algo» (el pedido anterior) y lo que está a medias (pedido_datos)', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.c.toca('p|cambiar', 'Cambiar algo');
+    expect(estadoDe(r.w.mundo)['carritoAnterior']).not.toBeNull();
+    const t = r.c.escribe('cancela mi pedido');
+    expect(cuerpos(t)[0]).toBe(CANCELADO);
+    expect(estadoDe(r.w.mundo)['carritoAnterior']).toBeNull();
+    const d = armarPedido({ ventana: 5, entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
+    expect(estadoDe(d.w.mundo)['paso']).toBe('pedido_datos');
+    expect(cuerpos(d.c.escribe('cancela mi pedido'))[0]).toBe(CANCELADO);
+    expect(estadoDe(d.w.mundo)['carrito']).toEqual([]);
+  });
+
+  it('con el QR ya enviado, «cancela mi pedido» y el botón «Cancelar pedido» dicen «Cancelé tu pedido #X.» (antes volvía al saludo sin decirlo)', () => {
+    for (const via of ['texto', 'boton'] as const) {
+      const r = armarPedido({ ventana: 5 });
+      confirmarPedido(r);
+      expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
+      const codigo = String((estadoDe(r.w.mundo)['pedido'] as J)['codigo']);
+      const t = via === 'texto' ? r.c.escribe('cancela mi pedido') : r.c.toca('q|cancelar', 'Cancelar pedido');
+      expect(cuerpos(t)[0], via).toBe(`Cancelé tu pedido #${codigo}. Cuando quieras empezar otro, toca «Hacer un pedido».`);
+      expect(t.mensajes, via).toHaveLength(1);
+      expect(t.avisos, via).toHaveLength(0);
+      expect(estadoDe(r.w.mundo)['pedido'], via).toBeNull();
+      expect(estadoDe(r.w.mundo)['paso'], via).toBe('menu');
+    }
+  });
+
+  it('con el comprobante ya enviado el pedido está con nuestro equipo: se dice la verdad, con el aviso al local y el botón (sin «lo cancelamos nosotros»)', () => {
+    const p = pedidoConComprobante({ ventana: 5 });
+    const codigo = String(pedidosGuardados(p.w.mundo)[0]!['codigo']);
+    const t = p.c.escribe('cancela mi pedido');
+    expect(cuerpos(t)[0]).toBe(`Tu pedido #${codigo} ya está con nuestro equipo. Para cancelarlo, toca «Escribir al local».`);
+    expect(tieneEnlace(t)).toBe(true);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(t.mensajes).toHaveLength(1);
+    expect(cuerpos(t)[0]).not.toMatch(/cancelamos|cancelé|quedó cancelado/);
+  });
+
+  it.each(['no cancela', 'no quiero cancelar', 'no cancelar', 'no cancelo', 'no lo canceles'])(
+    'negando: «%s» NO cancela: el pedido guardado sigue y se muestra', (dicho) => {
+      const r = armarPedido({ ventana: 5 });
+      const resumen = cuerpos(r.resumen)[0]!;
+      const t = r.c.escribe(dicho);
+      expect(cuerpos(t)[0], dicho).toBe(resumen);
+      expect((estadoDe(r.w.mundo)['carrito'] as J[]).length, dicho).toBeGreaterThan(0);
+      expect(estadoDe(r.w.mundo)['paso'], dicho).toBe('pedido_confirmar');
+    },
+  );
+
+  it('negando: «cancelar» dentro de otra frase («¿se puede cancelar después?») no cancela nada', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.estado.extraccion = EX([], { entrega: '' });
+    const t = r.c.escribe('¿se puede cancelar después de confirmar?');
+    expect(cuerpos(t).join('\n')).not.toContain('cancelé');
+    expect((estadoDe(r.w.mundo)['carrito'] as J[]).length).toBeGreaterThan(0);
+  });
+
+  it('sin nada guardado: lo dice (no inventa una cancelación) y ofrece empezar', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    const t = c.escribe('cancela mi pedido');
+    expect(cuerpos(t)[0]).toBe('Todavía no tienes productos en tu pedido. Toca «Hacer un pedido» para empezar.');
+    expect(cuerpos(t).join('\n')).not.toContain('cancelé');
+    expect(t.avisos).toHaveLength(0);
+  });
+
+  it('«cancelar reserva» sigue como siempre (menú) y no toca el pedido guardado', () => {
+    const r = armarPedido({ ventana: 5 });
+    const t = r.c.escribe('cancelar reserva');
+    expect(cuerpos(t)[0]).toContain('¿Qué te gustaría hacer?');
+    expect((estadoDe(r.w.mundo)['carrito'] as J[]).length).toBeGreaterThan(0);
+  });
+});
+
+describe('B. «¿qué tengo guardado?» muestra el pedido guardado (no deriva)', () => {
+  it.each(['qué tengo guardado', 'mi pedido', 'qué pedí', 'cuánto va', 'ver mi pedido', 'qué llevo', 'Qué tengo guardado?', 'cuánto llevo', 'mostrar mi pedido'])(
+    '«%s» con el resumen guardado: vuelve a mostrar el resumen con sus botones (sin derivar ni avisar)', (dicho) => {
+      const r = armarPedido({ ventana: 5 });
+      const resumen = cuerpos(r.resumen)[0]!;
+      const t = r.c.escribe(dicho);
+      expect(cuerpos(t)[0], dicho).toBe(resumen);
+      expect(t.mensajes.flatMap(titulosDe), dicho).toEqual(expect.arrayContaining(['Confirmar pedido', 'Cambiar algo']));
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(t.llamadas.extraer, dicho).toHaveLength(0);
+      expect(t.mensajes, dicho).toHaveLength(1);
+    },
+  );
+
+  it('sin carrito: «Todavía no tienes productos en tu pedido. Toca «Hacer un pedido» para empezar.» con los botones del menú', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    for (const dicho of ['qué tengo guardado', 'mi pedido', 'cuánto va']) {
+      const t = c.escribe(dicho);
+      expect(cuerpos(t)[0], dicho).toBe('Todavía no tienes productos en tu pedido. Toca «Hacer un pedido» para empezar.');
+      expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>), dicho).toContain('Hacer un pedido');
+      expect(t.avisos, dicho).toHaveLength(0);
+    }
+  });
+
+  it('justo después de «Cambiar algo» muestra el pedido anterior con «Dejarlo como estaba»', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.c.toca('p|cambiar', 'Cambiar algo');
+    const t = r.c.escribe('qué tengo guardado');
+    expect(cuerpos(t)[0]).toContain('Tu pedido guardado:');
+    expect(cuerpos(t)[0]).toContain('Total de la comida');
+    expect(t.mensajes.flatMap(titulosDe)).toContain('Dejarlo como estaba');
+  });
+
+  it('negando: con un QR esperando comprobante rige el recordatorio de siempre; y una frase que no es la consulta no la activa', () => {
+    const r = armarPedido({ ventana: 5 });
+    confirmarPedido(r);
+    expect(cuerpos(r.c.escribe('mi pedido'))[0]).toMatch(/falta tu comprobante/);
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'recojo' });
+    const t = c.escribe('quiero mi pedido de 2 tacos de birria');
+    expect(t.llamadas.extraer).toHaveLength(1);
+  });
+});
+
+describe('E. delivery OPCIONAL (decisión de Andres y Silvana, 04/10): referencia opcional y «quién recibe» sin bloquear', () => {
+  it('el pedido por delivery con la dirección sola se envía igual: el aviso no dice «sin referencia» ni pide nada más', () => {
+    const r = armarPedido({ ventana: 5, cobro: false, entrega: 'delivery', extra: { direccion: 'Calle Falsa 123', referencia: '', nombre: '' } });
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(r.resumen.mensajes).toHaveLength(1); // directo al resumen: 0 mensajes de `pedido_datos`
+    expect(r.resumen.llamadas.extraer).toHaveLength(1); // una sola llamada al modelo (la del pedido)
+    const t = confirmarPedido(r);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    const texto = JSON.stringify(t.avisos);
+    expect(texto).toContain('Calle Falsa 123');
+    expect(texto).not.toMatch(/sin referencia|\(\)/);
   });
 });

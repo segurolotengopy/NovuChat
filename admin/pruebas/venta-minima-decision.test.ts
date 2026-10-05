@@ -71,8 +71,8 @@ function pdAgregarLineas(carrito, carta, lineas){ const car = carrito.slice(); c
 function pdResolverForma(carrito, lista, forma){ const car = carrito.slice(); const p = lista[0]; if (forma === 'orden') _sumar(car, p.opciones[0], p.ordenes, p.detalle); else _sumar(car, p.opciones[1], p.cantidad, p.detalle); return { carrito: car, pendiente: lista.slice(1), noEncontrados: [] }; }
 function pdQuitarSinDelivery(carrito, carta, areas){ const ex = areas.map(vmNorm); const quitados = []; const car = carrito.filter(function(l){ if (ex.indexOf(vmNorm(l.area)) >= 0) { quitados.push(l.nombre); return false; } return true; }); return { carrito: car, quitados: quitados }; }
 function pdTotal(carrito){ return carrito.reduce(function(s, l){ return s + Math.round(l.precio * 100) * l.cantidad; }, 0) / 100; }
-function pdFaltanEntrega(e, perfil){ const f = []; if (!e.direccion) f.push('direccion'); if (!e.referencia) f.push('referencia'); if (!e.nombre && vmNorm(perfil).split(' ').length < 2) f.push('nombre'); return f; }
-function pdResumen(carrito, e, o){ return 'Tu pedido:\n' + carrito.map(function(l){ return '• ' + l.cantidad + ' × ' + l.nombre + (l.detalle ? ' (' + l.detalle + ')' : '') + ': ' + (l.precio * l.cantidad) + ' ' + o.moneda; }).join('\n') + '\nEntrega: ' + (e.entrega === 'delivery' ? 'delivery a ' + e.direccion + ' (' + e.referencia + '), recibe ' + e.nombre : 'recojo en el local') + '.\nTotal de la comida: ' + pdTotal(carrito) + ' ' + o.moneda + '.' + (e.entrega === 'delivery' ? '\nEl delivery no está incluido: se lo pagas al repartidor al recibir.' : ''); }
+function pdFaltanEntrega(e, perfil){ const f = []; if (!e.direccion && !e.ubicacion) f.push('direccion'); return f; }
+function pdResumen(carrito, e, o){ return 'Tu pedido:\n' + carrito.map(function(l){ return '• ' + l.cantidad + ' × ' + l.nombre + (l.detalle ? ' (' + l.detalle + ')' : '') + ': ' + (l.precio * l.cantidad) + ' ' + o.moneda; }).join('\n') + '\nEntrega: ' + (e.entrega === 'delivery' ? 'delivery a ' + e.direccion + (e.referencia ? ' (' + e.referencia + ')' : '') + ', recibe ' + e.nombre : 'recojo en el local') + '.\nTotal de la comida: ' + pdTotal(carrito) + ' ' + o.moneda + '.' + (e.entrega === 'delivery' ? '\nEl delivery no está incluido: se lo pagas al repartidor al recibir.' : ''); }
 function pdLineaCompacta(carrito, max){ return carrito.map(function(l){ return l.cantidad + ' ' + l.nombre; }).join(', ').slice(0, max); }
 function vmIdEstable(pre, from, cont, ancla, resp){ const a = ancla > 0 ? ancla : resp; const t = JSON.stringify([pre, a, from, cont]); let h = 7; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 0x100000000; return { id: pre + '-2026-10-05-' + String(from).slice(-4) + '-' + h.toString(36), codigo: vmCodigoCorto(h), huella: h }; }
 function pdNuevoPedido(from, perfil, carrito, e, total, moneda, ahora, ancla){ const k = vmIdEstable('ped', from, carrito, ancla, ahora); return { pedidoId: k.id, codigo: k.codigo, from: from, lineas: carrito.slice(), entrega: Object.assign({}, e), modalidad: e.entrega, total: pdTotal(carrito), moneda: 'BOB', mediaId: null, resultado: null, errores: [] }; }
@@ -85,7 +85,7 @@ function pdNombreCorto(i){ return String(i.nombre).replace(/\s*\([^)]*(orden|uni
 function pdEjemploDePedido(c){ const v = []; const n = []; (Array.isArray(c) ? c : []).forEach(function(i){ const k = i.clave || pdNombreCorto(i); if (n.length < 2 && v.indexOf(k) < 0) { v.push(k); n.push('1 ' + pdNombreCorto(i)); } }); return n.join(' y '); }
 function pdTextoExcluido(n){ return 'Lo siento, «' + n + '» no está disponible para pedir por WhatsApp. ¿Te muestro la carta?'; }
 function pdBotonAgregar(i, c){ return { id: 'g|agregar|' + i.id + '|' + c, title: 'Agregar ' + pdNombreCorto(i) }; }
-function pdTextoFaltanEntrega(f){ const r = { direccion: 'la dirección exacta', referencia: 'una referencia para llegar', nombre: 'el nombre de quien recibe' }; const l = f.map(function(k){ return r[k]; }); return 'Para el delivery necesito ' + (l.length > 1 ? l.slice(0, -1).join(', ') + ' y ' + l[l.length - 1] : l[0]) + '. El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.'; }
+function pdTextoFaltanEntrega(f){ return 'Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).'; }
 
 function rsCuerpoExtraccion(texto, o){ if (!isFinite(Number(o.ahoraMs))) throw new Error('ahoraMs'); return { marcador: 'reserva', texto: texto, zonas: o.zonas }; }
 function rsValidarExtraccion(o){ o = o || {}; return { personas: Number(o.personas) || 0, fecha: o.fecha || '', hora: o.hora || '', zona: o.zona || '', nombre: o.nombre || '', celebracion: o.celebracion || '', requerimiento: o.requerimiento || '' }; }
@@ -104,6 +104,7 @@ function prCampanaDelTexto(campanas, texto, ahora){ const n = vmNorm(texto); ret
 function prFicha(c, carta, ahora){ if (!c || !_vig(c, ahora)) return null; const t = ' ' + vmNorm(c.texto) + ' '; const m = carta.filter(function(i){ return t.indexOf(' ' + vmNorm(i.nombre) + ' ') >= 0; }); return m.length ? { id: String(m[0].id), nombre: m[0].nombre, precio: m[0].precio } : null; }
 function prTexto(f, cfg){ if (!f) return null; const b = []; if (cfg.pedidosActivo === true) b.push({ id: 'g|pedir|' + f.id, title: 'Pedir la promo' }); if (cfg.reservasActivo === true) b.push({ id: 'm|reserva', title: 'Reservar mesa' }); if (cfg.pedidosActivo === true) b.push({ id: 'm|pedido', title: 'Ver la carta' }); return { cuerpo: '¡Hola! Qué bueno que viste nuestra promo. ' + f.nombre + '. Precio: ' + f.precio + ' Bs.', botones: b }; }
 
+function cbCodigo(c){ return String(c === undefined || c === null ? '' : c).replace(/[^A-Za-z0-9]/g, '').slice(0, 12); }
 function cbHayQr(c){ c = c || {}; if (!/^https:\/\//i.test(String(c.qrUrl || ''))) return false; if (c.modo === 'real') return c.activo === true; if (c.modo === 'simulado') return c.activo !== true; return false; }
 function cbCaption(p, o){ if (o.simulado === true) return 'PRUEBA · COBRO SIMULADO: este QR es de demostración, no cobra ni mueve dinero.\nPedido #' + p.codigo + '. Total de la prueba: ' + p.total + ' Bs (solo la comida' + (o.delivery === true ? '; el delivery se paga aparte' : '') + ').\nNo intentes pagarlo. Envíame aquí cualquier foto como comprobante simulado.'; return 'Pedido #' + p.codigo + '. Total a pagar por QR: ' + p.total + ' Bs (solo la comida' + (o.delivery === true ? '; el delivery se paga aparte, al repartidor' : '') + ').\nEscanea el QR con la app de tu banco.'; }
 function cbResultado(resp, previo){ const r = resp || {}; const b = r.body || {}; let res = 'sin_cotejo'; if (r.statusCode === 200 && ['cuadra', 'no_cuadra', 'ilegible'].indexOf(b.resultado) >= 0) res = b.resultado; else if (r.statusCode === 409 && b.error === 'sin_sena_pendiente' && (previo === undefined || previo === 'cuadra')) res = 'ya_cotejado'; return { resultado: res, diferencias: res === 'no_cuadra' && Array.isArray(b.diferencias) ? b.diferencias : [], importe: null, cierreId: b.cierreId || '' }; }
@@ -272,7 +273,7 @@ describe('Decidir turno: el orden de §4.5, sin modelo', () => {
     expect(estadoDe(m2)['paso']).toBe('esperando_comprobante');
     expect(turno(m2, { boton: 'q|reenviar' }).d['accion']).toBe('reenviar_qr');
     const cancelar = turno(m2, { boton: 'q|cancelar' });
-    expect(cancelar.d['accion']).toBe('menu');
+    expect(cancelar.d['accion']).toBe('cancelar'); // 04/10: cancela de verdad y lo dice (antes volvía al saludo sin decirlo)
     expect(cancelar.d['motivo']).toBe('cancelar_pedido');
     expect(cancelar.d['limpiar']).toBe('pedido');
   });
@@ -304,9 +305,11 @@ describe('Decidir turno: el orden de §4.5, sin modelo', () => {
   });
 
   it('6. «menu», «empezar de nuevo» y «cancelar» vuelven al menú', () => {
-    for (const x of ['menu', 'Menú', 'empezar de nuevo', 'cancelar', 'Cancelar!']) {
+    for (const x of ['menu', 'Menú', 'empezar de nuevo']) {
       expect(turno(crearMundo(), { texto: x }).d['accion'], x).toBe('menu');
     }
+    // «cancelar» ya no vuelve al saludo sin decirlo: es la acción `cancelar` (04/10), que dice que canceló o que no hay nada.
+    for (const x of ['cancelar', 'Cancelar!']) expect(turno(crearMundo(), { texto: x }).d['accion'], x).toBe('cancelar');
     expect(turno(crearMundo(), { texto: 'no quiero cancelar mi vida' }).d['accion']).toBe('menu'); // cae al menú por falta de intención, no por reinicio
     expect(turno(crearMundo(), { texto: 'no quiero cancelar mi vida' }).d['motivo']).toBe('');
   });
@@ -659,17 +662,16 @@ describe('Plan del turno: el pedido', () => {
     expect(ids(s.p!['mensajes'][0])).toEqual(['p|confirmar', 'p|cambiar']);
   });
 
-  it('delivery: pide la entrega, luego los datos que faltan, luego el resumen', () => {
+  it('delivery: pide la entrega, luego SOLO la dirección (la referencia es opcional), luego el resumen', () => {
     const m = crearMundo();
     turno(m, { texto: 'quiero 1 queso fundido', extraccion: extPedido({ lineas: [linea('queso fundido', 1)] }) });
     expect(estadoDe(m)['paso']).toBe('pedido_entrega');
     const datos = registrar(turno(m, { boton: 'e|delivery' }));
-    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito la dirección exacta y una referencia para llegar. El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.');
+    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
     expect(estadoDe(m)['paso']).toBe('pedido_datos');
-    const parcial = turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) });
-    expect(parcial.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito una referencia para llegar. El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.');
-    const fin = registrar(turno(m, { texto: 'casa azul', extraccion: extPedido({ referencia: 'casa azul' }) }));
-    expect(fin.p!['mensajes'][0]['cuerpo']).toContain('Entrega: delivery a Calle 5 (casa azul), recibe Ana Pérez.');
+    // Con la dirección sola ya sigue al resumen (ni referencia ni nombre se exigen).
+    const fin = registrar(turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) }));
+    expect(fin.p!['mensajes'][0]['cuerpo']).toContain('Entrega: delivery a Calle 5, recibe Ana Pérez.');
     expect(fin.p!['mensajes'][0]['cuerpo']).toContain('El delivery no está incluido');
     expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
   });
