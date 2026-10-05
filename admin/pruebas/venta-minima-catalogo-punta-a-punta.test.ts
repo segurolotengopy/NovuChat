@@ -968,3 +968,79 @@ describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúden
     expect(t.avisos.length, dicho).toBeGreaterThan(0);
   });
 });
+
+// =====================================================================================================
+// Batería real (caso M2bX, 3/6): con el resumen de delivery ya dado, un cierre o un pedido de cambio NO es referencia ni dirección
+// (ni dicho por el cliente ni puesto por el modelo en `referencia` / `direccion`)
+// =====================================================================================================
+describe('referencia sin cierres: «eso es todo» y «cámbiame el pedido» no se guardan como referencia ni dirección', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_cierre_' + String(++k).padStart(4, '0') }) });
+    return w;
+  };
+  const sinDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_cierre_' + String(++k).padStart(4, '0') }) });
+    return w;
+  };
+  const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
+  const CIERRES = [
+    'eso es todo', 'Eso es todo', 'nada más', 'nada mas gracias', 'eso nomás', 'listo', 'gracias', 'ya está', 'es todo, gracias',
+    'cámbiame el pedido', 'cambia el pedido', 'modifica el pedido', 'quiero cambiar mi pedido', 'cancela el pedido',
+  ];
+
+  it.each(CIERRES)('«%s» dicho por el cliente (el modelo no asigna nada) no es referencia y no sale en el resumen', (dicho) => {
+    const w = conDireccion();
+    w.estado.extraccion = NADA;
+    const t = turno(w, texto(dicho));
+    expect(ent(w)['referencia'], dicho).toBe('');
+    expect(JSON.stringify(t.mensajes), dicho).not.toContain('(' + dicho);
+    expect(JSON.stringify(t.avisos), dicho).not.toContain(dicho);
+  });
+
+  it.each(CIERRES)('«%s» puesto por el MODELO en `referencia` no se guarda y no sale en el resumen ni en el aviso al local', (dicho) => {
+    const w = conDireccion();
+    w.estado.extraccion = { ...NADA, referencia: dicho };
+    const t = turno(w, texto(dicho));
+    expect(ent(w)['referencia'], dicho).toBe('');
+    // (Cancelar es otro flujo: reinicia el pedido entero, dirección incluida; lo demás conserva la dirección.)
+    if (!/^cancela/.test(dicho)) expect(ent(w)['direccion'], dicho).toBe('Av. Banzer 1234');
+    expect(JSON.stringify(t.mensajes), dicho).not.toContain('(' + dicho);
+    expect(JSON.stringify(t.avisos), dicho).not.toContain(dicho);
+  });
+
+  it.each(CIERRES)('«%s» puesto por el MODELO en `direccion` (con la dirección pendiente) no se guarda ni como dirección ni como referencia', (dicho) => {
+    const w = sinDireccion();
+    w.estado.extraccion = { ...NADA, direccion: dicho };
+    turno(w, texto(dicho));
+    expect(ent(w)['direccion'], dicho).toBe('');
+    expect(ent(w)['referencia'], dicho).toBe('');
+    expect(estadoDe(w)['paso'], dicho).not.toBe('pedido_confirmar');
+  });
+
+  it('el caso real: con la dirección dada y el modelo devolviendo «eso es todo» como referencia, el resumen sigue siendo «Entrega: delivery a Av. Banzer 1234» sin paréntesis', () => {
+    const w = conDireccion();
+    w.estado.extraccion = { ...NADA, referencia: 'eso es todo' };
+    const t = turno(w, texto('eso es todo'));
+    expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234');
+    expect(t.mensajes[0]!.cuerpo).not.toContain('eso es todo');
+  });
+
+  it.each(['A media cuadra del gas', 'Déjale al portero', 'frente a la farmacia, portón verde'])(
+    '«%s» SIGUE siendo una referencia válida: dicha por el cliente y puesta por el modelo', (dicho) => {
+      const a = conDireccion();
+      a.estado.extraccion = NADA;
+      const ta = turno(a, texto(dicho));
+      expect(ent(a)['referencia'], dicho).toBe(dicho);
+      expect(ta.mensajes[0]!.cuerpo, dicho).toContain('(' + dicho + ')');
+      const b = conDireccion();
+      b.estado.extraccion = { ...NADA, referencia: dicho };
+      const tb = turno(b, texto(dicho));
+      expect(ent(b)['referencia'], dicho).toBe(dicho);
+      expect(tb.mensajes[0]!.cuerpo, dicho).toContain('(' + dicho + ')');
+    },
+  );
+});

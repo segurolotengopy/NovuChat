@@ -908,6 +908,10 @@ function aExtraerPedido() {
   // Lo que pone el MODELO también pasa por las reglas del código (revisión de seguridad del PR #435, LOW-A2): una «dirección» sin dígito ni vía fuerte («Déjale al portero»,
   // «A media cuadra del gas», «necesito ayuda») NO es una dirección: pasa a la referencia (si está vacía) y la dirección se vuelve a pedir; y una ayuda dicha en un campo
   // del modelo («{referencia: "necesito ayuda"}») deriva a una persona.
+  // Lo que el MODELO pone en `direccion` o `referencia` pasa por el mismo filtro de cierre y de cambio que el texto libre (batería real, caso M2bX): «eso es todo» o
+  // «cámbiame el pedido» no son una dirección ni una referencia, y no salen en el resumen ni en el aviso al local.
+  if (x.direccion && esCierreOCambio(vmNorm(x.direccion))) x.direccion = '';
+  if (x.referencia && esCierreOCambio(vmNorm(x.referencia))) x.referencia = '';
   const delModelo = vmNorm([x.direccion, x.referencia].join(' '));
   if (!lineas.length && delModelo && pideAyudaPorCodigo(delModelo) && !pareceDato(delModelo)) return derivar('pidió hablar con una persona');
   if (x.direccion && !pareceDireccion(vmNorm(x.direccion))) {
@@ -1033,12 +1037,25 @@ function textoDeDato(x, max) {
   return delCliente(s, max);
 }
 
+// Un cierre («eso es todo», «nada más», «listo», «gracias», «ya está») o un pedido de cambio o de cancelación («cámbiame el pedido», «modifica el pedido», «cancela todo») NO es una dirección
+// ni una referencia: ni dicho por el cliente ni puesto por el modelo en `direccion` o `referencia`. El cierre es una frase hecha SOLO de palabras de cierre (una sola palabra de otra
+// clase, «portero», «gas», «Calle», la saca del filtro); el cambio, un verbo de cambio o cancelación al empezar o junto a «pedido», «orden», «compra» o «todo». `n` ya viene normalizado.
+function esCierreOCambio(n) {
+  const t = String(n || '').trim();
+  if (!t) return false;
+  if (/^((eso|esto|es|todo|nada|mas|nomas|no|ya|esta|listo|lista|gracias|muchas|ok|okey|dale|bueno|pues|entonces|si|por|ahora|con|ahi|asi|bien|perfecto|seria|estamos|estoy|ninguna|ninguno|nadie|chau|adios|hasta|luego|nos|vemos) ?)+$/.test(t)) return true;
+  const verbo = /\b(cambi\w*|modific\w*|corrig\w*|corregir|cancel\w*|anul\w*)\b/;
+  if (/^((quiero|quisiera|necesito|puedes|puede|podrias|podria|mejor|por favor|ya|pues|entonces) )*(cambi\w*|modific\w*|corrig\w*|corregir|cancel\w*|anul\w*)\b/.test(t)) return true;
+  return verbo.test(t) && /\b(pedido|orden|compra|todo)\b/.test(t);
+}
+
 // ¿El texto puede ser un DATO de entrega (dirección o referencia)? Nunca: una petición de persona, una pregunta (con o sin signos), un enlace, una cortesía o negación
 // suelta, una cancelación o «carta/menú», una queja o petición de ayuda, algo de pagos o comprobantes, un cambio de entrega («recoger», «delivery», «que me manden»,
 // «sin delivery») o una orden de comida («quiero 2 tacos»). Los rasgos de un dato (un dígito o una palabra de vía) salvan solo a lo que habla de delivery o a una pregunta
 // escrita sin signos; lo demás se rechaza aunque lleve un número («Pagué 110 Bs, comprobante 123456789»).
 function puedeSerDatoDeEntrega(crudo, n) {
   if (!n || !/[\p{L}\p{N}]/u.test(crudo) || pideUnaPersonaElTexto()) return false;
+  if (esCierreOCambio(n)) return false;
   if (/[?¿]/.test(crudo) || /https?:|www\./i.test(crudo) || crudo.search(AV_ENLACE) >= 0) return false; // (`search` y no `test`: la regla del aviso es global y `test` guarda estado)
   if (/^((mejor|ya|pues|bueno|entonces) )*(no|sin|si|gracias|muchas|ok|okey|listo|hola|buenas|buenos|dale|ya|bueno|nada|menu)\b/.test(n)) return false;
   if (/\b(no|sin) (delivery|envio|domicilio)\b|\b(delivery|envio|domicilio) no\b/.test(n)) return false;
