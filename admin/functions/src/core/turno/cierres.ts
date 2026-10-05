@@ -2,9 +2,6 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, enmascarar, rutaAutenticada } from '../seguridad/firma.js';
-// CABLEADO TEMPORAL (F3b-1b, pasos 2 a 6): este import es el último cruce de la
-// deuda de fronteras y se borra en el paso 7, cuando `ganchos.ts` arma los puertos.
-import { cierreDeVentaLoHaceElCotejo, solicitudTras } from '../../ingesta.js';
 
 /**
  * =============================================================================
@@ -291,21 +288,3 @@ export function crearRegistrarCierre(ganchos: GanchosDelCierre): ReturnType<type
     },
   );
 }
-
-/** Cobro real encendido y con ficha y código: el mismo criterio de `configuracionFlujo` y del cotejo de venta. */
-function cobroRealActivoDeVenta(venta: FirebaseFirestore.DocumentSnapshot): boolean {
-  const c = venta.get('cobroReal') as Record<string, unknown> | undefined;
-  return c?.['activo'] === true && String(c['ficha'] ?? '') !== '' && String(c['cargaUtil'] ?? '') !== '';
-}
-
-// CABLEADO TEMPORAL (F3b-1b, pasos 2 a 6): reproduce lo que `ganchos.ts` armará
-// con los ganchos de Cobros y de Agenda. Se borra en el paso 7.
-export const registrarCierre = crearRegistrarCierre({
-  cobro: {
-    cobroRealActivo: async (leer) => cobroRealActivoDeVenta(await leer('config/venta')),
-    cierreDeVentaLoHaceElCotejo,
-  },
-  solicitud: {
-    solicitudTrasElCierre: (previa, ahoraMs, datos) => solicitudTras(previa, 'cita_agendada', ahoraMs, { cobroReal: datos.cobroReal }),
-  },
-});
