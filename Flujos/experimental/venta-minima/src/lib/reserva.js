@@ -502,7 +502,7 @@ function rsPreguntaFaltantes(faltan, p) {
   else if (falta('fecha')) faltaTxt.push('el día');
   else if (falta('hora')) faltaTxt.push('la hora');
   if (falta('nombre')) faltaTxt.push('a nombre de quién (nombre y apellido)');
-  return (o.reclamo === true ? 'Disculpa, no me quedó claro. ' : '') + 'Tengo: ' + entendido.join(', ') + '. Me falta: ' + _rsListaY(faltaTxt) + '.'
+  return (o.reclamo === true ? 'Disculpa, no me quedó claro. ' : '') + 'Para tu solicitud de reserva tengo: ' + entendido.join(', ') + '. Me falta: ' + _rsListaY(faltaTxt) + '.'
     + (o.reclamo === true && falta('hora') ? ' Escribe la hora así: «19:00».' : '');
 }
 
@@ -514,8 +514,9 @@ function _rsEntendido(r) {
   if (cuando) partes.push(cuando);
   else if (x.hora) partes.push('a las ' + x.hora);
   if (x.personas) partes.push(_rsPersonas(x.personas) + (x.zona ? ' en ' + x.zona : ''));
-  if (x.celebracion) partes.push(x.celebracion);
-  if (x.requerimiento) partes.push(x.requerimiento);
+  // Lo libre del cliente va rotulado, con los mismos rótulos que el resumen: nunca suelto como si lo dijera el asistente.
+  if (x.celebracion) partes.push('celebración: ' + x.celebracion);
+  if (x.requerimiento) partes.push('pedido especial: ' + x.requerimiento);
   if (x.nombre) partes.push('a nombre de ' + x.nombre);
   return partes;
 }
@@ -535,9 +536,11 @@ function rsReclamo(texto) {
 // de lo que el restaurante recibe, la otra. Nunca valida: eso lo hace `rsValidar`, que dice cuando la hora no es de atencion.
 function rsHoraSuelta(texto, reserva, cfg, ahoraMs) {
   const r = reserva && typeof reserva === 'object' ? rsValidarExtraccion(reserva) : null;
-  if (!r || !(r.personas > 0) || r.hora) return '';
+  // Sin fecha no se toma ninguna hora suelta: un «12» puede ser el día. Y un «para 3» no es una hora (puede ser de personas): el prefijo solo
+  // vale con «las»/«la» («a las 7», «para las 7»); un número pelado («19», «7») sí, porque es la respuesta a «¿a qué hora?».
+  if (!r || !(r.personas > 0) || !r.fecha || r.hora) return '';
   const n = _rsNorm(texto).replace(/^(ya )?(te )?(lo )?(dije|puse|escribi|mande) /, '');
-  const m = /^(?:a |para |sobre )?(?:las? )?(\d{1,2})(?: ?(\d{2}))?(?: ?(am|pm|hrs?|horas?|h))?(?: de la (tarde|noche|manana))?(?: en punto)?(?: por favor)?$/.exec(n);
+  const m = /^(?:(?:a|para|sobre) (?:las? )|las? )?(\d{1,2})(?: ?(\d{2}))?(?: ?(am|pm|hrs?|horas?|h))?(?: de la (tarde|noche|manana))?(?: en punto)?(?: por favor)?$/.exec(n);
   if (!m) return '';
   const hh = Number(m[1]);
   const mm = m[2] === undefined ? 0 : Number(m[2]);

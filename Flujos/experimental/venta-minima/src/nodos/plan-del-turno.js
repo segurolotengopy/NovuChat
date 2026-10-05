@@ -349,7 +349,9 @@ function capacidades() {
 function derivar(razon, conservarPaso, extra, sinFraseMenu) {
   // (Las constantes van DENTRO de la función: lo que se declara después del `return` del nodo no llega a inicializarse.)
   const TEXTO_DERIVACION = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos.'
-    + (conservarPaso ? ' Tu pedido sigue esperando el comprobante.' : (sinFraseMenu === true ? '' : ' Para volver al inicio, escribe «menú».'));
+    + (conservarPaso ? ' Tu pedido sigue esperando el comprobante.'
+      // `sinFraseMenu` (costo del delivery, con el pedido en curso): el carrito se conserva, así que el texto no sugiere que se borra nada.
+      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «menú».'));
   ruta = 'transferir:' + razon;
   aviso = { tipo: 'transferencia', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: vmLinea(t.nombrePerfil, 60),
@@ -524,7 +526,7 @@ function aBoton(b) {
     // El pedido anterior NO se pierde sin avisar: queda en `carritoAnterior` (hasta que otro pedido lo reemplace) y el mensaje de la carta lo
     // dice y ofrece «Dejarlo como estaba» (mismo mensaje: 0 mensajes agregados).
     const e = en.entrega;
-    const anterior = { carrito: en.carrito, entrega: e };
+    const anterior = { carrito: en.carrito, entrega: e, pedidoWeb: en.pedidoWeb };
     limpiarCarrito();
     irA('pedido');
     en.entrega = Object.assign(entregaVacia(), { direccion: e.direccion, referencia: e.referencia, nombre: e.nombre });
@@ -550,16 +552,24 @@ function avisarReemplazo() {
   const ultimo = mensajes.length - 1;
   const primero = mensajes[0];
   const dejar = { id: vmIdDeBoton('p', 'dejar'), title: 'Dejarlo como estaba' };
+  // Lo que tiene guardado, corto: hasta 3 ítems y «… y N más» (el mensaje y el botón tienen tope de largo).
+  const lineas = en.carritoAnterior && Array.isArray(en.carritoAnterior.carrito) ? en.carritoAnterior.carrito : [];
+  const piezas = lineas.slice(0, 3).map((l) => l.cantidad + ' × ' + (vmLinea(l.nombre, 40) || 'producto'));
+  const resumen = piezas.join(', ') + (lineas.length > 3 ? ', … y ' + (lineas.length - 3) + ' más' : '');
+  const hoy = resumen ? ' (hoy tienes: ' + resumen + ')' : '';
+  const base = 'Para cambiar tu pedido, vuelve a elegir todo desde la carta: lo que elijas ahí reemplaza tu pedido actual' + hoy + '. Si prefieres dejarlo como estaba, ';
+  const conTexto = base + 'escribe «dejarlo como estaba».';
+  // Carta como enlace (un solo botón de enlace: no admite un botón de respuesta): se pide escribirlo.
   if (primero.tipo === 'enlace' && primero.catalogo === true) {
-    mensajes[0] = Object.assign({}, primero, { cuerpo: 'Esta es nuestra carta. Lo que elijas ahí reemplaza tu pedido actual. Si prefieres dejarlo como estaba, escribe «dejarlo como estaba». Para volver al inicio, escribe «menú».' });
+    mensajes[0] = Object.assign({}, primero, { cuerpo: conTexto });
     return;
   }
   const final = mensajes[ultimo];
-  const conBoton = 'Ojo: lo que pidas ahora reemplaza tu pedido actual. Si prefieres dejarlo como estaba, toca el botón.';
+  const conBoton = base + 'toca «Dejarlo como estaba».';
   // Un mensaje con botones admite 1.024 caracteres (el aviso va delante si la carta es un solo mensaje).
   const cabe = final.tipo === 'texto' && typeof final.cuerpo === 'string' && !!dejar.id
     && final.cuerpo.length + (ultimo === 0 ? conBoton.length + 2 : 0) <= 1000;
-  const aviso_ = cabe ? conBoton : 'Ojo: lo que pidas ahora reemplaza tu pedido actual. Si prefieres dejarlo como estaba, escribe «dejarlo como estaba».';
+  const aviso_ = cabe ? conBoton : conTexto;
   if (primero.tipo === 'texto') mensajes[0] = Object.assign({}, primero, { cuerpo: aviso_ + '\n\n' + primero.cuerpo });
   if (cabe) mensajes[ultimo] = { tipo: 'botones', cuerpo: mensajes[ultimo].cuerpo, botones: [dejar] };
 }
@@ -571,6 +581,8 @@ function dejarComoEstaba() {
   en.carrito = a.carrito;
   en.entrega = Object.assign(entregaVacia(), a.entrega && typeof a.entrega === 'object' ? a.entrega : {});
   en.pendiente = [];
+  // El `cat_…` del checkout vuelve con el pedido: `armarPedido` lo usa solo si la huella sigue coincidiendo (el carrito no cambió).
+  en.pedidoWeb = a.pedidoWeb && typeof a.pedidoWeb === 'object' ? a.pedidoWeb : null;
   en.carritoAnterior = null;
   ruta = 'boton:dejar_como_estaba';
   mostrarPedido();

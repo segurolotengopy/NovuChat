@@ -67,7 +67,10 @@ const HONESTAS = [
   'Tu pedido #K7Q2 está guardado; falta tu comprobante SIMULADO (es una prueba: no se paga nada): envíame aquí cualquier foto.',
   'Tengo: jueves 8 de octubre a las 19:00, 2 personas, aniversario. Me falta: a nombre de quién (nombre y apellido).',
   'Disculpa, no me quedó claro. Tengo: jueves 8 de octubre, 2 personas. Me falta: la hora. Escribe la hora así: «19:00».',
-  'Ojo: lo que pidas ahora reemplaza tu pedido actual. Si prefieres dejarlo como estaba, toca el botón.', 'Dejarlo como estaba',
+  'Para cambiar tu pedido, vuelve a elegir todo desde la carta: lo que elijas ahí reemplaza tu pedido actual (hoy tienes: 1 × Horchata, 2 × Gaseosas, … y 2 más). Si prefieres dejarlo como estaba, toca «Dejarlo como estaba».',
+  'Para cambiar tu pedido, vuelve a elegir todo desde la carta: lo que elijas ahí reemplaza tu pedido actual (hoy tienes: 1 × Horchata). Si prefieres dejarlo como estaba, escribe «dejarlo como estaba».', 'Dejarlo como estaba',
+  'Para tu solicitud de reserva tengo: jueves 8 de octubre a las 19:00, 2 personas, celebración: aniversario, pedido especial: mesa tranquila. Me falta: a nombre de quién (nombre y apellido).',
+  'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Tu pedido sigue guardado.',
   'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos.',
   'Cuando tu pago llegue al banco, ellos lo revisan.', 'Tu depósito ingresará en 24 horas según tu banco.', 'Si ya pagaste, envíame el comprobante.', 'Cancelar pedido', 'Hemos recibido tu comprobante de pago.', 'El delivery no está incluido: se lo pagas al repartidor al recibir.',
 ];

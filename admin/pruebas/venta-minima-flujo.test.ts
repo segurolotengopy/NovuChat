@@ -820,14 +820,35 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', { time
     expect(Object.keys(base)).not.toContain('catalogoWebActivo');
   });
 
-  it('settings: executionOrder v1, zona de La Paz, 60 s; la plantilla, la prueba y el ensayo NO guardan ejecuciones y Q\'Taco guarda TODO (all/all, decisión de Andres del 04/10); el progreso nunca', () => {
-    // [archivo, éxitos, errores]
-    for (const [f, exito, error] of [[PLANTILLA, 'none', 'none'], [QTACO, 'all', 'all'], [PRUEBA, 'none', 'none'], [leer('venta-minima.ensayo-demo-a.json'), 'none', 'none']] as [Flujo, string, string][]) {
+  it('settings: executionOrder v1, zona de La Paz; 60 s en la plantilla, la prueba y el ensayo y 120 s SOLO en Q\'Taco; la plantilla, la prueba y el ensayo NO guardan ejecuciones y Q\'Taco guarda TODO (all/all, decisión de Andres del 04/10); el progreso nunca', () => {
+    // [archivo, éxitos, errores, tiempo límite]
+    for (const [f, exito, error, limite] of [[PLANTILLA, 'none', 'none', 60], [QTACO, 'all', 'all', 120], [PRUEBA, 'none', 'none', 60], [leer('venta-minima.ensayo-demo-a.json'), 'none', 'none', 60]] as [Flujo, string, string, number][]) {
       expect(f.settings).toMatchObject({
-        executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
+        executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: limite,
         saveDataSuccessExecution: exito, saveDataErrorExecution: error, saveExecutionProgress: false,
       });
     }
+  });
+
+  it('el `settings` de Q\'Taco difiere de la versión anterior (v0.11 / main del 04/10) SOLO en `executionTimeout` (60 → 120): todo lo demás igual, incluida la retención all/all', () => {
+    const anterior = {
+      executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
+      saveDataSuccessExecution: 'all', saveDataErrorExecution: 'all', saveExecutionProgress: false, saveManualExecutions: false,
+    };
+    expect(QTACO.settings).toEqual({ ...anterior, executionTimeout: 120 });
+    const distintas = Object.keys({ ...anterior, ...(QTACO.settings as J) }).filter((k) => (anterior as J)[k] !== (QTACO.settings as J)[k]);
+    expect(distintas).toEqual(['executionTimeout']);
+    // Y no se contagia: la prueba y el ensayo (que heredan los datos de Q'Taco) y la plantilla siguen en 60 s.
+    for (const f of [PLANTILLA, PRUEBA, leer('venta-minima.ensayo-demo-a.json')]) expect((f.settings as J)['executionTimeout']).toBe(60);
+  });
+
+  it('`--verificar` FALLA si el JSON de Q\'Taco vuelve a 60 s o si otro archivo sube a 120 s', () => {
+    for (const [archivo, valor] of [['venta-minima.qtaco.json', 60], ['venta-minima.prueba.json', 120]] as [string, number][]) {
+      const r = verificarEnCopia((vm) => editarJson(vm, archivo, (f) => { (f.settings as J)['executionTimeout'] = valor; }));
+      expect(r.status, archivo).toBe(1);
+      expect(r.stderr, archivo).toContain('executionTimeout');
+    }
+    expect(verificarEnCopia(() => undefined).status).toBe(0);
   });
 
   it('--verificar EXIGE all/all en Q\'Taco (bajar a none o a default falla citando la decisión de Andres) y no deja que otro archivo guarde sin declararlo', () => {
@@ -3166,11 +3187,11 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
     return { total, degradado, detalle };
   }
 
-  it('M-OCR: el peor caso de un turno de comprobante, calculado desde los parámetros de los nodos, cabe en los 60 s del `executionTimeout`', () => {
+  it('M-OCR: el peor caso de un turno de comprobante, calculado desde los parámetros de los nodos, cabe en el `executionTimeout` (120 s en Q\'Taco, 60 s en la prueba)', () => {
     for (const f of [QTACO, PRUEBA]) {
       const limite = Number((f.settings as J)['executionTimeout']);
       const { total, degradado, detalle } = peorCasoDeComprobante(f);
-      expect(limite).toBe(60);
+      expect(limite).toBe(f === QTACO ? 120 : 60);
       expect(total, `peor caso ${total} s con «${degradado}» degradado: ${JSON.stringify(detalle)}`).toBeLessThan(limite);
       // Cada nodo HTTP de la cadena trae un timeout explícito (los dos que no lo admiten están declarados abajo).
       for (const [nombre] of CADENA_DE_COMPROBANTE) {
@@ -4725,7 +4746,7 @@ describe('A. reserva: una hora suelta se toma como la hora (la toma el código, 
     expect((estadoDe(w.mundo)['reserva'] as J)['hora']).toBe('19:00');
     expect(t.avisos).toHaveLength(0);
     expect(t.mensajes).toHaveLength(1);
-    expect(cuerpos(t)[0]).toBe('Tengo: jueves 8 de octubre a las 19:00, 2 personas, aniversario. Me falta: a nombre de quién (nombre y apellido).');
+    expect(cuerpos(t)[0]).toBe('Para tu solicitud de reserva tengo: jueves 8 de octubre a las 19:00, 2 personas, celebración: aniversario. Me falta: a nombre de quién (nombre y apellido).');
     expect(cuerpos(t)[0]).not.toMatch(/a qué hora/);
     // El nombre completa la solicitud: sale el resumen para enviar, con la hora.
     w.estado.extraccion = { ...vacia, nombre: 'Daniela Ortega' };
@@ -4783,14 +4804,14 @@ describe('A. reserva: una hora suelta se toma como la hora (la toma el código, 
     const { w, c, primera } = conHoraPendiente();
     w.estado.extraccion = { ...vacia, nombre: 'Daniela Ortega' };
     const segunda = c.escribe('Daniela ortega');
-    expect(cuerpos(segunda)[0]).toBe('Tengo: jueves 8 de octubre, 2 personas, aniversario, a nombre de Daniela Ortega. Me falta: la hora.');
+    expect(cuerpos(segunda)[0]).toBe('Para tu solicitud de reserva tengo: jueves 8 de octubre, 2 personas, celebración: aniversario, a nombre de Daniela Ortega. Me falta: la hora.');
     expect(cuerpos(segunda)[0]).not.toBe(cuerpos(primera)[0]);
     w.estado.extraccion = vacia;
     const reclamo = c.escribe('ya te dije');
     expect(cuerpos(reclamo)[0]).not.toBe(cuerpos(segunda)[0]);
     expect(cuerpos(reclamo)[0]).toContain('Disculpa');
     expect(cuerpos(reclamo)[0]).toContain('«19:00»');
-    expect(cuerpos(reclamo)[0]).toContain('Tengo: jueves 8 de octubre');
+    expect(cuerpos(reclamo)[0]).toContain('Para tu solicitud de reserva tengo: jueves 8 de octubre');
     expect(reclamo.mensajes).toHaveLength(1);
     expect(reclamo.avisos).toHaveLength(0);
   });
@@ -4800,12 +4821,34 @@ describe('B. «Cambiar algo»: lo que se elija reemplaza el pedido, se dice, y �
   it('la carta dice que reemplaza el pedido actual y lleva el botón «Dejarlo como estaba», sin agregar mensajes', () => {
     const r = armarPedido({ ventana: 5 });
     const t = r.c.toca('p|cambiar', 'Cambiar algo');
-    expect(cuerpos(t)[0]).toMatch(/^Ojo: lo que pidas ahora reemplaza tu pedido actual\./);
+    expect(cuerpos(t)[0]).toMatch(/^Para cambiar tu pedido, vuelve a elegir todo desde la carta: lo que elijas ahí reemplaza tu pedido actual \(hoy tienes: 4 × Taco de Birria \(unidad\)\)\. Si prefieres dejarlo como estaba, toca «Dejarlo como estaba»\.\n\nEsta es nuestra carta/);
+    expect(cuerpos(t)[0]).toContain('vuelve a elegir');
     expect(cuerpos(t).join('\n')).not.toContain('Tu pedido sigue guardado');
     const ultimo = t.mensajes[t.mensajes.length - 1] as NonNullable<(typeof t.mensajes)[number]>;
     expect(titulosDe(ultimo)).toContain('Dejarlo como estaba');
     expect(t.mensajes.length).toBe(1);
     expect(estadoDe(r.w.mundo)['carrito']).toEqual([]);
+  });
+
+  it('texto de «Cambiar algo» (pedido de Andres): dice «vuelve a elegir», muestra lo guardado (hasta 3 ítems y «… y N más») y cabe en el mensaje con botón', () => {
+    const uno = armarPedido({ ventana: 5, lineas: [ln('horchata', 1)] });
+    const t1 = uno.c.toca('p|cambiar', 'Cambiar algo');
+    expect(cuerpos(t1)[0]).toMatch(/^Para cambiar tu pedido, vuelve a elegir todo desde la carta: lo que elijas ahí reemplaza tu pedido actual \(hoy tienes: 1 × Horchata\)\. Si prefieres dejarlo como estaba, toca «Dejarlo como estaba»\./);
+    const seis = armarPedido({ ventana: 5, lineas: [ln('horchata', 1), ln('gaseosas', 2), ln('nachos', 1), ln('queso', 1), ln('suiza', 1)] });
+    const t6 = seis.c.toca('p|cambiar', 'Cambiar algo');
+    expect(cuerpos(t6)[0]).toContain('(hoy tienes: 1 × Horchata, 2 × Gaseosas, 1 × Nachos Supremos, … y 2 más)');
+    const ultimo = t6.mensajes[t6.mensajes.length - 1] as NonNullable<(typeof t6.mensajes)[number]>;
+    expect(titulosDe(ultimo)).toContain('Dejarlo como estaba');
+    expect(t6.mensajes.length).toBe(1);
+    expect(cuerpos(t6)[0].length).toBeLessThanOrEqual(1024);
+    expect(cuerpos(t6)[0]).not.toMatch(/confirmad/i);
+    // Sin pedido guardado no sale la parte de «hoy tienes» ni el botón.
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    const sin = c.toca('m|pedido', 'Hacer un pedido');
+    expect(cuerpos(sin).join('\n')).not.toContain('hoy tienes');
+    expect(cuerpos(sin).join('\n')).not.toContain('vuelve a elegir');
   });
 
   it('«Dejarlo como estaba» vuelve a mostrar el resumen guardado, con sus botones y el mismo total', () => {
@@ -4906,6 +4949,36 @@ describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger;
     },
   );
 
+  it.each([
+    'Barrio El Retiro, calle 3 casa 5', 'Av. Busch frente al retiro de jubilados', 'ella va a recoger en portería',
+    'mejor delivery en vez de recoger', 'delivery, nada de retirar', 'Calle Recoleta 45 donde recoger el pedido',
+  ])('negando: «%s» NO cambia a recojo en ningún paso (es una dirección o una referencia), y la dirección llega al modelo', (dicho) => {
+    const { w, c } = deliveryPendiente();
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+    w.estado.extraccion = EX([], { direccion: dicho, entrega: '' });
+    const t = c.escribe(dicho);
+    expect(t.llamadas.extraer, dicho).toHaveLength(1); // fue al modelo: no lo resolvió el código como cambio a recojo
+    expect((estadoDe(w.mundo)['entrega'] as J)['entrega'], dicho).toBe('delivery');
+    expect((estadoDe(w.mundo)['entrega'] as J)['direccion'], dicho).toContain(dicho.slice(0, 12));
+  });
+
+  it('negando: tampoco en la pregunta de entrega ni con el resumen delante (pasos donde SÍ vale el cambio con la frase exacta)', () => {
+    const w = crear({ panel: panel(COBRO_REAL) });
+    const c = con(w, CLIENTE, 'Carlos');
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: '' });
+    c.escribe('quiero 4 tacos de birria');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_entrega');
+    w.estado.extraccion = EX([], { entrega: '' });
+    c.escribe('ella va a recoger en portería');
+    expect((estadoDe(w.mundo)['entrega'] as J)['entrega']).toBe('');
+    // El positivo: la frase exacta sí.
+    c.escribe('prefiero recoger');
+    expect((estadoDe(w.mundo)['entrega'] as J)['entrega']).toBe('recojo');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
+  });
+
   it('negando: «no quiero recoger» no cambia a recojo', () => {
     const { w, c } = deliveryPendiente();
     w.estado.extraccion = EX([], { entrega: '' });
@@ -4916,8 +4989,9 @@ describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger;
   it('«¿no me puedes cobrar el delivery?» sigue transfiriendo (aviso + botón), pero SIN la frase de «menú»', () => {
     const { w, c } = deliveryPendiente();
     const t = c.escribe('¿no me puedes cobrar el delivery?');
-    expect(cuerpos(t)[0]).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos.');
+    expect(cuerpos(t)[0]).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Tu pedido sigue guardado.');
     expect(cuerpos(t)[0]).not.toContain('menú');
+    expect(cuerpos(t)[0]).not.toContain('volver al inicio'); // el carrito se conserva: no se sugiere que todo se borra
     expect(t.avisos.length).toBeGreaterThan(0);
     expect(t.mensajes).toHaveLength(1);
     expect(estadoDe(w.mundo)['carrito']).toHaveLength(1); // el pedido sigue guardado

@@ -234,8 +234,11 @@ const enPasoDePedido = paso.indexOf('pedido') === 0 && Array.isArray(previo.carr
 if (!enComprobante && enPasoDePedido) {
   // Un delivery a medias (o la pregunta de entrega) y el cliente dice que mejor recoge: pasa a recojo y se muestra el siguiente paso (el resumen).
   const eligioDelivery = previo.entrega && previo.entrega.entrega === 'delivery';
-  const cambiaARecojo = norm.length <= 80 && !/\bno\b/.test(norm)
-    && (/\b(recoger|recojo|recogerlo|retirar|retiro|retirarlo)\b/.test(norm) || /\b(paso|pasar|pasare|voy|vamos|ire|iria) (a |por )?(buscar|buscarlo|recogerlo|recoger)\b/.test(norm));
+  // FRASE ENTERA, no una palabra suelta (revisión de seguridad del PR #417): una dirección («Barrio El Retiro, calle 3», «Av. Busch frente al retiro
+  // de jubilados») o una referencia («ella va a recoger en portería») contiene «retiro» o «recoger» y NO es un cambio de entrega. Solo vale un
+  // mensaje que ES el pedido de recoger (empieza por el verbo y termina ahí), sin ninguna palabra de delivery, envío o domicilio.
+  const CAMBIO_A_RECOGER = /^((mejor|prefiero|quiero|ya|entonces) )*(recoger|recogerlo|recojo|lo recojo|retirarlo|paso a (buscar|buscarlo|recoger|recogerlo)|voy a (recoger|recogerlo|buscar|buscarlo))( yo)?( en (el )?local)?( por favor)?$|^(puedo|podria|se puede|es posible|quiero|quisiera) (cambiar|cambiarlo|pasar|pasarlo) (a|para) (recoger|recojo|retirar|retirarlo|recogerlo)( en (el )?local)?( por favor)?$|^(cambiar|cambio|cambiarlo|pasar) (a|para) (recoger|recojo|retirar)( en (el )?local)?( por favor)?$/;
+  const cambiaARecojo = norm.length <= 60 && !/\b(delivery|envio|envios|domicilio|no|nada)\b/.test(norm) && CAMBIO_A_RECOGER.test(norm);
   if (cambiaARecojo && cfg.aceptaRetiroEnLocal !== false && (eligioDelivery || paso === 'pedido_entrega')
     && ['pedido_entrega', 'pedido_datos', 'pedido_confirmar'].indexOf(paso) >= 0) {
     return salir('boton', { motivo: 'cambio_a_recojo', boton: { tipo: 'e', partes: ['recojo'] } });

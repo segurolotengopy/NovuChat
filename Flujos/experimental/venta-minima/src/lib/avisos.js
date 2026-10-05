@@ -615,6 +615,9 @@ function avConfigPlantilla(tipo, c, errores, rol) {
       if (texto(c.idiomaPlantillaReservaCompleto)) idioma = texto(c.idiomaPlantillaReservaCompleto);
       if (!falta(c.formaPlantillaReservaCompleto) && texto(c.formaPlantillaReservaCompleto)) forma = formaDe(c.formaPlantillaReservaCompleto, 'reserva_completo');
     }
+    // La forma `solicitud` lleva el teléfono del cliente y es SOLO del rol `completo`: para cualquier otro rol (cocina), aunque la configure
+    // `formaPlantillaReserva`, degrada a `pedido` (sin teléfono). `rol` ausente = la del evento, sin degradar.
+    if (forma === 'solicitud' && rol !== undefined && rol !== 'completo') forma = 'pedido';
     ordenCsv = c.ordenReserva; base = forma === 'pedido' ? AV_ORDEN_PEDIDO : (forma === 'solicitud' ? AV_ORDEN_SOLICITUD : AV_ORDEN_AGENDA);
   } else {
     evento = 'derivacion';
@@ -893,9 +896,9 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
     const conPlantilla = () => {
       // La reserva del rol `completo` puede tener su propia plantilla (`*ReservaCompleto`); el resto, la del evento.
       let pl = plEvento;
-      if (tipo === 'reserva' && dest.rol === 'completo') {
+      if (tipo === 'reserva') {
         const propios = [];
-        pl = avConfigPlantilla(tipo, c, propios, 'completo');
+        pl = avConfigPlantilla(tipo, c, propios, dest.rol);
         for (const e of propios) if (errores.indexOf(e) < 0) errores.push(e);
       }
       if (!pl.nombre) {

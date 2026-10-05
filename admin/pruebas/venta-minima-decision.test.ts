@@ -716,7 +716,7 @@ describe('Plan del turno: el pedido', () => {
     const m = crearMundo();
     hastaResumen(m, 'delivery');
     const s = turno(m, { boton: 'p|cambiar' });
-    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^Ojo: lo que pidas ahora reemplaza tu pedido actual\. [\s\S]*Esta es nuestra carta:/);
+    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^Para cambiar tu pedido, vuelve a elegir todo desde la carta: lo que elijas ahí reemplaza tu pedido actual \(hoy tienes: \d+ × [^)]+\)\. Si prefieres dejarlo como estaba, toca «Dejarlo como estaba»\.\n\nEsta es nuestra carta:/);
     const e = estadoDe(m);
     expect(e['paso']).toBe('pedido');
     expect(e['carrito']).toEqual([]);

@@ -1794,14 +1794,22 @@ describe('la forma `solicitud` de la reserva y la plantilla por rol (`solicitud_
     expect(params(plantillaDe(soloForma, SILVANA))).toHaveLength(4);
   });
 
-  it('formaPlantillaReserva = «solicitud» (global) también existe, pero cocina nunca ve el teléfono', () => {
-    const items = L.avArmar('reserva', reserva(), CSV, { ...CFG, formaPlantillaReserva: 'solicitud' }, sdCon(), AHORA);
-    expect(params(plantillaDe(items, ANDRES))[3]).toBe('+' + CLIENTE);
-    const cocina = params(plantillaDe(items, SILVANA));
-    expect(cocina).toHaveLength(5);
-    expect(cocina[3]).toBe('—');
-    expect(cocina[0]).toBe('R4T9 · Ana');
-    expect(JSON.stringify(plantillaDe(items, SILVANA).payload)).not.toContain(CLIENTE);
+  it('formaPlantillaReserva = «solicitud» a nivel de evento: completo recibe la forma solicitud; COCINA degrada a `pedido` (4 variables, sin teléfono)', () => {
+    const cfg = { ...CFG, plantillaReserva: 'solicitud_reserva', formaPlantillaReserva: 'solicitud' };
+    for (const sd of [sdCon(), abierta()]) {
+      const items = L.avArmar('reserva', reserva(), CSV, cfg, sd, AHORA);
+      expect(params(plantillaDe(items, ANDRES))).toHaveLength(5);
+      expect(params(plantillaDe(items, ANDRES))[3]).toBe('+' + CLIENTE);
+      const cocina = params(plantillaDe(items, SILVANA));
+      expect(cocina).toEqual([
+        'SOLICITUD DE RESERVA R4T9: 4 personas, viernes 9 de octubre a las 20:00, terraza',
+        'sin cobro', 'reserva de mesa por confirmar con el cliente', 'no aplica',
+      ]);
+      expect(JSON.stringify(plantillaDe(items, SILVANA).payload)).not.toContain(CLIENTE);
+    }
+    // Con la forma solo por rol (`...Completo`) tampoco la ve cocina; y un rol desconocido es cocina.
+    const rol = L.avArmar('reserva', reserva(), `completo:${ANDRES},rarito:${SILVANA}`, { ...CFG, formaPlantillaReserva: 'solicitud' }, sdCon(), AHORA);
+    expect(params(plantillaDe(rol, SILVANA))).toHaveLength(4);
   });
 
   it('una forma inválida por rol cae a la de la reserva y se anota; «solicitud» no existe para la derivación', () => {

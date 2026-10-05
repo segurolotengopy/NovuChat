@@ -207,7 +207,8 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     expect(mensajes(t)).toHaveLength(1);
     expect(mensajes(t)[0]!['tipo']).toBe('enlace');
     expect(mensajes(t)[0]!['catalogo']).toBe(true);
-    expect(String(mensajes(t)[0]!['cuerpo'])).toBe('Esta es nuestra carta. Lo que elijas ahí reemplaza tu pedido actual. Si prefieres dejarlo como estaba, escribe «dejarlo como estaba». Para volver al inicio, escribe «menú».');
+    expect(String(mensajes(t)[0]!['cuerpo'])).toBe('Para cambiar tu pedido, vuelve a elegir todo desde la carta: lo que elijas ahí reemplaza tu pedido actual (hoy tienes: 2 × Nachos Supremos). Si prefieres dejarlo como estaba, escribe «dejarlo como estaba».');
+    expect(String(mensajes(t)[0]!['cuerpo'])).toContain('vuelve a elegir');
     expect(mensajes(t)[0]!['url']).toBe(URL_CATALOGO);
     // Escribirlo devuelve el resumen guardado.
     const vuelve = turno(c, { mensaje: texto('Dejarlo como estaba') }, conEnlace(URL_CATALOGO));
@@ -219,6 +220,26 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     carrito(c, { pedidoId: 'cat_otro_11aa' }, conEnlace(URL_CATALOGO));
     expect(estadoDe(c)['carritoAnterior']).toBeNull();
     expect(estadoDe(c)['paso']).toBe('pedido_confirmar');
+  });
+
+  it('«Dejarlo como estaba» restaura también el id `cat_…` del checkout: el pedido confirmado sale con el mismo id y código que sin «Cambiar algo»', () => {
+    const directo = crear();
+    carrito(directo, {}, conEnlace(URL_CATALOGO));
+    const web = estadoDe(directo)['pedidoWeb'] as J;
+    expect(web['id']).toBe('cat_abc123_00ff');
+    const sinCambio = turno(directo, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, conEnlace(URL_CATALOGO));
+    const idEsperado = (sinCambio.plan!['pedido'] as J)['pedidoId'];
+    expect(idEsperado).toBe('cat_abc123_00ff');
+    // Con «Cambiar algo» y «Dejarlo como estaba» por el medio.
+    const c = crear();
+    carrito(c, {}, conEnlace(URL_CATALOGO));
+    turno(c, { mensaje: boton('p|cambiar', 'Cambiar algo') }, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['pedidoWeb']).toBeNull(); // mientras elige, el pedido anterior no es el vigente
+    turno(c, { mensaje: texto('Dejarlo como estaba') }, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['pedidoWeb']).toEqual(web);
+    const confirmado = turno(c, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, conEnlace(URL_CATALOGO));
+    expect((confirmado.plan!['pedido'] as J)['pedidoId']).toBe(idEsperado);
+    expect((confirmado.plan!['pedido'] as J)['codigo']).toBe((sinCambio.plan!['pedido'] as J)['codigo']);
   });
 
   it('el botón «Hacer un pedido» y «Cambiar algo» también dan el enlace', () => {

@@ -753,6 +753,15 @@ describe('rsHoraSuelta y rsReclamo (04/10): la hora suelta la toma el código', 
     expect(hora('19', null as unknown as Record<string, unknown>)).toBe('');
   });
 
+  it('«para 3» (o «para 12», «sobre 5», «a 4») NO es una hora: sin «las»/«la», am/pm u hrs puede ser de personas; y sin fecha ningún número suelto es la hora (un «12» puede ser el día)', () => {
+    for (const x of ['para 3', 'para 12', 'sobre 5', 'a 4', 'para 8 personas', 'para 2']) expect(hora(x), x).toBe('');
+    // El negativo del positivo: con «las», am/pm u hrs sí lo es.
+    expect(hora('para las 3')).toBe('15:00');
+    expect(hora('3 pm')).toBe('15:00');
+    expect(hora('3 hrs')).toBe('15:00');
+    for (const x of ['12', '19', '7 pm', 'a las 7', '19:30']) expect(hora(x, { ...previa, fecha: '' }), `sin fecha: ${x}`).toBe('');
+  });
+
   it('rsReclamo reconoce «ya te dije…» y no confunde una frase normal', () => {
     for (const x of ['ya te dije 19', 'Ya te lo dije', 'te dije que a las 7', 'ya lo dije', 'ya te puse la hora']) expect(L.rsReclamo(x), x).toBe(true);
     for (const x of ['a las 7', 'dime la hora', 'ya', 'hola']) expect(L.rsReclamo(x), x).toBe(false);
@@ -763,13 +772,19 @@ describe('rsPreguntaFaltantes con lo ya entendido (04/10)', () => {
   const r = { personas: 2, fecha: '2026-10-08', hora: '', zona: '', nombre: '', celebracion: 'aniversario', requerimiento: '' };
   it('muestra lo entendido y pide solo lo que falta', () => {
     expect(L.rsPreguntaFaltantes(['hora', 'nombre'], { reserva: r }))
-      .toBe('Tengo: jueves 8 de octubre, 2 personas, aniversario. Me falta: la hora y a nombre de quién (nombre y apellido).');
+      .toBe('Para tu solicitud de reserva tengo: jueves 8 de octubre, 2 personas, celebración: aniversario. Me falta: la hora y a nombre de quién (nombre y apellido).');
     expect(L.rsPreguntaFaltantes(['hora'], { reserva: { ...r, nombre: 'Daniela Ortega' } }))
-      .toBe('Tengo: jueves 8 de octubre, 2 personas, aniversario, a nombre de Daniela Ortega. Me falta: la hora.');
+      .toBe('Para tu solicitud de reserva tengo: jueves 8 de octubre, 2 personas, celebración: aniversario, a nombre de Daniela Ortega. Me falta: la hora.');
+  });
+  it('lo libre del cliente va rotulado como en el resumen («celebración:», «pedido especial:») y el texto se lee como solicitud', () => {
+    const t = L.rsPreguntaFaltantes(['hora'], { reserva: { ...r, requerimiento: 'mesa tranquila' } });
+    expect(t).toBe('Para tu solicitud de reserva tengo: jueves 8 de octubre, 2 personas, celebración: aniversario, pedido especial: mesa tranquila. Me falta: la hora.');
+    expect(t).not.toMatch(/^Tengo/);
+    expect(t).not.toMatch(/, aniversario|, mesa tranquila/);
   });
   it('con reclamo se pide perdón y se da el ejemplo de la hora; sin reclamo no', () => {
     const t = L.rsPreguntaFaltantes(['hora'], { reserva: r, reclamo: true });
-    expect(t).toBe('Disculpa, no me quedó claro. Tengo: jueves 8 de octubre, 2 personas, aniversario. Me falta: la hora. Escribe la hora así: «19:00».');
+    expect(t).toBe('Disculpa, no me quedó claro. Para tu solicitud de reserva tengo: jueves 8 de octubre, 2 personas, celebración: aniversario. Me falta: la hora. Escribe la hora así: «19:00».');
     expect(L.rsPreguntaFaltantes(['hora'], { reserva: r })).not.toContain('Disculpa');
   });
   it('sin la reserva (o sin nada entendido) rige el texto de siempre, y ninguno se dispara con la red de prohibidas', () => {
