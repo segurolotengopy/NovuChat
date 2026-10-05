@@ -760,3 +760,137 @@ describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () 
     expect(ent(v)['referencia']).toBe('Rexibe pedro');
   });
 });
+
+// =====================================================================================================
+// #435, ronda 2 (batería real de la Operadora y revisión de seguridad sobre 542d5f7e): dos listas (dirección / referencia), ayuda por código, `vacias`, «otra persona recoge»
+// =====================================================================================================
+describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código, vacías y «otra persona recoge»', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const id = (): string => 'cat_r2_' + String(++k).padStart(4, '0');
+  const conDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: id() }) });
+    w.estado.extraccion = NADA;
+    return w;
+  };
+  const sinDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id() }) });
+    expect(estadoDe(w)['paso']).toBe('pedido_datos');
+    w.estado.extraccion = NADA;
+    return w;
+  };
+  const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
+  const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta.';
+  const DERIVA = /Esto prefiero que lo vea una persona/;
+
+  it.each(['A media cuadra del gas', 'Déjale al portero', 'frente al mercado', 'Zona Sur', 'por la puerta verde'])(
+    'A4 «%s» con la dirección PENDIENTE queda como REFERENCIA (no como dirección) y se vuelve a pedir la dirección, sin pasar al resumen', (dicho) => {
+      const w = sinDireccion();
+      const t = turno(w, texto(dicho));
+      expect(ent(w)['direccion'], dicho).toBe('');
+      expect(ent(w)['referencia'], dicho).toBe(dicho);
+      expect(t.mensajes[0]!.cuerpo, dicho).toBe(PIDE_DIRECCION);
+      expect(estadoDe(w)['paso'], dicho).toBe('pedido_datos');
+      expect(t.avisos, dicho).toHaveLength(0);
+      // y luego la dirección real completa el pedido SIN duplicar la referencia
+      const u = turno(w, texto('calle 1 numerro 2 Irpavi'));
+      expect(ent(w)['direccion'], dicho).toBe('calle 1 numerro 2 Irpavi');
+      expect(u.mensajes[0]!.cuerpo, dicho).toContain('Entrega: delivery a calle 1 numerro 2 Irpavi (' + dicho + ')');
+      expect(estadoDe(w)['paso'], dicho).toBe('pedido_confirmar');
+    },
+  );
+
+  it.each(['necesito ayuda', 'quiero que me atienda alguien', 'comuníquenme con el local', 'tengo un problema con mi pedido', 'esto es una estafa'])(
+    'M1s «%s» con el modelo devolviendo SOLO {"lineas":[]} (sin quiereHablar) deriva a una persona, con la dirección dada y con la pendiente', (dicho) => {
+      for (const [w, campo] of [[conDireccion(), 'referencia'], [sinDireccion(), 'direccion']] as const) {
+        const t = turno(w, texto(dicho));
+        expect(ent(w)[campo], dicho).toBe('');
+        expect(t.mensajes[0]!.cuerpo, dicho).toMatch(DERIVA);
+        expect(t.avisos.length, dicho).toBeGreaterThan(0);
+      }
+    },
+  );
+  it('M1s, el opuesto: una referencia con rasgos de entrega («que alguien me abra la puerta») NO deriva', () => {
+    const w = conDireccion();
+    const t = turno(w, texto('que alguien me abra la puerta'));
+    expect(ent(w)['referencia']).toBe('que alguien me abra la puerta');
+    expect(t.avisos).toHaveLength(0);
+  });
+
+  it('SV2: con la dirección YA dada, la secuencia de Silvana y textos sin dato no pasan con el local ni suman «vacías»: sigue el resumen', () => {
+    const w = conDireccion();
+    for (const dicho of ['Déjale al portero', 'Ok', 'A media cuadra del gas', 'Rexibe pedro', 'Rexibe pedro', 'gracias nomas', 'Rexibe pedro']) {
+      const t = turno(w, texto(dicho));
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(t.mensajes[0]!.cuerpo, dicho).not.toMatch(DERIVA);
+      expect(estadoDe(w)['paso'], dicho).toBe('pedido_confirmar');
+      expect(t.mensajes[0]!.cuerpo, dicho).toContain('Entrega: delivery a Av. Banzer 1234');
+    }
+    expect(ent(w)['referencia']).toBe('Déjale al portero');
+  });
+  it('SV2, el opuesto: con la dirección PENDIENTE, dos textos seguidos sin dato sí pasan con el local a la 2.ª vez', () => {
+    const w = sinDireccion();
+    turno(w, texto('jajaja'));
+    expect(ent(w)['direccion']).toBe('');
+    const t = turno(w, texto('jajaja'));
+    expect(t.mensajes[0]!.cuerpo).toMatch(DERIVA);
+  });
+
+  it('«ella va a recoger en portería» con la dirección pendiente y el modelo vacío: no es dirección; se vuelve a pedir', () => {
+    const w = sinDireccion();
+    const t = turno(w, texto('ella va a recoger en portería'));
+    expect(ent(w)['direccion']).toBe('');
+    expect(t.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
+    expect(estadoDe(w)['paso']).toBe('pedido_datos');
+  });
+  it('«Calle Sucre 12, déjalo con el guardia nomás» (modelo vacío) es la dirección, con la instrucción dentro', () => {
+    const w = sinDireccion();
+    turno(w, texto('Calle Sucre 12, déjalo con el guardia nomás'));
+    expect(ent(w)['direccion']).toBe('Calle Sucre 12, déjalo con el guardia nomás');
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+  });
+
+  it.each(['voy a recoger el pedido', 'mejor lo retiro yo en el local', 'el lo recoge'])(
+    'MEDIUM «%s» con el modelo devolviendo `recojo` en pedido_datos: SÍ pasa a recojo (no es «otra persona»)', (dicho) => {
+      const w = sinDireccion();
+      w.estado.extraccion = { ...NADA, entrega: 'recojo' };
+      turno(w, texto(dicho));
+      expect(ent(w)['entrega'], dicho).toBe('recojo');
+    },
+  );
+  it.each(['pedido_datos', 'pedido_confirmar'])('LOW-4 «ella va a recoger en portería» con el modelo devolviendo `recojo` en %s: SIGUE siendo delivery', (paso) => {
+    const w = paso === 'pedido_datos' ? sinDireccion() : conDireccion();
+    expect(estadoDe(w)['paso']).toBe(paso);
+    w.estado.extraccion = { ...NADA, entrega: 'recojo' };
+    turno(w, texto('ella va a recoger en portería'));
+    expect(ent(w)['entrega']).toBe('delivery');
+  });
+
+  it('LOW-1: «prefiero delivery» se perdona UNA vez (vuelve a pedir la dirección); «no me manden nada» y «cancelen el envío» no se perdonan: derivan a la 2.ª vez', () => {
+    const w = sinDireccion();
+    const uno = turno(w, texto('prefiero delivery'));
+    expect(uno.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
+    expect(uno.avisos).toHaveLength(0);
+    for (const dicho of ['no me manden nada', 'cancelen el envio']) {
+      const v = sinDireccion();
+      turno(v, texto(dicho));
+      const dos = turno(v, texto(dicho));
+      expect(dos.mensajes[0]!.cuerpo, dicho).toMatch(DERIVA);
+    }
+  });
+
+  it.each(['dejalo como estaba', 'cambiar algo', 'q hora llega', 'me equivoque', 'una coca cola mas', 'dos de birria mas', 'paso a buscarlo a las 8'])(
+    'LOW-3 «%s» con la dirección ya dada NO se guarda como referencia', (dicho) => {
+      const w = conDireccion();
+      turno(w, texto(dicho));
+      expect(ent(w)['referencia'], dicho).toBe('');
+    },
+  );
+  it.each(['quiero 2 tacos en calle 5', 'paso a buscarlo a las 8'])('LOW-3 «%s» con la dirección pendiente y el modelo con 0 líneas NO se toma como dirección', (dicho) => {
+    const w = sinDireccion();
+    turno(w, texto(dicho));
+    expect(ent(w)['direccion'], dicho).toBe('');
+  });
+});

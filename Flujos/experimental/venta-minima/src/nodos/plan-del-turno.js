@@ -237,6 +237,7 @@ function estadoDe(e) {
   if (!s.pedidoWeb || typeof s.pedidoWeb !== 'object') s.pedidoWeb = null;
   if (!s.carritoAnterior || typeof s.carritoAnterior !== 'object') s.carritoAnterior = null;
   s.preguntoDejar = s.preguntoDejar === true;
+  s.excepDelivery = s.excepDelivery === true;
   return s;
 }
 
@@ -832,19 +833,29 @@ function aExtraerPedido() {
   const lineas = Array.isArray(x.lineas) ? x.lineas : [];
   // «Ella va a recoger en portería» es una instrucción de entrega, no pasar a recojo (A11): con el delivery a medias (`pedido_datos`), un recojo que el modelo
   // «sube» de una frase donde otra persona recoge se ignora. El cambio real a recojo lo reconoce `Decidir turno` por código (frase entera) y llega como botón.
-  if (x.entrega === 'recojo' && en.entrega.entrega === 'delivery' && en.paso === 'pedido_datos' && recogeOtraPersona(vmNorm(d.texto))) x.entrega = '';
+  if (x.entrega === 'recojo' && en.entrega.entrega === 'delivery' && (en.paso === 'pedido_datos' || en.paso === 'pedido_confirmar') && recogeOtraPersona(vmNorm(d.texto))) x.entrega = '';
   const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
   const normTexto = vmNorm(d.texto);
   // Una marca `quiereHablar` del modelo sobre un texto que NO parece un dato de entrega («necesito ayuda», «tengo un problema con mi pedido») deriva SIEMPRE:
   // el texto libre no se adopta como dirección o referencia (revisión de seguridad del PR #435, M1).
   if (x.quiereHablar === true && !pareceDato(normTexto)) return derivar('pidió hablar con una persona');
+  // Aunque el modelo NO marque `quiereHablar` (devuelva solo {"lineas":[]}): un texto de ayuda, queja o petición de atención SIN rasgos de un dato de entrega deriva a una
+  // persona por CÓDIGO, antes de adoptar nada («necesito ayuda», «quiero que me atienda alguien», «comuníquenme con el local»).
+  if (!lineas.length && !datosEntrega && pideAyudaPorCodigo(normTexto) && !pareceDato(normTexto)) return derivar('pidió hablar con una persona');
   // El modelo no asignó el texto a ningún campo: con el delivery a medias lo toma el CÓDIGO (la dirección que falta o, ya dada la dirección, la referencia
   // opcional), SIN depender del modelo: ni se pierde ni se repite la pregunta ni se deriva («Déjale al portero»). Solo si el texto puede ser un dato de entrega.
   if (!lineas.length && !datosEntrega && adoptarTextoLibre()) return;
   if (x.quiereHablar === true) return derivar('pidió hablar con una persona');
   if (!lineas.length && !datosEntrega) {
-    // Dos extracciones seguidas sin nada que tomar: se pasa con el local. («Prefiero delivery» con el delivery ya elegido no es «nada»: se vuelve a pedir lo que falta.)
-    if (!(en.entrega.entrega === 'delivery' && hablaDeDelivery(normTexto) && !pareceDato(normTexto))) en.vacias += 1;
+    // Dos extracciones seguidas sin nada que tomar: se pasa con el local, pero solo mientras falte algo que el cliente deba dar. Con el delivery YA completo (dirección dada)
+    // un texto sin dato («Rexibe pedro» con la referencia ya guardada) no suma ni deriva: se vuelve a mostrar el resumen. Un texto que habla de delivery («prefiero delivery»)
+    // se perdona UNA sola vez, nunca si niega o cancela («no me manden nada», «cancelen el envío»).
+    const deliveryCompleto = en.entrega.entrega === 'delivery' && en.carrito.length > 0 && en.pendiente.length === 0 && pdFaltanEntrega(en.entrega, perfil).length === 0;
+    if (!deliveryCompleto) {
+      const hablaDeDeliveryAislado = en.entrega.entrega === 'delivery' && hablaDeDelivery(normTexto) && !pareceDato(normTexto) && !/\b(no|nada|sin|ni|nunca|jamas|cancel\w*|anul\w*)\b/.test(normTexto);
+      if (hablaDeDeliveryAislado && en.excepDelivery !== true) en.excepDelivery = true;
+      else en.vacias += 1;
+    }
     if (en.vacias >= 2) return derivar('dos mensajes seguidos sin líneas de pedido');
     const m = en.carrito.length || en.pendiente.length ? siguientePasoPedido() : mensajesDeCarta();
     if (m) {
@@ -854,6 +865,7 @@ function aExtraerPedido() {
     return;
   }
   en.vacias = 0;
+  en.excepDelivery = false;
   if (x.entrega && modalidades().indexOf(x.entrega) >= 0) ponerModalidad(x.entrega);
   ['direccion', 'referencia', 'nombre'].forEach((k) => { if (x[k]) en.entrega[k] = textoDeDato(x[k], 160); });
   // Si el modelo deja la dirección vacía pero el texto SÍ trae rasgos de una dirección («Calle Sucre 12, déjalo con el guardia nomás»), la toma el código
@@ -877,15 +889,25 @@ function pideUnaPersonaElTexto() {
   return /\b(hablar con|conversar con|persona|personas|humano|humana|encargad[oa]|asesor|asesora|atencion|llamen|llamenme|llamame|llamar|gerente|duen[oa]|administrador)\b/.test(vmNorm(d.texto));
 }
 
-// ¿Tiene rasgos de un dato de entrega? Un dígito o una palabra de vía/lugar («calle», «avenida», «zona», «edificio», «piso», «esquina», «frente», «cuadra»,
-// «portería», «puerta», «timbre», «barrio»…). `n` ya viene normalizado con `vmNorm`.
-// (Función y no constante: lo declarado con `const` después del `return` del nodo no llega a inicializarse.)
-function palabraDeVia(n) { return /\b(calle|av|avenida|zona|nro|numero|edificio|piso|dpto|depto|casa|esquina|frente|cuadra|cuadras|porter\w*|puerta|timbre|barrio|condominio|urbanizacion|pasaje|manzano|lote|km|plaza|mercado|torre|bloque|carretera|guardia)\b/.test(n); }
-function pareceDato(n) { return /\d/.test(n) || palabraDeVia(n); }
+// DOS LISTAS (batería real y revisión de seguridad del PR #435): los rasgos de DIRECCIÓN (un dígito o una vía FUERTE: calle, avenida, barrio, edificio, condominio,
+// urbanización, pasaje, km, nro, número, piso, dpto) y los rasgos de REFERENCIA (cuadra, esquina, frente, portero/portería, puerta, timbre, casa, al lado, detrás,
+// cerca, junto, guardia, mercado, plaza, zona…). Para la dirección pendiente solo valen los primeros; un texto con solo rasgos de referencia se guarda como REFERENCIA y
+// se vuelve a pedir la dirección. Para «¿parece un dato de entrega?» (derivar o no) valen los dos. `n` ya viene normalizado con `vmNorm`.
+// (Funciones y no constantes: lo declarado con `const` después del `return` del nodo no llega a inicializarse.)
+function viaFuerte(n) { return /\b(calle|av|avenida|barrio|edificio|condominio|urbanizacion|urb|pasaje|km|nro|numero|piso|dpto|depto|carretera|manzano|lote|torre|bloque)\b/.test(n); }
+function rasgoDeReferencia(n) { return /\b(cuadra|cuadras|esquina|frente|porter\w*|puerta|timbre|casa|lado|detras|cerca|junto|guardia|mercado|plaza|zona|rejas?|porton|gas|surtidor|farmacia|iglesia|colegio)\b/.test(n); }
+function pareceDireccion(n) { return /\d/.test(n) || viaFuerte(n); }
+function pareceDato(n) { return pareceDireccion(n) || rasgoDeReferencia(n); }
 function hablaDeDelivery(n) { return /\b(delivery|envio|envios|enviar\w*|envien\w*|domicilio|mandar\w*|manden\w*|mande\w*|mandame|mandalo|traer\w*|traigan\w*|llevar\w*|lleven\w*)\b/.test(n); }
-// «Ella va a recoger en portería», «mi esposa lo retira», «el vecino lo recibe»: otra persona recoge; la entrega sigue siendo delivery.
+// Ayuda, queja o petición de atención dicha con palabras (sin depender de la marca del modelo).
+function pideAyudaPorCodigo(n) {
+  return /\b(ayuda\w*|ayudar\w*|problema\w*|queja\w*|reclam\w*|robo|estafa\w*|atienda\w*|atiendan|atender\w*|alguien|comuniquen\w*|hablar con|persona|personas|humano|humana|encargad[oa]|asesor\w*|llamen|llamenme)\b/.test(n);
+}
+// «Ella va a recoger en portería», «mi esposa lo retira», «lo recoge el portero»: OTRA persona recoge; la entrega sigue siendo delivery. Quien habla de sí mismo («voy a
+// recoger el pedido», «mejor lo retiro yo en el local», «paso a buscarlo») cambia a recojo de verdad: no se protege. («él» a secas no es otra persona: «el lo recoge» vale como recojo.)
 function recogeOtraPersona(n) {
-  return /\b(recoger\w*|recoge\w*|retir\w*|busca\w*|recibe\w*)\b/.test(n) && /\b(ella|el|ellos|ellas|alguien|vecin[oa]|porter[oa]|porteria|guardia|recepcion|mi (esposa|esposo|hijo|hija|mama|papa|hermano|hermana|amigo|amiga|primo|prima))\b/.test(n);
+  if (/\b(yo|voy|vamos|paso|pasamos|recojo|recogo|retiro|lo recojo|lo retiro|busco|buscare)\b/.test(n)) return false;
+  return /\b(recoger\w*|recoge\w*|recoja\w*|retir\w*|busca\w*|recibe\w*)\b/.test(n) && /\b(ella|ellos|ellas|alguien|vecin[oa]|porter[oa]|porteria|guardia|recepcion|mi (esposa|esposo|hijo|hija|mama|papa|hermano|hermana|amigo|amiga|primo|prima))\b/.test(n);
 }
 
 // El texto sin lo que no es un dato de entrega: sin formato de WhatsApp (`* _ ~` y comillas invertidas), sin enlaces (con o sin esquema: «ver x.com/a»; la misma
@@ -906,41 +928,60 @@ function puedeSerDatoDeEntrega(crudo, n) {
   if (/\b(no|sin) (delivery|envio|domicilio)\b|\b(delivery|envio|domicilio) no\b/.test(n)) return false;
   if (/\b(cancel\w*|anul\w*|olvid\w*|carta|catalogo|menu|ayuda\w*|problema\w*|reclam\w*|queja\w*|robo|pago|pagos|pague|pagar|pagado|transfer\w*|deposit\w*|comprobante|qr)\b/.test(n)) return false;
   const dato = pareceDato(n);
-  if (!/\d/.test(n) && /\b(recoger\w*|recojo|recogo|retir\w*|buscar\w*|paso a)\b/.test(n)) return false;
+  // Recoger o buscar el pedido (también con una hora: «paso a buscarlo a las 8») no es un dato de entrega, salvo que traiga una vía fuerte («Calle 5, ella lo recoge»).
+  if (!viaFuerte(n) && /\b(recoger\w*|recojo|recogo|retir\w*|buscar\w*|paso a|voy a)\b/.test(n)) return false;
   if (!dato && hablaDeDelivery(n)) return false;
-  if (!dato && /^(que|cuanto|cuanta|cuando|donde|como|cual|cuales|quien|a que|por que|porque|puedo|se puede|podria|podrian|pueden|hay|tienen|aceptan)\b/.test(n)) return false;
-  if (!palabraDeVia(n) && /\b(quiero|quisiera|queremos|dame|deme|ponme|necesito|me das|me da|agrega\w*|agregame|anade)\b/.test(n)
-    && /\b(\d+|un|una|uno|unos|unas|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|docena)\b/.test(n)) return false;
+  // Una pregunta escrita sin signos («a que hora llega», «q hora llega»), un cambio o arrepentimiento («dejalo como estaba», «cambiar algo», «me equivoque»).
+  if (!dato && /^(que|q|k|ke|cuanto|cuanta|cuando|donde|como|cual|cuales|quien|a que|por que|porque|puedo|se puede|podria|podrian|pueden|hay|tienen|aceptan)\b/.test(n)) return false;
+  if (/\b(estaba|cambiar\w*|cambio|cambie\w*|equivoq\w*|equivoc\w*)\b/.test(n)) return false;
+  // Una orden de comida: un verbo de pedido seguido (a lo sumo una palabra después) de una cantidad («quiero 2 tacos en calle 5»), o una cantidad que termina en «más»
+  // («una coca cola más», «dos de birria más»).
+  if (/\b(quiero|quisiera|queremos|dame|deme|ponme|necesito|me das|me da|agrega\w*|agregame|anade)( \w+)? (\d+|un|una|uno|unos|unas|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|docena)\b/.test(n)) return false;
+  if (/^(\d+|un|una|uno|unos|unas|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|docena)( \w+){0,5} mas$/.test(n)) return false;
   return true;
 }
 
-// La dirección que falta, tomada del texto: solo si el texto puede ser un dato, tiene rasgos de una dirección (dígito o palabra de vía) y, saneado, es una dirección
-// válida (≥5 caracteres, letras y dos palabras). Si no alcanza, NO se guarda nada: se vuelve a pedir (y a la segunda vez seguida se pasa con el local).
+// La dirección que falta, tomada del texto: solo si el texto puede ser un dato, tiene rasgos de DIRECCIÓN (un dígito o una vía fuerte: no «portero», «cuadra», «frente»)
+// y, saneado, es una dirección válida (≥5 caracteres, letras y dos palabras). Si no alcanza, NO se guarda nada: se vuelve a pedir (y a la segunda vez seguida se pasa con el
+// local). Una referencia igual a la dirección se quita (sin duplicar).
 function adoptarDireccionDelTexto() {
   if (en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length || !pdFaltanEntrega(en.entrega, perfil).length) return false;
   const crudo = String(d.texto || '');
   const n = vmNorm(crudo);
-  if (!puedeSerDatoDeEntrega(crudo, n) || !pareceDato(n) || crudo.trim().length < 5) return false;
+  if (!puedeSerDatoDeEntrega(crudo, n) || !pareceDireccion(n) || crudo.trim().length < 5) return false;
   const antes = en.entrega.direccion;
   en.entrega.direccion = textoDeDato(crudo, 160);
   if (pdFaltanEntrega(en.entrega, perfil).length) { en.entrega.direccion = antes; return false; }
+  if (vmNorm(en.entrega.referencia) === vmNorm(en.entrega.direccion)) en.entrega.referencia = '';
   return true;
 }
 
-// Con el delivery a medias y un texto libre sin líneas ni campos: si falta la dirección, el texto con rasgos de dirección ES la dirección (si no alcanza para
-// una dirección válida, o no parece un dato, se vuelve a pedir: «Plan del turno» no inventa nada); con la dirección ya dada y sin referencia, el texto es la
-// referencia (opcional, saneada, ≤150: pueden ser nombres u otras instrucciones; no se pide en el chat, la ofrece el catálogo). Todo con `puedeSerDatoDeEntrega`.
-// `false` si no se tomó nada.
+// Con el delivery a medias y un texto libre sin líneas ni campos: si falta la dirección, el texto con rasgos de DIRECCIÓN ES la dirección; un texto con solo rasgos de
+// REFERENCIA («A media cuadra del gas», «Déjale al portero») se guarda como referencia (saneada) y se vuelve a pedir la dirección; lo demás no se toma y se vuelve a pedir.
+// Con la dirección ya dada y sin referencia, el texto que puede ser un dato es la referencia (opcional, saneada, ≤150: pueden ser nombres u otras instrucciones; no se
+// pide en el chat, la ofrece el catálogo). Todo con `puedeSerDatoDeEntrega`. `false` si no se tomó nada.
 function adoptarTextoLibre() {
   if (en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length) return false;
   const crudo = String(d.texto || '');
   const n = vmNorm(crudo);
   if (!puedeSerDatoDeEntrega(crudo, n)) return false;
   if (pdFaltanEntrega(en.entrega, perfil).length) {
-    if (!adoptarDireccionDelTexto()) return false;
-    ruta = 'boton:direccion_del_texto';
-    mostrarPedido();
-    return true;
+    if (adoptarDireccionDelTexto()) {
+      ruta = 'boton:direccion_del_texto';
+      mostrarPedido();
+      return true;
+    }
+    // Solo rasgos de referencia: queda como referencia y se vuelve a pedir la dirección (sin contar como mensaje vacío: el cliente sí aportó un dato).
+    if (!en.entrega.referencia && rasgoDeReferencia(n) && /\p{L}{3}/u.test(crudo)) {
+      const ref = textoDeDato(crudo, 150);
+      if (ref) {
+        en.entrega.referencia = ref;
+        ruta = 'boton:referencia_del_texto';
+        mostrarPedido();
+        return true;
+      }
+    }
+    return false;
   }
   if (en.entrega.referencia || !/\p{L}{3}/u.test(crudo)) return false;
   en.entrega.referencia = textoDeDato(crudo, 150);
