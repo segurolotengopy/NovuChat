@@ -64,6 +64,9 @@ const HONESTAS = [
   'No pude incluir tu nota: «tequila» no está disponible por este medio.', 'Para volver al inicio, escribe «menú».',
   // Correcciones de conversación (04/10).
   '¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?', 'Elegir otra vez',
+  'Por delivery no enviamos «Horchata»: lo quité de tu pedido. Si vuelves a recojo, vuelve a agregarlo. Tu pedido quedó vacío: elige otra vez desde la carta.',
+  'Ya no tenemos «Horchata»: lo quité de tu pedido. Tu pedido quedó vacío: elige otra vez desde la carta.',
+  'Cambió el precio de «Taco de Birria (unidad)»: revisa el total antes de confirmar.',
   'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Para volver al inicio, escribe «menú». Tu pedido anterior sigue guardado: escribe «dejarlo como estaba» para recuperarlo.',
   'Tu pedido #K7Q2 está guardado; falta tu comprobante: envíame aquí la foto o el PDF.',
   'Tu pedido #K7Q2 está guardado; falta tu comprobante SIMULADO (es una prueba: no se paga nada): envíame aquí cualquier foto.',

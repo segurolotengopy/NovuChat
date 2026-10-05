@@ -226,13 +226,20 @@ if (!enComprobante) {
 // --- Pedido en curso: cosas que se resuelven con código, sin modelo --------------------------------
 // «Dejarlo como estaba», escrito: vuelve el pedido de antes de «Cambiar algo» (el botón de enlace de la carta no admite un botón de respuesta).
 // Tras «Cambiar algo» el carrito está vacío: lo que vale es que el pedido anterior siga guardado.
-// Se reconocen por código las formas naturales de pedir lo mismo («déjalo como estaba», «no, déjalo no más», «te dije que lo deses como estaba», «ya no cambio»),
-// con tolerancia a los errores de tipeo y de voz (`intencionDeVolver`). También con el paso en `menu`: una derivación manda el paso a `menu` y el pedido
-// anterior sigue guardado. Si la frase habla de dejar el pedido pero no se entiende del todo, NO se deriva ni se saluda: se pregunta UNA vez.
+// Se reconocen por código las formas naturales de pedir lo mismo («déjalo como estaba», «no, déjalo no más», «te dije que lo deses como estaba», «ya no cambio»)
+// (`intencionDeVolver`). También con el paso en `menu`: una derivación manda el paso a `menu` y el pedido anterior sigue guardado.
+// TOLERANCIA SOLO AL ELEGIR DE NUEVO (revisión de seguridad del PR #426): con tipeo/voz tolerados y con «duda» posible únicamente cuando el carrito nuevo está
+// vacío, sin una pregunta pendiente y sin que el cliente esté dando datos de entrega. Con un pedido nuevo en curso (carrito con productos, `pedido_entrega`,
+// `pedido_datos`) valen solo las formas CERRADAS y nunca se pregunta: «Déjalo en portería nomás» es una instrucción de entrega, no volver al pedido anterior.
+// La pregunta se hace UNA vez (`preguntoDejar`); la segunda vez la frase sigue su camino normal.
 if (!enComprobante && (paso.indexOf('pedido') === 0 || paso === 'menu') && previo.carritoAnterior && typeof previo.carritoAnterior === 'object') {
-  const quiere = intencionDeVolver(norm);
-  if (quiere === 'si') return salir('boton', { motivo: 'dejar_como_estaba', boton: { tipo: 'p', partes: ['dejar'] } });
-  if (quiere === 'duda') return salir('boton', { motivo: 'dejar_o_elegir' });
+  const hayCarritoNuevo = (Array.isArray(previo.carrito) && previo.carrito.length > 0) || (Array.isArray(previo.pendiente) && previo.pendiente.length > 0);
+  const dandoDatos = paso === 'pedido_entrega' || paso === 'pedido_datos';
+  const tolerante = !hayCarritoNuevo && !dandoDatos && (paso === 'pedido' || paso === 'menu');
+  const quiere = intencionDeVolver(norm, tolerante);
+  const sePuedePedir = !(pedidosOn && cerrado()); // el camino por texto respeta el horario igual que el botón
+  if (quiere === 'si') return sePuedePedir ? salir('boton', { motivo: 'dejar_como_estaba', boton: { tipo: 'p', partes: ['dejar'] } }) : salir('fuera_de_horario');
+  if (quiere === 'duda' && previo.preguntoDejar !== true) return sePuedePedir ? salir('boton', { motivo: 'dejar_o_elegir' }) : salir('fuera_de_horario');
 }
 const enPasoDePedido = paso.indexOf('pedido') === 0 && Array.isArray(previo.carrito) && previo.carrito.length > 0;
 if (!enComprobante && enPasoDePedido) {
@@ -245,6 +252,7 @@ if (!enComprobante && enPasoDePedido) {
   const cambiaARecojo = norm.length <= 60 && !/\b(delivery|envio|envios|domicilio|no|nada)\b/.test(norm) && CAMBIO_A_RECOGER.test(norm);
   if (cambiaARecojo && cfg.aceptaRetiroEnLocal !== false && (eligioDelivery || paso === 'pedido_entrega')
     && ['pedido_entrega', 'pedido_datos', 'pedido_confirmar'].indexOf(paso) >= 0) {
+    if (pedidosOn && cerrado()) return salir('fuera_de_horario');
     return salir('boton', { motivo: 'cambio_a_recojo', boton: { tipo: 'e', partes: ['recojo'] } });
   }
   // El inverso: con el resumen de recojo delante (o la pregunta de entrega), «¿puedo cambiar al delivery?», «prefiero delivery», «quiero que me lo envíen».
@@ -253,6 +261,7 @@ if (!enComprobante && enPasoDePedido) {
   const CAMBIO_A_DELIVERY = /^((mejor|prefiero|quiero|ya|entonces) )*(delivery|con delivery|a domicilio|domicilio|envio|con envio|(que )?me lo (envien|envian|manden|mandan|traigan|lleven|envies|mandes|traigas))( por favor)?$|^(prefiero|quiero|mejor|quisiera) que me lo (envien|manden|traigan|lleven)( por favor)?$|^(puedo|podria|se puede|es posible|quiero|quisiera) (cambiar|cambiarlo|pasar|pasarlo|cambio) (a|al|para|por) (el )?(delivery|envio|domicilio)( por favor)?$|^(cambiar|cambio|cambialo|cambiamelo|pasalo|pasar) (a|al|para|por) (el )?(delivery|envio|domicilio)( por favor)?$/;
   const cambiaADelivery = norm.length <= 60 && !/\b(no|nada|recoger|recojo|recogerlo|retirar|retiro|buscar|buscarlo)\b/.test(norm) && CAMBIO_A_DELIVERY.test(norm);
   if (cambiaADelivery && cfg.aceptaDelivery !== false && ['pedido_entrega', 'pedido_confirmar'].indexOf(paso) >= 0) {
+    if (pedidosOn && cerrado()) return salir('fuera_de_horario');
     return salir('boton', { motivo: 'cambio_a_delivery', boton: { tipo: 'e', partes: ['delivery'] } });
   }
   // El costo del delivery no es algo que el asistente cobre ni decida: se pasa con el local, SIN la frase de «menú» (el pedido sigue guardado).
@@ -364,25 +373,42 @@ function distancia(a, b) {
 
 // ¿Quiere volver al pedido de antes de «Cambiar algo»? 'si' = se entiende sin duda; 'duda' = habla de dejarlo pero no se entiende del todo o lo rechaza
 // («no quiero dejarlo como estaba»); '' = es otra cosa. `norm` ya viene sin tildes, en minúscula y sin signos. Un «no» aislado al comienzo
-// («no, déjalo como estaba») es parte de la respuesta y cuenta como volver; un «no» pegado al verbo («no lo dejes») es un rechazo y se pregunta.
-function intencionDeVolver(norm) {
+// («no, déjalo como estaba») es parte de la respuesta y cuenta como volver; un «no» pegado al verbo («no lo dejes») es un rechazo y se trata como duda.
+// `tolerante` = solo cuando se está eligiendo de nuevo (carrito nuevo vacío). Reglas de seguridad (PR #426):
+//  - TODAS las palabras del mensaje deben ser del vocabulario cerrado de abajo (como `soloAfirma`): una palabra de más («portería», «guardia», «hermana»)
+//    hace que NO sea «volver» ni «duda»;
+//  - nunca con dígitos ni con más de 6 palabras para la duda (8 para el «sí»);
+//  - la tolerancia de edición vale solo para palabras de 5 letras o más (las de 4, por igualdad exacta) y hay una lista negra («deme», «dije», «debe»…);
+//  - sin `tolerante` (pedido nuevo en curso) solo valen las formas cerradas y NUNCA se devuelve 'duda'.
+function intencionDeVolver(norm, tolerante) {
   const palabras = norm.split(' ').filter(Boolean);
-  if (!palabras.length || palabras.length > 12) return '';
-  // «dejar», con las formas de tipeo y de voz más comunes («dejalo», «dejarlo», «dejes», «deses», «dejaro»).
+  if (!palabras.length || palabras.length > 8) return '';
   const DEJAR = ['dejalo', 'dejarlo', 'deja', 'dejar', 'deje', 'dejes', 'dejemoslo', 'dejala'];
-  const esDejar = (w) => w.length >= 4 && DEJAR.some((k) => w === k || distancia(w, k) <= 1);
-  const esEstaba = (w) => w.length >= 5 && distancia(w, 'estaba') <= 1;
+  const NEGRAS = ['deme', 'dije', 'debe', 'debes', 'dejo', 'teja', 'reja', 'deben', 'dedo'];
+  const esDejar = (w) => NEGRAS.indexOf(w) < 0 && DEJAR.some((k) => w === k || (w.length >= 5 && k.length >= 5 && distancia(w, k) <= 1));
+  const esEstaba = (w) => w.length >= 5 && w.length <= 7 && distancia(w, 'estaba') <= 1;
+  // Vocabulario cerrado del «sí»: lo único que puede decir quien pide dejarlo como estaba.
+  const VOCAB = ['como', 'antes', 'igual', 'asi', 'nomas', 'mas', 'no', 'si', 'lo', 'la', 'que', 'te', 'dije', 'ya', 'mejor', 'por', 'favor', 'mi', 'pedido', 'anterior', 'pues', 'quiero', 'tenia', 'el', 'esta', 'estaba'];
+  const VOCAB_DUDA = VOCAB.concat(['se', 'cual', 'era', 'puedo', 'podria', 'volver', 'vuelve']);
+  const enVocab = (w, v) => v.indexOf(w) >= 0 || esDejar(w) || esEstaba(w);
+  const todas = (v) => palabras.every((w) => enVocab(w, v));
   const hayDejar = palabras.some(esDejar);
   const hayEstaba = palabras.some(esEstaba);
+  // Un rechazo («no lo dejes como estaba», «no quiero dejarlo») NUNCA es «volver»: con pedido nuevo en curso no es nada; al elegir de nuevo, se pregunta.
   const rechazo = /\bno (quiero|queremos|lo|me|vayas a|deseo)( (lo|me))? (dejar|dejarlo|dejalo|dejes|deje|deses)\b/.test(norm) || /\bno (quiero|queremos) (que )?(lo )?(dejes|dejen|dejemos)\b/.test(norm);
-  if (rechazo) return 'duda';
-  // Formas que no llevan el verbo.
-  const SIN_VERBO = /^((ya|no|si|mejor|pues|es que|entonces) )*(como estaba( antes)?|igual|como antes|lo que tenia|lo anterior|el anterior|mi pedido anterior|(volver|vuelve|volvamos|regresa|regresar) (al|a mi|a el) (pedido )?(anterior|de antes)|(volver|vuelve|volvamos|regresa|regresar) a mi pedido|(manten|mantener|mantenlo|mantengamoslo|mantenga)( mi| el)?( pedido)?|(no|ya no) (quiero )?(cambiar|cambio)( nada)?|no cambiar nada|cancelar( el)? cambio|cancela( el)? cambio|olvida el cambio)( no mas| nomas| igual)?( por favor)?$/;
+  if (rechazo) return tolerante && !/\d/.test(norm) && palabras.length <= 6 && todas(VOCAB_DUDA) ? 'duda' : '';
+  // Formas que no llevan el verbo (cerradas).
+  const SIN_VERBO = /^((ya|no|si|mejor|pues|es que|entonces) )*(como estaba( antes)?|como antes|lo que tenia|lo anterior|el anterior|mi pedido anterior|(volver|vuelve|volvamos|regresa|regresar) (al|a mi|a el) (pedido )?(anterior|de antes)|(volver|vuelve|volvamos|regresa|regresar) a mi pedido|(manten|mantener|mantenlo|mantengamoslo|mantenga)( mi| el)?( pedido)?|(no|ya no) (quiero )?(cambiar|cambio)( nada)?|no cambiar nada|cancelar( el)? cambio|cancela( el)? cambio|olvida el cambio)( no mas| nomas| igual)?( por favor)?$/;
   if (SIN_VERBO.test(norm)) return 'si';
-  if (hayDejar && (hayEstaba || /\b(antes|igual|asi|anterior|nomas|no mas|como tenia)\b/.test(norm))) return 'si';
+  // «dejar» + «como estaba» / «como antes» en una frase corta de vocabulario cerrado: la forma cerrada que vale siempre.
+  const comoEstaba = (hayEstaba && palabras.indexOf('como') >= 0) || /\bcomo (antes|tenia)\b/.test(norm);
+  if (hayDejar && comoEstaba && palabras.length <= 6 && todas(VOCAB)) return 'si';
+  if (!tolerante || /\d/.test(norm)) return '';
+  // Solo al elegir de nuevo: tolerancia a otras formas de vocabulario cerrado.
+  if (hayDejar && todas(VOCAB) && (hayEstaba || /\b(antes|igual|asi|anterior|nomas|mas|tenia)\b/.test(norm))) return 'si';
   if (hayDejar && palabras.length <= 4 && palabras.every((w) => esDejar(w) || ['no', 'si', 'mejor', 'lo', 'ya', 'pues', 'por', 'favor', 'nomas', 'mas'].indexOf(w) >= 0)) return 'si';
-  // Habla de dejarlo o de lo de antes, pero no se entiende del todo: se pregunta, no se deriva.
-  if (hayDejar || hayEstaba || /\b(anterior|como antes|de antes|lo que tenia)\b/.test(norm)) return 'duda';
+  // Habla de dejarlo o de lo de antes con palabras de vocabulario cerrado, pero no se entiende del todo: se pregunta (una vez), no se deriva.
+  if (palabras.length <= 6 && todas(VOCAB_DUDA) && (hayDejar || hayEstaba || /\b(anterior|tenia)\b/.test(norm) || /\bcomo antes\b/.test(norm))) return 'duda';
   return '';
 }
 
