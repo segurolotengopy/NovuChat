@@ -162,6 +162,8 @@ if (idBoton) {
   }
   if (b.tipo === 'e' && paso === 'pedido_entrega' && (p0 === 'delivery' || p0 === 'recojo')) return salir('boton', { boton: b });
   if (b.tipo === 'p' && paso === 'pedido_confirmar' && (p0 === 'confirmar' || p0 === 'cambiar')) return salir('boton', { boton: b });
+  // «Dejarlo como estaba» (tras «Cambiar algo»): vale mientras el pedido anterior siga guardado (`carritoAnterior`).
+  if (b.tipo === 'p' && p0 === 'dejar' && enPedido && previo.carritoAnterior && typeof previo.carritoAnterior === 'object') return salir('boton', { boton: b });
   if (b.tipo === 'r' && paso === 'reserva_confirmar' && (p0 === 'enviar' || p0 === 'corregir')) return salir('boton', { boton: b });
   if (b.tipo === 'q' && paso === 'esperando_comprobante') {
     if (p0 === 'reenviar') return salir('reenviar_qr', { boton: b });
@@ -221,6 +223,32 @@ if (!enComprobante) {
   if (pedidosOn && paso.indexOf('reserva') === 0 && norm.length <= 60 && !esPregunta && /\b(pedir|pedido)\b/.test(norm)) return extraerPedido();
 }
 
+// --- Pedido en curso: cosas que se resuelven con código, sin modelo --------------------------------
+// «Dejarlo como estaba», escrito: vuelve el pedido de antes de «Cambiar algo» (el botón de enlace de la carta no admite un botón de respuesta).
+// Tras «Cambiar algo» el carrito está vacío: lo que vale es que el pedido anterior siga guardado.
+if (!enComprobante && paso.indexOf('pedido') === 0 && previo.carritoAnterior && typeof previo.carritoAnterior === 'object'
+  && /^(dejarlo|dejalo|dejar|dejarlo como estaba|dejalo como estaba|dejar como estaba|como estaba|como estaba antes|volver a mi pedido|mantener mi pedido|no cambiar nada|no quiero cambiar nada)$/.test(norm)) {
+  return salir('boton', { motivo: 'dejar_como_estaba', boton: { tipo: 'p', partes: ['dejar'] } });
+}
+const enPasoDePedido = paso.indexOf('pedido') === 0 && Array.isArray(previo.carrito) && previo.carrito.length > 0;
+if (!enComprobante && enPasoDePedido) {
+  // Un delivery a medias (o la pregunta de entrega) y el cliente dice que mejor recoge: pasa a recojo y se muestra el siguiente paso (el resumen).
+  const eligioDelivery = previo.entrega && previo.entrega.entrega === 'delivery';
+  // FRASE ENTERA, no una palabra suelta (revisión de seguridad del PR #417): una dirección («Barrio El Retiro, calle 3», «Av. Busch frente al retiro
+  // de jubilados») o una referencia («ella va a recoger en portería») contiene «retiro» o «recoger» y NO es un cambio de entrega. Solo vale un
+  // mensaje que ES el pedido de recoger (empieza por el verbo y termina ahí), sin ninguna palabra de delivery, envío o domicilio.
+  const CAMBIO_A_RECOGER = /^((mejor|prefiero|quiero|ya|entonces) )*(recoger|recogerlo|recojo|lo recojo|retirarlo|paso a (buscar|buscarlo|recoger|recogerlo)|voy a (recoger|recogerlo|buscar|buscarlo))( yo)?( en (el )?local)?( por favor)?$|^(puedo|podria|se puede|es posible|quiero|quisiera) (cambiar|cambiarlo|pasar|pasarlo) (a|para) (recoger|recojo|retirar|retirarlo|recogerlo)( en (el )?local)?( por favor)?$|^(cambiar|cambio|cambiarlo|pasar) (a|para) (recoger|recojo|retirar)( en (el )?local)?( por favor)?$/;
+  const cambiaARecojo = norm.length <= 60 && !/\b(delivery|envio|envios|domicilio|no|nada)\b/.test(norm) && CAMBIO_A_RECOGER.test(norm);
+  if (cambiaARecojo && cfg.aceptaRetiroEnLocal !== false && (eligioDelivery || paso === 'pedido_entrega')
+    && ['pedido_entrega', 'pedido_datos', 'pedido_confirmar'].indexOf(paso) >= 0) {
+    return salir('boton', { motivo: 'cambio_a_recojo', boton: { tipo: 'e', partes: ['recojo'] } });
+  }
+  // El costo del delivery no es algo que el asistente cobre ni decida: se pasa con el local, SIN la frase de «menú» (el pedido sigue guardado).
+  const preguntaCostoDelivery = norm.length <= 100
+    && (/\b(cobrar|cobren|cobras|cobran|cobre|cobres|cobrarme|costo|cuesta|cuanto|precio|gratis|pagar)\b.*\b(delivery|envio|domicilio)\b|\b(delivery|envio|domicilio)\b.*\b(gratis|cobr\w*|costo|cuesta|precio|cuanto)\b/.test(norm));
+  if (preguntaCostoDelivery && paso !== 'pedido') return salir('transferir', { motivo: 'consulta sobre el costo del delivery', sinFraseMenu: true });
+}
+
 // --- Un «sí» suelto no confirma nada; una pregunta orden/unidad pendiente se vuelve a mostrar --
 const RELLENO = ['si', 'ya', 'dale', 'ok', 'okey', 'okay', 'listo', 'claro', 'bueno', 'confirmo', 'acepto', 'perfecto', 'adelante',
   'de', 'acuerdo', 'correcto', 'esta', 'bien', 'vale', 'sip', 'va', 'pues', 'una', 'enviar', 'envia', 'envialo', 'enviala',
@@ -228,6 +256,12 @@ const RELLENO = ['si', 'ya', 'dale', 'ok', 'okey', 'okay', 'listo', 'claro', 'bu
 const palabras = norm.split(' ').filter(Boolean);
 const soloAfirma = palabras.length > 0 && palabras.length <= 6 && palabras.every((w) => RELLENO.indexOf(w) >= 0);
 if ((paso === 'pedido_confirmar' || paso === 'reserva_confirmar') && soloAfirma) return salir('boton', { motivo: 'si_suelto' });
+// Lo mismo con el pedido a medias (entrega, datos del delivery, o la carta ya armada): «quiero confirmar», «confirmo», «ok» no se toman por una
+// pregunta ni se derivan a una persona; vuelve a salir el paso en que está (el resumen con «Confirmar pedido» cuando ya tiene todo). No confirma solo.
+const CONFIRMA = /^(quiero|quisiera|deseo|voy a) (confirmar|enviar|mandar)( (mi|el|este))?( pedido)?( por favor)?$|^(confirmar|confirmo|confirma|enviar|mandar)( (mi|el|este))? pedido( por favor)?$/;
+const pedidoEnCurso = ['pedido_entrega', 'pedido_datos'].indexOf(paso) >= 0 || (paso === 'pedido' && Array.isArray(previo.carrito) && previo.carrito.length > 0 && !(Array.isArray(previo.pendiente) && previo.pendiente.length));
+if (pedidoEnCurso && !enComprobante && (soloAfirma || CONFIRMA.test(norm))) return salir('boton', { motivo: 'si_suelto' });
+if (paso === 'pedido_confirmar' && CONFIRMA.test(norm)) return salir('boton', { motivo: 'si_suelto' });
 // Una respuesta a la pregunta orden/unidad («sueltos», «la orden», «dale») repite la pregunta sin gastar un modelo; cualquier otro
 // texto es un mensaje nuevo y se atiende (si no, «quiero un helado» recibía la misma pregunta una y otra vez). La
 // pregunta sigue pendiente en el estado y vuelve a salir en cuanto el pedido avanza.

@@ -93,6 +93,12 @@ const RETENCION_DECLARADA = new Set(['venta-minima.qtaco.json']);
 const RETENCION_POR_OMISION = { exito: 'none', error: 'none' };
 const retencionDe = (destino) => RETENCION_POR_SALIDA[destino] || RETENCION_POR_OMISION;
 
+// TIEMPO LÍMITE DE LA EJECUCIÓN (`settings.executionTimeout`, en segundos) POR SALIDA. Decisión de Andres (04/10/2026): el flujo de Q'Taco sube a 120 s porque el
+// peor caso del comprobante (57 s, ver DISENO.md) quedaba a 3 s de los 60 de la plantilla. SOLO Q'Taco: las variantes de prueba y de ensayo (aunque hereden sus
+// datos) y la plantilla conservan los 60 s. Un tiempo más largo no cambia mensajes ni costo por conversación: solo deja de cortar una ejecución lenta.
+const TIMEOUT_POR_SALIDA = { 'venta-minima.qtaco.json': 120 };
+const timeoutDe = (destino) => TIMEOUT_POR_SALIDA[destino] || plantilla.settings.executionTimeout;
+
 // COBRO SIMULADO (piloto de Q'Taco, 03/10/2026): la ÚNICA imagen permitida es el QR de demostración versionado, con el rótulo
 // IMPRESO, fijado EXACTAMENTE a la etiqueta v0.11.0 (no a «cualquier vN.N.N»: una etiqueta futura podría traer otra imagen). Otro anfitrión, otra
 // ruta u otra etiqueta = una imagen sin rótulo garantizado. Subir la etiqueta es una decisión revisada: se cambia aquí, en la prueba del blob
@@ -209,7 +215,7 @@ function armar(datos, archivo) {
   const flujo = JSON.parse(JSON.stringify(plantilla));
   flujo.name = dato(datos, 'nombreFlujo', archivo);
   const retencion = retencionDe(salidaDe(archivo));
-  flujo.settings = { ...flujo.settings, saveDataSuccessExecution: retencion.exito, saveDataErrorExecution: retencion.error };
+  flujo.settings = { ...flujo.settings, executionTimeout: timeoutDe(salidaDe(archivo)), saveDataSuccessExecution: retencion.exito, saveDataErrorExecution: retencion.error };
   const quitar = new Set(Object.entries(NODOS_DE_ENTRADA).filter(([k]) => k !== entrada).flatMap(([, v]) => v));
   if (entrada !== 'prueba') {
     for (const nombre of SOLO_PRUEBA) quitar.add(nombre);
@@ -414,6 +420,7 @@ function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
         ? '; decisión de Andres (04/10/2026): Q\'Taco guarda TODO (fallas y éxitos) por lo menos 24 horas para diagnosticar; el riesgo está aceptado y declarado en DISENO.md (no se baja a «none» ni a «default» sin su decisión)'
         : '; las ejecuciones llevan texto de clientes: este archivo no guarda nada y no puede hacerlo sin declararlo en RETENCION_POR_SALIDA'));
   }
+  if (st.executionTimeout !== timeoutDe(destino)) hallazgos.push(`el tiempo límite de ${destino || 'este archivo'} debe ser executionTimeout ${timeoutDe(destino)} (decisión de Andres, 04/10/2026: 120 s solo Q'Taco, 60 s el resto); tiene ${st.executionTimeout}`);
   // Presupuesto de nodos de producción.
   if (entrada !== 'prueba' && flujo.nodes.length > TOPE_DE_NODOS) {
     hallazgos.push(`tiene ${flujo.nodes.length} nodos y el tope de producción es ${TOPE_DE_NODOS}: reutilice los nodos existentes (el código vive en src/lib y src/nodos)`);
