@@ -8,7 +8,7 @@ import {
   ACEPTA, EXTENSIONES, esDelDeposito, mensajeDeFallaStorage, nombreParaProspecto,
   rutaArchivoPlanes, validarArchivoPlanes, type ExtensionPlanes,
 } from '../../central/lib/archivoPlanes';
-import { useModulos } from '../../central/lib/flujos';
+import { capacidadesDeConsola, useModulos } from '../../central/lib/flujos';
 import { idDeNombre } from '../../central/lib/csv';
 import { CampoMonto } from '../../central/componentes/CampoMonto';
 import { EditorLista } from '../../central/componentes/EditorLista';
@@ -299,7 +299,7 @@ export function Captacion() {
         + 'de captación.'));
   }, [tenantId]);
 
-  if (modulos !== null && !modulos.includes('captacion')) {
+  if (modulos !== null && !capacidadesDeConsola(modulos).conCaptacion) {
     return (
       <section>
         <h2>Captación de clientes</h2>

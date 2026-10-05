@@ -8,7 +8,7 @@ import { db } from '../../core/lib/firebase';
 import { useSesion } from '../../core/lib/contexto';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { SinSalida } from '../../core/componentes/SinSalida';
-import { FLUJOS, etiquetaDeCatalogoDe, flujosDe, useModulos } from '../lib/flujos';
+import { FLUJOS, capacidadesDeConsola, flujosDe, useModulos } from '../lib/flujos';
 import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
 import { GraficoDias, type DiaDeGrafico } from '../componentes/GraficoDias';
 import { avisoConsumoVigente, type AvisoConsumoVista as Aviso } from '../lib/planes';
@@ -305,7 +305,7 @@ interface ResumenNegocio {
 
 function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boolean }) {
   const modulos = useModulos(tenantId) ?? [];
-  const nombreItems = etiquetaDeCatalogoDe(modulos).toLowerCase();
+  const nombreItems = capacidadesDeConsola(modulos).etiquetaCatalogo.toLowerCase();
   const [datos, setDatos] = useState<ResumenNegocio | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<Periodo>('semana');

@@ -109,9 +109,9 @@ export function etiquetaCatalogo(flujos: readonly FlujoId[]): string {
   return etiquetaDeCatalogo(modulosDeFlujos(flujos));
 }
 
-/** Lo mismo, desde los módulos de la ficha (lo que usan las pantallas). */
+/** Lo mismo, desde los módulos de la ficha (el menú y el título de la página). */
 export function etiquetaDeCatalogoDe(modulos: readonly IdModulo[]): string {
-  return etiquetaDeCatalogo(modulos);
+  return capacidadesDeConsola(modulos).etiquetaCatalogo;
 }
 
 export interface Visitante {
@@ -142,10 +142,41 @@ export function pestanasVisibles(modulos: readonly IdModulo[], visitante: Visita
 }
 
 /**
- * El documento de `/config` donde vive el QR de este negocio: `venta` gana,
- * después `agendamiento`; sin ninguno de los dos (o sin Cobros), `null`.
+ * LO QUE CADA PANTALLA DECIDE CON LOS MÓDULOS DEL NEGOCIO, en UNA función pura.
+ *
+ * Las pantallas (`Cobro`, `Catalogo`, `Captacion`, `Tablero`) llaman a esta
+ * función y la suite de equivalencia (`pruebas/central/consola-registro.test.ts`)
+ * llama a ESTA MISMA función: lo que se prueba es lo que la pantalla ejecuta, no
+ * una copia. Una guarda de fuente exige además que cada pantalla la llame y use
+ * el campo que le corresponde.
+ *
+ *  - `conAgenda`: duración de cita en el catálogo y bloque de la seña en Cobro.
+ *  - `conPedidos`: bloque de costos de entrega en Cobro (`config/venta`).
+ *  - `conVistaPrevia`: vista previa del sitio público del catálogo (Catálogo web).
+ *  - `conCaptacion`: la pantalla de Captación solo se abre con este módulo.
+ *  - `documentoCobro`: el documento de `/config` donde vive el QR: `venta`
+ *    gana, después `agendamiento`; sin ninguno de los dos (o sin Cobros), `null`.
+ *  - `etiquetaCatalogo`: «Servicios», «Productos» o «Catálogo».
  */
-export { documentoDeCobro };
+export interface CapacidadesDeConsola {
+  conAgenda: boolean;
+  conPedidos: boolean;
+  conVistaPrevia: boolean;
+  conCaptacion: boolean;
+  documentoCobro: ReturnType<typeof documentoDeCobro>;
+  etiquetaCatalogo: string;
+}
+
+export function capacidadesDeConsola(modulos: readonly IdModulo[]): CapacidadesDeConsola {
+  return {
+    conAgenda: modulos.includes('agenda'),
+    conPedidos: modulos.includes('pedidos'),
+    conVistaPrevia: modulos.includes('catalogo-web'),
+    conCaptacion: modulos.includes('captacion'),
+    documentoCobro: documentoDeCobro(modulos),
+    etiquetaCatalogo: etiquetaDeCatalogo(modulos),
+  };
+}
 
 /**
  * La ficha del negocio, en vivo. `null` mientras carga: la cabecera no pinta

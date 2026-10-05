@@ -11,8 +11,13 @@
  *   «ANTES» es la consola del 03/10/2026 copiada LITERAL, con su lógica (la
  *   tabla, `flujosDe`, `etiquetaCatalogo`, el filtro de la cabecera de
  *   `App.tsx`, y lo que decidían `Cobro`, `Catalogo`, `Captacion` y `Tablero`).
- *   «DESPUÉS» es lo que la consola ejecuta hoy (la fachada `flujos.ts` y las
- *   funciones que las pantallas llaman).
+ *   «DESPUÉS» son las funciones puras de la fachada `flujos.ts` que las
+ *   pantallas LLAMAN (`pestanasVisibles`, `capacidadesDeConsola`,
+ *   `etiquetaDeCatalogoDe`): esta suite ejecuta esas mismas funciones, no una
+ *   copia. Lo que ninguna suite ejecuta es el JSX: que cada pantalla las llame
+ *   con los argumentos y los campos correctos lo exigen las GUARDAS DE FUENTE
+ *   de abajo (la llamada exacta), y cada una se probó mutando la pantalla (ver
+ *   la descripción del PR). No hay prueba que RENDERICE las pantallas.
  *
  * Se comparan los OCHO subconjuntos de los tres flujos, escritos como `flujos`
  * y, los de un solo flujo, como `vertical` (las fichas anteriores a la lista),
@@ -35,7 +40,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { IDS_FLUJOS, IDS_MODULOS, PUENTE_DE_FLUJOS } from '../../functions/src/registro.ts';
 import type { IdFlujo } from '../../functions/src/registro.ts';
 import {
-  FLUJOS as FLUJOS_DESPUES, documentoDeCobro, etiquetaCatalogo as etiquetaDespues, etiquetaDeCatalogoDe,
+  FLUJOS as FLUJOS_DESPUES, capacidadesDeConsola, etiquetaCatalogo as etiquetaDespues, etiquetaDeCatalogoDe,
   flujosDe as flujosDespues, modulosDe, pestanasVisibles,
 } from '../../web/src/central/lib/flujos.ts';
 
@@ -105,13 +110,10 @@ const cobroAntes = (flujos: string[]) => {
 // ============================================================ DESPUÉS
 const menuDespues = (ficha: Ficha, rol: string | null, propietario: boolean) =>
   pestanasVisibles(modulosDe(ficha), { rol, propietario });
+/** Lo que decide `Cobro.tsx`, con la función que `Cobro.tsx` llama. */
 const cobroDespues = (ficha: Ficha) => {
-  const modulos = modulosDe(ficha);
-  return {
-    tieneVenta: modulos.includes('pedidos'),
-    tieneAgenda: modulos.includes('agenda'),
-    documento: documentoDeCobro(modulos),
-  };
+  const c = capacidadesDeConsola(modulosDe(ficha));
+  return { tieneVenta: c.conPedidos, tieneAgenda: c.conAgenda, documento: c.documentoCobro };
 };
 
 // ============================================================ los casos
@@ -179,14 +181,15 @@ describe('H2b-5: la consola de hoy es la del 03/10 para los ocho subconjuntos de
   it.each(subconjuntos.map((s) => [nombre(s), s] as const))('%s: lo que deciden Cobro, Catálogo y Captación', (_n, s) => {
     for (const ficha of fichasDe(s)) {
       const flujos = flujosAntes(ficha);
-      const modulos = modulosDe(ficha);
+      const c = capacidadesDeConsola(modulosDe(ficha));
       const donde = JSON.stringify(ficha);
       expect(cobroDespues(ficha), donde).toEqual(cobroAntes(flujos));
-      // Catalogo.tsx: duración de cita (agenda) y vista previa del sitio (venta).
-      expect(modulos.includes('agenda'), donde).toBe(flujos.includes('agendamiento'));
-      expect(modulos.includes('catalogo-web'), donde).toBe(flujos.includes('venta'));
+      // Catalogo.tsx: duración de cita (agenda), vista previa del sitio (venta) y título.
+      expect(c.conAgenda, donde).toBe(flujos.includes('agendamiento'));
+      expect(c.conVistaPrevia, donde).toBe(flujos.includes('venta'));
+      expect(c.etiquetaCatalogo, donde).toBe(catalogoAntes(flujos));
       // Captacion.tsx: la pantalla se abre solo con el flujo de captación.
-      expect(modulos.includes('captacion'), donde).toBe(flujos.includes('onboarding'));
+      expect(c.conCaptacion, donde).toBe(flujos.includes('onboarding'));
     }
   });
 
@@ -261,6 +264,31 @@ describe('H2b-5: lo que cambia a propósito, negando', () => {
       .toEqual(['pedidos', 'cobros', 'inventario', 'cobro']);
   });
 
+  it('cada capacidad de la consola se enciende con SU módulo y con ningún otro (fichas con `modulos`)', () => {
+    // Con flujos, «pedidos» e «inventario» siempre van juntos: solo una lista de módulos los separa.
+    const campos = {
+      conAgenda: 'agenda', conPedidos: 'pedidos', conVistaPrevia: 'catalogo-web', conCaptacion: 'captacion',
+    } as const;
+    for (const [campo, modulo] of Object.entries(campos)) {
+      for (const m of IDS_MODULOS) {
+        const c = capacidadesDeConsola(modulosDe({ modulos: [m] }));
+        expect(c[campo as keyof typeof campos], `${campo} con solo «${m}»`).toBe(m === modulo);
+      }
+    }
+    const doc = (modulos: string[]) => capacidadesDeConsola(modulosDe({ modulos })).documentoCobro;
+    expect(doc(['cobros', 'pedidos'])).toBe('venta');
+    expect(doc(['cobros', 'agenda'])).toBe('agendamiento');
+    expect(doc(['cobros', 'pedidos', 'agenda'])).toBe('venta');
+    expect(doc(['pedidos', 'agenda'])).toBeNull();
+    expect(doc(['cobros'])).toBeNull();
+    expect(doc(['inventario', 'cobros'])).toBeNull();
+    const etiqueta = (modulos: string[]) => capacidadesDeConsola(modulosDe({ modulos })).etiquetaCatalogo;
+    expect(etiqueta(['agenda'])).toBe('Servicios');
+    expect(etiqueta(['pedidos'])).toBe('Productos');
+    expect(etiqueta(['agenda', 'pedidos'])).toBe('Catálogo');
+    expect(etiqueta(['agenda', 'captacion'])).toBe('Catálogo');
+  });
+
   it('el operador y los roles ajenos no ven pestañas de administrador (negativa de roles)', () => {
     for (const f of IDS_FLUJOS) {
       for (const rol of ['oper', 'ingesta', null]) {
@@ -283,28 +311,78 @@ describe('H2b-5: ninguna lista de flujos ni de pestañas queda escrita en la con
     const t = sinComentarios(readFileSync(join(WEB, 'central/lib/flujos.ts'), 'utf8'));
     expect(t).toMatch(/from '(\.\.\/)+functions\/src\/registro'/);
     expect(t).not.toMatch(/['"](agendamiento|venta|onboarding)['"]/);
-    for (const m of IDS_MODULOS) expect(t, `módulo ${m}`).not.toContain(`'${m}'`);
+    // Los ids de módulo solo aparecen dentro de `capacidadesDeConsola` (una consulta por pantalla).
+    const fuera = t.replace(/export function capacidadesDeConsola[\s\S]*?\n}\n/, '');
+    expect(fuera.length).toBeLessThan(t.length);
+    for (const m of IDS_MODULOS) expect(fuera, `módulo ${m}`).not.toContain(`'${m}'`);
     for (const f of IDS_FLUJOS) {
       for (const p of FLUJOS_ANTES[f]!.pestanas) expect(t, `${f}/${p.ruta}`).not.toContain(`ruta: '${p.ruta}'`);
     }
   });
 
-  it('App.tsx no recorre pestañas de flujo por su cuenta: pide las visibles al registro', () => {
-    const app = sinComentarios(readFileSync(join(WEB, 'App.tsx'), 'utf8'));
-    expect(app).toContain('pestanasVisibles(');
+  /** Sin comentarios y con los espacios colapsados: la llamada exacta no depende del formato. */
+  const normal = (t: string) => sinComentarios(t).replace(/\s+/g, ' ');
+  const pantalla = (ruta: string) => normal(readFileSync(join(WEB, ruta), 'utf8'));
+
+  // ---- Las pantallas llaman a las funciones de la fachada, con los argumentos y los campos correctos.
+  // Nadie ejecuta el JSX en una prueba: estas guardas son la única red de la llamada, y cada una se
+  // probó mutando la pantalla (descripción del PR). Un cambio de estilo que las rompa se corrige acá.
+  it('App.tsx: el rol sale de rolEn, el propietario de la sesión, y las pestañas y el rótulo de la fachada', () => {
+    const app = pantalla('App.tsx');
+    expect(app).toContain('const rol = tenantId ? rolEn(permisos, tenantId) : null;');
+    expect(app).toContain('const modulos = useModulos(tenantId);');
+    // La llamada exacta: ni `propietario: false`, ni un rol fijo, ni otra lista de módulos.
+    expect(app).toMatch(/\{tenantId && pestanasVisibles\(modulos \?\? \[\], \{ rol, propietario: permisos\.propietario \}\)\.map\(/);
+    expect(app).toContain('<NavLink key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.titulo}</NavLink>');
+    expect(app).toContain('{tenantId && esAdminDelNegocio && modulos && <NavLink to={`/negocio/${tenantId}/catalogo`}>{etiquetaDeCatalogoDe(modulos)}</NavLink>}');
+    expect(app).toContain("tramo === 'catalogo' ? etiquetaDeCatalogoDe(modulos ?? []) : TITULOS[tramo]");
     expect(app).not.toMatch(/\bFLUJOS\b/);
     expect(app).not.toMatch(/\.pestanas\b/);
     expect(app).not.toMatch(/etiquetaCatalogo\(/);
   });
 
-  it('los ids de flujo en comparaciones y condiciones solo sobreviven donde se declara (lista que solo se achica)', () => {
-    // Conocidos, con su porqué. Esta lista SOLO SE ACHICA: un archivo nuevo con un id de flujo falla.
+  it('Cobro, Catálogo, Captación y Tablero: cada decisión sale de capacidadesDeConsola, por su campo', () => {
+    const cobro = pantalla('modulos/cobros/Cobro.tsx');
+    expect(cobro).toContain('const modulos = useModulos(tenantId);');
+    expect(cobro).toContain('const capacidades = capacidadesDeConsola(modulos ?? []); const tieneVenta = capacidades.conPedidos; const tieneAgenda = capacidades.conAgenda;');
+    expect(cobro).toContain('modulos === null ? null : capacidades.documentoCobro;');
+    expect(cobro).toContain('if (modulos !== null && documento === null) {');
+    expect(cobro).toContain('{tieneVenta && <ConfiguracionVertical tenantId={tenantId} vertical="venta" />}');
+    expect(cobro).toContain('{tieneAgenda && <ConfiguracionVertical tenantId={tenantId} vertical="agendamiento" />}');
+
+    const catalogo = pantalla('modulos/productos/Catalogo.tsx');
+    expect(catalogo).toContain('const modulos = useModulos(tenantId) ?? []; const capacidades = capacidadesDeConsola(modulos); const conAgenda = capacidades.conAgenda;');
+    expect(catalogo).toContain('const conVenta = capacidades.conVistaPrevia;');
+    expect(catalogo).toContain('const titulo = capacidades.etiquetaCatalogo;');
+
+    const captacion = pantalla('modulos/captacion/Captacion.tsx');
+    expect(captacion).toContain('const modulos = useModulos(tenantId);');
+    expect(captacion).toContain('if (modulos !== null && !capacidadesDeConsola(modulos).conCaptacion) {');
+
+    const tablero = pantalla('central/paginas/Tablero.tsx');
+    expect(tablero).toContain('const modulos = useModulos(tenantId) ?? []; const nombreItems = capacidadesDeConsola(modulos).etiquetaCatalogo.toLowerCase();');
+    // La cartera lista los flujos de cada ficha con el nombre del puente.
+    expect(tablero).toContain('{flujosDe(n).map((f) => ( <span key={f} className="tag tag-outline">{FLUJOS[f].nombre}</span> ))}');
+  });
+
+  it('ninguna pantalla decide por un id de módulo con `.includes(...)`: lo hace la fachada', () => {
+    const ids = IDS_MODULOS.join('|');
+    const reg = new RegExp(`\\.includes\\(\\s*['"\`](${ids})['"\`]`);
+    for (const a of ARCHIVOS) {
+      if (relativo(a) === 'central/lib/flujos.ts') continue;
+      expect(normal(readFileSync(a, 'utf8')), relativo(a)).not.toMatch(reg);
+    }
+  });
+
+  // ---- Lo que queda con ids de flujo: listas que SOLO SE ACHICAN.
+  it('los ids de flujo escritos (comillas simples, dobles o plantillas) solo sobreviven donde se declara, y solo bajan', () => {
+    // Conocidos, con su porqué. Tope por archivo (`<=`): bajar es bueno y no rompe; subir, o un archivo nuevo, falla.
     //  - Configuracion.tsx: `flujos.includes('agendamiento'|'venta')`; el encargo H2b-5 pidió no tocarla.
     //  - Captacion.tsx: `FLUJOS_SUGERIDOS` es el catálogo de ofertas que el asesor sugiere a un prospecto
     //    (no los flujos que el negocio tiene) y `config/onboarding` es el nombre de un documento.
     //  - Cobro.tsx: `config/venta` y `config/agendamiento` son nombres de documento (`vertical=` de
     //    `ConfiguracionVertical`, que declara los campos de cada uno), no una lista de flujos.
-    const CONOCIDOS: Record<string, number> = {
+    const TOPE: Record<string, number> = {
       'central/paginas/Configuracion.tsx': 2,
       'modulos/captacion/Captacion.tsx': 6,
       'modulos/cobros/Cobro.tsx': 10,
@@ -312,13 +390,30 @@ describe('H2b-5: ninguna lista de flujos ni de pestañas queda escrita en la con
     const hallados: Record<string, number> = {};
     for (const a of ARCHIVOS) {
       if (relativo(a) === 'central/lib/flujos.ts') continue;
-      const n = (sinComentarios(readFileSync(a, 'utf8')).match(/['"](agendamiento|venta|onboarding)['"]/g) ?? []).length;
+      const n = (sinComentarios(readFileSync(a, 'utf8')).match(/['"`](agendamiento|venta|onboarding)['"`]/g) ?? []).length;
       if (n > 0) hallados[relativo(a)] = n;
     }
-    expect(hallados).toEqual(CONOCIDOS);
+    for (const [archivo, n] of Object.entries(hallados)) {
+      expect(TOPE[archivo], `${archivo}: archivo nuevo con ids de flujo`).toBeDefined();
+      expect(n, `${archivo}: más ids de flujo que el tope`).toBeLessThanOrEqual(TOPE[archivo] as number);
+    }
   });
 
-  it('ninguna pantalla lee `vertical` ni `flujos` de una ficha por su cuenta, salvo el Tablero (que pasa la ficha a la fachada)', () => {
+  it('`includes` con un id de flujo (con o sin punto delante, y en plantilla) solo en Configuracion.tsx', () => {
+    const reg = /includes\(\s*['"`](agendamiento|venta|onboarding)['"`]/;
+    const donde = ARCHIVOS.filter((a) => relativo(a) !== 'central/lib/flujos.ts'
+      && reg.test(sinComentarios(readFileSync(a, 'utf8')))).map(relativo);
+    expect(donde.filter((d) => d !== 'central/paginas/Configuracion.tsx')).toEqual([]);
+  });
+
+  it('`useFlujos` solo lo importa Configuracion.tsx, y la lista solo se achica', () => {
+    const TOPE = ['central/paginas/Configuracion.tsx'];
+    const importan = ARCHIVOS.filter((a) => relativo(a) !== 'central/lib/flujos.ts'
+      && /\buseFlujos\b/.test(sinComentarios(readFileSync(a, 'utf8')))).map(relativo);
+    expect(importan.filter((i) => !TOPE.includes(i)), 'archivo nuevo que usa useFlujos: que use useModulos').toEqual([]);
+  });
+
+  it('ninguna pantalla lee `vertical` ni `flujos` de una ficha por su cuenta', () => {
     for (const a of ARCHIVOS) {
       const t = sinComentarios(readFileSync(a, 'utf8'));
       if (relativo(a) === 'central/lib/flujos.ts') continue;

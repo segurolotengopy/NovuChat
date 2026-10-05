@@ -4,7 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 import { Link, useParams } from 'react-router-dom';
 import jsQR from 'jsqr';
 import { db, funciones } from '../../core/lib/firebase';
-import { documentoDeCobro, useModulos } from '../../central/lib/flujos';
+import { capacidadesDeConsola, useModulos } from '../../central/lib/flujos';
 import { ConfiguracionVertical } from '../../central/componentes/ConfiguracionModulo';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 
@@ -26,7 +26,7 @@ import { TextoSeguro } from '../../central/componentes/TextoSeguro';
  *    negocio en su banco. Los dos parámetros de la seña se editan al pie.
  *
  * EL DOCUMENTO LO DECIDE EL REGISTRO (`documentoDeCobro`, sobre los módulos del
- * negocio; H2b-5), igual que en el servidor (`registrarQrDeCobro`): `/config/venta` si el negocio vende, y si solo
+ * negocio; `capacidadesDeConsola`, H2b-5), igual que en el servidor (`registrarQrDeCobro`): `/config/venta` si el negocio vende, y si solo
  * reserva, `/config/agendamiento`. Es la política de capas (§4sexies): el QR es
  * del flujo que cobra, y un negocio con los dos flujos lo tiene una sola vez,
  * en el de venta, para que los dos manden el mismo.
@@ -123,14 +123,15 @@ export function Cobro() {
   const modulos = useModulos(tenantId);
   // Los parámetros propios van a SU documento: costos de entrega a `venta`
   // (módulo Pedidos), la seña a `agendamiento` (módulo Agenda).
-  const tieneVenta = (modulos ?? []).includes('pedidos');
-  const tieneAgenda = (modulos ?? []).includes('agenda');
+  const capacidades = capacidadesDeConsola(modulos ?? []);
+  const tieneVenta = capacidades.conPedidos;
+  const tieneAgenda = capacidades.conAgenda;
   // `null` mientras no se sabe qué módulos tiene: no se escucha ningún
   // documento hasta entonces, para no leer `venta` y después saltar a
   // `agendamiento` con el formulario ya rellenado con lo del otro. El
   // documento del QR lo decide el registro (`documentoDeCobro`): `venta` gana.
   const documento: 'venta' | 'agendamiento' | null =
-    modulos === null ? null : documentoDeCobro(modulos);
+    modulos === null ? null : capacidades.documentoCobro;
   const [hayQrDemo, setHayQrDemo] = useState<boolean | null>(null);
   const [registrado, setRegistrado] = useState<Registrado | null>(null);
 
