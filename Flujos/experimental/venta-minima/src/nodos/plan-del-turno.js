@@ -238,6 +238,7 @@ function estadoDe(e) {
   if (!s.pedidoWeb || typeof s.pedidoWeb !== 'object') s.pedidoWeb = null;
   if (!s.carritoAnterior || typeof s.carritoAnterior !== 'object') s.carritoAnterior = null;
   s.preguntoDejar = s.preguntoDejar === true;
+  s.aclaro = s.aclaro === true;
   return s;
 }
 
@@ -265,6 +266,7 @@ function limpiarSegun(que) {
 function irA(paso) {
   en.paso = paso;
   en.vacias = 0;
+  en.aclaro = false;
 }
 
 // --- Utilidades de texto --------------------------------------------------------------------
@@ -615,6 +617,8 @@ function aBoton(b) {
     return;
   }
   if (b.tipo === 'p' && p0 === 'dejar') return dejarComoEstaba();
+  if (b.tipo === 'p' && p0 === 'seguir') return mostrarPaso();
+  if (b.tipo === 'm' && p0 === 'persona') return derivar('pidió hablar con una persona');
   if (b.tipo === 'p' && p0 === 'confirmar') return confirmarPedido();
   if (b.tipo === 'r' && p0 === 'enviar') return enviarReserva();
   if (b.tipo === 'r' && p0 === 'corregir') return evaluarReserva(en.reserva || {});
@@ -817,10 +821,7 @@ function siguientePasoPedido() {
       return siguientePasoPedido();
     }
     en.paso = 'pedido_entrega';
-    return [{ tipo: 'botones', cuerpo: '¿Es para delivery o para recoger en el local?', botones: [
-      { id: vmIdDeBoton('e', 'delivery'), title: 'Delivery' },
-      { id: vmIdDeBoton('e', 'recojo'), title: 'Recoger en el local' },
-    ] }];
+    return [preguntaDeEntrega()];
   }
   if (en.entrega.entrega === 'delivery') {
     const faltan = pdFaltanEntrega(en.entrega, perfil);
@@ -898,9 +899,13 @@ function aExtraerPedido() {
     return derivar('el modelo no devolvió un pedido legible');
   }
   const x = pdValidarExtraccion(j);
-  if (x.quiereHablar === true) return derivar('pidió hablar con una persona');
   const lineas = Array.isArray(x.lineas) ? x.lineas : [];
+  // Con productos en el mensaje y sin una petición explícita de persona, se atiende el pedido (no se descarta lo pedido por una marca dudosa del modelo).
+  if (x.quiereHablar === true && (!lineas.length || pideUnaPersonaElTexto())) return aclararOPasarConElLocal();
   const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
+  // El modelo no asignó el texto a ningún campo: con el delivery a medias, lo toma el CÓDIGO (la dirección que falta o, ya dada la dirección, la referencia
+  // opcional) en lugar de perderlo o repetir la pregunta.
+  if (!lineas.length && !datosEntrega && adoptarTextoLibre()) return;
   if (!lineas.length && !datosEntrega) {
     // Dos extracciones seguidas sin nada que tomar: se pasa con el local.
     en.vacias += 1;
@@ -913,6 +918,7 @@ function aExtraerPedido() {
     return;
   }
   en.vacias = 0;
+  en.aclaro = false;
   if (x.entrega && modalidades().indexOf(x.entrega) >= 0) ponerModalidad(x.entrega);
   ['direccion', 'referencia', 'nombre'].forEach((k) => { if (x[k]) en.entrega[k] = delCliente(x[k], 160); });
   const noEnc = lineas.length ? agregarLineas(lineas.map(lineaSaneada)) : [];
@@ -926,6 +932,67 @@ function aExtraerPedido() {
   }
   if (falto) notas.push(falto);
   mostrarPedido();
+}
+
+// «quiereHablar: true» del modelo NO deriva a la primera (frases como «Donde dije» lo activaban sin que nadie pidiera una persona). Se deriva solo si el texto
+// pide EXPLÍCITAMENTE una persona o atención («hablar con», «persona», «encargado», «asesor», «atención», «llámenme»…) o si el cliente insiste (segunda vez
+// seguida, `aclaro`). Si no: UNA aclaración corta con botones, y si la frase se parece a un cambio de entrega («quiero que me mandn»), la pregunta de la
+// entrega (Delivery / Recoger en el local), que NUNCA deriva. Derivar sigue siendo aviso + botón, pero no es la primera salida.
+function pideUnaPersonaElTexto() {
+  return /\b(hablar con|conversar con|persona|personas|humano|humana|encargad[oa]|asesor|asesora|atencion|llamen|llamenme|llamame|llamar|gerente|duen[oa]|administrador)\b/.test(vmNorm(d.texto));
+}
+function aclararOPasarConElLocal() {
+  const n = vmNorm(d.texto);
+  const explicito = pideUnaPersonaElTexto();
+  const parecidoAEntrega = en.carrito.length > 0 && /\b(mand|envi|traig|traer|llev|domicil|delivery|recog|recoj|retir|buscar)/.test(n);
+  if (parecidoAEntrega && !explicito) {
+    ruta = 'boton:aclarar_entrega';
+    en.paso = 'pedido_entrega'; // los botones de entrega valen en este paso
+    mensajes = [preguntaDeEntrega()];
+    return;
+  }
+  if (explicito || en.aclaro === true) return derivar('pidió hablar con una persona');
+  ruta = 'boton:aclarar';
+  en.aclaro = true;
+  const hayPedido = en.carrito.length > 0 && en.paso.indexOf('pedido') === 0;
+  mensajes = [{ tipo: 'botones', cuerpo: 'Disculpa, no te entendí bien. ¿Qué te gustaría hacer?', botones: (hayPedido ? [{ id: vmIdDeBoton('p', 'seguir'), title: 'Seguir con mi pedido' }] : [])
+    .concat([{ id: vmIdDeBoton('m', 'persona'), title: 'Escribir al local' }]) }];
+}
+
+// La pregunta de la entrega (sin elegir todavía): Delivery o recoger en el local.
+function preguntaDeEntrega() {
+  return { tipo: 'botones', cuerpo: '¿Es para delivery o para recoger en el local?', botones: [
+    { id: vmIdDeBoton('e', 'delivery'), title: 'Delivery' },
+    { id: vmIdDeBoton('e', 'recojo'), title: 'Recoger en el local' },
+  ] };
+}
+
+// Con el delivery a medias y un texto libre que el modelo no asignó a nada: si falta la dirección y el texto es una dirección de verdad, es la dirección; si la
+// dirección ya está, un texto que nombra un lugar («a media cuadra de la calle Foton») es la referencia, que es opcional pero no se pierde. Sin
+// signos de pregunta ni enlaces, y nunca una palabra de cortesía o una negación. `false` si no se tomó nada.
+function adoptarTextoLibre() {
+  if (en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length) return false;
+  const crudo = String(d.texto || '');
+  const n = vmNorm(crudo);
+  if (!n || /[?¿]/.test(crudo) || /https?:|www\./i.test(crudo) || /^(no|si|gracias|ok|okey|listo|hola|buenas|buenos|dale|ya|bueno|nada|menu)\b/.test(n)) return false;
+  const palabras = n.split(' ').filter(Boolean);
+  const texto1 = delCliente(crudo, 160);
+  if (pdFaltanEntrega(en.entrega, perfil).length) {
+    const prueba = Object.assign({}, en.entrega, { direccion: texto1 });
+    // Una dirección de verdad: con un número («calle 1 numerro 2 Irpavi») o con una palabra de lugar («barrio Sopocachi, pasaje Los Pinos»); «puedo pagar con tarjeta» no.
+    const conLugar = /\b(calle|av|avenida|barrio|zona|esquina|esq|edificio|pasaje|urbanizacion|urb|condominio|km|numero|nro|casa|manzano|mz|lote|plaza|carretera|avda)\b/.test(n);
+    if (pdFaltanEntrega(prueba, perfil).length || !((/\d/.test(n) && palabras.length >= 2) || (conLugar && palabras.length >= 3))) return false;
+    en.entrega.direccion = texto1;
+    ruta = 'boton:direccion_del_texto';
+    mostrarPedido();
+    return true;
+  }
+  if (en.entrega.referencia || palabras.length < 2 || n.length < 8) return false;
+  if (!/\b(calle|av|avenida|esquina|cuadra|cuadras|frente|lado|junto|cerca|detras|entre|edificio|casa|porton|puerta|piso|zona|barrio|plaza|mercado|tienda|farmacia|colegio|iglesia|parque|pasaje|numero|nro|porteria|rotonda|surtidor|gasolinera|banco)\b/.test(n)) return false;
+  en.entrega.referencia = delCliente(crudo, 150);
+  ruta = 'boton:referencia_del_texto';
+  mostrarPedido();
+  return true;
 }
 
 // El pedido a guardar y a avisar: los campos del código (nunca un precio del modelo).
