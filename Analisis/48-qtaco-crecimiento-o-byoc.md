@@ -100,7 +100,19 @@ Lo que dice la tabla:
 - **El modelo de IA lo elige NovuChat**: el tope de BYOC se fija contra Gemini Flash-Lite (`Analisis/39` §2).
 - **Sin tarjeta no hay avisos.** El contrato dice qué pasa si la tarjeta de Meta falla, y la consola tiene que mostrarlo.
 
-## 6. Supuestos y límites
+## 6. ¿Se podría armar un grupo de WhatsApp con BYOC?
+
+Q'Taco pidió el 28/09 que el aviso vaya «a un grupo o a 2 personas». **BYOC no habilita el grupo.** Verificado el 04/10/2026 contra la documentación de Meta (API de grupos, Cloud API):
+
+- **Exige que el número tenga la cuenta oficial con insignia (OBA).** No bastan el portafolio verificado, el nombre visible aprobado ni tener la cuenta de pago. Con BYOC, la insignia tendría que obtenerla Q'Taco para su número, y Meta decide si la concede y cuándo. La del número de AAB1 está bloqueada (medición de WhatsApp-Modular, 01/10), y el número …326 no tiene.
+- **Cómo funciona, si algún día hay insignia:** lo crea la propia API del número (no se usa uno ya existente); el número es el único negocio del grupo; máximo **8 participantes**; nadie se agrega directamente, cada persona entra por un **enlace de invitación**; admite texto, medios y plantillas, pero **no botones ni mensajes interactivos**; cobra por mensaje (no se verificó si un aviso al grupo se cobra una vez o por integrante); no funciona con números de la app WhatsApp Business ni en coexistencia con ella.
+- **El flujo de Q'Taco no lo tiene:** habría que construir la creación del grupo, las invitaciones y qué hacer si alguien sale. Es obra nueva, no una configuración.
+
+**Lo que sirve hoy, en cualquier modalidad:** mensaje individual con plantilla a dos números. Es lo que el propio acta pide («o a 2 personas») y cubre la necesidad de fondo, que es que lo vean dos personas. Cada destinatario adicional agrega 0,0113 USD por aviso: con 225 conversaciones al mes, unos 2 a 3 USD (en BYOC los paga Q'Taco; en el canal de NovuChat, nosotros). Un grupo queda como mejora posible si Q'Taco consigue la insignia por su cuenta.
+
+Fuentes: documentación de Meta, «Groups API» (developers.facebook.com, business-messaging/whatsapp/groups) y el análisis de terceros «The state of the WhatsApp Groups API in 2026» (kapso.com).
+
+## 7. Supuestos y límites
 
 - Los mensajes salen del diseño y de la suite, no de producción: el piloto empieza el 05/10.
 - La mezcla 60/25/15 y las 225 conversaciones son supuestos del diseño (150 pedidos y 40 reservas). Los avisos al restaurante se cobran todos a 0,0113 USD, sin franquicia. Es conservador: con las ventanas cerradas, un pedido manda 2 plantillas y no 5.
