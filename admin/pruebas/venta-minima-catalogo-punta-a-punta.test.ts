@@ -969,6 +969,29 @@ describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúden
     const t = turno(w, texto(dicho));
     expect(t.avisos.length, dicho).toBeGreaterThan(0);
   });
+  // Batería real (FPdr/FPdp): con `quiereHablar` del modelo, «ayúdenme» y «auxilio» derivan a la PRIMERA (la aclaración es para lo dudoso, no para una petición de ayuda clara),
+  // con el resumen ya dado y con la dirección pendiente.
+  it.each(['ayúdenme', 'auxilio'])('«%s» con `quiereHablar` del modelo deriva a la primera: con el resumen dado y con la dirección pendiente', (dicho) => {
+    const a = conDireccion();
+    a.estado.extraccion = { ...NADA, quiereHablar: true };
+    const ta = turno(a, texto(dicho));
+    expect(ta.avisos.length, dicho + ' (resumen dado)').toBeGreaterThan(0);
+    expect(ta.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    const b = crear();
+    carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_a1_p_' + String(++k).padStart(4, '0') }) });
+    b.estado.extraccion = { ...NADA, quiereHablar: true };
+    const tb = turno(b, texto(dicho));
+    expect(tb.avisos.length, dicho + ' (dirección pendiente)').toBeGreaterThan(0);
+    expect(tb.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+  });
+  it.each(['no hay problema', 'alguien lo recibe', 'es para una persona'])('«%s» sin `quiereHablar` sigue sin derivar, con el resumen dado y con la dirección pendiente', (dicho) => {
+    const a = conDireccion();
+    expect(turno(a, texto(dicho)).avisos, dicho).toHaveLength(0);
+    const b = crear();
+    carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_a1_q_' + String(++k).padStart(4, '0') }) });
+    b.estado.extraccion = NADA;
+    expect(turno(b, texto(dicho)).avisos, dicho).toHaveLength(0);
+  });
 });
 
 // =====================================================================================================
@@ -1037,6 +1060,9 @@ describe('referencia sin cierres: «eso es todo» y «cámbiame el pedido» no s
     const i = fuente.indexOf('function esCierreOCambio(n) {');
     const j = fuente.indexOf('\n}\n', i) + 3;
     expect(i, 'esCierreOCambio no está en plan-del-turno.js').toBeGreaterThan(0);
+    // Se ejecuta la función VERSIONADA del nodo (copiarla dejaría la prueba en verde mientras el flujo se rompe); el código es del repositorio, nunca de un tercero.
+    // Misma justificación que `bellido-flujo.test.ts`.
+    // nosemgrep: devsecops.js-eval-prohibido
     return new Function(`${fuente.slice(i, j)}\nreturn esCierreOCambio;`)() as (n: string) => boolean;
   };
   it('rendimiento: 60 o 5000 repeticiones de «nomas » seguidas de «x» se resuelven en menos de 50 ms (sin retroceso exponencial)', () => {

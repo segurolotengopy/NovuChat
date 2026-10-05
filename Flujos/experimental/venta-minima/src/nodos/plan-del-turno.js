@@ -979,7 +979,8 @@ function pideUnaPersonaElTexto() {
 }
 function aclararOPasarConElLocal() {
   const n = vmNorm(d.texto);
-  const explicito = pideUnaPersonaElTexto();
+  // Una petición de ayuda clara («ayúdenme», «auxilio») también es explícita: `pideUnaPersonaElTexto` solo conoce «ayuda», y `pideAyudaPorCodigo` descarta las cortesías («no hay problema»).
+  const explicito = pideUnaPersonaElTexto() || pideAyudaPorCodigo(n);
   const parecidoAEntrega = en.carrito.length > 0 && /\b(mand|envi|traig|traer|llev|domicil|delivery|recog|recoj|retir|buscar)/.test(n);
   if (parecidoAEntrega && !explicito) {
     ruta = 'boton:aclarar_entrega';
