@@ -29,6 +29,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 // @ts-expect-error — módulo .mjs sin tipos
 import { comprobarProyecto, fichaDeVenta, nombresDePrueba } from '../../scripts/plataforma/verificar-reglas-staging.mjs';
 
@@ -36,15 +37,16 @@ const aqui = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(aqui, '..', '..');
 const SCRIPT = join(RAIZ, 'scripts', 'plataforma', 'verificar-reglas-staging.mjs');
 
-/** Entorno limpio: ninguna variable de Firebase/GCP del que corre la prueba se cuela. */
-const entorno = (extra: Record<string, string> = {}) => ({
-  PATH: process.env.PATH ?? '',
-  HOME: process.env.HOME ?? '',
-  ...extra,
-});
-
-const correrScript = (args: string[], env: Record<string, string>) =>
-  spawnSync('node', [SCRIPT, ...args], { env: entorno(env), encoding: 'utf8', timeout: 30000 });
+/**
+ * El hijo hereda el entorno hermético de las suites (`entornoDelEmulador`: Auth a un puerto
+ * muerto, sin ADC): aunque la salvaguarda fallara, el script no podría salir a la nube.
+ * Ese entorno deja puesto FIREBASE_AUTH_EMULATOR_HOST, así que ningún proyecto real pasa
+ * la salvaguarda aquí: los casos de «destino válido» van con un demo-*.
+ */
+const correrScript = (args: string[], extra: Record<string, string> = {}, host = '127.0.0.1:1') =>
+  spawnSync(process.execPath, [SCRIPT, ...args], {
+    encoding: 'utf8', timeout: 30000, env: entornoDelEmulador(host, extra),
+  });
 
 describe('verificar-reglas-staging — la salvaguarda de proyecto', () => {
   const STAGING = 'otro-proyecto-staging';
@@ -91,8 +93,8 @@ describe('verificar-reglas-staging — la salvaguarda de proyecto', () => {
     }
   });
 
-  it('en seco contra un destino válido imprime el plan, no escribe y sale 0', () => {
-    const r = correrScript(['--proyecto', STAGING], { GCP_PROJECT_ID_STAGING: STAGING });
+  it('en seco contra un destino válido (el emulador) imprime el plan, no escribe y sale 0', () => {
+    const r = correrScript(['--proyecto', 'demo-verif-reglas']);
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/SECO/);
     expect(r.stdout).toMatch(/no se escribió nada/);
@@ -100,7 +102,7 @@ describe('verificar-reglas-staging — la salvaguarda de proyecto', () => {
   });
 
   it('--aplicar y --limpiar juntos se rechazan', () => {
-    const r = correrScript(['--proyecto', STAGING, '--aplicar', '--limpiar'], { GCP_PROJECT_ID_STAGING: STAGING });
+    const r = correrScript(['--proyecto', 'demo-verif-reglas', '--aplicar', '--limpiar']);
     expect(r.status).toBe(2);
   });
 
@@ -157,7 +159,7 @@ describe.skipIf(!process.env.VERIFICAR_REGLAS_EMULADOR)('verificar-reglas-stagin
       const r = spawnSync(firebase, [
         'emulators:exec', '--config', join(tmp, 'firebase.json'), '--project', proy,
         '--only', 'auth,firestore,storage', orden,
-      ], { cwd: RAIZ, encoding: 'utf8', timeout: 240000, env: { ...process.env, STORAGE_EMULATOR_PORT: P.st } });
+      ], { cwd: RAIZ, encoding: 'utf8', timeout: 240000, env: entornoDelEmulador(undefined, { STORAGE_EMULATOR_PORT: P.st }) });
       expect(r.status, r.stderr.slice(-500)).toBe(0);
       return comandos.map((_, i) => ({
         texto: readFileSync(join(tmp, `${i}.txt`), 'utf8'),
