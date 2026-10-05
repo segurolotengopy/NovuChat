@@ -32,6 +32,7 @@ import { REGION } from '../../core/region.js';
 import { validarQrSimple } from './qrSimple.js';
 import type { ProblemaQr } from './qrSimple.js';
 import { dibujarQr } from './dibujoQr.js';
+import { documentoDeCobro, modulosDeFicha, type FichaConCapacidades } from '../../registro.js';
 
 const db = () => getFirestore();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -164,21 +165,28 @@ export const registrarQrDeCobro = onCall({ region: REGION }, async (peticion: Ca
 });
 
 /**
- * El documento de configuración donde vive el QR de un comercio, según sus
- * flujos: `venta` gana, después `agendamiento`; sin ninguno, `null`.
+ * El documento de configuración donde vive el QR de un comercio. Lo decide el
+ * registro (`documentoDeCobro(modulosDeFicha(...))`): sin `cobros`, `null`;
+ * con `pedidos`, `venta` (gana); con `agenda`, `agendamiento`. Con la lista
+ * `modulos` manda la lista; sin ella, los módulos de sus flujos (`flujos`, o
+ * `vertical` si la lista no está).
  *
- * `flujos` es la lista (DISENO §4sexies); `vertical` es el valor único de las
- * fichas anteriores a la lista y se mira solo si la lista no está, igual que
- * hace `flujosTenant()` en las reglas.
+ * DIFERENCIA CONOCIDA con la lógica anterior, solo fuera del dominio bien
+ * formado (el registro falla cerrado, como las reglas): `flujos` que no es
+ * lista, ni ausente (`{flujos:'venta', vertical:'agendamiento'}`) o `flujos:null`
+ * con `vertical` dan `null` (antes caían a `vertical`); `modulos` manda sobre
+ * los flujos (`{flujos:['agendamiento'], modulos:['cobros','pedidos']}` da
+ * `venta`; `modulos:[]` da `null`). Para fichas reales el resultado es idéntico.
+ * Probado en `pruebas/modulos/cobros/documento-que-cobra.test.ts`.
  */
 export function documentoQueCobra(
   ficha: { get(campo: string): unknown },
 ): 'venta' | 'agendamiento' | null {
-  const lista = ficha.get('flujos');
-  const flujos = Array.isArray(lista) ? lista.map(String) : [String(ficha.get('vertical') ?? '')];
-  if (flujos.includes('venta')) return 'venta';
-  if (flujos.includes('agendamiento')) return 'agendamiento';
-  return null;
+  return documentoDeCobro(modulosDeFicha({
+    modulos: ficha.get('modulos'),
+    flujos: ficha.get('flujos'),
+    vertical: ficha.get('vertical'),
+  } as FichaConCapacidades));
 }
 
 // ---------------------------------------------------------------------------
