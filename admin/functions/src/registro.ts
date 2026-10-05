@@ -10,13 +10,14 @@
  * F2 y F3, las siete copias de hoy (`Analisis/41` §3.3): la tabla de flujos de
  * la consola (`web/src/central/lib/flujos.ts`), `VERTICALES` de `plataforma/tenants.ts`,
  * `VERTICALES_CONOCIDOS` y `documentoDeVertical` de `prompt.ts`, las
- * capacidades de `firestore.rules`, y las elecciones a mano de `cobro.ts`,
- * `catalogoWeb.ts` y `captacion.ts`.
+ * capacidades de `firestore.rules` y la elección a mano de `cobro.ts`.
  *
- * F2, PR 1: EL CÓDIGO DE PRODUCCIÓN TODAVÍA NO LO IMPORTA. Lo importan
- * `pruebas/frontera/frontera.ts` y sus suites, y se verifica contra el código
- * de hoy (`pruebas/core/registro.test.ts`). Los PR siguientes lo enchufan donde
- * hoy están las copias.
+ * Hoy lo importan `pruebas/frontera/frontera.ts` y sus suites y, ya derivados,
+ * `prompt.ts` (H2b-2, #408), `captacion.ts` (#409) y `catalogoWeb.ts` (#410, por
+ * `tieneModulo`); se verifica contra el código de hoy
+ * (`pruebas/core/registro.test.ts`). Las demás copias de la lista de flujos
+ * (consola, `tenants.ts`, scripts de alta, reglas, `cobro.ts`…) se van
+ * reemplazando por una lectura de este archivo, una por PR de H2b.
  *
  * CERO `import`, Y ES A PROPÓSITO. Lo importan cuatro mundos que no comparten
  * resolución de módulos: las Functions (compilan con `rootDir: src` e importan
@@ -436,29 +437,34 @@ export function manifiestoDe(m: IdModulo): Manifiesto {
  * pestañas de cada flujo son la unión de las de sus módulos, que cada
  * documento propio lo exige la capacidad del flujo, etc.
  *
+ * `nombre` es el nombre visible del flujo (insignias del Tablero);
  * `catalogo` es la etiqueta de la pestaña de catálogo; `capacidadEnReglas`, la
  * función de `firestore.rules` que hoy abre ese flujo.
  */
 export const PUENTE_DE_FLUJOS = {
   agendamiento: {
+    nombre: 'Reservas y citas',
     modulos: ['productos', 'cobros', 'agenda'],
     documento: 'agendamiento',
     catalogo: 'Servicios',
     capacidadEnReglas: 'tieneAgenda',
   },
   venta: {
+    nombre: 'Pedidos y cobro',
     modulos: ['productos', 'cobros', 'inventario', 'pedidos', 'catalogo-web'],
     documento: 'venta',
     catalogo: 'Productos',
     capacidadEnReglas: 'tieneCobro',
   },
   onboarding: {
+    nombre: 'Captación de clientes',
     modulos: ['productos', 'captacion'],
     documento: 'onboarding',
     catalogo: 'Catálogo',
     capacidadEnReglas: 'tieneOnboarding',
   },
 } as const satisfies Record<string, {
+  readonly nombre: string;
   readonly modulos: readonly IdModulo[];
   readonly documento: string;
   readonly catalogo: string;
@@ -550,4 +556,23 @@ export function etiquetaDeCatalogo(modulos: readonly IdModulo[]): string {
   if (hay('agenda') && !hay('pedidos')) return 'Servicios';
   if (hay('pedidos') && !hay('agenda')) return 'Productos';
   return 'Catálogo';
+}
+
+/**
+ * El documento de `/config` donde vive el QR de un comercio, según sus módulos:
+ * sin `cobros`, `null`; con `pedidos`, `venta` (gana); con `agenda`,
+ * `agendamiento`; si no, `null`. Equivale a `documentoQueCobra` de
+ * `modulos/cobros/cobro.ts` sobre los flujos del puente.
+ *
+ * DIFERENCIA CONOCIDA: con `flujos` que NO es lista (p. ej.
+ * `{flujos: 'venta', vertical: 'agendamiento'}`) este registro da `null`
+ * (`flujosDeFicha` falla cerrado) y `documentoQueCobra` de `cobro.ts` da
+ * `'agendamiento'` (cae a `vertical`). El PR que reemplace `documentoQueCobra`
+ * (H2b-4a) debe declararlo y probarlo.
+ */
+export function documentoDeCobro(modulos: readonly IdModulo[]): 'venta' | 'agendamiento' | null {
+  if (!modulos.includes('cobros')) return null;
+  if (modulos.includes('pedidos')) return 'venta';
+  if (modulos.includes('agenda')) return 'agendamiento';
+  return null;
 }
