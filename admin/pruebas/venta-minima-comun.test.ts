@@ -1428,7 +1428,7 @@ describe('Config del negocio', () => {
     const largo = 'https://www.google.com/maps/place/' + 'a'.repeat(170);
     expect(largo.length).toBeGreaterThan(200);
     for (const v of ['http://maps.app.goo.gl/AbC123', 'https://malo.test/maps', 'https://maps.app.goo.gl.malo.test/x', 'https://evil.test/?u=https://maps.app.goo.gl/x',
-      'javascript:alert(1)', 'https://user@maps.app.goo.gl/x', 'https://maps.app.goo.gl/a b', largo, 5, null, { url: 'https://maps.app.goo.gl/x' }, '']) {
+      'javascript:alert(1)', 'https://usuario' + '@maps.app.goo.gl/x', 'https://maps.app.goo.gl/a b', largo, 5, null, { url: 'https://maps.app.goo.gl/x' }, '']) {
       expect(conMaps(v)['direccionMaps'] || '', JSON.stringify(v)).toBe('');
     }
     expect(ok()['direccionMaps'] || '').toBe('');

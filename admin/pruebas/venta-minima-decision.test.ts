@@ -86,7 +86,7 @@ function pdNombreCorto(i){ return String(i.nombre).replace(/\s*\([^)]*(orden|uni
 function pdEjemploDePedido(c){ const v = []; const n = []; (Array.isArray(c) ? c : []).forEach(function(i){ const k = i.clave || pdNombreCorto(i); if (n.length < 2 && v.indexOf(k) < 0) { v.push(k); n.push('1 ' + pdNombreCorto(i)); } }); return n.join(' y '); }
 function pdTextoExcluido(n){ return 'Lo siento, «' + n + '» no está disponible para pedir por WhatsApp. ¿Te muestro la carta?'; }
 function pdBotonAgregar(i, c){ return { id: 'g|agregar|' + i.id + '|' + c, title: 'Agregar ' + pdNombreCorto(i) }; }
-function pdTextoFaltanEntrega(f){ return 'Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).'; }
+function pdTextoFaltanEntrega(f){ return 'Para el delivery necesito la dirección exacta.'; }
 
 function rsCuerpoExtraccion(texto, o){ if (!isFinite(Number(o.ahoraMs))) throw new Error('ahoraMs'); return { marcador: 'reserva', texto: texto, zonas: o.zonas }; }
 function rsValidarExtraccion(o){ o = o || {}; return { personas: Number(o.personas) || 0, fecha: o.fecha || '', hora: o.hora || '', zona: o.zona || '', nombre: o.nombre || '', celebracion: o.celebracion || '', requerimiento: o.requerimiento || '' }; }
@@ -113,6 +113,7 @@ function cbResultado(resp, previo){ const r = resp || {}; const b = r.body || {}
 function cbEstadoParaAviso(r){ const e = { cuadra: 'comprobante: datos coinciden', no_cuadra: 'comprobante: NO coinciden', ilegible: 'comprobante ilegible', sin_cotejo: 'comprobante sin cotejar', ya_cotejado: null, simulado: 'PRUEBA: cobro SIMULADO, sin dinero' }; return e[r] === undefined ? 'sin QR: cobrar al entregar' : e[r]; }
 function cbTextoAlCliente(r, o){ const ped = 'tu pedido #' + o.codigo; const salio = o.avisoSalio === true; const sin = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.'; if (r === 'cuadra') return salio ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + ped + '. Ya lo pasé a nuestro equipo.', enlace: false, aviso: true } : { cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + ped + '. ' + sin, enlace: true, aviso: true }; if (r === 'no_cuadra') return { cuerpo: 'Recibí tu comprobante, pero algunos datos no coinciden con ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; if (r === 'ilegible') { if (!(Number(o.ilegibles) >= 2)) return { cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien. ¿Me lo envías de nuevo?', enlace: false, aviso: false }; return { cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien para revisar ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; } if (r === 'sin_cotejo') return { cuerpo: 'Recibí tu comprobante, pero no pude revisarlo contra ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; if (r === 'simulado') { const cab = 'Recibí tu comprobante SIMULADO de ' + ped + '. Es una prueba: no se movió dinero.'; return salio ? { cuerpo: cab + ' Ya lo pasé a nuestro equipo como pedido de PRUEBA.', enlace: false, aviso: true } : { cuerpo: cab + ' ' + sin, enlace: true, aviso: true }; } if (r === 'ya_cotejado') return { cuerpo: 'Ya tengo el comprobante de ' + ped + '. Si necesitas algo más, toca el botón.', enlace: true, aviso: false }; if (r === 'sin_qr') return salio ? { cuerpo: 'Listo: pasé ' + ped + ' al restaurante. El pago lo coordinas con ellos ' + (o.entrega === 'delivery' ? 'al recibir' : 'al recoger') + '.', enlace: false, aviso: true } : { cuerpo: sin, enlace: true, aviso: true }; return { cuerpo: 'Eso lo ve directamente nuestro equipo.', enlace: true, aviso: false }; }
 function cbResumenCorto(l, m){ return ''; }
+const AV_ENLACE = /(?:https?:\/\/|www\.)\S+|\b(?:wa\.me|t\.me|bit\.ly|goo\.gl|tinyurl\.com)\/\S*|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|bo|me|io|co|app|ly|link|info|biz|xyz|site|online)\b(?:\/\S*)?/gi;
 `;
 
 // --- El mundo de las pruebas -------------------------------------------------------------------
@@ -672,7 +673,7 @@ describe('Plan del turno: el pedido', () => {
     turno(m, { texto: 'quiero 1 queso fundido', extraccion: extPedido({ lineas: [linea('queso fundido', 1)] }) });
     expect(estadoDe(m)['paso']).toBe('pedido_entrega');
     const datos = registrar(turno(m, { boton: 'e|delivery' }));
-    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
+    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito la dirección exacta.');
     expect(estadoDe(m)['paso']).toBe('pedido_datos');
     // Con la dirección sola ya sigue al resumen (ni referencia ni nombre se exigen).
     const fin = registrar(turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) }));
