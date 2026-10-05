@@ -28,7 +28,7 @@ const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { ingesta } = await import('../functions/src/ingesta.ts');
 const { cierreBloqueadoPorCobro } = await import('../functions/src/ingesta.ts');
-const { registrarCierre } = await import('../functions/src/core/turno/cierres.ts');
+const { registrarCierre } = await import('../functions/src/ganchos.ts');
 
 const T = 'cobro-v2-ingesta';
 const NUMERO = '1000000099';
