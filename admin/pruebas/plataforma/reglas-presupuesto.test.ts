@@ -1,5 +1,5 @@
 /**
- * PRESUPUESTO DE EXPRESIONES DE LAS REGLAS (H2b-6) — NINGUNA OPERACIÓN CUESTA MÁS QUE EN main.
+ * PRESUPUESTO DE EXPRESIONES DE LAS REGLAS (H2b-6) — MARGEN >= HOLGURA O NO PEOR QUE main.
  *
  * Firestore corta una petición que evalúa más de 1.000 expresiones («maximum
  * of 1000 expressions to be evaluated») y la rechaza como PERMISSION_DENIED:
@@ -14,14 +14,16 @@
  * lastre de K expresiones triviales y se busca, por bisección, el K más alto con
  * el que la operación todavía pasa. Margen(operación, reglas) = K máximo.
  * Cuanto menos margen, más cara la operación: el costo en expresiones es
- * `tope − margen`. La prueba exige, en cada operación,
- * `margen(PR) >= min(margen(main), HOLGURA)`: una operación AJUSTADA en main
+ * `tope − margen` (la unidad es el TÉRMINO DE LASTRE, no una expresión exacta).
+ * La prueba exige, en cada operación, `margen(PR) >= min(margen(main), HOLGURA)`: una operación AJUSTADA en main
  * (config/negocio de Q'Taco, campañas) no puede costar más en el PR; una con
  * holgura puede gastar parte de ella (las exigencias nuevas de `privado`,
  * `productos` y `campanas` y la lectura de `modulos` cuestan unas expresiones)
  * pero no bajar de HOLGURA. Las reglas de main son
- * `firestore-base-previa-h2b6.rules.txt`. `PRESUPUESTO_FILTRO` (regex) mide
- * solo algunas operaciones al iterar.
+ * `firestore-base-previa-h2b6.rules.txt`. Para no reiniciar el emulador ~830
+ * veces (subía `calidad` de 9 a 15 min), el criterio se comprueba con 2 a 8
+ * reinicios por operación; la tabla completa de márgenes solo con
+ * `PRESUPUESTO_TABLA=1`. `PRESUPUESTO_FILTRO` (regex) mide solo algunas operaciones.
  *
  * Las operaciones son las que tocan lo que H2b-6 cambió y las más pesadas del
  * resto: `config/negocio` completo con la forma de Q'Taco (3 a 7 días de
@@ -263,12 +265,12 @@ const pasa = async (p: Prueba, reglas: string, k: number): Promise<boolean> => {
   }
 };
 
-/** Mayor lastre con el que la operación todavía pasa (−1: ni sin lastre). */
-const margen = async (p: Prueba, reglas: string): Promise<number> => {
+/** Mayor lastre con el que la operación todavía pasa, buscado en [0, tope] (−1: ni sin lastre). */
+const margenHasta = async (p: Prueba, reglas: string, tope: number): Promise<number> => {
   if (!(await pasa(p, reglas, 0))) return -1;
+  if (await pasa(p, reglas, tope)) return tope;
   let bajo = 0;
-  let alto = KMAX + 1;
-  if (await pasa(p, reglas, KMAX)) return KMAX;
+  let alto = tope;
   while (alto - bajo > 1) {
     const medio = Math.floor((bajo + alto) / 2);
     if (await pasa(p, reglas, medio)) bajo = medio; else alto = medio;
@@ -276,25 +278,60 @@ const margen = async (p: Prueba, reglas: string): Promise<number> => {
   return bajo;
 };
 
+/**
+ * El criterio, con el mínimo de reinicios del emulador (cada `pasa` reinicia uno):
+ *   · si main pasa con HOLGURA de lastre, al PR le basta UN `pasa(HOLGURA)`;
+ *   · si no, se mide el margen de main en [0, HOLGURA] y el PR tiene que pasar con ESE margen
+ *     (si main ya rechaza sin lastre, el PR no puede ser peor y no hay nada que exigir).
+ * Devuelve la descripción de la violación, o null si cumple.
+ */
+const violacion = async (p: Prueba, ahora: string): Promise<string | null> => {
+  if (await pasa(p, ANTES, HOLGURA)) {
+    return (await pasa(p, ahora, HOLGURA)) ? null : `${p.id}: main tiene holgura (>= ${HOLGURA}) y el PR no`;
+  }
+  const mAntes = await margenHasta(p, ANTES, HOLGURA);
+  if (mAntes < 0) return null;
+  return (await pasa(p, ahora, mAntes)) ? null : `${p.id}: main tiene margen ${mAntes} y el PR menos`;
+};
+
+const filtrar = (): Prueba[] => {
+  // PRESUPUESTO_FILTRO: expresión regular para medir solo algunas operaciones al iterar sobre las reglas.
+  const filtro = process.env['PRESUPUESTO_FILTRO'] ? new RegExp(process.env['PRESUPUESTO_FILTRO']) : null;
+  return pruebas.filter((x) => !filtro || filtro.test(x.id));
+};
+
 describe('reglas: presupuesto de expresiones contra las reglas de origin/main', () => {
   afterAll(async () => { await entorno?.cleanup(); });
 
-  it('ninguna operación gasta más expresiones que en main (margen del PR >= margen de main)', async () => {
-    const filas: string[] = [];
+  it('ninguna operación baja de HOLGURA ni queda peor que main (margen >= min(margen de main, HOLGURA))', async () => {
     const peores: string[] = [];
-    // PRESUPUESTO_FILTRO: expresión regular para medir solo algunas operaciones al iterar sobre las reglas.
-    const filtro = process.env['PRESUPUESTO_FILTRO'] ? new RegExp(process.env['PRESUPUESTO_FILTRO']) : null;
-    for (const p of pruebas.filter((x) => !filtro || filtro.test(x.id))) {
-      const mAntes = await margen(p, ANTES);
-      const mAhora = await margen(p, AHORA);
-      // -1: ni sin lastre pasa (main ya se pasa del tope en esa operación). El PR no puede ser peor.
-      filas.push(`${p.id} | margen main ${mAntes} | margen PR ${mAhora} | gasto PR − gasto main = ${mAntes - mAhora}`);
-      // Regla: una operación AJUSTADA en main (margen < HOLGURA) no puede costar más en el PR.
-      // Una con holgura puede gastar parte de ella (la exigencia nueva de `privado`, `productos`,
-      // `campanas` o la lectura de `modulos` cuestan expresiones), pero nunca bajar de HOLGURA.
-      if (mAhora < Math.min(mAntes, HOLGURA)) peores.push(`${p.id}: main ${mAntes}, PR ${mAhora}`);
+    for (const p of filtrar()) {
+      const v = await violacion(p, AHORA);
+      if (v) peores.push(v);
     }
-    console.log(`PRESUPUESTO (margen = expresiones sobrantes; más margen = más barato)\n${filas.join('\n')}`);
-    expect(peores, 'operaciones más caras que en main').toEqual([]);
+    expect(peores, 'operaciones que violan el criterio de presupuesto').toEqual([]);
+  }, 1_800_000);
+
+  it('control: una exigencia de más dentro de config/negocio SÍ la detecta el criterio', async () => {
+    const trozo = "|| tieneFlujo(tenantId, 'venta'))";
+    expect(AHORA.split(trozo).length - 1, 'el trozo a mutar está una vez').toBe(1);
+    const encarecida = AHORA.replace(trozo, `${trozo}\n            && tieneModuloComun(tenantId, 'productos')`);
+    const peores: string[] = [];
+    for (const p of pruebas.filter((x) => /config\/negocio completo, [456] días, ENCIENDE/.test(x.id))) {
+      const v = await violacion(p, encarecida);
+      if (v) peores.push(v);
+    }
+    expect(peores.length, 'la regla encarecida pasó el criterio: la prueba no mide').toBeGreaterThan(0);
+  }, 600_000);
+
+  // Tabla completa de márgenes (lenta: ~800 reinicios del emulador). Solo con PRESUPUESTO_TABLA=1.
+  it.runIf(process.env['PRESUPUESTO_TABLA'] === '1')('tabla de márgenes (informativa)', async () => {
+    const filas: string[] = [];
+    for (const p of filtrar()) {
+      const mAntes = await margenHasta(p, ANTES, KMAX);
+      const mAhora = await margenHasta(p, AHORA, KMAX);
+      filas.push(`${p.id} | margen main ${mAntes} | margen PR ${mAhora} | gasto PR − gasto main = ${mAntes - mAhora}`);
+    }
+    console.log(`PRESUPUESTO (margen = K máximo de términos de lastre que la operación aguanta; más margen = más barato)\n${filas.join('\n')}`);
   }, 1_800_000);
 });

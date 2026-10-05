@@ -402,6 +402,19 @@ describe('reglas por módulo: batería de capacidades (emulador)', () => {
     });
   }
 
+  // COMPUERTA (seguridad LOW 1 del #422). Hoy `catalogoWebActivo` en `configNegocioValida` se decide por `flujos`
+  // y NO mira `modulos` (por presupuesto de expresiones: ver el TODO en `firestore.rules`). Este es el
+  // comportamiento CORRECTO que falta: con `catalogo-web` apagado en `modulos`, encender el catálogo web se niega.
+  // `it.fails` pasa mientras la regla falla; cuando el PR que escriba `modulos` la arregle, esta prueba se pone
+  // en rojo y obliga a quitar el `.fails`.
+  it.fails('TODO H2b: ficha con `catalogo-web` apagado en `modulos`: `catalogoWebActivo=true` se niega', async () => {
+    const t: Tenant = { id: 'mcw', ficha: { ...base, flujos: ['venta'], modulos: ['pedidos', 'productos', 'campanas'] }, abre: [] };
+    await sembrar(t);
+    const abre = await permitida(() => updateDoc(doc(comoAdmin('mcw'), T('mcw', 'config/negocio')),
+      { catalogoWebActivo: true, ...sello('u-admin-mcw') }));
+    expect(abre).toBe(false);
+  });
+
   it('el oráculo no es vacío: hay casos que permiten y casos que niegan por cada operación', () => {
     for (const op of operaciones) {
       const permiten = tenants.filter((t) => abreOp(t, op.cap)).length;
@@ -455,6 +468,8 @@ const mutaciones: Array<{ nombre: string; reglas: () => string }> = [
     } },
   { nombre: 'tieneAgenda vuelve a leer solo `flujos` (ignora modulos)',
     reglas: () => mutarFuncion(REGLAS, 'tieneAgenda', (c) => c.replace("tieneModulo(tenantId, 'agenda')", "tieneFlujo(tenantId, 'agendamiento')")) },
+  { nombre: 'tieneCobro vuelve a leer solo `flujos` (ignora modulos)',
+    reglas: () => mutarFuncion(REGLAS, 'tieneCobro', (c) => c.replace("tieneModulo(tenantId, 'pedidos')", "tieneFlujo(tenantId, 'venta')")) },
   { nombre: 'tieneOnboarding vuelve a leer solo `flujos` (ignora modulos)',
     reglas: () => mutarFuncion(REGLAS, 'tieneOnboarding', (c) => c.replace("tieneModulo(tenantId, 'captacion')", "tieneFlujo(tenantId, 'onboarding')")) },
   { nombre: 'catalogo-web (config/marca) se abre con cualquier ficha',

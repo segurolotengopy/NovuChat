@@ -13,9 +13,9 @@
  *   · aislamiento: el administrador de un comercio no toca la carpeta de otro;
  *   · mutaciones: la regla ignora la lista, o abre siempre, y la batería lo nota.
  *
- * Se SALTA sin STORAGE_EMULATOR_PORT. Se corre con
- *   `pruebas/correr-storage.sh pruebas/plataforma/storage-modulos.test.ts`
- * (el script ya corre `storage-reglas.test.ts`; el argumento se le suma).
+ * Se SALTA sin STORAGE_EMULATOR_PORT. La corre `pruebas/correr-storage.sh`
+ * (`pnpm pruebas:reglas:storage`, el paso de Storage del CI), que ejecuta por
+ * defecto esta suite y `storage-reglas.test.ts`; los argumentos se le suman.
  */
 import {
   initializeTestEnvironment,

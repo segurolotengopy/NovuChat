@@ -70,7 +70,7 @@ const claims = (tenants: Record<string, string>, propietario = false, proveedor 
 // ---------------------------------------------------------------------------
 const sintetica = { creadoEn: Timestamp.fromMillis(1_700_000_000_000), creadoPor: 'u-sintetico',
   estado: 'activo', plan: 'crecimiento', waPhoneNumberId: 'pnid-sintetico', waWabaId: 'waba-sintetica' };
-const PERFILES: Record<string, { ficha: Record<string, unknown>; agenda: boolean }> = {
+const PERFILES: Record<string, { ficha: Record<string, unknown>; agenda: boolean; extra?: boolean }> = {
   qtaco: { ficha: { ...sintetica, nombre: 'Comercio sintetico Q', flujos: ['venta'], vertical: 'venta' }, agenda: false },
   demoA: { ficha: { ...sintetica, nombre: 'Demo A sintetico', flujos: ['agendamiento'], vertical: 'agendamiento' }, agenda: true },
   demoB: { ficha: { ...sintetica, nombre: 'Demo B sintetico', flujos: ['venta'], vertical: 'venta' }, agenda: false },
@@ -80,6 +80,26 @@ const PERFILES: Record<string, { ficha: Record<string, unknown>; agenda: boolean
   // Un comercio con reservas Y pedidos, que hoy existe como combinación.
   doble: { ficha: { ...sintetica, nombre: 'Doble sintetico', flujos: ['agendamiento', 'venta'], vertical: 'agendamiento' }, agenda: true },
 };
+// Fichas de borde (seguridad LOW 2 del #422): suspendida, de baja, `flujos`/`modulos` que NO son lista,
+// sin nada. Con actores reducidos (los que pueden distinguir algo) para no multiplicar el tiempo.
+const borde = (extra: Record<string, unknown>, agenda: boolean) => ({ ficha: { ...sintetica, nombre: 'borde', ...extra }, agenda, extra: true });
+Object.assign(PERFILES, {
+  flujosCadena: borde({ flujos: 'venta', vertical: 'venta' }, false),
+  flujosNull: borde({ flujos: null, vertical: 'agendamiento' }, false),
+  flujosMapa: borde({ flujos: { venta: true, agendamiento: true }, vertical: 'venta' }, false),
+  flujosVacia: borde({ flujos: [], vertical: 'agendamiento' }, false),
+  sinNada: borde({}, false),
+  verticalOnb: borde({ vertical: 'onboarding' }, false),
+  modMapa: borde({ flujos: ['venta'], modulos: { agenda: true } }, false),
+  modNull: borde({ flujos: ['agendamiento'], modulos: null }, true),
+  modNum: borde({ flujos: ['onboarding', 'venta'], modulos: 5 }, false),
+  modBool: borde({ flujos: ['agendamiento', 'venta'], modulos: true }, true),
+  suspV: borde({ estado: 'suspendido', flujos: ['venta'] }, false),
+  suspA: borde({ estado: 'suspendido', flujos: ['agendamiento'] }, true),
+  bajaD: borde({ estado: 'dado_de_baja', flujos: ['agendamiento', 'venta', 'onboarding'] }, true),
+  sinEstado: borde({ estado: null, flujos: ['venta'] }, false),
+  triple: borde({ flujos: ['agendamiento', 'venta', 'onboarding'], vertical: 'venta' }, true),
+});
 const OTRO = 'otro';
 const FICHA_OTRO = { ...sintetica, nombre: 'Otro sintetico', flujos: ['agendamiento', 'venta', 'onboarding'], vertical: 'venta' };
 
@@ -133,20 +153,27 @@ const sembrar = async (t: string, ficha: Record<string, unknown>): Promise<void>
   });
 };
 
-type Actor = 'admin' | 'oper' | 'propietario' | 'ajeno' | 'anon';
-const ACTORES: Actor[] = ['admin', 'oper', 'propietario', 'ajeno', 'anon'];
+type Actor = 'admin' | 'oper' | 'propietario' | 'ajeno' | 'anon' | 'ingesta' | 'adminGoogle';
+const ACTORES: Actor[] = ['admin', 'oper', 'propietario', 'ajeno', 'anon', 'ingesta', 'adminGoogle'];
+/** Las fichas de borde corren con los actores que pueden distinguir algo. */
+const ACTORES_BORDE: Actor[] = ['admin', 'propietario', 'ingesta', 'adminGoogle'];
+const actoresDe = (perfil: string): Actor[] => (PERFILES[perfil]?.extra ? ACTORES_BORDE : ACTORES);
 const contexto = (actor: Actor, t: string): ReturnType<RulesTestEnvironment['unauthenticatedContext']> => {
   switch (actor) {
     case 'admin': return entorno.authenticatedContext(`u-admin-${t}`, claims({ [t]: 'admin' }));
     case 'oper': return entorno.authenticatedContext(`u-oper-${t}`, claims({ [t]: 'oper' }));
     case 'propietario': return entorno.authenticatedContext('u-novuchat', claims({}, true, 'google.com'));
     // Administrador de OTRO comercio, actuando sobre `t`.
+    // `ingesta` es el principal de servicio de n8n (token personalizado); `adminGoogle`, un administrador con el
+    // proveedor equivocado: su claim tiene que quedar inerte.
+    case 'ingesta': return entorno.authenticatedContext(`u-ing-${t}`, claims({ [t]: 'ingesta' }, false, 'custom'));
+    case 'adminGoogle': return entorno.authenticatedContext(`u-g-${t}`, claims({ [t]: 'admin' }, false, 'google.com'));
     case 'ajeno': return entorno.authenticatedContext('u-admin-ajeno', claims({ [OTRO]: 'admin' }));
     default: return entorno.unauthenticatedContext();
   }
 };
 
-type Op = { id: string; correr: (fs: ReturnType<ReturnType<typeof contexto>['firestore']>, t: string, uid: string) => Promise<unknown> };
+type Op = { id: string; prep?: (t: string) => Promise<void>; correr: (fs: ReturnType<ReturnType<typeof contexto>['firestore']>, t: string, uid: string) => Promise<unknown> };
 const P = (t: string, p: string): string => `tenants/${t}/${p}`;
 
 // Lecturas: get de cada ruta y list de cada colección.
@@ -159,6 +186,10 @@ const RUTAS_GET = ['', 'config/negocio', 'config/agendamiento', 'config/venta', 
 const COLECCIONES = ['config', 'catalogo', 'fotosCatalogo', 'funcionarios', 'conversaciones', 'pedidos', 'contactos',
   'agenda', 'pagos', 'reclamos', 'metricas', 'bitacora', 'miembros'];
 
+/** Borra un documento sin reglas (para probar un `create` de verdad). */
+const borrar = (ruta: string): Promise<void> =>
+  entorno.withSecurityRulesDisabled(async (ctx) => { await deleteDoc(doc(ctx.firestore(), ruta)); });
+
 const ops: Op[] = [
   ...RUTAS_GET.map((r): Op => ({ id: `get ${r || '(ficha)'}`,
     correr: (fs, t) => getDoc(r ? doc(fs, P(t, r)) : doc(fs, `tenants/${t}`)) })),
@@ -170,6 +201,14 @@ const ops: Op[] = [
   { id: 'update config/venta', correr: (fs, t, u) => updateDoc(doc(fs, P(t, 'config/venta')), { costoDelivery: 12, ...sello(u) }) },
   { id: 'update config/marca', correr: (fs, t, u) => updateDoc(doc(fs, P(t, 'config/marca')), { logo: 'data:image/png;base64,AAAA', ...sello(u) }) },
   { id: 'update config/onboarding', correr: (fs, t, u) => updateDoc(doc(fs, P(t, 'config/onboarding')), { topeAviso: 30, ...sello(u) }) },
+  // Los `create` de verdad: el documento se BORRA antes (sin reglas); si no, el `setDoc` sería un `update`.
+  { id: 'create config/campanas (nuevo)', prep: (t) => borrar(P(t, 'config/campanas')),
+    correr: (fs, t, u) => setDoc(doc(fs, P(t, 'config/campanas')), { lista: [], ...sello(u) }) },
+  { id: 'create fotosCatalogo/item1 (nuevo)', prep: (t) => borrar(P(t, 'fotosCatalogo/item1')),
+    correr: (fs, t, u) => setDoc(doc(fs, P(t, 'fotosCatalogo/item1')),
+      { datos: 'data:image/webp;base64,AAAABBBB', ancho: 9, alto: 9, bytes: 9, tipo: 'image/webp', ...sello(u) }) },
+  { id: 'create config/marca (nuevo)', prep: (t) => borrar(P(t, 'config/marca')),
+    correr: (fs, t, u) => setDoc(doc(fs, P(t, 'config/marca')), { logo: 'data:image/png;base64,AAAA', ...sello(u) }) },
   { id: 'create config/campanas', correr: (fs, t, u) => setDoc(doc(fs, P(t, 'config/campanas')), { lista: [], ...sello(u) }) },
   { id: 'update catalogo/item1', correr: (fs, t, u) => updateDoc(doc(fs, P(t, 'catalogo/item1')), { precio: 95, ...sello(u) }) },
   { id: 'create fotosCatalogo/item1', correr: (fs, t, u) => setDoc(doc(fs, P(t, 'fotosCatalogo/item1')),
@@ -220,13 +259,15 @@ const clave = (perfil: string, actor: string, op: string): string => `${perfil} 
 const matriz = async (): Promise<Matriz> => {
   const m: Matriz = new Map();
   for (const [perfil, { ficha }] of Object.entries(PERFILES)) {
-    for (const actor of ACTORES) {
+    for (const actor of actoresDe(perfil)) {
       await sembrar(perfil, ficha);
       await sembrar(OTRO, FICHA_OTRO);
       const ctx = contexto(actor, perfil);
       const fs = ctx.firestore();
-      const uid = actor === 'admin' ? `u-admin-${perfil}` : actor === 'oper' ? `u-oper-${perfil}` : actor === 'propietario' ? 'u-novuchat' : 'u-admin-ajeno';
+      const uid = actor === 'admin' ? `u-admin-${perfil}` : actor === 'oper' ? `u-oper-${perfil}` : actor === 'propietario' ? 'u-novuchat'
+        : actor === 'ingesta' ? `u-ing-${perfil}` : actor === 'adminGoogle' ? `u-g-${perfil}` : 'u-admin-ajeno';
       for (const op of ops) {
+        if (op.prep) await op.prep(perfil);
         m.set(clave(perfil, actor, op.id), await permitida(() => op.correr(fs, perfil, uid)));
       }
     }
@@ -248,7 +289,7 @@ describe('reglas: prueba diferencial contra las reglas de origin/main', () => {
 
   it('la matriz no es trivial: hay operaciones permitidas y negadas en las reglas de antes', () => {
     const v = [...antes.values()];
-    expect(v.length).toBe(Object.keys(PERFILES).length * ACTORES.length * ops.length);
+    expect(v.length).toBe(Object.keys(PERFILES).reduce((n, perfil) => n + actoresDe(perfil).length * ops.length, 0));
     expect(v.filter(Boolean).length).toBeGreaterThan(300);
     expect(v.filter((x) => !x).length).toBeGreaterThan(300);
   });
@@ -268,7 +309,7 @@ describe('reglas: prueba diferencial contra las reglas de origin/main', () => {
     }
     // Y la diferencia aprobada SÍ ocurre en cada comercio sin agenda (si no, la
     // prueba no está mirando donde debe).
-    for (const [perfil, p] of Object.entries(PERFILES)) {
+    for (const [perfil, p] of Object.entries(PERFILES).filter(([, x]) => !x.extra)) {
       for (const op of ['update funcionarios/f1/privado/datos', 'create funcionarios/f1/privado/otro']) {
         const k = clave(perfil, 'admin', op);
         expect(antes.get(k), `${k}: base`).toBe(true);
@@ -311,7 +352,7 @@ describe('reglas: prueba diferencial contra las reglas de origin/main', () => {
   });
 
   it('entre comercios: el administrador ajeno y el anónimo no leen ni escriben NADA de ningún perfil', () => {
-    for (const perfil of Object.keys(PERFILES)) {
+    for (const perfil of Object.keys(PERFILES).filter((x) => !PERFILES[x]?.extra)) {
       for (const actor of ['ajeno', 'anon']) {
         for (const op of ops) {
           expect(ahora.get(clave(perfil, actor, op.id)), `${perfil} | ${actor} | ${op.id}`).toBe(false);

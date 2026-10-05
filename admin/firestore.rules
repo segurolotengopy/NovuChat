@@ -264,9 +264,10 @@ service cloud.firestore {
     // comunes usan `tieneModuloComun`, y preguntar por `cobros` da `false` para
     // todo comercio de hoy aunque el registro diga que lo tienen.
     //
-    // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y la regla de
-    // `config/negocio` de Q'Taco está a ~10 de ese tope; por eso la ficha se lee
-    // UNA vez (`let`), sin mapa ni `exists`: una ficha inexistente hace fallar el
+    // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y `config/negocio`
+    // completo con 6 días de horario y catálogo web está en el tope (margen 0 en
+    // `reglas-presupuesto.test.ts`); por eso la ficha se lee UNA vez (`let`),
+    // sin mapa ni `exists`: una ficha inexistente hace fallar el
     // `get` y la regla deniega, igual que antes. Medido en
     // `pruebas/plataforma/reglas-presupuesto.test.ts`.
     function tieneModulo(tenantId, m) {
@@ -889,10 +890,12 @@ service cloud.firestore {
             // campo en falso, en vez de que la regla le rechace la pantalla
             // entera por un campo que no le corresponde.
             // TODO(H2b, PR que escriba `modulos`): aquí va
-            // `tieneModulo(tenantId, 'catalogo-web')`. Hoy se conserva el costo
-            // de la base (`tieneFlujo`): esta línea corre dentro de la regla más
-            // cara (config/negocio completo de Q'Taco está a ~10 expresiones del
-            // tope de 1.000) y ninguna ficha viva trae `modulos`.
+            // `tieneModulo(tenantId, 'catalogo-web')`, y ANTES hay que abaratar
+            // `config/negocio` (hoy, completo con 6 días de horario y catálogo
+            // web, está en el tope de 1.000 expresiones: margen 0 en
+            // `reglas-presupuesto.test.ts`). Mientras tanto se conserva el costo
+            // de la base (`tieneFlujo`) y esta línea NO mira `modulos`: la
+            // prueba `it.fails` de `reglas-modulos.test.ts` obliga a voltearla.
             && (d.get('catalogoWebActivo', false) == false
                 || tieneFlujo(tenantId, 'venta'))
             // PALETA: una de cinco, y NADA más.
