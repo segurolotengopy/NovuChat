@@ -114,10 +114,18 @@ Se genera con el mismo `herramientas/generar.py` y el mismo código de `src/` (u
 - **Si la omisión es por configuración** (una variable de la plantilla de más de 30 caracteres, o `prefijosPermitidos`
   vacío), `Revisar omisión` lanza `Recordatorio no enviado: configuracion invalida (…)`: no termina en verde. Si no hay
   citas que correspondan (o el comercio no está operativo), sí termina en verde.
-- **Ejecuciones guardadas:** `settings.saveDataSuccessExecution` = `all` (decisión de Andres, 04/10/2026, durante el
-  piloto de Bellido): se guardan las exitosas para tener huella de cada corrida de las 17:00. **Costo de privacidad:**
-  llevan teléfonos y la descripción de la cita (14 días de retención en n8n, como las del flujo conversacional de
-  Bellido). Antes era `none` y solo se guardaban las de error; se vuelve a `none` cuando termine la vigilancia.
+- **Ejecuciones guardadas (con fecha tope):** `settings.saveDataSuccessExecution` = `all` (decisión de Andres, 04/10/2026,
+  durante el piloto de Bellido): se guardan las exitosas para tener huella de cada corrida de las 17:00. **Se vuelve a
+  `none` el 04/11/2026 o al terminar el piloto, lo que ocurra primero** (Andres, 05/10/2026: «deja el #430 en all hasta
+  el 04/11»). **Costo de privacidad, completo:** lo que se guarda es la lectura ENTERA del calendario del día siguiente
+  (`Citas de mañana`, `returnAll`): de cada evento, el título (con el nombre del paciente, menores de edad), la
+  descripción, los correos del organizador y del creador y los asistentes, **también de las citas que el doctor carga a
+  mano y que este flujo nunca recordará**, además de los teléfonos; `Marcar como recordada` devuelve el evento completo.
+  El minimizado de `preparar-recordatorios.js` protege lo que se ENVÍA, no lo que n8n GUARDA. La retención es el valor por
+  defecto de n8n (14 días = 336 h); el valor real en la VM está pendiente de leer. El flujo conversacional de Bellido ya
+  guarda datos de la misma clase con la retención aceptada por Andres el 04/10. Antes era `none` y solo se guardaban las
+  de error. **Al llegar el 04/11 se vuelve a `none`**: cambio en n8n y en `generar.py`, `recordatorio-bellido.v1.json` y
+  la prueba de `recordatorio-bellido-v1.test.ts`, que hoy exige `all`.
 - **Credenciales por nombre:** `Google Calendar account` (nodos de Calendar) y `Graph WhatsApp Bellido (Bearer)`
   (`Enviar plantilla`). Ninguna otra.
 - **Estado del comercio:** `estadoComercio` es una clave de datos del Config, fija en `operativo` (con otro valor, el
