@@ -1,0 +1,818 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "A",
+  "nota": "Escenarios A1 a A6, A11, A13 y A15 de «Delivery y entrega»: son de la rama de DELIVERY OPCIONAL (PR #435: la dirección es lo único que se exige; la referencia y quién recibe son opcionales, y el texto libre lo toma el código). PASAN contra esa rama y FALLAN contra main a propósito (main todavía pide referencia y nombre): la suite lo fija con un control negativo que se pone ROJO cuando la rama se fusione; entonces estos casos pasan a A.json y el control se borra. Para verificarlos contra la rama sin mezclar nada: un worktree temporal de origin/cartera/qtaco-delivery-opcional con esta batería fusionada encima.",
+  "casos": [
+    {
+      "id": "A1",
+      "titulo": "Carrito web con dirección y delivery: resumen directo con la entrega y la dirección, sin preguntar datos",
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Av\\. Banzer 1234",
+              "2 × Tacos de Birria"
+            ],
+            "textosNo": [
+              "necesito",
+              "referencia",
+              "nombre de quien",
+              "no va en el QR"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "botones": [
+              "p|confirmar"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234"
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "A2",
+      "titulo": "Carrito web sin dirección: pide solo la dirección una vez y, tras darla, pasa al resumen sin pedir referencia ni nombre",
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "textosNo": [
+              "no va en el QR",
+              "nombre de quien",
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Calle 1 número 2 Irpavi"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": "Calle 1 número 2 Irpavi"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Calle 1 número 2 Irpavi"
+            ],
+            "textosNo": [
+              "necesito",
+              "referencia",
+              "nombre de quien"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Calle 1 número 2 Irpavi",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 2,
+        "frases": [
+          "Calle 1 número 2 Irpavi",
+          {
+            "texto": "calle 1 numerro 2 Irpavi",
+            "seco": {
+              "lineas": [],
+              "direccion": "calle 1 numerro 2 Irpavi"
+            },
+            "esperado": {
+              "textos": [
+                "Entrega: delivery a calle 1 numerro 2 Irpavi"
+              ],
+              "estado": {
+                "entrega.direccion": "calle 1 numerro 2 Irpavi"
+              }
+            }
+          },
+          {
+            "texto": "calle 1 nro 2 Irpavi",
+            "seco": {
+              "lineas": []
+            },
+            "esperado": {
+              "textos": [
+                "Entrega: delivery a calle 1 nro 2 Irpavi"
+              ],
+              "estado": {
+                "entrega.direccion": "calle 1 nro 2 Irpavi"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "A3",
+      "titulo": "Tras el resumen, «Déjale al portero» se toma como referencia y no se pide nada más",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Déjale al portero"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Av\\. Banzer 1234 \\(Déjale al portero\\)"
+            ],
+            "textosNo": [
+              "necesito",
+              "nombre de quien",
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.referencia": "Déjale al portero"
+            },
+            "igualAntes": [
+              "carrito"
+            ],
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "A4",
+      "titulo": "Primero solo una referencia («A media cuadra del gas»): se guarda y se pide la dirección; con la dirección pasa al resumen con la referencia",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "A media cuadra del gas"
+          },
+          "seco": {
+            "lineas": [],
+            "referencia": "A media cuadra del gas"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "textosNo": [
+              "no va en el QR",
+              "nombre de quien",
+              "Confirmar pedido",
+              "Esto prefiero"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.referencia": "A media cuadra del gas",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Calle 1 número 2 Irpavi"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": "Calle 1 número 2 Irpavi"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Calle 1 número 2 Irpavi \\(A media cuadra del gas\\)"
+            ],
+            "textosNo": [
+              "necesito",
+              "nombre de quien"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "Calle 1 número 2 Irpavi",
+              "entrega.referencia": "A media cuadra del gas"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "A5",
+      "titulo": "«Ok» sobre el resumen de delivery (cliente que ya conversó) no cambia nada y vuelve a mostrar el resumen con sus botones",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Ok"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Av\\. Banzer 1234"
+            ],
+            "textosNo": [
+              "necesito",
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "botones": [
+              "p|confirmar"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "igualAntes": [
+              "entrega",
+              "carrito"
+            ],
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "Ok",
+          "Okey",
+          "Listo"
+        ]
+      }
+    },
+    {
+      "id": "A6",
+      "titulo": "Dirección en un mensaje y referencia en otro, con el modelo devolviendo solo líneas vacías: la referencia la toma el código, sin bucle",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "calle 1 numerro 2 Irpavi"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": "calle 1 numerro 2 Irpavi"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "calle 1 numerro 2 Irpavi"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "a media cuadra de la calle Foton"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a calle 1 numerro 2 Irpavi \\(a media cuadra de la calle Foton\\)"
+            ],
+            "textosNo": [
+              "necesito",
+              "direcci[oó]n exacta",
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "calle 1 numerro 2 Irpavi",
+              "entrega.referencia": "a media cuadra de la calle Foton"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "a media cuadra de la calle Foton",
+          {
+            "texto": "Donde dije",
+            "seco": {
+              "lineas": [],
+              "quiereHablar": true
+            },
+            "esperado": {
+              "textos": [
+                "Entrega: delivery a calle 1 numerro 2 Irpavi \\(Donde dije\\)"
+              ],
+              "estado": {
+                "entrega.referencia": "Donde dije"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "A11",
+      "titulo": "Delivery pendiente de datos: una dirección o instrucción con «retiro»/«recoger» (por el modelo o por el código) es la dirección y sigue al resumen en delivery",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Barrio El Retiro, calle 3 casa 5"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": "Barrio El Retiro, calle 3 casa 5"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Barrio El Retiro, calle 3 casa 5"
+            ],
+            "textosNo": [
+              "recojo en el local",
+              "necesito"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "botones": [
+              "p|confirmar"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.modalidad": "delivery",
+              "entrega.direccion": "Barrio El Retiro, calle 3 casa 5"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "Barrio El Retiro, calle 3 casa 5",
+          {
+            "texto": "Barrio El Retiro, calle 4 casa 7",
+            "seco": {
+              "lineas": []
+            },
+            "esperado": {
+              "textos": [
+                "Entrega: delivery a Barrio El Retiro, calle 4 casa 7"
+              ],
+              "estado": {
+                "entrega.direccion": "Barrio El Retiro, calle 4 casa 7"
+              }
+            }
+          },
+          {
+            "texto": "Av. Busch frente al retiro de jubilados",
+            "seco": {
+              "lineas": [],
+              "direccion": "Av. Busch frente al retiro de jubilados"
+            },
+            "esperado": {
+              "textos": [
+                "Entrega: delivery a Av\\. Busch frente al retiro de jubilados"
+              ],
+              "estado": {
+                "entrega.direccion": "Av. Busch frente al retiro de jubilados"
+              }
+            }
+          },
+          {
+            "texto": "Av. Busch esquina retiro de jubilados",
+            "seco": {
+              "lineas": []
+            },
+            "esperado": {
+              "textos": [
+                "Entrega: delivery a Av\\. Busch esquina retiro de jubilados"
+              ],
+              "estado": {
+                "entrega.direccion": "Av. Busch esquina retiro de jubilados"
+              }
+            }
+          },
+          {
+            "texto": "ella va a recoger en portería",
+            "seco": {
+              "lineas": []
+            },
+            "esperado": {
+              "textos": [
+                "Entrega: delivery a ella va a recoger en portería"
+              ],
+              "estado": {
+                "entrega.direccion": "ella va a recoger en portería"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "A13",
+      "titulo": "Cliente que ya conversó y trae el carrito con dirección: resumen directo con «recibe {nombre de perfil}», sin preguntar nada",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Av\\. Banzer 1234, recibe Lucía Ejemplo"
+            ],
+            "textosNo": [
+              "necesito",
+              "referencia",
+              "nombre de quien",
+              "no va en el QR",
+              "\\?"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.nombre": "Lucía Ejemplo"
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "A15",
+      "titulo": "Dirección en un mensaje y «a media cuadra del gas» en otro: la segunda se toma como referencia opcional y pasa al resumen sin más preguntas",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "calle 1 numerro 2 Irpavi"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": "calle 1 numerro 2 Irpavi"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a calle 1 numerro 2 Irpavi, recibe Lucía Ejemplo"
+            ],
+            "textosNo": [
+              "necesito",
+              "referencia",
+              "nombre de quien"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "calle 1 numerro 2 Irpavi",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "a media cuadra del gas"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a calle 1 numerro 2 Irpavi \\(a media cuadra del gas\\), recibe Lucía Ejemplo"
+            ],
+            "textosNo": [
+              "necesito",
+              "direcci[oó]n exacta",
+              "nombre de quien",
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "calle 1 numerro 2 Irpavi",
+              "entrega.referencia": "a media cuadra del gas"
+            },
+            "igualAntes": [
+              "carrito"
+            ],
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

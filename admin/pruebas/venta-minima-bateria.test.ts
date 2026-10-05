@@ -31,6 +31,13 @@ const CARPETA = join(AQUI, '../../Flujos/experimental/venta-minima');
 const HERRAMIENTA = join(CARPETA, 'herramientas/bateria.mjs');
 const CARPETA_CASOS = join(CARPETA, 'herramientas/bateria-casos');
 const RUTA_FLUJO = join(CARPETA, 'venta-minima.qtaco.json');
+/**
+ * Los casos que NO pasan contra main y esperan una rama (05/10/2026). `A-delivery-opcional.json` pasa contra la rama de delivery opcional (PR #435) y falla contra
+ * main; `A-pendiente-de-rama.json` falla contra las dos hoy (A7 y A8 esperan la rama funcional; A14 choca con el texto de la #435). La suite los saca del
+ * «cero fallos» y fija, con un control negativo, que fallan: se ponen en rojo cuando llegue lo que esperan y entonces el caso pasa a `A.json`.
+ */
+const ARCHIVOS_DE_RAMA = ['A-delivery-opcional.json', 'A-pendiente-de-rama.json'];
+const idsDeRama = (): string[] => ARCHIVOS_DE_RAMA.flatMap((f) => ((JSON.parse(readFileSync(join(CARPETA_CASOS, f), 'utf8')) as J)['casos'] as J[]).map((c) => String(c['id'])));
 
 interface Modulo {
   main(argv: string[], deps?: J): Promise<number>;
@@ -96,7 +103,8 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     const globalFetch = globalThis.fetch;
     globalThis.fetch = (() => { throw new Error('el fetch global no se toca en --seco'); }) as typeof fetch;
     let s: Salida;
-    const ids = casosDeLaCarpeta().casos.map((c) => String(c['id']));
+    const deRama = new Set(idsDeRama());
+    const ids = casosDeLaCarpeta().casos.map((c) => String(c['id'])).filter((x) => !deRama.has(x)); // los de una rama se miden aparte, abajo
     try { s = await correr(m, ['--seco', '--json', '--casos', ids.join(',')]); } finally { globalThis.fetch = globalFetch; }
     expect(s.codigo, s.error + '\n' + s.salida.slice(0, 2000)).toBe(0);
     const r = json(s);
@@ -108,15 +116,18 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     expect(r.negativoGlobal).toBeNull(); // una lista de casos que no nombra a E8 no lo evalúa
   });
 
-  it('el alcance: los casos son los de los lotes 1 y 2, y cada escenario de A1 a F5 está implementado, es el negativo global o está en los pendientes', () => {
-    const lote1 = ['A9', 'A10', 'A11', 'A12', 'B1', 'B2', 'B3', 'B5'];
+  it('el alcance: los casos son los de los lotes 1 a 3, y cada escenario de A1 a F5 está implementado, es el negativo global o está en los pendientes', () => {
+    // A10d es la variante de A10 con el delivery pendiente (ahí «no quiero delivery» SÍ pasa a recojo). El lote 3 es el de delivery opcional (A11 se redefinió con él).
+    const lote1 = ['A9', 'A10', 'A10d', 'A12', 'B1', 'B2', 'B3', 'B5'];
     const lote2 = ['B6', 'B7', 'B8', 'B9', 'C7', 'C8', 'C10', 'D1', 'D2', 'D3', 'D4', 'D9', 'E2', 'E3', 'E5', 'E7', 'F2', 'F3', 'F4'];
+    const lote3 = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A11', 'A13', 'A14', 'A15'];
     const { casos, global: g } = casosDeLaCarpeta();
     const ids = casos.map((c) => String(c['id']));
-    expect([...ids].sort()).toEqual([...lote1, ...lote2].sort());
+    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3].sort());
+    expect([...idsDeRama()].sort(), 'los casos de rama son exactamente los del lote 3').toEqual([...lote3].sort());
     const pendientes = ((JSON.parse(readFileSync(join(CARPETA_CASOS, 'pendientes.json'), 'utf8')) as J)['pendientes'] as J[]).map((p) => String(p['id']));
     const grilla: string[] = [];
-    for (const [letra, n] of [['A', 12], ['B', 9], ['C', 10], ['D', 9], ['E', 8], ['F', 5]] as const) for (let i = 1; i <= n; i++) grilla.push(`${letra}${i}`);
+    for (const [letra, n] of [['A', 15], ['B', 9], ['C', 10], ['D', 9], ['E', 8], ['F', 5]] as const) for (let i = 1; i <= n; i++) grilla.push(`${letra}${i}`);
     const cubiertos = new Set([...ids, ...pendientes, g ? String(g['id']) : '']);
     expect(grilla.filter((x) => !cubiertos.has(x)), 'escenarios sin implementar ni listar').toEqual([]);
   });
@@ -135,7 +146,7 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
   });
 
   it('--casos corre solo los pedidos y un id desconocido es un error de uso', async () => {
-    const primero = casosDeLaCarpeta().casos[0] as J;
+    const primero = casosDeLaCarpeta().casos.find((c) => !idsDeRama().includes(String(c['id']))) as J; // el primero que pasa contra main
     const s = await correr(mundo(), ['--seco', '--json', '--casos', primero['id']]);
     expect(s.codigo).toBe(0);
     expect(json(s).casos.filter((c: J) => c.id === primero['id'])).toHaveLength(1);
@@ -174,6 +185,59 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     const caso = casosDeLaCarpeta().casos.find((c) => c['id'] === 'A12') as J;
     const corrida = await B.correrCaso({ caso, rep: 1, flujo: f, opciones: { seco: true }, credencial: {}, deps: {} });
     expect(corrida['ok'], JSON.stringify(corrida['fallas'])).toBe(true);
+  });
+});
+
+// ------------------------------------------------------------------------------ lote 3: delivery y entrega (rama de delivery opcional, #435)
+describe('lote 3 (delivery y entrega): los casos de la rama FALLAN contra main (control negativo) y A10 mide su defecto', () => {
+  // Estos casos pasan contra la rama de delivery opcional (PR #435: se comprobó en un worktree temporal con la batería fusionada encima de
+  // origin/cartera/qtaco-delivery-opcional; en `--seco`: A1–A6, A11, A13 y A15 pasan; A7 pasa 2 de 3 frases, y A8 y A14 fallan por lo que dicen sus archivos).
+  // Contra main FALLAN porque main todavía pide referencia y nombre. Cuando la rama se fusione, esta prueba se pone ROJA: se mueven los casos que ya
+  // pasan de `A-delivery-opcional.json` a `A.json` y se ajusta la lista de abajo.
+  it('contra main, cada caso de los archivos de rama falla en --seco (ninguno pasa por casualidad)', async () => {
+    const ids = idsDeRama();
+    const s = await correr(mundo(), ['--seco', '--json', '--casos', ids.join(',')]);
+    expect(s.codigo, s.error).toBe(1);
+    const r = json(s);
+    const pasan = r.casos.filter((c: J) => c.ok).map((c: J) => c.id);
+    expect(pasan, 'estos casos ya pasan contra main: pasan a A.json y salen de los archivos de rama').toEqual([]);
+    expect(r.casos.map((c: J) => c.id)).toEqual(ids);
+  });
+
+  it('contra main A7 pasa dos frases de tres (el cambio con «cambiar al delivery» ya lo cubre #426) y falla «quiero que me manden», que deriva a una persona', async () => {
+    const s = await correr(mundo(), ['--seco', '--json', '--casos', 'A7']);
+    const a7 = json(s).casos.find((c: J) => c.id === 'A7') as J;
+    expect(a7.corridas).toBe(3);
+    expect(a7.aprobaron).toBe(2);
+    expect(String(a7.por)).toMatch(/quiero que me manden/);
+    expect(String(a7.por)).toMatch(/persona|direcci/);
+  });
+
+  it('A14 falla por la referencia: la pregunta de la dirección menciona una referencia y el escenario dice que NUNCA se pide en el chat', async () => {
+    const s = await correr(mundo(), ['--seco', '--json', '--casos', 'A14']);
+    const a14 = json(s).casos.find((c: J) => c.id === 'A14') as J;
+    expect(a14.ok).toBe(false);
+    expect(String(a14.por)).toMatch(/referencia/);
+  });
+
+  it('A10 mide el defecto: si el modelo lee «no quiero delivery» como delivery, el flujo cambia la entrega y el caso falla; con la respuesta fija de siempre, pasa', async () => {
+    const caso = casosDeLaCarpeta().casos.find((c) => c['id'] === 'A10') as J;
+    const f = flujo();
+    const bueno = await B.correrCaso({ caso: B.expandirVariantes(caso)[0]!.caso, rep: 1, flujo: f, opciones: { seco: true }, credencial: {}, deps: {} });
+    expect(bueno['ok'], JSON.stringify(bueno['fallas'])).toBe(true);
+    const malo = B.expandirVariantes(caso)[0]!.caso;
+    (malo['turnos'] as J[])[0]!['seco'] = { lineas: [], entrega: 'delivery' };
+    const c = await B.correrCaso({ caso: malo, rep: 1, flujo: f, opciones: { seco: true }, credencial: {}, deps: {} });
+    expect(c['ok']).toBe(false);
+    expect(JSON.stringify(c['fallas'])).toMatch(/entrega/);
+  });
+
+  it('A10d (delivery pendiente): lo mismo que dice el cliente SÍ pasa a recojo, y si el modelo no lo entiende (líneas vacías) el caso falla en vez de aprobar', async () => {
+    const caso = casosDeLaCarpeta().casos.find((c) => c['id'] === 'A10d') as J;
+    const malo = B.expandirVariantes(caso)[0]!.caso;
+    (malo['turnos'] as J[])[0]!['seco'] = { lineas: [] };
+    const c = await B.correrCaso({ caso: malo, rep: 1, flujo: flujo(), opciones: { seco: true }, credencial: {}, deps: {} });
+    expect(c['ok']).toBe(false);
   });
 });
 
@@ -440,7 +504,8 @@ describe('E8, el negativo global: ninguna frase prohibida en lo que el cliente r
     expect(s.codigo).toBe(1);
     const v = json(s).negativoGlobal.violaciones as J[];
     expect([...new Set(v.map((x) => x['frase']))]).toEqual(['\\bellos\\b']);
-    expect([...new Set(v.map((x) => x['caso']))].sort()).toEqual(['B9', 'C10', 'C7', 'E2', 'E7']);
+    // A7 se suma desde el lote 3: «quiero que me manden» deriva hoy con el texto genérico («para hablar con ellos»), el defecto que espera la rama funcional.
+    expect([...new Set(v.map((x) => x['caso']))].sort()).toEqual(['A7', 'B9', 'C10', 'C7', 'E2', 'E7']);
     // Los textos de respaldo (solo si Meta rechaza el interactivo) además dicen «Escríbeles aquí»: aviso, no fallo.
     const latentes = json(s).negativoGlobal.latentes as J[];
     expect(latentes.some((x) => x['frase'] === 'escr[ií]beles')).toBe(true);

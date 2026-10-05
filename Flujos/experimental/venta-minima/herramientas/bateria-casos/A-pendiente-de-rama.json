@@ -1,0 +1,203 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "A",
+  "nota": "Escenarios A7, A8 y A14 de «Delivery y entrega» que HOY FALLAN tanto contra main como contra la rama de delivery opcional (PR #435): A7 (la variante «quiero que me manden») y A8 (el tipeo «quiero que me mandn») esperan la rama FUNCIONAL (la intención de delivery por código, nunca una derivación); A14 choca con la rama #435: su pregunta de la dirección dice «(y, si quieres, una referencia para llegar)» y el escenario dice que la referencia NUNCA se pide en el chat. Se dejan implementados y fallando, con la suite que lo fija: se ponen en verde cuando la rama o la decisión correspondiente llegue, y entonces pasan a A.json.",
+  "casos": [
+    {
+      "id": "A7",
+      "titulo": "Resumen de recojo: «¿Puedo cambiar al delivery?», «prefiero delivery» y «quiero que me manden» pasan a delivery y piden la dirección, sin derivar a una persona",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Puedo cambiar al delivery?"
+          },
+          "seco": {
+            "lineas": [],
+            "quiereHablar": true
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n"
+            ],
+            "textosNo": [
+              "persona",
+              "Escribir al local",
+              "Esto prefiero"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "carrito": {
+                "longitud": 1
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "¿Puedo cambiar al delivery?",
+          "prefiero delivery",
+          "quiero que me manden"
+        ]
+      }
+    },
+    {
+      "id": "A8",
+      "titulo": "Resumen de recojo y un tipeo («quiero que me mandn»): pregunta «¿delivery o recoger en el local?» con botones, sin derivar",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "quiero que me mandn"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "delivery",
+              "recoger en el local"
+            ],
+            "textosNo": [
+              "persona",
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "delivery",
+              "recoger|recojo"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "estado": {
+              "carrito": {
+                "longitud": 1
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "A14",
+      "titulo": "Cliente con nombre de perfil y carrito de delivery SIN dirección: pide SOLO la dirección (sin referencia ni frase del QR)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n"
+            ],
+            "textosNo": [
+              "referencia",
+              "nombre de quien",
+              "no va en el QR",
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

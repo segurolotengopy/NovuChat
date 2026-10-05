@@ -35,7 +35,33 @@
     },
     {
       "id": "A10",
-      "titulo": "«no quiero delivery», «delivery no», «sin delivery» NO cambian la entrega",
+      "titulo": "Resumen de RECOJO: «no quiero delivery», «delivery no» y «sin delivery» NO cambian la entrega (siguen en recojo)",
+      "estadoPrevio": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"},
+          "esperado": {"mensajes": 1, "titulos": ["Confirmar pedido"], "estado": {"paso": "pedido_confirmar", "entrega.entrega": "recojo"}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "no quiero delivery"},
+          "seco": {"lineas": []},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["recojo en el local"],
+            "textosNo": ["Entrega: delivery", "necesito", "Esto prefiero"],
+            "titulos": ["Confirmar pedido"],
+            "estado": {"paso": "pedido_confirmar", "entrega.entrega": "recojo", "entrega.modalidad": "recojo", "carrito": {"longitud": 1}},
+            "igualAntes": ["entrega.entrega", "carrito"],
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {"turno": 1, "frases": ["no quiero delivery", "delivery no", "sin delivery"]}
+    },
+    {
+      "id": "A10d",
+      "titulo": "Delivery pendiente de datos: «no quiero delivery», «delivery no» y «sin delivery» SÍ pasan a recojo (es lo que el cliente pide) y muestran el resumen",
       "estadoPrevio": [
         {
           "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "envio", "direccion": ""},
@@ -45,49 +71,18 @@
       "turnos": [
         {
           "cliente": {"tipo": "texto", "texto": "no quiero delivery"},
-          "seco": {"lineas": []},
+          "seco": {"lineas": [], "entrega": "recojo"},
           "esperado": {
             "mensajes": 1,
-            "textosNo": ["recojo en el local"],
-            "titulosNo": ["Confirmar pedido"],
-            "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery", "entrega.modalidad": "delivery"},
-            "igualAntes": ["entrega.entrega", "carrito"],
+            "textos": ["recojo en el local", "2 × Tacos de Birria"],
+            "textosNo": ["Entrega: delivery", "necesito", "Esto prefiero"],
+            "titulos": ["Confirmar pedido"],
+            "estado": {"paso": "pedido_confirmar", "entrega.entrega": "recojo", "carrito": {"longitud": 1}},
             "efectos": {"derivacion": false, "aviso": false}
           }
         }
       ],
       "variantes": {"turno": 1, "frases": ["no quiero delivery", "delivery no", "sin delivery"]}
-    },
-    {
-      "id": "A11",
-      "titulo": "Una dirección o una instrucción de entrega con «retiro»/«recoger» NO cambia a recojo",
-      "estadoPrevio": [
-        {
-          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "envio", "direccion": ""},
-          "esperado": {"mensajes": 1, "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery"}}
-        }
-      ],
-      "turnos": [
-        {
-          "cliente": {"tipo": "texto", "texto": "Barrio El Retiro, calle 3 casa 5"},
-          "seco": {"lineas": [], "direccion": "Barrio El Retiro, calle 3 casa 5"},
-          "esperado": {
-            "mensajes": 1,
-            "textosNo": ["recojo en el local"],
-            "titulosNo": ["Confirmar pedido"],
-            "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery", "entrega.modalidad": "delivery"},
-            "efectos": {"derivacion": false, "aviso": false}
-          }
-        }
-      ],
-      "variantes": {
-        "turno": 1,
-        "frases": [
-          {"texto": "Barrio El Retiro, calle 3 casa 5", "seco": {"lineas": [], "direccion": "Barrio El Retiro, calle 3 casa 5"}},
-          {"texto": "Av. Busch frente al retiro de jubilados", "seco": {"lineas": [], "direccion": "Av. Busch frente al retiro de jubilados"}},
-          {"texto": "ella va a recoger en portería", "seco": {"lineas": [], "referencia": "ella va a recoger en portería"}}
-        ]
-      }
     },
     {
       "id": "A12",
@@ -103,7 +98,7 @@
           "esperado": {
             "mensajes": 1,
             "textosNo": ["no enviamos", "quit[eé]"],
-            "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery", "carrito": {"longitud": 3}},
+            "estado": {"paso": {"regex": "^pedido_(datos|confirmar)$"}, "entrega.entrega": "delivery", "carrito": {"longitud": 3}},
             "efectos": {"derivacion": false, "aviso": false}
           }
         },
@@ -120,7 +115,7 @@
           "esperado": {
             "mensajes": 1,
             "textosNo": ["no enviamos", "quit[eé]"],
-            "estado": {"paso": "pedido_datos", "entrega.entrega": "delivery", "carrito": {"longitud": 3}},
+            "estado": {"paso": {"regex": "^pedido_(datos|confirmar)$"}, "entrega.entrega": "delivery", "carrito": {"longitud": 3}},
             "efectos": {"derivacion": false, "aviso": false, "modelo": false}
           }
         }
