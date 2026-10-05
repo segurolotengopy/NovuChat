@@ -206,7 +206,7 @@ if (pedidosOn && !enComprobante && /^(ver |mostrar |muestrame |dime |cual es |qu
   && /\b(pedido|carrito|tengo|llevo|pedi|va)\b/.test(norm) && norm !== 'pedido' && norm.length <= 40) {
   return salir('boton', { motivo: 'ver_pedido' });
 }
-const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm);
+const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm) || intencionDePedir(norm);
 const quiereReservar = /reserv|\bmesa\b/.test(norm);
 // FALSOS POSITIVOS (revisión del PR #382): las intenciones globales de CARTA y RESERVA valen en `inicio` y `menu` sin límite de largo, pero
 // en los demás pasos solo con un mensaje CORTO (hasta 60 caracteres) y nunca mientras se piden los datos de entrega (`pedido_entrega`,
@@ -367,6 +367,30 @@ function estadoBase() {
     reserva: null, pedido: null, vacias: 0, ilegibles: 0, transferencias: [],
     carritoGuardado: 0,
   });
+}
+
+// ¿El texto PIDE comida sin decir «pedir» ni escribir un dígito? (05/10: un audio transcrito «quiero cuatro tacos de birria» caía al menú sin llamar al modelo.)
+// Cuenta si hay un verbo de pedido («quiero», «dame», «ponme», «mándame», «necesito», «me das»…) junto a una cantidad en palabras que no deja dudas
+// («dos» a «diez», «media docena», «docena») o a una palabra de la CARTA CARGADA (sus nombres, con `vmNorm`: nada de productos escritos en el código), o una cantidad
+// fuerte junto a una palabra de la carta sin verbo («cuatro tacos de birria por favor»). «un/una» solos NO son cantidad (sin una palabra de la carta, «quiero un
+// descuento» no es un pedido). Nunca si habla de una persona, una mesa, la ubicación, el horario o una reserva: eso lo atienden otras reglas.
+// El resto sigue igual: si el modelo no saca líneas, no se inventa nada (la carta, o pasar con el local a la segunda vez).
+function intencionDePedir(n) {
+  if (!n || n.length > 200 || /\b(persona|personas|mesa|mesas|reserv\w*|ubicacion|direccion|horario|hablar|asesor\w*|encargad\w*|humano|humana|queja|reclamo)\b/.test(n)) return false;
+  const verbo = /\b(quiero|quisiera|queremos|quisieramos|dame|deme|damelo|ponme|pongame|ponga|mandame|mandeme|necesito|necesitamos|pido|pedimos|traeme|traigame|regalame|me das|me da|me pones|me pone|me manda|me mandas|me regalas|voy a querer|vamos a querer)\b/.test(n);
+  const fuerte = /\b(\d+|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|docena|media docena)\b/.test(n);
+  const sueltas = n.split(' ').filter(Boolean);
+  const comunes = ['orden', 'ordenes', 'combo', 'combos', 'promo', 'promos', 'para', 'sin', 'con', 'del', 'los', 'las', 'una', 'unos', 'unas', 'plato', 'platos'];
+  const raiz = (w) => w.replace(/(es|s)$/, '');
+  // Solo lo que se vende (`cartaDelNegocio`: sin áreas excluidas, agotados ni precios inválidos), y sin las palabras del propio nombre del negocio
+  // («Q'Taco» no vuelve «quiero la promo de Q'Taco» un pedido de tacos).
+  const delNegocio = vmNorm(cfg.nombreNegocio).split(' ');
+  const deLaCarta = [];
+  for (const it of cartaDelNegocio()) {
+    for (const w of vmNorm(it.nombre).split(' ')) if (w.length >= 4 && comunes.indexOf(w) < 0) deLaCarta.push(raiz(w));
+  }
+  const nombraLaCarta = sueltas.some((w) => w.length >= 4 && comunes.indexOf(w) < 0 && delNegocio.indexOf(w) < 0 && deLaCarta.indexOf(raiz(w)) >= 0);
+  return (verbo && (fuerte || nombraLaCarta)) || (fuerte && nombraLaCarta);
 }
 
 // ¿Qué quiere cancelar? '' = nada; 'no' = lo rechaza («no cancela», «no quiero cancelar»); 'pedido' («cancela mi pedido», «ya no quiero el pedido»);

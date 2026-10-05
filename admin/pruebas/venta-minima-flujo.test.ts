@@ -5878,3 +5878,56 @@ describe('(5) modismos al volver al pedido anterior (solo al elegir de nuevo, me
     expect((estadoDe(w.mundo)['carrito'] as J[])[0]!['cantidad']).toBe(2);
   });
 });
+
+// =================================================================================================
+// (05/10, hallazgo de la Operadora) Pedir sin decir «pedir» ni escribir un dígito: un audio transcrito («quiero cuatro tacos de birria») caía al menú sin llamar al modelo.
+// =================================================================================================
+describe('pedir con cantidad en palabras o con el nombre de un producto de la carta (audio transcrito)', () => {
+  const FRASES = [
+    'quiero cuatro tacos de birria', 'dame dos tacos de birria por favor', 'ponme media docena de tacos', 'necesito tres tacos de birria',
+    'me das una horchata', 'quisiera un queso fundido', 'mándame dos nachos supremos', 'cuatro tacos de birria por favor', 'deme una docena de tacos',
+    'quiero tacos de birria', 'me pones unas enchiladas suizas', 'quiero cinco horchatas',
+  ];
+  it.each(FRASES)('«%s» desde el menú llama al modelo para extraer el pedido (no cae al menú)', (dicho) => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    const t = c.escribe(dicho);
+    expect(t.llamadas.extraer, dicho).toHaveLength(1);
+    expect(estadoDe(w.mundo)['paso'], dicho).toMatch(/^pedido/);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length, dicho).toBeGreaterThan(0);
+  });
+
+  it.each([
+    'quiero hablar con una persona', 'quiero la ubicación', 'quiero un descuento', 'quiero saber el horario', 'dame la dirección',
+    'necesito ayuda', 'quiero cuatro personas', 'me das el horario', 'quiero una queja',
+  ])('negando: «%s» NO es un pedido: no llama al modelo para extraer líneas', (dicho) => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    const t = c.escribe(dicho);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length, dicho).toBe(0);
+  });
+
+  it('negando: «quiero una mesa para cuatro» es una reserva (sigue su camino), no un pedido', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    c.escribe('quiero una mesa para cuatro');
+    expect(estadoDe(w.mundo)['paso']).toMatch(/^reserva/);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length).toBe(0);
+  });
+
+  it('sin carta cargada, una palabra suelta de la carta no inventa un pedido (el producto sale de la carta, no del código)', () => {
+    const w = crear({ panel: panel({ catalogo: [] }) });
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    const t = c.escribe('quiero tacos de birria');
+    expect(t.llamadas.extraer).toHaveLength(0);
+  });
+});
