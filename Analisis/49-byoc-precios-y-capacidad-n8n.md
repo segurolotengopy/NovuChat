@@ -27,7 +27,7 @@ Base pedida por Andres: USD 35 por 1.000 conversaciones. El segundo escalón es 
 |---|---|---|---|---|
 | 1.000 por 35 | 0,035 | 25 (72 %) | 23 (66 %) | 57 |
 | 2.000 por 50 | 0,025 | 36 (72 %) | 32 (64 %) | 124 |
-| 5.000 por 90 | 0,018 | 63 (71 %) | 53 (59 %) | 328 |
+| 5.000 por 90 | 0,018 | 63 (71 %) | 54 (59 %) | 328 |
 | 10.000 por 150 | 0,015 | 104 (69 %) | 84 (56 %) | 667 |
 
 USD al mes. «Nos queda» descuenta impuestos (16 %), infraestructura prorrateada (2,18 USD) e IA (0,004 USD por conversación). La columna de Meta supone 5 respuestas y 1 aviso por conversación, con los 1.000 mensajes gratis del número.
@@ -67,7 +67,7 @@ Perfil de un flujo mínimo: unos 6.600 tokens de entrada y 800 de salida por con
 |---|---|---|---|---|
 | 1.000 por 35 | 25 / 23 | 22 / 17 | 16 / 5 | 12 / −3 |
 | 2.000 por 50 | 36 / 32 | 29 / 19 | 17 / −6 | 10 / −21 |
-| 5.000 por 90 | 63 / 53 | 47 / 20 | 17 / −40 | −2 / −78 |
+| 5.000 por 90 | 63 / 54 | 47 / 20 | 17 / −40 | −2 / −78 |
 | 10.000 por 150 | 104 / 84 | 71 / 18 | 11 / −103 | −27 / −178 |
 
 **Precio que iguala el margen de hoy (USD al mes):**
@@ -94,7 +94,7 @@ Pedida por Andres: 25 por 200, 50 por 500 y 90 por 1.000. USD al mes, a uso plen
 | Margen al 50 % de uso | 71 % | 74 % | 76 % |
 | USD por conversación | 0,125 | 0,100 | 0,090 |
 
-**Cuántas conversaciones caben si se exige 70 % de margen:**
+**Cuántas conversaciones caben si se exige 70 % de margen** (cifras redondeadas a 5; las exactas, en el modelo):
 
 | Precio | 70 % sobre el precio cobrado | 70 % sobre lo neto de impuestos | Equilibrio (sin ganancia) |
 |---|---|---|---|
@@ -104,7 +104,7 @@ Pedida por Andres: 25 por 200, 50 por 500 y 90 por 1.000. USD al mes, a uso plen
 
 El 70 % sobre el precio cobrado es exigente: impuestos e infraestructura ya se llevan entre el 18 % y el 25 %, y el máximo posible sin gastar nada en IA es 75 % en el plan de 25 y 82 % en el de 90.
 
-Sensibilidades: si Haiku saliera un 30 % más caro al medirlo, el margen baja 2 a 3 puntos por escalón. Si el fijo se reparte entre 5 comercios y no entre 10, el plan de 25 baja a 58 %.
+Sensibilidades: si Haiku saliera un 30 % más caro al medirlo, el margen baja entre 2,5 y 3,5 puntos según el escalón. Si el fijo se reparte entre 5 comercios y no entre 10, el plan de 25 baja a 58 %.
 
 ## 4. Bolsas de conversaciones en BYOC
 
@@ -168,13 +168,13 @@ Supuestos: cliente de 300 conversaciones al mes; unas 30 ejecuciones por convers
 | Techo del modo actual | unos 300 | 300 a 600 | 90.000 | 90.000 |
 | Más allá | modo cola con trabajadores y una VM más grande | | | |
 
-Coincide en orden de magnitud con `Analisis/20` §6 (360.000 ejecuciones al mes con 300 clientes), que pedía medirlo antes del cliente cincuenta.
+El modelo da 110 y 330 clientes (33.000 y 99.000 conversaciones al mes); la tabla los redondea hacia abajo. **Coincide con `Analisis/20` §6 en el número de clientes (unos 300), no en las ejecuciones:** aquel análisis contaba 1.200 ejecuciones al mes por cliente (120 conversaciones de 10 mensajes, 360.000 en total) y este cuenta 9.000 (300 conversaciones y 30 ejecuciones por conversación, porque incluye los acuses de estado), es decir unos 2,7 millones al mes en el techo. `Analisis/20` pedía medirlo antes del cliente cincuenta, y sigue sin medirse.
 
 ### 6.4 Lo que falla antes que la CPU
 
-1. **El historial de ejecuciones.** Con 100 clientes, el tope actual guarda menos de un día (hoy, unos 20). Se pierde el diagnóstico y la medición de costos de IA, que lee esas ejecuciones. Salidas: no guardar los acuses de estado, o subir el tope usando disco.
+1. **El historial de ejecuciones.** Con 100 clientes, el tope por cantidad guarda menos de un día (hoy no se alcanza: manda la poda de 14 días). Se pierde el diagnóstico y la medición de costos de IA, que lee esas ejecuciones. Salidas: no guardar los acuses de estado, o subir el tope usando disco.
 2. **Los flujos de barrido por cliente.** Uno cada 5 minutos son 8.640 ejecuciones al mes por cliente, tanto como todo su tráfico de conversaciones (9.000). Conviene un barrido para todos o una cadencia menor.
-3. **Un solo punto de falla, compartido con el OTP.** Sin alta disponibilidad en Community, y el contenedor de n8n no tiene límite de CPU. Conviene ponérselo y separar n8n en otra VM antes de los 50 clientes.
+3. **Un solo punto de falla, en una máquina compartida.** Community no trae alta disponibilidad. Conviene revisar los límites de recursos del contenedor de n8n y separarlo en otra VM antes de los 50 clientes; el detalle va en la documentación privada de la infraestructura.
 4. **La memoria de n8n.** El tope de 1,2 GB alcanza hoy y se puede subir: la VM tiene de sobra.
 5. **La operación.** Cada cambio se publica flujo por flujo con los scripts, y cada cliente suma sus credenciales.
 
