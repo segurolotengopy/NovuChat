@@ -898,16 +898,15 @@ function _pdDireccionValida(dir) {
   return dir.length >= 5 && /[a-z]/.test(n) && n.split(' ').filter(Boolean).length >= 2;
 }
 
-// Que datos faltan para entregar: solo con delivery, y en este orden: direccion, referencia, nombre.
-// Una ubicacion compartida vale como direccion; el nombre del perfil, si tiene 2 palabras o mas, como nombre.
+// Que datos faltan para entregar: solo con delivery, y SOLO la direccion (decision de Andres y Silvana, 04/10/2026: la referencia es OPCIONAL y
+// «quien recibe» no es obligatorio; el pedido sigue al resumen y se envia igual). Una ubicacion compartida vale como direccion. `nombrePerfil` se
+// conserva en la firma por compatibilidad: ya no hace falta para decidir si falta algo.
 function pdFaltanEntrega(entrega, nombrePerfil) {
   if (_pdTipoDe(entrega) !== 'delivery') return [];
   const e = entrega;
   const faltan = [];
   const dir = _pdTexto(e.direccion, 200);
   if (!_pdDireccionValida(dir) && !_pdUbicacion(e.ubicacion)) faltan.push('direccion');
-  if (_pdTexto(e.referencia, 150).length < 3) faltan.push('referencia');
-  if (!_pdNombreEntrega(e, nombrePerfil)) faltan.push('nombre');
   return faltan;
 }
 
@@ -1080,11 +1079,9 @@ function pdEjemploDePedido(carta) {
 }
 
 // ADITIVO. «Para el delivery necesito {lista}…» (texto fijo del diseno) para lo que devuelve pdFaltanEntrega.
+// Lo único que se exige del delivery es la dirección; la referencia se ofrece como opcional (sin la frase del QR, decisión del 04/10/2026).
 function pdTextoFaltanEntrega(faltan) {
-  const rotulo = { direccion: 'la dirección exacta', referencia: 'una referencia para llegar', nombre: 'el nombre de quien recibe' };
-  const l = (Array.isArray(faltan) ? faltan : []).map((k) => rotulo[k]).filter(Boolean);
-  const lista = l.length > 1 ? l.slice(0, -1).join(', ') + ' y ' + l[l.length - 1] : (l[0] || 'los datos de entrega');
-  return 'Para el delivery necesito ' + lista + '. El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.';
+  return 'Para el delivery necesito la dirección exacta.';
 }
 
 // ---------------------------------------------------------------------------

@@ -168,6 +168,8 @@ function cdeCarrito(entradas) {
         fichaCompartida: v.fichaCompartida === true, moneda: String(v.moneda || 'Bs'), total: Number(v.total) || 0,
         costoEnvio: Number(v.costoEnvio) || 0, entrega: v.entrega === 'envio' ? 'envio' : 'retiro',
         direccion: String(v.direccion || ''), nota: String(v.nota || ''), descartados: Number(v.descartados) || 0,
+        // La referencia (opcional) la manda la página nueva; va FUERA del bloque copiado de validar-carrito.js (esa copia la fija una prueba).
+        referencia: vmLinea(String(cuerpo.referencia || ''), 150),
         itemsTotal: Number(v.itemsTotal) || 0,
         items: (Array.isArray(v.items) ? v.items : []).map((x, k) => {
           const id = crudos[k] && typeof crudos[k].id === 'string' ? crudos[k].id : '';
