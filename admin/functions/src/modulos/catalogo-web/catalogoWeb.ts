@@ -154,8 +154,8 @@ const texto = (v: unknown, max: number): string =>
  * recorta, esta limpia:
  *
  *  - caracteres de control (saltos de línea, NUL), de formato (la marca de
- *    derecha a izquierda U+202E y compañía), separadores de línea y de párrafo,
- *    y `<`, `>` y `&`, se vuelven un espacio;
+ *    derecha a izquierda U+202E y compañía), surrogates sueltos, uso privado,
+ *    separadores de línea y de párrafo, y `<`, `>` y `&`, se vuelven un espacio;
  *  - los enlaces (`http(s)://…`, `www.…`) se borran: una referencia para llegar
  *    no lleva enlaces, y un enlace en un mensaje de WhatsApp al repartidor es la
  *    forma más barata de colar un engaño;
@@ -168,13 +168,23 @@ const texto = (v: unknown, max: number): string =>
 export function lineaLimpia(v: unknown, max: number): string {
   if (typeof v !== 'string') return '';
   // Tope previo solo para acotar el trabajo de las expresiones regulares sobre
-  // un cuerpo hostil; el recorte que vale es el de abajo.
-  const limpio = v.slice(0, 1000)
-    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}<>&]/gu, ' ')
+  // un cuerpo hostil; el recorte que vale es el de abajo. Si el corte cae entre
+  // las dos mitades de un emoji, se descarta la mitad que quedó, para no dejar
+  // un surrogate suelto.
+  let tope = v.slice(0, 1000);
+  if (/[\ud800-\udbff]$/.test(tope)) tope = tope.slice(0, -1);
+  const limpio = tope
+    // Cs: surrogates sueltos; Co: uso privado. Ninguno es texto legible.
+    .replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Zl}\p{Zp}<>&]/gu, ' ')
     .replace(/https?:\/\/\S+/gi, ' ')
     .replace(/www\.\S+/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  // Bien formado por construcción: `\p{Cs}` con la bandera `u` solo casa los
+  // surrogates SUELTOS (una pareja válida es un solo punto de código), y ya se
+  // volvieron espacio arriba; el corte por puntos de código de abajo no parte
+  // parejas. Es el equivalente de `toWellFormed()` sin U+FFFD y sin pedir la
+  // biblioteca ES2024 que el `tsconfig` de Functions no declara.
   return Array.from(limpio).slice(0, max).join('').trim();
 }
 

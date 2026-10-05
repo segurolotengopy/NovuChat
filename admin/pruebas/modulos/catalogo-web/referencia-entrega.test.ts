@@ -72,6 +72,36 @@ describe('lineaLimpia', () => {
     expect(e).toBe('😀'.repeat(150));
   });
 
+  it('NEGANDO: un surrogate suelto sale bien formado (nunca queda media pareja)', () => {
+    const malformado = (x: string) => /\p{Cs}/u.test(x); // surrogate suelto
+    for (const v of ['\uD83D', 'a\uD83D', '\uDE00b', 'a\uD83Db\uDE00c', '\uD83D\uD83D\uDE00']) {
+      const r = lineaLimpia(v, 150);
+      expect(malformado(r), JSON.stringify(v)).toBe(false);
+      expect(r).not.toContain('\uFFFD');
+    }
+    expect(lineaLimpia('a\uD83Db', 150)).toBe('a b');
+    // Una pareja válida sigue entera.
+    expect(lineaLimpia('a\uD83D\uDE00b', 150)).toBe('a😀b');
+  });
+
+  it('NEGANDO: el uso privado (U+E000, U+F8FF, planos 15 y 16) pasa a espacio', () => {
+    expect(lineaLimpia('a\uE000b\uF8FFc', 150)).toBe('a b c');
+    expect(lineaLimpia('x\u{F0000}y\u{10FFFD}z', 150)).toBe('x y z');
+  });
+
+  it('NEGANDO: un emoji partido por el tope de 1.000 unidades no deja un surrogate suelto', () => {
+    // Un emoji que empieza en la unidad 999 y termina en la 1000: el slice lo parte.
+    const entrada = 'a'.repeat(999) + '😀' + 'b'.repeat(50);
+    expect(/\p{Cs}/u.test(entrada.slice(0, 1000))).toBe(true); // el caso es real: el slice parte el emoji
+    const r = lineaLimpia(entrada, 5000);
+    expect(/\p{Cs}/u.test(r)).toBe(false);
+    expect(Array.from(r).length).toBe(999);
+    // Y sin límite de salida más bajo, con la pareja justo antes del corte.
+    const r2 = lineaLimpia('a'.repeat(998) + '😀' + 'b'.repeat(50), 5000);
+    expect(/\p{Cs}/u.test(r2)).toBe(false);
+    expect(r2.endsWith('😀')).toBe(true);
+  });
+
   it('lo que no es texto, o es solo ruido, da vacío', () => {
     for (const v of [undefined, null, 5, {}, [], ['x'], true, '', '   ', '\n\u0000‮', '<>&']) {
       expect(lineaLimpia(v, 150), JSON.stringify(v)).toBe('');
