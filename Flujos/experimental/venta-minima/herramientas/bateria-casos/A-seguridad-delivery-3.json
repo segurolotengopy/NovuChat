@@ -303,8 +303,52 @@
       "variantes": {
         "turno": 1,
         "frases": [
-          "cancela el pedido",
-          "cancela todo",
+          {
+            "texto": "cancela el pedido",
+            "esperado": {
+              "estado": {
+                "entrega.entrega": {
+                  "regex": "^(delivery)?$"
+                },
+                "entrega.direccion": {
+                  "regex": "^(Av\\. Banzer 1234)?$"
+                },
+                "entrega.referencia": {
+                  "vacio": true
+                }
+              },
+              "igualAntes": [
+                "entrega.referencia"
+              ],
+              "textosNo": [
+                "Entrega: delivery a [^\\n]*\\(",
+                "referencia:"
+              ]
+            }
+          },
+          {
+            "texto": "cancela todo",
+            "esperado": {
+              "estado": {
+                "entrega.entrega": {
+                  "regex": "^(delivery)?$"
+                },
+                "entrega.direccion": {
+                  "regex": "^(Av\\. Banzer 1234)?$"
+                },
+                "entrega.referencia": {
+                  "vacio": true
+                }
+              },
+              "igualAntes": [
+                "entrega.referencia"
+              ],
+              "textosNo": [
+                "Entrega: delivery a [^\\n]*\\(",
+                "referencia:"
+              ]
+            }
+          },
           "mejor no",
           "a que hora llega",
           "puedo pagar con tarjeta",
@@ -470,8 +514,50 @@
       "variantes": {
         "turno": 1,
         "frases": [
-          "cancela el pedido",
-          "cancela todo",
+          {
+            "texto": "cancela el pedido",
+            "esperado": {
+              "estado": {
+                "entrega.entrega": {
+                  "regex": "^(delivery)?$"
+                },
+                "entrega.direccion": {
+                  "vacio": true
+                },
+                "entrega.referencia": {
+                  "vacio": true
+                }
+              },
+              "igualAntes": [
+                "entrega.referencia"
+              ],
+              "textosNo": [
+                "Entrega: delivery a"
+              ]
+            }
+          },
+          {
+            "texto": "cancela todo",
+            "esperado": {
+              "estado": {
+                "entrega.entrega": {
+                  "regex": "^(delivery)?$"
+                },
+                "entrega.direccion": {
+                  "vacio": true
+                },
+                "entrega.referencia": {
+                  "vacio": true
+                }
+              },
+              "igualAntes": [
+                "entrega.referencia"
+              ],
+              "textosNo": [
+                "Entrega: delivery a"
+              ]
+            }
+          },
           "mejor no",
           "a que hora llega",
           "puedo pagar con tarjeta",

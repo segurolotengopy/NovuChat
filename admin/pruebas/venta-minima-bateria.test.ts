@@ -39,7 +39,13 @@ const RUTA_FLUJO = join(CARPETA, 'venta-minima.qtaco.json');
 const ARCHIVO_PENDIENTES_DE_RAMA = 'A-pendiente-de-rama.json';
 const CONTROL_NEGATIVO = process.env['BATERIA_CONTROL_NEGATIVO'] === '1';
 const idsDe = (archivo: string): string[] => ((JSON.parse(readFileSync(join(CARPETA_CASOS, archivo), 'utf8')) as J)['casos'] as J[]).map((c) => String(c['id']));
-const idsPendientes = (): string[] => idsDe(ARCHIVO_PENDIENTES_DE_RAMA);
+/**
+ * ¿El flujo armado ya trae la CANCELACIÓN del pedido guardado (#440)? Se sabe por la ruta `no_cancela`. Con ella, `C-cancelar-guardado.json` son casos normales (deben pasar); sin ella
+ * (main antes de #440) esperan esa rama y quedan fuera del «cero fallos». Así la misma suite sirve antes y después de que la rama llegue.
+ */
+const CANCELAR_EN_EL_FLUJO = readFileSync(RUTA_FLUJO, 'utf8').includes('no_cancela');
+const ARCHIVO_CANCELAR = 'C-cancelar-guardado.json';
+const idsPendientes = (): string[] => [...idsDe(ARCHIVO_PENDIENTES_DE_RAMA), ...(CANCELAR_EN_EL_FLUJO ? [] : idsDe(ARCHIVO_CANCELAR))];
 /** Los casos de SEGURIDAD del texto libre (la cartera, 05/10/2026): el código no debe tomar como dirección ni como referencia lo que no lo es. */
 const ARCHIVO_SEGURIDAD = 'A-seguridad-texto-libre.json';
 const idsDeSeguridad = (): string[] => idsDe(ARCHIVO_SEGURIDAD);
@@ -129,13 +135,14 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     const lote3 = ['A1', 'A2', 'A3', 'A4', 'A4b', 'A5', 'A6', 'A6b', 'A7', 'A8', 'A11', 'A13', 'A14', 'A15']; // delivery opcional (#435); A7 y A8 esperan la rama funcional
     const lote7 = ['R1r', 'R1p', 'M2bR', 'M2bP', 'FPnr', 'FPnp', 'FPdr', 'FPdp', 'M2bX', 'S2d']; // seguridad del delivery, 3.ª ronda (M2bX y S2d siguen pendientes)
     const lote4 = ['S1', 'S2', 'S2b', 'S2c', 'S3']; // seguridad del texto libre
+    const lote8 = ['B4', 'C1', 'C1b', 'C1m', 'C2', 'C2b', 'C3', 'C4', 'C4q', 'C5', 'C6', 'C9', 'C9p', 'AU1', 'AU1b', 'BO1']; // cancelar y ver lo guardado (#440)
     const lote5 = ['D5', 'D5b', 'D6', 'D6b', 'D6d', 'D7', 'D7b', 'D7c', 'D8']; // reserva confirmada (#437); D8c, su control, vive en D.json
     const lote6 = ['M1r', 'M1p', 'M1ref', 'M1s', 'M1sp', 'M1refp', 'M2r', 'M2p', 'L1', 'FB1', 'FB2', 'SV2', 'SV2b']; // seguridad del delivery, 2.ª ronda
     const control = ['D8c'];
     const { casos, global: g } = casosDeLaCarpeta();
     const ids = casos.map((c) => String(c['id']));
-    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote7, ...control].sort());
-    expect([...idsPendientes()].sort(), 'lo pendiente de una rama (hoy falla contra main)').toEqual(['A7', 'A8', 'M2bX', 'S2d']);
+    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote7, ...lote8, ...control, 'C9m'].sort());
+    expect([...idsPendientes()].sort(), 'lo pendiente de una rama (hoy falla contra main)').toEqual(['A7', 'A8', 'C9m', 'M2bX', 'S2d', ...(CANCELAR_EN_EL_FLUJO ? [] : lote8)].sort());
     expect(idsDeSeguridad().sort(), 'los de seguridad son exactamente los del lote 4').toEqual([...lote4].sort());
     const pendientes = ((JSON.parse(readFileSync(join(CARPETA_CASOS, 'pendientes.json'), 'utf8')) as J)['pendientes'] as J[]).map((p) => String(p['id']));
     const grilla: string[] = [];
@@ -245,7 +252,7 @@ describe('lote 3 (delivery y entrega, #435): A14 pasa y A10 mide su defecto', ()
 // pasa de `A-pendiente-de-rama.json` a un archivo normal), así que solo corre a pedido: `BATERIA_CONTROL_NEGATIVO=1 pnpm vitest run pruebas/venta-minima-bateria.test.ts`.
 describe.skipIf(!CONTROL_NEGATIVO)('control negativo (BATERIA_CONTROL_NEGATIVO=1): lo pendiente de una rama SIGUE fallando y E8 sigue fallando por «ellos»', () => {
   it('cada caso de A-pendiente-de-rama.json falla en --seco (ninguno pasa por casualidad)', async () => {
-    const ids = idsPendientes();
+    const ids = idsDe(ARCHIVO_PENDIENTES_DE_RAMA);
     const s = await correr(mundo(), ['--seco', '--json', '--casos', ids.join(',')]);
     expect(s.codigo, s.error).toBe(1);
     const r = json(s);
