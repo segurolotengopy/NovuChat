@@ -125,8 +125,12 @@ export const RELOJES: Record<string, number> = {
 /** Los datos con los que se prueban los relojes que no son `ahora` (la rejilla completa por cada reloj no cabe). */
 const DATOS_CON_TODOS_LOS_RELOJES = ['vacios', 'con_referencia', 'cobro_real_con_referencia'];
 
-/** La huella de una lista de resultados: si cambia un solo caso del bloque, cambia la huella. */
-const huella = (v: unknown) => createHash('sha256').update(JSON.stringify(v)).digest('hex').slice(0, 16);
+/**
+ * La huella de una lista de resultados: si cambia un solo caso del bloque, cambia la huella.
+ * Va en grupos de cuatro separados por guion para que ninguna racha de dígitos llegue a diez
+ * (el saneo del repositorio público la tomaría por un teléfono o un id de Meta).
+ */
+const huella = (v: unknown) => createHash('sha256').update(JSON.stringify(v)).digest('hex').slice(0, 16).replace(/(.{4})(?=.)/g, '$1-');
 
 export const MARCAS: Record<string, unknown> = {
   timestamp: Timestamp.fromMillis(AHORA),

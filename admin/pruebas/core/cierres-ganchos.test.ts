@@ -42,7 +42,7 @@ type Ganchos = Parameters<typeof crearRegistrarCierre>[0];
 const T = 'cierres-ganchos';
 const NUMERO = '1000000121';
 const MES = new Date().toISOString().slice(0, 7);
-const TEL = '59170000121';
+const TEL = '59170000009';
 const SOLICITUD_PREVIA = { etapa: 'qr_enviado', cotejos: 0, marca: 'previa' };
 
 interface Respuesta { codigo: number; cuerpo: unknown }
