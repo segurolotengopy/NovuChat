@@ -232,6 +232,7 @@ function estadoDe(e) {
   if (!s.pedido || typeof s.pedido !== 'object') s.pedido = null;
   if (!s.pedidoWeb || typeof s.pedidoWeb !== 'object') s.pedidoWeb = null;
   if (!s.carritoAnterior || typeof s.carritoAnterior !== 'object') s.carritoAnterior = null;
+  s.preguntoDejar = s.preguntoDejar === true;
   return s;
 }
 
@@ -243,6 +244,7 @@ function limpiarCarrito() {
   en.carritoGuardado = 0;
   en.pedidoWeb = null;
   en.carritoAnterior = null;
+  en.preguntoDejar = false;
 }
 function limpiarConfirmado() {
   en.pedido = null;
@@ -351,7 +353,9 @@ function derivar(razon, conservarPaso, extra, sinFraseMenu) {
   const TEXTO_DERIVACION = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos.'
     + (conservarPaso ? ' Tu pedido sigue esperando el comprobante.'
       // `sinFraseMenu` (costo del delivery, con el pedido en curso): el carrito se conserva, así que el texto no sugiere que se borra nada.
-      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «menú».'));
+      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «menú».'))
+    // Un pedido guardado por «Cambiar algo» sigue ahí aunque se derive: se dice cómo recuperarlo (se cumple por código en `Decidir turno`).
+    + (!conservarPaso && en.carritoAnterior ? ' Tu pedido anterior sigue guardado: escribe «dejarlo como estaba» para recuperarlo.' : '');
   ruta = 'transferir:' + razon;
   aviso = { tipo: 'transferencia', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: vmLinea(t.nombrePerfil, 60),
@@ -574,16 +578,34 @@ function avisarReemplazo() {
   if (cabe) mensajes[ultimo] = { tipo: 'botones', cuerpo: mensajes[ultimo].cuerpo, botones: [dejar] };
 }
 
+// El cliente habló de dejar el pedido pero no se entendió del todo: se pregunta UNA vez, con los dos caminos (en lugar de derivar o de saludar). Es un mensaje
+// propio con botones de respuesta (no el botón de enlace de la carta), así que sirve también cuando la carta es un enlace. Reemplaza al mensaje que habría salido.
+function preguntarDejarOElegir() {
+  const a = en.carritoAnterior;
+  if (!a || !Array.isArray(a.carrito) || !a.carrito.length) return aMenu();
+  en.preguntoDejar = true; // se pregunta UNA vez: la segunda, la frase sigue su camino normal (`Decidir turno`)
+  if (en.paso.indexOf('pedido') !== 0) irA('pedido'); // dentro de un paso de pedido (datos, entrega) no se cambia el paso
+  mensajes = [{ tipo: 'botones', cuerpo: '¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?', botones: [
+    { id: vmIdDeBoton('p', 'dejar'), title: 'Dejarlo como estaba' },
+    { id: vmIdDeBoton('m', 'pedido'), title: 'Elegir otra vez' },
+  ] }];
+}
+
 // «Dejarlo como estaba»: vuelve el pedido de antes de «Cambiar algo» y se muestra su resumen con sus botones.
 function dejarComoEstaba() {
   const a = en.carritoAnterior;
   if (!a || !Array.isArray(a.carrito) || !a.carrito.length) return mostrarPaso();
   en.carrito = a.carrito;
+  // El pedido guardado pudo quedar viejo (hay hasta 60 min): se revalida contra la carta de AHORA (precio, productos que ya no están) y se avisa.
+  // El orden importa: primero se revalida y recién entonces se decide si el id `cat_…` del checkout sigue valiendo (si algo cambió, NO: el servidor
+  // coteja el comprobante contra el total de ESE id, que ya no es el del pedido).
+  const cambio = revalidarCarrito();
   en.entrega = Object.assign(entregaVacia(), a.entrega && typeof a.entrega === 'object' ? a.entrega : {});
   en.pendiente = [];
   // El `cat_…` del checkout vuelve con el pedido: `armarPedido` lo usa solo si la huella sigue coincidiendo (el carrito no cambió).
-  en.pedidoWeb = a.pedidoWeb && typeof a.pedidoWeb === 'object' ? a.pedidoWeb : null;
+  en.pedidoWeb = !cambio && a.pedidoWeb && typeof a.pedidoWeb === 'object' ? a.pedidoWeb : null;
   en.carritoAnterior = null;
+  en.preguntoDejar = false;
   ruta = 'boton:dejar_como_estaba';
   mostrarPedido();
 }
@@ -602,6 +624,7 @@ function tomarUbicacion() {
 // Vuelve a mostrar el paso actual (botón viejo, «sí» suelto, ubicación, pregunta pendiente).
 function mostrarPaso() {
   ruta = 'boton:' + (d.motivo || 'paso_actual');
+  if (d.motivo === 'dejar_o_elegir') return preguntarDejarOElegir();
   if (d.motivo === 'ubicacion') tomarUbicacion();
   const p = en.paso;
   if (p === 'inicio' || p === 'menu') return aMenu();
@@ -635,8 +658,37 @@ function quitarSinDelivery() {
   const quitados = r && Array.isArray(r.quitados)
     ? r.quitados.map((q) => (typeof q === 'string' ? q : (q && q.nombre) || '')).filter(Boolean) : [];
   if (quitados.length) {
-    notas.push('Por delivery no enviamos ' + unirY(quitados) + ': ' + (quitados.length > 1 ? 'los' : 'lo') + ' quité de tu pedido.');
+    // Lo quitado NO vuelve solo si el cliente regresa a recojo: se le dice. Y si el carrito quedó vacío, también.
+    notas.push('Por delivery no enviamos ' + unirY(quitados) + ': ' + (quitados.length > 1 ? 'los' : 'lo') + ' quité de tu pedido. Si vuelves a recojo, vuelve a agregar'
+      + (quitados.length > 1 ? 'los' : 'lo') + '.' + (en.carrito.length ? '' : ' Tu pedido quedó vacío: elige otra vez desde la carta.'));
   }
+}
+
+// Revalida el carrito contra la carta de AHORA, por id: actualiza el precio y el nombre, quita lo que ya no está y lo avisa con una nota. `true` si algo cambió.
+// Sin carta cargada (la consola la mandó vacía) no se toca nada: eso lo resuelve el resto del flujo.
+function revalidarCarrito() {
+  const carta = cartaDelNegocio();
+  if (!carta.length || !en.carrito.length) return false;
+  const quitadas = [];
+  const conPrecioNuevo = [];
+  const vigentes = [];
+  for (const l of en.carrito) {
+    const item = carta.find((i) => String(i.id) === String(l.id));
+    if (!item) { quitadas.push(l.nombre); continue; }
+    if (Number(item.precio) !== Number(l.precio)) conPrecioNuevo.push(item.nombre);
+    vigentes.push(Object.assign({}, l, { nombre: item.nombre, precio: item.precio, forma: item.forma, piezas: item.piezas, area: item.area, moneda: item.moneda }));
+  }
+  en.carrito = vigentes;
+  // Si algo cambió, el pedido ya no es el que escribió el checkout: se suelta su id `cat_…` (el servidor coteja contra el total de ese id) y el pedido
+  // sigue con id propio (`ped-…`) y el total de AHORA.
+  if (quitadas.length || conPrecioNuevo.length) {
+    if (en.pedidoWeb) errores.push('carrito_con_id_propio: revalidado');
+    en.pedidoWeb = null;
+  }
+  if (quitadas.length) notas.push('Ya no tenemos ' + unirY(quitadas.map((n) => '«' + n + '»')) + ': ' + (quitadas.length > 1 ? 'los' : 'lo') + ' quité de tu pedido.'
+    + (vigentes.length ? '' : ' Tu pedido quedó vacío: elige otra vez desde la carta.'));
+  if (conPrecioNuevo.length) notas.push('Cambió el precio de ' + unirY(conPrecioNuevo.map((n) => '«' + n + '»')) + ': revisa el total antes de confirmar.');
+  return quitadas.length > 0 || conPrecioNuevo.length > 0;
 }
 
 function preguntaForma() {
@@ -707,6 +759,7 @@ function siguientePasoPedido() {
   if (!en.entrega.nombre) en.entrega.nombre = vmLinea(t.nombrePerfil, 60);
   en.paso = 'pedido_confirmar';
   en.carritoAnterior = null; // ya hay un pedido nuevo: el de antes de «Cambiar algo» quedó reemplazado
+  en.preguntoDejar = false;
   return [{ tipo: 'botones', cuerpo: pdResumen(en.carrito, en.entrega, { moneda: monedaTxt, nombrePerfil: t.nombrePerfil, maxDetalle: 3000 }), botones: [
     { id: vmIdDeBoton('p', 'confirmar'), title: 'Confirmar pedido' },
     { id: vmIdDeBoton('p', 'cambiar'), title: 'Cambiar algo' },
@@ -850,7 +903,14 @@ function confirmarPedido() {
   // Sin respuesta del panel no se confirma nada: no se sabe si hay delivery ni qué cobro corresponde (se deriva).
   if (cfg.panelSinRespuesta === true) return derivar('panel sin respuesta: no se confirma el pedido');
   // Si falta algo (carrito, forma, entrega, datos), se muestra lo que falta: no se confirma.
+  // Con la carta vacía (todo agotado o inactivo, aunque la consola haya contestado 200) no hay con qué validar precios: se pasa con el local en lugar de
+  // confirmar con precios guardados.
+  if (!cartaDelNegocio().length) return derivar('carta sin cargar: no se confirma el pedido');
+  // Antes de confirmar se revalida contra la carta de ahora (primero, para que `quitarSinDelivery` use el área ya revalidada): si cambió un precio o un
+  // producto ya no está, se muestra el resumen con la nota (no se confirma). Solo en ese caso raro el cliente recibe un mensaje más.
+  const cambio = revalidarCarrito();
   quitarSinDelivery();
+  if (cambio) return mostrarPedido();
   const completo = en.pendiente.length === 0 && en.carrito.length > 0 && en.entrega.entrega
     && !(en.entrega.entrega === 'delivery' && pdFaltanEntrega(en.entrega, t.nombrePerfil).length);
   if (!completo) return mostrarPedido();
