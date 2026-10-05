@@ -1,0 +1,73 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "C",
+  "casos": [
+    {
+      "id": "C7",
+      "titulo": "«¿Cuánto cobran de delivery?» con el resumen de delivery: se pasa con el local (aviso y botón) y dice que el pedido sigue guardado",
+      "estadoPrevio": [
+        {"cliente": {"tipo": "carrito", "items": [{"id": "cat_pastor3", "cantidad": 2}], "entrega": "envio", "direccion": "Calle Ejemplo 5"}},
+        {
+          "cliente": {"tipo": "texto", "texto": "frente a la panadería"},
+          "seco": {"lineas": [], "referencia": "frente a la panadería"},
+          "esperado": {"estado": {"paso": "pedido_confirmar", "entrega.entrega": "delivery"}, "titulos": ["Confirmar pedido"]}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "¿Cuánto cobran de delivery?"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Tu pedido sigue guardado\\."],
+            "textosNo": ["escribe .{0,3}men[uú]", "volver al inicio"],
+            "titulos": ["Escribir al local"],
+            "efectos": {"derivacion": true, "aviso": true, "modelo": false, "qr": false},
+            "estado": {"carrito": {"longitud": 1}, "entrega.entrega": "delivery"}
+          }
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "titulo": "«Quiero confirmar», «confirmo», «sí», «ok», «dale», «ya» con datos pendientes: vuelve a mostrar el paso, no confirma solo ni deriva",
+      "estadoPrevio": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_pastor3", "cantidad": 2}], "entrega": "envio", "direccion": ""},
+          "esperado": {"estado": {"paso": "pedido_datos"}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "x"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Para el delivery necesito"],
+            "textosNo": ["Pedido #", "Total a pagar por QR"],
+            "titulosNo": ["Escribir al local"],
+            "estado": {"paso": "pedido_datos", "pedido": {"vacio": true}, "carrito": {"longitud": 1}},
+            "igualAntes": ["entrega.entrega", "carrito"],
+            "efectos": {"qr": false, "derivacion": false, "aviso": false, "modelo": false, "cierre": false}
+          }
+        }
+      ],
+      "variantes": {"turno": 1, "frases": ["Quiero confirmar", "confirmo", "sí", "ok", "dale", "ya"]}
+    },
+    {
+      "id": "C10",
+      "titulo": "«quiero hablar con una persona»: se pasa con el local (aviso y botón «Escribir al local»)",
+      "turnos": [
+        {"cliente": {"tipo": "texto", "texto": "hola"}},
+        {
+          "cliente": {"tipo": "texto", "texto": "quiero hablar con una persona"},
+          "esperado": {
+            "mensajes": 1,
+            "titulos": ["Escribir al local"],
+            "ruta": "^transferir",
+            "efectos": {"derivacion": true, "aviso": true, "modelo": false, "qr": false}
+          }
+        }
+      ]
+    }
+  ]
+}

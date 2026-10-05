@@ -91,34 +91,45 @@ function carpetaConCasos(archivos: Record<string, string>): string {
 
 // ------------------------------------------------------------------------------ `--seco`: lo determinista, sin red
 describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red', () => {
-  it('corre todos los casos de la carpeta con cero fallos, sin una sola llamada de red', async () => {
+  it('corre todos los casos de la carpeta con cero fallos, sin una sola llamada de red (el negativo global E8 va aparte, abajo)', async () => {
     const m = mundo();
     const globalFetch = globalThis.fetch;
     globalThis.fetch = (() => { throw new Error('el fetch global no se toca en --seco'); }) as typeof fetch;
     let s: Salida;
-    try { s = await correr(m, ['--seco', '--json']); } finally { globalThis.fetch = globalFetch; }
+    const ids = casosDeLaCarpeta().casos.map((c) => String(c['id']));
+    try { s = await correr(m, ['--seco', '--json', '--casos', ids.join(',')]); } finally { globalThis.fetch = globalFetch; }
     expect(s.codigo, s.error + '\n' + s.salida.slice(0, 2000)).toBe(0);
     const r = json(s);
     expect(r.modo).toBe('seco');
-    expect(r.fallaron).toBe(0);
-    expect(r.casos.length).toBeGreaterThan(0);
+    expect(r.fallaron, JSON.stringify(r.casos.filter((c: J) => !c.ok).map((c: J) => [c.id, c.por]))).toBe(0);
+    expect(r.casos.map((c: J) => c.id)).toEqual(ids);
     expect(m.red, 'ninguna llamada a la red').toHaveLength(0);
     expect(r.total.turnos).toBeGreaterThan(0);
-    expect(r.negativoGlobal === null || r.negativoGlobal.violaciones.length === 0).toBe(true);
-    // Cada caso de la carpeta aparece en la tabla.
-    const ids = casosDeLaCarpeta().casos.map((c) => c.id);
-    expect(r.casos.map((c: J) => c.id)).toEqual(expect.arrayContaining(ids));
+    expect(r.negativoGlobal).toBeNull(); // una lista de casos que no nombra a E8 no lo evalúa
+  });
+
+  it('el alcance: los casos son los de los lotes 1 y 2, y cada escenario de A1 a F5 está implementado, es el negativo global o está en los pendientes', () => {
+    const lote1 = ['A9', 'A10', 'A11', 'A12', 'B1', 'B2', 'B3', 'B5'];
+    const lote2 = ['B6', 'B7', 'B8', 'B9', 'C7', 'C8', 'C10', 'D1', 'D2', 'D3', 'D4', 'D9', 'E2', 'E3', 'E5', 'E7', 'F2', 'F3', 'F4'];
+    const { casos, global: g } = casosDeLaCarpeta();
+    const ids = casos.map((c) => String(c['id']));
+    expect([...ids].sort()).toEqual([...lote1, ...lote2].sort());
+    const pendientes = ((JSON.parse(readFileSync(join(CARPETA_CASOS, 'pendientes.json'), 'utf8')) as J)['pendientes'] as J[]).map((p) => String(p['id']));
+    const grilla: string[] = [];
+    for (const [letra, n] of [['A', 12], ['B', 9], ['C', 10], ['D', 9], ['E', 8], ['F', 5]] as const) for (let i = 1; i <= n; i++) grilla.push(`${letra}${i}`);
+    const cubiertos = new Set([...ids, ...pendientes, g ? String(g['id']) : '']);
+    expect(grilla.filter((x) => !cubiertos.has(x)), 'escenarios sin implementar ni listar').toEqual([]);
   });
 
   it('la tabla de texto trae una fila por escenario, el resumen y el costo; --tabla la da en Markdown', async () => {
-    const s = await correr(mundo(), ['--seco']);
+    const s = await correr(mundo(), ['--seco', '--casos', 'A9,B1']);
     expect(s.codigo).toBe(0);
     expect(s.salida).toMatch(/ID\s+TÍTULO\s+CORR\s+RESULTADO\s+POR QUÉ/);
     expect(s.salida).toMatch(/APROBÓ/);
     expect(s.salida).toMatch(/turnos totales: \d+/);
     expect(s.salida).toMatch(/llamadas al modelo/);
     expect(s.salida).toMatch(/Costo: sin uso real \(modo seco\)/);
-    const md = await correr(mundo(), ['--seco', '--tabla']);
+    const md = await correr(mundo(), ['--seco', '--tabla', '--casos', 'A9,B1']);
     expect(md.salida).toMatch(/^\| ID \| TÍTULO \| CORR \| RESULTADO \| POR QUÉ \|$/m);
     expect(md.salida).toMatch(/^\|---\|---\|---\|---\|---\|$/m);
   });
@@ -417,9 +428,28 @@ describe('E8, el negativo global: ninguna frase prohibida en lo que el cliente r
     expect(json(ok).negativoGlobal.violaciones).toHaveLength(0);
   });
 
-  it('el negativo global de la carpeta cubre las frases del escenario E8 (si ya están los casos de la sección E)', () => {
+  // HOY (main, 05/10/2026) E8 FALLA, y es un defecto real que arregla la rama de voz: el texto de la derivación dice «hablar con ellos» y los de
+  // comprobante dicen «Si quieres hablar con ellos» y «ellos revisan el pago en su banco». `it.fails` pasa mientras E8 falle y se pone ROJA cuando se
+  // arregle: entonces se quita el `.fails`, se borra la prueba de al lado y E8 queda como cualquier otro caso.
+  it.fails('E8 sobre main: ninguna frase prohibida en lo que el cliente recibe (HOY FALLA: «ellos»; lo arregla la rama de voz)', async () => {
+    const s = await correr(mundo(), ['--seco', '--json']);
+    expect(json(s).negativoGlobal.violaciones).toHaveLength(0);
+  });
+  it('E8 sobre main, lo que se sabe HOY: la única frase prohibida que sale es «ellos», en la derivación y en los comprobantes que pasan con el local', async () => {
+    const s = await correr(mundo(), ['--seco', '--json']);
+    expect(s.codigo).toBe(1);
+    const v = json(s).negativoGlobal.violaciones as J[];
+    expect([...new Set(v.map((x) => x['frase']))]).toEqual(['\\bellos\\b']);
+    expect([...new Set(v.map((x) => x['caso']))].sort()).toEqual(['B9', 'C10', 'C7', 'E2', 'E7']);
+    // Los textos de respaldo (solo si Meta rechaza el interactivo) además dicen «Escríbeles aquí»: aviso, no fallo.
+    const latentes = json(s).negativoGlobal.latentes as J[];
+    expect(latentes.some((x) => x['frase'] === 'escr[ií]beles')).toBe(true);
+  });
+
+  it('el negativo global de la carpeta cubre las frases del escenario E8', () => {
     const { global: g } = casosDeLaCarpeta();
-    if (!g) return; // la sección E llega en el segundo lote
+    expect(g, 'E.json trae el negativo global').toBeTruthy();
+    if (!g) return;
     expect(g.id).toBe('E8');
     const aprobadas: [string, boolean][] = [
       ['pago acreditado', true], ['Tu pago verificado', true], ['recibimos tu pago', true], ['verificamos tu pago', true], ['gracias por tu pago', true],
