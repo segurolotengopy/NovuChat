@@ -23,7 +23,7 @@
  * decisiones; lo que escribe es Core. Los teléfonos llevan seis ceros seguidos
  * (los que admite el saneo del repositorio público).
  */
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -73,7 +73,12 @@ async function llamar(fn: unknown, cuerpo: Record<string, unknown>): Promise<Res
 // ---------------------------------------------------------------------------
 
 const llamadas: string[] = [];
-const argumentos: { previa: unknown[]; datos: unknown[]; rutasLeidas: string[] } = { previa: [], datos: [], rutasLeidas: [] };
+// `enTransaccion`: por cada llamada a `cobroRealActivo`, si el lector que recibió leyó POR la transacción
+// (`t.get`) o por `db` directo. Es lo que distingue el lector de DENTRO de la transacción del de FUERA (ver `beforeAll`).
+const argumentos: { previa: unknown[]; datos: unknown[]; rutasLeidas: string[]; enTransaccion: boolean[] } = {
+  previa: [], datos: [], rutasLeidas: [], enTransaccion: [],
+};
+let lecturasPorTransaccion = 0;
 const decide = { cotejo: false, cobroReal: false, solicitud: { etapa: 'agendada', marcaDelGancho: 'si' } as object | null, lanza: false };
 
 const ganchos: Ganchos = {
@@ -81,7 +86,9 @@ const ganchos: Ganchos = {
     async cobroRealActivo(leer) {
       llamadas.push('cobroRealActivo');
       // Lee de verdad por el lector (una lectura): lo que Core le pasa tiene que funcionar.
+      const antes = lecturasPorTransaccion;
       const doc = await leer('config/venta');
+      argumentos.enTransaccion.push(lecturasPorTransaccion > antes);
       argumentos.rutasLeidas.push(doc.ref.path);
       return decide.cobroReal;
     },
@@ -120,6 +127,18 @@ async function borrarTodo(): Promise<void> {
 }
 
 beforeAll(async () => {
+  // Envuelve la transacción para contar sus `get`: así la prueba ve si el gancho leyó por la transacción o por `db`.
+  const original = db.runTransaction.bind(db) as (f: (t: object) => Promise<unknown>, o?: unknown) => Promise<unknown>;
+  vi.spyOn(db, 'runTransaction').mockImplementation(((f: (t: object) => Promise<unknown>, o?: unknown) =>
+    original((t) => f(new Proxy(t, {
+      get(objeto, propiedad) {
+        const valor = Reflect.get(objeto, propiedad) as unknown;
+        if (typeof valor !== 'function') return valor;
+        return propiedad === 'get'
+          ? (...a: unknown[]) => { lecturasPorTransaccion += 1; return (valor as (...x: unknown[]) => unknown).apply(objeto, a); }
+          : (valor as (...x: unknown[]) => unknown).bind(objeto);
+      },
+    })), o)) as never);
   await db.doc(`rutasWhatsApp/${NUMERO}`).set({
     tenantId: T, flujo: 'agenda', aliasSecreto: 'cliente11', estado: 'activo',
   });
@@ -130,7 +149,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await borrarTodo();
   llamadas.length = 0;
-  argumentos.previa.length = 0; argumentos.datos.length = 0; argumentos.rutasLeidas.length = 0;
+  argumentos.previa.length = 0; argumentos.datos.length = 0; argumentos.rutasLeidas.length = 0; argumentos.enTransaccion.length = 0;
   decide.cotejo = false; decide.cobroReal = false; decide.lanza = false;
   decide.solicitud = { etapa: 'agendada', marcaDelGancho: 'si' };
   await db.doc(`tenants/${T}/conversaciones/wa_${TEL}`).set({ solicitud: SOLICITUD_PREVIA, marcaPropia: 1 });
@@ -180,6 +199,7 @@ describe('Core recorre los ganchos sin saber de módulos', () => {
     const r = await venta('v-1');
     expect(r).toEqual({ codigo: 409, cuerpo: { error: 'cobro_real_lo_cierra_el_cotejo' } });
     expect(llamadas).toEqual(['cotejo', 'cobroRealActivo']);
+    expect(argumentos.enTransaccion, 'con teléfono, el lector es el de DENTRO de la transacción').toEqual([true]);
     expect((await cierre('venta_v-1')).exists).toBe(false);
     expect((await privado('venta_v-1')).exists).toBe(false);
     expect((await metricas())['cierres']).toBeUndefined();
@@ -197,6 +217,7 @@ describe('Core recorre los ganchos sin saber de módulos', () => {
     const r = await cita('ev-4');
     expect(r.codigo).toBe(200);
     expect(llamadas).toEqual(['cotejo', 'cobroRealActivo', 'solicitud:true']);
+    expect(argumentos.enTransaccion).toEqual([true]);
     expect(argumentos.datos[0]).toEqual({ cobroReal: true });
     expect((await metricas())['cierres']).toBe(1);
   });
@@ -216,6 +237,7 @@ describe('Core recorre los ganchos sin saber de módulos', () => {
     expect(r.codigo).toBe(400);
     expect(r.cuerpo).toMatchObject({ error: 'falta_telefono' });
     expect(llamadas).toEqual(['cobroRealActivo']);
+    expect(argumentos.enTransaccion, 'sin teléfono, el lector es el de FUERA de la transacción').toEqual([false]);
     expect((await cierre('venta_v-4')).exists).toBe(false);
     expect((await metricas())['cierres']).toBeUndefined();
   });

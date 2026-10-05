@@ -222,8 +222,8 @@ export const REGISTRO = [
     nombre: 'Agenda',
     version: 1,
     // Para la seña y la solicitud: `sena.ts` importa `cotejo.ts` y `cobroVenta.ts`,
-    // y `solicitud.ts` y `alCierre.ts` importan los predicados de la regla 2 de
-    // `cobros/alCierre.ts` (F3b-1b).
+    // y `solicitud.ts` importa los predicados de la regla 2 de `cobros/alCierre.ts`
+    // (F3b-1b); `agenda/alCierre.ts` importa solo `solicitud.ts`.
     dependeDe: ['cobros'],
     configuracion: [
       {

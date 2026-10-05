@@ -25,7 +25,7 @@ import {
   COBRO_AL_CIERRE, cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo, cobroDosCerrado, cobroRealActivo,
 } from '../../../functions/src/modulos/cobros/alCierre.ts';
 import {
-  MINUTOS_QR_VENTA, MS_VENTANA_DEL_CASO, limiteDe, solicitudDeCobroTras, type EventoDeCobro,
+  MS_VENTANA_DEL_CASO, limiteDe, solicitudDeCobroTras, type EventoDeCobro,
 } from '../../../functions/src/modulos/cobros/cobroVenta.ts';
 
 const MIN = 60_000;
@@ -97,9 +97,8 @@ describe('La ventana de 24 h es UNA: la del comprobante tardío y la del cierre 
   };
   const valido: EventoDeCobro = { tipo: 'comprobante', estado: 'valido', motivo: 'ok', idMeta: 'c1', ruta: null };
 
-  it('las constantes: 24 h en milisegundos y 1.440 minutos', () => {
+  it('la constante: 24 h en milisegundos (los bordes de abajo prueban que las dos decisiones la comparten)', () => {
     expect(MS_VENTANA_DEL_CASO).toBe(86_400_000);
-    expect(MINUTOS_QR_VENTA).toBe(MS_VENTANA_DEL_CASO / MIN);
   });
 
   it('en L + 24 h: el cierre sigue bloqueado y el comprobante es `tardio`', () => {
