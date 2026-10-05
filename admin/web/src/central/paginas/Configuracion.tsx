@@ -7,6 +7,7 @@ import { auth, db } from '../../core/lib/firebase';
 import { useFlujos } from '../lib/flujos';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { PALETAS, PALETA_POR_DEFECTO, type PaletaId } from '../lib/paletas';
+import { ErrorDeImagen, mensajeDeErrorDeLogo } from '../lib/errorLogo';
 
 /**
  * Edición de la configuración del negocio: lo que hoy vive a mano en el nodo
@@ -876,8 +877,8 @@ function LogoDelComercio({ tenantId }: { tenantId: string }) {
       await guardar(datos);
       setEstado('Logo actualizado. Ya se ve en tu catálogo web.');
     } catch (error) {
-      setEstado(error instanceof Error ? error.message
-        : 'No se pudo leer esa imagen. Intenta con un PNG o un JPG.');
+      // Nunca el texto crudo del SDK: la causa, en palabras del comercio.
+      setEstado(mensajeDeErrorDeLogo(error));
     } finally {
       setSubiendo(false);
       if (archivo.current) archivo.current.value = '';
@@ -889,7 +890,7 @@ function LogoDelComercio({ tenantId }: { tenantId: string }) {
     try {
       await guardar('');
       setEstado('Logo quitado.');
-    } catch { setEstado('No se pudo quitar el logo.'); }
+    } catch (error) { setEstado(mensajeDeErrorDeLogo(error)); }
   };
 
   return (
@@ -938,7 +939,7 @@ async function recortar(archivo: File): Promise<string> {
     const img = await new Promise<HTMLImageElement>((resolver, rechazar) => {
       const i = new Image();
       i.onload = () => resolver(i);
-      i.onerror = () => rechazar(new Error('Ese archivo no es una imagen que podamos leer.'));
+      i.onerror = () => rechazar(new ErrorDeImagen('ilegible'));
       i.src = url;
     });
 
@@ -948,7 +949,7 @@ async function recortar(archivo: File): Promise<string> {
     lienzo.width = Math.max(1, Math.round(img.naturalWidth * escala));
     lienzo.height = Math.max(1, Math.round(img.naturalHeight * escala));
     const ctx = lienzo.getContext('2d');
-    if (!ctx) throw new Error('El navegador no pudo procesar la imagen.');
+    if (!ctx) throw new ErrorDeImagen('sin-lienzo');
     ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
 
     // WebP primero por tamaño; si el navegador no sabe codificarlo, `toDataURL`
@@ -957,8 +958,7 @@ async function recortar(archivo: File): Promise<string> {
       const datos = lienzo.toDataURL('image/webp', calidad);
       if (datos.length <= TOPE_LOGO) return datos;
     }
-    throw new Error('Esa imagen es demasiado pesada incluso reducida. '
-      + 'Intenta con una más simple o con menos detalle.');
+    throw new ErrorDeImagen('pesada');
   } finally {
     URL.revokeObjectURL(url);
   }
