@@ -367,17 +367,19 @@ function cobroDosCerrado(p: Plano, ahoraMs: number): boolean {
  * ¿Un cierre (`cita_agendada`, o el de una venta) NO debe mover esta solicitud?
  * Sí cuando es un cobro de regla 2 que ya no está en curso —`en_revision`,
  * `cancelada`, `vencida`, o `qr_enviado` con el límite efectivo ya pasado
- * (vencida por reloj sin que nadie la anotara; D6)— **y solo mientras sigue
- * siendo ESTE caso**: hasta 24 h después del límite efectivo (`limiteDe`) o, en
- * `en_revision`, hasta 24 h desde que entró (`desde`; no vence por reloj).
- * Pasado ese plazo `solicitudDeCobroTras` lo trata como otra conversación, y el
+ * (vencida por reloj sin que nadie la anotara; D6).
+ * **`en_revision` bloquea SIEMPRE**: no vence por reloj, lo resuelve una persona.
+ * `cancelada`, `vencida` y `qr_enviado` vencido bloquean **solo mientras sigue
+ * siendo ESTE caso**, hasta 24 h después del límite efectivo (`limiteDe`);
+ * pasado ese plazo `solicitudDeCobroTras` lo trata como otra conversación y el
  * cierre ya puede crear su solicitud. Pura. Con regla 1, nunca.
  */
 export function cierreBloqueadoPorCobro(previa: unknown, ahoraMs: number): boolean {
   const p = comoPlano(previa);
   if (!p || !esReglaDos(p) || !cobroDosCerrado(p, ahoraMs)) return false;
-  const base = p['etapa'] === 'en_revision' ? (milisegundosDe(p['desde']) ?? limiteDe(p)) : limiteDe(p);
-  return base !== null && ahoraMs - base <= MS_VENTANA_COBRO;
+  if (p['etapa'] === 'en_revision') return true;
+  const limite = limiteDe(p);
+  return limite !== null && ahoraMs - limite <= MS_VENTANA_COBRO;
 }
 
 /**
@@ -428,7 +430,11 @@ export function solicitudTras(
   previa: unknown,
   evento: string | undefined,
   ahoraMs: number,
-  datos: { referencia?: string; calendario?: string; inicio?: string; nueva?: string; monto?: number },
+  datos: {
+    referencia?: string; calendario?: string; inicio?: string; nueva?: string; monto?: number;
+    /** Solo con `cita_agendada`: el comercio tiene cobro REAL activo (lo lee `registrarCierre`). */
+    cobroReal?: boolean;
+  },
 ): Solicitud | null {
   const ahora = Timestamp.fromMillis(ahoraMs);
   const p = typeof previa === 'object' && previa !== null ? (previa as Partial<Solicitud>) : null;
@@ -523,6 +529,10 @@ export function solicitudTras(
     // anotara) NO se cierra como agendado: el cierre de la cita no resucita un
     // pedido que ya no está en curso. Con regla 1 nada cambia.
     if (cierreBloqueadoPorCobro(previa, ahoraMs)) return null;
+    // Con COBRO REAL, un cobro de regla 2 a tiempo (`qr_enviado`) lo cierra solo
+    // el cotejo, sea cual sea el `tipo` del cierre que lo pida (una cita del
+    // mismo teléfono no lo cierra): la solicitud no se mueve.
+    if (datos.cobroReal === true && cierreDeVentaLoHaceElCotejo(previa, ahoraMs)) return null;
     // Un cobro de regla 2 cerrado hace MÁS de 24 h es otra conversación: el
     // cierre crea su solicitud nueva y anula los restos (`merge` los conservaría).
     const pp = comoPlano(previa);

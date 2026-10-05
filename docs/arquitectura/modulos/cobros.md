@@ -467,16 +467,18 @@ y `ingesta.ts` entiende `reglaCobro`, `cobro_cancelado` y `anulacion_avisada`
 y llama a `solicitudDeCobroTras` en todo `qr_enviado` (obligaciones (a) y (b));
 `solicitudTras` no pasa a `agendada` una regla 2 en `en_revision`, `cancelada`
 o vencida, escrita o por reloj (obligación (c)), con el predicado puro exportado
-`cierreBloqueadoPorCobro(previa, ahoraMs)` de `ingesta.ts`, **solo mientras
-sigue siendo ese caso** (hasta 24 h después del límite efectivo; en
-`en_revision`, 24 h desde que entró): pasado ese plazo es otra conversación y
-`cita_agendada` crea su solicitud `agendada` con `CAMPOS_REGLA_2_EN_NULO`.
-`registrarCierre` (`core/turno/cierres.ts`), con `tipo: 'venta'`, regla 2 y
+`cierreBloqueadoPorCobro(previa, ahoraMs)` de `ingesta.ts`, **`en_revision` bloquea
+siempre** (no vence por reloj: lo resuelve una persona) y `cancelada`, `vencida` y
+`qr_enviado` vencido, **solo mientras sigue siendo ese caso** (hasta 24 h después
+del límite efectivo): pasado ese plazo es otra conversación y `cita_agendada`
+crea su solicitud `agendada` con `CAMPOS_REGLA_2_EN_NULO`. `registrarCierre` (`core/turno/cierres.ts`), con `tipo: 'venta'`, regla 2 y
 **cobro real activo** (`config/venta.cobroReal`: encendido, con ficha y código),
 responde 409 y no crea cierre ni suma `cierres` si el cobro está a tiempo
 (`qr_enviado`) o bloqueado: en cobro real el único que cierra una venta es
 `cotejarComprobanteVenta`; el modo simulado y la regla 1 cierran como siempre
-(`cierreDeVentaLoHaceElCotejo`). Un `horarios_ofrecidos` no reemplaza un cobro `en_revision`, y con
+(`cierreDeVentaLoHaceElCotejo`). Con cobro real, una venta sin teléfono válido
+responde 400, y un cierre `cita` sobre un `qr_enviado` de regla 2 a tiempo se
+registra (su propio `cierres`) **sin mover la solicitud**. Un `horarios_ofrecidos` no reemplaza un cobro `en_revision`, y con
 `reglaCobro: 2` una `referencia` vacía o igual al `idMeta` se trata como
 `sin_id_meta`. La suite es
 `pruebas/cobro-v2-ingesta.test.ts`. **Nada de esto corre en producción hasta el
@@ -496,3 +498,11 @@ un recordatorio.
 - **C3 no se publica antes de que C1c esté completo** (la guarda de regla 2 en el
   cotejo de regla 1 de `sena.ts`, y lo que C1c termine de `registrarCierre`), ni
   antes de C1b-d (#413, `seguimientos.ts`).
+- **Con cobro real, el flujo no llama a `registrarCierre` de venta** (o usa el id
+  del pedido como `referencia`): cierra solo `cotejarComprobanteVenta`. Una venta
+  con otra `referencia` sobre una solicitud ya `agendada` por el cotejo contaría
+  dos veces (seguimiento declarado, no implementado).
+
+**Deuda para F3b.** Hoy Core (`registrarCierre`) lee `config/venta` y conoce la
+regla 2; sale cuando F3b inyecte ganchos (el gancho `alCierre` de Cobros ya está
+en el manifiesto).
