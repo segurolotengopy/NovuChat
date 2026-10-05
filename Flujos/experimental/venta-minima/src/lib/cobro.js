@@ -439,7 +439,7 @@ function cbDiferencia(diferencias) {
 //   entrega     'delivery' o 'recojo' (para `sin_qr`).
 // Devuelve {cuerpo, enlace, aviso}: `enlace` = lleva el botón «Escribir al local»;
 // `aviso` = hay que avisar al restaurante (y de ahí depende `avisoSalio`).
-// «Ya pasé tu pedido» solo sale con `avisoSalio === true`: nunca se promete lo que
+// «Ya lo pasé al restaurante» solo sale con `avisoSalio === true`: nunca se promete lo que
 // no se cumplió. El texto nunca llama «pago» a un comprobante que no es el banco.
 function cbTextoAlCliente(resultado, opciones) {
   const o = cbEsObjeto(opciones) ? opciones : {};
@@ -450,14 +450,14 @@ function cbTextoAlCliente(resultado, opciones) {
   const guardar = 'Guarda tu comprobante por si te lo piden.';
   // Lo que se dice cuando el comprobante lo tiene que mirar una persona.
   const alRestaurante = (inicio) => (salio
-    ? inicio + ' Ya pasé tu pedido al restaurante, con los datos que leí de tu comprobante, para que lo revisen. '
-      + guardar + ' Si quieres hablar con ellos, toca el botón.'
+    ? inicio + ' Ya lo pasé al restaurante, con los datos que leí, para que lo revisen. '
+      + 'Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.'
     : inicio + ' ' + sinAviso + ' ' + guardar);
 
   if (resultado === 'cuadra') {
     return salio
       ? {
-        cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + pedido + '. Ya pasé tu pedido al restaurante; '
+        cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + pedido + '. Ya lo pasé al restaurante; '
           + 'ellos revisan el pago en su banco antes de despacharlo.',
         enlace: false, aviso: true,
       }
@@ -497,7 +497,7 @@ function cbTextoAlCliente(resultado, opciones) {
   if (resultado === 'simulado') {
     const cabezaSim = 'Recibí tu comprobante SIMULADO de ' + pedido + '. Es una prueba: no se movió dinero.';
     return salio
-      ? { cuerpo: cabezaSim + ' Ya pasé tu pedido al restaurante como pedido de PRUEBA.', enlace: false, aviso: true }
+      ? { cuerpo: cabezaSim + ' Ya lo pasé al restaurante como pedido de PRUEBA.', enlace: false, aviso: true }
       : { cuerpo: cabezaSim + ' ' + sinAviso, enlace: true, aviso: true };
   }
   if (resultado === 'ya_cotejado') {

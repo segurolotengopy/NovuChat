@@ -165,7 +165,7 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     const t = turno(m, { mensaje: texto('quiero ver la carta') }, conEnlace(URL_CATALOGO));
     expect(mensajes(t)).toEqual([{
       tipo: 'enlace', catalogo: true,
-      cuerpo: 'Esta es nuestra carta. Elige ahí tus productos y vuelve al chat para confirmar el pedido, o escríbeme lo que quieres. Si quieres seguir con tu pedido o tu reserva, escribe «menú».',
+      cuerpo: 'Esta es nuestra carta. Elige ahí tus productos y vuelve al chat para confirmar, o escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
       botones: [{ id: '', title: 'Ver la carta' }], url: URL_CATALOGO,
     }]);
     expect(estadoDe(m)['paso']).toBe('pedido');
@@ -177,7 +177,8 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     const sin = turno(m, { mensaje: texto('quiero ver la carta') }, conEnlace(URL_CATALOGO));
     const cuerpoSin = String(mensajes(sin)[0]!['cuerpo']);
     expect(cuerpoSin).not.toMatch(/confirma ah|confirmar ah/i);
-    expect(cuerpoSin).toContain('vuelve al chat para confirmar el pedido');
+    expect(cuerpoSin).toContain('vuelve al chat para confirmar, o escríbeme');
+    expect(cuerpoSin).not.toContain('confirmar el pedido'); // redacción: «confirmar el pedido» se repetía con «tu pedido sigue guardado»
     expect(cuerpoSin).not.toContain('sigue guardado');
     // Un pedido en curso (llegó un carrito) y luego «carta»: el enlace lleva el aviso, en el mismo mensaje (0 mensajes de más).
     const c = crear();
@@ -187,12 +188,58 @@ describe('la carta como enlace (el enlace llega en la respuesta de `Traer config
     expect(mensajes(t)).toHaveLength(1);
     expect(mensajes(t)[0]!['tipo']).toBe('enlace');
     expect(String(mensajes(t)[0]!['cuerpo'])).toMatch(/^Tu pedido sigue guardado \(\d+ productos?\)\. Esta es nuestra carta\./);
+    expect(String(mensajes(t)[0]!['cuerpo'])).toContain('vuelve al chat para confirmar, o escríbeme');
+    expect(String(mensajes(t)[0]!['cuerpo'])).not.toContain('confirmar el pedido');
     expect(mensajes(t)[0]!['url']).toBe(URL_CATALOGO);
     // Sin enlace, la carta en texto lleva el mismo aviso (como siempre).
     const d = crear();
     carrito(d, {}, respuesta());
     const texto2 = turno(d, { mensaje: texto('quiero ver la carta') }, respuesta());
     expect(String(mensajes(texto2)[0]!['cuerpo'])).toMatch(/^Tu pedido sigue guardado/);
+  });
+
+  it('«Cambiar algo» con la carta como enlace: UN mensaje que dice que lo que elija reemplaza el pedido y cómo dejarlo como estaba (escribiéndolo)', () => {
+    const c = crear();
+    carrito(c, {}, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['paso']).toBe('pedido_confirmar');
+    const resumen = String(mensajes(turno(c, { mensaje: texto('ok') }, conEnlace(URL_CATALOGO)))[0]!['cuerpo']);
+    const t = turno(c, { mensaje: boton('p|cambiar', 'Cambiar algo') }, conEnlace(URL_CATALOGO));
+    expect(mensajes(t)).toHaveLength(1);
+    expect(mensajes(t)[0]!['tipo']).toBe('enlace');
+    expect(mensajes(t)[0]!['catalogo']).toBe(true);
+    expect(String(mensajes(t)[0]!['cuerpo'])).toBe('Para cambiar tu pedido, vuelve a elegir todo desde la carta: lo que elijas ahí reemplaza tu pedido actual (hoy tienes: 2 × Nachos Supremos). Si prefieres dejarlo como estaba, escribe «dejarlo como estaba».');
+    expect(String(mensajes(t)[0]!['cuerpo'])).toContain('vuelve a elegir');
+    expect(mensajes(t)[0]!['url']).toBe(URL_CATALOGO);
+    // Escribirlo devuelve el resumen guardado.
+    const vuelve = turno(c, { mensaje: texto('Dejarlo como estaba') }, conEnlace(URL_CATALOGO));
+    expect(String(mensajes(vuelve)[0]!['cuerpo'])).toBe(resumen);
+    expect(estadoDe(c)['paso']).toBe('pedido_confirmar');
+    // Negando: si el carrito de la página llega antes, REEMPLAZA el pedido y ya no hay nada que dejar como estaba.
+    turno(c, { mensaje: boton('p|cambiar', 'Cambiar algo') }, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['carritoAnterior']).not.toBeNull();
+    carrito(c, { pedidoId: 'cat_otro_11aa' }, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['carritoAnterior']).toBeNull();
+    expect(estadoDe(c)['paso']).toBe('pedido_confirmar');
+  });
+
+  it('«Dejarlo como estaba» restaura también el id `cat_…` del checkout: el pedido confirmado sale con el mismo id y código que sin «Cambiar algo»', () => {
+    const directo = crear();
+    carrito(directo, {}, conEnlace(URL_CATALOGO));
+    const web = estadoDe(directo)['pedidoWeb'] as J;
+    expect(web['id']).toBe('cat_abc123_00ff');
+    const sinCambio = turno(directo, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, conEnlace(URL_CATALOGO));
+    const idEsperado = (sinCambio.plan!['pedido'] as J)['pedidoId'];
+    expect(idEsperado).toBe('cat_abc123_00ff');
+    // Con «Cambiar algo» y «Dejarlo como estaba» por el medio.
+    const c = crear();
+    carrito(c, {}, conEnlace(URL_CATALOGO));
+    turno(c, { mensaje: boton('p|cambiar', 'Cambiar algo') }, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['pedidoWeb']).toBeNull(); // mientras elige, el pedido anterior no es el vigente
+    turno(c, { mensaje: texto('Dejarlo como estaba') }, conEnlace(URL_CATALOGO));
+    expect(estadoDe(c)['pedidoWeb']).toEqual(web);
+    const confirmado = turno(c, { mensaje: boton('p|confirmar', 'Confirmar pedido') }, conEnlace(URL_CATALOGO));
+    expect((confirmado.plan!['pedido'] as J)['pedidoId']).toBe(idEsperado);
+    expect((confirmado.plan!['pedido'] as J)['codigo']).toBe((sinCambio.plan!['pedido'] as J)['codigo']);
   });
 
   it('el botón «Hacer un pedido» y «Cambiar algo» también dan el enlace', () => {
@@ -407,8 +454,9 @@ describe('el carrito que vuelve de la página', () => {
       const t = carrito(m, { nota });
       const cuerpo = String(mensajes(t)[0]!['cuerpo']);
       expect(cuerpo, nota).not.toContain('Tu nota');
-      expect(cuerpo, nota).toMatch(/No pude incluir tu nota: «(tequila|cerveza|shot)» no lo podemos incluir en el pedido\./);
-      expect(cuerpo, nota).not.toContain('no está disponible'); // no culpa al producto: la línea sigue y solo se quitó la nota
+      expect(cuerpo, nota).toMatch(/No pude incluir tu nota: «(tequila|cerveza|shot)» no está disponible por este medio\./);
+      expect(cuerpo, nota).not.toContain('no lo podemos incluir'); // redacción: la frase vieja («no lo podemos incluir en el pedido») ya no sale
+      expect(cuerpo, nota).not.toMatch(/No pude incluir «/); // no culpa al producto: la línea sigue y solo se quitó la nota
       expect(estadoDe(m)['entrega']?.['notaPedido'], nota).toBeUndefined();
       // el resto del pedido sigue: se confirma con el botón y el aviso NO lleva la nota
       const c = turno(m, { mensaje: boton('p|confirmar', 'Confirmar pedido') });
@@ -438,10 +486,11 @@ describe('el carrito que vuelve de la página', () => {
       const cuerpo = String(mensajes(t)[0]!['cuerpo']);
       expect(cuerpo, nota).toContain(`Tu nota: ${nota}\nTotal de la comida:`);
       expect(cuerpo, nota).not.toContain('no lo podemos incluir');
+      expect(cuerpo, nota).not.toContain('No pude incluir tu nota');
     }
     // NEGANDO: la bebida en la nota sigue sin pasar.
     const bebida = carrito(crear({ palabrasExcluidas: 'margarita,paloma,ron,chop,tequila' }), { nota: 'con una margarita' });
-    expect(String(mensajes(bebida)[0]!['cuerpo'])).toContain('«margarita» no lo podemos incluir');
+    expect(String(mensajes(bebida)[0]!['cuerpo'])).toContain('No pude incluir tu nota: «margarita» no está disponible por este medio.');
   });
 
   it('el carrito sin nota no deja rastro de nota, y una nota con palabras de la red se sanea', () => {

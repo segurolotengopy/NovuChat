@@ -175,7 +175,7 @@ function textosDe(j: J): string[] {
   if (typeof j['texto'] === 'string') out.push(j['texto']);
   return out;
 }
-const GENERICO = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+const GENERICO = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Para volver al inicio, escribe «menú».';
 const cuerpoDe = (j: J): string => String(j['payload'].text?.body ?? j['payload'].interactive?.body.text ?? j['payload'].image?.caption);
 
 // =================================================================================================
@@ -499,15 +499,15 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
       const i = r.items[0]!;
       expect(i['payload'].type).toBe('text');
       // Sin botón no se nombra el botón («Escribir al local»): queda lo demás, con el camino de vuelta al menú.
-      expect(i['payload'].text.body).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
+      expect(i['payload'].text.body).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Para volver al inicio, escribe «menú».');
       expect(i['tipoReporte']).toBe('text');
       expect(JSON.stringify(i)).not.toMatch(/bot[oó]n/i);
     }
     // el texto con «:» conserva lo que viene antes del «:»
     const r = mensajes({ mensajes: [enlace('No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido al restaurante en este momento. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
+    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido al restaurante en este momento. Para volver al inicio, escribe «menú».');
     const dos = mensajes({ mensajes: [enlace('Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Si quieres seguir con tu pedido o tu reserva, escribe «menú».');
+    expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Para volver al inicio, escribe «menú».');
   });
 
   it('modo prueba: a telefonoDePrueba, sin prefijo y sin reportar; fuera de prueba, reportable', () => {
@@ -682,7 +682,7 @@ describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', ()
   const PASE = 'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.';
   const NO_PASE_PLAN = 'No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.';
   // Lo que sale: el mensaje con botón de enlace lleva al final el camino de vuelta al menú (03/10).
-  const NO_PASE = NO_PASE_PLAN + ' Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+  const NO_PASE = NO_PASE_PLAN + ' Para volver al inicio, escribe «menú».';
   const plan = (): J => ({
     ruta: 'confirmar', pedido: PEDIDO, aviso: { tipo: 'pedido', datos: {} }, mensajes: [],
     condicionados: { siSalio: [texto(PASE)], siNoSalio: [enlace(NO_PASE_PLAN)] },
@@ -781,6 +781,9 @@ describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', ()
     ['Listo, pasé tu pedido #K7Q2 al restaurante.'],
     ['Tu solicitud de reserva llegó al restaurante.'],
     ['Ya pasé tu comprobante.'],
+    ['Ya lo pasé al restaurante, con los datos que leí, para que lo revisen.'],
+    ['Ya la pasé al restaurante.'],
+    ['Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva.'],
   ])('defensa: «%s» en un mensaje normal SIN aviso salido se reemplaza por la derivación', (frase) => {
     const sin = mensajes({ mensajes: [texto(frase)] });
     expect(cuerpoDe(sin.items[0]!)).toBe(GENERICO);
@@ -1018,15 +1021,15 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
       'Para el delivery necesito la dirección. El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.',
       'Tu pedido:\n• 1 × Orden de 3 tacos de birria (sin cebolla): 55 Bs\nEntrega: recojo en el local.\nTotal de la comida: 55 Bs.',
       PIE,
-      'Recibí tu comprobante y los datos coinciden con tu pedido #K7Q2. Ya pasé tu pedido al restaurante; ellos revisan el pago en su banco antes de despacharlo.',
+      'Recibí tu comprobante y los datos coinciden con tu pedido #K7Q2. Ya lo pasé al restaurante; ellos revisan el pago en su banco antes de despacharlo.',
       'Recibí tu comprobante y los datos coinciden con tu pedido #K7Q2. No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.',
-      'Recibí tu comprobante, pero algunos datos no coinciden con tu pedido #K7Q2 (monto). Ya pasé tu pedido y tu comprobante al restaurante para que lo revisen. Si quieres hablar con ellos, toca el botón.',
+      'Recibí tu comprobante, pero algunos datos no coinciden con tu pedido #K7Q2 (monto). Ya lo pasé al restaurante, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
       'Recibí tu comprobante, pero no pude leerlo bien. ¿Me lo envías de nuevo, más nítido o como PDF desde la app de tu banco?',
       'Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.',
       'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.',
       'Para tu solicitud de reserva dime, en un solo mensaje: cuántas personas, qué día y a qué hora.',
       'Tu solicitud de reserva:\n• viernes 9 de octubre a las 20:00\n• 4 personas, salón\n• A nombre de Ana Prueba',
-      'Listo, Ana: tu solicitud de reserva llegó al restaurante. Todavía es una solicitud: el restaurante la revisa según sus mesas. Si quieres hablar con ellos, toca el botón.',
+      'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
       'No pude hacer llegar tu solicitud al restaurante en este momento. Escríbeles con el botón para reservar.',
       '¡Hola! Qué bueno que viste nuestra promo. Promo Dúo: 2 órdenes. Precio: 99 Bs.',
       'Soy un asistente virtual con inteligencia artificial de Q\' Taco. Si prefieres hablar con una persona del restaurante, toca el botón.',
@@ -1284,7 +1287,7 @@ describe('Armar avisos — R3: el tope de derivaciones respeta el 0 y lee solo l
 describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (03/10)', () => {
   const titulos = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.title));
   const ids = (j: J): string[] => (j['payload'].interactive?.action?.buttons ?? []).map((b: J) => String(b.reply.id));
-  const SEGUIR = 'Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+  const SEGUIR = 'Para volver al inicio, escribe «menú».';
 
   it('todo mensaje con botones y lugar (menos de tres) sale con «Menú» (`m|menu`) al final; con tres, no se agrega nada', () => {
     const uno = mensajes({ mensajes: [botones('Elige', 'A')] }).items[0]!;
@@ -1309,6 +1312,18 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     expect(e['payload'].interactive.body.text).toBe(`Texto del plan. ${SEGUIR}`);
     const ya = mensajes({ mensajes: [enlace(`Texto del plan. ${SEGUIR}`)] }).items[0]!;
     expect(ya['texto']).toBe(`Texto del plan. ${SEGUIR}`);
+  });
+
+  it('la frase de «menú» es «Para volver al inicio, escribe «menú».»: la vieja («seguir con tu pedido o tu reserva») no sale en ningún mensaje', () => {
+    expect(SEGUIR).toBe('Para volver al inicio, escribe «menú».');
+    const e = mensajes({ mensajes: [enlace('Texto del plan.')] }).items[0]!;
+    expect(e['texto']).toBe('Texto del plan. Para volver al inicio, escribe «menú».');
+    expect(JSON.stringify(e)).not.toContain('seguir con tu pedido');
+    // La comparación por texto reconoce la frase NUEVA (no la repite) y ya no reconoce la vieja (se agrega la nueva).
+    const vieja = 'Texto del plan. Si quieres seguir con tu pedido o tu reserva, escribe «menú».';
+    expect(mensajes({ mensajes: [enlace(vieja)] }).items[0]!['texto']).toBe(`${vieja} ${SEGUIR}`);
+    // El mensaje genérico de derivación lleva la frase nueva.
+    expect(String(mensajes({ mensajes: [texto('x')] }, { armados: [], enviados: [] }).items[0]!['texto'])).not.toContain('seguir con tu pedido');
   });
 
   it('solo en la conversación: el aviso fijo de «Uso extendido» y de «Comercio no operativo» NO ofrece «menú» (ahí no funciona)', () => {
