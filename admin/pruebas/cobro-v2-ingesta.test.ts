@@ -569,7 +569,7 @@ describe('registrarCierre con cobro real: bordes del bloqueo, tipo cita y teléf
   const hace = (h: number) => Timestamp.fromMillis(Date.now() - h * 3_600_000);
 
   it('NIEGA: en_revision de 25 h y de 10 días, con cobro real: venta 409 sin cierre; cita no mueve la solicitud ni borra comprobantes y subidas', async () => {
-    for (const [tel, horas] of [['5910000010001', 25], ['5910000010002', 240]] as Array<[string, number]>) {
+    for (const [tel, horas] of [['591000000010001', 25], ['5910000010002', 240]] as Array<[string, number]>) {
       await abrir(tel, `cat_rv_${horas}`);
       await fijar(tel, { 'solicitud.etapa': 'en_revision', 'solicitud.desde': hace(horas), 'solicitud.venceEn': hace(horas + 1),
         'solicitud.comprobantes': [{ idMeta: 'wamid.C1', estado: 'invalido' }], 'solicitud.subidas': [{ idMeta: 'wamid.C1', ruta: 'x' }] });
@@ -588,7 +588,7 @@ describe('registrarCierre con cobro real: bordes del bloqueo, tipo cita y teléf
   });
 
   it('con cobro real y el bloqueo vencido (más de 24 h): cancelada, vencida y qr_enviado vencido cierran con 200', async () => {
-    const casos: Array<[string, string]> = [['5910000010003', 'cancelada'], ['5910000010004', 'vencida'], ['5910000010005', 'qr_enviado']];
+    const casos: Array<[string, string]> = [['591000000010003', 'cancelada'], ['5910000010004', 'vencida'], ['5910000010005', 'qr_enviado']];
     for (const [tel, etapa] of casos) {
       await abrir(tel, `cat_bv_${etapa}`);
       await fijar(tel, { 'solicitud.etapa': etapa, 'solicitud.venceEn': hace(30) });
@@ -602,8 +602,8 @@ describe('registrarCierre con cobro real: bordes del bloqueo, tipo cita y teléf
 
   it('un cobroReal sin ficha o sin cargaUtil NO es cobro real: la venta cierra con 200', async () => {
     const casos: Array<[string, Record<string, unknown>]> = [
-      ['5910000010006', { activo: true, cargaUtil: 'c' }], ['5910000010007', { activo: true, ficha: 'f' }],
-      ['5910000010008', { activo: false, ficha: 'f', cargaUtil: 'c' }],
+      ['591000000010006', { activo: true, cargaUtil: 'c' }], ['5910000010007', { activo: true, ficha: 'f' }],
+      ['591000000010008', { activo: false, ficha: 'f', cargaUtil: 'c' }],
     ];
     for (const [tel, cfg] of casos) {
       await abrir(tel, `cat_sf_${tel}`);
@@ -614,7 +614,7 @@ describe('registrarCierre con cobro real: bordes del bloqueo, tipo cita y teléf
   });
 
   it('NIEGA: cierre tipo cita sobre un qr_enviado de regla 2 a tiempo con cobro real: la solicitud no se mueve, la cita sí se registra', async () => {
-    const tel = '5910000010009';
+    const tel = '591000000010009';
     await abrir(tel, 'cat_cita');
     await conConfig(COBRO_REAL, async () => {
       const d = await delta(async () => { expect((await cerrar(tel, 'c-cita', 'cita')).codigo).toBe(200); });
@@ -626,11 +626,11 @@ describe('registrarCierre con cobro real: bordes del bloqueo, tipo cita y teléf
   });
 
   it('EQUIVALENCIA: la cita ordinaria (regla 1, y regla 2 en modo simulado) sigue pasando a agendada', async () => {
-    const t1 = '5910000010010';
+    const t1 = '591000000010010';
     await reportar({ telefono: t1, evento: 'qr_enviado', referencia: 'ev-eq', calendario: 'cal' });
     await conConfig(COBRO_REAL, async () => { expect((await cerrar(t1, 'c-eq1', 'cita')).codigo).toBe(200); });
     expect((await solicitud(t1))!['etapa']).toBe('agendada');
-    const t2 = '5910000010011';
+    const t2 = '591000000010011';
     await abrir(t2, 'cat_eq2');
     expect((await cerrar(t2, 'c-eq2', 'cita')).codigo).toBe(200);
     expect((await solicitud(t2))!['etapa']).toBe('agendada');
