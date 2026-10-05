@@ -1081,7 +1081,7 @@ function pdEjemploDePedido(carta) {
 // ADITIVO. «Para el delivery necesito {lista}…» (texto fijo del diseno) para lo que devuelve pdFaltanEntrega.
 // Lo único que se exige del delivery es la dirección; la referencia se ofrece como opcional (sin la frase del QR, decisión del 04/10/2026).
 function pdTextoFaltanEntrega(faltan) {
-  return 'Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).';
+  return 'Para el delivery necesito la dirección exacta.';
 }
 
 // ---------------------------------------------------------------------------

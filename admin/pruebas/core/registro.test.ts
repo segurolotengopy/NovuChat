@@ -168,6 +168,7 @@ const propiosDe = (f: IdFlujo): string[] => (PUENTE_DE_FLUJOS[f].modulos as read
 const FORMA_LITERAL = /^\s*return tieneFlujo\(tenantId, '(\w+)'\);\s*$/;
 const FORMA_DERIVADA = /^\s*return tieneModulo\(tenantId, '([\w-]+)'\);\s*$/;
 const MODULO_EN_REGLAS = /\btieneModulo\(tenantId,\s*'([\w-]+)'\)/g;
+const MODULO_COMUN_EN_REGLAS = /\btieneModuloComun\(tenantId,\s*'([\w-]+)'\)/g;
 /** El flujo que abre una capacidad según su cuerpo en las reglas, o null si el cuerpo no es ninguna de las dos formas. */
 function flujoQueAbre(reglas: string, capacidad: string): IdFlujo | null {
   const cuerpo = cuerpoDeFuncion(reglas, capacidad);
@@ -240,7 +241,10 @@ function escrituraDe(cuerpo: string, modulosPermitidos: readonly string[] = []):
    */
   const exigeModulo = (c: string) => [...c.matchAll(/(?:^|&&)\s*tieneModulo\(tenantId,\s*'([\w-]+)'\)\s*(?=&&|$)/g)]
     .some((m) => modulosPermitidos.includes(m[1] as string));
-  return condiciones.every((c) => /\btiene\w+\(tenantId\)/.test(c) || exigeModulo(c)) ? 'exige-capacidad' : 'sin-exigir';
+  /** Lo mismo para `tieneModuloComun(tenantId, 'm')` (módulos comunes: productos, campanas), con `m` del módulo de la colección. */
+  const exigeModuloComun = (c: string) => [...c.matchAll(/(?:^|&&)\s*tieneModuloComun\(tenantId,\s*'([\w-]+)'\)\s*(?=&&|$)/g)]
+    .some((m) => modulosPermitidos.includes(m[1] as string) && (MODULOS_COMUNES_HOY as readonly string[]).includes(m[1] as string));
+  return condiciones.every((c) => /\btiene\w+\(tenantId\)/.test(c) || exigeModulo(c) || exigeModuloComun(c)) ? 'exige-capacidad' : 'sin-exigir';
 }
 
 // ======================================================================= 1
@@ -402,9 +406,9 @@ describe('3. configuración: el registro contra las listas blancas de firestore.
     'config/campanas': 'configCampanasValida',
     'config/marca': 'logoValido',
   };
-  /** Documentos de módulo que hoy escribe el administrador de CUALQUIER comercio. Solo puede achicarse. */
-  const DOCUMENTOS_SIN_CAPACIDAD_HOY = [
-    'config/campanas', // Campañas es común hoy (App.tsx y la regla); F2 le da tieneModulo.
+  /** Documentos de un módulo COMÚN (no de un flujo): la regla exige `tieneModuloComun(tenantId, '<módulo>')` (H2b-6). */
+  const DOCUMENTOS_DE_MODULO_COMUN = [
+    'config/campanas', // Campañas es común hoy (App.tsx y la regla).
   ];
   const SELLO = ['actualizadoPor', 'actualizadoEn'];
   const documentos = ordenado(new Set(MANIFIESTOS.flatMap((m) => m.configuracion.map((c) => c.documento))));
@@ -439,8 +443,13 @@ describe('3. configuración: el registro contra las listas blancas de firestore.
       ...[...r.matchAll(MODULO_EN_REGLAS)].map((m) => `tieneModulo:${m[1]}`),
     ]));
     if (flujos.length === 0) {
-      expect(DOCUMENTOS_SIN_CAPACIDAD_HOY, `${documento} no es de ningún flujo y la lista no lo dice`).toContain(documento);
-      expect([...capacidades], `${documento} ya exige capacidad: sacarlo de DOCUMENTOS_SIN_CAPACIDAD_HOY`).toEqual([]);
+      expect(DOCUMENTOS_DE_MODULO_COMUN, `${documento} no es de ningún flujo y la lista no lo dice`).toContain(documento);
+      expect([...capacidades], `${documento}: un documento común no exige la capacidad de un flujo`).toEqual([]);
+      for (const r of ramas) {
+        const comunes = [...r.matchAll(MODULO_COMUN_EN_REGLAS)].map((m) => m[1] as string);
+        expect(comunes.some((m) => declarantes.includes(m as IdModulo) && (MODULOS_COMUNES_HOY as readonly string[]).includes(m)),
+          `${documento}: una rama no exige tieneModuloComun(tenantId, '<módulo>') de ${declarantes.join(', ')}`).toBe(true);
+      }
       return;
     }
     expect(flujos.length, `${documento}: más de un flujo reúne a ${declarantes.join(', ')}`).toBe(1);
@@ -486,13 +495,8 @@ describe('4. colecciones y almacenamiento: el registro contra las reglas', () =>
    * exigir. El PR `H2b-cierre` devuelve el «exactamente» y obliga a sacar la entrada.
    */
   const ESCRITURA_SIN_EXIGIR_MODULO_HOY = [
-    // Productos es común a todo comercio hoy; F2 agrega tieneModulo('productos').
-    'catalogo', 'fotosCatalogo', 'contadores/catalogo',
-    // HALLAZGO del 26/09: `funcionarios` exige tieneAgenda, pero su
-    // subcolección `privado` (datos personales) solo exige esAdmin: el admin
-    // de un comercio SIN agenda puede escribir ahí. Sin funcionario visible,
-    // pero escribible. Lo cierra el agente de Agenda en F2.
-    'funcionarios/privado',
+    // (H2b-6 cerró `catalogo`, `fotosCatalogo`, `contadores/catalogo` con tieneModuloComun('productos') y
+    // `funcionarios/privado` con tieneAgenda: ya no están, y revertir una de esas exigencias hace fallar la prueba.)
     // La escribe solo la ingesta del comercio (esIngesta), sin mirar el flujo.
     'agenda',
   ];
@@ -507,11 +511,65 @@ describe('4. colecciones y almacenamiento: el registro contra las reglas', () =>
 
   // TODO(H2b-cierre): el PR de cierre de H2b devuelve el «exactamente» de esta prueba. Mientras los PR de H2b
   // enchufan `tieneModulo` en las reglas, una colección puede salir de la lista sin que cada PR edite esta suite.
-  // TODO(H2b-6): la forma derivada de las reglas `return tieneModulo(tenantId, 'm');` se acepta SIN comprobar que
-  // las reglas definan `function tieneModulo(`; el PR que la enchufe debe probar que existe y qué hace.
+  // H2b-6: las reglas definen `tieneModulo` y `tieneModuloComun` (la prueba de abajo lo exige) y su comportamiento
+  // se prueba en el emulador (`plataforma/reglas-modulos.test.ts`).
   it('la lista «escritura sin exigir módulo» es un subconjunto de la de hoy (nada nuevo sin exigir)', () => {
     const hoy = colecciones.filter(({ modulo, c }) => escrituraDe(bloqueDeColeccion(c) as string, modulosDeLaColeccion(modulo)) === 'sin-exigir').map(({ c }) => c);
     for (const c of hoy) expect(ESCRITURA_SIN_EXIGIR_MODULO_HOY, `${c}: escritura sin exigir módulo que la lista no declara`).toContain(c);
+  });
+
+  it('H2b-6: las exigencias que cerró siguen en las reglas (si se revierte una, falla)', () => {
+    const hoy = (c: string) => {
+      const m = colecciones.find((x) => x.c === c);
+      return escrituraDe(bloqueDeColeccion(c) as string, modulosDeLaColeccion(m!.modulo));
+    };
+    for (const c of ['catalogo', 'fotosCatalogo', 'contadores/catalogo', 'funcionarios/privado']) {
+      expect(hoy(c), `${c}: la regla dejó de exigir su módulo`).toBe('exige-capacidad');
+    }
+    for (const f of ['tieneModulo', 'tieneModuloComun']) {
+      expect(() => cuerpoDeFuncion(REGLAS, f), `las reglas no definen ${f}`).not.toThrow();
+    }
+  });
+
+  it('H2b-6 (mutación en memoria): sin la exigencia, la prueba de arriba falla', () => {
+    const sinExigir = (c: string, quitar: RegExp) => {
+      const m = colecciones.find((x) => x.c === c)!;
+      const bloque = bloqueDeColeccion(c) as string;
+      const roto = bloque.replace(quitar, '');
+      expect(roto, `${c}: la mutación cambia algo`).not.toBe(bloque);
+      return escrituraDe(roto, modulosDeLaColeccion(m.modulo));
+    };
+    expect(sinExigir('funcionarios/privado', /&&\s*tieneAgenda\(tenantId\)/g)).toBe('sin-exigir');
+    expect(sinExigir('catalogo', /&&\s*tieneModuloComun\(tenantId,\s*'productos'\)/g)).toBe('sin-exigir');
+    expect(sinExigir('fotosCatalogo', /&&\s*tieneModuloComun\(tenantId,\s*'productos'\)/g)).toBe('sin-exigir');
+    expect(sinExigir('contadores/catalogo', /&&\s*tieneModuloComun\(tenantId,\s*'productos'\)/g)).toBe('sin-exigir');
+  });
+
+  it('H2b-6: tieneModulo solo recibe módulos propios de un flujo y tieneModuloComun solo comunes (siempre con literal)', () => {
+    const propios = new Set(FLUJOS_HOY.flatMap(propiosDe));
+    const sinDefiniciones = REGLAS.replace(/function tieneModulo(Comun)?\([^)]*\)/g, '');
+    const llamadasModulo = [...sinDefiniciones.matchAll(/\btieneModulo\(/g)].length;
+    const llamadasComun = [...sinDefiniciones.matchAll(/\btieneModuloComun\(/g)].length;
+    const conLiteral = [...sinDefiniciones.matchAll(MODULO_EN_REGLAS)].map((m) => m[1] as string);
+    const comunesLiteral = [...sinDefiniciones.matchAll(MODULO_COMUN_EN_REGLAS)].map((m) => m[1] as string);
+    expect(conLiteral.length, 'toda llamada a tieneModulo pasa un módulo literal').toBe(llamadasModulo);
+    expect(comunesLiteral.length, 'toda llamada a tieneModuloComun pasa un módulo literal').toBe(llamadasComun);
+    expect(llamadasModulo, 'control: las reglas usan tieneModulo').toBeGreaterThan(0);
+    expect(llamadasComun, 'control: las reglas usan tieneModuloComun').toBeGreaterThan(0);
+    for (const m of conLiteral) expect(propios, `tieneModulo(tenantId, '${m}'): no es un módulo propio de un flujo`).toContain(m);
+    for (const m of comunesLiteral) {
+      expect(MODULOS_COMUNES_HOY as readonly string[], `tieneModuloComun(tenantId, '${m}'): no es un módulo común`).toContain(m);
+    }
+  });
+
+  it('escrituraDe: tieneModuloComun solo cuenta como término propio de `&&` y con un módulo común de la colección', () => {
+    const bloque = (cond: string) => `allow create, update: if ${cond};`;
+    expect(escrituraDe(bloque("esAdmin(tenantId) && tieneModuloComun(tenantId, 'productos') && valido()"), ['productos'])).toBe('exige-capacidad');
+    expect(escrituraDe(bloque("esAdmin(tenantId) && tieneModuloComun(tenantId, 'campanas') && valido()"), ['productos'])).toBe('sin-exigir');
+    expect(escrituraDe(bloque("esAdmin(tenantId) && (tieneModuloComun(tenantId, 'productos') || true)"), ['productos'])).toBe('sin-exigir');
+    expect(escrituraDe(bloque("tieneModuloComun(tenantId, 'productos') || esAdmin(tenantId)"), ['productos'])).toBe('sin-exigir');
+    // un módulo propio de un flujo no cuenta como «común» aunque la colección lo permita
+    expect(escrituraDe(bloque("esAdmin(tenantId) && tieneModuloComun(tenantId, 'agenda')"), ['agenda'])).toBe('sin-exigir');
   });
 
   it('escrituraDe: tieneModulo solo cuenta como término propio de `&&` y con un módulo de la colección', () => {

@@ -97,7 +97,7 @@ timeout --kill-after=15s "$LIMITE" "$FIREBASE" emulators:exec \
   --config "$TMP/firebase.json" \
   --project "$PROYECTO" \
   --only firestore,storage \
-  "npx vitest run pruebas/storage-reglas.test.ts $*"
+  "npx vitest run pruebas/storage-reglas.test.ts pruebas/plataforma/storage-modulos.test.ts $*"
 CODIGO=$?
 set -e
 if [[ "$CODIGO" -eq 124 || "$CODIGO" -eq 137 ]]; then

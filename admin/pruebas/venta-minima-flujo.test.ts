@@ -1916,7 +1916,7 @@ describe('pedido', () => {
 
   it('delivery sin dirección → la pide, SOLO la dirección (la referencia es opcional); con la dirección sola, sigue al resumen', () => {
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
-    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
+    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito la dirección exacta.');
     expect(cuerpos(r.resumen)[0]).not.toContain('QR');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     expect(r.resumen.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
@@ -1936,7 +1936,7 @@ describe('pedido', () => {
     const mala = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
     mala.w.estado.extraccion = EX([], { entrega: '', direccion: 'calle', referencia: '', nombre: '' });
     const t = mala.c.escribe('calle');
-    expect(cuerpos(t)[0]).toBe('Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).');
+    expect(cuerpos(t)[0]).toBe('Para el delivery necesito la dirección exacta.');
     expect(estadoDe(mala.w.mundo)['paso']).toBe('pedido_datos');
   });
 

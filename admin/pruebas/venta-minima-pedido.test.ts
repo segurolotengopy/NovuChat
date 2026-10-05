@@ -876,10 +876,10 @@ describe('pdResumen y pdLineaCompacta', () => {
 });
 
 describe('textos fijos del pedido', () => {
-  it('«Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).»: sin la frase del QR y sin pedir el nombre', () => {
-    const txt = 'Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).';
+  it('«Para el delivery necesito la dirección exacta.»: sin la frase del QR y sin pedir el nombre', () => {
+    const txt = 'Para el delivery necesito la dirección exacta.';
     for (const f of [['direccion'], ['direccion', 'referencia', 'nombre'], [], undefined]) expect(L.pdTextoFaltanEntrega(f as string[])).toBe(txt);
-    expect(txt).not.toMatch(/QR|nombre de quien|repartidor/);
+    expect(txt).not.toMatch(/QR|nombre de quien|repartidor|referencia/); // la referencia NUNCA se pide en el chat (la ofrece el catálogo; regla de Silvana, 05/10)
   });
   it('«No encontré …»: con 1, 2 o 3 sugerencias (sin repetir, con su precio) y sin ellas', () => {
     const s = (k: string) => porId(k);

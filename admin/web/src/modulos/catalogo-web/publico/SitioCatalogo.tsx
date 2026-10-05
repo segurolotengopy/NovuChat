@@ -372,7 +372,10 @@ function Detalle({ item, ficha, moneda, cantidad, alSumar, alCerrar }: {
 // Pedido y checkout
 // ---------------------------------------------------------------------------
 
-function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVolver, alConfirmar }: {
+/** Tope de las referencias para llegar; el servidor aplica el mismo (150). */
+export const LIMITE_REFERENCIA = 150;
+
+export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVolver, alConfirmar }: {
   ficha: string; items: ItemPublico[]; carrito: Carrito;
   entrega: CatalogoPublico['entrega']; moneda: string; total: number;
   alCambiar: (c: Carrito) => void;
@@ -386,6 +389,7 @@ function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVo
   // «retiro en el local» que después le va a traer gente a la puerta.
   const eligeEntrega = entrega.aceptaRetiroEnLocal && entrega.aceptaDelivery;
   const [direccion, setDireccion] = useState('');
+  const [referencia, setReferencia] = useState('');
   const [nota, setNota] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [fallo, setFallo] = useState<string | null>(null);
@@ -412,6 +416,9 @@ function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVo
           items: elegidos.map((i) => ({ id: i.id, cantidad: carrito[i.id] })),
           entrega: modo,
           ...(modo === 'envio' ? { direccion } : {}),
+          // OPCIONAL y solo con envío. Sin texto no viaja el campo, y el
+          // servidor lo vuelve a sanear y recortar a 150 (no confía en esto).
+          ...(modo === 'envio' && referencia.trim() ? { referencia: referencia.trim() } : {}),
           ...(nota.trim() ? { nota: nota.trim() } : {}),
         }),
       });
@@ -458,18 +465,33 @@ function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVo
       )}
 
       {modo === 'envio' && (
-        <label className="cat-campo">
-          ¿A dónde lo llevamos?
-          <textarea value={direccion} maxLength={200} rows={2}
-                    placeholder="Calle, número, zona y alguna referencia"
-                    onChange={(e) => setDireccion(e.target.value)} />
-        </label>
+        <>
+          <label className="cat-campo">
+            ¿A dónde lo llevamos?
+            <textarea value={direccion} maxLength={200} rows={2}
+                      placeholder="Calle, número y zona"
+                      onChange={(e) => setDireccion(e.target.value)} />
+          </label>
+          {/* Solo cuando la página NO suma costo de envío al total (null o 0).
+              Con un costo mayor que cero ya lo suma, y este aviso diría lo
+              contrario de lo que muestra el total. */}
+          {!entrega.costoDelivery && (
+            <p className="cat-nota">
+              El delivery se paga aparte, al repartidor, al recibir tu pedido.
+            </p>
+          )}
+          <label className="cat-campo">
+            Referencias para llegar (opcional)
+            <input type="text" value={referencia} maxLength={LIMITE_REFERENCIA}
+                   onChange={(e) => setReferencia(e.target.value)} />
+          </label>
+        </>
       )}
 
       <label className="cat-campo">
         ¿Algo que debamos saber? (opcional)
         <textarea value={nota} maxLength={300} rows={2}
-                  placeholder="Sin cebolla, tocar el timbre de al lado…"
+                  placeholder="Sin cebolla, tipo de carne, tipo de gaseosa…"
                   onChange={(e) => setNota(e.target.value)} />
       </label>
 
