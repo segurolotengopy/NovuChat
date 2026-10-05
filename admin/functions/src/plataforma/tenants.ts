@@ -24,6 +24,7 @@ import {
 // es `asignarEjes`, y contar los cambios operados es `registrarCambioOperado`,
 // los dos en `central/`. El plan, la modalidad y los umbrales siguen en
 // `actualizarEstadoCuenta`, más abajo.
+import { IDS_FLUJOS } from '../registro.js';
 import { MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } from '../central/ejes.js';
 // PREPAGO (bloque A-0, `DISENO.md` §4undecies): la modalidad de la cuenta y los
 // campos derivados de la situación de pago, que se recalculan y nunca se
@@ -51,7 +52,9 @@ import { documentoDeVertical } from '../core/prompt/prompt.js';
 // use como parte de una ruta de Firestore un valor con barras o puntos.
 const ID_NUMERO = /^[0-9]{6,25}$/;
 // Un flujo por vertical. Ver DISENO.md §Varios flujos y varios números.
-const VERTICALES = new Set(['agendamiento', 'venta', 'onboarding']);
+// La lista sale del registro (`PUENTE_DE_FLUJOS`): no se repite aquí. El alta SIGUE
+// escribiendo `vertical` y `flujos`; `modulos` lo escribe solo la migración (H2b).
+const VERTICALES = new Set<string>(IDS_FLUJOS);
 
 // ---------------------------------------------------------------------------
 // ALTA DE UN NEGOCIO. Es lo que sostiene la promesa de instalar un cliente en

@@ -43,6 +43,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
+// `registro.ts` no importa nada: se carga directo, sin el hook de abajo.
+import { IDS_FLUJOS, documentoDeFlujo } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -70,7 +72,6 @@ const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 // Mismos formatos que `ID_TENANT`, `ID_NUMERO` y `VERTICALES` de functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_NUMERO = /^[0-9]{6,25}$/;
-const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);
 // `central/ejes.ts` importa `./cuenta/planes.js` y `./cuenta/prepago.js`: se resuelve con el
 // mismo hook que `asignar-plan.mjs` y `pase-a-produccion.mjs`, sin compilar.
 registerHooks({
@@ -85,10 +86,11 @@ registerHooks({
     }
   },
 });
+const FLUJOS_VALIDOS = new Set(IDS_FLUJOS);
 const { TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } = await import('../../functions/src/central/ejes.ts');
 const titularidad = TITULARIDAD || TITULARIDAD_POR_DEFECTO;
-// Mismo mapa que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
-const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
+// El documento de cada flujo sale del registro.
+const DOCUMENTO = Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]));
 
 const firma = readFileSync(new URL('../../functions/src/core/seguridad/firma.ts', import.meta.url), 'utf8');
 const RESERVA = [...firma.matchAll(/^\s*(\w+):\s*defineSecret\('([A-Z0-9_]+)'\)/gm)]

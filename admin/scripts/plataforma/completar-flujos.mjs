@@ -21,13 +21,14 @@ if (!PROYECTO) {
   process.exit(2);
 }
 
+const { IDS_FLUJOS, documentoDeFlujo } = await import('../../functions/src/registro.ts');
 const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 
-// Misma tabla que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
-const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta' };
+// El documento de cada flujo sale del registro (antes faltaba `onboarding`).
+const DOCUMENTO = Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]));
 
 const fichas = await db.collection('tenants').get();
 let completadas = 0, creados = 0;
