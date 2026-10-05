@@ -8,7 +8,7 @@ import { limiteDeProductos, nombreDePlan, planSiguiente } from '../../central/li
 import { auth, db, funciones } from '../../core/lib/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
-import { etiquetaCatalogo, useFlujos } from '../../central/lib/flujos';
+import { capacidadesDeConsola, useModulos } from '../../central/lib/flujos';
 import { mensajeDeFalla, prepararFoto } from './foto';
 import {
   aCsv, idDeNombre, partirCsv, validarFilas, type FilaCatalogo, type FilaConProblemas,
@@ -398,9 +398,11 @@ function UsoDelPlan({ usados, limite, plan, unidad, tenantId }: {
 
 export function Catalogo() {
   const { tenantId = '' } = useParams();
-  const flujos = useFlujos(tenantId) ?? [];
-  const conAgenda = flujos.includes('agendamiento');
-  const conVenta = flujos.includes('venta');
+  const modulos = useModulos(tenantId) ?? [];
+  const capacidades = capacidadesDeConsola(modulos);
+  const conAgenda = capacidades.conAgenda;
+  // La vista previa del sitio público es de Catálogo web (`PUENTE_DE_FLUJOS.venta` lo trae).
+  const conVenta = capacidades.conVistaPrevia;
   const [items, setItems] = useState<Item[] | null>(null);
   const [veredictos, setVeredictos] = useState<Record<string, Veredicto>>({});
   const [nuevo, setNuevo] = useState(NUEVO);
@@ -494,7 +496,7 @@ export function Catalogo() {
     q: '', area: '', estado: '', foto: '', stock: '', pmin: '', pmax: '',
   });
 
-  const titulo = etiquetaCatalogo(flujos);
+  const titulo = capacidades.etiquetaCatalogo;
   const unidad = titulo === 'Servicios' ? 'servicios' : 'productos';
   const usados = Math.max(0, contador ?? todos.length);
   const limite = limiteDeProductos(cuenta);
