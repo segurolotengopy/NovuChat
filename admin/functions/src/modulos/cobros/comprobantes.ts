@@ -277,7 +277,9 @@ export const guardarComprobante = onRequest(
     const a = almacen();
     const reservar: Reservar = async (rutaNueva) => {
       const previa = entradaDe(solicitud, idMeta);
-      if (previa && await a.existe(previa.ruta)) return { ruta: previa.ruta, guardada: true };
+      // La ruta guardada se REVALIDA: una entrada con una ruta que no es la de
+      // este comercio y este mensaje se ignora y se reemplaza.
+      if (previa && rutaValidaDe(previa.ruta, ruta.tenantId, idMeta) !== null && await a.existe(previa.ruta)) return { ruta: previa.ruta, guardada: true };
       return reservarSubida(refConversacion, idMeta, rutaNueva, Date.now());
     };
     const r = await guardarBytesDeComprobante(
@@ -300,9 +302,13 @@ export async function reservarSubida(
     if (!puedeSubir(actual, ahoraMs)) return 'lleno' as const;
     const lista = subidasDe(actual);
     const previa = lista.find((x) => x.idMeta === idMeta);
-    if (previa) return { ruta: previa.ruta, guardada: false };
-    if (lista.length >= MAX_COMPROBANTES) return 'lleno' as const;
-    tx.set(refConversacion, { solicitud: { subidas: [...lista, { idMeta, ruta: rutaNueva }] } }, { merge: true });
+    const tenantId = refConversacion.parent.parent?.id ?? '';
+    // Solo se conserva una ruta VÁLIDA para este comercio y este idMeta; una que
+    // no lo es se reemplaza por la nueva (misma entrada, sin sumar otra).
+    if (previa && rutaValidaDe(previa.ruta, tenantId, idMeta) !== null) return { ruta: previa.ruta, guardada: false };
+    const resto = lista.filter((x) => x !== previa);
+    if (resto.length >= MAX_COMPROBANTES) return 'lleno' as const;
+    tx.set(refConversacion, { solicitud: { subidas: [...resto, { idMeta, ruta: rutaNueva }] } }, { merge: true });
     return { ruta: rutaNueva, guardada: false };
   });
 }
@@ -349,6 +355,8 @@ export interface ResultadoDePurga {
   carpetasBorradas: number;
   objetosBorrados: number;
   tenantsDeBajaBorrados: number;
+  /** Comercios cuya purga falló: se sigue con los demás. */
+  errores: number;
 }
 
 /** Días enteros entre dos días `aaaa-mm-dd`. */
@@ -369,23 +377,31 @@ export async function purgarComprobantesDe(
   const a = deps.almacen ?? almacen();
   const hoy = diaDeLaPaz(deps.ahoraMs ?? Date.now());
   const fichas = await getFirestore().collection('tenants').select('estado').get();
-  const r: ResultadoDePurga = { tenantsRevisados: 0, carpetasBorradas: 0, objetosBorrados: 0, tenantsDeBajaBorrados: 0 };
+  const r: ResultadoDePurga = { tenantsRevisados: 0, carpetasBorradas: 0, objetosBorrados: 0, tenantsDeBajaBorrados: 0, errores: 0 };
   for (const ficha of fichas.docs) {
     if (!ID_TENANT.test(ficha.id)) continue;
     r.tenantsRevisados++;
-    const base = `tenants/${ficha.id}/comprobantes/`;
-    if (ficha.get('estado') === 'dado_de_baja') {
-      const n = await a.borrarPrefijo(base);
-      if (n > 0) r.tenantsDeBajaBorrados++;
-      r.objetosBorrados += n;
-      continue;
-    }
-    for (const nombre of await a.subcarpetas(base)) {
-      if (!CARPETA_DE_DIA.test(nombre)) continue;
-      if (diasEntre(hoy, nombre) > DIAS_DE_RETENCION) {
-        r.objetosBorrados += await a.borrarPrefijo(`${base}${nombre}/`);
-        r.carpetasBorradas++;
+    try {
+      const base = `tenants/${ficha.id}/comprobantes/`;
+      if (ficha.get('estado') === 'dado_de_baja') {
+        const n = await a.borrarPrefijo(base);
+        if (n > 0) r.tenantsDeBajaBorrados++;
+        r.objetosBorrados += n;
+        continue;
       }
+      for (const nombre of await a.subcarpetas(base)) {
+        if (!CARPETA_DE_DIA.test(nombre)) continue;
+        if (diasEntre(hoy, nombre) > DIAS_DE_RETENCION) {
+          r.objetosBorrados += await a.borrarPrefijo(`${base}${nombre}/`);
+          r.carpetasBorradas++;
+        }
+      }
+    } catch (error) {
+      // Un comercio que falla no detiene la purga de los demás. Solo el código,
+      // nunca el mensaje (puede traer rutas) ni datos personales.
+      r.errores++;
+      const codigo = (error as { code?: unknown } | null)?.code;
+      console.error(`purga de comprobantes: falló un comercio (código ${typeof codigo === 'string' || typeof codigo === 'number' ? codigo : 'desconocido'})`);
     }
   }
   return r;

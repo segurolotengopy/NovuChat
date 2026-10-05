@@ -9,10 +9,15 @@
  * de la lista, y conviene que exista en todas las fichas.
  *
  * Es idempotente: una ficha que ya tiene lista no se toca, y un documento de
- * configuración que ya existe no se pisa.
+ * configuración que ya existe no se pisa (se crea con `create`, sin carrera).
+ * NO TIENE MODO SECO: escribe al correrlo. Desde H2b-3 su `DOCUMENTO` sale del
+ * registro y por eso también crea `config/onboarding` en las fichas de captación
+ * que no lo tengan (antes las ignoraba). Seguimiento: darle `--aplicar`.
  *
  *   node scripts/plataforma/completar-flujos.mjs --proyecto <id-del-proyecto>
  */
+import { IDS_FLUJOS, documentoDeFlujo } from '../../functions/src/registro.ts';
+
 const args = process.argv.slice(2);
 const iProy = args.indexOf('--proyecto');
 const PROYECTO = iProy >= 0 ? args[iProy + 1] : null;
@@ -26,8 +31,8 @@ const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 
-// Misma tabla que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
-const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta' };
+// El documento de cada flujo sale del registro (antes faltaba `onboarding`).
+const DOCUMENTO = Object.fromEntries(IDS_FLUJOS.map((f) => [f, documentoDeFlujo(f)]));
 
 const fichas = await db.collection('tenants').get();
 let completadas = 0, creados = 0;
@@ -45,9 +50,12 @@ for (const ficha of fichas.docs) {
     const documento = DOCUMENTO[flujo];
     if (!documento) continue;
     const ref = ficha.ref.collection('config').doc(documento);
-    if (!(await ref.get()).exists) {
-      await ref.set({ actualizadoPor: 'completar-flujos', actualizadoEn: Timestamp.now() });
+    // `create` falla si ya existe: sin carrera y sin pisar lo que haya (ALREADY_EXISTS = ya estaba).
+    try {
+      await ref.create({ actualizadoPor: 'completar-flujos', actualizadoEn: Timestamp.now() });
       creados += 1;
+    } catch (e) {
+      if (e?.code !== 6 && !/ALREADY_EXISTS/.test(String(e?.message ?? e))) throw e;
     }
   }
   console.log(`  ${ficha.id}: flujos ${JSON.stringify(flujos)}`);

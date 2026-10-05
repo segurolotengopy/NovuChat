@@ -229,11 +229,11 @@ service cloud.firestore {
     // tabla vive en `functions/src/core/prompt/prompt.ts` (VERTICALES_CONOCIDOS) y en
     // `web/src/central/lib/flujos.ts`: si se agrega un flujo en un solo lado, se nota.
     function tieneAgenda(tenantId) {
-      return tieneModulo(tenantId, 'agenda');
+      return tieneFlujo(tenantId, 'agendamiento');
     }
 
     function tieneCobro(tenantId) {
-      return tieneModulo(tenantId, 'pedidos');
+      return tieneFlujo(tenantId, 'venta');
     }
 
     // El flujo de CAPTACIÓN: capta y atiende a quien quiere contratar lo que
@@ -242,51 +242,7 @@ service cloud.firestore {
     // `/config/onboarding` lo leen los miembros del comercio y lo escribe su
     // administrador, además del propietario de la plataforma.
     function tieneOnboarding(tenantId) {
-      return tieneModulo(tenantId, 'captacion');
-    }
-
-    // LOS MÓDULOS ENCENDIDOS DE UN NEGOCIO (H2b-6). La ficha puede traer
-    // `modulos`, una lista (`Analisis/41` §3, el registro de módulos). MIENTRAS
-    // NO LA TRAIGA —hoy ninguna ficha viva la trae— TODO se decide como antes,
-    // por `flujos`: el módulo se traduce a su flujo y se pregunta `tieneFlujo`.
-    // Cuando la lista existe MANDA, igual que `flujos` manda sobre `vertical`:
-    // un módulo apagado en la lista no se reabre por la puerta del flujo viejo.
-    // `modulos` que no es una lista (cadena, mapa, número, null) se trata como
-    // ausente: cae a `flujos`, nunca abre de más.
-    //
-    // SOLO PARA MÓDULOS PROPIOS DE UN FLUJO. La tabla de respaldo es PARCIAL a
-    // propósito y se cierra con `false`: agenda ⇒ agendamiento; pedidos,
-    // catalogo-web e inventario ⇒ venta; captacion ⇒ onboarding. Son los módulos
-    // que pertenecen a UN solo flujo en `PUENTE_DE_FLUJOS`
-    // (`functions/src/registro.ts`); `reglas-modulos.test.ts` compara este cuerpo
-    // con el registro y falla si divergen. Un módulo COMÚN (`productos`,
-    // `campanas`) o compartido por dos flujos (`cobros`) NO va por acá: los
-    // comunes usan `tieneModuloComun`, y preguntar por `cobros` da `false` para
-    // todo comercio de hoy aunque el registro diga que lo tienen.
-    //
-    // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y `config/negocio`
-    // completo con 6 días de horario y catálogo web está en el tope (margen 0 en
-    // `reglas-presupuesto.test.ts`); por eso la ficha se lee UNA vez (`let`),
-    // sin mapa ni `exists`: una ficha inexistente hace fallar el
-    // `get` y la regla deniega, igual que antes. Medido en
-    // `pruebas/plataforma/reglas-presupuesto.test.ts`.
-    function tieneModulo(tenantId, m) {
-      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
-      return ficha.get('modulos', null) is list
-        ? m in ficha.modulos
-        : (m == 'agenda' ? tieneFlujo(tenantId, 'agendamiento')
-           : m == 'captacion' ? tieneFlujo(tenantId, 'onboarding')
-           : (m == 'pedidos' || m == 'catalogo-web' || m == 'inventario') ? tieneFlujo(tenantId, 'venta')
-           : false);
-    }
-
-    // Los módulos COMUNES (`productos`, `campanas`) los tiene todo comercio hoy:
-    // sin `modulos` en la ficha, abre como antes (todo comercio activo); con la
-    // lista, solo si el módulo está en ella. Un negocio que no existe no abre (el
-    // `get` falla y la regla deniega).
-    function tieneModuloComun(tenantId, m) {
-      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
-      return !(ficha.get('modulos', null) is list) || m in ficha.modulos;
+      return tieneFlujo(tenantId, 'onboarding');
     }
 
     // Habilita ESCRITURA y la ingesta desde n8n. Solo 'activo'.
@@ -528,7 +484,7 @@ service cloud.firestore {
                             && configAgendamientoValida())
                         || (documento == 'venta' && tieneCobro(tenantId)
                             && configVentaValida())
-                        || (documento == 'marca' && tieneModulo(tenantId, 'catalogo-web')
+                        || (documento == 'marca' && tieneCobro(tenantId)
                             && logoValido())
                         // Captación: igual que los otros documentos de flujo,
                         // solo con la capacidad. El operador no escribe.
@@ -543,8 +499,7 @@ service cloud.firestore {
         // ser meses después. Se le permite crearlo a él, con la misma
         // validación que la actualización.
         allow create: if esAdmin(tenantId) && tenantOperativo(tenantId)
-                      && documento == 'marca' && tieneModulo(tenantId, 'catalogo-web')
-                      && logoValido();
+                      && documento == 'marca' && tieneCobro(tenantId) && logoValido();
         allow delete: if false;
 
         // =====================================================================
@@ -569,7 +524,6 @@ service cloud.firestore {
         allow create, update: if documento == 'campanas'
                               && esAdmin(tenantId)
                               && tenantOperativo(tenantId)
-                              && tieneModuloComun(tenantId, 'campanas')
                               && configCampanasValida();
 
         // El tope escrito a mano, porque las reglas no importan TypeScript;
@@ -813,8 +767,8 @@ service cloud.firestore {
             && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
             && d.get('moneda', 'BOB') in ['BOB', 'USD']
             // Teléfono en formato E.164 sin '+', igual que lo espera la Cloud API.
-            && d.get('numeroRecepcion', '59100000000') is string
-            && d.get('numeroRecepcion', '59100000000').matches('^[0-9]{8,15}$')
+            && d.get('numeroRecepcion', '591000000') is string
+            && d.get('numeroRecepcion', '591000000').matches('^[0-9]{8,15}$')
             // Misma validación estricta que para los funcionarios: un ID mal
             // pegado acá tiene exactamente las mismas consecuencias.
             && calendarioValidoOpcional(d, 'calendarioId')
@@ -889,15 +843,7 @@ service cloud.firestore {
             // para que un salón pueda seguir guardando su configuración con el
             // campo en falso, en vez de que la regla le rechace la pantalla
             // entera por un campo que no le corresponde.
-            // TODO(H2b, PR que escriba `modulos`): aquí va
-            // `tieneModulo(tenantId, 'catalogo-web')`, y ANTES hay que abaratar
-            // `config/negocio` (hoy, completo con 6 días de horario y catálogo
-            // web, está en el tope de 1.000 expresiones: margen 0 en
-            // `reglas-presupuesto.test.ts`). Mientras tanto se conserva el costo
-            // de la base (`tieneFlujo`) y esta línea NO mira `modulos`: la
-            // prueba `it.fails` de `reglas-modulos.test.ts` obliga a voltearla.
-            && (d.get('catalogoWebActivo', false) == false
-                || tieneFlujo(tenantId, 'venta'))
+            && (d.get('catalogoWebActivo', false) == false || tieneCobro(tenantId))
             // PALETA: una de cinco, y NADA más.
             //
             // Antes esto era un `colorMarca` en `#rrggbb`. Aun con esa
@@ -1129,10 +1075,8 @@ service cloud.firestore {
         allow get, list: if esMiembro(tenantId);
         allow create, update: if esAdmin(tenantId)
                               && tenantOperativo(tenantId)
-                              && tieneModuloComun(tenantId, 'productos')
                               && fotoValida();
-        allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId)
-                      && tieneModuloComun(tenantId, 'productos');
+        allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId);
 
         function fotoValida() {
           let d = request.resource.data;
@@ -1265,13 +1209,11 @@ service cloud.firestore {
         // `altaContada()` y el bloque `/contadores/{contador}` más abajo.
         allow create: if esAdmin(tenantId)
                       && tenantOperativo(tenantId)
-                      && tieneModuloComun(tenantId, 'productos')
                       && itemValido()
                       && !request.resource.data.keys().hasAny(['stock'])
                       && altaContada(itemId);
         allow update: if esAdmin(tenantId)
                       && tenantOperativo(tenantId)
-                      && tieneModuloComun(tenantId, 'productos')
                       && itemValido()
                       // `resource != null` no es defensa contra nadie: es que
                       // `resource.data` sobre un documento que no existe NO da
@@ -1286,7 +1228,6 @@ service cloud.firestore {
         // este ítem: sin eso, cada baja dejaría el contador inflado y el
         // comercio perdería cupo que pagó.
         allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId)
-                      && tieneModuloComun(tenantId, 'productos')
                       && bajaContada(itemId);
 
         function itemValido() {
@@ -1359,7 +1300,6 @@ service cloud.firestore {
         allow update: if contador == 'catalogo'
                       && esAdmin(tenantId)
                       && tenantOperativo(tenantId)
-                      && tieneModuloComun(tenantId, 'productos')
                       && contadorCatalogoValido();
         allow create, delete: if false;
 
@@ -1483,7 +1423,6 @@ service cloud.firestore {
         match /privado/{documento} {
           allow get, list: if esAdmin(tenantId) && tenantLegible(tenantId);
           allow create, update: if esAdmin(tenantId) && tenantOperativo(tenantId)
-                                && tieneAgenda(tenantId)
                                 && datosPersonalesValidos();
           allow delete: if false;
 
