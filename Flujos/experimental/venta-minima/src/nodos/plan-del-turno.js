@@ -1043,10 +1043,16 @@ function textoDeDato(x, max) {
 function esCierreOCambio(n) {
   const t = String(n || '').trim();
   if (!t) return false;
-  if (/^((eso|esto|es|todo|nada|mas|nomas|no|ya|esta|listo|lista|gracias|muchas|ok|okey|dale|bueno|pues|entonces|si|por|ahora|con|ahi|asi|bien|perfecto|seria|estamos|estoy|ninguna|ninguno|nadie|chau|adios|hasta|luego|nos|vemos) ?)+$/.test(t)) return true;
-  const verbo = /\b(cambi\w*|modific\w*|corrig\w*|corregir|cancel\w*|anul\w*)\b/;
-  if (/^((quiero|quisiera|necesito|puedes|puede|podrias|podria|mejor|por favor|ya|pues|entonces) )*(cambi\w*|modific\w*|corrig\w*|corregir|cancel\w*|anul\w*)\b/.test(t)) return true;
-  return verbo.test(t) && /\b(pedido|orden|compra|todo)\b/.test(t);
+  // Comprobación LINEAL, sin cuantificadores anidados (una regex `((a|b) ?)+` retrocede de forma exponencial con «nomas nomas nomas… x»; alerta js/redos de CodeQL).
+  const palabras = t.split(' ');
+  const cierre = new Set(['eso', 'esto', 'es', 'todo', 'nada', 'mas', 'nomas', 'no', 'ya', 'esta', 'listo', 'lista', 'gracias', 'muchas', 'ok', 'okey', 'dale', 'bueno', 'pues', 'entonces', 'si', 'por', 'ahora', 'con', 'ahi', 'asi', 'bien', 'perfecto', 'seria', 'estamos', 'estoy', 'ninguna', 'ninguno', 'nadie', 'chau', 'adios', 'hasta', 'luego', 'nos', 'vemos']);
+  if (palabras.every((w) => cierre.has(w))) return true;
+  // Un verbo de cambio o cancelación al empezar la frase, tras un preámbulo de cortesía («quiero cambiar mi pedido», «por favor cancela todo»).
+  const preambulo = new Set(['quiero', 'quisiera', 'necesito', 'puedes', 'puede', 'podrias', 'podria', 'mejor', 'por', 'favor', 'ya', 'pues', 'entonces']);
+  let k = 0;
+  while (k < palabras.length && preambulo.has(palabras[k])) k += 1;
+  if (k < palabras.length && /^(cambi|modific|corrig|corregir|cancel|anul)/.test(palabras[k])) return true;
+  return /\b(cambi\w*|modific\w*|corrig\w*|corregir|cancel\w*|anul\w*)\b/.test(t) && /\b(pedido|orden|compra|todo)\b/.test(t);
 }
 
 // ¿El texto puede ser un DATO de entrega (dirección o referencia)? Nunca: una petición de persona, una pregunta (con o sin signos), un enlace, una cortesía o negación

@@ -16,10 +16,12 @@
  *   - un carrito inválido (otro número, sin ítems, sin firma, de marca vieja) no produce nada: 0 mensajes, 0 avisos, 0 reportes;
  *   - un mensaje normal de WhatsApp sigue pasando por el receptor y SÍ se reporta como entrante (la guardia nueva no lo toca).
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type J } from './lib/flujo';
 import {
-  AHORA, boton, botonesDe, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
+  AHORA, boton, botonesDe, CARPETA_VM, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
 } from './lib/venta-minima-mundo';
 
 const CARRITO = 'Carrito del catálogo';
@@ -1027,6 +1029,34 @@ describe('referencia sin cierres: «eso es todo» y «cámbiame el pedido» no s
     const t = turno(w, texto('eso es todo'));
     expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234');
     expect(t.mensajes[0]!.cuerpo).not.toContain('eso es todo');
+  });
+
+  // El filtro corre sobre texto del cliente y del modelo: no puede retroceder de forma exponencial (alerta js/redos de CodeQL en el PR #440). Se prueba la función REAL del nodo.
+  const esCierreOCambio = (): ((n: string) => boolean) => {
+    const fuente = readFileSync(join(CARPETA_VM, 'src/nodos/plan-del-turno.js'), 'utf8');
+    const i = fuente.indexOf('function esCierreOCambio(n) {');
+    const j = fuente.indexOf('\n}\n', i) + 3;
+    expect(i, 'esCierreOCambio no está en plan-del-turno.js').toBeGreaterThan(0);
+    return new Function(`${fuente.slice(i, j)}\nreturn esCierreOCambio;`)() as (n: string) => boolean;
+  };
+  it('rendimiento: 60 o 5000 repeticiones de «nomas » seguidas de «x» se resuelven en menos de 50 ms (sin retroceso exponencial)', () => {
+    const f = esCierreOCambio();
+    for (const veces of [60, 5000]) {
+      const entrada = 'nomas '.repeat(veces) + 'x';
+      const t0 = performance.now();
+      const r = f(entrada);
+      expect(performance.now() - t0, `${veces} repeticiones`).toBeLessThan(50);
+      expect(r).toBe(false);
+      const t1 = performance.now();
+      expect(f('quiero ' + 'por '.repeat(veces) + 'x')).toBe(false);
+      expect(performance.now() - t1, `${veces} preámbulos`).toBeLessThan(50);
+    }
+    expect(f('nomas '.repeat(60).trim())).toBe(true);
+  });
+  it('la función real: cierres y cambios sí; referencias válidas no', () => {
+    const f = esCierreOCambio();
+    for (const si of ['eso es todo', 'nada mas', 'listo', 'gracias', 'ya esta', 'eso seria todo', 'cambiame el pedido', 'quiero cambiar mi pedido', 'por favor cancela todo', 'modifica el pedido']) expect(f(si), si).toBe(true);
+    for (const no of ['a media cuadra del gas', 'dejale al portero', 'frente a la farmacia porton verde', 'calle 5 numero 12']) expect(f(no), no).toBe(false);
   });
 
   it.each(['A media cuadra del gas', 'Déjale al portero', 'frente a la farmacia, portón verde'])(
