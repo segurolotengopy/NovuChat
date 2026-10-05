@@ -1,59 +1,59 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../core/lib/firebase';
+import {
+  IDS_FLUJOS, PUENTE_DE_FLUJOS, documentoDeCobro, esFlujo as esFlujoDelRegistro, etiquetaDeCatalogo,
+  flujosDeFicha, modulosDeFicha, modulosDeFlujos, pestanasDe,
+} from '../../../../functions/src/registro';
+import type { FichaConCapacidades, IdFlujo, IdModulo, Pestana as PestanaDelRegistro } from '../../../../functions/src/registro';
 
 /**
  * =============================================================================
- * REGISTRO DE FLUJOS — la tabla que decide qué pestañas tiene cada negocio
+ * FACHADA DEL REGISTRO — la consola ya no tiene su propia lista de flujos
  * =============================================================================
  *
- * POLÍTICA (DISENO.md §4sexies, registrada el 2026-09-06). El producto tiene
- * tres capas: FLUJOS (lo que corre en n8n), CONSOLA (donde el negocio carga sus
- * datos) y USUARIOS (los negocios, con su gente). Cada flujo puede necesitar
- * parámetros PROPIOS —reservas necesita agendas por persona; pedidos necesita
- * costos de entrega y un QR— y esos parámetros son excluyentes entre sí. Lo que
- * es común a cualquier negocio (identidad, horarios, voz del asistente, usuarios,
- * contraseña, consumo) no depende del flujo.
+ * Hasta H2b-5 este archivo era LA tabla de flujos y pestañas del navegador (la
+ * política de capas, `DISENO.md` §4sexies, hoy `docs/arquitectura/registro.md`):
+ * una de las siete copias de la lista de flujos que `Analisis/41` §3.3 quería
+ * reducir a una. Ahora es una capa delgada que LEE `functions/src/registro.ts`,
+ * el archivo puro y sin `import` que importan también las Functions, las
+ * pruebas y los scripts (como la consola ya hace con `planes.ts`, `prepago.ts`
+ * y `central/ejes.ts`: la frontera de zonas deja que cualquiera importe el
+ * registro, que es la capa más baja). Agregar un flujo o una pestaña es
+ * tocar el registro; acá no cambia nada.
  *
- * Un negocio tiene UNO O MÁS flujos (`tenants/{id}.flujos`), y la consola le
- * habilita una pestaña por cada uno. Esta tabla es la única lista de pestañas
- * por flujo del navegador. Sus espejos son `tieneAgenda`/`tieneCobro` en
- * `firestore.rules` y `VERTICALES_CONOCIDOS` en `functions/src/core/prompt/prompt.ts`:
- * agregar un flujo es tocar los tres, y si se toca uno solo, se nota.
+ * LA UNIDAD ES EL MÓDULO. Las pantallas preguntan por módulos
+ * (`modulos.includes('agenda')`), no por el nombre del flujo: es lo que el
+ * registro llevará a `tenants.modulos` (Analisis/41 §5.2) y lo que ya hacen
+ * las reglas y el servidor. Mientras la ficha no traiga `modulos`, el registro
+ * los saca de sus `flujos` y, sin `flujos`, de `vertical`; para los seis
+ * comercios de hoy el resultado es el mismo de siempre (la prueba
+ * `pruebas/central/consola-registro.test.ts` lo demuestra sobre los ocho
+ * subconjuntos de flujos).
  *
- * ESTO ES COSMÉTICO. Quien autoriza es `firestore.rules`: un negocio de venta
- * no puede escribir funcionarios ni construyendo la petición a mano. Lo que
- * esta tabla evita es ofrecer una puerta que el servidor va a cerrar.
+ * UN CAMBIO DELIBERADO. Una ficha con `flujos` que NO es una lista (una cadena,
+ * `null`, un objeto) CIERRA: sin pestañas de flujo. Antes la consola caía a
+ * `vertical` y abría pestañas que las reglas y el registro cerraban (el
+ * seguimiento del #392). Con la clave `flujos` ausente, todo sigue como hoy.
+ *
+ * LO QUE DECIDE ESTA CAPA ES COSMÉTICO. Quien autoriza es `firestore.rules`: un
+ * negocio de venta no puede escribir funcionarios ni construyendo la petición a
+ * mano. Lo que esta capa evita es ofrecer una puerta que el servidor va a cerrar.
  */
-export type FlujoId = 'agendamiento' | 'venta' | 'onboarding';
+export type FlujoId = IdFlujo;
+export type { IdModulo };
 
+/** Una pestaña, con la forma que la consola usó siempre. */
 export interface Pestana {
   ruta: string;
   etiqueta: string;
   /**
-   * Quién la ve. Ausente significa SOLO ADMINISTRADOR, que era lo único que
-   * había hasta el 09/09: toda pestaña de flujo se daba por administrativa.
-   *
-   * «Pedidos» rompe esa regla y por eso el campo existe. La mira el cocinero o
-   * el repartidor —gente con rol `oper`— y es la única pantalla de la consola
-   * que se usa con las manos ocupadas. Dejarla solo para el admin obligaría al
-   * dueño a leerle los pedidos a su cocinero, que es exactamente el trabajo que
-   * este producto viene a sacar del medio.
+   * Quién la ve. Ausente significa SOLO ADMINISTRADOR. «Pedidos» es la
+   * excepción: la mira el cocinero o el repartidor, gente con rol `oper`, y es
+   * la única pantalla que se usa con las manos ocupadas.
    */
   roles?: ('admin' | 'oper')[];
-  /**
-   * La ve TAMBIÉN el propietario de NovuChat (sesión de Google), además de los
-   * roles de arriba. Es el caso de «Captación»: la configura el administrador
-   * del comercio, y el propietario entra a instalarla y a darle soporte.
-   *
-   * HASTA EL 15/09 ESTE CAMPO SE LLAMABA `soloPropietario` y excluía a la gente
-   * del comercio. La captación era el flujo propio de NovuChat, su documento
-   * era de NovuChat y la regla le negaba la lectura hasta al administrador del
-   * tenant `novuchat`. Ese día Andres decidió que es un TERCER FLUJO GENÉRICO,
-   * como reservas y pedidos: cualquier comercio que capte prospectos lo
-   * contrata y lo configura él. Ya no hay pestañas que el comercio no pueda
-   * ver en su propio negocio.
-   */
+  /** La ve TAMBIÉN el propietario de NovuChat (sesión de Google): «Captación». */
   tambienPropietario?: boolean;
 }
 
@@ -68,109 +68,109 @@ export interface DefinicionFlujo {
   documento: string;
 }
 
-export const FLUJOS: Record<FlujoId, DefinicionFlujo> = {
-  agendamiento: {
-    nombre: 'Reservas y citas',
-    // «COBROS» Y «CONFIGURACIÓN DE QR» TAMBIÉN SON DE RESERVAS desde el 17/09
-    // (DISENO.md §4duodecies): el flujo de agendamiento cobra una SEÑA por QR
-    // para retener el horario. Por la política de capas (§4sexies) el QR es
-    // del flujo que cobra, no del negocio: un comercio que solo reserva tiene
-    // su `cobroReal` en `/config/agendamiento`, junto con `senaImporte` y
-    // `senaMinutosRetencion`; uno que además vende lo tiene en `/config/venta`
-    // y el mismo QR sirve para las dos cosas (`registrarQrDeCobro` elige el
-    // documento). Las dos pantallas son las mismas que usa venta y se dibujan
-    // según el documento que corresponda; la cabecera (`App.tsx`) no repite
-    // una pestaña que dos flujos declaran con la misma ruta.
-    pestanas: [
-      { ruta: 'agenda', etiqueta: 'Agenda' },
-      { ruta: 'cobros', etiqueta: 'Cobros' },
-      { ruta: 'cobro', etiqueta: 'Configuración de QR' },
-    ],
-    catalogo: 'Servicios',
-    documento: 'agendamiento',
-  },
-  venta: {
-    nombre: 'Pedidos y cobro',
-    // «Inventario» es de VENTA y de nadie más: un salón no descuenta cortes
-    // de pelo de un depósito. Es la política de capas de DISENO.md §4sexies.
-    //
-    // «Pedidos» es la primera pestaña de flujo que también ve el OPERADOR; la
-    // compuerta de roles de la cabecera (`App.tsx`) lee `roles` por eso.
-    // PENDIENTE: dos datos que las pantallas ya esperan y todavía no llegan
-    // —el `media id` del comprobante y el pedido tomado por WhatsApp—. Ver
-    // `admin/DISENO.md` §4nonies.3.
-    pestanas: [
-      // TRES PANTALLAS Y NO UNA (`DISENO.md` §4nonies). «Pedidos y cobro» era un
-      // nombre que prometía dos cosas que no estaban: la pantalla configuraba el
-      // QR y no listaba ni un pedido ni un cobro.
-      //
-      // El orden es el de la jornada de un comercio: primero lo que hay que
-      // preparar, después la plata, y al final lo que se toca una vez y no se
-      // vuelve a mirar.
-      { ruta: 'pedidos', etiqueta: 'Pedidos', roles: ['admin', 'oper'] },
-      { ruta: 'cobros', etiqueta: 'Cobros' },
-      { ruta: 'inventario', etiqueta: 'Inventario' },
-      { ruta: 'cobro', etiqueta: 'Configuración de QR' },
-    ],
-    catalogo: 'Productos',
-    documento: 'venta',
-    // PENDIENTE, y solo acá: publicar este catálogo como catálogo NATIVO de
-    // WhatsApp, con carrito. Decidido el 2026-09-07 que es una capacidad de
-    // venta y no de agendamiento: allá el catálogo es referencial —de qué habla
-    // el asistente— y además Meta exige precio en cada producto, así que los
-    // servicios «a consultar» no se podrían listar. Ver DISENO.md §4sexies.3bis.
-  },
-  onboarding: {
-    // CAPTACIÓN DE PROSPECTOS: el asistente se presenta, distingue cliente
-    // nuevo de cliente actual, deduce el rubro del prospecto, le muestra los
-    // planes y cargos del comercio y lo pasa a un asesor.
-    //
-    // Nació el 13/09 como el flujo PROPIO de NovuChat (especificación de
-    // Silvana, en `CLIENTES/NOVUCHAT/`) y por eso su pestaña era solo del
-    // propietario. Desde el 15/09 es un flujo genérico —decisión de Andres—:
-    // la pestaña la ve y la edita el ADMINISTRADOR de cualquier comercio que lo
-    // tenga en `flujos`, igual que «Agenda» o «Cobros», y el propietario la
-    // sigue viendo para instalarla. El operador no: como las demás pestañas de
-    // configuración de un flujo, es trabajo del administrador.
-    nombre: 'Captación de clientes',
-    pestanas: [{ ruta: 'captacion', etiqueta: 'Captación', tambienPropietario: true }],
-    catalogo: 'Catálogo',
-    documento: 'onboarding',
-  },
-};
-
-export const esFlujo = (v: unknown): v is FlujoId =>
-  typeof v === 'string' && Object.prototype.hasOwnProperty.call(FLUJOS, v);
+/** La pestaña del registro en la forma de siempre: `roles` solo si no es la de administrador. */
+function aPestanaDeConsola(p: PestanaDelRegistro): Pestana {
+  const soloAdmin = p.roles.length === 1 && p.roles[0] === 'admin';
+  return {
+    ruta: p.ruta,
+    etiqueta: p.titulo,
+    ...(soloAdmin ? {} : { roles: [...p.roles] }),
+    ...(p.tambienPropietario === true ? { tambienPropietario: true } : {}),
+  };
+}
 
 /**
- * Los flujos de una ficha. La lista manda; una ficha anterior a la lista se
- * lee por `vertical`, igual que hacen las reglas. Así nada de lo ya cargado
- * cambia de comportamiento.
+ * Los flujos de hoy, DERIVADOS del puente del registro: el nombre, el
+ * catálogo y el documento salen de `PUENTE_DE_FLUJOS`; las pestañas, de los
+ * módulos del flujo. Sirve a la cartera (`Tablero`: el nombre de cada flujo) y
+ * a la suite del registro, que compara este objeto con la consola del 03/10.
  */
-export function flujosDe(ficha: { flujos?: unknown; vertical?: unknown } | undefined): FlujoId[] {
-  if (!ficha) return [];
-  if (Array.isArray(ficha.flujos)) return ficha.flujos.filter(esFlujo);
-  return esFlujo(ficha.vertical) ? [ficha.vertical] : [];
+export const FLUJOS = Object.fromEntries(IDS_FLUJOS.map((f) => [f, {
+  nombre: PUENTE_DE_FLUJOS[f].nombre,
+  pestanas: pestanasDe(modulosDeFlujos([f])).map(aPestanaDeConsola),
+  catalogo: PUENTE_DE_FLUJOS[f].catalogo,
+  documento: PUENTE_DE_FLUJOS[f].documento,
+}])) as Record<FlujoId, DefinicionFlujo>;
+
+export const esFlujo = (v: unknown): v is FlujoId => esFlujoDelRegistro(v);
+
+/** Los flujos de una ficha. Falla cerrado con un `flujos` que no es lista (ver la cabecera). */
+export function flujosDe(ficha: FichaConCapacidades | null | undefined): FlujoId[] {
+  return flujosDeFicha(ficha);
+}
+
+/** Los módulos de una ficha: manda `modulos`; si no, los de sus flujos (el registro lo decide). */
+export function modulosDe(ficha: FichaConCapacidades | null | undefined): IdModulo[] {
+  return modulosDeFicha(ficha);
 }
 
 /** Etiqueta de la pestaña de catálogo según los flujos: «Servicios», «Productos» o «Catálogo». */
-export function etiquetaCatalogo(flujos: FlujoId[]): string {
-  const nombres = new Set(flujos.map((f) => FLUJOS[f].catalogo));
-  return nombres.size === 1 ? [...nombres][0] as string : 'Catálogo';
+export function etiquetaCatalogo(flujos: readonly FlujoId[]): string {
+  return etiquetaDeCatalogo(modulosDeFlujos(flujos));
+}
+
+/** Lo mismo, desde los módulos de la ficha (lo que usan las pantallas). */
+export function etiquetaDeCatalogoDe(modulos: readonly IdModulo[]): string {
+  return etiquetaDeCatalogo(modulos);
+}
+
+export interface Visitante {
+  /** Rol de la persona en ESTE negocio (`rolEn`), o `null` si no tiene ninguno. */
+  rol: string | null;
+  /** Sesión de propietario de NovuChat. */
+  propietario: boolean;
 }
 
 /**
- * Flujos del negocio, en vivo. `null` mientras carga: la cabecera no pinta
- * pestañas de flujo hasta saber cuáles son, para no mostrar una que después
- * desaparece.
+ * Las pestañas de módulo que ve `visitante` en el menú, en el orden del
+ * registro (`orden`) y UNA por ruta. Las comunes (Catálogo, Campañas) no están
+ * acá: son enlaces fijos de `App.tsx`.
+ *
+ * LA COMPUERTA DE ROLES NO DA POR SENTADO QUE PESTAÑA DE MÓDULO = ADMINISTRADOR.
+ * Lo era hasta el 09/09 y «Pedidos» rompe la regla (la mira el cocinero). Cada
+ * pestaña declara sus roles en el registro; la de «Captación» la ve además el
+ * propietario, que la instala y le da soporte. Es cosmético, como todo el menú:
+ * lo autoriza `firestore.rules`.
  */
-export function useFlujos(tenantId: string | undefined): FlujoId[] | null {
-  const [flujos, setFlujos] = useState<FlujoId[] | null>(null);
+export function pestanasVisibles(modulos: readonly IdModulo[], visitante: Visitante): { ruta: string; titulo: string }[] {
+  return pestanasDe(modulos)
+    .filter((p) => (p.tambienPropietario === true && visitante.propietario)
+      || (visitante.rol !== null && (p.roles as readonly string[]).includes(visitante.rol)))
+    // Una pestaña por ruta aunque dos módulos la declaren; el registro garantiza que no pasa.
+    .filter((p, i, todas) => todas.findIndex((q) => q.ruta === p.ruta) === i)
+    .map((p) => ({ ruta: p.ruta, titulo: p.titulo }));
+}
+
+/**
+ * El documento de `/config` donde vive el QR de este negocio: `venta` gana,
+ * después `agendamiento`; sin ninguno de los dos (o sin Cobros), `null`.
+ */
+export { documentoDeCobro };
+
+/**
+ * La ficha del negocio, en vivo. `null` mientras carga: la cabecera no pinta
+ * pestañas de flujo hasta saber cuáles son, para no mostrar una que después
+ * desaparece. Si la lectura falla, una ficha SIN módulos ni flujos (nada abre).
+ */
+function useFicha(tenantId: string | undefined): FichaConCapacidades | null {
+  const [ficha, setFicha] = useState<FichaConCapacidades | null>(null);
   useEffect(() => {
-    if (!tenantId) { setFlujos(null); return; }
+    if (!tenantId) { setFicha(null); return; }
     return onSnapshot(doc(db, 'tenants', tenantId),
-      (d) => setFlujos(flujosDe(d.data())),
-      () => setFlujos([]));
+      (d) => setFicha(d.data() ?? {}),
+      () => setFicha({ modulos: [], flujos: [] }));
   }, [tenantId]);
-  return flujos;
+  return ficha;
+}
+
+/** Los módulos del negocio, en vivo. `null` mientras carga. */
+export function useModulos(tenantId: string | undefined): IdModulo[] | null {
+  const ficha = useFicha(tenantId);
+  return ficha === null ? null : modulosDeFicha(ficha);
+}
+
+/** Los flujos del negocio, en vivo. `null` mientras carga. */
+export function useFlujos(tenantId: string | undefined): FlujoId[] | null {
+  const ficha = useFicha(tenantId);
+  return ficha === null ? null : flujosDeFicha(ficha);
 }

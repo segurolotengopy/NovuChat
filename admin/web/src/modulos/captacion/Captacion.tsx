@@ -8,7 +8,7 @@ import {
   ACEPTA, EXTENSIONES, esDelDeposito, mensajeDeFallaStorage, nombreParaProspecto,
   rutaArchivoPlanes, validarArchivoPlanes, type ExtensionPlanes,
 } from '../../central/lib/archivoPlanes';
-import { useFlujos } from '../../central/lib/flujos';
+import { useModulos } from '../../central/lib/flujos';
 import { idDeNombre } from '../../central/lib/csv';
 import { CampoMonto } from '../../central/componentes/CampoMonto';
 import { EditorLista } from '../../central/componentes/EditorLista';
@@ -266,7 +266,7 @@ function problemaDe(d: Datos): string | null {
 
 export function Captacion() {
   const { tenantId = '' } = useParams();
-  const flujos = useFlujos(tenantId);
+  const modulos = useModulos(tenantId);
   const [datos, setDatos] = useState<Datos | null>(null);
   /** El documento no tiene mensaje propio: se muestra el de ejemplo. */
   const [mensajeDeEjemplo, setMensajeDeEjemplo] = useState(false);
@@ -299,7 +299,7 @@ export function Captacion() {
         + 'de captación.'));
   }, [tenantId]);
 
-  if (flujos !== null && !flujos.includes('onboarding')) {
+  if (modulos !== null && !modulos.includes('captacion')) {
     return (
       <section>
         <h2>Captación de clientes</h2>
