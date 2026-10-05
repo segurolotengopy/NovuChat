@@ -45,7 +45,14 @@ describe('A. comparar(ficha): las fichas esperadas dan cero diferencias', () => 
     ['Demo B', { vertical: 'venta', flujos: ['venta'] }],
     ["Q'Taco", { vertical: 'venta', flujos: ['venta'] }],
     ['NovuChat', { vertical: 'onboarding', flujos: ['onboarding'] }],
-    ['solo vertical (ficha anterior a la lista)', { vertical: 'venta' }],
+    ['solo vertical (ficha anterior a la lista): venta', { vertical: 'venta' }],
+    ['solo vertical (ficha anterior a la lista): onboarding', { vertical: 'onboarding' }],
+    ['solo vertical (ficha anterior a la lista): agendamiento', { vertical: 'agendamiento' }],
+    ["Q'Taco con la ficha exacta de 9 campos (valores sintéticos)", {
+      creadoEn: '2026-01-01T00:00:00Z', creadoPor: 'uid-sintetico', estado: 'activo', flujos: ['venta'],
+      nombre: 'Comercio de venta de prueba', plan: 'impulso', vertical: 'venta',
+      waPhoneNumberId: '1000000001', waWabaId: '1000000002',
+    }],
   ];
   it.each(esperadas)('%s: cero diferencias', (_n, ficha) => {
     expect(comparar(ficha).diferencias).toEqual([]);
@@ -59,24 +66,47 @@ describe('A. comparar(ficha): las fichas esperadas dan cero diferencias', () => 
 
   it('un `modulos` que ya existe en la ficha y difiere de los flujos se informa', () => {
     const r = comparar({ vertical: 'venta', flujos: ['venta'], modulos: ['productos', 'campanas'] });
-    expect(r.diferencias.length).toBeGreaterThan(0);
+    // Lista EXACTA: borrar el chequeo 1 o el 2 hace fallar esta prueba.
+    expect(r.diferencias.map((d) => d.chequeo)).toEqual([
+      CHEQUEOS[0], CHEQUEOS[1], CHEQUEOS[2], CHEQUEOS[3], CHEQUEOS[5], CHEQUEOS[7]]);
     expect(notas({ flujos: ['venta'], modulos: [] }).conModulosYa).toBe(true);
   });
 
   it('flujos null: el registro cierra y los lectores de hoy caen a vertical → diferencias (documento de cobro, pestañas, etiqueta)', () => {
     const r = comparar({ flujos: null, vertical: 'agendamiento' });
     const nombres = r.diferencias.map((d) => d.chequeo);
-    expect(nombres).toContain(CHEQUEOS[2]);
-    expect(nombres).toContain(CHEQUEOS[5]);
-    expect(nombres).toContain(CHEQUEOS[7]);
+    expect(nombres).toEqual([CHEQUEOS[2], CHEQUEOS[5], CHEQUEOS[7]]);
     expect(notas({ flujos: null }).flujosNoLista).toBe(true);
+    // Una ficha sin `flujos` (solo vertical) NO es «flujos que no es lista».
+    expect(notas({ vertical: 'venta' }).flujosNoLista).toBe(false);
   });
 
-  it('dos flujos: el orden de las pestañas del registro no es el de la lista de flujos → diferencia de orden', () => {
-    const r = comparar({ flujos: ['agendamiento', 'venta'], vertical: 'agendamiento' });
-    expect(r.diferencias.map((d) => d.chequeo)).toEqual([CHEQUEOS[6]]);
-    expect(notas({ flujos: ['agendamiento', 'venta'] }).variosFlujos).toBe(true);
+  // El orden de pestañas del registro es el declarado (`orden`), no el de la lista de `flujos` de la ficha:
+  // con 2 o más flujos la cabecera de la consola CAMBIA de orden (visible). Lo decide H2b-5 (consola); el
+  // seco lo informa como diferencia de orden y nunca de conjunto.
+  it.each([
+    [['agendamiento', 'venta'], [6]],
+    [['venta', 'agendamiento'], [6]],
+    [['agendamiento', 'onboarding'], []],
+    [['onboarding', 'agendamiento'], [6]],
+    [['venta', 'onboarding'], []],
+    [['onboarding', 'venta'], [6]],
+    [['agendamiento', 'venta', 'onboarding'], [6]],
+    [['onboarding', 'venta', 'agendamiento'], [6]],
+  ] as [string[], number[]][])('flujos %j: diferencias solo de orden de pestañas', (flujos, indices) => {
+    const r = comparar({ flujos, vertical: flujos[0] });
+    expect(r.diferencias.map((d) => d.chequeo)).toEqual(indices.map((i) => CHEQUEOS[i]));
+    expect(notas({ flujos }).variosFlujos).toBe(true);
+  });
+
+  it('flujos repetidos no cuentan como 2 flujos', () => {
     expect(notas({ flujos: ['venta', 'venta'] }).variosFlujos).toBe(false);
+  });
+
+  it('un `flujos` mapa (`{venta: true}`) abre las reglas por sus claves: se detecta por los chequeos 1, 2, 3, 6a y 7', () => {
+    const r = comparar({ flujos: { venta: true }, vertical: 'agendamiento' });
+    expect(r.diferencias.map((d) => d.chequeo)).toEqual([CHEQUEOS[0], CHEQUEOS[1], CHEQUEOS[2], CHEQUEOS[5], CHEQUEOS[7]]);
+    expect(notas({ flujos: { venta: true } }).flujosNoLista).toBe(true);
   });
 
   it('flujos desconocidos, listas vacías y repetidos', () => {
@@ -85,7 +115,7 @@ describe('A. comparar(ficha): las fichas esperadas dan cero diferencias', () => 
     expect(comparar({ flujos: ['venta', 'venta'] }).diferencias).toEqual([]);
   });
 
-  it("un `flujos` que no es lista con vertical de venta cambia la venta del catálogo web (el caso de Q'Taco)", () => {
+  it("(lo que le pasaría a un comercio de venta con `flujos` mal tipado) cambia la venta del catálogo web; NO es el caso de Q'Taco, cuya ficha trae una lista", () => {
     const r = comparar({ flujos: 'venta', vertical: 'venta' });
     expect(r.diferencias.map((d) => d.chequeo)).toContain(CHEQUEOS[3]);
   });

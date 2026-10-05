@@ -55,10 +55,16 @@ import {
 // el código que está hoy en producción.
 // ===========================================================================
 
-/** `flujosTenant` de `firestore.rules`: `get('flujos', [vertical])`. Lista, o null (la regla falla y niega). */
+/**
+ * `flujosTenant` de `firestore.rules`: `get('flujos', [vertical])` y `flujo in …`. Una lista se
+ * recorre; un mapa (`{venta: true}`) abre por sus CLAVES (`'venta' in mapa`); cualquier otra cosa
+ * (null, cadena, número) hace fallar la regla y niega, y aquí da null.
+ */
 function flujosDeReglas(ficha) {
   const lista = 'flujos' in ficha ? ficha.flujos : [ficha.vertical ?? ''];
-  return Array.isArray(lista) ? lista : null;
+  if (Array.isArray(lista)) return lista;
+  if (lista !== null && typeof lista === 'object') return Object.keys(lista);
+  return null;
 }
 const flujoEnReglas = (ficha, flujo) => flujosDeReglas(ficha)?.includes(flujo) === true;
 
@@ -124,7 +130,12 @@ function etiquetaAntes(ficha) {
   return nombres.length === 1 ? nombres[0] : 'Catálogo';
 }
 
-/** Los módulos que el puente da a los flujos que leen las reglas, más los comunes, en orden de `IDS_MODULOS`. */
+/**
+ * Los módulos que el puente da a los flujos que leen las reglas, más los comunes, en orden de
+ * `IDS_MODULOS`. OJO: sale del MISMO `PUENTE_DE_FLUJOS` que usa el registro, así que el chequeo 1
+ * no es independiente (solo prueba que `modulos` guardada y los flujos leídos como las reglas
+ * coinciden). Lo independiente, copiado de cada lector, son los chequeos 2 a 7.
+ */
 function modulosAntes(ficha) {
   const activos = [...MODULOS_COMUNES_HOY];
   for (const f of flujosDeReglas(ficha) ?? []) {
