@@ -67,6 +67,7 @@ function vmNodo(n) { try { const x = $(n); return x && x.isExecuted ? x : null; 
 function vmPrimero(n) { const x = vmNodo(n); if (!x) return null; const i = x.first(); return i && i.json ? i.json : null; }
 function vmTodos(n) { const x = vmNodo(n); if (!x) return []; return x.all().map((i) => (i && i.json) || {}); }
 function vmCfg() { return vmPrimero('Config del negocio') || {}; }
+function vmEnlaceDeMapa(v) { if (typeof v !== 'string') return ''; const t = v.trim(); return t.length <= 200 && /^https:\\/\\/(maps\\.app\\.goo\\.gl|goo\\.gl\\/maps|www\\.google\\.com\\/maps|google\\.com\\/maps|maps\\.google\\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/.test(t) ? t : ''; }
 function vmNorm(t) { return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim(); }
 function vmDigitos(v) { return String(v === undefined || v === null ? '' : v).replace(/\\D/g, ''); }
 function vmRecorte(t, max) { const s = String(t === undefined || t === null ? '' : t); return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s; }
@@ -1364,6 +1365,29 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     // Sin la marca `catalogo`, un enlace con otra URL sigue siendo el chat del local (la regla de siempre).
     const chat = mensajes({ mensajes: [enlace(GENERICO, { url: URL_CARTA })] }).items[0]!;
     expect(chat['payload'].interactive.action.parameters.url).toMatch(new RegExp(`^https://wa\\.me/${REC}`));
+  });
+
+  it('«Ver ubicación»: abre el mapa de la configuración (no el chat); con otra URL, o sin mapa en la configuración, el MISMO texto sin botón', () => {
+    const MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
+    const CONF = '¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Ejemplo 123.';
+    const mapa = (extra: J = {}): J => ({ tipo: 'enlace', mapa: true, cuerpo: CONF, botones: [{ id: '', title: 'Ver ubicación' }], url: MAPA, ...extra });
+    const SALIO = { armados: [armado('reserva')], enviados: [OK()] };
+    const ok = mensajes({ mensajes: [mapa()] }, { ...SALIO, cfg: { direccionMaps: MAPA } }).items[0]!;
+    expect(ok['payload'].interactive.type).toBe('cta_url');
+    expect(ok['payload'].interactive.action.parameters).toEqual({ display_text: 'Ver ubicación', url: MAPA });
+    expect(ok['texto']).toBe(CONF); // sin la frase de «menú» y sin chat
+    expect(JSON.stringify(ok['payload'])).not.toContain('wa.me');
+    // Negativos: otra URL que la de la configuración, una inválida, o la configuración sin mapa → texto, sin botón (no la derivación).
+    for (const [url, cfgMapa] of [['https://www.google.com/maps/otro', MAPA], ['https://evil.example/maps/x', 'https://evil.example/maps/x'], [MAPA, ''], ['', MAPA]] as const) {
+      const i = mensajes({ mensajes: [mapa({ url })] }, { ...SALIO, cfg: { direccionMaps: cfgMapa } }).items[0]!;
+      expect(i['payload'].type, url).toBe('text');
+      expect(i['texto'], url).toBe(CONF);
+      expect(JSON.stringify(i['payload']), url).not.toMatch(/cta_url|wa\.me/);
+    }
+    // Sin aviso salido, la frase «Anotamos tu reserva» (con o sin mapa) se reemplaza: AM_PASE.
+    const sin = mensajes({ mensajes: [mapa()] }, { armados: [SIN_AVISO], cfg: { direccionMaps: MAPA } }).items[0]!;
+    expect(cuerpoDe(sin)).toBe(GENERICO);
+    expect(JSON.stringify(sin['payload'])).not.toContain('google.com');
   });
 
   it('`nivelEmojis`: «pocos» deja el primer emoji de cada mensaje, «ninguno» los quita todos, «muchos» no toca nada', () => {

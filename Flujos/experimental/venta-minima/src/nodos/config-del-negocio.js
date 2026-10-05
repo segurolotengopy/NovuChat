@@ -203,6 +203,9 @@ if (codigo === 409) {
     // El enlace vigente del catalogo web de ESTA conversacion (`catalogoWeb.enlace`, solo si el cuerpo pidio `catalogoCompleto`).
     // Aca solo se copia como texto: `Plan del turno` lo valida (https, host con dominio) antes de ofrecerlo; sin enlace, carta en texto.
     catalogoWebEnlace: util(objeto(cuerpo.catalogoWeb).enlace) || '',
+    // El enlace de Google Maps del negocio (`datosDelNegocio.direccionMaps`): solo si pasa la MISMA regla que el servidor (segunda barrera).
+    // Sin enlace válido, '' y la confirmación de la reserva sale sin el botón «Ver ubicación».
+    direccionMaps: vmEnlaceDeMapa(dn.direccionMaps),
     campanas: campanas(cuerpo.campanas),
     // Solo se apagan con `false`: la falta del dato es «sí», igual que en el servidor (`!== false`).
     aceptaDelivery: venta.aceptaDelivery !== false,

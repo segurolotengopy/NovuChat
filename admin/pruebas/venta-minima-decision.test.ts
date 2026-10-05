@@ -48,6 +48,7 @@ function vmPrimero(n){ const x = vmNodo(n); if (!x) return null; const i = x.fir
 function vmCfg(){ return vmPrimero('Config del negocio') || {}; }
 function vmNorm(t){ return String(t == null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
 function vmLinea(t, max){ const s = String(t == null ? '' : t).replace(/[\u0000-\u001f\u007f<>&]+/g, ' ').replace(/\s+/g, ' ').trim(); return s.length > max ? s.slice(0, max).trimEnd() : s; }
+function vmEnlaceDeMapa(v){ if (typeof v !== 'string') return ''; const t = v.trim(); return t.length <= 200 && /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/.test(t) ? t : ''; }
 function vmRecorte(t, max){ const s = String(t == null ? '' : t); return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s; }
 function vmTextoDeGemini(j){ if (!j || j.error) return ''; const c = j.candidates && j.candidates[0]; return c && c.content && c.content.parts ? c.content.parts.map(function(p){ return p.text || ''; }).join('\n') : ''; }
 function vmJsonDeGemini(j){ const t = vmTextoDeGemini(j).trim(); if (!t) return null; try { const o = JSON.parse(t); return o && typeof o === 'object' && !Array.isArray(o) ? o : null; } catch (e) { return null; } }
@@ -1117,6 +1118,34 @@ describe('Plan del turno: la reserva', () => {
     expect(p['anotarReserva']).toBe(true);
     expect(estadoDe(m)['paso']).toBe('menu');
     expect(estadoDe(m)['reserva']).toBeNull();
+  });
+
+  it('«Ver ubicación»: con un enlace de Google Maps válido, la confirmación lleva ese botón (CTA), sin «Escribir al local» ni chat', () => {
+    const URL_MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
+    const m = crearMundo({ direccionMaps: URL_MAPA });
+    turno(m, { boton: 'm|reserva' });
+    turno(m, { texto: 'mesa', extraccion: datos() });
+    const s = registrar(turno(m, { boton: 'r|enviar' }));
+    const c = s.p!['condicionados']['siSalio'][0];
+    expect(c).toMatchObject({ tipo: 'enlace', mapa: true, url: URL_MAPA });
+    expect(c['botones'].map((b: J) => b['title'])).toEqual(['Ver ubicación']);
+    expect(c['cuerpo']).toMatch(/^¡Listo, Ana! Anotamos tu reserva para /);
+    expect(JSON.stringify(s.p!['condicionados']['siSalio'])).not.toMatch(/wa\.me|Escribir al local/);
+    // «Escribir al local» solo existe en el texto honesto de «no salió».
+    expect(s.p!['condicionados']['siNoSalio'][0]['botones'][0]['title']).toBe('Escribir al local');
+  });
+
+  it('«Ver ubicación»: SIN enlace válido no hay botón (ausente, otro dominio, http, con espacios, de más de 200 caracteres)', () => {
+    const malos = [undefined, '', 'https://evil.example/maps/x', 'http://www.google.com/maps/x', 'https://www.google.com/maps/x y',
+      'https://www.google.com.evil.example/maps/x', 'https://wa.me/59170000000', 'https://www.google.com/maps/' + 'a'.repeat(200), 42];
+    for (const direccionMaps of malos) {
+      const m = crearMundo({ direccionMaps });
+      turno(m, { boton: 'm|reserva' });
+      turno(m, { texto: 'mesa', extraccion: datos() });
+      const c = turno(m, { boton: 'r|enviar' }).p!['condicionados']['siSalio'][0];
+      expect(c['tipo'], String(direccionMaps)).toBe('texto');
+      expect(c['cuerpo']).toMatch(/^¡Listo, Ana! Anotamos tu reserva para /);
+    }
   });
 
   it('«Corregir» vuelve a los datos (conservando lo dicho); un botón de envío viejo no avisa', () => {

@@ -20,7 +20,7 @@
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
 //   reserva: rsValidarExtraccion, rsFusionar, rsValidar, rsPreguntaFaltantes, rsResumen,
-//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope.   promos: prFicha, prTexto.
+//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto.
 //   cobro: cbCaption, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
@@ -1203,8 +1203,11 @@ function enviarReserva() {
   // Aviso al local SALIÓ: «Anotamos tu reserva» (nunca «reservamos tu…»: las tres redes lo rechazan; y `AM_PASE` lo atrapa si el aviso NO
   // salió). Sin promesa de contacto. Aviso NO salió: texto honesto con «Escribir al local» (empieza con «No pude»: `AM_NEGADO`).
   const dir = vmLinea(cfg.direccion, 200).replace(/[.\s]+$/, '');
+  const confirmacion = '¡Listo, ' + nombre + '! Anotamos tu reserva para ' + rsFraseDeConfirmacion(reserva) + '.' + (dir ? ' Te esperamos en ' + dir + '.' : ' Te esperamos.');
+  // «Ver ubicación» (Google Maps) solo con un enlace VÁLIDO (`vmEnlaceDeMapa`, la regla del servidor); sin él, la misma confirmación en texto, sin botón.
+  const mapa = vmEnlaceDeMapa(cfg.direccionMaps);
   condicionados = {
-    siSalio: [texto('¡Listo, ' + nombre + '! Anotamos tu reserva para ' + rsFraseDeConfirmacion(reserva) + '.' + (dir ? ' Te esperamos en ' + dir + '.' : ' Te esperamos.'))],
+    siSalio: [mapa ? { tipo: 'enlace', mapa: true, cuerpo: confirmacion, botones: [{ id: '', title: 'Ver ubicación' }], url: mapa } : texto(confirmacion)],
     siNoSalio: [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.')],
   };
   cierre = { tipo: 'registro', detalle: vmRecorte('Solicitud de reserva #' + codigo + ': ' + rsLineaCompacta(reserva, 'completo'), 300), referencia: clave.id };

@@ -431,6 +431,35 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
     expect(s.armados.map((a) => a['para']).sort()).toEqual([AV1, AV2]);
   });
 
+  it('«Ver ubicación»: con direccionMaps válido en el panel y el aviso salido, la confirmación sale como botón de enlace al mapa (sin «Escribir al local»)', () => {
+    const MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
+    const s = reservar(crear({ panel: panel({ datosDelNegocio: { nombreNegocio: 'Casa de Tacos', direccion: 'Av. Ejemplo 123', direccionMaps: MAPA } }) }));
+    const msg = clientes(s).find((j) => cuerpoDe(j).includes('Anotamos tu reserva'))!;
+    expect(msg['payload'].interactive.type).toBe('cta_url');
+    expect(msg['payload'].interactive.action.parameters).toEqual({ display_text: 'Ver ubicación', url: MAPA });
+    expect(cuerpoDe(msg)).toContain('Te esperamos en Av. Ejemplo 123.');
+    expect(JSON.stringify(clientes(s))).not.toMatch(/wa\.me|Escribir al local/);
+  });
+
+  it('«Ver ubicación»: sin enlace válido en el panel (falta o de otro dominio) la confirmación sale en texto, sin botón ni «Escribir al local»', () => {
+    for (const direccionMaps of [undefined, 'https://evil.example/maps/x', 'http://www.google.com/maps/x']) {
+      const s = reservar(crear({ panel: panel({ datosDelNegocio: { nombreNegocio: 'Casa de Tacos', direccion: 'Av. Ejemplo 123', ...(direccionMaps ? { direccionMaps } : {}) } }) }));
+      const msg = clientes(s).find((j) => cuerpoDe(j).includes('Anotamos tu reserva'))!;
+      expect(msg['payload'].type, String(direccionMaps)).toBe('text');
+      expect(JSON.stringify(clientes(s)), String(direccionMaps)).not.toMatch(/cta_url|wa\.me|Escribir al local|google\.com/);
+    }
+  });
+
+  it('«Ver ubicación»: si el aviso NO salió, no hay «Anotamos tu reserva» ni mapa: rige el texto honesto con «Escribir al local»', () => {
+    const MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
+    const s = reservar(crear({ base: SIN, panel: panel({ datosDelNegocio: { nombreNegocio: 'Casa de Tacos', direccion: 'Av. Ejemplo 123', direccionMaps: MAPA } }) }));
+    const t = cuerpos(s).join('\n');
+    expect(t).toContain('No pude hacer llegar tu reserva a nuestro equipo');
+    expect(t).not.toMatch(/Anotamos tu reserva|Te esperamos/);
+    expect(JSON.stringify(clientes(s))).not.toContain('google.com');
+    expect(JSON.stringify(clientes(s))).toContain('Escribir al local');
+  });
+
   it('reserva SIN plantilla y ventana cerrada: ningún ítem de plantilla, y el cliente NO lee que llegó', () => {
     const s = reservar(crear({ base: SIN }));
     expect(s.p['aviso'].tipo).toBe('reserva');

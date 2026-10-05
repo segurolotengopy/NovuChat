@@ -262,6 +262,18 @@ function amArmarUno(m) {
       payload: amCta(cuerpoCta, titulo, url), texto: cuerpoCta, respaldo: vmRecorte(cuerpoCta + '\n\nVer la carta: ' + url, 4000), tipoReporte: 'interactive',
     }, extra);
   }
+  // El mapa del local («Ver ubicación»): el botón abre ESA dirección de Google Maps, nunca el chat. Vale solo si la URL pasa la regla del
+  // servidor (`vmEnlaceDeMapa`) Y es la de la configuración; si no, el MISMO texto sin botón (no se promete un mapa que no se puede abrir).
+  if (tipo === 'enlace' && m.mapa === true) {
+    const url = vmEnlaceDeMapa(m.url);
+    if (!url || url !== vmEnlaceDeMapa(AM_CFG.direccionMaps)) {
+      AM_errores.push('mapa_sin_enlace_valido');
+      return Object.assign({ payload: amTexto(cuerpo), texto: cuerpo, respaldo: cuerpo, tipoReporte: 'text' }, extra);
+    }
+    return Object.assign({
+      payload: amCta(cuerpo, 'Ver ubicación', url), texto: cuerpo, respaldo: vmRecorte(cuerpo + '\n\nVer ubicación: ' + url, 4000), tipoReporte: 'interactive',
+    }, extra);
+  }
   if (tipo === 'enlace') {
     const boton = m.boton || (Array.isArray(m.botones) && m.botones[0] ? (m.botones[0].title || m.botones[0].titulo) : '');
     return Object.assign(amEnlace(cuerpo, boton, m.url, 'interactive', m.sinMenu === true), extra);
