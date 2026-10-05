@@ -2,10 +2,12 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { REGION } from '../../core/region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
-import { ETAPAS_PENDIENTES, milisegundosDe, type Solicitud } from '../../ingesta.js';
+import { ETAPAS_PENDIENTES, type Solicitud } from './solicitud.js';
+import { milisegundosDe } from '../../core/turno/tiempo.js';
 import { registrar } from '../../core/turno/bitacora.js';
 import { documentoDeVertical } from '../../core/prompt/prompt.js';
 import { periodoDe } from '../../central/cuenta/planes.js';
+import { limiteDe } from '../cobros/cobroVenta.js';
 
 /**
  * =============================================================================
@@ -109,6 +111,9 @@ export interface ConversacionParaSeguimiento {
  *   · ya salió un seguimiento para esta solicitud (`seguimientos` distinto de 0,
  *     y también si el campo viniera con basura: ante la duda, no se escribe);
  *   · `noContactar === true`;
+ *   · la solicitud está en `qr_enviado`, es de COBRO de regla 2 y su límite
+ *     (`venceEn` o la prórroga, el mayor) ya pasó por reloj, aunque la etapa
+ *     siga escrita así (los restos de regla 2 en `horarios` no cuentan);
  *   · el teléfono está en `operador` o `bloqueado`;
  *   · no se sabe cuándo fue el último mensaje;
  *   · el último mensaje cae fuera de las dos ventanas.
@@ -126,6 +131,16 @@ export function esPendienteDeSeguimiento(
     ? (conversacion.solicitud as Partial<Solicitud>) : null;
   if (!s) return null;
   if (typeof s.etapa !== 'string' || !ETAPAS_PENDIENTES.has(s.etapa)) return null;
+  // Regla 2 de Cobros (`cobros.md` §4duodecies.6, obligación d): el QR vence por
+  // reloj aunque nadie lo haya materializado (vencimiento perezoso) y la etapa
+  // siga escrita como `qr_enviado`. Pedirle el pago a quien ya no puede pagar
+  // es un recordatorio inválido. Sin `reglaCobro` (regla 1) esto no se activa.
+  // Solo en `qr_enviado`: una solicitud `horarios` posterior puede traer restos de
+  // regla 2 (la ingesta escribe `solicitud` con merge) y no debe callarse.
+  if (s.etapa === 'qr_enviado') {
+    const lim = limiteDe(s as Record<string, unknown>); // null sin regla 2
+    if (lim !== null && lim <= ahoraMs) return null;
+  }
   // El cero tiene que estar escrito: un campo ausente o con otro tipo no es
   // «todavía ninguno», es una solicitud que no entiendo, y no se le escribe.
   if (s.seguimientos !== 0) return null;

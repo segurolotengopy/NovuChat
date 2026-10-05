@@ -26,7 +26,7 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [
   'rsCuerpoExtraccion', 'rsValidarExtraccion', 'rsFusionar', 'rsValidar', 'rsPreguntaFaltantes',
-  'rsResumen', 'rsLineaCompacta', 'rsDentroDelTope', 'rsAnotar', 'rsHoraSuelta', 'rsReclamo',
+  'rsResumen', 'rsLineaCompacta', 'rsFraseDeConfirmacion', 'rsDentroDelTope', 'rsAnotar', 'rsHoraSuelta', 'rsReclamo',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -193,7 +193,7 @@ describe('rsValidar: la solicitud completa', () => {
     expect(v.reserva).toEqual({ ...BASE, grupoGrande: false });
     const resumen = L.rsResumen(v.reserva);
     expect(resumen).toBe([
-      'Tu solicitud de reserva:', '• viernes 9 de octubre a las 20:00', '• 4 personas, salón', '• A nombre de Ana Pérez',
+      'Tu reserva:', '• viernes 9 de octubre a las 20:00', '• 4 personas, salón', '• A nombre de Ana Pérez',
       '• Celebración: cumpleaños', '• Pedido especial: silla de bebé',
     ].join('\n'));
   });
@@ -332,7 +332,8 @@ describe('rsValidar: la solicitud completa', () => {
     });
     it('el resumen y la línea del aviso llevan la nota; la reserva normal no', () => {
       const g = validar({ personas: 15 });
-      expect(L.rsResumen(g.reserva)).toContain('grupo grande');
+      // El grupo grande YA NO se anota en el resumen al cliente (se quitó la línea): lo marca solo el aviso al local.
+      expect(L.rsResumen(g.reserva)).not.toMatch(/grupo grande|revisa aparte/i);
       expect(L.rsLineaCompacta(g.reserva, 'completo')).toContain('(grupo grande)');
       const n = validar({ personas: 4 });
       expect(L.rsResumen(n.reserva)).not.toContain('grupo grande');
@@ -571,14 +572,14 @@ describe('responseSchema de reserva.js: ningún enum vacío ni con cadena vacía
 describe('rsPreguntaFaltantes', () => {
   it('con lo esencial vacío es el pedido de datos completo, con las zonas', () => {
     expect(L.rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: ['salón', 'terraza'] })).toBe(
-      '¡Con gusto! 🙌 Para tu solicitud de reserva cuéntame en un solo mensaje: cuántas personas, qué día y a qué hora, si prefieres salón o terraza y a nombre de quién (nombre y apellido). Si celebran algo o necesitan algo especial, cuéntamelo también.',
+      '¡Con gusto! 🙌 Para tu reserva cuéntame en un solo mensaje: cuántas personas, qué día y a qué hora, si prefieres salón o terraza y a nombre de quién (nombre y apellido). Si celebran algo o necesitan algo especial, cuéntamelo también.',
     );
   });
   it('abre con «¡Con gusto!» y un emoji, y con nivelEmojis «ninguno» va sin emoji; la pregunta parcial no lleva ninguno', () => {
     const t = L.rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: 'salón', nivelEmojis: 'pocos' });
-    expect(t.startsWith('¡Con gusto! 🙌 Para tu solicitud de reserva cuéntame en un solo mensaje: ')).toBe(true);
+    expect(t.startsWith('¡Con gusto! 🙌 Para tu reserva cuéntame en un solo mensaje: ')).toBe(true);
     const sin = L.rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: 'salón', nivelEmojis: 'ninguno' });
-    expect(sin.startsWith('¡Con gusto! Para tu solicitud de reserva cuéntame en un solo mensaje: ')).toBe(true);
+    expect(sin.startsWith('¡Con gusto! Para tu reserva cuéntame en un solo mensaje: ')).toBe(true);
     expect(sin).not.toMatch(/\p{Extended_Pictographic}/u);
     expect(L.rsPreguntaFaltantes(['hora'], {})).not.toMatch(/\p{Extended_Pictographic}|Con gusto/u);
     for (const x of [t, sin]) expect(x).not.toMatch(VM_PROHIBIDAS);
@@ -610,14 +611,26 @@ describe('rsPreguntaFaltantes', () => {
 });
 
 describe('rsResumen y rsLineaCompacta', () => {
+  it('día lleno: la línea del aviso lo marca («VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar»); sin la marca, no', () => {
+    const r = { personas: 4, fecha: VIE, hora: '20:00', nombre: 'Ana Pérez', zona: 'salón' };
+    expect(L.rsLineaCompacta(Object.assign({}, r, { diaLleno: true }), 'completo')).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    expect(L.rsLineaCompacta(r, 'completo')).not.toContain('VARIAS RESERVAS');
+    // El resumen al cliente nunca lo muestra.
+    expect(L.rsResumen(Object.assign({}, r, { diaLleno: true }))).not.toMatch(/lleno/i);
+  });
+  it('rsFraseDeConfirmacion: fecha, hora, personas y zona; sin nombre ni notas', () => {
+    expect(L.rsFraseDeConfirmacion({ personas: 4, fecha: VIE, hora: '20:00', nombre: 'Ana Pérez', zona: 'salón', celebracion: 'cumpleaños' }))
+      .toBe('el viernes 9 de octubre a las 20:00, 4 personas, salón');
+    expect(L.rsFraseDeConfirmacion({ personas: 1, fecha: VIE, hora: '13:00', nombre: 'Ana Pérez' })).toBe('el viernes 9 de octubre a las 13:00, 1 persona');
+  });
   it('«1 persona» en singular; sin zona ni extras; sin las líneas vacías', () => {
     const t = L.rsResumen({ personas: 1, fecha: VIE, hora: '13:00', nombre: 'Ana Pérez' });
-    expect(t).toBe('Tu solicitud de reserva:\n• viernes 9 de octubre a las 13:00\n• 1 persona\n• A nombre de Ana Pérez');
+    expect(t).toBe('Tu reserva:\n• viernes 9 de octubre a las 13:00\n• 1 persona\n• A nombre de Ana Pérez');
     expect(t).not.toMatch(/Celebración|Pedido especial|grupo grande/);
   });
   it('un resumen parcial no inventa lo que falta', () => {
-    expect(L.rsResumen({ personas: 4 })).toBe('Tu solicitud de reserva:\n• 4 personas');
-    expect(L.rsResumen(null)).toBe('Tu solicitud de reserva:');
+    expect(L.rsResumen({ personas: 4 })).toBe('Tu reserva:\n• 4 personas');
+    expect(L.rsResumen(null)).toBe('Tu reserva:');
   });
   it('la línea compacta no tiene saltos de línea y no trae el teléfono; el rol cocina solo el primer nombre', () => {
     const r = validar({}).reserva;

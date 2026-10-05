@@ -317,7 +317,7 @@ function armarReserva(op: OpReserva = {}) {
   const resumen = c.escribe('quiero reservar una mesa');
   return { w, c, menu, pide, resumen };
 }
-const enviarReserva = (r: ReturnType<typeof armarReserva>): ResultadoTurno => r.c.toca('r|enviar', 'Enviar solicitud');
+const enviarReserva = (r: ReturnType<typeof armarReserva>): ResultadoTurno => r.c.toca('r|enviar', 'Reservar');
 
 // ------------------------------------------------------------------------------ los escenarios (cada uno, un mundo nuevo)
 // Sirven a dos cosas: cada prueba por funcionalidad toma el suyo, y la prueba de la red de palabras prohibidas
@@ -418,7 +418,7 @@ const ESCENARIOS: Record<string, () => Esc> = {
     const r = armarPedido({ ventana: 5 });
     r.w.estado.extraccion = RESERVA_OK;
     r.c.escribe('quiero reservar una mesa');
-    r.c.toca('r|enviar', 'Enviar solicitud');
+    r.c.toca('r|enviar', 'Reservar');
     r.c.escribe('carta');
     return { w: r.w };
   },
@@ -1400,21 +1400,22 @@ describe('no negociable 3: «pasé tu pedido al restaurante» solo si un aviso s
     }
   });
 
-  it('la misma regla para la reserva: «llegó al restaurante» solo con el aviso salido', () => {
+  it('la misma regla para la reserva: «Anotamos tu reserva» solo con el aviso salido', () => {
     const buena = armarReserva({ ventana: 5 });
     const enviada = enviarReserva(buena);
-    expect(cuerpos(enviada).join('\n')).toContain('tu solicitud llegó al restaurante');
+    expect(cuerpos(enviada).join('\n')).toContain('Anotamos tu reserva para ');
+    expect(tieneEnlace(enviada)).toBe(false); // con el aviso salido NO hay «Escribir al local»
     expect(enviada.avisos.some((a) => a.ok)).toBe(true);
     const caida = armarReserva({ fallan: ['Enviar aviso', 'Aviso de respaldo'] });
     const fallida = enviarReserva(caida);
     expect(fallida.avisos.every((a) => !a.ok)).toBe(true);
-    expect(cuerpos(fallida).join('\n')).toContain('No pude hacer llegar tu solicitud al restaurante');
-    expect(cuerpos(fallida).join('\n')).not.toMatch(/llegó al restaurante/);
+    expect(cuerpos(fallida).join('\n')).toContain('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.');
+    expect(cuerpos(fallida).join('\n')).not.toMatch(/llegó al restaurante|anotamos tu reserva|llegó a nuestro equipo/i);
     expect(tieneEnlace(fallida)).toBe(true);
   });
 
   it('en TODOS los escenarios: si ningún aviso salió, ningún texto al cliente dice que se pasó al restaurante', () => {
-    const PASE = /\bya (lo |la )?pas[eé]\b|pas[eé] tu (pedido|solicitud|comprobante)|llegó al restaurante|hice llegar/i;
+    const PASE = /\bya (lo |la )?pas[eé]\b|pas[eé] tu (pedido|solicitud|comprobante)|llegó al restaurante|hice llegar|anotamos tu reserva|lleg(ó|aron) a nuestro equipo/i;
     let conPase = 0;
     let sinPase = 0;
     for (const { nombre, turno } of todosLosTurnos()) {
@@ -1564,13 +1565,14 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     const r = armarReserva({ ventana: 5 });
     expect(cuerpos(r.resumen)[0]).toContain('viernes 9 de octubre a las 20:00');
     expect(cuerpos(r.resumen)[0]).toContain('4 personas');
-    expect(titulosDe(r.resumen.mensajes[0] as NonNullable<(typeof r.resumen.mensajes)[number]>)).toEqual(['Enviar solicitud', 'Corregir', 'Menú']);
+    expect(titulosDe(r.resumen.mensajes[0] as NonNullable<(typeof r.resumen.mensajes)[number]>)).toEqual(['Reservar', 'Corregir', 'Menú']);
     const enviada = enviarReserva(r);
     expect(todoElTexto(r.resumen) + todoElTexto(enviada)).not.toMatch(/confirmad/i);
     expect(plantillasA(enviada, AV1)).toHaveLength(1);
     expect(plantillasA(enviada, AV2)).toHaveLength(1);
     expect(detallesA(enviada, AV1)[0]?.cuerpo).toMatch(/Solicitud de reserva/);
-    expect(cuerpos(enviada)[0]).toContain('todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.');
+    expect(cuerpos(enviada)[0]).toMatch(/^¡Listo, Carlos! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón\./);
+    expect(cuerpos(enviada)[0]).not.toMatch(/todavía no es una reserva|según sus mesas|Toca el botón/);
     // Redacción: el texto sale sin la frase de «menú» ni «Todavía es una solicitud» (el texto viejo).
     expect(cuerpos(enviada)[0]).not.toContain('Todavía es una solicitud');
     expect(cuerpos(enviada)[0]).not.toContain('escribe «menú»');
@@ -1645,20 +1647,20 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
       const t = r.resumen;
       expect(t.avisos).toHaveLength(0);
       expect(t.mensajes.length).toBeGreaterThan(0);
-      expect(t.mensajes.flatMap(titulosDe)).not.toContain('Enviar solicitud');
+      expect(t.mensajes.flatMap(titulosDe)).not.toContain('Reservar');
       expect(estadoDe(r.w.mundo)['paso']).toBe('reserva');
       ver(nombre, t);
       // Y el negativo: con los datos buenos, el mismo mundo sí ofrece enviar.
-      expect(titulosDe(armarReserva().resumen.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>)).toContain('Enviar solicitud');
+      expect(titulosDe(armarReserva().resumen.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>)).toContain('Reservar');
     });
   }
 
-  it('al corregir el dato, la reserva sigue (un campo vacío no pisa uno lleno) y llega a «Enviar solicitud»', () => {
+  it('al corregir el dato, la reserva sigue (un campo vacío no pisa uno lleno) y llega a «Reservar»', () => {
     const r = armarReserva({ extra: { zona: 'jardín' } });
     r.w.estado.extraccion = { personas: 0, fecha: '', hora: '', zona: 'terraza', nombre: '', celebracion: '', requerimiento: '' };
     const t = r.c.escribe('mejor en la terraza');
     expect(cuerpos(t)[0]).toContain('terraza');
-    expect(t.mensajes.flatMap(titulosDe)).toContain('Enviar solicitud');
+    expect(t.mensajes.flatMap(titulosDe)).toContain('Reservar');
   });
 });
 
@@ -1703,7 +1705,7 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     expect(con(w, CLIENTE).escribe('hola').mensajes.length).toBeGreaterThan(0);
   });
 
-  it('una cuarta reserva del mismo teléfono el mismo día → texto de tope y botón, y 0 avisos', () => {
+  it('de la 4.ª a la 6.ª reserva del mismo teléfono el mismo día se anotan con la marca; la 7.ª no arma aviso', () => {
     const w = crear();
     abrirVentanas(w);
     const c = con(w);
@@ -1712,22 +1714,36 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       c.toca('m|reserva', 'Reservar mesa');
       w.estado.extraccion = { ...RESERVA_OK, hora };
       c.escribe('quiero reservar');
-      return c.toca('r|enviar', 'Enviar solicitud');
+      return c.toca('r|enviar', 'Reservar');
     };
     for (const h of ['18:00', '19:00', '20:00']) {
       const ok = hacer(h);
       expect(ok.avisos.some((a) => a.ok), `reserva de las ${h}`).toBe(true);
+      expect(JSON.stringify(ok.avisos), `reserva de las ${h}`).not.toContain('VARIAS RESERVAS');
     }
     const cuarta = hacer('21:00');
-    expect(cuarta.avisos).toHaveLength(0);
-    expect(cuerpos(cuarta)[0]).toContain('Por hoy ya no puedo tomar más solicitudes de reserva');
-    expect(tieneEnlace(cuarta)).toBe(true);
+    expect(cuarta.avisos.some((a) => a.ok)).toBe(true);
+    expect(JSON.stringify(cuarta.avisos)).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    expect(cuerpos(cuarta)[0]).toContain('Anotamos tu reserva para ');
+    expect(cuerpos(cuarta).join('\n')).not.toMatch(/Por hoy ya no puedo|lleno|tope/i);
+    expect(tieneEnlace(cuarta)).toBe(false);
+    for (const h of ['17:00', '16:00']) {
+      const mas = hacer(h);
+      expect(mas.avisos.some((a) => a.ok), `reserva de las ${h}`).toBe(true);
+      expect(JSON.stringify(mas.avisos)).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    }
+    // TECHO DURO: la séptima del día del mismo teléfono NO arma aviso y NO dice que se anotó.
+    const septima = hacer('15:00');
+    expect(septima.avisos).toHaveLength(0);
+    expect(cuerpos(septima).join('\n')).toContain('No pude hacer llegar tu reserva a nuestro equipo');
+    expect(cuerpos(septima).join('\n')).not.toMatch(/Anotamos|Te esperamos/);
+    expect(tieneEnlace(septima)).toBe(true);
     // El negativo: otro teléfono, el mismo día, sí puede reservar.
     const otro = con(w, OTRO, 'Luis Mamani');
     otro.escribe('hola'); otro.toca('m|reserva', 'Reservar mesa');
     w.estado.extraccion = { ...RESERVA_OK, nombre: 'Luis Mamani' };
     otro.escribe('quiero reservar');
-    expect(otro.toca('r|enviar', 'Enviar solicitud').avisos.length).toBeGreaterThan(0);
+    expect(otro.toca('r|enviar', 'Reservar').avisos.length).toBeGreaterThan(0);
   });
 
   it('una reserva cuyo aviso NO salió no cuenta para el tope del día', () => {
@@ -1739,8 +1755,9 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
       c.toca('m|reserva', 'Reservar mesa');
       w.estado.extraccion = { ...RESERVA_OK, hora: `${18 + i}:00` };
       c.escribe('quiero reservar');
-      const t = c.toca('r|enviar', 'Enviar solicitud');
+      const t = c.toca('r|enviar', 'Reservar');
       expect(cuerpos(t)[0], `intento ${i + 1}`).not.toContain('Por hoy ya no puedo tomar');
+      expect(cuerpos(t).join('\n'), `intento ${i + 1}`).not.toMatch(/Anotamos tu reserva/); // jamás «Anotamos» sin aviso salido
     }
   });
 
@@ -1771,13 +1788,15 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
   });
 
   it('una bebida suelta por delivery se quita con su texto; en recojo, queda', () => {
-    const delivery = armarPedido({ entrega: 'delivery', lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
+    // `areasSinDelivery` ya no es «Bebidas» en Q'Taco (04/10: es falso, el área solo tiene bebidas sin alcohol que SÍ se envían): la regla sigue vigente
+    // para quien la configure, y se prueba poniéndola.
+    const delivery = armarPedido({ entrega: 'delivery', config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
     const texto = cuerpos(delivery.resumen).join('\n');
     expect(texto).not.toMatch(/× Horchata/); // no queda en el pedido…
     expect(texto).toMatch(/1 × Queso Fundido/);
     expect(texto).toContain('Por delivery no enviamos Horchata: lo quité de tu pedido.'); // …y se le dice que se quitó
     expect(texto).toContain('Total de la comida: 75 Bs.'); // el total es solo lo que queda
-    const recojo = armarPedido({ entrega: 'recojo', lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
+    const recojo = armarPedido({ entrega: 'recojo', config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
     expect(cuerpos(recojo.resumen).join('\n')).toMatch(/2 × Horchata/);
   });
 
@@ -1817,7 +1836,7 @@ describe('menú y promoción', () => {
     const soloPedidos = con(crear({ config: { reservasActivo: false } })).escribe('hola');
     expect(cuerpos(soloPedidos)[0]).toContain('Esta es nuestra carta');
     const soloReservas = con(crear({ config: { pedidosActivo: false } })).escribe('hola');
-    expect(cuerpos(soloReservas)[0]).toContain('solicitud de reserva');
+    expect(cuerpos(soloReservas)[0]).toContain('Para tu reserva cuéntame');
     // Sin ninguna capacidad: lo único que se ofrece es pasar con el restaurante.
     const nada = con(crear({ config: { pedidosActivo: false, reservasActivo: false } })).escribe('hola');
     expect(tieneEnlace(nada)).toBe(true);
@@ -1898,27 +1917,40 @@ describe('pedido', () => {
     expect(cuerpos(sug).join('\n')).toMatch(/Queso Fundido/);
   });
 
-  it('delivery sin dirección → la pide (y el delivery no va en el QR); con los datos, sigue al resumen', () => {
+  it('delivery sin dirección → la pide, SOLO la dirección (la referencia es opcional); con la dirección sola, sigue al resumen', () => {
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
-    expect(cuerpos(r.resumen)[0]).toMatch(/Para el delivery necesito la dirección/);
-    expect(cuerpos(r.resumen)[0]).toContain('El delivery no va en el QR: se lo pagas al repartidor al recibir tu pedido.');
+    expect(cuerpos(r.resumen)[0]).toBe('Para el delivery necesito la dirección exacta.');
+    expect(cuerpos(r.resumen)[0]).not.toContain('QR');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     expect(r.resumen.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
-    r.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: 'portón verde', nombre: '' });
-    const siguiente = r.c.escribe('Calle Falsa 123, portón verde');
-    ver('delivery: datos', siguiente);
+    // Con la dirección y SIN referencia ni nombre: directo al resumen (la referencia ya no se pide).
+    r.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: '', nombre: '' });
+    const siguiente = r.c.escribe('Calle Falsa 123');
+    ver('delivery: dirección sola', siguiente);
     expect(cuerpos(siguiente).join('\n')).toContain('Entrega: delivery a Calle Falsa 123');
     expect(siguiente.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(cuerpos(siguiente).join('\n')).not.toMatch(/referencia|\(\)/);
+    // Con la referencia opcional, el resumen la muestra.
+    const conRef = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
+    conRef.w.estado.extraccion = EX([], { entrega: '', direccion: 'Calle Falsa 123', referencia: 'portón verde', nombre: '' });
+    expect(cuerpos(conRef.c.escribe('Calle Falsa 123, portón verde')).join('\n')).toContain('Entrega: delivery a Calle Falsa 123 (portón verde)');
+    // Una dirección inválida («calle») se sigue pidiendo.
+    const mala = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
+    mala.w.estado.extraccion = EX([], { entrega: '', direccion: 'calle', referencia: '', nombre: '' });
+    const t = mala.c.escribe('calle');
+    expect(cuerpos(t)[0]).toBe('Para el delivery necesito la dirección exacta.');
+    expect(estadoDe(mala.w.mundo)['paso']).toBe('pedido_datos');
   });
 
-  it('una ubicación compartida cuenta como la dirección (decisión de la integración): falta la referencia, que se pide, y no se confirma nada', () => {
+  it('una ubicación compartida cuenta como la dirección: va directo al resumen (sin pedir referencia ni nombre), y sin confirmar nada', () => {
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
     const t = r.c.ubicacion();
-    expect(cuerpos(t).join('\n')).toMatch(/Para el delivery necesito una referencia para llegar/);
-    expect(cuerpos(t).join('\n')).not.toMatch(/dirección exacta/);
-    expect(t.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
+    expect(cuerpos(t).join('\n')).toContain('Entrega: delivery a ubicación compartida');
+    expect(cuerpos(t).join('\n')).not.toMatch(/necesito/);
+    expect(t.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
     expect(t.avisos).toHaveLength(0);
-    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
   });
 
   it('fuera de horario → «Por ahora no estamos tomando pedidos», sin carrito y sin llamar al modelo; con el horario abierto, sí', () => {
@@ -2095,7 +2127,7 @@ describe('carta', () => {
     const texto = cuerpos(carta).join('\n');
     for (const quedan of ['Promo Dúo', 'Nachos Supremos', 'Queso Fundido', 'Tacos de Birria', 'Enchiladas Suizas', 'Horchata']) expect(texto, quedan).toContain(quedan);
     for (const sale of ['Michelada', 'Pils', 'Rompope', 'Helado', 'Cervezas', 'Cócteles']) expect(texto, sale).not.toContain(sale);
-    expect(texto).toContain('Por delivery no enviamos bebidas.');
+    expect(texto).not.toContain('Por delivery no enviamos'); // sin `areasSinDelivery` no se afirma nada del delivery (04/10)
     w.estado.extraccion = EX([ln('michelada', 2)]);
     const t = c.escribe('quiero 2 micheladas');
     // Es un producto EXCLUIDO a propósito: su texto amable (no «no lo encuentro»), con la carta a un toque y sin aviso al restaurante.
@@ -2985,10 +3017,10 @@ describe('mensajes por conversación: los números que declara DISENO.md', () =>
     c.toca('m|reserva', 'Reservar mesa');
     w.estado.extraccion = { ...RESERVA_OK, hora: '' }; // falta la hora
     const faltan = c.escribe('quiero reservar una mesa');
-    expect(faltan.mensajes.flatMap(titulosDe)).not.toContain('Enviar solicitud');
+    expect(faltan.mensajes.flatMap(titulosDe)).not.toContain('Reservar');
     w.estado.extraccion = { ...RESERVA_OK };
     const resumen = c.escribe('a las 20:00');
-    c.toca(idDeBoton(resumen, 'Enviar solicitud'), 'Enviar solicitud');
+    c.toca(idDeBoton(resumen, 'Reservar'), 'Reservar');
     expect(contar(w.turnos.filter((x) => x.from === CLIENTE).map((x) => x.t)).alCliente).toBe(5);
   });
 
@@ -3234,7 +3266,7 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
 
 
 // =====================================================================================================
-// 6. B0: CLAVES ESTABLES POR PEDIDO (el doble toque en «Confirmar pedido» o «Enviar solicitud»)
+// 6. B0: CLAVES ESTABLES POR PEDIDO (el doble toque en «Confirmar pedido» o «Reservar»)
 // =====================================================================================================
 // n8n carga los datos estáticos al empezar cada ejecución y los reescribe enteros al terminar: dos ejecuciones
 // simultáneas parten del MISMO estado. El arnés no corre en paralelo, así que el doble toque se simula así: se guarda
@@ -3368,9 +3400,9 @@ describe('B0: claves estables por pedido (doble toque simulado desde el mismo es
     expect([primero, segundo]).not.toContain(referenciaDelCierre(t3));
   });
 
-  it('(e) reserva: el doble toque en «Enviar solicitud» deja la MISMA referencia (res-<fecha>-<tel4>-<huella>) y el MISMO código', () => {
+  it('(e) reserva: el doble toque en «Reservar» deja la MISMA referencia (res-<fecha>-<tel4>-<huella>) y el MISMO código', () => {
     const r = armarReserva({ ventana: 5 });
-    const { t1, t2 } = dobleToque(r.w.mundo, r.c, 'r|enviar', 'Enviar solicitud');
+    const { t1, t2 } = dobleToque(r.w.mundo, r.c, 'r|enviar', 'Reservar');
     expect(t1.llamadas.cierre).toHaveLength(1);
     expect(t2.llamadas.cierre).toHaveLength(1);
     expect(referenciaDelCierre(t1)).toMatch(/^res-2026-10-05-0011-[0-9a-z]{7}$/);
@@ -3394,7 +3426,7 @@ describe('B0: claves estables por pedido (doble toque simulado desde el mismo es
     base.c.toca('m|reserva', 'Reservar mesa');
     base.w.estado.extraccion = { ...RESERVA_OK };
     base.c.escribe('quiero reservar una mesa');
-    const ref2 = referenciaDelCierre(base.c.toca('r|enviar', 'Enviar solicitud'));
+    const ref2 = referenciaDelCierre(base.c.toca('r|enviar', 'Reservar'));
     expect(ref2).toMatch(/^res-/);
     expect(ref2).not.toBe(ref1);
     // otros datos (otra cantidad de personas)
@@ -3475,7 +3507,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     // 6. «¿puedo hacer una reserva?» en medio del pedido → la pregunta de la reserva, y el pedido sigue en el estado.
     w.estado.extraccion = RESERVA_VACIA;
     const reserva = c.escribe('puedo hacer una reserva?');
-    expect(cuerpos(reserva)[0]).toMatch(/solicitud de reserva/);
+    expect(cuerpos(reserva)[0]).toMatch(/Para tu reserva cuéntame/);
     expect(reserva.avisos).toHaveLength(0);
     expect(estadoDe(w.mundo)['paso']).toBe('reserva');
     expect(estadoDe(w.mundo)['pendiente']).toHaveLength(1);
@@ -3509,13 +3541,13 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     w.estado.extraccion = RESERVA_OK;
     const res = c.escribe('quiero reservar una mesa');
     expect(cuerpos(res)[0]).toMatch(/^Guardé tu pedido \(4 productos\)\. Cuando termines la reserva, escribe «carta» para seguir con el pedido\./);
-    expect(titulosDelPrimero(res)).toEqual(['Enviar solicitud', 'Corregir', 'Menú']);
+    expect(titulosDelPrimero(res)).toEqual(['Reservar', 'Corregir', 'Menú']);
     expect(estadoDe(w.mundo)['paso']).toBe('reserva_confirmar');
     expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
     expect(estadoDe(w.mundo)['carritoGuardado']).toBe(4);
     // La reserva se envía: se limpia la reserva, NO el carrito.
     abrirVentanas(w);
-    const enviada = c.toca('r|enviar', 'Enviar solicitud');
+    const enviada = c.toca('r|enviar', 'Reservar');
     expect(enviada.avisos.length).toBeGreaterThan(0);
     expect(estadoDe(w.mundo)['reserva']).toBeNull();
     expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
@@ -3674,7 +3706,7 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     expect(cuerpos(helado)[0]).toContain('¿Qué te gustaría hacer?');
     // Y una reserva pedida después de la falla también se atiende.
     w.estado.extraccion = RESERVA_VACIA;
-    expect(cuerpos(c.escribe('puedo hacer una reserva?'))[0]).toMatch(/solicitud de reserva/);
+    expect(cuerpos(c.escribe('puedo hacer una reserva?'))[0]).toMatch(/Para tu reserva cuéntame/);
   });
 
   it('el nombre se comparte: el del pedido completa la reserva y el de la reserva completa el pedido', () => {
@@ -4208,7 +4240,7 @@ describe('R3 y hechos externos: si ya salió un aviso o corrió el cierre, recon
     expect(fallido.avisos.length).toBeGreaterThan(0);
     expect(fallido.llamadas.cierre.length).toBeGreaterThan(0);
     sinFalla(r.w);
-    const t = r.c.toca('r|enviar', 'Enviar solicitud');
+    const t = r.c.toca('r|enviar', 'Reservar');
     expect(t.avisos).toHaveLength(0);
     expect(t.llamadas.cierre).toHaveLength(0);
     expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
@@ -4751,7 +4783,7 @@ describe('A. reserva: una hora suelta se toma como la hora (la toma el código, 
     // El nombre completa la solicitud: sale el resumen para enviar, con la hora.
     w.estado.extraccion = { ...vacia, nombre: 'Daniela Ortega' };
     const resumen = c.escribe('Daniela ortega');
-    expect(resumen.mensajes.flatMap(titulosDe)).toContain('Enviar solicitud');
+    expect(resumen.mensajes.flatMap(titulosDe)).toContain('Reservar');
     expect(cuerpos(resumen)[0]).toContain('jueves 8 de octubre a las 19:00');
     expect(estadoDe(w.mundo)['paso']).toBe('reserva_confirmar');
   });
@@ -4904,7 +4936,7 @@ describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger;
     const c = con(w, CLIENTE, 'Carlos');
     c.escribe('hola');
     c.toca('m|pedido', 'Hacer un pedido');
-    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery', direccion: 'Calle Falsa 123' });
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery' });
     const t = c.escribe('quiero 4 tacos de birria con delivery a Calle Falsa 123');
     return { w, c, t };
   }
@@ -4959,7 +4991,13 @@ describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger;
     const t = c.escribe(dicho);
     expect(t.llamadas.extraer, dicho).toHaveLength(1); // fue al modelo: no lo resolvió el código como cambio a recojo
     expect((estadoDe(w.mundo)['entrega'] as J)['entrega'], dicho).toBe('delivery');
-    expect((estadoDe(w.mundo)['entrega'] as J)['direccion'], dicho).toContain(dicho.slice(0, 12));
+    // Con dígito o una vía fuerte (calle, av, barrio…) el modelo acierta: es la dirección. Sin ellos («ella va a recoger en portería») NO es una dirección (#435, LOW-A2): pasa a la referencia.
+    const entrega = estadoDe(w.mundo)['entrega'] as J;
+    if (/\d|\b(calle|av|avenida|barrio)\b/i.test(dicho)) expect(entrega['direccion'], dicho).toContain(dicho.slice(0, 12));
+    else {
+      expect(entrega['direccion'], dicho).toBe('');
+      expect(entrega['referencia'], dicho).toContain(dicho.slice(0, 12));
+    }
   });
 
   it('negando: tampoco en la pregunta de entrega ni con el resumen delante (pasos donde SÍ vale el cambio con la frase exacta)', () => {
@@ -5206,7 +5244,7 @@ describe('M1/M2. «dejarlo como estaba» solo con formas cerradas y sin trabar e
   /** Un pedido NUEVO a medias (delivery sin referencia ni nombre) con el pedido anterior todavía guardado. */
   function nuevoADelivery() {
     const r = trasCambiar();
-    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery', direccion: 'Calle Sucre 12' });
+    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery' });
     r.c.escribe('quiero 2 tacos de birria con delivery a Calle Sucre 12');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     expect(estadoDe(r.w.mundo)['carritoAnterior']).not.toBeNull();
@@ -5331,7 +5369,7 @@ describe('N2. un «no» seguido del verbo dejar es un rechazo, nunca «volver al
 
   it.each(RECHAZOS)('estricto («%s» con un pedido nuevo en curso): NO vuelve al anterior ni pregunta; sigue su camino al modelo', (dicho) => {
     const r = trasCambiar();
-    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery', direccion: 'Calle Sucre 12' });
+    r.w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery' });
     r.c.escribe('quiero 2 tacos de birria con delivery a Calle Sucre 12');
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
     r.w.estado.extraccion = EX([], { entrega: '' });

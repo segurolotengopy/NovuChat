@@ -18,6 +18,11 @@ export { configuracionParaFlujo } from './central/negocio/configuracionParaFlujo
 export { ingesta, configuracionFlujo } from './ingesta.js';
 export { registrarCierre } from './core/turno/cierres.js';
 export { registrarQrDeCobro, imagenDeCobro } from './modulos/cobros/cobro.js';
+// COMPROBANTE DE PAGO DE VENTA, REGLA 2 (C1b, `cobros.md` §4duodecies.6): el
+// cotejo por plazo e intentos, la imagen guardada en Storage y la purga diaria.
+// Desplegar esto no cambia ningún flujo vivo: la regla 2 la elige el flujo.
+export { cotejarComprobanteVenta } from './modulos/cobros/cotejoVenta.js';
+export { guardarComprobante, purgarComprobantes } from './modulos/cobros/comprobantes.js';
 // SEÑA POR QR EN LAS RESERVAS (bloque 2). El cotejo del comprobante lo hace el
 // servidor —el flujo manda lo que leyó el modelo y recibe `cuadra`,
 // `no_cuadra` o `ilegible`— y la retención vencida se anota sin mandarle nada

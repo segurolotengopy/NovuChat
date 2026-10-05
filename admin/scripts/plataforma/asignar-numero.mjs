@@ -43,6 +43,9 @@
  */
 import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
+// EL FLUJO VÁLIDO Y SU DOCUMENTO DE CONFIGURACIÓN SALEN DEL REGISTRO (H2b-4e), no de
+// una lista propia: `registro.ts` no tiene `import`, así que no necesita el gancho de abajo.
+import { documentoDeFlujo, esFlujo } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -67,10 +70,9 @@ const TITULARIDAD = (opcion('titularidad') ?? '').trim();
 const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
 const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-// Mismos formatos que `ID_TENANT`, `ID_NUMERO` y `VERTICALES` de functions/src/index.ts.
+// Mismos formatos que `ID_TENANT` e `ID_NUMERO` de functions/src/plataforma/tenants.ts; los flujos válidos salen del registro.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_NUMERO = /^[0-9]{6,25}$/;
-const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);
 // `central/ejes.ts` importa `./cuenta/planes.js` y `./cuenta/prepago.js`: se resuelve con el
 // mismo hook que `asignar-plan.mjs` y `pase-a-produccion.mjs`, sin compilar.
 registerHooks({
@@ -87,8 +89,6 @@ registerHooks({
 });
 const { TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } = await import('../../functions/src/central/ejes.ts');
 const titularidad = TITULARIDAD || TITULARIDAD_POR_DEFECTO;
-// Mismo mapa que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
-const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
 
 const firma = readFileSync(new URL('../../functions/src/core/seguridad/firma.ts', import.meta.url), 'utf8');
 const RESERVA = [...firma.matchAll(/^\s*(\w+):\s*defineSecret\('([A-Z0-9_]+)'\)/gm)]
@@ -106,7 +106,7 @@ if (!LISTAR) {
   if (!ID_NUMERO.test(NUMERO)) problemas.push('--numero no es un phone_number_id (solo dígitos, 6 a 25)');
   if (!ID_NUMERO.test(WABA)) problemas.push('--waba no es un WABA ID (solo dígitos, 6 a 25)');
   if (NUMERO && NUMERO === WABA) problemas.push('--numero y --waba son iguales: son dos IDs distintos');
-  if (!FLUJOS_VALIDOS.has(FLUJO)) problemas.push(`--flujo desconocido: ${FLUJO || '(vacío)'}`);
+  if (!esFlujo(FLUJO)) problemas.push(`--flujo desconocido: ${FLUJO || '(vacío)'}`);
   if (!ALIAS_VALIDOS.has(ALIAS)) problemas.push(`--alias no está en la reserva de firma.ts: ${ALIAS || '(vacío)'}`);
   if (REEMPLAZA && !ID_NUMERO.test(REEMPLAZA)) problemas.push('--reemplaza no es un phone_number_id (solo dígitos, 6 a 25)');
   if (REEMPLAZA && REEMPLAZA === NUMERO) problemas.push('--reemplaza es el mismo número que --numero');
@@ -149,7 +149,7 @@ if (LISTAR) {
 const refRuta = db.doc(`rutasWhatsApp/${NUMERO}`);
 const refVieja = REEMPLAZA ? db.doc(`rutasWhatsApp/${REEMPLAZA}`) : null;
 const refTenant = db.doc(`tenants/${TENANT}`);
-const documento = DOCUMENTO[FLUJO] ?? null;
+const documento = documentoDeFlujo(FLUJO);
 const refConfig = documento ? db.doc(`tenants/${TENANT}/config/${documento}`) : null;
 const secreto = RESERVA.find((r) => r.alias === ALIAS)?.secreto;
 

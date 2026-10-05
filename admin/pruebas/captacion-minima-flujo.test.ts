@@ -759,7 +759,8 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       expect(tipoInter(t5.aMi[0]!)).toBe('cta_url');
       expect(urlDe(t5.aMi[0]!)).toMatch(new RegExp(`^https://wa\\.me/${REC}(\\?|$)`));
       expect(CUERPO(t5)).toMatch(new RegExp(`escribirle directo a ${esc(QUIEN)}`));
-      expect(CUERPO(t5)).toMatch(/¿cómo se llama tu negocio\?$/);
+      expect(CUERPO(t5)).toMatch(/¿cómo se llama tu negocio\? 😊$/);
+      expect((CUERPO(t5).match(/negocio/g) ?? []).length).toBe(1); // §14: «negocio» una sola vez
       expect(t5.plantillas).toHaveLength(1);
       expect(t5.plantillas[0]!.a).toBe(REC);
       const plantilla = t5.plantillas[0]!.payload['template'] as J;
@@ -770,7 +771,7 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       // 6. Contesta el nombre del negocio: se registra por código y se responde corto, sin modelo.
       const t6 = j.texto('Salón Rosa');
       expect(t6.aMi).toHaveLength(1);
-      expect(CUERPO(t6)).toBe('¡Gracias! 😊 Quedó anotado.');
+      expect(CUERPO(t6)).toBe(`¡Gracias! 😊 Anoté «Salón Rosa». ¡Cuando quieras, escríbele a ${QUIEN} con el botón!`);
       expect(t6.modelo).toHaveLength(0);
       expect(t6.plantillas).toHaveLength(0);
       expect(filaDe(w, MAMA)![COL_EMPRESA]).toBe('Salón Rosa');
@@ -1311,23 +1312,26 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       expect(CUERPO(t)).not.toMatch(/¿[Cc]ómo se llama tu negocio\?/);
       expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
     });
-    it('«¡Gracias! 😊 Quedó anotado.»: la empresa que contesta se registra por código; algo que no es un nombre (o trae «?») no se registra y no avisa otra vez', () => {
+    it('Cierre cálido tras el nombre («Anoté «Salón Rosa»…»): la empresa que contesta se registra por código; algo que no es un nombre (o trae «?») no se registra y no avisa otra vez', () => {
       const w = crear(); const j = jugar(w);
       j.texto('Hola');
       j.asesor();
       // Algo que no es un nombre: modelo (a veces) y una repregunta; nunca se registra como empresa.
       modelo(w, { tipo: 'respuesta', empatia: 'Entiendo.' });
       const t1 = j.texto('¿para qué lo necesitas?');
-      expect(CUERPO(t1)).not.toBe('¡Gracias! 😊 Quedó anotado.');
+      expect(CUERPO(t1)).not.toMatch(/Anoté|Quedó anotado/);
       expect(estadoDe(w, MAMA)!['empresa']).toBe('');
       const t2 = j.texto('prefiero no decirlo');
-      expect(CUERPO(t2)).not.toBe('¡Gracias! 😊 Quedó anotado.');
+      expect(CUERPO(t2)).not.toMatch(/Anoté|Quedó anotado/);
       expect(estadoDe(w, MAMA)!['empresa']).toBe('');
       expect(estadoDe(w, MAMA)!['reintentoEmpresa']).toBe(true); // se repregunta UNA sola vez (§4)
       expect(t1.plantillas.length + t2.plantillas.length).toBe(0);
       // Y el nombre de verdad sí se anota.
       const t3 = j.texto('Salón Rosa');
-      expect(CUERPO(t3)).toBe('¡Gracias! 😊 Quedó anotado.');
+      expect(CUERPO(t3)).toBe(`¡Gracias! 😊 Anoté «Salón Rosa». ¡Cuando quieras, escríbele a ${QUIEN} con el botón!`);
+      expect(tipoInter(t3.aMi[0]!)).toBe('cta_url');
+      expect(urlDe(t3.aMi[0]!)).toMatch(new RegExp(`^https://wa\\.me/${REC}(\\?|$)`));
+      expect(t3.aMi).toHaveLength(1); // un solo mensaje, como antes (0 agregados)
       expect(estadoDe(w, MAMA)!['empresa']).toBe('Salón Rosa');
       expect(filaDe(w, MAMA)![COL_EMPRESA]).toBe('Salón Rosa');
     });
@@ -2591,9 +2595,9 @@ describe('§13: la consola viva y el tono (C1 y C2)', () => {
     expect(encabezadoDe(t4.aMi[0]!)).toEqual({ type: 'image', image: { link: ARCHIVO.url } });
     expect(botonesDe(t4.aMi[0]!)).toEqual([{ id: 'asesor', title: TITULO_ASESOR }]);
     const t5 = j.asesor();
-    expect(CUERPO(t5)).toBe('¡Perfecto! 🙌 Toca el botón para escribirle directo a Silvana, que te cuenta cómo armarlo para tu negocio. Y para dejarlo anotado, ¿cómo se llama tu negocio?');
+    expect(CUERPO(t5)).toBe('¡Perfecto! 🙌 Toca el botón para escribirle directo a Silvana, que te cuenta cómo armarlo. Y para dejarlo anotado, ¿cómo se llama tu negocio? 😊');
     const t6 = j.texto('Salón Rosa');
-    expect(CUERPO(t6)).toBe('¡Gracias! 😊 Quedó anotado.');
+    expect(CUERPO(t6)).toBe('¡Gracias! 😊 Anoté «Salón Rosa». ¡Cuando quieras, escríbele a Silvana con el botón!');
     // Cada mensaje del recorrido lleva emojis, y ningún precio salió del modelo (los montos son los de la consola).
     for (const t of [t1, t2, t3, t4, t5, t6]) expect(emojis(CUERPO(t))).toBeGreaterThan(0);
     expect(w.modelo.llamadas).toHaveLength(1);
@@ -2653,5 +2657,85 @@ describe('§13: la consola viva y el tono (C1 y C2)', () => {
         expect(c, `${nivel}: ${c}`).not.toMatch(/ {2}/);
       }
     }
+  });
+});
+
+// =================================================================================================
+// §14: cordialidad, sin repeticiones innecesarias (la conversación real que probó Andres)
+// =================================================================================================
+describe('§14: cordialidad en el flujo armado', () => {
+  const vivo = (): W => crear({ panel: panel({}, { rubros: RUBROS, cargosUnicos: [{ nombre: 'Instalación', precioUsd: 65, desde: false, detalle: '' }] }) });
+  const FORMULACIONES = [
+    `¿Te gustaría ver los planes o prefieres hablar con ${QUIEN}?`,
+    `¿Quieres que te muestre los planes o prefieres hablar con ${QUIEN}?`,
+    `¿Te cuento los planes o prefieres hablar directo con ${QUIEN}?`,
+  ];
+
+  it('la conversación de Andres: el traspaso no repite «negocio»; «ok» NO repite la pregunta ni llama al modelo; el nombre cierra con calidez', () => {
+    const w = vivo(); const j = jugar(w);
+    j.texto('Hola'); j.rubro('comercio-y-retail');
+    modelo(w, { tipo: 'respuesta', empatia: '¡Uy, totalmente! 🌙 Perder ventas de noche es una lástima.' });
+    j.texto('Sí, a la medianoche me escriben y no puedo contestar.');
+    j.planes();
+    const t3 = j.asesor();
+    expect(CUERPO(t3)).toBe(`¡Perfecto! 🙌 Toca el botón para escribirle directo a ${QUIEN}, que te cuenta cómo armarlo. Y para dejarlo anotado, ¿cómo se llama tu negocio? 😊`);
+    expect((CUERPO(t3).match(/negocio/g) ?? []).length).toBe(1);
+    const llamadas = w.modelo.llamadas.length;
+    const t4 = j.texto('ok');
+    expect(w.modelo.llamadas.length, '«ok» no llama al modelo').toBe(llamadas);
+    expect(t4.modelo).toHaveLength(0);
+    expect(t4.aMi).toHaveLength(1);
+    expect(CUERPO(t4)).toBe(`¡Con gusto! 😊 Cuando quieras, toca el botón para escribirle directo a ${QUIEN}.`);
+    expect(CUERPO(t4)).not.toMatch(/[Cc]ómo se llama/);
+    expect(preguntasDe(CUERPO(t4))).toBe(0);
+    expect(tipoInter(t4.aMi[0]!)).toBe('cta_url'); // la oferta del asesor lleva su botón
+    expect(t4.plantillas, 'un acuse no avisa otra vez a recepción').toHaveLength(0);
+    expect(estadoDe(w, MAMA)!.paso).toBe('esperando_empresa');
+    expect(estadoDe(w, MAMA)!['empresa']).toBe('');
+    // Un segundo acuse tampoco repite nada.
+    const t4b = j.texto('👍');
+    expect(CUERPO(t4b)).toBe(CUERPO(t4));
+    expect(t4b.modelo).toHaveLength(0);
+    // El nombre llega: se anota y se cierra con calidez.
+    const t5 = j.texto('Tacos pastor');
+    expect(CUERPO(t5)).toBe(`¡Gracias! 😊 Anoté «Tacos pastor». ¡Cuando quieras, escríbele a ${QUIEN} con el botón!`);
+    expect(filaDe(w, MAMA)![COL_EMPRESA]).toBe('Tacos pastor');
+    expect(estadoDe(w, MAMA)!.paso).toBe('libre');
+    // Mensajes por conversación: uno por entrante (0 agregados): 9 entrantes → 9 mensajes (el aviso a recepción es una plantilla aparte).
+    expect(mensajesTotales(w)).toBe(w.turnos.length);
+  });
+  it('B NIEGA: una pregunta en el paso de la empresa SÍ va al modelo y se repregunta una sola vez', () => {
+    const w = vivo(); const j = hastaElDolor(w);
+    j.asesor();
+    modelo(w, { tipo: 'respuesta', empatia: 'Entiendo.' });
+    const t = j.texto('¿y para qué necesitas el nombre?');
+    expect(t.modelo).toHaveLength(1);
+    expect(CUERPO(t)).toMatch(/¿[Cc]ómo se llama tu negocio\?$/);
+    expect(estadoDe(w, MAMA)!['reintentoEmpresa']).toBe(true);
+  });
+  it('D: las preguntas sueltas de la oferta no terminan siempre con la MISMA frase: se omite una de cada dos y rota entre tres formulaciones', () => {
+    const w = vivo(); const { j } = hastaLaOferta(w, 'comercio-y-retail');
+    modelo(w, { tipo: 'pregunta', respuesta: 'Atienden tu WhatsApp todo el día.', enLosDatos: true });
+    const salidas = [j.texto('¿qué hacen?'), j.texto('¿y cómo funciona?'), j.texto('¿sirve para mi tienda?'), j.texto('¿y las sucursales?'), j.texto('¿y los pedidos?'), j.texto('¿y el horario?')];
+    const cuerpos = salidas.map((t) => CUERPO(t));
+    // 1.ª sin pregunta, 2.ª con la 2.ª formulación (la 1.ª ya salió en la oferta), 3.ª sin, 4.ª con la 3.ª, 5.ª sin, 6.ª con la 1.ª.
+    const preguntas = cuerpos.map((c) => FORMULACIONES.find((f) => c.endsWith(f)) ?? '');
+    expect(preguntas).toEqual(['', FORMULACIONES[1], '', FORMULACIONES[2], '', FORMULACIONES[0]]);
+    for (const t of salidas) expect(idsBotones(t.aMi[0]!), 'los botones siguen').toEqual(['planes', 'asesor']);
+    // Nunca dos seguidos con la misma frase.
+    const hechas = preguntas.filter(Boolean);
+    for (let i = 1; i < hechas.length; i++) expect(hechas[i]).not.toBe(hechas[i - 1]);
+  });
+  it('D: la oferta rota también entre ofertas del modelo, y lo que ve el modelo como «PREGUNTA QUE HICISTE» es la formulación que salió', () => {
+    const w = vivo(); const { j, oferta } = hastaLaOferta(w, 'comercio-y-retail');
+    expect(CUERPO(oferta).endsWith(FORMULACIONES[0]!)).toBe(true);
+    modelo(w, { tipo: 'respuesta', empatia: 'Qué bien.' });
+    const t2 = j.texto('quiero saber más de cómo ayuda');
+    expect(t2.aMi).toHaveLength(1);
+    expect(CUERPO(t2).endsWith(FORMULACIONES[1]!)).toBe(true); // no la misma otra vez
+    // Al turno siguiente, el modelo recibe la que acaba de salir (la 2.ª), no la 1.ª.
+    const t3 = j.texto('entiendo, cuéntame algo más');
+    expect(CUERPO(t3).endsWith(FORMULACIONES[2]!)).toBe(true);
+    expect(JSON.stringify(t3.modelo[0]!.cuerpo['contents'])).toContain(`PREGUNTA QUE HICISTE: ${FORMULACIONES[1]}`);
   });
 });

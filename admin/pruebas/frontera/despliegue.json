@@ -516,6 +516,90 @@
     "labels": {},
     "httpsTrigger": {}
   },
+  "cotejarComprobanteVenta": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
   "crearCobroPrepago": {
     "availableMemoryMb": null,
     "timeoutSeconds": null,
@@ -713,6 +797,90 @@
     "platform": "gcfv2",
     "region": [
       "us-east1"
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "guardarComprobante": {
+    "availableMemoryMb": 512,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
     ],
     "labels": {},
     "httpsTrigger": {}
@@ -938,6 +1106,26 @@
     ],
     "labels": {},
     "callableTrigger": {}
+  },
+  "purgarComprobantes": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": 540,
+    "minInstances": null,
+    "maxInstances": 1,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "scheduleTrigger": {
+      "schedule": "30 3 * * *",
+      "retryConfig": {},
+      "timeZone": "America/La_Paz"
+    }
   },
   "quitarUsuario": {
     "availableMemoryMb": null,

@@ -1,5 +1,18 @@
 import { REGION } from './core/region.js';
-import { senaVencidaPorTiempo } from './modulos/agenda/retencion.js';
+import { MINUTOS_RETENCION_POR_DEFECTO, senaVencidaPorTiempo } from './modulos/agenda/retencion.js';
+import { milisegundosDe } from './core/turno/tiempo.js';
+import { reactivaTras, solicitudTras } from './modulos/agenda/solicitud.js';
+// F3b-1a (05/10/2026): la solicitud, sus predicados de cobro y el tiempo se
+// mudaron a `modulos/agenda/solicitud.ts`, `modulos/agenda/retencion.ts` y
+// `core/turno/tiempo.ts` sin cambiar lógica. Se reexportan para que quien ya los
+// importaba de acá (las suites, `core/turno/cierres.ts` hasta que F3b-1b lo
+// desate con ganchos) no cambie.
+export {
+  DIAS_ADELANTO_A_FAVOR, ETAPAS_PENDIENTES, HORAS_ANTICIPACION_PARA_CANCELAR, cierreBloqueadoPorCobro,
+  cierreDeVentaLoHaceElCotejo, reactivaTras, solicitudTras, type Solicitud,
+} from './modulos/agenda/solicitud.js';
+export { MINUTOS_RETENCION_POR_DEFECTO };
+export { milisegundosDe };
 import { existencias } from './modulos/inventario/inventario.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
@@ -10,7 +23,7 @@ import { sanearCaptacion } from './modulos/captacion/captacion.js';
 import { vozFija } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
 import {
-  HORAS_VENTANA_ATENCION, MS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
+  HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
   estadoDeAtencion, umbralesDeAtencion, ventanaVencida,
 } from './core/conteo/atencion.js';
 // Los valores comerciales viven en `atencion.ts` (puro, compartido con la
@@ -35,7 +48,10 @@ import {
 // El cobro de una VENTA: el importe no vive en la configuración, se fija cuando
 // sale el QR. `cobroVenta.ts` no importa nada de acá en tiempo de ejecución
 // (sus dos importaciones son de tipo), así que no hay ciclo.
-import { cobroParaElFlujo, totalUtilizable } from './modulos/cobros/cobroVenta.js';
+import {
+  CAMPOS_REGLA_2_EN_NULO, cobroParaElFlujo, solicitudDeCobroTras, totalUtilizable,
+  type EventoDeCobro,
+} from './modulos/cobros/cobroVenta.js';
 // El enlace de la carta para «Venta mínima v0» (`catalogoCompleto: true`). Sale
 // de `catalogoWeb.ts`, que no importa nada de acá: no hay ciclo.
 import { enlaceParaElFlujo, sePuedeComprar, type EnlaceEmitido } from './modulos/catalogo-web/catalogoWeb.js';
@@ -129,7 +145,18 @@ interface Entrante {
    *    y desde ahí ningún seguimiento automático le llega. Es UN solo hecho
    *    con dos orígenes; la dirección del mensaje que lo trae no importa.
    */
-  evento?: 'qr_enviado' | 'horarios_ofrecidos' | 'no_contactar' | 'cita_cancelada' | 'adelanto_aplicado' | 'reprogramada';
+  evento?: 'qr_enviado' | 'horarios_ofrecidos' | 'no_contactar' | 'cita_cancelada' | 'adelanto_aplicado' | 'reprogramada'
+    | 'cobro_cancelado' | 'anulacion_avisada';
+  /**
+   * LA REGLA DEL COBRO QUE ELIGE EL FLUJO (D1, `cobros.md` §4duodecies.6). Solo
+   * `2` con `qr_enviado`: plazo de 15 min, prórroga única y 3 intentos. Cualquier
+   * otro valor, o un `reglaCobro` que acompañe a otro evento, se toma como
+   * regla 1 (la de 24 h de siempre) y NO se responde 400: un flujo viejo o con
+   * un campo raro sigue funcionando como hoy. `cobro_cancelado` y
+   * `anulacion_avisada` son hechos del flujo de regla 2 (el cliente canceló; se
+   * le avisó que el pedido se anuló).
+   */
+  reglaCobro?: 2;
   referencia?: string;
   calendario?: string;
   /**
@@ -184,7 +211,8 @@ const ORIGENES = new Set(['anuncio', 'directo']);
 
 /** Los hechos del flujo que la ingesta entiende. Uno desconocido se ignora:
  *  el mensaje se cuenta igual y el campo no se guarda. */
-const EVENTOS = new Set(['qr_enviado', 'horarios_ofrecidos', 'no_contactar', 'cita_cancelada', 'adelanto_aplicado', 'reprogramada']);
+const EVENTOS = new Set(['qr_enviado', 'horarios_ofrecidos', 'no_contactar', 'cita_cancelada', 'adelanto_aplicado', 'reprogramada',
+  'cobro_cancelado', 'anulacion_avisada']);
 
 /**
  * Normaliza el mensaje entrante. TODO lo de acá es DATO NO CONFIABLE: lo escribió
@@ -221,249 +249,19 @@ function normalizar(cuerpo: unknown): Entrante | null {
   // como número finito y positivo dentro de un techo. Lo que no pase no se
   // guarda, y sin total el cotejo no compara nada (no lo toma por cero).
   const monto = totalUtilizable(c['monto']);
+  // LA REGLA DEL COBRO (D5): solo el número 2, y solo junto a `qr_enviado`. Todo
+  // lo demás es regla 1, sin error.
+  const reglaCobro = evento === 'qr_enviado' && c['reglaCobro'] === 2 ? 2 as const : undefined;
 
   return { telefono, direccion, tipo, texto, origen, ...(idMeta ? { idMeta } : {}),
            ...(nombreContacto ? { nombreContacto } : {}),
            ...(evento ? { evento } : {}),
+           ...(reglaCobro ? { reglaCobro } : {}),
            ...(referencia ? { referencia } : {}),
            ...(calendario ? { calendario } : {}),
            ...(inicio ? { inicio } : {}),
            ...(nueva ? { nueva } : {}),
            ...(monto !== null ? { monto } : {}) };
-}
-
-/**
- * ===========================================================================
- * LA SEÑA EN CURSO DE UN TELÉFONO — `solicitud` en la conversación
- * ===========================================================================
- *
- * Es el estado que le dice al flujo qué hacer con el próximo archivo que manda
- * el paciente: si hay un QR enviado y sin comprobante, una imagen o un PDF se
- * lee como comprobante y se coteja; si no, es una imagen cualquiera. Y es lo
- * que `senaVencida` mira para saber qué cita borrar.
- *
- * Vive en el documento de la conversación —que ya está indexado por teléfono
- * y ya se escribe con cada mensaje— por la misma razón que las marcas de
- * conteo: no crea ningún registro nuevo de teléfonos y se escribe en la
- * transacción que ya existe. Cero lecturas y cero escrituras extra.
- *
- * ETAPAS: `horarios` (bloque 4: el asistente ofreció horarios y el paciente
- * no eligió), `qr_enviado` (retenida, esperando el comprobante), `agendada`
- * (el comprobante cuadró, o `registrarCierre` registró la cita), `vencida`
- * (pasaron los minutos de retención sin comprobante y la cita se borró).
- *
- * Las dos PENDIENTES son `horarios` y `qr_enviado`: sobre ellas corre el
- * recordatorio de solicitud pendiente (`seguimientos.ts`), una sola vez.
- */
-export interface Solicitud {
-  etapa: 'horarios' | 'qr_enviado' | 'agendada' | 'vencida' | 'a_favor';
-  /** Cuándo entró en esta etapa. */
-  desde: Timestamp;
-  qrEnviadoEn: Timestamp | null;
-  /** La cita retenida en el calendario: su identificador y en qué calendario. */
-  evento: { id: string; calendario: string } | null;
-  /** Comprobantes recibidos para esta solicitud. */
-  cotejos: number;
-  /** Seguimientos enviados sobre ESTA solicitud. El tope es uno (bloque 4). */
-  seguimientos: number;
-  /** Cuándo salió el seguimiento; `null` mientras no salió. */
-  seguimientoEn: Timestamp | null;
-  /**
-   * Cuándo el paciente volvió a escribir dentro de las 24 h del seguimiento;
-   * `null` si no volvió. Es la marca que hace que `reactivadas` cuente UNA
-   * vez por solicitud y no una por cada mensaje que siga.
-   */
-  reactivadaEn: Timestamp | null;
-  /**
-   * ADELANTO A FAVOR (Andres, 21/09/2026): hasta cuándo vale el adelanto de una
-   * cita pagada que se canceló, y de qué cita venía. `null` fuera de `a_favor`.
-   */
-  aFavorHasta?: Timestamp | null;
-  aFavorDe?: { id: string; calendario: string } | null;
-  /**
-   * EL TOTAL COTIZADO AL MANDAR EL QR, solo en venta (`cobroVenta.ts`).
-   *
-   * En una reserva el importe esperado se lee de `config/agendamiento`; en una
-   * venta cambia con cada pedido y por eso se guarda acá, en el mismo instante
-   * en que el QR salió. Es el número contra el que se coteja el comprobante, y
-   * nada de lo que el modelo escriba después lo mueve.
-   *
-   * `null` en las reservas y cuando el flujo no lo mandó. Sin él no se coteja
-   * el importe: se manda a una persona, que es lo honesto.
-   */
-  monto?: number | null;
-}
-
-/**
- * LA REGLA DEL ADELANTO A FAVOR (Andres, 21/09/2026). El asistente ya le decía
- * al paciente «para cancelar o reprogramar, escríbenos con al menos 2 horas de
- * anticipación y lo resolvemos sin costo», y el sistema le cobraba otra seña
- * al reagendar. Ahora: el adelanto de una cita PAGADA que se cancela con esa
- * anticipación queda a favor del paciente por siete días, y se aplica a la
- * próxima cita que agende en ese plazo. Con menos anticipación no hay crédito
- * automático: lo decide recepción, que recibe el aviso.
- */
-export const DIAS_ADELANTO_A_FAVOR = 7;
-export const HORAS_ANTICIPACION_PARA_CANCELAR = 2;
-
-export const ETAPAS_PENDIENTES: ReadonlySet<string> = new Set(['horarios', 'qr_enviado']);
-
-/** Milisegundos de un Timestamp (o de algo que se le parezca), o `null`. */
-export function milisegundosDe(v: unknown): number | null {
-  const t = v as { toMillis?: () => number; seconds?: unknown } | null | undefined;
-  if (typeof t?.toMillis === 'function') return t.toMillis();
-  if (typeof t?.seconds === 'number') return t.seconds * 1000;
-  return null;
-}
-
-/** Una solicitud nueva, con todos los contadores y marcas en cero. */
-function solicitudNueva(etapa: Solicitud['etapa'], ahora: Timestamp): Solicitud {
-  return {
-    etapa, desde: ahora, qrEnviadoEn: null, evento: null, cotejos: 0, seguimientos: 0,
-    seguimientoEn: null, reactivadaEn: null, aFavorHasta: null, aFavorDe: null, monto: null,
-  };
-}
-
-/**
- * Qué `solicitud` queda guardada después de este mensaje. `null` = no se toca.
- *
- * ES PURA Y ESTÁ PROBADA APARTE, como `contadoresDelMensaje`: sobre esto se
- * decide si el próximo archivo del paciente se coteja como pago y si le llega
- * un recordatorio, y la decisión separada de la base se prueba sin emulador.
- *
- * `previa` es lo que hay guardado. Por evento:
- *
- *  - `qr_enviado` SIEMPRE abre una solicitud nueva, aunque hubiera una: el
- *    flujo manda el QR cuando acaba de retener una cita, y esa cita nueva es
- *    la que hay que seguir, no la de hace dos días que venció o ya se pagó.
- *  - `horarios_ofrecidos` abre una solicitud `horarios` SOLO si no hay
- *    ninguna, o si la que hay está cerrada (`agendada` o `vencida`) desde hace
- *    más de 24 h: el paciente que agendó ayer y hoy pregunta por otro horario
- *    no es una solicitud pendiente nueva, es el mismo asunto. Sobre una
- *    `horarios` ya abierta NO cambia `desde` ni los contadores —si cambiara,
- *    cada turno con horarios reiniciaría el reloj del seguimiento y el
- *    recordatorio no saldría nunca—, y sobre un `qr_enviado` no toca nada: la
- *    seña pendiente manda.
- *  - `cita_agendada` (lo llama `registrarCierre` tipo cita, con la cita ya en
- *    el calendario) cierra la solicitud pendiente como `agendada`. Sin
- *    solicitud, la crea ya `agendada`: así un `horarios_ofrecidos` de la
- *    misma conversación en las 24 h siguientes no abre una pendiente que no
- *    existe. Sobre una `agendada` no mueve nada (idempotente).
- *
- * `merge: true` de Firestore fusiona los mapas campo a campo, así que una
- * solicitud nueva escribe TODOS sus campos, incluidos los nulos: si no, el
- * `seguimientoEn` de la solicitud anterior sobreviviría en la nueva.
- */
-export function solicitudTras(
-  previa: unknown,
-  evento: string | undefined,
-  ahoraMs: number,
-  datos: { referencia?: string; calendario?: string; inicio?: string; nueva?: string; monto?: number },
-): Solicitud | null {
-  const ahora = Timestamp.fromMillis(ahoraMs);
-  const p = typeof previa === 'object' && previa !== null ? (previa as Partial<Solicitud>) : null;
-  const etapaPrevia = typeof p?.etapa === 'string' ? p.etapa : '';
-
-  if (evento === 'qr_enviado') {
-    const id = (datos.referencia ?? '').trim();
-    return {
-      ...solicitudNueva('qr_enviado', ahora),
-      qrEnviadoEn: ahora,
-      // Sin identificador de la cita no hay cita que seguir: el cotejo igual
-      // corre (el cierre se referencia con el mensaje del comprobante), pero
-      // `senaVencida` no tiene qué borrar. El flujo siempre lo manda.
-      //
-      // EN VENTA, `referencia` es el PEDIDO (el `cat_…` del carrito web, o el
-      // id del mensaje del QR) y `calendario` no viene: no hay agenda. La forma
-      // del campo no cambia porque lo que significa es lo mismo —qué quedó
-      // reservado esperando este pago— y duplicarlo por vertical partiría en
-      // dos una regla que es una sola.
-      evento: id ? { id, calendario: (datos.calendario ?? '').trim() } : null,
-      // EL TOTAL COTIZADO, en venta. Se escribe acá y no se vuelve a tocar: es
-      // el número contra el que se cotejará el comprobante (`cobroVenta.ts`).
-      monto: totalUtilizable(datos.monto),
-    };
-  }
-
-  if (evento === 'horarios_ofrecidos') {
-    if (!p || etapaPrevia === '') return solicitudNueva('horarios', ahora);
-    if (ETAPAS_PENDIENTES.has(etapaPrevia)) return null;
-    const desdeMs = milisegundosDe(p.desde);
-    const cerradaHaceMas24h = desdeMs === null || ahoraMs - desdeMs >= MS_VENTANA_ATENCION;
-    return cerradaHaceMas24h ? solicitudNueva('horarios', ahora) : null;
-  }
-
-  // CANCELÓ UNA CITA PAGADA: el adelanto queda a su favor, si hubo anticipación.
-  // Solo la cita de ESTA solicitud, ya pagada (`agendada` con cotejo): una cita
-  // sin seña, o de otra solicitud, no deja ningún crédito. Sin anticipación —o
-  // sin saber cuándo era— no se da: lo resuelve recepción.
-  if (evento === 'cita_cancelada') {
-    const id = (datos.referencia ?? '').trim();
-    const pagada = etapaPrevia === 'agendada' && typeof p?.cotejos === 'number' && p.cotejos > 0
-      && !!p?.evento && p.evento.id === id && id !== '';
-    if (!pagada) return null;
-    const inicioMs = Date.parse(datos.inicio ?? '');
-    const conAnticipacion = Number.isFinite(inicioMs)
-      && inicioMs - ahoraMs >= HORAS_ANTICIPACION_PARA_CANCELAR * 3_600_000;
-    if (!conAnticipacion) return null;
-    return {
-      ...solicitudNueva('a_favor', ahora), ...p, etapa: 'a_favor', desde: ahora, evento: null,
-      aFavorHasta: Timestamp.fromMillis(ahoraMs + DIAS_ADELANTO_A_FAVOR * 24 * 3_600_000),
-      aFavorDe: p!.evento ?? null,
-    };
-  }
-
-  // REPROGRAMADA EN UN SOLO TURNO: la cancelación y la aplicación juntas. Misma
-  // regla que las dos por separado —cita pagada de esta solicitud, con
-  // anticipación—, y el adelanto pasa directo a la cita nueva, sin quedar «a
-  // favor» en el medio. Si la regla no se cumple, no se toca nada.
-  if (evento === 'reprogramada') {
-    const nueva = (datos.nueva ?? '').trim();
-    if (!nueva) return null;
-    const aFavor = solicitudTras(previa, 'cita_cancelada', ahoraMs, datos);
-    if (!aFavor) return null;
-    return solicitudTras(aFavor, 'adelanto_aplicado', ahoraMs, { referencia: nueva, calendario: datos.calendario });
-  }
-
-  // SE APLICÓ EL ADELANTO A UNA CITA NUEVA: vuelve a `agendada`, con la cita
-  // nueva. Una sola vez, y solo dentro del plazo: vencido, no se aplica nada.
-  if (evento === 'adelanto_aplicado') {
-    const id = (datos.referencia ?? '').trim();
-    const hasta = milisegundosDe(p?.aFavorHasta);
-    if (etapaPrevia !== 'a_favor' || !id || hasta === null || ahoraMs >= hasta) return null;
-    return {
-      ...solicitudNueva('agendada', ahora), ...p, etapa: 'agendada', desde: ahora,
-      evento: { id, calendario: (datos.calendario ?? '').trim() }, aFavorHasta: null,
-    };
-  }
-
-  if (evento === 'cita_agendada') {
-    if (etapaPrevia === 'agendada') return null;
-    if (!p || etapaPrevia === '') return solicitudNueva('agendada', ahora);
-    return { ...solicitudNueva('agendada', ahora), ...p, etapa: 'agendada', desde: ahora };
-  }
-
-  return null;
-}
-
-/**
- * ¿Este mensaje REACTIVA una solicitud que recibió seguimiento? Sí cuando es
- * del cliente, hay un seguimiento enviado hace menos de 24 h y es el primer
- * mensaje suyo después de ese seguimiento (`reactivadaEn` todavía vacío).
- * Cuenta `reactivadas` en el mes: es la cifra que dice si el recordatorio
- * recupera a alguien o solo cuesta (`Analisis/31` §6). Pura, probada aparte.
- */
-export function reactivaTras(
-  previa: unknown, direccion: 'entrante' | 'saliente', ahoraMs: number,
-): boolean {
-  if (direccion !== 'entrante') return false;
-  const p = typeof previa === 'object' && previa !== null ? (previa as Partial<Solicitud>) : null;
-  if (!p) return false;
-  const seguimientoMs = milisegundosDe(p.seguimientoEn);
-  if (seguimientoMs === null) return false;
-  if (milisegundosDe(p.reactivadaEn) !== null) return false;
-  const transcurrido = ahoraMs - seguimientoMs;
-  return transcurrido >= 0 && transcurrido < MS_VENTANA_ATENCION;
 }
 
 /** Forma que exige un identificador de comercio. Se comprueba ANTES de armar
@@ -576,7 +374,6 @@ const EVENTO_CONFIGURACION = 'configuracion_flujo';
  * escribió, si el flujo mandó `telefono`: le dicen si el próximo archivo se
  * lee como comprobante y qué cita está retenida. Sin teléfono, van vacíos.
  */
-export const MINUTOS_RETENCION_POR_DEFECTO = 30;
 export const IMPORTE_SENA_MAXIMO = 10000;
 
 /** Un día, en minutos: la ventana en la que un pago tardío sigue siendo ESTE caso. */
@@ -1324,9 +1121,36 @@ export const ingesta = onRequest(
       // contado sin solicitud dejaría al paciente mandando un comprobante que
       // nadie lee, y una solicitud sin QR contado sería un mensaje regalado.
       const solicitudPrevia = conversacion.get('solicitud');
-      const solicitud = solicitudTras(solicitudPrevia, mensaje.evento, ahoraMs,
+      //
+      // EL COBRO (regla 2, `cobroVenta.ts`): `solicitudDeCobroTras` se llama en
+      // TODO `qr_enviado` —agenda y venta comparten esta solicitud— y en los
+      // dos eventos del cobro. `referencia` es el PEDIDO y `monto` su total:
+      // con ellos decide si un QR es reenvío o cobro nuevo. Los `cambios` se
+      // mezclan DESPUÉS de lo que arma `solicitudTras` (obligación (a)). Con
+      // efecto `ignorado` o `sin_id_meta` no se escribe solicitud ni se cuenta
+      // el QR. Sin `reglaCobro` y sin restos de regla 2, el resultado es
+      // idéntico al de siempre.
+      // Con regla 2, una `referencia` vacía o igual al `idMeta` no identifica un
+      // pedido (cada reenvío sería un cobro nuevo con plazo nuevo): se trata
+      // como `sin_id_meta` y no abre cobro.
+      const sinPedido = mensaje.reglaCobro === 2
+        && (!mensaje.referencia || mensaje.referencia === (mensaje.idMeta ?? '').trim());
+      const eventoDeCobro: EventoDeCobro | null =
+        mensaje.evento === 'qr_enviado'
+          ? { tipo: 'qr_enviado', reglaCobro: mensaje.reglaCobro, idMeta: sinPedido ? undefined : mensaje.idMeta,
+              referencia: mensaje.referencia, monto: mensaje.monto }
+          : mensaje.evento === 'cobro_cancelado' ? { tipo: 'cobro_cancelado' }
+          : mensaje.evento === 'anulacion_avisada' ? { tipo: 'anulacion_avisada' } : null;
+      const cobro = eventoDeCobro ? solicitudDeCobroTras(solicitudPrevia, eventoDeCobro, ahoraMs) : null;
+      const sinQr = cobro !== null && mensaje.evento === 'qr_enviado'
+        && (cobro.efecto === 'ignorado' || cobro.efecto === 'sin_id_meta');
+      const base = sinQr ? null : solicitudTras(solicitudPrevia, mensaje.evento, ahoraMs,
         { referencia: mensaje.referencia, calendario: mensaje.calendario, inicio: mensaje.inicio,
           nueva: mensaje.nueva, monto: mensaje.monto });
+      const cambiosDeCobro = cobro?.efecto === 'regla_1' && cobro.cambios
+        ? { ...cobro.cambios, ...CAMPOS_REGLA_2_EN_NULO } : cobro?.cambios ?? null;
+      const solicitud = sinQr ? null : base ? (cambiosDeCobro ? { ...base, ...cambiosDeCobro } : base)
+        : cambiosDeCobro;
       // REACTIVADA (bloque 4): el primer mensaje del paciente dentro de las 24 h
       // de un seguimiento. Se anota en la solicitud y se cuenta en el mes, en
       // la misma transacción que cuenta el mensaje. Cero lecturas extra.
@@ -1371,7 +1195,11 @@ export const ingesta = onRequest(
         // Una solicitud nueva trae TODOS sus campos (los nulos también): con
         // `merge: true` los mapas se fusionan campo a campo, y un campo que no
         // viniera sobreviviría de la solicitud anterior.
-        ...(solicitud ? { solicitud }
+        // Si la solicitud viene de `cambios` PARCIALES del cobro (sin base), y el
+        // mensaje reactiva, se escribe también `reactivadaEn`: si no, la marca
+        // faltaría y `reactivadas` contaría dos veces.
+        ...(solicitud ? { solicitud: !base && reactivada
+          ? { ...solicitud, reactivadaEn: Timestamp.fromMillis(ahoraMs) } : solicitud }
           : reactivada ? { solicitud: { reactivadaEn: Timestamp.fromMillis(ahoraMs) } } : {}),
         // NO CONTACTAR (bloque 4): el paciente pidió que no le escriban, o el
         // turno pasó a una persona. Solo se ENCIENDE desde acá; apagarlo es un
@@ -1452,7 +1280,12 @@ export const ingesta = onRequest(
         //   SEÑAS ENVIADAS = QR de seña que salieron. Con `senasCotejadas` y
         //                    `senasVencidas` (que escribe `sena.ts`) es el
         //                    embudo de la reserva con seña.
-        ...(mensaje.evento === 'qr_enviado' ? { senasEnviadas: FieldValue.increment(1) } : {}),
+        ...(mensaje.evento === 'qr_enviado' && !sinQr && mensaje.reglaCobro !== 2
+          ? { senasEnviadas: FieldValue.increment(1) } : {}),
+        //   COBROS (regla 2): los contadores que devuelve `solicitudDeCobroTras`,
+        //   en la misma escritura de métricas (0 escrituras extra). Los nombres
+        //   son fijos de esa función, nunca del cuerpo.
+        ...Object.fromEntries(Object.entries(cobro?.metricas ?? {}).map(([k, n]) => [k, FieldValue.increment(n)])),
         //   REACTIVADAS   = conversaciones en las que el paciente volvió a
         //                   escribir dentro de las 24 h de un seguimiento
         //                   (bloque 4). Con `seguimientos` (que escribe
