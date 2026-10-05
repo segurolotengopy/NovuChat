@@ -239,6 +239,9 @@ function ejecutarCodigo(codigo, entradas, refs, globales = {}) {
   const vacios = GLOBALES_FUERA.filter((g) => !propios.includes(g));
   // Se ejecuta el codigo VERSIONADO del flujo, en una herramienta que no corre en ningun servidor: la alternativa (copiar la
   // logica de los nodos) dejaria la bateria midiendo otra cosa. Excepcion deliberada, igual que `admin/pruebas/lib/flujo.ts`.
+  // OJO: ocultar los globales como parametros es de FIDELIDAD (que el Code vea lo que ve n8n), no un aislamiento de seguridad:
+  // `globalThis.fetch` y `globalThis.process` siguen al alcance del codigo. Es codigo del propio repositorio; con `--vertex` se corre
+  // solo sobre ramas ya revisadas. Si esta bateria entrara a CI con credenciales, pasarla a `node:vm` con un contexto vacio.
   // nosemgrep: devsecops.js-eval-prohibido
   const fn = new Function('$input', '$', ...vacios, ...propios, codigo);
   const salida = fn(entrada, $, ...vacios.map(() => undefined), ...propios.map((n) => globales[n]));
@@ -1191,7 +1194,7 @@ export async function main(argv, deps = {}) {
     error: (t) => process.stderr.write(t),
     fetch: (...a) => globalThis.fetch(...a),
     leerArchivo: (r) => (existsSync(r) ? readFileSync(r, 'utf8') : null),
-    gcloudToken: () => execFileSync('gcloud', ['auth', 'print-access-token'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString(),
+    gcloudToken: () => execFileSync('gcloud', ['auth', 'print-access-token'], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000 }).toString(),
     ...deps,
   };
   let opciones;

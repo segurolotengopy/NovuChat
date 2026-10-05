@@ -841,7 +841,7 @@ export async function main(argv, deps = {}) {
     error: (t) => process.stderr.write(t),
     fetch: (...a) => globalThis.fetch(...a),
     leerArchivo: (r) => (existsSync(r) ? readFileSync(r, 'utf8') : null),
-    gcloudToken: () => execFileSync('gcloud', ['auth', 'print-access-token'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString(),
+    gcloudToken: () => execFileSync('gcloud', ['auth', 'print-access-token'], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000 }).toString(),
     leerCasos: () => leerCasosDeCarpeta(),
     ...deps,
   };
