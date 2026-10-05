@@ -114,7 +114,7 @@ function amSeguro(x) {
   return vmTextoSeguro(s) === true && !VM_PROHIBIDAS.test(vmNorm(s));
 }
 // Una frase que afirma que el pedido o la solicitud se pasó al restaurante.
-const AM_PASE = /\bya (lo |la )?pase\b|\b(lo|la) pase al restaurante|\bpase tu (pedido|solicitud|comprobante)|\bpase el pedido|llego al restaurante|llegaron al restaurante|\bhice llegar tu/;
+const AM_PASE = /\bya (lo |la )?pase\b|\b(lo|la) pase al restaurante|\bpase tu (pedido|solicitud|comprobante)|\bpase el pedido|llego al restaurante|llegaron al restaurante|\bhice llegar tu|\banotamos tu reserva\b|llego a nuestro equipo|llegaron a nuestro equipo/;
 const AM_NEGADO = /\bno (pude|pase|he pasado|logre)\b/;
 function amAfirmaPase(texto) {
   const n = vmNorm(texto);

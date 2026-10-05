@@ -60,7 +60,9 @@ const HONESTAS = [
   'Ya lo pasé al restaurante; ellos revisan el pago en su banco antes de despacharlo.',
   'Ya lo pasé al restaurante, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
   'Ya lo pasé al restaurante como pedido de PRUEBA.',
-  'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
+  '¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, terraza. Te esperamos en Av. Ejemplo 123.',
+  'No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.',
+  'Tu reserva: viernes 9 de octubre a las 20:00, 4 personas.', 'Reservar', 'Ver ubicación',
   'No pude incluir tu nota: «tequila» no está disponible por este medio.', 'Para volver al inicio, escribe «menú».',
   // Correcciones de conversación (04/10).
   '¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?', 'Elegir otra vez',

@@ -491,7 +491,7 @@ function rsPreguntaFaltantes(faltan, p) {
   if (!partes.length) return '';
   if (inicial) {
     return '¡Con gusto!' + (o.nivelEmojis === 'ninguno' ? '' : ' 🙌')
-      + ' Para tu solicitud de reserva cuéntame en un solo mensaje: ' + _rsListaY(partes)
+      + ' Para tu reserva cuéntame en un solo mensaje: ' + _rsListaY(partes)
       + '. Si celebran algo o necesitan algo especial, cuéntamelo también.';
   }
   const entendido = o.reserva && typeof o.reserva === 'object' ? _rsEntendido(o.reserva) : [];
@@ -577,18 +577,23 @@ function rsHoraSuelta(texto, reserva, cfg, ahoraMs) {
 function _rsPersonas(n) { return n + (n === 1 ? ' persona' : ' personas'); }
 
 // El resumen que se muestra al cliente antes de enviar. Si `r.grupoGrande` es true
-// (lo trae `rsValidar` en `reserva`), agrega la nota del grupo grande.
+// (lo trae `rsValidar` en `reserva`), NO agrega nota: el grupo grande lo marca solo el aviso al local.
 function rsResumen(r) {
   const x = rsValidarExtraccion(r);
-  const lineas = ['Tu solicitud de reserva:'];
+  const lineas = ['Tu reserva:'];
   const cuando = _rsFechaLegible(x.fecha, x.hora);
   if (cuando) lineas.push('• ' + cuando);
   if (x.personas) lineas.push('• ' + _rsPersonas(x.personas) + (x.zona ? ', ' + x.zona : ''));
   if (x.nombre) lineas.push('• A nombre de ' + x.nombre);
   if (x.celebracion) lineas.push('• Celebración: ' + x.celebracion);
   if (x.requerimiento) lineas.push('• Pedido especial: ' + x.requerimiento);
-  if (r && r.grupoGrande === true) lineas.push('• Es un grupo grande: el restaurante lo revisa aparte.');
   return lineas.join('\n');
+}
+
+// La frase de la confirmacion al cliente: «el lunes 6 de octubre a las 19:00, 4 personas, terraza» (sin nombre ni notas).
+function rsFraseDeConfirmacion(r) {
+  const x = rsValidarExtraccion(r);
+  return 'el ' + _rsFechaLegible(x.fecha, x.hora) + ', ' + _rsPersonas(x.personas) + (x.zona ? ', ' + x.zona : '');
 }
 
 // Una sola linea (sin saltos) para el aviso. `completo` ve el nombre entero; cualquier
@@ -602,6 +607,7 @@ function rsLineaCompacta(r, rol) {
   if (cuando) partes.push(cuando);
   if (x.personas) partes.push(_rsPersonas(x.personas) + (r && r.grupoGrande === true ? ' (grupo grande)' : ''));
   if (x.zona) partes.push(x.zona);
+  if (r && r.diaLleno === true) partes.push('DÍA LLENO/revisar');
   if (x.celebracion) partes.push('Celebración: ' + x.celebracion);
   if (x.requerimiento) partes.push('Pedido especial: ' + x.requerimiento);
   return partes.join(' · ');

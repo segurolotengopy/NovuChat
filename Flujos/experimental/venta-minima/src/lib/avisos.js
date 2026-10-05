@@ -686,6 +686,14 @@ function avModalidadVariable(d, dest, opc) {
 // variables de la plantilla de pedido («Se registró un pedido en …: Pedido: {{1}}. Total de la comida: {{2}}. Modalidad:
 // {{3}}. Comprobante: {{4}}.»), con textos fijos que no afirman nada: una reserva es siempre una SOLICITUD y no hay cobro.
 // El texto fijo de la plantilla («Se registró un pedido… antes de despachar») lo pone Meta, no este código.
+// Las marcas de una reserva para quien la lee en el local (texto fijo, sin nada del cliente): el grupo de más de `maxPersonasReserva` y el
+// día lleno (`topeReservasDia`) YA NO se derivan al cliente: se anotan y el local las revisa.
+function avMarcasReserva(r) {
+  const m = [];
+  if (r && r.grupoGrande === true) m.push('GRUPO GRANDE');
+  if (r && r.diaLleno === true) m.push('DÍA LLENO/revisar');
+  return m;
+}
 function avVariablesDeForma(tipo, d, dest, ahoraMs) {
   const opc = { cocina: dest.rol === 'cocina' };
   if (tipo === 'reserva') {
@@ -696,7 +704,7 @@ function avVariablesDeForma(tipo, d, dest, ahoraMs) {
       Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : 'personas sin indicar',
       avFechaLegible(r.fecha, r.hora) || 'fecha sin indicar',
       avLimpio(r.zona, 40, opc),
-    ].filter(Boolean);
+    ].concat(avMarcasReserva(r)).filter(Boolean);
     return {
       items: avParametro('SOLICITUD DE RESERVA' + (cod ? ' ' + cod : '') + ': ' + partes.join(', '), 200),
       total: avParametro('sin cobro', 30),
@@ -728,10 +736,10 @@ function avVariablesSolicitud(d, dest) {
   const zona = avLimpio(r.zona, 40, opc);
   const cuando = avFechaLegible(r.fecha, r.hora) || 'fecha sin indicar';
   const tel = dest.rol === 'completo' ? avDigitos(d.telefono) : '';
-  const extras = [
+  const extras = avMarcasReserva(r).concat([
     avLimpio(r.celebracion, 120, opc) ? 'Celebración: ' + avLimpio(r.celebracion, 120, opc) : '',
     avLimpio(r.requerimiento, 150, opc) ? 'Pedido especial: ' + avLimpio(r.requerimiento, 150, opc) : '',
-  ].filter(Boolean);
+  ]).filter(Boolean);
   return {
     cliente: avParametro((cod ? cod + ' · ' : '') + nombre, 90),
     personas: avParametro(Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : 'personas sin indicar', 30),
@@ -766,7 +774,7 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
       'Reserva ' + (Number.isFinite(p) && p >= 1 ? p + (p === 1 ? ' persona' : ' personas') : '—'),
       nombreDe(r.nombre || d.nombre),
       avLimpio(r.zona, 40, opc),
-    ].filter(Boolean);
+    ].concat(avMarcasReserva(r)).filter(Boolean);
     return {
       destinatario,
       cuando: avParametro(avFechaLegible(r.fecha, r.hora), 70),
@@ -842,6 +850,7 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
       + (avLimpio(r.zona, 40, opc) ? ', ' + avLimpio(r.zona, 40, opc) : ''));
     const aNombre = completo ? avLimpio(r.nombre || d.nombre, 60) : avPrimerNombre(r.nombre || d.nombre, opc);
     lineas.push('• A nombre de ' + (aNombre || 'sin nombre'));
+    if (avMarcasReserva(r).length) lineas.push('• ' + avMarcasReserva(r).join(' · '));
     if (avLimpio(r.celebracion, 120, opc)) lineas.push('• Celebración: ' + avLimpio(r.celebracion, 120, opc));
     if (avLimpio(r.requerimiento, 200, opc)) lineas.push('• Pedido especial: ' + avLimpio(r.requerimiento, 200, opc));
     if (completo && tel) lineas.push('Cliente: tel ' + tel);

@@ -424,10 +424,10 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
   };
   const nombresDePlantilla = (s: Salida): string[] => plantillas(s).map((a) => a['payload'].template.name);
 
-  it('reserva con plantilla configurada y ventana cerrada: dos plantillas, y el cliente lee que llegó', () => {
+  it('reserva con plantilla configurada y ventana cerrada: dos plantillas, y el cliente lee que se anotó su reserva', () => {
     const s = reservar(crear());
     expect(nombresDePlantilla(s)).toEqual(['plantilla_reserva_x', 'plantilla_reserva_x']);
-    expect(cuerpos(s).join('\n')).toContain('tu solicitud llegó al restaurante');
+    expect(cuerpos(s).join('\n')).toContain('Anotamos tu reserva para ');
     expect(s.armados.map((a) => a['para']).sort()).toEqual([AV1, AV2]);
   });
 
@@ -437,8 +437,8 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
     expect(plantillas(s)).toEqual([]);
     expect(s.armados).toEqual([]);
     expect(erroresAvisos(s)).toContain('plantilla_no_configurada_reserva');
-    expect(cuerpos(s).join('\n')).toContain('No pude hacer llegar tu solicitud al restaurante');
-    expect(cuerpos(s).join('\n')).not.toContain('llegó al restaurante');
+    expect(cuerpos(s).join('\n')).toContain('No pude hacer llegar tu reserva a nuestro equipo en este momento.');
+    expect(cuerpos(s).join('\n')).not.toMatch(/anotamos tu reserva|llegó al restaurante|llegó a nuestro equipo/i);
   });
 
   it('reserva SIN plantilla pero con la ventana abierta: cae al texto de detalle, que sí salió', () => {
@@ -448,7 +448,7 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
     expect(plantillas(s)).toEqual([]);
     expect(s.armados.map((a) => [a['para'], a['clase']])).toEqual([[AV1, 'detalle']]);
     expect(cuerpoDe(s.armados[0]!)).toContain('Solicitud de reserva');
-    expect(cuerpos(s).join('\n')).toContain('tu solicitud llegó al restaurante');
+    expect(cuerpos(s).join('\n')).toContain('Anotamos tu reserva para ');
   });
 
   it('derivación SIN plantilla y ventana cerrada: ningún ítem de plantilla; NO hereda la de reserva, solo el respaldo común `plantillaAviso`', () => {
@@ -791,7 +791,7 @@ describe('I1: «reservado» como dato de la carta o de una zona no traba el fluj
     expect(cuerpos(resumen).join('\n')).toContain('sala reservada');
     const enviada = turno(m, { boton: 'r|enviar' });
     expect(enviada.armados.length).toBeGreaterThan(0);
-    expect(cuerpos(enviada).join('\n')).toContain('tu solicitud llegó al restaurante');
+    expect(cuerpos(enviada).join('\n')).toContain('Anotamos tu reserva para ');
   });
 });
 
@@ -921,8 +921,11 @@ describe('M1: los topes en 0 se respetan de punta a punta', () => {
     turno(r, { texto: 'mesa para 4 el viernes a las 8 de la noche en la terraza', extraccion: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'terraza', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' } });
     const e = turno(r, { boton: 'r|enviar' });
     expect(e.cfg['topeReservasDia']).toBe(0);
-    expect(e.armados).toEqual([]);
-    expect(cuerpos(e).join('\n')).toContain('Por hoy ya no puedo tomar más solicitudes de reserva');
+    // El día lleno YA NO deriva: se anota igual, el aviso sale marcado y el cliente lee la misma confirmación.
+    expect(e.armados.length).toBeGreaterThan(0);
+    expect(JSON.stringify(e.armados)).toContain('DÍA LLENO/revisar');
+    expect(cuerpos(e).join('\n')).toContain('Anotamos tu reserva para ');
+    expect(cuerpos(e).join('\n')).not.toMatch(/Por hoy ya no puedo|lleno/i);
   });
 });
 

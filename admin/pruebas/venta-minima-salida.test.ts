@@ -784,6 +784,9 @@ describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', ()
     ['Ya lo pasé al restaurante, con los datos que leí, para que lo revisen.'],
     ['Ya la pasé al restaurante.'],
     ['Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva.'],
+    ['¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Ejemplo 123.'],
+    ['Tu reserva llegó a nuestro equipo.'],
+    ['Tus datos llegaron a nuestro equipo.'],
   ])('defensa: «%s» en un mensaje normal SIN aviso salido se reemplaza por la derivación', (frase) => {
     const sin = mensajes({ mensajes: [texto(frase)] });
     expect(cuerpoDe(sin.items[0]!)).toBe(GENERICO);
@@ -1027,10 +1030,10 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
       'Recibí tu comprobante, pero no pude leerlo bien. ¿Me lo envías de nuevo, más nítido o como PDF desde la app de tu banco?',
       'Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.',
       'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.',
-      'Para tu solicitud de reserva dime, en un solo mensaje: cuántas personas, qué día y a qué hora.',
-      'Tu solicitud de reserva:\n• viernes 9 de octubre a las 20:00\n• 4 personas, salón\n• A nombre de Ana Prueba',
-      'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
-      'No pude hacer llegar tu solicitud al restaurante en este momento. Escríbeles con el botón para reservar.',
+      'Para tu reserva cuéntame en un solo mensaje: cuántas personas, qué día y a qué hora.',
+      'Tu reserva:\n• viernes 9 de octubre a las 20:00\n• 4 personas, salón\n• A nombre de Ana Prueba',
+      '¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Ejemplo 123.',
+      'No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.',
       '¡Hola! Qué bueno que viste nuestra promo. Promo Dúo: 2 órdenes. Precio: 99 Bs.',
       'Soy un asistente virtual con inteligencia artificial de Q\' Taco. Si prefieres hablar con una persona del restaurante, toca el botón.',
       GENERICO,
