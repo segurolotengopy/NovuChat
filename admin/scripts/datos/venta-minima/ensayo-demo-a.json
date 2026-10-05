@@ -18,6 +18,7 @@
     "avisarAlPropioNumero": true,
     "plantillaPedido": "",
     "plantillaReserva": "",
+    "plantillaReservaCompleto": "",
     "plantillaDerivacion": ""
   }
 }

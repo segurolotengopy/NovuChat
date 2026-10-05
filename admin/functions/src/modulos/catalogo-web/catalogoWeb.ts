@@ -287,6 +287,40 @@ export function paletaValida(valor: unknown): string {
 }
 
 /**
+ * EL NÚMERO PÚBLICO DE LA LÍNEA DEL NEGOCIO (`rutasWhatsApp/<phoneNumberId>.numeroPublico`,
+ * 04/10/2026), para que el cliente vuelva al chat con `https://wa.me/<número>`.
+ *
+ * Es el número que el negocio ya publica como su WhatsApp, y NINGÚN otro: ni el
+ * de recepción interna (`config/negocio.numeroRecepcion`), ni el de avisos, ni
+ * el id de Meta. Solo viaja si es una cadena de 8 a 15 dígitos, sin `+` ni
+ * espacios y sin cero inicial; cualquier otra cosa devuelve `''` y la respuesta
+ * simplemente no lo trae (la página ya sabe vivir sin él). Es la misma forma
+ * que valida el navegador (`enlaceAlChat`): dos vallas para un valor que
+ * termina en un `href`.
+ */
+const NUMERO_PUBLICO = /^[1-9][0-9]{7,14}$/;
+
+export function numeroPublicoValido(valor: unknown): string {
+  return typeof valor === 'string' && NUMERO_PUBLICO.test(valor) ? valor : '';
+}
+
+/**
+ * El número público de la línea por la que entró la conversación de la ficha.
+ *
+ * Se lee por el `phoneNumberId` de la ficha, con el SDK Admin (`rutasWhatsApp`
+ * está cerrada a todo navegador). Y SOLO se acepta si la ruta es del MISMO
+ * comercio que la ficha: un número reasignado a otro comercio dentro de las 72
+ * horas no puede mostrarle al cliente el WhatsApp de otro negocio. De ese
+ * documento no sale ningún otro campo.
+ */
+async function numeroPublicoDeLaLinea(ficha: Ficha): Promise<string> {
+  if (!/^[0-9]{6,25}$/.test(ficha.phoneNumberId)) return '';
+  const ruta = await db().doc(`rutasWhatsApp/${ficha.phoneNumberId}`).get();
+  if (!ruta.exists || ruta.get('tenantId') !== ficha.tenantId) return '';
+  return numeroPublicoValido(ruta.get('numeroPublico'));
+}
+
+/**
  * El logo del comercio, incrustado.
  *
  * Vive en `/config/marca` y no en `/config/negocio` porque son decenas de
@@ -721,7 +755,7 @@ export const catalogoPublico = onRequest(
     const ficha = await fichaVigente(id);
     if (!ficha) { respuesta.status(404).json({ error: 'enlace vencido' }); return; }
 
-    const [config, venta, marca, catalogo, fotos] = await Promise.all([
+    const [config, venta, marca, catalogo, fotos, whatsapp] = await Promise.all([
       db().doc(`tenants/${ficha.tenantId}/config/negocio`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/venta`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/marca`).get(),
@@ -742,6 +776,7 @@ export const catalogoPublico = onRequest(
       // byte de imagen. Sin esto, saber qué ítems tienen foto costaría bajarlas
       // todas para después tirarlas.
       db().collection(`tenants/${ficha.tenantId}/fotosCatalogo`).select().get(),
+      numeroPublicoDeLaLinea(ficha),
     ]);
     const conFoto = new Set(fotos.docs.map((d) => d.id));
 
@@ -778,6 +813,9 @@ export const catalogoPublico = onRequest(
         // pueda fallar— para el elemento que está más arriba de la página.
         logo: logoValido(marca.get('logo')) ? String(marca.get('logo')) : '',
         paleta: paletaValida(config.get('paleta')),
+        // El número público de la línea, o NADA: sin esa clave la página no
+        // ofrece «Volver al chat». Ver `numeroPublicoDeLaLinea`.
+        ...(whatsapp !== '' ? { whatsapp } : {}),
       },
       // Condiciones de entrega, si el comercio vende. Se muestran ANTES del
       // checkout: enterarse del costo de envío después de confirmar es la queja
