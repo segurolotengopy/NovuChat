@@ -2,7 +2,7 @@
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
   "nodes": [],
   "seccion": "S",
-  "nota": "Escenarios de SEGURIDAD del texto libre (la cartera, 05/10/2026): el código no debe tomar como dirección ni como referencia lo que no lo es (órdenes, ayuda, consultas, la carta, un comprobante en texto, números sueltos). FALLAN contra la rama de delivery opcional en f065863b y deben PASAR contra su head nuevo; contra main también fallan por lo que main ya hacía distinto. Se miden con invariantes de estado y de texto, nunca con frases exactas. La suite fija con un control negativo que fallan contra main y se pone roja cuando lleguen; entonces pasan a A.json.",
+  "nota": "Escenarios de SEGURIDAD del texto libre (la cartera, 05/10/2026; #435 ya en main): el código no debe tomar como dirección ni como referencia lo que no lo es (órdenes, ayuda, consultas, un comprobante en texto, números sueltos). Casos normales: deben pasar. Invariantes de estado y de texto, nunca frases exactas.",
   "casos": [
     {
       "id": "S1",

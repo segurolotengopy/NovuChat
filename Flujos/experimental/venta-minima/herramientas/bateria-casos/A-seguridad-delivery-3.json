@@ -2,7 +2,7 @@
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
   "nodes": [],
   "seccion": "R",
-  "nota": "Seguridad del delivery, 3.ª ronda (la cartera, 05/10/2026; head final de la rama de delivery opcional, PR #435): recojo propio (R1), intención ajena ampliada (M2b) y falsos positivos de ayuda (FP). Pasan contra 0c4bf930; contra main fallan o pasan según el caso (la suite fija cuáles).",
+  "nota": "Seguridad del delivery, tercera ronda (la cartera, 05/10/2026; #435 ya en main): recojo propio (R1), intención ajena ampliada (M2b) y falsos positivos de ayuda (FP). Casos normales: deben pasar.",
   "casos": [
     {
       "id": "R1r",

@@ -2,7 +2,7 @@
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
   "nodes": [],
   "seccion": "M",
-  "nota": "Seguridad del texto libre del delivery, segunda ronda (la cartera, 05/10/2026; head nuevo de la rama de delivery opcional, PR #435). PASAN contra su head 542d5f7e; contra main fallan o pasan según el caso (la suite fija cuáles). Invariantes de estado y de texto, no frases exactas. M1r/M1p simulan al modelo que MARCA el pedido de persona (quiereHablar): con solo `{\"lineas\":[]}` el código no deriva (ver A-pendiente-de-rama.json, M1s y M1sp).",
+  "nota": "Seguridad del texto libre del delivery, segunda ronda (la cartera, 05/10/2026; #435 ya en main). Casos normales: deben pasar. Invariantes de estado y de texto, no frases exactas. M1r/M1p simulan al modelo que MARCA el pedido de persona (quiereHablar) y M1s/M1sp el que no marca nada: en los dos casos deriva.",
   "casos": [
     {
       "id": "M1r",

@@ -2,7 +2,7 @@
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
   "nodes": [],
   "seccion": "A",
-  "nota": "Escenarios que HOY fallan contra el head de la rama de delivery opcional (0c4bf930) y contra main: A7 y A8 esperan la rama funcional (la intención de delivery por código, nunca derivar); A6b: «Donde dije» con quiereHablar deriva; S2d: «dame la carta» con la dirección pendiente no muestra la carta; M2bX: «eso es todo» y «cámbiame el pedido» con el resumen dado se guardan como referencia.",
+  "nota": "Escenarios que HOY fallan contra main porque esperan una rama o una decisión que todavía no llegó: A7 y A8 (la rama funcional: la intención de delivery por código, nunca derivar), S2d («dame la carta» con la dirección pendiente no muestra la carta) y M2bX («eso es todo» y «cámbiame el pedido» con el resumen dado se guardan como referencia: hallazgo real). La suite los saca del «cero fallos»; `BATERIA_CONTROL_NEGATIVO=1` (opcional, nunca en CI) comprueba que siguen fallando. Cuando uno pase, se mueve a un archivo normal.",
   "casos": [
     {
       "id": "A7",

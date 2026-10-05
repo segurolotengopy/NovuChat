@@ -2,7 +2,7 @@
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
   "nodes": [],
   "seccion": "A",
-  "nota": "Escenarios A1 a A6, A11, A13 y A15 de «Delivery y entrega»: son de la rama de DELIVERY OPCIONAL (PR #435: la dirección es lo único que se exige; la referencia y quién recibe son opcionales, y el texto libre lo toma el código). PASAN contra esa rama y FALLAN contra main a propósito (main todavía pide referencia y nombre): la suite lo fija con un control negativo que se pone ROJO cuando la rama se fusione; entonces estos casos pasan a A.json y el control se borra. Para verificarlos contra la rama sin mezclar nada: un worktree temporal de origin/cartera/qtaco-delivery-opcional con esta batería fusionada encima.",
+  "nota": "Escenarios de «Delivery y entrega» de la rama de DELIVERY OPCIONAL (PR #435, ya en main desde el 05/10/2026): la dirección es lo único que se exige; la referencia y quién recibe son opcionales, y el texto libre lo toma el código. Son casos normales: deben pasar. Contra una base anterior a #435 fallan.",
   "casos": [
     {
       "id": "A1",
