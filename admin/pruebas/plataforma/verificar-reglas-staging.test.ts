@@ -39,7 +39,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 // @ts-expect-error — módulo .mjs sin tipos
-import { comprobarBucket, comprobarProyecto, esHuerfanoDePrueba, esTenantDePrueba, esUsuarioDePrueba, fichaDeAgenda, fichaDeVenta, nombresDePrueba } from '../../scripts/plataforma/verificar-reglas-staging.mjs';
+import { borrarTenants, comprobarBucket, comprobarProyecto, esHuerfanoDePrueba, esObjetoDePrueba, esTenantDePrueba, esUsuarioDePrueba, fichaDeAgenda, fichaDeVenta, marcarFichas, nombresDePrueba } from '../../scripts/plataforma/verificar-reglas-staging.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(aqui, '..', '..');
@@ -67,6 +67,20 @@ describe('verificar-reglas-staging — la salvaguarda de proyecto', () => {
   it('acepta solo el proyecto de la lista blanca que además contiene «staging» (F1: el id real no lo tiene entre guiones)', () => {
     expect(comprobarProyecto(STAGING, BUENO)).toEqual({ ok: true, emulador: false });
     expect(comprobarProyecto('otro-staging-2', { ...BUENO, GCP_PROJECT_ID_STAGING: 'otro-staging-2' }).ok).toBe(true);
+  });
+
+  it('Seguridad LOW 1b: un proyecto real se rechaza si CUALQUIER variable de emulador existe, aunque esté en blanco', () => {
+    for (const k of ['FIRESTORE_EMULATOR_HOST', 'FIREBASE_AUTH_EMULATOR_HOST', 'FIREBASE_STORAGE_EMULATOR_HOST', 'STORAGE_EMULATOR_HOST']) {
+      for (const valor of ['127.0.0.1:1', '', '  ']) {
+        const r = comprobarProyecto(STAGING, { ...BUENO, [k]: valor });
+        expect(r.ok, `${k}=«${valor}»`).toBe(false);
+        expect(r.motivo).toMatch(/emulador/);
+      }
+    }
+    // Y un demo-* con una variable en blanco NO cuenta como emulador completo.
+    const todas = { FIRESTORE_EMULATOR_HOST: '127.0.0.1:1', FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:2', FIREBASE_STORAGE_EMULATOR_HOST: '127.0.0.1:3' };
+    expect(comprobarProyecto('demo-x', todas).ok).toBe(true);
+    for (const k of Object.keys(todas)) expect(comprobarProyecto('demo-x', { ...todas, [k]: ' ' }).ok, k).toBe(false);
   });
 
   it('Seguridad LOW 3: un espacio o salto de línea de más en las variables no esquiva la comparación', () => {
@@ -136,6 +150,57 @@ describe('verificar-reglas-staging — la salvaguarda de proyecto', () => {
     }
   });
 
+  it('Storage: un objeto es de prueba solo si el segundo segmento tiene la forma exacta del id', () => {
+    expect(esObjetoDePrueba('tenants/zz-verif-reglas-20261004/captacion/planes.pdf')).toBe(true);
+    expect(esObjetoDePrueba('tenants/zz-verif-reglas-20261004-ag/captacion/planes.pdf')).toBe(true);
+    for (const n of ['tenants/cliente-real/captacion/planes.pdf', 'tenants/zz-verif-reglas-/x', 'tenants/zz-verif-reglas-ajeno-real/x',
+      'tenants/zz-verif-reglas-20261004', 'tenants/zz-verif-reglas-20261004/', 'otra/zz-verif-reglas-20261004/x', 'zz-verif-reglas-20261004/x', '', undefined]) {
+      expect(esObjetoDePrueba(n as string), String(n)).toBe(false);
+    }
+  });
+
+  it('M1 (limpieza): si falla Storage de un tenant NO se borra su árbol de Firestore (se conserva el ancla); un 404 no cuenta', async () => {
+    const arboles: string[] = [];
+    const r = await borrarTenants({
+      borrarObjetos: async (id: string) => {
+        if (id === 'zz-verif-reglas-20261004') throw Object.assign(new Error('x'), { code: 403 });
+        if (id === 'zz-verif-reglas-20261005') throw Object.assign(new Error('x'), { code: 404 });
+      },
+      borrarArbol: async (id: string) => { arboles.push(id); },
+    }, ['zz-verif-reglas-20261004', 'zz-verif-reglas-20261005', 'zz-verif-reglas-20261006']);
+    expect(arboles).toEqual(['zz-verif-reglas-20261005', 'zz-verif-reglas-20261006']); // el 403 conserva el ancla
+    expect(r.borrados).toBe(2);
+    expect(r.falloStorage?.code).toBe(403);
+    // Sin fallos: todo se borra.
+    arboles.length = 0;
+    const ok = await borrarTenants({ borrarObjetos: async () => {}, borrarArbol: async (id: string) => { arboles.push(id); } }, ['a', 'b']);
+    expect(ok).toEqual({ borrados: 2, falloStorage: null });
+    expect(arboles).toEqual(['a', 'b']);
+  });
+
+  it('L3 (limpieza): se borra primero SOLO la ficha, y solo de lo que es de prueba', async () => {
+    const MARCA = { creadoPor: 'verificar-reglas-staging' };
+    const docs: Record<string, { existe: boolean; data?: object }> = {
+      'zz-verif-reglas-20261004': { existe: true, data: MARCA },
+      'zz-verif-reglas-20261004-ag': { existe: true, data: MARCA },
+      'zz-verif-reglas-20250101': { existe: false },                 // huérfano con id de prueba
+      'zz-verif-reglas-ajeno-huerfano': { existe: false },           // huérfano ajeno
+      'zz-verif-reglas-ajeno-real': { existe: true, data: { creadoPor: 'otra' } },
+      'zz-verif-reglas-': { existe: true, data: MARCA },             // el prefijo a secas
+      'cliente-real': { existe: true, data: MARCA },
+    };
+    const fichas: string[] = [];
+    const leidos: string[] = [];
+    const c = await marcarFichas({
+      ids: Object.keys(docs),
+      leer: async (id: string) => { leidos.push(id); return docs[id]; },
+      borrarFicha: async (id: string) => { fichas.push(id); },
+    });
+    expect(c).toEqual(['zz-verif-reglas-20261004', 'zz-verif-reglas-20261004-ag', 'zz-verif-reglas-20250101']);
+    expect(fichas).toEqual(['zz-verif-reglas-20261004', 'zz-verif-reglas-20261004-ag']); // al huérfano no hay ficha que borrar
+    expect(leidos).not.toContain('cliente-real'); // ni se lee lo que no lleva el prefijo
+  });
+
   it('H1/M1: el comercio de agenda tiene captación (la capacidad de lo que el de venta no puede)', () => {
     expect(fichaDeAgenda('t').flujos).toEqual(['agendamiento', 'onboarding']);
     expect(fichaDeVenta('t').flujos).toEqual(['venta']);
@@ -151,6 +216,9 @@ describe('verificar-reglas-staging — la salvaguarda de proyecto', () => {
     }
     expect(esTenantDePrueba('zz-verif-reglas-20261004', { creadoPor: 'verificar-reglas-staging' })).toBe(true);
     for (const [id, ficha] of [
+      // Seguridad 1b: el mismo regex que el huérfano; el prefijo a secas ya no alcanza.
+      ['zz-verif-reglas-', { creadoPor: 'verificar-reglas-staging' }], ['zz-verif-reglas-x', { creadoPor: 'verificar-reglas-staging' }],
+      ['zz-verif-reglas-20261004-otro', { creadoPor: 'verificar-reglas-staging' }],
       ['zz-verif-reglas-ajeno-real', { creadoPor: 'alguien' }], ['zz-verif-reglas-x', {}], ['zz-verif-reglas-x', undefined],
       ['cliente-real', { creadoPor: 'verificar-reglas-staging' }], ['zz-verif-reglas', { creadoPor: 'verificar-reglas-staging' }],
       ['zz-verif-reglasX-1', { creadoPor: 'verificar-reglas-staging' }],
@@ -379,7 +447,7 @@ describe.skipIf(!process.env.VERIFICAR_REGLAS_EMULADOR)('verificar-reglas-stagin
     expect(l2.texto).toMatch(/borrados 0 tenants y 0 usuarios/);
 
     // L2/M3: ningún señuelo se tocó; el objeto de Storage y el huérfano con id de prueba se fueron.
-    expect(resto.texto).toMatch(/tenants=6 usuarios=2 huerfanos-ajenos=2 huerfano-valido=0 objetos=0/);
+    expect(resto.texto).toMatch(/tenants=6 usuarios=2 huerfanos-ajenos=2 huerfano-valido=0 objetos=0 objetos-ajenos=2/);
     for (const x of [ok, mal, conservar, l1, l2]) sinSensibles(x.texto);
   }, 300000);
 });
@@ -392,7 +460,12 @@ import { getAuth } from 'firebase-admin/auth';
 import { getStorage } from 'firebase-admin/storage';
 const [, , proyecto, modo] = process.argv;
 const app = initializeApp({ projectId: proyecto, storageBucket: proyecto + '.appspot.com' }, 'senuelos');
-const objetos = async () => (await getStorage(app).bucket().getFiles({ prefix: 'tenants/zz-verif-reglas-' }))[0].length;
+const bucket = getStorage(app).bucket();
+// Objetos de prueba (segundo segmento con forma de id de prueba): sin contar los señuelos ajenos.
+const objetos = async () => (await bucket.getFiles({ prefix: 'tenants/zz-verif-reglas-' }))[0].filter((f) => !f.name.includes('ajeno-real')).length;
+// Objetos AJENOS que no se pueden tocar nunca: otro tenant, y un id con el prefijo pero sin la forma.
+const AJENOS = ['tenants/cliente-real/captacion/planes.pdf', 'tenants/zz-verif-reglas-ajeno-real/captacion/planes.pdf'];
+const ajenos = async () => { let n = 0; for (const a of AJENOS) if ((await bucket.file(a).exists())[0]) n += 1; return n; };
 const db = getFirestore(app); const auth = getAuth(app);
 const TENANTS = {
   'cliente-real': 'verificar-reglas-staging',          // marca, pero sin prefijo
@@ -408,6 +481,9 @@ const CORREOS = ['zz-verif-reglas-alguien', 'cliente-real'].map((u) => u + '@' +
 const HUERFANO_VALIDO = 'zz-verif-reglas-20250101';
 const HUERFANOS_AJENOS = ['zz-verif-reglas-ajeno-huerfano', 'cliente-huerfano'];
 if (modo === 'sembrar') {
+  for (const a of AJENOS) await bucket.file(a).save('x');
+  // Un objeto con id de prueba cuyo tenant YA NO existe: el barrido lo borra.
+  await bucket.file('tenants/zz-verif-reglas-20250102/captacion/planes.pdf').save('x');
   await db.doc('tenants/' + HUERFANO_VALIDO + '/bitacora/x').set({ x: 1 });
   for (const id of HUERFANOS_AJENOS) await db.doc('tenants/' + id + '/bitacora/x').set({ x: 1 });
   for (const [id, por] of Object.entries(TENANTS)) {
@@ -421,7 +497,7 @@ if (modo === 'sembrar') {
   const hv = (await db.doc('tenants/' + HUERFANO_VALIDO + '/bitacora/x').get()).exists ? 1 : 0;
   let t = 0; for (const id of Object.keys(TENANTS)) if ((await db.doc('tenants/' + id).get()).exists) t += 1;
   let u = 0; for (const c of CORREOS) if (await auth.getUserByEmail(c).catch(() => null)) u += 1;
-  console.log('tenants=' + t + ' usuarios=' + u + ' huerfanos-ajenos=' + h + ' huerfano-valido=' + hv + ' objetos=' + (await objetos()));
+  console.log('tenants=' + t + ' usuarios=' + u + ' huerfanos-ajenos=' + h + ' huerfano-valido=' + hv + ' objetos=' + (await objetos()) + ' objetos-ajenos=' + (await ajenos()));
 }
 process.exit(0);
 `;

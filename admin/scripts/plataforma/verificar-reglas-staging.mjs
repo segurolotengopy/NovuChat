@@ -4,8 +4,8 @@
  * PARA QUÉ. Las reglas se prueban en el emulador (`reglas.test.ts`,
  * `storage-reglas.test.ts`), pero lo que decide si un comercio real puede
  * trabajar es el ruleset PUBLICADO en un proyecto de verdad: el `firestore.get()`
- * de Storage, el rol del agente de Storage y las reglas con `tieneModulo` solo se
- * ven ahí. Este script crea UN tenant de prueba con la forma exacta de la ficha
+ * de Storage, el rol del agente de Storage y la lógica de capacidades por `flujos` solo se
+ * ven ahí (no se ejercita `tieneModulo` con módulos presentes: ver LIMITACIONES). Este script crea UN tenant de prueba con la forma exacta de la ficha
  * de un comercio de venta ya dado de alta (sin `modulos`), otro de agendamiento
  * para las negativas entre comercios, entra como el administrador de cada uno
  * con el SDK de cliente (el mismo camino que la consola) y verifica la matriz.
@@ -72,11 +72,15 @@
  *     salen sin trabajar con estos datos.
  *   · Si la matriz falla (1) y además la limpieza falla, el código sigue siendo 1 y se
  *     imprime el aviso «corra --limpiar».
- *   · Cada operación tiene un tope de 20 s (`error:timeout`, cuenta como fallo).
+ *   · El tope de 20 s (`error:timeout`, cuenta como fallo) cubre SOLO las operaciones de la
+ *     matriz: no la siembra, el inicio de sesión ni la limpieza (esas se cortan con Ctrl-C).
+ *   · Si falla el borrado en Storage de un tenant de prueba, NO se borra su árbol de Firestore:
+ *     el id queda como ancla y la siguiente corrida (o --limpiar) lo reintenta.
  *
  * SALIDA: 0 todo como se esperaba; 1 la matriz difiere de lo esperado; 2 salvaguarda o
- * argumentos; 3 error inesperado (la siembra o la matriz no terminaron; igual se limpia);
- * 130 interrumpido con Ctrl-C (limpia si puede; si no, corra --limpiar).
+ * argumentos; 3 error inesperado: la siembra o la matriz no terminaron, o la matriz pasó y
+ * FALLÓ la limpieza final (igual se limpia siempre que se puede); 130 interrumpido con Ctrl-C
+ * (la limpieza la hace el cierre normal; un segundo Ctrl-C sale ya).
  */
 import { randomBytes } from 'node:crypto';
 
@@ -101,6 +105,9 @@ export function comprobarProyecto(proyectoCrudo, env = process.env) {
   const emuladorFs = !!v('FIRESTORE_EMULATOR_HOST');
   const emuladorAuth = !!v('FIREBASE_AUTH_EMULATOR_HOST');
   const emuladorSt = !!v('FIREBASE_STORAGE_EMULATOR_HOST');
+  // Para el rechazo por ambigüedad basta que la variable EXISTA, aunque esté en blanco.
+  const hayEmulador = ['FIRESTORE_EMULATOR_HOST', 'FIREBASE_AUTH_EMULATOR_HOST',
+    'FIREBASE_STORAGE_EMULATOR_HOST', 'STORAGE_EMULATOR_HOST'].some((k) => env[k] !== undefined);
   if (proyecto.startsWith('demo-')) {
     if (emuladorFs && emuladorAuth && emuladorSt) return { ok: true, emulador: true };
     return {
@@ -110,7 +117,7 @@ export function comprobarProyecto(proyectoCrudo, env = process.env) {
   }
   // Un proyecto real con un emulador a medio configurar es una trampa: el SDK
   // Admin iría al emulador y el de cliente a la nube (o al revés).
-  if (emuladorFs || emuladorAuth || emuladorSt) {
+  if (hayEmulador) {
     return { ok: false, motivo: 'hay variables de emulador puestas y el proyecto no es demo-*: se rechaza por ambiguo' };
   }
   // GCP_PROJECT_ID es el proyecto de DEMOS; el de producción es GCP_PROJECT_ID_PROD, y sin
@@ -153,9 +160,19 @@ export function esUsuarioDePrueba(correo) {
   return typeof correo === 'string' && correo.startsWith(PREFIJO) && correo.endsWith(`@${DOMINIO}`);
 }
 
-/** ¿Es un tenant de prueba? Prefijo Y la marca de quien lo sembró en la ficha. */
+/** La forma EXACTA de los ids de esta prueba: prefijo + fecha de 8 dígitos + «-ag» opcional. */
+const ID_PRUEBA = /^zz-verif-reglas-[0-9]{8}(-ag)?$/;
+
+/** ¿Es un tenant de prueba? La forma exacta del id Y la marca de quien lo sembró en la ficha. */
 export function esTenantDePrueba(id, ficha) {
-  return typeof id === 'string' && id.startsWith(PREFIJO) && ficha?.creadoPor === CREADOR;
+  return typeof id === 'string' && ID_PRUEBA.test(id) && ficha?.creadoPor === CREADOR;
+}
+
+/** ¿Es un objeto de Storage de un tenant de prueba? Mismo regex, sobre el segundo segmento. */
+export function esObjetoDePrueba(nombre) {
+  if (typeof nombre !== 'string') return false;
+  const [raiz, tenant, ...resto] = nombre.split('/');
+  return raiz === 'tenants' && ID_PRUEBA.test(tenant ?? '') && resto.join('/') !== '';
 }
 
 /**
@@ -164,7 +181,44 @@ export function esTenantDePrueba(id, ficha) {
  * que un disparador (`registrarCambioConfig`) escribió después de borrar el tenant.
  */
 export function esHuerfanoDePrueba(id, existe) {
-  return existe === false && typeof id === 'string' && /^zz-verif-reglas-[0-9]{8}(-ag)?$/.test(id);
+  return existe === false && typeof id === 'string' && ID_PRUEBA.test(id);
+}
+
+/**
+ * Fase 1 de la limpieza: decide qué tenants son de prueba y borra SOLO su ficha (el documento
+ * `tenants/{id}`), que es lo que corta de verdad el acceso de una sesión viva (un ID token vive
+ * hasta una hora; las reglas leen la ficha en cada operación). Devuelve los ids a seguir
+ * limpiando. `d`: { ids, leer(id) -> {existe, data}, borrarFicha(id) }.
+ */
+export async function marcarFichas(d) {
+  const candidatos = [];
+  for (const id of d.ids) {
+    if (!id.startsWith(PREFIJO)) continue; // ni se lee lo que no lleva el prefijo
+    const { existe, data } = await d.leer(id);
+    if (!esTenantDePrueba(id, data) && !esHuerfanoDePrueba(id, existe)) continue; // JAMÁS lo demás
+    if (existe) await d.borrarFicha(id);
+    candidatos.push(id);
+  }
+  return candidatos;
+}
+
+/**
+ * Fase 3: sus objetos de Storage y después el árbol de Firestore. Si el borrado en Storage
+ * falla (salvo 404), NO se borra el árbol: sin el id como ancla, la siguiente corrida ya no
+ * encontraría el objeto. `d`: { borrarObjetos(id), borrarArbol(id) }.
+ */
+export async function borrarTenants(d, candidatos) {
+  let borrados = 0; let falloStorage = null;
+  for (const id of candidatos) {
+    try {
+      await d.borrarObjetos(id);
+    } catch (e) {
+      if (e?.code !== 404) { falloStorage = e; continue; } // conserva el ancla; se reintenta
+    }
+    await d.borrarArbol(id);
+    borrados += 1;
+  }
+  return { borrados, falloStorage };
 }
 
 /** Identificadores y correos de prueba para una fecha aaaammdd. */
@@ -303,8 +357,18 @@ async function principal() {
 
   // ---- limpiar ------------------------------------------------------------
   async function limpiar() {
-    let tenants = 0; let usuarios = 0; let falloStorage = null;
-    // 1. Los USUARIOS primero: sin ellos, una sesión viva no puede seguir escribiendo mientras se borra.
+    let usuarios = 0;
+    const bucketAdmin = () => getStorage(adminApp).bucket(bucket);
+    // 1. LAS FICHAS primero: es lo que corta de verdad a una sesión viva (un ID token vive hasta
+    //    una hora, pero las reglas leen la ficha en cada operación). Solo el documento.
+    const refs = await db.collection('tenants').listDocuments();
+    const porId = new Map(refs.map((r) => [r.id, r]));
+    const candidatos = await marcarFichas({
+      ids: [...porId.keys()],
+      leer: async (id) => { const snap = await porId.get(id).get(); return { existe: snap.exists, data: snap.data() }; },
+      borrarFicha: (id) => porId.get(id).delete(),
+    });
+    // 2. Los usuarios.
     let token;
     do {
       const pagina = await auth.listUsers(1000, token);
@@ -313,25 +377,26 @@ async function principal() {
       }
       token = pagina.pageToken;
     } while (token);
-    // 2. Los tenants: con marca de este script, o padres HUÉRFANOS con id de prueba (un disparador
-    //    escribió bitacora/* después de borrarlos). Antes, sus objetos de Storage.
-    const refs = await db.collection('tenants').listDocuments();
-    for (const r of refs) {
-      if (!r.id.startsWith(PREFIJO)) continue; // ni se lee lo que no lleva el prefijo
-      const snap = await r.get();
-      if (!esTenantDePrueba(r.id, snap.data()) && !esHuerfanoDePrueba(r.id, snap.exists)) continue; // JAMÁS lo demás
-      try {
-        await getStorage(adminApp).bucket(bucket).deleteFiles({ prefix: `tenants/${r.id}/`, force: true });
-      } catch (e) {
-        if (e?.code !== 404) falloStorage = e; // se sigue con lo demás y se avisa al final
-      }
-      await db.recursiveDelete(r);
-      tenants += 1;
+    // 3. Sus objetos de Storage y el árbol de Firestore (padres huérfanos incluidos); si Storage
+    //    falla para un tenant, se conserva su ancla.
+    const { borrados, falloStorage: f1 } = await borrarTenants({
+      borrarObjetos: (id) => bucketAdmin().deleteFiles({ prefix: `tenants/${id}/`, force: true }),
+      borrarArbol: (id) => db.recursiveDelete(porId.get(id)),
+    }, candidatos);
+    // 4. Barrido de objetos con id de prueba aunque su tenant ya no exista (mismo regex).
+    let f2 = null;
+    try {
+      const [archivos] = await bucketAdmin().getFiles({ prefix: `tenants/${PREFIJO}` });
+      for (const f of archivos) if (esObjetoDePrueba(f.name)) await f.delete();
+    } catch (e) {
+      if (e?.code !== 404) f2 = e;
     }
+    const falloStorage = f1 ?? f2;
     if (falloStorage) {
-      throw Object.assign(new Error('storage'), { code: `storage:${falloStorage.code ?? falloStorage.name ?? 'desconocido'}` });
+      // El aviso dice qué hacer: el ancla quedó, así que basta repetir.
+      throw Object.assign(new Error('storage'), { code: `storage:${falloStorage.code ?? falloStorage.name ?? 'desconocido'} (los objetos de Storage no se borraron; el tenant sigue como ancla: repita --limpiar)` });
     }
-    return { tenants, usuarios };
+    return { tenants: borrados, usuarios };
   }
 
   if (LIMPIAR) {
@@ -351,26 +416,33 @@ async function principal() {
   }
 
   let codigo = 0;
-  let fallos = [];
-  // Ctrl-C: avisa y limpia si puede (con tope), en vez de dejar lo sembrado sin decirlo.
-  process.once('SIGINT', async () => {
-    console.error('\n  ! Interrumpido. Si algo quedó sembrado, corra --limpiar.');
-    if (!CONSERVAR) {
-      try { await conTope(limpiar(), 15000); console.error('  Limpieza hecha.'); } catch { console.error('  La limpieza no terminó: corra --limpiar.'); }
-    }
-    process.exit(130);
+  let sV; let sA; let fsdk; let borrarApp; // fuera del try: el cierre tiene que alcanzarlos
+  // Ctrl-C: SOLO marca la bandera. La siembra y `correr` la consultan antes de cada operación y el
+  // cierre normal (el `finally`) hace la limpieza. Un segundo Ctrl-C, o 60 s, sale ya.
+  let interrumpido = false;
+  const alto = () => {
+    if (interrumpido) throw Object.assign(new Error('interrumpido'), { codigoSalida: 130, mensaje: 'Interrumpido por el operador.' });
+  };
+  process.on('SIGINT', () => {
+    if (interrumpido) { console.error('\n  ! Segundo Ctrl-C: se sale ya. Corra --limpiar.'); process.exit(130); }
+    interrumpido = true;
+    console.error('\n  ! Interrumpido: se termina la operación en curso y se limpia. Un segundo Ctrl-C sale ya.');
+    setTimeout(() => { console.error('  ! La limpieza no terminó en 60 s: corra --limpiar.'); process.exit(130); }, 60000);
   });
   try {
     // ---- sembrar --------------------------------------------------------------
+    alto();
     const previa = await limpiar(); // parte de cero: la matriz es determinista
     console.log(`  Limpieza previa: ${previa.tenants} tenants y ${previa.usuarios} usuarios de prueba borrados.\n`);
     const ahora = Timestamp.now();
     const sello = (uid) => ({ actualizadoPor: uid ?? CREADOR, actualizadoEn: ahora });
     const base = (t) => db.doc(`tenants/${t}`);
 
+    alto();
     await base(N.venta).set(fichaDeVenta(ahora));
     await base(N.agenda).set(fichaDeAgenda(ahora));
     for (const t of [N.venta, N.agenda]) {
+      alto();
       await base(t).collection('cuenta').doc('estado').set({ plan: 'crecimiento', estado: 'activo' });
       await base(t).collection('config').doc('negocio').set({ nombre: 'Verificación', ...sello() });
       await base(t).collection('config').doc('onboarding').set({ rubros: [], ...sello() });
@@ -395,13 +467,15 @@ async function principal() {
       await auth.setCustomUserClaims(u.uid, { nc: { t: { [tenant]: 'admin' }, v: 1 } });
       return { correo, clave, uid: u.uid };
     }
+    alto();
     const uVenta = await usuario(N.correoVenta, N.venta);
     const uAgenda = await usuario(N.correoAgenda, N.agenda);
 
     // ---- el SDK de cliente ------------------------------------------------------
-    const { initializeApp: appCliente, deleteApp: borrarApp } = await import('firebase/app');
+    const { initializeApp: appCliente, deleteApp: borrarAppCliente } = await import('firebase/app');
+    borrarApp = borrarAppCliente;
     const { getAuth: authCliente, signInWithEmailAndPassword, connectAuthEmulator } = await import('firebase/auth');
-    const fsdk = await import('firebase/firestore');
+    fsdk = await import('firebase/firestore');
     const ssdk = await import('firebase/storage');
     fsdk.setLogLevel('silent'); // el SDK vuelca el texto de las reglas en cada denegación: ruido, y no se imprime
 
@@ -431,13 +505,15 @@ async function principal() {
       }
       return { app, db: dbc, st, uid: cred.user.uid };
     }
-    const sV = await sesion('verif-venta', uVenta);
-    const sA = await sesion('verif-agenda', uAgenda);
+    alto();
+    sV = await sesion('verif-venta', uVenta);
+    sA = await sesion('verif-agenda', uAgenda);
 
     // ---- la matriz ----------------------------------------------------------
     const filas = [];
     /** Corre `fn` (tope 20 s: `error:timeout`); 'permitir' si no lanza, 'negar' si lanza permission-denied / unauthorized. */
     async function correr(operacion, ruta, esperado, fn) {
+      alto(); // fuera del try de abajo: una interrupción corta la matriz, no cuenta como fila
       let obtenido;
       try { await conTope((async () => fn())(), 20000); obtenido = 'permitir'; } catch (e) {
         const c = String(e?.code ?? '');
@@ -544,16 +620,19 @@ async function principal() {
       () => subir(sA, captacion(N.agenda), 'application/pdf'));
     await correr('storage agenda→propio leer', 'tenants/{propio}/captacion/planes.pdf', 'permitir',
       () => leer(sA, captacion(N.agenda)));
-    // Las negativas, ahora contra un objeto que EXISTE y un comercio que SÍ tiene la capacidad:
+    // Las negativas ENTRE COMERCIOS las sostienen las filas venta→ajeno: el ajeno (agenda) SÍ tiene
+    // la capacidad y el objeto EXISTE, así que solo puede negar por ser de otro comercio. Las filas
+    // agenda→ajeno niegan por dos causas a la vez (otro comercio Y el de venta no tiene captación):
+    // no prueban lo primero por sí solas, y su etiqueta lo dice.
     await correr('storage venta→propio subir (sin flujo captación)', 'tenants/{propio}/captacion/planes.pdf', 'negar',
       () => subir(sV, captacion(N.venta), 'application/pdf'));
     await correr('storage venta→ajeno subir', 'tenants/{ajeno}/captacion/planes.pdf', 'negar',
       () => subir(sV, captacion(N.agenda), 'application/pdf'));
     await correr('storage venta→ajeno leer', 'tenants/{ajeno}/captacion/planes.pdf', 'negar',
       () => leer(sV, captacion(N.agenda)));
-    await correr('storage agenda→ajeno subir', 'tenants/{ajeno}/captacion/planes.pdf', 'negar',
+    await correr('storage agenda→ajeno subir (ajeno sin captación)', 'tenants/{ajeno}/captacion/planes.pdf', 'negar',
       () => subir(sA, captacion(N.venta), 'application/pdf'));
-    await correr('storage agenda→ajeno leer', 'tenants/{ajeno}/captacion/planes.pdf', 'negar',
+    await correr('storage agenda→ajeno leer (ajeno sin captación)', 'tenants/{ajeno}/captacion/planes.pdf', 'negar',
       () => leer(sA, captacion(N.venta)));
     if (RUTA_PROPIA) {
       // EXTRA: una ruta propia del comercio de venta, si alguna regla futura se la da.
@@ -574,7 +653,7 @@ async function principal() {
     const linea = (f, marca) => `  ${marca} ${String(f.operacion).padEnd(w.operacion)}  ${String(f.ruta).padEnd(w.ruta)}  ${String(f.esperado).padEnd(w.esperado)}  ${f.obtenido}`;
     console.log(`  ${' '} ${'operación'.padEnd(w.operacion)}  ${'ruta'.padEnd(w.ruta)}  ${'esperado'.padEnd(w.esperado)}  obtenido`);
     for (const f of filas) console.log(linea(f, f.ok ? '✓' : '✗'));
-    fallos = filas.filter((f) => !f.ok);
+    const fallos = filas.filter((f) => !f.ok);
     console.log(`\n  Resumen: ${filas.length - fallos.length} aciertos, ${fallos.length} fallos, de ${filas.length} filas.`);
 
     codigo = fallos.length ? 1 : 0;
@@ -583,6 +662,12 @@ async function principal() {
     // Solo el código del error, nunca su mensaje: el SDK puede incluir rutas o valores.
     console.error(`\n  ✗ ${e?.mensaje ?? `Error inesperado (${e?.code ?? e?.name ?? 'desconocido'}): la verificación no terminó.`}\n`);
   } finally {
+    // Las escrituras cortadas por el tope de 20 s siguen vivas en el cliente: se cierran las sesiones
+    // ANTES de limpiar, para que no vuelvan a escribir en un tenant ya borrado.
+    await Promise.allSettled([sV, sA].filter(Boolean).map((x) => conTope((async () => {
+      await fsdk.terminate(x.db);
+      await borrarApp(x.app);
+    })(), 10000)));
     if (CONSERVAR) {
       console.log('  --conservar: lo sembrado queda en el proyecto; --limpiar lo borra.\n');
     } else {
