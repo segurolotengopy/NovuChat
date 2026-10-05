@@ -33,6 +33,13 @@
  */
 export const MINUTOS_DE_REVISION = 120;
 
+/**
+ * Minutos que se retiene una cita esperando el comprobante cuando el comercio no
+ * fijó otro valor. F3b-1a (05/10/2026): vivía en `ingesta.ts`; baja a la regla de
+ * retención, que es de Agenda, sin cambiar el número.
+ */
+export const MINUTOS_RETENCION_POR_DEFECTO = 30;
+
 /** La marca de un `Timestamp` de Firestore, de un ISO o de un número. */
 export function marcaMs(v: unknown): number | null {
   const t = v as { toMillis?: () => number; _seconds?: unknown; seconds?: unknown } | undefined;
