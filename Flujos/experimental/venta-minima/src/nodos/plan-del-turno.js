@@ -351,7 +351,9 @@ function derivar(razon, conservarPaso, extra, sinFraseMenu) {
   const TEXTO_DERIVACION = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos.'
     + (conservarPaso ? ' Tu pedido sigue esperando el comprobante.'
       // `sinFraseMenu` (costo del delivery, con el pedido en curso): el carrito se conserva, así que el texto no sugiere que se borra nada.
-      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «menú».'));
+      : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «menú».'))
+    // Un pedido guardado por «Cambiar algo» sigue ahí aunque se derive: se dice cómo recuperarlo (se cumple por código en `Decidir turno`).
+    + (!conservarPaso && en.carritoAnterior ? ' Tu pedido anterior sigue guardado: escribe «dejarlo como estaba» para recuperarlo.' : '');
   ruta = 'transferir:' + razon;
   aviso = { tipo: 'transferencia', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: vmLinea(t.nombrePerfil, 60),
@@ -574,6 +576,18 @@ function avisarReemplazo() {
   if (cabe) mensajes[ultimo] = { tipo: 'botones', cuerpo: mensajes[ultimo].cuerpo, botones: [dejar] };
 }
 
+// El cliente habló de dejar el pedido pero no se entendió del todo: se pregunta UNA vez, con los dos caminos (en lugar de derivar o de saludar). Es un mensaje
+// propio con botones de respuesta (no el botón de enlace de la carta), así que sirve también cuando la carta es un enlace. Reemplaza al mensaje que habría salido.
+function preguntarDejarOElegir() {
+  const a = en.carritoAnterior;
+  if (!a || !Array.isArray(a.carrito) || !a.carrito.length) return aMenu();
+  irA('pedido');
+  mensajes = [{ tipo: 'botones', cuerpo: '¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?', botones: [
+    { id: vmIdDeBoton('p', 'dejar'), title: 'Dejarlo como estaba' },
+    { id: vmIdDeBoton('m', 'pedido'), title: 'Elegir otra vez' },
+  ] }];
+}
+
 // «Dejarlo como estaba»: vuelve el pedido de antes de «Cambiar algo» y se muestra su resumen con sus botones.
 function dejarComoEstaba() {
   const a = en.carritoAnterior;
@@ -602,6 +616,7 @@ function tomarUbicacion() {
 // Vuelve a mostrar el paso actual (botón viejo, «sí» suelto, ubicación, pregunta pendiente).
 function mostrarPaso() {
   ruta = 'boton:' + (d.motivo || 'paso_actual');
+  if (d.motivo === 'dejar_o_elegir') return preguntarDejarOElegir();
   if (d.motivo === 'ubicacion') tomarUbicacion();
   const p = en.paso;
   if (p === 'inicio' || p === 'menu') return aMenu();

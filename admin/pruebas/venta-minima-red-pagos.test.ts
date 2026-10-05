@@ -63,6 +63,8 @@ const HONESTAS = [
   'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
   'No pude incluir tu nota: «tequila» no está disponible por este medio.', 'Para volver al inicio, escribe «menú».',
   // Correcciones de conversación (04/10).
+  '¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?', 'Elegir otra vez',
+  'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Para volver al inicio, escribe «menú». Tu pedido anterior sigue guardado: escribe «dejarlo como estaba» para recuperarlo.',
   'Tu pedido #K7Q2 está guardado; falta tu comprobante: envíame aquí la foto o el PDF.',
   'Tu pedido #K7Q2 está guardado; falta tu comprobante SIMULADO (es una prueba: no se paga nada): envíame aquí cualquier foto.',
   'Tengo: jueves 8 de octubre a las 19:00, 2 personas, aniversario. Me falta: a nombre de quién (nombre y apellido).',
