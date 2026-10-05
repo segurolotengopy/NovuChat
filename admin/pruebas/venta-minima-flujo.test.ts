@@ -4991,7 +4991,13 @@ describe('C. pedido a medias: «quiero confirmar» no deriva; cambiar a recoger;
     const t = c.escribe(dicho);
     expect(t.llamadas.extraer, dicho).toHaveLength(1); // fue al modelo: no lo resolvió el código como cambio a recojo
     expect((estadoDe(w.mundo)['entrega'] as J)['entrega'], dicho).toBe('delivery');
-    expect((estadoDe(w.mundo)['entrega'] as J)['direccion'], dicho).toContain(dicho.slice(0, 12));
+    // Con dígito o una vía fuerte (calle, av, barrio…) el modelo acierta: es la dirección. Sin ellos («ella va a recoger en portería») NO es una dirección (#435, LOW-A2): pasa a la referencia.
+    const entrega = estadoDe(w.mundo)['entrega'] as J;
+    if (/\d|\b(calle|av|avenida|barrio)\b/i.test(dicho)) expect(entrega['direccion'], dicho).toContain(dicho.slice(0, 12));
+    else {
+      expect(entrega['direccion'], dicho).toBe('');
+      expect(entrega['referencia'], dicho).toContain(dicho.slice(0, 12));
+    }
   });
 
   it('negando: tampoco en la pregunta de entrega ni con el resumen delante (pasos donde SÍ vale el cambio con la frase exacta)', () => {

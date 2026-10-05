@@ -834,8 +834,17 @@ function aExtraerPedido() {
   // «Ella va a recoger en portería» es una instrucción de entrega, no pasar a recojo (A11): con el delivery a medias (`pedido_datos`), un recojo que el modelo
   // «sube» de una frase donde otra persona recoge se ignora. El cambio real a recojo lo reconoce `Decidir turno` por código (frase entera) y llega como botón.
   if (x.entrega === 'recojo' && en.entrega.entrega === 'delivery' && (en.paso === 'pedido_datos' || en.paso === 'pedido_confirmar') && recogeOtraPersona(vmNorm(d.texto))) x.entrega = '';
-  const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
   const normTexto = vmNorm(d.texto);
+  // Lo que pone el MODELO también pasa por las reglas del código (revisión de seguridad del PR #435, LOW-A2): una «dirección» sin dígito ni vía fuerte («Déjale al portero»,
+  // «A media cuadra del gas», «necesito ayuda») NO es una dirección: pasa a la referencia (si está vacía) y la dirección se vuelve a pedir; y una ayuda dicha en un campo
+  // del modelo («{referencia: "necesito ayuda"}») deriva a una persona.
+  const delModelo = vmNorm([x.direccion, x.referencia].join(' '));
+  if (!lineas.length && delModelo && pideAyudaPorCodigo(delModelo) && !pareceDato(delModelo)) return derivar('pidió hablar con una persona');
+  if (x.direccion && !pareceDireccion(vmNorm(x.direccion))) {
+    if (!x.referencia) x.referencia = x.direccion;
+    x.direccion = '';
+  }
+  const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
   // Una marca `quiereHablar` del modelo sobre un texto que NO parece un dato de entrega («necesito ayuda», «tengo un problema con mi pedido») deriva SIEMPRE:
   // el texto libre no se adopta como dirección o referencia (revisión de seguridad del PR #435, M1).
   if (x.quiereHablar === true && !pareceDato(normTexto)) return derivar('pidió hablar con una persona');
@@ -900,8 +909,13 @@ function pareceDireccion(n) { return /\d/.test(n) || viaFuerte(n); }
 function pareceDato(n) { return pareceDireccion(n) || rasgoDeReferencia(n); }
 function hablaDeDelivery(n) { return /\b(delivery|envio|envios|enviar\w*|envien\w*|domicilio|mandar\w*|manden\w*|mande\w*|mandame|mandalo|traer\w*|traigan\w*|llevar\w*|lleven\w*)\b/.test(n); }
 // Ayuda, queja o petición de atención dicha con palabras (sin depender de la marca del modelo).
+// No cuenta como ayuda: una cortesía («no hay problema», «sin problema», «ningún problema»), ni «alguien/persona» cuando hay verbo de recibir o recoger («alguien lo recibe»,
+// «que lo reciba alguien», «cualquier persona lo recibe») ni «es para una persona». Sí: «ayúdenme», «auxilio».
 function pideAyudaPorCodigo(n) {
-  return /\b(ayuda\w*|ayudar\w*|problema\w*|queja\w*|reclam\w*|robo|estafa\w*|atienda\w*|atiendan|atender\w*|alguien|comuniquen\w*|hablar con|persona|personas|humano|humana|encargad[oa]|asesor\w*|llamen|llamenme)\b/.test(n);
+  let t = String(n).replace(/\b(no hay|sin|ningun|ninguna)\s+(problema|problemas|queja|quejas)\b/g, ' ');
+  if (/\b(recib\w*|recog\w*|recoj\w*|retir\w*)\b/.test(t)) t = t.replace(/\b(alguien|persona|personas)\b/g, ' ');
+  t = t.replace(/\bpara (una|un|1|dos|tres|cuatro) (persona|personas)\b/g, ' ');
+  return /\b(ayud\w*|auxilio|problema\w*|queja\w*|reclam\w*|robo|estafa\w*|atienda\w*|atiendan|atender\w*|alguien|comuniquen\w*|hablar con|persona|personas|humano|humana|encargad[oa]|asesor\w*|llamen|llamenme)\b/.test(t);
 }
 // «Ella va a recoger en portería», «mi esposa lo retira», «lo recoge el portero»: OTRA persona recoge; la entrega sigue siendo delivery. Quien habla de sí mismo («voy a
 // recoger el pedido», «mejor lo retiro yo en el local», «paso a buscarlo») cambia a recojo de verdad: no se protege. («él» a secas no es otra persona: «el lo recoge» vale como recojo.)
