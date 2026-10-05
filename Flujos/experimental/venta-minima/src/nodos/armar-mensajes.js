@@ -55,9 +55,9 @@ const AM_NUMERO_ID = AM_PRUEBA ? String(AM_CFG.phoneNumberIdEsperado || '') : (A
 const AM_REC = vmDigitos(AM_CFG.numeroRecepcion);
 const AM_REC_OK = AM_REC.length >= 8 && AM_REC.length <= 15 && AM_REC !== AM_FROM_DIG;
 const AM_GEN_CUERPO = AM_CONVERSA
-  ? 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. '
+  ? 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. '
     + 'Para volver al inicio, escribe «menú».'
-  : 'Eso lo ve directamente el restaurante. Toca el botón para escribirles.';
+  : 'Eso lo ve directamente nuestro equipo. Toca el botón para escribirnos.';
 const AM_SEGUIR = 'Para volver al inicio, escribe «menú».';
 const AM_GEN_BOTON = 'Escribir al local';
 const AM_HORA_MS = 60 * 60 * 1000;
@@ -113,8 +113,9 @@ function amSeguro(x) {
   if (!s) return true;
   return vmTextoSeguro(s) === true && !VM_PROHIBIDAS.test(vmNorm(s));
 }
-// Una frase que afirma que el pedido o la solicitud se pasó al restaurante.
-const AM_PASE = /\bya (lo |la )?pase\b|\b(lo|la) pase al restaurante|\bpase tu (pedido|solicitud|comprobante)|\bpase el pedido|llego al restaurante|llegaron al restaurante|\bhice llegar tu/;
+// Una frase que afirma que el pedido, la solicitud o la reserva se pasó al local o a nuestro equipo («Anotamos tu reserva», «llegó a nuestro equipo»
+// salen SOLO si el aviso salió: `AM_AVISO_SALIO`; si no, se reemplazan por la derivación).
+const AM_PASE = /\bya (lo |la )?pase\b|\b(lo|la) pase al restaurante|\bpase tu (pedido|solicitud|comprobante)|\bpase el pedido|llego al restaurante|llegaron al restaurante|\bhice llegar tu|\banotamos tu reserva\b|llego a nuestro equipo|llegaron a nuestro equipo/;
 const AM_NEGADO = /\bno (pude|pase|he pasado|logre)\b/;
 function amAfirmaPase(texto) {
   const n = vmNorm(texto);
@@ -146,7 +147,11 @@ function amSinBoton(cuerpo) {
     const i = o.indexOf(':');
     if (i > 0) salida.push(o.slice(0, i).trimEnd() + '.');
   }
-  return salida.join(' ').trim() || 'Eso lo ve directamente el restaurante.';
+  // Si de la frase queda solo un saludo («¡Claro! 🙂»; sin contar la cola de «menú»), no es una respuesta: se completa con lo que sí es cierto.
+  const cuerpoSolo = salida.filter((o) => o !== AM_SEGUIR);
+  const letras = cuerpoSolo.join(' ').replace(/[^\p{L}]/gu, '').length;
+  if (!cuerpoSolo.length || letras < 12) return cuerpoSolo.concat(['Eso lo ve directamente nuestro equipo.']).concat(salida.filter((o) => o === AM_SEGUIR)).join(' ').trim();
+  return salida.join(' ').trim();
 }
 // El botón que abre el chat del restaurante. La URL del plan se acepta si es https y no es el chat del
 // propio cliente; si no, sale del número de recepción; sin número válido, texto sin la frase del botón.
@@ -176,7 +181,7 @@ function amEnlace(cuerpoCrudo, boton, urlDelPlan, tipoReporte, sinMenu) {
     const solo = amSinBoton(cuerpo);
     return { payload: amTexto(solo), texto: solo, respaldo: solo, tipoReporte: 'text' };
   }
-  return { payload: amCta(cuerpo, titulo, url), texto: cuerpo, respaldo: vmRecorte(cuerpo + '\n\nEscríbeles aquí: ' + url, 4000), tipoReporte: tipoReporte || 'interactive' };
+  return { payload: amCta(cuerpo, titulo, url), texto: cuerpo, respaldo: vmRecorte(cuerpo + '\n\nEscríbenos aquí: ' + url, 4000), tipoReporte: tipoReporte || 'interactive' };
 }
 function amGenerico(motivo) {
   AM_errores.push(motivo);
@@ -252,6 +257,19 @@ function amArmarUno(m) {
   if (tipo === 'imagen') return amQr(m, cuerpo);
   // El enlace a la carta (página del catálogo): el botón abre ESA dirección, no el chat del local. Vale solo con una URL segura
   // (https, dominio con nombre, sin usuario ni puerto); sin ella no se promete una carta que el cliente no puede abrir: se pasa con el local.
+  // El enlace de la UBICACIÓN (Google Maps) de la reserva anotada: un ÚNICO botón «Ver ubicación» que abre ESE enlace (nunca el chat del local). Vale
+  // solo con un enlace de mapas válido (misma regla que el servidor: `vmEnlaceDeMapa`; tercera barrera tras el servidor y `Config del negocio`);
+  // sin él sale el texto SIN botón (ni «Escribir al local»: la reserva anotada no lo ofrece) y se anota el motivo.
+  if (tipo === 'enlace' && m.mapa === true) {
+    const mapa = vmEnlaceDeMapa(String(m.url === undefined || m.url === null ? '' : m.url));
+    if (!mapa) {
+      AM_errores.push('mapa_sin_enlace_valido');
+      return Object.assign({ payload: amTexto(cuerpo), texto: cuerpo, respaldo: cuerpo, tipoReporte: 'text' }, extra);
+    }
+    return Object.assign({
+      payload: amCta(cuerpo, 'Ver ubicación', mapa), texto: cuerpo, respaldo: vmRecorte(cuerpo + '\n\nVer ubicación: ' + mapa, 4000), tipoReporte: 'interactive',
+    }, extra);
+  }
   if (tipo === 'enlace' && m.catalogo === true) {
     const url = String(m.url === undefined || m.url === null ? '' : m.url).trim();
     if (!amUrlSegura(url)) return amGenerico('catalogo_sin_enlace_seguro');

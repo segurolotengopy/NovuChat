@@ -215,7 +215,7 @@ describe('comun.js: red de palabras prohibidas', () => {
       expect(L.vmTextoSeguro(t), t).toBe(false);
     }
     for (const t of ['No estamos abiertos hoy', '¿A qué hora reservo?', 'Quiero reservar una mesa', 'Confirmar pedido', 'Recibí tu imagen',
-      'Estoy esperando el comprobante de tu pedido', 'Solicitud de reserva', 'El pago se coordina con el cliente al entregar o al recoger.',
+      'Sigo esperando el comprobante de tu pedido', 'Solicitud de reserva', 'El pago se coordina con el cliente al entregar o al recoger.',
       'Vino Tinto Reservado', 'Salón, sala reservada y terraza', 'Mesa reservada para eventos', 'Yo confirmo que llego a las 8']) {
       expect(L.vmTextoSeguro(t), t).toBe(true);
     }
@@ -262,17 +262,17 @@ describe('comun.js: red de palabras prohibidas', () => {
     }
     const LIMPIOS = [
       '¡Hola! Soy el asistente virtual de Q. ¿Qué quieres hacer?',
-      'Recibí tu comprobante y los datos coinciden con tu pedido #AB12. Ya lo pasé al restaurante; ellos revisan el pago en su banco antes de despacharlo.',
-      'Recibí tu comprobante, pero algunos datos no coinciden con tu pedido #AB12. Ya lo pasé al restaurante, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
-      'Recibí tu comprobante SIMULADO de tu pedido #AB12. Es una prueba: no se movió dinero. Ya lo pasé al restaurante como pedido de PRUEBA.',
+      'Recibí tu comprobante y los datos coinciden con tu pedido #AB12. Ya lo pasé a nuestro equipo; ellos revisan el pago en su banco antes de despacharlo.',
+      'Recibí tu comprobante, pero algunos datos no coinciden con tu pedido #AB12. Ya lo pasé a nuestro equipo, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
+      'Recibí tu comprobante SIMULADO de tu pedido #AB12. Es una prueba: no se movió dinero. Ya lo pasé a nuestro equipo como pedido de PRUEBA.',
       'Listo: pasé tu pedido #AB12 al restaurante. El pago lo coordinas con ellos al recoger.',
       'Todavía es una solicitud: el restaurante la revisa según sus mesas.',
       'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
-      'No pude incluir tu nota: «tequila» no está disponible por este medio.',
+      'No pude incluir tu nota: «tequila» no está disponible para pedir por WhatsApp.',
       'Atendemos lunes a domingo de 12:00 a 22:00.',
       'Para volver al inicio, escribe «menú».',
       'Revisen el pago en su banco antes de despachar.',
-      'Eso lo ve directamente el restaurante. Toca el botón para escribirles.',
+      'Eso lo ve directamente nuestro equipo. Toca el botón para escribirnos.',
       'Confirmar pedido', 'Cambiar algo', 'Enviar solicitud',
     ];
     for (const t of LIMPIOS) expect(L.vmTextoSeguro(t), t).toBe(true);

@@ -31,6 +31,7 @@ const RESPALDO = {
   nombreAsistente: '',
   nivelEmojis: 'pocos',
   direccion: '',
+  direccionMaps: '',
   horarioAtencion: '',
   moneda: 'BOB',
   numeroRecepcion: '',
@@ -175,6 +176,8 @@ if (codigo === 409) {
   const deLaConsola = soloLlenos({
     nombreNegocio: util(dn.nombreNegocio),
     direccion: util(dn.direccion),
+    // El enlace de Google Maps (lo manda el servidor ya filtrado): se vuelve a comprobar aquí con la misma regla (segunda barrera) y de nuevo en `Armar mensajes`.
+    direccionMaps: vmEnlaceDeMapa(dn.direccionMaps) || undefined,
     mensajeComercioSuspendido: util(dn.mensajeComercioSuspendido),
     nombreAsistente: util(voz.nombreAsistente),
     nivelEmojis: ['ninguno', 'pocos', 'muchos'].indexOf(voz.nivelEmojis) >= 0 ? voz.nivelEmojis : undefined,

@@ -163,7 +163,7 @@ function despachar() {
   if (a === 'identidad') {
     if (en.paso === 'inicio') en.paso = 'menu';
     return (mensajes = [enlace('Soy un asistente virtual con inteligencia artificial de ' + negocio()
-      + '. Si prefieres hablar con una persona del restaurante, toca el botón.')]);
+      + '. Si prefieres hablar con una persona de nuestro equipo, toca el botón.')]);
   }
   if (a === 'medio_no_leido') return aMedioNoLeido();
   if (a === 'imagen_sin_pendiente') return aImagenSinPendiente();
@@ -183,7 +183,9 @@ function notaDelPedidoGuardado() {
   const n = en.carrito.reduce((suma, l) => suma + (l && Number.isInteger(l.cantidad) && l.cantidad > 0 ? l.cantidad : 0), 0);
   const primero = mensajes[0];
   if (!n || !primero || typeof primero.cuerpo !== 'string') return;
-  const aviso = 'Tu pedido sigue guardado (' + n + (n === 1 ? ' producto' : ' productos') + ').';
+  // Voz 05/10: dice QUÉ hay guardado, no un conteo («Todavía tienes un pedido sin confirmar: 1 × Birriamen.»); hasta 3 ítems y «… y N más».
+  const piezas = en.carrito.slice(0, 3).map((l) => l.cantidad + ' × ' + (vmLinea(l.nombre, 40) || 'producto'));
+  const aviso = 'Todavía tienes un pedido sin confirmar: ' + piezas.join(', ') + (en.carrito.length > 3 ? ', … y ' + (en.carrito.length - 3) + ' más' : '') + '.';
   // La carta en texto lleva el aviso en su propio párrafo; la carta como enlace (un solo mensaje con botón) lo lleva al comienzo del cuerpo.
   if (primero.tipo === 'texto') mensajes[0] = Object.assign({}, primero, { cuerpo: aviso + '\n\n' + primero.cuerpo });
   else if (primero.tipo === 'enlace' && primero.catalogo === true) mensajes[0] = Object.assign({}, primero, { cuerpo: aviso + ' ' + primero.cuerpo });
@@ -355,7 +357,12 @@ function capacidades() {
 // `sinFraseMenu` (solo la pregunta por el costo del delivery, con el pedido en curso): el texto termina en el botón, sin la frase de «menú».
 function derivar(razon, conservarPaso, extra, sinFraseMenu, textoPropio) {
   // (Las constantes van DENTRO de la función: lo que se declara después del `return` del nodo no llega a inicializarse.)
-  const TEXTO_DERIVACION = typeof textoPropio === 'string' && textoPropio ? textoPropio : 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos.'
+  // Voz 05/10 (guía de tono, fila 19): tres versiones según el motivo; la primera oración nunca nombra el botón (si no hay número de recepción, `amSinBoton`
+  // quita la que lo nombra y queda una frase útil). Nunca «te avisamos / te llamamos / te escribirán» (no hay mecanismo).
+  const CUERPO_DERIVACION = razon === 'pidió hablar con una persona' ? '¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo.'
+    : (sinFraseMenu === true ? 'El costo del delivery no lo tengo por aquí 🙏. Toca «Escribir al local» y consúltalo con nuestro equipo.'
+      : 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo.');
+  const TEXTO_DERIVACION = typeof textoPropio === 'string' && textoPropio ? textoPropio : CUERPO_DERIVACION
     + (conservarPaso ? ' Tu pedido sigue esperando el comprobante.'
       // `sinFraseMenu` (costo del delivery, con el pedido en curso): el carrito se conserva, así que el texto no sugiere que se borra nada.
       : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «menú».'))
@@ -454,6 +461,7 @@ function aMenu() {
     if (d.motivo) ruta = 'menu:' + d.motivo;
     return aRecordatorio();
   }
+  const primera = en.paso === 'inicio'; // el primer mensaje de la conversación (o con el estado vencido): saludo completo
   irA('menu');
   if (d.limpiar) limpiarSegun(d.limpiar);
   if (d.motivo) ruta = 'menu:' + d.motivo;
@@ -463,8 +471,12 @@ function aMenu() {
   if (capacidades().length === 1) return pedidosOn ? aCarta() : iniciarReserva();
   const asistente = vmLinea(cfg.nombreAsistente, 40);
   // `sinMenu`: el menú ya es el menú; `Armar mensajes` no le agrega el botón «Menú».
-  mensajes = [Object.assign(conBotones('¡Hola! 👋 Soy ' + (asistente ? asistente + ', el asistente virtual' : 'el asistente virtual')
-    + ' de ' + negocio() + '. ¿Qué te gustaría hacer?', botones), { sinMenu: true })];
+  // Voz 05/10: el saludo completo (con «asistente virtual»: prohibición 4) solo la primera vez; al volver al menú, uno corto.
+  const saludaDeNuevo = /^(hola|buenas|buenos|buen)\b/.test(vmNorm(d.texto));
+  const cuerpo = primera
+    ? '¡Hola! 👋 Gracias por escribir a ' + negocio() + '. Soy ' + (asistente ? asistente + ', el asistente virtual' : 'el asistente virtual') + '. ¿Qué te gustaría hacer?'
+    : (saludaDeNuevo ? '¡Hola de nuevo! 👋 ¿Qué te gustaría hacer?' : '¿Qué te gustaría hacer ahora?');
+  mensajes = [Object.assign(conBotones(cuerpo, botones), { sinMenu: true })];
 }
 
 function cartaDelNegocio() {
@@ -484,7 +496,7 @@ function mensajesDeCarta(enlace) {
   if (url) {
     return [{
       tipo: 'enlace', catalogo: true,
-      cuerpo: 'Esta es nuestra carta. Elige ahí tus productos y vuelve al chat para confirmar, o escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
+      cuerpo: '¡Con gusto! Toca «Ver la carta», elige lo que quieras y vuelve aquí para confirmar tu pedido. Si prefieres, escríbeme lo que quieres. Para volver al inicio, escribe «menú».',
       botones: [{ id: '', title: 'Ver la carta' }], url: url,
     }];
   }
@@ -541,7 +553,7 @@ function aConsulta(clave) {
         return (mensajes = [conBotones(tx.cuerpo, tx.botones)]);
       }
     }
-    cuerpo = 'Por ahora no tengo promociones para mostrarte.';
+    cuerpo = 'Por ahora no tenemos promociones para mostrarte.';
   }
   if (!cuerpo) return derivar('consulta sin dato cargado');
   en.paso = 'menu';
@@ -580,9 +592,12 @@ function aMedioNoLeido() {
 function aFueraDeHorario() {
   // El texto de la consola manda; sin él, el horario de la configuración dicho en palabras (`vmHorarioLegible`).
   const h = horarioEnFrase(vmLinea(cfg.horarioAtencion, 200)) || horarioEnFrase(vmLinea(vmHorarioLegible(cfg.horario), 200));
-  const cuerpo = 'Por ahora no estamos tomando pedidos 🕒.' + (h ? ' Atendemos ' + h + '.' : '');
+  const botonReserva = reservasOn && vmIdDeBoton('m', 'reserva') ? [{ id: vmIdDeBoton('m', 'reserva'), title: 'Reservar mesa' }] : [];
+  // Voz 05/10: se agradece, se dice qué pasa y cuándo atendemos; «con el botón» solo si el botón sale.
+  const cuerpo = '¡Gracias por escribirnos! 🕒 Ahora estamos fuera de nuestro horario de pedidos.' + (h ? ' Atendemos ' + h + '.' : '')
+    + (botonReserva.length ? ' Mientras tanto, puedes reservar una mesa con el botón.' : '');
   irA('menu');
-  mensajes = [conBotones(cuerpo, reservasOn ? [{ id: vmIdDeBoton('m', 'reserva'), title: 'Reservar mesa' }] : [])];
+  mensajes = [conBotones(cuerpo, botonReserva)];
 }
 
 // --- Botones ---------------------------------------------------------------------------------
@@ -595,6 +610,10 @@ function aBoton(b) {
   if (b.tipo === 'f') return resolverForma(Number(p0), String(b.partes[1]));
   if (b.tipo === 'e') {
     ponerModalidad(p0);
+    // Voz 05/10: un cambio de entrega por texto («prefiero recoger», «¿puedo cambiar al delivery?») se dice antes del resumen; el toque del botón de
+    // entrega no lleva nota (el cliente acaba de elegir).
+    if (d.motivo === 'cambio_a_recojo') notas.push('Listo, cambié tu pedido a recojo en el local.');
+    else if (d.motivo === 'cambio_a_delivery') notas.push('Listo, cambié tu pedido a delivery.');
     return mostrarPedido();
   }
   if (b.tipo === 'p' && p0 === 'cambiar') {
@@ -632,16 +651,19 @@ function avisarReemplazo() {
   const lineas = en.carritoAnterior && Array.isArray(en.carritoAnterior.carrito) ? en.carritoAnterior.carrito : [];
   const piezas = lineas.slice(0, 3).map((l) => l.cantidad + ' × ' + (vmLinea(l.nombre, 40) || 'producto'));
   const resumen = piezas.join(', ') + (lineas.length > 3 ? ', … y ' + (lineas.length - 3) + ' más' : '');
-  const hoy = resumen ? ' (hoy tienes: ' + resumen + ')' : '';
-  const base = 'Para cambiar tu pedido, vuelve a elegir todo desde la carta: lo que elijas ahí reemplaza tu pedido actual' + hoy + '. Si prefieres dejarlo como estaba, ';
-  const conTexto = base + 'escribe «dejarlo como estaba».';
+  const ahora_ = resumen ? ' (' + resumen + ')' : '';
+  // Voz 05/10. Con la carta como enlace (su botón es «Ver la carta») se nombra ese botón; con la carta en texto no hay tal botón (la carta va debajo): se
+  // pide elegir de nuevo sin nombrarlo. Una sola instrucción por mensaje; «dejarlo como estaba» no cambia.
+  const baseEnlace = 'Claro. Toca «Ver la carta» y elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora' + ahora_ + '. Si mejor lo dejas como está, ';
+  const baseTexto = 'Claro. Elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora' + ahora_ + '. Si mejor lo dejas como está, ';
   // Carta como enlace (un solo botón de enlace: no admite un botón de respuesta): se pide escribirlo.
   if (primero.tipo === 'enlace' && primero.catalogo === true) {
-    mensajes[0] = Object.assign({}, primero, { cuerpo: conTexto });
+    mensajes[0] = Object.assign({}, primero, { cuerpo: baseEnlace + 'escribe «dejarlo como estaba».' });
     return;
   }
+  const conTexto = baseTexto + 'escribe «dejarlo como estaba».';
   const final = mensajes[ultimo];
-  const conBoton = base + 'toca «Dejarlo como estaba».';
+  const conBoton = baseTexto + 'toca «Dejarlo como estaba».';
   // Un mensaje con botones admite 1.024 caracteres (el aviso va delante si la carta es un solo mensaje).
   const cabe = final.tipo === 'texto' && typeof final.cuerpo === 'string' && !!dejar.id
     && final.cuerpo.length + (ultimo === 0 ? conBoton.length + 2 : 0) <= 1000;
@@ -731,8 +753,9 @@ function quitarSinDelivery() {
   const quitados = r && Array.isArray(r.quitados)
     ? r.quitados.map((q) => (typeof q === 'string' ? q : (q && q.nombre) || '')).filter(Boolean) : [];
   if (quitados.length) {
-    // Lo quitado NO vuelve solo si el cliente regresa a recojo: se le dice. Y si el carrito quedó vacío, también.
-    notas.push('Por delivery no enviamos ' + unirY(quitados) + ': ' + (quitados.length > 1 ? 'los' : 'lo') + ' quité de tu pedido. Si vuelves a recojo, vuelve a agregar'
+    // Voz 05/10. Lo quitado NO vuelve solo si el cliente regresa a recojo: se le dice. Y si el carrito quedó vacío, también.
+    const nombres = unirY(quitados.map((n) => '«' + n + '»'));
+    notas.push('Quité ' + nombres + ' de tu pedido porque no ' + (quitados.length > 1 ? 'los' : 'lo') + ' enviamos por delivery. Si cambias a recoger, puedes volver a agregar'
       + (quitados.length > 1 ? 'los' : 'lo') + '.' + (en.carrito.length ? '' : ' Tu pedido quedó vacío: elige otra vez desde la carta.'));
   }
 }
@@ -833,7 +856,9 @@ function siguientePasoPedido() {
   en.paso = 'pedido_confirmar';
   en.carritoAnterior = null; // ya hay un pedido nuevo: el de antes de «Cambiar algo» quedó reemplazado
   en.preguntoDejar = false;
-  return [{ tipo: 'botones', cuerpo: pdResumen(en.carrito, en.entrega, { moneda: monedaTxt, nombrePerfil: perfil, maxDetalle: 3000 }), botones: [
+  return [{ tipo: 'botones', cuerpo: pdResumen(en.carrito, en.entrega, { moneda: monedaTxt, nombrePerfil: perfil, maxDetalle: 3000 })
+    // Voz 05/10: la instrucción, nombrando el botón que SÍ sale en este mensaje (va después del total: `partirLargos` corta en «Total de la comida:»).
+    + '\n\nSi está todo bien, toca «Confirmar pedido».', botones: [
     { id: vmIdDeBoton('p', 'confirmar'), title: 'Confirmar pedido' },
     { id: vmIdDeBoton('p', 'cambiar'), title: 'Cambiar algo' },
   ] }];
@@ -1044,14 +1069,15 @@ function aRecordatorio() {
   const cobroVigente = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
   const enlaceQr = sim && cobroVigente.modo === 'simulado' && cbHayQr(cobroVigente) ? ' Si no ves el QR, ábrelo aquí: ' + String(cobroVigente.qrUrl).trim() : '';
   // Un texto suelto (una dirección, una duda) con el pedido ya guardado y el comprobante pendiente: UNA frase honesta, sin la carta ni el menú.
+  // Voz 05/10: cada versión dice una sola instrucción y nombra el botón que SÍ sale en este mensaje («Cancelar pedido», «Reenviar QR»).
   const textoSuelto = d.accion === 'recordatorio_comprobante' && t.tipo !== 'carrito';
   const cuerpo = sim
     ? (textoSuelto
-      ? 'Tu pedido #' + ped.codigo + ' está guardado; falta tu comprobante SIMULADO (es una prueba: no se paga nada): envíame aquí cualquier foto.'
-      : 'Estoy esperando el comprobante SIMULADO de tu pedido #' + ped.codigo + ' (es una prueba: no se paga nada). Envíame aquí cualquier foto, o usa los botones.') + enlaceQr
+      ? 'Tu pedido #' + ped.codigo + ' sigue pendiente: falta que me envíes cualquier foto del comprobante SIMULADO (es una prueba: no se paga nada). Si ya no lo quieres, toca «Cancelar pedido».'
+      : 'Sigo esperando el comprobante SIMULADO de tu pedido #' + ped.codigo + ' (es una prueba: no se paga nada): envíame aquí cualquier foto. Si necesitas el QR otra vez, toca «Reenviar QR».') + enlaceQr
     : (textoSuelto
-      ? 'Tu pedido #' + ped.codigo + ' está guardado; falta tu comprobante: envíame aquí la foto o el PDF.'
-      : 'Estoy esperando el comprobante de tu pedido #' + ped.codigo + '. Envíame aquí la foto o el PDF, o usa los botones.');
+      ? 'Tu pedido #' + ped.codigo + ' sigue pendiente: falta que me envíes la foto o el PDF del comprobante del QR. Si ya no lo quieres, toca «Cancelar pedido».'
+      : 'Sigo esperando el comprobante de tu pedido #' + ped.codigo + ': envíame aquí la foto o el PDF. Si necesitas el QR otra vez, toca «Reenviar QR».');
   mensajes = [{ tipo: 'botones',
     cuerpo: cuerpo,
     botones: [
@@ -1150,7 +1176,7 @@ function aComprobante() {
     if (lectura && lectura.legible === false) resultado = 'ilegible';
   }
   const ilegibles = resultado === 'ilegible' ? en.ilegibles + 1 : en.ilegibles;
-  const base = { codigo: ped.codigo, diferencia: diferencias, ilegibles: ilegibles, entrega: ped.modalidad };
+  const base = { codigo: ped.codigo, diferencia: diferencias, ilegibles: ilegibles, entrega: ped.modalidad, moneda: monedaTxt };
   const conAviso = cbTextoAlCliente(resultado, Object.assign({ avisoSalio: true }, base));
   ruta = 'comprobante:' + resultado;
 
@@ -1232,7 +1258,7 @@ function evaluarReserva(reserva, reclamo) {
   }
   en.paso = 'reserva_confirmar';
   mensajes = conNotas([{ tipo: 'botones', cuerpo: rsResumen(v.reserva), botones: [
-    { id: vmIdDeBoton('r', 'enviar'), title: 'Enviar solicitud' },
+    { id: vmIdDeBoton('r', 'enviar'), title: 'Reservar' },
     { id: vmIdDeBoton('r', 'corregir'), title: 'Corregir' },
   ] }]);
   return v;
@@ -1262,26 +1288,29 @@ function enviarReserva() {
   // El tiempo pasó desde el resumen: se vuelve a validar antes de avisar.
   const v = rsValidar(en.reserva || {}, limitesReserva(), t.nombrePerfil, ahora);
   if (v.error || !v.completa) return evaluarReserva(en.reserva || {});
-  // Una solicitud más allá del tope diario: texto de tope y botón, sin aviso.
-  if (!rsDentroDelTope(sd, t.from, ahora, Number(cfg.topeReservasDia))) {
-    ruta = 'reserva:tope';
-    limpiarReserva();
-    irA('menu');
-    return (mensajes = [enlace('Por hoy ya no puedo tomar más solicitudes de reserva por aquí 🙏. Escríbele al restaurante con el botón.')]);
-  }
+  // DÍA LLENO (tope diario `topeReservasDia`): YA NO se deriva ni se rechaza (decisión de Andres, 04/10/2026): se anota igual y el aviso al local lo marca
+  // «DÍA LLENO: revisar». Sin datos estáticos el tope «falla cerrado» (cuenta como lleno): también se anota y se marca.
+  const diaLleno = !rsDentroDelTope(sd, t.from, ahora, Number(cfg.topeReservasDia));
   const reserva = v.reserva;
   // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Enviar solicitud»
   // da el mismo codigo y la misma referencia de cierre, y el servidor cuenta UN cierre.
   const clave = vmIdEstable('res', t.from, reserva, ancla, ahora);
   const codigo = clave.codigo;
-  const nombre = String(reserva.nombre || '').split(' ')[0];
   aviso = { tipo: 'reserva', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: reserva.nombre, codigo: codigo, reserva: reserva,
+    diaLleno: diaLleno,
   } };
+  // La reserva SE ANOTA por defecto (decisión de Silvana y Andres): si el aviso al local SALIÓ, el cliente lee «Anotamos tu reserva…» con la dirección y un ÚNICO botón
+  // «Ver ubicación» que abre Google Maps (`direccionMaps`, ya revalidado por `Config del negocio`; `Armar mensajes` lo revisa otra vez). Sin enlace válido: solo
+  // texto, sin botón (tampoco «Escribir al local»). Sin promesa de contacto. Nunca «reservamos tu mesa» (la rechazan las tres redes) ni «confirmada».
+  // Si el aviso NO salió: texto honesto con «Escribir al local», sin decir que se anotó.
+  const mapa = vmEnlaceDeMapa(cfg.direccionMaps);
+  const anotada = rsMensajeAnotada(reserva, vmLinea(cfg.direccion, 200));
   condicionados = {
-    // `sinMenu`: el texto termina en el botón; no se le agrega la frase de «menú». (Sin «confirmada»: la red de palabras prohibidas la rechaza, incluso negada.)
-    siSalio: [Object.assign(enlace('Listo, ' + nombre + ': tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.'), { sinMenu: true })],
-    siNoSalio: [enlace('No pude hacer llegar tu solicitud al restaurante en este momento. Escríbeles con el botón para reservar.')],
+    siSalio: [mapa
+      ? { tipo: 'enlace', mapa: true, cuerpo: anotada, url: mapa, botones: [{ id: '', title: 'Ver ubicación' }], sinMenu: true }
+      : texto(anotada)],
+    siNoSalio: [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.')],
   };
   cierre = { tipo: 'registro', detalle: vmRecorte('Solicitud de reserva #' + codigo + ': ' + rsLineaCompacta(reserva, 'completo'), 300), referencia: clave.id };
   anotarReserva = true;
@@ -1399,10 +1428,10 @@ function aCarrito() {
   const nota = delCliente(c.nota, 200);
   const notaExcluida = nota ? pdPalabraExcluida(nota, lista(cfg.palabrasExcluidas)) : '';
   if (nota && !notaExcluida) en.entrega.notaPedido = nota;
-  if (notaExcluida) notas.push('No pude incluir tu nota: «' + notaExcluida + '» no está disponible por este medio.');
+  if (notaExcluida) notas.push('No pude incluir tu nota: «' + notaExcluida + '» no está disponible para pedir por WhatsApp.');
 
   const nombres = (l) => unirY(l.slice(0, 3).map((n) => '«' + n + '»')) + (l.length > 3 ? ' y ' + (l.length - 3) + ' más' : '');
-  if (fuera.length) notas.push('No pude incluir ' + nombres(fuera) + ' en tu pedido: no está disponible por este medio.');
+  if (fuera.length) notas.push('No pude incluir ' + nombres(fuera) + ' en tu pedido: no está disponible para pedir por WhatsApp.');
   if (recortadas.length) notas.push('De ' + nombres(recortadas) + ' tomé ' + PD_MAX_CANTIDAD + ', que es el máximo por pedido.');
   const descartados = Math.floor(Number(c.descartados)) || 0;
   if (descartados > 0) {

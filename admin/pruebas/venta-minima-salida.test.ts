@@ -124,7 +124,7 @@ const PEDIDO: J = {
   pedidoId: 'ped-2026-10-05-0011-abc', codigo: 'K7Q2', total: 55, modalidad: 'recojo',
   lineas: [{ cantidad: 1, nombre: 'Orden de 3 tacos de birria', detalle: 'sin cebolla' }],
 };
-const PIE = 'Pedido #K7Q2. Total a pagar por QR: 55 Bs (solo la comida).\nEscanea el QR con la app de tu banco. Cuando termines, envíame aquí la foto o el PDF del comprobante.';
+const PIE = 'Pedido #K7Q2. Total a pagar con este QR: 55 Bs (solo la comida).\nEscanéalo con la app de tu banco. Cuando termines, envíame aquí la foto o el PDF del comprobante.';
 const OK = (n = 1): J => ({ messaging_product: 'whatsapp', contacts: [{ wa_id: CLIENTE }], messages: [{ id: `wamid.AVISO${n}` }] });
 const FALLA: J = { error: { message: 'Graph rechazó el envío', code: 131030 } };
 
@@ -175,7 +175,7 @@ function textosDe(j: J): string[] {
   if (typeof j['texto'] === 'string') out.push(j['texto']);
   return out;
 }
-const GENERICO = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Para volver al inicio, escribe «menú».';
+const GENERICO = 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Para volver al inicio, escribe «menú».';
 const cuerpoDe = (j: J): string => String(j['payload'].text?.body ?? j['payload'].interactive?.body.text ?? j['payload'].image?.caption);
 
 // =================================================================================================
@@ -499,13 +499,13 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
       const i = r.items[0]!;
       expect(i['payload'].type).toBe('text');
       // Sin botón no se nombra el botón («Escribir al local»): queda lo demás, con el camino de vuelta al menú.
-      expect(i['payload'].text.body).toBe('Esto prefiero que lo vea una persona del restaurante 🙂. Para volver al inicio, escribe «menú».');
+      expect(i['payload'].text.body).toBe('Disculpa, eso no lo puedo resolver por aquí 🙏. Para volver al inicio, escribe «menú».');
       expect(i['tipoReporte']).toBe('text');
       expect(JSON.stringify(i)).not.toMatch(/bot[oó]n/i);
     }
     // el texto con «:» conserva lo que viene antes del «:»
-    const r = mensajes({ mensajes: [enlace('No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.')] }, { cfg: { numeroRecepcion: '' } });
-    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido al restaurante en este momento. Para volver al inicio, escribe «menú».');
+    const r = mensajes({ mensajes: [enlace('No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.')] }, { cfg: { numeroRecepcion: '' } });
+    expect(r.items[0]!['payload'].text.body).toBe('No pude pasarle tu pedido a nuestro equipo en este momento. Para volver al inicio, escribe «menú».');
     const dos = mensajes({ mensajes: [enlace('Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.')] }, { cfg: { numeroRecepcion: '' } });
     expect(dos.items[0]!['payload'].text.body).toBe('Ya tengo el comprobante de tu pedido #K7Q2. Para volver al inicio, escribe «menú».');
   });
@@ -666,7 +666,7 @@ describe('Armar mensajes — el QR del cobro simulado', () => {
 
   it('el titular de la cuenta real («Pruebas SRL») no es un rótulo: su QR sale; pero un «PRUEBA» fuera del titular sí lo rechaza', () => {
     const cobro = { activo: true, modo: 'real', qrUrl: URL_SIM, titular: 'Pruebas y Demostraciones SRL' };
-    const pie = PIE.replace('Escanea el QR', 'Titular: Pruebas y Demostraciones SRL. Escanea el QR');
+    const pie = PIE.replace('Escanéalo', 'Titular: Pruebas y Demostraciones SRL. Escanéalo');
     expect(mensajes(planQr(qr({ cuerpo: pie })), { cfg: { cobro } }).items[0]!['payload'].type).toBe('image');
     const malo = mensajes(planQr(qr({ cuerpo: `${pie} PRUEBA` })), { cfg: { cobro } });
     expect(malo.items[0]!['payload'].type).not.toBe('image');
@@ -680,7 +680,7 @@ describe('Armar mensajes — el QR del cobro simulado', () => {
 // =================================================================================================
 describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', () => {
   const PASE = 'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.';
-  const NO_PASE_PLAN = 'No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.';
+  const NO_PASE_PLAN = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.';
   // Lo que sale: el mensaje con botón de enlace lleva al final el camino de vuelta al menú (03/10).
   const NO_PASE = NO_PASE_PLAN + ' Para volver al inicio, escribe «menú».';
   const plan = (): J => ({
@@ -781,7 +781,7 @@ describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', ()
     ['Listo, pasé tu pedido #K7Q2 al restaurante.'],
     ['Tu solicitud de reserva llegó al restaurante.'],
     ['Ya pasé tu comprobante.'],
-    ['Ya lo pasé al restaurante, con los datos que leí, para que lo revisen.'],
+    ['Ya lo pasé a nuestro equipo, con los datos que leí, para que lo revisen.'],
     ['Ya la pasé al restaurante.'],
     ['Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva.'],
   ])('defensa: «%s» en un mensaje normal SIN aviso salido se reemplaza por la derivación', (frase) => {
@@ -794,8 +794,8 @@ describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', ()
   });
 
   it('defensa: una negación honesta («No pude pasarle…») nunca se reemplaza', () => {
-    const r = mensajes({ mensajes: [texto('No pude pasarle tu pedido al restaurante en este momento.')] });
-    expect(r.items[0]!['texto']).toBe('No pude pasarle tu pedido al restaurante en este momento.');
+    const r = mensajes({ mensajes: [texto('No pude pasarle tu pedido a nuestro equipo en este momento.')] });
+    expect(r.items[0]!['texto']).toBe('No pude pasarle tu pedido a nuestro equipo en este momento.');
     expect(r.items[0]!['errores']).toEqual([]);
   });
 
@@ -1021,9 +1021,9 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
       'Para el delivery necesito la dirección exacta (y, si quieres, una referencia para llegar).',
       'Tu pedido:\n• 1 × Orden de 3 tacos de birria (sin cebolla): 55 Bs\nEntrega: recojo en el local.\nTotal de la comida: 55 Bs.',
       PIE,
-      'Recibí tu comprobante y los datos coinciden con tu pedido #K7Q2. Ya lo pasé al restaurante; ellos revisan el pago en su banco antes de despacharlo.',
-      'Recibí tu comprobante y los datos coinciden con tu pedido #K7Q2. No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.',
-      'Recibí tu comprobante, pero algunos datos no coinciden con tu pedido #K7Q2 (monto). Ya lo pasé al restaurante, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
+      'Recibí tu comprobante y los datos coinciden con tu pedido #K7Q2. Ya lo pasé a nuestro equipo; ellos revisan el pago en su banco antes de despacharlo.',
+      'Recibí tu comprobante y los datos coinciden con tu pedido #K7Q2. No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.',
+      'Recibí tu comprobante, pero algunos datos no coinciden con tu pedido #K7Q2 (monto). Ya lo pasé a nuestro equipo, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
       'Recibí tu comprobante, pero no pude leerlo bien. ¿Me lo envías de nuevo, más nítido o como PDF desde la app de tu banco?',
       'Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.',
       'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.',
@@ -1380,11 +1380,12 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     for (const mal of [texto('Ya va en camino.'), texto('Pagado')]) {
       const r = mensajes({ mensajes: [mal] }, { cfg: { nivelEmojis: 'ninguno' } }).items[0]!;
       expect(JSON.stringify([r['payload'], r['texto'], r['respaldo']]), JSON.stringify(mal)).not.toContain('🙂');
-      expect(r['texto']).toContain('Esto prefiero que lo vea una persona del restaurante.'); // la frase queda entera, sin el emoji ni un espacio suelto
+      expect(JSON.stringify([r['payload'], r['texto'], r['respaldo']])).not.toContain('🙏');
+      expect(r['texto']).toContain('Disculpa, eso no lo puedo resolver por aquí.'); // la frase queda entera, sin el emoji ni un espacio suelto
     }
     // NEGANDO: con «pocos» (o sin el dato) el 🙂 sigue; con «muchos» también.
     for (const cfg of [{ nivelEmojis: 'pocos' }, { nivelEmojis: 'muchos' }, {}]) {
-      expect(mensajes({ mensajes: [texto('Ya va en camino.')] }, { cfg }).items[0]!['texto'], JSON.stringify(cfg)).toContain('🙂');
+      expect(mensajes({ mensajes: [texto('Ya va en camino.')] }, { cfg }).items[0]!['texto'], JSON.stringify(cfg)).toContain('🙏');
     }
   });
 });
@@ -1393,7 +1394,7 @@ describe('D (04/10): ningún texto nombra un botón que no se envía', () => {
   const TEXTOS = [
     GENERICO,
     'Tu pedido #K7Q2 ya está con nuestro equipo. Para cancelarlo, toca «Escribir al local».',
-    'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Tu pedido sigue guardado.',
+    'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. Tu pedido sigue guardado.',
   ];
   it('con número de recepción válido el texto nombra «Escribir al local» Y el payload lleva ese botón (cta_url al chat del local)', () => {
     for (const t of TEXTOS) {

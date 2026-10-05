@@ -389,6 +389,23 @@ function intencionDeCancelar(norm) {
   return '';
 }
 
+// ¿Hay un «no» seguido (con «lo/la/me/se/te» a lo sumo) de una palabra que es el verbo dejar en SUBJUNTIVO o INFINITIVO con un error de una letra («dejez», «deges»,
+// «dejarl»)? El imperativo afirmativo («dejalo», «dejala», «deja», «dejemoslo») y sus tipeos NO cuentan: «No déjalo como estaba no más.» sigue siendo «volver».
+function rechazoConTipeo(palabras) {
+  const NEGATIVAS = ['dejes', 'dejen', 'deses', 'dejar', 'dejarlo', 'dejarla'];
+  const AFIRMATIVAS = ['dejalo', 'dejala', 'dejemoslo'];
+  for (let i = 0; i < palabras.length; i++) {
+    if (palabras[i] !== 'no') continue;
+    let j = i + 1;
+    while (j < palabras.length && ['lo', 'la', 'me', 'se', 'te'].indexOf(palabras[j]) >= 0) j++;
+    const w = palabras[j];
+    if (!w || w.length < 5) continue;
+    if (AFIRMATIVAS.some((k) => distancia(w, k) <= 1)) continue;
+    if (NEGATIVAS.some((k) => distancia(w, k) <= 1)) return true;
+  }
+  return false;
+}
+
 // Distancia de edición (Levenshtein) entre dos palabras cortas.
 function distancia(a, b) {
   const m = a.length;
@@ -430,7 +447,9 @@ function intencionDeVolver(norm, tolerante) {
   const rechazo = /\bno (quiero|queremos|lo|me|vayas a|deseo)( (lo|me))? (dejar|dejarlo|dejalo|dejes|deje|deses)\b/.test(norm) || /\bno (quiero|queremos) (que )?(lo )?(dejes|dejen|dejemos)\b/.test(norm)
     // «no dejes como estaba», «ya no dejes…», «mejor no dejes…», «no la dejes», «no lo dejen», «no dejarlo», «no dejar…»: un «no» seguido (con «lo/la/me/se/te» a lo sumo) del verbo.
     // El imperativo afirmativo («no, déjalo…», «dejala», «deja») no está en la lista: «No déjalo como estaba no más.» sigue siendo «volver».
-    || /\bno (lo |la |me |se |te )*(dejes|dejen|deje|deses|dejar|dejarlo|dejarla)\b/.test(norm);
+    || /\bno (lo |la |me |se |te )*(dejes|dejen|deje|deses|dejar|dejarlo|dejarla)\b/.test(norm)
+    // …y con un error de tipeo o de voz en el verbo («no dejez», «no deges»): el verbo, dicho con una letra de más o de menos, tras un «no».
+    || rechazoConTipeo(palabras);
   if (rechazo) return tolerante && !/\d/.test(norm) && palabras.length <= 6 && todas(VOCAB_DUDA) ? 'duda' : '';
   // Formas que no llevan el verbo (cerradas).
   const SIN_VERBO = /^((ya|no|si|mejor|pues|es que|entonces) )*(como estaba( antes)?|como antes|lo que tenia|lo anterior|el anterior|mi pedido anterior|(volver|vuelve|volvamos|regresa|regresar) (al|a mi|a el) (pedido )?(anterior|de antes)|(volver|vuelve|volvamos|regresa|regresar) a mi pedido|(manten|mantener|mantenlo|mantengamoslo|mantenga)( mi| el)?( pedido)?|(no|ya no) (quiero )?(cambiar|cambio)( nada)?|no cambiar nada|cancelar( el)? cambio|cancela( el)? cambio|olvida el cambio)( no mas| nomas| igual)?( por favor)?$/;

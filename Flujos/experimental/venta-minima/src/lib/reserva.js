@@ -385,13 +385,13 @@ function rsValidar(r, cfg, nombrePerfil, ahoraMs) {
 
   // Horario: sin el no se acepta nada (falla cerrado).
   if (!horario) {
-    errores.push({ campo: 'horario', texto: 'En este momento no puedo tomar solicitudes de reserva porque no tengo el horario del restaurante.' });
+    errores.push({ campo: 'horario', texto: 'En este momento no puedo tomar reservas.' });
   }
 
   // Personas: hasta el maximo normal; hasta el doble, grupo grande; mas, error.
   if (reserva.personas > 0) {
     if (reserva.personas > 2 * maxPersonas) {
-      marcar('personas', 'Por aquí tomo solicitudes de hasta ' + (2 * maxPersonas) + ' personas. ¿Para cuántas personas sería?');
+      marcar('personas', 'Por aquí tomo reservas de hasta ' + (2 * maxPersonas) + ' personas. ¿Para cuántas personas sería?');
     } else if (reserva.personas > maxPersonas) {
       reserva.grupoGrande = true;
     }
@@ -406,9 +406,9 @@ function rsValidar(r, cfg, nombrePerfil, ahoraMs) {
     if (reserva.fecha < hoy) {
       marcar('fecha', 'Esa fecha ya pasó. ¿Para qué día quieres la reserva?');
     } else if (reserva.fecha > _rsSumarDias(hoy, maxDias)) {
-      marcar('fecha', 'Por aquí tomo solicitudes con hasta ' + maxDias + ' días de anticipación. ¿Para qué día la quieres?');
+      marcar('fecha', 'Por aquí tomo reservas con hasta ' + maxDias + ' días de anticipación. ¿Para qué día la quieres?');
     } else if (!_rsTramosUtiles(horario, reserva.fecha).length) {
-      marcar('fecha', 'El restaurante no abre el ' + _rsFechaLegible(reserva.fecha) + '. ¿Para qué otro día quieres la reserva?');
+      marcar('fecha', 'No abrimos el ' + _rsFechaLegible(reserva.fecha) + '. ¿Para qué otro día quieres la reserva?');
     } else {
       fechaJuzgable = true;
     }
@@ -418,7 +418,7 @@ function rsValidar(r, cfg, nombrePerfil, ahoraMs) {
     const min = _rsMin(reserva.hora);
     if (!util.some(function (t) { return min >= t[0] && min <= t[1]; })) {
       const rangos = util.map(function (t) { return 'de ' + _rsHhmm(t[0]) + ' a ' + _rsHhmm(t[1]); });
-      marcar('hora', 'El ' + RS_DIAS[_rsIndiceDia(reserva.fecha)] + ' el restaurante recibe reservas ' + _rsListaY(rangos) + '. ¿A qué hora las quieres?');
+      marcar('hora', 'El ' + RS_DIAS[_rsIndiceDia(reserva.fecha)] + ' recibimos reservas ' + _rsListaY(rangos) + '. ¿A qué hora la quieres?');
     } else if (_rsMsLocal(reserva.fecha, reserva.hora) < Number(ahoraMs) + anticipacionMin * 60000) {
       marcar('hora', 'Para esa hora necesito al menos ' + _rsAnticipacionTexto(anticipacionMin) + ' de anticipación. ¿Prefieres otra hora u otro día?');
     }
@@ -439,7 +439,7 @@ function rsValidar(r, cfg, nombrePerfil, ahoraMs) {
       if (coinciden.length === 1) {
         reserva.zona = coinciden[0];
       } else {
-        marcar('zona', 'No tengo «' + reserva.zona + '» como opción. Puedes elegir ' + _rsListaO(zonas) + '. ¿Cuál prefieres?');
+        marcar('zona', 'No tenemos «' + reserva.zona + '» como opción. Puedes elegir ' + _rsListaO(zonas) + '. ¿Cuál prefieres?');
       }
     }
   }
@@ -454,7 +454,7 @@ function rsValidar(r, cfg, nombrePerfil, ahoraMs) {
     if (perfilCompleto && dicho && (' ' + _rsNorm(perfil) + ' ').indexOf(' ' + dicho + ' ') >= 0) {
       reserva.nombre = perfil;
     } else {
-      marcar('nombre', 'Para la solicitud necesito tu nombre completo (nombre y apellido). ¿A nombre de quién la pongo?');
+      marcar('nombre', 'Para la reserva necesito tu nombre completo (nombre y apellido). ¿A nombre de quién la pongo?');
     }
   }
 
@@ -469,12 +469,11 @@ function rsValidar(r, cfg, nombrePerfil, ahoraMs) {
   };
 }
 
-// La pregunta por lo que falta. Con todo lo esencial vacio es el pedido de datos completo, que abre con «¡Con gusto!»
-// y un emoji (sin el emoji si `p.nivelEmojis` es «ninguno»). Si ya hay algo entendido y quien llama pasa la reserva
-// (`p.reserva`), el mensaje MUESTRA lo entendido y pide solo lo que falta («Tengo: jueves 8 de octubre, 2 personas.
-// Me falta: la hora y a nombre de quién (nombre y apellido).»): repetir «me falta saber…» sin decir que se entendio
-// hacia que el cliente repitiera lo mismo. Con `p.reclamo` (el cliente dijo «ya te dije…») la pregunta cambia: se
-// pide perdon y, si falta la hora, se da un ejemplo de como escribirla.
+// La pregunta por lo que falta (voz del 05/10/2026: agradecer lo dado, decir lo que falta; nada de «solicitud»). Con todo lo esencial vacio es el pedido
+// de datos completo, que abre con «¡Con gusto!» y un emoji (sin el emoji si `p.nivelEmojis` es «ninguno»). Si ya hay algo entendido y quien llama pasa la
+// reserva (`p.reserva`), el mensaje MUESTRA lo entendido y pide solo lo que falta («Gracias, ya tengo: jueves 8 de octubre, 2 personas. Solo me falta: la
+// hora y a nombre de quién (nombre y apellido).»): repetir «me falta saber…» sin decir que se entendio hacia que el cliente repitiera lo mismo. Con
+// `p.reclamo` (el cliente dijo «ya te dije…») la pregunta cambia: se pide perdon y, si falta la hora, se da un ejemplo de como escribirla.
 function rsPreguntaFaltantes(faltan, p) {
   const f = Array.isArray(faltan) ? faltan : [];
   const falta = function (k) { return f.indexOf(k) >= 0; };
@@ -486,23 +485,24 @@ function rsPreguntaFaltantes(faltan, p) {
   if (falta('fecha') && falta('hora')) partes.push('qué día y a qué hora');
   else if (falta('fecha')) partes.push('para qué día');
   else if (falta('hora')) partes.push('a qué hora');
-  if (inicial && zonas.length) partes.push('si prefieres ' + _rsListaO(zonas));
   if (falta('nombre')) partes.push('a nombre de quién (nombre y apellido)');
   if (!partes.length) return '';
   if (inicial) {
-    return '¡Con gusto!' + (o.nivelEmojis === 'ninguno' ? '' : ' 🙌')
-      + ' Para tu solicitud de reserva cuéntame en un solo mensaje: ' + _rsListaY(partes)
-      + '. Si celebran algo o necesitan algo especial, cuéntamelo también.';
+    const pide = ['para cuántas personas', 'qué día y a qué hora'];
+    if (falta('nombre')) pide.push('a nombre de quién (nombre y apellido)');
+    const lista = pide.length > 2 ? pide.slice(0, -1).join(', ') + ', y ' + pide[pide.length - 1] : pide.join(', ');
+    const extra = (zonas.length ? 'Si prefieres ' + _rsListaO(zonas) + ', c' : 'Si c') + 'elebran algo o necesitan algo especial, dímelo también.';
+    return '¡Con gusto!' + (o.nivelEmojis === 'ninguno' ? '' : ' 🙌') + ' Cuéntame en un mensaje ' + lista + '. ' + extra;
   }
   const entendido = o.reserva && typeof o.reserva === 'object' ? _rsEntendido(o.reserva) : [];
-  if (!entendido.length) return 'Para tu solicitud de reserva me falta saber ' + _rsListaY(partes) + '.';
+  if (!entendido.length) return 'Gracias. Solo me falta ' + _rsListaY(partes) + '.';
   const faltaTxt = [];
   if (falta('personas')) faltaTxt.push('cuántas personas');
   if (falta('fecha') && falta('hora')) faltaTxt.push('el día y la hora');
   else if (falta('fecha')) faltaTxt.push('el día');
   else if (falta('hora')) faltaTxt.push('la hora');
   if (falta('nombre')) faltaTxt.push('a nombre de quién (nombre y apellido)');
-  return (o.reclamo === true ? 'Disculpa, no me quedó claro. ' : '') + 'Para tu solicitud de reserva tengo: ' + entendido.join(', ') + '. Me falta: ' + _rsListaY(faltaTxt) + '.'
+  return (o.reclamo === true ? 'Disculpa, no me quedó claro. Ya tengo: ' : 'Gracias, ya tengo: ') + entendido.join(', ') + '. Solo me falta: ' + _rsListaY(faltaTxt) + '.'
     + (o.reclamo === true && falta('hora') ? ' Escribe la hora así: «19:00».' : '');
 }
 
@@ -576,19 +576,30 @@ function rsHoraSuelta(texto, reserva, cfg, ahoraMs) {
 // ---------------------------------------------------------------------------
 function _rsPersonas(n) { return n + (n === 1 ? ' persona' : ' personas'); }
 
-// El resumen que se muestra al cliente antes de enviar. Si `r.grupoGrande` es true
-// (lo trae `rsValidar` en `reserva`), agrega la nota del grupo grande.
+// El resumen que se muestra al cliente antes de reservar. Un grupo grande (`r.grupoGrande`) NO agrega nada al cliente: se reserva igual y
+// el aviso al local lo marca «GRUPO GRANDE» (decisión del 04/10/2026).
 function rsResumen(r) {
   const x = rsValidarExtraccion(r);
-  const lineas = ['Tu solicitud de reserva:'];
+  const lineas = ['Tu reserva:'];
   const cuando = _rsFechaLegible(x.fecha, x.hora);
   if (cuando) lineas.push('• ' + cuando);
   if (x.personas) lineas.push('• ' + _rsPersonas(x.personas) + (x.zona ? ', ' + x.zona : ''));
   if (x.nombre) lineas.push('• A nombre de ' + x.nombre);
   if (x.celebracion) lineas.push('• Celebración: ' + x.celebracion);
   if (x.requerimiento) lineas.push('• Pedido especial: ' + x.requerimiento);
-  if (r && r.grupoGrande === true) lineas.push('• Es un grupo grande: el restaurante lo revisa aparte.');
   return lineas.join('\n');
+}
+
+// El mensaje de la reserva anotada (solo sale si el aviso al local SALIO; `Armar mensajes` lo condiciona y `AM_PASE` lo atrapa si no): «¡Listo, Ana!
+// Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en {dirección} 🙌». SIN promesa de contacto (el local
+// llama por su cuenta si ve un problema: es un compromiso humano, no del flujo). Nunca «reservamos tu mesa» (la rechazan las tres redes). Sin dirección,
+// «Te esperamos 🙌».
+function rsMensajeAnotada(r, direccion) {
+  const x = rsValidarExtraccion(r);
+  const nombre = x.nombre.split(' ')[0] || '';
+  const dir = _rsLinea(direccion, 200);
+  return '¡Listo' + (nombre ? ', ' + nombre : '') + '! Anotamos tu reserva para el ' + _rsFechaLegible(x.fecha, x.hora)
+    + ', ' + _rsPersonas(x.personas) + (x.zona ? ', ' + x.zona : '') + '. Te esperamos' + (dir ? ' en ' + dir : '') + ' 🙌';
 }
 
 // Una sola linea (sin saltos) para el aviso. `completo` ve el nombre entero; cualquier

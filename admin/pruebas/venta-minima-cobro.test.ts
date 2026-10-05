@@ -127,7 +127,7 @@ describe('S3: la red se compara en NFKC y sin caracteres de formato, con las ra�
     for (const titular of ['Pago va​lidado SRL', 'ｖａｌｉｄａｄｏ SRL', 'Pago aprobado SRL']) {
       const pie = L.cbCaption(PEDIDO, { titular, moneda: 'BOB' });
       expect(pie, JSON.stringify(titular)).not.toContain('la cuenta es de');
-      expect(pie, JSON.stringify(titular)).toContain('Total a pagar por QR: 63 Bs');
+      expect(pie, JSON.stringify(titular)).toContain('Total a pagar con este QR: 63 Bs');
     }
     // Negativo: un titular normal sale.
     expect(L.cbCaption(PEDIDO, { titular: 'Taqueria Ejemplo SRL', moneda: 'BOB' })).toContain('la cuenta es de Taqueria Ejemplo SRL');
@@ -236,9 +236,9 @@ describe('cbCaption y cbMensajeQr: el total del QR es el del código', () => {
   it('el pie lleva código, total, «solo la comida» y las instrucciones; con delivery, «se paga aparte»', () => {
     const recojo = L.cbCaption(PEDIDO, { titular: 'Taqueria Ejemplo SRL', moneda: 'BOB', delivery: false });
     expect(recojo).toBe(
-      'Pedido #K7QX. Total a pagar por QR: 63 Bs (solo la comida).\n'
-      + 'Escanea el QR con la app de tu banco (la cuenta es de Taqueria Ejemplo SRL). '
-      + 'Cuando termines, envíame aquí la foto o el PDF del comprobante.',
+      '¡Gracias por tu pedido! Es el #K7QX.\n'
+      + 'Total a pagar con este QR: 63 Bs (solo la comida).\n'
+      + 'Escanéalo con la app de tu banco (la cuenta es de Taqueria Ejemplo SRL) y después envíame aquí la foto o el PDF del comprobante.',
     );
     const delivery = L.cbCaption(PEDIDO, { titular: 'Taqueria Ejemplo SRL', delivery: true });
     expect(delivery).toContain('(solo la comida; el delivery se paga aparte, al repartidor)');
@@ -248,7 +248,7 @@ describe('cbCaption y cbMensajeQr: el total del QR es el del código', () => {
 
   it('sin titular no hay paréntesis de la cuenta; con decimales, coma decimal', () => {
     const c = L.cbCaption({ codigo: 'K7QX', total: 12.5 }, {});
-    expect(c).toContain('Total a pagar por QR: 12,50 Bs');
+    expect(c).toContain('Total a pagar con este QR: 12,50 Bs');
     expect(c).not.toContain('la cuenta es de');
   });
 
@@ -293,14 +293,14 @@ describe('cbCaption y cbMensajeQr: el total del QR es el del código', () => {
     };
     const m = L.cbMensajeQr(pedido, L.cbCobroReal(panel({ costoDelivery: 10 })), { delivery: true });
     expect(m.monto).toBe(63);
-    expect(m.cuerpo).toContain('Total a pagar por QR: 63 Bs');
+    expect(m.cuerpo).toContain('Total a pagar con este QR: 63 Bs');
     expect(m.cuerpo).not.toMatch(/999|73|10 Bs/);
   });
 
   it('el pie y el `monto` dicen el mismo número, también con centavos y con el redondeo de 0,1 + 0,2', () => {
     const m = L.cbMensajeQr({ ...PEDIDO, total: 0.1 + 0.2 }, L.cbCobroReal(panel()), {});
     expect(m.monto).toBe(0.3);
-    expect(m.cuerpo).toContain('Total a pagar por QR: 0,30 Bs');
+    expect(m.cuerpo).toContain('Total a pagar con este QR: 0,30 Bs');
   });
 
   it('sin cobro real, sin https, sin pedido o con el cobro de otro pedido apagado: no hay QR (plan B)', () => {
@@ -475,16 +475,19 @@ describe('cbEstadoParaAviso: lo que lee el restaurante en el aviso', () => {
 describe('cbTextoAlCliente: los textos fijos y la prohibición 3', () => {
   const T = (r: string, o: Record<string, unknown> = {}) => L.cbTextoAlCliente(r, { codigo: 'K7QX', ...o });
 
-  it('coincide y el aviso salió: «Ya lo pasé» y que el banco confirma, sin botón', () => {
+  const GRACIAS = 'Gracias por enviar tu comprobante.';
+  const SIN_AVISO = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.';
+
+  it('coincide y el aviso salió: «Ya lo pasé a nuestro equipo» y que el banco confirma, sin botón (voz 05/10: se agradece el COMPROBANTE, nunca «gracias por tu pago»)', () => {
     expect(T('cuadra', { avisoSalio: true })).toEqual({
-      cuerpo: 'Recibí tu comprobante y los datos coinciden con tu pedido #K7QX. Ya lo pasé al restaurante; ellos revisan el pago en su banco antes de despacharlo.',
+      cuerpo: `${GRACIAS} Los datos coinciden con tu pedido #K7QX. Ya lo pasé a nuestro equipo, que revisa el pago en nuestro banco antes de despachar tu pedido.`,
       enlace: false, aviso: true,
     });
   });
 
   it('coincide y NO salió ningún aviso: «No pude pasarle…» con botón, y nunca «Ya pasé»', () => {
     const t = T('cuadra', { avisoSalio: false });
-    expect(t.cuerpo).toBe('Recibí tu comprobante y los datos coinciden con tu pedido #K7QX. No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.');
+    expect(t.cuerpo).toBe(`${GRACIAS} Los datos coinciden con tu pedido #K7QX. ${SIN_AVISO}`);
     expect(t.enlace).toBe(true);
     expect(t.cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
   });
@@ -497,63 +500,68 @@ describe('cbTextoAlCliente: los textos fijos y la prohibición 3', () => {
     }
   });
 
-  it('no coincide: dice cuál dato con una frase fija, pasa el pedido y deja el botón', () => {
-    const t = T('no_cuadra', { avisoSalio: true, diferencia: 'El comprobante dice 5 y el pedido es de 63.' });
+  it('no coincide: dice cuál dato con una frase fija (con la moneda), pasa el pedido y deja el botón', () => {
+    const t = T('no_cuadra', { avisoSalio: true, moneda: 'Bs', diferencia: 'El comprobante dice 5 y el pedido es de 63.' });
     expect(t.cuerpo).toBe(
-      'Recibí tu comprobante, pero algunos datos no coinciden con tu pedido #K7QX (el comprobante dice 5 y tu pedido es de 63). '
-      + 'Ya lo pasé al restaurante, con los datos que leí, para que lo revisen. '
-      + 'Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
+      `${GRACIAS} Veo una diferencia con tu pedido #K7QX: el comprobante dice 5 Bs y tu pedido es de 63 Bs. `
+      + 'Ya lo pasé a nuestro equipo para que lo revise; guárdalo por si te lo pedimos. Si quieres escribirnos directamente, toca el botón.',
     );
-    // Redacción: «tu pedido» y «tu comprobante» no se repiten tras la diferencia.
+    // Redacción: «tu pedido» y «tu comprobante» no se repiten; ya no hay «con los datos que leí» ni «ellos».
     expect(t.cuerpo).not.toContain('Ya pasé');
-    expect(t.cuerpo).not.toContain('de tu comprobante, para');
-    expect(t.cuerpo).not.toContain('Guarda tu comprobante');
+    expect(t.cuerpo).not.toContain('con los datos que leí');
+    expect(t.cuerpo).not.toMatch(/\bellos\b|escr[ií]beles|al restaurante/i);
     expect(t.enlace).toBe(true);
     expect(t.aviso).toBe(true);
     // El opuesto: sin aviso salido no promete nada.
     const sin = T('no_cuadra', { avisoSalio: false, diferencia: 'El comprobante dice 5 y el pedido es de 63.' });
-    expect(sin.cuerpo).toContain('No pude pasarle tu pedido al restaurante en este momento');
+    expect(sin.cuerpo).toContain(SIN_AVISO);
+    expect(sin.cuerpo).toContain('Guarda tu comprobante por si te lo pedimos.');
     expect(sin.cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
+    // Sin moneda la de por omisión es «Bs».
+    expect(T('no_cuadra', { avisoSalio: true, diferencia: 'El comprobante dice 5 y el pedido es de 63.' }).cuerpo).toContain('el comprobante dice 5 Bs y tu pedido es de 63 Bs');
   });
 
-  it('ilegible, primera vez: lo pide de nuevo, sin aviso y sin botón; la segunda, lo pasa al restaurante', () => {
+  it('ilegible, primera vez: lo pide de nuevo, sin aviso y sin botón; la segunda, lo pasa a nuestro equipo', () => {
     const primera = T('ilegible', { ilegibles: 1 });
     expect(primera).toEqual({
-      cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien. ¿Me lo envías de nuevo, más nítido o como PDF desde la app de tu banco?',
+      cuerpo: 'Gracias por enviarlo. No pude leer bien tu comprobante: ¿me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?',
       enlace: false, aviso: false,
     });
     expect(T('ilegible', {}).aviso).toBe(false);
     const segunda = T('ilegible', { ilegibles: 2, avisoSalio: true });
     expect(segunda.aviso).toBe(true);
     expect(segunda.enlace).toBe(true);
-    expect(segunda.cuerpo).toContain('no pude leerlo bien para revisar tu pedido #K7QX');
-    expect(segunda.cuerpo).toContain('Ya lo pasé al restaurante');
+    expect(segunda.cuerpo).toBe('Gracias por enviarlo de nuevo. Como no se lee bien, ya lo pasé a nuestro equipo para que revise tu pedido #K7QX directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.');
     expect(T('ilegible', { ilegibles: 3, avisoSalio: false }).cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
+    expect(T('ilegible', { ilegibles: 3, avisoSalio: false }).cuerpo).toBe(
+      'Gracias por enviarlo de nuevo. Como no se lee bien, no pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón. Guarda tu comprobante por si te lo pedimos.');
   });
 
-  it('redacción: «tu pedido» y «tu comprobante» no se repiten, y nunca se llama «pago» a un comprobante', () => {
-    const cierre = 'Ya lo pasé al restaurante, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.';
-    expect(T('ilegible', { ilegibles: 2, avisoSalio: true }).cuerpo).toBe(`Recibí tu comprobante, pero no pude leerlo bien para revisar tu pedido #K7QX. ${cierre}`);
-    expect(T('sin_cotejo', { avisoSalio: true }).cuerpo).toBe(`Recibí tu comprobante, pero no pude revisarlo contra tu pedido #K7QX. ${cierre}`);
-    expect(T('no_cuadra', { avisoSalio: true }).cuerpo).toBe(`Recibí tu comprobante, pero algunos datos no coinciden con tu pedido #K7QX. ${cierre}`);
+  it('redacción: cada versión una sola vez «tu comprobante» y nunca se llama «pago» a un comprobante (salvo «revisa el pago en nuestro banco» de «coincide»)', () => {
+    expect(T('sin_cotejo', { avisoSalio: true }).cuerpo).toBe('Gracias por enviar el comprobante de tu pedido #K7QX. Ya lo pasé a nuestro equipo para que lo revise directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.');
+    expect(T('sin_cotejo', { avisoSalio: false }).cuerpo).toBe(`Gracias por enviar el comprobante de tu pedido #K7QX. ${SIN_AVISO} Guarda tu comprobante por si te lo pedimos.`);
     for (const r of ['no_cuadra', 'ilegible', 'sin_cotejo']) {
       const c = T(r, { avisoSalio: true, ilegibles: 2 }).cuerpo;
       expect(c, r).not.toContain('Ya pasé tu pedido');
-      expect(c, r).not.toContain('de tu comprobante, para');
       expect(c, r).not.toContain('Guarda tu comprobante');
-      expect((c.match(/tu comprobante/g) ?? []).length, r).toBe(1);
       expect(c, r).not.toMatch(/(tu|el|su) pago/i); // un comprobante no es «el pago»
+      expect(c, r).not.toMatch(/\bellos\b|escr[ií]beles|al restaurante|con los datos que leí/i);
+    }
+    // PROHIBICIÓN 3: se agradece el comprobante, jamás el pago.
+    for (const r of ['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'simulado']) {
+      for (const avisoSalio of [true, false]) {
+        const c = T(r, { avisoSalio, ilegibles: 2 }).cuerpo;
+        expect(c, `${r} ${avisoSalio}`).not.toMatch(/gracias por (tu|el) pago|recibimos tu pago|verificamos|tenemos tu pago|pago (acreditado|verificado|confirmado)/i);
+      }
     }
     expect(T('cuadra', { avisoSalio: true }).cuerpo).not.toContain('Ya pasé tu pedido');
     expect(T('simulado', { avisoSalio: true }).cuerpo).not.toContain('Ya pasé tu pedido');
-    // Sin aviso salido el texto no promete nada ni usa la forma nueva del pase.
-    expect(T('sin_cotejo', { avisoSalio: false }).cuerpo).toContain('Guarda tu comprobante por si te lo piden.');
     expect(T('sin_cotejo', { avisoSalio: false }).cuerpo).not.toContain('Ya lo pasé');
   });
 
-  it('sin cotejo: «no pude revisarlo» y lo pasa al restaurante solo si el aviso salió', () => {
+  it('sin cotejo: lo pasa a nuestro equipo solo si el aviso salió', () => {
     const t = T('sin_cotejo', { avisoSalio: true });
-    expect(t.cuerpo).toContain('no pude revisarlo contra tu pedido #K7QX');
+    expect(t.cuerpo).toContain('Gracias por enviar el comprobante de tu pedido #K7QX');
     expect(t.aviso).toBe(true);
     expect(T('sin_cotejo', { avisoSalio: false }).cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
   });
@@ -567,22 +575,22 @@ describe('cbTextoAlCliente: los textos fijos y la prohibición 3', () => {
 
   it('plan B (sin QR): con aviso salido, el pago se coordina al recoger o al recibir; sin aviso, el botón', () => {
     expect(T('sin_qr', { avisoSalio: true, entrega: 'recojo' }).cuerpo)
-      .toBe('Listo: pasé tu pedido #K7QX al restaurante. El pago lo coordinas con ellos al recoger.');
+      .toBe('Listo: pasé tu pedido #K7QX a nuestro equipo. El pago lo coordinas con nosotros al recoger.');
     expect(T('sin_qr', { avisoSalio: true, entrega: 'delivery' }).cuerpo)
-      .toBe('Listo: pasé tu pedido #K7QX al restaurante. El pago lo coordinas con ellos al recibir.');
+      .toBe('Listo: pasé tu pedido #K7QX a nuestro equipo. El pago lo coordinas con nosotros al recibir.');
     const sin = T('sin_qr', { avisoSalio: false, entrega: 'delivery' });
     expect(sin).toEqual({
-      cuerpo: 'No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.', enlace: true, aviso: true,
+      cuerpo: 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.', enlace: true, aviso: true,
     });
   });
 
   it('un resultado que no existe, o sin código, cae en la derivación honesta (sin prometer nada)', () => {
     for (const r of ['pagado', '', undefined, null, 'CUADRA']) {
       const t = L.cbTextoAlCliente(r as string, { avisoSalio: true });
-      expect(t.cuerpo, String(r)).toBe('Eso lo ve directamente el restaurante. Toca el botón para escribirles.');
+      expect(t.cuerpo, String(r)).toBe('Eso lo ve directamente nuestro equipo. Toca el botón para escribirnos.');
       expect(t.enlace).toBe(true);
     }
-    expect(L.cbTextoAlCliente('cuadra', { avisoSalio: true }).cuerpo).toContain('con tu pedido. Ya lo pasé al restaurante;');
+    expect(L.cbTextoAlCliente('cuadra', { avisoSalio: true }).cuerpo).toContain('con tu pedido. Ya lo pasé a nuestro equipo, que revisa el pago');
     expect(L.cbTextoAlCliente('cuadra', undefined).cuerpo).toContain('No pude pasarle');
   });
 
@@ -617,13 +625,14 @@ describe('cbTextoAlCliente: los textos fijos y la prohibición 3', () => {
 
     it('una diferencia que el código no reconoce no se copia: se dice sin detalle', () => {
       const t = T('no_cuadra', { avisoSalio: true, diferencia: 'Algo raro que escribió alguien' });
-      expect(t.cuerpo).toContain('algunos datos no coinciden con tu pedido #K7QX.');
+      expect(t.cuerpo).toContain('Veo una diferencia con tu pedido #K7QX.');
       expect(t.cuerpo).not.toContain('raro');
-      expect(T('no_cuadra', { avisoSalio: true, diferencia: undefined }).cuerpo).toContain('con tu pedido #K7QX.');
+      expect(T('no_cuadra', { avisoSalio: true, diferencia: undefined }).cuerpo).toContain('Veo una diferencia con tu pedido #K7QX.');
     });
 
     it('cbDiferencia: cada frase del servidor, en orden, y un nombre leído no cambia cuál se reconoce', () => {
-      expect(L.cbDiferencia('El comprobante dice 5 y el pedido es de 63.')).toBe('el comprobante dice 5 y tu pedido es de 63');
+      expect(L.cbDiferencia('El comprobante dice 5 y el pedido es de 63.')).toBe('el comprobante dice 5 Bs y tu pedido es de 63 Bs');
+      expect(L.cbDiferencia('El comprobante dice 5 y el pedido es de 63.', 'USD')).toBe('el comprobante dice 5 USD y tu pedido es de 63 USD');
       expect(L.cbDiferencia('No se pudo leer el importe en el comprobante.')).toBe('no pude leer el importe');
       expect(L.cbDiferencia('No se pudo leer la fecha del comprobante.')).toBe('no pude leer la fecha');
       expect(L.cbDiferencia('El comprobante es anterior al pedido: parece un pago de otra vez.')).toBe('la fecha del comprobante es anterior a tu pedido');
@@ -672,8 +681,8 @@ describe('cbTextoAlCliente: los textos fijos y la prohibición 3', () => {
 
   it('el texto de «coincide» dice quién confirma: el banco y el negocio, nunca el asistente', () => {
     const t = T('cuadra', { avisoSalio: true }).cuerpo;
-    expect(t).toMatch(/los datos coinciden/);
-    expect(t).toMatch(/revisan el pago en su banco/);
+    expect(t).toMatch(/Los datos coinciden/);
+    expect(t).toMatch(/que revisa el pago en nuestro banco/);
     expect(t).not.toMatch(/acreditad|verificad|recibimos tu pago/i);
   });
 });
@@ -773,7 +782,7 @@ describe('S-1: `cbCanon` compara sin homoglifos, sin marcas combinantes y sin co
   });
   it('un titular escrito con letras cirílicas que forma una palabra prohibida se omite del pie del QR', () => {
     const pie = L.cbCaption({ codigo: 'AB12', total: 55 }, { titular: 'Cuenta pаgаda SRL', moneda: 'BOB' });
-    expect(pie).toContain('Total a pagar por QR: 55 Bs');
+    expect(pie).toContain('Total a pagar con este QR: 55 Bs');
     expect(pie).not.toContain('la cuenta es de');
   });
   it('la red conserva el cuantificador acotado y las raíces en su contexto', () => {
@@ -927,10 +936,10 @@ describe('cbCaption simulado: lleva el rótulo y nunca se pide pagar; el real nu
 
   it('NO pide escanear con la app del banco ni nombra al titular, aunque se le pase uno', () => {
     const pie = sim({ titular: 'Taqueria Ejemplo SRL' });
-    expect(pie).not.toContain('Escanea el QR con la app de tu banco');
+    expect(pie).not.toContain('Escanéalo con la app de tu banco');
     expect(pie).not.toContain('Taqueria Ejemplo');
     expect(pie).not.toContain('la cuenta es de');
-    expect(pie).not.toContain('Total a pagar por QR');
+    expect(pie).not.toContain('Total a pagar con este QR');
     expect(pie).toContain('No intentes pagarlo');
   });
 
@@ -942,8 +951,8 @@ describe('cbCaption simulado: lleva el rótulo y nunca se pide pagar; el real nu
   it('el real, con cualquier titular, moneda o delivery, jamás se parece a un simulacro', () => {
     for (const titular of ['', 'Taqueria Ejemplo SRL']) for (const delivery of [true, false]) for (const simulado of [undefined, false]) {
       const pie = L.cbCaption({ codigo: 'K7QX', total: 63 }, { titular, moneda: 'BOB', delivery, simulado });
-      expect(pie).toContain('Total a pagar por QR: 63 Bs');
-      expect(pie).toContain('Escanea el QR con la app de tu banco');
+      expect(pie).toContain('Total a pagar con este QR: 63 Bs');
+      expect(pie).toContain('Escanéalo con la app de tu banco');
       expect(pie).not.toMatch(/simulad|simulacr|demostraci|prueba/i);
     }
     // `simulado` solo vale como el booleano true: un texto no activa el rótulo.
@@ -958,7 +967,7 @@ describe('cbTextoAlCliente simulado: dice SIMULADO y nunca acredita nada', () =>
     const t = T({ avisoSalio: true });
     expect(t.cuerpo).toContain('SIMULADO');
     expect(t.cuerpo).toContain('no se movió dinero');
-    expect(t.cuerpo).toContain('Ya lo pasé al restaurante como pedido de PRUEBA');
+    expect(t.cuerpo).toContain('Ya lo pasé a nuestro equipo como pedido de PRUEBA');
     expect(t.cuerpo).toContain('tu pedido #K7QX');
     expect(t.enlace).toBe(false);
     expect(t.aviso).toBe(true);
@@ -976,7 +985,7 @@ describe('cbTextoAlCliente simulado: dice SIMULADO y nunca acredita nada', () =>
     const t = T({ avisoSalio: false });
     expect(t.cuerpo).toContain('SIMULADO');
     expect(t.cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
-    expect(t.cuerpo).toContain('No pude pasarle tu pedido al restaurante');
+    expect(t.cuerpo).toContain('No pude pasarle tu pedido a nuestro equipo');
     expect(t.enlace).toBe(true);
     expect(t.aviso).toBe(true);
     // `avisoSalio` solo vale como true: ausente o texto no promete.

@@ -333,7 +333,7 @@ describe('R4: el texto del cliente no traba el mensaje entero', () => {
     const m = crear({ panel: panel({ datosDelNegocio: { nombreNegocio: 'Taquería pagado', direccion: 'Av. Ejemplo 123' } }) });
     const s = turno(m, { texto: 'hola' });
     expect(errores(s)).toContain('texto_reemplazado_por_palabra_prohibida');
-    expect(cuerpos(s)[0]).toContain('Esto prefiero que lo vea una persona del restaurante');
+    expect(cuerpos(s)[0]).toContain('Disculpa, eso no lo puedo resolver por aquí');
   });
 });
 
@@ -388,7 +388,7 @@ describe('R3: la marca de derivación es por hecho, y el tope respeta el 0', () 
     expect(sdDe(m)['transferencias']).toBeUndefined();
     expect(sdDe(m)['estados'][CLIENTE]['transferencias']).toEqual([]);
     // El cliente igual recibe la derivación honesta: el botón, sin «ya pasé».
-    expect(cuerpos(a).join('\n')).toContain('Toca «Escribir al local» para hablar con ellos');
+    expect(cuerpos(a).join('\n')).toContain('Toca «Escribir al local» y conversas directamente con nuestro equipo');
     const b = turno(m, { despues: MIN, texto: pide });
     expect(b.armados.length).toBeGreaterThan(0);
     expect(erroresAvisos(b).filter((e) => e.startsWith('derivacion_repetida'))).toEqual([]);
@@ -411,7 +411,7 @@ describe('R3: la marca de derivación es por hecho, y el tope respeta el 0', () 
     const a = turno(m, { texto: pide });
     expect(a.cfg['topeTransferenciasHora']).toBe(0);
     expect(a.armados).toEqual([]);
-    expect(cuerpos(a).join('\n')).toContain('Toca «Escribir al local» para hablar con ellos'); // el botón sí sale
+    expect(cuerpos(a).join('\n')).toContain('Toca «Escribir al local» y conversas directamente con nuestro equipo'); // el botón sí sale
   });
 });
 
@@ -427,7 +427,7 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
   it('reserva con plantilla configurada y ventana cerrada: dos plantillas, y el cliente lee que llegó', () => {
     const s = reservar(crear());
     expect(nombresDePlantilla(s)).toEqual(['plantilla_reserva_x', 'plantilla_reserva_x']);
-    expect(cuerpos(s).join('\n')).toContain('tu solicitud llegó al restaurante');
+    expect(cuerpos(s).join('\n')).toContain('Anotamos tu reserva para el viernes 9 de octubre a las 20:00');
     expect(s.armados.map((a) => a['para']).sort()).toEqual([AV1, AV2]);
   });
 
@@ -437,8 +437,8 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
     expect(plantillas(s)).toEqual([]);
     expect(s.armados).toEqual([]);
     expect(erroresAvisos(s)).toContain('plantilla_no_configurada_reserva');
-    expect(cuerpos(s).join('\n')).toContain('No pude hacer llegar tu solicitud al restaurante');
-    expect(cuerpos(s).join('\n')).not.toContain('llegó al restaurante');
+    expect(cuerpos(s).join('\n')).toContain('No pude hacer llegar tu reserva a nuestro equipo');
+    expect(cuerpos(s).join('\n')).not.toMatch(/Anotamos tu reserva|llegó a nuestro equipo/);
   });
 
   it('reserva SIN plantilla pero con la ventana abierta: cae al texto de detalle, que sí salió', () => {
@@ -448,14 +448,14 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
     expect(plantillas(s)).toEqual([]);
     expect(s.armados.map((a) => [a['para'], a['clase']])).toEqual([[AV1, 'detalle']]);
     expect(cuerpoDe(s.armados[0]!)).toContain('Solicitud de reserva');
-    expect(cuerpos(s).join('\n')).toContain('tu solicitud llegó al restaurante');
+    expect(cuerpos(s).join('\n')).toContain('Anotamos tu reserva para el viernes 9 de octubre a las 20:00');
   });
 
   it('derivación SIN plantilla y ventana cerrada: ningún ítem de plantilla; NO hereda la de reserva, solo el respaldo común `plantillaAviso`', () => {
     const sin = turno(crear({ base: SIN }), { texto: 'quiero hablar con una persona' });
     expect(sin.armados).toEqual([]);
     expect(erroresAvisos(sin)).toContain('plantilla_no_configurada_derivacion');
-    expect(cuerpos(sin).join('\n')).toContain('Toca «Escribir al local» para hablar con ellos');
+    expect(cuerpos(sin).join('\n')).toContain('Toca «Escribir al local» y conversas directamente con nuestro equipo');
     // Con la de reserva configurada pero sin la propia ni el respaldo común, falla cerrado (antes heredaba la de reserva).
     const noHereda = turno(crear({ base: sinClaves('plantillaDerivacion', 'idiomaPlantillaDerivacion') }), { texto: 'quiero hablar con una persona' });
     expect(noHereda.armados).toEqual([]);
@@ -472,7 +472,7 @@ describe('S2: sin plantilla configurada no se inventa un nombre; con ella, sale 
     const s = turno(m, { boton: 'p|confirmar' });
     expect(s.armados).toEqual([]);
     expect(erroresAvisos(s)).toContain('plantilla_no_configurada_pedido');
-    expect(cuerpos(s).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
+    expect(cuerpos(s).join('\n')).toContain('No pude pasarle tu pedido a nuestro equipo');
     expect(cuerpos(s).join('\n')).not.toMatch(/pas[ée] tu pedido|ya (lo |la )?pas/i);
   });
 
@@ -500,7 +500,7 @@ describe('S4: «Reenviar QR» sí reenvía el QR, sin reabrir el cobro', () => {
     expect(reenviado).toMatchObject({ referencia: primero['referencia'], monto: 55 });
     expect(reenviado['evento']).toBeUndefined();
     expect(errores(r).filter((e) => e.startsWith('qr_rechazado'))).toEqual([]);
-    expect(cuerpoDe(reenviado)).toContain('Total a pagar por QR: 55 Bs');
+    expect(cuerpoDe(reenviado)).toContain('Total a pagar con este QR: 55 Bs');
     expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
   });
 
@@ -532,8 +532,8 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
     const s = comprobante(m, { statusCode: 200, body: { resultado: 'cuadra', cierreId: 'cierre-1' } });
     expect(s.d['accion']).toBe('comprobante');
     const texto = cuerpos(s).join('\n');
-    expect(texto).toContain('los datos coinciden');
-    expect(texto).toMatch(/ya lo pas[ée] al restaurante; ellos revisan el pago en su banco/i);
+    expect(texto).toContain('Gracias por enviar tu comprobante. Los datos coinciden');
+    expect(texto).toMatch(/ya lo pas[ée] a nuestro equipo, que revisa el pago en nuestro banco/i);
     expect(texto).not.toMatch(PROHIBIDAS);
     expect(params(plantillas(s).find((a) => a['para'] === AV1)!)[3]).toBe('comprobante: datos coinciden');
     const clases = s.armados.filter((a) => a['para'] === AV1).map((a) => a['clase']);
@@ -547,7 +547,7 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
     turno(m, { from: AV1, texto: 'hola' });
     turno(m, { from: AV2, texto: 'hola' });
     const s = comprobante(m, { statusCode: 200, body: { resultado: 'no_cuadra', diferencias: ['El comprobante dice 50 y el pedido es de 55'] } });
-    expect(cuerpos(s).join('\n')).toContain('no coinciden');
+    expect(cuerpos(s).join('\n')).toContain('Veo una diferencia con tu pedido');
     expect(cuerpos(s).join('\n')).not.toMatch(PROHIBIDAS);
     expect(params(plantillas(s)[0]!)[3]).toBe('comprobante: NO coinciden los datos');
     const detalleCompleto = cuerpoDe(s.armados.find((a) => a['para'] === AV1 && a['clase'] === 'detalle')!);
@@ -560,7 +560,7 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
     const { m } = pagando();
     const a = comprobante(m, { statusCode: 200, body: { resultado: 'ilegible' } });
     expect(a.armados).toEqual([]);
-    expect(cuerpos(a).join('\n')).toContain('no pude leerlo bien');
+    expect(cuerpos(a).join('\n')).toContain('No pude leer bien tu comprobante');
     expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
     const b = comprobante(m, { statusCode: 200, body: { resultado: 'ilegible' } });
     expect(b.armados.length).toBeGreaterThan(0);
@@ -572,7 +572,7 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
     const { m } = pagando();
     const s = comprobante(m, { statusCode: 500, body: {} });
     expect(params(plantillas(s)[0]!)[3]).toBe('comprobante sin cotejar');
-    expect(cuerpos(s).join('\n')).not.toContain('los datos coinciden');
+    expect(cuerpos(s).join('\n')).not.toMatch(/datos coinciden/i);
   });
 
   it('S7: la referencia del servidor de otro teléfono no se coteja contra el pedido de este: se deriva', () => {
@@ -669,7 +669,7 @@ describe('S6: los topes por teléfono y por hora, de punta a punta', () => {
     expect(septimo.armados).toEqual([]);
     expect(erroresAvisos(septimo).some((e) => e.startsWith('tope_pedidos_hora'))).toBe(true);
     // El cliente no lee que se pasó el pedido: lo que sale es el aviso honesto con el botón.
-    expect(cuerpos(septimo).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
+    expect(cuerpos(septimo).join('\n')).toContain('No pude pasarle tu pedido a nuestro equipo');
     expect(pedirYConfirmar(m, OTRO).armados.length).toBeGreaterThan(0);
     m.ahora += 61 * MIN;
     expect(pedirYConfirmar(m).armados.length).toBeGreaterThan(0);
@@ -778,7 +778,7 @@ describe('I1: «reservado» como dato de la carta o de una zona no traba el fluj
     const s = turno(m, { boton: 'm|pedido' });
     expect(cuerpos(s).join('\n')).toContain('Vino Tinto Reservado');
     expect(errores(s).filter((e) => e.startsWith('texto_reemplazado'))).toEqual([]);
-    expect(cuerpos(s).join('\n')).not.toContain('Esto prefiero que lo vea una persona del restaurante');
+    expect(cuerpos(s).join('\n')).not.toMatch(/Disculpa, eso no lo puedo resolver|¡Claro! 🙂 Toca «Escribir al local»|El costo del delivery no lo tengo/);
   });
   it('`zonasReserva: «salón,sala reservada»` deja pasar el flujo de reserva entero, hasta el aviso', () => {
     const m = crear({ base: { ...BASE, zonasReserva: 'salón,sala reservada' } });
@@ -791,7 +791,7 @@ describe('I1: «reservado» como dato de la carta o de una zona no traba el fluj
     expect(cuerpos(resumen).join('\n')).toContain('sala reservada');
     const enviada = turno(m, { boton: 'r|enviar' });
     expect(enviada.armados.length).toBeGreaterThan(0);
-    expect(cuerpos(enviada).join('\n')).toContain('tu solicitud llegó al restaurante');
+    expect(cuerpos(enviada).join('\n')).toContain('Anotamos tu reserva para el viernes 9 de octubre a las 20:00');
   });
 });
 
@@ -891,7 +891,7 @@ describe('M1: los topes en 0 se respetan de punta a punta', () => {
     expect(s.cfg['topeAvisosDia']).toBe(0);
     expect(s.armados).toEqual([]);
     expect(erroresAvisos(s).some((e) => e.startsWith('tope_diario_de_avisos'))).toBe(true);
-    expect(cuerpos(s).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
+    expect(cuerpos(s).join('\n')).toContain('No pude pasarle tu pedido a nuestro equipo');
   });
   it('topeAvisosDia = 2 corta el día en el segundo aviso y 0 corta desde el primero (el cupo se cuenta por mensajes con wamid)', () => {
     const m = crear({ base: { ...BASE, topeAvisosDia: 2 } });
@@ -921,8 +921,11 @@ describe('M1: los topes en 0 se respetan de punta a punta', () => {
     turno(r, { texto: 'mesa para 4 el viernes a las 8 de la noche en la terraza', extraccion: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'terraza', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' } });
     const e = turno(r, { boton: 'r|enviar' });
     expect(e.cfg['topeReservasDia']).toBe(0);
-    expect(e.armados).toEqual([]);
-    expect(cuerpos(e).join('\n')).toContain('Por hoy ya no puedo tomar más solicitudes de reserva');
+    // 04/10: el tope diario ya no deriva ni rechaza: la reserva se anota y el aviso al local la marca «DÍA LLENO: revisar».
+    expect(e.armados.length).toBeGreaterThan(0);
+    expect(e.armados.map((a) => JSON.stringify(a['payload'])).join('\n')).toContain('DÍA LLENO: revisar');
+    expect(cuerpos(e).join('\n')).toContain('Anotamos tu reserva');
+    expect(cuerpos(e).join('\n')).not.toContain('Por hoy ya no puedo');
   });
 });
 
@@ -937,7 +940,7 @@ describe('M3: con el panel caído a mitad de un pedido no se ofrece ni se afirma
     expect(s.p['ruta']).toContain('transferir');
     expect(s.p['aviso'].tipo).toBe('transferencia');
     expect(s.p['pedido']).toBeNull();
-    expect(cuerpos(s).join('\n')).toContain('Toca «Escribir al local» para hablar con ellos');
+    expect(cuerpos(s).join('\n')).toContain('Toca «Escribir al local» y lo ves directamente con nuestro equipo');
     expect(cuerpos(s).join('\n')).not.toMatch(/delivery|pas[ée] tu pedido/i);
   });
   it('con el pedido a medias (aún sin elegir entrega), un botón de entrega tampoco ofrece delivery con el panel caído', () => {
@@ -962,7 +965,7 @@ describe('M3: con el panel caído a mitad de un pedido no se ofrece ni se afirma
     expect(turno(m, { boton: 'p|confirmar' }).p['ruta']).toBe('menu:boton_viejo');
     // «Hacer un pedido» retoma el pedido guardado y cualquier dato de entrega lleva de nuevo al resumen.
     const carta = turno(m, { boton: 'm|pedido' });
-    expect(cuerpos(carta)[0]).toMatch(/^Tu pedido sigue guardado \(1 producto\)\./);
+    expect(cuerpos(carta)[0]).toMatch(/^Todavía tienes un pedido sin confirmar: 1 × [^.]+\./);
     turno(m, { texto: 'recojo', extraccion: { lineas: [], entrega: 'recojo', direccion: '', referencia: '', nombre: '' } });
     expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
     const s = turno(m, { boton: 'p|confirmar' });
@@ -1021,13 +1024,13 @@ describe('M7: la forma `candidates` de Gemini y el nodo `Interpretar lectura`, d
     const s = turno(m, { tipo: 'image', mediaId: 'media-9', lecturaGemini: geminiCandidates({ monto: 55, cuentaDestino: '1000000000045', nombreCuenta: 'Titular de Prueba SRL' }) });
     expect(s.d['accion']).toBe('comprobante');
     expect(params(plantillas(s)[0]!)[3]).toBe('comprobante sin cotejar');
-    expect(cuerpos(s).join('\n')).not.toContain('los datos coinciden');
+    expect(cuerpos(s).join('\n')).not.toMatch(/datos coinciden/i);
   });
   it('`Interpretar lectura` con una lectura ilegible: la primera vez se pide de nuevo, sin avisar', () => {
     const m = conQr();
     const s = turno(m, { tipo: 'image', mediaId: 'media-9', lecturaGemini: geminiCandidates({ monto: '', cuentaDestino: '' }) });
     expect(s.armados).toEqual([]);
-    expect(cuerpos(s).join('\n')).toContain('no pude leerlo bien');
+    expect(cuerpos(s).join('\n')).toContain('No pude leer bien tu comprobante');
     expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
   });
   it('negado: lo que dice la imagen es un dato, nunca una instrucción (una clave extra no cambia el resultado)', () => {
@@ -1107,7 +1110,7 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
     expect(img).toMatchObject({ evento: 'qr_enviado', monto: 55 });
     expect(cuerpoDe(img)).toContain('SIMULADO');
     expect(cuerpoDe(img)).toContain('no cobra');
-    expect(cuerpoDe(img)).not.toContain('Escanea el QR con la app de tu banco');
+    expect(cuerpoDe(img)).not.toContain('Escanéalo con la app de tu banco');
     expect(errores(qr).filter((x) => x.startsWith('qr_rechazado'))).toEqual([]);
     expect(qr.p['ruta']).toBe('pedido:qr_simulado');
     expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
@@ -1124,7 +1127,7 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
     // El cliente
     const texto = cuerpos(s).join('\n');
     expect(texto).toContain('SIMULADO');
-    expect(texto).toMatch(/Ya lo pasé al restaurante como pedido de PRUEBA\./);
+    expect(texto).toMatch(/Ya lo pasé a nuestro equipo como pedido de PRUEBA\./);
     expect(texto).not.toMatch(PROHIBIDAS);
     expect(texto).not.toMatch(/pago (acreditado|verificado)|recibimos\s+tu\s+pago|los datos coinciden/i);
     // El restaurante: plantilla con PRUEBA, detalle de PRUEBA y NUNCA la imagen del comprobante ni «revisen el pago»
@@ -1187,7 +1190,7 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
     const c = turno(m, { boton: 'p|confirmar' });
     expect(c.cfg['cobro']).toMatchObject({ activo: true, modo: 'real', qrUrl: QR });
     expect(clientes(c)[0]!['payload']).toMatchObject({ type: 'image', image: { link: QR } });
-    expect(cuerpoDe(clientes(c)[0]!)).toContain('Total a pagar por QR: 55 Bs');
+    expect(cuerpoDe(clientes(c)[0]!)).toContain('Total a pagar con este QR: 55 Bs');
     // (el titular de la cuenta del fixture se llama «Titular de Prueba SRL»: «prueba» sola no es un rótulo; el del simulado es «PRUEBA ·»)
     expect(cuerpoDe(clientes(c)[0]!)).not.toMatch(/simulad|demostraci|PRUEBA ·/i);
     expect(c.p['ruta']).toBe('pedido:qr');
