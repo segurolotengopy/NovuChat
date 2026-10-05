@@ -1771,13 +1771,15 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
   });
 
   it('una bebida suelta por delivery se quita con su texto; en recojo, queda', () => {
-    const delivery = armarPedido({ entrega: 'delivery', lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
+    // `areasSinDelivery` ya no es «Bebidas» en Q'Taco (04/10: es falso, el área solo tiene bebidas sin alcohol que SÍ se envían): la regla sigue vigente
+    // para quien la configure, y se prueba poniéndola.
+    const delivery = armarPedido({ entrega: 'delivery', config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
     const texto = cuerpos(delivery.resumen).join('\n');
     expect(texto).not.toMatch(/× Horchata/); // no queda en el pedido…
     expect(texto).toMatch(/1 × Queso Fundido/);
     expect(texto).toContain('Por delivery no enviamos Horchata: lo quité de tu pedido.'); // …y se le dice que se quitó
     expect(texto).toContain('Total de la comida: 75 Bs.'); // el total es solo lo que queda
-    const recojo = armarPedido({ entrega: 'recojo', lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
+    const recojo = armarPedido({ entrega: 'recojo', config: { areasSinDelivery: 'Bebidas' }, lineas: [ln('horchata', 2), ln('queso fundido', 1)] });
     expect(cuerpos(recojo.resumen).join('\n')).toMatch(/2 × Horchata/);
   });
 
@@ -2108,7 +2110,7 @@ describe('carta', () => {
     const texto = cuerpos(carta).join('\n');
     for (const quedan of ['Promo Dúo', 'Nachos Supremos', 'Queso Fundido', 'Tacos de Birria', 'Enchiladas Suizas', 'Horchata']) expect(texto, quedan).toContain(quedan);
     for (const sale of ['Michelada', 'Pils', 'Rompope', 'Helado', 'Cervezas', 'Cócteles']) expect(texto, sale).not.toContain(sale);
-    expect(texto).toContain('Por delivery no enviamos bebidas.');
+    expect(texto).not.toContain('Por delivery no enviamos'); // sin `areasSinDelivery` no se afirma nada del delivery (04/10)
     w.estado.extraccion = EX([ln('michelada', 2)]);
     const t = c.escribe('quiero 2 micheladas');
     // Es un producto EXCLUIDO a propósito: su texto amable (no «no lo encuentro»), con la carta a un toque y sin aviso al restaurante.

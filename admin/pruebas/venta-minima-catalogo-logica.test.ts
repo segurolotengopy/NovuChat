@@ -456,17 +456,22 @@ describe('el carrito que vuelve de la página', () => {
     expect(t.textos).toHaveLength(1);
   });
 
-  it('delivery: lo que no sale por delivery (Bebidas) se quita con su nota; con recojo se queda', () => {
+  it('delivery: con `areasSinDelivery` configurada, lo que no sale por delivery se quita con su nota; con recojo se queda (Q\'Taco ya NO la tiene: 04/10)', () => {
     const items = [
       { id: 'nachos', nombre: 'Nachos Supremos', cantidad: 1, subtotal: 58 }, { id: 'horchata', nombre: 'Horchata', cantidad: 1, subtotal: 20 },
     ];
-    const m = crear();
+    const m = crear({ areasSinDelivery: 'Bebidas' });
     const t = carrito(m, { items, total: 78, entrega: 'envio', direccion: 'Av. Arce 2345, San Jorge' });
     expect(estadoDe(m)['carrito'].map((l: J) => l['id'])).toEqual(['nachos']);
     expect(t.textos.join('\n')).toContain('Por delivery no enviamos Horchata');
-    const m2 = crear();
+    const m2 = crear({ areasSinDelivery: 'Bebidas' });
     carrito(m2, { items, total: 78, entrega: 'retiro' });
     expect(estadoDe(m2)['carrito'].map((l: J) => l['id'])).toEqual(['nachos', 'horchata']);
+    // Con la config REAL de Q'Taco (sin áreas) nada se quita por delivery.
+    const m3 = crear();
+    const real = carrito(m3, { items, total: 78, entrega: 'envio', direccion: 'Av. Arce 2345, San Jorge' });
+    expect(estadoDe(m3)['carrito'].map((l: J) => l['id'])).toEqual(['nachos', 'horchata']);
+    expect(real.textos.join('\n')).not.toContain('no enviamos');
   });
 
   it('si el local no hace delivery y el carrito pedía envío, se dice y se toma el recojo', () => {

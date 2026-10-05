@@ -163,7 +163,7 @@
               "id": "cb_areasSinDelivery",
               "name": "areasSinDelivery",
               "type": "string",
-              "value": "Bebidas"
+              "value": ""
             },
             {
               "id": "cb_horario",
