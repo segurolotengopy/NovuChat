@@ -777,7 +777,7 @@ function tablaTexto(filas, columnas) {
   const linea = (f) => f.map((x, i) => String(x).padEnd(anchos[i])).join('  ').trimEnd();
   return [linea(columnas), anchos.map((a) => '-'.repeat(a)).join('  '), ...filas.map(linea)].join('\n');
 }
-const tablaMarkdown = (filas, columnas) => [`| ${columnas.join(' | ')} |`, `|${columnas.map(() => '---').join('|')}|`, ...filas.map((f) => `| ${f.map((x) => String(x).replace(/\|/g, '\\|')).join(' | ')} |`)].join('\n');
+const tablaMarkdown = (filas, columnas) => [`| ${columnas.join(' | ')} |`, `|${columnas.map(() => '---').join('|')}|`, ...filas.map((f) => `| ${f.map((x) => String(x).replace(/\\/g, '\\\\').replace(/\|/g, '\\|')).join(' | ')} |`)].join('\n');
 
 function textoDelInforme(r, opciones) {
   const o = [];
