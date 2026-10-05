@@ -96,6 +96,25 @@ describe('decodificarImagen', () => {
   });
 });
 
+describe('tope del archivo original, antes de decodificar', () => {
+  const TOPE = 25 * 1024 * 1024;
+  it('un byte más de 25 MiB: ErrorDeImagen pesada, sin tocar el decodificador', async () => {
+    const crearBitmap = vi.fn(async () => ({ width: 1, height: 1 }) as unknown as ImageBitmap);
+    const nuevoLector = vi.fn(lectorQue('ok'));
+    const error = await decodificarImagen({ size: TOPE + 1 } as File, { crearBitmap, nuevoLector }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ErrorDeImagen);
+    expect((error as ErrorDeImagen).causa).toBe('pesada');
+    expect(crearBitmap).not.toHaveBeenCalled();
+    expect(nuevoLector).not.toHaveBeenCalled();
+  });
+  it('25 MiB exactos pasan al decodificador', async () => {
+    const crearBitmap = vi.fn(async () => ({ width: 10, height: 10 }) as unknown as ImageBitmap);
+    const r = await decodificarImagen({ size: TOPE } as File, { crearBitmap });
+    expect(crearBitmap).toHaveBeenCalledTimes(1);
+    expect(r.ancho).toBe(10);
+  });
+});
+
 describe('el camino del logo no usa createObjectURL', () => {
   it('ni Configuracion.tsx ni la decodificación lo llaman', () => {
     for (const ruta of ['web/src/central/paginas/Configuracion.tsx', 'web/src/central/lib/decodificarImagen.ts']) {

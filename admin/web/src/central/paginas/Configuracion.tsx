@@ -913,7 +913,7 @@ function LogoDelComercio({ tenantId }: { tenantId: string }) {
         </div>
       )}
       <p className="ayuda">
-        Un PNG o un JPG. Se recorta solo a 320 píxeles, así que no hace falta
+        Un PNG, un JPG o un WebP. Se recorta solo a 320 píxeles, así que no hace falta
         que lo prepares: sube el que tengas. Se ve arriba de todo en la página
         que abren tus clientes.
       </p>

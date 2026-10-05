@@ -27,9 +27,9 @@ describe('errores propios de la imagen (por clase, no por texto)', () => {
       'No pudimos leer ese archivo como imagen. Sube un PNG, JPG o WebP (no un PDF ni una captura de '
       + 'otro formato). Si es de WhatsApp o de un PDF, guárdalo primero como imagen.');
   });
-  it('pesada: se conserva el texto de siempre', () => {
+  it('pesada: un texto que vale tanto para el original enorme como para el que no entra reducido', () => {
     expect(mensajeDeErrorDeLogo(new ErrorDeImagen('pesada'))).toBe(
-      'Esa imagen es demasiado pesada incluso reducida. Intenta con una más simple o con menos detalle.');
+      'Esa imagen es demasiado pesada. Prueba con una más pequeña o más simple.');
   });
   it('sin lienzo: se conserva el texto de siempre', () => {
     expect(mensajeDeErrorDeLogo(new ErrorDeImagen('sin-lienzo'))).toBe('El navegador no pudo procesar la imagen.');
@@ -44,8 +44,11 @@ describe('errores del servidor, por código', () => {
     const m = mensajeDeErrorDeLogo(deFirebase('permission-denied', 'Missing or insufficient permissions.'));
     expect(m).toBe(TEXTO_SIN_PERMISO);
     expect(m).not.toMatch(/Missing or insufficient/i);
-    expect(m).toMatch(/persona administradora/);
-    expect(m).toMatch(/catálogo web/);
+    // La regla exige administrador, negocio activo y catálogo web habilitado.
+    expect(m).toMatch(/quien administra el negocio/);
+    expect(m).toMatch(/activo/);
+    expect(m).toMatch(/catálogo web habilitado/);
+    expect(m).not.toMatch(/administradora|plan/);
   });
   it('con el prefijo firestore/ también', () => {
     expect(mensajeDeErrorDeLogo(deFirebase('firestore/permission-denied', 'x'))).toBe(TEXTO_SIN_PERMISO);

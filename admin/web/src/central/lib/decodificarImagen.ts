@@ -11,7 +11,7 @@
  * Esta es una versión propia y mínima de esa pieza: la consola central no
  * puede importar de un módulo (`fronteras.test.ts`). SEGUIMIENTO: unificar
  * ambas en una pieza común. Y no se arregla aflojando la CSP con `blob:`: lo
- * fija `admin/pruebas/central/error-logo.test.ts`.
+ * fija `admin/pruebas/central/decodificar-imagen.test.ts`.
  *
  * Primero `createImageBitmap(archivo)` (recibe el `File`, sin URL); si no
  * existe o falla, respaldo con `FileReader.readAsDataURL` + `Image`, porque
@@ -35,10 +35,15 @@ export interface PiezasDeDecodificacion {
   nuevaImagen?: () => HTMLImageElement;
 }
 
+/** Tope del archivo original, antes de decodificar (el mismo valor que las fotos de productos). */
+export const TOPE_ORIGINAL = 25 * 1024 * 1024;
+
 export async function decodificarImagen(
   archivo: File,
   piezas: PiezasDeDecodificacion = {},
 ): Promise<ImagenDecodificada> {
+  // Un archivo enorme se rechaza sin pedirle al navegador que lo decodifique.
+  if (archivo.size > TOPE_ORIGINAL) throw new ErrorDeImagen('pesada');
   const crearBitmap = piezas.crearBitmap
     ?? (typeof createImageBitmap === 'function' ? (a: Blob) => createImageBitmap(a) : undefined);
   if (crearBitmap) {

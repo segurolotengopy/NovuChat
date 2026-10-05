@@ -30,14 +30,13 @@ const TEXTO_POR_CAUSA: Record<CausaDeImagen, string> = {
   ilegible: 'No pudimos leer ese archivo como imagen. Sube un PNG, JPG o WebP '
     + '(no un PDF ni una captura de otro formato). Si es de WhatsApp o de un '
     + 'PDF, guárdalo primero como imagen.',
-  pesada: 'Esa imagen es demasiado pesada incluso reducida. '
-    + 'Intenta con una más simple o con menos detalle.',
+  pesada: 'Esa imagen es demasiado pesada. Prueba con una más pequeña o más simple.',
   'sin-lienzo': 'El navegador no pudo procesar la imagen.',
 };
 
-export const TEXTO_SIN_PERMISO = 'No tienes permiso para cambiar el logo. Solo lo cambia la '
-  + 'persona administradora del negocio, y el catálogo web tiene que estar incluido en tu plan. '
-  + 'Si eres administradora y sigue igual, avísanos.';
+export const TEXTO_SIN_PERMISO = 'No se pudo guardar el logo: solo lo cambia quien administra el '
+  + 'negocio, y el negocio tiene que estar activo y con el catálogo web habilitado. '
+  + 'Si es tu caso y sigue igual, avísanos.';
 export const TEXTO_SIN_CONEXION = 'No hay conexión con el servidor. Revisa tu internet e intenta de nuevo.';
 export const TEXTO_SESION_VENCIDA = 'Tu sesión venció. Entra de nuevo e intenta otra vez.';
 export const TEXTO_TAMANO_RECHAZADO = 'El servidor rechazó el tamaño del logo. Prueba con una imagen más simple.';
