@@ -12,7 +12,8 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
@@ -99,8 +100,10 @@ describe('A. comparar(ficha): las fichas esperadas dan cero diferencias', () => 
     expect(notas({ flujos }).variosFlujos).toBe(true);
   });
 
-  it('flujos repetidos no cuentan como 2 flujos', () => {
+  it('flujos repetidos o desconocidos no cuentan como 2 flujos', () => {
     expect(notas({ flujos: ['venta', 'venta'] }).variosFlujos).toBe(false);
+    expect(notas({ flujos: ['venta', 'interno'] }).variosFlujos).toBe(false);
+    expect(notas({ flujos: ['venta', 'agendamiento', 'interno'] }).variosFlujos).toBe(true);
   });
 
   it('un `flujos` mapa (`{venta: true}`) abre las reglas por sus claves: se detecta por los chequeos 1, 2, 3, 6a y 7', () => {
@@ -161,6 +164,42 @@ describe('B. el script como proceso: solo lee', () => {
       expect(r.codigo, r.salida).toBe(2);
       expect(r.salida).toContain('SOLO un seco');
     }
+  });
+
+  it('invocado por un enlace simbólico también corre: sin --proyecto sale 2, no un falso «0»', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mig-enlace-'));
+    try {
+      // El enlace queda FUERA del directorio del script: `import.meta.url` y `argv[1]` difieren.
+      const enlace = join(dir, 'migrar-modulos-enlace.mjs');
+      symlinkSync(SCRIPT, enlace);
+      const r = spawnSync(process.execPath, [enlace], { env: entornoDelEmulador(HOST), encoding: 'utf8' });
+      expect(r.status, `${r.stdout}${r.stderr}`).toBe(2);
+      expect(r.stderr).toContain('falta --proyecto');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('un error de ejecución sale con 3 (no con 1, que es «hay diferencias») y no imprime el mensaje', () => {
+    // Sin emulador y sin credenciales (`entornoDelEmulador` las apunta a la nada): la lectura falla de inmediato,
+    // sin llegar a ninguna red. El host del emulador se quita solo durante este lanzamiento síncrono.
+    const host = process.env['FIRESTORE_EMULATOR_HOST'];
+    delete process.env['FIRESTORE_EMULATOR_HOST'];
+    let r;
+    try {
+      r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T_OK],
+        { env: entornoDelEmulador(undefined), encoding: 'utf8', timeout: 15_000 });
+    } finally {
+      if (host !== undefined) process.env['FIRESTORE_EMULATOR_HOST'] = host;
+    }
+    expect(r.status, `${r.stdout}${r.stderr}`).toBe(3);
+    expect(r.stderr).toContain('error de ejecución');
+  });
+
+  it('--tenant repetido se lee una sola vez', () => {
+    const r = correr('--tenant', `${T_OK},${T_OK}`);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toContain('fichas leídas            : 1');
   });
 
   it('sin --proyecto o con --tenant inválido: código 2', () => {

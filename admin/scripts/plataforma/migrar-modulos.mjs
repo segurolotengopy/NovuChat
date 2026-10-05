@@ -33,7 +33,8 @@
  * sobre su texto y contra el emulador (`updateTime` iguales).
  *
  * SALIDA. Código 0: cero diferencias. Código 1: hay diferencias (o una ficha
- * pedida no existe). Código 2: uso. Imprime solo ids de tenant, nombres de
+ * pedida no existe). Código 2: uso. Código 3: error de ejecución (permiso, red:
+ * se imprime solo su código o nombre, nunca el mensaje). Imprime solo ids de tenant, nombres de
  * módulos, banderas y conteos: nunca un dato del comercio ni de sus clientes.
  *
  *   node scripts/plataforma/migrar-modulos.mjs --proyecto <id> [--tenant a,b]
@@ -42,9 +43,10 @@
  * lectura por ficha, más el listado de `funcionarios/*\/privado` de los
  * comercios sin agenda. Cero escrituras.
  */
-import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
-  IDS_MODULOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS, documentoDeCobro, etiquetaDeCatalogo,
+  IDS_MODULOS, MODULOS_COMUNES_HOY, esFlujo, PUENTE_DE_FLUJOS, documentoDeCobro, etiquetaDeCatalogo,
   modulosDeFicha, pestanasDe, tieneModulo,
 } from '../../functions/src/registro.ts';
 
@@ -219,7 +221,7 @@ export function notas(ficha) {
   const tieneFlujos = 'flujos' in f;
   return {
     flujosNoLista: tieneFlujos && !Array.isArray(f.flujos),
-    variosFlujos: Array.isArray(f.flujos) && new Set(f.flujos).size >= 2,
+    variosFlujos: Array.isArray(f.flujos) && new Set(f.flujos.filter(esFlujo)).size >= 2,
     conModulosYa: 'modulos' in f,
   };
 }
@@ -238,7 +240,7 @@ async function principal() {
     process.exit(2);
   }
   const PROYECTO = opcion('proyecto');
-  const pedidos = (opcion('tenant') ?? '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+  const pedidos = [...new Set((opcion('tenant') ?? '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))];
   const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
   const problemas = [];
   if (!PROYECTO) problemas.push('falta --proyecto');
@@ -318,4 +320,21 @@ async function principal() {
   process.exit(conDiferencias + faltan.length > 0 ? 1 : 0);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await principal();
+/** ¿Se ejecutó este archivo (aunque sea por un enlace simbólico) y no se importó? */
+function seEjecutaDirecto() {
+  try {
+    return Boolean(process.argv[1]) && fileURLToPath(import.meta.url) === realpathSync(process.argv[1]);
+  } catch {
+    return false;
+  }
+}
+
+if (seEjecutaDirecto()) {
+  try {
+    await principal();
+  } catch (e) {
+    // Un fallo de ejecución (permiso, red) NO es «hay diferencias»: código 3, sin mensaje (podría traer datos).
+    console.error(`\n  ✗ error de ejecución: ${e?.code ?? e?.name ?? 'desconocido'}\n`);
+    process.exit(3);
+  }
+}
