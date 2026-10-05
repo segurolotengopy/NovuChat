@@ -6,7 +6,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import { documentoQueCobra } from '../../../functions/src/modulos/cobros/cobro.ts';
-import { documentoDeCobro, modulosDeFicha } from '../../../functions/src/registro.ts';
 
 const ficha = (d: Record<string, unknown>) => ({ get: (k: string) => d[k] });
 const crudo = (d: Record<string, unknown>) => documentoQueCobra(ficha(d));
@@ -68,9 +67,21 @@ describe('documentoQueCobra: fuera del dominio bien formado, el registro falla c
     expect(crudo({ modulos: ['agenda'] })).toBeNull();
     expect(crudo({ modulos: ['pedidos', 'agenda'] })).toBeNull();
   });
-  it('coincide con el registro sobre la ficha cruda', () => {
-    for (const d of [{ flujos: ['venta'] }, { modulos: ['cobros', 'pedidos'] }, { flujos: null, vertical: 'venta' }, {}]) {
-      expect(crudo(d)).toBe(documentoDeCobro(modulosDeFicha(d)));
-    }
+  it('valores esperados escritos a mano, independientes del registro', () => {
+    expect(crudo({ flujos: ['venta'] })).toBe('venta');
+    expect(crudo({ modulos: ['cobros', 'pedidos'] })).toBe('venta');
+    expect(crudo({ modulos: ['cobros', 'agenda'] })).toBe('agendamiento');
+    expect(crudo({ flujos: null, vertical: 'venta' })).toBeNull();
+    expect(crudo({})).toBeNull();
+  });
+});
+
+describe('documentoQueCobra: la ficha completa de Q\'Taco (valores sintéticos)', () => {
+  it('da venta', () => {
+    expect(crudo({
+      creadoEn: '2026-01-01T00:00:00Z', creadoPor: 'uid-sintetico', estado: 'activo',
+      flujos: ['venta'], nombre: 'Comercio de prueba', plan: 'plan-sintetico',
+      vertical: 'venta', waPhoneNumberId: 'phone-sintetico', waWabaId: 'waba-sintetico',
+    })).toBe('venta');
   });
 });

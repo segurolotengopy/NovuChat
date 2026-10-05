@@ -32,7 +32,7 @@ import { REGION } from '../../core/region.js';
 import { validarQrSimple } from './qrSimple.js';
 import type { ProblemaQr } from './qrSimple.js';
 import { dibujarQr } from './dibujoQr.js';
-import { documentoDeCobro, modulosDeFicha, type FichaConCapacidades } from '../../registro.js';
+import { documentoDeCobro, modulosDeFicha } from '../../registro.js';
 
 const db = () => getFirestore();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -186,7 +186,7 @@ export function documentoQueCobra(
     modulos: ficha.get('modulos'),
     flujos: ficha.get('flujos'),
     vertical: ficha.get('vertical'),
-  } as FichaConCapacidades));
+  }));
 }
 
 // ---------------------------------------------------------------------------
