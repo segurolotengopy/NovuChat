@@ -59,11 +59,13 @@ const HONESTAS = [
   'Total de la comida: 155 Bs.', 'Escanéalo con la app de tu banco.', 'Tu pedido sigue guardado.',
   'Sigo esperando el comprobante de tu pedido.',
   // Redacción de Venta mínima (04/10): los textos nuevos de cara al cliente no disparan la red.
-  'Ya lo pasé a nuestro equipo; ellos revisan el pago en su banco antes de despacharlo.',
-  'Ya lo pasé a nuestro equipo, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
-  'Ya lo pasé a nuestro equipo como pedido de PRUEBA.',
-  'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
-  'No pude incluir tu nota: «tequila» no está disponible para pedir por WhatsApp.', 'Para volver al inicio, escribe «menú».',
+  'Ya lo pasé al restaurante; ellos revisan el pago en su banco antes de despacharlo.',
+  'Ya lo pasé al restaurante, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
+  'Ya lo pasé al restaurante como pedido de PRUEBA.',
+  '¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, terraza. Te esperamos en Av. Ejemplo 123.',
+  'No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.',
+  'Tu reserva: viernes 9 de octubre a las 20:00, 4 personas.', 'Reservar', 'Ver ubicación',
+  'No pude incluir tu nota: «tequila» no está disponible por este medio.', 'Para volver al inicio, escribe «menú».',
   // Correcciones de conversación (04/10).
   'Disculpa, no te entendí bien. ¿Qué te gustaría hacer?', 'Seguir con mi pedido',
   '¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?', 'Elegir otra vez',

@@ -40,6 +40,9 @@ import { registerHooks } from 'node:module';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// LOS FLUJOS DE LA FICHA Y EL DOCUMENTO DE CADA UNO SALEN DEL REGISTRO (H2b-4e).
+// `registro.ts` no tiene `import`, así que no necesita el gancho de resolución de abajo.
+import { documentoDeFlujo, flujosDeFicha } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -160,7 +163,7 @@ if (esDemo) {
 }
 
 // 1 · Comercio ---------------------------------------------------------------
-const flujos = Array.isArray(fichaD.flujos) ? fichaD.flujos : [fichaD.vertical].filter(Boolean);
+const flujos = flujosDeFicha(fichaD);
 if (fichaD.estado === 'activo' || fichaD.estado === undefined) cumple('Comercio', 'activo');
 else falta('Comercio', `estado «${fichaD.estado}»: un comercio suspendido o de baja no pasa`);
 if (flujos.length) cumple('Comercio', `flujos: ${flujos.join(', ')}`);
@@ -233,7 +236,7 @@ if (!negocioDoc.exists) {
   else falta('Configuración', 'sin número de recepción válido: los avisos no llegan a nadie');
   const configs = [negocio];
   for (const f of flujos) {
-    const d = await db.doc(`tenants/${TENANT}/config/${f}`).get();
+    const d = await db.doc(`tenants/${TENANT}/config/${documentoDeFlujo(f)}`).get();
     if (d.exists) configs.push(d.data());
   }
   const textos = configs.flatMap((c) => textosDe(c));

@@ -108,15 +108,6 @@ function vmLinea(t, max) {
   const s = _vmCadena(t).replace(/[\u0080-\u0084\u0086-\u009f]/g, '').replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029<>&]/g, ' ').replace(/\s+/g, ' ').trim();
   return Number(max) > 0 ? vmRecorte(s, max) : s;
 }
-// El enlace de Google Maps del comercio (`datosDelNegocio.direccionMaps`): LA MISMA regla que el servidor (`enlaceDeMapaValido` de
-// `admin/functions/src/core/prompt/prompt.ts`): https, un dominio de mapas de Google y hasta 200 caracteres; si no, ''. Es la segunda barrera:
-// el servidor ya lo filtró antes de mandarlo, y aquí se vuelve a comprobar (`Config del negocio`) y otra vez al armar el mensaje (`Armar mensajes`).
-const VM_ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
-function vmEnlaceDeMapa(v) {
-  if (typeof v !== 'string') return '';
-  const t = v.trim();
-  return t.length <= 200 && VM_ENLACE_DE_MAPA.test(t) ? t : '';
-}
 // Una lista (arreglo o CSV) de lineas cortas, sin vacios, sin repetidos y sin marcadores `REEMPLAZAR_`.
 function vmLista(v) {
   const partes = Array.isArray(v) ? v : _vmCadena(v).split(',');
@@ -130,6 +121,15 @@ function vmLista(v) {
     salida.push(s);
   }
   return salida;
+}
+// El enlace de Google Maps del negocio (`direccionMaps`): LA MISMA regla que `enlaceDeMapaValido` del servidor
+// (`admin/functions/src/core/prompt/prompt.ts`: https, uno de los dominios de mapas, hasta 200 caracteres, sin espacios). Se vuelve a
+// comprobar aquí (`Config del negocio`, `Plan del turno` y `Armar mensajes`): dos barreras o más. Inválido o ausente = '' (sin botón).
+const VM_ENLACE_DE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+function vmEnlaceDeMapa(v) {
+  if (typeof v !== 'string') return '';
+  const t = v.trim();
+  return t.length <= 200 && VM_ENLACE_DE_MAPA.test(t) ? t : '';
 }
 function vmEntero(v, min, max, def) {
   const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);

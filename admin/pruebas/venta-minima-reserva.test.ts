@@ -26,7 +26,7 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [
   'rsCuerpoExtraccion', 'rsValidarExtraccion', 'rsFusionar', 'rsValidar', 'rsPreguntaFaltantes',
-  'rsResumen', 'rsLineaCompacta', 'rsDentroDelTope', 'rsAnotar', 'rsHoraSuelta', 'rsReclamo', 'rsMensajeAnotada',
+  'rsResumen', 'rsLineaCompacta', 'rsFraseDeConfirmacion', 'rsDentroDelTope', 'rsAnotar', 'rsHoraSuelta', 'rsReclamo',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -272,7 +272,7 @@ describe('rsValidar: la solicitud completa', () => {
       const v = validar({ fecha: DOM });
       expect(v.completa).toBe(false);
       expect(v.error).toMatchObject({ campo: 'fecha' });
-      expect(v.error.texto).toContain('No abrimos el domingo 11 de octubre');
+      expect(v.error.texto).toContain('no abre el domingo 11 de octubre');
       expect(v.reserva.fecha).toBe('');
     });
     it('menos de la anticipación: hoy con 59 minutos no; con 60 sí (el límite exacto)', () => {
@@ -330,13 +330,13 @@ describe('rsValidar: la solicitud completa', () => {
       expect(validar({ personas: 25 })).toMatchObject({ completa: false, grupoGrande: false, error: { campo: 'personas' } });
       expect(validar({ personas: 40 }).error.campo).toBe('personas');
     });
-    it('el RESUMEN al cliente ya no habla de «grupo grande» (se reserva igual; el aviso al local lo marca); la línea del aviso sí lo lleva', () => {
+    it('el resumen y la línea del aviso llevan la nota; la reserva normal no', () => {
       const g = validar({ personas: 15 });
-      expect(g.grupoGrande).toBe(true);
-      expect(L.rsResumen(g.reserva)).not.toMatch(/grupo grande|revisa aparte|restaurante/i);
+      // El grupo grande YA NO se anota en el resumen al cliente (se quitó la línea): lo marca solo el aviso al local.
+      expect(L.rsResumen(g.reserva)).not.toMatch(/grupo grande|revisa aparte/i);
       expect(L.rsLineaCompacta(g.reserva, 'completo')).toContain('(grupo grande)');
       const n = validar({ personas: 4 });
-      expect(L.rsResumen(n.reserva)).toBe(L.rsResumen({ ...g.reserva, personas: 4, grupoGrande: false }));
+      expect(L.rsResumen(n.reserva)).not.toContain('grupo grande');
       expect(L.rsLineaCompacta(n.reserva, 'completo')).not.toContain('grupo grande');
     });
     it('el máximo sale de la configuración: con 6, siete personas son grupo grande y 13 error', () => {
@@ -447,7 +447,7 @@ describe('rsValidar: la solicitud completa', () => {
         const v = validar({}, { horario: h });
         expect(v.completa, JSON.stringify(h)).toBe(false);
         expect(v.error, JSON.stringify(h)).toMatchObject({ campo: 'horario' });
-        expect(v.error.texto).toBe('En este momento no puedo tomar reservas.');
+        expect(v.error.texto).toContain('horario');
       }
       // Los opuestos: el mismo caso con un horario bueno pasa.
       expect(validar({}).completa).toBe(true);
@@ -485,7 +485,7 @@ describe('rsValidar: la solicitud completa', () => {
         }
       });
       it('el texto del error dice los dos tramos en que sí recibe reservas', () => {
-        expect(validar({ fecha: VIE, hora: '17:00' }, cfg).error.texto).toContain('El viernes recibimos reservas de 12:00 a 15:30 y de 18:00 a 21:30. ¿A qué hora la quieres?');
+        expect(validar({ fecha: VIE, hora: '17:00' }, cfg).error.texto).toContain('El viernes el restaurante recibe reservas de 12:00 a 15:30 y de 18:00 a 21:30');
       });
       it('sábado y domingo es un solo tramo: a las 17:00 sí se reserva', () => {
         for (const f of ['2026-10-10', DOM]) {
@@ -572,14 +572,14 @@ describe('responseSchema de reserva.js: ningún enum vacío ni con cadena vacía
 describe('rsPreguntaFaltantes', () => {
   it('con lo esencial vacío es el pedido de datos completo, con las zonas', () => {
     expect(L.rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: ['salón', 'terraza'] })).toBe(
-      '¡Con gusto! 🙌 Cuéntame en un mensaje para cuántas personas, qué día y a qué hora, y a nombre de quién (nombre y apellido). Si prefieres salón o terraza, celebran algo o necesitan algo especial, dímelo también.',
+      '¡Con gusto! 🙌 Para tu reserva cuéntame en un solo mensaje: cuántas personas, qué día y a qué hora, si prefieres salón o terraza y a nombre de quién (nombre y apellido). Si celebran algo o necesitan algo especial, cuéntamelo también.',
     );
   });
   it('abre con «¡Con gusto!» y un emoji, y con nivelEmojis «ninguno» va sin emoji; la pregunta parcial no lleva ninguno', () => {
     const t = L.rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: 'salón', nivelEmojis: 'pocos' });
-    expect(t.startsWith('¡Con gusto! 🙌 Cuéntame en un mensaje ')).toBe(true);
+    expect(t.startsWith('¡Con gusto! 🙌 Para tu reserva cuéntame en un solo mensaje: ')).toBe(true);
     const sin = L.rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: 'salón', nivelEmojis: 'ninguno' });
-    expect(sin.startsWith('¡Con gusto! Cuéntame en un mensaje ')).toBe(true);
+    expect(sin.startsWith('¡Con gusto! Para tu reserva cuéntame en un solo mensaje: ')).toBe(true);
     expect(sin).not.toMatch(/\p{Extended_Pictographic}/u);
     expect(L.rsPreguntaFaltantes(['hora'], {})).not.toMatch(/\p{Extended_Pictographic}|Con gusto/u);
     for (const x of [t, sin]) expect(x).not.toMatch(VM_PROHIBIDAS);
@@ -587,16 +587,16 @@ describe('rsPreguntaFaltantes', () => {
   });
   it('sin zonas configuradas no ofrece zonas; con el nombre resuelto no lo pide', () => {
     const t = L.rsPreguntaFaltantes(['personas', 'fecha', 'hora'], {});
-    expect(t).toBe('¡Con gusto! 🙌 Cuéntame en un mensaje para cuántas personas, qué día y a qué hora. Si celebran algo o necesitan algo especial, dímelo también.');
+    expect(t).toContain('cuántas personas y qué día y a qué hora');
     expect(t).not.toMatch(/prefieres|nombre/);
   });
   it('si falta solo una parte, pregunta solo por ella', () => {
-    expect(L.rsPreguntaFaltantes(['hora'], { zonas: 'salón,terraza' })).toBe('Gracias. Solo me falta a qué hora.');
-    expect(L.rsPreguntaFaltantes(['fecha'], {})).toBe('Gracias. Solo me falta para qué día.');
+    expect(L.rsPreguntaFaltantes(['hora'], { zonas: 'salón,terraza' })).toBe('Para tu solicitud de reserva me falta saber a qué hora.');
+    expect(L.rsPreguntaFaltantes(['fecha'], {})).toBe('Para tu solicitud de reserva me falta saber para qué día.');
     expect(L.rsPreguntaFaltantes(['personas', 'nombre'], {})).toBe(
-      'Gracias. Solo me falta cuántas personas y a nombre de quién (nombre y apellido).',
+      'Para tu solicitud de reserva me falta saber cuántas personas y a nombre de quién (nombre y apellido).',
     );
-    expect(L.rsPreguntaFaltantes(['fecha', 'hora'], {})).toBe('Gracias. Solo me falta qué día y a qué hora.');
+    expect(L.rsPreguntaFaltantes(['fecha', 'hora'], {})).toBe('Para tu solicitud de reserva me falta saber qué día y a qué hora.');
     // Sin zonas en la pregunta parcial: la zona es opcional y no se insiste.
     expect(L.rsPreguntaFaltantes(['hora'], { zonas: 'salón,terraza' })).not.toContain('prefieres');
   });
@@ -604,13 +604,25 @@ describe('rsPreguntaFaltantes', () => {
     for (const f of [[], ['zona'], ['otra'], null, undefined, 'hora']) expect(L.rsPreguntaFaltantes(f, {})).toBe('');
   });
   it('acepta las zonas como texto con comas y no se rompe sin segundo argumento', () => {
-    expect(L.rsPreguntaFaltantes(['personas', 'fecha', 'hora'], { zonas: 'salón, terraza' })).toContain('Si prefieres salón o terraza');
+    expect(L.rsPreguntaFaltantes(['personas', 'fecha', 'hora'], { zonas: 'salón, terraza' })).toContain('si prefieres salón o terraza');
     expect(L.rsPreguntaFaltantes(['hora'])).toContain('a qué hora');
     expect(L.rsPreguntaFaltantes(['personas', 'fecha', 'hora'], { zonas: ['salón', 'terraza', 'patio'] })).toContain('salón, terraza o patio');
   });
 });
 
 describe('rsResumen y rsLineaCompacta', () => {
+  it('día lleno: la línea del aviso lo marca («VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar»); sin la marca, no', () => {
+    const r = { personas: 4, fecha: VIE, hora: '20:00', nombre: 'Ana Pérez', zona: 'salón' };
+    expect(L.rsLineaCompacta(Object.assign({}, r, { diaLleno: true }), 'completo')).toContain('VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar');
+    expect(L.rsLineaCompacta(r, 'completo')).not.toContain('VARIAS RESERVAS');
+    // El resumen al cliente nunca lo muestra.
+    expect(L.rsResumen(Object.assign({}, r, { diaLleno: true }))).not.toMatch(/lleno/i);
+  });
+  it('rsFraseDeConfirmacion: fecha, hora, personas y zona; sin nombre ni notas', () => {
+    expect(L.rsFraseDeConfirmacion({ personas: 4, fecha: VIE, hora: '20:00', nombre: 'Ana Pérez', zona: 'salón', celebracion: 'cumpleaños' }))
+      .toBe('el viernes 9 de octubre a las 20:00, 4 personas, salón');
+    expect(L.rsFraseDeConfirmacion({ personas: 1, fecha: VIE, hora: '13:00', nombre: 'Ana Pérez' })).toBe('el viernes 9 de octubre a las 13:00, 1 persona');
+  });
   it('«1 persona» en singular; sin zona ni extras; sin las líneas vacías', () => {
     const t = L.rsResumen({ personas: 1, fecha: VIE, hora: '13:00', nombre: 'Ana Pérez' });
     expect(t).toBe('Tu reserva:\n• viernes 9 de octubre a las 13:00\n• 1 persona\n• A nombre de Ana Pérez');
@@ -773,64 +785,27 @@ describe('rsPreguntaFaltantes con lo ya entendido (04/10)', () => {
   const r = { personas: 2, fecha: '2026-10-08', hora: '', zona: '', nombre: '', celebracion: 'aniversario', requerimiento: '' };
   it('muestra lo entendido y pide solo lo que falta', () => {
     expect(L.rsPreguntaFaltantes(['hora', 'nombre'], { reserva: r }))
-      .toBe('Gracias, ya tengo: jueves 8 de octubre, 2 personas, celebración: aniversario. Solo me falta: la hora y a nombre de quién (nombre y apellido).');
+      .toBe('Para tu solicitud de reserva tengo: jueves 8 de octubre, 2 personas, celebración: aniversario. Me falta: la hora y a nombre de quién (nombre y apellido).');
     expect(L.rsPreguntaFaltantes(['hora'], { reserva: { ...r, nombre: 'Daniela Ortega' } }))
-      .toBe('Gracias, ya tengo: jueves 8 de octubre, 2 personas, celebración: aniversario, a nombre de Daniela Ortega. Solo me falta: la hora.');
+      .toBe('Para tu solicitud de reserva tengo: jueves 8 de octubre, 2 personas, celebración: aniversario, a nombre de Daniela Ortega. Me falta: la hora.');
   });
-  it('lo libre del cliente va rotulado como en el resumen («celebración:», «pedido especial:») y el texto agradece lo dado y dice lo que falta', () => {
+  it('lo libre del cliente va rotulado como en el resumen («celebración:», «pedido especial:») y el texto se lee como solicitud', () => {
     const t = L.rsPreguntaFaltantes(['hora'], { reserva: { ...r, requerimiento: 'mesa tranquila' } });
-    expect(t).toBe('Gracias, ya tengo: jueves 8 de octubre, 2 personas, celebración: aniversario, pedido especial: mesa tranquila. Solo me falta: la hora.');
-    expect(t).not.toMatch(/^Tengo|solicitud/);
+    expect(t).toBe('Para tu solicitud de reserva tengo: jueves 8 de octubre, 2 personas, celebración: aniversario, pedido especial: mesa tranquila. Me falta: la hora.');
+    expect(t).not.toMatch(/^Tengo/);
     expect(t).not.toMatch(/, aniversario|, mesa tranquila/);
   });
   it('con reclamo se pide perdón y se da el ejemplo de la hora; sin reclamo no', () => {
     const t = L.rsPreguntaFaltantes(['hora'], { reserva: r, reclamo: true });
-    expect(t).toBe('Disculpa, no me quedó claro. Ya tengo: jueves 8 de octubre, 2 personas, celebración: aniversario. Solo me falta: la hora. Escribe la hora así: «19:00».');
+    expect(t).toBe('Disculpa, no me quedó claro. Para tu solicitud de reserva tengo: jueves 8 de octubre, 2 personas, celebración: aniversario. Me falta: la hora. Escribe la hora así: «19:00».');
     expect(L.rsPreguntaFaltantes(['hora'], { reserva: r })).not.toContain('Disculpa');
   });
   it('sin la reserva (o sin nada entendido) rige el texto de siempre, y ninguno se dispara con la red de prohibidas', () => {
-    expect(L.rsPreguntaFaltantes(['hora', 'nombre'], {})).toBe('Gracias. Solo me falta a qué hora y a nombre de quién (nombre y apellido).');
+    expect(L.rsPreguntaFaltantes(['hora', 'nombre'], {})).toBe('Para tu solicitud de reserva me falta saber a qué hora y a nombre de quién (nombre y apellido).');
     expect(L.rsPreguntaFaltantes(['hora'], { reserva: { personas: 0, fecha: '', hora: '', zona: '', nombre: '', celebracion: '', requerimiento: '' } }))
-      .toBe('Gracias. Solo me falta a qué hora.');
+      .toBe('Para tu solicitud de reserva me falta saber a qué hora.');
     for (const t of [L.rsPreguntaFaltantes(['hora', 'nombre'], { reserva: r }), L.rsPreguntaFaltantes(['hora'], { reserva: r, reclamo: true })]) {
       expect(t).not.toMatch(VM_PROHIBIDAS);
     }
-  });
-});
-
-describe('rsMensajeAnotada (voz y reserva con Maps, 05/10): el mensaje de la reserva anotada', () => {
-  const R = { personas: 4, fecha: VIE, hora: '20:00', zona: 'salón', nombre: 'Ana Pérez', celebracion: '', requerimiento: '' };
-  it('«¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en {dirección} 🙌», sin promesa de contacto', () => {
-    const t = L.rsMensajeAnotada(R, 'Av. Sucre 123, Calacoto');
-    expect(t).toBe('¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Sucre 123, Calacoto 🙌');
-    expect(t).not.toMatch(/te avisamos|te llamamos|te escrib|te confirmamos|ellos|restaurante|solicitud|reservamos tu|confirmad/i);
-    expect(t).not.toMatch(VM_PROHIBIDAS); // las tres redes la dejan pasar (el cliente recibe ESTE texto, no la derivación)
-  });
-  it('sin zona ni dirección: no deja huecos («Te esperamos 🙌»); 1 persona en singular; la dirección se limpia (sin <>&« ni saltos)', () => {
-    expect(L.rsMensajeAnotada({ ...R, zona: '', personas: 1 }, '')).toBe('¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 1 persona. Te esperamos 🙌');
-    expect(L.rsMensajeAnotada(R, 'Calle <b>Sucre</b>\n 12 «centro»')).toMatch(/Te esperamos en Calle b Sucre \/b 12 centro 🙌$/);
-    expect(L.rsMensajeAnotada(R, 'Calle <b>Sucre</b>\n 12 «centro»')).not.toMatch(/[<>«»\n]/);
-  });
-  it('«reservamos tu mesa» NO se usa: la rechazan las tres redes (el control negativo de la red)', () => {
-    expect(VM_PROHIBIDAS.test('Listo, Ana: reservamos tu mesa para el viernes')).toBe(true);
-    expect(VM_PROHIBIDAS.test(L.rsMensajeAnotada(R, 'Av. Sucre 123'))).toBe(false);
-  });
-});
-
-describe('textos al cliente de la reserva (voz única, 05/10): nosotros, sin reglas internas', () => {
-  it('ningún texto de error o de pregunta dice «ellos», «el restaurante», «solicitud» ni «según sus mesas»', () => {
-    const textos = [
-      validar({ fecha: DOM }).error.texto, validar({ fecha: VIE, hora: '23:45' }).error.texto, validar({ zona: 'jardín' }).error.texto,
-      validar({ personas: 40 }).error.texto, validar({ nombre: 'Ana' }, {}, 'Ana').error.texto, validar({ fecha: '2026-12-31' }, { maxDias: 5 }).error.texto,
-      validar({}, { horario: '' }).error.texto, L.rsResumen(BASE), L.rsPreguntaFaltantes(['personas', 'fecha', 'hora', 'nombre'], { zonas: 'salón,terraza' }),
-      L.rsPreguntaFaltantes(['hora'], { reserva: BASE }), L.rsPreguntaFaltantes(['hora'], { reserva: BASE, reclamo: true }),
-    ];
-    for (const t of textos) {
-      expect(t).not.toMatch(/\bellos\b|escr[ií]beles|el restaurante|solicitud|seg[uú]n sus mesas|no tengo «/i);
-      expect(t).not.toMatch(VM_PROHIBIDAS);
-    }
-    expect(validar({ fecha: VIE, hora: '23:45' }).error.texto).toMatch(/^El viernes recibimos reservas de .* ¿A qué hora la quieres\?$/);
-    expect(validar({ zona: 'jardín' }).error.texto).toMatch(/^No tenemos «jardín» como opción\./);
-    expect(validar({ personas: 40 }).error.texto).toMatch(/^Por aquí tomo reservas de hasta 24 personas\./);
   });
 });

@@ -20,7 +20,7 @@
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
 //   reserva: rsValidarExtraccion, rsFusionar, rsValidar, rsPreguntaFaltantes, rsResumen,
-//     rsLineaCompacta, rsDentroDelTope.   promos: prFicha, prTexto.
+//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto.
 //   cobro: cbCaption, cbResumenCorto, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
@@ -935,8 +935,17 @@ function aExtraerPedido() {
   // «Ella va a recoger en portería» es una instrucción de entrega, no pasar a recojo (A11): con el delivery a medias (`pedido_datos`), un recojo que el modelo
   // «sube» de una frase donde otra persona recoge se ignora. El cambio real a recojo lo reconoce `Decidir turno` por código (frase entera) y llega como botón.
   if (x.entrega === 'recojo' && en.entrega.entrega === 'delivery' && (en.paso === 'pedido_datos' || en.paso === 'pedido_confirmar') && recogeOtraPersona(vmNorm(d.texto))) x.entrega = '';
-  const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
   const normTexto = vmNorm(d.texto);
+  // Lo que pone el MODELO también pasa por las reglas del código (revisión de seguridad del PR #435, LOW-A2): una «dirección» sin dígito ni vía fuerte («Déjale al portero»,
+  // «A media cuadra del gas», «necesito ayuda») NO es una dirección: pasa a la referencia (si está vacía) y la dirección se vuelve a pedir; y una ayuda dicha en un campo
+  // del modelo («{referencia: "necesito ayuda"}») deriva a una persona.
+  const delModelo = vmNorm([x.direccion, x.referencia].join(' '));
+  if (!lineas.length && delModelo && pideAyudaPorCodigo(delModelo) && !pareceDato(delModelo)) return derivar('pidió hablar con una persona');
+  if (x.direccion && !pareceDireccion(vmNorm(x.direccion))) {
+    if (!x.referencia) x.referencia = x.direccion;
+    x.direccion = '';
+  }
+  const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
   // Una marca `quiereHablar` del modelo sobre un texto que NO parece un dato de entrega («necesito ayuda», «tengo un problema con mi pedido») deriva SIEMPRE:
   // el texto libre no se adopta como dirección o referencia (revisión de seguridad del PR #435, M1).
   // (La primera vez, sin una petición explícita, sale UNA aclaración con «Escribir al local» —o la pregunta de entrega—; con una petición explícita o al insistir, deriva.)
@@ -1033,8 +1042,13 @@ function pareceDireccion(n) { return /\d/.test(n) || viaFuerte(n); }
 function pareceDato(n) { return pareceDireccion(n) || rasgoDeReferencia(n); }
 function hablaDeDelivery(n) { return /\b(delivery|envio|envios|enviar\w*|envien\w*|domicilio|mandar\w*|manden\w*|mande\w*|mandame|mandalo|traer\w*|traigan\w*|llevar\w*|lleven\w*)\b/.test(n); }
 // Ayuda, queja o petición de atención dicha con palabras (sin depender de la marca del modelo).
+// No cuenta como ayuda: una cortesía («no hay problema», «sin problema», «ningún problema»), ni «alguien/persona» cuando hay verbo de recibir o recoger («alguien lo recibe»,
+// «que lo reciba alguien», «cualquier persona lo recibe») ni «es para una persona». Sí: «ayúdenme», «auxilio».
 function pideAyudaPorCodigo(n) {
-  return /\b(ayuda\w*|ayudar\w*|problema\w*|queja\w*|reclam\w*|robo|estafa\w*|atienda\w*|atiendan|atender\w*|alguien|comuniquen\w*|hablar con|persona|personas|humano|humana|encargad[oa]|asesor\w*|llamen|llamenme)\b/.test(n);
+  let t = String(n).replace(/\b(no hay|sin|ningun|ninguna)\s+(problema|problemas|queja|quejas)\b/g, ' ');
+  if (/\b(recib\w*|recog\w*|recoj\w*|retir\w*)\b/.test(t)) t = t.replace(/\b(alguien|persona|personas)\b/g, ' ');
+  t = t.replace(/\bpara (una|un|1|dos|tres|cuatro) (persona|personas)\b/g, ' ');
+  return /\b(ayud\w*|auxilio|problema\w*|queja\w*|reclam\w*|robo|estafa\w*|atienda\w*|atiendan|atender\w*|alguien|comuniquen\w*|hablar con|persona|personas|humano|humana|encargad[oa]|asesor\w*|llamen|llamenme)\b/.test(t);
 }
 // «Ella va a recoger en portería», «mi esposa lo retira», «lo recoge el portero»: OTRA persona recoge; la entrega sigue siendo delivery. Quien habla de sí mismo («voy a
 // recoger el pedido», «mejor lo retiro yo en el local», «paso a buscarlo») cambia a recojo de verdad: no se protege. («él» a secas no es otra persona: «el lo recoge» vale como recojo.)
@@ -1459,28 +1473,34 @@ function enviarReserva() {
   // El tiempo pasó desde el resumen: se vuelve a validar antes de avisar.
   const v = rsValidar(en.reserva || {}, limitesReserva(), t.nombrePerfil, ahora);
   if (v.error || !v.completa) return evaluarReserva(en.reserva || {});
-  // DÍA LLENO (tope diario `topeReservasDia`): YA NO se deriva ni se rechaza (decisión de Andres, 04/10/2026): se anota igual y el aviso al local lo marca
-  // «DÍA LLENO: revisar». Sin datos estáticos el tope «falla cerrado» (cuenta como lleno): también se anota y se marca.
+  // VARIAS RESERVAS HOY DE ESTE NÚMERO (`topeReservasDia`, tope BLANDO): ya NO se deriva. Se anota igual y el aviso al local lo marca
+  // «VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar» (mide reservas del mismo teléfono el día en que se pide, no la ocupación del local).
+  // TECHO DURO: con 2 × `topeReservasDia` reservas (con aviso salido) del mismo teléfono en el día, NO se arma aviso (un número no puede gastar el
+  // cupo diario de avisos, `topeAvisosDia`, con reservas falsas): texto honesto con «Escribir al local» y SIN decir que se anotó. Falla cerrado.
+  if (!rsDentroDelTope(sd, t.from, ahora, 2 * Number(cfg.topeReservasDia))) {
+    ruta = 'reserva:tope';
+    limpiarReserva();
+    irA('menu');
+    return (mensajes = [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.')]);
+  }
   const diaLleno = !rsDentroDelTope(sd, t.from, ahora, Number(cfg.topeReservasDia));
-  const reserva = v.reserva;
-  // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Enviar solicitud»
+  const reserva = diaLleno ? Object.assign({}, v.reserva, { diaLleno: true }) : v.reserva;
+  // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Reservar»
   // da el mismo codigo y la misma referencia de cierre, y el servidor cuenta UN cierre.
-  const clave = vmIdEstable('res', t.from, reserva, ancla, ahora);
+  const clave = vmIdEstable('res', t.from, v.reserva, ancla, ahora); // con la reserva SIN la marca `diaLleno`: el código no cambia entre reintentos
   const codigo = clave.codigo;
+  const nombre = String(reserva.nombre || '').split(' ')[0];
   aviso = { tipo: 'reserva', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: reserva.nombre, codigo: codigo, reserva: reserva,
-    diaLleno: diaLleno,
   } };
-  // La reserva SE ANOTA por defecto (decisión de Silvana y Andres): si el aviso al local SALIÓ, el cliente lee «Anotamos tu reserva…» con la dirección y un ÚNICO botón
-  // «Ver ubicación» que abre Google Maps (`direccionMaps`, ya revalidado por `Config del negocio`; `Armar mensajes` lo revisa otra vez). Sin enlace válido: solo
-  // texto, sin botón (tampoco «Escribir al local»). Sin promesa de contacto. Nunca «reservamos tu mesa» (la rechazan las tres redes) ni «confirmada».
-  // Si el aviso NO salió: texto honesto con «Escribir al local», sin decir que se anotó.
+  // Aviso al local SALIÓ: «Anotamos tu reserva» (nunca «reservamos tu…»: las tres redes lo rechazan; y `AM_PASE` lo atrapa si el aviso NO
+  // salió). Sin promesa de contacto. Aviso NO salió: texto honesto con «Escribir al local» (empieza con «No pude»: `AM_NEGADO`).
+  const dir = vmLinea(cfg.direccion, 200).replace(/[.\s]+$/, '');
+  const confirmacion = '¡Listo, ' + nombre + '! Anotamos tu reserva para ' + rsFraseDeConfirmacion(reserva) + '.' + (dir ? ' Te esperamos en ' + dir + '.' : ' Te esperamos.');
+  // «Ver ubicación» (Google Maps) solo con un enlace VÁLIDO (`vmEnlaceDeMapa`, la regla del servidor); sin él, la misma confirmación en texto, sin botón.
   const mapa = vmEnlaceDeMapa(cfg.direccionMaps);
-  const anotada = rsMensajeAnotada(reserva, vmLinea(cfg.direccion, 200));
   condicionados = {
-    siSalio: [mapa
-      ? { tipo: 'enlace', mapa: true, cuerpo: anotada, url: mapa, botones: [{ id: '', title: 'Ver ubicación' }], sinMenu: true }
-      : texto(anotada)],
+    siSalio: [mapa ? { tipo: 'enlace', mapa: true, cuerpo: confirmacion, botones: [{ id: '', title: 'Ver ubicación' }], url: mapa } : texto(confirmacion)],
     siNoSalio: [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.')],
   };
   cierre = { tipo: 'registro', detalle: vmRecorte('Solicitud de reserva #' + codigo + ': ' + rsLineaCompacta(reserva, 'completo'), 300), referencia: clave.id };

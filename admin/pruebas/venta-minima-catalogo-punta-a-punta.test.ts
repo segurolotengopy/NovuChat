@@ -894,3 +894,77 @@ describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código,
     expect(ent(w)['direccion'], dicho).toBe('');
   });
 });
+
+// =====================================================================================================
+// #435, LOW-A1 y LOW-A2 (revisión de seguridad sobre 6c1935df): lo que pone el MODELO también pasa por las reglas del código; cortesías y entrega no son «ayuda»
+// =====================================================================================================
+describe('#435 LOW-A2: la «dirección» o la «referencia» que pone el modelo pasa por las listas del código', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const id = (): string => 'cat_a2_' + String(++k).padStart(4, '0');
+  const sinDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id() }) });
+    return w;
+  };
+  const conDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: id() }) });
+    return w;
+  };
+  const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
+
+  it.each(['Déjale al portero', 'A media cuadra del gas', 'frente al mercado'])(
+    'A2 `{direccion: «%s»}` del modelo NO es la dirección: pasa a la referencia y se vuelve a pedir la dirección (sin pasar al resumen)', (dicho) => {
+      const w = sinDireccion();
+      w.estado.extraccion = { ...NADA, direccion: dicho };
+      const t = turno(w, texto(dicho));
+      expect(ent(w)['direccion'], dicho).toBe('');
+      expect(ent(w)['referencia'], dicho).toBe(dicho);
+      expect(t.mensajes[0]!.cuerpo, dicho).toBe('Para el delivery necesito la dirección exacta.');
+      expect(estadoDe(w)['paso'], dicho).toBe('pedido_datos');
+    },
+  );
+  it('A2, el opuesto: `{direccion: «Calle Sucre 12»}` del modelo SÍ es la dirección y sigue al resumen', () => {
+    const w = sinDireccion();
+    w.estado.extraccion = { ...NADA, direccion: 'Calle Sucre 12' };
+    turno(w, texto('Calle Sucre 12'));
+    expect(ent(w)['direccion']).toBe('Calle Sucre 12');
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+  });
+  it('A2: una ayuda que el modelo pone como dirección o referencia («necesito ayuda») deriva a una persona', () => {
+    for (const campo of ['direccion', 'referencia']) {
+      for (const [w, dicho] of [[sinDireccion(), 'necesito ayuda'], [conDireccion(), 'quiero que me atienda alguien']] as const) {
+        w.estado.extraccion = { ...NADA, [campo]: dicho };
+        const t = turno(w, texto(dicho));
+        expect(t.mensajes[0]!.cuerpo, `${campo} ${dicho}`).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
+        expect(t.avisos.length, `${campo} ${dicho}`).toBeGreaterThan(0);
+        expect(String(ent(w)[campo]), `${campo} ${dicho}`).not.toContain(dicho);
+      }
+    }
+  });
+});
+
+describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúdenme» y «auxilio» sí', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_a1_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = NADA;
+    return w;
+  };
+  it.each(['no hay problema', 'sin problema', 'ningún problema', 'alguien lo recibe', 'que lo reciba alguien', 'cualquier persona lo recibe', 'recibe Pedro, alguien de la familia', 'es para una persona'])(
+    '«%s» NO deriva a una persona', (dicho) => {
+      const w = conDireccion();
+      const t = turno(w, texto(dicho));
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(estadoDe(w)['paso'], dicho).toBe('pedido_confirmar');
+    },
+  );
+  it.each(['ayúdenme', 'auxilio', 'necesito ayuda urgente'])('«%s» SÍ deriva', (dicho) => {
+    const w = conDireccion();
+    const t = turno(w, texto(dicho));
+    expect(t.avisos.length, dicho).toBeGreaterThan(0);
+  });
+});

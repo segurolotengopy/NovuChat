@@ -53,7 +53,7 @@ function relojFijo(ms: number): unknown {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Fn = (...a: any[]) => any;
 const NOMBRES = [
-  'vmNodo', 'vmPrimero', 'vmTodos', 'vmCfg', 'vmNorm', 'vmDigitos', 'vmRecorte', 'vmLinea', 'vmLista', 'vmEntero',
+  'vmNodo', 'vmPrimero', 'vmTodos', 'vmCfg', 'vmNorm', 'vmDigitos', 'vmRecorte', 'vmLinea', 'vmLista', 'vmEntero', 'vmEnlaceDeMapa',
   'vmTextoDeGemini', 'vmJsonDeGemini', 'vmTextoSeguro', 'vmSd', 'vmEstadoBase', 'vmLeerEstado', 'vmEscribirEstado',
   'vmBarrer', 'vmYaVisto', 'vmMarcarVisto', 'vmAtencion', 'vmPrefijoPermitido', 'vmIdDeBoton', 'vmLeerBoton',
   'vmCodigoCorto', 'vmHuella', 'vmIdEstable', 'vmFechaLocal', 'vmHoraLocal', 'vmDiaSemana', 'vmMsLocal', 'vmFechaLegible', 'vmTablaDeDias',
@@ -1148,6 +1148,29 @@ describe('Config del negocio', () => {
     expect(c['campanas']).toEqual([{ id: 'c1', texto: 'Promo Dúo', inicio: '2026-10-01T04:00:00.000Z', fin: '2026-10-31T04:00:00.000Z' }]);
     expect(c['catalogo']).toEqual([{ id: 'a1', nombre: 'Queso fundido', precio: 40, area: 'Entradas', descripcion: 'Con chorizo', agotado: false }]);
     expect(c['phoneNumberId']).toBe(PNID);
+  });
+  it('direccionMaps: del panel, solo con un enlace de Google Maps válido (la misma regla del servidor); si no, vacío', () => {
+    const MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
+    const con = (v: unknown): string => ok({ ...PANEL, datosDelNegocio: { ...(PANEL['datosDelNegocio'] as J), direccionMaps: v } })['direccionMaps'] as string;
+    expect(con(MAPA)).toBe(MAPA);
+    expect(con('  https://maps.app.goo.gl/AbC123  ')).toBe('https://maps.app.goo.gl/AbC123');
+    for (const malo of ['http://www.google.com/maps/x', 'https://evil.example/maps/x', 'https://www.google.com.evil.example/maps/x', 'https://wa.me/59100000041',
+      'https://www.google.com/maps/a b', 'https://www.google.com/maps/' + 'a'.repeat(200), '', null, 7, undefined]) {
+      expect(con(malo), String(malo)).toBe('');
+    }
+    // El panel sin la clave, el panel caído y el comercio suspendido: sin enlace.
+    expect(ok()['direccionMaps']).toBe('');
+    expect(correr({ statusCode: 500, body: {} })['direccionMaps'] ?? '').toBe('');
+    expect(correr({ statusCode: 409, body: {} })['direccionMaps'] ?? '').toBe('');
+  });
+  it('vmEnlaceDeMapa (comun.js): dominios de mapas de Google, https, hasta 200 caracteres, sin espacios', () => {
+    expect(L.vmEnlaceDeMapa('https://goo.gl/maps/xyz')).toBe('https://goo.gl/maps/xyz');
+    expect(L.vmEnlaceDeMapa('https://maps.google.com')).toBe('https://maps.google.com');
+    expect(L.vmEnlaceDeMapa('https://google.com/maps?q=a')).toBe('https://google.com/maps?q=a');
+    expect(L.vmEnlaceDeMapa('https://www.google.com/search?q=maps')).toBe('');
+    expect(L.vmEnlaceDeMapa('javascript:alert(1)')).toBe('');
+    expect(L.vmEnlaceDeMapa('https://www.google.com/maps/' + 'a'.repeat(172)).length).toBe(200);
+    expect(L.vmEnlaceDeMapa('https://www.google.com/maps/' + 'a'.repeat(173))).toBe('');
   });
   it('areasExcluidas, areasSinDelivery y zonasReserva salen como ARREGLOS', () => {
     const c = ok();
