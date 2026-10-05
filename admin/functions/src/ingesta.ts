@@ -349,6 +349,51 @@ function solicitudNueva(etapa: Solicitud['etapa'], ahora: Timestamp): Solicitud 
   };
 }
 
+/** La ventana en la que un cobro de regla 2 cerrado sigue siendo ESTE caso: pasada, es otra conversación. */
+const MS_VENTANA_COBRO = 24 * 3_600_000;
+
+type Plano = Record<string, unknown>;
+const comoPlano = (v: unknown): Plano | null => (typeof v === 'object' && v !== null ? v as Plano : null);
+
+/** ¿Es un cobro de regla 2 que ya no está en curso (en revisión, cancelado, vencido o vencido por reloj)? */
+function cobroDosCerrado(p: Plano, ahoraMs: number): boolean {
+  const etapa = typeof p['etapa'] === 'string' ? p['etapa'] : '';
+  const limite = limiteDe(p);
+  return etapa === 'en_revision' || etapa === 'cancelada' || etapa === 'vencida'
+    || (etapa === 'qr_enviado' && limite !== null && ahoraMs >= limite);
+}
+
+/**
+ * ¿Un cierre (`cita_agendada`, o el de una venta) NO debe mover esta solicitud?
+ * Sí cuando es un cobro de regla 2 que ya no está en curso —`en_revision`,
+ * `cancelada`, `vencida`, o `qr_enviado` con el límite efectivo ya pasado
+ * (vencida por reloj sin que nadie la anotara; D6)— **y solo mientras sigue
+ * siendo ESTE caso**: hasta 24 h después del límite efectivo (`limiteDe`) o, en
+ * `en_revision`, hasta 24 h desde que entró (`desde`; no vence por reloj).
+ * Pasado ese plazo `solicitudDeCobroTras` lo trata como otra conversación, y el
+ * cierre ya puede crear su solicitud. Pura. Con regla 1, nunca.
+ */
+export function cierreBloqueadoPorCobro(previa: unknown, ahoraMs: number): boolean {
+  const p = comoPlano(previa);
+  if (!p || !esReglaDos(p) || !cobroDosCerrado(p, ahoraMs)) return false;
+  const base = p['etapa'] === 'en_revision' ? (milisegundosDe(p['desde']) ?? limiteDe(p)) : limiteDe(p);
+  return base !== null && ahoraMs - base <= MS_VENTANA_COBRO;
+}
+
+/**
+ * ¿Un cierre de VENTA con cobro REAL lo debe hacer solo `cotejarComprobanteVenta`?
+ * Sí si el cobro de regla 2 está bloqueado (arriba) o sigue a tiempo en
+ * `qr_enviado`: con cobro real el único que cierra es el cotejo del comprobante.
+ * Lo consulta `registrarCierre`; el modo simulado sigue cerrando por ahí.
+ */
+export function cierreDeVentaLoHaceElCotejo(previa: unknown, ahoraMs: number): boolean {
+  const p = comoPlano(previa);
+  if (!p || !esReglaDos(p)) return false;
+  const limite = limiteDe(p);
+  return cierreBloqueadoPorCobro(p, ahoraMs)
+    || (p['etapa'] === 'qr_enviado' && limite !== null && ahoraMs < limite);
+}
+
 /**
  * Qué `solicitud` queda guardada después de este mensaje. `null` = no se toca.
  *
@@ -379,22 +424,6 @@ function solicitudNueva(etapa: Solicitud['etapa'], ahora: Timestamp): Solicitud 
  * solicitud nueva escribe TODOS sus campos, incluidos los nulos: si no, el
  * `seguimientoEn` de la solicitud anterior sobreviviría en la nueva.
  */
-/**
- * ¿Un cierre (`cita_agendada`, o el de una venta) NO debe mover esta solicitud?
- * Sí cuando es un cobro de regla 2 que ya no está en curso: `en_revision`,
- * `cancelada`, `vencida`, o `qr_enviado` con el límite efectivo ya pasado
- * (vencida por reloj sin que nadie la anotara; D6). Pura. Con regla 1, nunca.
- * La consume `solicitudTras` y, en el PR C1c, `registrarCierre`.
- */
-export function cierreBloqueadoPorCobro(previa: unknown, ahoraMs: number): boolean {
-  const p = (typeof previa === 'object' && previa !== null ? previa : null) as Record<string, unknown> | null;
-  if (!esReglaDos(p)) return false;
-  const etapa = typeof p?.['etapa'] === 'string' ? p['etapa'] : '';
-  const limite = limiteDe(p);
-  return etapa === 'en_revision' || etapa === 'cancelada' || etapa === 'vencida'
-    || (etapa === 'qr_enviado' && limite !== null && ahoraMs >= limite);
-}
-
 export function solicitudTras(
   previa: unknown,
   evento: string | undefined,
@@ -494,6 +523,12 @@ export function solicitudTras(
     // anotara) NO se cierra como agendado: el cierre de la cita no resucita un
     // pedido que ya no está en curso. Con regla 1 nada cambia.
     if (cierreBloqueadoPorCobro(previa, ahoraMs)) return null;
+    // Un cobro de regla 2 cerrado hace MÁS de 24 h es otra conversación: el
+    // cierre crea su solicitud nueva y anula los restos (`merge` los conservaría).
+    const pp = comoPlano(previa);
+    if (pp && esReglaDos(pp) && cobroDosCerrado(pp, ahoraMs)) {
+      return { ...solicitudNueva('agendada', ahora), ...CAMPOS_REGLA_2_EN_NULO } as Solicitud;
+    }
     if (!p || etapaPrevia === '') return solicitudNueva('agendada', ahora);
     return { ...solicitudNueva('agendada', ahora), ...p, etapa: 'agendada', desde: ahora };
   }
@@ -1392,7 +1427,7 @@ export const ingesta = onRequest(
       // pedido (cada reenvío sería un cobro nuevo con plazo nuevo): se trata
       // como `sin_id_meta` y no abre cobro.
       const sinPedido = mensaje.reglaCobro === 2
-        && (!mensaje.referencia || mensaje.referencia === mensaje.idMeta);
+        && (!mensaje.referencia || mensaje.referencia === (mensaje.idMeta ?? '').trim());
       const eventoDeCobro: EventoDeCobro | null =
         mensaje.evento === 'qr_enviado'
           ? { tipo: 'qr_enviado', reglaCobro: mensaje.reglaCobro, idMeta: sinPedido ? undefined : mensaje.idMeta,

@@ -19,7 +19,7 @@
 | **Nodos (lo que queda en n8n)** | `preparar-sena`, `respuesta-de-la-sena`, `mensaje-de-la-sena`, `interpretar-lectura` (en `Flujos/src/modulos/cobros/` desde FL1), más los nodos de cobro del Demo B; dibujo del QR y cotejo del comprobante como servicios internos del módulo |
 | **Ganchos** | `despuesDelTurno` (cotejo), `alCierre` con Pedidos o Agenda |
 | **Mensajes por conversación** | 0 en la venta; la seña agrega los mensajes declarados en §4duodecies (abajo) |
-| **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts`; regla 2 (§4duodecies.6): `calificar.test.ts`, `cobro-v2.test.ts`, `cotejo-venta.test.ts`, `comprobantes.test.ts` (en `pruebas/modulos/cobros/`) «Comprobantes de pago» en `storage-reglas.test.ts` y, en la ingesta, `pruebas/cobro-v2-ingesta.test.ts` |
+| **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts`; regla 2 (§4duodecies.6): `calificar.test.ts`, `cobro-v2.test.ts`, `cotejo-venta.test.ts`, `comprobantes.test.ts` (en `pruebas/modulos/cobros/`), «Comprobantes de pago» en `storage-reglas.test.ts` y, en la ingesta, `pruebas/cobro-v2-ingesta.test.ts` |
 
 **Observación:** declarado por dos verticales «y gana venta»; con módulo, es uno solo con su propio `config/cobros`. **Los rótulos del cobro simulado son de Plataforma** (§4sexies.3, abajo). **Nunca confundir con Pagar** (NovuChat cobra al comercio), que es de Central. La prohibición 3 de `CLAUDE.md` manda: cobro simulado con rótulo, cobro real sin «pago acreditado», y los dos modos son excluyentes
 
@@ -467,10 +467,16 @@ y `ingesta.ts` entiende `reglaCobro`, `cobro_cancelado` y `anulacion_avisada`
 y llama a `solicitudDeCobroTras` en todo `qr_enviado` (obligaciones (a) y (b));
 `solicitudTras` no pasa a `agendada` una regla 2 en `en_revision`, `cancelada`
 o vencida, escrita o por reloj (obligación (c)), con el predicado puro exportado
-`cierreBloqueadoPorCobro(previa, ahoraMs)` de `ingesta.ts`. **Falta:
-`registrarCierre` (`core/turno/cierres.ts`) consulta ese predicado (PR C1c, de
-`core-functions`): hoy crea el cierre y suma `cierres` aunque la solicitud no
-se mueva.** Un `horarios_ofrecidos` no reemplaza un cobro `en_revision`, y con
+`cierreBloqueadoPorCobro(previa, ahoraMs)` de `ingesta.ts`, **solo mientras
+sigue siendo ese caso** (hasta 24 h después del límite efectivo; en
+`en_revision`, 24 h desde que entró): pasado ese plazo es otra conversación y
+`cita_agendada` crea su solicitud `agendada` con `CAMPOS_REGLA_2_EN_NULO`.
+`registrarCierre` (`core/turno/cierres.ts`), con `tipo: 'venta'`, regla 2 y
+**cobro real activo** (`config/venta.cobroReal`: encendido, con ficha y código),
+responde 409 y no crea cierre ni suma `cierres` si el cobro está a tiempo
+(`qr_enviado`) o bloqueado: en cobro real el único que cierra una venta es
+`cotejarComprobanteVenta`; el modo simulado y la regla 1 cierran como siempre
+(`cierreDeVentaLoHaceElCotejo`). Un `horarios_ofrecidos` no reemplaza un cobro `en_revision`, y con
 `reglaCobro: 2` una `referencia` vacía o igual al `idMeta` se trata como
 `sin_id_meta`. La suite es
 `pruebas/cobro-v2-ingesta.test.ts`. **Nada de esto corre en producción hasta el
@@ -480,3 +486,13 @@ elige el flujo, así que desplegar no cambia ningún flujo publicado. **Falta la
 obligación (d)** (`seguimientos.ts`, otro PR): hasta entonces, una regla 2
 vencida de forma perezosa que sigue escrita `qr_enviado` todavía podría recibir
 un recordatorio.
+
+**Requisitos del flujo (C3) y dependencias duras.**
+- `referencia` del `qr_enviado` de regla 2 debe ser un **id de pedido estable y
+  distinto del `idMeta` del mensaje del QR**. El Demo B manda `cobroPedido || id
+  del mensaje del QR`: en un pedido conversacional sin carrito `cobroPedido` va
+  vacío y la ingesta lo trata como `sin_id_meta` (no abre cobro). El flujo debe
+  mandar un id propio del pedido.
+- **C3 no se publica antes de que C1c esté completo** (la guarda de regla 2 en el
+  cotejo de regla 1 de `sena.ts`, y lo que C1c termine de `registrarCierre`), ni
+  antes de C1b-d (#413, `seguimientos.ts`).

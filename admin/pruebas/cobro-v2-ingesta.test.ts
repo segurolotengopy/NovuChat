@@ -160,8 +160,7 @@ describe('regla 2: qr_enviado', () => {
     const s = await solicitud(tel);
     expect(s).toMatchObject({ etapa: 'qr_enviado', reglaCobro: 2, intentosInvalidos: 0, comprobantes: [], subidas: [],
       prorrogaHasta: null, anulacionAvisadaEn: null, monto: 120, evento: { id: 'cat_r2', calendario: '' } });
-    expect(ms(s!['venceEn']) - ms(s!['qrEnviadoEn'])).toBeGreaterThan(14 * 60_000);
-    expect(ms(s!['venceEn']) - ms(s!['qrEnviadoEn'])).toBeLessThanOrEqual(15 * 60_000);
+    expect(ms(s!['venceEn']) - ms(s!['qrEnviadoEn'])).toBe(15 * 60_000);
     expect(d['cobrosQrEnviados']).toBe(1);
     expect(d['senasEnviadas']).toBeUndefined();
     // El mensaje se cuenta como siempre: 0 mensajes agregados o quitados.
@@ -393,7 +392,7 @@ describe('regla 2: el camino ignorado y sus bordes', () => {
     expect(s['subidas']).toEqual([{ idMeta: 'wamid.S', ruta: 'x' }]);
   });
 
-  it('registrarCierre tipo venta sobre cada etapa bloqueada: la etapa no se mueve (contrato de (c)); el cierre se crea hasta el PR C1c', async () => {
+  it('registrarCierre tipo venta en modo SIMULADO (sin cobro real) sobre cada etapa bloqueada: la etapa no se mueve y el cierre se crea', async () => {
     const casos: Array<[string, string]> = [['5910000006006', 'en_revision'], ['5910000006007', 'cancelada'], ['5910000006008', 'vencida']];
     for (const [tel, etapa] of casos) {
       await abrir(tel, `cat_v_${etapa}`);
@@ -402,7 +401,7 @@ describe('regla 2: el camino ignorado y sus bordes', () => {
         expect((await llamar(registrarCierre, { tipo: 'venta', referencia: `v-${etapa}`, telefono: tel })).codigo, etapa).toBe(200);
       });
       expect((await solicitud(tel))!['etapa'], etapa).toBe(etapa);
-      // Hoy `registrarCierre` no consulta el predicado: el cierre se crea. C1c lo cambia.
+      // Sin cobro real, quien cierra la venta es `registrarCierre`.
       expect(d['cierres'], etapa).toBe(1);
     }
   });
@@ -439,5 +438,112 @@ describe('cierreBloqueadoPorCobro (puro)', () => {
     expect(cierreBloqueadoPorCobro({ etapa: 'en_revision' }, ahora)).toBe(false);
     expect(cierreBloqueadoPorCobro({ etapa: 'vencida', reglaCobro: null }, ahora)).toBe(false);
     for (const v of [null, undefined, 'x', 3]) expect(cierreBloqueadoPorCobro(v, ahora)).toBe(false);
+  });
+});
+
+describe('registrarCierre de venta con COBRO REAL de regla 2: solo cierra el cotejo', () => {
+  const COBRO_REAL = { activo: true, ficha: 'ficha-de-prueba', cargaUtil: 'carga-de-prueba', nombreCuenta: 'Tienda' };
+  const refVenta = db.doc(`tenants/${T}/config/venta`);
+  const abrir = (tel: string, ref: string) =>
+    reportar({ telefono: tel, evento: 'qr_enviado', referencia: ref, monto: 30, reglaCobro: 2, idMeta: `wamid.${ref}` });
+  const fijar = (tel: string, campos: Record<string, unknown>) =>
+    db.doc(`tenants/${T}/conversaciones/wa_${tel}`).update(campos);
+  const cerrar = (tel: string, referencia: string, tipo = 'venta') =>
+    llamar(registrarCierre, { tipo, referencia, telefono: tel });
+  const conCobroReal = async (fn: () => Promise<void>) => {
+    await refVenta.set({ cobroReal: COBRO_REAL });
+    try { await fn(); } finally { await refVenta.delete(); }
+  };
+
+  it('NIEGA: regla 2, cobro real, qr_enviado en plazo: 409, sin cierre y sin sumar cierres', async () => {
+    const tel = '5910000007001';
+    await abrir(tel, 'cat_real');
+    await conCobroReal(async () => {
+      const d = await delta(async () => { expect((await cerrar(tel, 'v-real')).codigo).toBe(409); });
+      expect(d['cierres']).toBeUndefined();
+      expect((await db.doc(`tenants/${T}/cierres/venta_v-real`).get()).exists).toBe(false);
+      expect((await solicitud(tel))!['etapa']).toBe('qr_enviado');
+    });
+  });
+
+  it('NIEGA: regla 2, cobro real, en_revision, cancelada y vencida: 409 y sin cierre', async () => {
+    const casos: Array<[string, string]> = [['5910000007002', 'en_revision'], ['5910000007003', 'cancelada'], ['5910000007004', 'vencida']];
+    for (const [tel, etapa] of casos) {
+      await abrir(tel, `cat_r_${etapa}`);
+      await fijar(tel, { 'solicitud.etapa': etapa });
+      await conCobroReal(async () => {
+        const d = await delta(async () => { expect((await cerrar(tel, `v-r-${etapa}`)).codigo, etapa).toBe(409); });
+        expect(d['cierres'], etapa).toBeUndefined();
+        expect((await solicitud(tel))!['etapa'], etapa).toBe(etapa);
+      });
+    }
+  });
+
+  it('el modo SIMULADO (sin cobro real) sigue cerrando por registrarCierre, también en regla 2', async () => {
+    const tel = '5910000007005';
+    await abrir(tel, 'cat_sim');
+    const d = await delta(async () => { expect((await cerrar(tel, 'v-sim')).codigo).toBe(200); });
+    expect(d['cierres']).toBe(1);
+    expect((await solicitud(tel))!['etapa']).toBe('agendada');
+  });
+
+  it('EQUIVALENCIA: sin reglaCobro (regla 1), con cobro real, registrarCierre cierra y mueve la solicitud como siempre', async () => {
+    const tel = '5910000007006';
+    await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'cat_r1', monto: 30 });
+    await conCobroReal(async () => {
+      const d = await delta(async () => { expect((await cerrar(tel, 'v-r1')).codigo).toBe(200); });
+      expect(d['cierres']).toBe(1);
+    });
+    expect((await solicitud(tel))!['etapa']).toBe('agendada');
+  });
+});
+
+describe('el bloqueo de un cierre dura 24 h: pasado el plazo es otra conversación', () => {
+  const abrir = (tel: string, ref: string) =>
+    reportar({ telefono: tel, evento: 'qr_enviado', referencia: ref, monto: 30, reglaCobro: 2, idMeta: `wamid.${ref}` });
+  const venceHace = (tel: string, horas: number, extra: Record<string, unknown> = {}) =>
+    db.doc(`tenants/${T}/conversaciones/wa_${tel}`).update({
+      'solicitud.venceEn': Timestamp.fromMillis(Date.now() - horas * 3_600_000), ...extra });
+
+  it('NIEGA: un cierre de cita 2 días después de una vencida SÍ pasa a agendada, sin restos de regla 2', async () => {
+    const tel = '5910000008001';
+    await abrir(tel, 'cat_dias');
+    await venceHace(tel, 48, { 'solicitud.etapa': 'vencida' });
+    expect((await llamar(registrarCierre, { tipo: 'cita', referencia: 'ev-dias', telefono: tel })).codigo).toBe(200);
+    const s = (await solicitud(tel))!;
+    expect(s['etapa']).toBe('agendada');
+    for (const c of CAMPOS_REGLA_2) expect(s[c], c).toBeNull();
+  });
+
+  it('dentro de las 24 h del límite sigue bloqueado; pasadas, también un qr_enviado vencido por reloj cierra', async () => {
+    const dentro = '5910000008002';
+    await abrir(dentro, 'cat_dentro');
+    await venceHace(dentro, 23, { 'solicitud.etapa': 'vencida' });
+    await llamar(registrarCierre, { tipo: 'cita', referencia: 'ev-dentro', telefono: dentro });
+    expect((await solicitud(dentro))!['etapa']).toBe('vencida');
+    const fuera = '5910000008003';
+    await abrir(fuera, 'cat_fuera');
+    await venceHace(fuera, 25);
+    await llamar(registrarCierre, { tipo: 'cita', referencia: 'ev-fuera', telefono: fuera });
+    expect((await solicitud(fuera))!['etapa']).toBe('agendada');
+  });
+
+  it('el predicado en_revision cuenta 24 h desde que entró', () => {
+    const ahora = Date.now();
+    const rev = (hace: number) => ({ etapa: 'en_revision', reglaCobro: 2, venceEn: Timestamp.fromMillis(ahora - 99 * 3_600_000),
+      desde: Timestamp.fromMillis(ahora - hace * 3_600_000) });
+    expect(cierreBloqueadoPorCobro(rev(23), ahora)).toBe(true);
+    expect(cierreBloqueadoPorCobro(rev(25), ahora)).toBe(false);
+  });
+});
+
+describe('referencia contra idMeta, con espacios', () => {
+  it('NIEGA: con regla 2, una referencia igual al idMeta aunque este traiga espacios no abre cobro', async () => {
+    const tel = '5910000009001';
+    const d = await delta(async () => {
+      await reportar({ telefono: tel, evento: 'qr_enviado', referencia: 'wamid.ESP', monto: 30, reglaCobro: 2, idMeta: '  wamid.ESP  ' });
+    });
+    expect(await solicitud(tel)).toBeUndefined();
+    expect(d['cobrosQrEnviados']).toBeUndefined();
   });
 });
