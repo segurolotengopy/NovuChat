@@ -586,6 +586,7 @@ describe('un caso mal formado o un argumento malo es un error de uso (código 2)
   const bueno = (): J => ({ id: 'OK1', titulo: 't', turnos: [{ cliente: { tipo: 'texto', texto: 'hola' } }] });
   const malos: [string, (c: J) => void, RegExp][] = [
     ['sin título', (c) => { delete c['titulo']; }, /sin título/],
+    ['soloSeco que no es booleano', (c) => { c['soloSeco'] = 'si'; }, /soloSeco/],
     ['sin turnos', (c) => { c['turnos'] = []; }, /sin turnos/],
     ['id con caracteres raros', (c) => { c['id'] = 'A 9!'; }, /sin id válido/],
     ['tipo de turno desconocido', (c) => { c['turnos'][0].cliente.tipo = 'telepatia'; }, /cliente\.tipo/],
@@ -705,6 +706,29 @@ describe('--vertex (con un fetch y un token de mentira): el cuerpo es el del flu
     expect(s.salida).not.toContain(TOKEN);
     expect(s.error).not.toContain(TOKEN);
     expect(s.codigo).toBe(3); // el modelo devolvio error: los resultados no sirven para juzgar el flujo
+  });
+
+  it('un caso `soloSeco` inyecta lo que dice el modelo: con --vertex se OMITE (ni aprueba ni falla, y el informe lo dice); con --seco corre', async () => {
+    const hola = (id: string, extra: J = {}): J => ({ id, titulo: id, ...extra, turnos: [{ cliente: { tipo: 'texto', texto: 'hola' }, esperado: { mensajes: 1, ruta: 'menu' } }] });
+    const leerCasos = () => ({ casos: [hola('Z1', { soloSeco: true }), hola('Z2')], global: null });
+    const m = mundo(undefined, { leerCasos });
+    const s = await correr(m, ['--vertex', 'mi-proyecto-de-prueba', '--json']);
+    expect(s.codigo, s.error + s.salida.slice(0, 500)).toBe(0);
+    const r = json(s);
+    expect(r.casos.map((c: J) => c.id)).toEqual(['Z2']); // Z1 no cuenta como aprobado ni como fallo
+    expect(r.aprobaron).toBe(1);
+    expect(r.fallaron).toBe(0);
+    expect(r.omitidos).toEqual(['Z1']);
+    const texto = await correr(mundo(undefined, { leerCasos }), ['--vertex', 'mi-proyecto-de-prueba']);
+    expect(texto.salida).toMatch(/Omitidos \(no aplican con modelo real[^)]*\): Z1/);
+    const seco = await correr(mundo(undefined, { leerCasos }), ['--seco', '--json']);
+    expect(json(seco).casos.map((c: J) => c.id)).toEqual(['Z1', 'Z2']);
+    expect(json(seco).omitidos).toEqual([]);
+  });
+
+  it('D6d (el texto de un aviso inyectado) está marcado `soloSeco`', () => {
+    const d6d = casosDeLaCarpeta().casos.find((c) => c['id'] === 'D6d') as J;
+    expect(d6d['soloSeco']).toBe(true);
   });
 
   it('un 404 del modelo (p. ej. el modelo no existe en esa ubicación) se SEÑALA y sale con 3; no se confunde con un defecto del flujo', async () => {

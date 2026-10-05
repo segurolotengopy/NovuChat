@@ -310,9 +310,71 @@
           "puedo pagar con tarjeta",
           "Pague 110 Bs comprobante 123456789",
           "dame la carta",
-          "quiero 2 tacos",
-          "quiero 60 tacos",
-          "mejor paso a recogerlo yo mismo",
+          {
+            "texto": "quiero 2 tacos",
+            "seco": {
+              "lineas": [
+                {
+                  "producto": "tacos al pastor",
+                  "cantidad": 2,
+                  "forma": "orden",
+                  "detalle": ""
+                }
+              ]
+            },
+            "esperado": {
+              "igualAntes": [
+                "entrega.entrega",
+                "entrega.direccion",
+                "entrega.referencia"
+              ]
+            }
+          },
+          {
+            "texto": "quiero 60 tacos",
+            "seco": {
+              "lineas": [
+                {
+                  "producto": "tacos al pastor",
+                  "cantidad": 60,
+                  "forma": "orden",
+                  "detalle": ""
+                }
+              ]
+            },
+            "esperado": {
+              "igualAntes": [
+                "entrega.entrega",
+                "entrega.direccion",
+                "entrega.referencia"
+              ]
+            }
+          },
+          {
+            "texto": "mejor paso a recogerlo yo mismo",
+            "seco": {
+              "lineas": [],
+              "entrega": "recojo"
+            },
+            "esperado": {
+              "estado": {
+                "entrega.entrega": "recojo",
+                "entrega.referencia": {
+                  "vacio": true
+                },
+                "entrega.direccion": "Av. Banzer 1234"
+              },
+              "titulosNo": [],
+              "textosNo": [
+                "referencia:"
+              ],
+              "igualAntes": [
+                "entrega.referencia",
+                "carrito",
+                "entrega.direccion"
+              ]
+            }
+          },
           "delivery no",
           "sin delivery",
           "prefiero delivery",
@@ -415,9 +477,72 @@
           "puedo pagar con tarjeta",
           "Pague 110 Bs comprobante 123456789",
           "dame la carta",
-          "quiero 2 tacos",
-          "quiero 60 tacos",
-          "mejor paso a recogerlo yo mismo",
+          {
+            "texto": "quiero 2 tacos",
+            "seco": {
+              "lineas": [
+                {
+                  "producto": "tacos al pastor",
+                  "cantidad": 2,
+                  "forma": "orden",
+                  "detalle": ""
+                }
+              ]
+            },
+            "esperado": {
+              "igualAntes": [
+                "entrega.entrega",
+                "entrega.direccion",
+                "entrega.referencia"
+              ]
+            }
+          },
+          {
+            "texto": "quiero 60 tacos",
+            "seco": {
+              "lineas": [
+                {
+                  "producto": "tacos al pastor",
+                  "cantidad": 60,
+                  "forma": "orden",
+                  "detalle": ""
+                }
+              ]
+            },
+            "esperado": {
+              "igualAntes": [
+                "entrega.entrega",
+                "entrega.direccion",
+                "entrega.referencia"
+              ]
+            }
+          },
+          {
+            "texto": "mejor paso a recogerlo yo mismo",
+            "seco": {
+              "lineas": [],
+              "entrega": "recojo"
+            },
+            "esperado": {
+              "estado": {
+                "entrega.entrega": "recojo",
+                "entrega.referencia": {
+                  "vacio": true
+                },
+                "entrega.direccion": {
+                  "vacio": true
+                }
+              },
+              "titulosNo": [],
+              "textosNo": [
+                "referencia:"
+              ],
+              "igualAntes": [
+                "entrega.referencia",
+                "carrito"
+              ]
+            }
+          },
           "delivery no",
           "sin delivery",
           "prefiero delivery",

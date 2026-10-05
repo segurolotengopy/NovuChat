@@ -42,6 +42,8 @@
 //   "config": { "horario": "…" },   (opcional) valores de «Config base» que este caso cambia (ver CONFIG_VIVA y HORARIO_REAL)
 //   "panel":  { … },                (opcional) lo que este caso cambia de la consola (mezcla de primer nivel sobre el panel base)
 //   "perfil": "Carlos Pérez",       (opcional) el nombre de perfil de WhatsApp del cliente; "" = sin nombre de perfil
+//   "soloSeco": true,               (opcional) el caso INYECTA lo que dice el modelo (un texto que el modelo no escribiria) y solo vale en `--seco`: con un modelo real
+//                                   (`--vertex`) se OMITE y el informe lo dice («no aplica con modelo real»); no cuenta como aprobado ni como fallo
 //   "reloj":  "2026-10-06T13:00:00-04:00",  (opcional) el instante del primer turno (con su desfase); por omision, martes 06/10/2026 13:00 La Paz
 //   "estadoPrevio": [ <turno>, … ], (opcional) turnos que CORREN POR EL FLUJO antes de los turnos del caso. Es la forma preferida de
 //                                   llegar a un estado («llega el carrito», «Hacer un pedido»): nada se siembra a mano en los datos
@@ -307,6 +309,7 @@ export function validarCasos(datos, origen = 'casos') {
     if (c.config !== undefined && (typeof c.config !== 'object' || c.config === null || Array.isArray(c.config))) throw new ErrorDeUso(`${origen}: ${c.id}: «config» debe ser un objeto.`);
     if (c.panel !== undefined && (typeof c.panel !== 'object' || c.panel === null || Array.isArray(c.panel))) throw new ErrorDeUso(`${origen}: ${c.id}: «panel» debe ser un objeto.`);
     if (c.perfil !== undefined && typeof c.perfil !== 'string') throw new ErrorDeUso(`${origen}: ${c.id}: «perfil» debe ser un texto.`);
+    if (c.soloSeco !== undefined && typeof c.soloSeco !== 'boolean') throw new ErrorDeUso(`${origen}: ${c.id}: «soloSeco» debe ser true o false.`);
     if (c.reloj !== undefined && (typeof c.reloj !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?[+-]\d{2}:\d{2}$/.test(c.reloj) || Number.isNaN(Date.parse(c.reloj)))) throw new ErrorDeUso(`${origen}: ${c.id}: «reloj» debe ser una fecha ISO con desfase (2026-10-06T13:00:00-04:00).`);
     for (const [i, t] of (c.estadoPrevio ?? []).entries()) validarTurno(t, `${c.id}, previo ${i + 1}`);
     for (const [i, t] of c.turnos.entries()) validarTurno(t, `${c.id}, turno ${i + 1}`);
@@ -744,7 +747,7 @@ const SUPUESTO_TARIFA = `USD ${TARIFA.entrada} por millón de tokens de entrada,
 const SALIDA_ESTIMADA = 150; // tokens de salida por llamada a «Extraer» (un JSON de líneas o de reserva)
 
 // ------------------------------------------------------------------------------------------------------- salida
-function informe({ opciones, flujo, casos, corridas, global, pendientes }) {
+function informe({ opciones, flujo, casos, corridas, global, pendientes, omitidos = [] }) {
   const porCaso = casos.map((c) => {
     const cs = corridas.filter((x) => x.caso === c.id);
     const fallaron = cs.filter((x) => !x.ok);
@@ -785,6 +788,7 @@ function informe({ opciones, flujo, casos, corridas, global, pendientes }) {
       nota: opciones.seco ? `ESTIMACIÓN de una corrida real: ${llamadas} llamada(s) a «Extraer» con ≈ ${Math.round(bytes / 4 / Math.max(1, llamadas))} tokens de entrada y ${SALIDA_ESTIMADA} de salida cada una (entrada ≈ caracteres/4).` : '',
     },
     pendientes,
+    omitidos,
     aviso: opciones.seco ? 'SECO: el modelo es simulado (respuesta fija por turno); lo que se mide es el flujo determinista, no al modelo.' : '',
   };
 }
@@ -837,6 +841,7 @@ function textoDelInforme(r, opciones) {
     o.push(`Uso del modelo: ${t.llamadasModelo} llamadas · entrada ${u.entrada} tokens (cacheados ${u.cacheados}) · salida ${u.salida} (razonamiento ${u.razonamiento})`);
     o.push(`Costo estimado: ${fmtUsd(r.costo.usd)}. Supuesto de la tarifa: ${r.costo.supuesto}`);
   }
+  if (r.omitidos.length) o.push(`Omitidos (no aplican con modelo real: inyectan lo que dice el modelo): ${r.omitidos.join(', ')}. No cuentan como aprobados ni como fallos.`);
   if (r.pendientes.length) o.push(`Escenarios que esperan una rama (no están en estos lotes): ${r.pendientes.map((p) => p.id).join(', ')}`);
   return o.join('\n');
 }
@@ -889,6 +894,9 @@ export async function main(argv, deps = {}) {
       elegidos = soloGlobal ? todos : ids.filter((id) => !global || id !== global.id).map((id) => todos.find((x) => x.id === id));
       if (global && !ids.includes(global.id)) conGlobal = null;
     }
+    // Un caso `soloSeco` inyecta lo que dice el modelo: con un modelo real no aplica y se omite (ni aprueba ni falla).
+    const omitidos = opciones.seco ? [] : elegidos.filter((c) => c.soloSeco === true).map((c) => c.id);
+    if (omitidos.length) elegidos = elegidos.filter((c) => c.soloSeco !== true);
     const info = (t) => (opciones.json ? d.error(t + '\n') : d.salida(t + '\n'));
     if (!opciones.seco) {
       credencial = leerCredencial(opciones, d);
@@ -904,7 +912,7 @@ export async function main(argv, deps = {}) {
         }
       }
     }
-    const r = informe({ opciones, flujo, casos: elegidos, corridas, global: conGlobal, pendientes: leerPendientes(CARPETA_CASOS) });
+    const r = informe({ opciones, flujo, casos: elegidos, corridas, global: conGlobal, pendientes: leerPendientes(CARPETA_CASOS), omitidos });
     d.salida(opciones.json ? JSON.stringify(r) + '\n' : textoDelInforme(r, opciones) + '\n');
     return r.total.erroresDelModelo > 0 ? 3 : r.fallaron > 0 ? 1 : 0;
   } catch (e) {

@@ -142,10 +142,12 @@
             },
             "esperado": {
               "textos": [
-                "Entrega: delivery a calle 1 numerro 2 Irpavi"
+                "Entrega: delivery a calle 1 (numero|numerro) 2 Irpavi"
               ],
               "estado": {
-                "entrega.direccion": "calle 1 numerro 2 Irpavi"
+                "entrega.direccion": {
+                  "regex": "^calle 1 (numero|numerro) 2 Irpavi$"
+                }
               }
             }
           },
@@ -457,7 +459,9 @@
             ],
             "estado": {
               "paso": "pedido_confirmar",
-              "entrega.direccion": "calle 1 numerro 2 Irpavi"
+              "entrega.direccion": {
+                "regex": "^calle 1 (numero|numerro) 2 Irpavi$"
+              }
             }
           }
         }
@@ -474,7 +478,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "Entrega: delivery a calle 1 numerro 2 Irpavi \\(a media cuadra de la calle Foton\\)"
+              "Entrega: delivery a calle 1 (numero|numerro) 2 Irpavi \\(a media cuadra de la calle Foton\\)"
             ],
             "textosNo": [
               "necesito",
@@ -486,7 +490,9 @@
             ],
             "estado": {
               "paso": "pedido_confirmar",
-              "entrega.direccion": "calle 1 numerro 2 Irpavi",
+              "entrega.direccion": {
+                "regex": "^calle 1 (numero|numerro) 2 Irpavi$"
+              },
               "entrega.referencia": "a media cuadra de la calle Foton"
             },
             "efectos": {
@@ -724,7 +730,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "Entrega: delivery a calle 1 numerro 2 Irpavi, recibe Lucía Ejemplo"
+              "Entrega: delivery a calle 1 (numero|numerro) 2 Irpavi, recibe Lucía Ejemplo"
             ],
             "textosNo": [
               "necesito",
@@ -736,7 +742,9 @@
             ],
             "estado": {
               "paso": "pedido_confirmar",
-              "entrega.direccion": "calle 1 numerro 2 Irpavi",
+              "entrega.direccion": {
+                "regex": "^calle 1 (numero|numerro) 2 Irpavi$"
+              },
               "entrega.referencia": {
                 "vacio": true
               }
@@ -758,7 +766,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "Entrega: delivery a calle 1 numerro 2 Irpavi \\(a media cuadra del gas\\), recibe Lucía Ejemplo"
+              "Entrega: delivery a calle 1 (numero|numerro) 2 Irpavi \\(a media cuadra del gas\\), recibe Lucía Ejemplo"
             ],
             "textosNo": [
               "necesito",
@@ -771,7 +779,9 @@
             ],
             "estado": {
               "paso": "pedido_confirmar",
-              "entrega.direccion": "calle 1 numerro 2 Irpavi",
+              "entrega.direccion": {
+                "regex": "^calle 1 (numero|numerro) 2 Irpavi$"
+              },
               "entrega.referencia": "a media cuadra del gas"
             },
             "igualAntes": [
@@ -931,6 +941,104 @@
           }
         ]
       }
+    },
+    {
+      "id": "A6b",
+      "titulo": "Dirección dada y «Donde dije» con el modelo marcando quiereHablar: sobre un texto sin rasgos de dato de entrega la rama DERIVA (aviso y «Escribir al local») y no guarda nada",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "calle 1 numerro 2 Irpavi"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": "calle 1 numerro 2 Irpavi"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": {
+                "regex": "^calle 1 (numero|numerro) 2 Irpavi$"
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "a media cuadra de la calle Foton"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "^transferir",
+            "titulos": [
+              "Escribir al local"
+            ],
+            "enlaces": [
+              "wa\\.me/59100000031"
+            ],
+            "textosNo": [
+              "Entrega: delivery a"
+            ],
+            "estado": {
+              "entrega.direccion": {
+                "regex": "^calle 1 (numero|numerro) 2 Irpavi$"
+              },
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": true,
+              "aviso": true,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {
+            "texto": "Donde dije",
+            "seco": {
+              "lineas": [],
+              "quiereHablar": true
+            }
+          }
+        ]
+      },
+      "nota": "ESPERADO CONFIRMADO CON LA CARTERA (05/10): la marca quiereHablar del modelo sobre un texto SIN rasgos de dato de entrega deriva siempre (diseño endurecido de la rama); «Donde dije» ya no queda como referencia."
     }
   ]
 }

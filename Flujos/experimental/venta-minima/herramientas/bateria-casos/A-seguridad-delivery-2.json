@@ -366,9 +366,71 @@
           "puedo pagar con tarjeta",
           "Pague 110 Bs comprobante 123456789",
           "dame la carta",
-          "quiero 2 tacos",
-          "quiero 60 tacos",
-          "mejor paso a recogerlo yo mismo",
+          {
+            "texto": "quiero 2 tacos",
+            "seco": {
+              "lineas": [
+                {
+                  "producto": "tacos al pastor",
+                  "cantidad": 2,
+                  "forma": "orden",
+                  "detalle": ""
+                }
+              ]
+            },
+            "esperado": {
+              "igualAntes": [
+                "entrega.entrega",
+                "entrega.direccion",
+                "entrega.referencia"
+              ]
+            }
+          },
+          {
+            "texto": "quiero 60 tacos",
+            "seco": {
+              "lineas": [
+                {
+                  "producto": "tacos al pastor",
+                  "cantidad": 60,
+                  "forma": "orden",
+                  "detalle": ""
+                }
+              ]
+            },
+            "esperado": {
+              "igualAntes": [
+                "entrega.entrega",
+                "entrega.direccion",
+                "entrega.referencia"
+              ]
+            }
+          },
+          {
+            "texto": "mejor paso a recogerlo yo mismo",
+            "seco": {
+              "lineas": [],
+              "entrega": "recojo"
+            },
+            "esperado": {
+              "estado": {
+                "entrega.entrega": "recojo",
+                "entrega.referencia": {
+                  "vacio": true
+                },
+                "entrega.direccion": "Av. Banzer 1234"
+              },
+              "titulosNo": [],
+              "textosNo": [
+                "referencia:"
+              ],
+              "igualAntes": [
+                "entrega.referencia",
+                "carrito",
+                "entrega.direccion"
+              ]
+            }
+          },
           "delivery no",
           "sin delivery",
           "prefiero delivery",
@@ -459,9 +521,72 @@
           "puedo pagar con tarjeta",
           "Pague 110 Bs comprobante 123456789",
           "dame la carta",
-          "quiero 2 tacos",
-          "quiero 60 tacos",
-          "mejor paso a recogerlo yo mismo",
+          {
+            "texto": "quiero 2 tacos",
+            "seco": {
+              "lineas": [
+                {
+                  "producto": "tacos al pastor",
+                  "cantidad": 2,
+                  "forma": "orden",
+                  "detalle": ""
+                }
+              ]
+            },
+            "esperado": {
+              "igualAntes": [
+                "entrega.entrega",
+                "entrega.direccion",
+                "entrega.referencia"
+              ]
+            }
+          },
+          {
+            "texto": "quiero 60 tacos",
+            "seco": {
+              "lineas": [
+                {
+                  "producto": "tacos al pastor",
+                  "cantidad": 60,
+                  "forma": "orden",
+                  "detalle": ""
+                }
+              ]
+            },
+            "esperado": {
+              "igualAntes": [
+                "entrega.entrega",
+                "entrega.direccion",
+                "entrega.referencia"
+              ]
+            }
+          },
+          {
+            "texto": "mejor paso a recogerlo yo mismo",
+            "seco": {
+              "lineas": [],
+              "entrega": "recojo"
+            },
+            "esperado": {
+              "estado": {
+                "entrega.entrega": "recojo",
+                "entrega.referencia": {
+                  "vacio": true
+                },
+                "entrega.direccion": {
+                  "vacio": true
+                }
+              },
+              "titulosNo": [],
+              "textosNo": [
+                "referencia:"
+              ],
+              "igualAntes": [
+                "entrega.referencia",
+                "carrito"
+              ]
+            }
+          },
           "delivery no",
           "sin delivery",
           "prefiero delivery",
@@ -577,7 +702,7 @@
     },
     {
       "id": "FB1",
-      "titulo": "Dirección pendiente y el modelo devuelve la dirección vacía: una dirección con rasgos de dirección («Calle Sucre 12, déjalo con el guardia nomás», «Calle 1 número 2 Irpavi») la toma el código, queda en delivery y pasa al resumen",
+      "titulo": "Dirección pendiente y el modelo devuelve la dirección vacía o la separa de la referencia: «Calle 1 número 2 Irpavi» y «Calle Sucre 12, déjalo con el guardia nomás» (frase entera como dirección, o «Calle Sucre 12» + referencia) quedan en delivery con esa dirección y pasan al resumen",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -660,7 +785,9 @@
                 "Entrega: delivery a Calle 1 número 2 Irpavi"
               ],
               "estado": {
-                "entrega.direccion": "Calle 1 número 2 Irpavi"
+                "entrega.direccion": {
+                  "regex": "^Calle 1 número 2 Irpavi$"
+                }
               }
             }
           },
@@ -671,10 +798,30 @@
             },
             "esperado": {
               "textos": [
-                "Entrega: delivery a Calle Sucre 12, déjalo con el guardia nomás"
+                "Entrega: delivery a Calle Sucre 12"
               ],
               "estado": {
-                "entrega.direccion": "Calle Sucre 12, déjalo con el guardia nomás"
+                "entrega.direccion": {
+                  "regex": "^Calle Sucre 12"
+                }
+              }
+            }
+          },
+          {
+            "texto": "Calle Sucre 12 - déjalo con el guardia nomás",
+            "seco": {
+              "lineas": [],
+              "direccion": "Calle Sucre 12",
+              "referencia": "déjalo con el guardia nomás"
+            },
+            "esperado": {
+              "textos": [
+                "Entrega: delivery a Calle Sucre 12"
+              ],
+              "estado": {
+                "entrega.direccion": {
+                  "regex": "^Calle Sucre 12"
+                }
               }
             }
           }
@@ -763,8 +910,8 @@
     },
     {
       "id": "SV2",
-      "titulo": "Secuencia de Silvana 2: carrito con dirección → «Déjale al portero» → «Ok» → «A media cuadra del gas» → «Rexibe pedro» ×2: la dirección no cambia y «Rexibe pedro» NO deriva",
-      "nota": "LÍMITE DECLARADO por la cartera: un NOMBRE de quien recibe («Rexibe pedro») que el modelo no extrae no se toma como nombre. En el head 0c4bf930, con la referencia ya dada, «Rexibe pedro» (las dos veces) no deriva ni cambia nada: el resumen sigue igual. Solo y sin referencia previa cae como referencia (SV2b).",
+      "titulo": "Secuencia de Silvana 2: carrito con dirección → «Déjale al portero» → «Ok» → «A media cuadra del gas» (REEMPLAZA la referencia) → «Rexibe pedro» ×2: la dirección no cambia y no deriva",
+      "nota": "La segunda referencia REEMPLAZA a la primera (criterio A15, confirmado con la cartera y con la corrida real): la referencia final es «A media cuadra del gas». LÍMITE DECLARADO: un NOMBRE de quien recibe («Rexibe pedro») que el modelo no extrae no se toma como nombre; con la referencia ya dada no la pisa ni deriva (el modelo real puede extraer el nombre: se acepta cualquiera de las dos salidas, siempre sin tocar la dirección). En --seco el modelo marca la referencia de «A media cuadra del gas» como lo hace el real.",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -881,10 +1028,14 @@
             "texto": "A media cuadra del gas"
           },
           "seco": {
-            "lineas": []
+            "lineas": [],
+            "referencia": "A media cuadra del gas"
           },
           "esperado": {
             "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Av\\. Banzer 1234 \\(A media cuadra del gas\\)"
+            ],
             "textosNo": [
               "referencia",
               "necesito",
@@ -896,9 +1047,7 @@
             "estado": {
               "paso": "pedido_confirmar",
               "entrega.direccion": "Av. Banzer 1234",
-              "entrega.referencia": {
-                "vacio": false
-              }
+              "entrega.referencia": "A media cuadra del gas"
             },
             "igualAntes": [
               "entrega.direccion",
@@ -922,7 +1071,8 @@
             "mensajes": 1,
             "textosNo": [
               "Esto prefiero",
-              "necesito"
+              "necesito",
+              "direcci[oó]n exacta"
             ],
             "titulos": [
               "Confirmar pedido"
@@ -933,11 +1083,12 @@
             "estado": {
               "paso": "pedido_confirmar",
               "entrega.direccion": "Av. Banzer 1234",
-              "entrega.referencia": "Déjale al portero"
+              "entrega.referencia": {
+                "vacio": false
+              }
             },
             "igualAntes": [
-              "entrega.direccion",
-              "entrega.referencia"
+              "entrega.direccion"
             ],
             "efectos": {
               "derivacion": false,
@@ -957,7 +1108,8 @@
             "mensajes": 1,
             "textosNo": [
               "Esto prefiero",
-              "necesito"
+              "necesito",
+              "direcci[oó]n exacta"
             ],
             "titulos": [
               "Confirmar pedido"
@@ -968,11 +1120,12 @@
             "estado": {
               "paso": "pedido_confirmar",
               "entrega.direccion": "Av. Banzer 1234",
-              "entrega.referencia": "Déjale al portero"
+              "entrega.referencia": {
+                "vacio": false
+              }
             },
             "igualAntes": [
-              "entrega.direccion",
-              "entrega.referencia"
+              "entrega.direccion"
             ],
             "efectos": {
               "derivacion": false,
@@ -984,8 +1137,8 @@
     },
     {
       "id": "SV2b",
-      "titulo": "Carrito con dirección y, sin referencia previa, «Rexibe pedro» (el modelo no extrae el nombre) cae como REFERENCIA y la dirección no cambia",
-      "nota": "LÍMITE DECLARADO por la cartera: el nombre de quien recibe que el modelo no extrae queda como referencia (opcional, saneada). Se asierta lo que pasa.",
+      "titulo": "Carrito con dirección y, sin referencia previa, «Rexibe pedro»: la dirección no cambia, no deriva y queda como referencia o como nombre de quien recibe (según lo que extraiga el modelo)",
+      "nota": "LÍMITE DECLARADO por la cartera: si el modelo no extrae el nombre, «Rexibe pedro» cae como REFERENCIA; con el modelo real puede extraerlo como nombre. Se aceptan las dos salidas; lo que no puede pasar es que se guarde como dirección ni que derive.",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -1035,16 +1188,23 @@
           },
           "esperado": {
             "mensajes": 1,
+            "textosNo": [
+              "Esto prefiero",
+              "direcci[oó]n exacta"
+            ],
             "textos": [
-              "Entrega: delivery a Av\\. Banzer 1234 \\(Rexibe pedro\\)"
+              "Entrega: delivery a Av\\. Banzer 1234"
             ],
             "titulos": [
               "Confirmar pedido"
             ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
             "estado": {
               "paso": "pedido_confirmar",
               "entrega.direccion": "Av. Banzer 1234",
-              "entrega.referencia": "Rexibe pedro"
+              "entrega.entrega": "delivery"
             },
             "igualAntes": [
               "entrega.direccion"
@@ -1055,7 +1215,20 @@
             }
           }
         }
-      ]
+      ],
+      "variantes": {
+        "turno": 2,
+        "frases": [
+          "Rexibe pedro",
+          {
+            "texto": "Recibe Pedro",
+            "seco": {
+              "lineas": [],
+              "nombre": "Pedro"
+            }
+          }
+        ]
+      }
     },
     {
       "id": "M1s",

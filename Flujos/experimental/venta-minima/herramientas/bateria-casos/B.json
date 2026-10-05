@@ -201,7 +201,7 @@
           {
             "texto": "Calle Sucre 12, déjalo con el guardia nomás",
             "seco": {"lineas": [], "direccion": "Calle Sucre 12", "referencia": "déjalo con el guardia"},
-            "esperado": {"estado": {"entrega.direccion": "Calle Sucre 12"}}
+            "esperado": {"textos": ["Entrega: delivery a Calle Sucre 12"], "estado": {"entrega.direccion": {"regex": "^Calle Sucre 12"}}}
           },
           {"texto": "Déjalo antes de las 8", "seco": {"lineas": [], "referencia": "antes de las 8"}},
           {"texto": "dejalo con mi mamá igual pago yo", "seco": {"lineas": [], "referencia": "con mi mamá"}}

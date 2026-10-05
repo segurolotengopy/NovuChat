@@ -1705,7 +1705,7 @@
     {
       "id": "D6d",
       "titulo": "Sin aviso salido, un texto que afirma que la reserva quedó anotada («Anotamos su reserva», «Tu reserva quedó anotada», «Reserva anotada», «Anoté tu reserva») nunca llega al cliente: se reemplaza por la derivación genérica",
-      "nota": "APROXIMACIÓN: el flujo no deja que el modelo escriba al cliente; el único texto ajeno que llega a «Armar mensajes» sin aviso salido es el del propio cliente que el resumen repite (la celebración). Se usa esa vía para ejercitar `AM_PASE`. Con --vertex el modelo real decide qué celebración extrae; en --seco es la fija. «ellos» no se niega aquí: la derivación genérica de main y de esta rama todavía lo dice (lo mide E8).",
+      "nota": "APROXIMACIÓN: el flujo no deja que el modelo escriba al cliente; el único texto ajeno que llega a «Armar mensajes» sin aviso salido es el del propio cliente que el resumen repite (la celebración). Se usa esa vía para ejercitar `AM_PASE`. Con --vertex el modelo real decide qué celebración extrae; en --seco es la fija. «ellos» no se niega aquí: la derivación genérica de main y de esta rama todavía lo dice (lo mide E8). `soloSeco`: inyecta lo que dice el modelo; con --vertex se omite («no aplica con modelo real»).",
       "estadoPrevio": [
         {
           "cliente": {
@@ -1812,7 +1812,8 @@
             }
           }
         ]
-      }
+      },
+      "soloSeco": true
     }
   ]
 }
