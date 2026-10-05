@@ -37,6 +37,9 @@ import { randomBytes } from 'node:crypto';
 import {
   ID_CLIENTE, clienteDeTenant, comprobarDestino, guardarEnlaceDeContrasena, raizDelProyecto,
 } from './enlace-privado.mjs';
+// LOS FLUJOS Y SU DOCUMENTO DE CONFIGURACIÓN SALEN DEL REGISTRO (H2b-4e), no de una
+// lista propia: `registro.ts` no tiene `import`, así que Node lo carga quitando los tipos.
+import { documentoDeFlujo, esFlujo } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -50,7 +53,6 @@ const NOMBRE_ADMIN = opcion('nombre-admin') ?? '';
 const FLUJOS = (opcion('flujos') ?? 'agendamiento').split(',').map((f) => f.trim()).filter(Boolean);
 const CLIENTE = opcion('cliente') ?? clienteDeTenant(TENANT);
 
-const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 
@@ -59,7 +61,7 @@ if (!PROYECTO) problemas.push('falta --proyecto');
 if (!ID_TENANT.test(TENANT)) problemas.push('--tenant inválido (minúsculas, guiones, 3 a 60)');
 if (!NOMBRE) problemas.push('falta --nombre');
 if (!ADMIN || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ADMIN)) problemas.push('--admin no es un correo');
-for (const f of FLUJOS) if (!FLUJOS_VALIDOS.has(f)) problemas.push(`flujo desconocido: ${f}`);
+for (const f of FLUJOS) if (!esFlujo(f)) problemas.push(`flujo desconocido: ${f}`);
 if (!ID_CLIENTE.test(CLIENTE)) problemas.push('--cliente inválido (la carpeta de CLIENTES/: mayúsculas, dígitos y _)');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
@@ -86,9 +88,6 @@ const { getAuth } = await import('firebase-admin/auth');
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 const auth = getAuth();
-
-// Mismo mapa que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
-const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
 
 console.log(`\n  Negocio    : ${TENANT} · ${NOMBRE}`);
 console.log(`  Flujos     : ${FLUJOS.join(', ')}`);
@@ -159,8 +158,9 @@ lote.create(db.doc(`tenants/${TENANT}/config/negocio`), {
 // El documento de cada flujo nace acá: las reglas prohíben crearlo desde el
 // navegador, así que sin esto la pestaña del flujo no podría guardar nunca.
 for (const f of FLUJOS) {
-  if (DOCUMENTO[f]) {
-    lote.create(db.doc(`tenants/${TENANT}/config/${DOCUMENTO[f]}`), {
+  const documento = documentoDeFlujo(f);
+  if (documento) {
+    lote.create(db.doc(`tenants/${TENANT}/config/${documento}`), {
       actualizadoPor: 'alta-comercio', actualizadoEn: Timestamp.now(),
     });
   }

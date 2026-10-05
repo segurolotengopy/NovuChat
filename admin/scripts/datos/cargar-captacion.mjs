@@ -31,6 +31,10 @@
  * son notas del archivo y no se escriben.
  */
 import { readFileSync } from 'node:fs';
+// QUIÉN TIENE CAPTACIÓN LO DECIDE EL REGISTRO (`tieneModulo`, H2b-4e), como el
+// servidor (`captacion.ts`), no una lista propia de flujos. `registro.ts` no tiene
+// `import`: Node lo carga quitando los tipos.
+import { flujosDeFicha, tieneModulo } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -245,9 +249,8 @@ try {
   await db.runTransaction(async (tx) => {
     const [tenant, negocio, onb] = await Promise.all([tx.get(refTenant), tx.get(refNegocio), tx.get(refOnb)]);
     if (!tenant.exists) { rechazo = `No existe el comercio «${TENANT}». Primero alta-comercio.mjs.`; return; }
-    const flujos = tenant.get('flujos') ?? [tenant.get('vertical')].filter(Boolean);
-    if (!flujos.includes('onboarding')) {
-      rechazo = `«${TENANT}» no tiene el flujo onboarding (flujos: ${JSON.stringify(flujos)}). `
+    if (!tieneModulo(tenant.data(), 'captacion')) {
+      rechazo = `«${TENANT}» no tiene el flujo onboarding (flujos: ${JSON.stringify(flujosDeFicha(tenant.data()))}). `
         + 'La captación se carga solo en un comercio con ese flujo.';
       return;
     }
