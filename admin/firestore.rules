@@ -255,12 +255,13 @@ service cloud.firestore {
     // ausente: cae a `flujos`, nunca abre de más.
     //
     // SOLO PARA MÓDULOS PROPIOS DE UN FLUJO. La tabla de respaldo es PARCIAL a
-    // propósito y se cierra con `false`: agenda ⇒ agendamiento, pedidos y
-    // catalogo-web ⇒ venta, captacion ⇒ onboarding (los `propiosDe(flujo)` de
-    // `PUENTE_DE_FLUJOS` en `functions/src/registro.ts`; `reglas-modulos.test.ts`
-    // compara este cuerpo con el registro). Un módulo COMÚN o de otro tipo
-    // (`productos`, `campanas`, `cobros`, `inventario`) NO va por acá: los comunes
-    // usan `tieneModuloComun`, y preguntar por uno de los demás da `false` para
+    // propósito y se cierra con `false`: agenda ⇒ agendamiento; pedidos,
+    // catalogo-web e inventario ⇒ venta; captacion ⇒ onboarding. Son los módulos
+    // que pertenecen a UN solo flujo en `PUENTE_DE_FLUJOS`
+    // (`functions/src/registro.ts`); `reglas-modulos.test.ts` compara este cuerpo
+    // con el registro y falla si divergen. Un módulo COMÚN (`productos`,
+    // `campanas`) o compartido por dos flujos (`cobros`) NO va por acá: los
+    // comunes usan `tieneModuloComun`, y preguntar por `cobros` da `false` para
     // todo comercio de hoy aunque el registro diga que lo tienen.
     //
     // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y la regla de
@@ -274,7 +275,7 @@ service cloud.firestore {
         ? m in ficha.modulos
         : (m == 'agenda' ? tieneFlujo(tenantId, 'agendamiento')
            : m == 'captacion' ? tieneFlujo(tenantId, 'onboarding')
-           : (m == 'pedidos' || m == 'catalogo-web') ? tieneFlujo(tenantId, 'venta')
+           : (m == 'pedidos' || m == 'catalogo-web' || m == 'inventario') ? tieneFlujo(tenantId, 'venta')
            : false);
     }
 

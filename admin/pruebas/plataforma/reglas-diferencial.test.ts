@@ -4,8 +4,9 @@
  * Es la prueba que cuida a Q'Taco (y a todo comercio vivo): ninguna ficha viva
  * trae `modulos`, así que con las fichas de hoy las reglas nuevas tienen que
  * decidir IGUAL que las de antes. Se corre la MISMA matriz de operaciones
- * (get, list, create, update, delete) sobre las rutas relevantes, con cuatro
- * actores (administrador, operador, propietario y un administrador AJENO) y con
+ * (get, list, create, update, delete) sobre las rutas relevantes, con cinco
+ * actores (administrador, operador, propietario, un administrador AJENO y un
+ * anónimo) y con
  * las fichas de Q'Taco, Demo A, Demo B, Platinum y NovuChat, contra
  *   · las reglas de ANTES: `firestore-base-previa-h2b6.rules.txt`, copia de
  *     `admin/firestore.rules` en origin/main justo antes de este bloque (con UNA
@@ -18,6 +19,11 @@
  * Andres aprobó (decisión N2): `funcionarios/{id}/privado` se cierra al
  * administrador de un comercio SIN agenda. Cualquier otra diferencia es un
  * defecto de las reglas nuevas.
+ *
+ * RETIRO: la fixture `firestore-base-previa-h2b6.rules.txt` (esta prueba y
+ * `reglas-presupuesto.test.ts`) se retira en H2b-cierre, cuando alguna ficha
+ * viva traiga `modulos` y «las reglas de antes» dejen de ser una referencia
+ * (o antes, si `admin/firestore.rules` en main cambia y la copia queda atrás).
  *
  * Las fichas son SINTÉTICAS: la de Q'Taco tiene la forma exacta de la real
  * (sin `modulos`) con valores inventados; ningún dato de ningún comercio.

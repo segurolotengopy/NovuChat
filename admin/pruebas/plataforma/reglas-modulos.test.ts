@@ -37,6 +37,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { IDS_FLUJOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS } from '../../functions/src/registro.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const REGLAS = readFileSync(join(aqui, '..', '..', 'firestore.rules'), 'utf8');
@@ -189,7 +190,12 @@ const sembrar = async (t: Tenant): Promise<void> => {
 // ---------------------------------------------------------------------------
 // Las operaciones. Cada una es la petición que haría un navegador.
 // ---------------------------------------------------------------------------
-type Operacion = { nombre: string; cap: Cap | 'catalogoWebActivo'; ejecutar: (t: string) => Promise<unknown> };
+type Operacion = {
+  nombre: string; cap: Cap | 'catalogoWebActivo';
+  /** Deja el estado que la operación necesita (corre después de `sembrar`, sin reglas). */
+  prep?: (t: string) => Promise<void>;
+  ejecutar: (t: string) => Promise<unknown>;
+};
 /** Lo que el oráculo espera de cada operación para un tenant. `catalogoWebActivo` (config/negocio) se decide HOY por `flujos`, no por `modulos`: TODO(H2b) con el PR que escriba `modulos`. */
 const abreOp = (t: Tenant, cap: Operacion['cap']): boolean => {
   if (cap !== 'catalogoWebActivo') return t.abre.includes(cap);
@@ -227,6 +233,25 @@ const operaciones: Operacion[] = [
   { nombre: 'el propietario edita config/onboarding', cap: 'onb',
     ejecutar: (t) => setDoc(doc(comoPropietario(), T(t, 'config/onboarding')),
       { topeAviso: 30, ...sello('u-novuchat') }, { merge: true }) },
+  { nombre: 'el administrador CREA config/marca (el logo nace con el primer upload)', cap: 'marca',
+    prep: async (t) => { await entorno.withSecurityRulesDisabled(async (ctx) => { await deleteDoc(doc(ctx.firestore(), T(t, 'config/marca'))); }); },
+    ejecutar: (t) => setDoc(doc(comoAdmin(t), T(t, 'config/marca')),
+      { logo: 'data:image/png;base64,AAAA', ...sello(`u-admin-${t}`) }) },
+  { nombre: 'el administrador BORRA la foto de un producto', cap: 'productos',
+    prep: async (t) => { await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), T(t, 'fotosCatalogo/item1')), {
+        datos: 'data:image/webp;base64,AAAABBBB', ancho: 9, alto: 9, bytes: 9, tipo: 'image/webp',
+        actualizadoPor: 'seed', actualizadoEn: Timestamp.now() }); }); },
+    ejecutar: (t) => deleteDoc(doc(comoAdmin(t), T(t, 'fotosCatalogo/item1'))) },
+  { nombre: 'el administrador da de BAJA un producto (catálogo + contador)', cap: 'productos',
+    ejecutar: (t) => {
+      const fs = comoAdmin(t);
+      const lote = writeBatch(fs);
+      lote.delete(doc(fs, T(t, 'catalogo/item1')));
+      lote.update(doc(fs, T(t, 'contadores/catalogo')),
+        { items: increment(-1), ultimoItem: 'item1', actualizadoEn: serverTimestamp() });
+      return lote.commit();
+    } },
   { nombre: 'el propietario lee config/onboarding', cap: 'onb',
     ejecutar: (t) => getDoc(doc(comoPropietario(), T(t, 'config/onboarding'))) },
   { nombre: 'el administrador da de alta un producto (catálogo + contador)', cap: 'productos',
@@ -272,7 +297,11 @@ const casos = (nucleo = false): Caso[] => {
       lista.push({
         nombre: `${t.id}: ${op.nombre}`,
         esperado: abreOp(t, op.cap),
-        correr: async () => { await sembrar(t); return permitida(() => op.ejecutar(t.id)); },
+        correr: async () => {
+          await sembrar(t);
+          if (op.prep) await op.prep(t.id);
+          return permitida(() => op.ejecutar(t.id));
+        },
       });
     }
   }
@@ -349,10 +378,13 @@ const casos = (nucleo = false): Caso[] => {
 };
 
 /** Corre toda la batería y devuelve los casos cuyo resultado no es el esperado. */
-const violados = async (): Promise<string[]> => {
-  const malos: string[] = [];
+type Violado = { texto: string; esperado: boolean };
+const violados = async (): Promise<Violado[]> => {
+  const malos: Violado[] = [];
   for (const c of casos(true)) {
-    if ((await c.correr()) !== c.esperado) malos.push(`${c.nombre} (esperado ${c.esperado ? 'permite' : 'niega'})`);
+    if ((await c.correr()) !== c.esperado) {
+      malos.push({ texto: `${c.nombre} (esperado ${c.esperado ? 'permite' : 'niega'})`, esperado: c.esperado });
+    }
   }
   return malos;
 };
@@ -394,9 +426,15 @@ const mutarFuncion = (reglas: string, nombre: string, cambio: (cuerpo: string) =
   return reglas.slice(0, inicio) + nuevo + reglas.slice(fin);
 };
 
+/** Cambia UN trozo exacto de las reglas (falla si no está una sola vez). */
+const sustituir = (trozo: string, por: string): string => {
+  expect(REGLAS.split(trozo).length - 1, `el trozo a mutar está una vez: ${trozo.slice(0, 50)}`).toBe(1);
+  return REGLAS.replace(trozo, por);
+};
+
 const mutaciones: Array<{ nombre: string; reglas: () => string }> = [
   { nombre: 'tieneModulo devuelve true',
-    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace('return ficha.get(', 'return true || ficha.get(')) },
+    reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace(/return [\s\S]*;\n\s*\}\n$/, 'return true;\n    }\n')) },
   { nombre: 'tieneModulo ignora al tenant (mira siempre la ficha del de todos los módulos)',
     reglas: () => mutarFuncion(REGLAS, 'tieneModulo', (c) => c.replace('tenants/$(tenantId)', 'tenants/ab')) },
   { nombre: 'tieneModulo ignora la lista `modulos`',
@@ -423,6 +461,18 @@ const mutaciones: Array<{ nombre: string; reglas: () => string }> = [
     reglas: () => REGLAS.replaceAll("tieneModulo(tenantId, 'catalogo-web')", 'true') },
   { nombre: 'catálogo: se quita la exigencia del módulo productos',
     reglas: () => REGLAS.replaceAll("&& tieneModuloComun(tenantId, 'productos')", '') },
+  { nombre: 'config/marca (CREATE): se quita la exigencia de catalogo-web',
+    reglas: () => sustituir("documento == 'marca' && tieneModulo(tenantId, 'catalogo-web')\n                      && logoValido();",
+      "documento == 'marca' && logoValido();") },
+  { nombre: 'fotosCatalogo (DELETE): se quita la exigencia de productos',
+    reglas: () => sustituir("allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId)\n                      && tieneModuloComun(tenantId, 'productos');",
+      'allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId);') },
+  // El alta y la baja de un producto van SIEMPRE con el contador en el mismo
+  // lote, y las dos reglas (la del producto y la del contador) exigen
+  // `productos` por su cuenta: quitar la exigencia de UNA sola es una mutación
+  // equivalente, no observable (la otra sigue negando). Es defensa en
+  // profundidad. Quitarlas de las dos (la mutación de arriba, que las borra
+  // todas) sí se detecta, con la edición suelta del producto y las fotos.
   { nombre: 'campañas: se quita la exigencia del módulo campanas',
     reglas: () => REGLAS.replaceAll("&& tieneModuloComun(tenantId, 'campanas')", '') },
 ];
@@ -439,7 +489,8 @@ describe('reglas por módulo: mutaciones (cada una debe dejar pasar una negativa
     it(`mutación: ${m.nombre}`, async () => {
       await iniciar(m.reglas());
       const malos = await violados();
-      expect(malos.length, `ningún caso detectó «${m.nombre}»`).toBeGreaterThan(0);
+      // Tiene que dejar pasar al menos una NEGATIVA: que solo se rompa un caso positivo no prueba que la regla niegue.
+      expect(malos.filter((v) => !v.esperado).length, `ninguna negativa detectó «${m.nombre}»: ${JSON.stringify(malos.map((v) => v.texto).slice(0, 3))}`).toBeGreaterThan(0);
     }, 600_000);
   }
 
@@ -447,4 +498,39 @@ describe('reglas por módulo: mutaciones (cada una debe dejar pasar una negativa
     await iniciar(REGLAS);
     expect(await violados()).toEqual([]);
   }, 600_000);
+});
+
+// ---------------------------------------------------------------------------
+// La tabla de respaldo de `tieneModulo` es PARCIAL a propósito (solo módulos
+// propios de un flujo) y tiene que coincidir con el registro. `registro.test.ts`
+// no la compara; esta prueba lee el cuerpo de la función en las reglas y lo
+// contrasta con `PUENTE_DE_FLUJOS`: si se invierte o se desfasa, falla.
+// ---------------------------------------------------------------------------
+describe('reglas: la tabla de respaldo de tieneModulo coincide con el registro', () => {
+  const cuerpo = (): string => {
+    const i = REGLAS.indexOf('    function tieneModulo(');
+    expect(i, 'existe tieneModulo').toBeGreaterThan(-1);
+    return REGLAS.slice(i, REGLAS.indexOf('\n    }\n', i));
+  };
+
+  /** Módulos de `f` que no son comunes ni de otro flujo: lo que `tieneModulo` puede resolver por `flujos`. */
+  const propiosDe = (f: keyof typeof PUENTE_DE_FLUJOS): string[] =>
+    (PUENTE_DE_FLUJOS[f].modulos as readonly string[]).filter((m) =>
+      !(MODULOS_COMUNES_HOY as readonly string[]).includes(m)
+      && !IDS_FLUJOS.some((o) => o !== f && (PUENTE_DE_FLUJOS[o].modulos as readonly string[]).includes(m)));
+
+  it('cada flujo resuelve exactamente sus módulos propios, y el resto da false', () => {
+    const texto = cuerpo();
+    const tabla = new Map<string, string[]>();
+    const re = /((?:m == '[\w-]+'(?:\s*\|\|\s*)?)+)\)?\s*\?\s*tieneFlujo\(tenantId,\s*'(\w+)'\)/g;
+    for (const g of texto.matchAll(re)) {
+      const mods = [...(g[1] as string).matchAll(/m == '([\w-]+)'/g)].map((x) => x[1] as string);
+      tabla.set(g[2] as string, [...(tabla.get(g[2] as string) ?? []), ...mods]);
+    }
+    expect([...tabla.keys()].sort(), 'flujos de la tabla de respaldo').toEqual([...IDS_FLUJOS].sort());
+    for (const f of IDS_FLUJOS) {
+      expect((tabla.get(f) ?? []).sort(), `módulos propios de ${f}`).toEqual(propiosDe(f).sort());
+    }
+    expect(texto, 'la tabla se cierra con false').toMatch(/:\s*false\);\s*$/);
+  });
 });
