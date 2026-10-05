@@ -103,6 +103,9 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// QUÉ SECCIONES ADMITE UN COMERCIO LO DECIDE EL REGISTRO (`tieneModulo`, H2b-4e), no
+// una lista propia de flujos. `registro.ts` no tiene `import`: Node lo carga quitando los tipos.
+import { flujosDeFicha, tieneModulo } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -577,13 +580,14 @@ try {
     // Como las reglas: un comercio suspendido o dado de baja no se reconfigura.
     const estado = tenant.get('estado') ?? 'activo';
     if (estado !== 'activo') throw new Error(`«${TENANT}» está ${estado}: no se reconfigura.`);
-    const flujos = tenant.get('flujos') ?? [tenant.get('vertical')].filter(Boolean);
-    if ((agendamiento || funcionarios) && !flujos.includes('agendamiento')) {
+    const ficha = tenant.data();
+    const flujos = flujosDeFicha(ficha);
+    if ((agendamiento || funcionarios) && !tieneModulo(ficha, 'agenda')) {
       throw new Error(`«${TENANT}» no tiene el flujo agendamiento (flujos: ${JSON.stringify(flujos)}). `
         + 'Las secciones agendamiento y funcionarios se cargan solo en un comercio con ese flujo.');
     }
     // `configNegocioValida`: el catálogo web solo se enciende con el flujo de venta.
-    if (negocio?.catalogoWebActivo === true && !flujos.includes('venta')) {
+    if (negocio?.catalogoWebActivo === true && !tieneModulo(ficha, 'catalogo-web')) {
       throw new Error(`«${TENANT}» no tiene el flujo venta: catalogoWebActivo no puede ser true.`);
     }
 

@@ -67,6 +67,7 @@ function vmNodo(n) { try { const x = $(n); return x && x.isExecuted ? x : null; 
 function vmPrimero(n) { const x = vmNodo(n); if (!x) return null; const i = x.first(); return i && i.json ? i.json : null; }
 function vmTodos(n) { const x = vmNodo(n); if (!x) return []; return x.all().map((i) => (i && i.json) || {}); }
 function vmCfg() { return vmPrimero('Config del negocio') || {}; }
+function vmEnlaceDeMapa(v) { if (typeof v !== 'string') return ''; const t = v.trim(); return t.length <= 200 && /^https:\\/\\/(maps\\.app\\.goo\\.gl|goo\\.gl\\/maps|www\\.google\\.com\\/maps|google\\.com\\/maps|maps\\.google\\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/.test(t) ? t : ''; }
 function vmNorm(t) { return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim(); }
 function vmDigitos(v) { return String(v === undefined || v === null ? '' : v).replace(/\\D/g, ''); }
 function vmRecorte(t, max) { const s = String(t === undefined || t === null ? '' : t); return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s; }
@@ -784,6 +785,9 @@ describe('Armar mensajes — el aviso salió (por hecho) y la defensa extra', ()
     ['Ya lo pasé al restaurante, con los datos que leí, para que lo revisen.'],
     ['Ya la pasé al restaurante.'],
     ['Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva.'],
+    ['¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Ejemplo 123.'],
+    ['Tu reserva llegó a nuestro equipo.'],
+    ['Tus datos llegaron a nuestro equipo.'],
   ])('defensa: «%s» en un mensaje normal SIN aviso salido se reemplaza por la derivación', (frase) => {
     const sin = mensajes({ mensajes: [texto(frase)] });
     expect(cuerpoDe(sin.items[0]!)).toBe(GENERICO);
@@ -1027,10 +1031,10 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
       'Recibí tu comprobante, pero no pude leerlo bien. ¿Me lo envías de nuevo, más nítido o como PDF desde la app de tu banco?',
       'Ya tengo el comprobante de tu pedido #K7Q2. Si necesitas algo más, toca el botón.',
       'Listo: pasé tu pedido #K7Q2 al restaurante. El pago lo coordinas con ellos al recoger.',
-      'Para tu solicitud de reserva dime, en un solo mensaje: cuántas personas, qué día y a qué hora.',
-      'Tu solicitud de reserva:\n• viernes 9 de octubre a las 20:00\n• 4 personas, salón\n• A nombre de Ana Prueba',
-      'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
-      'No pude hacer llegar tu solicitud al restaurante en este momento. Escríbeles con el botón para reservar.',
+      'Para tu reserva cuéntame en un solo mensaje: cuántas personas, qué día y a qué hora.',
+      'Tu reserva:\n• viernes 9 de octubre a las 20:00\n• 4 personas, salón\n• A nombre de Ana Prueba',
+      '¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Ejemplo 123.',
+      'No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.',
       '¡Hola! Qué bueno que viste nuestra promo. Promo Dúo: 2 órdenes. Precio: 99 Bs.',
       'Soy un asistente virtual con inteligencia artificial de Q\' Taco. Si prefieres hablar con una persona del restaurante, toca el botón.',
       GENERICO,
@@ -1361,6 +1365,63 @@ describe('Armar mensajes — el camino de vuelta al menú y el nivel de emojis (
     // Sin la marca `catalogo`, un enlace con otra URL sigue siendo el chat del local (la regla de siempre).
     const chat = mensajes({ mensajes: [enlace(GENERICO, { url: URL_CARTA })] }).items[0]!;
     expect(chat['payload'].interactive.action.parameters.url).toMatch(new RegExp(`^https://wa\\.me/${REC}`));
+  });
+
+  it('M1: una reserva exige el aviso del rol `completo`: con solo el de `cocina` salido rige siNoSalio; el respaldo del completo cuenta', () => {
+    const cond = { siSalio: [texto('¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre.')], siNoSalio: [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento.')] };
+    const plan = { ruta: 'reserva:enviada', mensajes: [], condicionados: cond, aviso: { tipo: 'reserva', datos: {} } };
+    const completo = armado('reserva', { para: AV1, rol: 'completo', respaldo: { type: 'text' } });
+    const cocina = armado('reserva', { para: AV2, rol: 'cocina', respaldo: { type: 'text' } });
+    const textos = (e: Entrada): string => mensajes(plan, e).items.map((i) => String(i['texto'])).join('|');
+    // completo cae, cocina sale: NO se anota.
+    expect(textos({ armados: [completo, cocina], enviados: [FALLA, OK(2)] })).toMatch(/^No pude hacer llegar/);
+    // completo sale, cocina cae: sí.
+    expect(textos({ armados: [completo, cocina], enviados: [OK(1), FALLA] })).toMatch(/^¡Listo, Ana! Anotamos/);
+    // los dos caen y el respaldo de cocina sale: NO (el respaldo es del ítem que cayó, y ese era de cocina).
+    expect(textos({ armados: [completo, cocina], enviados: [FALLA, FALLA], respaldos: [OK(3)] })).toMatch(/^No pude hacer llegar/);
+    // el completo cae pero su respaldo sale: sí.
+    expect(textos({ armados: [completo, { ...cocina, respaldo: null }], enviados: [FALLA, OK(2)], respaldos: [OK(3)] })).toMatch(/^¡Listo, Ana! Anotamos/);
+    // solo un destinatario de cocina: nunca se anota (nadie tendría el teléfono).
+    expect(textos({ armados: [cocina], enviados: [OK(1)] })).toMatch(/^No pude hacer llegar/);
+    // Una turno que no es de reserva no cambia: con el de cocina salido, sale siSalio.
+    const otro = mensajes({ ...plan, aviso: { tipo: 'pedido', datos: {} } }, { armados: [armado('pedido', { rol: 'cocina' })], enviados: [OK(1)] });
+    expect(otro.items.map((i) => String(i['texto'])).join('|')).toMatch(/^¡Listo, Ana! Anotamos/);
+  });
+
+  it('L3: sin aviso salido, ninguna forma de «anotar la reserva» llega al cliente (la derivación la reemplaza)', () => {
+    for (const frase of ['Anotamos su reserva para el viernes.', 'Tu reserva quedó anotada.', 'Reserva anotada.', 'Anoté tu reserva para el viernes.',
+      'Anotamos tu reservación para el viernes.', 'Anotamos tu reserva para el viernes.', 'Su reserva ya está anotada.', 'La reserva queda anotada.']) {
+      const sin = mensajes({ mensajes: [texto(frase)] });
+      expect(cuerpoDe(sin.items[0]!), frase).toBe(GENERICO);
+      const con = mensajes({ mensajes: [texto(frase)] }, { armados: [armado('pedido')], enviados: [OK()] });
+      expect(con.items[0]!['texto'], frase).toBe(frase);
+    }
+    // La frase honesta no se toca.
+    const honesta = 'No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.';
+    expect(mensajes({ mensajes: [texto(honesta)] }).items[0]!['texto']).toBe(honesta);
+  });
+
+  it('«Ver ubicación»: abre el mapa de la configuración (no el chat); con otra URL, o sin mapa en la configuración, el MISMO texto sin botón', () => {
+    const MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
+    const CONF = '¡Listo, Ana! Anotamos tu reserva para el viernes 9 de octubre a las 20:00, 4 personas, salón. Te esperamos en Av. Ejemplo 123.';
+    const mapa = (extra: J = {}): J => ({ tipo: 'enlace', mapa: true, cuerpo: CONF, botones: [{ id: '', title: 'Ver ubicación' }], url: MAPA, ...extra });
+    const SALIO = { armados: [armado('reserva')], enviados: [OK()] };
+    const ok = mensajes({ mensajes: [mapa()] }, { ...SALIO, cfg: { direccionMaps: MAPA } }).items[0]!;
+    expect(ok['payload'].interactive.type).toBe('cta_url');
+    expect(ok['payload'].interactive.action.parameters).toEqual({ display_text: 'Ver ubicación', url: MAPA });
+    expect(ok['texto']).toBe(CONF); // sin la frase de «menú» y sin chat
+    expect(JSON.stringify(ok['payload'])).not.toContain('wa.me');
+    // Negativos: otra URL que la de la configuración, una inválida, o la configuración sin mapa → texto, sin botón (no la derivación).
+    for (const [url, cfgMapa] of [['https://www.google.com/maps/otro', MAPA], ['https://evil.example/maps/x', 'https://evil.example/maps/x'], [MAPA, ''], ['', MAPA]] as const) {
+      const i = mensajes({ mensajes: [mapa({ url })] }, { ...SALIO, cfg: { direccionMaps: cfgMapa } }).items[0]!;
+      expect(i['payload'].type, url).toBe('text');
+      expect(i['texto'], url).toBe(CONF);
+      expect(JSON.stringify(i['payload']), url).not.toMatch(/cta_url|wa\.me/);
+    }
+    // Sin aviso salido, la frase «Anotamos tu reserva» (con o sin mapa) se reemplaza: AM_PASE.
+    const sin = mensajes({ mensajes: [mapa()] }, { armados: [SIN_AVISO], cfg: { direccionMaps: MAPA } }).items[0]!;
+    expect(cuerpoDe(sin)).toBe(GENERICO);
+    expect(JSON.stringify(sin['payload'])).not.toContain('google.com');
   });
 
   it('`nivelEmojis`: «pocos» deja el primer emoji de cada mensaje, «ninguno» los quita todos, «muchos» no toca nada', () => {

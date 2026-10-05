@@ -107,6 +107,25 @@ if (AM_wamids.length) {
 }
 const AM_AVISO_SALIO = AM_avisoSalio;
 
+// LA RESERVA EXIGE EL AVISO DEL ROL `completo` (el único que lleva el teléfono del cliente). Con dos roles (`completo` con la plantilla
+// `solicitud_reserva`, `cocina` sin teléfono), que salga solo el de cocina NO alcanza: el local no podría escribirle al cliente y este leería
+// «Anotamos tu reserva». Se sabe por el HECHO: el id de Meta del ítem armado con `rol === 'completo'` (emparejado por índice con `Enviar aviso`)
+// o el del respaldo de ese ítem. Sin poder emparejar, no se da por salido (falla cerrado: rige el texto honesto con «Escribir al local»).
+const AM_ES_RESERVA = (AM_PLAN.aviso && AM_PLAN.aviso.tipo === 'reserva') || AM_armados.some((a) => a.tipoAviso === 'reserva');
+let AM_completoSalio = false;
+if (AM_wamids.length && AM_enviados.length === AM_armados.length) {
+  const caidos = [];
+  AM_enviados.forEach((j, i) => {
+    if (amEsImagen(AM_armados[i])) return;
+    if (amWamid(j)) { if (AM_armados[i].rol === 'completo') AM_completoSalio = true; } else if (AM_armados[i].respaldo) caidos.push(i);
+  });
+  if (AM_respaldos.length === caidos.length) {
+    caidos.forEach((i, k) => { if (amWamid(AM_respaldos[k]) && AM_armados[i].rol === 'completo') AM_completoSalio = true; });
+  }
+}
+// Lo que el cliente puede leer como «ya pasó»: el aviso salió; y, en una reserva, el del local completo.
+const AM_PASO = AM_ES_RESERVA ? (AM_AVISO_SALIO && AM_completoSalio) : AM_AVISO_SALIO;
+
 // ----------------------------------------------------------------- red de palabras
 function amSeguro(x) {
   const s = String(x === undefined || x === null ? '' : x);
@@ -114,7 +133,7 @@ function amSeguro(x) {
   return vmTextoSeguro(s) === true && !VM_PROHIBIDAS.test(vmNorm(s));
 }
 // Una frase que afirma que el pedido o la solicitud se pasó al restaurante.
-const AM_PASE = /\bya (lo |la )?pase\b|\b(lo|la) pase al restaurante|\bpase tu (pedido|solicitud|comprobante)|\bpase el pedido|llego al restaurante|llegaron al restaurante|\bhice llegar tu/;
+const AM_PASE = /\bya (lo |la )?pase\b|\b(lo|la) pase al restaurante|\bpase tu (pedido|solicitud|comprobante)|\bpase el pedido|llego al restaurante|llegaron al restaurante|\bhice llegar tu|\banot(amos|e)\s+(tu|su)\s+reserv|reserv\w*\s+(ya\s+)?(esta|quedo|queda)\s+anotad|\breserva anotada\b|llego a nuestro equipo|llegaron a nuestro equipo/;
 const AM_NEGADO = /\bno (pude|pase|he pasado|logre)\b/;
 function amAfirmaPase(texto) {
   const n = vmNorm(texto);
@@ -242,7 +261,7 @@ function amArmarUno(m) {
   const cuerpo = amEmojis(String(m.cuerpo === undefined || m.cuerpo === null ? '' : m.cuerpo).trim()).trim();
   if (!cuerpo) { AM_errores.push('mensaje_sin_cuerpo: ' + tipo); return null; }
   if (!amSeguro(cuerpo)) return amGenerico('texto_reemplazado_por_palabra_prohibida');
-  if (!AM_AVISO_SALIO && amAfirmaPase(cuerpo)) return amGenerico('pase_afirmado_sin_aviso_salido');
+  if (!AM_PASO && amAfirmaPase(cuerpo)) return amGenerico('pase_afirmado_sin_aviso_salido');
   const extra = {};
   if (typeof m.evento === 'string' && m.evento && m.evento !== 'qr_enviado') {
     extra.evento = m.evento;
@@ -260,6 +279,18 @@ function amArmarUno(m) {
     const cuerpoCta = amConSeguir(cuerpo);
     return Object.assign({
       payload: amCta(cuerpoCta, titulo, url), texto: cuerpoCta, respaldo: vmRecorte(cuerpoCta + '\n\nVer la carta: ' + url, 4000), tipoReporte: 'interactive',
+    }, extra);
+  }
+  // El mapa del local («Ver ubicación»): el botón abre ESA dirección de Google Maps, nunca el chat. Vale solo si la URL pasa la regla del
+  // servidor (`vmEnlaceDeMapa`) Y es la de la configuración; si no, el MISMO texto sin botón (no se promete un mapa que no se puede abrir).
+  if (tipo === 'enlace' && m.mapa === true) {
+    const url = vmEnlaceDeMapa(m.url);
+    if (!url || url !== vmEnlaceDeMapa(AM_CFG.direccionMaps)) {
+      AM_errores.push('mapa_sin_enlace_valido');
+      return Object.assign({ payload: amTexto(cuerpo), texto: cuerpo, respaldo: cuerpo, tipoReporte: 'text' }, extra);
+    }
+    return Object.assign({
+      payload: amCta(cuerpo, 'Ver ubicación', url), texto: cuerpo, respaldo: vmRecorte(cuerpo + '\n\nVer ubicación: ' + url, 4000), tipoReporte: 'interactive',
     }, extra);
   }
   if (tipo === 'enlace') {
@@ -284,7 +315,7 @@ function amArmarUno(m) {
 // ----------------------------------------------------------------- qué se manda
 const AM_base = Array.isArray(AM_PLAN.mensajes) ? AM_PLAN.mensajes : [];
 const AM_cond = AM_PLAN.condicionados && typeof AM_PLAN.condicionados === 'object'
-  ? (AM_AVISO_SALIO ? AM_PLAN.condicionados.siSalio : AM_PLAN.condicionados.siNoSalio) : [];
+  ? (AM_PASO ? AM_PLAN.condicionados.siSalio : AM_PLAN.condicionados.siNoSalio) : [];
 const AM_pedidosMsg = AM_base.concat(Array.isArray(AM_cond) ? AM_cond : []);
 const AM_lista = [];
 for (const m of AM_pedidosMsg) {

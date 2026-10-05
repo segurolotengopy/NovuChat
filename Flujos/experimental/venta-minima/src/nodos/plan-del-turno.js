@@ -20,7 +20,7 @@
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
 //     pdTextoFaltanEntrega, pdLineasAviso, pdMonto (así los textos del pedido tienen un solo dueño).
 //   reserva: rsValidarExtraccion, rsFusionar, rsValidar, rsPreguntaFaltantes, rsResumen,
-//     rsLineaCompacta, rsDentroDelTope.   promos: prFicha, prTexto.
+//     rsLineaCompacta, rsFraseDeConfirmacion, rsDentroDelTope; comun: vmEnlaceDeMapa.   promos: prFicha, prTexto.
 //   cobro: cbCaption, cbResultado, cbEstadoParaAviso, cbTextoAlCliente.
 //
 // SUPUESTOS DECLARADOS (los de la tarea T7a, aprobados por la coordinadora):
@@ -1397,7 +1397,7 @@ function evaluarReserva(reserva, reclamo) {
   }
   en.paso = 'reserva_confirmar';
   mensajes = conNotas([{ tipo: 'botones', cuerpo: rsResumen(v.reserva), botones: [
-    { id: vmIdDeBoton('r', 'enviar'), title: 'Enviar solicitud' },
+    { id: vmIdDeBoton('r', 'enviar'), title: 'Reservar' },
     { id: vmIdDeBoton('r', 'corregir'), title: 'Corregir' },
   ] }]);
   return v;
@@ -1427,26 +1427,35 @@ function enviarReserva() {
   // El tiempo pasó desde el resumen: se vuelve a validar antes de avisar.
   const v = rsValidar(en.reserva || {}, limitesReserva(), t.nombrePerfil, ahora);
   if (v.error || !v.completa) return evaluarReserva(en.reserva || {});
-  // Una solicitud más allá del tope diario: texto de tope y botón, sin aviso.
-  if (!rsDentroDelTope(sd, t.from, ahora, Number(cfg.topeReservasDia))) {
+  // VARIAS RESERVAS HOY DE ESTE NÚMERO (`topeReservasDia`, tope BLANDO): ya NO se deriva. Se anota igual y el aviso al local lo marca
+  // «VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar» (mide reservas del mismo teléfono el día en que se pide, no la ocupación del local).
+  // TECHO DURO: con 2 × `topeReservasDia` reservas (con aviso salido) del mismo teléfono en el día, NO se arma aviso (un número no puede gastar el
+  // cupo diario de avisos, `topeAvisosDia`, con reservas falsas): texto honesto con «Escribir al local» y SIN decir que se anotó. Falla cerrado.
+  if (!rsDentroDelTope(sd, t.from, ahora, 2 * Number(cfg.topeReservasDia))) {
     ruta = 'reserva:tope';
     limpiarReserva();
     irA('menu');
-    return (mensajes = [enlace('Por hoy ya no puedo tomar más solicitudes de reserva por aquí 🙏. Escríbele al restaurante con el botón.')]);
+    return (mensajes = [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.')]);
   }
-  const reserva = v.reserva;
-  // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Enviar solicitud»
+  const diaLleno = !rsDentroDelTope(sd, t.from, ahora, Number(cfg.topeReservasDia));
+  const reserva = diaLleno ? Object.assign({}, v.reserva, { diaLleno: true }) : v.reserva;
+  // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Reservar»
   // da el mismo codigo y la misma referencia de cierre, y el servidor cuenta UN cierre.
-  const clave = vmIdEstable('res', t.from, reserva, ancla, ahora);
+  const clave = vmIdEstable('res', t.from, v.reserva, ancla, ahora); // con la reserva SIN la marca `diaLleno`: el código no cambia entre reintentos
   const codigo = clave.codigo;
   const nombre = String(reserva.nombre || '').split(' ')[0];
   aviso = { tipo: 'reserva', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: reserva.nombre, codigo: codigo, reserva: reserva,
   } };
+  // Aviso al local SALIÓ: «Anotamos tu reserva» (nunca «reservamos tu…»: las tres redes lo rechazan; y `AM_PASE` lo atrapa si el aviso NO
+  // salió). Sin promesa de contacto. Aviso NO salió: texto honesto con «Escribir al local» (empieza con «No pude»: `AM_NEGADO`).
+  const dir = vmLinea(cfg.direccion, 200).replace(/[.\s]+$/, '');
+  const confirmacion = '¡Listo, ' + nombre + '! Anotamos tu reserva para ' + rsFraseDeConfirmacion(reserva) + '.' + (dir ? ' Te esperamos en ' + dir + '.' : ' Te esperamos.');
+  // «Ver ubicación» (Google Maps) solo con un enlace VÁLIDO (`vmEnlaceDeMapa`, la regla del servidor); sin él, la misma confirmación en texto, sin botón.
+  const mapa = vmEnlaceDeMapa(cfg.direccionMaps);
   condicionados = {
-    // `sinMenu`: el texto termina en el botón; no se le agrega la frase de «menú». (Sin «confirmada»: la red de palabras prohibidas la rechaza, incluso negada.)
-    siSalio: [Object.assign(enlace('Listo, ' + nombre + ': tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.'), { sinMenu: true })],
-    siNoSalio: [enlace('No pude hacer llegar tu solicitud al restaurante en este momento. Escríbeles con el botón para reservar.')],
+    siSalio: [mapa ? { tipo: 'enlace', mapa: true, cuerpo: confirmacion, botones: [{ id: '', title: 'Ver ubicación' }], url: mapa } : texto(confirmacion)],
+    siNoSalio: [enlace('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.')],
   };
   cierre = { tipo: 'registro', detalle: vmRecorte('Solicitud de reserva #' + codigo + ': ' + rsLineaCompacta(reserva, 'completo'), 300), referencia: clave.id };
   anotarReserva = true;

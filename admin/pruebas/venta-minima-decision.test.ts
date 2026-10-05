@@ -48,6 +48,7 @@ function vmPrimero(n){ const x = vmNodo(n); if (!x) return null; const i = x.fir
 function vmCfg(){ return vmPrimero('Config del negocio') || {}; }
 function vmNorm(t){ return String(t == null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
 function vmLinea(t, max){ const s = String(t == null ? '' : t).replace(/[\u0000-\u001f\u007f<>&]+/g, ' ').replace(/\s+/g, ' ').trim(); return s.length > max ? s.slice(0, max).trimEnd() : s; }
+function vmEnlaceDeMapa(v){ if (typeof v !== 'string') return ''; const t = v.trim(); return t.length <= 200 && /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/.test(t) ? t : ''; }
 function vmRecorte(t, max){ const s = String(t == null ? '' : t); return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s; }
 function vmTextoDeGemini(j){ if (!j || j.error) return ''; const c = j.candidates && j.candidates[0]; return c && c.content && c.content.parts ? c.content.parts.map(function(p){ return p.text || ''; }).join('\n') : ''; }
 function vmJsonDeGemini(j){ const t = vmTextoDeGemini(j).trim(); if (!t) return null; try { const o = JSON.parse(t); return o && typeof o === 'object' && !Array.isArray(o) ? o : null; } catch (e) { return null; } }
@@ -92,7 +93,8 @@ function rsValidarExtraccion(o){ o = o || {}; return { personas: Number(o.person
 function rsFusionar(a, b){ const x = rsValidarExtraccion(a); const y = rsValidarExtraccion(b); const r = {}; Object.keys(x).forEach(function(k){ r[k] = y[k] ? y[k] : x[k]; }); return r; }
 function rsValidar(r, c, perfil, ahora){ const x = rsValidarExtraccion(r); const res = Object.assign({}, x, { grupoGrande: false }); let error = null; const marcar = function(campo, texto){ if (!error) error = { campo: campo, texto: texto }; res[campo] = campo === 'personas' ? 0 : ''; }; if (!c.horario) error = { campo: 'horario', texto: 'En este momento no puedo tomar solicitudes de reserva.' }; const hoy = new Date(ahora - 4 * 3600000).toISOString().slice(0, 10); if (res.fecha && res.fecha < hoy) marcar('fecha', 'Esa fecha ya pasó. ¿Para qué día quieres la reserva?'); const zonas = c.zonas || []; if (res.zona && zonas.length && zonas.map(vmNorm).indexOf(vmNorm(res.zona)) < 0) marcar('zona', 'No tengo «' + res.zona + '» como opción.'); if (!res.nombre && vmNorm(perfil).split(' ').length >= 2) res.nombre = perfil; const faltan = ['personas', 'fecha', 'hora', 'nombre'].filter(function(k){ return !res[k]; }); return { completa: !faltan.length && !error, faltan: faltan, error: error, reserva: res, grupoGrande: false }; }
 function rsPreguntaFaltantes(f, o){ if (f.indexOf('personas') >= 0 && f.indexOf('fecha') >= 0 && f.indexOf('hora') >= 0) return 'Para tu solicitud de reserva dime, en un solo mensaje: cuántas personas, qué día y a qué hora, si prefieres ' + (o.zonas || []).join(' o ') + ' y a nombre de quién.'; return f.length ? 'Para tu solicitud de reserva me falta saber ' + f.join(', ') + '.' : ''; }
-function rsResumen(r){ return 'Tu solicitud de reserva:\n• ' + r.fecha + ' ' + r.hora + '\n• ' + r.personas + ' personas' + (r.zona ? ', ' + r.zona : '') + '\n• A nombre de ' + r.nombre; }
+function rsResumen(r){ return 'Tu reserva:\n• ' + r.fecha + ' ' + r.hora + '\n• ' + r.personas + ' personas' + (r.zona ? ', ' + r.zona : '') + '\n• A nombre de ' + r.nombre; }
+function rsFraseDeConfirmacion(r){ return 'el ' + r.fecha + ' a las ' + r.hora + ', ' + r.personas + ' personas' + (r.zona ? ', ' + r.zona : ''); }
 function rsLineaCompacta(r, rol){ return (rol === 'completo' ? r.nombre : r.nombre.split(' ')[0]) + ' · ' + r.fecha + ' ' + r.hora + ' · ' + r.personas + ' personas'; }
 function rsReclamo(t){ return false; }
 function rsHoraSuelta(t, r, c, a){ return ''; }
@@ -1054,13 +1056,13 @@ describe('Plan del turno: la reserva', () => {
     expect(estadoDe(m)['paso']).toBe('reserva');
   });
 
-  it('con todo lo necesario muestra el resumen con «Enviar solicitud» y «Corregir»; sin aviso todavía', () => {
+  it('con todo lo necesario muestra el resumen con «Reservar» y «Corregir»; sin aviso todavía', () => {
     const m = crearMundo();
     turno(m, { boton: 'm|reserva' });
     const s = registrar(turno(m, { texto: 'mesa para 4 el viernes a las 8', extraccion: datos() }));
     const msg = s.p!['mensajes'][0];
-    expect(msg['cuerpo']).toContain('Tu solicitud de reserva:');
-    expect(titulos(msg)).toEqual(['Enviar solicitud', 'Corregir']);
+    expect(msg['cuerpo']).toContain('Tu reserva:');
+    expect(titulos(msg)).toEqual(['Reservar', 'Corregir']);
     expect(ids(msg)).toEqual(['r|enviar', 'r|corregir']);
     expect(s.p!['aviso']).toBeNull();
     expect(estadoDe(m)['paso']).toBe('reserva_confirmar');
@@ -1078,7 +1080,7 @@ describe('Plan del turno: la reserva', () => {
     expect(estadoDe(m)['paso']).toBe('reserva');
     // Lo ya dicho se conserva y el campo corregido pisa al inválido.
     const ok = turno(m, { texto: 'mejor el 9', extraccion: extReserva({ fecha: '2026-10-09' }) });
-    expect(ok.p!['mensajes'][0]['cuerpo']).toContain('Tu solicitud de reserva:');
+    expect(ok.p!['mensajes'][0]['cuerpo']).toContain('Tu reserva:');
     const zona = crearMundo();
     turno(zona, { boton: 'm|reserva' });
     const jardin = turno(zona, { texto: 'en el jardín', extraccion: datos({ zona: 'jardín' }) });
@@ -1094,7 +1096,7 @@ describe('Plan del turno: la reserva', () => {
     expect(s.p!['mensajes'][0]['tipo']).toBe('enlace');
   });
 
-  it('«Enviar solicitud»: aviso de tipo reserva, textos condicionados («llegó» solo si salió), cierre y `anotarReserva`', () => {
+  it('«Reservar»: aviso de tipo reserva, textos condicionados («Anotamos» solo si salió), cierre y `anotarReserva`', () => {
     const m = crearMundo();
     turno(m, { boton: 'm|reserva' });
     turno(m, { texto: 'mesa', extraccion: datos({ celebracion: 'cumpleaños' }) });
@@ -1107,9 +1109,13 @@ describe('Plan del turno: la reserva', () => {
       reserva: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'salón', nombre: 'Ana Pérez', celebracion: 'cumpleaños' },
     });
     expect(p['aviso']['datos']['codigo']).toMatch(/^[0-9A-Z]{4}$/);
-    expect(p['condicionados']['siSalio'][0]['cuerpo']).toBe('Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.');
-    expect(p['condicionados']['siNoSalio'][0]['cuerpo']).toBe('No pude hacer llegar tu solicitud al restaurante en este momento. Escríbeles con el botón para reservar.');
-    expect(p['condicionados']['siSalio'][0]['tipo']).toBe('enlace');
+    expect(p['condicionados']['siSalio'][0]['cuerpo']).toBe('¡Listo, Ana! Anotamos tu reserva para el 2026-10-09 a las 20:00, 4 personas, salón. Te esperamos en Av. Ejemplo 123.');
+    // Con el aviso salido NO hay «Escribir al local» ni promesa de contacto.
+    expect(p['condicionados']['siSalio'][0]['tipo']).toBe('texto');
+    expect(p['condicionados']['siNoSalio'][0]['cuerpo']).toBe('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.');
+    expect(p['condicionados']['siNoSalio'][0]['tipo']).toBe('enlace');
+    expect(p['condicionados']['siNoSalio'][0]['botones'][0]['title']).toBe('Escribir al local');
+    expect(p['aviso']['datos']['reserva']['diaLleno']).toBeUndefined();
     expect(p['cierre']['tipo']).toBe('registro');
     expect(p['cierre']['detalle'].length).toBeLessThanOrEqual(300);
     expect(p['anotarReserva']).toBe(true);
@@ -1117,12 +1123,40 @@ describe('Plan del turno: la reserva', () => {
     expect(estadoDe(m)['reserva']).toBeNull();
   });
 
+  it('«Ver ubicación»: con un enlace de Google Maps válido, la confirmación lleva ese botón (CTA), sin «Escribir al local» ni chat', () => {
+    const URL_MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
+    const m = crearMundo({ direccionMaps: URL_MAPA });
+    turno(m, { boton: 'm|reserva' });
+    turno(m, { texto: 'mesa', extraccion: datos() });
+    const s = registrar(turno(m, { boton: 'r|enviar' }));
+    const c = s.p!['condicionados']['siSalio'][0];
+    expect(c).toMatchObject({ tipo: 'enlace', mapa: true, url: URL_MAPA });
+    expect(c['botones'].map((b: J) => b['title'])).toEqual(['Ver ubicación']);
+    expect(c['cuerpo']).toMatch(/^¡Listo, Ana! Anotamos tu reserva para /);
+    expect(JSON.stringify(s.p!['condicionados']['siSalio'])).not.toMatch(/wa\.me|Escribir al local/);
+    // «Escribir al local» solo existe en el texto honesto de «no salió».
+    expect(s.p!['condicionados']['siNoSalio'][0]['botones'][0]['title']).toBe('Escribir al local');
+  });
+
+  it('«Ver ubicación»: SIN enlace válido no hay botón (ausente, otro dominio, http, con espacios, de más de 200 caracteres)', () => {
+    const malos = [undefined, '', 'https://evil.example/maps/x', 'http://www.google.com/maps/x', 'https://www.google.com/maps/x y',
+      'https://www.google.com.evil.example/maps/x', 'https://wa.me/59170000000', 'https://www.google.com/maps/' + 'a'.repeat(200), 42];
+    for (const direccionMaps of malos) {
+      const m = crearMundo({ direccionMaps });
+      turno(m, { boton: 'm|reserva' });
+      turno(m, { texto: 'mesa', extraccion: datos() });
+      const c = turno(m, { boton: 'r|enviar' }).p!['condicionados']['siSalio'][0];
+      expect(c['tipo'], String(direccionMaps)).toBe('texto');
+      expect(c['cuerpo']).toMatch(/^¡Listo, Ana! Anotamos tu reserva para /);
+    }
+  });
+
   it('«Corregir» vuelve a los datos (conservando lo dicho); un botón de envío viejo no avisa', () => {
     const m = crearMundo();
     turno(m, { boton: 'm|reserva' });
     turno(m, { texto: 'mesa', extraccion: datos() });
     const c = turno(m, { boton: 'r|corregir' });
-    expect(c.p!['mensajes'][0]['cuerpo']).toContain('Tu solicitud de reserva:');
+    expect(c.p!['mensajes'][0]['cuerpo']).toContain('Tu reserva:');
     expect(estadoDe(m)['paso']).toBe('reserva_confirmar');
     // En el menú (otro paso), el mismo botón es viejo: no hay aviso.
     const otro = crearMundo();
@@ -1141,27 +1175,55 @@ describe('Plan del turno: la reserva', () => {
     expect(s.p!['mensajes'][0]['cuerpo']).toContain('Esa fecha ya pasó');
   });
 
-  it('el tope diario: la cuarta solicitud del día da texto de tope y botón, sin aviso (con `rsAnotar` que llama T7b)', () => {
+  it('varias reservas hoy del mismo número: de la 4.ª a la 6.ª se anotan y el aviso al local las marca «VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar»; la 7.ª (techo duro) no arma aviso', () => {
     const m = crearMundo();
     const enviar = (): Salida => {
       turno(m, { boton: 'm|reserva' });
       turno(m, { texto: 'mesa', extraccion: datos() });
       return turno(m, { boton: 'r|enviar' });
     };
-    for (let i = 0; i < 3; i++) expect(enviar().p!['aviso']['tipo']).toBe('reserva');
+    for (let i = 0; i < 3; i++) expect(enviar().p!['aviso']['datos']['reserva']['diaLleno']).toBeUndefined();
     const cuarta = registrar(enviar());
-    expect(cuarta.p!['aviso']).toBeNull();
-    expect(cuarta.p!['anotarReserva']).toBe(false);
-    expect(cuarta.p!['cierre']).toBeNull();
-    expect(cuarta.p!['condicionados']).toBeNull();
-    expect(cuarta.p!['mensajes'][0]['tipo']).toBe('enlace');
-    expect(cuarta.p!['mensajes'][0]['cuerpo']).toContain('Por hoy ya no puedo tomar más solicitudes de reserva');
-    // Otro teléfono tiene su tope; al día siguiente se reinicia.
+    expect(cuarta.p!['aviso']['tipo']).toBe('reserva');
+    expect(cuarta.p!['aviso']['datos']['reserva']['diaLleno']).toBe(true);
+    expect(cuarta.p!['anotarReserva']).toBe(true);
+    expect(cuarta.p!['cierre']['tipo']).toBe('registro');
+    // El MISMO texto de reserva, sin derivar y sin «Escribir al local» al cliente.
+    expect(cuarta.p!['condicionados']['siSalio'][0]['cuerpo']).toMatch(/^¡Listo, Ana! Anotamos tu reserva para /);
+    expect(cuarta.p!['condicionados']['siSalio'][0]['tipo']).toBe('texto');
+    expect(JSON.stringify(cuarta.p!['condicionados'])).not.toMatch(/lleno|tope|ya no puedo tomar/i);
+    for (let i = 0; i < 2; i++) {
+      const s = registrar(enviar());
+      expect(s.p!['aviso']['datos']['reserva']['diaLleno'], `reserva ${5 + i}`).toBe(true);
+    }
+    // TECHO DURO (2 × topeReservasDia = 6): la séptima NO arma aviso y NO dice que se anotó; texto honesto con «Escribir al local».
+    const septima = registrar(enviar());
+    expect(septima.p!['aviso']).toBeNull();
+    expect(septima.p!['anotarReserva']).toBe(false);
+    expect(septima.p!['cierre']).toBeNull();
+    expect(septima.p!['condicionados']).toBeNull();
+    expect(septima.p!['mensajes'][0]['tipo']).toBe('enlace');
+    expect(septima.p!['mensajes'][0]['cuerpo']).toBe('No pude hacer llegar tu reserva a nuestro equipo en este momento. Escríbenos directamente con el botón para reservar.');
+    expect(septima.p!['mensajes'][0]['botones'][0]['title']).toBe('Escribir al local');
+    expect(JSON.stringify(septima.p)).not.toMatch(/Anotamos|Te esperamos/);
+    // Otro teléfono tiene su propio conteo; al día siguiente se reinicia.
     turno(m, { from: OTRO, boton: 'm|reserva' });
     turno(m, { from: OTRO, texto: 'mesa', extraccion: datos() });
-    expect(turno(m, { from: OTRO, boton: 'r|enviar' }).p!['aviso']['tipo']).toBe('reserva');
+    expect(turno(m, { from: OTRO, boton: 'r|enviar' }).p!['aviso']['datos']['reserva']['diaLleno']).toBeUndefined();
     m.ahora += 24 * 3600000;
-    expect(enviar().p!['aviso']['tipo']).toBe('reserva');
+    expect(enviar().p!['aviso']['datos']['reserva']['diaLleno']).toBeUndefined();
+  });
+
+  it('grupo grande: el mismo texto de reserva; el aviso lleva la reserva con `grupoGrande` (la marca «GRUPO GRANDE» la pone el aviso)', () => {
+    const m = crearMundo();
+    turno(m, { boton: 'm|reserva' });
+    turno(m, { texto: 'mesa', extraccion: datos() });
+    sdDe(m)['estados'][FROM]['reserva']['grupoGrande'] = true;
+    sdDe(m)['estados'][FROM]['reserva']['personas'] = 15;
+    const s = registrar(turno(m, { boton: 'r|enviar' }));
+    expect(s.p!['condicionados']['siSalio'][0]['cuerpo']).toMatch(/^¡Listo, Ana! Anotamos tu reserva para .*15 personas/);
+    expect(s.p!['aviso']['tipo']).toBe('reserva');
+    expect(JSON.stringify(s.p!['condicionados'])).not.toMatch(/grande|revisa/i);
   });
 
   it('DOCUMENTA el supuesto 4: el plan NO escribe en `sd`; sin el `rsAnotar` de T7b el tope nunca se alcanza', () => {
@@ -1179,14 +1241,15 @@ describe('Plan del turno: la reserva', () => {
     expect(sdDe(m)['reservasDelDia']).toBeUndefined();
   });
 
-  it('sin datos estáticos el tope falla cerrado (`rsDentroDelTope` da false): texto de tope, sin aviso', () => {
+  it('sin tope en la configuración el techo duro falla cerrado (`rsDentroDelTope` da false): sin aviso y sin decir que se anotó', () => {
     const m = crearMundo();
     turno(m, { boton: 'm|reserva' });
     turno(m, { texto: 'mesa', extraccion: datos() });
     delete m.cfg['topeReservasDia'];
     const s = turno(m, { boton: 'r|enviar' });
     expect(s.p!['aviso']).toBeNull();
-    expect(s.p!['mensajes'][0]['cuerpo']).toContain('Por hoy ya no puedo tomar');
+    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^No pude hacer llegar tu reserva/);
+    expect(s.p!['mensajes'][0]['tipo']).toBe('enlace');
   });
 });
 
