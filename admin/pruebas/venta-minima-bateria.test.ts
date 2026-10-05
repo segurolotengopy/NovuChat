@@ -35,7 +35,7 @@ const RUTA_FLUJO = join(CARPETA, 'venta-minima.qtaco.json');
  * Los casos que NO pasan contra main y esperan una rama (05/10/2026). `A-delivery-opcional.json` pasa contra la rama de delivery opcional (PR #435) y falla contra
  * main; `A-pendiente-de-rama.json` falla contra las dos hoy (A7 y A8 esperan la rama funcional; A14 choca con el texto de la #435). La suite los saca del
  * «cero fallos» y fija, con un control negativo, que fallan: se ponen en rojo cuando llegue lo que esperan y entonces el caso pasa a `A.json`.
- * `D-reserva-confirmada.json` (D5 a D8) pasa contra la rama de RESERVA CONFIRMADA (PR #437, fc7621ac) y falla contra main (todavía dice «solicitud» y deriva).
+ * `D-reserva-confirmada.json` (D5 a D8) pasa contra la rama de RESERVA CONFIRMADA (PR #437, head 90334306) y falla contra main (todavía dice «solicitud» y deriva).
  */
 const ARCHIVOS_DE_RAMA = ['A-delivery-opcional.json', 'A-pendiente-de-rama.json', 'D-reserva-confirmada.json', 'A-seguridad-delivery-2.json'];
 /**
@@ -139,7 +139,7 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     const lote2 = ['B6', 'B7', 'B8', 'B9', 'C7', 'C8', 'C10', 'D1', 'D2', 'D3', 'D4', 'D9', 'E2', 'E3', 'E5', 'E7', 'F2', 'F3', 'F4'];
     const lote3 = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A11', 'A13', 'A14', 'A15'];
     const lote4 = ['S1', 'S2', 'S2b', 'S2c', 'S3']; // seguridad del texto libre
-    const lote5 = ['D5', 'D5b', 'D6', 'D7', 'D7b', 'D8']; // reserva confirmada (rama #437); D8c, su control, ya pasa en main y vive en D.json
+    const lote5 = ['D5', 'D5b', 'D6', 'D6b', 'D6d', 'D7', 'D7b', 'D7c', 'D8']; // reserva confirmada (rama #437); D8c, su control, ya pasa en main y vive en D.json
     const lote6 = ['M1r', 'M1p', 'M1ref', 'M2r', 'M2p', 'L1', 'FB1', 'FB2', 'SV2', 'SV2b']; // seguridad del delivery, 2.ª ronda: pasan contra 542d5f7e
     const lote6x = ['M1s', 'M1sp', 'FB3', 'M1refp']; // los que HOY fallan también contra 542d5f7e (ver A-pendiente-de-rama.json)
     const control = ['D8c'];

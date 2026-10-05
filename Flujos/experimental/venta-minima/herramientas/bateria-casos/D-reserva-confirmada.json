@@ -2,11 +2,11 @@
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
   "nodes": [],
   "seccion": "D",
-  "nota": "Escenarios D5 a D8 de «Reserva» (rama RESERVA CONFIRMADA, PR #437): la reserva se ANOTA («Anotamos tu reserva») con «Ver ubicación» si el mapa es válido, sin «Escribir al local»; si el aviso al local no salió, texto honesto con «Escribir al local»; el día lleno y el grupo grande ya no derivan. PASAN contra esa rama y FALLAN contra main. Todos los turnos niegan «todavía no es una reserva», «según sus mesas», «ellos», «escríbeles» y «solicitud de reserva». PENDIENTE de una extensión de la herramienta: que el AVISO al local lleve «DÍA LLENO/revisar» (D7, D7b) y «GRUPO GRANDE» (D8) no se puede asertar todavía (la herramienta no expone el texto de los avisos).",
+  "nota": "Escenarios D5 a D8 de «Reserva» (rama RESERVA CONFIRMADA, PR #437, head 90334306): la reserva se ANOTA («Anotamos tu reserva») con «Ver ubicación» si el mapa es válido, sin «Escribir al local»; si el aviso al local no salió (o no salió el del rol «completo»), texto honesto con «Escribir al local»; el grupo grande y las varias reservas del mismo teléfono se anotan y el aviso las marca; con 2 × el tope la reserva NO arma aviso. PASAN contra esa rama y FALLAN contra main. Todos los turnos niegan «todavía no es una reserva», «según sus mesas», «ellos», «escríbeles» y «solicitud de reserva». NO IMPLEMENTADOS (la herramienta o el flujo no lo permiten sin tocarlos): D6c (los avisos en respaldo: en las reservas `respaldo` es siempre null, el texto de detalle es otro ítem del mismo nodo «Enviar aviso», y la batería solo rechaza un NODO entero), el rechazo de UN destinatario (D6b es una aproximación con `destinatariosAviso`) y «otro teléfono tiene su propio conteo» (la batería tiene un solo teléfono de cliente).",
   "casos": [
     {
       "id": "D5",
-      "titulo": "Reserva completa: resumen «Tu reserva:» con Reservar/Corregir; al tocar «Reservar» con el aviso al local salido, «Anotamos tu reserva» con «Ver ubicación» y sin «Escribir al local»",
+      "titulo": "Reserva completa: resumen «Tu reserva:» con Reservar/Corregir; al tocar «Reservar» con el aviso al local salido, «Anotamos tu reserva» con «Ver ubicación» y sin «Escribir al local»; el aviso no lleva marcas",
       "estadoPrevio": [
         {
           "cliente": {
@@ -107,6 +107,15 @@
             ],
             "enlaces": [
               "www\\.google\\.com/maps"
+            ],
+            "avisoTextos": [
+              "Ana Duran",
+              "4 personas"
+            ],
+            "avisoTextosNo": [
+              "GRUPO GRANDE",
+              "VARIAS RESERVAS",
+              "D[IÍ]A LLENO"
             ]
           }
         }
@@ -224,7 +233,7 @@
     },
     {
       "id": "D6",
-      "titulo": "Reserva con el aviso al local RECHAZADO por Meta: texto honesto «No pude hacer llegar tu reserva…» con «Escribir al local», y jamás «Anotamos»",
+      "titulo": "Reserva con el aviso al local RECHAZADO por Meta (plantilla y respaldo): texto honesto «No pude hacer llegar tu reserva…» con «Escribir al local», y jamás «Anotamos»",
       "estadoPrevio": [
         {
           "cliente": {
@@ -327,7 +336,115 @@
           },
           "meta": {
             "rechaza": [
-              "Enviar aviso"
+              "Enviar aviso",
+              "Aviso de respaldo"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "D6b",
+      "titulo": "Solo avisa el rol de cocina (el del rol «completo», el único con el teléfono del cliente, no sale): «No pude hacer llegar tu reserva…» con «Escribir al local», sin «Anotamos» y sin mapa",
+      "nota": "APROXIMACIÓN: la batería solo sabe rechazar un NODO de envío (no un destinatario), así que se simula con `destinatariosAviso` = solo cocina. No prueba el emparejamiento por índice del wamid cuando Meta rechaza al `completo` y acepta a cocina: eso exige que el doble pueda rechazar por destinatario.",
+      "config": {
+        "destinatariosAviso": "cocina:59100000022"
+      },
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          },
+          "esperado": {
+            "textos": [
+              "cu[eé]ntame en un solo mensaje"
+            ],
+            "estado": {
+              "paso": "reserva"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 4 el jueves a las 7 pm, terraza, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 4,
+            "fecha": "2026-10-08",
+            "hora": "19:00",
+            "zona": "terraza",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "4 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "No pude hacer llegar tu reserva a nuestro equipo"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Anotamos",
+              "¡Listo",
+              "te (avisamos|llamamos|contactamos)"
+            ],
+            "titulos": [
+              "Escribir al local"
+            ],
+            "titulosNo": [
+              "Ver ubicaci[oó]n"
+            ],
+            "enlaces": [
+              "wa\\.me/59100000031"
             ]
           }
         }
@@ -335,9 +452,9 @@
     },
     {
       "id": "D7",
-      "titulo": "Día lleno (tope de reservas del día en 0): la reserva se anota igual, sin derivar al cliente, y el aviso al local sale",
+      "titulo": "Tope blando de reservas del mismo teléfono en el día (tope en 1): la primera sin marca; la segunda se anota igual, sin derivar, y el aviso al local lleva «VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar»",
       "config": {
-        "topeReservasDia": 0
+        "topeReservasDia": 1
       },
       "estadoPrevio": [
         {
@@ -425,8 +542,7 @@
               "escr[ií]beles",
               "solicitud de reserva",
               "Escribir al local",
-              "Por hoy ya no puedo",
-              "no puedo tomar"
+              "te (avisamos|llamamos|contactamos)"
             ],
             "titulosNo": [
               "Escribir al local"
@@ -434,55 +550,10 @@
             "efectos": {
               "aviso": true,
               "derivacion": false
-            }
-          }
-        }
-      ]
-    },
-    {
-      "id": "D7b",
-      "titulo": "Cuarta reserva del mismo día (tope por defecto, 3): se anota igual, sin derivar, y el aviso al local sale",
-      "estadoPrevio": [
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "hola"
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "boton",
-            "titulo": "Reservar mesa"
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "mesa para 2 el jueves a las 7 pm, a nombre de Ana Duran"
-          },
-          "seco": {
-            "personas": 2,
-            "fecha": "2026-10-08",
-            "hora": "19:00",
-            "zona": "",
-            "nombre": "Ana Duran",
-            "celebracion": "",
-            "requerimiento": ""
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "boton",
-            "titulo": "Reservar"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "textos": [
-              "Anotamos tu reserva"
-            ],
-            "efectos": {
-              "aviso": true
-            }
+            },
+            "avisoTextosNo": [
+              "VARIAS RESERVAS"
+            ]
           }
         },
         {
@@ -504,86 +575,12 @@
             "nombre": "Ana Duran",
             "celebracion": "",
             "requerimiento": ""
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "boton",
-            "titulo": "Reservar"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "textos": [
-              "Anotamos tu reserva"
-            ],
-            "efectos": {
-              "aviso": true
-            }
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "boton",
-            "titulo": "Reservar mesa"
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "mesa para 2 el jueves a las 9 pm, a nombre de Ana Duran"
-          },
-          "seco": {
-            "personas": 2,
-            "fecha": "2026-10-08",
-            "hora": "21:00",
-            "zona": "",
-            "nombre": "Ana Duran",
-            "celebracion": "",
-            "requerimiento": ""
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "boton",
-            "titulo": "Reservar"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "textos": [
-              "Anotamos tu reserva"
-            ],
-            "efectos": {
-              "aviso": true
-            }
-          }
-        }
-      ],
-      "turnos": [
-        {
-          "cliente": {
-            "tipo": "boton",
-            "titulo": "Reservar mesa"
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "mesa para 4 el jueves a las 12:30, terraza, a nombre de Ana Duran"
-          },
-          "seco": {
-            "personas": 4,
-            "fecha": "2026-10-08",
-            "hora": "12:30",
-            "zona": "terraza",
-            "nombre": "Ana Duran",
-            "celebracion": "",
-            "requerimiento": ""
           },
           "esperado": {
             "mensajes": 1,
             "textos": [
               "Tu reserva:",
-              "4 personas"
+              "2 personas"
             ],
             "textosNo": [
               "todav[ií]a no es una reserva",
@@ -618,7 +615,7 @@
             "mensajes": 1,
             "textos": [
               "¡Listo, Ana!",
-              "Anotamos tu reserva para el .* a las 12:30, 4 personas",
+              "Anotamos tu reserva para el .* a las 20:00, 2 personas",
               "Te esperamos en Calle Ejemplo 123"
             ],
             "textosNo": [
@@ -637,6 +634,961 @@
             "efectos": {
               "aviso": true,
               "derivacion": false
+            },
+            "avisoTextos": [
+              "VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "D7b",
+      "titulo": "Cuarta reserva del mismo teléfono el mismo día (tope blando por defecto, 3): se anota igual, sin derivar, y el aviso lleva «VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar»; las tres primeras salen sin la marca",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a las 12, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "12:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 12:00, 2 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "Por hoy ya no puedo",
+              "no puedo tomar"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "avisoTextosNo": [
+              "VARIAS RESERVAS"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a la 1 pm, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "13:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 13:00, 2 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "Por hoy ya no puedo",
+              "no puedo tomar"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "avisoTextosNo": [
+              "VARIAS RESERVAS"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a las 2 pm, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "14:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 14:00, 2 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "Por hoy ya no puedo",
+              "no puedo tomar"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "avisoTextosNo": [
+              "VARIAS RESERVAS"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a las 6 pm, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "18:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 18:00, 2 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "Por hoy ya no puedo",
+              "no puedo tomar"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "avisoTextos": [
+              "VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "D7c",
+      "titulo": "Techo duro: de la 4.ª a la 6.ª reserva del mismo teléfono el mismo día se anotan con el aviso marcado «VARIAS RESERVAS HOY DE ESTE NÚMERO»; la 7.ª NO arma aviso y responde «No pude hacer llegar tu reserva…» sin «Anotamos»",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a las 12, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "12:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 12:00, 2 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "Por hoy ya no puedo",
+              "no puedo tomar"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "avisoTextosNo": [
+              "VARIAS RESERVAS"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a la 1 pm, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "13:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 13:00, 2 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "Por hoy ya no puedo",
+              "no puedo tomar"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "avisoTextosNo": [
+              "VARIAS RESERVAS"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a las 2 pm, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "14:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 14:00, 2 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "Por hoy ya no puedo",
+              "no puedo tomar"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "avisoTextosNo": [
+              "VARIAS RESERVAS"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a las 6 pm, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "18:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 18:00, 2 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "Por hoy ya no puedo",
+              "no puedo tomar"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "avisoTextos": [
+              "VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a las 7 pm, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "19:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 19:00, 2 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "Por hoy ya no puedo",
+              "no puedo tomar"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "avisoTextos": [
+              "VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a las 8 pm, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "20:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 20:00, 2 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "Por hoy ya no puedo",
+              "no puedo tomar"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "avisoTextos": [
+              "VARIAS RESERVAS HOY DE ESTE NÚMERO/revisar"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 2 el jueves a las 9 pm, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 2,
+            "fecha": "2026-10-08",
+            "hora": "21:00",
+            "zona": "",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "2 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "No pude hacer llegar tu reserva a nuestro equipo"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Anotamos",
+              "¡Listo",
+              "te (avisamos|llamamos|contactamos)"
+            ],
+            "titulos": [
+              "Escribir al local"
+            ],
+            "titulosNo": [
+              "Ver ubicaci[oó]n"
+            ],
+            "enlaces": [
+              "wa\\.me/59100000031"
+            ],
+            "efectos": {
+              "aviso": false
             }
           }
         }
@@ -644,7 +1596,7 @@
     },
     {
       "id": "D8",
-      "titulo": "Grupo grande (15 personas, más de 12 y hasta 24): el resumen no lo advierte, se anota igual con el mismo texto y el aviso al local sale",
+      "titulo": "Grupo grande (15 personas, más de 12 y hasta 24): el resumen no lo advierte, se anota igual con el mismo texto y el aviso al local lleva «GRUPO GRANDE» (sin la marca de varias reservas)",
       "estadoPrevio": [
         {
           "cliente": {
@@ -736,6 +1688,12 @@
             "titulosNo": [
               "Escribir al local"
             ],
+            "avisoTextos": [
+              "GRUPO GRANDE"
+            ],
+            "avisoTextosNo": [
+              "VARIAS RESERVAS"
+            ],
             "efectos": {
               "aviso": true,
               "derivacion": false
@@ -743,6 +1701,118 @@
           }
         }
       ]
+    },
+    {
+      "id": "D6d",
+      "titulo": "Sin aviso salido, un texto que afirma que la reserva quedó anotada («Anotamos su reserva», «Tu reserva quedó anotada», «Reserva anotada», «Anoté tu reserva») nunca llega al cliente: se reemplaza por la derivación genérica",
+      "nota": "APROXIMACIÓN: el flujo no deja que el modelo escriba al cliente; el único texto ajeno que llega a «Armar mensajes» sin aviso salido es el del propio cliente que el resumen repite (la celebración). Se usa esa vía para ejercitar `AM_PASE`. Con --vertex el modelo real decide qué celebración extrae; en --seco es la fija. «ellos» no se niega aquí: la derivación genérica de main y de esta rama todavía lo dice (lo mide E8).",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          },
+          "esperado": {
+            "textos": [
+              "cu[eé]ntame en un solo mensaje"
+            ],
+            "estado": {
+              "paso": "reserva"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 4 el jueves a las 7 pm, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 4,
+            "fecha": "2026-10-08",
+            "hora": "19:00",
+            "zona": "terraza",
+            "nombre": "Ana Duran",
+            "celebracion": "Anotamos su reserva",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "anot[eéo]\\w* (tu|su) reserva",
+              "reserva (ya )?(est[aá]|qued[oó]) anotada",
+              "reserva anotada"
+            ],
+            "titulos": [
+              "Escribir al local"
+            ]
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {
+            "texto": "Anotamos su reserva",
+            "seco": {
+              "personas": 4,
+              "fecha": "2026-10-08",
+              "hora": "19:00",
+              "zona": "terraza",
+              "nombre": "Ana Duran",
+              "celebracion": "Anotamos su reserva",
+              "requerimiento": ""
+            }
+          },
+          {
+            "texto": "Tu reserva quedó anotada",
+            "seco": {
+              "personas": 4,
+              "fecha": "2026-10-08",
+              "hora": "19:00",
+              "zona": "terraza",
+              "nombre": "Ana Duran",
+              "celebracion": "Tu reserva quedó anotada",
+              "requerimiento": ""
+            }
+          },
+          {
+            "texto": "Reserva anotada",
+            "seco": {
+              "personas": 4,
+              "fecha": "2026-10-08",
+              "hora": "19:00",
+              "zona": "terraza",
+              "nombre": "Ana Duran",
+              "celebracion": "Reserva anotada",
+              "requerimiento": ""
+            }
+          },
+          {
+            "texto": "Anoté tu reserva",
+            "seco": {
+              "personas": 4,
+              "fecha": "2026-10-08",
+              "hora": "19:00",
+              "zona": "terraza",
+              "nombre": "Ana Duran",
+              "celebracion": "Anoté tu reserva",
+              "requerimiento": ""
+            }
+          }
+        ]
+      }
     }
   ]
 }
