@@ -23,7 +23,10 @@ El coordinador de turno es `admin/functions/src/ingesta.ts`, en la raíz de
 Functions hasta F3b: tiene su línea de coordinador en `ZONA_POR_ARCHIVO`
 (`admin/pruebas/frontera/frontera.ts`) y la lista de lo que se parte en
 `SE_PARTE` (seña, inventario, captación, campañas y cobro de venta).
-`index.ts` también es coordinador y solo reexporta. `fronteras.test.ts` toma
+`admin/functions/src/ganchos.ts` (F3b-1b) es el segundo archivo coordinador de
+la raíz: une el contrato de `registrarCierre` (Core) con los ganchos de Cobros
+y de Agenda (ver «El cierre» abajo). `index.ts` también es coordinador y solo
+reexporta. `fronteras.test.ts` toma
 de `index.ts` el archivo que reexporta la Function `ingesta` y exige que sea
 coordinador: no lo fija como una constante de ruta, porque F3b lo mueve.
 
@@ -51,18 +54,59 @@ No se agregan llamadas: las dos por turno ya existen.
 coordinador más los ganchos de seña, inventario, captación, campañas y cobro de
 venta, que vuelven a sus módulos.
 
+## El cierre (`registrarCierre`): ganchos inyectados (F3b-1b, 05/10/2026)
+
+`registrarCierre` es Core (`core/turno/cierres.ts`) y **ya no importa nada de
+arriba**: exporta el contrato y una fábrica, `crearRegistrarCierre(ganchos)`, y
+recibe sus ganchos ya armados. Quien los arma es `admin/functions/src/ganchos.ts`
+(coordinador), que exporta `GANCHOS_DEL_CIERRE = { cobro: COBRO_AL_CIERRE,
+solicitud: SOLICITUD_AL_CIERRE } satisfies GanchosDelCierre` y
+`registrarCierre = crearRegistrarCierre(GANCHOS_DEL_CIERRE)`; `index.ts`
+reexporta ese `registrarCierre` (mismo nombre, mismas opciones y secretos).
+
+- **Dos puertos con nombre fijo y obligatorios**, no una lista genérica de
+  módulos: `cobro` (`modulos/cobros/alCierre.ts`: `cobroRealActivo(leer)` y
+  `cierreDeVentaLoHaceElCotejo(previa, ahoraMs)`) y `solicitud`
+  (`modulos/agenda/alCierre.ts`: `solicitudTrasElCierre(previa, ahoraMs,
+  { cobroReal })`). Recorrer los módulos encendidos del tenant en el orden del
+  registro es F3b-2 y exige `tenants.modulos`.
+- **Los ganchos nunca reciben la `Transaction` ni `db`.** Reciben un lector de
+  solo lectura anclado al tenant de la firma (`LeerDelTenant`, con
+  `rutaDelTenant`: solo `<colección>/<documento>` con `[A-Za-z0-9_-]`) y
+  devuelven decisiones; **Core escribe todo** (cierre, `privado`, `metricas`,
+  `cierres` y la `solicitud`). Son puros: Firestore reintenta la transacción
+  entera y un gancho con efectos se ejecutaría dos veces. El conteo no cambia, y
+  tampoco las lecturas por cierre (la de `config/venta`, solo si la solicitud
+  lo pide).
+- **Tres capas contra el gancho olvidado:** de tipos (interfaz sin campos
+  opcionales y `satisfies`), de carga (`crearRegistrarCierre` lanza `registrarCierre:
+  falta el gancho <puerto>.<función>`) y de captura (las funciones se capturan al
+  crear el endpoint: mutar el objeto después no cambia nada). Un registro global
+  mutable se descartó: si un módulo no se importa, el cierre deja de cerrar la
+  solicitud en silencio y el barrido de seguimientos le escribe a quien ya agendó.
+- **Pruebas:** `pruebas/core/cierres-contrato.test.ts` (compila programas
+  virtuales: sin gancho no compila), `pruebas/core/cierres-ganchos.test.ts`
+  (emulador, ganchos falsos, atomicidad), `pruebas/modulos/cobros/al-cierre.test.ts`,
+  `pruebas/modulos/agenda/al-cierre.test.ts` y `pruebas/ganchos-del-cierre.test.ts`
+  (que cada puerto sea la función correcta). La equivalencia con el código
+  anterior la fija `pruebas/modulos/agenda/solicitud-equivalencia.test.ts`, con
+  un golden generado antes de mover nada.
+
 ## Pendiente F3b
 
-- **El corte de `ingesta.ts`** (coordinador más ganchos). Hasta entonces, tres
-  cruces hacia arriba en `deuda.json`: `core/turno/cierres.ts`,
-  `modulos/agenda/seguimientos.ts` y `modulos/agenda/sena.ts` importan de
-  `ingesta.ts`.
+- **El corte de `ingesta.ts`** (coordinador más ganchos). La deuda de
+  `deuda.json` es **0 cruces** desde F3b-1b: ya ningún archivo de Core ni de un
+  módulo importa de `ingesta.ts`. Lo que falta del corte es mover los ganchos
+  de seña, inventario, captación, campañas y cobro de venta que siguen dentro de
+  `ingesta.ts`, y recorrer los módulos encendidos por el registro (F3b-2).
 - **De la solicitud, no del registro de eventos:** `solicitudTras`,
-  `ETAPAS_PENDIENTES`, `milisegundosDe`, `MINUTOS_RETENCION_POR_DEFECTO` y el
-  tipo `Solicitud` quedan en `ingesta.ts` y bajan con el corte.
-- **La separación seña/prepago es solo directa:** existe el camino
-  `sena.ts → ingesta.ts → prepago.ts`. Una prueba transitiva, o el corte de
-  `ingesta` en F3b.
+  `ETAPAS_PENDIENTES` y el tipo `Solicitud` viven desde F3b-1a en
+  `modulos/agenda/solicitud.ts`, `MINUTOS_RETENCION_POR_DEFECTO` en
+  `modulos/agenda/retencion.ts` y `milisegundosDe` en `core/turno/tiempo.ts`;
+  `ingesta.ts` los reexporta. Los predicados de la regla 2 y la ventana de 24 h
+  (`MS_VENTANA_DEL_CASO`) viven desde F3b-1b en `modulos/cobros/`.
+- **La separación seña/prepago:** `sena.ts` ya no importa `ingesta.ts`, así que
+  el camino `sena.ts → ingesta.ts → prepago.ts` ya no existe.
 - **§5.1 de `Analisis/41`** manda `ingesta.ts` (coordinador) a `core/turno/`,
   contra «carpeta = zona»: se resuelve en F3b, al partirla.
 
