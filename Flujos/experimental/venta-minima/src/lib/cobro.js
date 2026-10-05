@@ -435,6 +435,15 @@ function cbEstadoParaAviso(resultado) {
   return 'sin QR: cobrar al entregar';
 }
 
+// Un importe como lo escribe el servidor («21.00», «1,5», «1.234,50») en la forma de Bolivia, sin decimales sobrantes: «21», «1,50», «1234,50». Con un solo
+// separador, es el decimal; con los dos, el que aparece último es el decimal. Un valor que no es un número finito se deja como llegó (ya solo trae dígitos y separadores).
+function cbImporteDelServidor(t) {
+  const x = String(t);
+  const ult = Math.max(x.lastIndexOf('.'), x.lastIndexOf(','));
+  const n = ult < 0 ? Number(x) : Number(x.slice(0, ult).replace(/[.,]/g, '') + '.' + x.slice(ult + 1));
+  return Number.isFinite(n) ? cbMonto(n) : x;
+}
+
 // Las diferencias que da el servidor, a una frase FIJA. Lo leído de la imagen (un
 // nombre, una cuenta) NUNCA se copia al cliente: ahí puede venir cualquier texto.
 // Solo pasan dos números, que el servidor ya tradujo de la lectura. Reconoce la
@@ -446,7 +455,7 @@ function cbDiferencia(diferencias, moneda) {
     // Cada patrón se ancla al INICIO de la frase del servidor: un nombre leído de la
     // imagen que repita otra frase no cambia cuál se reconoce.
     const m = /^\s*El comprobante dice (\d+(?:[.,]\d+)*) y el pedido es de (\d+(?:[.,]\d+)*)/i.exec(d);
-    if (m) return 'el comprobante dice ' + m[1] + ' ' + cbMoneda(moneda) + ' y tu pedido es de ' + m[2] + ' ' + cbMoneda(moneda);
+    if (m) return 'el comprobante dice ' + cbImporteDelServidor(m[1]) + ' ' + cbMoneda(moneda) + ' y tu pedido es de ' + cbImporteDelServidor(m[2]) + ' ' + cbMoneda(moneda);
     if (/^\s*No se pudo leer el importe/i.test(d)) return 'no pude leer el importe';
     if (/^\s*No se pudo leer la fecha/i.test(d)) return 'no pude leer la fecha';
     if (/^\s*El comprobante es anterior al pedido/i.test(d)) return 'la fecha del comprobante es anterior a tu pedido';

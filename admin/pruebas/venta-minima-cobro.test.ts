@@ -35,7 +35,7 @@ export const LUNES_10 = Date.UTC(2026, 9, 5, 14);
 
 const NOMBRES = [
   'cbCobroReal', 'cbCaption', 'cbMensajeQr', 'cbLectura', 'cbResultado', 'cbEstadoParaAviso',
-  'cbTextoAlCliente', 'cbDiferencia', 'cbObjetoUnico', 'cbTotalValido', 'cbMonto', 'cbUrlSegura',
+  'cbTextoAlCliente', 'cbDiferencia', 'cbImporteDelServidor', 'cbObjetoUnico', 'cbTotalValido', 'cbMonto', 'cbUrlSegura',
   'cbCobroSimulado', 'cbHayQr',
 ] as const;
 
@@ -628,6 +628,19 @@ describe('cbTextoAlCliente: los textos fijos y la prohibición 3', () => {
       expect(t.cuerpo).toContain('Veo una diferencia con tu pedido #K7QX.');
       expect(t.cuerpo).not.toContain('raro');
       expect(T('no_cuadra', { avisoSalio: true, diferencia: undefined }).cuerpo).toContain('Veo una diferencia con tu pedido #K7QX.');
+    });
+
+    it('E2: cbDiferencia pone la unidad y quita los decimales sobrantes («1.00» → «1 Bs», «1.5» → «1,50 Bs»); cbImporteDelServidor lee punto o coma como decimal', () => {
+      expect(L.cbDiferencia('El comprobante dice 1.00 y el pedido es de 21.00')).toBe('el comprobante dice 1 Bs y tu pedido es de 21 Bs');
+      expect(L.cbDiferencia('El comprobante dice 1.5 y el pedido es de 21.00', 'BOB')).toBe('el comprobante dice 1,50 Bs y tu pedido es de 21 Bs');
+      expect(L.cbDiferencia('El comprobante dice 1,50 y el pedido es de 1.234,50')).toBe('el comprobante dice 1,50 Bs y tu pedido es de 1234,50 Bs');
+      for (const [de, a] of [['21.00', '21'], ['21,00', '21'], ['1.5', '1,50'], ['0,05', '0,05'], ['1.234,50', '1234,50'], ['1,234.50', '1234,50'], ['7', '7']] as const) {
+        expect(L.cbImporteDelServidor(de), de).toBe(a);
+      }
+      // el texto al cliente completo, con la unidad y sin «.00»
+      const t = L.cbTextoAlCliente('no_cuadra', { codigo: 'K7QX', avisoSalio: true, diferencia: ['El comprobante dice 1.00 y el pedido es de 21.00'], moneda: 'Bs' }).cuerpo as string;
+      expect(t).toContain('el comprobante dice 1 Bs y tu pedido es de 21 Bs');
+      expect(t).not.toMatch(/\d\.00/);
     });
 
     it('cbDiferencia: cada frase del servidor, en orden, y un nombre leído no cambia cuál se reconoce', () => {

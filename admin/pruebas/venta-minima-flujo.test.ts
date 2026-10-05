@@ -5385,6 +5385,30 @@ describe('N2. un «no» seguido del verbo dejar es un rechazo, nunca «volver al
       expect(cuerpos(r.c.escribe(dicho))[0], dicho).toBe(antes);
     },
   );
+
+  // LOW del PR #426: el verbo con una letra de más o de menos tras el «no» (tipeo o voz) sigue siendo un rechazo.
+  const CON_TIPEO = ['no dejez como estaba', 'no deges como estaba', 'no dejarl como estaba', 'no lo dejez como estaba', 'ya no dejezs como estaba', 'mejor no dejarlo como estaba'];
+  it.each(CON_TIPEO)('rechazo con tipeo en el verbo («%s»): NO vuelve al anterior; se pregunta una vez', (dicho) => {
+    const r = trasCambiar();
+    const t = r.c.escribe(dicho);
+    expect(cuerpos(t).join('\n'), dicho).not.toContain('Total de la comida');
+    expect(cuerpos(t)[0], dicho).toBe('¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?');
+    expect(estadoDe(r.w.mundo)['carritoAnterior'], dicho).not.toBeNull();
+  });
+
+  // …y el «no» que es una respuesta aparte («No, dejarlo como estaba») no es un rechazo del verbo: se deja como estaba.
+  it.each(['No, dejarlo como estaba', 'no, dejar como estaba', 'No. Dejarlo como estaba', 'ya no, dejarlo como estaba'])(
+    'el «no» aparte («%s») deja el pedido como estaba', (dicho) => {
+      const r = armarPedido({ ventana: 5 });
+      const antes = cuerpos(r.resumen)[0]!;
+      r.c.toca('p|cambiar', 'Cambiar algo');
+      expect(cuerpos(r.c.escribe(dicho))[0], dicho).toBe(antes);
+    },
+  );
+  it('el opuesto: sin puntuación, «no dejarlo como estaba» sigue siendo un rechazo', () => {
+    const r = trasCambiar();
+    expect(cuerpos(r.c.escribe('no dejarlo como estaba'))[0]).toBe('¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?');
+  });
 });
 
 describe('N3. carta vacía con respuesta 200 al confirmar: se pasa con el local, no se confirma con precios guardados', () => {
@@ -5882,5 +5906,76 @@ describe('(5) modismos al volver al pedido anterior (solo al elegir de nuevo, me
     const x = c.escribe('así nomás');
     expect(x.llamadas.extraer).toHaveLength(1);
     expect((estadoDe(w.mundo)['carrito'] as J[])[0]!['cantidad']).toBe(2);
+  });
+});
+
+// =================================================================================================
+// (05/10, hallazgo de la Operadora) Pedir sin decir «pedir» ni escribir un dígito: un audio transcrito («quiero cuatro tacos de birria») caía al menú sin llamar al modelo.
+// =================================================================================================
+describe('pedir con cantidad en palabras o con el nombre de un producto de la carta (audio transcrito)', () => {
+  const FRASES = [
+    'quiero cuatro tacos de birria', 'dame dos tacos de birria por favor', 'ponme media docena de tacos', 'necesito tres tacos de birria',
+    'me das una horchata', 'quisiera un queso fundido', 'mándame dos nachos supremos', 'cuatro tacos de birria por favor', 'deme una docena de tacos',
+    'quiero tacos de birria', 'me pones unas enchiladas suizas', 'quiero cinco horchatas',
+  ];
+  it.each(FRASES)('«%s» desde el menú llama al modelo para extraer el pedido (no cae al menú)', (dicho) => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    const t = c.escribe(dicho);
+    expect(t.llamadas.extraer, dicho).toHaveLength(1);
+    expect(estadoDe(w.mundo)['paso'], dicho).toMatch(/^pedido/);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length, dicho).toBeGreaterThan(0);
+  });
+
+  it.each([
+    'quiero hablar con una persona', 'quiero la ubicación', 'quiero un descuento', 'quiero saber el horario', 'dame la dirección',
+    'necesito ayuda', 'quiero cuatro personas', 'me das el horario', 'quiero una queja',
+  ])('negando: «%s» NO es un pedido: no llama al modelo para extraer líneas', (dicho) => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    const t = c.escribe(dicho);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length, dicho).toBe(0);
+  });
+
+  it('negando: «quiero una mesa para cuatro» es una reserva (sigue su camino), no un pedido', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    c.escribe('quiero una mesa para cuatro');
+    expect(estadoDe(w.mundo)['paso']).toMatch(/^reserva/);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length).toBe(0);
+  });
+
+  it('sin carta cargada, una palabra suelta de la carta no inventa un pedido (el producto sale de la carta, no del código)', () => {
+    const w = crear({ panel: panel({ catalogo: [] }) });
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    const t = c.escribe('quiero tacos de birria');
+    expect(t.llamadas.extraer).toHaveLength(0);
+  });
+});
+
+// =================================================================================================
+// (05/10, hallazgo E2 de la Operadora) El comprobante que no cuadra dice la diferencia CON UNIDAD y sin decimales sobrantes, venga como venga del servidor.
+// =================================================================================================
+describe('E2: la diferencia del comprobante sale con su unidad («21 Bs», «1,50 Bs»)', () => {
+  it.each([
+    ['El comprobante dice 1.00 y el pedido es de 21.00', 'el comprobante dice 1 Bs y tu pedido es de 21 Bs'],
+    ['El comprobante dice 1.5 y el pedido es de 21.00', 'el comprobante dice 1,50 Bs y tu pedido es de 21 Bs'],
+    ['El comprobante dice 60 y el pedido es de 84', 'el comprobante dice 60 Bs y tu pedido es de 84 Bs'],
+    ['El comprobante dice 1,50 y el pedido es de 1.234,50', 'el comprobante dice 1,50 Bs y tu pedido es de 1234,50 Bs'],
+  ])('«%s» llega al cliente como «%s»', (delServidor, dice) => {
+    const p = pedidoConComprobante({ ventana: 5, cotejo: { statusCode: 200, body: { resultado: 'no_cuadra', diferencias: [delServidor], cierreId: 'venta_x' } } });
+    const texto = cuerpos(p.comp).join('\n');
+    expect(texto).toContain('Veo una diferencia con tu pedido #');
+    expect(texto).toContain(dice);
+    expect(texto).not.toMatch(/\d\.00|con los datos que leí/);
   });
 });
