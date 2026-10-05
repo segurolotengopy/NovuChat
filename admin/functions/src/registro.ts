@@ -197,7 +197,8 @@ export const REGISTRO = [
     camposEnNegocio: [],
     colecciones: [],
     coleccionesRaiz: [],
-    almacenamiento: [],
+    // Las imágenes de comprobantes de venta (regla 2); las reglas niegan todo acceso.
+    almacenamiento: ['comprobantes'],
     limites: [],
     pestanas: [
       { ruta: 'cobros', titulo: 'Cobros', roles: ['admin'], orden: 30 },
@@ -205,7 +206,7 @@ export const REGISTRO = [
     ],
     tablero: [],
     herramientas: [],
-    functions: ['registrarQrDeCobro', 'imagenDeCobro'],
+    functions: ['registrarQrDeCobro', 'imagenDeCobro', 'cotejarComprobanteVenta', 'guardarComprobante', 'purgarComprobantes'],
     flujosProgramados: [],
     // Corregido respecto del diseño (que decía solo `despuesDelTurno`):
     // `configuracionFlujo` arma el cobro con `cobroParaElFlujo` (antes del

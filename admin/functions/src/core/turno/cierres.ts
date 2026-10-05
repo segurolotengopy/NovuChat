@@ -2,7 +2,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, enmascarar, rutaAutenticada } from '../seguridad/firma.js';
-import { solicitudTras } from '../../ingesta.js';
+import { cierreDeVentaLoHaceElCotejo, solicitudTras } from '../../ingesta.js';
 
 /**
  * =============================================================================
@@ -58,6 +58,12 @@ function texto(valor: unknown, maxLargo: number): string {
 function idDesdeReferencia(tipo: string, referencia: string): string {
   const limpio = referencia.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 120);
   return `${tipo}_${limpio}`;
+}
+
+/** Cobro real encendido y con ficha y código: el mismo criterio de `configuracionFlujo` y del cotejo de venta. */
+function cobroRealActivo(venta: FirebaseFirestore.DocumentSnapshot): boolean {
+  const c = venta.get('cobroReal') as Record<string, unknown> | undefined;
+  return c?.['activo'] === true && String(c['ficha'] ?? '') !== '' && String(c['cargaUtil'] ?? '') !== '';
 }
 
 export const registrarCierre = onRequest(
@@ -130,15 +136,37 @@ export const registrarCierre = onRequest(
       ? db.doc(`tenants/${tenantId}/conversaciones/wa_${telefonoLimpio}`) : null;
     const ahoraMs = Date.now();
 
+    // Con COBRO REAL de regla 2, el único que cierra una venta es
+    // `cotejarComprobanteVenta`: este endpoint no crea cierre ni suma `cierres`
+    // mientras el cobro está a tiempo o ya no está en curso (`cobros.md`
+    // §4duodecies.6). El modo simulado, y la regla 1, siguen como siempre.
+    // CON COBRO REAL una venta sin teléfono utilizable no se puede cruzar con su
+    // cobro: no se registra (400), o el cierre esquivaría al cotejo.
+    if (tipo === 'venta' && refConversacion === null
+      && cobroRealActivo(await db.doc(`tenants/${tenantId}/config/venta`).get())) {
+      respuesta.status(400).json({ error: 'falta_telefono', detalle: 'Con cobro real, el cierre de una venta necesita el teléfono del cliente.' });
+      return;
+    }
+    let loCierraElCotejo = false;
     const yaEstaba = await db.runTransaction(async (t) => {
+      loCierraElCotejo = false;
       // Todas las lecturas antes de la primera escritura: lo exige Firestore.
       const [previo, conversacion] = await Promise.all([
         t.get(refCierre), refConversacion ? t.get(refConversacion) : Promise.resolve(null),
       ]);
       if (previo.exists) return true;     // reintento de n8n: no se cuenta dos veces
 
+      // Con cobro real, un cobro de regla 2 a tiempo o bloqueado lo cierra solo
+      // `cotejarComprobanteVenta`: una venta aquí responde 409, y un cierre de
+      // otro tipo (cita del mismo teléfono) no mueve la solicitud.
+      let cobroReal = false;
+      if (conversacion?.exists && cierreDeVentaLoHaceElCotejo(conversacion.get('solicitud'), ahoraMs)) {
+        cobroReal = cobroRealActivo(await t.get(db.doc(`tenants/${tenantId}/config/venta`)));
+        if (cobroReal && tipo === 'venta') { loCierraElCotejo = true; return false; }
+      }
+
       const solicitud = conversacion?.exists
-        ? solicitudTras(conversacion.get('solicitud'), 'cita_agendada', ahoraMs, {}) : null;
+        ? solicitudTras(conversacion.get('solicitud'), 'cita_agendada', ahoraMs, { cobroReal }) : null;
       if (refConversacion && solicitud) t.set(refConversacion, { solicitud }, { merge: true });
 
       t.set(refCierre, {
@@ -171,6 +199,8 @@ export const registrarCierre = onRequest(
       t.set(refMetricas, { cierres: FieldValue.increment(1) }, { merge: true });
       return false;
     });
+
+    if (loCierraElCotejo) { respuesta.status(409).json({ error: 'cobro_real_lo_cierra_el_cotejo' }); return; }
 
     respuesta.status(200).json({ registrado: !yaEstaba, repetido: yaEstaba, id: idCierre });
   },

@@ -5708,7 +5708,8 @@ describe('(1) cambio de entrega con tipeo y variantes naturales; nunca deriva an
     r.w.estado.extraccion = EX([], { entrega: '', quiereHablar: true });
     for (const dicho of ['quiero que me mandn por favor ahorita', 'ahorita mismo que me manden pues']) {
       const t = r.c.escribe(dicho);
-      expect(cuerpos(t)[0], dicho).toBe('¿Es para delivery o para recoger en el local?');
+      expect(cuerpos(t)[0], dicho).toBe('¿Quieres que te lo enviemos por delivery o recoger en el local?');
+      expect(cuerpos(t)[0], dicho).not.toBe('¿Es para delivery o para recoger en el local?');
       expect(t.mensajes.flatMap(titulosDe), dicho).toEqual(expect.arrayContaining(['Delivery', 'Recoger en el local']));
       expect(t.avisos, dicho).toHaveLength(0);
       expect(cuerpos(t).join('\n'), dicho).not.toMatch(DERIVA_FLUJO);

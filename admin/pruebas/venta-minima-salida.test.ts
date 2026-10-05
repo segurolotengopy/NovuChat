@@ -1017,7 +1017,7 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
       'Esta es nuestra carta:\n\nTacos\n• Orden de 3 tacos de birria: 55 Bs\n\nEscríbeme en un mensaje qué quieres y cuántos.',
       '¿«3 tacos de birria» es 1 orden de 3 (55 Bs) o 3 sueltos (63 Bs)?',
       'No encuentro «micheladas» en la carta. ¿Me lo escribes como figura en la carta?',
-      '¿Es para delivery o para recoger en el local?',
+      '¿Es para delivery o para recoger en el local?', '¿Quieres que te lo enviemos por delivery o recoger en el local?',
       'Para el delivery necesito la dirección exacta.',
       'Tu pedido:\n• 1 × Orden de 3 tacos de birria (sin cebolla): 55 Bs\nEntrega: recojo en el local.\nTotal de la comida: 55 Bs.',
       PIE,
