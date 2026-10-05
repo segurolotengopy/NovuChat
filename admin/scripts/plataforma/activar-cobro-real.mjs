@@ -33,6 +33,10 @@
  *
  * Sin `--aplicar` no escribe nada: dice qué cambiaría.
  */
+// EL DOCUMENTO QUE COBRA SALE DEL REGISTRO (`documentoDeCobro`, H2b-4e), no de una
+// lista propia de flujos. `registro.ts` no tiene `import`: Node lo carga quitando los tipos.
+import { documentoDeCobro, flujosDeFicha, modulosDeFicha } from '../../functions/src/registro.ts';
+
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
 const APLICAR = args.includes('--aplicar');
@@ -58,14 +62,14 @@ const db = getFirestore();
 
 const comercio = await db.doc(`tenants/${TENANT}`).get();
 if (!comercio.exists) { rojo(`✗ No existe el comercio ${TENANT}.`); process.exit(1); }
-const flujos = comercio.get('flujos') ?? [];
+const ficha = comercio.data();
 
 // El mismo criterio que `registrarQrDeCobro` (DISENO §4sexies): quien vende
-// cobra la venta; quien solo agenda cobra la seña de la reserva.
-const documento = flujos.includes('venta') ? 'venta'
-  : (flujos.includes('agendamiento') ? 'agendamiento' : null);
+// cobra la venta; quien solo agenda cobra la seña de la reserva. Lo decide el
+// registro por los módulos del comercio (`pedidos` gana sobre `agenda`).
+const documento = documentoDeCobro(modulosDeFicha(ficha));
 if (!documento) {
-  rojo(`✗ ${TENANT} no tiene un flujo que cobre (venta o agendamiento). Flujos: ${JSON.stringify(flujos)}`);
+  rojo(`✗ ${TENANT} no tiene un flujo que cobre (venta o agendamiento). Flujos: ${JSON.stringify(flujosDeFicha(ficha))}`);
   process.exit(1);
 }
 

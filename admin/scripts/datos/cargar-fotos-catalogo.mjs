@@ -60,6 +60,9 @@ import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
+// QUIÉN PUEDE TENER LOGO LO DECIDE EL REGISTRO (`tieneModulo`, H2b-4e), no una lista
+// propia de flujos. `registro.ts` no tiene `import`: Node lo carga quitando los tipos.
+import { flujosDeFicha, tieneModulo } from '../../functions/src/registro.ts';
 
 const args = process.argv.slice(2);
 const leer = (bandera) => {
@@ -169,15 +172,15 @@ const db = getFirestore();
 
 const ficha = await db.doc(`tenants/${TENANT}`).get();
 if (!ficha.exists) salir(`El comercio ${TENANT} no existe en ${PROYECTO}.`);
-const flujos = Array.isArray(ficha.get('flujos')) ? ficha.get('flujos') : [ficha.get('vertical')];
 
 console.log(`\n  Proyecto : ${PROYECTO}`);
-console.log(`  Comercio : ${TENANT} — ${ficha.get('nombre')}  ${G}(${flujos.join(', ')})${F}`);
+console.log(`  Comercio : ${TENANT} — ${ficha.get('nombre')}  ${G}(${flujosDeFicha(ficha.data()).join(', ')})${F}`);
 
-// EL LOGO ES CAPACIDAD DE VENTA, igual que el catálogo web: `config/marca` solo
-// se acepta con `tieneCobro` (firestore.rules §/config/marca). Escribirlo en un
-// comercio sin el flujo dejaría un documento que la consola no puede editar.
-if (ARCHIVO_LOGO && !flujos.includes('venta')) {
+// EL LOGO ES CAPACIDAD DE VENTA, igual que el catálogo web: `config/marca` es del
+// módulo `catalogo-web` y solo se acepta con `tieneModulo(tenantId, 'catalogo-web')`
+// (firestore.rules §/config/marca). Escribirlo en un comercio sin el flujo dejaría un documento
+// que la consola no puede editar.
+if (ARCHIVO_LOGO && !tieneModulo(ficha.data(), 'catalogo-web')) {
   salir(`El comercio ${TENANT} no tiene el flujo venta: /config/marca no le corresponde.`);
 }
 
