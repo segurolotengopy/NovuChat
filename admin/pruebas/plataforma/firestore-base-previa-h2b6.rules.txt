@@ -767,8 +767,8 @@ service cloud.firestore {
             && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
             && d.get('moneda', 'BOB') in ['BOB', 'USD']
             // Teléfono en formato E.164 sin '+', igual que lo espera la Cloud API.
-            && d.get('numeroRecepcion', '59100000000') is string
-            && d.get('numeroRecepcion', '59100000000').matches('^[0-9]{8,15}$')
+            && d.get('numeroRecepcion', '591000000') is string
+            && d.get('numeroRecepcion', '591000000').matches('^[0-9]{8,15}$')
             // Misma validación estricta que para los funcionarios: un ID mal
             // pegado acá tiene exactamente las mismas consecuencias.
             && calendarioValidoOpcional(d, 'calendarioId')

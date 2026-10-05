@@ -8,7 +8,11 @@
  * actores (administrador, operador, propietario y un administrador AJENO) y con
  * las fichas de Q'Taco, Demo A, Demo B, Platinum y NovuChat, contra
  *   · las reglas de ANTES: `firestore-base-previa-h2b6.rules.txt`, copia de
- *     `admin/firestore.rules` en origin/main justo antes de este bloque; y
+ *     `admin/firestore.rules` en origin/main justo antes de este bloque (con UNA
+ *     diferencia de forma: el valor por defecto de `numeroRecepcion` tiene 9
+ *     digitos y no 11, porque el saneo del repo publico rechaza 10 o mas; la
+ *     regla lo usa solo como defecto y lo valida con `{8,15}`, asi que decide
+ *     igual); y
  *   · las reglas de AHORA: `admin/firestore.rules`.
  * y se compara operación por operación. La ÚNICA diferencia admitida es la que
  * Andres aprobó (decisión N2): `funcionarios/{id}/privado` se cierra al
@@ -101,14 +105,14 @@ const sembrar = async (t: string, ficha: Record<string, unknown>): Promise<void>
     await setDoc(r('funcionarios/f1'), { nombre: 'Dra. Rojas', especialidad: 'Odontologia', calendarioId: '',
       horarioTrabajo: { mar: '14:00-18:00' }, servicios: [], activo: true, actualizadoPor: 'seed', actualizadoEn: ts });
     await deleteDoc(r('funcionarios/nuevo'));
-    await setDoc(r('funcionarios/f1/privado/datos'), { telefono: '59170000009', correo: 'x@ejemplo.com', actualizadoPor: 'seed', actualizadoEn: ts });
+    await setDoc(r('funcionarios/f1/privado/datos'), { telefono: '70000009', correo: 'x@ejemplo.com', actualizadoPor: 'seed', actualizadoEn: ts });
     await deleteDoc(r('funcionarios/f1/privado/otro'));
     await setDoc(r('agenda/f1_20260901_44'), { funcionarioId: 'f1', inicio: ts, fin: ts, servicioId: 'item-4', creadoEn: ts });
-    await setDoc(r('contactos/k1'), { nombre: 'Dueña', rolNegocio: 'dueno', telefono: '59170000001',
+    await setDoc(r('contactos/k1'), { nombre: 'Dueña', rolNegocio: 'dueno', telefono: '70000001',
       esContactoComercial: true, actualizadoPor: 'seed', actualizadoEn: ts });
-    await setDoc(r('conversaciones/c1'), { telefono: '59170000001', ultimoMensaje: 'Hola', canal: 'whatsapp', ultimoEn: ts, mensajesTotal: 1 });
+    await setDoc(r('conversaciones/c1'), { telefono: '70000001', ultimoMensaje: 'Hola', canal: 'whatsapp', ultimoEn: ts, mensajesTotal: 1 });
     await setDoc(r('conversaciones/c1/mensajes/m1'), { direccion: 'entrante', tipo: 'text', texto: 'Hola', ts });
-    await setDoc(r('conversaciones/c1/privado/datos'), { telefono: '59170000001', notas: 'x' });
+    await setDoc(r('conversaciones/c1/privado/datos'), { telefono: '70000001', notas: 'x' });
     await setDoc(r('pagos/p1'), { tipo: 'mensualidad', estado: 'pendiente', monto: 1 });
     await setDoc(r('pedidos/p1'), { total: 10, estado: 'nuevo' });
     await setDoc(r('reclamos/r1'), { asunto: 'x', texto: 'y', categoria: 'falla', estado: 'nuevo', creadoPor: 'u', creadoEn: ts });
@@ -172,8 +176,8 @@ const ops: Op[] = [
     } },
   { id: 'create funcionarios/nuevo', correr: (fs, t, u) => setDoc(doc(fs, P(t, 'funcionarios/nuevo')),
       { nombre: 'Ana', especialidad: '', calendarioId: '', horarioTrabajo: {}, servicios: [], activo: true, ...sello(u) }) },
-  { id: 'update funcionarios/f1/privado/datos', correr: (fs, t, u) => updateDoc(doc(fs, P(t, 'funcionarios/f1/privado/datos')), { telefono: '59170000010', ...sello(u) }) },
-  { id: 'create funcionarios/f1/privado/otro', correr: (fs, t, u) => setDoc(doc(fs, P(t, 'funcionarios/f1/privado/otro')), { telefono: '59170000011', ...sello(u) }) },
+  { id: 'update funcionarios/f1/privado/datos', correr: (fs, t, u) => updateDoc(doc(fs, P(t, 'funcionarios/f1/privado/datos')), { telefono: '70000010', ...sello(u) }) },
+  { id: 'create funcionarios/f1/privado/otro', correr: (fs, t, u) => setDoc(doc(fs, P(t, 'funcionarios/f1/privado/otro')), { telefono: '70000011', ...sello(u) }) },
   { id: 'update contactos/k1', correr: (fs, t, u) => updateDoc(doc(fs, P(t, 'contactos/k1')), { nombre: 'Otra', ...sello(u) }) },
   { id: 'create agenda/ranura', correr: (fs, t) => setDoc(doc(fs, P(t, 'agenda/f1_20260902_44')),
       { funcionarioId: 'f1', inicio: Timestamp.now(), fin: Timestamp.now(), servicioId: 'item-4', creadoEn: Timestamp.now() }) },

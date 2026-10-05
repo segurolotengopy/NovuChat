@@ -179,7 +179,7 @@ const sembrar = async (t: Tenant): Promise<void> => {
     });
     await deleteDoc(r('funcionarios/nuevo'));
     await setDoc(r('funcionarios/f1/privado/datos'), {
-      telefono: '59170000009', correo: 'rojas@ejemplo.com', actualizadoPor: 'seed', actualizadoEn: ahora,
+      telefono: '70000009', correo: 'rojas@ejemplo.com', actualizadoPor: 'seed', actualizadoEn: ahora,
     });
     await deleteDoc(r('config/campanas'));
     await deleteDoc(r('fotosCatalogo/item1'));
@@ -202,10 +202,10 @@ const operaciones: Operacion[] = [
       activo: true, ...sello(`u-admin-${t}`) }) },
   { nombre: 'el administrador escribe funcionarios/*/privado (update)', cap: 'agenda',
     ejecutar: (t) => updateDoc(doc(comoAdmin(t), T(t, 'funcionarios/f1/privado/datos')),
-      { telefono: '59170000010', ...sello(`u-admin-${t}`) }) },
+      { telefono: '70000010', ...sello(`u-admin-${t}`) }) },
   { nombre: 'el administrador escribe funcionarios/*/privado (create)', cap: 'agenda',
     ejecutar: (t) => setDoc(doc(comoAdmin(t), T(t, 'funcionarios/f1/privado/otro')),
-      { telefono: '59170000011', ...sello(`u-admin-${t}`) }) },
+      { telefono: '70000011', ...sello(`u-admin-${t}`) }) },
   { nombre: 'el administrador edita config/venta', cap: 'venta',
     ejecutar: (t) => updateDoc(doc(comoAdmin(t), T(t, 'config/venta')),
       { costoDelivery: 12, ...sello(`u-admin-${t}`) }) },
@@ -293,7 +293,7 @@ const casos = (nucleo = false): Caso[] => {
     nombre: 'ab: un OPERADOR no escribe funcionarios/*/privado',
     esperado: false,
     correr: async () => { await sembrar(ab); return permitida(() => updateDoc(doc(comoOper('ab'), T('ab', 'funcionarios/f1/privado/datos')),
-      { telefono: '59170000010', ...sello('u-oper-ab') })); },
+      { telefono: '70000010', ...sello('u-oper-ab') })); },
   });
   // Aislamiento entre tenants: ni con todos los módulos del ajeno.
   lista.push({
@@ -308,7 +308,7 @@ const casos = (nucleo = false): Caso[] => {
     esperado: false,
     correr: async () => { await sembrar(ab); await sembrar(sa);
       return permitida(() => updateDoc(doc(comoAdmin('sa'), T('ab', 'funcionarios/f1/privado/datos')),
-        { telefono: '59170000010', ...sello('u-admin-sa') })); },
+        { telefono: '70000010', ...sello('u-admin-sa') })); },
   });
   // Un tenant sin ficha no abre nada (ni con un rol que dice ser su admin).
   lista.push({
