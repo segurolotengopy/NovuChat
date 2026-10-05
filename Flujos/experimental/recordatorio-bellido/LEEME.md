@@ -114,7 +114,7 @@ Se genera con el mismo `herramientas/generar.py` y el mismo código de `src/` (u
 - **Si la omisión es por configuración** (una variable de la plantilla de más de 30 caracteres, o `prefijosPermitidos`
   vacío), `Revisar omisión` lanza `Recordatorio no enviado: configuracion invalida (…)`: no termina en verde. Si no hay
   citas que correspondan (o el comercio no está operativo), sí termina en verde.
-- **Ejecuciones guardadas:** `settings.saveDataSuccessExecution` = `all` (decisión de Andres, 05/10/2026, durante el
+- **Ejecuciones guardadas:** `settings.saveDataSuccessExecution` = `all` (decisión de Andres, 04/10/2026, durante el
   piloto de Bellido): se guardan las exitosas para tener huella de cada corrida de las 17:00. **Costo de privacidad:**
   llevan teléfonos y la descripción de la cita (14 días de retención en n8n, como las del flujo conversacional de
   Bellido). Antes era `none` y solo se guardaban las de error; se vuelve a `none` cuando termine la vigilancia.

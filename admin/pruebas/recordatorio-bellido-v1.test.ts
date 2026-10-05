@@ -246,7 +246,7 @@ describe('recordatorio de Bellido v1: si la marca falla después de enviar, o la
     expect(m).not.toContain(TEL);
   });
 
-  it('el flujo guarda las ejecuciones exitosas durante el piloto (decisión de Andres, 05/10: llevan teléfonos y la descripción de la cita; volver a none al terminar la vigilancia)', () => {
+  it('el flujo guarda las ejecuciones exitosas durante el piloto (decisión de Andres, 04/10: llevan teléfonos y la descripción de la cita; volver a none al terminar la vigilancia)', () => {
     expect(FLUJO.settings['saveDataSuccessExecution']).toBe('all');
     expect(FLUJO.settings).not.toHaveProperty('saveDataErrorExecution');
   });
