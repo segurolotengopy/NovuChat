@@ -37,7 +37,12 @@ const RUTA_FLUJO = join(CARPETA, 'venta-minima.qtaco.json');
  * «cero fallos» y fija, con un control negativo, que fallan: se ponen en rojo cuando llegue lo que esperan y entonces el caso pasa a `A.json`.
  * `D-reserva-confirmada.json` (D5 a D8) pasa contra la rama de RESERVA CONFIRMADA (PR #437, fc7621ac) y falla contra main (todavía dice «solicitud» y deriva).
  */
-const ARCHIVOS_DE_RAMA = ['A-delivery-opcional.json', 'A-pendiente-de-rama.json', 'D-reserva-confirmada.json'];
+const ARCHIVOS_DE_RAMA = ['A-delivery-opcional.json', 'A-pendiente-de-rama.json', 'D-reserva-confirmada.json', 'A-seguridad-delivery-2.json'];
+/**
+ * Los casos de esos archivos que PASAN contra main (main no toma texto libre como dato: M1p y L1 derivan igual, M2p no guarda nada, y M1refp no duplica la
+ * referencia como dirección). Solo protegen a la rama de delivery opcional: contra su head 542d5f7e M1p, M2p y L1 pasan y M1refp FALLA (ver su nota).
+ */
+const PASAN_EN_MAIN_DE_RAMA = ['L1', 'M1p', 'M1refp', 'M2p'];
 const idsDeRama = (): string[] => ARCHIVOS_DE_RAMA.flatMap((f) => ((JSON.parse(readFileSync(join(CARPETA_CASOS, f), 'utf8')) as J)['casos'] as J[]).map((c) => String(c['id'])));
 /**
  * Los casos de SEGURIDAD del texto libre (la cartera, 05/10/2026): el código no debe tomar como dirección ni como referencia lo que no lo es. Fallan contra la rama de
@@ -48,7 +53,7 @@ const ARCHIVO_SEGURIDAD = 'A-seguridad-texto-libre.json';
 const PASAN_EN_MAIN_DE_SEGURIDAD = ['S2b', 'S2c'];
 const idsDeSeguridad = (): string[] => ((JSON.parse(readFileSync(join(CARPETA_CASOS, ARCHIVO_SEGURIDAD), 'utf8')) as J)['casos'] as J[]).map((c) => String(c['id']));
 /** Los casos que HOY fallan contra main (los de rama y los de seguridad que main no cumple). */
-const idsQueFallanEnMain = (): string[] => [...idsDeRama(), ...idsDeSeguridad().filter((x) => !PASAN_EN_MAIN_DE_SEGURIDAD.includes(x))];
+const idsQueFallanEnMain = (): string[] => [...idsDeRama().filter((x) => !PASAN_EN_MAIN_DE_RAMA.includes(x)), ...idsDeSeguridad().filter((x) => !PASAN_EN_MAIN_DE_SEGURIDAD.includes(x))];
 
 interface Modulo {
   main(argv: string[], deps?: J): Promise<number>;
@@ -135,11 +140,13 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     const lote3 = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A11', 'A13', 'A14', 'A15'];
     const lote4 = ['S1', 'S2', 'S2b', 'S2c', 'S3']; // seguridad del texto libre
     const lote5 = ['D5', 'D5b', 'D6', 'D7', 'D7b', 'D8']; // reserva confirmada (rama #437); D8c, su control, ya pasa en main y vive en D.json
+    const lote6 = ['M1r', 'M1p', 'M1ref', 'M2r', 'M2p', 'L1', 'FB1', 'FB2', 'SV2', 'SV2b']; // seguridad del delivery, 2.ª ronda: pasan contra 542d5f7e
+    const lote6x = ['M1s', 'M1sp', 'FB3', 'M1refp']; // los que HOY fallan también contra 542d5f7e (ver A-pendiente-de-rama.json)
     const control = ['D8c'];
     const { casos, global: g } = casosDeLaCarpeta();
     const ids = casos.map((c) => String(c['id']));
-    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...control].sort());
-    expect([...idsDeRama()].sort(), 'los casos de rama son los de los lotes 3 y 5').toEqual([...lote3, ...lote5].sort());
+    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote6x, ...control].sort());
+    expect([...idsDeRama()].sort(), 'los casos de rama son los de los lotes 3, 5 y 6').toEqual([...lote3, ...lote5, ...lote6, ...lote6x].sort());
     expect(idsDeSeguridad().sort(), 'los de seguridad son exactamente los del lote 4').toEqual([...lote4].sort());
     const pendientes = ((JSON.parse(readFileSync(join(CARPETA_CASOS, 'pendientes.json'), 'utf8')) as J)['pendientes'] as J[]).map((p) => String(p['id']));
     const grilla: string[] = [];
@@ -216,7 +223,7 @@ describe('lote 3 (delivery y entrega): los casos de la rama FALLAN contra main (
     expect(s.codigo, s.error).toBe(1);
     const r = json(s);
     const pasan = r.casos.filter((c: J) => c.ok).map((c: J) => c.id);
-    expect(pasan, 'estos casos ya pasan contra main: pasan a A.json y salen de los archivos de rama').toEqual([]);
+    expect([...pasan].sort(), 'estos casos ya pasan contra main: pasan a A.json y salen de los archivos de rama').toEqual([...PASAN_EN_MAIN_DE_RAMA].sort());
     expect(r.casos.map((c: J) => c.id)).toEqual(ids);
   });
 
@@ -541,7 +548,8 @@ describe('E8, el negativo global: ninguna frase prohibida en lo que el cliente r
     expect([...new Set(v.map((x) => x['frase']))]).toEqual(['\\bellos\\b']);
     // A7 se suma desde el lote 3: «quiero que me manden» deriva hoy con el texto genérico («para hablar con ellos»), el defecto que espera la rama funcional.
     // S2b, S2c y S3 se suman con el lote 4 por lo mismo: la segunda vez sin líneas (o la tercera, en S3) main pasa con el local con el texto genérico.
-    expect([...new Set(v.map((x) => x['caso']))].sort()).toEqual(['A7', 'B9', 'C10', 'C7', 'E2', 'E7', 'S2b', 'S2c', 'S3']);
+    expect([...new Set(v.map((x) => x['caso']))].sort()).toEqual(['A7', 'B9', 'C10', 'C7', 'E2', 'E7', 'L1', 'M1p', 'S2b', 'S2c', 'S3', 'SV2']);
+    // L1, M1p y SV2 (seguridad del delivery, 2.ª ronda) también derivan con el texto genérico, por lo mismo.
     // Los textos de respaldo (solo si Meta rechaza el interactivo) además dicen «Escríbeles aquí»: aviso, no fallo.
     const latentes = json(s).negativoGlobal.latentes as J[];
     expect(latentes.some((x) => x['frase'] === 'escr[ií]beles')).toBe(true);
