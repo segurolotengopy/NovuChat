@@ -1,6 +1,6 @@
 {
   "_fuente": "CLIENTES/BELLIDO/conocimiento-asistente.md (17/09/2026), única fuente de los textos: si cambia allá, cambia acá. Se carga con admin/scripts/datos/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben. El número de recepción y el calendario NO van acá (repositorio público): van como marcadores que el script resuelve desde la tabla de CONFIGURACION.local.md.",
-  "_supuestos": "La duración de 30 minutos por cita del chat la CONFIRMÓ el doctor el 29/09/2026: el chat ofrece y agenda cada 30 minutos, lo que él da a mano de 15 minutos lo gestiona en su propio sistema, y lo que manda es la hora de fin de cada evento del calendario. La anticipación mínima de 2 horas sigue siendo SUPUESTO de Andres. El precio de la consulta (250 Bs) lo dio el doctor el 29/09/2026 y solo se dice si preguntan; los demás precios NO se cargan.",
+  "_confirmado": "La duración de 30 minutos por cita del chat la CONFIRMÓ el doctor el 29/09/2026: el chat ofrece y agenda cada 30 minutos, lo que él da a mano de 15 minutos lo gestiona en su propio sistema, y lo que manda es la hora de fin de cada evento del calendario. La anticipación mínima se QUITÓ por decisión de Andres el 04/10/2026 (anticipacionMinimaMin = 0): el chat puede agendar una cita a cualquier hora futura del horario. El precio de la consulta (250 Bs) lo dio el doctor el 29/09/2026 y solo se dice si preguntan; los demás precios NO se cargan.",
   "negocio": {
     "nombreNegocio": "Dr. Andres Bellido — Pediatra",
     "descripcion": "Consultorio de pediatría, neonatología y nutrición infantil en La Paz, a cargo del Dr. Andres Bellido. Se atiende con cita previa y se agenda por este mismo WhatsApp. Quien escribe casi siempre es el papá o la mamá de un niño.",
@@ -43,7 +43,7 @@
   },
   "agendamiento": {
     "duracionPorDefectoMin": 30,
-    "anticipacionMinimaMin": 120,
+    "anticipacionMinimaMin": 0,
     "anticipacionMaximaDias": 60,
     "permitirCancelacion": true,
     "horasRecordatorio": 24,

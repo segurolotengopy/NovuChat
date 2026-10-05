@@ -5757,8 +5757,10 @@ describe('(3) el texto libre que el modelo no asignó lo toma el código (direcc
     expect(t.llamadas.extraer).toHaveLength(1); // el modelo corrió y no asignó nada; el código no perdió el texto
   });
 
-  it('negando: lo que no es dirección ni referencia NO se toma («Donde dije», «ok gracias», «no gracias», una pregunta, un enlace, una palabra sola)', () => {
-    for (const dicho of ['Donde dije', 'ok gracias', 'no gracias', 'puedo pagar con tarjeta', '¿cuánto demora el delivery?', 'mira https://malo.test/x', 'hola']) {
+  it('negando: lo que no es dato NO se toma («ok gracias», «no gracias», una pregunta, un enlace, una cortesía suelta); con la dirección ya dada, tampoco pisa la referencia', () => {
+    // Decisión del 05/10 (delivery opcional): si falta la dirección, cualquier texto con letras o dígitos ES la dirección (se prefiere tomarlo a perder el dato);
+    // lo que nunca se toma son las cortesías, las negaciones, las preguntas y los enlaces.
+    for (const dicho of ['ok gracias', 'no gracias', '¿cuánto demora el delivery?', 'mira https://malo.test/x', 'hola']) {
       const { w, c } = deliverySinDireccion();
       w.estado.extraccion = vacio;
       c.escribe(dicho);
@@ -5768,7 +5770,7 @@ describe('(3) el texto libre que el modelo no asignó lo toma el código (direcc
     const { w, c } = deliverySinDireccion();
     w.estado.extraccion = vacio;
     c.escribe('calle 1 numerro 2 Irpavi');
-    for (const dicho of ['puedo pagar con tarjeta', 'ok gracias', 'no gracias']) {
+    for (const dicho of ['ok gracias', 'no gracias', '¿cuánto demora?']) {
       c.escribe(dicho);
       expect((estadoDe(w.mundo)['entrega'] as J)['referencia'], dicho).toBe('');
     }

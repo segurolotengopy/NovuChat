@@ -900,12 +900,12 @@ function aExtraerPedido() {
   }
   const x = pdValidarExtraccion(j);
   const lineas = Array.isArray(x.lineas) ? x.lineas : [];
+  const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
+  // El modelo no asignó el texto a ningún campo: con el delivery a medias lo toma el CÓDIGO (la dirección que falta o, ya dada la dirección, la referencia
+  // opcional), SIN depender del modelo: ni se pierde ni se repite la pregunta ni se deriva («Déjale al portero», «Donde dije»). Una petición explícita de persona no se toma.
+  if (!lineas.length && !datosEntrega && adoptarTextoLibre()) return;
   // Con productos en el mensaje y sin una petición explícita de persona, se atiende el pedido (no se descarta lo pedido por una marca dudosa del modelo).
   if (x.quiereHablar === true && (!lineas.length || pideUnaPersonaElTexto())) return aclararOPasarConElLocal();
-  const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
-  // El modelo no asignó el texto a ningún campo: con el delivery a medias, lo toma el CÓDIGO (la dirección que falta o, ya dada la dirección, la referencia
-  // opcional) en lugar de perderlo o repetir la pregunta.
-  if (!lineas.length && !datosEntrega && adoptarTextoLibre()) return;
   if (!lineas.length && !datosEntrega) {
     // Dos extracciones seguidas sin nada que tomar: se pasa con el local.
     en.vacias += 1;
@@ -967,28 +967,23 @@ function preguntaDeEntrega() {
   ] };
 }
 
-// Con el delivery a medias y un texto libre que el modelo no asignó a nada: si falta la dirección y el texto es una dirección de verdad, es la dirección; si la
-// dirección ya está, un texto que nombra un lugar («a media cuadra de la calle Foton») es la referencia, que es opcional pero no se pierde. Sin
-// signos de pregunta ni enlaces, y nunca una palabra de cortesía o una negación. `false` si no se tomó nada.
+// Con el delivery a medias y un texto libre sin líneas ni campos: si falta la dirección, el texto con letras o dígitos ES la dirección (si no alcanza para
+// una dirección válida, se vuelve a pedir: «Plan del turno» no inventa nada); con la dirección ya dada y sin referencia, el texto es la referencia (opcional,
+// saneada, ≤150). Nunca: una pregunta, un enlace, una cortesía o negación suelta («ok», «gracias», «no»: siguen al resumen porque el dato ya no es obligatorio),
+// ni una petición explícita de persona. `false` si no se tomó nada.
 function adoptarTextoLibre() {
   if (en.entrega.entrega !== 'delivery' || !en.carrito.length || en.pendiente.length) return false;
   const crudo = String(d.texto || '');
   const n = vmNorm(crudo);
-  if (!n || /[?¿]/.test(crudo) || /https?:|www\./i.test(crudo) || /^(no|si|gracias|ok|okey|listo|hola|buenas|buenos|dale|ya|bueno|nada|menu)\b/.test(n)) return false;
-  const palabras = n.split(' ').filter(Boolean);
-  const texto1 = delCliente(crudo, 160);
+  if (!n || !/[\p{L}\p{N}]/u.test(crudo) || pideUnaPersonaElTexto()) return false;
+  if (/[?¿]/.test(crudo) || /https?:|www\./i.test(crudo) || /^(no|si|gracias|muchas|ok|okey|listo|hola|buenas|buenos|dale|ya|bueno|nada|menu)\b/.test(n)) return false;
   if (pdFaltanEntrega(en.entrega, perfil).length) {
-    const prueba = Object.assign({}, en.entrega, { direccion: texto1 });
-    // Una dirección de verdad: con un número («calle 1 numerro 2 Irpavi») o con una palabra de lugar («barrio Sopocachi, pasaje Los Pinos»); «puedo pagar con tarjeta» no.
-    const conLugar = /\b(calle|av|avenida|barrio|zona|esquina|esq|edificio|pasaje|urbanizacion|urb|condominio|km|numero|nro|casa|manzano|mz|lote|plaza|carretera|avda)\b/.test(n);
-    if (pdFaltanEntrega(prueba, perfil).length || !((/\d/.test(n) && palabras.length >= 2) || (conLugar && palabras.length >= 3))) return false;
-    en.entrega.direccion = texto1;
+    en.entrega.direccion = delCliente(crudo, 160);
     ruta = 'boton:direccion_del_texto';
     mostrarPedido();
     return true;
   }
-  if (en.entrega.referencia || palabras.length < 2 || n.length < 8) return false;
-  if (!/\b(calle|av|avenida|esquina|cuadra|cuadras|frente|lado|junto|cerca|detras|entre|edificio|casa|porton|puerta|piso|zona|barrio|plaza|mercado|tienda|farmacia|colegio|iglesia|parque|pasaje|numero|nro|porteria|rotonda|surtidor|gasolinera|banco)\b/.test(n)) return false;
+  if (en.entrega.referencia || !/\p{L}{3}/u.test(crudo)) return false;
   en.entrega.referencia = delCliente(crudo, 150);
   ruta = 'boton:referencia_del_texto';
   mostrarPedido();
