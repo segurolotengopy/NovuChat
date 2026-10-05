@@ -5,7 +5,7 @@
  *
  * El PR movió esas piezas de `ingesta.ts` a `modulos/agenda/solicitud.ts` y a
  * `core/turno/tiempo.ts` SIN cambiar una línea de lógica. Esta suite lo prueba
- * de la única forma que vale: `equivalencia-f3b1a.golden.json` se generó con el
+ * de la única forma que vale: `solicitud-equivalencia-f3b1a.golden.json` se generó con el
  * código ANTES de moverlo (misma entrada, salida guardada), y acá se vuelve a
  * correr la misma rejilla y se exige igualdad exacta. Si un movimiento futuro
  * cambia el resultado de un solo caso, falla con el caso nombrado.
@@ -17,18 +17,20 @@
  *
  * Es pura: no toca Firestore (el `Timestamp` es el de la biblioteca, sin red).
  * Regenerar el golden solo es legítimo si se cambia la lógica A PROPÓSITO, en
- * otro PR y diciéndolo: `GENERAR_GOLDEN=1 vitest run pruebas/core/equivalencia-f3b1a.test.ts`.
+ * otro PR y diciéndolo: `GENERAR_GOLDEN=1 vitest run pruebas/modulos/agenda/solicitud-equivalencia-f3b1a.test.ts`.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
+import { milisegundosDe } from '../../../functions/src/core/turno/tiempo.ts';
+import { MINUTOS_RETENCION_POR_DEFECTO } from '../../../functions/src/modulos/agenda/retencion.ts';
 import {
-  DIAS_ADELANTO_A_FAVOR, ETAPAS_PENDIENTES, HORAS_ANTICIPACION_PARA_CANCELAR, MINUTOS_RETENCION_POR_DEFECTO,
-  cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo, milisegundosDe, reactivaTras, solicitudTras,
-} from '../../functions/src/ingesta.ts';
+  DIAS_ADELANTO_A_FAVOR, ETAPAS_PENDIENTES, HORAS_ANTICIPACION_PARA_CANCELAR,
+  cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo, reactivaTras, solicitudTras,
+} from '../../../functions/src/modulos/agenda/solicitud.ts';
 
-const GOLDEN = new URL('./equivalencia-f3b1a.golden.json', import.meta.url);
+const GOLDEN = new URL('./solicitud-equivalencia-f3b1a.golden.json', import.meta.url);
 const H = 3_600_000;
 const AHORA = Date.UTC(2026, 9, 5, 15, 0, 0);
 
