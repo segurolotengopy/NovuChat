@@ -235,9 +235,9 @@ for (const ficha of ['agenda', 'doble']) {
     correr: (fs) => setDoc(doc(fs, P('funcionarios/nuevo')), funcionario(UA)) });
   pruebas.push({ id: `funcionarios/privado (update), comercio ${ficha}`, ficha,
     seed: (db) => setDoc(doc(db, P('funcionarios/f1/privado/datos')), { telefono: '70000009', actualizadoPor: 's', actualizadoEn: Timestamp.now() }),
-    correr: (fs) => updateDoc(doc(fs, P('funcionarios/f1/privado/datos')), { telefono: '70000010', correo: 'a@b.co', notas: 'n', ...sello(UA) }) });
+    correr: (fs) => updateDoc(doc(fs, P('funcionarios/f1/privado/datos')), { telefono: '70000010', correo: 'x@ejemplo.com', notas: 'n', ...sello(UA) }) });
   pruebas.push({ id: `funcionarios/privado (create), comercio ${ficha}`, ficha,
-    correr: (fs) => setDoc(doc(fs, P('funcionarios/f1/privado/otro')), { telefono: '70000011', correo: 'a@b.co', ...sello(UA) }) });
+    correr: (fs) => setDoc(doc(fs, P('funcionarios/f1/privado/otro')), { telefono: '70000011', correo: 'x@ejemplo.com', ...sello(UA) }) });
 }
 
 /** Siembra el tenant, corre la prueba con lastre `k` y dice si pasó. Lanza si falla por otra cosa. */
