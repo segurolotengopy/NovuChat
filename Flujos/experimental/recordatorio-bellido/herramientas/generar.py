@@ -99,7 +99,7 @@ def v1():
         k=0
         while __import__("re").search(r"\d{10}",n["id"]):
             k+=1; n["id"]="rec-"+__import__("hashlib").md5((n["name"]+"#"+str(k)).encode()).hexdigest()[:12]
-    return {"name":"NovuChat Bellido — Recordatorio de citas (24 h)","nodes":nodos1,"connections":con1,"settings":{"executionOrder":"v1","timezone":"America/La_Paz","saveDataSuccessExecution":"none"}}
+    return {"name":"NovuChat Bellido — Recordatorio de citas (24 h)","nodes":nodos1,"connections":con1,"settings":{"executionOrder":"v1","timezone":"America/La_Paz","saveDataSuccessExecution":"all"}}
 if len(sys.argv)>1 and sys.argv[1]=="v1":
     print(json.dumps(v1(),ensure_ascii=False,indent=1)); sys.exit(0)
 print(json.dumps({"name":"ZZ Recordatorio Bellido (prueba)","nodes":nodos,"connections":con,"settings":{"executionOrder":"v1"}},ensure_ascii=False,indent=1))
