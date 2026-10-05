@@ -185,7 +185,8 @@
 }
 
 .cat-campo { display: block; margin: var(--space-3) 0; font-size: .85rem; opacity: .85; }
-.cat-campo textarea {
+.cat-campo textarea,
+.cat-campo input {
   display: block; width: 100%; box-sizing: border-box; margin-top: .3rem;
   padding: .6rem; font: inherit; font-size: 1rem; resize: vertical;
   color: var(--color-text); background: var(--color-surface);

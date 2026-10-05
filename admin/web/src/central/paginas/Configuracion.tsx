@@ -7,6 +7,8 @@ import { auth, db } from '../../core/lib/firebase';
 import { useFlujos } from '../lib/flujos';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { PALETAS, PALETA_POR_DEFECTO, type PaletaId } from '../lib/paletas';
+import { ErrorDeImagen, mensajeDeErrorDeLogo } from '../lib/errorLogo';
+import { decodificarImagen } from '../lib/decodificarImagen';
 
 /**
  * Edición de la configuración del negocio: lo que hoy vive a mano en el nodo
@@ -876,8 +878,8 @@ function LogoDelComercio({ tenantId }: { tenantId: string }) {
       await guardar(datos);
       setEstado('Logo actualizado. Ya se ve en tu catálogo web.');
     } catch (error) {
-      setEstado(error instanceof Error ? error.message
-        : 'No se pudo leer esa imagen. Intenta con un PNG o un JPG.');
+      // Nunca el texto crudo del SDK: la causa, en palabras del comercio.
+      setEstado(mensajeDeErrorDeLogo(error));
     } finally {
       setSubiendo(false);
       if (archivo.current) archivo.current.value = '';
@@ -889,7 +891,7 @@ function LogoDelComercio({ tenantId }: { tenantId: string }) {
     try {
       await guardar('');
       setEstado('Logo quitado.');
-    } catch { setEstado('No se pudo quitar el logo.'); }
+    } catch (error) { setEstado(mensajeDeErrorDeLogo(error)); }
   };
 
   return (
@@ -911,7 +913,7 @@ function LogoDelComercio({ tenantId }: { tenantId: string }) {
         </div>
       )}
       <p className="ayuda">
-        Un PNG o un JPG. Se recorta solo a 320 píxeles, así que no hace falta
+        Un PNG, un JPG o un WebP. Se recorta solo a 320 píxeles, así que no hace falta
         que lo prepares: sube el que tengas. Se ve arriba de todo en la página
         que abren tus clientes.
       </p>
@@ -933,23 +935,19 @@ const TOPE_LOGO = 200_000;
  * saber qué es un kilobyte. Si aun así no entra, se lo dice con una salida.
  */
 async function recortar(archivo: File): Promise<string> {
-  const url = URL.createObjectURL(archivo);
+  // Sin `URL.createObjectURL`: la CSP no admite `blob:` en `img-src` y esa
+  // carga fallaba siempre (ver `lib/decodificarImagen.ts`).
+  const img = await decodificarImagen(archivo);
   try {
-    const img = await new Promise<HTMLImageElement>((resolver, rechazar) => {
-      const i = new Image();
-      i.onload = () => resolver(i);
-      i.onerror = () => rechazar(new Error('Ese archivo no es una imagen que podamos leer.'));
-      i.src = url;
-    });
-
+    if (img.ancho < 1 || img.alto < 1) throw new ErrorDeImagen('ilegible');
     const LADO = 320;
-    const escala = Math.min(1, LADO / Math.max(img.naturalWidth, img.naturalHeight));
+    const escala = Math.min(1, LADO / Math.max(img.ancho, img.alto));
     const lienzo = document.createElement('canvas');
-    lienzo.width = Math.max(1, Math.round(img.naturalWidth * escala));
-    lienzo.height = Math.max(1, Math.round(img.naturalHeight * escala));
+    lienzo.width = Math.max(1, Math.round(img.ancho * escala));
+    lienzo.height = Math.max(1, Math.round(img.alto * escala));
     const ctx = lienzo.getContext('2d');
-    if (!ctx) throw new Error('El navegador no pudo procesar la imagen.');
-    ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
+    if (!ctx) throw new ErrorDeImagen('sin-lienzo');
+    ctx.drawImage(img.fuente, 0, 0, lienzo.width, lienzo.height);
 
     // WebP primero por tamaño; si el navegador no sabe codificarlo, `toDataURL`
     // devuelve un PNG en silencio, que la validación acepta igual.
@@ -957,9 +955,8 @@ async function recortar(archivo: File): Promise<string> {
       const datos = lienzo.toDataURL('image/webp', calidad);
       if (datos.length <= TOPE_LOGO) return datos;
     }
-    throw new Error('Esa imagen es demasiado pesada incluso reducida. '
-      + 'Intenta con una más simple o con menos detalle.');
+    throw new ErrorDeImagen('pesada');
   } finally {
-    URL.revokeObjectURL(url);
+    img.cerrar();
   }
 }

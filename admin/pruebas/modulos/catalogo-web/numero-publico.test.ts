@@ -404,3 +404,131 @@ describe('fijar-numero-publico.mjs: el caso bueno', () => {
     expect(negocioDe(r)['whatsapp']).toBe('59100000053');
   });
 });
+
+// ===========================================================================
+// LA VUELTA ATRÁS: `--quitar`
+// ===========================================================================
+
+describe('fijar-numero-publico.mjs --quitar: lo que no se puede pedir', () => {
+  const quitar = (tenant: string, ...mas: string[]) =>
+    ['--proyecto', PROYECTO, '--tenant', tenant, '--quitar', '--operador', OPERADOR, ...mas];
+
+  it('NEGANDO: sin --operador, o con un correo inválido, no escribe nada (salida 2)', async () => {
+    await db.doc(`rutasWhatsApp/${LINEA}`).update({ numeroPublico: PUBLICO });
+    const antes = await ruta(LINEA);
+    const r = correr('--proyecto', PROYECTO, '--tenant', T, '--quitar', '--aplicar');
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('--operador <correo> es obligatorio');
+    for (const malo of ['', 'operador', 'a@b']) {
+      expect(correr('--proyecto', PROYECTO, '--tenant', T, '--quitar', '--aplicar', '--operador', malo).codigo).toBe(2);
+    }
+    expect(await ruta(LINEA)).toEqual(antes);
+  });
+
+  it('NEGANDO: --quitar y --numero juntos son excluyentes (salida 2), y no escribe', async () => {
+    const antes = await ruta(LINEA);
+    const r = correr(...quitar(T, '--numero', '59100000061', '--aplicar'));
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('excluyentes');
+    // Ni siquiera con un --numero inválido: la exclusión se dice igual.
+    expect(correr(...quitar(T, '--numero', 'x', '--aplicar')).salida).toContain('excluyentes');
+    expect(await ruta(LINEA)).toEqual(antes);
+  });
+
+  it.each([
+    ['un comercio que no existe', 'np-no-existe', 'No existe el comercio'],
+    ['un comercio suspendido', T_SUSP, 'no está activo'],
+    ['un comercio sin número de WhatsApp asignado', T_SIN_NUMERO, 'no tiene un número de WhatsApp asignado'],
+    ['un número sin ruta', T_SIN_RUTA, 'no tiene ruta'],
+    ['una ruta que es de otro comercio', T_RUTA_AJENA, 'es de otro comercio'],
+  ])('NEGANDO: %s (salida 1, sin escribir nada, ni siquiera con --aplicar)', async (_n, tenant, mensaje) => {
+    const antes = await Promise.all(lineas.map(ruta));
+    const r = correr(...quitar(tenant, '--aplicar'));
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain(mensaje);
+    expect(await Promise.all(lineas.map(ruta))).toEqual(antes);
+    expect(await auditorias(tenant)).toEqual([]);
+  });
+});
+
+describe('fijar-numero-publico.mjs --quitar: el caso bueno', () => {
+  const quitar = (...mas: string[]) =>
+    ['--proyecto', PROYECTO, '--tenant', T, '--quitar', '--operador', OPERADOR, ...mas];
+
+  it('es SECO por omisión: muestra el número que se quitaría y no escribe', async () => {
+    await db.doc(`rutasWhatsApp/${LINEA}`).update({ numeroPublico: PUBLICO });
+    const antes = await ruta(LINEA);
+    const auditoriasAntes = (await auditorias(T)).length;
+    const r = correr(...quitar());
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toContain(PUBLICO);
+    expect(r.salida).toContain('(sin número público)');
+    expect(r.salida).toContain('Seco');
+    expect(await ruta(LINEA)).toEqual(antes);
+    expect((await auditorias(T)).length).toBe(auditoriasAntes);
+  });
+
+  it('con --aplicar elimina SOLO `numeroPublico`, sella al operador y audita con el valor anterior', async () => {
+    // Otro sello previo, para que se vea que lo escribe ESTA corrida.
+    await db.doc(`rutasWhatsApp/${LINEA}`).update({ actualizadoPor: 'anterior@ejemplo.com' });
+    const antes = await ruta(LINEA);
+    const auditoriasAntes = (await auditorias(T)).length;
+    const r = correr(...quitar('--aplicar'));
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toContain('quitado');
+
+    const despues = await ruta(LINEA);
+    expect(despues).not.toHaveProperty('numeroPublico');
+    const cambiaron = Object.keys({ ...antes, ...despues })
+      .filter((k) => JSON.stringify(antes[k]) !== JSON.stringify(despues[k])).sort();
+    expect(cambiaron).toEqual(['actualizadoEn', 'actualizadoPor', 'numeroPublico']);
+    expect(despues['actualizadoPor']).toBe(OPERADOR);
+    // No toca el alias, la WABA, el webhook, la titularidad ni el resto de la ruta.
+    for (const k of ['tenantId', 'flujo', 'wabaId', 'aliasSecreto', 'titularidad', 'estado', 'webhookCarrito']) {
+      expect(despues[k], k).toEqual(antes[k]);
+    }
+    expect(despues['aliasSecreto']).toBe(ALIAS);
+    expect(despues['webhookCarrito']).toBe(WEBHOOK);
+
+    const todas = await auditorias(T);
+    expect(todas).toHaveLength(auditoriasAntes + 1);
+    const quitada = todas.find((a) => a['accion'] === 'quitar_numero_publico');
+    expect(quitada).toMatchObject({
+      origen: 'script', uid: OPERADOR, antes: PUBLICO, despues: '', phoneNumberId: `…${LINEA.slice(-4)}`,
+    });
+    expect(quitada!['en']).toBeInstanceOf(Timestamp);
+    expect(JSON.stringify(quitada)).not.toContain(LINEA);
+    // La salida no trae datos de la ruta.
+    for (const secreto of [ALIAS, WABA, WEBHOOK, RECEPCION, LINEA]) expect(r.salida, secreto).not.toContain(secreto);
+  });
+
+  it('IDEMPOTENTE: si ya no hay campo, «Ya estaba así», sin escribir ni auditar', async () => {
+    const antes = await ruta(LINEA);
+    const auditoriasAntes = (await auditorias(T)).length;
+    const r = correr(...quitar('--aplicar'));
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toContain('Ya estaba así');
+    expect(await ruta(LINEA)).toEqual(antes);
+    expect((await auditorias(T)).length).toBe(auditoriasAntes);
+  });
+
+  it('tras quitar, catalogoPublico ya no manda `negocio.whatsapp` y el resto de la respuesta no cambia', async () => {
+    // Con número: la respuesta de referencia.
+    await db.doc(`rutasWhatsApp/${LINEA}`).update({ numeroPublico: PUBLICO });
+    const con = await abrir(T, LINEA);
+    expect(negocioDe(con)['whatsapp']).toBe(PUBLICO);
+
+    expect(correr(...quitar('--aplicar')).codigo).toBe(0);
+    const sin = await abrir(T, LINEA);
+    expect(sin.codigo).toBe(200);
+    expect(negocioDe(sin)).not.toHaveProperty('whatsapp');
+
+    // Todo lo demás, idéntico (salvo el vencimiento de la ficha nueva).
+    const sinWhatsapp = (r: Respuesta) => {
+      const { caducaEn: _c, ...resto } = r.cuerpo;
+      const { whatsapp: _w, ...negocio } = negocioDe(r);
+      return { ...resto, negocio };
+    };
+    expect(sinWhatsapp(sin)).toEqual(sinWhatsapp(con));
+  });
+});

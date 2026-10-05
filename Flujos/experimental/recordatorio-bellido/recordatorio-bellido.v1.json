@@ -444,6 +444,6 @@
  "settings": {
   "executionOrder": "v1",
   "timezone": "America/La_Paz",
-  "saveDataSuccessExecution": "none"
+  "saveDataSuccessExecution": "all"
  }
 }
