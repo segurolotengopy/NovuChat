@@ -1732,3 +1732,127 @@ describe('transferencia con `comprobante: true`: el restaurante lee que es un co
   });
 });
 
+
+describe('la forma `solicitud` de la reserva y la plantilla por rol (`solicitud_reserva`, 5 variables, solo el rol completo; 04/10)', () => {
+  const POR_ROL = {
+    ...CFG, plantillaReserva: 'pedido_registrado', formaPlantillaReserva: 'pedido',
+    plantillaReservaCompleto: 'solicitud_reserva', formaPlantillaReservaCompleto: 'solicitud', idiomaPlantillaReservaCompleto: 'es',
+  };
+  const ABIERTA = abierta();
+
+  it('el rol completo recibe `solicitud_reserva` con las 5 variables en orden y con el teléfono del cliente con prefijo', () => {
+    const items = L.avArmar('reserva', reserva(), CSV, POR_ROL, sdCon(), AHORA);
+    const completo = plantillaDe(items, ANDRES);
+    expect(completo.payload.template.name).toBe('solicitud_reserva');
+    expect(completo.payload.template.language.code).toBe('es');
+    expect(params(completo)).toEqual([
+      'R4T9 · Ana Pérez', '4 personas', 'viernes 9 de octubre a las 20:00, terraza', '+' + CLIENTE,
+      'Celebración: cumpleaños · Pedido especial: una silla alta',
+    ]);
+  });
+
+  it('el rol cocina NO recibe la plantilla nueva ni el teléfono: sigue con `pedido_registrado` (forma pedido), como hoy', () => {
+    const items = L.avArmar('reserva', reserva(), CSV, POR_ROL, sdCon(), AHORA);
+    const cocina = plantillaDe(items, SILVANA);
+    expect(cocina.payload.template.name).toBe('pedido_registrado');
+    expect(params(cocina)).toEqual([
+      'SOLICITUD DE RESERVA R4T9: 4 personas, viernes 9 de octubre a las 20:00, terraza',
+      'sin cobro', 'reserva de mesa por confirmar con el cliente', 'no aplica',
+    ]);
+    expect(JSON.stringify(cocina.payload)).not.toContain(CLIENTE);
+    expect(items.map((i: J) => i.clase)).toEqual(['plantilla', 'plantilla']); // el número de avisos por reserva no cambia
+  });
+
+  it('con la ventana abierta sigue el mismo número de avisos (plantilla + texto por destinatario) y el texto de cocina no lleva teléfono', () => {
+    const con = L.avArmar('reserva', reserva(), CSV, POR_ROL, ABIERTA, AHORA);
+    const sin = L.avArmar('reserva', reserva(), CSV, { ...CFG, plantillaReserva: 'pedido_registrado', formaPlantillaReserva: 'pedido' }, ABIERTA, AHORA);
+    expect(con.map((i: J) => i.clase)).toEqual(sin.map((i: J) => i.clase));
+    const textoCocina = con.find((i: J) => i.para === SILVANA && i.clase === 'detalle');
+    expect(JSON.stringify(textoCocina.payload)).not.toContain(CLIENTE);
+  });
+
+  it('sin las claves nuevas el aviso sale IGUAL que hoy (compatible hacia atrás), también con la ventana abierta', () => {
+    const base = { ...CFG, plantillaReserva: 'pedido_registrado', formaPlantillaReserva: 'pedido' };
+    for (const sd of [sdCon(), ABIERTA]) {
+      const hoy = JSON.stringify(L.avPlan('reserva', reserva(), CSV, base, sd, AHORA));
+      const conVacias = JSON.stringify(L.avPlan('reserva', reserva(), CSV, { ...base, plantillaReservaCompleto: '', formaPlantillaReservaCompleto: '', idiomaPlantillaReservaCompleto: '' }, sd, AHORA));
+      expect(conVacias).toBe(hoy);
+    }
+    expect(plantillaDe(L.avArmar('reserva', reserva(), CSV, base, sdCon(), AHORA), ANDRES).payload.template.name).toBe('pedido_registrado');
+  });
+
+  it('cada clave pisa por separado: solo la plantilla, solo el idioma, solo la forma', () => {
+    const soloNombre = L.avArmar('reserva', reserva(), CSV, { ...CFG, plantillaReservaCompleto: 'otra_plantilla' }, sdCon(), AHORA);
+    expect(plantillaDe(soloNombre, ANDRES).payload.template.name).toBe('otra_plantilla');
+    expect(params(plantillaDe(soloNombre, ANDRES))).toHaveLength(4); // la forma sigue siendo la de la reserva (cita)
+    expect(plantillaDe(soloNombre, SILVANA).payload.template.name).toBe('appointment_confirmed');
+    const soloIdioma = L.avArmar('reserva', reserva(), CSV, { ...CFG, idiomaPlantillaReservaCompleto: 'en_US' }, sdCon(), AHORA);
+    expect(plantillaDe(soloIdioma, ANDRES).payload.template.language.code).toBe('en_US');
+    expect(plantillaDe(soloIdioma, SILVANA).payload.template.language.code).toBe('es');
+    const soloForma = L.avArmar('reserva', reserva(), CSV, { ...CFG, formaPlantillaReservaCompleto: 'solicitud' }, sdCon(), AHORA);
+    expect(params(plantillaDe(soloForma, ANDRES))).toHaveLength(5);
+    expect(params(plantillaDe(soloForma, SILVANA))).toHaveLength(4);
+  });
+
+  it('formaPlantillaReserva = «solicitud» a nivel de evento: completo recibe la forma solicitud; COCINA degrada a `pedido` (4 variables, sin teléfono)', () => {
+    const cfg = { ...CFG, plantillaReserva: 'solicitud_reserva', formaPlantillaReserva: 'solicitud' };
+    for (const sd of [sdCon(), abierta()]) {
+      const items = L.avArmar('reserva', reserva(), CSV, cfg, sd, AHORA);
+      expect(params(plantillaDe(items, ANDRES))).toHaveLength(5);
+      expect(params(plantillaDe(items, ANDRES))[3]).toBe('+' + CLIENTE);
+      const cocina = params(plantillaDe(items, SILVANA));
+      expect(cocina).toEqual([
+        'SOLICITUD DE RESERVA R4T9: 4 personas, viernes 9 de octubre a las 20:00, terraza',
+        'sin cobro', 'reserva de mesa por confirmar con el cliente', 'no aplica',
+      ]);
+      expect(JSON.stringify(plantillaDe(items, SILVANA).payload)).not.toContain(CLIENTE);
+    }
+    // Con la forma solo por rol (`...Completo`) tampoco la ve cocina; y un rol desconocido es cocina.
+    const rol = L.avArmar('reserva', reserva(), `completo:${ANDRES},rarito:${SILVANA}`, { ...CFG, formaPlantillaReserva: 'solicitud' }, sdCon(), AHORA);
+    expect(params(plantillaDe(rol, SILVANA))).toHaveLength(4);
+  });
+
+  it('una forma inválida por rol cae a la de la reserva y se anota; «solicitud» no existe para la derivación', () => {
+    const rara = L.avPlan('reserva', reserva(), CSV, { ...POR_ROL, formaPlantillaReservaCompleto: 'otra' }, sdCon(), AHORA);
+    expect(rara.errores).toContain('forma_invalida_reserva_completo');
+    expect(params(plantillaDe(rara.items, ANDRES))).toHaveLength(4);
+    const deriva = L.avPlan('transferencia', { nombre: 'Ana Pérez', telefono: CLIENTE, motivo: 'consulta', codigo: 'C1D2' }, CSV, { ...CFG, formaPlantillaDerivacion: 'solicitud' }, sdCon(), AHORA);
+    expect(deriva.errores).toContain('forma_invalida_derivacion');
+  });
+
+  it('ninguna variable lleva saltos de línea, tabuladores ni 4+ espacios, ni queda vacía, con datos hostiles o ausentes; y se recortan por campo', () => {
+    const hostil = reserva({
+      codigo: 'R\n4', nombre: 'Ana\n\tPérez',
+      reserva: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'terraza\n\n          norte', nombre: 'Ana    María\tPérez', celebracion: 'cum\npleaños' + ' x'.repeat(200), requerimiento: 'silla\t\talta' },
+    });
+    for (const datos of [hostil, { reserva: {} }, reserva({ telefono: '' })]) {
+      for (const it of L.avArmar('reserva', datos, CSV, POR_ROL, sdCon(), AHORA)) {
+        const v = params(it);
+        if (it.rol === 'completo') expect(v).toHaveLength(5);
+        for (const x of v) {
+          expect(x).not.toMatch(/[\n\r\t]/);
+          expect(x).not.toMatch(/ {4,}/);
+          expect(x.length).toBeGreaterThan(0);
+          expect(x.length).toBeLessThanOrEqual(300);
+        }
+      }
+    }
+    const completo = params(plantillaDe(L.avArmar('reserva', hostil, CSV, POR_ROL, sdCon(), AHORA), ANDRES));
+    expect(completo[0].length).toBeLessThanOrEqual(90);
+    expect(completo[1].length).toBeLessThanOrEqual(30);
+    expect(completo[2].length).toBeLessThanOrEqual(100);
+    expect(completo[3].length).toBeLessThanOrEqual(20);
+    // Sin teléfono ni notas: «—» y «sin datos adicionales».
+    const sin = params(plantillaDe(L.avArmar('reserva', { codigo: 'R4T9', reserva: { personas: 2, fecha: '2026-10-09', hora: '20:00', nombre: 'Ana Pérez' } }, CSV, POR_ROL, sdCon(), AHORA), ANDRES));
+    expect(sin[3]).toBe('—');
+    expect(sin[4]).toBe('sin datos adicionales');
+  });
+
+  it('nunca dice «confirmada» ni nada que parezca una reserva aceptada, y la red de prohibidas no se dispara', () => {
+    const items = L.avArmar('reserva', reserva({ reserva: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'salón', nombre: 'Ana Pérez', celebracion: 'reserva confirmada ya pagado', requerimiento: '' } }), CSV, POR_ROL, sdCon(), AHORA);
+    for (const x of params(plantillaDe(items, ANDRES))) {
+      expect(x).not.toMatch(VM_PROHIBIDAS);
+      expect(x).not.toMatch(/confirmad/i);
+    }
+  });
+});

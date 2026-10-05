@@ -470,11 +470,16 @@ function rsValidar(r, cfg, nombrePerfil, ahoraMs) {
 }
 
 // La pregunta por lo que falta. Con todo lo esencial vacio es el pedido de datos completo, que abre con «¡Con gusto!»
-// y un emoji (sin el emoji si `p.nivelEmojis` es «ninguno»).
+// y un emoji (sin el emoji si `p.nivelEmojis` es «ninguno»). Si ya hay algo entendido y quien llama pasa la reserva
+// (`p.reserva`), el mensaje MUESTRA lo entendido y pide solo lo que falta («Tengo: jueves 8 de octubre, 2 personas.
+// Me falta: la hora y a nombre de quién (nombre y apellido).»): repetir «me falta saber…» sin decir que se entendio
+// hacia que el cliente repitiera lo mismo. Con `p.reclamo` (el cliente dijo «ya te dije…») la pregunta cambia: se
+// pide perdon y, si falta la hora, se da un ejemplo de como escribirla.
 function rsPreguntaFaltantes(faltan, p) {
   const f = Array.isArray(faltan) ? faltan : [];
   const falta = function (k) { return f.indexOf(k) >= 0; };
-  const zonas = _rsZonas(p && typeof p === 'object' ? p.zonas : []);
+  const o = p && typeof p === 'object' ? p : {};
+  const zonas = _rsZonas(o.zonas);
   const inicial = falta('personas') && falta('fecha') && falta('hora');
   const partes = [];
   if (falta('personas')) partes.push('cuántas personas');
@@ -485,11 +490,85 @@ function rsPreguntaFaltantes(faltan, p) {
   if (falta('nombre')) partes.push('a nombre de quién (nombre y apellido)');
   if (!partes.length) return '';
   if (inicial) {
-    return '¡Con gusto!' + (p && typeof p === 'object' && p.nivelEmojis === 'ninguno' ? '' : ' 🙌')
+    return '¡Con gusto!' + (o.nivelEmojis === 'ninguno' ? '' : ' 🙌')
       + ' Para tu solicitud de reserva cuéntame en un solo mensaje: ' + _rsListaY(partes)
       + '. Si celebran algo o necesitan algo especial, cuéntamelo también.';
   }
-  return 'Para tu solicitud de reserva me falta saber ' + _rsListaY(partes) + '.';
+  const entendido = o.reserva && typeof o.reserva === 'object' ? _rsEntendido(o.reserva) : [];
+  if (!entendido.length) return 'Para tu solicitud de reserva me falta saber ' + _rsListaY(partes) + '.';
+  const faltaTxt = [];
+  if (falta('personas')) faltaTxt.push('cuántas personas');
+  if (falta('fecha') && falta('hora')) faltaTxt.push('el día y la hora');
+  else if (falta('fecha')) faltaTxt.push('el día');
+  else if (falta('hora')) faltaTxt.push('la hora');
+  if (falta('nombre')) faltaTxt.push('a nombre de quién (nombre y apellido)');
+  return (o.reclamo === true ? 'Disculpa, no me quedó claro. ' : '') + 'Para tu solicitud de reserva tengo: ' + entendido.join(', ') + '. Me falta: ' + _rsListaY(faltaTxt) + '.'
+    + (o.reclamo === true && falta('hora') ? ' Escribe la hora así: «19:00».' : '');
+}
+
+// Lo que ya se entendio de la reserva, en frases cortas para «Tengo: …».
+function _rsEntendido(r) {
+  const x = rsValidarExtraccion(r);
+  const partes = [];
+  const cuando = _rsFechaLegible(x.fecha, x.hora);
+  if (cuando) partes.push(cuando);
+  else if (x.hora) partes.push('a las ' + x.hora);
+  if (x.personas) partes.push(_rsPersonas(x.personas) + (x.zona ? ' en ' + x.zona : ''));
+  // Lo libre del cliente va rotulado, con los mismos rótulos que el resumen: nunca suelto como si lo dijera el asistente.
+  if (x.celebracion) partes.push('celebración: ' + x.celebracion);
+  if (x.requerimiento) partes.push('pedido especial: ' + x.requerimiento);
+  if (x.nombre) partes.push('a nombre de ' + x.nombre);
+  return partes;
+}
+
+// ---------------------------------------------------------------------------
+// La hora suelta («19», «7 pm», «a las 7», «19:30»): la toma el CODIGO, no el modelo
+// ---------------------------------------------------------------------------
+// «Ya te dije…», «te lo dije»: el cliente reclama que ya dio un dato.
+function rsReclamo(texto) {
+  return /\b(ya (te |se )?(lo |la )?(dije|puse|escribi|mande|di)|te (lo )?(dije|puse|escribi)|ya lo (dije|puse))\b/.test(_rsNorm(texto));
+}
+
+// Cuando lo pendiente es la hora (hay personas y no hay hora), una respuesta que es SOLO una hora se toma como la hora, sin
+// preguntarle al modelo qué es un «19» suelto (podia leerlo como personas y dejar la hora vacia: el cliente la repetia tres veces).
+// Devuelve «HH:MM» o ''. Un numero de 13 a 23 es de 24 horas; de 1 a 12 sin marca («pm», «de la noche»…) se elige entre la
+// tarde y la mañana segun el horario de reservas del dia (si ya hay fecha): primero la lectura habitual (1 a 10 = tarde, 11 y 12 = tal cual) y, si no cae dentro
+// de lo que el restaurante recibe, la otra. Nunca valida: eso lo hace `rsValidar`, que dice cuando la hora no es de atencion.
+function rsHoraSuelta(texto, reserva, cfg, ahoraMs) {
+  const r = reserva && typeof reserva === 'object' ? rsValidarExtraccion(reserva) : null;
+  // Sin fecha no se toma ninguna hora suelta: un «12» puede ser el día. Y un «para 3» no es una hora (puede ser de personas): el prefijo solo
+  // vale con «las»/«la» («a las 7», «para las 7»); un número pelado («19», «7») sí, porque es la respuesta a «¿a qué hora?».
+  if (!r || !(r.personas > 0) || !r.fecha || r.hora) return '';
+  const n = _rsNorm(texto).replace(/^(ya )?(te )?(lo )?(dije|puse|escribi|mande) /, '');
+  const m = /^(?:(?:a|para|sobre) (?:las? )|las? )?(\d{1,2})(?: ?(\d{2}))?(?: ?(am|pm|hrs?|horas?|h))?(?: de la (tarde|noche|manana))?(?: en punto)?(?: por favor)?$/.exec(n);
+  if (!m) return '';
+  const hh = Number(m[1]);
+  const mm = m[2] === undefined ? 0 : Number(m[2]);
+  if (hh > 23 || mm > 59) return '';
+  if (m[2] !== undefined && m[2].length !== 2) return '';
+  const marca = m[3] === 'am' || m[4] === 'manana' ? 'am' : (m[3] === 'pm' || m[4] === 'tarde' || m[4] === 'noche' ? 'pm' : '');
+  let candidatas;
+  if (hh >= 13 || hh === 0) {
+    if (marca === 'am' && hh >= 13) return '';
+    candidatas = [hh];
+  } else if (marca === 'pm') {
+    candidatas = [hh === 12 ? 12 : hh + 12];
+  } else if (marca === 'am') {
+    candidatas = [hh === 12 ? 0 : hh];
+  } else if (hh >= 11) {
+    candidatas = hh === 11 ? [11, 23] : [12, 0];
+  } else {
+    candidatas = [hh + 12, hh];
+  }
+  const horas = candidatas.map(function (h) { return _rsPad2(h) + ':' + _rsPad2(mm); });
+  const c = cfg && typeof cfg === 'object' ? cfg : {};
+  const horario = _rsHorario(c.horario);
+  if (horas.length > 1 && horario && r.fecha && _rsEsFecha(r.fecha)) {
+    const util = _rsTramosUtiles(horario, r.fecha);
+    const cabe = horas.filter(function (h) { const min = _rsMin(h); return util.some(function (t) { return min >= t[0] && min <= t[1]; }); });
+    if (cabe.length) return cabe[0];
+  }
+  return horas[0];
 }
 
 // ---------------------------------------------------------------------------

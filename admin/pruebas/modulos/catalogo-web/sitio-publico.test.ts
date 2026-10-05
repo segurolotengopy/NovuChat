@@ -21,7 +21,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { enlaceAlChat } from '../../../web/src/modulos/catalogo-web/publico/saneo.ts';
-import { Confirmacion } from '../../../web/src/modulos/catalogo-web/publico/SitioCatalogo.tsx';
+import { Confirmacion, LIMITE_REFERENCIA, Pedido } from '../../../web/src/modulos/catalogo-web/publico/SitioCatalogo.tsx';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -738,5 +738,89 @@ describe('textos de cara al cliente: español de Bolivia, sin voseo', () => {
       'Actualiza la página', 'Sepáralos en dos pedidos', 'Volver al chat']) {
       expect(t, bueno).toContain(bueno);
     }
+  });
+});
+
+// =============================================================================
+// REFERENCIAS PARA LLEGAR Y AVISO DEL DELIVERY (Andres y Silvana, 04/10/2026,
+// Q'Taco): un campo opcional con envío, un aviso cuando la página no suma el
+// costo del delivery, y el ejemplo del cuadro de notas sin la referencia.
+// =============================================================================
+describe('pedido: referencias para llegar, aviso del delivery y ejemplo de la nota', () => {
+  const desdeWeb = createRequire(join(ADMIN, 'web', 'package.json'));
+  const AVISO = 'El delivery se paga aparte, al repartidor, al recibir tu pedido.';
+  type Entrega = {
+    aceptaRetiroEnLocal: boolean; aceptaDelivery: boolean;
+    costoDelivery: number | null; pedidoMinimo: number | null;
+  };
+  const ENVIO: Entrega = {
+    aceptaRetiroEnLocal: false, aceptaDelivery: true, costoDelivery: null, pedidoMinimo: null,
+  };
+  const pintar = (entrega: Partial<Entrega>) => {
+    const servidor = desdeWeb('react-dom/server');
+    const React = desdeWeb('react');
+    return servidor.renderToStaticMarkup(React.createElement(Pedido, {
+      ficha: 'f1', items: [], carrito: {}, moneda: 'BOB', total: 0,
+      entrega: { ...ENVIO, ...entrega },
+      alCambiar: () => undefined, alVolver: () => undefined, alConfirmar: () => undefined,
+    }));
+  };
+
+  it('con envío: aparece el campo opcional, de texto y con tope de 150', () => {
+    const html = pintar({});
+    expect(html).toContain('Referencias para llegar (opcional)');
+    expect(LIMITE_REFERENCIA).toBe(150);
+    expect(html).toMatch(/<input[^>]*type="text"[^>]*maxLength="150"|<input[^>]*maxLength="150"[^>]*type="text"/i);
+  });
+
+  it('la ayuda de la dirección pasa a «Calle, número y zona»', () => {
+    const html = pintar({});
+    expect(html).toContain('placeholder="Calle, número y zona"');
+    expect(html).not.toContain('alguna referencia');
+  });
+
+  it('NEGANDO: con retiro elegido no hay campo de referencias, ni dirección, ni aviso', () => {
+    const html = pintar({ aceptaRetiroEnLocal: true, aceptaDelivery: true });
+    expect(html).not.toContain('Referencias para llegar');
+    expect(html).not.toContain('¿A dónde lo llevamos?');
+    expect(html).not.toContain(AVISO);
+  });
+
+  it('el aviso sale solo cuando la página no suma costo de envío: null o 0', () => {
+    expect(pintar({ costoDelivery: null })).toContain(AVISO);
+    expect(pintar({ costoDelivery: 0 })).toContain(AVISO);
+  });
+
+  it('NEGANDO: con un costo de delivery mayor que cero el aviso no sale (el total ya lo suma)', () => {
+    for (const costo of [1, 5, 10.5]) {
+      const html = pintar({ costoDelivery: costo });
+      expect(html, String(costo)).not.toContain(AVISO);
+      expect(html).toContain('Referencias para llegar (opcional)');
+    }
+  });
+
+  it('con costo > 0 el total sigue sumando el envío (el aviso no cambia la cuenta)', () => {
+    expect(pintar({ costoDelivery: 7 })).toContain('Total Bs');
+  });
+
+  it('el cuadro de notas trae el ejemplo nuevo y ya no el del timbre', () => {
+    const html = pintar({});
+    expect(html).toContain('placeholder="Sin cebolla, tipo de carne, tipo de gaseosa…"');
+    expect(html).not.toContain('timbre');
+  });
+
+  it('el cuerpo del pedido manda `referencia` solo con envío y con texto, recortada', () => {
+    const t = sinComentarios(sitioFuente());
+    expect(t).toContain("...(modo === 'envio' && referencia.trim() ? { referencia: referencia.trim() } : {})");
+    // Ninguna otra forma de mandarla: sin el campo, el cuerpo es el de antes.
+    expect(t.match(/referencia:/g)?.length).toBe(1);
+  });
+
+  it('la CSP del sitio público no cambia: un input de texto no pide ningún origen', () => {
+    const csp = valorDe(catalogo as Sitio, '**', 'Content-Security-Policy');
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("connect-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("form-action 'none'");
   });
 });
