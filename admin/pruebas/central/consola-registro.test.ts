@@ -382,10 +382,15 @@ describe('H2b-5: ninguna lista de flujos ni de pestañas queda escrita en la con
     //    (no los flujos que el negocio tiene) y `config/onboarding` es el nombre de un documento.
     //  - Cobro.tsx: `config/venta` y `config/agendamiento` son nombres de documento (`vertical=` de
     //    `ConfiguracionVertical`, que declara los campos de cada uno), no una lista de flujos.
+    //  - ContadoresDeCobro.tsx (#407, llegó con main): `getDoc(.../config/venta)` es la lectura de UN documento
+    //    (`cobroReal`), no una lista ni una decisión por flujo. Límite conocido, fuera de H2b-5: «Cobros» también
+    //    la abre un negocio de reservas, cuyo QR vive en `config/agendamiento`; derivar el documento con
+    //    `capacidadesDeConsola(...).documentoCobro` cambiaría lo que ese negocio ve y es de su dueño (#407).
     const TOPE: Record<string, number> = {
       'central/paginas/Configuracion.tsx': 2,
       'modulos/captacion/Captacion.tsx': 6,
       'modulos/cobros/Cobro.tsx': 10,
+      'modulos/cobros/ContadoresDeCobro.tsx': 1,
     };
     const hallados: Record<string, number> = {};
     for (const a of ARCHIVOS) {
