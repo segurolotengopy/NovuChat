@@ -32,6 +32,7 @@
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { REGION } from '../../core/region.js';
+import { tieneModulo } from '../../registro.js';
 
 const db = () => getFirestore();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -150,6 +151,30 @@ export async function descontarPedido(
 }
 
 // ---------------------------------------------------------------------------
+// EL MÓDULO LO EXIGE EL SERVIDOR (05/10/2026)
+// ---------------------------------------------------------------------------
+
+/**
+ * Las dos callables de este módulo solo sirven a un comercio que lo tiene
+ * encendido. Ocultar la pestaña no cerraba nada: quien conocía el nombre de la
+ * función la llamaba igual. La decide el registro (`tieneModulo`), no una lista
+ * propia: con `tenants.modulos` (lista) manda la lista; sin ella, el respaldo por
+ * `flujos`/`vertical` da `inventario` al flujo de venta, así que un comercio de
+ * venta sin lista sigue igual que antes. Ficha inexistente, o `flujos` que no es
+ * lista, o un flujo de reservas o de captación sin lista: «no» (falla cerrado).
+ *
+ * UNA LECTURA DE DOCUMENTO POR LLAMADA, FUERA de la transacción de `ajustarStock`
+ * (no cambia el orden de lecturas y escrituras de ésta) y después de resolver al
+ * llamador: quien no es administrador no cuesta ni esa lectura.
+ */
+async function exigirModulo(tenantId: string): Promise<void> {
+  const ficha = await db().doc(`tenants/${tenantId}`).get();
+  if (!ficha.exists || !tieneModulo(ficha.data() ?? {}, 'inventario')) {
+    throw new HttpsError('permission-denied', 'Este negocio no tiene el módulo de inventario.');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // AJUSTE A MANO, desde la consola
 // ---------------------------------------------------------------------------
 
@@ -167,6 +192,7 @@ export const ajustarStock = onCall({ region: REGION }, async (peticion: Callable
   if ((nc.t ?? {})[tenantId] !== 'admin') {
     throw new HttpsError('permission-denied', 'Solo el administrador del negocio.');
   }
+  await exigirModulo(tenantId);
 
   const motivo = ['reposicion', 'ajuste', 'merma', 'inicial'].includes(String(d['motivo']))
     ? d['motivo'] as MotivoMovimiento : 'ajuste';
@@ -219,6 +245,7 @@ export const dejarDeControlarStock = onCall({ region: REGION }, async (peticion:
   if ((nc.t ?? {})[tenantId] !== 'admin') {
     throw new HttpsError('permission-denied', 'Solo el administrador del negocio.');
   }
+  await exigirModulo(tenantId);
   await db().doc(`tenants/${tenantId}/catalogo/${itemId}`)
     .update({ stock: FieldValue.delete() });
   return { ok: true };
