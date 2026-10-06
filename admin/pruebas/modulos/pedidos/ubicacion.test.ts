@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { enlaceAMaps, ubicacionValida } from '../../../web/src/modulos/pedidos/ubicacion.ts';
+import { enlaceAMaps, enlaceDelPedido, ubicacionValida } from '../../../web/src/modulos/pedidos/ubicacion.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const PAGINA = readFileSync(join(aqui, '../../../web/src/modulos/pedidos/Pedidos.tsx'), 'utf8');
@@ -97,8 +97,8 @@ describe('el enlace a Maps de un pedido', () => {
 
 describe('la pantalla de Pedidos', () => {
   it('arma el enlace solo con la función pura y lo abre sin dar acceso a la consola', () => {
-    expect(PAGINA).toContain("import { enlaceAMaps } from './ubicacion'");
-    expect(PAGINA).toContain('enlaceAMaps(p.ubicacion)');
+    expect(PAGINA).toContain("import { enlaceDelPedido } from './ubicacion'");
+    expect(PAGINA).toContain('enlaceDelPedido(p)');
     expect(PAGINA).toContain('target="_blank"');
     expect(PAGINA).toContain('rel="noopener noreferrer"');
     // El único href de la página es el que sale de la función pura.
@@ -114,5 +114,36 @@ describe('la pantalla de Pedidos', () => {
     expect(PAGINA).toMatch(/typeof p\.direccion === 'string' && p\.direccion !== ''/);
     expect(PAGINA).toContain('Ubicación compartida');
     expect(PAGINA).toContain('Abrir en Maps');
+  });
+
+  it('etiqueta el envío que guarda el servidor y no depende solo de «delivery»', () => {
+    expect(PAGINA).toMatch(/envio: '🛵 Enviar a domicilio'/);
+    expect(PAGINA).not.toMatch(/p\.entrega === 'delivery'/);
+  });
+});
+
+describe('con la forma REAL del pedido del catálogo web (entrega: envio | retiro)', () => {
+  const UBICACION = { lat: -17.783327, lng: -63.182141 };
+  const ENLACE = 'https://www.google.com/maps/search/?api=1&query=-17.78333%2C-63.18214';
+  const real = (extra: Record<string, unknown>) => ({
+    items: [], total: 50, moneda: 'BOB', costoEnvio: 5, direccion: 'Calle 1', nota: '', ...extra,
+  });
+
+  it('envio con ubicación válida: aparece el enlace', () => {
+    expect(enlaceDelPedido(real({ entrega: 'envio', ubicacion: UBICACION }))).toBe(ENLACE);
+  });
+  it('delivery (nombre alterno) con ubicación válida: también', () => {
+    expect(enlaceDelPedido(real({ entrega: 'delivery', ubicacion: UBICACION }))).toBe(ENLACE);
+  });
+  it('retiro con ubicación: no aparece', () => {
+    expect(enlaceDelPedido(real({ entrega: 'retiro', ubicacion: UBICACION }))).toBeNull();
+    expect(enlaceDelPedido(real({ entrega: 'local', ubicacion: UBICACION }))).toBeNull();
+    expect(enlaceDelPedido(real({ ubicacion: UBICACION }))).toBeNull();
+  });
+  it('envio sin ubicación o con una inválida: igual que hoy', () => {
+    expect(enlaceDelPedido(real({ entrega: 'envio' }))).toBeNull();
+    expect(enlaceDelPedido(real({ entrega: 'envio', ubicacion: { lat: 0, lng: 0 } }))).toBeNull();
+    expect(enlaceDelPedido(real({ entrega: 'envio', ubicacion: { lat: '1', lng: '2' } }))).toBeNull();
+    expect(enlaceDelPedido(real({ entrega: 'envio', ubicacion: 'javascript:alert(1)' }))).toBeNull();
   });
 });

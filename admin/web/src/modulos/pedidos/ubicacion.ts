@@ -49,3 +49,15 @@ export function enlaceAMaps(valor: unknown): string | null {
   return 'https://www.google.com/maps/search/?api=1&query='
     + `${u.lat.toFixed(DECIMALES)}%2C${u.lng.toFixed(DECIMALES)}`;
 }
+
+/**
+ * El enlace de un pedido, o `null`. La ubicación solo importa cuando el pedido
+ * va a domicilio. El servidor guarda `entrega: 'envio' | 'retiro'`
+ * (`checkoutCatalogo`); `'delivery'` es el nombre que usan otras partes y se
+ * acepta también. Un retiro en el local nunca muestra el enlace, aunque traiga
+ * ubicación.
+ */
+export function enlaceDelPedido(p: { entrega?: unknown; ubicacion?: unknown }): string | null {
+  if (p.entrega !== 'envio' && p.entrega !== 'delivery') return null;
+  return enlaceAMaps(p.ubicacion);
+}

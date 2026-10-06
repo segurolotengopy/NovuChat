@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { db } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
-import { enlaceAMaps } from './ubicacion';
+import { enlaceDelPedido } from './ubicacion';
 
 /**
  * =============================================================================
@@ -54,6 +54,7 @@ interface Pedido {
 }
 
 const ENTREGA: Record<string, string> = {
+  envio: '🛵 Enviar a domicilio', // lo que guarda el catálogo web
   delivery: '🛵 Enviar a domicilio',
   retiro: '🏪 Retira en el local',
   local: '🏪 Retira en el local',
@@ -132,7 +133,7 @@ export function Pedidos() {
             {pedidos.map((p) => {
               const items = Array.isArray(p.items) ? p.items as ItemPedido[] : [];
               const entrega = ENTREGA[String(p.entrega ?? '')] ?? null;
-              const enlaceMaps = p.entrega === 'delivery' ? enlaceAMaps(p.ubicacion) : null;
+              const enlaceMaps = enlaceDelPedido(p);
               return (
                 <li key={p.id} className="tarjeta pedido">
                   <div className="pedido-cabecera">
