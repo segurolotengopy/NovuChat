@@ -1,0 +1,35 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "nota": "Escenarios que esta batería NO implementa todavía: esperan la rama indicada (o no se asignaron a un lote). Es una lista de seguimiento, no una suite.",
+  "pendientes": [
+    {
+      "id": "B4",
+      "espera": "rama funcional",
+      "titulo": "Formas naturales de volver al pedido anterior tras «Cambiar algo»",
+      "nota": "marcado como falla en la columna «Hoy»; no figuraba en la lista de exclusión del encargo"
+    },
+    {"id": "C1", "espera": "rama funcional", "titulo": "Cancelar un pedido guardado sin confirmar"},
+    {"id": "C2", "espera": "rama funcional", "titulo": "«Cancelar pedido» con el QR enviado dice que se canceló"},
+    {"id": "C3", "espera": "rama funcional", "titulo": "Cancelar con el comprobante ya enviado: pasa al local con aviso y botón"},
+    {"id": "C4", "espera": "rama funcional", "titulo": "«no cancela» / «no quiero cancelar» no cancela"},
+    {"id": "C5", "espera": "rama funcional", "titulo": "«Qué tengo guardado» muestra el resumen con botones"},
+    {"id": "C6", "espera": "rama funcional", "titulo": "«Qué tengo guardado» sin carrito"},
+    {"id": "C9", "espera": "rama funcional", "titulo": "Frase que no se entiende: una aclaración con botones, deriva solo si insiste"},
+    {"id": "E1", "espera": "rama voz", "titulo": "Comprobante que coincide: el texto nuevo, nunca «pago acreditado»"},
+    {"id": "E4", "espera": "rama voz", "titulo": "Comprobante ilegible por segunda vez o sin cotejo: pasa al local con aviso"},
+    {
+      "id": "E6",
+      "espera": "rama voz",
+      "titulo": "Comprobante enviado con el aviso al local caído: derivación genérica",
+      "nota": "la columna «Hoy» dice OK/ampliar"
+    },
+    {"id": "F1", "espera": "rama voz", "titulo": "«hola» y «Menú»: saludo corto al volver al menú"},
+    {
+      "id": "F5",
+      "espera": "rama funcional",
+      "titulo": "Teléfono con el uso extendido pasado del umbral: aviso fijo",
+      "nota": "no figuraba en ninguno de los dos lotes del encargo; la columna «Hoy» dice que no es un defecto del flujo"
+    }
+  ]
+}

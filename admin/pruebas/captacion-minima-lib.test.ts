@@ -1048,7 +1048,7 @@ describe('los datos del tenant que se versionan', () => {
     });
     expect(g.rubros['otro']).toMatchObject({
       pregunta: '¡Perfecto! 😊 Cuéntame un poquito, ¿de qué trata tu negocio y qué es lo que más tiempo te quita hoy?',
-      preguntaDolor: '🤔 ¿Y qué es lo que más tiempo te quita hoy en tu negocio?',
+      preguntaDolor: '¿Y qué es lo que más tiempo te quita hoy en tu negocio?',
     });
     expect(g.rubros['otro'].dolor).toBeUndefined();
     // Cada rubro lleva su impacto y su cierre, y ninguno trae imagen.
@@ -1889,6 +1889,22 @@ describe('el turno: ccDecidir y ccCompletar', () => {
     expect(cuerpo(mal2['mensajes'][0])).not.toMatch(/[Cc]ómo se llama/);
     expect(mal2['e'].paso).toBe('esperando_empresa'); // el nombre, cuando llegue, se anota
     expect(decidir(mal2['e'], TXT('Panadería Sol'))['accion']).toBe('empresa');
+  });
+  it('Prueba del 05/10: el rubro que el cliente escribió no lo pisa lo que devuelve el modelo al contestar el dolor, y la pregunta no lleva dos emojis seguidos', () => {
+    // «tecnologia» escrito en la lista → rubro libre; después cuenta su problema y el modelo lo llama «soporte y entregas».
+    const e1 = E({ paso: 'eligiendo_rubro' });
+    const p1 = decidir(e1, TXT('tecnologia'));
+    const r1 = completar(p1, OK({ rubroLibre: 'tecnologia' }));
+    expect(r1['e'].rubroLibre).toBe('tecnologia');
+    expect(r1['e'].paso).toBe('esperando_negocio');
+    const t1 = cuerpo(r1['mensajes'][0]);
+    expect(t1, 'un emoji de la empatía y la pregunta sin otro pegado').not.toMatch(/\p{Extended_Pictographic}\s+\p{Extended_Pictographic}/u);
+    const r2 = completar(decidir(r1['e'], TXT('tengo soporte todo el día y no logro confirmar las entregas')), OK({ rubroLibre: 'soporte y entregas' }));
+    expect(r2['e'].rubroLibre, 'la planilla lleva el rubro, no el problema').toBe('tecnologia');
+    expect(r2['e'].hechos.respondioDolor).toBe(true);
+    // Quien toca «Otro» y describe su negocio sin haber dicho el rubro, sí lo deja anotado.
+    const r3 = completar(decidir(E({ paso: 'esperando_negocio', hechos: { eligioOtro: true } }), TXT('Tengo un estudio contable')), OK({ rubroLibre: 'estudio contable' }));
+    expect(r3['e'].rubroLibre).toBe('estudio contable');
   });
   it('el descarte del modelo: aceptado en un texto, con texto fijo y paso libre; rechazado con un toque, una imagen, Alta o el motivo escrito', () => {
     const e = E({ paso: 'eligiendo_rubro' });

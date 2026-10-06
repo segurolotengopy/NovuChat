@@ -1,0 +1,277 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "B",
+  "casos": [
+    {
+      "id": "B1",
+      "titulo": "«Cambiar algo» explica que se elige de nuevo desde la carta y cómo dejarlo como estaba, en un solo mensaje",
+      "estadoPrevio": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"},
+          "esperado": {"mensajes": 1, "titulos": ["Cambiar algo"], "estado": {"paso": "pedido_confirmar"}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["vuelve a elegir todo desde la carta", "hoy tienes:.*Tacos de Birria", "Dejarlo como estaba"],
+            "titulos": ["Dejarlo como estaba"],
+            "botones": ["p|dejar"],
+            "estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}},
+            "efectos": {"derivacion": false, "aviso": false, "modelo": false}
+          }
+        }
+      ]
+    },
+    {
+      "id": "B2",
+      "titulo": "Tras «Cambiar algo», «dejarlo como estaba» (y sus formas) devuelve el resumen guardado con botones",
+      "estadoPrevio": [
+        {"cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
+          "esperado": {"estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "dejarlo como estaba"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Tu pedido", "2 × Tacos de Birria"],
+            "titulos": ["Confirmar pedido"],
+            "botones": ["p|confirmar", "p|cambiar"],
+            "estado": {"paso": "pedido_confirmar", "carrito": {"longitud": 1}},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {"turno": 1, "frases": ["dejarlo como estaba", "déjalo como estaba", "dejalo asi", "dejarlo como estava"]}
+    },
+    {
+      "id": "B3",
+      "titulo": "Tras «Cambiar algo», un audio o una frase torpe de «déjalo como estaba» devuelve el resumen, sin derivar ni saludar",
+      "estadoPrevio": [
+        {"cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
+          "esperado": {"estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "audio", "transcripcion": "No déjalo como estaba no más."},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Tu pedido", "2 × Tacos de Birria"],
+            "textosNo": ["hola", "bienvenid", "asistente virtual"],
+            "titulos": ["Confirmar pedido"],
+            "estado": {"paso": "pedido_confirmar", "carrito": {"longitud": 1}},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [{"texto": "No déjalo como estaba no más.", "audio": true}, {"texto": "te dije que lo deses como estaba", "audio": false}]
+      }
+    },
+    {
+      "id": "B5",
+      "titulo": "«no dejes como estaba» y sus negaciones NO restauran: se pregunta UNA vez con botones",
+      "estadoPrevio": [
+        {"cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
+          "esperado": {"estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "no dejes como estaba"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta\\?"],
+            "textosNo": ["Tu pedido:"],
+            "titulos": ["Dejarlo como estaba", "Elegir otra vez"],
+            "botones": ["p|dejar", "m|pedido"],
+            "titulosNo": ["Confirmar pedido"],
+            "estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}, "preguntoDejar": true},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "no dejes como estaba",
+          "ya no dejes como estaba",
+          "mejor no dejes como estaba",
+          "no la dejes como estaba",
+          "no lo dejen como estaba",
+          "no dejarlo como estaba"
+        ]
+      }
+    },
+    {
+      "id": "B6",
+      "titulo": "Tras «Cambiar algo», un pedido o una instrucción de entrega NO dispara la pregunta de dejarlo como estaba ni hace bucle",
+      "estadoPrevio": [
+        {"cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
+          "esperado": {"estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "x"},
+          "seco": {"lineas": []},
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": ["como estaba", "Tu pedido:.*Tacos de Birria"],
+            "titulosNo": ["Dejarlo como estaba"],
+            "estado": {"carrito.0.id": {"noRegex": "birria3"}},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {
+            "texto": "Deme 2 tacos al pastor",
+            "seco": {"lineas": [{"producto": "tacos al pastor", "cantidad": 2, "forma": "", "detalle": ""}]},
+            "esperado": {"estado": {"carrito": {"vacio": false}, "carrito.0.id": {"regex": "pastor"}}}
+          },
+          {
+            "texto": "te dije que es para mi hermana",
+            "seco": {"lineas": [], "referencia": "es para mi hermana"},
+            "esperado": {"estado": {"entrega.referencia": "es para mi hermana"}}
+          },
+          {
+            "texto": "casa anterior a la farmacia",
+            "seco": {"lineas": [], "referencia": "casa anterior a la farmacia"},
+            "esperado": {"estado": {"entrega.referencia": "casa anterior a la farmacia"}}
+          },
+          {
+            "texto": "Calle Reja 12",
+            "seco": {"lineas": [], "direccion": "Calle Reja 12"},
+            "esperado": {"estado": {"entrega.direccion": "Calle Reja 12"}}
+          },
+          {"texto": "Estaba pensando en 2 tacos", "seco": {"lineas": [{"producto": "tacos", "cantidad": 2, "forma": "", "detalle": ""}]}}
+        ]
+      }
+    },
+    {
+      "id": "B7",
+      "titulo": "Un pedido nuevo en curso con una instrucción de entrega («déjalo en portería») NO se reemplaza por el pedido anterior",
+      "estadoPrevio": [
+        {"cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
+          "esperado": {"estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}}}
+        },
+        {
+          "cliente": {"tipo": "texto", "texto": "Quiero 2 órdenes de tacos al pastor para delivery"},
+          "seco": {"lineas": [{"producto": "tacos al pastor", "cantidad": 2, "forma": "orden", "detalle": ""}], "entrega": "delivery"},
+          "esperado": {"estado": {"paso": "pedido_datos", "entrega.entrega": "delivery", "carrito.0.id": {"regex": "pastor"}}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "x"},
+          "seco": {"lineas": []},
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": ["como estaba", "Tacos de Birria"],
+            "titulosNo": ["Dejarlo como estaba"],
+            "estado": {"entrega.entrega": "delivery", "carrito": {"longitud": 1}, "carrito.0.id": {"regex": "pastor"}},
+            "efectos": {"derivacion": false, "aviso": false}
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {"texto": "Déjalo en portería nomás", "seco": {"lineas": [], "referencia": "Déjalo en portería nomás"}},
+          {
+            "texto": "Calle Sucre 12, déjalo con el guardia nomás",
+            "seco": {"lineas": [], "direccion": "Calle Sucre 12", "referencia": "déjalo con el guardia"},
+            "esperado": {"textos": ["Entrega: delivery a Calle Sucre 12"], "estado": {"entrega.direccion": {"regex": "^Calle Sucre 12"}}}
+          },
+          {"texto": "Déjalo antes de las 8", "seco": {"lineas": [], "referencia": "antes de las 8"}},
+          {"texto": "dejalo con mi mamá igual pago yo", "seco": {"lineas": [], "referencia": "con mi mamá"}}
+        ]
+      }
+    },
+    {
+      "id": "B8",
+      "titulo": "Pedido de la carta web con el precio cambiado en la consola: el 1.er «Confirmar» muestra el aviso y el total nuevo, el 2.º saca el QR con referencia propia",
+      "turnos": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"},
+          "esperado": {"mensajes": 1, "textos": ["110 Bs"], "efectos": {"qr": false}}
+        },
+        {
+          "cliente": {"tipo": "boton", "titulo": "Confirmar pedido"},
+          "consola": {"precios": {"cat_birria3": 60}},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Cambió el precio de .{0,5}Tacos de Birria", "120 Bs"],
+            "textosNo": ["Pedido #"],
+            "titulos": ["Confirmar pedido"],
+            "efectos": {"qr": false, "aviso": false, "derivacion": false},
+            "estado": {"paso": "pedido_confirmar"}
+          }
+        },
+        {
+          "cliente": {"tipo": "boton", "titulo": "Confirmar pedido"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Total a pagar por QR: 120 Bs"],
+            "efectos": {"qr": true, "derivacion": false},
+            "estado": {"paso": "esperando_comprobante"},
+            "reporteQr": {"monto": 120, "referencia": {"noRegex": "^cat_"}}
+          }
+        }
+      ]
+    },
+    {
+      "id": "B9",
+      "titulo": "Carta vacía (todo agotado) al confirmar: se pasa con el local (aviso y botón), sin QR",
+      "turnos": [
+        {"cliente": {"tipo": "carrito", "items": [{"id": "cat_birria3", "cantidad": 2}], "entrega": "retiro"}},
+        {
+          "cliente": {"tipo": "boton", "titulo": "Confirmar pedido"},
+          "consola": {
+            "agotados": [
+              "cat_nachos",
+              "cat_queso",
+              "cat_pastor3",
+              "cat_pastor1",
+              "cat_birria3",
+              "cat_birria1",
+              "cat_suizas",
+              "cat_horchata",
+              "cat_gaseosas",
+              "cat_michelada",
+              "cat_pils",
+              "cat_rompope"
+            ]
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": ["Escribir al local"],
+            "textosNo": ["Pedido #", "Total a pagar por QR"],
+            "efectos": {"derivacion": true, "aviso": true, "qr": false},
+            "estado": {"pedido": {"vacio": true}}
+          }
+        }
+      ]
+    }
+  ]
+}
