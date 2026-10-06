@@ -1023,6 +1023,8 @@ describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
       'No encuentro «micheladas» en la carta. ¿Me lo escribes como figura en la carta?',
       '¿Es para delivery o para recoger en el local?', '¿Quieres que te lo enviemos por delivery o recoger en el local?',
       'Para el delivery necesito la dirección exacta.',
+      'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón.',
+      'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación.',
       'Tu pedido:\n• 1 × Orden de 3 tacos de birria (sin cebolla): 55 Bs\nEntrega: recojo en el local.\nTotal de la comida: 55 Bs.',
       PIE,
       'Recibí tu comprobante y los datos coinciden con tu pedido #K7Q2. Ya lo pasé a nuestro equipo; ellos revisan el pago en su banco antes de despacharlo.',

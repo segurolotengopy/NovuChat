@@ -26,7 +26,7 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [
   'avDestinatarios', 'avParametro', 'avPlantilla', 'avTexto', 'avVentanaAbierta', 'avAnotarEntrante',
-  'avDentroDelTopeDiario', 'avContar', 'avArmar', 'avPlan', 'avLimpio', 'avFechaLegible', 'avSinProhibidas', 'avCanon',
+  'avDentroDelTopeDiario', 'avContar', 'avArmar', 'avPlan', 'avLimpio', 'avFechaLegible', 'avSinProhibidas', 'avCanon', 'avEnlaceDeUbicacion',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1878,5 +1878,50 @@ describe('la forma `solicitud` de la reserva y la plantilla por rol (`solicitud_
       expect(x).not.toMatch(VM_PROHIBIDAS);
       expect(x).not.toMatch(/confirmad/i);
     }
+  });
+});
+
+describe('PR-A (05/10): el enlace al mapa de la ubicación compartida, solo en el detalle de texto de completo', () => {
+  const ENLACE = 'https://www.google.com/maps/search/?api=1&query=-16.500000%2C-68.150000';
+  const FORMA = /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=-?\d{1,2}\.\d{6}%2C-?\d{1,3}\.\d{6}$/;
+  const conUbicacion = (extra: J = {}): J => pedido({ coordenadas: 'ubicación compartida (-16,50000; -68,15000)', ubicacion: { lat: -16.5, lng: -68.15 }, ...extra });
+
+  it('se arma solo con números y tiene la forma exacta; lo demás da vacío', () => {
+    expect(L.avEnlaceDeUbicacion({ lat: -16.5, lng: -68.15 })).toBe(ENLACE);
+    expect(L.avEnlaceDeUbicacion({ lat: -16.5, lng: -68.15 })).toMatch(FORMA);
+    expect(L.avEnlaceDeUbicacion({ lat: 90, lng: 180 })).toMatch(FORMA);
+    expect(L.avEnlaceDeUbicacion({ lat: 0, lng: -68.15 })).toMatch(FORMA);
+    for (const mala of [
+      { lat: 95, lng: -68 }, { lat: -16.5, lng: 181 }, { lat: NaN, lng: 1 }, { lat: Infinity, lng: 1 }, { lat: '-16', lng: '-68' }, { lat: -16.5 },
+      { lat: 0, lng: 0 }, { lat: null, lng: null }, null, undefined, 'x', 7, [], {},
+    ]) expect(L.avEnlaceDeUbicacion(mala), JSON.stringify(mala)).toBe('');
+  });
+
+  it('con la ventana abierta, completo recibe «Ver en el mapa» con el enlace SIN «[enlace omitido]»; cocina no; y el detalle pasa las dos redes', () => {
+    const items = L.avArmar('pedido', conUbicacion(), CSV, CFG, abierta(), AHORA);
+    const completo = cuerpo(items, ANDRES);
+    expect(completo.split('\n')).toContain(`Ver en el mapa: ${ENLACE}`);
+    expect(completo).not.toContain('[enlace omitido]');
+    expect(completo).not.toMatch(VM_PROHIBIDAS);
+    expect(cuerpo(items, SILVANA)).not.toMatch(/mapa|google|https?:|ubicaci/i);
+  });
+
+  it('negado: ni las plantillas (ventana cerrada) ni el recojo ni una ubicación inválida llevan el enlace', () => {
+    const cerrada = L.avArmar('pedido', conUbicacion(), CSV, CFG, sdCon(), AHORA);
+    for (const it of cerrada) expect(textosDe(it).join('\n'), String(it.para)).not.toMatch(/google|https?:|query=/i);
+    expect(params(plantillaDe(cerrada, ANDRES))[2]).toContain('ubicación compartida (-16,50000; -68,15000)');
+    const recojo = L.avArmar('pedido', conUbicacion({ modalidad: 'recojo' }), CSV, CFG, abierta(), AHORA);
+    expect(cuerpo(recojo, ANDRES)).not.toMatch(/google|https?:|mapa/i);
+    for (const mala of [{ lat: 95, lng: -68 }, { lat: NaN, lng: -68 }, { lat: '-16', lng: '-68' }, { lat: 0, lng: 0 }]) {
+      const items = L.avArmar('pedido', conUbicacion({ ubicacion: mala }), CSV, CFG, abierta(), AHORA);
+      expect(cuerpo(items, ANDRES), JSON.stringify(mala)).not.toMatch(/google|https?:|mapa/i);
+    }
+  });
+
+  it('negado: un texto del cliente con un enlace o una URL en la dirección sigue saneado, y el enlace del mapa no se arma con texto', () => {
+    const items = L.avArmar('pedido', conUbicacion({ direccion: 'Calle 5 https://malo.example/x', referencia: 'http://otro.example', ubicacion: { lat: '-16.5', lng: '-68.15' } }), CSV, CFG, abierta(), AHORA);
+    const completo = cuerpo(items, ANDRES);
+    expect(completo).toContain('[enlace omitido]');
+    expect(completo).not.toMatch(/malo\.example|otro\.example|google/);
   });
 });

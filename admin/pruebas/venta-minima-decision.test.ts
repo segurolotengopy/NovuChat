@@ -674,7 +674,7 @@ describe('Plan del turno: el pedido', () => {
     turno(m, { texto: 'quiero 1 queso fundido', extraccion: extPedido({ lineas: [linea('queso fundido', 1)] }) });
     expect(estadoDe(m)['paso']).toBe('pedido_entrega');
     const datos = registrar(turno(m, { boton: 'e|delivery' }));
-    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito la dirección exacta.');
+    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón.');
     expect(estadoDe(m)['paso']).toBe('pedido_datos');
     // Con la dirección sola ya sigue al resumen (ni referencia ni nombre se exigen).
     const fin = registrar(turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) }));
