@@ -76,6 +76,7 @@
 //   { "tipo": "boton", "id": "p|cambiar", "titulo": "Cambiar algo" }   un id literal (un boton viejo o inventado)
 //   { "tipo": "fila", "titulo": "…" } / { "tipo": "fila", "id": "…" }  una fila de una lista, igual que el boton
 //   { "tipo": "audio", "transcripcion": "…" }         una nota de voz; `transcripcion` es lo que «Transcribir audio» devolveria
+//   { "tipo": "ubicacion", "latitud": -16.5, "longitud": -68.15 }   el cliente comparte una ubicacion (mensaje `location` de Meta; `nombre` y `direccion` opcionales; las coordenadas pueden ser invalidas a proposito)
 //   { "tipo": "imagen", "pie": "…" } / { "tipo": "documento", "pie": "…" }   foto o PDF (el comprobante, si hay un QR esperandolo)
 //   { "tipo": "carrito", "items": [{ "id": "cat_x", "cantidad": 2 }], "entrega": "envio"|"retiro", "direccion": "…", "nota": "…" }
 //                                                       el carrito de la pagina de la carta: entra por «Carrito del catálogo»; el
@@ -242,7 +243,7 @@ export function leerArgumentos(argv) {
 }
 
 // ------------------------------------------------------------------------------------------------------- los casos
-const TIPOS_CLIENTE = ['texto', 'boton', 'fila', 'audio', 'imagen', 'documento', 'carrito'];
+const TIPOS_CLIENTE = ['texto', 'boton', 'fila', 'audio', 'imagen', 'documento', 'carrito', 'ubicacion'];
 const CLAVES_ESPERADO = ['mensajes', 'textos', 'textosNo', 'botones', 'botonesNo', 'titulos', 'titulosNo', 'enlaces', 'estado', 'reporteQr', 'igualAntes', 'efectos', 'ruta', 'fallo', 'avisoTextos', 'avisoTextosNo'];
 const CLAVES_EFECTOS = ['aviso', 'derivacion', 'qr', 'modelo', 'cierre'];
 const CLAVES_ESTADO_MATCH = ['regex', 'noRegex', 'vacio', 'existe', 'longitud', 'contiene'];
@@ -290,6 +291,7 @@ function validarTurno(t, donde) {
   if (c.tipo === 'texto' && typeof c.texto !== 'string') throw new ErrorDeUso(`${donde}: falta el texto.`);
   if ((c.tipo === 'boton' || c.tipo === 'fila') && typeof c.id !== 'string' && typeof c.titulo !== 'string') throw new ErrorDeUso(`${donde}: falta el id o el titulo del ${c.tipo}.`);
   if (c.tipo === 'audio' && typeof c.transcripcion !== 'string') throw new ErrorDeUso(`${donde}: falta la transcripción.`);
+  if (c.tipo === 'ubicacion' && (!('latitud' in c) || !('longitud' in c))) throw new ErrorDeUso(`${donde}: la ubicación necesita «latitud» y «longitud» (pueden ser inválidas a propósito).`);
   if (c.tipo === 'carrito' && (!Array.isArray(c.items) || !c.items.length || c.items.some((x) => !x || typeof x.id !== 'string'))) throw new ErrorDeUso(`${donde}: el carrito necesita «items» con id.`);
   if (t.seco !== undefined && typeof t.seco !== 'string' && (t.seco === null || typeof t.seco !== 'object' || Array.isArray(t.seco))) throw new ErrorDeUso(`${donde}: «seco» debe ser un objeto o un texto.`);
   if (t.avanzarMin !== undefined && (!Number.isInteger(t.avanzarMin) || t.avanzarMin < 0 || t.avanzarMin > 10080)) throw new ErrorDeUso(`${donde}: «avanzarMin» debe ser un entero de 0 a 10080.`);
@@ -407,6 +409,7 @@ const mensajeDeMeta = (t, wamid, ctx) => {
   if (c.tipo === 'boton') return { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: ctx.idDe(c), title: c.titulo ?? ctx.idDe(c) } } };
   if (c.tipo === 'fila') return { ...base, type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: ctx.idDe(c), title: c.titulo ?? ctx.idDe(c) } } };
   if (c.tipo === 'audio') return { ...base, type: 'audio', audio: { id: 'media-aud', mime_type: 'audio/ogg; codecs=opus', voice: true } };
+  if (c.tipo === 'ubicacion') return { ...base, type: 'location', location: { latitude: c.latitud, longitude: c.longitud, ...(c.nombre ? { name: c.nombre } : {}), ...(c.direccion ? { address: c.direccion } : {}) } };
   if (c.tipo === 'imagen') return { ...base, type: 'image', image: { id: 'media-img', mime_type: 'image/jpeg', ...(c.pie ? { caption: c.pie } : {}) } };
   if (c.tipo === 'documento') return { ...base, type: 'document', document: { id: 'media-doc', mime_type: 'application/pdf', ...(c.pie ? { caption: c.pie } : {}) } };
   throw new Error('tipo de turno desconocido: ' + c.tipo);
@@ -675,7 +678,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     corrida.mensajes += entregados.length;
     corrida.usos.push(...captura.usos);
     corrida.erroresModelo.push(...captura.erroresModelo);
-    const dicho = c.tipo === 'texto' ? c.texto : c.tipo === 'audio' ? `(audio) ${c.transcripcion}` : c.tipo === 'carrito' ? `(carrito) ${c.items.map((x) => `${x.cantidad ?? 1}× ${x.id}`).join(', ')}` : c.tipo === 'imagen' || c.tipo === 'documento' ? `(${c.tipo})${c.pie ? ' ' + c.pie : ''}` : `(toca) ${c.titulo ?? c.id}`;
+    const dicho = c.tipo === 'texto' ? c.texto : c.tipo === 'audio' ? `(audio) ${c.transcripcion}` : c.tipo === 'carrito' ? `(carrito) ${c.items.map((x) => `${x.cantidad ?? 1}× ${x.id}`).join(', ')}` : c.tipo === 'imagen' || c.tipo === 'documento' ? `(${c.tipo})${c.pie ? ' ' + c.pie : ''}` : c.tipo === 'ubicacion' ? `(ubicación) ${c.latitud}; ${c.longitud}` : `(toca) ${c.titulo ?? c.id}`;
     for (const m of entregados) corrida.textos.push({ turno: n, previo, texto: m.piezas.join(' ') });
     for (const it of r.porNodo['Armar mensajes'] ?? []) if (it && it.destino === 'cliente' && typeof it.respaldo === 'string' && it.respaldo) corrida.respaldos.push({ turno: n, previo, texto: it.respaldo });
     corrida.conversacion.push({

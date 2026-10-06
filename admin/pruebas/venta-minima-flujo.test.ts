@@ -56,6 +56,8 @@ const PRUEBA_TEL = '59100000041';
 const NUMERO_DE_ENSAYO: J = { numeroEnsayo: PRUEBA_TEL };
 const PHONE_ID = '100000000000042';
 const QR_URL = 'https://qr.ejemplo.invalid/qtaco.png';
+/** Cualquiera de los textos de derivación a una persona (el de ahora y el de la rama de voz): el negativo «no deriva» no pasa solo si el texto cambia. */
+const DERIVA_FLUJO = /Esto prefiero que lo vea una persona|Disculpa, eso no lo puedo resolver|¡Claro! 🙂 Toca «Escribir al local»|El costo del delivery no lo tengo/;
 const HORARIO_TODOS = 'lun=08:00-23:00,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00';
 const HORARIO_SIN_LUNES = 'lun=cerrado,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00';
 
@@ -1800,6 +1802,18 @@ describe('no negociable 10: prefijo, topes y áreas', () => {
     expect(cuerpos(recojo.resumen).join('\n')).toMatch(/2 × Horchata/);
   });
 
+  it('C (04/10): con la config REAL de Q\'Taco (`areasSinDelivery` vacío) una bebida SÍ va por delivery y no se afirma «por delivery no enviamos»', () => {
+    expect(configBase(QTACO)['areasSinDelivery']).toBe('');
+    const delivery = armarPedido({ entrega: 'delivery', lineas: [ln('gaseosas', 2), ln('queso fundido', 1)] });
+    const texto = cuerpos(delivery.resumen).join('\n');
+    expect(texto).toMatch(/2 × Gaseosas/);
+    expect(texto).not.toMatch(/no enviamos|lo quité/);
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    expect(cuerpos(c.toca('m|pedido', 'Hacer un pedido')).join('\n')).not.toMatch(/no enviamos/);
+  });
+
   it('una campaña vencida (el servidor no la manda) → menú normal, sin ficha', () => {
     const w = crear({ panel: panel({ campanas: [] }) });
     const t = con(w).escribe(TEXTO_DUO);
@@ -2039,7 +2053,7 @@ describe('pedido', () => {
   it('el modelo dice que el cliente quiere hablar con alguien, o no saca líneas dos veces seguidas → pasar con el restaurante', () => {
     const w = crear();
     w.estado.extraccion = EX([ln('tacos de birria', 4)], { quiereHablar: true });
-    const t = con(w).escribe('quiero 4 tacos y una consulta');
+    const t = con(w).escribe('quiero 4 tacos y hablar con una persona');
     expect(tieneEnlace(t)).toBe(true);
     expect(t.avisos.length).toBeGreaterThan(0);
     const w2 = crear();
@@ -3613,8 +3627,9 @@ describe('regresión del ensayo del 03/10: el menú siempre vuelve, los pedidos 
     const qr = confirmarPedido(r);
     expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
     const abierto = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado');
-    // Con un QR pendiente: «carta», «reserva», «cancelar» y los botones del menú no hacen nada nuevo (recordatorio).
-    for (const palabra of ['carta', 'quiero reservar una mesa', 'cancelar', 'cancelar pedido', 'hola gracias']) {
+    // Con un QR pendiente: «carta», «reserva» y los botones del menú no hacen nada nuevo (recordatorio).
+    // («cancelar» y «cancelar pedido» ya no están aquí: con el QR enviado CANCELAN el pedido y lo dicen, 04/10; ver «A. cancelar»)
+    for (const palabra of ['carta', 'quiero reservar una mesa', 'hola gracias']) {
       const t = r.c.escribe(palabra);
       expect(cuerpos(t)[0], palabra).toMatch(/Estoy esperando el comprobante|falta tu comprobante/);
       expect(t.llamadas.extraer, palabra).toHaveLength(0);
@@ -5502,5 +5517,441 @@ describe('L3. el delivery que quita productos dice que no vuelven solos', () => 
     expect(cuerpos(u).join('\n')).toContain('Si vuelves a recojo, vuelve a agregarlo. Tu pedido quedó vacío: elige otra vez desde la carta.');
     expect(cuerpos(u).join('\n')).toContain('Esta es nuestra carta');
     expect(estadoDe(v.w.mundo)['paso']).toBe('pedido');
+  });
+});
+
+// ================================================================================================
+// PRUEBAS REALES DE ANDRES (04/10; ejecuciones n8n #20589, #20593, #20588, #20570, #20597): cancelar, «¿qué tengo guardado?», delivery opcional.
+// ================================================================================================
+describe('A. «cancela mi pedido» cancela el pedido guardado (no deriva) y lo dice', () => {
+  const CANCELADO = 'Listo, cancelé tu pedido. Cuando quieras empezar otro, toca «Hacer un pedido».';
+
+  it.each([
+    'cancela mi pedido', 'cancelar pedido', 'cancela', 'ya no quiero el pedido', 'cancela todo', 'quiero cancelar', 'Cancelar mi pedido por favor', 'cancelalo',
+    'quiero cancelar mi pedido', 'cancélame el pedido', 'ya no quiero nada',
+  ])('«%s» con el resumen guardado: vacía el carrito, vuelve al menú y dice que quedó cancelado (un mensaje, con los botones del menú)', (dicho) => {
+    const r = armarPedido({ ventana: 5 });
+    const t = r.c.escribe(dicho);
+    expect(cuerpos(t)[0], dicho).toBe(CANCELADO);
+    expect(t.mensajes, dicho).toHaveLength(1);
+    expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>), dicho).toEqual(expect.arrayContaining(['Hacer un pedido', 'Reservar mesa']));
+    expect(t.avisos, dicho).toHaveLength(0);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+    const e = estadoDe(r.w.mundo);
+    expect(e['carrito'], dicho).toEqual([]);
+    expect(e['pedido'], dicho).toBeNull();
+    expect(e['carritoAnterior'], dicho).toBeNull();
+    expect(e['paso'], dicho).toBe('menu');
+    expect(cuerpos(t).join('\n'), dicho).not.toContain('Esto prefiero que lo vea una persona');
+  });
+
+  it('también cancela lo que dejó «Cambiar algo» (el pedido anterior) y lo que está a medias (pedido_datos)', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.c.toca('p|cambiar', 'Cambiar algo');
+    expect(estadoDe(r.w.mundo)['carritoAnterior']).not.toBeNull();
+    const t = r.c.escribe('cancela mi pedido');
+    expect(cuerpos(t)[0]).toBe(CANCELADO);
+    expect(estadoDe(r.w.mundo)['carritoAnterior']).toBeNull();
+    const d = armarPedido({ ventana: 5, entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
+    expect(estadoDe(d.w.mundo)['paso']).toBe('pedido_datos');
+    expect(cuerpos(d.c.escribe('cancela mi pedido'))[0]).toBe(CANCELADO);
+    expect(estadoDe(d.w.mundo)['carrito']).toEqual([]);
+  });
+
+  it('con el QR ya enviado, «cancela mi pedido» y el botón «Cancelar pedido» dicen «Cancelé tu pedido #X.» (antes volvía al saludo sin decirlo)', () => {
+    for (const via of ['texto', 'boton'] as const) {
+      const r = armarPedido({ ventana: 5 });
+      confirmarPedido(r);
+      expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
+      const codigo = String((estadoDe(r.w.mundo)['pedido'] as J)['codigo']);
+      const t = via === 'texto' ? r.c.escribe('cancela mi pedido') : r.c.toca('q|cancelar', 'Cancelar pedido');
+      expect(cuerpos(t)[0], via).toBe(`Cancelé tu pedido #${codigo}. Cuando quieras empezar otro, toca «Hacer un pedido».`);
+      expect(t.mensajes, via).toHaveLength(1);
+      expect(t.avisos, via).toHaveLength(0);
+      expect(estadoDe(r.w.mundo)['pedido'], via).toBeNull();
+      expect(estadoDe(r.w.mundo)['paso'], via).toBe('menu');
+    }
+  });
+
+  it('con el comprobante ya enviado el pedido está con nuestro equipo: se dice la verdad, con el aviso al local y el botón (sin «lo cancelamos nosotros»)', () => {
+    const p = pedidoConComprobante({ ventana: 5 });
+    const codigo = String(pedidosGuardados(p.w.mundo)[0]!['codigo']);
+    const t = p.c.escribe('cancela mi pedido');
+    expect(cuerpos(t)[0]).toBe(`Tu pedido #${codigo} ya está con nuestro equipo. Para cancelarlo, toca «Escribir al local».`);
+    expect(tieneEnlace(t)).toBe(true);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(t.mensajes).toHaveLength(1);
+    expect(cuerpos(t)[0]).not.toMatch(/cancelamos|cancelé|quedó cancelado/);
+  });
+
+  it.each(['no cancela', 'no quiero cancelar', 'no cancelar', 'no cancelo', 'no lo canceles'])(
+    'negando: «%s» NO cancela: el pedido guardado sigue y se muestra', (dicho) => {
+      const r = armarPedido({ ventana: 5 });
+      const resumen = cuerpos(r.resumen)[0]!;
+      const t = r.c.escribe(dicho);
+      expect(cuerpos(t)[0], dicho).toBe(resumen);
+      expect((estadoDe(r.w.mundo)['carrito'] as J[]).length, dicho).toBeGreaterThan(0);
+      expect(estadoDe(r.w.mundo)['paso'], dicho).toBe('pedido_confirmar');
+    },
+  );
+
+  it('negando: «cancelar» dentro de otra frase («¿se puede cancelar después?») no cancela nada', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.estado.extraccion = EX([], { entrega: '' });
+    const t = r.c.escribe('¿se puede cancelar después de confirmar?');
+    expect(cuerpos(t).join('\n')).not.toContain('cancelé');
+    expect((estadoDe(r.w.mundo)['carrito'] as J[]).length).toBeGreaterThan(0);
+  });
+
+  it('sin nada guardado: lo dice (no inventa una cancelación) y ofrece empezar', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    const t = c.escribe('cancela mi pedido');
+    expect(cuerpos(t)[0]).toBe('Todavía no tienes productos en tu pedido. Toca «Hacer un pedido» para empezar.');
+    expect(cuerpos(t).join('\n')).not.toContain('cancelé');
+    expect(t.avisos).toHaveLength(0);
+  });
+
+  it('«cancelar reserva» sigue como siempre (menú) y no toca el pedido guardado', () => {
+    const r = armarPedido({ ventana: 5 });
+    const t = r.c.escribe('cancelar reserva');
+    expect(cuerpos(t)[0]).toContain('¿Qué te gustaría hacer?');
+    expect((estadoDe(r.w.mundo)['carrito'] as J[]).length).toBeGreaterThan(0);
+  });
+});
+
+describe('B. «¿qué tengo guardado?» muestra el pedido guardado (no deriva)', () => {
+  it.each(['qué tengo guardado', 'mi pedido', 'qué pedí', 'cuánto va', 'ver mi pedido', 'qué llevo', 'Qué tengo guardado?', 'cuánto llevo', 'mostrar mi pedido'])(
+    '«%s» con el resumen guardado: vuelve a mostrar el resumen con sus botones (sin derivar ni avisar)', (dicho) => {
+      const r = armarPedido({ ventana: 5 });
+      const resumen = cuerpos(r.resumen)[0]!;
+      const t = r.c.escribe(dicho);
+      expect(cuerpos(t)[0], dicho).toBe(resumen);
+      expect(t.mensajes.flatMap(titulosDe), dicho).toEqual(expect.arrayContaining(['Confirmar pedido', 'Cambiar algo']));
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(t.llamadas.extraer, dicho).toHaveLength(0);
+      expect(t.mensajes, dicho).toHaveLength(1);
+    },
+  );
+
+  it('sin carrito: «Todavía no tienes productos en tu pedido. Toca «Hacer un pedido» para empezar.» con los botones del menú', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    for (const dicho of ['qué tengo guardado', 'mi pedido', 'cuánto va']) {
+      const t = c.escribe(dicho);
+      expect(cuerpos(t)[0], dicho).toBe('Todavía no tienes productos en tu pedido. Toca «Hacer un pedido» para empezar.');
+      expect(titulosDe(t.mensajes[0] as NonNullable<(typeof t.mensajes)[number]>), dicho).toContain('Hacer un pedido');
+      expect(t.avisos, dicho).toHaveLength(0);
+    }
+  });
+
+  it('justo después de «Cambiar algo» muestra el pedido anterior con «Dejarlo como estaba»', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.c.toca('p|cambiar', 'Cambiar algo');
+    const t = r.c.escribe('qué tengo guardado');
+    expect(cuerpos(t)[0]).toContain('Tu pedido guardado:');
+    expect(cuerpos(t)[0]).toContain('Total de la comida');
+    expect(t.mensajes.flatMap(titulosDe)).toContain('Dejarlo como estaba');
+  });
+
+  it('negando: con un QR esperando comprobante rige el recordatorio de siempre; y una frase que no es la consulta no la activa', () => {
+    const r = armarPedido({ ventana: 5 });
+    confirmarPedido(r);
+    expect(cuerpos(r.c.escribe('mi pedido'))[0]).toMatch(/falta tu comprobante/);
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'recojo' });
+    const t = c.escribe('quiero mi pedido de 2 tacos de birria');
+    expect(t.llamadas.extraer).toHaveLength(1);
+  });
+});
+
+describe('E. delivery OPCIONAL (decisión de Andres y Silvana, 04/10): referencia opcional y «quién recibe» sin bloquear', () => {
+  it('el pedido por delivery con la dirección sola se envía igual: el aviso no dice «sin referencia» ni pide nada más', () => {
+    const r = armarPedido({ ventana: 5, cobro: false, entrega: 'delivery', extra: { direccion: 'Calle Falsa 123', referencia: '', nombre: '' } });
+    expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(r.resumen.mensajes).toHaveLength(1); // directo al resumen: 0 mensajes de `pedido_datos`
+    expect(r.resumen.llamadas.extraer).toHaveLength(1); // una sola llamada al modelo (la del pedido)
+    const t = confirmarPedido(r);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    const texto = JSON.stringify(t.avisos);
+    expect(texto).toContain('Calle Falsa 123');
+    expect(texto).not.toMatch(/sin referencia|\(\)/);
+  });
+});
+
+// ================================================================================================
+// DEFECTOS DE LAS PRUEBAS REALES DE ANDRES, 05/10 (ejecuciones n8n #20607–#20632): cambio de entrega con tipeo, texto libre sin asignar, derivación a la primera,
+// modismos al volver al pedido anterior.
+// ================================================================================================
+describe('(1) cambio de entrega con tipeo y variantes naturales; nunca deriva ante algo que se parece', () => {
+  it.each([
+    'quiero que me mandn', 'que me manden', 'mándamelo', 'envíenmelo', 'a domicilio', 'para llevar a mi casa', 'prefiero que me lo traigan', 'me lo traen',
+    'quiero que me lo envien', 'mejor delivery',
+  ])('«%s» con el resumen de recojo pasa a delivery (sin derivar, sin avisar, sin llamar al modelo)', (dicho) => {
+    const r = armarPedido({ ventana: 5 });
+    const t = r.c.escribe(dicho);
+    expect((estadoDe(r.w.mundo)['entrega'] as J)['entrega'], dicho).toBe('delivery');
+    expect(cuerpos(t).join('\n'), dicho).not.toMatch(DERIVA_FLUJO);
+    expect(t.avisos, dicho).toHaveLength(0);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+  });
+
+  it.each(['mejor recojo', 'mejor recojer', 'prefiero recoger', 'paso a buscar', 'quiero recogerlo yo'])(
+    '«%s» con un delivery a medias pasa a recojo y muestra el resumen', (dicho) => {
+      const w = crear({ panel: panel(COBRO_REAL) });
+      const c = con(w, CLIENTE, 'Carlos');
+      c.escribe('hola');
+      c.toca('m|pedido', 'Hacer un pedido');
+      w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'delivery' });
+      c.escribe('quiero 4 tacos de birria con delivery');
+      expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+      w.estado.extraccion = EX([]);
+      const t = c.escribe(dicho);
+      expect((estadoDe(w.mundo)['entrega'] as J)['entrega'], dicho).toBe('recojo');
+      expect(estadoDe(w.mundo)['paso'], dicho).toBe('pedido_confirmar');
+      expect(t.mensajes.flatMap(titulosDe), dicho).toContain('Confirmar pedido');
+    },
+  );
+
+  it.each(['no quiero que me manden', 'sin delivery', 'delivery no', 'Av. Busch esquina Delivery Express', 'Calle Domicilio 5', 'mándalo', 'enviar'])(
+    'negando: «%s» NO cambia la entrega a delivery', (dicho) => {
+      const r = armarPedido({ ventana: 5 });
+      r.w.estado.extraccion = EX([], { entrega: '' });
+      r.c.escribe(dicho);
+      expect((estadoDe(r.w.mundo)['entrega'] as J)['entrega'], dicho).toBe('recojo');
+    },
+  );
+
+  it('si el modelo marca `quiereHablar` ante una orden que se parece a un cambio de entrega, NO deriva: pregunta «¿Es para delivery o para recoger en el local?» con los dos botones', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.estado.extraccion = EX([], { entrega: '', quiereHablar: true });
+    for (const dicho of ['quiero que me mandn por favor ahorita', 'ahorita mismo que me manden pues']) {
+      const t = r.c.escribe(dicho);
+      expect(cuerpos(t)[0], dicho).toBe('¿Quieres que te lo enviemos por delivery o recoger en el local?');
+      expect(cuerpos(t)[0], dicho).not.toBe('¿Es para delivery o para recoger en el local?');
+      expect(t.mensajes.flatMap(titulosDe), dicho).toEqual(expect.arrayContaining(['Delivery', 'Recoger en el local']));
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(cuerpos(t).join('\n'), dicho).not.toMatch(DERIVA_FLUJO);
+      expect(t.mensajes, dicho).toHaveLength(1);
+    }
+    // El botón «Delivery» sigue el camino normal.
+    const q = r.c.escribe('quiero que me mandn por favor ahorita');
+    const d = r.c.toca(idDeBoton(q, 'Delivery'), 'Delivery');
+    expect((estadoDe(r.w.mundo)['entrega'] as J)['entrega']).toBe('delivery');
+    expect(cuerpos(d)[0]).toMatch(/necesito la dirección/);
+  });
+});
+
+describe('(3) el texto libre que el modelo no asignó lo toma el código (dirección o referencia), sin bucles', () => {
+  const vacio = EX([], { entrega: '' });
+  function deliverySinDireccion() {
+    const w = crear({ panel: panel(COBRO_REAL) });
+    const c = con(w, CLIENTE, 'Carlos');
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery' });
+    c.escribe('quiero 2 tacos de birria con delivery');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+    return { w, c };
+  }
+
+  it('«calle 1 numerro 2 Irpavi»: si el modelo devuelve solo `{lineas: []}`, el código la toma como la dirección y sigue al resumen', () => {
+    const { w, c } = deliverySinDireccion();
+    w.estado.extraccion = vacio;
+    const t = c.escribe('calle 1 numerro 2 Irpavi');
+    expect((estadoDe(w.mundo)['entrega'] as J)['direccion']).toBe('calle 1 numerro 2 Irpavi');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(cuerpos(t).join('\n')).toContain('Entrega: delivery a calle 1 numerro 2 Irpavi');
+    expect(t.mensajes).toHaveLength(1);
+  });
+
+  it('dirección en un mensaje y referencia en otro: «a media cuadra de la calle foton» (sin asignar por el modelo) queda como referencia y sale en el resumen', () => {
+    const { w, c } = deliverySinDireccion();
+    w.estado.extraccion = vacio;
+    c.escribe('calle 1 numerro 2 Irpavi');
+    const t = c.escribe('a media cuadra de la calle foton');
+    expect((estadoDe(w.mundo)['entrega'] as J)['referencia']).toBe('a media cuadra de la calle foton');
+    expect(cuerpos(t).join('\n')).toContain('Entrega: delivery a calle 1 numerro 2 Irpavi (a media cuadra de la calle foton)');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_confirmar');
+    expect(t.avisos).toHaveLength(0);
+    expect(t.llamadas.extraer).toHaveLength(1); // el modelo corrió y no asignó nada; el código no perdió el texto
+  });
+
+  it('negando: lo que no es dato NO se toma («ok gracias», «no gracias», una pregunta, un enlace, una cortesía suelta); con la dirección ya dada, tampoco pisa la referencia', () => {
+    // Decisión del 05/10 (delivery opcional): si falta la dirección, cualquier texto con letras o dígitos ES la dirección (se prefiere tomarlo a perder el dato);
+    // lo que nunca se toma son las cortesías, las negaciones, las preguntas y los enlaces.
+    for (const dicho of ['ok gracias', 'no gracias', '¿cuánto demora el delivery?', 'mira https://malo.test/x', 'hola']) {
+      const { w, c } = deliverySinDireccion();
+      w.estado.extraccion = vacio;
+      c.escribe(dicho);
+      expect((estadoDe(w.mundo)['entrega'] as J)['direccion'], dicho).toBe('');
+      expect((estadoDe(w.mundo)['entrega'] as J)['referencia'], dicho).toBe('');
+    }
+    const { w, c } = deliverySinDireccion();
+    w.estado.extraccion = vacio;
+    c.escribe('calle 1 numerro 2 Irpavi');
+    for (const dicho of ['ok gracias', 'no gracias', '¿cuánto demora?']) {
+      c.escribe(dicho);
+      expect((estadoDe(w.mundo)['entrega'] as J)['referencia'], dicho).toBe('');
+    }
+  });
+});
+
+describe('(4) `quiereHablar` del modelo no deriva a la primera: una aclaración corta; deriva con petición explícita o al insistir', () => {
+  const quiere = (extra: J = {}) => EX([], { entrega: '', quiereHablar: true, ...extra });
+  it('«Donde dije» (quiereHablar:true, sin pedir a nadie): UNA aclaración con «Seguir con mi pedido» y «Escribir al local»; sin aviso', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.estado.extraccion = quiere();
+    const t = r.c.escribe('Donde dije');
+    expect(cuerpos(t)[0]).toBe('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?');
+    expect(t.mensajes.flatMap(titulosDe)).toEqual(expect.arrayContaining(['Seguir con mi pedido', 'Escribir al local']));
+    expect(t.avisos).toHaveLength(0);
+    expect(tieneEnlace(t)).toBe(false);
+    expect(t.mensajes).toHaveLength(1);
+    expect(estadoDe(r.w.mundo)['carrito']).toHaveLength(1); // el pedido sigue guardado
+    // «Seguir con mi pedido» vuelve al resumen.
+    const sigue = r.c.toca(idDeBoton(t, 'Seguir con mi pedido'), 'Seguir con mi pedido');
+    expect(sigue.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
+    // «Escribir al local» (el botón de la aclaración) sí pasa con el local: aviso + botón.
+    const otra = armarPedido({ ventana: 5 });
+    otra.w.estado.extraccion = quiere();
+    const a = otra.c.escribe('Donde dije');
+    const pasa = otra.c.toca(idDeBoton(a, 'Escribir al local'), 'Escribir al local');
+    expect(tieneEnlace(pasa)).toBe(true);
+    expect(pasa.avisos.length).toBeGreaterThan(0);
+    expect(cuerpos(pasa)[0]).toContain('Toca «Escribir al local»');
+  });
+
+  it('si insiste (la segunda vez seguida) se pasa con el local; una petición explícita deriva a la primera', () => {
+    const r = armarPedido({ ventana: 5 });
+    r.w.estado.extraccion = quiere();
+    r.c.escribe('Donde dije');
+    const segunda = r.c.escribe('Donde dije que no entiendes');
+    expect(tieneEnlace(segunda)).toBe(true);
+    expect(segunda.avisos.length).toBeGreaterThan(0);
+    const e = armarPedido({ ventana: 5 });
+    e.w.estado.extraccion = quiere();
+    const t = e.c.escribe('necesito ayuda de un encargado');
+    expect(tieneEnlace(t)).toBe(true);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect(cuerpos(t)[0]).toMatch(DERIVA_FLUJO);
+  });
+
+  it('con productos en el mismo mensaje se atiende el pedido (no se descarta por una marca dudosa del modelo); sin pedido, la aclaración ofrece solo «Escribir al local»', () => {
+    const w = crear();
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { quiereHablar: true });
+    const t = con(w).escribe('quiero 4 tacos de birria y una duda');
+    expect(estadoDe(w.mundo)['carrito']).toHaveLength(1);
+    expect(t.avisos).toHaveLength(0);
+    const v = crear();
+    const c = con(v);
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido'); // en el paso de pedido, todavía sin productos
+    v.estado.extraccion = EX([], { entrega: '', quiereHablar: true });
+    const a = c.escribe('Donde dije');
+    expect(cuerpos(a)[0]).toBe('Disculpa, no te entendí bien. ¿Qué te gustaría hacer?');
+    expect(a.mensajes.flatMap(titulosDe)).not.toContain('Seguir con mi pedido');
+  });
+});
+
+describe('(5) modismos al volver al pedido anterior (solo al elegir de nuevo, mensaje entero de vocabulario cerrado)', () => {
+  function trasCambiar() {
+    const r = armarPedido({ ventana: 5 });
+    const resumen = cuerpos(r.resumen)[0]!;
+    r.c.toca('p|cambiar', 'Cambiar algo');
+    return { r, resumen };
+  }
+  it.each([
+    'así nomás, está bien', 'asi nomas esta bien', 'está bien así', 'así está bien', 'nomás', 'déjalo nomás', 'sin cambios', 'no cambies nada', 'así', 'está bien',
+    'como estaba', 'mejor lo que tenía', 'no quiero cambiar nada', 'dejarlo asi',
+  ])('«%s» vuelve al pedido anterior (la carta no se vuelve a mostrar)', (dicho) => {
+    const { r, resumen } = trasCambiar();
+    const t = r.c.escribe(dicho);
+    expect(cuerpos(t)[0], dicho).toBe(resumen);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+    expect(t.mensajes, dicho).toHaveLength(1);
+  });
+  it.each(['no está bien', 'no así', 'no esta bien asi'])('negando: «%s» es un rechazo: no vuelve; se pregunta una vez', (dicho) => {
+    const { r, resumen } = trasCambiar();
+    const t = r.c.escribe(dicho);
+    expect(cuerpos(t)[0], dicho).not.toBe(resumen);
+    expect(cuerpos(t)[0], dicho).toBe('¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?');
+  });
+  it('negando (M1): con palabras ajenas o con un pedido nuevo en curso, los modismos NO valen («déjalo antes de las 8», «así nomás» en pedido_datos)', () => {
+    const { r } = trasCambiar();
+    r.w.estado.extraccion = EX([], { entrega: '' });
+    const t = r.c.escribe('déjalo antes de las 8');
+    expect(t.llamadas.extraer).toHaveLength(1);
+    const w = crear({ panel: panel(COBRO_REAL) });
+    const c = con(w, CLIENTE, 'Carlos');
+    c.escribe('hola');
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')], { entrega: 'recojo' });
+    c.escribe('quiero 4 tacos de birria para recoger');
+    c.toca('p|cambiar', 'Cambiar algo');
+    w.estado.extraccion = EX([ln('tacos de birria', 2, 'unidad')], { entrega: 'delivery' });
+    c.escribe('quiero 2 tacos de birria con delivery');
+    expect(estadoDe(w.mundo)['paso']).toBe('pedido_datos');
+    w.estado.extraccion = EX([], { entrega: '' });
+    const x = c.escribe('así nomás');
+    expect(x.llamadas.extraer).toHaveLength(1);
+    expect((estadoDe(w.mundo)['carrito'] as J[])[0]!['cantidad']).toBe(2);
+  });
+});
+
+// =================================================================================================
+// (05/10, hallazgo de la Operadora) Pedir sin decir «pedir» ni escribir un dígito: un audio transcrito («quiero cuatro tacos de birria») caía al menú sin llamar al modelo.
+// =================================================================================================
+describe('pedir con cantidad en palabras o con el nombre de un producto de la carta (audio transcrito)', () => {
+  const FRASES = [
+    'quiero cuatro tacos de birria', 'dame dos tacos de birria por favor', 'ponme media docena de tacos', 'necesito tres tacos de birria',
+    'me das una horchata', 'quisiera un queso fundido', 'mándame dos nachos supremos', 'cuatro tacos de birria por favor', 'deme una docena de tacos',
+    'quiero tacos de birria', 'me pones unas enchiladas suizas', 'quiero cinco horchatas',
+  ];
+  it.each(FRASES)('«%s» desde el menú llama al modelo para extraer el pedido (no cae al menú)', (dicho) => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    const t = c.escribe(dicho);
+    expect(t.llamadas.extraer, dicho).toHaveLength(1);
+    expect(estadoDe(w.mundo)['paso'], dicho).toMatch(/^pedido/);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length, dicho).toBeGreaterThan(0);
+  });
+
+  it.each([
+    'quiero hablar con una persona', 'quiero la ubicación', 'quiero un descuento', 'quiero saber el horario', 'dame la dirección',
+    'necesito ayuda', 'quiero cuatro personas', 'me das el horario', 'quiero una queja',
+  ])('negando: «%s» NO es un pedido: no llama al modelo para extraer líneas', (dicho) => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    const t = c.escribe(dicho);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length, dicho).toBe(0);
+  });
+
+  it('negando: «quiero una mesa para cuatro» es una reserva (sigue su camino), no un pedido', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    c.escribe('quiero una mesa para cuatro');
+    expect(estadoDe(w.mundo)['paso']).toMatch(/^reserva/);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length).toBe(0);
+  });
+
+  it('sin carta cargada, una palabra suelta de la carta no inventa un pedido (el producto sale de la carta, no del código)', () => {
+    const w = crear({ panel: panel({ catalogo: [] }) });
+    const c = con(w);
+    c.escribe('hola');
+    w.estado.extraccion = EX([ln('tacos de birria', 4)], { entrega: '' });
+    const t = c.escribe('quiero tacos de birria');
+    expect(t.llamadas.extraer).toHaveLength(0);
   });
 });

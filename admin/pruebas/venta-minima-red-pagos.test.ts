@@ -65,6 +65,7 @@ const HONESTAS = [
   'Tu reserva: viernes 9 de octubre a las 20:00, 4 personas.', 'Reservar', 'Ver ubicación',
   'No pude incluir tu nota: «tequila» no está disponible por este medio.', 'Para volver al inicio, escribe «menú».',
   // Correcciones de conversación (04/10).
+  'Disculpa, no te entendí bien. ¿Qué te gustaría hacer?', 'Seguir con mi pedido',
   '¿Quieres dejar tu pedido como estaba o elegir otra vez desde la carta?', 'Elegir otra vez',
   'Por delivery no enviamos «Horchata»: lo quité de tu pedido. Si vuelves a recojo, vuelve a agregarlo. Tu pedido quedó vacío: elige otra vez desde la carta.',
   'Ya no tenemos «Horchata»: lo quité de tu pedido. Tu pedido quedó vacío: elige otra vez desde la carta.',

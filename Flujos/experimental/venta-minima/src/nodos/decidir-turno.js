@@ -148,6 +148,7 @@ if (idBoton) {
   // Los demás `m|*` valen salvo con un comprobante en espera.
   if (b.tipo === 'm' && p0 === 'menu') return salir('menu', { boton: b, motivo: 'boton_menu' });
   if (b.tipo === 'm' && !enComp) {
+    if (p0 === 'persona') return salir('transferir', { boton: b, motivo: 'pidió hablar con una persona' });
     if (p0 === 'pedido' && pedidosOn) return salir('carta', { boton: b });
     if (p0 === 'reserva' && reservasOn) return salir('boton', { boton: b });
     if (p0 === 'promos' && cfg.promosActivo === true) return salir('consulta', { boton: b, consulta: 'promociones' });
@@ -163,11 +164,12 @@ if (idBoton) {
   if (b.tipo === 'e' && paso === 'pedido_entrega' && (p0 === 'delivery' || p0 === 'recojo')) return salir('boton', { boton: b });
   if (b.tipo === 'p' && paso === 'pedido_confirmar' && (p0 === 'confirmar' || p0 === 'cambiar')) return salir('boton', { boton: b });
   // «Dejarlo como estaba» (tras «Cambiar algo»): vale mientras el pedido anterior siga guardado (`carritoAnterior`).
+  if (b.tipo === 'p' && p0 === 'seguir' && enPedido) return salir('boton', { boton: b });
   if (b.tipo === 'p' && p0 === 'dejar' && (enPedido || paso === 'menu') && previo.carritoAnterior && typeof previo.carritoAnterior === 'object') return salir('boton', { boton: b });
   if (b.tipo === 'r' && paso === 'reserva_confirmar' && (p0 === 'enviar' || p0 === 'corregir')) return salir('boton', { boton: b });
   if (b.tipo === 'q' && paso === 'esperando_comprobante') {
     if (p0 === 'reenviar') return salir('reenviar_qr', { boton: b });
-    if (p0 === 'cancelar') return salir('menu', { boton: b, motivo: 'cancelar_pedido', limpiar: 'pedido' });
+    if (p0 === 'cancelar') return salir('cancelar', { boton: b, motivo: 'cancelar_pedido', limpiar: 'pedido' });
   }
   return viejo();
 }
@@ -190,7 +192,21 @@ if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar
 // Con un comprobante en espera (`esperando_comprobante`) «menú» no sale del cobro (muestra el recordatorio) y lo
 // demás recibe el recordatorio. «Menú» no borra nada; «cancelar» y «empezar de nuevo» sí limpian.
 const enComprobante = paso === 'esperando_comprobante';
-const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm);
+// CANCELAR (04/10): «cancela mi pedido» y sus variantes naturales CANCELAN el pedido guardado (`Plan del turno`: `aCancelar`), no derivan a una persona.
+// Un rechazo («no cancela», «no quiero cancelar») NO cancela: el pedido sigue donde estaba.
+const cancelacion = intencionDeCancelar(norm);
+if (cancelacion === 'no') {
+  if (enComprobante || (paso.indexOf('pedido') === 0 && (previo.carrito.length > 0 || previo.carritoAnterior))) return salir('boton', { motivo: 'no_cancela' });
+} else if (cancelacion && enComprobante) {
+  // Con el QR enviado, escribir «cancela mi pedido» es lo mismo que tocar «Cancelar pedido».
+  if (cancelacion !== 'reserva') return salir('cancelar', { motivo: 'cancelar_pedido', limpiar: 'pedido' });
+}
+// «¿Qué tengo guardado?»: muestra el pedido guardado con sus botones (sin pedido, lo dice). Con un QR esperando comprobante rige el recordatorio de siempre.
+if (pedidosOn && !enComprobante && /^(ver |mostrar |muestrame |dime |cual es |quiero ver )?(mi |el )?(pedido|carrito)( guardado| actual)?$|^(que|cual) (tengo|llevo|pedi)( guardado| en mi pedido| en el pedido| pedido)?$|^cuanto (va|llevo)( en mi pedido| en el pedido| mi pedido)?$|^(mi pedido|mi carrito)$/.test(norm)
+  && /\b(pedido|carrito|tengo|llevo|pedi|va)\b/.test(norm) && norm !== 'pedido' && norm.length <= 40) {
+  return salir('boton', { motivo: 'ver_pedido' });
+}
+const quierePedir = /\b(pedir|pedido)\b|\bdelivery\b|para llevar|\bquiero \d/.test(norm) || intencionDePedir(norm);
 const quiereReservar = /reserv|\bmesa\b/.test(norm);
 // FALSOS POSITIVOS (revisión del PR #382): las intenciones globales de CARTA y RESERVA valen en `inicio` y `menu` sin límite de largo, pero
 // en los demás pasos solo con un mensaje CORTO (hasta 60 caracteres) y nunca mientras se piden los datos de entrega (`pedido_entrega`,
@@ -206,11 +222,13 @@ if (/^(menu|menu principal|inicio|volver al menu)$/.test(norm) || (!enComprobant
 }
 if (!enComprobante) {
   if (/^(empezar de nuevo|empezar otra vez|volver a empezar|reiniciar)$/.test(norm)) return salir('menu', { motivo: 'reinicio', limpiar: 'todo' });
-  if (/^(cancelar pedido)$/.test(norm)) return salir('menu', { motivo: 'reinicio', limpiar: 'pedido' });
-  if (/^(cancelar reserva)$/.test(norm)) return salir('menu', { motivo: 'reinicio', limpiar: 'reserva' });
+  if (cancelacion === 'pedido') return salir('cancelar', { motivo: 'reinicio', limpiar: 'pedido' });
+  if (cancelacion === 'reserva') return salir('menu', { motivo: 'reinicio', limpiar: 'reserva' });
+  if (cancelacion === 'todo') return salir('cancelar', { motivo: 'reinicio', limpiar: 'todo' });
   // «cancelar» a secas cancela lo que se está haciendo; sin nada en curso, todo.
-  if (/^(cancelar|cancela)$/.test(norm)) {
-    return salir('menu', { motivo: 'reinicio', limpiar: paso.indexOf('reserva') === 0 ? 'reserva' : (paso.indexOf('pedido') === 0 ? 'pedido' : 'todo') });
+  if (cancelacion === 'solo') {
+    if (paso.indexOf('reserva') === 0) return salir('menu', { motivo: 'reinicio', limpiar: 'reserva' });
+    return salir('cancelar', { motivo: 'reinicio', limpiar: paso.indexOf('pedido') === 0 ? 'pedido' : 'todo' });
   }
   // La carta, en cualquier paso. Un pedido que la nombra («tres tacos de la carta») no es esta intención.
   if (pedidosOn && globalCorto && norm.length <= 80 && !/\d/.test(norm) && (/\b(carta|catalogo)\b/.test(norm) || (/\bque tienen\b/.test(norm) && !pideAlgo))
@@ -243,24 +261,18 @@ if (!enComprobante && (paso.indexOf('pedido') === 0 || paso === 'menu') && previ
 }
 const enPasoDePedido = paso.indexOf('pedido') === 0 && Array.isArray(previo.carrito) && previo.carrito.length > 0;
 if (!enComprobante && enPasoDePedido) {
-  // Un delivery a medias (o la pregunta de entrega) y el cliente dice que mejor recoge: pasa a recojo y se muestra el siguiente paso (el resumen).
+  // CAMBIO DE ENTREGA por texto («prefiero recoger», «¿puedo cambiar al delivery?», «quiero que me manden», «mándamelo», «a domicilio», «mejor recojo»),
+  // también con tipeo («quiero que me mandn»): `cambioDeEntrega` exige que TODAS las palabras sean de un vocabulario cerrado (una dirección o una referencia
+  // —«Barrio El Retiro», «ella va a recoger en portería», «Calle Domicilio 5»— tiene palabras ajenas y NO es un cambio), sin «no/nada/sin», y que no mezcle
+  // delivery con recojo. Mensaje entero y corto (revisión de seguridad del PR #417/#426).
   const eligioDelivery = previo.entrega && previo.entrega.entrega === 'delivery';
-  // FRASE ENTERA, no una palabra suelta (revisión de seguridad del PR #417): una dirección («Barrio El Retiro, calle 3», «Av. Busch frente al retiro
-  // de jubilados») o una referencia («ella va a recoger en portería») contiene «retiro» o «recoger» y NO es un cambio de entrega. Solo vale un
-  // mensaje que ES el pedido de recoger (empieza por el verbo y termina ahí), sin ninguna palabra de delivery, envío o domicilio.
-  const CAMBIO_A_RECOGER = /^((mejor|prefiero|quiero|ya|entonces) )*(recoger|recogerlo|recojo|lo recojo|retirarlo|paso a (buscar|buscarlo|recoger|recogerlo)|voy a (recoger|recogerlo|buscar|buscarlo))( yo)?( en (el )?local)?( por favor)?$|^(puedo|podria|se puede|es posible|quiero|quisiera) (cambiar|cambiarlo|pasar|pasarlo) (a|para) (recoger|recojo|retirar|retirarlo|recogerlo)( en (el )?local)?( por favor)?$|^(cambiar|cambio|cambiarlo|pasar) (a|para) (recoger|recojo|retirar)( en (el )?local)?( por favor)?$/;
-  const cambiaARecojo = norm.length <= 60 && !/\b(delivery|envio|envios|domicilio|no|nada)\b/.test(norm) && CAMBIO_A_RECOGER.test(norm);
-  if (cambiaARecojo && cfg.aceptaRetiroEnLocal !== false && (eligioDelivery || paso === 'pedido_entrega')
+  const cambio = cambioDeEntrega(norm);
+  if (cambio === 'recojo' && cfg.aceptaRetiroEnLocal !== false && (eligioDelivery || paso === 'pedido_entrega')
     && ['pedido_entrega', 'pedido_datos', 'pedido_confirmar'].indexOf(paso) >= 0) {
     if (pedidosOn && cerrado()) return salir('fuera_de_horario');
     return salir('boton', { motivo: 'cambio_a_recojo', boton: { tipo: 'e', partes: ['recojo'] } });
   }
-  // El inverso: con el resumen de recojo delante (o la pregunta de entrega), «¿puedo cambiar al delivery?», «prefiero delivery», «quiero que me lo envíen».
-  // Misma política estricta: el mensaje ENTERO es el pedido de cambiar, corto y sin «no», «nada» ni palabras de recojo; una dirección («Calle Delivery 5»,
-  // «delivery no») no lo activa. Sigue el camino normal del delivery (`e|delivery`: pide dirección, referencia y quién recibe; respeta las áreas sin delivery).
-  const CAMBIO_A_DELIVERY = /^((mejor|prefiero|quiero|ya|entonces) )*(delivery|con delivery|a domicilio|domicilio|envio|con envio|(que )?me lo (envien|envian|manden|mandan|traigan|lleven|envies|mandes|traigas))( por favor)?$|^(prefiero|quiero|mejor|quisiera) que me lo (envien|manden|traigan|lleven)( por favor)?$|^(puedo|podria|se puede|es posible|quiero|quisiera) (cambiar|cambiarlo|pasar|pasarlo|cambio) (a|al|para|por) (el )?(delivery|envio|domicilio)( por favor)?$|^(cambiar|cambio|cambialo|cambiamelo|pasalo|pasar) (a|al|para|por) (el )?(delivery|envio|domicilio)( por favor)?$/;
-  const cambiaADelivery = norm.length <= 60 && !/\b(no|nada|recoger|recojo|recogerlo|retirar|retiro|buscar|buscarlo)\b/.test(norm) && CAMBIO_A_DELIVERY.test(norm);
-  if (cambiaADelivery && cfg.aceptaDelivery !== false && ['pedido_entrega', 'pedido_confirmar'].indexOf(paso) >= 0) {
+  if (cambio === 'delivery' && cfg.aceptaDelivery !== false && ['pedido_entrega', 'pedido_confirmar'].indexOf(paso) >= 0) {
     if (pedidosOn && cerrado()) return salir('fuera_de_horario');
     return salir('boton', { motivo: 'cambio_a_delivery', boton: { tipo: 'e', partes: ['delivery'] } });
   }
@@ -357,6 +369,76 @@ function estadoBase() {
   });
 }
 
+// ¿El texto PIDE comida sin decir «pedir» ni escribir un dígito? (05/10: un audio transcrito «quiero cuatro tacos de birria» caía al menú sin llamar al modelo.)
+// Cuenta si hay un verbo de pedido («quiero», «dame», «ponme», «mándame», «necesito», «me das»…) junto a una cantidad en palabras que no deja dudas
+// («dos» a «diez», «media docena», «docena») o a una palabra de la CARTA CARGADA (sus nombres, con `vmNorm`: nada de productos escritos en el código), o una cantidad
+// fuerte junto a una palabra de la carta sin verbo («cuatro tacos de birria por favor»). «un/una» solos NO son cantidad (sin una palabra de la carta, «quiero un
+// descuento» no es un pedido). Nunca si habla de una persona, una mesa, la ubicación, el horario o una reserva: eso lo atienden otras reglas.
+// El resto sigue igual: si el modelo no saca líneas, no se inventa nada (la carta, o pasar con el local a la segunda vez).
+function intencionDePedir(n) {
+  if (!n || n.length > 200 || /\b(persona|personas|mesa|mesas|reserv\w*|ubicacion|direccion|horario|hablar|asesor\w*|encargad\w*|humano|humana|queja|reclamo)\b/.test(n)) return false;
+  const verbo = /\b(quiero|quisiera|queremos|quisieramos|dame|deme|damelo|ponme|pongame|ponga|mandame|mandeme|necesito|necesitamos|pido|pedimos|traeme|traigame|regalame|me das|me da|me pones|me pone|me manda|me mandas|me regalas|voy a querer|vamos a querer)\b/.test(n);
+  const fuerte = /\b(\d+|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|docena|media docena)\b/.test(n);
+  const sueltas = n.split(' ').filter(Boolean);
+  const comunes = ['orden', 'ordenes', 'combo', 'combos', 'promo', 'promos', 'para', 'sin', 'con', 'del', 'los', 'las', 'una', 'unos', 'unas', 'plato', 'platos'];
+  const raiz = (w) => w.replace(/(es|s)$/, '');
+  // Solo lo que se vende (`cartaDelNegocio`: sin áreas excluidas, agotados ni precios inválidos), y sin las palabras del propio nombre del negocio
+  // («Q'Taco» no vuelve «quiero la promo de Q'Taco» un pedido de tacos).
+  const delNegocio = vmNorm(cfg.nombreNegocio).split(' ');
+  const deLaCarta = [];
+  for (const it of cartaDelNegocio()) {
+    for (const w of vmNorm(it.nombre).split(' ')) if (w.length >= 4 && comunes.indexOf(w) < 0) deLaCarta.push(raiz(w));
+  }
+  const nombraLaCarta = sueltas.some((w) => w.length >= 4 && comunes.indexOf(w) < 0 && delNegocio.indexOf(w) < 0 && deLaCarta.indexOf(raiz(w)) >= 0);
+  return (verbo && (fuerte || nombraLaCarta)) || (fuerte && nombraLaCarta);
+}
+
+// ¿Qué quiere cancelar? '' = nada; 'no' = lo rechaza («no cancela», «no quiero cancelar»); 'pedido' («cancela mi pedido», «ya no quiero el pedido»);
+// 'reserva'; 'todo' («cancela todo»); 'solo' = la palabra a secas («cancelar», «quiero cancelar»: se cancela lo que se está haciendo). Mensaje ENTERO
+// y corto: «cancelar» dentro de otra frase («¿se puede cancelar después?») no cancela nada.
+function intencionDeCancelar(norm) {
+  if (!norm || norm.length > 50 || /\d/.test(norm)) return '';
+  if (/\bno\b.{0,20}\b(cancel\w*|anul\w*)\b/.test(norm) || /\b(cancel\w*|anul\w*)\b.{0,12}\bno\b/.test(norm)) return /\b(cancel|anul)/.test(norm) ? 'no' : '';
+  const V = '(cancelar|cancela|cancelo|cancelame|anular|anula|anulame)';
+  if (new RegExp('^(quiero |quisiera |deseo |necesito |voy a |por favor |ya |entonces )*' + V + ' (la |mi |esta |esa )?reserva( por favor)?$').test(norm)) return 'reserva';
+  if (new RegExp('^(quiero |quisiera |deseo |necesito |voy a |por favor |ya |entonces )*' + V + ' (todo|todo mi pedido|todo el pedido|todo por favor)( por favor)?$').test(norm)) return 'todo';
+  if (new RegExp('^(quiero |quisiera |deseo |necesito |voy a |por favor |ya |entonces )*' + V + '( me)? ?(mi |el |este |ese )(pedido|orden)( por favor)?$').test(norm)
+    || /^(cancelar|cancela) pedido( por favor)?$/.test(norm)) return 'pedido';
+  if (/^(ya )?no quiero (el |mi |este |ese )?(pedido|nada)( por favor)?$/.test(norm)) return 'pedido';
+  if (new RegExp('^(quiero |quisiera |deseo |necesito |voy a |por favor |ya |entonces )*' + V + '(lo|la|melo)?( por favor)?$').test(norm)) return 'solo';
+  return '';
+}
+
+// ¿El mensaje ES un pedido de cambiar la entrega? 'delivery' | 'recojo' | ''. TODAS las palabras deben ser del vocabulario cerrado de abajo (rellenos,
+// verbos de cambiar, y las palabras de delivery o de recojo, con tolerancia de una letra para las de 5 o más letras: «mandn», «envien», «recojer»);
+// sin dígitos, de hasta 8 palabras, y nunca con «no», «nada», «sin», «ni» ni mezclando las dos entregas.
+function cambioDeEntrega(norm) {
+  const palabras = norm.split(' ').filter(Boolean);
+  if (!palabras.length || palabras.length > 8 || norm.length > 60 || /\d/.test(norm)) return '';
+  const RELLENO = ['quiero', 'quisiera', 'queremos', 'que', 'me', 'lo', 'la', 'el', 'al', 'a', 'mi', 'por', 'para', 'favor', 'mejor', 'prefiero', 'prefiere',
+    'preferimos', 'ya', 'entonces', 'pues', 'yo', 'en', 'local', 'casa', 'puedo', 'podria', 'podrian', 'se', 'puede', 'es', 'posible', 'cambiar', 'cambio',
+    'cambialo', 'cambiarlo', 'cambiamelo', 'pasar', 'pasarlo', 'pasalo', 'pasame', 'paso', 'voy', 'ire', 'si', 'ok', 'dale', 'bueno', 'nomas', 'tambien', 'pero'];
+  const DELIVERY = ['delivery', 'domicilio', 'envio', 'enviar', 'enviarlo', 'envien', 'envienlo', 'envienmelo', 'enviamelo', 'envialo', 'envian', 'manden', 'mandar',
+    'mandarlo', 'mandamelo', 'mandalo', 'mandenlo', 'mandenmelo', 'mandan', 'traigan', 'traer', 'traerlo', 'traiganlo', 'traiganmelo', 'traen', 'lleven', 'llevar',
+    'llevarlo', 'llevenlo', 'llevenmelo', 'llevamelo', 'llevan'];
+  const RECOJO = ['recoger', 'recogerlo', 'recojo', 'recogo', 'retirar', 'retirarlo', 'retiro', 'buscar', 'buscarlo', 'buscaria'];
+  const cerca = (w, lista) => lista.some((k) => w === k || (w.length >= 5 && k.length >= 5 && distancia(w, k) <= 1));
+  if (palabras.some((w) => ['no', 'nada', 'sin', 'ni', 'nunca', 'jamas'].indexOf(w) >= 0)) return '';
+  let hayDelivery = false;
+  let hayRecojo = false;
+  for (const w of palabras) {
+    if (RELLENO.indexOf(w) >= 0) continue;
+    if (cerca(w, DELIVERY)) { hayDelivery = true; continue; }
+    if (cerca(w, RECOJO)) { hayRecojo = true; continue; }
+    return ''; // una palabra ajena: es una dirección, una referencia o una pregunta, no el pedido de cambiar
+  }
+  if (hayDelivery === hayRecojo) return '';
+  // Un verbo suelto («enviar», «mándalo») es la forma de CONFIRMAR («un “sí” escrito no confirma nada», más abajo), no un cambio de entrega: una sola palabra
+  // vale solo si es delivery/domicilio/envío o lleva el «me» («mándamelo»).
+  if (palabras.length === 1 && hayDelivery && !/melo$/.test(palabras[0]) && ['delivery', 'domicilio', 'envio'].indexOf(palabras[0]) < 0) return '';
+  return hayDelivery ? 'delivery' : 'recojo';
+}
+
 // Distancia de edición (Levenshtein) entre dos palabras cortas.
 function distancia(a, b) {
   const m = a.length;
@@ -410,6 +492,18 @@ function intencionDeVolver(norm, tolerante) {
   // Solo al elegir de nuevo: tolerancia a otras formas de vocabulario cerrado.
   if (hayDejar && todas(VOCAB) && (hayEstaba || /\b(antes|igual|asi|anterior|nomas|mas|tenia)\b/.test(norm))) return 'si';
   if (hayDejar && palabras.length <= 4 && palabras.every((w) => esDejar(w) || ['no', 'si', 'mejor', 'lo', 'ya', 'pues', 'por', 'favor', 'nomas', 'mas'].indexOf(w) >= 0)) return 'si';
+  // Modismos y frases de conformidad con lo que había («así nomás», «está bien así», «así está bien», «nomás», «sin cambios», «no cambies nada»): SOLO aquí (al
+  // elegir de nuevo, mensaje ENTERO de vocabulario cerrado). Un «no» seguido de «está bien» / «así» («no está bien», «no así») es un rechazo: se pregunta.
+  const CONFORME = ['asi', 'nomas', 'esta', 'bien', 'ya', 'pues', 'si', 'ok', 'okey', 'bueno', 'dale', 'entonces', 'mejor', 'dejalo', 'dejarlo', 'sin', 'cambios',
+    'no', 'cambies', 'nada', 'quiero', 'cambiar', 'por', 'favor'];
+  if (palabras.every((w) => CONFORME.indexOf(w) >= 0)) {
+    if (palabras.indexOf('no') >= 0) {
+      if (/^((ya|pues|si|ok|okey|bueno|dale|entonces|mejor) )*(no cambies nada|no quiero cambiar nada)( por favor)?$/.test(norm)) return 'si';
+      if (palabras.some((w) => ['asi', 'bien', 'esta'].indexOf(w) >= 0)) return 'duda';
+    } else if (palabras.some((w) => ['asi', 'nomas', 'bien', 'cambios'].indexOf(w) >= 0)) {
+      return 'si';
+    }
+  }
   // Habla de dejarlo o de lo de antes con palabras de vocabulario cerrado, pero no se entiende del todo: se pregunta (una vez), no se deriva.
   if (palabras.length <= 6 && todas(VOCAB_DUDA) && (hayDejar || hayEstaba || /\b(anterior|tenia)\b/.test(norm) || /\bcomo antes\b/.test(norm))) return 'duda';
   return '';

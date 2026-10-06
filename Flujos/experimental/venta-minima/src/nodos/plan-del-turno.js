@@ -152,6 +152,7 @@ function despachar() {
   const a = d.accion;
   const b = d.boton && typeof d.boton === 'object' ? d.boton : null;
   if (a === 'menu') return aMenu();
+  if (a === 'cancelar') return aCancelar();
   if (a === 'carta') return aCarta();
   if (a === 'carrito') return aCarrito();
   if (a === 'consulta') return aConsulta(d.consulta);
@@ -237,6 +238,7 @@ function estadoDe(e) {
   if (!s.pedidoWeb || typeof s.pedidoWeb !== 'object') s.pedidoWeb = null;
   if (!s.carritoAnterior || typeof s.carritoAnterior !== 'object') s.carritoAnterior = null;
   s.preguntoDejar = s.preguntoDejar === true;
+  s.aclaro = s.aclaro === true;
   s.excepDelivery = s.excepDelivery === true;
   return s;
 }
@@ -265,6 +267,7 @@ function limpiarSegun(que) {
 function irA(paso) {
   en.paso = paso;
   en.vacias = 0;
+  en.aclaro = false;
 }
 
 // --- Utilidades de texto --------------------------------------------------------------------
@@ -353,9 +356,9 @@ function capacidades() {
 // para que «Reenviar QR» y «Cancelar pedido» sigan funcionando; el texto no manda a «menú» (con un QR pendiente el menú no está
 // disponible: solo se ofrece lo que se cumple) y el mensaje sale sin el botón «Menú».
 // `sinFraseMenu` (solo la pregunta por el costo del delivery, con el pedido en curso): el texto termina en el botón, sin la frase de «menú».
-function derivar(razon, conservarPaso, extra, sinFraseMenu) {
+function derivar(razon, conservarPaso, extra, sinFraseMenu, textoPropio) {
   // (Las constantes van DENTRO de la función: lo que se declara después del `return` del nodo no llega a inicializarse.)
-  const TEXTO_DERIVACION = 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos.'
+  const TEXTO_DERIVACION = typeof textoPropio === 'string' && textoPropio ? textoPropio : 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos.'
     + (conservarPaso ? ' Tu pedido sigue esperando el comprobante.'
       // `sinFraseMenu` (costo del delivery, con el pedido en curso): el carrito se conserva, así que el texto no sugiere que se borra nada.
       : (sinFraseMenu === true ? (en.carrito.length ? ' Tu pedido sigue guardado.' : '') : ' Para volver al inicio, escribe «menú».'))
@@ -373,9 +376,76 @@ function derivar(razon, conservarPaso, extra, sinFraseMenu) {
   // derivar cada mensaje) y el cliente retoma su pedido o su reserva escribiendo «menú». Con un comprobante en espera
   // (`conservarPaso`) el paso no cambia.
   if (!conservarPaso) irA('menu');
-  mensajes = [conservarPaso || sinFraseMenu === true ? Object.assign(enlace(TEXTO_DERIVACION), { sinMenu: true }) : enlace(TEXTO_DERIVACION)];
+  mensajes = [conservarPaso || sinFraseMenu === true || !!textoPropio ? Object.assign(enlace(TEXTO_DERIVACION), { sinMenu: true }) : enlace(TEXTO_DERIVACION)];
   condicionados = null;
   return null;
+}
+
+// Un mensaje con los botones del menú (que ya son el menú: `sinMenu`) o, sin ninguno, solo texto. El texto nunca nombra «Hacer un pedido» si ese botón
+// no sale (política: un texto no nombra un botón que no se envía).
+function conMenu(cuerpo) {
+  return Object.assign(conBotones(cuerpo, menuBotones()), { sinMenu: true });
+}
+// (Función y no constante: lo que se declara con `const` después del `return` del nodo no llega a inicializarse.)
+function textoEmpezar() {
+  return pedidosOn && menuBotones().some((b) => b.title === 'Hacer un pedido') ? ' Cuando quieras empezar otro, toca «Hacer un pedido».' : '';
+}
+
+// El último pedido de este teléfono que YA se pasó a nuestro equipo (comprobante recibido o pedido sin QR enviado): en `sd.pedidos` con `resultado`.
+function pedidoYaPasado() {
+  const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
+  let mejor = null;
+  for (const k of Object.keys(guardados)) {
+    const p = guardados[k];
+    if (!p || typeof p !== 'object' || String(p.from) !== String(t.from) || !p.resultado) continue;
+    if (!mejor || Number(p.guardadoMs || 0) > Number(mejor.guardadoMs || 0)) mejor = p;
+  }
+  return mejor;
+}
+
+// CANCELAR (04/10). `d.limpiar` = 'pedido' | 'todo' | 'reserva'. Lo guardado se cancela de verdad y el cliente lo lee: «Listo, cancelé tu pedido.»; con un QR
+// ya enviado, «Cancelé tu pedido #X.» (el cobro abierto en la consola vence solo: no se promete nada más). Un pedido que YA se pasó a nuestro equipo
+// (comprobante recibido o pedido sin QR) NO lo cancela este flujo: se dice la verdad y se pasa con el local (aviso + botón «Escribir al local»).
+function aCancelar() {
+  const alcance = d.limpiar === 'todo' || d.limpiar === 'reserva' ? d.limpiar : 'pedido';
+  ruta = 'cancelar:' + alcance;
+  const ped = en.pedido;
+  const tenia = !!ped || en.carrito.length > 0 || en.pendiente.length > 0 || !!en.carritoAnterior;
+  // Solo la reserva (o nada que cancelar con `todo`): como siempre, el menú.
+  const pasado = !tenia && alcance !== 'reserva' ? pedidoYaPasado() : null;
+  if (alcance === 'reserva' || (alcance === 'todo' && !tenia && !pasado && en.reserva)) return aMenu();
+  if (tenia) {
+    const cod = ped && ped.codigo ? cbCodigo(ped.codigo) : '';
+    limpiarSegun(alcance === 'todo' ? 'todo' : 'pedido');
+    irA('menu');
+    mensajes = [conMenu((cod ? 'Cancelé tu pedido #' + cod + '.' : 'Listo, cancelé tu pedido.') + textoEmpezar())];
+    return;
+  }
+  if (pasado) {
+    const cod = cbCodigo(pasado.codigo);
+    const nombre = cod ? 'tu pedido #' + cod : 'tu pedido';
+    return derivar('cancelación de un pedido ya pasado al local', false, { motivo: 'Quiere cancelar ' + nombre + ' (ya está con el local)' }, false,
+      (cod ? 'Tu pedido #' + cod : 'Tu pedido') + ' ya está con nuestro equipo. Para cancelarlo, toca «Escribir al local».');
+  }
+  irA('menu');
+  mensajes = [conMenu('Todavía no tienes productos en tu pedido.' + (pedidosOn && menuBotones().some((b) => b.title === 'Hacer un pedido') ? ' Toca «Hacer un pedido» para empezar.' : ''))];
+}
+
+// «¿Qué tengo guardado?»: el resumen del pedido guardado con sus botones; sin productos, lo dice.
+function verPedido() {
+  ruta = 'boton:ver_pedido';
+  if (en.carrito.length) return mostrarPedido();
+  const a = en.carritoAnterior;
+  if (a && Array.isArray(a.carrito) && a.carrito.length) {
+    irA('pedido');
+    mensajes = [{ tipo: 'botones', cuerpo: 'Tu pedido guardado:\n' + pdResumen(a.carrito, a.entrega || entregaVacia(), { moneda: monedaTxt, nombrePerfil: perfil, maxDetalle: 3000 }), botones: [
+      { id: vmIdDeBoton('p', 'dejar'), title: 'Dejarlo como estaba' },
+      { id: vmIdDeBoton('m', 'pedido'), title: 'Ver la carta' },
+    ] }];
+    return;
+  }
+  if (en.paso === 'inicio') irA('menu');
+  mensajes = [conMenu('Todavía no tienes productos en tu pedido.' + (pedidosOn && menuBotones().some((b) => b.title === 'Hacer un pedido') ? ' Toca «Hacer un pedido» para empezar.' : ''))];
 }
 
 // --- Menú, carta, consultas, promoción ------------------------------------------------------
@@ -548,6 +618,8 @@ function aBoton(b) {
     return;
   }
   if (b.tipo === 'p' && p0 === 'dejar') return dejarComoEstaba();
+  if (b.tipo === 'p' && p0 === 'seguir') return mostrarPaso();
+  if (b.tipo === 'm' && p0 === 'persona') return derivar('pidió hablar con una persona');
   if (b.tipo === 'p' && p0 === 'confirmar') return confirmarPedido();
   if (b.tipo === 'r' && p0 === 'enviar') return enviarReserva();
   if (b.tipo === 'r' && p0 === 'corregir') return evaluarReserva(en.reserva || {});
@@ -630,6 +702,7 @@ function tomarUbicacion() {
 function mostrarPaso() {
   ruta = 'boton:' + (d.motivo || 'paso_actual');
   if (d.motivo === 'dejar_o_elegir') return preguntarDejarOElegir();
+  if (d.motivo === 'ver_pedido') return verPedido();
   if (d.motivo === 'ubicacion') tomarUbicacion();
   const p = en.paso;
   if (p === 'inicio' || p === 'menu') return aMenu();
@@ -749,10 +822,7 @@ function siguientePasoPedido() {
       return siguientePasoPedido();
     }
     en.paso = 'pedido_entrega';
-    return [{ tipo: 'botones', cuerpo: '¿Es para delivery o para recoger en el local?', botones: [
-      { id: vmIdDeBoton('e', 'delivery'), title: 'Delivery' },
-      { id: vmIdDeBoton('e', 'recojo'), title: 'Recoger en el local' },
-    ] }];
+    return [preguntaDeEntrega()];
   }
   if (en.entrega.entrega === 'delivery') {
     const faltan = pdFaltanEntrega(en.entrega, perfil);
@@ -838,6 +908,10 @@ function aExtraerPedido() {
   // Lo que pone el MODELO también pasa por las reglas del código (revisión de seguridad del PR #435, LOW-A2): una «dirección» sin dígito ni vía fuerte («Déjale al portero»,
   // «A media cuadra del gas», «necesito ayuda») NO es una dirección: pasa a la referencia (si está vacía) y la dirección se vuelve a pedir; y una ayuda dicha en un campo
   // del modelo («{referencia: "necesito ayuda"}») deriva a una persona.
+  // Lo que el MODELO pone en `direccion` o `referencia` pasa por el mismo filtro de cierre y de cambio que el texto libre (batería real, caso M2bX): «eso es todo» o
+  // «cámbiame el pedido» no son una dirección ni una referencia, y no salen en el resumen ni en el aviso al local.
+  if (x.direccion && esCierreOCambio(vmNorm(x.direccion))) x.direccion = '';
+  if (x.referencia && esCierreOCambio(vmNorm(x.referencia))) x.referencia = '';
   const delModelo = vmNorm([x.direccion, x.referencia].join(' '));
   if (!lineas.length && delModelo && pideAyudaPorCodigo(delModelo) && !pareceDato(delModelo)) return derivar('pidió hablar con una persona');
   if (x.direccion && !pareceDireccion(vmNorm(x.direccion))) {
@@ -847,14 +921,16 @@ function aExtraerPedido() {
   const datosEntrega = ['entrega', 'direccion', 'referencia', 'nombre'].some((k) => x[k]);
   // Una marca `quiereHablar` del modelo sobre un texto que NO parece un dato de entrega («necesito ayuda», «tengo un problema con mi pedido») deriva SIEMPRE:
   // el texto libre no se adopta como dirección o referencia (revisión de seguridad del PR #435, M1).
-  if (x.quiereHablar === true && !pareceDato(normTexto)) return derivar('pidió hablar con una persona');
+  // (La primera vez, sin una petición explícita, sale UNA aclaración con «Escribir al local» —o la pregunta de entrega—; con una petición explícita o al insistir, deriva.)
+  if (x.quiereHablar === true && !pareceDato(normTexto)) return aclararOPasarConElLocal();
   // Aunque el modelo NO marque `quiereHablar` (devuelva solo {"lineas":[]}): un texto de ayuda, queja o petición de atención SIN rasgos de un dato de entrega deriva a una
   // persona por CÓDIGO, antes de adoptar nada («necesito ayuda», «quiero que me atienda alguien», «comuníquenme con el local»).
   if (!lineas.length && !datosEntrega && pideAyudaPorCodigo(normTexto) && !pareceDato(normTexto)) return derivar('pidió hablar con una persona');
   // El modelo no asignó el texto a ningún campo: con el delivery a medias lo toma el CÓDIGO (la dirección que falta o, ya dada la dirección, la referencia
   // opcional), SIN depender del modelo: ni se pierde ni se repite la pregunta ni se deriva («Déjale al portero»). Solo si el texto puede ser un dato de entrega.
   if (!lineas.length && !datosEntrega && adoptarTextoLibre()) return;
-  if (x.quiereHablar === true) return derivar('pidió hablar con una persona');
+  // Con productos en el mensaje y sin una petición explícita de persona, se atiende el pedido (no se descarta lo pedido por una marca dudosa del modelo).
+  if (x.quiereHablar === true && (!lineas.length || pideUnaPersonaElTexto())) return aclararOPasarConElLocal();
   if (!lineas.length && !datosEntrega) {
     // Dos extracciones seguidas sin nada que tomar: se pasa con el local, pero solo mientras falte algo que el cliente deba dar. Con el delivery YA completo (dirección dada)
     // un texto sin dato («Rexibe pedro» con la referencia ya guardada) no suma ni deriva: se vuelve a mostrar el resumen. Un texto que habla de delivery («prefiero delivery»)
@@ -874,6 +950,7 @@ function aExtraerPedido() {
     return;
   }
   en.vacias = 0;
+  en.aclaro = false;
   en.excepDelivery = false;
   if (x.entrega && modalidades().indexOf(x.entrega) >= 0) ponerModalidad(x.entrega);
   ['direccion', 'referencia', 'nombre'].forEach((k) => { if (x[k]) en.entrega[k] = textoDeDato(x[k], 160); });
@@ -893,9 +970,39 @@ function aExtraerPedido() {
   mostrarPedido();
 }
 
-// ¿El texto pide EXPLÍCITAMENTE a una persona o atención? (lo que NO se toma como dato de entrega).
+// «quiereHablar: true» del modelo NO deriva a la primera (frases como «Donde dije» lo activaban sin que nadie pidiera una persona). Se deriva solo si el texto
+// pide EXPLÍCITAMENTE una persona o atención («hablar con», «persona», «encargado», «asesor», «atención», «llámenme»…) o si el cliente insiste (segunda vez
+// seguida, `aclaro`). Si no: UNA aclaración corta con botones, y si la frase se parece a un cambio de entrega («quiero que me mandn»), la pregunta de la
+// entrega (Delivery / Recoger en el local), que NUNCA deriva. Derivar sigue siendo aviso + botón, pero no es la primera salida.
 function pideUnaPersonaElTexto() {
-  return /\b(hablar con|conversar con|persona|personas|humano|humana|encargad[oa]|asesor|asesora|atencion|llamen|llamenme|llamame|llamar|gerente|duen[oa]|administrador)\b/.test(vmNorm(d.texto));
+  return /\b(hablar con|conversar con|persona|personas|humano|humana|encargad[oa]|asesor|asesora|atencion|llamen|llamenme|llamame|llamar|gerente|duen[oa]|administrador|ayuda|problema|problemas|queja|reclamo|robo|comuniquen\w*|atienda|atiendan)\b/.test(vmNorm(d.texto));
+}
+function aclararOPasarConElLocal() {
+  const n = vmNorm(d.texto);
+  // Una petición de ayuda clara («ayúdenme», «auxilio») también es explícita: `pideUnaPersonaElTexto` solo conoce «ayuda», y `pideAyudaPorCodigo` descarta las cortesías («no hay problema»).
+  const explicito = pideUnaPersonaElTexto() || pideAyudaPorCodigo(n);
+  const parecidoAEntrega = en.carrito.length > 0 && /\b(mand|envi|traig|traer|llev|domicil|delivery|recog|recoj|retir|buscar)/.test(n);
+  if (parecidoAEntrega && !explicito) {
+    ruta = 'boton:aclarar_entrega';
+    en.paso = 'pedido_entrega'; // los botones de entrega valen en este paso
+    mensajes = [preguntaDeEntrega(true)];
+    return;
+  }
+  if (explicito || en.aclaro === true) return derivar('pidió hablar con una persona');
+  ruta = 'boton:aclarar';
+  en.aclaro = true;
+  const hayPedido = en.carrito.length > 0 && en.paso.indexOf('pedido') === 0;
+  mensajes = [{ tipo: 'botones', cuerpo: 'Disculpa, no te entendí bien. ¿Qué te gustaría hacer?', botones: (hayPedido ? [{ id: vmIdDeBoton('p', 'seguir'), title: 'Seguir con mi pedido' }] : [])
+    .concat([{ id: vmIdDeBoton('m', 'persona'), title: 'Escribir al local' }]) }];
+}
+
+// La pregunta de la entrega (sin elegir todavía): Delivery o recoger en el local. Con `aclara` (una frase que se parece a un cambio de entrega pero no se entendió)
+// el texto lo dice: «¿Quieres que te lo enviemos por delivery o recoger en el local?».
+function preguntaDeEntrega(aclara) {
+  return { tipo: 'botones', cuerpo: aclara === true ? '¿Quieres que te lo enviemos por delivery o recoger en el local?' : '¿Es para delivery o para recoger en el local?', botones: [
+    { id: vmIdDeBoton('e', 'delivery'), title: 'Delivery' },
+    { id: vmIdDeBoton('e', 'recojo'), title: 'Recoger en el local' },
+  ] };
 }
 
 // DOS LISTAS (batería real y revisión de seguridad del PR #435): los rasgos de DIRECCIÓN (un dígito o una vía FUERTE: calle, avenida, barrio, edificio, condominio,
@@ -931,12 +1038,31 @@ function textoDeDato(x, max) {
   return delCliente(s, max);
 }
 
+// Un cierre («eso es todo», «nada más», «listo», «gracias», «ya está») o un pedido de cambio o de cancelación («cámbiame el pedido», «modifica el pedido», «cancela todo») NO es una dirección
+// ni una referencia: ni dicho por el cliente ni puesto por el modelo en `direccion` o `referencia`. El cierre es una frase hecha SOLO de palabras de cierre (una sola palabra de otra
+// clase, «portero», «gas», «Calle», la saca del filtro); el cambio, un verbo de cambio o cancelación al empezar o junto a «pedido», «orden», «compra» o «todo». `n` ya viene normalizado.
+function esCierreOCambio(n) {
+  const t = String(n || '').trim();
+  if (!t) return false;
+  // Comprobación LINEAL, sin cuantificadores anidados (una regex `((a|b) ?)+` retrocede de forma exponencial con «nomas nomas nomas… x»; alerta js/redos de CodeQL).
+  const palabras = t.split(' ');
+  const cierre = new Set(['eso', 'esto', 'es', 'todo', 'nada', 'mas', 'nomas', 'no', 'ya', 'esta', 'listo', 'lista', 'gracias', 'muchas', 'ok', 'okey', 'dale', 'bueno', 'pues', 'entonces', 'si', 'por', 'ahora', 'con', 'ahi', 'asi', 'bien', 'perfecto', 'seria', 'estamos', 'estoy', 'ninguna', 'ninguno', 'nadie', 'chau', 'adios', 'hasta', 'luego', 'nos', 'vemos']);
+  if (palabras.every((w) => cierre.has(w))) return true;
+  // Un verbo de cambio o cancelación al empezar la frase, tras un preámbulo de cortesía («quiero cambiar mi pedido», «por favor cancela todo»).
+  const preambulo = new Set(['quiero', 'quisiera', 'necesito', 'puedes', 'puede', 'podrias', 'podria', 'mejor', 'por', 'favor', 'ya', 'pues', 'entonces']);
+  let k = 0;
+  while (k < palabras.length && preambulo.has(palabras[k])) k += 1;
+  if (k < palabras.length && /^(cambi|modific|corrig|corregir|cancel|anul)/.test(palabras[k])) return true;
+  return /\b(cambi\w*|modific\w*|corrig\w*|corregir|cancel\w*|anul\w*)\b/.test(t) && /\b(pedido|orden|compra|todo)\b/.test(t);
+}
+
 // ¿El texto puede ser un DATO de entrega (dirección o referencia)? Nunca: una petición de persona, una pregunta (con o sin signos), un enlace, una cortesía o negación
 // suelta, una cancelación o «carta/menú», una queja o petición de ayuda, algo de pagos o comprobantes, un cambio de entrega («recoger», «delivery», «que me manden»,
 // «sin delivery») o una orden de comida («quiero 2 tacos»). Los rasgos de un dato (un dígito o una palabra de vía) salvan solo a lo que habla de delivery o a una pregunta
 // escrita sin signos; lo demás se rechaza aunque lleve un número («Pagué 110 Bs, comprobante 123456789»).
 function puedeSerDatoDeEntrega(crudo, n) {
   if (!n || !/[\p{L}\p{N}]/u.test(crudo) || pideUnaPersonaElTexto()) return false;
+  if (esCierreOCambio(n)) return false;
   if (/[?¿]/.test(crudo) || /https?:|www\./i.test(crudo) || crudo.search(AV_ENLACE) >= 0) return false; // (`search` y no `test`: la regla del aviso es global y `test` guarda estado)
   if (/^((mejor|ya|pues|bueno|entonces) )*(no|sin|si|gracias|muchas|ok|okey|listo|hola|buenas|buenos|dale|ya|bueno|nada|menu)\b/.test(n)) return false;
   if (/\b(no|sin) (delivery|envio|domicilio)\b|\b(delivery|envio|domicilio) no\b/.test(n)) return false;

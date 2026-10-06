@@ -16,10 +16,12 @@
  *   - un carrito inválido (otro número, sin ítems, sin firma, de marca vieja) no produce nada: 0 mensajes, 0 avisos, 0 reportes;
  *   - un mensaje normal de WhatsApp sigue pasando por el receptor y SÍ se reporta como entrante (la guardia nueva no lo toca).
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type J } from './lib/flujo';
 import {
-  AHORA, boton, botonesDe, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
+  AHORA, boton, botonesDe, CARPETA_VM, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
 } from './lib/venta-minima-mundo';
 
 const CARRITO = 'Carrito del catálogo';
@@ -967,4 +969,134 @@ describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúden
     const t = turno(w, texto(dicho));
     expect(t.avisos.length, dicho).toBeGreaterThan(0);
   });
+  // Batería real (FPdr/FPdp): con `quiereHablar` del modelo, «ayúdenme» y «auxilio» derivan a la PRIMERA (la aclaración es para lo dudoso, no para una petición de ayuda clara),
+  // con el resumen ya dado y con la dirección pendiente.
+  it.each(['ayúdenme', 'auxilio'])('«%s» con `quiereHablar` del modelo deriva a la primera: con el resumen dado y con la dirección pendiente', (dicho) => {
+    const a = conDireccion();
+    a.estado.extraccion = { ...NADA, quiereHablar: true };
+    const ta = turno(a, texto(dicho));
+    expect(ta.avisos.length, dicho + ' (resumen dado)').toBeGreaterThan(0);
+    expect(ta.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    const b = crear();
+    carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_a1_p_' + String(++k).padStart(4, '0') }) });
+    b.estado.extraccion = { ...NADA, quiereHablar: true };
+    const tb = turno(b, texto(dicho));
+    expect(tb.avisos.length, dicho + ' (dirección pendiente)').toBeGreaterThan(0);
+    expect(tb.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+  });
+  it.each(['no hay problema', 'alguien lo recibe', 'es para una persona'])('«%s» sin `quiereHablar` sigue sin derivar, con el resumen dado y con la dirección pendiente', (dicho) => {
+    const a = conDireccion();
+    expect(turno(a, texto(dicho)).avisos, dicho).toHaveLength(0);
+    const b = crear();
+    carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_a1_q_' + String(++k).padStart(4, '0') }) });
+    b.estado.extraccion = NADA;
+    expect(turno(b, texto(dicho)).avisos, dicho).toHaveLength(0);
+  });
+});
+
+// =====================================================================================================
+// Batería real (caso M2bX, 3/6): con el resumen de delivery ya dado, un cierre o un pedido de cambio NO es referencia ni dirección
+// (ni dicho por el cliente ni puesto por el modelo en `referencia` / `direccion`)
+// =====================================================================================================
+describe('referencia sin cierres: «eso es todo» y «cámbiame el pedido» no se guardan como referencia ni dirección', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_cierre_' + String(++k).padStart(4, '0') }) });
+    return w;
+  };
+  const sinDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_cierre_' + String(++k).padStart(4, '0') }) });
+    return w;
+  };
+  const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
+  const CIERRES = [
+    'eso es todo', 'Eso es todo', 'nada más', 'nada mas gracias', 'eso nomás', 'listo', 'gracias', 'ya está', 'es todo, gracias',
+    'cámbiame el pedido', 'cambia el pedido', 'modifica el pedido', 'quiero cambiar mi pedido', 'cancela el pedido',
+  ];
+
+  it.each(CIERRES)('«%s» dicho por el cliente (el modelo no asigna nada) no es referencia y no sale en el resumen', (dicho) => {
+    const w = conDireccion();
+    w.estado.extraccion = NADA;
+    const t = turno(w, texto(dicho));
+    expect(ent(w)['referencia'], dicho).toBe('');
+    expect(JSON.stringify(t.mensajes), dicho).not.toContain('(' + dicho);
+    expect(JSON.stringify(t.avisos), dicho).not.toContain(dicho);
+  });
+
+  it.each(CIERRES)('«%s» puesto por el MODELO en `referencia` no se guarda y no sale en el resumen ni en el aviso al local', (dicho) => {
+    const w = conDireccion();
+    w.estado.extraccion = { ...NADA, referencia: dicho };
+    const t = turno(w, texto(dicho));
+    expect(ent(w)['referencia'], dicho).toBe('');
+    // (Cancelar es otro flujo: reinicia el pedido entero, dirección incluida; lo demás conserva la dirección.)
+    if (!/^cancela/.test(dicho)) expect(ent(w)['direccion'], dicho).toBe('Av. Banzer 1234');
+    expect(JSON.stringify(t.mensajes), dicho).not.toContain('(' + dicho);
+    expect(JSON.stringify(t.avisos), dicho).not.toContain(dicho);
+  });
+
+  it.each(CIERRES)('«%s» puesto por el MODELO en `direccion` (con la dirección pendiente) no se guarda ni como dirección ni como referencia', (dicho) => {
+    const w = sinDireccion();
+    w.estado.extraccion = { ...NADA, direccion: dicho };
+    turno(w, texto(dicho));
+    expect(ent(w)['direccion'], dicho).toBe('');
+    expect(ent(w)['referencia'], dicho).toBe('');
+    expect(estadoDe(w)['paso'], dicho).not.toBe('pedido_confirmar');
+  });
+
+  it('el caso real: con la dirección dada y el modelo devolviendo «eso es todo» como referencia, el resumen sigue siendo «Entrega: delivery a Av. Banzer 1234» sin paréntesis', () => {
+    const w = conDireccion();
+    w.estado.extraccion = { ...NADA, referencia: 'eso es todo' };
+    const t = turno(w, texto('eso es todo'));
+    expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234');
+    expect(t.mensajes[0]!.cuerpo).not.toContain('eso es todo');
+  });
+
+  // El filtro corre sobre texto del cliente y del modelo: no puede retroceder de forma exponencial (alerta js/redos de CodeQL en el PR #440). Se prueba la función REAL del nodo.
+  const esCierreOCambio = (): ((n: string) => boolean) => {
+    const fuente = readFileSync(join(CARPETA_VM, 'src/nodos/plan-del-turno.js'), 'utf8');
+    const i = fuente.indexOf('function esCierreOCambio(n) {');
+    const j = fuente.indexOf('\n}\n', i) + 3;
+    expect(i, 'esCierreOCambio no está en plan-del-turno.js').toBeGreaterThan(0);
+    // Se ejecuta la función VERSIONADA del nodo (copiarla dejaría la prueba en verde mientras el flujo se rompe); el código es del repositorio, nunca de un tercero.
+    // Misma justificación que `bellido-flujo.test.ts`.
+    // nosemgrep: devsecops.js-eval-prohibido
+    return new Function(`${fuente.slice(i, j)}\nreturn esCierreOCambio;`)() as (n: string) => boolean;
+  };
+  it('rendimiento: 60 o 5000 repeticiones de «nomas » seguidas de «x» se resuelven en menos de 50 ms (sin retroceso exponencial)', () => {
+    const f = esCierreOCambio();
+    for (const veces of [60, 5000]) {
+      const entrada = 'nomas '.repeat(veces) + 'x';
+      const t0 = performance.now();
+      const r = f(entrada);
+      expect(performance.now() - t0, `${veces} repeticiones`).toBeLessThan(50);
+      expect(r).toBe(false);
+      const t1 = performance.now();
+      expect(f('quiero ' + 'por '.repeat(veces) + 'x')).toBe(false);
+      expect(performance.now() - t1, `${veces} preámbulos`).toBeLessThan(50);
+    }
+    expect(f('nomas '.repeat(60).trim())).toBe(true);
+  });
+  it('la función real: cierres y cambios sí; referencias válidas no', () => {
+    const f = esCierreOCambio();
+    for (const si of ['eso es todo', 'nada mas', 'listo', 'gracias', 'ya esta', 'eso seria todo', 'cambiame el pedido', 'quiero cambiar mi pedido', 'por favor cancela todo', 'modifica el pedido']) expect(f(si), si).toBe(true);
+    for (const no of ['a media cuadra del gas', 'dejale al portero', 'frente a la farmacia porton verde', 'calle 5 numero 12']) expect(f(no), no).toBe(false);
+  });
+
+  it.each(['A media cuadra del gas', 'Déjale al portero', 'frente a la farmacia, portón verde'])(
+    '«%s» SIGUE siendo una referencia válida: dicha por el cliente y puesta por el modelo', (dicho) => {
+      const a = conDireccion();
+      a.estado.extraccion = NADA;
+      const ta = turno(a, texto(dicho));
+      expect(ent(a)['referencia'], dicho).toBe(dicho);
+      expect(ta.mensajes[0]!.cuerpo, dicho).toContain('(' + dicho + ')');
+      const b = conDireccion();
+      b.estado.extraccion = { ...NADA, referencia: dicho };
+      const tb = turno(b, texto(dicho));
+      expect(ent(b)['referencia'], dicho).toBe(dicho);
+      expect(tb.mensajes[0]!.cuerpo, dicho).toContain('(' + dicho + ')');
+    },
+  );
 });
