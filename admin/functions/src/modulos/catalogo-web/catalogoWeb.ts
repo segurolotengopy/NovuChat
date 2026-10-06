@@ -199,6 +199,39 @@ export function referenciaDelPedido(cuerpo: Record<string, unknown>, entrega: st
   return entrega === 'envio' ? lineaLimpia(cuerpo['referencia'], MAX_REFERENCIA) : '';
 }
 
+/** Decimales de la ubicación compartida (5 ≈ 1 m): el mismo número está en la página. */
+export const DECIMALES_UBICACION = 5;
+
+/**
+ * La ubicación que el cliente compartió para la entrega, o null.
+ *
+ * Solo con envío; solo un objeto plano `{ lat, lng }` con números finitos
+ * (las cadenas NO se convierten: una página honesta manda números); dentro de
+ * los rangos de la Tierra; redondeada a 5 decimales (el dato es personal: no
+ * se guarda más precisión de la que sirve para llegar). (0,0) se rechaza: es
+ * el valor de «sin dato» de muchos clientes. Una ubicación inválida se ignora
+ * sin error propio: si además falta la dirección, responde el 400 de siempre.
+ * Las claves de más (p. ej. `accuracy`) se descartan. Con retiro no hay a
+ * dónde llegar, así que no se guarda aunque el cuerpo la traiga.
+ */
+export function ubicacionDelPedido(
+  cuerpo: Record<string, unknown>, entrega: string,
+): { lat: number; lng: number } | null {
+  if (entrega !== 'envio') return null;
+  const u = cuerpo['ubicacion'];
+  if (typeof u !== 'object' || u === null || Array.isArray(u)) return null;
+  const { lat, lng } = u as Record<string, unknown>;
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  const f = 10 ** DECIMALES_UBICACION;
+  const redondea = (x: number): number => Math.round(x * f) / f + 0; // −0 → 0
+  const la = redondea(lat);
+  const ln = redondea(lng);
+  if (la === 0 && ln === 0) return null;
+  return { lat: la, lng: ln };
+}
+
 /**
  * =============================================================================
  * SIN PRECIO NO SE PUBLICA
@@ -1027,7 +1060,9 @@ export const checkoutCatalogo = onRequest(
     const nota = texto(cuerpo['nota'], 300);
     // Opcional. Una página vieja no la manda y el pedido sale igual que antes.
     const referencia = referenciaDelPedido(cuerpo, entrega);
-    if (entrega === 'envio' && direccion === '') {
+    // Opcional. Solo con envío y válida; si no, se ignora (no es un error).
+    const ubicacion = ubicacionDelPedido(cuerpo, entrega);
+    if (entrega === 'envio' && direccion === '' && !ubicacion) {
       respuesta.status(400).json({ error: 'falta la direccion' }); return;
     }
 
@@ -1154,6 +1189,8 @@ export const checkoutCatalogo = onRequest(
       ...(nota ? { nota } : {}),
       ...(referencia ? { referencia } : {}),
       ...(descartados.length ? { descartados } : {}),
+      // Dato personal (ubicación compartida): solo si es válida y solo aquí.
+      ...(ubicacion ? { ubicacion } : {}),
       estado: 'recibido',
       ventanaAbierta,
       // Segundo carrito o más con la misma ficha: puede ser un cliente que se
@@ -1223,6 +1260,9 @@ export const checkoutCatalogo = onRequest(
       items, total, moneda: monedaPedido, costoEnvio, entrega, direccion, nota,
       // Solo si hay: sin referencia la carga firmada es idéntica a la de antes.
       ...(referencia ? { referencia } : {}),
+      // Dato personal: solo en el pedido y en esta carga firmada, nunca en un
+      // log. Sin ubicación la carga es idéntica a la de antes.
+      ...(ubicacion ? { ubicacion } : {}),
       descartados,
       ventanaAbierta,
       // Fuera de la ventana, el flujo NO puede mandar un mensaje libre. Se le
