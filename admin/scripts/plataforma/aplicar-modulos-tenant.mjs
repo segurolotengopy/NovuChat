@@ -13,7 +13,7 @@
  *        --modulos a,b,c [--acepto-diferencias inventario] [--aplicar] [--respaldo <ruta>] \
  *        [--confirmo-produccion <tenant>]
  *   node scripts/plataforma/aplicar-modulos-tenant.mjs --revertir --respaldo <ruta> \
- *        --tenant <id> --proyecto <id> [--aplicar] [--confirmo-produccion <tenant>]
+ *        --tenant <id> --proyecto <id> [--acepto-diferencias x,y] [--aplicar] [--confirmo-produccion <tenant>]
  *
  * QUÉ HACE.
  *   · SECO (sin `--aplicar`): lee SOLO `tenants/{id}` (campos `flujos`, `vertical`
@@ -31,7 +31,15 @@
  *     `flujos` ni `vertical`. Después relee y compara. Una escritura por corrida.
  *   · `--revertir --aplicar`: restaura desde el respaldo (si `modulos` no
  *     existía, ELIMINA el campo; si existía, lo restaura), con la misma
- *     precondición y relectura. Sin `--aplicar` es seco.
+ *     precondición y relectura, y con el mismo freno que la ida: exige
+ *     `--acepto-diferencias` igual a las capacidades que cambian. NO pisa un cambio
+ *     ajeno: si la `modulos` de hoy no es (como conjunto) la que escribió este
+ *     script, sale con 2 sin escribir. Sin `--aplicar` es seco (sale 1 si queda un
+ *     cambio pendiente).
+ *   · IDEMPOTENTE: si `modulos` ya es la lista pedida (o, al revertir, ya es lo del
+ *     respaldo), sale con 0 sin escribir, antes de mirar el freno, aunque el archivo
+ *     de respaldo de la corrida anterior ya exista (se permite si es 0600 y del
+ *     usuario; solo se rechaza cuando habría que escribir encima de él).
  *
  * LA LISTA MANDA. Las reglas dicen «si hay lista, manda la lista»: un módulo que
  * no está en `modulos` deja de abrirse aunque `flujos` lo diga. Por eso se rechaza
@@ -41,7 +49,10 @@
  * RESPALDO. Ruta absoluta en una carpeta del usuario (la existente más cercana es
  * suya y no la escribe nadie más), FUERA de todo repositorio. El directorio se crea con permisos 0700 y el archivo con 0600; uno
  * ya existente con permisos de grupo u otros se rechaza, y un archivo de respaldo
- * ya existente nunca se pisa. Contiene solo ids, nombres de módulos, la hora de la
+ * ya existente nunca se pisa. La ruta la da quien corre el script (`--respaldo`); no hay
+ * ninguna por omisión ni una variable de entorno que la fije. Las comprobaciones al
+ * escribir y al leer se hacen sobre el descriptor ya abierto (`fstat`), no sobre la ruta:
+ * no hay «comprobar y luego abrir». Contiene solo ids, nombres de módulos, la hora de la
  * ficha y la etiqueta del entorno (`staging`/`produccion`): nada de datos del
  * comercio ni de sus clientes, ni el id del proyecto.
  *
@@ -58,14 +69,15 @@
  * encontró diferencias (o la ficha pedida no existe). 2: uso o salvaguarda (nada
  * leído de la nube más allá de lo dicho; nada escrito). 3: error de ejecución
  * (permiso, red, precondición, relectura que no coincide: se imprime solo
- * `e.code ?? e.name`, nunca el mensaje). 130: Ctrl-C. Imprime solo ids de tenant,
+ * `e.code ?? e.name`, nunca el mensaje). 130: Ctrl-C (el mensaje distingue si fue antes de
+ * escribir, durante la escritura o después de escribir). Imprime solo ids de tenant,
  * nombres de módulos, banderas y conteos.
  *
- * COSTO. Seco: una lectura de la ficha. `--aplicar`: dos lecturas más y UNA
+ * COSTO. Seco: una lectura de la ficha. `--aplicar`: una lectura más (dos en total) y UNA
  * escritura de un campo (más el archivo local del respaldo). 0 mensajes por
  * conversación. NO se corre contra producción sin el «sí» de Andres.
  */
-import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, statSync, writeSync } from 'node:fs';
+import { closeSync, constants, existsSync, fchmodSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync, writeSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IDS_MODULOS, MODULOS_COMUNES_HOY, modulosDeFicha } from '../../functions/src/registro.ts';
@@ -88,7 +100,7 @@ const BANDERAS = ['aplicar', 'revertir'];
 export const USO = '  node scripts/plataforma/aplicar-modulos-tenant.mjs --proyecto <id> --tenant <id> --modulos a,b,c '
   + '[--acepto-diferencias x,y] [--aplicar] [--respaldo <ruta>] [--confirmo-produccion <tenant>]\n'
   + '  node scripts/plataforma/aplicar-modulos-tenant.mjs --revertir --respaldo <ruta> --tenant <id> --proyecto <id> '
-  + '[--aplicar] [--confirmo-produccion <tenant>]';
+  + '[--acepto-diferencias x,y] [--aplicar] [--confirmo-produccion <tenant>]';
 
 // ===========================================================================
 // SALVAGUARDA DE PROYECTO (pura: recibe el entorno)
@@ -163,6 +175,20 @@ export function validarListaDeModulos(texto, nombre, { exigirComunes }) {
   return problemas.length ? { ok: false, problemas } : { ok: true, lista };
 }
 
+/**
+ * ¿Es una lista de módulos que este script aceptaría escribir? Elemento por elemento (sin `join`): textos del
+ * registro, sin repetidos y con los módulos comunes. Es lo que se exige de un valor previo antes de respaldarlo y
+ * de un respaldo antes de restaurarlo: un `[]`, un módulo desconocido o `__proto__` no se restauran.
+ */
+export function modulosValidos(v) {
+  if (!Array.isArray(v) || v.length > IDS_MODULOS.length) return false;
+  for (let i = 0; i < v.length; i++) {
+    const m = v[i];
+    if (typeof m !== 'string' || !IDS_MODULOS.includes(m) || v.indexOf(m) !== i) return false;
+  }
+  return COMUNES_OBLIGATORIOS.every((c) => v.includes(c));
+}
+
 // ===========================================================================
 // RUTA DEL RESPALDO (el sistema de archivos solo se mira, no se escribe)
 // ===========================================================================
@@ -191,9 +217,13 @@ function rutaRealConPendientes(absoluta) {
   return null;
 }
 
-/** ¿El directorio es del usuario y sin permisos de grupo ni otros? */
+/** ¿El directorio es del usuario y sin permisos de grupo ni otros? (solo para validar los argumentos) */
 function directorioPrivado(dir) {
-  const s = statSync(dir);
+  return directorioPrivadoDe(statSync(dir));
+}
+
+/** Lo mismo, sobre un `Stats` ya obtenido (del descriptor abierto, al escribir: sin volver a mirar la ruta). */
+function directorioPrivadoDe(s) {
   if (!s.isDirectory()) return 'la carpeta del respaldo no es una carpeta';
   if (typeof process.getuid === 'function' && s.uid !== process.getuid()) return 'la carpeta del respaldo no es del usuario';
   if ((s.mode & 0o077) !== 0) return 'la carpeta del respaldo tiene permisos de grupo u otros (tiene que ser 0700)';
@@ -205,9 +235,11 @@ function directorioPrivado(dir) {
  * cercana es suya y no la escribe nadie más; una carpeta ya existente del respaldo, además, es 0700),
  * fuera de este repositorio y de cualquier otro (ningún ancestro con `.git`). No crea nada. `lectura`:
  * el archivo tiene que existir y ser del usuario con 0600 (lo que `--revertir` exige); si no, no puede
- * existir (nunca se pisa un respaldo).
+ * existir (nunca se pisa un respaldo). `permitirExistente`: al aplicar, un archivo ya existente pasa si es
+ * regular, del usuario y 0600 (reaplicar el mismo comando tiene que poder salir «nada que hacer»); si hay
+ * que escribir encima de él, `guardarRespaldo` lo rechaza igual (`wx`).
  */
-export function comprobarRespaldo(ruta, { raiz = RAIZ_REPO, lectura = false } = {}) {
+export function comprobarRespaldo(ruta, { raiz = RAIZ_REPO, lectura = false, permitirExistente = false } = {}) {
   if (typeof ruta !== 'string' || ruta === '' || ruta.includes('\0')) return { ok: false, motivo: 'falta --respaldo' };
   if (!isAbsolute(ruta) || resolve(ruta) !== ruta) return { ok: false, motivo: '--respaldo tiene que ser una ruta absoluta y normalizada (sin «..», «.» ni barras repetidas)' };
   const resuelta = rutaRealConPendientes(ruta);
@@ -235,7 +267,7 @@ export function comprobarRespaldo(ruta, { raiz = RAIZ_REPO, lectura = false } = 
   let archivo = null;
   // `lstat` sobre la ruta DADA: no sigue el último componente, así un enlace simbólico se ve como tal.
   try { archivo = lstatSync(ruta); } catch { /* no existe */ }
-  if (lectura) {
+  if (lectura || (permitirExistente && archivo)) {
     if (!archivo) return { ok: false, motivo: 'el archivo de respaldo no existe' };
     if (!archivo.isFile()) return { ok: false, motivo: 'el respaldo no es un archivo regular (un enlace simbólico se rechaza)' };
     if (typeof process.getuid === 'function' && archivo.uid !== process.getuid()) return { ok: false, motivo: 'el respaldo no es del usuario' };
@@ -309,7 +341,10 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   let acepto = [];
   if (revertir) {
     if ('modulos' in valores) problemas.push('--revertir no admite --modulos: restaura lo del respaldo');
-    if ('acepto-diferencias' in valores) problemas.push('--revertir no admite --acepto-diferencias');
+    if ('acepto-diferencias' in valores) {
+      const r = validarListaDeModulos(valores['acepto-diferencias'], '--acepto-diferencias', { exigirComunes: false });
+      if (r.ok) acepto = r.lista; else problemas.push(...r.problemas);
+    }
     if (respaldo === undefined) problemas.push('--revertir exige --respaldo <ruta>');
   } else {
     if (!('modulos' in valores)) problemas.push('falta --modulos');
@@ -325,7 +360,7 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
   }
   let respaldoReal = null;
   if (respaldo !== undefined) {
-    const r = comprobarRespaldo(respaldo, { ...opciones, lectura: revertir });
+    const r = comprobarRespaldo(respaldo, { ...opciones, lectura: revertir, permitirExistente: !revertir });
     if (r.ok) respaldoReal = respaldo; else problemas.push(r.motivo);
   }
 
@@ -344,7 +379,9 @@ const sinModulos = (ficha) => {
   const { modulos: _quitado, ...resto } = ficha ?? {};
   return resto;
 };
-const igualesComoConjunto = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+const igualesComoConjunto = (a, b) => a.length === b.length && a.every((x) => b.includes(x)) && b.every((x) => a.includes(x));
+/** ¿Dos listas son el mismo conjunto (mismo tamaño, cada una dentro de la otra: un repetido no se cuela)? */
+export const mismoConjunto = (a, b) => Array.isArray(a) && Array.isArray(b) && igualesComoConjunto(a, b);
 
 /**
  * Compara la ficha con la lista destino. `cambian`: los módulos cuya presencia cambia respecto de lo que
@@ -411,44 +448,76 @@ export function contenidoDelRespaldo({ entorno, tenant, ficha, actualizadoEn, es
   };
 }
 
-/** Escribe el respaldo (carpeta 0700, archivo 0600, sin pisar) y lo relee. Lanza si no coincide. */
+/**
+ * Escribe el respaldo (carpeta 0700, archivo 0600, sin pisar) y lo relee. Lanza si no coincide.
+ *
+ * SIN «COMPROBAR Y LUEGO ABRIR». Cada cosa se abre UNA vez y todo lo que se comprueba se comprueba sobre el
+ * descriptor ya abierto (`fstat`), no sobre la ruta: nada entre la comprobación y el uso por donde pueda
+ * colarse un cambio. La carpeta se crea (`mkdir` recursivo, 0700; devuelve qué creó) y se abre; el archivo se
+ * crea con `O_CREAT | O_EXCL | O_NOFOLLOW` en 0600 (si ya existe o es un enlace, falla: nunca se pisa); el
+ * modo se fija con `fchmod` sobre el descriptor, y la relectura se hace desde ese mismo descriptor.
+ */
 export function guardarRespaldo(ruta, contenido) {
   const dir = dirname(ruta);
-  const existiaCarpeta = existsSync(dir);
-  if (!existiaCarpeta) {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    chmodSync(dir, 0o700);
-  }
-  const malo = directorioPrivado(dir);
-  if (malo) throw Object.assign(new Error(malo), { code: 'respaldo-carpeta' });
-  const texto = `${JSON.stringify(contenido, null, 2)}\n`;
-  const fd = openSync(ruta, 'wx', 0o600);
+  const creada = mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const fdDir = openSync(dir, constants.O_RDONLY | constants.O_DIRECTORY);
   try {
-    writeSync(fd, texto);
-    fsyncSync(fd);
+    if (creada !== undefined) fchmodSync(fdDir, 0o700);
+    const malo = directorioPrivadoDe(fstatSync(fdDir));
+    if (malo) throw Object.assign(new Error(malo), { code: 'respaldo-carpeta' });
+    const texto = `${JSON.stringify(contenido, null, 2)}\n`;
+    const fd = openSync(ruta, constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try {
+      fchmodSync(fd, 0o600);
+      writeSync(fd, texto);
+      fsyncSync(fd);
+      const s = fstatSync(fd);
+      const leido = Buffer.alloc(s.size);
+      const n = readSync(fd, leido, 0, s.size, 0);
+      const bien = s.isFile() && (s.mode & 0o777) === 0o600
+        && (typeof process.getuid !== 'function' || s.uid === process.getuid())
+        && n === s.size && leido.toString('utf8') === texto;
+      if (!bien) throw Object.assign(new Error('el respaldo no quedó como se escribió'), { code: 'respaldo-relectura' });
+    } finally {
+      closeSync(fd);
+    }
   } finally {
-    closeSync(fd);
-  }
-  chmodSync(ruta, 0o600);
-  const s = statSync(ruta);
-  if ((s.mode & 0o777) !== 0o600 || readFileSync(ruta, 'utf8') !== texto) {
-    throw Object.assign(new Error('el respaldo no quedó como se escribió'), { code: 'respaldo-relectura' });
+    closeSync(fdDir);
   }
 }
 
+/** Lo máximo que puede pesar un respaldo legítimo (unos cientos de bytes): más es otra cosa. */
+const MAXIMO_RESPALDO = 64 * 1024;
+
 /** Lee y valida un respaldo para `--revertir`. `{ ok, respaldo }` o `{ ok: false, motivo }`. */
 export function leerRespaldo(ruta, { entorno, tenant }) {
+  // Se abre UNA vez; el tipo, el dueño y el modo se comprueban sobre el descriptor y se lee de él.
+  let texto;
+  let fd;
+  try {
+    fd = openSync(ruta, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const s = fstatSync(fd);
+    if (!s.isFile()) return { ok: false, motivo: 'el respaldo no es un archivo regular' };
+    if (typeof process.getuid === 'function' && s.uid !== process.getuid()) return { ok: false, motivo: 'el respaldo no es del usuario' };
+    if ((s.mode & 0o077) !== 0) return { ok: false, motivo: 'el respaldo tiene permisos de grupo u otros (tiene que ser 0600)' };
+    if (s.size > MAXIMO_RESPALDO) return { ok: false, motivo: 'el respaldo no es un JSON legible' };
+    texto = readFileSync(fd, 'utf8');
+  } catch {
+    return { ok: false, motivo: 'el respaldo no se pudo abrir ni leer' };
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
   let r;
-  try { r = JSON.parse(readFileSync(ruta, 'utf8')); } catch { return { ok: false, motivo: 'el respaldo no es un JSON legible' }; }
-  const esTextos = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+  try { r = JSON.parse(texto); } catch { return { ok: false, motivo: 'el respaldo no es un JSON legible' }; }
   if (r?.version !== 1 || typeof r.previo !== 'object' || r.previo === null) return { ok: false, motivo: 'el respaldo no tiene la forma esperada' };
   if (r.tenant !== tenant) return { ok: false, motivo: 'el respaldo es de otro comercio' };
   if (r.entorno !== entorno) return { ok: false, motivo: 'el respaldo es de otro entorno (staging, produccion o emulador)' };
   if (typeof r.previo.modulosPresente !== 'boolean') return { ok: false, motivo: 'el respaldo no dice si «modulos» existía' };
-  if (r.previo.modulosPresente ? !esTextos(r.previo.modulos) : r.previo.modulos !== null) {
-    return { ok: false, motivo: 'el respaldo no guardó el valor previo de «modulos» con fidelidad' };
+  // Lo que se va a restaurar tiene que ser una lista que este script habría aceptado escribir.
+  if (r.previo.modulosPresente ? !modulosValidos(r.previo.modulos) : r.previo.modulos !== null) {
+    return { ok: false, motivo: 'el respaldo no guardó el valor previo de «modulos» con fidelidad (lista válida del registro, sin repetidos y con «productos» y «campanas»)' };
   }
-  if (!esTextos(r.escrito)) return { ok: false, motivo: 'el respaldo no dice qué lista se escribió' };
+  if (!modulosValidos(r.escrito)) return { ok: false, motivo: 'el respaldo no dice qué lista se escribió (lista válida del registro, sin repetidos y con «productos» y «campanas»)' };
   return { ok: true, respaldo: r };
 }
 
@@ -476,14 +545,30 @@ async function leerFicha(db, tenant) {
 }
 
 /**
- * Corre la operación ya validada. `deps`: `{ db, FieldValue, log, escribiendo }`. Devuelve el código
- * de salida. Importable para probar la precondición con una base que cambia entre la lectura y la escritura.
+ * El mensaje de un Ctrl-C según dónde estaba la corrida: `antes` de escribir, `escribiendo` (sin saber si la
+ * escritura llegó) o `escrito`. Un estado desconocido se trata como el peor caso (`escribiendo`).
+ */
+export function mensajeDeInterrupcion(estado) {
+  if (estado === 'antes') return '\n  ! Interrumpido por el operador antes de escribir en la ficha. No se escribió nada en la ficha.\n';
+  if (estado === 'escrito') {
+    return '\n  ! Interrumpido DESPUÉS de escribir: la escritura SÍ se hizo y la relectura no se completó. '
+      + 'Corra el seco para verificar la ficha; si hay que deshacer, use --revertir con el mismo respaldo, tenant y proyecto.\n';
+  }
+  return '\n  ! Interrumpido DURANTE la escritura: puede haberse escrito o no. Corra el seco para ver en qué estado quedó la ficha.\n';
+}
+
+/**
+ * Corre la operación ya validada. `deps`: `{ db, FieldValue, log, marcarEscritura }`; `marcarEscritura(estado)`
+ * recibe `escribiendo` justo antes de la escritura, `escrito` apenas vuelve bien y `antes` si Firestore la
+ * rechazó por la precondición. Devuelve el código de salida. Importable para probar la precondición con una
+ * base que cambia entre la lectura y la escritura.
  */
 export async function ejecutar(cfg, deps) {
   const { db, FieldValue } = deps;
   const log = deps.log ?? ((t) => console.log(t));
   const marcar = deps.marcarEscritura ?? (() => {});
   const rotulo = `${cfg.entorno} · tenant ${cfg.tenant}`;
+  const acepto = cfg.acepto ?? [];
 
   const { ref, snap } = await leerFicha(db, cfg.tenant);
   if (!snap.exists) { log(`\n  ✗ ${cfg.tenant}: no existe la ficha (${cfg.entorno})\n`); return 1; }
@@ -505,18 +590,30 @@ export async function ejecutar(cfg, deps) {
     log(`  «modulos» antes del respaldo : ${previo.modulosPresente ? lista(previo.modulos) : 'AUSENTE (se eliminaría el campo)'}`);
     log(`  «modulos» hoy                : ${hoyPresente ? (Array.isArray(ficha.modulos) ? lista(ficha.modulos) : '(no es una lista)') : 'AUSENTE'}`);
     log(`  capacidades que cambian      : ${lista(cambian)}`);
-    if (hoyPresente && JSON.stringify(ficha.modulos) !== JSON.stringify(escrito)) {
-      log('  ! la ficha ya no tiene la lista que escribió este script: alguien la cambió después. Se restaura el valor del respaldo.');
-    }
+    // Idempotente: lo primero, antes de cualquier freno.
     if (yaIgual) { log('\n  ✓ La ficha ya está como el respaldo: nada que revertir.\n'); return 0; }
-    if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para revertir.\n'); return 0; }
-    marcar(true);
+    // No se pisa el cambio de otra persona: solo se revierte lo que este script escribió.
+    if (!hoyPresente || !mismoConjunto(ficha.modulos, escrito)) {
+      log('\n  ✗ La ficha ya no tiene la lista que escribió este script: alguien la cambió después (o este script no llegó a escribirla). '
+        + 'Revertir pisaría ese cambio. No se escribe nada; revise la ficha y corríjala a propósito.\n');
+      return 2;
+    }
+    const frenado = igualesComoConjunto(cambian, acepto) ? null
+      : `las capacidades que cambian al revertir (${lista(cambian)}) no son exactamente las declaradas en --acepto-diferencias (${lista(acepto)}): no se escribe nada`;
+    if (!cfg.aplicar) {
+      log(frenado ? `\n  Con --aplicar NO se escribiría: ${frenado}.` : '\n  Con --aplicar se aceptaría: lo declarado en --acepto-diferencias coincide.');
+      log('  Seco: no se escribió nada. Queda un cambio pendiente; agregue --aplicar para revertir.\n');
+      return 1;
+    }
+    if (frenado) { log(`\n  ✗ ${frenado}\n`); return 2; }
+    marcar('escribiendo');
     try {
       await escribirModulos(ref, previo.modulosPresente ? previo.modulos : FieldValue.delete(), snap.updateTime);
+      marcar('escrito');
     } catch (e) {
-      if (esPrecondicion(e)) { log('\n  ✗ La ficha cambió entre la lectura y la escritura: no se escribió nada. Vuelva a correr el seco.\n'); return 3; }
+      if (esPrecondicion(e)) { marcar('antes'); log('\n  ✗ La ficha cambió entre la lectura y la escritura: no se escribió nada. Vuelva a correr el seco.\n'); return 3; }
       throw e;
-    } finally { marcar(false); }
+    }
     const { snap: despues } = await leerFicha(db, cfg.tenant);
     const d = despues.data() ?? {};
     const bien = previo.modulosPresente
@@ -543,7 +640,10 @@ export async function ejecutar(cfg, deps) {
   }
   log(`  capacidades que cambian      : ${ev.cambian.length ? ev.cambian.map((m) => `${m} (${ev.despues.includes(m) ? 'se agrega' : 'se quita'})`).join(', ') : '(ninguna)'}`);
 
-  const permiso = permitirAplicar(ev, cfg.acepto);
+  // Idempotente: lo primero, antes de cualquier freno. Reaplicar el mismo comando no es un error.
+  if (ev.yaEscrita) { log('\n  ✓ «modulos» ya está escrita con esa lista: nada que hacer.\n'); return 0; }
+
+  const permiso = permitirAplicar(ev, acepto);
   if (!cfg.aplicar) {
     if (permiso.ok) log('\n  Con --aplicar se aceptaría: lo declarado en --acepto-diferencias coincide.');
     else log(`\n  Con --aplicar NO se escribiría: ${permiso.motivo}.`);
@@ -552,25 +652,32 @@ export async function ejecutar(cfg, deps) {
   }
 
   if (!permiso.ok) { log(`\n  ✗ ${permiso.motivo}\n`); return 2; }
-  if (Object.prototype.hasOwnProperty.call(ficha, 'modulos') && !textos(ficha.modulos)) {
-    log('\n  ✗ La ficha ya tiene «modulos» y no es una lista de textos: no se puede respaldar con fidelidad. No se escribe nada.\n');
+  // Solo se escribe encima de una lista que se pueda respaldar con fidelidad Y restaurar después.
+  if (Object.prototype.hasOwnProperty.call(ficha, 'modulos') && !modulosValidos(ficha.modulos)) {
+    log('\n  ✗ La ficha ya tiene «modulos» y no es una lista válida del registro (sin repetidos y con «productos» y «campanas»): '
+      + 'no se puede respaldar y restaurar con fidelidad. No se escribe nada.\n');
     return 2;
   }
-  if (ev.yaEscrita) { log('\n  ✓ «modulos» ya está escrita con esa lista: nada que hacer.\n'); return 0; }
 
   // Respaldo ANTES de escribir, y se relee.
-  guardarRespaldo(cfg.respaldo, contenidoDelRespaldo({
-    entorno: cfg.entorno, tenant: cfg.tenant, ficha, actualizadoEn: iso(snap.updateTime), escrito: cfg.modulos,
-  }));
+  try {
+    guardarRespaldo(cfg.respaldo, contenidoDelRespaldo({
+      entorno: cfg.entorno, tenant: cfg.tenant, ficha, actualizadoEn: iso(snap.updateTime), escrito: cfg.modulos,
+    }));
+  } catch (e) {
+    if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa; elija otro nombre. No se escribe nada.\n'); return 2; }
+    throw e;
+  }
   log(`\n  Respaldo guardado y releído: ${cfg.respaldo}`);
 
-  marcar(true);
+  marcar('escribiendo');
   try {
     await escribirModulos(ref, cfg.modulos, snap.updateTime);
+    marcar('escrito');
   } catch (e) {
-    if (esPrecondicion(e)) { log('\n  ✗ La ficha cambió entre la lectura y la escritura: no se escribió nada. Vuelva a correr el seco.\n'); return 3; }
+    if (esPrecondicion(e)) { marcar('antes'); log('\n  ✗ La ficha cambió entre la lectura y la escritura: no se escribió nada. Vuelva a correr el seco.\n'); return 3; }
     throw e;
-  } finally { marcar(false); }
+  }
 
   const { snap: despues } = await leerFicha(db, cfg.tenant);
   const d = despues.data() ?? {};
@@ -597,15 +704,13 @@ async function principal() {
   initializeApp({ projectId: cfg.proyecto });
   const db = getFirestore();
 
-  let escribiendo = false;
+  let estado = 'antes';
   process.on('SIGINT', () => {
-    console.error(escribiendo
-      ? '\n  ! Interrumpido DURANTE la escritura: corra el seco para ver en qué estado quedó la ficha.\n'
-      : '\n  ! Interrumpido por el operador. No se escribió nada.\n');
+    console.error(mensajeDeInterrupcion(estado));
     process.exit(130);
   });
 
-  const codigo = await ejecutar(cfg, { db, FieldValue, marcarEscritura: (v) => { escribiendo = v; } });
+  const codigo = await ejecutar(cfg, { db, FieldValue, marcarEscritura: (v) => { estado = v; } });
   await db.terminate().catch(() => {});
   process.exit(codigo);
 }

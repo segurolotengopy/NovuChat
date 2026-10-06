@@ -10,11 +10,18 @@
  *      Q'Taco, ruta y permisos del respaldo.
  *   B. El script como proceso contra el emulador: seco, aplicar, el freno, revertir, permisos.
  *   C. La precondición: la ficha cambia entre la lectura y la escritura y no se escribe.
- *   D. El texto del script: la única escritura a Firestore es `modulos`.
+ *   D. El texto del script: la única escritura a Firestore es `modulos`; el respaldo sin «comprobar y luego abrir».
+ *
+ * POR QUÉ ESTE SCRIPT ESCRIBE FUERA DEL REPOSITORIO, A PEDIDO. El respaldo es un archivo local con la lista de
+ * módulos previa de un comercio real: no es código ni documentación, y un repositorio público no es su lugar.
+ * Por eso la ruta la da quien corre el script (`--respaldo`), tiene que quedar en una carpeta del usuario con
+ * permisos 0700, fuera de este repositorio y de cualquier otro, y el script no trae ninguna ruta por omisión ni
+ * una variable de entorno que la fije. Las pruebas escriben solo en carpetas temporales propias (`mkdtemp`), que
+ * se borran al terminar.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,7 +45,12 @@ const mod = await import('../../scripts/plataforma/aplicar-modulos-tenant.mjs') 
   analizarArgumentos: (argv: string[], env?: Record<string, string>, op?: { raiz?: string }) =>
     { ok: boolean; problemas?: string[]; cfg?: Record<string, unknown> };
   comprobarProyecto: (p: unknown, env?: Record<string, string>) => { ok: boolean; entorno?: string; motivo?: string };
-  comprobarRespaldo: (r: unknown, o?: { raiz?: string; lectura?: boolean }) => { ok: boolean; motivo?: string };
+  comprobarRespaldo: (r: unknown, o?: { raiz?: string; lectura?: boolean; permitirExistente?: boolean }) => { ok: boolean; motivo?: string };
+  modulosValidos: (v: unknown) => boolean;
+  mismoConjunto: (a: unknown, b: unknown) => boolean;
+  guardarRespaldo: (ruta: string, contenido: unknown) => void;
+  leerRespaldo: (ruta: string, o: { entorno: string; tenant: string }) => { ok: boolean; motivo?: string; respaldo?: Record<string, unknown> };
+  mensajeDeInterrupcion: (estado: string) => string;
   evaluar: (ficha: unknown, destino: string[]) => Evaluacion;
   permitirAplicar: (e: Evaluacion, acepto: string[]) => { ok: boolean; motivo?: string };
   ejecutar: (cfg: Record<string, unknown>, deps: Record<string, unknown>) => Promise<number>;
@@ -147,12 +159,17 @@ describe('A. validación de argumentos y evaluación (puras)', () => {
     expect(problemasDe([...base, '--aplicar'])).toContain('--aplicar exige --respaldo');
   });
 
-  it('--revertir exige --respaldo y no admite --modulos ni --acepto-diferencias', () => {
+  it('--revertir exige --respaldo, no admite --modulos y valida --acepto-diferencias como la ida', () => {
     const rev = ['--revertir', '--tenant', 'qtaco', '--proyecto', PROYECTO];
     expect(problemasDe(rev)).toContain('--revertir exige --respaldo');
     const dir = nuevoDir();
-    expect(problemasDe([...rev, '--respaldo', join(dir, 'x.json'), '--modulos', LISTA_QTACO], ENV_EMU)).toContain('--revertir no admite --modulos');
-    expect(problemasDe([...rev, '--respaldo', join(dir, 'x.json'), '--acepto-diferencias', 'inventario'], ENV_EMU)).toContain('--revertir no admite --acepto-diferencias');
+    const resp = join(dir, 'x.json');
+    writeFileSync(resp, '{}', { mode: 0o600 });
+    expect(problemasDe([...rev, '--respaldo', resp, '--modulos', LISTA_QTACO], ENV_EMU)).toContain('--revertir no admite --modulos');
+    expect(analizar([...rev, '--respaldo', resp, '--acepto-diferencias', 'inventario'], ENV_EMU).cfg).toMatchObject({ revertir: true, acepto: ['inventario'] });
+    expect(problemasDe([...rev, '--respaldo', resp, '--acepto-diferencias', 'inventarios'], ENV_EMU)).toContain('módulo desconocido');
+    expect(problemasDe([...rev, '--respaldo', resp, '--acepto-diferencias', '__proto__'], ENV_EMU)).toContain('módulo desconocido');
+    expect(problemasDe([...rev, '--respaldo', resp, '--acepto-diferencias', 'inventario,inventario'], ENV_EMU)).toContain('módulo repetido');
   });
 
   // ------------------------------------------------------------ salvaguarda
@@ -355,6 +372,149 @@ describe('A. validación de argumentos y evaluación (puras)', () => {
       symlinkSync(f, join(dir, 'p', 'enlace.json'));
       expect(cr(join(dir, 'p', 'enlace.json'), { lectura: true }).motivo).toContain('enlace simbólico');
     });
+
+    it('al aplicar, un respaldo ya existente pasa SOLO si es regular, del usuario y 0600 (para reaplicar sin error); si no, se rechaza', () => {
+      const dir = nuevoDir();
+      mkdirSync(join(dir, 'p'), { mode: 0o700 }); chmodSync(join(dir, 'p'), 0o700);
+      const f = join(dir, 'p', 'r.json');
+      expect(cr(f, { permitirExistente: true }).ok).toBe(true); // no existe: pasa, se creará
+      writeFileSync(f, '{}', { mode: 0o600 });
+      expect(cr(f, { permitirExistente: true }).ok).toBe(true);
+      chmodSync(f, 0o644);
+      expect(cr(f, { permitirExistente: true }).motivo).toContain('permisos de grupo u otros');
+      chmodSync(f, 0o600);
+      symlinkSync(f, join(dir, 'p', 'enlace.json'));
+      expect(cr(join(dir, 'p', 'enlace.json'), { permitirExistente: true }).motivo).toContain('enlace simbólico');
+      mkdirSync(join(dir, 'p', 'carpeta'));
+      expect(cr(join(dir, 'p', 'carpeta'), { permitirExistente: true }).motivo).toContain('no es un archivo regular');
+    });
+  });
+});
+
+// ===========================================================================
+describe('A2. el respaldo: lo que se guarda, lo que se acepta al leerlo y cómo se abre (sin «comprobar y luego abrir»)', () => {
+  const ESCRITO = [...QTACO];
+  const respaldoBueno = (cambios: Record<string, unknown> = {}, previo: Record<string, unknown> = {}) => ({
+    version: 1, entorno: 'emulador', tenant: 'qtaco', creadoEn: '2026-10-05T00:00:00.000Z', fichaActualizadaEn: null,
+    previo: { modulosPresente: false, modulos: null, flujos: ['venta'], vertical: 'venta', ...previo },
+    escrito: ESCRITO,
+    ...cambios,
+  });
+  const archivo = (contenido: unknown, modo = 0o600) => {
+    const dir = nuevoDir();
+    const f = join(dir, 'r.json');
+    writeFileSync(f, typeof contenido === 'string' ? contenido : JSON.stringify(contenido), { mode: modo });
+    chmodSync(f, modo);
+    return f;
+  };
+  const leer = (c: unknown, modo?: number) => mod.leerRespaldo(archivo(c, modo), { entorno: 'emulador', tenant: 'qtaco' });
+
+  it('modulosValidos: solo listas del registro, sin repetidos y con productos y campanas, elemento por elemento', () => {
+    expect(mod.modulosValidos(QTACO)).toBe(true);
+    expect(mod.modulosValidos([...IDS_MODULOS].reverse())).toBe(true);
+    for (const malo of [[], ['pedidos'], ['productos'], ['campanas', 'pedidos'], ['productos', 'campanas', 'inventarios'],
+      ['productos', 'campanas', '__proto__'], ['productos', 'campanas', 'constructor'], ['productos', 'campanas', 'productos'],
+      ['productos', 'campanas', 5], ['productos', 'campanas', null], 'productos,campanas', { 0: 'productos', 1: 'campanas', length: 2 },
+      null, undefined, ['productos', 'campanas', ...IDS_MODULOS]]) {
+      expect(mod.modulosValidos(malo), JSON.stringify(malo)).toBe(false);
+    }
+    // «Elemento por elemento»: un solo texto «productos,campanas» no vale como dos módulos.
+    expect(mod.modulosValidos(['productos,campanas'])).toBe(false);
+  });
+
+  it('mismoConjunto: mismo contenido en cualquier orden; un repetido o un elemento de menos no se cuelan; lo que no es lista no es nada', () => {
+    expect(mod.mismoConjunto(['a', 'b'], ['b', 'a'])).toBe(true);
+    expect(mod.mismoConjunto([], [])).toBe(true);
+    expect(mod.mismoConjunto(['a', 'a', 'b'], ['a', 'b', 'c'])).toBe(false); // mismo tamaño y todo lo primero está en lo segundo
+    expect(mod.mismoConjunto(['a', 'b', 'c'], ['a', 'a', 'b'])).toBe(false);
+    expect(mod.mismoConjunto(['a'], ['a', 'b'])).toBe(false);
+    expect(mod.mismoConjunto(undefined, [])).toBe(false);
+    expect(mod.mismoConjunto('ab', ['a', 'b'])).toBe(false);
+    expect(mod.mismoConjunto(null, null)).toBe(false);
+  });
+
+  it('leerRespaldo acepta un respaldo bueno, con `modulos` ausente o presente', () => {
+    expect(leer(respaldoBueno()).ok).toBe(true);
+    expect(leer(respaldoBueno({}, { modulosPresente: true, modulos: ['productos', 'campanas', 'agenda'] })).ok).toBe(true);
+  });
+
+  it('leerRespaldo rechaza un valor previo inválido ([], [pedidos], desconocido, __proto__, repetido, sin comunes, no lista)', () => {
+    for (const modulos of [[], ['pedidos'], ['productos', 'campanas', 'inexistente'], ['productos', 'campanas', '__proto__'],
+      ['productos', 'campanas', 'campanas'], ['productos'], 'productos,campanas', null, [1, 2]]) {
+      const r = leer(respaldoBueno({}, { modulosPresente: true, modulos }));
+      expect(r.ok, JSON.stringify(modulos)).toBe(false);
+      expect(r.motivo).toContain('valor previo');
+    }
+    // Y si `modulos` no existía, el valor previo tiene que ser exactamente null.
+    expect(leer(respaldoBueno({}, { modulosPresente: false, modulos: [] })).ok).toBe(false);
+    expect(leer(respaldoBueno({}, { modulosPresente: false, modulos: QTACO })).ok).toBe(false);
+  });
+
+  it('leerRespaldo rechaza una lista «escrito» inválida, ausente o con módulos que no existen', () => {
+    for (const escrito of [[], ['pedidos'], ['productos', 'campanas', 'inexistente'], ['productos', 'campanas', '__proto__'],
+      ['productos', 'campanas', 'productos'], 'productos,campanas', null, undefined]) {
+      const r = leer(respaldoBueno({ escrito }));
+      expect(r.ok, JSON.stringify(escrito)).toBe(false);
+      expect(r.motivo).toContain('qué lista se escribió');
+    }
+    // También cuando `modulos` sí existía (la validación del previo no reemplaza la de `escrito`).
+    expect(leer(respaldoBueno({ escrito: ['pedidos'] }, { modulosPresente: true, modulos: ['productos', 'campanas', 'agenda'] })).ok).toBe(false);
+  });
+
+  it('leerRespaldo mira el descriptor abierto: rechaza permisos abiertos, enlaces simbólicos y archivos enormes', () => {
+    expect(leer(respaldoBueno(), 0o644).motivo).toContain('permisos de grupo u otros');
+    expect(leer(respaldoBueno(), 0o640).motivo).toContain('permisos de grupo u otros');
+    const f = archivo(respaldoBueno());
+    symlinkSync(f, join(dirname(f), 'enlace.json'));
+    expect(mod.leerRespaldo(join(dirname(f), 'enlace.json'), { entorno: 'emulador', tenant: 'qtaco' }).ok).toBe(false);
+    expect(mod.leerRespaldo(join(dirname(f), 'no-existe.json'), { entorno: 'emulador', tenant: 'qtaco' }).ok).toBe(false);
+    expect(mod.leerRespaldo(dirname(f), { entorno: 'emulador', tenant: 'qtaco' }).ok).toBe(false);
+    expect(leer('x'.repeat(70_000)).ok).toBe(false);
+    expect(leer('no es json').motivo).toContain('JSON legible');
+  });
+
+  it('guardarRespaldo: carpeta nueva 0700 y archivo 0600 releído; nunca pisa un archivo ni sigue un enlace simbólico', () => {
+    const dir = nuevoDir();
+    const f = join(dir, 'nueva', 'honda', 'r.json');
+    mod.guardarRespaldo(f, respaldoBueno());
+    expect(statSync(f).mode & 0o777).toBe(0o600);
+    expect(statSync(dirname(f)).mode & 0o777).toBe(0o700);
+    expect(JSON.parse(readFileSync(f, 'utf8')).tenant).toBe('qtaco');
+    // Un archivo existente no se pisa.
+    expect(() => mod.guardarRespaldo(f, respaldoBueno({ tenant: 'otro' }))).toThrowError(expect.objectContaining({ code: 'EEXIST' }));
+    expect(JSON.parse(readFileSync(f, 'utf8')).tenant).toBe('qtaco');
+    // Un enlace simbólico en la ruta (aunque apunte a algo inexistente) tampoco: no se escribe a través de él.
+    const objetivo = join(dir, 'objetivo-del-enlace.json');
+    symlinkSync(objetivo, join(dirname(f), 'enlace.json'));
+    expect(() => mod.guardarRespaldo(join(dirname(f), 'enlace.json'), respaldoBueno())).toThrowError(expect.objectContaining({ code: 'EEXIST' }));
+    expect(existsSync(objetivo)).toBe(false);
+  });
+
+  it('guardarRespaldo rechaza una carpeta existente con permisos de grupo u otros y no deja el archivo', () => {
+    const dir = nuevoDir();
+    mkdirSync(join(dir, 'abierta'), { mode: 0o755 }); chmodSync(join(dir, 'abierta'), 0o755);
+    expect(() => mod.guardarRespaldo(join(dir, 'abierta', 'r.json'), respaldoBueno())).toThrowError(expect.objectContaining({ code: 'respaldo-carpeta' }));
+    expect(existsSync(join(dir, 'abierta', 'r.json'))).toBe(false);
+    // Una carpeta existente 0700 se respeta tal cual (no se le cambia el modo).
+    mkdirSync(join(dir, 'privada'), { mode: 0o700 }); chmodSync(join(dir, 'privada'), 0o700);
+    mod.guardarRespaldo(join(dir, 'privada', 'r.json'), respaldoBueno());
+    expect(lstatSync(join(dir, 'privada', 'r.json')).mode & 0o777).toBe(0o600);
+  });
+
+  it('el mensaje del Ctrl-C distingue antes de escribir, durante la escritura y después de escribir', () => {
+    const antes = mod.mensajeDeInterrupcion('antes');
+    expect(antes).toContain('No se escribió nada');
+    const durante = mod.mensajeDeInterrupcion('escribiendo');
+    expect(durante).toContain('DURANTE la escritura');
+    expect(durante).not.toContain('No se escribió nada');
+    const despues = mod.mensajeDeInterrupcion('escrito');
+    expect(despues).toContain('SÍ se hizo');
+    expect(despues).toContain('--revertir');
+    expect(despues).toContain('seco');
+    expect(despues).not.toContain('No se escribió nada');
+    // Un estado que no se conoce es el peor caso, nunca «no se escribió nada».
+    expect(mod.mensajeDeInterrupcion('raro')).toContain('DURANTE la escritura');
+    expect(mod.mensajeDeInterrupcion(undefined as unknown as string)).not.toContain('No se escribió nada');
   });
 });
 
@@ -362,7 +522,8 @@ describe('A. validación de argumentos y evaluación (puras)', () => {
 describe('B. el script como proceso contra el emulador', () => {
   const T = {
     seco: 'apl-mod-seco', aplicar: 'apl-mod-aplicar', freno: 'apl-mod-freno', revertir: 'apl-mod-revertir',
-    conLista: 'apl-mod-con-lista', otro: 'apl-mod-otro',
+    conLista: 'apl-mod-con-lista', otro: 'apl-mod-otro', ajeno: 'apl-mod-ajeno', adultera: 'apl-mod-adultera',
+    reaplica: 'apl-mod-reaplica', yaescrita: 'apl-mod-ya-escrita', invalida: 'apl-mod-invalida',
   };
   const TODOS = Object.values(T);
   const SECRETO = FICHA_VENTA.nombre;
@@ -381,7 +542,9 @@ describe('B. el script como proceso contra el emulador', () => {
 
   beforeAll(async () => {
     for (const t of TODOS) await db.recursiveDelete(db.doc(`tenants/${t}`));
-    for (const t of [T.seco, T.aplicar, T.freno, T.revertir]) await db.doc(`tenants/${t}`).set({ ...FICHA_VENTA });
+    for (const t of [T.seco, T.aplicar, T.freno, T.revertir, T.ajeno, T.adultera, T.reaplica]) await db.doc(`tenants/${t}`).set({ ...FICHA_VENTA });
+    await db.doc(`tenants/${T.yaescrita}`).set({ ...FICHA_VENTA, modulos: QTACO });
+    await db.doc(`tenants/${T.invalida}`).set({ ...FICHA_VENTA, modulos: [...QTACO, 'productos'] });
     await db.doc(`tenants/${T.conLista}`).set({ nombre: SECRETO, estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], modulos: ['productos', 'campanas', 'agenda'] });
     await db.doc(`tenants/${T.otro}`).set({ ...FICHA_VENTA });
   });
@@ -466,32 +629,167 @@ describe('B. el script como proceso contra el emulador', () => {
     expect(d).toEqual({ ...FICHA_VENTA, modulos: QTACO });
     expect(await tiempo(T.aplicar)).not.toBe(antes);
 
-    // Un segundo --aplicar con el mismo respaldo no lo pisa.
+    // Reaplicar el MISMO comando (mismo respaldo, que ya existe) es idempotente: 0, sin escribir ni pisar el respaldo.
+    const t0 = await tiempo(T.aplicar);
+    const textoResp = readFileSync(resp, 'utf8');
     const otra = correr(args(T.aplicar, ['--modulos', LISTA_QTACO, '--acepto-diferencias', 'inventario', '--aplicar', '--respaldo', resp]));
-    expect(otra.codigo, otra.salida).toBe(2);
-    expect(otra.salida).toContain('nunca se pisa');
+    expect(otra.codigo, otra.salida).toBe(0);
+    expect(otra.salida).toContain('ya está escrita con esa lista: nada que hacer');
+    expect(await tiempo(T.aplicar)).toBe(t0);
+    expect(readFileSync(resp, 'utf8')).toBe(textoResp);
 
-    // Revertir en seco no escribe.
+    // Revertir en seco no escribe y sale con 1: queda un cambio pendiente.
     const t1 = await tiempo(T.aplicar);
-    const seco = correr(args(T.aplicar, ['--revertir', '--respaldo', resp]));
-    expect(seco.codigo, seco.salida).toBe(0);
+    const seco = correr(args(T.aplicar, ['--revertir', '--respaldo', resp, '--acepto-diferencias', 'inventario']));
+    expect(seco.codigo, seco.salida).toBe(1);
     expect(seco.salida).toContain('AUSENTE (se eliminaría el campo)');
     expect(seco.salida).toContain('capacidades que cambian      : inventario');
+    expect(seco.salida).toContain('Con --aplicar se aceptaría');
+    expect(await tiempo(T.aplicar)).toBe(t1);
+    // Sin declarar la capacidad, el seco también sale con 1 y dice que no se escribiría.
+    const secoSin = correr(args(T.aplicar, ['--revertir', '--respaldo', resp]));
+    expect(secoSin.codigo, secoSin.salida).toBe(1);
+    expect(secoSin.salida).toContain('Con --aplicar NO se escribiría');
     expect(await tiempo(T.aplicar)).toBe(t1);
 
-    // Revertir de verdad: como `modulos` no existía, se ELIMINA el campo.
-    const rev = correr(args(T.aplicar, ['--revertir', '--aplicar', '--respaldo', resp]));
+    // Revertir de verdad: como `modulos` no existía, se ELIMINA el campo (con el freno: inventario declarado).
+    const rev = correr(args(T.aplicar, ['--revertir', '--aplicar', '--respaldo', resp, '--acepto-diferencias', 'inventario']));
     expect(rev.codigo, rev.salida).toBe(0);
     expect(rev.salida).toContain('eliminado (no existía)');
     expect(await datos(T.aplicar)).toEqual(FICHA_VENTA);
     expect('modulos' in (await datos(T.aplicar))).toBe(false);
 
-    // Y revertir otra vez no hace nada.
+    // Y revertir otra vez no hace nada: idempotente, sale 0 aunque no se declare nada (el freno va después).
     const t2 = await tiempo(T.aplicar);
     const de_nuevo = correr(args(T.aplicar, ['--revertir', '--aplicar', '--respaldo', resp]));
     expect(de_nuevo.codigo, de_nuevo.salida).toBe(0);
     expect(de_nuevo.salida).toContain('nada que revertir');
     expect(await tiempo(T.aplicar)).toBe(t2);
+    const seco2 = correr(args(T.aplicar, ['--revertir', '--respaldo', resp]));
+    expect(seco2.codigo, seco2.salida).toBe(0);
+  });
+
+  it('--revertir --aplicar exige --acepto-diferencias igual a lo que cambia, como la ida: sin él, o con otro, sale con 2 y no escribe', async () => {
+    const dir = nuevoDir();
+    const resp = join(dir, 'r.json');
+    const ok = correr(args(T.reaplica, ['--modulos', LISTA_QTACO, '--acepto-diferencias', 'inventario', '--aplicar', '--respaldo', resp]));
+    expect(ok.codigo, ok.salida).toBe(0);
+    const t = await tiempo(T.reaplica);
+    for (const extra of [[], ['--acepto-diferencias', 'campanas'], ['--acepto-diferencias', 'inventario,campanas']]) {
+      const r = correr(args(T.reaplica, ['--revertir', '--aplicar', '--respaldo', resp, ...extra]));
+      expect(r.codigo, r.salida).toBe(2);
+      expect(r.salida).toContain('no son exactamente las declaradas');
+      expect(await tiempo(T.reaplica)).toBe(t);
+      expect((await datos(T.reaplica))['modulos']).toEqual(QTACO);
+    }
+    const bien = correr(args(T.reaplica, ['--revertir', '--aplicar', '--respaldo', resp, '--acepto-diferencias', 'inventario']));
+    expect(bien.codigo, bien.salida).toBe(0);
+    expect('modulos' in (await datos(T.reaplica))).toBe(false);
+  });
+
+  it('--revertir NO pisa un cambio posterior de otra persona: si la ficha ya no tiene lo escrito, sale con 2 y conserva el cambio', async () => {
+    const dir = nuevoDir();
+    const resp = join(dir, 'r.json');
+    const ok = correr(args(T.ajeno, ['--modulos', LISTA_QTACO, '--acepto-diferencias', 'inventario', '--aplicar', '--respaldo', resp]));
+    expect(ok.codigo, ok.salida).toBe(0);
+    // Otro proceso (otra persona) agrega `agenda` después.
+    await db.doc(`tenants/${T.ajeno}`).update({ modulos: [...QTACO, 'agenda'] });
+    const t = await tiempo(T.ajeno);
+    for (const extra of [[], ['--aplicar'], ['--aplicar', '--acepto-diferencias', 'inventario'], ['--aplicar', '--acepto-diferencias', 'inventario,agenda']]) {
+      const r = correr(args(T.ajeno, ['--revertir', '--respaldo', resp, ...extra]));
+      expect(r.codigo, r.salida).toBe(2);
+      expect(r.salida).toContain('alguien la cambió después');
+      expect(r.salida).toContain('No se escribe nada');
+      expect(await tiempo(T.ajeno)).toBe(t);
+      expect((await datos(T.ajeno))['modulos']).toEqual([...QTACO, 'agenda']);
+    }
+    // Mismo tamaño y todo lo suyo está en lo escrito, pero con un repetido y sin `catalogo-web`: no es lo escrito.
+    const conRepetido = ['productos', 'campanas', 'cobros', 'cobros', 'pedidos'];
+    await db.doc(`tenants/${T.ajeno}`).update({ modulos: conRepetido });
+    const rr = correr(args(T.ajeno, ['--revertir', '--aplicar', '--respaldo', resp, '--acepto-diferencias', 'inventario']));
+    expect(rr.codigo, rr.salida).toBe(2);
+    expect((await datos(T.ajeno))['modulos']).toEqual(conRepetido);
+    // El mismo conjunto en otro orden SÍ es lo escrito (se compara como conjunto): se revierte.
+    await db.doc(`tenants/${T.ajeno}`).update({ modulos: [...QTACO].reverse() });
+    const rev = correr(args(T.ajeno, ['--revertir', '--aplicar', '--respaldo', resp, '--acepto-diferencias', 'inventario']));
+    expect(rev.codigo, rev.salida).toBe(0);
+    expect('modulos' in (await datos(T.ajeno))).toBe(false);
+  });
+
+  it('un respaldo adulterado (previo o escrito inválidos) sale con 2 y no cambia la ficha ni su updateTime', async () => {
+    const dir = nuevoDir();
+    const base = (previo: Record<string, unknown>, escrito: unknown = QTACO) => ({
+      version: 1, entorno: 'emulador', tenant: T.adultera, creadoEn: '2026-10-05T00:00:00.000Z', fichaActualizadaEn: null,
+      previo: { modulosPresente: true, flujos: ['venta'], vertical: 'venta', ...previo }, escrito,
+    });
+    await db.doc(`tenants/${T.adultera}`).update({ modulos: QTACO });
+    const t = await tiempo(T.adultera);
+    const casos: [string, unknown][] = [
+      ['vacio', base({ modulos: [] })],
+      ['solo-pedidos', base({ modulos: ['pedidos'] })],
+      ['desconocido', base({ modulos: ['productos', 'campanas', 'no-existe'] })],
+      ['proto', base({ modulos: ['productos', 'campanas', '__proto__'] })],
+      ['repetido', base({ modulos: ['productos', 'campanas', 'productos'] })],
+      ['escrito-vacio', base({ modulos: ['productos', 'campanas', 'agenda'] }, [])],
+      ['escrito-proto', base({ modulos: ['productos', 'campanas', 'agenda'] }, ['productos', 'campanas', '__proto__'])],
+      ['previo-no-existia-con-lista', base({ modulosPresente: false, modulos: ['productos', 'campanas'] })],
+    ];
+    for (const [nombre, contenido] of casos) {
+      const f = join(dir, `${nombre}.json`);
+      writeFileSync(f, JSON.stringify(contenido), { mode: 0o600 });
+      for (const extra of [[], ['--aplicar', '--acepto-diferencias', 'inventario,agenda']]) {
+        const r = correr(args(T.adultera, ['--revertir', '--respaldo', f, ...extra]));
+        expect(r.codigo, `${nombre}: ${r.salida}`).toBe(2);
+        expect(r.salida, nombre).toContain('el respaldo no');
+        expect(await tiempo(T.adultera), nombre).toBe(t);
+        expect((await datos(T.adultera))['modulos'], nombre).toEqual(QTACO);
+      }
+    }
+  });
+
+  it('reaplicar es idempotente: la lista ya escrita sale con 0 ANTES del freno, sin respaldo nuevo ni escritura', async () => {
+    const dir = nuevoDir();
+    const resp = join(dir, 'resp', 'r.json');
+    const t = await tiempo(T.yaescrita);
+    // Sin --acepto-diferencias (el freno diría 2 si llegara a mirarse) y con el seco también.
+    for (const extra of [['--aplicar', '--respaldo', resp], []]) {
+      const r = correr(args(T.yaescrita, ['--modulos', LISTA_QTACO, ...extra]));
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.salida).toContain('nada que hacer');
+      expect(r.salida).not.toContain('no son exactamente las declaradas');
+    }
+    expect(existsSync(dirname(resp))).toBe(false);
+    expect(await tiempo(T.yaescrita)).toBe(t);
+  });
+
+  it('aplicar no escribe encima de un `modulos` que no se podría respaldar y restaurar (repetidos, desconocidos): sale con 2 sin respaldo', async () => {
+    const dir = nuevoDir();
+    const resp = join(dir, 'resp', 'r.json');
+    const t = await tiempo(T.invalida);
+    const r = correr(args(T.invalida, ['--modulos', LISTA_QTACO, '--aplicar', '--respaldo', resp]));
+    expect(r.codigo, r.salida).toBe(2);
+    expect(r.salida).toContain('no es una lista válida del registro');
+    expect(existsSync(dirname(resp))).toBe(false);
+    expect(await tiempo(T.invalida)).toBe(t);
+    expect((await datos(T.invalida))['modulos']).toEqual([...QTACO, 'productos']);
+  });
+
+  it('un respaldo que ya existe se acepta como argumento, pero si habría que escribir encima sale con 2 y no escribe', async () => {
+    const dir = nuevoDir();
+    const resp = join(dir, 'r.json');
+    writeFileSync(resp, '{"viejo":true}', { mode: 0o600 });
+    const t = await tiempo(T.freno);
+    const r = correr(args(T.freno, ['--modulos', LISTA_QTACO, '--acepto-diferencias', 'inventario', '--aplicar', '--respaldo', resp]));
+    expect(r.codigo, r.salida).toBe(2);
+    expect(r.salida).toContain('nunca se pisa');
+    expect(readFileSync(resp, 'utf8')).toBe('{"viejo":true}');
+    expect(await tiempo(T.freno)).toBe(t);
+    expect('modulos' in (await datos(T.freno))).toBe(false);
+    // Con permisos abiertos ni siquiera se acepta.
+    chmodSync(resp, 0o644);
+    const abierto = correr(args(T.freno, ['--modulos', LISTA_QTACO, '--acepto-diferencias', 'inventario', '--aplicar', '--respaldo', resp]));
+    expect(abierto.codigo, abierto.salida).toBe(2);
+    expect(abierto.salida).toContain('permisos de grupo u otros');
   });
 
   it('revertir RESTAURA el valor previo cuando `modulos` existía', async () => {
@@ -503,7 +801,7 @@ describe('B. el script como proceso contra el emulador', () => {
     expect(r.codigo, r.salida).toBe(0);
     expect((await datos(T.conLista))['modulos']).toEqual(nueva.split(','));
     expect(JSON.parse(readFileSync(resp, 'utf8')).previo).toMatchObject({ modulosPresente: true, modulos: previo });
-    const rev = correr(args(T.conLista, ['--revertir', '--aplicar', '--respaldo', resp]));
+    const rev = correr(args(T.conLista, ['--revertir', '--aplicar', '--respaldo', resp, '--acepto-diferencias', 'cobros']));
     expect(rev.codigo, rev.salida).toBe(0);
     expect(rev.salida).toContain('restaurado');
     expect((await datos(T.conLista))['modulos']).toEqual(previo);
@@ -676,10 +974,38 @@ describe('C. la precondición: la ficha cambia entre la lectura y la escritura',
     const cfg = { proyecto: PROYECTO, entorno: 'emulador', tenant: T2, modulos: QTACO, acepto: ['inventario'], aplicar: true, revertir: false, respaldo: resp };
     expect(await mod.ejecutar(cfg, { db, FieldValue, log: (t: string) => lineasA.push(t) }), lineasA.join('\n')).toBe(0);
     lineas.length = 0;
-    const codigo = await mod.ejecutar({ ...cfg, revertir: true, modulos: null, acepto: [] }, { db: baseConCarrera(), FieldValue, log });
+    const codigo = await mod.ejecutar({ ...cfg, revertir: true, modulos: null, acepto: ['inventario'] }, { db: baseConCarrera(), FieldValue, log });
     expect(codigo, lineas.join('\n')).toBe(3);
     expect(lineas.join('\n')).toContain('no se escribió nada');
     expect(((await db.doc(`tenants/${T2}`).get()).data() as Record<string, unknown>)['modulos']).toEqual(QTACO);
+  });
+
+  // El estado que ve el manejador de Ctrl-C: antes de escribir / escribiendo / escrito.
+  it('la corrida avisa su estado: escribiendo y luego escrito; si la precondición rechaza, vuelve a antes', async () => {
+    const T3 = 'apl-mod-carrera-estado';
+    await db.recursiveDelete(db.doc(`tenants/${T3}`));
+    await db.doc(`tenants/${T3}`).set({ ...FICHA_VENTA });
+    const dir = nuevoDir();
+    const estados: string[] = [];
+    const cfg = { proyecto: PROYECTO, entorno: 'emulador', tenant: T3, modulos: QTACO, acepto: ['inventario'], aplicar: true, revertir: false, respaldo: join(dir, 'a', 'r.json') };
+    // Seco: nunca marca nada.
+    expect(await mod.ejecutar({ ...cfg, aplicar: false, respaldo: null }, { db, FieldValue, log, marcarEscritura: (e: string) => estados.push(e) })).toBe(1);
+    expect(estados).toEqual([]);
+    // Rechazada por la precondición: escribiendo -> antes (no se escribió nada).
+    const codigo = await mod.ejecutar(cfg, { db: baseConCarrera(), FieldValue, log, marcarEscritura: (e: string) => estados.push(e) });
+    expect(codigo).toBe(3);
+    expect(estados).toEqual(['escribiendo', 'antes']);
+    // Escritura buena: escribiendo -> escrito (y se queda en escrito mientras relee).
+    estados.length = 0;
+    await db.doc(`tenants/${T3}`).set({ ...FICHA_VENTA });
+    const bien = await mod.ejecutar({ ...cfg, respaldo: join(dir, 'b', 'r.json') }, { db, FieldValue, log, marcarEscritura: (e: string) => estados.push(e) });
+    expect(bien).toBe(0);
+    expect(estados).toEqual(['escribiendo', 'escrito']);
+    // Revertir: lo mismo.
+    estados.length = 0;
+    const rev = await mod.ejecutar({ ...cfg, revertir: true, modulos: null, respaldo: join(dir, 'b', 'r.json') }, { db, FieldValue, log, marcarEscritura: (e: string) => estados.push(e) });
+    expect(rev).toBe(0);
+    expect(estados).toEqual(['escribiendo', 'escrito']);
   });
 });
 
@@ -711,6 +1037,43 @@ describe('D. el texto del script: la única escritura a Firestore es `modulos`',
   it('la precondición de la escritura se lee de la ficha ya leída (no se vuelve a leer antes de escribir)', () => {
     expect(sinComentarios.match(/escribirModulos\(/g) ?? []).toHaveLength(3); // definición y dos usos
     expect(sinComentarios.match(/snap\.updateTime/g) ?? []).toHaveLength(3);
+  });
+
+  it('el respaldo se abre UNA vez y se comprueba sobre el descriptor: ni `statSync`, `existsSync` ni `chmodSync` sobre la ruta al escribir o leer', () => {
+    const desde = (marca: string) => {
+      const a = sinComentarios.indexOf(marca);
+      return sinComentarios.slice(a, sinComentarios.indexOf('\n}\n', a));
+    };
+    const guardar = desde('export function guardarRespaldo');
+    const leer = desde('export function leerRespaldo');
+    for (const [nombre, cuerpo] of [['guardarRespaldo', guardar], ['leerRespaldo', leer]]) {
+      expect(cuerpo.length, nombre).toBeGreaterThan(200);
+      expect(cuerpo, nombre).toContain('fstatSync(');
+      expect(cuerpo, nombre).not.toMatch(/\b(statSync|lstatSync|existsSync|accessSync|chmodSync)\s*\(/);
+      expect(cuerpo, nombre).not.toMatch(/readFileSync\(\s*ruta/);
+    }
+    // El archivo se crea exclusivo, sin seguir enlaces, y su modo se fija en el descriptor.
+    expect(guardar).toContain('constants.O_EXCL');
+    expect(guardar).toContain('constants.O_NOFOLLOW');
+    expect(guardar).toContain('fchmodSync(fd, 0o600)');
+    expect(leer).toContain('constants.O_NOFOLLOW');
+    // Y no queda ningún `chmodSync`, `statSync(ruta)` ni `readFileSync(ruta)` suelto en el archivo.
+    expect(sinComentarios).not.toMatch(/\bchmodSync\b/);
+    expect(sinComentarios).not.toMatch(/readFileSync\(\s*ruta/);
+  });
+
+  it('el Ctrl-C usa el estado de tres valores y el mensaje propio; ya no hay un booleano `escribiendo`', () => {
+    expect(sinComentarios).toContain('mensajeDeInterrupcion(estado)');
+    expect(sinComentarios).toContain("marcar('escribiendo')");
+    expect(sinComentarios).toContain("marcar('escrito')");
+    expect(sinComentarios).toContain("marcar('antes')");
+    expect(sinComentarios).not.toMatch(/marcar\((true|false)\)/);
+    expect(sinComentarios).not.toContain('let escribiendo');
+  });
+
+  it('el respaldo no tiene ruta por omisión ni variable de entorno propia: la da quien corre el script', () => {
+    expect(codigo).not.toMatch(/NOVUCHAT_DIR_RESPALDOS|homedir\(|os\.tmpdir|\/home\/|process\.env\[?\.?['"]?(HOME|RESPALDO)/);
+    expect(sinComentarios).not.toMatch(/respaldo\s*=\s*valores\['respaldo'\]\s*\?\?/);
   });
 
   it('el id del proyecto no se imprime: ningún log o error nombra a `cfg.proyecto` ni al valor de --proyecto', () => {
