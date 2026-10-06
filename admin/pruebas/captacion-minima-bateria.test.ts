@@ -40,6 +40,8 @@ interface Modulo {
   validarCasos(datos: unknown): J[];
   revisarMensaje(m: J, ctx?: J): { regla: string; texto: string }[];
   tonoDe(t: string): { voseo: boolean; usted: boolean };
+  MAX_ORACIONES: number; MAX_PALABRAS: number; MAX_ORACIONES_PLANES: number; MAX_PALABRAS_PLANES: number;
+  telefonoDe(id: string, rep: number): string;
   conEmoji(t: string): boolean;
   limpiarSecretos(t: string, secretos?: string[]): string;
   correrCaso(a: J): Promise<J>;
@@ -311,7 +313,7 @@ describe('Batería de Captación mínima contra el modelo', () => {
       const [a, b] = m.red.map((x) => JSON.parse(x.cuerpo) as J);
       expect(Object.keys(a!).sort()).toEqual(['contents', 'generationConfig', 'systemInstruction']);
       expect(a!['generationConfig']['responseMimeType']).toBe('application/json');
-      expect(a!['generationConfig']['maxOutputTokens']).toBe(400);
+      expect(a!['generationConfig']['maxOutputTokens']).toBe(600);
       expect(a!['generationConfig']['responseSchema']['type']).toBe('OBJECT');
       expect('temperature' in a!['generationConfig'], 'sin temperature').toBe(false);
       expect(a!['systemInstruction']).toEqual(b!['systemInstruction']);
@@ -400,7 +402,8 @@ describe('Batería de Captación mínima contra el modelo', () => {
       // Lo que el cliente recibe: sin el monto ni la promesa, y con el camino al asesor.
       const conv = ['C21', 'C22'].flatMap((id) => (caso(json(r), id)['conversacion'] as J[]).flatMap((x) => x['mensajes'] as string[])).join('\n');
       expect(conv).not.toMatch(/USD|\bllamo\b|Seguro que sí/);
-      expect(conv).toMatch(/Esa no la tengo a la mano 🤔; Silvana te lo responde/);
+      expect(conv).toMatch(/Esa no la tengo a la mano 🤔; un asesor te lo responde/);
+      expect(conv).not.toMatch(/silvana/i);
       expect(json(r)['violaciones']['detalle']).toEqual([]);
       // El modelo "afirmó tener datos" donde C22 sí los esperaba, y en C21 no se evalúa; la invención efectiva no llegó.
       expect(t['invencionesEfectivas']).toBe(0);
@@ -445,8 +448,8 @@ describe('Batería de Captación mínima contra el modelo', () => {
 
     const malos: [string, string, string][] = [
       ['más de una «?»', '¿Quieres planes? ¿O prefieres hablar con alguien?', 'mas_de_una_pregunta'],
-      ['más de 4 oraciones', 'Entiendo. Es mucho trabajo. Lo sé bien. Puedo ayudarte. Cuéntame más.', 'mas_de_4_oraciones'],
-      ['más de 60 palabras', Array.from({ length: 65 }, () => 'palabra').join(' ') + '.', 'mas_de_60_palabras'],
+      ['más de 6 oraciones', 'Entiendo. Es mucho trabajo. Lo sé bien. Puedo ayudarte. Cuéntame más. Dime algo. Y más.', 'mas_de_6_oraciones'],
+      ['más de 95 palabras', Array.from({ length: 100 }, () => 'palabra').join(' ') + '.', 'mas_de_95_palabras'],
       ['negar ser IA', 'Claro, no soy un bot, soy una persona real.', 'niega_ser_ia'],
       ['presentarse como persona', 'Hola, soy una persona y te ayudo con gusto.', 'se_presenta_como_persona_o_asesor'],
       ['presentarse como el asesor', 'Hola, soy Silvana y te ayudo con gusto.', 'se_presenta_como_persona_o_asesor'],
@@ -467,18 +470,23 @@ describe('Batería de Captación mínima contra el modelo', () => {
       ['enlace de recepción ajeno', 'Escríbele a wa.me/5919999 ahora.', 'enlace'],
       ['oferta del asesor sin botón', 'Silvana te lo responde cuando pueda.', 'ofrece_asesor_sin_boton_ni_fila'],
     ];
-    it('los topes de §13: 4 oraciones y 60 palabras para un mensaje general; el de PLANES (con encabezado) 5 y 70; y las 4 oraciones y 60 palabras exactas pasan', () => {
-      const cuatro = 'Uno. Dos. Tres. Cuatro.';
-      expect(reglas(texto(cuatro))).toEqual([]);
-      expect(reglas(texto(Array.from({ length: 60 }, () => 'palabra').join(' ') + '.'))).toEqual([]);
-      // El mensaje de planes: 5 oraciones y 70 palabras pasan; 71 palabras o 6 oraciones no.
+    it('los topes de §15: 6 oraciones y 95 palabras para un mensaje general; el de PLANES (con encabezado) 7 y 110; y los topes exactos pasan', () => {
+      const seis = 'Uno. Dos. Tres. Cuatro. Cinco. Seis.';
+      expect(reglas(texto(seis))).toEqual([]);
+      expect(reglas(texto(Array.from({ length: 95 }, () => 'palabra').join(' ') + '.'))).toEqual([]);
+      // El mensaje de planes: 7 oraciones y 110 palabras pasan; 111 palabras u 8 oraciones no.
       const planes = (cuerpo: string): J => ({ tipo: 'interactive', cuerpo, payload: { type: 'interactive', interactive: { type: 'button', header: { type: 'image', image: { link: ctx.archivos[0] } }, body: { text: cuerpo }, action: { buttons: [{ type: 'reply', reply: { id: 'asesor', title: 'x' } }] } } } });
-      expect(reglas(planes('Uno. Dos. Tres. Cuatro. Cinco.'))).toEqual([]);
-      expect(reglas(planes(Array.from({ length: 70 }, () => 'palabra').join(' ') + '.'))).toEqual([]);
-      expect(reglas(planes(Array.from({ length: 71 }, () => 'palabra').join(' ') + '.'))).toContain('mas_de_70_palabras');
-      expect(reglas(planes('Uno. Dos. Tres. Cuatro. Cinco. Seis.'))).toContain('mas_de_5_oraciones');
+      expect(reglas(planes('Uno. Dos. Tres. Cuatro. Cinco. Seis. Siete.'))).toEqual([]);
+      expect(reglas(planes(Array.from({ length: 110 }, () => 'palabra').join(' ') + '.'))).toEqual([]);
+      expect(reglas(planes(Array.from({ length: 111 }, () => 'palabra').join(' ') + '.'))).toContain('mas_de_110_palabras');
+      expect(reglas(planes('Uno. Dos. Tres. Cuatro. Cinco. Seis. Siete. Ocho.'))).toContain('mas_de_7_oraciones');
       // Sin encabezado, el tope del mensaje de planes NO vale.
-      expect(reglas(texto(Array.from({ length: 65 }, () => 'palabra').join(' ') + '.'))).toContain('mas_de_60_palabras');
+      expect(reglas(texto(Array.from({ length: 100 }, () => 'palabra').join(' ') + '.'))).toContain('mas_de_95_palabras');
+    });
+    it('los topes de la batería son los de la librería (`ccLimites()` es la única fuente)', () => {
+      const lim = B.cargarLibreria(flujo())['ccLimites']() as J;
+      expect([B.MAX_ORACIONES, B.MAX_PALABRAS, B.MAX_ORACIONES_PLANES, B.MAX_PALABRAS_PLANES]).toEqual([lim['general'].oraciones, lim['general'].palabras, lim['planes'].oraciones, lim['planes'].palabras]);
+      expect(lim).toMatchObject({ general: { oraciones: 6, palabras: 95 }, planes: { oraciones: 7, palabras: 110 }, empatia: { caracteres: 220, oraciones: 2 }, respuesta: { caracteres: 420, oraciones: 3 }, tokens: 600 });
     });
     it('NIEGA: las cantidades sin moneda no son un monto («hasta 25 respuestas», «48 horas»)', () => {
       for (const c of ['Una conversación son hasta 25 respuestas.', 'Lo instalamos en 48 horas.']) expect(reglas(texto(c)), c).not.toContain('monto_o_descuento');
@@ -569,6 +577,91 @@ describe('Batería de Captación mínima contra el modelo', () => {
       const c = await B.correrCaso({ caso: casosDelArchivo().find((x) => x['id'] === 'C1')!, rep: 1, flujo: malo, lib: B.cargarLibreria(malo), opciones: { seco: true }, credencial: {}, deps: {} });
       expect(B.medir([c])['avisosDeConfiguracion']).toBeGreaterThan(0);
       expect(B.medir([c])['violaciones']).toBeGreaterThan(0);
+    });
+  });
+
+  describe('§15: longitud, repetición, Harvard y nombres (la herramienta lo mide y lo cuenta)', () => {
+    const r = hijo(['--seco', '--json', '--n', '1']);
+    const j = JSON.parse(r.salida) as J;
+    const variante = (mut: (codigo: string) => string): J => {
+      const f = flujo();
+      const nodo = (f['nodes'] as J[]).find((n) => n['name'] === 'Armar mensajes')!;
+      const codigo = String(nodo['parameters']['jsCode']);
+      const i = codigo.lastIndexOf('return salida;');
+      nodo['parameters']['jsCode'] = codigo.slice(0, i) + mut('') + '\n' + codigo.slice(i);
+      return f;
+    };
+    const correr1 = (f: J, id: string): Promise<J> => B.correrCaso({ caso: casosDelArchivo().find((x) => x['id'] === id)!, rep: 1, flujo: f, lib: B.cargarLibreria(f), opciones: { seco: true }, credencial: {}, deps: {} });
+
+    it('los tres casos largos están y la corrida en seco los pasa sin violaciones ni repeticiones seguidas', () => {
+      const ids = (j['casos'] as J[]).map((c) => c['id']);
+      for (const id of ['L1', 'L2', 'L3']) expect(ids, id).toContain(id);
+      expect(j['violaciones']['detalle']).toEqual([]);
+      expect(j['total']['repeticionesSeguidas']).toBe(0);
+      expect(j['total']['harvard']['maxPorConversacion']).toBeLessThanOrEqual(1);
+      expect(j['total']['harvard']['conversacionesConElDato']).toBeGreaterThan(0);
+      for (const id of ['L1', 'L2', 'L3']) expect(caso(j, id)['fallosDeNodo'] ?? [], id).toEqual([]);
+    });
+    it('el informe mide las palabras por mensaje (y la oferta tras el dolor no queda corta)', () => {
+      const l = j['total']['longitud'] as J;
+      expect(l['mensajes']).toBeGreaterThan(100);
+      expect(l['palabrasMedias']).toBeGreaterThan(20);
+      expect(l['maximo']).toBeLessThanOrEqual(110);
+      const t = hijo(['--seco', '--n', '1', '--casos', 'P1']);
+      expect(t.salida).toMatch(/Longitud: [\d.]+ palabras por mensaje en promedio \(mediana \d+, máximo \d+\) · mensajes idénticos seguidos 0/);
+      expect(t.salida).toMatch(/dato de Harvard: 1 conversaciones, a lo más 1 vez por conversación/);
+      // La oferta de P1 (belleza, tras el dolor) trae empatía + orientación + Harvard + pregunta: entre 55 y 95 palabras.
+      const oferta = ((caso(j, 'P1')['conversacion'] as J[])[2]!['mensajes'] as string[])[0]!;
+      const palabras = oferta.split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length;
+      expect(palabras).toBeGreaterThanOrEqual(55);
+      expect(palabras).toBeLessThanOrEqual(95);
+    });
+    it('el teléfono de cada caso y corrida es sintético, distinto del de recepción y del del negocio, y varía (el saludo rota por su último dígito)', () => {
+      const tels = new Set<string>();
+      for (const c of casosDelArchivo()) for (const rep of [1, 2, 3]) {
+        const t = B.telefonoDe(c['id'], rep);
+        expect(t).toMatch(/^5910000001\d$/);
+        expect(t).not.toBe('59100000001');
+        expect(t).not.toBe('59100000003');
+        expect(t).toBe(B.telefonoDe(c['id'], rep)); // determinista
+        tels.add(t.slice(-1));
+      }
+      expect(tels.size).toBeGreaterThanOrEqual(5);
+      // Y por eso las conversaciones no abren todas igual.
+      const aperturas = new Set((j['casos'] as J[]).map((c) => String((c['conversacion'] as J[])[0]!['mensajes'][0])).filter((m) => /asistente virtual/.test(m) && /rubro/.test(m) && /\?$/.test(m)));
+      expect(aperturas.size).toBeGreaterThanOrEqual(3);
+    });
+    it('detecta un mensaje idéntico al anterior (control negativo): un flujo que contestara siempre lo mismo acumula repeticiones y violaciones', async () => {
+      const f = variante(() => "for (const it of salida) { const p = it.json.payload; if (p && p.type === 'interactive' && p.interactive.body) p.interactive.body.text = 'Siempre la misma frase de ejemplo.'; if (p && p.type === 'text') p.text.body = 'Siempre la misma frase de ejemplo.'; }");
+      const c = await correr1(f, 'C7');
+      expect(c['repeticiones']).toBeGreaterThan(0);
+      expect((c['violaciones'] as J[]).map((v) => v['regla'])).toContain('mensaje_repetido_seguido');
+      expect(B.medir([c])['repeticionesSeguidas']).toBeGreaterThan(0);
+    });
+    it('detecta el dato de Harvard más de una vez en una conversación (control negativo)', async () => {
+      const f = variante(() => "for (const it of salida) { const p = it.json.payload; if (p && p.type === 'text') p.text.body += ' Según Harvard Business Review, algo.'; if (p && p.type === 'interactive' && p.interactive.body) p.interactive.body.text += ' Según Harvard Business Review, algo.'; }");
+      const c = await correr1(f, 'L1');
+      expect(c['harvard']).toBeGreaterThan(1);
+      expect((c['violaciones'] as J[]).map((v) => v['regla'])).toContain('harvard_mas_de_una_vez');
+      expect(B.medir([c])['harvard']['maxPorConversacion']).toBeGreaterThan(1);
+    });
+    it('NIEGA: ningún mensaje que sale al cliente en ninguno de los casos nombra a una persona (con los datos reales de NovuChat)', () => {
+      const todo = (j['casos'] as J[]).flatMap((c) => (c['conversacion'] as J[]).flatMap((t) => t['mensajes'] as string[])).join('\n');
+      expect(todo.length).toBeGreaterThan(5000);
+      expect(todo).not.toMatch(/silvana|asesora\b/i);
+      expect(todo).toMatch(/un asesor/); // y sí dicen «un asesor»
+    });
+    it('el mismo flujo con un asesor que SÍ tiene nombre (tenant de ejemplo) lo usa: la capacidad no se pierde', async () => {
+      const f = flujo();
+      const nodo = (f['nodes'] as J[]).find((n) => n['name'] === 'Config del negocio')!;
+      const antes = String(nodo['parameters']['jsCode']);
+      expect(antes).toContain('"asesor":{"nombre":""}');
+      nodo['parameters']['jsCode'] = antes.replace('"asesor":{"nombre":""}', '"asesor":{"nombre":"Ana"}');
+      const c = await correr1(f, 'L3');
+      const todo = (c['conversacion'] as J[]).flatMap((t) => t['mensajes'] as string[]).join('\n');
+      expect(todo).toMatch(/\bAna\b/);
+      expect(todo).not.toMatch(/un asesor te lo responde/);
+      expect(c['violaciones']).toEqual([]);
     });
   });
 

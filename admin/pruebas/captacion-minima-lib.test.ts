@@ -47,6 +47,8 @@ type Fn = (...a: any[]) => any;
 type J = Record<string, any>;
 const L = ejecutar(`${LIB}\n${MENSAJES}\n${FILTRO}\nreturn [{ json: { ${DECLARADAS.join(', ')} } }];`, [{}])[0] as Record<string, Fn>;
 const f = (n: string): Fn => L[n] as Fn;
+// El filtro de la redacción del modelo (`cm*`, de `comun-sin-agente`), por si una prueba revisa un texto con él.
+const CM = ejecutar(`${FILTRO}\nreturn [{ json: { cmRevisarRedaccion } }];`, [{}])[0] as Record<string, Fn>;
 
 // --- El mundo de las pruebas ----------------------------------------------------------------------------
 const AT = '@'; // el escáner de saneo toma «a@b.c» por un correo
@@ -68,6 +70,8 @@ const ACLARACIONES = [
   { tema: 'Cuándo se paga', texto: 'Todo es prepago: cada mes se paga por adelantado.' },
   { tema: 'Bolsa extra', texto: 'Cada bolsa de 30 conversaciones cuesta USD 10.' },
 ];
+// OJO: «Silvana» es el asesor de un tenant de EJEMPLO que SÍ configura un nombre: cubre el camino con nombre (la capacidad no se pierde). NovuChat real
+// NO configura nombre (§15): sus pruebas con los datos reales y asesor vacío están al final de este archivo y en la suite de punta a punta.
 const CFG = {
   nombreNegocio: 'Tienda Ejemplo', nombreAsistente: '', asesor: 'Silvana', rubros: RUBROS, planes: PLANES, cargosUnicos: CARGOS,
   aclaraciones: ACLARACIONES, archivoPlanes: null as J | null,
@@ -290,6 +294,7 @@ describe('estado por teléfono', () => {
       v: 1, paso: 'inicio', rubroId: '', rubroLibre: '', empresa: '', reintentoEmpresa: false,
       hechos: { pidioAsesor: false, pidioPlanes: false, eligioOtro: false, respondioDolor: false, descarte: '' },
       planesPendientes: false, planesMostrados: false, soporte: false, anuncio: false, avisado: false, avisoFalla: '', ultimoMensajeMs: 0, ultimosIds: [], ofertas: 0, sueltas: 0,
+      impactoDicho: false, rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0 },
     });
     e.hechos.pidioAsesor = true;
     e.ultimosIds.push('x');
@@ -513,11 +518,11 @@ describe('el modelo: instrucciones, cuerpo y esquema', () => {
     expect(s).not.toMatch(/<<<malo|malo>>>|\[PLANES\]/);
     expect(s).toContain('- x: Rubro malo PLANES nuevo — s');
   });
-  it('ccCuerpoModelo: la forma de la llamada a `generateContent` (sin temperature ni topP, 400 tokens)', () => {
+  it('ccCuerpoModelo: la forma de la llamada a `generateContent` (sin temperature ni topP, 600 tokens)', () => {
     const b = f('ccCuerpoModelo')({ paso: 'oferta', cfg: CFG, mensaje: 'hola', ahoraMs: AHORA, conocimiento: CORPUS });
     expect(Object.keys(b).sort()).toEqual(['contents', 'generationConfig', 'systemInstruction']);
     expect(b.generationConfig.responseMimeType).toBe('application/json');
-    expect(b.generationConfig.maxOutputTokens).toBe(400);
+    expect(b.generationConfig.maxOutputTokens).toBe(600); // §15: más largo de respuesta y el razonamiento del modelo también cuenta
     expect(Object.keys(b.generationConfig).sort()).toEqual(['maxOutputTokens', 'responseMimeType', 'responseSchema']);
     expect(b.contents).toHaveLength(1);
     expect(b.contents[0].role).toBe('user');
@@ -624,46 +629,50 @@ describe('ccLeerModelo: la salida del modelo, validada campo por campo', () => {
     expect(leer(valido({ rubroLibre: 'criptomonedas' })).rubroLibre).toBe('');
     expect(leer(valido({ rubroLibre: 'tienda de ropa' }), { textoCliente: 'hola', textoDeImagen: 'Tienda de ropa Luna' }).rubroLibre).toBe('tienda de ropa');
   });
-  it('empatia (§13): una idea con a lo más una exclamación inicial (2 oraciones) y hasta 140 caracteres con emojis, sin «?», montos, promesas ni enlaces; si no, «¡Te entiendo! 😊»', () => {
+  it('empatia (§15): hasta 2 oraciones, 220 caracteres con emojis y 34 palabras, sin «?», montos, promesas ni enlaces; si no, «¡Te entiendo! 😊»', () => {
     const RESPALDO = '¡Te entiendo! 😊';
     expect(leer(valido({ empatia: 'Entiendo, perder ventas de noche duele.' })).empatia).toBe('Entiendo, perder ventas de noche duele.');
-    // Los dos ejemplos del tono (§13) pasan: el primero abre con una exclamación (cuenta como oración) y lleva emoji.
-    for (const e of ['¡Uff, te entiendo! 😅 Responder todo a mano le quita tiempo a cualquiera.', '¡Qué buena señal que ya vendas por WhatsApp! 🙌', 'Entiendo. Eso pasa mucho.']) {
+    // Los dos ejemplos del tono pasan: el primero abre con una exclamación (cuenta como oración) y lleva emoji.
+    for (const e of ['¡Uff, te entiendo! 😅 Responder todo a mano le quita tiempo a cualquiera.', '¡Qué buena señal que ya vendas por WhatsApp! 🙌', 'Entiendo. Eso pasa mucho.',
+      '¡Qué cansado perseguir confirmaciones a mano! 😅 Cuando una clienta se olvida, ese hueco en la agenda ya no se recupera y se siente.']) {
       expect(leer(valido({ empatia: e })).empatia, e).toBe(e);
     }
-    for (const e of ['¿Pierdes ventas de noche?', 'Entiendo. Eso pasa mucho. Y a todos.', 'a'.repeat(141), 'Cuesta solo USD 25.', 'Te aviso luego.', 'Mira www.sitio.com para más.', 'Soy una persona real, te entiendo.', '', '   ', '🙌', '😅😅']) {
+    for (const e of ['¿Pierdes ventas de noche?', 'Entiendo. Eso pasa mucho. Y a todos.', 'a'.repeat(221), 'Cuesta solo USD 25.', 'Te aviso luego.', 'Mira www.sitio.com para más.', 'Soy una persona real, te entiendo.', '', '   ', '🙌', '😅😅',
+      Array(35).fill('es').join(' ') + '.']) {
       expect(leer(valido({ empatia: e })).empatia, e).toBe(RESPALDO);
     }
-    // Exactamente 140 pasa; 141 no. Un saludo delante se pule y deja una sola oración.
-    const ciento40 = 'Entiendo ' + 'x'.repeat(130) + '.';
-    expect(ciento40).toHaveLength(140);
-    expect(leer(valido({ empatia: ciento40 })).empatia).toBe(ciento40);
-    expect(leer(valido({ empatia: 'Entiendo ' + 'x'.repeat(131) + '.' })).empatia).toBe(RESPALDO);
+    // Exactamente 220 caracteres pasa; 221 no. 34 palabras pasan; 35 no. Un saludo delante se pule.
+    const doscientos20 = 'Entiendo ' + 'x'.repeat(210) + '.';
+    expect(doscientos20).toHaveLength(220);
+    expect(leer(valido({ empatia: doscientos20 })).empatia).toBe(doscientos20);
+    expect(leer(valido({ empatia: 'Entiendo ' + 'x'.repeat(211) + '.' })).empatia).toBe(RESPALDO);
+    expect(leer(valido({ empatia: Array(34).fill('es').join(' ') + '.' })).empatia).toContain('es es');
     expect(leer(valido({ empatia: 'Hola. Entiendo lo del tiempo.' })).empatia).toBe('Entiendo lo del tiempo.');
     // Las respuestas que fallan por completo traen también la empatía cálida de respaldo.
     expect(leer(undefined).empatia).toBe(RESPALDO);
   });
-  it('respuesta: hasta 2 oraciones y 280 caracteres, sin «?», montos, promesas, enlaces ni negar ser IA; si no, «no lo tengo»', () => {
+  it('respuesta (§15): hasta 3 oraciones y 420 caracteres, sin «?», montos, promesas, enlaces ni negar ser IA; si no, «no lo tengo»', () => {
     const ok = 'Atendemos por WhatsApp. Funciona todo el día.';
     expect(leer(valido({ tipo: 'pregunta', respuesta: ok, enLosDatos: true }))).toMatchObject({ respuesta: ok, enLosDatos: true });
-    for (const r of ['Atendemos todo el día. Tienes más. Y otra más.', 'a'.repeat(281), '¿Quieres saber más?', 'Cuesta 25 dólares al mes.', 'Cuesta Bs 100.', 'Silvana te escribe luego.', 'El asesor te responde mañana.', 'Te avisamos pronto.',
+    expect(leer(valido({ tipo: 'pregunta', respuesta: 'Atendemos todo el día. Tienes más. Y otra más.', enLosDatos: true }))).toMatchObject({ enLosDatos: true });
+    for (const r of ['Atendemos todo el día. Tienes más. Y otra más. Y una más.', 'a'.repeat(421), '¿Quieres saber más?', 'Cuesta 25 dólares al mes.', 'Cuesta Bs 100.', 'Silvana te escribe luego.', 'El asesor te responde mañana.', 'Te avisamos pronto.',
       'Mira www.sitio.com', `Escríbenos a hola${AT}sitio.com`, 'Soy una persona, no un bot.', 'Tu cita quedó agendada.']) {
       expect(leer(valido({ tipo: 'pregunta', respuesta: r, enLosDatos: true })), r).toMatchObject({ respuesta: '', enLosDatos: false });
     }
-    const doscientos80 = 'Atendemos ' + 'x'.repeat(269) + '.';
-    expect(doscientos80).toHaveLength(280);
-    expect(leer(valido({ tipo: 'pregunta', respuesta: doscientos80, enLosDatos: true })).respuesta).toBe(doscientos80);
+    const cuatrocientos20 = 'Atendemos ' + 'x'.repeat(409) + '.';
+    expect(cuatrocientos20).toHaveLength(420);
+    expect(leer(valido({ tipo: 'pregunta', respuesta: cuatrocientos20, enLosDatos: true })).respuesta).toBe(cuatrocientos20);
   });
   it('enLosDatos: solo vale si hay una respuesta válida; sin ella es «no lo tengo»', () => {
     expect(leer(valido({ tipo: 'pregunta', respuesta: '', enLosDatos: true })).enLosDatos).toBe(false);
     expect(leer(valido({ tipo: 'pregunta', respuesta: 'Atendemos todo el día.', enLosDatos: false })).enLosDatos).toBe(false);
   });
-  it('aclaracion válida: la respuesta es el texto de la consola (recortado a 300), aunque el modelo haya escrito otra cosa', () => {
+  it('aclaracion válida: la respuesta es el texto de la consola (recortado a 420), aunque el modelo haya escrito otra cosa', () => {
     const aclaraciones = [{ id: 'a1', texto: 'Todo es prepago.' }, { id: 'a2', texto: 'Cada bolsa de 30 conversaciones cuesta USD 10. ' + 'y '.repeat(200) }];
     const r = leer(valido({ tipo: 'pregunta', aclaracion: 'a1', respuesta: 'Cuesta USD 5.', enLosDatos: false }), { aclaraciones });
     expect(r).toMatchObject({ aclaracion: 'a1', respuesta: 'Todo es prepago.', enLosDatos: true });
     const larga = leer(valido({ tipo: 'pregunta', aclaracion: 'a2', enLosDatos: true }), { aclaraciones });
-    expect(larga.respuesta.length).toBeLessThanOrEqual(300);
+    expect(larga.respuesta.length).toBeLessThanOrEqual(420);
     expect(larga.respuesta).toMatch(/^Cada bolsa de 30/);
     expect(larga.respuesta.endsWith('…')).toBe(true);
     // Un id que la consola ya no tiene no inventa texto; sin los textos, queda el id para que el armador los busque.
@@ -765,7 +774,10 @@ describe('los mensajes que arma el código', () => {
 
   it('ccOferta: botones `planes` y `asesor`, cuerpo = empatía + impacto + una pregunta, y una sola «?»', () => {
     const m = f('ccOferta')({ empatia: 'Entiendo, es mucho tiempo', impacto: 'Un recordatorio baja las ausencias.', asesor: 'Silvana', conPlanes: true });
-    expect(cuerpoDe(m)).toBe('Entiendo, es mucho tiempo. Un recordatorio baja las ausencias. ¿Te gustaría ver los planes o prefieres hablar con Silvana?');
+    expect(cuerpoDe(m)).toBe('Entiendo, es mucho tiempo. Un recordatorio baja las ausencias. ¿Quieres ver los planes para tener una idea de la inversión, o prefieres hablar con Silvana?');
+    // §15: con la orientación del rubro y el dato de impacto, en ese orden: empatía → orientación → impacto → pregunta.
+    const completa = f('ccOferta')({ empatia: 'Entiendo, es mucho tiempo.', orientacion: 'Tu asistente agenda en tu calendario.', impacto: 'Un recordatorio baja las ausencias.', asesor: 'Silvana', conPlanes: true, indice: 1 });
+    expect(cuerpoDe(completa)).toBe('Entiendo, es mucho tiempo. Tu asistente agenda en tu calendario. Un recordatorio baja las ausencias. ¿Te muestro los planes para que compares opciones, o prefieres hablar directo con Silvana?');
     expect(m.payload.interactive.type).toBe('button');
     expect(m.payload.interactive.action.buttons.map((b: J) => b.reply.id)).toEqual(['planes', 'asesor']);
     expect(m.payload.interactive.action.buttons.map((b: J) => b.reply.title)).toEqual(['Ver planes', 'Hablar con Silvana']);
@@ -775,7 +787,7 @@ describe('los mensajes que arma el código', () => {
   it('ccOferta: sin planes no hay botón `planes` ni pregunta por ellos (solo se ofrece lo que se cumple)', () => {
     const m = f('ccOferta')({ empatia: 'Te entiendo.', impacto: '', asesor: '', conPlanes: false });
     expect(m.payload.interactive.action.buttons.map((b: J) => b.reply.id)).toEqual(['asesor']);
-    expect(cuerpoDe(m)).toBe('Te entiendo. ¿Te gustaría hablar con un asesor?');
+    expect(cuerpoDe(m)).toBe('Te entiendo. ¿Te gustaría hablar con un asesor para ver cómo lo armaríamos en tu caso?');
     expect(cuerpoDe(m)).not.toMatch(/planes/);
     expect(m.respaldo).not.toMatch(/planes/);
   });
@@ -1037,30 +1049,31 @@ describe('los datos del tenant que se versionan', () => {
   });
   it('el guion inicial es el del PDF (§13): ids VIVOS de la consola, dolor, pregunta, impacto y cierre por rubro, «otro» sin dolor, SIN imágenes', () => {
     const g = C.cargarDatos('novuchat.json')['guion'];
-    expect(g.asesor).toEqual({ nombre: 'Silvana' });
+    // §15: NovuChat NO configura nombre de asesor: la persona que atienda puede ser otra, y todo mensaje dice «un asesor».
+    expect(g.asesor).toEqual({ nombre: '' });
     // C1: las claves son las de la consola viva, no las del guion viejo (`salud-belleza`, `comercio`).
     expect(Object.keys(g.rubros).sort()).toEqual(['comercio-y-retail', 'educacion', 'gastronomia', 'otro', 'salud-y-belleza']);
     expect(g.rubros['salud-y-belleza']).toMatchObject({
       dolor: '¡Excelente! 💅 En los salones y consultorios, la gente olvida su turno y ese hueco ya no se recupera.',
       pregunta: 'Cuéntame, ¿actualmente pierdes mucho tiempo agendando y recordando citas a mano?',
-      impacto: 'Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.',
-      cierre: '¿Qué te parece si Silvana te cuenta cómo armaríamos esto para tu negocio? 👇',
+      queHacemos: 'Tu asistente agenda en tu Google Calendar y recuerda la cita 24 horas antes. Cada profesional tiene su propia agenda.',
+      impacto: 'Según Harvard Business Review, contactar a un cliente potencial en la primera hora lo hace siete veces más probable de calificar.',
+      cierre: '¿Qué te parece si un asesor te cuenta cómo armaríamos esto para tu negocio? 👇',
     });
     expect(g.rubros['otro']).toMatchObject({
       pregunta: '¡Perfecto! 😊 Cuéntame un poquito, ¿de qué trata tu negocio y qué es lo que más tiempo te quita hoy?',
       preguntaDolor: '¿Y qué es lo que más tiempo te quita hoy en tu negocio?',
     });
     expect(g.rubros['otro'].dolor).toBeUndefined();
-    // Cada rubro lleva su impacto y su cierre, y ninguno trae imagen.
-    for (const r of Object.values(g.rubros) as J[]) { expect(r['impacto']).not.toBe(''); expect(r['cierre']).not.toBe(''); expect('imagen' in r).toBe(false); }
-    expect(JSON.stringify(g)).not.toMatch(/imagen/);
-    // La frase de Harvard (verificada el 03/10/2026: contactar al prospecto en la primera hora lo hace siete veces más
-    // probable de calificar, no «en el primer minuto» ni «de vender») va en todos los rubros menos gastronomía, que
-    // conserva su línea concreta del PDF (toma el pedido, suma el envío y manda el QR).
-    const HARVARD = 'Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.';
-    for (const id of ['salud-y-belleza', 'comercio-y-retail', 'educacion', 'otro']) expect(g.rubros[id]['impacto'], id).toBe(HARVARD);
-    expect(g.rubros['gastronomia']['impacto']).not.toMatch(/Harvard/);
-    expect(JSON.stringify(g)).not.toMatch(/primer minuto|multiplica por (7|siete)/i);
+    // Cada rubro lleva su orientación (`queHacemos`), su `comoFunciona` y su cierre, y ninguno trae imagen ni el nombre de una persona.
+    for (const r of Object.values(g.rubros) as J[]) { expect(r['queHacemos']).not.toBe(''); expect(r['comoFunciona']).not.toBe(''); expect(r['cierre']).not.toBe(''); expect('imagen' in r).toBe(false); }
+    expect(JSON.stringify(g)).not.toMatch(/imagen|silvana/i);
+    // La frase de Harvard (verificada el 03/10/2026: contactar al cliente potencial en la primera hora lo hace siete veces más probable de calificar, no «en el primer
+    // minuto» ni «de vender») va SOLO donde encaja: la rapidez de respuesta (belleza, comercio, «otro»); gastronomía y educación no la cargan (§15: no en todas).
+    const HARVARD = 'Según Harvard Business Review, contactar a un cliente potencial en la primera hora lo hace siete veces más probable de calificar.';
+    for (const id of ['salud-y-belleza', 'comercio-y-retail', 'otro']) expect(g.rubros[id]['impacto'], id).toBe(HARVARD);
+    for (const id of ['gastronomia', 'educacion']) expect(g.rubros[id]['impacto'], id).toBeUndefined();
+    expect(JSON.stringify(g)).not.toMatch(/primer minuto|multiplica por (7|siete)|prospecto/i);
     expect(C.cargarDatos('novuchat.json')['configBase'].nivelEmojis).toBe('muchos');
   });
   it('el corpus viene de la cantera: sin `vector`, con huella y fecha, y ningún fragmento incluido trae un precio', () => {
@@ -1138,7 +1151,12 @@ describe('validarDatos: cada dato malo, con el nombre del campo', () => {
     ['limiteInteractivo fuera de rango', (d) => { d['configBase'].limiteInteractivo = 50; }, 'configBase.limiteInteractivo'],
     ['mensajeComercioSuspendido de más de 300', (d) => { d['configBase'].mensajeComercioSuspendido = 'x'.repeat(301); }, 'configBase.mensajeComercioSuspendido'],
     ['guion ausente', (d) => { delete d['guion']; }, 'guion'],
-    ['asesor sin nombre', (d) => { delete d['guion'].asesor; }, 'guion.asesor.nombre'],
+    ['asesor que no es un objeto', (d) => { d['guion'].asesor = 'Silvana'; }, 'guion.asesor'],
+    ['asesor nulo', (d) => { d['guion'].asesor = null; }, 'guion.asesor'],
+    ['nombre de asesor que no es un texto', (d) => { d['guion'].asesor.nombre = 5; }, 'guion.asesor.nombre'],
+    ['nombre de asesor con comillas y marcas', (d) => { d['guion'].asesor.nombre = 'Ana"<b>'; }, 'guion.asesor.nombre'],
+    ['nombre de asesor con una fórmula', (d) => { d['guion'].asesor.nombre = '=SUMA'; }, 'guion.asesor.nombre'],
+    ['nombre de asesor con un espacio y apellido', (d) => { d['guion'].asesor.nombre = 'Ana Pérez'; }, 'guion.asesor.nombre'],
     ['asesor de más de 9 letras (el botón pasaría de 20)', (d) => { d['guion'].asesor.nombre = 'Maximiliano'; }, 'guion.asesor.nombre'],
     ['asesor de una letra', (d) => { d['guion'].asesor.nombre = 'S'; }, 'guion.asesor.nombre'],
     ['asesor con números', (d) => { d['guion'].asesor.nombre = 'Ana2'; }, 'guion.asesor.nombre'],
@@ -1174,7 +1192,22 @@ describe('validarDatos: cada dato malo, con el nombre del campo', () => {
     ['dolor y pregunta juntos de más de 3 oraciones', (d) => { rubro(d)['dolor'] = '¡Uno! Dos cosas.'; rubro(d)['pregunta'] = 'Dime, ¿cuál? ¿O cuál?'; }, 'guion.rubros.comercio-y-retail'],
     ['impacto de más de 160', (d) => { rubro(d)['impacto'] = 'a'.repeat(161); }, 'guion.rubros.comercio-y-retail.impacto'],
     ['impacto de dos oraciones', (d) => { rubro(d)['impacto'] = 'Una cosa. Otra cosa.'; }, 'guion.rubros.comercio-y-retail.impacto'],
-    ['impacto de más de 24 palabras', (d) => { rubro(d)['impacto'] = Array(25).fill('ahorras').join(' ') + '.'; }, 'guion.rubros.comercio-y-retail.impacto'],
+    ['impacto de más de 21 palabras', (d) => { rubro(d)['impacto'] = Array(22).fill('ya').join(' ') + '.'; }, 'guion.rubros.comercio-y-retail.impacto'],
+    // §15: la orientación comercial por rubro (dato del tenant), con el mismo rigor de caracteres y largos y sin precios ni promesas.
+    ['queHacemos de más de 240', (d) => { rubro(d)['queHacemos'] = 'a'.repeat(241); }, 'guion.rubros.comercio-y-retail.queHacemos'],
+    ['queHacemos de tres oraciones', (d) => { rubro(d)['queHacemos'] = 'Una cosa. Otra cosa. Y otra más.'; }, 'guion.rubros.comercio-y-retail.queHacemos'],
+    ['queHacemos de más de 24 palabras', (d) => { rubro(d)['queHacemos'] = Array(25).fill('ya').join(' ') + '.'; }, 'guion.rubros.comercio-y-retail.queHacemos'],
+    ['queHacemos con «?»', (d) => { rubro(d)['queHacemos'] = '¿Agenda las citas?'; }, 'guion.rubros.comercio-y-retail.queHacemos'],
+    ['queHacemos con un precio', (d) => { rubro(d)['queHacemos'] = 'Todo por USD 25 al mes.'; }, 'guion.rubros.comercio-y-retail.queHacemos'],
+    ['queHacemos con una promesa de contacto', (d) => { rubro(d)['queHacemos'] = 'Un asesor te llamará hoy.'; }, 'guion.rubros.comercio-y-retail.queHacemos'],
+    ['queHacemos con un porcentaje', (d) => { rubro(d)['queHacemos'] = 'Sube las ventas un 30%.'; }, 'guion.rubros.comercio-y-retail.queHacemos'],
+    ['queHacemos con una URL', (d) => { rubro(d)['queHacemos'] = 'Mira www.sitio.com ahora.'; }, 'guion.rubros.comercio-y-retail.queHacemos'],
+    ['queHacemos que empieza con «=»', (d) => { rubro(d)['queHacemos'] = '=SUMA(A1)'; }, 'guion.rubros.comercio-y-retail.queHacemos'],
+    ['comoFunciona de más de 160', (d) => { rubro(d)['comoFunciona'] = 'a'.repeat(161); }, 'guion.rubros.comercio-y-retail.comoFunciona'],
+    ['comoFunciona de dos oraciones', (d) => { rubro(d)['comoFunciona'] = 'Una cosa. Otra cosa.'; }, 'guion.rubros.comercio-y-retail.comoFunciona'],
+    ['comoFunciona de más de 20 palabras', (d) => { rubro(d)['comoFunciona'] = Array(21).fill('ya').join(' ') + '.'; }, 'guion.rubros.comercio-y-retail.comoFunciona'],
+    ['comoFunciona con un precio', (d) => { rubro(d)['comoFunciona'] = 'La instalación cuesta 65 dólares.'; }, 'guion.rubros.comercio-y-retail.comoFunciona'],
+    ['comoFunciona con «?»', (d) => { rubro(d)['comoFunciona'] = '¿Se instala en 48 horas?'; }, 'guion.rubros.comercio-y-retail.comoFunciona'],
     ['impacto con «?»', (d) => { rubro(d)['impacto'] = '¿Ahorras tiempo?'; }, 'guion.rubros.comercio-y-retail.impacto'],
     ['impacto con una URL', (d) => { rubro(d)['impacto'] = 'Mira www.sitio.com ahora.'; }, 'guion.rubros.comercio-y-retail.impacto'],
     ['cierre de más de 160', (d) => { rubro(d)['cierre'] = '¿' + 'a'.repeat(160) + '?'; }, 'guion.rubros.comercio-y-retail.cierre'],
@@ -1226,7 +1259,9 @@ describe('validarDatos: cada dato malo, con el nombre del campo', () => {
     expect(rubro(d)['dolor']).toHaveLength(200);
     rubro(d)['pregunta'] = '¿' + 'p'.repeat(138) + '?';
     // Con el dolor y la pregunta de arriba (pocas palabras) no se pasa de 50 palabras ni de 3 oraciones.
-    rubro(d)['impacto'] = Array(23).fill('ya').join(' ') + ' hoy.';
+    rubro(d)['impacto'] = Array(20).fill('ya').join(' ') + ' hoy.';
+    rubro(d)['queHacemos'] = Array(23).fill('ya').join(' ') + ' hoy.';       // 24 palabras
+    rubro(d)['comoFunciona'] = Array(19).fill('ya').join(' ') + ' hoy.';     // 20 palabras
     rubro(d)['cierre'] = '¿' + 'c'.repeat(155) + '? 👇';
     expect(rubro(d)['cierre']).toHaveLength(160);
     expect(() => C.validarDatos(d, 'novuchat.json')).not.toThrow();
@@ -1234,6 +1269,20 @@ describe('validarDatos: cada dato malo, con el nombre del campo', () => {
     expect(() => C.validarDatos(d, 'novuchat.json')).not.toThrow();
     d['guion'].asesor.nombre = 'Alexandra';
     expect(() => C.validarDatos(d, 'novuchat.json')).not.toThrow();
+  });
+  it('§15: el nombre del asesor es OPCIONAL: vacío o ausente es válido (NovuChat lo deja vacío); un nombre de 2 a 9 letras sigue valiendo; los peligrosos no', () => {
+    const d = base();
+    expect(d['guion'].asesor.nombre).toBe('');
+    expect(() => C.validarDatos(d, 'novuchat.json')).not.toThrow();
+    delete d['guion'].asesor;
+    expect(() => C.validarDatos(d, 'novuchat.json')).not.toThrow();
+    d['guion'].asesor = {};
+    expect(() => C.validarDatos(d, 'novuchat.json')).not.toThrow();
+    for (const bueno of ['Ana', 'Alexandra', 'María']) { d['guion'].asesor = { nombre: bueno }; expect(() => C.validarDatos(d, 'novuchat.json'), bueno).not.toThrow(); }
+    for (const malo of ['A', 'Maximiliano', 'Ana2', 'Ana"', '<b>', '=HYPERLINK', 'Ana\nPérez', 'Silv@na', '{{x}}', 'Ana Pérez', 5, null, ['Ana']]) {
+      d['guion'].asesor = { nombre: malo };
+      expect(() => C.validarDatos(d, 'novuchat.json'), String(malo)).toThrowError(/«guion\.asesor\.nombre»/);
+    }
   });
   it('varios datos malos se reportan juntos, cada uno con su campo', () => {
     const d = base();
@@ -1715,7 +1764,7 @@ describe('el turno: ccDecidir y ccCompletar', () => {
   const GUION_P = {
     asesor: { nombre: 'Silvana' },
     rubros: {
-      'salud-y-belleza': { dolor: 'Los turnos se olvidan.', pregunta: '¿Pierdes tiempo agendando?', impacto: 'Un recordatorio baja las ausencias.' },
+      'salud-y-belleza': { dolor: 'Los turnos se olvidan.', pregunta: '¿Pierdes tiempo agendando?', queHacemos: 'Tu asistente agenda en tu calendario.', comoFunciona: 'Lo instalamos en 48 horas.', impacto: 'Un recordatorio baja las ausencias.' },
       otro: { pregunta: '¿De qué trata tu negocio y qué te quita más tiempo?', impacto: '' },
     },
   };
@@ -1805,7 +1854,7 @@ describe('el turno: ccDecidir y ccCompletar', () => {
     expect(p['accion']).toBe('abierta');
     expect(p['e']).toMatchObject({ paso: 'esperando_negocio' });
     const m = completar(p, null, { ...CFGT, rubros: [] })['mensajes'][0];
-    expect(cuerpo(m)).toMatch(/^¡Hola! 👋 Soy el asistente virtual de Tienda Ejemplo 🤖✨, con inteligencia artificial\. ¿De qué trata tu negocio/);
+    expect(cuerpo(m)).toMatch(/^¡Hola, qué gusto saludarte! 😊 Soy el asistente virtual de Tienda Ejemplo, con inteligencia artificial\. ¿De qué trata tu negocio/); // el teléfono termina en 1: la 2.ª variante del saludo
     expect(m['payload']['type']).toBe('text');
   });
   it('en el dolor: «precios» solo, y solo un pedido corto, van a los planes; lo demás va al modelo', () => {
@@ -1815,46 +1864,61 @@ describe('el turno: ccDecidir y ccCompletar', () => {
     expect(largo).toMatchObject({ accion: 'modelo', modo: 'dolor', llamarModelo: true });
     expect(largo['e'].hechos.pidioPlanes).toBe(false);
   });
-  it('el modelo en el dolor: oferta con la empatía y el impacto del rubro; Media por `respondioDolor`', () => {
+  it('el modelo en el dolor: oferta con la empatía, la orientación y el impacto del rubro; Media por `respondioDolor`', () => {
     const p = decidir(E({ paso: 'esperando_dolor', rubroId: 'salud-y-belleza' }), TXT('sí, todo el día'));
     const r = completar(p, OK({ empatia: 'Entiendo, es mucho.' }));
     expect(r['accion']).toBe('oferta');
     expect(r['e']).toMatchObject({ paso: 'oferta' });
     expect(r['e'].hechos.respondioDolor).toBe(true);
-    expect(cuerpo(r['mensajes'][0])).toBe('Entiendo, es mucho. Un recordatorio baja las ausencias. ¿Te gustaría ver los planes o prefieres hablar con Silvana?');
+    expect(cuerpo(r['mensajes'][0])).toBe('Entiendo, es mucho. Tu asistente agenda en tu calendario. Un recordatorio baja las ausencias. ¿Quieres ver los planes para tener una idea de la inversión, o prefieres hablar con Silvana?');
+    expect(r['e'].impactoDicho).toBe(true);
   });
-  it('la oferta con los máximos (empatía de 140 y 25 palabras, impacto de 160 y 24 palabras) cabe en 4 oraciones y 60 palabras (§13)', () => {
-    const empatia = '¡Uff, te entiendo perfectamente! 😅 Contestar siempre lo mismo cada día te quita muchísimo tiempo valioso de tu jornada completa.';
-    const impacto = 'Un asistente que responde al instante libera horas cada semana, evita perder clientes fuera de horario y te deja concentrarte en lo importante.';
-    expect(empatia.length).toBeLessThanOrEqual(140);
-    expect(impacto.length).toBeLessThanOrEqual(160);
-    expect(f('ccContar')(impacto).palabras).toBeLessThanOrEqual(24);
-    const m = f('ccOferta')({ empatia, impacto, asesor: 'Silvana', conPlanes: true });
-    const c = f('ccContar')(cuerpo(m));
-    expect(c.oraciones).toBeLessThanOrEqual(4);
-    expect(c.palabras).toBeLessThanOrEqual(60);
-    expect(preguntas(cuerpo(m))).toBe(1);
-    // El límite de PALABRAS de la empatía es lo que garantiza ese tope: 140 caracteres de palabras cortas no pasan (el máximo con 25 palabras sí).
-    const corta = Array(30).fill('es').join(' ') + '.'; // 30 palabras en 90 caracteres
-    expect(corta.length).toBeLessThanOrEqual(140);
+  it('la oferta con los máximos (empatía de 220 y 34 palabras, orientación de 24, impacto de 21, pregunta de 16) cabe en 6 oraciones y 95 palabras (§15)', () => {
+    const lim = f('ccLimites')();
+    expect(lim).toMatchObject({ general: { oraciones: 6, palabras: 95 }, planes: { oraciones: 7, palabras: 110 }, empatia: { caracteres: 220, oraciones: 2, palabras: 34 }, respuesta: { caracteres: 420, oraciones: 3 }, guion: { queHacemos: 24, impacto: 21, comoFunciona: 20, preguntaOferta: 16 }, tokens: 600 });
+    const empatia = '¡Uff, te entiendo perfectamente! 😅 Contestar siempre lo mismo cada día te quita muchísimo tiempo valioso de tu jornada completa y te cansa mucho.';
+    const orientacion = 'Tu asistente agenda en tu Google Calendar y recuerda la cita 24 horas antes. Cada profesional tiene su propia agenda.';
+    const impacto = 'Según Harvard Business Review, contactar a un cliente potencial en la primera hora lo hace siete veces más probable de calificar.';
+    expect(empatia.length).toBeLessThanOrEqual(220);
+    expect(f('ccContar')(orientacion).palabras).toBeLessThanOrEqual(24);
+    expect(f('ccContar')(impacto).palabras).toBeLessThanOrEqual(21);
+    // Las tres formulaciones de la pregunta, con y sin planes y con y sin nombre de asesor, nunca pasan de 16 palabras con nombre (17 con «un asesor», que cabe en el margen).
+    for (const asesor of ['Silvana', '']) for (const conPlanes of [true, false]) for (const i of [0, 1, 2]) {
+      const q = f('ccPreguntaDeOferta')(f('ccQuien')(asesor), conPlanes, i);
+      expect(f('ccContar')(q).palabras, q).toBeLessThanOrEqual(asesor ? 16 : 17);
+      expect(preguntas(q), q).toBe(1);
+    }
+    // Todo al máximo a la vez, con nombre y SIN nombre (la «?» y la pregunta peor), cabe.
+    for (const asesor of ['Silvana', '']) for (const i of [0, 1, 2]) {
+      const m = f('ccOferta')({ empatia, orientacion, impacto, asesor, conPlanes: true, indice: i });
+      const c = f('ccContar')(cuerpo(m));
+      expect(c.oraciones, cuerpo(m)).toBeLessThanOrEqual(6);
+      expect(c.palabras, cuerpo(m)).toBeLessThanOrEqual(95);
+      expect(preguntas(cuerpo(m))).toBe(1);
+      expect(cuerpo(m).length).toBeLessThanOrEqual(1024);
+    }
+    // El límite de PALABRAS de la empatía es lo que garantiza ese tope: 220 caracteres de palabras cortas no pasan (el máximo de 34 palabras sí).
+    const corta = Array(60).fill('es').join(' ') + '.'; // 60 palabras en 180 caracteres
+    expect(corta.length).toBeLessThanOrEqual(220);
     const leer = (e: string): J => f('ccLeerModelo')({ tipo: 'respuesta', rubroId: 'ninguno', rubroLibre: '', empatia: e, respuesta: '', aclaracion: 'ninguno', enLosDatos: false, descarte: 'ninguno' }, { rubroIds: [], aclaracionIds: [], textoCliente: 'x', asesor: 'Silvana', nombreNegocio: 'T' });
     expect(leer(corta).empatia).toBe('¡Te entiendo! 😊');
-    expect(leer(Array(25).fill('es').join(' ') + '.').empatia).toContain('es es');
-    // Y con TODO al máximo a la vez (empatía de 25 palabras, impacto de 24, la pregunta de 11) el mensaje no pasa de 60 palabras.
-    const e25 = Array(25).fill('es').join(' ') + '.';
-    const i24 = Array(24).fill('ya').join(' ') + '.';
-    const tope = f('ccContar')(cuerpo(f('ccOferta')({ empatia: e25, impacto: i24, asesor: 'Silvana', conPlanes: true })));
-    expect(tope.palabras).toBeLessThanOrEqual(60);
+    expect(leer(Array(34).fill('es').join(' ') + '.').empatia).toContain('es es');
+    // Y con la empatía y todo lo demás en su tope de PALABRAS (34 + 24 + 21 + 16) el mensaje no pasa de 95.
+    const e34 = Array(34).fill('es').join(' ') + '.';
+    const o24 = Array(24).fill('ya').join(' ') + '.';
+    const i21 = Array(21).fill('ok').join(' ') + '.';
+    const tope = f('ccContar')(cuerpo(f('ccOferta')({ empatia: e34, orientacion: o24, impacto: i21, asesor: 'Silvana', conPlanes: true })));
+    expect(tope.palabras).toBeLessThanOrEqual(95);
   });
   it('una pregunta suelta: la respuesta + la pregunta del paso en el MISMO mensaje, sin cambiar el paso ni la calificación', () => {
     const pasos: [J, RegExp][] = [
       [E({ paso: 'eligiendo_rubro' }), /¿De qué rubro es tu negocio\?$/], [E({ paso: 'esperando_dolor', rubroId: 'salud-y-belleza' }), /¿Pierdes tiempo agendando\?$/],
       [E({ paso: 'esperando_negocio' }), /¿De qué trata tu negocio/], [E({ paso: 'esperando_empresa' }), /¿Cómo se llama tu negocio\?$/],
-      [E({ paso: 'oferta', rubroId: 'salud-y-belleza' }), /¿Te gustaría ver los planes o prefieres hablar con Silvana\?$/],
+      [E({ paso: 'oferta', rubroId: 'salud-y-belleza' }), /¿Te muestro los planes para que compares opciones, o prefieres hablar directo con Silvana\?$/], // la 2.ª formulación: la 1.ª ya salió en la oferta (ofertas: 1)
     ];
     for (const [e, fin] of pasos) {
       // En la oferta la pregunta no se repite en la 1.ª respuesta suelta (§14): se prueba con la ficha de una 2.ª (ya hubo una sin pregunta).
-      const previo = e['paso'] === 'oferta' ? { ...e, sueltas: 1 } : e;
+      const previo = e['paso'] === 'oferta' ? { ...e, sueltas: 1, ofertas: 1 } : e;
       const r = completar(decidir(previo, TXT('¿qué hacen?')), OK({ tipo: 'pregunta', respuesta: 'Atienden tu WhatsApp.', enLosDatos: true }));
       expect(r['mensajes']).toHaveLength(1);
       expect(cuerpo(r['mensajes'][0]), String(e['paso'])).toMatch(fin);
@@ -2130,9 +2194,9 @@ describe('§12: correcciones de la revisión (S1 a S4, S8, R1 a R7, R11, R12), u
     const cfg = { asesor: 'Silvana', guion: { rubros: { otro: {} } }, rubros: [], planes: [{ nombre: 'Impulso', precioUsd: 25 }] };
     // La pregunta que se le pasa al modelo es la formulación de la ÚLTIMA oferta (el contador de la ficha apunta a la siguiente).
     const ultima = (ofertas: number): string => f('ccPreguntaHecha')({ ...f('ccEstadoBase')(), paso: 'oferta', ofertas }, cfg);
-    expect(ultima(1)).toBe('¿Te gustaría ver los planes o prefieres hablar con Silvana?');
-    expect(ultima(2)).toBe('¿Quieres que te muestre los planes o prefieres hablar con Silvana?');
-    expect(ultima(0)).toBe('¿Te cuento los planes o prefieres hablar directo con Silvana?');
+    expect(ultima(1)).toBe('¿Quieres ver los planes para tener una idea de la inversión, o prefieres hablar con Silvana?');
+    expect(ultima(2)).toBe('¿Te muestro los planes para que compares opciones, o prefieres hablar directo con Silvana?');
+    expect(ultima(0)).toBe('¿Te cuento los planes para que veas qué encaja contigo, o prefieres hablar con Silvana?');
     expect(f('ccPreguntaHecha')({ ...f('ccEstadoBase')(), paso: 'esperando_empresa' }, cfg)).toBe('¿Cómo se llama tu negocio?');
     expect(f('ccEsAgradecimiento')('Muchas gracias')).toBe(true);
     expect(f('ccEsAgradecimiento')('gracias, ¿y los planes?')).toBe(false);
@@ -2255,7 +2319,8 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
     { id: 'otro-a-medida', nombre: 'Otro / a medida', solucion: 'A tu medida.', flujoSugerido: '' },
   ];
   const GUION_REAL = (C.cargarDatos('novuchat.json') as J)['guion'] as J;
-  const CFGV = { ...CFG, rubros: VIVOS, guion: GUION_REAL, numeroRecepcion: '59100000001', campanas: [], nivelEmojis: 'muchos', plantillaAviso: 'solicitud_contacto', idiomaPlantillaAviso: 'es' };
+  // §15: NovuChat real no configura nombre de asesor: los textos dicen «un asesor».
+  const CFGV = { ...CFG, asesor: '', rubros: VIVOS, guion: GUION_REAL, numeroRecepcion: '59100000001', campanas: [], nivelEmojis: 'muchos', plantillaAviso: 'solicitud_contacto', idiomaPlantillaAviso: 'es' };
   const toque = (id: string): J => ({ from: '59100000011', nombrePerfil: 'Ana', tipo: 'interactive', texto: '', via: 'toque', idToque: id, anuncio: false, textoDeImagen: '', categoria: '', medioFallo: '' });
   const cuerpo = (m: J): string => (m['payload']['interactive']?.['body']?.['text'] ?? m['payload']['text']?.['body']) as string;
   const elegir = (id: string, cfg: J = CFGV): J => {
@@ -2332,7 +2397,7 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
   it('ccConEmojis: al quitar un emoji no queda un espacio delante de la puntuación', () => {
     expect(f('ccConEmojis')('Soy el asistente de NovuChat 🤖✨, con IA.', 'ninguno')).toBe('Soy el asistente de NovuChat, con IA.');
     expect(f('ccConEmojis')('¿Qué te parece? 👇', 'ninguno')).toBe('¿Qué te parece?');
-    expect(f('ccConEmojis')('Esa no la tengo a la mano 🤔; Silvana te lo responde.', 'ninguno')).toBe('Esa no la tengo a la mano; Silvana te lo responde.');
+    expect(f('ccConEmojis')('Esa no la tengo a la mano 🤔; un asesor te lo responde.', 'ninguno')).toBe('Esa no la tengo a la mano; un asesor te lo responde.');
     expect(f('ccConEmojis')('¡Hola! 👋 Soy yo 🤖.', 'pocos')).toBe('¡Hola! 👋 Soy yo.');
     expect(f('ccConEmojis')('Sin emojis , tal cual', 'ninguno')).toBe('Sin emojis , tal cual'); // si no quitó nada, no toca el resto
   });
@@ -2349,7 +2414,14 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
     expect(t).toMatch(/cercana y entusiasta/);
     expect(t).toContain('¡Uff, te entiendo! 😅 Responder todo a mano le quita tiempo a cualquiera.');
     expect(t).toContain('¡Qué buena señal que ya vendas por WhatsApp! 🙌');
-    expect(t).toMatch(/UNA oración, de hasta 140 caracteres con sus emojis/);
+    expect(t).toMatch(/hasta 2 oraciones y 220 caracteres con sus emojis/);
+    // §15: vendedor consultivo, sin repetir lo del cliente ni los textos fijos, variando el arranque; y sin nombrar a nadie.
+    expect(t).toMatch(/vendedor consultivo, no un formulario/);
+    expect(t).toMatch(/tampoco repitas las frases de los mensajes fijos/);
+    expect(t).toMatch(/Varía cómo arrancas: no siempre «¡Uff, te entiendo!»/);
+    expect(t).toMatch(/Sé concreto/);
+    expect(t).toMatch(/solo lo que está en los datos|SOLO lo que está en los datos/);
+    expect(t).toMatch(/hasta 3 oraciones y 420 caracteres/);
     expect(t).toMatch(/1 emoji cuando aporta/);
     expect(t).toContain('¡Te entiendo! 😊');
     expect(t).not.toContain('"Te entiendo."');
@@ -2362,13 +2434,16 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
     const b = f('ccCuerpoModelo')({ paso: 'libre', cfg: CFGV, mensaje: 'dos', ahoraMs: AHORA + H, conocimiento: CORPUS }).systemInstruction.parts[0].text;
     expect(a).toBe(b);
   });
-  it('el guion real cumple los límites del §13: dolor y pregunta ≤3 oraciones y ≤50 palabras, impacto ≤24, cierre ≤2 oraciones, cada texto con una sola «?»', () => {
+  it('el guion real cumple los límites: dolor y pregunta ≤3 oraciones y ≤50 palabras, orientación ≤2 oraciones y ≤24 palabras, impacto ≤21, cierre ≤2 oraciones, cada texto con una sola «?»', () => {
     for (const [id, r] of Object.entries(GUION_REAL['rubros']) as [string, J][]) {
       const junto = f('ccContar')([r['dolor'], r['pregunta']].filter(Boolean).join(' '));
       expect(junto.oraciones, id).toBeLessThanOrEqual(3);
       expect(junto.palabras, id).toBeLessThanOrEqual(50);
-      expect(f('ccContar')(r['impacto']).palabras, id).toBeLessThanOrEqual(24);
-      expect(f('ccContar')(r['impacto']).oraciones, id).toBe(1);
+      if (r['impacto']) { expect(f('ccContar')(r['impacto']).palabras, id).toBeLessThanOrEqual(21); expect(f('ccContar')(r['impacto']).oraciones, id).toBe(1); }
+      expect(f('ccContar')(r['queHacemos']).palabras, id).toBeLessThanOrEqual(24);
+      expect(f('ccContar')(r['queHacemos']).oraciones, id).toBeLessThanOrEqual(2);
+      expect(f('ccContar')(r['comoFunciona']).palabras, id).toBeLessThanOrEqual(20);
+      expect(f('ccContar')(r['comoFunciona']).oraciones, id).toBe(1);
       expect(f('ccContar')(r['cierre']).oraciones, id).toBeLessThanOrEqual(2);
       expect(r['cierre'].length, id).toBeLessThanOrEqual(160);
       expect(preguntas(r['cierre']), id).toBeLessThanOrEqual(1);
@@ -2380,15 +2455,15 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
     const salida = (e: J, dicho: J, cfg: J = CFGV): J => (f('ccCompletar')({ plan: f('ccDecidir')({ e, t: dicho, cfg }), modelo: null, cfg })['mensajes'] as J[])[0]!;
     // Pedir los planes dos veces: la segunda no los repite y lo dice con calidez, con la pregunta del asesor y su botón.
     const ya = salida(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true }), t('precios'));
-    expect(cuerpo(ya)).toBe('¡Ya te los mostré arriba! 😊 ¿Te gustaría hablar con Silvana?');
+    expect(cuerpo(ya)).toBe('¡Ya te los mostré arriba! 😊 ¿Te gustaría hablar con un asesor para ver cómo lo armaríamos en tu caso?');
     expect(ya['botones']).toEqual(['asesor']);
     const comp = salida(E({ paso: 'oferta', rubroId: 'educacion' }), t('', { tipo: 'image', via: 'imagen', categoria: 'comprobante', textoDeImagen: 'x' }));
-    expect(cuerpo(comp)).toBe('¡Recibí tu archivo! 📎 Por este medio no puedo revisar comprobantes. Si lo necesitas, toca el botón para hablar con Silvana 😊');
+    expect(cuerpo(comp)).toBe('¡Recibí tu archivo! 📎 Por este medio no puedo revisar comprobantes. Si lo necesitas, toca el botón para hablar con un asesor 😊');
     expect(comp['botones']).toEqual(['asesor']);
     const gracias = salida(E({ paso: 'libre', rubroId: 'educacion', empresa: 'Colegio Sol' }), t('muchas gracias'));
     expect(cuerpo(gracias)).toBe('¡Con gusto! 😊 Aquí estoy si necesitas algo más.');
     const sinPlanes = salida(E({ paso: 'oferta', rubroId: 'educacion' }), t('planes por favor'), { ...CFGV, planes: [], cargosUnicos: [], archivoPlanes: null });
-    expect(cuerpo(sinPlanes)).toBe('Los planes te los pasa Silvana directamente 😊');
+    expect(cuerpo(sinPlanes)).toBe('Los planes te los pasa un asesor directamente 😊');
     expect(sinPlanes['botones']).toEqual(['asesor']);
     for (const m of [ya, comp, gracias, sinPlanes]) {
       expect(preguntas(cuerpo(m)), cuerpo(m)).toBeLessThanOrEqual(1);
@@ -2400,12 +2475,12 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
     const s1 = salida(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true }), t('precios'), sin);
     const s2 = salida(E({ paso: 'oferta', rubroId: 'educacion' }), t('', { tipo: 'image', via: 'imagen', categoria: 'comprobante', textoDeImagen: 'x' }), sin);
     const s3 = salida(E({ paso: 'libre', rubroId: 'educacion', empresa: 'Colegio Sol' }), t('muchas gracias'), sin);
-    expect(cuerpo(s1)).toBe('¡Ya te los mostré arriba! ¿Te gustaría hablar con Silvana?');
-    expect(cuerpo(s2)).toBe('¡Recibí tu archivo! Por este medio no puedo revisar comprobantes. Si lo necesitas, toca el botón para hablar con Silvana');
+    expect(cuerpo(s1)).toBe('¡Ya te los mostré arriba! ¿Te gustaría hablar con un asesor para ver cómo lo armaríamos en tu caso?');
+    expect(cuerpo(s2)).toBe('¡Recibí tu archivo! Por este medio no puedo revisar comprobantes. Si lo necesitas, toca el botón para hablar con un asesor');
     expect(cuerpo(s3)).toBe('¡Con gusto! Aquí estoy si necesitas algo más.');
     for (const m of [s1, s2, s3]) expect(cuerpo(m)).not.toMatch(/\p{Extended_Pictographic}| {2}| [,;.!?]/u);
   });
-  it('TODOS los mensajes fijos con el guion real y nivel «muchos»: ≤4 oraciones y ≤60 palabras (los planes, ≤5 y ≤70), una sola «?», con emojis, tuteo', () => {
+  it('TODOS los mensajes fijos con el guion real y nivel «muchos»: ≤6 oraciones y ≤95 palabras (los planes, ≤7 y ≤110), una sola «?», con emojis, tuteo, sin nombrar a nadie', () => {
     const archivo = { url: ARCHIVO_IMG, tipo: 'imagen', nombreArchivo: 'Planes.png' };
     const cfg = { ...CFGV, archivoPlanes: archivo };
     const mensajes: [string, J][] = [];
@@ -2419,8 +2494,6 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
     toma('primer mensaje', E(), t('hola'));
     for (const id of ['salud-y-belleza', 'gastronomia', 'comercio-y-retail', 'educacion']) {
       toma(`dolor ${id}`, E({ paso: 'eligiendo_rubro' }), toque(`rubro:${id}`));
-      const impacto = GUION_REAL['rubros'][id]['impacto'];
-      expect(impacto).not.toBe('');
       toma(`oferta ${id}`, E({ paso: 'esperando_dolor', rubroId: id }), t('sí, todo el día'), ok());
       toma(`planes ${id}`, E({ paso: 'oferta', rubroId: id }), t('planes por favor'));
     }
@@ -2438,7 +2511,9 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
     expect(mensajes.length).toBeGreaterThan(20);
     for (const [nombre, m] of mensajes) {
       const c = cuerpo(m);
-      const limite = m['evento'] === 'planes' ? { oraciones: 5, palabras: 70 } : { oraciones: 4, palabras: 60 };
+      const limite = m['evento'] === 'planes' ? { oraciones: 7, palabras: 110 } : { oraciones: 6, palabras: 95 };
+      // §15: la oferta tras el dolor no queda corta (con una empatía realista de ~20 palabras): entre 50 y 95 palabras.
+      if (/^oferta /.test(nombre)) expect(f('ccContar')(c).palabras, `${nombre}: ${c}`).toBeGreaterThanOrEqual(50);
       expect(f('ccContar')(c).oraciones, `${nombre}: ${c}`).toBeLessThanOrEqual(limite.oraciones);
       expect(f('ccContar')(c).palabras, `${nombre}: ${c}`).toBeLessThanOrEqual(limite.palabras);
       expect(preguntas(c), `${nombre}: ${c}`).toBeLessThanOrEqual(1);
@@ -2446,6 +2521,7 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
       // Cálido: con el nivel «muchos» todos los mensajes fijos de la conversación llevan al menos un emoji (menos los que son solo el nombre del negocio).
       expect(c, nombre).toMatch(/\p{Extended_Pictographic}/u);
       expect(c, nombre).not.toMatch(/ya le pas|te escribir|te llamar|te avis|lo consult|pago acreditado|pago verificado/i);
+      expect(c, nombre).not.toMatch(/silvana/i);
     }
   });
 });
@@ -2460,7 +2536,7 @@ describe('§14: cordialidad (sin repeticiones innecesarias)', () => {
   const OK = (extra: J = {}): J => ({ ok: true, motivo: '', tipo: 'respuesta', rubroId: '', rubroLibre: '', empatia: '¡Qué bien! 😊', respuesta: '', aclaracion: 'ninguno', enLosDatos: false, descarte: '', ...extra });
   const SUELTA = OK({ tipo: 'pregunta', respuesta: 'Atienden tu WhatsApp.', enLosDatos: true });
   const cuerpo = (m: J): string => (m['payload']['interactive']?.['body']?.['text'] ?? m['payload']['text']?.['body']) as string;
-  const F = ['¿Te gustaría ver los planes o prefieres hablar con Silvana?', '¿Quieres que te muestre los planes o prefieres hablar con Silvana?', '¿Te cuento los planes o prefieres hablar directo con Silvana?'];
+  const F = ['¿Quieres ver los planes para tener una idea de la inversión, o prefieres hablar con Silvana?', '¿Te muestro los planes para que compares opciones, o prefieres hablar directo con Silvana?', '¿Te cuento los planes para que veas qué encaja contigo, o prefieres hablar con Silvana?'];
 
   it('A: el traspaso no repite «negocio»: «…cómo armarlo. Y para dejarlo anotado, ¿cómo se llama tu negocio? 😊»', () => {
     const m = completar(decidir(E({ paso: 'oferta', rubroId: 'salud-y-belleza' }), T('quiero hablar con un asesor')))['mensajes'][0];
@@ -2506,7 +2582,7 @@ describe('§14: cordialidad (sin repeticiones innecesarias)', () => {
   it('Revisión #412: ccPreguntaHecha nombra la variante que salió (sin planes, «hablar con…»)', () => {
     const cfg = { asesor: 'Silvana', guion: { rubros: { otro: {} } }, rubros: [], planes: [{ nombre: 'Impulso', precioUsd: 25 }] };
     const sinPlanes = { ...f('ccEstadoBase')(), paso: 'oferta', planesMostrados: true, ofertas: 1 };
-    expect(f('ccPreguntaHecha')(sinPlanes, cfg)).toBe('¿Te gustaría hablar con Silvana?');
+    expect(f('ccPreguntaHecha')(sinPlanes, cfg)).toBe('¿Te gustaría hablar con Silvana para ver cómo lo armaríamos en tu caso?');
   });
   it('B: un acuse en el paso de la empresa NO repite la pregunta ni llama al modelo: texto cordial sin «?», con el botón, y el paso sigue en la empresa', () => {
     for (const dicho of ['ok', 'gracias', 'Dale', 'listo', 'vale', 'perfecto', 'entendido', 'muchas gracias', '👍']) {
@@ -2584,15 +2660,15 @@ describe('§14: cordialidad (sin repeticiones innecesarias)', () => {
     expect(e.ofertas).toBe(1); // 4 ofertas: el contador apunta a la 2.ª formulación
     for (const v of vistas) expect(preguntas(v)).toBe(1);
     // Sin planes que ofrecer, las tres formulaciones solo ofrecen al asesor.
-    expect(f('ccPreguntaDeOferta')('Silvana', false, 0)).toBe('¿Te gustaría hablar con Silvana?');
-    expect(f('ccPreguntaDeOferta')('Silvana', false, 1)).toBe('¿Quieres hablar directo con Silvana?');
-    expect(f('ccPreguntaDeOferta')('Silvana', false, 2)).toBe('¿Te animas a hablar con Silvana?');
+    expect(f('ccPreguntaDeOferta')('Silvana', false, 0)).toBe('¿Te gustaría hablar con Silvana para ver cómo lo armaríamos en tu caso?');
+    expect(f('ccPreguntaDeOferta')('Silvana', false, 1)).toBe('¿Te animas a hablar con Silvana para ver cómo se adaptaría a tu caso?');
+    expect(f('ccPreguntaDeOferta')('Silvana', false, 2)).toBe('¿Quieres hablar directo con Silvana para resolver tus dudas?');
     for (const i of [0, 1, 2, 3, -1, 'x', undefined, NaN]) expect(f('ccPreguntaDeOferta')('Silvana', false, i)).not.toMatch(/planes/);
     // «Ya te los mostré» también rota (no repite idéntica la pregunta del asesor).
     const ya1 = completar(decidir(E({ paso: 'oferta', rubroId: 'salud-y-belleza', planesMostrados: true }), T('precios')));
     const ya2 = completar(decidir(ya1['e'], T('precios')));
-    expect(cuerpo(ya1['mensajes'][0])).toBe('¡Ya te los mostré arriba! 😊 ¿Te gustaría hablar con Silvana?');
-    expect(cuerpo(ya2['mensajes'][0])).toBe('¡Ya te los mostré arriba! 😊 ¿Quieres hablar directo con Silvana?');
+    expect(cuerpo(ya1['mensajes'][0])).toBe('¡Ya te los mostré arriba! 😊 ¿Te gustaría hablar con Silvana para ver cómo lo armaríamos en tu caso?');
+    expect(cuerpo(ya2['mensajes'][0])).toBe('¡Ya te los mostré arriba! 😊 ¿Te animas a hablar con Silvana para ver cómo se adaptaría a tu caso?');
     // La ficha: valores raros se sanean y la ventana los vence.
     const vigente = (extra: J, ahora = AHORA): J => f('ccEstadoVigente')({ ...f('ccEstadoBase')(), ultimoMensajeMs: AHORA - H, ...extra }, ahora);
     expect(vigente({ ofertas: 2, sueltas: 1 })).toMatchObject({ ofertas: 2, sueltas: 1 });
@@ -2607,11 +2683,13 @@ describe('§14: cordialidad (sin repeticiones innecesarias)', () => {
       salida.push(r['mensajes'][0]);
       e = r['e'];
     }
-    // 1.ª: sin pregunta; 2.ª: con; 3.ª: sin; 4.ª: con (y nunca la misma formulación seguida: rota).
-    expect(cuerpo(salida[0]!)).toBe('Atienden tu WhatsApp.');
+    // 1.ª: sin pregunta (cierra con una invitación sin «?»); 2.ª: con; 3.ª: sin (otra invitación); 4.ª: con (y nunca la misma formulación seguida: rota).
+    expect(cuerpo(salida[0]!)).toBe('Atienden tu WhatsApp. Cuando quieras, te muestro los planes o puedes escribirle a Silvana 😊');
     expect(cuerpo(salida[1]!)).toBe('Atienden tu WhatsApp. ' + F[0]);
-    expect(cuerpo(salida[2]!)).toBe('Atienden tu WhatsApp.');
+    expect(cuerpo(salida[2]!)).toBe('Atienden tu WhatsApp. Si quieres seguir, puedo mostrarte los planes o puedes hablar directo con Silvana 🙌');
     expect(cuerpo(salida[3]!)).toBe('Atienden tu WhatsApp. ' + F[1]);
+    expect(cuerpo(salida[0]!)).not.toBe(cuerpo(salida[2]!));
+    for (const i of [0, 2]) expect(preguntas(cuerpo(salida[i]!))).toBe(0);
     for (const m of salida) {
       expect(m['botones'], 'los botones siguen siempre').toEqual(['planes', 'asesor']);
       expect(m['respaldo']).toMatch(/«planes» o «asesor»/);
@@ -2620,7 +2698,7 @@ describe('§14: cordialidad (sin repeticiones innecesarias)', () => {
     // Una oferta de verdad (con su pregunta) reinicia la cuenta: la próxima respuesta suelta vuelve a omitirla.
     const oferta = completar(decidir(e, T('cuéntame más')), OK({ empatia: '¡Claro! 😊' }));
     expect(oferta['e'].sueltas).toBe(0);
-    expect(cuerpo(completar(decidir(oferta['e'], T('¿qué hacen?')), SUELTA)['mensajes'][0])).toBe('Atienden tu WhatsApp.');
+    expect(preguntas(cuerpo(completar(decidir(oferta['e'], T('¿qué hacen?')), SUELTA)['mensajes'][0]))).toBe(0);
     // «Sin datos» ofrece al asesor: aun sin pregunta, el botón del asesor está.
     const sinDatos = completar(decidir(E({ paso: 'oferta', rubroId: 'salud-y-belleza' }), T('¿hacen apps?')), OK({ tipo: 'pregunta' }))['mensajes'][0];
     expect(cuerpo(sinDatos)).toBe('Esa no la tengo a la mano 🤔; Silvana te lo responde.');
@@ -2684,5 +2762,269 @@ describe('§14 F: otras repeticiones y textos fríos que se corrigieron', () => 
     expect(f('ccCuerpoLista')({ negocio: 'T', vencida: true, nivel: 'muchos' })).toBe('Esa opción ya no está. ¿De qué rubro es tu negocio?');
     expect(f('ccCuerpoLista')({ negocio: 'T', promesa: true, presentar: false })).toBe('Para mostrarte los planes que te sirven, ¿de qué rubro es tu negocio?');
     expect((f('ccCuerpoLista')({ negocio: 'T', presentar: false }).match(/\?/g) ?? []).length).toBe(1);
+  });
+});
+
+// ================================================================================================
+describe('§15: más detalle y orientación comercial, sin repetición y sin nombrar a nadie (06/10/2026)', () => {
+  const GUION_REAL = (C.cargarDatos('novuchat.json') as J)['guion'] as J;
+  const CONOCIMIENTO = (C.cargarDatos('novuchat.json') as J)['conocimiento'] as J;
+  const VIVOS = [
+    { id: 'salud-y-belleza', nombre: 'Salud y Belleza', solucion: 'Agenda sola.', flujoSugerido: 'agendamiento' },
+    { id: 'gastronomia', nombre: 'Gastronomía', solucion: 'Toma pedidos.', flujoSugerido: 'venta' },
+    { id: 'comercio-y-retail', nombre: 'Comercio y Retail', solucion: 'Responde por tu catálogo.', flujoSugerido: 'venta' },
+    { id: 'educacion', nombre: 'Educación', solucion: 'Responde dudas.', flujoSugerido: 'agendamiento' },
+    { id: 'otro-a-medida', nombre: 'Otro / a medida', solucion: 'A tu medida.', flujoSugerido: '' },
+  ];
+  // NovuChat real: guion real, SIN nombre de asesor, nivel «muchos».
+  const REAL = { ...CFG, asesor: '', rubros: VIVOS, guion: GUION_REAL, numeroRecepcion: '59100000001', campanas: [], nivelEmojis: 'muchos', plantillaAviso: 'solicitud_contacto', idiomaPlantillaAviso: 'es' };
+  const E = (extra: J = {}): J => { const e = f('ccEstadoBase')(); return { ...e, ...extra, hechos: { ...e.hechos, ...(extra['hechos'] ?? {}) } }; };
+  const T = (texto: string, extra: J = {}): J => ({ from: '59100000011', nombrePerfil: 'Ana', tipo: 'text', texto, via: 'texto', idToque: '', anuncio: false, textoDeImagen: '', categoria: '', medioFallo: '', ...extra });
+  const TOQUE = (id: string, from = '59100000011'): J => ({ ...T('', { from }), tipo: 'interactive', via: 'toque', idToque: id });
+  const OK = (extra: J = {}): J => ({ ok: true, motivo: '', tipo: 'respuesta', rubroId: '', rubroLibre: '', empatia: '¡Qué bueno que ya vendas por WhatsApp! 🙌 Lo difícil es contestar a todos.', respuesta: '', aclaracion: '', enLosDatos: false, descarte: '', ...extra });
+  const turno = (e: J, t: J, modelo: J | null = null, cfg: J = REAL): J => { const plan = f('ccDecidir')({ e, t, cfg }); return f('ccCompletar')({ plan, modelo, cfg }); };
+  const cuerpo = (m: J): string => (m['payload']['interactive']?.['body']?.['text'] ?? m['payload']['text']?.['body']) as string;
+  const nombres = (m: J): string => JSON.stringify(m['payload']) + ' ' + String(m['texto']) + ' ' + String(m['respaldo']);
+
+  it('«un asesor»: con nombre vacío las frases salen naturales y gramaticales en TODA posición (inicio de oración, medio, título del botón y de la fila)', () => {
+    expect(f('ccQuien')('')).toBe('un asesor');
+    expect(f('ccQuien')(undefined)).toBe('un asesor');
+    expect(f('ccQuien')('Ana')).toBe('Ana');
+    expect(f('ccInicial')('un asesor')).toBe('Un asesor');
+    // Título del botón: ≤20 con el conteo real (justo 20) y la fila de la lista ≤24.
+    expect(f('ccTituloAsesor')('')).toBe('Hablar con un asesor');
+    expect([...f('ccTituloAsesor')('')].length).toBe(20);
+    expect(f('ccTituloAsesor')('Ana')).toBe('Hablar con Ana');
+    const lista = f('ccLista')('c', VIVOS, true, f('ccTituloAsesor')(''));
+    const filas = lista.payload.interactive.action.sections[0].rows as J[];
+    expect(filas.at(-1)).toMatchObject({ id: 'asesor', title: 'Hablar con un asesor' });
+    for (const r of filas) expect([...r['title']].length).toBeLessThanOrEqual(24);
+    // Inicio de oración con mayúscula, medio con minúscula: «sin datos» (las tres variantes) y «a un asesor».
+    const sinDatos: string[] = [];
+    let e = E({ paso: 'oferta', rubroId: 'educacion' });
+    for (let i = 0; i < 3; i++) {
+      const r = turno(e, T('¿hacen apps?'), OK({ tipo: 'pregunta' }));
+      sinDatos.push(cuerpo(r['mensajes'][0]));
+      e = { ...r['e'], sueltas: 0 };
+    }
+    expect(sinDatos[0]).toBe('Esa no la tengo a la mano 🤔; un asesor te lo responde.');
+    expect(sinDatos[1]).toBe('Uy, ese dato no lo tengo a la mano 🤔. Un asesor te lo responde con gusto.');
+    expect(sinDatos[2]).toBe('Buena pregunta 😊, pero ese detalle no lo tengo a mano; un asesor te lo responde.');
+    expect(new Set(sinDatos).size).toBe(3);
+    for (const t of sinDatos) expect(t).not.toMatch(/\bun asesor te\b.*\. un asesor/);
+  });
+
+  it('S1/S2: «un asesor», «el asesor» y «recepción» siguen siendo quienes no pueden recibir promesas del modelo, y «¿eres un asesor?» es una pregunta de identidad', () => {
+    const OP = { rubroIds: [], aclaracionIds: [], textoCliente: 'tengo una tienda', textoDeImagen: '', nombreNegocio: 'Tienda', asesor: '' };
+    const valido = (extra: J): J => ({ tipo: 'pregunta', rubroId: 'ninguno', rubroLibre: '', empatia: 'Qué bien.', respuesta: '', aclaracion: 'ninguno', enLosDatos: true, descarte: 'ninguno', ...extra });
+    for (const r of ['Un asesor te escribe hoy.', 'El asesor te llamará mañana.', 'Recepción te responde pronto.', 'Un asesor te contactará.', 'Nuestro equipo se pondrá en contacto contigo.', 'Soy un asesor del equipo.']) {
+      expect(f('ccLeerModelo')(valido({ respuesta: r }), OP), r).toMatchObject({ respuesta: '', enLosDatos: false });
+    }
+    for (const empatia of ['Un asesor te entiende.', 'Soy un asesor.', 'El asesor te escribe.', 'Una asesora lo ve.']) {
+      expect(f('ccLeerModelo')(valido({ empatia }), OP).empatia, empatia).toBe('¡Te entiendo! 😊');
+    }
+    for (const q of ['¿eres un asesor?', '¿me atiende un asesor?', '¿hablo con una asesora?', '¿es un robot?']) expect(f('ccEsIdentidad')(q, ''), q).toBe(true);
+    for (const q of ['quiero hablar con un asesor', 'el asesor me dijo que escribiera']) expect(f('ccEsIdentidad')(q, ''), q).toBe(false);
+  });
+
+  it('con los datos REALES de NovuChat ningún mensaje del recorrido nombra a una persona (texto, título de botón, fila, saludo prellenado)', () => {
+    const mensajes: [string, J][] = [];
+    const toma = (nombre: string, e: J, t: J, modelo: J | null = null, cfg: J = REAL): J => {
+      const r = turno(e, t, modelo, cfg);
+      for (const m of r['mensajes'] as J[]) mensajes.push([nombre, m]);
+      return r;
+    };
+    toma('lista', E(), T('hola'));
+    toma('lista con promesa', E(), T('hola, quiero los planes por favor'));
+    toma('lista con asesor', E({ paso: 'eligiendo_rubro' }), T('quiero hablar con una persona y no sé de qué rubro'), OK({ tipo: 'pide_asesor' }));
+    for (const id of ['salud-y-belleza', 'gastronomia', 'comercio-y-retail', 'educacion']) {
+      toma(`dolor ${id}`, E({ paso: 'eligiendo_rubro' }), TOQUE(`rubro:${id}`));
+      toma(`oferta ${id}`, E({ paso: 'esperando_dolor', rubroId: id }), T('sí, todo el día'), OK());
+      toma(`planes ${id}`, E({ paso: 'oferta', rubroId: id }), T('planes por favor'));
+    }
+    toma('abierta otro', E({ paso: 'eligiendo_rubro' }), TOQUE('rubro:otro-a-medida'));
+    toma('oferta otro', E({ paso: 'esperando_negocio', hechos: { eligioOtro: true } }), T('Tengo un estudio contable'), OK({ rubroLibre: 'estudio contable' }));
+    toma('planes otro', E({ paso: 'oferta', rubroLibre: 'estudio contable', hechos: { eligioOtro: true } }), T('precios'));
+    toma('planes sin archivo ni planes', E({ paso: 'oferta', rubroId: 'educacion' }), T('precios'), null, { ...REAL, planes: [], cargosUnicos: [], archivoPlanes: null });
+    toma('planes en texto', E({ paso: 'oferta', rubroId: 'educacion' }), T('precios'), null, { ...REAL, archivoPlanes: null });
+    toma('planes ya mostrados', E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true }), T('precios'));
+    for (let v = 0; v < 3; v++) {
+      toma(`traspaso ${v}`, E({ paso: 'oferta', rubroId: 'educacion', rot: { saludo: 0, rubros: 0, traspaso: v, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0 } }), T('quiero hablar con un asesor'));
+      toma(`traspaso sin empresa pendiente ${v}`, E({ paso: 'oferta', rubroId: 'educacion', empresa: 'Mi Tienda', rot: { saludo: 0, rubros: 0, traspaso: v, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0 } }), T('quiero hablar con un asesor'));
+      toma(`acuse ${v}`, E({ paso: 'esperando_empresa', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: v, cierre: 0, sinDatos: 0, identidad: 0 } }), T('ok'));
+      toma(`cierre tras el nombre ${v}`, E({ paso: 'esperando_empresa', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: v, sinDatos: 0, identidad: 0 } }), T('Colegio Sol'));
+      toma(`identidad ${v}`, E({ paso: 'oferta', rubroId: 'educacion', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: v } }), T('¿eres un robot?'));
+      toma(`sin datos ${v}`, E({ paso: 'esperando_dolor', rubroId: 'educacion', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: v, identidad: 0 } }), T('¿hacen apps?'), OK({ tipo: 'pregunta' }));
+      toma(`oferta con pregunta ${v}`, E({ paso: 'oferta', rubroId: 'educacion', ofertas: v }), T('cuéntame más'), OK());
+      toma(`suelta con datos ${v}`, E({ paso: 'oferta', rubroId: 'educacion', ofertas: v, sueltas: 1 }), T('¿qué hacen?'), OK({ tipo: 'pregunta', respuesta: 'Atienden tu WhatsApp.', enLosDatos: true }));
+      toma(`suelta sin pregunta ${v}`, E({ paso: 'oferta', rubroId: 'educacion', ofertas: v }), T('¿qué hacen?'), OK({ tipo: 'pregunta', respuesta: 'Atienden tu WhatsApp.', enLosDatos: true }));
+      toma(`saludo ${v}`, E(), T('hola', { from: '5910000001' + v }));
+    }
+    toma('segundo pedido del botón', E({ paso: 'esperando_empresa', hechos: { pidioAsesor: true } }), T('quiero hablar con un asesor'));
+    toma('segundo pedido sin empresa', E({ paso: 'libre', empresa: 'Mi Tienda', hechos: { pidioAsesor: true } }), T('quiero hablar con un asesor'));
+    toma('soporte', E({ paso: 'oferta', rubroId: 'educacion' }), T('ya soy cliente y no puedo entrar a mi cuenta'));
+    toma('falla', E({ paso: 'oferta', rubroId: 'educacion' }), T('hola'), { ok: false, motivo: 'json' });
+    toma('descarte', E({ paso: 'eligiendo_rubro' }), T('creo que me equivoqué de número'), OK({ tipo: 'descarte', descarte: 'numero_equivocado' }));
+    toma('comprobante', E({ paso: 'oferta', rubroId: 'educacion' }), T('', { tipo: 'image', via: 'imagen', categoria: 'comprobante', textoDeImagen: 'x' }));
+    toma('sin recepción: traspaso', E({ paso: 'oferta', rubroId: 'educacion' }), T('quiero hablar con un asesor'), null, { ...REAL, numeroRecepcion: '' });
+    toma('sin recepción: acuse', E({ paso: 'esperando_empresa' }), T('ok'), null, { ...REAL, numeroRecepcion: '' });
+    toma('sin recepción: cierre', E({ paso: 'esperando_empresa' }), T('Colegio Sol'), null, { ...REAL, numeroRecepcion: '' });
+    expect(mensajes.length).toBeGreaterThan(60);
+    for (const [nombre, m] of mensajes) {
+      expect(nombres(m), nombre).not.toMatch(/silvana/i);
+      expect(decodeURIComponent(nombres(m)), nombre).not.toMatch(/silvana|asesora/i); // ni el saludo prellenado del botón a recepción, ni género marcado
+    }
+    // El saludo prellenado del botón a recepción dice «un asesor».
+    const traspaso = mensajes.find(([n]) => n === 'traspaso 0')![1];
+    expect(decodeURIComponent(traspaso['payload']['interactive']['action']['parameters']['url'])).toContain('Hola, escribo desde el WhatsApp de Tienda Ejemplo. Quiero hablar con un asesor.');
+    // Los botones y filas, dentro de los límites de Meta con el conteo real (emojis incluidos).
+    for (const [nombre, m] of mensajes) {
+      const inter = m['payload']['interactive'];
+      if (!inter) continue;
+      for (const b of (inter['action']['buttons'] ?? []) as J[]) expect([...b['reply']['title']].length, `${nombre}: ${b['reply']['title']}`).toBeLessThanOrEqual(20);
+      for (const s of (inter['action']['sections'] ?? []) as J[]) for (const r of s['rows'] as J[]) expect([...r['title']].length, `${nombre}: ${r['title']}`).toBeLessThanOrEqual(24);
+      if (inter['type'] === 'cta_url') expect([...inter['action']['parameters']['display_text']].length, nombre).toBeLessThanOrEqual(20);
+      expect([...inter['body']['text']].length, nombre).toBeLessThanOrEqual(1024);
+    }
+  });
+
+  it('cada afirmación de `queHacemos` y `comoFunciona` pasa el filtro de la redacción (sin montos, promesas, enlaces ni negar ser IA) y solo trae cifras de las fuentes', () => {
+    // Las fuentes verificadas son TODO el corpus del sitio, también los fragmentos que el modelo no ve por traer precios (p. ej. la instalación a medida).
+    const corpus = (CONOCIMIENTO['fragmentos'] as J[]).map((x) => x['texto']).join(' ');
+    const textos: [string, string][] = [];
+    for (const [id, r] of Object.entries(GUION_REAL['rubros']) as [string, J][]) for (const campo of ['queHacemos', 'comoFunciona']) textos.push([`${id}.${campo}`, r[campo]]);
+    expect(textos).toHaveLength(10);
+    for (const [donde, t] of textos) {
+      expect(CM['cmRevisarRedaccion']!(t, { nombreNegocio: 'NovuChat', textoDelCliente: '', quienPromete: ['asesor', 'recepcion'] }).motivo, donde).toBe('');
+      expect(f('ccTieneMonto')(t), donde).toBe(false);
+      expect(t, donde).not.toMatch(/\?|%|\bgratis\b|\bdescuento|silvana|asesora/i);
+      // Toda cifra de la oración está literalmente en las fuentes verificadas (hoy: 24 y 48).
+      for (const n of t.match(/\d+/g) ?? []) expect(corpus, `${donde}: la cifra ${n}`).toMatch(new RegExp(`\\b${n}\\b`));
+    }
+  });
+  it('cada afirmación se puede citar a su fuente (tabla «frase → fuente»): sus palabras clave están en el corpus verificado', () => {
+    const corpus = (CONOCIMIENTO['fragmentos'] as J[]).map((x) => f('ccNorm')(x['texto'])).join(' ');
+    const ancla: Record<string, string[]> = {
+      'salud-y-belleza.queHacemos': ['google calendar', '24 horas antes', 'su propia agenda'],
+      'gastronomia.queHacemos': ['toma el pedido desde tu carta', 'suma el envio', 'qr de tu banco', 'avisa a la cocina'],
+      'comercio-y-retail.queHacemos': ['responde por tu catalogo', 'a cualquier hora', 'arma el pedido', 'calcula el total con el envio', 'qr'],
+      'educacion.queHacemos': ['responde', 'a cualquier hora', 'agenda citas en tu calendario'],
+      'otro.queHacemos': ['a medida', 'tu sistema', 'caso por caso'],
+      'comun.comoFunciona': ['lo instalamos en 48 horas', 'desde que tenemos tu informacion', 'lo controlas desde tu celular', 'tu no programas nada'],
+      'otro.comoFunciona': ['reunion', 'tu no programas nada'],
+    };
+    for (const [clave, frases] of Object.entries(ancla)) for (const fr of frases) expect(corpus, `${clave}: «${fr}»`).toContain(fr);
+    // Y las frases del guion dicen eso: cada ancla aparece en su texto (normalizado) o es de la fuente que lo respalda.
+    const norm = (id: string, c: string): string => f('ccNorm')(GUION_REAL['rubros'][id][c]);
+    expect(norm('salud-y-belleza', 'queHacemos')).toMatch(/google calendar.*24 horas antes.*propia agenda/);
+    expect(norm('gastronomia', 'queHacemos')).toMatch(/toma el pedido desde tu carta.*suma el envio.*qr de tu banco.*avisa a la cocina/);
+    expect(norm('comercio-y-retail', 'queHacemos')).toMatch(/responde por tu catalogo a cualquier hora.*arma el pedido.*calcula el total con el envio.*qr/);
+    expect(norm('educacion', 'queHacemos')).toMatch(/responde las dudas.*a cualquier hora.*agenda citas en tu google calendar/);
+    expect(norm('otro', 'queHacemos')).toMatch(/flujos a medida.*conectados a tu sistema.*cotizamos segun tu caso/);
+    for (const id of ['salud-y-belleza', 'gastronomia', 'comercio-y-retail', 'educacion']) expect(norm(id, 'comoFunciona')).toMatch(/instalamos en 48 horas desde que tenemos tu informacion.*controlas desde tu celular.*sin programar nada/);
+    expect(norm('otro', 'comoFunciona')).toMatch(/reunion.*no programas nada/);
+  });
+
+  it('el dato de impacto (Harvard) sale UNA sola vez por ficha; en la ventana siguiente puede volver a salir', () => {
+    let e = E({ paso: 'esperando_dolor', rubroId: 'salud-y-belleza' });
+    const r1 = turno(e, T('sí, todo el día'), OK());
+    expect(cuerpo(r1['mensajes'][0])).toContain('Harvard Business Review');
+    expect(r1['e'].impactoDicho).toBe(true);
+    // Otra oferta de la misma ficha (el modelo la vuelve a armar) ya no lo repite, ni en otro rubro.
+    for (const rubroId of ['salud-y-belleza', 'comercio-y-retail']) {
+      const r2 = turno({ ...r1['e'], paso: 'esperando_dolor', rubroId }, T('sí, también de noche'), OK());
+      expect(cuerpo(r2['mensajes'][0]), rubroId).not.toContain('Harvard');
+    }
+    // Un turno de otra clase tampoco lo trae; la bandera se conserva dentro de la ventana y vence con ella.
+    const ya = turno(r1['e'], T('hola, ¿sigues ahí?'), OK());
+    expect(cuerpo(ya['mensajes'][0])).not.toContain('Harvard');
+    expect(f('ccEstadoVigente')({ ...r1['e'], ultimoMensajeMs: AHORA - H }, AHORA).impactoDicho).toBe(true);
+    expect(f('ccEstadoVigente')({ ...r1['e'], ultimoMensajeMs: AHORA - 24 * H }, AHORA).impactoDicho).toBe(false);
+    // Recorrido largo completo: en todos los mensajes salidos de la ficha, Harvard aparece a lo más una vez.
+    e = E();
+    const dicho: string[] = [];
+    const pasos: [J, J | null][] = [[T('hola'), null], [TOQUE('rubro:comercio-y-retail'), null], [T('sí, de noche'), OK()], [T('¿qué hacen?'), OK({ tipo: 'pregunta', respuesta: 'Atienden tu WhatsApp.', enLosDatos: true })],
+      [T('cuéntame algo más'), OK()], [T('ok, cuéntame algo más'), OK()], [T('¿y cómo se instala?'), OK({ tipo: 'pregunta', respuesta: 'En 48 horas.', enLosDatos: true })]];
+    for (const [t, m] of pasos) { const r = turno(e, t, m); dicho.push(cuerpo(r['mensajes'][0])); e = r['e']; }
+    expect(dicho.filter((x) => /Harvard/.test(x))).toHaveLength(1);
+  });
+
+  it('los contadores nuevos (`rot`, `impactoDicho`): se sanean, vencen con la ventana (el del saludo no), y no hay claves de más', () => {
+    const vigente = (extra: J, ahora = AHORA): J => f('ccEstadoVigente')({ ...f('ccEstadoBase')(), ultimoMensajeMs: AHORA - H, ...extra }, ahora);
+    const base = { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0 };
+    expect(vigente({ rot: { saludo: 5, rubros: 4, traspaso: 3, acuse: 2, cierre: 1, sinDatos: 11, identidad: 7 }, impactoDicho: true })).toMatchObject({ rot: { saludo: 5, rubros: 4, traspaso: 3, acuse: 2, cierre: 1, sinDatos: 11, identidad: 7 }, impactoDicho: true });
+    for (const malo of [12, -1, 1.5, '2', null, {}, [], NaN, Infinity, undefined]) {
+      const v = vigente({ rot: { saludo: malo, rubros: malo, traspaso: malo, acuse: malo, cierre: malo, sinDatos: malo, identidad: malo }, impactoDicho: malo });
+      expect(v['rot'], String(malo)).toEqual(base);
+      expect(v['impactoDicho'], String(malo)).toBe(false);
+    }
+    for (const basura of ['texto', 7, null, [], { __proto__: { saludo: 3 } }]) expect(vigente({ rot: basura })['rot']).toEqual(base);
+    expect(Object.keys(vigente({ rot: { ...base, extra: 3, __proto__: { x: 1 } } })['rot']).sort()).toEqual(Object.keys(base).sort());
+    // La ventana vence todo menos el saludo (quien vuelve al día siguiente no recibe el mismo saludo); a las 48 h se olvida la ficha entera.
+    const lleno = { rot: { saludo: 5, rubros: 4, traspaso: 3, acuse: 2, cierre: 1, sinDatos: 11, identidad: 7 }, impactoDicho: true };
+    expect(vigente(lleno, AHORA + 24 * H)).toMatchObject({ rot: { ...base, saludo: 5 }, impactoDicho: false });
+    expect(vigente(lleno, AHORA + 48 * H + 1)).toMatchObject({ rot: base, impactoDicho: false });
+  });
+
+  it('cada familia de textos fijos tiene 3 variantes, rota con su contador y nunca da el mismo texto dos veces seguidas', () => {
+    const familias: [string, (e: J) => J, J][] = [
+      ['acuse', (e) => turno(e, T('ok')), E({ paso: 'esperando_empresa' })],
+      ['cierre tras el nombre', (e) => turno(e, T('Colegio Sol')), E({ paso: 'esperando_empresa' })],
+      ['traspaso', (e) => turno(e, T('quiero hablar con un asesor')), E({ paso: 'oferta', rubroId: 'educacion', empresa: 'Mi Tienda' })],
+      ['identidad', (e) => turno(e, T('¿eres un robot?')), E({ paso: 'oferta', rubroId: 'educacion' })],
+      ['sin datos', (e) => turno(e, T('¿hacen apps?'), OK({ tipo: 'pregunta' })), E({ paso: 'esperando_dolor', rubroId: 'educacion' })],
+      ['pregunta de rubros', (e) => turno(e, T('quiero algo raro y no sé qué decir'), OK({ tipo: 'otro' })), E({ paso: 'eligiendo_rubro' })],
+    ];
+    for (const [nombre, jugar, inicial] of familias) {
+      const vistas: string[] = [];
+      let e = inicial;
+      for (let i = 0; i < 7; i++) {
+        const r = jugar(e);
+        vistas.push(cuerpo(r['mensajes'][0]));
+        // El estado siguiente de una familia que cierra el paso (el nombre del negocio) o lo cambia se vuelve al de partida con el contador vigente.
+        e = { ...inicial, rot: r['e'].rot, ofertas: r['e'].ofertas, sueltas: 0, planesMostrados: false, impactoDicho: true };
+      }
+      expect(new Set(vistas).size, nombre).toBeGreaterThanOrEqual(3);
+      for (let i = 1; i < vistas.length; i++) expect(vistas[i], `${nombre} #${i}: dos seguidas`).not.toBe(vistas[i - 1]);
+    }
+  });
+  it('el saludo del primer mensaje rota por el último dígito del teléfono: tres variantes, todas dicen «asistente virtual» e «inteligencia artificial»', () => {
+    const vistas = new Map<number, string>();
+    for (let d = 0; d < 10; d++) {
+      const r = turno(E(), T('hola', { from: '5910000001' + d }));
+      const c = cuerpo(r['mensajes'][0]);
+      vistas.set(d, c);
+      expect(c, `dígito ${d}`).toMatch(/asistente virtual/);
+      expect(c, `dígito ${d}`).toMatch(/inteligencia artificial/);
+      expect(preguntas(c)).toBe(1);
+    }
+    expect(new Set(vistas.values()).size).toBe(3);
+    // El mismo dígito da el mismo saludo (reproducible en la batería) y el contador `rot.saludo` lo cambia para quien vuelve.
+    expect(vistas.get(3)).toBe(cuerpo(turno(E(), T('hola', { from: '59100000013' }))['mensajes'][0]));
+    expect(vistas.get(3)).not.toBe(cuerpo(turno(E({ rot: { saludo: 1, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0 } }), T('hola', { from: '59100000013' }))['mensajes'][0]));
+    // Con el nombre del asistente de la consola (distinto del asesor) se usa en las tres variantes.
+    for (let d = 0; d < 3; d++) expect(cuerpo(turno(E(), T('hola', { from: '5910000001' + d }), null, { ...REAL, nombreAsistente: 'Kenji' })['mensajes'][0])).toContain('Soy Kenji, el asistente virtual');
+  });
+  it('lo que se repite NUNCA cambia lo que el cliente debe saber: toda oferta del asesor conserva su botón, y sin recepción ninguna variante nombra un botón', () => {
+    for (let v = 0; v < 3; v++) {
+      const rot = { saludo: 0, rubros: 0, traspaso: v, acuse: v, cierre: v, sinDatos: 0, identidad: 0 };
+      for (const [e, t] of [[E({ paso: 'oferta', rubroId: 'educacion', rot }), T('quiero hablar con un asesor')], [E({ paso: 'esperando_empresa', rot }), T('ok')], [E({ paso: 'esperando_empresa', rot }), T('Colegio Sol')]] as [J, J][]) {
+        const con = turno(e, t)['mensajes'][0];
+        expect(con['payload']['interactive']['type'], `${v}: ${cuerpo(con)}`).toBe('cta_url');
+        const sin = turno(e, t, null, { ...REAL, numeroRecepcion: '' })['mensajes'][0];
+        expect(sin['payload']['type'], `${v}: ${cuerpo(sin)}`).toBe('text');
+        expect(cuerpo(sin), `${v}`).not.toMatch(/bot[oó]n|wa\.me|escríbele/i);
+      }
+    }
+  });
+  it('preguntas sueltas con más detalle: la respuesta del modelo puede traer hasta 3 oraciones y 420 caracteres y llega entera al cliente (con su cierre)', () => {
+    const respuesta = 'Lo instalamos en 48 horas desde que tenemos tu información: tus servicios, tus horarios y tu calendario. Tú no programas nada y lo controlas desde tu celular. Después puedes cambiar horarios y precios cuando quieras.';
+    expect(respuesta.length).toBeLessThanOrEqual(420);
+    const r = turno(E({ paso: 'oferta', rubroId: 'educacion' }), T('¿cómo se instala?'), OK({ tipo: 'pregunta', respuesta, enLosDatos: true }));
+    expect(cuerpo(r['mensajes'][0])).toContain(respuesta);
+    expect(r['mensajes']).toHaveLength(1);
+    const c = f('ccContar')(cuerpo(r['mensajes'][0]));
+    expect(c.oraciones).toBeLessThanOrEqual(6);
+    expect(c.palabras).toBeLessThanOrEqual(95);
   });
 });

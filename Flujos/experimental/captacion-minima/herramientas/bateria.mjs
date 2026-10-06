@@ -66,7 +66,9 @@ const GLOBALES_FUERA = ['URL', 'URLSearchParams', 'TextEncoder', 'TextDecoder', 
 // ------------------------------------------------------------------------------------------------------- datos de ejemplo
 // Un negocio inventado y telefonos sinteticos (seis ceros seguidos): ningun dato real. Lunes 05/10/2026, 10:00 en La Paz.
 const PID = '59100000003';       // phone_number_id del numero del negocio
-const CLIENTE = '59100000011';   // quien escribe
+// Quien escribe: un telefono SINTETICO por caso y corrida (59100000010 a 59100000019: nunca el de recepcion ni el del negocio; el ultimo digito varia, determinista): el saludo del flujo
+// rota por el ultimo digito (§15), y con un solo telefono las 24 conversaciones abririan igual.
+export const telefonoDe = (idCaso, rep) => '5910000001' + ([...`${idCaso}#${rep}`].reduce((a, c) => a + c.charCodeAt(0), 0) % 10);
 const REC = '59100000001';       // recepcion: destino del boton y del aviso
 const ID_PLANILLA = 'PLANILLA_DE_PRUEBA_' + 'x'.repeat(26);
 const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
@@ -637,13 +639,16 @@ export async function llamarGemini({ cuerpo, urlDelNodo, credencial, opciones, d
 const sinUrl = (s) => String(s).replace(/https?:\/\/\S+/g, ' ');
 const preguntasDe = (s) => (sinUrl(s).match(/\?/g) ?? []).length;
 const oracionesDe = (s) => sinUrl(s).split(/[.!?…]+(?:\s+|$)/).map((x) => x.trim()).filter((x) => /\p{L}/u.test(x)).length;
+/** Las oraciones de 5 palabras o mas de un texto, normalizadas (para contar las que se repiten de un mensaje al siguiente). */
+const oracionesTexto = (s) => sinUrl(s).split(/(?<=[.!?…])\s+/).map((x) => norm(x).replace(/[^\p{L}\p{N} ]/gu, '').trim()).filter((x) => x.split(' ').length >= 5);
 const palabrasDe = (s) => sinUrl(s).split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length;
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-// §13: un mensaje general hasta 4 oraciones y 60 palabras (la exclamación inicial cuenta como oración); el de PLANES (el único con encabezado), 5 y 70.
-export const MAX_ORACIONES = 4;
-export const MAX_PALABRAS = 60;
-export const MAX_ORACIONES_PLANES = 5;
-export const MAX_PALABRAS_PLANES = 70;
+// §15: un mensaje general hasta 6 oraciones y 95 palabras (la exclamación inicial cuenta como oración); el de PLANES (el único con encabezado), 7 y 110.
+// La fuente es `ccLimites()` de la librería; una prueba compara estas cifras con ella.
+export const MAX_ORACIONES = 6;
+export const MAX_PALABRAS = 95;
+export const MAX_ORACIONES_PLANES = 7;
+export const MAX_PALABRAS_PLANES = 110;
 const CON_EMOJI = /\p{Extended_Pictographic}/u;
 
 // Promesas sin mecanismo (politica general «solo se ofrece lo que se cumple»), en tercera persona y en primera.
@@ -742,7 +747,7 @@ export function cargarLibreria(flujo) {
   const i = codigo.indexOf('// ARMAR MENSAJES:');
   if (i < 0) throw new Error('No encuentro el inicio del código propio de «Armar mensajes» en el flujo: ¿se reconstruyó con otra cabecera?');
   // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function(...GLOBALES_FUERA, codigo.slice(0, i) + '\nreturn { ccLeerModelo, ccIdsDeRubros, ccIdsDeAclaraciones, ccResumenDePrecios, CC_EMPATIA_RESPALDO, CC_MAX_EMPATIA, CC_MAX_PALABRAS_EMPATIA, ccContar };');
+  const fn = new Function(...GLOBALES_FUERA, codigo.slice(0, i) + '\nreturn { ccLeerModelo, ccIdsDeRubros, ccIdsDeAclaraciones, ccResumenDePrecios, CC_EMPATIA_RESPALDO, ccLimites, ccContar };');
   return fn(...GLOBALES_FUERA.map(() => undefined));
 }
 
@@ -801,8 +806,8 @@ function evaluarLlamada({ crudo, cuerpo, espera, lib, cfg, plan, uso, ms, reinte
     rec.campos.enLosDatos = estado(raw.enLosDatos === true, v.enLosDatos === true);
     rec.campos.descarte = estado(raw.descarte !== 'ninguno', v.descarte !== '');
     rec.tono = {
-      palabras: palabrasDe(raw.empatia), hastaDosOraciones: oracionesDe(raw.empatia) <= 2, sinPregunta: !/[?¿]/.test(raw.empatia),
-      hasta140: String(raw.empatia).length <= lib.CC_MAX_EMPATIA && palabrasDe(raw.empatia) <= lib.CC_MAX_PALABRAS_EMPATIA,
+      palabras: palabrasDe(raw.empatia), hastaDosOraciones: oracionesDe(raw.empatia) <= lib.ccLimites().empatia.oraciones, sinPregunta: !/[?¿]/.test(raw.empatia),
+      hastaElLimite: String(raw.empatia).length <= lib.ccLimites().empatia.caracteres && palabrasDe(raw.empatia) <= lib.ccLimites().empatia.palabras,
       sinVoseo: !VOSEO.test(raw.empatia), tuteo: !USTED.test(raw.empatia), vacia: String(raw.empatia).trim() === '', conEmoji: CON_EMOJI.test(raw.empatia),
     };
     rec.tipoDicho = raw.tipo; rec.descarteDicho = raw.descarte;
@@ -837,18 +842,18 @@ function evaluarLlamada({ crudo, cuerpo, espera, lib, cfg, plan, uso, ms, reinte
 }
 
 // ------------------------------------------------------------------------------------------------------- una conversacion
-const mensajeDeMeta = (t, wamid) => {
-  const base = { from: CLIENTE, id: wamid, timestamp: '1' };
+const mensajeDeMeta = (t, wamid, cliente) => {
+  const base = { from: cliente, id: wamid, timestamp: '1' };
   if (t.tipo === 'texto') return { ...base, type: 'text', text: { body: t.texto } };
   if (t.tipo === 'fila') return { ...base, type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: t.id, title: t.titulo ?? t.id } } };
   if (t.tipo === 'boton') return { ...base, type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: t.id, title: t.titulo ?? t.id } } };
   if (t.tipo === 'audio') return { ...base, type: 'audio', audio: { id: 'media-aud', mime_type: 'audio/ogg; codecs=opus', voice: true } };
   throw new Error('tipo de turno desconocido: ' + t.tipo);
 };
-const valorMeta = (msg) => ({
+const valorMeta = (msg, cliente) => ({
   messaging_product: 'whatsapp',
   metadata: { display_phone_number: PID, phone_number_id: PID },
-  contacts: [{ profile: { name: 'Ana Prueba' }, wa_id: CLIENTE }],
+  contacts: [{ profile: { name: 'Ana Prueba' }, wa_id: cliente }],
   messages: [msg],
 });
 const dichoDe = (t) => (t.tipo === 'texto' ? t.texto : t.tipo === 'audio' ? `(audio) ${t.transcripcion}` : `(toque) ${t.id}`);
@@ -858,6 +863,7 @@ const respuestaDeGemini = (texto) => ({ candidates: [{ content: { parts: [{ text
 
 /** Una corrida (un caso, una repeticion): un mundo nuevo, con su estado, su planilla y su reloj. */
 export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, deps }) {
+  const CLIENTE = telefonoDe(caso.id, rep);
   const panel = panelDe(caso.opciones ?? {});
   const hoja = { filas: [] };
   const turnoActual = { t: null };
@@ -939,11 +945,12 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, horarioAtencion: '', planillaProspectosId: ID_PLANILLA, planillaProspectosHoja: 'Leads_CRM', mensajeComercioSuspendido: SUSPENDIDO },
   });
 
-  const corrida = { caso: caso.id, rep, turnos: [], llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], sinModelo: [], asesor: '' };
+  const corrida = { caso: caso.id, rep, turnos: [], llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], sinModelo: [], asesor: '', palabras: [], repeticiones: 0, oracionesRepetidas: 0, harvard: 0 };
+  let anterior = '';   // el ultimo mensaje al cliente de esta conversacion
   for (const [i, t] of caso.turnos.entries()) {
     captura = { mensajes: [], modelo: null };
     turnoActual.t = t;
-    const r = await mundo.turno(valorMeta(mensajeDeMeta(t, `wamid.BAT${caso.id}.${rep}.${i + 1}`)));
+    const r = await mundo.turno(valorMeta(mensajeDeMeta(t, `wamid.BAT${caso.id}.${rep}.${i + 1}`, CLIENTE), CLIENTE));
     if (r.fallo) corrida.fallos.push(`#${i + 1} «${r.fallo.nodo}»: ${r.fallo.mensaje}`);
     const cfg = (r.porNodo['Config del negocio'] ?? [])[0] ?? {};
     const plan = ((r.porNodo['Decidir turno'] ?? [])[0] ?? {}).plan ?? {};
@@ -960,7 +967,20 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     }
     for (const m of alCliente) {
       for (const x of revisarMensaje(m, ctx)) corrida.violaciones.push({ caso: caso.id, rep, turno: i + 1, dicho: dichoDe(t), ...x });
-      if (!m.esRespaldo) corrida.tonos.push({ ...tonoDe(m.cuerpo), conEmoji: conEmoji(m.cuerpo) });
+      if (!m.esRespaldo) {
+        corrida.tonos.push({ ...tonoDe(m.cuerpo), conEmoji: conEmoji(m.cuerpo) });
+        // §15: la longitud, la repeticion (el mismo mensaje dos veces seguidas es un fallo; una oracion de 5 palabras o mas que se repite en
+        // el mensaje siguiente solo se cuenta: retomar la pregunta pendiente es a proposito) y el dato de Harvard (una vez por conversacion).
+        corrida.palabras.push(palabrasDe(m.cuerpo));
+        if (anterior !== '' && norm(m.cuerpo) === norm(anterior)) {
+          corrida.repeticiones += 1;
+          corrida.violaciones.push({ caso: caso.id, rep, turno: i + 1, dicho: dichoDe(t), regla: 'mensaje_repetido_seguido', texto: String(m.cuerpo).replace(/\s+/g, ' ').slice(0, 200) });
+        }
+        const prev = new Set(oracionesTexto(anterior));
+        corrida.oracionesRepetidas += oracionesTexto(m.cuerpo).filter((o) => prev.has(o)).length;
+        if (/Harvard/i.test(m.cuerpo)) corrida.harvard += 1;
+        anterior = m.cuerpo;
+      }
     }
     salidas.push({ turno: i + 1, dicho: dichoDe(t), mensajes: alCliente.map((m) => m.cuerpo) });
     if (captura.modelo) {
@@ -968,6 +988,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       corrida.llamadas.push({ caso: caso.id, rep, turno: i + 1, ...l });
     } else if (t.espera) corrida.sinModelo.push(i + 1);
   }
+  if (corrida.harvard > 1) corrida.violaciones.push({ caso: caso.id, rep, turno: caso.turnos.length, dicho: '(la conversacion)', regla: 'harvard_mas_de_una_vez', texto: `el dato de Harvard salio ${corrida.harvard} veces` });
   const ficha = objeto(objeto(mundo.sd.captacionMinima)[CLIENTE]);
   corrida.descarteFinal = String(objeto(ficha.hechos).descarte ?? '') !== '';
   corrida.paso = String(ficha.paso ?? '');
@@ -1023,10 +1044,10 @@ export function medir(corridas, descarteEsperado = () => false) {
     empatia: {
       n: tonos.length,
       hastaDosOraciones: cuenta(tonos, (t) => t.hastaDosOraciones), sinPregunta: cuenta(tonos, (t) => t.sinPregunta), sinVoseo: cuenta(tonos, (t) => t.sinVoseo),
-      tuteo: cuenta(tonos, (t) => t.tuteo), hasta140: cuenta(tonos, (t) => t.hasta140), vacias: tonos.filter((t) => t.vacia).length,
+      tuteo: cuenta(tonos, (t) => t.tuteo), hastaElLimite: cuenta(tonos, (t) => t.hastaElLimite), vacias: tonos.filter((t) => t.vacia).length,
       conEmoji: cuenta(tonos, (t) => t.conEmoji),
       palabrasMedias: redondear(media(tonos.map((t) => t.palabras)), 1),
-      todoOk: cuenta(tonos, (t) => t.hastaDosOraciones && t.sinPregunta && t.sinVoseo && t.tuteo && t.hasta140 && !t.vacia),
+      todoOk: cuenta(tonos, (t) => t.hastaDosOraciones && t.sinPregunta && t.sinVoseo && t.tuteo && t.hastaElLimite && !t.vacia),
     },
     tipo: cuenta(ev('tipo'), (l) => l.evaluado.tipo === true),
     pidePlanesIndebido: ev('tipo').filter((l) => l.evaluado.pidePlanesIndebido === true).length,
@@ -1041,6 +1062,15 @@ export function medir(corridas, descarteEsperado = () => false) {
     invenciones: ev('enLosDatos').filter((l) => l.evaluado.invencion === true).length,
     invencionesEfectivas: ev('enLosDatos').filter((l) => l.evaluado.invencionEfectiva === true).length,
     violaciones: suma(corridas.map((c) => c.violaciones.length)),
+    // §15: palabras por mensaje al cliente, repeticiones seguidas (0 esperado) y apariciones del dato de Harvard por conversacion (hasta 1).
+    longitud: (() => {
+      const todas = corridas.flatMap((c) => c.palabras ?? []);
+      const ord = [...todas].sort((a, b) => a - b);
+      return { mensajes: todas.length, palabrasMedias: redondear(media(todas), 1), mediana: ord.length ? ord[Math.floor(ord.length / 2)] : 0, maximo: ord.length ? ord[ord.length - 1] : 0 };
+    })(),
+    repeticionesSeguidas: suma(corridas.map((c) => c.repeticiones ?? 0)),
+    oracionesRepetidasSeguidas: suma(corridas.map((c) => c.oracionesRepetidas ?? 0)),
+    harvard: { conversacionesConElDato: corridas.filter((c) => (c.harvard ?? 0) > 0).length, maxPorConversacion: Math.max(0, ...corridas.map((c) => c.harvard ?? 0)) },
     tono: {
       mensajes: suma(corridas.map((c) => c.tonos.length)),
       voseo: suma(corridas.map((c) => c.tonos.filter((t) => t.voseo).length)),
@@ -1141,18 +1171,19 @@ function textoDelInforme(r) {
   o.push('');
   o.push('MSJ/C = mensajes al cliente por corrida · LLAM/C = llamadas al modelo por corrida · JSON/ESQ = JSON válido / conforme al esquema (sobre las llamadas)');
   o.push('TIPO = acierto de `tipo` · RUBRO = `rubroId` y `rubroLibre` acertados · DESC = descarte final correcto por corrida (verdaderos en C11 y C12) · DATOS = `enLosDatos` honesto');
-  o.push('EMP = empatía del modelo que cumple todo (hasta 2 oraciones, ≤140 caracteres y ≤25 palabras, sin «?», sin voseo, de tú) · VIOL = violaciones de reglas duras sobre lo que el cliente recibe (incluye `rubro_sin_guion`)');
+  o.push('EMP = empatía del modelo que cumple todo (hasta 2 oraciones, ≤220 caracteres y ≤34 palabras, sin «?», sin voseo, de tú) · VIOL = violaciones de reglas duras sobre lo que el cliente recibe (incluye `rubro_sin_guion`)');
   o.push('');
   o.push('Campos del modelo (todas las llamadas con objeto válido): aceptado = pasó la validación · respaldo = el código lo reemplazó · vacío = el modelo no puso nada');
   const kc = Object.entries(t.campos).map(([k, v]) => [k, v.aceptado, v.respaldo, v.vacio, v.porAclaracion]);
   o.push(tablaTexto(kc, ['CAMPO', 'ACEPTADO', 'RESPALDO', 'VACÍO', 'ACLARAC.']));
   o.push(`FALLO (objeto entero inválido: «Disculpa, no pude procesar tu mensaje…»): ${t.fallo} de ${t.llamadas} llamadas${t.erroresDelServicio ? ` (${t.erroresDelServicio} con error del servicio)` : ''}`);
   o.push('');
-  o.push(`Empatía (${t.empatia.n} medidas): hasta 2 oraciones ${fr(t.empatia.hastaDosOraciones)} · ≤140 caracteres y ≤25 palabras ${fr(t.empatia.hasta140)} · sin «?» ${fr(t.empatia.sinPregunta)} · sin voseo ${fr(t.empatia.sinVoseo)} · de tú ${fr(t.empatia.tuteo)} · con emoji ${fr(t.empatia.conEmoji)} · vacías ${t.empatia.vacias} · ${t.empatia.palabrasMedias} palabras en promedio`);
+  o.push(`Empatía (${t.empatia.n} medidas): hasta 2 oraciones ${fr(t.empatia.hastaDosOraciones)} · ≤220 caracteres y ≤34 palabras ${fr(t.empatia.hastaElLimite)} · sin «?» ${fr(t.empatia.sinPregunta)} · sin voseo ${fr(t.empatia.sinVoseo)} · de tú ${fr(t.empatia.tuteo)} · con emoji ${fr(t.empatia.conEmoji)} · vacías ${t.empatia.vacias} · ${t.empatia.palabrasMedias} palabras en promedio`);
   o.push(`Acierto: tipo ${fr(t.tipo)} (pide_planes indebido ${t.pidePlanesIndebido}) · rubroId ${fr(t.rubroId)} · rubroLibre ${fr(t.rubroLibre)} · descarte por turno ${fr(t.descarteTurno)}`);
   o.push(`Descarte final por corrida: ${fr(t.descarteFinal)} (falsos positivos ${t.descarteFinal.falsosPositivos}, falsos negativos ${t.descarteFinal.falsosNegativos})`);
   o.push(`Honestidad de enLosDatos: ${fr(t.enLosDatos)} · el modelo afirmó tener datos que no hay: ${t.invenciones} (llegaron al cliente: ${t.invencionesEfectivas})`);
   o.push(`Calificación final (planilla): ${Object.entries(t.calificaciones).map(([k, v]) => `${k || '(vacía)'} ${v}`).join(', ') || '—'}`);
+  o.push(`Longitud: ${t.longitud.palabrasMedias} palabras por mensaje en promedio (mediana ${t.longitud.mediana}, máximo ${t.longitud.maximo}) · mensajes idénticos seguidos ${t.repeticionesSeguidas} (se espera 0) · oraciones repetidas de un mensaje al siguiente ${t.oracionesRepetidasSeguidas} (informativo) · dato de Harvard: ${t.harvard.conversacionesConElDato} conversaciones, a lo más ${t.harvard.maxPorConversacion} vez por conversación (se espera ≤1)`);
   o.push(`Tono sobre ${t.tono.mensajes} mensajes al cliente: voseo ${t.tono.voseo} · trato de usted ${t.tono.usted} · sin ningún emoji ${t.tono.sinEmoji}`);
   if (t.avisosDeConfiguracion) o.push(`FALLO DE CONFIGURACIÓN: ${t.avisosDeConfiguracion} turno(s) con \`rubro_sin_guion\` (un rubro de la consola sin entrada en el guion se atendió como «Otro»).`);
   if (t.sinModelo.length) o.push(`ATENCIÓN: turnos donde se esperaba el modelo y el flujo no lo llamó: ${t.sinModelo.join(', ')}`);
