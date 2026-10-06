@@ -1295,7 +1295,8 @@ function ccResolverModelo(plan, r, e, cfg) {
     case 'negocio':
       if (pregunta) return retomar();
       if (r.rubroId) e.rubroId = r.rubroId; // R12: si el modelo reconoce un rubro de la consola, se respeta
-      if (r.rubroLibre) e.rubroLibre = r.rubroLibre;
+      // El rubro que el cliente YA dijo (lo que escribió en la lista) no lo pisa lo que el modelo entiende de su problema: la planilla lleva el rubro.
+      if (r.rubroLibre && e.rubroLibre === '') e.rubroLibre = r.rubroLibre;
       e.hechos.respondioDolor = true;
       e.paso = 'oferta';
       return { accion: 'oferta', extra: { empatia: empatia, impacto: ccPlano((ccGuionDe(cfg, e.rubroId).propia || g.otro).impacto) } };
