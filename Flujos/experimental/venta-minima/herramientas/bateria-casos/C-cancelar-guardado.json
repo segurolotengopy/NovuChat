@@ -346,7 +346,7 @@
               "Cancelar pedido"
             ],
             "textos": [
-              "falta tu comprobante"
+              "falta que me env[ií]es la foto o el PDF del comprobante"
             ]
           }
         }
@@ -1248,8 +1248,8 @@
     },
     {
       "id": "BO1",
-      "titulo": "Con el resumen mostrado, «cámbiame el pedido» vuelve a mostrar el resumen (no abre un cambio ni deriva)",
-      "nota": "POR CONFIRMAR CON LA CARTERA: se asierta lo que hace la rama (vuelve a mostrar el resumen en vez de abrir «Cambiar algo»).",
+      "titulo": "Con el resumen mostrado, «cámbiame el pedido» abre el cambio como el botón «Cambiar algo» (la carta de nuevo; no \"no te entendí\", no deriva)",
+      "nota": "Decidido el 05/10 (BO1): el texto hace lo mismo que el botón `p|cambiar`; la regla está en `Decidir turno` (`pideCambiarElPedido`). Antes vivía aquí la expectativa contraria (volver a mostrar el resumen), que con el modelo real salía como «Disculpa, no te entendí».",
       "perfil": "Lucía Ejemplo",
       "estadoPrevio": [
         {
@@ -1300,30 +1300,33 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "Tu pedido:",
-              "2 × Tacos de Birria"
+              "elige de nuevo todo lo que quieres",
+              "reemplaza tu pedido de ahora \\(2 × Tacos de Birria",
+              "Dejarlo como estaba"
             ],
             "textosNo": [
-              "como estaba",
               "Esto prefiero",
-              "desde la carta"
+              "no te entend",
+              "Tu pedido:"
             ],
             "titulos": [
-              "Confirmar pedido"
+              "Dejarlo como estaba"
+            ],
+            "botones": [
+              "p|dejar"
             ],
             "estado": {
-              "paso": "pedido_confirmar",
               "carrito": {
-                "longitud": 1
+                "vacio": true
+              },
+              "carritoAnterior": {
+                "vacio": false
               }
             },
-            "igualAntes": [
-              "carrito",
-              "entrega"
-            ],
             "efectos": {
               "derivacion": false,
-              "aviso": false
+              "aviso": false,
+              "modelo": false
             }
           }
         }

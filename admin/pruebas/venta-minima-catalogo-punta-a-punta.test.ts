@@ -627,7 +627,7 @@ describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta e
     w.estado.extraccion = { ...NADA, quiereHablar: true };
     const t = turno(w, texto('necesito ayuda de un encargado'));
     expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('');
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo/);
   });
 });
 
@@ -658,12 +658,12 @@ describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () 
     a.estado.extraccion = { ...NADA, quiereHablar: true };
     const t = turno(a, texto(dicho));
     expect(ent(a)['referencia'], dicho).toBe('');
-    expect(t.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(t.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
     const b = sinDireccion('cat_m1_b_' + dicho.length);
     b.estado.extraccion = { ...NADA, quiereHablar: true };
     const u = turno(b, texto(dicho));
     expect(ent(b)['direccion'], dicho).toBe('');
-    expect(u.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(u.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
   });
 
   it('M1, el caso opuesto: «Déjale al portero» con `quiereHablar` del modelo SÍ queda como referencia (tiene rasgos de un dato de entrega)', () => {
@@ -711,7 +711,7 @@ describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () 
     expect(ent(w)['direccion']).toBe('');
     expect(uno.mensajes[0]!.cuerpo).toBe('Para el delivery necesito la dirección exacta.');
     const dos = turno(w, texto('70012345'));
-    expect(dos.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(dos.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
     expect(dos.avisos.length).toBeGreaterThan(0);
   });
 
@@ -785,7 +785,7 @@ describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código,
   };
   const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
   const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta.';
-  const DERIVA = /Esto prefiero que lo vea una persona/;
+  const DERIVA = /Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/;
 
   it.each(['A media cuadra del gas', 'Déjale al portero', 'frente al mercado', 'Zona Sur', 'por la puerta verde'])(
     'A4 «%s» con la dirección PENDIENTE queda como REFERENCIA (no como dirección) y se vuelve a pedir la dirección, sin pasar al resumen', (dicho) => {
@@ -976,13 +976,13 @@ describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúden
     a.estado.extraccion = { ...NADA, quiereHablar: true };
     const ta = turno(a, texto(dicho));
     expect(ta.avisos.length, dicho + ' (resumen dado)').toBeGreaterThan(0);
-    expect(ta.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(ta.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
     const b = crear();
     carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_a1_p_' + String(++k).padStart(4, '0') }) });
     b.estado.extraccion = { ...NADA, quiereHablar: true };
     const tb = turno(b, texto(dicho));
     expect(tb.avisos.length, dicho + ' (dirección pendiente)').toBeGreaterThan(0);
-    expect(tb.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(tb.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
   });
   it.each(['no hay problema', 'alguien lo recibe', 'es para una persona'])('«%s» sin `quiereHablar` sigue sin derivar, con el resumen dado y con la dirección pendiente', (dicho) => {
     const a = conDireccion();
@@ -1099,4 +1099,137 @@ describe('referencia sin cierres: «eso es todo» y «cámbiame el pedido» no s
       expect(tb.mensajes[0]!.cuerpo, dicho).toContain('(' + dicho + ')');
     },
   );
+});
+
+// =====================================================================================================
+// BO1 (regresión leve del PR #440, batería del 05/10): con el resumen del pedido mostrado, pedir por texto que se cambie el pedido abre el
+// cambio IGUAL que el botón «Cambiar algo» (`p|cambiar`): la carta de nuevo, y lo que se elija ahí reemplaza el pedido. Antes caía en «no te entendí».
+// El filtro `esCierreOCambio` sigue impidiendo que esas frases se guarden como referencia o dirección (prueba arriba).
+// =====================================================================================================
+describe('BO1: con el resumen dado, «cámbiame el pedido» abre el cambio como el botón «Cambiar algo»', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conResumen = () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_bo1_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = NADA;
+    return { w, t };
+  };
+  const cuerpos = (t: ReturnType<typeof turno>): string => JSON.stringify(t.mensajes.map((m) => m.cuerpo));
+  const FRASES = ['cámbiame el pedido', 'quiero cambiar el pedido', 'modifica el pedido', 'Quiero cambiar mi pedido', 'cambia el pedido por favor', 'quisiera modificar mi pedido'];
+
+  it.each(FRASES)('«%s» hace lo mismo que el botón: carta de nuevo, el pedido de ahora a `carritoAnterior`, ninguna referencia, ningún aviso, sin el modelo', (dicho) => {
+    const ref = conResumen();
+    const tb = turno(ref.w, boton(idDeBoton(ref.t, 'Cambiar algo'), 'Cambiar algo'));
+    const { w } = conResumen();
+    const t = turno(w, texto(dicho));
+    expect(cuerpos(t), dicho).not.toMatch(/no te entend/i);
+    expect(cuerpos(t), dicho).toBe(cuerpos(tb));
+    expect(cuerpos(t), dicho).toMatch(/reemplaza tu pedido de ahora/);
+    expect(estadoDe(w)['paso'], dicho).toBe(estadoDe(ref.w)['paso']);
+    expect(estadoDe(w)['carrito'], dicho).toEqual(estadoDe(ref.w)['carrito']);
+    // El pedido de ahora queda en `carritoAnterior` (las líneas; el id del pedido web es propio de cada mundo).
+    const lineas = (x: ReturnType<typeof crear>): unknown => ((estadoDe(x)['carritoAnterior'] as J)['carrito'] as J[]).map((l) => [l['nombre'], l['cantidad']]);
+    expect(lineas(w), dicho).toEqual(lineas(ref.w));
+    expect((lineas(w) as unknown[]).length, dicho).toBeGreaterThan(0);
+    expect((estadoDe(w)['entrega'] as J)['referencia'], dicho).toBe('');
+    expect(t.avisos, dicho).toHaveLength(0);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+  });
+
+  it('no es una dirección ni una referencia aunque el modelo la ponga: abre el cambio y la referencia queda vacía', () => {
+    const { w } = conResumen();
+    w.estado.extraccion = { ...NADA, referencia: 'cámbiame el pedido' };
+    const t = turno(w, texto('cámbiame el pedido'));
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('');
+    expect(cuerpos(t)).toMatch(/reemplaza tu pedido de ahora/);
+  });
+
+  it.each(['quiero cambiar mi pedido a recoger', 'cambiar el pedido para otra dirección: Calle 5', 'cámbiame el pedido de la mesa 3'])(
+    '«%s» NO se toma por «Cambiar algo» (lleva algo más: sigue su camino de siempre)', (dicho) => {
+      const { w } = conResumen();
+      turno(w, texto(dicho));
+      expect(estadoDe(w)['carritoAnterior'] ?? null, dicho).toBeNull();
+    },
+  );
+
+  // Cambia un dato de «Config base» del mundo YA armado (el nodo lee la asignación en cada turno): el pedido sigue guardado y lo que cambia es el negocio.
+  const cambiarBase = (w: ReturnType<typeof crear>, nombre: string, valor: string | boolean): void => {
+    const lista = (w.mundo.flujo.nodes.find((n) => n.name === 'Config base')!.parameters['assignments'] as J)['assignments'] as J[];
+    lista.find((x) => x['name'] === nombre)!['value'] = valor;
+  };
+  // La compuerta del horario: el texto respeta el horario igual que el botón. Sin esta prueba, quitar `cerrado()` del código no rompería nada.
+  it.each(['cámbiame el pedido', 'quiero cambiar mi pedido'])('«%s» con el local CERRADO (lunes sin horario): fuera de horario, el pedido queda como estaba y no se abre el cambio', (dicho) => {
+    const { w } = conResumen();
+    const antes = JSON.stringify(estadoDe(w)['carrito']);
+    expect(antes.length, 'hay un pedido guardado').toBeGreaterThan(10);
+    cambiarBase(w, 'horario', 'lun=cerrado,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00'); // AHORA es lunes 10:00
+    const t = turno(w, texto(dicho));
+    expect(cuerpos(t), dicho).toMatch(/fuera de nuestro horario de pedidos/);
+    expect(cuerpos(t), dicho).not.toMatch(/reemplaza tu pedido de ahora/);
+    expect(estadoDe(w)['carritoAnterior'] ?? null, dicho).toBeNull();
+    expect(JSON.stringify(estadoDe(w)['carrito']), dicho).toBe(antes);
+    expect(t.avisos, dicho).toHaveLength(0);
+  });
+  it('con el local ABIERTO, la misma frase sí abre el cambio (control de la prueba de arriba)', () => {
+    const { w } = conResumen();
+    cambiarBase(w, 'horario', 'lun=08:00-23:00,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00');
+    expect(cuerpos(turno(w, texto('cámbiame el pedido')))).toMatch(/reemplaza tu pedido de ahora/);
+  });
+  it('con `pedidosActivo: false` la regla no actúa: el texto no abre el cambio ni deja `carritoAnterior`', () => {
+    const { w } = conResumen();
+    cambiarBase(w, 'pedidosActivo', false);
+    const t = turno(w, texto('cámbiame el pedido'));
+    expect(cuerpos(t)).not.toMatch(/reemplaza tu pedido de ahora/);
+    expect(estadoDe(w)['carritoAnterior'] ?? null).toBeNull();
+    expect(t.avisos).toHaveLength(0);
+  });
+  it('fuera del paso de confirmar la regla no actúa: en el menú no hay pedido que reemplazar (`carritoAnterior` vacío)', () => {
+    const w = crear();
+    turno(w, texto('hola'));
+    w.estado.extraccion = NADA;
+    turno(w, texto('cámbiame el pedido'));
+    expect(estadoDe(w)['carritoAnterior'] ?? null).toBeNull();
+  });
+});
+
+// =====================================================================================================
+// Seguimientos LOW de la revisión de seguridad del PR #440: con `quiereHablar` del modelo, ni una frase de ENTREGA con «alguien» («mandalo con alguien»,
+// «dejalo con alguien», «avisa a alguien», «me ayudas con el pedido») ni una cortesía («no hay problema», «es para una persona») derivan a la primera: sale la
+// aclaración (o la pregunta de entrega) con botones y CERO avisos; «ayúdenme» y «auxilio» siguen derivando a la primera con aviso + botón.
+// =====================================================================================================
+describe('LOW #440: con `quiereHablar`, la entrega con «alguien» y las cortesías no derivan a la primera; la ayuda clara sí', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conResumen = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_low_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = { ...NADA, quiereHablar: true };
+    return w;
+  };
+  const conDireccionPendiente = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_low_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = { ...NADA, quiereHablar: true };
+    return w;
+  };
+  const NO_DERIVAN = ['mandalo con alguien', 'dejalo con alguien', 'avisa a alguien', 'me ayudas con el pedido', 'no hay problema', 'es para una persona'];
+
+  it.each(NO_DERIVAN)('«%s» con `quiereHablar`: 0 avisos y una aclaración con botones, con el resumen dado y con la dirección pendiente', (dicho) => {
+    for (const [donde, w] of [['resumen dado', conResumen()], ['dirección pendiente', conDireccionPendiente()]] as const) {
+      const t = turno(w, texto(dicho));
+      expect(t.avisos, `${dicho} (${donde})`).toHaveLength(0);
+      const m = t.mensajes[t.mensajes.length - 1]!;
+      expect(botonesDe(m).length, `${dicho} (${donde}): trae botones`).toBeGreaterThan(0);
+      expect(JSON.stringify(t.mensajes.map((x) => x.cuerpo)), `${dicho} (${donde})`).not.toMatch(/Esto prefiero|no lo puedo resolver por aquí|conversas directamente con nuestro equipo/);
+    }
+  });
+
+  it.each(['ayúdenme', 'auxilio'])('«%s» con `quiereHablar` sigue derivando a la primera, con aviso y con el botón «Escribir al local»', (dicho) => {
+    for (const [donde, w] of [['resumen dado', conResumen()], ['dirección pendiente', conDireccionPendiente()]] as const) {
+      const t = turno(w, texto(dicho));
+      expect(t.avisos.length, `${dicho} (${donde})`).toBeGreaterThan(0);
+      expect(botonesDe(t.mensajes[0]!).map((b) => b.title).join('|') + JSON.stringify(t.mensajes[0]), `${dicho} (${donde})`).toMatch(/Escribir al local/);
+    }
+  });
 });

@@ -59,6 +59,7 @@ function vmIdDeBoton(){ return Array.prototype.slice.call(arguments).join('|'); 
 function vmLeerBoton(id){ const p = String(id).split('|'); return p.length >= 2 && /^[a-z]$/.test(p[0]) ? { tipo: p[0], partes: p.slice(1) } : null; }
 function vmCodigoCorto(ms){ return ms.toString(36).slice(-4).toUpperCase(); }
 function vmSinProhibidas(t){ return String(t == null ? '' : t).replace(new RegExp(${JSON.stringify(PROHIBIDAS.source)}, 'gi'), '…'); }
+function vmEnlaceDeMapa(v){ const t = typeof v === 'string' ? v.trim() : ''; return t.length <= 200 && /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/.test(t) ? t : ''; }
 function vmHorario(csv){ const o = {}; let mal = false; String(csv).split(',').forEach(function(p){ const kv = p.split('='); const v = (kv[1] || '').trim(); if (v === 'cerrado') o[kv[0].trim()] = []; else { const m = /^(\d\d:\d\d)-(\d\d:\d\d)$/.exec(v); if (m) o[kv[0].trim()] = [{ desde: m[1], hasta: m[2] }]; else mal = true; } }); return mal ? null : o; }
 function vmAbierto(h, ms){ const l = new Date(ms - 4 * 3600000); const dia = ['dom','lun','mar','mie','jue','vie','sab'][l.getUTCDay()]; const hm = ('0' + l.getUTCHours()).slice(-2) + ':' + ('0' + l.getUTCMinutes()).slice(-2); const tr = h[dia] || []; return { abierto: tr.some(function(x){ return hm >= x.desde && hm < x.hasta; }), hoyCerrado: !tr.length }; }
 
@@ -108,10 +109,11 @@ function prTexto(f, cfg){ if (!f) return null; const b = []; if (cfg.pedidosActi
 
 function cbCodigo(c){ return String(c === undefined || c === null ? '' : c).replace(/[^A-Za-z0-9]/g, '').slice(0, 12); }
 function cbHayQr(c){ c = c || {}; if (!/^https:\/\//i.test(String(c.qrUrl || ''))) return false; if (c.modo === 'real') return c.activo === true; if (c.modo === 'simulado') return c.activo !== true; return false; }
-function cbCaption(p, o){ if (o.simulado === true) return 'PRUEBA · COBRO SIMULADO: este QR es de demostración, no cobra ni mueve dinero.\nPedido #' + p.codigo + '. Total de la prueba: ' + p.total + ' Bs (solo la comida' + (o.delivery === true ? '; el delivery se paga aparte' : '') + ').\nNo intentes pagarlo. Envíame aquí cualquier foto como comprobante simulado.'; return 'Pedido #' + p.codigo + '. Total a pagar por QR: ' + p.total + ' Bs (solo la comida' + (o.delivery === true ? '; el delivery se paga aparte, al repartidor' : '') + ').\nEscanea el QR con la app de tu banco.'; }
+function cbCaption(p, o){ if (o.simulado === true) return 'PRUEBA · COBRO SIMULADO: este QR es de demostración, no cobra ni mueve dinero.\nPedido #' + p.codigo + '. Total de la prueba: ' + p.total + ' Bs (solo la comida' + (o.delivery === true ? '; el delivery se paga aparte' : '') + ').\nNo intentes pagarlo. Envíame aquí cualquier foto como comprobante simulado.'; return 'Pedido #' + p.codigo + '. Total a pagar con este QR: ' + p.total + ' Bs (solo la comida' + (o.delivery === true ? '; el delivery se paga aparte, al repartidor' : '') + ').\nEscanéalo con la app de tu banco.'; }
 function cbResultado(resp, previo){ const r = resp || {}; const b = r.body || {}; let res = 'sin_cotejo'; if (r.statusCode === 200 && ['cuadra', 'no_cuadra', 'ilegible'].indexOf(b.resultado) >= 0) res = b.resultado; else if (r.statusCode === 409 && b.error === 'sin_sena_pendiente' && (previo === undefined || previo === 'cuadra')) res = 'ya_cotejado'; return { resultado: res, diferencias: res === 'no_cuadra' && Array.isArray(b.diferencias) ? b.diferencias : [], importe: null, cierreId: b.cierreId || '' }; }
 function cbEstadoParaAviso(r){ const e = { cuadra: 'comprobante: datos coinciden', no_cuadra: 'comprobante: NO coinciden', ilegible: 'comprobante ilegible', sin_cotejo: 'comprobante sin cotejar', ya_cotejado: null, simulado: 'PRUEBA: cobro SIMULADO, sin dinero' }; return e[r] === undefined ? 'sin QR: cobrar al entregar' : e[r]; }
-function cbTextoAlCliente(r, o){ const ped = 'tu pedido #' + o.codigo; const salio = o.avisoSalio === true; const sin = 'No pude pasarle tu pedido al restaurante en este momento: escríbeles con el botón.'; if (r === 'cuadra') return salio ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + ped + '. Ya lo pasé al restaurante.', enlace: false, aviso: true } : { cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + ped + '. ' + sin, enlace: true, aviso: true }; if (r === 'no_cuadra') return { cuerpo: 'Recibí tu comprobante, pero algunos datos no coinciden con ' + ped + '. ' + (salio ? 'Ya lo pasé al restaurante.' : sin), enlace: true, aviso: true }; if (r === 'ilegible') { if (!(Number(o.ilegibles) >= 2)) return { cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien. ¿Me lo envías de nuevo?', enlace: false, aviso: false }; return { cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien para revisar ' + ped + '. ' + (salio ? 'Ya lo pasé al restaurante.' : sin), enlace: true, aviso: true }; } if (r === 'sin_cotejo') return { cuerpo: 'Recibí tu comprobante, pero no pude revisarlo contra ' + ped + '. ' + (salio ? 'Ya lo pasé al restaurante.' : sin), enlace: true, aviso: true }; if (r === 'simulado') { const cab = 'Recibí tu comprobante SIMULADO de ' + ped + '. Es una prueba: no se movió dinero.'; return salio ? { cuerpo: cab + ' Ya lo pasé al restaurante como pedido de PRUEBA.', enlace: false, aviso: true } : { cuerpo: cab + ' ' + sin, enlace: true, aviso: true }; } if (r === 'ya_cotejado') return { cuerpo: 'Ya tengo el comprobante de ' + ped + '. Si necesitas algo más, toca el botón.', enlace: true, aviso: false }; if (r === 'sin_qr') return salio ? { cuerpo: 'Listo: pasé ' + ped + ' al restaurante. El pago lo coordinas con ellos ' + (o.entrega === 'delivery' ? 'al recibir' : 'al recoger') + '.', enlace: false, aviso: true } : { cuerpo: sin, enlace: true, aviso: true }; return { cuerpo: 'Eso lo ve directamente el restaurante.', enlace: true, aviso: false }; }
+function cbTextoAlCliente(r, o){ const ped = 'tu pedido #' + o.codigo; const salio = o.avisoSalio === true; const sin = 'No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.'; if (r === 'cuadra') return salio ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + ped + '. Ya lo pasé a nuestro equipo.', enlace: false, aviso: true } : { cuerpo: 'Recibí tu comprobante y los datos coinciden con ' + ped + '. ' + sin, enlace: true, aviso: true }; if (r === 'no_cuadra') return { cuerpo: 'Recibí tu comprobante, pero algunos datos no coinciden con ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; if (r === 'ilegible') { if (!(Number(o.ilegibles) >= 2)) return { cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien. ¿Me lo envías de nuevo?', enlace: false, aviso: false }; return { cuerpo: 'Recibí tu comprobante, pero no pude leerlo bien para revisar ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; } if (r === 'sin_cotejo') return { cuerpo: 'Recibí tu comprobante, pero no pude revisarlo contra ' + ped + '. ' + (salio ? 'Ya lo pasé a nuestro equipo.' : sin), enlace: true, aviso: true }; if (r === 'simulado') { const cab = 'Recibí tu comprobante SIMULADO de ' + ped + '. Es una prueba: no se movió dinero.'; return salio ? { cuerpo: cab + ' Ya lo pasé a nuestro equipo como pedido de PRUEBA.', enlace: false, aviso: true } : { cuerpo: cab + ' ' + sin, enlace: true, aviso: true }; } if (r === 'ya_cotejado') return { cuerpo: 'Ya tengo el comprobante de ' + ped + '. Si necesitas algo más, toca el botón.', enlace: true, aviso: false }; if (r === 'sin_qr') return salio ? { cuerpo: 'Listo: pasé ' + ped + ' al restaurante. El pago lo coordinas con ellos ' + (o.entrega === 'delivery' ? 'al recibir' : 'al recoger') + '.', enlace: false, aviso: true } : { cuerpo: sin, enlace: true, aviso: true }; return { cuerpo: 'Eso lo ve directamente nuestro equipo.', enlace: true, aviso: false }; }
+function cbResumenCorto(l, m){ return ''; }
 const AV_ENLACE = /(?:https?:\/\/|www\.)\S+|\b(?:wa\.me|t\.me|bit\.ly|goo\.gl|tinyurl\.com)\/\S*|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|bo|me|io|co|app|ly|link|info|biz|xyz|site|online)\b(?:\/\S*)?/gi;
 `;
 
@@ -422,7 +424,7 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
     const s = registrar(turno(crearMundo(), { texto: 'hola' }));
     const msg = s.p!['mensajes'][0];
     expect(msg['tipo']).toBe('botones');
-    expect(msg['cuerpo']).toBe("¡Hola! 👋 Soy el asistente virtual de Q' Taco de prueba. ¿Qué te gustaría hacer?");
+    expect(msg['cuerpo']).toBe("¡Hola! 👋 Gracias por escribir a Q' Taco de prueba. Soy el asistente virtual. ¿Qué te gustaría hacer?");
     // «Promociones» solo con una campaña vigente con ficha (en este mundo la hay).
     expect(ids(msg)).toEqual(['m|pedido', 'm|reserva', 'm|promos']);
     expect(titulos(msg)).toEqual(['Hacer un pedido', 'Reservar mesa', 'Promociones']);
@@ -430,7 +432,7 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
     expect(s.p!['aviso']).toBeNull();
     expect(estadoDe(crearMundo()).paso).toBeUndefined();
     const con = turno(crearMundo({ nombreAsistente: 'Taquito' }), { texto: 'hola' });
-    expect(con.p!['mensajes'][0]['cuerpo']).toContain('Soy Taquito, el asistente virtual de');
+    expect(con.p!['mensajes'][0]['cuerpo']).toContain('Gracias por escribir a Q\' Taco de prueba. Soy Taquito, el asistente virtual. ¿Qué te gustaría hacer?');
   });
 
   it('con una sola capacidad no hay nada que elegir: va directo (carta o datos de la reserva)', () => {
@@ -495,7 +497,7 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
     expect(sinDato.p!['mensajes'][0]['tipo']).toBe('enlace');
     const promos = registrar(turno(crearMundo(), { texto: 'tienen promociones' }));
     expect(promos.p!['mensajes'][0]['cuerpo']).toContain('Promo Dúo');
-    expect(registrar(turno(crearMundo({ campanas: [] }), { texto: 'tienen promociones' })).cuerpos[0]).toContain('no tengo promociones');
+    expect(registrar(turno(crearMundo({ campanas: [] }), { texto: 'tienen promociones' })).cuerpos[0]).toContain('no tenemos promociones');
   });
 
   it('promoción: ficha con 3 botones; reinicia el estado; sin ficha (producto fuera de la carta) es el menú normal', () => {
@@ -510,7 +512,7 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
     expect(s.p!['mensajes'].some((x: J) => x['evento'] || x['monto'])).toBe(false);
     // La ficha no existe si el ítem no está en la carta: menú normal.
     const sinFicha = turno(crearMundo({ catalogo: CATALOGO.filter((i) => i.id !== 'i6') }), { texto: 'Quiero la Promo Dúo' });
-    expect(sinFicha.p!['mensajes'][0]['cuerpo']).toMatch(/^¡Hola! 👋 Soy el asistente virtual/);
+    expect(sinFicha.p!['mensajes'][0]['cuerpo']).toMatch(/^¡Hola! 👋 Gracias por escribir a .* Soy el asistente virtual\./);
     // «Pedir la promo» agrega el ítem al carrito.
     turno(m, { boton: 'g|pedir|i6' });
     expect(estadoDe(m)['carrito'][0]['nombre']).toBe('Promo Dúo');
@@ -565,7 +567,7 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
         expect(consulta, horarioAtencion).not.toMatch(/Atendemos [A-ZÁÉÍÓÚ]/);
         const fuera = registrar(turno(crearMundo({ horarioAtencion }, Date.UTC(2026, 9, 6, 3)), { texto: 'quiero 3 tacos de birria' }));
         const cuerpoFuera = String(fuera.p!['mensajes'][0]['cuerpo']);
-        expect(cuerpoFuera, horarioAtencion).toBe('Por ahora no estamos tomando pedidos 🕒. Atendemos ' + esperado);
+        expect(cuerpoFuera, horarioAtencion).toBe('¡Gracias por escribirnos! 🕒 Ahora estamos fuera de nuestro horario de pedidos. Atendemos ' + esperado + ' Mientras tanto, puedes reservar una mesa con el botón.');
         expect(cuerpoFuera, horarioAtencion).not.toContain('..');
       }
     }
@@ -576,11 +578,13 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
   it('fuera de horario: lo dice con el horario y ofrece reservar solo si las reservas están activas; sin carrito', () => {
     const m = crearMundo({}, Date.UTC(2026, 9, 6, 3));
     const s = registrar(turno(m, { texto: 'quiero 3 tacos de birria' }));
-    expect(s.p!['mensajes'][0]['cuerpo']).toBe('Por ahora no estamos tomando pedidos 🕒. Atendemos todos los días de 9:00 a 22:00.');
+    expect(s.p!['mensajes'][0]['cuerpo']).toBe('¡Gracias por escribirnos! 🕒 Ahora estamos fuera de nuestro horario de pedidos. Atendemos todos los días de 9:00 a 22:00. Mientras tanto, puedes reservar una mesa con el botón.');
     expect(ids(s.p!['mensajes'][0])).toEqual(['m|reserva']);
     expect(estadoDe(m)['carrito']).toEqual([]);
     const sin = turno(crearMundo({ reservasActivo: false }, Date.UTC(2026, 9, 6, 3)), { texto: 'quiero 3 tacos de birria' });
     expect(sin.p!['mensajes'][0]['tipo']).toBe('texto');
+    // Sin el botón de reservar no se nombra: «con el botón» solo sale si el botón sale.
+    expect(sin.p!['mensajes'][0]['cuerpo']).toBe('¡Gracias por escribirnos! 🕒 Ahora estamos fuera de nuestro horario de pedidos. Atendemos todos los días de 9:00 a 22:00.');
   });
 });
 
@@ -691,7 +695,7 @@ describe('Plan del turno: el pedido', () => {
     const m = crearMundo();
     turno(m, { texto: 'quiero pedir queso y cerveza', extraccion: extPedido({ lineas: [linea('queso fundido', 1), linea('cerveza', 2)] }) });
     const s = registrar(turno(m, { boton: 'e|delivery' }));
-    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^Por delivery no enviamos Cerveza artesanal: lo quité de tu pedido\./);
+    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^Quité «Cerveza artesanal» de tu pedido porque no lo enviamos por delivery\./);
     expect(s.p!['mensajes'][0]['cuerpo']).toContain('Para el delivery necesito');
     expect(estadoDe(m)['carrito'].map((l: J) => l['nombre'])).toEqual(['Queso fundido con chorizo']);
     const rec = crearMundo();
@@ -701,7 +705,7 @@ describe('Plan del turno: el pedido', () => {
     const solo = crearMundo();
     turno(solo, { texto: 'quiero pedir una cerveza', extraccion: extPedido({ lineas: [linea('cerveza', 1)] }) });
     const v = registrar(turno(solo, { boton: 'e|delivery' }));
-    expect(v.p!['mensajes'][0]['cuerpo']).toMatch(/^Por delivery no enviamos Cerveza artesanal/);
+    expect(v.p!['mensajes'][0]['cuerpo']).toMatch(/^Quité «Cerveza artesanal»/);
     expect(v.p!['mensajes'][0]['cuerpo']).toContain('Esta es nuestra carta:');
     expect(estadoDe(solo)['paso']).toBe('pedido');
   });
@@ -721,7 +725,7 @@ describe('Plan del turno: el pedido', () => {
     const m = crearMundo();
     hastaResumen(m, 'delivery');
     const s = turno(m, { boton: 'p|cambiar' });
-    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^Para cambiar tu pedido, vuelve a elegir todo desde la carta: lo que elijas ahí reemplaza tu pedido actual \(hoy tienes: \d+ × [^)]+\)\. Si prefieres dejarlo como estaba, toca «Dejarlo como estaba»\.\n\nEsta es nuestra carta:/);
+    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^Claro\. Elige de nuevo todo lo que quieres: eso reemplaza tu pedido de ahora \(\d+ × [^)]+\)\. Si mejor lo dejas como está, toca «Dejarlo como estaba»\.\n\nEsta es nuestra carta:/);
     const e = estadoDe(m);
     expect(e['paso']).toBe('pedido');
     expect(e['carrito']).toEqual([]);
@@ -737,7 +741,7 @@ describe('Plan del turno: el pedido', () => {
     expect(s.p!['mensajes'].length).toBe(1);
     expect(q).toMatchObject({ tipo: 'imagen', url: QR, evento: 'qr_enviado', monto: 55 });
     expect(q['referencia']).toMatch(/^ped-/);
-    expect(q['cuerpo']).toContain('Total a pagar por QR: 55 Bs (solo la comida)');
+    expect(q['cuerpo']).toContain('Total a pagar con este QR: 55 Bs (solo la comida)');
     expect(q['cuerpo']).not.toContain('delivery se paga');
     expect(s.p!['aviso']).toBeNull();
     expect(s.p!['cierre']).toBeNull();
@@ -776,7 +780,7 @@ describe('Plan del turno: el pedido', () => {
     const no = p['condicionados']['siNoSalio'][0];
     expect(si['cuerpo']).toMatch(/^Listo: pasé tu pedido #\w+ al restaurante\. El pago lo coordinas con ellos al recoger\.$/);
     expect(si['tipo']).toBe('texto');
-    expect(no['cuerpo']).toContain('No pude pasarle tu pedido al restaurante');
+    expect(no['cuerpo']).toContain('No pude pasarle tu pedido a nuestro equipo');
     expect(no['tipo']).toBe('enlace');
     expect(no['url']).toBe('https://wa.me/59100000099');
     expect(no['botones']).toEqual([{ id: '', title: 'Escribir al local' }]);
@@ -832,7 +836,7 @@ describe('Plan del turno: el pedido', () => {
     hastaResumen(m);
     m.ahora += 61 * 60000;
     const s = turno(m, { texto: 'hola' });
-    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^¡Hola! 👋 Soy/);
+    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^¡Hola! 👋 Gracias por escribir a .* Soy el asistente virtual/);
     expect(estadoDe(m)['carrito']).toEqual([]);
   });
 });
@@ -843,7 +847,7 @@ describe('Plan del turno: derivar a una persona (solo se ofrece lo que se cumple
     const s = registrar(turno(m, { texto: 'tengo un problema con mi pedido de ayer, necesito ayuda de una persona', extraccion: extPedido({ quiereHablar: true }) }));
     expect(s.d['accion']).toBe('extraer_pedido');
     const msg = s.p!['mensajes'][0];
-    expect(msg).toMatchObject({ tipo: 'enlace', cuerpo: 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. Para volver al inicio, escribe «menú».', url: 'https://wa.me/59100000099' });
+    expect(msg).toMatchObject({ tipo: 'enlace', cuerpo: '¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo. Para volver al inicio, escribe «menú».', url: 'https://wa.me/59100000099' });
     expect(s.p!['aviso']['tipo']).toBe('transferencia');
     expect(s.p!['aviso']['datos']).toMatchObject({ from: FROM, nombrePerfil: 'Ana Pérez', telefono: FROM, motivo: 'tengo un problema con mi pedido de ayer, necesito ayuda de una persona' });
     expect(s.p!['aviso']['datos']['codigo']).toMatch(/^[0-9A-Z]{4}$/);
@@ -938,7 +942,7 @@ describe('Plan del turno: el comprobante', () => {
     expect(p['aviso']['datos']).toMatchObject({ resultado: 'cuadra', estado: 'comprobante: datos coinciden', mediaId: 'media-1', total: 55, from: FROM });
     const si = p['condicionados']['siSalio'][0];
     const no = p['condicionados']['siNoSalio'][0];
-    expect(si['cuerpo']).toContain('Ya lo pasé al restaurante');
+    expect(si['cuerpo']).toContain('Ya lo pasé a nuestro equipo');
     expect(si['tipo']).toBe('texto');
     expect(no['cuerpo']).toContain('No pude pasarle tu pedido');
     expect(no['cuerpo']).not.toMatch(/ya (lo |la )?pas[eé]/i);
@@ -968,7 +972,7 @@ describe('Plan del turno: el comprobante', () => {
     expect(estadoDe(m)['pedido']).not.toBeNull();
     const b = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejo('ilegible') }));
     expect(b.p!['aviso']['datos']).toMatchObject({ resultado: 'ilegible', estado: 'comprobante ilegible' });
-    expect(b.p!['condicionados']['siSalio'][0]['cuerpo']).toContain('Ya lo pasé al restaurante');
+    expect(b.p!['condicionados']['siSalio'][0]['cuerpo']).toContain('Ya lo pasé a nuestro equipo');
     expect(estadoDe(m)['paso']).toBe('menu');
   });
 
@@ -1022,7 +1026,7 @@ describe('Plan del turno: el comprobante', () => {
   it('recordatorio y reenvío del QR: dos botones; el reenvío no vuelve a reportar `qr_enviado`', () => {
     const m = enEspera();
     const r = registrar(turno(m, { texto: 'ya pagué' }));
-    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Tu pedido #\w+ está guardado; falta tu comprobante: envíame aquí la foto o el PDF\.$/);
+    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Tu pedido #\w+ sigue pendiente: falta que me envíes la foto o el PDF del comprobante del QR\. Si ya no lo quieres, toca «Cancelar pedido»\.$/);
     expect(ids(r.p!['mensajes'][0])).toEqual(['q|reenviar', 'q|cancelar']);
     expect(titulos(r.p!['mensajes'][0])).toEqual(['Reenviar QR', 'Cancelar pedido']);
     const q = turno(m, { boton: 'q|reenviar' });
@@ -1260,14 +1264,15 @@ describe('Vigencia, botones de promoción y costo en mensajes', () => {
     expect(turno(crearMundo({ campanas: vencida }), { texto: 'Quiero la Promo Dúo' }).d['accion']).not.toBe('promo');
     expect(turno(crearMundo({ campanas: vigente }), { texto: 'Quiero la Promo Dúo' }).d['accion']).toBe('promo');
     // En la consulta de promociones, una campaña vencida no se muestra.
-    expect(turno(crearMundo({ campanas: vencida }), { texto: 'tienen promociones' }).p!['mensajes'][0]['cuerpo']).toContain('no tengo promociones');
+    expect(turno(crearMundo({ campanas: vencida }), { texto: 'tienen promociones' }).p!['mensajes'][0]['cuerpo']).toContain('no tenemos promociones');
   });
 
   it('«Pedir la promo» con un ítem que ya no está en la carta vuelve al menú, sin carrito', () => {
     const m = crearMundo();
     turno(m, { texto: 'hola' });
     const s = turno(m, { boton: 'g|pedir|no-existe' });
-    expect(s.p!['mensajes'][0]['cuerpo']).toMatch(/^¡Hola! 👋 Soy el asistente virtual/);
+    // Ya estaba en el menú: la vuelta es corta (el saludo completo es solo para el primer mensaje).
+    expect(s.p!['mensajes'][0]['cuerpo']).toBe('¿Qué te gustaría hacer ahora?');
     expect(estadoDe(m)['carrito']).toEqual([]);
   });
 
@@ -1335,7 +1340,7 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     expect(img).toMatchObject({ tipo: 'imagen', url: QR, evento: 'qr_enviado', monto: 55 });
     expect(img['cuerpo']).toContain('SIMULADO');
     expect(img['cuerpo']).toContain('no cobra');
-    expect(img['cuerpo']).not.toContain('Escanea el QR con la app de tu banco');
+    expect(img['cuerpo']).not.toContain('Escanéalo con la app de tu banco');
     expect(s.p!['ruta']).toBe('pedido:qr_simulado');
     expect(s.p!['ruta']).not.toBe('pedido:sin_qr');
     expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
@@ -1376,7 +1381,7 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     const si = p['condicionados']['siSalio'][0];
     const no = p['condicionados']['siNoSalio'][0];
     expect(si['cuerpo']).toContain('SIMULADO');
-    expect(si['cuerpo']).toContain('Ya lo pasé al restaurante como pedido de PRUEBA');
+    expect(si['cuerpo']).toContain('Ya lo pasé a nuestro equipo como pedido de PRUEBA');
     expect(no['cuerpo']).toContain('SIMULADO');
     expect(no['cuerpo']).not.toMatch(/ya (lo |la )?pas[eé]/i);
     expect(no['tipo']).toBe('enlace');
@@ -1553,7 +1558,7 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     const real = enEsperaReal();
     real.cfg['cobro'] = { ...CFG_SIM.cobro, pendiente: true };
     const r = registrar(turno(real, { texto: '¿ya llegó?' }));
-    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Tu pedido #\w+ está guardado; falta tu comprobante: envíame aquí la foto o el PDF\.$/);
+    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Tu pedido #\w+ sigue pendiente: falta que me envíes la foto o el PDF del comprobante del QR\. Si ya no lo quieres, toca «Cancelar pedido»\.$/);
     expect(JSON.stringify(r.p!['mensajes'])).not.toMatch(/SIMULADO|prueba/i);
     // Un pedido simulado con el modo vigente ya REAL: no se pide otra foto (volvería a derivar): se pasa con una persona y se suelta (ver «sin callejón»).
     const sim = enEsperaSim();
@@ -1613,7 +1618,7 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
   it('el recordatorio en simulado dice «SIMULADO»; en real no', () => {
     const m = enEsperaSim();
     const r = registrar(turno(m, { texto: 'ya pagué' }));
-    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Tu pedido #\w+ está guardado; falta tu comprobante SIMULADO \(es una prueba: no se paga nada\): envíame aquí cualquier foto\./);
+    expect(r.p!['mensajes'][0]['cuerpo']).toMatch(/^Tu pedido #\w+ sigue pendiente: falta que me envíes cualquier foto del comprobante SIMULADO \(es una prueba: no se paga nada\)\. Si ya no lo quieres, toca «Cancelar pedido»\./);
     expect(ids(r.p!['mensajes'][0])).toEqual(['q|reenviar', 'q|cancelar']);
     const real = turno(enEsperaReal(), { texto: 'ya pagué' });
     expect(real.p!['mensajes'][0]['cuerpo']).not.toMatch(/simulad|prueba/i);
@@ -1702,7 +1707,7 @@ describe('Todo texto al cliente es seguro (PROHIBICIÓN 3)', () => {
     }
   });
 
-  it('el plan nunca promete antes de que el aviso salga: ningún mensaje directo dice «ya pasé» o «llegó al restaurante»', () => {
+  it('el plan nunca promete antes de que el aviso salga: ningún mensaje directo dice «ya pasé», «llegó a nuestro equipo» ni «Anotamos tu reserva»', () => {
     const m = crearMundo(CFG_QR);
     const salidas = [
       hastaResumen(m), turno(m, { boton: 'p|confirmar' }),
@@ -1716,7 +1721,7 @@ describe('Todo texto al cliente es seguro (PROHIBICIÓN 3)', () => {
     hastaResumen(p);
     salidas.push(turno(p, { boton: 'p|confirmar' }));
     for (const s of salidas) {
-      for (const msg of s.p!['mensajes']) expect(String(msg['cuerpo'])).not.toMatch(/ya (lo )?pasé|llegó al restaurante|pasé tu pedido/i);
+      for (const msg of s.p!['mensajes']) expect(String(msg['cuerpo'])).not.toMatch(/ya (lo )?pasé|llegó al restaurante|llegó a nuestro equipo|anotamos tu reserva|pasé tu pedido/i);
     }
   });
 });

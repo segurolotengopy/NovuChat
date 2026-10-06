@@ -22,6 +22,7 @@
     "nivelEmojis": "pocos",
     "direccion": "REEMPLAZAR_DIRECCION_QTACO",
     "horarioAtencion": "REEMPLAZAR_HORARIO_ATENCION_QTACO",
+    "horarioAtencionManda": "si",
     "moneda": "BOB",
     "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
     "prefijosPermitidos": "591",

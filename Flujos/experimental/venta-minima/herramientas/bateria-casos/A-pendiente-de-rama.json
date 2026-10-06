@@ -308,11 +308,10 @@
       "variantes": {
         "turno": 1,
         "frases": [
-          "eso es todo",
-          "cámbiame el pedido"
+          "eso es todo"
         ]
       },
-      "nota": "En el head 0c4bf930 esas dos frases con el resumen dado se guardan como REFERENCIA («Entrega: delivery a … (eso es todo)»)."
+      "nota": "En el head 0c4bf930 esas dos frases con el resumen dado se guardan como REFERENCIA («Entrega: delivery a … (eso es todo)»). Desde el 05/10 «cámbiame el pedido» ya no es de este caso: abre el cambio como «Cambiar algo» y lo cubre BO1 (C-cancelar-guardado.json); aquí queda solo «eso es todo», que no cambia nada."
     },
     {
       "id": "C9m",
