@@ -77,10 +77,20 @@ const GLOBOS = sitio.headers.map((h) => ({
   cabeceras: aMapa(h),
 }));
 
+// SOLO PARA LAS PRUEBAS DE NAVEGADOR (`pruebas-navegador/`): la política real no deja que la consola hable con los emuladores
+// locales (`connect-src` no los nombra) y el inicio de sesión falla. `CSP_CONNECT_EXTRA="http://127.0.0.1:9399 http://127.0.0.1:8332"`
+// los suma SOLO a `connect-src`; todo lo demás (img-src, script-src, frame-src…) queda como en firebase.json. Sin la variable no cambia nada.
+const CONNECT_EXTRA = (process.env.CSP_CONNECT_EXTRA ?? '').trim();
+function conEmuladores(cabeceras) {
+  const csp = cabeceras['Content-Security-Policy'];
+  if (!CONNECT_EXTRA || typeof csp !== 'string') return cabeceras;
+  return { ...cabeceras, 'Content-Security-Policy': csp.replace(/connect-src /, `connect-src ${CONNECT_EXTRA} `) };
+}
+
 function cabecerasDe(ruta) {
   let acumulado = {};
   for (const g of GLOBOS) if (g.prueba.test(ruta)) acumulado = { ...acumulado, ...g.cabeceras };
-  return acumulado;
+  return conEmuladores(acumulado);
 }
 
 const CABECERAS = cabecerasDe('/');
