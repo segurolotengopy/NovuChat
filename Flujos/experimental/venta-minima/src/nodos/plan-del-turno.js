@@ -317,6 +317,8 @@ function conNotas(lista_) {
   const previo = notas.join(' ');
   if (!ms.length) return [texto(previo)];
   const primero = Object.assign({}, ms[0], { cuerpo: previo + '\n\n' + ms[0].cuerpo });
+  // El mensaje con el botón de ubicación lleva además su versión sin botón (el respaldo y el texto largo): las notas van delante de las dos.
+  if (typeof ms[0].cuerpoSinBoton === 'string') primero.cuerpoSinBoton = previo + '\n\n' + ms[0].cuerpoSinBoton;
   return [primero].concat(ms.slice(1));
 }
 
@@ -723,7 +725,8 @@ function tomarUbicacion() {
   if (!u || typeof u !== 'object' || typeof u.latitud !== 'number' || typeof u.longitud !== 'number') return;
   if (!isFinite(u.latitud) || !isFinite(u.longitud) || Math.abs(u.latitud) > 90 || Math.abs(u.longitud) > 180) return;
   if (en.paso.indexOf('pedido') !== 0 || en.entrega.entrega !== 'delivery') return;
-  en.entrega.ubicacion = { lat: u.latitud, lng: u.longitud };
+  if (u.latitud === 0 && u.longitud === 0) return; // el punto nulo de un GPS sin fijar no es una ubicación
+  en.entrega.ubicacion = { lat: Math.round(u.latitud * 1e5) / 1e5, lng: Math.round(u.longitud * 1e5) / 1e5 };
 }
 
 // Vuelve a mostrar el paso actual (botón viejo, «sí» suelto, ubicación, pregunta pendiente).
@@ -857,7 +860,11 @@ function siguientePasoPedido() {
     const faltan = pdFaltanEntrega(en.entrega, perfil);
     if (faltan.length) {
       en.paso = 'pedido_datos';
-      return [texto(pdTextoFaltanEntrega(faltan))];
+      // PR-A 05/10: la dirección se pide escrita O con la ubicación (botón nativo de WhatsApp); es el MISMO mensaje que ya salía (0 agregados) y solo
+      // aquí, donde `tomarUbicacion` acepta la ubicación. `Armar mensajes` lo manda con el botón y, si no cabe o falla, en texto sin nombrarlo.
+      const base = pdTextoFaltanEntrega(faltan);
+      return [{ tipo: 'ubicacion', cuerpo: base + ' Escríbela aquí o comparte tu ubicación con el botón.',
+        cuerpoSinBoton: base + ' Escríbela aquí o comparte tu ubicación.' }];
     }
   }
   if (!en.entrega.nombre) en.entrega.nombre = vmLinea(perfil, 60);
@@ -1198,6 +1205,8 @@ function armarPedido() {
     lineas: pdLineasAviso(en.carrito),
     total: total, modalidad: en.entrega.entrega, moneda: monedaTxt,
     nombre: en.entrega.nombre || vmLinea(perfil, 60), direccion: delivery ? en.entrega.direccion : '', coordenadas: coordenadas,
+    // Los números de la ubicación (no el texto): `Avisos` arma con ellos el enlace al mapa del detalle; la plantilla sigue con las coordenadas.
+    ubicacion: delivery && u && isFinite(u.lat) && isFinite(u.lng) ? { lat: u.lat, lng: u.lng } : null,
     notaPedido: en.entrega.notaPedido || '', // la nota del carrito del catalogo web (texto del cliente, ya saneado)
     referencia: delivery ? en.entrega.referencia : '',
     from: t.from, nombrePerfil: t.nombrePerfil,
@@ -1610,10 +1619,15 @@ function aCarrito() {
   if (entregaPrevia.ubicacion) en.entrega.ubicacion = entregaPrevia.ubicacion;
   // Si el carrito trae dirección, se reemplaza el PAR dirección + referencia: la referencia de antes NO se hereda (era de otra dirección); la
   // referencia es opcional y solo la manda la página nueva (`carrito.referencia`).
-  if (c.entrega === 'envio' && String(c.direccion || '').trim()) {
+  // PR-A 05/10: una ubicación enviada por la página SIN texto también reemplaza el par (la dirección vieja del chat NO se hereda: era de otro
+  // lugar y el pedido saldría con una dirección que el cliente ya no quiere); con texto y ubicación se guardan las dos. La ubicación se vuelve a
+  // validar aquí (la misma regla de `Carga de entrada`): sin ella inválida, se borra la que hubiera.
+  const ubic = c.entrega === 'envio' && _pdUbicacion(c.ubicacion) ? _pdCopiaUbicacion(c.ubicacion) : null;
+  if (c.entrega === 'envio' && (String(c.direccion || '').trim() || ubic)) {
     en.entrega.direccion = delCliente(c.direccion, 160);
     en.entrega.referencia = textoDeDato(c.referencia, 150);
-    delete en.entrega.ubicacion;
+    if (ubic) en.entrega.ubicacion = ubic;
+    else delete en.entrega.ubicacion;
   }
 
   const carta = cartaDelNegocio();

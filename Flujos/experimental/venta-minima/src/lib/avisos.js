@@ -791,6 +791,21 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
   };
 }
 
+// El enlace al mapa de la ubicación compartida (PR-A 05/10). Se arma SOLO con dos números —nunca con texto del cliente— y por eso NO pasa por
+// `avLimpio` (que cambia toda URL por «[enlace omitido]»); a cambio se valida con la forma exacta y se devuelve '' ante cualquier duda: tipos
+// que no son número, fuera de rango, no finitos o (0, 0) (el «punto nulo» de un GPS sin fijar). Solo lo usa el detalle de texto del rol `completo`:
+// la plantilla (ventana cerrada) sigue con las coordenadas sin enlace.
+const AV_FORMA_ENLACE_MAPA = /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=-?\d{1,2}\.\d{6}%2C-?\d{1,3}\.\d{6}$/;
+function avEnlaceDeUbicacion(u) {
+  if (!u || typeof u !== 'object') return '';
+  const lat = u.lat;
+  const lng = u.lng;
+  if (typeof lat !== 'number' || typeof lng !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lng)) return '';
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return '';
+  const url = 'https://www.google.com/maps/search/?api=1&query=' + lat.toFixed(6) + '%2C' + lng.toFixed(6);
+  return AV_FORMA_ENLACE_MAPA.test(url) ? url : '';
+}
+
 // Detalle completo en texto libre. Cada pieza dinámica pasa por `avLimpio`; el cierre va al final.
 function avDetalle(tipo, d, rol, resultado, ahoraMs) {
   const opc = { cocina: rol === 'cocina' };
@@ -816,6 +831,9 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
       // Las coordenadas de la ubicación compartida van en su propia línea, solo para el rol completo.
       const coord = completo ? avLimpio(d.coordenadas, 80) : '';
       if (coord) lineas.push(coord.charAt(0).toUpperCase() + coord.slice(1));
+      // El enlace al mapa: solo el rol completo y solo con una ubicación válida (de los números, no del texto de `coordenadas`).
+      const mapa = completo ? avEnlaceDeUbicacion(d.ubicacion) : '';
+      if (mapa) lineas.push('Ver en el mapa: ' + mapa);
     } else if (d.modalidad === 'recojo') {
       lineas.push('Entrega: recojo en el local');
     }

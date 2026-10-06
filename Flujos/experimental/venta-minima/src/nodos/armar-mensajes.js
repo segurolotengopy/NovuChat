@@ -273,6 +273,21 @@ function amArmarUno(m) {
     if (Number.isFinite(Number(m.monto)) && m.monto !== null && m.monto !== '') extra.monto = Number(m.monto);
   }
   if (tipo === 'imagen') return amQr(m, cuerpo);
+  // El pedido de ubicación (PR-A 05/10): el botón nativo «Enviar ubicación» de WhatsApp. El texto se pide escrito O con el botón; si no cabe en
+  // 1.024 caracteres (las notas del turno lo empujan) o el envío falla, sale en texto con la versión SIN botón (`cuerpoSinBoton`): nunca se
+  // nombra un botón que no se ve. Las dos versiones pasan por la red de palabras. Es UN mensaje, el mismo que ya salía como texto.
+  if (tipo === 'ubicacion') {
+    const sinBoton = amEmojis(String(m.cuerpoSinBoton === undefined || m.cuerpoSinBoton === null ? '' : m.cuerpoSinBoton).trim()).trim();
+    if (!sinBoton) { AM_errores.push('mensaje_sin_cuerpo: ubicacion_sin_version_sin_boton'); return null; }
+    if (!amSeguro(sinBoton)) return amGenerico('texto_reemplazado_por_palabra_prohibida');
+    if (!AM_PASO && amAfirmaPase(sinBoton)) return amGenerico('pase_afirmado_sin_aviso_salido');
+    const textoSinBoton = amConSeguir(sinBoton);
+    const conBoton = amConSeguir(cuerpo);
+    if (conBoton.length > 1024) return Object.assign({ payload: amTexto(textoSinBoton), texto: textoSinBoton, respaldo: textoSinBoton, tipoReporte: 'text' }, extra);
+    return Object.assign({ payload: Object.assign(amBase('interactive'), { interactive: {
+      type: 'location_request_message', body: { text: conBoton }, action: { name: 'send_location' },
+    } }), texto: conBoton, respaldo: textoSinBoton, tipoReporte: 'interactive' }, extra);
+  }
   // El enlace a la carta (página del catálogo): el botón abre ESA dirección, no el chat del local. Vale solo con una URL segura
   // (https, dominio con nombre, sin usuario ni puerto); sin ella no se promete una carta que el cliente no puede abrir: se pasa con el local.
   if (tipo === 'enlace' && m.catalogo === true) {
