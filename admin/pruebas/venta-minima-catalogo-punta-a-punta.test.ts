@@ -1153,6 +1153,37 @@ describe('BO1: con el resumen dado, «cámbiame el pedido» abre el cambio como 
     },
   );
 
+  // Cambia un dato de «Config base» del mundo YA armado (el nodo lee la asignación en cada turno): el pedido sigue guardado y lo que cambia es el negocio.
+  const cambiarBase = (w: ReturnType<typeof crear>, nombre: string, valor: string | boolean): void => {
+    const lista = (w.mundo.flujo.nodes.find((n) => n.name === 'Config base')!.parameters['assignments'] as J)['assignments'] as J[];
+    lista.find((x) => x['name'] === nombre)!['value'] = valor;
+  };
+  // La compuerta del horario: el texto respeta el horario igual que el botón. Sin esta prueba, quitar `cerrado()` del código no rompería nada.
+  it.each(['cámbiame el pedido', 'quiero cambiar mi pedido'])('«%s» con el local CERRADO (lunes sin horario): fuera de horario, el pedido queda como estaba y no se abre el cambio', (dicho) => {
+    const { w } = conResumen();
+    const antes = JSON.stringify(estadoDe(w)['carrito']);
+    expect(antes.length, 'hay un pedido guardado').toBeGreaterThan(10);
+    cambiarBase(w, 'horario', 'lun=cerrado,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00'); // AHORA es lunes 10:00
+    const t = turno(w, texto(dicho));
+    expect(cuerpos(t), dicho).toMatch(/fuera de nuestro horario de pedidos/);
+    expect(cuerpos(t), dicho).not.toMatch(/reemplaza tu pedido de ahora/);
+    expect(estadoDe(w)['carritoAnterior'] ?? null, dicho).toBeNull();
+    expect(JSON.stringify(estadoDe(w)['carrito']), dicho).toBe(antes);
+    expect(t.avisos, dicho).toHaveLength(0);
+  });
+  it('con el local ABIERTO, la misma frase sí abre el cambio (control de la prueba de arriba)', () => {
+    const { w } = conResumen();
+    cambiarBase(w, 'horario', 'lun=08:00-23:00,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00');
+    expect(cuerpos(turno(w, texto('cámbiame el pedido')))).toMatch(/reemplaza tu pedido de ahora/);
+  });
+  it('con `pedidosActivo: false` la regla no actúa: el texto no abre el cambio ni deja `carritoAnterior`', () => {
+    const { w } = conResumen();
+    cambiarBase(w, 'pedidosActivo', false);
+    const t = turno(w, texto('cámbiame el pedido'));
+    expect(cuerpos(t)).not.toMatch(/reemplaza tu pedido de ahora/);
+    expect(estadoDe(w)['carritoAnterior'] ?? null).toBeNull();
+    expect(t.avisos).toHaveLength(0);
+  });
   it('fuera del paso de confirmar la regla no actúa: en el menú no hay pedido que reemplazar (`carritoAnterior` vacío)', () => {
     const w = crear();
     turno(w, texto('hola'));

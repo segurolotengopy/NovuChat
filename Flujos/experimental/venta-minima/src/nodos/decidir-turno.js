@@ -480,6 +480,7 @@ function cambioDeEntrega(norm) {
 function distancia(a, b) {
   const m = a.length;
   const n = b.length;
+  if (Math.abs(m - n) > 1) return 2; // corte temprano: todos los usos comparan con `<= 1`
   let fila = [];
   for (let j = 0; j <= n; j++) fila.push(j);
   for (let i = 1; i <= m; i++) {
