@@ -41,7 +41,7 @@ describe('exportar.ts: el texto no puede ser una fórmula', () => {
   });
 
   it('el texto común no cambia', () => {
-    for (const t of ['', 'Calle 1', 'sin cebolla', '1× pizza', 'a=b', 'x-y', 'a@b.com', ' =x']) {
+    for (const t of ['', 'Calle 1', 'sin cebolla', '1× pizza', 'a=b', 'x-y', 'a@b', ' =x']) {
       expect(neutralizarFormula(t)).toBe(t);
     }
   });
