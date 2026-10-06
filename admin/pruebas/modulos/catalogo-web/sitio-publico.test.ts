@@ -919,6 +919,42 @@ describe('ubicación compartida: política de permisos y página', () => {
     expect(t).not.toMatch(/watchPosition|ipapi|ipinfo|geolocation\.googleapis/);
   });
 
+  it('NEGANDO: la ubicación se pide solo con el toque del botón: ni al montar, ni en un efecto, ni en seguimiento', () => {
+    const t = sinComentarios(sitioFuente());
+    // `pedirUbicacion` aparece exactamente dos veces: la declaración y el onClick.
+    expect(t.match(/\bpedirUbicacion\b/g)?.length).toBe(2);
+    expect(t.match(/const pedirUbicacion = \(\) => \{/g)?.length).toBe(1);
+    expect(t.match(/onClick=\{pedirUbicacion\}/g)?.length).toBe(1);
+    // El onClick está en el botón de «Usar mi ubicación actual».
+    const i = t.indexOf('onClick={pedirUbicacion}');
+    const abre = t.lastIndexOf('<button', i);
+    expect(t.slice(abre, t.indexOf('</button>', i))).toContain('Usar mi ubicación actual');
+    // Y `getCurrentPosition` solo vive dentro de `pedirUbicacion`.
+    const desde = t.indexOf('const pedirUbicacion = () => {');
+    const hasta = t.indexOf('const quitarUbicacion', desde);
+    const cuerpoPedir = t.slice(desde, hasta);
+    expect(cuerpoPedir).toContain('getCurrentPosition(');
+    expect(t.replace(cuerpoPedir, '')).not.toMatch(/getCurrentPosition|navigator\.geolocation/);
+    // Ningún `useEffect(` (cada uno, hasta su paréntesis de cierre) la toca.
+    let inicio = t.indexOf('useEffect(');
+    let efectos = 0;
+    while (inicio !== -1) {
+      let nivel = 0;
+      let fin = inicio + 'useEffect'.length;
+      for (; fin < t.length; fin += 1) {
+        if (t[fin] === '(') nivel += 1;
+        else if (t[fin] === ')') { nivel -= 1; if (nivel === 0) break; }
+      }
+      const efecto = t.slice(inicio, fin + 1);
+      expect(efecto, 'un useEffect no puede pedir la ubicación').not.toMatch(
+        /geolocation|getCurrentPosition|watchPosition|pedirUbicacion/);
+      efectos += 1;
+      inicio = t.indexOf('useEffect(', fin);
+    }
+    expect(efectos).toBeGreaterThan(0);
+    expect(t).not.toMatch(/watchPosition/);
+  });
+
   it('NEGANDO: `accuracy` no viaja: el cuerpo del checkout solo manda `ubicacion` con envío y con valor', () => {
     const t = sinComentarios(sitioFuente());
     expect(t).toContain("...(modo === 'envio' && ubicacion ? { ubicacion } : {}),");
