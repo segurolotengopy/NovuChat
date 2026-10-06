@@ -41,8 +41,12 @@ Decidido por Andres el 06/10/2026 (D1, D2, D3, D5).
   validando en el servidor con o sin la lista. Quien necesite que algo NO se pueda
   hacer lo prohíbe en `firestore.rules` o en la Function.
 - No oculta nada que el comercio use sin la lista: sin lista, cero cambios.
-- El propietario de NovuChat ve el mismo menú del comercio que el comercio (un solo
-  criterio por comercio); lo de plataforma sigue en Negocios.
+- **El propietario de NovuChat ignora la lista**, para todos los ids: NovuChat ve y
+  opera todo en cualquier comercio (Pagar incluido; el enlace de Plataforma a
+  `/negocio/{id}/pagar` sigue abriendo). Lo hace `useConsolaOculta` con la sesión
+  (`ocultosParaVisitante`), así que menú, páginas y rutas lo heredan.
+- **Si falla la lectura de la lista, la consola muestra todo** (la lista queda vacía).
+  Decisión aceptada: ningún límite del servidor depende de la lista.
 
 ## Costo
 

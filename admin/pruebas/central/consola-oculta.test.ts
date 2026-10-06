@@ -21,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  IDS_CONSOLA_OCULTA, consolaOcultaDeFicha, esVisible, reemplazoQrOculto,
+  IDS_CONSOLA_OCULTA, consolaOcultaDeFicha, esVisible, ocultosParaVisitante, reemplazoQrOculto,
 } from '../../functions/src/central/consola-oculta';
 
 // --- Sustitutos de las pantallas: sin red, sin router real, con una lista fija. -------------------
@@ -210,6 +210,41 @@ describe('C. la ruta directa a una página oculta no se abre', () => {
     const lector = sinComentarios(leer('web/src/central/componentes/ConsolaOculta.tsx'));
     expect(lector).not.toMatch(/setDoc|updateDoc|addDoc|writeBatch|runTransaction/);
     expect(lector).not.toContain('dangerouslySetInnerHTML');
+  });
+});
+
+// ===========================================================================
+describe('C2. el propietario de NovuChat ignora la lista; el administrador del comercio no', () => {
+  it('ocultosParaVisitante: el propietario ve todo (todos los ids); el comercio, lo que no está oculto', () => {
+    const todos = [...IDS_CONSOLA_OCULTA];
+    expect(ocultosParaVisitante(todos, true)).toEqual([]);
+    expect(ocultosParaVisitante(todos, false)).toEqual(todos);
+    // El propietario con la lista aún sin leer sigue «cargando» (no se adelanta).
+    expect(ocultosParaVisitante(null, true)).toBeNull();
+    expect(ocultosParaVisitante(null, false)).toBeNull();
+  });
+
+  it('con «pagar» oculto: el propietario sigue viendo el enlace de la cabecera y la página; el administrador no', () => {
+    const pagar = ['pagar'] as const;
+    expect(esVisible(ocultosParaVisitante(pagar, true), 'pagar')).toBe(true);
+    expect(esVisible(ocultosParaVisitante(pagar, false), 'pagar')).toBe(false);
+    const pagina = createElement('div', {}, 'PAGINA-DE-PAGAR');
+    const puerta = (propietario: boolean) => renderToStaticMarkup(createElement(PuertaOculta, {
+      ocultos: ocultosParaVisitante(pagar, propietario), id: 'pagar', children: pagina }));
+    expect(puerta(true)).toContain('PAGINA-DE-PAGAR');
+    expect(puerta(false)).not.toContain('PAGINA-DE-PAGAR');
+    expect(puerta(false)).toContain('data-redirige="/"');
+  });
+
+  it('igual con «invitar»: el propietario ve el formulario; el administrador no', () => {
+    expect(pintar(Usuarios, [...ocultosParaVisitante(['invitar'], true)!])).toContain('Enviar invitación');
+    expect(pintar(Usuarios, [...ocultosParaVisitante(['invitar'], false)!])).not.toContain('Enviar invitación');
+  });
+
+  it('el hook usa la sesión: todo lo que lee la lista (menú, páginas, ruta) pasa por ocultosParaVisitante', () => {
+    const f = sinComentarios(leer('web/src/central/componentes/ConsolaOculta.tsx'));
+    expect(f).toContain('const { permisos } = useSesion();');
+    expect(f).toContain('return ocultosParaVisitante(lista, permisos.propietario);');
   });
 });
 

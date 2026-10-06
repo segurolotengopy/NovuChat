@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../core/lib/firebase';
-import { consolaOcultaDeFicha, esVisible } from '../../../../functions/src/central/consola-oculta';
+import { useSesion } from '../../core/lib/contexto';
+import { consolaOcultaDeFicha, esVisible, ocultosParaVisitante } from '../../../../functions/src/central/consola-oculta';
 import type { IdConsolaOculta } from '../../../../functions/src/central/consola-oculta';
 
 /**
@@ -15,9 +16,14 @@ import type { IdConsolaOculta } from '../../../../functions/src/central/consola-
  * desaparezca (con un clic en medio). Si la lectura falla, la lista queda vacía:
  * sin lista, la consola es la de siempre.
  *
+ * EL PROPIETARIO DE NOVUCHAT IGNORA LA LISTA (devuelve `[]`): ve y opera todo en
+ * cualquier comercio. Como el menú, las páginas y las rutas pasan por este hook,
+ * el criterio vale para todos los ids.
+ *
  * ES SOLO PRESENTACIÓN: lo que el servidor permite no cambia con esto.
  */
 export function useConsolaOculta(tenantId: string | undefined): readonly IdConsolaOculta[] | null {
+  const { permisos } = useSesion();
   const [lista, setLista] = useState<readonly IdConsolaOculta[] | null>(null);
   useEffect(() => {
     if (!tenantId) { setLista(null); return; }
@@ -26,7 +32,7 @@ export function useConsolaOculta(tenantId: string | undefined): readonly IdConso
       (d) => setLista(consolaOcultaDeFicha(d.data())),
       () => setLista([]));
   }, [tenantId]);
-  return lista;
+  return ocultosParaVisitante(lista, permisos.propietario);
 }
 
 /**

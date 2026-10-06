@@ -50,6 +50,17 @@ export function consolaOcultaDeFicha(ficha: FichaConConsolaOculta | null | undef
 }
 
 /**
+ * La lista que rige para quien mira. EL PROPIETARIO DE NOVUCHAT IGNORA LA LISTA:
+ * NovuChat ve y opera todo en cualquier comercio (la lista es lo que NovuChat le
+ * oculta al comercio, no a sí misma). `null` (sin leer) se conserva: sigue cargando.
+ */
+export function ocultosParaVisitante(
+  ocultos: readonly IdConsolaOculta[] | null, propietario: boolean,
+): readonly IdConsolaOculta[] | null {
+  return propietario && ocultos !== null ? [] : ocultos;
+}
+
+/**
  * ¿La consola pinta `id`? Con la lista todavía sin leer (`null`) NO: lo ocultable
  * no aparece y desaparece. Con la lista leída, sí salvo que `id` esté en ella.
  */
