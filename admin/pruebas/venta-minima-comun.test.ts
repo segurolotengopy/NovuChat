@@ -1149,6 +1149,35 @@ describe('Config del negocio', () => {
     expect(c['catalogo']).toEqual([{ id: 'a1', nombre: 'Queso fundido', precio: 40, area: 'Entradas', descripcion: 'Con chorizo', agotado: false }]);
     expect(c['phoneNumberId']).toBe(PNID);
   });
+  describe('horarioAtencionManda: el texto de «Config base» gana sobre el de la consola solo si el dato vale «si» y la base trae texto', () => {
+    const PARTIDO = 'lunes a viernes de 12:00 a 16:00 y de 18:00 a 22:00; sábado y domingo de 12:00 a 22:00';
+    const CONSOLA = 'Lunes a sábado de 12:00 a 22:00'; // lo que dice PANEL.operacion.horarioAtencion
+    const hor = (base: J, panel: J = PANEL): unknown => ok(panel, { base: { ...BASE, ...base } })['horarioAtencion'];
+    it('con el dato en «si» y la base con texto: gana la base, aunque la consola traiga el suyo', () => {
+      expect(hor({ horarioAtencion: PARTIDO, horarioAtencionManda: 'si' })).toBe(PARTIDO);
+      expect(hor({ horarioAtencion: PARTIDO, horarioAtencionManda: ' SI ' })).toBe(PARTIDO);
+    });
+    it('sin el dato: gana la consola, como siempre (los demás clientes y flujos no cambian)', () => {
+      expect(hor({ horarioAtencion: PARTIDO })).toBe(CONSOLA);
+    });
+    it('con el dato pero la base vacía, ausente o sin llenar (REEMPLAZAR_): gana la consola', () => {
+      expect(hor({ horarioAtencion: '', horarioAtencionManda: 'si' })).toBe(CONSOLA);
+      expect(hor({ horarioAtencionManda: 'si' })).toBe(CONSOLA);
+      expect(hor({ horarioAtencion: 'REEMPLAZAR_HORARIO_ATENCION_QTACO', horarioAtencionManda: 'si' })).toBe(CONSOLA);
+    });
+    it('con otro valor del dato («no», «true», vacío): gana la consola', () => {
+      for (const v of ['no', 'true', '', 'REEMPLAZAR_X', 1, true]) expect(hor({ horarioAtencion: PARTIDO, horarioAtencionManda: v }), String(v)).toBe(CONSOLA);
+    });
+    it('con el dato en «si» y la consola SIN texto: la base (igual que sin el dato)', () => {
+      const sinTexto: J = { ...PANEL, operacion: { ...(PANEL['operacion'] as J), horarioAtencion: '' } };
+      expect(hor({ horarioAtencion: PARTIDO, horarioAtencionManda: 'si' }, sinTexto)).toBe(PARTIDO);
+      expect(hor({ horarioAtencion: PARTIDO }, sinTexto)).toBe(PARTIDO);
+    });
+    it('el dato no toca lo demás de la consola (nombre, dirección, moneda siguen mandando)', () => {
+      const c = ok(PANEL, { base: { ...BASE, horarioAtencion: PARTIDO, horarioAtencionManda: 'si', nombreNegocio: 'Otro', direccion: 'Otra' } });
+      expect(c).toMatchObject({ nombreNegocio: 'Casa de Tacos', direccion: 'Calle 1 #23', moneda: 'BOB', horarioAtencion: PARTIDO });
+    });
+  });
   it('direccionMaps: del panel, solo con un enlace de Google Maps válido (la misma regla del servidor); si no, vacío', () => {
     const MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
     const con = (v: unknown): string => ok({ ...PANEL, datosDelNegocio: { ...(PANEL['datosDelNegocio'] as J), direccionMaps: v } })['direccionMaps'] as string;

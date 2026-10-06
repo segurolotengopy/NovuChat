@@ -2000,6 +2000,23 @@ describe('pedido', () => {
     expect(u).not.toContain('..');
   });
 
+  it('turno partido: con `horarioAtencionManda: si` el cliente oye el horario de «Config base» (dos rangos), no el de la consola; sin el dato, el de la consola', () => {
+    const PARTIDO = 'lunes a viernes de 12:00 a 16:00 y de 18:00 a 22:00';
+    const mundo = (config: Record<string, unknown>) => crear({
+      panel: panel({ operacion: { horarioAtencion: 'todos los días de 12:00 a 22:00', moneda: 'BOB', numeroRecepcion: REC, prefijosPermitidos: ['591'] } }),
+      config: { horario: HORARIO_SIN_LUNES, horarioAtencion: PARTIDO, ...config },
+    });
+    const conDato = cuerpos(con(mundo({ horarioAtencionManda: 'si' })).escribe('quiero pedir unos tacos'))[0]!;
+    expect(conDato).toContain(' Atendemos ' + PARTIDO + '.');
+    expect(conDato).not.toContain('todos los días de 12:00 a 22:00');
+    // (Los datos de Q'Taco ya traen el dato en «si»: «sin el dato» es dejarlo vacío.)
+    const sinDato = cuerpos(con(mundo({ horarioAtencionManda: '' })).escribe('quiero pedir unos tacos'))[0]!;
+    expect(sinDato).toContain(' Atendemos todos los días de 12:00 a 22:00.');
+    expect(sinDato).not.toContain('18:00');
+    // La consulta «¿a qué hora abren?» dice lo mismo que el aviso de fuera de horario.
+    expect(cuerpos(con(mundo({ horarioAtencionManda: 'si' })).escribe('a qué hora abren'))[0]).toBe('Atendemos ' + PARTIDO + '.');
+  });
+
   it('«Cambiar algo» reinicia el carrito', () => {
     const r = armarPedido();
     expect(((estadoDe(r.w.mundo)['carrito'] ?? []) as unknown[]).length).toBeGreaterThan(0);
