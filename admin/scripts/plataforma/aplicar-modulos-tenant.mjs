@@ -65,7 +65,9 @@
  * otra combinación sale con 2, también en seco. El id de un proyecto real NUNCA se
  * imprime (el repositorio es público): se imprime `staging` o `produccion`.
  *
- * SALIDA. 0: seco sin diferencias, o escritura hecha y comprobada. 1: el seco
+ * SALIDA. 0: seco sin diferencias, o la lista ya escrita (el seco puede imprimir ✗ de los
+ * chequeos 1 y 6a, que comparan contra `flujos`; no automatizar solo sobre este código), o
+ * escritura hecha y comprobada. 1: el seco
  * encontró diferencias (o la ficha pedida no existe). 2: uso o salvaguarda (nada
  * leído de la nube más allá de lo dicho; nada escrito). 3: error de ejecución
  * (permiso, red, precondición, relectura que no coincide: se imprime solo
@@ -380,7 +382,7 @@ const sinModulos = (ficha) => {
   return resto;
 };
 const igualesComoConjunto = (a, b) => a.length === b.length && a.every((x) => b.includes(x)) && b.every((x) => a.includes(x));
-/** ¿Dos listas son el mismo conjunto (mismo tamaño, cada una dentro de la otra: un repetido no se cuela)? */
+/** ¿Dos listas son el mismo conjunto? Solo es exacto con listas SIN repetidos (las de `modulosValidos`): con repetidos la comparación por pertenencia puede dar verdadero. */
 export const mismoConjunto = (a, b) => Array.isArray(a) && Array.isArray(b) && igualesComoConjunto(a, b);
 
 /**
@@ -495,7 +497,8 @@ export function leerRespaldo(ruta, { entorno, tenant }) {
   let texto;
   let fd;
   try {
-    fd = openSync(ruta, constants.O_RDONLY | constants.O_NOFOLLOW);
+    // O_NONBLOCK: un FIFO en la ruta no cuelga la apertura (el fstat de abajo lo rechaza).
+    fd = openSync(ruta, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     const s = fstatSync(fd);
     if (!s.isFile()) return { ok: false, motivo: 'el respaldo no es un archivo regular' };
     if (typeof process.getuid === 'function' && s.uid !== process.getuid()) return { ok: false, motivo: 'el respaldo no es del usuario' };

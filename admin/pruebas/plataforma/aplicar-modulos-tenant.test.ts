@@ -21,7 +21,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -477,12 +477,15 @@ describe('A2. el respaldo: lo que se guarda, lo que se acepta al leerlo y cómo 
     const dir = nuevoDir();
     const f = join(dir, 'nueva', 'honda', 'r.json');
     mod.guardarRespaldo(f, respaldoBueno());
-    expect(statSync(f).mode & 0o777).toBe(0o600);
+    // Se lee por descriptor (como el script): comprobar la ruta y luego leerla por ruta es la carrera de CodeQL.
+    const abrir = (r: string) => { const fd = openSync(r, 'r'); try { return { modo: fstatSync(fd).mode & 0o777, texto: readFileSync(fd, 'utf8') }; } finally { closeSync(fd); } };
+    const a = abrir(f);
+    expect(a.modo).toBe(0o600);
     expect(statSync(dirname(f)).mode & 0o777).toBe(0o700);
-    expect(JSON.parse(readFileSync(f, 'utf8')).tenant).toBe('qtaco');
+    expect(JSON.parse(a.texto).tenant).toBe('qtaco');
     // Un archivo existente no se pisa.
     expect(() => mod.guardarRespaldo(f, respaldoBueno({ tenant: 'otro' }))).toThrowError(expect.objectContaining({ code: 'EEXIST' }));
-    expect(JSON.parse(readFileSync(f, 'utf8')).tenant).toBe('qtaco');
+    expect(JSON.parse(abrir(f).texto).tenant).toBe('qtaco');
     // Un enlace simbólico en la ruta (aunque apunte a algo inexistente) tampoco: no se escribe a través de él.
     const objetivo = join(dir, 'objetivo-del-enlace.json');
     symlinkSync(objetivo, join(dirname(f), 'enlace.json'));
