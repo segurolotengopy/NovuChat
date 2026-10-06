@@ -1006,12 +1006,15 @@ function aExtraerPedido() {
 // seguida, `aclaro`). Si no: UNA aclaración corta con botones, y si la frase se parece a un cambio de entrega («quiero que me mandn»), la pregunta de la
 // entrega (Delivery / Recoger en el local), que NUNCA deriva. Derivar sigue siendo aviso + botón, pero no es la primera salida.
 function pideUnaPersonaElTexto() {
-  return /\b(hablar con|conversar con|persona|personas|humano|humana|encargad[oa]|asesor|asesora|atencion|llamen|llamenme|llamame|llamar|gerente|duen[oa]|administrador|ayuda|problema|problemas|queja|reclamo|robo|comuniquen\w*|atienda|atiendan)\b/.test(vmNorm(d.texto));
+  // Sin las cortesías («no hay problema», «es para una persona») ni «persona/alguien» de una entrega o recogida: la misma limpieza que `pideAyudaPorCodigo`.
+  return /\b(hablar con|conversar con|persona|personas|humano|humana|encargad[oa]|asesor|asesora|atencion|llamen|llamenme|llamame|llamar|gerente|duen[oa]|administrador|ayuda|problema|problemas|queja|reclamo|robo|comuniquen\w*|atienda|atiendan)\b/.test(sinCortesias(vmNorm(d.texto)));
 }
 function aclararOPasarConElLocal() {
   const n = vmNorm(d.texto);
-  // Una petición de ayuda clara («ayúdenme», «auxilio») también es explícita: `pideUnaPersonaElTexto` solo conoce «ayuda», y `pideAyudaPorCodigo` descarta las cortesías («no hay problema»).
-  const explicito = pideUnaPersonaElTexto() || pideAyudaPorCodigo(n);
+  // Una petición de ayuda clara («ayúdenme», «auxilio», «socorro») también es explícita: `pideUnaPersonaElTexto` solo conoce «ayuda». Se agrega SOLO eso, no todo
+  // `pideAyudaPorCodigo`: sus «alguien», «persona» y «problema» harían derivar a la primera frases de entrega («mandalo con alguien», «dejalo con alguien», «avisa a alguien»,
+  // «me ayudas con el pedido») que merecen la aclaración (LOW de la revisión de seguridad del PR #440).
+  const explicito = pideUnaPersonaElTexto() || /\b(ayudenme|ayudeme|ayudennos|auxilio|socorro)\b/.test(n);
   const parecidoAEntrega = en.carrito.length > 0 && /\b(mand|envi|traig|traer|llev|domicil|delivery|recog|recoj|retir|buscar)/.test(n);
   if (parecidoAEntrega && !explicito) {
     ruta = 'boton:aclarar_entrega';
@@ -1049,10 +1052,14 @@ function hablaDeDelivery(n) { return /\b(delivery|envio|envios|enviar\w*|envien\
 // Ayuda, queja o petición de atención dicha con palabras (sin depender de la marca del modelo).
 // No cuenta como ayuda: una cortesía («no hay problema», «sin problema», «ningún problema»), ni «alguien/persona» cuando hay verbo de recibir o recoger («alguien lo recibe»,
 // «que lo reciba alguien», «cualquier persona lo recibe») ni «es para una persona». Sí: «ayúdenme», «auxilio».
-function pideAyudaPorCodigo(n) {
+function sinCortesias(n) {
   let t = String(n).replace(/\b(no hay|sin|ningun|ninguna)\s+(problema|problemas|queja|quejas)\b/g, ' ');
   if (/\b(recib\w*|recog\w*|recoj\w*|retir\w*)\b/.test(t)) t = t.replace(/\b(alguien|persona|personas)\b/g, ' ');
   t = t.replace(/\bpara (una|un|1|dos|tres|cuatro) (persona|personas)\b/g, ' ');
+  return t;
+}
+function pideAyudaPorCodigo(n) {
+  const t = sinCortesias(n);
   return /\b(ayud\w*|auxilio|problema\w*|queja\w*|reclam\w*|robo|estafa\w*|atienda\w*|atiendan|atender\w*|alguien|comuniquen\w*|hablar con|persona|personas|humano|humana|encargad[oa]|asesor\w*|llamen|llamenme)\b/.test(t);
 }
 // «Ella va a recoger en portería», «mi esposa lo retira», «lo recoge el portero»: OTRA persona recoge; la entrega sigue siendo delivery. Quien habla de sí mismo («voy a

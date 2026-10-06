@@ -1161,3 +1161,44 @@ describe('BO1: con el resumen dado, «cámbiame el pedido» abre el cambio como 
     expect(estadoDe(w)['carritoAnterior'] ?? null).toBeNull();
   });
 });
+
+// =====================================================================================================
+// Seguimientos LOW de la revisión de seguridad del PR #440: con `quiereHablar` del modelo, ni una frase de ENTREGA con «alguien» («mandalo con alguien»,
+// «dejalo con alguien», «avisa a alguien», «me ayudas con el pedido») ni una cortesía («no hay problema», «es para una persona») derivan a la primera: sale la
+// aclaración (o la pregunta de entrega) con botones y CERO avisos; «ayúdenme» y «auxilio» siguen derivando a la primera con aviso + botón.
+// =====================================================================================================
+describe('LOW #440: con `quiereHablar`, la entrega con «alguien» y las cortesías no derivan a la primera; la ayuda clara sí', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conResumen = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_low_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = { ...NADA, quiereHablar: true };
+    return w;
+  };
+  const conDireccionPendiente = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_low_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = { ...NADA, quiereHablar: true };
+    return w;
+  };
+  const NO_DERIVAN = ['mandalo con alguien', 'dejalo con alguien', 'avisa a alguien', 'me ayudas con el pedido', 'no hay problema', 'es para una persona'];
+
+  it.each(NO_DERIVAN)('«%s» con `quiereHablar`: 0 avisos y una aclaración con botones, con el resumen dado y con la dirección pendiente', (dicho) => {
+    for (const [donde, w] of [['resumen dado', conResumen()], ['dirección pendiente', conDireccionPendiente()]] as const) {
+      const t = turno(w, texto(dicho));
+      expect(t.avisos, `${dicho} (${donde})`).toHaveLength(0);
+      const m = t.mensajes[t.mensajes.length - 1]!;
+      expect(botonesDe(m).length, `${dicho} (${donde}): trae botones`).toBeGreaterThan(0);
+      expect(JSON.stringify(t.mensajes.map((x) => x.cuerpo)), `${dicho} (${donde})`).not.toMatch(/Esto prefiero|no lo puedo resolver por aquí|conversas directamente con nuestro equipo/);
+    }
+  });
+
+  it.each(['ayúdenme', 'auxilio'])('«%s» con `quiereHablar` sigue derivando a la primera, con aviso y con el botón «Escribir al local»', (dicho) => {
+    for (const [donde, w] of [['resumen dado', conResumen()], ['dirección pendiente', conDireccionPendiente()]] as const) {
+      const t = turno(w, texto(dicho));
+      expect(t.avisos.length, `${dicho} (${donde})`).toBeGreaterThan(0);
+      expect(botonesDe(t.mensajes[0]!).map((b) => b.title).join('|') + JSON.stringify(t.mensajes[0]), `${dicho} (${donde})`).toMatch(/Escribir al local/);
+    }
+  });
+});
