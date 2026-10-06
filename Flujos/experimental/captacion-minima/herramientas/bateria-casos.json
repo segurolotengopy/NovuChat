@@ -159,7 +159,8 @@
       { "tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía" },
       { "tipo": "texto", "texto": "😩😩",
         "seco": { "tipo": "respuesta", "empatia": "Te entiendo." },
-        "espera": { "tipo": ["respuesta", "otro"], "descarte": false } } ] },
+        "espera": { "tipo": ["respuesta", "otro"], "descarte": false },
+        "exige": { "accion": "oferta" } } ] },
 
     { "id": "C24", "titulo": "dolor: con un audio transcrito", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
@@ -172,10 +173,23 @@
       { "tipo": "texto", "texto": "Hola" },
       { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
       { "tipo": "texto", "texto": "¿Me llamas mañana a las 10 para explicarme?",
-        "seco": { "tipo": "pide_asesor", "empatia": "Claro, puedo pasarte con una persona." },
-        "espera": { "tipo": ["pide_asesor", "pregunta", "otro"], "descarte": false } },
+        "seco": { "tipo": "pide_asesor", "empatia": "¡Con gusto te ayudamos con eso!" },
+        "exige": { "accion": "contacto", "boton": true } },
       { "tipo": "texto", "texto": "Entonces me llamas tú, ¿sí?",
-        "seco": { "tipo": "pide_asesor", "empatia": "Te puedo pasar con una persona." },
+        "seco": { "tipo": "pide_asesor", "empatia": "¡Con gusto te ayudamos con eso!" },
+        "exige": { "accion": "contacto", "boton": true } } ] },
+
+    { "id": "C25b", "titulo": "promesa inducida, el modelo dice otro (lo deriva el código)", "turnos": [
+      { "tipo": "texto", "texto": "Hola" },
+      { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
+      { "tipo": "texto", "texto": "¿Me llamas mañana a las 10 para explicarme?",
+        "seco": { "tipo": "otro", "empatia": "¡Te entiendo! 😊" },
+        "exige": { "accion": "contacto", "boton": true } },
+      { "tipo": "texto", "texto": "Entonces me llamas tú, ¿sí?",
+        "seco": { "tipo": "otro", "empatia": "¡Te entiendo! 😊" },
+        "exige": { "accion": "contacto", "boton": true } },
+      { "tipo": "texto", "texto": "¿Y entonces?",
+        "seco": { "tipo": "otro", "empatia": "¡Te entiendo! 😊" },
         "espera": { "tipo": ["pide_asesor", "pregunta", "otro"], "descarte": false } } ] },
 
     { "id": "C26", "titulo": "monto inducido (2 sucursales)", "turnos": [
@@ -204,7 +218,7 @@
         "seco": { "tipo": "respuesta", "empatia": "¡Uff, te entiendo! 😅 Estar pegada al celular todo el día le quita tiempo a cualquiera." },
         "espera": { "tipo": "respuesta", "descarte": false } },
       { "tipo": "texto", "texto": "Planes por favor." },
-      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con Silvana" },
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" },
       { "tipo": "texto", "texto": "Salón Rosa" } ] },
 
     { "id": "P2", "titulo": "PDF: gastronomía (más directo al dolor)", "turnos": [
@@ -213,7 +227,7 @@
       { "tipo": "texto", "texto": "Sí, pero los fines de semana colapsamos.",
         "seco": { "tipo": "respuesta", "empatia": "¡Ese es el momento donde más dinero se pierde por no responder! 💸" },
         "espera": { "tipo": "respuesta", "descarte": false } },
-      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con Silvana" } ] },
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" } ] },
 
     { "id": "P3", "titulo": "PDF: estudio contable (Otro, no pide precios)", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
@@ -224,7 +238,7 @@
       { "tipo": "texto", "texto": "Sí, la verdad me ahorraría mucho tiempo.",
         "seco": { "tipo": "respuesta", "empatia": "¡Esa es la idea! 💡 Un asistente que responde y agenda de forma natural." },
         "espera": { "tipo": ["respuesta", "otro"], "descarte": false } },
-      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con Silvana" } ] },
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" } ] },
 
     { "id": "P4", "titulo": "PDF: importadora con ERP (Otro, pide precios)", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
@@ -236,7 +250,7 @@
         "seco": { "tipo": "respuesta", "empatia": "¡Excelente! 🚀 Eso es justo lo que se puede conectar." },
         "espera": { "tipo": ["respuesta", "pregunta", "otro"], "descarte": false } },
       { "tipo": "texto", "texto": "Planes por favor." },
-      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con Silvana" } ] },
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" } ] },
 
     { "id": "P5", "titulo": "PDF: comercio (pide precios)", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
@@ -245,6 +259,66 @@
         "seco": { "tipo": "respuesta", "empatia": "¡Qué buena señal que te escriban tanto! 🙌 Pero contestar de noche cansa." },
         "espera": { "tipo": "respuesta", "descarte": false } },
       { "tipo": "texto", "texto": "Planes por favor." },
-      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con Silvana" } ] }
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" } ] },
+
+    { "id": "L1", "titulo": "larga: todo por escrito, sin tocar botones", "turnos": [
+      { "tipo": "texto", "texto": "Hola buenas, quisiera información" },
+      { "tipo": "texto", "texto": "salud y belleza" },
+      { "tipo": "texto", "texto": "Sí, pierdo mucho tiempo con las citas y los recordatorios, y mis clientas se olvidan.",
+        "seco": { "tipo": "respuesta", "empatia": "¡Qué cansado perseguir confirmaciones a mano! 😅 Cuando una clienta se olvida, ese hueco en la agenda ya no se recupera." },
+        "espera": { "tipo": "respuesta", "descarte": false } },
+      { "tipo": "texto", "texto": "¿Cómo se instala?",
+        "seco": { "tipo": "pregunta", "respuesta": "Lo instalamos en 48 horas desde que tenemos tu información: tus servicios, tus horarios y tu calendario. Tú no programas nada y lo controlas desde tu celular.", "enLosDatos": true },
+        "espera": { "tipo": "pregunta", "enLosDatos": true } },
+      { "tipo": "texto", "texto": "¿Y funciona con varias profesionales?",
+        "seco": { "tipo": "pregunta", "respuesta": "Sí. Cada profesional tiene su propia agenda, así que nadie queda con dos citas a la vez, y todo se administra desde la misma consola.", "enLosDatos": true },
+        "espera": { "tipo": "pregunta", "enLosDatos": true } },
+      { "tipo": "texto", "texto": "¿Se conecta con mi sistema de facturación?",
+        "seco": { "tipo": "pregunta", "respuesta": "", "enLosDatos": false },
+        "espera": { "tipo": "pregunta", "enLosDatos": false } },
+      { "tipo": "texto", "texto": "Mándame los planes por favor" },
+      { "tipo": "texto", "texto": "ok" },
+      { "tipo": "texto", "texto": "Quiero hablar con una asesora" },
+      { "tipo": "texto", "texto": "Peluquería Luna" },
+      { "tipo": "texto", "texto": "gracias" },
+      { "tipo": "texto", "texto": "¿Tienen soporte en feriados?",
+        "seco": { "tipo": "pregunta", "respuesta": "", "enLosDatos": false },
+        "espera": { "tipo": "pregunta", "enLosDatos": false } } ] },
+
+    { "id": "L2", "titulo": "larga: cinco preguntas sueltas seguidas en la oferta", "turnos": [
+      { "tipo": "texto", "texto": "Hola" },
+      { "tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía" },
+      { "tipo": "texto", "texto": "Sí, por WhatsApp, y los fines de semana se me juntan los pedidos.",
+        "seco": { "tipo": "respuesta", "empatia": "¡Qué buena señal que te pidan tanto! 🙌 Pero cuando se juntan, atender a todos a la vez es complicado." },
+        "espera": { "tipo": "respuesta", "descarte": false } },
+      { "tipo": "texto", "texto": "¿Calcula el envío?",
+        "seco": { "tipo": "pregunta", "respuesta": "Sí. El cliente dice a dónde va y el total sale con el costo de envío ya sumado, sin idas y vueltas.", "enLosDatos": true },
+        "espera": { "tipo": "pregunta", "enLosDatos": true } },
+      { "tipo": "texto", "texto": "¿Y cómo cobra?",
+        "seco": { "tipo": "pregunta", "respuesta": "Manda el QR de tu banco y el cliente envía su comprobante, que tú revisas desde tu celular.", "enLosDatos": true },
+        "espera": { "tipo": "pregunta", "enLosDatos": true } },
+      { "tipo": "texto", "texto": "¿Puedo cambiar el menú yo mismo?",
+        "seco": { "tipo": "pregunta", "respuesta": "Sí. Desde la consola cambias horarios y precios, y lo controlas todo desde el celular.", "enLosDatos": true },
+        "espera": { "tipo": "pregunta", "enLosDatos": true } },
+      { "tipo": "texto", "texto": "¿Se integra con mi sistema de delivery?",
+        "seco": { "tipo": "pregunta", "respuesta": "", "enLosDatos": false },
+        "espera": { "tipo": "pregunta", "enLosDatos": false } },
+      { "tipo": "texto", "texto": "¿Dónde quedan mis datos?",
+        "seco": { "tipo": "pregunta", "respuesta": "Están en la infraestructura de Google Cloud, con la información de cada negocio aislada de la de los demás.", "enLosDatos": true },
+        "espera": { "tipo": "pregunta", "enLosDatos": true } } ] },
+
+    { "id": "L3", "titulo": "larga: «ok» repetidos y acuses tras el traspaso", "turnos": [
+      { "tipo": "texto", "texto": "Hola" },
+      { "tipo": "fila", "id": "rubro:comercio-y-retail", "titulo": "Comercio y Retail" },
+      { "tipo": "texto", "texto": "Vendo ropa y me escriben de noche, cuando ya cerré.",
+        "seco": { "tipo": "respuesta", "empatia": "¡Qué bueno que tus clientas te busquen a cualquier hora! 🌙 Lo difícil es contestar cuando ya cerraste." },
+        "espera": { "tipo": "respuesta", "descarte": false } },
+      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" },
+      { "tipo": "texto", "texto": "ok" },
+      { "tipo": "texto", "texto": "ok" },
+      { "tipo": "texto", "texto": "👍" },
+      { "tipo": "texto", "texto": "Boutique Sol" },
+      { "tipo": "texto", "texto": "gracias" },
+      { "tipo": "texto", "texto": "ok" } ] }
   ]
 }

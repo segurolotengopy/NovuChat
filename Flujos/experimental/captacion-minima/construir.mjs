@@ -29,7 +29,7 @@
  *       hereda?: '<otro tenant>',
  *       credenciales: { trigger, ingesta, graph, planilla, crm, entradaPrueba? }, pruebaRuta,
  *       configBase: { … },
- *       guion: { asesor: { nombre }, rubros: { '<id>': { dolor, pregunta, impacto?, cierre? }, otro: { pregunta, preguntaDolor?, impacto?, cierre? } } },   // sin imágenes (D16)
+ *       guion: { asesor?: { nombre? }, rubros: { '<id>': { dolor, pregunta, impacto?, cierre? }, otro: { pregunta, preguntaDolor?, impacto?, cierre? } } },   // sin imágenes (D16)
  *                                                          // '<id>': el de la consola VIVA o el slug de su nombre (§13, C1)
  *       conocimiento: { huella, generado, excluidos: [ids], fragmentos: [{ id, titulo, url, texto }] } }
  *
@@ -147,8 +147,35 @@ function patronDePrecios() {
   return new RegExp(m[1], m[2]);
 }
 export const PRECIO = patronDePrecios();
+/** Una constante numérica de la librería (`const CC_X = 24;`): los límites del guion tienen UNA fuente, la librería (§15). */
+function numeroDeLaLibreria(nombre) {
+  const fuente = leerSiExiste(join(AQUI, 'src/lib/captacion.js'), 'src/lib/captacion.js') || '';
+  const m = new RegExp(`^const ${nombre} = (\\d+);`, 'm').exec(fuente);
+  if (!m) throw new Error(`src/lib/captacion.js: no se encontró la línea «const ${nombre} = <número>;»`);
+  return Number(m[1]);
+}
+/** Una expresión regular de una línea de la librería (`const CC_X = /…/;`). */
+function regexDeLaLibreria(nombre) {
+  const fuente = leerSiExiste(join(AQUI, 'src/lib/captacion.js'), 'src/lib/captacion.js') || '';
+  const m = new RegExp(`^const ${nombre} = \\/(.+)\\/([a-z]*);`, 'm').exec(fuente);
+  if (!m) throw new Error(`src/lib/captacion.js: no se encontró la línea «const ${nombre} = /…/;»`);
+  return new RegExp(m[1], m[2]);
+}
+export const MAX_PALABRAS_QUE_HACEMOS = numeroDeLaLibreria('CC_MAX_PALABRAS_QUE_HACEMOS');
+export const MAX_PALABRAS_IMPACTO = numeroDeLaLibreria('CC_MAX_PALABRAS_IMPACTO');
+export const MAX_PALABRAS_COMO_FUNCIONA = numeroDeLaLibreria('CC_MAX_PALABRAS_COMO_FUNCIONA');
+const PROMESA = regexDeLaLibreria('CC_PROMESA_DEL_MODELO');
+// §15: lo que NINGÚN texto del guion puede decir, del mismo patrón que filtra al modelo (una sola fuente: la librería).
+const OFERTA = regexDeLaLibreria('CC_OFERTA_DEL_MODELO');
+const YO = regexDeLaLibreria('CC_YO_DEL_MODELO');
+const MONTO_EN_LETRAS = regexDeLaLibreria('CC_MONTO_MODELO');
+const ENLACE = regexDeLaLibreria('CC_ENLACE');
+const ACREDITACION = /acreditad|verificad|pago (exitoso|recibido|confirmado|aprobado|validado)|recibimos tu pago|\bgarantiz/;
+const NIEGA_SER_IA = /\bno soy (un |una )?(bot|robot|ia|inteligencia|maquina|asistente|programa)|\bsoy (una )?(persona|humano|humana)|de carne y hueso|persona real|\bno es (un )?(bot|robot)/;
+const NUMERO_EN_LETRAS = /\b(cinco|diez|quince|veinte|veinticinco|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|quinientos|mil)\s+(dolares|bolivianos|bs|usd|por ciento)\b/;
 const CONTROLES = /[\u0000-\u001f\u007f\u2028\u2029]/;
-const URL_EN_TEXTO = /[a-z][a-z0-9+.-]*:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|site|app|io|bo|me|co|ly|dev|xyz|info|biz|link|page)\b/i;
+// Caracteres invisibles o de control que se cuelan en un texto sin verse (U+0080 a U+009F, guion blando, espacios de ancho cero, marcas de dirección, BOM).
+const INVISIBLES = /[\u0080-\u009f\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
 
 /** Oraciones y palabras: la misma cuenta que `ccContar` de la librería (una prueba compara las dos). */
 export function contarTexto(t) {
@@ -164,13 +191,26 @@ export function contarTexto(t) {
   return { oraciones, palabras: s.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length };
 }
 
-/** Todo texto del guion: una línea, sin lo que n8n o una planilla toman por código, sin marcador ni URL. */
+/** El texto sin tildes, en minúsculas y con espacios simples (como `ccNorm` de la librería, para las regex de promesas). */
+function ccNorm(t) {
+  return String(t ?? '').normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/** Todo texto del guion: una línea, sin lo que n8n o una planilla toman por código, sin formato de WhatsApp, sin invisibles, sin marcador ni enlace, y sin lo que el servicio no puede decir (§15). */
 function errorDeTextoDelGuion(v) {
   if (CONTROLES.test(v)) return 'trae un salto de línea o un carácter de control';
+  if (INVISIBLES.test(v)) return 'trae un carácter invisible o de control (U+0080 a U+009F, guion blando, ancho cero, marca de dirección o BOM)';
   if (/^[=+\-@]/.test(v)) return 'empieza con «=», «+», «-» o «@» (una planilla lo tomaría por fórmula)';
+  if (/[*_~`]/.test(v)) return 'trae formato de WhatsApp (*, _, ~ o `): cambiaría cómo se ve el texto';
   if (/\{\{|\[|\]|<|>/.test(v)) return 'trae «{{», «[», «]», «<» o «>»';
   if (/REEMPLAZAR_/.test(v)) return 'trae un marcador REEMPLAZAR_';
-  if (URL_EN_TEXTO.test(v)) return 'trae una URL';
+  if (ENLACE.test(v)) return 'trae un enlace o un dominio';
+  const n = ccNorm(v);
+  if (PROMESA.test(n)) return 'promete que alguien llamará, escribirá o responderá («solo se ofrece lo que se cumple»)';
+  if (OFERTA.test(n) || /%|\bgratis\b|\bdescuento/.test(n)) return 'trae una oferta, un regalo, una rebaja, un descuento o un porcentaje';
+  if (PRECIO.test(v) || MONTO_EN_LETRAS.test(n) || NUMERO_EN_LETRAS.test(n)) return 'trae un precio o un monto: los precios los arma el código desde la consola';
+  if (ACREDITACION.test(n)) return 'afirma un pago acreditado o verificado, o garantiza algo (prohibición 3)';
+  if (NIEGA_SER_IA.test(n) || YO.test(n)) return 'habla como una persona o niega ser una IA (prohibición 4)';
   return '';
 }
 
@@ -222,9 +262,13 @@ export function validarDatos(datos, archivo) {
   const g = d.guion && typeof d.guion === 'object' ? d.guion : null;
   if (!g) e('guion', 'falta');
   else {
-    const nombre = g.asesor && typeof g.asesor === 'object' ? g.asesor.nombre : undefined;
-    if (nombre === undefined) e('guion.asesor.nombre', 'falta (vacío o de 2 a 9 letras)');
-    else if (typeof nombre !== 'string' || !(nombre === '' || /^\p{L}{2,9}$/u.test(nombre))) e('guion.asesor.nombre', 'tiene que ser vacío o de 2 a 9 letras (el botón «Hablar con <nombre>» no pasa de 20 caracteres)');
+    // §15: el nombre del asesor es OPCIONAL. NovuChat lo deja vacío (la persona que atienda puede ser otra) y todo mensaje dice «un asesor»; un tenant
+    // que configure un nombre (2 a 9 letras) lo usa como siempre. Ausente (`asesor` sin declarar) equivale a vacío.
+    if (g.asesor !== undefined) {
+      const nombre = g.asesor && typeof g.asesor === 'object' && !Array.isArray(g.asesor) ? g.asesor.nombre : undefined;
+      if (g.asesor === null || typeof g.asesor !== 'object' || Array.isArray(g.asesor)) e('guion.asesor', 'tiene que ser un objeto { nombre }');
+      else if (nombre !== undefined && (typeof nombre !== 'string' || !(nombre === '' || /^\p{L}{2,9}$/u.test(nombre)))) e('guion.asesor.nombre', 'tiene que ser vacío o de 2 a 9 letras (el botón «Hablar con <nombre>» no pasa de 20 caracteres)');
+    }
     const rubros = g.rubros && typeof g.rubros === 'object' && !Array.isArray(g.rubros) ? g.rubros : null;
     if (!rubros) e('guion.rubros', 'falta');
     else {
@@ -239,7 +283,7 @@ export function validarDatos(datos, archivo) {
         if (!r || typeof r !== 'object' || Array.isArray(r)) { e(ruta, 'tiene que ser un objeto'); continue; }
         // D16: la única imagen que envía el flujo es la de los planes (`archivoPlanes` de la consola); el guion no lleva imágenes.
         if ('imagen' in r) e(`${ruta}.imagen`, 'no se admite: la única imagen que envía el flujo es la de los planes, y viene de la consola');
-        for (const k of Object.keys(r)) if (k !== 'imagen' && !['dolor', 'pregunta', 'impacto', 'preguntaDolor', 'cierre'].includes(k)) e(`${ruta}.${k}`, 'no es un campo del guion (dolor, pregunta, impacto, preguntaDolor, cierre)');
+        for (const k of Object.keys(r)) if (k !== 'imagen' && !['dolor', 'pregunta', 'impacto', 'preguntaDolor', 'cierre', 'queHacemos', 'comoFunciona'].includes(k)) e(`${ruta}.${k}`, 'no es un campo del guion (dolor, pregunta, impacto, preguntaDolor, cierre, queHacemos, comoFunciona)');
         // Texto: de qué se compone cada campo.
         const texto = (k, { requerido, max }) => {
           const v = r[k];
@@ -258,6 +302,9 @@ export function validarDatos(datos, archivo) {
         const preguntaDolor = texto('preguntaDolor', { requerido: false, max: 140 });
         // §13: el cierre del mensaje de planes (opcional, por rubro): hasta 2 oraciones y 160 caracteres; a lo más una «?» (el mensaje lleva una sola).
         const cierre = texto('cierre', { requerido: false, max: 160 });
+        // §15: la orientación comercial por rubro (dato del tenant, no código): lo que hace el servicio (1 o 2 oraciones) y cómo funciona (1 oración).
+        const queHacemos = texto('queHacemos', { requerido: false, max: 240 });
+        const comoFunciona = texto('comoFunciona', { requerido: false, max: 160 });
         if (preguntaDolor && ((preguntaDolor.match(/\?/g) || []).length !== 1 || !preguntaDolor.endsWith('?'))) e(`${ruta}.preguntaDolor`, 'tiene que terminar en una sola «?»');
         if (preguntaDolor && id !== 'otro') e(`${ruta}.preguntaDolor`, 'solo lo lleva «otro»');
         if (dolor) {
@@ -273,8 +320,16 @@ export function validarDatos(datos, archivo) {
         if (impacto) {
           const c = contarTexto(impacto);
           if (c.oraciones > 1) e(`${ruta}.impacto`, 'tiene que ser una sola oración');
-          if (c.palabras > 24) e(`${ruta}.impacto`, `tiene ${c.palabras} palabras (hasta 24)`);
-          if (impacto.includes('?')) e(`${ruta}.impacto`, 'no lleva «?»');
+          if (c.palabras > MAX_PALABRAS_IMPACTO) e(`${ruta}.impacto`, `tiene ${c.palabras} palabras (hasta ${MAX_PALABRAS_IMPACTO})`);
+          if (/[?¿]/.test(impacto)) e(`${ruta}.impacto`, 'no lleva «?» ni «¿»');
+        }
+        // La orientación no promete ni cotiza: sin «?», sin precios (los arma el código desde la consola) y sin promesas de contacto («solo se ofrece lo que se cumple»).
+        for (const [campo, valor, maxOraciones, maxPalabras] of [['queHacemos', queHacemos, 2, MAX_PALABRAS_QUE_HACEMOS], ['comoFunciona', comoFunciona, 1, MAX_PALABRAS_COMO_FUNCIONA]]) {
+          if (!valor) continue;
+          const c = contarTexto(valor);
+          if (c.oraciones > maxOraciones) e(`${ruta}.${campo}`, `tiene ${c.oraciones} oraciones (hasta ${maxOraciones})`);
+          if (c.palabras > maxPalabras) e(`${ruta}.${campo}`, `tiene ${c.palabras} palabras (hasta ${maxPalabras})`);
+          if (/[?¿]/.test(valor)) e(`${ruta}.${campo}`, 'no lleva «?» ni «¿»');
         }
         if (cierre) {
           const c = contarTexto(cierre);
