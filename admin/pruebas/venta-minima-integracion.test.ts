@@ -376,6 +376,35 @@ describe('R5: un pedido largo no pierde el total ni los botones', () => {
   it('negado: un pedido corto sigue en UN mensaje', () => {
     expect(clientes(hastaResumen(crear()))).toHaveLength(1);
   });
+
+  // La instrucción «Si está todo bien, toca «Confirmar pedido».» (~45 caracteres) no puede hacer partir en dos (+1 mensaje, +0,0113 USD) un resumen que SIN ella cabe en los 1.024
+  // de un mensaje con botones. Se barre el largo de las notas de 12 líneas: el resumen cruza los 1.024 caracteres de a ~12 por paso.
+  it('un resumen de ~1.000 caracteres sigue en UN mensaje (sin la instrucción si solo ella lo pasaba de 1.024); más allá, se parte como siempre', () => {
+    const INSTRUCCION = 'Si está todo bien, toca «Confirmar pedido».';
+    const resumenCon = (largoNota: number): string[] => {
+      const m = crear();
+      turno(m, { texto: 'hola' });
+      turno(m, { texto: 'pedido grande', extraccion: {
+        lineas: LINEAS.map((p, i) => ({ producto: p, cantidad: 1, forma: 'orden', detalle: ('nota ' + i + ' ').padEnd(largoNota, 'x') })),
+        entrega: 'recojo', direccion: '', referencia: '', nombre: '',
+      } });
+      return cuerpos(turno(m, { boton: 'e|recojo' }));
+    };
+    const corridas = Array.from({ length: 45 }, (_, k) => ({ nota: k + 20, ms: resumenCon(k + 20) }));
+    // Hay una ventana de pedidos de 1.000 a 1.024 caracteres SIN la instrucción, y todos van en UN mensaje de a lo sumo 1.024.
+    const enVentana = corridas.filter((c) => c.ms.length === 1 && c.ms[0]!.length >= 1000 && c.ms[0]!.length <= 1024 && !c.ms[0]!.includes(INSTRUCCION));
+    expect(enVentana.length, 'hay resúmenes de 1.000 a 1.024 caracteres en un solo mensaje, sin la instrucción').toBeGreaterThan(0);
+    for (const c of corridas) {
+      if (c.ms.length === 1) expect(c.ms[0]!.length, 'nota de ' + c.nota).toBeLessThanOrEqual(1024);
+    }
+    // Un resumen que sí cabe con la instrucción la conserva; uno que se parte la lleva en el último mensaje (el de los botones).
+    expect(corridas.some((c) => c.ms.length === 1 && c.ms[0]!.endsWith(INSTRUCCION))).toBe(true);
+    for (const c of corridas.filter((x) => x.ms.length > 1)) expect(c.ms[c.ms.length - 1]!, 'nota de ' + c.nota).toContain(INSTRUCCION);
+    // A medida que la nota crece pasa de 1 mensaje a 2 una sola vez, y nunca a 3.
+    expect(Math.max(...corridas.map((c) => c.ms.length))).toBeLessThanOrEqual(2);
+    const cuentas = corridas.map((c) => c.ms.length);
+    expect(cuentas).toEqual([...cuentas].sort((x, y) => x - y));
+  });
 });
 
 // =================================================================================================
@@ -592,6 +621,29 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
     expect(clases).toEqual(['plantilla', 'detalle', 'imagen']);
     expect(s.armados.find((a) => a['clase'] === 'imagen')!['payload'].image.id).toBe('media-9');
     expect(estadoDe(m)['paso']).toBe('menu');
+  });
+
+  // Cobro REAL: la confirmación del comprobante lleva el resumen corto del pedido, pero un producto llamado «prueba»/«simulado» no puede aparecer (como en el pie del QR real:
+  // `amQr` rechaza esas palabras). Se omite el resumen, no el mensaje.
+  it('cuadra: el resumen del pedido sale en la confirmación (control) y se omite si un producto se llama «prueba» (el mensaje sale igual)', () => {
+    const conNombre = (nombre: string): string => {
+      const catalogo = CATALOGO.map((p) => (p.id === 'i1' ? { ...p, nombre } : p));
+      const m = crear({ panel: conCobro(undefined, { catalogo }) });
+      turno(m, { from: CLIENTE, texto: 'hola' });
+      turno(m, { from: CLIENTE, texto: 'quiero 1 ' + nombre, extraccion: { lineas: [{ producto: nombre, cantidad: 1, forma: 'orden', detalle: '' }], entrega: 'recojo', direccion: '', referencia: '', nombre: '' } });
+      const c = turno(m, { boton: 'p|confirmar' });
+      const ref = String(clientes(c)[0]!['referencia']);
+      m.panel = conCobro({ pedido: ref, monto: 55 }, { catalogo });
+      turno(m, { from: AV1, texto: 'hola' });
+      return cuerpos(comprobante(m, { statusCode: 200, body: { resultado: 'cuadra', cierreId: 'cierre-1' } })).join('\n');
+    };
+    const normal = conNombre('Orden de 3 tacos de birria');
+    expect(normal).toMatch(/Los datos coinciden con tu pedido #\w+ \(1 × Orden de 3 tacos de birria, recojo en el local\)\./);
+    for (const nombre of ['Orden de 3 tacos de birria (prueba)', 'Tacos Simulados de birria']) {
+      const s = conNombre(nombre);
+      expect(s, nombre).toMatch(/Gracias por enviar tu comprobante\. Los datos coinciden con tu pedido #\w+\. Ya lo pas[ée] a nuestro equipo/);
+      expect(s, nombre).not.toMatch(/prueba|simulad/i);
+    }
   });
 
   it('no cuadra: el cliente lee que algunos datos no coinciden; completo ve las diferencias y cocina no', () => {

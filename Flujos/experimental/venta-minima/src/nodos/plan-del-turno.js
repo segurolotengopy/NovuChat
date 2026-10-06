@@ -200,12 +200,21 @@ function notaDelPedidoGuardado() {
 // las notas del turno (`conNotas`) lo empujaran más allá. Es el ÚNICO caso en que el flujo agrega un mensaje: solo en un
 // pedido largo (un mensaje más para ese cliente en esa conversación).
 // (Las constantes van DENTRO de la función: lo que se declara después del `return` del nodo no llega a inicializarse.)
+// La instrucción que cierra el resumen del pedido (una función y no una constante: lo declarado con `const` después del `return` del nodo no llega a inicializarse).
+function instruccionDeConfirmar() { return '\n\nSi está todo bien, toca «Confirmar pedido».'; }
 function partirLargos(lista_) {
   const MAX_CUERPO_BOTONES = 1024;
   const MAX_CUERPO_TEXTO = 3800;
   const salida = [];
   for (const m of (Array.isArray(lista_) ? lista_ : [])) {
     const cuerpo = m && m.tipo === 'botones' ? String(m.cuerpo || '') : '';
+    // La instrucción del resumen («Si está todo bien, toca «Confirmar pedido».», ~45 caracteres) no puede hacer partir un resumen que SIN ella cabe: sería un mensaje
+    // más (+0,0113 USD) por una frase de cortesía. Si sin la instrucción cabe en 1.024, el mensaje sale UNO y sin ella (el botón «Confirmar pedido» ya dice lo mismo).
+    const instr = instruccionDeConfirmar();
+    if (cuerpo.length > MAX_CUERPO_BOTONES && cuerpo.slice(-instr.length) === instr && cuerpo.length - instr.length <= MAX_CUERPO_BOTONES) {
+      salida.push(Object.assign({}, m, { cuerpo: cuerpo.slice(0, -instr.length) }));
+      continue;
+    }
     const i = cuerpo.lastIndexOf('\nTotal de la comida:');
     if (cuerpo.length <= MAX_CUERPO_BOTONES || i < 0) { salida.push(m); continue; }
     let detalle = cuerpo.slice(0, i);
@@ -872,8 +881,9 @@ function siguientePasoPedido() {
   en.carritoAnterior = null; // ya hay un pedido nuevo: el de antes de «Cambiar algo» quedó reemplazado
   en.preguntoDejar = false;
   return [{ tipo: 'botones', cuerpo: pdResumen(en.carrito, en.entrega, { moneda: monedaTxt, nombrePerfil: perfil, maxDetalle: 3000 })
-    // Voz 05/10: la instrucción, nombrando el botón que SÍ sale en este mensaje (va después del total: `partirLargos` corta en «Total de la comida:»).
-    + '\n\nSi está todo bien, toca «Confirmar pedido».', botones: [
+    // Voz 05/10: la instrucción, nombrando el botón que SÍ sale en este mensaje (va después del total: `partirLargos` corta en «Total de la comida:» y la quita si
+    // solo ella hacía pasar el cuerpo de 1.024 caracteres).
+    + instruccionDeConfirmar(), botones: [
     { id: vmIdDeBoton('p', 'confirmar'), title: 'Confirmar pedido' },
     { id: vmIdDeBoton('p', 'cambiar'), title: 'Cambiar algo' },
   ] }];
@@ -1401,7 +1411,7 @@ function aComprobante() {
     if (lectura && lectura.legible === false) resultado = 'ilegible';
   }
   const ilegibles = resultado === 'ilegible' ? en.ilegibles + 1 : en.ilegibles;
-  const base = { codigo: ped.codigo, diferencia: diferencias, ilegibles: ilegibles, entrega: ped.modalidad, moneda: monedaTxt, resumen: cbResumenCorto(ped.lineas, ped.modalidad) };
+  const base = { codigo: ped.codigo, diferencia: diferencias, ilegibles: ilegibles, entrega: ped.modalidad, moneda: monedaTxt, resumen: cbResumenCorto(ped.lineas, ped.modalidad, { real: ped.simulado !== true }) };
   const conAviso = cbTextoAlCliente(resultado, Object.assign({ avisoSalio: true }, base));
   ruta = 'comprobante:' + resultado;
 
