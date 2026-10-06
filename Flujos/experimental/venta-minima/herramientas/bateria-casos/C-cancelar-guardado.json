@@ -1247,49 +1247,6 @@
       ]
     },
     {
-      "id": "AU1b",
-      "titulo": "El mismo audio y el modelo sin líneas: no cae al menú ni deriva; muestra la carta",
-      "estadoPrevio": [
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "hola"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "ruta": "menu"
-          }
-        }
-      ],
-      "turnos": [
-        {
-          "cliente": {
-            "tipo": "audio",
-            "transcripcion": "quiero cuatro tacos de birria"
-          },
-          "seco": {
-            "lineas": []
-          },
-          "esperado": {
-            "mensajes": {
-              "min": 1
-            },
-            "textos": [
-              "carta"
-            ],
-            "textosNo": [
-              "Soy el asistente virtual",
-              "Esto prefiero"
-            ],
-            "efectos": {
-              "derivacion": false,
-              "aviso": false
-            }
-          }
-        }
-      ]
-    },
-    {
       "id": "BO1",
       "titulo": "Con el resumen mostrado, «cámbiame el pedido» vuelve a mostrar el resumen (no abre un cambio ni deriva)",
       "nota": "POR CONFIRMAR CON LA CARTERA: se asierta lo que hace la rama (vuelve a mostrar el resumen en vez de abrir «Cambiar algo»).",

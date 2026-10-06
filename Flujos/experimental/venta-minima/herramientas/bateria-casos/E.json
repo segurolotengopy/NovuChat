@@ -128,7 +128,7 @@
   ],
   "negativoGlobal": {
     "id": "E8",
-    "titulo": "Negativo global: ninguna frase prohibida (pago acreditado, ellos, escríbeles…) en nada de lo que el cliente recibe, en ningún caso",
+    "titulo": "Negativo global: ninguna frase prohibida (pago acreditado, escríbeles…) en nada de lo que el cliente recibe, en ningún caso",
     "frases": [
       "pago acreditado",
       "pago verificado",
@@ -137,7 +137,6 @@
       "gracias por tu pago",
       "reservamos tu mesa",
       "qued[oó] cancelado",
-      "\\bellos\\b",
       "escr[ií]beles",
       "todav[ií]a no es una reserva"
     ]

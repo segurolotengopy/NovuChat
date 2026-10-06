@@ -79,7 +79,7 @@
     },
     {
       "id": "A8",
-      "titulo": "Resumen de recojo y un tipeo («quiero que me mandn»): pregunta «¿delivery o recoger en el local?» con botones, sin derivar",
+      "titulo": "Resumen de recojo y un tipeo («quiero que me mandn»): lo toma como cambio a delivery y pide la dirección exacta, sin derivar (comportamiento de #440, aceptado el 05/10)",
       "estadoPrevio": [
         {
           "cliente": {
@@ -117,15 +117,11 @@
             "mensajes": 1,
             "textos": [
               "delivery",
-              "recoger en el local"
+              "direcci[oó]n exacta"
             ],
             "textosNo": [
               "persona",
               "Esto prefiero"
-            ],
-            "titulos": [
-              "delivery",
-              "recoger|recojo"
             ],
             "titulosNo": [
               "Escribir al local"
@@ -387,6 +383,94 @@
           }
         }
       ]
+    },
+    {
+      "id": "U5m",
+      "titulo": "El aviso al local de un delivery con ubicación compartida lleva además el ENLACE A MAPS (hoy solo trae las coordenadas)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "efectos": {
+              "qr": true
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "imagen",
+            "pie": "comprobante"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "datos coinciden"
+            ],
+            "efectos": {
+              "aviso": true
+            },
+            "avisoTextos": [
+              "(maps\\.google\\.com|google\\.com/maps|maps\\.app\\.goo\\.gl|goo\\.gl/maps)"
+            ]
+          }
+        }
+      ],
+      "nota": "Pendiente de rama: el encargo «ubicación o dirección en texto» (PR-A, punto 2) pide el enlace a Maps en el aviso al local; hoy el aviso solo trae las coordenadas (plan-del-turno.js, «coordenadas»). Cuando exista, pasa a A-ubicacion.json."
     }
   ]
 }
