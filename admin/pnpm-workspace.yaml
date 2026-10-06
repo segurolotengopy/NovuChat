@@ -31,6 +31,36 @@ overrides:
   # bounce); get-uri no usa esa opción y solo llama access, lastMod, list,
   # downloadTo y close, que no cambiaron (02/10/2026).
   basic-ftp: ^6.2.1
+  # Avisos nuevos del 05/10/2026 que Trivy fs bloquea sobre este lockfile
+  # (CRITICAL/HIGH, con dependencias de desarrollo incluidas). Las cuatro
+  # versiones corregidas son las que Trivy marca como «Fixed Version»;
+  # `pnpm why -r` confirma cada camino.
+  #
+  # tinypool — CVE-2026-104848 (GHSA-5gmw-xhrv-c9v3, corregido en 2.1.1) y
+  # CVE-2026-104849 (GHSA-85c8-ppgw-ccpr, corregido en 2.1.2), CRITICAL:
+  # contaminación de prototipo en las opciones del worker que termina en
+  # ejecución de código. Solo lo trae vitest 3.2.7 (pruebas), que declara
+  # ^1.1.1, y la rama 1.x no tiene parche: solo un override lo saca. El único
+  # cambio incompatible de tinypool 2.0 es dejar Node 18 (el CI usa Node 22); el
+  # diff de código de 1.1.1 a 2.1.2 son dos guardas y availableParallelism. Se
+  # acota a ~2.1.2 y no a ^: 2.2.0 quita referencias CJS y no hace falta para
+  # cerrar el aviso. Alternativa descartada: vitest 4 (ya no usa tinypool) es
+  # un salto mayor del corredor de toda la suite.
+  tinypool: ~2.1.2
+  # proxy-addr — CVE-2026-90711, CRITICAL. Llega por express 4.22.2 (que lo
+  # pide con ~2.0.7) desde firebase-functions —dependencia de PRODUCCIÓN de las
+  # Functions— y firebase-tools, y por express 5 desde el SDK de MCP de
+  # firebase-tools. El artefacto que se despliega ya resuelve 2.0.8 por su
+  # cuenta (scripts/lockfile-functions.sh genera el package-lock con npm); el
+  # override alinea este lockfile —el que prueba y el que Trivy escanea— con lo
+  # que corre en producción. Tilde, para no salir del rango de express 4.
+  proxy-addr: ~2.0.8
+  # source-map-js — CVE-2026-93749, HIGH (DoS con un source map indexado mal
+  # formado). Solo por postcss <- vite (compilación de la consola y vitest).
+  source-map-js: ^1.2.2
+  # compression — CVE-2026-87776, HIGH (DoS por fuga de memoria). Solo por
+  # superstatic <- firebase-tools (servidor local de Hosting del CLI).
+  compression: ^1.8.2
 
 packages:
   - web
