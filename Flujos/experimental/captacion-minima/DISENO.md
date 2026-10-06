@@ -255,3 +255,19 @@ Andres probó el flujo real y dijo «hay repeticiones innecesarias, poca cordial
 - **F. Otras correcciones:** el segundo pedido del botón no recibe el mismo texto («¡Claro! 😊 Aquí tienes otra vez el botón para escribirle directo a {asesor}.»); quien ya es cliente (soporte) recibe «¡Claro! 😊 Toca el botón para escribirle directo a {asesor} y contarle lo que necesitas.»
   (antes le decían «cómo armarlo»); la pregunta de los rubros repetida tras algo que no es un rubro es «Para ayudarte mejor, ¿de qué rubro es tu negocio? 😊» (antes, la frase seca de siempre, siete veces seguidas ante una orden del cliente).
 - **G. Revisión del PR #412 (código y seguridad):** el nombre que se muestra de vuelta se valida DESPUÉS de limpiarlo (NFKC, sin invisibles ni bidireccionales, sin `*_~` ni comillas): sin enlace ni teléfono armados al quitar marcas, y sin que el eco diga por el negocio una promesa, un monto, una oferta o una acreditación; si no pasa, «Quedó anotado.» (la ficha conserva el nombre). Una despedida o un acuse compuesto («Chau listo», «Hasta luego ok») ya no se anota como nombre: `ccNombreDeEmpresa` rechaza el texto hecho solo de palabras de acuse. `ccPreguntaHecha` nombra la variante que salió (con o sin planes). El acuse admite el tono de piel de un 👍.
+
+## Más detalle y orientación comercial; sin nombre de persona (§15, 06/10/2026)
+
+Resumen de lo que cambió (el contrato, §15, tiene las decisiones, la tabla de límites antes/después y el porqué):
+- **Límites** en una sola fuente, `ccLimites()` de la librería: mensaje general 6 oraciones y 95 palabras; PLANES 7 y 110; empatía 2 oraciones, 220 caracteres y 34 palabras; `respuesta` del modelo 3 oraciones y 420 caracteres;
+  `maxOutputTokens` 600. `construir.mjs` lee de la librería los topes de palabras del guion (`CC_MAX_PALABRAS_QUE_HACEMOS`, `_IMPACTO`, `_COMO_FUNCIONA`) y la regex de promesas.
+- **La oferta tras el dolor** (`ccOferta`): empatía (modelo) + `orientacion` (`guion.rubros.<id>.queHacemos`) + `impacto` (Harvard, una vez por ficha: `impactoDicho`) + la pregunta de cierre (3 formulaciones con un porqué). `ccResolverModelo` pasa
+  `orientacion` e `impacto` del rubro (el de «otro» si no tiene guion propio). El mensaje de PLANES lleva `comoFunciona` entre el resumen y el cierre (`ccPlanes(cfg, asesor, cierre, comoFunciona)`).
+- **Variantes** (`ccVariante(e, clave, n, base)`): `rot` en la ficha (`saludo`, `rubros`, `traspaso`, `acuse`, `cierre`, `sinDatos`, `identidad`; enteros 0 a 11, saneados por `ccRotSaneada` con solo propiedades propias); se eligen en `ccMensajesDe`/`ccResolverModelo`
+  (donde se escribe la ficha) y por eso «Confirmar envío» los restaura con `fichaAntes`. Vencen con la ventana salvo `rot.saludo`. El saludo parte del último dígito del teléfono (`ccUltimoDigito`).
+- **Invitación sin pregunta** (`ccCierreSinPregunta`) cuando la pregunta de la oferta se omite tras una respuesta suelta, salvo si el prefijo ya ofrece al asesor («sin datos»).
+- **«Un asesor»:** `asesor.nombre` vacío en `novuchat.json`; `validarDatos` acepta `asesor` ausente; `ccInicial` capitaliza al inicio de una oración; los `cierre` del guion dicen «un asesor».
+- **Batería** (`bateria.mjs`, `bateria-casos.json`): casos `L1` (todo por escrito, sin botones), `L2` (cinco preguntas sueltas seguidas) y `L3` («ok» repetidos y acuses tras el traspaso); un teléfono sintético por caso y corrida
+  (`telefonoDe`: 59100000010 a 59100000019, nunca el de recepción ni el del negocio); el informe mide las palabras por mensaje (media, mediana, máximo), los mensajes idénticos seguidos (0 esperado, cuenta como violación
+  `mensaje_repetido_seguido`), las oraciones repetidas de un mensaje al siguiente (informativo: retomar la pregunta pendiente es a propósito) y las apariciones del dato de Harvard por conversación (hasta 1; más es `harvard_mas_de_una_vez`).
+- **Mensajes por conversación: 0 agregados y 0 quitados.**

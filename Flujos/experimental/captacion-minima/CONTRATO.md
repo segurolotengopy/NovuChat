@@ -482,3 +482,56 @@ seco. Lo que cambia:
 ## 14. Cordialidad sin repeticiones (04/10/2026) — manda sobre §13 donde difieran
 
 Tras la prueba real de Andres («hay repeticiones innecesarias, poca cordialidad») cambian los textos fijos de §13: el TRASPASO («…que te cuenta cómo armarlo. Y para dejarlo anotado, ¿cómo se llama tu negocio? 😊», sin «negocio» doble), el cierre tras el nombre («¡Gracias! 😊 Anoté «{empresa}». ¡Cuando quieras, escríbele a {asesor} con el botón!», en lugar de «Quedó anotado.»), la pregunta de la OFERTA (tres formulaciones que rotan) y un acuse («ok», «gracias»…) en el paso de la empresa (no repite la pregunta ni llama al modelo). El detalle y las reglas de seguridad del eco del nombre están en `DISENO.md` §14. Sin cambio en la cuenta de mensajes.
+
+## 15. Más detalle y orientación comercial (06/10/2026) — manda sobre §13 y §14 donde difieran
+
+Silvana (diseño funcional) observó el chat publicado: «está robótico, suele repetir frases, es poco cordial y las respuestas son muy cortas y concisas». La batería real
+(24 conversaciones, 104 mensajes) midió 26 palabras por mensaje de promedio (máximo 46), la presentación idéntica en 24 de 24, la pregunta de cierre de la oferta en 18 de 24
+y la frase de Harvard en los cuatro rubros que la cargaban; solo gastronomía decía algo concreto de lo que NovuChat hace. Decisiones de Andres, sin reabrir:
+
+1. **Un mensaje por turno, como hoy.** El detalle va dentro del mismo mensaje. **0 mensajes agregados o quitados**; ningún camino necesitó uno más.
+2. **Límites** (una sola fuente: `ccLimites()` de la librería; las suites y la batería comparan sus cifras con ella):
+
+   | | Antes | Ahora |
+   |---|---|---|
+   | Mensaje general | 4 oraciones, 60 palabras | **6 oraciones, 95 palabras** |
+   | PLANES (el único con encabezado) | 5 y 70 | **7 y 110** |
+   | `empatia` del modelo | 2 oraciones, 140 caracteres, 25 palabras | **2 oraciones, 220 caracteres, 34 palabras** |
+   | `respuesta` del modelo (pregunta suelta) y aclaración de la consola | 2 oraciones, 280 caracteres (300 la aclaración) | **3 oraciones, 420 caracteres** |
+   | `maxOutputTokens` | 400 | **600** (el razonamiento del modelo también cuenta: se mide en la batería real) |
+   | `impacto` (guion) | 160 caracteres, 20 palabras | 160 caracteres, **21 palabras** (la frase de Harvard con «cliente potencial») |
+   | `queHacemos` / `comoFunciona` (guion, nuevos) | — | 240 caracteres, 2 oraciones, 24 palabras / 160 caracteres, 1 oración, 20 palabras |
+   | Pregunta de cierre de la oferta | 11 palabras | **16 palabras** (con un porqué breve) |
+
+   La oferta máxima cabe justa: empatía (34) + orientación (24) + impacto (21) + pregunta (16) = 95 palabras y 2 + 2 + 1 + 1 = 6 oraciones. Siguen vigentes los límites de Meta
+   (cuerpo ≤1.024, título de botón ≤20 y de fila ≤24, lista ≤10 filas) y **una sola «?» por mensaje**. Objetivo de la oferta tras el dolor: 55 a 85 palabras (antes ~40); con una
+   empatía realista de ~20 palabras mide 53 a 84 según el rubro (la prueba exige al menos 50).
+3. **Estructura de la oferta** (un solo mensaje con botones): empatía natural (modelo) → **orientación** (`queHacemos` del rubro) → el **dato de impacto**, una sola vez por ficha (`impactoDicho`) →
+   una pregunta de cierre con su porqué que propone el siguiente paso (ver planes o hablar con un asesor), en tres formulaciones que rotan. Consultivo, sin presión.
+4. **Orientación comercial por rubro = dato del tenant, no código.** `guion.rubros.<id>.queHacemos` y `comoFunciona` (este último va en el mensaje de PLANES, entre el resumen de precios y el cierre).
+   Se validan en `validarDatos` con el mismo rigor de caracteres y largos que el resto, y además sin `?`, sin precios (`CC_PRECIO`), sin promesas ni porcentajes (`CC_PROMESA_DEL_MODELO`).
+   **Verdad comercial:** solo afirmaciones respaldadas por las fuentes verificadas (el PDF, el corpus del sitio del mismo archivo de datos, los planes de la consola y la frase de Harvard); ninguna cifra, cliente,
+   caso o resultado inventado; ninguna promesa de contacto ni de tiempos de una persona. Una prueba exige que cada cifra de esas oraciones esté literalmente en las fuentes (hoy 24 y 48) y que sus palabras clave
+   estén en el corpus; la tabla «frase → fuente» para Silvana está en el informe de la entrega.
+5. **Harvard:** «Según Harvard Business Review, contactar a un cliente potencial en la primera hora lo hace siete veces más probable de calificar.» (antes «prospecto»). Vive en `impacto` solo donde encaja —belleza,
+   comercio y «otro»; gastronomía y educación no lo cargan— y sale una sola vez por ficha (se vuelve a poder decir en la ventana siguiente).
+6. **Sin repetición.** Los textos fijos tienen tres variantes elegidas de forma determinista por contadores de la ficha: `rot.{saludo, rubros, traspaso, acuse, cierre, sinDatos, identidad}` (enteros 0 a 11) además de
+   `ofertas` y `sueltas` (§14). El saludo del primer mensaje parte del **último dígito del teléfono** (más `rot.saludo`), así que es reproducible. Familias: saludo y pregunta de rubros, traspaso, acuse, cierre tras el nombre,
+   pregunta de cierre de la oferta (y la invitación sin pregunta), «sin datos» e identidad. Dentro de una misma conversación una familia nunca da el mismo texto dos veces seguidas. Las variantes conservan el trato de tú, los emojis
+   (nivel «muchos»), la presentación como IA y la regla de no nombrar un botón que no existe. Los contadores se sanean en `ccEstadoVigente` (solo claves conocidas, enteros acotados, solo propiedades propias), vencen con la
+   ventana —**salvo `rot.saludo`**, para que quien vuelve al día siguiente no reciba el mismo saludo; a las 48 h se olvida la ficha entera— y «Confirmar envío» los restaura con `fichaAntes` si Meta rechaza el mensaje.
+7. **Tono consultivo** en `ccInstrucciones`: vendedor consultivo (reconoce con calidez, conecta con algo concreto que haría el servicio —solo lo del dato—, propone el siguiente paso), sin repetir las palabras del cliente ni las
+   frases de los mensajes fijos, variando el arranque, concreto. Los filtros S1 (identidad), S2 (promesas), S3 (montos y ofertas) y H1 (monto con moneda) y la regla de una sola «?» siguen sin aflojar; `CC_MAX_PALABRAS_EMPATIA` (34)
+   y el margen de `ccRetomar` (prefijo de hasta 3 oraciones y lo que quede de 95 − 4 − la pregunta) son coherentes con los límites nuevos.
+8. **Preguntas sueltas con más detalle:** la `respuesta` del modelo admite 3 oraciones y 420 caracteres. Tras la respuesta la oferta cierra con una invitación sin «?» (tres variantes) que orienta al siguiente paso y mantiene los botones;
+   la pregunta completa se repite una de cada dos veces (§14). «Esa no la tengo a la mano» queda para cuando de verdad no hay dato, con tres frases más cálidas.
+9. **No cambia:** los hechos de calificación, la planilla, el aviso a recepción, el estado (salvo los contadores nuevos), el manejo de medios, los límites de Meta ni los 43 nodos del flujo.
+
+### Cambio de alcance (Andres, 06/10/2026): ninguna persona del equipo se nombra en lo que el cliente lee
+La persona que atienda puede ser otra. Con los datos de NovuChat (`asesor.nombre` **vacío**) ningún mensaje saliente —textos, botones, filas, saludo prellenado del botón a recepción, `cierre` del guion— nombra a nadie: dice «un asesor»
+(sin género marcado). Decisión de implementación:
+- `ccQuien(asesor)` devuelve el nombre configurado o «un asesor»; `ccInicial` lo capitaliza al inicio de una oración («Un asesor te lo responde con gusto»); `ccTituloAsesor` da «Hablar con un asesor» (20 caracteres justos).
+- `guion.asesor` es **opcional** (ausente o `{}` equivale a vacío); un nombre se valida igual que antes (vacío o 2 a 9 letras). Un tenant que configure un nombre sigue funcionando como siempre (las fixtures de prueba con «Silvana» son de un tenant de EJEMPLO).
+- `ccEsIdentidad` reconoce también «¿eres un asesor?», «¿me atiende una asesora?»; los filtros S1/S2 siguen cubriendo «un asesor», «el asesor» y «recepción» como quienes no pueden recibir promesas del modelo.
+- El nombre del ASISTENTE (p. ej. «Kenji», de la consola) no se toca.
+- Pruebas: la suite de punta a punta revisa CADA mensaje con los datos reales (texto, botones, filas, saludo prellenado) contra `/silvana|asesora/i`, la librería recorre todos los caminos y la batería en seco no encuentra el nombre en ninguna conversación.

@@ -27,38 +27,46 @@
   },
   "guion": {
     "asesor": {
-      "nombre": "Silvana"
+      "nombre": ""
     },
     "rubros": {
       "salud-y-belleza": {
         "dolor": "¡Excelente! 💅 En los salones y consultorios, la gente olvida su turno y ese hueco ya no se recupera.",
         "pregunta": "Cuéntame, ¿actualmente pierdes mucho tiempo agendando y recordando citas a mano?",
-        "impacto": "Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.",
-        "cierre": "¿Qué te parece si Silvana te cuenta cómo armaríamos esto para tu negocio? 👇"
+        "queHacemos": "Tu asistente agenda en tu Google Calendar y recuerda la cita 24 horas antes. Cada profesional tiene su propia agenda.",
+        "comoFunciona": "Lo instalamos en 48 horas desde que tenemos tu información y tú lo controlas desde tu celular, sin programar nada.",
+        "impacto": "Según Harvard Business Review, contactar a un cliente potencial en la primera hora lo hace siete veces más probable de calificar.",
+        "cierre": "¿Qué te parece si un asesor te cuenta cómo armaríamos esto para tu negocio? 👇"
       },
       "gastronomia": {
         "dolor": "¡Qué rico! 🍔 En gastronomía los clientes escriben en plena hora pico y, si no respondes rápido, le compran al de al lado.",
         "pregunta": "¿Tomas pedidos por WhatsApp actualmente?",
-        "impacto": "Tomamos el pedido, sumamos el envío y mandamos el QR de cobro en segundos.",
-        "cierre": "¿Hablamos con Silvana para ver cómo subiríamos tu menú al sistema? 👇"
+        "queHacemos": "Tu asistente toma el pedido desde tu carta y suma el envío. Después manda el QR de tu banco y avisa a la cocina.",
+        "comoFunciona": "Lo instalamos en 48 horas desde que tenemos tu información y tú lo controlas desde tu celular, sin programar nada.",
+        "cierre": "¿Hablamos con un asesor para ver cómo subiríamos tu menú al sistema? 👇"
       },
       "comercio-y-retail": {
         "dolor": "¡Genial! 🛍️ Cuando un cliente escribe fuera de horario y nadie responde rápido, le compra a otro.",
         "pregunta": "¿Se te escapan ventas de noche o los fines de semana?",
-        "impacto": "Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.",
-        "cierre": "¿Hablamos con Silvana para ver cómo cargaríamos tu catálogo? 👇"
+        "queHacemos": "Tu asistente responde por tu catálogo a cualquier hora. Arma el pedido, calcula el total con el envío y manda el QR.",
+        "comoFunciona": "Lo instalamos en 48 horas desde que tenemos tu información y tú lo controlas desde tu celular, sin programar nada.",
+        "impacto": "Según Harvard Business Review, contactar a un cliente potencial en la primera hora lo hace siete veces más probable de calificar.",
+        "cierre": "¿Hablamos con un asesor para ver cómo cargaríamos tu catálogo? 👇"
       },
       "educacion": {
         "dolor": "¡Qué bien! 🎓 Responder las mismas dudas de padres y alumnos todos los días quita muchísimo tiempo.",
         "pregunta": "¿Te llegan las mismas consultas una y otra vez?",
-        "impacto": "Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.",
-        "cierre": "¿Hablamos con Silvana para ver cómo armaríamos las respuestas para tu institución? 👇"
+        "queHacemos": "Tu asistente responde las dudas de padres y alumnos a cualquier hora y agenda citas en tu Google Calendar.",
+        "comoFunciona": "Lo instalamos en 48 horas desde que tenemos tu información y tú lo controlas desde tu celular, sin programar nada.",
+        "cierre": "¿Hablamos con un asesor para ver cómo armaríamos las respuestas para tu institución? 👇"
       },
       "otro": {
         "pregunta": "¡Perfecto! 😊 Cuéntame un poquito, ¿de qué trata tu negocio y qué es lo que más tiempo te quita hoy?",
         "preguntaDolor": "¿Y qué es lo que más tiempo te quita hoy en tu negocio?",
-        "impacto": "Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar.",
-        "cierre": "Para negocios como el tuyo diseñamos flujos a medida. ¿Te animas a hablar con Silvana para ver cómo estructuraríamos tus respuestas? 👇"
+        "queHacemos": "Armamos flujos a medida para lo que necesitas lograr, incluso conectados a tu sistema. Lo cotizamos según tu caso.",
+        "comoFunciona": "Empezamos con una reunión para entender tu caso, y tú no programas nada.",
+        "impacto": "Según Harvard Business Review, contactar a un cliente potencial en la primera hora lo hace siete veces más probable de calificar.",
+        "cierre": "Para negocios como el tuyo diseñamos flujos a medida. ¿Te animas a hablar con un asesor para ver cómo estructuraríamos tus respuestas? 👇"
       }
     }
   },
