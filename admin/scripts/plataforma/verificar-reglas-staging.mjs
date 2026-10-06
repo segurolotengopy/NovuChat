@@ -62,6 +62,10 @@
  * --limpiar). 0 mensajes por conversación.
  *
  * LIMITACIONES CONOCIDAS (dichas, no escondidas):
+ *   · El comercio de venta se siembra con el `config/negocio` COMPLETO (`negocioCompletoDeVenta`), sin
+ *     `instruccionesExtra` a propósito (dispararía `verificarComportamiento`, que llama a un modelo).
+ *     Las tres filas `venta→propio escribir {propio}/config/negocio (...)` miden con el servicio real si
+ *     el guardado completo de la consola cabe en las 1.000 expresiones; el emulador puede contar distinto.
  *   · Las fichas NO llevan `modulos`: solo se ejercita el respaldo por `flujos` que tienen
  *     las reglas de #422. La única fila que distingue las reglas de main de las de #422 es
  *     el privado de funcionarios del comercio de venta.
@@ -265,6 +269,88 @@ export function fichaDeAgenda(creadoEn) {
   };
 }
 
+/**
+ * EL DOCUMENTO `config/negocio` COMPLETO DE UN COMERCIO DE VENTA: siete días con un rango, ubicación y enlace de mapa,
+ * calendario de grupo, cada texto fijo en su tope, las listas llenas y `mensajes` con diez claves. Es la forma de
+ * `tope` de `pruebas/plataforma/guardado-configuracion-lib.ts` (`pruebas/plataforma/verificar-reglas-staging.test.ts`
+ * comprueba que son el mismo documento), SALVO `instruccionesExtra` y lo que escribe el servidor
+ * (`instruccionesVigentes`, `instruccionesRevision`): sembrar un texto de comportamiento dispararía en staging la
+ * Function `verificarComportamiento`, que lo revisa con un modelo (costo y escrituras que esta verificación no busca).
+ * Su peso en el presupuesto de expresiones es el de un texto más, y el emulador lo cubre en el tope.
+ * SIN `catalogoWebActivo`: nace apagado, y las filas lo encienden.
+ */
+export function negocioCompletoDeVenta(ahora) {
+  return {
+    nombreNegocio: 'N'.repeat(80),
+    descripcion: 'd'.repeat(400),
+    zonaHoraria: 'America/La_Paz',
+    numeroRecepcion: '1'.repeat(15),
+    direccion: 'x'.repeat(200),
+    tratamiento: 'vos',
+    estiloEmojis: 'muchos',
+    politicaCancelacion: 'p'.repeat(600),
+    prefijosPermitidos: Array.from({ length: 10 }, (_, i) => `59${i}`),
+    datosQueNoTenemos: Array.from({ length: 20 }, (_, i) => `dato ${i}`),
+    mensajeCierre: 'c'.repeat(300),
+    mensajeErrorTemporal: 'e'.repeat(300),
+    mensajeReservaNoConfirmada: 'r'.repeat(300),
+    mensajeComercioSuspendido: 's'.repeat(300),
+    calendarioId: `${'a'.repeat(64)}@group.calendar.google.com`,
+    moneda: 'USD',
+    mensajes: Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`clave_${i}`, `Mensaje fijo número ${i}`])),
+    nombreAsistente: 'k'.repeat(40),
+    paleta: 'vino',
+    horarios: Object.fromEntries(['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'].map((d) => [d, '09:00-18:00'])),
+    direccionMaps: 'https://maps.app.goo.gl/AbCdEfGh12',
+    ubicacion: { lat: -17.8, lng: -63.2 },
+    actualizadoPor: CREADOR,
+    actualizadoEn: ahora,
+  };
+}
+
+/**
+ * LO QUE LA PANTALLA «CONFIGURACIÓN» MANDA AL PULSAR «GUARDAR» sobre un documento ya guardado, sin tocar nada salvo la
+ * casilla del catálogo web. Es la misma construcción que `datosDeNegocio` + `payloadNegocio`
+ * (`web/src/central/lib/payloadNegocio.ts`): este script es JavaScript puro y no puede importar ese módulo, así que la
+ * prueba compara las dos salidas. `marcas`: { ahora, borrar } son los valores especiales del SDK (`serverTimestamp()`,
+ * `deleteField()`), que el script saca de su propio SDK de cliente.
+ */
+export function guardadoDeLaConsola(almacenado, uid, catalogoWeb, marcas) {
+  const v = almacenado;
+  const datos = {
+    nombreNegocio: String(v.nombreNegocio ?? ''),
+    descripcion: String(v.descripcion ?? ''),
+    direccion: String(v.direccion ?? ''),
+    direccionMaps: String(v.direccionMaps ?? ''),
+    numeroRecepcion: String(v.numeroRecepcion ?? ''),
+    calendarioId: String(v.calendarioId ?? ''),
+    politicaCancelacion: String(v.politicaCancelacion ?? ''),
+    tratamiento: String(v.tratamiento ?? 'usted'),
+    estiloEmojis: String(v.estiloEmojis ?? 'pocos'),
+    mensajeCierre: String(v.mensajeCierre ?? ''),
+    mensajeErrorTemporal: String(v.mensajeErrorTemporal ?? ''),
+    mensajeReservaNoConfirmada: String(v.mensajeReservaNoConfirmada ?? ''),
+    mensajeComercioSuspendido: String(v.mensajeComercioSuspendido ?? ''),
+    instruccionesExtra: String(v.instruccionesExtra ?? ''),
+    paleta: String(v.paleta ?? 'indigo'),
+  };
+  const direccionMaps = datos.direccionMaps.trim();
+  const ubicacion = v.ubicacion ?? null;
+  const nombre = (typeof v.nombreAsistente === 'string' ? v.nombreAsistente : '').replace(/[\r\n]+/g, ' ').trim();
+  return {
+    ...datos,
+    ...(direccionMaps !== '' || 'direccionMaps' in v ? { direccionMaps } : {}),
+    ...(ubicacion ? { ubicacion } : 'ubicacion' in v ? { ubicacion: marcas.borrar } : {}),
+    ...(nombre !== '' || 'nombreAsistente' in v ? { nombreAsistente: nombre } : {}),
+    horarios: v.horarios ?? {},
+    catalogoWebActivo: catalogoWeb,
+    zonaHoraria: 'America/La_Paz',
+    moneda: 'BOB',
+    actualizadoPor: uid,
+    actualizadoEn: marcas.ahora,
+  };
+}
+
 // Importado desde una prueba: solo las funciones puras de arriba; nada más se ejecuta.
 if (process.argv[1]?.endsWith('verificar-reglas-staging.mjs')) await principal();
 
@@ -455,6 +541,9 @@ async function principal() {
       await base(t).collection('funcionarios').doc('f1').collection('privado').doc('datos')
         .set({ telefono: '70000000', ...sello() });
     }
+    // El comercio de venta guarda el documento COMPLETO de la consola: las filas de `config/negocio` lo vuelven a
+    // guardar como lo hace «Guardar» (el presupuesto de expresiones del servicio real, no solo el del emulador).
+    await base(N.venta).collection('config').doc('negocio').set(negocioCompletoDeVenta(ahora));
     await base(N.venta).collection('config').doc('venta').set({ costoDelivery: 0, ...sello() });
     await base(N.venta).collection('config').doc('campanas').set({ lista: [], ...sello() });
     await base(N.agenda).collection('config').doc('agendamiento').set({ duracionDefectoMin: 30, ...sello() });
@@ -581,6 +670,19 @@ async function principal() {
       const esperado = PROPIO_VENTA_NEGADO.has(ruta) ? 'negar' : 'permitir';
       await correr(`venta→propio ${op}`, `{propio}/${ruta}`, esperado, fn);
     }
+    // EL GUARDADO COMPLETO DE «CONFIGURACIÓN» sobre el documento lleno (7 días, ubicación, textos y mensajes en su
+    // tope): `updateDoc` con lo que manda la pantalla. Firestore evalúa las reglas sobre el documento resultante y
+    // corta a las 1.000 expresiones; con las reglas de antes del recorte, la fila que ENCIENDE el catálogo web (y la que
+    // lo guarda ya encendido) se rechazaba por eso. Van en este orden: sin cambios con el catálogo apagado, se enciende,
+    // y sin cambios con el catálogo ya encendido.
+    const negocioAlmacenado = negocioCompletoDeVenta(null);
+    const guardarNegocio = (catalogoWeb) => () => updateDoc(
+      R(sV, N.venta, 'config', 'negocio'),
+      guardadoDeLaConsola(negocioAlmacenado, sV.uid, catalogoWeb, { ahora: serverTimestamp(), borrar: fsdk.deleteField() }),
+    );
+    await correr('venta→propio escribir', '{propio}/config/negocio (documento completo, catálogo web apagado, sin cambios)', 'permitir', guardarNegocio(false));
+    await correr('venta→propio escribir', '{propio}/config/negocio (documento completo, 7 días, SE ENCIENDE el catálogo web)', 'permitir', guardarNegocio(true));
+    await correr('venta→propio escribir', '{propio}/config/negocio (documento completo, catálogo web ya encendido, sin cambios)', 'permitir', guardarNegocio(true));
     try { await limpiezaVenta(sV, N.venta, 'verif1'); } catch { /* si el alta falló no hay nada que deshacer */ }
 
     // 2. El admin de venta en el tenant de agenda: NADA.

@@ -36,10 +36,12 @@ import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileS
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deleteField, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
+import { documentoAlmacenado, payloadDeLaConsola } from './guardado-configuracion-lib.ts';
 // @ts-expect-error — módulo .mjs sin tipos
-import { borrarTenants, comprobarBucket, comprobarProyecto, esHuerfanoDePrueba, esObjetoDePrueba, esTenantDePrueba, esUsuarioDePrueba, fichaDeAgenda, fichaDeVenta, marcarFichas, nombresDePrueba } from '../../scripts/plataforma/verificar-reglas-staging.mjs';
+import { borrarTenants, comprobarBucket, comprobarProyecto, esHuerfanoDePrueba, esObjetoDePrueba, esTenantDePrueba, esUsuarioDePrueba, fichaDeAgenda, fichaDeVenta, guardadoDeLaConsola, marcarFichas, negocioCompletoDeVenta, nombresDePrueba } from '../../scripts/plataforma/verificar-reglas-staging.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(aqui, '..', '..');
@@ -289,6 +291,46 @@ describe('verificar-reglas-staging — la salvaguarda de proyecto', () => {
   });
 });
 
+describe('verificar-reglas-staging — el guardado completo de Configuración', () => {
+  const UID = 'u-prueba';
+  const TS = Timestamp.fromMillis(1_700_000_000_000);
+  /** Un valor especial del SDK (`serverTimestamp()`, `deleteField()`) por su nombre, para compararlos entre sí. */
+  const metodo = (v: unknown): unknown => (v && typeof v === 'object' && '_methodName' in v ? `<${String((v as { _methodName: string })._methodName)}>` : v);
+  const plano = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, metodo(v)]));
+
+  it('el documento sembrado es el `tope` de la prueba del guardado completo, salvo lo que dispararía un modelo', () => {
+    const sembrado = negocioCompletoDeVenta(TS) as Record<string, unknown>;
+    const tope = documentoAlmacenado('tope', { dias: 7, ubicacion: true, calendario: 'grupo' }) as Record<string, unknown>;
+    // Lo único que el script NO siembra: el comportamiento del asistente (lo revisa un modelo) y lo que escribe el servidor.
+    for (const k of ['instruccionesExtra', 'instruccionesVigentes', 'instruccionesRevision']) {
+      expect(sembrado, k).not.toHaveProperty(k);
+      delete tope[k];
+    }
+    // El sello del sembrado es el del script; el del `tope`, el de la siembra del repositorio.
+    delete sembrado['actualizadoPor']; delete sembrado['actualizadoEn'];
+    delete tope['actualizadoPor']; delete tope['actualizadoEn'];
+    expect(sembrado).toEqual(tope);
+    expect(Object.keys((negocioCompletoDeVenta(TS) as { horarios: object }).horarios)).toHaveLength(7);
+    expect(negocioCompletoDeVenta(TS)).not.toHaveProperty('catalogoWebActivo');
+  });
+
+  it('lo que el script manda es EXACTAMENTE lo que arma la pantalla (`datosDeNegocio` + `payloadNegocio`)', () => {
+    const almacenado = negocioCompletoDeVenta(TS) as Record<string, unknown>;
+    for (const catalogoWeb of [false, true]) {
+      const delScript = guardadoDeLaConsola(almacenado, UID, catalogoWeb, { ahora: serverTimestamp(), borrar: deleteField() });
+      const dePantalla = payloadDeLaConsola(almacenado, UID, catalogoWeb);
+      expect(plano(delScript), `catálogo web ${catalogoWeb}`).toEqual(plano(dePantalla));
+      expect(Object.keys(delScript)).toEqual(Object.keys(dePantalla)); // incluso el orden
+    }
+    // Y sin ubicación ni mapa guardados, el campo se quita o no se escribe, igual que la pantalla.
+    const sin = { ...almacenado }; delete sin['ubicacion']; delete sin['direccionMaps'];
+    expect(plano(guardadoDeLaConsola(sin, UID, true, { ahora: serverTimestamp(), borrar: deleteField() })))
+      .toEqual(plano(payloadDeLaConsola(sin, UID, true)));
+    // Con el pin guardado, el pin viaja como números (no se borra).
+    expect(guardadoDeLaConsola(almacenado, UID, false, { ahora: serverTimestamp(), borrar: deleteField() })).toHaveProperty('ubicacion', { lat: -17.8, lng: -63.2 });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Parte 2: contra los emuladores, con puertos propios.
 // ---------------------------------------------------------------------------
@@ -384,6 +426,16 @@ describe.skipIf(!process.env.VERIFICAR_REGLAS_EMULADOR)('verificar-reglas-stagin
     expect(m.texto).toMatch(/Limpieza final: 2 tenants y 2 usuarios/); // L1: limpia también cuando la matriz falla
   }, 300000);
 
+  it('con las reglas de v0.13.2 (producción hoy) la fila que enciende el catálogo web con el documento completo FALLA (sale 1): el verificador ve el rechazo', () => {
+    const produccion = readFileSync(join(aqui, 'firestore-base-v0.13.2.rules.txt'), 'utf8');
+    const [m] = conEmuladores(produccion, ['{S} --aplicar --fecha 20261004']);
+    sinSensibles(m.texto);
+    expect(m.codigo, m.texto).toBe(1);
+    expect(m.texto).toMatch(/✗ venta→propio escribir\s+\{propio\}\/config\/negocio \(documento completo, 7 días, SE ENCIENDE el catálogo web\)\s+permitir\s+negar/);
+    expect(m.texto).toMatch(/✗ venta→propio escribir\s+\{propio\}\/config\/negocio \(documento completo, catálogo web ya encendido, sin cambios\)\s+permitir\s+negar/);
+    expect(m.texto).toMatch(/Limpieza final: 2 tenants y 2 usuarios/);
+  }, 300000);
+
   it('H1: con un storage.rules que niega TODO la corrida falla (sale 1) por el control positivo de Storage', () => {
     const NIEGA_TODO = "rules_version = '2';\nservice firebase.storage { match /b/{bucket}/o { match /{todo=**} { allow read, write: if false; } } }\n";
     const [m] = conEmuladores(reglasConAgenda, ['{S} --aplicar --fecha 20261004'], NIEGA_TODO);
@@ -409,7 +461,7 @@ describe.skipIf(!process.env.VERIFICAR_REGLAS_EMULADOR)('verificar-reglas-stagin
     expect(sen.codigo, sen.texto).toBe(0);
     expect(ok.codigo, ok.texto).toBe(0);
     expect(ok.texto).toMatch(/, 0 fallos,/);
-    expect(ok.texto).toMatch(/de 71 filas/);
+    expect(ok.texto).toMatch(/de 74 filas/);
     // M3: el padre huérfano con id de prueba se barre; los señuelos no cuentan.
     expect(ok.texto).toMatch(/Limpieza previa: 1 tenants y 0 usuarios/);
     expect(ok.texto).toMatch(/Limpieza final: 2 tenants y 2 usuarios/);
@@ -418,6 +470,10 @@ describe.skipIf(!process.env.VERIFICAR_REGLAS_EMULADOR)('verificar-reglas-stagin
     expect(ok.texto).toMatch(/venta→propio escribir\s+\{propio\}\/config\/campanas\s+permitir\s+permitir/);
     expect(ok.texto).toMatch(/venta→propio escribir\s+\{propio\}\/catalogo \+ contadores\/catalogo \(lote, alta\)\s+permitir\s+permitir/);
     expect(ok.texto).toMatch(/venta→propio escribir\s+\{propio\}\/fotosCatalogo\s+permitir\s+permitir/);
+    // El guardado completo de la consola, con el servicio que corre las reglas: las tres filas permiten.
+    expect(ok.texto).toMatch(/venta→propio escribir\s+\{propio\}\/config\/negocio \(documento completo, catálogo web apagado, sin cambios\)\s+permitir\s+permitir/);
+    expect(ok.texto).toMatch(/venta→propio escribir\s+\{propio\}\/config\/negocio \(documento completo, 7 días, SE ENCIENDE el catálogo web\)\s+permitir\s+permitir/);
+    expect(ok.texto).toMatch(/venta→propio escribir\s+\{propio\}\/config\/negocio \(documento completo, catálogo web ya encendido, sin cambios\)\s+permitir\s+permitir/);
     expect(ok.texto).toMatch(/venta→propio escribir\s+\{propio\}\/config\/onboarding\s+negar\s+negar/);
     expect(ok.texto).toMatch(/venta→propio escribir\s+\{propio\}\/funcionarios\/\{f\}\s+negar\s+negar/);
     expect(ok.texto).toMatch(/venta→propio escribir\s+\{propio\}\/funcionarios\/\{f\}\/privado\/datos\s+negar\s+negar/);
@@ -433,7 +489,7 @@ describe.skipIf(!process.env.VERIFICAR_REGLAS_EMULADOR)('verificar-reglas-stagin
     expect(ok.texto).not.toMatch(/SIN VERIFICAR/);
 
     expect(mal.codigo, mal.texto).toBe(1);
-    expect(mal.texto).toMatch(/de 77 filas/);
+    expect(mal.texto).toMatch(/de 80 filas/);
     expect(mal.texto).toMatch(/✗ storage venta→propio subir \(ruta extra\)\s+tenants\/\{propio\}\/captacion\/planes\.pdf\s+permitir\s+negar/);
     expect(mal.texto).toMatch(/Limpieza final: 2 tenants y 2 usuarios/);
 
