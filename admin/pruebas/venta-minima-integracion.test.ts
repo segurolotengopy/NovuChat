@@ -972,6 +972,77 @@ describe('PR-A (05/10): la ubicación que manda la página del catálogo', () =>
   });
 });
 
+describe('PR-A (05/10), revisión de seguridad: (0, 0) tras redondear, `Carga de entrada` y el recojo', () => {
+  const casiCero = { latitude: 0.000004, longitude: -0.000003, name: '', address: '' };
+  const pideDireccion = (m: Mundo): Salida => {
+    turno(m, { texto: 'hola' });
+    return turno(m, { texto: 'quiero 1 orden de tacos de birria', extraccion: {
+      lineas: [{ producto: 'tacos de birria', cantidad: 1, forma: 'orden', detalle: '' }], entrega: 'delivery', direccion: '', referencia: '', nombre: 'Ana Pérez',
+    } });
+  };
+  /** `Carga de entrada` real con el cuerpo crudo de un carrito: lo que sale en `messages[0].carrito`. */
+  const cargaDeCarrito = (extra: J): J => {
+    const globales = { Date: relojFijo(AHORA) };
+    const cuerpo: J = {
+      tipo: 'carrito', tenantId: 'tenant-de-prueba', telefono: CLIENTE, accion: 'responder', pedidoId: 'cat_k1a2b3c4_9f8e7d6c', conversacionId: 'c-1',
+      ventanaAbierta: true, items: [{ id: 'i1', nombre: 'Orden de 3 tacos de birria', cantidad: 1, subtotal: 55 }], total: 55, moneda: 'Bs', entrega: 'envio', costoEnvio: 0, ...extra,
+    };
+    const entrada = { headers: { 'x-novuchat-numero': '59100000001', 'x-novuchat-timestamp': String(AHORA), 'x-novuchat-signature': `sha256=${'0'.repeat(64)}` }, body: cuerpo };
+    const salida = ejecutar(CODIGO['carga-de-entrada']!, [entrada], { 'Carrito del catálogo': {} }, globales);
+    return (salida[0]!['messages'] as J[])[0]!['carrito'];
+  };
+
+  it('`Carga de entrada` (cdeUbicacion): una ubicación válida entra con 5 decimales; (0, 0), casi (0, 0) tras redondear, texto, NaN y fuera de rango dan null', () => {
+    expect(cargaDeCarrito({ ubicacion: { lat: -16.500004, lng: -68.150004 } })['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+    expect(cargaDeCarrito({ ubicacion: { lat: 0, lng: -68.15 } })['ubicacion']).toEqual({ lat: 0, lng: -68.15 });
+    for (const mala of [{ lat: 0, lng: 0 }, { lat: 0.000004, lng: -0.000003 }, { lat: '-16.5', lng: '-68.15' }, { lat: NaN, lng: 1 }, { lat: 95, lng: 0 }, { lat: 1, lng: 181 }, { lat: -16.5 }, 'x', [], 7, null]) {
+      expect(cargaDeCarrito({ ubicacion: mala })['ubicacion'], JSON.stringify(mala)).toBeNull();
+    }
+    expect(cargaDeCarrito({})['ubicacion']).toBeNull();
+  });
+
+  it('negado: una ubicación de WhatsApp que redondea a (0, 0) no se toma y se vuelve a pedir la dirección con el botón', () => {
+    const m = crear();
+    pideDireccion(m);
+    const s = turno(m, { tipo: 'location', ubicacion: casiCero });
+    expect(estadoDe(m)['entrega']['ubicacion']).toBeUndefined();
+    expect(estadoDe(m)['paso']).toBe('pedido_datos');
+    expect(clientes(s).filter((j) => j['payload']?.interactive?.type === 'location_request_message')).toHaveLength(1);
+  });
+
+  it('negado: una ubicación de la página que redondea a (0, 0) no entra y no reemplaza la dirección previa', () => {
+    const m = crear();
+    hastaResumen(m);
+    turno(m, { tipo: 'text', carrito: {
+      pedidoId: 'cat_k1a2b3c4_9f8e7d6c', tenantId: 'tenant-de-prueba', accion: 'responder', ventanaAbierta: true, fichaCompartida: false, moneda: 'Bs',
+      total: 55, costoEnvio: 0, entrega: 'envio', direccion: '', nota: '', descartados: 0, itemsTotal: 1,
+      items: [{ id: 'i1', nombre: 'Orden de 3 tacos de birria', cantidad: 1, subtotal: 55 }], ubicacion: { lat: 0.000004, lng: -0.000003 },
+    } });
+    expect(estadoDe(m)['entrega']['ubicacion']).toBeUndefined();
+    expect(estadoDe(m)['entrega']['direccion']).toBe('Calle Falsa 123');
+  });
+
+  it('recojo con un pin y una dirección viejos en el estado: el pedido armado NO lleva ubicación ni coordenadas, y el guardado no copia dirección, referencia ni ubicación', () => {
+    const m = crear();
+    hastaResumen(m); // delivery con dirección y referencia
+    turno(m, { tipo: 'location', ubicacion: { latitude: -16.5, longitude: -68.15 } });
+    expect(estadoDe(m)['entrega']['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+    // El estado pasa a recojo conservando los datos viejos de entrega (como si el cliente hubiera cambiado de modalidad).
+    const e = estadoDe(m)['entrega'];
+    sdDe(m)['estados'][CLIENTE]['entrega'] = { ...e, entrega: 'recojo', modalidad: 'recojo' };
+    const c = turno(m, { boton: 'p|confirmar' });
+    const ped = c.p['pedido'] as J;
+    expect(ped['modalidad']).toBe('recojo');
+    expect(ped['ubicacion']).toBeNull();
+    expect(ped['coordenadas']).toBe('');
+    expect(ped['direccion']).toBe('');
+    expect(ped['referencia']).toBe('');
+    const guardado = JSON.stringify(Object.values(sdDe(m)['pedidos'] ?? {}));
+    expect(guardado).not.toMatch(/Calle Falsa|portón|-16\.5|68\.15|"ubicacion":\{/);
+    expect(JSON.stringify(c.armados)).not.toMatch(/ubicación compartida|google|Calle Falsa/);
+  });
+});
+
 // =================================================================================================
 describe('S6: los topes por teléfono y por hora, de punta a punta', () => {
   const pedirYConfirmar = (m: Mundo, from = CLIENTE): Salida => {
