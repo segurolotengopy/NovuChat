@@ -1100,3 +1100,64 @@ describe('referencia sin cierres: «eso es todo» y «cámbiame el pedido» no s
     },
   );
 });
+
+// =====================================================================================================
+// BO1 (regresión leve del PR #440, batería del 05/10): con el resumen del pedido mostrado, pedir por texto que se cambie el pedido abre el
+// cambio IGUAL que el botón «Cambiar algo» (`p|cambiar`): la carta de nuevo, y lo que se elija ahí reemplaza el pedido. Antes caía en «no te entendí».
+// El filtro `esCierreOCambio` sigue impidiendo que esas frases se guarden como referencia o dirección (prueba arriba).
+// =====================================================================================================
+describe('BO1: con el resumen dado, «cámbiame el pedido» abre el cambio como el botón «Cambiar algo»', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conResumen = () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_bo1_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = NADA;
+    return { w, t };
+  };
+  const cuerpos = (t: ReturnType<typeof turno>): string => JSON.stringify(t.mensajes.map((m) => m.cuerpo));
+  const FRASES = ['cámbiame el pedido', 'quiero cambiar el pedido', 'modifica el pedido', 'Quiero cambiar mi pedido', 'cambia el pedido por favor', 'quisiera modificar mi pedido'];
+
+  it.each(FRASES)('«%s» hace lo mismo que el botón: carta de nuevo, el pedido de ahora a `carritoAnterior`, ninguna referencia, ningún aviso, sin el modelo', (dicho) => {
+    const ref = conResumen();
+    const tb = turno(ref.w, boton(idDeBoton(ref.t, 'Cambiar algo'), 'Cambiar algo'));
+    const { w } = conResumen();
+    const t = turno(w, texto(dicho));
+    expect(cuerpos(t), dicho).not.toMatch(/no te entend/i);
+    expect(cuerpos(t), dicho).toBe(cuerpos(tb));
+    expect(cuerpos(t), dicho).toMatch(/reemplaza tu pedido de ahora/);
+    expect(estadoDe(w)['paso'], dicho).toBe(estadoDe(ref.w)['paso']);
+    expect(estadoDe(w)['carrito'], dicho).toEqual(estadoDe(ref.w)['carrito']);
+    // El pedido de ahora queda en `carritoAnterior` (las líneas; el id del pedido web es propio de cada mundo).
+    const lineas = (x: ReturnType<typeof crear>): unknown => ((estadoDe(x)['carritoAnterior'] as J)['carrito'] as J[]).map((l) => [l['nombre'], l['cantidad']]);
+    expect(lineas(w), dicho).toEqual(lineas(ref.w));
+    expect((lineas(w) as unknown[]).length, dicho).toBeGreaterThan(0);
+    expect((estadoDe(w)['entrega'] as J)['referencia'], dicho).toBe('');
+    expect(t.avisos, dicho).toHaveLength(0);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+  });
+
+  it('no es una dirección ni una referencia aunque el modelo la ponga: abre el cambio y la referencia queda vacía', () => {
+    const { w } = conResumen();
+    w.estado.extraccion = { ...NADA, referencia: 'cámbiame el pedido' };
+    const t = turno(w, texto('cámbiame el pedido'));
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('');
+    expect(cuerpos(t)).toMatch(/reemplaza tu pedido de ahora/);
+  });
+
+  it.each(['quiero cambiar mi pedido a recoger', 'cambiar el pedido para otra dirección: Calle 5', 'cámbiame el pedido de la mesa 3'])(
+    '«%s» NO se toma por «Cambiar algo» (lleva algo más: sigue su camino de siempre)', (dicho) => {
+      const { w } = conResumen();
+      turno(w, texto(dicho));
+      expect(estadoDe(w)['carritoAnterior'] ?? null, dicho).toBeNull();
+    },
+  );
+
+  it('fuera del paso de confirmar la regla no actúa: en el menú no hay pedido que reemplazar (`carritoAnterior` vacío)', () => {
+    const w = crear();
+    turno(w, texto('hola'));
+    w.estado.extraccion = NADA;
+    turno(w, texto('cámbiame el pedido'));
+    expect(estadoDe(w)['carritoAnterior'] ?? null).toBeNull();
+  });
+});

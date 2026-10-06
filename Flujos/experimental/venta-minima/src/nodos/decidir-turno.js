@@ -298,6 +298,23 @@ const CONFIRMA = /^(quiero|quisiera|deseo|voy a) (confirmar|enviar|mandar)( (mi|
 const pedidoEnCurso = ['pedido_entrega', 'pedido_datos'].indexOf(paso) >= 0 || (paso === 'pedido' && Array.isArray(previo.carrito) && previo.carrito.length > 0 && !(Array.isArray(previo.pendiente) && previo.pendiente.length));
 if (pedidoEnCurso && !enComprobante && (soloAfirma || CONFIRMA.test(norm))) return salir('boton', { motivo: 'si_suelto' });
 if (paso === 'pedido_confirmar' && CONFIRMA.test(norm)) return salir('boton', { motivo: 'si_suelto' });
+// Con el resumen mostrado, pedir por texto que se cambie el pedido («cámbiame el pedido», «quiero cambiar mi pedido», «modifica el pedido») abre el cambio igual que el botón
+// «Cambiar algo» (`p|cambiar`: la carta de nuevo; lo que se elija reemplaza el pedido). Vocabulario cerrado y comprobación lineal por palabras (sin regex con cuantificadores
+// anidados): si la frase lleva algo más («… a recoger», «… de la mesa 3», una dirección), no es esto y sigue su camino de siempre. Cero mensajes agregados: sale el de la carta.
+function pideCambiarElPedido(ps) {
+  const PRE = ['mejor', 'ya', 'pues', 'entonces', 'por', 'favor', 'quiero', 'quisiera', 'necesito', 'deseo', 'queremos', 'puedo', 'podria', 'puedes', 'podrias', 'voy', 'a'];
+  const VERBO = ['cambia', 'cambiame', 'cambialo', 'cambiar', 'cambiarlo', 'modifica', 'modificame', 'modificalo', 'modificar', 'modificarlo', 'corrige', 'corrigeme', 'corregir', 'corregirlo'];
+  let i = 0;
+  while (i < ps.length && PRE.indexOf(ps[i]) >= 0) i += 1;
+  if (i >= ps.length || VERBO.indexOf(ps[i]) < 0) return false;
+  i += 1;
+  while (i < ps.length && ['me', 'nos', 'el', 'mi', 'mis', 'este', 'la', 'lo'].indexOf(ps[i]) >= 0) i += 1;
+  if (i >= ps.length || ['pedido', 'orden', 'compra'].indexOf(ps[i]) < 0) return false;
+  i += 1;
+  while (i < ps.length && ['por', 'favor', 'otra', 'vez'].indexOf(ps[i]) >= 0) i += 1;
+  return i === ps.length;
+}
+if (paso === 'pedido_confirmar' && pedidosOn && pideCambiarElPedido(palabras)) return cerrado() ? salir('fuera_de_horario') : salir('boton', { motivo: 'cambiar_pedido', boton: { tipo: 'p', partes: ['cambiar'] } }); // respeta el horario igual que el botón
 // Una respuesta a la pregunta orden/unidad («sueltos», «la orden», «dale») repite la pregunta sin gastar un modelo; cualquier otro
 // texto es un mensaje nuevo y se atiende (si no, «quiero un helado» recibía la misma pregunta una y otra vez). La
 // pregunta sigue pendiente en el estado y vuelve a salir en cuanto el pedido avanza.
