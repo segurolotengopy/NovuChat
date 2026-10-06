@@ -17,7 +17,7 @@
  * aceptación que sigue siéndolo, no admite excepciones.
  *
  * DOS PARTES.
- *  A. `config/negocio`: ~560 casos (CASOS, en `casos-config-negocio.ts`): cada campo
+ *  A. `config/negocio`: 529 casos (CASOS, en `casos-config-negocio.ts`): cada campo
  *     en su tope y uno más, con `ñ` y emoji, cada tipo raro, cada camino del horario
  *     (`12:29-12:30`, `10:00-09:59`…), los dominios del mapa, las coordenadas, el
  *     calendario, los enumerados, las listas, el sello y el catálogo web contra
@@ -278,6 +278,10 @@ describe('reglas: el recorte de config/negocio decide IGUAL que la base anterior
     const v = [...negocioAntes.values()];
     expect(v.filter((x) => x === 'P').length).toBeGreaterThan(80);
     // Un rechazo de las reglas de antes puede llegar etiquetado como LIMITE (el emulador reevalúa al denegar): cuenta como rechazo.
+    // LÍMITE: la etiqueta LIMITE con las reglas viejas NO distingue la causa. El emulador rotula
+    // «maximum of 1000» muchas denegaciones que en realidad son por validez, así que LIMITE no se lee
+    // como «se quedó sin presupuesto». Esa prueba la dan las filas «sin ubicación» que pasan y la
+    // sonda de margen de `reglas-presupuesto.test.ts`, no la etiqueta.
     expect(v.filter((x) => x !== 'P').length).toBeGreaterThan(300);
     // El caso del encargo: la forma de Q'Taco con siete días no cabía antes y ahora sí.
     expect(negocioAntes.get('OK:consola-7d-enciende-cw'), 'consola de 7 días antes').toBe('LIMITE');

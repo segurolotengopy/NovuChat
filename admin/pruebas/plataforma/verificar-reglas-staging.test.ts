@@ -40,6 +40,7 @@ import { deleteField, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 import { documentoAlmacenado, payloadDeLaConsola } from './guardado-configuracion-lib.ts';
+import { PALETA_POR_DEFECTO } from '../../web/src/central/lib/paletas.ts';
 // @ts-expect-error — módulo .mjs sin tipos
 import { borrarTenants, comprobarBucket, comprobarProyecto, esHuerfanoDePrueba, esObjetoDePrueba, esTenantDePrueba, esUsuarioDePrueba, fichaDeAgenda, fichaDeVenta, guardadoDeLaConsola, marcarFichas, negocioCompletoDeVenta, nombresDePrueba } from '../../scripts/plataforma/verificar-reglas-staging.mjs';
 
@@ -326,6 +327,17 @@ describe('verificar-reglas-staging — el guardado completo de Configuración', 
     const sin = { ...almacenado }; delete sin['ubicacion']; delete sin['direccionMaps'];
     expect(plano(guardadoDeLaConsola(sin, UID, true, { ahora: serverTimestamp(), borrar: deleteField() })))
       .toEqual(plano(payloadDeLaConsola(sin, UID, true)));
+    // Sin `paleta` guardada, la pantalla manda su valor por defecto (`PALETA_POR_DEFECTO`,
+    // `web/src/central/lib/paletas.ts`) y el script lo escribe a mano ('indigo'): este caso fija que coinciden.
+    // El `.mjs` no puede importar ese módulo TypeScript (corre con node plano, y la frontera lo prohíbe).
+    const sinPaleta = { ...almacenado }; delete sinPaleta['paleta'];
+    expect(guardadoDeLaConsola(sinPaleta, UID, false, { ahora: serverTimestamp(), borrar: deleteField() })).toHaveProperty('paleta', PALETA_POR_DEFECTO);
+    expect(plano(guardadoDeLaConsola(sinPaleta, UID, false, { ahora: serverTimestamp(), borrar: deleteField() })))
+      .toEqual(plano(payloadDeLaConsola(sinPaleta, UID, false)));
+    // LÍMITE conocido: `horarios` NO se compara por la misma vía. El verificador y `payloadDeLaConsola`
+    // (`guardado-configuracion-lib.ts`) pasan los horarios tal cual (`almacenado.horarios ?? {}`), sin
+    // `leerHorarios` / `escribirHorarios` de la pantalla; si la pantalla cambiara cómo normaliza el horario,
+    // esta igualdad no lo vería.
     // Con el pin guardado, el pin viaja como números (no se borra).
     expect(guardadoDeLaConsola(almacenado, UID, false, { ahora: serverTimestamp(), borrar: deleteField() })).toHaveProperty('ubicacion', { lat: -17.8, lng: -63.2 });
   });

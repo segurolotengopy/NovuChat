@@ -170,6 +170,10 @@ describe('el guardado completo de Configuración, como lo hace la consola', () =
   });
 
   it('con las reglas de v0.13.2 (producción) y las de main antes del recorte, el guardado con catálogo web y ubicación FALLA por presupuesto', () => {
+    // OJO: con las reglas viejas la etiqueta LIMITE NO distingue la causa. El emulador rotula «maximum of
+    // 1000» muchas denegaciones por validez, así que LIMITE no se lee como «se quedó sin presupuesto».
+    // Esa prueba la dan las filas «sin ubicación» que pasan (el mismo documento cabe sin ubicación) y la
+    // sonda de margen de `reglas-presupuesto.test.ts`.
     for (const forma of ['sembrado', 'tope'] as const) {
       for (const dias of [6, 7]) {
         for (const catalogo of ['enciende', 'ya'] as const) {

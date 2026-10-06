@@ -332,7 +332,7 @@ export function guardadoDeLaConsola(almacenado, uid, catalogoWeb, marcas) {
     mensajeReservaNoConfirmada: String(v.mensajeReservaNoConfirmada ?? ''),
     mensajeComercioSuspendido: String(v.mensajeComercioSuspendido ?? ''),
     instruccionesExtra: String(v.instruccionesExtra ?? ''),
-    paleta: String(v.paleta ?? 'indigo'),
+    paleta: String(v.paleta ?? 'indigo'), // = PALETA_POR_DEFECTO (web/src/central/lib/paletas.ts); lo fija verificar-reglas-staging.test.ts
   };
   const direccionMaps = datos.direccionMaps.trim();
   const ubicacion = v.ubicacion ?? null;

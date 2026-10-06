@@ -201,12 +201,6 @@ service cloud.firestore {
     // reglas los rechazan. Esconder en la interfaz no protege de nada; lo que
     // protege es que el campo no exista para ese comercio.
     // -------------------------------------------------------------------------
-    function verticalTenant(tenantId) {
-      return exists(/databases/$(database)/documents/tenants/$(tenantId))
-        ? get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('vertical', '')
-        : '';
-    }
-
     // LOS FLUJOS DE UN NEGOCIO SON UNA LISTA, NO UN VALOR. Un negocio puede
     // tener reservas Y pedidos —cada flujo con su número de WhatsApp— y la
     // consola le habilita una pestaña por cada uno. `vertical` (valor único) se
@@ -220,9 +214,10 @@ service cloud.firestore {
     //
     // PRESUPUESTO DE EXPRESIONES. Igual que `estadoTenant`: la ruta se nombra una
     // vez. Y el `vertical` de respaldo se lee de la misma ficha (`get(ruta)`, que
-    // la petición ya tiene en caché) en vez de llamar a `verticalTenant`, que
-    // volvía a comprobar `exists` y a armar la ruta; es lo mismo, porque acá la
-    // ficha ya se sabe que existe. Mismo resultado para toda ficha: la prueba
+    // la petición ya tiene en caché) en vez de pasar por una función aparte que
+    // volvía a comprobar `exists` y a armar la ruta (la base anterior tenía
+    // `verticalTenant`, ya retirada por no tener otro uso); es lo mismo, porque
+    // acá la ficha ya se sabe que existe. Mismo resultado para toda ficha: la prueba
     // diferencial `reglas-diferencial-config-negocio.test.ts` lo comprueba contra
     // la base anterior, incluidas las fichas sin `flujos`, con `flujos` nulo,
     // mapa o cadena, suspendidas y dadas de baja.
@@ -278,9 +273,11 @@ service cloud.firestore {
     // todo comercio de hoy aunque el registro diga que lo tienen.
     //
     // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y `config/negocio`
-    // completo con 6 días de horario y catálogo web está en el tope (margen 0 en
-    // `reglas-presupuesto.test.ts`); por eso la ficha se lee UNA vez (`let`),
-    // sin mapa ni `exists`: una ficha inexistente hace fallar el
+    // completo con 6 días de horario y catálogo web llegaba al tope (margen 0 en
+    // la base anterior; tras el recorte, el documento «tope» de 7 días con
+    // ubicación deja margen 22 términos, ~60 expresiones, y la variante más
+    // ajustada medida deja 20, según `reglas-presupuesto.test.ts`); por eso la
+    // ficha se lee UNA vez (`let`), sin mapa ni `exists`: una ficha inexistente hace fallar el
     // `get` y la regla deniega, igual que antes. Medido en
     // `pruebas/plataforma/reglas-presupuesto.test.ts`.
     function tieneModulo(tenantId, m) {
@@ -958,9 +955,12 @@ service cloud.firestore {
             // campo en falso, en vez de que la regla le rechace la pantalla
             // entera por un campo que no le corresponde.
             // TODO(H2b, PR que escriba `modulos`): aquí va
-            // `tieneModulo(tenantId, 'catalogo-web')`, y ANTES hay que abaratar
-            // `config/negocio` (hoy, completo con 6 días de horario y catálogo
-            // web, está en el tope de 1.000 expresiones: margen 0 en
+            // `tieneModulo(tenantId, 'catalogo-web')`; hay que volver a medir el
+            // margen antes de hacerlo (`config/negocio` completo, con 6 días de
+            // horario y catálogo web, llegaba al tope de 1.000 expresiones: margen
+            // 0 en la base anterior; tras el recorte el documento «tope» de 7 días
+            // con ubicación deja margen 22 términos, ~60 expresiones, y la variante
+            // más ajustada medida deja 20; medido en
             // `reglas-presupuesto.test.ts`). Mientras tanto se conserva el costo
             // de la base (`tieneFlujo`) y esta línea NO mira `modulos`: la
             // prueba `it.fails` de `reglas-modulos.test.ts` obliga a voltearla.
