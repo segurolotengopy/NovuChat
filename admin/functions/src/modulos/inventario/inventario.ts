@@ -245,7 +245,10 @@ export const dejarDeControlarStock = onCall({ region: REGION }, async (peticion:
   if ((nc.t ?? {})[tenantId] !== 'admin') {
     throw new HttpsError('permission-denied', 'Solo el administrador del negocio.');
   }
-  await exigirModulo(tenantId);
+  // SIN `exigirModulo` A PROPÓSITO (05/10/2026): solo borra el campo `stock` y no otorga
+  // nada. Un comercio que pierde el módulo con ítems que ya llevan `stock` debe poder
+  // quitar el control; con la guarda se quedaba con la salida cerrada. `ajustarStock`,
+  // que sí escribe saldos, sigue exigiéndolo. El chequeo de rol de arriba se mantiene.
   await db().doc(`tenants/${tenantId}/catalogo/${itemId}`)
     .update({ stock: FieldValue.delete() });
   return { ok: true };

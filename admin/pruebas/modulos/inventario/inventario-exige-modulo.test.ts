@@ -13,6 +13,11 @@
  *   (c) la lectura de `movimientosStock` en las reglas no está ligada al módulo:
  *       SEGUIMIENTO, `firestore.rules` lo toca otro PR (un dueño por archivo).
  *
+ * `dejarDeControlarStock` NO exige el módulo (ronda de corrección del PR #443): solo
+ * borra el campo `stock` y no otorga nada; un comercio que pierde el módulo con ítems
+ * que ya llevan `stock` debe conservar la salida. Pide ser administrador del negocio y
+ * nada más. `ajustarStock`, que escribe saldos, sí lo exige.
+ *
  * Esta suite cierra (a) y (b), y fija la tabla de comportamiento por tipo de
  * ficha. Las pruebas de servidor corren contra el emulador de Firestore, con la
  * callable ejecutada de verdad (`.run`).
@@ -127,23 +132,24 @@ describe('ajustarStock: con el módulo, o con el respaldo de venta, hace lo de s
   });
 });
 
-describe('ajustarStock y dejarDeControlarStock: sin el módulo responden permission-denied y no escriben nada', () => {
+describe('ajustarStock sin el módulo responde permission-denied y no escribe nada; dejarDeControlarStock sigue permitido al administrador', () => {
   it.each(TABLA.filter(([, f, ok]) => !ok && f !== null))('%s', async (_n, ficha) => {
     const t = 'inv-sin-modulo';
     await sembrar(t, ficha);
     await expect(ajustar({ tenantId: t, itemId: 'torta', fijarEn: 99 }, admin(t))).rejects.toMatchObject(denegado);
     await expect(ajustar({ tenantId: t, itemId: 'torta', sumar: 1 }, admin(t))).rejects.toMatchObject(denegado);
-    await expect(dejar({ tenantId: t, itemId: 'torta' }, admin(t))).rejects.toMatchObject(denegado);
     expect(await stockDe(t), 'el saldo no se mueve').toBe(5);
     expect(await movimientos(t), 'no queda movimiento').toBe(0);
+    // La salida queda abierta: quitar el control solo borra `stock` y no otorga nada.
+    expect(await dejar({ tenantId: t, itemId: 'torta' }, admin(t))).toEqual({ ok: true });
+    expect(await stockDe(t), 'el administrador pudo dejar de controlar').toBeUndefined();
   });
 
-  it('un negocio SIN ficha (el ítem existe, el documento del negocio no) falla cerrado', async () => {
+  it('un negocio SIN ficha (el ítem existe, el documento del negocio no): ajustarStock falla cerrado', async () => {
     const t = 'inv-sin-ficha';
     await sembrar(t, null);
     expect((await db.doc(`tenants/${t}`).get()).exists).toBe(false);
     await expect(ajustar({ tenantId: t, itemId: 'torta', fijarEn: 1 }, admin(t))).rejects.toMatchObject(denegado);
-    await expect(dejar({ tenantId: t, itemId: 'torta' }, admin(t))).rejects.toMatchObject(denegado);
     expect(await stockDe(t)).toBe(5);
     expect(await movimientos(t)).toBe(0);
   });
@@ -152,6 +158,9 @@ describe('ajustarStock y dejarDeControlarStock: sin el módulo responden permiss
     const t = 'inv-qtaco';
     await sembrar(t, QTACO);
     await expect(ajustar({ tenantId: t, itemId: 'torta', sumar: 1 }, admin(t))).rejects.toMatchObject(denegado);
+    // Pero puede dejar de controlar lo que ya controlaba (no otorga nada).
+    expect(await dejar({ tenantId: t, itemId: 'torta' }, admin(t))).toEqual({ ok: true });
+    await sembrar(t, QTACO);
     // Y con el respaldo por flujo (la misma ficha sin lista) sí podría: la lista es lo que lo cierra.
     await sembrar(t, QTACO_SIN_LISTA);
     expect(await ajustar({ tenantId: t, itemId: 'torta', sumar: 1 }, admin(t))).toMatchObject({ saldo: 6 });
@@ -168,6 +177,19 @@ describe('Lo que ya se exigía antes se sigue exigiendo, y primero', () => {
     await expect(ajustar({ tenantId: t, itemId: 'torta', sumar: 1 }, oper)).rejects.toMatchObject({
       code: 'permission-denied', message: 'Solo el administrador del negocio.',
     });
+    expect(await stockDe(t)).toBe(5);
+  });
+
+  it('el ORDEN es rol y después ficha: sobre una ficha SIN el módulo, el operador y el administrador ajeno reciben el mensaje del rol', async () => {
+    const t = 'inv-orden';
+    await sembrar(t, QTACO); // sin inventario
+    await sembrar('inv-orden-otro', { flujos: ['venta'] });
+    const oper: Auth = { uid: 'u-oper', token: token({ [t]: 'oper' }) };
+    const rol = { code: 'permission-denied', message: 'Solo el administrador del negocio.' };
+    for (const quien of [oper, admin('inv-orden-otro')]) {
+      await expect(ajustar({ tenantId: t, itemId: 'torta', sumar: 1 }, quien)).rejects.toMatchObject(rol);
+      await expect(dejar({ tenantId: t, itemId: 'torta' }, quien)).rejects.toMatchObject(rol);
+    }
     expect(await stockDe(t)).toBe(5);
   });
 
