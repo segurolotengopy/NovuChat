@@ -1,0 +1,565 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "S",
+  "nota": "Escenarios de SEGURIDAD del texto libre (la cartera, 05/10/2026; #435 ya en main): el código no debe tomar como dirección ni como referencia lo que no lo es (órdenes, ayuda, consultas, un comprobante en texto, números sueltos). Casos normales: deben pasar. Invariantes de estado y de texto, nunca frases exactas.",
+  "casos": [
+    {
+      "id": "S1",
+      "titulo": "Resumen de delivery ya mostrado: «cancela el pedido», «necesito ayuda» y «a qué hora llega» NO se guardan como referencia ni dirección y la respuesta es de otra clase",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "cancela el pedido"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "textosNo": [
+              "Entrega: delivery a [^\\n]*\\(",
+              "referencia:"
+            ],
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "igualAntes": [
+              "entrega.entrega",
+              "entrega.direccion",
+              "entrega.referencia",
+              "carrito"
+            ],
+            "efectos": {
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {
+            "texto": "cancela el pedido",
+            "esperado": {
+              "textosNo": [
+                "cancela el pedido"
+              ]
+            }
+          },
+          {
+            "texto": "necesito ayuda",
+            "esperado": {
+              "textosNo": [
+                "necesito ayuda"
+              ]
+            }
+          },
+          {
+            "texto": "a qué hora llega",
+            "esperado": {
+              "textosNo": [
+                "a qu[eé] hora llega"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "S2",
+      "titulo": "Delivery pendiente de dirección: «mejor no» y un comprobante en texto no se guardan como dirección ni referencia, y no avanzan al resumen",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "dame la carta"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "textosNo": [
+              "Entrega: delivery a"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "entrega.direccion": {
+                "vacio": true
+              },
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "mejor no",
+          "Pague 110 Bs comprobante 123456789"
+        ]
+      }
+    },
+    {
+      "id": "S2b",
+      "titulo": "Delivery pendiente de dirección: el número suelto «4» dicho DOS veces seguidas no se guarda como dirección ni como referencia",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "4"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "textosNo": [
+              "Entrega: delivery a"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              },
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "qr": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "4"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "textosNo": [
+              "Entrega: delivery a"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              },
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "S2c",
+      "titulo": "Delivery pendiente de dirección: el número suelto «123» dicho DOS veces seguidas no se guarda como dirección ni como referencia",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "123"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "textosNo": [
+              "Entrega: delivery a"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              },
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "qr": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "123"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "textosNo": [
+              "Entrega: delivery a"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "entrega.entrega": "delivery",
+              "entrega.direccion": {
+                "vacio": true
+              },
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "titulo": "Secuencia de Silvana: carrito con dirección → «Déjale al portero» → «Ok» → «A media cuadra del gas» (esperado por confirmar con la cartera: reemplaza o completa la referencia)",
+      "nota": "ESPERADO POR CONFIRMAR CON LA CARTERA: no se sabe si la segunda instrucción reemplaza o completa la referencia anterior. Solo se asierta lo invariante: la dirección original no cambia, la referencia no queda vacía y ningún mensaje del bot pide una «referencia».",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Av\\. Banzer 1234, recibe Lucía Ejemplo"
+            ],
+            "textosNo": [
+              "referencia",
+              "necesito",
+              "nombre de quien"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "Av. Banzer 1234"
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Déjale al portero"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Déjale al portero"
+            ],
+            "textosNo": [
+              "referencia",
+              "necesito"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.referencia": "Déjale al portero"
+            },
+            "igualAntes": [
+              "carrito"
+            ],
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Ok"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": [
+              "referencia",
+              "necesito"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar"
+            },
+            "igualAntes": [
+              "entrega",
+              "carrito"
+            ],
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "A media cuadra del gas"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": [
+              "referencia",
+              "necesito",
+              "direcci[oó]n exacta"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.referencia": {
+                "vacio": false
+              }
+            },
+            "igualAntes": [
+              "entrega.direccion",
+              "carrito"
+            ],
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

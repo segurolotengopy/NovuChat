@@ -534,3 +534,437 @@ describe('el recordatorio SIMULADO sale de punta a punta con el enlace del QR (H
   });
 });
 
+
+// =====================================================================================================
+// DELIVERY OPCIONAL (decisión de Andres y Silvana, 05/10): la secuencia real de las 04:25–04:27 UTC, con el tercer teléfono
+// =====================================================================================================
+describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta en el catálogo; «Ok», «Déjale al portero», «A media cuadra del gas»)', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  const conDireccion = (extra: J = {}): J => cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_seq_0001', ...extra });
+
+  it('el carrito con dirección y SIN referencia (página vieja) va directo al resumen: UN mensaje, 0 de `pedido_datos`, 0 llamadas al modelo', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: conDireccion() });
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234');
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/necesito|referencia|no va en el QR/i);
+    expect(titulos(t)).toEqual(['Confirmar pedido', 'Cambiar algo', 'Menú']);
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+    expect(t.llamadas.extraer).toHaveLength(0);
+  });
+
+  it('«Ok» sigue al resumen; «Déjale al portero» queda como la referencia (aunque el modelo no asigne nada); un segundo texto no pisa la referencia; y se confirma sin más vueltas', () => {
+    const w = crear();
+    const t0 = carrito(w, { headers: cabeceras(), body: conDireccion() });
+    w.estado.extraccion = NADA;
+    const ok = turno(w, texto('Ok'));
+    expect(ok.mensajes).toHaveLength(1);
+    expect(botonesDe(ok.mensajes[0]!).map((b) => b.title)).toContain('Confirmar pedido');
+    expect(ok.llamadas.extraer).toHaveLength(0); // «Ok» no llama al modelo ni se toma como dato
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('');
+    const portero = turno(w, texto('Déjale al portero'));
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('Déjale al portero');
+    expect(portero.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234 (Déjale al portero)');
+    expect(portero.avisos).toHaveLength(0);
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+    const gas = turno(w, texto('A media cuadra del gas'));
+    expect((estadoDe(w)['entrega'] as J)['referencia'], 'ya hay referencia: un segundo texto no la pisa').toBe('Déjale al portero');
+    expect(gas.avisos).toHaveLength(0);
+    expect(gas.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234');
+    // El pedido sigue y se confirma: el QR sale y la referencia viaja al pedido.
+    const confirmar = turno(w, boton(idDeBoton(t0, 'Confirmar pedido'), 'Confirmar pedido'));
+    expect(confirmar.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    expect(JSON.stringify(estadoDe(w)['pedido'])).toContain('Déjale al portero');
+  });
+
+  it('con una referencia que manda la página nueva, el resumen la muestra desde el primer mensaje', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: conDireccion({ referencia: 'portón verde', pedidoId: 'cat_seq_0002' }) });
+    expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234 (portón verde)');
+    expect(t.mensajes).toHaveLength(1);
+  });
+
+  it('si FALTA la dirección, cualquier texto con letras o dígitos es la dirección (sin depender del modelo) y sigue al resumen; algo sin letras ni dígitos se vuelve a pedir', () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_seq_0003' }) });
+    expect(estadoDe(w)['paso']).toBe('pedido_datos');
+    w.estado.extraccion = NADA;
+    const raro = turno(w, texto('...'));
+    expect(raro.mensajes[0]!.cuerpo).toBe('Para el delivery necesito la dirección exacta.');
+    expect((estadoDe(w)['entrega'] as J)['direccion']).toBe('');
+    const t = turno(w, texto('calle 1 numerro 2 Irpavi'));
+    expect((estadoDe(w)['entrega'] as J)['direccion']).toBe('calle 1 numerro 2 Irpavi');
+    expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a calle 1 numerro 2 Irpavi');
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+  });
+
+  it('dirección en un mensaje y referencia en otro: sin bucle («a media cuadra de la calle foton» queda como referencia); una pregunta, un enlace o «no gracias» NO se toman', () => {
+    const nuevo = (id: string) => {
+      const x = crear();
+      carrito(x, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id }) });
+      x.estado.extraccion = NADA;
+      turno(x, texto('calle 1 numerro 2 Irpavi'));
+      return x;
+    };
+    for (const [i, dicho] of ['¿cuánto demora?', 'mira https://malo.test/x', 'no gracias'].entries()) {
+      const x = nuevo(`cat_seq_010${i}`);
+      turno(x, texto(dicho));
+      expect((estadoDe(x)['entrega'] as J)['referencia'], dicho).toBe('');
+      expect((estadoDe(x)['entrega'] as J)['direccion'], dicho).toBe('calle 1 numerro 2 Irpavi');
+    }
+    const w = nuevo('cat_seq_0004');
+    const t = turno(w, texto('a media cuadra de la calle foton'));
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('a media cuadra de la calle foton');
+    expect(t.mensajes[0]!.cuerpo).toContain('(a media cuadra de la calle foton)');
+    expect(t.avisos).toHaveLength(0);
+  });
+
+  it('una petición explícita de persona no se toma como dato de entrega (deriva como siempre)', () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: conDireccion({ pedidoId: 'cat_seq_0005' }) });
+    w.estado.extraccion = { ...NADA, quiereHablar: true };
+    const t = turno(w, texto('necesito ayuda de un encargado'));
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('');
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona/);
+  });
+});
+
+// =====================================================================================================
+// Revisión de seguridad del PR #435 (M1, M2, L1, L2) y la batería real de la Operadora: el texto libre solo se toma como dato de entrega si PUEDE serlo
+// =====================================================================================================
+describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  /** Mundo con la dirección ya dada (falta, a lo sumo, la referencia opcional). */
+  function conDireccion(id: string) {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: id }) });
+    return w;
+  }
+  /** Mundo con la dirección PENDIENTE (`pedido_datos`). */
+  function sinDireccion(id: string) {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id }) });
+    expect(estadoDe(w)['paso']).toBe('pedido_datos');
+    return w;
+  }
+  const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
+
+  it.each([
+    'necesito ayuda', 'quiero que me atienda alguien', 'tengo un problema con mi pedido', 'comuníquenme con el local', 'esto es un robo',
+  ])('M1 «%s» con `quiereHablar` del modelo DERIVA (no se vuelve referencia ni dirección), con la dirección dada y con la dirección pendiente', (dicho) => {
+    const a = conDireccion('cat_m1_a_' + dicho.length);
+    a.estado.extraccion = { ...NADA, quiereHablar: true };
+    const t = turno(a, texto(dicho));
+    expect(ent(a)['referencia'], dicho).toBe('');
+    expect(t.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    const b = sinDireccion('cat_m1_b_' + dicho.length);
+    b.estado.extraccion = { ...NADA, quiereHablar: true };
+    const u = turno(b, texto(dicho));
+    expect(ent(b)['direccion'], dicho).toBe('');
+    expect(u.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+  });
+
+  it('M1, el caso opuesto: «Déjale al portero» con `quiereHablar` del modelo SÍ queda como referencia (tiene rasgos de un dato de entrega)', () => {
+    const w = conDireccion('cat_m1_c');
+    w.estado.extraccion = { ...NADA, quiereHablar: true };
+    const t = turno(w, texto('Déjale al portero'));
+    expect(ent(w)['referencia']).toBe('Déjale al portero');
+    expect(t.mensajes[0]!.cuerpo).toContain('(Déjale al portero)');
+  });
+
+  const NEGATIVAS = [
+    'cancela el pedido', 'cancela todo', 'anula mi pedido', 'mejor no', 'a que hora llega', 'puedo pagar con tarjeta', 'Pague 110 Bs comprobante 123456789',
+    'dame la carta', 'quiero 2 tacos', 'quiero 60 tacos', 'mejor paso a recogerlo yo mismo', 'ya pagué por transferencia', 'cuánto demora', 'olvídalo',
+    'quiero el menú', 'tengo una queja', 'delivery no', 'sin delivery', 'prefiero delivery', 'quiero que me manden', 'ver x.com/a', 'aa bb',
+  ];
+  it.each(NEGATIVAS)('M2 «%s»: con la dirección PENDIENTE no se guarda como dirección y el pedido no pasa al resumen', (dicho) => {
+    const w = sinDireccion('cat_m2_a_' + dicho.length + dicho.charCodeAt(0));
+    w.estado.extraccion = NADA;
+    turno(w, texto(dicho));
+    expect(ent(w)['direccion'], dicho).toBe('');
+    expect(estadoDe(w)['paso'], dicho).not.toBe('pedido_confirmar');
+    expect(JSON.stringify(estadoDe(w)['pedido']), dicho).not.toContain(dicho);
+  });
+  it.each(NEGATIVAS)('M2 «%s»: con la dirección ya dada no se guarda como referencia', (dicho) => {
+    const w = conDireccion('cat_m2_b_' + dicho.length + dicho.charCodeAt(0));
+    w.estado.extraccion = NADA;
+    turno(w, texto(dicho));
+    expect(ent(w)['referencia'], dicho).toBe('');
+  });
+
+  it('M2, el caso opuesto: lo que SÍ es una dirección o una referencia se toma (con dígitos o palabra de vía)', () => {
+    const w = sinDireccion('cat_m2_c');
+    w.estado.extraccion = NADA;
+    turno(w, texto('calle 1 numerro 2 Irpavi'));
+    expect(ent(w)['direccion']).toBe('calle 1 numerro 2 Irpavi');
+    const t = turno(w, texto('a media cuadra del gas'));
+    expect(ent(w)['referencia']).toBe('a media cuadra del gas');
+    expect(t.avisos).toHaveLength(0);
+  });
+
+  it('L1: «70012345» repetido no se queda en un bucle: se vuelve a pedir una vez y, a la segunda vez seguida, se pasa con el local', () => {
+    const w = sinDireccion('cat_l1');
+    w.estado.extraccion = NADA;
+    const uno = turno(w, texto('70012345'));
+    expect(ent(w)['direccion']).toBe('');
+    expect(uno.mensajes[0]!.cuerpo).toBe('Para el delivery necesito la dirección exacta.');
+    const dos = turno(w, texto('70012345'));
+    expect(dos.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(dos.avisos.length).toBeGreaterThan(0);
+  });
+
+  it('L2: la referencia y la dirección tomadas del texto salen sin formato de WhatsApp ni enlaces (con o sin esquema); también la del carrito web', () => {
+    const w = conDireccion('cat_l2_a');
+    w.estado.extraccion = NADA;
+    turno(w, texto('*portón* _verde_'));
+    expect(ent(w)['referencia']).toBe('portón verde');
+    const v = crear();
+    carrito(v, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Arce 12', referencia: 'ver malo.com/x `portón`', pedidoId: 'cat_l2_b' }) });
+    expect(ent(v)['referencia']).toBe('ver portón');
+  });
+
+  it('(3) si el modelo deja la dirección VACÍA pero el texto trae rasgos de una dirección, la toma el código (con la instrucción de entrega dentro)', () => {
+    const w = sinDireccion('cat_3_a');
+    w.estado.extraccion = { ...NADA, entrega: 'delivery', referencia: 'déjalo con el guardia nomás' };
+    turno(w, texto('Calle Sucre 12, déjalo con el guardia nomás'));
+    expect(String(ent(w)['direccion'])).toContain('Calle Sucre 12');
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+    const v = sinDireccion('cat_3_b');
+    v.estado.extraccion = NADA;
+    turno(v, texto('Calle 1 número 2 Irpavi'));
+    expect(ent(v)['direccion']).toBe('Calle 1 número 2 Irpavi');
+    expect(estadoDe(v)['paso']).toBe('pedido_confirmar');
+  });
+
+  it('(4) «ella va a recoger en portería» con el modelo que lo «sube» a recojo: la entrega SIGUE siendo delivery y el pedido no pasa a recojo', () => {
+    const w = sinDireccion('cat_4');
+    w.estado.extraccion = { ...NADA, entrega: 'recojo' };
+    turno(w, texto('ella va a recoger en portería'));
+    expect(ent(w)['entrega']).toBe('delivery');
+    expect(estadoDe(w)['paso']).not.toBe('pedido_confirmar');
+  });
+
+  it('la secuencia de Silvana (A13–A15) sigue bien: «Déjale al portero», «Ok», «A media cuadra del gas» (no pisa), y un nombre («Rexibe pedro») cae como referencia si no la hay', () => {
+    const w = conDireccion('cat_seq_1');
+    w.estado.extraccion = NADA;
+    turno(w, texto('Déjale al portero'));
+    expect(ent(w)['referencia']).toBe('Déjale al portero');
+    const ok = turno(w, texto('Ok'));
+    expect(ok.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234 (Déjale al portero)');
+    turno(w, texto('A media cuadra del gas'));
+    expect(ent(w)['referencia']).toBe('Déjale al portero');
+    // Un nombre cuando el modelo no lo extrae: cae como referencia (límite declarado en DISENO.md).
+    const v = conDireccion('cat_seq_2');
+    v.estado.extraccion = NADA;
+    turno(v, texto('Rexibe pedro'));
+    expect(ent(v)['referencia']).toBe('Rexibe pedro');
+  });
+});
+
+// =====================================================================================================
+// #435, ronda 2 (batería real de la Operadora y revisión de seguridad sobre 542d5f7e): dos listas (dirección / referencia), ayuda por código, `vacias`, «otra persona recoge»
+// =====================================================================================================
+describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código, vacías y «otra persona recoge»', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const id = (): string => 'cat_r2_' + String(++k).padStart(4, '0');
+  const conDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: id() }) });
+    w.estado.extraccion = NADA;
+    return w;
+  };
+  const sinDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id() }) });
+    expect(estadoDe(w)['paso']).toBe('pedido_datos');
+    w.estado.extraccion = NADA;
+    return w;
+  };
+  const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
+  const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta.';
+  const DERIVA = /Esto prefiero que lo vea una persona/;
+
+  it.each(['A media cuadra del gas', 'Déjale al portero', 'frente al mercado', 'Zona Sur', 'por la puerta verde'])(
+    'A4 «%s» con la dirección PENDIENTE queda como REFERENCIA (no como dirección) y se vuelve a pedir la dirección, sin pasar al resumen', (dicho) => {
+      const w = sinDireccion();
+      const t = turno(w, texto(dicho));
+      expect(ent(w)['direccion'], dicho).toBe('');
+      expect(ent(w)['referencia'], dicho).toBe(dicho);
+      expect(t.mensajes[0]!.cuerpo, dicho).toBe(PIDE_DIRECCION);
+      expect(estadoDe(w)['paso'], dicho).toBe('pedido_datos');
+      expect(t.avisos, dicho).toHaveLength(0);
+      // y luego la dirección real completa el pedido SIN duplicar la referencia
+      const u = turno(w, texto('calle 1 numerro 2 Irpavi'));
+      expect(ent(w)['direccion'], dicho).toBe('calle 1 numerro 2 Irpavi');
+      expect(u.mensajes[0]!.cuerpo, dicho).toContain('Entrega: delivery a calle 1 numerro 2 Irpavi (' + dicho + ')');
+      expect(estadoDe(w)['paso'], dicho).toBe('pedido_confirmar');
+    },
+  );
+
+  it.each(['necesito ayuda', 'quiero que me atienda alguien', 'comuníquenme con el local', 'tengo un problema con mi pedido', 'esto es una estafa'])(
+    'M1s «%s» con el modelo devolviendo SOLO {"lineas":[]} (sin quiereHablar) deriva a una persona, con la dirección dada y con la pendiente', (dicho) => {
+      for (const [w, campo] of [[conDireccion(), 'referencia'], [sinDireccion(), 'direccion']] as const) {
+        const t = turno(w, texto(dicho));
+        expect(ent(w)[campo], dicho).toBe('');
+        expect(t.mensajes[0]!.cuerpo, dicho).toMatch(DERIVA);
+        expect(t.avisos.length, dicho).toBeGreaterThan(0);
+      }
+    },
+  );
+  it('M1s, el opuesto: una referencia con rasgos de entrega («que alguien me abra la puerta») NO deriva', () => {
+    const w = conDireccion();
+    const t = turno(w, texto('que alguien me abra la puerta'));
+    expect(ent(w)['referencia']).toBe('que alguien me abra la puerta');
+    expect(t.avisos).toHaveLength(0);
+  });
+
+  it('SV2: con la dirección YA dada, la secuencia de Silvana y textos sin dato no pasan con el local ni suman «vacías»: sigue el resumen', () => {
+    const w = conDireccion();
+    for (const dicho of ['Déjale al portero', 'Ok', 'A media cuadra del gas', 'Rexibe pedro', 'Rexibe pedro', 'gracias nomas', 'Rexibe pedro']) {
+      const t = turno(w, texto(dicho));
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(t.mensajes[0]!.cuerpo, dicho).not.toMatch(DERIVA);
+      expect(estadoDe(w)['paso'], dicho).toBe('pedido_confirmar');
+      expect(t.mensajes[0]!.cuerpo, dicho).toContain('Entrega: delivery a Av. Banzer 1234');
+    }
+    expect(ent(w)['referencia']).toBe('Déjale al portero');
+  });
+  it('SV2, el opuesto: con la dirección PENDIENTE, dos textos seguidos sin dato sí pasan con el local a la 2.ª vez', () => {
+    const w = sinDireccion();
+    turno(w, texto('jajaja'));
+    expect(ent(w)['direccion']).toBe('');
+    const t = turno(w, texto('jajaja'));
+    expect(t.mensajes[0]!.cuerpo).toMatch(DERIVA);
+  });
+
+  it('«ella va a recoger en portería» con la dirección pendiente y el modelo vacío: no es dirección; se vuelve a pedir', () => {
+    const w = sinDireccion();
+    const t = turno(w, texto('ella va a recoger en portería'));
+    expect(ent(w)['direccion']).toBe('');
+    expect(t.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
+    expect(estadoDe(w)['paso']).toBe('pedido_datos');
+  });
+  it('«Calle Sucre 12, déjalo con el guardia nomás» (modelo vacío) es la dirección, con la instrucción dentro', () => {
+    const w = sinDireccion();
+    turno(w, texto('Calle Sucre 12, déjalo con el guardia nomás'));
+    expect(ent(w)['direccion']).toBe('Calle Sucre 12, déjalo con el guardia nomás');
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+  });
+
+  it.each(['voy a recoger el pedido', 'mejor lo retiro yo en el local', 'el lo recoge'])(
+    'MEDIUM «%s» con el modelo devolviendo `recojo` en pedido_datos: SÍ pasa a recojo (no es «otra persona»)', (dicho) => {
+      const w = sinDireccion();
+      w.estado.extraccion = { ...NADA, entrega: 'recojo' };
+      turno(w, texto(dicho));
+      expect(ent(w)['entrega'], dicho).toBe('recojo');
+    },
+  );
+  it.each(['pedido_datos', 'pedido_confirmar'])('LOW-4 «ella va a recoger en portería» con el modelo devolviendo `recojo` en %s: SIGUE siendo delivery', (paso) => {
+    const w = paso === 'pedido_datos' ? sinDireccion() : conDireccion();
+    expect(estadoDe(w)['paso']).toBe(paso);
+    w.estado.extraccion = { ...NADA, entrega: 'recojo' };
+    turno(w, texto('ella va a recoger en portería'));
+    expect(ent(w)['entrega']).toBe('delivery');
+  });
+
+  it('LOW-1: «prefiero delivery» se perdona UNA vez (vuelve a pedir la dirección); «no me manden nada» y «cancelen el envío» no se perdonan: derivan a la 2.ª vez', () => {
+    const w = sinDireccion();
+    const uno = turno(w, texto('prefiero delivery'));
+    expect(uno.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
+    expect(uno.avisos).toHaveLength(0);
+    for (const dicho of ['no me manden nada', 'cancelen el envio']) {
+      const v = sinDireccion();
+      turno(v, texto(dicho));
+      const dos = turno(v, texto(dicho));
+      expect(dos.mensajes[0]!.cuerpo, dicho).toMatch(DERIVA);
+    }
+  });
+
+  it.each(['dejalo como estaba', 'cambiar algo', 'q hora llega', 'me equivoque', 'una coca cola mas', 'dos de birria mas', 'paso a buscarlo a las 8'])(
+    'LOW-3 «%s» con la dirección ya dada NO se guarda como referencia', (dicho) => {
+      const w = conDireccion();
+      turno(w, texto(dicho));
+      expect(ent(w)['referencia'], dicho).toBe('');
+    },
+  );
+  it.each(['quiero 2 tacos en calle 5', 'paso a buscarlo a las 8'])('LOW-3 «%s» con la dirección pendiente y el modelo con 0 líneas NO se toma como dirección', (dicho) => {
+    const w = sinDireccion();
+    turno(w, texto(dicho));
+    expect(ent(w)['direccion'], dicho).toBe('');
+  });
+});
+
+// =====================================================================================================
+// #435, LOW-A1 y LOW-A2 (revisión de seguridad sobre 6c1935df): lo que pone el MODELO también pasa por las reglas del código; cortesías y entrega no son «ayuda»
+// =====================================================================================================
+describe('#435 LOW-A2: la «dirección» o la «referencia» que pone el modelo pasa por las listas del código', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const id = (): string => 'cat_a2_' + String(++k).padStart(4, '0');
+  const sinDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: id() }) });
+    return w;
+  };
+  const conDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: id() }) });
+    return w;
+  };
+  const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
+
+  it.each(['Déjale al portero', 'A media cuadra del gas', 'frente al mercado'])(
+    'A2 `{direccion: «%s»}` del modelo NO es la dirección: pasa a la referencia y se vuelve a pedir la dirección (sin pasar al resumen)', (dicho) => {
+      const w = sinDireccion();
+      w.estado.extraccion = { ...NADA, direccion: dicho };
+      const t = turno(w, texto(dicho));
+      expect(ent(w)['direccion'], dicho).toBe('');
+      expect(ent(w)['referencia'], dicho).toBe(dicho);
+      expect(t.mensajes[0]!.cuerpo, dicho).toBe('Para el delivery necesito la dirección exacta.');
+      expect(estadoDe(w)['paso'], dicho).toBe('pedido_datos');
+    },
+  );
+  it('A2, el opuesto: `{direccion: «Calle Sucre 12»}` del modelo SÍ es la dirección y sigue al resumen', () => {
+    const w = sinDireccion();
+    w.estado.extraccion = { ...NADA, direccion: 'Calle Sucre 12' };
+    turno(w, texto('Calle Sucre 12'));
+    expect(ent(w)['direccion']).toBe('Calle Sucre 12');
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+  });
+  it('A2: una ayuda que el modelo pone como dirección o referencia («necesito ayuda») deriva a una persona', () => {
+    for (const campo of ['direccion', 'referencia']) {
+      for (const [w, dicho] of [[sinDireccion(), 'necesito ayuda'], [conDireccion(), 'quiero que me atienda alguien']] as const) {
+        w.estado.extraccion = { ...NADA, [campo]: dicho };
+        const t = turno(w, texto(dicho));
+        expect(t.mensajes[0]!.cuerpo, `${campo} ${dicho}`).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
+        expect(t.avisos.length, `${campo} ${dicho}`).toBeGreaterThan(0);
+        expect(String(ent(w)[campo]), `${campo} ${dicho}`).not.toContain(dicho);
+      }
+    }
+  });
+});
+
+describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúdenme» y «auxilio» sí', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_a1_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = NADA;
+    return w;
+  };
+  it.each(['no hay problema', 'sin problema', 'ningún problema', 'alguien lo recibe', 'que lo reciba alguien', 'cualquier persona lo recibe', 'recibe Pedro, alguien de la familia', 'es para una persona'])(
+    '«%s» NO deriva a una persona', (dicho) => {
+      const w = conDireccion();
+      const t = turno(w, texto(dicho));
+      expect(t.avisos, dicho).toHaveLength(0);
+      expect(estadoDe(w)['paso'], dicho).toBe('pedido_confirmar');
+    },
+  );
+  it.each(['ayúdenme', 'auxilio', 'necesito ayuda urgente'])('«%s» SÍ deriva', (dicho) => {
+    const w = conDireccion();
+    const t = turno(w, texto(dicho));
+    expect(t.avisos.length, dicho).toBeGreaterThan(0);
+  });
+});

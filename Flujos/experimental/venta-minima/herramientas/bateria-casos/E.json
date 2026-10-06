@@ -1,0 +1,145 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "E",
+  "casos": [
+    {
+      "id": "E2",
+      "titulo": "Comprobante de otro importe (Bs 1 contra un pedido de 21): dice la diferencia y pasa con el local",
+      "estadoPrevio": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria1", "cantidad": 1}], "entrega": "retiro"},
+          "esperado": {"mensajes": 1, "textos": ["21 Bs"], "titulos": ["Confirmar pedido"]}
+        },
+        {
+          "cliente": {"tipo": "boton", "titulo": "Confirmar pedido"},
+          "esperado": {"mensajes": 1, "efectos": {"qr": true}, "estado": {"paso": "esperando_comprobante"}, "reporteQr": {"monto": 21}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "imagen"},
+          "lectura": {"monto": "1.00"},
+          "cotejo": {"resultado": "no_cuadra", "diferencias": ["El comprobante dice 1.00 y el pedido es de 21.00"]},
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "algunos datos no coinciden con tu pedido #",
+              "comprobante dice 1(\\.00)? y (tu|el) pedido es de 21(\\.00)?",
+              "Ya lo pas[eé] (al restaurante|a nuestro equipo)"
+            ],
+            "titulos": ["Escribir al local"],
+            "ruta": "^comprobante:no_cuadra",
+            "efectos": {"aviso": true, "qr": false, "modelo": false}
+          }
+        }
+      ]
+    },
+    {
+      "id": "E3",
+      "titulo": "Comprobante ilegible la 1.ª vez: pide reenviarlo más nítido o en PDF, sin avisar todavía",
+      "estadoPrevio": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria1", "cantidad": 1}], "entrega": "retiro"},
+          "esperado": {"mensajes": 1, "textos": ["21 Bs"], "titulos": ["Confirmar pedido"]}
+        },
+        {
+          "cliente": {"tipo": "boton", "titulo": "Confirmar pedido"},
+          "esperado": {"mensajes": 1, "efectos": {"qr": true}, "estado": {"paso": "esperando_comprobante"}, "reporteQr": {"monto": 21}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "imagen"},
+          "lectura": "ilegible",
+          "cotejo": "ilegible",
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["no pude leerlo bien", "n[ií]tido", "PDF"],
+            "titulosNo": ["Escribir al local"],
+            "ruta": "^comprobante:ilegible",
+            "estado": {"paso": "esperando_comprobante", "ilegibles": 1},
+            "efectos": {"aviso": false, "derivacion": false, "qr": false}
+          }
+        }
+      ]
+    },
+    {
+      "id": "E5",
+      "titulo": "Con el QR enviado y sin comprobante, un texto suelto recibe el recordatorio con «Reenviar QR» y «Cancelar pedido», sin mostrar la carta",
+      "estadoPrevio": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria1", "cantidad": 1}], "entrega": "retiro"},
+          "esperado": {"mensajes": 1, "textos": ["21 Bs"], "titulos": ["Confirmar pedido"]}
+        },
+        {
+          "cliente": {"tipo": "boton", "titulo": "Confirmar pedido"},
+          "esperado": {"mensajes": 1, "efectos": {"qr": true}, "estado": {"paso": "esperando_comprobante"}, "reporteQr": {"monto": 21}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "texto", "texto": "x"},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["falta tu comprobante"],
+            "textosNo": ["Esta es nuestra carta", "Nachos", "Tacos al Pastor"],
+            "titulos": ["Reenviar QR", "Cancelar pedido"],
+            "botones": ["q|reenviar", "q|cancelar"],
+            "ruta": "^recordatorio_comprobante",
+            "estado": {"paso": "esperando_comprobante"},
+            "efectos": {"modelo": false, "derivacion": false, "aviso": false, "qr": false}
+          }
+        }
+      ],
+      "variantes": {"turno": 1, "frases": ["Ya no", "A media cuadra de la plaza"]}
+    },
+    {
+      "id": "E7",
+      "titulo": "El cliente repite la foto del comprobante: «Ya tengo el comprobante de tu pedido», sin un segundo aviso",
+      "estadoPrevio": [
+        {
+          "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria1", "cantidad": 1}], "entrega": "retiro"},
+          "esperado": {"mensajes": 1, "textos": ["21 Bs"], "titulos": ["Confirmar pedido"]}
+        },
+        {
+          "cliente": {"tipo": "boton", "titulo": "Confirmar pedido"},
+          "esperado": {"mensajes": 1, "efectos": {"qr": true}, "estado": {"paso": "esperando_comprobante"}, "reporteQr": {"monto": 21}}
+        },
+        {
+          "cliente": {"tipo": "imagen"},
+          "cotejo": "cuadra",
+          "esperado": {"mensajes": 1, "textos": ["los datos coinciden con tu pedido #"], "ruta": "^comprobante:cuadra", "efectos": {"aviso": true}}
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {"tipo": "imagen"},
+          "cotejo": {"statusCode": 409, "body": {"error": "sin_sena_pendiente"}},
+          "esperado": {
+            "mensajes": 1,
+            "textos": ["Ya tengo el comprobante de tu pedido #"],
+            "ruta": "^comprobante:ya_cotejado",
+            "efectos": {"aviso": false, "derivacion": false, "qr": false}
+          }
+        }
+      ]
+    }
+  ],
+  "negativoGlobal": {
+    "id": "E8",
+    "titulo": "Negativo global: ninguna frase prohibida (pago acreditado, ellos, escríbeles…) en nada de lo que el cliente recibe, en ningún caso",
+    "frases": [
+      "pago acreditado",
+      "pago verificado",
+      "recibimos tu pago",
+      "verificamos tu pago",
+      "gracias por tu pago",
+      "reservamos tu mesa",
+      "qued[oó] cancelado",
+      "\\bellos\\b",
+      "escr[ií]beles",
+      "todav[ií]a no es una reserva"
+    ]
+  }
+}
