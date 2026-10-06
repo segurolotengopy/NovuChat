@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { db } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
+import { enlaceAMaps } from './ubicacion';
 
 /**
  * =============================================================================
@@ -45,6 +46,8 @@ interface Pedido {
   costoEnvio?: unknown;
   entrega?: unknown;
   direccion?: unknown;
+  /** Opcional: `{ lat, lng }` si el cliente compartió su ubicación (delivery). */
+  ubicacion?: unknown;
   nota?: unknown;
   estado?: unknown;
   origen?: unknown;
@@ -129,6 +132,7 @@ export function Pedidos() {
             {pedidos.map((p) => {
               const items = Array.isArray(p.items) ? p.items as ItemPedido[] : [];
               const entrega = ENTREGA[String(p.entrega ?? '')] ?? null;
+              const enlaceMaps = p.entrega === 'delivery' ? enlaceAMaps(p.ubicacion) : null;
               return (
                 <li key={p.id} className="tarjeta pedido">
                   <div className="pedido-cabecera">
@@ -146,6 +150,15 @@ export function Pedidos() {
                   {entrega && <p className="pedido-entrega">{entrega}</p>}
                   {typeof p.direccion === 'string' && p.direccion !== '' && (
                     <p className="pedido-direccion"><TextoSeguro valor={p.direccion} maxLargo={200} /></p>
+                  )}
+                  {/* UBICACIÓN COMPARTIDA: opcional (los pedidos viejos no la
+                      traen). El enlace sale SOLO de dos números validados, ver
+                      `ubicacion.ts`; nada del pedido se usa como texto ni URL. */}
+                  {enlaceMaps && (
+                    <p className="pedido-direccion">
+                      Ubicación compartida ·{' '}
+                      <a href={enlaceMaps} target="_blank" rel="noopener noreferrer">Abrir en Maps</a>
+                    </p>
                   )}
 
                   <ul className="pedido-items">
