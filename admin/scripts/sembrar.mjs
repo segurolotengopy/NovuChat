@@ -497,7 +497,8 @@ async function principal() {
   await sembrarComercio({
     id: B,
     nombre: 'Parrilla El Fogon',
-    estado: 'suspendido',
+    // SEMBRAR_FOGON_ACTIVO=1 lo deja activo: las pruebas de navegador necesitan un comercio de ventas con forma de Q'Taco que se pueda usar.
+    estado: process.env.SEMBRAR_FOGON_ACTIVO === '1' ? 'activo' : 'suspendido',
     vertical: 'venta',
     telefono: '59170000002',
     pnid: '100000000000102',

@@ -55,6 +55,9 @@ venv/
 # --- Firebase (directorio admin/) ----------------------------------------
 .firebase/
 admin/**/.env*
+# Salidas de las pruebas de navegador (capturas, trazas, informes): se regeneran en cada corrida.
+admin/test-results/
+admin/playwright-report/
 !admin/**/.env.example
 .deploy-log/
 .security-reports/
