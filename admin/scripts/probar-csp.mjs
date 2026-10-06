@@ -81,6 +81,11 @@ const GLOBOS = sitio.headers.map((h) => ({
 // locales (`connect-src` no los nombra) y el inicio de sesión falla. `CSP_CONNECT_EXTRA="http://127.0.0.1:9399 http://127.0.0.1:8332"`
 // los suma SOLO a `connect-src`; todo lo demás (img-src, script-src, frame-src…) queda como en firebase.json. Sin la variable no cambia nada.
 const CONNECT_EXTRA = (process.env.CSP_CONNECT_EXTRA ?? '').trim();
+// Solo orígenes locales con puerto: un valor con «;» o con un comodín podría anteponer directivas y dejar pasar en verde una prueba con una política más laxa que la real.
+if (CONNECT_EXTRA.split(/\s+/).filter(Boolean).some((o) => !/^(https?|wss?):\/\/(127\.0\.0\.1|localhost):\d{1,5}$/.test(o))) {
+  console.error('CSP_CONNECT_EXTRA solo admite orígenes locales (http://127.0.0.1:<puerto>, ws://127.0.0.1:<puerto>), separados por espacios.');
+  process.exit(1);
+}
 function conEmuladores(cabeceras) {
   const csp = cabeceras['Content-Security-Policy'];
   if (!CONNECT_EXTRA || typeof csp !== 'string') return cabeceras;

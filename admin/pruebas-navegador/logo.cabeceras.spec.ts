@@ -2,10 +2,10 @@ import { expect, test } from '@playwright/test';
 import { USUARIOS } from './entorno';
 import { ingresar } from './ayudas/ingresar';
 import { abrirConfiguracion } from './ayudas/configuracion';
+import { PNG_1X1 as PNG } from './ayudas/png';
 
-// Un PNG de 1×1 (válido). El logo se recorta en el navegador a `data:` y se guarda en Firestore; con la política real de Hosting
+// El logo se recorta en el navegador a `data:` y se guarda en Firestore; con la política real de Hosting
 // la carga no puede pasar por `blob:` (no está en `img-src`).
-const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
 test.describe('Configuración: logo, con las cabeceras reales', () => {
   test('la política de la consola está puesta (no es vite dev)', async ({ page }) => {

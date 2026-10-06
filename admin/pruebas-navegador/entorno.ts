@@ -8,12 +8,17 @@ export const PUERTO_FIRESTORE = 8332;
 export const PUERTO_FIRESTORE_WS = 9251;
 export const PUERTO_AUTH = 9399;
 export const PUERTO_WEB = 5373;
+export const PUERTO_FUNCTIONS = 5231;
 export const URL_WEB = `http://127.0.0.1:${PUERTO_WEB}`;
 /** La consola ya construida y servida con las cabeceras REALES de `firebase.json` (CSP, Permissions-Policy), puerto propio. */
 export const PUERTO_CABECERAS = 5340;
+/** El catálogo web público es OTRO sitio de Hosting, con su propia política (target `catalogo` de `firebase.json`). */
+export const PUERTO_CATALOGO = 5341;
+export const URL_CATALOGO = `http://127.0.0.1:${PUERTO_CATALOGO}`;
+export const FICHA_DEL_CATALOGO = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 export const URL_CABECERAS = `http://127.0.0.1:${PUERTO_CABECERAS}`;
 /** Lo único que se le suma a `connect-src`: los emuladores locales (sin esto el inicio de sesión no puede ni empezar). */
-export const CONNECT_EMULADORES = `http://127.0.0.1:${PUERTO_AUTH} http://127.0.0.1:${PUERTO_FIRESTORE} ws://127.0.0.1:${PUERTO_FIRESTORE_WS}`;
+export const CONNECT_EMULADORES = `http://127.0.0.1:${PUERTO_AUTH} http://127.0.0.1:${PUERTO_FIRESTORE} ws://127.0.0.1:${PUERTO_FIRESTORE_WS} http://127.0.0.1:${PUERTO_FUNCTIONS}`;
 
 /** Variables de Vite que apuntan la consola a los emuladores propios. */
 export const VARIABLES_DE_VITE = {
