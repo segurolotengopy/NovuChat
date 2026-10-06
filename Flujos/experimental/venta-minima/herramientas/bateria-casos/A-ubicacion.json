@@ -1,5 +1,8 @@
 {
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
   "seccion": "U",
+  "nota": "Escenarios de «ubicación compartida o dirección en texto» (encargo del 05/10/2026): con un pedido de delivery la ubicación vale como dirección; fuera de ese paso no se toma; una ubicación inválida no se toma; el aviso al local lleva las coordenadas. Pasan contra main y contra #440. El aviso con enlace a Maps (U5m) espera la rama y vive en A-pendiente-de-rama.json.",
   "casos": [
     {
       "id": "U1",
