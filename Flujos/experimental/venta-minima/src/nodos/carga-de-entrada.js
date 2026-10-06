@@ -151,8 +151,10 @@ return out;
 function cdeUbicacion(u) {
   if (!u || typeof u !== 'object' || Array.isArray(u)) return null;
   if (typeof u.lat !== 'number' || typeof u.lng !== 'number' || !Number.isFinite(u.lat) || !Number.isFinite(u.lng)) return null;
-  if (Math.abs(u.lat) > 90 || Math.abs(u.lng) > 180 || (u.lat === 0 && u.lng === 0)) return null;
-  return { lat: Math.round(u.lat * 1e5) / 1e5, lng: Math.round(u.lng * 1e5) / 1e5 };
+  if (Math.abs(u.lat) > 90 || Math.abs(u.lng) > 180) return null;
+  // Se redondea PRIMERO y se valida el resultado: (0,000004; -0,000003) queda en (0, 0), el punto nulo de un GPS sin fijar.
+  const r = { lat: Math.round(u.lat * 1e5) / 1e5, lng: Math.round(u.lng * 1e5) / 1e5 };
+  return r.lat === 0 && r.lng === 0 ? null : r;
 }
 
 // El id de cada item viaja en el cuerpo del servidor; `validar-carrito.js` solo conserva nombre, cantidad y subtotal. Se emparejan

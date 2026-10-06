@@ -734,8 +734,10 @@ function tomarUbicacion() {
   if (!u || typeof u !== 'object' || typeof u.latitud !== 'number' || typeof u.longitud !== 'number') return;
   if (!isFinite(u.latitud) || !isFinite(u.longitud) || Math.abs(u.latitud) > 90 || Math.abs(u.longitud) > 180) return;
   if (en.paso.indexOf('pedido') !== 0 || en.entrega.entrega !== 'delivery') return;
-  if (u.latitud === 0 && u.longitud === 0) return; // el punto nulo de un GPS sin fijar no es una ubicación
-  en.entrega.ubicacion = { lat: Math.round(u.latitud * 1e5) / 1e5, lng: Math.round(u.longitud * 1e5) / 1e5 };
+  // La misma regla que el servidor, sobre el valor redondeado: el punto nulo (0, 0) de un GPS sin fijar no es una ubicación.
+  const r = { lat: Math.round(u.latitud * 1e5) / 1e5, lng: Math.round(u.longitud * 1e5) / 1e5 };
+  if (!_pdUbicacion(r)) return;
+  en.entrega.ubicacion = r;
 }
 
 // Vuelve a mostrar el paso actual (botón viejo, «sí» suelto, ubicación, pregunta pendiente).
@@ -1209,14 +1211,14 @@ function armarPedido() {
   // Con una ubicación compartida el restaurante recibe las coordenadas (con coma decimal, que no se confunde con un enlace),
   // en su propio campo: `Avisos` las pone en su propio segmento y la dirección no las arrastra ni las corta.
   const u = en.entrega.ubicacion;
-  const coordenadas = delivery && u && isFinite(u.lat) && isFinite(u.lng)
+  const coordenadas = delivery && _pdUbicacion(u)
     ? 'ubicación compartida (' + u.lat.toFixed(5).replace('.', ',') + '; ' + u.lng.toFixed(5).replace('.', ',') + ')' : '';
   return Object.assign({}, nuevo, {
     lineas: pdLineasAviso(en.carrito),
     total: total, modalidad: en.entrega.entrega, moneda: monedaTxt,
     nombre: en.entrega.nombre || vmLinea(perfil, 60), direccion: delivery ? en.entrega.direccion : '', coordenadas: coordenadas,
     // Los números de la ubicación (no el texto): `Avisos` arma con ellos el enlace al mapa del detalle; la plantilla sigue con las coordenadas.
-    ubicacion: delivery && u && isFinite(u.lat) && isFinite(u.lng) ? { lat: u.lat, lng: u.lng } : null,
+    ubicacion: delivery && _pdUbicacion(u) ? { lat: u.lat, lng: u.lng } : null,
     notaPedido: en.entrega.notaPedido || '', // la nota del carrito del catalogo web (texto del cliente, ya saneado)
     referencia: delivery ? en.entrega.referencia : '',
     from: t.from, nombrePerfil: t.nombrePerfil,

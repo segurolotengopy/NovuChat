@@ -880,9 +880,10 @@ function _pdTipoDe(e) {
 }
 // Una ubicación compartida válida: dos números finitos en rango y NO (0, 0) (el punto nulo de un GPS sin fijar). Misma regla que el servidor
 // (la ubicación que manda la página del catálogo); PR-A 05/10.
+// Se valida el valor YA REDONDEADO a 5 decimales (el que se guarda): (0,000004; -0,000003) queda en (0, 0) y no vale.
 function _pdUbicacion(u) {
   return !!u && typeof u === 'object' && Number.isFinite(u.lat) && Number.isFinite(u.lng) && Math.abs(u.lat) <= 90 && Math.abs(u.lng) <= 180
-    && !(u.lat === 0 && u.lng === 0);
+    && !(Math.round(u.lat * 1e5) === 0 && Math.round(u.lng * 1e5) === 0);
 }
 // Lo que se guarda de una ubicación: 5 decimales (≈ 1 m), como el servidor.
 function _pdCopiaUbicacion(u) {
@@ -1117,8 +1118,11 @@ function pdNuevoPedido(from, nombrePerfil, carrito, entrega, total, moneda, ahor
   if (typeof total !== 'number' || _pdCentavos(total) !== _pdCentavos(calculado)) errores.push('total_no_coincide');
   const e = entrega && typeof entrega === 'object' ? entrega : {};
   const tipo = _pdTipoDe(e);
-  const ent = { entrega: tipo, modalidad: tipo, direccion: _pdTexto(e.direccion, 200), referencia: _pdTexto(e.referencia, 150), nombre: _pdNombreEntrega(e, nombrePerfil) };
-  if (_pdUbicacion(e.ubicacion)) ent.ubicacion = _pdCopiaUbicacion(e.ubicacion);
+  // Minimización: dirección, referencia y ubicación solo se guardan con delivery (un recojo no tiene a dónde entregar; el estado puede
+  // conservar un dato viejo del cliente y no por eso se copia al pedido guardado en `sd.pedidos`).
+  const conEntrega = tipo === 'delivery';
+  const ent = { entrega: tipo, modalidad: tipo, direccion: conEntrega ? _pdTexto(e.direccion, 200) : '', referencia: conEntrega ? _pdTexto(e.referencia, 150) : '', nombre: _pdNombreEntrega(e, nombrePerfil) };
+  if (conEntrega && _pdUbicacion(e.ubicacion)) ent.ubicacion = _pdCopiaUbicacion(e.ubicacion);
   const clave = vmIdEstable('ped', tel, lineas, anclaMs, ms);
   return {
     pedidoId: clave.id,
