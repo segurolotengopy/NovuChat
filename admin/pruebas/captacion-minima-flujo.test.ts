@@ -2877,8 +2877,51 @@ describe('§15: el flujo armado con los datos reales', () => {
     j.texto('Hola'); j.asesor();
     for (let i = 0; i < 30; i++) j.texto(i % 2 ? 'ok' : '👍');
     const rot = (estadoDe(w, MAMA) as J)['rot'] as Record<string, number>;
-    expect(Object.keys(rot).sort()).toEqual(['acuse', 'cierre', 'identidad', 'rubros', 'saludo', 'sinDatos', 'traspaso']);
+    expect(Object.keys(rot).sort()).toEqual(['acuse', 'cierre', 'identidad', 'pideAsesor', 'rubros', 'saludo', 'sinDatos', 'traspaso']);
     for (const v of Object.values(rot)) { expect(Number.isInteger(v)).toBe(true); expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThan(12); }
     expect(rot['acuse']).toBe(30 % 12);
+  });
+});
+
+describe('§15 (defecto visto con el modelo real): C25, la promesa inducida', () => {
+  const vivo = (): W => crear({ panel: panel({}, { rubros: RUBROS, cargosUnicos: [{ nombre: 'Instalación', precioUsd: 65, desde: false, detalle: '' }] }) });
+  const PROMESA = /te llam|te escrib|te contact|me llam|a las 10|mañana|horario|te avis|en breve|pronto|lo consult/i;
+
+  it('el recorrido exacto: «¿Me llamas mañana a las 10…?» y «Entonces me llamas tú, ¿sí?» con tipo `otro`: el 2.º mensaje no es idéntico al 1.º, trae el botón y un mensaje por turno', () => {
+    const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
+    modelo(w, { tipo: 'otro', empatia: '¡Te entiendo! 😊' });
+    const t1 = j.texto('¿Me llamas mañana a las 10 para explicarme?');
+    const t2 = j.texto('Entonces me llamas tú, ¿sí?');
+    const t3 = j.texto('¿Y entonces?');
+    expect(CUERPO(t1)).toBe(`¡Te entiendo! 😊 ${preguntaDe('salud-y-belleza')}`);
+    expect(CUERPO(t2)).not.toBe(CUERPO(t1));
+    expect(CUERPO(t3)).not.toBe(CUERPO(t2));
+    expect(idsBotones(t1.aMi[0]!)).toEqual([]);
+    for (const t of [t2, t3]) { expect(idsBotones(t.aMi[0]!)).toEqual(['asesor']); expect(CUERPO(t)).not.toMatch(PROMESA); expect(preguntasDe(CUERPO(t))).toBe(1); }
+    for (const t of [t1, t2, t3]) expect(t.aMi).toHaveLength(1);                // 0 mensajes agregados
+    expect(t2.plantillas.length + t3.plantillas.length).toBe(0);                // sin aviso a recepción
+    expect(estadoDe(w, MAMA)!.hechos['pidioAsesor']).toBe(false);
+    expect(estadoDe(w, MAMA)!.paso).toBe('esperando_dolor');
+  });
+  it('con tipo `pide_asesor` (R6): el texto es del código, con el botón, sin promesa y distinto cada vez', () => {
+    const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
+    modelo(w, { tipo: 'pide_asesor', empatia: '¡Con gusto te ayudamos con eso!' });
+    const ts = [j.texto('¿Me llamas mañana a las 10 para explicarme?'), j.texto('Entonces me llamas tú, ¿sí?'), j.texto('¿Y me llaman hoy?')];
+    for (const t of ts) { expect(idsBotones(t.aMi[0]!)).toContain('asesor'); expect(CUERPO(t)).not.toMatch(PROMESA); expect(CUERPO(t)).not.toContain('Con gusto te ayudamos'); expect(t.plantillas).toHaveLength(0); }
+    expect(new Set(ts.map((t) => CUERPO(t))).size).toBe(3);
+  });
+  it('R8: si Meta rechaza el mensaje y su respaldo, el contador de repeticiones vuelve al de antes (el siguiente intento no se toma por una repetición)', () => {
+    const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
+    modelo(w, { tipo: 'otro', empatia: '¡Te entiendo! 😊' });
+    j.texto('¿Me llamas mañana a las 10?');
+    expect(estadoDe(w, MAMA)!['repetidas']).toBe(1);
+    w.graph.falla = (p) => p['to'] === MAMA;
+    const t = j.texto('Entonces me llamas tú, ¿sí?', { tolerarFallo: true });
+    expect(t.fallo).not.toBeNull();
+    expect(estadoDe(w, MAMA)!['repetidas']).toBe(1);
+    w.graph.falla = () => false;
+    const t2 = j.texto('Entonces me llamas tú, ¿sí?');
+    expect(idsBotones(t2.aMi[0]!)).toEqual(['asesor']);
+    expect(estadoDe(w, MAMA)!['repetidas']).toBe(2);
   });
 });

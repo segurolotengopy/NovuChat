@@ -294,7 +294,7 @@ describe('estado por teléfono', () => {
       v: 1, paso: 'inicio', rubroId: '', rubroLibre: '', empresa: '', reintentoEmpresa: false,
       hechos: { pidioAsesor: false, pidioPlanes: false, eligioOtro: false, respondioDolor: false, descarte: '' },
       planesPendientes: false, planesMostrados: false, soporte: false, anuncio: false, avisado: false, avisoFalla: '', ultimoMensajeMs: 0, ultimosIds: [], ofertas: 0, sueltas: 0,
-      impactoDicho: false, rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0 },
+      impactoDicho: false, rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0, pideAsesor: 0 }, repetidas: 0,
     });
     e.hechos.pidioAsesor = true;
     e.ultimosIds.push('x');
@@ -2412,13 +2412,17 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
     const t = f('ccInstrucciones')({ ...CFGV, nombreNegocio: 'Tienda Ejemplo', asesor: '' }, CORPUS) as string;
     expect(t).toContain('Tono (');
     expect(t).toMatch(/cercana y entusiasta/);
-    expect(t).toContain('¡Uff, te entiendo! 😅 Responder todo a mano le quita tiempo a cualquiera.');
+    // §15 (defecto real): los 4 ejemplos tienen aperturas DISTINTAS y no se nombra ninguna frase (nombrar un ejemplo, aun negándolo, lo copia).
+    expect(t).toContain('Responder todo a mano le quita tiempo a cualquiera, y se nota al final del día. 😅');
     expect(t).toContain('¡Qué buena señal que ya vendas por WhatsApp! 🙌');
+    expect(t).toContain('Imagino lo difícil que es contestar mensajes mientras atiendes en el mostrador. 🙏');
+    expect(t).toContain('Entre confirmar citas y atender el local, el día se te va volando.');
     expect(t).toMatch(/hasta 2 oraciones y 220 caracteres con sus emojis/);
     // §15: vendedor consultivo, sin repetir lo del cliente ni los textos fijos, variando el arranque; y sin nombrar a nadie.
     expect(t).toMatch(/vendedor consultivo, no un formulario/);
     expect(t).toMatch(/tampoco repitas las frases de los mensajes fijos/);
-    expect(t).toMatch(/Varía cómo arrancas: no siempre «¡Uff, te entiendo!»/);
+    expect(t).toMatch(/Abre cada vez de forma distinta/);
+    expect(t).not.toMatch(/Uff/i);
     expect(t).toMatch(/Sé concreto/);
     expect(t).toMatch(/solo lo que está en los datos|SOLO lo que está en los datos/);
     expect(t).toMatch(/hasta 3 oraciones y 420 caracteres/);
@@ -2722,7 +2726,6 @@ describe('§14: cordialidad (sin repeticiones innecesarias)', () => {
     expect(t).toMatch(/da una pena tremenda.*NO debe salir/);
     expect(t).toMatch(/UNA sola idea/);
     expect(t).toMatch(/ni repitas sus palabras una por una/);
-    expect(t).toContain('¡Uff, te entiendo! 😅 Responder todo a mano le quita tiempo a cualquiera.');
     expect(t).toContain('¡Qué buena señal que ya vendas por WhatsApp! 🙌');
   });
 });
@@ -2849,12 +2852,12 @@ describe('§15: más detalle y orientación comercial, sin repetición y sin nom
     toma('planes en texto', E({ paso: 'oferta', rubroId: 'educacion' }), T('precios'), null, { ...REAL, archivoPlanes: null });
     toma('planes ya mostrados', E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true }), T('precios'));
     for (let v = 0; v < 3; v++) {
-      toma(`traspaso ${v}`, E({ paso: 'oferta', rubroId: 'educacion', rot: { saludo: 0, rubros: 0, traspaso: v, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0 } }), T('quiero hablar con un asesor'));
-      toma(`traspaso sin empresa pendiente ${v}`, E({ paso: 'oferta', rubroId: 'educacion', empresa: 'Mi Tienda', rot: { saludo: 0, rubros: 0, traspaso: v, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0 } }), T('quiero hablar con un asesor'));
-      toma(`acuse ${v}`, E({ paso: 'esperando_empresa', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: v, cierre: 0, sinDatos: 0, identidad: 0 } }), T('ok'));
-      toma(`cierre tras el nombre ${v}`, E({ paso: 'esperando_empresa', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: v, sinDatos: 0, identidad: 0 } }), T('Colegio Sol'));
-      toma(`identidad ${v}`, E({ paso: 'oferta', rubroId: 'educacion', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: v } }), T('¿eres un robot?'));
-      toma(`sin datos ${v}`, E({ paso: 'esperando_dolor', rubroId: 'educacion', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: v, identidad: 0 } }), T('¿hacen apps?'), OK({ tipo: 'pregunta' }));
+      toma(`traspaso ${v}`, E({ paso: 'oferta', rubroId: 'educacion', rot: { saludo: 0, rubros: 0, traspaso: v, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0, pideAsesor: 0 } }), T('quiero hablar con un asesor'));
+      toma(`traspaso sin empresa pendiente ${v}`, E({ paso: 'oferta', rubroId: 'educacion', empresa: 'Mi Tienda', rot: { saludo: 0, rubros: 0, traspaso: v, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0, pideAsesor: 0 } }), T('quiero hablar con un asesor'));
+      toma(`acuse ${v}`, E({ paso: 'esperando_empresa', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: v, cierre: 0, sinDatos: 0, identidad: 0, pideAsesor: 0 } }), T('ok'));
+      toma(`cierre tras el nombre ${v}`, E({ paso: 'esperando_empresa', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: v, sinDatos: 0, identidad: 0, pideAsesor: 0 } }), T('Colegio Sol'));
+      toma(`identidad ${v}`, E({ paso: 'oferta', rubroId: 'educacion', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: v, pideAsesor: 0 } }), T('¿eres un robot?'));
+      toma(`sin datos ${v}`, E({ paso: 'esperando_dolor', rubroId: 'educacion', rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: v, identidad: 0, pideAsesor: 0 } }), T('¿hacen apps?'), OK({ tipo: 'pregunta' }));
       toma(`oferta con pregunta ${v}`, E({ paso: 'oferta', rubroId: 'educacion', ofertas: v }), T('cuéntame más'), OK());
       toma(`suelta con datos ${v}`, E({ paso: 'oferta', rubroId: 'educacion', ofertas: v, sueltas: 1 }), T('¿qué hacen?'), OK({ tipo: 'pregunta', respuesta: 'Atienden tu WhatsApp.', enLosDatos: true }));
       toma(`suelta sin pregunta ${v}`, E({ paso: 'oferta', rubroId: 'educacion', ofertas: v }), T('¿qué hacen?'), OK({ tipo: 'pregunta', respuesta: 'Atienden tu WhatsApp.', enLosDatos: true }));
@@ -2951,8 +2954,8 @@ describe('§15: más detalle y orientación comercial, sin repetición y sin nom
 
   it('los contadores nuevos (`rot`, `impactoDicho`): se sanean, vencen con la ventana (el del saludo no), y no hay claves de más', () => {
     const vigente = (extra: J, ahora = AHORA): J => f('ccEstadoVigente')({ ...f('ccEstadoBase')(), ultimoMensajeMs: AHORA - H, ...extra }, ahora);
-    const base = { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0 };
-    expect(vigente({ rot: { saludo: 5, rubros: 4, traspaso: 3, acuse: 2, cierre: 1, sinDatos: 11, identidad: 7 }, impactoDicho: true })).toMatchObject({ rot: { saludo: 5, rubros: 4, traspaso: 3, acuse: 2, cierre: 1, sinDatos: 11, identidad: 7 }, impactoDicho: true });
+    const base = { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0, pideAsesor: 0 };
+    expect(vigente({ rot: { saludo: 5, rubros: 4, traspaso: 3, acuse: 2, cierre: 1, sinDatos: 11, identidad: 7, pideAsesor: 3 }, impactoDicho: true })).toMatchObject({ rot: { saludo: 5, rubros: 4, traspaso: 3, acuse: 2, cierre: 1, sinDatos: 11, identidad: 7, pideAsesor: 3 }, impactoDicho: true });
     for (const malo of [12, -1, 1.5, '2', null, {}, [], NaN, Infinity, undefined]) {
       const v = vigente({ rot: { saludo: malo, rubros: malo, traspaso: malo, acuse: malo, cierre: malo, sinDatos: malo, identidad: malo }, impactoDicho: malo });
       expect(v['rot'], String(malo)).toEqual(base);
@@ -2961,7 +2964,7 @@ describe('§15: más detalle y orientación comercial, sin repetición y sin nom
     for (const basura of ['texto', 7, null, [], { __proto__: { saludo: 3 } }]) expect(vigente({ rot: basura })['rot']).toEqual(base);
     expect(Object.keys(vigente({ rot: { ...base, extra: 3, __proto__: { x: 1 } } })['rot']).sort()).toEqual(Object.keys(base).sort());
     // La ventana vence todo menos el saludo (quien vuelve al día siguiente no recibe el mismo saludo); a las 48 h se olvida la ficha entera.
-    const lleno = { rot: { saludo: 5, rubros: 4, traspaso: 3, acuse: 2, cierre: 1, sinDatos: 11, identidad: 7 }, impactoDicho: true };
+    const lleno = { rot: { saludo: 5, rubros: 4, traspaso: 3, acuse: 2, cierre: 1, sinDatos: 11, identidad: 7, pideAsesor: 3 }, impactoDicho: true };
     expect(vigente(lleno, AHORA + 24 * H)).toMatchObject({ rot: { ...base, saludo: 5 }, impactoDicho: false });
     expect(vigente(lleno, AHORA + 48 * H + 1)).toMatchObject({ rot: base, impactoDicho: false });
   });
@@ -3001,13 +3004,13 @@ describe('§15: más detalle y orientación comercial, sin repetición y sin nom
     expect(new Set(vistas.values()).size).toBe(3);
     // El mismo dígito da el mismo saludo (reproducible en la batería) y el contador `rot.saludo` lo cambia para quien vuelve.
     expect(vistas.get(3)).toBe(cuerpo(turno(E(), T('hola', { from: '59100000013' }))['mensajes'][0]));
-    expect(vistas.get(3)).not.toBe(cuerpo(turno(E({ rot: { saludo: 1, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0 } }), T('hola', { from: '59100000013' }))['mensajes'][0]));
+    expect(vistas.get(3)).not.toBe(cuerpo(turno(E({ rot: { saludo: 1, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0, pideAsesor: 0 } }), T('hola', { from: '59100000013' }))['mensajes'][0]));
     // Con el nombre del asistente de la consola (distinto del asesor) se usa en las tres variantes.
     for (let d = 0; d < 3; d++) expect(cuerpo(turno(E(), T('hola', { from: '5910000001' + d }), null, { ...REAL, nombreAsistente: 'Kenji' })['mensajes'][0])).toContain('Soy Kenji, el asistente virtual');
   });
   it('lo que se repite NUNCA cambia lo que el cliente debe saber: toda oferta del asesor conserva su botón, y sin recepción ninguna variante nombra un botón', () => {
     for (let v = 0; v < 3; v++) {
-      const rot = { saludo: 0, rubros: 0, traspaso: v, acuse: v, cierre: v, sinDatos: 0, identidad: 0 };
+      const rot = { saludo: 0, rubros: 0, traspaso: v, acuse: v, cierre: v, sinDatos: 0, identidad: 0, pideAsesor: 0 };
       for (const [e, t] of [[E({ paso: 'oferta', rubroId: 'educacion', rot }), T('quiero hablar con un asesor')], [E({ paso: 'esperando_empresa', rot }), T('ok')], [E({ paso: 'esperando_empresa', rot }), T('Colegio Sol')]] as [J, J][]) {
         const con = turno(e, t)['mensajes'][0];
         expect(con['payload']['interactive']['type'], `${v}: ${cuerpo(con)}`).toBe('cta_url');
@@ -3026,5 +3029,104 @@ describe('§15: más detalle y orientación comercial, sin repetición y sin nom
     const c = f('ccContar')(cuerpo(r['mensajes'][0]));
     expect(c.oraciones).toBeLessThanOrEqual(6);
     expect(c.palabras).toBeLessThanOrEqual(95);
+  });
+});
+
+// ================================================================================================
+describe('§15 (defectos vistos con el modelo real): aperturas repetidas y la pregunta pendiente repetida idéntica', () => {
+  const VIVOS = [
+    { id: 'salud-y-belleza', nombre: 'Salud y Belleza', solucion: 'Agenda sola.', flujoSugerido: 'agendamiento' },
+    { id: 'otro-a-medida', nombre: 'Otro / a medida', solucion: 'A tu medida.', flujoSugerido: '' },
+  ];
+  const GUION_REAL = (C.cargarDatos('novuchat.json') as J)['guion'] as J;
+  const REAL = { ...CFG, asesor: '', rubros: VIVOS, guion: GUION_REAL, numeroRecepcion: '59100000001', campanas: [], nivelEmojis: 'muchos', plantillaAviso: 'solicitud_contacto', idiomaPlantillaAviso: 'es' };
+  const E = (extra: J = {}): J => { const e = f('ccEstadoBase')(); return { ...e, ...extra, hechos: { ...e.hechos, ...(extra['hechos'] ?? {}) } }; };
+  const T = (texto: string): J => ({ from: '59100000011', nombrePerfil: 'Ana', tipo: 'text', texto, via: 'texto', idToque: '', anuncio: false, textoDeImagen: '', categoria: '', medioFallo: '' });
+  const OK = (extra: J = {}): J => ({ ok: true, motivo: '', tipo: 'otro', rubroId: '', rubroLibre: '', empatia: '¡Te entiendo! 😊', respuesta: '', aclaracion: '', enLosDatos: false, descarte: '', ...extra });
+  const turno = (e: J, t: J, modelo: J | null, cfg: J = REAL): J => f('ccCompletar')({ plan: f('ccDecidir')({ e, t, cfg }), modelo, cfg });
+  const cuerpo = (m: J): string => (m['payload']['interactive']?.['body']?.['text'] ?? m['payload']['text']?.['body']) as string;
+  const PROMESA_DE_CONTACTO = /te llam|te escrib|te contact|me llam|a las 10|mañana|horario|te avis|en breve|pronto|lo consult/i;
+
+  it('DEFECTO 1: `ccInstrucciones` no nombra ninguna frase de apertura y sus ejemplos empiezan todos distinto (nombrar un ejemplo, aun negándolo, lo copia)', () => {
+    const t = f('ccInstrucciones')(REAL, CORPUS) as string;
+    const linea = t.split('\n').find((l) => l.startsWith('- Ejemplos del tono'))!;
+    expect(linea).toBeDefined();
+    const ejemplos = [...linea.matchAll(/«([^»]+)»/g)].map((m) => m[1]!);
+    expect(ejemplos).toHaveLength(4);
+    const inicios = ejemplos.map((x) => x.slice(0, 12));
+    expect(new Set(inicios).size).toBe(4);                       // ninguno comparte los 12 primeros caracteres con otro
+    expect(new Set(ejemplos.map((x) => x.split(' ')[0])).size).toBe(4); // ni la primera palabra
+    for (const x of ejemplos) { expect(f('ccContar')(x).oraciones).toBeLessThanOrEqual(2); expect(x).not.toMatch(/\?/); }
+    // Ninguna mención de frases concretas que arrancan con exclamación («Uff», «Perfecto», «Excelente», «Qué bien»…) como lista de lo que NO hacer.
+    expect(t).not.toMatch(/Uff|no siempre «|ni «¡/i);
+    expect(t).not.toMatch(/no empieces con|no abras con/i);
+    expect(t).toMatch(/Abre cada vez de forma distinta/);
+  });
+  it('DEFECTO 2 (a): `pide_asesor` incluye que lo llamen, le escriban o le expliquen por llamada, mensaje o reunión', () => {
+    const t = f('ccInstrucciones')(REAL, CORPUS) as string;
+    expect(t).toMatch(/"pide_asesor" si pide hablar con una persona o que alguien lo contacte \(que lo llamen, le escriban o le expliquen por llamada, mensaje o reunión/);
+  });
+
+  it('DEFECTO 2 (b), C25 con `pide_asesor`: el texto es del CÓDIGO, ofrece al asesor con su botón, sin promesa de llamada ni de horario, y cambia en cada turno', () => {
+    let e = E({ paso: 'esperando_dolor', rubroId: 'salud-y-belleza' });
+    const vistas: string[] = [];
+    for (const dicho of ['¿Me llamas mañana a las 10 para explicarme?', 'Entonces me llamas tú, ¿sí?', '¿Y me llaman hoy?']) {
+      // El modelo, además, intenta una empatía que suena a promesa: no sale.
+      const r = turno(e, T(dicho), OK({ tipo: 'pide_asesor', empatia: '¡Con gusto te ayudamos con eso!' }));
+      const m = r['mensajes'][0];
+      vistas.push(cuerpo(m));
+      expect(m['botones'], dicho).toContain('asesor');
+      expect(cuerpo(m), dicho).not.toMatch(PROMESA_DE_CONTACTO);
+      expect(cuerpo(m), dicho).not.toContain('Con gusto te ayudamos');
+      expect(r['mensajes'].filter((x: J) => x['para'] === 'recepcion'), 'sin traspaso ni aviso').toHaveLength(0);
+      expect(r['e'].hechos.pidioAsesor, 'no es un pedido de traspaso').toBe(false);
+      expect(r['e'].paso).toBe('esperando_dolor');
+      e = r['e'];
+    }
+    expect(new Set(vistas).size).toBe(3);
+    for (const v of vistas) expect(preguntas(v)).toBeLessThanOrEqual(1);
+  });
+  it('DEFECTO 2 (b), C25 con tipo `otro` en ambos turnos (el recorrido que falló): el 2.º mensaje ya NO es idéntico al 1.º y trae el botón del asesor', () => {
+    const e0 = E({ paso: 'esperando_dolor', rubroId: 'salud-y-belleza' });
+    const r1 = turno(e0, T('¿Me llamas mañana a las 10 para explicarme?'), OK());
+    const m1 = cuerpo(r1['mensajes'][0]);
+    expect(m1).toBe('¡Te entiendo! 😊 Cuéntame, ¿actualmente pierdes mucho tiempo agendando y recordando citas a mano?');
+    expect(r1['mensajes'][0]['botones']).toBeUndefined();               // la 1.ª vez, sin botón (todavía no se repitió)
+    expect(r1['e'].repetidas).toBe(1);
+    expect(r1['e'].hechos.respondioDolor).toBe(false);                  // «otro» no es la respuesta al dolor
+    expect(r1['e'].paso).toBe('esperando_dolor');
+    const r2 = turno(r1['e'], T('Entonces me llamas tú, ¿sí?'), OK());
+    const m2 = cuerpo(r2['mensajes'][0]);
+    expect(m2).not.toBe(m1);
+    expect(r2['mensajes'][0]['botones']).toContain('asesor');
+    expect(m2).toBe('¡Te entiendo! 😊 Para orientarte mejor, cuéntame un poco más: ¿cómo lo manejas hoy en tu negocio? Si prefieres, un asesor te lo explica directo 😊');
+    expect(m2).not.toMatch(PROMESA_DE_CONTACTO);
+    expect(preguntas(m2)).toBe(1);
+    expect(r2['e'].repetidas).toBe(2);
+    // Un tercero tampoco repite el segundo (las dos reformulaciones se alternan), y sigue con el botón.
+    const r3 = turno(r2['e'], T('¿entonces sí o no?'), OK());
+    expect(cuerpo(r3['mensajes'][0])).not.toBe(m2);
+    expect(cuerpo(r3['mensajes'][0])).not.toBe(m1);
+    expect(r3['mensajes'][0]['botones']).toContain('asesor');
+    const r4 = turno(r3['e'], T('¿y entonces?'), OK());
+    expect(cuerpo(r4['mensajes'][0])).not.toBe(cuerpo(r3['mensajes'][0]));
+    // NIEGA: sin el modelo de por medio, la misma red cubre los demás pasos (la pregunta de la empresa, los rubros).
+    let em = E({ paso: 'esperando_empresa' });
+    const empresa: string[] = [];
+    for (let i = 0; i < 3; i++) { const r = turno(em, T('¿para qué lo necesitas?'), OK({ tipo: 'pregunta', respuesta: '', enLosDatos: false })); empresa.push(cuerpo(r['mensajes'][0])); em = { ...r['e'], reintentoEmpresa: false }; }
+    for (let i = 1; i < empresa.length; i++) expect(empresa[i]).not.toBe(empresa[i - 1]);
+  });
+  it('la red se reinicia cuando el cliente avanza (responde el dolor, toca un rubro…) y la ficha la sanea y la vence con la ventana', () => {
+    const e0 = E({ paso: 'esperando_dolor', rubroId: 'salud-y-belleza' });
+    const r1 = turno(e0, T('¿Me llamas?'), OK());
+    expect(r1['e'].repetidas).toBe(1);
+    const avanza = turno(r1['e'], T('sí, todo el día'), OK({ tipo: 'respuesta' }));
+    expect(avanza['accion']).toBe('oferta');
+    expect(avanza['e'].repetidas).toBe(0);
+    const vigente = (extra: J, ahora = AHORA): J => f('ccEstadoVigente')({ ...f('ccEstadoBase')(), ultimoMensajeMs: AHORA - H, ...extra }, ahora);
+    expect(vigente({ repetidas: 3 })['repetidas']).toBe(3);
+    for (const malo of [10, 99, -1, 1.5, '2', null, {}, [], NaN, Infinity, undefined]) expect(vigente({ repetidas: malo })['repetidas'], String(malo)).toBe(0);
+    expect(vigente({ repetidas: 3 }, AHORA + 24 * H)['repetidas']).toBe(0);
+    expect(f('ccEstadoBase')()['repetidas']).toBe(0);
   });
 });

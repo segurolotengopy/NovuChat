@@ -535,3 +535,13 @@ La persona que atienda puede ser otra. Con los datos de NovuChat (`asesor.nombre
 - `ccEsIdentidad` reconoce también «¿eres un asesor?», «¿me atiende una asesora?»; los filtros S1/S2 siguen cubriendo «un asesor», «el asesor» y «recepción» como quienes no pueden recibir promesas del modelo.
 - El nombre del ASISTENTE (p. ej. «Kenji», de la consola) no se toca.
 - Pruebas: la suite de punta a punta revisa CADA mensaje con los datos reales (texto, botones, filas, saludo prellenado) contra `/silvana|asesora/i`, la librería recorre todos los caminos y la batería en seco no encuentra el nombre en ninguna conversación.
+
+### Dos defectos que solo se vieron con el modelo real (batería real del 06/10/2026)
+- **Aperturas repetidas.** El modelo abrió una y otra vez con «¡Uff, te entiendo!», «¡Perfecto!», «¡Excelente!»: `ccInstrucciones` nombraba la frase («no siempre «¡Uff, te entiendo!»») y la usaba de primer ejemplo, y **nombrar un ejemplo, aun negándolo, lo copia**.
+  Ahora el prompt no nombra ninguna frase ni lleva listas negras: pide «abre cada vez de forma distinta, según lo que dijo el cliente» y da CUATRO ejemplos con aperturas y estructuras distintas (una observación, una felicitación por algo concreto, una frase de empatía imaginativa y
+  una directa al punto; ninguna con «?» —la empatía no admite preguntas—). Una prueba exige que no compartan los 12 primeros caracteres ni la primera palabra y que no aparezca «Uff».
+- **Pregunta pendiente repetida idéntica (C25, promesa inducida).** (a) `pide_asesor` incluye ahora pedir que lo llamen, le escriban o le expliquen por llamada, mensaje o reunión; el camino R6 ya no usa la empatía del modelo sino **una frase del código** (tres variantes, `rot.pideAsesor`:
+  «Si prefieres hablarlo con una persona, puedes hacerlo con un asesor desde las opciones de abajo»…), con el botón (o la fila) del asesor, sin traspaso ni aviso y sin prometer llamada, horario ni respuesta (así «¡Con gusto te ayudamos con eso!» del modelo ya no puede salir).
+  (b) Red de seguridad en el código: `repetidas` (entero 0 a 9 en la ficha, saneado, vence con la ventana, restaurado con `fichaAntes`) cuenta las veces seguidas que se retoma la pregunta pendiente. A la 2.ª vez no sale idéntica: se reformula (dos formulaciones que se alternan por paso) y se agrega
+  «Si prefieres, un asesor te lo explica directo 😊» con su botón. Cualquier turno que no retome la pregunta la reinicia. Además, un tipo `otro` en el paso del dolor o del negocio ya no se toma por la respuesta al dolor (oferta y calificación Media): se retoma la pregunta con la empatía del modelo.
+- **Mensajes por conversación: 0 agregados y 0 quitados.**

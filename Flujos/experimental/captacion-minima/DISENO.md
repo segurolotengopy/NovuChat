@@ -271,3 +271,5 @@ Resumen de lo que cambió (el contrato, §15, tiene las decisiones, la tabla de 
   (`telefonoDe`: 59100000010 a 59100000019, nunca el de recepción ni el del negocio); el informe mide las palabras por mensaje (media, mediana, máximo), los mensajes idénticos seguidos (0 esperado, cuenta como violación
   `mensaje_repetido_seguido`), las oraciones repetidas de un mensaje al siguiente (informativo: retomar la pregunta pendiente es a propósito) y las apariciones del dato de Harvard por conversación (hasta 1; más es `harvard_mas_de_una_vez`).
 - **Mensajes por conversación: 0 agregados y 0 quitados.**
+- **Defectos del modelo real (06/10):** el prompt ya no nombra ninguna frase de apertura (cuatro ejemplos distintos); `pide_asesor` cubre «que me llamen» y su texto es del código (`ccPresentaAsesor`, `rot.pideAsesor`); `repetidas` en la ficha evita repetir idéntica la pregunta pendiente
+  (`ccRetomar`: reformula y ofrece al asesor); `otro` en el dolor o el negocio retoma la pregunta. Caso `C25b` de la batería (tipo `otro` tres veces).
