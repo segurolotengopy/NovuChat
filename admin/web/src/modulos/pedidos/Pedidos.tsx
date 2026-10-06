@@ -48,6 +48,8 @@ interface Pedido {
   direccion?: unknown;
   /** Opcional: `{ lat, lng }` si el cliente compartió su ubicación (delivery). */
   ubicacion?: unknown;
+  /** Opcional: cómo llegar, escrito por el cliente («a media cuadra del gas»). */
+  referencia?: unknown;
   nota?: unknown;
   estado?: unknown;
   origen?: unknown;
@@ -115,12 +117,13 @@ export function Pedidos() {
           <div className="acciones">
             <button type="button" className="btn btn-secondary" onClick={() => descargarCsv(
               'pedidos',
-              ['Cuándo', 'Cliente', 'Entrega', 'Dirección', 'Ítems', 'Nota', 'Total', 'Moneda', 'Estado'],
+              ['Cuándo', 'Cliente', 'Entrega', 'Dirección', 'Referencia', 'Ítems', 'Nota', 'Total', 'Moneda', 'Estado'],
               pedidos.map((p) => [
                 p.creadoEn?.toDate?.().toLocaleString('es-BO') ?? '',
                 p.telefonoEnmascarado,
                 ENTREGA[String(p.entrega ?? '')] ?? p.entrega,
                 p.direccion,
+                p.referencia,
                 (Array.isArray(p.items) ? p.items as ItemPedido[] : [])
                   .map((i) => `${String(i.cantidad ?? 1)}× ${String(i.nombre ?? '')}`
                     + (detalleDelItem(i) ? ` (${detalleDelItem(i)})` : '')).join(' · '),
@@ -151,6 +154,14 @@ export function Pedidos() {
                   {entrega && <p className="pedido-entrega">{entrega}</p>}
                   {typeof p.direccion === 'string' && p.direccion !== '' && (
                     <p className="pedido-direccion"><TextoSeguro valor={p.direccion} maxLargo={200} /></p>
+                  )}
+                  {/* REFERENCIA PARA LLEGAR: texto del cliente, opcional (los
+                      pedidos sin ella quedan igual). Como todo texto del
+                      pedido, va por `TextoSeguro`. */}
+                  {typeof p.referencia === 'string' && p.referencia !== '' && (
+                    <p className="pedido-direccion">
+                      Referencia: <TextoSeguro valor={p.referencia} maxLargo={200} />
+                    </p>
                   )}
                   {/* UBICACIÓN COMPARTIDA: opcional (los pedidos viejos no la
                       traen). El enlace sale SOLO de dos números validados, ver

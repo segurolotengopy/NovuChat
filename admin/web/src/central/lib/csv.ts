@@ -27,6 +27,8 @@
  * por una, exactamente igual que si se hubiera cargado a mano.
  */
 
+import { neutralizarFormula, quitarNeutralizacion } from './exportar';
+
 export interface FilaCatalogo {
   nombre: string;
   descripcion: string;
@@ -242,7 +244,9 @@ export function validarFilas(
   const indice = (columna: string) => encabezados.indexOf(columna);
   const celda = (f: string[], columna: string): string => {
     const i = indice(columna);
-    return i >= 0 ? (f[i] ?? '').trim() : '';
+    // Quita el `'` que `aCsv` antepone a los textos que una hoja de cálculo
+    // ejecutaría como fórmula: lo exportado se lee igual que se guardó.
+    return i >= 0 ? quitarNeutralizacion((f[i] ?? '').trim()).trim() : '';
   };
 
   const vistos = new Set<string>();
@@ -364,7 +368,12 @@ export function validarFilas(
  * comercio crea que sirve.
  */
 export function aCsv(filas: FilaCatalogo[]): string {
-  const escapar = (v: string | number | boolean) => `"${String(v).replace(/"/g, '""')}"`;
+  // Los textos (nombre, descripción, área, imagen) los escribió el comercio o,
+  // por el importador, un archivo ajeno: se neutralizan las fórmulas. Los
+  // números (precio, duración, cantidad) no se tocan: un cero o un negativo
+  // sigue siendo número. Ver `neutralizarFormula`.
+  const escapar = (v: string | number | boolean) =>
+    `"${(typeof v === 'string' ? neutralizarFormula(v) : String(v)).replace(/"/g, '""')}"`;
   const lineas = [COLUMNAS.map(escapar).join(',')];
   for (const f of filas) {
     lineas.push([
