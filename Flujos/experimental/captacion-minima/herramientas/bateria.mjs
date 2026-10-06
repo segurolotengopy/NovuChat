@@ -982,6 +982,18 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
         anterior = m.cuerpo;
       }
     }
+    // §15: `exige` (en un turno del caso) pide que la conversacion AVANCE o que se ofrezca al asesor, no solo que el modelo acierte el tipo:
+    // `accion`: la accion final del turno (`oferta`, `contacto`, `retomar`…; una o varias aceptables); `boton`: algun mensaje con el boton o la fila del asesor.
+    if (t.exige) {
+      const accionFinal = String((((r.porNodo['Armar mensajes'] ?? [])[0] ?? {}).resumen ?? {}).plan ?? '');
+      const aceptables = [].concat(t.exige.accion ?? []);
+      if (aceptables.length && !aceptables.includes(accionFinal)) {
+        corrida.violaciones.push({ caso: caso.id, rep, turno: i + 1, dicho: dichoDe(t), regla: 'no_avanza', texto: `se esperaba ${aceptables.join(' o ')} y salio «${accionFinal}»` });
+      }
+      if (t.exige.boton === true && !alCliente.some((m) => botonesDe(m.payload).includes('asesor') || filasDe(m.payload).includes('asesor') || tipoInter(m.payload) === 'cta_url')) {
+        corrida.violaciones.push({ caso: caso.id, rep, turno: i + 1, dicho: dichoDe(t), regla: 'sin_boton_del_asesor', texto: alCliente.map((m) => m.cuerpo).join(' | ').slice(0, 200) });
+      }
+    }
     salidas.push({ turno: i + 1, dicho: dichoDe(t), mensajes: alCliente.map((m) => m.cuerpo) });
     if (captura.modelo) {
       const l = evaluarLlamada({ ...captura.modelo, espera: t.espera, lib, cfg, plan });
@@ -1108,6 +1120,9 @@ export function validarCasos(datos) {
       else if (!['texto', 'fila', 'boton', 'audio'].includes(t.tipo)) throw new Error(`bateria-casos.json: ${donde}: tipo de turno desconocido.`);
       if (t.seco !== undefined && typeof t.seco !== 'string' && (typeof t.seco !== 'object' || t.seco === null || Object.keys(t.seco).some((k) => !CAMPOS.includes(k)))) {
         throw new Error(`bateria-casos.json: ${donde}: «seco» debe ser un objeto con campos del esquema, o un texto.`);
+      }
+      if (t.exige !== undefined && (typeof t.exige !== 'object' || t.exige === null || Object.keys(t.exige).some((k) => !['accion', 'boton'].includes(k)))) {
+        throw new Error(`bateria-casos.json: ${donde}: «exige» solo admite accion y boton.`);
       }
       if (t.espera !== undefined && (typeof t.espera !== 'object' || Object.keys(t.espera).some((k) => !['tipo', 'rubroId', 'rubroLibre', 'descarte', 'enLosDatos'].includes(k)))) {
         throw new Error(`bateria-casos.json: ${donde}: «espera» con un campo desconocido.`);

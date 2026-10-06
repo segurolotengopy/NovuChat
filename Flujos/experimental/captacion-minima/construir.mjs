@@ -165,8 +165,17 @@ export const MAX_PALABRAS_QUE_HACEMOS = numeroDeLaLibreria('CC_MAX_PALABRAS_QUE_
 export const MAX_PALABRAS_IMPACTO = numeroDeLaLibreria('CC_MAX_PALABRAS_IMPACTO');
 export const MAX_PALABRAS_COMO_FUNCIONA = numeroDeLaLibreria('CC_MAX_PALABRAS_COMO_FUNCIONA');
 const PROMESA = regexDeLaLibreria('CC_PROMESA_DEL_MODELO');
+// §15: lo que NINGÚN texto del guion puede decir, del mismo patrón que filtra al modelo (una sola fuente: la librería).
+const OFERTA = regexDeLaLibreria('CC_OFERTA_DEL_MODELO');
+const YO = regexDeLaLibreria('CC_YO_DEL_MODELO');
+const MONTO_EN_LETRAS = regexDeLaLibreria('CC_MONTO_MODELO');
+const ENLACE = regexDeLaLibreria('CC_ENLACE');
+const ACREDITACION = /acreditad|verificad|pago (exitoso|recibido|confirmado|aprobado|validado)|recibimos tu pago|\bgarantiz/;
+const NIEGA_SER_IA = /\bno soy (un |una )?(bot|robot|ia|inteligencia|maquina|asistente|programa)|\bsoy (una )?(persona|humano|humana)|de carne y hueso|persona real|\bno es (un )?(bot|robot)/;
+const NUMERO_EN_LETRAS = /\b(cinco|diez|quince|veinte|veinticinco|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|quinientos|mil)\s+(dolares|bolivianos|bs|usd|por ciento)\b/;
 const CONTROLES = /[\u0000-\u001f\u007f\u2028\u2029]/;
-const URL_EN_TEXTO = /[a-z][a-z0-9+.-]*:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|site|app|io|bo|me|co|ly|dev|xyz|info|biz|link|page)\b/i;
+// Caracteres invisibles o de control que se cuelan en un texto sin verse (U+0080 a U+009F, guion blando, espacios de ancho cero, marcas de dirección, BOM).
+const INVISIBLES = /[\u0080-\u009f\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
 
 /** Oraciones y palabras: la misma cuenta que `ccContar` de la librería (una prueba compara las dos). */
 export function contarTexto(t) {
@@ -187,13 +196,21 @@ function ccNorm(t) {
   return String(t ?? '').normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-/** Todo texto del guion: una línea, sin lo que n8n o una planilla toman por código, sin marcador ni URL. */
+/** Todo texto del guion: una línea, sin lo que n8n o una planilla toman por código, sin formato de WhatsApp, sin invisibles, sin marcador ni enlace, y sin lo que el servicio no puede decir (§15). */
 function errorDeTextoDelGuion(v) {
   if (CONTROLES.test(v)) return 'trae un salto de línea o un carácter de control';
+  if (INVISIBLES.test(v)) return 'trae un carácter invisible o de control (U+0080 a U+009F, guion blando, ancho cero, marca de dirección o BOM)';
   if (/^[=+\-@]/.test(v)) return 'empieza con «=», «+», «-» o «@» (una planilla lo tomaría por fórmula)';
+  if (/[*_~`]/.test(v)) return 'trae formato de WhatsApp (*, _, ~ o `): cambiaría cómo se ve el texto';
   if (/\{\{|\[|\]|<|>/.test(v)) return 'trae «{{», «[», «]», «<» o «>»';
   if (/REEMPLAZAR_/.test(v)) return 'trae un marcador REEMPLAZAR_';
-  if (URL_EN_TEXTO.test(v)) return 'trae una URL';
+  if (ENLACE.test(v)) return 'trae un enlace o un dominio';
+  const n = ccNorm(v);
+  if (PROMESA.test(n)) return 'promete que alguien llamará, escribirá o responderá («solo se ofrece lo que se cumple»)';
+  if (OFERTA.test(n) || /%|\bgratis\b|\bdescuento/.test(n)) return 'trae una oferta, un regalo, una rebaja, un descuento o un porcentaje';
+  if (PRECIO.test(v) || MONTO_EN_LETRAS.test(n) || NUMERO_EN_LETRAS.test(n)) return 'trae un precio o un monto: los precios los arma el código desde la consola';
+  if (ACREDITACION.test(n)) return 'afirma un pago acreditado o verificado, o garantiza algo (prohibición 3)';
+  if (NIEGA_SER_IA.test(n) || YO.test(n)) return 'habla como una persona o niega ser una IA (prohibición 4)';
   return '';
 }
 
@@ -304,7 +321,7 @@ export function validarDatos(datos, archivo) {
           const c = contarTexto(impacto);
           if (c.oraciones > 1) e(`${ruta}.impacto`, 'tiene que ser una sola oración');
           if (c.palabras > MAX_PALABRAS_IMPACTO) e(`${ruta}.impacto`, `tiene ${c.palabras} palabras (hasta ${MAX_PALABRAS_IMPACTO})`);
-          if (impacto.includes('?')) e(`${ruta}.impacto`, 'no lleva «?»');
+          if (/[?¿]/.test(impacto)) e(`${ruta}.impacto`, 'no lleva «?» ni «¿»');
         }
         // La orientación no promete ni cotiza: sin «?», sin precios (los arma el código desde la consola) y sin promesas de contacto («solo se ofrece lo que se cumple»).
         for (const [campo, valor, maxOraciones, maxPalabras] of [['queHacemos', queHacemos, 2, MAX_PALABRAS_QUE_HACEMOS], ['comoFunciona', comoFunciona, 1, MAX_PALABRAS_COMO_FUNCIONA]]) {
@@ -312,9 +329,7 @@ export function validarDatos(datos, archivo) {
           const c = contarTexto(valor);
           if (c.oraciones > maxOraciones) e(`${ruta}.${campo}`, `tiene ${c.oraciones} oraciones (hasta ${maxOraciones})`);
           if (c.palabras > maxPalabras) e(`${ruta}.${campo}`, `tiene ${c.palabras} palabras (hasta ${maxPalabras})`);
-          if (valor.includes('?')) e(`${ruta}.${campo}`, 'no lleva «?»');
-          if (PRECIO.test(valor)) e(`${ruta}.${campo}`, 'trae un precio: los precios los arma el código desde la consola');
-          if (PROMESA.test(ccNorm(valor)) || /%|\bgratis\b|\bdescuento/i.test(valor)) e(`${ruta}.${campo}`, 'trae una promesa, un porcentaje o una oferta');
+          if (/[?¿]/.test(valor)) e(`${ruta}.${campo}`, 'no lleva «?» ni «¿»');
         }
         if (cierre) {
           const c = contarTexto(cierre);

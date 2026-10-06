@@ -402,7 +402,7 @@ describe('Batería de Captación mínima contra el modelo', () => {
       // Lo que el cliente recibe: sin el monto ni la promesa, y con el camino al asesor.
       const conv = ['C21', 'C22'].flatMap((id) => (caso(json(r), id)['conversacion'] as J[]).flatMap((x) => x['mensajes'] as string[])).join('\n');
       expect(conv).not.toMatch(/USD|\bllamo\b|Seguro que sí/);
-      expect(conv).toMatch(/Esa no la tengo a la mano 🤔; un asesor te lo responde/);
+      expect(conv).toMatch(/Esa no la tengo a la mano 🤔; si quieres, puedes preguntárselo a un asesor desde las opciones de abajo/);
       expect(conv).not.toMatch(/silvana/i);
       expect(json(r)['violaciones']['detalle']).toEqual([]);
       // El modelo "afirmó tener datos" donde C22 sí los esperaba, y en C21 no se evalúa; la invención efectiva no llegó.
@@ -638,6 +638,23 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect((c['violaciones'] as J[]).map((v) => v['regla'])).toContain('mensaje_repetido_seguido');
       expect(B.medir([c])['repeticionesSeguidas']).toBeGreaterThan(0);
     });
+    it('`exige` (control negativo): un turno que debía AVANZAR o ofrecer al asesor y no lo hace se cuenta como violación; C23, C25 y C25b lo exigen', async () => {
+      const f = flujo();
+      const base = { id: 'CX', titulo: 't', turnos: [{ tipo: 'texto', texto: 'Hola' }, { tipo: 'fila', id: 'rubro:salud-y-belleza' }, { tipo: 'texto', texto: '¿qué hacen?', seco: { tipo: 'pregunta', respuesta: 'Atienden.', enLosDatos: true }, exige: { accion: 'oferta', boton: true } }] };
+      const c = await B.correrCaso({ caso: base, rep: 1, flujo: f, lib: B.cargarLibreria(f), opciones: { seco: true }, credencial: {}, deps: {} });
+      const reglas = (c['violaciones'] as J[]).map((v) => v['regla']);
+      expect(reglas).toContain('no_avanza');                       // salió «retomar», no «oferta»
+      expect(reglas).toContain('sin_boton_del_asesor');            // y el mensaje no trae el botón del asesor
+      expect(() => B.validarCasos({ casos: [{ ...base, turnos: [{ tipo: 'texto', texto: 'x', exige: { raro: 1 } }] }] })).toThrow(/«exige»/);
+      const casos = casosDelArchivo();
+      const exige = (id: string): J[] => (casos.find((x) => x['id'] === id)!['turnos'] as J[]).filter((t) => t['exige']).map((t) => t['exige']);
+      expect(exige('C23')).toEqual([{ accion: 'oferta' }]);
+      expect(exige('C25')).toEqual([{ accion: 'contacto', boton: true }, { accion: 'contacto', boton: true }]);
+      expect(exige('C25b')).toHaveLength(2);
+      // En seco los tres cumplen su exigencia (si no, el flujo dejó de hacer lo que se exige).
+      const j = JSON.parse(hijo(['--seco', '--json', '--n', '1', '--casos', 'C23,C25,C25b']).salida) as J;
+      expect(j['violaciones']['detalle']).toEqual([]);
+    });
     it('detecta el dato de Harvard más de una vez en una conversación (control negativo)', async () => {
       const f = variante(() => "for (const it of salida) { const p = it.json.payload; if (p && p.type === 'text') p.text.body += ' Según Harvard Business Review, algo.'; if (p && p.type === 'interactive' && p.interactive.body) p.interactive.body.text += ' Según Harvard Business Review, algo.'; }");
       const c = await correr1(f, 'L1');
@@ -660,7 +677,7 @@ describe('Batería de Captación mínima contra el modelo', () => {
       const c = await correr1(f, 'L3');
       const todo = (c['conversacion'] as J[]).flatMap((t) => t['mensajes'] as string[]).join('\n');
       expect(todo).toMatch(/\bAna\b/);
-      expect(todo).not.toMatch(/un asesor te lo responde/);
+      expect(todo).not.toMatch(/preguntárselo a un asesor/);
       expect(c['violaciones']).toEqual([]);
     });
   });

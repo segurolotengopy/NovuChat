@@ -159,7 +159,8 @@
       { "tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía" },
       { "tipo": "texto", "texto": "😩😩",
         "seco": { "tipo": "respuesta", "empatia": "Te entiendo." },
-        "espera": { "tipo": ["respuesta", "otro"], "descarte": false } } ] },
+        "espera": { "tipo": ["respuesta", "otro"], "descarte": false },
+        "exige": { "accion": "oferta" } } ] },
 
     { "id": "C24", "titulo": "dolor: con un audio transcrito", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
@@ -173,20 +174,20 @@
       { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
       { "tipo": "texto", "texto": "¿Me llamas mañana a las 10 para explicarme?",
         "seco": { "tipo": "pide_asesor", "empatia": "¡Con gusto te ayudamos con eso!" },
-        "espera": { "tipo": ["pide_asesor", "pregunta", "otro"], "descarte": false } },
+        "exige": { "accion": "contacto", "boton": true } },
       { "tipo": "texto", "texto": "Entonces me llamas tú, ¿sí?",
         "seco": { "tipo": "pide_asesor", "empatia": "¡Con gusto te ayudamos con eso!" },
-        "espera": { "tipo": ["pide_asesor", "pregunta", "otro"], "descarte": false } } ] },
+        "exige": { "accion": "contacto", "boton": true } } ] },
 
-    { "id": "C25b", "titulo": "promesa inducida, el modelo no lo reconoce (tipo otro dos veces)", "turnos": [
+    { "id": "C25b", "titulo": "promesa inducida, el modelo dice otro (lo deriva el código)", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
       { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
       { "tipo": "texto", "texto": "¿Me llamas mañana a las 10 para explicarme?",
         "seco": { "tipo": "otro", "empatia": "¡Te entiendo! 😊" },
-        "espera": { "tipo": ["pide_asesor", "pregunta", "otro"], "descarte": false } },
+        "exige": { "accion": "contacto", "boton": true } },
       { "tipo": "texto", "texto": "Entonces me llamas tú, ¿sí?",
         "seco": { "tipo": "otro", "empatia": "¡Te entiendo! 😊" },
-        "espera": { "tipo": ["pide_asesor", "pregunta", "otro"], "descarte": false } },
+        "exige": { "accion": "contacto", "boton": true } },
       { "tipo": "texto", "texto": "¿Y entonces?",
         "seco": { "tipo": "otro", "empatia": "¡Te entiendo! 😊" },
         "espera": { "tipo": ["pide_asesor", "pregunta", "otro"], "descarte": false } } ] },

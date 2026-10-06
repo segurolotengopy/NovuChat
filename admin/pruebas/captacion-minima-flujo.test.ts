@@ -88,7 +88,7 @@ const preguntaDe = (id: string): string => String(GUION.rubros[id]?.['pregunta']
 const TITULO_ASESOR = GUION.asesor ? `Hablar con ${GUION.asesor}` : 'Hablar con un asesor';
 // §15: las tres formulaciones de la pregunta de cierre de la oferta (con y sin planes); la que toca la lleva la ficha (`ofertas`).
 const PREGUNTA_OFERTA = (i: number, conPlanes = true): string => (conPlanes
-  ? [`¿Quieres ver los planes para tener una idea de la inversión, o prefieres hablar con ${QUIEN}?`, `¿Te muestro los planes para que compares opciones, o prefieres hablar directo con ${QUIEN}?`, `¿Te cuento los planes para que veas qué encaja contigo, o prefieres hablar con ${QUIEN}?`]
+  ? [`¿Quieres ver los planes para ubicar tu presupuesto, o prefieres hablar con ${QUIEN}?`, `¿Te muestro los planes para que compares opciones, o prefieres hablar directo con ${QUIEN}?`, `¿Te cuento los planes para que veas qué encaja contigo, o prefieres hablar con ${QUIEN}?`]
   : [`¿Te gustaría hablar con ${QUIEN} para ver cómo lo armaríamos en tu caso?`, `¿Te animas a hablar con ${QUIEN} para ver cómo se adaptaría a tu caso?`, `¿Quieres hablar directo con ${QUIEN} para resolver tus dudas?`])[i % 3]!;
 // El saludo de la lista rota por el último dígito del teléfono (§15): MAMA termina en 1 → la 2.ª variante.
 const SALUDOS = [
@@ -369,7 +369,7 @@ const NIEGA_IA = /\bno soy (un |una )?(bot|robot|ia|inteligencia artificial|asis
 // Solo las formas que NO son del tuteo: «mira» y «fíjate» son tuteo; «mirá» y «fijate», voseo.
 const VOSEO = /(?<![\p{L}])(quer[eé]s|ten[eé]s|pod[eé]s|dec[ií]me|cont[aá]me|escrib[ií]me|mirá|fijate|pasame|avisame|che|vos)(?![\p{L}])/iu;
 const COBRO_REAL = /pago (acreditado|verificado|recibido|confirmado)|recibimos tu pago|pago exitoso/i;
-const OFRECE_ASESOR = new RegExp(`hablar con (un asesor|${esc(QUIEN)})\\b|te lo responde|te ayuda directamente|te los pasa|toca el bot[oó]n|\\bpasar con\\b`, 'i');
+const OFRECE_ASESOR = new RegExp(`hablar con (un asesor|${esc(QUIEN)})\\b|te lo responde|preguntárselo a|te ayuda directamente|te los pasa|toca el bot[oó]n|\\bpasar con\\b`, 'i');
 const RESPUESTAS_DEL_MODELO = ['respuesta', 'pregunta', 'pide_planes', 'pide_asesor', 'ya_es_cliente', 'descarte', 'otro'];
 
 interface OpcionesDeJuego { prueba?: J; sinReporte?: boolean; conAvisos?: boolean }
@@ -1460,7 +1460,7 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       const w = crear(); const j = hastaElDolor(w);
       modelo(w, { tipo: 'pregunta', respuesta: '', enLosDatos: false });
       const t = j.texto('¿Tienen integración con mi sistema de facturación?');
-      expect(CUERPO(t)).toMatch(new RegExp(`Esa no la tengo a la mano 🤔; ${esc(QUIEN)} te lo responde\\.`));
+      expect(CUERPO(t)).toMatch(new RegExp(`Esa no la tengo a la mano 🤔; si quieres, puedes preguntárselo a ${esc(QUIEN)} desde las opciones de abajo\\.`));
       expect(idsBotones(t.aMi[0]!).concat(idsFilas(t.aMi[0]!))).toContain('asesor');
       expect(t.plantillas).toHaveLength(0); // ofrecerlo no es avisar: el aviso sale al tocar
       expect(CUERPO(t)).not.toMatch(/consult/i);
@@ -2887,21 +2887,40 @@ describe('§15 (defecto visto con el modelo real): C25, la promesa inducida', ()
   const vivo = (): W => crear({ panel: panel({}, { rubros: RUBROS, cargosUnicos: [{ nombre: 'Instalación', precioUsd: 65, desde: false, detalle: '' }] }) });
   const PROMESA = /te llam|te escrib|te contact|me llam|a las 10|mañana|horario|te avis|en breve|pronto|lo consult/i;
 
-  it('el recorrido exacto: «¿Me llamas mañana a las 10…?» y «Entonces me llamas tú, ¿sí?» con tipo `otro`: el 2.º mensaje no es idéntico al 1.º, trae el botón y un mensaje por turno', () => {
+  it('el recorrido exacto: «¿Me llamas mañana a las 10…?» y «Entonces me llamas tú, ¿sí?» con el modelo devolviendo `otro`: el CÓDIGO lo deriva a R6 desde el 1.º (sin llamar al modelo), con botón, un mensaje por turno, sin promesa y distinto cada vez', () => {
     const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
     modelo(w, { tipo: 'otro', empatia: '¡Te entiendo! 😊' });
+    const antes = w.modelo.llamadas.length;
     const t1 = j.texto('¿Me llamas mañana a las 10 para explicarme?');
     const t2 = j.texto('Entonces me llamas tú, ¿sí?');
-    const t3 = j.texto('¿Y entonces?');
-    expect(CUERPO(t1)).toBe(`¡Te entiendo! 😊 ${preguntaDe('salud-y-belleza')}`);
-    expect(CUERPO(t2)).not.toBe(CUERPO(t1));
-    expect(CUERPO(t3)).not.toBe(CUERPO(t2));
-    expect(idsBotones(t1.aMi[0]!)).toEqual([]);
-    for (const t of [t2, t3]) { expect(idsBotones(t.aMi[0]!)).toEqual(['asesor']); expect(CUERPO(t)).not.toMatch(PROMESA); expect(preguntasDe(CUERPO(t))).toBe(1); }
-    for (const t of [t1, t2, t3]) expect(t.aMi).toHaveLength(1);                // 0 mensajes agregados
-    expect(t2.plantillas.length + t3.plantillas.length).toBe(0);                // sin aviso a recepción
+    const t3 = j.texto('¿Y me llamas hoy mismo?');
+    expect(w.modelo.llamadas.length, 'ningún turno de contacto llama al modelo').toBe(antes);
+    expect(new Set([CUERPO(t1), CUERPO(t2), CUERPO(t3)]).size).toBe(3);
+    expect(CUERPO(t1)).toBe(`¡Claro! 😊 Si prefieres hablarlo con una persona, puedes hacerlo con un asesor desde las opciones de abajo. ${preguntaDe('salud-y-belleza')}`);
+    for (const t of [t1, t2, t3]) { expect(idsBotones(t.aMi[0]!)).toEqual(['asesor']); expect(CUERPO(t)).not.toMatch(PROMESA); expect(preguntasDe(CUERPO(t))).toBe(1); expect(t.aMi).toHaveLength(1); expect(t.plantillas).toHaveLength(0); }
     expect(estadoDe(w, MAMA)!.hechos['pidioAsesor']).toBe(false);
     expect(estadoDe(w, MAMA)!.paso).toBe('esperando_dolor');
+  });
+  it('un `otro` del modelo ante «😩😩», «👍» o «jaja sí» NO deja al cliente atrapado: avanza a la oferta y califica Media', () => {
+    for (const dicho of ['😩😩', '👍', 'jaja sí']) {
+      const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
+      modelo(w, { tipo: 'otro', empatia: '¡Qué bueno que me cuentas! 😊' });
+      const t = j.texto(dicho);
+      expect(idsBotones(t.aMi[0]!), dicho).toEqual(['planes', 'asesor']);
+      expect(estadoDe(w, MAMA)!.paso, dicho).toBe('oferta');
+      expect(estadoDe(w, MAMA)!.hechos['respondioDolor'], dicho).toBe(true);
+      expect(califDe(w, MAMA), dicho).toBe('Media');
+    }
+  });
+  it('«tengo muchas llamadas perdidas» y «me llaman todo el día» NO son un pedido de contacto: siguen al modelo y avanzan', () => {
+    for (const dicho of ['tengo muchas llamadas perdidas', 'me llaman todo el día y no alcanzo']) {
+      const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
+      modelo(w, { tipo: 'respuesta', empatia: '¡Qué cansado atender tantas llamadas! 😅' });
+      const t = j.texto(dicho);
+      expect(t.modelo, dicho).toHaveLength(1);
+      expect(estadoDe(w, MAMA)!.paso, dicho).toBe('oferta');
+      expect(CUERPO(t), dicho).not.toMatch(/opciones de abajo/);
+    }
   });
   it('con tipo `pide_asesor` (R6): el texto es del código, con el botón, sin promesa y distinto cada vez', () => {
     const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
@@ -2912,16 +2931,17 @@ describe('§15 (defecto visto con el modelo real): C25, la promesa inducida', ()
   });
   it('R8: si Meta rechaza el mensaje y su respaldo, el contador de repeticiones vuelve al de antes (el siguiente intento no se toma por una repetición)', () => {
     const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
-    modelo(w, { tipo: 'otro', empatia: '¡Te entiendo! 😊' });
-    j.texto('¿Me llamas mañana a las 10?');
+    modelo(w, { tipo: 'pregunta', respuesta: 'Atienden tu WhatsApp todo el día.', enLosDatos: true });
+    j.texto('¿qué hacen?');
     expect(estadoDe(w, MAMA)!['repetidas']).toBe(1);
     w.graph.falla = (p) => p['to'] === MAMA;
-    const t = j.texto('Entonces me llamas tú, ¿sí?', { tolerarFallo: true });
+    const t = j.texto('¿y qué más hacen?', { tolerarFallo: true });
     expect(t.fallo).not.toBeNull();
     expect(estadoDe(w, MAMA)!['repetidas']).toBe(1);
     w.graph.falla = () => false;
-    const t2 = j.texto('Entonces me llamas tú, ¿sí?');
+    const t2 = j.texto('¿y qué más hacen?');
     expect(idsBotones(t2.aMi[0]!)).toEqual(['asesor']);
+    expect(CUERPO(t2)).toContain('Si prefieres, puedes preguntárselo a un asesor');
     expect(estadoDe(w, MAMA)!['repetidas']).toBe(2);
   });
 });
