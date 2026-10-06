@@ -2650,7 +2650,9 @@ describe('§13: la consola viva y el tono (C1 y C2)', () => {
     expect(estadoDe(w, MAMA)!['rubroLibre']).toBe('estudio contable');
     const t4 = j.planes();
     expect(CUERPO(t4)).toMatch(/\? 👇$/);
-    expect(CUERPO(t4)).toContain('Para negocios como el tuyo diseñamos flujos a medida. ¿Te animas a hablar con un asesor para ver cómo estructuraríamos tus respuestas?');
+    expect(CUERPO(t4)).toContain('¿Te animas a hablar con un asesor para ver cómo estructuraríamos tus respuestas?');
+    // §15: el cierre de «Otro» no repite la frase de la orientación («Armamos flujos a medida…»), que ya salió en la oferta.
+    expect(CUERPO(t4)).not.toContain('Para negocios como el tuyo');
   });
   it('el resumen de precios sale de la CONSOLA (mínimos de planes mensuales y de cargos): si la consola cambia, cambia el mensaje; el modelo no lo escribe', () => {
     const w = vivo({ planes: [{ nombre: 'Básico', precioUsd: 40, periodo: 'mes', incluye: '' }, { nombre: 'Pro', precioUsd: 90, periodo: 'mes', incluye: '' }, { nombre: 'Anual', precioUsd: 10, periodo: 'anio', incluye: '' }], cargosUnicos: [{ nombre: 'A', precioUsd: 200, desde: false, detalle: '' }, { nombre: 'B', precioUsd: 120.5, desde: true, detalle: '' }] });
