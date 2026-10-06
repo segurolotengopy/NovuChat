@@ -254,7 +254,10 @@ if (!enComprobante && (paso.indexOf('pedido') === 0 || paso === 'menu') && previ
   const hayCarritoNuevo = (Array.isArray(previo.carrito) && previo.carrito.length > 0) || (Array.isArray(previo.pendiente) && previo.pendiente.length > 0);
   const dandoDatos = paso === 'pedido_entrega' || paso === 'pedido_datos';
   const tolerante = !hayCarritoNuevo && !dandoDatos && (paso === 'pedido' || paso === 'menu');
-  const quiere = intencionDeVolver(norm, tolerante);
+  // «No, dejarlo como estaba» (con coma o punto tras el «no»): el «no» es una respuesta aparte y lo que sigue es lo que quiere, no un rechazo del verbo (LOW del PR
+  // #426). Sin la puntuación («no dejarlo como estaba») sigue siendo un rechazo. `vmNorm` borra la puntuación: se mira el texto crudo.
+  const sinNoAparte = String(texto).replace(/^\s*(?:(?:ya|pues|mejor)\s+)?no\s*[,;:.!]+\s*(?=\S)/i, '');
+  const quiere = intencionDeVolver(sinNoAparte !== String(texto) ? vmNorm(sinNoAparte) : norm, tolerante);
   const sePuedePedir = !(pedidosOn && cerrado()); // el camino por texto respeta el horario igual que el botón
   if (quiere === 'si') return sePuedePedir ? salir('boton', { motivo: 'dejar_como_estaba', boton: { tipo: 'p', partes: ['dejar'] } }) : salir('fuera_de_horario');
   if (quiere === 'duda' && previo.preguntoDejar !== true) return sePuedePedir ? salir('boton', { motivo: 'dejar_o_elegir' }) : salir('fuera_de_horario');
@@ -409,6 +412,23 @@ function intencionDeCancelar(norm) {
   return '';
 }
 
+// ¿Hay un «no» seguido (con «lo/la/me/se/te» a lo sumo) de una palabra que es el verbo dejar en SUBJUNTIVO o INFINITIVO con un error de una letra («dejez», «deges»,
+// «dejarl»)? El imperativo afirmativo («dejalo», «dejala», «deja», «dejemoslo») y sus tipeos NO cuentan: «No déjalo como estaba no más.» sigue siendo «volver».
+function rechazoConTipeo(palabras) {
+  const NEGATIVAS = ['dejes', 'dejen', 'deses', 'dejar', 'dejarlo', 'dejarla'];
+  const AFIRMATIVAS = ['dejalo', 'dejala', 'dejemoslo'];
+  for (let i = 0; i < palabras.length; i++) {
+    if (palabras[i] !== 'no') continue;
+    let j = i + 1;
+    while (j < palabras.length && ['lo', 'la', 'me', 'se', 'te'].indexOf(palabras[j]) >= 0) j++;
+    const w = palabras[j];
+    if (!w || w.length < 5) continue;
+    if (AFIRMATIVAS.some((k) => distancia(w, k) <= 1)) continue;
+    if (NEGATIVAS.some((k) => distancia(w, k) <= 1)) return true;
+  }
+  return false;
+}
+
 // ¿El mensaje ES un pedido de cambiar la entrega? 'delivery' | 'recojo' | ''. TODAS las palabras deben ser del vocabulario cerrado de abajo (rellenos,
 // verbos de cambiar, y las palabras de delivery o de recojo, con tolerancia de una letra para las de 5 o más letras: «mandn», «envien», «recojer»);
 // sin dígitos, de hasta 8 palabras, y nunca con «no», «nada», «sin», «ni» ni mezclando las dos entregas.
@@ -480,7 +500,9 @@ function intencionDeVolver(norm, tolerante) {
   const rechazo = /\bno (quiero|queremos|lo|me|vayas a|deseo)( (lo|me))? (dejar|dejarlo|dejalo|dejes|deje|deses)\b/.test(norm) || /\bno (quiero|queremos) (que )?(lo )?(dejes|dejen|dejemos)\b/.test(norm)
     // «no dejes como estaba», «ya no dejes…», «mejor no dejes…», «no la dejes», «no lo dejen», «no dejarlo», «no dejar…»: un «no» seguido (con «lo/la/me/se/te» a lo sumo) del verbo.
     // El imperativo afirmativo («no, déjalo…», «dejala», «deja») no está en la lista: «No déjalo como estaba no más.» sigue siendo «volver».
-    || /\bno (lo |la |me |se |te )*(dejes|dejen|deje|deses|dejar|dejarlo|dejarla)\b/.test(norm);
+    || /\bno (lo |la |me |se |te )*(dejes|dejen|deje|deses|dejar|dejarlo|dejarla)\b/.test(norm)
+    // …y con un error de tipeo o de voz en el verbo («no dejez», «no deges»): el verbo, dicho con una letra de más o de menos, tras un «no».
+    || rechazoConTipeo(palabras);
   if (rechazo) return tolerante && !/\d/.test(norm) && palabras.length <= 6 && todas(VOCAB_DUDA) ? 'duda' : '';
   // Formas que no llevan el verbo (cerradas).
   const SIN_VERBO = /^((ya|no|si|mejor|pues|es que|entonces) )*(como estaba( antes)?|como antes|lo que tenia|lo anterior|el anterior|mi pedido anterior|(volver|vuelve|volvamos|regresa|regresar) (al|a mi|a el) (pedido )?(anterior|de antes)|(volver|vuelve|volvamos|regresa|regresar) a mi pedido|(manten|mantener|mantenlo|mantengamoslo|mantenga)( mi| el)?( pedido)?|(no|ya no) (quiero )?(cambiar|cambio)( nada)?|no cambiar nada|cancelar( el)? cambio|cancela( el)? cambio|olvida el cambio)( no mas| nomas| igual)?( por favor)?$/;

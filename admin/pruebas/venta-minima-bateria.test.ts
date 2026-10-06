@@ -341,9 +341,9 @@ describe('el motor del caso: reloj, perfil, botón de enlace, reporte del QR y e
   });
 
   it('el reloj del caso manda: a las 3 de la mañana el horario real cierra los pedidos y el 7×24 los abre (y lo contrario falla)', async () => {
-    const cerrado = await correrUno(pedirALas3({ textos: ['no estamos tomando pedidos'], textosNo: ['Esta es nuestra carta'] }));
+    const cerrado = await correrUno(pedirALas3({ textos: ['fuera de nuestro horario de pedidos'], textosNo: ['Esta es nuestra carta'] }));
     expect(cerrado['ok'], JSON.stringify(cerrado['fallas'])).toBe(true);
-    const abierto = await correrUno(pedirALas3({ textos: ['Esta es nuestra carta'], textosNo: ['no estamos tomando pedidos'] }, { horario: H7 }));
+    const abierto = await correrUno(pedirALas3({ textos: ['Esta es nuestra carta'], textosNo: ['fuera de nuestro horario de pedidos'] }, { horario: H7 }));
     expect(abierto['ok'], JSON.stringify(abierto['fallas'])).toBe(true);
     const mal = await correrUno(pedirALas3({ textos: ['Esta es nuestra carta'] }));
     expect(mal['ok']).toBe(false);

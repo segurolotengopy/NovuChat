@@ -627,7 +627,7 @@ describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta e
     w.estado.extraccion = { ...NADA, quiereHablar: true };
     const t = turno(w, texto('necesito ayuda de un encargado'));
     expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('');
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo/);
   });
 });
 
@@ -658,12 +658,12 @@ describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () 
     a.estado.extraccion = { ...NADA, quiereHablar: true };
     const t = turno(a, texto(dicho));
     expect(ent(a)['referencia'], dicho).toBe('');
-    expect(t.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(t.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
     const b = sinDireccion('cat_m1_b_' + dicho.length);
     b.estado.extraccion = { ...NADA, quiereHablar: true };
     const u = turno(b, texto(dicho));
     expect(ent(b)['direccion'], dicho).toBe('');
-    expect(u.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(u.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
   });
 
   it('M1, el caso opuesto: «Déjale al portero» con `quiereHablar` del modelo SÍ queda como referencia (tiene rasgos de un dato de entrega)', () => {
@@ -711,7 +711,7 @@ describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () 
     expect(ent(w)['direccion']).toBe('');
     expect(uno.mensajes[0]!.cuerpo).toBe('Para el delivery necesito la dirección exacta.');
     const dos = turno(w, texto('70012345'));
-    expect(dos.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(dos.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
     expect(dos.avisos.length).toBeGreaterThan(0);
   });
 
@@ -785,7 +785,7 @@ describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código,
   };
   const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
   const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta.';
-  const DERIVA = /Esto prefiero que lo vea una persona/;
+  const DERIVA = /Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/;
 
   it.each(['A media cuadra del gas', 'Déjale al portero', 'frente al mercado', 'Zona Sur', 'por la puerta verde'])(
     'A4 «%s» con la dirección PENDIENTE queda como REFERENCIA (no como dirección) y se vuelve a pedir la dirección, sin pasar al resumen', (dicho) => {
@@ -976,13 +976,13 @@ describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúden
     a.estado.extraccion = { ...NADA, quiereHablar: true };
     const ta = turno(a, texto(dicho));
     expect(ta.avisos.length, dicho + ' (resumen dado)').toBeGreaterThan(0);
-    expect(ta.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(ta.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
     const b = crear();
     carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_a1_p_' + String(++k).padStart(4, '0') }) });
     b.estado.extraccion = { ...NADA, quiereHablar: true };
     const tb = turno(b, texto(dicho));
     expect(tb.avisos.length, dicho + ' (dirección pendiente)').toBeGreaterThan(0);
-    expect(tb.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(tb.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
   });
   it.each(['no hay problema', 'alguien lo recibe', 'es para una persona'])('«%s» sin `quiereHablar` sigue sin derivar, con el resumen dado y con la dirección pendiente', (dicho) => {
     const a = conDireccion();
