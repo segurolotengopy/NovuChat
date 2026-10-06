@@ -96,6 +96,8 @@ export const SUITES_PURAS = [
   'pruebas/central/cobrador-doble.test.ts',
   'pruebas/central/comportamiento-pantalla.test.ts',
   'pruebas/central/consola-pagar.test.ts',
+  'pruebas/central/consola-oculta.test.ts',
+  'pruebas/plataforma/aplicar-consola-oculta.test.ts',
   'pruebas/conteo-bloques.test.ts',
   'pruebas/central/contrasena-minimo.test.ts',
   'pruebas/frontera/despliegue.test.ts',

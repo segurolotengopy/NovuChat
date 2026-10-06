@@ -9,6 +9,8 @@ import { useSesion } from '../../core/lib/contexto';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { SinSalida } from '../../core/componentes/SinSalida';
 import { FLUJOS, capacidadesDeConsola, flujosDe, useModulos } from '../lib/flujos';
+import { useConsolaOculta } from '../componentes/ConsolaOculta';
+import { esVisible } from '../../../../functions/src/central/consola-oculta';
 import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
 import { GraficoDias, type DiaDeGrafico } from '../componentes/GraficoDias';
 import { avisoConsumoVigente, type AvisoConsumoVista as Aviso } from '../lib/planes';
@@ -305,6 +307,10 @@ interface ResumenNegocio {
 
 function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boolean }) {
   const modulos = useModulos(tenantId) ?? [];
+  // La tarjeta «Hoy» no se pinta si NovuChat la ocultó (el horario lo dice el
+  // asistente desde su configuración, no esta pantalla). Mientras carga, tampoco.
+  const ocultos = useConsolaOculta(tenantId);
+  const verHoy = esVisible(ocultos, 'hoy');
   const nombreItems = capacidadesDeConsola(modulos).etiquetaCatalogo.toLowerCase();
   const [datos, setDatos] = useState<ResumenNegocio | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -434,7 +440,7 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
     )}
 
     <div className="cuadricula">
-      <Tarjeta
+      {verHoy && <Tarjeta
         titulo="Hoy"
         pie={<Link to={`/negocio/${encodeURIComponent(tenantId)}/conversaciones`}>Ver conversaciones</Link>}
       >
@@ -457,7 +463,7 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
             </p>
           </>
         )}
-      </Tarjeta>
+      </Tarjeta>}
 
       <Tarjeta
         titulo="Lo que el asistente sabe ofrecer"

@@ -5,6 +5,8 @@ import { Link, useParams } from 'react-router-dom';
 import jsQR from 'jsqr';
 import { db, funciones } from '../../core/lib/firebase';
 import { capacidadesDeConsola, useModulos } from '../../central/lib/flujos';
+import { useConsolaOculta } from '../../central/componentes/ConsolaOculta';
+import { reemplazoQrOculto } from '../../../../functions/src/central/consola-oculta';
 import { ConfiguracionVertical } from '../../central/componentes/ConfiguracionModulo';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 
@@ -134,6 +136,9 @@ export function Cobro() {
     modulos === null ? null : capacidades.documentoCobro;
   const [hayQrDemo, setHayQrDemo] = useState<boolean | null>(null);
   const [registrado, setRegistrado] = useState<Registrado | null>(null);
+  /** El documento de cobro ya se leyó (sin esto, «sin QR» y «todavía cargando» se confunden). */
+  const [leido, setLeido] = useState(false);
+  const ocultos = useConsolaOculta(tenantId);
 
   const [nombreCuenta, setNombreCuenta] = useState('');
   const [banco, setBanco] = useState('');
@@ -169,6 +174,7 @@ export function Cobro() {
     if (!tenantId || documento === null) return;
     return onSnapshot(doc(db, 'tenants', tenantId, 'config', documento), (d) => {
       setHayQrDemo(String(d.get('mediaIdQr') ?? '') !== '');
+      setLeido(true);
       const cobro = d.get('cobroReal') as Registrado | undefined;
       setRegistrado(cobro ?? null);
       // El formulario se rellena UNA sola vez. Sin la marca, cada cambio que
@@ -248,6 +254,13 @@ export function Cobro() {
   };
 
   const activo = registrado?.activo === true;
+  // REEMPLAZO DEL QR CON EL COBRO REAL ACTIVO: cada registro vuelve a `activo:false`
+  // (`cobro.ts`), o sea que «Cambiar el QR» apagaría el cobro de quien ya cobra.
+  // Si NovuChat lo ocultó para este comercio, el formulario solo se pinta cuando
+  // ya se sabe que NO hay cobro activo: el registro del PRIMER QR sigue disponible.
+  // Mientras carga la lista o el documento, tampoco. Solo presentación: el
+  // servidor no cambia (`registrarQrDeCobro`).
+  const sinReemplazo = reemplazoQrOculto(ocultos, leido, activo);
 
   // Sin un flujo que cobre no se ofrece el formulario: `registrarQrDeCobro` lo
   // rechazaría, y ofrecer una puerta que el servidor cierra es lo que la
@@ -341,160 +354,170 @@ export function Cobro() {
       )}
 
       {/* ------------------------------------------------------------------ */}
-      <h3>{registrado ? 'Cambiar el QR' : 'Cargar mi QR'}</h3>
-
-      <div className="aviso-datos ayuda">
-        <p><strong>Abre la aplicación de tu banco y mira estas cuatro cosas junto
-        al QR.</strong> La mayoría de los QR bolivianos vienen cifrados: nosotros
-        podemos comprobar que sea un código de cobro de un banco, pero <strong>no
-        podemos ver lo que dice adentro</strong>. Lo que escribas acá es lo que
-        vamos a usar para cotejar los comprobantes de tus clientes.</p>
-        <ol>
-          <li><strong>Que se pueda usar muchas veces.</strong> Los bancos ofrecen
-          QR «de un solo uso» para un cobro puntual. Ese no sirve: el asistente
-          se lo manda a todos tus clientes y solo el primero podría pagar.</li>
-          <li><strong>Sin monto fijo.</strong> Suele figurar como «Monto: Bs. 0.00»
-          o «Sin especificar». Si tiene un importe grabado, le cobraría lo mismo
-          a todo el mundo, sin importar el pedido.</li>
-          <li><strong>Que sea el QR para COMERCIOS, no el que la aplicación te da por
-          defecto.</strong> El QR personal suele vencer el mismo día; el de comercio
-          dura mucho más, y la vigencia la eliges al generarlo. Pide la fecha más
-          lejana que te permitan: el día que vence, tus clientes dejan de poder pagar
-          y te enteras por un reclamo.</li>
-          <li><strong>El número de la cuenta que recibe.</strong> Aparece como
-          «Cuenta destino». Es el dato más importante de todos: es contra lo que
-          se compara el comprobante que manda tu cliente.</li>
-        </ol>
-      </div>
-
-      {/* SIN `maxWidth` FIJO. Tenía 38rem escritas a mano, así que en un monitor
-          el formulario quedaba en una tira angosta contra el borde izquierdo
-          por más ancho que hubiera. Ahora lo acomoda la cuadrícula. */}
-      <form onSubmit={enviar}>
-        <div className="grupo">
-          <label className="field">Imagen del QR
-            <input className="input" type="file" ref={archivoRef} id="campo-imagen"
-            aria-invalid={problemaDe('imagen') !== null}
-            aria-describedby={problemaDe('imagen') ? 'error-imagen' : undefined}
-            accept="image/png,image/jpeg,image/webp" required />
-          </label>
-          <MensajeDelCampo campo="imagen" />
+      {sinReemplazo ? (
+        activo && ocultos !== null && (
           <p className="ayuda">
-            Mejor una captura de pantalla de la aplicación de tu banco que una foto:
-            se lee siempre. La imagen no se guarda, solo el código que contiene.
+            Tu QR está cobrando. Para cambiarlo, comunícate con NovuChat: así el cobro no se corta mientras se reemplaza.
           </p>
-        </div>
+        )
+      ) : (
+        <>
+          <h3>{registrado ? 'Cambiar el QR' : 'Cargar mi QR'}</h3>
 
-        <div className="grupo">
-          <label className="field">¿A nombre de quién está la cuenta?
-            <input className="input" required maxLength={120} value={nombreCuenta}
-            id="campo-nombreCuenta" aria-invalid={problemaDe('nombreCuenta') !== null}
-            aria-describedby={problemaDe('nombreCuenta') ? 'error-nombreCuenta' : undefined}
-            placeholder="Como figura en tu banco"
-            onChange={(e) => setNombreCuenta(e.target.value)} />
-          </label>
-          <MensajeDelCampo campo="nombreCuenta" />
-          <p className="ayuda">
-            Tal como lo escribe el banco. Puede ser una persona o el nombre del
-            negocio; lo importante es que sea el mismo que va a aparecer en el
-            comprobante de tu cliente.
-          </p>
-        </div>
+          <div className="aviso-datos ayuda">
+            <p><strong>Abre la aplicación de tu banco y mira estas cuatro cosas junto
+            al QR.</strong> La mayoría de los QR bolivianos vienen cifrados: nosotros
+            podemos comprobar que sea un código de cobro de un banco, pero <strong>no
+            podemos ver lo que dice adentro</strong>. Lo que escribas acá es lo que
+            vamos a usar para cotejar los comprobantes de tus clientes.</p>
+            <ol>
+              <li><strong>Que se pueda usar muchas veces.</strong> Los bancos ofrecen
+              QR «de un solo uso» para un cobro puntual. Ese no sirve: el asistente
+              se lo manda a todos tus clientes y solo el primero podría pagar.</li>
+              <li><strong>Sin monto fijo.</strong> Suele figurar como «Monto: Bs. 0.00»
+              o «Sin especificar». Si tiene un importe grabado, le cobraría lo mismo
+              a todo el mundo, sin importar el pedido.</li>
+              <li><strong>Que sea el QR para COMERCIOS, no el que la aplicación te da por
+              defecto.</strong> El QR personal suele vencer el mismo día; el de comercio
+              dura mucho más, y la vigencia la eliges al generarlo. Pide la fecha más
+              lejana que te permitan: el día que vence, tus clientes dejan de poder pagar
+              y te enteras por un reclamo.</li>
+              <li><strong>El número de la cuenta que recibe.</strong> Aparece como
+              «Cuenta destino». Es el dato más importante de todos: es contra lo que
+              se compara el comprobante que manda tu cliente.</li>
+            </ol>
+          </div>
 
-        <div className="grupo">
-          <label className="field">Número de la cuenta que recibe el dinero
-            <input className="input" required maxLength={30} value={cuentaDeclarada}
-            id="campo-cuentaDeclarada" aria-invalid={problemaDe('cuentaDeclarada') !== null}
-            aria-describedby={problemaDe('cuentaDeclarada') ? 'error-cuentaDeclarada' : undefined}
-            inputMode="numeric" placeholder="Cuenta destino, tal como figura junto al QR"
-            onChange={(e) => setCuentaDeclarada(e.target.value)} />
-          </label>
-          <MensajeDelCampo campo="cuentaDeclarada" />
-          <p className="ayuda">
-            Es con lo que se coteja cada comprobante. Cópialo con cuidado: si
-            está mal, ningún comprobante va a coincidir.
-          </p>
-        </div>
+          {/* SIN `maxWidth` FIJO. Tenía 38rem escritas a mano, así que en un monitor
+              el formulario quedaba en una tira angosta contra el borde izquierdo
+              por más ancho que hubiera. Ahora lo acomoda la cuadrícula. */}
+          <form onSubmit={enviar}>
+            <div className="grupo">
+              <label className="field">Imagen del QR
+                <input className="input" type="file" ref={archivoRef} id="campo-imagen"
+                aria-invalid={problemaDe('imagen') !== null}
+                aria-describedby={problemaDe('imagen') ? 'error-imagen' : undefined}
+                accept="image/png,image/jpeg,image/webp" required />
+              </label>
+              <MensajeDelCampo campo="imagen" />
+              <p className="ayuda">
+                Mejor una captura de pantalla de la aplicación de tu banco que una foto:
+                se lee siempre. La imagen no se guarda, solo el código que contiene.
+              </p>
+            </div>
 
-        <div className="grupo">
-          <label className="field">Banco (opcional)
-            <input className="input" maxLength={80} value={banco}
-            onChange={(e) => setBanco(e.target.value)} />
-          </label>
-        </div>
+            <div className="grupo">
+              <label className="field">¿A nombre de quién está la cuenta?
+                <input className="input" required maxLength={120} value={nombreCuenta}
+                id="campo-nombreCuenta" aria-invalid={problemaDe('nombreCuenta') !== null}
+                aria-describedby={problemaDe('nombreCuenta') ? 'error-nombreCuenta' : undefined}
+                placeholder="Como figura en tu banco"
+                onChange={(e) => setNombreCuenta(e.target.value)} />
+              </label>
+              <MensajeDelCampo campo="nombreCuenta" />
+              <p className="ayuda">
+                Tal como lo escribe el banco. Puede ser una persona o el nombre del
+                negocio; lo importante es que sea el mismo que va a aparecer en el
+                comprobante de tu cliente.
+              </p>
+            </div>
 
-        <div className="grupo">
-          <label className="field">¿Qué día vence el QR?
-            <input className="input" type="date" required value={venceEl}
-            id="campo-venceEl" aria-invalid={problemaDe('venceEl') !== null}
-            aria-describedby={problemaDe('venceEl') ? 'error-venceEl' : undefined}
-            onChange={(e) => setVenceEl(e.target.value)} />
-          </label>
-          <MensajeDelCampo campo="venceEl" />
-          <p className="ayuda">
-            Lo dice la aplicación de tu banco al generarlo. Te vamos a avisar antes
-            de que venza.
-          </p>
-        </div>
+            <div className="grupo">
+              <label className="field">Número de la cuenta que recibe el dinero
+                <input className="input" required maxLength={30} value={cuentaDeclarada}
+                id="campo-cuentaDeclarada" aria-invalid={problemaDe('cuentaDeclarada') !== null}
+                aria-describedby={problemaDe('cuentaDeclarada') ? 'error-cuentaDeclarada' : undefined}
+                inputMode="numeric" placeholder="Cuenta destino, tal como figura junto al QR"
+                onChange={(e) => setCuentaDeclarada(e.target.value)} />
+              </label>
+              <MensajeDelCampo campo="cuentaDeclarada" />
+              <p className="ayuda">
+                Es con lo que se coteja cada comprobante. Cópialo con cuidado: si
+                está mal, ningún comprobante va a coincidir.
+              </p>
+            </div>
 
-        <label className="field campo-casilla">
-          <input type="checkbox" checked={confirmaReutilizable}
-                 id="campo-confirmaReutilizable"
-                 aria-invalid={problemaDe('confirmaReutilizable') !== null}
-                 aria-describedby={problemaDe('confirmaReutilizable') ? 'error-confirmaReutilizable' : undefined}
-                 onChange={(e) => setConfirmaReutilizable(e.target.checked)} />
-          {' '}Miré en mi banco y confirmo que este QR se puede usar muchas veces
-        </label>
-        <MensajeDelCampo campo="confirmaReutilizable" />
-        <label className="field campo-casilla">
-          <input type="checkbox" checked={confirmaMontoAbierto}
-                 id="campo-confirmaMontoAbierto"
-                 aria-invalid={problemaDe('confirmaMontoAbierto') !== null}
-                 aria-describedby={problemaDe('confirmaMontoAbierto') ? 'error-confirmaMontoAbierto' : undefined}
-                 onChange={(e) => setConfirmaMontoAbierto(e.target.checked)} />
-          {' '}Confirmo que NO tiene un importe fijo grabado
-        </label>
-        <MensajeDelCampo campo="confirmaMontoAbierto" />
+            <div className="grupo">
+              <label className="field">Banco (opcional)
+                <input className="input" maxLength={80} value={banco}
+                onChange={(e) => setBanco(e.target.value)} />
+              </label>
+            </div>
 
-        <label className="field campo-casilla">
-          <input type="checkbox" checked={aceptaMontoFijo}
-                 id="campo-aceptaMontoFijo"
-                 aria-invalid={problemaDe('aceptaMontoFijo') !== null}
-                 aria-describedby={problemaDe('aceptaMontoFijo') ? 'error-aceptaMontoFijo' : undefined}
-                 onChange={(e) => setAceptaMontoFijo(e.target.checked)} />
-          {' '}Todos mis cobros son exactamente del mismo importe
-        </label>
-        <MensajeDelCampo campo="aceptaMontoFijo" />
-        <p className="ayuda">
-          Marca esto solo si es literalmente cierto. Habilita los QR de monto
-          cerrado, que en cualquier otro caso cobrarían de menos o de más.
-        </p>
+            <div className="grupo">
+              <label className="field">¿Qué día vence el QR?
+                <input className="input" type="date" required value={venceEl}
+                id="campo-venceEl" aria-invalid={problemaDe('venceEl') !== null}
+                aria-describedby={problemaDe('venceEl') ? 'error-venceEl' : undefined}
+                onChange={(e) => setVenceEl(e.target.value)} />
+              </label>
+              <MensajeDelCampo campo="venceEl" />
+              <p className="ayuda">
+                Lo dice la aplicación de tu banco al generarlo. Te vamos a avisar antes
+                de que venza.
+              </p>
+            </div>
 
-        <button type="submit" className="btn btn-primary" disabled={ocupado}>
-          {ocupado ? 'Revisando el código…' : 'Guardar mi QR'}
-        </button>
-      </form>
+            <label className="field campo-casilla">
+              <input type="checkbox" checked={confirmaReutilizable}
+                     id="campo-confirmaReutilizable"
+                     aria-invalid={problemaDe('confirmaReutilizable') !== null}
+                     aria-describedby={problemaDe('confirmaReutilizable') ? 'error-confirmaReutilizable' : undefined}
+                     onChange={(e) => setConfirmaReutilizable(e.target.checked)} />
+              {' '}Miré en mi banco y confirmo que este QR se puede usar muchas veces
+            </label>
+            <MensajeDelCampo campo="confirmaReutilizable" />
+            <label className="field campo-casilla">
+              <input type="checkbox" checked={confirmaMontoAbierto}
+                     id="campo-confirmaMontoAbierto"
+                     aria-invalid={problemaDe('confirmaMontoAbierto') !== null}
+                     aria-describedby={problemaDe('confirmaMontoAbierto') ? 'error-confirmaMontoAbierto' : undefined}
+                     onChange={(e) => setConfirmaMontoAbierto(e.target.checked)} />
+              {' '}Confirmo que NO tiene un importe fijo grabado
+            </label>
+            <MensajeDelCampo campo="confirmaMontoAbierto" />
 
-      {problemas.length > 0 && (
-        <div role="alert" className="aviso-datos">
-          <p><strong>No se pudo guardar. Falta esto:</strong></p>
-          <ul>{problemas.map((p) => (
-            <li key={p.campo + p.texto}><strong>{ROTULO[p.campo]}</strong>: {p.texto}</li>
-          ))}</ul>
-        </div>
+            <label className="field campo-casilla">
+              <input type="checkbox" checked={aceptaMontoFijo}
+                     id="campo-aceptaMontoFijo"
+                     aria-invalid={problemaDe('aceptaMontoFijo') !== null}
+                     aria-describedby={problemaDe('aceptaMontoFijo') ? 'error-aceptaMontoFijo' : undefined}
+                     onChange={(e) => setAceptaMontoFijo(e.target.checked)} />
+              {' '}Todos mis cobros son exactamente del mismo importe
+            </label>
+            <MensajeDelCampo campo="aceptaMontoFijo" />
+            <p className="ayuda">
+              Marca esto solo si es literalmente cierto. Habilita los QR de monto
+              cerrado, que en cualquier otro caso cobrarían de menos o de más.
+            </p>
+
+            <button type="submit" className="btn btn-primary" disabled={ocupado}>
+              {ocupado ? 'Revisando el código…' : 'Guardar mi QR'}
+            </button>
+          </form>
+
+          {problemas.length > 0 && (
+            <div role="alert" className="aviso-datos">
+              <p><strong>No se pudo guardar. Falta esto:</strong></p>
+              <ul>{problemas.map((p) => (
+                <li key={p.campo + p.texto}><strong>{ROTULO[p.campo]}</strong>: {p.texto}</li>
+              ))}</ul>
+            </div>
+          )}
+          {advertencias.length > 0 && (
+            <div role="status" className="ayuda aviso-datos">
+              <p><strong>Tenlo en cuenta:</strong></p>
+              <ul>{advertencias.map((a) => <li key={a}>{a}</li>)}</ul>
+            </div>
+          )}
+          {fallo && (
+            <div role="alert" className="ayuda aviso-datos">
+              <p>{fallo}</p>
+            </div>
+          )}
+          {estado && <p role="status">{estado}</p>}
+        </>
       )}
-      {advertencias.length > 0 && (
-        <div role="status" className="ayuda aviso-datos">
-          <p><strong>Tenlo en cuenta:</strong></p>
-          <ul>{advertencias.map((a) => <li key={a}>{a}</li>)}</ul>
-        </div>
-      )}
-      {fallo && (
-        <div role="alert" className="ayuda aviso-datos">
-          <p>{fallo}</p>
-        </div>
-      )}
-      {estado && <p role="status">{estado}</p>}
 
       {/* ------------------------------------------------------------------ */}
       {/* SOLO PARA VENTA. El QR de demostración (`mediaIdQr`) vive en
