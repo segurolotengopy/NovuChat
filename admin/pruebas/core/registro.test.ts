@@ -930,8 +930,14 @@ describe('9. derivaciones equivalentes: el registro calcula lo que las copias ca
     expect(JSON.stringify(pestanasDe(IDS_MODULOS))).toBe(antes);
   });
 
-  it('flujosTenant de las reglas lee `flujos` con `[verticalTenant(tenantId)]` por defecto', () => {
-    expect(cuerpoDeFuncion(REGLAS, 'flujosTenant')).toMatch(/\.get\('flujos',\s*\[verticalTenant\(tenantId\)\]\)/);
+  it('flujosTenant de las reglas lee `flujos` de la ficha del tenant con el `vertical` de ESA ficha por defecto', () => {
+    const cuerpo = cuerpoDeFuncion(REGLAS, 'flujosTenant');
+    // La ruta se nombra una vez (presupuesto de expresiones) y es la ficha de `tenantId`, no otra.
+    expect(cuerpo).toMatch(/let ruta = \/databases\/\$\(database\)\/documents\/tenants\/\$\(tenantId\);/);
+    // Manda `flujos`; sin él, `[vertical]` de la misma ficha. Nada más: ni `get('flujos', [''])` ni otro valor.
+    expect(cuerpo).toMatch(/get\(ruta\)\.data\.get\('flujos',\s*\[get\(ruta\)\.data\.get\('vertical',\s*''\)\]\)/);
+    // Una ficha que no existe no abre ningún flujo.
+    expect(cuerpo).toMatch(/exists\(ruta\)\s*\?[\s\S]*:\s*\[\];/);
   });
 
   it('flujosDeFicha quita repetidos y deja la lista vacía si no hay nada conocido', () => {
