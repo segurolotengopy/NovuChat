@@ -5,6 +5,8 @@ import { rolEn } from './core/lib/sesion';
 import { Proteger } from './core/componentes/Proteger';
 import { Marca } from './central/componentes/Marca';
 import { EncabezadoComercio } from './central/componentes/EncabezadoComercio';
+import { SiNoOculta, useConsolaOculta } from './central/componentes/ConsolaOculta';
+import { esVisible } from '../../functions/src/central/consola-oculta';
 import { Ingresar } from './central/paginas/Ingresar';
 import { Tenants } from './plataforma/paginas/Tenants';
 import { CuentaNegocio } from './plataforma/paginas/CuentaNegocio';
@@ -107,6 +109,9 @@ function Cabecera() {
   const negocios = Object.keys(permisos.tenants);
   const tenantId = tenantDeLaRuta ?? (negocios.length === 1 ? negocios[0] : undefined);
   const modulos = useModulos(tenantId);
+  // Lo que NovuChat decidió no ofrecer a este comercio (presentación, no límite).
+  // Mientras carga (`null`) no se pinta «Pagar»: no aparece y desaparece.
+  const ocultos = useConsolaOculta(tenantId);
   useTituloDePagina(modulos);
   if (!usuario) return null;
 
@@ -166,7 +171,7 @@ function Cabecera() {
             operador no compromete gasto. La puerta real es la callable, que
             exige lo mismo (`exigirAdminOPropietario`); esto es la cortesia de
             no mostrar lo que el servidor va a rechazar. */}
-        {tenantId && (esAdminDelNegocio || permisos.propietario) &&
+        {tenantId && (esAdminDelNegocio || permisos.propietario) && esVisible(ocultos, 'pagar') &&
           <NavLink to={`/negocio/${tenantId}/pagar`}>Pagar</NavLink>}
         {tenantId && esPersona &&
           <NavLink to={`/negocio/${tenantId}/reclamos`}>Reclamos</NavLink>}
@@ -293,7 +298,7 @@ export function App() {
         <Route path="/negocio/:tenantId/cuenta" element={
           <Proteger requiere="adminTenant"><><Cabecera /><EstadoCuenta /></></Proteger>} />
         <Route path="/negocio/:tenantId/pagar" element={
-          <Proteger requiere="adminOPropietario"><><Cabecera /><Pagar /></></Proteger>} />
+          <Proteger requiere="adminOPropietario"><><Cabecera /><SiNoOculta id="pagar"><Pagar /></SiNoOculta></></Proteger>} />
         <Route path="/negocio/:tenantId/reclamos" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Reclamos /></></Proteger>} />
         {/* Vista de plataforma: todos los comercios, por consulta de grupo. */}

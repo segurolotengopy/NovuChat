@@ -5,6 +5,8 @@ import { funciones } from '../../core/lib/firebase';
 import { useParams } from 'react-router-dom';
 import { auth, db } from '../../core/lib/firebase';
 import { useFlujos } from '../lib/flujos';
+import { useConsolaOculta } from '../componentes/ConsolaOculta';
+import { esVisible } from '../../../../functions/src/central/consola-oculta';
 import { datosDeNegocio, payloadNegocio } from '../lib/payloadNegocio';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { PALETAS, PALETA_POR_DEFECTO, type PaletaId } from '../lib/paletas';
@@ -274,6 +276,13 @@ export function Configuracion() {
   // Esta pantalla es LO COMÚN a cualquier negocio. Lo propio de cada flujo
   // vive en su pestaña («Agenda», «Pedidos y cobro»): ver `web/src/central/lib/flujos.ts`.
   const flujos = useFlujos(tenantId) ?? [];
+  // La sección «Horario» no se pinta si NovuChat la ocultó para este comercio
+  // (el horario lo dice el asistente desde su configuración base, y lo que se
+  // cargara aquí no lo cambiaría). Mientras carga la lista, tampoco. Oculta, el
+  // guardado NO toca `horarios` ni lo valida: lo que haya en el documento queda
+  // como está. Solo presentación: las reglas siguen siendo las mismas.
+  const ocultos = useConsolaOculta(tenantId);
+  const conHorario = esVisible(ocultos, 'horario');
   const conAgenda = flujos.includes('agendamiento');
   const conVenta = flujos.includes('venta');
   // El catálogo web es una capacidad de VENTA y solo de venta (DISENO.md
@@ -356,7 +365,7 @@ export function Configuracion() {
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
     setEstado(null);
-    if (DIAS_SEMANA.some(([clave]) => errorDelDia(horarios[clave] ?? DIA_VACIO) !== null)) {
+    if (conHorario && DIAS_SEMANA.some(([clave]) => errorDelDia(horarios[clave] ?? DIA_VACIO) !== null)) {
       setEstado('Revisa el horario de atención: hay un día con las horas incompletas o al revés.');
       return;
     }
@@ -401,10 +410,11 @@ export function Configuracion() {
     }
     try {
       // El documento se arma en `payloadNegocio` (lib/payloadNegocio.ts): la
-      // prueba del guardado completo usa la misma función.
+      // prueba del guardado completo usa la misma función. Con la sección «Horario»
+      // oculta (consolaOculta) NO se escribe `horarios`: lo que hubiera queda como está.
       await updateDoc(doc(db, 'tenants', tenantId, 'config', 'negocio'), payloadNegocio({
         datos, direccionMaps, ubicacion, teniaUbicacion, nombre, teniaNombreAsistente,
-        horarios: escribirHorarios(horarios), catalogoWeb, uid: auth.currentUser?.uid ?? '',
+        horarios: conHorario ? escribirHorarios(horarios) : undefined, catalogoWeb, uid: auth.currentUser?.uid ?? '',
       }));
       setEstado((datos['instruccionesExtra'] ?? '') !== instruccionesGuardadas
         ? 'Guardado. Las indicaciones para el asistente se revisan en unos segundos; esta pantalla se actualiza sola.'
@@ -517,61 +527,65 @@ export function Configuracion() {
         {conAgenda && campo('calendarioId', 'ID del calendario de Google (agenda del negocio)')}
         {campo('politicaCancelacion', 'Política de cancelación', undefined, true)}
 
-        <h3>Horario de atención (opcional)</h3>
-        <p className="ayuda">
-          El asistente usa este horario para responder «¿a qué hora atienden?».
-          Marca <strong>Cerrado</strong> los días que no abres; un día que dejas
-          sin datos no se menciona. <strong>Es opcional</strong>: si no tienes
-          horario fijo, deja todos los días vacíos y el asistente no mencionará
-          horarios.
-          {conAgenda && <> Si en «Agenda» no cargaste a nadie, las citas también
-          se ofrecen dentro de este horario.</>}
-        </p>
-        <fieldset className="horario">
-          <legend>Días y horas</legend>
-          {DIAS_SEMANA.map(([clave, nombre]) => {
-            const d = horarios[clave] ?? DIA_VACIO;
-            const error = errorDelDia(d);
-            return (
-              <div key={clave} className="horario-dia">
-                <strong>{nombre}</strong>
-                <label className="campo-casilla">
-                  <input type="checkbox" checked={d.cerrado}
-                         onChange={(e) => cambiarDia(clave, { cerrado: e.target.checked })} />
-                  <span>Cerrado</span>
-                </label>
-                <div className="horario-horas">
-                  {/* Paso de 15 minutos: nadie abre a las 9:07. Las horas se
-                      conservan al marcar «Cerrado», para que desmarcarlo no
-                      obligue a escribirlas de nuevo. */}
-                  <label>desde
-                    <input type="time" step={900} value={d.desde} disabled={d.cerrado}
-                           aria-label={`${nombre}, desde`} aria-invalid={error !== null}
-                           onChange={(e) => cambiarDia(clave, { desde: e.target.value })} />
-                  </label>
-                  <label>hasta
-                    <input type="time" step={900} value={d.hasta} disabled={d.cerrado}
-                           aria-label={`${nombre}, hasta`} aria-invalid={error !== null}
-                           onChange={(e) => cambiarDia(clave, { hasta: e.target.value })} />
-                  </label>
-                </div>
-                {error && <p role="alert" className="ayuda aviso-datos">{error}</p>}
-                {d.ilegible !== undefined && (
-                  <p role="alert" className="ayuda aviso-datos">
-                    Lo que había guardado («{d.ilegible}») no tiene un formato que el
-                    asistente pueda leer. Vuelve a cargar este día; si guardas sin
-                    tocarlo, queda sin datos.
-                  </p>
-                )}
-              </div>
-            );
-          })}
-        </fieldset>
-        <p className="ayuda">
-          Un horario que pasa la medianoche (por ejemplo, de 18:00 a 02:00) todavía
-          no se puede cargar. Por ahora, carga el cierre a las 23:45 y aclara el
-          horario real en la descripción del negocio.
-        </p>
+        {conHorario && (
+          <>
+            <h3>Horario de atención (opcional)</h3>
+            <p className="ayuda">
+              El asistente usa este horario para responder «¿a qué hora atienden?».
+              Marca <strong>Cerrado</strong> los días que no abres; un día que dejas
+              sin datos no se menciona. <strong>Es opcional</strong>: si no tienes
+              horario fijo, deja todos los días vacíos y el asistente no mencionará
+              horarios.
+              {conAgenda && <> Si en «Agenda» no cargaste a nadie, las citas también
+              se ofrecen dentro de este horario.</>}
+            </p>
+            <fieldset className="horario">
+              <legend>Días y horas</legend>
+              {DIAS_SEMANA.map(([clave, nombre]) => {
+                const d = horarios[clave] ?? DIA_VACIO;
+                const error = errorDelDia(d);
+                return (
+                  <div key={clave} className="horario-dia">
+                    <strong>{nombre}</strong>
+                    <label className="campo-casilla">
+                      <input type="checkbox" checked={d.cerrado}
+                             onChange={(e) => cambiarDia(clave, { cerrado: e.target.checked })} />
+                      <span>Cerrado</span>
+                    </label>
+                    <div className="horario-horas">
+                      {/* Paso de 15 minutos: nadie abre a las 9:07. Las horas se
+                          conservan al marcar «Cerrado», para que desmarcarlo no
+                          obligue a escribirlas de nuevo. */}
+                      <label>desde
+                        <input type="time" step={900} value={d.desde} disabled={d.cerrado}
+                               aria-label={`${nombre}, desde`} aria-invalid={error !== null}
+                               onChange={(e) => cambiarDia(clave, { desde: e.target.value })} />
+                      </label>
+                      <label>hasta
+                        <input type="time" step={900} value={d.hasta} disabled={d.cerrado}
+                               aria-label={`${nombre}, hasta`} aria-invalid={error !== null}
+                               onChange={(e) => cambiarDia(clave, { hasta: e.target.value })} />
+                      </label>
+                    </div>
+                    {error && <p role="alert" className="ayuda aviso-datos">{error}</p>}
+                    {d.ilegible !== undefined && (
+                      <p role="alert" className="ayuda aviso-datos">
+                        Lo que había guardado («{d.ilegible}») no tiene un formato que el
+                        asistente pueda leer. Vuelve a cargar este día; si guardas sin
+                        tocarlo, queda sin datos.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </fieldset>
+            <p className="ayuda">
+              Un horario que pasa la medianoche (por ejemplo, de 18:00 a 02:00) todavía
+              no se puede cargar. Por ahora, carga el cierre a las 23:45 y aclara el
+              horario real en la descripción del negocio.
+            </p>
+          </>
+        )}
 
         <h3>Voz del asistente</h3>
         {/* CAPA COMÚN: el nombre vale para TODOS los flujos del negocio

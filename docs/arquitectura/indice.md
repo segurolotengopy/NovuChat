@@ -137,3 +137,8 @@ número (por ejemplo «Por qué una SPA estática…» de §2) viajan con su `##
 Documentos nuevos citan el archivo y el bloque: «`docs/arquitectura/central.md`
 §4undecies.4». Los documentos viejos no se corrigen en masa: con esta tabla la
 cita sigue resolviéndose.
+
+## Documentos agregados
+
+- `docs/arquitectura/consola-oculta.md`: la lista `consolaOculta` por comercio
+  (presentación, no límite), el script que la escribe y qué oculta cada id.

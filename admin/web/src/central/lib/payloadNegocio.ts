@@ -29,7 +29,7 @@ export type EntradaPayloadNegocio = {
   nombre: string;
   teniaNombreAsistente: boolean;
   /** El horario ya escrito: `{ lun: '09:00-18:00', dom: 'cerrado' }`; un día sin datos no está. */
-  horarios: Record<string, string>;
+  horarios?: Record<string, string>;
   catalogoWeb: boolean;
   /** `auth.currentUser?.uid ?? ''`. */
   uid: string;
@@ -46,7 +46,7 @@ export function payloadNegocio(e: EntradaPayloadNegocio): Record<string, unknown
     ...(nombre !== '' || teniaNombreAsistente ? { nombreAsistente: nombre } : {}),
     // El mapa se reemplaza entero: un día que se vació desaparece del
     // documento, en vez de quedar con el horario viejo.
-    horarios,
+    ...(horarios ? { horarios } : {}),
     catalogoWebActivo: catalogoWeb,
     zonaHoraria: 'America/La_Paz',
     moneda: 'BOB',
