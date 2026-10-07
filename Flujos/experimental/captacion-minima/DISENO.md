@@ -312,3 +312,11 @@ Resumen de lo que cambió (el contrato, §16, tiene las decisiones D1 a D10, la 
 - **Por qué el análisis es estrecho:** partir «Juan de Dios» o «María de la Cruz» sería peor que repreguntar. Sin coma, solo se divide con «de/en» seguido de una palabra de negocio; con coma o guion, no hace falta.
 - **Por qué «Ana Pérez» sola no cambia:** distinguirla de «Tacos Pastor» exige el modelo, y llamarlo en cada respuesta del negocio sube el costo por conversación.
 
+## §18 (PR #456)
+- **Por qué una lista de permitidos y no más bloqueos:** cada bloqueo previó una frase y el prospecto encontró otra (el 18 de 20 pasaron con los filtros anteriores). La lista invierte la carga: solo se dice lo que el tenant escribió, y lo demás cuesta puntos. El margen (2) y el vocabulario se calibraron con explicaciones reales del modelo para que el 81 % siga pasando sin aflojar las frases hostiles.
+- **Por qué un sujeto ajeno pesa 3:** «Contifico recibe cada venta» solo suma dos raíces ajenas, pero un sujeto que el tenant nunca nombró es la forma de colar una marca.
+- **Por qué el tramo literal:** la guardia contra la inyección pide que cada palabra esté en lo que dijo el cliente; contiguo y literal además impide palabras sueltas reordenadas y caracteres que el cliente no escribió (invisibles, asteriscos, emojis). Se guarda lo que el cliente escribió, no lo que devolvió el modelo.
+- **Por qué «Ana Pérez» va una vez al modelo:** el código no distingue un nombre de un negocio de dos palabras. Se acepta una llamada más en ese solo turno antes que anotar a una persona como negocio.
+- **Por qué «Descuentos Express» es un negocio:** los detectores globales (descuento, contacto, banco) buscan palabras sueltas; en el paso en que se pregunta el nombre del negocio, sin «?», esas palabras son parte del nombre.
+- **Costos de Meta:** el negocio los paga directamente a Meta y dependen del uso; el chat ni los cuantifica ni los minimiza, y solo promete lo que hay detrás (pasar con el equipo).
+

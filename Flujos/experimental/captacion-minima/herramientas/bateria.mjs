@@ -114,7 +114,7 @@ const ARCHIVO = { url: 'https://firebasestorage.googleapis.com/v0/b/ejemplo-novu
 function panelDe(opciones = {}) {
   return {
     tenantId: 'novuchat', flujo: 'onboarding', estadoComercio: 'activo', phoneNumberId: PID,
-    operacion: { numeroRecepcion: REC, horarioAtencion: '' },
+    operacion: { numeroRecepcion: opciones.sinRecepcion ? '' : REC, horarioAtencion: '' },
     datosDelNegocio: { nombreNegocio: 'NovuChat' },
     // §16 (D6): el nivel «equilibrado» del documento comercial es «pocos» (un emoji por parte del mensaje). OJO: en vivo manda `voz.nivelEmojis` de la CONSOLA; el valor de los datos
     // solo es el respaldo si la consola no lo manda. Y el nombre del asistente (Kenji) es un dato de la consola, no un nombre de persona del equipo.
@@ -992,7 +992,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
   };
   const mundo = crearMundo({
     flujo, dobles, ahoraMs: AHORA,
-    configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, horarioAtencion: '', planillaProspectosId: ID_PLANILLA, planillaProspectosHoja: 'Leads_CRM', mensajeComercioSuspendido: SUSPENDIDO },
+    configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: (caso.opciones ?? {}).sinRecepcion ? '' : REC, horarioAtencion: '', planillaProspectosId: ID_PLANILLA, planillaProspectosHoja: 'Leads_CRM', mensajeComercioSuspendido: SUSPENDIDO },
   });
 
   const corrida = { caso: caso.id, rep, turnos: [], llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], sinModelo: [], asesor: '', palabras: [], repeticiones: 0, oracionesRepetidas: 0, harvard: 0 };
@@ -1064,11 +1064,14 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       if (t.exige.sinCifras === true && /\d/.test(todo)) falla('cifra_donde_no_va', todo);
       if (t.exige.imagenPlanes === true && !alCliente.some((m) => objeto(objeto(m.payload).interactive).header !== undefined)) falla('sin_imagen_de_planes', todo);
       if (t.exige.sinModelo === true && captura.modelo) falla('llamo_al_modelo_sin_necesidad', todo);
+      // `sinEquipo` (§18, B4): sin número de recepción, ni botón ni fila ni «hablar con alguien de nuestro equipo»: solo se ofrece lo que se cumple.
+      if (t.exige.sinEquipo === true && alCliente.some((m) => botonesDe(m.payload).includes('asesor') || filasDe(m.payload).includes('asesor') || tipoInter(m.payload) === 'cta_url' || /hablar con (alguien de nuestro equipo|el equipo)/i.test(m.cuerpo))) falla('ofrece_al_equipo_sin_equipo', todo);
     }
     // §16 (D7): la 1.ª explicación de rubro de la conversación termina con la pregunta EXACTA del documento comercial.
     if (corrida.cierreExacto === undefined) {
       const expl = alCliente.find((m) => m.evento === 'explicacion');
-      if (expl) corrida.cierreExacto = norm(expl.cuerpo).endsWith(norm(CIERRE_EXACTO));
+      // (Sin número de recepción —§18, B4— la pregunta ofrece solo los planes: no es la exacta del documento, que nombra al equipo.)
+      if (expl && !(caso.opciones ?? {}).sinRecepcion) corrida.cierreExacto = norm(expl.cuerpo).endsWith(norm(CIERRE_EXACTO));
     }
     salidas.push({ turno: i + 1, dicho: dichoDe(t), mensajes: alCliente.map((m) => m.cuerpo) });
     if (captura.modelo) {
@@ -1209,8 +1212,8 @@ export function validarCasos(datos) {
       if (t.seco !== undefined && typeof t.seco !== 'string' && (typeof t.seco !== 'object' || t.seco === null || Object.keys(t.seco).some((k) => !CAMPOS.includes(k)))) {
         throw new Error(`bateria-casos.json: ${donde}: «seco» debe ser un objeto con campos del esquema, o un texto.`);
       }
-      if (t.exige !== undefined && (typeof t.exige !== 'object' || t.exige === null || Object.keys(t.exige).some((k) => !['accion', 'boton', 'termina', 'contiene', 'contieneAlguna', 'noContiene', 'sinCifras', 'imagenPlanes', 'sinModelo', 'cubrePuntos'].includes(k)))) {
-        throw new Error(`bateria-casos.json: ${donde}: «exige» solo admite accion, boton, termina, contiene, noContiene, sinCifras, imagenPlanes y sinModelo.`);
+      if (t.exige !== undefined && (typeof t.exige !== 'object' || t.exige === null || Object.keys(t.exige).some((k) => !['accion', 'boton', 'termina', 'contiene', 'contieneAlguna', 'noContiene', 'sinCifras', 'imagenPlanes', 'sinModelo', 'cubrePuntos', 'sinEquipo'].includes(k)))) {
+        throw new Error(`bateria-casos.json: ${donde}: «exige» solo admite accion, boton, termina, contiene, contieneAlguna, noContiene, sinCifras, imagenPlanes, sinModelo, cubrePuntos y sinEquipo.`);
       }
       if (t.espera !== undefined && (typeof t.espera !== 'object' || Object.keys(t.espera).some((k) => !['tipo', 'rubroId', 'rubroLibre', 'descarte', 'enLosDatos', 'necesidad', 'nombre', 'empresa', 'explicacion'].includes(k)))) {
         throw new Error(`bateria-casos.json: ${donde}: «espera» con un campo desconocido.`);

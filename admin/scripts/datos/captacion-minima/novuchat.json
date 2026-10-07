@@ -251,7 +251,8 @@
     "respuestas": {
       "consumo": "Nuestros planes están diseñados para que cada conversación cubra sin problemas todo el flujo necesario para cerrar una venta o agendar una cita.",
       "banco": "El asistente solo revisa visualmente el comprobante que envía tu cliente: no lo valida con el banco. Quien confirma que el dinero entró es tu banco, y tú como dueño."
-    }
+    },
+    "vocabulario": "que como con sin por para pero porque mientras así asi además ademas también tambien muy más mas todo toda todos todas cada cualquier siempre ahora hoy ya aquí aqui allí los las una uno unos unas del sus tus mis tan sobre entre hasta desde hacia donde cuando cual cuales esto esta este estos estas eso esa ese ser eres es son está están estés estes estar estarás tienes tiene tienen puedes puede podrás poder vas va hace haces hacer hacen deja dejas dejar sea seas sean fue fueron has hayas haya hemos pasa pasan pueden tú tu qué bien bueno buena buenos buenas buen genial excelente gran grande decisión decision elección eleccion elegiste elegido elegir perfecto perfecta maravilloso maravillosa increíble increible fantástico fantastico espectacular rico rica lindo linda bonito bonita hermoso hermosa ideal justo acertado acertada apuesta apuestas apuestes felicitaciones enhorabuena claro supuesto encantado encanta encantará me gusta valiente camino rubro negocio negocios local centro tienda comercio empresa emprendimiento clínica clinica institución institucion instituto colegio estudio estudios estética estetica comida restaurante salud belleza educación educacion ventas venta clientes cliente pacientes paciente padres alumnos responde responder atiende atender muestra mostrar maneja manejar gestiona gestionar coordina coordinar agenda agendar toma tomar registra registrar cobra cobrar ayuda ayudar facilita facilitar envía envia enviar recuerda recordar revisa revisar califica calificar organiza organizar genera generar instante inmediato inmediata facilidad fácilmente facilmente rápido rapido rápida rapida sencilla sencillo simple completo completa disponible activa activo directo directamente automático automatico automática automatica automáticamente automaticamente forma manera tiempo momento día dia noche noches asistente virtual conversaciones conversación mensajes mensaje whatsapp chat atención atencion orden ordenado ordenada claridad agilidad detalle detalles preocupes preocupe descansa descansas descanso tranquilo tranquila conecta conectas conectar conecte turnos visitas alto altos cuenta cuentas veinticuatro necesarios necesaria total cobro cobros segura seguro ninguna ninguno tendrás tendras ahorra ahorras evita evitas gana ganas crece creces lleno llena llenas imagina imaginas descubre disfruta aprovecha mira piensa lleva llevas llevar sigue sigues"
   },
   "conocimiento": {
     "huella": "b0b58ba17884db3df3ce9706e61375eb2a641b2573e0b60f588f467d6d81b504",
@@ -269,7 +270,8 @@
       "plan-crecimiento",
       "plan-pro",
       "como-se-cuenta",
-      "contacto"
+      "contacto",
+      "faq-que-pasa-si-una-conversacion"
     ],
     "fragmentos": [
       {

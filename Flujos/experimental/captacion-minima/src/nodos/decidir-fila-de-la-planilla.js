@@ -108,7 +108,8 @@ const RESUMEN_ESTADO = {
 // =============================================================================
 
 const H = PLANILLA.encabezados;
-const limpio = (v) => String(v ?? '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+// §18 (B2): también sin invisibles ni marcas de dirección (U+00AD, U+061C, U+200B a U+200F, U+202A a U+202E, U+2060 a U+2069, BOM): nada que el cliente no ve llega a la hoja.
+const limpio = (v) => String(v ?? '').replace(/[\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
 const digitos = (v) => String(v ?? '').replace(/\D/g, '');
 // Un texto del cliente nunca empieza con lo que una planilla toma por formula
 // («=», «+», «-», «@»): se quita en los DOS caminos (revision del PR #237, L3).

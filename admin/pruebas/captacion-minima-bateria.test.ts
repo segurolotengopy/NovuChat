@@ -155,7 +155,8 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect(t['campos']['respuesta']['aceptado']).toBeGreaterThan(0);
       expect(t['campos']['aclaracion']['aceptado']).toBeGreaterThan(0);
       // §16: la explicación redactada por el modelo (los casos del documento), la necesidad, el nombre y la empresa que extrae pasan la validación del flujo.
-      for (const k of ['explicacion', 'necesidad', 'nombre', 'empresa']) { expect(t['campos'][k]['aceptado'], k).toBeGreaterThan(0); expect(t['campos'][k]['respaldo'], k).toBe(0); }
+      // (§18: salvo la explicación del caso N-INYECCION, que dice a propósito que el setup es gratuito: ESA, y solo esa, el flujo la rechaza y sale el respaldo.)
+      for (const k of ['explicacion', 'necesidad', 'nombre', 'empresa']) { expect(t['campos'][k]['aceptado'], k).toBeGreaterThan(0); expect(t['campos'][k]['respaldo'], k).toBe(k === 'explicacion' ? 1 : 0); }
       expect(t['tipo'].ok).toBe(t['tipo'].n);
       expect(t['enLosDatos'].ok).toBe(t['enLosDatos'].n);
       expect(t['invencionesEfectivas']).toBe(0);

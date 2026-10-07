@@ -495,7 +495,13 @@ describe('el modelo: instrucciones, cuerpo y esquema', () => {
   });
   it('ccInstrucciones: los planes van SIN precio y una aclaración con un monto va solo con su tema', () => {
     const s = f('ccInstrucciones')(CFG, CORPUS) as string;
-    expect(s).toContain('- Impulso: Hasta 100 conversaciones.');
+    // §18 (B1): lo que incluye cada plan se le muestra al modelo SOLO sin topes numéricos («Hasta 100 conversaciones» lo repetiría): queda el nombre.
+    expect(s).toContain('- Impulso\n');
+    expect(s).not.toContain('Hasta 100 conversaciones');
+    expect(f('ccInstrucciones')({ ...CFG, planes: [{ nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: 'Asistente con IA y consola del dueño.' }] }, CORPUS)).toContain('- Impulso: Asistente con IA y consola del dueño.');
+    for (const tope of ['hasta 100 clientes con Impulso', '25 intercambios', '300 contactos', '25 turnos', 'cien conversaciones']) {
+      expect(f('ccInstrucciones')({ ...CFG, planes: [{ nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: tope }] }, CORPUS), tope).not.toContain(tope);
+    }
     expect(s).not.toMatch(/USD|\$\s*\d|dólares|\b25\b|\b50\b|\b65\b/);
     expect(s).toContain('a1: Cuándo se paga — Todo es prepago');
     expect(s).toContain('a2: Bolsa extra (el texto trae cifras');
@@ -1092,7 +1098,7 @@ describe('los datos del tenant que se versionan', () => {
     expect(k.huella).toMatch(/^[a-f0-9]{64}$/);
     expect(k.generado).toBe('2026-09-16T01:53:52.079Z');
     expect(k.fragmentos).toHaveLength(41);
-    expect(k.excluidos).toHaveLength(13);
+    expect(k.excluidos).toHaveLength(14);   // §18 (B1): +1, `faq-que-pasa-si-una-conversacion` (trae el tope de 25 respuestas)
     expect(k.excluidos).toContain('contacto'); // S2: el teléfono y el correo del sitio no los dice el modelo
     for (const fr of k.fragmentos as J[]) expect(Object.keys(fr).sort()).toEqual(['id', 'texto', 'titulo', 'url']);
     // Y lo que de verdad le llegaría al modelo tampoco trae un monto.
@@ -2775,7 +2781,14 @@ describe('§14: cordialidad (sin repeticiones innecesarias)', () => {
       expect(r['e'].reintentoEmpresa, 'un acuse no gasta la repregunta').toBe(false);
       expect(r['mensajes'].filter((x: J) => x['para'] === 'recepcion'), 'un acuse no avisa a recepción').toHaveLength(0);
       // Y el nombre que llega después sí se anota.
-      expect(decidir(r['e'], T('Tacos Pastor'))['accion']).toBe('empresa');
+      // §18 (C3): «Tacos Pastor» podría ser el nombre de la persona (aún no se sabe cómo se llama): lo decide el modelo UNA vez y, si falla, queda como negocio.
+      const despues = decidir(r['e'], T('Tacos Pastor'));
+      expect(despues['accion']).toBe('modelo');
+      expect(despues['ambiguo'] ?? despues['extra']?.['ambiguo']).toBeTruthy();
+      expect(completar(despues, null)['accion']).toBe('empresa');
+      expect(completar(despues, null)['e'].empresa).toBe('Tacos Pastor');
+      // Con una palabra de negocio no hay duda ni llamada.
+      expect(decidir(r['e'], T('Taquería Pastor'))['accion']).toBe('empresa');
     }
     // Sin recepción no hay botón: ni botón ni promesa; solo la invitación a dar el nombre.
     const sin = completar(decidir(E({ paso: 'esperando_empresa' }), T('ok'), { ...CFGC, numeroRecepcion: '' }), null, { ...CFGC, numeroRecepcion: '' })['mensajes'][0];
@@ -4086,8 +4099,13 @@ describe('§16 (continuación): «Otro» en tres partes, la necesidad, el nombre
     });
     it('«Juan Pérez, Salón Rosa» (con extracción válida): se guardan el nombre y la empresa, se cierra «Anoté «Salón Rosa»» y el nombre dado reemplaza al del perfil en la fila', () => {
       const e0 = E({ paso: 'esperando_empresa', hechos: { pidioAsesor: true } });
-      const p = decidir(e0, T('Juan Pérez, Salón Rosa'));
-      expect(p['accion'], 'con una coma no es un nombre de negocio: lo mira el modelo').toBe('modelo');
+      // §18 (C1): con «Nombre, Empresa» el CÓDIGO separa la persona y el negocio, sin modelo; con una frase que no se puede separar, lo mira el modelo.
+      const directo = decidir(e0, T('Juan Pérez, Salón Rosa'));
+      expect(directo['accion']).toBe('empresa');
+      expect(directo['llamarModelo']).toBe(false);
+      expect(directo['e']).toMatchObject({ nombre: 'Juan Pérez', empresa: 'Salón Rosa', paso: 'libre' });
+      const p = decidir(e0, T('Me llamo Juan Pérez y mi negocio es Salón Rosa'));
+      expect(p['accion'], 'una frase sin separador no se adivina: lo mira el modelo').toBe('modelo');
       expect(p['modo']).toBe('empresa');
       const r = f('ccCompletar')({ plan: p, modelo: OK({ tipo: 'respuesta', nombre: 'Juan Pérez', empresa: 'Salón Rosa' }), cfg: CFG16 });
       expect(r['accion']).toBe('empresa');
@@ -4226,7 +4244,7 @@ describe('§16 (continuación): «Otro» en tres partes, la necesidad, el nombre
       expect(error((d) => { d['guion'].precios.cierre = 'Sin signo.'; })).toMatch(/«guion\.precios\.cierre» tiene que llevar una sola «\?»/);
       expect(error((d) => { d['guion'].precios.raro = 'x'; })).toMatch(/«guion\.precios\.raro»/);
       expect(error((d) => { d['guion'].precios = 'texto'; })).toMatch(/«guion\.precios» tiene que ser un objeto/);
-      expect(error((d) => { d['guion'].respuestas.consumo = 'Incluye 100 mensajes.'; })).toMatch(/«guion\.respuestas\.consumo» trae un número/);
+      expect(error((d) => { d['guion'].respuestas.consumo = 'Incluye 100 mensajes.'; })).toMatch(/«guion\.respuestas\.consumo» trae/);   // §18: lo atrapa primero el filtro de cifras de consumo (antes, el de números)
       expect(error((d) => { d['guion'].respuestas.banco = '¿Quieres que lo valide con el banco?'; })).toMatch(/«guion\.respuestas\.banco»/);
       expect(error((d) => { d['guion'].respuestas.banco = 'Un asesor te llamará para explicarte.'; })).toMatch(/«guion\.respuestas\.banco»/);
       expect(error((d) => { d['guion'].respuestas.otra = 'x'; })).toMatch(/«guion\.respuestas\.otra»/);
@@ -4400,5 +4418,233 @@ describe('§16: validarDatos de los campos nuevos del guion (explicación, punto
     expect(C.LIMITE_GENERAL).toEqual(lim.general);
     expect(C.MAX_PALABRAS_PREGUNTA_OFERTA).toBe(lim.guion.preguntaOferta);
     expect(C.MAX_PALABRAS_EMPATIA).toBe(lim.empatia.palabras);
+  });
+});
+
+// =================================================================================================
+describe('§18 (PR #456): lista de permitidos de la explicación, bloqueos comunes, tramo literal del cliente y validación de los datos', () => {
+  const DATOS = C.cargarDatos('novuchat.json') as J;
+  const GUION = DATOS['guion'] as J;
+  const CFG: J = { nombreNegocio: 'NovuChat', nombreAsistente: 'Kenji', asesor: '', rubros: [], guion: GUION };
+  const ficha = (rubroId: string): J => ({ rubroId, rubroLibre: '', hechos: {} });
+  const leer = (extra: J, textoCliente = 'Tengo un restaurante'): J => f('ccLeerModelo')(JSON.stringify({ tipo: 'respuesta', rubroId: 'ninguno', rubroLibre: '', empatia: '¡Qué bien!', respuesta: '', aclaracion: 'ninguno', enLosDatos: false, descarte: 'ninguno', explicacion: '', necesidad: '', nombre: '', empresa: '', ...extra }),
+    { rubroIds: [], aclaracionIds: [], textoCliente, nombreNegocio: 'NovuChat', nombreAsistente: 'Kenji', asesor: '', datos: '' });
+  /** Lo que sale al cliente como explicación del rubro (la del modelo si pasa TODO, o el respaldo fijo). */
+  const sale = (rubro: string, explicacion: string): string => f('ccExplicacionDelRubro')(leer({ explicacion }), ficha(rubro), CFG);
+  const respaldo = (rubro: string): string => String(GUION['rubros'][rubro]['explicacion']);
+  const HOSTILES = [
+    'Recibirás nuestra llamada mañana.', 'El setup es gratuito este mes.', 'Te regalamos la instalación.', 'Cuesta veinticinco dólares al mes.', 'Tienes 7 días de prueba.',
+    'Se integra con tu sistema de facturación.', 'Contifico recibe cada venta.', 'Concilia tus cobros automáticamente.', 'Aprueba tus cobros al instante.', 'Certifica cada pago de tus clientes.',
+    'Garantiza tus cobros todos los días.', 'Kenji es una persona del equipo.', 'Aquí hay alguien real atendiendo.', 'Escríbenos a ventas arroba novuchat punto com.',
+    'Nos pondremos en contacto contigo hoy.', 'Se encargará de llamarte esta tarde.', 'Tienes noticias nuestras pronto.', 'Instala sin pagar nada.', 'Tienes la mitad de precio este mes.', 'Pruébalo con una prueba gratis.',
+  ];
+  // Una explicación real por línea (JSONL): las redactó el modelo en tres corridas de la batería del 07/10/2026 (k2 antes de las rondas 2 y 3 de §17; k3 y k4 después). Solo para calibrar la lista de permitidos.
+  const FIXTURES = readFileSync(join(CARPETA, 'fuentes/explicaciones-reales-del-modelo-2026-10-07.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as { rubro: string; corrida: string; texto: string });
+
+  it('A1: la explicación REAL del modelo sigue pasando (≥80 % de las corridas después de las rondas 2 y 3; ≥90 % de las que pasaban todo menos la lista) y el respaldo no es la salida', () => {
+    let pasabanTodoMenosLista = 0; let pasanConLista = 0; let recientes = 0; let recientesQuePasan = 0;
+    for (const x of FIXTURES) {
+      const r = leer({ explicacion: x.texto });
+      const g = GUION['rubros'][x.rubro];
+      const base = r['explicacion'] !== '' && f('ccAbreCalido')(r['explicacion']) && f('ccCubrePuntos')(r['explicacion'], g['puntosClave']);
+      const conLista = base && f('ccExplicacionDelRubro')(r, ficha(x.rubro), CFG) === r['explicacion'];
+      if (base) { pasabanTodoMenosLista++; if (conLista) pasanConLista++; }
+      if (x.corrida !== 'k2') { recientes++; if (conLista) recientesQuePasan++; }
+    }
+    expect(FIXTURES.length).toBeGreaterThan(60);
+    expect(recientesQuePasan / recientes, `explicaciones de las corridas k3 y k4 que pasan: ${recientesQuePasan}/${recientes}`).toBeGreaterThanOrEqual(0.8);
+    expect(pasanConLista / pasabanTodoMenosLista, `de las que pasaban todo menos la lista: ${pasanConLista}/${pasabanTodoMenosLista}`).toBeGreaterThanOrEqual(0.9);
+  });
+  it('A1 NIEGA: cada frase hostil pegada a una explicación válida (al principio o al final) cae al respaldo fijo, en cada rubro', () => {
+    for (const rubro of ['gastronomia', 'salud', 'belleza', 'educacion', 'retail']) {
+      const base = respaldo(rubro);
+      expect(sale(rubro, base), `control: la explicación válida de ${rubro} pasa sola`).toBe(base);   // el respaldo es válido para la lista
+      const partes = base.split(/(?<=[.!?])\s+/);
+      for (const h of HOSTILES) {
+        for (const e of [[partes[0], h, ...partes.slice(1)].join(' '), `${base} ${h}`]) {
+          expect(sale(rubro, e), `${rubro}: «${h}»`).toBe(base);
+        }
+      }
+    }
+  });
+  it('A1: el control: la misma explicación con una frase INOCENTE sí pasa (la prueba de arriba no pasa por otra causa)', () => {
+    const base = respaldo('gastronomia') + ' Tu asistente trabaja por ti.';
+    expect(sale('gastronomia', base)).toBe(base);
+  });
+  it('A1: la lista cuenta raíces AJENAS (2 si abren una oración) y admite hasta 2; el nombre del negocio y del asistente y el vocabulario cálido no cuentan', () => {
+    const per = f('ccPermitidasDelRubro')(ficha('gastronomia'), CFG, GUION['rubros']['gastronomia']);
+    expect(f('ccAjenasDeLaExplicacion')('¡Qué rico! En horas pico no pierdes pedidos con NovuChat y Kenji.', per)).toBe(0);
+    expect(f('ccAjenasDeLaExplicacion')('Tu asistente muestra tu menú con rarísimo zumbido.', per)).toBe(2);       // «rarisimo», «zumbido»
+    expect(f('ccAjenasDeLaExplicacion')('Zumbido y rarísimo menú.', per)).toBe(3 + 1);                                  // la primera abre la oración (3) + una
+    expect(f('ccDentroDeLoPermitido')('Tu asistente muestra tu menú con zumbido.', per)).toBe(true);
+    expect(f('ccDentroDeLoPermitido')('Tu asistente muestra tu menú con zumbido, rarísimo y excéntrico.', per)).toBe(false);
+  });
+  it('A2: cero dígitos en la explicación salvo «24/7» y «24 horas»', () => {
+    const base = respaldo('gastronomia');
+    for (const malo of [base.replace('pedidos', 'pedidos (3 por minuto)'), base.replace('menú', 'menú de 5 platos'), base.replace('cocina', 'cocina en 10 minutos'), base.replace('pico', 'pico de 2026')]) expect(sale('gastronomia', malo), malo).toBe(base);
+    const buena = base.replace('NovuChat muestra', 'NovuChat atiende 24/7, muestra');
+    expect(sale('gastronomia', buena)).toBe(buena);
+    const buena2 = base.replace('NovuChat muestra', 'NovuChat atiende las 24 horas, muestra');
+    expect(sale('gastronomia', buena2)).toBe(buena2);
+  });
+  it('A3: los bloqueos comunes rigen la empatía, la respuesta y la explicación (cada frase del informe de seguridad)', () => {
+    const BLOQUEADAS = HOSTILES.filter((h) => !/Contifico|sistema de facturación/.test(h));
+    for (const h of BLOQUEADAS) {
+      expect(leer({ empatia: `¡Qué bien! ${h}` })['empatia'], `empatía: ${h}`).toBe(f('ccLeerModelo')(JSON.stringify({ tipo: 'respuesta', rubroId: 'ninguno', rubroLibre: '', empatia: '', respuesta: '', aclaracion: 'ninguno', enLosDatos: false, descarte: 'ninguno' }), { rubroIds: [], aclaracionIds: [], textoCliente: 'x', asesor: '', nombreNegocio: 'T' })['empatia']);
+      expect(leer({ respuesta: `Claro. ${h}`, enLosDatos: true, tipo: 'pregunta' })['respuesta'], `respuesta: ${h}`).toBe('');
+      expect(leer({ explicacion: `¡Qué rico! ${h}` })['explicacion'], `explicación: ${h}`).toBe('');
+    }
+    // NIEGA: lo correcto no se rechaza
+    expect(leer({ respuesta: 'Atiende todo el día y cobra con QR.', enLosDatos: true, tipo: 'pregunta' })['respuesta']).not.toBe('');
+    expect(leer({ empatia: 'Qué bueno que estés en este rubro, ahí cada cliente cuenta.' })['empatia']).toMatch(/rubro/);
+  });
+  it('A: «se integra con tu sistema de facturación» (y su familia) se rechaza; «se integra a tu Google Calendar» pasa', () => {
+    for (const x of ['Se integra con tu sistema de facturación.', 'Se conecta a tu ERP de contabilidad.', 'Se sincroniza con tu software de inventario.', 'Se vincula con tu banco.']) expect(leer({ explicacion: `¡Qué bien! ${x}` })['explicacion'], x).toBe('');
+    expect(leer({ explicacion: '¡Qué bien! Se integra a tu Google Calendar.' })['explicacion']).not.toBe('');
+  });
+
+  it('B1: las cifras de consumo con otros sustantivos («25 intercambios», «hasta 100 clientes», «300 contactos», «25 turnos», «el plan Pro no tiene tope») no salen de la redacción del modelo', () => {
+    for (const x of ['Incluye 25 intercambios por cliente.', 'Atiende hasta 100 clientes con Impulso.', 'Maneja 300 contactos.', 'Agenda 25 turnos por día.', 'El plan Pro no tiene tope.', 'Con Pro, sin límite de uso.', 'Es ilimitado.', 'Son cien clientes al mes.']) {
+      expect(leer({ respuesta: x, enLosDatos: true, tipo: 'pregunta' })['respuesta'], x).toBe('');
+    }
+    expect(leer({ respuesta: 'Atiende tus chats todo el día.', enLosDatos: true, tipo: 'pregunta' })['respuesta']).not.toBe('');
+  });
+
+  it('B2: el nombre o la empresa del modelo se reemplazan SIEMPRE por el tramo contiguo y literal del cliente (con sus mayúsculas y tildes); sin tramo contiguo, se descartan', () => {
+    for (const [modelo, cliente, esperado] of [
+      ['Panadería‮Luna', 'Mi negocio es Panadería Luna', 'Panadería Luna'],
+      ['*Panadería Luna*', 'Panadería Luna', 'Panadería Luna'],
+      ['Panadería Luna 😈', 'Panadería Luna', 'Panadería Luna'],
+      ['Panadería Luna', 'mi negocio es panaderia luna', 'panaderia luna'],
+      ['Panadería؜Luna', 'Panadería Luna', 'Panadería Luna'],
+    ] as [string, string, string][]) {
+      const r = leer({ empresa: modelo }, cliente);
+      expect(r['empresa'], `${JSON.stringify(modelo)} sobre «${cliente}»`).toBe(esperado);
+      expect(cliente, 'es una subcadena del cliente (sin tener en cuenta los espacios)').toContain(String(r['empresa']).replace(/^(\S+).*$/, '$1'));
+    }
+    // palabras sueltas que están en el texto pero no juntas, o con otro orden: se descartan
+    expect(leer({ nombre: 'Rosa Juan' }, 'Juan Pérez, Salón Rosa')['nombre']).not.toBe('Rosa Juan');
+    expect(leer({ nombre: 'Rosa Pérez' }, 'Juan Pérez, Salón Rosa')['nombre']).not.toBe('Rosa Pérez');
+    expect(leer({ empresa: 'Pan Luna' }, 'Pan de Luna')['empresa']).toBe('');
+    expect(leer({ empresa: 'Salón Pérez' }, 'Juan Pérez, Salón Rosa')['empresa']).not.toBe('Salón Pérez');
+    expect(leer({ nombre: 'Juan Pérez' }, 'Hola, soy Juan Pérez')['nombre']).toBe('Juan Pérez');
+  });
+  it('B2: U+061C y los invisibles no llegan a la empresa, a la necesidad ni a la hoja; una necesidad con un correo deletreado se descarta', () => {
+    expect(f('ccNombreDeEmpresa')('Panadería؜Luna')).toBe('PanaderíaLuna');
+    expect(f('ccNombreDeEmpresa')('Panadería‮Luna')).toBe('PanaderíaLuna');
+    expect(f('ccNecesidadValida')('responder؜ los precios por WhatsApp')).toBe('responder los precios por WhatsApp');
+    for (const mala of ['mandar a juan arroba gmail punto com', 'escribir a ventas arroba empresa punto net']) expect(f('ccNecesidadValida')(mala), mala).toBe('');
+    expect(f('ccNombreDeEmpresa')('ventas arroba novuchat punto com')).toBe('');
+    const nodo = readFileSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'), 'utf8');
+    const linea = /^const limpio = .*$/m.exec(nodo)![0];
+    const limpio = new Function(`${linea}\nreturn limpio;`)() as (v: unknown) => string;
+    expect(limpio('Pana؜dería‮ Luna​')).toBe('Panadería Luna');
+  });
+
+  it('B3: validarDatos aplica a TODOS los textos del tenant los filtros del modelo (cifras de consumo, sistemas, acreditación, promesas, ofertas y los bloqueos comunes)', () => {
+    const error = (mut: (d: J) => void): string => { const d = clon(DATOS); mut(d); try { C.validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
+    expect(error(() => undefined)).toBe('');
+    const rubro = (d: J, id = 'educacion'): J => d['guion'].rubros[id];
+    for (const [que, mut, campo] of [
+      ['cifra de consumo', (d: J) => { rubro(d, 'otro')['queHacemos'] = 'Armamos flujos para atender hasta 300 contactos.'; }, 'guion.rubros.otro.queHacemos'],
+      ['sistema conocido', (d: J) => { rubro(d, 'otro')['queHacemos'] = 'Armamos flujos conectados a SAP.'; }, 'guion.rubros.otro.queHacemos'],
+      ['acreditación', (d: J) => { d['guion'].respuestas.consumo = 'El asistente valida tus pagos con el banco.'; }, 'guion.respuestas.consumo'],
+      ['gratuidad', (d: J) => { rubro(d)['explicacion'] = '¡Qué bien! El setup es gratuito para tu colegio y responde dudas repetitivas como admisiones y pensiones, además coordina entrevistas en el calendario.'; }, 'guion.rubros.educacion.explicacion'],
+      ['promesa de contacto', (d: J) => { d['guion'].precios.incluye = 'Nos pondremos en contacto contigo.'; }, 'guion.precios.incluye'],
+      ['persona', (d: J) => { d['guion'].respuestas.integracion = 'Kenji es una persona del equipo.'; }, 'guion.respuestas.integracion'],
+      ['correo deletreado', (d: J) => { d['guion'].precios.cierre = 'Escríbenos a ventas arroba novuchat punto com ¿te parece?'; }, 'guion.precios.cierre'],
+    ] as [string, (d: J) => void, string][]) expect(error(mut), que).toContain(`«${campo}»`);
+    // `respuestas.banco` tiene que decir en forma NEGADA que no valida con el banco
+    expect(error((d) => { d['guion'].respuestas.banco = 'El asistente revisa el comprobante con el banco.'; })).toMatch(/«guion\.respuestas\.banco» tiene que decir en forma NEGADA/);
+    expect(error((d) => { d['guion'].respuestas.banco = 'No lo valida con el banco: solo revisa la imagen.'; })).toBe('');
+    // una respuesta fija de más de 2 oraciones perdería la invitación al equipo
+    expect(error((d) => { d['guion'].respuestas.consumo = 'Uno. Dos. Tres.'; })).toMatch(/«guion\.respuestas\.consumo» tiene más de 2 oraciones/);
+    // el mensaje de planes lleva UNA sola «?»: la del cierre
+    expect(error((d) => { d['guion'].precios.incluye = '¿Todos incluyen las funciones clave?'; })).toMatch(/«guion\.precios\.incluye» no lleva «\?»/);
+  });
+  it('B3: `palabras` rechaza los cuantificadores anidados y más de dos «.*» (ReDoS)', () => {
+    const error = (palabras: string): string => { const d = clon(DATOS); d['guion'].rubros['educacion'].puntosClave[0] = { texto: 'Ideal para alto volumen de consultas de padres', palabras }; try { C.validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
+    for (const mala of ['(a|b)*c', '((a)*)*', 'padres.*.*.*consultas']) expect(error(mala), mala).toMatch(/ReDoS|cuantificadores anidados/);
+    expect(error('(padres|consultas)+'), 'el «+» ni siquiera es de la familia').toMatch(/«guion\.rubros\.educacion\.puntosClave\[0\]\.palabras»/);
+    expect(error('padres|familias|consultas')).toBe('');
+    expect(error('(coordina|agenda).*(calendario|colegio)')).toBe('');
+  });
+  it('A1 (datos): el vocabulario del tenant es obligatorio con explicación, de palabras sin dígitos ni signos, y sin palabras de riesgo (gratis, llamar, precio, garantía…)', () => {
+    const error = (mut: (d: J) => void): string => { const d = clon(DATOS); mut(d); try { C.validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
+    expect(error((d) => { delete d['guion'].vocabulario; })).toMatch(/«guion\.vocabulario» falta/);
+    expect(error((d) => { d['guion'].vocabulario = 'corto'; })).toMatch(/«guion\.vocabulario» tiene que ser un texto de 20 a 3000/);
+    expect(error((d) => { d['guion'].vocabulario += ' 24horas'; })).toMatch(/«guion\.vocabulario»/);
+    for (const w of ['gratis', 'llamar', 'precio', 'garantía', 'regalo', 'persona', 'descuento', 'dólares', 'sistema']) expect(error((d) => { d['guion'].vocabulario += ` ${w}`; }), w).toMatch(/«guion\.vocabulario» «.+» no puede estar/);
+    expect(error((d) => { d['guion'].vocabulario += ' simpático'; })).toBe('');
+  });
+  it('B1 (datos): ningún fragmento incluido del corpus trae un tope numérico; uno que lo trae se rechaza', () => {
+    const error = (mut: (d: J) => void): string => { const d = clon(DATOS); mut(d); try { C.validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
+    expect(DATOS['conocimiento'].excluidos).toContain('faq-que-pasa-si-una-conversacion');
+    expect(error((d) => { d['conocimiento'].excluidos = d['conocimiento'].excluidos.filter((x: string) => x !== 'faq-que-pasa-si-una-conversacion'); })).toMatch(/«faq-que-pasa-si-una-conversacion» está incluido y trae una cifra de consumo/);
+  });
+
+  it('C5: «mis clientes me preguntan cuánto cuesta el servicio de mantenimiento» NO pide los planes; el costo de NUESTRO servicio sí', () => {
+    for (const t of ['Hola, tengo un taller y mis clientes me preguntan cuánto cuesta el servicio de mantenimiento', 'Mis clientes preguntan cuánto cuesta el servicio de delivery', 'tengo que decirles cuánto cuesta el servicio de limpieza', 'Cuánto cuesta el servicio de delivery que ofrezco']) expect(f('ccPideCostoDelServicio')(t), t).toBe(false);
+    for (const t of ['¿cuánto cuesta el servicio?', '¿cuánto cobran por el servicio de WhatsApp?', '¿cuánto cuesta el servicio de asistente?']) expect(f('ccPideCostoDelServicio')(t), t).toBe(true);
+  });
+  it('C6: «tiene límite» exige un objeto de consumo o «uso»: el horario, los productos o las citas no reciben el texto de consumo', () => {
+    for (const t of ['¿hay límite de horario para atender?', '¿tienen límite de productos en el catálogo?', '¿tiene un tope de citas por día?']) expect(f('ccPreguntaConsumo')(t), t).toBe(false);
+    for (const t of ['¿Tiene algún tope?', '¿hay límite de mensajes?', '¿tiene límite de uso?', '¿tienen tope de conversaciones?']) expect(f('ccPreguntaConsumo')(t), t).toBe(true);
+  });
+  it('D10: una AFIRMACIÓN sobre su sistema no recibe «esa no la tengo a la mano»; una pregunta sí', () => {
+    for (const t of ['tengo una integración con mi sistema', 'mi sistema de facturación se conecta con el SIN', 'uso un ERP que se integra con el banco']) expect(f('ccPreguntaIntegracion')(t), t).toBe(false);
+    for (const t of ['¿se conecta con mi ERP?', 'Puede integrarse con mi sistema de facturación', 'sí, pero antes dime si se integra con mi ERP', 'tiene integración con Contifico?', 'es compatible con mi sistema']) expect(f('ccPreguntaIntegracion')(t), t).toBe(true);
+  });
+  it('C7: un saludo con «?» y una negativa corta no son interactuar (ccEsSustantivo)', () => {
+    for (const t of ['hola?', 'Buenas noches, ¿cómo están ustedes?', 'no gracias por ahora', 'no, gracias', 'por ahora no', 'ahora no', '¿hola, cómo estás?']) expect(f('ccEsSustantivo')(t), t).toBe(false);
+    for (const t of ['¿Funciona con varias profesionales?', 'Quiero saber más de cómo funciona', '¿y el horario?']) expect(f('ccEsSustantivo')(t), t).toBe(true);
+  });
+  it('C3 y D9 (código): lo que podría ser SOLO el nombre de la persona se detecta; con una palabra de negocio no; «Descuentos Express» y compañía son negocios', () => {
+    for (const t of ['Ana Pérez', 'María de la Cruz', 'Juan de Dios Pérez', 'Ana', 'Tacos Pastor']) expect(f('ccPareceSoloUnNombre')(t), t).toBe(true);
+    for (const t of ['Taquería Pastor', 'Panadería Luna', 'Salón Rosa', 'Clínica Santa María', 'Taller Mecánico']) expect(f('ccPareceSoloUnNombre')(t), t).toBe(false);
+    for (const t of ['Descuentos Express', 'Más Barato SRL', 'Rebajas Bolivia', 'Precio Exacto', 'Llámame Ya', 'Conecta con Bolivia', 'Banco del Sur', 'Plan B Eventos', 'Mi Consola Gamer']) expect(f('ccNombreDeEmpresa')(t, true), t).toBe(t);
+    for (const t of ['precios', 'hola', 'gracias', 'muchas gracias', 'información', 'Quiero información', 'ok']) expect(f('ccNombreDeEmpresa')(t, true), t).toBe('');
+  });
+  it('D11: una ficha viva en «esperando el dolor» cuyo rubro ya se EXPLICA pasa a la oferta: nunca un cuerpo vacío (Meta lo rechaza)', () => {
+    const rubros = [{ id: 'educacion', nombre: 'Educación', solucion: 'Responde dudas.', flujoSugerido: 'agendamiento' }, { id: 'otro-a-medida', nombre: 'Otro / a medida', solucion: 'A tu medida.', flujoSugerido: 'a_medida' }];
+    const cfg: J = { ...CFG, rubros, planes: [], cargosUnicos: [], aclaraciones: [], archivoPlanes: null, numeroRecepcion: '59100000001', campanas: [], nivelEmojis: 'pocos', plantillaAviso: 'solicitud_contacto', idiomaPlantillaAviso: 'es' };
+    const e = { ...f('ccEstadoBase')(), paso: 'esperando_dolor', rubroId: 'educacion', ultimoMensajeMs: AHORA };
+    for (const t of [{ via: 'toque', idToque: 'rubro:ya-no-existe', texto: '', tipo: 'interactive' }, { via: 'otro', texto: '', tipo: 'unsupported' }, { via: 'texto', texto: '', tipo: 'text' }]) {
+      const plan = f('ccDecidir')({ e, t: { from: '59100000011', nombrePerfil: 'Ana', anuncio: false, textoDeImagen: '', categoria: '', ...t }, cfg });
+      expect(plan['accion'], JSON.stringify(t)).not.toBe('dolor');
+      const r = f('ccCompletar')({ plan, modelo: null, cfg });
+      for (const m of r['mensajes']) expect(String(m['payload']['interactive']?.['body']?.['text'] ?? m['payload']['text']?.['body'] ?? '').trim(), JSON.stringify(t)).not.toBe('');
+    }
+    // un tenant sin `explicacion` (flujo anterior) conserva su pregunta de dolor
+    const viejo: J = { ...cfg, guion: { rubros: { educacion: { dolor: 'Cuesta.', pregunta: '¿Te pasa?' }, otro: { pregunta: '¿Y tu negocio?' } } } };
+    expect(f('ccDecidir')({ e, t: { from: '59100000011', nombrePerfil: 'Ana', via: 'texto', texto: '', tipo: 'text', anuncio: false, textoDeImagen: '', categoria: '' }, cfg: viejo })['accion']).toBe('dolor');
+  });
+  it('D12: el mensaje de planes lleva UNA sola «?» aunque un texto de `guion.precios` traiga otra (defensa; el validador ya las rechaza)', () => {
+    const guion = clon(GUION); guion['precios'].incluye = '¿Todos incluyen las funciones clave?'; guion['precios'].mensual = 'Planes mensuales ¿desde cuándo?';
+    const cfg: J = { nombreNegocio: 'NovuChat', asesor: '', rubros: [], guion, planes: [{ nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: '' }], cargosUnicos: [{ nombre: 'Instalación estándar', precioUsd: 65, desde: false, detalle: '' }], archivoPlanes: null, nivelEmojis: 'pocos' };
+    for (const archivoPlanes of [null, { url: 'https://firebasestorage.googleapis.com/v0/b/ejemplo/o/planes.png', tipo: 'imagen', nombreArchivo: 'Planes.png' }]) {
+      const m = f('ccPlanes')({ ...cfg, archivoPlanes }, '', '', '', {});
+      const cuerpo = String(m['payload']['interactive']?.['body']?.['text'] ?? m['payload']['text']?.['body']);
+      expect((cuerpo.match(/\?/g) ?? []).length, archivoPlanes ? 'con imagen' : 'en texto').toBeLessThanOrEqual(1);
+    }
+  });
+  it('adenda: los costos de Meta/WhatsApp/mensajería no se minimizan ni se cuantifican; una pregunta por ellos la contesta el código (no la tengo a la mano + equipo) y cuenta como «costos»', () => {
+    for (const t of ['¿Cuánto cobra Meta?', 'quién paga a Meta', 'costos de mensajería', '¿Cuánto cuestan los mensajes de WhatsApp?', '¿Los costos de WhatsApp van aparte?', 'cuánto se paga a Meta por mensaje']) expect(f('ccPreguntaCostoMeta')(t), t).toBe(true);
+    for (const t of ['¿cuánto cuesta el plan para WhatsApp?', '¿cuánto cuesta el servicio de WhatsApp?', 'quiero ver los planes', 'tengo WhatsApp Business', 'precios', '¿Cuánto cuesta el asistente?']) expect(f('ccPreguntaCostoMeta')(t), t).toBe(false);
+    expect(f('ccPideListaPlanes')('¿Cuánto cobra Meta?'), 'no es un pedido de planes').toBe(false);
+    expect(f('ccTemasDe')('¿Cuánto cobra Meta?', [])).toContain('costos');
+    // lo que diga el modelo (empatía, respuesta o explicación) cae
+    for (const x of ['Meta cobra centavos por mensaje.', 'Los mensajes de WhatsApp cuestan casi nada.', 'El costo de mensajería es insignificante.', 'WhatsApp es prácticamente gratis.', 'Tiene un costo mínimo con Meta.', 'La bolsa de 50 conversaciones te alcanza.', 'Puedes comprar una bolsa extra.']) {
+      expect(leer({ empatia: `¡Qué bien! ${x}` })['empatia'], `empatía: ${x}`).toBe(leer({ empatia: '' })['empatia']);
+      expect(leer({ respuesta: x, enLosDatos: true, tipo: 'pregunta' })['respuesta'], `respuesta: ${x}`).toBe('');
+      expect(leer({ explicacion: `¡Qué rico! ${x}` })['explicacion'], `explicación: ${x}`).toBe('');
+    }
+    // NIEGA: «centavos» sin hablar de Meta, WhatsApp, mensajes ni costos no se bloquea por esta regla
+    expect(leer({ empatia: 'Qué bueno que cuides cada centavo de tu negocio.' })['empatia']).toMatch(/centavo/);
+  });
+  it('C4: un nombre de pila suelto («Ana») persiste en la ficha y llega al prospecto', () => {
+    const e = { ...f('ccEstadoBase')(), nombre: 'Ana', empresa: 'Panadería Luna', ultimoMensajeMs: AHORA };
+    expect(f('ccEstadoVigente')(e, AHORA + 1000)['nombre']).toBe('Ana');
+    expect(f('ccProspecto')(e, { from: '59100000011', nombrePerfil: 'Ana Perfil', rubros: [] })['nombre']).toBe('Ana');
   });
 });

@@ -183,8 +183,19 @@ const OFERTA = regexDeLaLibreria('CC_OFERTA_DEL_MODELO');
 const YO = regexDeLaLibreria('CC_YO_DEL_MODELO');
 const MONTO_EN_LETRAS = regexDeLaLibreria('CC_MONTO_MODELO');
 const ENLACE = regexDeLaLibreria('CC_ENLACE');
+// §18 (B3): los filtros nuevos de la redacción del modelo también rigen los textos del tenant (una sola fuente: la librería).
+const ACREDITA_MODELO = regexDeLaLibreria('CC_ACREDITA_MODELO');
+const SISTEMA_CONOCIDO = regexDeLaLibreria('CC_SISTEMA_CONOCIDO');
+const CIFRA_DE_CONSUMO = regexDeLaLibreria('CC_CIFRA_DE_CONSUMO');
+const BLOQUEO_COMUN = regexDeLaLibreria('CC_BLOQUEO_COMUN');
+/** Funciones puras de la librería que la validación necesita (el «sistema ajeno» por mayúscula en medio de la frase). */
+const FUNCIONES_DE_LA_LIBRERIA = new Function(`${leerSiExiste(join(AQUI, 'src/lib/captacion.js'), 'src/lib/captacion.js') || ''}\nreturn { ccSistemaAjeno };`)();
+/** Los nombres propios que un texto del tenant puede traer (el negocio, el asistente): los fija `validarDatos` antes de revisar los textos. */
+let NOMBRES_PROPIOS = [];
 const ACREDITACION = /acreditad|verificad|pago (exitoso|recibido|confirmado|aprobado|validado)|recibimos tu pago|\bgarantiz/;
 const NIEGA_SER_IA = /\bno soy (un |una )?(bot|robot|ia|inteligencia|maquina|asistente|programa)|\bsoy (una )?(persona|humano|humana)|de carne y hueso|persona real|\bno es (un )?(bot|robot)/;
+/** Raíces de palabras que el vocabulario cálido nunca puede traer (promesas, gratuidades, precios, contacto, garantías, ser una persona). */
+const RAICES_DE_RIESGO = ['gratu', 'gratis', 'regal', 'llam', 'contact', 'preci', 'costo', 'cuest', 'pago', 'pagar', 'dolar', 'garant', 'certif', 'concil', 'aprueb', 'persona', 'human', 'descue', 'promo', 'ofert', 'mitad', 'prueb', 'cobran', 'tarifa', 'factur', 'banco', 'sistema'];
 const NUMERO_EN_LETRAS = /\b(cinco|diez|quince|veinte|veinticinco|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|quinientos|mil)\s+(dolares|bolivianos|bs|usd|por ciento)\b/;
 const CONTROLES = /[\u0000-\u001f\u007f\u2028\u2029]/;
 // Caracteres invisibles o de control que se cuelan en un texto sin verse (U+0080 a U+009F, guion blando, espacios de ancho cero, marcas de dirección, BOM).
@@ -210,7 +221,8 @@ function ccNorm(t) {
 }
 
 /** Todo texto del guion: una línea, sin lo que n8n o una planilla toman por código, sin formato de WhatsApp, sin invisibles, sin marcador ni enlace, y sin lo que el servicio no puede decir (§15). */
-function errorDeTextoDelGuion(v) {
+function errorDeTextoDelGuion(v, opciones) {
+  const opc = opciones || {};
   if (CONTROLES.test(v)) return 'trae un salto de línea o un carácter de control';
   if (INVISIBLES.test(v)) return 'trae un carácter invisible o de control (U+0080 a U+009F, guion blando, ancho cero, marca de dirección o BOM)';
   if (/^[=+\-@]/.test(v)) return 'empieza con «=», «+», «-» o «@» (una planilla lo tomaría por fórmula)';
@@ -224,6 +236,11 @@ function errorDeTextoDelGuion(v) {
   if (PRECIO.test(v) || MONTO_EN_LETRAS.test(n) || NUMERO_EN_LETRAS.test(n)) return 'trae un precio o un monto: los precios los arma el código desde la consola';
   if (ACREDITACION.test(n)) return 'afirma un pago acreditado o verificado, o garantiza algo (prohibición 3)';
   if (NIEGA_SER_IA.test(n) || YO.test(n)) return 'habla como una persona o niega ser una IA (prohibición 4)';
+  // §18 (B3): lo mismo que se le exige a la redacción del modelo.
+  if (BLOQUEO_COMUN.test(n)) return 'trae una gratuidad, un regalo, una promesa de contacto, una afirmación de que concilia, aprueba, certifica o garantiza, que es una persona, un correo deletreado o una moneda';
+  if (CIFRA_DE_CONSUMO.test(n)) return 'trae una cifra de consumo o de capacidad (conversaciones, mensajes, clientes, turnos…): los topes los muestra la imagen de planes';
+  if (opc.sinAcredita !== true && ACREDITA_MODELO.test(n)) return 'afirma que el servicio valida, verifica o acredita pagos o transferencias, o que consulta al banco';
+  if (SISTEMA_CONOCIDO.test(n) || FUNCIONES_DE_LA_LIBRERIA.ccSistemaAjeno(v, NOMBRES_PROPIOS, false)) return 'nombra un sistema, plataforma, banco o pasarela que el servicio no nombra';
   return '';
 }
 
@@ -232,6 +249,8 @@ export function validarDatos(datos, archivo) {
   const errores = [];
   const e = (campo, msg) => errores.push(`«${campo}» ${msg}`);
   const d = datos && typeof datos === 'object' ? datos : {};
+  NOMBRES_PROPIOS = [d.configBase && d.configBase.nombreNegocio, d.configBase && d.configBase.nombreAsistente, 'NovuChat', 'Kenji']
+    .filter((x) => typeof x === 'string' && x !== '').join(' ').split(/\s+/);
 
   // --- el flujo y la entrada
   if (typeof d.nombreFlujo !== 'string' || !d.nombreFlujo.trim() || d.nombreFlujo.length > 120 || CONTROLES.test(d.nombreFlujo)) e('nombreFlujo', 'tiene que ser un texto de una línea, de 1 a 120 caracteres');
@@ -342,6 +361,8 @@ export function validarDatos(datos, archivo) {
               for (const k of Object.keys(p)) if (!['texto', 'palabras'].includes(k)) e(donde, `no tiene el campo «${k}» (solo texto y palabras)`);
               if (p.palabras !== undefined) {
                 if (typeof p.palabras !== 'string' || p.palabras.length < 2 || p.palabras.length > 240 || !/^[a-z0-9 |()?.*]+$/.test(p.palabras)) { e(`${donde}.palabras`, 'tiene que ser una familia de palabras (minúsculas sin tildes, números, espacios y | ( ) ? . *) de hasta 240 caracteres'); return; }
+                // §18 (B3): sin cuantificadores anidados («)*», «)+», «*)*»: ReDoS) y a lo más dos «.*».
+                if (/\)[*+]|[*+]\)[*+]/.test(p.palabras) || (p.palabras.match(/\.\*/g) || []).length > 2) { e(`${donde}.palabras`, 'trae cuantificadores anidados («)*», «)+») o más de dos «.*»: una familia de palabras no puede ser una expresión que se cuelgue (ReDoS)'); return; }
                 let re = null;
                 try { re = new RegExp(p.palabras); } catch (x) { e(`${donde}.palabras`, 'no compila como expresión regular'); return; }
                 if (typeof r.explicacion === 'string' && !re.test(ccNorm(r.explicacion))) e(`${donde}.palabras`, `la explicación fija del rubro no la cubre («${texto}»): el respaldo tiene que decir todos sus puntos clave`);
@@ -401,6 +422,23 @@ export function validarDatos(datos, archivo) {
     }
   }
 
+  // --- §18 (A1): el vocabulario cálido y general de la lista de permitidos de la explicación del modelo (obligatorio si algún rubro tiene `explicacion`).
+  if (g) {
+    const conExplicacion = g.rubros && typeof g.rubros === 'object' && Object.values(g.rubros).some((r) => r && typeof r === 'object' && r.explicacion !== undefined);
+    const v = g.vocabulario;
+    if (v === undefined) { if (conExplicacion) e('guion.vocabulario', 'falta: con `explicacion` por rubro, la lista de permitidos necesita su vocabulario cálido'); }
+    else if (typeof v !== 'string' || v.length < 20 || v.length > 3000) e('guion.vocabulario', 'tiene que ser un texto de 20 a 3000 caracteres (palabras separadas por espacios)');
+    else {
+      const palabras = v.split(/\s+/).filter(Boolean);
+      if (palabras.length > 450) e('guion.vocabulario', `tiene ${palabras.length} palabras (hasta 450)`);
+      for (const w of palabras) {
+        if (!/^\p{L}{2,20}$/u.test(w)) { e('guion.vocabulario', `«${w}» no es una palabra de 2 a 20 letras (sin dígitos ni signos)`); break; }
+        const n = ccNorm(w);
+        if (BLOQUEO_COMUN.test(n) || PROMESA.test(n) || OFERTA.test(n) || RAICES_DE_RIESGO.some((x) => n.startsWith(x))) { e('guion.vocabulario', `«${w}» no puede estar en el vocabulario: abre la puerta a una promesa, una oferta, un precio o una afirmación que el servicio no cumple`); break; }
+      }
+    }
+  }
+
   // --- §16: los textos de precios y las respuestas fijas del documento comercial (opcionales; sin ellos, los textos neutros de la librería)
   if (g && g.precios !== undefined) {
     const p = g.precios;
@@ -414,6 +452,7 @@ export function validarDatos(datos, archivo) {
         const m = errorDeTextoDelGuion(v);
         if (m) e(`guion.precios.${k}`, m);
         else if (/\d/.test(v)) e(`guion.precios.${k}`, 'trae un número: los montos los pone el código desde la consola');
+        else if (k !== 'cierre' && /[?¿]/.test(v)) e(`guion.precios.${k}`, 'no lleva «?» ni «¿»: el mensaje de planes lleva una sola, la del cierre');
       }
       if (typeof p.cierre === 'string' && ((p.cierre.match(/\?/g) || []).length !== 1 || !/\?[^?]*$/.test(p.cierre))) e('guion.precios.cierre', 'tiene que llevar una sola «?»');
     }
@@ -427,11 +466,12 @@ export function validarDatos(datos, archivo) {
         const v = r[k];
         if (v === undefined) continue;
         if (typeof v !== 'string' || v.length < 1 || v.length > 400) { e(`guion.respuestas.${k}`, 'tiene que ser un texto de 1 a 400 caracteres'); continue; }
-        const m = errorDeTextoDelGuion(v);
+        const m = errorDeTextoDelGuion(v, { sinAcredita: k === 'banco' });
         if (m) e(`guion.respuestas.${k}`, m);
         else if (/\d/.test(v)) e(`guion.respuestas.${k}`, 'trae un número: jamás se dan cifras de consumo ni de planes en una respuesta fija (documento comercial §5)');
         else if (/[?¿]/.test(v)) e(`guion.respuestas.${k}`, 'no lleva «?» ni «¿»: el código agrega la opción de hablar con el equipo');
-        else if (contarTexto(v).oraciones > 3) e(`guion.respuestas.${k}`, 'tiene más de 3 oraciones');
+        else if (contarTexto(v).oraciones > 2) e(`guion.respuestas.${k}`, 'tiene más de 2 oraciones (el código agrega la apertura y la invitación al equipo, y el mensaje tiene un límite)');
+        else if (k === 'banco' && !(/\bno\b[^.!?]{0,40}\b(?:valida|verifica|confirma|comprueba|acredita)\w*/.test(ccNorm(v)) && /\bbanco\b/.test(ccNorm(v)))) e('guion.respuestas.banco', 'tiene que decir en forma NEGADA que no se valida con el banco («no lo valida con el banco»): es la prohibición 3');
       }
     }
   }
@@ -462,6 +502,8 @@ export function validarDatos(datos, archivo) {
       if (largo > 40000) e('conocimiento', `los fragmentos incluidos suman ${largo} caracteres (hasta 40.000)`);
       for (const f of incluidos) {
         if (PRECIO.test(String(f.texto || '')) || PRECIO.test(String(f.titulo || ''))) e('conocimiento.fragmentos', `«${f.id}» está incluido y trae un precio: va en «excluidos» (los precios tienen una sola fuente, la consola)`);
+        // §18 (B1): ni un tope numérico (el modelo lo repetiría: «hasta 25 respuestas», «300 contactos»): los topes los muestra la imagen de planes.
+        if (CIFRA_DE_CONSUMO.test(ccNorm(`${f.titulo || ''} ${f.texto || ''}`))) e('conocimiento.fragmentos', `«${f.id}» está incluido y trae una cifra de consumo o de capacidad: va en «excluidos» (los topes los muestra la imagen de planes)`);
       }
     }
   }
