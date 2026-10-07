@@ -159,7 +159,7 @@ function cbCobroReal(cuerpoPanel) {
   if (!activo) {
     return {
       activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null,
-      pedidoRef: '', vencidoHaceMin: null,
+      pedidoRef: '', vencidoHaceMin: null, venceEl: '',
     };
   }
   const monto = cbTotalValido(cb.monto);
@@ -175,6 +175,9 @@ function cbCobroReal(cuerpoPanel) {
     monto: monto,
     pedidoRef: typeof cb.pedido === 'string' ? cbLinea(cb.pedido, 120) : '',
     vencidoHaceMin: vencido,
+    // El último día de vigencia del QR (`aaaa-mm-dd`, el que registró el comercio). Solo se copia; `cbQrVencido` lo interpreta.
+    // Tal cual, sin recortar a 10 ni limpiar: el servidor exige el formato exacto, y un valor ilegible aquí debe seguir siendo ilegible.
+    venceEl: typeof cr.venceEl === 'string' ? cr.venceEl.slice(0, 40) : '',
   };
 }
 
@@ -205,6 +208,21 @@ function cbHayQr(cobro) {
   if (c.modo === 'real') return c.activo === true;
   if (c.modo === 'simulado') return c.activo !== true;
   return false;
+}
+
+// ¿El QR del cobro REAL ya venció? MISMO criterio que la Function `imagenDeCobro` (modulos/cobros/cobro.ts, `finDelDiaBoliviano`): `venceEl` (`aaaa-mm-dd`)
+// vale hasta las 23:59:59 de ESE día en Bolivia (UTC-4 fijo) y está vencido si ese instante ya pasó (`<=`). Sin fecha, o con una que no tiene el formato exacto,
+// NO está vencido: el servidor tampoco bloquea la imagen en ese caso (registros anteriores al campo). `ahoraMs` es el del turno (nunca el reloj suelto).
+// Solo aplica al modo real: el QR simulado no vence. Un QR vencido el servidor lo responde con 404, así que ofrecerlo promete una imagen que no llega.
+function cbQrVencido(cobro, ahoraMs) {
+  const c = cbEsObjeto(cobro) ? cobro : {};
+  if (c.modo !== 'real') return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(typeof c.venceEl === 'string' ? c.venceEl : '');
+  if (!m) return false;
+  const finDelDia = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59) + 4 * 3600000;
+  const ahora = Number(ahoraMs);
+  if (!Number.isFinite(finDelDia) || !Number.isFinite(ahora)) return false;
+  return finDelDia <= ahora;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +450,7 @@ function cbEstadoParaAviso(resultado) {
   if (resultado === 'sin_cotejo') return 'comprobante sin cotejar';
   if (resultado === 'ya_cotejado') return null;
   if (resultado === 'simulado') return 'PRUEBA: cobro SIMULADO, sin dinero';
+  if (resultado === 'qr_vencido') return 'QR vencido: coordinar el pago';
   return 'sin QR: cobrar al entregar';
 }
 
@@ -556,6 +575,13 @@ function cbTextoAlCliente(resultado, opciones) {
         enlace: false, aviso: true,
       }
       : { cuerpo: sinAviso, enlace: true, aviso: true };
+  }
+  if (resultado === 'qr_vencido') {
+    // El QR real venció: no se ofrece el QR ni el total a pagar. Lo único que se ofrece es pasar con recepción (aviso + botón «Escribir al local»).
+    const cabeza = 'No puedo mostrarte el QR en este momento.';
+    return salio
+      ? { cuerpo: cabeza + ' Pasé ' + pedido + ' a nuestro equipo. Para coordinar el pago, toca «Escribir al local» y lo ves directamente con ellos.', enlace: true, aviso: true }
+      : { cuerpo: cabeza + ' ' + sinAviso, enlace: true, aviso: true };
   }
   return { cuerpo: 'Eso lo ve directamente nuestro equipo. Toca el botón para escribirnos.', enlace: true, aviso: false };
 }

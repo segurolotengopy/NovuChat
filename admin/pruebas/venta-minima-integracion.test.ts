@@ -1643,3 +1643,98 @@ describe('cobro SIMULADO: QR de prueba, cualquier foto como comprobante, aviso d
     });
   });
 });
+
+// =================================================================================================
+describe('QR REAL VENCIDO (07/10): no se ofrece un QR que la imagen no va a servir; se pasa con recepción', () => {
+  // `AHORA` es el lunes 05/10/2026 a las 10:00 de La Paz. El QR vale hasta las 23:59:59 de `venceEl` (misma regla que `imagenDeCobro`).
+  const conVence = (venceEl: unknown, pendiente?: { pedido: string; monto: number }): J =>
+    conCobro(pendiente, { cobroReal: { nombreCuenta: 'Titular de Prueba SRL', banco: 'Banco de Prueba', venceEl } });
+  const confirmar = (venceEl: unknown): { m: Mundo; c: Salida } => {
+    const m = crear({ panel: conVence(venceEl) });
+    hastaResumen(m);
+    return { m, c: turno(m, { boton: 'p|confirmar' }) };
+  };
+  const hayImagen = (s: Salida): boolean => clientes(s).some((j) => j['payload'].type === 'image');
+
+  it('vigente (mañana, o hoy mismo, el último día): el QR sale como siempre, con el evento y el paso «esperando comprobante»', () => {
+    for (const vence of ['2026-10-06', '2026-10-05']) {
+      const { m, c } = confirmar(vence);
+      expect(c.p['ruta'], vence).toBe('pedido:qr');
+      expect(clientes(c)[0]!, vence).toMatchObject({ evento: 'qr_enviado', monto: 55 });
+      expect(clientes(c)[0]!['payload']).toMatchObject({ type: 'image', image: { link: QR } });
+      expect(cuerpoDe(clientes(c)[0]!)).toContain('Total a pagar con este QR: 55 Bs');
+      expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+    }
+  });
+
+  it('sin fecha, o con una ilegible, NO se trata como vencido (el servidor tampoco bloquea la imagen): sale el QR', () => {
+    for (const vence of [undefined, '', 'ayer', '05/10/2026', ' 2026-10-04', '2026-10-04x', 20261004]) {
+      const { c } = confirmar(vence);
+      expect(c.p['ruta'], String(vence)).toBe('pedido:qr');
+      expect(hayImagen(c), String(vence)).toBe(true);
+    }
+  });
+
+  it('VENCIDO (ayer): sin QR ni «total a pagar», un solo mensaje con el botón, aviso al rol completo y el pedido sin cobro abierto', () => {
+    const { m, c } = confirmar('2026-10-04');
+    expect(c.p['ruta']).toBe('pedido:qr_vencido');
+    expect(hayImagen(c)).toBe(false);
+    expect(clientes(c)).toHaveLength(1); // 0 mensajes agregados: reemplaza al del QR
+    const j = clientes(c)[0]!;
+    expect(JSON.stringify(c.mensajes)).not.toContain('qr_enviado');
+    const t = cuerpoDe(j);
+    expect(t).toContain('No puedo mostrarte el QR en este momento.');
+    expect(t).toMatch(/Para volver al inicio, escribe «menú»\.$/);
+    expect(t).not.toMatch(/Total a pagar|Escan[ée]alo|te avisa|te llama|te escribir|lo consulto/i);
+    expect(t).not.toMatch(PROHIBIDAS);
+    expect(JSON.stringify(j['payload'])).toContain('Escribir al local');
+    // El aviso a recepción: pedido al rol completo, diciendo que el QR está vencido.
+    const aviso = plantillas(c).find((a) => a['para'] === AV1)!;
+    expect(aviso).toBeDefined();
+    expect(c.armados.every((a) => a['tipoAviso'] === 'pedido')).toBe(true);
+    expect(params(aviso)[3]).toBe('QR vencido: coordinar el pago');
+    // El estado: nada esperando comprobante; el pedido queda guardado sin cobro.
+    expect(estadoDe(m)['paso']).toBe('menu');
+    expect(estadoDe(m)['pedido']).toBeFalsy();
+    const guardados = Object.values(sdDe(m)['pedidos']) as J[];
+    expect(guardados).toHaveLength(1);
+    expect(guardados[0]).toMatchObject({ resultado: 'qr_vencido' });
+  });
+
+  it('VENCIDO y el aviso NO salió: el cliente lee que escriba con el botón, nunca «lo pasé» ni «te avisamos»', () => {
+    const m = crear({ panel: conVence('2026-10-04') });
+    hastaResumen(m);
+    const c = turno(m, { boton: 'p|confirmar', envio: (a) => a.map(() => FALLA) });
+    const t = cuerpos(c).join('\n');
+    expect(t).toContain('No puedo mostrarte el QR en este momento.');
+    expect(t).toContain('No pude pasarle tu pedido a nuestro equipo');
+    expect(t).not.toMatch(/Pas[ée] tu pedido|Total a pagar|te avisa|te llama/i);
+    expect(JSON.stringify(c.mensajes.map((x) => x['payload']))).toContain('Escribir al local');
+  });
+
+  it('el último instante: a las 23:59:58 La Paz del último día aún vale; desde las 23:59:59 (`<=`, como el servidor) está vencido', () => {
+    const MS = (s: number): number => Date.UTC(2026, 9, 6, 3, 59, s); // 05/10/2026 23:59:xx en La Paz
+    const evalua = (modo: string, venceEl: string, ahora: number): unknown => ejecutar(
+      `${leer('lib/cobro.js')}\nreturn [{ json: { v: cbQrVencido({ modo: ${JSON.stringify(modo)}, venceEl: ${JSON.stringify(venceEl)} }, ${ahora}) } }];`, [{}])[0]!['v'];
+    expect(evalua('real', '2026-10-05', MS(58))).toBe(false);
+    expect(evalua('real', '2026-10-05', MS(59))).toBe(true);
+    expect(evalua('real', '2026-10-05', MS(59) + 1)).toBe(true);
+    expect(evalua('real', '2026-10-06', MS(59))).toBe(false);
+    // Solo el modo real vence: el simulado y el apagado no.
+    expect([evalua('real', '2020-01-01', MS(0)), evalua('simulado', '2020-01-01', MS(0)), evalua('apagado', '2020-01-01', MS(0))]).toEqual([true, false, false]);
+  });
+
+  it('«Reenviar QR» con el QR ya vencido: no sale la imagen; se pasa con recepción (aviso + botón) y el pedido sigue esperando', () => {
+    const m = crear({ panel: conVence('2026-10-05') });
+    hastaResumen(m);
+    const c = turno(m, { boton: 'p|confirmar' });
+    const ref = String(clientes(c)[0]!['referencia']);
+    m.panel = conVence('2026-10-04', { pedido: ref, monto: 55 }); // venció mientras esperaba
+    const r = turno(m, { boton: 'q|reenviar' });
+    expect(hayImagen(r)).toBe(false);
+    expect(r.p['aviso'].tipo).toBe('transferencia');
+    expect(cuerpos(r).join('\n')).toContain('No puedo mostrarte el QR en este momento.');
+    expect(JSON.stringify(r.mensajes.map((x) => x['payload']))).toContain('Escribir al local');
+    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+  });
+});

@@ -36,7 +36,7 @@ export const LUNES_10 = Date.UTC(2026, 9, 5, 14);
 const NOMBRES = [
   'cbCobroReal', 'cbCaption', 'cbMensajeQr', 'cbLectura', 'cbResultado', 'cbEstadoParaAviso',
   'cbTextoAlCliente', 'cbDiferencia', 'cbImporteDelServidor', 'cbObjetoUnico', 'cbTotalValido', 'cbMonto', 'cbUrlSegura',
-  'cbCobroSimulado', 'cbHayQr',
+  'cbCobroSimulado', 'cbHayQr', 'cbQrVencido',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -169,13 +169,20 @@ describe('cbCobroReal: cobro real solo si el servidor lo manda y el QR es https'
   it('con cobroReal y la dirección https, está activo y trae el titular, el banco y la dirección', () => {
     expect(L.cbCobroReal(panel())).toEqual({
       activo: true, qrUrl: URL_QR, titular: 'Taqueria Ejemplo SRL', banco: 'Banco de Prueba',
-      pendiente: false, monto: null, pedidoRef: '', vencidoHaceMin: null,
+      pendiente: false, monto: null, pedidoRef: '', vencidoHaceMin: null, venceEl: '',
     });
   });
 
   it('un QR esperando comprobante: pendiente, monto cotizado y pedido', () => {
     const c = L.cbCobroReal(panel({}, { pendiente: true, monto: 63, pedido: 'ped-2026-10-05-0011-abc', vencidoHaceMin: 12 }));
     expect(c).toMatchObject({ activo: true, pendiente: true, monto: 63, pedidoRef: 'ped-2026-10-05-0011-abc', vencidoHaceMin: 12 });
+  });
+
+  it('`venceEl` del servidor se copia tal cual (texto), y cualquier otra cosa queda en \'\' ', () => {
+    const con = (venceEl: unknown) => L.cbCobroReal({ ...panel(), cobroReal: { nombreCuenta: 'X', banco: 'Y', venceEl } }).venceEl;
+    expect(con('2026-10-05')).toBe('2026-10-05');
+    expect(con(' 2026-10-05')).toBe(' 2026-10-05'); // sin limpiar: el servidor exige el formato exacto
+    expect([con(undefined), con(null), con(20261005), con({})]).toEqual(['', '', '', '']);
   });
 
   it('el opuesto: el servidor no manda `cobroReal` -> no hay cobro real, aunque el QR tenga https', () => {
@@ -199,7 +206,7 @@ describe('cbCobroReal: cobro real solo si el servidor lo manda y el QR es https'
     (p.cobro as { qr: { url: unknown } }).qr.url = url;
     const c = L.cbCobroReal(p);
     expect(c).toEqual({
-      activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: '', vencidoHaceMin: null,
+      activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: '', vencidoHaceMin: null, venceEl: '',
     });
   });
 
@@ -1051,5 +1058,37 @@ describe('cbEstadoParaAviso simulado y la red del texto simulado', () => {
       expect(t).not.toMatch(ACREDITACION);
       expect(t).not.toMatch(VOSEO);
     }
+  });
+});
+
+describe('cbQrVencido y el texto del QR vencido', () => {
+  const real = (venceEl: unknown) => ({ modo: 'real', activo: true, qrUrl: URL_QR, venceEl });
+  const FIN_5 = Date.UTC(2026, 9, 6, 3, 59, 59); // 05/10/2026 23:59:59 en La Paz (UTC-4)
+  it('vale hasta las 23:59:59 de La Paz del último día y desde ese segundo está vencido (igual que `imagenDeCobro`)', () => {
+    expect(L.cbQrVencido(real('2026-10-05'), FIN_5 - 1)).toBe(false);
+    expect(L.cbQrVencido(real('2026-10-05'), FIN_5)).toBe(true);
+    expect(L.cbQrVencido(real('2026-10-05'), LUNES_10)).toBe(false); // hoy, a media mañana: vigente
+    expect(L.cbQrVencido(real('2026-10-06'), LUNES_10)).toBe(false); // mañana
+    expect(L.cbQrVencido(real('2026-10-04'), LUNES_10)).toBe(true); // ayer
+  });
+  it('negado: sin fecha o con una ilegible NO vence (el servidor tampoco la bloquea); y solo el modo real vence', () => {
+    for (const v of [undefined, null, '', 'mañana', '2026-10-4', '2026-10-04 ', 20261004, {}]) expect(L.cbQrVencido(real(v), LUNES_10), String(v)).toBe(false);
+    expect(L.cbQrVencido({ modo: 'simulado', venceEl: '2020-01-01' }, LUNES_10)).toBe(false);
+    expect(L.cbQrVencido({ modo: 'apagado', venceEl: '2020-01-01' }, LUNES_10)).toBe(false);
+    expect(L.cbQrVencido(undefined, LUNES_10)).toBe(false);
+    expect(L.cbQrVencido(real('2026-10-04'), undefined)).toBe(false); // sin hora no se afirma nada
+    expect(L.cbQrVencido(real('2026-10-04'), NaN)).toBe(false);
+  });
+  it('el texto al cliente pasa la red, no promete nada y lleva el botón; el estado para el aviso lo dice', () => {
+    for (const salio of [true, false]) {
+      const r = L.cbTextoAlCliente('qr_vencido', { avisoSalio: salio, codigo: 'K7Q2', entrega: 'recojo' });
+      expect(r.enlace, String(salio)).toBe(true);
+      expect(r.cuerpo).toMatch(/^No puedo mostrarte el QR en este momento\./);
+      expect(r.cuerpo).not.toMatch(L.CB_PROHIBIDAS);
+      expect(r.cuerpo).not.toMatch(/te avisa|te llama|te escribir|lo consulto|Total a pagar/i);
+    }
+    expect(L.cbTextoAlCliente('qr_vencido', { avisoSalio: true, codigo: 'K7Q2' }).cuerpo).toContain('Pasé tu pedido #K7Q2 a nuestro equipo.');
+    expect(L.cbTextoAlCliente('qr_vencido', { avisoSalio: false, codigo: 'K7Q2' }).cuerpo).toContain('No pude pasarle tu pedido a nuestro equipo');
+    expect(L.cbEstadoParaAviso('qr_vencido')).toBe('QR vencido: coordinar el pago');
   });
 });

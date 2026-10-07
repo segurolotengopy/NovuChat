@@ -97,7 +97,7 @@
 //     lineas:[{cantidad, nombre, detalle}]   total: número en Bs (nunca el delivery)
 //     notaPedido (opcional): la nota del cliente desde la página del catálogo; la ven `completo` y `cocina`
 //     modalidad: 'delivery' | 'recojo'       codigo: código corto del pedido
-//     resultado: 'cuadra'|'no_cuadra'|'ilegible'|'sin_cotejo'|'sin_qr'|'ya_cotejado'|'simulado'
+//     resultado: 'cuadra'|'no_cuadra'|'ilegible'|'sin_cotejo'|'sin_qr'|'qr_vencido'|'ya_cotejado'|'simulado'
 //       (`simulado` = pedido de PRUEBA con cobro simulado: se rotula PRUEBA y SIMULADO, su cierre no habla del banco
 //        y NUNCA lleva la imagen del comprobante, aunque `mediaId` venga)
 //       (por defecto: `sin_qr` en `pedido`, `sin_cotejo` en `comprobante`; con
@@ -135,6 +135,7 @@ const AV_ORDEN_AGENDA = ['destinatario', 'cuando', 'detalle', 'codigo'];
 const AV_ORDEN_SOLICITUD = ['cliente', 'personas', 'cuando', 'telefono', 'nota'];
 const AV_CIERRE_PAGO = 'Revisen el pago en su banco antes de despachar.';
 const AV_CIERRE_SIN_QR = 'El pago se coordina con el cliente al entregar o al recoger.';
+const AV_CIERRE_QR_VENCIDO = 'El QR de cobro está vencido y no se envió: coordinen el pago con el cliente.';
 const AV_CIERRE_SIMULADO = 'Pedido de PRUEBA: el cobro fue SIMULADO y no se movió dinero.';
 const AV_CIERRE_RESERVA = 'Es una solicitud: revísenla según sus mesas y respondan al cliente.';
 const AV_CIERRE_DERIVACION = 'El cliente también puede escribirles directo con el botón.';
@@ -541,6 +542,7 @@ function avCotejoTexto(resultado) {
   if (resultado === 'no_cuadra') return 'comprobante: NO coinciden los datos';
   if (resultado === 'ilegible') return 'comprobante ilegible';
   if (resultado === 'sin_qr') return 'sin QR: se cobra al entregar o al recoger';
+  if (resultado === 'qr_vencido') return 'QR vencido: coordinar el pago';
   return 'comprobante sin cotejar';
 }
 
@@ -552,7 +554,7 @@ function avModalidadTexto(m) {
 
 function avResultado(tipo, r) {
   const v = String(r === undefined || r === null ? '' : r);
-  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
+  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr', 'qr_vencido', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
   return tipo === 'pedido' ? 'sin_qr' : 'sin_cotejo';
 }
 
@@ -857,7 +859,7 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
       const dif = d.diferencias.slice(0, 6).map((x) => avLimpio(x, 100)).filter(Boolean).join('; ');
       if (dif) lineas.push('Diferencias: ' + dif);
     }
-    cierre = resultado === 'sin_qr' ? AV_CIERRE_SIN_QR : (resultado === 'simulado' ? AV_CIERRE_SIMULADO : AV_CIERRE_PAGO);
+    cierre = resultado === 'sin_qr' ? AV_CIERRE_SIN_QR : resultado === 'qr_vencido' ? AV_CIERRE_QR_VENCIDO : (resultado === 'simulado' ? AV_CIERRE_SIMULADO : AV_CIERRE_PAGO);
   } else if (tipo === 'reserva') {
     const r = (d.reserva && typeof d.reserva === 'object') ? d.reserva : {};
     const p = Math.floor(Number(r.personas));
