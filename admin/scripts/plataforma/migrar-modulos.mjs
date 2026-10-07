@@ -160,10 +160,14 @@ export const CHEQUEOS = [
  * «Después» migra la ficha: `modulos` = lo que `modulosDeFicha` deriva hoy, y
  * todo se lee sobre `{...ficha, modulos}` solo con las funciones del registro.
  * Devuelve `{ modulos, diferencias: [{ chequeo, antes, despues }] }`.
+ *
+ * `modulosDestino` (opcional, lo usa `aplicar-modulos-tenant.mjs`): en vez de la lista que
+ * deriva el registro, el «después» es esa lista. Sin él, el comportamiento es el de siempre.
+ * El «antes» nunca mira `modulos`: es lo que cada lector decide hoy con `flujos`.
  */
-export function comparar(ficha) {
+export function comparar(ficha, modulosDestino = undefined) {
   const f = ficha ?? {};
-  const modulos = modulosDeFicha(f);
+  const modulos = modulosDestino === undefined ? modulosDeFicha(f) : modulosDeFicha({ modulos: modulosDestino });
   const migrada = { ...f, modulos };
   const diferencias = [];
   const ver = (chequeo, antes, despues) => {
