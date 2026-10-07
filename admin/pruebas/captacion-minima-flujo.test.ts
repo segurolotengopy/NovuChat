@@ -3389,12 +3389,20 @@ describe('§16: el documento comercial de Kenji, de punta a punta (los JSON vers
       // Sin extracción: el modelo no trae nada válido (un nombre que el cliente no dijo, una empresa inventada).
       const mal = nc(); const jm = jugar(mal); jm.texto('Hola'); jm.rubro('gastronomia'); jm.asesor();
       modeloPara(mal, { nombre: 'Pedro Gómez', empresa: 'Kiosco Inventado' });
-      const t = jm.texto('Juan Pérez, Salón Rosa');
+      // (§17, ronda 3: si el texto trae «Nombre, Empresa» el código lo separa solo, con lo que el cliente escribió; aquí no hay nada que separar.)
+      const t = jm.texto('jajaja, Juan Pérez ok');
       expect(CUERPO(t)).toMatch(/¿Cómo te llamas y cómo se llama tu negocio\?$/);   // se repregunta, sin inventar
       expect(estadoDe(mal, MAMA)!['empresa']).toBe('');
       jm.texto('Salón Rosa');
       expect(filaDe(mal, MAMA)!['Empresa / Cliente']).toBe('Salón Rosa');
       expect(filaDe(mal, MAMA)!['Nombre y Apellido']).toBe('Ana Pérez');   // el del perfil
+      // Con el mismo modelo inválido pero «Nombre, Empresa» en el texto: el código separa y anota LO QUE EL CLIENTE ESCRIBIÓ; nada de lo que inventó el modelo.
+      const lit = nc(); const jl = jugar(lit); jl.texto('Hola'); jl.rubro('gastronomia'); jl.asesor();
+      modeloPara(lit, { nombre: 'Pedro Gómez', empresa: 'Kiosco Inventado' });
+      jl.texto('Juan Pérez, Salón Rosa');
+      expect(filaDe(lit, MAMA)!['Nombre y Apellido']).toBe('Juan Pérez');
+      expect(filaDe(lit, MAMA)!['Empresa / Cliente']).toBe('Salón Rosa');
+      expect(JSON.stringify(lit.hoja.filas)).not.toMatch(/Inventado|Pedro/);
     });
     it('Media: interactuó tras la explicación (pregunta o comentario de fondo); Baja: eligió rubro y no continuó, o solo saludó; Alta: pidió planes o al equipo', () => {
       const baja = nc(); const jb = jugar(baja); jb.texto('Hola'); jb.rubro('educacion');
@@ -3650,6 +3658,62 @@ describe('§17 (ronda 2): concordancia, apertura cálida y el pedido de un descu
     const t = j2.texto('Mis clientes me piden descuentos todo el día');
     expect(t.aMi.some((m) => encabezadoDe(m)?.type === 'image')).toBe(false);
     expect(t.modelo).toHaveLength(1);
+  });
+});
+
+describe('§17 (ronda 3): nombre y empresa con la errata del modelo, y el texto sin letras no es una pregunta', () => {
+  const PLANES: J[] = [{ nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: '100 conversaciones al mes' }];
+  const CARGOS: J[] = [{ nombre: 'Instalación estándar', precioUsd: 65, desde: false, detalle: 'Pago único.' }];
+  const mundo = (): W => crear({ flujo: PRODUCCION_REAL, panel: panel({ voz: { nivelEmojis: 'pocos', nombreAsistente: 'Kenji' } }, { planes: PLANES, cargosUnicos: CARGOS }) });
+  const hastaPedirNombre = (w: W): Jugador => { const j = jugar(w); j.texto('Hola'); j.rubro('educacion'); j.texto('precios'); j.asesor(); return j; };
+
+  it('«Juan Pérez, Ferretería El Clavo» con el modelo diciendo «Fretería»: se anota lo que el cliente escribió (hoja y mensaje) y se cierra sin repreguntar el negocio', () => {
+    const w = mundo(); const j = hastaPedirNombre(w);
+    modelo(w, { tipo: 'respuesta', nombre: 'Juan Pérez', empresa: 'Fretería El Clavo' });
+    const t = j.texto('Juan Pérez, Ferretería El Clavo');
+    expect(CUERPO(t)).toMatch(/Anoté «Ferretería El Clavo»/);
+    expect(CUERPO(t)).not.toMatch(/Fretería|¿Cómo se llama tu negocio\?/);
+    const f = filaDe(w, MAMA)!;
+    expect(f['Empresa / Cliente']).toBe('Ferretería El Clavo');
+    expect(f['Nombre y Apellido']).toBe('Juan Pérez');
+    expect(JSON.stringify(w.hoja.filas)).not.toMatch(/Fretería/);
+  });
+  it('con el modelo sin extraer nada, el código separa «Juan Pérez - Salón Rosa»; con un negocio INVENTADO por el modelo solo se anota el nombre y se pide el negocio', () => {
+    const w = mundo(); const j = hastaPedirNombre(w);
+    modelo(w, { tipo: 'respuesta' });
+    expect(CUERPO(j.texto('Juan Pérez - Salón Rosa'))).toMatch(/Anoté «Salón Rosa»/);
+    expect(filaDe(w, MAMA)!['Nombre y Apellido']).toBe('Juan Pérez');
+    const w2 = mundo(); const j2 = hastaPedirNombre(w2);
+    modelo(w2, { tipo: 'respuesta', nombre: 'Ana Pérez', empresa: 'Panadería Estrella' });
+    const t = j2.texto('Hola, soy Ana Pérez');
+    expect(CUERPO(t)).toMatch(/negocio/);
+    expect(JSON.stringify(w2.hoja.filas)).not.toMatch(/Estrella/);
+    expect(filaDe(w2, MAMA)!['Nombre y Apellido']).toBe('Ana Pérez');
+  });
+  it('un acuse («ok», «gracias») no anota ni pisa nada', () => {
+    const w = mundo(); const j = hastaPedirNombre(w);
+    modelo(w, { tipo: 'respuesta', nombre: '', empresa: '' });
+    j.texto('ok');
+    const f = filaDe(w, MAMA)!;
+    expect(f['Empresa / Cliente'] ?? '').not.toMatch(/ok/i);
+    expect(JSON.stringify(w.hoja.filas)).not.toMatch(/Anoté/);
+  });
+  it('«😩😩» (sin letras ni «?») etiquetado `pregunta` por el modelo se trata como respuesta: avanza a la oferta en vez de retomar la pregunta', () => {
+    const w = mundo(); const j = jugar(w); j.texto('Hola'); j.rubro('otro-a-medida');
+    modelo(w, { tipo: 'respuesta', rubroLibre: 'ferretería', empatia: '¡Qué buen rubro!' });
+    j.texto('Tengo una ferretería en El Alto');
+    modelo(w, { tipo: 'pregunta', empatia: 'Uf, te entiendo.' });
+    const t = j.texto('😩😩');
+    expect(CUERPO(t)).toMatch(/nuestro equipo\? 🤝$/);
+    expect(estadoDe(w, MAMA)!.paso).toBe('oferta');
+    // NIEGA: con «?» o con letras SÍ es una pregunta y retoma
+    const w2 = mundo(); const j2 = jugar(w2); j2.texto('Hola'); j2.rubro('otro-a-medida');
+    modelo(w2, { tipo: 'respuesta', rubroLibre: 'ferretería', empatia: '¡Qué buen rubro!' });
+    j2.texto('Tengo una ferretería en El Alto');
+    modelo(w2, { tipo: 'pregunta', empatia: 'Claro.' });
+    expect(estadoDe(w2, MAMA)!.paso).toBe('esperando_negocio');
+    j2.texto('¿?');
+    expect(estadoDe(w2, MAMA)!.paso).toBe('esperando_negocio');
   });
 });
 

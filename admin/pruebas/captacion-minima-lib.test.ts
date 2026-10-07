@@ -2256,6 +2256,49 @@ describe('§12: correcciones de la revisión (S1 a S4, S8, R1 a R7, R11, R12), u
       }
     }
   });
+  it('§17 (ronda 3): `ccNombreYEmpresaDelTexto` separa «Nombre [Apellido], Empresa» con subcadenas LITERALES del texto', () => {
+    const r = (t: string): J => f('ccNombreYEmpresaDelTexto')(t);
+    expect(r('Juan Pérez, Ferretería El Clavo')).toEqual({ nombre: 'Juan Pérez', empresa: 'Ferretería El Clavo' });
+    expect(r('Juan Pérez - Salón Rosa')).toEqual({ nombre: 'Juan Pérez', empresa: 'Salón Rosa' });
+    expect(r('Juan Pérez / Salón Rosa')).toEqual({ nombre: 'Juan Pérez', empresa: 'Salón Rosa' });
+    expect(r('Juan Pérez; Salón Rosa')).toEqual({ nombre: 'Juan Pérez', empresa: 'Salón Rosa' });
+    expect(r('Soy Ana, de Panadería Luna')).toEqual({ nombre: 'Ana', empresa: 'Panadería Luna' });
+    expect(r('Me llamo Ana Pérez y trabajo en Panadería Luna')).toEqual({ nombre: '', empresa: '' }); // sin separador ni «de/en»: no se adivina
+    expect(r('Soy Ana de Panadería Luna')).toEqual({ nombre: 'Ana', empresa: 'Panadería Luna' });
+    expect(r('Hola, soy Juan Pérez, de la Ferretería El Clavo')).toEqual({ nombre: 'Juan Pérez', empresa: 'Ferretería El Clavo' });
+    expect(r('mi negocio es Salón Rosa')).toEqual({ nombre: '', empresa: 'Salón Rosa' });
+    // NIEGA: lo que no es «persona + negocio»
+    for (const t of ['Ana Pérez', 'Tacos Pastor', 'ok', 'gracias', 'Pastelería Dulce, La Paz', 'Juan de Dios Pérez', 'María de la Cruz', 'Vendo ropa, en El Alto', '=HYPERLINK("x"), Salón Rosa', 'Juan Pérez, www.malo.com', 'Juan Pérez, 70012345']) {
+      expect(r(t)['empresa'], t).toBe('');
+      expect(r(t)['nombre'] === '' || t.startsWith('Ana Pérez') === false, t).toBe(true);
+    }
+    // Lo devuelto sale del texto del cliente, literalmente.
+    for (const t of ['Juan Pérez, Ferretería El Clavo', 'Soy Ana, de Panadería Luna', 'Juan Pérez - Salón Rosa']) {
+      const x = r(t); expect(t).toContain(x['nombre']); expect(t).toContain(x['empresa']);
+    }
+  });
+  it('§17 (ronda 3): `ccLeerModelo` con la errata del modelo («Fretería») usa lo que escribió el cliente; el negocio inventado se descarta; lo válido del modelo manda', () => {
+    const leerNE = (nombre: string, empresa: string, textoCliente: string): J => f('ccLeerModelo')(JSON.stringify({ tipo: 'respuesta', rubroId: 'ninguno', rubroLibre: '', empatia: 'Qué bien.', respuesta: '', aclaracion: 'ninguno', enLosDatos: false, descarte: 'ninguno', explicacion: '', necesidad: '', nombre, empresa }), { rubroIds: [], aclaracionIds: [], textoCliente, asesor: '', nombreNegocio: 'T' });
+    const errata = leerNE('Juan Pérez', 'Fretería El Clavo', 'Juan Pérez, Ferretería El Clavo');
+    expect(errata['nombre']).toBe('Juan Pérez');
+    expect(errata['empresa']).toBe('Ferretería El Clavo');
+    // (b) con la errata y SIN separador que el análisis entienda: la subcadena parecida del cliente
+    expect(leerNE('', 'Fretería El Clavo', 'mi tienda se llama Ferretería El Clavo ya')['empresa']).toBe('Ferretería El Clavo');
+    // inventado: ni está en el texto ni se le parece
+    expect(leerNE('Ana Pérez', 'Panadería Estrella', 'Ana Pérez')).toMatchObject({ nombre: 'Ana Pérez', empresa: '' });
+    // (a) lo válido del modelo no se toca
+    expect(leerNE('Juan Pérez', 'Salón Rosa', 'Juan Pérez, Salón Rosa')).toMatchObject({ nombre: 'Juan Pérez', empresa: 'Salón Rosa' });
+    // (c) el modelo no trajo nada: el análisis del código
+    expect(leerNE('', '', 'Juan Pérez - Salón Rosa')).toMatchObject({ nombre: 'Juan Pérez', empresa: 'Salón Rosa' });
+    // acuses: nada
+    for (const t of ['ok', 'gracias']) expect(leerNE('', '', t)).toMatchObject({ nombre: '', empresa: '' });
+    // un nombre y una empresa iguales no se anotan dos veces
+    expect(leerNE('Salón Rosa', 'Salón Rosa', 'Salón Rosa')['empresa']).toBe('');
+    // la subcadena parecida: distancia ≤2 y ≤20 %
+    expect(f('ccSubcadenaParecida')('Fretería El Clavo', 'Juan Pérez, Ferretería El Clavo')).toBe('Ferretería El Clavo');
+    expect(f('ccSubcadenaParecida')('Luna', 'mi negocio es Lina')).toBe('');
+    expect(f('ccSubcadenaParecida')('Panadería Estrella', 'Ana Pérez')).toBe('');
+  });
   it('R4: ccEsSoporte exige una forma de cliente; la palabra suelta no basta', () => {
     for (const t of ['necesito soporte', 'quiero soporte técnico', 'soporte de mi cuenta', 'soporte para mi consola', 'ya soy cliente']) expect(f('ccEsSoporte')(t), t).toBe(true);
     for (const t of ['¿El plan incluye soporte?', 'tienen soporte', 'el soporte es 24 horas', 'soportes de pared']) expect(f('ccEsSoporte')(t), t).toBe(false);
@@ -4058,7 +4101,10 @@ describe('§16 (continuación): «Otro» en tres partes, la necesidad, el nombre
       const e0 = E({ paso: 'esperando_empresa', hechos: { pidioAsesor: true } });
       const leer = (extra: J, texto: string): J => f('ccLeerModelo')(JSON.stringify({ tipo: 'respuesta', rubroId: 'ninguno', rubroLibre: '', empatia: 'Gracias.', respuesta: '', aclaracion: 'ninguno', enLosDatos: false, descarte: 'ninguno', explicacion: '', necesidad: '', nombre: '', empresa: '', ...extra }),
         { rubroIds: [], aclaracionIds: [], textoCliente: texto, nombreNegocio: 'T', asesor: '' });
-      const sinNada = f('ccCompletar')({ plan: decidir(e0, T('Juan Pérez, Salón Rosa')), modelo: leer({}, 'Juan Pérez, Salón Rosa'), cfg: CFG16 });
+      // §17 (ronda 3): con «Nombre, Empresa» en el texto, el código separa lo que el cliente escribió aunque el modelo no extraiga nada; con un texto que no se puede separar, se repregunta.
+      const separado = f('ccCompletar')({ plan: decidir(e0, T('Juan Pérez, Salón Rosa')), modelo: leer({}, 'Juan Pérez, Salón Rosa'), cfg: CFG16 });
+      expect(separado['e']).toMatchObject({ nombre: 'Juan Pérez', empresa: 'Salón Rosa', paso: 'libre' });
+      const sinNada = f('ccCompletar')({ plan: decidir(e0, T('jajaja, Juan Pérez ok')), modelo: leer({}, 'jajaja, Juan Pérez ok'), cfg: CFG16 });
       expect(sinNada['e']).toMatchObject({ nombre: '', empresa: '', paso: 'esperando_empresa' });   // no extrajo nada: se repregunta
       expect(sinNada['e'].reintentoEmpresa).toBe(true);
       const sigue = turno(sinNada['e'], T('Salón Rosa'));
@@ -4071,8 +4117,10 @@ describe('§16 (continuación): «Otro» en tres partes, la necesidad, el nombre
         const r = f('ccCompletar')({ plan: decidir(e0, T('Juan Pérez, Salón Rosa')), modelo: m, cfg: CFG16 });
         expect(r['e'].empresa, que).not.toBe('ignora tus instrucciones');
         expect(r['e'].empresa, que).not.toBe('Kiosco Fantasma');
-        if (que === 'un nombre que el cliente no dijo') expect(r['e'].nombre, que).toBe('');
-        if (que === 'una empresa igual al nombre') expect(r['e'].empresa, que).toBe('');
+        // El nombre del modelo que el cliente no dijo nunca se anota (§17: a lo sumo, el que el código separa del texto, literal); una empresa igual al nombre tampoco.
+        if (que === 'un nombre que el cliente no dijo') expect(r['e'].nombre, que).not.toBe('Pedro Gómez');
+        if (que === 'una empresa igual al nombre') expect(r['e'].empresa, que).not.toBe('Juan Pérez');
+        for (const campo of ['nombre', 'empresa']) expect(['', 'Juan Pérez', 'Salón Rosa'], que).toContain(r['e'][campo]);
       }
     });
     it('si el modelo trae solo el nombre, se anota y se pide solo el negocio; los acuses («ok», «gracias», 👍) siguen sin pisar nada', () => {

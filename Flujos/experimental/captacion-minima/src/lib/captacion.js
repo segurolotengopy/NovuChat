@@ -667,6 +667,73 @@ function ccNombreDeEmpresa(t) {
   return letras >= 2 && n.length <= 60 && n.split(/\s+/).length <= 6 && !/[?¿,;:]|\.\s/.test(n) &&
     !CC_NO_ES_RUBRO.test(nn) && !CC_PEDIDO.test(nn) && !CC_CORTESIA.test(nn) && !nn.split(' ').every((w) => CC_ACUSE_PALABRAS.has(w)) ? n : '';
 }
+// §17 (ronda 3): el nombre y el negocio de un mensaje «Nombre [Apellido], Empresa», analizados por el CÓDIGO y siempre como SUBCADENAS LITERALES de lo que escribió el cliente (por
+// construcción pasan la guardia anti-inyección). Separadores: coma, punto y coma, « - », « – », « — », « / »; sin ellos, « de » o « en » solo si lo que sigue empieza con una palabra de
+// negocio («Soy Ana de Panadería Luna»), para no partir «Juan de Dios» ni «María de la Cruz». Se quitan «soy», «me llamo», «mi nombre es», «mi negocio es», «mi empresa es», «trabajo en/de» y
+// «somos». La parte de la persona son 2 a 4 palabras (`ccNombreDePersonaValido`) o UN nombre de pila si el cliente se presentó («soy Ana»); no puede ser un negocio («Pastelería Dulce, La Paz»).
+const CC_PALABRAS_DE_NEGOCIO = new Set(('tienda pasteleria panaderia ferreteria salon restaurante clinica consultorio taller farmacia libreria boutique bar cafe cafeteria hotel colegio academia estudio ' +
+  'centro casa distribuidora importadora comercial servicios empresa negocio taqueria pizzeria peluqueria barberia veterinaria optica joyeria grupo corporacion supermercado minimarket').split(' '));
+function ccNombreDePila(v) {
+  const s = ccPlano(v).replace(/[.,;:!¡]+$/, '').trim();
+  if (!/^\p{L}[\p{L}'’-]+$/u.test(s) || (s.match(/\p{L}/gu) || []).length < 2 || s.length > 30) return '';
+  const n = ccNorm(s);
+  return CC_NO_ES_PERSONA.has(n) || CC_ARTICULOS.has(n) || CC_PALABRAS_DE_NEGOCIO.has(n) || CC_ACUSE_PALABRAS.has(n) ? '' : s;
+}
+function ccNombreYEmpresaDelTexto(t) {
+  const vacio = { nombre: '', empresa: '' };
+  let s = ccPlano(t, 300).replace(/[.!…]+$/, '').trim();
+  if (!s || /^[=+\-@]/.test(s) || CC_ENLACE.test(s)) return vacio;
+  s = s.replace(/^(?:hola|buenas|buenos d[ií]as|buenas tardes|buenas noches)\b[\s,!.¡]*/i, '');
+  const presenta = /^(?:yo\s+)?(?:soy|me\s+llamo|mi\s+nombre\s+es)\s+/i.exec(s);
+  if (presenta) s = s.slice(presenta[0].length);
+  const soloEmpresa = /^(?:mi\s+(?:negocio|empresa|emprendimiento|tienda|local)\s+(?:es|se\s+llama)|trabajo\s+(?:en|de)|somos)\s+(.+)$/i.exec(s);
+  if (soloEmpresa && !presenta) return { nombre: '', empresa: ccNombreDeEmpresa(soloEmpresa[1]) };
+  let a = ''; let b = '';
+  const sep = /\s*[,;]\s*|\s+[-–—\/]\s+/.exec(s);
+  if (sep) { a = s.slice(0, sep.index); b = s.slice(sep.index + sep[0].length); }
+  else {
+    const m = /^(.+?)\s+(?:de|en)\s+(.+)$/.exec(s);
+    if (!m) return vacio;
+    a = m[1]; b = m[2];
+    const primera = ccNorm(b).split(' ')[0];
+    if (!CC_PALABRAS_DE_NEGOCIO.has(primera)) return vacio;
+  }
+  b = b.replace(/^(?:y\s+)?(?:(?:mi|la)\s+(?:negocio|empresa|tienda)\s+(?:es|se\s+llama)|trabajo\s+(?:en|de)|somos)\s+/i, '').replace(/^(?:de\s+la|de|del|en\s+la|en)\s+(?=\S)/, '');
+  const nombre = ccNorm(a).split(' ').some((w) => CC_PALABRAS_DE_NEGOCIO.has(w)) ? ''
+    : (ccNombreDePersonaValido(a) || (presenta ? ccNombreDePila(a) : ''));
+  if (!nombre) return vacio;
+  const empresa = ccNombreDeEmpresa(b);
+  return { nombre: nombre, empresa: empresa && ccNorm(empresa) !== ccNorm(nombre) ? empresa : '' };
+}
+// §17 (ronda 3): si el modelo trajo un negocio que NO está en lo que dijo el cliente pero una subcadena de su texto se le parece mucho (el modelo «se comió» una letra: «Fretería» por
+// «Ferretería»), se usa la subcadena LITERAL del cliente. Parecido: distancia de edición de 2 a lo más sobre el texto normalizado y a lo más el 20 % del largo.
+function ccDistancia(x, y) {
+  let fila = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i++) {
+    const nueva = [i];
+    for (let j = 1; j <= y.length; j++) nueva[j] = Math.min(fila[j] + 1, nueva[j - 1] + 1, fila[j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1));
+    fila = nueva;
+  }
+  return fila[y.length];
+}
+function ccSubcadenaParecida(modelo, texto) {
+  const objetivo = ccNorm(modelo);
+  if (!objetivo) return '';
+  const palabras = []; const re = /\S+/g; let m;
+  while ((m = re.exec(texto)) !== null) palabras.push({ i: m.index, f: m.index + m[0].length, n: ccNorm(m[0]) });
+  const largo = objetivo.split(' ').length;
+  let mejor = null;
+  for (let tam = Math.max(1, largo - 1); tam <= largo + 1; tam++) {
+    for (let k = 0; k + tam <= palabras.length; k++) {
+      const trozo = palabras.slice(k, k + tam);
+      const n = trozo.map((x) => x.n).join(' ');
+      if (n === '' || Math.abs(n.length - objetivo.length) > 2) continue;
+      const d = ccDistancia(n, objetivo);
+      if (d <= 2 && d <= Math.max(n.length, objetivo.length) * 0.2 && (!mejor || d < mejor.d)) mejor = { d: d, desde: trozo[0].i, hasta: trozo[trozo.length - 1].f };
+    }
+  }
+  return mejor ? texto.slice(mejor.desde, mejor.hasta).replace(/[.,;:!¡?¿]+$/, '') : '';
+}
 // ¿Se acepta el descarte que propuso el modelo? Devuelve el motivo o ''. Solo si:
 //  - el turno es texto escrito, audio transcrito o campaña (`via`: no un toque, una imagen ni un documento);
 //  - no hay hecho de Alta (pidió una persona o los planes) ni es soporte;
@@ -991,10 +1058,17 @@ function ccLeerModelo(jsonGemini, opciones) {
   const cadena = (v) => (typeof v === 'string' ? v : '');
   const explicacion = revisar(cadena(j.explicacion), CC_MAX_ORACIONES_EXPLICACION, CC_MAX_EXPLICACION, 'explicacion');
   const necesidad = ccNecesidadValida(cadena(j.necesidad), textos);
-  const nombre = ccNombreDePersonaValido(cadena(j.nombre), [op.textoCliente]);
+  // Precedencia (§17, ronda 3): (a) lo del modelo si es válido y está en lo que dijo el cliente; (b) un negocio del modelo que no está pero se parece mucho a una subcadena del texto: la subcadena
+  // LITERAL del cliente; (c) el análisis del código («Nombre, Empresa»); (d) nada (el chat sigue pidiendo lo que falta). Nunca sale una cadena que el cliente no escribió.
+  const del = ccNombreYEmpresaDelTexto(op.textoCliente);
+  const nombre = ccNombreDePersonaValido(cadena(j.nombre), [op.textoCliente]) || del.nombre;
   const empresaCruda = ccNombreDeEmpresa(cadena(j.empresa));
   const baseEmpresa = ' ' + ccNorm(op.textoCliente) + ' ';
-  const empresa = empresaCruda && ccNorm(empresaCruda).split(' ').every((w) => baseEmpresa.includes(' ' + w + ' ')) && ccNorm(empresaCruda) !== ccNorm(nombre) ? empresaCruda : '';
+  const estaEnElTexto = (x) => ccNorm(x).split(' ').every((w) => baseEmpresa.includes(' ' + w + ' '));
+  let empresa = empresaCruda && estaEnElTexto(empresaCruda) ? empresaCruda : '';
+  if (!empresa && empresaCruda) { const parecida = ccSubcadenaParecida(empresaCruda, ccTexto(op.textoCliente)); empresa = parecida ? ccNombreDeEmpresa(parecida) : ''; }
+  if (!empresa) empresa = del.empresa;
+  if (empresa && ccNorm(empresa) === ccNorm(nombre)) empresa = '';
   return { ok: true, motivo: '', tipo: tipo, rubroId: rubroId, rubroLibre: rubroLibre, empatia: empatia, respuesta: respuesta, aclaracion: aclaracion, enLosDatos: enLosDatos, descarte: descarte, explicacion: explicacion, necesidad: necesidad, nombre: nombre, empresa: empresa };
 }
 
@@ -1701,7 +1775,10 @@ function ccDecidir(a) {
       if (dichoOEscrito && ccPidePlanesCorto(texto)) return resolver(ccPedirPlanes(e));
       return hay ? modelo('negocio') : delPaso('abierta', { presentar: false });
     case 'esperando_empresa': {
-      const empresa = dichoOEscrito ? ccNombreDeEmpresa(texto) : '';
+      // §17 (ronda 3): «Juan Pérez - Salón Rosa» NO es el nombre de un negocio: lleva persona y negocio. Con modelo, lo separa `ccLeerModelo` (con el respaldo del código); sin modelo, el código.
+      const par = dichoOEscrito ? ccNombreYEmpresaDelTexto(texto) : { nombre: '', empresa: '' };
+      if (par.nombre && par.empresa && !hay) { e.nombre = par.nombre; e.empresa = par.empresa; e.paso = 'libre'; return delPaso('empresa', {}); }
+      const empresa = dichoOEscrito && !par.nombre ? ccNombreDeEmpresa(texto) : '';
       if (empresa) { e.empresa = empresa; e.paso = 'libre'; return delPaso('empresa', {}); }
       // §14: un acuse no repite la pregunta ni llama al modelo: se contesta con cordialidad y el paso sigue esperando el nombre.
       if (dichoOEscrito && ccEsAcuse(texto)) return delPaso('acuse', {});
@@ -1878,7 +1955,10 @@ function ccResolverModelo(plan, r, e, cfg) {
   if (r.tipo === 'ya_es_cliente') { e.soporte = true; return { accion: 'soporte', extra: {} }; }
   const quien = ccQuien(cfg.asesor);
   const empatia = ccConEmojis(r.empatia, cfg.nivelEmojis);
-  const pregunta = r.tipo === 'pregunta';
+  // §17 (ronda 3): una pregunta exige letras o «?»: un texto de solo emojis o signos («😩😩») es una respuesta aunque el modelo la etiquete `pregunta`.
+  const textoCliente = ccTexto(plan.texto);
+  const sinLetrasNiPregunta = ccPlano(textoCliente) !== '' && !/\p{L}/u.test(textoCliente) && !/[?¿]/.test(textoCliente);
+  const pregunta = r.tipo === 'pregunta' && !sinLetrasNiPregunta;
   const conDatos = r.respuesta !== '' && r.enLosDatos === true;
   const hayTexto = (plan.via === 'texto' || plan.via === 'audio') && ccPlano(plan.texto) !== '';
   const sustantivo = hayTexto && (ccEsSustantivo(plan.texto) || (pregunta && r.tipo !== 'otro'));

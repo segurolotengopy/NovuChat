@@ -307,3 +307,8 @@ Resumen de lo que cambió (el contrato, §16, tiene las decisiones D1 a D10, la 
 - **Apertura cálida por código:** se valida en la explicación, no en la instrucción: lo que no abre cálido cae al respaldo, que sí lo hace.
 - **Descuentos:** la respuesta es fija porque es una política (no hay descuentos ni otros precios); se evita la palabra en el texto para que ningún detector de «descuento» confunda una negación con una oferta.
 
+### Ronda 3 de §17
+- **Por qué no se relajó la guardia:** exigir que cada palabra del negocio esté en lo que dijo el cliente es lo que impide que un mensaje inyecte un texto en la hoja. La errata se arregla por el otro lado: cuando el modelo casi acierta, se usa lo que el cliente escribió, que ya cumple la guardia por construcción.
+- **Por qué el análisis es estrecho:** partir «Juan de Dios» o «María de la Cruz» sería peor que repreguntar. Sin coma, solo se divide con «de/en» seguido de una palabra de negocio; con coma o guion, no hace falta.
+- **Por qué «Ana Pérez» sola no cambia:** distinguirla de «Tacos Pastor» exige el modelo, y llamarlo en cada respuesta del negocio sube el costo por conversación.
+
