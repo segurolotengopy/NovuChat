@@ -2100,7 +2100,9 @@ function ccResolverModelo(plan, r, e, cfg) {
   // R6: pidió una persona con otras palabras: se le ofrece el botón (o la fila), sin traspaso ni aviso.
   // En la lista de rubros sale CON la fila del asesor; en los modos de texto, la pregunta del paso con el botón.
   // El texto es del CÓDIGO (no la empatía del modelo): sin promesa de llamada, de horario ni de respuesta de una persona; solo la opción de hablar con el asesor.
-  if (r.tipo === 'pide_asesor' && plan.modo !== 'empresa') {
+  // §19: un `pide_asesor` del modelo solo se acepta si el CÓDIGO lo confirma (`ccPidioContacto` / `ccPideAsesor`; el toque del botón ya se resolvió antes): quien cuenta su problema («me escriben muchos
+  // clientes por las noches y no alcanzo a responder») no pidió nada y su turno sigue como una respuesta (oferta y Media), como un `pide_planes` que el código no confirma (arriba: solo cuenta si `ccPideListaPlanes`).
+  if (r.tipo === 'pide_asesor' && plan.modo !== 'empresa' && (ccPidioContacto(plan.texto) || ccPideAsesor(plan.texto, cfg.campanas))) {
     const q = ccPresentaAsesor(quien, ccVariante(e, 'pideAsesor', 3));
     return { accion: 'retomar', extra: { prefijo: q, conAsesor: true } };
   }

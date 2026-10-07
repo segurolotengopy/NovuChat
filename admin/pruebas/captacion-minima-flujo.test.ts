@@ -3900,3 +3900,49 @@ describe('§18 (PR #456): sin equipo, nombre y negocio, calificación y respuest
     expect(CUERPO(t)).toContain(String(GUION_NUEVO.rubros['gastronomia']!['explicacion']).slice(0, 40));
   });
 });
+
+describe('§19: el tipo que etiqueta el modelo no cambia lo que el cliente pidió (pide_asesor y pide_planes sin confirmar son una respuesta)', () => {
+  const CIERRES = /nuestro equipo\? 🤝$|nuestro equipo\? 😊$|nuestro equipo\? 🙌$/;
+  const TEXTO = 'Me escriben muchos clientes por las noches y no alcanzo a responder';
+  const mundo = (): W => crear({ flujo: PRODUCCION_REAL, panel: panel({ voz: { nivelEmojis: 'pocos', nombreAsistente: 'Kenji' } }, { planes: [{ nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: 'Asistente con IA' }], cargosUnicos: [{ nombre: 'Instalación estándar', precioUsd: 65, desde: false, detalle: 'Pago único.' }] }) });
+
+  it('los tres tipos crudos (pide_asesor, pide_planes, respuesta) sobre «Me escriben muchos clientes por las noches…» dan la MISMA oferta con su pregunta de cierre, sin R6 ni planes, y la hoja queda en Media', () => {
+    const salidas: string[] = [];
+    for (const tipo of ['pide_asesor', 'pide_planes', 'respuesta']) {
+      const w = mundo(); const j = jugar(w); j.texto('Hola'); j.rubro('gastronomia');
+      const llamadas = w.modelo.llamadas.length;
+      modelo(w, { tipo, necesidad: 'responder a los clientes que escriben de noche', empatia: 'Imagino lo pesado que es eso.' });
+      const t = j.texto(TEXTO);
+      expect(w.modelo.llamadas, tipo).toHaveLength(llamadas + 1);
+      expect(t.aMi, tipo).toHaveLength(1);
+      expect(CUERPO(t), tipo).toMatch(CIERRES);
+      expect(CUERPO(t), tipo).not.toMatch(/opciones de abajo|Setup|USD/);
+      expect(t.aMi.some((m) => encabezadoDe(m) !== undefined), tipo).toBe(false);
+      expect(estadoDe(w, MAMA)!['hechos'], tipo).toMatchObject({ pidioAsesor: false, pidioPlanes: false, respondioDolor: true });
+      expect(califDe(w, MAMA), tipo).toBe('Media');
+      salidas.push(CUERPO(t));
+    }
+    expect(new Set(salidas).size, 'los tres terminan con la MISMA respuesta').toBe(1);
+  });
+  it('un pedido de contacto CONFIRMADO por el código («¿Me llamas mañana?») sigue yendo a la opción del equipo, sin traspaso ni aviso, con el tipo que sea', () => {
+    for (const tipo of ['pide_asesor', 'respuesta']) {
+      const w = mundo(); const j = jugar(w); j.texto('Hola'); j.rubro('gastronomia');
+      modelo(w, { tipo, empatia: 'Claro.' });
+      const t = j.texto('¿Me llamas mañana?');
+      expect(CUERPO(t), tipo).toMatch(/opciones de abajo/);
+      expect(t.plantillas, tipo).toHaveLength(0);
+      expect(estadoDe(w, MAMA)!['hechos'], tipo).toMatchObject({ pidioAsesor: false });
+    }
+  });
+  it('otro texto de necesidad con retail y los mismos tipos crudos: Media y la misma oferta', () => {
+    const salidas: string[] = [];
+    for (const tipo of ['pide_asesor', 'pide_planes', 'respuesta']) {
+      const w = mundo(); const j = jugar(w); j.texto('Hola'); j.rubro('comercio-y-retail');
+      modelo(w, { tipo, necesidad: 'contestar por las noches', empatia: 'Claro, de noche cuesta.' });
+      const t = j.texto('De noche me escriben y no alcanzo a contestar');
+      expect(califDe(w, MAMA), tipo).toBe('Media');
+      salidas.push(CUERPO(t));
+    }
+    expect(new Set(salidas).size).toBe(1);
+  });
+});
