@@ -824,3 +824,184 @@ describe('pedido: referencias para llegar, aviso del delivery y ejemplo de la no
     expect(csp).toContain("form-action 'none'");
   });
 });
+
+// =============================================================================
+// UBICACIÓN COMPARTIDA (Andres, 05/10/2026, Q'Taco): «Usar mi ubicación actual»
+// con envío. El navegador pide permiso por sí mismo; lo que hace falta de este
+// lado es que la política de permisos del SITIO PÚBLICO lo deje (y solo a él),
+// que la consola siga sin geolocalización, y que la página no abra otra puerta.
+// =============================================================================
+describe('ubicación compartida: política de permisos y página', () => {
+  const desdeWeb = createRequire(join(ADMIN, 'web', 'package.json'));
+  const POLITICA = 'geolocation=(self), camera=(), microphone=(), payment=(), usb=()';
+  const pintar = (aceptaRetiroEnLocal: boolean, aceptaDelivery: boolean) => {
+    const servidor = desdeWeb('react-dom/server');
+    const React = desdeWeb('react');
+    return servidor.renderToStaticMarkup(React.createElement(Pedido, {
+      ficha: 'f1', items: [], carrito: {}, moneda: 'BOB', total: 0,
+      entrega: { aceptaRetiroEnLocal, aceptaDelivery, costoDelivery: null, pedidoMinimo: null },
+      alCambiar: () => undefined, alVolver: () => undefined, alConfirmar: () => undefined,
+    }));
+  };
+
+  it('el catálogo declara `Permissions-Policy` con `geolocation=(self)` y nada más abierto', () => {
+    expect(valorDe(catalogo as Sitio, '**', 'Permissions-Policy')).toBe(POLITICA);
+  });
+
+  it('NEGANDO: la consola conserva `geolocation=()` (la ubicación no es de la consola)', () => {
+    expect(valorDe(consola as Sitio, '**', 'Permissions-Policy'))
+      .toBe('geolocation=(), camera=(), microphone=(), payment=(), usb=()');
+  });
+
+  it('NEGANDO: ningún otro bloque del catálogo define `Permissions-Policy` (dos bloques con la misma clave se pisan)', () => {
+    const bloques = (catalogo?.headers ?? []).filter((b) => b.headers.some((h) => h.key === 'Permissions-Policy'));
+    expect(bloques.map((b) => b.source)).toEqual(['**']);
+    expect(bloques[0]?.headers.filter((h) => h.key === 'Permissions-Policy')).toHaveLength(1);
+  });
+
+  it('NEGANDO: `(self)` y no `*`: ningún origen ajeno ni marco recibe la geolocalización', () => {
+    for (const s of sitios) {
+      for (const b of s.headers) {
+        for (const h of b.headers.filter((x) => x.key === 'Permissions-Policy')) {
+          expect(h.value).not.toMatch(/geolocation=\(?\*/);
+          expect(h.value).not.toMatch(/geolocation=\([^)]*https?:/);
+        }
+      }
+    }
+    // El resto de las capacidades siguen cerradas en el catálogo.
+    for (const c of ['camera', 'microphone', 'payment', 'usb']) {
+      expect(valorDe(catalogo as Sitio, '**', 'Permissions-Policy')).toContain(`${c}=()`);
+    }
+  });
+
+  it('NEGANDO: la CSP del catálogo no cambia (la geolocalización no es un origen de conexión)', () => {
+    const csp = valorDe(catalogo as Sitio, '**', 'Content-Security-Policy');
+    expect(csp).toBe(
+      "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; worker-src 'none'; manifest-src 'none'");
+  });
+
+  it('con envío: botón, línea de privacidad y la etiqueta de la dirección (que no se oculta)', () => {
+    const html = pintar(false, true);
+    expect(html).toMatch(/<button[^>]*type="button"[^>]*>Usar mi ubicación actual<\/button>/);
+    expect(html).toContain('Solo la usamos para entregar este pedido: la recibe el local y queda guardada con tu pedido.');
+    expect(html).toContain('aria-describedby="cat-ubicacion-privacidad"');
+    expect(html).toContain('id="cat-ubicacion-privacidad"');
+    expect(html).toContain('¿A dónde lo llevamos?');
+    expect(html).toContain('placeholder="Calle, número y zona"');
+    // El botón va ANTES del campo de dirección.
+    expect(html.indexOf('Usar mi ubicación actual')).toBeLessThan(html.indexOf('¿A dónde lo llevamos?'));
+  });
+
+  it('NEGANDO: sin haber pedido la ubicación no hay estados de error ni «Listo» ni «Quitar»', () => {
+    const html = pintar(false, true);
+    for (const t of ['Buscando tu ubicación', 'Listo: usaremos', 'Quitar ubicación', 'No diste permiso',
+      'No pudimos obtener tu ubicación', 'Este navegador no permite', 'Ubicación aproximada']) {
+      expect(html, t).not.toContain(t);
+    }
+    // La etiqueta «opcional» solo aparece después de compartirla.
+    expect(html).not.toContain('opcional si compartiste tu ubicación');
+  });
+
+  it('NEGANDO: con retiro no hay botón ni línea de privacidad de ubicación', () => {
+    const html = pintar(true, true);
+    expect(html).not.toContain('Usar mi ubicación actual');
+    expect(html).not.toContain('Solo la usamos para entregar este pedido');
+    expect(html).not.toContain('cat-ubicacion');
+  });
+
+  it('la fuente: una sola llamada a getCurrentPosition, con las opciones acordadas, validada por coordenadasValidas', () => {
+    const t = sinComentarios(sitioFuente());
+    expect(t.match(/getCurrentPosition\(/g)?.length).toBe(1);
+    expect(t).toContain('{ enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }');
+    expect(t).toContain('coordenadasValidas(pos.coords.latitude, pos.coords.longitude)');
+    expect(t).toContain("err.code === 1 ? 'denegada' : 'fallo'");
+    // Nada de seguimiento continuo ni de otras formas de geolocalizar.
+    expect(t).not.toMatch(/watchPosition|ipapi|ipinfo|geolocation\.googleapis/);
+  });
+
+  it('NEGANDO: la ubicación se pide solo con el toque del botón: ni al montar, ni en un efecto, ni en seguimiento', () => {
+    const t = sinComentarios(sitioFuente());
+    // `pedirUbicacion` aparece exactamente dos veces: la declaración y el onClick.
+    expect(t.match(/\bpedirUbicacion\b/g)?.length).toBe(2);
+    expect(t.match(/const pedirUbicacion = \(\) => \{/g)?.length).toBe(1);
+    expect(t.match(/onClick=\{pedirUbicacion\}/g)?.length).toBe(1);
+    // El onClick está en el botón de «Usar mi ubicación actual».
+    const i = t.indexOf('onClick={pedirUbicacion}');
+    const abre = t.lastIndexOf('<button', i);
+    expect(t.slice(abre, t.indexOf('</button>', i))).toContain('Usar mi ubicación actual');
+    // Y `getCurrentPosition` solo vive dentro de `pedirUbicacion`.
+    const desde = t.indexOf('const pedirUbicacion = () => {');
+    const hasta = t.indexOf('const quitarUbicacion', desde);
+    const cuerpoPedir = t.slice(desde, hasta);
+    expect(cuerpoPedir).toContain('getCurrentPosition(');
+    expect(t.replace(cuerpoPedir, '')).not.toMatch(/getCurrentPosition|navigator\.geolocation/);
+    // Ningún `useEffect(` (cada uno, hasta su paréntesis de cierre) la toca.
+    let inicio = t.indexOf('useEffect(');
+    let efectos = 0;
+    while (inicio !== -1) {
+      let nivel = 0;
+      let fin = inicio + 'useEffect'.length;
+      for (; fin < t.length; fin += 1) {
+        if (t[fin] === '(') nivel += 1;
+        else if (t[fin] === ')') { nivel -= 1; if (nivel === 0) break; }
+      }
+      const efecto = t.slice(inicio, fin + 1);
+      expect(efecto, 'un useEffect no puede pedir la ubicación').not.toMatch(
+        /geolocation|getCurrentPosition|watchPosition|pedirUbicacion/);
+      efectos += 1;
+      inicio = t.indexOf('useEffect(', fin);
+    }
+    expect(efectos).toBeGreaterThan(0);
+    expect(t).not.toMatch(/watchPosition/);
+  });
+
+  it('NEGANDO: `accuracy` no viaja: el cuerpo del checkout solo manda `ubicacion` con envío y con valor', () => {
+    const t = sinComentarios(sitioFuente());
+    expect(t).toContain("...(modo === 'envio' && ubicacion ? { ubicacion } : {}),");
+    const desde = t.indexOf('body: JSON.stringify({');
+    const cuerpo = t.slice(desde, t.indexOf('const cuerpo = await r.json()', desde));
+    expect(cuerpo.length).toBeGreaterThan(0);
+    expect(cuerpo).not.toMatch(/accuracy|precision/);
+  });
+
+  it('el botón de confirmar solo se deshabilita sin dirección Y sin ubicación; el fallo del servidor se traduce', () => {
+    const t = sinComentarios(sitioFuente());
+    expect(t).toContain("|| (modo === 'envio' && direccion.trim() === '' && !ubicacion)}");
+    expect(t).toContain("return 'Falta la dirección de entrega o tu ubicación.';");
+    expect(t).not.toContain("return 'Falta la dirección de entrega.';");
+  });
+
+  it('los estados se anuncian: status cortés para los avisos y alert para las fallas', () => {
+    const t = sinComentarios(sitioFuente());
+    expect(t.match(/role="status" aria-live="polite"/g)?.length).toBeGreaterThanOrEqual(3);
+    for (const texto of [
+      'No diste permiso para usar tu ubicación. Escribe la dirección abajo.',
+      'No pudimos obtener tu ubicación. Escribe la dirección abajo o inténtalo de nuevo.',
+      'Este navegador no permite compartir la ubicación. Escribe la dirección abajo.',
+    ]) {
+      const i = t.indexOf(texto);
+      expect(i, texto).toBeGreaterThan(0);
+      expect(t.slice(Math.max(0, i - 80), i)).toContain('role="alert"');
+    }
+    expect(t).toContain("aria-busy={estadoUbicacion === 'pidiendo'}");
+    expect(t).toContain('Ubicación aproximada (± {precision} m): agrega la dirección si puedes.');
+    expect(t).toContain('PRECISION_AVISO_M = 100');
+  });
+
+  it('NEGANDO: sin paquetes nuevos ni mapas: la página sigue importando solo React', () => {
+    const entrada = join(ADMIN, 'web/src/modulos/catalogo-web/publico/entrada.tsx');
+    const { paquetes } = cierre(entrada);
+    expect([...paquetes].sort()).toEqual(['react', 'react-dom/client']);
+    const t = sinComentarios(sitioFuente());
+    expect(t).not.toMatch(/leaflet|maps\.google|openstreetmap|mapbox|<iframe|<img[^>]*staticmap/i);
+    const deps = Object.keys((JSON.parse(leer('web', 'package.json')) as { dependencies: Record<string, string> }).dependencies);
+    expect(deps.filter((d) => /leaflet|map|geo/i.test(d))).toEqual([]);
+  });
+
+  it('el texto de la ubicación está en español de Bolivia, sin voseo', () => {
+    const t = sinComentarios(sitioFuente());
+    const i = t.indexOf('Usar mi ubicación actual');
+    const zona = t.slice(i, t.indexOf('¿A dónde lo llevamos?', i));
+    expect(zona).not.toMatch(/\b(vos|tenés|querés|podés|escribí|agregá|intentá|tocá)\b/i);
+  });
+});

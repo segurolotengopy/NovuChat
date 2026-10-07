@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CatalogoPublico, ItemPublico, RespuestaCheckout } from './tipos';
-import { enlaceAlChat, imagenSegura, logoSeguro, precioTexto } from './saneo';
+import { coordenadasValidas, enlaceAlChat, imagenSegura, logoSeguro, precioTexto } from './saneo';
 import { variablesDe } from '../../../central/lib/paletas';
 
 /**
@@ -375,6 +375,11 @@ function Detalle({ item, ficha, moneda, cantidad, alSumar, alCerrar }: {
 /** Tope de las referencias para llegar; el servidor aplica el mismo (150). */
 export const LIMITE_REFERENCIA = 150;
 
+/** Por encima de esto (metros) la ubicación se avisa como aproximada; no bloquea. */
+export const PRECISION_AVISO_M = 100;
+
+type EstadoUbicacion = 'nada' | 'pidiendo' | 'lista' | 'denegada' | 'fallo' | 'sin_soporte';
+
 export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVolver, alConfirmar }: {
   ficha: string; items: ItemPublico[]; carrito: Carrito;
   entrega: CatalogoPublico['entrega']; moneda: string; total: number;
@@ -389,6 +394,12 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
   // «retiro en el local» que después le va a traer gente a la puerta.
   const eligeEntrega = entrega.aceptaRetiroEnLocal && entrega.aceptaDelivery;
   const [direccion, setDireccion] = useState('');
+  // La ubicación compartida con «Usar mi ubicación actual». Solo vive en esta
+  // pantalla y viaja con el pedido; la precisión (`accuracy`) se queda acá y
+  // NO se envía al servidor (se muestra solo para avisar).
+  const [estadoUbicacion, setEstadoUbicacion] = useState<EstadoUbicacion>('nada');
+  const [ubicacion, setUbicacion] = useState<{ lat: number; lng: number } | null>(null);
+  const [precision, setPrecision] = useState<number | null>(null);
   const [referencia, setReferencia] = useState('');
   const [nota, setNota] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -404,6 +415,38 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
   const bajoMinimo = modo === 'envio'
     && entrega.pedidoMinimo !== null && total < entrega.pedidoMinimo;
 
+  const pedirUbicacion = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setEstadoUbicacion('sin_soporte');
+      return;
+    }
+    setEstadoUbicacion('pidiendo');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const c = coordenadasValidas(pos.coords.latitude, pos.coords.longitude);
+        if (!c) {
+          setUbicacion(null);
+          setEstadoUbicacion('fallo');
+          return;
+        }
+        setUbicacion(c);
+        setPrecision(Number.isFinite(pos.coords.accuracy) ? Math.round(pos.coords.accuracy) : null);
+        setEstadoUbicacion('lista');
+      },
+      (err) => {
+        setUbicacion(null);
+        setEstadoUbicacion(err.code === 1 ? 'denegada' : 'fallo');
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+  };
+
+  const quitarUbicacion = () => {
+    setUbicacion(null);
+    setPrecision(null);
+    setEstadoUbicacion('nada');
+  };
+
   const enviar = async () => {
     setFallo(null);
     setEnviando(true);
@@ -416,6 +459,9 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
           items: elegidos.map((i) => ({ id: i.id, cantidad: carrito[i.id] })),
           entrega: modo,
           ...(modo === 'envio' ? { direccion } : {}),
+          // OPCIONAL y solo con envío: un objeto {lat, lng} ya redondeado. El
+          // servidor lo vuelve a validar; sin él, el cuerpo es el de antes.
+          ...(modo === 'envio' && ubicacion ? { ubicacion } : {}),
           // OPCIONAL y solo con envío. Sin texto no viaja el campo, y el
           // servidor lo vuelve a sanear y recortar a 150 (no confía en esto).
           ...(modo === 'envio' && referencia.trim() ? { referencia: referencia.trim() } : {}),
@@ -466,8 +512,55 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
 
       {modo === 'envio' && (
         <>
+          <div className="cat-ubicacion">
+            <button type="button" className="cat-ubicacion-boton"
+                    disabled={estadoUbicacion === 'pidiendo'}
+                    aria-busy={estadoUbicacion === 'pidiendo'}
+                    aria-describedby="cat-ubicacion-privacidad"
+                    onClick={pedirUbicacion}>
+              Usar mi ubicación actual
+            </button>
+            <p id="cat-ubicacion-privacidad" className="cat-nota">
+              Solo la usamos para entregar este pedido: la recibe el local y queda guardada con tu pedido.
+            </p>
+            {estadoUbicacion === 'pidiendo' && (
+              <p className="cat-nota" role="status" aria-live="polite">Buscando tu ubicación…</p>
+            )}
+            {estadoUbicacion === 'lista' && (
+              <>
+                <p className="cat-nota" role="status" aria-live="polite">
+                  Listo: usaremos tu ubicación actual para la entrega.
+                </p>
+                {precision !== null && precision > PRECISION_AVISO_M && (
+                  <p className="cat-nota" role="status" aria-live="polite">
+                    Ubicación aproximada (± {precision} m): agrega la dirección si puedes.
+                  </p>
+                )}
+                <button type="button" className="cat-ubicacion-quitar" onClick={quitarUbicacion}>
+                  Quitar ubicación
+                </button>
+              </>
+            )}
+            {estadoUbicacion === 'denegada' && (
+              <p className="cat-error" role="alert">
+                No diste permiso para usar tu ubicación. Escribe la dirección abajo.
+              </p>
+            )}
+            {estadoUbicacion === 'fallo' && (
+              <p className="cat-error" role="alert">
+                No pudimos obtener tu ubicación. Escribe la dirección abajo o inténtalo de nuevo.
+              </p>
+            )}
+            {estadoUbicacion === 'sin_soporte' && (
+              <p className="cat-error" role="alert">
+                Este navegador no permite compartir la ubicación. Escribe la dirección abajo.
+              </p>
+            )}
+          </div>
           <label className="cat-campo">
-            ¿A dónde lo llevamos?
+            {ubicacion
+              ? '¿A dónde lo llevamos? (opcional si compartiste tu ubicación)'
+              : '¿A dónde lo llevamos?'}
             <textarea value={direccion} maxLength={200} rows={2}
                       placeholder="Calle, número y zona"
                       onChange={(e) => setDireccion(e.target.value)} />
@@ -511,7 +604,7 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
 
       <button type="button" className="cat-confirmar"
               disabled={enviando || elegidos.length === 0
-                        || (modo === 'envio' && direccion.trim() === '')}
+                        || (modo === 'envio' && direccion.trim() === '' && !ubicacion)}
               onClick={() => void enviar()}>
         {enviando ? 'Enviando…' : 'Confirmar el pedido'}
       </button>
@@ -680,7 +773,7 @@ function guardarCarrito(ficha: string, carrito: Carrito): void {
 function mensajeDeFallo(estado: number, codigo: unknown): string {
   if (estado === 404) return 'Este enlace ya no está disponible. Escríbenos por WhatsApp.';
   if (estado === 429) return 'Ya enviaste varios pedidos con este enlace. Escríbenos por WhatsApp y seguimos por ahí.';
-  if (codigo === 'falta la direccion') return 'Falta la dirección de entrega.';
+  if (codigo === 'falta la direccion') return 'Falta la dirección de entrega o tu ubicación.';
   if (codigo === 'nada de lo pedido sigue disponible') {
     return 'Lo que elegiste ya no se puede pedir por acá. Actualiza la página para ver el catálogo de ahora.';
   }

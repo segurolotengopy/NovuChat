@@ -193,6 +193,17 @@
   border: 1px solid var(--color-divider); border-radius: var(--radius-md);
 }
 
+/* Ubicación compartida para la entrega (solo con envío). */
+.cat-ubicacion { margin: var(--space-3) 0; }
+.cat-ubicacion-boton, .cat-ubicacion-quitar {
+  min-height: 44px; padding: 0 var(--space-4); font: inherit; font-size: .95rem;
+  color: var(--color-text); background: var(--color-surface);
+  border: 1.5px solid var(--color-divider); border-radius: var(--radius-md);
+}
+.cat-ubicacion-boton { width: 100%; }
+.cat-ubicacion-boton:disabled { opacity: .6; cursor: progress; }
+.cat-ubicacion-quitar { min-height: 36px; font-size: .85rem; }
+
 .cat-total { font-size: 1.25rem; font-weight: 700; margin: var(--space-4) 0 var(--space-2); }
 .cat-confirmar {
   width: 100%; min-height: 52px; font-size: 1rem;
