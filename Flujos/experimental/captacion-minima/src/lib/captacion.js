@@ -299,13 +299,14 @@ function ccPreguntaBanco(t) {
   return (banco && (verbo || objeto) && pregunta) || (verbo && objeto && pregunta);
 }
 // Los sistemas que el servicio SÍ nombra (documento §6): ninguno más se puede afirmar.
-const CC_SISTEMAS_PROPIOS = ['whatsapp', 'meta', 'google calendar', 'calendar', 'google sheets', 'sheets', 'hojas de calculo', 'qr', 'minicrm'];
+const CC_SISTEMAS_PROPIOS = ['whatsapp', 'whatsapp business', 'meta', 'google calendar', 'google', 'calendar', 'calendario', 'google sheets', 'sheets', 'qr', 'codigo qr', 'minicrm'];
 const CC_PREGUNTA_INTEGRACION = /\b(?:se |puede |pueden |podria |podrian |podemos |logra |lograria )?(?:conecta|conectan|conectar|conectarse|conectarlo|integra|integran|integrar|integrarse|integrarlo|sincroniza|sincronizan|sincronizar|vincula|vinculan|vincular|es compatible|son compatibles|compatible|compatibles|integracion|integraciones|conexion|conexiones)\s+(?:directamente |tambien |bien )?(?:con|a|al|a la)\s+(.{1,60})$/;
 function ccPreguntaIntegracion(t) {
   const n = ccNorm(t);
   const m = CC_PREGUNTA_INTEGRACION.exec(n);
   if (!m) return false;
-  const objeto = m[1].trim();
+  // Sin el determinante («mi calendario», «tu WhatsApp»): lo que se conecta es el calendario, no «mi».
+  const objeto = m[1].trim().replace(/^(mi|mis|el|la|los|las|tu|tus|su|sus|un|una)\s+/, '');
   // Un sistema propio (Google Calendar, WhatsApp…) lo contesta el modelo con los datos; cualquier otro, o «mi sistema», «mi ERP», «él», no se afirma.
   return !CC_SISTEMAS_PROPIOS.some((x) => objeto === x || objeto.indexOf(x + ' ') === 0);
 }

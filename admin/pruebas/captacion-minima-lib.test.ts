@@ -3760,7 +3760,7 @@ describe('§16: el documento comercial (híbrido: el modelo redacta, el código 
       for (const q of ['¿cobra con QR?', 'mis clientes pagan por transferencia', 'quiero abrir una cuenta en un banco']) expect(f('ccPreguntaBanco')(q), q).toBe(false);
     });
     it('«¿se conecta con SAP / Tigo Money / Shopify / mi sistema?»: el CÓDIGO no inventa la integración («Esa no la tengo a la mano»), sin repetir el nombre del sistema; Google Calendar sí llega al modelo', () => {
-      for (const q of ['¿Se conecta con SAP?', '¿Se integra con Tigo Money?', '¿Se conecta con Shopify?', 'Usamos un ERP propio. ¿Se integra con él?', '¿Tienen integración con mi sistema de facturación?', '¿es compatible con Odoo?', '¿Se puede conectar a Zapier?']) {
+      for (const q of ['¿Se conecta con SAP?', '¿Se integra con Tigo Money?', '¿Se conecta con Shopify?', 'Usamos un ERP propio. ¿Se integra con él?', '¿Tienen integración con mi sistema de facturación?', '¿es compatible con Odoo?', '¿Se puede conectar a Zapier?', '¿Se integra con mi hoja de cálculo de Excel?']) {
         const p = decidir(E({ paso: 'oferta', rubroId: 'educacion' }), T(q));
         expect(p['accion'], q).toBe('integracion');
         expect(p['llamarModelo'], q).toBe(false);
@@ -3772,7 +3772,7 @@ describe('§16: el documento comercial (híbrido: el modelo redacta, el código 
         expect(r['mensajes'][0]['botones'], q).toContain('asesor');
         expect(r['e'].temas, q).toContain('integraciones');
       }
-      for (const q of ['¿Se integra con Google Calendar?', '¿Se conecta con WhatsApp?', '¿Se integra con Google Sheets?', '¿funciona con varias profesionales?', 'vendo sistemas de facturación', '¿Se conecta con QR?']) {
+      for (const q of ['¿Se integra con Google Calendar?', '¿Se conecta con WhatsApp?', '¿Se integra con Google Sheets?', '¿Se conecta con mi calendario?', '¿Se integra con mi Google Calendar de trabajo?', '¿funciona con varias profesionales?', 'vendo sistemas de facturación', '¿Se conecta con QR?']) {
         expect(f('ccPreguntaIntegracion')(q), q).toBe(false);
         expect(decidir(E({ paso: 'oferta', rubroId: 'educacion' }), T(q))['accion'], q).toBe('modelo');
       }
