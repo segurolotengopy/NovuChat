@@ -76,7 +76,7 @@ function aaTopeAlcanzado(clave, tope) {
 
 // Lo que `avArmar` necesita y el plan no trajo se completa con el pedido que el plan guarda y con la
 // entrada del turno: `codigo`, `nombre`, `telefono` (segunda guarda para no avisar a quien escribe),
-// `direccion`, `referencia`, `coordenadas` (la ubicación compartida, en su propio campo), `mediaId` (solo el del comprobante de este turno), `diferencias`, `motivo`.
+// `direccion`, `referencia`, `coordenadas` (la ubicación compartida, en su propio campo) y `ubicacion` ({lat, lng}, solo números: de ella sale el enlace al mapa), `mediaId` (solo el del comprobante de este turno), `diferencias`, `motivo`.
 // Lo que trae el plan manda.
 function aaDatos(a) {
   const ped = AA_PLAN.pedido && typeof AA_PLAN.pedido === 'object' ? AA_PLAN.pedido : {};
@@ -86,7 +86,7 @@ function aaDatos(a) {
     nombre: d.nombre || ped.nombre || d.nombrePerfil || AA_T.nombrePerfil || '',
     telefono: d.telefono || d.from || AA_FROM, ahoraMs: AA_AHORA,
   };
-  for (const k of ['lineas', 'total', 'modalidad', 'direccion', 'referencia', 'coordenadas', 'pedidoId', 'diferencias', 'motivo']) {
+  for (const k of ['lineas', 'total', 'modalidad', 'direccion', 'referencia', 'coordenadas', 'ubicacion', 'pedidoId', 'diferencias', 'motivo']) {
     if (ped[k] !== undefined) base[k] = ped[k];
   }
   const media = d.mediaId || ped.mediaId || (String(a.tipo) === 'comprobante' ? AA_T.mediaId : '');

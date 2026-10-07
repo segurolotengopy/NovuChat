@@ -1669,3 +1669,45 @@ describe('palabras excluidas como nota o detalle de un producto activo: la líne
     }
   });
 });
+
+describe('PR-A (05/10): la ubicación compartida, con la misma regla que el servidor', () => {
+  const deliv = (extra: Record<string, unknown> = {}) => ({ entrega: 'delivery', modalidad: 'delivery', direccion: '', referencia: '', nombre: '', ...extra });
+  const carrito = () => agregar([ln('tacos de birria', 1, 'orden')]).carrito;
+  it('negado: (0, 0), el punto nulo de un GPS sin fijar, no vale como dirección ni se guarda', () => {
+    expect(L.pdFaltanEntrega(deliv({ ubicacion: { lat: 0, lng: 0 } }), '')).toEqual(['direccion']);
+    expect(L.pdFusionarEntrega({ entrega: 'delivery', modalidad: 'delivery' }, { ubicacion: { lat: 0, lng: 0 } }).ubicacion).toBeUndefined();
+    expect(L.pdNuevoPedido(TEL, 'x', [], deliv({ ubicacion: { lat: 0, lng: 0 } }), 0, 'BOB', AHORA).entrega.ubicacion).toBeUndefined();
+    // Una sola coordenada en 0 sí es un lugar (el ecuador o el meridiano de Greenwich).
+    expect(L.pdFaltanEntrega(deliv({ ubicacion: { lat: 0, lng: -68.15 } }), '')).toEqual([]);
+  });
+  it('negado: lo que redondea a (0, 0) a 5 decimales tampoco vale (el (0, 0) se juzga DESPUÉS de redondear)', () => {
+    const casi = { lat: 0.000004, lng: -0.000003 };
+    expect(L.pdFaltanEntrega(deliv({ ubicacion: casi }), '')).toEqual(['direccion']);
+    expect(L.pdFusionarEntrega({ entrega: 'delivery', modalidad: 'delivery' }, { ubicacion: casi }).ubicacion).toBeUndefined();
+    expect(L.pdNuevoPedido(TEL, 'x', [], deliv({ ubicacion: casi }), 0, 'BOB', AHORA).entrega.ubicacion).toBeUndefined();
+    expect(L.pdFaltanEntrega(deliv({ ubicacion: { lat: 0.000006, lng: 0 } }), '')).toEqual([]); // 0,00001: sí es un punto
+  });
+  it('minimización: el pedido guardado de un RECOJO no copia dirección, referencia ni ubicación del estado', () => {
+    const p = L.pdNuevoPedido(TEL, 'x', carrito(), { entrega: 'recojo', modalidad: 'recojo', direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana Soria', ubicacion: { lat: -16.5, lng: -68.15 } }, 118, 'BOB', AHORA);
+    expect(p.entrega.direccion).toBe('');
+    expect(p.entrega.referencia).toBe('');
+    expect(p.entrega.ubicacion).toBeUndefined();
+    const d = L.pdNuevoPedido(TEL, 'x', carrito(), { entrega: 'delivery', modalidad: 'delivery', direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana Soria', ubicacion: { lat: -16.5, lng: -68.15 } }, 118, 'BOB', AHORA);
+    expect(d.entrega).toMatchObject({ direccion: 'Av. Arce 2345', referencia: 'casa verde', ubicacion: { lat: -16.5, lng: -68.15 } });
+  });
+  it('lo que se guarda lleva 5 decimales (como el servidor), al fusionar y al armar el pedido', () => {
+    const f = L.pdFusionarEntrega({ entrega: 'delivery', modalidad: 'delivery' }, { ubicacion: { lat: -16.5000049, lng: -68.1500051 } });
+    expect(f.ubicacion).toEqual({ lat: -16.5, lng: -68.15001 });
+    const p = L.pdNuevoPedido(TEL, 'x', carrito(), deliv({ ubicacion: { lat: -16.123456789, lng: -68.987654321 } }), 118, 'BOB', AHORA);
+    expect(p.entrega.ubicacion).toEqual({ lat: -16.12346, lng: -68.98765 });
+  });
+  it('el resumen dice las dos cosas cuando hay dirección escrita y ubicación; con una sola, como antes', () => {
+    const u = { lat: -16.5, lng: -68.15 };
+    expect(L.pdResumen(carrito(), deliv({ direccion: 'Av. Arce 2345', ubicacion: u }), {})).toContain('Entrega: delivery a Av. Arce 2345, con la ubicación que compartiste.');
+    expect(L.pdResumen(carrito(), deliv({ direccion: 'Av. Arce 2345', referencia: 'casa verde', ubicacion: u, nombre: 'Ana' }), {}))
+      .toContain('Entrega: delivery a Av. Arce 2345 (casa verde), con la ubicación que compartiste, recibe Ana.');
+    expect(L.pdResumen(carrito(), deliv({ direccion: 'Av. Arce 2345' }), {})).not.toContain('ubicación');
+    expect(L.pdResumen(carrito(), deliv({ ubicacion: u }), {})).toContain('Entrega: delivery a ubicación compartida.');
+    expect(L.pdResumen(carrito(), deliv({ ubicacion: u }), {})).not.toContain('con la ubicación que compartiste');
+  });
+});

@@ -33,13 +33,19 @@ const CARPETA_CASOS = join(CARPETA, 'herramientas/bateria-casos');
 const RUTA_FLUJO = join(CARPETA, 'venta-minima.qtaco.json');
 /**
  * Lo que HOY falla contra main porque pertenece a una rama que todavía no llegó (la funcional, la de voz): `A-pendiente-de-rama.json`. La suite lo saca del «cero
- * fallos». Que SIGUE fallando (y que E8 sigue fallando por «ellos») es un control negativo OPCIONAL: acopla la suite al estado de otras ramas, así que solo corre con
+ * fallos». Que SIGUE fallando es un control negativo OPCIONAL: acopla la suite al estado de otras ramas, así que solo corre con
  * `BATERIA_CONTROL_NEGATIVO=1` (nunca en CI). Todo lo demás (delivery opcional #435, reserva confirmada #437, seguridad del texto libre) ya es normal: debe pasar.
  */
 const ARCHIVO_PENDIENTES_DE_RAMA = 'A-pendiente-de-rama.json';
 const CONTROL_NEGATIVO = process.env['BATERIA_CONTROL_NEGATIVO'] === '1';
 const idsDe = (archivo: string): string[] => ((JSON.parse(readFileSync(join(CARPETA_CASOS, archivo), 'utf8')) as J)['casos'] as J[]).map((c) => String(c['id']));
-const idsPendientes = (): string[] => idsDe(ARCHIVO_PENDIENTES_DE_RAMA);
+/**
+ * ¿El flujo armado ya trae la CANCELACIÓN del pedido guardado (#440)? Se sabe por la ruta `no_cancela`. Con ella, `C-cancelar-guardado.json` son casos normales (deben pasar); sin ella
+ * (main antes de #440) esperan esa rama y quedan fuera del «cero fallos». Así la misma suite sirve antes y después de que la rama llegue.
+ */
+const CANCELAR_EN_EL_FLUJO = readFileSync(RUTA_FLUJO, 'utf8').includes('no_cancela');
+const ARCHIVO_CANCELAR = 'C-cancelar-guardado.json';
+const idsPendientes = (): string[] => [...idsDe(ARCHIVO_PENDIENTES_DE_RAMA), ...(CANCELAR_EN_EL_FLUJO ? [] : idsDe(ARCHIVO_CANCELAR))];
 /** Los casos de SEGURIDAD del texto libre (la cartera, 05/10/2026): el código no debe tomar como dirección ni como referencia lo que no lo es. */
 const ARCHIVO_SEGURIDAD = 'A-seguridad-texto-libre.json';
 const idsDeSeguridad = (): string[] => idsDe(ARCHIVO_SEGURIDAD);
@@ -129,13 +135,15 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     const lote3 = ['A1', 'A2', 'A3', 'A4', 'A4b', 'A5', 'A6', 'A6b', 'A7', 'A8', 'A11', 'A13', 'A14', 'A15']; // delivery opcional (#435); A7 y A8 esperan la rama funcional
     const lote7 = ['R1r', 'R1p', 'M2bR', 'M2bP', 'FPnr', 'FPnp', 'FPdr', 'FPdp', 'M2bX', 'S2d']; // seguridad del delivery, 3.ª ronda (M2bX y S2d siguen pendientes)
     const lote4 = ['S1', 'S2', 'S2b', 'S2c', 'S3']; // seguridad del texto libre
+    const lote8 = ['B4', 'C1', 'C1b', 'C1m', 'C2', 'C2b', 'C3', 'C4', 'C4q', 'C5', 'C6', 'C9', 'C9p', 'AU1', 'BO1']; // cancelar y ver lo guardado (#440)
     const lote5 = ['D5', 'D5b', 'D6', 'D6b', 'D6d', 'D7', 'D7b', 'D7c', 'D8']; // reserva confirmada (#437); D8c, su control, vive en D.json
     const lote6 = ['M1r', 'M1p', 'M1ref', 'M1s', 'M1sp', 'M1refp', 'M2r', 'M2p', 'L1', 'FB1', 'FB2', 'SV2', 'SV2b']; // seguridad del delivery, 2.ª ronda
     const control = ['D8c'];
+    const lote9 = ['U1', 'U2', 'U2b', 'U3', 'U3b', 'U4', 'U5', 'U5m', 'U6', 'U6b']; // ubicación compartida o dirección en texto (encargo del 05/10; U5m, U6 y U6b son del PR-A: el enlace a Maps solo con la ventana abierta y el pedido de ubicación)
     const { casos, global: g } = casosDeLaCarpeta();
     const ids = casos.map((c) => String(c['id']));
-    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote7, ...control].sort());
-    expect([...idsPendientes()].sort(), 'lo pendiente de una rama (hoy falla contra main)').toEqual(['A7', 'A8', 'M2bX', 'S2d']);
+    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote7, ...lote8, ...lote9, ...control, 'C9m'].sort());
+    expect([...idsPendientes()].sort(), 'lo pendiente de una rama (hoy falla contra main)').toEqual(['A7', 'A8', 'C9m', 'M2bX', 'S2d', ...(CANCELAR_EN_EL_FLUJO ? [] : lote8)].sort());
     expect(idsDeSeguridad().sort(), 'los de seguridad son exactamente los del lote 4').toEqual([...lote4].sort());
     const pendientes = ((JSON.parse(readFileSync(join(CARPETA_CASOS, 'pendientes.json'), 'utf8')) as J)['pendientes'] as J[]).map((p) => String(p['id']));
     const grilla: string[] = [];
@@ -243,9 +251,9 @@ describe('lote 3 (delivery y entrega, #435): A14 pasa y A10 mide su defecto', ()
 // ------------------------------------------------------------------------------ control negativo OPCIONAL (no corre en CI)
 // Lo que HOY falla porque pertenece a una rama que todavía no llegó. Acopla la suite al estado de OTRAS ramas (si una llega, estas pruebas se ponen rojas y entonces el caso
 // pasa de `A-pendiente-de-rama.json` a un archivo normal), así que solo corre a pedido: `BATERIA_CONTROL_NEGATIVO=1 pnpm vitest run pruebas/venta-minima-bateria.test.ts`.
-describe.skipIf(!CONTROL_NEGATIVO)('control negativo (BATERIA_CONTROL_NEGATIVO=1): lo pendiente de una rama SIGUE fallando y E8 sigue fallando por «ellos»', () => {
+describe.skipIf(!CONTROL_NEGATIVO)('control negativo (BATERIA_CONTROL_NEGATIVO=1): lo pendiente de una rama SIGUE fallando', () => {
   it('cada caso de A-pendiente-de-rama.json falla en --seco (ninguno pasa por casualidad)', async () => {
-    const ids = idsPendientes();
+    const ids = idsDe(ARCHIVO_PENDIENTES_DE_RAMA);
     const s = await correr(mundo(), ['--seco', '--json', '--casos', ids.join(',')]);
     expect(s.codigo, s.error).toBe(1);
     const r = json(s);
@@ -260,22 +268,14 @@ describe.skipIf(!CONTROL_NEGATIVO)('control negativo (BATERIA_CONTROL_NEGATIVO=1
     expect(a7.aprobaron).toBe(2);
     expect(String(a7.por)).toMatch(/quiero que me manden/);
   });
+});
 
-  // E8 FALLA hoy, y es un defecto real que arregla la rama de voz: el texto de la derivación dice «hablar con ellos» y los de comprobante «Si quieres hablar con ellos» y
-  // «ellos revisan el pago en su banco». `it.fails` pasa mientras E8 falle y se pone ROJA cuando se arregle: entonces se quita el `.fails` y E8 queda como cualquier otro caso.
-  it.fails('E8: ninguna frase prohibida en lo que el cliente recibe (HOY FALLA: «ellos»; lo arregla la rama de voz)', async () => {
-    const s = await correr(mundo(), ['--seco', '--json']);
-    expect(json(s).negativoGlobal.violaciones).toHaveLength(0);
-  });
-
-  it('E8, lo que se sabe HOY: la única frase prohibida que sale es «ellos» (la derivación genérica y los comprobantes que pasan con el local)', async () => {
-    const s = await correr(mundo(), ['--seco', '--json']);
-    expect(s.codigo).toBe(1);
+describe('E8, el negativo global', () => {
+  // «ellos» salió de la lista el 05/10/2026 por decisión de la cartera (no está prohibido en la guía de tono); los textos fijos que lo llevan se revisan en la rama de voz.
+  it('ninguna frase prohibida (pago acreditado, escríbeles…) en lo que el cliente recibe, en ningún caso', async () => {
+    const s = await correr(mundo(), ['--seco', '--json', '--casos', 'E8']);
     const v = json(s).negativoGlobal.violaciones as J[];
-    expect([...new Set(v.map((x) => x['frase']))]).toEqual(['\\bellos\\b']);
-    // Los textos de respaldo (solo si Meta rechaza el interactivo) además dicen «Escríbeles aquí»: aviso, no fallo.
-    const latentes = json(s).negativoGlobal.latentes as J[];
-    expect(latentes.some((x) => x['frase'] === 'escr[ií]beles')).toBe(true);
+    expect(v.map((x) => `${x['caso']} T${x['turno']} ${x['frase']}`)).toEqual([]);
   });
 });
 
@@ -341,9 +341,9 @@ describe('el motor del caso: reloj, perfil, botón de enlace, reporte del QR y e
   });
 
   it('el reloj del caso manda: a las 3 de la mañana el horario real cierra los pedidos y el 7×24 los abre (y lo contrario falla)', async () => {
-    const cerrado = await correrUno(pedirALas3({ textos: ['no estamos tomando pedidos'], textosNo: ['Esta es nuestra carta'] }));
+    const cerrado = await correrUno(pedirALas3({ textos: ['fuera de nuestro horario de pedidos'], textosNo: ['Esta es nuestra carta'] }));
     expect(cerrado['ok'], JSON.stringify(cerrado['fallas'])).toBe(true);
-    const abierto = await correrUno(pedirALas3({ textos: ['Esta es nuestra carta'], textosNo: ['no estamos tomando pedidos'] }, { horario: H7 }));
+    const abierto = await correrUno(pedirALas3({ textos: ['Esta es nuestra carta'], textosNo: ['fuera de nuestro horario de pedidos'] }, { horario: H7 }));
     expect(abierto['ok'], JSON.stringify(abierto['fallas'])).toBe(true);
     const mal = await correrUno(pedirALas3({ textos: ['Esta es nuestra carta'] }));
     expect(mal['ok']).toBe(false);
@@ -536,7 +536,7 @@ describe('E8, el negativo global: ninguna frase prohibida en lo que el cliente r
     expect(g.id).toBe('E8');
     const aprobadas: [string, boolean][] = [
       ['pago acreditado', true], ['Tu pago verificado', true], ['recibimos tu pago', true], ['verificamos tu pago', true], ['gracias por tu pago', true],
-      ['reservamos tu mesa', true], ['quedó cancelado', true], ['Ellos revisan', true], ['Escríbeles', true], ['todavía no es una reserva', true],
+      ['reservamos tu mesa', true], ['quedó cancelado', true], ['Ellos revisan', false], ['Escríbeles', true], ['todavía no es una reserva', true],
       ['Los datos coinciden con tu pedido; el equipo revisa el pago en el banco', false],
     ];
     for (const [texto, debe] of aprobadas) {

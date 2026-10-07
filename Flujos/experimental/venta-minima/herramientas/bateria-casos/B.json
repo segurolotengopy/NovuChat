@@ -17,7 +17,7 @@
           "cliente": {"tipo": "boton", "titulo": "Cambiar algo"},
           "esperado": {
             "mensajes": 1,
-            "textos": ["vuelve a elegir todo desde la carta", "hoy tienes:.*Tacos de Birria", "Dejarlo como estaba"],
+            "textos": ["elige de nuevo todo lo que quieres", "reemplaza tu pedido de ahora \\(2 × Tacos de Birria", "Dejarlo como estaba"],
             "titulos": ["Dejarlo como estaba"],
             "botones": ["p|dejar"],
             "estado": {"carrito": {"vacio": true}, "carritoAnterior": {"vacio": false}},
@@ -232,7 +232,7 @@
           "cliente": {"tipo": "boton", "titulo": "Confirmar pedido"},
           "esperado": {
             "mensajes": 1,
-            "textos": ["Total a pagar por QR: 120 Bs"],
+            "textos": ["Total a pagar con este QR: 120 Bs"],
             "efectos": {"qr": true, "derivacion": false},
             "estado": {"paso": "esperando_comprobante"},
             "reporteQr": {"monto": 120, "referencia": {"noRegex": "^cat_"}}

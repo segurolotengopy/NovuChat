@@ -2,7 +2,7 @@
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
   "nodes": [],
   "seccion": "A",
-  "nota": "Escenarios que HOY fallan contra main porque esperan una rama o una decisión que todavía no llegó: A7 y A8 (la rama funcional: la intención de delivery por código, nunca derivar), S2d («dame la carta» con la dirección pendiente no muestra la carta) y M2bX («eso es todo» y «cámbiame el pedido» con el resumen dado se guardan como referencia: hallazgo real). La suite los saca del «cero fallos»; `BATERIA_CONTROL_NEGATIVO=1` (opcional, nunca en CI) comprueba que siguen fallando. Cuando uno pase, se mueve a un archivo normal.",
+  "nota": "Escenarios que HOY fallan contra main porque esperan una rama o una decisión que todavía no llegó: A7 y A8 (la rama funcional: la intención de delivery por código, nunca derivar), S2d («dame la carta» con la dirección pendiente no muestra la carta) y M2bX («eso es todo» y «cámbiame el pedido» con el resumen dado se guardan como referencia: hallazgo real). La suite los saca del «cero fallos»; `BATERIA_CONTROL_NEGATIVO=1` (opcional, nunca en CI) comprueba que siguen fallando. (U5m pasó a A-ubicacion.json con el PR-A de ubicación, 05/10.) Cuando uno pase, se mueve a un archivo normal.",
   "casos": [
     {
       "id": "A7",
@@ -79,7 +79,7 @@
     },
     {
       "id": "A8",
-      "titulo": "Resumen de recojo y un tipeo («quiero que me mandn»): pregunta «¿delivery o recoger en el local?» con botones, sin derivar",
+      "titulo": "Resumen de recojo y un tipeo («quiero que me mandn»): lo toma como cambio a delivery y pide la dirección exacta, sin derivar (comportamiento de #440, aceptado el 05/10)",
       "estadoPrevio": [
         {
           "cliente": {
@@ -117,15 +117,11 @@
             "mensajes": 1,
             "textos": [
               "delivery",
-              "recoger en el local"
+              "direcci[oó]n exacta"
             ],
             "textosNo": [
               "persona",
               "Esto prefiero"
-            ],
-            "titulos": [
-              "delivery",
-              "recoger|recojo"
             ],
             "titulosNo": [
               "Escribir al local"
@@ -312,11 +308,80 @@
       "variantes": {
         "turno": 1,
         "frases": [
-          "eso es todo",
-          "cámbiame el pedido"
+          "eso es todo"
         ]
       },
-      "nota": "En el head 0c4bf930 esas dos frases con el resumen dado se guardan como REFERENCIA («Entrega: delivery a … (eso es todo)»)."
+      "nota": "En el head 0c4bf930 esas dos frases con el resumen dado se guardan como REFERENCIA («Entrega: delivery a … (eso es todo)»). Desde el 05/10 «cámbiame el pedido» ya no es de este caso: abre el cambio como «Cambiar algo» y lo cubre BO1 (C-cancelar-guardado.json); aquí queda solo «eso es todo», que no cambia nada."
+    },
+    {
+      "id": "C9m",
+      "titulo": "Menú (sin pedido) y «Donde dije» con quiereHablar: UNA aclaración con botones; si insiste, deriva",
+      "nota": "En el head de #440, en el menú (sin pedido en curso) la frase solo vuelve a mostrar el saludo, las dos veces: ni aclara con botones ni deriva. La aclaración existe solo con un pedido en curso (C9).",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Donde dije"
+          },
+          "seco": {
+            "lineas": [],
+            "quiereHablar": true
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "no te entend[ií] bien"
+            ],
+            "textosNo": [
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Escribir al local"
+            ],
+            "estado": {},
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Donde dije"
+          },
+          "seco": {
+            "lineas": [],
+            "quiereHablar": true
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "^transferir",
+            "titulos": [
+              "Escribir al local"
+            ],
+            "enlaces": [
+              "wa\\.me/59100000031"
+            ],
+            "efectos": {
+              "derivacion": true,
+              "aviso": true
+            }
+          }
+        }
+      ]
     }
   ]
 }

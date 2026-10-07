@@ -86,6 +86,18 @@ const QUIEN = GUION.asesor || 'un asesor';
 const dolorDe = (id: string): string => String(GUION.rubros[id]?.['dolor'] ?? '');
 const preguntaDe = (id: string): string => String(GUION.rubros[id]?.['pregunta'] ?? '');
 const TITULO_ASESOR = GUION.asesor ? `Hablar con ${GUION.asesor}` : 'Hablar con un asesor';
+// §15: las tres formulaciones de la pregunta de cierre de la oferta (con y sin planes); la que toca la lleva la ficha (`ofertas`).
+const PREGUNTA_OFERTA = (i: number, conPlanes = true): string => (conPlanes
+  ? [`¿Quieres ver los planes para ubicar tu presupuesto, o prefieres hablar con ${QUIEN}?`, `¿Te muestro los planes para que compares opciones, o prefieres hablar directo con ${QUIEN}?`, `¿Te cuento los planes para que veas qué encaja contigo, o prefieres hablar con ${QUIEN}?`]
+  : [`¿Te gustaría hablar con ${QUIEN} para ver cómo lo armaríamos en tu caso?`, `¿Te animas a hablar con ${QUIEN} para ver cómo se adaptaría a tu caso?`, `¿Quieres hablar directo con ${QUIEN} para resolver tus dudas?`])[i % 3]!;
+// El saludo de la lista rota por el último dígito del teléfono (§15): MAMA termina en 1 → la 2.ª variante.
+const SALUDOS = [
+  '¡Hola! 👋 Soy el asistente virtual de NovuChat 🤖✨, con inteligencia artificial. Para darte la info exacta, ¿de qué rubro es tu negocio?',
+  '¡Hola, qué gusto saludarte! 😊 Soy el asistente virtual de NovuChat, con inteligencia artificial. Cuéntame, ¿de qué rubro es tu negocio, para orientarte mejor?',
+  '¡Bienvenido a NovuChat! 🙌 Soy el asistente virtual, con inteligencia artificial 🤖. Para mostrarte lo que mejor te sirve, ¿en qué rubro está tu negocio?',
+];
+const SALUDO_MAMA = SALUDOS[1]!;
+const ES_UN_SALUDO = /asistente virtual.*con inteligencia artificial/;
 
 // La oferta de la consola (`/config/onboarding`), la que mandaba el flujo viejo y manda el nuevo.
 const RUBROS: J[] = [
@@ -348,15 +360,16 @@ const preguntasDe = (s: string): number => (SIN_URL(s).match(/\?/g) ?? []).lengt
 const oracionesDe = (s: string): number => SIN_URL(s).split(/[.!?…]+(?:\s+|$)/).map((x) => x.trim()).filter((x) => /\p{L}/u.test(x)).length;
 const palabrasDe = (s: string): number => SIN_URL(s).split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length;
 // §13: un mensaje general hasta 4 oraciones y 60 palabras (la exclamación inicial cuenta); el de PLANES (el único con encabezado), 5 y 70.
-const LIMITE_GENERAL = { oraciones: 4, palabras: 60 };
-const LIMITE_PLANES = { oraciones: 5, palabras: 70 };
+// §15 (06/10/2026): subieron a 6 oraciones y 95 palabras (general) y 7 y 110 (planes); `ccLimites()` de la librería es la fuente y una prueba la compara con estas cifras.
+const LIMITE_GENERAL = { oraciones: 6, palabras: 95 };
+const LIMITE_PLANES = { oraciones: 7, palabras: 110 };
 // Promesas sin mecanismo (política general «solo se ofrece lo que se cumple»).
 const PROMESAS = /\bya (le|te|se|les) (pas[eé]|avis[eé]|notific[eé]|inform[eé]|transmit[ií])|\bte (escribir[aá]n|llamar[aá]n|contactar[aá]n|llamamos|escribimos|avisamos|contactamos|avisar[eé]|avisaremos)\b|\b(se|nos) (comunicar[aá]n?|pondr[aá]n? en contacto)\b|\blo consulto\b|\blo consultamos\b|\bte aviso\b|\bya avis[eé]\b|\bte llamar[aá]\b|\bte escribir[aá]\b/i;
 const NIEGA_IA = /\bno soy (un |una )?(bot|robot|ia|inteligencia artificial|asistente virtual)\b|\bsoy (una )?persona (real|de carne)|\bsoy (un )?humano\b/i;
 // Solo las formas que NO son del tuteo: «mira» y «fíjate» son tuteo; «mirá» y «fijate», voseo.
 const VOSEO = /(?<![\p{L}])(quer[eé]s|ten[eé]s|pod[eé]s|dec[ií]me|cont[aá]me|escrib[ií]me|mirá|fijate|pasame|avisame|che|vos)(?![\p{L}])/iu;
 const COBRO_REAL = /pago (acreditado|verificado|recibido|confirmado)|recibimos tu pago|pago exitoso/i;
-const OFRECE_ASESOR = new RegExp(`hablar con (un asesor|${esc(QUIEN)})\\b|te lo responde|te ayuda directamente|te los pasa|toca el bot[oó]n|\\bpasar con\\b`, 'i');
+const OFRECE_ASESOR = new RegExp(`hablar con (un asesor|${esc(QUIEN)})\\b|te lo responde|preguntárselo a|te ayuda directamente|te los pasa|toca el bot[oó]n|\\bpasar con\\b`, 'i');
 const RESPUESTAS_DEL_MODELO = ['respuesta', 'pregunta', 'pide_planes', 'pide_asesor', 'ya_es_cliente', 'descarte', 'otro'];
 
 interface OpcionesDeJuego { prueba?: J; sinReporte?: boolean; conAvisos?: boolean }
@@ -392,6 +405,13 @@ function propiedades(w: W, t: T, from: string, entrada: string, juego: OpcionesD
     // --- el texto
     expect(preguntasDe(c), `${que}: más de una «?»`).toBeLessThanOrEqual(1);
     expect(c, `${que}: marcas o delimitadores en el texto`).not.toMatch(/[\[\]{}]|<<<|>>>/);
+    // §15: con los datos REALES de NovuChat ningún mensaje —texto, botón, fila ni saludo prellenado del botón a recepción— nombra a una persona.
+    if (!GUION.asesor) {
+      const crudo = JSON.stringify(e.payload);
+      let decodificado = crudo;
+      try { decodificado = decodeURIComponent(crudo); } catch { /* una URL con un % suelto: se revisa el crudo */ }
+      expect(crudo + ' ' + decodificado + ' ' + c, `${que}: nombra a una persona del equipo`).not.toMatch(/silvana|asesora\b/i);
+    }
     expect(c, `${que}: promesa sin respaldo`).not.toMatch(PROMESAS);
     expect(c, `${que}: niega ser una IA`).not.toMatch(NIEGA_IA);
     expect(c, `${que}: voseo`).not.toMatch(VOSEO);
@@ -487,7 +507,7 @@ function propiedades(w: W, t: T, from: string, entrada: string, juego: OpcionesD
     expect(m.url, `${ctx}: URL del modelo`).toMatch(/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash-lite:generateContent$/);
     const g = (cuerpo['generationConfig'] ?? {}) as J;
     expect(g['responseMimeType'], `${ctx}: responseMimeType`).toBe('application/json');
-    expect(g['maxOutputTokens'], `${ctx}: maxOutputTokens`).toBe(400);
+    expect(g['maxOutputTokens'], `${ctx}: maxOutputTokens`).toBe(600);
     expect('temperature' in g || 'topP' in g, `${ctx}: temperature o topP`).toBe(false);
     const esquema = (g['responseSchema'] ?? {}) as J;
     expect(esquema['type'], `${ctx}: responseSchema`).toBe('OBJECT');
@@ -712,8 +732,8 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       // 1. La lista: texto fijo, sin modelo; se presenta como IA.
       expect(t1.aMi).toHaveLength(1);
       expect(tipoInter(t1.aMi[0]!)).toBe('list');
-      expect(CUERPO(t1)).toMatch(/asistente virtual de NovuChat 🤖✨, con inteligencia artificial/);
-      expect(CUERPO(t1)).toMatch(/Para darte la info exacta, ¿de qué rubro es tu negocio\?$/);
+      expect(CUERPO(t1)).toBe(SALUDO_MAMA);
+      expect(CUERPO(t1)).toMatch(ES_UN_SALUDO);
       expect(idsFilas(t1.aMi[0]!)).toEqual(['rubro:salud-y-belleza', 'rubro:gastronomia', 'rubro:comercio-y-retail', 'rubro:educacion', 'rubro:otro']);
       expect(filasDe(t1.aMi[0]!).at(-1)!['title']).toMatch(/Otro/);
       expect(encabezadoDe(t1.aMi[0]!)).toBeUndefined();
@@ -740,7 +760,10 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       expect(idsBotones(oferta)).toEqual(['planes', 'asesor']);
       expect(encabezadoDe(oferta)).toBeUndefined();
       expect(oferta.cuerpo).toContain(EMP);
-      expect(oferta.cuerpo).toMatch(new RegExp(`¿Te gustaría ver los planes o prefieres hablar con ${esc(QUIEN)}\\?$`));
+      expect(oferta.cuerpo.endsWith(PREGUNTA_OFERTA(0))).toBe(true);
+      // §15: la oferta incluye la orientación del rubro (lo que hace el servicio) y mide entre 55 y 95 palabras, no queda corta.
+      expect(oferta.cuerpo).toContain(GUION.rubros['salud-y-belleza']!['queHacemos']);
+      expect(palabrasDe(oferta.cuerpo)).toBeGreaterThanOrEqual(55);
       expect(oferta.cuerpo).not.toMatch(/USD|\d+ ?\/ ?mes/);
       expect(botonesDe(oferta)[1]!.title).toBe(TITULO_ASESOR);
       expect(califDe(w, MAMA)).toBe('Media');
@@ -818,7 +841,7 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       const w = crear({ panel: panel({}, { planes: [], cargosUnicos: [], archivoPlanes: null }) });
       const { j, oferta } = hastaLaOferta(w, 'gastronomia');
       expect(idsBotones(oferta.aMi[0]!)).toEqual(['asesor']);
-      expect(oferta.aMi[0]!.cuerpo).toMatch(new RegExp(`¿Te gustaría hablar con ${esc(QUIEN)}\\?$`));
+      expect(oferta.aMi[0]!.cuerpo.endsWith(PREGUNTA_OFERTA(0, false))).toBe(true);
       expect(oferta.aMi[0]!.cuerpo).not.toMatch(/USD/);
       expect(califDe(w, MAMA)).toBe('Media');
       j.asesor();
@@ -997,8 +1020,7 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       const t1 = j.texto('¿Eres una persona o un bot?');
       expect(t1.modelo).toHaveLength(0);
       // En el PRIMER mensaje la pregunta de identidad no es global: sale la lista con la presentación (que ya dice que es una IA).
-      expect(CUERPO(t1)).toContain('el asistente virtual de NovuChat 🤖✨, con inteligencia artificial.');
-      expect(CUERPO(t1)).toMatch(/¿de qué rubro es tu negocio\?$/);
+      expect(CUERPO(t1)).toBe(SALUDO_MAMA);
       j.rubro('comercio-y-retail');
       const t2 = j.texto('oye, ¿hablo con una persona?');
       expect(t2.modelo).toHaveLength(0);
@@ -1438,7 +1460,7 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       const w = crear(); const j = hastaElDolor(w);
       modelo(w, { tipo: 'pregunta', respuesta: '', enLosDatos: false });
       const t = j.texto('¿Tienen integración con mi sistema de facturación?');
-      expect(CUERPO(t)).toMatch(new RegExp(`Esa no la tengo a la mano 🤔; ${esc(QUIEN)} te lo responde\\.`));
+      expect(CUERPO(t)).toMatch(new RegExp(`Esa no la tengo a la mano 🤔; si quieres, puedes preguntárselo a ${esc(QUIEN)} desde las opciones de abajo\\.`));
       expect(idsBotones(t.aMi[0]!).concat(idsFilas(t.aMi[0]!))).toContain('asesor');
       expect(t.plantillas).toHaveLength(0); // ofrecerlo no es avisar: el aviso sale al tocar
       expect(CUERPO(t)).not.toMatch(/consult/i);
@@ -2186,7 +2208,7 @@ describe('construir.mjs: el flujo armado es el que sale de la plantilla y los da
 describe('§12: correcciones de la revisión de código y de seguridad', () => {
   const FIJO_IA = 'Soy el asistente virtual de NovuChat, con inteligencia artificial 🤖.';
 
-  it('S1: «¿eres Silvana?», «¿es un robot?», «¿me atiende una persona?» y «¿esto es automático?» los contesta el código, sin modelo', () => {
+  it('S1: «¿eres un asesor?» (NovuChat no configura un nombre), «¿es un robot?», «¿me atiende una persona?» y «¿esto es automático?» los contesta el código, sin modelo', () => {
     for (const q of [`¿eres ${QUIEN}?`, '¿es un robot?', '¿me atiende una persona?', '¿esto es automático?']) {
       const w = crear(); const j = hastaElDolor(w);
       const t = j.texto(q);
@@ -2194,7 +2216,7 @@ describe('§12: correcciones de la revisión de código y de seguridad', () => {
       expect(CUERPO(t), q).toContain(FIJO_IA);
     }
   });
-  it('S1/S2: el modelo no puede hablar como Silvana, decir que no hay robot ni prometer contacto: sale «¡Te entiendo! 😊»', () => {
+  it('S1/S2: el modelo no puede hablar como el asesor, decir que no hay robot ni prometer contacto: sale «¡Te entiendo! 😊»', () => {
     for (const empatia of [`Sí, soy ${QUIEN}.`, `Te habla ${QUIEN}, del equipo.`, 'Soy una asesora del equipo.', 'Aquí no hay ningún robot.', 'Se pondrá en contacto contigo.',
       `${QUIEN} te escribe hoy mismo.`, 'Te responde en menos de 2 horas.', 'Se comunicará contigo pronto.']) {
       const w = crear(); const j = hastaElDolor(w);
@@ -2398,7 +2420,7 @@ describe('§12: correcciones de la revisión de código y de seguridad', () => {
     const w = crear(); const { j } = hastaLaOferta(w);
     modelo(w, { tipo: 'respuesta', empatia: EMP });
     const t = j.texto('cuéntame algo más');
-    expect(JSON.stringify(t.modelo[0]!.cuerpo['contents'])).toContain(`¿Te gustaría ver los planes o prefieres hablar con ${QUIEN}?`);
+    expect(JSON.stringify(t.modelo[0]!.cuerpo['contents'])).toContain(PREGUNTA_OFERTA(0));
   });
   it('R12: el modo «negocio» respeta el rubro de la consola que el modelo reconoce', () => {
     const w = crear(); const j = jugar(w);
@@ -2580,24 +2602,25 @@ describe('§13: la consola viva y el tono (C1 y C2)', () => {
   });
 
   // ------------------------------------------------------------------------------------ el tono
-  it('la conversación de belleza del PDF, completa y con el nivel «muchos»: cálida, con emojis, el dato de impacto, el resumen de precios y el cierre con la asesora', () => {
+  it('la conversación de belleza del PDF, completa y con el nivel «muchos»: cálida, con emojis, la orientación, el dato de impacto, el resumen de precios y el cierre con un asesor', () => {
     const w = vivo(); const j = jugar(w);
     const t1 = j.texto('Hola, me das información.');
-    expect(CUERPO(t1)).toBe('¡Hola! 👋 Soy el asistente virtual de NovuChat 🤖✨, con inteligencia artificial. Para darte la info exacta, ¿de qué rubro es tu negocio?');
+    expect(CUERPO(t1)).toBe(SALUDO_MAMA);
     const t2 = j.rubro('salud-y-belleza');
     expect(CUERPO(t2)).toBe('¡Excelente! 💅 En los salones y consultorios, la gente olvida su turno y ese hueco ya no se recupera. Cuéntame, ¿actualmente pierdes mucho tiempo agendando y recordando citas a mano?');
     modelo(w, { tipo: 'respuesta', empatia: '¡Uff, te entiendo! 😅 Estar pegada al celular todo el día le quita tiempo a cualquiera.' });
     const t3 = j.texto('Uff sí, todo el día estoy pegada al celular y a veces me dejan plantada.');
-    expect(CUERPO(t3)).toBe('¡Uff, te entiendo! 😅 Estar pegada al celular todo el día le quita tiempo a cualquiera. Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar. ¿Te gustaría ver los planes o prefieres hablar con Silvana?');
+    // §15: empatía (modelo) + orientación del rubro (dato) + el dato de impacto (una vez) + la pregunta de cierre con su porqué.
+    expect(CUERPO(t3)).toBe(`¡Uff, te entiendo! 😅 Estar pegada al celular todo el día le quita tiempo a cualquiera. Tu asistente agenda en tu Google Calendar y recuerda la cita 24 horas antes. Cada profesional tiene su propia agenda. Según Harvard Business Review, contactar a un cliente potencial en la primera hora lo hace siete veces más probable de calificar. ${PREGUNTA_OFERTA(0)}`);
     expect(idsBotones(t3.aMi[0]!)).toEqual(['planes', 'asesor']);
     const t4 = j.texto('Planes por favor.');
-    expect(CUERPO(t4)).toBe('¡Claro! 😊 La instalación sale desde USD 65 (pago único) y los planes mensuales desde USD 25, cobrados en bolivianos. ¿Qué te parece si Silvana te cuenta cómo armaríamos esto para tu negocio? 👇');
+    expect(CUERPO(t4)).toBe('¡Claro! 😊 La instalación sale desde USD 65 (pago único) y los planes mensuales desde USD 25, cobrados en bolivianos. Lo instalamos en 48 horas desde que tenemos tu información y tú lo controlas desde tu celular, sin programar nada. ¿Qué te parece si un asesor te cuenta cómo armaríamos esto para tu negocio? 👇');
     expect(encabezadoDe(t4.aMi[0]!)).toEqual({ type: 'image', image: { link: ARCHIVO.url } });
     expect(botonesDe(t4.aMi[0]!)).toEqual([{ id: 'asesor', title: TITULO_ASESOR }]);
     const t5 = j.asesor();
-    expect(CUERPO(t5)).toBe('¡Perfecto! 🙌 Toca el botón para escribirle directo a Silvana, que te cuenta cómo armarlo. Y para dejarlo anotado, ¿cómo se llama tu negocio? 😊');
+    expect(CUERPO(t5)).toBe('¡Perfecto! 🙌 Toca el botón para escribirle directo a un asesor, que te cuenta cómo armarlo. Y para dejarlo anotado, ¿cómo se llama tu negocio? 😊');
     const t6 = j.texto('Salón Rosa');
-    expect(CUERPO(t6)).toBe('¡Gracias! 😊 Anoté «Salón Rosa». ¡Cuando quieras, escríbele a Silvana con el botón!');
+    expect(CUERPO(t6)).toBe('¡Gracias! 😊 Anoté «Salón Rosa». ¡Cuando quieras, escríbele a un asesor con el botón!');
     // Cada mensaje del recorrido lleva emojis, y ningún precio salió del modelo (los montos son los de la consola).
     for (const t of [t1, t2, t3, t4, t5, t6]) expect(emojis(CUERPO(t))).toBeGreaterThan(0);
     expect(w.modelo.llamadas).toHaveLength(1);
@@ -2609,10 +2632,12 @@ describe('§13: la consola viva y el tono (C1 y C2)', () => {
     expect(CUERPO(t2)).toBe('¡Qué rico! 🍔 En gastronomía los clientes escriben en plena hora pico y, si no respondes rápido, le compran al de al lado. ¿Tomas pedidos por WhatsApp actualmente?');
     modelo(w, { tipo: 'respuesta', empatia: '¡Ese es el momento donde más dinero se pierde por no responder! 💸' });
     const t3 = j.texto('Sí, pero los fines de semana colapsamos.');
-    expect(CUERPO(t3)).toBe('¡Ese es el momento donde más dinero se pierde por no responder! 💸 Tomamos el pedido, sumamos el envío y mandamos el QR de cobro en segundos. ¿Te gustaría ver los planes o prefieres hablar con Silvana?');
+    // Gastronomía no carga el dato de impacto (no encaja: habla de la hora pico): empatía + orientación + pregunta.
+    expect(CUERPO(t3)).toBe(`¡Ese es el momento donde más dinero se pierde por no responder! 💸 Tu asistente toma el pedido desde tu carta y suma el envío. Después manda el QR de tu banco y avisa a la cocina. ${PREGUNTA_OFERTA(0)}`);
+    expect(CUERPO(t3)).not.toContain('Harvard');
     // Los planes de esta rama cierran con SU frase: subir el menú al sistema.
     const t4 = j.planes();
-    expect(CUERPO(t4)).toMatch(/cobrados en bolivianos\. ¿Hablamos con Silvana para ver cómo subiríamos tu menú al sistema\? 👇$/);
+    expect(CUERPO(t4)).toMatch(/sin programar nada\. ¿Hablamos con un asesor para ver cómo subiríamos tu menú al sistema\? 👇$/);
   });
   it('«Otro» del PDF (estudio contable): pregunta cálida, empatía del modelo con el rubro con las palabras del cliente, impacto y cierre de «Otro»', () => {
     const w = vivo(); const j = jugar(w);
@@ -2621,11 +2646,13 @@ describe('§13: la consola viva y el tono (C1 y C2)', () => {
     expect(CUERPO(t2)).toBe('¡Perfecto! 😊 Cuéntame un poquito, ¿de qué trata tu negocio y qué es lo que más tiempo te quita hoy?');
     modelo(w, { tipo: 'respuesta', rubroLibre: 'estudio contable', empatia: '¡Te entiendo! 📊 En servicios profesionales se pierden horas respondiendo lo mismo.' });
     const t3 = j.texto('Tengo un estudio contable. Pierdo mucho tiempo respondiendo consultas básicas sobre impuestos por WhatsApp.');
-    expect(CUERPO(t3)).toBe('¡Te entiendo! 📊 En servicios profesionales se pierden horas respondiendo lo mismo. Según Harvard Business Review, contactar a un prospecto en la primera hora lo hace siete veces más probable de calificar. ¿Te gustaría ver los planes o prefieres hablar con Silvana?');
+    expect(CUERPO(t3)).toBe(`¡Te entiendo! 📊 En servicios profesionales se pierden horas respondiendo lo mismo. Armamos flujos a medida para lo que necesitas lograr, incluso conectados a tu sistema. Lo cotizamos según tu caso. Según Harvard Business Review, contactar a un cliente potencial en la primera hora lo hace siete veces más probable de calificar. ${PREGUNTA_OFERTA(0)}`);
     expect(estadoDe(w, MAMA)!['rubroLibre']).toBe('estudio contable');
     const t4 = j.planes();
     expect(CUERPO(t4)).toMatch(/\? 👇$/);
-    expect(CUERPO(t4)).toContain('Para negocios como el tuyo diseñamos flujos a medida. ¿Te animas a hablar con Silvana para ver cómo estructuraríamos tus respuestas?');
+    expect(CUERPO(t4)).toContain('¿Te animas a hablar con un asesor para ver cómo estructuraríamos tus respuestas?');
+    // §15: el cierre de «Otro» no repite la frase de la orientación («Armamos flujos a medida…»), que ya salió en la oferta.
+    expect(CUERPO(t4)).not.toContain('Para negocios como el tuyo');
   });
   it('el resumen de precios sale de la CONSOLA (mínimos de planes mensuales y de cargos): si la consola cambia, cambia el mensaje; el modelo no lo escribe', () => {
     const w = vivo({ planes: [{ nombre: 'Básico', precioUsd: 40, periodo: 'mes', incluye: '' }, { nombre: 'Pro', precioUsd: 90, periodo: 'mes', incluye: '' }, { nombre: 'Anual', precioUsd: 10, periodo: 'anio', incluye: '' }], cargosUnicos: [{ nombre: 'A', precioUsd: 200, desde: false, detalle: '' }, { nombre: 'B', precioUsd: 120.5, desde: true, detalle: '' }] });
@@ -2665,11 +2692,7 @@ describe('§13: la consola viva y el tono (C1 y C2)', () => {
 // =================================================================================================
 describe('§14: cordialidad en el flujo armado', () => {
   const vivo = (): W => crear({ panel: panel({}, { rubros: RUBROS, cargosUnicos: [{ nombre: 'Instalación', precioUsd: 65, desde: false, detalle: '' }] }) });
-  const FORMULACIONES = [
-    `¿Te gustaría ver los planes o prefieres hablar con ${QUIEN}?`,
-    `¿Quieres que te muestre los planes o prefieres hablar con ${QUIEN}?`,
-    `¿Te cuento los planes o prefieres hablar directo con ${QUIEN}?`,
-  ];
+  const FORMULACIONES = [PREGUNTA_OFERTA(0), PREGUNTA_OFERTA(1), PREGUNTA_OFERTA(2)];
 
   it('la conversación de Andres: el traspaso no repite «negocio»; «ok» NO repite la pregunta ni llama al modelo; el nombre cierra con calidez', () => {
     const w = vivo(); const j = jugar(w);
@@ -2692,10 +2715,15 @@ describe('§14: cordialidad en el flujo armado', () => {
     expect(t4.plantillas, 'un acuse no avisa otra vez a recepción').toHaveLength(0);
     expect(estadoDe(w, MAMA)!.paso).toBe('esperando_empresa');
     expect(estadoDe(w, MAMA)!['empresa']).toBe('');
-    // Un segundo acuse tampoco repite nada.
+    // Un segundo y un tercer acuse tampoco repiten nada: no se pregunta de nuevo y el texto cambia (§15: tres variantes que rotan).
     const t4b = j.texto('👍');
-    expect(CUERPO(t4b)).toBe(CUERPO(t4));
+    expect(CUERPO(t4b)).not.toBe(CUERPO(t4));
+    expect(CUERPO(t4b)).toMatch(/botón/);
+    expect(tipoInter(t4b.aMi[0]!)).toBe('cta_url');
     expect(t4b.modelo).toHaveLength(0);
+    const t4c = j.texto('ok');
+    expect(CUERPO(t4c)).not.toBe(CUERPO(t4b));
+    expect(new Set([CUERPO(t4), CUERPO(t4b), CUERPO(t4c)]).size).toBe(3);
     // El nombre llega: se anota y se cierra con calidez.
     const t5 = j.texto('Tacos pastor');
     expect(CUERPO(t5)).toBe(`¡Gracias! 😊 Anoté «Tacos pastor». ¡Cuando quieras, escríbele a ${QUIEN} con el botón!`);
@@ -2721,6 +2749,9 @@ describe('§14: cordialidad en el flujo armado', () => {
     // 1.ª sin pregunta, 2.ª con la 2.ª formulación (la 1.ª ya salió en la oferta), 3.ª sin, 4.ª con la 3.ª, 5.ª sin, 6.ª con la 1.ª.
     const preguntas = cuerpos.map((c) => FORMULACIONES.find((f) => c.endsWith(f)) ?? '');
     expect(preguntas).toEqual(['', FORMULACIONES[1], '', FORMULACIONES[2], '', FORMULACIONES[0]]);
+    // Las que omiten la pregunta cierran con una invitación sin «?» (§15): orientan al siguiente paso y nombran al asesor con su botón.
+    for (const i of [0, 2, 4]) { expect(preguntasDe(cuerpos[i]!), cuerpos[i]).toBe(0); expect(cuerpos[i]).toMatch(/planes.*(asesor)|(asesor).*planes/); }
+    expect(new Set([0, 2, 4].map((i) => cuerpos[i]!.slice(cuerpos[i]!.indexOf('todo el día.') + 12))).size).toBe(3);
     for (const t of salidas) expect(idsBotones(t.aMi[0]!), 'los botones siguen').toEqual(['planes', 'asesor']);
     // Nunca dos seguidos con la misma frase.
     const hechas = preguntas.filter(Boolean);
@@ -2737,5 +2768,180 @@ describe('§14: cordialidad en el flujo armado', () => {
     const t3 = j.texto('entiendo, cuéntame algo más');
     expect(CUERPO(t3).endsWith(FORMULACIONES[2]!)).toBe(true);
     expect(JSON.stringify(t3.modelo[0]!.cuerpo['contents'])).toContain(`PREGUNTA QUE HICISTE: ${FORMULACIONES[1]}`);
+  });
+});
+
+// =================================================================================================
+// §15: más detalle y orientación comercial, sin repeticiones, y sin nombrar a una persona (06/10/2026)
+// =================================================================================================
+describe('§15: el flujo armado con los datos reales', () => {
+  const vivo = (extra: J = {}): W => crear({ panel: panel({}, { rubros: RUBROS, cargosUnicos: [{ nombre: 'Instalación', precioUsd: 65, desde: false, detalle: '' }], ...extra }) });
+  const ofertaDe = (t: T): string => CUERPO(t);
+
+  it('NovuChat no configura nombre de asesor: el dato lo dice vacío y TODA la suite corre con «un asesor» (la propiedad global revisa cada mensaje)', () => {
+    expect(GUION.asesor).toBe('');
+    expect(QUIEN).toBe('un asesor');
+    expect(TITULO_ASESOR).toBe('Hablar con un asesor');
+    expect([...TITULO_ASESOR].length).toBe(20);
+    const w = vivo(); const j = jugar(w);
+    const t1 = j.texto('Hola');
+    j.rubro('educacion'); j.asesor();
+    const t4 = w.turnos.at(-1)!;
+    // El saludo prellenado del botón a recepción.
+    expect(decodeURIComponent(urlDe(t4.aMi[0]!))).toContain('Quiero hablar con un asesor.');
+    expect(decodeURIComponent(urlDe(t4.aMi[0]!))).not.toMatch(/silvana/i);
+    expect(t1.aMi).toHaveLength(1);
+  });
+
+  it('la oferta tras el dolor trae la ORIENTACIÓN del rubro y no queda corta: entre 50 y 95 palabras en cada rubro, con una empatía realista de ~20 palabras', () => {
+    for (const id of ['salud-y-belleza', 'gastronomia', 'comercio-y-retail', 'educacion']) {
+      const w = vivo(); const j = hastaElDolor(w, id);
+      modelo(w, { tipo: 'respuesta', empatia: '¡Qué bueno que ya te escriban tanto por WhatsApp! 🙌 Lo difícil es contestar a todos a tiempo.' });
+      const t = j.texto('Sí, todo el día me escriben y no alcanzo.');
+      const c = ofertaDe(t);
+      expect(c, id).toContain(String(GUION.rubros[id]!['queHacemos']));
+      expect(palabrasDe(c), `${id}: ${c}`).toBeGreaterThanOrEqual(50);
+      expect(palabrasDe(c), `${id}: ${c}`).toBeLessThanOrEqual(95);
+      expect(oracionesDe(c), id).toBeLessThanOrEqual(6);
+      expect(preguntasDe(c), id).toBe(1);
+    }
+  });
+
+  it('un recorrido largo SIN tocar botones: ningún mensaje se repite seguido, Harvard sale una sola vez, un mensaje por turno y ninguna oferta repite la misma frase de cierre', () => {
+    const w = vivo(); const j = jugar(w);
+    const salidas: string[] = [];
+    const dice = (t: T): T => { salidas.push(CUERPO(t)); return t; };
+    dice(j.texto('Hola buenas, quisiera información'));
+    dice(j.texto('salud y belleza'));
+    modelo(w, { tipo: 'respuesta', empatia: '¡Qué cansado perseguir confirmaciones a mano! 😅 Cuando una clienta se olvida, ese hueco ya no se recupera.' });
+    dice(j.texto('Sí, pierdo mucho tiempo con las citas y los recordatorios.'));
+    modelo(w, { tipo: 'pregunta', respuesta: 'Lo instalamos en 48 horas desde que tenemos tu información. Tú no programas nada y lo controlas desde tu celular.', enLosDatos: true });
+    dice(j.texto('¿Cómo se instala?'));
+    dice(j.texto('¿Y se puede cambiar después?'));
+    dice(j.texto('¿Y funciona con varias profesionales?'));
+    modelo(w, { tipo: 'pregunta', respuesta: '', enLosDatos: false });
+    dice(j.texto('¿Se conecta con mi sistema de facturación?'));
+    dice(j.texto('¿Y con mi sistema de reservas?'));
+    dice(j.texto('Mándame los planes por favor'));
+    dice(j.texto('ok'));
+    dice(j.texto('Quiero hablar con una asesora'));
+    for (const dicho of ['ok', 'ok', '👍']) dice(j.texto(dicho));
+    dice(j.texto('Peluquería Luna'));
+    dice(j.texto('gracias'));
+    dice(j.texto('gracias'));
+    expect(salidas.length).toBe(w.turnos.length);                                  // un mensaje por entrante: 0 agregados
+    expect(mensajesTotales(w)).toBe(w.turnos.length);
+    for (let i = 1; i < salidas.length; i++) expect(salidas[i], `#${i + 1} repite el anterior`).not.toBe(salidas[i - 1]);
+    expect(salidas.filter((x) => /Harvard/.test(x))).toHaveLength(1);
+    // La pregunta de cierre de la oferta nunca es la misma dos veces seguidas (rota y a ratos se omite).
+    const cierres = salidas.map((x) => [0, 1, 2].map((i) => PREGUNTA_OFERTA(i)).find((q) => x.endsWith(q)) ?? '').filter(Boolean);
+    for (let i = 1; i < cierres.length; i++) expect(cierres[i]).not.toBe(cierres[i - 1]);
+    // Los tres acuses seguidos del paso de la empresa son tres textos distintos, y la planilla tiene el nombre al final.
+    const acuses = salidas.filter((x) => /^(¡Con gusto! 😊 Cuando quieras, toca|¡Perfecto! 😊 Cuando estés listo, con|¡Listo! 🙌 Cuando quieras, le escribes)/.test(x));
+    expect(new Set(acuses).size).toBe(3);
+    expect(filaDe(w, MAMA)![COL_EMPRESA]).toBe('Peluquería Luna');
+  });
+
+  it('las variantes del saludo: dos teléfonos con distinto último dígito abren distinto; el mismo dígito, igual (reproducible)', () => {
+    const w = vivo();
+    const abre = (from: string): string => CUERPO(jugar(w, from).texto('Hola'));
+    const a = abre('59100000010'); const b = abre('59100000011'); const c = abre('59100000012'); const d = abre('59100000013');
+    expect(new Set([a, b, c]).size).toBe(3);
+    expect(d).toBe(a); // el dígito 3 cae en la misma variante que el 0
+    expect(abre('59100000021')).toBe(b);
+    for (const x of [a, b, c, d]) expect(x).toMatch(ES_UN_SALUDO);
+  });
+
+  it('R8 y los contadores: si Meta rechaza el mensaje y su respaldo, los contadores de variantes y la bandera del dato de impacto vuelven a los de antes', () => {
+    const w = vivo(); const j = hastaElDolor(w, 'comercio-y-retail');
+    const antes = JSON.parse(JSON.stringify(estadoDe(w, MAMA))) as J;
+    expect(antes['impactoDicho']).toBe(false);
+    modelo(w, { tipo: 'respuesta', empatia: '¡Qué bueno que ya te escriban tanto! 🙌 Lo difícil es contestar a todos.' });
+    w.graph.falla = (p) => p['to'] === MAMA;
+    const t = j.texto('Sí, de noche me escriben y no alcanzo.', { tolerarFallo: true });
+    expect(t.fallo).not.toBeNull();
+    const despues = estadoDe(w, MAMA) as J;
+    expect(despues['impactoDicho']).toBe(false);
+    expect(despues['ofertas']).toBe(antes['ofertas']);
+    expect(despues['rot']).toEqual(antes['rot']);
+    expect(despues['paso']).toBe('esperando_dolor');
+    // El reenvío (el mismo texto otra vez, ya sin falla) vuelve a recibir la oferta CON el dato de impacto, y ahora sí lo cuenta.
+    w.graph.falla = () => false;
+    const t2 = j.texto('Sí, de noche me escriben y no alcanzo.');
+    expect(CUERPO(t2)).toContain('Harvard Business Review');
+    expect(estadoDe(w, MAMA)!['impactoDicho']).toBe(true);
+    expect(estadoDe(w, MAMA)!['ofertas']).toBe(1);
+  });
+  it('los contadores nuevos viajan en la ficha, acotados: tras un recorrido largo `rot` solo tiene enteros de 0 a 11 y las claves conocidas', () => {
+    const w = vivo(); const j = jugar(w);
+    j.texto('Hola'); j.asesor();
+    for (let i = 0; i < 30; i++) j.texto(i % 2 ? 'ok' : '👍');
+    const rot = (estadoDe(w, MAMA) as J)['rot'] as Record<string, number>;
+    expect(Object.keys(rot).sort()).toEqual(['acuse', 'cierre', 'identidad', 'pideAsesor', 'rubros', 'saludo', 'sinDatos', 'traspaso']);
+    for (const v of Object.values(rot)) { expect(Number.isInteger(v)).toBe(true); expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThan(12); }
+    expect(rot['acuse']).toBe(30 % 12);
+  });
+});
+
+describe('§15 (defecto visto con el modelo real): C25, la promesa inducida', () => {
+  const vivo = (): W => crear({ panel: panel({}, { rubros: RUBROS, cargosUnicos: [{ nombre: 'Instalación', precioUsd: 65, desde: false, detalle: '' }] }) });
+  const PROMESA = /te llam|te escrib|te contact|me llam|a las 10|mañana|horario|te avis|en breve|pronto|lo consult/i;
+
+  it('el recorrido exacto: «¿Me llamas mañana a las 10…?» y «Entonces me llamas tú, ¿sí?» con el modelo devolviendo `otro`: el CÓDIGO lo deriva a R6 desde el 1.º (sin llamar al modelo), con botón, un mensaje por turno, sin promesa y distinto cada vez', () => {
+    const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
+    modelo(w, { tipo: 'otro', empatia: '¡Te entiendo! 😊' });
+    const antes = w.modelo.llamadas.length;
+    const t1 = j.texto('¿Me llamas mañana a las 10 para explicarme?');
+    const t2 = j.texto('Entonces me llamas tú, ¿sí?');
+    const t3 = j.texto('¿Y me llamas hoy mismo?');
+    expect(w.modelo.llamadas.length, 'ningún turno de contacto llama al modelo').toBe(antes);
+    expect(new Set([CUERPO(t1), CUERPO(t2), CUERPO(t3)]).size).toBe(3);
+    expect(CUERPO(t1)).toBe(`¡Claro! 😊 Si prefieres hablarlo con una persona, puedes hacerlo con un asesor desde las opciones de abajo. ${preguntaDe('salud-y-belleza')}`);
+    for (const t of [t1, t2, t3]) { expect(idsBotones(t.aMi[0]!)).toEqual(['asesor']); expect(CUERPO(t)).not.toMatch(PROMESA); expect(preguntasDe(CUERPO(t))).toBe(1); expect(t.aMi).toHaveLength(1); expect(t.plantillas).toHaveLength(0); }
+    expect(estadoDe(w, MAMA)!.hechos['pidioAsesor']).toBe(false);
+    expect(estadoDe(w, MAMA)!.paso).toBe('esperando_dolor');
+  });
+  it('un `otro` del modelo ante «😩😩», «👍» o «jaja sí» NO deja al cliente atrapado: avanza a la oferta y califica Media', () => {
+    for (const dicho of ['😩😩', '👍', 'jaja sí']) {
+      const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
+      modelo(w, { tipo: 'otro', empatia: '¡Qué bueno que me cuentas! 😊' });
+      const t = j.texto(dicho);
+      expect(idsBotones(t.aMi[0]!), dicho).toEqual(['planes', 'asesor']);
+      expect(estadoDe(w, MAMA)!.paso, dicho).toBe('oferta');
+      expect(estadoDe(w, MAMA)!.hechos['respondioDolor'], dicho).toBe(true);
+      expect(califDe(w, MAMA), dicho).toBe('Media');
+    }
+  });
+  it('«tengo muchas llamadas perdidas» y «me llaman todo el día» NO son un pedido de contacto: siguen al modelo y avanzan', () => {
+    for (const dicho of ['tengo muchas llamadas perdidas', 'me llaman todo el día y no alcanzo']) {
+      const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
+      modelo(w, { tipo: 'respuesta', empatia: '¡Qué cansado atender tantas llamadas! 😅' });
+      const t = j.texto(dicho);
+      expect(t.modelo, dicho).toHaveLength(1);
+      expect(estadoDe(w, MAMA)!.paso, dicho).toBe('oferta');
+      expect(CUERPO(t), dicho).not.toMatch(/opciones de abajo/);
+    }
+  });
+  it('con tipo `pide_asesor` (R6): el texto es del código, con el botón, sin promesa y distinto cada vez', () => {
+    const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
+    modelo(w, { tipo: 'pide_asesor', empatia: '¡Con gusto te ayudamos con eso!' });
+    const ts = [j.texto('¿Me llamas mañana a las 10 para explicarme?'), j.texto('Entonces me llamas tú, ¿sí?'), j.texto('¿Y me llaman hoy?')];
+    for (const t of ts) { expect(idsBotones(t.aMi[0]!)).toContain('asesor'); expect(CUERPO(t)).not.toMatch(PROMESA); expect(CUERPO(t)).not.toContain('Con gusto te ayudamos'); expect(t.plantillas).toHaveLength(0); }
+    expect(new Set(ts.map((t) => CUERPO(t))).size).toBe(3);
+  });
+  it('R8: si Meta rechaza el mensaje y su respaldo, el contador de repeticiones vuelve al de antes (el siguiente intento no se toma por una repetición)', () => {
+    const w = vivo(); const j = hastaElDolor(w, 'salud-y-belleza');
+    modelo(w, { tipo: 'pregunta', respuesta: 'Atienden tu WhatsApp todo el día.', enLosDatos: true });
+    j.texto('¿qué hacen?');
+    expect(estadoDe(w, MAMA)!['repetidas']).toBe(1);
+    w.graph.falla = (p) => p['to'] === MAMA;
+    const t = j.texto('¿y qué más hacen?', { tolerarFallo: true });
+    expect(t.fallo).not.toBeNull();
+    expect(estadoDe(w, MAMA)!['repetidas']).toBe(1);
+    w.graph.falla = () => false;
+    const t2 = j.texto('¿y qué más hacen?');
+    expect(idsBotones(t2.aMi[0]!)).toEqual(['asesor']);
+    expect(CUERPO(t2)).toContain('Si prefieres, puedes preguntárselo a un asesor');
+    expect(estadoDe(w, MAMA)!['repetidas']).toBe(2);
   });
 });
