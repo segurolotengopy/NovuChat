@@ -19,6 +19,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -4364,7 +4365,7 @@ describe('§16: validarDatos de los campos nuevos del guion (explicación, punto
   const base = (): J => clon(C.cargarDatos('novuchat.json'));
   const rubro = (d: J, id = 'educacion'): J => d['guion'].rubros[id];
   const error = (mut: (d: J) => void): string => { const d = base(); mut(d); try { C.validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
-  const nombra = (campo: string, id = 'educacion'): RegExp => new RegExp(`«guion\\.rubros\\.${id}\\.${campo.replace(/[[\]]/g, '\\$&')}»`);
+  const nombra = (campo: string, id = 'educacion'): RegExp => new RegExp(`«guion\\.rubros\\.${id}\\.${campo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}»`);
 
   it('los datos reales pasan', () => { expect(error(() => undefined)).toBe(''); });
   it('un rubro estándar con `explicacion` NO lleva `dolor` ni `pregunta` (D2: la pregunta de dolor es solo de «Otro»); sin explicación (otro tenant) sí los pide', () => {
@@ -4537,7 +4538,7 @@ describe('§18 (PR #456): lista de permitidos de la explicación, bloqueos comun
     expect(f('ccNombreDeEmpresa')('ventas arroba novuchat punto com')).toBe('');
     const nodo = readFileSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'), 'utf8');
     const linea = /^const limpio = .*$/m.exec(nodo)![0];
-    const limpio = new Function(`${linea}\nreturn limpio;`)() as (v: unknown) => string;
+    const limpio = runInNewContext(`${linea}\nlimpio`, {}) as (v: unknown) => string;
     expect(limpio('Pana؜dería‮ Luna​')).toBe('Panadería Luna');
   });
 

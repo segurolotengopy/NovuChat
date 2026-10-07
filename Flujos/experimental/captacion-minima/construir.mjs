@@ -40,6 +40,7 @@
  * Node sin dependencias. No lee ningún .env ni llama a la red. Sin la plantilla (la agrega la Fase 2) falla con un mensaje.
  */
 import { closeSync, constants, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { armarVariante, leerProyecto } from '../comun-sin-agente/construir.mjs';
@@ -189,7 +190,8 @@ const SISTEMA_CONOCIDO = regexDeLaLibreria('CC_SISTEMA_CONOCIDO');
 const CIFRA_DE_CONSUMO = regexDeLaLibreria('CC_CIFRA_DE_CONSUMO');
 const BLOQUEO_COMUN = regexDeLaLibreria('CC_BLOQUEO_COMUN');
 /** Funciones puras de la librería que la validación necesita (el «sistema ajeno» por mayúscula en medio de la frase). */
-const FUNCIONES_DE_LA_LIBRERIA = new Function(`${leerSiExiste(join(AQUI, 'src/lib/captacion.js'), 'src/lib/captacion.js') || ''}\nreturn { ccSistemaAjeno };`)();
+// Contexto aislado (node:vm), sin los globales de Node: igual que el Code de n8n.
+const FUNCIONES_DE_LA_LIBRERIA = runInNewContext(`${leerSiExiste(join(AQUI, 'src/lib/captacion.js'), 'src/lib/captacion.js') || ''}\n({ ccSistemaAjeno })`, {});
 /** Los nombres propios que un texto del tenant puede traer (el negocio, el asistente): los fija `validarDatos` antes de revisar los textos. */
 let NOMBRES_PROPIOS = [];
 const ACREDITACION = /acreditad|verificad|pago (exitoso|recibido|confirmado|aprobado|validado)|recibimos tu pago|\bgarantiz/;

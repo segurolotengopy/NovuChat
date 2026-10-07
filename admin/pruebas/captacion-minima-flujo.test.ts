@@ -3554,7 +3554,7 @@ describe('§17: la pregunta de cierre en todo camino, los costos solo si los pid
       const sinonimos = '¡Qué rico! 🍔 En horas pico ya no pierdes pedidos: NovuChat muestra tu menú, anota las indicaciones de cada pedido y cobra con QR para que pase a cocina.';
       const w2 = mundo(); const j2 = jugar(w2); j2.texto('Hola');
       respuesta(w2, { explicacion: sinonimos });
-      expect(CUERPO(j2.rubro('gastronomia'))).toBe(`${sinonimos.replace(/ 🍔/, ' 🍔')} ${CIERRE}`.replace(/ 🍔/, ' 🍔'));
+      expect(CUERPO(j2.rubro('gastronomia'))).toBe(`${sinonimos} ${CIERRE}`);
     });
   });
 
