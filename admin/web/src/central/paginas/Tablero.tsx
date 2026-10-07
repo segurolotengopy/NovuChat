@@ -307,11 +307,11 @@ interface ResumenNegocio {
 
 function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boolean }) {
   const modulos = useModulos(tenantId) ?? [];
+  const nombreItems = capacidadesDeConsola(modulos).etiquetaCatalogo.toLowerCase();
   // La tarjeta «Hoy» no se pinta si NovuChat la ocultó (el horario lo dice el
   // asistente desde su configuración, no esta pantalla). Mientras carga, tampoco.
   const ocultos = useConsolaOculta(tenantId);
   const verHoy = esVisible(ocultos, 'hoy');
-  const nombreItems = capacidadesDeConsola(modulos).etiquetaCatalogo.toLowerCase();
   const [datos, setDatos] = useState<ResumenNegocio | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<Periodo>('semana');

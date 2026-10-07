@@ -13,7 +13,7 @@
  * Los respaldos de las pruebas van a carpetas temporales propias (`mkdtemp`), que se borran al terminar.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -194,8 +194,16 @@ describe('E2. el seco no escribe; --aplicar guarda respaldo, escribe una vez y r
     expect(Object.keys(b.escrituras[0]!.campos)).toEqual(['consolaOculta']);
     expect(b.escrituras[0]!.precondicion).toHaveProperty('lastUpdateTime');
     expect(b.datos()).toEqual({ ...FICHA, consolaOculta: ['horario', 'hoy', 'invitar', 'pagar', 'reemplazoQr'] });
-    expect((statSync(ruta).mode & 0o777).toString(8)).toBe('600');
-    const r = JSON.parse(readFileSync(ruta, 'utf8'));
+    // Se abre UNA vez: el modo y el contenido salen del mismo descriptor (sin «comprobar y luego leer»).
+    const fd = openSync(ruta, 'r');
+    let texto: string;
+    try {
+      expect((fstatSync(fd).mode & 0o777).toString(8)).toBe('600');
+      texto = readFileSync(fd, 'utf8');
+    } finally {
+      closeSync(fd);
+    }
+    const r = JSON.parse(texto);
     expect(r.previo).toEqual({ presente: false, valor: null });
     expect(JSON.stringify(r)).not.toContain('dato-sintetico');
     expect(salida).toContain('Escrito y releído');
