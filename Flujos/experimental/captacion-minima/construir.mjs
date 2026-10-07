@@ -164,6 +164,19 @@ function regexDeLaLibreria(nombre) {
 export const MAX_PALABRAS_QUE_HACEMOS = numeroDeLaLibreria('CC_MAX_PALABRAS_QUE_HACEMOS');
 export const MAX_PALABRAS_IMPACTO = numeroDeLaLibreria('CC_MAX_PALABRAS_IMPACTO');
 export const MAX_PALABRAS_COMO_FUNCIONA = numeroDeLaLibreria('CC_MAX_PALABRAS_COMO_FUNCIONA');
+// §16 (documento comercial de Kenji): la explicación del rubro y los límites del mensaje general, de la librería (una sola fuente).
+export const MAX_EXPLICACION = numeroDeLaLibreria('CC_MAX_EXPLICACION');
+export const MAX_ORACIONES_EXPLICACION = numeroDeLaLibreria('CC_MAX_ORACIONES_EXPLICACION');
+export const MAX_PALABRAS_EXPLICACION = numeroDeLaLibreria('CC_MAX_PALABRAS_EXPLICACION');
+export const MAX_PALABRAS_PREGUNTA_OFERTA = numeroDeLaLibreria('CC_MAX_PALABRAS_PREGUNTA_OFERTA');
+export const MAX_PALABRAS_EMPATIA = numeroDeLaLibreria('CC_MAX_PALABRAS_EMPATIA');
+function limiteGeneral() {
+  const fuente = leerSiExiste(join(AQUI, 'src/lib/captacion.js'), 'src/lib/captacion.js') || '';
+  const m = /^const CC_LIMITE_GENERAL = \{ oraciones: (\d+), palabras: (\d+) \};/m.exec(fuente);
+  if (!m) throw new Error('src/lib/captacion.js: no se encontró la línea «const CC_LIMITE_GENERAL = { oraciones: N, palabras: N };»');
+  return { oraciones: Number(m[1]), palabras: Number(m[2]) };
+}
+export const LIMITE_GENERAL = limiteGeneral();
 const PROMESA = regexDeLaLibreria('CC_PROMESA_DEL_MODELO');
 // §15: lo que NINGÚN texto del guion puede decir, del mismo patrón que filtra al modelo (una sola fuente: la librería).
 const OFERTA = regexDeLaLibreria('CC_OFERTA_DEL_MODELO');
@@ -283,7 +296,7 @@ export function validarDatos(datos, archivo) {
         if (!r || typeof r !== 'object' || Array.isArray(r)) { e(ruta, 'tiene que ser un objeto'); continue; }
         // D16: la única imagen que envía el flujo es la de los planes (`archivoPlanes` de la consola); el guion no lleva imágenes.
         if ('imagen' in r) e(`${ruta}.imagen`, 'no se admite: la única imagen que envía el flujo es la de los planes, y viene de la consola');
-        for (const k of Object.keys(r)) if (k !== 'imagen' && !['dolor', 'pregunta', 'impacto', 'preguntaDolor', 'cierre', 'queHacemos', 'comoFunciona'].includes(k)) e(`${ruta}.${k}`, 'no es un campo del guion (dolor, pregunta, impacto, preguntaDolor, cierre, queHacemos, comoFunciona)');
+        for (const k of Object.keys(r)) if (k !== 'imagen' && !['dolor', 'pregunta', 'impacto', 'preguntaDolor', 'cierre', 'queHacemos', 'comoFunciona', 'explicacion', 'puntosClave', 'propuesta'].includes(k)) e(`${ruta}.${k}`, 'no es un campo del guion (dolor, pregunta, impacto, preguntaDolor, cierre, queHacemos, comoFunciona, explicacion, puntosClave, propuesta)');
         // Texto: de qué se compone cada campo.
         const texto = (k, { requerido, max }) => {
           const v = r[k];
@@ -295,8 +308,42 @@ export function validarDatos(datos, archivo) {
           if (motivo) { e(`${ruta}.${k}`, motivo); return undefined; }
           return v;
         };
-        const dolor = texto('dolor', { requerido: id !== 'otro', max: 200 });
-        const pregunta = texto('pregunta', { requerido: true, max: 140 });
+        // §16 (D2): un rubro estándar con `explicacion` (+ `puntosClave`) se explica de inmediato y NO lleva pregunta de dolor; sin ella (otros tenants), `dolor` y `pregunta` como siempre.
+        // «Otro» sigue con su `pregunta` (de qué trata y qué le cuesta) y, con `propuesta`, el flujo del documento (empatía + propuesta de valor + cierre investigativo = `preguntaDolor`).
+        const nuevo = id !== 'otro' && r.explicacion !== undefined;
+        const dolor = texto('dolor', { requerido: id !== 'otro' && !nuevo, max: 200 });
+        const pregunta = texto('pregunta', { requerido: !nuevo, max: 140 });
+        if (nuevo && (r.dolor !== undefined || r.pregunta !== undefined)) e(ruta, 'lleva `explicacion` y también `dolor` o `pregunta`: la pregunta de dolor es solo de «Otro» (la explicación la reemplaza)');
+        if (id !== 'otro' && r.propuesta !== undefined) e(`${ruta}.propuesta`, 'solo lo lleva «otro»');
+        if (id !== 'otro' && r.explicacion === undefined && r.puntosClave !== undefined) e(`${ruta}.puntosClave`, 'sin `explicacion` no se usa');
+        const explicacion = texto('explicacion', { requerido: false, max: MAX_EXPLICACION });
+        const propuesta = texto('propuesta', { requerido: false, max: 300 });
+        if (id === 'otro' && r.explicacion !== undefined) e(`${ruta}.explicacion`, 'no la lleva «otro»: sigue su propio flujo (pregunta, propuesta y preguntaDolor)');
+        if (explicacion) {
+          const c = contarTexto(explicacion);
+          if (c.oraciones > MAX_ORACIONES_EXPLICACION) e(`${ruta}.explicacion`, `tiene ${c.oraciones} oraciones (hasta ${MAX_ORACIONES_EXPLICACION}; la exclamación inicial cuenta)`);
+          if (c.palabras > MAX_PALABRAS_EXPLICACION) e(`${ruta}.explicacion`, `tiene ${c.palabras} palabras (hasta ${MAX_PALABRAS_EXPLICACION})`);
+          if (/[?¿]/.test(explicacion)) e(`${ruta}.explicacion`, 'no lleva «?» ni «¿»: la pregunta de cierre la agrega el código');
+          // Con la pregunta de cierre exacta del documento (13 palabras, 1 oración) el mensaje cabe en el límite general.
+          if (c.palabras + MAX_PALABRAS_PREGUNTA_OFERTA > LIMITE_GENERAL.palabras || c.oraciones + 1 > LIMITE_GENERAL.oraciones) e(`${ruta}.explicacion`, 'con la pregunta de cierre pasa del límite general del mensaje');
+          if (!Array.isArray(r.puntosClave)) e(`${ruta}.puntosClave`, 'falta: la explicación se apoya en los puntos clave del rubro (los ve el modelo)');
+        }
+        if (r.puntosClave !== undefined) {
+          if (!Array.isArray(r.puntosClave) || r.puntosClave.length < 2 || r.puntosClave.length > 8) e(`${ruta}.puntosClave`, 'tiene que ser una lista de 2 a 8 textos');
+          else r.puntosClave.forEach((p, i) => {
+            if (typeof p !== 'string' || p.length < 3 || p.length > 160) e(`${ruta}.puntosClave[${i}]`, 'tiene que ser un texto de 3 a 160 caracteres');
+            else { const m = errorDeTextoDelGuion(p); if (m) e(`${ruta}.puntosClave[${i}]`, m); }
+          });
+        }
+        if (propuesta) {
+          const c = contarTexto(propuesta);
+          if (c.oraciones > 2) e(`${ruta}.propuesta`, `tiene ${c.oraciones} oraciones (hasta 2)`);
+          if (/[?¿]/.test(propuesta)) e(`${ruta}.propuesta`, 'no lleva «?» ni «¿»');
+          if (!r.preguntaDolor) e(`${ruta}.preguntaDolor`, 'falta: con `propuesta`, el cierre investigativo es la `preguntaDolor`');
+          // Empatía del modelo (hasta 34 palabras) + propuesta + cierre investigativo caben en el mensaje general.
+          const cierre = contarTexto(r.preguntaDolor || '');
+          if (MAX_PALABRAS_EMPATIA + c.palabras + cierre.palabras > LIMITE_GENERAL.palabras) e(`${ruta}.propuesta`, `con la empatía (${MAX_PALABRAS_EMPATIA} palabras) y el cierre investigativo pasa de ${LIMITE_GENERAL.palabras} palabras`);
+        }
         const impacto = texto('impacto', { requerido: false, max: 160 });
         // R7: la pregunta de «Otro» cuando el rubro ya se conoce (solo «otro»), validada como `pregunta`.
         const preguntaDolor = texto('preguntaDolor', { requerido: false, max: 140 });
@@ -336,6 +383,41 @@ export function validarDatos(datos, archivo) {
           if (c.oraciones > 2) e(`${ruta}.cierre`, 'tiene más de 2 oraciones');
           if ((cierre.match(/\?/g) || []).length > 1) e(`${ruta}.cierre`, 'lleva más de una «?»');
         }
+      }
+    }
+  }
+
+  // --- §16: los textos de precios y las respuestas fijas del documento comercial (opcionales; sin ellos, los textos neutros de la librería)
+  if (g && g.precios !== undefined) {
+    const p = g.precios;
+    if (!p || typeof p !== 'object' || Array.isArray(p)) e('guion.precios', 'tiene que ser un objeto');
+    else {
+      for (const k of Object.keys(p)) if (!['estandar', 'detalleEstandar', 'aMedida', 'mensual', 'incluye', 'cierre'].includes(k)) e(`guion.precios.${k}`, 'no es un campo (estandar, detalleEstandar, aMedida, mensual, incluye, cierre)');
+      for (const [k, max, requerido] of [['estandar', 40, true], ['detalleEstandar', 120, false], ['aMedida', 40, true], ['mensual', 40, true], ['incluye', 300, true], ['cierre', 200, false]]) {
+        const v = p[k];
+        if (v === undefined) { if (requerido) e(`guion.precios.${k}`, 'falta'); continue; }
+        if (typeof v !== 'string' || v.length < 1 || v.length > max) { e(`guion.precios.${k}`, `tiene que ser un texto de 1 a ${max} caracteres`); continue; }
+        const m = errorDeTextoDelGuion(v);
+        if (m) e(`guion.precios.${k}`, m);
+        else if (/\d/.test(v)) e(`guion.precios.${k}`, 'trae un número: los montos los pone el código desde la consola');
+      }
+      if (typeof p.cierre === 'string' && ((p.cierre.match(/\?/g) || []).length !== 1 || !/\?[^?]*$/.test(p.cierre))) e('guion.precios.cierre', 'tiene que llevar una sola «?»');
+    }
+  }
+  if (g && g.respuestas !== undefined) {
+    const r = g.respuestas;
+    if (!r || typeof r !== 'object' || Array.isArray(r)) e('guion.respuestas', 'tiene que ser un objeto');
+    else {
+      for (const k of Object.keys(r)) if (!['consumo', 'banco', 'integracion'].includes(k)) e(`guion.respuestas.${k}`, 'no es una respuesta fija (consumo, banco, integracion)');
+      for (const k of ['consumo', 'banco', 'integracion']) {
+        const v = r[k];
+        if (v === undefined) continue;
+        if (typeof v !== 'string' || v.length < 1 || v.length > 400) { e(`guion.respuestas.${k}`, 'tiene que ser un texto de 1 a 400 caracteres'); continue; }
+        const m = errorDeTextoDelGuion(v);
+        if (m) e(`guion.respuestas.${k}`, m);
+        else if (/\d/.test(v)) e(`guion.respuestas.${k}`, 'trae un número: jamás se dan cifras de consumo ni de planes en una respuesta fija (documento comercial §5)');
+        else if (/[?¿]/.test(v)) e(`guion.respuestas.${k}`, 'no lleva «?» ni «¿»: el código agrega la opción de hablar con el equipo');
+        else if (contarTexto(v).oraciones > 3) e(`guion.respuestas.${k}`, 'tiene más de 3 oraciones');
       }
     }
   }

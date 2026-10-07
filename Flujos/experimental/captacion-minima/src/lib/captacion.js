@@ -16,7 +16,7 @@
 // NINGÚN NOMBRE DE COMERCIO NI DE PERSONA: `negocio` y `asesor` llegan como parámetros (D14 del contrato).
 //
 // Forma de la configuración que reciben las funciones (`cfg`), la arma «Config del negocio»:
-//   { nombreNegocio, nombreAsistente, asesor,                         // asesor: nombre de pila ('' = «un asesor»)
+//   { nombreNegocio, nombreAsistente, asesor,                         // asesor: nombre de pila ('' = «alguien de nuestro equipo»)
 //     rubros:[{id,nombre,solucion,flujoSugerido}],                    // los de la consola
 //     planes:[{nombre,precioUsd,periodo,incluye}], cargosUnicos:[{nombre,precioUsd,desde,detalle}],
 //     aclaraciones:[{tema,texto}], archivoPlanes:{url,tipo,nombreArchivo}|null }
@@ -45,6 +45,12 @@ const CC_MAX_PALABRAS_QUE_HACEMOS = 24;      // dato por rubro (guion): lo que h
 const CC_MAX_PALABRAS_IMPACTO = 21;          // dato por rubro: el dato de impacto, 1 oración
 const CC_MAX_PALABRAS_COMO_FUNCIONA = 20;    // dato por rubro: cómo funciona, 1 oración (va en el mensaje de planes)
 const CC_MAX_PALABRAS_PREGUNTA_OFERTA = 16;  // la pregunta de cierre de la oferta, con su porqué breve
+// §16 (07/10/2026, documento comercial del asistente): la explicación del rubro (la redacta el modelo con los «puntos clave» del rubro, o sale el respaldo fijo del
+// dato) mide hasta 4 oraciones y 72 palabras, y con la pregunta de cierre (13 palabras) cabe en el límite general (6 oraciones y 95 palabras).
+const CC_MAX_EXPLICACION = 520;              // caracteres de la explicación del rubro (emojis incluidos)
+const CC_MAX_ORACIONES_EXPLICACION = 4;      // una exclamación inicial cuenta como oración
+const CC_MAX_PALABRAS_EXPLICACION = 72;
+const CC_MAX_NECESIDAD = 160;                // caracteres de la «necesidad» que el cliente cuenta (va al resumen de la hoja)
 const CC_MAX_TOKENS = 600;                   // `maxOutputTokens` de «Llamar al modelo» (el razonamiento del modelo también cuenta)
 // Contadores de variantes de los textos fijos (§15): un entero acotado por familia, para no repetir el mismo texto dos veces seguidas.
 const CC_ROT_CLAVES = ['saludo', 'rubros', 'traspaso', 'acuse', 'cierre', 'sinDatos', 'identidad', 'pideAsesor'];
@@ -65,6 +71,8 @@ function ccLimites() {
     empatia: { caracteres: CC_MAX_EMPATIA, oraciones: CC_MAX_ORACIONES_EMPATIA, palabras: CC_MAX_PALABRAS_EMPATIA },
     respuesta: { caracteres: CC_MAX_RESPUESTA, oraciones: CC_MAX_ORACIONES_RESPUESTA },
     guion: { queHacemos: CC_MAX_PALABRAS_QUE_HACEMOS, impacto: CC_MAX_PALABRAS_IMPACTO, comoFunciona: CC_MAX_PALABRAS_COMO_FUNCIONA, preguntaOferta: CC_MAX_PALABRAS_PREGUNTA_OFERTA },
+    explicacion: { caracteres: CC_MAX_EXPLICACION, oraciones: CC_MAX_ORACIONES_EXPLICACION, palabras: CC_MAX_PALABRAS_EXPLICACION },
+    necesidad: CC_MAX_NECESIDAD,
     tokens: CC_MAX_TOKENS,
   };
 }
@@ -248,6 +256,118 @@ function ccPidioContacto(t) {
   return CC_PIDIO_CONTACTO.test(ccNorm(t));
 }
 
+// §16 (documento comercial del asistente, 07/10/2026): cuatro preguntas que NO las contesta el modelo: las detecta el CÓDIGO sobre el texto normalizado y sale una respuesta fija.
+//  - consumo: cuántos mensajes incluye una conversación, límites de interacción o detalles técnicos de consumo (documento §5: JAMÁS un número exacto);
+//  - tope de un plan concreto («¿cuántas conversaciones trae el Impulso?»): se atiende mostrando la imagen de planes, sin cifras escritas;
+//  - banco: si valida los pagos o las transferencias con el banco (prohibición 3 y documento §6: solo revisa visualmente el comprobante);
+//  - integración: si se conecta con un sistema concreto que no es de los que el servicio nombra (documento §6: nunca inventar integraciones).
+const CC_OBJETO_CONSUMO = '(mensajes|conversaciones|interacciones|respuestas|chats)';
+const CC_CONSUMO = new RegExp([
+  '\\b(cuantos|cuantas|cantidad de|numero de) ' + CC_OBJETO_CONSUMO + '\\b',
+  '\\b(limite|limites|tope|topes|maximo|maxima) (de |en |del |por )?(' + CC_OBJETO_CONSUMO.slice(1, -1) + '|interaccion|uso|consumo)\\b',
+  '\\b(hay|tiene|tienen|existe|existen|tendria|tendran) (algun |un |algunos |unos )?(limite|limites|tope|topes)\\b',
+  '\\bconsumo (de|del|por) (mensajes|conversaciones|interacciones|ia|plan|servicio|asistente|bot|datos)\\b',
+  '\\b(detalles?|datos) tecnicos? (del |sobre el |de )?consumo\\b',
+  '\\bcuanto consume\\b',
+].join('|'));
+// Quien cuenta SU propio volumen («no sé cuántos mensajes recibo») no pregunta por el límite del servicio.
+const CC_VOLUMEN_PROPIO = /\b(recibo|recibimos|me llegan|nos llegan|me escriben|nos escriben|atiendo|atendemos|contesto|respondo)\b/;
+const CC_ALCANCE_DEL_SERVICIO = /\b(incluye|incluyen|incluido|incluidos|plan|planes|limite|limites|tope|topes|maximo|conversacion)\b/;
+function ccPreguntaConsumo(t) {
+  const n = ccNorm(t);
+  return CC_CONSUMO.test(n) && !(CC_VOLUMEN_PROPIO.test(n) && !CC_ALCANCE_DEL_SERVICIO.test(n));
+}
+function ccEscaparRegex(x) {
+  return ccTexto(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+// El tope de UN plan: pregunta por cantidades de conversaciones o mensajes y nombra un plan (por su nombre en la consola o la palabra «plan»).
+function ccPreguntaTopePlan(t, planes) {
+  const n = ccNorm(t);
+  if (!/\b(cuantos|cuantas|limite|limites|tope|topes|maximo|incluye|incluyen|incluido|trae|traen|tiene|tienen|alcanza|alcanzan|permite|permiten|da|dan|cubre|cubren)\b/.test(n)) return false;
+  if (!/\b(mensajes|conversaciones|interacciones|respuestas|chats|clientes|usuarios)\b/.test(n)) return false;
+  const nombres = (Array.isArray(planes) ? planes : []).map((p) => ccNorm(p && p.nombre)).filter((x) => x !== '');
+  return /\bplan(es)?\b/.test(n) || nombres.some((x) => new RegExp('\\b' + ccEscaparRegex(x) + '\\b').test(n));
+}
+const CC_VERBO_DE_PAGO = /\b(valida\w*|verifica\w*|confirma\w*|comprueba\w*|acredita\w*|revisa\w*|reconoce\w*|detecta\w*|consulta\w*|cruza\w*)\b/;
+const CC_OBJETO_DE_PAGO = /\b(pagos?|transferencias?|depositos?|comprobantes?|abonos?|qr)\b/;
+function ccPreguntaBanco(t) {
+  const n = ccNorm(t);
+  const pregunta = /[?¿]/.test(ccTexto(t)) || /^(el|la|puede|pueden|como|que|se|valida|verifica|confirma|comprueba)\b/.test(n);
+  const banco = /\bbanc(o|os|aria|ario|arios|arias)\b/.test(n);
+  const verbo = CC_VERBO_DE_PAGO.test(n);
+  const objeto = CC_OBJETO_DE_PAGO.test(n);
+  return (banco && (verbo || objeto) && pregunta) || (verbo && objeto && pregunta);
+}
+// Los sistemas que el servicio SÍ nombra (documento §6): ninguno más se puede afirmar.
+const CC_SISTEMAS_PROPIOS = ['whatsapp', 'meta', 'google calendar', 'calendar', 'google sheets', 'sheets', 'hojas de calculo', 'qr', 'minicrm'];
+const CC_PREGUNTA_INTEGRACION = /\b(?:se |puede |pueden |podria |podrian |podemos |logra |lograria )?(?:conecta|conectan|conectar|conectarse|conectarlo|integra|integran|integrar|integrarse|integrarlo|sincroniza|sincronizan|sincronizar|vincula|vinculan|vincular|es compatible|son compatibles|compatible|compatibles|integracion|integraciones|conexion|conexiones)\s+(?:directamente |tambien |bien )?(?:con|a|al|a la)\s+(.{1,60})$/;
+function ccPreguntaIntegracion(t) {
+  const n = ccNorm(t);
+  const m = CC_PREGUNTA_INTEGRACION.exec(n);
+  if (!m) return false;
+  const objeto = m[1].trim();
+  // Un sistema propio (Google Calendar, WhatsApp…) lo contesta el modelo con los datos; cualquier otro, o «mi sistema», «mi ERP», «él», no se afirma.
+  return !CC_SISTEMAS_PROPIOS.some((x) => objeto === x || objeto.indexOf(x + ' ') === 0);
+}
+// Lo que preguntó, en vocabulario CERRADO (va a la ficha y al resumen de la hoja; nunca el texto del cliente).
+const CC_TEMAS = ['costos', 'consumo', 'integraciones', 'pagos', 'dudas'];
+function ccTemasDe(t, planes) {
+  const out = [];
+  if (ccPideListaPlanes(t)) out.push('costos');
+  if (ccPreguntaConsumo(t) || ccPreguntaTopePlan(t, planes)) out.push('consumo');
+  if (ccPreguntaIntegracion(t)) out.push('integraciones');
+  if (ccPreguntaBanco(t)) out.push('pagos');
+  return out;
+}
+function ccTemasUnidos(antes, nuevos) {
+  const out = [];
+  for (const x of (Array.isArray(antes) ? antes : []).concat(Array.isArray(nuevos) ? nuevos : [])) if (CC_TEMAS.includes(x) && !out.includes(x)) out.push(x);
+  return out;
+}
+
+// §16: lo que el modelo extrae del cliente (`necesidad`, `nombre`, `empresa`) se valida a mano: el modelo no puede inventar ni colar nada a la hoja.
+// El raíz de 5 letras de cada palabra: «agenda» y «agendar» son la misma, y sirve para comprobar que lo extraído sale de lo que el cliente dijo.
+function ccRaices(textos) {
+  const set = new Set();
+  for (const t of (Array.isArray(textos) ? textos : [textos])) for (const w of ccNorm(t).split(' ')) if (w.length >= 3) set.add(w.slice(0, 5));
+  return set;
+}
+const CC_FORMULA = /^[=+\-@]/;
+const CC_DATO_PERSONAL = /@|\d{5,}|\d[\d\s.-]{6,}\d/;
+// La necesidad del cliente: lo que cuenta que le cuesta o que quiere, hasta 160 caracteres, en una línea, sin enlaces, fórmulas ni datos personales (teléfonos, correos,
+// carnets) y sin órdenes. `textos` (opcional): lo que dijo el cliente; con él, cada palabra de 5 letras o más tiene que salir de ahí (el modelo no inventa).
+function ccNecesidadValida(v, textos) {
+  const s = ccPlano(ccTexto(v).normalize('NFKC').replace(CC_INVISIBLES, ''), CC_MAX_NECESIDAD + 1);
+  if (s.length < 3 || s.length > CC_MAX_NECESIDAD) return '';
+  if (/[\[\]{}<>«»"`*_~|\\]/.test(s) || CC_FORMULA.test(s)) return '';
+  if (ccEsOrden(s) || CC_ENLACE.test(s) || CC_DATO_PERSONAL.test(s)) return '';
+  if (!/\p{L}{3}/u.test(s)) return '';
+  if (CC_RELLENO.test(ccNorm(s))) return '';
+  if (textos !== undefined) {
+    const raices = ccRaices(textos);
+    if (ccNorm(s).split(' ').filter((w) => w.length >= 5).some((w) => !raices.has(w.slice(0, 5)))) return '';
+  }
+  return s;
+}
+// El nombre de pila y apellido de quien escribe: de 2 a 4 palabras con letras (sin dígitos), sin enlaces, fórmulas ni órdenes, y que salgan de lo que dijo.
+const CC_NO_ES_PERSONA = new Set('mi mis tu tus su sus hola gracias buenas buenos dias tardes noches negocio empresa tienda local nombre llamo soy somos estoy tengo vendo ok no si nada ninguno el la los las un una'.split(' '));
+function ccNombreDePersonaValido(v, textos) {
+  const s = ccPlano(ccTexto(v).normalize('NFKC').replace(CC_INVISIBLES, '')).replace(/[.,;:!¡]+$/, '').trim();
+  if (s.length < 3 || s.length > 60) return '';
+  if (/[\[\]{}<>«»"`*_~|\\@\d?¿,;:]/.test(s) || CC_FORMULA.test(s)) return '';
+  if (ccEsOrden(s) || CC_ENLACE.test(s)) return '';
+  const palabras = s.split(' ');
+  if (palabras.length < 2 || palabras.length > 4) return '';
+  if (!palabras.every((w) => /^\p{L}[\p{L}'’.-]*$/u.test(w) && (w.match(/\p{L}/gu) || []).length >= 2)) return '';
+  const nn = ccNorm(s).split(' ');
+  if (nn.some((w) => CC_NO_ES_PERSONA.has(w)) || nn.every((w) => CC_ACUSE_PALABRAS.has(w))) return '';
+  if (textos !== undefined) {
+    const base = (Array.isArray(textos) ? textos : [textos]).map((t) => ' ' + ccNorm(t) + ' ');
+    if (!nn.every((w) => base.some((b) => b.includes(' ' + w + ' ')))) return '';
+  }
+  return s;
+}
+
 // ------------------------------------------------------------------ rubros, toques y campañas
 // «Otro / a medida» no es un rubro: es la salida abierta. La misma prueba que usa la consola.
 function ccEsAMedida(r) {
@@ -311,6 +431,8 @@ function ccLeerToque(id, rubros) {
 function ccEstadoBase() {
   return {
     v: 1, paso: 'inicio', rubroId: '', rubroLibre: '', empresa: '', reintentoEmpresa: false,
+    // §16: lo que el cliente cuenta (para el resumen de la hoja): su nombre (el que dice, no el del perfil), su necesidad (hasta 160 caracteres, sanitizada) y de qué preguntó (vocabulario cerrado).
+    nombre: '', necesidad: '', temas: [],
     hechos: { pidioAsesor: false, pidioPlanes: false, eligioOtro: false, respondioDolor: false, descarte: '' },
     planesPendientes: false, planesMostrados: false, soporte: false, anuncio: false,
     avisado: false, avisoFalla: '', ultimoMensajeMs: 0, ultimosIds: [],
@@ -345,6 +467,9 @@ function ccEstadoVigente(e, ahoraMs) {
     rubroId: CC_ID_RUBRO.test(ccTexto(e.rubroId)) ? e.rubroId : '',
     rubroLibre: ccPlano(e.rubroLibre, 60),
     empresa: ccPlano(e.empresa, 60),
+    nombre: ccNombreDePersonaValido(e.nombre),
+    necesidad: ccNecesidadValida(e.necesidad),
+    temas: ccTemasUnidos(e.temas, []).slice(0, CC_TEMAS.length),
     reintentoEmpresa: e.reintentoEmpresa === true,
     hechos: {
       pidioAsesor: h.pidioAsesor === true, pidioPlanes: h.pidioPlanes === true,
@@ -432,6 +557,8 @@ function ccBarrer(mapa, ahoraMs) {
 }
 // Los hechos de calificación: lo que el prospecto HIZO no se quita nunca; el motivo de descarte nuevo reemplaza
 // al viejo solo si es de la lista.
+// §16: `respondioDolor` conserva su NOMBRE histórico pero cambia de significado: es «interactuó después de la explicación» (escribió o dijo algo sustantivo —una pregunta de fondo,
+// un comentario sobre su negocio, su necesidad— y no un acuse ni un saludo; en «Otro», respondió el cierre investigativo). Media = eligió rubro (o «Otro») y `respondioDolor`.
 function ccHechos(antes, nuevos) {
   const a = antes && typeof antes === 'object' ? antes : {};
   const n = nuevos && typeof nuevos === 'object' ? nuevos : {};
@@ -541,10 +668,16 @@ function ccTextoDelCorpus(conocimiento) {
 function ccInstrucciones(cfg, conocimiento) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
   const negocio = ccLineaDeConsola(c.nombreNegocio || c.negocio, 60) || 'el negocio';
-  const asesor = ccLineaDeConsola(c.asesor, 20) || 'un asesor';
+  const asesor = ccLineaDeConsola(c.asesor, 20) || 'alguien del equipo';
   const rubros = ccRubrosComunes(c);
+  // §16: los PUNTOS CLAVE de cada rubro (del guion del tenant, tomados del documento comercial) van aquí, en la parte estática: la explicación se apoya OBLIGATORIAMENTE en ellos.
+  const puntos = (r) => {
+    const g = ccGuionDe(c, ccTexto(r.id)).propia;
+    const l = g && Array.isArray(g.puntosClave) ? g.puntosClave.map((x) => ccLineaDeConsola(x, 200)).filter((x) => x !== '') : [];
+    return l.length ? '\n  PUNTOS CLAVE: ' + l.join('; ') : '';
+  };
   const rubrosTexto = rubros.length
-    ? rubros.map((r) => '- ' + r.id + ': ' + ccLineaDeConsola(r.nombre, 60) + (r.solucion && !ccTieneMonto(r.solucion) ? ' — ' + ccLineaDeConsola(r.solucion, 300) : '')).join('\n')
+    ? rubros.map((r) => '- ' + r.id + ': ' + ccLineaDeConsola(r.nombre, 60) + (r.solucion && !ccTieneMonto(r.solucion) ? ' — ' + ccLineaDeConsola(r.solucion, 300) : '') + puntos(r)).join('\n')
     : '(no hay rubros cargados)';
   const planes = Array.isArray(c.planes) ? c.planes : [];
   const planesTexto = planes.length
@@ -555,8 +688,9 @@ function ccInstrucciones(cfg, conocimiento) {
     ? aclaraciones.map((a, i) => 'a' + (i + 1) + ': ' + ccLineaDeConsola(a && a.tema, 60) + (a && a.texto && !ccTieneMonto(a.texto) ? ' — ' + ccLineaDeConsola(a.texto, 600) : ' (el texto trae cifras: no lo repitas, devuelve solo su id)')).join('\n')
     : '(ninguna)';
   const corpus = ccTextoDelCorpus(conocimiento) || '(sin información adicional)';
+  const nombreAsistente = ccLineaDeConsola(c.nombreAsistente, 40);
   return [
-    'Eres el asistente virtual de ' + negocio + ', con inteligencia artificial. Conversas por WhatsApp con personas que quieren conocer el servicio. Hablas en español, de tú, con frases cortas. Nunca niegas ser una inteligencia artificial: si te lo preguntan, lo dices con naturalidad.',
+    'Eres ' + (nombreAsistente ? nombreAsistente + ', ' : '') + 'el asistente virtual de ' + negocio + ', con inteligencia artificial: un asistente comercial consultivo, empático y orientado a resultados. Conversas por WhatsApp con personas que quieren conocer el servicio. Hablas en español, de tú, con frases cortas, con lenguaje natural y emojis de forma equilibrada. Nunca niegas ser una inteligencia artificial: si te lo preguntan, lo dices con naturalidad.',
     '',
     'El guion de la conversación (saludar, mostrar los rubros, preguntar, mostrar los planes y pasar con ' + asesor + ') lo ejecuta otro sistema. Tú NO decides nada de eso. Solo devuelves un JSON con los campos del esquema, y de cada campo llenas lo que corresponde.',
     '',
@@ -569,8 +703,14 @@ function ccInstrucciones(cfg, conocimiento) {
     '- aclaracion: si la respuesta está en una de las aclaraciones de abajo, su id (a1, a2…); si no, "ninguno".',
     '- enLosDatos: true solo si la respuesta sale de los datos de abajo; si no, false.',
     '- descarte: "numero_equivocado", "vende_o_busca_trabajo", "sin_negocio" o "spam_o_prueba" solo si es claro; si no, "ninguno".',
+    '- explicacion: solo si la TAREA del turno es EXPLICAR EL RUBRO, o si el cliente acaba de decir claramente de qué rubro es su negocio (rubroId distinto de "ninguno"): hasta ' + CC_MAX_ORACIONES_EXPLICACION + ' oraciones y ' + CC_MAX_PALABRAS_EXPLICACION + ' palabras que expliquen el servicio PARA ESE RUBRO apoyándote OBLIGATORIAMENTE en los PUNTOS CLAVE de ese rubro (están abajo, en la lista de rubros): cúbrelos todos, con tus palabras, de forma natural y adaptada a lo que el cliente dijo (si no dijo nada, ve directo al valor). Empieza con una frase breve y cálida y usa los emojis que ayuden (equilibrado: 3 o 4 como máximo). Sin preguntas (el sistema agrega la pregunta de cierre), sin cifras de consumo, sin montos ni precios, sin promesas y sin enlaces. Si no aplica, vacío.',
+    '- necesidad: lo que el cliente cuenta que necesita o lo que más le cuesta hoy en WhatsApp, con SUS palabras, resumido en hasta ' + CC_MAX_NECESIDAD + ' caracteres, sin datos personales (teléfono, correo, carnet), sin enlaces ni fórmulas. Si no lo dijo, vacío.',
+    '- nombre: solo si el cliente dijo su nombre y apellido: de 2 a 4 palabras tal como las escribió, y nada más. Si no, vacío.',
+    '- empresa: solo si el cliente dijo el nombre de su negocio: tal como lo escribió. Si no, vacío.',
     '',
-    'Tono (lo que escribes en «empatia» y en «respuesta»):',
+    'Si el negocio NO encaja en los rubros de la lista (el cliente cuenta de qué trata y no es uno de ellos), NO uses ejemplos predeterminados ni inventes funciones: en «empatia» valida con naturalidad que su industria maneja procesos únicos y menciona brevemente un reto típico de esa industria específica, sin afirmar nada que haga el servicio (la propuesta de valor la agrega el sistema).',
+    '',
+    'Tono (lo que escribes en «empatia», «explicacion» y «respuesta»):',
     '- Eres un vendedor consultivo, no un formulario: reconoce con calidez lo que el cliente cuenta, conéctalo con algo concreto que haría el servicio (SOLO lo que está en los datos de abajo) y deja claro el siguiente paso, sin presionar.',
     '- Escribe como una persona cercana y entusiasta de Bolivia: cálida, con exclamaciones y un emoji cuando aporta. Nunca suenes seco, administrativo ni como un formulario.',
     '- Refleja con tus palabras lo que el cliente te contó, para que se sienta escuchado; no lo copies tal cual ni repitas sus palabras una por una, y tampoco repitas las frases de los mensajes fijos del sistema.',
@@ -583,6 +723,9 @@ function ccInstrucciones(cfg, conocimiento) {
     '- Nunca escribas un monto ni un precio, ni «cuesta», ni «vale». Los precios los muestra el código.',
     '- Nunca prometas que alguien escribirá, llamará o avisará: el código ofrece hablar con ' + asesor + ' cuando corresponde.',
     '- No inventes datos del negocio. Si no está abajo, no lo sabes.',
+    '- Nunca inventes integraciones: los únicos sistemas que puedes nombrar son WhatsApp, Meta, Google Calendar, Google Sheets (el miniCRM) y el cobro con QR. Ningún otro sistema, plataforma, banco ni pasarela, aunque el cliente lo mencione: si pregunta por uno, deja «respuesta» vacía y enLosDatos en false.',
+    '- Nunca digas que el asistente valida, verifica o acredita pagos o transferencias, ni que consulta al banco: solo revisa visualmente el comprobante; quien confirma que el dinero entró es el banco, y el negocio.',
+    '- Si preguntan cuántos mensajes incluye una conversación, por límites de uso o por el consumo, NUNCA des números: eso lo contesta el sistema. Tampoco escribas cifras de conversaciones o mensajes de ningún plan.',
     '',
     'DATOS',
     '',
@@ -604,7 +747,7 @@ function ccEsquema(rubroIds, aclaracionIds) {
   const ids = (l) => (Array.isArray(l) ? l : []).filter((x) => typeof x === 'string' && x !== '' && x !== 'ninguno');
   return {
     type: 'OBJECT',
-    required: ['tipo', 'rubroId', 'rubroLibre', 'empatia', 'respuesta', 'aclaracion', 'enLosDatos', 'descarte'],
+    required: ['tipo', 'rubroId', 'rubroLibre', 'empatia', 'respuesta', 'aclaracion', 'enLosDatos', 'descarte', 'explicacion', 'necesidad', 'nombre', 'empresa'],
     properties: {
       tipo: { type: 'STRING', enum: CC_TIPOS.slice() },
       rubroId: { type: 'STRING', enum: ['ninguno'].concat(ids(rubroIds)) },
@@ -614,11 +757,16 @@ function ccEsquema(rubroIds, aclaracionIds) {
       aclaracion: { type: 'STRING', enum: ['ninguno'].concat(ids(aclaracionIds)) },
       enLosDatos: { type: 'BOOLEAN' },
       descarte: { type: 'STRING', enum: ['ninguno'].concat(CC_DESCARTES) },
+      explicacion: { type: 'STRING' },
+      necesidad: { type: 'STRING' },
+      nombre: { type: 'STRING' },
+      empresa: { type: 'STRING' },
     },
   };
 }
 // El cuerpo de la llamada a `generateContent`. `systemInstruction` es la estática; el turno va en `contents`.
-//   { paso, cfg, mensaje, preguntaHecha, textoDeImagen, ahoraMs, rubro?, conocimiento? }
+//   { paso, modo, cfg, mensaje, preguntaHecha, textoDeImagen, ahoraMs, rubro?, conocimiento? }
+//   modo: lo que el plan le pide al modelo (`explicar`, `eligiendo`, `negocio`, `empresa`, `libre`…): `explicar` agrega la TAREA de explicar el rubro (§16).
 //   rubro: el nombre del rubro ya elegido ('' si no hay); conocimiento: el corpus (objeto o texto; si falta, `cfg.conocimiento`).
 function ccCuerpoModelo(a) {
   const o = a || {};
@@ -628,8 +776,14 @@ function ccCuerpoModelo(a) {
   while (/<<<|>>>/.test(mensaje)) mensaje = mensaje.replace(/<<<|>>>/g, '');
   mensaje = ccCortar(mensaje.trim(), 1500);
   const imagen = ccLineaDeConsola(o.textoDeImagen, 600);
+  const explicar = o.modo === 'explicar';
+  if (explicar && mensaje === '') mensaje = '(eligió el rubro tocando la lista)';
+  const tarea = explicar ? 'TAREA: EXPLICAR EL RUBRO. El cliente eligió el rubro de RUBRO: llena «explicacion» con sus PUNTOS CLAVE (y una «empatia» breve); «tipo» es "respuesta".'
+    : (o.modo === 'empresa' ? 'TAREA: el sistema pidió el nombre de la persona y el de su negocio: llena «nombre» y «empresa» solo con lo que el cliente dijo.'
+      : (o.modo === 'negocio' ? 'TAREA: el sistema pidió de qué trata el negocio y qué es lo que más le cuesta: llena «rubroLibre» y «necesidad» solo con lo que el cliente dijo.' : ''));
   const turno = [
     'PASO: ' + (CC_PASOS.includes(o.paso) ? o.paso : 'libre'),
+    tarea,
     'PREGUNTA QUE HICISTE: ' + (ccLineaDeConsola(o.preguntaHecha, 200) || '(ninguna)'),
     // S8: lo que viene del cliente o de su imagen va dentro de un bloque delimitado (`[[[…]]]`: el texto ya no puede traer corchetes).
     'RUBRO: [[[' + (ccLineaDeConsola(o.rubro, 60) || 'sin elegir') + ']]]',
@@ -681,9 +835,39 @@ const CC_YO_DEL_MODELO = /\bsoy\b|\bsomos\b|\bte habla\b|aqui no hay (ningun )?(
 const CC_PROMESA_DEL_MODELO = /\b(se|te) (pondra|pondran|contacta|contactara|comunica|comunicara|llama|llamara|escribe|escribira|responde|respondera|responderan)\b|\bte respond(emos|eremos)\b|\ben contacto contigo\b|\bse comunica\w* contigo\b|\bmenos de \d+ horas\b|\bte va a (llamar|escribir|contactar|avisar|responder|enviar|mandar|ayudar)\b|\bte (llamaran|contactaran|escribiran|avisaran|enviaran|mandaran|ayudaran)\b|\brecibiras (una llamada|un mensaje|una respuesta)\b|\bte llegara\b|\bte (enviaremos|mandaremos|llamaremos|escribiremos|contactaremos|avisaremos|llamamos|escribimos|contactamos|avisamos|envio|mando)\b|\bcoordinamos (una )?(llamada|reunion)\b|\b(asesor|asesora|equipo|especialista|ejecutivo|ejecutiva) (responde|contesta|escribe|llama|contacta|avisa)\b|\bpuede (llamarte|escribirte|contactarte)\b/;
 // S3: ninguna oferta, regalo, rebaja ni precio especial sale de la redacción del modelo.
 const CC_OFERTA_DEL_MODELO = /\bsin costo\b|\bsin cargo\b|\bde regalo\b|\brebaja|\bpor ciento\b|\bpromoci|\boferta|\bprecio especial\b|\bbonific|\b2x1\b|\blanzamiento\b/;
+// §16 (documento comercial del asistente, §5 y §6): lo que el modelo NO puede escribir aunque esté en los datos que ve.
+//  - ninguna cifra de consumo («100 conversaciones», «hasta 220 mensajes», «cien conversaciones»): los topes los muestra la imagen de planes;
+//  - nada que afirme que el servicio valida, verifica o acredita pagos o transferencias, ni que consulta al banco (solo revisa visualmente el comprobante; confirman el banco y el negocio);
+//  - ningún sistema, plataforma, banco o pasarela que el servicio no nombre (`CC_SISTEMAS_PROPIOS`): ni uno conocido, ni una marca (mayúscula en medio de la frase).
+const CC_CIFRA_DE_CONSUMO = /\b\d[\d.,]*\s+(?:\w+\s+){0,2}(?:conversaciones?|mensajes?|interacciones?|respuestas?|chats?)\b|\b(?:conversaciones?|mensajes?|interacciones?|respuestas?)\s+(?:\w+\s+){0,2}\d|\b(?:cien|ciento|doscientas?|trescientas?|quinientas?|mil|diez|veinte|treinta|cincuenta)\s+(?:conversaciones?|mensajes?|interacciones?|respuestas?)\b/;
+const CC_ACREDITA_MODELO = /\b(?:valida|validan|validar|validamos|verifica|verifican|verificar|acredita|acreditan|acreditar|comprueba|comprueban|confirma|confirman|confirmar)\w*[^.!?]{0,40}\b(?:pagos?|transferencias?|depositos?|comprobantes?|qr|banco)\b|\b(?:pagos?|transferencias?|depositos?|comprobantes?)\b[^.!?]{0,40}\b(?:acreditad\w*|verificad\w*|validad\w*|confirmad\w*|aprobad\w*)\b|\bcon el banco\b|\bdirectamente con (?:el )?banco\b/;
+const CC_SISTEMA_CONOCIDO = /\b(?:sap|tigo ?money|tigo|shopify|woocommerce|wix|zapier|odoo|excel|power ?bi|salesforce|hubspot|zoho|mercado ?pago|mercado ?libre|paypal|stripe|binance|yape|plin|facebook|instagram|messenger|telegram|tiktok|gmail|outlook|slack|trello|notion|airtable|quickbooks|alegra|siigo|erp|crm|banco union|bnb|bisa|bcp|banco economico|banco ganadero|banco mercantil|prodem|pagos? ?net|visa|mastercard|pedidosya|rappi|uber ?eats|google ?pay|apple ?pay|chatgpt|openai|gemini|claude)\b/;
+const CC_NOMBRES_PROPIOS_OK = ['whatsapp', 'meta', 'google', 'calendar', 'sheets', 'qr', 'ia', 'minicrm', 'kanban', 'setup', 'setups', 'medida', 'bolivia'];
+function ccSistemaAjeno(t, permitidos, estricto) {
+  const s = ccTexto(t).normalize('NFKC');
+  if (CC_SISTEMA_CONOCIDO.test(ccNorm(s))) return true;
+  const ok = new Set(CC_NOMBRES_PROPIOS_OK.concat(Array.isArray(permitidos) ? permitidos : []).map((x) => ccNorm(x)).filter((x) => x !== ''));
+  const fuera = (w) => !ok.has(ccNorm(w));
+  for (const m of s.matchAll(/\b[\p{L}]*\p{Ll}\p{Lu}[\p{L}]*\b|\b\p{Lu}{2,}\b/gu)) if (fuera(m[0])) return true;
+  if (estricto === true) {
+    for (const m of s.matchAll(/(?<=[a-záéíóúñ,;:] )\p{Lu}[\p{L}]{2,}(?: \p{Lu}[\p{L}]{2,})*/gu)) if (m[0].split(' ').some(fuera)) return true;
+  }
+  return false;
+}
+// «Obligatoriamente basada en los puntos clave» (documento §2): cada punto clave se toca si aparecen un tercio o más de sus raíces (5 letras, palabras de 5 o más), y la explicación tiene que tocar al menos el 60% de los puntos.
+function ccCubrePuntos(texto, puntos) {
+  const lista = (Array.isArray(puntos) ? puntos : []).filter((x) => typeof x === 'string' && x !== '');
+  if (!lista.length) return true;
+  const raices = ccRaices(texto);
+  const tocados = lista.filter((p) => {
+    const rs = ccNorm(p).split(' ').filter((w) => w.length >= 5).map((w) => w.slice(0, 5));
+    return rs.length === 0 || rs.filter((r) => raices.has(r)).length * 3 >= rs.length;
+  });
+  return tocados.length * 5 >= lista.length * 3;
+}
 function ccLeerModelo(jsonGemini, opciones) {
   const op = opciones || {};
-  const falla = (motivo) => ({ ok: false, motivo: motivo, tipo: 'otro', rubroId: '', rubroLibre: '', empatia: CC_EMPATIA_RESPALDO, respuesta: '', aclaracion: '', enLosDatos: false, descarte: '' });
+  const falla = (motivo) => ({ ok: false, motivo: motivo, tipo: 'otro', rubroId: '', rubroLibre: '', empatia: CC_EMPATIA_RESPALDO, respuesta: '', aclaracion: '', enLosDatos: false, descarte: '', explicacion: '', necesidad: '', nombre: '', empresa: '' });
   const vacio = jsonGemini === undefined || jsonGemini === null || (typeof jsonGemini === 'string' && jsonGemini.trim() === '');
   if (vacio) return falla('vacio');
   const j = ccObjetoDelModelo(jsonGemini);
@@ -705,23 +889,32 @@ function ccLeerModelo(jsonGemini, opciones) {
     quienPromete: ['asesor', 'asesora', 'especialista', 'ejecutivo', 'ejecutiva', 'equipo', 'alguien', 'recepcion'].concat(asesorNorm ? [asesorNorm] : []),
   };
   const datos = ccTexto(op.datos);
-  const revisar = (texto, maxOraciones, maxLargo, esEmpatia) => {
+  // Los nombres propios que se pueden decir: el negocio, el asistente y los planes de la consola (§16).
+  const propios = [op.nombreNegocio, op.nombreAsistente].concat((Array.isArray(op.planes) ? op.planes : []).map((x) => x && x.nombre)).filter((x) => typeof x === 'string' && x !== '').join(' ').split(' ');
+  // `clase`: 'empatia', 'respuesta' o 'explicacion' (§16: la explicación del rubro, hasta 4 oraciones y 72 palabras, con cifras solo si están en los datos que ve el modelo).
+  const revisar = (texto, maxOraciones, maxLargo, clase) => {
     const r = cmRevisarRedaccion(ccPlano(texto), filtro);
     const t = ccPlano(r.texto);
     if (!t || !/\p{L}/u.test(t) || r.motivo !== '' || /[?¿]/.test(t) || t.length > maxLargo || ccContar(t).oraciones > maxOraciones) return '';
     const n = cmNorm(t);
     // S1 (hablar en primera persona como alguien), S2 (promesas de contacto), S3 (montos y ofertas): nada de eso sale del modelo.
     if (CC_YO_DEL_MODELO.test(n) || CC_PROMESA_DEL_MODELO.test(n) || CC_OFERTA_DEL_MODELO.test(n) || ccTieneMonto(t) || ccMontoDelModelo(t) || /%|gratis|descuento/.test(n)) return '';
-    if (esEmpatia) {
+    // §16: ninguna cifra de consumo, ninguna validación de pagos con el banco y ningún sistema que el servicio no nombre.
+    if (CC_CIFRA_DE_CONSUMO.test(n) || CC_ACREDITA_MODELO.test(n) || ccSistemaAjeno(t, propios, clase !== 'empatia')) return '';
+    if (clase === 'empatia') {
       if (/\d|promo|oferta/.test(n) || /\b(asesor|asesora|ejecutiv[oa])\b/.test(n)) return '';
       if (ccContar(t).palabras > CC_MAX_PALABRAS_EMPATIA) return '';
       if (asesorNorm && new RegExp('\\b' + asesorNorm.replace(/[.*+?^${}()[\]\\|]/g, '\\$&') + '\\b').test(n)) return '';
-    } else if ((t.match(/\d+(?:[.,]\d+)*/g) || []).some((x) => datos.indexOf(x) < 0)) return '';  // solo números que están en lo que ve el modelo
+    } else {
+      // Solo números que están en lo que ve el modelo, como número ENTERO («7» no está en «72» ni en «2027»).
+      if ((t.match(/\d+(?:[.,]\d+)*/g) || []).some((x) => !new RegExp('(?<![\\d.,])' + x.replace(/[.,]/g, '[.,]') + '(?![\\d]|[.,]\\d)').test(datos))) return '';
+      if (clase === 'explicacion' && ccContar(t).palabras > CC_MAX_PALABRAS_EXPLICACION) return '';
+    }
     return t;
   };
   // La empatía: una idea, con una exclamación inicial a lo más (cuenta como oración: hasta 2) y hasta 140 caracteres.
-  const empatia = revisar(j.empatia, CC_MAX_ORACIONES_EMPATIA, CC_MAX_EMPATIA, true) || CC_EMPATIA_RESPALDO;
-  let respuesta = revisar(j.respuesta, CC_MAX_ORACIONES_RESPUESTA, CC_MAX_RESPUESTA, false);
+  const empatia = revisar(j.empatia, CC_MAX_ORACIONES_EMPATIA, CC_MAX_EMPATIA, 'empatia') || CC_EMPATIA_RESPALDO;
+  let respuesta = revisar(j.respuesta, CC_MAX_ORACIONES_RESPUESTA, CC_MAX_RESPUESTA, 'respuesta');
   let enLosDatos = j.enLosDatos === true && respuesta !== '';
   const aclaracionIds = Array.isArray(op.aclaracionIds) ? op.aclaracionIds : [];
   let aclaracion = j.aclaracion !== 'ninguno' && aclaracionIds.includes(j.aclaracion) ? j.aclaracion : '';
@@ -733,16 +926,26 @@ function ccLeerModelo(jsonGemini, opciones) {
     } else if (j.enLosDatos === true) enLosDatos = true;
   }
   const descarte = CC_DESCARTES.includes(j.descarte) ? j.descarte : '';
-  return { ok: true, motivo: '', tipo: tipo, rubroId: rubroId, rubroLibre: rubroLibre, empatia: empatia, respuesta: respuesta, aclaracion: aclaracion, enLosDatos: enLosDatos, descarte: descarte };
+  // §16: lo que el modelo extrae del cliente. Los campos son opcionales para quien lee (un esquema viejo no los trae) y cada uno se valida contra lo que el cliente DIJO.
+  const cadena = (v) => (typeof v === 'string' ? v : '');
+  const explicacion = revisar(cadena(j.explicacion), CC_MAX_ORACIONES_EXPLICACION, CC_MAX_EXPLICACION, 'explicacion');
+  const necesidad = ccNecesidadValida(cadena(j.necesidad), textos);
+  const nombre = ccNombreDePersonaValido(cadena(j.nombre), [op.textoCliente]);
+  const empresaCruda = ccNombreDeEmpresa(cadena(j.empresa));
+  const baseEmpresa = ' ' + ccNorm(op.textoCliente) + ' ';
+  const empresa = empresaCruda && ccNorm(empresaCruda).split(' ').every((w) => baseEmpresa.includes(' ' + w + ' ')) && ccNorm(empresaCruda) !== ccNorm(nombre) ? empresaCruda : '';
+  return { ok: true, motivo: '', tipo: tipo, rubroId: rubroId, rubroLibre: rubroLibre, empatia: empatia, respuesta: respuesta, aclaracion: aclaracion, enLosDatos: enLosDatos, descarte: descarte, explicacion: explicacion, necesidad: necesidad, nombre: nombre, empresa: empresa };
 }
 
 // ------------------------------------------------------------------ los mensajes que arma el código (§6)
+// §16: sin nombre, el botón dice «Hablar con el equipo» (20 caracteres, el máximo de Meta): nadie del equipo se nombra y nadie promete nada, el botón es el mecanismo.
 function ccTituloAsesor(nombre) {
   const t = 'Hablar con ' + ccPlano(nombre, 20);
-  return ccPlano(nombre) !== '' && t.length <= CC_TITULO_BOTON ? t : 'Hablar con un asesor';
+  return ccPlano(nombre) !== '' && t.length <= CC_TITULO_BOTON ? t : 'Hablar con el equipo';
 }
-// Quién atiende: el nombre de pila que configure el tenant o, sin nombre (la persona que atienda puede ser otra), «un asesor».
-// Sirve en toda posición de la frase («hablar con un asesor», «escribirle directo a un asesor»); al inicio de una oración, con `ccInicial`.
+// Quién atiende: el nombre de pila que configure el tenant o, sin nombre (la persona que atienda puede ser otra), «alguien de nuestro equipo» (§16: el documento comercial
+// habla de «nuestro equipo»; nunca «se comunique contigo»). Sirve en toda posición de la frase («hablar con alguien de nuestro equipo», «escribirle directo a alguien de
+// nuestro equipo»); al inicio de una oración, con `ccInicial`.
 // ¿Hay a quién mandar al cliente? Un número de recepción válido y que no sea el de quien escribe: solo entonces se ofrece el botón del asesor donde antes
 // se ofrecía como respaldo (la reformulación de la pregunta repetida y «sin datos»).
 function ccHayRecepcion(cfg, from) {
@@ -751,7 +954,7 @@ function ccHayRecepcion(cfg, from) {
   return numero.length >= 6 && numero !== desde;
 }
 function ccQuien(asesor) {
-  return ccPlano(asesor, 20) || 'un asesor';
+  return ccPlano(asesor, 20) || 'alguien de nuestro equipo';
 }
 function ccInicial(t) {
   const s = ccTexto(t);
@@ -786,7 +989,7 @@ function ccLista(cuerpo, rubros, conAsesor, tituloAsesor) {
     return { id: 'rubro:' + r.id, title: t.titulo, description: t.recortado ? ccRecorte(r.nombre, CC_DESCRIPCION_FILA) : '' };
   });
   filas.push({ id: 'rubro:otro', title: 'Otro / a medida', description: 'Cuéntame de qué trata tu negocio' });
-  if (conAsesor) filas.push({ id: 'asesor', title: ccPlano(tituloAsesor, CC_TITULO_FILA) || 'Hablar con un asesor', description: '' });
+  if (conAsesor) filas.push({ id: 'asesor', title: ccPlano(tituloAsesor, CC_TITULO_FILA) || 'Hablar con el equipo', description: '' });
   const texto = ccPlano(cuerpo);
   const nombres = elegidos.map((r) => ccPlano(r.nombre, 60)).concat(['Otro']).join(', ');
   const respaldo = texto + '\nPor ejemplo: ' + nombres + '.' + (conAsesor ? ' Si prefieres hablar con una persona, escríbeme «asesor».' : '');
@@ -802,34 +1005,42 @@ function ccLista(cuerpo, rubros, conAsesor, tituloAsesor) {
 // propone el siguiente paso con un porqué breve (§15, hasta 16 palabras).
 function ccPreguntaDeOferta(quien, conPlanes, indice) {
   const i = Number.isInteger(indice) && indice >= 0 ? indice % 3 : 0;
+  // §16 (D7): la 1.ª vez de la ficha (y de cada ventana) es la pregunta EXACTA del documento comercial; las otras dos dicen lo mismo con otras palabras.
   return (conPlanes
-    ? ['¿Quieres ver los planes para ubicar tu presupuesto, o prefieres hablar con ' + quien + '?',
-      '¿Te muestro los planes para que compares opciones, o prefieres hablar directo con ' + quien + '?',
-      '¿Te cuento los planes para que veas qué encaja contigo, o prefieres hablar con ' + quien + '?']
+    ? ['¿Te gustaría ver nuestros planes o prefieres hablar con ' + quien + '? 🤝',
+      '¿Quieres que te muestre los planes, o prefieres hablar con ' + quien + '? 😊',
+      '¿Prefieres ver nuestros planes o hablar con ' + quien + '? 🙌']
     : ['¿Te gustaría hablar con ' + quien + ' para ver cómo lo armaríamos en tu caso?',
-      '¿Te animas a hablar con ' + quien + ' para ver cómo se adaptaría a tu caso?',
-      '¿Quieres hablar directo con ' + quien + ' para resolver tus dudas?'])[i];
+      '¿Quieres hablar con ' + quien + ' para ver cómo se adaptaría a tu caso?',
+      '¿Quieres hablar con ' + quien + ' para resolver tus dudas?'])[i];
 }
 // Tras una respuesta suelta, sin repetir la pregunta (§14), la oferta cierra con una invitación sin «?» (§15): orienta al siguiente paso y los botones siguen.
 function ccCierreSinPregunta(quien, conPlanes, indice) {
   const i = Number.isInteger(indice) && indice >= 0 ? indice % 3 : 0;
   return (conPlanes
-    ? ['Cuando quieras, te muestro los planes o puedes escribirle a ' + quien + ' 😊', 'Si quieres seguir, puedo mostrarte los planes o puedes hablar directo con ' + quien + ' 🙌', 'Estoy aquí para lo que necesites: ver los planes o hablar con ' + quien + ' cuando quieras 😊']
-    : ['Cuando quieras, puedes hablar con ' + quien + ' para ver tu caso 😊', 'Si quieres seguir, puedes hablar directo con ' + quien + ' 🙌', 'Estoy aquí para lo que necesites, y ' + quien + ' también cuando quieras hablar 😊'])[i];
+    ? ['Cuando quieras, te muestro los planes o puedes hablar con ' + quien + ' 😊', 'Si quieres seguir, puedo mostrarte los planes o puedes hablar con ' + quien + ' 🙌', 'Estoy aquí para lo que necesites: ver los planes o hablar con ' + quien + ' cuando quieras 😊']
+    : ['Cuando quieras, puedes hablar con ' + quien + ' para ver tu caso 😊', 'Si quieres seguir, puedes hablar con ' + quien + ' 🙌', 'Estoy aquí para lo que necesites, y ' + quien + ' también cuando quieras hablar 😊'])[i];
+}
+// Los emojis según el nivel de la consola, PARTE POR PARTE (§16): con «pocos» cada parte conserva el suyo, así la pregunta exacta de cierre («… de nuestro equipo? 🤝») no pierde su emoji porque la
+// explicación ya trajo uno. Con «ninguno» no queda ninguno; con «muchos», todos.
+function ccEmPartes(partes, nivel) {
+  return partes.filter((x) => ccTexto(x) !== '').map((x) => ccConEmojis(x, nivel)).join(' ');
 }
 // `indice`: la formulación que toca; `sinPregunta`: tras una respuesta suelta se cierra sin repetir la pregunta (los botones siguen ahí).
 // Cuerpo (§15) = empatía + orientación (`orientacion`: lo que hace el servicio en su rubro, del guion) + dato de impacto (`impacto`, una vez por ficha) +
-// la pregunta de cierre. El botón `planes` solo si `conPlanes`; sin él se ofrece solo al asesor (solo se ofrece lo que se cumple).
+// la pregunta de cierre. §16: o bien `explicacion` (la del rubro: la redactó el modelo con los puntos clave o es el respaldo fijo del dato) + la pregunta de cierre,
+// con los emojis por partes. El botón `planes` solo si `conPlanes`; sin él se ofrece solo al asesor (solo se ofrece lo que se cumple).
 function ccOferta(a) {
   const o = a || {};
   const quien = ccQuien(o.asesor);
   const cierre = o.sinPregunta === true ? (o.sinCierre === true ? '' : ccCierreSinPregunta(quien, o.conPlanes, o.indice)) : ccPreguntaDeOferta(quien, o.conPlanes, o.indice);
   // Una sola «?» por mensaje: lo que venga del modelo o del guion no puede agregar otra.
-  const cuerpo = ccEm([ccPunto(ccSinPregunta(o.empatia)), ccPunto(ccSinPregunta(o.orientacion)), ccPunto(ccSinPregunta(o.impacto)), cierre].filter((x) => x !== '').join(' '), { nivelEmojis: o.nivel });
+  const partes = [ccPunto(ccSinPregunta(o.empatia)), ccPunto(ccSinPregunta(o.explicacion)), ccPunto(ccSinPregunta(o.orientacion)), ccPunto(ccSinPregunta(o.impacto)), cierre].filter((x) => x !== '');
+  const cuerpo = o.explicacion ? ccEmPartes(partes, o.nivel) : ccEm(partes.join(' '), { nivelEmojis: o.nivel });
   const botones = (o.conPlanes ? [{ id: 'planes', title: 'Ver planes' }] : []).concat([{ id: 'asesor', title: ccTituloAsesor(o.asesor) }]);
   const payload = cmBotones(cuerpo, botones);
   const respaldo = cuerpo + (o.conPlanes ? ' Escribe «planes» o «asesor».' : ' Escribe «asesor».');
-  return cmMensaje('cliente', payload, cuerpo, respaldo, { tipoReporte: 'interactive', evento: 'oferta', botones: botones.map((b) => b.id) });
+  return cmMensaje('cliente', payload, cuerpo, respaldo, { tipoReporte: 'interactive', evento: o.explicacion ? 'explicacion' : 'oferta', botones: botones.map((b) => b.id) });
 }
 const CC_SUFIJO = { mes: '/mes', anio: '/año', unico: ', pago único' };
 function ccMonto(n) {
@@ -868,32 +1079,69 @@ function ccResumenDePrecios(cfg) {
   if (plan !== null) return 'Los planes mensuales salen desde USD ' + ccMonto(plan) + ', cobrados en bolivianos.';
   return '';
 }
-// El cierre del mensaje de planes: el del rubro (dato del guion) o el genérico, que ofrece al asesor.
+// §16 (D5, documento comercial §4): los precios los dice SOLO el código, con los montos de la consola y las frases del dato `guion.precios` (el texto es del tenant; la cifra, nunca).
+//   «Setup estándar USD 65, pago único (configuración llave en mano y conexión a Meta).» + (si el rubro es «Otro») «Setup a medida desde USD 125.» + «Planes mensuales
+//   (Impulso, Crecimiento, Pro) desde USD 25.» + «Todos incluyen las funciones clave que necesites (…).» El «desde» sale de la bandera `desde` del cargo en la consola.
+//   Sin `guion.precios`, el mensaje de planes es el de siempre (`ccResumenDePrecios`).
+function ccPreciosDelGuion(cfg) {
+  const g = cfg && cfg.guion && typeof cfg.guion === 'object' ? cfg.guion : {};
+  return g.precios && typeof g.precios === 'object' && !Array.isArray(g.precios) ? g.precios : null;
+}
+function ccCargoMasBarato(cfg, conDesde) {
+  const l = (Array.isArray(cfg && cfg.cargosUnicos) ? cfg.cargosUnicos : []).filter((x) => x && Number.isFinite(x.precioUsd) && (x.desde === true) === conDesde);
+  return l.length ? l.reduce((a, b) => (b.precioUsd < a.precioUsd ? b : a)) : null;
+}
+function ccFrasesDePrecios(cfg, aMedida) {
+  const p = ccPreciosDelGuion(cfg);
+  if (!p) return null;
+  const frases = [];
+  const estandar = ccCargoMasBarato(cfg, false);
+  const medida = ccCargoMasBarato(cfg, true);
+  const mensuales = (Array.isArray(cfg.planes) ? cfg.planes : []).filter((x) => x && x.periodo === 'mes' && Number.isFinite(x.precioUsd));
+  if (estandar && ccPlano(p.estandar)) frases.push(ccPlano(p.estandar) + ' USD ' + ccMonto(estandar.precioUsd) + ', pago único' + (ccPlano(p.detalleEstandar) ? ' (' + ccPlano(p.detalleEstandar) + ')' : '') + '.');
+  if (aMedida === true && medida && ccPlano(p.aMedida)) frases.push(ccPlano(p.aMedida) + ' desde USD ' + ccMonto(medida.precioUsd) + '.');
+  if (mensuales.length && ccPlano(p.mensual)) {
+    const nombres = mensuales.map((x) => ccPlano(x.nombre)).filter((x) => x !== '').join(', ');
+    frases.push(ccPlano(p.mensual) + (nombres ? ' (' + nombres + ')' : '') + ' desde USD ' + ccMonto(Math.min.apply(null, mensuales.map((x) => x.precioUsd))) + '.');
+  }
+  if (ccPlano(p.incluye)) frases.push(ccPunto(p.incluye));
+  return frases;
+}
+// El cierre del mensaje de planes: el del rubro (dato del guion), el de `guion.precios` o el genérico (§16, D3: «¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos
+// qué plan es el ideal para empezar? 🤝»), que ofrece al equipo con el botón y nunca promete que alguien escriba.
 function ccCierreDePlanes(cierre, asesor) {
-  return ccPlano(cierre) || '¿Qué te parece si ' + ccQuien(asesor) + ' te cuenta cómo armaríamos esto para tu negocio? 👇';
+  return ccPlano(cierre) || '¿Te gustaría hablar con ' + ccQuien(asesor) + ' para evaluar juntos qué plan es el ideal para empezar? 🤝';
 }
 // Los planes (§13): con `archivoPlanes` válido, encabezado imagen o documento + «¡Claro! 😊 {resumen} {cierre}» + el botón del asesor; sin
 // archivo, el bloque de planes en texto + el mismo cierre; sin planes, «Los planes te los pasa {asesor} directamente 😊» + el botón. Si el bloque no
 // cabe en 1.024 ni compacto, sale como texto con la instrucción de escribir «asesor» (nunca se recorta un precio). `cierre`: el del rubro.
-function ccPlanes(cfg, asesor, cierre, comoFunciona) {
+function ccPlanes(cfg, asesor, cierre, comoFunciona, opc) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
   const quien = ccQuien(asesor);
   const boton = [{ id: 'asesor', title: ccTituloAsesor(asesor) }];
   const archivo = ccArchivoDePlanes(c);
   const extra = { tipoReporte: 'interactive', evento: 'planes', botones: ['asesor'] };
-  const cierreTexto = ccEm(ccCierreDePlanes(cierre, asesor), c);
-  // §15: «cómo funciona» (dato por rubro: 1 oración) entre los precios y el cierre.
-  const comoLimpio = ccPunto(ccSinPregunta(comoFunciona));   // una sola «?» por mensaje: el dato nunca la trae, y si la trajera no suma otra
+  const frases = ccFrasesDePrecios(c, !!(opc && opc.aMedida));
+  // §16: con `guion.precios` el cierre es el de los precios (D3), no el del rubro.
+  const cierreFinal = frases ? ccPlano(ccPreciosDelGuion(c).cierre) : cierre;
+  const cierreTexto = ccEm(ccCierreDePlanes(cierreFinal, asesor), c);
+  // §15: «cómo funciona» (dato por rubro: 1 oración) entre los precios y el cierre (solo sin `guion.precios`).
+  const comoLimpio = frases ? '' : ccPunto(ccSinPregunta(comoFunciona));   // una sola «?» por mensaje: el dato nunca la trae, y si la trajera no suma otra
   const como = ccEm(comoLimpio, c);
   if (archivo) {
-    const cuerpo = ccEm(['¡Claro! 😊', ccResumenDePrecios(c), comoLimpio, ccCierreDePlanes(cierre, asesor)].filter((x) => x !== '').join(' '), c);
+    // Con `guion.precios` los emojis van por partes: «¡Claro! 😊 …precios…» y el cierre conservan cada uno el suyo con el nivel «pocos».
+    const cuerpo = frases
+      ? ccEmPartes(['¡Claro! 😊 ' + frases.join(' '), ccCierreDePlanes(cierreFinal, asesor)], c.nivelEmojis)
+      : ccEm(['¡Claro! 😊', ccResumenDePrecios(c), comoLimpio, ccCierreDePlanes(cierre, asesor)].filter((x) => x !== '').join(' '), c);
     const payload = cmBotones(cuerpo, boton);
     payload.interactive.header = archivo.tipo === 'pdf'
       ? { type: 'document', document: { link: archivo.url, filename: ccPlano(archivo.nombreArchivo, 80) || 'Planes.pdf' } }
       : { type: 'image', image: { link: archivo.url } };
     return cmMensaje('cliente', payload, cuerpo, cuerpo + ' Escribe «asesor». ' + archivo.url, Object.assign(extra, { conArchivo: true }));
   }
-  const colas = [[como, cierreTexto].filter(Boolean).join(' '), cierreTexto];
+  // Sin archivo: el bloque con los montos de la consola y, debajo, lo que incluyen (§16) y el cierre.
+  const incluye = frases && ccPreciosDelGuion(c) && ccPlano(ccPreciosDelGuion(c).incluye) ? ccEm(ccPunto(ccPreciosDelGuion(c).incluye), c) : '';
+  const colas = frases ? [[incluye, cierreTexto].filter(Boolean).join(' '), cierreTexto] : [[como, cierreTexto].filter(Boolean).join(' '), cierreTexto];
   const completo = ccBloquePlanes(c, false);
   if (!completo) {
     const cuerpo = ccEm('Los planes te los pasa ' + quien + ' directamente 😊', c);
@@ -911,24 +1159,26 @@ function ccPlanes(cfg, asesor, cierre, comoFunciona) {
 // El traspaso: `cta_url` a `wa.me/{numero}` (botón ≤20), con el pedido del nombre del negocio en el mismo mensaje si
 // `pideEmpresa`. El texto NO afirma que se avisó a nadie (D7). Sin número de recepción, o si quien escribe ES
 // recepción: ni botón ni promesa.
-//   { numero, desde, negocio, asesor, pideEmpresa }
+//   { numero, desde, negocio, asesor, pideEmpresa, pideNombre }
+// §16: con `pideEmpresa` el MISMO mensaje pide el nombre de quien escribe y el de su negocio («¿cómo te llamas y cómo se llama tu negocio?»); con `pideNombre: false` (ya lo dijo), solo el negocio.
 function ccTraspaso(a) {
   const o = a || {};
   const quien = ccQuien(o.asesor);
-  const pide = o.pideEmpresa ? ' ¿Cómo se llama tu negocio?' : '';
+  const dato = o.pideNombre === false ? 'cómo se llama tu negocio' : 'cómo te llamas y cómo se llama tu negocio';
+  const pide = o.pideEmpresa ? ' ¿' + ccInicial(dato) + '?' : '';
   const v = Number.isInteger(o.variante) && o.variante >= 0 ? o.variante % 3 : 0;
   // §13/§14/§15: cálido y sin afirmar que se avisó a nadie (D7): el botón es el mecanismo. «negocio» no se repite en el mismo mensaje, y el texto
   // tiene tres variantes (`variante`). Quien ya es cliente no viene a «armar» nada (soporte); y quien pide el botón por segunda vez no recibe el mismo texto otra vez (`repite`).
   let texto;
   if (o.soporte === true) texto = '¡Claro! 😊 Toca el botón para escribirle directo a ' + quien + ' y contarle lo que necesitas.';
-  else if (o.repite === true) texto = '¡Claro! 😊 Aquí tienes otra vez el botón para escribirle directo a ' + quien + (o.pideEmpresa ? '. Y para dejarlo anotado, ¿cómo se llama tu negocio? 😊' : '.');
+  else if (o.repite === true) texto = '¡Claro! 😊 Aquí tienes otra vez el botón para escribirle directo a ' + quien + (o.pideEmpresa ? '. Y para dejarlo anotado, ¿' + dato + '? 😊' : '.');
   else {
     const cabezas = [
-      '¡Perfecto! 🙌 Toca el botón para escribirle directo a ' + quien + ', que te cuenta cómo armarlo',
+      '¡Perfecto! 🙌 Toca el botón para escribirle directo a ' + quien + ' y ver juntos cómo armarlo',
       '¡Excelente! 😊 Con el botón puedes escribirle directo a ' + quien + ', y ahí ven juntos cómo dejarlo andando',
-      '¡Genial! 🙌 Escríbele directo a ' + quien + ' con el botón: es quien mejor te cuenta cómo lo armaríamos',
+      '¡Genial! 🙌 Escríbele directo a ' + quien + ' con el botón: ahí ven juntos cómo lo armaríamos',
     ];
-    const colasConPregunta = ['. Y para dejarlo anotado, ¿cómo se llama tu negocio? 😊', '. Antes, ¿me cuentas cómo se llama tu negocio? 😊', '. Por cierto, ¿cómo se llama tu negocio? 😊'];
+    const colasConPregunta = ['. Y para dejarlo anotado, ¿' + dato + '? 😊', '. Antes, ¿me cuentas ' + dato + '? 😊', '. Por cierto, ¿' + dato + '? 😊'];
     const colasSinPregunta = [' para tu negocio.', ' en tu negocio.', ' para ti.'];
     texto = cabezas[v] + (o.pideEmpresa ? colasConPregunta[v] : colasSinPregunta[v]);
   }
@@ -1004,12 +1254,16 @@ function ccProspecto(estado, entrada) {
   const h = ccHechos(null, e.hechos);
   return {
     telefono: telefono,
-    nombre: celda(x.nombrePerfil),
+    // §16: el nombre que el cliente DIJO reemplaza al del perfil de WhatsApp.
+    nombre: celda(ccNombreDePersonaValido(e.nombre) || x.nombrePerfil),
     empresa: celda(e.empresa),
     rubro: celda(rubro ? rubro.nombre : e.rubroLibre),
     flujos: celda(rubro ? rubro.flujoSugerido : ''),
     // Lo que quiso, en pocas palabras: sin esto, la planilla no actualiza el resumen de quien ya tenia uno (p. ej. «Descalificado»).
     consulta: h.pidioAsesor ? 'Quiere hablar con una persona' : (h.pidioPlanes ? 'Pidió los planes' : ''),
+    // §16: la necesidad (sanitizada de nuevo) y de qué preguntó (vocabulario cerrado) viajan a «Decidir fila de la planilla», que arma el resumen de la columna J por código.
+    necesidad: ccNecesidadValida(e.necesidad),
+    temas: ccTemasUnidos(e.temas, []),
     estado: h.pidioAsesor ? 'cerrado' : 'en_conversacion',
     anuncio: e.anuncio === true,
     hechos: h,
@@ -1064,7 +1318,8 @@ function ccGuionDe(cfg, rubroId) {
   let p = null;
   for (const k of claves) {
     const x = Object.prototype.hasOwnProperty.call(g, k) ? g[k] : null;
-    if (x && typeof x === 'object' && x.dolor) { p = x; break; }
+    // §16: la entrada propia de un rubro tiene `explicacion` (el flujo del documento comercial) o `dolor` (el flujo anterior, de otros tenants).
+    if (x && typeof x === 'object' && (x.dolor || x.explicacion)) { p = x; break; }
   }
   return { propia: p, otro: g.otro && typeof g.otro === 'object' ? g.otro : {} };
 }
@@ -1096,6 +1351,8 @@ function ccNombreDelRubro(e, cfg) {
 }
 const CC_PREGUNTA_RUBRO = '¿De qué rubro es tu negocio?';
 const CC_PREGUNTA_EMPRESA = '¿Cómo se llama tu negocio?';
+// §16: al pasar con el equipo, UN mensaje pide las dos cosas; si el nombre ya se sabe, solo el negocio.
+const CC_PREGUNTA_DATOS = '¿Cómo te llamas y cómo se llama tu negocio?';
 // La pregunta que el paso tiene pendiente, y cómo sale: en una lista, en un texto, o en los botones de la oferta.
 function ccPreguntaDelPaso(e, cfg) {
   const g = ccGuionDe(cfg, e.rubroId);
@@ -1103,7 +1360,7 @@ function ccPreguntaDelPaso(e, cfg) {
     case 'esperando_dolor': return { texto: ccPlano((g.propia || g.otro).pregunta), tipo: 'texto' };
     // R7: con el rubro ya dicho («Otro» con `rubroLibre`) no se vuelve a preguntar de qué trata el negocio.
     case 'esperando_negocio': return { texto: ccPlano(e.rubroLibre !== '' && g.otro.preguntaDolor ? g.otro.preguntaDolor : g.otro.pregunta), tipo: 'texto' };
-    case 'esperando_empresa': return { texto: CC_PREGUNTA_EMPRESA, tipo: 'texto' };
+    case 'esperando_empresa': return { texto: e.nombre ? CC_PREGUNTA_EMPRESA : CC_PREGUNTA_DATOS, tipo: 'texto' };
     case 'oferta':
     case 'libre': return { texto: '', tipo: 'oferta' };
     default: return ccRubrosComunes(cfg).length ? { texto: CC_PREGUNTA_RUBRO, tipo: 'lista' } : { texto: ccPlano(g.otro.pregunta), tipo: 'texto' };
@@ -1166,7 +1423,8 @@ function ccRetomar(e, cfg, prefijo, opc) {
   if (repetida) {
     const v = veces % 2 === 1 ? 0 : 1;
     pregunta = (e.paso === 'esperando_empresa'
-      ? ['¿Cómo se llama tu negocio? Así lo dejo anotado 😊', '¿Me dices el nombre de tu negocio para anotarlo? 😊']
+      ? (e.nombre ? ['¿Cómo se llama tu negocio? Así lo dejo anotado 😊', '¿Me dices el nombre de tu negocio para anotarlo? 😊']
+        : ['¿Cómo te llamas y cómo se llama tu negocio? Así lo dejo anotado 😊', '¿Me dices tu nombre y el de tu negocio para anotarlos? 😊'])
       : (q.tipo === 'lista'
         ? ['Para ayudarte mejor, ¿de qué rubro es tu negocio? 😊', 'Cuéntame, ¿en qué rubro está tu negocio? 😊']
         : ['Para orientarte mejor, cuéntame un poco más: ¿cómo lo manejas hoy en tu negocio?', '¿Me cuentas qué es lo que más tiempo te quita hoy en tu negocio?']))[v];
@@ -1184,6 +1442,8 @@ function ccRetomar(e, cfg, prefijo, opc) {
       if (n < 2) { e.sueltas = n; preguntar = false; }
     }
     // Sin pregunta: una invitación breve (variante de `ofertas`, sin avanzarlo), salvo si el prefijo ya ofrece al asesor («sin datos»).
+    // §16 `soloPrefijo`: la respuesta fija ya ofrece al equipo (consumo, banco, integración): solo ella y los botones, sin la pregunta de cierre.
+    if (o.soloPrefijo === true) return ccOferta({ empatia: pre, impacto: '', asesor: cfg.asesor, conPlanes: ccPuedePlanes(e, cfg), nivel: cfg.nivelEmojis, indice: e.ofertas || 0, sinPregunta: true, sinCierre: true });
     return ccOferta({ empatia: pre, impacto: '', asesor: cfg.asesor, conPlanes: ccPuedePlanes(e, cfg), nivel: cfg.nivelEmojis, indice: preguntar ? ccIndiceDeOferta(e) : (e.ofertas || 0), sinPregunta: !preguntar, sinCierre: o.conAsesor === true });
   }
   const cuerpo = [pre, ccUnaPregunta(pre) && !/\?/.test(pre) ? pregunta : '', cola].filter(Boolean).join(' ');
@@ -1215,7 +1475,11 @@ function ccAplicarRubro(e, cfg, tipo, id) {
   // «Otro» conserva el `rubroLibre` que ya se conocía: no se vuelve a preguntar de qué trata el negocio (R7).
   if (tipo === 'rubro') { e.rubroId = id; e.rubroLibre = ''; } else { e.rubroId = ''; e.hechos.eligioOtro = true; }
   if (e.planesPendientes === true && e.soporte !== true) return ccAplicarPlanes(e, true);
-  if (tipo === 'rubro' && ccGuionDe(cfg, e.rubroId).propia) { e.paso = 'esperando_dolor'; return 'dolor'; }
+  // §16 (D2): un rubro con `explicacion` en el guion se EXPLICA de inmediato (el modelo la redacta con los puntos clave del rubro o sale el respaldo fijo) y cierra con la pregunta
+  // de planes o equipo: sin pregunta de dolor y sin turno extra; el paso queda en la oferta. Sin `explicacion` (otros tenants), el flujo anterior: la frase de dolor.
+  const propia = tipo === 'rubro' ? ccGuionDe(cfg, e.rubroId).propia : null;
+  if (propia && propia.explicacion) { e.paso = 'oferta'; return 'explicar'; }
+  if (propia) { e.paso = 'esperando_dolor'; return 'dolor'; }
   e.paso = 'esperando_negocio';
   return 'abierta';
 }
@@ -1296,13 +1560,18 @@ function ccDecidir(a) {
   };
   const resolver = (r) => delPaso(r.accion, r.extra);
   const modelo = (modo) => plan('modelo', {}, { modo: modo, llamarModelo: true });
+  // §16: elegir un rubro estándar con guion nuevo es EXPLICARLO: la única llamada nueva al modelo (la que redacta la explicación) y ningún mensaje de más.
+  const elegido = (accion) => (accion === 'explicar' ? modelo('explicar') : delPaso(accion, { presentar: false }));
+  // Lo que preguntó, en vocabulario cerrado, queda en la ficha (resumen de la hoja). Y quien ya vio la explicación y pregunta algo de fondo INTERACTUÓ (califica Media).
+  if (dichoOEscrito) e.temas = ccTemasUnidos(e.temas, ccTemasDe(texto, cfg.planes));
+  const interactua = () => { if (ccTieneRubro(e)) e.hechos.respondioDolor = true; };
   const traspaso = () => {
     const soporte = e.soporte === true || soporteAntes;
     const repite = !soporte && e.hechos.pidioAsesor === true;   // ya había pedido el botón: no se le repite el mismo texto
     if (!soporte) e.hechos.pidioAsesor = true;
     const pideEmpresa = !soporte && e.empresa === '';
     if (pideEmpresa) { e.paso = 'esperando_empresa'; e.reintentoEmpresa = false; }
-    return delPaso('traspaso', { pideEmpresa: pideEmpresa, soporte: soporte, repite: repite });
+    return delPaso('traspaso', { pideEmpresa: pideEmpresa, pideNombre: e.nombre === '', soporte: soporte, repite: repite });
   };
 
   // 0. La campaña por texto (solo la primera vez de la ventana): se trata como el toque de su destino.
@@ -1311,7 +1580,7 @@ function ccDecidir(a) {
     if (campana.destino === 'planes') return primerMensaje(true);
     if (campana.destino && campana.destino.indexOf('rubro:') === 0) {
       const tq = ccLeerToque(campana.destino, rubros);
-      if (tq && (tq.tipo === 'rubro' || tq.tipo === 'otro')) return delPaso(ccAplicarRubro(e, cfg, tq.tipo, tq.id), { presentar: false });
+      if (tq && (tq.tipo === 'rubro' || tq.tipo === 'otro')) return elegido(ccAplicarRubro(e, cfg, tq.tipo, tq.id));
       return primerMensaje(false); // R12: en el primer mensaje no se dice «Esa opción ya no está»: se presenta
     }
     return primerMensaje(false);
@@ -1323,13 +1592,20 @@ function ccDecidir(a) {
   if ((toque && toque.tipo === 'asesor') || (dichoOEscrito && ccPideAsesor(texto, cfg.campanas))) return traspaso();
   if (toque && toque.tipo === 'planes') return resolver(ccPedirPlanes(e));
   if (toque && toque.tipo === 'vencida') return lista({ vencida: true, presentar: false });
-  if (toque && (toque.tipo === 'rubro' || toque.tipo === 'otro')) return delPaso(ccAplicarRubro(e, cfg, toque.tipo, toque.id), { presentar: false });
+  if (toque && (toque.tipo === 'rubro' || toque.tipo === 'otro')) return elegido(ccAplicarRubro(e, cfg, toque.tipo, toque.id));
   if (dichoOEscrito && ccEsSoporte(texto)) { e.soporte = true; return delPaso('soporte', {}); }
   // §15: pidió que lo llamen, le escriban o le expliquen por llamada o reunión (o preguntó si lo atiende un asesor): lo decide el CÓDIGO, sin depender de la etiqueta
   // del modelo. Se ofrece al asesor con su botón (sin traspaso, aviso ni promesa de llamada o de horario) y se retoma el paso.
   if (dichoOEscrito && !campana && ccPidioContacto(texto)) return paso0 === 'inicio' ? lista({ presentar: true, conAsesor: true }) : delPaso('contacto', {});
   if (paso0 !== 'inicio') {
     if (dichoOEscrito && ccEsIdentidad(texto, cfg.asesor)) return delPaso('identidad', {});
+    // §16 (documento comercial §5 y §6, D9 y D10): cuatro preguntas que el CÓDIGO contesta con un texto fijo, sin modelo (cero llamadas y cero números): si valida pagos con el banco (solo revisa
+    // visualmente el comprobante), el tope de conversaciones de un plan (se muestra la imagen de planes), cuántos mensajes incluye una conversación o los límites de uso (nunca un número) y si se
+    // conecta con un sistema que el servicio no nombra (no se inventa la integración).
+    if (dichoOEscrito && ccPreguntaBanco(texto)) { interactua(); return delPaso('banco', {}); }
+    if (dichoOEscrito && ccPreguntaTopePlan(texto, cfg.planes)) { interactua(); return resolver(ccPedirPlanes(e)); }
+    if (dichoOEscrito && ccPreguntaConsumo(texto)) { interactua(); return delPaso('consumo', {}); }
+    if (dichoOEscrito && ccPreguntaIntegracion(texto)) { interactua(); return delPaso('integracion', {}); }
     if (t.categoria === 'comprobante') {
       return delPaso('fijo', { texto: '¡Recibí tu archivo! 📎 Por este medio no puedo revisar comprobantes. Si lo necesitas, toca el botón para hablar con ' + quien + ' 😊', conAsesor: true });
     }
@@ -1343,7 +1619,7 @@ function ccDecidir(a) {
     case 'eligiendo_rubro': {
       if (via === 'texto' && texto) {
         const id = ccRubroPorNombre(texto, rubros);
-        if (id) return delPaso(ccAplicarRubro(e, cfg, id === 'otro' ? 'otro' : 'rubro', id), { presentar: false });
+        if (id) return elegido(ccAplicarRubro(e, cfg, id === 'otro' ? 'otro' : 'rubro', id));
       }
       if (dichoOEscrito && ccPideListaPlanes(texto)) return resolver(ccPedirPlanes(e));
       if (!hay) return lista({ presentar: false, promesa: e.planesPendientes === true });
@@ -1393,17 +1669,29 @@ function ccMensajesDe(accion, e, cfg, t, x) {
       return [ccFijo([ccPlano(g.dolor), ccPlano(g.pregunta)].filter(Boolean).join(' '), false, cfg, 'dolor')];
     }
     case 'abierta': {
-      const texto = [extra.presentar === true ? ccPresentacion(cfg, ccVariante(e, 'saludo', 3, ccUltimoDigito(t.from))) : '', ccPunto(ccPlano(extra.prefijo)), ccPreguntaDelPaso(e, cfg).texto].filter(Boolean).join(' ');
+      // §16 (documento comercial §3, «Otros rubros»): empatía contextual con la industria que dijo (el modelo) + la PROPUESTA DE VALOR fija (dato `otro.propuesta`) + el cierre investigativo (la pregunta del paso).
+      const propuesta = extra.propuesta === true ? ccPunto(ccPlano(guion.otro.propuesta)) : '';
+      const texto = [extra.presentar === true ? ccPresentacion(cfg, ccVariante(e, 'saludo', 3, ccUltimoDigito(t.from))) : '', ccPunto(ccPlano(extra.prefijo)), propuesta, ccPreguntaDelPaso(e, cfg).texto].filter(Boolean).join(' ');
       return [ccFijo(texto, false, cfg, 'abierta')];
     }
-    case 'planes': return [ccPlanes(cfg, cfg.asesor, ccCierreDelRubro(e, cfg), ccComoFuncionaDelRubro(e, cfg))];
+    case 'explicacion': {
+      // §16 (D1, D7): la explicación del rubro (redactada por el modelo y validada, o el respaldo fijo del dato) + la pregunta de cierre del documento, con «Ver planes» y «Hablar con el equipo».
+      return [ccOferta({ explicacion: extra.texto, asesor: cfg.asesor, conPlanes: ccPuedePlanes(e, cfg), nivel: cfg.nivelEmojis, indice: ccIndiceDeOferta(e) })];
+    }
+    case 'consumo':
+    case 'banco':
+    case 'integracion': {
+      const hayAsesor = ccHayRecepcion(cfg, t.from);
+      return [ccRetomar(e, cfg, ccRespuestaFija(accion, cfg, hayAsesor), { conAsesor: hayAsesor, soloPrefijo: true, sinAsesor: !hayAsesor })];
+    }
+    case 'planes': return [ccPlanes(cfg, cfg.asesor, ccCierreDelRubro(e, cfg), ccComoFuncionaDelRubro(e, cfg), { aMedida: e.rubroId === '' && ccTieneRubro(e) })];
     case 'planes_ya': return [ccOferta({ empatia: '¡Ya te los mostré arriba! 😊', impacto: '', asesor: cfg.asesor, conPlanes: false, nivel: cfg.nivelEmojis, indice: ccIndiceDeOferta(e) })];
     case 'traspaso':
     case 'soporte':
     {
       const soporte = accion === 'soporte' || extra.soporte === true;
       const variante = soporte || extra.repite === true ? 0 : ccVariante(e, 'traspaso', 3);
-      return [ccTraspaso({ numero: cfg.numeroRecepcion, desde: t.from, negocio: negocio, asesor: cfg.asesor, pideEmpresa: accion === 'traspaso' && extra.pideEmpresa === true, soporte: soporte, repite: extra.repite === true, variante: variante, nivel: cfg.nivelEmojis })];
+      return [ccTraspaso({ numero: cfg.numeroRecepcion, desde: t.from, negocio: negocio, asesor: cfg.asesor, pideEmpresa: accion === 'traspaso' && extra.pideEmpresa === true, pideNombre: extra.pideNombre !== false, soporte: soporte, repite: extra.repite === true, variante: variante, nivel: cfg.nivelEmojis })];
     }
     case 'contacto': return [ccRetomar(e, cfg, ccPresentaAsesor(quien, ccVariante(e, 'pideAsesor', 3)), { conAsesor: true })];
     case 'identidad': {
@@ -1444,14 +1732,51 @@ function ccMensajesDe(accion, e, cfg, t, x) {
   }
 }
 
+// §16: las respuestas fijas del documento comercial (§5 y §6). El texto es del tenant (`guion.respuestas.consumo|banco|integracion`); sin él, uno neutro. Con a quién mandarlo
+// (`hayAsesor`), cada una ofrece hablar con el equipo como una OPCIÓN desde los botones: nada de «te llamamos» ni de «se comunicará».
+function ccRespuestaFija(accion, cfg, hayAsesor) {
+  const g = cfg && cfg.guion && typeof cfg.guion === 'object' ? cfg.guion : {};
+  const r = g.respuestas && typeof g.respuestas === 'object' && !Array.isArray(g.respuestas) ? g.respuestas : {};
+  const quien = ccQuien(cfg && cfg.asesor);
+  const con = (base, equipo) => ccPunto(base) + (hayAsesor ? ' ' + equipo : '');
+  if (accion === 'consumo') {
+    return con(ccPlano(r.consumo) || 'Los planes están pensados para que cada conversación cubra sin problemas todo lo que necesitas, así que prefiero no darte cifras sueltas.',
+      'Para analizar el volumen de tu negocio y recomendarte el plan que mejor se ajuste, puedes hablar con ' + quien + ' desde las opciones de abajo.');
+  }
+  if (accion === 'banco') {
+    return con(ccPlano(r.banco) || 'El asistente revisa visualmente el comprobante que le llega, pero no lo valida con el banco: quien confirma que el dinero entró es el banco, y el negocio.',
+      'Si quieres ver cómo quedaría en tu caso, puedes hablar con ' + quien + ' desde las opciones de abajo.');
+  }
+  return con(ccPlano(r.integracion) || 'Esa integración no la tengo a la mano 🤔.',
+    'Si quieres consultarla, puedes hablar con ' + quien + ' desde las opciones de abajo.');
+}
 // Lo que antecede a la pregunta pendiente cuando alguien pide que lo llamen o hablar con una persona: tres frases (§15) que solo ofrecen la opción.
 function ccPresentaAsesor(quien, v) {
   return ['¡Claro! 😊 Si prefieres hablarlo con una persona, puedes hacerlo con ' + quien + ' desde las opciones de abajo.',
     'Entiendo 😊 Para conversarlo con una persona, tienes a ' + quien + ' en las opciones de abajo.',
     '¡Con gusto! 🙌 Si quieres que te lo expliquen directo, puedes hablar con ' + quien + ' desde las opciones de abajo.'][v % 3];
 }
+// ¿Dijo algo SUSTANTIVO? (§16: lo que hace que quien vio la explicación cuente como que INTERACTUÓ y califique Media): una pregunta o un comentario con contenido, no un saludo, un «sí», un acuse
+// ni un agradecimiento. Es del código, sobre lo escrito o dicho: no depende de cómo etiquete el modelo.
+const CC_SALUDOS = new Set('hola buenas buenos dias tardes noches buen dia que tal como estas estan hey ola saludos'.split(' '));
+function ccEsSustantivo(t) {
+  const n = ccNorm(t);
+  if (n === '') return false;
+  if (ccEsAcuse(t) || ccEsAgradecimiento(t) || ccEsAfirmativo(t)) return false;
+  if (n.split(' ').every((w) => CC_SALUDOS.has(w) || CC_ACUSE_PALABRAS.has(w))) return false;
+  return n.split(' ').length >= 3 || /[?¿]/.test(ccTexto(t));
+}
+// La explicación del rubro (§16, D1 híbrido): la que redactó el modelo si pasó TODA la validación (el filtro, sus límites, y que toque los puntos clave del rubro); si no, el respaldo fijo del dato.
+function ccExplicacionDelRubro(r, e, cfg) {
+  const g = ccGuionDe(cfg, e.rubroId).propia || {};
+  const redactada = r && r.ok === true ? ccPlano(r.explicacion) : '';
+  if (redactada && ccCubrePuntos(redactada, g.puntosClave)) return redactada;
+  return ccPlano(g.explicacion);
+}
 // Lo que dijo el modelo (ya validado por `ccLeerModelo`) decide la acción; muta `e`. Devuelve { accion, extra }.
 function ccResolverModelo(plan, r, e, cfg) {
+  // §16: el turno de EXPLICAR el rubro (el cliente lo eligió): sale la explicación o su respaldo; nunca el texto de falla. El modelo no decide nada más aquí.
+  if (plan.modo === 'explicar') return { accion: 'explicacion', extra: { texto: ccExplicacionDelRubro(r, e, cfg) } };
   if (!r || r.ok !== true) return { accion: 'falla', extra: {} };
   const negocioTexto = plan.texto + ' ' + plan.textoDeImagen;
   const motivo = r.tipo === 'descarte'
@@ -1466,6 +1791,11 @@ function ccResolverModelo(plan, r, e, cfg) {
   const empatia = ccConEmojis(r.empatia, cfg.nivelEmojis);
   const pregunta = r.tipo === 'pregunta';
   const conDatos = r.respuesta !== '' && r.enLosDatos === true;
+  const hayTexto = (plan.via === 'texto' || plan.via === 'audio') && ccPlano(plan.texto) !== '';
+  const sustantivo = hayTexto && (ccEsSustantivo(plan.texto) || (pregunta && r.tipo !== 'otro'));
+  if (hayTexto && pregunta) e.temas = ccTemasUnidos(e.temas, ['dudas']);
+  // La necesidad que el cliente cuenta se guarda para el resumen de la hoja (ya validada por `ccLeerModelo`, y por `ccNecesidadValida` al armar el prospecto).
+  const guardarNecesidad = () => { if (r.necesidad && !pregunta) e.necesidad = r.necesidad; };
   // Lo que antecede a la pregunta del paso: la respuesta del modelo o, sin datos, una de tres frases cálidas (§15; solo avanza su contador si se usa). Sin datos
   // se ofrece al asesor como una OPCIÓN (no como promesa) y solo si hay a quién (`ccHayRecepcion`): si no, la frase no lo nombra y no lleva botón.
   const hayAsesor = ccHayRecepcion(cfg, plan.from);
@@ -1487,13 +1817,29 @@ function ccResolverModelo(plan, r, e, cfg) {
     return { accion: 'retomar', extra: { prefijo: q, conAsesor: true } };
   }
   const g = ccGuionDe(cfg, e.rubroId);
+  const otro = g.otro;
+  // §16 (documento §3): con `otro.propuesta` en el guion, «Otro» sigue el flujo del documento: empatía contextual + propuesta de valor fija + cierre investigativo.
+  const conPropuesta = ccPlano(otro.propuesta) !== '';
   switch (plan.modo) {
     case 'eligiendo': {
       if (pregunta) return retomar();
-      if (r.rubroId) return { accion: ccAplicarRubro(e, cfg, 'rubro', r.rubroId), extra: { presentar: false } };
+      if (r.rubroId) {
+        const a = ccAplicarRubro(e, cfg, 'rubro', r.rubroId);
+        return a === 'explicar' ? { accion: 'explicacion', extra: { texto: ccExplicacionDelRubro(r, e, cfg) } } : { accion: a, extra: { presentar: false } };
+      }
       if (r.rubroLibre) {
         const accion = ccAplicarRubro(e, cfg, 'otro', '');
         e.rubroLibre = r.rubroLibre;
+        if (accion === 'abierta' && conPropuesta) {
+          // Contó de qué trata su negocio: si ya dijo también lo que más le cuesta, directo a la oferta; si no, las tres partes y el cierre investigativo.
+          if (r.necesidad) {
+            e.necesidad = r.necesidad;
+            e.hechos.respondioDolor = true;
+            e.paso = 'oferta';
+            return { accion: 'oferta', extra: { empatia: empatia, orientacion: ccPlano(otro.queHacemos), impacto: '' } };
+          }
+          return { accion: 'abierta', extra: { presentar: false, prefijo: empatia, propuesta: true } };
+        }
         return { accion: accion, extra: { presentar: false, prefijo: accion === 'abierta' ? empatia : '' } };
       }
       e.paso = 'eligiendo_rubro';
@@ -1504,15 +1850,44 @@ function ccResolverModelo(plan, r, e, cfg) {
       e.hechos.respondioDolor = true;
       e.paso = 'oferta';
       return { accion: 'oferta', extra: { empatia: empatia, orientacion: ccPlano((g.propia || g.otro).queHacemos), impacto: ccPlano((g.propia || g.otro).impacto) } };
-    case 'negocio':
+    case 'negocio': {
       if (pregunta) return retomar();
-      if (r.rubroId) e.rubroId = r.rubroId; // R12: si el modelo reconoce un rubro de la consola, se respeta
+      const rubroLibreAntes = e.rubroLibre;
+      if (r.rubroId) {
+        // R12: si el modelo reconoce un rubro de la consola, se respeta. Con explicación en el guion de ese rubro, se explica como a cualquier rubro estándar (§16).
+        e.rubroId = r.rubroId;
+        const propia = ccGuionDe(cfg, e.rubroId).propia;
+        if (propia && propia.explicacion) {
+          e.rubroLibre = '';
+          e.paso = 'oferta';
+          if (sustantivo) e.hechos.respondioDolor = true;
+          return { accion: 'explicacion', extra: { texto: ccExplicacionDelRubro(r, e, cfg) } };
+        }
+      }
       // El rubro que el cliente YA dijo (lo que escribió en la lista) no lo pisa lo que el modelo entiende de su problema: la planilla lleva el rubro.
       if (r.rubroLibre && e.rubroLibre === '') e.rubroLibre = r.rubroLibre;
+      guardarNecesidad();
+      if (conPropuesta) {
+        // §16: sin `necesidad` y recién sabiendo de qué trata: las tres partes (la empatía con su industria, la propuesta de valor y el cierre investigativo), y sigue esperando la necesidad.
+        if (rubroLibreAntes === '' && e.rubroLibre !== '' && !r.necesidad && !e.necesidad) {
+          e.paso = 'esperando_negocio';
+          return { accion: 'abierta', extra: { presentar: false, prefijo: empatia, propuesta: true } };
+        }
+        if (sustantivo) e.hechos.respondioDolor = true;
+        e.paso = 'oferta';
+        // La propuesta ya se dijo si el rubro se conocía de antes (las tres partes); si no, va en la orientación de la oferta.
+        const gg = ccGuionDe(cfg, e.rubroId).propia || otro;
+        return { accion: 'oferta', extra: { empatia: empatia, orientacion: rubroLibreAntes === '' ? ccPlano(gg.queHacemos) : '', impacto: '' } };
+      }
       e.hechos.respondioDolor = true;
       e.paso = 'oferta';
-      { const gg = ccGuionDe(cfg, e.rubroId).propia || g.otro; return { accion: 'oferta', extra: { empatia: empatia, orientacion: ccPlano(gg.queHacemos), impacto: ccPlano(gg.impacto) } }; }
+      { const gg = ccGuionDe(cfg, e.rubroId).propia || otro; return { accion: 'oferta', extra: { empatia: empatia, orientacion: ccPlano(gg.queHacemos), impacto: ccPlano(gg.impacto) } }; }
+    }
     case 'empresa': {
+      // §16: el modelo pudo extraer el nombre y el negocio de una respuesta con más que el nombre («Juan Pérez, Salón Rosa»); ya vienen validados contra lo que el cliente dijo.
+      // Con el nombre de la empresa, se cierra como cuando se la dice sola; con solo el nombre de la persona, se anota y se pide el negocio. Un acuse nunca llega aquí.
+      if (r.nombre) e.nombre = r.nombre;
+      if (r.empresa && !pregunta) { e.empresa = r.empresa; e.paso = 'libre'; return { accion: 'empresa', extra: {} }; }
       // Mientras no diga el nombre sigue esperando la empresa (la acepta cuando llegue), pero se le repregunta UNA sola vez.
       const repregunta = e.reintentoEmpresa !== true;
       if (repregunta) e.reintentoEmpresa = true;
@@ -1520,6 +1895,7 @@ function ccResolverModelo(plan, r, e, cfg) {
       return repregunta ? { accion: 'retomar', extra: { prefijo: empatia } } : { accion: 'oferta', extra: { empatia: empatia, impacto: '' } };
     }
     default: // libre (oferta y libre)
+      if (sustantivo) e.hechos.respondioDolor = true;
       if (pregunta) return retomar();
       return { accion: 'oferta', extra: { empatia: empatia, impacto: '' } };
   }
@@ -1540,7 +1916,7 @@ function ccCompletar(a) {
   }
   const mensajes = ccMensajesDe(accion, e, cfg, t, extra);
   // Cualquier turno que NO retoma la pregunta pendiente reinicia la cuenta de repeticiones seguidas.
-  if (accion !== 'retomar' && accion !== 'identidad' && accion !== 'contacto') e.repetidas = 0;
+  if (!['retomar', 'identidad', 'contacto', 'consumo', 'banco', 'integracion'].includes(accion)) e.repetidas = 0;
   // El traspaso de un prospecto avisa a recepción (una vez por conversación, contando solo lo que Meta aceptó).
   if (accion === 'traspaso' && extra.soporte !== true) {
     const payload = ccAviso({

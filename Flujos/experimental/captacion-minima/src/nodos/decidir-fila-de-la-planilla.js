@@ -69,8 +69,10 @@ const PLANILLA = {
 //   Alta          pidio una persona (boton, fila o escrito) o pidio los planes
 //   Descalificado el modelo propuso un motivo de la lista y el codigo lo acepto
 //                 (un hecho de Alta posterior gana: va primero)
-//   Media         eligio su rubro (o «Otro») y contesto la pregunta por su negocio
-//   Baja          el resto
+//   Media         eligio su rubro (o «Otro») e INTERACTUO despues de la explicacion (§16, documento comercial del 07/10/2026): escribio o dijo algo
+//                 sustantivo —una pregunta de fondo, un comentario sobre su negocio, su necesidad—, no un saludo ni un acuse; en «Otro», respondio el cierre
+//                 investigativo. El hecho se sigue llamando `respondioDolor` (nombre historico: ya no hay pregunta de dolor en los rubros estandar).
+//   Baja          el resto: eligio rubro y no continuo
 const CALIFICACION = [
   { valor: 'Alta', si: (p) => p.pidioAsesor === true || p.pidioPlanes === true },
   { valor: 'Descalificado', si: (p) => Object.hasOwn(MOTIVOS_DESCARTE, p.descarte) },
@@ -91,8 +93,12 @@ const MOTIVOS_DESCARTE = {
   sin_negocio: 'No tiene negocio',
   spam_o_prueba: 'Spam o prueba',
 };
-// J «Resumen Chatbot IA», POR CODIGO: el interes, la consulta y el estado. El
-// rubro ya no va aca: tiene su columna, F.
+// J «Resumen Chatbot IA», POR CODIGO (§16): «Rubro X. Necesidad: …. Preguntó por: …. Pidió: planes y hablar con el equipo.», con lo que haya (hasta 400 caracteres). La
+// necesidad ya viene saneada de `Armar mensajes` (sin enlaces, formulas ni datos personales) y aca se recorta de nuevo; los temas son de un vocabulario CERRADO (nunca
+// un texto del cliente). La celda no empieza nunca con lo que una planilla toma por formula: arranca con «Rubro», «Necesidad» o «Descalificado».
+const TEMAS_PREGUNTADOS = {
+  costos: 'costos', consumo: 'consumo de mensajes', integraciones: 'integraciones', pagos: 'pagos y comprobantes', dudas: 'otras dudas',
+};
 const RESUMEN_ESTADO = {
   cerrado: 'Pidió hablar con un asesor.',
   en_conversacion: 'En conversación con el asistente.',
@@ -122,11 +128,19 @@ function calificar(p) {
 function resumir(p, conEstado, calificacionFinal) {
   const partes = [];
   if (calificacionFinal === 'Descalificado') partes.push('Descalificado por el asistente: ' + MOTIVOS_DESCARTE[p.descarte] + '.');
+  if (limpio(p.rubro)) partes.push('Rubro ' + limpio(p.rubro).slice(0, 60) + '.');
   if (p.flujos) partes.push('Interés: ' + p.flujos + '.');
-  if (p.consulta) partes.push('Consulta: ' + p.consulta + '.');
+  const necesidad = limpio(p.necesidad).slice(0, 160);
+  if (necesidad) partes.push('Necesidad: ' + necesidad.replace(/[.!?…]+$/, '') + '.');
+  const temas = (Array.isArray(p.temas) ? p.temas : []).filter((t) => Object.hasOwn(TEMAS_PREGUNTADOS, t)).map((t) => TEMAS_PREGUNTADOS[t]);
+  if (temas.length) partes.push('Preguntó por: ' + temas.join(', ') + '.');
+  const pidio = [p.pidioPlanes === true ? 'planes' : '', p.pidioAsesor === true ? 'hablar con el equipo' : ''].filter(Boolean);
+  if (pidio.length) partes.push('Pidió: ' + pidio.join(' y ') + '.');
+  else if (p.consulta) partes.push('Consulta: ' + p.consulta + '.');
   // Sin ningun dato del negocio, el resumen no dice nada que valga pisar.
   if (!partes.length && !conEstado) return '';
-  if (RESUMEN_ESTADO[p.estado]) partes.push(RESUMEN_ESTADO[p.estado]);
+  // «Pidió hablar con un asesor» ya lo dice la linea «Pidió: …».
+  if (RESUMEN_ESTADO[p.estado] && !(p.estado === 'cerrado' && pidio.length)) partes.push(RESUMEN_ESTADO[p.estado]);
   return partes.join(' ').slice(0, 400);
 }
 // Por que no se pudo leer: SOLO el tipo y el codigo del error, nunca su

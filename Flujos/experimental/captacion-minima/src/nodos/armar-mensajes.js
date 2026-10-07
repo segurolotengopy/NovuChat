@@ -42,6 +42,8 @@ if (decidir && decidir.plan) {
     ? ccLeerModelo(cnPrimero('Llamar al modelo') || {}, {
       rubroIds: ccIdsDeRubros(cfg), aclaracionIds: ids, aclaraciones: aclaraciones,
       textoCliente: decidir.plan.texto, textoDeImagen: decidir.plan.textoDeImagen, nombreNegocio: cfg.nombreNegocio, asesor: cfg.asesor,
+      // Los nombres propios que el modelo puede decir (§16): el asistente y los planes de la consola.
+      nombreAsistente: cfg.nombreAsistente, planes: cfg.planes,
       // Lo que ve el modelo: una `respuesta` solo puede traer los numeros que estan ahi (S3).
       datos: String((((decidir.cuerpoModelo || {}).systemInstruction || {}).parts || [{}])[0].text || ''),
     }) : null;
