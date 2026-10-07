@@ -535,6 +535,12 @@ CLAUDE.md: el rótulo va **impreso en la imagen** y en el **pie**, la respuesta 
   manda `cobroReal` ni `cobroSimulado`; con `cobroSimulado` declarado y las dos claves puestas, el flujo sigue en simulado aunque los datos digan
   otra cosa. El texto del comprobante simulado dice «tu comprobante» (puede ser una foto o un PDF).
 
+**QR real vencido (07/10/2026).** `imagenDeCobro` responde 404 a un QR cuyo `venceEl` ya pasó, así que el flujo no lo ofrece: `cbQrVencido(cobro, ahoraMs)`
+(`lib/cobro.js`) aplica el MISMO criterio del servidor (`venceEl` `aaaa-mm-dd` vale hasta las 23:59:59 de La Paz, UTC-4; vencido si ese instante `<=` la hora del
+turno; sin fecha o ilegible, no vence; solo el modo real). Al confirmar, con el QR vencido: sin imagen ni «total a pagar», el pedido se guarda sin cobro
+(`resultado: qr_vencido`, paso `menu`, sin `qr_enviado`), el aviso al rol `completo` dice «QR vencido: coordinar el pago» y el cliente recibe UN mensaje
+(reemplaza al del QR: 0 mensajes agregados) con «Escribir al local». «Reenviar QR» con el QR ya vencido deriva a recepción en vez de mandar la imagen.
+
 **Trampa que se evita (`registrarQrDeCobro`).** Esa Function es solo para el cobro real: guarda `cobroReal` apagado y `imagenDeCobro` vuelve a
 dibujar el QR desde `cargaUtil`, **sin rótulo**. Registrar `qr-demo.png` como QR real dejaría un cobro real sin rótulo: está prohibido. La imagen
 rotulada solo viaja por `qrSimuladoUrl`.

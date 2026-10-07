@@ -1256,7 +1256,11 @@ function confirmarPedido() {
   }
   const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
   const simulado = cobro.modo === 'simulado';
-  const conQr = cbHayQr(cobro);
+  // QR REAL VENCIDO (07/10): la Function de la imagen responde 404 a un QR vencido, así que ofrecerlo promete algo que no llega. Se comprueba ANTES de
+  // ofrecerlo, con el mismo criterio del servidor y la hora del turno: sin QR, sin «total a pagar», sin `qr_enviado` ni paso `esperando_comprobante`. Lo único que se
+  // ofrece es pasar con recepción (aviso + botón «Escribir al local»); el pedido queda guardado sin cobro y el aviso dice «QR vencido: coordinar el pago».
+  const qrVencido = cbHayQr(cobro) && !simulado && cbQrVencido(cobro, ahora);
+  const conQr = cbHayQr(cobro) && !qrVencido;
   if (conQr) {
     const pie = cbCaption(ped, { titular: simulado ? '' : cobro.titular, moneda: monedaTxt, delivery: ped.modalidad === 'delivery', simulado: simulado });
     if (pie) {
@@ -1274,17 +1278,18 @@ function confirmarPedido() {
     }
     errores.push('qr_sin_pie');
   }
-  // Plan B (sin QR real): el pedido va al restaurante y el pago se coordina con él.
+  // Plan B (sin QR real, o con el QR real vencido): el pedido va al restaurante y el pago se coordina con él.
+  const resSinQr = qrVencido ? 'qr_vencido' : 'sin_qr';
   const base = { codigo: ped.codigo, entrega: ped.modalidad };
-  const salio = cbTextoAlCliente('sin_qr', Object.assign({ avisoSalio: true }, base));
-  const noSalio = cbTextoAlCliente('sin_qr', Object.assign({ avisoSalio: false }, base));
-  pedidoGuardar = Object.assign({}, ped, { resultado: 'sin_qr', estado: cbEstadoParaAviso('sin_qr') });
-  aviso = { tipo: 'pedido', datos: datosDePedido(pedidoGuardar, 'sin_qr', []) };
+  const salio = cbTextoAlCliente(resSinQr, Object.assign({ avisoSalio: true }, base));
+  const noSalio = cbTextoAlCliente(resSinQr, Object.assign({ avisoSalio: false }, base));
+  pedidoGuardar = Object.assign({}, ped, { resultado: resSinQr, estado: cbEstadoParaAviso(resSinQr) });
+  aviso = { tipo: 'pedido', datos: datosDePedido(pedidoGuardar, resSinQr, []) };
   condicionados = { siSalio: [mensajeDeCb(salio)], siNoSalio: [mensajeDeCb(noSalio)] };
-  cierre = { tipo: 'registro', detalle: vmRecorte('Pedido #' + ped.codigo + ' (sin QR, ' + ped.modalidad + '): '
+  cierre = { tipo: 'registro', detalle: vmRecorte('Pedido #' + ped.codigo + ' (' + (qrVencido ? 'QR vencido' : 'sin QR') + ', ' + ped.modalidad + '): '
     + pdLineaCompacta(en.carrito, 200) + '. Total ' + pdMonto(ped.total, monedaTxt) + '.', 300), referencia: ped.pedidoId };
   mensajes = [];
-  ruta = 'pedido:sin_qr';
+  ruta = qrVencido ? 'pedido:qr_vencido' : 'pedido:sin_qr';
   limpiarCarrito();
   irA('menu');
 }
@@ -1330,6 +1335,11 @@ function aReenviarQr() {
   // Un pedido cuyo QR salió en otro modo (el cobro cambió entre la confirmación y el reenvío) no se reenvía con el modo de ahora.
   if (ped && ped.simulado === true && !simulado) return derivarPorCambioDeModo(ped); // un pedido de PRUEBA con el cobro ya real: sin callejón
   if (ped && (ped.simulado === true) !== simulado) return derivar('el modo de cobro cambió: no se reenvía el QR');
+  // El mismo candado que al confirmar: un QR real que venció mientras el cliente esperaba no se reenvía (la imagen no llegaría). Solo se ofrece pasar con recepción.
+  if (!simulado && cbHayQr(cobro) && cbQrVencido(cobro, ahora)) {
+    return derivar('QR vencido: no se reenvía el QR', true, undefined, false,
+      'No puedo mostrarte el QR en este momento. Toca «Escribir al local» y coordinas el pago directamente con nuestro equipo.');
+  }
   const pie = ped && cbHayQr(cobro) ? cbCaption(ped, { titular: simulado ? '' : cobro.titular, moneda: monedaTxt, delivery: ped.modalidad === 'delivery', simulado: simulado }) : '';
   if (!pie) return derivar('no se pudo reenviar el QR');
   // Lleva el monto y la referencia del pedido para que `Armar mensajes` compruebe el total, pero NO el evento
