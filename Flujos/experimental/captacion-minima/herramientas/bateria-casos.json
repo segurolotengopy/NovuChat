@@ -30,8 +30,7 @@
         "seco": { "tipo": "respuesta", "rubroLibre": "repuestos de maquinaria", "empatia": "Entiendo, el stock cambia y te preguntan a toda hora." },
         "espera": { "tipo": ["respuesta", "pide_planes"], "rubroLibre": "repuestos", "descarte": false } },
       { "tipo": "texto", "texto": "Sí. Usamos un sistema ERP propio que se llama Gestor Alfa. ¿Se integra con él?",
-        "seco": { "tipo": "pregunta", "empatia": "Gracias por contarme.", "respuesta": "", "enLosDatos": false },
-        "espera": { "tipo": "pregunta", "enLosDatos": false } } ] },
+        "exige": { "sinModelo": true, "contiene": "a la mano", "noContiene": "Gestor Alfa", "boton": true } } ] },
 
     { "id": "C7", "titulo": "escribe el rubro (pastelería)", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
@@ -79,7 +78,7 @@
     { "id": "C17", "titulo": "sin rubros cargados", "opciones": { "sinRubros": true }, "turnos": [
       { "tipo": "texto", "texto": "Hola" },
       { "tipo": "texto", "texto": "Vendo ropa deportiva por Instagram y me escriben todo el día.",
-        "seco": { "tipo": "respuesta", "rubroLibre": "ropa deportiva", "empatia": "Entiendo, vender por Instagram deja poco tiempo." },
+        "seco": { "tipo": "respuesta", "rubroLibre": "ropa deportiva", "empatia": "Entiendo, vender por redes sociales deja poco tiempo." },
         "espera": { "tipo": "respuesta", "rubroId": "ninguno", "rubroLibre": "ropa deportiva", "descarte": false } },
       { "tipo": "texto", "texto": "¿Cuánto tarda la instalación?",
         "seco": { "tipo": "pregunta", "respuesta": "La instalación tarda 48 horas desde que tenemos tu información.", "enLosDatos": true },
@@ -99,8 +98,7 @@
         "seco": { "tipo": "pregunta", "respuesta": "La instalación se hace en 48 horas desde que tenemos tu información.", "enLosDatos": true },
         "espera": { "tipo": "pregunta", "enLosDatos": true, "descarte": false } },
       { "tipo": "texto", "texto": "¿Se integra con mi ERP X?",
-        "seco": { "tipo": "pregunta", "respuesta": "", "enLosDatos": false },
-        "espera": { "tipo": "pregunta", "enLosDatos": false, "descarte": false } },
+        "exige": { "sinModelo": true, "contiene": "a la mano", "boton": true } },
       { "tipo": "texto", "texto": "¿En qué moneda se paga?",
         "seco": { "tipo": "pregunta", "aclaracion": "a2", "enLosDatos": true },
         "espera": { "tipo": "pregunta", "enLosDatos": true } },
@@ -109,8 +107,7 @@
         "seco": { "tipo": "pregunta", "respuesta": "La instalación se hace en 48 horas desde que tenemos tu información.", "enLosDatos": true },
         "espera": { "tipo": "pregunta", "enLosDatos": true } },
       { "tipo": "texto", "texto": "¿Se integra con mi ERP X?",
-        "seco": { "tipo": "pregunta", "respuesta": "", "enLosDatos": false },
-        "espera": { "tipo": "pregunta", "enLosDatos": false } },
+        "exige": { "sinModelo": true, "contiene": "a la mano", "boton": true } },
       { "tipo": "texto", "texto": "Sí, los viernes y sábados no doy abasto.",
         "espera": { "tipo": "respuesta", "descarte": false } } ] },
 
@@ -123,27 +120,24 @@
         "seco": { "tipo": "pregunta", "respuesta": "Sí, cada número de WhatsApp es un asistente con su propia configuración.", "enLosDatos": true },
         "espera": { "tipo": "pregunta", "enLosDatos": true } },
       { "tipo": "texto", "texto": "¿Se integra con mi ERP X?",
-        "seco": { "tipo": "pregunta", "respuesta": "", "enLosDatos": false },
-        "espera": { "tipo": "pregunta", "enLosDatos": false } },
+        "exige": { "sinModelo": true, "contiene": "a la mano", "boton": true } },
       { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" },
       { "tipo": "texto", "texto": "¿Cuánto dura la instalación?",
         "seco": { "tipo": "pregunta", "respuesta": "La instalación se hace en 48 horas desde que tenemos tu información.", "enLosDatos": true },
         "espera": { "tipo": "pregunta", "enLosDatos": true } },
       { "tipo": "texto", "texto": "¿Se integra con mi ERP X?",
-        "seco": { "tipo": "pregunta", "respuesta": "", "enLosDatos": false },
-        "espera": { "tipo": "pregunta", "enLosDatos": false } },
+        "exige": { "sinModelo": true, "contiene": "a la mano", "boton": true } },
       { "tipo": "texto", "texto": "Tienda Ejemplo Sur" },
       { "tipo": "texto", "texto": "¿Se integra con mi ERP X?",
-        "seco": { "tipo": "pregunta", "respuesta": "", "enLosDatos": false },
-        "espera": { "tipo": "pregunta", "enLosDatos": false } },
+        "exige": { "sinModelo": true, "contiene": "a la mano", "boton": true } },
       { "tipo": "texto", "texto": "¿Y la instalación cuánto dura?",
         "seco": { "tipo": "pregunta", "respuesta": "La instalación se hace en 48 horas desde que tenemos tu información.", "enLosDatos": true },
         "espera": { "tipo": "pregunta", "enLosDatos": true } } ] },
 
-    { "id": "C21", "titulo": "dolor: una sola palabra", "turnos": [
+    { "id": "C21", "titulo": "tras la explicación: una sola palabra", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
       { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
-      { "tipo": "texto", "texto": "sí",
+      { "tipo": "texto", "texto": "mucho",
         "seco": { "tipo": "respuesta", "empatia": "Te entiendo." },
         "espera": { "tipo": "respuesta", "descarte": false } } ] },
 
@@ -211,56 +205,6 @@
         "seco": { "tipo": "respuesta", "empatia": "Entiendo, atender el celular y el mostrador a la vez es mucho." },
         "espera": { "tipo": "respuesta", "descarte": false } } ] },
 
-    { "id": "P1", "titulo": "PDF: belleza completa (pide precios)", "turnos": [
-      { "tipo": "texto", "texto": "Hola, me das información." },
-      { "tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza" },
-      { "tipo": "texto", "texto": "Uff sí, todo el día estoy pegada al celular y a veces me dejan plantada.",
-        "seco": { "tipo": "respuesta", "empatia": "¡Uff, te entiendo! 😅 Estar pegada al celular todo el día le quita tiempo a cualquiera." },
-        "espera": { "tipo": "respuesta", "descarte": false } },
-      { "tipo": "texto", "texto": "Planes por favor." },
-      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" },
-      { "tipo": "texto", "texto": "Salón Rosa" } ] },
-
-    { "id": "P2", "titulo": "PDF: gastronomía (más directo al dolor)", "turnos": [
-      { "tipo": "texto", "texto": "Hola" },
-      { "tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía" },
-      { "tipo": "texto", "texto": "Sí, pero los fines de semana colapsamos.",
-        "seco": { "tipo": "respuesta", "empatia": "¡Ese es el momento donde más dinero se pierde por no responder! 💸" },
-        "espera": { "tipo": "respuesta", "descarte": false } },
-      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" } ] },
-
-    { "id": "P3", "titulo": "PDF: estudio contable (Otro, no pide precios)", "turnos": [
-      { "tipo": "texto", "texto": "Hola" },
-      { "tipo": "fila", "id": "rubro:otro", "titulo": "Otro / a medida" },
-      { "tipo": "texto", "texto": "Tengo un estudio contable. Pierdo mucho tiempo respondiendo consultas básicas sobre impuestos por WhatsApp.",
-        "seco": { "tipo": "respuesta", "rubroLibre": "estudio contable", "empatia": "¡Te entiendo! 📊 En servicios profesionales se pierden horas respondiendo lo mismo." },
-        "espera": { "tipo": "respuesta", "rubroLibre": "contable", "descarte": false } },
-      { "tipo": "texto", "texto": "Sí, la verdad me ahorraría mucho tiempo.",
-        "seco": { "tipo": "respuesta", "empatia": "¡Esa es la idea! 💡 Un asistente que responde y agenda de forma natural." },
-        "espera": { "tipo": ["respuesta", "otro"], "descarte": false } },
-      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" } ] },
-
-    { "id": "P4", "titulo": "PDF: importadora con ERP (Otro, pide precios)", "turnos": [
-      { "tipo": "texto", "texto": "Hola" },
-      { "tipo": "fila", "id": "rubro:otro", "titulo": "Otro / a medida" },
-      { "tipo": "texto", "texto": "Importo repuestos de maquinaria. Los clientes preguntan por stock a toda hora y quiero saber cuánto cobran por el bot.",
-        "seco": { "tipo": "respuesta", "rubroLibre": "repuestos de maquinaria", "empatia": "¡Gran rubro! ⚙️ Responder por el stock a toda hora es mucho trabajo." },
-        "espera": { "tipo": ["respuesta", "pide_planes"], "rubroLibre": "repuestos", "descarte": false } },
-      { "tipo": "texto", "texto": "Sí, usamos nuestro propio ERP.",
-        "seco": { "tipo": "respuesta", "empatia": "¡Excelente! 🚀 Eso es justo lo que se puede conectar." },
-        "espera": { "tipo": ["respuesta", "pregunta", "otro"], "descarte": false } },
-      { "tipo": "texto", "texto": "Planes por favor." },
-      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" } ] },
-
-    { "id": "P5", "titulo": "PDF: comercio (pide precios)", "turnos": [
-      { "tipo": "texto", "texto": "Hola" },
-      { "tipo": "fila", "id": "rubro:comercio-y-retail", "titulo": "Comercio y Retail" },
-      { "tipo": "texto", "texto": "Sí, de noche me escriben y no alcanzo a contestar.",
-        "seco": { "tipo": "respuesta", "empatia": "¡Qué buena señal que te escriban tanto! 🙌 Pero contestar de noche cansa." },
-        "espera": { "tipo": "respuesta", "descarte": false } },
-      { "tipo": "texto", "texto": "Planes por favor." },
-      { "tipo": "boton", "id": "asesor", "titulo": "Hablar con un asesor" } ] },
-
     { "id": "L1", "titulo": "larga: todo por escrito, sin tocar botones", "turnos": [
       { "tipo": "texto", "texto": "Hola buenas, quisiera información" },
       { "tipo": "texto", "texto": "salud y belleza" },
@@ -274,8 +218,7 @@
         "seco": { "tipo": "pregunta", "respuesta": "Sí. Cada profesional tiene su propia agenda, así que nadie queda con dos citas a la vez, y todo se administra desde la misma consola.", "enLosDatos": true },
         "espera": { "tipo": "pregunta", "enLosDatos": true } },
       { "tipo": "texto", "texto": "¿Se conecta con mi sistema de facturación?",
-        "seco": { "tipo": "pregunta", "respuesta": "", "enLosDatos": false },
-        "espera": { "tipo": "pregunta", "enLosDatos": false } },
+        "exige": { "sinModelo": true, "contiene": "a la mano", "boton": true } },
       { "tipo": "texto", "texto": "Mándame los planes por favor" },
       { "tipo": "texto", "texto": "ok" },
       { "tipo": "texto", "texto": "Quiero hablar con una asesora" },
@@ -301,11 +244,10 @@
         "seco": { "tipo": "pregunta", "respuesta": "Sí. Desde la consola cambias horarios y precios, y lo controlas todo desde el celular.", "enLosDatos": true },
         "espera": { "tipo": "pregunta", "enLosDatos": true } },
       { "tipo": "texto", "texto": "¿Se integra con mi sistema de delivery?",
-        "seco": { "tipo": "pregunta", "respuesta": "", "enLosDatos": false },
-        "espera": { "tipo": "pregunta", "enLosDatos": false } },
+        "exige": { "sinModelo": true, "contiene": "a la mano", "boton": true } },
       { "tipo": "texto", "texto": "¿Dónde quedan mis datos?",
-        "seco": { "tipo": "pregunta", "respuesta": "Están en la infraestructura de Google Cloud, con la información de cada negocio aislada de la de los demás.", "enLosDatos": true },
-        "espera": { "tipo": "pregunta", "enLosDatos": true } } ] },
+        "seco": { "tipo": "pregunta", "respuesta": "Cada negocio tiene su información aislada de la de los demás y la controlas desde tu consola.", "enLosDatos": true },
+        "espera": { "tipo": "pregunta" } } ] },
 
     { "id": "L3", "titulo": "larga: «ok» repetidos y acuses tras el traspaso", "turnos": [
       { "tipo": "texto", "texto": "Hola" },
@@ -319,6 +261,48 @@
       { "tipo": "texto", "texto": "👍" },
       { "tipo": "texto", "texto": "Boutique Sol" },
       { "tipo": "texto", "texto": "gracias" },
-      { "tipo": "texto", "texto": "ok" } ] }
+      { "tipo": "texto", "texto": "ok" } ] },
+
+    { "id": "R-SAL", "titulo": "documento: Salud (explica, costos, equipo)", "opciones": {"rubrosDelDocumento": true}, "planilla": {"calificacion": "Alta", "contiene": {"Rubro": "Salud", "Resumen Chatbot IA": ["Rubro Salud", "Pidió: planes y hablar con el equipo"]}}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:salud", "titulo": "Salud", "seco": {"tipo": "respuesta", "empatia": "¡Te entiendo!", "explicacion": "¡Qué bien! 🏥 NovuChat es tu recepcionista virtual 24/7 y se integra con tu Google Calendar 📅. Maneja varias agendas a la vez, agenda sin cruzar horarios y manda un recordatorio automático un día antes para asegurar la asistencia ⏰."}, "espera": {"explicacion": true}, "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝", "contiene": ["recepcionista virtual", "Google Calendar", "recordatorio"]}}, {"tipo": "texto", "texto": "¿Cuánto cuesta?", "exige": {"imagenPlanes": true, "sinModelo": true, "contiene": ["Setup estándar USD 65, pago único (configuración llave en mano y conexión a Meta)", "Planes mensuales (Impulso, Crecimiento, Pro) desde USD 25"], "noContiene": ["USD 125"]}}, {"tipo": "boton", "id": "asesor", "titulo": "Hablar con el equipo"}]},
+
+    { "id": "R-BEL", "titulo": "documento: Belleza", "opciones": {"rubrosDelDocumento": true}, "planilla": {"calificacion": "Baja", "contiene": {"Rubro": "Belleza"}}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:belleza", "titulo": "Belleza", "seco": {"tipo": "respuesta", "empatia": "¡Te entiendo!", "explicacion": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena."}, "espera": {"explicacion": true}, "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝", "contiene": ["especialistas", "24 horas antes"]}}]},
+
+    { "id": "R-GAS", "titulo": "documento: Gastronomía", "opciones": {"rubrosDelDocumento": true}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía", "seco": {"tipo": "respuesta", "empatia": "¡Te entiendo!", "explicacion": "¡Qué rico! 🍔 En horas pico ya no pierdes pedidos 🔥: NovuChat muestra tu menú, toma cada pedido registrando las notas especiales y realiza el cobro con QR 📲 para que pase directo a cocina."}, "espera": {"explicacion": true}, "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝", "contiene": ["notas especiales", "QR"]}}]},
+
+    { "id": "R-RET", "titulo": "documento: Retail", "opciones": {"rubrosDelDocumento": true}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:retail", "titulo": "Retail", "seco": {"tipo": "respuesta", "empatia": "¡Te entiendo!", "explicacion": "¡Genial! 🛍️ Con NovuChat no pierdes ventas por las noches 🌙: muestra tu catálogo, te ayuda a cerrar el carrito, cobra con QR 💳, toma los datos de envío 📦 y deja el pedido listo para el despacho."}, "espera": {"explicacion": true}, "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝", "contiene": ["catálogo", "carrito", "despacho"]}}]},
+
+    { "id": "R-EDU", "titulo": "documento: Educación", "opciones": {"rubrosDelDocumento": true}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:educacion", "titulo": "Educación", "seco": {"tipo": "respuesta", "empatia": "¡Te entiendo!", "explicacion": "¡Qué bien! 🏫 NovuChat es ideal si recibes muchas consultas de padres 👪: responde las dudas repetitivas, como admisiones y pensiones, y coordina entrevistas directamente en el calendario del colegio 📅."}, "espera": {"explicacion": true}, "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝", "contiene": ["admisiones", "pensiones", "entrevistas"]}}]},
+
+    { "id": "R-LEA", "titulo": "documento: Leads de Ventas (rubro propio)", "opciones": {"rubrosDelDocumento": true}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:leads-de-ventas", "titulo": "Leads de Ventas", "seco": {"tipo": "respuesta", "empatia": "¡Te entiendo!", "explicacion": "¡Excelente! 💼 Con NovuChat ningún prospecto calificado se enfría por falta de respuesta inmediata 🎯. Califica el interés con IA 🤖, genera un resumen automático y lo registra al instante en un miniCRM 📋, organizado en un tablero Kanban por etapas de venta 📌 para que tu asesor comercial cierre con toda la información lista 🚀."}, "espera": {"explicacion": true}, "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝", "contiene": ["miniCRM", "Kanban"]}}]},
+
+    { "id": "V-SYB", "titulo": "vivo: Salud y Belleza (respaldo fijo)", "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza", "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝", "contiene": ["recepcionista virtual", "Google Calendar"]}}]},
+
+    { "id": "V-GAS", "titulo": "vivo: Gastronomía (respaldo fijo)", "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía", "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝", "contiene": ["notas especiales"]}}]},
+
+    { "id": "V-COM", "titulo": "vivo: Comercio y Retail (respaldo fijo)", "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:comercio-y-retail", "titulo": "Comercio y Retail", "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝", "contiene": ["carrito", "despacho"]}}]},
+
+    { "id": "V-EDU", "titulo": "vivo: Educación (respaldo fijo)", "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:educacion", "titulo": "Educación", "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝", "contiene": ["admisiones", "entrevistas"]}}]},
+
+    { "id": "V-OTR", "titulo": "vivo: Otro (toque): la pregunta del negocio y su cuello de botella", "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:otro-a-medida", "titulo": "Otro / a medida", "exige": {"contiene": ["mayor cuello de botella"], "sinModelo": true}}]},
+
+    { "id": "OT1", "titulo": "Otro completo: tres partes, necesidad, planes con Setup a medida, nombre y empresa", "planilla": {"calificacion": "Alta", "contiene": {"Nombre y Apellido": "Juan Pérez", "Empresa / Cliente": "Ferretería El Clavo", "Rubro": "ferretería", "Resumen Chatbot IA": ["Necesidad: responder cuánto cuesta cada herramienta por WhatsApp", "Pidió: planes y hablar con el equipo"]}}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:otro-a-medida", "titulo": "Otro / a medida"}, {"tipo": "texto", "texto": "Tengo una ferretería", "seco": {"tipo": "respuesta", "rubroLibre": "ferretería", "empatia": "¡Qué buen rubro! Una ferretería maneja muchísimos productos distintos."}, "espera": {"tipo": "respuesta", "rubroLibre": "ferret", "descarte": false}, "exige": {"contiene": ["menú rígido", "Setups a Medida", "cuello de botella"]}}, {"tipo": "texto", "texto": "Me quita tiempo responder cuánto cuesta cada herramienta por WhatsApp", "seco": {"tipo": "respuesta", "necesidad": "responder cuánto cuesta cada herramienta por WhatsApp", "empatia": "Imagino, repetir precios todo el día cansa."}, "espera": {"tipo": "respuesta", "necesidad": "cuesta cada herramienta", "descarte": false}, "exige": {"termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"}}, {"tipo": "texto", "texto": "Quiero ver los planes", "exige": {"imagenPlanes": true, "sinModelo": true, "contiene": ["Setup a medida desde USD 125", "Setup estándar USD 65"]}}, {"tipo": "boton", "id": "asesor", "titulo": "Hablar con el equipo"}, {"tipo": "texto", "texto": "Juan Pérez, Ferretería El Clavo", "seco": {"tipo": "respuesta", "nombre": "Juan Pérez", "empresa": "Ferretería El Clavo"}, "espera": {"nombre": "Juan Pérez", "empresa": "Ferretería El Clavo"}, "exige": {"contiene": "Ferretería El Clavo"}}]},
+
+    { "id": "K-COSTOS", "titulo": "costos: precios del documento armados por código (nunca el modelo)", "planilla": {"calificacion": "Alta", "contiene": {"Resumen Chatbot IA": ["Preguntó por: costos", "Pidió: planes"]}}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:educacion", "titulo": "Educación"}, {"tipo": "texto", "texto": "¿Cuánto cuesta?", "exige": {"imagenPlanes": true, "sinModelo": true, "termina": "¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝", "contiene": ["Setup estándar USD 65, pago único (configuración llave en mano y conexión a Meta)", "Planes mensuales (Impulso, Crecimiento, Pro) desde USD 25", "Todos incluyen las funciones clave que necesites (agendamiento inteligente, cierre de ventas con catálogo y cobro, o captura y gestión de leads con miniCRM)"], "noContiene": ["se comunique", "USD 125", "desde USD 65"]}}]},
+
+    { "id": "K-CONSUMO", "titulo": "consumo: respuesta fija del documento, sin ninguna cifra", "planilla": {"calificacion": "Media", "contiene": {"Resumen Chatbot IA": "Preguntó por: consumo de mensajes"}}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía"}, {"tipo": "texto", "texto": "¿Cuántos mensajes incluye una conversación?", "exige": {"sinModelo": true, "sinCifras": true, "boton": true, "contiene": "cada conversación cubra sin problemas todo el flujo necesario para cerrar una venta o agendar una cita"}}, {"tipo": "texto", "texto": "¿Hay límite de interacciones?", "exige": {"sinModelo": true, "sinCifras": true, "boton": true, "contiene": "cubra sin problemas"}}]},
+
+    { "id": "K-TOPE", "titulo": "tope de un plan: se muestra la imagen de planes, sin cifras escritas", "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:comercio-y-retail", "titulo": "Comercio y Retail"}, {"tipo": "texto", "texto": "¿Cuántas conversaciones trae el Impulso?", "exige": {"imagenPlanes": true, "sinModelo": true, "noContiene": ["100 conversaciones"]}}]},
+
+    { "id": "K-INTEGRA", "titulo": "integraciones inventadas: no se inventan; Google Calendar sí lo contesta el modelo", "planilla": {"contiene": {"Resumen Chatbot IA": "Preguntó por: integraciones"}}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza"}, {"tipo": "texto", "texto": "¿Se conecta con SAP?", "exige": {"sinModelo": true, "contiene": "a la mano", "noContiene": "SAP", "boton": true}}, {"tipo": "texto", "texto": "¿Se integra con Tigo Money?", "exige": {"sinModelo": true, "contiene": "a la mano", "noContiene": "Tigo", "boton": true}}, {"tipo": "texto", "texto": "¿Se conecta con Shopify?", "exige": {"sinModelo": true, "contiene": "a la mano", "noContiene": "Shopify", "boton": true}}, {"tipo": "texto", "texto": "¿Se integra con Google Calendar?", "seco": {"tipo": "pregunta", "respuesta": "Sí, se integra con tu Google Calendar para agendar sin cruzar horarios.", "enLosDatos": true}, "espera": {"tipo": "pregunta"}}]},
+
+    { "id": "K-BANCO", "titulo": "banco: solo revisa visualmente el comprobante; nunca valida con el banco", "planilla": {"contiene": {"Resumen Chatbot IA": "Preguntó por: pagos y comprobantes"}}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía"}, {"tipo": "texto", "texto": "¿Valida mis transferencias con el banco?", "exige": {"sinModelo": true, "contiene": "revisa visualmente el comprobante", "noContiene": ["acredit", "verifica con el banco"], "boton": true}}, {"tipo": "texto", "texto": "¿Y cómo confirman los pagos?", "exige": {"sinModelo": true, "contiene": "revisa visualmente el comprobante"}}]},
+
+    { "id": "N-NOMBRE1", "titulo": "nombre y empresa en un mensaje (con extracción válida)", "planilla": {"calificacion": "Alta", "contiene": {"Nombre y Apellido": "Juan Pérez", "Empresa / Cliente": "Salón Rosa"}}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza"}, {"tipo": "boton", "id": "asesor", "titulo": "Hablar con el equipo"}, {"tipo": "texto", "texto": "Juan Pérez, Salón Rosa", "seco": {"tipo": "respuesta", "nombre": "Juan Pérez", "empresa": "Salón Rosa"}, "espera": {"nombre": "Juan Pérez", "empresa": "Salón Rosa"}, "exige": {"contiene": "Salón Rosa"}}]},
+
+    { "id": "N-NOMBRE2", "titulo": "nombre y empresa sin extracción válida: cae a solo la empresa y el nombre del perfil", "planilla": {"contiene": {"Nombre y Apellido": "Ana Prueba", "Empresa / Cliente": "Salón Rosa"}}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:salud-y-belleza", "titulo": "Salud y Belleza"}, {"tipo": "boton", "id": "asesor", "titulo": "Hablar con el equipo"}, {"tipo": "texto", "texto": "Juan Pérez, Salón Rosa", "seco": {"tipo": "respuesta", "empatia": "Gracias por contarme."}}, {"tipo": "texto", "texto": "Salón Rosa"}]},
+
+    { "id": "M-MEDIA", "titulo": "Media sin pregunta de dolor: interactuó tras la explicación", "planilla": {"calificacion": "Media"}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía"}, {"tipo": "texto", "texto": "Me escriben muchos clientes por las noches y no alcanzo a responder", "seco": {"tipo": "respuesta", "empatia": "Imagino lo pesado que es eso."}, "espera": {"tipo": "respuesta", "descarte": false}}]},
+
+    { "id": "M-BAJA", "titulo": "Baja: eligió rubro y no continuó (un saludo no cuenta)", "planilla": {"calificacion": "Baja"}, "turnos": [{"tipo": "texto", "texto": "Hola"}, {"tipo": "fila", "id": "rubro:gastronomia", "titulo": "Gastronomía"}, {"tipo": "texto", "texto": "hola", "seco": {"tipo": "otro", "empatia": "¡Hola de nuevo!"}}]}
   ]
 }

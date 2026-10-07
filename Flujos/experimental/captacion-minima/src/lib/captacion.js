@@ -53,7 +53,7 @@ const CC_MAX_PALABRAS_EXPLICACION = 72;
 const CC_MAX_NECESIDAD = 160;                // caracteres de la «necesidad» que el cliente cuenta (va al resumen de la hoja)
 const CC_MAX_TOKENS = 600;                   // `maxOutputTokens` de «Llamar al modelo» (el razonamiento del modelo también cuenta)
 // Contadores de variantes de los textos fijos (§15): un entero acotado por familia, para no repetir el mismo texto dos veces seguidas.
-const CC_ROT_CLAVES = ['saludo', 'rubros', 'traspaso', 'acuse', 'cierre', 'sinDatos', 'identidad', 'pideAsesor'];
+const CC_ROT_CLAVES = ['saludo', 'rubros', 'traspaso', 'acuse', 'cierre', 'sinDatos', 'identidad', 'pideAsesor', 'fijas'];
 const CC_REPETIDAS_MAX = 9;                  // la pregunta pendiente que se retoma turno tras turno: cuántas veces seguidas (satura aquí)
 const CC_ROT_VUELTA = 12;                    // múltiplo de 2, 3 y 4: la vuelta del contador no repite una variante seguida
 const CC_EMPATIA_RESPALDO = '¡Te entiendo! 😊';
@@ -268,7 +268,7 @@ const CC_CONSUMO = new RegExp([
   '\\b(hay|tiene|tienen|existe|existen|tendria|tendran) (algun |un |algunos |unos )?(limite|limites|tope|topes)\\b',
   '\\bconsumo (de|del|por) (mensajes|conversaciones|interacciones|ia|plan|servicio|asistente|bot|datos)\\b',
   '\\b(detalles?|datos) tecnicos? (del |sobre el |de )?consumo\\b',
-  '\\bcuanto consume\\b',
+  '\\bcuanto (consume|consumo)\\b',
 ].join('|'));
 // Quien cuenta SU propio volumen («no sé cuántos mensajes recibo») no pregunta por el límite del servicio.
 const CC_VOLUMEN_PROPIO = /\b(recibo|recibimos|me llegan|nos llegan|me escriben|nos escriben|atiendo|atendemos|contesto|respondo)\b/;
@@ -350,7 +350,8 @@ function ccNecesidadValida(v, textos) {
   return s;
 }
 // El nombre de pila y apellido de quien escribe: de 2 a 4 palabras con letras (sin dígitos), sin enlaces, fórmulas ni órdenes, y que salgan de lo que dijo.
-const CC_NO_ES_PERSONA = new Set('mi mis tu tus su sus hola gracias buenas buenos dias tardes noches negocio empresa tienda local nombre llamo soy somos estoy tengo vendo ok no si nada ninguno el la los las un una'.split(' '));
+const CC_NO_ES_PERSONA = new Set('mi mis tu tus su sus hola gracias buenas buenos dias tardes noches negocio empresa tienda local nombre llamo soy somos estoy tengo vendo ok no si nada ninguno'.split(' '));
+const CC_ARTICULOS = new Set(['el', 'la', 'los', 'las', 'un', 'una']);
 function ccNombreDePersonaValido(v, textos) {
   const s = ccPlano(ccTexto(v).normalize('NFKC').replace(CC_INVISIBLES, '')).replace(/[.,;:!¡]+$/, '').trim();
   if (s.length < 3 || s.length > 60) return '';
@@ -360,7 +361,8 @@ function ccNombreDePersonaValido(v, textos) {
   if (palabras.length < 2 || palabras.length > 4) return '';
   if (!palabras.every((w) => /^\p{L}[\p{L}'’.-]*$/u.test(w) && (w.match(/\p{L}/gu) || []).length >= 2)) return '';
   const nn = ccNorm(s).split(' ');
-  if (nn.some((w) => CC_NO_ES_PERSONA.has(w)) || nn.every((w) => CC_ACUSE_PALABRAS.has(w))) return '';
+  // «de los», «de la» sí van en un nombre («María de los Ángeles»); un artículo al INICIO («La Tienda», «El Rincón») es un negocio.
+  if (nn.some((w) => CC_NO_ES_PERSONA.has(w)) || CC_ARTICULOS.has(nn[0]) || nn.every((w) => CC_ACUSE_PALABRAS.has(w))) return '';
   if (textos !== undefined) {
     const base = (Array.isArray(textos) ? textos : [textos]).map((t) => ' ' + ccNorm(t) + ' ');
     if (!nn.every((w) => base.some((b) => b.includes(' ' + w + ' ')))) return '';
@@ -998,11 +1000,10 @@ function ccLista(cuerpo, rubros, conAsesor, tituloAsesor) {
   for (const fila of payload.interactive.action.sections[0].rows) if (!fila.description) delete fila.description;
   return cmMensaje('cliente', payload, texto, respaldo, { tipoReporte: 'interactive', evento: 'lista', filas: filas.map((f) => f.id) });
 }
-// La oferta: botones de respuesta, SIN encabezado (la única imagen del flujo es la de los planes, D16). Cuerpo = empatía + impacto + «¿Te gustaría
-// ver los planes o prefieres hablar con {asesor}?». El botón `planes` solo si `conPlanes` (hay planes o archivo y no se mostraron);
-// sin él, la pregunta ofrece solo al asesor: solo se ofrece lo que se cumple.
-// La pregunta de la oferta tiene tres formulaciones que rotan (`indice`, de la ficha) para que no sea idéntica una y otra vez (§14), y cada una
-// propone el siguiente paso con un porqué breve (§15, hasta 16 palabras).
+// La oferta: botones de respuesta, SIN encabezado (la única imagen del flujo es la de los planes, D16). Cuerpo = (empatía + orientación + impacto) o la explicación del rubro (§16) +
+// la pregunta de cierre. El botón `planes` solo si `conPlanes` (hay planes o archivo y no se mostraron); sin él, la pregunta ofrece solo al equipo: solo se ofrece lo que se cumple.
+// La pregunta de la oferta tiene tres formulaciones que rotan (`indice`, de la ficha) para que no sea idéntica una y otra vez (§14): la 1.ª con planes es la EXACTA del documento
+// comercial (§16, D7) y todas miden hasta 16 palabras (§15).
 function ccPreguntaDeOferta(quien, conPlanes, indice) {
   const i = Number.isInteger(indice) && indice >= 0 ? indice % 3 : 0;
   // §16 (D7): la 1.ª vez de la ficha (y de cada ventana) es la pregunta EXACTA del documento comercial; las otras dos dicen lo mismo con otras palabras.
@@ -1682,7 +1683,7 @@ function ccMensajesDe(accion, e, cfg, t, x) {
     case 'banco':
     case 'integracion': {
       const hayAsesor = ccHayRecepcion(cfg, t.from);
-      return [ccRetomar(e, cfg, ccRespuestaFija(accion, cfg, hayAsesor), { conAsesor: hayAsesor, soloPrefijo: true, sinAsesor: !hayAsesor })];
+      return [ccRetomar(e, cfg, ccRespuestaFija(accion, cfg, hayAsesor, ccVariante(e, 'fijas', 3)), { conAsesor: hayAsesor, soloPrefijo: true, sinAsesor: !hayAsesor })];
     }
     case 'planes': return [ccPlanes(cfg, cfg.asesor, ccCierreDelRubro(e, cfg), ccComoFuncionaDelRubro(e, cfg), { aMedida: e.rubroId === '' && ccTieneRubro(e) })];
     case 'planes_ya': return [ccOferta({ empatia: '¡Ya te los mostré arriba! 😊', impacto: '', asesor: cfg.asesor, conPlanes: false, nivel: cfg.nivelEmojis, indice: ccIndiceDeOferta(e) })];
@@ -1732,23 +1733,33 @@ function ccMensajesDe(accion, e, cfg, t, x) {
   }
 }
 
-// §16: las respuestas fijas del documento comercial (§5 y §6). El texto es del tenant (`guion.respuestas.consumo|banco|integracion`); sin él, uno neutro. Con a quién mandarlo
-// (`hayAsesor`), cada una ofrece hablar con el equipo como una OPCIÓN desde los botones: nada de «te llamamos» ni de «se comunicará».
-function ccRespuestaFija(accion, cfg, hayAsesor) {
+// §16: las respuestas fijas del documento comercial (§5 y §6). La oración del documento es del tenant (`guion.respuestas.consumo|banco|integracion`); sin ella, una neutra. Va SIEMPRE
+// (D9: la respuesta fija de consumo no depende de lo que etiquete el modelo), pero lo que la rodea rota con el contador `fijas` (`v`, de 0 a 2) para que dos preguntas seguidas no reciban el
+// mismo mensaje idéntico. Con a quién mandarlo (`hayAsesor`), cada una ofrece hablar con el equipo como una OPCIÓN desde los botones: nada de «te llamamos» ni de «se comunicará».
+function ccRespuestaFija(accion, cfg, hayAsesor, variante) {
   const g = cfg && cfg.guion && typeof cfg.guion === 'object' ? cfg.guion : {};
   const r = g.respuestas && typeof g.respuestas === 'object' && !Array.isArray(g.respuestas) ? g.respuestas : {};
   const quien = ccQuien(cfg && cfg.asesor);
-  const con = (base, equipo) => ccPunto(base) + (hayAsesor ? ' ' + equipo : '');
+  const v = Number.isInteger(variante) && variante >= 0 ? variante % 3 : 0;
+  const con = (cabeza, base, equipo) => [cabeza, ccPunto(base), hayAsesor ? equipo : ''].filter((x) => x !== '').join(' ');
   if (accion === 'consumo') {
-    return con(ccPlano(r.consumo) || 'Los planes están pensados para que cada conversación cubra sin problemas todo lo que necesitas, así que prefiero no darte cifras sueltas.',
-      'Para analizar el volumen de tu negocio y recomendarte el plan que mejor se ajuste, puedes hablar con ' + quien + ' desde las opciones de abajo.');
+    return con(['¡Buena pregunta! 😊', 'Con gusto te lo explico 😊', 'Te cuento 🙌'][v],
+      ccPlano(r.consumo) || 'Los planes están pensados para que cada conversación cubra sin problemas todo lo que necesitas, así que prefiero no darte cifras sueltas.',
+      ['Para analizar el volumen de tu negocio y recomendarte el plan que mejor se ajuste, puedes hablar con ' + quien + ' desde las opciones de abajo.',
+        'Y para que te recomienden el plan que mejor se ajuste a tu volumen, puedes hablar con ' + quien + ' desde las opciones de abajo.',
+        'Si quieres afinar el plan según el volumen de tu negocio, puedes hablar con ' + quien + ' desde las opciones de abajo.'][v]);
   }
   if (accion === 'banco') {
-    return con(ccPlano(r.banco) || 'El asistente revisa visualmente el comprobante que le llega, pero no lo valida con el banco: quien confirma que el dinero entró es el banco, y el negocio.',
-      'Si quieres ver cómo quedaría en tu caso, puedes hablar con ' + quien + ' desde las opciones de abajo.');
+    return con(['¡Buena pregunta! 😊', 'Te lo aclaro 😊', 'Muy buena duda 🙌'][v],
+      ccPlano(r.banco) || 'El asistente solo revisa visualmente el comprobante que le llega: no lo valida con el banco. Quien confirma que el dinero entró es el banco, y el negocio.',
+      ['Si quieres ver cómo quedaría en tu caso, puedes hablar con ' + quien + ' desde las opciones de abajo.',
+        'Para ver cómo se haría en tu negocio, puedes hablar con ' + quien + ' desde las opciones de abajo.',
+        'Si prefieres revisarlo con calma, puedes hablar con ' + quien + ' desde las opciones de abajo.'][v]);
   }
-  return con(ccPlano(r.integracion) || 'Esa integración no la tengo a la mano 🤔.',
-    'Si quieres consultarla, puedes hablar con ' + quien + ' desde las opciones de abajo.');
+  return con('', ccPlano(r.integracion) ? ccPlano(r.integracion) : ['Esa no la tengo a la mano 🤔.', 'Uy, esa conexión no la tengo a la mano 🤔.', 'Sobre esa integración no tengo datos a la mano 🤔.'][v],
+    ['Si quieres consultarla, puedes hablar con ' + quien + ' desde las opciones de abajo.',
+      'Si te interesa, puedes preguntárselo a ' + quien + ' desde las opciones de abajo.',
+      'Para saber si es posible, puedes hablar con ' + quien + ' desde las opciones de abajo.'][v]);
 }
 // Lo que antecede a la pregunta pendiente cuando alguien pide que lo llamen o hablar con una persona: tres frases (§15) que solo ofrecen la opción.
 function ccPresentaAsesor(quien, v) {

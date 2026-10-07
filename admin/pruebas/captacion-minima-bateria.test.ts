@@ -63,7 +63,7 @@ interface Mundo { salida: string[]; error: string[]; red: LlamadaDeRed[]; deps: 
 /** `respuesta`: lo que contesta el modelo de mentira (objeto del esquema, texto, o una función de la petición). */
 function mundo(respuesta: ((cuerpo: J, n: number) => J | string | Error) | J | string = {}, archivos: Record<string, string> = {}): Mundo {
   const m: Mundo = { salida: [], error: [], red: [], deps: {} };
-  const base = { tipo: 'respuesta', rubroId: 'ninguno', rubroLibre: '', empatia: 'Te entiendo.', respuesta: '', aclaracion: 'ninguno', enLosDatos: false, descarte: 'ninguno' };
+  const base = { tipo: 'respuesta', rubroId: 'ninguno', rubroLibre: '', empatia: 'Te entiendo.', respuesta: '', aclaracion: 'ninguno', enLosDatos: false, descarte: 'ninguno', explicacion: '', necesidad: '', nombre: '', empresa: '' };
   m.deps = {
     salida: (t: string) => { m.salida.push(t); },
     error: (t: string) => { m.error.push(t); },
@@ -120,9 +120,13 @@ describe('Batería de Captación mínima contra el modelo', () => {
       const j = JSON.parse(r.salida) as J;
       const ids = (j['casos'] as J[]).map((c) => c['id']);
       expect(ids).toEqual(casosDelArchivo().map((c) => c['id']));
-      for (const id of ['C1', 'C3', 'C4', 'C7', 'C10', 'C11', 'C12', 'C17', 'C18', 'P1', 'P2', 'P3', 'P4', 'P5']) expect(ids, id).toContain(id);
-      // Preguntas sueltas, el dolor de cinco maneras, la promesa y el monto inducidos y el saludo largo.
-      expect(ids.length).toBeGreaterThanOrEqual(24);
+      for (const id of ['C1', 'C3', 'C4', 'C7', 'C10', 'C11', 'C12', 'C17', 'C18']) expect(ids, id).toContain(id);
+      // §16: un caso por cada rubro del documento (ids del documento y los 5 ids VIVOS de la consola), «Otro» completo, costos, consumo, topes, integraciones, banco, nombre y empresa, y la calificación.
+      for (const id of ['R-SAL', 'R-BEL', 'R-GAS', 'R-RET', 'R-EDU', 'R-LEA', 'V-SYB', 'V-GAS', 'V-COM', 'V-EDU', 'V-OTR', 'OT1', 'K-COSTOS', 'K-CONSUMO', 'K-TOPE', 'K-INTEGRA', 'K-BANCO', 'N-NOMBRE1', 'N-NOMBRE2', 'M-MEDIA', 'M-BAJA']) expect(ids, id).toContain(id);
+      // Los recorridos P1 a P5 del PDF se reemplazaron por los del documento comercial.
+      for (const id of ['P1', 'P2', 'P3', 'P4', 'P5']) expect(ids, id).not.toContain(id);
+      // Preguntas sueltas, la promesa y el monto inducidos y el saludo largo.
+      expect(ids.length).toBeGreaterThanOrEqual(40);
     });
 
     it('lo determinista no viola ninguna regla dura sobre lo que el cliente recibe', () => {
@@ -150,6 +154,8 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect(t['campos']['empatia']['respaldo']).toBe(0);
       expect(t['campos']['respuesta']['aceptado']).toBeGreaterThan(0);
       expect(t['campos']['aclaracion']['aceptado']).toBeGreaterThan(0);
+      // §16: la explicación redactada por el modelo (los casos del documento), la necesidad, el nombre y la empresa que extrae pasan la validación del flujo.
+      for (const k of ['explicacion', 'necesidad', 'nombre', 'empresa']) { expect(t['campos'][k]['aceptado'], k).toBeGreaterThan(0); expect(t['campos'][k]['respaldo'], k).toBe(0); }
       expect(t['tipo'].ok).toBe(t['tipo'].n);
       expect(t['enLosDatos'].ok).toBe(t['enLosDatos'].n);
       expect(t['invencionesEfectivas']).toBe(0);
@@ -161,12 +167,25 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect(j['total']['descarteFinal']).toMatchObject({ ok: j['total']['corridas'], falsosPositivos: 0, falsosNegativos: 0 });
     });
 
-    it('C1: el recorrido feliz son 6 mensajes y 1 plantilla con 1 llamada al modelo, y termina en Alta', () => {
+    it('C1 (el guion de seis turnos de antes: contesta, además, un comentario tras la explicación): 6 mensajes y 1 plantilla, 2 llamadas al modelo (la explicación y el comentario), y termina en Alta', () => {
       const c = caso(JSON.parse(r.salida) as J, 'C1');
       expect(c['mensajesPorCorrida']).toBe(6);
       expect(c['plantillasPorCorrida']).toBe(1);
+      expect(c['llamadasPorCorrida']).toBe(2);
+      expect(c['calificaciones']).toEqual({ Alta: 1 });
+    });
+    it('el recorrido natural del documento comercial (R-SAL: elige rubro, pregunta por el costo y pasa con el equipo) son 4 mensajes y 1 plantilla con UNA sola llamada al modelo (la explicación): cero mensajes de más', () => {
+      const c = caso(JSON.parse(r.salida) as J, 'R-SAL');
+      expect(c['mensajesPorCorrida']).toBe(4);
+      expect(c['plantillasPorCorrida']).toBe(1);
       expect(c['llamadasPorCorrida']).toBe(1);
       expect(c['calificaciones']).toEqual({ Alta: 1 });
+      expect(c['cierreExacto']).toEqual({ ok: 1, n: 1 });
+    });
+    it('D7: en TODA conversación con explicación de rubro, la primera termina con la pregunta exacta del documento comercial', () => {
+      const t = (JSON.parse(r.salida) as J)['total'] as J;
+      expect(t['cierreExacto'].n).toBeGreaterThan(20);
+      expect(t['cierreExacto'].ok).toBe(t['cierreExacto'].n);
     });
 
     it('C10: el código contesta la identidad con texto fijo (sin modelo) y no cae en ninguna marca del cliente', () => {
@@ -294,8 +313,8 @@ describe('Batería de Captación mínima contra el modelo', () => {
       const todo = r.salida + r.error + JSON.stringify(m.red.map((x) => x.url));
       expect(todo).not.toContain(CLAVE);
       expect(r.error).toMatch(/variable GEMINI_API_KEY del entorno \(valor no mostrado\)/);
-      // C1: una llamada; C3: dos.
-      expect(m.red).toHaveLength(3);
+      // C1: dos llamadas (la explicación del rubro y el comentario); C3: dos (el rubro del cliente y la respuesta al cierre investigativo).
+      expect(m.red).toHaveLength(4);
       for (const x of m.red) {
         expect(x.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
         expect(x.encabezados['x-goog-api-key']).toBe(CLAVE);
@@ -329,8 +348,9 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect(r.codigo, r.error).toBe(0);
       expect(r.salida + r.error).not.toContain(CLAVE);
       const t = json(r)['total'] as J;
-      expect(t['fallo']).toBe(2);
-      expect(t['erroresDelServicio']).toBe(2);
+      // C21 llama al modelo dos veces por corrida: la explicación (con el respaldo fijo si falla) y la respuesta del cliente (con el texto de falla).
+      expect(t['fallo']).toBe(4);
+      expect(t['erroresDelServicio']).toBe(4);
       expect(t['jsonValido'].ok).toBe(0);
       // «Disculpa, no pude procesar tu mensaje…» con el botón del asesor (el contrato §4): nada de un mensaje vacío.
       const conv = (caso(json(r), 'C21')['conversacion'] as J[]).flatMap((x) => x['mensajes'] as string[]).join('\n');
@@ -341,10 +361,10 @@ describe('Batería de Captación mínima contra el modelo', () => {
     it('un 400 no se reintenta; un 503 sí, como el nodo (2 intentos), y se cuenta', async () => {
       const m = mundo(`HTTP 400 {"error":{"message":"malo"}}`, archivos);
       await correr(m, ['--env', '.env.de-mentira', '--casos', 'C21', '--n', '1']);
-      expect(m.red).toHaveLength(1);
+      expect(m.red).toHaveLength(2);   // dos llamadas del caso, ninguna reintentada
       const m2 = mundo((_c, n) => (n === 1 ? 'HTTP 503 {"error":{"message":"ocupado"}}' : { tipo: 'respuesta' }), archivos);
       const r2 = await correr(m2, ['--env', '.env.de-mentira', '--casos', 'C21', '--n', '1', '--json']);
-      expect(m2.red).toHaveLength(2);
+      expect(m2.red).toHaveLength(3);  // la 1.ª llamada se reintenta una vez + la 2.ª llamada del caso
       expect(json(r2)['total']['reintentos']).toBe(1);
       expect(json(r2)['total']['fallo']).toBe(0);
     }, 15000);
@@ -354,9 +374,9 @@ describe('Batería de Captación mínima contra el modelo', () => {
       const r = await correr(m, ['--env', '.env.de-mentira', '--casos', 'C21', '--n', '1', '--json']);
       const j = json(r);
       const u = j['total']['uso'] as J;
-      expect(u).toMatchObject({ llamadasConUso: 1, entrada: 1000, salida: 100, cacheados: 200, razonamiento: 10 });
+      expect(u).toMatchObject({ llamadasConUso: 2, entrada: 2000, salida: 200, cacheados: 400, razonamiento: 20 });
       expect(u['latenciaMediaMs']).toBeGreaterThanOrEqual(0);
-      const esperado = ((1000 - 200) * B.TARIFA.entrada + 200 * B.TARIFA.cacheado + (100 + 10) * B.TARIFA.salida) / 1e6;
+      const esperado = 2 * ((1000 - 200) * B.TARIFA.entrada + 200 * B.TARIFA.cacheado + (100 + 10) * B.TARIFA.salida) / 1e6;
       expect(u['costoUsd']).toBeCloseTo(esperado, 8);
       expect(j['costo']['usd']).toBeCloseTo(esperado, 8);
       expect(j['costo']['supuesto']).toMatch(/No es una factura/);
@@ -364,14 +384,14 @@ describe('Batería de Captación mínima contra el modelo', () => {
       // En la salida legible el supuesto se declara.
       const t = await correr(mundo({}, archivos), ['--env', '.env.de-mentira', '--casos', 'C21', '--n', '1']);
       expect(t.salida).toMatch(/Supuesto de la tarifa:/);
-      expect(t.salida).toMatch(/Costo estimado: USD 0\.000\d/);
+      expect(t.salida).toMatch(/Costo estimado: USD 0\.00\d/);
     });
 
     it('con --vertex usa el token de gcloud en Authorization, hacia aiplatform, y el token no sale', async () => {
       const m = mundo({});
       const r = await correr(m, ['--vertex', 'proyecto-de-prueba', '--locacion', 'us-central1', '--casos', 'C21', '--n', '1', '--json']);
       expect(r.codigo, r.error).toBe(0);
-      expect(m.red).toHaveLength(1);
+      expect(m.red).toHaveLength(2);
       expect(m.red[0]!.url).toBe('https://us-central1-aiplatform.googleapis.com/v1/projects/proyecto-de-prueba/locations/us-central1/publishers/google/models/gemini-3.5-flash-lite:generateContent');
       expect(m.red[0]!.encabezados['Authorization']).toBe(`Bearer ${TOKEN}`);
       expect(Object.keys(m.red[0]!.encabezados)).not.toContain('x-goog-api-key');
@@ -395,14 +415,15 @@ describe('Batería de Captación mínima contra el modelo', () => {
       const r = await correr(m, ['--env', '.env.de-mentira', '--casos', 'C21,C22', '--n', '1', '--json']);
       expect(r.codigo, r.error).toBe(0);
       const t = json(r)['total'] as J;
-      expect(t['campos']['empatia']).toMatchObject({ aceptado: 0, respaldo: 2 });
-      expect(t['campos']['respuesta']).toMatchObject({ aceptado: 0, respaldo: 2 });
-      expect(t['campos']['enLosDatos']['respaldo']).toBe(2);
-      expect(t['empatia']['sinPregunta']).toMatchObject({ ok: 0, n: 2 });
+      // C21 y C22 llaman al modelo dos veces cada uno (la explicación del rubro y lo que dice el cliente): cuatro llamadas con el mismo modelo malo.
+      expect(t['campos']['empatia']).toMatchObject({ aceptado: 0, respaldo: 4 });
+      expect(t['campos']['respuesta']).toMatchObject({ aceptado: 0, respaldo: 4 });
+      expect(t['campos']['enLosDatos']['respaldo']).toBe(4);
+      expect(t['empatia']['sinPregunta']).toMatchObject({ ok: 0, n: 4 });
       // Lo que el cliente recibe: sin el monto ni la promesa, y con el camino al asesor.
       const conv = ['C21', 'C22'].flatMap((id) => (caso(json(r), id)['conversacion'] as J[]).flatMap((x) => x['mensajes'] as string[])).join('\n');
       expect(conv).not.toMatch(/USD|\bllamo\b|Seguro que sí/);
-      expect(conv).toMatch(/Esa no la tengo a la mano 🤔; si quieres, puedes preguntárselo a un asesor desde las opciones de abajo/);
+      expect(conv).toMatch(/Esa no la tengo a la mano 🤔; si quieres, puedes preguntárselo a alguien de nuestro equipo desde las opciones de abajo/);
       expect(conv).not.toMatch(/silvana/i);
       expect(json(r)['violaciones']['detalle']).toEqual([]);
       // El modelo "afirmó tener datos" donde C22 sí los esperaba, y en C21 no se evalúa; la invención efectiva no llegó.
@@ -418,26 +439,27 @@ describe('Batería de Captación mínima contra el modelo', () => {
         expect(r.codigo, r.error).toBe(0);
         resultados.push(json(r)['total'] as J);
       }
+      // C21 hace dos llamadas al modelo (la explicación y la respuesta del cliente).
       expect(resultados[0]!['jsonValido'].ok).toBe(0);
-      expect(resultados[0]!['fallo']).toBe(1);
-      expect(resultados[1]!['jsonValido'].ok).toBe(1);
+      expect(resultados[0]!['fallo']).toBe(2);
+      expect(resultados[1]!['jsonValido'].ok).toBe(2);
       expect(resultados[1]!['conforme'].ok, 'JSON válido pero fuera del esquema').toBe(0);
-      expect(resultados[1]!['fallo']).toBe(1);
-      expect(resultados[2]!['jsonValido'].ok).toBe(1);
+      expect(resultados[1]!['fallo']).toBe(2);
+      expect(resultados[2]!['jsonValido'].ok).toBe(2);
       expect(resultados[2]!['conforme'].ok).toBe(0);
-      expect(resultados[2]!['campos']['tipo']['respaldo']).toBe(1);
+      expect(resultados[2]!['campos']['tipo']['respaldo']).toBe(2);
       for (const t of resultados) expect(t['violaciones']).toBe(0);
     });
 
     it('lo que dice el modelo no se acepta si el flujo no lo llama: un turno que esperaba modelo y no lo tuvo se avisa', async () => {
       const casos = casosDelArchivo();
       const falso = JSON.parse(JSON.stringify(casos.find((c) => c['id'] === 'C21'))) as J;
-      // «Hola» + toque de rubro no llaman al modelo: ponerles `espera` debe quedar en `sinModelo`.
+      // «Hola» no llama al modelo (es la lista de rubros): ponerle `espera` debe quedar en `sinModelo`.
       falso['id'] = 'CX';
-      falso['turnos'][1]['espera'] = { tipo: 'respuesta' };
+      falso['turnos'][0]['espera'] = { tipo: 'respuesta' };
       const f = flujo();
       const c = await B.correrCaso({ caso: falso, rep: 1, flujo: f, lib: B.cargarLibreria(f), opciones: { seco: true }, credencial: {}, deps: {} });
-      expect(c['sinModelo']).toEqual([2]);
+      expect(c['sinModelo']).toEqual([1]);
     });
   });
 
@@ -541,12 +563,13 @@ describe('Batería de Captación mínima contra el modelo', () => {
       // Un flujo de mentira que le agrega dos preguntas y un monto a todo texto que sale.
       nodo['parameters']['jsCode'] = codigo.slice(0, i)
         + "for (const it of salida) { const p = it.json.payload; if (p && p.type === 'text') p.text.body += ' ¿Seguro? ¿De verdad? Cuesta USD 25.'; }\n" + codigo.slice(i);
-      const c11 = casosDelArchivo().find((x) => x['id'] === 'C7')!;
+      // V-OTR: tocar «Otro» da un TEXTO (la pregunta del negocio); los demás mensajes del flujo con el documento comercial son interactivos.
+      const c11 = casosDelArchivo().find((x) => x['id'] === 'V-OTR')!;
       const c = await B.correrCaso({ caso: c11, rep: 1, flujo: f, lib: B.cargarLibreria(f), opciones: { seco: true }, credencial: {}, deps: {} });
       const v = c['violaciones'] as J[];
       expect(v.length).toBeGreaterThan(0);
       expect(v.map((x) => x['regla'])).toEqual(expect.arrayContaining(['mas_de_una_pregunta', 'monto_o_descuento']));
-      expect(v[0]).toMatchObject({ caso: 'C7', rep: 1 });
+      expect(v[0]).toMatchObject({ caso: 'V-OTR', rep: 1 });
       expect(v[0]!['turno']).toBeGreaterThan(0);
       expect(String(v[0]!['texto'])).toMatch(/Seguro/);
     });
@@ -599,21 +622,23 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect(j['violaciones']['detalle']).toEqual([]);
       expect(j['total']['repeticionesSeguidas']).toBe(0);
       expect(j['total']['harvard']['maxPorConversacion']).toBeLessThanOrEqual(1);
-      expect(j['total']['harvard']['conversacionesConElDato']).toBeGreaterThan(0);
+      // §16: el documento comercial es la fuente única del contenido de NovuChat y no trae el dato de Harvard: ninguna conversación lo dice (el mecanismo de «una vez por ficha» sigue en la librería).
+      expect(j['total']['harvard']['conversacionesConElDato']).toBe(0);
       for (const id of ['L1', 'L2', 'L3']) expect(caso(j, id)['fallosDeNodo'] ?? [], id).toEqual([]);
     });
-    it('el informe mide las palabras por mensaje (y la oferta tras el dolor no queda corta)', () => {
+    it('el informe mide las palabras por mensaje (y la explicación del rubro no queda corta ni pasa del tope)', () => {
       const l = j['total']['longitud'] as J;
       expect(l['mensajes']).toBeGreaterThan(100);
       expect(l['palabrasMedias']).toBeGreaterThan(20);
       expect(l['maximo']).toBeLessThanOrEqual(110);
-      const t = hijo(['--seco', '--n', '1', '--casos', 'P1']);
+      const t = hijo(['--seco', '--n', '1', '--casos', 'R-SAL']);
       expect(t.salida).toMatch(/Longitud: [\d.]+ palabras por mensaje en promedio \(mediana \d+, máximo \d+\) · mensajes idénticos seguidos 0/);
-      expect(t.salida).toMatch(/dato de Harvard: 1 conversaciones, a lo más 1 vez por conversación/);
-      // La oferta de P1 (belleza, tras el dolor) trae empatía + orientación + Harvard + pregunta: entre 55 y 95 palabras.
-      const oferta = ((caso(j, 'P1')['conversacion'] as J[])[2]!['mensajes'] as string[])[0]!;
-      const palabras = oferta.split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length;
-      expect(palabras).toBeGreaterThanOrEqual(55);
+      expect(t.salida).toMatch(/dato de Harvard: 0 conversaciones, a lo más 0 vez por conversación/);
+      expect(t.salida).toMatch(/Cierre exacto del documento comercial en la 1\.ª explicación de rubro: 1\/1 conversaciones/);
+      // La explicación de Salud (redactada por el modelo de mentira) con la pregunta de cierre exacta: entre 35 y 95 palabras.
+      const explicacion = ((caso(j, 'R-SAL')['conversacion'] as J[])[1]!['mensajes'] as string[])[0]!;
+      const palabras = explicacion.split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length;
+      expect(palabras).toBeGreaterThanOrEqual(35);
       expect(palabras).toBeLessThanOrEqual(95);
     });
     it('el teléfono de cada caso y corrida es sintético, distinto del de recepción y del del negocio, y varía (el saludo rota por su último dígito)', () => {
@@ -640,10 +665,11 @@ describe('Batería de Captación mínima contra el modelo', () => {
     });
     it('`exige` (control negativo): un turno que debía AVANZAR o ofrecer al asesor y no lo hace se cuenta como violación; C23, C25 y C25b lo exigen', async () => {
       const f = flujo();
-      const base = { id: 'CX', titulo: 't', turnos: [{ tipo: 'texto', texto: 'Hola' }, { tipo: 'fila', id: 'rubro:salud-y-belleza' }, { tipo: 'texto', texto: '¿qué hacen?', seco: { tipo: 'pregunta', respuesta: 'Atienden.', enLosDatos: true }, exige: { accion: 'oferta', boton: true } }] };
+      // «Hola» da la lista de rubros: ni avanza a la oferta ni trae el botón del asesor.
+      const base = { id: 'CX', titulo: 't', turnos: [{ tipo: 'texto', texto: 'Hola', exige: { accion: 'oferta', boton: true } }] };
       const c = await B.correrCaso({ caso: base, rep: 1, flujo: f, lib: B.cargarLibreria(f), opciones: { seco: true }, credencial: {}, deps: {} });
       const reglas = (c['violaciones'] as J[]).map((v) => v['regla']);
-      expect(reglas).toContain('no_avanza');                       // salió «retomar», no «oferta»
+      expect(reglas).toContain('no_avanza');                       // salió «lista», no «oferta»
       expect(reglas).toContain('sin_boton_del_asesor');            // y el mensaje no trae el botón del asesor
       expect(() => B.validarCasos({ casos: [{ ...base, turnos: [{ tipo: 'texto', texto: 'x', exige: { raro: 1 } }] }] })).toThrow(/«exige»/);
       const casos = casosDelArchivo();
@@ -654,6 +680,42 @@ describe('Batería de Captación mínima contra el modelo', () => {
       // En seco los tres cumplen su exigencia (si no, el flujo dejó de hacer lo que se exige).
       const j = JSON.parse(hijo(['--seco', '--json', '--n', '1', '--casos', 'C23,C25,C25b']).salida) as J;
       expect(j['violaciones']['detalle']).toEqual([]);
+    });
+    it('§16: las exigencias del documento comercial (`termina`, `contiene`, `noContiene`, `sinCifras`, `imagenPlanes`, `sinModelo`) y lo que se espera de la planilla se cuentan como violación cuando no se cumplen (control negativo)', async () => {
+      const f = flujo();
+      const libreria = B.cargarLibreria(f);
+      const corre = (turnos: J[], extra: J = {}): Promise<J> => B.correrCaso({ caso: { id: 'CX', titulo: 't', turnos, ...extra }, rep: 1, flujo: f, lib: libreria, opciones: { seco: true }, credencial: {}, deps: {} });
+      const reglasDe = (c: J): string[] => (c['violaciones'] as J[]).map((v) => v['regla']);
+      // «Hola» → la lista de rubros: no termina así, no trae lo pedido, trae lo prohibido, tiene dígitos y no es la imagen de planes.
+      const mal = await corre([{ tipo: 'texto', texto: 'Hola', exige: { termina: '¿Te gustaría ver nuestros planes?', contiene: 'Kanban', noContiene: 'rubro', sinCifras: true, imagenPlanes: true } }]);
+      expect(reglasDe(mal)).toEqual(expect.arrayContaining(['no_termina_como_se_exige', 'falta_lo_que_se_exige', 'trae_lo_que_no_debe', 'sin_imagen_de_planes']));
+      // El modelo SÍ se llama en la explicación del rubro: `sinModelo` lo cuenta.
+      const llamo = await corre([{ tipo: 'texto', texto: 'Hola' }, { tipo: 'fila', id: 'rubro:gastronomia', exige: { sinModelo: true } }]);
+      expect(reglasDe(llamo)).toContain('llamo_al_modelo_sin_necesidad');
+      // Una cifra donde no va: el mensaje de la oferta de gastronomía trae el «24/7»-tipo de dígitos del respaldo de salud.
+      const cifra = await corre([{ tipo: 'texto', texto: 'Hola' }, { tipo: 'fila', id: 'rubro:salud-y-belleza', exige: { sinCifras: true } }]);
+      expect(reglasDe(cifra)).toContain('cifra_donde_no_va');
+      // La planilla: se espera una calificación y un resumen que no son los de la fila.
+      const planilla = await corre([{ tipo: 'texto', texto: 'Hola' }, { tipo: 'fila', id: 'rubro:gastronomia' }], { planilla: { calificacion: 'Alta', contiene: { 'Resumen Chatbot IA': 'Necesidad: inventada' }, noContiene: { Rubro: 'Gastro' } } });
+      expect(reglasDe(planilla)).toEqual(expect.arrayContaining(['planilla_no_coincide']));
+      expect((planilla['violaciones'] as J[]).filter((v) => v['regla'] === 'planilla_no_coincide')).toHaveLength(3);
+      // Y los casos reales del archivo cumplen todo lo que exigen (en seco).
+      const real = JSON.parse(hijo(['--seco', '--json', '--n', '1', '--casos', 'R-SAL,OT1,K-COSTOS,K-CONSUMO,K-TOPE,K-INTEGRA,K-BANCO,N-NOMBRE1,N-NOMBRE2,M-MEDIA,M-BAJA']).salida) as J;
+      expect(real['violaciones']['detalle']).toEqual([]);
+      expect(() => B.validarCasos({ casos: [{ id: 'CZ', titulo: 't', turnos: [{ tipo: 'texto', texto: 'x' }], planilla: { raro: 1 } }] })).toThrow(/«planilla»/);
+    });
+    it('§16: las reglas nuevas del detector (cifras de consumo, validar pagos con el banco y sistemas ajenos) y lo que NO acusan', () => {
+      const lib = B.cargarLibreria(flujo());
+      const c = { asesor: '', recepcion: '59100000001', aclaraciones: ['Los precios son en dólares: USD 25 el plan más bajo.'], archivos: [], lib, propios: ['NovuChat', 'Kenji', 'Impulso', 'Crecimiento', 'Pro'] };
+      const regla = (cuerpo: string, extra: J = {}): string[] => B.revisarMensaje({ tipo: 'text', payload: { type: 'text', text: { body: cuerpo } }, cuerpo, ...extra }, c).map((v) => v.regla);
+      for (const t of ['Incluye 100 conversaciones al mes.', 'El plan Impulso trae hasta 220 mensajes.', 'Tiene cien conversaciones incluidas.']) expect(regla(t), t).toContain('cifra_de_consumo');
+      for (const t of ['El asistente valida las transferencias con el banco.', 'Verifica tus pagos con el banco al instante.', 'Tu pago acreditado queda al instante.']) expect(regla(t), t).toContain('valida_pagos_con_el_banco');
+      for (const t of ['Se conecta con SAP sin problema.', 'Funciona con Tigo Money.', 'Se integra con tu ERP.', 'Puedes usar MercadoPago.']) expect(regla(t), t).toContain('sistema_ajeno_o_integracion_inventada');
+      // NIEGA: lo que el código dice (negar la validación con el banco, los sistemas propios, el texto de una aclaración y el mensaje de planes que arma el código) no es una violación.
+      for (const t of ['El asistente solo revisa visualmente el comprobante: no lo valida con el banco. Quien confirma que el dinero entró es tu banco.', 'Se integra con tu Google Calendar y con WhatsApp.',
+        'Los precios son en dólares: USD 25 el plan más bajo.', 'Cobra con QR y avisa a la cocina.', 'Registra todo en un miniCRM con un tablero Kanban.', 'Dura 24 horas desde el primer mensaje.']) expect(regla(t), t).toEqual([]);
+      const planes = { tipo: 'interactive', cuerpo: 'Planes mensuales (Impulso, Crecimiento, Pro) desde USD 25. Setup estándar USD 65.', payload: { type: 'interactive', interactive: { type: 'button', header: { type: 'image', image: { link: 'x' } }, body: { text: 'x' }, action: { buttons: [{ type: 'reply', reply: { id: 'asesor', title: 'x' } }] } } } };
+      expect(B.revisarMensaje(planes, c)).toEqual([]);
     });
     it('detecta el dato de Harvard más de una vez en una conversación (control negativo)', async () => {
       const f = variante(() => "for (const it of salida) { const p = it.json.payload; if (p && p.type === 'text') p.text.body += ' Según Harvard Business Review, algo.'; if (p && p.type === 'interactive' && p.interactive.body) p.interactive.body.text += ' Según Harvard Business Review, algo.'; }");
@@ -666,7 +728,7 @@ describe('Batería de Captación mínima contra el modelo', () => {
       const todo = (j['casos'] as J[]).flatMap((c) => (c['conversacion'] as J[]).flatMap((t) => t['mensajes'] as string[])).join('\n');
       expect(todo.length).toBeGreaterThan(5000);
       expect(todo).not.toMatch(/silvana|asesora\b/i);
-      expect(todo).toMatch(/un asesor/); // y sí dicen «un asesor»
+      expect(todo).toMatch(/alguien de nuestro equipo/); // y sí dicen «alguien de nuestro equipo»
     });
     it('el mismo flujo con un asesor que SÍ tiene nombre (tenant de ejemplo) lo usa: la capacidad no se pierde', async () => {
       const f = flujo();
@@ -677,7 +739,7 @@ describe('Batería de Captación mínima contra el modelo', () => {
       const c = await correr1(f, 'L3');
       const todo = (c['conversacion'] as J[]).flatMap((t) => t['mensajes'] as string[]).join('\n');
       expect(todo).toMatch(/\bAna\b/);
-      expect(todo).not.toMatch(/preguntárselo a un asesor/);
+      expect(todo).not.toMatch(/preguntárselo a alguien de nuestro equipo/);
       expect(c['violaciones']).toEqual([]);
     });
   });
@@ -727,16 +789,22 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect(por('C17')['opciones']).toEqual({ sinRubros: true });
       expect((por('C18')['turnos'] as J[]).some((t) => t['tipo'] === 'audio')).toBe(true);
       const todo = casos.flatMap((c) => (c['turnos'] as J[]).map((t) => String(t['texto'] ?? t['transcripcion'] ?? ''))).join('\n');
-      // Las conversaciones del PDF (el tono que pidió Andres, §13).
-      expect(dicho('P1')).toMatch(/pegada al celular/);
-      expect(dicho('P2')).toMatch(/fines de semana colapsamos/);
-      expect(dicho('P3')).toMatch(/estudio contable/);
-      expect(dicho('P4')).toMatch(/propio ERP/);
-      expect(dicho('P4')).toMatch(/cuánto cobran por el bot/);
-      expect(dicho('P5')).toMatch(/de noche me escriben/);
+      // §16: los recorridos del documento comercial (por rubro del documento y por id vivo, «Otro» completo, costos, consumo, topes, integraciones, banco, nombre y empresa, calificación).
+      expect(dicho('R-SAL')).toMatch(/¿Cuánto cuesta\?/);
+      expect(dicho('OT1')).toMatch(/Tengo una ferretería.*Quiero ver los planes.*Juan Pérez, Ferretería El Clavo/);
+      expect(dicho('K-CONSUMO')).toMatch(/¿Cuántos mensajes incluye una conversación\?/);
+      expect(dicho('K-TOPE')).toMatch(/¿Cuántas conversaciones trae el Impulso\?/);
+      expect(dicho('K-INTEGRA')).toMatch(/SAP.*Tigo Money.*Shopify/);
+      expect(dicho('K-BANCO')).toMatch(/¿Valida mis transferencias con el banco\?/);
+      expect(dicho('N-NOMBRE1')).toMatch(/Juan Pérez, Salón Rosa/);
+      expect(dicho('N-NOMBRE2')).toMatch(/Juan Pérez, Salón Rosa.*Salón Rosa/);
+      expect(por('R-SAL')['opciones']).toEqual({ rubrosDelDocumento: true });
+      for (const id of ['R-SAL', 'R-BEL', 'R-GAS', 'R-RET', 'R-EDU', 'R-LEA']) expect(por(id)['opciones'], id).toEqual({ rubrosDelDocumento: true });
+      for (const id of ['V-SYB', 'V-GAS', 'V-COM', 'V-EDU']) expect(por(id)['opciones'], id).toBeUndefined();   // los 5 ids VIVOS de la consola
+      expect(dicho('R-LEA')).toMatch(/rubro:leads-de-ventas/);
       // Los ids de rubro de los casos son los de la consola VIVA, nunca los del guion viejo.
       expect(crudo).not.toMatch(/rubro:salud-belleza|rubro:comercio\b(?!-)|"rubroId": "comercio"|"rubroId": "salud-belleza"/);
-      for (const frase of [/cuánto dura la instalación/i, /ERP X/, /sí$/m, /😩/, /me llamas mañana/i, /cuánto me sale al mes para 2 sucursales/i]) expect(todo).toMatch(frase);
+      for (const frase of [/cuánto dura la instalación/i, /ERP X/, /mucho$/m, /😩/, /me llamas mañana/i, /cuánto me sale al mes para 2 sucursales/i]) expect(todo).toMatch(frase);
       expect(casos.filter((c) => c['descartaFinal'] === true).map((c) => c['id']).sort()).toEqual(['C11', 'C12', 'C12b']);
     });
   });

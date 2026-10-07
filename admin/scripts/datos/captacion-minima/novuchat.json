@@ -120,9 +120,8 @@
       "incluye": "Todos incluyen las funciones clave que necesites (agendamiento inteligente, cierre de ventas con catálogo y cobro, o captura y gestión de leads con miniCRM)."
     },
     "respuestas": {
-      "consumo": "¡Buena pregunta! 😊 Nuestros planes están diseñados para que cada conversación cubra sin problemas todo el flujo necesario para cerrar una venta o agendar una cita.",
-      "banco": "¡Buena pregunta! 😊 El asistente solo revisa visualmente el comprobante que envía tu cliente: no lo valida con el banco. Quien confirma que el dinero entró es tu banco, y tú como dueño.",
-      "integracion": "Esa no la tengo a la mano 🤔. Prefiero no asegurarte una conexión sin confirmarla."
+      "consumo": "Nuestros planes están diseñados para que cada conversación cubra sin problemas todo el flujo necesario para cerrar una venta o agendar una cita.",
+      "banco": "El asistente solo revisa visualmente el comprobante que envía tu cliente: no lo valida con el banco. Quien confirma que el dinero entró es tu banco, y tú como dueño."
     }
   },
   "conocimiento": {

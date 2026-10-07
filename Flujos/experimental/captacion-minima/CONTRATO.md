@@ -561,3 +561,84 @@ La persona que atienda puede ser otra. Con los datos de NovuChat (`asesor.nombre
 - **F.** La pregunta de cierre mide ≤16 palabras también con «un asesor» («…para ubicar tu presupuesto…»); `ccRetomar` descuenta la reformulación y la cola del asesor del presupuesto del prefijo; `repetidas` SATURA (alterna 8 y 9; no da la vuelta a 0). `rot` lista también `pideAsesor`.
 - La batería gana `exige` por turno (`accion`, `boton`): C23 exige avanzar a la oferta y C25/C25b exigen la acción `contacto` con el botón del asesor; el incumplimiento cuenta como violación (`no_avanza`, `sin_boton_del_asesor`).
 - **Mensajes por conversación: 0 agregados y 0 quitados.**
+
+## 16. Documento comercial de Kenji (07/10/2026) — manda sobre §13, §14 y §15 donde difieran
+
+Fuente única del contenido comercial: **`fuentes/system-prompt-comercial-kenji-2026-10-07.md`** («System Prompt Comercial para Kenji», Andres y Silvana, 6 secciones). Decisiones de Andres, sin reabrir (D1 a D10):
+
+**Qué manda sobre lo anterior.** (a) **El flujo ya no pregunta por el dolor en los rubros estándar** (§13/§15): elegir el rubro es **explicarlo** de inmediato. La pregunta de dolor queda solo para «Otro» (como cierre
+investigativo). (b) **Los cierres** son los del documento: la pregunta de la oferta es EXACTA la 1.ª vez y la de los precios, la de D3. (c) **El contacto** es siempre «hablar con alguien de nuestro equipo» con el botón (aviso a recepción +
+botón, como hoy): nunca «se comunique contigo» ni «ofrecerle contactarlo»; ningún texto promete llamada, horario ni que alguien escriba. (d) El dato de Harvard (§15) **no se usa** en los datos de NovuChat (el documento es la fuente
+única y el mensaje no tiene espacio); el mecanismo (`impacto`, una vez por ficha) sigue en la librería para otros tenants. (e) `nivelEmojis` de los datos baja a «pocos» (D6; ver la advertencia).
+
+### D1 y D2: híbrido y rubros estándar
+- **El modelo redacta, el código fija.** Al elegir un rubro estándar (toque, nombre escrito, campaña o rubro que el modelo reconoce) el plan llama al modelo en modo `explicar` (`ccDecidir` → `plan.modo = 'explicar'`) y `ccResolverModelo` devuelve la acción `explicacion`.
+  Es **la única llamada nueva** y no agrega ningún mensaje: el mensaje de ese turno es la explicación + la pregunta de cierre + los botones «Ver planes» / «Hablar con el equipo» (título de 20 caracteres, el máximo de Meta). Si el modelo falla, no responde, devuelve un JSON roto o su texto no pasa la validación, sale el **respaldo fijo** del
+  dato (`guion.rubros.<id>.explicacion`), nunca el texto de falla.
+- **Validación de lo redactado** (`ccLeerModelo` + `ccExplicacionDelRubro`): el filtro común de redacción; S1/S2/S3 y H1 (sin aflojar); hasta 4 oraciones, 72 palabras y 520 caracteres (con la pregunta de cierre de 13 palabras cabe en 6 oraciones y 95); sin «?»;
+  números solo como número ENTERO presente en lo que ve el modelo (antes un «7» pasaba por estar dentro de «72»); **ninguna cifra de consumo** (`CC_CIFRA_DE_CONSUMO`); **nada que valide pagos con el banco** (`CC_ACREDITA_MODELO`); **ningún sistema que el servicio no nombre**
+  (`ccSistemaAjeno`: denylist de sistemas, marcas con mayúscula interior, siglas y, en la explicación y en la `respuesta`, palabras con mayúscula en medio de la frase; solo se pueden nombrar WhatsApp, Meta, Google Calendar, Google Sheets, el miniCRM, el QR, el negocio, el asistente y los planes);
+  y **«obligatoriamente basada en los puntos clave»** (`ccCubrePuntos`: cada punto clave se toca si aparece un tercio de sus raíces de 5 letras, y la explicación tiene que tocar el 60% de los puntos).
+- **Datos por rubro** (`guion.rubros.<id>`): `explicacion` (el respaldo fijo, con los puntos clave del documento §2) y `puntosClave` (2 a 8, los ve el modelo en la `systemInstruction` estática, junto a su rubro). Un rubro con `explicacion` **no lleva** `dolor` ni `pregunta`;
+  sin `explicacion` (otros tenants) el flujo anterior sigue igual (`esperando_dolor`). `construir.mjs` valida todo (límites desde la librería: `CC_MAX_EXPLICACION`, `CC_MAX_ORACIONES_EXPLICACION`, `CC_MAX_PALABRAS_EXPLICACION`) con las guardas de siempre.
+- **Mensaje:** `ccOferta({ explicacion })` con los emojis **por partes** (`ccEmPartes`): con «pocos» cada parte conserva su primer emoji, así la pregunta exacta no pierde su 🤝.
+
+### D3 y D7: contacto y la pregunta exacta
+- `ccQuien` (sin nombre) = «alguien de nuestro equipo»; el botón, «Hablar con el equipo». Traspaso: «Toca el botón para escribirle directo a alguien de nuestro equipo y ver juntos cómo armarlo» + el pedido de datos.
+- **Pregunta de cierre (D7):** la 1.ª vez de la ficha, EXACTA: «¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝». Las repeticiones rotan por `ofertas` entre dos formulaciones más (mismo sentido, ≤16 palabras).
+- **Cierre de precios (D3):** «¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝» (el documento decía «se comunique contigo»).
+
+### D5: precios, solo si pide planes o costos, armados por el código
+`guion.precios` trae las FRASES (no las cifras): `estandar` («Setup estándar»), `detalleEstandar`, `aMedida`, `mensual`, `incluye`. Las cifras salen de la consola: `cargosUnicos` (el más barato sin `desde` = estándar, **sin «desde»**; el más barato con `desde` = a medida) y los planes `mes`:
+«Setup estándar USD 65, pago único (configuración llave en mano y conexión a Meta). [Si el rubro es «Otro»: Setup a medida desde USD 125.] Planes mensuales (Impulso, Crecimiento, Pro) desde USD 25. Todos incluyen las funciones clave que necesites (…).» + el cierre D3, con la imagen de planes si existe; sin archivo, el bloque de planes y debajo lo que incluyen y el cierre.
+Sin `guion.precios` (otro tenant), el mensaje de planes es el de §13. El modelo no ve ni escribe una cifra.
+
+### D9 y D10: consumo, topes, integraciones y banco, por código
+Cuatro reglas deterministas en `ccDecidir` (sobre el texto normalizado, en cualquier paso salvo el primer mensaje, **antes** del modelo y sin llamarlo):
+| Regla | Detecta | Respuesta |
+|---|---|---|
+| `ccPreguntaConsumo` | cuántos mensajes incluye una conversación, límites o topes de uso, detalles técnicos de consumo | acción `consumo`: la oración del documento §5 (dato `respuestas.consumo`) + la opción de hablar con el equipo; **ni un dígito**; no se activa si el cliente cuenta su propio volumen |
+| `ccPreguntaTopePlan` | cantidades de conversaciones o mensajes de un plan concreto (nombre en la consola o «plan») | se muestra la imagen de planes, como un pedido de planes (`ccPedirPlanes`); sin cifras escritas |
+| `ccPreguntaBanco` | si valida o confirma pagos, transferencias o comprobantes (con o sin «banco») | acción `banco`: «solo revisa visualmente el comprobante: no lo valida con el banco; confirman el banco y el negocio» (prohibición 3) |
+| `ccPreguntaIntegracion` | «se conecta/integra/sincroniza con X», «integración con X», «compatible con X» donde X no es WhatsApp, Meta, Google Calendar, Google Sheets, el QR ni el miniCRM | acción `integracion`: «Esa no la tengo a la mano» + el equipo; no repite el nombre del sistema; **nunca inventa una integración** |
+Las respuestas fijas rotan por el contador `fijas` (`rot`, 0 a 11): dos preguntas seguidas no reciben el mismo mensaje. Sin recepción válida no nombran ningún botón. El tema preguntado va a la ficha (`temas`, vocabulario cerrado: costos, consumo, integraciones, pagos, dudas).
+
+### «Otros rubros» (documento §3) y lo que cuenta el cliente
+Con `guion.rubros.otro.propuesta` el flujo de «Otro» es: tocar «Otro» → la pregunta de qué trata y su mayor cuello de botella (sin modelo); si responde solo el rubro → **empatía contextual** del modelo (con su industria) + **propuesta de valor fija** («no te obliga a seguir un menú rígido: usa IA que se adapta a tu forma de trabajar; con nuestros Setups a Medida armamos respuestas totalmente personalizadas»; el «100%» del documento se dice «totalmente» porque `validarDatos` rechaza todo «%»)
++ **cierre investigativo** (`preguntaDolor`); si en el mismo mensaje cuenta también lo que le cuesta → directo a la oferta (con `queHacemos` como orientación). Cuando responde el cierre investigativo, el modelo extrae `necesidad` y el flujo pasa a la oferta.
+- **Validación** (`ccNecesidadValida`, `ccNombreDePersonaValido`, la empresa con `ccNombreDeEmpresa` y que salga de lo que el cliente dijo): `necesidad` de 3 a 160 caracteres, en una línea, sin enlaces, fórmulas, datos personales (teléfono, correo, carnet), órdenes ni marcas, y cada palabra de 5 letras sale de lo que el cliente dijo; `nombre` de 2 a 4 palabras con letras, sin dígitos, enlaces, fórmulas ni órdenes ni palabras de negocio, y todas dichas por el cliente.
+- **Nombre y empresa:** al pasar con el equipo UN mensaje pide las dos cosas («¿Cómo te llamas y cómo se llama tu negocio?»; si ya dijo su nombre, solo el negocio). Una respuesta que es solo el nombre del negocio se anota por código (sin modelo); si trae más, el modelo extrae `nombre` y `empresa` y se aplica la validación estricta; si falla, cae al comportamiento de antes (solo la empresa, nombre del perfil). Los acuses no pisan nada. El nombre dado reemplaza al del perfil en la columna C.
+
+### Calificación sin pregunta de dolor
+El hecho `respondioDolor` **conserva su nombre histórico pero significa «interactuó después de la explicación»** (escribió o dijo algo sustantivo —`ccEsSustantivo`: una pregunta de fondo, un comentario sobre su negocio, su necesidad, o preguntó por costos, consumo, integraciones o pagos—, no un saludo ni un acuse; en «Otro», respondió el cierre investigativo). La tabla de reglas de «Decidir fila de la planilla» sigue siendo la única fuente:
+**Alta** = pidió al equipo o los planes · **Descalificado** = motivo aceptado · **Media** = eligió rubro (o «Otro») e interactuó · **Baja** = el resto (eligió rubro y no continuó).
+
+### El resumen de la hoja (columna J), por código
+«Rubro X. Interés: Y. Necesidad: Z. Preguntó por: costos, consumo de mensajes, integraciones, pagos y comprobantes, otras dudas. Pidió: planes y hablar con el equipo.» con lo que haya (hasta 400 caracteres; los temas son de un vocabulario cerrado; la necesidad se sanea otra vez y la celda nunca empieza con lo que una planilla toma por fórmula). El prospecto (`ccProspecto`) trae los campos nuevos `necesidad` y `temas`; no cambian las columnas ni el esquema de la hoja.
+
+### Tabla «frase → fuente» (D4)
+Todo lo de la columna «Solo el documento» se toma como verdad comercial dictada por Andres y Silvana (**fuente: «documento comercial 07/10/2026»**): el sitio (corpus de `conocimiento`) **no lo menciona**. Una prueba lo fija (`miniCRM`, `Kanban`, `notas especiales`, `entrevistas`, `admisiones` y `pensiones` no están en el corpus).
+| Frase del texto del rubro | Fuente | Solo el documento |
+|---|---|---|
+| Salud: «recepcionista virtual 24/7», «se integra a tu Google Calendar», «maneja varias agendas a la vez», «agenda sin cruzar horarios» | documento §2; el sitio dice «atiende las 24 horas», «agenda en tu calendario», «cada profesional con su propia agenda» | «recepcionista virtual», «varias agendas a la vez» |
+| Salud: «recordatorio automático un día antes» · Belleza: «recordatorio 24 horas antes» | documento §2; el sitio: «recordatorio 24 horas antes por una plantilla aprobada» | «un día antes» (equivale) |
+| Belleza: «muestra tus servicios y motiva a agendar en el momento», «revisa la disponibilidad de tus especialistas», «agenda llena» | documento §2 | sí (el sitio habla de agendar y de horarios libres de cada profesional) |
+| Gastronomía: «en horas pico ya no pierdes pedidos», «muestra tu menú», «cobro con QR», «directo a cocina» | documento §2; el sitio: «toma el pedido desde tu carta… manda el QR y avisa a la cocina» | «notas especiales» |
+| Retail: «no pierdes ventas por las noches», «muestra tu catálogo», «cierra el carrito», «cobra con QR», «datos de envío», «listo para el despacho» | documento §2; el sitio: «responde por tu catálogo a cualquier hora, toma los datos de envío y cierra la venta con el QR» | «cerrar el carrito», «despacho» |
+| Educación: «muchas consultas de padres», «admisiones y pensiones», «entrevistas en el calendario del colegio» | documento §2; el sitio: «responde las dudas de padres y alumnos y agenda citas en tu calendario» | «admisiones», «pensiones», «entrevistas» |
+| Leads de Ventas: «ningún prospecto calificado se enfría», «califica el interés con IA», «resumen automático», «miniCRM», «tablero Kanban por etapas de venta» | documento §2 | **todo** (el sitio no menciona leads, miniCRM ni Kanban) |
+| «Otro»: «no te obliga a seguir un menú rígido», «IA que se adapta a tu forma de trabajar», «Setups a Medida» | documento §3 (reformulado: el documento dice «no usa menús rígidos» y este chat arranca con una lista) | «Setups a Medida» |
+| Precios: «Setup estándar USD 65, pago único (configuración llave en mano y conexión a Meta)», «Setup a medida desde USD 125», «planes mensuales (Impulso, Crecimiento, Pro) desde USD 25», «funciones clave (agendamiento inteligente, cierre de ventas con catálogo y cobro, o captura y gestión de leads con miniCRM)» | documento §4 y la consola (cargos 65 sin «desde» y 125 con «desde»; planes 25/50/90) | el nombre «Setup» (la consola dice «Instalación»), «miniCRM» |
+| Consumo: «nuestros planes están diseñados para que cada conversación cubra sin problemas todo el flujo necesario para cerrar una venta o agendar una cita» | documento §5 | sí |
+| Banco: «solo revisa visualmente el comprobante… no lo valida con el banco; confirman el banco y el negocio» | documento §6 y prohibición 3 de CLAUDE.md | «revisa visualmente» (el sitio dice «quien lo valida eres tú») |
+
+### Qué no cambia, y mensajes por conversación
+Los hechos de Alta y de Descalificado, el aviso a recepción (una vez por conversación), el estado, los medios, los límites de Meta, la regla de una sola «?», el trato de tú, 43 nodos por variante y los filtros S1 a S3 y H1.
+**Mensajes por conversación: ≤ antes** (la regla del flujo es UN mensaje del asistente por cada mensaje del cliente, y eso no cambia). Lo que baja es lo que el cliente tiene que escribir: un rubro estándar pasa de «lista → pregunta de dolor → (el cliente la contesta) → oferta» a «lista → explicación con la oferta».
+El mismo recorrido de un cliente (lista, rubro, planes, equipo, nombre del negocio) son **6 mensajes y 1 llamada al modelo antes** (la respuesta al dolor) y **5 mensajes y 1 llamada ahora** (la explicación, que se hace al elegir el rubro; la prueba de punta a punta lo mide contra el flujo anterior armado en memoria).
+Si el cliente contesta algo más que el nombre del negocio (p. ej. «Juan Pérez, Salón Rosa»), la extracción de nombre y empresa agrega **una llamada** (2 en total); consumo, topes, integraciones y banco se contestan sin modelo y ahorran llamadas. Un cliente que sigue comentando tras la explicación genera su turno y su mensaje, como siempre (C1 de la batería: 6 mensajes y 2 llamadas contra 6 y 1 antes).
+«Otro»: un mensaje por turno del cliente (el de tres partes responde a la industria; la oferta llega con la necesidad).
+
+### Advertencia (D6) y lo que queda fuera
+Con la consola de NovuChat, `voz.nivelEmojis` **manda** sobre `configBase.nivelEmojis` (este solo es el respaldo si la consola no lo envía): para que el nivel «pocos» rija en vivo hay que cambiarlo en la consola (no está en esta zona ni en este PR). La propuesta de las 7 filas de la lista de rubros está en `fuentes/rubros-propuestos-2026-10-07.json` y NO se aplicó.
+No hay preguntas de perfilado extra (volumen, urgencia): quedan como propuesta.
