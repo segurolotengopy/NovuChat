@@ -310,6 +310,8 @@ const CC_PIDIO_CONTACTO = new RegExp([
   '\\b(quiero|prefiero|necesito) (una |la )?(llamada|videollamada|reunion)\\b',
   '\\b(me atiende|hablo con|me atiende) (un|una|el|la) (asesor|asesora|ejecutiv\\w+|especialista)\\b',
 ].join('|'));
+// §19: pedir una persona con otras palabras («prefiero que me atienda alguien del equipo», «me gustaría que alguien me explique mejor»): confirma un `pide_asesor` del modelo. Contar un problema no lo es.
+const CC_PIDE_PERSONA = /\b(?:prefiero|quiero|quisiera|me gustaria|necesito|pido|podria|puede)\b[^.!?]{0,30}\b(?:alguien|una persona|un asesor|un humano|un ejecutivo|un especialista)\b|\bque (?:me )?(?:atienda|atiendan|explique|expliquen|llame|llamen|hable|ayude)\b[^.!?]{0,30}\b(?:alguien|persona|asesor|humano|equipo)\b|\balguien (?:\w+ ){0,3}(?:me )?(?:atienda|explique|ayude|hable|llame)\b/;
 function ccPidioContacto(t) {
   return CC_PIDIO_CONTACTO.test(ccNorm(t));
 }
@@ -2102,7 +2104,7 @@ function ccResolverModelo(plan, r, e, cfg) {
   // El texto es del CÓDIGO (no la empatía del modelo): sin promesa de llamada, de horario ni de respuesta de una persona; solo la opción de hablar con el asesor.
   // §19: un `pide_asesor` del modelo solo se acepta si el CÓDIGO lo confirma (`ccPidioContacto` / `ccPideAsesor`; el toque del botón ya se resolvió antes): quien cuenta su problema («me escriben muchos
   // clientes por las noches y no alcanzo a responder») no pidió nada y su turno sigue como una respuesta (oferta y Media), como un `pide_planes` que el código no confirma (arriba: solo cuenta si `ccPideListaPlanes`).
-  if (r.tipo === 'pide_asesor' && plan.modo !== 'empresa' && (ccPidioContacto(plan.texto) || ccPideAsesor(plan.texto, cfg.campanas))) {
+  if (r.tipo === 'pide_asesor' && plan.modo !== 'empresa' && (ccPidioContacto(plan.texto) || ccPideAsesor(plan.texto, cfg.campanas) || CC_PIDE_PERSONA.test(ccNorm(plan.texto)))) {
     const q = ccPresentaAsesor(quien, ccVariante(e, 'pideAsesor', 3));
     return { accion: 'retomar', extra: { prefijo: q, conAsesor: true } };
   }
