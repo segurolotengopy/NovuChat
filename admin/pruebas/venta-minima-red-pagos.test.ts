@@ -93,7 +93,7 @@ const HONESTAS = [
   '¡Gracias por tu pedido! Es el #K7Q2: 1 × Birriamen, recojo en el local.\nTotal a pagar con este QR: 21 Bs (solo la comida).\nEscanéalo con la app de tu banco (la cuenta es de Q\' Taco SRL) y después envíame aquí la foto o el PDF del comprobante.',
   'Sigo esperando el comprobante de tu pedido #K7Q2: envíame aquí la foto o el PDF. Si necesitas el QR otra vez, toca «Reenviar QR».',
   'No puedo mostrarte el QR en este momento. Pasé tu pedido #K7Q2 a nuestro equipo. Para coordinar el pago, toca «Escribir al local» y lo ves directamente con ellos.',
-  'No puedo mostrarte el QR en este momento. No pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón.',
+  'No puedo mostrarte el QR en este momento. No pude pasarle tu pedido a nuestro equipo: escríbenos directamente con el botón.',
   'No puedo mostrarte el QR en este momento. Toca «Escribir al local» y coordinas el pago directamente con nuestro equipo.',
   'QR vencido: coordinar el pago', 'El QR de cobro está vencido y no se envió: coordinen el pago con el cliente.',
   'Gracias por enviar tu comprobante. Los datos coinciden con tu pedido #K7Q2 (1 × Birriamen, recojo en el local). Ya lo pasé a nuestro equipo, que revisa el pago en nuestro banco antes de despachar tu pedido.',

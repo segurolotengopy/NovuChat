@@ -581,7 +581,7 @@ function cbTextoAlCliente(resultado, opciones) {
     const cabeza = 'No puedo mostrarte el QR en este momento.';
     return salio
       ? { cuerpo: cabeza + ' Pasé ' + pedido + ' a nuestro equipo. Para coordinar el pago, toca «Escribir al local» y lo ves directamente con ellos.', enlace: true, aviso: true }
-      : { cuerpo: cabeza + ' ' + sinAviso, enlace: true, aviso: true };
+      : { cuerpo: cabeza + ' No pude pasarle tu pedido a nuestro equipo: escríbenos directamente con el botón.', enlace: true, aviso: true };
   }
   return { cuerpo: 'Eso lo ve directamente nuestro equipo. Toca el botón para escribirnos.', enlace: true, aviso: false };
 }

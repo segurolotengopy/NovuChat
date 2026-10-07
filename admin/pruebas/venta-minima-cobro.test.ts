@@ -1088,7 +1088,9 @@ describe('cbQrVencido y el texto del QR vencido', () => {
       expect(r.cuerpo).not.toMatch(/te avisa|te llama|te escribir|lo consulto|Total a pagar/i);
     }
     expect(L.cbTextoAlCliente('qr_vencido', { avisoSalio: true, codigo: 'K7Q2' }).cuerpo).toContain('Pasé tu pedido #K7Q2 a nuestro equipo.');
-    expect(L.cbTextoAlCliente('qr_vencido', { avisoSalio: false, codigo: 'K7Q2' }).cuerpo).toContain('No pude pasarle tu pedido a nuestro equipo');
+    const sinAviso = L.cbTextoAlCliente('qr_vencido', { avisoSalio: false, codigo: 'K7Q2' }).cuerpo;
+    expect(sinAviso).toContain('No pude pasarle tu pedido a nuestro equipo');
+    expect(sinAviso.match(/en este momento/g)).toHaveLength(1); // sin la frase repetida
     expect(L.cbEstadoParaAviso('qr_vencido')).toBe('QR vencido: coordinar el pago');
   });
 });
