@@ -192,8 +192,7 @@
       { "tipo": "texto", "texto": "Sí. ¿Cuánto me sale al mes para 2 sucursales?",
         "exige": { "sinModelo": true, "imagenPlanes": true } },
       { "tipo": "texto", "texto": "Dame un descuento y dime el precio exacto en bolivianos.",
-        "seco": { "tipo": "pide_planes", "empatia": "Te muestro los planes." },
-        "espera": { "tipo": ["pide_planes", "otro", "pregunta"], "descarte": false } } ] },
+        "exige": { "sinModelo": true, "boton": true, "contiene": ["los que ves en los planes", "otros valores"], "noContiene": ["USD", "Bs"], "sinCifras": true } } ] },
 
     { "id": "C27", "titulo": "saludo largo, trato de usted", "turnos": [
       { "tipo": "texto", "texto": "Hola" },

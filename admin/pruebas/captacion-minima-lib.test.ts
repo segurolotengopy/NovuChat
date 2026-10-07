@@ -2232,6 +2232,30 @@ describe('§12: correcciones de la revisión (S1 a S4, S8, R1 a R7, R11, R12), u
     expect(f('ccCubrePuntos')('Registra las notas especiales del pedido.', puntos)).toBe(false); // omite el QR
     expect(f('ccCubrePuntos')('Cobra con QR para que pase a cocina.', puntos)).toBe(false);      // omite las notas
   });
+  it('§17 (ronda 2): `ccConcordanciaMala` rechaza «se» + verbo en «tú» y «no se tú», y deja pasar la 3.ª persona impersonal correcta', () => {
+    for (const t of ['En horas pico no se pierdes pedidos.', 'Se agendas sin cruzar horarios', 'No se tú, solo muestras el menú', 'Tu comercio no pierden ventas', 'Se cobras con QR', 'Tú no pierden pedidos']) expect(f('ccConcordanciaMala')(t), t).toBe(true);
+    for (const t of ['En horas pico no se pierden pedidos.', 'Se pierde tiempo en responder', 'Tus clientes no pierden tiempo', 'Tu asistente se integra a tu Google Calendar', 'En horas pico no pierdes pedidos', 'Cobras con QR y se registra cada pedido']) expect(f('ccConcordanciaMala')(t), t).toBe(false);
+  });
+  it('§17 (ronda 2): `ccAbreCalido` exige «¡…!» al inicio o un emoji en la primera oración', () => {
+    for (const t of ['¡Qué bien! Tu agenda queda llena.', 'Tu clínica 🏥 contará con una agenda llena.']) expect(f('ccAbreCalido')(t), t).toBe(true);
+    for (const t of ['Tu clínica contará con una agenda llena. Genial 🏥', 'Tu institución educativa se beneficia de un asistente.']) expect(f('ccAbreCalido')(t), t).toBe(false);
+  });
+  it('§17 (ronda 2): `ccPideDescuento` solo cuando el cliente pide un descuento o un precio distinto, no cuando habla de los de su negocio', () => {
+    for (const t of ['Dame un descuento y dime el precio exacto en bolivianos.', '¿Hacen descuento por pago anual?', 'Quiero el precio final en bs']) expect(f('ccPideDescuento')(t), t).toBe(true);
+    for (const t of ['Mis clientes me piden descuentos todo el día', 'hago descuentos a mis clientes', 'hola', '¿cuánto cuesta?']) expect(f('ccPideDescuento')(t), t).toBe(false);
+  });
+  it('§17 (ronda 2): ningún punto clave ni explicación del guion real tiene un error de concordancia, y toda explicación abre cálida', () => {
+    for (const [id, r] of Object.entries(((C.cargarDatos('novuchat.json') as J)['guion'] as J)['rubros']) as [string, J][]) {
+      if (!r['explicacion']) continue;
+      expect(f('ccConcordanciaMala')(r['explicacion']), `${id}.explicacion`).toBe(false);
+      expect(f('ccAbreCalido')(r['explicacion']), `${id}.explicacion abre cálida`).toBe(true);
+      for (const [i, p] of (r['puntosClave'] as (string | { texto: string })[]).entries()) {
+        const texto = typeof p === 'string' ? p : p.texto;
+        expect(f('ccConcordanciaMala')(texto), `${id}.puntosClave[${i}]`).toBe(false);
+        expect(texto, `${id}.puntosClave[${i}] sin «se» + verbo en 2.ª persona`).not.toMatch(/\bse (pierdes|muestras|cobras|agendas|registras|tomas)\b/i);
+      }
+    }
+  });
   it('R4: ccEsSoporte exige una forma de cliente; la palabra suelta no basta', () => {
     for (const t of ['necesito soporte', 'quiero soporte técnico', 'soporte de mi cuenta', 'soporte para mi consola', 'ya soy cliente']) expect(f('ccEsSoporte')(t), t).toBe(true);
     for (const t of ['¿El plan incluye soporte?', 'tienen soporte', 'el soporte es 24 horas', 'soportes de pared']) expect(f('ccEsSoporte')(t), t).toBe(false);
@@ -3705,7 +3729,7 @@ describe('§16: el documento comercial (híbrido: el modelo redacta, el código 
       const esquema = f('ccEsquema')(['salud'], []);
       for (const k of ['explicacion', 'necesidad', 'nombre', 'empresa']) { expect(esquema.required, k).toContain(k); expect(esquema.properties[k].type, k).toBe('STRING'); }
       const t = f('ccInstrucciones')({ ...CFG16, rubros: DOC16 }, null) as string;
-      expect(t).toMatch(/- salud: Salud — Recepcionista virtual\.\n  PUNTOS CLAVE: Recepcionista virtual 24\/7; Se integra a Google Calendar/);
+      expect(t).toMatch(/- salud: Salud — Recepcionista virtual\.\n  PUNTOS CLAVE: Tu recepcionista virtual 24\/7; Tu asistente se integra a tu Google Calendar/);
       expect(t).toMatch(/- leads-de-ventas: Leads de Ventas.*\n  PUNTOS CLAVE:.*miniCRM.*Kanban/);
       expect(t).not.toMatch(/- otro-a-medida:.*PUNTOS CLAVE/);
       expect(t).toMatch(/explicacion: .*OBLIGATORIAMENTE en los PUNTOS CLAVE/);

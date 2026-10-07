@@ -33,27 +33,27 @@
       "salud-y-belleza": {
         "puntosClave": [
           {
-            "texto": "Recepcionista virtual 24/7",
+            "texto": "Tu recepcionista virtual 24/7",
             "palabras": "recepcion|24 7|24 horas|las 24|todo el dia|a toda hora|siempre"
           },
           {
-            "texto": "Se integra a Google Calendar",
+            "texto": "Tu asistente se integra a tu Google Calendar",
             "palabras": "calendar|calendario"
           },
           {
-            "texto": "Muestra los servicios y motiva a agendar en el momento",
+            "texto": "Tu asistente muestra tus servicios y motiva a agendar en el momento",
             "palabras": "servicios|tratamientos|agendar|reservar|agenda|cita"
           },
           {
-            "texto": "Revisa la disponibilidad de los especialistas",
+            "texto": "Tu asistente revisa la disponibilidad de tus especialistas",
             "palabras": "disponibilidad|horarios (libres|disponibles)|especialistas|profesionales|estilistas|terapeutas|agendas"
           },
           {
-            "texto": "Agenda sin cruzar horarios",
+            "texto": "Tu asistente agenda sin cruzar horarios",
             "palabras": "cruz|superpon|empalm|choc|duplic|dobles|sin conflictos"
           },
           {
-            "texto": "Recordatorio automático un día antes para asegurar la asistencia",
+            "texto": "Tu asistente envía un recordatorio automático un día antes para asegurar la asistencia",
             "palabras": "(recordatorio|recuerda|recordar|avisa|aviso|notifica).*(antes|anterior|previo|vispera)|(un dia|24 horas) antes"
           }
         ],
@@ -62,23 +62,23 @@
       "salud": {
         "puntosClave": [
           {
-            "texto": "Recepcionista virtual 24/7",
+            "texto": "Tu recepcionista virtual 24/7",
             "palabras": "recepcion|24 7|24 horas|las 24|todo el dia|a toda hora|siempre"
           },
           {
-            "texto": "Se integra a Google Calendar",
+            "texto": "Tu asistente se integra a tu Google Calendar",
             "palabras": "calendar|calendario"
           },
           {
-            "texto": "Maneja múltiples agendas a la vez",
+            "texto": "Tu asistente maneja varias agendas a la vez",
             "palabras": "agendas|varios (doctores|medicos|profesionales|especialistas)|varias (citas|agendas)|multiples|a la vez"
           },
           {
-            "texto": "Agenda sin cruzar horarios",
+            "texto": "Tu asistente agenda sin cruzar horarios",
             "palabras": "cruz|superpon|empalm|choc|duplic|dobles|sin conflictos"
           },
           {
-            "texto": "Recordatorio automático un día antes para asegurar la asistencia",
+            "texto": "Tu asistente envía un recordatorio automático un día antes para asegurar la asistencia",
             "palabras": "(recordatorio|recuerda|recordar|avisa|aviso|notifica).*(antes|anterior|previo|vispera)|(un dia|24 horas) antes"
           }
         ],
@@ -87,23 +87,23 @@
       "belleza": {
         "puntosClave": [
           {
-            "texto": "Muestra los servicios",
+            "texto": "Tu asistente muestra tus servicios",
             "palabras": "servicios|tratamientos|catalogo|carta"
           },
           {
-            "texto": "Motiva a agendar en el momento",
+            "texto": "Tu asistente motiva a agendar en el momento",
             "palabras": "agendar|reservar|reserva|agenda|cita|momento"
           },
           {
-            "texto": "Revisa la disponibilidad de los especialistas",
+            "texto": "Tu asistente revisa la disponibilidad de tus especialistas",
             "palabras": "disponibilidad|horarios (libres|disponibles)|especialistas|profesionales|estilistas|terapeutas"
           },
           {
-            "texto": "Recordatorio 24 horas antes",
+            "texto": "Tu asistente envía un recordatorio 24 horas antes",
             "palabras": "(recordatorio|recuerda|recordar|avisa|aviso|notifica).*(antes|anterior|previo|vispera)|(un dia|24 horas) antes"
           },
           {
-            "texto": "Mantiene la agenda llena",
+            "texto": "Tu agenda se mantiene llena",
             "palabras": "agenda llena|llena|ausenc|inasisten|plantones|asistencia|completa"
           }
         ],
@@ -112,23 +112,23 @@
       "gastronomia": {
         "puntosClave": [
           {
-            "texto": "En horas pico no se pierden pedidos",
+            "texto": "En horas pico no pierdes pedidos",
             "palabras": "pico|no pierd|sin perder|colaps|saturad|alta demanda|pedidos"
           },
           {
-            "texto": "Muestra el menú",
+            "texto": "Tu asistente muestra tu menú",
             "palabras": "menu|carta"
           },
           {
-            "texto": "Toma el pedido registrando notas especiales",
+            "texto": "Tu asistente toma cada pedido y registra las notas especiales",
             "palabras": "notas especiales|indicaciones|aclaraciones|observaciones|detalles|preferencias|especificaciones|comentarios"
           },
           {
-            "texto": "Cobra con QR",
+            "texto": "Cobras con QR",
             "palabras": "qr"
           },
           {
-            "texto": "El pedido pasa directo a cocina",
+            "texto": "Tu pedido pasa directo a cocina",
             "palabras": "cocina|directo|preparacion"
           }
         ],
@@ -137,27 +137,27 @@
       "comercio-y-retail": {
         "puntosClave": [
           {
-            "texto": "No pierden ventas en las noches",
+            "texto": "No pierdes ventas en las noches",
             "palabras": "noche|madrugada|fuera de horario|cualquier hora|todo el dia|24"
           },
           {
-            "texto": "Muestra el catálogo",
+            "texto": "Tu asistente muestra tu catálogo",
             "palabras": "catalogo|productos|tienda"
           },
           {
-            "texto": "Ayuda a cerrar el carrito",
+            "texto": "Tu asistente te ayuda a cerrar el carrito",
             "palabras": "carrito|pedido|compra|venta"
           },
           {
-            "texto": "Cobra con QR",
+            "texto": "Cobras con QR",
             "palabras": "qr"
           },
           {
-            "texto": "Toma los datos de envío",
+            "texto": "Tu asistente toma los datos de envío",
             "palabras": "envio|entrega|direccion"
           },
           {
-            "texto": "Deja el pedido listo para el despacho",
+            "texto": "Tu asistente deja el pedido listo para el despacho",
             "palabras": "despacho|listo|entrega|enviar|preparado|salga"
           }
         ],
@@ -166,27 +166,27 @@
       "retail": {
         "puntosClave": [
           {
-            "texto": "No pierden ventas en las noches",
+            "texto": "No pierdes ventas en las noches",
             "palabras": "noche|madrugada|fuera de horario|cualquier hora|todo el dia|24"
           },
           {
-            "texto": "Muestra el catálogo",
+            "texto": "Tu asistente muestra tu catálogo",
             "palabras": "catalogo|productos|tienda"
           },
           {
-            "texto": "Ayuda a cerrar el carrito",
+            "texto": "Tu asistente te ayuda a cerrar el carrito",
             "palabras": "carrito|pedido|compra|venta"
           },
           {
-            "texto": "Cobra con QR",
+            "texto": "Cobras con QR",
             "palabras": "qr"
           },
           {
-            "texto": "Toma los datos de envío",
+            "texto": "Tu asistente toma los datos de envío",
             "palabras": "envio|entrega|direccion"
           },
           {
-            "texto": "Deja el pedido listo para el despacho",
+            "texto": "Tu asistente deja el pedido listo para el despacho",
             "palabras": "despacho|listo|entrega|enviar|preparado|salga"
           }
         ],
@@ -195,15 +195,15 @@
       "educacion": {
         "puntosClave": [
           {
-            "texto": "Ideal para alto volumen de consultas de padres",
+            "texto": "Ideal si recibes muchas consultas de padres",
             "palabras": "padres|apoderados|familias|consultas|volumen"
           },
           {
-            "texto": "Responde dudas repetitivas como admisiones y pensiones",
+            "texto": "Tu asistente responde dudas repetitivas, como admisiones y pensiones",
             "palabras": "admision|pension|inscripcion|matricula|repetitiv|frecuentes|dudas|preguntas"
           },
           {
-            "texto": "Coordina entrevistas directamente en el calendario del colegio",
+            "texto": "Tu asistente coordina entrevistas directamente en el calendario del colegio",
             "palabras": "entrevista|reunion|cita|calendario|agenda"
           }
         ],
@@ -212,23 +212,23 @@
       "leads-de-ventas": {
         "puntosClave": [
           {
-            "texto": "Ningún prospecto calificado se enfría por falta de respuesta inmediata",
+            "texto": "Tus prospectos calificados no se enfrían por falta de respuesta inmediata",
             "palabras": "enfri|pierd|inmediat|rapid|al instante|al momento|sin demora|de inmediato"
           },
           {
-            "texto": "Califica el interés del cliente con IA",
+            "texto": "Tu asistente califica el interés del cliente con IA",
             "palabras": "califica|clasifica|evalua|puntua|interes"
           },
           {
-            "texto": "Genera un resumen automático y lo registra al instante en un miniCRM",
+            "texto": "Tu asistente genera un resumen automático y lo registra al instante en tu miniCRM",
             "palabras": "minicrm|crm|registra|resumen"
           },
           {
-            "texto": "Organiza los leads en un tablero Kanban por etapas de venta",
+            "texto": "Tu asistente organiza tus leads en un tablero Kanban por etapas de venta",
             "palabras": "kanban|tablero|etapas|embudo"
           },
           {
-            "texto": "El asesor comercial concreta el cierre con toda la información lista",
+            "texto": "Tu asesor comercial concreta el cierre con toda la información lista",
             "palabras": "asesor|comercial|cierre|cierra|concret|informacion lista|vendedor|equipo de ventas"
           }
         ],

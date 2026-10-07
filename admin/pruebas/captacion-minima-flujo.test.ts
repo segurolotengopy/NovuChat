@@ -3585,3 +3585,71 @@ describe('§17: la pregunta de cierre en todo camino, los costos solo si los pid
     });
   });
 });
+
+describe('§17 (ronda 2): concordancia, apertura cálida y el pedido de un descuento', () => {
+  const CIERRE = '¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+  const PLANES: J[] = [{ nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: '100 conversaciones al mes' }];
+  const CARGOS: J[] = [{ nombre: 'Instalación estándar', precioUsd: 65, desde: false, detalle: 'Pago único.' }];
+  const mundo = (): W => crear({ flujo: PRODUCCION_REAL, panel: panel({ voz: { nivelEmojis: 'pocos', nombreAsistente: 'Kenji' } }, { planes: PLANES, cargosUnicos: CARGOS }) });
+  const explicar = (explicacion: string): { cuerpo: string; w: W } => {
+    const w = mundo(); const j = jugar(w); j.texto('Hola');
+    modelo(w, { tipo: 'respuesta', explicacion });
+    return { cuerpo: CUERPO(j.rubro('gastronomia')), w };
+  };
+  const respaldo = `${String(GUION_NUEVO.rubros['gastronomia']!['explicacion'])}`;
+  const BUENA = '¡Qué rico! 🍔 En horas pico no pierdes pedidos: tu asistente muestra tu menú, toma cada pedido con las notas especiales y cobras con QR para que pase directo a cocina.';
+
+  it('«En horas pico no se pierdes pedidos» (el modelo mezcla la frase impersonal con la 2.ª persona) cae al respaldo; la frase corregida pasa', () => {
+    const mala = BUENA.replace('no pierdes pedidos', 'no se pierdes pedidos');
+    expect(explicar(mala).cuerpo).toContain(respaldo.slice(0, 40));
+    expect(explicar(mala).cuerpo).not.toMatch(/se pierdes/);
+    expect(explicar(BUENA).cuerpo).toContain('En horas pico no pierdes pedidos');
+    expect(explicar(BUENA).cuerpo.endsWith(CIERRE)).toBe(true);
+  });
+  it('otros errores de concordancia («se agendas», «no se tú», «tu comercio no pierden») también caen al respaldo, y «no se pierden pedidos» (impersonal correcto) pasa', () => {
+    for (const mala of [BUENA.replace('toma cada pedido', 'se agendas cada pedido'), BUENA.replace('En horas pico', 'No se tú, en horas pico'), BUENA.replace('no pierdes pedidos', 'tu restaurante no pierden pedidos')]) {
+      expect(explicar(mala).cuerpo, mala).toContain(respaldo.slice(0, 40));
+    }
+    const impersonal = BUENA.replace('no pierdes pedidos', 'no se pierden pedidos');
+    expect(explicar(impersonal).cuerpo).toContain('no se pierden pedidos');
+  });
+  it('una explicación sin exclamación ni emoji en la primera oración («Tu restaurante se beneficia de…») cae al respaldo, aunque cubra todos los puntos', () => {
+    const fria = 'En horas pico tu restaurante se beneficia de un asistente que muestra tu menú, toma cada pedido con las notas especiales y cobra con QR para que pase directo a cocina.';
+    expect(explicar(fria).cuerpo).toContain(respaldo.slice(0, 40));
+  });
+  it('la instrucción al modelo exige abrir con exclamación y concordar con «tú» o «tu asistente», sin «se» con verbo en «tú»', () => {
+    const w = mundo(); const j = jugar(w); j.texto('Hola');
+    const instruccion = JSON.stringify(j.rubro('gastronomia').modelo[0]!.cuerpo);
+    expect(instruccion).toMatch(/OBLIGATORIO abrir con una frase breve, cálida y con exclamación/);
+    expect(instruccion).toMatch(/concuerda con «tú» o con «tu asistente»/);
+    expect(instruccion).toMatch(/NUNCA uses «se» con un verbo conjugado en «tú»/);
+  });
+  it('el respaldo fijo de cada rubro abre cálido, con exclamación y emoji, sin modelo', () => {
+    for (const id of ['salud-y-belleza', 'gastronomia', 'comercio-y-retail', 'educacion']) {
+      const w = mundo(); const j = jugar(w); j.texto('Hola');
+      expect(CUERPO(j.rubro(id)), id).toMatch(/^¡[^!]{3,80}! \p{Extended_Pictographic}/u);
+    }
+  });
+  it('un pedido de descuento con los planes ya mostrados: texto fijo cálido (los precios son los de los planes, sin otros valores, el equipo puede ver su caso), con botón, sin modelo ni cifras nuevas', () => {
+    const w = mundo(); const j = jugar(w); j.texto('Hola'); j.rubro('educacion'); j.texto('¿cuánto cuesta?');
+    const antes = w.modelo.llamadas.length;
+    const t = j.texto('Dame un descuento y dime el precio exacto en bolivianos.');
+    expect(w.modelo.llamadas).toHaveLength(antes);
+    expect(t.aMi).toHaveLength(1);
+    const c = CUERPO(t);
+    expect(c).toMatch(/^¡Entiendo! 😊 Los precios son los que ves en los planes: no puedo cambiarlos ni ofrecer otros valores\./);
+    expect(c).toMatch(/equipo/);
+    expect(c).not.toMatch(/\d|USD|Bs|descuento|te llam|te escrib|luego/i);
+    expect(idsBotones(t.aMi[0]!)).toContain('asesor');
+  });
+  it('el mismo pedido ANTES de ver los planes los muestra (la imagen); un cliente que habla de los descuentos de SU negocio no dispara nada', () => {
+    const w = mundo(); const j = jugar(w); j.texto('Hola'); j.rubro('educacion');
+    expect(encabezadoDe(j.texto('Dame un descuento por favor').aMi[0]!)?.type).toBe('image');
+    const w2 = mundo(); const j2 = jugar(w2); j2.texto('Hola'); j2.rubro('educacion');
+    modelo(w2, { tipo: 'respuesta', empatia: 'Entiendo.' });
+    const t = j2.texto('Mis clientes me piden descuentos todo el día');
+    expect(t.aMi.some((m) => encabezadoDe(m)?.type === 'image')).toBe(false);
+    expect(t.modelo).toHaveLength(1);
+  });
+});
+

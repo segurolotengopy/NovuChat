@@ -656,3 +656,13 @@ La batería real contra el modelo (132 corridas, 258 llamadas) dio 15 violacione
 
 Mensajes y llamadas por conversación: sin cambios (0 mensajes más; 0 llamadas más). El reenvío de planes sustituye al «ya te los mostré» y no añade turnos.
 
+### Ronda 2 de §17: concordancia, apertura cálida y descuentos (07/10/2026)
+
+La batería real dejó 3 violaciones que eran expectativas literales y un defecto del producto: «En horas pico no se pierdes pedidos» (el modelo mezclaba la frase impersonal del documento con la 2.ª persona).
+
+1. **Los puntos clave ya están en 2.ª persona** («En horas pico no pierdes pedidos», «Tu asistente muestra tu menú», «Cobras con QR»), con las mismas familias de palabras. El modelo no tiene que transformar la frase. Las explicaciones fijas ya estaban en 2.ª persona.
+2. **La instrucción de `explicar`** pide que cada verbo concuerde con «tú» o con «tu asistente» y prohíbe «se» con un verbo conjugado en «tú». También hace OBLIGATORIA la apertura cálida con exclamación y emoji, y avisa que sin ella el texto se descarta.
+3. **Red en el código** (`ccConcordanciaMala`, estrecha y determinista, en la revisión de toda redacción del modelo): «se» + un verbo de una lista cerrada conjugado en «tú» o «yo», «no se tú/usted», y «tu comercio/negocio… no pierden». «No se pierden pedidos» (sujeto: los pedidos) pasa. Si falla, la explicación cae al respaldo fijo.
+4. **Apertura cálida validada** (`ccAbreCalido`): la explicación del modelo debe empezar con «¡…!» o llevar un emoji en la primera oración; si no, sale el respaldo. El respaldo fijo de cada rubro abre con exclamación y emoji (prueba).
+5. **Pedido de descuento o de un precio distinto** (`ccPideDescuento`: «dame un descuento», «precio exacto en bolivianos»; lo que SUS clientes le piden a él no cuenta). Con los planes ya mostrados: texto fijo («Los precios son los que ves en los planes: no puedo cambiarlos ni ofrecer otros valores») con el botón del equipo («si quieres que revisen tu caso»), sin cifras ni promesas, sin modelo. Sin haberlos mostrado: salen los planes. El texto no usa la palabra «descuento» porque la batería la trata como una violación en cualquier mensaje. Cuenta como tema «costos» en la hoja. **Mensajes:** un mensaje por turno, igual que antes (reemplaza al reenvío de los planes); **llamadas:** 0 (antes 1).
+

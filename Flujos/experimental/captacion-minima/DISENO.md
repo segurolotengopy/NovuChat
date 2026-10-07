@@ -302,3 +302,8 @@ Resumen de lo que cambió (el contrato, §16, tiene las decisiones D1 a D10, la 
 - **Puntos clave con familias:** una lista de raíces por heurística daba falsos negativos («notas especiales» contra «indicaciones»). La familia la escribe quien arma el guion (dato, no código), y la valida `construir.mjs`.
 - **Dos redacciones de falla:** repetir el mismo texto dos veces seguidas parecía una caída; rota con `fijas`.
 
+### Ronda 2 de §17
+- **Por qué no basta pedirlo en el prompt:** el modelo ya tenía la orden de hablar en 2.ª persona y aun así conjugó «se pierdes». Se atacó por tres lados: el dato (puntos clave ya en «tú», sin nada que conjugar), la instrucción (concordancia explícita) y una red de código estrecha (lista cerrada de verbos, para no rechazar texto correcto).
+- **Apertura cálida por código:** se valida en la explicación, no en la instrucción: lo que no abre cálido cae al respaldo, que sí lo hace.
+- **Descuentos:** la respuesta es fija porque es una política (no hay descuentos ni otros precios); se evita la palabra en el texto para que ningún detector de «descuento» confunda una negación con una oferta.
+

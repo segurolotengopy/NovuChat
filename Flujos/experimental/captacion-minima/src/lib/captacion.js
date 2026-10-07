@@ -241,6 +241,28 @@ function ccPideCostoConObjeto(t) {
 function ccPideListaPlanes(t) {
   return ccPidePlanes(t) || CC_COSTO_MARCA.test(ccNorm(t)) ? ccPideCostoDelServicio(t) : false;
 }
+// §17 (ronda 2): un pedido de descuento o de un precio distinto al de los planes («dame un descuento», «el precio exacto en bolivianos»). Lo contesta el CÓDIGO: los precios son los de los
+// planes, no hay descuentos ni otros precios, y alguien del equipo puede ver su caso (el botón). Lo que SUS clientes le piden a él («mis clientes piden descuentos») no cuenta.
+const CC_DESCUENTO_MARCA = /(^| )(descuentos?|rebajas?|rebajar|mas barato|mas economico|precio especial|precio exacto|precio final|en bolivianos|en bs|negociar)( |$)/;
+function ccPideDescuento(t) {
+  const n = ccNorm(t);
+  return CC_DESCUENTO_MARCA.test(n) && !CC_LADO_DEL_CLIENTE.test(n);
+}
+// §17 (ronda 2): errores de concordancia que el modelo comete al pasar a «tú» una frase impersonal del documento («no se pierden pedidos» → «no se pierdes pedidos»). Es una red ESTRECHA:
+// «se» + un verbo conjugado en «tú» o «yo» (de una lista cerrada), «no se tú/usted», y «tu comercio/negocio… no pierden» (el sujeto es el cliente y el verbo quedó en plural). «No se pierden pedidos»
+// (sujeto «los pedidos») pasa.
+const CC_VERBOS_EN_TU = 'pierdes|pierdas|pierdo|sumas|tomas|agendas|cobras|muestras|registras|envias|recibes|manejas|atiendes|ahorras|cierras|vendes|pasas|organizas|calificas|coordinas|respondes|revisas|anotas|conectas|llenas|ganas|pierdan';
+const CC_CONCORDANCIA_MALA = new RegExp('(^| )se (' + CC_VERBOS_EN_TU + ')( |$)|(^| )no se (tu|usted)( |$)|(^| )(tu|usted) (no )?(pierden|pierdan)( |$)|(^| )tu (comercio|negocio|tienda|local|restaurante|clinica|empresa|institucion|colegio|consultorio) (no )?(pierden|pierdan)( |$)');
+function ccConcordanciaMala(t) {
+  return CC_CONCORDANCIA_MALA.test(ccNorm(t));
+}
+// §17 (ronda 2): la explicación abre cálida: «¡…!» al inicio o un emoji en la primera oración.
+function ccAbreCalido(t) {
+  const x = ccTexto(t);
+  if (/^¡[^!]{2,}!/u.test(x)) return true;
+  const primera = x.split(/[.!?]/)[0] || '';
+  return /\p{Extended_Pictographic}/u.test(primera);
+}
 const CC_IDENTIDAD_BASE = '(persona|humano|humana|robot|bot|chatbot|automatico|automatica|real|ia|maquina|de verdad|inteligencia artificial)';
 const CC_IDENTIDAD = new RegExp('\\b(eres|sos) (una |un )?(persona|humano|humana|bot|chatbot|robot|ia|maquina|real|de verdad|inteligencia artificial)\\b' +
   '|\\b(hablo|estoy hablando|chateo) con (una |un )?(persona|humano|humana|bot|chatbot|robot|maquina|ia|alguien real)\\b' +
@@ -335,7 +357,7 @@ function ccPreguntaIntegracion(t) {
 const CC_TEMAS = ['costos', 'consumo', 'integraciones', 'pagos', 'dudas'];
 function ccTemasDe(t, planes) {
   const out = [];
-  if (ccPideListaPlanes(t)) out.push('costos');
+  if (ccPideListaPlanes(t) || ccPideDescuento(t)) out.push('costos');
   if (ccPreguntaConsumo(t) || ccPreguntaTopePlan(t, planes)) out.push('consumo');
   if (ccPreguntaIntegracion(t)) out.push('integraciones');
   if (ccPreguntaBanco(t)) out.push('pagos');
@@ -732,7 +754,7 @@ function ccInstrucciones(cfg, conocimiento) {
     '- aclaracion: si la respuesta está en una de las aclaraciones de abajo, su id (a1, a2…); si no, "ninguno".',
     '- enLosDatos: true solo si la respuesta sale de los datos de abajo; si no, false.',
     '- descarte: "numero_equivocado", "vende_o_busca_trabajo", "sin_negocio" o "spam_o_prueba" solo si es claro; si no, "ninguno".',
-    '- explicacion: solo si la TAREA del turno es EXPLICAR EL RUBRO, o si el cliente acaba de decir claramente de qué rubro es su negocio (rubroId distinto de "ninguno"): hasta ' + CC_MAX_ORACIONES_EXPLICACION + ' oraciones y ' + CC_MAX_PALABRAS_EXPLICACION + ' palabras que expliquen el servicio PARA ESE RUBRO apoyándote OBLIGATORIAMENTE en los PUNTOS CLAVE de ese rubro (están abajo, en la lista de rubros): cúbrelos TODOS, con tus palabras (no los copies tal cual), una idea por oración y adaptados a lo que el cliente dijo (si no dijo nada, ve directo al valor). ABRE siempre con una frase breve, cálida y con exclamación que reconozca el rubro del cliente, con un emoji acorde. Habla SIEMPRE en segunda persona del singular («tu catálogo», «no pierdes ventas», «tu clínica»): nunca en tercera persona ni mezclando personas. Usa los emojis que ayuden (3 o 4 como máximo). Sin preguntas (el sistema agrega la pregunta de cierre), sin cifras de consumo, sin montos ni precios, sin promesas y sin enlaces. Si no aplica, vacío.',
+    '- explicacion: solo si la TAREA del turno es EXPLICAR EL RUBRO, o si el cliente acaba de decir claramente de qué rubro es su negocio (rubroId distinto de "ninguno"): hasta ' + CC_MAX_ORACIONES_EXPLICACION + ' oraciones y ' + CC_MAX_PALABRAS_EXPLICACION + ' palabras que expliquen el servicio PARA ESE RUBRO apoyándote OBLIGATORIAMENTE en los PUNTOS CLAVE de ese rubro (están abajo, en la lista de rubros): cúbrelos TODOS, con tus palabras (no los copies tal cual), una idea por oración y adaptados a lo que el cliente dijo (si no dijo nada, ve directo al valor). ES OBLIGATORIO abrir con una frase breve, cálida y con exclamación («¡Qué bien…!», «¡Qué rico!») que reconozca el rubro del cliente, con un emoji acorde: si no abres así, tu texto se descarta. Habla SIEMPRE en segunda persona del singular («tu catálogo», «no pierdes ventas», «tu clínica»): nunca en tercera persona ni mezclando personas. Cada verbo concuerda con «tú» o con «tu asistente» («no pierdes pedidos», «tu asistente muestra el menú», «cobras con QR»): NUNCA uses «se» con un verbo conjugado en «tú» («no se pierdes» es un error). Los puntos clave ya están escritos en segunda persona: tómalos como están en cuanto a persona y verbo. Usa los emojis que ayuden (3 o 4 como máximo). Sin preguntas (el sistema agrega la pregunta de cierre), sin cifras de consumo, sin montos ni precios, sin promesas y sin enlaces. Si no aplica, vacío.',
     '- necesidad: lo que el cliente cuenta que necesita o lo que más le cuesta hoy en WhatsApp, con SUS palabras, resumido en hasta ' + CC_MAX_NECESIDAD + ' caracteres, sin datos personales (teléfono, correo, carnet), sin enlaces ni fórmulas. NO es el rubro ni lo que vende («tengo una ferretería» va en rubroLibre, no aquí). Si no lo dijo, vacío.',
     '- nombre: solo si el cliente dijo su nombre y apellido: de 2 a 4 palabras tal como las escribió, y nada más. Si no, vacío.',
     '- empresa: solo si el cliente dijo el nombre de su negocio: tal como lo escribió. Si no, vacío.',
@@ -938,6 +960,8 @@ function ccLeerModelo(jsonGemini, opciones) {
     if (CC_YO_DEL_MODELO.test(n) || CC_PROMESA_DEL_MODELO.test(n) || CC_OFERTA_DEL_MODELO.test(n) || ccTieneMonto(t) || ccMontoDelModelo(t) || /%|gratis|descuento/.test(n)) return '';
     // §16: ninguna cifra de consumo, ninguna validación de pagos con el banco y ningún sistema que el servicio no nombre.
     if (CC_CIFRA_DE_CONSUMO.test(n) || CC_ACREDITA_MODELO.test(n) || ccSistemaAjeno(t, propios, clase !== 'empatia')) return '';
+    // §17: un error de concordancia («no se pierdes pedidos») no llega al cliente.
+    if (ccConcordanciaMala(t)) return '';
     if (clase === 'empatia') {
       if (/\d|promo|oferta/.test(n) || /\b(asesor|asesora|ejecutiv[oa])\b/.test(n)) return '';
       if (ccContar(t).palabras > CC_MAX_PALABRAS_EMPATIA) return '';
@@ -1649,6 +1673,8 @@ function ccDecidir(a) {
     if (dichoOEscrito && ccPreguntaTopePlan(texto, cfg.planes)) { interactua(); return resolver(ccPedirPlanes(e)); }
     if (dichoOEscrito && ccPreguntaConsumo(texto)) { interactua(); return delPaso('consumo', {}); }
     if (dichoOEscrito && ccPreguntaIntegracion(texto)) { interactua(); return delPaso('integracion', {}); }
+    // §17: un pedido de descuento o de un precio distinto: con los planes ya mostrados, el texto fijo (los precios son esos, sin descuentos, el equipo puede ver su caso); sin mostrarlos, los planes.
+    if (dichoOEscrito && ccPideDescuento(texto)) { interactua(); return e.planesMostrados === true ? delPaso('precios', {}) : resolver(ccPedirPlanes(e)); }
     if (t.categoria === 'comprobante') {
       return delPaso('fijo', { texto: '¡Recibí tu archivo! 📎 Por este medio no puedo revisar comprobantes. Si lo necesitas, toca el botón para hablar con ' + quien + ' 😊', conAsesor: true });
     }
@@ -1723,6 +1749,7 @@ function ccMensajesDe(accion, e, cfg, t, x) {
     }
     case 'consumo':
     case 'banco':
+    case 'precios':
     case 'integracion': {
       const hayAsesor = ccHayRecepcion(cfg, t.from);
       return [ccRetomar(e, cfg, ccRespuestaFija(accion, cfg, hayAsesor, ccVariante(e, 'fijas', 3)), { conAsesor: hayAsesor, soloPrefijo: true, sinAsesor: !hayAsesor })];
@@ -1793,6 +1820,13 @@ function ccRespuestaFija(accion, cfg, hayAsesor, variante) {
         'Y para que te recomienden el plan que mejor se ajuste a tu volumen, puedes hablar con ' + quien + ' desde las opciones de abajo.',
         'Si quieres afinar el plan según el volumen de tu negocio, puedes hablar con ' + quien + ' desde las opciones de abajo.'][v]);
   }
+  if (accion === 'precios') {
+    return con(['¡Entiendo! 😊', 'Te lo aclaro con gusto 😊', 'Claro, te cuento 🙌'][v],
+      'Los precios son los que ves en los planes: no puedo cambiarlos ni ofrecer otros valores',
+      ['Si quieres que revisen tu caso, puedes hablar con ' + quien + ' desde las opciones de abajo.',
+        'Si prefieres que vean tu caso, puedes hablar con ' + quien + ' desde las opciones de abajo.',
+        'Y si quieres que alguien analice tu caso, puedes hablar con ' + quien + ' desde las opciones de abajo.'][v]);
+  }
   if (accion === 'banco') {
     return con(['¡Buena pregunta! 😊', 'Te lo aclaro 😊', 'Muy buena duda 🙌'][v],
       ccPlano(r.banco) || 'El asistente solo revisa visualmente el comprobante que le llega: no lo valida con el banco. Quien confirma que el dinero entró es el banco, y el negocio.',
@@ -1825,7 +1859,7 @@ function ccEsSustantivo(t) {
 function ccExplicacionDelRubro(r, e, cfg) {
   const g = ccGuionDe(cfg, e.rubroId).propia || {};
   const redactada = r && r.ok === true ? ccPlano(r.explicacion) : '';
-  if (redactada && ccCubrePuntos(redactada, g.puntosClave)) return redactada;
+  if (redactada && ccAbreCalido(redactada) && ccCubrePuntos(redactada, g.puntosClave)) return redactada;
   return ccPlano(g.explicacion);
 }
 // Lo que dijo el modelo (ya validado por `ccLeerModelo`) decide la acción; muta `e`. Devuelve { accion, extra }.
@@ -1973,7 +2007,7 @@ function ccCompletar(a) {
   }
   const mensajes = ccMensajesDe(accion, e, cfg, t, extra);
   // Cualquier turno que NO retoma la pregunta pendiente reinicia la cuenta de repeticiones seguidas.
-  if (!['retomar', 'identidad', 'contacto', 'consumo', 'banco', 'integracion'].includes(accion)) e.repetidas = 0;
+  if (!['retomar', 'identidad', 'contacto', 'consumo', 'banco', 'precios', 'integracion'].includes(accion)) e.repetidas = 0;
   // El traspaso de un prospecto avisa a recepción (una vez por conversación, contando solo lo que Meta aceptó).
   if (accion === 'traspaso' && extra.soporte !== true) {
     const payload = ccAviso({
