@@ -139,11 +139,11 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     const lote5 = ['D5', 'D5b', 'D6', 'D6b', 'D6d', 'D7', 'D7b', 'D7c', 'D8']; // reserva confirmada (#437); D8c, su control, vive en D.json
     const lote6 = ['M1r', 'M1p', 'M1ref', 'M1s', 'M1sp', 'M1refp', 'M2r', 'M2p', 'L1', 'FB1', 'FB2', 'SV2', 'SV2b']; // seguridad del delivery, 2.ª ronda
     const control = ['D8c'];
-    const lote9 = ['U1', 'U2', 'U2b', 'U3', 'U3b', 'U4', 'U5']; // ubicación compartida o dirección en texto (encargo del 05/10); U5m, el enlace a Maps en el aviso, espera la rama
+    const lote9 = ['U1', 'U2', 'U2b', 'U3', 'U3b', 'U4', 'U5', 'U5m', 'U6', 'U6b']; // ubicación compartida o dirección en texto (encargo del 05/10; U5m, U6 y U6b son del PR-A: el enlace a Maps solo con la ventana abierta y el pedido de ubicación)
     const { casos, global: g } = casosDeLaCarpeta();
     const ids = casos.map((c) => String(c['id']));
-    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote7, ...lote8, ...lote9, ...control, 'C9m', 'U5m'].sort());
-    expect([...idsPendientes()].sort(), 'lo pendiente de una rama (hoy falla contra main)').toEqual(['A7', 'A8', 'C9m', 'M2bX', 'S2d', 'U5m', ...(CANCELAR_EN_EL_FLUJO ? [] : lote8)].sort());
+    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote7, ...lote8, ...lote9, ...control, 'C9m'].sort());
+    expect([...idsPendientes()].sort(), 'lo pendiente de una rama (hoy falla contra main)').toEqual(['A7', 'A8', 'C9m', 'M2bX', 'S2d', ...(CANCELAR_EN_EL_FLUJO ? [] : lote8)].sort());
     expect(idsDeSeguridad().sort(), 'los de seguridad son exactamente los del lote 4').toEqual([...lote4].sort());
     const pendientes = ((JSON.parse(readFileSync(join(CARPETA_CASOS, 'pendientes.json'), 'utf8')) as J)['pendientes'] as J[]).map((p) => String(p['id']));
     const grilla: string[] = [];

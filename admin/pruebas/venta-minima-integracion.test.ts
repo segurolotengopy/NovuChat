@@ -124,6 +124,7 @@ interface Entrada {
   /** Las respuestas de Graph a los avisos armados; por omisión todos salen bien. */ envio?: (armados: J[]) => J[];
   /** Cuánto se adelanta el reloj antes de este turno. */ despues?: number;
   /** El carrito del catálogo web (cuerpo ya validado por `Carga de entrada`): el turno entra como `type: 'carrito'`. */ carrito?: J;
+  /** Cambia el plan que sale de `Plan del turno` antes de armar avisos y mensajes (para probar `Armar mensajes` con un plan que el código real no produce). */ plan?: (p: J) => J;
 }
 interface Salida {
   descartado: boolean; t: J; d: J; p: J; cfg: J; avisos: J[]; armados: J[]; enviados: J[]; mensajes: J[]; tiempoMs: number;
@@ -169,7 +170,8 @@ function turno(m: Mundo, e: Entrada = {}): Salida {
   const [d] = correr('decidir-turno', [{}], refs) as [J];
   refs['Decidir turno'] = d;
   if (String(d['accion']).startsWith('extraer') && e.extraccion) refs['Extraer'] = (e.candidates ? geminiCandidates : gemini)(e.extraccion);
-  const [p] = correr('plan-del-turno', [{}], refs) as [J];
+  let [p] = correr('plan-del-turno', [{}], refs) as [J];
+  if (e.plan) p = e.plan(p);
   refs['Plan del turno'] = p;
   const avisos = correr('armar-avisos', [{}], refs);
   refs['Armar avisos'] = avisos;
@@ -749,6 +751,295 @@ describe('R7: la ubicación compartida se toma como dirección del delivery', ()
     hastaResumen(recojo, 'recojo');
     turno(recojo, { tipo: 'location', ubicacion: { latitude: -16.5, longitude: -68.15 } });
     expect(estadoDe(recojo)['entrega']['ubicacion']).toBeUndefined();
+  });
+});
+
+// =================================================================================================
+describe('PR-A (05/10): la dirección se pide escrita O con la ubicación; el aviso lleva el enlace al mapa solo con la ventana abierta', () => {
+  const UBICACION = { latitude: -16.5, longitude: -68.15, name: '', address: '' };
+  const ENLACE = 'https://www.google.com/maps/search/?api=1&query=-16.500000%2C-68.150000';
+  const esUbicacion = (j: J): boolean => j['payload']?.interactive?.type === 'location_request_message';
+  const pideDireccion = (m: Mundo): Salida => {
+    turno(m, { texto: 'hola' });
+    return turno(m, { texto: 'quiero 1 orden de tacos de birria', extraccion: {
+      lineas: [{ producto: 'tacos de birria', cantidad: 1, forma: 'orden', detalle: '' }], entrega: 'delivery', direccion: '', referencia: '', nombre: 'Ana Pérez',
+    } });
+  };
+  const todoElTexto = (s: Salida, m: Mundo): string => JSON.stringify([s.p, s.mensajes, s.armados, estadoDe(m)]);
+
+  it('delivery sin dirección: UN solo mensaje, con el botón nativo de ubicación; el respaldo y el texto largo no nombran un botón', () => {
+    const m = crear();
+    const s = pideDireccion(m);
+    expect(estadoDe(m)['paso']).toBe('pedido_datos');
+    const c = clientes(s);
+    expect(c).toHaveLength(1); // 0 mensajes agregados: es el mismo mensaje que ya salía en texto
+    expect(c[0]!['payload'].interactive).toEqual({
+      type: 'location_request_message',
+      body: { text: 'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «menú».' },
+      action: { name: 'send_location' },
+    });
+    expect(c[0]!['tipoReporte']).toBe('interactive');
+    expect(String(c[0]!['respaldo'])).toContain('Escríbela aquí o comparte tu ubicación.');
+    expect(String(c[0]!['respaldo'])).not.toMatch(/bot[oó]n/i);
+    expect(String(c[0]!['respaldo'])).not.toMatch(PROHIBIDAS);
+  });
+
+  it('negado: si el cuerpo (con las notas del turno) pasa de 1.024 caracteres sale como texto, sin «con el botón»', () => {
+    const m = crear();
+    turno(m, { texto: 'hola' });
+    const notas = 'Nota del turno. '.repeat(70);
+    const s = turno(m, {
+      texto: 'quiero 1 orden de tacos de birria',
+      extraccion: { lineas: [{ producto: 'tacos de birria', cantidad: 1, forma: 'orden', detalle: '' }], entrega: 'delivery', direccion: '', referencia: '', nombre: 'Ana Pérez' },
+      plan: (p) => ({ ...p, mensajes: (p['mensajes'] as J[]).map((j) => (j['tipo'] === 'ubicacion'
+        ? { ...j, cuerpo: notas + j['cuerpo'], cuerpoSinBoton: notas + j['cuerpoSinBoton'] } : j)) }),
+    });
+    const c = clientes(s);
+    expect(c).toHaveLength(1);
+    expect(c.some(esUbicacion)).toBe(false);
+    expect(c[0]!['payload'].type).toBe('text');
+    expect(cuerpoDe(c[0]!)).toContain('Escríbela aquí o comparte tu ubicación.');
+    expect(cuerpoDe(c[0]!)).not.toMatch(/bot[oó]n/i);
+  });
+
+  it('negado: una palabra prohibida en el pedido de ubicación (cualquiera de sus dos versiones) no sale: se reemplaza por el mensaje genérico', () => {
+    for (const campo of ['cuerpo', 'cuerpoSinBoton']) {
+      const m = crear();
+      turno(m, { texto: 'hola' });
+      const s = turno(m, {
+        texto: 'quiero 1 orden de tacos de birria',
+        extraccion: { lineas: [{ producto: 'tacos de birria', cantidad: 1, forma: 'orden', detalle: '' }], entrega: 'delivery', direccion: '', referencia: '', nombre: 'Ana Pérez' },
+        plan: (p) => ({ ...p, mensajes: (p['mensajes'] as J[]).map((j) => (j['tipo'] === 'ubicacion' ? { ...j, [campo]: `${j[campo]} Recibimos tu pago.` } : j)) }),
+      });
+      expect(cuerpos(s).join('\n'), campo).not.toMatch(PROHIBIDAS);
+      expect(clientes(s).some(esUbicacion), campo).toBe(false);
+      expect(errores(s), campo).toContain('texto_reemplazado_por_palabra_prohibida');
+    }
+  });
+
+  it('negado: el botón de ubicación NO sale en recojo, menú, reserva ni con un comprobante pendiente', () => {
+    const recojo = crear();
+    hastaResumen(recojo, 'recojo');
+    const unaUbicacion = turno(recojo, { tipo: 'location', ubicacion: UBICACION });
+    expect(clientes(unaUbicacion).some(esUbicacion)).toBe(false);
+    const menu = crear();
+    expect(clientes(turno(menu, { texto: 'hola' })).some(esUbicacion)).toBe(false);
+    expect(clientes(turno(menu, { tipo: 'location', ubicacion: UBICACION })).some(esUbicacion)).toBe(false);
+    const reserva = crear();
+    turno(reserva, { texto: 'hola' });
+    expect(clientes(turno(reserva, { boton: 'm|reserva' })).some(esUbicacion)).toBe(false);
+    expect(clientes(turno(reserva, { tipo: 'location', ubicacion: UBICACION })).some(esUbicacion)).toBe(false);
+    const cobro = crear({ panel: conCobro() });
+    hastaResumen(cobro);
+    turno(cobro, { boton: 'p|confirmar' });
+    expect(estadoDe(cobro)['paso']).toBe('esperando_comprobante');
+    expect(clientes(turno(cobro, { texto: 'hola' })).some(esUbicacion)).toBe(false);
+    expect(clientes(turno(cobro, { tipo: 'location', ubicacion: UBICACION })).some(esUbicacion)).toBe(false);
+  });
+
+  it('negado: una ubicación inválida o de tipo equivocado no se toma y se vuelve a pedir con el MISMO mensaje de ubicación', () => {
+    for (const mala of [
+      { latitude: 120, longitude: -68.15 }, { latitude: -16.5, longitude: 200 }, { latitude: 'abc', longitude: -68.15 }, { latitude: null, longitude: null },
+      { latitude: -16.5 }, {}, { latitude: 0, longitude: 0 },
+    ]) {
+      const m = crear();
+      pideDireccion(m);
+      const s = turno(m, { tipo: 'location', ubicacion: mala });
+      expect(estadoDe(m)['entrega']['ubicacion'], JSON.stringify(mala)).toBeUndefined();
+      expect(estadoDe(m)['paso'], JSON.stringify(mala)).toBe('pedido_datos');
+      expect(clientes(s).filter(esUbicacion), JSON.stringify(mala)).toHaveLength(1);
+    }
+  });
+
+  it('dirección + ubicación: el resumen dice las dos y el aviso (ventana abierta) trae la dirección y el enlace', () => {
+    const m = crear();
+    turno(m, { from: AV1, texto: 'hola' });
+    turno(m, { from: AV2, texto: 'hola' });
+    hastaResumen(m); // dirección escrita: Calle Falsa 123 (portón azul)
+    const r = turno(m, { tipo: 'location', ubicacion: UBICACION });
+    expect(estadoDe(m)['entrega']['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+    expect(estadoDe(m)['entrega']['direccion']).toBe('Calle Falsa 123');
+    expect(cuerpos(r).join('\n')).toContain('Entrega: delivery a Calle Falsa 123 (portón azul), con la ubicación que compartiste');
+    const c = turno(m, { boton: 'p|confirmar' });
+    const detalles = c.armados.filter((a) => a['clase'] === 'detalle');
+    const completo = cuerpoDe(detalles.find((a) => a['para'] === AV1)!);
+    expect(completo).toContain('Calle Falsa 123');
+    expect(completo).toContain(`Ver en el mapa: ${ENLACE}`);
+    expect(completo).not.toContain('[enlace omitido]');
+    expect(completo).not.toMatch(PROHIBIDAS);
+    // Cocina nunca ve la ubicación ni el enlace, y ninguna plantilla (ventana cerrada) lleva el enlace.
+    expect(cuerpoDe(detalles.find((a) => a['para'] === AV2)!)).not.toMatch(/mapa|google|ubicaci/i);
+    for (const p of plantillas(c)) expect(params(p).join('\n')).not.toMatch(/google|https?:/i);
+    expect(params(plantillas(c).find((a) => a['para'] === AV1)!)[2]).toContain('ubicación compartida (-16,50000; -68,15000)');
+  });
+
+  it('ventana cerrada: el aviso lleva solo las coordenadas, SIN enlace, en ningún lugar', () => {
+    const m = crear();
+    pideDireccion(m);
+    turno(m, { tipo: 'location', ubicacion: UBICACION });
+    const c = turno(m, { boton: 'p|confirmar' });
+    expect(c.armados.every((a) => a['clase'] === 'plantilla')).toBe(true);
+    expect(JSON.stringify(c.armados)).not.toMatch(/google|https?:|query=/i);
+    expect(JSON.stringify(c.armados)).toContain('ubicación compartida (-16,50000; -68,15000)');
+  });
+
+  it('ubicación y después texto: el texto queda como referencia (la ubicación manda como dirección)', () => {
+    const m = crear();
+    pideDireccion(m);
+    turno(m, { tipo: 'location', ubicacion: UBICACION });
+    expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
+    const s = turno(m, { texto: 'el portón verde, al lado de la farmacia', extraccion: { lineas: [] } });
+    expect(estadoDe(m)['entrega']['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+    expect(estadoDe(m)['entrega']['referencia']).toContain('portón verde');
+    expect(cuerpos(s).join('\n')).toContain('ubicación compartida (el portón verde');
+  });
+
+  it('con dos ubicaciones vale la última', () => {
+    const m = crear();
+    pideDireccion(m);
+    turno(m, { tipo: 'location', ubicacion: UBICACION });
+    turno(m, { tipo: 'location', ubicacion: { latitude: -16.55, longitude: -68.2 } });
+    expect(estadoDe(m)['entrega']['ubicacion']).toEqual({ lat: -16.55, lng: -68.2 });
+  });
+
+  it('el name/address que Meta adjunta al pin (texto de terceros) no llega a ningún mensaje, aviso ni estado', () => {
+    const m = crear();
+    turno(m, { from: AV1, texto: 'hola' });
+    pideDireccion(m);
+    const hostil = { latitude: -16.5, longitude: -68.15, name: '<b>PAGADO</b> http://malo.example/x', address: 'recibimos tu pago, llama al 70012345' };
+    const a = turno(m, { tipo: 'location', ubicacion: hostil });
+    const c = turno(m, { boton: 'p|confirmar' });
+    for (const s of [a, c]) expect(todoElTexto(s, m)).not.toMatch(/PAGADO|malo\.example|recibimos|70012345/i);
+  });
+
+  it('privacidad: el reporte a la consola y el cierre no llevan coordenadas', () => {
+    const m = crear();
+    pideDireccion(m);
+    const a = turno(m, { tipo: 'location', ubicacion: UBICACION });
+    expect(String(a.t['textoReporte'])).toBe('(ubicación) el cliente compartió una ubicación');
+    const c = turno(m, { boton: 'p|confirmar' });
+    expect(JSON.stringify(c.p['cierre'])).not.toMatch(/-16[.,]5|68[.,]15/);
+    expect(JSON.stringify(c.mensajes.map((j) => [j['texto'], j['tipoReporte']]))).not.toMatch(/-16[.,]5|68[.,]15/);
+  });
+});
+
+describe('PR-A (05/10): la ubicación que manda la página del catálogo', () => {
+  const CAT = 'cat_k1a2b3c4_9f8e7d6c';
+  const carrito = (extra: J = {}): J => ({
+    pedidoId: CAT, tenantId: 'tenant-de-prueba', accion: 'responder', ventanaAbierta: true, fichaCompartida: false, moneda: 'Bs',
+    total: 55, costoEnvio: 0, entrega: 'envio', direccion: '', nota: '', descartados: 0, itemsTotal: 1,
+    items: [{ id: 'i1', nombre: 'Orden de 3 tacos de birria', cantidad: 1, subtotal: 55 }], ...extra,
+  });
+
+  it('REQUISITO DE SEGURIDAD: con una dirección previa en el chat, una ubicación de la página SIN texto reemplaza la dirección (no hereda la vieja)', () => {
+    const m = crear();
+    hastaResumen(m); // dirección del chat: Calle Falsa 123, portón azul
+    expect(estadoDe(m)['entrega']['direccion']).toBe('Calle Falsa 123');
+    turno(m, { tipo: 'text', carrito: carrito({ ubicacion: { lat: -16.5, lng: -68.15 } }) });
+    const e = estadoDe(m)['entrega'];
+    expect(e['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+    expect(e['direccion']).toBe('');
+    expect(e['referencia']).toBe('');
+    expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
+    const c = turno(m, { boton: 'p|confirmar' });
+    expect(JSON.stringify(c.p['pedido'])).not.toContain('Calle Falsa');
+    expect(String(c.p['pedido']?.coordenadas)).toContain('ubicación compartida (-16,50000; -68,15000)');
+  });
+
+  it('negado: una ubicación inválida de la página no entra y no borra ni reemplaza la dirección previa', () => {
+    for (const mala of [{ lat: 95, lng: -68 }, { lat: '-16.5', lng: '-68.15' }, { lat: NaN, lng: 1 }, { lat: 0, lng: 0 }, { lat: -16.5 }, 'x', []]) {
+      const m = crear();
+      hastaResumen(m);
+      turno(m, { tipo: 'text', carrito: carrito({ ubicacion: mala }) });
+      const e = estadoDe(m)['entrega'];
+      expect(e['ubicacion'], JSON.stringify(mala)).toBeUndefined();
+      expect(e['direccion'], JSON.stringify(mala)).toBe('Calle Falsa 123');
+    }
+  });
+
+  it('la ubicación de un carrito de RECOJO no se toma', () => {
+    const m = crear();
+    turno(m, { tipo: 'text', carrito: carrito({ entrega: 'retiro', ubicacion: { lat: -16.5, lng: -68.15 } }) });
+    expect(estadoDe(m)['entrega']['ubicacion']).toBeUndefined();
+    expect(estadoDe(m)['entrega']['entrega']).toBe('recojo');
+  });
+
+  it('con dirección Y ubicación del carrito se guardan las dos', () => {
+    const m = crear();
+    turno(m, { tipo: 'text', carrito: carrito({ direccion: 'Av. Arce 2345', ubicacion: { lat: -16.500004, lng: -68.150004 } }) });
+    expect(estadoDe(m)['entrega']['direccion']).toBe('Av. Arce 2345');
+    expect(estadoDe(m)['entrega']['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+  });
+});
+
+describe('PR-A (05/10), revisión de seguridad: (0, 0) tras redondear, `Carga de entrada` y el recojo', () => {
+  const casiCero = { latitude: 0.000004, longitude: -0.000003, name: '', address: '' };
+  const pideDireccion = (m: Mundo): Salida => {
+    turno(m, { texto: 'hola' });
+    return turno(m, { texto: 'quiero 1 orden de tacos de birria', extraccion: {
+      lineas: [{ producto: 'tacos de birria', cantidad: 1, forma: 'orden', detalle: '' }], entrega: 'delivery', direccion: '', referencia: '', nombre: 'Ana Pérez',
+    } });
+  };
+  /** `Carga de entrada` real con el cuerpo crudo de un carrito: lo que sale en `messages[0].carrito`. */
+  const cargaDeCarrito = (extra: J): J => {
+    const globales = { Date: relojFijo(AHORA) };
+    const cuerpo: J = {
+      tipo: 'carrito', tenantId: 'tenant-de-prueba', telefono: CLIENTE, accion: 'responder', pedidoId: 'cat_k1a2b3c4_9f8e7d6c', conversacionId: 'c-1',
+      ventanaAbierta: true, items: [{ id: 'i1', nombre: 'Orden de 3 tacos de birria', cantidad: 1, subtotal: 55 }], total: 55, moneda: 'Bs', entrega: 'envio', costoEnvio: 0, ...extra,
+    };
+    const entrada = { headers: { 'x-novuchat-numero': '59100000001', 'x-novuchat-timestamp': String(AHORA), 'x-novuchat-signature': `sha256=${'0'.repeat(64)}` }, body: cuerpo };
+    const salida = ejecutar(CODIGO['carga-de-entrada']!, [entrada], { 'Carrito del catálogo': {} }, globales);
+    return (salida[0]!['messages'] as J[])[0]!['carrito'];
+  };
+
+  it('`Carga de entrada` (cdeUbicacion): una ubicación válida entra con 5 decimales; (0, 0), casi (0, 0) tras redondear, texto, NaN y fuera de rango dan null', () => {
+    expect(cargaDeCarrito({ ubicacion: { lat: -16.500004, lng: -68.150004 } })['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+    expect(cargaDeCarrito({ ubicacion: { lat: 0, lng: -68.15 } })['ubicacion']).toEqual({ lat: 0, lng: -68.15 });
+    for (const mala of [{ lat: 0, lng: 0 }, { lat: 0.000004, lng: -0.000003 }, { lat: '-16.5', lng: '-68.15' }, { lat: NaN, lng: 1 }, { lat: 95, lng: 0 }, { lat: 1, lng: 181 }, { lat: -16.5 }, 'x', [], 7, null]) {
+      expect(cargaDeCarrito({ ubicacion: mala })['ubicacion'], JSON.stringify(mala)).toBeNull();
+    }
+    expect(cargaDeCarrito({})['ubicacion']).toBeNull();
+  });
+
+  it('negado: una ubicación de WhatsApp que redondea a (0, 0) no se toma y se vuelve a pedir la dirección con el botón', () => {
+    const m = crear();
+    pideDireccion(m);
+    const s = turno(m, { tipo: 'location', ubicacion: casiCero });
+    expect(estadoDe(m)['entrega']['ubicacion']).toBeUndefined();
+    expect(estadoDe(m)['paso']).toBe('pedido_datos');
+    expect(clientes(s).filter((j) => j['payload']?.interactive?.type === 'location_request_message')).toHaveLength(1);
+  });
+
+  it('negado: una ubicación de la página que redondea a (0, 0) no entra y no reemplaza la dirección previa', () => {
+    const m = crear();
+    hastaResumen(m);
+    turno(m, { tipo: 'text', carrito: {
+      pedidoId: 'cat_k1a2b3c4_9f8e7d6c', tenantId: 'tenant-de-prueba', accion: 'responder', ventanaAbierta: true, fichaCompartida: false, moneda: 'Bs',
+      total: 55, costoEnvio: 0, entrega: 'envio', direccion: '', nota: '', descartados: 0, itemsTotal: 1,
+      items: [{ id: 'i1', nombre: 'Orden de 3 tacos de birria', cantidad: 1, subtotal: 55 }], ubicacion: { lat: 0.000004, lng: -0.000003 },
+    } });
+    expect(estadoDe(m)['entrega']['ubicacion']).toBeUndefined();
+    expect(estadoDe(m)['entrega']['direccion']).toBe('Calle Falsa 123');
+  });
+
+  it('recojo con un pin y una dirección viejos en el estado: el pedido armado NO lleva ubicación ni coordenadas, y el guardado no copia dirección, referencia ni ubicación', () => {
+    const m = crear();
+    hastaResumen(m); // delivery con dirección y referencia
+    turno(m, { tipo: 'location', ubicacion: { latitude: -16.5, longitude: -68.15 } });
+    expect(estadoDe(m)['entrega']['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+    // El estado pasa a recojo conservando los datos viejos de entrega (como si el cliente hubiera cambiado de modalidad).
+    const e = estadoDe(m)['entrega'];
+    sdDe(m)['estados'][CLIENTE]['entrega'] = { ...e, entrega: 'recojo', modalidad: 'recojo' };
+    const c = turno(m, { boton: 'p|confirmar' });
+    const ped = c.p['pedido'] as J;
+    expect(ped['modalidad']).toBe('recojo');
+    expect(ped['ubicacion']).toBeNull();
+    expect(ped['coordenadas']).toBe('');
+    expect(ped['direccion']).toBe('');
+    expect(ped['referencia']).toBe('');
+    const guardado = JSON.stringify(Object.values(sdDe(m)['pedidos'] ?? {}));
+    expect(guardado).not.toMatch(/Calle Falsa|portón|-16\.5|68\.15|"ubicacion":\{/);
+    expect(JSON.stringify(c.armados)).not.toMatch(/ubicación compartida|google|Calle Falsa/);
   });
 });
 

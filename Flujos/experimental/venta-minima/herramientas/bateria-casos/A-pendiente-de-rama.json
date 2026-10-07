@@ -2,7 +2,7 @@
   "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
   "nodes": [],
   "seccion": "A",
-  "nota": "Escenarios que HOY fallan contra main porque esperan una rama o una decisión que todavía no llegó: A7 y A8 (la rama funcional: la intención de delivery por código, nunca derivar), S2d («dame la carta» con la dirección pendiente no muestra la carta) y M2bX («eso es todo» y «cámbiame el pedido» con el resumen dado se guardan como referencia: hallazgo real). La suite los saca del «cero fallos»; `BATERIA_CONTROL_NEGATIVO=1` (opcional, nunca en CI) comprueba que siguen fallando. Cuando uno pase, se mueve a un archivo normal.",
+  "nota": "Escenarios que HOY fallan contra main porque esperan una rama o una decisión que todavía no llegó: A7 y A8 (la rama funcional: la intención de delivery por código, nunca derivar), S2d («dame la carta» con la dirección pendiente no muestra la carta) y M2bX («eso es todo» y «cámbiame el pedido» con el resumen dado se guardan como referencia: hallazgo real). La suite los saca del «cero fallos»; `BATERIA_CONTROL_NEGATIVO=1` (opcional, nunca en CI) comprueba que siguen fallando. (U5m pasó a A-ubicacion.json con el PR-A de ubicación, 05/10.) Cuando uno pase, se mueve a un archivo normal.",
   "casos": [
     {
       "id": "A7",
@@ -382,94 +382,6 @@
           }
         }
       ]
-    },
-    {
-      "id": "U5m",
-      "titulo": "El aviso al local de un delivery con ubicación compartida lleva además el ENLACE A MAPS (hoy solo trae las coordenadas)",
-      "perfil": "Lucía Ejemplo",
-      "estadoPrevio": [
-        {
-          "cliente": {
-            "tipo": "texto",
-            "texto": "hola"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "ruta": "menu"
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "carrito",
-            "items": [
-              {
-                "id": "cat_birria3",
-                "cantidad": 2
-              }
-            ],
-            "entrega": "envio",
-            "direccion": ""
-          },
-          "esperado": {
-            "mensajes": 1,
-            "textos": [
-              "direcci[oó]n exacta"
-            ],
-            "estado": {
-              "paso": "pedido_datos",
-              "entrega.entrega": "delivery"
-            }
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "ubicacion",
-            "latitud": -16.5,
-            "longitud": -68.15
-          },
-          "esperado": {
-            "mensajes": 1,
-            "titulos": [
-              "Confirmar pedido"
-            ],
-            "estado": {
-              "paso": "pedido_confirmar"
-            }
-          }
-        },
-        {
-          "cliente": {
-            "tipo": "boton",
-            "titulo": "Confirmar pedido"
-          },
-          "esperado": {
-            "efectos": {
-              "qr": true
-            }
-          }
-        }
-      ],
-      "turnos": [
-        {
-          "cliente": {
-            "tipo": "imagen",
-            "pie": "comprobante"
-          },
-          "esperado": {
-            "mensajes": 1,
-            "textos": [
-              "datos coinciden"
-            ],
-            "efectos": {
-              "aviso": true
-            },
-            "avisoTextos": [
-              "(maps\\.google\\.com|google\\.com/maps|maps\\.app\\.goo\\.gl|goo\\.gl/maps)"
-            ]
-          }
-        }
-      ],
-      "nota": "Pendiente de rama: el encargo «ubicación o dirección en texto» (PR-A, punto 2) pide el enlace a Maps en el aviso al local; hoy el aviso solo trae las coordenadas (plan-del-turno.js, «coordenadas»). Cuando exista, pasa a A-ubicacion.json."
     }
   ]
 }

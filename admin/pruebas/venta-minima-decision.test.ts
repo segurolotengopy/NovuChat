@@ -73,6 +73,8 @@ function pdAgregarLineas(carrito, carta, lineas){ const car = carrito.slice(); c
 function pdResolverForma(carrito, lista, forma){ const car = carrito.slice(); const p = lista[0]; if (forma === 'orden') _sumar(car, p.opciones[0], p.ordenes, p.detalle); else _sumar(car, p.opciones[1], p.cantidad, p.detalle); return { carrito: car, pendiente: lista.slice(1), noEncontrados: [] }; }
 function pdQuitarSinDelivery(carrito, carta, areas){ const ex = areas.map(vmNorm); const quitados = []; const car = carrito.filter(function(l){ if (ex.indexOf(vmNorm(l.area)) >= 0) { quitados.push(l.nombre); return false; } return true; }); return { carrito: car, quitados: quitados }; }
 function pdTotal(carrito){ return carrito.reduce(function(s, l){ return s + Math.round(l.precio * 100) * l.cantidad; }, 0) / 100; }
+function _pdUbicacion(u){ return !!u && typeof u === 'object' && Number.isFinite(u.lat) && Number.isFinite(u.lng) && Math.abs(u.lat) <= 90 && Math.abs(u.lng) <= 180 && !(Math.round(u.lat * 1e5) === 0 && Math.round(u.lng * 1e5) === 0); }
+function _pdCopiaUbicacion(u){ return { lat: Math.round(u.lat * 1e5) / 1e5, lng: Math.round(u.lng * 1e5) / 1e5 }; }
 function pdFaltanEntrega(e, perfil){ const f = []; if (!e.direccion && !e.ubicacion) f.push('direccion'); return f; }
 function pdResumen(carrito, e, o){ return 'Tu pedido:\n' + carrito.map(function(l){ return '• ' + l.cantidad + ' × ' + l.nombre + (l.detalle ? ' (' + l.detalle + ')' : '') + ': ' + (l.precio * l.cantidad) + ' ' + o.moneda; }).join('\n') + '\nEntrega: ' + (e.entrega === 'delivery' ? 'delivery a ' + e.direccion + (e.referencia ? ' (' + e.referencia + ')' : '') + ', recibe ' + e.nombre : 'recojo en el local') + '.\nTotal de la comida: ' + pdTotal(carrito) + ' ' + o.moneda + '.' + (e.entrega === 'delivery' ? '\nEl delivery no está incluido: se lo pagas al repartidor al recibir.' : ''); }
 function pdLineaCompacta(carrito, max){ return carrito.map(function(l){ return l.cantidad + ' ' + l.nombre; }).join(', ').slice(0, max); }
@@ -674,7 +676,7 @@ describe('Plan del turno: el pedido', () => {
     turno(m, { texto: 'quiero 1 queso fundido', extraccion: extPedido({ lineas: [linea('queso fundido', 1)] }) });
     expect(estadoDe(m)['paso']).toBe('pedido_entrega');
     const datos = registrar(turno(m, { boton: 'e|delivery' }));
-    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito la dirección exacta.');
+    expect(datos.p!['mensajes'][0]['cuerpo']).toBe('Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón.');
     expect(estadoDe(m)['paso']).toBe('pedido_datos');
     // Con la dirección sola ya sigue al resumen (ni referencia ni nombre se exigen).
     const fin = registrar(turno(m, { texto: 'Calle 5', extraccion: extPedido({ direccion: 'Calle 5' }) }));

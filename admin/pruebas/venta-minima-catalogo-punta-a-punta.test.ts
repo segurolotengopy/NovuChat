@@ -25,6 +25,8 @@ import {
 } from './lib/venta-minima-mundo';
 
 const CARRITO = 'Carrito del catálogo';
+// El pedido de dirección (PR-A 05/10): sale con el botón de ubicación; es el mismo mensaje de siempre, sin mensajes de más.
+const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «menú».';
 
 const cabeceras = (extra: J = {}): J => ({
   'x-novuchat-numero': PHONE_ID, 'x-novuchat-timestamp': String(AHORA), 'x-novuchat-signature': `sha256=${'0'.repeat(64)}`, ...extra,
@@ -592,7 +594,7 @@ describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta e
     expect(estadoDe(w)['paso']).toBe('pedido_datos');
     w.estado.extraccion = NADA;
     const raro = turno(w, texto('...'));
-    expect(raro.mensajes[0]!.cuerpo).toBe('Para el delivery necesito la dirección exacta.');
+    expect(raro.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
     expect((estadoDe(w)['entrega'] as J)['direccion']).toBe('');
     const t = turno(w, texto('calle 1 numerro 2 Irpavi'));
     expect((estadoDe(w)['entrega'] as J)['direccion']).toBe('calle 1 numerro 2 Irpavi');
@@ -709,7 +711,7 @@ describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () 
     w.estado.extraccion = NADA;
     const uno = turno(w, texto('70012345'));
     expect(ent(w)['direccion']).toBe('');
-    expect(uno.mensajes[0]!.cuerpo).toBe('Para el delivery necesito la dirección exacta.');
+    expect(uno.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
     const dos = turno(w, texto('70012345'));
     expect(dos.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
     expect(dos.avisos.length).toBeGreaterThan(0);
@@ -784,7 +786,6 @@ describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código,
     return w;
   };
   const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
-  const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta.';
   const DERIVA = /Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/;
 
   it.each(['A media cuadra del gas', 'Déjale al portero', 'frente al mercado', 'Zona Sur', 'por la puerta verde'])(
@@ -923,7 +924,7 @@ describe('#435 LOW-A2: la «dirección» o la «referencia» que pone el modelo 
       const t = turno(w, texto(dicho));
       expect(ent(w)['direccion'], dicho).toBe('');
       expect(ent(w)['referencia'], dicho).toBe(dicho);
-      expect(t.mensajes[0]!.cuerpo, dicho).toBe('Para el delivery necesito la dirección exacta.');
+      expect(t.mensajes[0]!.cuerpo, dicho).toBe(PIDE_DIRECCION);
       expect(estadoDe(w)['paso'], dicho).toBe('pedido_datos');
     },
   );
@@ -1231,5 +1232,33 @@ describe('LOW #440: con `quiereHablar`, la entrega con «alguien» y las cortes�
       expect(t.avisos.length, `${dicho} (${donde})`).toBeGreaterThan(0);
       expect(botonesDe(t.mensajes[0]!).map((b) => b.title).join('|') + JSON.stringify(t.mensajes[0]), `${dicho} (${donde})`).toMatch(/Escribir al local/);
     }
+  });
+});
+
+describe('PR-A (05/10): la ubicación del carrito de la página llega por `Carga de entrada` solo si es válida', () => {
+  const entregaDe = (w: ReturnType<typeof crear>): J => (estadoDe(w) as J)['entrega'] as J;
+  it('una ubicación válida entra (5 decimales) y vale como dirección: el pedido va directo al resumen, sin pedir la dirección', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.500004, lng: -68.15 } }) });
+    expect(t.fallo).toBeNull();
+    expect(entregaDe(w)['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+    expect(titulos(t)).toContain('Confirmar pedido');
+    expect(JSON.stringify(t.mensajes)).toContain('ubicación compartida');
+  });
+  it('negado: una ubicación inválida (texto, fuera de rango, NaN, (0, 0), incompleta) no entra y se pide la dirección con el botón de ubicación', () => {
+    for (const mala of [{ lat: '-16.5', lng: '-68.15' }, { lat: 95, lng: 0 }, { lat: -16.5, lng: 181 }, { lat: null, lng: null }, { lat: 0, lng: 0 }, { lat: -16.5 }, 'x', [], 7]) {
+      const w = crear();
+      const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: mala }) });
+      expect(t.fallo, JSON.stringify(mala)).toBeNull();
+      expect(entregaDe(w)['ubicacion'], JSON.stringify(mala)).toBeUndefined();
+      expect(estadoDe(w)['paso'], JSON.stringify(mala)).toBe('pedido_datos');
+      expect(t.mensajes[0]!['payload'].interactive.type, JSON.stringify(mala)).toBe('location_request_message');
+    }
+  });
+  it('privacidad: lo que se reporta a la consola (ingesta) no lleva las coordenadas', () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 } }) });
+    expect(JSON.stringify(w.mundo.llamadas.ingesta)).not.toMatch(/-16[.,]5|68[.,]15/);
   });
 });
