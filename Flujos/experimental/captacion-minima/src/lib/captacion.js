@@ -242,12 +242,13 @@ function ccPideCostoConObjeto(t) {
 // §18 (adenda): una pregunta por los costos de Meta, de WhatsApp o de la mensajería («cuánto cobra Meta», «quién paga a Meta», «costos de mensajería») NO se contesta con cifras ni con
 // minimización: el cliente los paga directamente a Meta y dependen de su uso. La contesta el CÓDIGO («no la tengo a la mano» + el equipo). Un pedido de los planes o del servicio propio no es esto.
 const CC_META_MARCA = /(^| )(meta|whatsapp|mensajeria|facebook|conversaciones de meta|mensajes de whatsapp)( |$)/;
-const CC_COSTO_DE_META = /(^| )(cuanto (cobra|cobran|cuesta|cuestan|sale|salen|pago|pagan|se paga|vale|valen)|quien (paga|cobra|pone)|costos?|tarifas?|precios?|se paga|pagar a|pago a|cobro de|cobran por)( |$)/;
+const CC_COSTO_DE_META = /(^| )(cuanto (cobra|cobran|cuesta|cuestan|sale|salen|pago|pagan|se paga|vale|valen)|quien (paga|cobra|pone)|costos?|tarifas?|precios?|se paga|pagar a|pago a|cobro de|cobran por|cobra\w*|pagarle|cuanto es|costo extra|cobro extra)( |$)/;
 const CC_NO_ES_COSTO_DE_META = /(^| )(plan|planes|setup|instalacion|servicio|asistente|bot|chatbot|ustedes)( |$)/;
 function ccPreguntaCostoMeta(t) {
   const n = ccNorm(t);
   // Lo que SUS clientes le preguntan a él o el costo de un producto suyo («me quita tiempo responder cuánto cuesta cada herramienta por WhatsApp») no es esto.
-  return CC_META_MARCA.test(n) && CC_COSTO_DE_META.test(n) && !CC_NO_ES_COSTO_DE_META.test(n) && !CC_LADO_DEL_CLIENTE.test(n) && !(CC_COSTO_DE_UN_PRODUCTO.test(n) && !/(mensajes?|conversaciones|mensajeria|envios?) (de|por|en) (whatsapp|meta)/.test(n));
+  const marca = CC_META_MARCA.test(n) || (/(^| )(mensajes?|conversaciones)( |$)/.test(n) && /(^| )(extra|aparte)( |$)/.test(n));   // «¿los mensajes tienen costo extra?»
+  return marca && CC_COSTO_DE_META.test(n) && !CC_NO_ES_COSTO_DE_META.test(n) && !CC_LADO_DEL_CLIENTE.test(n) && !(CC_COSTO_DE_UN_PRODUCTO.test(n) && !/(mensajes?|conversaciones|mensajeria|envios?) (de|por|en) (whatsapp|meta)/.test(n));
 }
 // Un pedido de planes para las reglas del primer mensaje y de la lista de rubros (R1): «Hola, vendo ropa y mis clientes me preguntan
 // precios todo el día» NO lo es. §17: la regla es `ccPideCostoDelServicio`.
@@ -980,20 +981,20 @@ function ccMontoDelModelo(t) {
 // «Habla» solo cuenta al inicio de una oración y sin preposición ni artículo detrás («habla con tus clientes» y «habla español» son legítimos).
 const CC_YO_DEL_MODELO = /\bsoy\b|\bsomos\b|\bte habla\b|aqui no hay (ningun )?(robot|bot)|\bmi nombre es\b|\bme llamo\b|(^|[.!?¡¿]\s*)habla (?!con\b|de\b|en\b|por\b|para\b|sobre\b|a\b|el\b|la\b|los\b|las\b|tu\b|tus\b|un\b|una\b|espanol\b|ingles\b)[a-z]+|\baqui (el|la|tu) (asesor|asesora)\b|\b(hablas|hablo|estas hablando|estoy hablando|conversas|converso) con (el|la|un|una|tu) (asesor|asesora|ejecutiv\w+|vendedor\w*)\b|\batiende (el|la|un|una) (asesor|asesora)\b|\byo mism[oa]\b/;
 // S2: ninguna promesa de que alguien llamará, escribirá o responderá, en ninguna forma (futuro, «va a», plural, «puede llamarte», envíos, reuniones).
-const CC_PROMESA_DEL_MODELO = /\b(se|te) (pondra|pondran|contacta|contactara|comunica|comunicara|llama|llamara|escribe|escribira|responde|respondera|responderan)\b|\bte respond(emos|eremos)\b|\ben contacto contigo\b|\bse comunica\w* contigo\b|\bmenos de \d+ horas\b|\bte va a (llamar|escribir|contactar|avisar|responder|enviar|mandar|ayudar)\b|\bte (llamaran|contactaran|escribiran|avisaran|enviaran|mandaran|ayudaran)\b|\brecibiras (una llamada|un mensaje|una respuesta)\b|\bte llegara\b|\bte (enviaremos|mandaremos|llamaremos|escribiremos|contactaremos|avisaremos|llamamos|escribimos|contactamos|avisamos|envio|mando)\b|\bcoordinamos (una )?(llamada|reunion)\b|\b(asesor|asesora|equipo|especialista|ejecutivo|ejecutiva) (responde|contesta|escribe|llama|contacta|avisa)\b|\bpuede (llamarte|escribirte|contactarte)\b/;
+const CC_PROMESA_DEL_MODELO = /\b(se|te) (pondra|pondran|contacta|contactara|comunica|comunicara|llama|llamara|escribe|escribira|responde|respondera|responderan)\b|\bte respond(emos|eremos)\b|\ben contacto contigo\b|\bse comunica\w* contigo\b|\bmenos de \d+ horas\b|\bte va a (llamar|escribir|contactar|avisar|responder|enviar|mandar|ayudar)\b|\bte (llamaran|contactaran|escribiran|avisaran|enviaran|mandaran|ayudaran)\b|\brecibiras (una llamada|un mensaje|una respuesta)\b|\bte llegara\b|\bte (?:enviara|mandara|escribira|llamara|avisara)\b|\bte (enviaremos|mandaremos|llamaremos|escribiremos|contactaremos|avisaremos|llamamos|escribimos|contactamos|avisamos|envio|mando)\b|\bcoordinamos (una )?(llamada|reunion)\b|\b(asesor|asesora|equipo|especialista|ejecutivo|ejecutiva) (responde|contesta|escribe|llama|contacta|avisa)\b|\bpuede (llamarte|escribirte|contactarte)\b/;
 // S3: ninguna oferta, regalo, rebaja ni precio especial sale de la redacción del modelo.
 const CC_OFERTA_DEL_MODELO = /\bsin costo\b|\bsin cargo\b|\bde regalo\b|\brebaja|\bpor ciento\b|\bpromoci|\boferta|\bprecio especial\b|\bbonific|\b2x1\b|\blanzamiento\b/;
 // §18 (A3): bloqueos comunes a la empatía, la respuesta y la explicación del modelo: regalos y gratuidades, promesas de contacto con otras palabras, afirmaciones de que el servicio concilia, aprueba,
 // certifica o garantiza, decir que es una persona, un correo deletreado y monedas. Una sola línea: `construir.mjs` la lee de aquí para los textos del tenant.
-const CC_BLOQUEO_COMUN = /gratuit|regal|no pag\w+ nada|sin pagar|mitad de precio|prueba gratis|(?:nos|se) pondr\w* en contacto|recibir\w* (?:nuestra|una) llamada|noticias nuestras|se encargar\w* de (?:llamar|escribir|contactar)|\bte respondo\b|\b(?:concilia|aprueba|certifica|garantiz)|\b(?:es|son) (?:una )?persona\b|alguien real|\barroba\b|\bpunto (?:com|net)\b|\b(?:dolar|dolares|boliviano|bolivianos)\b|\b(?:no (?:tiene|tienen|hay|existe|existen) (?:ningun )?(?:limite|tope)|sin (?:ningun )?(?:limite|tope)|sin restricciones)|\bilimitad|\bbolsas?\b|^(?=.*\b(?:meta|whatsapp|mensajeria|mensajes?|costos?)\b).*\b(?:centavos|casi nada|casi gratis|practicamente gratis|muy poco costo|costo minimo|insignificante)\b/;
+const CC_BLOQUEO_COMUN = /gratuit|regal|no pag\w+ nada|sin pagar|mitad de precio|prueba gratis|(?:nos|se) pondr\w* en contacto|recibir\w* (?:nuestra|una) llamada|noticias nuestras|se encargar\w* de (?:llamar|escribir|contactar)|\bte respondo\b|\b(?:concilia|aprueba|certifica|garantiz)|\b(?:es|son) (?:una )?persona\b|alguien real|\barroba\b|\bpunto (?:com|net)\b|\b(?:dolar|dolares|boliviano|bolivianos)\b|\b(?:no (?:tiene|tienen|hay|existe|existen) (?:ningun )?(?:limite|tope)|sin (?:ningun )?(?:limite|tope)|sin restricciones)|\bilimitad|\bbolsas?\b|\bbolson|\bsin (?:ningun |nada de )?(?:costo|cobro|cargo)|\bcosto cero|\bno cobra\w* nada|\b(?:meta|whatsapp|mensajeria|mensajes?|costos?)\b[^.!?]{0,40}\b(?:centavos|casi nada|casi gratis|practicamente gratis|practicamente nada|muy poco costo|costo minimo|insignificante|miseria|poquit\w*|baratisim\w*|centavit\w*|minimo)\b|\b(?:centavos|casi nada|casi gratis|practicamente gratis|practicamente nada|muy poco costo|costo minimo|insignificante|miseria|poquit\w*|baratisim\w*|centavit\w*|minimo)\b[^.!?]{0,40}\b(?:meta|whatsapp|mensajeria|mensajes?|costos?)\b/;
 // §18: «se integra/conecta con tu sistema de facturación»: el servicio solo se integra con lo que nombra (Google Calendar, WhatsApp, Sheets…), nunca con «tu sistema», un ERP, un banco ni una pasarela.
 const CC_INTEGRA_SISTEMA = /\b(?:integra|integran|integrar|integrarse|conecta|conectan|conectar|conectarse|sincroniza|sincronizan|sincronizar|vincula|vinculan|vincular)\w*\s+(?:\w+\s+){0,2}(?:con|a|al|a la)\s+(?:(?:tu|su|el|la|un|una|tus|sus|otro|otra|cualquier)\s+)?(?:sistemas?|software|programas?|plataformas?|aplicaci\w+|erp|crm|factur\w+|contabilidad|inventarios?|base de datos|pagina web|app|bancos?|pasarelas?)\b/;
 // §16 (documento comercial del asistente, §5 y §6): lo que el modelo NO puede escribir aunque esté en los datos que ve.
 //  - ninguna cifra de consumo («100 conversaciones», «hasta 220 mensajes», «cien conversaciones»): los topes los muestra la imagen de planes;
 //  - nada que afirme que el servicio valida, verifica o acredita pagos o transferencias, ni que consulta al banco (solo revisa visualmente el comprobante; confirman el banco y el negocio);
 //  - ningún sistema, plataforma, banco o pasarela que el servicio no nombre (`CC_SISTEMAS_PROPIOS`): ni uno conocido, ni una marca (mayúscula en medio de la frase).
-const CC_CIFRA_DE_CONSUMO = /\b\d[\d.,]*\s+(?:(?!horas?\b)\w+\s+){0,2}(?:conversaciones?|mensajes?|interacciones?|respuestas?|chats?|intercambios?|clientes?|contactos?|turnos?|usuarios?|consultas?|prospectos?|leads?|citas?|agendas?|productos?|pedidos?)\b|\b(?:conversaciones?|mensajes?|interacciones?|respuestas?)\s+(?:\w+\s+){0,2}\d|\b(?:cien|ciento|doscientas?|doscientos|trescientas?|trescientos|cuatrocientas?|quinientas?|quinientos|mil|diez|quince|veinte|veinticinco|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)\s+(?:conversaciones?|mensajes?|interacciones?|respuestas?|chats?|intercambios?|clientes?|contactos?|turnos?|usuarios?|consultas?|prospectos?|leads?|citas?|agendas?|productos?|pedidos?)\b/;
-const CC_ACREDITA_MODELO = /\b(?:valida|validan|validar|validamos|verifica|verifican|verificar|acredita|acreditan|acreditar|comprueba|comprueban|confirma|confirman|confirmar)\w*[^.!?]{0,40}\b(?:pagos?|transferencias?|depositos?|comprobantes?|qr|banco)\b|\b(?:pagos?|transferencias?|depositos?|comprobantes?)\b[^.!?]{0,40}\b(?:acreditad\w*|verificad\w*|validad\w*|confirmad\w*|aprobad\w*)\b|\bcon el banco\b|\bdirectamente con (?:el )?banco\b/;
+const CC_CIFRA_DE_CONSUMO = /\b\d[\d.,]*\s+(?:(?!horas?\b)\w+\s+){0,2}(?:conversaciones?|mensajes?|interacciones?|respuestas?|chats?|intercambios?|clientes?|contactos?|turnos?|usuarios?|consultas?|prospectos?|leads?|citas?|agendas?|productos?|pedidos?)\b|\b(?:conversaciones?|mensajes?|interacciones?|respuestas?)\s+(?:\w+\s+){0,2}\d|\bveinticuatro\b(?!\s+horas?\b)|\b(?:cien|ciento|doscientas?|doscientos|trescientas?|trescientos|cuatrocientas?|cuatrocientos|quinientas?|quinientos|seiscientos|setecientos|ochocientos|novecientos|mil|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|veinti\w+|(?:treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)(?: y \w+)?)\s+(?:(?!horas?\b)\w+\s+){0,2}(?:conversaciones?|mensajes?|interacciones?|respuestas?|chats?|intercambios?|clientes?|contactos?|turnos?|usuarios?|consultas?|prospectos?|leads?|citas?|agendas?|productos?|pedidos?)\b/;
+const CC_ACREDITA_MODELO = /\b(?:valida|validan|validar|validamos|verifica|verifican|verificar|acredita|acreditan|acreditar|comprueba|comprueban|confirma|confirman|confirmar)\w*[^.!?]{0,40}\b(?:pagos?|transferencias?|depositos?|comprobantes?|qr|banco|cobros?|cobra\w*)\b|\b(?:pagos?|transferencias?|depositos?|comprobantes?|cobros?)\b[^.!?]{0,40}\b(?:acreditad\w*|verificad\w*|validad\w*|confirmad\w*|aprobad\w*)\b|\bcon (?:el |tu |su )?(?:\w+ ){0,2}(?:del )?banco\b|\bdirectamente con (?:el )?banco\b/;
 const CC_SISTEMA_CONOCIDO = /\b(?:sap|tigo ?money|tigo|shopify|woocommerce|wix|zapier|odoo|excel|power ?bi|salesforce|hubspot|zoho|mercado ?pago|mercado ?libre|paypal|stripe|binance|yape|plin|facebook|instagram|messenger|telegram|tiktok|gmail|outlook|slack|trello|notion|airtable|quickbooks|alegra|siigo|erp|crm|banco union|bnb|bisa|bcp|banco economico|banco ganadero|banco mercantil|prodem|pagos? ?net|visa|mastercard|pedidosya|rappi|uber ?eats|google ?pay|apple ?pay|chatgpt|openai|gemini|claude)\b/;
 const CC_NOMBRES_PROPIOS_OK = ['whatsapp', 'meta', 'google', 'calendar', 'sheets', 'qr', 'ia', 'minicrm', 'kanban', 'setup', 'setups', 'medida', 'bolivia'];
 function ccSistemaAjeno(t, permitidos, estricto) {
@@ -2005,6 +2006,17 @@ function ccEsSustantivo(t) {
 // Cada raíz AJENA suma 1 (2 si abre una oración: «Contifico recibe cada venta»); con más de `CC_MARGEN_AJENAS`, la explicación se descarta y sale el respaldo. Los bloqueos de `revisar`
 // (promesas, ofertas, monedas, dígitos, sistemas ajenos) siguen rigiendo: la lista es la red de fondo para lo que ningún bloqueo previó.
 const CC_MARGEN_AJENAS = 2;
+// §18 (ronda 6): raíces (prefijos) de RIESGO: una de ellas que NO venga de los puntos clave, del respaldo ni del nombre del rubro descarta la explicación SIN importar el margen. ÚNICA fuente: la
+// lee también `construir.mjs` para validar el vocabulario del tenant (que no puede traer ninguna). «cobr» y «cuent» son legítimas solo por los puntos clave («cobra con QR»).
+const CC_RAICES_DE_RIESGO = 'gratu gratis regal llam contact preci costo cuest pago pagar dolar garant certif concil aprueb persona person human descue promo ofert mitad prueb cobr cuent tarifa factur banco banca sistem valid verif confi acred compr cero segur miseria';
+function ccRiesgoDe(w) {
+  return CC_RAICES_DE_RIESGO.split(' ').some((r) => w.startsWith(r));
+}
+function ccPropiasDelRubro(e, cfg, propia) {
+  const g = propia && typeof propia === 'object' ? propia : {};
+  const puntos = (Array.isArray(g.puntosClave) ? g.puntosClave : []).map((p) => (p && typeof p === 'object' ? ccTexto(p.texto) + ' ' + ccTexto(p.palabras).replace(/[|()?.*]/g, ' ') : ccTexto(p)));
+  return ccRaices(puntos.concat([ccTexto(g.explicacion), ccNombreDelRubro(e, cfg), ccTexto(e.rubroId).replace(/-/g, ' ')]));
+}
 function ccPermitidasDelRubro(e, cfg, propia) {
   const g = propia && typeof propia === 'object' ? propia : {};
   const puntos = (Array.isArray(g.puntosClave) ? g.puntosClave : []).map((p) => (p && typeof p === 'object' ? ccTexto(p.texto) + ' ' + ccTexto(p.palabras).replace(/[|()?.*]/g, ' ') : ccTexto(p)));
@@ -2026,14 +2038,19 @@ function ccAjenasDeLaExplicacion(texto, permitidas) {
   for (const v of vistas.values()) suma += v;
   return suma;
 }
-function ccDentroDeLoPermitido(texto, permitidas) {
+function ccDentroDeLoPermitido(texto, permitidas, propias) {
+  // `propias`: lo que el tenant escribió para ESE rubro (puntos clave con sus familias, respaldo, nombre del rubro); sin ellas, las permitidas.
+  const mias = propias || permitidas;
+  for (const w of ccNorm(ccTexto(texto).replace(/\p{Extended_Pictographic}|\uFE0F|\u200D/gu, ' ')).split(' ')) {
+    if (w.length >= 3 && ccRiesgoDe(w) && !mias.has(w.slice(0, 5))) return false;
+  }
   return ccAjenasDeLaExplicacion(texto, permitidas) <= CC_MARGEN_AJENAS;
 }
 // La explicación del rubro (§16, D1 híbrido): la que redactó el modelo si pasó TODA la validación (el filtro, sus límites, y que toque los puntos clave del rubro); si no, el respaldo fijo del dato.
 function ccExplicacionDelRubro(r, e, cfg) {
   const g = ccGuionDe(cfg, e.rubroId).propia || {};
   const redactada = r && r.ok === true ? ccPlano(r.explicacion) : '';
-  if (redactada && ccAbreCalido(redactada) && ccCubrePuntos(redactada, g.puntosClave) && ccDentroDeLoPermitido(redactada, ccPermitidasDelRubro(e, cfg, g))) return redactada;
+  if (redactada && ccAbreCalido(redactada) && ccCubrePuntos(redactada, g.puntosClave) && ccDentroDeLoPermitido(redactada, ccPermitidasDelRubro(e, cfg, g), ccPropiasDelRubro(e, cfg, g))) return redactada;
   return ccPlano(g.explicacion);
 }
 // Lo que dijo el modelo (ya validado por `ccLeerModelo`) decide la acción; muta `e`. Devuelve { accion, extra }.

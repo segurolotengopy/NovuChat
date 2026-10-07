@@ -4628,6 +4628,56 @@ describe('§18 (PR #456): lista de permitidos de la explicación, bloqueos comun
       expect((cuerpo.match(/\?/g) ?? []).length, archivoPlanes ? 'con imagen' : 'en texto').toBeLessThanOrEqual(1);
     }
   });
+  it('ronda 6 (MEDIO): una raíz de RIESGO que no sale de los puntos clave descarta la explicación sin importar el margen (valida/confirma/verifica cobros, sin costo, costo cero, veinticuatro mensajes, «te enviará»…)', () => {
+    const HOSTILES6 = [
+      'Tu asistente valida cada cobro al instante.', 'Tu asistente confirma cada cobro.', 'Tu asistente verifica cada cobro.', 'Tu asistente revisa tu cobro con el sistema del banco.', 'Tu asistente atiende sin ningún costo.',
+      'Tu asistente atiende a costo cero.', 'Tu asistente no cobra nada.', 'Tu asistente trabaja sin cobro alguno.', 'Cada cliente cuenta con veinticuatro mensajes.', 'Puedes tener veinticuatro conversaciones.',
+      'Te enviará un mensaje mañana.', 'Tu asistente se conecta con tu cuenta.', 'Tu asistente es tan humano como tú.', 'Tu asistente es seguro y confiable.', 'Tu asistente acredita tus cobros.',
+    ];
+    for (const rubro of ['gastronomia', 'salud', 'belleza', 'educacion', 'retail']) {
+      const base = respaldo(rubro); const partes = base.split(/(?<=[.!?])\s+/);
+      for (const h of HOSTILES6) for (const e of [[partes[0], h, ...partes.slice(1)].join(' '), `${base} ${h}`]) expect(sale(rubro, e), `${rubro}: «${h}»`).toBe(base);
+    }
+    // el margen NO salva a una raíz de riesgo: la misma frase con una palabra ajena inocua sigue cayendo; y «cobra con QR» sigue valiendo porque viene de los puntos clave
+    expect(sale('gastronomia', respaldo('gastronomia') + ' Tu asistente valida.')).toBe(respaldo('gastronomia'));
+    const buena = respaldo('gastronomia').replace('realiza el cobro con QR', 'cobra con QR');
+    expect(sale('gastronomia', buena)).toBe(buena);
+    // la lista de riesgo es UNA: la que lee construir.mjs para el vocabulario
+    const lista = /^const CC_RAICES_DE_RIESGO = '([^']+)';$/m.exec(LIB)![1]!.split(' ');
+    for (const r of ['valid', 'verif', 'confi', 'acred', 'compr', 'cero', 'gratu', 'segur', 'human', 'costo', 'banco', 'sistem', 'person', 'cobr', 'cuent', 'banca', 'miseria']) expect(lista, r).toContain(r);
+    const error = (palabra: string): string => { const d = clon(DATOS); d['guion'].vocabulario += ` ${palabra}`; try { C.validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
+    for (const w of ['cobro', 'cobros', 'cobra', 'cobranza', 'cuenta', 'cuentas', 'veinticuatro'.replace('veinticuatro', 'cero'), 'valida', 'validar', 'banca', 'miseria', 'segura', 'seguro', 'humano', 'verifica', 'confirma']) expect(error(w), w).toMatch(/«guion\.vocabulario» «.+» no puede estar/);
+    for (const w of ['cobro', 'cuenta', 'veinticuatro', 'total', 'ninguna']) expect(String(GUION['vocabulario']).split(' '), w).not.toContain(w);
+  });
+  it('ronda 6 (MEDIO): los filtros del modelo cubren cobros, costo cero, números en letras y «te enviará»', () => {
+    for (const x of ['Valida cada cobro al instante.', 'Confirma tus cobros.', 'Revisa el cobro con el sistema del banco.', 'Atiende sin ningún costo.', 'Funciona a costo cero.', 'No cobra nada.', 'Trabaja sin cobro alguno.', 'Cada cliente cuenta con veinticuatro mensajes.', 'Puedes tener veinticuatro conversaciones.', 'Incluye treinta y cinco conversaciones.', 'Te enviará un mensaje mañana.', 'Te mandará un aviso.']) {
+      expect(leer({ respuesta: x, enLosDatos: true, tipo: 'pregunta' })['respuesta'], x).toBe('');
+      expect(leer({ explicacion: `¡Qué rico! ${x}` })['explicacion'], x).toBe('');
+    }
+    expect(leer({ respuesta: 'Atiende las veinticuatro horas.', enLosDatos: true, tipo: 'pregunta' })['respuesta']).not.toBe('');
+  });
+  it('ronda 6 (bajo a): `palabras` solo admite «*» como «.*», «?» tras «)», hasta 4 cuantificadores, y compila y corre en menos de 50 ms contra 30 caracteres', () => {
+    const error = (palabras: string): string => { const d = clon(DATOS); d['guion'].rubros['educacion'].puntosClave[0] = { texto: 'Ideal para alto volumen de consultas de padres', palabras }; try { C.validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
+    for (const mala of ['e*e*e*e*e*e*e*e*padres', 'a?a?a?a?a?a?a?a?aaaaaaa|padres', 'padres.*x*', '(padres)?(a)?(b)?(c)?(d)?(e)?']) expect(error(mala), mala).toMatch(/palabras»/);
+    for (const buena of ['padres|familias|consultas', '(padres|familias)?|consultas', '(coordina|agenda).*(calendario|colegio)']) {
+      expect(error(buena), buena).toBe('');
+      const t0 = performance.now(); new RegExp(buena).test('a'.repeat(30)); expect(performance.now() - t0).toBeLessThan(50);
+    }
+  });
+  it('ronda 6 (bajo b): `respuestas.banco` exige «no» pegado al verbo («no solo» y «no te preocupes» no valen) y la parte NO negada pasa por el filtro de acreditación', () => {
+    const error = (v: string): string => { const d = clon(DATOS); d['guion'].respuestas.banco = v; try { C.validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
+    for (const mala of ['No solo revisa el comprobante: valida con el banco.', 'No te preocupes, el asistente valida los pagos con el banco.', 'El asistente verifica la transferencia con el banco y no lo olvida.']) expect(error(mala), mala).toMatch(/«guion\.respuestas\.banco»/);
+    expect(error('El asistente confirma la transferencia en el banco y no lo valida con el banco.')).toMatch(/fuera de la parte negada|«guion\.respuestas\.banco»/);
+    expect(error('El asistente solo revisa el comprobante: no lo valida con el banco. Quien confirma que el dinero entró es el banco.')).toBe('');
+  });
+  it('ronda 6 (bajo c): minimizar los costos de Meta («miseria», «poquito», «mínimo») cae, y «¿Meta cobra aparte?», «¿hay que pagarle algo a Meta?», «y lo de Meta cuánto es?» y «¿los mensajes tienen costo extra?» van a la respuesta fija', () => {
+    for (const x of ['Meta cobra muy poquito.', 'Lo de Meta es mínimo.', 'Meta cobra una miseria.', 'Los mensajes de WhatsApp son baratísimos.', 'Es prácticamente nada con Meta.', 'Con Meta es un bolsón de conversaciones.']) {
+      expect(leer({ respuesta: x, enLosDatos: true, tipo: 'pregunta' })['respuesta'], x).toBe('');
+      expect(leer({ explicacion: `¡Qué rico! ${x}` })['explicacion'], x).toBe('');
+    }
+    for (const t of ['¿Meta cobra aparte?', '¿hay que pagarle algo a Meta?', 'y lo de Meta cuánto es?', '¿los mensajes tienen costo extra?']) expect(f('ccPreguntaCostoMeta')(t), t).toBe(true);
+    for (const t of ['Me quita tiempo responder mensajes extra', 'quiero ver los planes', '¿cuánto cuesta el servicio de WhatsApp?']) expect(f('ccPreguntaCostoMeta')(t), t).toBe(false);
+  });
   it('adenda: los costos de Meta/WhatsApp/mensajería no se minimizan ni se cuantifican; una pregunta por ellos la contesta el código (no la tengo a la mano + equipo) y cuenta como «costos»', () => {
     for (const t of ['¿Cuánto cobra Meta?', 'quién paga a Meta', 'costos de mensajería', '¿Cuánto cuestan los mensajes de WhatsApp?', '¿Los costos de WhatsApp van aparte?', 'cuánto se paga a Meta por mensaje']) expect(f('ccPreguntaCostoMeta')(t), t).toBe(true);
     for (const t of ['¿cuánto cuesta el plan para WhatsApp?', '¿cuánto cuesta el servicio de WhatsApp?', 'quiero ver los planes', 'tengo WhatsApp Business', 'precios', '¿Cuánto cuesta el asistente?']) expect(f('ccPreguntaCostoMeta')(t), t).toBe(false);

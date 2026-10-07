@@ -194,8 +194,8 @@ const FUNCIONES_DE_LA_LIBRERIA = new Function(`${leerSiExiste(join(AQUI, 'src/li
 let NOMBRES_PROPIOS = [];
 const ACREDITACION = /acreditad|verificad|pago (exitoso|recibido|confirmado|aprobado|validado)|recibimos tu pago|\bgarantiz/;
 const NIEGA_SER_IA = /\bno soy (un |una )?(bot|robot|ia|inteligencia|maquina|asistente|programa)|\bsoy (una )?(persona|humano|humana)|de carne y hueso|persona real|\bno es (un )?(bot|robot)/;
-/** Raíces de palabras que el vocabulario cálido nunca puede traer (promesas, gratuidades, precios, contacto, garantías, ser una persona). */
-const RAICES_DE_RIESGO = ['gratu', 'gratis', 'regal', 'llam', 'contact', 'preci', 'costo', 'cuest', 'pago', 'pagar', 'dolar', 'garant', 'certif', 'concil', 'aprueb', 'persona', 'human', 'descue', 'promo', 'ofert', 'mitad', 'prueb', 'cobran', 'tarifa', 'factur', 'banco', 'sistema'];
+/** Raíces de riesgo del vocabulario cálido: ÚNICA fuente, la librería (`CC_RAICES_DE_RIESGO`, prefijos separados por espacios). */
+const RAICES_DE_RIESGO = (/^const CC_RAICES_DE_RIESGO = '([^']+)';$/m.exec(leerSiExiste(join(AQUI, 'src/lib/captacion.js'), 'src/lib/captacion.js') || '') ?? [, ''])[1].split(' ').filter(Boolean);
 const NUMERO_EN_LETRAS = /\b(cinco|diez|quince|veinte|veinticinco|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|quinientos|mil)\s+(dolares|bolivianos|bs|usd|por ciento)\b/;
 const CONTROLES = /[\u0000-\u001f\u007f\u2028\u2029]/;
 // Caracteres invisibles o de control que se cuelan en un texto sin verse (U+0080 a U+009F, guion blando, espacios de ancho cero, marcas de dirección, BOM).
@@ -362,7 +362,7 @@ export function validarDatos(datos, archivo) {
               if (p.palabras !== undefined) {
                 if (typeof p.palabras !== 'string' || p.palabras.length < 2 || p.palabras.length > 240 || !/^[a-z0-9 |()?.*]+$/.test(p.palabras)) { e(`${donde}.palabras`, 'tiene que ser una familia de palabras (minúsculas sin tildes, números, espacios y | ( ) ? . *) de hasta 240 caracteres'); return; }
                 // §18 (B3): sin cuantificadores anidados («)*», «)+», «*)*»: ReDoS) y a lo más dos «.*».
-                if (/\)[*+]|[*+]\)[*+]/.test(p.palabras) || (p.palabras.match(/\.\*/g) || []).length > 2) { e(`${donde}.palabras`, 'trae cuantificadores anidados («)*», «)+») o más de dos «.*»: una familia de palabras no puede ser una expresión que se cuelgue (ReDoS)'); return; }
+                if (/\)[*+]|[*+]\)[*+]/.test(p.palabras) || (p.palabras.match(/\.\*/g) || []).length > 2 || /(?<!\.)\*/.test(p.palabras) || /(?<!\))\?/.test(p.palabras) || (p.palabras.match(/[*?]/g) || []).length > 4) { e(`${donde}.palabras`, 'trae cuantificadores anidados («)*», «)+»), un «*» que no es «.*», un «?» que no sigue a «)» o más de 4 cuantificadores (más de dos «.*»): una familia de palabras no puede ser una expresión que se cuelgue (ReDoS)'); return; }
                 let re = null;
                 try { re = new RegExp(p.palabras); } catch (x) { e(`${donde}.palabras`, 'no compila como expresión regular'); return; }
                 if (typeof r.explicacion === 'string' && !re.test(ccNorm(r.explicacion))) e(`${donde}.palabras`, `la explicación fija del rubro no la cubre («${texto}»): el respaldo tiene que decir todos sus puntos clave`);
@@ -471,7 +471,8 @@ export function validarDatos(datos, archivo) {
         else if (/\d/.test(v)) e(`guion.respuestas.${k}`, 'trae un número: jamás se dan cifras de consumo ni de planes en una respuesta fija (documento comercial §5)');
         else if (/[?¿]/.test(v)) e(`guion.respuestas.${k}`, 'no lleva «?» ni «¿»: el código agrega la opción de hablar con el equipo');
         else if (contarTexto(v).oraciones > 2) e(`guion.respuestas.${k}`, 'tiene más de 2 oraciones (el código agrega la apertura y la invitación al equipo, y el mensaje tiene un límite)');
-        else if (k === 'banco' && !(/\bno\b[^.!?]{0,40}\b(?:valida|verifica|confirma|comprueba|acredita)\w*/.test(ccNorm(v)) && /\bbanco\b/.test(ccNorm(v)))) e('guion.respuestas.banco', 'tiene que decir en forma NEGADA que no se valida con el banco («no lo valida con el banco»): es la prohibición 3');
+        else if (k === 'banco' && !(/\bno (?:lo |la |los |las )?(?:valida|verifica|confirma|comprueba|acredita)\w*/.test(ccNorm(v)) && /\bbanco\b/.test(ccNorm(v)))) e('guion.respuestas.banco', 'tiene que decir en forma NEGADA, con el «no» pegado al verbo, que no se valida con el banco («no lo valida con el banco»): es la prohibición 3');
+        else if (k === 'banco' && ACREDITA_MODELO.test(ccNorm(v).replace(/\b(?:no (?:lo |la |los |las )?|quien )(?:valida|verifica|confirma|comprueba|acredita)\w*[^.!?]*/g, ' '))) e('guion.respuestas.banco', 'afirma, fuera de la parte negada, que el servicio valida, verifica o acredita pagos o transferencias, o que consulta al banco');
       }
     }
   }
