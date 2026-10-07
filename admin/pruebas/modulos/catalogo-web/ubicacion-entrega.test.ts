@@ -6,7 +6,7 @@
  * defiende es: que solo pase un objeto con números reales dentro de los rangos
  * de la Tierra (las cadenas no se convierten), que se redondee a 5 decimales,
  * que con retiro no se guarde, que (0,0) y todo lo inválido se ignore SIN
- * volverse un permiso para pedir sin dirección, que viaje solo en el pedido y
+ * guardarse, que viaje solo en el pedido y
  * en la carga firmada (nunca a un log, a `registrar` ni al resumen del hilo) y
  * que sin la clave el pedido y la carga sean idénticos a los de antes.
  *
@@ -124,10 +124,14 @@ describe('checkoutCatalogo: la ubicación se guarda y se reenvía solo si existe
     expect(f).toContain('const ubicacion = ubicacionDelPedido(cuerpo, entrega);');
   });
 
-  it('el 400 «falta la direccion» se mantiene: solo lo evita una ubicación VÁLIDA', () => {
-    expect(f).toContain("if (entrega === 'envio' && direccion === '' && !ubicacion) {");
-    expect(f).toContain("error: 'falta la direccion'");
-    // La validez la decide el helper: el cuerpo crudo no se mira en ningún otro lado.
+  // REEMPLAZA a «el 400 falta la direccion se mantiene» (Andres, 07/10/2026): con envío la
+  // dirección pasó a ser OPCIONAL y el flujo de WhatsApp pide la ubicación. No es un debilitamiento
+  // por descuido: el comportamiento real (200 sin dirección ni ubicación) lo prueba
+  // `direccion-opcional.test.ts` contra el emulador; acá se niega que el 400 siga escrito y que la
+  // ubicación se lea de otro lado que no sea el helper que la valida.
+  it('NEGANDO: ya no hay 400 «falta la direccion», y la validez la sigue decidiendo solo el helper', () => {
+    expect(f).not.toContain("error: 'falta la direccion'");
+    expect(f).not.toMatch(/entrega === 'envio' && direccion === '' && !ubicacion/);
     expect(f.match(/cuerpo\['ubicacion'\]/g)?.length).toBe(1);
   });
 
@@ -138,9 +142,10 @@ describe('checkoutCatalogo: la ubicación se guarda y se reenvía solo si existe
 
   it('`ubicacion` aparece solo con `...(ubicacion ?` en el pedido y en la carga firmada', () => {
     const c = checkout();
-    // En el checkout: la constante, la condición del 400, y dos usos (pedido y
-    // carga), cada uno con dos menciones. Ninguna más.
-    expect(c.match(/\bubicacion\b/g)?.length).toBe(6);
+    // En el checkout: la constante y dos usos (pedido y carga), cada uno con dos
+    // menciones. Ninguna más (desde el 07/10 ya no hay condición del 400: eran 6
+    // con ella y son 5 sin ella; el conteo sigue siendo exacto).
+    expect(c.match(/\bubicacion\b/g)?.length).toBe(5);
     expect(c.match(/\.\.\.\(ubicacion \? \{ ubicacion \} : \{\}\),/g)?.length).toBe(2);
     const pedido = f.slice(f.indexOf("origen: 'catalogo-web',"), f.indexOf('entregadoAlFlujo: false,'));
     expect(pedido).toContain('...(ubicacion ? { ubicacion } : {}),');

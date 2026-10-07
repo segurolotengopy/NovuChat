@@ -560,11 +560,15 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
           <label className="cat-campo">
             {ubicacion
               ? '¿A dónde lo llevamos? (opcional si compartiste tu ubicación)'
-              : '¿A dónde lo llevamos?'}
+              : '¿A dónde lo llevamos? (opcional)'}
             <textarea value={direccion} maxLength={200} rows={2}
                       placeholder="Calle, número y zona"
+                      aria-describedby="cat-direccion-opcional"
                       onChange={(e) => setDireccion(e.target.value)} />
           </label>
+          <p id="cat-direccion-opcional" className="cat-nota">
+            Si no escribes la dirección, te pediremos tu ubicación por WhatsApp.
+          </p>
           {/* Solo cuando la página NO suma costo de envío al total (null o 0).
               Con un costo mayor que cero ya lo suma, y este aviso diría lo
               contrario de lo que muestra el total. */}
@@ -603,8 +607,7 @@ export function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambia
       {fallo && <p className="cat-error" role="alert">{fallo}</p>}
 
       <button type="button" className="cat-confirmar"
-              disabled={enviando || elegidos.length === 0
-                        || (modo === 'envio' && direccion.trim() === '' && !ubicacion)}
+              disabled={enviando || elegidos.length === 0}
               onClick={() => void enviar()}>
         {enviando ? 'Enviando…' : 'Confirmar el pedido'}
       </button>
@@ -773,7 +776,9 @@ function guardarCarrito(ficha: string, carrito: Carrito): void {
 function mensajeDeFallo(estado: number, codigo: unknown): string {
   if (estado === 404) return 'Este enlace ya no está disponible. Escríbenos por WhatsApp.';
   if (estado === 429) return 'Ya enviaste varios pedidos con este enlace. Escríbenos por WhatsApp y seguimos por ahí.';
-  if (codigo === 'falta la direccion') return 'Falta la dirección de entrega o tu ubicación.';
+  // Ya no se emite (la dirección es opcional con envío); queda por si la página nueva
+  // le habla a una Function que todavía no se desplegó.
+  if (codigo === 'falta la direccion') return 'Escribe la dirección o comparte tu ubicación y confirma de nuevo.';
   if (codigo === 'nada de lo pedido sigue disponible') {
     return 'Lo que elegiste ya no se puede pedir por acá. Actualiza la página para ver el catálogo de ahora.';
   }
