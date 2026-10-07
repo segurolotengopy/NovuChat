@@ -294,3 +294,11 @@ Resumen de lo que cambió (el contrato, §16, tiene las decisiones D1 a D10, la 
   nuevas exigencias por turno (`termina`, `contiene`, `noContiene`, `sinCifras`, `imagenPlanes`, `sinModelo`) y por caso (`planilla`: calificación y celdas de la fila); nuevas violaciones (`cifra_de_consumo`, `valida_pagos_con_el_banco`, `sistema_ajeno_o_integracion_inventada`); métrica del cierre exacto de la 1.ª explicación.
 - **Pruebas:** la suite de punta a punta corre la mecánica con el guion del flujo anterior armado EN MEMORIA (`armarConGuion`; nada se escribe) y prueba el flujo de NovuChat en el describe «§16» contra los JSON versionados; la librería y la batería llevan sus describes «§16».
 - **Mensajes por conversación: ≤ antes** (ver §16 del contrato); **llamadas al modelo:** la explicación reemplaza a la respuesta al dolor; la extracción de nombre y empresa suma una solo si el cliente da más que el nombre del negocio.
+
+## Correcciones de la batería real (§17, 07/10/2026)
+
+- **Por qué el cierre perdía el 🤝:** el nivel «pocos» deja un emoji por parte y en «Otro» la empatía y el cierre eran una sola parte. Ahora son dos (`ccEmPartes([dicho, cierre])`).
+- **Por qué ya no se cree a `pide_planes`:** el modelo etiquetó como pedido de planes una frase donde el cliente hablaba de lo que le preguntan a él. La decisión pasó al código (`ccPideCostoDelServicio`): costo con marca de precio y sin que sea el producto o el cliente del prospecto. Decisión sobre la 2.ª petición de planes: se reenvía la imagen una vez y luego se contesta sin repetirla (evita enviar tres veces la misma imagen y no deja al cliente sin respuesta la 1.ª vez).
+- **Puntos clave con familias:** una lista de raíces por heurística daba falsos negativos («notas especiales» contra «indicaciones»). La familia la escribe quien arma el guion (dato, no código), y la valida `construir.mjs`.
+- **Dos redacciones de falla:** repetir el mismo texto dos veces seguidas parecía una caída; rota con `fijas`.
+

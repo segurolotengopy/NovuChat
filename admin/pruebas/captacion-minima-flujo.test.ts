@@ -1195,10 +1195,14 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       expect(idsBotones(t2.aMi[0]!)).toEqual(['asesor']);
       expect(CUERPO(t2)).not.toContain(dolorDe('salud-y-belleza')); // la promesa cumplida va EN VEZ del dolor
       expect(califDe(w, MAMA)).toBe('Alta');
+      // §17: un segundo «precios» reenvía la imagen UNA vez (por si no la vio); el tercero ya no la repite.
       const t3 = j.texto('precios');
-      expect(t3.aMi.every((e) => encabezadoDe(e) === undefined)).toBe(true);
-      expect(todoElTexto(t3)).not.toMatch(/USD/);
-      expect(w.turnos.flatMap((t) => t.aMi).filter((e) => encabezadoDe(e) !== undefined)).toHaveLength(1);
+      expect(encabezadoDe(t3.aMi[0]!)).toEqual({ type: 'image', image: { link: ARCHIVO.url } });
+      expect(CUERPO(t3)).toMatch(/otra vez/);
+      const t4 = j.texto('precios');
+      expect(t4.aMi.every((e) => encabezadoDe(e) === undefined)).toBe(true);
+      expect(todoElTexto(t4)).not.toMatch(/USD/);
+      expect(w.turnos.flatMap((t) => t.aMi).filter((e) => encabezadoDe(e) !== undefined)).toHaveLength(2);
     });
     it('C16 NIEGA: con la promesa pero SIN archivo, los planes salen en texto armado por el código con los precios de la consola', () => {
       const w = crear({ panel: panel({}, { archivoPlanes: null }) }); const j = jugar(w);
@@ -1232,7 +1236,9 @@ describe('Captación mínima v0: el flujo, de punta a punta', () => {
       expect(encabezadoDe(t.aMi[0]!)).toBeDefined();
       expect(califDe(w, MAMA)).toBe('Alta');
       const otra = j.texto('los planes por favor');
-      expect(otra.aMi.every((e) => encabezadoDe(e) === undefined)).toBe(true);
+      expect(encabezadoDe(otra.aMi[0]!), '§17: la 2.ª petición reenvía la imagen una vez').toBeDefined();
+      const ultima = j.texto('los planes por favor');
+      expect(ultima.aMi.every((e) => encabezadoDe(e) === undefined)).toBe(true);
     });
     it('C17 sin rubros cargados: se presenta y hace la pregunta abierta (sin lista); responde el cliente y llega a la oferta', () => {
       const w = crear({ panel: panel({}, { rubros: [] }) }); const j = jugar(w);
@@ -2565,10 +2571,12 @@ describe('H1 y H2: lo que encontró la batería contra el modelo', () => {
       expect(encabezadoDe(t.aMi[0]!), afirma).toBeDefined();
       expect(idsBotones(t.aMi[0]!), afirma).toEqual(['asesor']);
       expect(califDe(w, MAMA), afirma).toBe('Alta');
-      const t2 = j.texto(afirma);
-      expect(t2.aMi.every((e) => encabezadoDe(e) === undefined), afirma).toBe(true);
-      expect(idsBotones(t2.aMi[0]!), afirma).toEqual(['asesor']);
-      expect(t2.plantillas).toHaveLength(0);
+      const t2 = j.texto(afirma);   // §17: el 2.º «sí» reenvía la imagen una vez…
+      expect(encabezadoDe(t2.aMi[0]!), afirma).toBeDefined();
+      const t3 = j.texto(afirma);   // …y el 3.º no los repite y ofrece al equipo con botón
+      expect(t3.aMi.every((e) => encabezadoDe(e) === undefined), afirma).toBe(true);
+      expect(idsBotones(t3.aMi[0]!), afirma).toEqual(['asesor']);
+      expect(t3.plantillas).toHaveLength(0);
     }
   });
   it('H2 NIEGA: «sí, pero antes dime si se integra con mi ERP» no va a los planes: lo contesta el código (§16, no se inventa la integración), sin llamar al modelo', () => {
@@ -2757,7 +2765,7 @@ describe('§13: la consola viva y el tono (C1 y C2)', () => {
       for (const t of ts) {
         const c = CUERPO(t);
         if (nivel === 'ninguno') expect(emojis(c), `${nivel}: ${c}`).toBe(0);
-        else expect(emojis(c), `${nivel}: ${c}`).toBeLessThanOrEqual(1);
+        else expect(emojis(c), `${nivel}: ${c}`).toBeLessThanOrEqual(2);   // §17: un emoji por PARTE (lo que se dice y la pregunta de cierre)
         expect(c, `${nivel}: ${c}`).not.toMatch(/ [,;.!?]/);
         expect(c, `${nivel}: ${c}`).not.toMatch(/ {2}/);
       }
@@ -3258,7 +3266,8 @@ describe('§16: el documento comercial de Kenji, de punta a punta (los JSON vers
       expect(CUERPO(j.texto('precios'))).toContain('Setup estándar USD 70, pago único (configuración llave en mano y conexión a Meta). Planes mensuales (Básico, Max) desde USD 30.');
       const sin = nc({ cargosUnicos: [] }); const js = jugar(sin); js.texto('Hola'); js.rubro('educacion');
       expect(CUERPO(js.texto('precios'))).not.toMatch(/Setup/);
-      expect(CUERPO(js.planes())).toMatch(/¡Ya te los mostré arriba!/);
+      expect(CUERPO(js.planes())).toMatch(/¡Con gusto te los comparto otra vez!/);   // §17: la 1.ª petición posterior reenvía la imagen
+      expect(CUERPO(js.planes())).toMatch(/¡Ya te los mostré arriba!/);              // y la siguiente ya no
     });
     it('el modelo nunca ve un precio ni los topes de los planes escritos como cifra de consumo: la instrucción estática no trae montos y su respuesta con «100 conversaciones» no llega al cliente', () => {
       const w = nc(); const j = jugar(w); j.texto('Hola'); j.rubro('educacion');
@@ -3416,6 +3425,163 @@ describe('§16: el documento comercial de Kenji, de punta a punta (los JSON vers
       const planes = js.texto('precios');
       expect(emojis(CUERPO(planes))).toBe(0);
       expect(CUERPO(planes)).toMatch(/Setup estándar USD 65/);
+    });
+  });
+});
+
+describe('§17: la pregunta de cierre en todo camino, los costos solo si los pide, el tono, los puntos clave y la necesidad', () => {
+  const CIERRE = '¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+  const PLANES: J[] = [{ nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: '100 conversaciones al mes' }];
+  const CARGOS: J[] = [{ nombre: 'Instalación estándar', precioUsd: 65, desde: false, detalle: 'Pago único.' }];
+  const mundo = (nivel = 'pocos'): W => crear({ flujo: PRODUCCION_REAL, panel: panel({ voz: { nivelEmojis: nivel, nombreAsistente: 'Kenji' } }, { planes: PLANES, cargosUnicos: CARGOS }) });
+  const respuesta = (w: W, extra: J): void => modelo(w, { tipo: 'respuesta', ...extra });
+  const hastaOtro = (w: W): Jugador => {
+    const j = jugar(w); j.texto('Hola'); j.rubro('otro-a-medida');
+    respuesta(w, { rubroLibre: 'ferretería', empatia: '¡Qué buen rubro!' });
+    j.texto('Tengo una ferretería en El Alto');
+    return j;
+  };
+  const hayImagen = (t: T): boolean => t.aMi.some((m) => encabezadoDe(m)?.type === 'image');
+
+  describe('1: la 1.ª pregunta de cierre es EXACTA, con su 🤝, en cada camino', () => {
+    it('rubro estándar tocado en la lista', () => {
+      const w = mundo(); const j = jugar(w); j.texto('Hola');
+      respuesta(w, { explicacion: '¡Qué rico! 🍔 En horas pico ya no pierdes pedidos: NovuChat muestra tu menú, toma cada pedido registrando las notas especiales y realiza el cobro con QR.' });
+      expect(CUERPO(j.rubro('gastronomia')).endsWith(CIERRE)).toBe(true);
+    });
+    it('rubro estándar con el modelo caído (respaldo fijo)', () => {
+      const w = mundo(); const j = jugar(w); j.texto('Hola');
+      expect(CUERPO(j.rubro('educacion')).endsWith(CIERRE)).toBe(true);
+    });
+    it('el cliente cuenta su negocio con sus palabras', () => {
+      const w = mundo(); const j = jugar(w); j.texto('Hola');
+      respuesta(w, { rubroId: 'gastronomia', explicacion: '¡Qué rico! 🍔 No pierdes pedidos: NovuChat muestra tu menú, toma pedidos con notas especiales y cobra con QR.' });
+      expect(CUERPO(j.texto('tengo un restaurante y los fines de semana colapsamos')).endsWith(CIERRE)).toBe(true);
+    });
+    it('camino de «Otro» (OT1, turno 4): la respuesta al cierre investigativo cierra con la pregunta exacta y su 🤝', () => {
+      const w = mundo(); const j = hastaOtro(w);
+      respuesta(w, { necesidad: 'responder cuánto cuesta cada herramienta', empatia: 'Imagino, repetir precios todo el día cansa.' });
+      const t = j.texto('Me quita tiempo responder cuánto cuesta cada herramienta por WhatsApp');
+      expect(CUERPO(t).endsWith(CIERRE)).toBe(true);
+      expect(CUERPO(t)).toBe(`Imagino, repetir precios todo el día cansa. ${CIERRE}`);
+    });
+    it('camino de «Otro» con una respuesta sin necesidad, con el modelo caído y con una respuesta suelta: la 1.ª vez el cierre sigue siendo exacto', () => {
+      const w = mundo(); const j = hastaOtro(w);
+      respuesta(w, { empatia: 'Entiendo, es un trabajo enorme.' });
+      expect(CUERPO(j.texto('Pasamos horas con eso')).endsWith(CIERRE)).toBe(true);
+    });
+    it('«ninguno»: el mismo texto sin el emoji; las variantes posteriores no exigen emoji', () => {
+      const w = mundo('ninguno'); const j = hastaOtro(w);
+      respuesta(w, { necesidad: 'responder precios', empatia: 'Imagino, cansa.' });
+      expect(CUERPO(j.texto('Me quita tiempo responder precios')).endsWith('¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo?')).toBe(true);
+    });
+  });
+
+  describe('2: un precio solo sale si el cliente pide el costo del servicio', () => {
+    it('el modelo etiquetó `pide_planes` ante «cuánto cuesta cada herramienta» (un producto del cliente): NO sale la imagen de precios ni se marca el pedido', () => {
+      const w = mundo(); const j = hastaOtro(w);
+      modelo(w, { tipo: 'pide_planes', necesidad: 'responder cuánto cuesta cada herramienta', empatia: 'Imagino, repetir precios cansa.' });
+      const t = j.texto('Me quita tiempo responder cuánto cuesta cada herramienta');
+      expect(hayImagen(t)).toBe(false);
+      expect(JSON.stringify(t.aMi)).not.toMatch(/USD|Impulso|Setup/);
+      expect(estadoDe(w, MAMA)!['planesMostrados']).not.toBe(true);
+    });
+    it('sí salen con «¿cuánto cuesta?», «¿cuánto cobran por el servicio?», «precios» y «quiero ver los planes», aunque el modelo diga otra cosa', () => {
+      for (const frase of ['¿cuánto cuesta?', '¿cuánto cobran por el servicio?', 'precios', 'quiero ver los planes']) {
+        const w = mundo(); const j = jugar(w); j.texto('Hola'); j.rubro('educacion');
+        respuesta(w, { empatia: 'Claro.' });
+        const t = j.texto(frase);
+        expect(hayImagen(t), frase).toBe(true);
+        expect(t.modelo, frase).toHaveLength(0);
+      }
+    });
+    it('«cuánto cuesta» sobre un producto del cliente no muestra precios, en ningún paso', () => {
+      for (const frase of ['Mis clientes preguntan cuánto cuesta cada repuesto', 'tengo que responder cuánto cuesta el producto todo el día']) {
+        const w = mundo(); const j = jugar(w); j.texto('Hola'); j.rubro('educacion');
+        respuesta(w, { tipo: 'pide_planes', empatia: 'Entiendo.' });
+        expect(hayImagen(j.texto(frase)), frase).toBe(false);
+      }
+    });
+    it('una petición POSTERIOR de planes reenvía la imagen UNA vez; la tercera ya no la repite', () => {
+      const w = mundo(); const j = jugar(w); j.texto('Hola'); j.rubro('educacion');
+      expect(hayImagen(j.texto('precios'))).toBe(true);
+      const otra = j.texto('quiero ver los planes');
+      expect(hayImagen(otra)).toBe(true);
+      expect(CUERPO(otra)).toMatch(/otra vez/);
+      const tercera = j.texto('los precios por favor');
+      expect(hayImagen(tercera)).toBe(false);
+      expect(w.modelo.llamadas).toHaveLength(1); // solo la explicación del rubro: los precios nunca llaman al modelo
+    });
+  });
+
+  describe('3: el tono de la explicación', () => {
+    it('toda explicación fija abre con una frase breve y cálida con exclamación y un emoji, en 2.ª persona del singular', () => {
+      for (const [id, r] of Object.entries(GUION_NUEVO.rubros) as [string, J][]) {
+        if (!r['explicacion']) continue;
+        const texto = String(r['explicacion']);
+        expect(texto, id).toMatch(/^¡[^!]{3,80}! \p{Extended_Pictographic}/u);
+        expect(texto, id).not.toMatch(/\b(su|sus|usted|ustedes|vuestro|vuestra)\b/i);
+      }
+    });
+    it('la instrucción al modelo pide apertura cálida con exclamación, 2.ª persona, una idea por oración y cubrir TODOS los puntos clave', () => {
+      const w = mundo(); const j = jugar(w); j.texto('Hola');
+      const t = j.rubro('gastronomia');
+      const instruccion = JSON.stringify(t.modelo[0]!.cuerpo);
+      expect(instruccion).toMatch(/cálida y con exclamación/);
+      expect(instruccion).toMatch(/segunda persona del singular/);
+      expect(instruccion).toMatch(/una idea por oración/);
+      expect(instruccion).toMatch(/cúbrelos TODOS/);
+    });
+  });
+
+  describe('4: los puntos clave se cubren TODOS (una sola regla, la misma de la batería)', () => {
+    it('una explicación que omite UN punto del rubro (aquí el cobro con QR) cae al respaldo; con sinónimos de la familia pasa', () => {
+      const respaldo = CUERPO((() => { const w = mundo(); const j = jugar(w); j.texto('Hola'); return j.rubro('gastronomia'); })());
+      const sinQr = '¡Qué rico! 🍔 En horas pico ya no pierdes pedidos: NovuChat muestra tu menú y registra las notas especiales de cada pedido.';
+      const w = mundo(); const j = jugar(w); j.texto('Hola');
+      respuesta(w, { explicacion: sinQr });
+      expect(CUERPO(j.rubro('gastronomia'))).toBe(respaldo);
+      const sinonimos = '¡Qué rico! 🍔 En horas pico ya no pierdes pedidos: NovuChat muestra tu menú, anota las indicaciones de cada compra y cobra con QR para que pase a cocina.';
+      const w2 = mundo(); const j2 = jugar(w2); j2.texto('Hola');
+      respuesta(w2, { explicacion: sinonimos });
+      expect(CUERPO(j2.rubro('gastronomia'))).toBe(`${sinonimos.replace(/ 🍔/, ' 🍔')} ${CIERRE}`.replace(/ 🍔/, ' 🍔'));
+    });
+  });
+
+  describe('5c: la necesidad se actualiza con la última respuesta sustantiva mientras no se haya pasado con el equipo', () => {
+    it('tras el cierre investigativo, una 2.ª respuesta sustantiva reemplaza a la 1.ª; después de pedir al equipo ya no cambia', () => {
+      const w = mundo(); const j = hastaOtro(w);
+      respuesta(w, { necesidad: 'responder precios', empatia: 'Imagino, cansa.' });
+      j.texto('Me quita tiempo responder precios');
+      expect(estadoDe(w, MAMA)!['necesidad']).toBe('responder precios');
+      respuesta(w, { necesidad: 'coordinar las visitas de los técnicos', empatia: 'Claro, eso es clave.' });
+      j.texto('En realidad lo que más me complica es coordinar las visitas de los técnicos');
+      expect(estadoDe(w, MAMA)!['necesidad']).toBe('coordinar las visitas de los técnicos');
+      j.asesor();
+      respuesta(w, { necesidad: 'otra cosa distinta', empatia: 'Claro.' });
+      j.texto('Y también quiero otra cosa distinta');
+      expect(estadoDe(w, MAMA)!['necesidad']).toBe('coordinar las visitas de los técnicos');
+    });
+    it('una necesidad que solo describe el negocio («tengo una ferretería») no se guarda como necesidad', () => {
+      const w = mundo(); const j = hastaOtro(w);
+      respuesta(w, { necesidad: 'tengo una ferretería', empatia: 'Claro.' });
+      j.texto('Tengo una ferretería');
+      expect(estadoDe(w, MAMA)!['necesidad'] ?? '').toBe('');
+    });
+  });
+
+  describe('6: dos fallos seguidos del modelo no dan el mismo texto', () => {
+    it('el 2.º aviso de falla usa otra redacción, sin prometer nada y con el botón del equipo', () => {
+      const w = mundo(); const j = jugar(w); j.texto('Hola'); j.rubro('educacion');
+      const a = j.texto('cuéntame algo que no tengo claro'); const b = j.texto('y también algo más que no tengo claro');
+      const ta = CUERPO(a); const tb = CUERPO(b);
+      expect(ta).not.toBe(tb);
+      for (const x of [ta, tb]) {
+        expect(x).not.toMatch(/te (llamar|escribir|avisar)|luego|más tarde|mañana/i);
+        expect(x).toMatch(/equipo/);
+      }
+      expect(idsBotones(a.aMi[0]!)).toContain('asesor');
+      expect(idsBotones(b.aMi[0]!)).toContain('asesor');
     });
   });
 });

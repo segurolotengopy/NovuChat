@@ -214,11 +214,32 @@ function ccPidePlanesCorto(t) {
   const palabras = n.split(' ');
   return palabras.length <= 7 && palabras.every((w) => CC_RELLENO_PLANES.has(w));
 }
+// ¿Pregunta por el COSTO DEL SERVICIO? (documento comercial §4: los precios salen SOLO si elige «ver planes» o pregunta explícitamente por los costos del servicio; §17). Lo decide el CÓDIGO, nunca la etiqueta
+// `pide_planes` del modelo. Sí: un mensaje corto que solo los pide («¿cuánto cuesta?», «precios», «planes», «ver planes»), «planes», un precio/costo/tarifa «del servicio|bot|asistente|instalación|setup|plan», «cuánto cobran/cuesta
+// el servicio|el plan|el bot|esto|la instalación|por mes», «cuánto cuesta» al final de una frase en que el cliente pide algo para sí. NO: cuando «cuánto cuesta» es lo que SUS clientes le preguntan o el precio de un producto de él
+// («me quita tiempo responder cuánto cuesta cada herramienta», «mis clientes preguntan cuánto cuesta cada producto», «vendo ropa y me preguntan precios todo el día»).
+const CC_COSTO_MARCA = /(^| )(precios?|costos?|tarifas?|planes|mensualidad|cotizacion|cuanto (me |nos |te )?(cuesta|cuestan|cobran|cobra|cobras|sale|salen|vale|valen))( |$)/;
+const CC_OBJETO_DEL_SERVICIO = /(^| )(servicio|bot|chatbot|asistente|instalacion|setup|mensualidad|mensual|al mes|por mes|esto|eso|ustedes)( |$)/;
+const CC_LADO_DEL_CLIENTE = /(^| )(responder|contestar|decir|decirles|decirle|preguntan|preguntar|preguntando|preguntas|preguntandome|piden|pedir|dar|darles|pasar|pasarles|cotizar|cotizarles|mandar|enviar|averiguar)( |$)|(^| )(mis|nuestros|los|mi|nuestro) (clientes?|compradores|usuarios|pacientes|alumnos)( |$)/;
+const CC_COSTO_DE_UN_PRODUCTO = /(^| )cuanto (me |nos |te )?(cuesta|cuestan|cobran|cobra|cobras|sale|salen|vale|valen) (cada|mis|mi|nuestros|nuestro|el producto|la herramienta|el repuesto|el plato|la prenda|(los|las|un|una) (?!plan|servicio|precio|bot|asistente|instalacion|setup))/;
+function ccPideCostoDelServicio(t) {
+  const n = ccNorm(t);
+  if (!CC_COSTO_MARCA.test(n)) return false;
+  if (ccPidePlanesCorto(t)) return true;
+  if (CC_COSTO_DE_UN_PRODUCTO.test(n)) return false;
+  if (CC_OBJETO_DEL_SERVICIO.test(n)) return true;
+  if (CC_LADO_DEL_CLIENTE.test(n)) return false;
+  return /(^| )cuanto (me |nos |te )?(cuesta|cuestan|cobran|cobra|cobras|sale|salen|vale|valen)( |$)/.test(n) || /\?/.test(ccTexto(t)) || /(^| )(quiero|necesito|dame|mandame|pasame|cual|cuales|ver|conocer|cotiza\w*)( |$)/.test(n);
+}
+// §17: el costo pedido con su objeto explícito («¿cuánto cobran por el servicio?», «cuánto cuesta el bot») lo confirma el código también en la oferta, sin depender de la etiqueta del modelo.
+function ccPideCostoConObjeto(t) {
+  const n = ccNorm(t);
+  return CC_COSTO_MARCA.test(n) && CC_OBJETO_DEL_SERVICIO.test(n) && !CC_COSTO_DE_UN_PRODUCTO.test(n) && !CC_LADO_DEL_CLIENTE.test(n);
+}
 // Un pedido de planes para las reglas del primer mensaje y de la lista de rubros (R1): «Hola, vendo ropa y mis clientes me preguntan
-// precios todo el día» NO lo es. Hace falta un mensaje corto que solo los pide, o la palabra junto con un «?» o un verbo de pedido.
+// precios todo el día» NO lo es. §17: la regla es `ccPideCostoDelServicio`.
 function ccPideListaPlanes(t) {
-  if (!ccPidePlanes(t)) return false;
-  return ccPidePlanesCorto(t) || /\?/.test(ccTexto(t)) || /\b(quiero|necesito|dame|mandame|pasame|cual|cuales|cuanto|ver|cotiza\w*)\b/.test(ccNorm(t));
+  return ccPidePlanes(t) || CC_COSTO_MARCA.test(ccNorm(t)) ? ccPideCostoDelServicio(t) : false;
 }
 const CC_IDENTIDAD_BASE = '(persona|humano|humana|robot|bot|chatbot|automatico|automatica|real|ia|maquina|de verdad|inteligencia artificial)';
 const CC_IDENTIDAD = new RegExp('\\b(eres|sos) (una |un )?(persona|humano|humana|bot|chatbot|robot|ia|maquina|real|de verdad|inteligencia artificial)\\b' +
@@ -334,6 +355,7 @@ function ccRaices(textos) {
   return set;
 }
 const CC_FORMULA = /^[=+\-@]/;
+const CC_DESCRIBE_EL_NEGOCIO = /^(tengo|tenemos|soy|somos|vendo|vendemos|trabajo|trabajamos|me dedico|nos dedicamos|mi negocio es|mi empresa es)( |$)/;
 const CC_DATO_PERSONAL = /@|\d{5,}|\d[\d\s.-]{6,}\d/;
 // La necesidad del cliente: lo que cuenta que le cuesta o que quiere, hasta 160 caracteres, en una línea, sin enlaces, fórmulas ni datos personales (teléfonos, correos,
 // carnets) y sin órdenes. `textos` (opcional): lo que dijo el cliente; con él, cada palabra de 5 letras o más tiene que salir de ahí (el modelo no inventa).
@@ -344,6 +366,8 @@ function ccNecesidadValida(v, textos) {
   if (ccEsOrden(s) || CC_ENLACE.test(s) || CC_DATO_PERSONAL.test(s)) return '';
   if (!/\p{L}{3}/u.test(s)) return '';
   if (CC_RELLENO.test(ccNorm(s))) return '';
+  // «Tengo una ferretería», «vendo ropa»: describe el negocio, no lo que necesita o le cuesta (§17).
+  if (CC_DESCRIBE_EL_NEGOCIO.test(ccNorm(s)) && ccNorm(s).split(' ').length <= 4) return '';
   if (textos !== undefined) {
     const raices = ccRaices(textos);
     if (ccNorm(s).split(' ').filter((w) => w.length >= 5).some((w) => !raices.has(w.slice(0, 5)))) return '';
@@ -437,7 +461,7 @@ function ccEstadoBase() {
     // §16: lo que el cliente cuenta (para el resumen de la hoja): su nombre (el que dice, no el del perfil), su necesidad (hasta 160 caracteres, sanitizada) y de qué preguntó (vocabulario cerrado).
     nombre: '', necesidad: '', temas: [],
     hechos: { pidioAsesor: false, pidioPlanes: false, eligioOtro: false, respondioDolor: false, descarte: '' },
-    planesPendientes: false, planesMostrados: false, soporte: false, anuncio: false,
+    planesPendientes: false, planesMostrados: false, planesReenviados: false, soporte: false, anuncio: false,
     avisado: false, avisoFalla: '', ultimoMensajeMs: 0, ultimosIds: [],
     // Cordialidad (§14): qué formulación de la pregunta de la oferta toca (0 a 2) y cuántas respuestas sueltas van desde la última vez que se preguntó (0 o 1).
     ofertas: 0, sueltas: 0,
@@ -481,6 +505,7 @@ function ccEstadoVigente(e, ahoraMs) {
     },
     planesPendientes: e.planesPendientes === true,
     planesMostrados: e.planesMostrados === true,
+    planesReenviados: e.planesReenviados === true,
     soporte: e.soporte === true,
     anuncio: e.anuncio === true,
     avisado: e.avisado === true,
@@ -497,6 +522,7 @@ function ccEstadoVigente(e, ahoraMs) {
     s.paso = 'inicio';
     s.planesPendientes = false;
     s.planesMostrados = false;
+    s.planesReenviados = false;
     s.soporte = false;
     s.avisado = false;
     s.reintentoEmpresa = false;
@@ -676,7 +702,7 @@ function ccInstrucciones(cfg, conocimiento) {
   // §16: los PUNTOS CLAVE de cada rubro (del guion del tenant, tomados del documento comercial) van aquí, en la parte estática: la explicación se apoya OBLIGATORIAMENTE en ellos.
   const puntos = (r) => {
     const g = ccGuionDe(c, ccTexto(r.id)).propia;
-    const l = g && Array.isArray(g.puntosClave) ? g.puntosClave.map((x) => ccLineaDeConsola(x, 200)).filter((x) => x !== '') : [];
+    const l = g && Array.isArray(g.puntosClave) ? g.puntosClave.map((x) => ccLineaDeConsola(x && typeof x === 'object' ? x.texto : x, 200)).filter((x) => x !== '') : [];
     return l.length ? '\n  PUNTOS CLAVE: ' + l.join('; ') : '';
   };
   const rubrosTexto = rubros.length
@@ -706,8 +732,8 @@ function ccInstrucciones(cfg, conocimiento) {
     '- aclaracion: si la respuesta está en una de las aclaraciones de abajo, su id (a1, a2…); si no, "ninguno".',
     '- enLosDatos: true solo si la respuesta sale de los datos de abajo; si no, false.',
     '- descarte: "numero_equivocado", "vende_o_busca_trabajo", "sin_negocio" o "spam_o_prueba" solo si es claro; si no, "ninguno".',
-    '- explicacion: solo si la TAREA del turno es EXPLICAR EL RUBRO, o si el cliente acaba de decir claramente de qué rubro es su negocio (rubroId distinto de "ninguno"): hasta ' + CC_MAX_ORACIONES_EXPLICACION + ' oraciones y ' + CC_MAX_PALABRAS_EXPLICACION + ' palabras que expliquen el servicio PARA ESE RUBRO apoyándote OBLIGATORIAMENTE en los PUNTOS CLAVE de ese rubro (están abajo, en la lista de rubros): cúbrelos todos, con tus palabras, de forma natural y adaptada a lo que el cliente dijo (si no dijo nada, ve directo al valor). Empieza con una frase breve y cálida y usa los emojis que ayuden (equilibrado: 3 o 4 como máximo). Sin preguntas (el sistema agrega la pregunta de cierre), sin cifras de consumo, sin montos ni precios, sin promesas y sin enlaces. Si no aplica, vacío.',
-    '- necesidad: lo que el cliente cuenta que necesita o lo que más le cuesta hoy en WhatsApp, con SUS palabras, resumido en hasta ' + CC_MAX_NECESIDAD + ' caracteres, sin datos personales (teléfono, correo, carnet), sin enlaces ni fórmulas. Si no lo dijo, vacío.',
+    '- explicacion: solo si la TAREA del turno es EXPLICAR EL RUBRO, o si el cliente acaba de decir claramente de qué rubro es su negocio (rubroId distinto de "ninguno"): hasta ' + CC_MAX_ORACIONES_EXPLICACION + ' oraciones y ' + CC_MAX_PALABRAS_EXPLICACION + ' palabras que expliquen el servicio PARA ESE RUBRO apoyándote OBLIGATORIAMENTE en los PUNTOS CLAVE de ese rubro (están abajo, en la lista de rubros): cúbrelos TODOS, con tus palabras (no los copies tal cual), una idea por oración y adaptados a lo que el cliente dijo (si no dijo nada, ve directo al valor). ABRE siempre con una frase breve, cálida y con exclamación que reconozca el rubro del cliente, con un emoji acorde. Habla SIEMPRE en segunda persona del singular («tu catálogo», «no pierdes ventas», «tu clínica»): nunca en tercera persona ni mezclando personas. Usa los emojis que ayuden (3 o 4 como máximo). Sin preguntas (el sistema agrega la pregunta de cierre), sin cifras de consumo, sin montos ni precios, sin promesas y sin enlaces. Si no aplica, vacío.',
+    '- necesidad: lo que el cliente cuenta que necesita o lo que más le cuesta hoy en WhatsApp, con SUS palabras, resumido en hasta ' + CC_MAX_NECESIDAD + ' caracteres, sin datos personales (teléfono, correo, carnet), sin enlaces ni fórmulas. NO es el rubro ni lo que vende («tengo una ferretería» va en rubroLibre, no aquí). Si no lo dijo, vacío.',
     '- nombre: solo si el cliente dijo su nombre y apellido: de 2 a 4 palabras tal como las escribió, y nada más. Si no, vacío.',
     '- empresa: solo si el cliente dijo el nombre de su negocio: tal como lo escribió. Si no, vacío.',
     '',
@@ -857,16 +883,24 @@ function ccSistemaAjeno(t, permitidos, estricto) {
   }
   return false;
 }
-// «Obligatoriamente basada en los puntos clave» (documento §2): cada punto clave se toca si aparecen un tercio o más de sus raíces (5 letras, palabras de 5 o más), y la explicación tiene que tocar al menos el 60% de los puntos.
+// «Obligatoriamente basada en los puntos clave» (documento §2). UNA regla, que usan el validador y la batería: cada punto clave tiene una FAMILIA de palabras aceptables (`palabras`: alternativas
+// de una expresión regular, ya sin tildes ni mayúsculas, p. ej. «notas especiales|indicaciones|aclaraciones|observaciones») y la explicación del modelo tiene que cubrir TODOS los puntos con alguna palabra
+// de su familia; si no, sale el respaldo fijo. Un punto sin familia (un texto suelto, de otro tenant) se toca si aparece un tercio de sus raíces de 5 letras.
+function ccPuntoTocado(punto, raices, norm) {
+  if (punto && typeof punto === 'object') {
+    const familia = ccTexto(punto.palabras);
+    if (familia !== '') { try { return new RegExp(familia).test(norm); } catch (e) { return false; } }
+    punto = punto.texto;
+  }
+  const rs = ccNorm(punto).split(' ').filter((w) => w.length >= 5).map((w) => w.slice(0, 5));
+  return rs.length === 0 || rs.filter((r) => raices.has(r)).length * 3 >= rs.length;
+}
 function ccCubrePuntos(texto, puntos) {
-  const lista = (Array.isArray(puntos) ? puntos : []).filter((x) => typeof x === 'string' && x !== '');
+  const lista = (Array.isArray(puntos) ? puntos : []).filter((x) => (typeof x === 'string' && x !== '') || (x && typeof x === 'object'));
   if (!lista.length) return true;
   const raices = ccRaices(texto);
-  const tocados = lista.filter((p) => {
-    const rs = ccNorm(p).split(' ').filter((w) => w.length >= 5).map((w) => w.slice(0, 5));
-    return rs.length === 0 || rs.filter((r) => raices.has(r)).length * 3 >= rs.length;
-  });
-  return tocados.length * 5 >= lista.length * 3;
+  const norm = ccNorm(texto);
+  return lista.every((p) => ccPuntoTocado(p, raices, norm));
 }
 function ccLeerModelo(jsonGemini, opciones) {
   const op = opciones || {};
@@ -1037,8 +1071,10 @@ function ccOferta(a) {
   const quien = ccQuien(o.asesor);
   const cierre = o.sinPregunta === true ? (o.sinCierre === true ? '' : ccCierreSinPregunta(quien, o.conPlanes, o.indice)) : ccPreguntaDeOferta(quien, o.conPlanes, o.indice);
   // Una sola «?» por mensaje: lo que venga del modelo o del guion no puede agregar otra.
-  const partes = [ccPunto(ccSinPregunta(o.empatia)), ccPunto(ccSinPregunta(o.explicacion)), ccPunto(ccSinPregunta(o.orientacion)), ccPunto(ccSinPregunta(o.impacto)), cierre].filter((x) => x !== '');
-  const cuerpo = o.explicacion ? ccEmPartes(partes, o.nivel) : ccEm(partes.join(' '), { nivelEmojis: o.nivel });
+  // §17: los emojis van POR PARTES —lo que se dice (empatía, explicación, orientación, impacto) y la pregunta de cierre—: con «pocos» cada parte conserva su primer emoji, y así la pregunta
+  // EXACTA de la 1.ª vez («… de nuestro equipo? 🤝») no pierde su 🤝 porque la empatía del modelo ya trajo uno (en cualquier camino: explicación, tras la necesidad de «Otro», tras una respuesta suelta).
+  const dicho = [ccPunto(ccSinPregunta(o.empatia)), ccPunto(ccSinPregunta(o.explicacion)), ccPunto(ccSinPregunta(o.orientacion)), ccPunto(ccSinPregunta(o.impacto))].filter((x) => x !== '').join(' ');
+  const cuerpo = ccEmPartes([dicho, cierre], o.nivel);
   const botones = (o.conPlanes ? [{ id: 'planes', title: 'Ver planes' }] : []).concat([{ id: 'asesor', title: ccTituloAsesor(o.asesor) }]);
   const payload = cmBotones(cuerpo, botones);
   const respaldo = cuerpo + (o.conPlanes ? ' Escribe «planes» o «asesor».' : ' Escribe «asesor».');
@@ -1124,6 +1160,7 @@ function ccPlanes(cfg, asesor, cierre, comoFunciona, opc) {
   const archivo = ccArchivoDePlanes(c);
   const extra = { tipoReporte: 'interactive', evento: 'planes', botones: ['asesor'] };
   const frases = ccFrasesDePrecios(c, !!(opc && opc.aMedida));
+  const intro = opc && opc.repite === true ? '¡Con gusto te los comparto otra vez! 😊' : '¡Claro! 😊';
   // §16: con `guion.precios` el cierre es el de los precios (D3), no el del rubro.
   const cierreFinal = frases ? ccPlano(ccPreciosDelGuion(c).cierre) : cierre;
   const cierreTexto = ccEm(ccCierreDePlanes(cierreFinal, asesor), c);
@@ -1133,8 +1170,8 @@ function ccPlanes(cfg, asesor, cierre, comoFunciona, opc) {
   if (archivo) {
     // Con `guion.precios` los emojis van por partes: «¡Claro! 😊 …precios…» y el cierre conservan cada uno el suyo con el nivel «pocos».
     const cuerpo = frases
-      ? ccEmPartes(['¡Claro! 😊 ' + frases.join(' '), ccCierreDePlanes(cierreFinal, asesor)], c.nivelEmojis)
-      : ccEm(['¡Claro! 😊', ccResumenDePrecios(c), comoLimpio, ccCierreDePlanes(cierre, asesor)].filter((x) => x !== '').join(' '), c);
+      ? ccEmPartes([intro + ' ' + frases.join(' '), ccCierreDePlanes(cierreFinal, asesor)], c.nivelEmojis)
+      : ccEm([intro, ccResumenDePrecios(c), comoLimpio, ccCierreDePlanes(cierre, asesor)].filter((x) => x !== '').join(' '), c);
     const payload = cmBotones(cuerpo, boton);
     payload.interactive.header = archivo.tipo === 'pdf'
       ? { type: 'document', document: { link: archivo.url, filename: ccPlano(archivo.nombreArchivo, 80) || 'Planes.pdf' } }
@@ -1151,7 +1188,7 @@ function ccPlanes(cfg, asesor, cierre, comoFunciona, opc) {
   }
   for (const bloque of [completo, ccBloquePlanes(c, true)]) {
     for (const cola of colas) {
-      const cuerpo = bloque + '\n\n' + cola;
+      const cuerpo = (opc && opc.repite === true && (ccEm('Te los comparto otra vez 😊', c) + '\n\n' + bloque + '\n\n' + cola).length <= CC_CUERPO_INTERACTIVO ? ccEm('Te los comparto otra vez 😊', c) + '\n\n' : '') + bloque + '\n\n' + cola;
       if (cuerpo.length <= CC_CUERPO_INTERACTIVO) return cmMensaje('cliente', cmBotones(cuerpo, boton), cuerpo, cuerpo + ' Escribe «asesor».', extra);
     }
   }
@@ -1460,7 +1497,11 @@ function ccRetomar(e, cfg, prefijo, opc) {
 function ccAplicarPlanes(e, cumplida) {
   if (e.soporte !== true) e.hechos.pidioPlanes = true;
   e.planesPendientes = false;
-  if (e.planesMostrados === true) return 'planes_ya';
+  // §17: una petición POSTERIOR de planes vuelve a mandar la imagen UNA vez («planes_otra_vez»: por si no la vio o la perdió arriba); a la siguiente, «ya te los mostré arriba».
+  if (e.planesMostrados === true) {
+    if (e.planesReenviados !== true) { e.planesReenviados = true; return 'planes_otra_vez'; }
+    return 'planes_ya';
+  }
   e.planesMostrados = true;
   if (cumplida) e.paso = 'oferta';
   return 'planes';
@@ -1642,7 +1683,7 @@ function ccDecidir(a) {
       return hay ? modelo('empresa') : delPaso('retomar', { prefijo: '' });
     }
     default: // oferta y libre
-      if (dichoOEscrito && ccPidePlanesCorto(texto)) return resolver(ccPedirPlanes(e));
+      if (dichoOEscrito && (ccPidePlanesCorto(texto) || ccPideCostoConObjeto(texto))) return resolver(ccPedirPlanes(e));
       // H2: un «sí» corto a la oferta va a los planes (que ya traen el botón del asesor): sin planes que mostrar, es un «sí» al asesor.
       if (dichoOEscrito && ccEsAfirmativo(texto)) return ccHayPlanes(cfg) ? resolver(ccPedirPlanes(e)) : traspaso();
       // En libre, un agradecimiento o una despedida no repite la oferta del asesor.
@@ -1687,6 +1728,7 @@ function ccMensajesDe(accion, e, cfg, t, x) {
       return [ccRetomar(e, cfg, ccRespuestaFija(accion, cfg, hayAsesor, ccVariante(e, 'fijas', 3)), { conAsesor: hayAsesor, soloPrefijo: true, sinAsesor: !hayAsesor })];
     }
     case 'planes': return [ccPlanes(cfg, cfg.asesor, ccCierreDelRubro(e, cfg), ccComoFuncionaDelRubro(e, cfg), { aMedida: e.rubroId === '' && ccTieneRubro(e) })];
+    case 'planes_otra_vez': return [ccPlanes(cfg, cfg.asesor, ccCierreDelRubro(e, cfg), ccComoFuncionaDelRubro(e, cfg), { aMedida: e.rubroId === '' && ccTieneRubro(e), repite: true })];
     case 'planes_ya': return [ccOferta({ empatia: '¡Ya te los mostré arriba! 😊', impacto: '', asesor: cfg.asesor, conPlanes: false, nivel: cfg.nivelEmojis, indice: ccIndiceDeOferta(e) })];
     case 'traspaso':
     case 'soporte':
@@ -1729,8 +1771,9 @@ function ccMensajesDe(accion, e, cfg, t, x) {
     }
     case 'retomar': return [ccRetomar(e, cfg, extra.prefijo, { conAsesor: extra.conAsesor === true, suelta: extra.suelta === true, sinAsesor: !ccHayRecepcion(cfg, t.from) })];
     case 'descarte': return [ccFijo(ccTextoDelDescarte(extra.motivo, negocio), false, cfg, 'descarte')];
-    default: // falla
-      return [ccFijo('¡Uy, tuve un problema para procesar tu mensaje! 😅 Si quieres, ' + quien + ' te ayuda directamente.', true, cfg, 'falla')];
+    default: // falla (§17: dos redacciones que rotan con `fijas`: dos fallos seguidos no dan el mismo texto; sin prometer nada y con el botón del equipo)
+      return [ccFijo(['¡Uy, tuve un problema para procesar tu mensaje! 😅 Si quieres, ' + quien + ' te ayuda directamente.',
+        '¡Ups, algo falló de mi lado con tu mensaje! 😅 Si prefieres, puedes hablar con ' + quien + ' con el botón de abajo.'][ccVariante(e, 'fijas', 2)], true, cfg, 'falla')];
   }
 }
 
@@ -1807,7 +1850,8 @@ function ccResolverModelo(plan, r, e, cfg) {
   const sustantivo = hayTexto && (ccEsSustantivo(plan.texto) || (pregunta && r.tipo !== 'otro'));
   if (hayTexto && pregunta) e.temas = ccTemasUnidos(e.temas, ['dudas']);
   // La necesidad que el cliente cuenta se guarda para el resumen de la hoja (ya validada por `ccLeerModelo`, y por `ccNecesidadValida` al armar el prospecto).
-  const guardarNecesidad = () => { if (r.necesidad && !pregunta) e.necesidad = r.necesidad; };
+  // §17: la ÚLTIMA necesidad válida que cuenta tras el cierre investigativo pisa la anterior, mientras no haya pasado con el equipo (después, la hoja ya tiene lo que importó para el traspaso).
+  const guardarNecesidad = () => { if (r.necesidad && !pregunta && e.hechos.pidioAsesor !== true) e.necesidad = r.necesidad; };
   // Lo que antecede a la pregunta del paso: la respuesta del modelo o, sin datos, una de tres frases cálidas (§15; solo avanza su contador si se usa). Sin datos
   // se ofrece al asesor como una OPCIÓN (no como promesa) y solo si hay a quién (`ccHayRecepcion`): si no, la frase no lo nombra y no lleva botón.
   const hayAsesor = ccHayRecepcion(cfg, plan.from);
@@ -1909,6 +1953,7 @@ function ccResolverModelo(plan, r, e, cfg) {
     default: // libre (oferta y libre)
       if (sustantivo) e.hechos.respondioDolor = true;
       if (pregunta) return retomar();
+      guardarNecesidad();
       return { accion: 'oferta', extra: { empatia: empatia, impacto: '' } };
   }
 }

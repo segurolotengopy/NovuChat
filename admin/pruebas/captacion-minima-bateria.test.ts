@@ -797,7 +797,7 @@ describe('Batería de Captación mínima contra el modelo', () => {
       expect(dicho('K-INTEGRA')).toMatch(/SAP.*Tigo Money.*Shopify/);
       expect(dicho('K-BANCO')).toMatch(/¿Valida mis transferencias con el banco\?/);
       expect(dicho('N-NOMBRE1')).toMatch(/Juan Pérez, Salón Rosa/);
-      expect(dicho('N-NOMBRE2')).toMatch(/Juan Pérez, Salón Rosa.*Salón Rosa/);
+      expect(dicho('N-NOMBRE2')).toMatch(/mi negocio es Salón Rosa/);
       expect(por('R-SAL')['opciones']).toEqual({ rubrosDelDocumento: true });
       for (const id of ['R-SAL', 'R-BEL', 'R-GAS', 'R-RET', 'R-EDU', 'R-LEA']) expect(por(id)['opciones'], id).toEqual({ rubrosDelDocumento: true });
       for (const id of ['V-SYB', 'V-GAS', 'V-COM', 'V-EDU']) expect(por(id)['opciones'], id).toBeUndefined();   // los 5 ids VIVOS de la consola

@@ -787,7 +787,7 @@ export function cargarLibreria(flujo) {
   const i = codigo.indexOf('// ARMAR MENSAJES:');
   if (i < 0) throw new Error('No encuentro el inicio del código propio de «Armar mensajes» en el flujo: ¿se reconstruyó con otra cabecera?');
   // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function(...GLOBALES_FUERA, codigo.slice(0, i) + '\nreturn { ccLeerModelo, ccIdsDeRubros, ccIdsDeAclaraciones, ccResumenDePrecios, CC_EMPATIA_RESPALDO, ccLimites, ccContar, ccSistemaAjeno };');
+  const fn = new Function(...GLOBALES_FUERA, codigo.slice(0, i) + '\nreturn { ccLeerModelo, ccIdsDeRubros, ccIdsDeAclaraciones, ccResumenDePrecios, CC_EMPATIA_RESPALDO, ccLimites, ccContar, ccSistemaAjeno, ccCubrePuntos, ccGuionDe };');
   return fn(...GLOBALES_FUERA.map(() => undefined));
 }
 
@@ -1050,7 +1050,15 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       // `sinCifras`: ni un dígito; `imagenPlanes`: sale el mensaje de planes con su imagen; `sinModelo`: el código contestó solo (cero llamadas).
       const todo = alCliente.map((m) => m.cuerpo).join(' | ');
       const falla = (regla, texto) => corrida.violaciones.push({ caso: caso.id, rep, turno: i + 1, dicho: dichoDe(t), regla, texto: String(texto).replace(/\s+/g, ' ').slice(0, 200) });
-      if (t.exige.termina !== undefined && !alCliente.some((m) => norm(m.cuerpo).endsWith(norm(t.exige.termina)))) falla('no_termina_como_se_exige', todo);
+      if (t.exige.termina !== undefined && !alCliente.some((m) => [].concat(t.exige.termina).some((x) => norm(m.cuerpo).endsWith(norm(x))))) falla('no_termina_como_se_exige', todo);
+      // `contieneAlguna`: basta UNA de las frases (el documento admite varias formas de decir lo mismo: «mayor cuello de botella» o «qué tarea te quita más tiempo»).
+      if (t.exige.contieneAlguna !== undefined && ![].concat(t.exige.contieneAlguna).some((x) => norm(todo).includes(norm(x)))) falla('falta_lo_que_se_exige', `falta alguna de ${[].concat(t.exige.contieneAlguna).map((x) => `«${x}»`).join(' o ')} en: ${todo}`);
+      // `cubrePuntos`: la MISMA regla que usa el validador del flujo (`ccCubrePuntos` con la familia de palabras de cada punto clave del dato): la explicación dice TODOS los puntos clave de su rubro.
+      if (t.exige.cubrePuntos === true) {
+        const puntos = ((lib.ccGuionDe(cfg, String(plan.e?.rubroId ?? '')).propia ?? {}).puntosClave) ?? [];
+        const sale = alCliente.map((m) => m.cuerpo).find((c) => /¿Te gustaría ver nuestros planes|prefieres hablar con/.test(c)) ?? todo;
+        if (!puntos.length || !lib.ccCubrePuntos(sale, puntos)) falla('no_cubre_los_puntos_clave', sale);
+      }
       for (const x of [].concat(t.exige.contiene ?? [])) if (!norm(todo).includes(norm(x))) falla('falta_lo_que_se_exige', `falta «${x}» en: ${todo}`);
       for (const x of [].concat(t.exige.noContiene ?? [])) if (norm(todo).includes(norm(x))) falla('trae_lo_que_no_debe', `trae «${x}» en: ${todo}`);
       if (t.exige.sinCifras === true && /\d/.test(todo)) falla('cifra_donde_no_va', todo);
@@ -1201,7 +1209,7 @@ export function validarCasos(datos) {
       if (t.seco !== undefined && typeof t.seco !== 'string' && (typeof t.seco !== 'object' || t.seco === null || Object.keys(t.seco).some((k) => !CAMPOS.includes(k)))) {
         throw new Error(`bateria-casos.json: ${donde}: «seco» debe ser un objeto con campos del esquema, o un texto.`);
       }
-      if (t.exige !== undefined && (typeof t.exige !== 'object' || t.exige === null || Object.keys(t.exige).some((k) => !['accion', 'boton', 'termina', 'contiene', 'noContiene', 'sinCifras', 'imagenPlanes', 'sinModelo'].includes(k)))) {
+      if (t.exige !== undefined && (typeof t.exige !== 'object' || t.exige === null || Object.keys(t.exige).some((k) => !['accion', 'boton', 'termina', 'contiene', 'contieneAlguna', 'noContiene', 'sinCifras', 'imagenPlanes', 'sinModelo', 'cubrePuntos'].includes(k)))) {
         throw new Error(`bateria-casos.json: ${donde}: «exige» solo admite accion, boton, termina, contiene, noContiene, sinCifras, imagenPlanes y sinModelo.`);
       }
       if (t.espera !== undefined && (typeof t.espera !== 'object' || Object.keys(t.espera).some((k) => !['tipo', 'rubroId', 'rubroLibre', 'descarte', 'enLosDatos', 'necesidad', 'nombre', 'empresa', 'explicacion'].includes(k)))) {

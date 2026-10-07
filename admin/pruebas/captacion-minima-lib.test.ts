@@ -294,7 +294,7 @@ describe('estado por teléfono', () => {
     expect(e).toEqual({
       v: 1, paso: 'inicio', rubroId: '', rubroLibre: '', empresa: '', reintentoEmpresa: false, nombre: '', necesidad: '', temas: [],
       hechos: { pidioAsesor: false, pidioPlanes: false, eligioOtro: false, respondioDolor: false, descarte: '' },
-      planesPendientes: false, planesMostrados: false, soporte: false, anuncio: false, avisado: false, avisoFalla: '', ultimoMensajeMs: 0, ultimosIds: [], ofertas: 0, sueltas: 0,
+      planesPendientes: false, planesMostrados: false, planesReenviados: false, soporte: false, anuncio: false, avisado: false, avisoFalla: '', ultimoMensajeMs: 0, ultimosIds: [], ofertas: 0, sueltas: 0,
       impactoDicho: false, rot: { saludo: 0, rubros: 0, traspaso: 0, acuse: 0, cierre: 0, sinDatos: 0, identidad: 0, pideAsesor: 0, fijas: 0 }, repetidas: 0,
     });
     e.hechos.pidioAsesor = true;
@@ -1721,7 +1721,7 @@ describe('el armado de punta a punta, con una plantilla de ejemplo', () => {
   it('`--verificar` ve un dato cambiado, un archivo borrado, una guardia violada a mano y un huérfano', () => {
     const original = readFileSync(join(datos, 'novuchat.json'), 'utf8');
     const d = JSON.parse(original) as J;
-    d['guion'].rubros['comercio-y-retail'].explicacion = '¡Genial! 🛍️ Este texto cambió.';
+    d['guion'].rubros['comercio-y-retail'].explicacion = d['guion'].rubros['comercio-y-retail'].explicacion.replace('¡Genial,', '¡Excelente,');
     writeFileSync(join(datos, 'novuchat.json'), JSON.stringify(d));
     try {
       const r = armar({ verificar: true });
@@ -1853,7 +1853,8 @@ describe('el turno: ccDecidir y ccCompletar', () => {
     expect(p2['e']).toMatchObject({ rubroId: 'comercio-y-retail', planesPendientes: false, planesMostrados: true, paso: 'oferta' });
     expect(p2['e'].hechos.pidioPlanes).toBe(true);
     const p3 = decidir(p2['e'], TXT('precios'));
-    expect(p3['accion']).toBe('planes_ya'); // un segundo pedido no los repite
+    expect(p3['accion']).toBe('planes_otra_vez'); // §17: un segundo pedido los reenvía UNA vez…
+    expect(decidir(p3['e'], TXT('precios'))['accion']).toBe('planes_ya'); // …y el tercero ya no
   });
   it('un toque en el rubro elige y va al dolor; un rubro sin entrada en el guion se trata como «Otro»', () => {
     const p = decidir(E({ paso: 'eligiendo_rubro' }), TOQUE('rubro:salud-y-belleza'));
@@ -2218,6 +2219,19 @@ describe('§12: correcciones de la revisión (S1 a S4, S8, R1 a R7, R11, R12), u
     for (const t of ['precios', 'los precios por favor', '¿cuánto cuestan los planes?', 'hola, quiero ver los precios', 'necesito los planes', 'cuál es el precio']) expect(f('ccPideListaPlanes')(t), t).toBe(true);
     for (const t of ['Hola, vendo ropa y mis clientes me preguntan precios todo el día', 'mis precios cambian seguido', 'tengo planes de crecer', 'hola']) expect(f('ccPideListaPlanes')(t), t).toBe(false);
   });
+  it('§17: `ccPideCostoDelServicio` solo confirma el costo del SERVICIO; «cuánto cuesta» sobre un producto del cliente o lo que le preguntan a él no es un pedido', () => {
+    for (const t of ['¿cuánto cuesta?', '¿cuánto cobran por el servicio?', 'precios', 'quiero ver los planes', 'cuánto cuesta el bot', '¿cuánto sale al mes?']) expect(f('ccPideCostoDelServicio')(t), t).toBe(true);
+    for (const t of ['Me quita tiempo responder cuánto cuesta cada herramienta', 'mis clientes preguntan cuánto cuesta cada producto', 'tengo que decirles cuánto cuesta el repuesto', 'vendo ropa y me preguntan precios todo el día', 'hola']) expect(f('ccPideCostoDelServicio')(t), t).toBe(false);
+    expect(f('ccPideCostoConObjeto')('¿Cuánto cobran por el servicio?')).toBe(true);
+    expect(f('ccPideCostoConObjeto')('Me quita tiempo responder cuánto cuesta cada herramienta')).toBe(false);
+  });
+  it('§17: `ccCubrePuntos` exige TODOS los puntos, con las familias de palabras de cada uno', () => {
+    const puntos = [{ texto: 'Notas especiales en el pedido', palabras: 'notas especiales|indicaciones|aclaraciones|observaciones' }, { texto: 'Cobro con QR', palabras: 'qr' }];
+    expect(f('ccCubrePuntos')('Anota las indicaciones de cada compra y cobra con QR.', puntos)).toBe(true);
+    expect(f('ccCubrePuntos')('Registra las observaciones del pedido y cobra con QR.', puntos)).toBe(true);
+    expect(f('ccCubrePuntos')('Registra las notas especiales del pedido.', puntos)).toBe(false); // omite el QR
+    expect(f('ccCubrePuntos')('Cobra con QR para que pase a cocina.', puntos)).toBe(false);      // omite las notas
+  });
   it('R4: ccEsSoporte exige una forma de cliente; la palabra suelta no basta', () => {
     for (const t of ['necesito soporte', 'quiero soporte técnico', 'soporte de mi cuenta', 'soporte para mi consola', 'ya soy cliente']) expect(f('ccEsSoporte')(t), t).toBe(true);
     for (const t of ['¿El plan incluye soporte?', 'tienen soporte', 'el soporte es 24 horas', 'soportes de pared']) expect(f('ccEsSoporte')(t), t).toBe(false);
@@ -2351,8 +2365,10 @@ describe('H1 y H2 (batería contra el modelo): montos con moneda y el «sí» a 
     expect(p['accion']).toBe('planes');
     expect(p['e'].hechos.pidioPlanes).toBe(true);
     expect(p['e'].planesMostrados).toBe(true);
-    const otra = dec(p['e'], 'claro');
-    expect(otra['accion']).toBe('planes_ya');
+    const reenvio = dec(p['e'], 'claro');
+    expect(reenvio['accion']).toBe('planes_otra_vez');   // §17: la 1.ª petición posterior reenvía la imagen
+    const otra = dec(reenvio['e'], 'claro');
+    expect(otra['accion']).toBe('planes_ya');             // y a la siguiente, «ya te los mostré»
     expect(f('ccCompletar')({ plan: otra, modelo: null, cfg: CFGH })['mensajes'][0]['botones']).toEqual(['asesor']);
     for (const paso of ['oferta', 'libre']) expect(dec({ paso, rubroId: 'salud-y-belleza' }, 'dale')['accion'], paso).toBe('planes');
   });
@@ -2541,7 +2557,7 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
     const t = (texto: string, extra: J = {}): J => ({ from: '59100000011', nombrePerfil: 'Ana', tipo: 'text', texto, via: 'texto', idToque: '', anuncio: false, textoDeImagen: '', categoria: '', medioFallo: '', ...extra });
     const salida = (e: J, dicho: J, cfg: J = CFGV): J => (f('ccCompletar')({ plan: f('ccDecidir')({ e, t: dicho, cfg }), modelo: null, cfg })['mensajes'] as J[])[0]!;
     // Pedir los planes dos veces: la segunda no los repite y lo dice con calidez, con la pregunta del asesor y su botón.
-    const ya = salida(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true }), t('precios'));
+    const ya = salida(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true, planesReenviados: true }), t('precios'));
     expect(cuerpo(ya)).toBe('¡Ya te los mostré arriba! 😊 ¿Te gustaría hablar con alguien de nuestro equipo para ver cómo lo armaríamos en tu caso?');
     expect(ya['botones']).toEqual(['asesor']);
     const comp = salida(E({ paso: 'oferta', rubroId: 'educacion' }), t('', { tipo: 'image', via: 'imagen', categoria: 'comprobante', textoDeImagen: 'x' }));
@@ -2559,7 +2575,7 @@ describe('§13: los ids de rubro de la consola viva (C1) y el tono (C2)', () => 
     }
     // Con el nivel «ninguno» salen sin un solo emoji y sin espacios de más (la negación no es vacía: con «muchos» sí los traen).
     const sin = { ...CFGV, nivelEmojis: 'ninguno' };
-    const s1 = salida(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true }), t('precios'), sin);
+    const s1 = salida(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true, planesReenviados: true }), t('precios'), sin);
     const s2 = salida(E({ paso: 'oferta', rubroId: 'educacion' }), t('', { tipo: 'image', via: 'imagen', categoria: 'comprobante', textoDeImagen: 'x' }), sin);
     const s3 = salida(E({ paso: 'libre', rubroId: 'educacion', empresa: 'Colegio Sol' }), t('muchas gracias'), sin);
     expect(cuerpo(s1)).toBe('¡Ya te los mostré arriba! ¿Te gustaría hablar con alguien de nuestro equipo para ver cómo lo armaríamos en tu caso?');
@@ -2756,7 +2772,7 @@ describe('§14: cordialidad (sin repeticiones innecesarias)', () => {
     expect(f('ccPreguntaDeOferta')('Silvana', false, 2)).toBe('¿Quieres hablar con Silvana para resolver tus dudas?');
     for (const i of [0, 1, 2, 3, -1, 'x', undefined, NaN]) expect(f('ccPreguntaDeOferta')('Silvana', false, i)).not.toMatch(/planes/);
     // «Ya te los mostré» también rota (no repite idéntica la pregunta del asesor).
-    const ya1 = completar(decidir(E({ paso: 'oferta', rubroId: 'salud-y-belleza', planesMostrados: true }), T('precios')));
+    const ya1 = completar(decidir(E({ paso: 'oferta', rubroId: 'salud-y-belleza', planesMostrados: true, planesReenviados: true }), T('precios')));
     const ya2 = completar(decidir(ya1['e'], T('precios')));
     expect(cuerpo(ya1['mensajes'][0])).toBe('¡Ya te los mostré arriba! 😊 ¿Te gustaría hablar con Silvana para ver cómo lo armaríamos en tu caso?');
     expect(cuerpo(ya2['mensajes'][0])).toBe('¡Ya te los mostré arriba! 😊 ¿Quieres hablar con Silvana para ver cómo se adaptaría a tu caso?');
@@ -2996,7 +3012,7 @@ describe('§15: más detalle y orientación comercial, sin repetición y sin nom
     const textos: [string, string][] = [];
     for (const [id, r] of Object.entries(GUION_REAL['rubros']) as [string, J][]) {
       for (const campo of ['explicacion', 'propuesta', 'queHacemos', 'preguntaDolor', 'pregunta']) if (r[campo]) textos.push([`${id}.${campo}`, r[campo]]);
-      for (const [i, p] of ((r['puntosClave'] ?? []) as string[]).entries()) textos.push([`${id}.puntosClave[${i}]`, p]);
+      for (const [i, p] of ((r['puntosClave'] ?? []) as (string | { texto: string })[]).entries()) textos.push([`${id}.puntosClave[${i}]`, typeof p === 'string' ? p : p.texto]);
     }
     for (const [k, v] of Object.entries(GUION_REAL['precios']) as [string, string][]) textos.push([`precios.${k}`, v]);
     for (const [k, v] of Object.entries(GUION_REAL['respuestas']) as [string, string][]) textos.push([`respuestas.${k}`, v]);
@@ -3823,7 +3839,10 @@ describe('§16: el documento comercial (híbrido: el modelo redacta, el código 
         expect(cuerpo(r['mensajes'][0]), q).not.toMatch(/\d+ conversaciones|\d+ mensajes/);
       }
       // Con los planes ya mostrados no se repiten: «ya te los mostré», sin cifras.
-      const ya = turno(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true }), T('¿Cuántas conversaciones trae el Impulso?'));
+      const reenvio = turno(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true }), T('¿Cuántas conversaciones trae el Impulso?'));
+      expect(reenvio['accion']).toBe('planes_otra_vez');
+      expect(reenvio['mensajes'][0]['payload']['interactive']['header']).toEqual({ type: 'image', image: { link: ARCHIVO_IMG } });
+      const ya = turno(E({ paso: 'oferta', rubroId: 'educacion', planesMostrados: true, planesReenviados: true }), T('¿Cuántas conversaciones trae el Impulso?'));
       expect(cuerpo(ya['mensajes'][0])).toMatch(/¡Ya te los mostré arriba!/);
       // NIEGA: sin nombrar un plan ni la palabra «plan», es la pregunta general (la respuesta fija).
       expect(f('ccPreguntaTopePlan')('¿cuántas conversaciones puedo tener?', PLANES16)).toBe(false);
@@ -4293,8 +4312,8 @@ describe('§16: validarDatos de los campos nuevos del guion (explicación, punto
     expect(error((d) => { rubro(d, 'otro')['propuesta'] = Array(70).fill('ya').join(' ') + '.'; })).toMatch(/«guion\.rubros\.otro\.propuesta» con la empatía/);
   });
   it('NIEGA: los límites exactos pasan (explicación de 72 palabras en 4 oraciones, 8 puntos clave) y ningún texto real se rechaza por falso positivo', () => {
-    expect(error((d) => { rubro(d)['explicacion'] = '¡Bien! ' + Array(23).fill('ya').join(' ') + '. ' + Array(24).fill('ya').join(' ') + '. ' + Array(24).fill('ya').join(' ') + '.'; })).toBe('');
-    expect(error((d) => { rubro(d)['puntosClave'] = Array(8).fill('un punto clave del rubro'); })).toBe('');
+    expect(error((d) => { rubro(d)['explicacion'] = '¡Bien! ' + Array(23).fill('ya').join(' ') + '. ' + Array(24).fill('ya').join(' ') + '. ' + Array(24).fill('ya').join(' ') + '.'; rubro(d)['puntosClave'] = [{ texto: 'Dice ya', palabras: 'ya' }, { texto: 'Dice ya otra vez', palabras: 'ya' }]; })).toBe('');
+    expect(error((d) => { rubro(d)['puntosClave'] = Array(8).fill('un punto clave del rubro'); rubro(d)['explicacion'] = '¡Bien! Es un punto clave del rubro.'; })).toBe('');
     for (const [id, r] of Object.entries(base()['guion'].rubros) as [string, J][]) {
       for (const campo of ['explicacion', 'propuesta', 'preguntaDolor', 'pregunta', 'queHacemos']) if (r[campo]) expect(error((d) => { d['guion'].rubros[id][campo] = r[campo]; }), `${id}.${campo}`).toBe('');
     }

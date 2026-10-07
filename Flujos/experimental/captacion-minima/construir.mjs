@@ -329,10 +329,24 @@ export function validarDatos(datos, archivo) {
           if (!Array.isArray(r.puntosClave)) e(`${ruta}.puntosClave`, 'falta: la explicación se apoya en los puntos clave del rubro (los ve el modelo)');
         }
         if (r.puntosClave !== undefined) {
-          if (!Array.isArray(r.puntosClave) || r.puntosClave.length < 2 || r.puntosClave.length > 8) e(`${ruta}.puntosClave`, 'tiene que ser una lista de 2 a 8 textos');
+          // §17: cada punto clave es un texto (lo ve el modelo) con su FAMILIA de palabras aceptables (`palabras`, alternativas de una expresión regular sin tildes ni mayúsculas) —la regla única
+          // que usan el validador de la explicación y la batería— o un texto suelto (se toca con un tercio de sus raíces). El respaldo fijo tiene que cubrir todos sus puntos.
+          if (!Array.isArray(r.puntosClave) || r.puntosClave.length < 2 || r.puntosClave.length > 8) e(`${ruta}.puntosClave`, 'tiene que ser una lista de 2 a 8 puntos');
           else r.puntosClave.forEach((p, i) => {
-            if (typeof p !== 'string' || p.length < 3 || p.length > 160) e(`${ruta}.puntosClave[${i}]`, 'tiene que ser un texto de 3 a 160 caracteres');
-            else { const m = errorDeTextoDelGuion(p); if (m) e(`${ruta}.puntosClave[${i}]`, m); }
+            const donde = `${ruta}.puntosClave[${i}]`;
+            const texto = p && typeof p === 'object' && !Array.isArray(p) ? p.texto : p;
+            if (typeof texto !== 'string' || texto.length < 3 || texto.length > 160) { e(donde, 'tiene que ser un texto de 3 a 160 caracteres (o un objeto { texto, palabras })'); return; }
+            const m = errorDeTextoDelGuion(texto);
+            if (m) { e(donde, m); return; }
+            if (p && typeof p === 'object') {
+              for (const k of Object.keys(p)) if (!['texto', 'palabras'].includes(k)) e(donde, `no tiene el campo «${k}» (solo texto y palabras)`);
+              if (p.palabras !== undefined) {
+                if (typeof p.palabras !== 'string' || p.palabras.length < 2 || p.palabras.length > 240 || !/^[a-z0-9 |()?.*]+$/.test(p.palabras)) { e(`${donde}.palabras`, 'tiene que ser una familia de palabras (minúsculas sin tildes, números, espacios y | ( ) ? . *) de hasta 240 caracteres'); return; }
+                let re = null;
+                try { re = new RegExp(p.palabras); } catch (x) { e(`${donde}.palabras`, 'no compila como expresión regular'); return; }
+                if (typeof r.explicacion === 'string' && !re.test(ccNorm(r.explicacion))) e(`${donde}.palabras`, `la explicación fija del rubro no la cubre («${texto}»): el respaldo tiene que decir todos sus puntos clave`);
+              }
+            }
           });
         }
         if (propuesta) {

@@ -32,78 +32,207 @@
     "rubros": {
       "salud-y-belleza": {
         "puntosClave": [
-          "Recepcionista virtual 24/7",
-          "Se integra a Google Calendar",
-          "Maneja múltiples agendas a la vez y agenda sin cruzar horarios",
-          "Muestra los servicios y motiva a agendar en el momento",
-          "Revisa la disponibilidad de los especialistas",
-          "Recordatorio automático un día antes para asegurar la asistencia"
+          {
+            "texto": "Recepcionista virtual 24/7",
+            "palabras": "recepcion|24 7|24 horas|las 24|todo el dia|a toda hora|siempre"
+          },
+          {
+            "texto": "Se integra a Google Calendar",
+            "palabras": "calendar|calendario"
+          },
+          {
+            "texto": "Muestra los servicios y motiva a agendar en el momento",
+            "palabras": "servicios|tratamientos|agendar|reservar|agenda|cita"
+          },
+          {
+            "texto": "Revisa la disponibilidad de los especialistas",
+            "palabras": "disponibilidad|horarios (libres|disponibles)|especialistas|profesionales|estilistas|terapeutas|agendas"
+          },
+          {
+            "texto": "Agenda sin cruzar horarios",
+            "palabras": "cruz|superpon|empalm|choc|duplic|dobles|sin conflictos"
+          },
+          {
+            "texto": "Recordatorio automático un día antes para asegurar la asistencia",
+            "palabras": "(recordatorio|recuerda|recordar|avisa|aviso|notifica).*(antes|anterior|previo|vispera)|(un dia|24 horas) antes"
+          }
         ],
-        "explicacion": "¡Excelente! ✨ NovuChat es tu recepcionista virtual 24/7 🏥: muestra tus servicios, revisa la disponibilidad de cada profesional y agenda en tu Google Calendar 📅, sin cruzar horarios. Además manda un recordatorio automático un día antes ⏰ para asegurar la asistencia y mantener tu agenda llena."
+        "explicacion": "¡Qué bien que trabajes en salud o belleza! ✨ NovuChat es tu recepcionista virtual 24/7 🏥: muestra tus servicios, revisa la disponibilidad de cada profesional y agenda en tu Google Calendar 📅, sin cruzar horarios. Además manda un recordatorio automático un día antes ⏰ para asegurar la asistencia y mantener tu agenda llena."
       },
       "salud": {
         "puntosClave": [
-          "Recepcionista virtual 24/7",
-          "Se integra a Google Calendar",
-          "Maneja múltiples agendas a la vez",
-          "Agenda sin cruzar horarios",
-          "Recordatorio automático un día antes para asegurar la asistencia"
+          {
+            "texto": "Recepcionista virtual 24/7",
+            "palabras": "recepcion|24 7|24 horas|las 24|todo el dia|a toda hora|siempre"
+          },
+          {
+            "texto": "Se integra a Google Calendar",
+            "palabras": "calendar|calendario"
+          },
+          {
+            "texto": "Maneja múltiples agendas a la vez",
+            "palabras": "agendas|varios (doctores|medicos|profesionales|especialistas)|varias (citas|agendas)|multiples|a la vez"
+          },
+          {
+            "texto": "Agenda sin cruzar horarios",
+            "palabras": "cruz|superpon|empalm|choc|duplic|dobles|sin conflictos"
+          },
+          {
+            "texto": "Recordatorio automático un día antes para asegurar la asistencia",
+            "palabras": "(recordatorio|recuerda|recordar|avisa|aviso|notifica).*(antes|anterior|previo|vispera)|(un dia|24 horas) antes"
+          }
         ],
-        "explicacion": "¡Qué bien! 🏥 NovuChat es tu recepcionista virtual 24/7: se integra a tu Google Calendar 📅, maneja varias agendas a la vez y agenda sin cruzar horarios. Además manda un recordatorio automático un día antes para asegurar la asistencia ⏰."
+        "explicacion": "¡Qué bien que cuides la salud de tus pacientes! 🏥 NovuChat es tu recepcionista virtual 24/7: se integra a tu Google Calendar 📅, maneja varias agendas a la vez y agenda sin cruzar horarios. Además manda un recordatorio automático un día antes para asegurar la asistencia ⏰."
       },
       "belleza": {
         "puntosClave": [
-          "Muestra los servicios y motiva a agendar en el momento",
-          "Revisa la disponibilidad de los especialistas",
-          "Agenda la cita",
-          "Recordatorio 24 horas antes para mantener la agenda llena"
+          {
+            "texto": "Muestra los servicios",
+            "palabras": "servicios|tratamientos|catalogo|carta"
+          },
+          {
+            "texto": "Motiva a agendar en el momento",
+            "palabras": "agendar|reservar|reserva|agenda|cita|momento"
+          },
+          {
+            "texto": "Revisa la disponibilidad de los especialistas",
+            "palabras": "disponibilidad|horarios (libres|disponibles)|especialistas|profesionales|estilistas|terapeutas"
+          },
+          {
+            "texto": "Recordatorio 24 horas antes",
+            "palabras": "(recordatorio|recuerda|recordar|avisa|aviso|notifica).*(antes|anterior|previo|vispera)|(un dia|24 horas) antes"
+          },
+          {
+            "texto": "Mantiene la agenda llena",
+            "palabras": "agenda llena|llena|ausenc|inasisten|plantones|asistencia|completa"
+          }
         ],
         "explicacion": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena."
       },
       "gastronomia": {
         "puntosClave": [
-          "En horas pico no se pierden pedidos",
-          "Muestra el menú",
-          "Toma el pedido registrando notas especiales",
-          "Cobra con QR para que pase directo a cocina"
+          {
+            "texto": "En horas pico no se pierden pedidos",
+            "palabras": "pico|no pierd|sin perder|colaps|saturad|alta demanda|pedidos"
+          },
+          {
+            "texto": "Muestra el menú",
+            "palabras": "menu|carta"
+          },
+          {
+            "texto": "Toma el pedido registrando notas especiales",
+            "palabras": "notas especiales|indicaciones|aclaraciones|observaciones|detalles|preferencias|especificaciones|comentarios"
+          },
+          {
+            "texto": "Cobra con QR",
+            "palabras": "qr"
+          },
+          {
+            "texto": "El pedido pasa directo a cocina",
+            "palabras": "cocina|directo|preparacion"
+          }
         ],
         "explicacion": "¡Qué rico! 🍔 En horas pico ya no pierdes pedidos 🔥: NovuChat muestra tu menú, toma cada pedido registrando las notas especiales y realiza el cobro con QR 📲 para que pase directo a cocina."
       },
       "comercio-y-retail": {
         "puntosClave": [
-          "No pierden ventas en las noches",
-          "Muestra el catálogo y ayuda a cerrar el carrito",
-          "Cobra con QR",
-          "Toma los datos de envío y deja el pedido listo para el despacho"
+          {
+            "texto": "No pierden ventas en las noches",
+            "palabras": "noche|madrugada|fuera de horario|cualquier hora|todo el dia|24"
+          },
+          {
+            "texto": "Muestra el catálogo",
+            "palabras": "catalogo|productos|tienda"
+          },
+          {
+            "texto": "Ayuda a cerrar el carrito",
+            "palabras": "carrito|pedido|compra|venta"
+          },
+          {
+            "texto": "Cobra con QR",
+            "palabras": "qr"
+          },
+          {
+            "texto": "Toma los datos de envío",
+            "palabras": "envio|entrega|direccion"
+          },
+          {
+            "texto": "Deja el pedido listo para el despacho",
+            "palabras": "despacho|listo|entrega|enviar|preparado|salga"
+          }
         ],
-        "explicacion": "¡Genial! 🛍️ Con NovuChat no pierdes ventas por las noches 🌙: muestra tu catálogo, te ayuda a cerrar el carrito, cobra con QR 💳, toma los datos de envío 📦 y deja el pedido listo para el despacho."
+        "explicacion": "¡Genial, tu comercio no tiene que cerrar de noche! 🛍️ Con NovuChat no pierdes ventas por las noches 🌙: muestra tu catálogo, te ayuda a cerrar el carrito, cobra con QR 💳, toma los datos de envío 📦 y deja el pedido listo para el despacho."
       },
       "retail": {
         "puntosClave": [
-          "No pierden ventas en las noches",
-          "Muestra el catálogo y ayuda a cerrar el carrito",
-          "Cobra con QR",
-          "Toma los datos de envío y deja el pedido listo para el despacho"
+          {
+            "texto": "No pierden ventas en las noches",
+            "palabras": "noche|madrugada|fuera de horario|cualquier hora|todo el dia|24"
+          },
+          {
+            "texto": "Muestra el catálogo",
+            "palabras": "catalogo|productos|tienda"
+          },
+          {
+            "texto": "Ayuda a cerrar el carrito",
+            "palabras": "carrito|pedido|compra|venta"
+          },
+          {
+            "texto": "Cobra con QR",
+            "palabras": "qr"
+          },
+          {
+            "texto": "Toma los datos de envío",
+            "palabras": "envio|entrega|direccion"
+          },
+          {
+            "texto": "Deja el pedido listo para el despacho",
+            "palabras": "despacho|listo|entrega|enviar|preparado|salga"
+          }
         ],
-        "explicacion": "¡Genial! 🛍️ Con NovuChat no pierdes ventas por las noches 🌙: muestra tu catálogo, te ayuda a cerrar el carrito, cobra con QR 💳, toma los datos de envío 📦 y deja el pedido listo para el despacho."
+        "explicacion": "¡Genial, tu comercio no tiene que cerrar de noche! 🛍️ Con NovuChat no pierdes ventas por las noches 🌙: muestra tu catálogo, te ayuda a cerrar el carrito, cobra con QR 💳, toma los datos de envío 📦 y deja el pedido listo para el despacho."
       },
       "educacion": {
         "puntosClave": [
-          "Ideal para alto volumen de consultas de padres",
-          "Responde dudas repetitivas como admisiones y pensiones",
-          "Coordina entrevistas directamente en el calendario del colegio"
+          {
+            "texto": "Ideal para alto volumen de consultas de padres",
+            "palabras": "padres|apoderados|familias|consultas|volumen"
+          },
+          {
+            "texto": "Responde dudas repetitivas como admisiones y pensiones",
+            "palabras": "admision|pension|inscripcion|matricula|repetitiv|frecuentes|dudas|preguntas"
+          },
+          {
+            "texto": "Coordina entrevistas directamente en el calendario del colegio",
+            "palabras": "entrevista|reunion|cita|calendario|agenda"
+          }
         ],
-        "explicacion": "¡Qué bien! 🏫 NovuChat es ideal si recibes muchas consultas de padres 👪: responde las dudas repetitivas, como admisiones y pensiones, y coordina entrevistas directamente en el calendario del colegio 📅."
+        "explicacion": "¡Qué bonito trabajar con colegios! 🏫 NovuChat es ideal si recibes muchas consultas de padres 👪: responde las dudas repetitivas, como admisiones y pensiones, y coordina entrevistas directamente en el calendario del colegio 📅."
       },
       "leads-de-ventas": {
         "puntosClave": [
-          "Ningún prospecto calificado se enfría por falta de respuesta inmediata",
-          "Califica el interés del cliente con IA",
-          "Genera un resumen automático y lo registra al instante en un miniCRM",
-          "Organiza los leads en un tablero Kanban por etapas de venta, de nuevo lead a negociación",
-          "El asesor comercial concreta el cierre con toda la información lista"
+          {
+            "texto": "Ningún prospecto calificado se enfría por falta de respuesta inmediata",
+            "palabras": "enfri|pierd|inmediat|rapid|al instante|al momento|sin demora|de inmediato"
+          },
+          {
+            "texto": "Califica el interés del cliente con IA",
+            "palabras": "califica|clasifica|evalua|puntua|interes"
+          },
+          {
+            "texto": "Genera un resumen automático y lo registra al instante en un miniCRM",
+            "palabras": "minicrm|crm|registra|resumen"
+          },
+          {
+            "texto": "Organiza los leads en un tablero Kanban por etapas de venta",
+            "palabras": "kanban|tablero|etapas|embudo"
+          },
+          {
+            "texto": "El asesor comercial concreta el cierre con toda la información lista",
+            "palabras": "asesor|comercial|cierre|cierra|concret|informacion lista|vendedor|equipo de ventas"
+          }
         ],
-        "explicacion": "¡Excelente! 💼 Con NovuChat ningún prospecto calificado se enfría por falta de respuesta inmediata 🎯. Califica el interés con IA 🤖, genera un resumen automático y lo registra al instante en un miniCRM 📋, organizado en un tablero Kanban por etapas de venta 📌 para que tu asesor comercial cierre con toda la información lista 🚀."
+        "explicacion": "¡Excelente, cada oportunidad cuenta! 💼 Con NovuChat ningún prospecto calificado se enfría por falta de respuesta inmediata 🎯. Califica el interés con IA 🤖, genera un resumen automático y lo registra al instante en un miniCRM 📋, organizado en un tablero Kanban por etapas de venta 📌 para que tu asesor comercial cierre con toda la información lista 🚀."
       },
       "otro": {
         "pregunta": "¡Perfecto! 😊 Cuéntame un poquito, ¿de qué trata tu negocio y cuál es tu mayor cuello de botella en WhatsApp?",
