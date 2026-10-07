@@ -964,11 +964,35 @@ describe('ubicación compartida: política de permisos y página', () => {
     expect(cuerpo).not.toMatch(/accuracy|precision/);
   });
 
-  it('el botón de confirmar solo se deshabilita sin dirección Y sin ubicación; el fallo del servidor se traduce', () => {
+  // REEMPLAZA a «el botón de confirmar solo se deshabilita sin dirección Y sin ubicación»
+  // (Andres, 07/10/2026): con envío la dirección es OPCIONAL; si falta, el flujo de WhatsApp pide
+  // la ubicación. La regla nueva es más estricta en otro sentido: el botón NO puede depender de la
+  // dirección ni de la ubicación (lo único que lo frena es enviar o un carrito vacío).
+  it('el botón de confirmar ya no depende de la dirección ni de la ubicación; el fallo viejo se traduce', () => {
     const t = sinComentarios(sitioFuente());
-    expect(t).toContain("|| (modo === 'envio' && direccion.trim() === '' && !ubicacion)}");
-    expect(t).toContain("return 'Falta la dirección de entrega o tu ubicación.';");
+    const i = t.indexOf('className="cat-confirmar"');
+    const boton = t.slice(i, t.indexOf('onClick', i));
+    expect(boton).toContain('disabled={enviando || elegidos.length === 0}');
+    expect(boton).not.toMatch(/direccion|ubicacion|modo/);
+    // El código viejo del servidor (Function sin desplegar) se traduce a algo accionable.
+    expect(t).toContain("return 'Escribe la dirección o comparte tu ubicación y confirma de nuevo.';");
     expect(t).not.toContain("return 'Falta la dirección de entrega.';");
+  });
+
+  it('la leyenda de la dirección opcional: texto literal, solo con envío, junto al campo y enlazada por aria', () => {
+    const LEYENDA = 'Si no escribes la dirección, te pediremos tu ubicación por WhatsApp.';
+    // Con envío: aparece, después del campo de la dirección y asociada a él.
+    const conEnvio = pintar(false, true);
+    expect(conEnvio).toContain(LEYENDA);
+    expect(conEnvio).toContain('¿A dónde lo llevamos? (opcional)');
+    expect(conEnvio).toContain('aria-describedby="cat-direccion-opcional"');
+    expect(conEnvio).toContain('id="cat-direccion-opcional"');
+    expect(conEnvio.indexOf('placeholder="Calle, número y zona"')).toBeLessThan(conEnvio.indexOf(LEYENDA));
+    // NEGANDO: solo para retiro, ni la leyenda ni el campo existen.
+    const soloRetiro = pintar(true, false);
+    expect(soloRetiro).not.toContain(LEYENDA);
+    expect(soloRetiro).not.toContain('cat-direccion-opcional');
+    expect(soloRetiro).not.toContain('¿A dónde lo llevamos?');
   });
 
   it('los estados se anuncian: status cortés para los avisos y alert para las fallas', () => {

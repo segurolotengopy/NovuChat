@@ -1062,9 +1062,10 @@ export const checkoutCatalogo = onRequest(
     const referencia = referenciaDelPedido(cuerpo, entrega);
     // Opcional. Solo con envío y válida; si no, se ignora (no es un error).
     const ubicacion = ubicacionDelPedido(cuerpo, entrega);
-    if (entrega === 'envio' && direccion === '' && !ubicacion) {
-      respuesta.status(400).json({ error: 'falta la direccion' }); return;
-    }
+    // La dirección es OPCIONAL con envío (Andres, 07/10/2026). Sin dirección y
+    // sin ubicación el pedido entra igual: el flujo de WhatsApp es quien pide la
+    // ubicación con el botón nativo, en el mismo mensaje con que ya preguntaba
+    // la dirección (0 mensajes agregados). Ya no hay 400 `falta la direccion`.
 
     // -----------------------------------------------------------------------
     // AQUÍ ESTÁ LA GARANTÍA ENTERA DEL DISEÑO.
