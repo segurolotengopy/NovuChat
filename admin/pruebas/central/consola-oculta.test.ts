@@ -172,7 +172,7 @@ describe('B. cada id oculta su control con la lista y NO sin ella', () => {
   it('guardar Configuración con «Horario» oculto no valida ni escribe `horarios`', () => {
     const f = sinComentarios(leer('web/src/central/paginas/Configuracion.tsx'));
     expect(f).toContain('if (conHorario && DIAS_SEMANA.some(');
-    expect(f).toContain('...(conHorario ? { horarios: escribirHorarios(horarios) } : {}),');
+    expect(f).toContain('horarios: conHorario ? escribirHorarios(horarios) : undefined,');
     expect(f).not.toMatch(/^\s*horarios: escribirHorarios\(horarios\),/m);
   });
 });

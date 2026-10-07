@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { deleteField, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { funciones } from '../../core/lib/firebase';
 import { useParams } from 'react-router-dom';
@@ -7,6 +7,7 @@ import { auth, db } from '../../core/lib/firebase';
 import { useFlujos } from '../lib/flujos';
 import { useConsolaOculta } from '../componentes/ConsolaOculta';
 import { esVisible } from '../../../../functions/src/central/consola-oculta';
+import { datosDeNegocio, payloadNegocio } from '../lib/payloadNegocio';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { PALETAS, PALETA_POR_DEFECTO, type PaletaId } from '../lib/paletas';
 import { ErrorDeImagen, mensajeDeErrorDeLogo } from '../lib/errorLogo';
@@ -329,23 +330,7 @@ export function Configuracion() {
     if (!tenantId) return;
     return onSnapshot(doc(db, 'tenants', tenantId, 'config', 'negocio'), (d) => {
       const v = d.data() ?? {};
-      setDatos({
-        nombreNegocio: String(v['nombreNegocio'] ?? ''),
-        descripcion: String(v['descripcion'] ?? ''),
-        direccion: String(v['direccion'] ?? ''),
-        direccionMaps: String(v['direccionMaps'] ?? ''),
-        numeroRecepcion: String(v['numeroRecepcion'] ?? ''),
-        calendarioId: String(v['calendarioId'] ?? ''),
-        politicaCancelacion: String(v['politicaCancelacion'] ?? ''),
-        tratamiento: String(v['tratamiento'] ?? 'usted'),
-        estiloEmojis: String(v['estiloEmojis'] ?? 'pocos'),
-        mensajeCierre: String(v['mensajeCierre'] ?? ''),
-        mensajeErrorTemporal: String(v['mensajeErrorTemporal'] ?? ''),
-        mensajeReservaNoConfirmada: String(v['mensajeReservaNoConfirmada'] ?? ''),
-        mensajeComercioSuspendido: String(v['mensajeComercioSuspendido'] ?? ''),
-        instruccionesExtra: String(v['instruccionesExtra'] ?? ''),
-        paleta: String(v['paleta'] ?? PALETA_POR_DEFECTO),
-      });
+      setDatos(datosDeNegocio(v));
       setCatalogoWeb(v['catalogoWebActivo'] === true);
       setHorarios(leerHorarios(v['horarios']));
       setCoordenadas(leerUbicacion(v['ubicacion']));
@@ -424,24 +409,13 @@ export function Configuracion() {
       }
     }
     try {
-      await updateDoc(doc(db, 'tenants', tenantId, 'config', 'negocio'), {
-        ...datos,
-        ...(direccionMaps !== '' || teniaUbicacion.direccionMaps ? { direccionMaps } : {}),
-        // NÚMEROS en un mapa, o el campo se quita: nunca la cadena vacía, que
-        // la regla rechaza, ni un par a medias.
-        ...(ubicacion ? { ubicacion } : teniaUbicacion.ubicacion ? { ubicacion: deleteField() } : {}),
-        ...(nombre !== '' || teniaNombreAsistente ? { nombreAsistente: nombre } : {}),
-        // El mapa se reemplaza entero: un día que se vació desaparece del
-        // documento, en vez de quedar con el horario viejo.
-        ...(conHorario ? { horarios: escribirHorarios(horarios) } : {}),
-        catalogoWebActivo: catalogoWeb,
-        zonaHoraria: 'America/La_Paz',
-        moneda: 'BOB',
-        // El sello lo verifica la regla: `actualizadoPor == request.auth.uid` y
-        // `actualizadoEn == request.time`. No se puede falsear desde el cliente.
-        actualizadoPor: auth.currentUser?.uid ?? '',
-        actualizadoEn: serverTimestamp(),
-      });
+      // El documento se arma en `payloadNegocio` (lib/payloadNegocio.ts): la
+      // prueba del guardado completo usa la misma función. Con la sección «Horario»
+      // oculta (consolaOculta) NO se escribe `horarios`: lo que hubiera queda como está.
+      await updateDoc(doc(db, 'tenants', tenantId, 'config', 'negocio'), payloadNegocio({
+        datos, direccionMaps, ubicacion, teniaUbicacion, nombre, teniaNombreAsistente,
+        horarios: conHorario ? escribirHorarios(horarios) : undefined, catalogoWeb, uid: auth.currentUser?.uid ?? '',
+      }));
       setEstado((datos['instruccionesExtra'] ?? '') !== instruccionesGuardadas
         ? 'Guardado. Las indicaciones para el asistente se revisan en unos segundos; esta pantalla se actualiza sola.'
         : 'Guardado.');

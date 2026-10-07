@@ -1,6 +1,24 @@
 rules_version = '2';
 
 // =============================================================================
+// FIXTURE CONGELADA — NO EDITAR. Copia de `admin/firestore.rules` de origin/main
+// del 05/10/2026 (HEAD 0959c03c, con #422 y #419 dentro), justo ANTES del
+// recorte de expresiones de `configNegocioValida` (reglas/recorte-config-negocio).
+// Una sola diferencia de forma: el valor por defecto de `numeroRecepcion` tiene 9
+// dígitos y no 11, porque el saneo del repositorio público rechaza secuencias
+// largas de dígitos; la regla lo usa solo como defecto y lo valida con
+// `{8,15}`, así que decide igual.
+//
+// La usan `reglas-diferencial-config-negocio.test.ts` (equivalencia de
+// aceptación y rechazo) y `reglas-presupuesto.test.ts` (control: esta base NO
+// cabía en el presupuesto con 7 días de horario).
+//
+// RETIRO: se retira (con esas dos referencias) cuando el recorte lleve una
+// versión en producción, o antes si `admin/firestore.rules` en main cambia
+// otra regla y la copia queda atrás.
+// =============================================================================
+
+// =============================================================================
 // NovuChat — Panel administrativo multi-tenant
 // Reglas de seguridad de Cloud Firestore
 // =============================================================================
@@ -178,14 +196,10 @@ service cloud.firestore {
     // hora; si la suspensión dependiera de los claims, el comercio seguiría
     // operando durante todo ese rato después de que se le cortó el servicio.
     // Para una palanca de cobranza, una hora de retraso la vuelve inútil.
-    //
-    // PRESUPUESTO DE EXPRESIONES. La ruta de la ficha se nombra UNA vez (`let`):
-    // cada vez que se escribía entera, el `$(database)` y el `$(tenantId)` de la
-    // ruta se evaluaban de nuevo. Es una de las piezas del recorte que le devolvió
-    // margen a `config/negocio` completo (ver `configNegocioValida`).
     function estadoTenant(tenantId) {
-      let ruta = /databases/$(database)/documents/tenants/$(tenantId);
-      return exists(ruta) ? get(ruta).data.get('estado', '') : '';
+      return exists(/databases/$(database)/documents/tenants/$(tenantId))
+        ? get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('estado', '')
+        : '';
     }
 
     // -------------------------------------------------------------------------
@@ -201,6 +215,12 @@ service cloud.firestore {
     // reglas los rechazan. Esconder en la interfaz no protege de nada; lo que
     // protege es que el campo no exista para ese comercio.
     // -------------------------------------------------------------------------
+    function verticalTenant(tenantId) {
+      return exists(/databases/$(database)/documents/tenants/$(tenantId))
+        ? get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('vertical', '')
+        : '';
+    }
+
     // LOS FLUJOS DE UN NEGOCIO SON UNA LISTA, NO UN VALOR. Un negocio puede
     // tener reservas Y pedidos —cada flujo con su número de WhatsApp— y la
     // consola le habilita una pestaña por cada uno. `vertical` (valor único) se
@@ -211,20 +231,10 @@ service cloud.firestore {
     // Cuando las dos cosas están, MANDA LA LISTA. Es lo que evita que una ficha
     // con `vertical: 'agendamiento'` y `flujos: ['venta']` abra la agenda por
     // la puerta del valor viejo.
-    //
-    // PRESUPUESTO DE EXPRESIONES. Igual que `estadoTenant`: la ruta se nombra una
-    // vez. Y el `vertical` de respaldo se lee de la misma ficha (`get(ruta)`, que
-    // la petición ya tiene en caché) en vez de pasar por una función aparte que
-    // volvía a comprobar `exists` y a armar la ruta (la base anterior tenía
-    // `verticalTenant`, ya retirada por no tener otro uso); es lo mismo, porque
-    // acá la ficha ya se sabe que existe. Mismo resultado para toda ficha: la prueba
-    // diferencial `reglas-diferencial-config-negocio.test.ts` lo comprueba contra
-    // la base anterior, incluidas las fichas sin `flujos`, con `flujos` nulo,
-    // mapa o cadena, suspendidas y dadas de baja.
     function flujosTenant(tenantId) {
-      let ruta = /databases/$(database)/documents/tenants/$(tenantId);
-      return exists(ruta)
-        ? get(ruta).data.get('flujos', [get(ruta).data.get('vertical', '')])
+      return exists(/databases/$(database)/documents/tenants/$(tenantId))
+        ? get(/databases/$(database)/documents/tenants/$(tenantId)).data
+            .get('flujos', [verticalTenant(tenantId)])
         : [];
     }
 
@@ -273,11 +283,9 @@ service cloud.firestore {
     // todo comercio de hoy aunque el registro diga que lo tienen.
     //
     // COSTO. Una petición evalúa a lo sumo 1.000 expresiones y `config/negocio`
-    // completo con 6 días de horario y catálogo web llegaba al tope (margen 0 en
-    // la base anterior; tras el recorte, el documento «tope» de 7 días con
-    // ubicación deja margen 22 términos, ~60 expresiones, y la variante más
-    // ajustada medida deja 20, según `reglas-presupuesto.test.ts`); por eso la
-    // ficha se lee UNA vez (`let`), sin mapa ni `exists`: una ficha inexistente hace fallar el
+    // completo con 6 días de horario y catálogo web está en el tope (margen 0 en
+    // `reglas-presupuesto.test.ts`); por eso la ficha se lee UNA vez (`let`),
+    // sin mapa ni `exists`: una ficha inexistente hace fallar el
     // `get` y la regla deniega, igual que antes. Medido en
     // `pruebas/plataforma/reglas-presupuesto.test.ts`.
     function tieneModulo(tenantId, m) {
@@ -373,13 +381,10 @@ service cloud.firestore {
     // antes de mandarlo al flujo: dos barreras, a propósito, como con los
     // derivados. El punto se escribe `[.]`, como en `calendarioValido`.
     // -------------------------------------------------------------------------
-    //
-    // PRESUPUESTO: el campo se lee una vez (`let v`) y no cuatro.
     function enlaceDeMapaValido(datos, campo) {
-      let v = datos.get(campo, '');
-      return cadena(v, 200)
-        && (v == ''
-            || v.matches(
+      return textoOpc(datos, campo, 200)
+        && (datos.get(campo, '') == ''
+            || datos.get(campo, '').matches(
                  '^https://(maps[.]app[.]goo[.]gl|goo[.]gl/maps|www[.]google[.]com/maps|google[.]com/maps|maps[.]google[.]com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$'));
     }
 
@@ -391,21 +396,15 @@ service cloud.firestore {
     // Con una sola de las dos, o con texto adentro, el pin saldría en el mar o
     // Meta lo rechazaría después de haberlo contado: se frena acá.
     // -------------------------------------------------------------------------
-    //
-    // PRESUPUESTO: el mapa se lee una vez (`let u`) y «exactamente `lat` y `lng`»
-    // se escribe como `size() == 2` más `hasAll`, que es lo mismo que `hasOnly`
-    // más `hasAll` con una expresión menos. `ubicacion: null` sigue negándose
-    // (no es un mapa), igual que antes.
     function ubicacionValida(datos) {
-      let u = datos.get('ubicacion', null);
       return !('ubicacion' in datos)
-        || (u is map
-            && u.size() == 2
-            && u.keys().hasAll(['lat', 'lng'])
-            && u.lat is number
-            && u.lng is number
-            && u.lat >= -90 && u.lat <= 90
-            && u.lng >= -180 && u.lng <= 180);
+        || (datos.ubicacion is map
+            && datos.ubicacion.keys().hasOnly(['lat', 'lng'])
+            && datos.ubicacion.keys().hasAll(['lat', 'lng'])
+            && datos.ubicacion.lat is number
+            && datos.ubicacion.lng is number
+            && datos.ubicacion.lat >= -90 && datos.ubicacion.lat <= 90
+            && datos.ubicacion.lng >= -180 && datos.ubicacion.lng <= 180);
     }
 
     // -------------------------------------------------------------------------
@@ -745,18 +744,12 @@ service cloud.firestore {
         // comercial §7). Consecuencia buscada: un horario que cruza la
         // medianoche (18:00-02:00) no se puede expresar hoy. Se compara como
         // texto, y funciona porque las dos horas tienen el mismo largo fijo.
-        //
-        // PRESUPUESTO DE EXPRESIONES. Recibe el VALOR del día (quien llama hace
-        // `h.get(dia, 'cerrado')`, con `h` leído una sola vez), y compara las dos
-        // horas con cortes de posición fija (`v[0:5] < v[6:11]`) en vez de dos
-        // `split('-')`. Es lo mismo: una vez que `matches` pasó, el texto mide
-        // exactamente 11 caracteres, `HH:MM-HH:MM`. Siete días × (un `get` más
-        // dos `split`) era lo que más pesaba en `config/negocio` completo.
-        function horarioDiaValido(v) {
+        function horarioDiaValido(h, dia) {
+          let v = h.get(dia, 'cerrado');
           return v == 'cerrado'
             || (v is string
                 && v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$')
-                && v[0:5] < v[6:11]);
+                && v.split('-')[0] < v.split('-')[1]);
         }
 
         // LO VIGENTE Y SU REVISIÓN NO SE TOCAN DESDE EL NAVEGADOR, con ningún
@@ -774,51 +767,8 @@ service cloud.firestore {
                   .hasAny(['instruccionesVigentes', 'instruccionesRevision']);
         }
 
-        // Los textos libres del documento común: tipo y tope, uno por uno.
-        // Separados de `configNegocioValida` solo por el límite de 10 `let` por
-        // función de Firestore; cada `let` lee el campo UNA vez en vez de
-        // llamar a `textoOpc` ocho veces (cada llamada reconstruía el `get`, el
-        // `is string` y el `size`). Mismo contrato que `textoOpc`: ausente
-        // equivale a vacío y pasa; que no sea texto, o que pase el tope, niega.
-        function textosNegocioValidos(d) {
-          let descripcion = d.get('descripcion', '');
-          let direccion = d.get('direccion', '');
-          let politica = d.get('politicaCancelacion', '');
-          let cierre = d.get('mensajeCierre', '');
-          let errorTemporal = d.get('mensajeErrorTemporal', '');
-          let reservaNoConfirmada = d.get('mensajeReservaNoConfirmada', '');
-          let suspendido = d.get('mensajeComercioSuspendido', '');
-          let instrucciones = d.get('instruccionesExtra', '');
-          return descripcion is string && descripcion.size() <= 400
-            && direccion is string && direccion.size() <= 200
-            && politica is string && politica.size() <= 600
-            && cierre is string && cierre.size() <= 300
-            && errorTemporal is string && errorTemporal.size() <= 300
-            && reservaNoConfirmada is string && reservaNoConfirmada.size() <= 300
-            && suspendido is string && suspendido.size() <= 300
-            && instrucciones is string && instrucciones.size() <= 1500;
-        }
-
-        // PRESUPUESTO DE EXPRESIONES. Firestore corta una petición que evalúa
-        // más de 1.000 expresiones, y `config/negocio` completo —el que guarda la
-        // consola— de un comercio de venta con catálogo web, ubicación y siete
-        // días de horario daba el límite (margen −1 en
-        // `pruebas/plataforma/reglas-presupuesto.test.ts`): la consola habría
-        // mostrado «El servidor rechazó el cambio». Por eso esta función lee cada
-        // campo UNA vez (los `let` de abajo; Firestore admite 10 por función, y
-        // quedan 9) en vez de repetir `d.get(...)` en cada condición. NO cambia
-        // qué se acepta ni qué se rechaza: lo comprueba
-        // `reglas-diferencial-config-negocio.test.ts` contra la base anterior.
-        // Al tocar esta función se vuelve a correr la sonda de presupuesto.
         function configNegocioValida() {
           let d = request.resource.data;
-          let h = d.get('horarios', {});
-          let numero = d.get('numeroRecepcion', '59100000000');
-          let prefijos = d.get('prefijosPermitidos', []);
-          let faltantes = d.get('datosQueNoTenemos', []);
-          let nombreAsistente = d.get('nombreAsistente', '');
-          let catalogoWeb = d.get('catalogoWebActivo', false);
-          let calendario = d.get('calendarioId', '');
           let clavesPermitidas = [
             // Identidad y contacto
             'nombreNegocio', 'descripcion', 'direccion', 'numeroRecepcion',
@@ -857,7 +807,7 @@ service cloud.firestore {
           return d.keys().hasOnly(clavesPermitidas)
             && d.keys().hasAll(['nombreNegocio', 'actualizadoPor', 'actualizadoEn'])
             && textoReq(d, 'nombreNegocio', 80)
-            && textosNegocioValidos(d)
+            && textoOpc(d, 'descripcion', 400)
 
             // DIRECCIÓN — el campo del incidente del 28/08.
             // Ante «donde queda su clinica?» el agente INVENTO una direccion:
@@ -871,7 +821,7 @@ service cloud.firestore {
             // significa «no la tenemos», y `configuracionFlujo` la agrega
             // automáticamente a `datosQueNoTenemos` para que el agente responda
             // que la va a consultar. Ver DISENO.md §4quater.3.
-            // (`direccion` y los demás textos libres, en `textosNegocioValidos`.)
+            && textoOpc(d, 'direccion', 200)
             // El enlace del mapa acompaña a la dirección en el MISMO mensaje
             // (cero mensajes nuevos); las coordenadas solo salen como pin
             // cuando el cliente lo pide. Validados arriba, no texto libre.
@@ -881,35 +831,35 @@ service cloud.firestore {
             && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
             && d.get('moneda', 'BOB') in ['BOB', 'USD']
             // Teléfono en formato E.164 sin '+', igual que lo espera la Cloud API.
-            && numero is string
-            && numero.matches('^[0-9]{8,15}$')
+            && d.get('numeroRecepcion', '591000000') is string
+            && d.get('numeroRecepcion', '591000000').matches('^[0-9]{8,15}$')
             // Misma validación estricta que para los funcionarios: un ID mal
             // pegado acá tiene exactamente las mismas consecuencias.
-            // (Lo mismo que `calendarioValidoOpcional(d, 'calendarioId')`: vacío
-            // o ausente pasa; con valor, la regla estricta de `calendarioValido`.)
-            && (calendario == '' || calendarioValido(calendario))
+            && calendarioValidoOpcional(d, 'calendarioId')
             // HORARIOS. Solo los siete días, y cada uno con formato válido. Las
             // reglas no recorren mapas, así que cada día se nombra a mano.
-            && h is map
-            && h.keys().hasOnly(
+            && d.get('horarios', {}) is map
+            && d.get('horarios', {}).keys().hasOnly(
                  ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'])
-            && horarioDiaValido(h.get('lun', 'cerrado'))
-            && horarioDiaValido(h.get('mar', 'cerrado'))
-            && horarioDiaValido(h.get('mie', 'cerrado'))
-            && horarioDiaValido(h.get('jue', 'cerrado'))
-            && horarioDiaValido(h.get('vie', 'cerrado'))
-            && horarioDiaValido(h.get('sab', 'cerrado'))
-            && horarioDiaValido(h.get('dom', 'cerrado'))
+            && horarioDiaValido(d.get('horarios', {}), 'lun')
+            && horarioDiaValido(d.get('horarios', {}), 'mar')
+            && horarioDiaValido(d.get('horarios', {}), 'mie')
+            && horarioDiaValido(d.get('horarios', {}), 'jue')
+            && horarioDiaValido(d.get('horarios', {}), 'vie')
+            && horarioDiaValido(d.get('horarios', {}), 'sab')
+            && horarioDiaValido(d.get('horarios', {}), 'dom')
+
+            && textoOpc(d, 'politicaCancelacion', 600)
 
             // Listas. Las reglas NO saben recorrer los elementos de una lista, así
             // que acá solo se comprueba el tipo y el tamaño; el contenido lo
             // valida y recorta la Cloud Function antes de que llegue al prompt.
             // Está dicho en SEGURIDAD.md, T-27, para que nadie suponga más de lo
             // que esta línea garantiza.
-            && prefijos is list
-            && prefijos.size() <= 10
-            && faltantes is list
-            && faltantes.size() <= 20
+            && d.get('prefijosPermitidos', []) is list
+            && d.get('prefijosPermitidos', []).size() <= 10
+            && d.get('datosQueNoTenemos', []) is list
+            && d.get('datosQueNoTenemos', []).size() <= 20
 
             // VOZ DEL ASISTENTE — enumerados, no texto libre.
             // `tratamiento` cierra además el defecto de estilo de ESTADO.md: el
@@ -926,23 +876,26 @@ service cloud.firestore {
             // UNA línea: los flujos lo interpolan en textos fijos que no pasan
             // por el modelo, y un salto de línea ahí rompe el mensaje. El
             // servidor lo vuelve a sanear antes de mandarlo (`vozFija`).
-            && cadena(nombreAsistente, 40)
-            && nombreAsistente.matches('[^\\r\\n]*')
+            && textoOpc(d, 'nombreAsistente', 40)
+            && d.get('nombreAsistente', '').matches('[^\\r\\n]*')
 
             && d.get('mensajes', {}) is map
+            && textoOpc(d, 'mensajeCierre', 300)
+            && textoOpc(d, 'mensajeErrorTemporal', 300)
+            && textoOpc(d, 'mensajeReservaNoConfirmada', 300)
             // Se puede escribir MIENTRAS EL COMERCIO ESTÁ ACTIVO, porque toda
             // escritura de configuración exige `tenantOperativo`. Consecuencia
             // buscada: nadie redacta el mensaje de suspensión DESPUÉS de que lo
             // suspendieron. Ver SEGURIDAD.md, T-26.
-            // (`mensajeCierre`, `mensajeErrorTemporal`, `mensajeReservaNoConfirmada`,
-            // `mensajeComercioSuspendido` e `instruccionesExtra`, en
-            // `textosNegocioValidos`.)
+            && textoOpc(d, 'mensajeComercioSuspendido', 300)
+
+            && textoOpc(d, 'instruccionesExtra', 1500)
             && instruccionesVerificadasIntactas()
 
             // CATÁLOGO WEB. Nace APAGADO y encenderlo es un acto deliberado del
             // comercio: publicar los precios de alguien en una dirección
             // pública no puede ser el valor por defecto de nada.
-            && catalogoWeb is bool
+            && d.get('catalogoWebActivo', false) is bool
             // SOLO CON EL FLUJO DE VENTA, decidido el 08/09. Un catálogo web
             // con carrito y checkout es una tienda; el flujo de agendamiento no
             // vende, su catálogo es referencial y sus ítems son en buena parte
@@ -955,16 +908,13 @@ service cloud.firestore {
             // campo en falso, en vez de que la regla le rechace la pantalla
             // entera por un campo que no le corresponde.
             // TODO(H2b, PR que escriba `modulos`): aquí va
-            // `tieneModulo(tenantId, 'catalogo-web')`; hay que volver a medir el
-            // margen antes de hacerlo (`config/negocio` completo, con 6 días de
-            // horario y catálogo web, llegaba al tope de 1.000 expresiones: margen
-            // 0 en la base anterior; tras el recorte el documento «tope» de 7 días
-            // con ubicación deja margen 22 términos, ~60 expresiones, y la variante
-            // más ajustada medida deja 20; medido en
+            // `tieneModulo(tenantId, 'catalogo-web')`, y ANTES hay que abaratar
+            // `config/negocio` (hoy, completo con 6 días de horario y catálogo
+            // web, está en el tope de 1.000 expresiones: margen 0 en
             // `reglas-presupuesto.test.ts`). Mientras tanto se conserva el costo
             // de la base (`tieneFlujo`) y esta línea NO mira `modulos`: la
             // prueba `it.fails` de `reglas-modulos.test.ts` obliga a voltearla.
-            && (catalogoWeb == false
+            && (d.get('catalogoWebActivo', false) == false
                 || tieneFlujo(tenantId, 'venta'))
             // PALETA: una de cinco, y NADA más.
             //
