@@ -154,6 +154,7 @@ export function pestanasVisibles(modulos: readonly IdModulo[], visitante: Visita
  *  - `conPedidos`: bloque de costos de entrega en Cobro (`config/venta`).
  *  - `conVistaPrevia`: vista previa del sitio público del catálogo (Catálogo web).
  *  - `conCaptacion`: la pantalla de Captación solo se abre con este módulo.
+ *  - `conInventario`: la ruta de Inventario solo se abre con este módulo.
  *  - `documentoCobro`: el documento de `/config` donde vive el QR: `venta`
  *    gana, después `agendamiento`; sin ninguno de los dos (o sin Cobros), `null`.
  *  - `etiquetaCatalogo`: «Servicios», «Productos» o «Catálogo».
@@ -163,6 +164,7 @@ export interface CapacidadesDeConsola {
   conPedidos: boolean;
   conVistaPrevia: boolean;
   conCaptacion: boolean;
+  conInventario: boolean;
   documentoCobro: ReturnType<typeof documentoDeCobro>;
   etiquetaCatalogo: string;
 }
@@ -173,6 +175,7 @@ export function capacidadesDeConsola(modulos: readonly IdModulo[]): CapacidadesD
     conPedidos: modulos.includes('pedidos'),
     conVistaPrevia: modulos.includes('catalogo-web'),
     conCaptacion: modulos.includes('captacion'),
+    conInventario: modulos.includes('inventario'),
     documentoCobro: documentoDeCobro(modulos),
     etiquetaCatalogo: etiquetaDeCatalogo(modulos),
   };

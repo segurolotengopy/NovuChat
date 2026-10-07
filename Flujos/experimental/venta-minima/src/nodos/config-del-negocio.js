@@ -183,6 +183,9 @@ if (codigo === 409) {
     numeroRecepcion: vmDigitos(op.numeroRecepcion) || undefined,
     prefijosPermitidos: prefijosDelPanel || undefined,
   });
+  // `horarioAtencionManda: si` en «Config base» (dato opcional): el texto de «Config base» GANA sobre el de la consola cuando no está vacío. Es para un turno partido que la
+  // consola (un solo rango por día) no puede decir sin mentir. Sin el dato, o con la base vacía, manda la consola, como siempre.
+  if (marcador(base.horarioAtencionManda).toLowerCase() === 'si' && deBase.horarioAtencion) delete deLaConsola.horarioAtencion;
   const util2 = util(cuerpo.estadoComercio);
   const estadoComercio = util2 === 'activo' ? 'operativo' : (util2 ? 'suspendido' : 'operativo');
   let cobro = COBRO_APAGADO;

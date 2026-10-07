@@ -21,10 +21,47 @@
  * cálculo ignoran, y se usa punto y coma.
  */
 
+/**
+ * =============================================================================
+ * INYECCIÓN DE FÓRMULAS (OWASP «CSV injection»)
+ * =============================================================================
+ *
+ * Excel, Sheets y LibreOffice ejecutan como fórmula una celda cuyo texto
+ * empieza con `=`, `+`, `-`, `@`, tabulación o retorno de carro, y entrecomillar
+ * no lo impide: las comillas son del CSV, no de la hoja. Varias columnas de lo
+ * que exporta la consola son texto escrito por el cliente final (nota,
+ * dirección, referencia para llegar), así que una nota «=HYPERLINK(...)» se
+ * ejecutaría cuando el local abra el archivo.
+ *
+ * LA REGLA: todo TEXTO que empiece así lleva un `'` delante, que la hoja
+ * muestra como texto literal y no como parte del valor. Un NÚMERO real
+ * (`typeof 'number'`) NO se toca: un monto negativo sigue siendo número, y un
+ * número no puede llevar una fórmula. Lo que llega como texto se neutraliza
+ * siempre, aunque parezca un número: no hay forma de distinguir «-2» de un
+ * texto escrito por una persona.
+ *
+ * IDA Y VUELTA. Para que `quitarNeutralizacion` devuelva exactamente lo que
+ * había (el importador del catálogo lo usa), también se antepone el `'` cuando
+ * el texto ya empieza con comillas simples seguidas de uno de esos caracteres:
+ * `'=x` se escribe `''=x` y se lee `'=x`, no `=x`.
+ */
+const PELIGROSO = /^'*[=+\-@\t\r]/;
+
+/** El texto, listo para una hoja de cálculo: sin fórmulas posibles. */
+export function neutralizarFormula(t: string): string {
+  return PELIGROSO.test(t) ? `'${t}` : t;
+}
+
+/** Lo inverso, para el importador: quita UN `'` si lo puso `neutralizarFormula`. */
+export function quitarNeutralizacion(t: string): string {
+  return t.startsWith("'") && PELIGROSO.test(t) ? t.slice(1) : t;
+}
+
 /** Un valor de celda, ya en texto. */
 const celda = (v: unknown): string => {
   if (v === null || v === undefined) return '';
-  const t = v instanceof Date ? v.toLocaleString('es-BO') : String(v);
+  if (typeof v === 'number') return `"${String(v)}"`;
+  const t = neutralizarFormula(v instanceof Date ? v.toLocaleString('es-BO') : String(v));
   // Comillas dobles duplicadas, y todo entre comillas: así un texto con punto y
   // coma, comillas o saltos de línea no parte la fila.
   return `"${t.replace(/"/g, '""')}"`;

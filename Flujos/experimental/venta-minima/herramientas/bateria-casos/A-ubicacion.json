@@ -1,0 +1,785 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "U",
+  "nota": "Escenarios de «ubicación compartida o dirección en texto» (encargo del 05/10/2026): con un pedido de delivery la ubicación vale como dirección; fuera de ese paso no se toma; una ubicación inválida no se toma; el aviso al local lleva las coordenadas. Pasan contra main y contra #440. U5m: con la ventana del local cerrada el aviso no lleva enlace (el enlace va solo en el detalle de texto, probado en las suites de integración). U6 y U6b: el pedido de dirección ofrece la ubicación solo en el delivery (PR-A, 05/10).",
+  "casos": [
+    {
+      "id": "U1",
+      "titulo": "Delivery pendiente de dirección: el cliente COMPARTE SU UBICACIÓN y vale como dirección (pasa al resumen, sin modelo, sin pedirla por escrito)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a ubicaci[oó]n compartida"
+            ],
+            "textosNo": [
+              "direcci[oó]n exacta",
+              "necesito"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.ubicacion.lat": -16.5,
+              "entrega.ubicacion.lng": -68.15
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "U2",
+      "titulo": "Ubicación FUERA del paso de delivery (menú, sin pedido): no se guarda en ninguna parte, vuelve a mostrar el menú, sin modelo ni aviso",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "menu",
+              "entrega.ubicacion": {
+                "existe": false
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "U2b",
+      "titulo": "Ubicación con un pedido de RECOJO: no se toma (no hay a dónde mandar), el pedido sigue como estaba y no aparece «ubicación compartida»",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": [
+              "ubicaci[oó]n compartida"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "entrega.ubicacion": {
+                "existe": false
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "U3",
+      "titulo": "Ubicación + texto (1): comparte la ubicación y después escribe una referencia; las dos quedan (ubicación como dirección, el texto como referencia)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.ubicacion.lat": -16.5
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Frente a la panadería, portón verde"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a ubicaci[oó]n compartida",
+              "panader[ií]a"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.ubicacion.lat": -16.5,
+              "entrega.ubicacion.lng": -68.15,
+              "entrega.referencia": {
+                "regex": "panader[ií]a"
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "U3b",
+      "titulo": "Ubicación + texto (2): con la dirección ya escrita, comparte además la ubicación; conserva la dirección escrita y suma las coordenadas",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Av\\. Banzer 1234"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "Av. Banzer 1234",
+              "entrega.ubicacion.lat": -16.5,
+              "entrega.ubicacion.lng": -68.15
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "U4",
+      "titulo": "Ubicación INVÁLIDA (latitud fuera de rango, longitud fuera de rango, coordenada que no es número): no se toma como dirección y el asistente vuelve a pedir la dirección",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": 95,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "textosNo": [
+              "ubicaci[oó]n compartida"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.ubicacion": {
+                "existe": false
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": 200
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.ubicacion": {
+                "existe": false
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": "abc",
+            "longitud": "def"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "titulosNo": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.ubicacion": {
+                "existe": false
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "U5",
+      "titulo": "El aviso al local de un delivery con ubicación compartida lleva las COORDENADAS (con coma decimal) y la dirección no las arrastra",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "efectos": {
+              "qr": true
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "imagen",
+            "pie": "comprobante"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "datos coinciden"
+            ],
+            "efectos": {
+              "aviso": true
+            },
+            "avisoTextos": [
+              "ubicaci[oó]n compartida \\(-16,50000; -68,15000\\)"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "U5m",
+      "titulo": "Ventana del local CERRADA: el aviso de un delivery con ubicación compartida lleva las coordenadas y NINGÚN enlace al mapa (decisión del 05/10: la plantilla no se toca; el enlace va solo en el detalle de texto con la ventana abierta)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "efectos": {
+              "qr": true
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "imagen",
+            "pie": "comprobante"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "datos coinciden"
+            ],
+            "efectos": {
+              "aviso": true
+            },
+            "avisoTextos": [
+              "ubicaci[oó]n compartida \\(-16,50000; -68,15000\\)"
+            ],
+            "avisoTextosNo": [
+              "google",
+              "maps",
+              "https?:",
+              "query="
+            ]
+          }
+        }
+      ],
+      "nota": "El enlace a Maps (`Ver en el mapa: …`) sale solo en el detalle de texto del rol completo, que exige la ventana de 24 h del local abierta; la batería no puede abrir esa ventana (el local no escribe), y eso lo prueban `venta-minima-integracion.test.ts` («PR-A») y `venta-minima-avisos.test.ts`. Aquí se comprueba lo que sí es de punta a punta: la plantilla no lleva el enlace."
+    },
+    {
+      "id": "U6",
+      "titulo": "Delivery pendiente de dirección: el mensaje ofrece escribirla O compartir la ubicación, y es UN solo mensaje (el mismo de siempre; el botón nativo de ubicación lo dibuja WhatsApp)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta",
+              "Escr[ií]bela aqu[ií] o comparte tu ubicaci[oó]n con el bot[oó]n"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "..."
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "direcci[oó]n exacta",
+              "comparte tu ubicaci[oó]n"
+            ],
+            "estado": {
+              "paso": "pedido_datos"
+            },
+            "efectos": {
+              "derivacion": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "U6b",
+      "titulo": "Con un pedido de RECOJO nunca se ofrece compartir la ubicación (no hay a dónde mandar): el resumen no la nombra",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "textosNo": [
+              "ubicaci[oó]n"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola otra vez"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": {
+              "min": 1
+            },
+            "textosNo": [
+              "comparte tu ubicaci[oó]n",
+              "con el bot[oó]n"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

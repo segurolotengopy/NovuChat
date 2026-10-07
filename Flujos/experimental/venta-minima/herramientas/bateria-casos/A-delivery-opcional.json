@@ -944,7 +944,7 @@
     },
     {
       "id": "A6b",
-      "titulo": "Dirección dada y «Donde dije» con el modelo marcando quiereHablar: sobre un texto sin rasgos de dato de entrega la rama DERIVA (aviso y «Escribir al local») y no guarda nada",
+      "titulo": "Dirección dada y «Donde dije» con el modelo marcando quiereHablar: no se guarda como referencia ni cambia la dirección (deriva, o pide una aclaración con botones con la cancelación de #440)",
       "estadoPrevio": [
         {
           "cliente": {
@@ -999,14 +999,9 @@
             "lineas": []
           },
           "esperado": {
-            "mensajes": 1,
-            "ruta": "^transferir",
-            "titulos": [
-              "Escribir al local"
-            ],
-            "enlaces": [
-              "wa\\.me/59100000031"
-            ],
+            "mensajes": {
+              "min": 1
+            },
             "textosNo": [
               "Entrega: delivery a"
             ],
@@ -1019,10 +1014,12 @@
               }
             },
             "efectos": {
-              "derivacion": true,
-              "aviso": true,
               "qr": false
-            }
+            },
+            "igualAntes": [
+              "entrega.direccion",
+              "entrega.referencia"
+            ]
           }
         }
       ],
@@ -1038,7 +1035,7 @@
           }
         ]
       },
-      "nota": "ESPERADO CONFIRMADO CON LA CARTERA (05/10): la marca quiereHablar del modelo sobre un texto SIN rasgos de dato de entrega deriva siempre (diseño endurecido de la rama); «Donde dije» ya no queda como referencia."
+      "nota": "ESPERADO CONFIRMADO CON LA CARTERA (05/10): la marca quiereHablar sobre un texto SIN rasgos de dato de entrega no se guarda como dato. Hasta #440 deriva; con #440 UNA aclaración con botones y, si insiste, deriva (C9)."
     }
   ]
 }

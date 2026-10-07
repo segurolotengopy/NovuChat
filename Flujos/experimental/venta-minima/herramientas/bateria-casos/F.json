@@ -15,7 +15,7 @@
           "esperado": {
             "mensajes": 1,
             "textos": ["Esta es nuestra carta", "Nachos Supremos"],
-            "textosNo": ["no estamos tomando pedidos"],
+            "textosNo": ["fuera de nuestro horario de pedidos"],
             "ruta": "^carta",
             "efectos": {"derivacion": false, "aviso": false}
           }
@@ -32,7 +32,7 @@
           "cliente": {"tipo": "boton", "titulo": "Hacer un pedido"},
           "esperado": {
             "mensajes": 1,
-            "textos": ["Esta es nuestra carta", "Para volver al inicio, escribe «menú»\\."],
+            "textos": ["Toca «Ver la carta»", "Para volver al inicio, escribe «menú»\\."],
             "titulos": ["Ver la carta"],
             "ruta": "^carta",
             "efectos": {"derivacion": false, "aviso": false, "modelo": false}

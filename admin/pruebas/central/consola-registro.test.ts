@@ -190,6 +190,8 @@ describe('H2b-5: la consola de hoy es la del 03/10 para los ocho subconjuntos de
       expect(c.etiquetaCatalogo, donde).toBe(catalogoAntes(flujos));
       // Captacion.tsx: la pantalla se abre solo con el flujo de captación.
       expect(c.conCaptacion, donde).toBe(flujos.includes('onboarding'));
+      // Inventario.tsx: la ruta solo se abre con el módulo; con los flujos, lo trae el de venta (respaldo).
+      expect(c.conInventario, donde).toBe(flujos.includes('venta'));
     }
   });
 
@@ -268,6 +270,7 @@ describe('H2b-5: lo que cambia a propósito, negando', () => {
     // Con flujos, «pedidos» e «inventario» siempre van juntos: solo una lista de módulos los separa.
     const campos = {
       conAgenda: 'agenda', conPedidos: 'pedidos', conVistaPrevia: 'catalogo-web', conCaptacion: 'captacion',
+      conInventario: 'inventario',
     } as const;
     for (const [campo, modulo] of Object.entries(campos)) {
       for (const m of IDS_MODULOS) {
@@ -358,6 +361,11 @@ describe('H2b-5: ninguna lista de flujos ni de pestañas queda escrita en la con
     const captacion = pantalla('modulos/captacion/Captacion.tsx');
     expect(captacion).toContain('const modulos = useModulos(tenantId);');
     expect(captacion).toContain('if (modulos !== null && !capacidadesDeConsola(modulos).conCaptacion) {');
+
+    // Inventario: la ruta lleva al inicio sin el módulo y no abre lecturas hasta saberlo (05/10).
+    const inventario = pantalla('modulos/inventario/Inventario.tsx');
+    expect(inventario).toContain('const modulos = useModulos(tenantId); if (modulos === null) return');
+    expect(inventario).toContain('if (!capacidadesDeConsola(modulos).conInventario) return <Navigate to="/" replace />;');
 
     const tablero = pantalla('central/paginas/Tablero.tsx');
     expect(tablero).toContain('const modulos = useModulos(tenantId) ?? []; const nombreItems = capacidadesDeConsola(modulos).etiquetaCatalogo.toLowerCase();');
