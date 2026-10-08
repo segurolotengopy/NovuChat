@@ -1,0 +1,49 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "_nota": "PROPUESTA, NO APLICADA (07/10/2026). Las 7 filas de la lista de rubros que el documento comercial de Kenji pide (§2 y §3): Salud, Belleza, Gastronomía, Retail, Educación, Leads de Ventas y Otros. La consola de NovuChat hoy tiene 5 filas (salud-y-belleza, gastronomia, comercio-y-retail, educacion, otro-a-medida) y este PR NO la modifica: el guion de Captación mínima soporta AMBOS conjuntos de ids. Para aplicarla hay que escribir /config/onboarding de NovuChat (lo hace Claude con la autorización de Andres, nunca a mano). Cuidado: las campañas con destino `rubro:salud-y-belleza` o `rubro:comercio-y-retail` quedarían «vencidas» (el cliente vería «Esa opción ya no está») y hay que repuntarlas a `rubro:salud` o `rubro:belleza` y a `rubro:retail`. `flujoSugerido` solo admite agendamiento, venta, recordatorios y a_medida (admin/functions/src/modulos/captacion/captacion.ts): Leads de Ventas se propone como a_medida; un valor propio exigiría ampliar esa lista (otra zona). `solucion` (hasta 300 caracteres, sin montos) es lo que el modelo lee de la fila; los puntos clave están en el guion, no aquí.",
+  "rubros": [
+    {
+      "id": "salud",
+      "nombre": "Salud",
+      "solucion": "Recepcionista virtual 24/7 para clínicas y consultorios: agenda en tu Google Calendar, maneja varias agendas a la vez sin cruzar horarios y recuerda la cita un día antes.",
+      "flujoSugerido": "agendamiento"
+    },
+    {
+      "id": "belleza",
+      "nombre": "Belleza",
+      "solucion": "Para salones y spas: muestra tus servicios, revisa la disponibilidad de tus especialistas, agenda la cita y recuerda 24 horas antes para mantener la agenda llena.",
+      "flujoSugerido": "agendamiento"
+    },
+    {
+      "id": "gastronomia",
+      "nombre": "Gastronomía",
+      "solucion": "Para restaurantes, cafés y deliveries: no pierdes pedidos en horas pico; muestra el menú, toma el pedido con sus notas especiales y cobra con QR para que pase directo a cocina.",
+      "flujoSugerido": "venta"
+    },
+    {
+      "id": "retail",
+      "nombre": "Retail",
+      "solucion": "Para comercios y tiendas: no pierdes ventas por las noches; muestra el catálogo, ayuda a cerrar el carrito, cobra con QR, toma los datos de envío y deja el pedido listo para el despacho.",
+      "flujoSugerido": "venta"
+    },
+    {
+      "id": "educacion",
+      "nombre": "Educación",
+      "solucion": "Para colegios e institutos: responde las dudas repetitivas de padres, como admisiones y pensiones, y coordina entrevistas directamente en el calendario del colegio.",
+      "flujoSugerido": "agendamiento"
+    },
+    {
+      "id": "leads-de-ventas",
+      "nombre": "Leads de Ventas",
+      "solucion": "Para servicios B2B, consultorías e inmobiliarias: ningún prospecto calificado se enfría; califica el interés con IA, genera un resumen y lo registra en un miniCRM con tablero Kanban.",
+      "flujoSugerido": "a_medida"
+    },
+    {
+      "id": "otro-a-medida",
+      "nombre": "Otro / a medida",
+      "solucion": "Para negocios que no encajan en los rubros anteriores: IA que se adapta a tu forma de trabajar y Setups a Medida para respuestas totalmente personalizadas.",
+      "flujoSugerido": "a_medida"
+    }
+  ]
+}

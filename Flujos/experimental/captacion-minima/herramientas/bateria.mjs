@@ -83,11 +83,27 @@ const RUBROS = [
   { id: 'educacion', nombre: 'Educación', solucion: 'Agenda clases y responde dudas.', flujoSugerido: 'agendamiento' },
   { id: 'otro-a-medida', nombre: 'Otro / a medida', solucion: 'Lo armamos a tu medida.', flujoSugerido: '' },
 ];
-const PLANES = [
-  { nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: 'Hasta 100 conversaciones.' },
-  { nombre: 'Crecimiento', precioUsd: 50, periodo: 'mes', incluye: 'Hasta 300 conversaciones.' },
+// §16: los planes y los cargos únicos de la consola de NovuChat (los topes de conversaciones viajan en `incluye`: la batería comprueba que el modelo NO los escriba).
+// §16 (D8): las 7 filas que se PROPONEN para la lista de rubros de la consola (documento comercial §2 y §3; el archivo de la propuesta está en `fuentes/rubros-propuestos-2026-10-07.json`).
+// Los casos con `opciones.rubrosDelDocumento` los usan; los demás, los 5 de la consola VIVA de arriba. El guion soporta los dos conjuntos de ids.
+const RUBROS_DOC = [
+  { id: 'salud', nombre: 'Salud', solucion: 'Recepcionista virtual 24/7 para clínicas y consultorios.', flujoSugerido: 'agendamiento' },
+  { id: 'belleza', nombre: 'Belleza', solucion: 'Muestra tus servicios y agenda con tus especialistas.', flujoSugerido: 'agendamiento' },
+  { id: 'gastronomia', nombre: 'Gastronomía', solucion: 'Toma pedidos con notas especiales y cobra con QR.', flujoSugerido: 'venta' },
+  { id: 'retail', nombre: 'Retail', solucion: 'Muestra tu catálogo, cierra el carrito y cobra con QR.', flujoSugerido: 'venta' },
+  { id: 'educacion', nombre: 'Educación', solucion: 'Responde dudas de padres y coordina entrevistas.', flujoSugerido: 'agendamiento' },
+  { id: 'leads-de-ventas', nombre: 'Leads de Ventas', solucion: 'Califica prospectos con IA y los registra en un miniCRM.', flujoSugerido: 'a_medida' },
+  { id: 'otro-a-medida', nombre: 'Otro / a medida', solucion: 'Lo armamos a tu medida.', flujoSugerido: 'a_medida' },
 ];
-const CARGOS = [{ nombre: 'Instalación', precioUsd: 65, desde: false, detalle: 'Llave en mano.' }];
+const PLANES = [
+  { nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: '100 conversaciones al mes; hasta 20 productos en el catálogo' },
+  { nombre: 'Crecimiento', precioUsd: 50, periodo: 'mes', incluye: '220 conversaciones al mes; hasta 100 productos en el catálogo' },
+  { nombre: 'Pro', precioUsd: 90, periodo: 'mes', incluye: '500 conversaciones al mes; hasta 500 productos; soporte prioritario' },
+];
+const CARGOS = [
+  { nombre: 'Instalación estándar', precioUsd: 65, desde: false, detalle: 'Pago único y por adelantado, llave en mano.' },
+  { nombre: 'Instalación a medida', precioUsd: 125, desde: true, detalle: 'Integración con tu sistema propio o flujos complejos; se cotiza caso por caso.' },
+];
 // a1 sin monto (el modelo la ve completa); a2 trae un monto (el modelo solo ve su tema y el codigo copia el texto).
 const ACLARACIONES = [
   { tema: 'Conversaciones', texto: 'Cada conversación dura 24 horas desde el primer mensaje.' },
@@ -98,12 +114,14 @@ const ARCHIVO = { url: 'https://firebasestorage.googleapis.com/v0/b/ejemplo-novu
 function panelDe(opciones = {}) {
   return {
     tenantId: 'novuchat', flujo: 'onboarding', estadoComercio: 'activo', phoneNumberId: PID,
-    operacion: { numeroRecepcion: REC, horarioAtencion: '' },
+    operacion: { numeroRecepcion: opciones.sinRecepcion ? '' : REC, horarioAtencion: '' },
     datosDelNegocio: { nombreNegocio: 'NovuChat' },
-    voz: { nivelEmojis: 'muchos' },   // la consola de NovuChat lo declara así (§13)
+    // §16 (D6): el nivel «equilibrado» del documento comercial es «pocos» (un emoji por parte del mensaje). OJO: en vivo manda `voz.nivelEmojis` de la CONSOLA; el valor de los datos
+    // solo es el respaldo si la consola no lo manda. Y el nombre del asistente (Kenji) es un dato de la consola, no un nombre de persona del equipo.
+    voz: { nivelEmojis: 'pocos', nombreAsistente: 'Kenji' },
     onboarding: {
       topeAviso: 10, plantillaAviso: 'solicitud_contacto',
-      rubros: opciones.sinRubros ? [] : RUBROS,
+      rubros: opciones.sinRubros ? [] : (opciones.rubrosDelDocumento ? RUBROS_DOC : RUBROS),
       planes: opciones.sinPlanes ? [] : PLANES, cargosUnicos: opciones.sinPlanes ? [] : CARGOS,
       aclaraciones: ACLARACIONES,
       archivoPlanes: opciones.sinPlanes || opciones.sinArchivo ? null : ARCHIVO,
@@ -652,7 +670,7 @@ export const MAX_PALABRAS_PLANES = 110;
 const CON_EMOJI = /\p{Extended_Pictographic}/u;
 
 // Promesas sin mecanismo (politica general «solo se ofrece lo que se cumple»), en tercera persona y en primera.
-const PROMESAS = /\bya (le|te|se|les) (pas[eé]|avis[eé]|notific[eé]|inform[eé]|transmit[ií])|\bte (escribir[aá]n|llamar[aá]n|contactar[aá]n|llamamos|escribimos|avisamos|contactamos|avisar[eé]|avisaremos)\b|\b(se|nos) (comunicar[aá]n?|pondr[aá]n? en contacto)\b|\blo consulto\b|\blo consultamos\b|\bte aviso\b|\bya avis[eé]\b|\bte llamar[aá]\b|\bte escribir[aá]\b|\b(te|le) (llamo|escribo|contacto|informo|enviar[eé]|mandar[eé]|llamar[eé]|escribir[eé]|contactar[eé]|informar[eé])\b|\bme (comunico|pongo en contacto)\b|\b(te|le) (envio|mando) (un mensaje|el|la|los|las|mas|más)\b/i;
+const PROMESAS = /\bya (le|te|se|les) (pas[eé]|avis[eé]|notific[eé]|inform[eé]|transmit[ií])|\bte (escribir[aá]n|llamar[aá]n|contactar[aá]n|llamamos|escribimos|avisamos|contactamos|avisar[eé]|avisaremos)\b|\b(se|nos) (comunicar[aá]n?|pondr[aá]n? en contacto)\b|\blo consulto\b|\blo consultamos\b|\bte aviso\b|\bya avis[eé]\b|\bte llamar[aá]\b|\bte escribir[aá]\b|\b(te|le) (llamo|escribo|contacto|informo|enviar[eé]|mandar[eé]|llamar[eé]|escribir[eé]|contactar[eé]|informar[eé])\b|\bme (comunico|pongo en contacto)\b|\b(te|le) (envio|mando) (un mensaje|el|la|los|las|mas|más)\b|\bse (comunique|comuniquen|ponga|pongan) (con|en contacto)|\b(ofrecerle|ofrecerte) contact|\bcontactarl[oae]\b/i;
 const NIEGA_IA = /\bno soy (un |una )?(bot|robot|ia|inteligencia artificial|asistente virtual)\b|\bsoy (una )?persona (real|de carne)|\bsoy (un )?humano\b|\bno (soy|es) (una )?(maquina|máquina)\b/i;
 const SE_PRESENTA_PERSONA = /\bsoy (una )?(persona|humano|humana)\b|\bsoy (el|la) (asesor|asesora)\b|\bsoy de carne y hueso\b/i;
 // H1: el patrón de montos con moneda es EL MISMO que filtra `ccLeerModelo` (una línea de la librería, leída de allí).
@@ -662,6 +680,17 @@ const MONTO_DEL_MODELO = (() => {
   if (!m) throw new Error('No encuentro «const CC_MONTO_MODELO» en src/lib/captacion.js');
   return new RegExp(m[1], m[2]);
 })();
+// §16: las reglas del documento comercial §5 y §6 como lo que el cliente RECIBE: sin cifras de consumo (los topes los muestra la imagen de planes), sin decir que el servicio
+// valida pagos con el banco y sin nombrar un sistema que el servicio no nombra. El patrón de cifras es EL MISMO que filtra `ccLeerModelo` (una línea de la librería).
+const CIFRA_DE_CONSUMO = (() => {
+  const fuente = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/lib/captacion.js'), 'utf8');
+  const m = /^const CC_CIFRA_DE_CONSUMO = \/(.+)\/([a-z]*);$/m.exec(fuente);
+  if (!m) throw new Error('No encuentro «const CC_CIFRA_DE_CONSUMO» en src/lib/captacion.js');
+  return new RegExp(m[1], m[2]);
+})();
+// Una oración que AFIRMA que valida/verifica/acredita un pago con el banco (la negación «no lo valida con el banco» es la respuesta correcta y no cuenta).
+const VALIDA_CON_EL_BANCO = /\b(valida|validan|verifica|verifican|acredita|acreditan|confirma|confirman|consulta|consultan|cruza|cruzan)\w*\b[^.!?]{0,40}\b(banco|pagos?|transferencias?|depositos?|comprobantes?)\b[^.!?]{0,30}\bcon el banco\b|\bpago (acreditado|verificado|validado|confirmado|recibido)\b|\b(consulta|cruza)\w* (con )?el banco\b/;
+const CIERRE_EXACTO = '¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
 const sinTildes = (t) => String(t ?? '').normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const MONTO = /USD\s*\d|\$\s*\d|\d+([.,]\d+)?\s*(d[oó]lares|bs\.?|bolivianos|usd)\b|\bbs\.?\s*\d|\b\d+\s*%|descuento|rebaja|promoci[oó]n|oferta especial/i;
 const ENLACE = /(https?:\/\/|www\.|wa\.me\/)[^\s)»"]*/gi;
@@ -685,6 +714,8 @@ export function revisarMensaje(m, ctx = {}) {
   const asesor = String(ctx.asesor ?? '').trim();
   const anota = (regla, texto) => v.push({ regla, texto: String(texto).replace(/\s+/g, ' ').slice(0, 200) });
 
+  // §16: el mensaje de PLANES con archivo lo arma el CÓDIGO con los montos de la consola (D5): no cuenta como monto ni se le exige que no traiga cifras.
+  const deCodigo = m.payload !== null && m.payload !== undefined && objeto(objeto(m.payload).interactive).header !== undefined;
   const revisarTexto = (texto, { respaldo, payload }) => {
     const c = String(texto ?? '');
     const esBloqueDePlanes = /\*Planes\*/.test(c);
@@ -700,9 +731,18 @@ export function revisarMensaje(m, ctx = {}) {
     if (SE_PRESENTA_PERSONA.test(c) || (asesor && new RegExp(`\\b(soy|me llamo|mi nombre es) ${esc(asesor)}\\b`, 'i').test(c))) anota('se_presenta_como_persona_o_asesor', c);
     if (PROMESAS.test(c)) anota('promesa_de_contacto_sin_mecanismo', c);
     // Montos: sin el bloque de planes ni el texto de una aclaracion de la consola (los copia el codigo).
-    let paraMonto = esBloqueDePlanes ? '' : c;
+    let paraMonto = esBloqueDePlanes || deCodigo ? '' : c;
     for (const a of ctx.aclaraciones ?? []) for (const t of [a, String(a).slice(0, 300)]) if (t) paraMonto = paraMonto.split(t).join(' ');
     if (MONTO.test(paraMonto) || MONTO_DEL_MODELO.test(sinTildes(paraMonto))) anota('monto_o_descuento', c);
+    // §16 (documento comercial §5 y §6): ninguna cifra de consumo, ningún pago validado con el banco y ningún sistema que el servicio no nombra, en nada que redacte el modelo.
+    if (!esBloqueDePlanes && !deCodigo) {
+      // Sin el texto de una aclaración de la consola (lo copia el código, con su «USD 25»).
+      let propio = c.replace(ENLACE, ' ');
+      for (const a of ctx.aclaraciones ?? []) for (const t of [a, String(a).slice(0, 300)]) if (t) propio = propio.split(t).join(' ');
+      if (CIFRA_DE_CONSUMO.test(sinTildes(propio))) anota('cifra_de_consumo', c);
+      if (VALIDA_CON_EL_BANCO.test(sinTildes(propio))) anota('valida_pagos_con_el_banco', c);
+      if (ctx.lib && ctx.lib.ccSistemaAjeno(propio, ctx.propios ?? [], false)) anota('sistema_ajeno_o_integracion_inventada', c);
+    }
     // Enlaces: solo el de recepcion y el del archivo de planes, que arma el codigo.
     for (const e of c.match(ENLACE) ?? []) {
       const ok = (ctx.recepcion && new RegExp(`^(https://)?wa\\.me/${esc(ctx.recepcion)}(\\?.*)?$`, 'i').test(e))
@@ -710,7 +750,7 @@ export function revisarMensaje(m, ctx = {}) {
       if (!ok) anota('enlace', c);
     }
     // Toda oferta del asesor lleva un camino: boton, fila o enlace (en el respaldo en texto, la palabra «asesor» o el enlace).
-    const ofrece = new RegExp(`hablar con (un asesor${asesor ? '|' + esc(asesor) : ''})\\b|te lo responde|te ayuda directamente|te los pasa|toca el bot[oó]n|\\bpasar con\\b`, 'i');
+    const ofrece = new RegExp(`hablar con (un asesor|alguien de nuestro equipo|el equipo${asesor ? '|' + esc(asesor) : ''})\\b|te lo responde|te ayuda directamente|te los pasa|toca el bot[oó]n|\\bpasar con\\b`, 'i');
     if (ofrece.test(c) && !esBloqueDePlanes) {
       const camino = payload
         ? (botonesDe(payload).includes('asesor') || filasDe(payload).includes('asesor') || tipoInter(payload) === 'cta_url' || (payload.type === 'text' && (/«asesor»/.test(c) || /wa\.me\//.test(c))))
@@ -747,11 +787,11 @@ export function cargarLibreria(flujo) {
   const i = codigo.indexOf('// ARMAR MENSAJES:');
   if (i < 0) throw new Error('No encuentro el inicio del código propio de «Armar mensajes» en el flujo: ¿se reconstruyó con otra cabecera?');
   // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function(...GLOBALES_FUERA, codigo.slice(0, i) + '\nreturn { ccLeerModelo, ccIdsDeRubros, ccIdsDeAclaraciones, ccResumenDePrecios, CC_EMPATIA_RESPALDO, ccLimites, ccContar };');
+  const fn = new Function(...GLOBALES_FUERA, codigo.slice(0, i) + '\nreturn { ccLeerModelo, ccIdsDeRubros, ccIdsDeAclaraciones, ccResumenDePrecios, CC_EMPATIA_RESPALDO, ccLimites, ccContar, ccSistemaAjeno, ccCubrePuntos, ccGuionDe };');
   return fn(...GLOBALES_FUERA.map(() => undefined));
 }
 
-const CAMPOS = ['tipo', 'rubroId', 'rubroLibre', 'empatia', 'respuesta', 'aclaracion', 'enLosDatos', 'descarte'];
+const CAMPOS = ['tipo', 'rubroId', 'rubroLibre', 'empatia', 'respuesta', 'aclaracion', 'enLosDatos', 'descarte', 'explicacion', 'necesidad', 'nombre', 'empresa'];
 
 /** ¿El objeto cumple el `responseSchema` que se envio? Devuelve el motivo del primer incumplimiento, o ''. */
 function incumpleEsquema(obj, esquema) {
@@ -786,6 +826,7 @@ function evaluarLlamada({ crudo, cuerpo, espera, lib, cfg, plan, uso, ms, reinte
     rubroIds: lib.ccIdsDeRubros(cfg), aclaracionIds: ids,
     aclaraciones: (Array.isArray(cfg.aclaraciones) ? cfg.aclaraciones : []).slice(0, 15).map((a, i) => ({ id: ids[i], texto: a.texto })),
     textoCliente: plan.texto, textoDeImagen: plan.textoDeImagen, nombreNegocio: cfg.nombreNegocio, asesor: cfg.asesor,
+    nombreAsistente: cfg.nombreAsistente, planes: cfg.planes,
     // Lo que ve el modelo: una `respuesta` solo puede traer los numeros que estan ahi (igual que «Armar mensajes»).
     datos: String(cuerpo?.systemInstruction?.parts?.[0]?.text ?? ''),
   });
@@ -805,6 +846,12 @@ function evaluarLlamada({ crudo, cuerpo, espera, lib, cfg, plan, uso, ms, reinte
     rec.campos.respuesta = v.aclaracion ? 'porAclaracion' : estado(String(raw.respuesta).trim() !== '', v.respuesta !== '');
     rec.campos.enLosDatos = estado(raw.enLosDatos === true, v.enLosDatos === true);
     rec.campos.descarte = estado(raw.descarte !== 'ninguno', v.descarte !== '');
+    // §16: lo que el modelo extrae del cliente o redacta por rubro: la explicación (con los puntos clave), la necesidad, el nombre y la empresa.
+    rec.campos.explicacion = estado(String(raw.explicacion ?? '').trim() !== '', v.explicacion !== '');
+    rec.campos.necesidad = estado(String(raw.necesidad ?? '').trim() !== '', v.necesidad !== '');
+    rec.campos.nombre = estado(String(raw.nombre ?? '').trim() !== '', v.nombre !== '');
+    rec.campos.empresa = estado(String(raw.empresa ?? '').trim() !== '', v.empresa !== '');
+    rec.explicacion = { palabras: palabrasDe(v.explicacion), oraciones: oracionesDe(v.explicacion), aceptada: v.explicacion !== '' };
     rec.tono = {
       palabras: palabrasDe(raw.empatia), hastaDosOraciones: oracionesDe(raw.empatia) <= lib.ccLimites().empatia.oraciones, sinPregunta: !/[?¿]/.test(raw.empatia),
       hastaElLimite: String(raw.empatia).length <= lib.ccLimites().empatia.caracteres && palabrasDe(raw.empatia) <= lib.ccLimites().empatia.palabras,
@@ -828,6 +875,9 @@ function evaluarLlamada({ crudo, cuerpo, espera, lib, cfg, plan, uso, ms, reinte
     if (e.rubroId !== undefined) rec.evaluado.rubroId = raw.rubroId === e.rubroId;
     if (e.rubroLibre !== undefined) rec.evaluado.rubroLibre = e.rubroLibre === '' ? v.rubroLibre === '' : norma(v.rubroLibre).includes(norma(e.rubroLibre));
     if (e.descarte !== undefined) rec.evaluado.descarte = (raw.descarte !== 'ninguno') === e.descarte;
+    // §16: `necesidad`, `nombre` y `empresa`: el texto esperado (o '' si no debía extraer nada); `explicacion: true` si debía redactar una válida.
+    for (const k of ['necesidad', 'nombre', 'empresa']) if (e[k] !== undefined) rec.evaluado[k] = e[k] === '' ? v[k] === '' : norma(v[k]).includes(norma(e[k]));
+    if (e.explicacion !== undefined) rec.evaluado.explicacion = (v.explicacion !== '') === e.explicacion;
     if (e.enLosDatos !== undefined) {
       rec.evaluado.enLosDatos = rec.afirmaDatos === e.enLosDatos;
       rec.evaluado.invencion = e.enLosDatos === false && rec.afirmaDatos;
@@ -836,7 +886,7 @@ function evaluarLlamada({ crudo, cuerpo, espera, lib, cfg, plan, uso, ms, reinte
   } else if (espera) {
     // Se esperaba un resultado util y el objeto fallo: cuenta como desacierto en cada campo evaluado.
     rec.evaluado = {};
-    for (const k of ['tipo', 'rubroId', 'rubroLibre', 'descarte', 'enLosDatos']) if (espera[k] !== undefined) rec.evaluado[k] = false;
+    for (const k of ['tipo', 'rubroId', 'rubroLibre', 'descarte', 'enLosDatos', 'necesidad', 'nombre', 'empresa', 'explicacion']) if (espera[k] !== undefined) rec.evaluado[k] = false;
   }
   return rec;
 }
@@ -858,7 +908,7 @@ const valorMeta = (msg, cliente) => ({
 });
 const dichoDe = (t) => (t.tipo === 'texto' ? t.texto : t.tipo === 'audio' ? `(audio) ${t.transcripcion}` : `(toque) ${t.id}`);
 
-const MODELO_BASE = { tipo: 'respuesta', rubroId: 'ninguno', rubroLibre: '', empatia: 'Te entiendo.', respuesta: '', aclaracion: 'ninguno', enLosDatos: false, descarte: 'ninguno' };
+const MODELO_BASE = { tipo: 'respuesta', rubroId: 'ninguno', rubroLibre: '', empatia: 'Te entiendo.', respuesta: '', aclaracion: 'ninguno', enLosDatos: false, descarte: 'ninguno', explicacion: '', necesidad: '', nombre: '', empresa: '' };
 const respuestaDeGemini = (texto) => ({ candidates: [{ content: { parts: [{ text: texto }] } }] });
 
 /** Una corrida (un caso, una repeticion): un mundo nuevo, con su estado, su planilla y su reloj. */
@@ -885,7 +935,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
   const aceptado = () => ({ statusCode: 200, body: { messaging_product: 'whatsapp', messages: [{ id: `wamid.OUT${++seqSalida}` }] } });
   const envio = (nodo) => (ll) => {
     const payload = ll.cuerpo ?? {};
-    captura.mensajes.push({ nodo, a: String(payload.to ?? ''), tipo: String(payload.type ?? ''), payload, cuerpo: textoDeEnvio(payload),
+    captura.mensajes.push({ nodo, a: String(payload.to ?? ''), tipo: String(payload.type ?? ''), payload, cuerpo: textoDeEnvio(payload), evento: String(ll.item.evento ?? ''),
       respaldoTexto: nodo === 'Enviar a WhatsApp' ? String(ll.item.respaldo ?? '') : '', esRespaldo: nodo !== 'Enviar a WhatsApp' });
     return aceptado();
   };
@@ -942,7 +992,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
   };
   const mundo = crearMundo({
     flujo, dobles, ahoraMs: AHORA,
-    configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, horarioAtencion: '', planillaProspectosId: ID_PLANILLA, planillaProspectosHoja: 'Leads_CRM', mensajeComercioSuspendido: SUSPENDIDO },
+    configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: (caso.opciones ?? {}).sinRecepcion ? '' : REC, horarioAtencion: '', planillaProspectosId: ID_PLANILLA, planillaProspectosHoja: 'Leads_CRM', mensajeComercioSuspendido: SUSPENDIDO },
   });
 
   const corrida = { caso: caso.id, rep, turnos: [], llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], sinModelo: [], asesor: '', palabras: [], repeticiones: 0, oracionesRepetidas: 0, harvard: 0 };
@@ -960,7 +1010,10 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     corrida.plantillas += captura.mensajes.filter((m) => m.tipo === 'template').length;
     // El resumen de precios del mensaje de planes lo arma el CODIGO con los minimos de la consola: no es un monto del modelo.
     const resumen = cfg.planes || cfg.cargosUnicos ? lib.ccResumenDePrecios(cfg) : '';
-    const ctx = { asesor: corrida.asesor, recepcion: REC, aclaraciones: ACLARACIONES.map((a) => a.texto).concat(resumen ? [resumen] : []), archivos: [ARCHIVO.url] };
+    const ctx = {
+      asesor: corrida.asesor, recepcion: REC, aclaraciones: ACLARACIONES.map((a) => a.texto).concat(resumen ? [resumen] : []), archivos: [ARCHIVO.url],
+      lib, propios: ['NovuChat', 'Kenji', ...PLANES.map((x) => x.nombre)].flatMap((x) => x.split(' ')),
+    };
     // C1 (§13): un rubro de la consola sin entrada en el guion se atiende como «Otro»; eso cuenta como fallo, no se calla.
     for (const aviso of ((r.porNodo['Armar mensajes'] ?? [])[0] ?? {}).avisos ?? []) {
       corrida.violaciones.push({ caso: caso.id, rep, turno: i + 1, dicho: dichoDe(t), regla: aviso, texto: `el rubro «${String(plan.e?.rubroId ?? '')}» de la consola no tiene entrada en el guion y se atendió como «Otro»` });
@@ -993,6 +1046,32 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       if (t.exige.boton === true && !alCliente.some((m) => botonesDe(m.payload).includes('asesor') || filasDe(m.payload).includes('asesor') || tipoInter(m.payload) === 'cta_url')) {
         corrida.violaciones.push({ caso: caso.id, rep, turno: i + 1, dicho: dichoDe(t), regla: 'sin_boton_del_asesor', texto: alCliente.map((m) => m.cuerpo).join(' | ').slice(0, 200) });
       }
+      // §16: lo que el documento comercial manda en ese turno. `termina`: el mensaje acaba EXACTO con ese texto; `contiene` / `noContiene`: textos (normalizados) que tienen que estar o no;
+      // `sinCifras`: ni un dígito; `imagenPlanes`: sale el mensaje de planes con su imagen; `sinModelo`: el código contestó solo (cero llamadas).
+      const todo = alCliente.map((m) => m.cuerpo).join(' | ');
+      const falla = (regla, texto) => corrida.violaciones.push({ caso: caso.id, rep, turno: i + 1, dicho: dichoDe(t), regla, texto: String(texto).replace(/\s+/g, ' ').slice(0, 200) });
+      if (t.exige.termina !== undefined && !alCliente.some((m) => [].concat(t.exige.termina).some((x) => norm(m.cuerpo).endsWith(norm(x))))) falla('no_termina_como_se_exige', todo);
+      // `contieneAlguna`: basta UNA de las frases (el documento admite varias formas de decir lo mismo: «mayor cuello de botella» o «qué tarea te quita más tiempo»).
+      if (t.exige.contieneAlguna !== undefined && ![].concat(t.exige.contieneAlguna).some((x) => norm(todo).includes(norm(x)))) falla('falta_lo_que_se_exige', `falta alguna de ${[].concat(t.exige.contieneAlguna).map((x) => `«${x}»`).join(' o ')} en: ${todo}`);
+      // `cubrePuntos`: la MISMA regla que usa el validador del flujo (`ccCubrePuntos` con la familia de palabras de cada punto clave del dato): la explicación dice TODOS los puntos clave de su rubro.
+      if (t.exige.cubrePuntos === true) {
+        const puntos = ((lib.ccGuionDe(cfg, String(plan.e?.rubroId ?? '')).propia ?? {}).puntosClave) ?? [];
+        const sale = alCliente.map((m) => m.cuerpo).find((c) => /¿Te gustaría ver nuestros planes|prefieres hablar con/.test(c)) ?? todo;
+        if (!puntos.length || !lib.ccCubrePuntos(sale, puntos)) falla('no_cubre_los_puntos_clave', sale);
+      }
+      for (const x of [].concat(t.exige.contiene ?? [])) if (!norm(todo).includes(norm(x))) falla('falta_lo_que_se_exige', `falta «${x}» en: ${todo}`);
+      for (const x of [].concat(t.exige.noContiene ?? [])) if (norm(todo).includes(norm(x))) falla('trae_lo_que_no_debe', `trae «${x}» en: ${todo}`);
+      if (t.exige.sinCifras === true && /\d/.test(todo)) falla('cifra_donde_no_va', todo);
+      if (t.exige.imagenPlanes === true && !alCliente.some((m) => objeto(objeto(m.payload).interactive).header !== undefined)) falla('sin_imagen_de_planes', todo);
+      if (t.exige.sinModelo === true && captura.modelo) falla('llamo_al_modelo_sin_necesidad', todo);
+      // `sinEquipo` (§18, B4): sin número de recepción, ni botón ni fila ni «hablar con alguien de nuestro equipo»: solo se ofrece lo que se cumple.
+      if (t.exige.sinEquipo === true && alCliente.some((m) => botonesDe(m.payload).includes('asesor') || filasDe(m.payload).includes('asesor') || tipoInter(m.payload) === 'cta_url' || /hablar con (alguien de nuestro equipo|el equipo)/i.test(m.cuerpo))) falla('ofrece_al_equipo_sin_equipo', todo);
+    }
+    // §16 (D7): la 1.ª explicación de rubro de la conversación termina con la pregunta EXACTA del documento comercial.
+    if (corrida.cierreExacto === undefined) {
+      const expl = alCliente.find((m) => m.evento === 'explicacion');
+      // (Sin número de recepción —§18, B4— la pregunta ofrece solo los planes: no es la exacta del documento, que nombra al equipo.)
+      if (expl && !(caso.opciones ?? {}).sinRecepcion) corrida.cierreExacto = norm(expl.cuerpo).endsWith(norm(CIERRE_EXACTO));
     }
     salidas.push({ turno: i + 1, dicho: dichoDe(t), mensajes: alCliente.map((m) => m.cuerpo) });
     if (captura.modelo) {
@@ -1007,6 +1086,16 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
   const fila = hoja.filas.find((f) => String(f[4] ?? '').replace(/\D/g, '') === CLIENTE);
   corrida.calificacion = fila ? String(fila[ENC.indexOf(COL_CALIFICACION)] ?? '') : '(sin fila)';
   corrida.planilla = fila ? celdas(fila) : null;
+  // §16: lo que el caso espera de la FILA de la hoja (la calificación, el nombre, la empresa y el resumen que arma el código: necesidad, temas y lo que pidió).
+  if (caso.planilla) {
+    const falla = (texto) => corrida.violaciones.push({ caso: caso.id, rep, turno: caso.turnos.length, dicho: '(la planilla)', regla: 'planilla_no_coincide', texto: String(texto).slice(0, 200) });
+    if (!corrida.planilla) falla('no hay fila en la planilla');
+    else {
+      if (caso.planilla.calificacion !== undefined && corrida.planilla[COL_CALIFICACION] !== caso.planilla.calificacion) falla(`calificación ${corrida.planilla[COL_CALIFICACION]} y se esperaba ${caso.planilla.calificacion}`);
+      for (const [col, textos] of Object.entries(caso.planilla.contiene ?? {})) for (const x of [].concat(textos)) if (!norm(corrida.planilla[col]).includes(norm(x))) falla(`«${col}» no contiene «${x}»: ${corrida.planilla[col]}`);
+      for (const [col, textos] of Object.entries(caso.planilla.noContiene ?? {})) for (const x of [].concat(textos)) if (norm(corrida.planilla[col]).includes(norm(x))) falla(`«${col}» contiene «${x}»: ${corrida.planilla[col]}`);
+    }
+  }
   corrida.filas = hoja.filas.length;
   corrida.formulas = formulas.length;
   corrida.conversacion = salidas;
@@ -1081,6 +1170,8 @@ export function medir(corridas, descarteEsperado = () => false) {
       return { mensajes: todas.length, palabrasMedias: redondear(media(todas), 1), mediana: ord.length ? ord[Math.floor(ord.length / 2)] : 0, maximo: ord.length ? ord[ord.length - 1] : 0 };
     })(),
     repeticionesSeguidas: suma(corridas.map((c) => c.repeticiones ?? 0)),
+    // §16 (D7): conversaciones cuya 1.ª explicación de rubro termina con la pregunta EXACTA del documento comercial (se espera todas).
+    cierreExacto: { ok: corridas.filter((c) => c.cierreExacto === true).length, n: corridas.filter((c) => c.cierreExacto !== undefined).length },
     oracionesRepetidasSeguidas: suma(corridas.map((c) => c.oracionesRepetidas ?? 0)),
     harvard: { conversacionesConElDato: corridas.filter((c) => (c.harvard ?? 0) > 0).length, maxPorConversacion: Math.max(0, ...corridas.map((c) => c.harvard ?? 0)) },
     tono: {
@@ -1121,12 +1212,15 @@ export function validarCasos(datos) {
       if (t.seco !== undefined && typeof t.seco !== 'string' && (typeof t.seco !== 'object' || t.seco === null || Object.keys(t.seco).some((k) => !CAMPOS.includes(k)))) {
         throw new Error(`bateria-casos.json: ${donde}: «seco» debe ser un objeto con campos del esquema, o un texto.`);
       }
-      if (t.exige !== undefined && (typeof t.exige !== 'object' || t.exige === null || Object.keys(t.exige).some((k) => !['accion', 'boton'].includes(k)))) {
-        throw new Error(`bateria-casos.json: ${donde}: «exige» solo admite accion y boton.`);
+      if (t.exige !== undefined && (typeof t.exige !== 'object' || t.exige === null || Object.keys(t.exige).some((k) => !['accion', 'boton', 'termina', 'contiene', 'contieneAlguna', 'noContiene', 'sinCifras', 'imagenPlanes', 'sinModelo', 'cubrePuntos', 'sinEquipo'].includes(k)))) {
+        throw new Error(`bateria-casos.json: ${donde}: «exige» solo admite accion, boton, termina, contiene, contieneAlguna, noContiene, sinCifras, imagenPlanes, sinModelo, cubrePuntos y sinEquipo.`);
       }
-      if (t.espera !== undefined && (typeof t.espera !== 'object' || Object.keys(t.espera).some((k) => !['tipo', 'rubroId', 'rubroLibre', 'descarte', 'enLosDatos'].includes(k)))) {
+      if (t.espera !== undefined && (typeof t.espera !== 'object' || Object.keys(t.espera).some((k) => !['tipo', 'rubroId', 'rubroLibre', 'descarte', 'enLosDatos', 'necesidad', 'nombre', 'empresa', 'explicacion'].includes(k)))) {
         throw new Error(`bateria-casos.json: ${donde}: «espera» con un campo desconocido.`);
       }
+    }
+    if (c.planilla !== undefined && (typeof c.planilla !== 'object' || c.planilla === null || Object.keys(c.planilla).some((k) => !['calificacion', 'contiene', 'noContiene'].includes(k)))) {
+      throw new Error(`bateria-casos.json: ${c.id}: «planilla» solo admite calificacion, contiene y noContiene.`);
     }
   }
   return casos;
@@ -1199,6 +1293,7 @@ function textoDelInforme(r) {
   o.push(`Honestidad de enLosDatos: ${fr(t.enLosDatos)} · el modelo afirmó tener datos que no hay: ${t.invenciones} (llegaron al cliente: ${t.invencionesEfectivas})`);
   o.push(`Calificación final (planilla): ${Object.entries(t.calificaciones).map(([k, v]) => `${k || '(vacía)'} ${v}`).join(', ') || '—'}`);
   o.push(`Longitud: ${t.longitud.palabrasMedias} palabras por mensaje en promedio (mediana ${t.longitud.mediana}, máximo ${t.longitud.maximo}) · mensajes idénticos seguidos ${t.repeticionesSeguidas} (se espera 0) · oraciones repetidas de un mensaje al siguiente ${t.oracionesRepetidasSeguidas} (informativo) · dato de Harvard: ${t.harvard.conversacionesConElDato} conversaciones, a lo más ${t.harvard.maxPorConversacion} vez por conversación (se espera ≤1)`);
+  o.push(`Cierre exacto del documento comercial en la 1.ª explicación de rubro: ${fr(t.cierreExacto)} conversaciones (se espera todas)`);
   o.push(`Tono sobre ${t.tono.mensajes} mensajes al cliente: voseo ${t.tono.voseo} · trato de usted ${t.tono.usted} · sin ningún emoji ${t.tono.sinEmoji}`);
   if (t.avisosDeConfiguracion) o.push(`FALLO DE CONFIGURACIÓN: ${t.avisosDeConfiguracion} turno(s) con \`rubro_sin_guion\` (un rubro de la consola sin entrada en el guion se atendió como «Otro»).`);
   if (t.sinModelo.length) o.push(`ATENCIÓN: turnos donde se esperaba el modelo y el flujo no lo llamó: ${t.sinModelo.join(', ')}`);

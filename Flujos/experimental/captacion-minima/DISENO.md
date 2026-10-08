@@ -275,3 +275,48 @@ Resumen de lo que cambió (el contrato, §15, tiene las decisiones, la tabla de 
   (`ccRetomar`: reformula y ofrece al asesor); `otro` en el dolor o el negocio retoma la pregunta. Caso `C25b` de la batería (tipo `otro` tres veces).
 - **Revisión del PR #454 (06/10):** filtros S1/S2/S3 ampliados en la capa de captación (no en el filtro común); `ccEsIdentidad` sin «es asesora»; `ccPidioContacto` (regla determinista, acción `contacto`) en vez de depender de `pide_asesor`/`otro`; `otro` en el dolor vuelve a avanzar; validación de datos de todos los textos (invisibles, formato de WhatsApp, promesas, ofertas, montos, enlaces con `CC_ENLACE`);
   «sin datos» y la reformulación como opción y solo con recepción (`ccHayRecepcion`); `repetidas` satura; `rot` incluye `pideAsesor`; la batería exige (`exige`) que C23, C25 y C25b avancen u ofrezcan al asesor.
+
+## Documento comercial de Kenji: el modelo redacta, el código fija (§16, 07/10/2026)
+
+Resumen de lo que cambió (el contrato, §16, tiene las decisiones D1 a D10, la tabla «frase → fuente» y las reglas; la fuente es `fuentes/system-prompt-comercial-kenji-2026-10-07.md`):
+- **Un rubro estándar se explica al elegirlo.** `ccAplicarRubro` devuelve `explicar` (si el guion del rubro trae `explicacion`) y `ccDecidir` lo vuelve un plan con `llamarModelo` y `modo: 'explicar'` (`elegido`); `decidir-turno.js` pasa el `modo` a `ccCuerpoModelo`, que agrega la línea `TAREA`. `ccResolverModelo` responde `explicacion` con
+  `ccExplicacionDelRubro` (la del modelo si pasó `ccLeerModelo` y `ccCubrePuntos`; si no, el respaldo del dato) y `ccMensajesDe` arma `ccOferta({ explicacion })` con los emojis por partes (`ccEmPartes`). Sin `explicacion` en el guion (otro tenant) sigue el flujo del dolor.
+- **`ccLeerModelo` extrae y valida** `explicacion`, `necesidad`, `nombre` y `empresa` (el esquema los exige; el lector los toma como vacíos si faltan, para no romper un modelo viejo). Filtros nuevos sobre todo lo que redacta el modelo: `CC_CIFRA_DE_CONSUMO`, `CC_ACREDITA_MODELO`, `ccSistemaAjeno` y el número de un dato como número entero.
+  `armar-mensajes.js` le pasa también `nombreAsistente` y `planes` (los nombres propios que se pueden decir).
+- **Reglas deterministas en `ccDecidir`** (antes del modelo, no en el primer mensaje): `ccPreguntaBanco`, `ccPreguntaTopePlan` (→ `ccPedirPlanes`), `ccPreguntaConsumo` e `ccPreguntaIntegracion` (acciones `banco`, `consumo`, `integracion`; texto de `ccRespuestaFija` con el contador `fijas`).
+  Tocan la ficha: `temas` (vocabulario cerrado) y `hechos.respondioDolor` (= «interactuó»). `completar` no reinicia `repetidas` en esas acciones, porque pasan por `ccRetomar` (`soloPrefijo`).
+- **Precios** (`ccFrasesDePrecios`, `ccPreciosDelGuion`, `ccPlanes(cfg, asesor, cierre, comoFunciona, { aMedida })`): frases de `guion.precios` + cifras de la consola; sin `guion.precios`, el mensaje de §13.
+- **«Otro»**: `abierta` con `extra.propuesta` (empatía + `otro.propuesta` + el cierre investigativo = `preguntaDolor`); `ccResolverModelo` decide entre las tres partes y la oferta directa según lo que el modelo extrajo (`rubroLibre`, `necesidad`).
+- **Ficha:** `nombre`, `necesidad` y `temas` (saneados en `ccEstadoVigente`, no vencen con la ventana) y el contador `rot.fijas`. `ccProspecto` los lleva; «Decidir fila de la planilla» arma el resumen de la columna J por código (`resumir`) y la tabla de calificación no cambia (el hecho `respondioDolor` significa ahora «interactuó»).
+- **Botón y contacto:** `ccQuien` sin nombre = «alguien de nuestro equipo»; `ccTituloAsesor` = «Hablar con el equipo». Traspaso: pide «cómo te llamas y cómo se llama tu negocio» en un mensaje.
+- **Datos (`novuchat.json`):** `guion.rubros` con los ids vivos y los del documento (`salud`, `belleza`, `retail`, `leads-de-ventas`), `guion.precios`, `guion.respuestas` (consumo y banco; la integración rota en la librería), `nivelEmojis` en «pocos». `construir.mjs` valida los campos nuevos y lee los topes de la librería.
+- **Batería** (`bateria.mjs`, `bateria-casos.json`): se reemplazan P1 a P5 por los recorridos del documento (un caso por rubro del documento y por id vivo, «Otro» completo, costos, consumo, topes, integraciones, banco, nombre y empresa, calificación); la consola de ejemplo trae los 3 planes y los 2 cargos reales y `nivelEmojis: 'pocos'`;
+  nuevas exigencias por turno (`termina`, `contiene`, `noContiene`, `sinCifras`, `imagenPlanes`, `sinModelo`) y por caso (`planilla`: calificación y celdas de la fila); nuevas violaciones (`cifra_de_consumo`, `valida_pagos_con_el_banco`, `sistema_ajeno_o_integracion_inventada`); métrica del cierre exacto de la 1.ª explicación.
+- **Pruebas:** la suite de punta a punta corre la mecánica con el guion del flujo anterior armado EN MEMORIA (`armarConGuion`; nada se escribe) y prueba el flujo de NovuChat en el describe «§16» contra los JSON versionados; la librería y la batería llevan sus describes «§16».
+- **Mensajes por conversación: ≤ antes** (ver §16 del contrato); **llamadas al modelo:** la explicación reemplaza a la respuesta al dolor; la extracción de nombre y empresa suma una solo si el cliente da más que el nombre del negocio.
+
+## Correcciones de la batería real (§17, 07/10/2026)
+
+- **Por qué el cierre perdía el 🤝:** el nivel «pocos» deja un emoji por parte y en «Otro» la empatía y el cierre eran una sola parte. Ahora son dos (`ccEmPartes([dicho, cierre])`).
+- **Por qué ya no se cree a `pide_planes`:** el modelo etiquetó como pedido de planes una frase donde el cliente hablaba de lo que le preguntan a él. La decisión pasó al código (`ccPideCostoDelServicio`): costo con marca de precio y sin que sea el producto o el cliente del prospecto. Decisión sobre la 2.ª petición de planes: se reenvía la imagen una vez y luego se contesta sin repetirla (evita enviar tres veces la misma imagen y no deja al cliente sin respuesta la 1.ª vez).
+- **Puntos clave con familias:** una lista de raíces por heurística daba falsos negativos («notas especiales» contra «indicaciones»). La familia la escribe quien arma el guion (dato, no código), y la valida `construir.mjs`.
+- **Dos redacciones de falla:** repetir el mismo texto dos veces seguidas parecía una caída; rota con `fijas`.
+
+### Ronda 2 de §17
+- **Por qué no basta pedirlo en el prompt:** el modelo ya tenía la orden de hablar en 2.ª persona y aun así conjugó «se pierdes». Se atacó por tres lados: el dato (puntos clave ya en «tú», sin nada que conjugar), la instrucción (concordancia explícita) y una red de código estrecha (lista cerrada de verbos, para no rechazar texto correcto).
+- **Apertura cálida por código:** se valida en la explicación, no en la instrucción: lo que no abre cálido cae al respaldo, que sí lo hace.
+- **Descuentos:** la respuesta es fija porque es una política (no hay descuentos ni otros precios); se evita la palabra en el texto para que ningún detector de «descuento» confunda una negación con una oferta.
+
+### Ronda 3 de §17
+- **Por qué no se relajó la guardia:** exigir que cada palabra del negocio esté en lo que dijo el cliente es lo que impide que un mensaje inyecte un texto en la hoja. La errata se arregla por el otro lado: cuando el modelo casi acierta, se usa lo que el cliente escribió, que ya cumple la guardia por construcción.
+- **Por qué el análisis es estrecho:** partir «Juan de Dios» o «María de la Cruz» sería peor que repreguntar. Sin coma, solo se divide con «de/en» seguido de una palabra de negocio; con coma o guion, no hace falta.
+- **Por qué «Ana Pérez» sola no cambia:** distinguirla de «Tacos Pastor» exige el modelo, y llamarlo en cada respuesta del negocio sube el costo por conversación.
+
+## §18 (PR #456)
+- **Por qué una lista de permitidos y no más bloqueos:** cada bloqueo previó una frase y el prospecto encontró otra (el 18 de 20 pasaron con los filtros anteriores). La lista invierte la carga: solo se dice lo que el tenant escribió, y lo demás cuesta puntos. El margen (2) y el vocabulario se calibraron con explicaciones reales del modelo para que el 81 % siga pasando sin aflojar las frases hostiles.
+- **Por qué un sujeto ajeno pesa 3:** «Contifico recibe cada venta» solo suma dos raíces ajenas, pero un sujeto que el tenant nunca nombró es la forma de colar una marca.
+- **Por qué el tramo literal:** la guardia contra la inyección pide que cada palabra esté en lo que dijo el cliente; contiguo y literal además impide palabras sueltas reordenadas y caracteres que el cliente no escribió (invisibles, asteriscos, emojis). Se guarda lo que el cliente escribió, no lo que devolvió el modelo.
+- **Por qué «Ana Pérez» va una vez al modelo:** el código no distingue un nombre de un negocio de dos palabras. Se acepta una llamada más en ese solo turno antes que anotar a una persona como negocio.
+- **Por qué «Descuentos Express» es un negocio:** los detectores globales (descuento, contacto, banco) buscan palabras sueltas; en el paso en que se pregunta el nombre del negocio, sin «?», esas palabras son parte del nombre.
+- **Costos de Meta:** el negocio los paga directamente a Meta y dependen del uso; el chat ni los cuantifica ni los minimiza, y solo promete lo que hay detrás (pasar con el equipo).
+
