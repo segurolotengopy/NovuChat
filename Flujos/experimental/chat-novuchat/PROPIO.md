@@ -21,7 +21,7 @@ Regla (Andres, 09/10/2026): **flujo propio = composición propia + núcleo comú
 | Puerta del turno (comercio no operativo + uso extendido) | `core/comercio-no-operativo.js` y `core/uso-extendido.js` son del contrato del agente y hay 4 versiones divergentes de `uso-extendido` |
 | Config del negocio (consola → configuración) | `core/config-del-negocio.js` (403 líneas) es del agente; este nodo toma solo precios, imagen, recepción, voz y atención |
 | `chAviso` (plantilla `solicitud_contacto` a recepción) | `cmContactoConBoton` cubre solo el botón; no hay constructor común de la plantilla |
-| `decidir-fila-de-la-planilla.js`, `prospecto-para-la-planilla.js` (hoja Leads_CRM) | `Flujos/src/modulos/captacion/` existe pero está ATRASADO (sin calificación por hechos ni resumen J). Copia idéntica a la de `captacion-minima/src/nodos/`; una prueba compara byte a byte |
+| `decidir-fila-de-la-planilla.js`, `prospecto-para-la-planilla.js` (hoja Leads_CRM) | `Flujos/src/modulos/captacion/` existe pero está ATRASADO (sin calificación por hechos ni resumen J). Copia de `captacion-minima/src/nodos/`; una prueba compara byte a byte. `prospecto` es idéntico; `decidir-fila` diverge en UNA línea a propósito (`seguro` quita todos los bloques de signos de fórmula del comienzo, «= =1»; revisión del PR #464) y la prueba declara esa diferencia |
 | Detectores, extracción literal de nombre y empresa, filtros de redacción propios (`src/lib/chat.js`, primer bloque) | Existían solo en Captación mínima: son piezas propias de NovuChat portadas con sus pruebas (y comparadas con la original) |
 
 ## Propio de NovuChat

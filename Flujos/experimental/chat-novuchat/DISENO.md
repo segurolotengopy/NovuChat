@@ -37,8 +37,8 @@ debajo de los envíos y la hoja. No hay ciclos: ningún nodo lee por nombre algo
 - **Evento** `{k, t, c, rubro, boton}`: `t` es lo que lee el modelo (`[Eligió el rubro: Salud]`, `[Nota de voz] …`, `[Envió solo emojis o signos: 👽]`); `c`, lo que el cliente escribió o dijo
   (sobre `c` corren los detectores). Un texto del cliente nunca trae corchetes (no puede fingir un evento del sistema) ni los delimitadores `<<<` `>>>`.
 - **Ficha** (`staticData.global.chatNovuchat[tel]`, 19 campos, saneada campo por campo): `rubro`, `nombre`, `empresa`, `necesidad`, `temas`, `hechos`
-  (`pidioEquipo`, `pidioPlanes`, `eligioOtro`, `interactuo`, `descarte`), `avisado`, `planesMostrados`, `soporte`, `anuncio`, `seq`, `hasta`, `cola` (eventos sin responder, ≤8),
-  `historial` (últimas 12 entradas, ≤400 caracteres) y `ultimosIds` (5). Ventana de 24 h (vencen aviso, planes y soporte), olvido a las 48 h. Sin contadores de rotación.
+  (`pidioEquipo`, `pidioPlanes`, `eligioOtro`, `interactuo`, `descarte`), `avisado`, `planesMostrados`, `soporte`, `anuncio`, `seq`, `hasta`, `cola` (eventos sin responder, ≤6),
+  `historial` (últimas 8 entradas, ≤300 caracteres) y `ultimosIds` (5). Ventana de 24 h (vencen aviso, planes y soporte), olvido a las 48 h. Sin contadores de rotación.
   Escriben: «Registrar evento» (el evento), «Armar mensajes» (todo lo demás) y «Confirmar envío» (`avisado`; y restaura `fichaAntes`, con la cola, si Meta rechaza el envío).
 - **Plan** (`chDecidir`): `ruta` = `lista` | `planes` | `equipo` | `fijo` | `modelo` (+ `suspendido`/`uso_extendido` de la puerta), más `contexto` del modelo (`rubro`, `multiple`, `otro`,
   `otroRespuesta`, `abierta`, `datos`, `identidad`, `cortesia`, `fuera`, `ambiguo`, `medio`, `general`), `hechos`, `temas`, `aMedida`.
@@ -63,12 +63,14 @@ baja de N respuestas a UNA. **Llamadas al modelo: 0 o 1 por turno** (2 si una gu
 
 ## Riesgos y lo que no se hizo
 
-- **Coalescencia: RIESGO CONOCIDO, a verificar con un teléfono real (tres toques en menos de 2 s en el Demo A).** Lo más probable es que n8n dé a cada ejecución una COPIA de los datos estáticos y grabe el objeto
-  entero al terminar: entonces las ejecuciones simultáneas no se ven y las tres responden (la espera de 2,5 s no une nada; se deja porque no daña y sí une si los datos se comparten, a costa de 2,5 s de latencia
-  y de un mensaje por toque en vez de uno). El diseño NO empeora con la copia desfasada (prueba «copia desfasada»): cada ejecución arma el turno con SU evento, responde una vez y con contenido (nunca vacío ni
-  repetido), y el historial pisado por la última que graba solo olvida intercambios: el turno siguiente responde bien. Si se quisiera una sola respuesta garantizada, el registro de eventos pasaría a un almacén
-  compartido (Data Table de n8n o una función de la consola); solo cambian «Registrar evento» y «Armar turno». No se invierte más en eso por ahora.
-- **Peso de los datos estáticos**: cada ficha pesa ~5 KB y n8n graba todas en cada ejecución; el barrido de 48 h y el tope de 5.000 lo acotan.
+- **Coalescencia y concurrencia: RIESGO CONOCIDO, aceptado por Andres; a verificar con un teléfono real (tres toques en menos de 2 s en el Demo A).** Lo más probable es que n8n dé a cada ejecución una COPIA de
+  los datos estáticos y grabe el mapa ENTERO al terminar: gana el último que graba y pisa a TODOS los teléfonos, no solo al suyo. Alcance real: (1) tres toques seguidos reciben tres respuestas (la espera de 2,5 s
+  no une nada; se deja porque no daña y sí une si los datos se comparten, a costa de 2,5 s de latencia); (2) se pierden el historial y los `ultimosIds` de OTRO teléfono que escribió a la vez, así que una reentrega
+  de Meta puede responderse dos veces; (3) un `avisado` perdido puede duplicar la plantilla a recepción (cuesta dinero); (4) dos toques rápidos en «Hablar con el equipo» pueden enviar dos plantillas.
+  El diseño NO empeora con la copia desfasada (prueba «copia desfasada»): cada ejecución arma el turno con SU evento, responde una vez y con contenido (nunca vacío ni repetido), y sobre el mapa final pisado el turno
+  siguiente responde bien. Se resuelve más adelante con un almacén compartido (Data Table de n8n o una función de la consola): solo cambian «Registrar evento» y «Armar turno». Además, las esperas de 2,5 s ocupan
+  una ejecución cada una: hay que confirmar el límite de concurrencia de n8n (L4 de la revisión de seguridad) antes de tener muchos chats a la vez.
+- **Peso de los datos estáticos**: n8n graba TODAS las fichas en cada ejecución. Topes: 300 fichas, historial 8 × 300 caracteres, cola 6 eventos de ≤600: la peor ficha pesa ~7 KB y el peor caso ~2 MB serializados (no ~25 MB); el barrido de 48 h lo acota más.
 - **Trato**: se lee `voz.tratamiento` de la consola («usted» cambia lo que se le pide al modelo), pero los textos fijos del dato están en tú.
 - No hay campañas, rubro libre, CRM real, imágenes salientes (salvo la de planes), trato de usted en textos fijos ni miniCRM/Kanban (D4: «panel de control»).
 - Pasarlo a producción: `scripts/preparar-import.sh Flujos/experimental/chat-novuchat/chat-novuchat.novuchat.json .env.<cliente>` y `publicar-flujo.sh` (el nombre del flujo es el del vivo).

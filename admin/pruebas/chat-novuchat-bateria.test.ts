@@ -328,6 +328,23 @@ describe('argumentos, casos y secretos', () => {
     expect(Object.keys(cuerpo).sort()).toEqual(['contents', 'generationConfig', 'systemInstruction']);
     expect(cuerpo['generationConfig'].responseSchema.required).toHaveLength(7);
   }, 30_000);
+  it('en modo REAL no cuentan como violación las exigencias que solo tienen sentido en `--seco` (frase literal, origen del texto, lo que «ve» el modelo, cómo termina lo que escribió el modelo)', async () => {
+    const CLAVE = 'AI' + 'zaFAKE_clave_de_prueba_' + 'ABCDEFGHIJKLMNOP';
+    // Un modelo real que redacta SU mensaje: bueno, pero con otras palabras que las del seco.
+    const msg = 'Tienes un negocio muy interesante y NovuChat puede atender tu WhatsApp en segundos, agendar citas sin cruces y ayudarte a no perder ventas fuera de horario, todos los días. ¿Quieres ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+    const respuesta = (): J => ({ ok: true, status: 200, text: async () => JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ mensaje: msg, accion: 'ninguna', rubro: 'ninguno', necesidad: '', nombre: '', empresa: '', descarte: 'ninguno' }) }] } }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 } }) });
+    const deps: J = { leerArchivo: (r: string) => (r === '.env.novuchat' ? `GEMINI_API_KEY=${CLAVE}\n` : null), fetch: async () => respuesta(), gcloudToken: () => { throw new Error('no'); } };
+    const r = await correr(['--n', '1', '--casos', 'S2,P1,P3,E2', '--json'], deps);
+    const inf = JSON.parse(r.salida) as J;
+    expect(inf['modo']).toBe('real');
+    const ruido = ['origen_inesperado', 'el_modelo_no_ve_lo_que_se_exige', 'falta_lo_que_se_exige', 'no_termina_como_se_exige'];
+    expect(Object.keys(inf['violaciones'].porRegla).filter((k) => ruido.includes(k)), JSON.stringify(inf['violaciones'].detalle).slice(0, 600)).toEqual([]);
+    // lo que sí depende del modelo se sigue midiendo: tasa de respaldo y causas de rechazo salen en el informe
+    expect(inf['total']).toHaveProperty('turnosConRespaldo');
+    expect(inf['total']).toHaveProperty('causasDeRechazo');
+    // y en seco las mismas exigencias SÍ se miden (el caso con la respuesta mala exige el respaldo)
+    expect(JSON.stringify(CASOS)).toMatch(/"origen"/);
+  }, 30_000);
   it('un error de la red con la clave dentro NO la deja pasar a la salida', async () => {
     const CLAVE = 'AI' + 'zaFAKE_clave_de_prueba_' + 'ABCDEFGHIJKLMNOP';
     const deps: J = {

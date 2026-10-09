@@ -37,7 +37,7 @@ const texto = (s) => cmMensaje('cliente', cmTexto(s), s, s, { tipoReporte: 'text
 const aviso = (estado, marca, yaAvisado) => {
   const payload = chAviso({
     avisado: yaAvisado === true, numeroRecepcion: cfg.numeroRecepcion, desde: from, plantilla: cfg.plantillaAviso, idioma: cfg.idiomaPlantillaAviso,
-    estado: estado, empresa: nueva.empresa, contacto: nueva.nombre, nombrePerfil: t.nombrePerfil,
+    estado: estado, empresa: nueva.empresa, contacto: nueva.nombre, nombrePerfil: chNombreDelPerfil(t.nombrePerfil),
     rubro: (chRubroDe(cfg, nueva.rubro) || {}).nombre || '', flujos: (chRubroDe(cfg, nueva.rubro) || {}).flujo || '',
   });
   return payload ? { para: 'recepcion', payload: payload, texto: 'Aviso a recepción: ' + estado + '.', respaldo: '', tipoReporte: null, esAviso: true, marcaAvisado: marca, evento: 'aviso' } : null;
@@ -76,7 +76,11 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
   if (plan.ruta === 'lista') m = chLista(cfg);
   else if (plan.ruta === 'planes') m = chMensajePlanes(cfg, { aMedida: plan.aMedida, repite: antes.planesMostrados === true, tope: plan.tope === true });
   else if (plan.ruta === 'fijo') m = chCliente(chRespuestaFija(plan.fijo, cfg), cfg, 'fijo');
-  else if (plan.ruta === 'equipo') m = chMensajeEquipo(cfg, antes, from);
+  else if (plan.ruta === 'equipo') {
+    // Si el cliente dio su nombre y su negocio en este mismo turno, el traspaso no los vuelve a pedir: se usan los de la ficha NUEVA (como el aviso).
+    const previa = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: '', ahoraMs: ahora, anuncio: t.anuncio === true });
+    m = chMensajeEquipo(cfg, Object.assign({}, antes, { nombre: previa.nombre, empresa: previa.empresa }), from);
+  }
   else m = chCliente(res.texto, cfg, res.evento);
   mensajes.push(m);
   nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.texto, ahoraMs: ahora, anuncio: t.anuncio === true });
@@ -117,7 +121,7 @@ if (claveOk) {
 
 // ============================================ el prospecto: solo si la ficha cambió. En modo prueba la planilla NO se escribe (una prueba no llena la hoja de nadie).
 const planillaOk = !prueba && String(cfg.planillaProspectosId || '').trim() !== '' && String(cfg.planillaProspectosHoja || '').trim() !== '';
-const datosDe = { from: from, nombrePerfil: t.nombrePerfil };
+const datosDe = { from: from, nombrePerfil: chNombreDelPerfil(t.nombrePerfil) };
 const despues = conversacion ? chProspecto(nueva, cfg, datosDe) : null;
 const primeraVez = antes.historial.length === 0;
 const cambio = despues !== null && (primeraVez || JSON.stringify(despues) !== JSON.stringify(chProspecto(antes, cfg, datosDe)));

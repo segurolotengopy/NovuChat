@@ -178,7 +178,7 @@ const CH_PIDIO_CONTACTO = new RegExp([
   '\\b(llamame|llamenme|llamanos|contactame|contactenme|escribeme|escribanme)\\b',
   '\\bme (llamas|llamaras|llamarias|pueden llamar|podrian llamar|puedes llamar|podrias llamar|contactas|contactaras|contactarias|pueden contactar|podrian contactar|puedes contactar|escribes|escribiras|pueden escribir|podrian escribir)\\b',
   '\\b(puedes|podrias|pueden|podrian) (llamarme|contactarme|escribirme)\\b',
-  '\\bme (contactan|llaman|contactaran|llamaran) (manana|hoy|luego|despues|mas tarde|esta tarde|en la (tarde|manana|noche)|a las \\d)',
+  '\\bme (contactaran|llamaran) (manana|hoy|luego|despues|mas tarde|esta tarde|en la (tarde|manana|noche)|a las \\d)',
   '\\b(que|si) me (llamen|llames|contacten|contactes|escriban|escribas)\\b',
   '\\b(explic\\w+|expliqu\\w+|cuent\\w+|expon\\w+) (por|en|mediante|via) (una |la )?(llamada|videollamada|reunion|zoom|meet)\\b',
   '\\b(una |la )?(llamada|videollamada|reunion) (con|de) (un |una |el |la )?(asesor|asesora|persona|ejecutiv\\w+|alguien|especialista)\\b',
@@ -187,9 +187,14 @@ const CH_PIDIO_CONTACTO = new RegExp([
   '\\b(me atiende|hablo con|me atiende) (un|una|el|la) (asesor|asesora|ejecutiv\\w+|especialista)\\b',
 ].join('|'));
 // §19: pedir una persona con otras palabras («prefiero que me atienda alguien del equipo», «me gustaría que alguien me explique mejor»): confirma un `pide_asesor` del modelo. Contar un problema no lo es.
-const CH_PIDE_PERSONA = /\b(?:prefiero|quiero|quisiera|me gustaria|necesito|pido|podria|puede)\b[^.!?]{0,30}\b(?:alguien|una persona|un asesor|un humano|un ejecutivo|un especialista)\b|\bque (?:me )?(?:atienda|atiendan|explique|expliquen|llame|llamen|hable|ayude)\b[^.!?]{0,30}\b(?:alguien|persona|asesor|humano|equipo)\b|\balguien (?:\w+ ){0,3}(?:me )?(?:atienda|explique|ayude|hable|llame)\b/;
+// La persona tiene que ser para ÉL: «necesito alguien que atienda mi WhatsApp de noche» o «quiero que alguien conteste a mis clientes» cuentan su necesidad y no piden hablar con alguien.
+const CH_PIDE_PERSONA = /\b(?:prefiero|quiero|quisiera|me gustaria|necesito|pido)\b[^.!?]{0,30}\b(?:hablar|conversar|charlar|comunicarme|escribir)\w*\s+con\b[^.!?]{0,20}\b(?:alguien|una persona|un asesor|un humano|un ejecutivo|un especialista)\b|\bque (?:me|nos) (?:atienda|atiendan|explique|expliquen|llame|llamen|hable|ayude|ayuden)\b[^.!?]{0,30}\b(?:alguien|persona|asesor|humano|equipo)\b|\balguien (?:\w+ ){0,3}(?:me|nos) (?:atienda|explique|ayude|hable|llame)\b|\b(?:prefiero|quiero|quisiera|necesito|me gustaria)\s+(?:hablar con\s+)?(?:una persona|un asesor|un humano|un ejecutivo|un especialista)\b(?!\s+(?:que|para|de|con|en|por)\b)|\b(?:puede|podria|pueden|podrian) (?:alguien|una persona|un asesor)\b[^.!?]{0,20}\b(?:llamarme|atenderme|explicarme|ayudarme|hablarme|contactarme)\b/;
+// Quien cuenta que SUS clientes lo llaman («mis pacientes me llaman hoy y no doy abasto», «los clientes me contactan en la noche», «me llaman a las 3 de la mañana») no pide que lo llamen: el presente de
+// «llaman/contactan» describe su problema y no se toma por un pedido (cuesta una plantilla a recepción). Los pedidos reales van en subjuntivo, imperativo o futuro, y el sujeto «mis clientes» los descarta.
+const CH_SUJETO_CLIENTE = /(^| )(mis|nuestros|nuestras|los|las|mi|nuestro|nuestra) (clientes?|compradores|usuarios?|pacientes?|alumnos?|proveedores|socios|familiares)( |$)/;
 function chPidioContacto(t) {
-  return CH_PIDIO_CONTACTO.test(chNorm(t));
+  const n = chNorm(t);
+  return CH_PIDIO_CONTACTO.test(n) && !(CH_SUJETO_CLIENTE.test(n) && /\bme (llaman|contactan|escriben|llamaran|contactaran)\b/.test(n));
 }
 // §16 (documento comercial del asistente, 07/10/2026): cuatro preguntas que NO las contesta el modelo: las detecta el CÓDIGO sobre el texto normalizado y sale una respuesta fija.
 //  - consumo: cuántos mensajes incluye una conversación, límites de interacción o detalles técnicos de consumo (documento §5: JAMÁS un número exacto);
@@ -234,7 +239,7 @@ function chPreguntaBanco(t) {
   return (banco && (verbo || objeto) && pregunta) || (verbo && objeto && pregunta);
 }
 // Los sistemas que el servicio SÍ nombra (documento §6): ninguno más se puede afirmar.
-const CH_SISTEMAS_PROPIOS = ['whatsapp', 'whatsapp business', 'meta', 'google calendar', 'google', 'calendar', 'calendario', 'google sheets', 'sheets', 'qr', 'codigo qr', 'minicrm'];
+const CH_SISTEMAS_PROPIOS = ['whatsapp', 'whatsapp business', 'meta', 'google calendar', 'google', 'calendar', 'calendario', 'google sheets', 'sheets', 'qr', 'codigo qr', 'minicrm', 'panel de control'];
 const CH_PREGUNTA_INTEGRACION = /\b(?:se |puede |pueden |podria |podrian |podemos |logra |lograria )?(?:conecta|conectan|conectar|conectarse|conectarlo|integra|integran|integrar|integrarse|integrarlo|sincroniza|sincronizan|sincronizar|vincula|vinculan|vincular|es compatible|son compatibles|compatible|compatibles|integracion|integraciones|conexion|conexiones)\s+(?:directamente |tambien |bien )?(?:con|a|al|a la)\s+(.{1,60})$/;
 function chPreguntaIntegracion(t) {
   const n = chNorm(t);
@@ -352,6 +357,10 @@ function chNombreDePila(v) {
   const n = chNorm(s);
   return CH_NO_ES_PERSONA.has(n) || CH_ARTICULOS.has(n) || CH_PALABRAS_DE_NEGOCIO.has(n) || CH_ACUSE_PALABRAS.has(n) ? '' : s;
 }
+// El nombre del perfil de WhatsApp lo escribe cualquiera («Ventas Gratis», «=HYPERLINK(…)», un enlace): solo pasa si tiene forma de nombre de persona; si no, '' y la hoja y el aviso dicen «no indicado».
+function chNombreDelPerfil(v) {
+  return chNombreDePersonaValido(v) || chNombreDePila(v);
+}
 function chNombreYEmpresaDelTexto(t) {
   const vacio = { nombre: '', empresa: '' };
   let s = chPlano(t, 300).replace(/[.!…]+$/, '').trim();
@@ -439,11 +448,11 @@ function chMontoDelModelo(t) {
 }
 // S1: el modelo no habla como una persona ni se presenta como alguien: «soy…», «te habla…», «mi nombre es…», «me llamo…», «habla Carla», «aquí el asesor», «estás hablando con el asesor», «yo misma te ayudo».
 // «Habla» solo cuenta al inicio de una oración y sin preposición ni artículo detrás («habla con tus clientes» y «habla español» son legítimos).
-const CH_YO_DEL_MODELO = /\bsoy\b|\bsomos\b|\bte habla\b|aqui no hay (ningun )?(robot|bot)|\bmi nombre es\b|\bme llamo\b|(^|[.!?¡¿]\s*)habla (?!con\b|de\b|en\b|por\b|para\b|sobre\b|a\b|el\b|la\b|los\b|las\b|tu\b|tus\b|un\b|una\b|espanol\b|ingles\b)[a-z]+|\baqui (el|la|tu) (asesor|asesora)\b|\b(hablas|hablo|estas hablando|estoy hablando|conversas|converso) con (el|la|un|una|tu) (asesor|asesora|ejecutiv\w+|vendedor\w*)\b|\batiende (el|la|un|una) (asesor|asesora)\b|\byo mism[oa]\b/;
+const CH_YO_DEL_MODELO = /\bsoy\b|\bsomos\b|\bte habla\b|aqui no hay (ningun )?(robot|bot)|\bmi nombre es\b|\bme llamo\b|(^|[.!?¡¿]\s*)habla (?!con\b|de\b|en\b|por\b|para\b|sobre\b|a\b|el\b|la\b|los\b|las\b|tu\b|tus\b|un\b|una\b|espanol\b|ingles\b)[a-z]+|\baqui (el|la|tu) (asesor|asesora)\b|\b(hablas|hablo|estas hablando|estoy hablando|conversas|converso) con (el|la|un|una|tu) (asesor|asesora|ejecutiv\w+|vendedor\w*)\b|\batiende (el|la|un|una) (asesor|asesora)\b|\byo mism[oa]\b|\bno (?:contesta|responde|atiende|hay) (?:ningun\w* )?(?:ia|inteligencia|bot|robot|maquina)\b|\bnada de (?:robots?|bots?|maquinas?)\b|\bhumano\b|\bpersonalmente\b|\bconmigo (?:hablas|conversas)\b|\bequipo humano\b|\b(?:soy|es) (?:una )?persona\b|\balguien real\b/;
 // S2: ninguna promesa de que alguien llamará, escribirá o responderá, en ninguna forma (futuro, «va a», plural, «puede llamarte», envíos, reuniones).
-const CH_PROMESA_DEL_MODELO = /\b(se|te) (pondra|pondran|contacta|contactara|comunica|comunicara|llama|llamara|escribe|escribira|responde|respondera|responderan)\b|\bte respond(emos|eremos)\b|\ben contacto contigo\b|\bse comunica\w* contigo\b|\bmenos de \d+ horas\b|\bte va a (llamar|escribir|contactar|avisar|responder|enviar|mandar|ayudar)\b|\bte (llamaran|contactaran|escribiran|avisaran|enviaran|mandaran|ayudaran)\b|\brecibiras (una llamada|un mensaje|una respuesta)\b|\bte llegara\b|\bte (?:enviara|mandara|escribira|llamara|avisara)\b|\bte (enviaremos|mandaremos|llamaremos|escribiremos|contactaremos|avisaremos|llamamos|escribimos|contactamos|avisamos|envio|mando)\b|\bcoordinamos (una )?(llamada|reunion)\b|\b(asesor|asesora|equipo|especialista|ejecutivo|ejecutiva) (responde|contesta|escribe|llama|contacta|avisa)\b|\bpuede (llamarte|escribirte|contactarte)\b/;
+const CH_PROMESA_DEL_MODELO = /\b(se|te) (pondra|pondran|contacta|contactara|comunica|comunicara|llama|llamara|escribe|escribira|responde|respondera|responderan)\b|\bte respond(emos|eremos)\b|\ben contacto contigo\b|\bse comunica\w* contigo\b|\bmenos de \d+ horas\b|\bte va a (llamar|escribir|contactar|avisar|responder|enviar|mandar|ayudar)\b|\bte (llamaran|contactaran|escribiran|avisaran|enviaran|mandaran|ayudaran)\b|\brecibiras (una llamada|un mensaje|una respuesta)\b|\bte llegara\b|\bte (?:enviara|mandara|escribira|llamara|avisara)\b|\bte (enviaremos|mandaremos|llamaremos|escribiremos|contactaremos|avisaremos|llamamos|escribimos|contactamos|avisamos|envio|mando)\b|\bcoordinamos (una )?(llamada|reunion)\b|\b(asesor|asesora|equipo|especialista|ejecutivo|ejecutiva) (responde|contesta|escribe|llama|contacta|avisa)\b|\bpuede (llamarte|escribirte|contactarte)\b|\bte (?:llamo|contacto|escribo|busco|marco|atiendo|aviso)\b|\b(?:devolve\w+|regresa\w+) (?:la|una) llamada\b|\bhablamos (?:manana|luego|despues|pronto|por telefono)\b|\bnovedades\b|\b(?:(?<!\b(?:tu|su|mi|tus|sus) )equipo|alguien|asesor\w*|especialista)\b(?:(?!\bpara (?!que\b))[^.!?]){0,40}\b(?:contact\w*|llam\w*|escrib\w*|comunic\w*|respond\w*|buscar\w*|visit\w*)/;
 // S3: ninguna oferta, regalo, rebaja ni precio especial sale de la redacción del modelo.
-const CH_OFERTA_DEL_MODELO = /\bsin costo\b|\bsin cargo\b|\bde regalo\b|\brebaja|\bpor ciento\b|\bpromoci|\boferta|\bprecio especial\b|\bbonific|\b2x1\b|\blanzamiento\b/;
+const CH_OFERTA_DEL_MODELO = /\bsin costo\b|\bsin cargo\b|\bde regalo\b|\brebaja|\bpor ciento\b|\bpromoci|\boferta|\bprecio especial\b|\bbonific|\b2x1\b|\blanzamiento\b|\bno cuesta nada\b|\bcortesia\b|\bbono\b|\bpreferencial\b|\bmitad de\b|\bde prueba\b|\bsin costo alguno\b|\bgratuit\w*|\bregal\w*/;
 // §18 (A3): bloqueos comunes a la empatía, la respuesta y la explicación del modelo: regalos y gratuidades, promesas de contacto con otras palabras, afirmaciones de que el servicio concilia, aprueba,
 // certifica o garantiza, decir que es una persona, un correo deletreado y monedas. Una sola línea: `construir.mjs` la lee de aquí para los textos del tenant.
 const CH_BLOQUEO_COMUN = /gratuit|regal|no pag\w+ nada|sin pagar|mitad de precio|prueba gratis|(?:nos|se) pondr\w* en contacto|recibir\w* (?:nuestra|una) llamada|noticias nuestras|se encargar\w* de (?:llamar|escribir|contactar)|\bte respondo\b|\b(?:concilia|aprueba|certifica|garantiz)|\b(?:es|son) (?:una )?persona\b|alguien real|\barroba\b|\bpunto (?:com|net)\b|\b(?:dolar|dolares|boliviano|bolivianos)\b|\b(?:no (?:tiene|tienen|hay|existe|existen) (?:ningun )?(?:limite|tope)|sin (?:ningun )?(?:limite|tope)|sin restricciones)|\bilimitad|\bbolsas?\b|\bbolson|\bsin (?:ningun |nada de )?(?:costo|cobro|cargo)|\bcosto cero|\bno cobra\w* nada|\b(?:meta|whatsapp|mensajeria|mensajes?|costos?)\b[^.!?]{0,40}\b(?:centavos|casi nada|casi gratis|practicamente gratis|practicamente nada|muy poco costo|costo minimo|insignificante|miseria|poquit\w*|baratisim\w*|centavit\w*|minimo)\b|\b(?:centavos|casi nada|casi gratis|practicamente gratis|practicamente nada|muy poco costo|costo minimo|insignificante|miseria|poquit\w*|baratisim\w*|centavit\w*|minimo)\b[^.!?]{0,40}\b(?:meta|whatsapp|mensajeria|mensajes?|costos?)\b/;
@@ -547,12 +556,12 @@ function chEsSustantivo(t) {
 
 const CH_VENTANA_MS = 24 * 60 * 60 * 1000;   // la ventana de Meta: vence lo que depende de ella (aviso, planes, soporte)
 const CH_OLVIDO_MS = 48 * 60 * 60 * 1000;    // a las 48 h sin mensajes se borra la ficha entera
-const CH_TOPE_FICHAS = 5000;                 // fichas guardadas a lo más
+const CH_TOPE_FICHAS = 300;                  // fichas guardadas a lo más (n8n graba TODAS en cada ejecución: ~7 KB la peor ficha, ~2 MB el peor caso)
 const CH_TOPE_IDS = 5;                       // ids de Meta que se recuerdan por ficha (entregas repetidas)
-const CH_TOPE_HISTORIAL = 12;                // entradas del historial (cliente y asistente) que ve el modelo
-const CH_TOPE_TEXTO = 400;                   // caracteres por entrada del historial
+const CH_TOPE_HISTORIAL = 8;                 // entradas del historial (cliente y asistente) que ve el modelo
+const CH_TOPE_TEXTO = 300;                   // caracteres por entrada del historial
 const CH_TOPE_EVENTO = 600;                  // caracteres de un evento del cliente
-const CH_TOPE_COLA = 8;                      // eventos pendientes de responder, a lo más
+const CH_TOPE_COLA = 6;                      // eventos pendientes de responder, a lo más
 const CH_ESPERA_SEG = 2.5;                   // la espera de la ráfaga (coalescencia de clics)
 const CH_MAX_MENSAJE = 1000;                 // Meta admite 1.024 en el cuerpo de un mensaje interactivo
 const CH_MIN_PALABRAS = 25;                  // un mensaje del modelo sin contenido nunca sale («¡Te entiendo! 😊»)
@@ -678,7 +687,7 @@ function chFichaVigente(e, ahoraMs) {
     v: 1, ultimoMs: ultimo,
     rubro: CH_ID_RUBRO.test(chTexto(e.rubro)) ? e.rubro : '',
     nombre: chNombreDePersonaValido(e.nombre) || chNombreDePila(e.nombre),
-    empresa: chPlano(e.empresa, 60),
+    empresa: chNombreDeEmpresa(e.empresa, true),
     necesidad: chNecesidadValida(e.necesidad),
     temas: chTemasUnidos(e.temas, []).slice(0, CH_TEMAS.length),
     hechos: {
@@ -1056,9 +1065,53 @@ const CH_PRESENTACION_OK = /\bsoy (?:[a-z]+,? )?(?:el|un) asistente(?: virtual| 
 function chSinNombrar(n) {
   return chTexto(n).replace(/\bcomo (?:se|te) llamas?\b/g, ' ').replace(/\b(?:se|te) llamas? (?:tu|su|el|la|a|asi|igual)\b/g, ' ');
 }
-const CH_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{0,20}\b(?:ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\b|\bpersona (?:real|de verdad)\b|\bcarne y hueso\b/;
+const CH_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{0,20}\b(?:ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\b|\bpersona (?:real|de verdad)\b|\bcarne y hueso\b|\bno (?:contesta|responde|atiende|hay) (?:ningun\w* )?(?:ia|inteligencia|bot|robot|maquina)\b|\bnada de (?:robots?|bots?|maquinas?)\b|\bhumano\b|\bpersonalmente\b|\bconmigo (?:hablas|conversas)\b|\bequipo humano\b|\b(?:soy|es) (?:una )?persona\b|\balguien real\b/;
 const CH_NOMBRE_DE_PERSONA = /\bsilvana\b|\basesora\b|\bandres\b|\bsasaki\b/;
-const CH_PROMETE_ACCION = /\b(?:te|les) (?:muestro|dejo|comparto|envio|mando|enseno|paso|conecto|comunico|derivo|transfiero|pongo)\b[^.!?]{0,40}\b(?:planes|precios|detalle|imagen|equipo|persona|alguien)\b|\baqui (?:tienes|esta|van|te dejo) (?:los |nuestros |el |la )?(?:planes|precios|detalle|imagen)\b/;
+// Revisión del PR #464. Lo que promete el modelo se separa por tipo: una promesa de planes solo vale si el CÓDIGO confirmó `mostrar_planes`, una de equipo solo si confirmó `derivar_equipo`.
+const CH_PROMETE_PLANES = /\b(?:te|les) (?:muestro|dejo|comparto|envio|mando|enseno|paso)\b[^.!?]{0,40}\b(?:planes|precios|detalle|imagen)\b|\baqui (?:tienes|esta|van|te dejo) (?:los |nuestros |el |la )?(?:planes|precios|detalle|imagen)\b/;
+const CH_PROMETE_EQUIPO = /\b(?:te|les) (?:conecto|comunico|derivo|transfiero|pongo|paso|muestro|dejo)\b[^.!?]{0,40}\b(?:equipo|persona|alguien|asesor\w*|especialista|ejecutiv\w*)\b/;
+// Números escritos en palabras: nada de precios ni cifras que no salgan de la consola. «Veinticuatro horas» es lo único permitido. Del uno al nueve solo cuentan en una serie (un teléfono dictado).
+const CH_NUMERO_EN_PALABRAS = /\b(?:cero|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|veinti\w+|(?:treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)(?: y \w+)?|cien|cientos?|doscientos|doscientas|trescientos|trescientas|cuatrocientos|cuatrocientas|quinientos|quinientas|seiscientos|setecientos|ochocientos|novecientos|mil|millon|millones)\b/;
+const CH_SERIE_DE_NUMEROS = /\b(?:uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)(?: (?:uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)){4,}\b/;
+// Letras de otra escritura (una «а» cirílica en «grаtis»), dígitos que no son 0-9 (٧٦٩٨ árabes) y correos o teléfonos deletreados.
+const CH_ESCRITURA_AJENA = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]|(?![0-9])\p{Nd}/u;
+const CH_CONTACTO_DELETREADO = /\[(?:at|arroba)\]|\((?:punto|dot)\)|\bdot\b/;
+// El costo de Meta lo contesta el CÓDIGO con el dato de la consola: el modelo no lo minimiza ni lo califica. Con «Meta» cuenta cualquier palabra de costo; con «WhatsApp» o «mensajería», solo las fuertes.
+const CH_COSTO_FUERTE = /\b(?:cobra\w*|cuesta\w*|costo\w*|tarifa\w*|paga\w*|barat\w*|bajisim\w*|despreciable|no se nota\w*|miseria|centavos)\b/;
+const CH_COSTO_DEBIL = /\b(?:bajo|bajos|baja|bajas|poco|poca|pocos|pocas)\b/;
+const CH_CONFIGURACION_DE_META = /\b(?:conexion|conectar|conectamos|configuracion|configurar|configuramos|integracion)\b/;
+function chCostoMetaDelModelo(n) {
+  return chTexto(n).split(/[.!?\n]+/).some((o) => {
+    if (CH_CONFIGURACION_DE_META.test(o)) return false;
+    if (/\bmeta\b/.test(o)) return CH_COSTO_FUERTE.test(o) || CH_COSTO_DEBIL.test(o);
+    return /\b(?:whatsapp|mensajeria)\b/.test(o) && CH_COSTO_FUERTE.test(o);
+  });
+}
+// «Funciona con Pipedrive», «se integra con Contifico»: el servicio solo se conecta con lo que nombra (`CH_SISTEMAS_PROPIOS`). Se mira lo nombrado tras «con», con o sin mayúsculas; los sustantivos comunes de su negocio
+// («trabaja con tu catálogo») no son sistemas. Lo que dijo el cliente NO sirve de permiso.
+const CH_INTEGRA_CON = /\b(?:funciona|funcionan|(?:novuchat|kenji|asistente|servicio)\s+trabaja(?:n)?|integra|integran|integrar|integrarse|conecta|conectan|conectar|conectarse|sincroniza|sincronizan|sincronizar|vincula|vinculan|vincular)\s+(?:\w+\s+){0,2}?con\s+([^.!?;:\n]+)/g;
+const CH_SUSTANTIVO_COMUN = /^(?:catalogos?|horarios?|agendas?|citas?|clientes?|pacientes?|pedidos?|menus?|datos|informacion|negocio|precios?|productos?|servicios?|equipo|asesor|asesores|especialista|ejecutivo|alguien|persona|personas|mensajes?|pagos?|consola|celular|telefono|panel|hoja|planilla|ia|inteligencia|tu|su|todo|todos|cada|ti|ustedes|nosotros|lo|la|el|los|las|un|una|eso|esto)$/;
+function chIntegraConAjeno(n) {
+  const base = chTexto(n);
+  for (const m of base.matchAll(CH_INTEGRA_CON)) {
+    for (const parte of m[1].split(/,| y | e | o |\bpara\b|\bpor\b|\bque\b|\bcuando\b|\bsi\b/)) {
+      const p = parte.trim().replace(/^(?:(?:con|mi|mis|el|la|los|las|tu|tus|su|sus|un|una|otro|otra|cualquier)\s+)+/, '');
+      if (!p) continue;
+      if (CH_SISTEMAS_PROPIOS.some((x) => p === x || p.indexOf(x + ' ') === 0)) continue;
+      if (CH_SUSTANTIVO_COMUN.test(p.split(' ')[0])) continue;
+      return true;
+    }
+  }
+  return false;
+}
+// El nombre de una persona escrito con separadores («S-i-l-v-a-n-a», «s i l v a n a», «a.s.e.s.o.r.a»): se compara sin ellos. Una serie de letras sueltas se junta SIN fronteras de palabra (el «a» de «escríbele a s i l v a n a» se pega).
+const CH_NOMBRE_PEGADO = new RegExp(CH_NOMBRE_DE_PERSONA.source.replace(/\\b/g, ''));
+function chNombreDeletreado(n) {
+  const t = chTexto(n).replace(/(\p{L})[-.·_*]+(?=\p{L})/gu, '$1');
+  const series = (t.match(/\b(?:\p{L} ){2,}\p{L}\b/gu) || []).map((m) => m.replace(/ /g, ''));
+  return CH_NOMBRE_DE_PERSONA.test(t) || series.some((x) => CH_NOMBRE_PEGADO.test(x));
+}
+const CH_PROMETE_ACCION = /\b(?:te|les) (?:muestro|dejo|comparto|envio|mando|enseno|paso|conecto|comunico|derivo|transfiero|pongo)\b[^.!?]{0,40}\b(?:planes|precios|detalle|imagen|equipo|persona|alguien|asesor\w*|especialista|ejecutiv\w*)\b|\baqui (?:tienes|esta|van|te dejo) (?:los |nuestros |el |la )?(?:planes|precios|detalle|imagen)\b/;
 const CH_INVITA = /\b(?:ver (?:los |nuestros )?planes|hablar con alguien de nuestro equipo|botones? de abajo|opciones de abajo|elegir)\b/;
 function chTerminaBien(t) {
   const s = chPlano(t);
@@ -1088,6 +1141,8 @@ function chValidarMensaje(texto, v) {
   const minimo = v.contexto === 'cortesia' ? 4 : (v.contexto === 'otro' || v.contexto === 'datos' || v.contexto === 'medio' ? 10 : CH_MIN_PALABRAS);
   if (c.palabras < minimo) return 'corto';
   if (t.length > CH_MAX_MENSAJE || c.palabras > CH_MAX_PALABRAS) return 'largo';
+  // Letras de otra escritura, dígitos que no son 0-9 y contactos deletreados: ninguno sale (la «а» cirílica de «grаtis» y los «٧٦٩٨» árabes esconden lo que el resto de las reglas busca).
+  if (CH_ESCRITURA_AJENA.test(flat) || CH_CONTACTO_DELETREADO.test(cmNorm(flat))) return 'bloqueo';
   const n = chSinNombrar(cmNorm(flat));
   const sinPresentacion = n.replace(CH_PRESENTACION_OK, ' ');
   // Presentarse como persona o negar ser una IA (prohibición 4) se ve ANTES que los demás hechos, para que el reintento diga la causa justa.
@@ -1097,11 +1152,14 @@ function chValidarMensaje(texto, v) {
     quienPromete: ['asesor', 'asesora', 'especialista', 'ejecutivo', 'ejecutiva', 'equipo', 'alguien', 'recepcion'],
   });
   if (motivo) return ({ monto: 'monto', promesa: 'promesa', afirma_un_hecho: 'afirma', hueco: 'hueco', enlace_ajeno: 'enlace', identidad: 'persona', largo: 'largo' })[motivo] || 'formato';
-  if (CH_NOMBRE_DE_PERSONA.test(n)) return 'nombre';
+  if (CH_NOMBRE_DE_PERSONA.test(n) || chNombreDeletreado(n)) return 'nombre';
   if (CH_PROMESA_DEL_MODELO.test(n)) return 'promesa';
   if (CH_OFERTA_DEL_MODELO.test(n) || /%|gratis|descuento/.test(n)) return 'oferta';
-  if (CH_BLOQUEO_COMUN.test(n)) return 'bloqueo';
-  if (CH_INTEGRA_SISTEMA.test(n)) return 'sistema';
+  if (CH_BLOQUEO_COMUN.test(n) || chCostoMetaDelModelo(n)) return 'bloqueo';
+  if (CH_INTEGRA_SISTEMA.test(n) || chIntegraConAjeno(n)) return 'sistema';
+  // Números en palabras: ningún precio ni cifra se escribe con letras («sesenta y cinco»); solo «veinticuatro horas». Y una serie de cinco o más es un teléfono dictado.
+  const sinHoras = n.replace(/\bveinticuatro horas\b/g, ' ');
+  if (CH_NUMERO_EN_PALABRAS.test(sinHoras) || CH_SERIE_DE_NUMEROS.test(sinHoras)) return 'cifra';
   if (CH_CIFRA_DE_CONSUMO.test(n)) return 'consumo';
   if (CH_ACREDITA_MODELO.test(n)) return 'banco';
   const d = chDatos(v.cfg);
@@ -1115,7 +1173,10 @@ function chValidarMensaje(texto, v) {
   const numeros = sinPermitidos.match(/\d+(?:[.,]\d+)*/g) || [];
   if (numeros.length && !(v.precios === true && numeros.every((x) => (v.permitidas || []).includes(x)))) return 'cifra';
   if (v.precios !== true && (chTieneMonto(flat) || chMontoDelModelo(flat))) return 'monto';
-  if (!v.planesOk && !v.equipoOk && CH_PROMETE_ACCION.test(n)) return 'accion';
+  // Regla única: si el CÓDIGO no confirmó la acción, la promesa se rechaza (planes y equipo por separado). `v.accion` es lo que etiquetó el modelo: sin etiqueta no hay acción que cumplir.
+  const planesConfirmado = v.planesOk === true && (v.accion === undefined || v.accion === 'mostrar_planes');
+  const equipoConfirmado = v.equipoOk === true && (v.accion === undefined || v.accion === 'derivar_equipo');
+  if ((!planesConfirmado && CH_PROMETE_PLANES.test(n)) || (!equipoConfirmado && CH_PROMETE_EQUIPO.test(n)) || (!planesConfirmado && !equipoConfirmado && CH_PROMETE_ACCION.test(n))) return 'accion';
   if (v.contexto === 'abierta' && !(/nunca duerme/.test(n) && chVinetas(t) >= 4)) return 'pitch';
   if (v.contexto === 'rubro') {
     const r = chRubroDe(v.cfg, v.rubroId);
@@ -1129,7 +1190,8 @@ function chRevisarModelo(json, v) {
   const lectura = chLeerModelo(json, { cfg: v.cfg, textos: v.textos });
   if (!lectura.ok) return { lectura: lectura, causa: lectura.motivo === 'error' ? 'sin_respuesta' : 'formato' };
   const nuevo = chRubroNuevoDelModelo(lectura, v);
-  return { lectura: lectura, causa: chValidarMensaje(lectura.mensaje, nuevo ? Object.assign({}, v, { contexto: 'rubro', rubroId: lectura.rubro }) : v) };
+  const base = Object.assign({}, v, { accion: lectura.accion });
+  return { lectura: lectura, causa: chValidarMensaje(lectura.mensaje, nuevo ? Object.assign({}, base, { contexto: 'rubro', rubroId: lectura.rubro }) : base) };
 }
 // El cliente MENCIONÓ su rubro en una frase («tengo una clínica»), no lo tocó en la lista: si el modelo lo detectó (y el rubro es estándar y distinto del que ya se conocía) y el mensaje no es una
 // pregunta, es el mismo caso que elegirlo: la explicación cubre los puntos clave del rubro y cierra con la pregunta exacta.
@@ -1225,7 +1287,12 @@ function chResolver(a) {
     texto = buena.lectura.mensaje;
     origen = 'modelo';
     evento = a.plan.contexto || 'respuesta';
-    if (contexto === 'rubro' && rubroId) texto = chConCierre(texto, chTexto(chDatos(a.cfg).cierres.rubro));
+    if (contexto === 'rubro' && rubroId) {
+      // El cierre exacto se agrega DESPUÉS de validar: si con él el mensaje pasa del máximo (Meta lo cortaría y se perdería la pregunta), sale el respaldo del dato, que ya lo trae.
+      const conCierre = chConCierre(texto, chTexto(chDatos(a.cfg).cierres.rubro));
+      if (conCierre.length <= CH_MAX_MENSAJE) texto = conCierre;
+      else { texto = respaldo.texto; origen = 'respaldo'; evento = respaldo.evento; }
+    }
   }
   return { origen: origen, texto: texto, evento: evento, lectura: lectura, causas: causas, accionConfirmada: accionConfirmada, descarte: descarte };
 }
@@ -1301,7 +1368,7 @@ function chAvisoEquipo(cfg, f, from, nombrePerfil) {
   const r = chRubroDe(cfg, f.rubro);
   return chAviso({
     avisado: f.avisado === true, numeroRecepcion: cfg.numeroRecepcion, desde: from, plantilla: cfg.plantillaAviso, idioma: cfg.idiomaPlantillaAviso,
-    estado: (chDatos(cfg).textos || {}).estadoAviso, empresa: f.empresa, contacto: f.nombre, nombrePerfil: nombrePerfil, rubro: r ? r.nombre : '', flujos: r ? r.flujo : '',
+    estado: (chDatos(cfg).textos || {}).estadoAviso, empresa: f.empresa, contacto: f.nombre, nombrePerfil: chNombreDelPerfil(nombrePerfil), rubro: r ? r.nombre : '', flujos: r ? r.flujo : '',
   });
 }
 
@@ -1345,7 +1412,7 @@ function chProspecto(f, cfg, entrada) {
   const h = f.hechos;
   return {
     telefono: telefono,
-    nombre: chPlano(chNombreDePersonaValido(f.nombre) || chNombreDePila(f.nombre) || x.nombrePerfil, 200),
+    nombre: chPlano(chNombreDePersonaValido(f.nombre) || chNombreDePila(f.nombre) || chNombreDelPerfil(x.nombrePerfil), 200),
     empresa: chPlano(f.empresa, 200),
     rubro: chPlano(r ? r.nombre : '', 200),
     flujos: chPlano(r ? r.flujo : '', 200),
@@ -1363,7 +1430,7 @@ function chValidacion(a) {
   const textos = a.eventos.filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => e.c);
   return {
     cfg: a.cfg, contexto: a.plan.contexto, precios: a.precios === true, permitidas: chCifrasPermitidas(a.cfg), textoCliente: textos.join(' '), textos: textos,
-    rubroId: a.plan.rubroElegido || '', rubroActual: a.ficha ? a.ficha.rubro : '', planesOk: textos.some((c) => CH_COSTO_MARCA.test(chNorm(c))),
+    rubroId: a.plan.rubroElegido || '', rubroActual: a.ficha ? a.ficha.rubro : '', planesOk: textos.some((c) => chPideCostoDelServicio(c)),
     equipoOk: textos.some((c) => chPidePersona(c) || chPidioContacto(c) || chPideAsesor(c)),
   };
 }

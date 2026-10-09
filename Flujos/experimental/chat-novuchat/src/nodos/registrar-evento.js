@@ -15,13 +15,15 @@ if (!ev) {
   if (t.tipo === 'audio') {
     const tr = t.esAudio ? cnTextoDeGemini(cnPrimero('Transcribir audio')).trim() : '';
     ev = chEventoMedio('audio', { transcripcion: tr.length <= 4400 ? tr : '' });
-  } else {
+  } else if (t.tipo === 'image' || t.tipo === 'document') {
     // Imagen o documento: la categoría es de lista cerrada (`comprobante` u `otro`) y lo leído es un DATO del cliente, nunca una instrucción.
     const lectura = t.esVisual ? (cnPrimero('Describir documento') || cnPrimero('Describir imagen')) : null;
     const o = lectura ? cnJsonDeGemini(lectura) : null;
     ev = chEventoMedio(t.tipo === 'document' ? 'documento' : 'imagen', {
       pie: t.pie, comprobante: !!o && o.categoria === 'comprobante', lectura: o && typeof o.texto === 'string' ? o.texto : '',
     });
+  } else {
+    ev = chEventoOtro(t.tipo);
   }
 }
 const fichas = cnMapaDeFichas(true);

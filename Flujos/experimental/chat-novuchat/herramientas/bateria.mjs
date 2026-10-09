@@ -881,10 +881,13 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       const todo = alCliente.filter((m) => !m.esRespaldo).map((m) => m.cuerpo).join(' | ');
       const n = (x) => sinTildes(x).replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
       const ex = t.exige;
-      for (const x of [].concat(ex.contiene ?? [])) if (!n(todo).includes(n(x))) falla(i + 1, dicho, 'falta_lo_que_se_exige', `falta «${x}» en: ${todo}`);
+      // En modo REAL el texto lo escribe el modelo: las frases literales, el origen esperado y lo que «ve» el modelo solo tienen sentido en `--seco` (respuestas simuladas). Con modelo real se mide lo que
+      // NO depende de su redacción: JSON válido, guardias (lo que no debe decir), botones, cierres, rutas y hoja. Un turno resuelto por el código (sin modelo) sí se compara literal.
+      const redactaElModelo = !opciones.seco && comp.captura.modelo.length > 0;
+      for (const x of redactaElModelo ? [] : [].concat(ex.contiene ?? [])) if (!n(todo).includes(n(x))) falla(i + 1, dicho, 'falta_lo_que_se_exige', `falta «${x}» en: ${todo}`);
       for (const x of [].concat(ex.noContiene ?? [])) if (n(todo).includes(n(x))) falla(i + 1, dicho, 'trae_lo_que_no_debe', `trae «${x}» en: ${todo}`);
-      if (ex.contieneAlguna !== undefined && ![].concat(ex.contieneAlguna).some((x) => n(todo).includes(n(x)))) falla(i + 1, dicho, 'falta_lo_que_se_exige', `falta alguna de ${[].concat(ex.contieneAlguna).join(' | ')} en: ${todo}`);
-      if (ex.termina !== undefined && !buenos.some((m) => [].concat(ex.termina).some((x) => n(m.cuerpo).endsWith(n(x))))) falla(i + 1, dicho, 'no_termina_como_se_exige', todo);
+      if (!redactaElModelo && ex.contieneAlguna !== undefined && ![].concat(ex.contieneAlguna).some((x) => n(todo).includes(n(x)))) falla(i + 1, dicho, 'falta_lo_que_se_exige', `falta alguna de ${[].concat(ex.contieneAlguna).join(' | ')} en: ${todo}`);
+      if (!redactaElModelo && ex.termina !== undefined && !buenos.some((m) => [].concat(ex.termina).some((x) => n(m.cuerpo).endsWith(n(x))))) falla(i + 1, dicho, 'no_termina_como_se_exige', todo);
       if (ex.sinCifras === true && /\d/.test(todo.replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' '))) falla(i + 1, dicho, 'cifra_donde_no_va', todo);
       if (ex.imagenPlanes === true && !buenos.some((m) => objeto(objeto(m.payload).interactive).header !== undefined)) falla(i + 1, dicho, 'sin_imagen_de_planes', todo);
       if (ex.sinModelo === true && comp.captura.modelo.length) falla(i + 1, dicho, 'llamo_al_modelo_sin_necesidad', todo);
@@ -893,12 +896,12 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       if (ex.cta === false && buenos.some((m) => tipoInter(m.payload) === 'cta_url')) falla(i + 1, dicho, 'boton_a_si_mismo', todo);
       if (ex.plantillas !== undefined && comp.captura.mensajes.filter((m) => m.tipo === 'template').length !== ex.plantillas) falla(i + 1, dicho, 'avisos_a_recepcion_inesperados', `se esperaban ${ex.plantillas}`);
       if (ex.ruta !== undefined && ![].concat(ex.ruta).includes(String(resumen.plan ?? ''))) falla(i + 1, dicho, 'ruta_inesperada', `se esperaba ${[].concat(ex.ruta).join(' o ')} y salió «${resumen.plan ?? ''}»`);
-      if (ex.origen !== undefined && ![].concat(ex.origen).includes(String(resumen.origen ?? ''))) falla(i + 1, dicho, 'origen_inesperado', `se esperaba ${[].concat(ex.origen).join(' o ')} y salió «${resumen.origen ?? ''}»`);
+      if (opciones.seco && ex.origen !== undefined && ![].concat(ex.origen).includes(String(resumen.origen ?? ''))) falla(i + 1, dicho, 'origen_inesperado', `se esperaba ${[].concat(ex.origen).join(' o ')} y salió «${resumen.origen ?? ''}»`);
       if (ex.filas !== undefined) {
         const ids = buenos.flatMap((m) => filasDe(m.payload).map((f) => String(f.id)));
         if (ids.join() !== [].concat(ex.filas).join()) falla(i + 1, dicho, 'filas_inesperadas', ids.join(', '));
       }
-      for (const x of [].concat(ex.modeloVe ?? [])) if (!JSON.stringify(comp.captura.modelo.at(-1)?.cuerpo ?? {}).includes(x)) falla(i + 1, dicho, 'el_modelo_no_ve_lo_que_se_exige', `«${x}»`);
+      for (const x of opciones.seco ? [].concat(ex.modeloVe ?? []) : []) if (!JSON.stringify(comp.captura.modelo.at(-1)?.cuerpo ?? {}).includes(x)) falla(i + 1, dicho, 'el_modelo_no_ve_lo_que_se_exige', `«${x}»`);
       if (ex.sinMensajes === true && buenos.length) falla(i + 1, dicho, 'respondio_donde_no_debia', todo);
     }
     corrida.conversacion.push({ turno: i + 1, dicho, mensajes: alCliente.filter((m) => !m.esRespaldo).map((m) => m.cuerpo), origen: String(resumen.origen ?? ''), contexto: String(resumen.contexto ?? '') });

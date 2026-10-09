@@ -273,7 +273,11 @@ describe('lo copiado de Captación mínima: los detectores, con sus negaciones',
         const mio = (LIB.match(new RegExp(`^const ${a} = (.*);$`, 'm')) ?? [])[1];
         const suyo = (ORIGINAL.match(new RegExp(`^const ${b} = (.*);$`, 'm')) ?? [])[1];
         expect(mio, a).toBeDefined();
-        expect(mio, a).toBe(suyo);
+        // Tres patrones se AMPLIARON en la revisión del PR #464 (promesas, ofertas e identidad): empiezan con el texto exacto del original y solo agregan alternativas al final.
+        if (['CH_PROMESA_DEL_MODELO', 'CH_OFERTA_DEL_MODELO', 'CH_YO_DEL_MODELO'].includes(a)) {
+          expect(mio!.startsWith(suyo!.slice(0, -1) + '|'), a).toBe(true);
+          expect(mio!.length, a).toBeGreaterThan(suyo!.length);
+        } else expect(mio, a).toBe(suyo);
       }
     });
   });
@@ -299,15 +303,15 @@ describe('la ficha por teléfono: saneada campo por campo, con tope y con olvido
     const v = f('chFichaVigente')(sucia, AHORA);
     expect(v.rubro).toBe('');
     expect(v.nombre).toBe('');
-    expect(v.empresa.length).toBe(60);
+    expect(v.empresa).toBe(''); // un nombre de 200 letras no es un nombre: se revalida como `nombre`, no solo se corta
     expect(v.necesidad).toBe('');
     expect(v.temas).toEqual(['costos']);
     expect(v.hechos.pidioEquipo).toBe(false);
     expect(v.hechos.descarte).toBe('');
     expect(v.seq).toBe(0);
     expect(v.hasta).toBe(0);
-    expect(v.cola).toHaveLength(8);
-    expect(v.historial).toHaveLength(12);
+    expect(v.cola).toHaveLength(6);
+    expect(v.historial).toHaveLength(8);
     expect(v.historial.every((h: J) => h.t.length <= 400)).toBe(true);
     expect(v.ultimosIds).toEqual(['c', 'd', 'e', 'f', 'g']);
   });
@@ -328,15 +332,15 @@ describe('la ficha por teléfono: saneada campo por campo, con tope y con olvido
     expect(a25.historial).toHaveLength(1);
     expect(f('chFichaVigente')({ ...base, ultimoMs: AHORA - 49 * H }, AHORA)).toEqual(fichaBase());
   });
-  it('chBarrer: fuera las de más de 48 h y las sin hora; con más de 5.000, quedan las más nuevas; chYaVisto mira los ids y la cola', () => {
+  it('chBarrer: fuera las de más de 48 h y las sin hora; con más de 300, quedan las más nuevas; chYaVisto mira los ids y la cola', () => {
     const mapa: J = { '1': { ultimoMs: AHORA }, '2': { ultimoMs: AHORA - 49 * H }, '3': {}, '4': null };
     f('chBarrer')(mapa, AHORA);
     expect(Object.keys(mapa)).toEqual(['1']);
-    const grande: J = Object.fromEntries(Array.from({ length: 5002 }, (_, i) => [String(1000 + i), { ultimoMs: AHORA - i }]));
+    const grande: J = Object.fromEntries(Array.from({ length: 302 }, (_, i) => [String(1000 + i), { ultimoMs: AHORA - i }]));
     f('chBarrer')(grande, AHORA);
-    expect(Object.keys(grande)).toHaveLength(5000);
+    expect(Object.keys(grande)).toHaveLength(300);
     expect(grande['1000']).toBeDefined();
-    expect(grande['6001']).toBeUndefined();
+    expect(grande['1301']).toBeUndefined();
     expect(f('chYaVisto')({ ultimosIds: ['wamid.A'], cola: [{ id: 'wamid.B' }] }, 'wamid.A')).toBe(true);
     expect(f('chYaVisto')({ ultimosIds: ['wamid.A'], cola: [{ id: 'wamid.B' }] }, 'wamid.B')).toBe(true);
     expect(f('chYaVisto')({ ultimosIds: ['wamid.A'], cola: [] }, 'wamid.C')).toBe(false);
@@ -506,7 +510,7 @@ describe('chValidarMensaje: cada guardia, con su caso que falla y el que pasa', 
   it('cifras: ninguna salvo 24/7 y 24 horas; hablando de precios, solo las de la consola; y los montos', () => {
     const base = 'NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario. ';
     expect(valida(base + 'Atiende 24/7 y las 24 horas del día. ¿Te parece bien?')).toBe('');
-    expect(valida(base + 'Tiene 7 días de prueba. ¿Te parece bien?')).toBe('cifra');
+    expect(valida(base + 'Tiene 7 días disponibles. ¿Te parece bien?')).toBe('cifra');
     expect(valida(base + 'La instalación estándar es de USD 65 y los planes son desde USD 25. ¿Te parece bien?', { precios: true })).toBe('');
     expect(valida(base + 'La instalación estándar es de USD 80 y los planes son desde USD 25. ¿Te parece bien?', { precios: true })).toBe('cifra');
     expect(valida(base + 'La instalación estándar es de USD 65. ¿Te parece bien?')).not.toBe('');
@@ -534,6 +538,165 @@ describe('chValidarMensaje: cada guardia, con su caso que falla y el que pasa', 
       expect(valida(f('chSustituir')(rp[k], CFG), { contexto: ctx }), k).toBe('');
     }
     expect(valida(rp['generico'], { contexto: 'general' })).toBe('corto');          // el último recurso del documento es una sola pregunta: no pasa por el filtro, es texto del código
+  });
+});
+
+// ================================================================================================
+// Revisión del PR #464 (seguridad y código). Cada caso FALLA si se revierte la regla: se prueba con y sin precios, y siempre contra el mismo marco que SÍ pasa.
+describe('revisión del PR #464: promesas, ofertas, cifras, identidad, sistemas y caracteres que NO salen', () => {
+  const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ...extra });
+  const MARCO = (x: string): string => 'NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ' + x + ' ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+  const causa = (x: string, extra: J = {}): string => f('chValidarMensaje')(MARCO(x), v(extra));
+  const rechazaSiempre = (frases: string[], esperada?: string): void => {
+    for (const x of frases) for (const extra of [{}, { precios: true }, { precios: true, contexto: 'rubro', rubroId: 'salud' }]) {
+      const c = causa(x, extra);
+      expect(c, `«${x}» con ${JSON.stringify(extra)} debía rechazarse`).not.toBe('');
+      if (esperada && !('contexto' in extra)) expect(c, x).toBe(esperada);
+    }
+  };
+  it('el marco solo, con una frase inocente, pasa (los rechazos de abajo son por la frase)', () => {
+    expect(causa('Además muestra tu catálogo y toma el pedido.')).toBe('');
+    expect(causa('Atiende las veinticuatro horas del día.')).toBe('');
+    expect(causa('Se conecta con tu Google Calendar y con WhatsApp.')).toBe('');
+    expect(causa('Funciona con tu catálogo y tus horarios.')).toBe('');
+  });
+  it('H1: promesas de que alguien contactará, en primera persona o con equipo/alguien en cualquier tiempo', () => {
+    rechazaSiempre(['Nuestro equipo se va a contactar contigo hoy mismo.', 'Te devolveremos la llamada pronto.', 'Recibirás novedades nuestras mañana.', 'Te llamo yo mañana.', 'Mañana te contacto.', 'Hablamos mañana por teléfono.',
+      'Alguien de nuestro equipo te contactó ayer.', 'El asesor te escribirá en la tarde.'], 'promesa');
+  });
+  it('H1: ofertas, regalos y descuentos con otras palabras', () => {
+    rechazaSiempre(['El primer mes no cuesta nada.', 'La instalación te sale a mitad de costo.', 'Tienes un mes de cortesía.', 'Hay un bono especial si contratas hoy.', 'Es un precio preferencial.', 'Hacemos una demo de prueba.']);
+  });
+  it('H1: ninguna cifra escrita en palabras (con precios y sin precios), salvo «veinticuatro horas»', () => {
+    rechazaSiempre(['La instalación vale sesenta y cinco.', 'Los planes van desde veinticinco al mes.', 'Cuesta ciento veinte.', 'Atiende a mil clientes.', 'Son cincuenta mensajes.', 'Es la mitad: quince por ciento.']);
+    expect(causa('La instalación vale sesenta y cinco.', { precios: true })).toBe('cifra');
+  });
+  it('H1: Meta no se califica: «bajísimos», «despreciable», «muy poco» (lo responde el código)', () => {
+    rechazaSiempre(['Los costos de Meta son bajísimos, casi no se notan.', 'Lo que cobra Meta es despreciable.', 'Meta cobra muy poco por cada mensaje.', 'WhatsApp cobra una tarifa mínima por mensaje.']);
+    expect(causa('La instalación incluye la conexión a Meta y la configuración de WhatsApp.')).toBe('');
+  });
+  it('H2 (prohibición 4): ni niega ser una IA ni habla como una persona', () => {
+    rechazaSiempre(['Aquí no contesta ninguna inteligencia artificial.', 'Kenji es parte del equipo humano de ventas.', 'Te atiendo personalmente yo.', 'Nada de robots: conmigo hablas directo.', 'Soy una persona como tú.', 'Aquí no hay un bot, hay alguien real.'], 'persona');
+    expect(causa('Soy un asistente virtual con inteligencia artificial.', {})).not.toBe('persona');
+  });
+  it('M1: «funciona/se integra con <sistema ajeno>» cae sin importar las mayúsculas ni lo que escribió el cliente', () => {
+    for (const x of ['Funciona con Pipedrive.', 'Se integra con Contifico.', 'Funciona con pipedrive y contifico.', 'NovuChat trabaja con Odoo.', 'Se conecta con tu Google Calendar y con pipedrive.']) {
+      expect(causa(x, {}), x).toBe('sistema');
+      expect(causa(x, { textoCliente: 'Pipedrive Contifico', textos: ['¿Funciona con Pipedrive y Contifico?'] }), x + ' (el cliente los nombró)').toBe('sistema');
+    }
+  });
+  it('M2: otras escrituras, dígitos no latinos, correos y teléfonos deletreados, y nombres con separadores', () => {
+    const cir = 'grаtis';
+    expect(causa('Es ' + cir + ' para ti.')).not.toBe('');
+    for (const x of ['Escribe a ventas [at] novuchat (punto) com.', 'Llama al siete seis nueve ocho ocho seis seis tres.', 'Llama al ٧٦٩٨٨٦٦٣.', 'Escríbele a S-i-l-v-a-n-a.', 'Escríbele a s i l v a n a.', 'Habla con la a.s.e.s.o.r.a.']) {
+      expect(causa(x), x).not.toBe('');
+    }
+    expect(causa('Escríbele a Silvana.')).toBe('nombre');
+  });
+  it('E2: una promesa de acción se rechaza si el CÓDIGO no la confirmó, separada por tipo (planes y equipo)', () => {
+    const ok = (extra: J): string => causa('Te paso con alguien del equipo ahora mismo para evaluar tu caso.', extra);
+    expect(ok({})).toBe('accion');
+    expect(ok({ planesOk: true, accion: 'mostrar_planes' })).toBe('accion'); // los planes confirmados no habilitan al equipo
+    expect(ok({ equipoOk: true, accion: 'ninguna' })).toBe('accion'); // el cliente lo pidió pero el modelo no etiquetó la acción: el código no la ejecuta
+    expect(ok({ equipoOk: true, accion: 'derivar_equipo' })).toBe('');
+    const planes = (extra: J): string => causa('Aquí tienes nuestros planes con todos sus detalles.', extra);
+    expect(planes({})).toBe('accion');
+    expect(planes({ equipoOk: true, accion: 'derivar_equipo' })).toBe('accion'); // el equipo confirmado no habilita los planes
+    expect(planes({ planesOk: true, accion: 'mostrar_planes' })).toBe('');
+    for (const x of ['Te comunico con un asesor ahora.', 'Te conecto con un especialista.', 'Te derivo con un ejecutivo.']) {
+      expect(causa(x), x).toBe('accion');
+      expect(causa(x, { equipoOk: true, accion: 'derivar_equipo' }), x + ' confirmado').toBe('');
+    }
+  });
+  it('E2: el criterio de «planes» es el MISMO que confirma la acción: «Tengo una ferretería y me preguntan precios todo el día» no confirma planes', () => {
+    const d = (text: string): J => f('chValidacion')({ cfg: CFG, plan: { contexto: 'general', rubroElegido: '' }, eventos: [{ k: 'texto', c: text }], precios: false, ficha: fichaBase() });
+    expect(d('Tengo una ferretería y me preguntan precios todo el día').planesOk).toBe(false);
+    expect(d('¿Cuánto cuesta el servicio?').planesOk).toBe(true);
+  });
+  it('chRevisarModelo pasa la etiqueta `accion` del modelo a la validación', () => {
+    const json = (accion: string): J => ({ mensaje: MARCO('Te paso con alguien del equipo ahora mismo para evaluar tu caso.'), accion, rubro: 'ninguno', necesidad: '', nombre: '', empresa: '', descarte: 'ninguno' });
+    const base = v({ equipoOk: true, textos: ['quiero hablar con una persona'] });
+    expect(f('chRevisarModelo')(json('derivar_equipo'), base).causa).toBe('');
+    expect(f('chRevisarModelo')(json('ninguna'), base).causa).toBe('accion');
+  });
+});
+
+describe('revisión del PR #464: cierre, prompt y datos', () => {
+  const resolver = (mensaje: string): J => f('chResolver')({
+    plan: { ruta: 'modelo', contexto: 'rubro', hechos: {}, rubroElegido: 'salud', temas: [] }, cfg: CFG, ficha: fichaBase(), eventos: [{ k: 'toque', c: '', t: '[Eligió el rubro: Salud]', seq: 1, rubro: 'salud' }],
+    intentos: [{ lectura: { ok: true, mensaje, accion: 'ninguna', rubro: 'salud', necesidad: '', nombre: '', empresa: '', descarte: '' }, causa: '' }],
+  });
+  it('F4: el cierre exacto se agrega DESPUÉS de validar; si con él el mensaje pasa de 1.000 caracteres, sale el respaldo (que ya lo trae) y la pregunta no se corta', () => {
+    const largo = ('Tu clínica gana tiempo con NovuChat, que atiende en segundos y agenda sin cruces. ').repeat(12).trim(); // ~940 caracteres: con el cierre (~86) pasa de 1.000
+    expect(largo.length).toBeGreaterThan(915);
+    const r = resolver(largo);
+    expect(r.origen).toBe('respaldo');
+    expect(r.texto.length).toBeLessThanOrEqual(1000);
+    expect(r.texto.endsWith(CIERRE_RUBRO)).toBe(true);
+    const corto = resolver('Tu clínica gana tiempo con NovuChat, que atiende en segundos y agenda sin cruces.');
+    expect(corto.origen).toBe('modelo');
+    expect(corto.texto.endsWith(CIERRE_RUBRO)).toBe(true);
+  });
+  it('H1: «tu equipo» (el del cliente) no es el equipo de NovuChat: «tu equipo pierde horas respondiendo» no es una promesa', () => {
+    const marco = (x: string): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', { cfg: CFG, contexto: 'general', precios: false, permitidas: [], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '' });
+    expect(marco('En un estudio contable, tu equipo pierde horas respondiendo lo mismo sobre impuestos.')).toBe('');
+    expect(marco('Nuestro equipo responde tus dudas mañana.')).toBe('promesa');
+  });
+  it('H: el prompt pide no repetir lo ya dicho y reconocer ser IA ante la insistencia; el traspaso nombra el «negocio» una sola vez', () => {
+    const i = NOVUCHAT['instrucciones'] as J;
+    expect(i['tono']).toMatch(/No repitas lo que ya dijiste en este chat/);
+    expect(i['tono']).toMatch(/UNA función concreta/);
+    expect(i['rol']).toMatch(/asistente virtual con inteligencia artificial/);
+    expect(i['rol']).toMatch(/Si insisten/);
+    expect(NOVUCHAT['respaldos'].identidad).toMatch(/inteligencia artificial/);
+    for (const k of ['traspasoConPregunta', 'traspasoSinPregunta', 'traspasoRepite']) expect((String(NOVUCHAT['textos'][k]).match(/negocio/g) ?? []).length, k).toBeLessThanOrEqual(1);
+  });
+  it('los nodos: el botón sin texto y el cierre usan el evento «respuesta rápida», y el traspaso usa la ficha NUEVA', () => {
+    const nodo = (n: string): string => readFileSync(join(CARPETA, 'src/nodos', n), 'utf8');
+    expect(nodo('registrar-evento.js')).toMatch(/chEventoOtro\(t\.tipo\)/);
+    expect(nodo('interpretar-entrada.js')).toMatch(/chEventoOtro\('button'\)/);
+    expect(nodo('armar-mensajes.js')).toMatch(/nombre: previa\.nombre, empresa: previa\.empresa/);
+  });
+});
+
+describe('revisión del PR #464: detectores del cliente', () => {
+  it('E1: lo que cuentan sus propios clientes no es un pedido de contacto (cuesta una plantilla)', () => {
+    for (const x of ['mis pacientes me llaman hoy y no doy abasto', 'los clientes me contactan en la noche y no alcanzo', 'me llaman a las 3 de la mañana', 'mis clientes me escriben todo el día']) {
+      expect(f('chPidioContacto')(x), x).toBe(false);
+      expect(f('chPideAsesor')(x), x).toBe(false);
+    }
+    for (const x of ['llámame mañana', 'me pueden llamar hoy', 'que me llamen a las 3 de la tarde', 'me llamarán mañana?', 'quiero una llamada']) expect(f('chPidioContacto')(x), x).toBe(true);
+  });
+  it('E8: contar la necesidad no pide una persona; pedirla para sí, sí', () => {
+    for (const x of ['necesito alguien que atienda mi WhatsApp de noche', 'quiero que alguien conteste a mis clientes', 'busco una persona que responda mis mensajes']) expect(f('chPidePersona')(x), x).toBe(false);
+    for (const x of ['prefiero que me atienda alguien del equipo', 'me gustaría que alguien me explique mejor', 'quiero hablar con una persona', 'puede alguien llamarme?']) expect(f('chPidePersona')(x), x).toBe(true);
+  });
+  it('E8: `derivar_equipo` exige las DOS llaves (la etiqueta del modelo y un detector del código)', () => {
+    const r = (accion: string, texto: string): string => f('chResolver')({
+      plan: { ruta: 'modelo', contexto: 'general', hechos: {}, rubroElegido: '' }, cfg: CFG, ficha: fichaBase(), eventos: [{ k: 'texto', c: texto, t: texto, seq: 1 }],
+      intentos: [{ lectura: { ok: true, mensaje: 'x', accion, rubro: '', necesidad: '', nombre: '', empresa: '', descarte: '' }, causa: '' }],
+    }).accionConfirmada;
+    expect(r('derivar_equipo', 'necesito alguien que atienda mi WhatsApp de noche')).toBe('');
+    expect(r('ninguna', 'quiero hablar con una persona')).toBe('');
+    expect(r('derivar_equipo', 'quiero hablar con una persona')).toBe('equipo');
+  });
+  it('L1: la ficha revalida `empresa` como `nombre`', () => {
+    const e = { ...fichaBase(), empresa: '=HYPERLINK("http://x","y")', nombre: 'Ana Pérez', ultimoMs: AHORA };
+    expect(f('chFichaVigente')(e, AHORA).empresa).toBe('');
+    expect(f('chFichaVigente')({ ...e, empresa: 'Panadería Luna' }, AHORA).empresa).toBe('Panadería Luna');
+  });
+  it('L3: el nombre del perfil de WhatsApp solo llega a la hoja si tiene forma de nombre', () => {
+    const p = (perfil: string): string => f('chProspecto')(fichaBase(), CFG, { from: '59170000001', nombrePerfil: perfil }).nombre;
+    expect(p('=HYPERLINK("http://x","y")')).toBe('');
+    expect(p('Ventas Gratis 100% https://x.co')).toBe('');
+    expect(p('Ana Pérez')).toBe('Ana Pérez');
+  });
+  it('F7: los topes de la ficha acotan el peso de los datos estáticos (peor caso ~2 MB, no 25 MB)', () => {
+    expect(K('CH_TOPE_FICHAS')).toBe(300);
+    expect(K('CH_TOPE_HISTORIAL')).toBe(8);
+    expect(K('CH_TOPE_TEXTO')).toBe(300);
+    const peor = f('chFichaVigente')({ ...fichaBase(), ultimoMs: AHORA, historial: Array.from({ length: 30 }, (_, i) => ({ r: i % 2 ? 'a' : 'u', t: 'x'.repeat(900) })), cola: Array.from({ length: 30 }, (_, i) => ({ ...ev('y'.repeat(900)), seq: i + 1 })), seq: 30 }, AHORA);
+    expect(JSON.stringify(peor).length * (K('CH_TOPE_FICHAS') as number)).toBeLessThan(5 * 1024 * 1024);
   });
 });
 
@@ -849,11 +1012,11 @@ describe('aplicar el turno a la ficha y armar el prospecto de la hoja', () => {
     const saludo = f('chAplicarTurno')({ ficha: { ...fichaBase(), rubro: 'salud' }, eventos: eventos(['gracias']), hasta: 1, plan: { ruta: 'modelo', temas: [], hechos: {} }, res: null, mensaje: 'x', ahoraMs: AHORA });
     expect(saludo.hechos.interactuo).toBe(false);
   });
-  it('la historia tiene tope de 12 y 400 caracteres por entrada', () => {
-    const larga = { ...fichaBase(), historial: Array.from({ length: 12 }, () => ({ r: 'u', t: 'x' })) };
+  it('la historia tiene tope de 8 y 300 caracteres por entrada', () => {
+    const larga = { ...fichaBase(), historial: Array.from({ length: 8 }, () => ({ r: 'u', t: 'x' })) };
     const n = f('chAplicarTurno')({ ficha: larga, eventos: eventos(['y'.repeat(900)]), hasta: 1, plan: { ruta: 'modelo', temas: [], hechos: {} }, res: null, mensaje: 'z'.repeat(900), ahoraMs: AHORA });
-    expect(n.historial).toHaveLength(12);
-    expect(n.historial.every((h: J) => h.t.length <= 400)).toBe(true);
+    expect(n.historial).toHaveLength(8);
+    expect(n.historial.every((h: J) => h.t.length <= 300)).toBe(true);
   });
   it('chProspecto: lo que lee «Decidir fila de la planilla»; sin teléfono o ya cliente, nada', () => {
     const fch = { ...fichaBase(), rubro: 'belleza', nombre: 'Ana Pérez', empresa: 'Salón Rosa', necesidad: 'agendar sin llamadas', temas: ['costos'], hechos: { pidioEquipo: true, pidioPlanes: true, eligioOtro: false, interactuo: true, descarte: '' } };
@@ -1167,8 +1330,20 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
     expect((flujo['connections'] as J)['¿Meta aceptó?'].main[1]).toEqual([]);
   });
   (existsSync(join(EXPERIMENTAL, 'captacion-minima/src/nodos')) ? it : it.skip)('las dos copias declaradas de la hoja son idénticas a las de Captación mínima (hasta que haya un módulo común: PROPIO.md)', () => {
-    for (const n of ['decidir-fila-de-la-planilla.js', 'prospecto-para-la-planilla.js']) {
-      expect(readFileSync(join(CARPETA, 'src/nodos', n), 'utf8'), n).toBe(readFileSync(join(EXPERIMENTAL, 'captacion-minima/src/nodos', n), 'utf8'));
-    }
+    const leer = (base: string, n: string): string => readFileSync(join(base, 'src/nodos', n), 'utf8');
+    expect(leer(CARPETA, 'prospecto-para-la-planilla.js')).toBe(leer(join(EXPERIMENTAL, 'captacion-minima'), 'prospecto-para-la-planilla.js'));
+    // `decidir-fila` diverge en UNA línea a propósito (L2 de la revisión de seguridad del PR #464: quitar TODOS los bloques de signos de fórmula del comienzo, «= =1»). Todo lo demás, idéntico.
+    const mia = leer(CARPETA, 'decidir-fila-de-la-planilla.js').split('\n');
+    const orig = leer(join(EXPERIMENTAL, 'captacion-minima'), 'decidir-fila-de-la-planilla.js').split('\n');
+    const distintas = mia.filter((l) => !orig.includes(l));
+    expect(distintas.filter((l) => !l.trimStart().startsWith('//'))).toEqual(["const seguro = (v) => limpio(v).replace(/^(?:[=+\\-@]\\s*)+/, '');"]);
+    expect(orig.filter((l) => !mia.includes(l))).toEqual(["const seguro = (v) => limpio(v).replace(/^[=+\\-@]+\\s*/, '');"]);
+  });
+  it('L2: «Decidir fila» quita TODOS los bloques de signos de fórmula del comienzo (revertir la línea hace fallar esta prueba)', () => {
+    const js = readFileSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'), 'utf8');
+    const linea = js.split('\n').find((l) => l.startsWith('const seguro'))!;
+    const seguro = new Function('limpio', `${linea}\nreturn seguro;`)((x: string) => String(x).trim()) as (v: string) => string;
+    for (const x of ['= =1', '=+-@ =HYPERLINK("x")', '+ - @ cmd', '=1']) expect(seguro(x), x).not.toMatch(/^[=+\-@]/);
+    expect(seguro('Panadería Luna')).toBe('Panadería Luna');
   });
 });

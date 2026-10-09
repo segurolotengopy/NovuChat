@@ -113,7 +113,8 @@ const limpio = (v) => String(v ?? '').replace(/[\u00ad\u061c\u200b-\u200f\u202a-
 const digitos = (v) => String(v ?? '').replace(/\D/g, '');
 // Un texto del cliente nunca empieza con lo que una planilla toma por formula
 // («=», «+», «-», «@»): se quita en los DOS caminos (revision del PR #237, L3).
-const seguro = (v) => limpio(v).replace(/^[=+\-@]+\s*/, '');
+// Quita TODOS los bloques de signos de fórmula del comienzo («= =1» no queda «=1»). Diverge a propósito de la copia de Captación mínima (L2 de la revisión de seguridad del PR #464).
+const seguro = (v) => limpio(v).replace(/^(?:[=+\-@]\s*)+/, '');
 // `Agregar fila` escribe con USER_ENTERED para que «Fecha Registro» quede como
 // fecha de verdad (la usan el tablero y los filtros por mes). Con USER_ENTERED
 // un texto se interpreta como si lo tipeara una persona, y «591…» seria un

@@ -553,11 +553,23 @@ describe('el modelo es el cerebro: los tres escenarios del documento (§7)', () 
       const cuerpo = JSON.stringify((ws[i]!.modelo.llamadas[0]!.cuerpo as { contents?: unknown }).contents);
       rubros.forEach((id, k) => { if (k === i) expect(cuerpo).toMatch(etiqueta[id]!); else expect(cuerpo).not.toMatch(etiqueta[id]!); });
     });
-    // gana el último que graba (el 3.º): su historial pisa a los otros y el turno siguiente responde con contenido, una sola vez
-    ws[2]!.modelo.con = dice(EXPLICA_GASTRO, { rubro: 'gastronomia' });
-    const sig = js[2]!.texto('Quiero saber más de los planes que tienen para mi negocio').aMi;
+    // Gana el ÚLTIMO que graba (el 3.º): n8n guarda el mapa ENTERO de esa ejecución. El mapa final es el de su copia: de los otros dos clics no queda ni el historial ni los ids de Meta.
+    const final = clonar(ws[2]!.mundo.sd['chatNovuchat'] as Record<string, Ficha>);
+    expect(final[MAMA]!.historial.some((h) => /Eligió el rubro: Salud|Eligió el rubro: Gastronom/.test(h.t))).toBe(false);
+    expect(final[MAMA]!.historial.some((h) => /Eligió el rubro: Retail/.test(h.t))).toBe(true);
+    // El cliente sigue recibiendo UNA respuesta coherente con ese mapa pisado (nunca vacía): el turno siguiente corre sobre él, en una ejecución nueva.
+    const w4 = crear({ ahoraMs: AHORA + 5 * 60_000 });
+    Object.assign(w4.mundo.sd, { chatNovuchat: final });
+    w4.modelo.con = dice(EXPLICA_GASTRO, { rubro: 'gastronomia' });
+    const sig = jugar(w4, MAMA).texto('Quiero saber más de los planes que tienen para mi negocio').aMi;
     expect(sig).toHaveLength(1);
     expect(String(sig[0]!.cuerpo).trim().length).toBeGreaterThan(20);
+    // y un mensaje que llega con el mapa de OTRO teléfono pisado (la ficha de este desapareció) responde igual: empieza de cero, con la lista de rubros, no con un error
+    const w5 = crear({ ahoraMs: AHORA + 6 * 60_000 });
+    Object.assign(w5.mundo.sd, { chatNovuchat: {} });
+    const vacia = jugar(w5, MAMA).texto('Hola').aMi;
+    expect(vacia).toHaveLength(1);
+    expect(String(vacia[0]!.cuerpo).trim().length).toBeGreaterThan(20);
   });
 
   it('con el modelo caído, los tres clics también reciben UNA respuesta: el texto de exploración del documento, con sus botones', () => {
@@ -1269,6 +1281,17 @@ describe('audio, imagen, documento y otros tipos', () => {
     expect(t.ejecutados.has('Descargar medio')).toBe(false);
     expect(t.aMi[0]!.cuerpo).toMatch(/No pude leer lo que me enviaste/);
   });
+  it('F5: un `button` sin texto es «una respuesta rápida», no una imagen', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = dice('¡Gracias por responder! 😊 Cuéntame un poco más de tu negocio para darte la información que realmente te sirva: ¿de qué rubro es y qué es lo que más tiempo te quita hoy en WhatsApp?');
+    const t = j.crudo({ type: 'button', button: { text: '', payload: '' } }, 'botón vacío');
+    const pedido = JSON.stringify((w.modelo.llamadas[0]!.cuerpo as J)['contents']);
+    expect(pedido).toMatch(/Envió una respuesta rápida/);
+    expect(pedido).not.toMatch(/Envió una imagen|Envió un documento/);
+    expect(t.aMi).toHaveLength(1);
+  });
   it('ubicación y sticker llegan al modelo (nada se descarta); una reacción no es una conversación y no recibe respuesta', () => {
     const w = crear();
     const j = jugar(w, MAMA);
@@ -1304,7 +1327,7 @@ describe('el historial por teléfono: ninguna respuesta «olvida» lo hablado un
     expect(texto).toMatch(/Eligió el rubro: Gastronomía/);
     expect(String(((contents[4]!['parts'] as J[]).at(-1) as J)['text'])).toMatch(/<<<Y\?>>>/);
   });
-  it('con 12 entradas el historial se recorta (las más viejas salen) y lo inmediato nunca se pierde', () => {
+  it('con 8 entradas el historial se recorta (las más viejas salen) y lo inmediato nunca se pierde', () => {
     const w = crear();
     const j = jugar(w, MAMA);
     j.texto('Hola');
@@ -1312,7 +1335,7 @@ describe('el historial por teléfono: ninguna respuesta «olvida» lo hablado un
     w.modelo.con = (_c: J, n: number) => dice(`Respuesta ${ORD[n]} del asistente: NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝`);
     for (let i = 1; i <= 9; i++) j.texto(`Cuéntame algo más sobre el punto ${ORD[i - 1]} de tu servicio, por favor`);
     const f = fichaDe(w, MAMA)!;
-    expect(f.historial.length).toBe(12);
+    expect(f.historial.length).toBe(8);
     const ultimo = (w.modelo.llamadas.at(-1)!.cuerpo['contents'] as J[]);
     const texto = JSON.stringify(ultimo);
     expect(texto).toMatch(/punto ocho/);
@@ -1668,5 +1691,69 @@ describe('la topología y las guardias del JSON versionado', () => {
     expect(sistema).not.toMatch(/100 conversaciones|220|500 conversaciones/);
     expect(sistema).not.toMatch(/silvana|asesora/i);
     expect(sistema).not.toMatch(/Leads de Ventas|miniCRM/);
+  });
+});
+
+// ================================================================================================
+// Revisión del PR #464 (flujo): cada caso FALLA si se revierte la corrección.
+describe('revisión del PR #464: lo que arma el flujo', () => {
+  it('F6: si el equipo se confirma por la acción del modelo y el cliente acaba de dar su nombre y negocio, el traspaso NO se los vuelve a pedir', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = dice('¡Perfecto, Ana! 🙌 Toca el botón de abajo para hablar con alguien de nuestro equipo y ver juntos cómo armarlo para tu panadería. ¿Te parece bien que sigamos por ahí?', { accion: 'derivar_equipo', nombre: 'Ana Pérez', empresa: 'Panadería Luna' });
+    const t = j.texto('Quiero hablar con una persona, soy Ana Pérez de Panadería Luna');
+    expect(t.plantillas).toHaveLength(1);
+    expect(fichaDe(w, MAMA)!['nombre']).toBe('Ana Pérez');
+    expect(fichaDe(w, MAMA)!['empresa']).toBe('Panadería Luna');
+    expect(t.aMi).toHaveLength(1);
+    expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
+    expect(t.aMi[0]!.cuerpo).not.toMatch(/cómo te llamas|cómo se llama/);
+  });
+  it('F6 (contraste): sin nombre ni negocio en la ficha, el traspaso SÍ los pide', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    const t = j.boton('equipo');
+    expect(t.aMi[0]!.cuerpo).toMatch(/¿cómo te llamas y cómo se llama tu negocio\?/);
+    expect((t.aMi[0]!.cuerpo.match(/negocio/g) ?? []).length).toBe(1);
+  });
+  it('L3: el nombre de perfil de WhatsApp que no parece un nombre no llega al aviso a recepción', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ventas Gratis 100% https://x.co', sinPropiedades: true });
+    j.texto('Hola');
+    const t = j.boton('equipo');
+    expect(t.plantillas).toHaveLength(1);
+    expect(JSON.stringify(t.plantillas[0]!.payload)).not.toMatch(/Ventas Gratis|x\.co/);
+  });
+  it('L3: ni al hoja: un perfil con forma de fórmula queda vacío, sin celdas como fórmula', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: '=HYPERLINK("http://x","y")', sinPropiedades: true });
+    j.texto('Hola');
+    j.lista('rubro:salud');
+    expect(w.hoja.formulas).toEqual([]);
+    expect(w.hoja.filas.length).toBe(1);
+    expect(JSON.stringify(w.hoja.filas)).not.toMatch(/HYPERLINK/);
+  });
+  it('E1: lo que cuentan sus clientes no manda al equipo ni gasta una plantilla («mis pacientes me llaman hoy y no doy abasto»)', () => {
+    for (const frase of ['mis pacientes me llaman hoy y no doy abasto', 'los clientes me contactan en la noche y no alcanzo', 'me llaman a las 3 de la mañana']) {
+      const w = crear();
+      const j = jugar(w, MAMA, { sinPropiedades: true });
+      j.texto('Hola');
+      w.modelo.con = dice('Te entiendo, eso agota. 😅 NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝');
+      const t = j.texto(frase);
+      expect(t.plantillas, frase).toHaveLength(0);
+      expect(fichaDe(w, MAMA)!.hechos['pidioEquipo'], frase).toBe(false);
+      expect(w.modelo.llamadas.length, frase).toBeGreaterThan(0);
+    }
+  });
+  it('E2: el modelo promete «te comunico con un asesor» sin que el código lo haga: se rechaza y se reintenta', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { sinPropiedades: true });
+    j.texto('Hola');
+    w.modelo.con = dice('¡Claro! 😊 NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces. Te comunico con un asesor ahora mismo para que todo quede listo. ¿Te parece bien? 🤝');
+    const t = j.texto('Tengo una ferretería y me preguntan precios todo el día');
+    expect(w.modelo.reintentos).toHaveLength(1);
+    expect(t.aMi[0]!.cuerpo).not.toMatch(/te comunico/i);
   });
 });

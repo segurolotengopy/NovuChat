@@ -45,7 +45,8 @@ if (tipo === 'text') {
 } else if (tipo === 'button') {
   texto = String((msg.button && (msg.button.text || msg.button.payload)) || '').slice(0, 1500);
   textoReporte = 'El cliente tocó el botón: ' + texto;
-  evento = chEventoTexto(texto);
+  // Un botón sin texto no es una imagen: queda como «una respuesta rápida».
+  evento = texto.trim() === '' ? chEventoOtro('button') : chEventoTexto(texto);
 } else if (tipo === 'audio') {
   textoReporte = '(audio) el cliente envió una nota de voz';
 } else if (tipo === 'image') {
