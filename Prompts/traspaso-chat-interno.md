@@ -8,7 +8,7 @@
 
 Eres la sesión dedicada a terminar el traspaso del chat interno de NovuChat:
 del portafolio `NovuChat Produccion` y el número …326 al portafolio
-`NovuChat` de Silvana y el número 76988663, con app y usuario de sistema
+`NovuChat` de Silvana y el número …663, con app y usuario de sistema
 propios en el portafolio de ella. Las decisiones están en
 `CLIENTES/NOVUCHAT/traspaso-tech-provider.md` (cabecera, §1 y §8) y en
 `ESTADO.md` (entrada del 24/09); este prompt las ejecuta.
@@ -125,7 +125,7 @@ leído entero y `--aplicar`, `--apagar` → `webhook-meta.sh --preparar` →
 nodo de envío.
 
 ### Fase 3 — Pruebas reales (§5)
-«Hola» al 76988663 con nombre visible «NovuChat»; la captación hasta el cierre
+«Hola» al …663 con nombre visible «NovuChat»; la captación hasta el cierre
 con el aviso a recepción (cuando la plantilla esté `APPROVED`); «Hola» al
 …326 sin respuesta; la conversación en la consola del comercio
 `novuchat`; `ver-ejecuciones.sh` sin errores. Resultado real en
