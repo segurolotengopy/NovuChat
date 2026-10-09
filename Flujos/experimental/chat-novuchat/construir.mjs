@@ -514,6 +514,10 @@ export function armarTenant(proyecto, datos, archivo) {
   }
   // La cadena de envío común, con las credenciales por NOMBRE del archivo de datos y la ingesta de la consola. Cuelga de «Armar mensajes», arriba de la hoja y de «Confirmar envío».
   injertar(plantilla, { credenciales: { graph: dato(datos, 'credenciales.graph', archivo), ingesta: dato(datos, 'credenciales.ingesta', archivo) }, ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`, desde: [5720, 160] });
+  // Puerta de la entrega (propia): el reporte saliente cuelga de «¿Meta aceptó?», que lee `messages[0].id`. Solo se reencamina la CONEXION de la cadena común; sus nodos quedan intactos.
+  const reporta = plantilla.connections['¿Reportar? (saliente)'];
+  if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${archivo}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);
+  reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: salidaDe(archivo), nombre: dato(datos, 'nombreFlujo', archivo), quitar: [] });
   const flujo = JSON.parse(texto);
   inyectar(flujo, MARCA_DATOS, 'CH_DATOS', datos.datos);

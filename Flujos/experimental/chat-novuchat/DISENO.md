@@ -12,18 +12,18 @@ por teléfono lo guarda y lo pasa este mismo flujo, explícito, en cada llamada.
 | `src/lib/chat.js` | Biblioteca pura (prefijo `ch`, ~1.370 líneas). Primera parte: copia adaptada de Captación mínima (detectores, extracción de nombre y empresa, filtros del modelo, aviso); el resto es nuevo |
 | `src/nodos/*.js` | Un archivo por nodo Code. Qué es común y qué propio: `PROPIO.md` |
 | `construir.mjs` | Arma los dos JSON con `../comun-sin-agente/construir.mjs`, valida los datos, inyecta `@@datos` y aplica las guardias. `--verificar` no escribe; un argumento desconocido sale con 2 sin escribir |
-| `chat-novuchat.novuchat.json` / `.prueba.json` | Producción (con «WhatsApp Trigger») y prueba (con «Entrada de prueba»), 43 nodos cada uno |
+| `chat-novuchat.novuchat.json` / `.prueba.json` | Producción (con «WhatsApp Trigger») y prueba (con «Entrada de prueba»), 44 nodos cada uno |
 | `admin/scripts/datos/chat-novuchat/{novuchat,ensayo}.json` | LA fuente de datos: instrucciones del documento, 7 rubros con puntos clave, cierres exactos, respaldos, textos, precios (frases) y `modelo` |
 | `herramientas/bateria.mjs`, `bateria-casos.json` | Batería contra el modelo (`--seco` o `--vertex`/`--env`), 53 casos |
 
-## El grafo (43 nodos)
+## El grafo (44 nodos)
 
 ```
 WhatsApp Trigger | Entrada de prueba → Config base → Carga de entrada (filtra eventos) → Traer configuración → Config del negocio
   → Interpretar entrada → ¿Reportar? → Reportar mensaje (entrante) → Puerta del turno (suspendido / uso extendido / sigue)
   → ¿Bajar medio? → [Obtener URL → ¿Tamaño? → Descargar → ¿Audio? → Transcribir | ¿Documento? → Describir documento | Describir imagen]
   → Registrar evento → Esperar ráfaga (Wait 2,5 s) → Armar turno → ¿Llamar al modelo? → Llamar al modelo → Validar respuesta
-  → ¿Reintentar? → Reintentar el modelo → Armar mensajes ─┬→ ¿Enviar de verdad? → Enviar a WhatsApp → ¿Falló el envío? → Enviar respaldo → ¿Reportar? (saliente) → Reportar mensaje (saliente)   [cadena COMÚN]
+  → ¿Reintentar? → Reintentar el modelo → Armar mensajes ─┬→ ¿Enviar de verdad? → Enviar a WhatsApp → ¿Falló el envío? → Enviar respaldo → ¿Reportar? (saliente) → ¿Meta aceptó? → Reportar mensaje (saliente)   [cadena COMÚN; «¿Meta aceptó?» es la puerta PROPIA]
                                                           ├→ Prospecto para la planilla → Buscar teléfono → Leer IDs → Decidir fila → ¿Agregar? → Agregar fila | ¿Actualizar? → Actualizar fila
                                                           ├→ Confirmar envío (propio: ficha)
                                                           └→ Resumen del turno
@@ -63,9 +63,11 @@ baja de N respuestas a UNA. **Llamadas al modelo: 0 o 1 por turno** (2 si una gu
 
 ## Riesgos y lo que no se hizo
 
-- **Coalescencia: NO verificada en n8n real.** n8n da a cada ejecución una COPIA de los datos estáticos y graba el objeto entero al terminar; si es así, tres ejecuciones simultáneas no se ven y
-  responderían las tres (la suite lo demuestra: `RIESGO CONOCIDO`). Se ensaya en el Demo A con tres toques en menos de 2 s antes de publicar. Si falla, el registro de eventos pasa a un almacén
-  compartido (Data Table de n8n o una función de la consola): solo cambian «Registrar evento» y «Armar turno».
+- **Coalescencia: RIESGO CONOCIDO, a verificar con un teléfono real (tres toques en menos de 2 s en el Demo A).** Lo más probable es que n8n dé a cada ejecución una COPIA de los datos estáticos y grabe el objeto
+  entero al terminar: entonces las ejecuciones simultáneas no se ven y las tres responden (la espera de 2,5 s no une nada; se deja porque no daña y sí une si los datos se comparten, a costa de 2,5 s de latencia
+  y de un mensaje por toque en vez de uno). El diseño NO empeora con la copia desfasada (prueba «copia desfasada»): cada ejecución arma el turno con SU evento, responde una vez y con contenido (nunca vacío ni
+  repetido), y el historial pisado por la última que graba solo olvida intercambios: el turno siguiente responde bien. Si se quisiera una sola respuesta garantizada, el registro de eventos pasaría a un almacén
+  compartido (Data Table de n8n o una función de la consola); solo cambian «Registrar evento» y «Armar turno». No se invierte más en eso por ahora.
 - **Peso de los datos estáticos**: cada ficha pesa ~5 KB y n8n graba todas en cada ejecución; el barrido de 48 h y el tope de 5.000 lo acotan.
 - **Trato**: se lee `voz.tratamiento` de la consola («usted» cambia lo que se le pide al modelo), pero los textos fijos del dato están en tú.
 - No hay campañas, rubro libre, CRM real, imágenes salientes (salvo la de planes), trato de usted en textos fijos ni miniCRM/Kanban (D4: «panel de control»).

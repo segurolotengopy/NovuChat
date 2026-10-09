@@ -1155,6 +1155,41 @@
       "notes": "Ultima rama de «Armar mensajes». En la variante de prueba, «Entrada de prueba» responde con esto."
     },
     {
+      "id": "meta-acepto",
+      "name": "¿Meta aceptó?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6920,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!($json && !$json.error && Array.isArray($json.messages) && $json.messages[0] && $json.messages[0].id) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "PUERTA de la entrega (regla I-ENTREGA 3): el reporte saliente solo corre si Meta devolvio `messages[0].id` y ningun `error`, sea del envio o de su respaldo. Lo pega `construir.mjs` entre «¿Reportar? (saliente)» y «Reportar mensaje (saliente)» sin tocar los nodos comunes."
+    },
+    {
       "id": "enviar-si",
       "name": "¿Enviar de verdad?",
       "type": "n8n-nodes-base.if",
@@ -1815,6 +1850,18 @@
         []
       ]
     },
+    "¿Meta aceptó?": {
+      "main": [
+        [
+          {
+            "node": "Reportar mensaje (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
     "¿Enviar de verdad?": {
       "main": [
         [
@@ -1877,7 +1924,7 @@
       "main": [
         [
           {
-            "node": "Reportar mensaje (saliente)",
+            "node": "¿Meta aceptó?",
             "type": "main",
             "index": 0
           }

@@ -538,6 +538,28 @@ describe('el modelo es el cerebro: los tres escenarios del documento (§7)', () 
     expect(respuestas).toEqual([1, 1, 1]);
   });
 
+  it('con la copia desfasada (ejecuciones simultáneas que NO se ven) el diseño no empeora: cada ejecución responde a SU propio evento, nunca vacío ni repetido, y el historial pisado no rompe el turno siguiente', () => {
+    const rubros = ['salud', 'gastronomia', 'retail'];
+    const etiqueta: Record<string, RegExp> = { salud: /Eligió el rubro: Salud/, gastronomia: /Eligió el rubro: Gastronom/, retail: /Eligió el rubro: Retail/ };
+    const ws = rubros.map((_, i) => crear({ ahoraMs: AHORA + i * 1000 }));
+    const js = ws.map((w) => jugar(w, MAMA));
+    js.forEach((j) => j.texto('Hola')); // cada mundo recibe su lista de rubros (los toques de abajo son SUYOS)
+    for (const w of ws) { w.modelo.con = dice('Veo que estás explorando varias de nuestras soluciones, ¡excelente! 🚀 Como NovuChat se adapta a los procesos de diferentes industrias, me ayudaría mucho saber: ¿cuál de estas áreas es el corazón de tu negocio hoy?'); w.modelo.llamadas.length = 0; }
+    const salidas = js.map((j, i) => j.lista('rubro:' + rubros[i]).aMi);
+    salidas.forEach((m, i) => {
+      expect(m, `ejecución ${i}`).toHaveLength(1);
+      expect(String(m[0]!.cuerpo).trim().length, `ejecución ${i}: respuesta vacía`).toBeGreaterThan(20);
+      // la llamada al modelo de esa ejecución trae SOLO su evento: no mezcla los de las otras
+      const cuerpo = JSON.stringify((ws[i]!.modelo.llamadas[0]!.cuerpo as { contents?: unknown }).contents);
+      rubros.forEach((id, k) => { if (k === i) expect(cuerpo).toMatch(etiqueta[id]!); else expect(cuerpo).not.toMatch(etiqueta[id]!); });
+    });
+    // gana el último que graba (el 3.º): su historial pisa a los otros y el turno siguiente responde con contenido, una sola vez
+    ws[2]!.modelo.con = dice(EXPLICA_GASTRO, { rubro: 'gastronomia' });
+    const sig = js[2]!.texto('Quiero saber más de los planes que tienen para mi negocio').aMi;
+    expect(sig).toHaveLength(1);
+    expect(String(sig[0]!.cuerpo).trim().length).toBeGreaterThan(20);
+  });
+
   it('con el modelo caído, los tres clics también reciben UNA respuesta: el texto de exploración del documento, con sus botones', () => {
     const entradas = ['rubro:salud', 'rubro:gastronomia', 'rubro:retail'].map((id) => valorMeta(mLista(id, id), MAMA));
     const r = rafaga(entradas, MAMA, (w) => { w.modelo.con = 'ERROR'; });
@@ -1523,9 +1545,9 @@ describe('la variante de prueba: «Entrada de prueba», todo al teléfono de pru
 
 describe('la topología y las guardias del JSON versionado', () => {
   const nombres = (f: Flujo): string[] => f.nodes.map((n) => n.name);
-  it('tiene 43 nodos por variante: la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
-    expect(PRODUCCION.nodes).toHaveLength(43);
-    expect(PRUEBA.nodes).toHaveLength(43);
+  it('tiene 44 nodos por variante: la de producción sin «Entrada de prueba», la de prueba sin «WhatsApp Trigger»', () => {
+    expect(PRODUCCION.nodes).toHaveLength(44);
+    expect(PRUEBA.nodes).toHaveLength(44);
     expect(nombres(PRODUCCION)).not.toContain('Entrada de prueba');
     expect(nombres(PRUEBA)).not.toContain('WhatsApp Trigger');
     expect(nombres(PRODUCCION).filter((x) => !nombres(PRUEBA).includes(x))).toEqual(['WhatsApp Trigger']);
@@ -1601,7 +1623,7 @@ describe('la topología y las guardias del JSON versionado', () => {
       alcanzables.add(n);
     };
     visitar('WhatsApp Trigger', []);
-    expect(alcanzables.size).toBe(43);
+    expect(alcanzables.size).toBe(44);
   });
   it('«Llamar al modelo» y «Reintentar el modelo» apuntan a generateContent con el modelo de los datos (gemini-3.5-flash-lite) por expresión', () => {
     for (const nombre of ['Llamar al modelo', 'Reintentar el modelo']) {

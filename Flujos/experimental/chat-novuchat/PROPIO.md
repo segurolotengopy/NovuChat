@@ -23,9 +23,10 @@ Regla (Andres, 09/10/2026): **flujo propio = composición propia + núcleo comú
 | `chAviso` (plantilla `solicitud_contacto` a recepción) | `cmContactoConBoton` cubre solo el botón; no hay constructor común de la plantilla |
 | `decidir-fila-de-la-planilla.js`, `prospecto-para-la-planilla.js` (hoja Leads_CRM) | `Flujos/src/modulos/captacion/` existe pero está ATRASADO (sin calificación por hechos ni resumen J). Copia idéntica a la de `captacion-minima/src/nodos/`; una prueba compara byte a byte |
 | Detectores, extracción literal de nombre y empresa, filtros de redacción propios (`src/lib/chat.js`, primer bloque) | Existían solo en Captación mínima: son piezas propias de NovuChat portadas con sus pruebas (y comparadas con la original) |
-| Cadena de envío común (`envio.mjs`) frente a `admin/pruebas/core/entregas.test.ts` (regla 3) | `¿Falló el envío?` y `¿Reportar? (saliente)` miran solo `$json.error`: el reporte saliente cuelga del envío sin una puerta que lea el id. El mismo defecto lo tiene Agenda mínima (excepciones declaradas, cierra PR-6). Este flujo NO copia ni altera la cadena: «Confirmar envío» sí lee el id (reglas 1 y 2 cumplidas), y quedan 2 violaciones de la regla 3 (`Reportar mensaje (saliente)::Enviar a WhatsApp` y `::Enviar respaldo`) que se cierran en el módulo común (puerta que lea `messages[0].id`) o con excepción declarada |
 
 ## Propio de NovuChat
+
+**Puerta de la entrega** (`¿Meta aceptó?`): un nodo propio entre `¿Reportar? (saliente)` y `Reportar mensaje (saliente)` que lee `messages[0].id` y `error` (regla I-ENTREGA 3). Los nodos comunes quedan intactos; `construir.mjs` solo reencamina esa conexión y una prueba lo compara con la fuente.
 
 Cerebro conversacional: instrucciones y datos del documento comercial (`admin/scripts/datos/chat-novuchat/novuchat.json`), historial y ficha por teléfono, coalescencia de clics (Registrar evento,
 Esperar ráfaga, Armar turno), contexto y validación del mensaje del modelo (con su reintento y respaldos), rutas deterministas (planes, equipo, consumo, tope, banco, integración, costos de Meta,

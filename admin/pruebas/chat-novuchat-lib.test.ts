@@ -1054,7 +1054,7 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     const r = CONSTRUIR.construir({ verificar: true });
     expect(r.resultado.map((x) => [x.archivo, x.alDia, x.versionado])).toEqual([['chat-novuchat.prueba.json', true, []], ['chat-novuchat.novuchat.json', true, []]]);
     expect(r.huerfanos).toEqual([]);
-    expect(r.resultado.map((x) => x.nodos)).toEqual([43, 43]);
+    expect(r.resultado.map((x) => x.nodos)).toEqual([44, 44]);
   });
   it('un dato cambiado, un archivo borrado a mano o una guardia violada a mano hacen fallar `--verificar` en una copia temporal; un JSON sin datos es un huérfano', () => {
     const dir = mkdtempSync(join(tmpdir(), 'chat-novuchat-'));
@@ -1143,9 +1143,28 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
     const fuente = nodosDeEnvio({ credenciales: { graph: datos['graph'], ingesta: datos['ingesta'] }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [5720, 160] });
     for (const n of fuente.nodes as J[]) expect((flujo['nodes'] as J[]).find((x) => x.name === n.name), `«${n.name}» difiere de la fuente común`).toEqual(n);
     expect((fuente.nodes as J[]).map((n) => n.name)).toEqual(['¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)']);
-    for (const [de, s] of Object.entries(fuente.connections as J)) expect(flujo['connections'][de], `conexiones de «${de}»`).toEqual(s);
+    // Una sola conexión es propia: «¿Reportar? (saliente)» cuelga de la puerta «¿Meta aceptó?» (regla I-ENTREGA 3) y no directo del reporte.
+    for (const [de, s] of Object.entries(fuente.connections as J)) {
+      if (de === '¿Reportar? (saliente)') continue;
+      expect(flujo['connections'][de], `conexiones de «${de}»`).toEqual(s);
+    }
+    const original = (fuente.connections as J)['¿Reportar? (saliente)'].main as J[][];
+    const propia = (flujo['connections'] as J)['¿Reportar? (saliente)'].main as J[][];
+    expect(original[0]!.map((e) => e.node)).toEqual(['Reportar mensaje (saliente)']);
+    expect(propia[0]!.map((e) => e.node)).toEqual(['¿Meta aceptó?']);
+    expect(propia.slice(1)).toEqual(original.slice(1));
+    expect((flujo['connections'] as J)['¿Meta aceptó?'].main[0].map((e: J) => e.node)).toEqual(['Reportar mensaje (saliente)']);
     // y la plantilla propia ya no los trae
     for (const n of fuente.nodes as J[]) expect((plantilla['nodes'] as J[]).some((x) => x.name === n.name)).toBe(false);
+  });
+  it('la puerta «¿Meta aceptó?» deja pasar al reporte saliente solo lo que Meta aceptó (con `messages[0].id` y sin `error`)', () => {
+    const n = (flujo['nodes'] as J[]).find((x) => x.name === '¿Meta aceptó?')!;
+    expect(n.type).toBe('n8n-nodes-base.if');
+    const expr = String(n.parameters.conditions.conditions[0].leftValue).replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
+    const evalua = new Function('$json', `return ${expr};`) as (j: unknown) => boolean;
+    expect(evalua({ messages: [{ id: 'wamid.X' }] })).toBe(true);
+    for (const malo of [{}, { error: { message: 'x' } }, { messages: [] }, { messages: [{}] }, { messages: [{ id: 'wamid.X' }], error: {} }, null, { messages: 'x' }]) expect(evalua(malo), JSON.stringify(malo)).toBe(false);
+    expect((flujo['connections'] as J)['¿Meta aceptó?'].main[1]).toEqual([]);
   });
   (existsSync(join(EXPERIMENTAL, 'captacion-minima/src/nodos')) ? it : it.skip)('las dos copias declaradas de la hoja son idénticas a las de Captación mínima (hasta que haya un módulo común: PROPIO.md)', () => {
     for (const n of ['decidir-fila-de-la-planilla.js', 'prospecto-para-la-planilla.js']) {
