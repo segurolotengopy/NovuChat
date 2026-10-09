@@ -103,7 +103,7 @@ referencia.
 - **Publicar solo desde `origin/main`**, con el diagnóstico en seco de
   `publicar-flujo.sh` leído entero; **ensayar primero en el número del Demo A**
   (memoria `ensayo-antes-de-produccion`). Ningún comercio está en modalidad
-  producción, así que la ventana de 02:00 a 03:00 no condiciona, pero verifícalo.
+  producción, así que la ventana de 23:30 a 01:30 no condiciona, pero verifícalo.
 - Cada cambio declara mensajes por conversación y qué prueba lo cubre.
 - Resultado REAL con teléfono: audio, foto de producto, PDF y foto sin contexto,
   en cada flujo tocado. El 25/09 un «funciona» sin prueba real fue lo que dejó

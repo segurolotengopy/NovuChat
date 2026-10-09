@@ -55,6 +55,19 @@ revisora; antes figuraban como «sin dueño»):
 
 **Nota sobre `.github/`:** la zona de `devsecops` sobre `.github/` la fija quien lo lanza (`NOVUCHAT_ZONA=".github/"` o `.claude/zona`). Mientras su ficha no la declare, `.github/` solo está protegido por CODEOWNERS y la revisión humana: limitación conocida, ya observada por `seguridad`. Sin zona, el gancho no restringe a `devsecops` en ninguna carpeta: puede escribir en todo el repositorio, no solo en `.github/`. Y CODEOWNERS tiene un único propietario (`docs/arquitectura/registro.md`, «Hasta dónde protege»), así que la barrera real es la revisión humana de Andres.
 
+**Zona «Flujo de cliente» (09/10/2026): `Flujos/clientes/<tenant>/`.** La regla
+de «flujo propio por defecto» (`tenants.md`, «El flujo de un cliente») crea esta
+zona. Su dueño es `flujos-n8n` (indicado por la sesión Principal el 09/10), que
+escribe además `admin/pruebas/tenants/<t>/` y `admin/scripts/datos/<t>/`. La
+ficha de `flujos-n8n` en `.claude/agents/` todavía no declara esta zona: se
+agrega en un cambio aparte, con revisión humana de Andres. El gancho no cambia
+(una zona por prefijo de carpeta). **Cuando se cree la zona se fija por tenant:** los
+prefijos son exactamente `Flujos/clientes/<t>/`, `admin/pruebas/tenants/<t>/`,
+`admin/scripts/datos/<t>/` y, como archivo exacto, `Flujos/<t>.json`; nunca
+`Flujos/clientes/` ni `Flujos/` a secas, y el lanzador falla si no hay zona. El
+gancho necesitará casos negativos (zona de A escribiendo en `clientes/B/`, en
+`clientes/A-x/` y en `Flujos/src/`).
+
 El gancho no cambia: aplica la zona que fija quien lanza al agente, y esta
 tabla es la fuente de qué prefijos se le dan. Lo que ningún agente tiene en su
 zona sigue declarándose en el PR y lo cubre la revisión humana.

@@ -45,7 +45,7 @@ importa. Lo encontró un agente verificando parámetros contra el paquete de npm
 **Cómo arreglarlo:** confirmá primero el valor correcto contra el paquete
 (`npm pack @n8n/n8n-nodes-langchain@2.36.5` y leer `dist/node-definitions`), que es lo
 que manda la memoria `parametros-de-nodos-n8n-desde-npm`. Con prueba que lo fije, y
-**respetando la ventana de mantenimiento de 2 a 3** para publicar.
+**respetando la ventana de mantenimiento de 23:30 a 01:30** para publicar.
 
 ### 2.2 El Demo B ya NO acepta cualquier imagen como comprobante
 
