@@ -66,7 +66,23 @@ export const esAdminDe = (p: CallableRequest, tenantId: string): boolean =>
   Boolean(p.auth?.uid) && claimsDe(p).t[tenantId] === 'admin'
   && proveedorDe(p) === 'password' && correoVerificado(p);
 
-export const exigirPropietario = (p: CallableRequest): string => {
+/**
+ * ¿Es operador de ESE comercio, con contraseña y correo verificado?
+ *
+ * Espejo exacto de `esOperador()` en `firestore.rules` (l.135-140): el mismo
+ * vínculo rol ↔ proveedor que `esAdminDe`, con el rol `oper`. Un claim `oper`
+ * sobre una sesión de Google, o sin el correo verificado, queda inerte.
+ *
+ * `Object.hasOwn` además del valor: `claimsDe().t` es el objeto del token tal
+ * cual, y un `tenantId` como `__proto__` o `constructor` no debe resolverse
+ * por la cadena de prototipos, solo por una clave propia del comercio.
+ */
+export const esOperDe = (p: CallableRequest, tenantId: string): boolean =>
+  Boolean(p.auth?.uid) && Object.hasOwn(claimsDe(p).t, tenantId)
+  && claimsDe(p).t[tenantId] === 'oper'
+  && proveedorDe(p) === 'password' && correoVerificado(p);
+
+export const exigirPropietario =(p: CallableRequest): string => {
   const uid = exigirAutenticado(p);
   if (!esPropietario(p)) throw new HttpsError('permission-denied', 'Solo NovuChat.');
   return uid;
