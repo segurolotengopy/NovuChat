@@ -67,7 +67,7 @@ const FLUJOS_ANTES: Record<string, { nombre: string; pestanas: PestanaAntes[]; c
     nombre: 'Pedidos y cobro',
     pestanas: [
       { ruta: 'pedidos', etiqueta: 'Pedidos', roles: ['admin', 'oper'] },
-      { ruta: 'cobros', etiqueta: 'Cobros' },
+      { ruta: 'cobros', etiqueta: 'Cobros', roles: ['admin', 'oper'] },
       { ruta: 'inventario', etiqueta: 'Inventario' },
       { ruta: 'cobro', etiqueta: 'Configuración de QR' },
     ],
@@ -209,8 +209,9 @@ describe('H2b-5: la consola de hoy es la del 03/10 para los ocho subconjuntos de
         expect(menuDespues(ficha, 'admin', false).map((p) => p.ruta), JSON.stringify(ficha)).toEqual(esperado[f]);
       }
     }
-    // El operador de venta ve solo «Pedidos»; el de reservas, nada de flujo.
-    expect(menuDespues({ flujos: ['venta'] }, 'oper', false)).toEqual([{ ruta: 'pedidos', titulo: 'Pedidos' }]);
+    // El operador de venta ve «Pedidos» y «Cobros» (09/10/2026: «Cobros» solo con el módulo Pedidos); el de reservas, nada de flujo.
+    expect(menuDespues({ flujos: ['venta'] }, 'oper', false))
+      .toEqual([{ ruta: 'pedidos', titulo: 'Pedidos' }, { ruta: 'cobros', titulo: 'Cobros' }]);
     expect(menuDespues({ flujos: ['agendamiento'] }, 'oper', false)).toEqual([]);
     // El propietario de NovuChat ve «Captación» aunque no sea del negocio.
     expect(menuDespues({ flujos: ['onboarding'] }, null, true)).toEqual([{ ruta: 'captacion', titulo: 'Captación' }]);
@@ -296,7 +297,9 @@ describe('H2b-5: lo que cambia a propósito, negando', () => {
     for (const f of IDS_FLUJOS) {
       for (const rol of ['oper', 'ingesta', null]) {
         const rutas = menuDespues({ flujos: [f] }, rol, false).map((p) => p.ruta);
-        expect(rutas.filter((r) => r !== 'pedidos'), `${f} ${rol}`).toEqual([]);
+        // «Cobros» la ve el operador SOLO con el módulo «pedidos» (09/10/2026); «ingesta» y sin rol, nunca.
+        expect(rutas.filter((r) => r !== 'pedidos' && r !== 'cobros'), `${f} ${rol}`).toEqual([]);
+        expect(rutas.includes('cobros'), `${f} ${rol}: cobros`).toBe(rol === 'oper' && f === 'venta');
       }
     }
   });

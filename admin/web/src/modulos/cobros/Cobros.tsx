@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../core/lib/firebase';
 import { useSesion } from '../../core/lib/contexto';
 import { rolEn } from '../../core/lib/sesion';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
+import { capacidadesDeConsola, useModulos } from '../../central/lib/flujos';
 import { ContadoresDeCobro } from './ContadoresDeCobro';
 import { VisorComprobante } from './VisorComprobante';
 import { puedeVerComprobante, textosDelVisor } from './visorComprobante';
@@ -98,7 +99,23 @@ function desdeHace(dias: number): Date {
 
 const DIAS: Record<Exclude<Rango, 'entre'>, number> = { hoy: 1, semana: 7, mes: 30 };
 
+/**
+ * El administrador entra siempre; el operador solo si el negocio tiene Pedidos (Andres, 09/10/2026), igual que
+ * el menú (`rolesConModulo` en el registro). Es presentación: lo que el operador puede leer lo deciden las reglas
+ * y la callable `verComprobante`, no esta redirección.
+ */
 export function Cobros() {
+  const { tenantId = '' } = useParams();
+  const { permisos } = useSesion();
+  const modulos = useModulos(tenantId);
+  if (rolEn(permisos, tenantId) !== 'admin') {
+    if (modulos === null) return <p className="ayuda">Cargando…</p>;
+    if (!capacidadesDeConsola(modulos).conPedidos) return <Navigate to="/" replace />;
+  }
+  return <CobrosDelNegocio />;
+}
+
+function CobrosDelNegocio() {
   const { tenantId = '' } = useParams();
   const [cobros, setCobros] = useState<Cobro[] | null>(null);
   const [error, setError] = useState<string | null>(null);

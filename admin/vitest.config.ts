@@ -133,6 +133,7 @@ export const SUITES_PURAS = [
   'pruebas/prepago-separacion.test.ts',
   'pruebas/central/prepago.test.ts',
   'pruebas/modulos/cobros/qr.test.ts',
+  'pruebas/modulos/cobros/visor-consola.test.ts',
   'pruebas/plataforma/region-y-cuenta.test.ts',
   'pruebas/plataforma/scripts-con-registro.test.ts',
   'pruebas/central/saneo.test.ts',

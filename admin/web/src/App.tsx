@@ -276,7 +276,7 @@ export function App() {
         <Route path="/negocio/:tenantId/pedidos" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Pedidos /></></Proteger>} />
         <Route path="/negocio/:tenantId/cobros" element={
-          <Proteger requiere="adminTenant"><><Cabecera /><Cobros /></></Proteger>} />
+          <Proteger requiere="miembroTenant"><><Cabecera /><Cobros /></></Proteger>} />
         <Route path="/negocio/:tenantId/cobro" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Cobro /></></Proteger>} />
         {/* CAPTACIÓN: hasta el 15/09 era el flujo propio de NovuChat y la ruta
