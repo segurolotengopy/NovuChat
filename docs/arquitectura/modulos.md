@@ -78,7 +78,10 @@ pagos, cobrador, cobranza (Central, pestaña Pagar; nunca «Cobros»).
 Un módulo nuevo es una carpeta y una línea en el registro. `registro.test.ts`
 obliga a que traiga reglas con prueba negativa, manifiesto completo y
 declaración de mensajes. Lo que un cliente necesita y no existe nace como
-módulo con bandera, para todos; **un tenant nunca posee código**.
+módulo con bandera, para todos, **a más tardar la segunda vez que otro cliente
+lo pide**: la primera es una pieza propia del flujo del cliente
+(`tenants.md`, «El flujo de un cliente»). Los **datos** de un tenant nunca son
+código.
 
 ## Ganchos que un módulo puede registrar (`Analisis/41` §2.3)
 
