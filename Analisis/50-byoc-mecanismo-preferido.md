@@ -15,7 +15,7 @@
 | **La bolsa de 300 por 10** | Deja 72 % con Flash-Lite y 52 % con Haiku, pero **a 0,033 USD por conversación es tres veces más barata que el plan**: Impulso más una bolsa son 500 conversaciones por 35, y Crecimiento las da por 50. Conviene 300 por 15 o más, o aceptar que nadie suba de plan (§3). |
 | **Q'Taco** | **DECIDIDO:** 35 por 400, BYOC, instalación 0. Nos quedan 26 USD al mes (73 % a uso pleno). Q'Taco paga a Meta unos 12 USD con 220 conversaciones y unos 32 con 400 (§4). |
 | **Rubén (Dhermacore y productos digitales)** | Un tenant, cuatro números en el portafolio verificado de Dhermacore, **60 por 1.500 conversaciones comunes, instalación 200**, seguimientos incluidos y contados como conversaciones. Nos quedan 42 USD (70 %) con Flash-Lite. Su factura de Meta va de 0 a 48 USD según cuántos seguimientos mande; el de la semana es el caro (§5). |
-| **La intervención humana a mitad del chat** | Hoy solo «pasar con Rubén» (aviso y botón a su WhatsApp). La bandeja en la consola es un módulo sin fecha. La coexistencia app y API está en investigación en WhatsApp-Modular (§5.4). |
+| **La intervención humana a mitad del chat** | Hoy solo «pasar con Rubén» (aviso y botón a su WhatsApp). La bandeja en la consola es un módulo sin fecha. **La coexistencia app y API existe en Meta y es la vía que encaja**: Rubén escribiría desde su teléfono y el flujo recibiría el eco para callar al asistente; falta que el receptor de AAB1 entregue ese campo y una prueba con línea real que autoriza Andres (§5.4). |
 | **Qué hay que cambiar** | `planes.ts` (200/500/1.000, titularidad `comercio` por defecto), la consola de planes, `docs/base-comercial.md` (§6), el sitio, las bolsas nuevas en el servidor, y un aviso cuando la tarjeta de Meta del comercio falle (§7). |
 
 Todo lo de IA distinto de Flash-Lite sigue estimado, no medido; la batería contra Haiku está pedida y espera una cuota en Vertex o una credencial directa.
@@ -113,9 +113,17 @@ La ventana de 72 horas **no se promete hasta medirla** (`base-comercial` §6); e
 |---|---|---|
 | **Pasar con Rubén** | El asistente le avisa con el resumen del lead y le da al lead un botón para escribirle a su WhatsApp personal | **Existe** («pasar con recepción» con su número). Es lo que se ofrece desde el día uno |
 | **Bandeja en la consola** | Rubén responde por el mismo número desde la consola; el asistente se pausa para ese teléfono | **No existe.** Necesita el envío desde el servidor (F4), el estado por teléfono (F3b) y una pantalla. Módulo para todos; sin fecha |
-| **Coexistencia app y API** | El número queda a la vez en la aplicación del teléfono y en la API; cuando Rubén escribe desde la app, el flujo recibe el eco y calla al asistente | **En investigación** (WhatsApp-Modular, sesión de investigaciones, encargo de Andres del 09/10). El alta actual de AAB1 registra el número con PIN y lo saca de la app, así que hoy no la da. La prueba con una línea real la autoriza Andres en esa sesión |
+| **Coexistencia app y API** | El número queda a la vez en la aplicación del teléfono y en la API; cuando Rubén escribe desde la app, el flujo recibe el eco y calla al asistente | **Existe en Meta y es la que encaja** (investigación de WhatsApp-Modular del 09/10, documentación oficial): ver abajo |
 
-Lo que diga la investigación decide si Rubén puede intervenir desde su teléfono o si hay que construir la bandeja.
+**Lo que encontró la investigación (09/10, documentación oficial de Meta salvo donde se dice):**
+- **Cómo se activa:** por el registro integrado del Tech Provider (AAB1), con la aplicación WhatsApp Business ya instalada y en uso en el número; el cliente confirma un código en su teléfono. Dentro de las 24 horas hay que pedir contactos e historial, o el cliente se reincorpora. El historial se sincroniza una sola vez (hasta 180 días; multimedia, 14).
+- **Qué se pierde en la app:** grupos (no se admiten ni sincronizan), mensajes temporales, «ver una vez» y ubicación en vivo; las listas de difusión quedan en solo lectura.
+- **Cómo se pausa el asistente:** cuando el humano escribe desde la app, Meta manda el campo `smb_message_echoes` (texto, imagen, video, documento, edición y borrado). El flujo trata cada eco como «el humano está hablando en esa conversación» y calla; deduplica por id. **Ese campo admite el desvío por WABA, pero el receptor de AAB1 hoy solo entrega `messages`: hay que ampliarlo**, y lo hace la sesión principal de WhatsApp-Modular con autorización de Andres. Las desconexiones no pasan por el receptor.
+- **Costos:** lo que Rubén escriba desde la app es gratis; lo que envíe la API paga tarifa estándar. Si el eco cuenta en la franquicia: no documentado.
+- **Riesgos:** el número se desconecta si el teléfono principal no se usa unos 14 días; revertir exige el teléfono del dueño; hoy la página de alta de AAB1 falla con un alta de coexistencia (evento sin identificador del número; lo corrige WhatsApp-Modular). No verificado: países (un proveedor dice que Bolivia tiene soporte pleno), límites de mensajería y calidad, verificación del negocio y OBA en coexistencia.
+- **Falta la prueba con una línea real** (línea con al menos 7 días de uso en la app, un teléfono de Andres, con reversa). La autoriza Andres en la sesión de investigaciones de WhatsApp-Modular. Sin esa prueba, a Rubén se le promete «pasar con Rubén» y la coexistencia se le muestra como posibilidad.
+
+Informe completo: `WHATSAPP-MODULAR_investigacion-coexistencia_2026-10-09.md` en las descargas de Claude.
 
 ### 5.5 Qué hay que construir y cuándo
 
@@ -158,5 +166,5 @@ Propuesta de texto, para que Andres la apruebe y el agente `metodo` la aplique:
 - IA: Flash-Lite 0,004 USD por conversación (`Analisis/43` §8 más comprobante y audio); Haiku 0,0106 estimado con el mismo perfil de tokens. La batería contra Haiku está pedida (Operadora, 06/10); espera una cuota en Vertex o una credencial directa.
 - Meta: 0,0113 por mensaje de servicio o utilidad, 0,074 marketing, 1.000 gratis por número; ventana de 72 horas del punto de entrada por anuncio, sin promesa.
 - Impuestos 16 % del precio; infraestructura 21,82 USD al mes entre 10 comercios; sin impuesto a las utilidades ni retenciones por pagos al exterior.
-- Coexistencia: pendiente del informe de WhatsApp-Modular; la prueba con línea real pendiente de Andres.
+- Coexistencia: documentación leída (§5.4); faltan la ampliación del receptor y la prueba con línea real, que autoriza Andres.
 - Capacidad de n8n: `Analisis/49` §6; Rubén suma unas 4.500 ejecuciones conversacionales y 3.000 de seguimientos al mes, dentro de la holgura.
