@@ -41,6 +41,32 @@ manifiesto completo y declaración de mensajes; `fronteras.test.ts` lee los
 importa a otro sin `dependeDe`. Sin esas dos pruebas en verde nada se fusiona
 (`Analisis/41` §8.2).
 
+## El registro y el flujo propio de cada cliente (09/10/2026)
+
+El registro lista **módulos**; no lista las piezas propias de un cliente. Cada
+cliente tiene su flujo en `Flujos/clientes/<tenant>/` (regla completa en
+`tenants.md`, «El flujo de un cliente»): piezas propias declaradas en
+`PROPIO.md` más el **núcleo común obligatorio**, que se incluye desde core y
+módulos y nunca se copia. Lo que el registro y sus pruebas siguen haciendo
+cumplir es lo común; lo propio entra por su declaración.
+
+- **Compuerta futura, no vigente:** una prueba de CI que compare byte a byte lo
+  incluido contra la fuente del núcleo. No existe todavía; se construye en un PR
+  posterior y recién entonces cuenta como garantía.
+- **La segunda vez que otro cliente pide una pieza propia, pasa a módulo**: se
+  le abre manifiesto en el registro, con su versión.
+- **Barridos comunes** (un barrido por tipo que recorre los tenants): excepción
+  declarada a «flujo propio».
+- **Fuera de este documento y de este PR:** la versión por cliente en
+  `registro.ts`, las columnas de `docs/versiones-por-cliente.md`
+  (`estado-de-versiones.sh`) y el cambio de `fronteras.test.ts` para la nueva
+  carpeta. Los hace la coordinadora o un PR posterior.
+- **Dependencias de la zona «Flujo de cliente» (BORRADOR, propuesta del análisis
+  A, sin prueba todavía):** un flujo de cliente puede incluir core y módulos;
+  nada fuera de su carpeta puede incluirlo. Se agrega a `fronteras.test.ts`
+  cuando exista la zona (hoy `Flujos/experimental/` está fuera de zonas y de
+  esa prueba).
+
 ## registro.ts (F2, PR 1)
 
 **Dónde vive:** `admin/functions/src/registro.ts`, un solo archivo con

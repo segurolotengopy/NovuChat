@@ -58,6 +58,12 @@ retirado), `CLAUDE.md` §7 (todo límite se hace cumplir en el servidor).
 | **MÓDULOS** | Lo que **se enciende por tenant**, con su manifiesto, y que cualquier tenant puede combinar | NovuChat, un módulo a la vez, con una versión | Productos, Agenda, Pedidos, Cobros, Inventario, Campañas, Catálogo web, Captación, Menú interactivo |
 | **TENANTS** | **Datos** de un cliente: configuración, catálogo, variables del prompt, instrucciones extra verificadas, módulos encendidos. **Nunca código** | El comercio desde su consola; NovuChat desde Plataforma | `config/*`, `catalogo`, `funcionarios`, `Flujos/prompts/tenants/<t>.vars`, `CLIENTES/<T>/` |
 
+> **Enmienda 09/10/2026 (§6.5).** «Nunca código» se lee: nunca código *común*
+> ni lógica que otro cliente pueda necesitar. Las piezas propias de un cliente
+> que no existen como módulo viven declaradas en `Flujos/clientes/<tenant>/`
+> y se construyen sobre el núcleo común obligatorio, que se incluye y nunca se
+> copia.
+
 Dos piezas más, con nombre propio, porque Andres las pidió como categorías
 válidas:
 
@@ -91,6 +97,10 @@ en orden. La primera que dice «sí» decide la zona:
 3. ¿Lo ve **solo NovuChat** como operador? → **Plataforma.**
 4. ¿Se **enciende o apaga por tenant**, o tiene un límite por plan? → **Módulo.**
 5. ¿Es un **dato de un cliente**? → **Tenant.**
+   5 bis (09/10/2026). ¿Es una **pieza propia de UN cliente** que ningún otro
+   pide? → **Flujo de cliente** (`Flujos/clientes/<tenant>/`), con el núcleo
+   común incluido. Si otro cliente la pide por segunda vez, responde «sí» a la
+   pregunta 4 y pasa a módulo (§6.5).
 6. ¿No es ninguna, porque **conecta dos zonas** o **coordina** varias? →
    Coordinador o conector, y se nombra como tal.
 
@@ -434,6 +444,13 @@ Un archivo por fila; la columna «Va a» es la carpeta destino de la fase 2.
 
 ---
 
+> **Enmienda 09/10/2026 (§6.5).** Las filas «Los 19 nodos de Bellido» y
+> «`Flujos/<tenant>.json`: salida de construcción» se leen con la regla de
+> flujo propio por defecto: las piezas propias de un cliente viven en
+> `Flujos/clientes/<tenant>/`, sobre el núcleo común incluido (nunca copiado);
+> pasan a módulo cuando un segundo cliente las pide. Qué entra en F5 se
+> replantea antes de empezarla.
+
 ## 6. Decisiones que este documento fija, y las que quedan para Andres
 
 ### 6.1 Fijadas (de acuerdo con Andres el 25/09)
@@ -448,9 +465,16 @@ Un archivo por fila; la columna «Va a» es la carpeta destino de la fase 2.
    genérico firmado hacia n8n, **antes de Tech Provider**. Da un flujo por
    esqueleto en vez de por cliente sin esperar a Meta, y es la puerta de
    Messenger y Telegram.
+   *(Enmienda 09/10/2026: «un flujo por esqueleto» se lee con §6.5: cada
+   cliente tiene su flujo, compuesto por piezas propias más el núcleo común
+   incluido. F4 se replantea con la regla nueva antes de empezar.)*
 5. **Un tenant nunca posee código.** Lo que un cliente necesita y no existe
    nace como módulo con bandera. El JSON de un tenant es salida de
    construcción.
+   *(Enmienda 09/10/2026: la pieza propia de un solo cliente, que ningún otro
+   pide, vive declarada en `Flujos/clientes/<tenant>/` y no es código del
+   tenant en el sentido de esta regla; la segunda vez que otro la pide, nace
+   como módulo. Ver §6.5.)*
 6. **Vocabulario:** *módulo* reemplaza a *vertical*; *Cobros* es el comercio
    cobrando a su cliente y *Pagar* es NovuChat cobrando al comercio;
    *producción* reemplaza a *prepago* en la consola; *titularidad* nombra
@@ -529,6 +553,36 @@ como sub-nodo intercambiable» lo aprueba él.
 
 ---
 
+### 6.5 Decidida el 09/10: flujo propio por defecto
+
+**Decisión de Andres (09/10/2026).** Fuente única de la decisión y de su plan:
+`NOVUCHAT_flujo-propio-por-defecto-decision-y-plan_2026-10-09.md`.
+
+1. **Flujo propio = composición propia + núcleo común obligatorio.** Cada
+   cliente tiene sus piezas propias declaradas en `Flujos/clientes/<tenant>/`.
+   Lo común (sesión por `messages[0].from`, filtro de eventos, conteo, candado
+   por hecho, rótulos de cobro, `NIEGA_IA`, aviso con botón, uso extendido,
+   comercio no operativo, entrada verificada del receptor (verificador interno, `wabaIdEsperado` fijo, sin «Continue on Fail», repetidos descartados entre ejecuciones), normalización de entrada y filtro de promesas sin respaldo) se **incluye** desde core y módulos y **nunca se
+   copia**; una prueba de CI comparará byte a byte (compuerta futura, hoy no existe). La segunda vez que otro
+   cliente pide una pieza propia, pasa a módulo. Seguridad y protección se
+   aplican a todos sin excepción.
+2. **Barridos comunes.** Un barrido por tipo recorre los tenants: excepción
+   declarada a «flujo propio».
+3. **Un tenant con varios flujos.** Rubén Roca es un tenant con cuatro flujos
+   (dos tipos: citas y ventas).
+
+**Qué no cambia:** las reglas de seguridad y protección, el candado por hecho,
+«solo se ofrece lo que se cumple», el aislamiento entre empresas y los cero
+mensajes por conversación agregados o quitados (cada flujo propio declara los
+suyos).
+
+**Qué falta (nada de esto existe todavía):** la prueba de CI que compara lo
+común byte a byte y su fuente única; mudar `Flujos/experimental/` a
+`Flujos/clientes/<tenant>/` con su zona y su frontera; la columna de versión
+común por cliente. **F4 y F5 se replantean con esta regla antes de empezar.**
+El congelamiento del §12.10 (ningún código a medida durante la obra) queda a
+revisar al replantearlas: **decisión pendiente de Andres**.
+
 ## 7. El camino, por fases
 
 Cada fase declara qué toca, qué prueba la cubre, si despliega, cuántos
@@ -548,7 +602,7 @@ persona con Claude Code; con agentes en paralelo el calendario se comprime
 | **F2b Conectar el registro** | Las siete copias de la lista de flujos derivadas de `registro.ts`; `tenants.modulos` reemplaza a `flujos` en dos pasos (§6.2); `tieneModulo` en reglas; límite de agendas por plan; chequeos que faltan en inventario y catálogo | Cada pieza con su prueba negativa; `registro.test.ts` y `fronteras.test.ts` en verde; segundo seco de `migrar-ejes.mjs` en 0 | Sí (reglas y Functions), en ventana, con respaldo y vuelta atrás escrita | 1 a 1,5 | Desdoblada de F2 el 02/10/2026 (cierra **H2b**). Va con F3b o antes |
 | **F3a Esqueleto de venta** | Medios entrantes (audio, imagen, documento) en el core para los tres esqueletos, con categorías por módulo; transferencia con aviso y botón, y fallo del modelo con botón, en el esqueleto de venta y en captación; prohibición 4 en código en la variante común (`NIEGA_IA`); campaña por texto en venta; embudo único de salida; gancho de Inventario que respeta `agotado`; higiene de ids de credencial y de `REEMPLAZAR_*` (anexo A, brechas 1 a 6, 8 y 9) | Suites de A, B y captación; ensayo con teléfono real en el Demo B con audio, foto, PDF y foto sin contexto, y el caso «verbo no previsto y la herramienta sí corrió», con identificadores de ejecución | **Sí**, y publicación de Demo B y captación desde `main` | 2 | Después de H2. Es lo que Rubén Roca, Dhermacore y Q'Taco necesitan; los flujos de reservas ya lo tienen (anexo A). Cierra **H3a** y habilita **H4-Rubén** |
 | **F3b Core unificado** | Ganchos registrados en lugar de importaciones en `ingesta.ts`; una sola variante de `Normalizar entrada`, `Config del negocio`, `Procesar respuesta`, `Uso extendido`, `Comercio no operativo` para los tres esqueletos; prompt por capas (base + módulos + variables); estado de la conversación por teléfono en el servidor (§2.2); las suites importan `Flujos/src/` en vez de `new Function`; el corpus de captación sale del nodo; barrera de horas rechazadas en `modulos/agenda` | Suites de los cinco flujos y `candado-agenda`; ensayo en el Demo A; Bellido portado con `sincronizar-flujo-cliente.mjs --base` y ensayado antes de publicar | **Sí**, y publicación de los 8 flujos desde `main` en ventana; Bellido y Platinum re-aceptan solo el delta | 2 | Después de H3a. Ya no bloquea a ningún cliente. Cierra **H3b** |
-| **F4 Conector de canal** | Function receptora del webhook de Meta (firma con el App Secret por `phone_number_id`, deduplicación, descarga de medios, normalización) que llama a n8n por webhook genérico firmado; Function `enviar` con Secret Manager y traducción de opciones; `/rutas/{canal}/{id}`; `contactoId` con prefijo; el flujo cambia el disparador y quita los nodos de envío y descarga | Suites del conector (firma, deduplicación, degradación de opciones); ensayo real; latencia p50 medida antes y después (hoy 3,8 s) | **Sí**, con ventana de mantenimiento de 2 a 3 por número | 5 | Después del primer cliente, antes del quinto número |
+| **F4 Conector de canal** | Function receptora del webhook de Meta (firma con el App Secret por `phone_number_id`, deduplicación, descarga de medios, normalización) que llama a n8n por webhook genérico firmado; Function `enviar` con Secret Manager y traducción de opciones; `/rutas/{canal}/{id}`; `contactoId` con prefijo; el flujo cambia el disparador y quita los nodos de envío y descarga | Suites del conector (firma, deduplicación, degradación de opciones); ensayo real; latencia p50 medida antes y después (hoy 3,8 s) | **Sí**, con ventana de mantenimiento de 23:30 a 01:30 por número | 5 | Después del primer cliente, antes del quinto número |
 | **F5 Tenants como datos** | Los 19 nodos de Bellido pasan a `modulos/menu-interactivo/`; `platinum-flujo` y `bellido-flujo` se reparten en módulos y quedan pruebas de instancia; `docs/versiones-por-cliente.md` informa versión de módulo por tenant | Las mismas suites, repartidas, sin perder un caso | Publicación de Bellido y Platinum | 2 | Junto con F4 |
 | **F6 Método** | `docs/arquitectura/` por zona y módulo con índice de secciones viejas; `bitacora/` por mes y `ESTADO.md` corto; script de estado generado; `CLAUDE.md` solo invariantes; gancho de Claude Code para Edit y Write por carpeta; agentes por zona; separar pruebas puras de las del emulador | Revisión de Andres; el gancho probado con un intento fuera de carpeta | No | 1,5 | **Hecha el 26/09 (H6)** |
 
@@ -715,6 +769,9 @@ encontró mal en este documento.
    titularidad y módulos; variables del prompt; el flujo se ensambla y se
    publica. Si el alta necesita tocar código, se detiene: es un módulo que
    falta.
+   *(Enmienda 09/10/2026: si lo que falta es una pieza que solo este cliente
+   necesita, se declara en `Flujos/clientes/<tenant>/` sobre el núcleo común;
+   si otro cliente ya la pidió, es un módulo. Ver §6.5.)*
 4. **El estado se genera.** Etiqueta viva, Functions desplegadas, flujos
    publicados con su versión de módulos, tenants con su modalidad: un script
    lo imprime. Lo que se escribe a mano es lo que no se puede derivar:
@@ -917,6 +974,9 @@ en `admin/scripts/`.
   en el tenant** (es la misma pieza, antes); y nunca pasa por encima de un
   hotfix de seguridad o de protección ni de una fase en obra de la
   rearquitectura.
+  *(Enmienda 09/10/2026: la pieza propia de un solo cliente se declara en
+  `Flujos/clientes/<tenant>/` (§6.5); no es una excepción a esta regla, es
+  otra categoría.)*
 
 ### 12.6 Colisiones entre tenants: tres tipos, tres salidas
 
@@ -937,7 +997,7 @@ en `admin/scripts/`.
   nadie la llama), con auditoría de quién y cuándo.
 - **Cinco pasos fijos** para cualquier reclamo de falla: ejecuciones de n8n
   leídas; causa y severidad según el SLA §5; corrección como hotfix (severidad
-  1) o en la ventana de 02:00 a 03:00; publicación **a todos** con excepciones
+  1) o en la ventana de 23:30 a 01:30 (hora de Bolivia); publicación **a todos** con excepciones
   declaradas; **verificación con el cliente anotada en su `aceptacion.md`**.
 - **Errores de redacción del modelo** están excluidos por el SLA §11, pero un
   patrón que se repite es un pedido de barrera por hecho, y entra al §12.4.
