@@ -541,7 +541,8 @@ puede otorgárselo a sí mismo: la colección es de solo lectura desde el navega
 Desde el 09/10/2026 la misma ventana también abre los comprobantes de pago de
 ventas cotejadas (`verComprobante`, auditado con rol «soporte», mismo tope por
 usuario); hasta que exista la pantalla que otorga la ventana, ese acceso queda
-habilitado en el servidor pero inactivo.
+sin camino en la consola (la pantalla que otorga la ventana, con el texto de
+consentimiento que menciona los comprobantes, llegará aparte).
 
 **Sin el control.** El proveedor tiene lectura permanente y silenciosa sobre todos
 sus clientes.

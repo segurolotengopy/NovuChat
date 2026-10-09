@@ -82,7 +82,7 @@ export const esOperDe = (p: CallableRequest, tenantId: string): boolean =>
   && claimsDe(p).t[tenantId] === 'oper'
   && proveedorDe(p) === 'password' && correoVerificado(p);
 
-export const exigirPropietario =(p: CallableRequest): string => {
+export const exigirPropietario = (p: CallableRequest): string => {
   const uid = exigirAutenticado(p);
   if (!esPropietario(p)) throw new HttpsError('permission-denied', 'Solo NovuChat.');
   return uid;
