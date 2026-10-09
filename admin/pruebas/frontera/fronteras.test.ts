@@ -516,21 +516,24 @@ describe('deuda-solo-baja.mjs: el paso de CI que compara la deuda con la base', 
   });
 
   it('mover un archivo (misma cantidad, otra ruta) pasa si git lo muestra como renombre', () => {
-    const viejo = base.cruces[0].desde;
+    // La base lleva una entrada propia: la deuda real puede quedar sin ningún cruce (F3b-1b).
+    const conUno = { ...base, cruces: [{ desde: `${F}core/viejo.ts`, hacia: `${F}central/b.ts`, porque: 'entrada propia de la prueba' }] };
+    const viejo = conUno.cruces[0]!.desde;
     const nuevo = `${F}modulos/catalogo-web/catalogoWeb.ts`;
-    const pr = { ...base, cruces: base.cruces.map((c, i) => (i === 0 ? { ...c, desde: nuevo } : c)) };
+    const pr = { ...conUno, cruces: conUno.cruces.map((c, i) => (i === 0 ? { ...c, desde: nuevo } : c)) };
     const movidos = leerMovidos(`M\tadmin/functions/src/index.ts\nR097\t${viejo}\t${nuevo}\n`);
-    const r = comparar(base, pr, movidos);
+    const r = comparar(conUno, pr, movidos);
     expect(r.crecen).toEqual([]);
     expect(r.inexplicadas).toEqual([]);
-    expect(r.nuevas).toEqual([`cruce ${nuevo} → ${base.cruces[0].hacia}`]);
+    expect(r.nuevas).toEqual([`cruce ${nuevo} → ${conUno.cruces[0]!.hacia}`]);
     // Sin el renombre, la misma entrada no se explica.
-    expect(comparar(base, pr).inexplicadas).toHaveLength(1);
+    expect(comparar(conUno, pr).inexplicadas).toHaveLength(1);
   });
 
   it('saldar un cruce y anotar otro (misma cantidad) no pasa: canjear deuda no vale', () => {
-    const pr = { ...base, cruces: [...base.cruces.slice(1), { desde: `${F}core/x.ts`, hacia: `${F}modulos/agenda/y.ts`, porque: 'canje' }] };
-    const r = comparar(base, pr);
+    const conUno = { ...base, cruces: [{ desde: `${F}core/viejo.ts`, hacia: `${F}central/b.ts`, porque: 'entrada propia de la prueba' }] };
+    const pr = { ...conUno, cruces: [{ desde: `${F}core/x.ts`, hacia: `${F}modulos/agenda/y.ts`, porque: 'canje' }] };
+    const r = comparar(conUno, pr);
     expect(r.crecen).toEqual([]);
     expect(r.inexplicadas).toEqual([`cruce ${F}core/x.ts → ${F}modulos/agenda/y.ts`]);
   });

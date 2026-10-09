@@ -16,7 +16,8 @@ export { registrarCambioConfig } from './central/registrarCambioConfig.js';
 export { configuracionParaFlujo } from './central/negocio/configuracionParaFlujo.js';
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
-export { registrarCierre } from './core/turno/cierres.js';
+// F3b-1b: el endpoint lo arma `ganchos.ts` con los ganchos de Cobros y de Agenda sobre el contrato de Core.
+export { registrarCierre } from './ganchos.js';
 export { registrarQrDeCobro, imagenDeCobro } from './modulos/cobros/cobro.js';
 // COMPROBANTE DE PAGO DE VENTA, REGLA 2 (C1b, `cobros.md` §4duodecies.6): el
 // cotejo por plazo e intentos, la imagen guardada en Storage y la purga diaria.

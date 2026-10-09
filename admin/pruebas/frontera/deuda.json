@@ -5,13 +5,7 @@
     "En un PR, el CI compara cada lista con la de la base (deuda-solo-baja.mjs, en esta carpeta) y falla si alguna crece.",
     "Mover un archivo cambia la ruta de su entrada, no la cantidad. Lo edita solo la coordinadora (docs/arquitectura/agentes.md)."
   ],
-  "cruces": [
-    {
-      "desde": "admin/functions/src/core/turno/cierres.ts",
-      "hacia": "admin/functions/src/ingesta.ts",
-      "porque": "Lo deshace F3b-1b con ganchos inyectados en registrarCierre (crearRegistrarCierre): nadie importa ingesta.ts. Hoy importa solicitudTras y cierreDeVentaLoHaceElCotejo, que viven en modulos/agenda/solicitud.ts desde F3b-1a y ingesta.ts reexporta"
-    }
-  ],
+  "cruces": [],
   "sinZona": [],
   "sinResolver": {},
   "transversales": [

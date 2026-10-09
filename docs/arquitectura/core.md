@@ -51,7 +51,7 @@ implementación actual del pipeline de turno. Los cuatro contratos:
 |---|---|---|
 | `firma.ts`, `claims.ts`, `autorizacion.ts` | `functions/src/core/seguridad/` | `claims.ts` es el único emisor de claims |
 | `atencion.ts` | `core/conteo/` | Ventana, bloque, umbrales |
-| `cierres.ts` | `core/turno/` | Contrato de cierre |
+| `cierres.ts` | `core/turno/` | Contrato de cierre; desde F3b-1b es `crearRegistrarCierre(ganchos)` y no importa nada de arriba: los ganchos de Cobros y Agenda los inyecta `ganchos.ts` (`coordinador.md`) |
 | `ingesta.ts` | `core/turno/`, **se parte** | Coordinador + ganchos que vuelven a sus módulos |
 | `prompt.ts` | `core/prompt/`, **se parte** | La base es core; el resumen del catálogo va a Productos; `documentoDeVertical` desaparece |
 | `region.ts`, `opcionesGlobales.ts` | `core/` | |

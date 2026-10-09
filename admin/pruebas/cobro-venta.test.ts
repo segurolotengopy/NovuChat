@@ -39,7 +39,7 @@ const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { ingesta, configuracionFlujo } = await import('../functions/src/ingesta.ts');
 const { cotejarComprobante } = await import('../functions/src/modulos/agenda/sena.ts');
-const { registrarCierre } = await import('../functions/src/core/turno/cierres.ts');
+const { registrarCierre } = await import('../functions/src/ganchos.ts');
 const { imagenDeCobro, registrarQrDeCobro } = await import('../functions/src/modulos/cobros/cobro.ts');
 const {
   MINUTOS_QR_VENTA, cobroParaElFlujo, detalleDeLaVenta, esperadoDeLaVenta,

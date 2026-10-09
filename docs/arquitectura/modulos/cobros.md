@@ -467,10 +467,10 @@ y `ingesta.ts` entiende `reglaCobro`, `cobro_cancelado` y `anulacion_avisada`
 y llama a `solicitudDeCobroTras` en todo `qr_enviado` (obligaciones (a) y (b));
 `solicitudTras` no pasa a `agendada` una regla 2 en `en_revision`, `cancelada`
 o vencida, escrita o por reloj (obligación (c)), con el predicado puro exportado
-`cierreBloqueadoPorCobro(previa, ahoraMs)` de `ingesta.ts`, **`en_revision` bloquea
+`cierreBloqueadoPorCobro(previa, ahoraMs)` de `modulos/cobros/alCierre.ts` (F3b-1b; `ingesta.ts` lo reexporta), **`en_revision` bloquea
 siempre** (no vence por reloj: lo resuelve una persona) y `cancelada`, `vencida` y
 `qr_enviado` vencido, **solo mientras sigue siendo ese caso** (hasta 24 h después
-del límite efectivo): pasado ese plazo es otra conversación y `cita_agendada`
+del límite efectivo, `MS_VENTANA_DEL_CASO`, la misma constante que usa `solicitudDeCobroTras`): pasado ese plazo es otra conversación y `cita_agendada`
 crea su solicitud `agendada` con `CAMPOS_REGLA_2_EN_NULO`. `registrarCierre` (`core/turno/cierres.ts`), con `tipo: 'venta'`, regla 2 y
 **cobro real activo** (`config/venta.cobroReal`: encendido, con ficha y código),
 responde 409 y no crea cierre ni suma `cierres` si el cobro está a tiempo
@@ -503,6 +503,12 @@ un recordatorio.
   con otra `referencia` sobre una solicitud ya `agendada` por el cotejo contaría
   dos veces (seguimiento declarado, no implementado).
 
-**Deuda para F3b.** Hoy Core (`registrarCierre`) lee `config/venta` y conoce la
-regla 2; sale cuando F3b inyecte ganchos (el gancho `alCierre` de Cobros ya está
-en el manifiesto).
+**Deuda para F3b: saldada en F3b-1b (05/10/2026).** Core (`registrarCierre`) ya
+no lee `config/venta` por su cuenta ni conoce la regla 2: recibe el gancho de
+Cobros, `COBRO_AL_CIERRE` (`modulos/cobros/alCierre.ts`: `cobroRealActivo(leer)`,
+que lee `config/venta` por el lector de solo lectura anclado al tenant de la
+firma, y `cierreDeVentaLoHaceElCotejo`), inyectado por `ganchos.ts`. El gancho
+`alCierre` de Cobros está declarado en el manifiesto de `registro.ts`. El
+comportamiento es el mismo (409, 400 y la solicitud sin mover, probados por
+`pruebas/cobro-v2-ingesta.test.ts`, `pruebas/cobro-venta.test.ts` y
+`pruebas/core/cierres-ganchos.test.ts`); ver `coordinador.md`, «El cierre».

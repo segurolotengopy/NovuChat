@@ -210,15 +210,20 @@ export const REGISTRO = [
     flujosProgramados: [],
     // Corregido respecto del diseño (que decía solo `despuesDelTurno`):
     // `configuracionFlujo` arma el cobro con `cobroParaElFlujo` (antes del
-    // turno) e `ingesta` valida el monto con `totalUtilizable` (después).
-    ganchos: ['antesDelTurno', 'despuesDelTurno'],
+    // turno) e `ingesta` valida el monto con `totalUtilizable` (después). Al
+    // cierre (F3b-1b): `modulos/cobros/alCierre.ts` decide si una venta con cobro
+    // real la cierra el cotejo del comprobante y no `registrarCierre`
+    // (`COBRO_AL_CIERRE`, que `ganchos.ts` inyecta en el endpoint de Core).
+    ganchos: ['antesDelTurno', 'despuesDelTurno', 'alCierre'],
     mensajes: 0,
   },
   {
     modulo: 'agenda',
     nombre: 'Agenda',
     version: 1,
-    // Solo para la seña: `sena.ts` importa `cotejo.ts` y `cobroVenta.ts`.
+    // Para la seña y la solicitud: `sena.ts` importa `cotejo.ts` y `cobroVenta.ts`,
+    // y `solicitud.ts` importa los predicados de la regla 2 de `cobros/alCierre.ts`
+    // (F3b-1b); `agenda/alCierre.ts` importa solo `solicitud.ts`.
     dependeDe: ['cobros'],
     configuracion: [
       {
@@ -250,7 +255,8 @@ export const REGISTRO = [
     ],
     // Agregado `antesDelTurno` respecto del diseño: `configuracionFlujo` lee
     // `funcionarios` para el contexto. Después: la retención de la seña
-    // (`senaVencidaPorTiempo`). Al cierre: la cita. Programado: recordatorios,
+    // (`senaVencidaPorTiempo`). Al cierre: la cita (`alCierre.ts`: la solicitud
+    // queda `agendada`). Programado: recordatorios,
     // seguimientos y señas vencidas.
     ganchos: ['antesDelTurno', 'despuesDelTurno', 'alCierre', 'programado'],
     mensajes: 0,

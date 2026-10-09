@@ -189,8 +189,17 @@ export interface CobroParaElFlujo {
   anulado: { pedido: string | null; haceMin: number } | null;
 }
 
-/** La ventana en la que un pago tardío sigue siendo ESTE caso y no otra conversación. */
-const MINUTOS_DE_UN_DIA = 24 * 60;
+/**
+ * La ventana en la que un pago tardío sigue siendo ESTE caso y no otra
+ * conversación: 24 h contadas desde el límite efectivo. Es UNA constante porque
+ * la usan dos decisiones que tienen que coincidir al milisegundo: la de
+ * `solicitudDeCobroTras` (un comprobante tardío es `tardio` hasta aquí, y `sin_cobro`
+ * después) y la de `cierreBloqueadoPorCobro` (`alCierre.ts`: un cierre de cita no
+ * mueve el cobro hasta aquí). F3b-1b la sacó de `agenda/solicitud.ts`, donde
+ * había una copia (`MS_VENTANA_COBRO`).
+ */
+export const MS_VENTANA_DEL_CASO = 24 * 3_600_000;
+const MINUTOS_DE_UN_DIA = MS_VENTANA_DEL_CASO / 60_000;
 
 /** Milisegundos de un Timestamp de Firestore, de un ISO o de un número. */
 function ms(v: unknown): number | null {

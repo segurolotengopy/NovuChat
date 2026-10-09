@@ -138,9 +138,10 @@ otro solo si lo declara, directa o indirectamente, en `dependeDe`.
 
 **La deuda conocida, que solo se achica:** los 19 cruces que existían el
 26/09 estaban en la prueba, uno por uno, con lo que los saca. Al cierre de F2
-quedan 3, los tres hacia `ingesta.ts` (`core/turno/cierres.ts`,
-`modulos/agenda/seguimientos.ts` y `modulos/agenda/sena.ts`), que deshace el
-coordinador de F3. Un cruce nuevo falla; una entrada cuyo cruce ya no existe
+quedaban 3, los tres hacia `ingesta.ts` (`core/turno/cierres.ts`,
+`modulos/agenda/seguimientos.ts` y `modulos/agenda/sena.ts`); F3b-1a (05/10)
+la bajó a 1 y **F3b-1b la deja en 0**: `registrarCierre` recibe sus ganchos de
+`ganchos.ts` (`coordinador.md`, «El cierre»). Un cruce nuevo falla; una entrada cuyo cruce ya no existe
 también falla, para que se saque. Los **archivos sin zona fuera de las
 pruebas** eran 42 el 26/09, 47 el 28/09 y son 0 al cierre: es una lista exacta, no un número (ubicar uno y
 agregar otro no se compensan), y está vacía.
