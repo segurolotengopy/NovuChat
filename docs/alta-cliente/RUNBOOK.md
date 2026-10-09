@@ -22,8 +22,8 @@ ahí va su ficha (`ficha.md`, desde `plantilla-ficha.md`) y su estado
 |---|---|---|---|
 | 0 · Preparar | Carpeta del cliente, ficha, decisiones | agente `alta-cliente` | `/alta-cliente` con `fase: preparar` |
 | 1 · Chip | Comprobar que el número no tenga WhatsApp | persona | — |
-| 2 · Meta | Portafolio, app, WABA, número, token, plantilla | persona, guiada por `meta-whatsapp` | — |
-| 3 · Canal | Entorno `.env.<cliente>` y verificación | persona (secretos) + `meta-whatsapp` | `fase: canal` |
+| 2 · Meta | Alta por `wa.aab1.website/alta`: portafolio, WABA, número, método de pago (ya no app, usuario de sistema ni token por cliente) | persona, guiada por `meta-whatsapp` | — |
+| 3 · Canal | Entorno `.env.<cliente>` y verificación (**DECISIÓN PENDIENTE**, ver la etapa 3) | persona (secretos) + `meta-whatsapp` | `fase: canal` |
 | 4 · Plataforma | Comercio, administrador, número y alias | `plataforma`, con confirmación | `fase: plataforma` |
 | 5 · Flujo | JSON del flujo, pruebas, importación | `flujos-n8n`, con confirmación | `fase: flujo` |
 | 6 · Aceptación | Dos teléfonos, suite completa | persona | — |
@@ -40,7 +40,10 @@ un secreto: eso lo hace una persona.
 
 - Copiar `docs/alta-cliente/plantilla-ficha.md` a `CLIENTES/<NOMBRE>/ficha.md`.
 - Decidir con el cliente: **un flujo por número** (agendamiento, venta,
-  onboarding), chip nuevo **a nombre del cliente**, portafolio **del cliente**
+  onboarding), que es su **flujo propio**: piezas propias en
+  `Flujos/clientes/<tenant>/` más el núcleo común obligatorio, incluido y nunca
+  copiado (etapa 5; un cliente con dos tipos de negocio es un tenant con
+  varios flujos, no varios tenants), chip nuevo **a nombre del cliente**, portafolio **del cliente**
   y el **nombre visible definitivo**, que es el nombre del portafolio.
 - Pedir con anticipación: cuenta personal de Facebook del dueño, datos completos
   del negocio (nombre, dirección, correo, web o red social), foto cuadrada,
@@ -59,21 +62,51 @@ un secreto: eso lo hace una persona.
 
 ## 2 · Meta (con el cliente, en su portafolio)
 
-| Paso | Tropiezo conocido |
+**Decisión de Andres del 08/10/2026: todos los clientes van por AAB1 y el alta
+se hace solo por `wa.aab1.website/alta`** (portafolio, WABA, número, método de
+pago). NovuChat envía con el **token del alta de AAB1** (usuario de sistema con
+alcance de **una sola WABA** del cliente, sin vencimiento). **Ya no se pide al
+cliente** crear una app, un usuario de sistema ni un token propios, ni
+**asignar a NovuChat como socio** de su WABA. Las operaciones sobre el receptor
+las ejecuta la sesión de WhatsApp-Modular con autorización de Andres
+(`CLAUDE.md`, prohibición 5).
+
+Los pasos que siguen se **conservan tal como estaban**, en dos tablas: lo que
+sigue vigente y lo que esa decisión retiró (con su tropiezo conocido, por si
+alguna vez se vuelve a necesitar).
+
+**DECISIÓN PENDIENTE** (el 08/10 no la resolvió): quién crea la plantilla del
+aviso interno y con qué token; si `subscribed_apps` sigue siendo un paso por
+cliente; y cómo llega el token del alta a NovuChat (lo resuelve
+WhatsApp-Modular, sin imprimir el valor).
+
+| Paso vigente | Tropiezo conocido |
 |---|---|
-| App `<Cliente>-Asistente` | Nombres con **un guion como mucho**; sin la palabra «WhatsApp» |
 | WhatsApp → WABA | Una app nueva en un portafolio con WABA **se cuelga de la existente**. Crear WABA nueva en Configuración → Cuentas → Cuentas de WhatsApp y **comparar su ID** con los de los demás entornos |
 | Número | «Ya está en uso» = tiene cuenta de WhatsApp: volver a la etapa 1 |
 | PIN de dos pasos | Administrador de WhatsApp → Números → el número → Verificación en dos pasos. Al gestor y por escrito |
-| Live | Se llama **Publicar**, en el menú izquierdo. Privacidad y borrado de datos: `https://novuchat.site/privacidad` |
-| Usuario de sistema | Sin verificar, el portafolio admite **un solo administrador** de sistema: crear como **Empleado**, con control total de la app y **solo** su WABA |
-| Token | Vencimiento **Nunca**, permisos `whatsapp_business_messaging` y `whatsapp_business_management`. Los alcances salen vacíos en `debug_token`: la prueba es listar los números de la WABA. «Revocar» invalida **todos**: hacerlo antes de cargarlo en n8n |
-| `subscribed_apps` | No tiene pantalla: `verificar-meta.sh --suscribir` |
 | Método de pago | En la WABA, con alerta de gasto: desde el 01/10 Meta cobra cada mensaje |
 | Plantilla del aviso interno | Utilidad, redactada como **aviso de una solicitud existente** (sin «prospecto», «interés», «atención»); **sin botones** (Meta prohíbe `wa.me` en botones); validez personalizada al máximo |
 | Nombre visible | **Decidirlo antes de agregar el número**: sale del nombre del portafolio, y cambiarlo después tiene cupo mensual (NovuChat lo agotó reintentando). Se pide **una vez y no se reintenta**: la pantalla sigue mostrando el viejo con «Editar» gris aunque Meta ya aprobó el nuevo. El estado real lo da `verificar-meta.sh` (nombre vigente y cambio pedido) |
 
+**Retirado el 08/10/2026 (ya no se pide por cliente):**
+
+| Paso retirado | Tropiezo conocido |
+|---|---|
+| App `<Cliente>-Asistente` | Nombres con **un guion como mucho**; sin la palabra «WhatsApp» |
+| Live | Se llama **Publicar**, en el menú izquierdo. Privacidad y borrado de datos: `https://novuchat.site/privacidad` |
+| Usuario de sistema | Sin verificar, el portafolio admite **un solo administrador** de sistema: crear como **Empleado**, con control total de la app y **solo** su WABA |
+| Token | Vencimiento **Nunca**, permisos `whatsapp_business_messaging` y `whatsapp_business_management`. Los alcances salen vacíos en `debug_token`: la prueba es listar los números de la WABA. «Revocar» invalida **todos**: hacerlo antes de cargarlo en n8n |
+| `subscribed_apps` | **DECISIÓN PENDIENTE** (arriba). Antes: no tiene pantalla, `verificar-meta.sh --suscribir` |
+
 ## 3 · Canal
+
+**DECISIÓN PENDIENTE:** el bloque de abajo se escribió para un token y una app
+por cliente (`.env.<cliente>`). Con la decisión del 08/10 (etapa 2), el
+procedimiento que lo reemplaza —qué entorno lleva el cliente, qué verifica
+`verificar-meta.sh` y cómo llega el token del alta a NovuChat— no está definido
+en la fuente de la decisión y no se inventa acá. Hasta entonces, el bloque
+sigue siendo lo que hace el script hoy.
 
 ```bash
 ./scripts/configurar-cliente.sh --cliente <NOMBRE> --dir ~/NovuChat
@@ -253,10 +286,30 @@ node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operado
 
 ## 5 · Flujo
 
+**Regla de flujo propio por defecto** (decisión de Andres del 09/10/2026;
+`docs/arquitectura/tenants.md`, «El flujo de un cliente»): cada cliente tiene
+su flujo, compuesto por **piezas propias** declaradas en
+`Flujos/clientes/<tenant>/` (con `PROPIO.md`, que declara los mensajes por
+conversación que agregan o quitan) más el **núcleo común obligatorio** —sesión
+por `messages[0].from`, filtro de eventos, conteo, candado por hecho, rótulos
+de cobro, `NIEGA_IA`, aviso con botón, uso extendido, comercio no operativo—,
+que se **incluye** desde core y módulos y **nunca se copia**.
+
+- Una prueba de CI comparará byte a byte lo incluido contra su fuente. **No
+  existe todavía** (PR posterior): hasta entonces, quien arma el flujo verifica
+  a mano que no copió el núcleo, y el revisor lo mira.
+- La **segunda vez** que otro cliente pide una pieza propia, pasa a módulo.
+- Seguridad y protección valen para todos sin excepción.
+- Un cliente con dos tipos de negocio (el caso de Rubén Roca: citas y ventas)
+  es **un tenant con varios flujos** (cuatro en ese caso), no varios tenants.
+- Los barridos comunes (uno por tipo, que recorre los tenants) no son flujos de
+  cliente: son la excepción declarada.
+
 1. **Sincronizar con `main` antes de nada:** los mecanismos comunes cambian en
    paralelo (umbrales del servidor, orden de reporte, avisos). Revisar
    `git log origin/main -- Flujos/ admin/functions/src/` y partir del flujo
-   vigente de ese vertical.
+   vigente de los módulos que el cliente enciende (no del JSON de otro
+   cliente: «basado en» es basarse en funcionalidades, `CLAUDE.md`).
 2. Un flujo nuevo trae su suite en `admin/pruebas/` (el JSON versionado se
    ejecuta), queda saneado (`REEMPLAZAR_*`) y pasa `verificar-saneo.sh`.
 3. `./scripts/preparar-import.sh Flujos/<flujo>.json .env.<cliente>` — **con**
@@ -268,6 +321,12 @@ node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operado
 4. En n8n: importar, credenciales, `Trigger On` = Messages, **Publish**. URL de
    Production al webhook de la app del cliente. Completar `N8N_WEBHOOK_*` y
    `N8N_WORKFLOW_ID` en `.env.<cliente>`: `verificar-meta.sh` con cuatro verdes.
+   **DECISIÓN PENDIENTE:** este paso supone una app propia del cliente y su
+   webhook. Con la decisión del 08/10 (etapa 2) los mensajes llegan por la
+   salida del receptor de AAB1, y **nunca** un WhatsApp Trigger con
+   credenciales de AAB1-WA-Prod (`CLAUDE.md`, prohibición 7). Cómo se arma la
+   entrada del flujo de cada cliente en ese esquema no está definido en la
+   fuente de la decisión: lo resuelve quien la defina con WhatsApp-Modular.
 
 ## 6 · Aceptación (dos teléfonos, resultado REAL en `CLIENTES/<NOMBRE>/estado.md`)
 

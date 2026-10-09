@@ -179,6 +179,7 @@ zona, y la zona es la carpeta:
 | **Plataforma** | Lo que ve NovuChat como operador: Negocios, alta, baja, suspensión, los tres ejes de la cuenta | NovuChat |
 | **Módulos** | Lo que se enciende por tenant, con su manifiesto: Productos, Agenda, Pedidos, Cobros, Inventario, Campañas, Catálogo web, Captación, Menú interactivo | NovuChat, un módulo a la vez, con una versión |
 | **Tenants** | Datos de un cliente. **Nunca código** | El comercio desde su consola; NovuChat desde Plataforma |
+| **Flujo de cliente** | Las piezas propias de un cliente (`Flujos/clientes/<tenant>/`) sobre el núcleo común obligatorio | NovuChat; la segunda vez que otro cliente pide una pieza, pasa a módulo |
 
 Más dos piezas con nombre: el **coordinador de turno** (el único código que
 conoce a todas las zonas, y solo a través del registro) y el **registro de
@@ -195,9 +196,17 @@ Functions, consola y ensamblador).
   **`registro.test.ts`** (cada documento, colección, pestaña y límite del
   registro tiene su regla y su prueba negativa). Sin esas dos pruebas en verde
   nada se fusiona (§8.2).
-- **Un tenant nunca posee código.** Lo que un cliente necesita y no existe
-  nace como módulo con bandera, para todos. El JSON de un tenant es salida de
-  construcción. Nunca un texto ni un nombre de cliente en código común.
+- **Los datos de un tenant nunca son código; su flujo sí es propio.** Cada
+  cliente tiene su flujo en `Flujos/clientes/<tenant>/`: piezas propias
+  declaradas en `PROPIO.md` más el **núcleo común obligatorio** —sesión por
+  `messages[0].from`, filtro de eventos, conteo, candado por hecho, rótulos de
+  cobro, `NIEGA_IA`, aviso con botón, uso extendido, comercio no operativo—,
+  que se **incluye** desde core y módulos y **nunca se copia** (una prueba de
+  CI lo comparará byte a byte: compuerta futura, hoy no existe). La segunda vez
+  que otro cliente pide una pieza propia, pasa a módulo. Seguridad y
+  protección valen para todos sin excepción. Los barridos comunes (uno por
+  tipo, que recorre los tenants) son la excepción declarada. Nunca un texto ni
+  un nombre de cliente en código común.
 - **Cada agente escribe solo en su zona**, y el gancho
   `.claude/hooks/zona-de-escritura.sh` (sobre `Edit` y `Write`, con la zona
   en `.claude/zona` del worktree o en `NOVUCHAT_ZONA`) lo rechaza si no. Las
@@ -248,9 +257,8 @@ código.
 - Antes de dar algo por terminado, probarlo contra un teléfono real y
   reportar el resultado **real**, no el esperado.
 - **Nunca editar a mano el flujo de un cliente.** Se edita el JSON versionado y
-  se reaplica con `publicar-flujo.sh`. Hoy hay un flujo por cliente —lo obliga
-  la credencial del disparador, porque cada app de Meta tiene un solo webhook—.
-  Ver `Analisis/20`.
+  se reaplica con `publicar-flujo.sh`. Cada cliente tiene su flujo propio (ver
+  «Flujo de cliente» en la regla de zonas; antecedente en `Analisis/20`).
 - **Un cambio se aplica PREFERENTEMENTE A TODOS, y toda excepción se registra**
   (Andres, 24/09/2026; antes decía «a todos o a ninguno»). El motivo del cambio
   es que empezamos a sacar **productos empaquetados**: un cliente puede quedarse

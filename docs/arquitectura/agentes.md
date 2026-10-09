@@ -55,6 +55,15 @@ revisora; antes figuraban como «sin dueño»):
 
 **Nota sobre `.github/`:** la zona de `devsecops` sobre `.github/` la fija quien lo lanza (`NOVUCHAT_ZONA=".github/"` o `.claude/zona`). Mientras su ficha no la declare, `.github/` solo está protegido por CODEOWNERS y la revisión humana: limitación conocida, ya observada por `seguridad`. Sin zona, el gancho no restringe a `devsecops` en ninguna carpeta: puede escribir en todo el repositorio, no solo en `.github/`. Y CODEOWNERS tiene un único propietario (`docs/arquitectura/registro.md`, «Hasta dónde protege»), así que la barrera real es la revisión humana de Andres.
 
+**Zona sin dueño declarada (09/10/2026): `Flujos/clientes/<tenant>/`.** La regla
+de «flujo propio por defecto» (`tenants.md`, «El flujo de un cliente») crea la
+zona «Flujo de cliente», que hoy no está en la zona de ningún agente.
+**DECISIÓN PENDIENTE:** quién la escribe (un agente nuevo, `core-flujos`
+ampliado o la coordinadora). Hasta que Andres lo decida, no se la agrega a
+ninguna fila y se declara en el PR; el gancho no cambia (una zona por
+prefijo de carpeta, p. ej. `Flujos/clientes/<tenant>/` para un agente de un
+solo cliente).
+
 El gancho no cambia: aplica la zona que fija quien lanza al agente, y esta
 tabla es la fuente de qué prefijos se le dan. Lo que ningún agente tiene en su
 zona sigue declarándose en el PR y lo cubre la revisión humana.

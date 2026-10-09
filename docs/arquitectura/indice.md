@@ -16,7 +16,7 @@
 | `plataforma.md` | Lo que ve NovuChat como operador: Negocios, alta, baja, suspensión, ejes |
 | `modulos.md` | La zona de módulos y el esquema del manifiesto |
 | `modulos/<m>.md` | Un manifiesto en prosa por módulo: productos, agenda, pedidos, cobros, inventario, campanas, catalogo-web, captacion, menu-interactivo |
-| `tenants.md` | Datos de un cliente, nunca código |
+| `tenants.md` | Datos de un cliente, nunca código; y la regla del flujo propio de cada cliente (`Flujos/clientes/<tenant>/` más el núcleo común obligatorio) |
 | `coordinador.md` | El coordinador de turno: las dos llamadas y los ganchos |
 | `registro.md` | El registro de módulos, la frontera de zonas, cómo se mueven archivos entre zonas y la política de capas que reemplaza |
 | `limites.md` | La tabla de límites comerciales y dónde se hace cumplir cada uno (copia del §7 de la base comercial) |
@@ -140,5 +140,10 @@ cita sigue resolviéndose.
 
 ## Documentos agregados
 
+- `docs/arquitectura/tenants.md`, sección «El flujo de un cliente» (09/10/2026):
+  la regla de flujo propio por defecto, que reconcilia `Analisis/41` §6.1.5
+  («un tenant nunca posee código») con el flujo propio de cada cliente. Las
+  secciones de `Analisis/41` que chocan (§1.1, §1.3, §5.4, §6.1.4, §6.1.5, §9.3,
+  §12.5, §12.10) son de la revisora y no se editan desde acá.
 - `docs/arquitectura/consola-oculta.md`: la lista `consolaOculta` por comercio
   (presentación, no límite), el script que la escribe y qué oculta cada id.

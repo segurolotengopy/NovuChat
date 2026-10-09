@@ -10,8 +10,8 @@
 >
 > Cambios de la v1, los dos en el §8:
 >
-> 1. Dice **cuándo** se aplican los cambios —la ventana diaria de 02:00 a 03:00,
->    fuera del horario cubierto— y separa esa aplicación, que no interrumpe el
+> 1. Dice **cuándo** se aplican los cambios —la ventana diaria de 23:30 a 01:30
+>    (cruza la medianoche), fuera del horario cubierto— y separa esa aplicación, que no interrumpe el
 >    servicio, del mantenimiento programado que sí lo interrumpe y se anuncia
 >    con 24 horas. No agrega ningún compromiso nuevo: le pone hora a lo que la
 >    v1 ya exigía hacer fuera del horario cubierto.
@@ -22,6 +22,12 @@
 >    diferencia se registra y se comunica— y **retiene sin excepción** las
 >    correcciones de seguridad y las reglas que protegen al paciente o al
 >    comprador. Es una promesa más chica, pero es la que se cumple.
+>
+> **Ajuste del 09/10/2026 (decisión de Andres del 07/10):** la ventana diaria
+> de los cambios pasa de 02:00–03:00 a **23:30–01:30, hora de Bolivia**, porque a
+> esas horas los códigos QR fallan y los bancos restringen los pagos. Sigue
+> fuera del horario cubierto. `[DECISIÓN PENDIENTE: si este ajuste sube la
+> versión del anexo y cómo se comunica a los clientes que ya firmaron, §13.]`
 >
 > **Regla de mantenimiento de esta plantilla:** no se agrega ningún compromiso
 > que el sistema no cumpla hoy. Cuando un prerrequisito de `Analisis/37` §5 se
@@ -184,8 +190,8 @@ se suman al saldo del Cliente. No se pagan en dinero.
   queda distinto, por qué, y qué haría falta para ponerlo al día. **Ninguna
   corrección de seguridad ni de las reglas que protegen al paciente o al
   comprador queda fuera**, en ninguna versión.
-- **Cuándo se aplican:** en la **ventana diaria de 02:00 a 03:00, hora de
-  Bolivia**, que está fuera del horario cubierto y solo se abre cuando hay algo
+- **Cuándo se aplican:** en la **ventana diaria de 23:30 a 01:30, hora de
+  Bolivia** (cruza la medianoche: dos horas), que está fuera del horario cubierto y solo se abre cuando hay algo
   que aplicar. La actualización se hace sobre el asistente en funcionamiento y
   **no interrumpe el servicio**: dura segundos y no cambia el número ni la
   conversación en curso. Por eso **no se anuncia ni se interrumpe a quien

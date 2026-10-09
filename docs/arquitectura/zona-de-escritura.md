@@ -95,6 +95,12 @@ agente de `.claude/agents/` (`central`, `core-functions`, `core-flujos`,
 `modulo`, `consola`, `plataforma-consola`, `metodo`,
 `analista-de-solicitudes`).
 
+La zona «Flujo de cliente» (`Flujos/clientes/<tenant>/`, regla del 09/10/2026
+en `tenants.md`) se expresa con el mismo prefijo de carpeta; el gancho no
+cambia. Quién la tiene en su zona es una **DECISIÓN PENDIENTE** (`agentes.md`).
+Que la carpeta todavía no exista no impide declarar el prefijo: se rechaza o
+acepta como cualquier otro.
+
 ## Rutas, `..` y enlaces simbólicos
 
 Destino y prefijos se resuelven con `realpath`; cuando el archivo todavía no
