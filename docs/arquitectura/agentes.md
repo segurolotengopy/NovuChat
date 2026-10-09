@@ -61,7 +61,12 @@ zona. Su dueño es `flujos-n8n` (indicado por la sesión Principal el 09/10), qu
 escribe además `admin/pruebas/tenants/<t>/` y `admin/scripts/datos/<t>/`. La
 ficha de `flujos-n8n` en `.claude/agents/` todavía no declara esta zona: se
 agrega en un cambio aparte, con revisión humana de Andres. El gancho no cambia
-(una zona por prefijo de carpeta).
+(una zona por prefijo de carpeta). **Cuando se cree la zona se fija por tenant:** los
+prefijos son exactamente `Flujos/clientes/<t>/`, `admin/pruebas/tenants/<t>/`,
+`admin/scripts/datos/<t>/` y, como archivo exacto, `Flujos/<t>.json`; nunca
+`Flujos/clientes/` ni `Flujos/` a secas, y el lanzador falla si no hay zona. El
+gancho necesitará casos negativos (zona de A escribiendo en `clientes/B/`, en
+`clientes/A-x/` y en `Flujos/src/`).
 
 El gancho no cambia: aplica la zona que fija quien lanza al agente, y esta
 tabla es la fuente de qué prefijos se le dan. Lo que ningún agente tiene en su

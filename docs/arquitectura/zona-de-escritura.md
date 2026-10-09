@@ -97,7 +97,7 @@ agente de `.claude/agents/` (`central`, `core-functions`, `core-flujos`,
 
 La zona «Flujo de cliente» (`Flujos/clientes/<tenant>/`, regla del 09/10/2026
 en `tenants.md`) se expresa con el mismo prefijo de carpeta; el gancho no
-cambia. La tiene `flujos-n8n`, con `admin/pruebas/tenants/<t>/` y `admin/scripts/datos/<t>/` (ver `agentes.md`).
+cambia. La tiene `flujos-n8n`, con `admin/pruebas/tenants/<t>/` y `admin/scripts/datos/<t>/` (ver `agentes.md`). La zona se fija por tenant, nunca `Flujos/clientes/` ni `Flujos/` a secas.
 Que la carpeta todavía no exista no impide declarar el prefijo: se rechaza o
 acepta como cualquier otro.
 

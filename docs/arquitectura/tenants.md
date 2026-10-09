@@ -28,7 +28,7 @@ una zona aparte de la de los datos (fila «Flujo de cliente» de `CLAUDE.md`).
   una con su `PROPIO.md`, que declara también los mensajes por conversación que
   agrega o quita), más el **núcleo común obligatorio**: sesión por
   `messages[0].from`, filtro de eventos, conteo, candado por hecho, rótulos de
-  cobro, `NIEGA_IA`, aviso con botón, uso extendido y comercio no operativo.
+  cobro, `NIEGA_IA`, aviso con botón, uso extendido, comercio no operativo, entrada verificada del receptor (verificador interno, `wabaIdEsperado` fijo, sin «Continue on Fail», repetidos descartados entre ejecuciones), normalización de entrada y filtro de promesas sin respaldo.
 - **El núcleo se INCLUYE desde core y módulos y nunca se copia.** Una prueba de
   CI comparará byte a byte lo incluido contra su fuente. **Esa prueba no
   existe todavía:** se construye en un PR posterior y, hasta que esté en verde,
@@ -37,7 +37,7 @@ una zona aparte de la de los datos (fila «Flujo de cliente» de `CLAUDE.md`).
   módulo** (con bandera, para todos).
 - **Seguridad y protección valen para todos sin excepción.**
 - **Barridos comunes:** un barrido por tipo de flujo que recorre los tenants (no
-  uno por cliente) es la excepción declarada a «flujo propio»; son más de la
+  uno por cliente) es la excepción declarada a «flujo propio», no a seguridad ni protección (cada iteración usa solo el número, la credencial y los datos de su tenant, sin estado compartido entre iteraciones); son más de la
   mitad de las ejecuciones de n8n.
 - **Rubén Roca** es un solo tenant con 4 flujos (dos tipos: citas y ventas),
   no cuatro tenants ni un tenant colgado de otro. Antes de portar su entrada se

@@ -200,12 +200,17 @@ Functions, consola y ensamblador).
   cliente tiene su flujo en `Flujos/clientes/<tenant>/`: piezas propias
   declaradas en `PROPIO.md` más el **núcleo común obligatorio** —sesión por
   `messages[0].from`, filtro de eventos, conteo, candado por hecho, rótulos de
-  cobro, `NIEGA_IA`, aviso con botón, uso extendido, comercio no operativo—,
+  cobro, `NIEGA_IA`, aviso con botón, uso extendido, comercio no operativo,
+  entrada verificada del receptor —verificador interno, `wabaIdEsperado` fijo,
+  sin «Continue on Fail», repetidos descartados entre ejecuciones—,
+  normalización de entrada y filtro de promesas sin respaldo—,
   que se **incluye** desde core y módulos y **nunca se copia** (una prueba de
   CI lo comparará byte a byte: compuerta futura, hoy no existe). La segunda vez
   que otro cliente pide una pieza propia, pasa a módulo. Seguridad y
   protección valen para todos sin excepción. Los barridos comunes (uno por
-  tipo, que recorre los tenants) son la excepción declarada. Nunca un texto ni
+  tipo, que recorre los tenants) son la excepción declarada **a «flujo propio»**,
+  no a seguridad ni protección: cada iteración usa solo el número, la credencial
+  y los datos de su tenant, sin estado compartido entre iteraciones. Nunca un texto ni
   un nombre de cliente en código común.
 - **Cada agente escribe solo en su zona**, y el gancho
   `.claude/hooks/zona-de-escritura.sh` (sobre `Edit` y `Write`, con la zona
