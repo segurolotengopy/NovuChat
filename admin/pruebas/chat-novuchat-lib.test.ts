@@ -436,7 +436,9 @@ describe('chDecidir: lo que resuelve el CÓDIGO y lo que cae en el modelo', () =
     expect(decidir([ev('?')], con([['u', 'hola'], ['a', 'lista']])).contexto).toBe('abierta');
     expect(decidir([ev('Y?')], con([['a', 'NovuChat es el primer empleado de tu negocio que nunca duerme']])).contexto).toBe('ambiguo');
     expect(decidir([ev('Ana Pérez, Panadería Luna')], con([['a', 'Y para dejarlo anotado, ¿cómo te llamas y cómo se llama tu negocio?']])).contexto).toBe('datos');
-    expect(decidir([ev('¿Eres una persona o un bot? Respóndeme con sinceridad')]).contexto).toBe('identidad');
+    // corta: la contesta el texto fijo (sin modelo); larga o mezclada con otra cosa: el modelo, con el contexto «identidad» y el validador de la prohibición 4
+    expect(decidir([ev('¿Eres una persona o un bot? Respóndeme con sinceridad')]).fijo).toBe('identidad');
+    expect(decidir([ev('Antes de seguir con esta conversación necesito saber con total sinceridad si estoy hablando con una persona o con un bot de verdad')]).contexto).toBe('identidad');
     expect(decidir([ev('gracias')], con([['a', 'algo']])).contexto).toBe('cortesia');
     expect(decidir([ev('👽')]).contexto).toBe('fuera');
     expect(decidir([ev('🍿')], con([['a', 'No estoy seguro de haberte entendido, pero estoy aquí']])).contexto).toBe('ambiguo');
@@ -618,6 +620,73 @@ describe('revisión del PR #464: promesas, ofertas, cifras, identidad, sistemas 
     const base = v({ equipoOk: true, textos: ['quiero hablar con una persona'] });
     expect(f('chRevisarModelo')(json('derivar_equipo'), base).causa).toBe('');
     expect(f('chRevisarModelo')(json('ninguna'), base).causa).toBe('accion');
+  });
+});
+
+describe('re-revisión de seguridad sobre 62f8bd17: identidad, ofertas, promesas por raíz y variantes', () => {
+  const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ...extra });
+  const MARCO = (x: string): string => 'NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ' + x + ' ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+  const causa = (x: string, extra: J = {}): string => f('chValidarMensaje')(MARCO(x), v(extra));
+  const NIEGAN_SER_IA = ['Aquí no contesta un robot, contesta Kenji.', 'Kenji es humana y trabaja en ventas.', 'Te atiende gente de verdad.', 'Te atiende gente real del equipo.', 'Detrás de este chat hay personas reales.',
+    'Este chat no es automático.', 'Esto no es un mensaje automático.', 'Kenji es una chica del equipo de ventas.'];
+  it('H (prohibición 4): las 8 variantes que NIEGAN ser una IA se rechazan con la causa «persona», con y sin precios, y en el reintento el cliente recibe el respaldo', () => {
+    for (const x of NIEGAN_SER_IA) for (const extra of [{}, { precios: true }, { contexto: 'identidad' }]) expect(causa(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('persona');
+    for (const x of NIEGAN_SER_IA) {
+      const mal = { lectura: { ok: true, mensaje: MARCO(x), accion: 'ninguna', rubro: '', necesidad: '', nombre: '', empresa: '', descarte: '' }, causa: 'persona' };
+      const r = f('chResolver')({ plan: { ruta: 'modelo', contexto: 'general', hechos: {}, rubroElegido: '' }, cfg: CFG, ficha: fichaBase(), eventos: [{ k: 'texto', c: 'hola, cuéntame', t: 'hola, cuéntame', seq: 1 }], intentos: [mal, mal] });
+      expect(r.origen, x).toBe('respaldo');
+      expect(r.texto, x).not.toContain(x);
+    }
+  });
+  it('H: el marco con la respuesta honesta de un asistente virtual con IA no cae en «persona» por las otras reglas (sí por «soy una persona»)', () => {
+    expect(causa('Soy un asistente virtual con inteligencia artificial.')).toBe('');
+    expect(causa('Hay horarios reales para agendar tus citas en tiempo real.')).toBe('');
+  });
+  it('H: el contexto «identidad» lo contesta SIEMPRE el texto fijo del dato, sin modelo, para las formas comunes de la pregunta', () => {
+    const preguntas = ['¿eres un robot?', '¿eres una persona?', '¿hablo con un humano?', '¿eres real?', '¿eres de verdad?', '¿esto es automático?', '¿es un bot?', '¿hay alguien ahí?', '¿eres una IA?',
+      '¿eres inteligencia artificial?', '¿hablo con una máquina?', '¿me responde una persona?', '¿eres humana?', '¿esto lo contesta un robot?', '¿es un chatbot?', '¿con quién hablo?', '¿hay una persona ahí?',
+      '¿Estoy hablando con un robot?', '¿quién me responde?', '¿eres Kenji o una persona?', '¿esto es una grabación?'];
+    for (const q of preguntas) {
+      const plan = f('chDecidir')({ eventos: [ev(q)], ficha: { ...fichaBase(), historial: [{ r: 'a', t: 'hola' }] }, cfg: CFG, from: '59170000001' });
+      expect(plan.ruta, q).toBe('fijo');
+      expect(plan.fijo, q).toBe('identidad');
+    }
+    const texto = f('chRespuestaFija')('identidad', CFG);
+    expect(texto).toMatch(/asistente virtual de NovuChat, con inteligencia artificial/);
+    expect(texto).not.toMatch(/\{asistente\}|\{negocio\}/);
+    // el texto fijo no cae en sus propias reglas (si el modelo lo escribiera, pasaría el validador)
+    expect(f('chValidarMensaje')(texto, v({ contexto: 'identidad' }))).toBe('');
+    // lo que NO es una pregunta de identidad no se desvía: sigue su camino
+    for (const q of ['¿cuánto cuesta el servicio?', 'tengo una clínica y hay alguien que me atienda por las noches', 'quiero hablar con una persona']) expect(f('chDecidir')({ eventos: [ev(q)], ficha: { ...fichaBase(), historial: [{ r: 'a', t: 'hola' }] }, cfg: CFG, from: '59170000001' }).fijo, q).not.toBe('identidad');
+  });
+  it('ofertas con otras palabras, Meta calificada con adjetivos y promesas por raíz verbal', () => {
+    for (const x of ['No pagas nada el primer mes.', 'No cobramos la instalación.', 'Es más barato que un empleado.', 'Tienes un mes extra.', 'Te damos un mes libre.', 'Va por nuestra cuenta.', 'Queda libre de pago.', 'Es gratis para ti.']) expect(causa(x), x).not.toBe('');
+    expect(causa('El costo de Meta es económico.')).not.toBe('');
+    expect(causa('Lo de Meta es accesible.')).not.toBe('');
+    for (const x of ['Vamos a llamarte hoy.', 'Nos comunicamos mañana.', 'Conversamos esta tarde.', 'Te marcamos en un rato.', 'Te estaremos llamando.', 'Un integrante del equipo te buscará pronto.', 'Te mandamos novedades cada semana.']) expect(causa(x), x).toBe('promesa');
+  });
+  it('NO hay falsos positivos sobre el pitch: un tercero que le escribe al cliente y los planes accesibles', () => {
+    for (const x of ['Cuando alguien te escribe de noche, tu asistente le responde al instante.', 'Si un cliente te escribe fuera de horario, NovuChat le responde al instante.', 'Hay planes accesibles según el tamaño de tu negocio.',
+      'Tus clientes te escriben a cualquier hora y NovuChat les responde en segundos.', 'Te cuento las novedades del servicio: agenda y cobra por QR.']) expect(causa(x), x).toBe('');
+  });
+  it('los textos del documento comercial siguen pasando el validador (6 rubros con su cierre, pitch, precios, Google Calendar, 24 horas)', () => {
+    for (const r of NOVUCHAT['rubros'] as J[]) {
+      if (!r.explicacion) continue;
+      expect(f('chValidarMensaje')(r.explicacion + ' ' + NOVUCHAT['cierres'].rubro, v({ contexto: 'rubro', rubroId: r.id })), r.id).toBe('');
+    }
+    expect(causa('Se conecta con tu Google Calendar y responde en segundos, las 24 horas.')).toBe('');
+    expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].abierta.pitch + '\n\n' + NOVUCHAT['respaldos'].abierta.cierreSinRubro, v({ contexto: 'abierta' }))).toBe('');
+  });
+  it('integración con variantes («compatible con», «junto a», «se lleva bien con», «pasan a») y sistemas ajenos', () => {
+    for (const x of ['Es compatible con Contifico.', 'Funciona junto a pipedrive.', 'Se lleva bien con bsale.', 'Tus pedidos pasan a nubox.']) expect(causa(x), x).toBe('sistema');
+    for (const x of ['Es compatible con tu Google Calendar.', 'Tus citas pasan a tu Google Calendar.', 'Tus clientes pasan a ser parte de tu historial.']) expect(causa(x), x).toBe('');
+  });
+  it('correo con espacios y letras sueltas unidas («g r a t i s») también caen', () => {
+    for (const x of ['Escribe a ventas @ novuchat . com.', 'Es g r a t i s para ti.', 'Es g.r.a.t.i.s para ti.', 'Pide tu d e s c u e n t o hoy.']) expect(causa(x), x).not.toBe('');
+  });
+  it('chPidioContacto mira oración por oración: el pedido real cuenta aunque antes cuente su problema; el problema solo, no', () => {
+    for (const x of ['mis clientes me llaman todo el día, llámame mañana porfa', 'mis clientes me escriben de noche. ¿Me pueden llamar mañana?']) expect(f('chPidioContacto')(x), x).toBe(true);
+    for (const x of ['mis pacientes me llaman hoy y no doy abasto', 'los clientes me contactan en la noche y no alcanzo']) expect(f('chPidioContacto')(x), x).toBe(false);
   });
 });
 

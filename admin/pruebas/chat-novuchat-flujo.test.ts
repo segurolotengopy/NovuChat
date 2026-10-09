@@ -1756,4 +1756,17 @@ describe('revisión del PR #464: lo que arma el flujo', () => {
     expect(w.modelo.reintentos).toHaveLength(1);
     expect(t.aMi[0]!.cuerpo).not.toMatch(/te comunico/i);
   });
+  it('H (prohibición 4): «¿eres un robot?» lo contesta SIEMPRE el texto fijo, sin llamar al modelo, aunque el modelo "negaría" ser una IA', () => {
+    for (const q of ['¿eres un robot?', '¿hablo con un humano?', '¿hay alguien ahí?', '¿esto es automático?']) {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.texto('Hola');
+      w.modelo.con = dice('Aquí no contesta un robot, contesta Kenji. Soy humana y trabajo en ventas, te atiende gente de verdad. ¿Te gustaría ver nuestros planes o hablar con alguien de nuestro equipo? 🤝');
+      const t = j.texto(q);
+      expect(w.modelo.llamadas, q).toHaveLength(0);
+      expect(t.aMi, q).toHaveLength(1);
+      expect(t.aMi[0]!.cuerpo, q).toMatch(/asistente virtual de NovuChat, con inteligencia artificial/);
+      expect(t.aMi[0]!.cuerpo, q).not.toMatch(/humana|robot|gente de verdad/);
+    }
+  });
 });
