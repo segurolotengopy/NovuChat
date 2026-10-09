@@ -217,7 +217,7 @@ beforeEach(async () => {
     vi.spyOn(console, nivel).mockImplementation((...a: unknown[]) => { salida.push(a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')); });
   }
 });
-afterEach(() => { vi.restoreAllMocks(); });
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 // ===========================================================================
 describe('el camino feliz: administrador, operador y soporte vigente', () => {
@@ -257,6 +257,9 @@ describe('el camino feliz: administrador, operador y soporte vigente', () => {
     expect(almacen.leerRutas).toEqual([e.ruta]);
   });
   it('sin ruta guardada se DERIVA del idMeta: el día del cotejo y el anterior, en las cuatro extensiones (máx. 8)', async () => {
+    // Reloj fijo (solo `Date`): 10:30 en La Paz, lejos de la medianoche, así «ayer» no depende de la hora de la corrida.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 9, 14, 30));
     const ayerMs = Date.now() - 86_400_000;
     const e = await escena(T, { sinRutaGuardada: true, ext: 'webp', bytes: WEBP(), diaDelObjetoMs: ayerMs });
     const r = await llamar(pedir(e), admin(T)) as { mime: string };
@@ -302,6 +305,11 @@ describe('T1: sin sesión', () => {
 
 // ===========================================================================
 describe('T2 y T3: el rol vale para ESE comercio, nunca para «el primero del token»', () => {
+  // QUÉ PRUEBA CUBRE EL PASO 3 AISLADO. `cuentaVigenteDe` (paso 4) vuelve a exigir `nc.t[comercio] === rol`,
+  // así que la mutación «autorizar contra el primer comercio del token» (o contra cualquiera) NO se ve en las
+  // dos pruebas de abajo: el paso 4 la tapa. Solo muere en «roles en A y en B a la vez» y en el tope global de
+  // T18 (el mismo uid con dos comercios). La defensa en profundidad es a propósito; estas pruebas fijan el
+  // resultado, no cuál de las dos capas lo produjo.
   for (const [nombre, hacer] of [['administrador', admin], ['operador', oper]] as const) {
     it(`el ${nombre} de A pide el comprobante de B (el cierre existe): permission-denied, sin almacén y sin escribir en B`, async () => {
       const e = await escena(OTRO);
@@ -755,6 +763,12 @@ describe('T17: si la auditoría falla, no sale ningún byte (fail-closed)', () =
 
 // ===========================================================================
 describe('T18: el tope por usuario, contado en el servidor', () => {
+  // Reloj fijo (solo `Date`): 10:30 en La Paz del 9, lejos de hh:59 y de la medianoche. Ninguna prueba de acá
+  // depende del reloj real.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 9, 14, 30));
+  });
   const dia = () => new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10);
   const hora = () => new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 13);
 
@@ -773,6 +787,39 @@ describe('T18: el tope por usuario, contado en el servidor', () => {
     // Otro usuario del mismo comercio no se ve afectado.
     expect(await llamar(pedir(e), oper(T))).toMatchObject({ mime: 'image/jpeg' });
   }, 120_000);
+
+  describe('el tope cuenta TODO intento autorizado que pasó el módulo, antes de mirar el cierre y el almacén', () => {
+    const sembrarCupo = (uid: string, vistasHora = 29) =>
+      db.doc(`topesDelVisor/${uid}`).set({ hora: hora(), vistasHora, dia: dia(), vistasDia: vistasHora, actualizadoEn: Timestamp.now() });
+    const vistasHora = async (uid: string) => (await db.doc(`topesDelVisor/${uid}`).get()).get('vistasHora');
+
+    it('(a) un cierre inexistente (not-found) igual consume el cupo; (b) con el cupo agotado, un pedido válido es resource-exhausted y no toca el almacén', async () => {
+      const e = await escena();
+      const a = admin(T);
+      await sembrarCupo(a.uid);
+      await expect(llamar({ tenantId: T, cierreId: 'venta_no_existe' }, a)).rejects.toMatchObject(falla('not-found', FIJOS.noHay));
+      expect(await vistasHora(a.uid)).toBe(30);
+      await expect(llamar(pedir(e), a)).rejects.toMatchObject(falla('resource-exhausted', FIJOS.tope));
+      expect(almacen.llamadas).toBe(0);
+      expect(await vistasHora(a.uid)).toBe(30);
+    });
+    it('(c) un cierre no elegible (failed-precondition) también consume el cupo, y el siguiente pedido ya no pasa', async () => {
+      const cita = await escena(T, { cierreId: 'venta_cita', idMeta: 'wamid.cita', tipo: 'cita' });
+      const buena = await escena(T, { cierreId: 'venta_buena', idMeta: 'wamid.buena' });
+      const a = oper(T);
+      await sembrarCupo(a.uid);
+      await expect(llamar(pedir(cita), a)).rejects.toMatchObject(falla('failed-precondition', FIJOS.noElegible));
+      expect(await vistasHora(a.uid)).toBe(30);
+      await expect(llamar(pedir(buena), a)).rejects.toMatchObject({ code: 'resource-exhausted' });
+    });
+    it('el que falla DESPUÉS de hallar el objeto (tipo que no coincide) también consume el cupo', async () => {
+      const e = await escena(T, { bytes: Buffer.from('<html/>') });
+      const a = admin(T);
+      await sembrarCupo(a.uid, 28);
+      await expect(llamar(pedir(e), a)).rejects.toMatchObject({ code: 'failed-precondition' });
+      expect(await vistasHora(a.uid)).toBe(29);
+    });
+  });
 
   it('la vista 101 del día, con la hora renovada: resource-exhausted; la 100 todavía pasa', async () => {
     const e = await escena();

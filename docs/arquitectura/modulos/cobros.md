@@ -531,7 +531,8 @@ sin ventana no.
 | Errores (mensaje fijo) | `unauthenticated` «Inicie sesión.»; `invalid-argument` «Solicitud inválida.»; `permission-denied` «Sin permiso para ver este comprobante.»; `failed-precondition` «Este cobro no tiene un comprobante que se pueda mostrar.»; `not-found` «No hay un comprobante guardado para este cobro.»; `resource-exhausted` «Alcanzó el tope de comprobantes por hora o por día.»; `unavailable` «No se pudo abrir el comprobante. Intente más tarde.» |
 
 **Orden en el servidor** (un rechazo se audita SOLO después de la identidad y la
-ficha; antes, cero escrituras en Firestore y una línea de log con código y uid):
+ficha; antes, cero escrituras en Firestore y, salvo sin sesión, una línea de log
+con código y uid; sin sesión (`unauthenticated`) no deja ni la línea):
 1 sesión; 2 forma de la entrada; 3 rol del token PARA ESE comercio
 (`esAdminDe`, `esOperDe` o `esPropietario` como candidato a soporte; cualquier
 otro, denegado); 4 `cuentaVigenteDe` (la cuenta sigue habilitada, con el rol y
@@ -578,7 +579,7 @@ llegan hoy), y no entra con este visor. Riesgo conocido: si el build de la
 etiqueta sale sin la clave del sitio, con `produccion: true` el visor queda
 inutilizable (todo `unauthenticated`); es una compuerta antes de etiquetar.
 
-**Quién lo ve (D4).** El operador ve en Cobros el listado, los totales y
+**Quién lo ve (D4).** Con el PR-2, el operador ve en Cobros el listado, los totales y
 «Ver comprobante», y NO ve «Comprobar» (la regla de actualización exige
 administrador) ni «Exportar». La callable lee `privado` en su nombre y devuelve
 solo `{mime, base64}`. El operador de un comercio de reservas también verá Cobros
@@ -599,5 +600,13 @@ El objeto se guarda sin `firebaseStorageDownloadTokens`.
 soporte), 2 escrituras (el tope y la auditoría), de 1 a 8 `getMetadata` y una
 descarga de hasta 10 MB (~13 MB en base64). Por venta: 0 escrituras extra (1 en la
 rama de un cierre previo). Nube: un servicio Cloud Run nuevo (`vercomprobante`),
-una publicación de reglas de Firestore, 0 índices; **una callable nueva no nace
+una publicación de reglas de Firestore y una de Storage (solo un comentario), 0 índices; **una callable nueva no nace
 invocable**: tras desplegar se verifica el invocador.
+
+**Costo declarado: los rechazos `tope` y `sin_modulo` escriben un asiento por
+llamada, sin cota propia.** Decisión de la coordinadora (09/10/2026): se acepta.
+La cota real la fijan `maxInstances` 3 × `concurrency` 4 y que quien llama tenga
+rol válido en ese comercio (sin rol no se escribe nada). Solo cuesta escrituras y
+ensucia la auditoría; no filtra datos. No se cambia el contrato ni el contador:
+el tope cuenta todo intento autorizado que pasó el módulo, antes de mirar el
+cierre y el almacén (lo fija `ver-comprobante.test.ts`, T18).
