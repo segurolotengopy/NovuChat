@@ -322,3 +322,59 @@ describe('el total y la ruta de la imagen', () => {
     expect(JSON.stringify(lista)).not.toContain('59100000052');   // sin teléfono en la ruta
   });
 });
+
+describe('la ruta de la imagen llega al cierre (privado/datos.rutaComprobante), solo si es de ESTE comercio y ESTE mensaje', () => {
+  const privado = async (id: string) => (await db.doc(`tenants/${T}/cierres/${id}/privado/datos`).get()).data() as Record<string, unknown>;
+
+  it('cierre nuevo con ruta válida: queda guardada en privado/datos', async () => {
+    await sembrar('59100000081', 2);
+    const buena = rutaDeComprobante(T, '2026-10-03', 'wamid.rc1', 'jpg');
+    const r = await comp('59100000081', leidoDe('100'), 'wamid.rc1', { ruta: buena });
+    expect(r.cuerpo.estado).toBe('valido');
+    expect((await privado(r.cuerpo.cierreId))['rutaComprobante']).toBe(buena);
+  });
+  it('cierre nuevo sin ruta (o con ruta nula): el campo NO existe', async () => {
+    await sembrar('59100000082', 2);
+    const r = await comp('59100000082', leidoDe('100'), 'wamid.rc2', { ruta: null });
+    expect(r.cuerpo.estado).toBe('valido');
+    expect(Object.hasOwn(await privado(r.cuerpo.cierreId), 'rutaComprobante')).toBe(false);
+  });
+  it('ruta de OTRO comercio, de otro mensaje o con «..»: el campo NO existe', async () => {
+    const malas = [
+      rutaDeComprobante('otro-comercio', '2026-10-03', 'wamid.rc3', 'jpg'),
+      rutaDeComprobante(T, '2026-10-03', 'wamid.otro-mensaje', 'jpg'),
+      `tenants/${T}/comprobantes/../../otro-comercio/comprobantes/2026-10-03/x.jpg`,
+    ];
+    for (const [i, ruta] of malas.entries()) {
+      const tel = `5910000009${i}`;
+      await sembrar(tel, 2);
+      const r = await comp(tel, leidoDe('100'), 'wamid.rc3', { ruta });
+      expect(r.cuerpo.estado, `caso ${i}`).toBe('valido');
+      expect(Object.hasOwn(await privado(r.cuerpo.cierreId), 'rutaComprobante'), `caso ${i}`).toBe(false);
+    }
+  });
+  it('rama «previo» con ruta: se agrega con merge y los demás campos de privado/datos quedan intactos', async () => {
+    const tel = '59100000083';
+    await sembrar(tel, 2);
+    const id = 'venta_wamid.qr-59100000083'.replace(/[^a-zA-Z0-9_-]/g, '');
+    await db.doc(`tenants/${T}/cierres/${id}`).set({ tipo: 'venta', monto: 100, moneda: 'BOB' });
+    await db.doc(`tenants/${T}/cierres/${id}/privado/datos`).set({ telefono: tel, nombreCliente: 'Previo', detalle: 'detalle previo' });
+    const buena = rutaDeComprobante(T, '2026-10-03', 'wamid.rc4', 'png');
+    const r = await comp(tel, leidoDe('100'), 'wamid.rc4', { ruta: buena });
+    expect(r.cuerpo).toMatchObject({ estado: 'valido', cierreId: id });
+    expect(await privado(id)).toEqual({ telefono: tel, nombreCliente: 'Previo', detalle: 'detalle previo', rutaComprobante: buena });
+    expect((await db.doc(`tenants/${T}/cierres/${id}`).get()).get('cotejo')).toMatchObject({ calidad: 'valido', idMeta: 'wamid.rc4' });
+  });
+  it('rama «previo» sin ruta, o con una ruta ajena: privado/datos no cambia', async () => {
+    for (const [i, ruta] of [null, rutaDeComprobante('otro-comercio', '2026-10-03', 'wamid.rc5', 'png')].entries()) {
+      const tel = `5910000000${i + 1}`;
+      await sembrar(tel, 2);
+      const id = `venta_wamid.qr-${tel}`.replace(/[^a-zA-Z0-9_-]/g, '');
+      await db.doc(`tenants/${T}/cierres/${id}`).set({ tipo: 'venta', monto: 100, moneda: 'BOB' });
+      const antes = { telefono: tel, detalle: 'detalle previo' };
+      await db.doc(`tenants/${T}/cierres/${id}/privado/datos`).set(antes);
+      await comp(tel, leidoDe('100'), 'wamid.rc5', ruta ? { ruta } : {});
+      expect(await privado(id), `caso ${i}`).toEqual(antes);
+    }
+  });
+});
