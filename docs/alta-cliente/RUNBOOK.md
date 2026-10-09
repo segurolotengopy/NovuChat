@@ -16,6 +16,20 @@ ahí va su ficha (`ficha.md`, desde `plantilla-ficha.md`) y su estado
 
 ---
 
+## El proceso de alta en cinco pasos (Andres, 09/10/2026)
+
+Este es el ORDEN entre las etapas de abajo; cada etapa sigue siendo el detalle de su tarea.
+
+1. **Flujo y pruebas con el cliente**, sobre una línea de pruebas de NovuChat (distinta del número de prueba de Meta y del Demo A, prohibición 6) y una copia de prueba que lleva **un solo modo de cobro** (simulado o real, nunca los dos; prohibición 3). Incluye el cobro real; los textos de las plantillas quedan fijados en este paso como contrato. **La aceptación de la etapa 6 se hace aquí**, en la línea de pruebas y con la copia de prueba.
+2. **Alta con el número DEFINITIVO, nuevo y dedicado.** Al entrar a la API el número deja de servir en la app del celular. Entra **directo a la WABA del cliente** desde `/alta`, con la SIM presente y la tarjeta del cliente.
+3. **WABA, plantillas, nombre visible y ficha** con la sesión que opera el receptor. Las plantillas se piden el **mismo día del alta**; la aprobación de Meta se midió en 12 a 28 horas.
+4. **Entre habilitar y producción NO hay pruebas con cambios.** Solo verificación de solo lectura (la ficha, la lectura de la ruta) y, al abrir, un **humo controlado con el cliente presente**: «hola», un pedido y la lectura de la cola, que hace la sesión que opera el receptor (NovuChat no corre comandos del receptor; prohibición 5). Sobre el número definitivo solo va este humo.
+5. **Producción con el número nuevo y los flujos ya probados.** Se activan juntos el flujo con datos reales, el `cliente:alta` del receptor (lo ejecuta la sesión que opera el receptor, con el «sí» de Andres) y la ruta en la plataforma, y la cuenta pasa de prueba a producción. Se sugieren dos días de vigilancia después de abrir.
+
+**Por qué entra directo a su WABA final.** Meta bloquea durante 30 días el traslado de un número entre WABA (lo vivió Q'Taco). Si el número se registra primero en otra WABA, no se puede mover después; por eso el número del cliente nunca se registra en una WABA que no sea la suya. Una vez dentro de su WABA, el bloqueo ya no importa.
+
+---
+
 ## Etapas y quién hace qué
 
 | Etapa | Qué | Quién | Flujo guardado |
@@ -65,11 +79,19 @@ un secreto: eso lo hace una persona.
 **Decisión de Andres del 08/10/2026: todos los clientes van por AAB1 y el alta
 se hace solo por `wa.aab1.website/alta`** (portafolio, WABA, número, método de
 pago). Los mensajes salen con el **token del alta de AAB1** (usuario de sistema con
-alcance de **una sola WABA** del cliente, sin vencimiento), que carga y custodia
-la sesión que opera el receptor en la credencial de n8n (puente S1). NovuChat
-no lo lee, no lo exporta, no lo copia a otra credencial y no lo usa fuera del
-nodo de envío (mensajes y medios); nunca en una llamada a `subscribed_apps`,
-`/subscriptions` ni `register`. **Ya no se pide al
+alcance de **una sola WABA** del cliente, sin vencimiento). Lo carga y custodia
+la sesión que opera el receptor mientras dure el puente S1; desde el relé B9,
+NovuChat recibe una **clave del relé**, no el token. Al 09/10/2026 ningún
+cliente tiene su token del alta cargado en el n8n de NovuChat; con la primera alta
+bajo el puente S1 lo habrá, en una credencial que carga esa sesión (la clave del
+relé B9 vive solo en la credencial de n8n y en el gestor de contraseñas, nunca en
+el repositorio). «Solo envío» es una **regla de procedimiento** (revisión de
+flujos), no una barrera técnica: NovuChat solo lo usa en el nodo de envío
+(mensajes y medios); no lo lee, no lo exporta, no lo copia, y **cualquier otra
+llamada con él** —en particular `subscribed_apps`, `/subscriptions`, `register` y
+`message_templates`— es de la sesión que opera el receptor (las plantillas las
+crea ella).
+(Fuente: respuesta de la sesión que opera el receptor del 09/10/2026, recibida por la sesión Principal.) **Ya no se pide al
 cliente** crear una app, un usuario de sistema ni un token propios, ni
 **asignar a NovuChat como socio** de su WABA. Las operaciones sobre el receptor
 las ejecuta la sesión de WhatsApp-Modular con autorización de Andres
@@ -332,9 +354,12 @@ que se **incluye** desde core y módulos y **nunca se copia**.
    b. NovuChat pasa a esa sesión el **alias** (minúsculas, dígitos y guiones, hasta 40 caracteres) y la **URL interna** del webhook de n8n. La ruta es una URL de capacidad: no va a archivos versionados.
    c. Esa sesión corre `cliente:alta --waba <id> --alias <alias> --destino <URL>` en seco y después con `--aplicar`, con «sí» de Andres.
    d. Prueba con «hola» y lectura de la cola.
+   **El flujo SIEMPRE pasa por el verificador completo** (firma, timestamp, `wabaIdEsperado` fijo, sin «Continue on Fail», repetidos descartados por `deliveryId`), y **ningún dato del cuerpo se usa antes de su OK**; el tenant sale de la WABA verificada. La ruta de destino en n8n es alcanzable desde internet (el n8n compartido expone el prefijo público de webhooks y sin firma válida responde 401); el verificador no (red interna). La sesión que opera el receptor prepara además restringir ese prefijo a la red interna, con autorización de Andres: es defensa adicional y **no reemplaza al verificador**. (Fuente: respuesta de la sesión que opera el receptor del 09/10/2026, recibida por la sesión Principal.)
    Varios clientes con un flujo: **un alias por WABA, mismo destino** solo si el flujo trae una lista cerrada `WABA → tenant` en `Config del negocio`, verifica contra esa lista y deriva el tenant de la WABA que devuelve el verificador, **nunca del cuerpo recibido**; sin esa lista, con flujo propio por defecto, **un destino por WABA** (`wabaIdEsperado` es uno solo por flujo). Cambios posteriores: `cliente:destino`, `cliente:pausar`, `cliente:baja`. Límites: **10 altas por semana** (planificar con 10; el panel dice 200) y el cliente carga su tarjeta (sin tarjeta, error 141006). Regla: el número entra **directo a la WABA del cliente** desde `/alta`.
 
 ## 6 · Aceptación (dos teléfonos, resultado REAL en `CLIENTES/<NOMBRE>/estado.md`)
+
+**Desde el 09/10/2026 esta etapa se ejecuta en el paso 1** (línea de pruebas y copia de prueba), antes del alta con el número definitivo. Sobre el número definitivo ya abierto solo va el humo controlado del paso 4: sin cambios de configuración ni ráfagas de prueba.
 
 Saludo y respuesta, dos celulares a la vez sin cruce, sticker y audio, «¿eres un
 robot?», el flujo principal de punta a punta, el aviso llegando a recepción,
