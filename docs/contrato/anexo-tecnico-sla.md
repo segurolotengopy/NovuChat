@@ -23,12 +23,6 @@
 >    correcciones de seguridad y las reglas que protegen al paciente o al
 >    comprador. Es una promesa más chica, pero es la que se cumple.
 >
-> **Ajuste del 09/10/2026 (decisión de Andres del 07/10):** la ventana diaria
-> de los cambios pasa de 02:00–03:00 a **23:30–01:30, hora de Bolivia**, porque a
-> esas horas los códigos QR fallan y los bancos restringen los pagos. Sigue
-> fuera del horario cubierto. `[DECISIÓN PENDIENTE: si este ajuste sube la
-> versión del anexo y cómo se comunica a los clientes que ya firmaron, §13.]`
->
 > **Regla de mantenimiento de esta plantilla:** no se agrega ningún compromiso
 > que el sistema no cumpla hoy. Cuando un prerrequisito de `Analisis/37` §5 se
 > cierre, se actualiza la cláusula correspondiente y se sube la versión.

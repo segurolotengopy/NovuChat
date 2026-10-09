@@ -23,7 +23,7 @@ ahí va su ficha (`ficha.md`, desde `plantilla-ficha.md`) y su estado
 | 0 · Preparar | Carpeta del cliente, ficha, decisiones | agente `alta-cliente` | `/alta-cliente` con `fase: preparar` |
 | 1 · Chip | Comprobar que el número no tenga WhatsApp | persona | — |
 | 2 · Meta | Alta por `wa.aab1.website/alta`: portafolio, WABA, número, método de pago (ya no app, usuario de sistema ni token por cliente) | persona, guiada por `meta-whatsapp` | — |
-| 3 · Canal | Entorno `.env.<cliente>` y verificación (**PENDIENTE DE WAM**, ver la etapa 3) | persona (secretos) + `meta-whatsapp` | `fase: canal` |
+| 3 · Canal | Entorno `.env.<cliente>` y verificación (ficha del receptor, sin `.env.<cliente>`: ver la etapa 3) | persona (secretos) + `meta-whatsapp` | `fase: canal` |
 | 4 · Plataforma | Comercio, administrador, número y alias | `plataforma`, con confirmación | `fase: plataforma` |
 | 5 · Flujo | JSON del flujo, pruebas, importación | `flujos-n8n`, con confirmación | `fase: flujo` |
 | 6 · Aceptación | Dos teléfonos, suite completa | persona | — |
@@ -75,10 +75,10 @@ Los pasos que siguen se **conservan tal como estaban**, en dos tablas: lo que
 sigue vigente y lo que esa decisión retiró (con su tropiezo conocido, por si
 alguna vez se vuelve a necesitar).
 
-**PENDIENTE DE WAM (WhatsApp-Modular)** (el 08/10 no lo resolvió): quién crea la plantilla del
-aviso interno y con qué token; si `subscribed_apps` sigue siendo un paso por
-cliente; y cómo llega el token del alta a NovuChat (lo resuelve
-WhatsApp-Modular, sin imprimir el valor).
+**Lo que respondió el 09/10/2026 la sesión que opera el receptor** (fuente: respuesta de la sesión que opera el receptor (WhatsApp-Modular) del 09/10/2026, recibida por la sesión Principal):
+
+1. **Plantilla del aviso interno.** La crea esa sesión con el token de negocio del alta de AAB1-WA-Prod, siempre con «sí» de Andres en su chat. NovuChat no usa ese token (`CLAUDE.md`, prohibición 5). El texto y las variables son un **contrato que NovuChat entrega por escrito** (categoría UTILITY, solo BODY, con ejemplos). La aprobación de Meta se midió en **12 a 28 horas**: se piden el **mismo día del alta**.
+2. **`subscribed_apps` ya no es un paso por cliente.** Lo hace el alta (paso 2). Si AAB1-WA-Prod ya está suscrita, no se repite el POST, para no borrar un override (riesgo R1 de esa sesión). Es aparte el `cliente:alta` del receptor (override por WABA, alias y destino). Se verifica **leyendo** `subscribed_apps`.
 
 | Paso vigente | Tropiezo conocido |
 |---|---|
@@ -97,16 +97,17 @@ WhatsApp-Modular, sin imprimir el valor).
 | Live | Se llama **Publicar**, en el menú izquierdo. Privacidad y borrado de datos: `https://novuchat.site/privacidad` |
 | Usuario de sistema | Sin verificar, el portafolio admite **un solo administrador** de sistema: crear como **Empleado**, con control total de la app y **solo** su WABA |
 | Token | Vencimiento **Nunca**, permisos `whatsapp_business_messaging` y `whatsapp_business_management`. Los alcances salen vacíos en `debug_token`: la prueba es listar los números de la WABA. «Revocar» invalida **todos**: hacerlo antes de cargarlo en n8n |
-| `subscribed_apps` | **PENDIENTE DE WAM** (arriba). Antes: no tiene pantalla, `verificar-meta.sh --suscribir` |
+| `subscribed_apps` | Ya no es un paso por cliente (lo hace el alta; ver arriba). Antes: no tiene pantalla, `verificar-meta.sh --suscribir` |
 
 ## 3 · Canal
 
-**PENDIENTE DE WAM:** el bloque de abajo se escribió para un token y una app
-por cliente (`.env.<cliente>`). Con la decisión del 08/10 (etapa 2), el
-procedimiento que lo reemplaza —qué entorno lleva el cliente, qué verifica
-`verificar-meta.sh` y cómo llega el token del alta a NovuChat— no está definido
-en la fuente de la decisión y no se inventa acá. Hasta entonces, el bloque
-sigue siendo lo que hace el script hoy.
+**Con la decisión del 08/10 cambia lo que reemplaza a `.env.<cliente>` y a `verificar-meta.sh`** (fuente: respuesta de la sesión que opera el receptor (WhatsApp-Modular) del 09/10/2026, recibida por la sesión Principal):
+
+- Esa sesión entrega una **ficha por mensaje, sin secretos**: id de la WABA y de la línea, nombre visible y estado, pago, plantillas y su estado, y `debug_token`.
+- Propone el comando de solo lectura `alta:verificar` en su repositorio; necesita el «sí» de Andres y lo pide la sesión Principal. Hasta que exista, la ficha es la verificación.
+- **El token del cliente NO va a ningún `.env` de NovuChat.** Mientras dure el puente S1, lo carga esa sesión en la credencial de n8n por PATCH. Después, con el relé B9 (PR #138 fusionado; B9b en revisión), NovuChat recibe una clave del relé por cliente. NovuChat conserva su credencial de Gemini y la de ingesta.
+
+El bloque de abajo sigue siendo lo que hace el script hoy; no se lo usa para cargar el token del cliente.
 
 ```bash
 ./scripts/configurar-cliente.sh --cliente <NOMBRE> --dir ~/NovuChat
@@ -321,12 +322,12 @@ que se **incluye** desde core y módulos y **nunca se copia**.
 4. En n8n: importar, credenciales, `Trigger On` = Messages, **Publish**. URL de
    Production al webhook de la app del cliente. Completar `N8N_WEBHOOK_*` y
    `N8N_WORKFLOW_ID` en `.env.<cliente>`: `verificar-meta.sh` con cuatro verdes.
-   **PENDIENTE DE WAM:** este paso supone una app propia del cliente y su
-   webhook. Con la decisión del 08/10 (etapa 2) los mensajes llegan por la
-   salida del receptor de AAB1, y **nunca** un WhatsApp Trigger con
-   credenciales de AAB1-WA-Prod (`CLAUDE.md`, prohibición 7). Cómo se arma la
-   entrada del flujo de cada cliente en ese esquema no está definido en la
-   fuente de la decisión: lo define WhatsApp-Modular; no se inventan pasos acá.
+   **Con la decisión del 08/10 este paso cambia** (fuente: respuesta de la sesión que opera el receptor (WhatsApp-Modular) del 09/10/2026, recibida por la sesión Principal). Los mensajes llegan por la salida del receptor de AAB1 y **nunca** por un WhatsApp Trigger con credenciales de AAB1-WA-Prod (`CLAUDE.md`, prohibición 7). La entrada del flujo del cliente es un **nodo Webhook normal** (no WhatsApp Trigger) más un **HTTP Request al verificador interno** `receptor-clientes:8081/v1/interno/verificar` (firma, timestamp, `deliveryId` y cuerpo), con `wabaIdEsperado` fijo, **sin «Continue on Fail»**, con *Remove Duplicates* por `deliveryId` y **sin HMAC en n8n** (`CLAUDE.md`, prohibición 5). Los pasos:
+   a. NovuChat importa el flujo (la ruta nace al importar: `receptor/<alias>-<16 hex>`) y lo activa.
+   b. NovuChat pasa a esa sesión el **alias** (minúsculas, dígitos y guiones, hasta 40 caracteres) y la **URL interna** `http://n8n:5678/webhook/<ruta>`. La ruta es una URL de capacidad: no va a archivos versionados.
+   c. Esa sesión corre `cliente:alta --waba <id> --alias <alias> --destino <URL>` en seco y después con `--aplicar`, con «sí» de Andres.
+   d. Prueba con «hola» y lectura de la cola.
+   Varios clientes con un flujo: **un alias por WABA, mismo destino**. Cambios posteriores: `cliente:destino`, `cliente:pausar`, `cliente:baja`. Límites: **10 altas por semana** (planificar con 10; el panel dice 200) y el cliente carga su tarjeta (sin tarjeta, error 141006). Regla: el número entra **directo a la WABA del cliente** desde `/alta`.
 
 ## 6 · Aceptación (dos teléfonos, resultado REAL en `CLIENTES/<NOMBRE>/estado.md`)
 
