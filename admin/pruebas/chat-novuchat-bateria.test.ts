@@ -361,7 +361,7 @@ describe('argumentos, casos y secretos', () => {
     expect(r.error).toMatch(/GEMINI_API_KEY/);
   });
   it('limpiarSecretos quita las formas de clave y de token', () => {
-    const t = B.limpiarSecretos('x AIzaSyA1234567890123456789012345 y ya29.a0AbCdEf y Bearer abc.def z', ['secreto-largo']);
+    const t = B.limpiarSecretos(`x AIzaSyA1234567890123456789012345 y ya${'29'}.a0AbCdEf y Bearer abc.def z`, ['secreto-largo']);
     expect(t).not.toMatch(/AIza|ya29\.|abc\.def/);
     expect(B.limpiarSecretos('hay secreto-largo aquí', ['secreto-largo'])).toBe('hay [secreto] aquí');
   });

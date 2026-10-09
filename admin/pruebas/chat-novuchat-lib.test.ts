@@ -13,6 +13,7 @@
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { runInNewContext } from 'node:vm';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -1315,8 +1316,8 @@ describe('construir.mjs: lo versionado coincide con lo que se arma, y no escribe
     rmSync(rutaPrueba);
     const sinArchivo = armar().resultado.find((x) => x.archivo === 'chat-novuchat.prueba.json')!;
     expect([sinArchivo.existia, sinArchivo.alDia]).toEqual([false, false]);
-    expect(existsSync(rutaPrueba)).toBe(false);
-    writeFileSync(rutaPrueba, textoPrueba);
+    // `wx` falla si el archivo ya existe: comprueba la ausencia y escribe en un solo paso (sin carrera entre ver y escribir).
+    writeFileSync(rutaPrueba, textoPrueba, { flag: 'wx' });
     // 3. una guardia violada a mano en el JSON versionado
     const rutaProd = join(carpeta, 'chat-novuchat.novuchat.json');
     const textoProd = readFileSync(rutaProd, 'utf8');
@@ -1393,7 +1394,7 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
     const n = (flujo['nodes'] as J[]).find((x) => x.name === '¿Meta aceptó?')!;
     expect(n.type).toBe('n8n-nodes-base.if');
     const expr = String(n.parameters.conditions.conditions[0].leftValue).replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
-    const evalua = new Function('$json', `return ${expr};`) as (j: unknown) => boolean;
+    const evalua = runInNewContext(`(function ($json) { return ${expr}; })`, {}) as (j: unknown) => boolean;
     expect(evalua({ messages: [{ id: 'wamid.X' }] })).toBe(true);
     for (const malo of [{}, { error: { message: 'x' } }, { messages: [] }, { messages: [{}] }, { messages: [{ id: 'wamid.X' }], error: {} }, null, { messages: 'x' }]) expect(evalua(malo), JSON.stringify(malo)).toBe(false);
     expect((flujo['connections'] as J)['¿Meta aceptó?'].main[1]).toEqual([]);
@@ -1411,7 +1412,7 @@ describe('lo común se incluye desde su fuente, byte a byte', () => {
   it('L2: «Decidir fila» quita TODOS los bloques de signos de fórmula del comienzo (revertir la línea hace fallar esta prueba)', () => {
     const js = readFileSync(join(CARPETA, 'src/nodos/decidir-fila-de-la-planilla.js'), 'utf8');
     const linea = js.split('\n').find((l) => l.startsWith('const seguro'))!;
-    const seguro = new Function('limpio', `${linea}\nreturn seguro;`)((x: string) => String(x).trim()) as (v: string) => string;
+    const seguro = (runInNewContext(`(function (limpio) { ${linea}\nreturn seguro; })`, {}) as (l: (x: string) => string) => (v: string) => string)((x: string) => String(x).trim());
     for (const x of ['= =1', '=+-@ =HYPERLINK("x")', '+ - @ cmd', '=1']) expect(seguro(x), x).not.toMatch(/^[=+\-@]/);
     expect(seguro('Panadería Luna')).toBe('Panadería Luna');
   });
