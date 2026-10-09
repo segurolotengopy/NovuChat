@@ -61,9 +61,11 @@ cumplir es lo común; lo propio entra por su declaración.
   `registro.ts`, las columnas de `docs/versiones-por-cliente.md`
   (`estado-de-versiones.sh`) y el cambio de `fronteras.test.ts` para la nueva
   carpeta. Los hace la coordinadora o un PR posterior.
-- **DECISIÓN PENDIENTE:** la dirección de dependencias de la zona «Flujo de
-  cliente» frente a `fronteras.test.ts` (hoy `Flujos/experimental/` está fuera
-  de zonas y de esa prueba).
+- **Dependencias de la zona «Flujo de cliente» (BORRADOR, propuesta del análisis
+  A, sin prueba todavía):** un flujo de cliente puede incluir core y módulos;
+  nada fuera de su carpeta puede incluirlo. Se agrega a `fronteras.test.ts`
+  cuando exista la zona (hoy `Flujos/experimental/` está fuera de zonas y de
+  esa prueba).
 
 ## registro.ts (F2, PR 1)
 

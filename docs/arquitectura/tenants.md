@@ -50,8 +50,10 @@ una zona aparte de la de los datos (fila «Flujo de cliente» de `CLAUDE.md`).
   cuando pasan al módulo Menú interactivo (texto de la decisión del 25/09, que
   este documento no toca). `Flujos/clientes/` aún no existe: la mudanza
   (incluida la de `Flujos/experimental/`) es de un PR posterior.
-- **DECISIÓN PENDIENTE:** qué agente es dueño de `Flujos/clientes/<tenant>/` y,
-  por tanto, qué zona de escritura recibe (`agentes.md`).
+- **Dueño:** `flujos-n8n` (indicado por la sesión Principal el 09/10), con
+  `admin/pruebas/tenants/<t>/` y `admin/scripts/datos/<t>/` (`agentes.md`). Su
+  ficha en `.claude/agents/` aún no declara esta zona: es un cambio aparte, con
+  revisión humana de Andres.
 
 ## Inventario (`Analisis/41` §5)
 

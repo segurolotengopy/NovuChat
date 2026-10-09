@@ -23,7 +23,7 @@ ahí va su ficha (`ficha.md`, desde `plantilla-ficha.md`) y su estado
 | 0 · Preparar | Carpeta del cliente, ficha, decisiones | agente `alta-cliente` | `/alta-cliente` con `fase: preparar` |
 | 1 · Chip | Comprobar que el número no tenga WhatsApp | persona | — |
 | 2 · Meta | Alta por `wa.aab1.website/alta`: portafolio, WABA, número, método de pago (ya no app, usuario de sistema ni token por cliente) | persona, guiada por `meta-whatsapp` | — |
-| 3 · Canal | Entorno `.env.<cliente>` y verificación (**DECISIÓN PENDIENTE**, ver la etapa 3) | persona (secretos) + `meta-whatsapp` | `fase: canal` |
+| 3 · Canal | Entorno `.env.<cliente>` y verificación (**PENDIENTE DE WAM**, ver la etapa 3) | persona (secretos) + `meta-whatsapp` | `fase: canal` |
 | 4 · Plataforma | Comercio, administrador, número y alias | `plataforma`, con confirmación | `fase: plataforma` |
 | 5 · Flujo | JSON del flujo, pruebas, importación | `flujos-n8n`, con confirmación | `fase: flujo` |
 | 6 · Aceptación | Dos teléfonos, suite completa | persona | — |
@@ -75,7 +75,7 @@ Los pasos que siguen se **conservan tal como estaban**, en dos tablas: lo que
 sigue vigente y lo que esa decisión retiró (con su tropiezo conocido, por si
 alguna vez se vuelve a necesitar).
 
-**DECISIÓN PENDIENTE** (el 08/10 no la resolvió): quién crea la plantilla del
+**PENDIENTE DE WAM (WhatsApp-Modular)** (el 08/10 no lo resolvió): quién crea la plantilla del
 aviso interno y con qué token; si `subscribed_apps` sigue siendo un paso por
 cliente; y cómo llega el token del alta a NovuChat (lo resuelve
 WhatsApp-Modular, sin imprimir el valor).
@@ -97,11 +97,11 @@ WhatsApp-Modular, sin imprimir el valor).
 | Live | Se llama **Publicar**, en el menú izquierdo. Privacidad y borrado de datos: `https://novuchat.site/privacidad` |
 | Usuario de sistema | Sin verificar, el portafolio admite **un solo administrador** de sistema: crear como **Empleado**, con control total de la app y **solo** su WABA |
 | Token | Vencimiento **Nunca**, permisos `whatsapp_business_messaging` y `whatsapp_business_management`. Los alcances salen vacíos en `debug_token`: la prueba es listar los números de la WABA. «Revocar» invalida **todos**: hacerlo antes de cargarlo en n8n |
-| `subscribed_apps` | **DECISIÓN PENDIENTE** (arriba). Antes: no tiene pantalla, `verificar-meta.sh --suscribir` |
+| `subscribed_apps` | **PENDIENTE DE WAM** (arriba). Antes: no tiene pantalla, `verificar-meta.sh --suscribir` |
 
 ## 3 · Canal
 
-**DECISIÓN PENDIENTE:** el bloque de abajo se escribió para un token y una app
+**PENDIENTE DE WAM:** el bloque de abajo se escribió para un token y una app
 por cliente (`.env.<cliente>`). Con la decisión del 08/10 (etapa 2), el
 procedimiento que lo reemplaza —qué entorno lleva el cliente, qué verifica
 `verificar-meta.sh` y cómo llega el token del alta a NovuChat— no está definido
@@ -321,12 +321,12 @@ que se **incluye** desde core y módulos y **nunca se copia**.
 4. En n8n: importar, credenciales, `Trigger On` = Messages, **Publish**. URL de
    Production al webhook de la app del cliente. Completar `N8N_WEBHOOK_*` y
    `N8N_WORKFLOW_ID` en `.env.<cliente>`: `verificar-meta.sh` con cuatro verdes.
-   **DECISIÓN PENDIENTE:** este paso supone una app propia del cliente y su
+   **PENDIENTE DE WAM:** este paso supone una app propia del cliente y su
    webhook. Con la decisión del 08/10 (etapa 2) los mensajes llegan por la
    salida del receptor de AAB1, y **nunca** un WhatsApp Trigger con
    credenciales de AAB1-WA-Prod (`CLAUDE.md`, prohibición 7). Cómo se arma la
    entrada del flujo de cada cliente en ese esquema no está definido en la
-   fuente de la decisión: lo resuelve quien la defina con WhatsApp-Modular.
+   fuente de la decisión: lo define WhatsApp-Modular; no se inventan pasos acá.
 
 ## 6 · Aceptación (dos teléfonos, resultado REAL en `CLIENTES/<NOMBRE>/estado.md`)
 
