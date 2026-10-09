@@ -14,7 +14,7 @@
 | **¿La tabla pública se sostiene?** | **Sí.** 25 por 200, 50 por 500 y 90 por 1.000 conversaciones dejan **72 % a 77 %** a uso pleno con Flash-Lite y **67 % a 70 %** con Haiku 4.5 (§2). Mejor que los planes con Meta incluido (53 % a 68 %). |
 | **Las bolsas** | **DECIDIDO (09/10): dos bolsas.** Conversaciones extra, fuera del plan: 300 por USD 15 (76 % con Flash-Lite). Mensajes salientes que el negocio inicia más de 48 h después del último mensaje del cliente final: 300 por USD 10 (84 %: no llevan IA). Los seguimientos dentro de las 48 h van dentro de la conversación del lead; los de después no cuentan como conversación y salen de la bolsa de mensajes (§3). |
 | **Q'Taco** | **DECIDIDO:** 35 por 400, BYOC, instalación 0. Nos quedan 26 USD al mes (73 % a uso pleno). Q'Taco paga a Meta unos 12 USD con 220 conversaciones y unos 32 con 400 (§4). |
-| **Rubén (Dhermacore y productos digitales)** | Un tenant, cuatro números en el portafolio verificado de Dhermacore, **60 por 1.500 conversaciones comunes, instalación 200**, seguimientos incluidos y contados como conversaciones. Nos quedan 42 USD (70 %) con Flash-Lite. Su factura de Meta va de 0 a 48 USD si el 70 % de los leads viene por anuncio y Meta da la ventana gratuita de 72 h; sin ella, de 57 a 74. El seguimiento de la semana es el caro (§5). |
+| **Rubén (Dhermacore y productos digitales)** | Un tenant, cuatro números en el portafolio verificado de Dhermacore, **60 por 1.500 conversaciones comunes, instalación 200**; el seguimiento de 48 h incluido en la conversación del lead y el de la semana de la bolsa de mensajes salientes. Nos quedan 42 USD (70 %) con Flash-Lite, más lo de las bolsas. Su factura de Meta va de 0 a 100 USD si el 70 % de los leads viene por anuncio y Meta da la ventana gratuita de 72 h; sin ella, hasta 234 con los dos seguimientos. El seguimiento de la semana es el caro (§5). |
 | **La intervención humana a mitad del chat** | Hoy solo «pasar con Rubén» (aviso y botón a su WhatsApp). La bandeja en la consola es un módulo sin fecha. **La coexistencia app y API existe en Meta y es la vía que encaja**: Rubén escribiría desde su teléfono y el flujo recibiría el eco para callar al asistente; falta que el receptor de AAB1 entregue ese campo y una prueba con línea real que autoriza Andres (§5.4). |
 | **Qué hay que cambiar** | `planes.ts` (200/500/1.000, titularidad `comercio` por defecto), la consola de planes, `docs/base-comercial.md` (§6), el sitio, las bolsas nuevas en el servidor, y un aviso cuando la tarjeta de Meta del comercio falle (§7). |
 
@@ -52,10 +52,10 @@ USD al mes, a uso pleno. «Nos queda» descuenta impuestos (16 %), infraestructu
 
 **La regla de conteo, confirmada por Andres el 09/10:**
 - El seguimiento **dentro de las 48 horas** va dentro de la conversación del lead: no abre una conversación nueva aunque pase la ventana de 24 horas.
-- Un mensaje iniciado por el negocio **después de 48 horas no cuenta como conversación**: se descuenta de la bolsa de mensajes salientes. Si el cliente final responde, esa respuesta abre una conversación que sí cuenta (por confirmar con Principal, §7).
+- Un mensaje iniciado por el negocio **después de 48 horas no cuenta como conversación**: se descuenta de la bolsa de mensajes salientes. Si el cliente final responde, esa respuesta abre una conversación que sí cuenta (§3, decisiones abiertas).
 - Las dos bolsas entran en el conteo de su unidad, no vencen y se cortan al agotarse, como las conversaciones en producción.
 
-**Lo que esto cambia:** 1.500 conversaciones vuelven a ser unos 1.500 leads, no 500 (§5.2). El servidor hoy no distingue un saliente iniciado por el negocio de una respuesta, cuenta cada ventana de 24 horas como conversación y solo conoce la bolsa de 30 por 10, con el pago sobre una lista cerrada: **las dos bolsas y la regla son código nuevo en el conteo y en Pagar**, que dimensiona Principal (§7).
+**Lo que esto cambia:** 1.500 conversaciones vuelven a ser unos 1.500 leads, no 500 (§5.2). El servidor hoy no distingue un saliente iniciado por el negocio de una respuesta, cuenta cada ventana de 24 horas como conversación y solo conoce la bolsa de 30 por 10, con el pago sobre una lista cerrada: **las dos bolsas y la regla son código nuevo en el conteo y en Pagar**, dimensionadas por Principal (abajo).
 
 **Dimensionado de Principal (09/10, solo lectura sobre main):** hoy el servidor no distingue un saliente del negocio de una respuesta, la ventana es fija de 24 horas desde la primera consulta, un saliente nunca abre conversación y la respuesta del cliente sobre ventana vencida abre una cobrada; no existe la hora del último entrante, y el código no manda nada después de 48 horas (los seguimientos viven en Agenda). Hacen falta: la hora del último entrante en el servidor, un evento «seguimiento» con ordinal, la reserva del mensaje antes de enviarlo (un solo escritor, idempotente), que ese evento no sume al bloque de 25 ni a los umbrales, las dos bolsas en el catálogo y en Pagar (variante nueva de pago), un contador y un corte propio para los salientes, la lista blanca de reglas, Consumo y el aviso de bolsa. **3 a 4 jornadas de agente en tres bloques:** Central (1,5 a 2, en paralelo a F3b), Core (0,5 a 1, después de fusionar #439, que toca `ingesta.ts`) y Módulo (0,5). **La bolsa de mensajes solo cierra en BYOC:** cobra 0,033 por mensaje y a Meta le cuesta 0,074; con titularidad `novuchat`, NovuChat pierde.
 
@@ -101,7 +101,7 @@ Rubén es agencia y autor: hace el marketing y el seguimiento de las dos doctora
 | Agente sin caché | 10 (17 %) | −28 | 945 |
 
 - **Los seguimientos no nos cuestan IA:** texto fijo, sin modelo; hasta unas 3.000 ejecuciones más al mes en n8n (`Analisis/49` §6 las absorbe). El de las 48 horas va incluido; el de la semana se vende en la bolsa de mensajes salientes, y la instalación cubre construirlos.
-- **1.500 conversaciones son unos 1.500 leads** con la regla de §3. Si Rubén manda el mensaje de la semana al 60 % de ellos (900 mensajes, 3 bolsas), nos paga 60 más 30 y nos quedan unos 67 USD (42 del plan y 25 de las bolsas).
+- **1.500 conversaciones son unos 1.500 leads** con la regla de §3, si Andres elige la opción A de la decisión 1. Si Rubén manda el mensaje de la semana al 60 % de ellos (900 mensajes, 3 bolsas), nos paga 60 más 30 y nos quedan unos 67 USD (42 del plan y 25 de las bolsas).
 - **Es precio por contrato** (0,040 por conversación), con plazo y revisión.
 
 ### 5.3 Lo que paga Rubén a Meta
@@ -113,7 +113,7 @@ Cuatro números son cuatro franquicias: 4.000 mensajes de servicio gratis al mes
 | 1.500 leads sin seguimientos | 0 | 60 |
 | 1.500 leads con el seguimiento de 48 h (incluido) | 33 | 93 |
 | 1.500 leads con el de 48 h y el de la semana al 60 % (900 mensajes, 3 bolsas de 10) | 100 | 190 |
-| Si Meta no diera la ventana gratuita: 1.500 leads con los dos seguimientos al 60 % | 234 | 324 |
+| Si Meta no diera la ventana gratuita: 1.500 leads, 48 h a todos y el de la semana al 60 % | 234 | 324 |
 
 La ventana de 72 horas **no se promete hasta medirla** (`base-comercial` §6); el origen del anuncio ya se registra en el servidor.
 
@@ -167,7 +167,7 @@ Propuesta de texto, para que Andres la apruebe y el agente `metodo` la aplique:
 | Pieza | Qué | Dueño |
 |---|---|---|
 | `planes.ts` y consola de planes | 200 / 500 / 1.000; titularidad `comercio` por defecto; `cambiosIncluidos` 0 / 1 / 2 | Principal (Central) |
-| Las dos bolsas y la regla de conteo en el servidor | Contador de mensajes salientes fuera de 48 h; la bolsa de conversaciones de 300 por 15 y la de mensajes de 300 por 10 en Pagar; consumo en la consola. Dimensionado pedido a Principal el 09/10 | Core y Central |
+| Las dos bolsas y la regla de conteo en el servidor | Contador de mensajes salientes fuera de 48 h; la bolsa de conversaciones de 300 por 15 y la de mensajes de 300 por 10 en Pagar; consumo en la consola. Dimensionado el 09/10 (§3): 3 a 4 jornadas | Central, Core y Módulo |
 | `docs/base-comercial.md` | §6 | `metodo`, con el OK de Andres |
 | Sitio (`precios.es.ts`) | Los tres planes publicados dicen lo mismo que `planes.ts` | Sesión del sitio |
 | Imagen del chat de captación | Factura de Meta con números; sin bolsas hasta que existan | Sesión del chat |
