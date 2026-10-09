@@ -69,9 +69,10 @@ WhatsApp (Meta Cloud API)
    red interna y nunca se expone. Las rutas de webhook de esa entrada son URL de
    capacidad: nunca en archivos versionados, notas de n8n ni registros. El
    detalle con los nombres concretos está en la documentación del receptor
-   (WhatsApp-Modular, `docs/25` §6). NovuChat nunca usa un token de negocio
-   del alta en `subscribed_apps`, `/subscriptions`, `register` ni
-   `message_templates`: las plantillas las crea la sesión de WhatsApp-Modular.
+   (WhatsApp-Modular, `docs/25` §6). El token de negocio del alta solo se
+   usa en el nodo de envío (mensajes y medios); cualquier otra llamada con él, en
+   particular `subscribed_apps`, `/subscriptions`, `register` y
+   `message_templates`, es de la sesión de WhatsApp-Modular.
 6. **NUNCA** publicar el número de prueba a terceros: solo responde a los 5
    destinatarios registrados (ver `CONFIGURACION.md`; el riesgo está en
    `bitacora/2026-09.md`, «Riesgos vivos»).
