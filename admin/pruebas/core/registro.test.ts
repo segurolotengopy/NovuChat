@@ -603,6 +603,15 @@ describe('4. colecciones y almacenamiento: el registro contra las reglas', () =>
 });
 
 // ======================================================================= 5
+describe('visor de comprobantes (09/10/2026): lo que el registro declara', () => {
+  it('Cobros declara la callable verComprobante y la colección raíz de su contador', () => {
+    expect(manifiestoDe('cobros').functions).toContain('verComprobante');
+    expect(manifiestoDe('cobros').coleccionesRaiz).toContain('topesDelVisor');
+    // La callable la exporta index.ts, y ninguna otra la declara.
+    for (const m of MANIFIESTOS) if (m.modulo !== 'cobros') expect(m.functions, m.modulo).not.toContain('verComprobante');
+  });
+});
+
 describe('5. límites: el registro contra planes.ts y las reglas', () => {
   const limites = MANIFIESTOS.flatMap((m) => m.limites.map((l) => ({ modulo: m.modulo, ...l })));
   const capital = (s: string) => s[0]!.toUpperCase() + s.slice(1);

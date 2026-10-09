@@ -250,6 +250,10 @@ Dos elecciones deliberadas:
   colección `/accesosSoporte` es de solo lectura desde el navegador y la Function
   exige rol de admin del negocio. Es además un buen argumento comercial: "no
   leemos sus conversaciones salvo que usted nos lo habilite, y usted ve cuándo".
+  Desde el 09/10/2026 esa misma ventana también permite ver comprobantes de pago
+  con la callable `verComprobante` (auditado con rol «soporte» y con el mismo
+  tope por usuario). Hoy no existe una pantalla que otorgue la ventana, así que
+  ese acceso está habilitado en el servidor pero inactivo.
 
 - **La ingesta es ciega.** El principal de servicio de n8n escribe y no puede
   leer. Si su credencial se filtra, el atacante puede ensuciar el historial de
