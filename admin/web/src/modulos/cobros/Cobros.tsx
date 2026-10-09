@@ -2,9 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
 import { auth, db } from '../../core/lib/firebase';
+import { useSesion } from '../../core/lib/contexto';
+import { rolEn } from '../../core/lib/sesion';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
 import { ContadoresDeCobro } from './ContadoresDeCobro';
+import { VisorComprobante } from './VisorComprobante';
+import { puedeVerComprobante, textosDelVisor } from './visorComprobante';
 
 /**
  * =============================================================================
@@ -45,6 +49,8 @@ interface Cotejo {
   montoLeido?: unknown;
   banco?: unknown;
   intentos?: unknown;
+  /** `valido` o `aproximado` en las ventas cotejadas; las señas de reserva no lo traen. */
+  calidad?: unknown;
   en?: { toDate?: () => Date };
 }
 
@@ -70,7 +76,11 @@ interface Cobro {
  */
 function etiquetaCotejo(c: Cobro): { texto: string; clase: string } | null {
   switch (c.cotejo?.resultado) {
-    case 'cuadra': return { texto: 'Datos coinciden', clase: 'tag tag-accent' };
+    case 'cuadra':
+      // Un cobro aproximado no dice «coinciden» a secas: algún dato cuadró con margen.
+      return c.cotejo.calidad === 'aproximado'
+        ? { texto: 'Datos coinciden de forma aproximada', clase: 'tag tag-aviso' }
+        : { texto: 'Datos coinciden', clase: 'tag tag-accent' };
     case 'no_cuadra': return { texto: 'Hay una diferencia', clase: 'tag tag-aviso' };
     case 'ilegible': return { texto: 'Ilegible', clase: 'tag tag-neutral' };
     default: return null;
@@ -96,6 +106,10 @@ export function Cobros() {
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
   const [abierto, setAbierto] = useState<Cobro | null>(null);
+  const { permisos } = useSesion();
+  // Comprobar y exportar son del administrador (la regla de actualización lo exige);
+  // el operador ve el listado, los totales, el detalle y el comprobante.
+  const soyAdmin = rolEn(permisos, tenantId) === 'admin';
 
   useEffect(() => {
     if (!tenantId) return;
@@ -147,10 +161,9 @@ export function Cobros() {
       <p className="ayuda">
         Los pagos que pasaron por el QR. <strong>Comprobar un pago lo hace usted
         mirando su cuenta</strong>: el comprobante que manda el cliente es una
-        imagen, y una imagen no es una acreditación del banco. En las señas de
-        reserva, NovuChat coteja los datos del comprobante —monto, cuenta y
-        hora— y lo dice en la columna «Comprobante»; eso no confirma que el
-        dinero entró.
+        imagen, y una imagen se puede editar. NovuChat coteja los datos del
+        comprobante —monto, cuenta y hora— y lo dice en la columna
+        «Comprobante»; eso no confirma que el dinero entró.
       </p>
 
       <div className="filtros">
@@ -203,6 +216,7 @@ export function Cobros() {
 
       {visibles.length > 0 && (
         <>
+          {soyAdmin && (
           <div className="acciones">
             <button type="button" className="btn btn-secondary" onClick={() => descargarCsv(
               'cobros',
@@ -218,6 +232,7 @@ export function Cobros() {
               }),
             )}>Exportar ({visibles.length})</button>
           </div>
+          )}
 
           <table className="table">
             <thead>
@@ -253,7 +268,7 @@ export function Cobros() {
                     <td>
                       <button type="button" className="btn btn-secondary btn-chico"
                               onClick={() => setAbierto(c)}>Ver</button>
-                      {!listo && (
+                      {soyAdmin && !listo && (
                         <button type="button" className="btn btn-primary btn-chico"
                                 onClick={() => void comprobar(c)}>Comprobar</button>
                       )}
@@ -266,12 +281,17 @@ export function Cobros() {
         </>
       )}
 
-      {abierto && <DetalleCobro cobro={abierto} cerrar={() => setAbierto(null)} />}
+      {abierto && (
+        <DetalleCobro cobro={abierto} tenantId={tenantId} soyAdmin={soyAdmin}
+                      cerrar={() => setAbierto(null)} />
+      )}
     </section>
   );
 }
 
-function DetalleCobro({ cobro, cerrar }: { cobro: Cobro; cerrar: () => void }) {
+function DetalleCobro({ cobro, tenantId, soyAdmin, cerrar }: {
+  cobro: Cobro; tenantId: string; soyAdmin: boolean; cerrar: () => void;
+}) {
   useEffect(() => {
     const alPulsar = (e: KeyboardEvent) => { if (e.key === 'Escape') cerrar(); };
     document.addEventListener('keydown', alPulsar);
@@ -280,6 +300,7 @@ function DetalleCobro({ cobro, cerrar }: { cobro: Cobro; cerrar: () => void }) {
 
   const items = Array.isArray(cobro.items) ? cobro.items as Record<string, unknown>[] : [];
   const cotejo = etiquetaCotejo(cobro);
+  const verComprobante = puedeVerComprobante(cobro);
   const diferencias = Array.isArray(cobro.cotejo?.diferencias)
     ? (cobro.cotejo.diferencias as unknown[]).filter((d): d is string => typeof d === 'string')
     : [];
@@ -323,9 +344,8 @@ function DetalleCobro({ cobro, cerrar }: { cobro: Cobro; cerrar: () => void }) {
 
           {/* EL COTEJO DEL SERVIDOR, cuando lo hay (señas de reserva, `DISENO.md`
               §4duodecies). Se muestra lo que se leyó y contra qué se comparó,
-              para que la persona que va a mirar su banco sepa qué buscar. Lo
-              que NO se muestra es la imagen: el comprobante no se guarda, se
-              coteja; solo queda lo leído y el resultado. */}
+              para que la persona que va a mirar su banco sepa qué buscar. La
+              imagen de una venta cotejada se pide aparte (`VisorComprobante`). */}
           {cotejo && (
             <div className="aviso-datos">
               <p>
@@ -354,24 +374,30 @@ function DetalleCobro({ cobro, cerrar }: { cobro: Cobro; cerrar: () => void }) {
                   {diferencias.map((d, n) => <li key={n}><TextoSeguro valor={d} maxLargo={200} /></li>)}
                 </ul>
               )}
-              <p className="ayuda">
-                NovuChat cotejó los datos del comprobante con la seña esperada.
-                Eso no confirma que el dinero entró: mírelo en su banco y, si
-                está, márquelo como comprobado.
-              </p>
+              {!verComprobante && (
+                <p className="ayuda">
+                  NovuChat cotejó los datos del comprobante con la seña esperada.
+                  Eso no confirma que el dinero entró: mírelo en su banco y, si
+                  está, márquelo como comprobado.
+                </p>
+              )}
             </div>
           )}
 
-          {/* EL COMPROBANTE NO SE PUEDE MOSTRAR, y se dice en vez de dejar un
-              hueco. NovuChat no guarda la imagen: vive en los servidores de
-              Meta y se baja con el token desde el servidor solo para cotejarla.
-              Ver `DISENO.md` §4nonies.3 y §4duodecies. Un recuadro vacío haría
-              pensar que la foto se perdió. */}
-          <p className="ayuda aviso-datos">
-            El comprobante que mandó el cliente está en su conversación. No se
-            puede ver desde acá: NovuChat no guarda la imagen
-            {cotejo ? ', solo lo que leyó de ella' : ''}.
-          </p>
+          {/* EL COMPROBANTE. De una venta cotejada se guarda 90 días y se ve
+              con la callable auditada; el de una seña de reserva sigue en la
+              conversación. Se dice en vez de dejar un hueco. */}
+          {verComprobante ? (
+            <div className="aviso-datos">
+              {textosDelVisor(cobro.cotejo?.calidad, soyAdmin).map((t) => <p key={t} className="ayuda">{t}</p>)}
+              <VisorComprobante tenantId={tenantId} cierreId={cobro.id} />
+            </div>
+          ) : (
+            <p className="ayuda aviso-datos">
+              El comprobante que mandó el cliente está en su conversación de WhatsApp.
+              Desde acá solo se ven los comprobantes de ventas cotejadas.
+            </p>
+          )}
 
           {typeof cobro.comprobadoPor === 'string' && (
             <p className="text-muted">
