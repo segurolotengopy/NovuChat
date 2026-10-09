@@ -12,7 +12,7 @@
 |---|---|
 | **Qué decidió Andres (07/10)** | **BYOC es el mecanismo preferido**: el comercio trae portafolio, número y tarjeta, y paga Meta directo. NovuChat cobra la mensualidad e incluye la IA y la infraestructura. El pago regular (NovuChat paga Meta) queda para excepciones declaradas. |
 | **¿La tabla pública se sostiene?** | **Sí.** 25 por 200, 50 por 500 y 90 por 1.000 conversaciones dejan **72 % a 77 %** a uso pleno con Flash-Lite y **67 % a 70 %** con Haiku 4.5 (§2). Mejor que los planes con Meta incluido (53 % a 68 %). |
-| **La bolsa de 300 por 10** | Deja 72 % con Flash-Lite y 52 % con Haiku, pero **a 0,033 USD por conversación es tres veces más barata que el plan**: Impulso más una bolsa son 500 conversaciones por 35, y Crecimiento las da por 50. Conviene 300 por 15 o más, o aceptar que nadie suba de plan (§3). |
+| **Las bolsas** | **DECIDIDO (09/10): dos bolsas.** Conversaciones extra, fuera del plan: 300 por USD 15 (76 % con Flash-Lite). Mensajes salientes que el negocio inicia más de 48 h después del último mensaje del cliente final: 300 por USD 10 (84 %: no llevan IA). Los seguimientos dentro de las 48 h van dentro de la conversación del lead; los de después no cuentan como conversación y salen de la bolsa de mensajes (§3). |
 | **Q'Taco** | **DECIDIDO:** 35 por 400, BYOC, instalación 0. Nos quedan 26 USD al mes (73 % a uso pleno). Q'Taco paga a Meta unos 12 USD con 220 conversaciones y unos 32 con 400 (§4). |
 | **Rubén (Dhermacore y productos digitales)** | Un tenant, cuatro números en el portafolio verificado de Dhermacore, **60 por 1.500 conversaciones comunes, instalación 200**, seguimientos incluidos y contados como conversaciones. Nos quedan 42 USD (70 %) con Flash-Lite. Su factura de Meta va de 0 a 48 USD si el 70 % de los leads viene por anuncio y Meta da la ventana gratuita de 72 h; sin ella, de 57 a 74. El seguimiento de la semana es el caro (§5). |
 | **La intervención humana a mitad del chat** | Hoy solo «pasar con Rubén» (aviso y botón a su WhatsApp). La bandeja en la consola es un módulo sin fecha. **La coexistencia app y API existe en Meta y es la vía que encaja**: Rubén escribiría desde su teléfono y el flujo recibiría el eco para callar al asistente; falta que el receptor de AAB1 entregue ese campo y una prueba con línea real que autoriza Andres (§5.4). |
@@ -41,17 +41,23 @@ USD al mes, a uso pleno. «Nos queda» descuenta impuestos (16 %), infraestructu
 - **Lo que paga el comercio a Meta**, a uso pleno y con un aviso por conversación: unos 2 USD en Impulso, 23 en Crecimiento y 57 en Pro. Con varios avisos al negocio (como Q'Taco), 10, 43 y 97. En Pro, el total puede pasar de 145 USD: la imagen y el contrato lo dicen con números, nunca como «centavos» (`base-comercial` §3).
 - **Instalación 65 y «a medida desde 125».** El alta BYOC lleva una sesión de Meta con el dueño (portafolio, tarjeta, número); Q'Taco salió con 0 y Rubén con 200. Andres decide si 65 se queda.
 
-## 3. Las bolsas
+## 3. Las bolsas: dos, y una regla de conteo
 
-| Bolsa | Por conversación | Flash-Lite | Haiku 4.5 | Contra el plan |
-|---|---|---|---|---|
-| 300 por 10 (Andres, 09/10, por confirmar) | 0,033 | 7,2 (72 %) | 5,2 (52 %) | Impulso + 1 bolsa = 500 por 35; Crecimiento, 500 por 50 |
-| 300 por 15 (PDF de Dhermacore, 23/09) | 0,050 | 11,4 (76 %) | 9,4 (63 %) | Impulso + 1 bolsa = 500 por 40 |
-| 300 por 40 (`Analisis/49`) | 0,133 | 32,4 (81 %) | 30,4 (76 %) | Más cara que cualquier plan: empuja a subir |
+**DECIDIDO (Andres, 09/10):**
 
-**El margen de la bolsa no es el problema; el precio relativo sí.** A 10, a ningún cliente le conviene subir de plan. Si Andres quiere 10, hay que aceptarlo como política («el plan es el piso, el resto se compra por bolsas») y entonces los planes de 50 y 90 pierden sentido frente a 25 más bolsas. **Recomendación: 300 por 15 como mínimo**, y que la bolsa nunca cueste menos por conversación que el plan de arriba.
+| Bolsa | Qué cubre | Precio | Por unidad | Nos queda | Lo que el comercio paga a Meta por esas 300 |
+|---|---|---|---|---|---|
+| **Conversaciones extra** | Conversaciones por encima de las incluidas en el plan | **300 por USD 15** | 0,050 | 11,4 (76 %) con Flash-Lite; 9,4 (63 %) con Haiku | Según su tráfico (5 respuestas y 1 aviso: unos 20 USD pasada la franquicia) |
+| **Mensajes salientes fuera de las 48 h** | Mensajes que el negocio inicia más de 48 horas después del último mensaje del cliente final (el seguimiento «a la semana», una reactivación) | **300 por USD 10** | 0,033 | 8,4 (84 %): no llevan IA | Unos 22 USD: son plantillas de marketing a 0,074. Hay que decirlo: la bolsa le cuesta más en Meta que en NovuChat |
 
-**DECIDIDO (Andres, 09/10): las bolsas entran en el conteo de conversaciones**, igual que el plan: una conversación es una conversación, venga del plan o de la bolsa, y los seguimientos también cuentan (§5.2). El servidor hoy solo conoce la bolsa de 30 por 10 y el pago acepta una lista cerrada: la bolsa BYOC hay que construirla (§7).
+**La regla de conteo, confirmada por Andres el 09/10:**
+- El seguimiento **dentro de las 48 horas** va dentro de la conversación del lead: no abre una conversación nueva aunque pase la ventana de 24 horas.
+- Un mensaje iniciado por el negocio **después de 48 horas no cuenta como conversación**: se descuenta de la bolsa de mensajes salientes. Si el cliente final responde, esa respuesta abre una conversación que sí cuenta (por confirmar con Principal, §7).
+- Las dos bolsas entran en el conteo de su unidad, no vencen y se cortan al agotarse, como las conversaciones en producción.
+
+**Lo que esto cambia:** 1.500 conversaciones vuelven a ser unos 1.500 leads, no 500 (§5.2). El servidor hoy no distingue un saliente iniciado por el negocio de una respuesta, cuenta cada ventana de 24 horas como conversación y solo conoce la bolsa de 30 por 10, con el pago sobre una lista cerrada: **las dos bolsas y la regla son código nuevo en el conteo y en Pagar**, que dimensiona Principal (§7).
+
+**Una observación, dicha una vez:** a 0,050 por conversación, la bolsa de conversaciones sigue más barata que los planes (0,090 a 0,125): Impulso más una bolsa son 500 conversaciones por 40 y Crecimiento las da por 50. Andres lo aceptó así.
 
 ## 4. Q'Taco: decidido
 
@@ -75,7 +81,7 @@ Rubén es agencia y autor: hace el marketing y el seguimiento de las dos doctora
 
 ### 5.2 Precio y lo que nos queda
 
-**60 USD al mes por 1.500 conversaciones comunes a los cuatro números; instalación 200; bolsa de 300 (§3); 4 cambios de campaña al mes como autogestión desde la consola (operados por NovuChat, 15 USD cada uno); seguimientos incluidos, máximo dos por lead, contados como conversaciones.**
+**60 USD al mes por 1.500 conversaciones comunes a los cuatro números; instalación 200; las dos bolsas de §3; 4 cambios de campaña al mes como autogestión desde la consola (operados por NovuChat, 15 USD cada uno); el seguimiento de las 48 horas incluido en la conversación del lead; el de la semana, de la bolsa de mensajes salientes.**
 
 | Flujo | Al 50 % de uso | A uso pleno | Equilibrio |
 |---|---|---|---|
@@ -84,8 +90,8 @@ Rubén es agencia y autor: hace el marketing y el seguimiento de las dos doctora
 | Agente con caché | 33 (54 %) | 17 (28 %) | 2.300 |
 | Agente sin caché | 10 (17 %) | −28 | 945 |
 
-- **Los seguimientos no nos cuestan:** texto fijo, sin modelo; hasta unas 1.000 ejecuciones más al mes en n8n, dentro del tope de 1.500 conversaciones (`Analisis/49` §6 las absorbe). Por eso no se cobran por mensaje; se cobra la instalación de construirlos.
-- **Sí consumen conversaciones:** cada uno abre una ventana de 24 horas nueva, así que un lead con sus dos seguimientos son hasta tres conversaciones. **1.500 conversaciones son unos 500 leads completos**, o más leads con menos seguimientos. Rubén lo tiene que saber al firmar.
+- **Los seguimientos no nos cuestan IA:** texto fijo, sin modelo; hasta unas 3.000 ejecuciones más al mes en n8n (`Analisis/49` §6 las absorbe). El de las 48 horas va incluido; el de la semana se vende en la bolsa de mensajes salientes, y la instalación cubre construirlos.
+- **1.500 conversaciones son unos 1.500 leads** con la regla de §3. Si Rubén manda el mensaje de la semana al 60 % de ellos (900 mensajes, 3 bolsas), nos paga 60 más 30 y nos quedan unos 67 USD (42 del plan y 25 de las bolsas).
 - **Es precio por contrato** (0,040 por conversación), con plazo y revisión.
 
 ### 5.3 Lo que paga Rubén a Meta
@@ -94,11 +100,10 @@ Cuatro números son cuatro franquicias: 4.000 mensajes de servicio gratis al mes
 
 | Escenario (70 % por anuncio) | Meta al mes | Paga en total |
 |---|---|---|
-| 500 leads con los dos seguimientos (1.500 conversaciones) | 48 | 108 |
-| 750 leads con el seguimiento de 48 h | 17 | 77 |
 | 1.500 leads sin seguimientos | 0 | 60 |
-| Si Meta no diera la ventana gratuita: 500 leads con los dos seguimientos | 74 | 134 |
-| Si Meta no diera la ventana gratuita: 1.500 leads sin seguimientos | 57 | 117 |
+| 1.500 leads con el seguimiento de 48 h (incluido) | 33 | 93 |
+| 1.500 leads con el de 48 h y el de la semana al 60 % (900 mensajes, 3 bolsas de 10) | 100 | 190 |
+| Si Meta no diera la ventana gratuita: 1.500 leads con los dos seguimientos al 60 % | 234 | 324 |
 
 La ventana de 72 horas **no se promete hasta medirla** (`base-comercial` §6); el origen del anuncio ya se registra en el servidor.
 
@@ -141,7 +146,7 @@ Propuesta de texto, para que Andres la apruebe y el agente `metodo` la aplique:
 | §3 «Planes 25 / 50 / 90 por 100 / 220 / 500» | Meta incluido | **25 / 50 / 90 por 200 / 500 / 1.000, BYOC.** El pago regular queda para excepciones declaradas (Bellido) |
 | §3 «El plan de entrada cabe exacto en la franquicia» | Argumento nuestro | Pasa a ser del comercio: su factura de Meta en Impulso ronda los 2 USD |
 | §3 «El volumen del plan grande no se estira más allá de 500» | Por Meta | Por la IA: el tope se fija contra el modelo (`Analisis/39` §2); 1.000 es holgado |
-| §3 «Bolsa: 30 por 10, que no vence» | Para Meta incluido | Bolsa BYOC de 300 conversaciones (precio por decidir, §3), que no vence y entra en el conteo |
+| §3 «Bolsa: 30 por 10, que no vence» | Para Meta incluido | Dos bolsas BYOC (§3): 300 conversaciones por 15 y 300 mensajes salientes fuera de 48 h por 10; no vencen y entran en el conteo de su unidad |
 | §3 «Aviso al 80 %» | Sigue | Sigue. Se agrega: aviso cuando la tarjeta del comercio en Meta falle, porque el canal se cae y NovuChat no puede reponerlo |
 | §3 BYOC «se ofrece caso por caso» | Excepción | Es el mecanismo preferido. Lo que sigue valiendo: el modelo lo elige NovuChat; la factura de Meta no son «centavos»; BYOC no levanta el techo de n8n |
 | §4 Consola | Mensajes del mes contra los 1.000 gratis | Es la cifra que le predice la factura al comercio: pasa a obligatoria, por número |
@@ -152,7 +157,7 @@ Propuesta de texto, para que Andres la apruebe y el agente `metodo` la aplique:
 | Pieza | Qué | Dueño |
 |---|---|---|
 | `planes.ts` y consola de planes | 200 / 500 / 1.000; titularidad `comercio` por defecto; `cambiosIncluidos` 0 / 1 / 2 | Principal (Central) |
-| Bolsa BYOC en el servidor | 300 conversaciones al precio que decida Andres; el pago acepta la lista cerrada | Central |
+| Las dos bolsas y la regla de conteo en el servidor | Contador de mensajes salientes fuera de 48 h; la bolsa de conversaciones de 300 por 15 y la de mensajes de 300 por 10 en Pagar; consumo en la consola. Dimensionado pedido a Principal el 09/10 | Core y Central |
 | `docs/base-comercial.md` | §6 | `metodo`, con el OK de Andres |
 | Sitio (`precios.es.ts`) | Los tres planes publicados dicen lo mismo que `planes.ts` | Sesión del sitio |
 | Imagen del chat de captación | Factura de Meta con números; sin bolsas hasta que existan | Sesión del chat |
