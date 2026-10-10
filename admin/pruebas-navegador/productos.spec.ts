@@ -90,13 +90,16 @@ test.describe('Productos', () => {
     await expect(page.getByText(/3 de \d+ productos/)).toBeVisible();
   });
 
-  test('NEGATIVA: un nombre que ya existe no pisa al anterior y manda a «Editar»', async ({ page }) => {
-    await page.getByLabel('Nombre').last().fill('Pique macho');
-    await page.getByLabel(/^Precio/).last().fill('1');
+  test('NEGATIVA: un nombre que ya existe (o que se escribe casi igual) no pisa al anterior y manda a «Editar»', async ({ page }) => {
+    // Se usa un ítem cargado por la propia pantalla: el identificador sale del nombre. (Los de la siembra llevan otro identificador
+    // —`item-1`—, y la pantalla no los reconoce como repetidos: ver el informe del carril 3.)
+    await agregar(page, 'E2E Repetido', '10');
+    await page.getByLabel('Nombre').last().fill('e2e  REPETIDO');
+    await page.getByLabel(/^Precio/).last().fill('99');
     await page.getByRole('button', { name: 'Agregar' }).click();
     await expect(page.getByText(/Ya hay un ítem con ese nombre/)).toBeVisible();
-    await expect(fila(page, 'Pique macho')).toContainText('65'); // el precio original sigue
-    await expect(page.getByText(/3 de \d+ productos/)).toBeVisible();
+    await expect(fila(page, 'E2E Repetido')).toContainText('10 BOB'); // el precio original sigue
+    await expect(page.getByText(/4 de \d+ productos/)).toBeVisible();
   });
 
   test('buscar por nombre deja solo lo que coincide', async ({ page }) => {
