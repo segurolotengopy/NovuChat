@@ -7,8 +7,8 @@
 > `~/NovuChat/CLIENTES/NOVUCHAT/` (no versionada) y en `.env.novuchat`.
 
 Eres la sesión dedicada a terminar el traspaso del chat interno de NovuChat:
-del portafolio `NovuChat Produccion` y el número 78567326 al portafolio
-`NovuChat` de Silvana y el número 76988663, con app y usuario de sistema
+del portafolio `NovuChat Produccion` y el número …326 al portafolio
+`NovuChat` de Silvana y el número …663, con app y usuario de sistema
 propios en el portafolio de ella. Las decisiones están en
 `CLIENTES/NOVUCHAT/traspaso-tech-provider.md` (cabecera, §1 y §8) y en
 `ESTADO.md` (entrada del 24/09); este prompt las ejecuta.
@@ -52,12 +52,12 @@ fase 2: **el flujo cambió, y un flujo se publica solo desde `main`**.
    tampoco a nivel de WABA: el destino de una WABA suscrita a esa app lo cambia
    solo WhatsApp-Modular, y `webhook-meta.sh --alta-waba` corta si el token es
    de esa app (`scripts/lib/apps-ajenas.sh`).
-3. **El flujo de captación `ayMDHHBXRREgT8gR` es el mismo.** Cambian los
+3. **El flujo de captación (id del flujo, en `CONFIGURACION.local.md`) es el mismo.** Cambian los
    valores de sus dos credenciales, el `phoneNumberId` de `Config base` y el
    webhook. El filtro por `phone_number_id` (condición c3 de `¿Es un
    mensaje?`) se queda: por una app compartida pueden entrar eventos de otros
    números.
-4. **El número de recepción sigue siendo el de Silvana** (…1250). 78567326 se
+4. **El número de recepción sigue siendo el de Silvana** (…1250). …326 se
    queda registrado en su WABA y solo se desuscribe la app vieja
    (`verificar-meta.sh --desuscribir`, reversible con `--suscribir`).
 5. **La plantilla `solicitud_contacto` se vuelve a pedir en la WABA de Silvana
@@ -125,9 +125,9 @@ leído entero y `--aplicar`, `--apagar` → `webhook-meta.sh --preparar` →
 nodo de envío.
 
 ### Fase 3 — Pruebas reales (§5)
-«Hola» al 76988663 con nombre visible «NovuChat»; la captación hasta el cierre
+«Hola» al …663 con nombre visible «NovuChat»; la captación hasta el cierre
 con el aviso a recepción (cuando la plantilla esté `APPROVED`); «Hola» al
-78567326 sin respuesta; la conversación en la consola del comercio
+…326 sin respuesta; la conversación en la consola del comercio
 `novuchat`; `ver-ejecuciones.sh` sin errores. Resultado real en
 `aceptacion.md`. Si falla la primera, rollback (§6) antes de seguir.
 
@@ -141,7 +141,7 @@ con el aviso a recepción (cuando la plantilla esté `APPROVED`); «Hola» al
 - **Cambios al sitio**: publica el contacto directo, no el número del
   asistente. Si Andres quiere que lleve al asistente, es de la sesión del
   sitio.
-- **Baja del 78567326**: se queda; borrar no aporta y quita el rollback.
+- **Baja del …326**: se queda; borrar no aporta y quita el rollback.
 
 ## Entregables al cerrar
 - PR de la rama del 24/09 fusionado antes de la fase 2; un PR más solo si
