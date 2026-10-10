@@ -3871,6 +3871,13 @@ describe('H1 de Conversaciones: marcar leída, campos derivados y búsqueda', ()
   it('no puede subir el contador ni escribir otro valor, ni borrar el campo', async () => {
     await sembrarSinLeer(A, false);
     await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: 5 }));
+    // Ni siquiera 1 ni un negativo: solo el entero 0. `-0` y `0.0` son dobles y rompen el contrato `int ≥ 0`.
+    await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: 1 }));
+    await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: -1 }));
+    await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: -0 }));
+    // La escritura COMBINADA con otro campo permitido no vale como atajo: se valida el valor igual.
+    await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: 99, notaInterna: 'x' }));
+    await assertFails(updateDoc(doc(operA(), c1()), { sinLeer: true, etiquetas: ['a'] }));
     await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: '0' }));
     await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: deleteField() }));
     await assertFails(updateDoc(doc(operA(), c1()), { sinLeer: true }));

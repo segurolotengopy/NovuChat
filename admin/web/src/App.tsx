@@ -64,7 +64,8 @@ import type { IdModulo } from './central/lib/flujos';
  * pestañas es cuál, ni de volver a la que estaba. Con dos pestañas de la
  * consola abiertas, menos.
  *
- * El nombre sale del último tramo de la RUTA y no de un rótulo que cada página
+ * El nombre sale de un tramo de la RUTA (`tramoDeTitulo`: el tercero bajo `/negocio`, nunca el id de una conversación)
+ * y no de un rótulo que cada página
  * escriba por su cuenta: así una pantalla nueva ya sale con título y no hay dos
  * listas de nombres que se separen con el tiempo. La única que no es literal es
  * el catálogo, que se llama «Servicios» o «Productos» según los flujos del

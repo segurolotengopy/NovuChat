@@ -1845,7 +1845,8 @@ service cloud.firestore {
         // Dos ramas de actualización disjuntas:
         //  a) n8n actualiza el resumen del hilo;
         //  b) una persona del negocio marca gestión interna, y SOLO puede tocar
-        //     los tres campos de gestión. Sin `hasOnly`, un operador podría
+        //     los campos de gestión (etiquetas, nota interna, no contactar y la marca de leída:
+        //     `noLeidos` y `sinLeer`, solo hacia 0 / false). Sin `hasOnly`, un operador podría
         //     reescribir `ultimoMensaje` o `telefono` y falsear el historial.
         allow update: if (esIngesta(tenantId) && tenantOperativo(tenantId)
                           && conversacionValida())
@@ -1870,7 +1871,8 @@ service cloud.firestore {
         // (borrar el campo o escribir otro valor se niega). Un cambio de otro campo no la toca.
         function marcaLeidaValida() {
           let cambios = request.resource.data.diff(resource.data).affectedKeys();
-          return (!cambios.hasAny(['noLeidos']) || request.resource.data.noLeidos == 0)
+          return (!cambios.hasAny(['noLeidos'])
+                  || (request.resource.data.noLeidos is int && request.resource.data.noLeidos == 0))
               && (!cambios.hasAny(['sinLeer']) || request.resource.data.sinLeer == false);
         }
 
