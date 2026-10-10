@@ -538,6 +538,11 @@ además un documento en `/tenants/{t}/accesosSoporte/{uid}` con `expira` en el
 futuro. Lo crea una Cloud Function que **exige rol de administrador del negocio**,
 dura entre 1 y 24 horas y queda registrada en `/auditoria`. El propietario no
 puede otorgárselo a sí mismo: la colección es de solo lectura desde el navegador.
+Desde el 09/10/2026 la misma ventana también abre los comprobantes de pago de
+ventas cotejadas (`verComprobante`, auditado con rol «soporte», mismo tope por
+usuario); hasta que exista la pantalla que otorga la ventana, ese acceso queda
+sin camino en la consola (la pantalla que otorga la ventana, con el texto de
+consentimiento que menciona los comprobantes, llegará aparte).
 
 **Sin el control.** El proveedor tiene lectura permanente y silenciosa sobre todos
 sus clientes.

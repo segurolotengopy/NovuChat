@@ -885,6 +885,8 @@ export const fijarCortePrepago = onCall(async (peticion) => {
 // ACCESO DE SOPORTE. NovuChat no lee conversaciones de sus clientes por defecto.
 // Cuando hace falta para resolver un problema, el ADMIN DEL NEGOCIO abre una
 // ventana con vencimiento. El propietario no puede abrírsela solo.
+// Desde el 09/10/2026 la misma ventana también deja ver comprobantes de pago con la callable
+// `verComprobante` (rol 'soporte', auditado en tenants/{t}/auditoria y con el mismo tope por uid).
 // ---------------------------------------------------------------------------
 export const otorgarAccesoSoporte = onCall(async (peticion) => {
   const datos = peticion.data as Record<string, unknown>;

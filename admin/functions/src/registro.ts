@@ -196,7 +196,7 @@ export const REGISTRO = [
     ],
     camposEnNegocio: [],
     colecciones: [],
-    coleccionesRaiz: [],
+    coleccionesRaiz: ['topesDelVisor'],  // contador por uid del visor de comprobantes (solo el servidor)
     // Las imágenes de comprobantes de venta (regla 2); las reglas niegan todo acceso.
     almacenamiento: ['comprobantes'],
     limites: [],
@@ -206,7 +206,7 @@ export const REGISTRO = [
     ],
     tablero: [],
     herramientas: [],
-    functions: ['registrarQrDeCobro', 'imagenDeCobro', 'cotejarComprobanteVenta', 'guardarComprobante', 'purgarComprobantes'],
+    functions: ['registrarQrDeCobro', 'imagenDeCobro', 'cotejarComprobanteVenta', 'guardarComprobante', 'purgarComprobantes', 'verComprobante'],
     flujosProgramados: [],
     // Corregido respecto del diseño (que decía solo `despuesDelTurno`):
     // `configuracionFlujo` arma el cobro con `cobroParaElFlujo` (antes del

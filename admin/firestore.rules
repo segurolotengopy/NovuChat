@@ -2130,8 +2130,9 @@ service cloud.firestore {
         // (`cotejo.ts`), `montoLeido` lo que el modelo leyó (o nulo), `banco`
         // el de destino tal como figura, `idMeta` el identificador del mensaje
         // con el comprobante —la prueba externa de que llegó— e `intentos`
-        // cuántos comprobantes se cotejaron para esta cita. LA IMAGEN NO SE
-        // GUARDA en ninguna parte: solo estos datos.
+        // cuántos comprobantes se cotejaron para esta cita. La imagen se guarda
+        // 90 días en Storage (comprobantes.ts) y solo la entrega verComprobante;
+        // acá van solo estos datos.
         function cotejoValido(d) {
           return !d.keys().hasAny(['cotejo'])
             || (d.cotejo is map
@@ -2524,6 +2525,20 @@ service cloud.firestore {
                     && soloCampos(['nombre', 'preferencias'])
                     && textoOpc(request.resource.data, 'nombre', 120);
       allow create, delete: if false;
+    }
+
+    // =========================================================================
+    // /topesDelVisor/{uid} — cuántos comprobantes vio cada usuario (módulo cobros).
+    //
+    // El contador del tope del visor de comprobantes: 30 por hora y 100 por día
+    // por usuario, global (no por comercio). Lo lee y lo escribe SOLO la callable
+    // `verComprobante`, con el SDK Admin, dentro de una transacción. Ni el
+    // navegador, ni la ingesta, ni el propietario, ni el mismo usuario tienen
+    // nada que hacer acá: si el usuario pudiera borrar su contador, el tope no
+    // sería un tope. Vive fuera de /tenants porque el tope es del usuario.
+    // =========================================================================
+    match /topesDelVisor/{uid} {
+      allow read, write: if false;
     }
 
     // =========================================================================

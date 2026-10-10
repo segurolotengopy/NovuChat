@@ -8,18 +8,18 @@
 
 | Campo | Valor hoy |
 |---|---|
-| **Qué contiene hoy** | `cobro.ts`, `qrSimple.ts`, `dibujoQr.ts`, `cotejo.ts`, `cobroVenta.ts`, `cotejoVenta.ts`, `comprobantes.ts`, `mediaIdQr`, `cobroReal`; `Cobros.tsx`, `Cobro.tsx` (QR) |
+| **Qué contiene hoy** | `cobro.ts`, `qrSimple.ts`, `dibujoQr.ts`, `cotejo.ts`, `cobroVenta.ts`, `cotejoVenta.ts`, `comprobantes.ts`, `verComprobante.ts` (el visor: la callable `verComprobante`), `mediaIdQr`, `cobroReal`; `Cobros.tsx`, `Cobro.tsx` (QR) |
 | **Depende de** | Pedidos o Agenda (quien cierra) |
 | **Límite por plan** | — |
 | **Configuración** | `config/cobros` (hoy repartido entre `config/venta` y `config/agendamiento`): `mediaIdQr`, `cobroReal`, montos de seña, … |
-| **Colecciones** | las de cobro dentro de `cierres` y `pedidos`; `fotosCatalogo` no. Almacenamiento: `comprobantes` (Storage, regla 2) |
+| **Colecciones** | las de cobro dentro de `cierres` y `pedidos`; `fotosCatalogo` no. Almacenamiento: `comprobantes` (Storage, regla 2). Raíz: `topesDelVisor/{uid}` (el contador del tope del visor; las reglas lo niegan todo, solo lo escribe la callable) |
 | **Pestañas** | Cobros (`admin`), Cobro / QR (`admin`) |
 | **Prompt** | fragmento de cobro del prompt (QR, comprobante) |
 | **Herramientas** | las de la seña y del comprobante en los flujos de reservas y venta |
 | **Nodos (lo que queda en n8n)** | `preparar-sena`, `respuesta-de-la-sena`, `mensaje-de-la-sena`, `interpretar-lectura` (en `Flujos/src/modulos/cobros/` desde FL1), más los nodos de cobro del Demo B; dibujo del QR y cotejo del comprobante como servicios internos del módulo |
 | **Ganchos** | `despuesDelTurno` (cotejo), `alCierre` con Pedidos o Agenda |
 | **Mensajes por conversación** | 0 en la venta; la seña agrega los mensajes declarados en §4duodecies (abajo) |
-| **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts`; regla 2 (§4duodecies.6): `calificar.test.ts`, `cobro-v2.test.ts`, `cotejo-venta.test.ts`, `comprobantes.test.ts` (en `pruebas/modulos/cobros/`), «Comprobantes de pago» en `storage-reglas.test.ts` y, en la ingesta, `pruebas/cobro-v2-ingesta.test.ts` |
+| **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts`; regla 2 (§4duodecies.6): `calificar.test.ts`, `cobro-v2.test.ts`, `cotejo-venta.test.ts`, `comprobantes.test.ts` (en `pruebas/modulos/cobros/`), «Comprobantes de pago» en `storage-reglas.test.ts` y, en la ingesta, `pruebas/cobro-v2-ingesta.test.ts`; el visor (§4duodecies.7): `ver-comprobante.test.ts` y `visor-reglas.test.ts` |
 
 **Observación:** declarado por dos verticales «y gana venta»; con módulo, es uno solo con su propio `config/cobros`. **Los rótulos del cobro simulado son de Plataforma** (§4sexies.3, abajo). **Nunca confundir con Pagar** (NovuChat cobra al comercio), que es de Central. La prohibición 3 de `CLAUDE.md` manda: cobro simulado con rótulo, cobro real sin «pago acreditado», y los dos modos son excluyentes
 
@@ -506,3 +506,110 @@ un recordatorio.
 **Deuda para F3b.** Hoy Core (`registrarCierre`) lee `config/venta` y conoce la
 regla 2; sale cuando F3b inyecte ganchos (el gancho `alCierre` de Cobros ya está
 en el manifiesto).
+
+### 4duodecies.7 El visor de comprobantes: `verComprobante` (09/10/2026)
+
+> **Origen:** pedido de Andres (07/10/2026) y decisiones del 09/10; plan único en
+> el PR-1 (servidor) y PR-2 (consola, después de fusionar el PR-1). **Cero
+> mensajes por conversación**: es una callable de la consola, no toca el flujo.
+> Reemplaza a «no hay visor en la consola» de §4duodecies.6.
+
+**Qué es.** Los comprobantes de las ventas con regla 2 se guardan 90 días en
+Storage (`comprobantes.ts`) y `storage.rules` sigue negando todo acceso directo,
+incluido el del administrador. La **única puerta** es la callable `verComprobante`
+(`modulos/cobros/verComprobante.ts`): devuelve los bytes, **sin URL firmada ni
+enlace**, para el administrador y el operador de ESE comercio y para el soporte
+de NovuChat mientras tenga una ventana vigente (`accesosSoporte`). El propietario
+sin ventana no.
+
+**Contrato (PR-1 servidor ↔ PR-2 consola).**
+
+| | |
+|---|---|
+| Entrada | SOLO `{tenantId, cierreId}`. `tenantId` cumple `ID_TENANT`; `cierreId` cumple `^venta_[A-Za-z0-9_-]{1,120}$`. El servidor ignora cualquier otra clave y **el cliente nunca manda una ruta**. |
+| Salida | exactamente `{mime, base64}`; `mime` ∈ `image/jpeg`, `image/png`, `image/webp`, `application/pdf`. |
+| Errores (mensaje fijo) | `unauthenticated` «Inicie sesión.»; `invalid-argument` «Solicitud inválida.»; `permission-denied` «Sin permiso para ver este comprobante.»; `failed-precondition` «Este cobro no tiene un comprobante que se pueda mostrar.»; `not-found` «No hay un comprobante guardado para este cobro.»; `resource-exhausted` «Alcanzó el tope de comprobantes por hora o por día.»; `unavailable` «No se pudo abrir el comprobante. Intente más tarde.» |
+
+**Orden en el servidor** (un rechazo se audita SOLO después de la identidad y la
+ficha; antes, cero escrituras en Firestore y, salvo sin sesión, una línea de log
+con código y uid; sin sesión (`unauthenticated`) no deja ni la línea):
+1 sesión; 2 forma de la entrada; 3 rol del token PARA ESE comercio
+(`esAdminDe`, `esOperDe` o `esPropietario` como candidato a soporte; cualquier
+otro, denegado); 4 `cuentaVigenteDe` (la cuenta sigue habilitada, con el rol y
+con la sesión posterior a la última revocación; Auth caído = `unavailable`, no
+«sin permiso»); 5 soporte: `soporteVigenteDe`; 6 la ficha, `activo` o
+`suspendido` (**el suspendido sí puede ver**; dado de baja o inexistente, no);
+7 `tieneModulo(ficha, 'cobros')` del registro; 8 el tope; 9 el cierre: tipo
+`venta` y `cotejo.calidad` ∈ {`valido`, `aproximado`}; 10 la ruta (la guardada en
+`privado/datos.rutaComprobante` si pasa `rutaValidaDe`; si no, derivada del
+`idMeta` sobre el día del cotejo y el anterior, 4 extensiones, hasta 8
+`getMetadata`); 11 tamaño sin descargar (10 MB PDF, 5 MB imagen); 12 descarga;
+13 el tipo por los **bytes** (`tipoPorFirma`), de acuerdo con la extensión: nunca
+el `contentType` guardado; 14 la **auditoría fail-closed**; 15 la respuesta.
+
+**Auditoría.** `tenants/{t}/auditoria` con `auditar` (`central/comunes.ts`):
+`{accion:'comprobante_visto', uid, rol ('admin'|'oper'|'soporte'), cierreId,
+resultado ('ok'|'rechazado'), motivo?, en}`. Motivos cerrados: `sin_modulo`,
+`tope`, `sin_comprobante`, `no_elegible`, `demasiado_grande`, `error_almacen`,
+`tipo_no_coincide`. Sin teléfono, ruta, `idMeta`, hash ni bytes. Es
+**fail-closed**: los bytes salen solo si la auditoría confirmó; si no se pudo
+anotar, `unavailable`. **No usa la bitácora** (`registrar()` se traga los errores
+y la ingesta puede escribir en ella).
+
+**D2. El tope: 30 por hora y 100 por día por usuario.** Un documento contador
+transaccional `topesDelVisor/{uid}` en la raíz (`hora`, `vistasHora`, `dia`,
+`vistasDia`, `actualizadoEn`; hora y día de La Paz). Es global (no por comercio),
+cuenta todo intento autorizado que pasa la verificación del módulo y se evalúa
+antes de leer el cierre; si rechaza, no escribe. Un contador ilegible falla
+cerrado. Sin índice compuesto. Las reglas niegan el documento a todos
+(`allow read, write: if false`, con prueba negativa en `visor-reglas.test.ts`).
+No va en `planes.ts` ni en `limites.md`: es una protección del servicio, no un
+límite comercial del plan.
+
+**D3. App Check, solo en esta callable.** `opcionesDeVerComprobante(process.env)`:
+`memory: '512MiB'`, `maxInstances: 3`, `concurrency: 4` y `enforceAppCheck` según
+`APP_CHECK_DEL_VISOR` (`{produccion: true, staging: false}`; el emulador, apagado).
+**En staging** (`CPU_FRACCIONARIA='si'`, `gcf_gen1` con 512 MiB = 0,333 vCPU)
+**no se fija `concurrency`**: firebase-tools rechaza una concurrencia mayor que 1
+con menos de 1 vCPU. Sin variable de entorno nueva (el CI de producción exige un
+`.env` exacto). Las pruebas llaman con `.run()`, que salta App Check: se prueba la
+función pura. **Exigir App Check en las demás Functions o en Firestore es un
+cambio APARTE y de riesgo** (antes hay que medir cuántos tokens verificados
+llegan hoy), y no entra con este visor. Riesgo conocido: si el build de la
+etiqueta sale sin la clave del sitio, con `produccion: true` el visor queda
+inutilizable (todo `unauthenticated`); es una compuerta antes de etiquetar.
+
+**Quién lo ve (D4).** Con el PR-2, el operador ve en Cobros el listado, los totales y
+«Ver comprobante», y NO ve «Comprobar» (la regla de actualización exige
+administrador) ni «Exportar». La callable lee `privado` en su nombre y devuelve
+solo `{mime, base64}`. La pestaña Cobros se le muestra al operador SOLO si el negocio
+tiene el módulo `pedidos` (decisión de Andres, 09/10/2026; `rolesConModulo` en el
+registro): al operador de un comercio de reservas no se le muestra. Es presentación,
+no un límite: las reglas de `cierres` ya dejaban leer los cierres a todo miembro
+del negocio antes de este visor. **Consentimiento de soporte (D7):** hoy no
+existe una pantalla que otorgue una ventana de soporte (`otorgarAccesoSoporte` y
+`revocarAccesoSoporte` no tienen quien las llame); el servidor ya acepta soporte
+vigente, y el texto del consentimiento llega con la pantalla (PR opcional).
+
+**Qué cambió en el resto del módulo.** `comprobantes.ts`: el `Almacen` gana
+`metadatos(ruta)` (tamaño sin descargar; `null` si es 404) y `leer(ruta)` (`null`
+si es 404; otro error se relanza), y se exporta `almacenDeComprobantes()`.
+`cotejoVenta.ts`: ahora escribe `privado/datos.rutaComprobante` (hasta aquí no la
+escribía en ninguna rama) al crear el cierre y, con `merge`, en la rama de un
+cierre previo; solo si `rutaValidaDe` la acepta para ESE comercio y ESE mensaje.
+El objeto se guarda sin `firebaseStorageDownloadTokens`.
+
+**Costo.** 0 mensajes por conversación. Por vista: 4 lecturas de Firestore (5 con
+soporte), 2 escrituras (el tope y la auditoría), de 1 a 8 `getMetadata` y una
+descarga de hasta 10 MB (~13 MB en base64). Por venta: 0 escrituras extra (1 en la
+rama de un cierre previo). Nube: un servicio Cloud Run nuevo (`vercomprobante`),
+una publicación de reglas de Firestore y una de Storage (solo un comentario), 0 índices; **una callable nueva no nace
+invocable**: tras desplegar se verifica el invocador.
+
+**Costo declarado: los rechazos `tope` y `sin_modulo` escriben un asiento por
+llamada, sin cota propia.** Decisión de la coordinadora (09/10/2026): se acepta.
+La cota real la fijan `maxInstances` 3 × `concurrency` 4 y que quien llama tenga
+rol válido en ese comercio (sin rol no se escribe nada). Solo cuesta escrituras y
+ensucia la auditoría; no filtra datos. No se cambia el contrato ni el contador:
+el tope cuenta todo intento autorizado que pasó el módulo, antes de mirar el
+cierre y el almacén (lo fija `ver-comprobante.test.ts`, T18).
