@@ -1006,7 +1006,7 @@ const CH_CAUSAS = {
   oferta: 'ofreciste algo gratis, un descuento, un regalo o una promoción',
   monto: 'escribiste un monto o una cifra que no corresponde',
   cifra: 'escribiste un número que no está permitido',
-  sistema: 'nombraste un sistema o integración que no existe; solo WhatsApp, Meta, Google Calendar, Google Sheets y el cobro con QR',
+  sistema: 'nombraste un sistema o integración que no existe; solo WhatsApp, Meta, Google Calendar, Google Sheets y el pago por QR',
   banco: 'dijiste que el asistente valida pagos o transferencias; solo revisa visualmente el comprobante',
   consumo: 'diste una cifra de consumo o de conversaciones; nunca des números de consumo',
   bloqueo: 'dijiste algo que el servicio no puede afirmar (gratuidad, garantías, que no hay límites, costos de Meta minimizados)',
@@ -1016,7 +1016,8 @@ const CH_CAUSAS = {
   afirma: 'afirmaste como hecho algo que solo el sistema puede afirmar (que algo quedó anotado, agendado o confirmado)',
   pitch: 'no hiciste el pitch obligatorio: di que NovuChat es el primer empleado de tu negocio que nunca duerme y usa cuatro viñetas, una por línea, cada una con su emoji',
   puntos: 'no cubriste todos los puntos clave del rubro',
-  funcion_inventada: 'afirmaste una función (cobros, QR, adelantos, seña o pagos) que no está documentada para el rubro del cliente; no la afirmes ni la niegues: di solo lo que sí haces en su rubro y ofrece que alguien de nuestro equipo evalúe su caso',
+  sujeto_del_pago: 'dijiste que NovuChat, el asistente, Kenji o los clientes de la empresa «cobran»; quien PAGA por QR son los clientes de la empresa, a la empresa: di «tus clientes pagan por QR» o «envía tu QR para que paguen»',
+  funcion_inventada: 'afirmaste una función (cobros, QR, adelantos, seña o pagos) que no está documentada para el rubro del cliente; no la afirmes ni la niegues: di solo lo que sí haces en su rubro y ofrece que alguien de nuestro equipo evalúe su caso. NovuChat y el asistente no cobran: los clientes de la empresa pagan por QR a la empresa',
   repite: 'repetiste casi igual tu mensaje anterior; aporta información nueva y verificada (no la copies) y ofrece los botones vigentes',
   accion: 'dijiste que ibas a mostrar los planes o a pasar al cliente con el equipo; eso lo hace el sistema con los botones, no lo prometas',
   hueco: 'el texto quedó con un hueco o un marcador',
@@ -1135,7 +1136,7 @@ const CH_CONFIGURACION_DE_META = /\b(?:conexion|conectar|conectamos|configuracio
 const CH_COSTO_ADJETIVO = /\b(?:economic\w*|accesibl\w*)\b/;
 function chCostoMetaDelModelo(n) {
   return chTexto(n).split(/[.!?\n]+/).some((raw) => {
-    // «cobra por QR» / «cobros por QR» es la función documentada (el comercio cobra a su cliente), no el costo de Meta.
+    // Una frase de pago por QR («cobra por QR»; el modelo ya no puede escribirla, la rechaza `CH_COBRO_MAL`) no es el costo de Meta.
     const o = raw.replace(/\bcobr\w*\s+(?:por|con|mediante|a traves de)\s+(?:el |tu |su )?(?:codigo )?qr\b/g, ' ');
     if (CH_CONFIGURACION_DE_META.test(o)) return false;
     if (/\bmeta\b/.test(o)) return CH_COSTO_FUERTE.test(o) || CH_COSTO_DEBIL.test(o) || CH_COSTO_ADJETIVO.test(o);
@@ -1212,6 +1213,9 @@ function chPlazoSinRespaldo(n) {
   const t = chTexto(n).replace(/\b(?:los\s+)?(?:7|siete)\s+dias\s+(?:de|a)\s+la\s+semana\b/g, ' ').replace(/\bun dia antes\b/g, ' ');
   return CH_PLAZO_CANTIDAD.test(t) || CH_PLAZO_FECHA.test(t) || CH_PLAZO_24H.test(t);
 }
+// Quien PAGA con el QR son los clientes de la empresa, a la empresa: NovuChat, el asistente y Kenji no cobran a nadie, envían el QR del negocio. El modelo no puede decir que cobra, que «realiza el cobro»,
+// que «te cobra» ni que los clientes finales «cobran» («tus clientes cobran», «el cliente cobra»: ellos PAGAN); sí «tus clientes pagan por QR» o «envía tu QR para que paguen». («Cuánto cobra Meta» y «se cobran en bolivianos» son otra cosa y no se tocan.)
+const CH_COBRO_MAL = /\bcobr(?:a|an|as|o|amos|ar|ando|aran|ara)\s+(?:con|por|mediante|a traves de|via)\s+(?:el |tu |su |un )?(?:codigo )?qr\b|\bcobros?\s+(?:con|por|mediante|a traves de|via)\s+(?:el |tu |su )?(?:codigo )?qr\b|\b(?:realiza\w*|hace\w*|haces|hacemos|efectua\w*)\s+(?:el |los |tu |su )?cobros?\b|\bte cobra\w*|\b(?:tus |los |sus |mis |el |tu |su |mi )?clientes?(?:\s+finales)?\s+cobr(?:a|an|o|as|amos|ar|aran|ara|ando)\b|\b(?:novuchat|kenji|(?:tu|el|este) asistente|la ia|el bot)\b[^.!?]{0,30}\bcobr(?:a|an|ar|o|as)\b/;
 const CH_RUBROS_CON_COBRO = ['gastronomia', 'retail', 'otro'];
 const CH_FUNCION_INVENTADA = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado|cobros?|cobra\w*|cobrar)\b|\bqr\b/;
 const CH_FUNCION_INVENTADA_FUERTE = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado)\b/;
@@ -1243,6 +1247,7 @@ function chValidarMensaje(texto, v) {
   const sinPresentacion = n.replace(CH_PRESENTACION_OK, ' ');
   // Presentarse como persona o negar ser una IA (prohibición 4) se ve ANTES que los demás hechos, para que el reintento diga la causa justa.
   if (CH_YO_DEL_MODELO.test(sinPresentacion) || CH_NIEGA_IA.test(n)) return 'persona';
+  if (CH_COBRO_MAL.test(n)) return 'sujeto_del_pago';
   // R1: no se inventan funciones. Cobros, QR, adelantos, seña y anticipos solo están documentados para gastronomía, retail y «otro» (y en el pitch general y los hechos de la empresa).
   const rubroDelMensaje = chTexto(v.rubroId || v.rubroActual);
   // (en el pitch y en la empresa el «cobro por QR» es lo documentado, pero adelantos, anticipos, seña y pago total no lo son en NINGÚN rubro)
