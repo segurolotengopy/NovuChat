@@ -1967,10 +1967,12 @@ describe('pideElLocal: PEDIR el local dispara, DAR la propia dirección no', () 
   });
 
   it('pidiendo SU dirección de entrega (restringido): «ubicación» y «dirección» sueltas son darla; solo cuenta lo que nombra al local', () => {
-    for (const f of ['ubicación', 'dirección', 'la ubicación', 'k direccion', 'mi ubicación', 'mi dirección', 'te paso mi ubicación', 'pásame la ubicación', 'cuál es la dirección', 'Av. Banzer 1234 zona Norte']) {
+    for (const f of ['ubicación', 'dirección', 'la ubicación', 'k direccion', 'mi ubicación', 'mi dirección', 'te paso mi ubicación', 'pásame la ubicación', 'cuál es la dirección', 'Av. Banzer 1234 zona Norte',
+      // revisión de seguridad (LOW): frases que DAN la dirección con «ubicados» o «su dirección»
+      'estamos ubicados por el centro', 'estoy ubicada atrás del mercado', 'ubicados en Sopocachi', 'su dirección es la misma', 'ubicados', '¿cómo llego?']) {
       expect([f, pide(f, true)], f).toEqual([f, false]);
     }
-    for (const f of ['¿Dónde están?', '¿cuál es su dirección?', 'dirección del local', 'ubicación de ustedes', 'su ubicación', 'mapa', 'link', 'el link por favor', 'google maps', '¿cómo llego?', 'dónde queda su local']) {
+    for (const f of ['¿Dónde están?', '¿cuál es su dirección?', 'dirección del local', 'ubicación de ustedes', 'su ubicación', 'mapa', 'link', 'el link por favor', 'google maps', 'cómo llego a su local', 'dónde están ubicados', 'su dirección, por favor', 'dónde queda su local']) {
       expect([f, pide(f, true)], f).toEqual([f, true]);
     }
   });

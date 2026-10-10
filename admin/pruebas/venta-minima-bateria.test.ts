@@ -143,7 +143,7 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     const lote5 = ['D5', 'D5b', 'D6', 'D6b', 'D6d', 'D7', 'D7b', 'D7c', 'D8']; // reserva confirmada (#437); D8c, su control, vive en D.json
     const lote6 = ['M1r', 'M1p', 'M1ref', 'M1s', 'M1sp', 'M1refp', 'M2r', 'M2p', 'L1', 'FB1', 'FB2', 'SV2', 'SV2b']; // seguridad del delivery, 2.ª ronda
     const control = ['D8c'];
-    const lote10 = ['UL1', 'UL1i', 'UL2', 'UL3', 'UL4', 'UL5', 'UL5b', 'UL6', 'UL7', 'UL8', 'UN1', 'UN2', 'UN3', 'UN4', 'UN4c']; // ubicación o dirección del LOCAL, pedida expresamente (09/10, Q'Taco; `A-ubicacion-local.json`)
+    const lote10 = ['UL1', 'UL1i', 'UL2', 'UL3', 'UL4', 'UL5', 'UL5b', 'UL6', 'UL7', 'UL8', 'UN1', 'UN2', 'UN3', 'UN4', 'UN4c', 'UN5', 'UN6']; // ubicación o dirección del LOCAL, pedida expresamente (09/10, Q'Taco; `A-ubicacion-local.json`)
     const lote9 = ['U1', 'U2', 'U2b', 'U3', 'U3b', 'U4', 'U5', 'U5m', 'U6', 'U6b']; // ubicación compartida o dirección en texto (encargo del 05/10; U5m, U6 y U6b son del PR-A: el enlace a Maps solo con la ventana abierta y el pedido de ubicación)
     const { casos, global: g } = casosDeLaCarpeta();
     const ids = casos.map((c) => String(c['id']));

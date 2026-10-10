@@ -1346,6 +1346,152 @@
           }
         }
       ]
+    },
+    {
+      "id": "UN5",
+      "titulo": "Delivery pidiendo SU dirección: «estamos ubicados por el centro», «estoy ubicada atrás del mercado», «ubicados en Sopocachi» y «su dirección es la misma» DAN la dirección del cliente: no sale el mapa del local ni se saca de la entrega",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "estamos ubicados por el centro"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": ""
+          },
+          "esperado": {
+            "textosNo": [
+              "Estamos en Calle Ejemplo",
+              "Aqu[ií] puedes ver d[oó]nde estamos",
+              "sigue como estaba"
+            ],
+            "titulosNo": [
+              "Ver ubicaci"
+            ],
+            "ruta": "^(?!consulta:direccion_local)",
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            },
+            "efectos": {
+              "modelo": true,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {
+            "texto": "estamos ubicados por el centro",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          },
+          {
+            "texto": "estoy ubicada atrás del mercado",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          },
+          {
+            "texto": "ubicados en Sopocachi",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          },
+          {
+            "texto": "su dirección es la misma",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "UN6",
+      "titulo": "Dirección de la consola que es solo puntuación («.») y sin enlace válido: no cuenta como dato, no se intercepta (mismo criterio que `Plan del turno`) y no se promete ningún mapa",
+      "perfil": "Lucía Ejemplo",
+      "panel": {
+        "datosDelNegocio": {
+          "nombreNegocio": "Q'Taco Mexican Grill",
+          "direccion": ".",
+          "direccionMaps": ""
+        }
+      },
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": [
+              "Aqu[ií] puedes ver d[oó]nde estamos"
+            ],
+            "titulosNo": [
+              "Ver ubicaci",
+              "Escribir al local"
+            ],
+            "ruta": "^consulta$"
+          }
+        }
+      ]
     }
   ]
 }

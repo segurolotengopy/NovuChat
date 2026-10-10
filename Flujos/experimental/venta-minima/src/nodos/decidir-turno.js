@@ -196,7 +196,8 @@ if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar
 // (la dirección en texto o un enlace de Maps válido); sin ninguno no se intercepta y todo sigue como antes. Cero llamadas al modelo.
 // DAR no es PEDIR: dentro de `pedido_datos` con delivery el flujo está pidiendo SU dirección de entrega, así que ahí «ubicación» o «dirección»
 // sueltas se leen como darla y solo cuenta lo que nombra al local (`pideElLocal(norm, true)`). Compartir la ubicación (`type: location`) ya salió arriba.
-const hayDatoDelLocal = !!vmLinea(cfg.direccion, 200) || !!vmEnlaceDeMapa(cfg.direccionMaps);
+// MISMO criterio que `Plan del turno` (`aUbicacionLocal`): la dirección sin los puntos ni los espacios finales; una que sea solo puntuación no cuenta como dato.
+const hayDatoDelLocal = !!vmLinea(cfg.direccion, 200).replace(/[.\s]+$/, '') || !!vmEnlaceDeMapa(cfg.direccionMaps);
 const pidiendoSuDireccion = paso === 'pedido_datos' && !!previo.entrega && previo.entrega.entrega === 'delivery';
 if (hayDatoDelLocal && pideElLocal(norm, pidiendoSuDireccion)) return salir('consulta', { consulta: 'direccion_local', motivo: 'ubicacion_del_local' });
 
@@ -605,7 +606,7 @@ function extraerReserva() {
 //    («ubicasion», «direcion»). Las constantes van DENTRO de la función (lo declarado con `const` después del `return` del nodo no se inicializa).
 function pideElLocal(n, restringido) {
   if (!n || n.length > 200 || /\d/.test(n)) return false;
-  const DA = /\b(?:mi|mis|mio|mia|nuestra|nuestro)\b|\b(?:estoy|estamos|vivo|vivimos|trabajo|trabajamos) (?:en|por|cerca|frente|a)\b|\b(?:te|les|le) (?:paso|mando|envio|comparto|dejo|doy)\b|\b(?:ahi|aqui|aca) (?:va|esta|es|queda)\b|\b(?:adjunto|adjunta|entregar|entregalo|entreguen|entregue|entrega|entregas)\b|\b(?:llevalo|llevamelo|llevenlo|llevenmelo|envialo|enviamelo|envienlo|envienmelo|mandalo|mandamelo|mandenlo|mandenmelo|traelo|traemelo|traiganlo|traiganmelo) a\b|\b(?:calle|calles|avenida|av|avda|zona|barrio|esquina|frente|cerca|nro|numero|casa|edificio|condominio|urbanizacion|urb|piso|departamento|depto|oficina|porteria|referencia|referencias)\b|\bhttps?\b|\bwww\b|\bgoo gl\b|\bmaps app\b/;
+  const DA = /\b(?:mi|mis|mio|mia|nuestra|nuestro)\b|\b(?:estoy|estamos|vivo|vivimos|trabajo|trabajamos) (?:en|por|cerca|frente|a)\b|\b(?:te|les|le) (?:paso|mando|envio|comparto|dejo|doy)\b|\b(?:ahi|aqui|aca) (?:va|esta|es|queda)\b|\b(?:adjunto|adjunta|entregar|entregalo|entreguen|entregue|entrega|entregas)\b|\b(?:llevalo|llevamelo|llevenlo|llevenmelo|envialo|enviamelo|envienlo|envienmelo|mandalo|mandamelo|mandenlo|mandenmelo|traelo|traemelo|traiganlo|traiganmelo) a\b|\b(?:calle|calles|avenida|av|avda|zona|barrio|esquina|frente|cerca|nro|numero|casa|edificio|condominio|urbanizacion|urb|piso|departamento|depto|oficina|porteria|referencia|referencias)\b|\bubicad[oa]s? (?:en|por|cerca|frente|a|atras|detras|al)\b|\bhttps?\b|\bwww\b|\bgoo gl\b|\bmaps app\b/;
   if (DA.test(n)) return false;
   const DIR = '(?:dir[ei]c{1,2}ion(?:es)?|ubi[ck]a[cs]ion(?:es)?)';
   const ESDIR = new RegExp('^' + DIR + '$');
@@ -622,10 +623,13 @@ function pideElLocal(n, restringido) {
   const dondeEstan = new RegExp('\\b' + DONDE + ' (?:estan|queda|quedan|se ubican|se ubica|se encuentran|se encuentra|los encuentro|las encuentro|los puedo encontrar|funcionan)\\b(.*)$').exec(n);
   if (dondeEstan && sigueUnLocal(dondeEstan[1])) return true;
   if (new RegExp('\\b' + DONDE + ' (?:esta|se ubica|queda) (?:el |la )' + LOCAL + '\\b').test(n)) return true;
-  if (/\bubicad[oa]s?\b/.test(n)) return true;
-  if (/\bcomo (?:llego|llegar|llegamos|llegare|se llega|puedo llegar|hago para llegar|podemos llegar|llegariamos)\b/.test(n)) return true;
+  // Con la entrega del cliente en curso, «ubicados» y «cómo llego» solo cuentan junto a «dónde» o a un nombre del local («dónde están ubicados» sí; «ubicados por el centro» ya cayó arriba).
+  const nombraAlLocal = new RegExp('\\b' + DONDE + '\\b|\\b' + LOCAL + '\\b').test(n);
+  if (/\bubicad[oa]s?\b/.test(n) && (!restringido || nombraAlLocal)) return true;
+  if (/\bcomo (?:llego|llegar|llegamos|llegare|se llega|puedo llegar|hago para llegar|podemos llegar|llegariamos)\b/.test(n) && (!restringido || nombraAlLocal)) return true;
   if (new RegExp('\\b' + DIR + ' (?:del|de el) ' + LOCAL + '\\b').test(n) || new RegExp('\\b' + DIR + ' de (?:ustedes|uds)\\b').test(n)) return true;
-  if (new RegExp('\\b(?:su|vuestra|vuestro|tu) ' + DIR + '\\b').test(n)) return true;
+  // «Su dirección» (fuera de la entrega); dentro de ella solo como pregunta o pedido, por el vocabulario cerrado de abajo.
+  if (!restringido && new RegExp('\\b(?:su|vuestra|vuestro|tu) ' + DIR + '\\b').test(n)) return true;
   if (/\b(?:mapa|google maps|gmaps|maps)\b/.test(n)) return true;
   if (new RegExp('\\b(?:link|enlace) (?:de |a |al |del )(?:la |el )?(?:' + DIR + '|mapa|' + LOCAL + '|google maps|maps)\\b').test(n)) return true;
   // Mensaje entero de vocabulario cerrado.
@@ -640,7 +644,11 @@ function pideElLocal(n, restringido) {
   if (ps.length > 12 || !ps.every((w) => VOCAB.indexOf(w) >= 0 || ESDIR.test(w))) return false;
   if (!ps.some((w) => ESDIR.test(w) || ['mapa', 'maps', 'gmaps', 'google', 'link', 'enlace'].indexOf(w) >= 0)) return false;
   // En la entrega del cliente solo cuenta lo que nombra al local.
-  if (restringido) return ps.some((w) => ['local', 'restaurante', 'negocio', 'ustedes', 'uds', 'su', 'tu', 'mapa', 'maps', 'gmaps', 'google', 'link', 'enlace'].indexOf(w) >= 0);
+  if (restringido) {
+    // «Su dirección es la misma» afirma, no pregunta: «su»/«tu» cuentan solo si no hay un «es» sin «cuál».
+    const afirma = ps.indexOf('es') >= 0 && ps.indexOf('cual') < 0 && ps.indexOf('cuales') < 0;
+    return ps.some((w) => ['local', 'restaurante', 'negocio', 'ustedes', 'uds', 'mapa', 'maps', 'gmaps', 'google', 'link', 'enlace'].indexOf(w) >= 0 || (!afirma && (w === 'su' || w === 'tu')));
+  }
   return true;
 }
 
