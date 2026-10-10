@@ -1,6 +1,7 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { PROYECTO, PUERTO_FIRESTORE } from '../entorno';
+import { getAuth } from 'firebase-admin/auth';
+import { CLAVE_DE_PRUEBA, PROYECTO, PUERTO_AUTH, PUERTO_FIRESTORE } from '../entorno';
 
 /**
  * Escribe datos de prueba en el emulador con el SDK Admin (se salta las reglas: es la forma de poner lo que en producción escribe
@@ -21,6 +22,10 @@ export interface PedidoDePrueba {
   entrega: 'delivery' | 'retiro';
   direccion?: string;
   nota?: string;
+  /** La referencia para llegar que escribió el cliente (catálogo web). */
+  referencia?: string;
+  /** Lo que guarda el servidor del catálogo web: `{lat, lng}`, a veces con valores inválidos a propósito. */
+  ubicacion?: unknown;
   telefonoEnmascarado?: string;
   moneda?: string;
 }
@@ -121,4 +126,51 @@ export function diaDeBolivia(n = 0): string {
 /** Fija el plan del comercio y cuántas campañas admite (la consola lee `cuenta/estado`; el plan inicial de la siembra es Impulso, que no incluye campañas). */
 export async function fijarPlan(tenantId: string, plan: string, campanas: number): Promise<void> {
   await bd().doc(`tenants/${tenantId}/cuenta/estado`).set({ plan, limites: { campanas } }, { merge: true });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Comercio y usuarios de ensayo (los helpers de `ayudas/` los escribe UN solo dueño: la Operadora; los carriles solo los usan)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Los módulos del comercio (`tenants/{id}.modulos`) o, con `null`, quita el campo (la consola vuelve al respaldo por `flujos`). */
+export async function fijarModulos(tenantId: string, modulos: string[] | null): Promise<void> {
+  const { FieldValue } = await import('firebase-admin/firestore');
+  await bd().doc(`tenants/${tenantId}`).set({ modulos: modulos === null ? FieldValue.delete() : modulos }, { merge: true });
+}
+
+/** Lo que NovuChat le oculta a la consola del comercio (`tenants/{id}.consolaOculta`): ids de `functions/src/central/consola-oculta.ts`. */
+export async function fijarConsolaOculta(tenantId: string, ids: string[] | null): Promise<void> {
+  const { FieldValue } = await import('firebase-admin/firestore');
+  await bd().doc(`tenants/${tenantId}`).set({ consolaOculta: ids === null ? FieldValue.delete() : ids }, { merge: true });
+}
+
+export async function leerFicha(tenantId: string): Promise<Record<string, unknown>> {
+  return ((await bd().doc(`tenants/${tenantId}`).get()).data() ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * Crea (o actualiza) un usuario de contraseña de un comercio, con el formato de claims y de espejo de miembros que usa `scripts/sembrar.mjs`.
+ * `verificado: false` crea el caso «correo sin verificar». Contraseña: la de prueba de la siembra. Solo contra el emulador de Auth.
+ */
+export async function crearUsuarioDeEnsayo(o: { uid: string; correo: string; nombre: string; tenantId: string; rol: 'admin' | 'oper'; verificado?: boolean }): Promise<void> {
+  const db = bd();
+  process.env['FIREBASE_AUTH_EMULATOR_HOST'] = `127.0.0.1:${PUERTO_AUTH}`;
+  const auth = getAuth();
+  const datos = { email: o.correo, emailVerified: o.verificado !== false, password: CLAVE_DE_PRUEBA, displayName: o.nombre, disabled: false };
+  try { await auth.updateUser(o.uid, datos); } catch (e) {
+    if ((e as { code?: string }).code !== 'auth/user-not-found') throw e;
+    await auth.createUser({ uid: o.uid, ...datos });
+  }
+  await auth.setCustomUserClaims(o.uid, { nc: { t: { [o.tenantId]: o.rol }, v: 1 } });
+  await db.doc(`usuarios/${o.uid}`).set({ nombre: o.nombre, preferencias: {} });
+  await db.doc(`tenants/${o.tenantId}/miembros/${o.uid}`).set({ correo: o.correo, rol: o.rol, estado: 'activo', desde: Timestamp.now() });
+}
+
+/** Borra un documento (por el SDK Admin) para probar la consola sobre un comercio sin él. */
+export async function borrarDoc(ruta: string): Promise<void> {
+  await bd().doc(ruta).delete();
+}
+
+export async function leerDoc(ruta: string): Promise<Record<string, unknown> | undefined> {
+  return (await bd().doc(ruta).get()).data() as Record<string, unknown> | undefined;
 }

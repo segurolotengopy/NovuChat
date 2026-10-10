@@ -48,4 +48,7 @@ export const USUARIOS = {
   adminFogon: 'admin.fogon@ejemplo.com',
   adminAurora: 'admin.aurora@ejemplo.com',
   operadorAurora: 'operador.aurora@ejemplo.com',
+  /** Se crean con `crearUsuarioDeEnsayo` (no los trae la siembra). */
+  operadorFogon: 'operador.fogon@ejemplo.com',
+  sinVerificarFogon: 'sinverificar.fogon@ejemplo.com',
 } as const;
