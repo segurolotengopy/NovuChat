@@ -582,8 +582,11 @@ inutilizable (todo `unauthenticated`); es una compuerta antes de etiquetar.
 **Quién lo ve (D4).** Con el PR-2, el operador ve en Cobros el listado, los totales y
 «Ver comprobante», y NO ve «Comprobar» (la regla de actualización exige
 administrador) ni «Exportar». La callable lee `privado` en su nombre y devuelve
-solo `{mime, base64}`. El operador de un comercio de reservas también verá Cobros
-(señas); las reglas ya se lo permiten. **Consentimiento de soporte (D7):** hoy no
+solo `{mime, base64}`. La pestaña Cobros se le muestra al operador SOLO si el negocio
+tiene el módulo `pedidos` (decisión de Andres, 09/10/2026; `rolesConModulo` en el
+registro): al operador de un comercio de reservas no se le muestra. Es presentación,
+no un límite: las reglas de `cierres` ya dejaban leer los cierres a todo miembro
+del negocio antes de este visor. **Consentimiento de soporte (D7):** hoy no
 existe una pantalla que otorgue una ventana de soporte (`otorgarAccesoSoporte` y
 `revocarAccesoSoporte` no tienen quien las llame); el servidor ya acepta soporte
 vigente, y el texto del consentimiento llega con la pantalla (PR opcional).
