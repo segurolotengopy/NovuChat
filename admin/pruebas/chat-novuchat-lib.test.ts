@@ -668,7 +668,7 @@ describe('re-revisión de seguridad sobre 62f8bd17: identidad, ofertas, promesas
   });
   it('NO hay falsos positivos sobre el pitch: un tercero que le escribe al cliente y los planes accesibles', () => {
     for (const x of ['Cuando un cliente te escribe de noche, tu asistente le responde al instante.', 'Si un cliente te escribe fuera de horario, NovuChat le responde al instante.', 'Hay planes accesibles según el tamaño de tu negocio.',
-      'Tus clientes te escriben a cualquier hora y NovuChat les responde en segundos.', 'Te cuento las novedades del servicio: agenda y cobra por QR.']) expect(causa(x), x).toBe('');
+      'Tus clientes te escriben a cualquier hora y NovuChat les responde en segundos.', 'Te cuento las novedades del servicio: agenda y envía tu QR para que tus clientes paguen.']) expect(causa(x), x).toBe('');
   });
   it('los textos del documento comercial siguen pasando el validador (6 rubros con su cierre, pitch, precios, Google Calendar, 24 horas)', () => {
     for (const r of NOVUCHAT['rubros'] as J[]) {
@@ -1451,12 +1451,12 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
     expect(valida(inventado, { rubroId: 'belleza', contexto: 'rubro' })).toBe('funcion_inventada');
     for (const rubro of ['gastronomia', 'retail', 'otro']) expect(valida(inventado, { rubroActual: rubro }), rubro).not.toBe('funcion_inventada');
     expect(valida(inventado, { rubroActual: 'belleza', contexto: 'abierta' })).toBe('funcion_inventada'); // (adelanto y pago total no están documentados en ningún rubro)
-    expect(valida('NovuChat atiende tu WhatsApp en segundos, agenda citas y cobra por QR sin que nadie intervenga. ' + CIERRE, { rubroActual: 'belleza', contexto: 'abierta' })).not.toBe('funcion_inventada');
-    for (const x of ['Coordina el anticipo de cada cita para que no te dejen plantada. ', 'Registra la seña de tus clientes por WhatsApp. ', 'Hace el cobro de cada servicio al terminar. ']) {
+    expect(valida('NovuChat atiende tu WhatsApp en segundos, agenda citas y envía tu QR para que tus clientes paguen sin que nadie intervenga. ' + CIERRE, { rubroActual: 'belleza', contexto: 'abierta' })).not.toBe('funcion_inventada');
+    for (const x of ['Coordina el anticipo de cada cita para que no te dejen plantada. ', 'Registra la seña de tus clientes por WhatsApp. ', 'Gestiona el cobro de cada servicio al terminar. ']) {
       expect(valida('NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces para tus especialistas en horarios reales. ' + x + CIERRE, { rubroActual: 'belleza' }), x).toBe('funcion_inventada');
     }
-    // sin rubro conocido no se aplica (el pitch general y la pregunta por la empresa hablan de cobrar por QR)
-    expect(valida('NovuChat atiende tu WhatsApp en segundos, agenda citas y cobra por QR sin que nadie intervenga. ' + CIERRE)).not.toBe('funcion_inventada');
+    // sin rubro conocido no se aplica (el pitch general y la pregunta por la empresa hablan de que tus clientes paguen por QR)
+    expect(valida('NovuChat atiende tu WhatsApp en segundos, agenda citas y envía tu QR para que tus clientes paguen sin que nadie intervenga. ' + CIERRE)).not.toBe('funcion_inventada');
   });
   it('R1: dos intentos con la función inventada → el respaldo es «lo evalúa el equipo» (nunca la invención ni el texto de siempre)', () => {
     const mal = { lectura: { ok: true, mensaje: 'Para belleza tu asistente puede enviar el código QR y coordinar el adelanto o pago total. ' + CIERRE, accion: 'ninguna', rubro: '', necesidad: '', nombre: '', empresa: '', descarte: '' }, causa: 'funcion_inventada' };
@@ -1469,7 +1469,7 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
   it('R1: el prompt dice «si no está en tus datos, no lo afirmes» y qué hacer con lo que el rubro no documenta', () => {
     const t = f('chInstrucciones')(CFG);
     expect(t).toMatch(/Si no está en tus datos, no lo afirmes/);
-    expect(t).toMatch(/cobros con QR en belleza/);
+    expect(t).toMatch(/pagos por QR en belleza/);
   });
 
   it('R2: «Dame más info sobre la empresa», «¿quiénes son?», «¿qué hacen?», «¿qué es NovuChat?» son el contexto `empresa`, aunque el pitch ya se haya dicho; «quiero más información» sigue siendo el pitch', () => {
@@ -1483,7 +1483,7 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
   it('R2: la evasión («para no marearte…») no pasa en el contexto `empresa`; la respuesta con los hechos sí, y el modelo ve los hechos verificados', () => {
     const evasion = 'Para no marearte con más información, mejor cuéntame qué buscas y lo vemos paso a paso. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar tu caso? 🤝';
     expect(valida(evasion, { contexto: 'empresa' })).toBe('puntos');
-    const real = '¡Con gusto! 😊 NovuChat es un asistente de WhatsApp con inteligencia artificial para negocios de Bolivia: atiende a tus clientes las 24 horas, agenda citas, toma pedidos y cobra por QR, y tú lo controlas desde tu celular. ' + CIERRE;
+    const real = '¡Con gusto! 😊 NovuChat es un asistente de WhatsApp con inteligencia artificial para negocios de Bolivia: atiende a tus clientes las 24 horas, agenda citas, toma pedidos y envía tu QR para que tus clientes paguen, y tú lo controlas desde tu celular. ' + CIERRE;
     expect(valida(real, { contexto: 'empresa', rubroActual: 'belleza' })).toBe('');
     const cuerpo = JSON.stringify(f('chCuerpoModelo')({ cfg: CFG, ficha: fichaCon(), eventos: [ev('Dame mas info sobre la empresa')], contexto: 'empresa', ahoraMs: AHORA }).contents);
     expect(cuerpo).toMatch(/HECHOS VERIFICADOS DE LA EMPRESA/);
@@ -1765,7 +1765,7 @@ describe('ronda de seguridad del 09/10: terceros, plazos, tope de avisos, perfil
         }
       }
     }
-    expect(f('chValidarMensaje')('NovuChat es un asistente de WhatsApp con inteligencia artificial para negocios de Bolivia: atiende a tus clientes las 24 horas, agenda citas, toma pedidos y cobra por QR, y tú lo controlas desde tu celular. ' + CIERRE_RUBRO, v({ contexto: 'empresa', rubroActual: 'belleza' }))).toBe('');
+    expect(f('chValidarMensaje')('NovuChat es un asistente de WhatsApp con inteligencia artificial para negocios de Bolivia: atiende a tus clientes las 24 horas, agenda citas, toma pedidos y envía tu QR para que tus clientes paguen, y tú lo controlas desde tu celular. ' + CIERRE_RUBRO, v({ contexto: 'empresa', rubroActual: 'belleza' }))).toBe('');
   });
 });
 
@@ -1904,5 +1904,40 @@ describe('ronda final de seguridad: plazos sin respaldo, perfiles, ofertas de bo
   it('BAJO: «apenas/en cuanto alguien te escribe/responde, …» es una promesa; los terceros excusados son solo clientes, prospectos, interesados y pacientes', () => {
     for (const x of ['Espera un momento; apenas alguien te escribe, coordinan la instalación.', 'En cuanto alguien te responde, cierras tu plan.', 'Cuando alguien te escribe de noche, tu asistente le responde al instante.', 'Si una persona te llama, coordinamos todo.']) expect(marco(x), x).toBe('promesa');
     for (const x of ['Tu asistente responde a quien te escribe de noche.', 'Cuando un cliente te escribe, tu asistente le responde al instante.', 'Si un prospecto te escribe fuera de horario, NovuChat le responde.', 'Apenas un paciente te escribe, tu asistente le responde.']) expect(marco(x), x).toBe('');
+  });
+});
+
+// ================================================================================================
+// Pagos por QR: quien PAGA son los clientes de la empresa, a la empresa. NovuChat, el asistente, Kenji y los clientes finales no «cobran».
+describe('pagos por QR: nadie «cobra» salvo el negocio; los clientes PAGAN', () => {
+  const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
+  const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ' + CIERRE_RUBRO, v(extra));
+  const MAL = ['NovuChat toma pedidos y cobra por QR.', 'Kenji cobra con QR a tus clientes.', 'Tu asistente cobra enviando el QR.', 'El asistente realiza el cobro con QR.', 'Tu asistente hace el cobro de cada pedido.', 'Te cobra por QR al terminar.',
+    'Tus clientes cobran con QR.', 'Los clientes cobran por QR.', 'El cliente cobra por QR.', 'Tu cliente cobra con el QR.', 'Los clientes finales cobran con QR.', 'Cobras con QR desde WhatsApp.', 'Ventas y cobros por QR.', 'Tus clientes cobran por QR en segundos.', 'La IA cobra por QR.', 'Cobran con QR directo.', 'Tu negocio cobra por QR.'];
+  it('el modelo no puede decir que NovuChat, el asistente, Kenji o los clientes finales «cobran» ni que «realiza el cobro» (`sujeto_del_pago`), en cualquier rubro y contexto', () => {
+    for (const x of MAL) for (const extra of [{}, { rubroActual: 'gastronomia' }, { rubroActual: 'retail', precios: true }, { contexto: 'abierta' }, { contexto: 'empresa' }, { contexto: 'rubro', rubroId: 'retail' }]) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('sujeto_del_pago');
+  });
+  it('lo correcto pasa: «tus clientes pagan por QR», «envía tu QR para que paguen», «recibe el pago»; y lo ajeno al QR no se toca («cuánto cobra Meta», «se cobran en bolivianos»)', () => {
+    for (const x of ['Tus clientes pagan por QR directo a tu cuenta.', 'Envía el código QR de tu negocio para que tus clientes paguen.', 'Tu negocio recibe el pago de sus clientes por QR.', 'Tus clientes pagan por QR y tú recibes el pago en tu cuenta.', 'Tomas el pedido y tus clientes pagan con el QR.']) {
+      for (const extra of [{ rubroActual: 'gastronomia' }, { rubroActual: 'retail' }]) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('');
+    }
+    // (el costo de Meta lo contesta el código; el modelo solo no lo califica: esa regla es otra)
+    expect(marco('Los planes se cobran en bolivianos al tipo de cambio oficial.')).not.toBe('funcion_inventada');
+  });
+  it('los textos fijos del dato ya no dicen que NovuChat, el asistente o los clientes «cobran» (el sujeto de pagar es el cliente de la empresa)', () => {
+    // (la regla de las instrucciones NOMBRA las frases prohibidas para prohibirlas: se revisa aparte)
+    const sinRegla = clonar(NOVUCHAT); delete sinRegla['instrucciones'].restricciones;
+    const todo = JSON.stringify(sinRegla);
+    expect(todo).not.toMatch(/cobra por|cobra con|cobra enviando|cobras con|cobrar por|realiza el cobro|cobros por QR|clientes cobran|cliente cobra|cobran con QR|cobran por QR/i);
+    expect(todo).toMatch(/Ventas y pagos por QR/);
+    expect(todo).toMatch(/envía el código QR de tu negocio para que tus clientes paguen/);
+    expect(todo).toMatch(/Tus clientes pagan por QR/);
+    // la regla para el modelo, en las instrucciones
+    expect(f('chInstrucciones')(CFG)).toMatch(/Los clientes de la empresa pagan por QR a la empresa: nunca digas que NovuChat, el asistente o Kenji «cobra»/);
+    expect(f('chInstrucciones')(CFG)).toMatch(/ni que los clientes de la empresa «cobran» \(ellos PAGAN\)/);
+    // y cada texto fijo con QR pasa el validador del propio modelo (el nuevo sujeto no cae en la red)
+    for (const r of NOVUCHAT['rubros'] as J[]) if (r.explicacion) expect(f('chValidarMensaje')(r.explicacion + ' ' + NOVUCHAT['cierres'].rubro, v({ contexto: 'rubro', rubroId: r.id })), r.id).toBe('');
+    expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].abierta.pitch + '\n\n' + NOVUCHAT['respaldos'].abierta.cierreSinRubro, v({ contexto: 'abierta' }))).toBe('');
+    expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].empresa, v({ contexto: 'empresa' }))).toBe('');
   });
 });
