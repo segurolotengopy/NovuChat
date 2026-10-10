@@ -245,8 +245,61 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     const f = estropear("    payload.interactive.header = archivo.tipo === 'pdf'", "    void 0; if (false) payload.interactive.header = archivo.tipo === 'pdf'");
     expect(await violacionesCon(f, 'D2')).toEqual(expect.arrayContaining(['sin_imagen_de_planes']));
   });
+  it('ajustes del 09/10: la base (sin estropear) da cero violaciones en los casos nuevos A1 a A5', async () => {
+    for (const id of ['A1', 'A1b', 'A2', 'A2b', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'REC', 'P1']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
+  });
+  it('R1: si la red de funciones inventadas deja de rechazar, la invención de QR en belleza llega al cliente y la batería lo dice', async () => {
+    const f = estropear("CH_FUNCION_INVENTADA.test(n))) return 'funcion_inventada';", "false)) return 'funcion_inventada';");
+    const r = await violacionesCon(f, 'A1b');
+    expect(r.some((x) => ['trae_lo_que_no_debe', 'falta_lo_que_se_exige', 'origen_inesperado'].includes(x)), r.join()).toBe(true);
+    expect((await violacionesCon(f, 'A1')).length).toBeGreaterThan(0);
+  });
+  it('R2: si deja de existir el contexto `empresa`, la evasión de «Dame más info sobre la empresa» ya no se corrige con los hechos', async () => {
+    const f = estropear("if (dijo !== '' && chPreguntaEmpresa(dijo)) return 'empresa';", "if (false) return 'empresa';");
+    expect((await violacionesCon(f, 'A1')).length).toBeGreaterThan(0);
+  });
+  it('hotfix 09/10: si el pedido del nombre se omite cuando la respuesta es larga, se dice que falta (A7); si la disponibilidad deja de ser un dato documentado, se dice (A6)', async () => {
+    const f = estropear('if (!chDebePedirDatos(f, contexto)) return { texto: base, pidio: false };\n  const largo', 'if (!chDebePedirDatos(f, contexto) || base.length + 110 > CH_MAX_MENSAJE) return { texto: base, pidio: false };\n  const largo');
+    expect(await violacionesCon(f, 'A7')).toContain('falta_lo_que_se_exige');
+    const g = estropear("if (chPreguntaHorario(dijo)) return fijo('disponibilidad');", "if (false) return fijo('disponibilidad');");
+    expect((await violacionesCon(g, 'A6')).length).toBeGreaterThan(0);
+  });
+  it('R4: si «Ver planes» como primera respuesta muestra los planes sin pedir el nombre, se dice `ruta_inesperada`', async () => {
+    const f = estropear("return !!f && (f.explicado === true || chPlano(f.rubro) !== '')", 'return false && (f.explicado === true');
+    expect(await violacionesCon(f, 'A2')).toContain('ruta_inesperada');
+  });
+  it('R5: si tras el traspaso siguen los botones en vez de la lista de rubros, se dice `botones_inesperados` y `boton_del_equipo_otra_vez`', async () => {
+    const f = estropear('lista: antes.equipoAhora === true && !ciclo }', 'lista: false }');
+    const r = await violacionesCon(f, 'A1');
+    expect(r).toContain('botones_inesperados');
+    expect(r).toContain('boton_del_equipo_otra_vez');
+  });
+  it('R5: si el botón sale sin mirar los planes ya vistos, se dice `ver_planes_cuando_ya_los_vio`', async () => {
+    const f = estropear('return est && est.planes === true ? [CH_BOTON_EQUIPO] : chBotones();', 'return chBotones();');
+    expect(await violacionesCon(f, 'A4')).toContain('ver_planes_cuando_ya_los_vio');
+  });
+  it('R5: si el segundo negocio pisa al primero en la hoja (C, D, F) o no se agrega al resumen, se dice `planilla_no_coincide`', async () => {
+    const f = estropear("const base = f.primero && typeof f.primero === 'object' ? f.primero : { rubro: f.rubro, empresa: f.empresa };", 'const base = { rubro: f.rubro, empresa: f.empresa };');
+    expect(await violacionesCon(f, 'A3')).toContain('planilla_no_coincide');
+  });
+  it('R5: si una empresa distinta ya no manda un aviso nuevo, se dice `avisos_a_recepcion_inesperados`', async () => {
+    const f = estropear('antes.avisado === true && !empresaNueva', 'antes.avisado === true');
+    expect(await violacionesCon(f, 'A3')).toContain('avisos_a_recepcion_inesperados');
+  });
+  it('R6: si los planes pedidos otra vez repiten la imagen y el texto, se dice `imagen_de_planes_repetida`', async () => {
+    const f = estropear('if (antes.planesMostrados === true && plan.tope !== true) {', 'if (false) {');
+    expect(await violacionesCon(f, 'A4')).toContain('imagen_de_planes_repetida');
+  });
+  it('R6: si el modelo puede calcar su mensaje anterior, la batería lo cuenta (`repite_el_mensaje_anterior`)', async () => {
+    const f = estropear("if (chTexto(v.ultimoAsistente) !== '' && chSimilitud(t, v.ultimoAsistente) >= CH_UMBRAL_REPITE) return 'repite';", '');
+    const c = clonar(casoPorId('A5'));
+    (c['turnos'] as J[])[2]['seco'] = clonar((c['turnos'] as J[])[1]['seco']);
+    const r = await B.correrCaso({ caso: c, rep: 1, flujo: f, lib, opciones: { seco: true, n: 1 }, credencial: { clave: null, token: null }, deps: sinRed });
+    expect((r.violaciones as J[]).map((v) => v.regla)).toContain('repite_el_mensaje_anterior');
+    expect(r.repeticiones).toBeGreaterThan(0);
+  });
   it('si el aviso a recepción deja de respetar la ventana (avisa en cada toque), se dice «avisos_a_recepcion_inesperados»', async () => {
-    const f = estropear("const a = aviso((chDatos(cfg).textos || {}).estadoAviso, true, antes.avisado === true);", "const a = aviso((chDatos(cfg).textos || {}).estadoAviso, true, false);");
+    const f = estropear("const a = aviso((chDatos(cfg).textos || {}).estadoAviso, true, antes.avisado === true && !empresaNueva);", "const a = aviso((chDatos(cfg).textos || {}).estadoAviso, true, false);");
     const c = { ...casoPorId('P1') };
     c['turnos'] = [...(c['turnos'] as J[]), { tipo: 'boton', id: 'equipo', exige: { plantillas: 0 } }];
     const r = await B.correrCaso({ caso: c, rep: 1, flujo: f, lib, opciones: { seco: true, n: 1 }, credencial: { clave: null, token: null }, deps: sinRed });

@@ -131,6 +131,14 @@ function resumir(p, conEstado, calificacionFinal) {
   const partes = [];
   if (calificacionFinal === 'Descalificado') partes.push('Descalificado por el asistente: ' + MOTIVOS_DESCARTE[p.descarte] + '.');
   if (limpio(p.rubro)) partes.push('Rubro ' + limpio(p.rubro).slice(0, 60) + '.');
+  // >>> otros negocios (R5, ajustes del 09/10): diverge a propósito de la copia de Captación mínima; la prueba lo declara.
+  // Más de un negocio: C, D y F son los del primero; los otros van aquí, sin pisar nada.
+  for (const o of (Array.isArray(p.otrosNegocios) ? p.otrosNegocios : []).slice(0, 3)) {
+    const nombre = limpio(o && o.empresa).slice(0, 60);
+    const rub = limpio(o && o.rubro).slice(0, 40);
+    if (nombre || rub) partes.push('Otro negocio: ' + (nombre || 'sin nombre') + (rub ? ' (' + rub + ')' : '') + '.');
+  }
+  // <<< otros negocios
   if (p.flujos) partes.push('Interés: ' + p.flujos + '.');
   const necesidad = limpio(p.necesidad).slice(0, 160);
   if (necesidad) partes.push('Necesidad: ' + necesidad.replace(/[.!?…]+$/, '') + '.');

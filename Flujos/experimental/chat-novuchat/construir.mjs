@@ -147,11 +147,11 @@ const CIERRE_RUBRO_EXACTO = '¿Te gustaría ver nuestros planes o prefieres habl
 const CIERRE_PRECIOS_EXACTO = '¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝';
 const MARCADORES = ['asistente', 'negocio', 'cierreRubro', 'cierrePrecios', 'cierreEquipo'];
 const CLAVES_INSTRUCCIONES = ['rol', 'tono', 'rubros', 'cierreRubro', 'otros', 'precios', 'limites', 'restricciones', 'ambiguedad', 'abierta', 'salida', 'seguridad'];
-const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'consumo', 'banco', 'costoMeta', 'integracion', 'descuento'];
-const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento'];
-const CLAVES_RESPALDOS = ['multiple', 'otroElegido', 'otroLibre', 'fuera', 'equipo', 'generico', 'identidad', 'cortesia', 'datosAmbos', 'datosSoloNombre', 'datosSoloEmpresa', 'datosNinguno'];
+const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad'];
+const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad'];
+const CLAVES_RESPALDOS = ['multiple', 'otroElegido', 'otroLibre', 'fuera', 'equipo', 'generico', 'identidad', 'cortesia', 'datosAmbos', 'datosSoloNombre', 'datosSoloEmpresa', 'datosNinguno', 'empresa', 'complemento', 'noDocumentado', 'sinDato'];
 const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'planesIntroRepite', 'planesIntroTopes', 'planesSinPrecios', 'traspasoConPregunta', 'traspasoSinPregunta',
-  'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible'];
+  'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'planesAgotado'];
 const DESCARTES = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
 
 /** Lo que un texto que VE EL CLIENTE no puede tener. Devuelve el motivo o ''. `libre`: textos que sí pueden tener cifras o una pregunta (los valida el llamador). */
@@ -165,6 +165,11 @@ function errorDeTextoDelCliente(v, opc = {}) {
   if (PROMESA.test(n)) return 'promete que alguien llamará, escribirá o responderá («solo se ofrece lo que se cumple»)';
   if (NOMBRE_DE_PERSONA.test(n)) return 'nombra a una persona del equipo: se dice «alguien de nuestro equipo»';
   if (OFERTA.test(n) || /%|\bgratis\b|\bdescuento/.test(n)) return 'trae una oferta, un regalo, una rebaja, un descuento o un porcentaje';
+  // El complemento de los planes (R6) trae a propósito la moneda, los tamaños de agendas y de catálogo y las categorías «ERP, CRM»: se revisa aparte.
+  if (opc.complemento === true) {
+    if (/\d+\s+(?:conversaciones?|mensajes?|interacciones?|respuestas?|chats?)\b|\bilimitad|\bsin (?:ningun )?(?:limite|tope)|\bgratis\b|\bgratuit/.test(n)) return 'trae una cifra de consumo, «ilimitado», «sin límite» o una gratuidad (§5)';
+    return '';
+  }
   if (BLOQUEO_COMUN.test(n)) return 'trae una gratuidad, una garantía, que no hay límites, una moneda o la minimización de un costo';
   if (CIFRA_DE_CONSUMO.test(n)) return 'trae una cifra de consumo o de capacidad: los topes los muestra la imagen de planes';
   if (opc.sinAcredita !== true && ACREDITA_MODELO.test(n)) return 'afirma que el servicio valida, verifica o acredita pagos o que consulta al banco';
@@ -356,7 +361,85 @@ export function validarDatos(datos, archivo) {
     if (typeof tx.listaTitulo === 'string' && tx.listaTitulo.length > 24) e('datos.textos.listaTitulo', 'pasa de 24 caracteres');
     if (typeof tx.botonTraspaso === 'string' && tx.botonTraspaso.length > 20) e('datos.textos.botonTraspaso', 'pasa de 20 caracteres (el título de un botón de enlace)');
     if (typeof tx.saludo === 'string' && !/inteligencia artificial/i.test(tx.saludo)) e('datos.textos.saludo', 'tiene que decir que es un asistente con inteligencia artificial (prohibición 4)');
-    for (const c of Object.keys(tx)) if (!CLAVES_TEXTOS.includes(c)) e(`datos.textos.${c}`, 'no es un texto conocido');
+    for (const c of Object.keys(tx)) if (!CLAVES_TEXTOS.includes(c) && c !== 'sitioFrase') e(`datos.textos.${c}`, 'no es un texto conocido');
+    // El sitio web (opcional; lo anexa SOLO el código): un único dominio, sin esquema, sin arroba, sin ruta ni «..»; su frase, corta y con UN {sitio}.
+    if (k.sitioWeb !== undefined) {
+      const sw = k.sitioWeb;
+      if (typeof sw !== 'string' || sw.length > 60 || !/^(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(sw) || sw.includes('..')) e('datos.sitioWeb', 'tiene que ser UN dominio visible («www.ejemplo.site»): sin esquema, sin arroba, sin ruta, sin «..», de a lo más 60 caracteres');
+      const fr = tx.sitioFrase;
+      if (typeof fr !== 'string' || fr.split('{sitio}').length !== 2 || fr.length > 120) e('datos.textos.sitioFrase', 'con sitioWeb tiene que haber una frase de a lo más 120 caracteres con UN {sitio}');
+      else if (!/\{sitio\}(?=[\s.,;!?]|$)/.test(fr)) e('datos.textos.sitioFrase', 'el {sitio} no puede llevar nada pegado (ni «/precios» ni «:8080»): solo un espacio o un signo de puntuación después');
+      else {
+        const m2 = errorDeTextoDelCliente(fr.replace('{sitio}', 'nuestro sitio'), { permitirPreguntas: false, sinAcredita: true });
+        if (m2) e('datos.textos.sitioFrase', m2);
+        // Con el dominio REAL puesto, lo único que parece un enlace es el dominio mismo.
+        const hallados = (typeof sw === 'string' ? fr.replace('{sitio}', sw) : fr).match(new RegExp(ENLACE.source, 'gi')) || [];
+        if (hallados.length !== 1 || hallados[0].replace(/[.,;!?]+$/, '') !== sw) e('datos.textos.sitioFrase', 'con el dominio puesto, la frase tiene que contener UN solo enlace y ser exactamente sitioWeb');
+      }
+    }
+  }
+
+  // --- R4: pedir el nombre y el negocio, cordialmente y una sola vez
+  const pd = k.pedirDatos && typeof k.pedirDatos === 'object' && !Array.isArray(k.pedirDatos) ? k.pedirDatos : null;
+  if (!pd) e('datos.pedirDatos', 'falta');
+  else {
+    const conNegocio = (v, ruta, pideNombre, pideNegocio) => {
+      const m = errorDeTextoDelCliente(v, { sinAcredita: true });
+      if (m) { e(ruta, m); return; }
+      const n = LIB.chNorm(v);
+      if ((v.match(/\?/g) || []).length !== 1) e(ruta, 'tiene que traer UNA sola pregunta');
+      if (pideNombre && !/\bcomo te llamas\b/.test(n)) e(ruta, 'tiene que preguntar «¿cómo te llamas…?»');
+      if (pideNegocio && !/\bcomo se llama tu (?:negocio|empresa)\b/.test(n)) e(ruta, 'tiene que preguntar «¿cómo se llama tu negocio?» (o «tu empresa»)');
+      if ((n.match(/\bnegocio\b/g) || []).length > 1) e(ruta, 'dice «negocio» más de una vez');
+      if (v.length > 200) e(ruta, 'pasa de 200 caracteres');
+    };
+    if (!Array.isArray(pd.ambos) || pd.ambos.length < 2 || pd.ambos.length > 5) e('datos.pedirDatos.ambos', 'tiene que ser una lista de 2 a 5 variantes');
+    else pd.ambos.forEach((v, i) => conNegocio(v, `datos.pedirDatos.ambos[${i}]`, true, true));
+    conNegocio(pd.soloEmpresa, 'datos.pedirDatos.soloEmpresa', false, true);
+    conNegocio(pd.soloNombre, 'datos.pedirDatos.soloNombre', true, false);
+    conNegocio(pd.cortoAmbos, 'datos.pedirDatos.cortoAmbos', true, true);
+    conNegocio(pd.cortoSoloEmpresa, 'datos.pedirDatos.cortoSoloEmpresa', false, true);
+    conNegocio(pd.cortoSoloNombre, 'datos.pedirDatos.cortoSoloNombre', true, false);
+    conNegocio(pd.planesAmbos, 'datos.pedirDatos.planesAmbos', true, true);
+    conNegocio(pd.planesSoloEmpresa, 'datos.pedirDatos.planesSoloEmpresa', false, true);
+    conNegocio(pd.planesSoloNombre, 'datos.pedirDatos.planesSoloNombre', true, false);
+    for (const c of Object.keys(pd)) if (!['ambos', 'soloEmpresa', 'soloNombre', 'cortoAmbos', 'cortoSoloEmpresa', 'cortoSoloNombre', 'planesAmbos', 'planesSoloEmpresa', 'planesSoloNombre'].includes(c)) e(`datos.pedirDatos.${c}`, 'no es un texto conocido');
+  }
+  // --- R6: el complemento de los planes (hechos del documento y de la imagen; sin cifras de conversaciones ni de consumo)
+  const cp = k.complementoPlanes && typeof k.complementoPlanes === 'object' && !Array.isArray(k.complementoPlanes) ? k.complementoPlanes : null;
+  if (!cp) e('datos.complementoPlanes', 'falta');
+  else if (!Array.isArray(cp.partes) || cp.partes.length < 1 || cp.partes.length > 4) e('datos.complementoPlanes.partes', 'tiene que ser una lista de 1 a 4 frases');
+  else {
+    // El resumen de una línea (3.ª vez): frases con `{usd}`, sin otra cifra.
+    const rs0 = cp.resumen && typeof cp.resumen === 'object' && !Array.isArray(cp.resumen) ? cp.resumen : null;
+    if (!rs0) e('datos.complementoPlanes.resumen', 'falta');
+    else for (const c of ['intro', 'estandar', 'aMedida', 'mensual']) {
+      const m = errorDeTextoDelCliente(typeof rs0[c] === 'string' ? rs0[c].replace(/\{usd\}/g, 'USD') : rs0[c], { complemento: true, sinAcredita: true });
+      if (m) e(`datos.complementoPlanes.resumen.${c}`, m);
+      else if (c !== 'intro' && (rs0[c].match(/\{usd\}/g) || []).length !== 1) e(`datos.complementoPlanes.resumen.${c}`, 'tiene que traer UN {usd}');
+      else if (/\d/.test(rs0[c])) e(`datos.complementoPlanes.resumen.${c}`, 'no lleva cifras escritas: el precio sale de la consola');
+    }
+    cp.partes.forEach((v, i) => {
+      const m = errorDeTextoDelCliente(v.replace(/\{usdEstandar\}|\{usdMedida\}/g, 'USD'), { complemento: true, sinAcredita: true });
+      if (m) e(`datos.complementoPlanes.partes[${i}]`, m);
+      for (const mm of v.matchAll(/\{([A-Za-z]+)\}/g)) if (!['usdEstandar', 'usdMedida'].includes(mm[1])) e(`datos.complementoPlanes.partes[${i}]`, `trae un marcador {${mm[1]}} desconocido (solo usdEstandar, usdMedida)`);
+    });
+    if (cp.partes.join(' ').length > 800) e('datos.complementoPlanes.partes', 'juntas pasan de 800 caracteres (con el cierre tienen que caber en un mensaje)');
+  }
+  // --- R2: los hechos verificados de la empresa (los usa el modelo) y sus puntos clave
+  const em = k.empresa && typeof k.empresa === 'object' && !Array.isArray(k.empresa) ? k.empresa : null;
+  if (!em) e('datos.empresa', 'falta');
+  else {
+    if (!Array.isArray(em.hechos) || em.hechos.length < 2 || em.hechos.length > 8) e('datos.empresa.hechos', 'tiene que ser una lista de 2 a 8 hechos');
+    else em.hechos.forEach((v, i) => { const m = errorDeInstruccion(v); if (m) e(`datos.empresa.hechos[${i}]`, m); else if (v.length > 300) e(`datos.empresa.hechos[${i}]`, 'pasa de 300 caracteres'); });
+    if (!Array.isArray(em.puntosClave) || em.puntosClave.length < 1 || em.puntosClave.length > 6) e('datos.empresa.puntosClave', 'tiene que ser una lista de 1 a 6 puntos');
+    else em.puntosClave.forEach((pc, j) => {
+      const donde = `datos.empresa.puntosClave[${j}]`;
+      if (!pc || typeof pc.texto !== 'string' || typeof pc.palabras !== 'string' || !/^[a-z0-9 |()]+$/.test(pc.palabras) || pc.palabras.length > 120) { e(donde, 'tiene que ser { texto, palabras } con una familia de palabras en minúsculas, números, espacios y | ( )'); return; }
+      let re = null;
+      try { re = new RegExp(pc.palabras); } catch (x) { e(`${donde}.palabras`, 'no compila'); return; }
+      if (rp && typeof rp.empresa === 'string' && !re.test(LIB.chNorm(rp.empresa))) e(`${donde}.palabras`, 'el respaldo de la empresa no cubre este punto clave');
+    });
   }
   if (errores.length) throw new Error(`${archivo}: datos no válidos: ${errores.join('; ')}`);
 }
