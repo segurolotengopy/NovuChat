@@ -33,6 +33,12 @@ export function VisorComprobante({ tenantId, cierreId }: { tenantId: string; cie
   const [estado, setEstado] = useState<Estado>({ tipo: 'reposo' });
   // Un cambio de cobro, o cerrar el detalle, invalida la respuesta que venga en camino.
   const vuelta = useRef(0);
+  // Accesibilidad: el aviso es una región `status` SIEMPRE montada (un lector de pantalla solo anuncia
+  // los cambios de una región que ya existía), y el foco vuelve a un elemento que sigue en pantalla
+  // cuando la consulta termina o falla, porque el botón se desmonta al empezar.
+  const aviso = useRef<HTMLDivElement>(null);
+  const boton = useRef<HTMLButtonElement>(null);
+  const hubo = useRef(false);
 
   useEffect(() => {
     vuelta.current += 1;
@@ -42,6 +48,12 @@ export function VisorComprobante({ tenantId, cierreId }: { tenantId: string; cie
       setEstado({ tipo: 'reposo' });
     };
   }, [tenantId, cierreId]);
+
+  useEffect(() => {
+    if (estado.tipo === 'imagen' || estado.tipo === 'pdf' || estado.tipo === 'error') aviso.current?.focus();
+    else if (estado.tipo === 'reposo' && hubo.current) boton.current?.focus();
+    hubo.current = estado.tipo !== 'reposo';
+  }, [estado]);
 
   const ver = async () => {
     const mia = ++vuelta.current;
@@ -71,7 +83,9 @@ export function VisorComprobante({ tenantId, cierreId }: { tenantId: string; cie
         enlace.href = url;
         enlace.download = NOMBRE_DEL_PDF;
         enlace.click();
-        setTimeout(() => URL.revokeObjectURL(url), 0);
+        // 5 s y no 0: Firefox y Safari pueden cancelar la descarga si la URL se suelta antes de que
+        // el navegador la tome. Los bytes ya están en memoria; el Blob se libera igual.
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
         setEstado({ tipo: 'pdf' });
         return;
       }
@@ -83,15 +97,20 @@ export function VisorComprobante({ tenantId, cierreId }: { tenantId: string; cie
     }
   };
 
+  const mensaje = estado.tipo === 'cargando' ? 'Abriendo el comprobante…'
+    : estado.tipo === 'error' ? estado.texto
+    : estado.tipo === 'imagen' ? 'Comprobante abierto.'
+    : estado.tipo === 'pdf' ? AVISO_PDF
+    : '';
+
   return (
     <div className="visor-comprobante">
+      <div role="status" ref={aviso} tabIndex={-1}>{mensaje}</div>
       {(estado.tipo === 'reposo' || estado.tipo === 'error') && (
-        <button type="button" className="btn btn-secondary btn-chico" onClick={() => void ver()}>
+        <button type="button" ref={boton} className="btn btn-secondary btn-chico" onClick={() => void ver()}>
           Ver comprobante
         </button>
       )}
-      {estado.tipo === 'cargando' && <p role="status">Abriendo el comprobante…</p>}
-      {estado.tipo === 'error' && <p role="alert">{estado.texto}</p>}
       {estado.tipo === 'imagen' && (
         <>
           <img src={estado.src} alt="Comprobante que mandó el cliente"
@@ -103,13 +122,10 @@ export function VisorComprobante({ tenantId, cierreId }: { tenantId: string; cie
         </>
       )}
       {estado.tipo === 'pdf' && (
-        <>
-          <p className="ayuda">{AVISO_PDF}</p>
-          <p>
-            <button type="button" className="btn btn-secondary btn-chico"
-                    onClick={() => setEstado({ tipo: 'reposo' })}>Entendido</button>
-          </p>
-        </>
+        <p>
+          <button type="button" className="btn btn-secondary btn-chico"
+                  onClick={() => setEstado({ tipo: 'reposo' })}>Entendido</button>
+        </p>
       )}
     </div>
   );

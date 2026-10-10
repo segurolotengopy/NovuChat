@@ -112,7 +112,9 @@ export function Cobros() {
     if (modulos === null) return <p className="ayuda">Cargando…</p>;
     if (!capacidadesDeConsola(modulos).conPedidos) return <Navigate to="/" replace />;
   }
-  return <CobrosDelNegocio />;
+  // `key`: al cambiar de negocio con la ruta montada, el modal abierto y los cobros cargados
+  // son del negocio anterior; con otra `key` se desmonta todo y se parte de cero.
+  return <CobrosDelNegocio key={tenantId} />;
 }
 
 function CobrosDelNegocio() {

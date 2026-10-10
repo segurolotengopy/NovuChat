@@ -60,11 +60,16 @@ describe('textos del visor', () => {
   });
 
   it('el error sale por su code, con el texto del contrato', () => {
-    expect(textoDeError('functions/permission-denied')).toBe('No tiene permiso para ver este comprobante.');
-    expect(textoDeError('functions/not-found')).toContain('Se conserva hasta 90 días desde que llegó.');
-    expect(textoDeError('functions/resource-exhausted')).toContain('30 por hora y 100 por día');
-    expect(textoDeError('functions/failed-precondition')).toBe(textoDeError('functions/invalid-argument'));
-    expect(textoDeError('functions/unauthenticated')).toContain('Recargue la página');
+    // La tabla ENTERA del contrato, literal: un texto cambiado, o dos códigos mezclados, la rompe.
+    const TABLA: Record<string, string> = {
+      'functions/unauthenticated': 'No se pudo comprobar su sesión. Recargue la página e inicie sesión de nuevo.',
+      'functions/permission-denied': 'No tiene permiso para ver este comprobante.',
+      'functions/not-found': 'No hay un comprobante guardado para este cobro. Se conserva hasta 90 días desde que llegó.',
+      'functions/failed-precondition': 'Este comprobante no se puede mostrar desde la consola.',
+      'functions/invalid-argument': 'Este comprobante no se puede mostrar desde la consola.',
+      'functions/resource-exhausted': 'Alcanzó el máximo de comprobantes que se pueden ver: 30 por hora y 100 por día. Vuelva a intentar más tarde.',
+    };
+    expect(Object.fromEntries(Object.keys(TABLA).map((k) => [k, textoDeError(k)]))).toEqual(TABLA);
     // Cualquier otra cosa, incluido un objeto raro, cae en el texto genérico.
     for (const c of ['functions/internal', 'x', undefined, null, 42, {}]) {
       expect(textoDeError(c)).toBe('No se pudo abrir el comprobante. Intente de nuevo en unos minutos.');
@@ -142,7 +147,10 @@ describe('PDF: se baja, nunca se abre', () => {
   it('la callable se llama con el contrato y sin ruta', () => {
     const c = sinComentarios(leer('VisorComprobante.tsx'));
     expect(c).toContain("'verComprobante'");
-    expect(c).toMatch(/\{ tenantId, cierreId \}/);
+    const plano = c.replace(/\s+/g, ' ');
+    // La llamada misma, no la firma del componente: exactamente una, con solo esas dos claves.
+    expect(plano.split("'verComprobante')({ tenantId, cierreId })").length - 1).toBe(1);
+    expect(plano.split("'verComprobante'").length - 1).toBe(1);
     expect(c).not.toMatch(/ruta/i);
   });
 });
@@ -186,5 +194,67 @@ describe('quién ve qué', () => {
     expect(c).toContain('una imagen se puede editar');
     expect(c).toContain('Desde acá solo se ven los comprobantes de ventas cotejadas.');
     expect(c).not.toContain('NovuChat no guarda la imagen');
+  });
+});
+
+describe('guardas de fuente de la ronda de revisión del #466', () => {
+  const cobros = () => sinComentarios(leer('Cobros.tsx')).replace(/\s+/g, ' ');
+  const visor = () => sinComentarios(leer('VisorComprobante.tsx')).replace(/\s+/g, ' ');
+
+  it('al cambiar de negocio con la ruta montada se desmonta todo: key={tenantId}', () => {
+    // Sin la `key`, el modal abierto y los cobros cargados serían los del negocio anterior.
+    expect(cobros()).toContain('return <CobrosDelNegocio key={tenantId} />;');
+    expect(cobros().split('<CobrosDelNegocio').length - 1).toBe(1);
+  });
+
+  it('el operador sin Pedidos se redirige; el administrador y la carga no', () => {
+    const c = cobros();
+    expect(c).toContain("if (rolEn(permisos, tenantId) !== 'admin') {");
+    expect(c).toContain('if (modulos === null) return');
+    expect(c).toContain('if (!capacidadesDeConsola(modulos).conPedidos) return <Navigate to="/" replace />;');
+    // Orden: primero el rol, luego la carga, luego la capacidad, y solo después el contenido.
+    const i = [
+      "if (rolEn(permisos, tenantId) !== 'admin') {", 'if (modulos === null) return',
+      'capacidadesDeConsola(modulos).conPedidos', 'return <CobrosDelNegocio',
+    ].map((x) => c.indexOf(x));
+    expect(i.every((x) => x >= 0)).toBe(true);
+    expect(i).toEqual([...i].sort((a, b) => a - b));
+  });
+
+  it('la respuesta tardía de otra consulta se descarta, tanto al responder como al fallar', () => {
+    expect(visor().split('if (mia !== vuelta.current) return;').length - 1).toBe(2);
+  });
+
+  it('al desmontar o cambiar de cobro se descartan los bytes', () => {
+    expect(visor()).toContain(
+      "return () => { vuelta.current += 1; setEstado({ tipo: 'reposo' }); }; }, [tenantId, cierreId]);");
+  });
+
+  it('el texto del detalle depende del rol real, no de un valor fijo', () => {
+    expect(cobros()).toContain('textosDelVisor(cobro.cotejo?.calidad, soyAdmin)');
+    expect(cobros()).toContain("c.cotejo.calidad === 'aproximado'");
+  });
+
+  it('la URL del Blob se suelta a los 5 s: antes, Firefox y Safari pueden cancelar la descarga', () => {
+    expect(visor()).toContain('setTimeout(() => URL.revokeObjectURL(url), 5000);');
+    expect(visor()).not.toMatch(/revokeObjectURL\(url\), 0\)/);
+  });
+
+  it('accesibilidad: región status siempre montada y foco devuelto al terminar o fallar', () => {
+    const c = visor();
+    // Siempre montada: ni dentro de un condicional ni con `&&` delante.
+    expect(c).toContain('<div role="status" ref={aviso} tabIndex={-1}>{mensaje}</div>');
+    expect(c).not.toMatch(/&& <div role="status"/);
+    expect(c).toContain("if (estado.tipo === 'imagen' || estado.tipo === 'pdf' || estado.tipo === 'error') aviso.current?.focus();");
+    expect(c).toContain("else if (estado.tipo === 'reposo' && hubo.current) boton.current?.focus();");
+    // El error y la carga se escriben en esa región, no en otra que aparezca después.
+    expect(c).toContain("estado.tipo === 'error' ? estado.texto");
+    expect(c).not.toContain('role="alert"');
+  });
+
+  it('useFicha no decide con la ficha del negocio anterior', () => {
+    const f = sinComentarios(readFileSync(join(carpeta, '../../central/lib/flujos.ts'), 'utf8')).replace(/\s+/g, ' ');
+    expect(f).toContain('guardada.de === tenantId ? guardada.ficha : null');
+    expect(f).toContain('setGuardada(null);');
   });
 });
