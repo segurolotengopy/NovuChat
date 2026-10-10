@@ -1,0 +1,1497 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "UL",
+  "nota": "Escenarios de «ubicación o dirección del LOCAL» (encargo del 09/10/2026, pedido de Q'Taco): cada vez que alguien pide expresamente dónde queda el local, en cualquier paso y también por audio, recibe UN mensaje con la dirección y el botón «Ver ubicación» (la URL de Maps de la consola) y el estado no se toca; si hay un pedido o una reserva en curso, el mismo mensaje lo dice al final. Dar la propia dirección o ubicación de entrega NO dispara el mapa. Sin dirección ni enlace válido no se intercepta. Costo: 1 mensaje por cada pedido de ubicación y cero llamadas al modelo. Todo dato es sintético.",
+  "casos": [
+    {
+      "id": "UL1",
+      "titulo": "Menú: quien pregunta por la ubicación o la dirección del local (texto, faltas y audio) recibe UN mensaje con la dirección y el botón «Ver ubicación»; el paso no cambia, sin modelo, sin aviso",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Estamos en Calle Ejemplo 123, zona Sur\\."
+            ],
+            "textosNo": [
+              "verific",
+              "acredit",
+              "sigue como estaba"
+            ],
+            "titulos": [
+              "^Ver ubicaci[oó]n$"
+            ],
+            "titulosNo": [
+              "Escribir al local",
+              "Confirmar pedido"
+            ],
+            "enlaces": [
+              "google\\.com/maps/place/ejemplo-qtaco"
+            ],
+            "igualAntes": [
+              "paso",
+              "carrito",
+              "entrega",
+              "reserva",
+              "pedido"
+            ],
+            "estado": {
+              "paso": "menu"
+            },
+            "efectos": {
+              "modelo": false,
+              "aviso": false,
+              "derivacion": false
+            },
+            "ruta": "^consulta:direccion_local$"
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "¿Dónde están?",
+          "ubicación",
+          "dirección",
+          "Hola, ¿cuál es su dirección?",
+          "¿Cómo llego?",
+          "me pasas la ubicacion porfa",
+          "k direccion",
+          "ubicasion",
+          "pásame el link del mapa",
+          "¿dónde queda el local?",
+          {
+            "texto": "hola, dónde están ubicados",
+            "audio": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "UL1i",
+      "titulo": "Primer mensaje de la conversación (aún sin menú): «¿Dónde están ubicados?» recibe la dirección y el mapa, y el paso sigue en el inicio (no se toca el estado)",
+      "perfil": "Lucía Ejemplo",
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están ubicados?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Estamos en Calle Ejemplo 123, zona Sur\\."
+            ],
+            "textosNo": [
+              "verific",
+              "acredit",
+              "sigue como estaba"
+            ],
+            "titulos": [
+              "^Ver ubicaci[oó]n$"
+            ],
+            "titulosNo": [
+              "Escribir al local",
+              "Confirmar pedido"
+            ],
+            "enlaces": [
+              "google\\.com/maps/place/ejemplo-qtaco"
+            ],
+            "igualAntes": [],
+            "estado": {
+              "paso": "inicio",
+              "carrito": {
+                "vacio": true
+              },
+              "reserva": {
+                "existe": false
+              },
+              "pedido": {
+                "existe": false
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "aviso": false,
+              "derivacion": false
+            },
+            "ruta": "^consulta:direccion_local$"
+          }
+        }
+      ]
+    },
+    {
+      "id": "UL2",
+      "titulo": "Resumen de un delivery con dirección (pedido_confirmar): pregunta por la ubicación del local (texto y audio), recibe la dirección y el mapa con «Tu pedido sigue como estaba»; el pedido, la entrega y el paso quedan igual y el botón «Confirmar pedido» del resumen sigue valiendo",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Estamos en Calle Ejemplo 123, zona Sur\\.",
+              "Tu pedido sigue como estaba\\."
+            ],
+            "textosNo": [
+              "verific",
+              "acredit"
+            ],
+            "titulos": [
+              "^Ver ubicaci[oó]n$"
+            ],
+            "titulosNo": [
+              "Escribir al local",
+              "Confirmar pedido"
+            ],
+            "enlaces": [
+              "google\\.com/maps/place/ejemplo-qtaco"
+            ],
+            "igualAntes": [
+              "paso",
+              "carrito",
+              "entrega",
+              "reserva",
+              "pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.direccion": "Av. Banzer 1234",
+              "carrito": {
+                "vacio": false
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "aviso": false,
+              "derivacion": false
+            },
+            "ruta": "^consulta:direccion_local$"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "estado": {
+              "paso": "esperando_comprobante"
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "¿Dónde están?",
+          "ubicación",
+          {
+            "texto": "oye, dónde queda el restaurante",
+            "audio": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "UL3",
+      "titulo": "Delivery pidiendo SU dirección (pedido_datos): «¿Dónde están?» y «¿Cuál es su dirección?» (texto y audio) son el local: reciben la dirección y el mapa con «Tu pedido sigue como estaba», sin salir del paso; después la persona da la suya y sigue al resumen",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Estamos en Calle Ejemplo 123, zona Sur\\.",
+              "Tu pedido sigue como estaba\\."
+            ],
+            "textosNo": [
+              "verific",
+              "acredit"
+            ],
+            "titulos": [
+              "^Ver ubicaci[oó]n$"
+            ],
+            "titulosNo": [
+              "Escribir al local",
+              "Confirmar pedido"
+            ],
+            "enlaces": [
+              "google\\.com/maps/place/ejemplo-qtaco"
+            ],
+            "igualAntes": [
+              "paso",
+              "carrito",
+              "entrega",
+              "reserva",
+              "pedido"
+            ],
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery",
+              "carrito": {
+                "vacio": false
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "aviso": false,
+              "derivacion": false
+            },
+            "ruta": "^consulta:direccion_local$"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Calle 1 número 2 Irpavi"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": "Calle 1 número 2 Irpavi"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Entrega: delivery a Calle 1 número 2 Irpavi"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar"
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "¿Dónde están?",
+          "¿Cuál es su dirección?",
+          "mándame el mapa de su local",
+          {
+            "texto": "dónde queda su local",
+            "audio": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "UL4",
+      "titulo": "Esperando el comprobante: la pregunta por la ubicación (texto y audio) se responde con la dirección y el mapa, SIN salir del cobro: el paso, el pedido y la entrega quedan, no sale otro QR, y el recordatorio sigue después",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "esperando_comprobante"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Estamos en Calle Ejemplo 123, zona Sur\\.",
+              "Tu pedido sigue como estaba\\."
+            ],
+            "textosNo": [
+              "verific",
+              "acredit"
+            ],
+            "titulos": [
+              "^Ver ubicaci[oó]n$"
+            ],
+            "titulosNo": [
+              "Escribir al local",
+              "Reenviar QR"
+            ],
+            "enlaces": [
+              "google\\.com/maps/place/ejemplo-qtaco"
+            ],
+            "igualAntes": [
+              "paso",
+              "carrito",
+              "entrega",
+              "reserva",
+              "pedido"
+            ],
+            "estado": {
+              "paso": "esperando_comprobante"
+            },
+            "efectos": {
+              "modelo": false,
+              "aviso": false,
+              "derivacion": false,
+              "qr": false
+            },
+            "ruta": "^consulta:direccion_local$"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "x"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Reenviar QR",
+              "Cancelar pedido"
+            ],
+            "ruta": "^recordatorio_comprobante",
+            "estado": {
+              "paso": "esperando_comprobante"
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "¿Dónde están?",
+          "ubicación",
+          {
+            "texto": "oye, dónde queda el local",
+            "audio": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "UL5",
+      "titulo": "Reserva en curso: la pregunta por la ubicación (texto y audio) recibe la dirección y el mapa con «Tu reserva sigue como estaba»; el paso de la reserva no cambia y la reserva sigue donde estaba",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          },
+          "esperado": {
+            "estado": {
+              "paso": "reserva"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Estamos en Calle Ejemplo 123, zona Sur\\.",
+              "Tu reserva sigue como estaba\\."
+            ],
+            "textosNo": [
+              "verific",
+              "acredit"
+            ],
+            "titulos": [
+              "^Ver ubicaci[oó]n$"
+            ],
+            "titulosNo": [
+              "Escribir al local",
+              "Confirmar pedido"
+            ],
+            "enlaces": [
+              "google\\.com/maps/place/ejemplo-qtaco"
+            ],
+            "igualAntes": [
+              "paso",
+              "carrito",
+              "entrega",
+              "reserva",
+              "pedido"
+            ],
+            "estado": {
+              "paso": "reserva"
+            },
+            "efectos": {
+              "modelo": false,
+              "aviso": false,
+              "derivacion": false
+            },
+            "ruta": "^consulta:direccion_local$"
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "¿Dónde están?",
+          "dirección",
+          {
+            "texto": "disculpa, cómo llego",
+            "audio": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "UL5b",
+      "titulo": "Resumen de la reserva (reserva_confirmar): la pregunta por la ubicación no la mueve; después «Reservar» sigue anotándola con su aviso al local y el mapa",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar mesa"
+          },
+          "esperado": {
+            "estado": {
+              "paso": "reserva"
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "mesa para 4 el jueves a las 7 pm, terraza, a nombre de Ana Duran"
+          },
+          "seco": {
+            "personas": 4,
+            "fecha": "2026-10-08",
+            "hora": "19:00",
+            "zona": "terraza",
+            "nombre": "Ana Duran",
+            "celebracion": "",
+            "requerimiento": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu reserva:",
+              "4 personas"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "grupo grande"
+            ],
+            "titulos": [
+              "^Reservar$",
+              "^Corregir$"
+            ],
+            "titulosNo": [
+              "Enviar solicitud"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "aviso": false,
+              "derivacion": false
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Estamos en Calle Ejemplo 123, zona Sur\\.",
+              "Tu reserva sigue como estaba\\."
+            ],
+            "textosNo": [
+              "verific",
+              "acredit"
+            ],
+            "titulos": [
+              "^Ver ubicaci[oó]n$"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "enlaces": [
+              "google\\.com/maps/place/ejemplo-qtaco"
+            ],
+            "igualAntes": [
+              "paso",
+              "carrito",
+              "entrega",
+              "reserva",
+              "pedido"
+            ],
+            "estado": {
+              "paso": "reserva_confirmar"
+            },
+            "efectos": {
+              "modelo": false,
+              "aviso": false,
+              "derivacion": false
+            },
+            "ruta": "^consulta:direccion_local$"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Reservar"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "¡Listo, Ana!",
+              "Anotamos tu reserva para el .* a las 19:00, 4 personas",
+              "Te esperamos en Calle Ejemplo 123"
+            ],
+            "textosNo": [
+              "todav[ií]a no es una reserva",
+              "seg[uú]n sus mesas",
+              "\\bellos\\b",
+              "escr[ií]beles",
+              "solicitud de reserva",
+              "Escribir al local",
+              "te (avisamos|llamamos|contactamos)"
+            ],
+            "titulosNo": [
+              "Escribir al local"
+            ],
+            "efectos": {
+              "aviso": true,
+              "derivacion": false
+            },
+            "titulos": [
+              "Ver ubicaci[oó]n"
+            ],
+            "enlaces": [
+              "www\\.google\\.com/maps"
+            ],
+            "avisoTextos": [
+              "Ana Duran",
+              "4 personas"
+            ],
+            "avisoTextosNo": [
+              "GRUPO GRANDE",
+              "VARIAS RESERVAS",
+              "D[IÍ]A LLENO"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "UL6",
+      "titulo": "Resumen de un pedido para RECOGER (pedido_confirmar): la pregunta por la ubicación (texto y audio) recibe la dirección y el mapa con «Tu pedido sigue como estaba»; el resumen no se reenvía y «Confirmar pedido» sigue valiendo",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Estamos en Calle Ejemplo 123, zona Sur\\.",
+              "Tu pedido sigue como estaba\\."
+            ],
+            "textosNo": [
+              "verific",
+              "acredit"
+            ],
+            "titulos": [
+              "^Ver ubicaci[oó]n$"
+            ],
+            "titulosNo": [
+              "Escribir al local",
+              "Confirmar pedido"
+            ],
+            "enlaces": [
+              "google\\.com/maps/place/ejemplo-qtaco"
+            ],
+            "igualAntes": [
+              "paso",
+              "carrito",
+              "entrega",
+              "reserva",
+              "pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "vacio": false
+              }
+            },
+            "efectos": {
+              "modelo": false,
+              "aviso": false,
+              "derivacion": false
+            },
+            "ruta": "^consulta:direccion_local$"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "estado": {
+              "paso": "esperando_comprobante"
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "¿Dónde están?",
+          "dirección",
+          {
+            "texto": "hola, cómo llego",
+            "audio": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "UL7",
+      "titulo": "Solo hay dirección y el enlace de Maps no es válido (el panel trae uno que no es de Google Maps): el MISMO texto SIN botón, sin prometer un mapa que no se puede abrir",
+      "perfil": "Lucía Ejemplo",
+      "panel": {
+        "datosDelNegocio": {
+          "nombreNegocio": "Q'Taco Mexican Grill",
+          "direccion": "Calle Ejemplo 123, zona Sur",
+          "direccionMaps": "https://mapa.ejemplo.invalid/qtaco"
+        }
+      },
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Estamos en Calle Ejemplo 123, zona Sur\\."
+            ],
+            "textosNo": [
+              "verific",
+              "acredit",
+              "sigue como estaba"
+            ],
+            "titulos": [],
+            "titulosNo": [
+              "Ver ubicaci",
+              "Escribir al local"
+            ],
+            "enlaces": [],
+            "igualAntes": [
+              "paso",
+              "carrito",
+              "entrega",
+              "reserva",
+              "pedido"
+            ],
+            "estado": {
+              "paso": "menu"
+            },
+            "efectos": {
+              "modelo": false,
+              "aviso": false,
+              "derivacion": false
+            },
+            "ruta": "^consulta:direccion_local$"
+          }
+        }
+      ]
+    },
+    {
+      "id": "UL8",
+      "titulo": "Solo hay enlace de Maps y la dirección está vacía: «Aquí puedes ver dónde estamos.» con el botón «Ver ubicación»",
+      "perfil": "Lucía Ejemplo",
+      "panel": {
+        "datosDelNegocio": {
+          "nombreNegocio": "Q'Taco Mexican Grill",
+          "direccion": "",
+          "direccionMaps": "https://www.google.com/maps/place/ejemplo-qtaco"
+        }
+      },
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Aqu[ií] puedes ver d[oó]nde estamos\\."
+            ],
+            "textosNo": [
+              "Estamos en",
+              "sigue como estaba"
+            ],
+            "titulos": [
+              "^Ver ubicaci[oó]n$"
+            ],
+            "titulosNo": [
+              "Escribir al local",
+              "Confirmar pedido"
+            ],
+            "enlaces": [
+              "google\\.com/maps/place/ejemplo-qtaco"
+            ],
+            "igualAntes": [
+              "paso",
+              "carrito",
+              "entrega",
+              "reserva",
+              "pedido"
+            ],
+            "estado": {
+              "paso": "menu"
+            },
+            "efectos": {
+              "modelo": false,
+              "aviso": false,
+              "derivacion": false
+            },
+            "ruta": "^consulta:direccion_local$"
+          }
+        }
+      ]
+    },
+    {
+      "id": "UN1",
+      "titulo": "Delivery pidiendo SU dirección: darla («Av. Banzer 1234 zona Norte», «mi dirección es calle 5 nro 10») NO es preguntar por el local: sigue su camino de dato de entrega y llega al resumen",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Av. Banzer 1234 zona Norte"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": "Av. Banzer 1234 zona Norte"
+          },
+          "esperado": {
+            "textosNo": [
+              "Estamos en Calle Ejemplo",
+              "Aqu[ií] puedes ver d[oó]nde estamos",
+              "sigue como estaba"
+            ],
+            "titulosNo": [
+              "Ver ubicaci"
+            ],
+            "ruta": "^(?!consulta:direccion_local)",
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery"
+            },
+            "efectos": {
+              "modelo": true,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "Av. Banzer 1234 zona Norte",
+          {
+            "texto": "mi dirección es calle 5 nro 10",
+            "seco": {
+              "lineas": [],
+              "direccion": "calle 5 nro 10"
+            }
+          },
+          {
+            "texto": "Calle Los Pinos esquina Rosales, zona Sur",
+            "seco": {
+              "lineas": [],
+              "direccion": "Calle Los Pinos esquina Rosales, zona Sur"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "UN2",
+      "titulo": "Delivery pidiendo SU dirección: «ubicación», «dirección», «mi ubicación», «mi dirección» y «te paso mi ubicación» sueltas se leen como darla, no como preguntar por el local: no sale el mapa y no se saca de la entrega",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "ubicación"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": ""
+          },
+          "esperado": {
+            "textosNo": [
+              "Estamos en Calle Ejemplo",
+              "Aqu[ií] puedes ver d[oó]nde estamos",
+              "sigue como estaba"
+            ],
+            "titulosNo": [
+              "Ver ubicaci"
+            ],
+            "ruta": "^(?!consulta:direccion_local)",
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            },
+            "efectos": {
+              "modelo": true,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {
+            "texto": "ubicación",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          },
+          {
+            "texto": "dirección",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          },
+          {
+            "texto": "mi ubicación",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          },
+          {
+            "texto": "mi dirección",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          },
+          {
+            "texto": "te paso mi ubicación",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "UN3",
+      "titulo": "Delivery pidiendo SU dirección: compartir SU ubicación (mensaje `location`) sigue valiendo como dirección de entrega y no dispara el mapa del local",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "ubicacion",
+            "latitud": -16.5,
+            "longitud": -68.15
+          },
+          "esperado": {
+            "textosNo": [
+              "Estamos en Calle Ejemplo",
+              "Aqu[ií] puedes ver d[oó]nde estamos",
+              "sigue como estaba"
+            ],
+            "titulosNo": [
+              "Ver ubicaci"
+            ],
+            "ruta": "^(?!consulta:direccion_local)",
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "delivery",
+              "entrega.ubicacion.lat": -16.5
+            },
+            "efectos": {
+              "modelo": false,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "UN4",
+      "titulo": "Sin dirección ni enlace válido en la consola no se intercepta nada: en el menú «¿Dónde están?» sigue como antes (se pasa con el local, aviso más botón) y no se promete ningún mapa",
+      "perfil": "Lucía Ejemplo",
+      "panel": {
+        "datosDelNegocio": {
+          "nombreNegocio": "Q'Taco Mexican Grill",
+          "direccion": "",
+          "direccionMaps": "http://mapa.ejemplo.invalid/qtaco"
+        }
+      },
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": [
+              "Estamos en",
+              "Aqu[ií] puedes ver d[oó]nde estamos"
+            ],
+            "titulos": [
+              "Escribir al local"
+            ],
+            "titulosNo": [
+              "Ver ubicaci"
+            ],
+            "ruta": "^transferir",
+            "efectos": {
+              "modelo": false,
+              "aviso": true,
+              "derivacion": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "UN4c",
+      "titulo": "Sin dirección ni enlace y con el comprobante en espera: «¿Dónde están?» sigue recibiendo el recordatorio del comprobante (no se intercepta y el cobro no se pierde)",
+      "perfil": "Lucía Ejemplo",
+      "panel": {
+        "datosDelNegocio": {
+          "nombreNegocio": "Q'Taco Mexican Grill",
+          "direccion": "",
+          "direccionMaps": ""
+        }
+      },
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ]
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "esperando_comprobante"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": [
+              "Estamos en"
+            ],
+            "titulosNo": [
+              "Ver ubicaci"
+            ],
+            "titulos": [
+              "Reenviar QR",
+              "Cancelar pedido"
+            ],
+            "ruta": "^recordatorio_comprobante",
+            "estado": {
+              "paso": "esperando_comprobante"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "UN5",
+      "titulo": "Delivery pidiendo SU dirección: «estamos ubicados por el centro», «estoy ubicada atrás del mercado», «ubicados en Sopocachi» y «su dirección es la misma» DAN la dirección del cliente: no sale el mapa del local ni se saca de la entrega",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": ""
+          },
+          "esperado": {
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "estamos ubicados por el centro"
+          },
+          "seco": {
+            "lineas": [],
+            "direccion": ""
+          },
+          "esperado": {
+            "textosNo": [
+              "Estamos en Calle Ejemplo",
+              "Aqu[ií] puedes ver d[oó]nde estamos",
+              "sigue como estaba"
+            ],
+            "titulosNo": [
+              "Ver ubicaci"
+            ],
+            "ruta": "^(?!consulta:direccion_local)",
+            "mensajes": 1,
+            "estado": {
+              "paso": "pedido_datos",
+              "entrega.entrega": "delivery"
+            },
+            "efectos": {
+              "modelo": true,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          {
+            "texto": "estamos ubicados por el centro",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          },
+          {
+            "texto": "estoy ubicada atrás del mercado",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          },
+          {
+            "texto": "ubicados en Sopocachi",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          },
+          {
+            "texto": "su dirección es la misma",
+            "seco": {
+              "lineas": [],
+              "direccion": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "UN6",
+      "titulo": "Dirección de la consola que es solo puntuación («.») y sin enlace válido: no cuenta como dato, no se intercepta (mismo criterio que `Plan del turno`) y no se promete ningún mapa",
+      "perfil": "Lucía Ejemplo",
+      "panel": {
+        "datosDelNegocio": {
+          "nombreNegocio": "Q'Taco Mexican Grill",
+          "direccion": ".",
+          "direccionMaps": ""
+        }
+      },
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "¿Dónde están?"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": [
+              "Aqu[ií] puedes ver d[oó]nde estamos"
+            ],
+            "titulosNo": [
+              "Ver ubicaci",
+              "Escribir al local"
+            ],
+            "ruta": "^consulta$"
+          }
+        }
+      ]
+    }
+  ]
+}

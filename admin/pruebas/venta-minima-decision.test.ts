@@ -324,7 +324,7 @@ describe('Decidir turno: el orden de §4.5, sin modelo', () => {
 
   it('7. consultas fijas en `inicio`/`menu`: una sola; «quiero delivery» es un pedido; dos a la vez van al menú', () => {
     const casos: [string, string, string][] = [
-      ['cuál es la dirección', 'consulta', 'direccion'], ['a qué hora abren', 'consulta', 'horario'],
+      ['cuál es la dirección', 'consulta', 'direccion_local'], ['a qué hora abren', 'consulta', 'horario'], // 09/10: la dirección del local va por el paso 5b (`direccion_local`)
       ['hacen delivery?', 'consulta', 'delivery'], ['tienen promociones', 'consulta', 'promociones'],
       ['me pasas la carta', 'carta', 'carta'], ['qué venden', 'carta', 'carta'],
     ];
@@ -491,7 +491,8 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
   it('consultas fijas: responden con el dato cargado y el menú; sin el dato, se pasa con el local', () => {
     const dir = registrar(turno(crearMundo(), { texto: 'cuál es la dirección' }));
     expect(dir.p!['mensajes'][0]['cuerpo']).toBe('Estamos en Av. Ejemplo 123.');
-    expect(ids(dir.p!['mensajes'][0])).toEqual(['m|pedido', 'm|reserva', 'm|promos']);
+    expect(dir.p!['ruta']).toBe('consulta:direccion_local'); // 09/10: UN mensaje con el mapa (si hay enlace válido) y sin los botones del menú; no cambia el paso
+    expect(ids(dir.p!['mensajes'][0])).toEqual([]);
     expect(registrar(turno(crearMundo(), { texto: 'a qué hora abren' })).cuerpos[0]).toBe('Atendemos todos los días de 9:00 a 22:00.');
     expect(registrar(turno(crearMundo(), { texto: 'hacen delivery?' })).cuerpos[0]).toBe('Sí, hacemos delivery. Por delivery no enviamos bebidas.');
     expect(registrar(turno(crearMundo({ aceptaDelivery: false }), { texto: 'hacen delivery?' })).cuerpos[0]).toContain('Por ahora no hacemos delivery');
@@ -1908,5 +1909,71 @@ describe('la réplica de `cbEstadoParaAviso` conoce el QR vencido', () => {
     const e = (r: string): unknown => ejecutar(`${DOBLES}\nreturn [{ json: { v: cbEstadoParaAviso(${JSON.stringify(r)}) } }];`, [{}])[0]!['v'];
     expect(e('qr_vencido')).toBe('QR vencido: coordinar el pago');
     expect(e('sin_qr')).toBe('sin QR: cobrar al entregar');
+  });
+});
+
+/**
+ * LA UBICACIÓN DEL LOCAL, PEDIDA EXPRESAMENTE (09/10/2026, pedido de Q'Taco; `Decidir turno`, paso 5b).
+ * `pideElLocal(norm, restringido)` es una función PURA: se corre tal como está en el nodo versionado (se saca de su código, sin copiarla)
+ * con una tabla de frases. Lo que PIDE el local dispara; lo que DA algo —una dirección de entrega, la propia ubicación, un enlace pegado,
+ * un dígito— no dispara. La prueba se escribe negando: la mitad de la tabla son frases que NO deben disparar. El recorrido por el flujo entero
+ * (estado que no cambia, un solo mensaje, sin modelo, el botón «Ver ubicación») lo mide la batería (`A-ubicacion-local.json`).
+ */
+// La función completa: desde su declaración hasta la llave que cierra en la columna 0.
+const inicioUbicacion = DECIDIR.indexOf('function pideElLocal(');
+const finUbicacion = DECIDIR.indexOf('\n}\n', inicioUbicacion);
+const FUENTE_UBICACION = DECIDIR.slice(inicioUbicacion, finUbicacion + 3);
+
+// Una normalización igual a `vmNorm` (sin tildes, en minúsculas, sin signos), para que la tabla se lea con tildes y signos.
+const normUbicacion = (t: string): string => t.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const pide = (texto: string, restringido = false): boolean =>
+  ejecutar(`${FUENTE_UBICACION}\nreturn [{ json: { r: pideElLocal(${JSON.stringify(normUbicacion(texto))}, ${restringido}) } }];`, [])[0]['r'] as boolean;
+
+describe('pideElLocal: PEDIR el local dispara, DAR la propia dirección no', () => {
+  it('la función se extrae completa del nodo', () => {
+    expect(inicioUbicacion).toBeGreaterThan(0);
+    expect(FUENTE_UBICACION.startsWith('function pideElLocal(')).toBe(true);
+    expect(FUENTE_UBICACION.trimEnd().endsWith('}')).toBe(true);
+  });
+
+  it('pedidos expresos del local, fuera de la entrega', () => {
+    const pedidos = [
+      '¿Dónde están?', 'donde estan', 'Dónde queda', '¿dónde queda el local?', '¿Dónde está el restaurante?', 'dónde se ubican', 'dónde se encuentran', 'dónde los encuentro',
+      'dnd estan', 'ubicados?', '¿Dónde están ubicados?', '¿Cómo llego?', 'cómo llegar', 'como se llega', 'cómo llegamos a su local',
+      'dirección del local', 'ubicación del restaurante', 'dirección de ustedes', 'su dirección', 'su ubicación', 'vuestra dirección',
+      '¿cuál es la dirección?', '¿cuál es la ubicación?', 'ubicación', 'dirección', 'link', 'el link por favor', 'mapa', 'google maps', 'gmaps',
+      'link de la ubicación', 'enlace de la dirección', 'enlace al mapa',
+      'pásame la ubicación', 'mándame la dirección', 'compárteme la ubicación', 'pasen la ubicación', 'manden la dirección', 'me pasas la ubicación por favor',
+      'ubicasion', 'direcion', 'k direccion', 'hola, ¿cuál es su dirección?', 'Hola buenas tardes, dónde están ubicados', 'cual es tu direccion',
+    ];
+    for (const f of pedidos) expect([f, pide(f)], f).toEqual([f, true]);
+  });
+
+  it('negado: lo que DA una dirección o una ubicación, o no pregunta por el local, no dispara', () => {
+    const noPide = [
+      // marcas de entrega y direcciones armadas
+      'Av. Banzer 1234 zona Norte', 'mi dirección es calle 5 nro 10', 'mi ubicación', 'mi dirección', 'te paso mi ubicación', 'estoy en la Av. Busch',
+      'vivo en Sopocachi', 'llévalo a la calle 3', 'entregar en mi casa', 'Calle Los Pinos esquina Rosales', 'barrio El Alto', 'zona Sur, frente a la plaza',
+      'cerca de la iglesia', 'edificio Mesa Grande piso 3', 'dirección de entrega', 'la dirección es calle 5', 'dirección 1234', 'ubicación 2',
+      // un enlace pegado (es la ubicación de ella, no un pedido)
+      'https://maps.app.goo.gl/abc123', 'mira www.google.com/maps/place/x', 'te mando el google maps',
+      // no preguntan por el local
+      '¿dónde está mi pedido?', 'dónde están los tacos', 'dónde están mis bebidas', '¿dónde queda la farmacia?', 'cambiar la dirección', 'quiero cambiar la dirección del pedido',
+      'cómo llega mi pedido', 'cuánto demora en llegar', 'hola', 'menú', 'quiero tres tacos', 'cancelar',
+      // vacío o demasiado largo
+      '', 'a'.repeat(250),
+    ];
+    for (const f of noPide) expect([f, pide(f)], f).toEqual([f, false]);
+  });
+
+  it('pidiendo SU dirección de entrega (restringido): «ubicación» y «dirección» sueltas son darla; solo cuenta lo que nombra al local', () => {
+    for (const f of ['ubicación', 'dirección', 'la ubicación', 'k direccion', 'mi ubicación', 'mi dirección', 'te paso mi ubicación', 'pásame la ubicación', 'cuál es la dirección', 'Av. Banzer 1234 zona Norte',
+      // revisión de seguridad (LOW): frases que DAN la dirección con «ubicados» o «su dirección»
+      'estamos ubicados por el centro', 'estoy ubicada atrás del mercado', 'ubicados en Sopocachi', 'su dirección es la misma', 'ubicados', '¿cómo llego?']) {
+      expect([f, pide(f, true)], f).toEqual([f, false]);
+    }
+    for (const f of ['¿Dónde están?', '¿cuál es su dirección?', 'dirección del local', 'ubicación de ustedes', 'su ubicación', 'mapa', 'link', 'el link por favor', 'google maps', 'cómo llego a su local', 'dónde están ubicados', 'su dirección, por favor', 'dónde queda su local']) {
+      expect([f, pide(f, true)], f).toEqual([f, true]);
+    }
   });
 });

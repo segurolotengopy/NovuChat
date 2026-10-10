@@ -16,7 +16,8 @@
 // ORDEN (diseño §4.5, sin modelo): 1) cotejo, o comprobante simulado → `comprobante`; 2) medios (imagen o documento
 // sin QR pendiente, audio); 3) botón, validado contra el estado; 4) texto exacto de una
 // campaña vigente → `promo`; 5) pide una persona → `transferir`, pregunta si es una IA →
-// `identidad` (la identidad se revisa primero); 6) intenciones GLOBALES, en cualquier paso salvo
+// `identidad` (la identidad se revisa primero); 5b) pide EXPRESAMENTE la ubicación o la dirección del LOCAL → `consulta:direccion_local`
+// (09/10, Q'Taco: en cualquier paso y también por audio; `Plan del turno` responde SIN tocar el estado); 6) intenciones GLOBALES, en cualquier paso salvo
 // `esperando_comprobante` (ahí «menú» y pedir una persona NO sacan del cobro: se conserva el paso): «menú», «cancelar», «carta», «reserva» y,
 // estando en una reserva, «pedir»; 7) en `inicio` o `menu`, consulta fija; 8) por paso; 9) pedido
 // fuera de horario.
@@ -187,6 +188,18 @@ const PREGUNTA_IDENTIDAD = /\b(eres|sos|seras|hablo con|hablando con|estoy habla
 const PIDE_PERSONA = /\b(hablar|conversar|comunicar|comunicarme|comunicarnos|contactar|contactarme|pasar|pasame|pasenme|comunicame) (con|a) (una |un |la |el |algun |alguna |otra )?(persona|alguien|humano|humana|encargad[oa]|asesor|asesora|duen[oa]|gerente|administrador|administradora|recepcion)\b|\b(quiero|necesito|prefiero|quisiera|pido) (a )?(una |un |la |el )?(persona|humano|humana|asesor|asesora|encargad[oa])\b|\b(reclamo|queja|humano|humana)\b/;
 if (PREGUNTA_IDENTIDAD.test(norm)) return salir('identidad');
 if (PIDE_PERSONA.test(norm)) return salir('transferir', { motivo: 'pidió hablar con una persona' });
+
+// --- 5b. Pide la ubicación o la dirección del LOCAL (09/10/2026, pedido de Q'Taco) ---------------------------------------
+// «Cada vez que una persona pida expresamente la ubicación o la dirección del local, se le manda el enlace de Google Maps, sea cual sea el
+// flujo que siga o la etapa en que esté.» Va ANTES de las intenciones globales y del «por paso»: con un comprobante en espera, un pedido a medias
+// o una reserva en curso la consulta se responde igual y el estado NO se toca (`Plan del turno`: `aUbicacionLocal`). Solo si hay algo que dar
+// (la dirección en texto o un enlace de Maps válido); sin ninguno no se intercepta y todo sigue como antes. Cero llamadas al modelo.
+// DAR no es PEDIR: dentro de `pedido_datos` con delivery el flujo está pidiendo SU dirección de entrega, así que ahí «ubicación» o «dirección»
+// sueltas se leen como darla y solo cuenta lo que nombra al local (`pideElLocal(norm, true)`). Compartir la ubicación (`type: location`) ya salió arriba.
+// MISMO criterio que `Plan del turno` (`aUbicacionLocal`): la dirección sin los puntos ni los espacios finales; una que sea solo puntuación no cuenta como dato.
+const hayDatoDelLocal = !!vmLinea(cfg.direccion, 200).replace(/[.\s]+$/, '') || !!vmEnlaceDeMapa(cfg.direccionMaps);
+const pidiendoSuDireccion = paso === 'pedido_datos' && !!previo.entrega && previo.entrega.entrega === 'delivery';
+if (hayDatoDelLocal && pideElLocal(norm, pidiendoSuDireccion)) return salir('consulta', { consulta: 'direccion_local', motivo: 'ubicacion_del_local' });
 
 // --- 6. Intenciones GLOBALES: valen en cualquier paso, antes del «por paso» ------------------------
 // Con un comprobante en espera (`esperando_comprobante`) «menú» no sale del cobro (muestra el recordatorio) y lo
@@ -580,6 +593,63 @@ function extraerPedido() {
 
 function extraerReserva() {
   return salir('extraer_reserva', { cuerpoExtraccion: rsCuerpoExtraccion(texto, { ahoraMs: ahora, zonas: lista(cfg.zonasReserva) }) });
+}
+
+// ¿El texto PIDE la ubicación o la dirección del LOCAL? Función pura sobre el texto ya normalizado con `vmNorm` (sin tildes, en minúsculas, sin signos).
+// `restringido` = el flujo está pidiendo la dirección de ENTREGA del cliente (`pedido_datos` con delivery): ahí «ubicación» y «dirección» sueltas son
+// DARLA y solo vale lo que nombra al local («dónde están», «del local», «de ustedes», «su dirección», «mapa», «link»).
+// 1) NUNCA si da algo: un dígito, una marca de entrega («mi», «estoy en», «calle», «zona», «barrio», «frente a», «nro»…), «te paso…», un enlace pegado.
+// 2) Pedidos expresos que nombran al local: «dónde están/queda(n)/se ubican/se encuentran/los encuentro», «dónde está el local», «ubicados», «cómo llego/
+//    llegar/se llega», «dirección/ubicación del local/de ustedes», «su dirección», «mapa», «google maps», «link de la ubicación».
+// 3) Fuera de lo restringido, el mensaje ENTERO de vocabulario cerrado con una palabra de dirección («ubicación», «pásame la ubicación», «k direccion»,
+//    «cuál es la dirección»): una palabra ajena («cambiar la dirección», «dirección de entrega») hace que no sea esto. Con faltas habituales
+//    («ubicasion», «direcion»). Las constantes van DENTRO de la función (lo declarado con `const` después del `return` del nodo no se inicializa).
+function pideElLocal(n, restringido) {
+  if (!n || n.length > 200 || /\d/.test(n)) return false;
+  const DA = /\b(?:mi|mis|mio|mia|nuestra|nuestro)\b|\b(?:estoy|estamos|vivo|vivimos|trabajo|trabajamos) (?:en|por|cerca|frente|a)\b|\b(?:te|les|le) (?:paso|mando|envio|comparto|dejo|doy)\b|\b(?:ahi|aqui|aca) (?:va|esta|es|queda)\b|\b(?:adjunto|adjunta|entregar|entregalo|entreguen|entregue|entrega|entregas)\b|\b(?:llevalo|llevamelo|llevenlo|llevenmelo|envialo|enviamelo|envienlo|envienmelo|mandalo|mandamelo|mandenlo|mandenmelo|traelo|traemelo|traiganlo|traiganmelo) a\b|\b(?:calle|calles|avenida|av|avda|zona|barrio|esquina|frente|cerca|nro|numero|casa|edificio|condominio|urbanizacion|urb|piso|departamento|depto|oficina|porteria|referencia|referencias)\b|\bubicad[oa]s? (?:en|por|cerca|frente|a|atras|detras|al)\b|\bhttps?\b|\bwww\b|\bgoo gl\b|\bmaps app\b/;
+  if (DA.test(n)) return false;
+  const DIR = '(?:dir[ei]c{1,2}ion(?:es)?|ubi[ck]a[cs]ion(?:es)?)';
+  const ESDIR = new RegExp('^' + DIR + '$');
+  const LOCAL = '(?:local|locales|restaurante|negocio|tienda|sucursal|lugar|establecimiento)';
+  const DONDE = '(?:donde|dnde|dnd|onde)';
+  // Qué sigue a «dónde están/queda…»: «los tacos» o «mi pedido» no es el local; «el local» o «ustedes» sí.
+  const sigueUnLocal = (resto) => {
+    const w = resto.trim().split(' ').filter(Boolean);
+    if (!w.length) return true;
+    if (['mi', 'mis', 'tu', 'tus', 'los', 'las', 'unos', 'unas', 'pedido', 'orden'].indexOf(w[0]) >= 0) return false;
+    if (['el', 'la', 'un', 'una'].indexOf(w[0]) >= 0) return new RegExp('^' + LOCAL + '$').test(w[1] || '');
+    return true;
+  };
+  const dondeEstan = new RegExp('\\b' + DONDE + ' (?:estan|queda|quedan|se ubican|se ubica|se encuentran|se encuentra|los encuentro|las encuentro|los puedo encontrar|funcionan)\\b(.*)$').exec(n);
+  if (dondeEstan && sigueUnLocal(dondeEstan[1])) return true;
+  if (new RegExp('\\b' + DONDE + ' (?:esta|se ubica|queda) (?:el |la )' + LOCAL + '\\b').test(n)) return true;
+  // Con la entrega del cliente en curso, «ubicados» y «cómo llego» solo cuentan junto a «dónde» o a un nombre del local («dónde están ubicados» sí; «ubicados por el centro» ya cayó arriba).
+  const nombraAlLocal = new RegExp('\\b' + DONDE + '\\b|\\b' + LOCAL + '\\b').test(n);
+  if (/\bubicad[oa]s?\b/.test(n) && (!restringido || nombraAlLocal)) return true;
+  if (/\bcomo (?:llego|llegar|llegamos|llegare|se llega|puedo llegar|hago para llegar|podemos llegar|llegariamos)\b/.test(n) && (!restringido || nombraAlLocal)) return true;
+  if (new RegExp('\\b' + DIR + ' (?:del|de el) ' + LOCAL + '\\b').test(n) || new RegExp('\\b' + DIR + ' de (?:ustedes|uds)\\b').test(n)) return true;
+  // «Su dirección» (fuera de la entrega); dentro de ella solo como pregunta o pedido, por el vocabulario cerrado de abajo.
+  if (!restringido && new RegExp('\\b(?:su|vuestra|vuestro|tu) ' + DIR + '\\b').test(n)) return true;
+  if (/\b(?:mapa|google maps|gmaps|maps)\b/.test(n)) return true;
+  if (new RegExp('\\b(?:link|enlace) (?:de |a |al |del )(?:la |el )?(?:' + DIR + '|mapa|' + LOCAL + '|google maps|maps)\\b').test(n)) return true;
+  // Mensaje entero de vocabulario cerrado.
+  const VOCAB = ['hola', 'buenas', 'buenos', 'buen', 'dia', 'dias', 'tarde', 'tardes', 'noche', 'noches', 'por', 'favor', 'porfa', 'porfavor', 'plis', 'pls', 'gracias',
+    'disculpa', 'disculpe', 'perdon', 'oye', 'una', 'un', 'la', 'el', 'su', 'tu', 'de', 'del', 'local', 'restaurante', 'negocio', 'ustedes', 'uds', 'exacta', 'exacto',
+    'cual', 'cuales', 'es', 'seria', 'k', 'q', 'que', 'y', 'o', 'tienen', 'tienes', 'tiene', 'me', 'nos', 'das', 'dan', 'darian', 'darme', 'dar', 'daria', 'dame', 'denme',
+    'pasas', 'pasan', 'pasar', 'pasarme', 'pasame', 'pasenme', 'mandas', 'mandan', 'mandar', 'mandarme', 'mandame', 'mandenme', 'compartes', 'comparten', 'compartir',
+    'compartirme', 'comparteme', 'compartame', 'comparte', 'compartan', 'pasa', 'pasen', 'manda', 'manden', 'envia', 'envien', 'envias', 'envian', 'enviar', 'enviarme', 'enviame', 'envienme', 'puedes', 'puede', 'pueden', 'podrias', 'podria',
+    'podrian', 'necesito', 'necesitamos', 'quiero', 'quisiera', 'queremos', 'saber', 'conocer', 'decirme', 'decir', 'dime', 'digame', 'indicame', 'indicarme', 'indiquen',
+    'mapa', 'maps', 'google', 'gmaps', 'link', 'enlace', 'ver', 'muestrame', 'si', 'ok', 'tambien', 'ademas', 'ahora', 'ir', 'a', 'al', 'en'];
+  const ps = n.split(' ').filter(Boolean);
+  if (ps.length > 12 || !ps.every((w) => VOCAB.indexOf(w) >= 0 || ESDIR.test(w))) return false;
+  if (!ps.some((w) => ESDIR.test(w) || ['mapa', 'maps', 'gmaps', 'google', 'link', 'enlace'].indexOf(w) >= 0)) return false;
+  // En la entrega del cliente solo cuenta lo que nombra al local.
+  if (restringido) {
+    // «Su dirección es la misma» afirma, no pregunta: «su»/«tu» cuentan solo si no hay un «es» sin «cuál».
+    const afirma = ps.indexOf('es') >= 0 && ps.indexOf('cual') < 0 && ps.indexOf('cuales') < 0;
+    return ps.some((w) => ['local', 'restaurante', 'negocio', 'ustedes', 'uds', 'mapa', 'maps', 'gmaps', 'google', 'link', 'enlace'].indexOf(w) >= 0 || (!afirma && (w === 'su' || w === 'tu')));
+  }
+  return true;
 }
 
 // Una de las consultas fijas, o '' si no es UNA sola (dos a la vez, un texto largo o una
