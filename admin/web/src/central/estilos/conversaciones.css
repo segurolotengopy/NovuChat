@@ -1,5 +1,5 @@
 /* =============================================================================
-   CONVERSACIONES (prototipo, 09/10/2026): lista a la izquierda, un solo detalle
+   CONVERSACIONES (H1, 09/10/2026): lista a la izquierda, un solo detalle
    a la derecha, cada uno con su scroll. Bajo 52rem son DOS VISTAS: la lista, o
    el chat (la clase `cv--chat` la pone la página cuando hay una abierta).
    Todo con prefijo `cv-` para no tocar las clases de las demás pantallas.
@@ -17,17 +17,6 @@
   gap: var(--space-2);
 }
 
-.cv-prototipo {
-  flex: none;
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3);
-  padding: var(--space-1) var(--space-3);
-  border: 1px dashed var(--color-aviso);
-  border-radius: var(--radius-md, 8px);
-  background: color-mix(in srgb, var(--color-aviso) 10%, var(--color-surface));
-  font-size: 13px;
-}
-.cv-atajos { opacity: .8; }
-.cv-reiniciar { margin-left: auto; min-height: 0; padding-block: 2px; font-size: 13px; }
 .cv-error { color: var(--color-error); }
 
 .cv-cuerpo {
@@ -84,6 +73,7 @@
   border-radius: 999px; background: var(--color-accent-2-600); color: #fff;
   font-size: 12px; font-weight: 800; line-height: 1.35rem;
 }
+.cv-contador--punto { min-width: 0; width: .7rem; height: .7rem; padding: 0; line-height: 0; align-self: center; }
 .cv-ficha-marcas { display: flex; flex-wrap: wrap; gap: 4px; }
 .cv-ficha-telefono { font-size: 12px; opacity: .7; }
 
@@ -126,7 +116,7 @@
   background: var(--color-accent-2-100); color: var(--color-accent-2-900);
 }
 .cv-pastilla--por-vencer { background: color-mix(in srgb, var(--color-aviso) 20%, var(--color-surface)); color: var(--color-aviso); }
-.cv-pastilla--cerrada, .cv-pastilla--sin-mensaje { background: color-mix(in srgb, var(--color-text) 10%, transparent); color: var(--color-text); }
+.cv-pastilla--cerrada { background: color-mix(in srgb, var(--color-text) 10%, transparent); color: var(--color-text); }
 
 .cv-det-sub { flex: none; display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: 4px var(--space-3); border-bottom: 1px solid var(--color-divider); font-size: 13px; }
 .cv-nocontactar { display: flex; flex-direction: row; align-items: center; gap: 4px; margin: 0; font-size: 13px; }
@@ -138,6 +128,8 @@
 }
 .cv-hilo:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .cv-mas { display: flex; justify-content: center; padding: var(--space-2) 0; }
+.cv-mas-lista { display: flex; justify-content: center; padding: var(--space-2) var(--space-3); }
+.cv-error-busqueda { margin: 2px 0 0; font-size: 12.5px; }
 .cv-mensajes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .cv-fila { display: flex; flex-direction: column; }
 .cv-dia { align-self: center; margin: var(--space-2) 0; }
@@ -151,17 +143,10 @@
 .cv-burbuja--entrante { align-self: flex-start; background: var(--color-surface); border: 1px solid var(--color-divider); }
 .cv-burbuja--saliente { align-self: flex-end; background: var(--color-accent-2-100); color: var(--color-accent-2-900); }
 [data-tema="oscuro"] .cv-burbuja--saliente { background: var(--color-accent-100); color: var(--color-text); }
-.cv-burbuja--simulada { border: 1px dashed var(--color-accent-2-700); }
 .cv-burbuja--buscada { animation: cv-resalte 3.2s ease-out 1; outline: 2px solid var(--color-aviso); outline-offset: 1px; }
 @keyframes cv-resalte { 0%, 70% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-aviso) 40%, transparent); } 100% { box-shadow: none; } }
 .cv-autor { display: block; font-size: 11.5px; font-weight: 800; opacity: .7; }
 .cv-burbuja .adjunto { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 2px; }
-
-.cv-redactar { flex: none; border-top: 1px solid var(--color-divider); padding: var(--space-2) var(--space-3); display: grid; gap: var(--space-1); }
-.cv-redactar-fila { display: flex; gap: var(--space-2); align-items: flex-end; }
-.cv-redactar textarea { flex: 1; resize: none; min-height: 2.6rem; max-height: 8rem; }
-.cv-nota { margin: 0; font-size: 13px; opacity: .8; }
-.cv-simulacion { margin: 0; font-size: 13px; font-weight: 700; color: var(--color-aviso); }
 
 /* ── Celular: DOS VISTAS. Con una conversación abierta se ve el chat; sin ella, la lista. ── */
 @media (max-width: 52rem) {
@@ -173,9 +158,6 @@
   .cv-volver { display: inline-flex; min-height: 36px; }
   .cv-det-cab { gap: var(--space-2); }
   .cv-det-acciones { width: 100%; }
-  .cv-atajos, .cv-prototipo-detalle { display: none; }
-  .cv-prototipo { flex-wrap: nowrap; font-size: 12px; padding: 2px var(--space-2); }
-  .cv-reiniciar { white-space: nowrap; flex: none; }
   .cv-filtros { flex-wrap: nowrap; overflow-x: auto; padding-bottom: var(--space-1); scrollbar-width: none; }
   .cv-chip { flex: none; white-space: nowrap; min-height: 28px; }
   .cv-buscador { padding-top: var(--space-1); }

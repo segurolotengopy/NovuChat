@@ -7,9 +7,8 @@ import {
 import { db } from '../../core/lib/firebase';
 import { TextoSeguro } from './TextoSeguro';
 import {
-  etiquetaDia, horaCorta, mismoDia, textoRestante, ventanaDe, type Ficha,
+  etiquetaDia, horaCorta, mismoDia, necesitaHumanoDe, textoRestante, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
-import type { EnviadoLocal } from '../lib/conversacionesSimulacion';
 
 /**
  * EL DETALLE DE UNA CONVERSACIÓN: un solo hilo, con su propio scroll.
@@ -38,7 +37,6 @@ interface Msg {
   direccion: 'entrante' | 'saliente';
   autor: string;
   ts: number;
-  simulado?: boolean;
 }
 
 /**
@@ -164,18 +162,11 @@ export interface PropsDetalle {
   ficha: Ficha;
   mensajeId: string | null;
   ahora: number;
-  quienSoy: string;
-  enviados: EnviadoLocal[];
   hrefLista: string;
   hrefUltimo: string;
-  onTomar: () => void;
-  onDevolver: () => void;
-  onEnviar: (texto: string) => void;
   onAnterior: (() => void) | null;
   onSiguiente: (() => void) | null;
   posicion: string;
-  /** Si es `false` (fuera de los emuladores) no se ofrece tomar ni escribir: ni siquiera simulado. */
-  simulacion: boolean;
 }
 
 export function DetalleConversacion(p: PropsDetalle) {
@@ -186,18 +177,13 @@ export function DetalleConversacion(p: PropsDetalle) {
   const pegado = useRef(true);
   const restaurar = useRef<{ alto: number; top: number } | null>(null);
   const ultimoVisto = useRef('');
-  const [texto, setTexto] = useState('');
-  const [aviso, setAviso] = useState('');
   const [errorNoContactar, setErrorNoContactar] = useState<string | null>(null);
 
-  const simulados: Msg[] = p.enviados.map((e) => ({
-    id: e.id, texto: e.texto, tipo: 'text', direccion: 'saliente', autor: 'persona', ts: e.ts, simulado: true,
-  }));
-  const visibles = unir(m.mensajes, simulados);
+  const visibles = m.mensajes;
   const claveHilo = `${ficha.id}/${mensajeId ?? ''}`;
 
-  // Otra conversación: borrador y aviso de simulación son de la anterior.
-  useEffect(() => { setTexto(''); setAviso(''); setErrorNoContactar(null); }, [ficha.id]);
+  // Otra conversación: el error de «No contactar» era de la anterior.
+  useEffect(() => { setErrorNoContactar(null); }, [ficha.id]);
 
   // Posición del scroll: al fondo al abrir y cuando llega algo estando al fondo;
   // en el mensaje buscado cuando se llegó por una búsqueda; sin saltos cuando se
@@ -255,16 +241,7 @@ export function DetalleConversacion(p: PropsDetalle) {
     }
   }
 
-  const v = ventanaDe(ficha.ultimoEntranteEn, p.ahora);
-  const tomada = ficha.responde === 'persona';
-  const puedeEscribir = tomada && v.estado !== 'cerrada' && v.estado !== 'sin-mensaje';
-
-  function enviar() {
-    if (!puedeEscribir || !texto.trim()) return;
-    p.onEnviar(texto);
-    setTexto('');
-    setAviso('Simulación: no se envió. En la versión real este mensaje saldría por WhatsApp.');
-  }
+  const v = ventanaDeFicha(ficha, p.ahora);
 
   let diaPrevio = 0;
   return (
@@ -278,29 +255,26 @@ export function DetalleConversacion(p: PropsDetalle) {
           <strong><TextoSeguro valor={ficha.nombre || ficha.telefono} maxLargo={60} /></strong>
           <span className="text-muted">
             +<TextoSeguro valor={ficha.telefono} maxLargo={15} />
-            {' · '}{tomada ? <>Atiende {ficha.tomadoPor || 'una persona'}</> : <>El asistente atiende</>}
           </span>
         </div>
-        <span className={`cv-pastilla cv-pastilla--${v.estado}`} title="Ventana de 24 h de WhatsApp: desde el último mensaje del cliente">
-          {v.estado === 'sin-mensaje' ? 'Sin mensajes del cliente'
-            : v.estado === 'cerrada' ? 'Ventana cerrada'
-            : `Ventana: ${textoRestante(v.restanteMs)}`}
-        </span>
+        {/* Sin dato (una conversación de antes de H1): no se pinta pastilla, porque «cerrada» sería falso. */}
+        {v.estado !== 'sin-dato' && (
+          <span className={`cv-pastilla cv-pastilla--${v.estado}`} title="Ventana de 24 h de WhatsApp: desde el último mensaje del cliente">
+            {v.estado === 'cerrada' ? 'Ventana cerrada' : `Ventana: ${textoRestante(v.restanteMs)}`}
+          </span>
+        )}
         <div className="cv-det-acciones">
           <button type="button" className="btn btn-secondary btn-icon" onClick={p.onAnterior ?? undefined}
             disabled={!p.onAnterior} aria-label="Conversación anterior (Alt+↑)" title="Anterior (Alt+↑)">↑</button>
           <button type="button" className="btn btn-secondary btn-icon" onClick={p.onSiguiente ?? undefined}
             disabled={!p.onSiguiente} aria-label="Conversación siguiente (Alt+↓)" title="Siguiente (Alt+↓)">↓</button>
           <span className="text-muted cv-pos">{p.posicion}</span>
-          {p.simulacion && (tomada
-            ? <button type="button" className="btn btn-secondary" onClick={p.onDevolver}>Devolver al asistente</button>
-            : <button type="button" className="btn btn-cta" onClick={p.onTomar}>Tomar la conversación</button>)}
         </div>
       </header>
 
       <div className="cv-det-sub">
-        {ficha.necesitaHumano && !tomada && (
-          <span className="cv-etiqueta cv-etiqueta--humano">El asistente pidió que intervenga una persona</span>
+        {necesitaHumanoDe(ficha, p.ahora) && (
+          <span className="cv-etiqueta cv-etiqueta--humano">Necesita que intervenga una persona</span>
         )}
         <label className="cv-nocontactar">
           <input type="checkbox" checked={ficha.noContactar}
@@ -332,17 +306,18 @@ export function DetalleConversacion(p: PropsDetalle) {
           {visibles.map((x) => {
             const nuevoDia = !mismoDia(x.ts, diaPrevio);
             diaPrevio = x.ts;
-            const rotuloAutor = x.simulado ? 'Usted (simulado)'
-              : x.direccion === 'saliente' ? (x.autor === 'persona' ? 'Persona del negocio' : 'Asistente') : '';
+            // Solo se rotula cuando el mensaje dice quién lo escribió (los de hoy no lo dicen: no se inventa).
+            const rotuloAutor = x.direccion === 'saliente'
+              ? (x.autor === 'persona' ? 'Persona del negocio' : x.autor === 'asistente' ? 'Asistente' : '') : '';
             return (
               <li key={x.id} className="cv-fila">
                 {nuevoDia && x.ts > 0 && <div className="cv-dia"><span>{etiquetaDia(x.ts, p.ahora)}</span></div>}
                 <div data-mid={x.id}
-                  className={`cv-burbuja cv-burbuja--${x.direccion}${x.simulado ? ' cv-burbuja--simulada' : ''}${x.id === mensajeId && m.modoSalto ? ' cv-burbuja--buscada' : ''}`}>
+                  className={`cv-burbuja cv-burbuja--${x.direccion}${x.id === mensajeId && m.modoSalto ? ' cv-burbuja--buscada' : ''}`}>
                   {rotuloAutor && <span className="cv-autor">{rotuloAutor}</span>}
                   {ADJUNTOS[x.tipo] && <span className="adjunto">{ADJUNTOS[x.tipo]}</span>}
                   <TextoSeguro valor={x.texto} />
-                  <time>{x.ts ? horaCorta(x.ts) : ''}{x.simulado ? ' · no se envió' : ''}</time>
+                  <time>{x.ts ? horaCorta(x.ts) : ''}</time>
                 </div>
               </li>
             );
@@ -356,27 +331,6 @@ export function DetalleConversacion(p: PropsDetalle) {
         </div>
       </div>
 
-      {p.simulacion && <form className="cv-redactar" onSubmit={(e) => { e.preventDefault(); enviar(); }}>
-        {aviso && <p className="cv-simulacion" role="status" aria-live="polite">{aviso}</p>}
-        {!tomada && (
-          <p className="cv-nota">El asistente atiende esta conversación. Tómela para escribir.</p>
-        )}
-        {tomada && !puedeEscribir && (
-          <p className="cv-nota">
-            La ventana de 24 h está cerrada: ya no se puede escribir libremente. Fuera de la ventana solo
-            sirven las plantillas aprobadas (llegan en H3).
-          </p>
-        )}
-        <div className="cv-redactar-fila">
-          <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={2} maxLength={4096}
-            disabled={!puedeEscribir} aria-label="Escribir un mensaje (simulación)"
-            placeholder={puedeEscribir ? 'Escriba un mensaje (simulación: no se envía)' : 'Escribir está desactivado'}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); enviar(); }
-            }} />
-          <button type="submit" className="btn btn-primary" disabled={!puedeEscribir || !texto.trim()}>Enviar</button>
-        </div>
-      </form>}
     </div>
   );
 }

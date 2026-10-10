@@ -1,35 +1,47 @@
 #!/usr/bin/env node
 /**
  * =============================================================================
- * SIEMBRA DEL PROTOTIPO DE CONVERSACIONES — DATOS 100 % FICTICIOS
+ * SIEMBRA DEL DEMO DE CONVERSACIONES — DATOS 100 % FICTICIOS
  * =============================================================================
  *
  * Deja en los emuladores (Auth y Firestore) un comercio de mentira con 31
- * conversaciones para probar la pantalla nueva:
+ * conversaciones para probar la pantalla nueva de Conversaciones (H1), con la
+ * bandera `consolaConversaciones: 'nueva'` ya puesta:
  *
  *   · un hilo de más de 400 mensajes (para ver que se muestran los ÚLTIMOS y no
  *     los más viejos, y que una búsqueda salta a un mensaje profundo);
  *   · DOS teléfonos de dígitos parecidos (…0047 y …0074);
- *   · conversaciones que «necesitan humano», con mensajes sin leer, con la
- *     ventana de 24 h por vencer y con la ventana cerrada, y tres ya tomadas por
- *     una persona;
+ *   · conversaciones que «necesitan humano» (estado de atención `operador` o
+ *     `bloqueado` en las últimas 24 h), con mensajes sin leer, con la ventana de
+ *     24 h por vencer y con la ventana cerrada;
+ *   · DOS conversaciones «de antes de H1», sin ninguno de los campos nuevos
+ *     (…0066 y …0096), para ver que la lectura tolerante las muestra como leídas
+ *     y sin pastilla de ventana;
  *   · un mensaje con HTML adentro, que tiene que verse como texto.
+ *
+ * Los campos son los del contrato de H1 (plan §4.1 y §4.2): en la conversación
+ * `telefonoTrozos`, `nombrePalabras`, `ultimoEntranteEn`, `ventanaVenceEn`,
+ * `noLeidos`, `sinLeer` y `atencionEstado`; en cada mensaje `tenantId` y `palabras`.
+ * NO se siembra `turno`, `necesitaHumano` ni `autor`: eso es de H2.
  *
  * TELÉFONOS: todos son `591000000NN` (seis ceros seguidos), la única forma que
  * deja pasar `scripts/verificar-saneo.sh`. Los nombres, los precios y los textos
  * son inventados. Ningún dato real.
  *
- * LAS PALABRAS Y LOS TROZOS DE TELÉFONO SE ESCRIBEN CON LAS MISMAS FUNCIONES QUE
- * USA LA PANTALLA (`web/src/central/lib/conversaciones.ts`): una sola regla de
- * normalización. Cuando la ingesta los escriba de verdad tiene que usar esa misma.
+ * LAS PALABRAS Y LOS TROZOS DE TELÉFONO SE ESCRIBEN CON LA FUNCIÓN DE CORE
+ * (`functions/src/core/conversacion/normalizacion.ts`): la misma que usan la
+ * pantalla, la ingesta y la búsqueda del servidor. Una sola regla.
+ *
+ * LA BÚSQUEDA POR PALABRA llama a la Function `buscarConversaciones`, que este demo
+ * no levanta (solo Firestore y Auth): en el demo esa búsqueda muestra el aviso de
+ * que todavía no está disponible. El teléfono y el nombre sí funcionan.
  *
  * SOLO CONTRA EMULADORES: se niega si el proyecto no empieza con `demo-` o si los
  * emuladores no están en esta máquina. El SDK Admin se salta las reglas.
  *
  * ES REPETIBLE: borra las conversaciones del comercio de prueba y las vuelve a
  * escribir con la hora de ahora (así «ventana por vencer» vuelve a estar por
- * vencer). También cambia la marca `prototipoSemilla`, que hace que la pantalla
- * descarte lo simulado (tomar, leer, escribir) que quedó guardado en el navegador.
+ * vencer).
  *
  * Uso:  node sembrar.mjs
  */
@@ -37,7 +49,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { cuentaInicial } from '../../../functions/src/central/cuenta/planes.ts';
-import { palabrasDe, trozosDeTelefono } from '../../../web/src/central/lib/conversaciones.ts';
+import { palabrasDe, trozosDeTelefono } from '../../../functions/src/core/conversacion/normalizacion.ts';
 
 // ── Salvaguardas ─────────────────────────────────────────────────────────────
 const PROYECTO = process.env.PROYECTO_EMULADOR ?? 'demo-novuchat-prototipo';
@@ -153,46 +165,40 @@ const COLA = [
   '¿Me puede confirmar?', 'Hola, ¿sigue ahí?', 'Es urgente, por favor', 'Quedo atento', '¿A qué hora sería?',
   '¿Y si cambio la hora?', 'Gracias de antemano', 'Avíseme apenas pueda',
 ];
-// Lo que escribe la persona que tomó la conversación.
-const PERSONA = {
-  Rosa: ['Buenas tardes, le habla Rosa del negocio. Ya revisé su caso.', 'Le ofrezco reponerle el pedido sin costo. ¿Le parece bien?'],
-  Luis: ['Hola, soy Luis, atiendo yo desde acá. Ya vi lo que necesita.', 'Le confirmo que se lo tenemos listo para esa hora.'],
-};
-
 // ── Las 31 conversaciones ────────────────────────────────────────────────────
-// [sufijo, nombre, guion, minutos desde el último mensaje, sin leer, humano, tomada por]
+// [sufijo, nombre, guion, minutos desde el último mensaje, sin leer, estado de atención, 'vieja' = sin los campos de H1]
 const FILAS = [
-  ['12', 'Marcela R.', 'LARGO', 6, 2, false, null],
-  ['47', 'Ximena P.', 'pedido', 12, 3, false, null],      // …0047 y …0074: dígitos parecidos
-  ['74', 'Mauricio T.', 'pedido', 25, 0, false, null],
-  ['05', 'Rolando C.', 'reclamo', 9, 2, true, null],
-  ['08', 'Daniela V.', 'factura', 40, 1, true, null],
-  ['15', 'Álvaro M.', 'tortaGrande', 75, 0, true, null],
-  ['21', 'Lucía F.', 'horarios', 130, 0, false, null],
-  ['23', 'Gonzalo S.', 'cumple', 55, 4, false, null],
-  ['31', 'Patricia L.', 'delivery', 20, 0, false, 'Rosa'],
-  ['33', 'Fernando H.', 'reclamo', 95, 0, false, 'Rosa'],
-  ['36', 'Carla B.', 'pedido', 180, 0, false, 'Luis'],
-  ['41', 'Jhonny A.', 'precios', 1180, 0, false, null],  // ventana por vencer
-  ['42', 'Verónica D.', 'pedido', 1210, 1, false, null],
-  ['44', 'Sergio N.', 'horarios', 1145, 0, false, null],
-  ['52', 'Rosario G.', 'cumple', 1250, 2, false, null],
-  ['55', 'Iván K.', 'delivery', 1170, 1, true, null],
-  ['58', 'Beatriz J.', 'precios', 2900, 0, false, null],  // ventana cerrada
-  ['61', 'Hugo Z.', 'pedido', 1700, 0, false, null],
-  ['63', 'Natalia O.', 'reclamo', 4300, 0, true, null],
-  ['66', 'Pablo Q.', 'horarios', 6000, 0, false, null],
-  ['70', 'Elena W.', 'pedido', 300, 0, false, null],
-  ['71', 'Marco E.', 'precios', 410, 5, false, null],
-  ['77', 'Silvia Y.', 'delivery', 520, 0, false, null],
-  ['79', 'Tito U.', 'horarios', 610, 1, false, null],
-  ['81', 'Gabriela I.', 'pedido', 700, 0, false, null],
-  ['84', 'Óscar R.', 'tortaGrande', 800, 0, false, null],
-  ['88', 'Mónica A.', 'precios', 900, 2, false, null],
-  ['90', 'Raúl D.', 'delivery', 980, 0, false, null],
-  ['93', 'Karen S.', 'cumple', 1020, 0, false, null],
-  ['96', 'Walter B.', 'horarios', 1000, 0, false, null],
-  ['99', 'Prueba de escapado', 'escapado', 1500, 0, false, null],
+  ['12', 'Marcela R.', 'LARGO', 6, 2, 'normal', null],
+  ['47', 'Ximena P.', 'pedido', 12, 3, 'normal', null],      // …0047 y …0074: dígitos parecidos
+  ['74', 'Mauricio T.', 'pedido', 25, 0, 'normal', null],
+  ['05', 'Rolando C.', 'reclamo', 9, 2, 'operador', null],
+  ['08', 'Daniela V.', 'factura', 40, 1, 'bloqueado', null],
+  ['15', 'Álvaro M.', 'tortaGrande', 75, 0, 'operador', null],
+  ['21', 'Lucía F.', 'horarios', 130, 0, 'normal', null],
+  ['23', 'Gonzalo S.', 'cumple', 55, 4, 'normal', null],
+  ['31', 'Patricia L.', 'delivery', 20, 0, 'normal', null],
+  ['33', 'Fernando H.', 'reclamo', 95, 0, 'normal', null],
+  ['36', 'Carla B.', 'pedido', 180, 0, 'normal', null],
+  ['41', 'Jhonny A.', 'precios', 1180, 0, 'normal', null],  // ventana por vencer
+  ['42', 'Verónica D.', 'pedido', 1210, 1, 'normal', null],
+  ['44', 'Sergio N.', 'horarios', 1145, 0, 'normal', null],
+  ['52', 'Rosario G.', 'cumple', 1250, 2, 'normal', null],
+  ['55', 'Iván K.', 'delivery', 1170, 1, 'operador', null],
+  ['58', 'Beatriz J.', 'precios', 2900, 0, 'normal', null],  // ventana cerrada
+  ['61', 'Hugo Z.', 'pedido', 1700, 0, 'normal', null],
+  ['63', 'Natalia O.', 'reclamo', 4300, 0, 'operador', null], // pidió una persona hace días: ya no figura en «Necesita humano»
+  ['66', 'Pablo Q.', 'horarios', 6000, 0, 'normal', 'vieja'], // de antes de H1: sin campos nuevos
+  ['70', 'Elena W.', 'pedido', 300, 0, 'normal', null],
+  ['71', 'Marco E.', 'precios', 410, 5, 'normal', null],
+  ['77', 'Silvia Y.', 'delivery', 520, 0, 'normal', null],
+  ['79', 'Tito U.', 'horarios', 610, 1, 'normal', null],
+  ['81', 'Gabriela I.', 'pedido', 700, 0, 'normal', null],
+  ['84', 'Óscar R.', 'tortaGrande', 800, 0, 'normal', null],
+  ['88', 'Mónica A.', 'precios', 900, 2, 'normal', null],
+  ['90', 'Raúl D.', 'delivery', 980, 0, 'normal', null],
+  ['93', 'Karen S.', 'cumple', 1020, 0, 'normal', null],
+  ['96', 'Walter B.', 'horarios', 1000, 0, 'normal', 'vieja'], // de antes de H1
+  ['99', 'Prueba de escapado', 'escapado', 1500, 0, 'normal', null],
 ];
 
 // ── El hilo largo: más de 400 mensajes ───────────────────────────────────────
@@ -229,12 +235,11 @@ function guionLargo() {
 }
 
 // ── Construcción de una conversación ─────────────────────────────────────────
-function armar([suf, nombre, guion, minUltimo, sinLeer, humano, tomadaPor]) {
+function armar([suf, nombre, guion, minUltimo, sinLeer, atencionEstado, vieja]) {
   const telefono = `591000000${suf}`;
   const base = guion === 'LARGO' ? guionLargo() : GUIONES[guion]();
   const lista = [...base];
   for (let k = 0; k < sinLeer; k++) lista.push(['c', COLA[(Number(suf) + k) % COLA.length]]);
-  if (tomadaPor) for (const t of PERSONA[tomadaPor]) lista.push(['p', t]);
 
   // Hacia atrás desde el último: entre mensajes 1 a 9 minutos; el hilo largo se
   // reparte en ~3 semanas (cada ~70 min de promedio).
@@ -249,13 +254,13 @@ function armar([suf, nombre, guion, minUltimo, sinLeer, humano, tomadaPor]) {
   const mensajes = lista.map(([de, texto, tipo], i) => ({
     id: `m${String(i + 1).padStart(4, '0')}`,
     direccion: de === 'c' ? 'entrante' : 'saliente',
-    autor: de === 'c' ? 'cliente' : de === 'a' ? 'asistente' : 'persona',
     tipo: tipo ?? 'text',
     texto,
     ts: horas[i],
   }));
   const ultimoEntrante = [...mensajes].reverse().find((x) => x.direccion === 'entrante');
   const ultimo = mensajes[mensajes.length - 1];
+  // Una conversación «de antes de H1» no trae ninguno de los campos nuevos (los escribe la ingesta desde H1).
   const conversacion = {
     telefono,
     nombreContacto: nombre,
@@ -263,18 +268,17 @@ function armar([suf, nombre, guion, minUltimo, sinLeer, humano, tomadaPor]) {
     ultimoMensaje: ultimo.texto.slice(0, 300),
     ultimoEn: ts(ultimo.ts),
     mensajesTotal: mensajes.length,
-    ultimoEntranteEn: ts(ultimoEntrante.ts),
-    noLeidos: sinLeer,
-    necesitaHumano: humano,
-    telefonoTrozos: trozosDeTelefono(telefono),
-    ...(tomadaPor ? {
-      turno: {
-        responde: 'persona', tomadoPor: tomadaPor === 'Rosa' ? USUARIOS.admin.nombre : USUARIOS.oper.nombre,
-        tomadoEn: ts(horas[base.length] - 2 * MIN), actividadPersonaEn: ts(ultimo.ts),
-      },
-    } : {}),
+    ...(vieja ? {} : {
+      telefonoTrozos: trozosDeTelefono(telefono),
+      nombrePalabras: palabrasDe(nombre, 6),
+      ultimoEntranteEn: ts(ultimoEntrante.ts),
+      ventanaVenceEn: ts(ultimoEntrante.ts + 24 * HORA),
+      noLeidos: sinLeer,
+      sinLeer: sinLeer > 0,
+      atencionEstado,
+    }),
   };
-  return { id: `wa_${telefono}`, suf, nombre, conversacion, mensajes };
+  return { id: `wa_${telefono}`, suf, nombre, vieja: Boolean(vieja), conversacion, mensajes };
 }
 
 // ── Escritura ────────────────────────────────────────────────────────────────
@@ -290,21 +294,23 @@ async function usuario({ uid, correo, nombre, rol }) {
 }
 
 async function principal() {
-  console.log(`\nSiembra del prototipo contra los emuladores (proyecto ${PROYECTO})`);
+  console.log(`\nSiembra del demo contra los emuladores (proyecto ${PROYECTO})`);
   console.log(`  Firestore ${HOST_FS}\n  Auth      ${HOST_AUTH}\n`);
 
   await db.recursiveDelete(db.collection(`tenants/${TENANT}/conversaciones`));
 
   await db.doc(`tenants/${TENANT}`).set({
-    nombre: 'Panadería Luna (PROTOTIPO)',
+    nombre: 'Panadería Luna (DEMO)',
     estado: 'activo',
     plan: cuentaInicial().plan,
     vertical: 'venta',
     flujos: ['venta'],
     creadoEn: ts(AHORA - 90 * 24 * HORA),
-    // La pantalla guarda lo simulado en el navegador atado a esta marca.
-    prototipoSemilla: String(AHORA),
+    // La bandera que enciende la pantalla nueva de Conversaciones (la escribe NovuChat, nunca el comercio).
+    consolaConversaciones: 'nueva',
   });
+  // Los prefijos de país con los que la búsqueda por teléfono completa lo escrito (`prefijosValidos` en Core).
+  await db.doc(`tenants/${TENANT}/config/negocio`).set({ prefijosPermitidos: ['591'] }, { merge: true });
   await db.doc(`tenants/${TENANT}/cuenta/estado`).set({
     ...cuentaInicial(), estadoPago: 'al_dia', montoMensual: 350, moneda: 'BOB',
     proximoVencimiento: ts(AHORA + 18 * 24 * HORA), motivoVisible: '', actualizadoEn: Timestamp.now(),
@@ -319,26 +325,29 @@ async function principal() {
     void escritor.set(ref, c.conversacion);
     for (const m of c.mensajes) {
       void escritor.set(ref.collection('mensajes').doc(m.id), {
-        direccion: m.direccion, autor: m.autor, tipo: m.tipo, texto: m.texto, ts: ts(m.ts),
-        idMeta: `wamid.ficticio.${c.suf}.${m.id}`, palabras: palabrasDe(m.texto),
+        direccion: m.direccion, tipo: m.tipo, texto: m.texto, ts: ts(m.ts),
+        idMeta: `wamid.ficticio.${c.suf}.${m.id}`,
+        ...(c.vieja ? {} : { tenantId: TENANT, ...(palabrasDe(m.texto).length ? { palabras: palabrasDe(m.texto) } : {}) }),
       });
       docs++;
     }
   }
   await escritor.close();
 
-  const sinLeer = conversaciones.filter((c) => c.conversacion.noLeidos > 0);
+  const nuevas = conversaciones.filter((c) => !c.vieja);
+  const sinLeer = nuevas.filter((c) => c.conversacion.noLeidos > 0);
   const horas = (c) => (AHORA - c.conversacion.ultimoEntranteEn.toMillis()) / HORA;
-  const porVencer = conversaciones.filter((c) => horas(c) < 24 && 24 - horas(c) < 6);
-  const cerradas = conversaciones.filter((c) => horas(c) >= 24);
+  const porVencer = nuevas.filter((c) => horas(c) < 24 && 24 - horas(c) < 6);
+  const cerradas = nuevas.filter((c) => horas(c) >= 24);
+  const humano = nuevas.filter((c) => c.conversacion.atencionEstado !== 'normal' && AHORA - c.conversacion.ultimoEn.toMillis() < 24 * HORA);
   const largo = conversaciones.find((c) => c.suf === '12');
   const linea = '='.repeat(74);
   console.log(`${linea}\nLISTO. ${conversaciones.length} conversaciones, ${docs} mensajes (todo ficticio).\n${linea}`);
   console.log(`  Sin leer:           ${sinLeer.length} conversaciones (${sinLeer.map((c) => '…' + c.suf).join(' ')})`);
-  console.log(`  Necesita humano:    ${FILAS.filter((f) => f[5]).length}`);
-  console.log(`  Tomadas por alguien: ${FILAS.filter((f) => f[6]).length}`);
+  console.log(`  Necesita humano:    ${humano.length} (${humano.map((c) => '…' + c.suf).join(' ')})`);
   console.log(`  Ventana por vencer: ${porVencer.length} (${porVencer.map((c) => '…' + c.suf).join(' ')})`);
   console.log(`  Ventana cerrada:    ${cerradas.length}`);
+  console.log(`  De antes de H1:     ${conversaciones.filter((c) => c.vieja).map((c) => '…' + c.suf).join(' ')} (sin los campos nuevos)`);
   console.log(`  Hilo largo:         591000000${largo.suf}, ${largo.mensajes.length} mensajes`);
   console.log('  Parecidos:          …47 y …74 (591000000' + '47 / 591000000' + '74)');
   console.log(`\n  Entre con:  ${USUARIOS.admin.correo}   (administrador)`);

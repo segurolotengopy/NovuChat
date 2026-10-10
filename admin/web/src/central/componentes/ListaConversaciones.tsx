@@ -2,7 +2,7 @@ import type { RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import { TextoSeguro } from './TextoSeguro';
 import {
-  FILTROS, etiquetaFicha, textoRestante, ventanaDe, type Ficha, type Filtro,
+  FILTROS, etiquetaFicha, necesitaHumanoDe, textoRestante, ventanaDeFicha, type Contadores, type Ficha, type Filtro,
 } from '../lib/conversaciones';
 
 /** Un renglón de la lista: una conversación, o un mensaje encontrado dentro de una. */
@@ -13,7 +13,7 @@ export interface Renglon {
   href: string;
   /** Si es un mensaje encontrado: su texto ya recortado y la hora. */
   coincidencia?: { fragmento: string; ts: number };
-  /** Si es un teléfono encontrado: por qué coincidió. */
+  /** Si es un teléfono o un nombre encontrado: por qué coincidió. */
   motivo?: string;
 }
 
@@ -23,17 +23,25 @@ export interface PropsLista {
   buscadorRef: RefObject<HTMLInputElement | null>;
   filtro: Filtro;
   onFiltro: (f: Filtro) => void;
-  conteos: Record<Filtro, number>;
+  conteos: Contadores;
   renglones: Renglon[];
   claveActiva: string | null;
   ahora: number;
   /** Texto de estado de la búsqueda (qué se buscó, cuántos, o por qué no se busca). */
   estadoBusqueda: string;
+  /** Por qué falló la parte de la búsqueda que falló (la palabra, hoy); el resto de los resultados se muestra igual. */
+  errorBusqueda: string | null;
   buscando: boolean;
   /** `true` si lo escrito es una búsqueda: los filtros se esconden. */
   enBusqueda: boolean;
-  totalConversaciones: number;
   cargando: boolean;
+  /** Hay más conversaciones del filtro para traer (botón «Cargar más»). */
+  hayMas: boolean;
+  cargandoMas: boolean;
+  onMas: () => void;
+  /** Hay más resultados de la búsqueda por palabra (el servidor devolvió un cursor). */
+  hayMasPalabra: boolean;
+  onMasPalabra: () => void;
 }
 
 export function ListaConversaciones(p: PropsLista) {
@@ -47,12 +55,14 @@ export function ListaConversaciones(p: PropsLista) {
           onChange={(e) => p.onConsulta(e.target.value)}
           placeholder="Buscar por teléfono, nombre o palabra  ( / )"
           aria-label="Buscar conversaciones por teléfono, nombre o palabra"
+          title="Atajos: / busca · Alt+↑/↓ cambia de conversación · Esc vuelve"
           autoComplete="off"
           spellCheck={false}
         />
         <p className={`cv-estado-busqueda${p.buscando ? ' cv-estado-busqueda--ocupado' : ''}`} role="status" aria-live="polite">
           {p.estadoBusqueda}
         </p>
+        {p.errorBusqueda && <p className="cv-error cv-error-busqueda" role="alert">{p.errorBusqueda}</p>}
       </div>
 
       {!p.enBusqueda && (
@@ -60,7 +70,8 @@ export function ListaConversaciones(p: PropsLista) {
           {FILTROS.map((f) => (
             <button key={f.id} type="button" className="cv-chip" aria-pressed={p.filtro === f.id}
               onClick={() => p.onFiltro(f.id)}>
-              {f.rotulo}<span className="cv-chip-n">{p.conteos[f.id]}</span>
+              {f.rotulo}
+              {p.conteos[f.id] !== null && <span className="cv-chip-n">{p.conteos[f.id]}</span>}
             </button>
           ))}
         </div>
@@ -71,11 +82,25 @@ export function ListaConversaciones(p: PropsLista) {
         {!p.cargando && p.renglones.length === 0 && !p.buscando && (
           <li className="cv-vacio">
             {p.enBusqueda ? 'Nada coincide con lo que escribió.'
-              : p.totalConversaciones === 0 ? 'Todavía no hay conversaciones.'
+              : p.filtro === 'todas' ? 'Todavía no hay conversaciones.'
               : 'Ninguna conversación cumple este filtro.'}
           </li>
         )}
         {p.renglones.map((r) => <RenglonFicha key={r.clave} r={r} activa={r.clave === p.claveActiva} ahora={p.ahora} />)}
+        {!p.cargando && !p.enBusqueda && p.hayMas && (
+          <li className="cv-mas-lista">
+            <button type="button" className="btn btn-secondary" disabled={p.cargandoMas} onClick={p.onMas}>
+              {p.cargandoMas ? 'Cargando…' : 'Cargar más conversaciones'}
+            </button>
+          </li>
+        )}
+        {p.enBusqueda && p.hayMasPalabra && (
+          <li className="cv-mas-lista">
+            <button type="button" className="btn btn-secondary" disabled={p.buscando} onClick={p.onMasPalabra}>
+              Más resultados
+            </button>
+          </li>
+        )}
       </ul>
     </div>
   );
@@ -83,9 +108,9 @@ export function ListaConversaciones(p: PropsLista) {
 
 function RenglonFicha({ r, activa, ahora }: { r: Renglon; activa: boolean; ahora: number }) {
   const f = r.ficha;
-  const v = ventanaDe(f.ultimoEntranteEn, ahora);
+  const v = ventanaDeFicha(f, ahora);
   const hora = r.coincidencia ? etiquetaFicha(r.coincidencia.ts, ahora) : etiquetaFicha(f.ultimoEn, ahora);
-  const sinLeer = f.noLeidos > 0;
+  const sinLeer = f.noLeidos > 0 || f.sinLeer;
   return (
     <li>
       <Link to={r.href} className={`cv-ficha${activa ? ' cv-ficha--activa' : ''}${sinLeer ? ' cv-ficha--sin-leer' : ''}`}
@@ -102,12 +127,13 @@ function RenglonFicha({ r, activa, ahora }: { r: Renglon; activa: boolean; ahora
                 ? <TextoSeguro valor={r.coincidencia.fragmento} maxLargo={120} />
                 : <TextoSeguro valor={f.ultimoMensaje} maxLargo={90} />}
             </span>
-            {sinLeer && <span className="cv-contador" aria-label={`${f.noLeidos} sin leer`}>{f.noLeidos}</span>}
+            {sinLeer && (f.noLeidos > 0
+              ? <span className="cv-contador" aria-label={`${f.noLeidos} sin leer`}>{f.noLeidos}</span>
+              : <span className="cv-contador cv-contador--punto" aria-label="Sin leer" />)}
           </span>
           <span className="cv-ficha-marcas">
             {r.motivo && <span className="cv-etiqueta">{r.motivo}</span>}
-            {f.necesitaHumano && f.responde !== 'persona' && <span className="cv-etiqueta cv-etiqueta--humano">Necesita humano</span>}
-            {f.responde === 'persona' && <span className="cv-etiqueta cv-etiqueta--persona">Atiende {f.tomadoPor || 'una persona'}</span>}
+            {necesitaHumanoDe(f, ahora) && <span className="cv-etiqueta cv-etiqueta--humano">Necesita humano</span>}
             {v.estado === 'por-vencer' && <span className="cv-etiqueta cv-etiqueta--vence">Vence en {textoRestante(v.restanteMs)}</span>}
             {v.estado === 'cerrada' && <span className="cv-etiqueta cv-etiqueta--cerrada">Ventana cerrada</span>}
             {r.coincidencia && <span className="cv-ficha-telefono">+{f.telefono}</span>}
