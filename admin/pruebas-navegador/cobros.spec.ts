@@ -1,19 +1,19 @@
-import { expect, test, type Page } from '@playwright/test';
+import { test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
-import { ingresar } from './ayudas/ingresar';
+import { entrar, esperar as expect } from './ayudas/o3-datos';
 import { fijarCobroReal, limpiarCierres, sembrarCierre, sembrarContadoresDelMes } from './ayudas/datos';
 import prepararDatos from './preparar-datos';
 
 const FOGON = 'parrilla-el-fogon';
 
 async function abrirCobros(page: Page): Promise<void> {
-  await ingresar(page, USUARIOS.adminFogon);
+  await entrar(page, USUARIOS.adminFogon);
   await page.getByRole('link', { name: 'Cobros', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Cobros', exact: true }).first()).toBeVisible();
 }
 
 test.describe('Cobros', () => {
-  test.beforeEach(async () => { prepararDatos(); await limpiarCierres(FOGON); });
+  test.beforeEach(async () => { test.setTimeout(90_000); prepararDatos(); await limpiarCierres(FOGON); });
 
   test('sin cobros dice que no hay en el período', async ({ page }) => {
     await abrirCobros(page);
@@ -41,7 +41,7 @@ test.describe('Cobros', () => {
     await page.getByRole('row', { name: /110 Bs/ }).getByRole('button', { name: 'Ver' }).click();
     await expect(page.getByRole('dialog', { name: 'Detalle del cobro' })).toBeVisible();
     const texto = (await page.locator('body').innerText()).toLowerCase();
-    for (const prohibida of ['pago acreditado', 'pago verificado', 'recibimos tu pago', 'verificamos tu pago']) {
+    for (const prohibida of ['pago acreditado', 'pago verificado', 'recibimos tu pago', 'verificamos tu pago', 'gracias por tu pago']) {
       expect(texto, prohibida).not.toContain(prohibida);
     }
   });

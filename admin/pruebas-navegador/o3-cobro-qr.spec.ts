@@ -48,7 +48,7 @@ test.describe('COB-02 · «Cambiar el QR» con el cobro real activo (reemplazoQr
     await fijarConsolaOculta(FOGON, ['reemplazoQr']);
     await abrirQr(page);
     await expect(page.getByText(AVISO_OCULTO)).toBeVisible();
-    await expect(page.getByText('Cobrando')).toBeVisible();
+    await expect(page.getByText('Cobrando', { exact: true })).toBeVisible();
     await expect(cambiar(page)).toHaveCount(0);
     await expect(cargar(page)).toHaveCount(0);
     await expect(formulario(page)).toHaveCount(0);
@@ -78,7 +78,7 @@ test.describe('COB-02 · «Cambiar el QR» con el cobro real activo (reemplazoQr
   test('sin la lista `consolaOculta` y con el cobro activo la pantalla es la de siempre: «Cambiar el QR» con su formulario y sin aviso', async ({ page }) => {
     await fijarCobroReal(FOGON, ACTIVO);
     await abrirQr(page);
-    await expect(page.getByText('Cobrando')).toBeVisible();
+    await expect(page.getByText('Cobrando', { exact: true })).toBeVisible();
     await expect(cambiar(page)).toBeVisible();
     await expect(formulario(page)).toBeVisible();
     await expect(page.getByText(AVISO_OCULTO)).toHaveCount(0);
@@ -121,7 +121,7 @@ test.describe('COB-02 · «Cambiar el QR» con el cobro real activo (reemplazoQr
     page.on('dialog', async (d) => { dialogos += 1; await d.dismiss(); });
     await fijarCobroReal(FOGON, ACTIVO);
     await abrirQr(page);
-    await expect(page.getByText('Cobrando')).toBeVisible();
+    await expect(page.getByText('Cobrando', { exact: true })).toBeVisible();
     // Antes de enviar, nada en pantalla avisa que el cobro se va a cortar.
     const antes = (await page.locator('body').innerText()).toLowerCase();
     for (const aviso of ['apag', 'se corta', 'se cortará', 'dejará de cobrar', 'dejara de cobrar', 'confirmar el cambio']) expect(antes, aviso).not.toContain(aviso);

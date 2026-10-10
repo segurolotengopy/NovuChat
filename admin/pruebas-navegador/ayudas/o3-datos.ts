@@ -188,3 +188,8 @@ export async function clienteDeReglas(correo: string): Promise<ClienteDeReglas> 
 }
 
 export const nombreDoc = (ruta: string) => `${RAIZ_DOCS}/${ruta}`;
+
+/** El QR de demostración (`config/venta.mediaIdQr`) que NovuChat carga para las presentaciones; con `false` lo quita. */
+export async function fijarQrDeDemostracion(tenantId: string, hay: boolean): Promise<void> {
+  await bd().doc(`tenants/${tenantId}/config/venta`).set({ mediaIdQr: hay ? 'media-de-prueba-0001' : FieldValue.delete() }, { merge: true });
+}

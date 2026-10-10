@@ -70,6 +70,7 @@ test.describe('COB-07 · «Comprobar» (el negocio afirma que lo vio en su banco
   test('NEGATIVA: la pantalla no ofrece desmarcar un cobro comprobado (solo «Ver») y recargar lo deja igual', async ({ page }) => {
     await sembrarCierre(FOGON, { id: 'c1', monto: 110, comprobado: true });
     await abrirCobros(page);
+    await expect(fila(page, '110')).toContainText('Comprobado por el negocio');
     const botones = await fila(page, '110').getByRole('button').allInnerTexts();
     expect(botones).toEqual(['Ver']);
     await expect(fila(page, '110')).not.toContainText(/desmarcar|quitar|deshacer/i);
@@ -132,6 +133,7 @@ test.describe('COB-07 · «Comprobar» (el negocio afirma que lo vio en su banco
     // HOY el operador SÍ entra a Cobros si el negocio tiene Pedidos (Andres, 09/10/2026): la matriz del 06/10 decía que no entraba.
     await abrirCobros(page, USUARIOS.operadorFogon);
     await expect(fila(page, '110')).toContainText('Sin comprobar');
+    await expect(fila(page, '110').getByRole('button', { name: 'Ver' })).toBeVisible();
     await expect(fila(page, '55')).toContainText('Comprobado por el negocio');
     await expect(page.getByRole('button', { name: 'Comprobar' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Exportar/ })).toHaveCount(0);
