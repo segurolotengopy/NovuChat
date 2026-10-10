@@ -11,6 +11,10 @@ test.describe('Pedidos', () => {
     await limpiarPedidos(FOGON);
     await limpiarPedidos(AURORA);
   });
+  // Lo que una prueba siembra en el comercio de al lado no se queda para las demás.
+  test.afterEach(async () => {
+    await limpiarPedidos(AURORA);
+  });
 
   test('sin pedidos dice que todavía no hay, y el primero aparece solo, sin recargar', async ({ page }) => {
     await ingresar(page, USUARIOS.adminFogon);
@@ -52,7 +56,8 @@ test.describe('Pedidos', () => {
     expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
   });
 
-  test('NEGATIVA (aislamiento): los pedidos de otro comercio no se ven', async ({ page }) => {
+  // Las dos pruebas de «aislamiento» comprueban la consulta POR LA RUTA del comercio; el aislamiento real entre comercios lo prueban las reglas de Firestore en `pruebas/`.
+  test('NEGATIVA (ruta del comercio): los pedidos de otro comercio no se ven', async ({ page }) => {
     await sembrarPedido(AURORA, { id: 'a1', items: [{ nombre: 'Corte de pelo secreto', cantidad: 1 }], total: 50, entrega: 'retiro' });
     await sembrarPedido(FOGON, { id: 'f1', items: [{ nombre: 'Costillas', cantidad: 1 }], total: 80, entrega: 'retiro' });
     await ingresar(page, USUARIOS.adminFogon);
@@ -61,7 +66,7 @@ test.describe('Pedidos', () => {
     await expect(page.getByText('Corte de pelo secreto')).toHaveCount(0);
   });
 
-  test('NEGATIVA (aislamiento en vivo): mirando un comercio, un pedido que llega a OTRO no aparece, y uno propio sí', async ({ page }) => {
+  test('NEGATIVA (ruta del comercio, en vivo): mirando un comercio, un pedido que llega a OTRO no aparece, y uno propio sí', async ({ page }) => {
     await sembrarPedido(FOGON, { id: 'l1', items: [{ nombre: 'Primero propio', cantidad: 1 }], total: 10, entrega: 'retiro' });
     await ingresar(page, USUARIOS.adminFogon);
     await page.getByRole('link', { name: 'Pedidos', exact: true }).click();

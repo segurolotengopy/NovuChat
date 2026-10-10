@@ -1,8 +1,8 @@
 import { test } from '@playwright/test';
 import { USUARIOS } from './entorno';
-import { expect, ingresar } from './ayudas/o2-ingresar';
-import { crearUsuarioDeEnsayo, fijarModulos, limpiarPedidos, sembrarPedido } from './ayudas/datos';
-import { leerDescargaCsv, type CsvLeido } from './ayudas/o2-csv';
+import { crearOperadorO2, expect, ingresarO2 as ingresar, OPERADOR_O2 } from './o2-comun';
+import { fijarModulos, limpiarPedidos, sembrarPedido } from './ayudas/datos';
+import { leerDescargaCsv, type CsvLeido } from './o2-csv';
 
 /**
  * CARRIL 2 · PED-04: exportar los pedidos a CSV (`web/src/central/lib/exportar.ts`).
@@ -13,6 +13,7 @@ const FOGON = 'parrilla-el-fogon';
 const COLUMNAS = ['Cuándo', 'Cliente', 'Entrega', 'Dirección', 'Referencia', 'Ítems', 'Nota', 'Total', 'Moneda', 'Estado'];
 const FORMULA = '=HYPERLINK("http://x","clic")';
 
+// Los 90 s por prueba son por la carga de la máquina (los otros carriles corren a la vez); no relajan ninguna comprobación.
 test.describe.configure({ timeout: 90_000 });
 
 async function exportar(page: import('@playwright/test').Page, cantidad: number): Promise<{ nombre: string; csv: CsvLeido }> {
@@ -36,7 +37,7 @@ function fila(csv: CsvLeido, cliente: string): Record<string, string> {
 
 test.describe('PED-04: exportar pedidos a CSV', () => {
   test.beforeAll(async () => {
-    await crearUsuarioDeEnsayo({ uid: 'u-o2-oper-fogon', correo: USUARIOS.operadorFogon, nombre: 'Cocinero de prueba', tenantId: FOGON, rol: 'oper' });
+    await crearOperadorO2(FOGON);
   });
   test.beforeEach(async () => {
     await limpiarPedidos(FOGON);
@@ -89,7 +90,7 @@ test.describe('PED-04: exportar pedidos a CSV', () => {
     for (let i = 1; i <= 5; i += 1) {
       await sembrarPedido(FOGON, { id: `c${i}`, total: i * 10, entrega: 'retiro', telefonoEnmascarado: `*** 020${i}`, items: [{ nombre: `Plato ${i}`, cantidad: i }] });
     }
-    await abrirPedidos(page, USUARIOS.operadorFogon);
+    await abrirPedidos(page, OPERADOR_O2.correo);
     await expect(page.locator('li.pedido')).toHaveCount(5);
     const { csv } = await exportar(page, 5);
     expect(csv.filas).toHaveLength(6);
@@ -178,7 +179,9 @@ test.describe('PED-04: exportar pedidos a CSV', () => {
     expect(f['Referencia']).toBe(html);
   });
 
-  test('NEGATIVA (aislamiento): el archivo de un comercio no lleva pedidos de otro', async ({ page }) => {
+  // La consulta de la pantalla es POR LA RUTA del comercio; el aislamiento real entre comercios lo prueban las reglas de Firestore en `pruebas/`.
+  // Acá se comprueba lo que baja una persona: el archivo del comercio abierto no trae nada ajeno.
+  test('NEGATIVA (ruta del comercio): el archivo de un comercio no lleva pedidos de otro', async ({ page }) => {
     await sembrarPedido('salon-aurora', { id: 'au1', total: 9, entrega: 'retiro', telefonoEnmascarado: '*** 0801', items: [{ nombre: 'Secreto de Aurora', cantidad: 1 }] });
     await sembrarPedido(FOGON, { id: 'fo1', total: 9, entrega: 'retiro', telefonoEnmascarado: '*** 0802', items: [{ nombre: 'Costillas', cantidad: 1 }] });
     try {

@@ -1,8 +1,8 @@
 import { test } from '@playwright/test';
 import { USUARIOS } from './entorno';
-import { expect, ingresar } from './ayudas/o2-ingresar';
-import { crearUsuarioDeEnsayo, fijarModulos, sembrarPedido } from './ayudas/datos';
-import { fijarEstadoDelComercio, sembrarMuchosPedidos, vaciarPedidos as limpiarPedidos } from './ayudas/o2-datos';
+import { fijarModulos, limpiarPedidos, sembrarPedido } from './ayudas/datos';
+import { crearOperadorO2, expect, fijarEstadoDelComercio, ingresarO2 as ingresar, OPERADOR_O2, sembrarMuchosPedidos } from './o2-comun';
+import { leerDescargaCsv } from './o2-csv';
 
 /**
  * CARRIL 2 · PED-01 (lista en vivo, también con sesión de operador) y PED-02 (la tarjeta del pedido, con la referencia del cliente).
@@ -11,7 +11,7 @@ import { fijarEstadoDelComercio, sembrarMuchosPedidos, vaciarPedidos as limpiarP
 const FOGON = 'parrilla-el-fogon';
 const AURORA = 'salon-aurora';
 
-// Con la máquina cargada por los otros carriles, el tiempo de cada prueba (siembra, inicio de sesión) se estira: tolerancia de tiempo, no de comprobaciones.
+// Los 90 s por prueba son por la carga de la máquina (los otros carriles corren a la vez); no relajan ninguna comprobación.
 test.describe.configure({ timeout: 90_000 });
 
 async function abrirPedidos(page: import('@playwright/test').Page): Promise<void> {
@@ -21,7 +21,7 @@ async function abrirPedidos(page: import('@playwright/test').Page): Promise<void
 
 test.describe('PED-01: la lista de pedidos en vivo, con sesión de operador', () => {
   test.beforeAll(async () => {
-    await crearUsuarioDeEnsayo({ uid: 'u-o2-oper-fogon', correo: USUARIOS.operadorFogon, nombre: 'Cocinero de prueba', tenantId: FOGON, rol: 'oper' });
+    await crearOperadorO2(FOGON);
   });
   test.beforeEach(async () => {
     await limpiarPedidos(FOGON);
@@ -32,10 +32,11 @@ test.describe('PED-01: la lista de pedidos en vivo, con sesión de operador', ()
   test.afterEach(async () => {
     await fijarModulos(FOGON, null);
     await fijarEstadoDelComercio(FOGON, 'activo');
+    await limpiarPedidos(AURORA);
   });
 
   test('el cocinero (operador) abre Pedidos, ve el vacío y el primer pedido aparece solo, sin recargar', async ({ page }) => {
-    await ingresar(page, USUARIOS.operadorFogon);
+    await ingresar(page, OPERADOR_O2.correo);
     await abrirPedidos(page);
     await expect(page.getByText('Todavía no hay pedidos')).toBeVisible();
     // Sin pedidos no se ofrece exportar un archivo vacío.
@@ -50,7 +51,7 @@ test.describe('PED-01: la lista de pedidos en vivo, con sesión de operador', ()
   });
 
   test('el operador ve Pedidos y Conversaciones, pero ninguna pestaña de administración', async ({ page }) => {
-    await ingresar(page, USUARIOS.operadorFogon);
+    await ingresar(page, OPERADOR_O2.correo);
     await expect(page.getByRole('link', { name: 'Pedidos', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Conversaciones', exact: true })).toBeVisible();
     for (const pestana of ['Configuración', 'Productos', 'Campañas', 'Usuarios', 'Cuenta']) {
@@ -60,24 +61,26 @@ test.describe('PED-01: la lista de pedidos en vivo, con sesión de operador', ()
 
   test('el operador también exporta y la descarga trae el pedido', async ({ page }) => {
     await sembrarPedido(FOGON, { id: 'o2', items: [{ nombre: 'Nachos', cantidad: 1 }], total: 58, entrega: 'retiro' });
-    await ingresar(page, USUARIOS.operadorFogon);
+    await ingresar(page, OPERADOR_O2.correo);
     await abrirPedidos(page);
     const [descarga] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Exportar \(1\)/ }).click()]);
     expect(descarga.suggestedFilename()).toMatch(/^pedidos-\d{4}-\d{2}-\d{2}\.csv$/);
+    const csv = await leerDescargaCsv(descarga);
+    expect(csv.filas).toHaveLength(2);
+    expect(csv.filas[1]?.[5]).toBe('1× Nachos');
   });
 
   test('del más nuevo al más viejo, y uno que llega en vivo se pone ARRIBA', async ({ page }) => {
     await sembrarPedido(FOGON, { id: 'v1', items: [{ nombre: 'Primero del día', cantidad: 1 }], total: 10, entrega: 'retiro' });
-    await new Promise((r) => setTimeout(r, 30));
+    // Sin esperas: cada siembra es una ida y vuelta al emulador (más de un milisegundo), así que `creadoEn` queda distinto y creciente.
     await sembrarPedido(FOGON, { id: 'v2', items: [{ nombre: 'Segundo del día', cantidad: 1 }], total: 20, entrega: 'retiro' });
-    await ingresar(page, USUARIOS.operadorFogon);
+    await ingresar(page, OPERADOR_O2.correo);
     await abrirPedidos(page);
     const tarjetas = page.locator('li.pedido');
     await expect(tarjetas).toHaveCount(2);
     await expect(tarjetas.nth(0)).toContainText('Segundo del día');
     await expect(tarjetas.nth(1)).toContainText('Primero del día');
 
-    await new Promise((r) => setTimeout(r, 30));
     await sembrarPedido(FOGON, { id: 'v3', items: [{ nombre: 'Tercero en vivo', cantidad: 1 }], total: 30, entrega: 'delivery' });
     await expect(tarjetas).toHaveCount(3);
     await expect(tarjetas.nth(0)).toContainText('Tercero en vivo');
@@ -85,7 +88,7 @@ test.describe('PED-01: la lista de pedidos en vivo, con sesión de operador', ()
 
   test('NEGATIVA (tope): con 101 pedidos solo se muestran los 100 más nuevos', async ({ page }) => {
     await sembrarMuchosPedidos(FOGON, 101);
-    await ingresar(page, USUARIOS.operadorFogon);
+    await ingresar(page, OPERADOR_O2.correo);
     await abrirPedidos(page);
     await expect(page.locator('li.pedido')).toHaveCount(100);
     await expect(page.getByRole('button', { name: 'Exportar (100)' })).toBeVisible();
@@ -96,13 +99,15 @@ test.describe('PED-01: la lista de pedidos en vivo, con sesión de operador', ()
   });
 
   test('la pantalla avisa que los pedidos tomados conversando no están aquí', async ({ page }) => {
-    await ingresar(page, USUARIOS.operadorFogon);
+    await ingresar(page, OPERADOR_O2.correo);
     await abrirPedidos(page);
     await expect(page.getByText('Por ahora aparecen los pedidos hechos desde el catálogo web.')).toBeVisible();
     await expect(page.getByText('Los que el asistente toma conversando están en «Conversaciones».')).toBeVisible();
   });
 
-  test('NEGATIVA (aislamiento): el operador de otro comercio no ve los pedidos de este, ni por la dirección directa', async ({ page }) => {
+  // La consulta de la pantalla es POR LA RUTA del comercio; el aislamiento real (que un operador no lea el comercio de otro) lo prueban las reglas
+  // de Firestore en `pruebas/`. Acá se comprueba lo que ve una persona: la pestaña, el guardia de la ruta y que no aparezca nada ajeno.
+  test('NEGATIVA (ruta del comercio): el operador de otro comercio no ve los pedidos de este, ni por la dirección directa', async ({ page }) => {
     await sembrarPedido(FOGON, { id: 'f1', items: [{ nombre: 'Costillas del Fogon', cantidad: 1 }], total: 80, entrega: 'retiro' });
     await sembrarPedido(AURORA, { id: 'a1', items: [{ nombre: 'Servicio de Aurora', cantidad: 1 }], total: 50, entrega: 'retiro' });
     await ingresar(page, USUARIOS.operadorAurora);
@@ -120,16 +125,18 @@ test.describe('PED-01: la lista de pedidos en vivo, con sesión de operador', ()
   });
 
   test('NEGATIVA (sin módulo): si el comercio no tiene Pedidos, el operador no ve la pestaña', async ({ page }) => {
+    // Primero CON el módulo (la pestaña se ve, así la prueba no puede pasar vacía) y luego se le quita con la pantalla abierta.
+    await ingresar(page, OPERADOR_O2.correo);
+    await expect(page.getByRole('link', { name: 'Pedidos', exact: true })).toBeVisible();
     await fijarModulos(FOGON, ['productos']);
-    await ingresar(page, USUARIOS.operadorFogon);
-    await expect(page.getByRole('link', { name: 'Conversaciones', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Pedidos', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Conversaciones', exact: true })).toBeVisible();
   });
 
   test('NEGATIVA (error de lectura): si el servidor rechaza la lectura, la pantalla lo dice y no muestra pedidos', async ({ page }) => {
     await sembrarPedido(FOGON, { id: 'e1', items: [{ nombre: 'No debería verse', cantidad: 1 }], total: 5, entrega: 'retiro' });
     await fijarEstadoDelComercio(FOGON, 'baja');
-    await ingresar(page, USUARIOS.operadorFogon);
+    await ingresar(page, OPERADOR_O2.correo);
     await page.goto(`/negocio/${FOGON}/pedidos`);
     await expect(page.getByRole('alert')).toContainText('No se pudieron leer los pedidos.');
     await expect(page.getByText('No debería verse')).toHaveCount(0);
@@ -170,13 +177,18 @@ test.describe('PED-02: la tarjeta del pedido', () => {
     await expect(tarjeta.locator('.pedido-total')).toHaveText(/165\s*Bs/);
   });
 
-  test('un retiro muestra «Retira en el local», sin dirección ni referencia', async ({ page }) => {
+  test('un retiro muestra «Retira en el local»; sin dirección, referencia ni nota no hay líneas de más, y si las trae la consola las muestra', async ({ page }) => {
     await sembrarPedido(FOGON, { id: 't2', total: 58, entrega: 'retiro', items: [{ nombre: 'Nachos', cantidad: 1 }] });
+    await sembrarPedido(FOGON, { id: 't2b', total: 59, entrega: 'retiro', direccion: 'Calle del retiro 7', referencia: 'Pasa a las seis', items: [{ nombre: 'Alitas', cantidad: 1 }] });
     await abrirComoAdmin(page);
-    const tarjeta = page.locator('li.pedido').first();
-    await expect(tarjeta).toContainText('Retira en el local');
-    await expect(tarjeta.locator('p.pedido-direccion')).toHaveCount(0);
-    await expect(tarjeta.locator('p.pedido-nota')).toHaveCount(0);
+    const con = page.locator('li.pedido').filter({ hasText: 'Alitas' });
+    await expect(con).toContainText('Retira en el local');
+    await expect(con).toContainText('Calle del retiro 7');
+    await expect(con).toContainText('Referencia: Pasa a las seis');
+    const sin = page.locator('li.pedido').filter({ hasText: 'Nachos' });
+    await expect(sin).toContainText('Retira en el local');
+    await expect(sin.locator('p.pedido-direccion')).toHaveCount(0);
+    await expect(sin.locator('p.pedido-nota')).toHaveCount(0);
   });
 
   test('NEGATIVA: sin referencia (los pedidos anteriores) la línea «Referencia» no aparece y el resto queda igual', async ({ page }) => {
@@ -198,7 +210,7 @@ test.describe('PED-02: la tarjeta del pedido', () => {
   });
 
   test('la modalidad de entrega se ve ANTES que el monto (lo que manda la pantalla del cocinero)', async ({ page }) => {
-    test.fail(true, 'PED-02 (matriz: «Modalidad antes del monto»; el comentario de Pedidos.tsx dice lo mismo): hoy el total va en la cabecera, ARRIBA de la modalidad. A decidir por la Cartera si basta o hay que reordenar.');
+    test.fail(true, 'PED-02 (matriz: «Modalidad antes del monto»; el comentario de Pedidos.tsx dice lo mismo): hoy el total va en la cabecera, ARRIBA de la modalidad. A decidir por la Cartera si basta o hay que reordenar. Prueba hermana SIN test.fail que cubre los mismos elementos: «un delivery muestra entrega, dirección, REFERENCIA, ítems…, nota y total con moneda».');
     await sembrarPedido(FOGON, { id: 't5', total: 99, entrega: 'delivery', direccion: 'Av. Banzer 1', items: [{ nombre: 'Taco', cantidad: 1 }] });
     await abrirComoAdmin(page);
     const tarjeta = page.locator('li.pedido').first();
@@ -234,18 +246,21 @@ test.describe('PED-02: la tarjeta del pedido', () => {
   });
 
   test('NEGATIVA: caracteres de control y de dirección bidireccional (Trojan Source) se quitan del texto del cliente', async ({ page }) => {
-    await sembrarPedido(FOGON, { id: 't7', total: 10, entrega: 'retiro', nota: 'confirmo ‮odnum‬ ok\u0007', referencia: 'cerca⁦ del gas', items: [{ nombre: 'Taco', cantidad: 1 }] });
+    await sembrarPedido(FOGON, { id: 't7', total: 10, entrega: 'retiro', nota: 'confirmo \u202Eodnum\u202C ok\u0007', referencia: 'cerca\u2066 del gas', items: [{ nombre: 'Taco', cantidad: 1 }] });
     await abrirComoAdmin(page);
     const nota = (await page.locator('li.pedido p.pedido-nota').textContent()) ?? '';
     expect(nota).toBe('confirmo odnum ok');
-    expect(nota).not.toMatch(/[‪-‮⁦-⁩\u0000-\u0008]/);
+    expect(nota).not.toMatch(/[\u202A-\u202E\u2066-\u2069\u0000-\u0008]/);
     // La referencia de un retiro igual se muestra: es lo que el cliente escribió.
     await expect(page.getByText('Referencia: cerca del gas')).toBeVisible();
   });
 
-  test('NEGATIVA: una nota de 400 caracteres se recorta a 300 y no deforma la tarjeta', async ({ page }) => {
+  test('NEGATIVA: una nota de 400 caracteres seguidos se recorta a 300 y no ensancha la tarjeta ni la pantalla', async ({ page }) => {
     await sembrarPedido(FOGON, { id: 't8', total: 10, entrega: 'retiro', nota: 'n'.repeat(400), items: [{ nombre: 'Taco', cantidad: 1 }] });
     await abrirComoAdmin(page);
     expect(((await page.locator('li.pedido p.pedido-nota').textContent()) ?? '').length).toBe(300);
+    const tarjeta = await page.locator('li.pedido').first().evaluate((e) => ({ desborde: e.scrollWidth - e.clientWidth }));
+    expect(tarjeta.desborde).toBeLessThanOrEqual(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   });
 });

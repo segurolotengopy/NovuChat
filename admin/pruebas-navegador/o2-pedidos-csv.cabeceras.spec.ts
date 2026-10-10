@@ -1,8 +1,8 @@
 import { test } from '@playwright/test';
 import { USUARIOS } from './entorno';
-import { expect, ingresar } from './ayudas/o2-ingresar';
+import { expect, ingresarO2 as ingresar } from './o2-comun';
 import { fijarModulos, limpiarPedidos, sembrarPedido } from './ayudas/datos';
-import { leerDescargaCsv } from './ayudas/o2-csv';
+import { leerDescargaCsv } from './o2-csv';
 
 /**
  * CARRIL 2 · PED-04 con las CABECERAS REALES de Hosting (`playwright.cabeceras.config.ts`). El CSV se arma en el navegador y se baja por
@@ -13,6 +13,7 @@ const FOGON = 'parrilla-el-fogon';
 const FORMULA = '=HYPERLINK("http://x","clic")';
 const PATRON_VIOLACION = /Content Security Policy|Refused to/i;
 
+// Los 90 s por prueba son por la carga de la máquina (los otros carriles corren a la vez); no relajan ninguna comprobación.
 test.describe.configure({ timeout: 90_000 });
 
 test.describe('Pedidos: exportar CSV y pantalla, con las cabeceras reales', () => {
@@ -28,6 +29,7 @@ test.describe('Pedidos: exportar CSV y pantalla, con las cabeceras reales', () =
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
   });
 
+  // Este control repite a propósito el de `logo.cabeceras.spec.ts`: así este archivo se puede correr solo y su detector queda probado aquí.
   test('CONTROL del detector: con esta política una imagen blob: SÍ se bloquea y la consola lo dice', async ({ page }) => {
     const violaciones: string[] = [];
     page.on('console', (m) => { if (PATRON_VIOLACION.test(m.text())) violaciones.push(m.text()); });

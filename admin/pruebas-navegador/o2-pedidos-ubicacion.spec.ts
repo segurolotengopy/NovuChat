@@ -1,7 +1,7 @@
 import { test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
-import { expect, ingresar } from './ayudas/o2-ingresar';
-import { crearUsuarioDeEnsayo, fijarModulos, limpiarPedidos, sembrarPedido, type PedidoDePrueba } from './ayudas/datos';
+import { crearOperadorO2, expect, ingresarO2 as ingresar, OPERADOR_O2 } from './o2-comun';
+import { fijarModulos, limpiarPedidos, sembrarPedido, type PedidoDePrueba } from './ayudas/datos';
 
 /**
  * CARRIL 2 · PED-03: la ubicación que el cliente comparte al pedir (#445, `web/src/modulos/pedidos/ubicacion.ts`).
@@ -20,11 +20,12 @@ async function abrirPedidos(page: Page, correo: string = USUARIOS.adminFogon): P
   await expect(page.getByRole('heading', { name: 'Pedidos' })).toBeVisible();
 }
 
+// Los 90 s por prueba son por la carga de la máquina (los otros carriles corren a la vez); no relajan ninguna comprobación.
 test.describe.configure({ timeout: 90_000 });
 
 test.describe('PED-03: ubicación compartida', () => {
   test.beforeAll(async () => {
-    await crearUsuarioDeEnsayo({ uid: 'u-o2-oper-fogon', correo: USUARIOS.operadorFogon, nombre: 'Cocinero de prueba', tenantId: FOGON, rol: 'oper' });
+    await crearOperadorO2(FOGON);
   });
   test.beforeEach(async () => {
     await limpiarPedidos(FOGON);
@@ -53,7 +54,7 @@ test.describe('PED-03: ubicación compartida', () => {
 
   test('«delivery» (el otro nombre de la modalidad) también muestra el enlace; el operador lo ve igual', async ({ page }) => {
     await sembrarPedido(FOGON, { id: 'u2', total: 50, entrega: 'delivery', ubicacion: { lat: 40.4168, lng: -3.7038 }, items: [{ nombre: 'Taco', cantidad: 1 }] });
-    await abrirPedidos(page, USUARIOS.operadorFogon);
+    await abrirPedidos(page, OPERADOR_O2.correo);
     await expect(page.getByRole('link', { name: 'Abrir en Maps' })).toHaveAttribute('href', `${MAPS}40.41680%2C-3.70380`);
   });
 

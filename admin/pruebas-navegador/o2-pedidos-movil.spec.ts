@@ -1,7 +1,7 @@
 import { test } from '@playwright/test';
 import { USUARIOS } from './entorno';
-import { expect, ingresar } from './ayudas/o2-ingresar';
-import { crearUsuarioDeEnsayo, fijarModulos, limpiarPedidos, sembrarPedido } from './ayudas/datos';
+import { crearOperadorO2, expect, ingresarO2 as ingresar, OPERADOR_O2 } from './o2-comun';
+import { fijarModulos, limpiarPedidos, sembrarPedido } from './ayudas/datos';
 
 /**
  * CARRIL 2 · PED-06: Pedidos en el teléfono del local (375×812). Se mira de pie y con las manos ocupadas: sin desplazarse hacia los
@@ -10,6 +10,7 @@ import { crearUsuarioDeEnsayo, fijarModulos, limpiarPedidos, sembrarPedido } fro
 const FOGON = 'parrilla-el-fogon';
 const LARGA = 'x'.repeat(260);
 
+// Los 90 s por prueba son por la carga de la máquina (los otros carriles corren a la vez); no relajan ninguna comprobación.
 test.describe.configure({ timeout: 90_000 });
 test.use({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
 
@@ -26,7 +27,7 @@ async function desborde(page: import('@playwright/test').Page): Promise<number> 
 
 test.describe('PED-06: pedidos en el teléfono del local', () => {
   test.beforeAll(async () => {
-    await crearUsuarioDeEnsayo({ uid: 'u-o2-oper-fogon', correo: USUARIOS.operadorFogon, nombre: 'Cocinero de prueba', tenantId: FOGON, rol: 'oper' });
+    await crearOperadorO2(FOGON);
   });
   test.beforeEach(async () => {
     await limpiarPedidos(FOGON);
@@ -54,7 +55,7 @@ test.describe('PED-06: pedidos en el teléfono del local', () => {
     }
   });
 
-  test('el detalle del cliente se lee: destacado, de 14 px o más, y el resto del texto de 15 a 16 px', async ({ page }) => {
+  test('el detalle del cliente se lee: destacado, de 14 px o más, y el resto del texto de 15 px o más', async ({ page }) => {
     await abrirPedidos(page);
     const tarjeta = page.locator('li.pedido').first();
     const tam = (sel: string) => tarjeta.locator(sel).first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
@@ -103,14 +104,14 @@ test.describe('PED-06: pedidos en el teléfono del local', () => {
   });
 
   test('el cocinero (operador) ve la misma tarjeta en el teléfono, sin desplazamiento lateral', async ({ page }) => {
-    await abrirPedidos(page, USUARIOS.operadorFogon);
+    await abrirPedidos(page, OPERADOR_O2.correo);
     await expect(page.locator('li.pedido').first()).toContainText('Enviar a domicilio');
     await expect(page.getByRole('link', { name: 'Abrir en Maps' })).toBeVisible();
     expect(await desborde(page)).toBe(0);
   });
 
   test('el enlace «Abrir en Maps» se puede tocar con el dedo (alto táctil)', async ({ page }) => {
-    test.fail(true, 'PED-03/PED-06 (matriz): el enlace «Abrir en Maps» es texto en línea de 16 px de alto, por debajo del mínimo táctil de 24 px (WCAG 2.5.8); el repartidor lo toca con el dedo. Cambio de consola (estilo del enlace), no de la Operadora.');
+    test.fail(true, 'PED-03/PED-06 (criterio de producto: el repartidor usa el teléfono con una mano y las manos ocupadas): el enlace «Abrir en Maps» es texto en línea de 16 px de alto y se pide 24 px como mínimo. Cambio de estilo de la consola, no de la Operadora. Pruebas hermanas SIN test.fail que cubren el mismo elemento: «el cocinero (operador) ve la misma tarjeta en el teléfono» (el enlace se ve, sin desborde) y, en o2-pedidos-ubicacion.spec.ts, la del href exacto.');
     await abrirPedidos(page);
     const b = await page.getByRole('link', { name: 'Abrir en Maps' }).boundingBox();
     expect(b?.height ?? 0, 'alto del enlace «Abrir en Maps»').toBeGreaterThanOrEqual(24);
