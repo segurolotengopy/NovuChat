@@ -10,9 +10,6 @@ test.describe('Configuración: horarios', () => {
   });
 
   test('guarda los 7 días y, al volver a entrar, los muestra', async ({ page }) => {
-    // ALT-C: hoy la regla de `config/{documento}` supera las 1000 expresiones y rechaza TODO guardado. Cuando las reglas nuevas
-    // lleguen a main esta prueba pasa sola, `test.fail` se pone roja y se quita esta línea.
-    test.fail(true, 'ALT-C: firestore.rules supera el tope de 1000 expresiones y rechaza todo guardado de Configuración');
     for (const dia of DIAS.slice(0, 5)) await cargarDia(page, dia, { desde: '12:00', hasta: '22:00' });
     await cargarDia(page, 'Sábado', { desde: '12:00', hasta: '23:00' });
     await cargarDia(page, 'Domingo', 'cerrado');
@@ -64,7 +61,6 @@ test.describe('Configuración: enlace de Google Maps', () => {
   });
 
   test('guarda un enlace de Google Maps válido', async ({ page }) => {
-    test.fail(true, 'ALT-C: firestore.rules supera el tope de 1000 expresiones y rechaza todo guardado de Configuración');
     await campo(page).fill('https://maps.app.goo.gl/AbCdEfGh12');
     await page.getByRole('button', { name: 'Guardar' }).click();
     await expect(resultadoDeGuardar(page)).toContainText('Guardado');
