@@ -39,7 +39,7 @@ const rutaActual = (page: Page) => new URL(page.url()).pathname;
 
 async function abre(page: Page, ruta: string, encabezado: string | null, quien: string): Promise<void> {
   await page.goto(ruta);
-  if (encabezado) await expect.soft(page.getByRole('heading', { name: encabezado, exact: true }), `${quien}: ${ruta} debe abrir «${encabezado}»`).toBeVisible();
+  if (encabezado) await expect.soft(page.getByRole('heading', { level: 2, name: encabezado, exact: true }), `${quien}: ${ruta} debe abrir «${encabezado}»`).toBeVisible();
   else await expect.soft(page.getByRole('button', { name: 'Salir', exact: true }), `${quien}: ${ruta} debe abrir la pantalla`).toBeVisible();
   await expect.soft(sinPermiso(page), `${quien}: ${ruta} no debe decir «Sin permiso»`).toHaveCount(0);
   expect.soft(rutaActual(page), `${quien}: ${ruta} no debe redirigir`).toBe(ruta);
@@ -52,6 +52,8 @@ async function niega(page: Page, ruta: string, quien: string): Promise<void> {
 }
 
 test.describe('ACC-05: guardia de rutas por rol y por comercio', () => {
+  // Cada prueba recorre varias rutas con recarga completa: más que los 30 s de siempre.
+  test.describe.configure({ timeout: 120_000 });
   test.beforeAll(async () => {
     prepararDatos();
     await crearOperadorFogon(USUARIOS.operadorFogon);
