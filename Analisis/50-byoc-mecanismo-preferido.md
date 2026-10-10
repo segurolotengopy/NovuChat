@@ -59,13 +59,13 @@ USD al mes, a uso pleno. «Nos queda» descuenta impuestos (16 %), infraestructu
 
 **Dimensionado de Principal (09/10, solo lectura sobre main):** hoy el servidor no distingue un saliente del negocio de una respuesta, la ventana es fija de 24 horas desde la primera consulta, un saliente nunca abre conversación y la respuesta del cliente sobre ventana vencida abre una cobrada; no existe la hora del último entrante, y el código no manda nada después de 48 horas (los seguimientos viven en Agenda). Hacen falta: la hora del último entrante en el servidor, un evento «seguimiento» con ordinal, la reserva del mensaje antes de enviarlo (un solo escritor, idempotente), que ese evento no sume al bloque de 25 ni a los umbrales, las dos bolsas en el catálogo y en Pagar (variante nueva de pago), un contador y un corte propio para los salientes, la lista blanca de reglas, Consumo y el aviso de bolsa. **3 a 4 jornadas de agente en tres bloques:** Central (1,5 a 2, en paralelo a F3b), Core (0,5 a 1, después de fusionar #439, que toca `ingesta.ts`) y Módulo (0,5). **La bolsa de mensajes solo cierra en BYOC:** cobra 0,033 por mensaje y a Meta le cuesta 0,074; con titularidad `novuchat`, NovuChat pierde.
 
-**Decisiones que Principal deja a Andres antes de construir:**
+**Decisiones de Andres sobre el dimensionado (09/10; las seis quedaron cerradas y pasadas a Principal):**
 1. **DECIDIDO (Andres, 09/10, opción A):** la respuesta del cliente a un seguimiento enviado dentro de las 48 h no abre una conversación nueva ni se cobra: extiende la conversación del lead.
-2. Qué reinicia las 48 h: cualquier mensaje entrante (como Meta) o solo una consulta sin cortesías.
-3. Cuántos mensajes salientes fuera de 48 h incluye cada plan (0 por defecto) y el umbral del aviso por saldo.
-4. Si se devuelve el mensaje a la bolsa cuando el envío a Meta falla.
-5. Si la bolsa vieja de 30 por 10 convive con la de 300 por 15, y qué pasa con el regalo de 6 meses, que hoy usa esa constante.
-6. Si la bolsa de mensajes se vende solo con titularidad `comercio`.
+2. **DECIDIDO:** las 48 h se reinician con **cualquier mensaje entrante** del cliente final, como mide Meta; el modelo no clasifica.
+3. **DECIDIDO:** los planes incluyen **0** mensajes salientes fuera de 48 h; la bolsa avisa al **80 %** consumido, como las conversaciones.
+4. **DECIDIDO:** el mensaje **vuelve a la bolsa solo si Meta rechaza el envío en el momento**; lo aceptado y no entregado después no se devuelve.
+5. **DECIDIDO:** la bolsa de 30 por 10 queda **solo para cuentas con Meta incluido** (hoy Bellido); BYOC usa la de 300 por 15. El regalo de 6 meses se escribe como **30 conversaciones**, sin depender de la constante.
+6. **DECIDIDO:** la bolsa de mensajes salientes se vende **solo con titularidad `comercio`**: cobra 0,033 por mensaje y a Meta le cuesta 0,074.
 
 **Una observación, dicha una vez:** a 0,050 por conversación, la bolsa de conversaciones sigue más barata que los planes (0,090 a 0,125): Impulso más una bolsa son 500 conversaciones por 40 y Crecimiento las da por 50. Andres lo aceptó así.
 
