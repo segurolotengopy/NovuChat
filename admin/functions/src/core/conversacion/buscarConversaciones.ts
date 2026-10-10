@@ -45,8 +45,10 @@
  *    búsquedas por hora y 600 por día, contadas en el servidor, en un documento
  *    transaccional `topesDeBusqueda/{uid}` (global, no por comercio). Las reglas lo
  *    niegan todo al navegador: la negación final de `firestore.rules` cierra esa
- *    colección y la prueba lo demuestra. Solo cuentan las búsquedas ya
- *    autorizadas y bien formadas (las que de verdad leen mensajes).
+ *    colección y la prueba lo demuestra. Cuenta toda búsqueda
+ *    autorizada y bien formada que llega a la consulta, aunque después falle (el
+ *    índice sin construir, Firestore caído): el cupo se consume ANTES de leer, a
+ *    propósito. Un rechazo por permiso, texto o cursor mal formado no cuenta.
  *  - **App Check y concurrencia** por entorno (`opcionesDeBuscarConversaciones`),
  *    con el mismo patrón que el visor de comprobantes.
  *
@@ -116,7 +118,7 @@ export const MENSAJES = {
   sinPermiso: MENSAJE_SIN_PERMISO,
   pocoTexto: 'Escriba al menos una palabra de 3 letras.',
   cursor: 'La búsqueda cambió; vuelva a buscar.',
-  tope: 'Hizo demasiadas búsquedas. Espere un momento e intente de nuevo.',
+  tope: 'Alcanzó el tope de búsquedas por hora o por día.',
   noDisponible: MENSAJE_NO_DISPONIBLE,
 } as const;
 
@@ -216,11 +218,11 @@ const numeroValido = (v: unknown): v is number => typeof v === 'number' && Numbe
  * busquedasDia, actualizadoEn}`. Devuelve `null` si hay cupo, o el motivo
  * (`tope_hora` / `tope_dia`) si ya llegó a 120 en la hora o a 600 en el día; en
  * ese caso NO escribe. Un contador ilegible se trata como agotado (falla
- * cerrado). Las reglas niegan este documento a todos: solo lo escribe el servidor.
+ * cerrado) y sale con su propio motivo, `tope_ilegible`. Las reglas niegan este documento a todos: solo lo escribe el servidor.
  */
 export async function consumirCupoDeBusqueda(
   db: Firestore, uid: string, ahoraMs: number,
-): Promise<null | 'tope_hora' | 'tope_dia'> {
+): Promise<null | 'tope_hora' | 'tope_dia' | 'tope_ilegible'> {
   if (!UID_SEGURO.test(uid)) throw new Error('uid inválido para el tope');
   const sello = new Date(ahoraMs - 4 * 3_600_000).toISOString();
   const hora = sello.slice(0, 13);
@@ -231,7 +233,7 @@ export async function consumirCupoDeBusqueda(
     const d = previo.exists ? (previo.data() ?? {}) : {};
     const busquedasHora = d['hora'] === hora ? d['busquedasHora'] : 0;
     const busquedasDia = d['dia'] === dia ? d['busquedasDia'] : 0;
-    if (!numeroValido(busquedasHora) || !numeroValido(busquedasDia)) return 'tope_hora';
+    if (!numeroValido(busquedasHora) || !numeroValido(busquedasDia)) return 'tope_ilegible';
     if (busquedasHora >= TOPE_POR_HORA) return 'tope_hora';
     if (busquedasDia >= TOPE_POR_DIA) return 'tope_dia';
     tx.set(ref, {
@@ -397,8 +399,8 @@ async function atender(
     if (snap.size < CONSULTA_PALABRAS.limite) break; // se acabó: cursor null
     inicio = snap.docs[snap.docs.length - 1] ?? null; // posición INTERNA para el lote siguiente
     if (lote === MAX_LOTES - 1) {
-      // Tope de lotes: el cursor es el último leído que pase la guarda, no el último a secas.
-      const ultimoBueno = [...snap.docs].reverse().find((d) => esDocumentoPropio(d, t));
+      // Tope de lotes: el cursor es el último leído que pase la guarda (y tenga `ts`, como el cursor que ENTRA), no el último a secas.
+      const ultimoBueno = [...snap.docs].reverse().find((d) => esDocumentoPropio(d, t) && d.get('ts') instanceof Timestamp);
       cursor = ultimoBueno ? cursorDe(ultimoBueno) : null;
       if (cursor === null) registrar('cursor_irregular', { ...quien, motivo: 'cursor_irregular' });
     }

@@ -102,7 +102,7 @@ const FIJOS = {
   sinPermiso: 'No tiene permiso para buscar en estas conversaciones.',
   pocoTexto: 'Escriba al menos una palabra de 3 letras.',
   cursor: 'La búsqueda cambió; vuelva a buscar.',
-  tope: 'Hizo demasiadas búsquedas. Espere un momento e intente de nuevo.',
+  tope: 'Alcanzó el tope de búsquedas por hora o por día.',
   noDisponible: 'La búsqueda no está disponible en este momento. Intente de nuevo.',
 };
 
@@ -781,10 +781,13 @@ describe('el tope por usuario: 120 por hora y 600 por día, contado en el servid
     expect(await rechazo(llamar({ tenantId: OTRO, texto: 'alfajor' }, dos))).toMatchObject({ code: 'resource-exhausted' });
   });
 
-  it('un contador ilegible se trata como agotado (falla cerrado)', async () => {
+  it('un contador ilegible se trata como agotado (falla cerrado), con su propio motivo `tope_ilegible` y el mensaje neutro', async () => {
     for (const mal of [{ busquedasHora: 'x' }, { busquedasHora: -1 }, { busquedasHora: 1.5 }, { busquedasDia: null }, { busquedasDia: '7' }]) {
       await sembrarTope(uidDe(A), mal);
-      expect(await rechazo(llamar({ tenantId: A, texto: 'alfajor' }, admin(A))), JSON.stringify(mal)).toMatchObject({ code: 'resource-exhausted' });
+      registros = [];
+      expect(await rechazo(llamar({ tenantId: A, texto: 'alfajor' }, admin(A))), JSON.stringify(mal)).toEqual({ code: 'resource-exhausted', message: FIJOS.tope });
+      const l = registros.map((x) => JSON.parse(x.slice(x.indexOf('{'))) as Record<string, unknown>).find((x) => x['codigo'] === 'resource-exhausted');
+      expect(l?.['motivo'], JSON.stringify(mal)).toBe('tope_ilegible');
     }
   });
 
@@ -812,6 +815,12 @@ describe('el tope por usuario: 120 por hora y 600 por día, contado en el servid
     const l = registros.map((x) => JSON.parse(x.slice(x.indexOf('{'))) as Record<string, unknown>).find((x) => x['codigo'] === 'resource-exhausted');
     expect(l).toEqual({ funcion: 'buscarConversaciones', codigo: 'resource-exhausted', tenantId: A, uid: uidDe(A), rol: 'admin', motivo: 'tope_hora' });
     expect(registros.join('\n')).not.toContain('zanahoria');
+  });
+
+  it('el cupo se consume ANTES de leer: una búsqueda autorizada y bien formada cuenta aunque la consulta falle (índice sin construir)', async () => {
+    vi.spyOn(db, 'collectionGroup').mockImplementation(() => { throw Object.assign(new Error('The query requires an index'), { code: 9 }); });
+    expect(await rechazo(llamar({ tenantId: A, texto: 'alfajor' }, admin(A)))).toMatchObject({ code: 'unavailable' });
+    expect(await topes(uidDe(A))).toMatchObject({ busquedasHora: 1, busquedasDia: 1 });
   });
 
   it('si el tope mismo falla (Firestore caído): unavailable y no se lee ningún mensaje', async () => {
@@ -863,24 +872,25 @@ describe('las reglas cierran `topesDeBusqueda` al navegador (la negación final)
   it('NEGATIVA: nadie lee, crea, edita ni borra `topesDeBusqueda/{uid}` desde el cliente', async () => {
     for (const [quien, fs, uid] of contextos()) {
       const ref = docCliente(fs, `topesDeBusqueda/${uid}`);
-      await assertFails(leerDoc(ref));
-      await assertFails(escribirDoc(ref, { hora: 'x', busquedasHora: 0, busquedasDia: 0 }));
-      await assertFails(actualizarDoc(docCliente(fs, 'topesDeBusqueda/u-admin-tienda-a'), { busquedasHora: 0 }));
-      await assertFails(borrarDoc(docCliente(fs, 'topesDeBusqueda/u-admin-tienda-a')));
-      expect(quien).toBeTruthy();
+      /** Que falle, y si NO falla el error dice quién y qué. */
+      const niega = async (accion: string, p: Promise<unknown>) => {
+        try { await assertFails(p); } catch (e) { throw new Error(`${quien}: pudo ${accion} (${String(e)})`); }
+      };
+      await niega('leer', leerDoc(ref));
+      await niega('crear', escribirDoc(ref, { hora: 'x', busquedasHora: 0, busquedasDia: 0 }));
+      await niega('editar', actualizarDoc(docCliente(fs, 'topesDeBusqueda/u-admin-tienda-a'), { busquedasHora: 0 }));
+      await niega('borrar', borrarDoc(docCliente(fs, 'topesDeBusqueda/u-admin-tienda-a')));
     }
+    // El contador sigue igual que lo sembrado, leído con las reglas desactivadas, DESPUÉS de todos los intentos.
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      const d = await leerDoc(docCliente(ctx.firestore(), 'topesDeBusqueda/u-admin-tienda-a'));
+      expect(d.data()).toEqual({ hora: 'x', busquedasHora: 1, busquedasDia: 1 });
+    });
   });
 
   it('control: las mismas reglas SÍ dejan al administrador de A leer la ficha de A (no es que todo esté cerrado)', async () => {
     const fs = entorno.authenticatedContext('u-admin-tienda-a', claimsDe({ t: { 'tienda-a': 'admin' } })).firestore();
     await assertSucceeds(leerDoc(docCliente(fs, 'tenants/tienda-a')));
-  });
-
-  it('el contador sigue intacto después de los intentos', async () => {
-    await entorno.withSecurityRulesDisabled(async (ctx) => {
-      const d = await leerDoc(docCliente(ctx.firestore(), 'topesDeBusqueda/u-admin-tienda-a'));
-      expect(d.data()).toMatchObject({ busquedasHora: 1, busquedasDia: 1 });
-    });
   });
 });
 
@@ -927,6 +937,22 @@ describe('el cursor que SALE pasa por la misma guarda de ruta que los resultados
       expect(p2.cursor).toBeNull();
     }, 60_000);
   }
+
+  it('cursor que SALE por el tope de lotes: un documento propio con `ts` corrupto al final del tercer lote nunca es el cursor', async () => {
+    // 60 documentos propios con «alfajor» (sin «maicena»: ninguno es resultado). El MÁS VIEJO tiene `ts: null`,
+    // que en orden descendente cae al final: es el último LEÍDO del tercer lote (lleno), y no se podría reanudar
+    // (el cursor que ENTRA exige un Timestamp). El cursor debe ser el último documento bueno.
+    const ids: string[] = [];
+    for (let i = 0; i < 59; i++) ids.push(await mensaje(A, TEL1, `alfajor solo ${i}`, reciente(1000 - i)));
+    const corrupto = db.collection(`tenants/${A}/conversaciones/wa_${TEL1}/mensajes`).doc();
+    await corrupto.set({ direccion: 'entrante', tipo: 'texto', texto: 'alfajor con fecha rota', ts: null, ...camposDeMensajeIndexado('alfajor con fecha rota', A) });
+    const p1 = await salidaDe({ tenantId: A, texto: 'alfajor maicena' }, admin(A));
+    expect(p1.resultados).toEqual([]);
+    expect(p1.cursor).toBe(`wa_${TEL1}/${ids[58]}`); // el último bueno, nunca el corrupto
+    expect(p1.cursor).not.toContain(corrupto.id);
+    const p2 = await salidaDe({ tenantId: A, texto: 'alfajor maicena', cursor: p1.cursor }, admin(A)); // no dice «cambió»
+    expect(p2).toMatchObject({ resultados: [], cursor: null });
+  }, 60_000);
 
   it('un documento hallado con un id de mensaje que no es automático no se devuelve (su cursor no se podría reanudar)', async () => {
     await db.doc(`tenants/${A}/conversaciones/wa_${TEL1}/mensajes/id-manual`).set({
