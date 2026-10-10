@@ -13,6 +13,20 @@ function bd() {
   return getFirestore();
 }
 
+/**
+ * Deja el comercio sin pedidos con lotes de borrado (hasta 400 por lote). `limpiarPedidos` usa `recursiveDelete`, que con 100 documentos y la
+ * máquina cargada falló a medias («100 deletes failed») y dejó la prueba siguiente con datos viejos.
+ */
+export async function vaciarPedidos(tenantId: string): Promise<void> {
+  const db = bd();
+  const refs = await db.collection(`tenants/${tenantId}/pedidos`).listDocuments();
+  for (let i = 0; i < refs.length; i += 400) {
+    const lote = db.batch();
+    for (const r of refs.slice(i, i + 400)) lote.delete(r);
+    await lote.commit();
+  }
+}
+
 /** Cambia el estado del comercio (`activo`, `suspendido`, `baja`…): las reglas de lectura miran este campo. */
 export async function fijarEstadoDelComercio(tenantId: string, estado: string): Promise<void> {
   await bd().doc(`tenants/${tenantId}`).set({ estado }, { merge: true });

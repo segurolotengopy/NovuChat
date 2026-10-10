@@ -1,8 +1,8 @@
 import { test } from '@playwright/test';
 import { USUARIOS } from './entorno';
 import { expect, ingresar } from './ayudas/o2-ingresar';
-import { crearUsuarioDeEnsayo, fijarModulos, limpiarPedidos, sembrarPedido } from './ayudas/datos';
-import { fijarEstadoDelComercio, sembrarMuchosPedidos } from './ayudas/o2-datos';
+import { crearUsuarioDeEnsayo, fijarModulos, sembrarPedido } from './ayudas/datos';
+import { fijarEstadoDelComercio, sembrarMuchosPedidos, vaciarPedidos as limpiarPedidos } from './ayudas/o2-datos';
 
 /**
  * CARRIL 2 · PED-01 (lista en vivo, también con sesión de operador) y PED-02 (la tarjeta del pedido, con la referencia del cliente).

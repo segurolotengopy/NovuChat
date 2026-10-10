@@ -23,7 +23,7 @@ test.describe('Pedidos', () => {
     await expect(page.getByText('Todavía no hay pedidos')).toBeHidden();
   });
 
-  test('un delivery muestra la modalidad antes del monto, la dirección, el detalle del cliente y la nota', async ({ page }) => {
+  test('un delivery muestra la modalidad, la dirección, el detalle del cliente y la nota', async ({ page }) => {
     await sembrarPedido(FOGON, {
       id: 'p2', total: 165, entrega: 'delivery', direccion: 'Av. Banzer 1234, frente a la panadería', nota: 'Tocar el timbre dos veces',
       items: [{ nombre: 'Tacos al Pastor', cantidad: 3, detalle: 'sin cebolla' }, { nombre: 'Horchata', cantidad: 1 }],
@@ -61,6 +61,20 @@ test.describe('Pedidos', () => {
     await expect(page.getByText('Corte de pelo secreto')).toHaveCount(0);
   });
 
+  test('NEGATIVA (aislamiento en vivo): mirando un comercio, un pedido que llega a OTRO no aparece, y uno propio sí', async ({ page }) => {
+    await sembrarPedido(FOGON, { id: 'l1', items: [{ nombre: 'Primero propio', cantidad: 1 }], total: 10, entrega: 'retiro' });
+    await ingresar(page, USUARIOS.adminFogon);
+    await page.getByRole('link', { name: 'Pedidos', exact: true }).click();
+    await expect(page.getByText('Primero propio')).toBeVisible();
+    await sembrarPedido(AURORA, { id: 'l2', items: [{ nombre: 'Llegó a Aurora', cantidad: 1 }], total: 20, entrega: 'retiro' });
+    await sembrarPedido(FOGON, { id: 'l3', items: [{ nombre: 'Segundo propio', cantidad: 1 }], total: 30, entrega: 'retiro' });
+    // Cuando el propio ya está en pantalla, el ajeno tuvo tiempo de sobra para aparecer si hubiera una fuga.
+    await expect(page.getByText('Segundo propio')).toBeVisible();
+    await expect(page.getByText('Llegó a Aurora')).toHaveCount(0);
+    await expect(page.locator('li.pedido')).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Exportar (2)' })).toBeVisible();
+  });
+
   test('exporta los pedidos a un archivo CSV con sus columnas', async ({ page }) => {
     await sembrarPedido(FOGON, { id: 'p4', items: [{ nombre: 'Nachos', cantidad: 1 }], total: 58, entrega: 'retiro' });
     await ingresar(page, USUARIOS.adminFogon);
@@ -70,6 +84,7 @@ test.describe('Pedidos', () => {
     const { readFile } = await import('node:fs/promises');
     const texto = await readFile((await descarga.path())!, 'utf8');
     expect(texto).toContain('Cuándo');
+    expect(texto).toContain('Referencia');
     expect(texto).toContain('Nachos');
   });
 });

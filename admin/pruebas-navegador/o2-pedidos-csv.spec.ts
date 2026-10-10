@@ -122,7 +122,7 @@ test.describe('PED-04: exportar pedidos a CSV', () => {
   }
 
   test('NEGATIVA (fórmulas): ninguna celda de ninguna columna del archivo empieza con un carácter de fórmula', async ({ page }) => {
-    const peligrosos = ['=1+1', '+59170000031', '-17.78346, -63.18212', '@SUM(A1)', '\t=1', '\r=1', "'=1", FORMULA];
+    const peligrosos = ['=1+1', '+591 7000', '-17.78346, -63.18212', '@SUM(A1)', '\t=1', '\r=1', "'=1", FORMULA];
     for (const [i, p] of peligrosos.entries()) {
       await sembrarPedido(FOGON, {
         id: `h${i}`, total: 10 + i, entrega: 'delivery', telefonoEnmascarado: `*** 04${String(i).padStart(2, '0')}`,
@@ -145,14 +145,14 @@ test.describe('PED-04: exportar pedidos a CSV', () => {
 
   test('lo que no es peligroso NO se toca: texto normal, un signo en el medio y un monto negativo (es un número, no una fórmula)', async ({ page }) => {
     await sembrarPedido(FOGON, {
-      id: 'n1', total: -5, entrega: 'retiro', telefonoEnmascarado: '*** 0501', direccion: 'Calle 21 de Calacoto', nota: 'sin picante = mejor, 2+2 y a@b.com',
+      id: 'n1', total: -5, entrega: 'retiro', telefonoEnmascarado: '*** 0501', direccion: 'Calle 21 de Calacoto', nota: 'sin picante = mejor, 2+2 y un @ en el medio',
       items: [{ nombre: 'Taco', cantidad: 1 }],
     });
     await abrirPedidos(page);
     const { csv } = await exportar(page, 1);
     const f = fila(csv, '*** 0501');
     expect(f['Dirección']).toBe('Calle 21 de Calacoto');
-    expect(f['Nota']).toBe('sin picante = mejor, 2+2 y a@b.com');
+    expect(f['Nota']).toBe('sin picante = mejor, 2+2 y un @ en el medio');
     expect(f['Total']).toBe('-5');
   });
 
