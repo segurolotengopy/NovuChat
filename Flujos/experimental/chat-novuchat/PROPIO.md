@@ -21,7 +21,7 @@ Regla (Andres, 09/10/2026): **flujo propio = composición propia + núcleo comú
 | Puerta del turno (comercio no operativo + uso extendido) | `core/comercio-no-operativo.js` y `core/uso-extendido.js` son del contrato del agente y hay 4 versiones divergentes de `uso-extendido` |
 | Config del negocio (consola → configuración) | `core/config-del-negocio.js` (403 líneas) es del agente; este nodo toma solo precios, imagen, recepción, voz y atención |
 | `chAviso` (plantilla `solicitud_contacto` a recepción) | `cmContactoConBoton` cubre solo el botón; no hay constructor común de la plantilla |
-| `decidir-fila-de-la-planilla.js`, `prospecto-para-la-planilla.js` (hoja Leads_CRM) | `Flujos/src/modulos/captacion/` existe pero está ATRASADO (sin calificación por hechos ni resumen J). Copia de `captacion-minima/src/nodos/`; una prueba compara byte a byte. `prospecto` es idéntico; `decidir-fila` diverge en UNA línea a propósito (`seguro` quita todos los bloques de signos de fórmula del comienzo, «= =1»; revisión del PR #464) y la prueba declara esa diferencia |
+| `decidir-fila-de-la-planilla.js`, `prospecto-para-la-planilla.js` (hoja Leads_CRM) | `Flujos/src/modulos/captacion/` existe pero está ATRASADO (sin calificación por hechos ni resumen J). Copia de `captacion-minima/src/nodos/`; una prueba compara byte a byte. `prospecto` es idéntico; `decidir-fila` diverge a propósito en la línea `seguro` (quita todos los bloques de signos de fórmula del comienzo, «= =1»; revisión del PR #464) y en el bloque «otros negocios» del resumen J (ajustes del 09/10); la prueba declara esas diferencias |
 | Detectores, extracción literal de nombre y empresa, filtros de redacción propios (`src/lib/chat.js`, primer bloque) | Existían solo en Captación mínima: son piezas propias de NovuChat portadas con sus pruebas (y comparadas con la original) |
 
 ## Propio de NovuChat
@@ -32,7 +32,9 @@ Cerebro conversacional: instrucciones y datos del documento comercial (`admin/sc
 Esperar ráfaga, Armar turno), contexto y validación del mensaje del modelo (con su reintento y respaldos), rutas deterministas (planes, equipo, consumo, tope, banco, integración, costos de Meta,
 descuento, lista), «Confirmar envío» (restaura la ficha si Meta rechaza), hoja y calificación por hechos, y el modelo como parámetro de los datos.
 
+Propio también: el sitio web (`sitioWeb`) que anexa el código en las rutas específicas (empresa, sin dato, no documentado, complemento de planes, integraciones y costos de Meta), a lo más 2 veces por ventana y por teléfono; no agrega mensajes.
+
 ## Mensajes por conversación
 
-Un mensaje por turno del cliente (una ráfaga de clics es UN turno) más la plantilla a recepción UNA vez por ventana de 24 h. **0 agregados y 0 quitados** respecto de Captación mínima por turno;
+Un mensaje por turno del cliente (una ráfaga de clics es UN turno) más la plantilla a recepción UNA vez por ventana de 24 h. **0 agregados y 0 quitados** respecto de Captación mínima por turno, salvo (ajustes del 09/10): **+1 mensaje** en el camino «Ver planes» como primera respuesta (pide el nombre y el negocio antes de los planes; el camino de texto libre lo pide en el mismo mensaje, 0 agregados) y **+1 plantilla** a recepción cuando un segundo traspaso trae una empresa distinta, con tope de **3 plantillas por teléfono y por ventana de 24 h**;
 las llamadas al modelo son 0 o 1 por turno (2 si una guardia rechaza el mensaje). Diferencia de la cadena común: ante el rechazo de la plantilla de aviso, envía además el texto de respaldo a recepción.

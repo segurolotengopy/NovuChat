@@ -630,7 +630,7 @@ export async function llamarGemini({ cuerpo, urlDelNodo, credencial, opciones, d
 /** Las funciones y patrones de la biblioteca del flujo (`src/lib/chat.js`) y las `cm*` comunes, en un contexto aislado (sin los globales de Node, como el Code de n8n). */
 export function cargarLibreria() {
   const fuente = [RUTA_LIB, RUTA_MENSAJES, RUTA_FILTRO].map((r) => readFileSync(r, 'utf8')).join('\n');
-  const nombres = ['chNorm', 'chContar', 'chSistemaAjeno', 'chObjetoDelModelo', 'chTerminaBien', 'chPlano', 'CH_ACREDITA_MODELO', 'CH_CIFRA_DE_CONSUMO', 'CH_SISTEMA_CONOCIDO', 'CH_BLOQUEO_COMUN', 'CH_OFERTA_DEL_MODELO'];
+  const nombres = ['chNorm', 'chContar', 'chSistemaAjeno', 'chObjetoDelModelo', 'chTerminaBien', 'chPlano', 'chSimilitud', 'CH_ACREDITA_MODELO', 'CH_CIFRA_DE_CONSUMO', 'CH_SISTEMA_CONOCIDO', 'CH_BLOQUEO_COMUN', 'CH_OFERTA_DEL_MODELO'];
   return runInNewContext(`${fuente}\n({ ${nombres.join(', ')} })`, {});
 }
 const datosDelChat = () => JSON.parse(readFileSync(RUTA_DATOS, 'utf8')).datos;
@@ -655,12 +655,14 @@ const MULETILLA = /^[¡!\s]*(te entiendo|qu[eé] bueno que quieras conocer m[aá
 const VALIDA_CON_EL_BANCO = /\b(valida|validan|verifica|verifican|acredita|acreditan|confirma|confirman|consulta|consultan|cruza|cruzan)\w*\b[^.!?]{0,40}\b(banco|pagos?|transferencias?|depositos?|comprobantes?)\b[^.!?]{0,30}\bcon el banco\b|\bpago (acreditado|verificado|validado|confirmado|recibido)\b|\b(consulta|cruza)\w* (con )?el banco\b/;
 const ENLACE = /(https?:\/\/|www\.|wa\.me\/)[^\s)»"]*/gi;
 // Los mensajes del sistema que NO llevan los dos botones: la lista de rubros, el traspaso (su botón es el enlace a recepción) y los avisos de comercio suspendido y de uso extendido.
-const SIN_DOS_BOTONES = new Set(['lista', 'traspaso', 'suspendido', 'uso_extendido']);
+const SIN_DOS_BOTONES = new Set(['lista', 'lista_otro', 'traspaso', 'suspendido', 'uso_extendido']);
 
 /**
  * Las violaciones de las reglas duras sobre UN mensaje que el cliente RECIBE. `m` = { tipo, payload, cuerpo, evento, esRespaldo }; `ctx` = { lib, origen, contexto }.
  * La plantilla de aviso va a recepción, no al cliente: no se revisa aquí. Devuelve [{ regla, texto }].
  */
+// El sitio web que anexa el CÓDIGO (dato `sitioWeb`): el único enlace, además del de recepción y el de la imagen de planes, que el cliente puede recibir.
+const SITIO = String(datosDelChat().sitioWeb ?? '');
 export function revisarMensaje(m, ctx = {}) {
   if (m.tipo === 'template') return [];
   const v = [];
@@ -678,31 +680,43 @@ export function revisarMensaje(m, ctx = {}) {
   if (MULETILLA.test(c)) anota('muletilla');
   if (/minicrm|kanban|leads de ventas/i.test(c)) anota('minicrm_o_leads_de_ventas');
   if (/menos de un minuto/i.test(c)) anota('menos_de_un_minuto');
+  // El complemento de los planes (R6) trae a propósito la moneda, los tamaños de agendas y de catálogo y las categorías «ERP, CRM»: solo se le exige no dar cifras de conversaciones ni de consumo.
+  const esComplemento = m.evento === 'planes_complemento';
   // Ningún dígito salvo «24/7», «24 horas» y las cifras del mensaje de planes que arma el código (65, 125 y 25 de la consola de ejemplo).
-  if (/\d/.test(c.replace(ENLACE, ' ').replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ').replace(/USD (65|125|25)\b/g, ' '))) anota('digitos_de_mas');
-  if (lib.CH_CIFRA_DE_CONSUMO.test(n)) anota('cifra_de_consumo');
+  if (!esComplemento && /\d/.test(c.replace(ENLACE, ' ').replace(/\b(?:los\s+)?7\s+d[ií]as(?:\s+(?:de|a)\s+la\s+semana)?\b(?!\s+(?:de\s+prueba|gratis|gratuit\w*|libres?|sin\s+costo|de\s+garant\w*|extra))/gi, ' ').replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ').replace(/USD (65|125|25)\b/g, ' '))) anota('digitos_de_mas');
+  if (esComplemento ? /\d+\s+(conversaciones?|mensajes?|interacciones?|respuestas?|chats?)\b|ilimitad|gratis/.test(n) : lib.CH_CIFRA_DE_CONSUMO.test(n)) anota('cifra_de_consumo');
   if (VALIDA_CON_EL_BANCO.test(n) || lib.CH_ACREDITA_MODELO.test(n.replace(/\bno lo valida con el banco\b/g, ' ').replace(/\bquien confirma que el dinero entro es\b[^.!?]*/g, ' '))) anota('valida_pagos_con_el_banco');
-  if (lib.CH_SISTEMA_CONOCIDO.test(n)) anota('sistema_ajeno_o_integracion_inventada');
-  if (lib.CH_BLOQUEO_COMUN.test(n) || lib.CH_OFERTA_DEL_MODELO.test(n) || /\bgratis\b|\bdescuento/.test(n)) anota('gratuidad_oferta_o_costo_de_meta_minimizado');
+  if (!esComplemento && lib.CH_SISTEMA_CONOCIDO.test(n)) anota('sistema_ajeno_o_integracion_inventada');
+  if (!esComplemento && (lib.CH_BLOQUEO_COMUN.test(n) || lib.CH_OFERTA_DEL_MODELO.test(n) || /\bgratis\b|\bdescuento/.test(n))) anota('gratuidad_oferta_o_costo_de_meta_minimizado');
   for (const e of c.match(ENLACE) ?? []) {
-    const ok = new RegExp(`^(https://)?wa\\.me/${esc(REC)}(\\?.*)?$`, 'i').test(e) || e.startsWith(ARCHIVO.url);
+    const ok = new RegExp(`^(https://)?wa\\.me/${esc(REC)}(\\?.*)?$`, 'i').test(e) || e.startsWith(ARCHIVO.url) || (!!SITIO && e.replace(/[.,;:!?]+$/, '') === SITIO);
     if (!ok) anota('enlace');
   }
   if (c.length > 1024) anota('cuerpo_mayor_a_1024');
   if (m.tipo === 'interactive') {
     const t = tipoInter(m.payload);
     if (t === 'button') {
-      if (botonesDe(m.payload).join() !== 'planes,equipo' || titulosDe(m.payload).join() !== 'Ver planes,Hablar con el equipo') anota('botones_incorrectos', botonesDe(m.payload).join('+'));
+      // R5: los botones salen según lo ya hecho. Antes de ver los planes, los dos; ya vistos, SOLO «Hablar con el equipo»; tras el traspaso, ninguno (la lista de rubros).
+      const ids = botonesDe(m.payload).join();
+      const tit = titulosDe(m.payload).join();
+      const dos = ids === 'planes,equipo' && tit === 'Ver planes,Hablar con el equipo';
+      const uno = ids === 'equipo' && tit === 'Hablar con el equipo';
+      if (!dos && !uno) anota('botones_incorrectos', botonesDe(m.payload).join('+'));
+      else if (dos && ctx.planesVistos === true) anota('ver_planes_cuando_ya_los_vio', ids);
+      else if (uno && ctx.planesVistos === false) anota('botones_incorrectos', 'solo «Hablar con el equipo» sin haber visto los planes');
+      if (ctx.equipoHecho === true) anota('boton_del_equipo_otra_vez', ids);
     } else if (t === 'list') {
       for (const f of filasDe(m.payload)) if (!String(f.description ?? '').trim() || String(f.title).length > 24 || String(f.description).length > 72) anota('fila_sin_descripcion_o_demasiado_larga', JSON.stringify(f));
     }
-    if (t !== 'button' && !SIN_DOS_BOTONES.has(m.evento) && !m.esRespaldo) anota('sin_los_dos_botones', `evento ${m.evento}`);
+    if (t !== 'button' && !SIN_DOS_BOTONES.has(m.evento) && !m.esRespaldo && !(t === 'list' && ctx.equipoHecho === true)) anota('sin_los_dos_botones', `evento ${m.evento}`);
   } else if (!SIN_DOS_BOTONES.has(m.evento) && !m.esRespaldo) anota('sin_los_dos_botones', `un texto sin botones (evento ${m.evento})`);
   // Lo que escribió el MODELO: contenido (no una muletilla ni una línea) y cierre con una pregunta o la invitación a elegir.
   if (ctx.origen === 'modelo' && ctx.contexto !== 'cortesia') {
     // El mismo mínimo que el flujo: 25 palabras (10 cuando se pregunta algo corto: «Otro», los datos o un medio ilegible).
     if (palabrasDe(c) < (['otro', 'datos', 'medio'].includes(ctx.contexto) ? 10 : 25)) anota('sin_contenido');
-    if (!lib.chTerminaBien(c)) anota('sin_cierre');
+    // (tras el traspaso el mensaje es una lista: la invitación a otro negocio va al final y el cierre se mide sobre la respuesta)
+    const cuerpoModelo = m.evento === 'lista_otro' || (tipoInter(m.payload) === 'list' && ctx.equipoHecho === true) ? c.split('\n\n').slice(0, -1).join('\n\n') || c : c;
+    if (!lib.chTerminaBien(cuerpoModelo)) anota('sin_cierre');
   }
   // Un rubro estándar explicado cierra con la pregunta EXACTA del documento.
   if (ctx.contexto === 'rubro' && m.evento !== 'lista' && !n.endsWith(sinTildes(CIERRE_EXACTO).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim())) {
@@ -729,10 +743,10 @@ const mensajeDeMeta = (t, wamid, cliente) => {
   if (t.tipo === 'sticker') return { ...base, type: 'sticker', sticker: { id: 'media-stk', mime_type: 'image/webp' } };
   throw new Error('tipo de turno desconocido: ' + t.tipo);
 };
-const valorMeta = (msg, cliente) => ({
+const valorMeta = (msg, cliente, perfil) => ({
   messaging_product: 'whatsapp',
   metadata: { display_phone_number: PID, phone_number_id: PID },
-  contacts: [{ profile: { name: 'Ana Prueba' }, wa_id: cliente }],
+  contacts: [{ profile: { name: perfil ?? 'Ana Prueba' }, wa_id: cliente }],
   messages: [msg],
 });
 const dichoDe = (t) => (t.tipo === 'texto' ? t.texto : t.tipo === 'audio' ? `(audio) ${t.transcripcion}` : t.tipo === 'imagen' ? `(imagen) ${t.pie ?? ''}` : t.tipo === 'rafaga' ? `(ráfaga) ${t.eventos.map(dichoDe).join(' + ')}` : t.tipo === 'fila' || t.tipo === 'boton' ? `(toque) ${t.id}` : `(${t.tipo})`);
@@ -824,7 +838,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       const act = { t };
       const mundo = mundoNuevo(act, comp.relojMs ?? AHORA);
       if (comp.sd) { for (const k of Object.keys(mundo.sd)) delete mundo.sd[k]; Object.assign(mundo.sd, clonar(comp.sd)); }
-      const r = await mundo.turno(valorMeta(mensajeDeMeta(t, wamid(0), CLIENTE), CLIENTE), 0);
+      const r = await mundo.turno(valorMeta(mensajeDeMeta(t, wamid(0), CLIENTE), CLIENTE, (caso.opciones ?? {}).perfil), 0);
       comp.sd = clonar(mundo.sd);
       comp.relojMs = (comp.relojMs ?? AHORA) + 60_000;
       return [r];
@@ -838,7 +852,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     // Cada mundo, al «esperar», corre el siguiente (anidado) y vuelve con los datos que dejó: las primeras ejecuciones despiertan con el estado final y terminan sin enviar nada.
     const correr = async (k) => {
       if (k + 1 < mundos.length) acts[k].alEsperar = async () => { sincronizar(mundos[k], mundos[k + 1]); await correr(k + 1); sincronizar(mundos[k + 1], mundos[k]); };
-      resultados.push(await mundos[k].turno(valorMeta(mensajeDeMeta(eventos[k], wamid(k), CLIENTE), CLIENTE), 0));
+      resultados.push(await mundos[k].turno(valorMeta(mensajeDeMeta(eventos[k], wamid(k), CLIENTE), CLIENTE, (caso.opciones ?? {}).perfil), 0));
     };
     await correr(0);
     comp.sd = clonar(mundos[0].sd);
@@ -846,7 +860,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     return resultados;
   }
 
-  const corrida = { caso: caso.id, rep, turnos: 0, llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], conversacion: [], palabras: [], modeloTurnos: 0, respaldos: 0, causas: {}, esperas: 0 };
+  const corrida = { caso: caso.id, rep, turnos: 0, llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], conversacion: [], palabras: [], modeloTurnos: 0, respaldos: 0, causas: {}, esperas: 0, repeticiones: 0 };
   const falla = (turno, dicho, regla, texto) => corrida.violaciones.push({ caso: caso.id, rep, turno, dicho, regla, texto: String(texto).replace(/\s+/g, ' ').slice(0, 200) });
   for (const [i, t] of caso.turnos.entries()) {
     comp.captura = { mensajes: [], modelo: [] };
@@ -861,7 +875,11 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     const dicho = dichoDe(t);
     // UN mensaje al cliente por turno del cliente (los clics seguidos de una ráfaga cuentan como UN turno).
     if (buenos.length > 1) falla(i + 1, dicho, 'mas_de_un_mensaje_por_turno', buenos.map((m) => m.cuerpo).join(' | '));
-    const ctx = { lib, origen: String(resumen.origen ?? ''), contexto: String(resumen.contexto ?? '') };
+    const fichaDespues = objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]);
+    // R6: lo que escribió el MODELO no calca el mensaje anterior (similitud de conjuntos de palabras >= 0,75): se cuenta y es una violación.
+    const anterior = corrida.conversacion.length ? (corrida.conversacion[corrida.conversacion.length - 1].mensajes.at(-1) ?? '') : '';
+    if (String(resumen.origen ?? '') === 'modelo' && buenos[0] && anterior && lib.chSimilitud(buenos[0].cuerpo, anterior) >= 0.75) { corrida.repeticiones += 1; falla(i + 1, dicho, 'repite_el_mensaje_anterior', buenos[0].cuerpo); }
+    const ctx = { lib, origen: String(resumen.origen ?? ''), contexto: String(resumen.contexto ?? ''), planesVistos: fichaDespues.planesMostrados === true, equipoHecho: fichaDespues.equipoAhora === true };
     for (const m of alCliente) {
       for (const x of revisarMensaje(m, ctx)) falla(i + 1, dicho, x.regla, x.texto);
       if (!m.esRespaldo) { corrida.tonos.push(tonoDe(m.cuerpo)); corrida.palabras.push(palabrasDe(m.cuerpo)); }
@@ -903,6 +921,15 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
       }
       for (const x of opciones.seco ? [].concat(ex.modeloVe ?? []) : []) if (!JSON.stringify(comp.captura.modelo.at(-1)?.cuerpo ?? {}).includes(x)) falla(i + 1, dicho, 'el_modelo_no_ve_lo_que_se_exige', `«${x}»`);
       if (ex.sinMensajes === true && buenos.length) falla(i + 1, dicho, 'respondio_donde_no_debia', todo);
+      // R5: lo que sale al final del mensaje: los botones («planes+equipo», «equipo»), «lista» (la lista de rubros), «cta» (el enlace a recepción) o «texto».
+      if (ex.botones !== undefined) {
+        const m0 = buenos[0];
+        const tipo0 = m0 ? tipoInter(m0.payload) : '';
+        const real = !m0 ? 'ninguno' : tipo0 === 'button' ? botonesDe(m0.payload).join('+') : tipo0 === 'list' ? 'lista' : tipo0 === 'cta_url' ? 'cta' : 'texto';
+        if (real !== [].concat(ex.botones).join('+')) falla(i + 1, dicho, 'botones_inesperados', `salió «${real}» y se esperaba «${[].concat(ex.botones).join('+')}»`);
+      }
+      if (ex.imagenPlanes === false && buenos.some((m) => objeto(objeto(m.payload).interactive).header !== undefined)) falla(i + 1, dicho, 'imagen_de_planes_repetida', todo);
+      if (ex.noRepite === true && buenos[0] && anterior && lib.chSimilitud(buenos[0].cuerpo, anterior) >= 0.75) falla(i + 1, dicho, 'repite_el_mensaje_anterior', buenos[0].cuerpo);
     }
     corrida.conversacion.push({ turno: i + 1, dicho, mensajes: alCliente.filter((m) => !m.esRespaldo).map((m) => m.cuerpo), origen: String(resumen.origen ?? ''), contexto: String(resumen.contexto ?? '') });
   }
@@ -957,7 +984,7 @@ export function medir(corridas) {
     turnosConModelo: modeloTurnos, llamadas: llamadas.length, reintentos: llamadas.filter((l) => l.nodo === 'Reintentar el modelo').length,
     llamadasPorCorrida: media(corridas.map((c) => c.llamadas.length)),
     // La calidad del MODELO real: de los turnos que le tocaron, cuántos salieron con SU texto y cuántos con el respaldo del código (y por qué causas se rechazó).
-    turnosConRespaldo: respaldos, tasaDeRespaldo: modeloTurnos ? respaldos / modeloTurnos : 0, causasDeRechazo: causas,
+    repeticiones: suma(corridas.map((c) => c.repeticiones || 0)), turnosConRespaldo: respaldos, tasaDeRespaldo: modeloTurnos ? respaldos / modeloTurnos : 0, causasDeRechazo: causas,
     jsonValido: { ok: llamadas.filter((l) => l.jsonValido).length, n: llamadas.length }, conforme: { ok: llamadas.filter((l) => l.conforme).length, n: llamadas.length },
     erroresDelServicio: llamadas.filter((l) => l.errorHttp).length,
     violaciones: suma(corridas.map((c) => c.violaciones.length)),
@@ -973,7 +1000,7 @@ export function medir(corridas) {
 // ------------------------------------------------------------------------------------------------------- casos
 const TIPOS_DE_TURNO = ['texto', 'fila', 'boton', 'audio', 'imagen', 'documento', 'ubicacion', 'sticker', 'rafaga'];
 const CAMPOS_SECO = ['mensaje', 'accion', 'rubro', 'necesidad', 'nombre', 'empresa', 'descarte'];
-const CLAVES_EXIGE = ['contiene', 'noContiene', 'contieneAlguna', 'termina', 'sinCifras', 'imagenPlanes', 'sinModelo', 'conModelo', 'cta', 'plantillas', 'ruta', 'origen', 'filas', 'modeloVe', 'sinMensajes'];
+const CLAVES_EXIGE = ['contiene', 'noContiene', 'contieneAlguna', 'termina', 'sinCifras', 'imagenPlanes', 'sinModelo', 'conModelo', 'cta', 'plantillas', 'ruta', 'origen', 'filas', 'modeloVe', 'sinMensajes', 'botones', 'noRepite'];
 /** Lee y valida `bateria-casos.json`: un caso mal escrito se rechaza con su id, nunca se corre a medias. */
 export function validarCasos(datos) {
   const casos = datos?.casos;
@@ -1010,8 +1037,8 @@ export function validarCasos(datos) {
     if (c.planilla !== undefined && (typeof c.planilla !== 'object' || c.planilla === null || Object.keys(c.planilla).some((k) => !['calificacion', 'contiene', 'noContiene'].includes(k)))) {
       throw new Error(`bateria-casos.json: ${c.id}: «planilla» solo admite calificacion, contiene y noContiene.`);
     }
-    if (c.ficha !== undefined && (typeof c.ficha !== 'object' || c.ficha === null || Object.keys(c.ficha).some((k) => !['rubro', 'nombre', 'empresa', 'necesidad'].includes(k)))) {
-      throw new Error(`bateria-casos.json: ${c.id}: «ficha» solo admite rubro, nombre, empresa y necesidad.`);
+    if (c.ficha !== undefined && (typeof c.ficha !== 'object' || c.ficha === null || Object.keys(c.ficha).some((k) => !['rubro', 'nombre', 'empresa', 'necesidad', 'planesMostrados', 'equipoAhora', 'nombrePedido', 'explicado', 'planesPendientes'].includes(k)))) {
+      throw new Error(`bateria-casos.json: ${c.id}: «ficha» solo admite rubro, nombre, empresa, necesidad, planesMostrados, equipoAhora, nombrePedido, explicado y planesPendientes.`);
     }
   }
   return casos;
@@ -1056,6 +1083,7 @@ function textoDelInforme(r) {
   const t = r.total;
   o.push('');
   o.push(`Modelo: ${t.turnosConModelo} turnos llegaron al modelo (${t.llamadas} llamadas, ${t.reintentos} reintentos) · respaldo del código en ${t.turnosConRespaldo} (${pct(t.turnosConRespaldo, t.turnosConModelo)})`);
+  o.push(`Mensajes del modelo que repetían el anterior (similitud >= 0,75): ${t.repeticiones}`);
   o.push(`Causas de rechazo del mensaje del modelo: ${Object.entries(t.causasDeRechazo).map(([k, v]) => `${k} ${v}`).join(', ') || 'ninguna'}`);
   o.push(`Longitud: ${t.longitud.palabrasMedias} palabras por mensaje en promedio (mediana ${t.longitud.mediana}, máximo ${t.longitud.maximo}) · tono: voseo ${t.tono.voseo}, usted ${t.tono.usted} (sobre ${t.tono.mensajes} mensajes)`);
   o.push(`Mensajes por turno: ${Math.round(t.mensajesPorTurno * 100) / 100} (${t.mensajes} mensajes en ${t.turnos} turnos) · plantillas de aviso: ${t.plantillas}`);
