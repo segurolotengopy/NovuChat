@@ -621,7 +621,7 @@ para todos, incluida la ruta de ingesta. En el hilo, una persona del negocio sol
 puede tocar tres campos de gestión interna:
 
 ```
-soloCampos(['etiquetas', 'atendidaPor', 'notaInterna'])
+soloCampos(['etiquetas', 'notaInterna', 'noContactar', 'noLeidos', 'sinLeer'])
 ```
 
 Los campos del registro —`telefono`, `ultimoMensaje`, `mensajesTotal`— quedan
@@ -780,7 +780,7 @@ otro comercio), 8 en *"Contactos del comercio"*.
 
 **Control.** `periodoContado` está en la lista blanca de campos que escribe
 **solo el principal de ingesta**, y **no** está entre los tres campos de gestión
-interna (`etiquetas`, `atendidaPor`, `notaInterna`) que puede tocar una persona
+interna (`etiquetas`, `notaInterna`, `noContactar` y la marca de leída `noLeidos`/`sinLeer`, solo hacia 0 / false; `atendidaPor` salió el 09/10/2026) que puede tocar una persona
 del negocio. Ni el admin ni el operador llegan. Y `/metricas` es de **solo
 lectura para todos**, incluido el propietario de NovuChat: la colección que
 sostiene la facturación no la puede escribir ninguna de las dos partes
