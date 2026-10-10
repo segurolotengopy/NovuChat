@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from './entorno-del-hijo.ts';
 import {
   MAX_PALABRAS_CONSULTA, MAX_PALABRAS_POR_MENSAJE, MAX_RESULTADOS_BUSQUEDA, MINIMO_DIGITOS, POR_VENCER_HORAS,
   PREFIJOS_PAIS_DEFECTO, VENTANA_HORAS, fragmento, mensajeContiene, normalizarTexto, palabraParaIndice, palabrasDe,
@@ -42,6 +43,12 @@ describe('constantes de producto', () => {
     expect(MAX_PALABRAS_CONSULTA).toBe(6);
     expect(MAX_RESULTADOS_BUSQUEDA).toBe(20);
     expect(PREFIJOS_PAIS_DEFECTO).toEqual(['591']);
+  });
+
+  it('PREFIJOS_PAIS_DEFECTO está congelado: nadie lo cambia desde fuera', () => {
+    expect(Object.isFrozen(PREFIJOS_PAIS_DEFECTO)).toBe(true);
+    expect(() => (PREFIJOS_PAIS_DEFECTO as string[]).push('999')).toThrow();
+    expect(Object.isFrozen(prefijosValidos(undefined))).toBe(false);   // la copia sí se puede modificar
   });
 });
 
@@ -72,19 +79,43 @@ describe('normalización: una sola regla para la pantalla, la ingesta y la búsq
     expect(raizDe('tres')).toBe('tre');          // límite conocido: no es un lematizador
   });
 
-  it('plural -es: solo con más de 5 letras; con menos, se quita solo la «s»', () => {
-    expect(raizDe('papeles')).toBe('papel');     // 7 letras: quita «es»
-    expect(raizDe('lunes')).toBe('lune');        // 5 letras: NO quita «es», quita «s»
-    expect(raizDe('mes')).toBe('mes');           // 3 letras: queda igual
-    expect(raizDe('cafes')).toBe('cafe');
-    expect(raizDe('doses')).toBe('dose');        // 5 letras
-    expect(raizDe('mujeres')).toBe('mujer');     // 7 letras
-    expect(raizDe('sabes')).toBe('sabe');
+  it('singular y plural se unen, también los que terminan en «e»', () => {
+    const pares: [string, string][] = [
+      ['alfajor', 'alfajores'], ['torta', 'tortas'], ['flor', 'flores'], ['papel', 'papeles'], ['cafe', 'cafes'],
+      ['saltena', 'saltenas'], ['chocolate', 'chocolates'], ['postre', 'postres'], ['tomate', 'tomates'],
+      ['cliente', 'clientes'], ['envase', 'envases'], ['pan', 'panes'], ['mujer', 'mujeres'],
+    ];
+    for (const [sing, plu] of pares) expect(raizDe(plu), `${sing}/${plu}`).toBe(raizDe(sing));
+    // Por las funciones públicas, con tildes y mayúsculas.
+    expect(palabrasDe('Café')).toEqual(palabrasDe('CAFÉS'));
+    expect(palabrasDe('Salteña')).toEqual(palabrasDe('salteñas'));
+  });
+
+  it('NEGATIVA: las palabras cortas quedan intactas (cada paso exige más de 3 letras)', () => {
+    for (const w of ['mes', 'pan', 'dos', 'mas', 'los', 'ese', 'que', 'sol']) expect(raizDe(w), w).toBe(w);
+    expect(raizDe('lunes')).toBe('lun');         // 5 letras: quita «s» y luego «e»
+    expect(raizDe('tres')).toBe('tre');          // «tre» ya tiene 3: la «e» no se quita
+    expect(raizDe('este')).toBe('est');
+  });
+
+  it('NEGATIVA: palabras distintas no se unen por la raíz', () => {
+    expect(raizDe('flor')).not.toBe(raizDe('flora'));
+    expect(raizDe('torta')).not.toBe(raizDe('tortilla'));
+    expect(raizDe('panes')).not.toBe(raizDe('pano'));
+  });
+
+  it('NFKD: la ligadura «ﬁ» y el ancho completo se indexan como texto normal', () => {
+    expect(normalizarTexto('ﬁesta')).toBe('fiesta');
+    expect(normalizarTexto('ＨＯＬＡ')).toBe('hola');
+    expect(palabrasDe('ﬁesta')).toEqual(['fiesta']);
+    expect(palabrasDe('ＨＯＬＡ ｔｏｒｔａｓ')).toEqual(['hola', 'torta']);
+    // Las tildes y la eñe siguen saliendo como antes.
+    expect(normalizarTexto('Ñandú ÁÉÍÓÚ')).toBe('nandu aeiou');
   });
 
   it('palabrasDe: normaliza, descarta lo de menos de 3 letras, no repite y respeta el tope de 30', () => {
     expect(palabrasDe('¡Hola! Quiero DOS salteñas y una torta de chocolate')).toEqual(
-      ['hola', 'quiero', 'dos', 'saltena', 'una', 'torta', 'chocolate']);
+      ['hola', 'quiero', 'dos', 'saltena', 'una', 'torta', 'chocolat']);
     expect(palabrasDe('torta Torta TORTAS')).toEqual(['torta']);
     expect(palabrasDe('a el de un')).toEqual([]);
     const largo = Array.from({ length: 80 }, (_, i) => `palabra${String.fromCharCode(97 + (i % 26))}${String.fromCharCode(97 + Math.floor(i / 26))}`).join(' ');
@@ -93,8 +124,25 @@ describe('normalización: una sola regla para la pantalla, la ingesta y la búsq
     expect(palabrasDe(undefined)).toEqual([]);
   });
 
+  it('NEGATIVA: un tope que no es válido (0, negativo, NaN, null, menos de 1) no indexa nada', () => {
+    for (const max of [0, -1, Number.NaN, null, 0.5]) {
+      expect(palabrasDe('hola quiero tortas', max as unknown as number), String(max)).toEqual([]);
+    }
+    expect(palabrasDe('hola quiero tortas', 1)).toEqual(['hola']);
+    expect(palabrasDe('hola quiero tortas', 2.9)).toEqual(['hola', 'quiero']);
+  });
+
+  it('CORPUS FIJO: la regla completa congelada desde H1-6 (cambiarla exige relleno de mensajes)', () => {
+    const texto = 'Pedido 1234: ¡Quiero DOS Salteñas, tres flores y CAFÉS! 🎉 Los chocolates, un postre, tomates; '
+      + 'clientes: envases y panes. Mamá, ñandú 😀 abc FLORES';
+    expect(palabrasDe(texto)).toEqual([
+      'pedido', '1234', 'quiero', 'dos', 'saltena', 'tre', 'flor', 'caf', 'los', 'chocolat', 'postr', 'tomat',
+      'client', 'envas', 'pan', 'mama', 'nandu', 'abc',
+    ]);
+  });
+
   it('tope de 30: con 31 palabras distintas queda la trigésima y no la 31', () => {
-    const treinta = Array.from({ length: 31 }, (_, i) => `voz${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}`);
+    const treinta = Array.from({ length: 31 }, (_, i) => `voz${String(i).padStart(2, '0')}`);
     const r = palabrasDe(treinta.join(' '));
     expect(r.length).toBe(MAX_PALABRAS_POR_MENSAJE);
     expect(r[29]).toBe(treinta[29]);
@@ -153,10 +201,30 @@ describe('hallar una palabra y llegar al mensaje', () => {
     const texto = 'Buenas tardes, quería preguntar si para el cumpleaños de mi hija tienen alfajores de maicena disponibles este sábado';
     const f = fragmento(texto, ['alfajor'], 60);
     expect(f.toLowerCase()).toContain('alfajores');
-    expect(f.length).toBeLessThanOrEqual(62);
+    expect(f.length).toBeLessThanOrEqual(60);
     expect(fragmento('corto', ['x'])).toBe('corto');
-    expect(fragmento(texto, ['inexistente'], 20)).toBe(texto.slice(0, 20) + '…');
+    expect(fragmento(texto, ['inexistente'], 20)).toBe(texto.slice(0, 19) + '…');
     expect(fragmento('  mucho    espacio  ', [])).toBe('mucho espacio');
+  });
+
+  it('NEGATIVA: el fragmento nunca pasa de `ancho` caracteres, con «…» en un extremo, en los dos o en ninguno', () => {
+    const texto = 'uno dos tres cuatro cinco seis siete ocho nueve diez once doce trece catorce quince dieciseis';
+    for (const ancho of [3, 4, 10, 20, 33, 60, texto.length - 1, texto.length]) {
+      for (const buscada of ['uno', 'siete', 'quince', 'dieciseis', 'inexistente']) {
+        const f = fragmento(texto, [buscada], ancho);
+        expect(f.length, `${buscada}/${ancho}`).toBeLessThanOrEqual(ancho);
+      }
+    }
+    const medio = fragmento(texto, ['siete'], 20);
+    expect(medio.startsWith('…') && medio.endsWith('…') && medio.includes('siete')).toBe(true);
+    expect(fragmento(texto, ['uno'], 20).startsWith('…')).toBe(false);
+  });
+
+  it('NEGATIVA: un `texto` que no es cadena da vacío, y un `ancho` inválido también', () => {
+    for (const x of [undefined, null, 42, {}, ['a']]) expect(fragmento(x as unknown as string, ['a'])).toBe('');
+    expect(fragmento('hola mundo', ['hola'], 0)).toBe('');
+    expect(fragmento('hola mundo', ['hola'], Number.NaN)).toBe('');
+    expect(fragmento('hola mundo largo', ['hola'], 2).length).toBeLessThanOrEqual(2);
   });
 });
 
@@ -185,6 +253,13 @@ describe('prefijosValidos', () => {
     expect(prefijosValidos(['+591'])).toEqual(['591']);
     expect(prefijosValidos([591])).toEqual(['591']);
     expect(prefijosValidos(['54', null])).toEqual(['591']);
+  });
+
+  it('NEGATIVA: una lista con huecos no pasa (new Array(3), [ , «54»])', () => {
+    expect(prefijosValidos(new Array(3))).toEqual(['591']);
+    // eslint-disable-next-line no-sparse-arrays
+    expect(prefijosValidos([, '54'])).toEqual(['591']);
+    expect(prefijosValidos(['54', , '1'])).toEqual(['591']);
   });
 
   it('NEGATIVA: lo que no es lista da el prefijo por defecto', () => {
@@ -236,7 +311,7 @@ describe('el archivo es de Core y de nadie más', () => {
     let r;
     try {
       r = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', mjs], {
-        encoding: 'utf8', env: { PATH: process.env.PATH ?? '' }, timeout: 30_000,
+        encoding: 'utf8', env: entornoDelEmulador(process.env['FIRESTORE_EMULATOR_HOST']), timeout: 30_000,
       });
     } finally {
       rmSync(carpeta, { recursive: true, force: true });

@@ -10,9 +10,18 @@
  * deja de encontrar lo que ya está guardado y nadie se entera. Por eso vive en
  * Core (lo que todo tenant corre igual) y en un solo archivo.
  *
- * Origen: las funciones de normalización se copiaron LITERALES del prototipo
- * aprobado (`admin/web/src/central/lib/conversaciones.ts`, 09/10/2026). Se
- * agregaron las constantes de búsqueda y `prefijosValidos`.
+ * Origen: las funciones de normalización salen del prototipo aprobado
+ * (`admin/web/src/central/lib/conversaciones.ts`, 09/10/2026). Se agregaron las
+ * constantes de búsqueda y `prefijosValidos`, y se cambiaron A PROPÓSITO dos
+ * cosas respecto del prototipo: `raizDe` (también quita la «e» final, para que
+ * «chocolate» y «chocolates» sean la misma palabra) y `normalizarTexto` (NFKD
+ * en lugar de NFD, para que «ﬁesta» indexe «fiesta» y el ancho completo no se
+ * pierda).
+ *
+ * REGLA CONGELADA DESDE H1-6: desde que la ingesta guarda `palabras[]`, cambiar
+ * `raizDe`, `normalizarTexto` o `palabrasDe` deja sin hallar todo lo ya
+ * indexado. Cambiarla exige rellenar los mensajes guardados. La prueba de
+ * corpus fijo de `conversacion-normalizacion.test.ts` la congela.
  *
  * SIN `import`, SIN `enum`, SIN `namespace`, A PROPÓSITO: los scripts `.mjs`
  * (relleno, siembra) lo cargan con Node y `--experimental-strip-types`, que solo
@@ -31,14 +40,14 @@ export const VENTANA_HORAS = 24;
 export const POR_VENCER_HORAS = 6;
 /** Mínimo de dígitos para buscar por teléfono: con menos, casi todo coincide con casi todo. */
 export const MINIMO_DIGITOS = 4;
-/** Tope de palabras indexadas por mensaje (decisión D4 / D9). */
+/** Tope de palabras indexadas por mensaje (decisión D9 del plan H1). */
 export const MAX_PALABRAS_POR_MENSAJE = 30;
-/** Tope de palabras de una consulta del buscador. */
+/** Tope de palabras de una consulta del buscador. El nombre del contacto usa `palabrasDe(nombre, 6)` (decisión D4). */
 export const MAX_PALABRAS_CONSULTA = 6;
 /** Tope de resultados de una búsqueda por texto. */
 export const MAX_RESULTADOS_BUSQUEDA = 20;
 /** Prefijo de país por defecto. En el servidor sale de `prefijosPermitidos` del tenant. */
-export const PREFIJOS_PAIS_DEFECTO: readonly string[] = ['591'];
+export const PREFIJOS_PAIS_DEFECTO: readonly string[] = Object.freeze(['591']);
 
 // ── Normalización ────────────────────────────────────────────────────────────
 
@@ -46,29 +55,39 @@ export function soloDigitos(s: unknown): string {
   return typeof s === 'string' ? s.replace(/\D+/g, '') : '';
 }
 
-/** Minúsculas y sin tildes ni eñes: «Salteñas» y «saltenas» son la misma palabra. */
+/**
+ * Minúsculas y sin tildes ni eñes: «Salteñas» y «saltenas» son la misma palabra.
+ * NFKD (y no NFD) también descompone las ligaduras y el ancho completo:
+ * «ﬁesta» pasa a «fiesta» y «ＡＢＣ» a «abc». CONGELADA desde H1-6.
+ */
 export function normalizarTexto(s: unknown): string {
   if (typeof s !== 'string') return '';
-  return s.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase();
+  return s.normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
 }
 
 /**
  * La raíz de una palabra, con la regla más barata que sirve al español: quitar
- * la «s» o la «es» del plural. Sin esto, quien escribe «alfajor» no encuentra
- * «alfajores» y la búsqueda parece rota. No es un lematizador: es lo mínimo
- * que se puede repetir idéntico en el servidor.
+ * la «s» final y luego la «e» final, cada paso solo si la palabra queda con
+ * más de 3 letras (no se come las cortas: «mes», «pan», «dos», «mas»). Con eso
+ * «alfajor» y «alfajores», «flor» y «flores», «chocolate» y «chocolates», «pan»
+ * y «panes» son la misma palabra, y la búsqueda no parece rota. No es un
+ * lematizador: es lo mínimo que se puede repetir idéntico en el servidor.
+ * CONGELADA desde H1-6: cambiarla exige rellenar los mensajes ya indexados.
  */
 export function raizDe(palabra: string): string {
-  if (palabra.length > 5 && palabra.endsWith('es')) return palabra.slice(0, -2);
-  if (palabra.length > 3 && palabra.endsWith('s')) return palabra.slice(0, -1);
-  return palabra;
+  let r = palabra;
+  if (r.length > 3 && r.endsWith('s')) r = r.slice(0, -1);
+  if (r.length > 3 && r.endsWith('e')) r = r.slice(0, -1);
+  return r;
 }
 
 /**
  * Las palabras a indexar de un texto: normalizadas, de 3 letras o más, con su
- * raíz, sin repetir y como mucho 30 (decisión D4). El orden es el de aparición.
+ * raíz, sin repetir y como mucho 30 (decisión D9). El orden es el de aparición.
  */
-export function palabrasDe(texto: unknown, max = MAX_PALABRAS_POR_MENSAJE): string[] {
+export function palabrasDe(texto: unknown, max: number = MAX_PALABRAS_POR_MENSAJE): string[] {
+  if (!(max >= 1)) return []; // 0, negativos, NaN, null: nada que indexar
+  const tope = Math.floor(max);
   const salida: string[] = [];
   const vistas = new Set<string>();
   for (const t of normalizarTexto(texto).split(/[^a-z0-9]+/)) {
@@ -77,7 +96,7 @@ export function palabrasDe(texto: unknown, max = MAX_PALABRAS_POR_MENSAJE): stri
     if (vistas.has(r)) continue;
     vistas.add(r);
     salida.push(r);
-    if (salida.length >= max) break;
+    if (salida.length >= tope) break;
   }
   return salida;
 }
@@ -113,19 +132,30 @@ export function palabraParaIndice(palabras: readonly string[]): string | null {
   return mejor;
 }
 
-/** Un fragmento del texto alrededor de la primera palabra encontrada, para mostrar en el resultado. */
+/**
+ * Un fragmento del texto alrededor de la primera palabra encontrada, para
+ * mostrar en el resultado. Nunca devuelve más de `ancho` caracteres, contando
+ * los «…» de los extremos. La posición se busca en el texto normalizado, que
+ * con NFKD puede diferir en uno o dos caracteres del original: solo mueve un
+ * poco la ventana, nunca el límite de ancho.
+ */
 export function fragmento(texto: string, buscadas: readonly string[], ancho = 70): string {
+  if (typeof texto !== 'string' || !(ancho >= 1)) return '';
   const limpio = texto.replace(/\s+/g, ' ').trim();
   if (limpio.length <= ancho) return limpio;
+  if (ancho < 3) return limpio.slice(0, Math.floor(ancho));
   const plano = normalizarTexto(limpio);
   let pos = -1;
   for (const p of buscadas) {
     const i = plano.indexOf(p);
     if (i >= 0 && (pos < 0 || i < pos)) pos = i;
   }
-  if (pos < 0) return limpio.slice(0, ancho) + '…';
+  if (pos < 0) return limpio.slice(0, ancho - 1) + '…';
   const desde = Math.max(0, Math.min(pos - Math.floor(ancho / 3), limpio.length - ancho));
-  return (desde > 0 ? '…' : '') + limpio.slice(desde, desde + ancho) + (desde + ancho < limpio.length ? '…' : '');
+  const pre = desde > 0 ? 1 : 0;
+  let hasta = Math.min(limpio.length, desde + ancho - pre);
+  if (hasta < limpio.length) hasta -= 1; // el «…» final ocupa un lugar
+  return (pre ? '…' : '') + limpio.slice(desde, hasta) + (hasta < limpio.length ? '…' : '');
 }
 
 // ── Prefijos de país del tenant ──────────────────────────────────────────────
@@ -138,7 +168,7 @@ export function fragmento(texto: string, buscadas: readonly string[], ancho = 70
  * pudo escribir no se interpreta, se descarta.
  */
 export function prefijosValidos(v: unknown): string[] {
-  if (Array.isArray(v) && v.length >= 1 && v.length <= 10 && v.every((p) => typeof p === 'string' && /^[0-9]{1,4}$/.test(p))) {
+  if (Array.isArray(v) && v.length >= 1 && v.length <= 10 && [...v].every((p) => typeof p === 'string' && /^[0-9]{1,4}$/.test(p))) {
     return v.slice() as string[];
   }
   return PREFIJOS_PAIS_DEFECTO.slice();
