@@ -709,8 +709,10 @@ describe('revisión del PR #464: cierre, prompt y datos', () => {
   });
   it('hotfix 09/10: la cifra de CALENDARIO («los 7 días de la semana», «7 días», «siete días», «todos los días», «fines de semana», «feriados») no se rechaza; ni de consumo ni de precio', () => {
     const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', { cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
-    for (const x of ['Atiende los 7 días de la semana, incluidos fines de semana y feriados.', 'Funciona 7 días a la semana.', 'Atiende siete días, de noche y todos los días.', 'Responde las 24 horas, 24/7.']) expect(marco(x), x).toBe('');
-    for (const x of ['Tiene 7 días de prueba.', 'Tienes 7 días gratis.', 'Atiende 7 clientes por día.', 'Incluye 100 conversaciones.', 'Cuesta sesenta y cinco dólares.']) expect(marco(x), x).not.toBe('');
+    for (const x of ['Atiende los 7 días de la semana, incluidos fines de semana y feriados.', 'Funciona 7 días a la semana.', 'Atiende siete días a la semana, de noche y todos los días.', 'Responde las 24 horas, 24/7.']) expect(marco(x), x).toBe('');
+    for (const x of ['Tiene 7 días de prueba.', 'Tienes 7 días gratis.', 'Atiende 7 clientes por día.', 'Incluye 100 conversaciones.', 'Cuesta sesenta y cinco dólares.',
+      // un «7 días» suelto es un plazo, una prueba o una garantía (revisión de seguridad)
+      'Durante 7 días te lo dejamos usar.', 'Tienes 7 días para devolverlo y te reembolsamos.', 'Lo dejamos listo en 7 días.', 'Cuesta 7 días de salario.', 'Durante siete días te lo dejamos usar.', 'Prueba de siete días, sin compromiso.', 'Pruébalo siete días y decide.', 'Atiende siete días.', 'Lo dejamos listo en tres semanas.']) expect(marco(x), x).not.toBe('');
     expect(marco('La instalación vale 65.', { precios: true })).toBe('');
     expect(marco('La instalación vale 80.', { precios: true })).toBe('cifra');
   });
@@ -1211,7 +1213,7 @@ describe('inyectar: la línea marcadora se reemplaza exactamente una vez', () =>
   const flujo = (...codigos: string[]): J => ({ nodes: codigos.map((c, i) => ({ name: 'N' + i, parameters: { jsCode: c } })) });
   it('una vez: se reemplaza por el literal; 0 o 2 veces es un error', () => {
     const fl = flujo('// x\nconst CH_DATOS = null; // @@datos\nreturn 1;');
-    CONSTRUIR.inyectar(fl, CONSTRUIR.MARCA_DATOS, 'CH_DATOS', { a: 'b c' });
+    CONSTRUIR.inyectar(fl, CONSTRUIR.MARCA_DATOS, 'CH_DATOS', { a: 'b\u2028c' });
     expect(fl['nodes'][0].parameters.jsCode).toContain('const CH_DATOS = {"a":"b\\u2028c"};');
     expect(() => CONSTRUIR.inyectar(flujo('return 1;'), CONSTRUIR.MARCA_DATOS, 'CH_DATOS', {})).toThrow(/aparece 0 veces/);
     expect(() => CONSTRUIR.inyectar(flujo(CONSTRUIR.MARCA_DATOS, CONSTRUIR.MARCA_DATOS), CONSTRUIR.MARCA_DATOS, 'CH_DATOS', {})).toThrow(/aparece 2 veces/);
@@ -1448,7 +1450,8 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
     for (const rubro of ['belleza', 'salud', 'educacion', 'captacion']) expect(valida(inventado, { rubroActual: rubro }), rubro).toBe('funcion_inventada');
     expect(valida(inventado, { rubroId: 'belleza', contexto: 'rubro' })).toBe('funcion_inventada');
     for (const rubro of ['gastronomia', 'retail', 'otro']) expect(valida(inventado, { rubroActual: rubro }), rubro).not.toBe('funcion_inventada');
-    expect(valida(inventado, { rubroActual: 'belleza', contexto: 'abierta' })).not.toBe('funcion_inventada');
+    expect(valida(inventado, { rubroActual: 'belleza', contexto: 'abierta' })).toBe('funcion_inventada'); // (adelanto y pago total no están documentados en ningún rubro)
+    expect(valida('NovuChat atiende tu WhatsApp en segundos, agenda citas y cobra por QR sin que nadie intervenga. ' + CIERRE, { rubroActual: 'belleza', contexto: 'abierta' })).not.toBe('funcion_inventada');
     for (const x of ['Coordina el anticipo de cada cita para que no te dejen plantada. ', 'Registra la seña de tus clientes por WhatsApp. ', 'Hace el cobro de cada servicio al terminar. ']) {
       expect(valida('NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces para tus especialistas en horarios reales. ' + x + CIERRE, { rubroActual: 'belleza' }), x).toBe('funcion_inventada');
     }
@@ -1678,5 +1681,90 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
     expect(ok((d) => { d.datos.empresa.puntosClave.push({ texto: 'x', palabras: 'sucursales' }); })).toMatch(/no cubre este punto clave/);
     expect(ok((d) => { d.datos.respaldos.noDocumentado = 'Nuestro equipo te llamará mañana para evaluar tu caso.'; })).toMatch(/noDocumentado/);
     expect(ok((d) => { d.datos.complementoPlanes.partes[0] = 'Los planes son gratis el primer mes.'; })).toMatch(/complementoPlanes\.partes\[0\]/);
+  });
+});
+
+// ================================================================================================
+// Ronda de seguridad sobre los ajustes del 09/10 (PR #476): cada caso FALLA si se revierte la corrección.
+describe('ronda de seguridad del 09/10: terceros, plazos, tope de avisos, perfiles, lista tras el traspaso y R1 en el pitch', () => {
+  const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
+  const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', v(extra));
+  const fichaCon = (extra: J = {}): J => ({ ...fichaBase(), ultimoMs: AHORA, ...extra });
+
+  it('ALTO: «quien te llama» con el EQUIPO de sujeto es una promesa (la preposición «a» es obligatoria para excusar a un tercero); «responde a quien te escribe de noche» sigue pasando', () => {
+    for (const x of ['Alguien de nuestro equipo es quien te llama mañana.', 'Nuestro equipo es quien te contacta hoy mismo.', 'Un asesor será quien te escribe en unos minutos.', 'Hablarás con quien te responde.', 'Es el equipo con quien te escribe.',
+      'Nuestro equipo se va a contactar contigo hoy mismo.', 'Te devolveremos la llamada pronto.']) expect(marco(x), x).toBe('promesa');
+    for (const x of ['Tu asistente responde a quien te escribe de noche.', 'Cuando alguien te escribe de noche, tu asistente le responde al instante.', 'Si un cliente te escribe fuera de horario, NovuChat le responde.']) expect(marco(x), x).toBe('');
+  });
+
+  it('MEDIO: el «7 días» suelto (plazo, prueba, garantía) se rechaza; solo la forma completa «los 7 días de la semana» pasa', () => {
+    for (const x of ['Durante 7 días te lo dejamos usar.', 'Tienes 7 días para devolverlo y te reembolsamos.', 'Lo dejamos listo en 7 días.', 'Cuesta 7 días de salario.', 'Prueba de siete días, sin compromiso.', 'Pruébalo siete días y decide.']) expect(marco(x), x).not.toBe('');
+    for (const x of ['Atiende los 7 días de la semana.', 'Atiende siete días a la semana.', 'Responde todos los días, 24/7, incluso en feriados y fines de semana.']) expect(marco(x), x).toBe('');
+  });
+
+  it('MEDIO costo: la ficha recuerda las empresas avisadas (a lo más 3) y cuántos avisos van; se reinicia al vencer la ventana de 24 h; saneo estricto', () => {
+    const sucia = fichaCon({ empresasAvisadas: ['Tienda A', 'tienda b', 5, '', 'x'.repeat(200), 'Tienda C', 'Tienda D'], avisosVentana: 99, avisado: true });
+    const s = f('chFichaVigente')(sucia, AHORA);
+    expect(s.empresasAvisadas.length).toBeLessThanOrEqual(3);
+    expect(s.empresasAvisadas.every((x: string) => x.length <= 60 && x === x.toLowerCase())).toBe(true);
+    expect(s.avisosVentana).toBe(0); // fuera de rango: no se acepta
+    expect(f('chFichaVigente')(fichaCon({ avisosVentana: 2 }), AHORA).avisosVentana).toBe(2);
+    expect(K('CH_TOPE_AVISOS')).toBe(3);
+    const vencida = f('chFichaVigente')(fichaCon({ ultimoMs: AHORA - 25 * H, empresasAvisadas: ['tienda a'], avisosVentana: 3, avisado: true }), AHORA);
+    expect(vencida.empresasAvisadas).toEqual([]);
+    expect(vencida.avisosVentana).toBe(0);
+    expect(vencida.avisado).toBe(false);
+    // la ficha vieja con `empresaAvisada` se migra al conjunto
+    expect(f('chFichaVigente')(fichaCon({ empresaAvisada: 'Salón Rosa' }), AHORA).empresasAvisadas).toEqual(['salon rosa']);
+  });
+
+  it('BAJO (a): el relleno de Hangul y Braille en blanco no es un nombre: «\u3164\u3164» queda vacío y «Ana\u3164» queda «Ana»', () => {
+    const nom = f('chNombreDelPerfil');
+    for (const x of ['\u3164\u3164', '\uFFA0', '\u2800\u2800', '\u180E', ' \u3164 ']) expect(nom(x), JSON.stringify(x)).toBe('');
+    expect(nom('Ana\u3164')).toBe('Ana');
+    expect(nom('\u2800Ana')).toBe('Ana');
+    expect(nom('Ana\u3164Pérez')).toBe(''); // en medio del nombre invalida
+    expect(f('chLinea')('Ana\u3164\u3164 Pérez', 60)).toBe('Ana Pérez');
+  });
+  it('BAJO (b): palabras de rol o de pago invalidan un NOMBRE DE PERFIL; los nombres reales siguen pasando', () => {
+    const nom = f('chNombreDelPerfil');
+    for (const x of ['Ventas Gratis', 'Asesor Comercial', 'Recepción NovuChat', 'Pago Acreditado', 'Banco Unión', 'Soporte', 'Admin', 'Oferta Hoy', 'Asesora Rosa']) expect(nom(x), x).toBe('');
+    for (const x of ['María J. López', 'Andrés Alberdi B.', 'Jean-Pierre', "O'Brien", 'Ventura Ríos']) expect(nom(x), x).not.toBe('');
+  });
+
+  it('BAJO (c): tras el traspaso ningún mensaje sin botón ofrece «hablar con alguien de nuestro equipo» ni «ver los planes»: sinDato, noDocumentado, complemento, empresa, identidad, planes y fijos', () => {
+    const ofrece = /hablar con alguien de nuestro equipo|hablar con el equipo|ver (?:los |nuestros )?planes|toca el bot/i;
+    const rd = NOVUCHAT['respaldos'];
+    const textos: Record<string, string> = {
+      sinDato: f('chSustituir')(rd.sinDato, CFG), noDocumentado: f('chSustituir')(rd.noDocumentado, CFG), empresa: f('chSustituir')(rd.empresa, CFG), identidad: f('chSustituir')(rd.identidad, CFG),
+      complemento: f('chSustituir')(rd.complemento, CFG), cortesia: f('chSustituir')(rd.cortesia, CFG), datosAmbos: f('chSustituir')(rd.datosAmbos, CFG),
+      disponibilidad: f('chRespuestaFija')('disponibilidad', CFG, true), consumo: f('chRespuestaFija')('consumo', CFG, true), costoMeta: f('chRespuestaFija')('costoMeta', CFG, true),
+    };
+    for (const [k, t] of Object.entries(textos)) {
+      const m = f('chCliente')(t, CFG, 'x', { planes: true, lista: true });
+      expect(m.payload.interactive.type, k).toBe('list');
+      expect(m.texto, k).not.toMatch(ofrece);
+      expect(m.texto, k).toMatch(/Si tienes otro negocio, cuéntame de qué rubro es/);
+    }
+    // lo que se respondió queda; el emoji del saludo no se pierde ni queda solo
+    expect(f('chCliente')(rd.cortesia, CFG, 'x', { planes: true, lista: true }).texto).toMatch(/^¡Con gusto! 😊\n\n/);
+    expect(f('chCliente')(rd.identidad, CFG, 'x', { planes: true, lista: true }).texto).toMatch(/inteligencia artificial/);
+    expect(f('chMensajeComplemento')(CFG, { vez: 0, lista: true }).texto).not.toMatch(ofrece);
+    expect(f('chMensajePlanes')(CFG, { lista: true }).texto).not.toMatch(ofrece);
+    expect(f('chMensajePlanes')(CFG, { lista: true }).texto).toMatch(/Setup estándar USD 65/);
+    // y con botones (antes del traspaso) el cierre sigue
+    expect(f('chCliente')(rd.sinDato, CFG, 'x', { planes: true }).texto).toMatch(/hablar con alguien de nuestro equipo\? 🤝$/);
+  });
+
+  it('BAJO (d): adelantos, anticipos, seña y pago total no se permiten ni en el pitch ni en la empresa, en ningún rubro; el cobro por QR documentado sí', () => {
+    const propios = 'NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces para tus especialistas en horarios reales. ';
+    for (const contexto of ['abierta', 'empresa']) {
+      for (const rubro of ['belleza', 'gastronomia', '']) {
+        for (const x of ['Coordina el adelanto de cada cita. ', 'Registra la seña de tus clientes. ', 'Maneja el anticipo y el pago total. ']) {
+          expect(f('chValidarMensaje')(propios + x + CIERRE_RUBRO, v({ contexto, rubroActual: rubro })), `${contexto} ${rubro} ${x}`).toBe('funcion_inventada');
+        }
+      }
+    }
+    expect(f('chValidarMensaje')('NovuChat es un asistente de WhatsApp con inteligencia artificial para negocios de Bolivia: atiende a tus clientes las 24 horas, agenda citas, toma pedidos y cobra por QR, y tú lo controlas desde tu celular. ' + CIERRE_RUBRO, v({ contexto: 'empresa', rubroActual: 'belleza' }))).toBe('');
   });
 });

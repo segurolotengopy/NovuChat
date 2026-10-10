@@ -34,5 +34,5 @@ descuento, lista), «Confirmar envío» (restaura la ficha si Meta rechaza), hoj
 
 ## Mensajes por conversación
 
-Un mensaje por turno del cliente (una ráfaga de clics es UN turno) más la plantilla a recepción UNA vez por ventana de 24 h. **0 agregados y 0 quitados** respecto de Captación mínima por turno, salvo (ajustes del 09/10): **+1 mensaje** en el camino «Ver planes» como primera respuesta (pide el nombre y el negocio antes de los planes; el camino de texto libre lo pide en el mismo mensaje, 0 agregados) y **+1 plantilla** a recepción cuando un segundo traspaso trae una empresa distinta;
+Un mensaje por turno del cliente (una ráfaga de clics es UN turno) más la plantilla a recepción UNA vez por ventana de 24 h. **0 agregados y 0 quitados** respecto de Captación mínima por turno, salvo (ajustes del 09/10): **+1 mensaje** en el camino «Ver planes» como primera respuesta (pide el nombre y el negocio antes de los planes; el camino de texto libre lo pide en el mismo mensaje, 0 agregados) y **+1 plantilla** a recepción cuando un segundo traspaso trae una empresa distinta, con tope de **3 plantillas por teléfono y por ventana de 24 h**;
 las llamadas al modelo son 0 o 1 por turno (2 si una guardia rechaza el mensaje). Diferencia de la cadena común: ante el rechazo de la plantilla de aviso, envía además el texto de respaldo a recepción.

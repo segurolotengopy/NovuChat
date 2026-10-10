@@ -2147,4 +2147,40 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     expect(t2.aMi[0]!.cuerpo).toMatch(/Ese dato no lo tengo a la mano/);
     expect(t2.aMi[0]!.cuerpo).not.toMatch(/No estoy seguro de haberte entendido/);
   });
+  it('MEDIO costo: un cliente que cambia de empresa en cada mensaje genera como máximo 3 plantillas a recepción por ventana (10 empresas distintas; A,B,A,B)', () => {
+    const correr = (empresas: string[]): number => {
+      const w = crear();
+      const j = jugar(w, MAMA, { perfil: 'Ana' });
+      j.texto('Hola');
+      w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+      j.lista('rubro:belleza');
+      for (const e of empresas) {
+        w.modelo.con = dice('¡Gracias! 😊', { nombre: 'Ana Pérez', empresa: e });
+        j.texto(`Soy Ana Pérez, de ${e}`);
+        const t = j.texto('quiero hablar con el equipo');
+        expect(tipoInter(t.aMi[0]!), e).toBe('cta_url'); // el botón siempre se reenvía
+      }
+      return plantillasTotales(w);
+    };
+    const letras = ['Tienda Uno', 'Tienda Dos', 'Tienda Tres', 'Tienda Cuatro', 'Tienda Cinco', 'Tienda Seis', 'Tienda Siete', 'Tienda Ocho', 'Tienda Nueve', 'Tienda Diez'];
+    expect(correr(letras)).toBe(3); // el primero + 2 empresas distintas; el resto solo reenvía el botón
+    expect(correr(['Tienda Uno', 'Tienda Dos', 'Tienda Uno', 'Tienda Dos', 'Tienda Uno'])).toBe(2);
+    expect(correr(['Tienda Uno', 'Tienda Uno', 'Tienda Uno'])).toBe(1);
+    // la ficha guarda a lo más 3 empresas avisadas y el contador
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ana' });
+    j.texto('Hola');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j.lista('rubro:belleza');
+    for (const e of letras.slice(0, 5)) { w.modelo.con = dice('¡Gracias! 😊', { nombre: 'Ana Pérez', empresa: e }); j.texto(`Soy Ana Pérez, de ${e}`); j.texto('quiero hablar con el equipo'); }
+    expect((fichaDe(w, MAMA)!['empresasAvisadas'] as string[]).length).toBe(3);
+    expect(fichaDe(w, MAMA)!['avisosVentana']).toBe(3);
+  });
+  it('BAJO: el perfil «Ventas Gratis» no llega a la hoja ni al aviso; «Andrés Alberdi B.» sí', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ventas Gratis', sinPropiedades: true });
+    j.texto('Hola');
+    expect(filaDe(w, MAMA)![COL.nombre]).toBe('');
+    expect(JSON.stringify(j.boton('equipo').plantillas[0]!.payload)).not.toMatch(/Ventas Gratis/);
+  });
 });

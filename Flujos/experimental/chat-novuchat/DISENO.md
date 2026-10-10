@@ -68,7 +68,7 @@ debajo de los envíos y la hoja. No hay ciclos: ningún nodo lee por nombre algo
 
 ## Costo por conversación (base comercial §1)
 
-**Un mensaje por turno del cliente** (más la plantilla a recepción, una vez por ventana de 24 h, cuando pide al equipo; **+1 plantilla** si en un segundo traspaso la empresa es distinta; **+1 mensaje** solo en el camino «Ver planes» como primera respuesta, que pide el nombre antes de los planes). Respecto de Captación mínima: 0 mensajes agregados; la ráfaga de clics
+**Un mensaje por turno del cliente** (más la plantilla a recepción, una vez por ventana de 24 h, cuando pide al equipo; **+1 plantilla** por cada empresa DISTINTA en un segundo traspaso, con TOPE: como máximo **3 plantillas a recepción por teléfono y por ventana de 24 h** (la primera + hasta 2 empresas distintas; `empresasAvisadas` ≤ 3 y `avisosVentana` ≤ 3 en la ficha, que se reinician al vencer la ventana). Pasado el tope, el traspaso solo reenvía el botón; **+1 mensaje** solo en el camino «Ver planes» como primera respuesta, que pide el nombre antes de los planes). Respecto de Captación mínima: 0 mensajes agregados; la ráfaga de clics
 baja de N respuestas a UNA. **Llamadas al modelo: 0 o 1 por turno** (2 si una guardia rechaza el mensaje): en el caso medio, lista (0) + rubro (1) + «Y?» (1) + planes (0) + equipo (0) + datos (1).
 
 ## Riesgos y lo que no se hizo

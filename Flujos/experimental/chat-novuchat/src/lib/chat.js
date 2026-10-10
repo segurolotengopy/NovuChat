@@ -482,7 +482,7 @@ function chSistemaAjeno(t, permitidos, estricto) {
 // El nombre del negocio como se muestra de vuelta (§14). Ya pasó `chNombreDeEmpresa`, pero lo que se muestra es OTRA cadena (sin marcas
 // de formato, sin caracteres invisibles, en NFKC), así que se vuelve a validar: sin enlace ni teléfono, y sin que el eco ponga en boca
 // del negocio una promesa, un monto, una oferta o una acreditación. Si no pasa, '' (el mensaje dice «Quedó anotado.»; la ficha conserva el nombre).
-const CH_INVISIBLES = /[\u00AD\u061C\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
+const CH_INVISIBLES = /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2069\u034F\u115F\u1160\u17B4\u17B5\u2800\u3164\uFEFF\uFFA0]/g;
 // Una variable de plantilla no admite saltos de línea, tabuladores ni más de cuatro espacios, y no puede ir vacía:
 // Meta rechaza el envío entero.
 function chVariable(v, max) {
@@ -563,6 +563,7 @@ const CH_TOPE_IDS = 5;                       // ids de Meta que se recuerdan por
 const CH_TOPE_HISTORIAL = 8;                 // entradas del historial (cliente y asistente) que ve el modelo
 const CH_TOPE_TEXTO = 300;                   // caracteres por entrada del historial
 const CH_TOPE_EVENTO = 600;                  // caracteres de un evento del cliente
+const CH_TOPE_AVISOS = 3;                    // plantillas a recepción por ventana de 24 h y por teléfono: el primero + hasta 2 empresas distintas
 const CH_TOPE_COLA = 6;                      // eventos pendientes de responder, a lo más
 const CH_ESPERA_SEG = 2.5;                   // la espera de la ráfaga (coalescencia de clics)
 const CH_MAX_MENSAJE = 1000;                 // Meta admite 1.024 en el cuerpo de un mensaje interactivo
@@ -666,7 +667,7 @@ function chFichaBase() {
     hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false, interactuo: false, descarte: '' },
     avisado: false, avisoFalla: '', planesMostrados: false, soporte: false, anuncio: false,
     // Ajustes del 09/10: el ciclo de un negocio (explicado, nombre pedido, planes pendientes, equipo ya pedido), el primer negocio y los otros para la hoja.
-    explicado: false, nombrePedido: false, preguntaDatos: false, planesPendientes: false, equipoAhora: false, empresaAvisada: '', primero: null, otros: [], complementos: 0,
+    explicado: false, nombrePedido: false, preguntaDatos: false, planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, primero: null, otros: [], complementos: 0,
     seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [],
   };
 }
@@ -700,7 +701,9 @@ function chFichaVigente(e, ahoraMs) {
     },
     avisado: e.avisado === true, avisoFalla: chPlano(e.avisoFalla, 200), planesMostrados: e.planesMostrados === true, soporte: e.soporte === true, anuncio: e.anuncio === true,
     explicado: e.explicado === true, nombrePedido: e.nombrePedido === true, preguntaDatos: e.preguntaDatos === true, planesPendientes: e.planesPendientes === true, equipoAhora: e.equipoAhora === true,
-    empresaAvisada: chNorm(chPlano(e.empresaAvisada, 60)), complementos: chEntero(e.complementos, 0, 3),
+    // Las empresas por las que ya se avisó a recepción en la ventana (a lo más 3, normalizadas) y cuántos avisos van: el tope (3) acota la plantilla por segunda empresa.
+    empresasAvisadas: Array.from(new Set((Array.isArray(e.empresasAvisadas) ? e.empresasAvisadas : []).concat(typeof e.empresaAvisada === 'string' ? [e.empresaAvisada] : []).filter((x) => typeof x === 'string').map((x) => chNorm(chPlano(x, 60))).filter((x) => x !== ''))).slice(0, CH_TOPE_AVISOS),
+    avisosVentana: chEntero(e.avisosVentana, 0, CH_TOPE_AVISOS), complementos: chEntero(e.complementos, 0, 3),
     primero: e.primero && typeof e.primero === 'object' && !Array.isArray(e.primero) ? { rubro: CH_ID_RUBRO.test(chTexto(e.primero.rubro)) ? e.primero.rubro : '', empresa: chNombreDeEmpresa(e.primero.empresa, true) } : null,
     otros: (Array.isArray(e.otros) ? e.otros : []).filter((x) => x && typeof x === 'object').map((x) => ({ e: chNombreDeEmpresa(x.e, true), r: CH_ID_RUBRO.test(chTexto(x.r)) ? x.r : '' })).filter((x) => x.e !== '' || x.r !== '').slice(-3),
     seq: chEntero(e.seq, 0, 1000000000), hasta: chEntero(e.hasta, 0, 1000000000),
@@ -710,7 +713,7 @@ function chFichaVigente(e, ahoraMs) {
     ultimosIds: (Array.isArray(e.ultimosIds) ? e.ultimosIds : []).filter((x) => typeof x === 'string' && x !== '' && x.length <= 200).slice(-CH_TOPE_IDS),
   };
   if (s.hasta > s.seq) s.hasta = s.seq;
-  if (ultimo && ahoraMs - ultimo >= CH_VENTANA_MS) { s.avisado = false; s.planesMostrados = false; s.soporte = false; s.equipoAhora = false; s.planesPendientes = false; }
+  if (ultimo && ahoraMs - ultimo >= CH_VENTANA_MS) { s.avisado = false; s.planesMostrados = false; s.soporte = false; s.equipoAhora = false; s.planesPendientes = false; s.empresasAvisadas = []; s.avisosVentana = 0; }
   return s;
 }
 // ¿Meta ya entregó este mensaje (o ya está en la cola)? Se mira sobre la ficha cruda y no la toca.
@@ -1111,7 +1114,7 @@ function chSinNombrar(n) {
   return chTexto(n).replace(/\bcomo (?:se|te) llamas?\b/g, ' ').replace(/\b(?:se|te) llamas? (?:tu|su|el|la|a|asi|igual)\b/g, ' ');
 }
 // «Cuando alguien te escribe de noche, tu asistente le responde»: quien escribe es un TERCERO (un cliente suyo), no una promesa de contacto del equipo. Se quita esa cláusula antes de buscar promesas.
-const CH_TERCERO_QUE_ESCRIBE = /\b(?:(?:cuando|si|cada vez que|apenas|en cuanto|mientras)\s+(?:alguien|un cliente|una persona|tus clientes|los clientes|un prospecto|un interesado|el cliente|un paciente|tus pacientes)|(?:con|a|de)?\s*quien)\s+(?:te|le|les)\s+(?:escribe|escriben|llama|llaman|contacta|contactan|responde|responden)\b/gi;
+const CH_TERCERO_QUE_ESCRIBE = /\b(?:(?:cuando|si|cada vez que|apenas|en cuanto|mientras)\s+(?:alguien|un cliente|una persona|tus clientes|los clientes|un prospecto|un interesado|el cliente|un paciente|tus pacientes)|\ba\s+quien)\s+(?:te|le|les)\s+(?:escribe|escriben|llama|llaman|contacta|contactan|responde|responden)\b/gi;
 const CH_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{0,20}\b(?:ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\b|\bpersona (?:real|de verdad)\b|\bcarne y hueso\b|\bno (?:contesta|responde|atiende|hay) (?:ningun\w* )?(?:ia|inteligencia|bot|robot|maquina)\b|\bnada de (?:robots?|bots?|maquinas?)\b|\bhumano\b|\bpersonalmente\b|\bconmigo (?:hablas|conversas)\b|\bequipo humano\b|\b(?:soy|es) (?:una )?persona\b|\balguien real\b|\bhuman[oa]s?\b|\b(?:personas?|gente) (?:real(?:es)?|de verdad)\b|\b(?:persona|gente|alguien|humano|equipo|ejecutiv\w*|asesor\w*) (?:real|de verdad)\b|\bde verdad\b[^.!?]{0,20}\b(?:persona|gente|humano)\w*|\bno (?:contesta|responde|atiende|hay|habla) (?:(?:un|una|el|la|ningun\w*) )?(?:ia|inteligencia|bot|chatbot|robot|maquina|programa)\b|\bno es (?:un )?(?:mensaje |chat )?automatic\w*|\b(?:es|soy) (?:una? )?(?:chica|chico|mujer|hombre|senorita|joven)\b/;
 const CH_NOMBRE_DE_PERSONA = /\bsilvana\b|\basesora\b|\bandres\b|\bsasaki\b/;
 // Revisión del PR #464. Lo que promete el modelo se separa por tipo: una promesa de planes solo vale si el CÓDIGO confirmó `mostrar_planes`, una de equipo solo si confirmó `derivar_equipo`.
@@ -1195,9 +1198,13 @@ function chCubrePuntos(texto, puntos) {
     try { return new RegExp(fam).test(norm); } catch (e) { return false; }
   });
 }
-const CH_CALENDARIO = /\b(?:los\s+)?(?:7|siete)\s+d[ií]as(?:\s+(?:de|a)\s+la\s+semana)?\b(?!\s+(?:de\s+prueba|gratis|gratuit\w*|libres?|sin\s+costo|de\s+garant\w*|extra))/gi;
+// SOLO la forma completa («los 7 días de la semana», «siete días a la semana»): un «7 días» suelto es un plazo, una prueba o una garantía que el servicio no cumple.
+const CH_CALENDARIO = /\b(?:los\s+)?(?:7|siete)\s+d[ií]as\s+(?:de|a)\s+la\s+semana\b/gi;
+// Un plazo escrito con palabras («en siete días», «dos semanas», «tres meses»): lo ofrece el equipo, no el modelo. («Un día antes» y «24 horas» son del documento.)
+const CH_PLAZO = /\b(?:dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\s+(?:dias|semanas|meses|horas|minutos)\b/;
 const CH_RUBROS_CON_COBRO = ['gastronomia', 'retail', 'otro'];
 const CH_FUNCION_INVENTADA = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado|cobros?|cobra\w*|cobrar)\b|\bqr\b/;
+const CH_FUNCION_INVENTADA_FUERTE = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado)\b/;
 const CH_UMBRAL_REPITE = 0.75;
 // Parecido entre dos mensajes: similitud de CONJUNTOS de palabras (palabras de 3 letras o más, sin tildes). 1 = mismas palabras, 0 = ninguna en común.
 function chSimilitud(a, b) {
@@ -1228,7 +1235,9 @@ function chValidarMensaje(texto, v) {
   if (CH_YO_DEL_MODELO.test(sinPresentacion) || CH_NIEGA_IA.test(n)) return 'persona';
   // R1: no se inventan funciones. Cobros, QR, adelantos, seña y anticipos solo están documentados para gastronomía, retail y «otro» (y en el pitch general y los hechos de la empresa).
   const rubroDelMensaje = chTexto(v.rubroId || v.rubroActual);
-  if (rubroDelMensaje !== '' && !CH_RUBROS_CON_COBRO.includes(rubroDelMensaje) && v.contexto !== 'abierta' && v.contexto !== 'empresa' && CH_FUNCION_INVENTADA.test(n)) return 'funcion_inventada';
+  // (en el pitch y en la empresa el «cobro por QR» es lo documentado, pero adelantos, anticipos, seña y pago total no lo son en NINGÚN rubro)
+  const generalEmpresa = v.contexto === 'abierta' || v.contexto === 'empresa';
+  if (generalEmpresa ? CH_FUNCION_INVENTADA_FUERTE.test(n) : (rubroDelMensaje !== '' && !CH_RUBROS_CON_COBRO.includes(rubroDelMensaje) && CH_FUNCION_INVENTADA.test(n))) return 'funcion_inventada';
   const motivo = cmMotivoDeRechazo(flat.replace(CH_TERCERO_QUE_ESCRIBE, ' '), {
     maximo: CH_MAX_MENSAJE, permitirMontos: v.precios === true, textoDelCliente: v.textoCliente,
     quienPromete: ['asesor', 'asesora', 'especialista', 'ejecutivo', 'ejecutiva', 'equipo', 'alguien', 'recepcion'],
@@ -1252,6 +1261,7 @@ function chValidarMensaje(texto, v) {
   if (chConcordanciaMala(flat)) return 'concordancia';
   // Números: ninguno salvo «24/7» y «24 horas»; y, hablando de precios, las cifras de la consola. Y ningún monto fuera de ese contexto.
   // «24/7», «24 horas» y la cifra de CALENDARIO («los 7 días de la semana», «7 días»): ni consumo ni precio. («7 días de prueba» o «gratis» no: son ofertas y las frena su propia regla.)
+  if (CH_PLAZO.test(n.replace(/\b(?:los\s+)?(?:7|siete)\s+dias\s+(?:de|a)\s+la\s+semana\b/g, ' '))) return 'cifra';
   const sinPermitidos = flat.replace(CH_CALENDARIO, ' ').replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ');
   const numeros = sinPermitidos.match(/\d+(?:[.,]\d+)*/g) || [];
   if (numeros.length && !(v.precios === true && numeros.every((x) => (v.permitidas || []).includes(x)))) return 'cifra';
@@ -1432,11 +1442,18 @@ function chFilasDeRubros(cfg) {
   return (chDatos(cfg).rubros || []).slice(0, 10).map((r) => ({ id: 'rubro:' + r.id, title: r.titulo, description: r.descripcion }));
 }
 // El mensaje con la LISTA de rubros y la invitación a explorar otro negocio (nunca un callejón sin salida tras el traspaso). El cuerpo (la respuesta) se recorta, nunca la invitación.
+// Tras el traspaso no hay botones: ninguna oración puede ofrecer «hablar con alguien de nuestro equipo», «ver los planes» ni «el botón». Se quitan esas oraciones (con su emoji) y queda lo que se respondió.
+const CH_OFRECE_BOTON = /hablar con alguien de nuestro equipo|hablar con el equipo|ver (?:los |nuestros )?planes|toca(?:r)? el bot[oó]n|botones? de abajo/i;
+function chSinOfertaDeBotones(texto) {
+  const lineas = chLineas(texto).split('\n').map((l) => l.split(/(?<=[.!?…][\p{Extended_Pictographic}\uFE0F]*)\s+(?![\p{Extended_Pictographic}\uFE0F])/u).filter((o) => !CH_OFRECE_BOTON.test(o)).join(' ').trim());
+  const r = lineas.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return r !== '' ? r : '¡Con gusto! 😊';
+}
 function chListaInvitacion(cuerpo, cfg, evento) {
   const tx = chDatos(cfg).textos || {};
   const invita = chEmMensaje(chSustituir(tx.invitaOtroRubro, cfg), cfg);
   const maximo = 1000 - invita.length - 2;
-  let base = chLineas(cuerpo);
+  let base = chSinOfertaDeBotones(cuerpo);
   if (base.length > maximo) {
     base = chCortar(base, maximo);
     const k = Math.max(base.lastIndexOf('. '), base.lastIndexOf('! '), base.lastIndexOf('? '));
@@ -1662,8 +1679,11 @@ function chAplicarTurno(a) {
 }
 // R3: el nombre del perfil de WhatsApp lo escribe cualquiera. Pasa si tiene forma de nombre de persona: letras con iniciales, puntos, guiones, apóstrofos y tildes («Andrés Alberdi B.», «María J. López»,
 // «Jean-Pierre», «O'Brien»). Los emojis se quitan; se rechazan las fórmulas, los enlaces, los teléfonos y dígitos, la arroba, los caracteres de control o invisibles y las órdenes. Si no pasa, ''.
+// Palabras de ROL o de PAGO que no son un nombre de persona: un perfil «Ventas Gratis», «Asesor Comercial», «Recepción NovuChat», «Pago Acreditado» o «Banco Unión» no llega a la hoja ni al aviso.
+const CH_ROL_DE_PERFIL = new Set('venta asesor asesora recepcion pago acreditado banco soporte admin novuchat gratis oferta'.split(' '));
 function chNombreDelPerfil(v) {
-  const crudo = chTexto(v).normalize('NFKC');
+  // Los rellenos invisibles de los bordes («Ana\u3164») se quitan; uno en medio del nombre lo invalida.
+  const crudo = chTexto(v).normalize('NFKC').replace(/^[\s\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2069\u034F\u115F\u1160\u17B4\u17B5\u2800\u3164\uFEFF\uFFA0]+|[\s\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2069\u034F\u115F\u1160\u17B4\u17B5\u2800\u3164\uFEFF\uFFA0]+$/g, '');
   if (crudo.replace(CH_INVISIBLES, '') !== crudo || /[\u0000-\u001f\u007f\u2028\u2029]/.test(crudo)) return '';
   const s = chPlano(crudo.replace(/[\p{Extended_Pictographic}\uFE0F\u200d]/gu, ' ')).replace(/^[\s.,;:!¡\-]+|[\s,;:!¡\-]+$/g, '');
   if (s.length < 2 || s.length > 60) return '';
@@ -1673,7 +1693,7 @@ function chNombreDelPerfil(v) {
   if (!palabras.every((w) => /^\p{L}[\p{L}'’.-]*$/u.test(w))) return '';
   if (!palabras.some((w) => (w.match(/\p{L}/gu) || []).length >= 2)) return '';
   const nn = chNorm(s).split(' ');
-  if (nn.some((w) => CH_NO_ES_PERSONA.has(w)) || nn.every((w) => CH_ACUSE_PALABRAS.has(w))) return '';
+  if (nn.some((w) => CH_NO_ES_PERSONA.has(w) || CH_ROL_DE_PERFIL.has(w) || CH_ROL_DE_PERFIL.has(w.replace(/s$/, ''))) || nn.every((w) => CH_ACUSE_PALABRAS.has(w))) return '';
   return s;
 }
 // El prospecto que va a la hoja (lo que lee «Decidir fila de la planilla»), o null si quien escribe ya es cliente o no hay teléfono. `entrada` = { from, nombrePerfil }.

@@ -39,7 +39,7 @@ const ficha = cnFichaDe(fichas.mapa, from);
 
 const fallas = [];
 let avisoAceptado = false;
-let empresaAvisoAceptada = '';
+let avisosGuardados = null; // { empresas, n } de la ficha tras el aviso aceptado
 let usados = 0;
 enviables.forEach((it, k) => {
   const envio = envios[k];
@@ -49,7 +49,15 @@ enviables.forEach((it, k) => {
   if (it.destino === 'recepcion') {
     if (it.marcaAvisado === true && ficha) {
       // El aviso cuenta SOLO si Meta aceptó la plantilla: el texto de respaldo que la cadena común manda tras un rechazo no es el aviso.
-      if (acepto(envio)) { ficha.avisado = true; ficha.avisoFalla = ''; ficha.empresaAvisada = String(it.empresaAviso || '').slice(0, 60); empresaAvisoAceptada = ficha.empresaAvisada; avisoAceptado = true; } else ficha.avisoFalla = 'aviso_rechazado: ' + detalle(envio, from);
+      if (acepto(envio)) { ficha.avisado = true; ficha.avisoFalla = ''; 
+        // Se recuerdan las empresas avisadas en la ventana (a lo más 3) y cuántos avisos van: el tope acota la plantilla por segunda empresa.
+        const emp = String(it.empresaAviso || '').slice(0, 60);
+        const previas = Array.isArray(ficha.empresasAvisadas) ? ficha.empresasAvisadas.filter((x) => typeof x === 'string') : [];
+        ficha.empresasAvisadas = emp && !previas.includes(emp) ? previas.concat([emp]).slice(-3) : previas.slice(-3);
+        ficha.avisosVentana = Math.min(3, (Number(ficha.avisosVentana) || 0) + 1);
+        avisosGuardados = { empresas: ficha.empresasAvisadas.slice(), n: ficha.avisosVentana };
+        avisoAceptado = true;
+      } else ficha.avisoFalla = 'aviso_rechazado: ' + detalle(envio, from);
     }
     return;
   }
@@ -68,7 +76,7 @@ if (fallas.length) {
     const restaurada = JSON.parse(JSON.stringify(previa));
     restaurada.ultimosIds = ids;
     restaurada.ultimoMs = hora;
-    if (avisoAceptado) { restaurada.avisado = true; restaurada.avisoFalla = ''; restaurada.empresaAvisada = empresaAvisoAceptada; }
+    if (avisoAceptado) { restaurada.avisado = true; restaurada.avisoFalla = ''; if (avisosGuardados) { restaurada.empresasAvisadas = avisosGuardados.empresas; restaurada.avisosVentana = avisosGuardados.n; } }
     fichas.mapa[from] = restaurada;
   }
   throw new Error('Meta rechazó el mensaje al cliente: ' + fallas.join(' | '));

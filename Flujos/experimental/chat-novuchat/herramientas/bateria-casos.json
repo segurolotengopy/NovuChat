@@ -3041,7 +3041,7 @@
      "tipo": "texto",
      "texto": "¿Y qué es NovuChat exactamente?",
      "seco": {
-      "mensaje": "Piénsalo como tu empleado digital: un asistente con inteligencia artificial que conversa por WhatsApp con quien te escribe, resuelve sus dudas, reserva horarios y arma pedidos las 24 horas, mientras tú revisas cada charla desde la consola. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "mensaje": "Piénsalo como tu empleado digital: un asistente con inteligencia artificial que conversa por WhatsApp con tus clientes, resuelve sus dudas, reserva horarios y arma pedidos las 24 horas, mientras tú revisas cada charla desde la consola. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
      },
      "exige": {
       "contiene": [

@@ -110,7 +110,8 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
   // Pedir hablar con el equipo: la plantilla a recepción, UNA vez por ventana (`avisado` cuenta solo lo que Meta aceptó) y nunca al propio número de recepción. Con una empresa DISTINTA a la ya avisada,
   // un aviso nuevo (R5); con la misma, solo se reenvía el botón.
   if (plan.ruta === 'equipo') {
-    const empresaNueva = nueva.empresa !== '' && antes.empresaAvisada !== '' && chNorm(nueva.empresa) !== antes.empresaAvisada;
+    // Con una empresa DISTINTA a las ya avisadas en la ventana, un aviso nuevo; con tope: el primero + hasta 2 empresas distintas (3 plantillas por ventana y por teléfono).
+    const empresaNueva = nueva.empresa !== '' && antes.empresasAvisadas.length > 0 && !antes.empresasAvisadas.includes(chNorm(nueva.empresa)) && antes.avisosVentana < CH_TOPE_AVISOS;
     const a = aviso((chDatos(cfg).textos || {}).estadoAviso, true, antes.avisado === true && !empresaNueva);
     if (a) mensajes.push(a);
   }
