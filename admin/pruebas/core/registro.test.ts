@@ -79,7 +79,7 @@ const PESTANAS_DE_LA_CONSOLA_AL_03_10: Record<IdFlujo, {
     nombre: 'Pedidos y cobro',
     pestanas: [
       { ruta: 'pedidos', etiqueta: 'Pedidos', roles: ['admin', 'oper'] },
-      { ruta: 'cobros', etiqueta: 'Cobros' },
+      { ruta: 'cobros', etiqueta: 'Cobros', roles: ['admin', 'oper'] },
       { ruta: 'inventario', etiqueta: 'Inventario' },
       { ruta: 'cobro', etiqueta: 'Configuración de QR' },
     ],
@@ -370,7 +370,11 @@ describe('2. pestañas: el registro contra web/src/central/lib/flujos.ts y App.t
     const delRegistro = PUENTE_DE_FLUJOS[f].modulos
       .filter((m) => !comunes.includes(m))
       .flatMap((m) => manifiestoDe(m).pestanas as readonly Pestana[])
-      .map(normal).sort(porRuta);
+      // `rolesConModulo` suma sus roles solo si el flujo trae ese módulo (09/10/2026: «Cobros» y el operador con «pedidos»).
+      .map((p) => normal({
+        ...p,
+        roles: [...p.roles, ...(p.rolesConModulo !== undefined && PUENTE_DE_FLUJOS[f].modulos.includes(p.rolesConModulo.modulo) ? p.rolesConModulo.roles : [])],
+      })).sort(porRuta);
     // El ORDEN no se compara: hoy lo decide la lista de cada flujo (venta
     // intercala Inventario entre las dos de Cobros). Ver el cuerpo del PR.
     expect(hoy).toEqual(delRegistro);
@@ -384,8 +388,34 @@ describe('2. pestañas: el registro contra web/src/central/lib/flujos.ts y App.t
     }
   });
 
+  it('`rolesConModulo` tiene una forma válida en todo el registro', () => {
+    for (const m of MANIFIESTOS) for (const p of m.pestanas) {
+      const r = p.rolesConModulo;
+      if (r === undefined) continue;
+      const donde = `${m.modulo}/${p.ruta}`;
+      expect(IDS_MODULOS as readonly string[], `${donde}: módulo desconocido`).toContain(r.modulo);
+      expect(r.modulo, `${donde}: se nombra a sí mismo`).not.toBe(m.modulo);
+      expect(new Set(r.roles).size, `${donde}: roles repetidos`).toBe(r.roles.length);
+      expect(r.roles.length, `${donde}: sin roles`).toBeGreaterThan(0);
+      for (const rol of r.roles) expect(p.roles as readonly string[], `${donde}: ${rol} ya está en roles`).not.toContain(rol);
+    }
+  });
+
+  it('«Cobros» la ve el operador SOLO con el módulo «pedidos» (decisión de Andres, 09/10/2026)', () => {
+    const rolesDe = (modulos: IdModulo[], ruta: string) => pestanasDe(modulos).find((p) => p.ruta === ruta)?.roles;
+    expect(manifiestoDe('cobros').pestanas.find((p) => p.ruta === 'cobros')?.rolesConModulo)
+      .toEqual({ modulo: 'pedidos', roles: ['oper'] });
+    expect(rolesDe(['productos', 'campanas', 'cobros'], 'cobros')).toEqual(['admin']);
+    expect(rolesDe(['productos', 'campanas', 'cobros', 'agenda'], 'cobros')).toEqual(['admin']);
+    expect(rolesDe(['productos', 'campanas', 'cobros', 'pedidos'], 'cobros')).toEqual(['admin', 'oper']);
+    // La configuración del QR sigue siendo solo del administrador, con o sin Pedidos.
+    expect(rolesDe(['productos', 'campanas', 'cobros', 'pedidos'], 'cobro')).toEqual(['admin']);
+    // `pestanasDe` no deja `rolesConModulo` en lo que devuelve.
+    expect(pestanasDe(['productos', 'campanas', 'cobros', 'pedidos']).every((p) => !('rolesConModulo' in p))).toBe(true);
+  });
+
   it('toda pestaña tiene su ruta en App.tsx, protegida según sus roles', () => {
-    const requiere = (p: Pestana) => (p.roles.includes('oper') ? 'miembroTenant'
+    const requiere = (p: Pestana) => (p.roles.includes('oper') || p.rolesConModulo?.roles.includes('oper') === true ? 'miembroTenant'
       : p.tambienPropietario ? 'adminOPropietario' : 'adminTenant');
     for (const m of MANIFIESTOS) for (const p of m.pestanas) {
       const ruta = new RegExp(`<Route path="/negocio/:tenantId/${p.ruta}" element=\\{\\s*<Proteger requiere="(\\w+)"`);

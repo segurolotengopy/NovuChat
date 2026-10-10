@@ -105,7 +105,8 @@ const FLUJOS_CONSOLA = {
     catalogo: 'Productos',
     pestanas: [
       { ruta: 'pedidos', etiqueta: 'Pedidos', roles: ['admin', 'oper'] },
-      { ruta: 'cobros', etiqueta: 'Cobros' },
+      // 09/10/2026 (Andres): el operador ve «Cobros» cuando el negocio tiene Pedidos (`rolesConModulo` del registro).
+      { ruta: 'cobros', etiqueta: 'Cobros', roles: ['admin', 'oper'] },
       { ruta: 'inventario', etiqueta: 'Inventario' },
       { ruta: 'cobro', etiqueta: 'Configuración de QR' },
     ],
@@ -122,9 +123,14 @@ function flujosDeConsola(ficha) {
 }
 /** Las pestañas que pinta `App.tsx`: por flujo, una por ruta (queda la primera). */
 function pestanasAntes(ficha) {
-  return flujosDeConsola(ficha)
+  const flujos = flujosDeConsola(ficha);
+  // Con Pedidos en CUALQUIERA de los flujos, «Cobros» la ve también el operador, aunque la primera declaración de la ruta
+  // (la del flujo de reservas) sea solo de administrador: por eso la regla se aplica acá y no solo en la tabla de arriba.
+  const hayPedidos = flujos.some((f) => FLUJOS_CONSOLA[f].pestanas.some((p) => p.ruta === 'pedidos'));
+  return flujos
     .flatMap((f) => FLUJOS_CONSOLA[f].pestanas)
     .filter((p, i, todas) => todas.findIndex((q) => q.ruta === p.ruta) === i)
+    .map((p) => (p.ruta === 'cobros' && hayPedidos ? { ...p, roles: ['admin', 'oper'] } : p))
     .map((p) => `${p.ruta}|${p.etiqueta}|${(p.roles ?? ['admin']).join('+')}|${p.tambienPropietario === true}`);
 }
 function etiquetaAntes(ficha) {

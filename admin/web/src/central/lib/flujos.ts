@@ -187,14 +187,17 @@ export function capacidadesDeConsola(modulos: readonly IdModulo[]): CapacidadesD
  * desaparece. Si la lectura falla, una ficha SIN módulos ni flujos (nada abre).
  */
 function useFicha(tenantId: string | undefined): FichaConCapacidades | null {
-  const [ficha, setFicha] = useState<FichaConCapacidades | null>(null);
+  // La ficha lleva el negocio al que pertenece: al cambiar de `tenantId` con la pantalla montada, el
+  // render intermedio no devuelve la del negocio anterior (decidir con sus módulos, p. ej. redirigir).
+  const [guardada, setGuardada] = useState<{ de: string; ficha: FichaConCapacidades } | null>(null);
   useEffect(() => {
-    if (!tenantId) { setFicha(null); return; }
+    setGuardada(null);
+    if (!tenantId) return;
     return onSnapshot(doc(db, 'tenants', tenantId),
-      (d) => setFicha(d.data() ?? {}),
-      () => setFicha({ modulos: [], flujos: [] }));
+      (d) => setGuardada({ de: tenantId, ficha: d.data() ?? {} }),
+      () => setGuardada({ de: tenantId, ficha: { modulos: [], flujos: [] } }));
   }, [tenantId]);
-  return ficha;
+  return guardada !== null && guardada.de === tenantId ? guardada.ficha : null;
 }
 
 /** Los módulos del negocio, en vivo. `null` mientras carga. */
