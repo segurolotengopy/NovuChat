@@ -20,7 +20,7 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
   `docs/versiones-por-cliente.md`. **Demo B con F3a publicada el 03/10** (74
   nodos): el QR del cobro quedó pendiente de republicar (el media ID vencía a los 30 días).
   **Captación de NovuChat: chat v2 publicado el 10/10** (`Flujos/experimental/chat-novuchat/`,
-  44 nodos, #464 y #476), flujo propio; se corrige «cobra por QR» en un PR aparte. Detalle en
+  44 nodos, #464, #476 y #482 —este último: los clientes de la empresa PAGAN por QR—), flujo propio. Detalle en
   `bitacora/2026-10.md`.
 - **Cuentas:** Bellido y Platinum en prueba; demos y captación en demostración.
   Nadie está en producción.
