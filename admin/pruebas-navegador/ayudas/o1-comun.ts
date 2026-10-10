@@ -1,6 +1,6 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { expect, type Page } from '@playwright/test';
 import { CLAVE_DE_PRUEBA, PROYECTO, PUERTO_AUTH, PUERTO_FIRESTORE } from '../entorno';
 import { crearUsuarioDeEnsayo } from './datos';
@@ -29,7 +29,9 @@ function bdPropia() {
   process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${PUERTO_FIRESTORE}`;
   process.env['FIREBASE_AUTH_EMULATOR_HOST'] = `127.0.0.1:${PUERTO_AUTH}`;
   if (!PROYECTO.startsWith('demo-')) throw new Error('NEGADO: el proyecto de las pruebas de navegador tiene que empezar con «demo-».');
-  const app = getApps().find((a) => a.name === 'o1') ?? initializeApp({ projectId: PROYECTO }, 'o1');
+  // La app por omisión, la misma que usa `datos.ts` (que solo inicializa una si no hay ninguna): dos apps distintas se pisarían.
+  const app = getApps()[0] ?? initializeApp({ projectId: PROYECTO });
+  if (!String(app.options.projectId ?? '').startsWith('demo-')) throw new Error('NEGADO: la app de Admin no es de un proyecto demo-*.');
   return { db: getFirestore(app), auth: getAuth(app) };
 }
 
@@ -56,9 +58,18 @@ export async function fijarDoc(ruta: string, campos: Record<string, unknown>, me
   await bdPropia().db.doc(ruta).set(campos, { merge: mezclar });
 }
 
-/** Siembra `n` eventos en la bitácora del comercio, en los últimos minutos (para el tope de 1500 del Tablero). */
+/** Quita un campo de un documento (por el SDK Admin): para probar el comercio que nunca lo tuvo. */
+export async function quitarCampo(ruta: string, campo: string): Promise<void> {
+  await bdPropia().db.doc(ruta).update({ [campo]: FieldValue.delete() });
+}
+
+/**
+ * Deja en la bitácora del comercio EXACTAMENTE `n` eventos, todos de los últimos minutos (para el tope de 1500 del Tablero). Antes
+ * borra los que traía la siembra: cuentan para el tope y harían que «uno menos que el tope» fuera en realidad el tope.
+ */
 export async function sembrarEventosDeBitacora(tenantId: string, n: number): Promise<void> {
   const { db } = bdPropia();
+  await limpiarBitacora(tenantId);
   const base = Date.now();
   let lote = db.batch();
   for (let i = 0; i < n; i += 1) {
@@ -73,8 +84,15 @@ export async function sembrarEventosDeBitacora(tenantId: string, n: number): Pro
 }
 
 export async function limpiarBitacora(tenantId: string): Promise<void> {
+  // De a 200 y en serie: el borrado masivo en paralelo (`recursiveDelete`) deja sin aire al emulador con 1500 eventos.
   const { db } = bdPropia();
-  await db.recursiveDelete(db.collection(`tenants/${tenantId}/bitacora`));
+  for (;;) {
+    const lote = await db.collection(`tenants/${tenantId}/bitacora`).limit(200).get();
+    if (lote.empty) return;
+    const escritura = db.batch();
+    lote.docs.forEach((d) => escritura.delete(d.ref));
+    await escritura.commit();
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
