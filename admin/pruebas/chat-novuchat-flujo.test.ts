@@ -2248,16 +2248,56 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
       expect(JSON.stringify(fichaDe(w, MAMA)!['historial'])).not.toContain('novuchat.site'); // no es un hecho de la conversación
       expect(w.turnos.every((t) => t.aMi.length <= 1)).toBe(true);
     });
-    it('tope: a lo más 2 veces por ventana de 24 h y por teléfono; al vencer la ventana vuelve', () => {
+    it('tope: a lo más 2 veces por ventana de 24 h y por teléfono (con un mensaje sin sitio entre uno y otro); al vencer la ventana vuelve', () => {
       const w = crear();
       const j = empezar(w);
-      const cuerpos = ['¿Se integra con mi ERP?', '¿Cuánto cobra Meta?', '¿Se integra con Odoo?'].map((q) => j.texto(q).aMi[0]!.cuerpo);
-      expect(cuerpos.map(veces)).toEqual([1, 1, 0]);
+      const sitio = (q: string): string => j.texto(q).aMi[0]!.cuerpo;
+      const a = sitio('¿Se integra con mi ERP?');
+      j.boton('planes'); // un mensaje intermedio sin sitio
+      const b = sitio('¿Cuánto cobra Meta?');
+      j.texto('gracias'); // otro intermedio sin sitio
+      const c = sitio('¿Se integra con Odoo?');
+      expect([a, b, c].map(veces)).toEqual([1, 1, 0]);
       expect(fichaDe(w, MAMA)!['sitiosVentana']).toBe(2);
-      expect(antesDeLaPregunta(cuerpos[1]!)).toBe(true);
-      expect(cuerpos[2]!).toMatch(/\?\s*\p{Extended_Pictographic}?\s*$/u); // sin el sitio sigue terminando en su pregunta
-      const despues = j.texto('¿Se integra con mi ERP otra vez?', 25 * 60).aMi[0]!.cuerpo;
-      expect(veces(despues)).toBe(1);
+      expect(antesDeLaPregunta(b)).toBe(true);
+      expect(c).toMatch(/\?\s*\p{Extended_Pictographic}?\s*$/u); // sin el sitio sigue terminando en su pregunta
+      expect(veces(j.texto('¿Se integra con mi ERP otra vez?', 25 * 60).aMi[0]!.cuerpo)).toBe(1);
+    });
+    it('el sitio NO va en dos mensajes seguidos: el segundo específico va sin él, y uno intermedio sin sitio lo devuelve (hasta el tope)', () => {
+      const w = crear();
+      const j = empezar(w);
+      const primero = j.texto('¿Se integra con mi ERP?').aMi[0]!.cuerpo;
+      expect(veces(primero)).toBe(1);
+      expect(fichaDe(w, MAMA)!['sitioUltimo']).toBe(true);
+      const segundo = j.texto('¿Cuánto cobra Meta?').aMi[0]!.cuerpo; // seguido: sin sitio (y sin gastar el tope)
+      expect(veces(segundo)).toBe(0);
+      expect(segundo).toMatch(/\?\s*\p{Extended_Pictographic}?\s*$/u);
+      expect(fichaDe(w, MAMA)!['sitioUltimo']).toBe(false);
+      expect(fichaDe(w, MAMA)!['sitiosVentana']).toBe(1);
+      expect(veces(j.texto('¿Se integra con Odoo?').aMi[0]!.cuerpo)).toBe(1); // el anterior no lo llevaba: vuelve (2.º y último)
+      expect(fichaDe(w, MAMA)!['sitiosVentana']).toBe(2);
+    });
+    it('dos turnos de EMPRESA seguidos: el segundo (aunque diga casi lo mismo) va sin el sitio, así la similitud con el anterior no cruza 0,75', () => {
+      const w = crear();
+      const j = empezar(w);
+      w.modelo.con = 'ERROR'; // los dos salen con el respaldo de la empresa
+      const uno = j.texto('¿Quiénes son ustedes?').aMi[0]!.cuerpo;
+      const dos = j.texto('Dame mas info sobre la empresa').aMi[0]!.cuerpo;
+      expect(veces(uno)).toBe(1);
+      expect(veces(dos)).toBe(0);
+      expect(dos).toMatch(/\?\s*\p{Extended_Pictographic}?\s*$/u);
+    });
+    it('si Meta rechaza el mensaje, la bandera y el contador del sitio vuelven a lo de antes (el cliente lo recibirá en el reintento)', () => {
+      const w = crear();
+      const j = empezar(w);
+      const antes = JSON.parse(JSON.stringify(fichaDe(w, MAMA)!)) as J;
+      w.graph.falla = () => true;
+      const r = w.mundo.turno(valorMeta(mTexto('¿Se integra con mi ERP?'), MAMA), { tolerarFallo: true });
+      expect(r.fallo?.nodo).toBe('Confirmar envío');
+      expect(fichaDe(w, MAMA)!['sitioUltimo']).toBe(antes['sitioUltimo']);
+      expect(fichaDe(w, MAMA)!['sitiosVentana']).toBe(antes['sitiosVentana']);
+      w.graph.falla = () => false;
+      expect(veces(j.texto('¿Se integra con mi ERP?').aMi[0]!.cuerpo)).toBe(1);
     });
     it('sin el dato `sitioWeb` no se anexa nada (y no hay error)', () => {
       const f = JSON.parse(JSON.stringify(PRODUCCION)) as Flujo;
