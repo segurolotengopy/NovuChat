@@ -600,7 +600,7 @@ export function textoErrorBusqueda(codigo: unknown, conCursor = false): string {
     case 'unauthenticated': return 'Su sesión venció. Vuelva a ingresar para buscar.';
     case 'permission-denied': return 'No tiene permiso para buscar en estas conversaciones.';
     case 'invalid-argument': return conCursor ? 'La búsqueda cambió; vuelva a buscar.' : 'Escriba al menos una palabra de 3 letras.';
-    case 'resource-exhausted': return 'Hay demasiadas búsquedas seguidas. Espere un momento e intente de nuevo.';
+    case 'resource-exhausted': return 'Alcanzó el tope de búsquedas por hora o por día.';
     // Una Function que todavía no se desplegó llega como `not-found` o, según el camino, como `internal`: el mismo aviso.
     case 'not-found':
     case 'internal': return 'La búsqueda por palabra todavía no está disponible. Puede buscar por teléfono o por nombre.';

@@ -727,7 +727,9 @@ describe('errores de la búsqueda por palabra: el texto sale del CÓDIGO, nunca 
     expect(textoErrorBusqueda('permission-denied')).toBe('No tiene permiso para buscar en estas conversaciones.');
     expect(textoErrorBusqueda('functions/invalid-argument')).toBe('Escriba al menos una palabra de 3 letras.');
     expect(textoErrorBusqueda('functions/invalid-argument', true)).toBe('La búsqueda cambió; vuelva a buscar.');
-    expect(textoErrorBusqueda('functions/resource-exhausted')).toMatch(/demasiadas búsquedas/);
+    // El tope puede ser por hora o por día: el texto es neutro y NO manda a «esperar un momento» (engañaría con el tope diario).
+    expect(textoErrorBusqueda('functions/resource-exhausted')).toBe('Alcanzó el tope de búsquedas por hora o por día.');
+    expect(textoErrorBusqueda('resource-exhausted')).not.toMatch(/momento|espere|segundos|minutos/i);
     expect(textoErrorBusqueda('functions/unavailable')).toBe('La búsqueda por palabra no está disponible en este momento. Intente de nuevo.');
   });
 
