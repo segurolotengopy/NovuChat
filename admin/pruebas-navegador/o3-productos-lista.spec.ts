@@ -36,10 +36,10 @@ async function abrir(page: Page, consulta = ''): Promise<void> {
   await expect(contador(page)).toContainText(/Mostrando|Nada coincide/);
 }
 
-/** La primera línea de la celda del nombre de cada fila visible. */
+/** La primera línea de la celda del nombre de cada fila visible (sin el rótulo «SIN FOTO» de la miniatura vacía). */
 async function nombres(page: Page): Promise<string[]> {
   const celdas = await filas(page).locator('td:first-child').allInnerTexts();
-  return celdas.map((t) => t.split('\n')[0]!.trim());
+  return celdas.map((t) => t.split('\n').map((l) => l.trim()).find((l) => l !== '' && l !== 'SIN FOTO') ?? '');
 }
 
 /** El precio de cada fila visible: un número, o `null` si dice «A consultar». */
@@ -186,10 +186,12 @@ test.describe('PRO-01 · Productos: lista, búsqueda, filtros, orden y paginaci�
     const enRango = (desde: number, hasta: number) =>
       TODOS.filter((i) => i.precio !== undefined && i.precio >= desde && i.precio <= hasta);
     await abrir(page);
+    // A ritmo de persona: se espera a que la URL refleje cada cambio antes del siguiente (ver el hallazgo H1 del informe).
     await control(page, 'Precio desde').fill('20');
-    await control(page, 'hasta').fill('40');
     await expect(page).toHaveURL(/pmin=20/);
+    await control(page, 'hasta').fill('40');
     await expect(page).toHaveURL(/pmax=40/);
+    await expect(page).toHaveURL(/pmin=20/);
     const esperados = enRango(20, 40);
     expect(esperados.length).toBeGreaterThan(5);
     await expect(contador(page)).toHaveText(resumen(esperados.length, 1, true));
@@ -198,14 +200,19 @@ test.describe('PRO-01 · Productos: lista, búsqueda, filtros, orden y paginaci�
     // Solo «desde»: sin tope arriba.
     await control(page, 'hasta').fill('');
     await expect(page).not.toHaveURL(/pmax=/);
+    await expect(contador(page)).toHaveText(resumen(enRango(20, Infinity).length, 1, true)); // ya se pintó con el cambio anterior
     await control(page, 'Precio desde').fill('90');
+    await expect(page).toHaveURL(/pmin=90/);
     const caros = enRango(90, Infinity);
     await expect(contador(page)).toHaveText(resumen(caros.length, 1, true));
 
     // El límite exacto entra: un precio que existe, como «desde» y «hasta» a la vez.
     const unPrecio = TODOS.find((i) => i.precio !== undefined)!.precio!;
     await control(page, 'Precio desde').fill(String(unPrecio));
+    await expect(page).toHaveURL(new RegExp(`pmin=${unPrecio}(&|$)`));
+    await expect(contador(page)).toHaveText(resumen(enRango(unPrecio, Infinity).length, 1, true));
     await control(page, 'hasta').fill(String(unPrecio));
+    await expect(page).toHaveURL(new RegExp(`pmax=${unPrecio}(&|$)`));
     await expect(contador(page)).toHaveText(resumen(enRango(unPrecio, unPrecio).length, 1, true));
 
     await page.reload();
@@ -221,6 +228,8 @@ test.describe('PRO-01 · Productos: lista, búsqueda, filtros, orden y paginaci�
     // Menor a mayor: página 1 y página 2, con los 6 «a consultar» al final.
     await control(page, 'Ordenar por').selectOption('precio');
     await expect(page).toHaveURL(/[?&]orden=precio/);
+    const conPrecio = TODOS.filter((i) => i.precio !== undefined).map((i) => i.precio!);
+    await expect(filas(page).first().locator('td:nth-child(3)')).toContainText(`${Math.min(...conPrecio)} BOB`);
     const p1 = (await precios(page)).filter((p): p is number => p !== null);
     expect(p1).toHaveLength(50);
     expect([...p1].sort((a, b) => a - b)).toEqual(p1);
@@ -237,16 +246,19 @@ test.describe('PRO-01 · Productos: lista, búsqueda, filtros, orden y paginaci�
     // Mayor a menor, y cambiar el orden vuelve a la página 1.
     await control(page, 'Ordenar por').selectOption('-precio');
     await expect(page).not.toHaveURL(/[?&]p=/);
+    await expect(filas(page).first().locator('td:nth-child(3)')).toContainText(`${Math.max(...conPrecio)} BOB`);
     const d1 = await precios(page);
     expect(d1).toHaveLength(50);
     expect(d1.every((p) => p !== null)).toBe(true);
     expect([...d1 as number[]].sort((a, b) => b - a)).toEqual(d1);
     await paginadores(page).first().getByRole('button', { name: 'Siguiente →' }).click();
+    await expect(contador(page)).toHaveText(resumen(79, 2));
     expect((await precios(page)).slice(-aConsultar)).toEqual(Array(aConsultar).fill(null));
 
     // Recién modificados: el ítem 1 es el más reciente, y así hacia atrás.
     await control(page, 'Ordenar por').selectOption('recientes');
     await expect(page).toHaveURL(/[?&]orden=recientes/);
+    await expect(filas(page).first()).toContainText('Taco Birria 001'); // ya se repintó con el nuevo orden
     expect((await nombres(page)).slice(0, 3)).toEqual(['Taco Birria 001', 'Horchata 002', 'Flan 003']);
 
     // Volver a «Nombre» quita el parámetro de la URL.
@@ -262,11 +274,12 @@ test.describe('PRO-01 · Productos: lista, búsqueda, filtros, orden y paginaci�
     await control(page, 'Área').selectOption('tacos');
     await expect(page).not.toHaveURL(/[?&]p=/);
     const esperados = TODOS.filter((i) => i.activo && i.area === 'tacos' && i.precio !== undefined && i.precio <= 50).length;
+    await expect(page).toHaveURL(/area=tacos/);
     await control(page, 'hasta').fill('50');
-    await expect(contador(page)).toHaveText(resumen(esperados, 1, true));
+    await expect(page).toHaveURL(/pmax=50/);
     await expect(page).toHaveURL(/estado=activo/);
     await expect(page).toHaveURL(/area=tacos/);
-    await expect(page).toHaveURL(/pmax=50/);
+    await expect(contador(page)).toHaveText(resumen(esperados, 1, true));
   });
 
   test('una dirección con todos los filtros se abre tal cual: los controles y la lista lo reflejan', async ({ page }) => {
