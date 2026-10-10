@@ -1452,7 +1452,7 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
     for (const rubro of ['gastronomia', 'retail', 'otro']) expect(valida(inventado, { rubroActual: rubro }), rubro).not.toBe('funcion_inventada');
     expect(valida(inventado, { rubroActual: 'belleza', contexto: 'abierta' })).toBe('funcion_inventada'); // (adelanto y pago total no están documentados en ningún rubro)
     expect(valida('NovuChat atiende tu WhatsApp en segundos, agenda citas y envía tu QR para que tus clientes paguen sin que nadie intervenga. ' + CIERRE, { rubroActual: 'belleza', contexto: 'abierta' })).not.toBe('funcion_inventada');
-    for (const x of ['Coordina el anticipo de cada cita para que no te dejen plantada. ', 'Registra la seña de tus clientes por WhatsApp. ', 'Gestiona el cobro de cada servicio al terminar. ']) {
+    for (const x of ['Coordina el anticipo de cada cita para que no te dejen plantada. ', 'Registra la seña de tus clientes por WhatsApp. ', 'Registra el cobro de cada servicio al terminar. ']) {
       expect(valida('NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces para tus especialistas en horarios reales. ' + x + CIERRE, { rubroActual: 'belleza' }), x).toBe('funcion_inventada');
     }
     // sin rubro conocido no se aplica (el pitch general y la pregunta por la empresa hablan de que tus clientes paguen por QR)
@@ -1913,9 +1913,37 @@ describe('pagos por QR: nadie «cobra» salvo el negocio; los clientes PAGAN', (
   const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
   const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ' + CIERRE_RUBRO, v(extra));
   const MAL = ['NovuChat toma pedidos y cobra por QR.', 'Kenji cobra con QR a tus clientes.', 'Tu asistente cobra enviando el QR.', 'El asistente realiza el cobro con QR.', 'Tu asistente hace el cobro de cada pedido.', 'Te cobra por QR al terminar.',
-    'Tus clientes cobran con QR.', 'Los clientes cobran por QR.', 'El cliente cobra por QR.', 'Tu cliente cobra con el QR.', 'Los clientes finales cobran con QR.', 'Cobras con QR desde WhatsApp.', 'Ventas y cobros por QR.', 'Tus clientes cobran por QR en segundos.', 'La IA cobra por QR.', 'Cobran con QR directo.', 'Tu negocio cobra por QR.'];
+    'Tus clientes cobran con QR.', 'Los clientes cobran por QR.', 'El cliente cobra por QR.', 'Tu cliente cobra con el QR.', 'Los clientes finales cobran con QR.', 'Cobras con QR desde WhatsApp.', 'Ventas y cobros por QR.', 'Tus clientes cobran por QR en segundos.', 'La IA cobra por QR.', 'Cobran con QR directo.', 'Tu negocio cobra por QR.',
+    // variantes de la revisión de seguridad
+    'El cobro lo hace tu asistente.', 'El cobro lo realiza Kenji.', 'Kenji cobrará el pedido.', 'Nosotros cobramos el pedido.', 'Para que cobres con QR.', 'Te ayuda a cobrarles con QR.', 'Cobrarle a tu cliente con QR.', 'Cobra al instante con QR.', 'Cobra fácil con tu QR.',
+    'Cobros QR al instante.', 'Se encarga de cobrar a tus clientes.', 'El bot hace la cobranza.', 'El cliente final cobra.', 'Kenji te cobra por QR.', 'Tu asistente cobra a tus clientes.', 'Co-bra por QR.', 'Cobra-por-QR.', 'C.o.b.r.a con QR.', 'El asistente gestiona el cobro de cada pedido.'];
   it('el modelo no puede decir que NovuChat, el asistente, Kenji o los clientes finales «cobran» ni que «realiza el cobro» (`sujeto_del_pago`), en cualquier rubro y contexto', () => {
     for (const x of MAL) for (const extra of [{}, { rubroActual: 'gastronomia' }, { rubroActual: 'retail', precios: true }, { contexto: 'abierta' }, { contexto: 'empresa' }, { contexto: 'rubro', rubroId: 'retail' }]) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('sujeto_del_pago');
+  });
+  it('la exclusión mira el OBJETO del verbo, no la oración: lo propio de NovuChat no excusa un «cobra» a tus clientes, ni el cierre fijo («…ver nuestros planes…»); cae en los seis contextos', () => {
+    const seis = [{ rubroActual: 'gastronomia' }, { rubroActual: 'retail' }, { rubroActual: 'otro' }, {}, { contexto: 'abierta' }, { contexto: 'empresa' }];
+    const mal = ['Te cobramos la instalación y el QR de tus clientes.', 'Te cobramos la instalación y cobramos a tus clientes.', 'NovuChat cobra tu plan y Kenji cobra a tus clientes.', 'Con el plan Pro, Kenji cobra a tus clientes.', 'Kenji cobra cada pedido de tus clientes sin comisión.',
+      'Te cobramos el setup; Kenji cobra el pedido a tus clientes.', 'Kenji cobra el pedido por WhatsApp.', 'Maneja el cobro de cada pedido.', 'Se ocupa del cobro de cada pedido.', 'Automatiza el cobro de cada pedido.', 'Lleva el cobro de cada pedido.', 'Envía el QR y cobra el pedido.',
+      'Los cobros los hace el asistente.', 'El cobro de cada pedido queda a cargo del asistente.', 'Kenji c o b r a por QR.', 'Kenji c-o-b-r-a por QR.'];
+    for (const x of mal) for (const extra of seis) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('sujeto_del_pago');
+    // la más grave: el cierre fijo (que dice «planes») no puede exceptuar la afirmación anterior, con emoji, con coma o sin puntuación
+    for (const antes of ['Kenji cobra cada pedido 🍔', 'Kenji cobra cada pedido,', 'Kenji cobra cada pedido', 'Kenji cobra cada pedido;']) {
+      for (const extra of seis) expect(f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + antes + ' ' + CIERRE_RUBRO, v(extra)), `${antes} ${JSON.stringify(extra)}`).toBe('sujeto_del_pago');
+    }
+    expect(marco('Kenji cobra el pedido por WhatsApp.')).not.toBe('bloqueo'); // sigue la causa del sujeto, no el bloqueo de Meta
+  });
+  it('siguen legítimas (no `sujeto_del_pago`): la instalación, la suscripción, la configuración inicial, la cuota mensual, el plan Impulso; «no cobra comisión» da `oferta` como en main', () => {
+    for (const x of ['Te cobramos la instalación.', 'NovuChat cobra una instalación única.', 'Te cobra la suscripción cada mes.', 'Te cobramos la configuración inicial.', 'Te cobramos una cuota mensual.', 'NovuChat cobra el plan Impulso por adelantado.', 'Kenji te cuenta cuánto cobra Meta.']) {
+      expect(marco(x), x).not.toBe('sujeto_del_pago');
+    }
+    expect(marco('Tu asistente no cobra comisión por venta.')).toBe('oferta');
+    expect(marco('Tu asistente no cobra ninguna comisión por venta.')).toBe('oferta');
+  });
+  it('NovuChat SÍ cobra al negocio su instalación, su plan y su mensualidad: esas frases NO caen por `sujeto_del_pago` (siguen la suerte que tenían)', () => {
+    for (const x of ['Te cobramos la instalación una sola vez.', 'NovuChat cobra una instalación única.', 'Tu asistente no cobra comisión por venta.', 'NovuChat cobra el plan cada mes por adelantado.', 'Kenji te explica cuánto cobra Meta.', 'La mensualidad se cobra en bolivianos al tipo de cambio oficial.', 'Te cobramos el setup estándar.']) {
+      expect(marco(x), x).not.toBe('sujeto_del_pago');
+    }
+    expect(marco('Tu asistente no cobra comisión por venta.')).toBe('oferta'); // la causa que tenía en main
   });
   it('lo correcto pasa: «tus clientes pagan por QR», «envía tu QR para que paguen», «recibe el pago»; y lo ajeno al QR no se toca («cuánto cobra Meta», «se cobran en bolivianos»)', () => {
     for (const x of ['Tus clientes pagan por QR directo a tu cuenta.', 'Envía el código QR de tu negocio para que tus clientes paguen.', 'Tu negocio recibe el pago de sus clientes por QR.', 'Tus clientes pagan por QR y tú recibes el pago en tu cuenta.', 'Tomas el pedido y tus clientes pagan con el QR.']) {

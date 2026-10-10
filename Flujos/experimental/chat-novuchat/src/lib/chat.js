@@ -1213,9 +1213,15 @@ function chPlazoSinRespaldo(n) {
   const t = chTexto(n).replace(/\b(?:los\s+)?(?:7|siete)\s+dias\s+(?:de|a)\s+la\s+semana\b/g, ' ').replace(/\bun dia antes\b/g, ' ');
   return CH_PLAZO_CANTIDAD.test(t) || CH_PLAZO_FECHA.test(t) || CH_PLAZO_24H.test(t);
 }
-// Quien PAGA con el QR son los clientes de la empresa, a la empresa: NovuChat, el asistente y Kenji no cobran a nadie, envían el QR del negocio. El modelo no puede decir que cobra, que «realiza el cobro»,
-// que «te cobra» ni que los clientes finales «cobran» («tus clientes cobran», «el cliente cobra»: ellos PAGAN); sí «tus clientes pagan por QR» o «envía tu QR para que paguen». («Cuánto cobra Meta» y «se cobran en bolivianos» son otra cosa y no se tocan.)
-const CH_COBRO_MAL = /\bcobr(?:a|an|as|o|amos|ar|ando|aran|ara)\s+(?:con|por|mediante|a traves de|via)\s+(?:el |tu |su |un )?(?:codigo )?qr\b|\bcobros?\s+(?:con|por|mediante|a traves de|via)\s+(?:el |tu |su )?(?:codigo )?qr\b|\b(?:realiza\w*|hace\w*|haces|hacemos|efectua\w*)\s+(?:el |los |tu |su )?cobros?\b|\bte cobra\w*|\b(?:tus |los |sus |mis |el |tu |su |mi )?clientes?(?:\s+finales)?\s+cobr(?:a|an|o|as|amos|ar|aran|ara|ando)\b|\b(?:novuchat|kenji|(?:tu|el|este) asistente|la ia|el bot)\b[^.!?]{0,30}\bcobr(?:a|an|ar|o|as)\b/;
+// Quien PAGA con el QR son los clientes de la empresa, a la empresa: NovuChat, el asistente y Kenji no cobran a nadie, envían el QR del negocio (sí «tus clientes pagan por QR»). Cae todo «cobr…» con QR, clientes, pedidos, ventas o compras en la MISMA cláusula (hasta 40 caracteres, cortada en ; : , ¿ ¡ « » o emoji), «realiza/maneja/lleva el cobro», «el cobro lo hace…», «los clientes cobran» y, con sujeto NovuChat/Kenji/el asistente o «te», todo «cobr…» salvo el OBJETO propio inmediato (la instalación, el setup, el plan, la mensualidad, la suscripción, la configuración, la cuota) o Meta/WhatsApp. «No cobra comisión» se quita antes. Se mira el texto tal cual, con guiones y puntos quitados o hechos espacios y con las letras espaciadas juntas.
+const CH_CLAUSULA = '[^.;:,!?¿¡«»\\p{Extended_Pictographic}]';
+const CH_COBRO_MAL = new RegExp('\\bcobr\\w*\\s+' + CH_CLAUSULA + '{0,40}?\\b(?:qr|clientes?|pedidos?|ventas?|compras?)\\b|\\b(?:realiza|hace|efectua|gestiona|maneja|automatiza|lleva|se ocupa)\\w*\\s+(?:(?:de|del|el|los|la|las|tu|su)\\s+)*(?:cobros?|cobranzas?)\\b|\\bcobros?\\s+l[oa]s?\\s+\\w+\\s+(?:tu |el |este )?(?:asistente|kenji|novuchat|bot|ia)\\b|\\bse encarga de cobr\\w*|\\bclientes?(?:\\s+final(?:es)?)?\\s+cobr\\w*', 'u');
+const CH_COBRO_PROPIO = '(?!\\w*\\s+(?:(?:(?:el|la|los|las|tu|su|una|un|cada|de)\\s+)*(?:\\w+\\s+)?(?:instalacion|setup|plan(?:es)?|mensualidad|suscripcion|configuracion|cuota)\\b|meta\\b|whatsapp\\b))';
+const CH_COBRO_DE_NOVUCHAT = new RegExp('\\bte cobr' + CH_COBRO_PROPIO + '\\w*|\\b(?:novuchat|kenji|nosotros|(?:tu|el|este) asistente|la ia|el bot)\\b' + CH_CLAUSULA + '{0,30}?\\bcobr' + CH_COBRO_PROPIO + '\\w*', 'u');
+function chCobroMal(n) {
+  const sin = chTexto(n).replace(/\bno cobra\w*\s+(?:ninguna\s+)?comision(?:es)?\b/g, ' ');
+  return [sin, cmJunto(sin), sin.replace(/[-_.·*]+/g, ' '), sin.replace(/\b(?:\p{L} ){2,}\p{L}\b/gu, (m) => m.replace(/ /g, ''))].some((t) => CH_COBRO_MAL.test(t) || CH_COBRO_DE_NOVUCHAT.test(t));
+}
 const CH_RUBROS_CON_COBRO = ['gastronomia', 'retail', 'otro'];
 const CH_FUNCION_INVENTADA = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado|cobros?|cobra\w*|cobrar)\b|\bqr\b/;
 const CH_FUNCION_INVENTADA_FUERTE = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado)\b/;
@@ -1247,7 +1253,7 @@ function chValidarMensaje(texto, v) {
   const sinPresentacion = n.replace(CH_PRESENTACION_OK, ' ');
   // Presentarse como persona o negar ser una IA (prohibición 4) se ve ANTES que los demás hechos, para que el reintento diga la causa justa.
   if (CH_YO_DEL_MODELO.test(sinPresentacion) || CH_NIEGA_IA.test(n)) return 'persona';
-  if (CH_COBRO_MAL.test(n)) return 'sujeto_del_pago';
+  if (chCobroMal(n)) return 'sujeto_del_pago';
   // R1: no se inventan funciones. Cobros, QR, adelantos, seña y anticipos solo están documentados para gastronomía, retail y «otro» (y en el pitch general y los hechos de la empresa).
   const rubroDelMensaje = chTexto(v.rubroId || v.rubroActual);
   // (en el pitch y en la empresa el «cobro por QR» es lo documentado, pero adelantos, anticipos, seña y pago total no lo son en NINGÚN rubro)
