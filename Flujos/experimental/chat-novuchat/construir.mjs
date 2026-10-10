@@ -361,7 +361,15 @@ export function validarDatos(datos, archivo) {
     if (typeof tx.listaTitulo === 'string' && tx.listaTitulo.length > 24) e('datos.textos.listaTitulo', 'pasa de 24 caracteres');
     if (typeof tx.botonTraspaso === 'string' && tx.botonTraspaso.length > 20) e('datos.textos.botonTraspaso', 'pasa de 20 caracteres (el título de un botón de enlace)');
     if (typeof tx.saludo === 'string' && !/inteligencia artificial/i.test(tx.saludo)) e('datos.textos.saludo', 'tiene que decir que es un asistente con inteligencia artificial (prohibición 4)');
-    for (const c of Object.keys(tx)) if (!CLAVES_TEXTOS.includes(c)) e(`datos.textos.${c}`, 'no es un texto conocido');
+    for (const c of Object.keys(tx)) if (!CLAVES_TEXTOS.includes(c) && c !== 'sitioFrase') e(`datos.textos.${c}`, 'no es un texto conocido');
+    // El sitio web (opcional; lo anexa SOLO el código): un único dominio, sin esquema, sin arroba, sin ruta ni «..»; su frase, corta y con UN {sitio}.
+    if (k.sitioWeb !== undefined) {
+      const sw = k.sitioWeb;
+      if (typeof sw !== 'string' || sw.length > 60 || !/^(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(sw) || sw.includes('..')) e('datos.sitioWeb', 'tiene que ser UN dominio visible («www.ejemplo.site»): sin esquema, sin arroba, sin ruta, sin «..», de a lo más 60 caracteres');
+      const fr = tx.sitioFrase;
+      if (typeof fr !== 'string' || fr.split('{sitio}').length !== 2 || fr.length > 120) e('datos.textos.sitioFrase', 'con sitioWeb tiene que haber una frase de a lo más 120 caracteres con UN {sitio}');
+      else { const m2 = errorDeTextoDelCliente(fr.replace('{sitio}', 'nuestro sitio'), { permitirPreguntas: false, sinAcredita: true }); if (m2) e('datos.textos.sitioFrase', m2); }
+    }
   }
 
   // --- R4: pedir el nombre y el negocio, cordialmente y una sola vez

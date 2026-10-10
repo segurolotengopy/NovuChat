@@ -246,7 +246,7 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(await violacionesCon(f, 'D2')).toEqual(expect.arrayContaining(['sin_imagen_de_planes']));
   });
   it('ajustes del 09/10: la base (sin estropear) da cero violaciones en los casos nuevos A1 a A5', async () => {
-    for (const id of ['A1', 'A1b', 'A2', 'A2b', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'REC', 'P1']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
+    for (const id of ['A1', 'A1b', 'A2', 'A2b', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'REC', 'P1']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
   });
   it('R1: si la red de funciones inventadas deja de rechazar, la invención de QR en belleza llega al cliente y la batería lo dice', async () => {
     const f = estropear("CH_FUNCION_INVENTADA.test(n))) return 'funcion_inventada';", "false)) return 'funcion_inventada';");

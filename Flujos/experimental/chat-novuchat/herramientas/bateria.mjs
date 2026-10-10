@@ -661,6 +661,8 @@ const SIN_DOS_BOTONES = new Set(['lista', 'lista_otro', 'traspaso', 'suspendido'
  * Las violaciones de las reglas duras sobre UN mensaje que el cliente RECIBE. `m` = { tipo, payload, cuerpo, evento, esRespaldo }; `ctx` = { lib, origen, contexto }.
  * La plantilla de aviso va a recepción, no al cliente: no se revisa aquí. Devuelve [{ regla, texto }].
  */
+// El sitio web que anexa el CÓDIGO (dato `sitioWeb`): el único enlace, además del de recepción y el de la imagen de planes, que el cliente puede recibir.
+const SITIO = String(datosDelChat().sitioWeb ?? '');
 export function revisarMensaje(m, ctx = {}) {
   if (m.tipo === 'template') return [];
   const v = [];
@@ -687,7 +689,7 @@ export function revisarMensaje(m, ctx = {}) {
   if (!esComplemento && lib.CH_SISTEMA_CONOCIDO.test(n)) anota('sistema_ajeno_o_integracion_inventada');
   if (!esComplemento && (lib.CH_BLOQUEO_COMUN.test(n) || lib.CH_OFERTA_DEL_MODELO.test(n) || /\bgratis\b|\bdescuento/.test(n))) anota('gratuidad_oferta_o_costo_de_meta_minimizado');
   for (const e of c.match(ENLACE) ?? []) {
-    const ok = new RegExp(`^(https://)?wa\\.me/${esc(REC)}(\\?.*)?$`, 'i').test(e) || e.startsWith(ARCHIVO.url);
+    const ok = new RegExp(`^(https://)?wa\\.me/${esc(REC)}(\\?.*)?$`, 'i').test(e) || e.startsWith(ARCHIVO.url) || (!!SITIO && e.replace(/[.,;:!?]+$/, '') === SITIO);
     if (!ok) anota('enlace');
   }
   if (c.length > 1024) anota('cuerpo_mayor_a_1024');

@@ -563,6 +563,7 @@ const CH_TOPE_IDS = 5;                       // ids de Meta que se recuerdan por
 const CH_TOPE_HISTORIAL = 8;                 // entradas del historial (cliente y asistente) que ve el modelo
 const CH_TOPE_TEXTO = 300;                   // caracteres por entrada del historial
 const CH_TOPE_EVENTO = 600;                  // caracteres de un evento del cliente
+const CH_TOPE_SITIO = 2;                     // veces que el CÓDIGO anexa el sitio web por ventana de 24 h y por teléfono
 const CH_TOPE_AVISOS = 3;                    // plantillas a recepción por ventana de 24 h y por teléfono: el primero + hasta 2 empresas distintas
 const CH_TOPE_COLA = 6;                      // eventos pendientes de responder, a lo más
 const CH_ESPERA_SEG = 2.5;                   // la espera de la ráfaga (coalescencia de clics)
@@ -667,7 +668,7 @@ function chFichaBase() {
     hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false, interactuo: false, descarte: '' },
     avisado: false, avisoFalla: '', planesMostrados: false, soporte: false, anuncio: false,
     // Ajustes del 09/10: el ciclo de un negocio (explicado, nombre pedido, planes pendientes, equipo ya pedido), el primer negocio y los otros para la hoja.
-    explicado: false, nombrePedido: false, preguntaDatos: false, planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, primero: null, otros: [], complementos: 0,
+    explicado: false, nombrePedido: false, preguntaDatos: false, planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, primero: null, otros: [], complementos: 0,
     seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [],
   };
 }
@@ -703,7 +704,7 @@ function chFichaVigente(e, ahoraMs) {
     explicado: e.explicado === true, nombrePedido: e.nombrePedido === true, preguntaDatos: e.preguntaDatos === true, planesPendientes: e.planesPendientes === true, equipoAhora: e.equipoAhora === true,
     // Las empresas por las que ya se avisó a recepción en la ventana (a lo más 3, normalizadas) y cuántos avisos van: el tope (3) acota la plantilla por segunda empresa.
     empresasAvisadas: Array.from(new Set((Array.isArray(e.empresasAvisadas) ? e.empresasAvisadas : []).concat(typeof e.empresaAvisada === 'string' ? [e.empresaAvisada] : []).filter((x) => typeof x === 'string').map((x) => chNorm(chPlano(x, 60))).filter((x) => x !== ''))).slice(0, CH_TOPE_AVISOS),
-    avisosVentana: chEntero(e.avisosVentana, 0, CH_TOPE_AVISOS), complementos: chEntero(e.complementos, 0, 3),
+    avisosVentana: chEntero(e.avisosVentana, 0, CH_TOPE_AVISOS), sitiosVentana: chEntero(e.sitiosVentana, 0, CH_TOPE_SITIO), complementos: chEntero(e.complementos, 0, 3),
     primero: e.primero && typeof e.primero === 'object' && !Array.isArray(e.primero) ? { rubro: CH_ID_RUBRO.test(chTexto(e.primero.rubro)) ? e.primero.rubro : '', empresa: chNombreDeEmpresa(e.primero.empresa, true) } : null,
     otros: (Array.isArray(e.otros) ? e.otros : []).filter((x) => x && typeof x === 'object').map((x) => ({ e: chNombreDeEmpresa(x.e, true), r: CH_ID_RUBRO.test(chTexto(x.r)) ? x.r : '' })).filter((x) => x.e !== '' || x.r !== '').slice(-3),
     seq: chEntero(e.seq, 0, 1000000000), hasta: chEntero(e.hasta, 0, 1000000000),
@@ -713,7 +714,7 @@ function chFichaVigente(e, ahoraMs) {
     ultimosIds: (Array.isArray(e.ultimosIds) ? e.ultimosIds : []).filter((x) => typeof x === 'string' && x !== '' && x.length <= 200).slice(-CH_TOPE_IDS),
   };
   if (s.hasta > s.seq) s.hasta = s.seq;
-  if (ultimo && ahoraMs - ultimo >= CH_VENTANA_MS) { s.avisado = false; s.planesMostrados = false; s.soporte = false; s.equipoAhora = false; s.planesPendientes = false; s.empresasAvisadas = []; s.avisosVentana = 0; }
+  if (ultimo && ahoraMs - ultimo >= CH_VENTANA_MS) { s.avisado = false; s.planesMostrados = false; s.soporte = false; s.equipoAhora = false; s.planesPendientes = false; s.empresasAvisadas = []; s.avisosVentana = 0; s.sitiosVentana = 0; }
   return s;
 }
 // ¿Meta ya entregó este mensaje (o ya está en la cola)? Se mira sobre la ficha cruda y no la toca.
@@ -1472,6 +1473,41 @@ function chCliente(texto, cfg, evento, est) {
   const botones = chBotonesDe(est);
   return cmMensaje('cliente', cmBotones(cuerpo, botones), cuerpo, cuerpo + '\n' + (botones.length === 2 ? CH_RESPALDO_BOTONES : CH_RESPALDO_UN_BOTON), { tipoReporte: 'interactive', evento: evento, botones: botones.map((b) => b.id) });
 }
+// El SITIO WEB lo anexa SOLO el código (el modelo no puede escribir ningún enlace: `CH_ENLACE` y la causa `enlace` siguen rechazando todo lo suyo). Una frase corta, sin promesas ni afirmar qué contiene,
+// ANTES de la pregunta final del mensaje (que sigue terminando en ella), solo en las rutas específicas, a lo más CH_TOPE_SITIO veces por ventana y por teléfono, y solo si cabe en un mensaje.
+// Si falta el dato `sitioWeb` o su frase, no se anexa nada.
+function chSitioWeb(cfg) {
+  const d = chDatos(cfg);
+  const sitio = chTexto(d.sitioWeb).trim();
+  const frase = chTexto((d.textos || {}).sitioFrase);
+  if (!/^(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(sitio) || sitio.length > 60 || frase.split('{sitio}').length !== 2) return '';
+  return frase.replace('{sitio}', sitio);
+}
+// Con la reserva (la invitación de la lista, tras el traspaso) también tiene que caber. Devuelve { texto, puso }.
+function chInsertarSitio(cfg, f, texto, reserva) {
+  const frase = chSitioWeb(cfg);
+  const base = chLineas(texto);
+  if (!frase || !f || !(f.sitiosVentana < CH_TOPE_SITIO) || base.includes(frase) || base.length + 1 + frase.length > CH_MAX_MENSAJE - (reserva || 0)) return { texto: base, puso: false };
+  const i = base.lastIndexOf('¿');
+  const cola = i >= 0 ? base.slice(i) : '';
+  if (i < 0 || !/\?\s*[\p{Extended_Pictographic}\uFE0F\s]*$/u.test(cola)) return { texto: (base + ' ' + frase).trim(), puso: true };
+  const antes = base.slice(0, i);
+  const sep = /\n\s*$/.test(antes) ? '\n\n' : ' ';
+  return { texto: (antes.trimEnd() + (antes.trim() === '' ? '' : sep) + frase + sep + cola).trim(), puso: true };
+}
+// El mensaje al cliente con el sitio (si la ruta lo pide y corresponde). `m.sitio` dice que se anexó; `m.textoSinSitio` es lo que va al historial (el sitio no es un hecho de la conversación).
+function chClienteConSitio(texto, cfg, evento, est, f, quiere) {
+  const base = chCliente(texto, cfg, evento, est);
+  if (quiere !== true) return base;
+  const tx = chDatos(cfg).textos || {};
+  const reserva = est && est.lista === true ? 2 + chEmMensaje(chSustituir(tx.invitaOtroRubro, cfg), cfg).length : 0;
+  const r = chInsertarSitio(cfg, f, texto, reserva);
+  if (!r.puso) return base;
+  const m = chCliente(r.texto, cfg, evento, est);
+  m.sitio = true;
+  m.textoSinSitio = base.texto;
+  return m;
+}
 // El primer mensaje: el saludo y la lista de rubros (los 7, cada uno con su descripción).
 function chLista(cfg) {
   const d = chDatos(cfg);
@@ -1526,7 +1562,7 @@ function chMensajeComplemento(cfg, o) {
       .map((p) => chTexto(p).replace(/\{usdEstandar\}/g, est ? chMonto(est.precioUsd) : '').replace(/\{usdMedida\}/g, med ? chMonto(med.precioUsd) : ''));
     texto = partes.concat([chTexto((d.cierres || {}).precios)]).filter((y) => y !== '').join(' ');
   }
-  return chCliente(texto, cfg, 'planes_complemento', { planes: true, lista: x.lista === true });
+  return chClienteConSitio(texto, cfg, 'planes_complemento', { planes: true, lista: x.lista === true }, x.ficha, (x.vez || 0) === 0);
 }
 // R4: el pedido del nombre y del negocio. Según lo que falte (los dos, solo el negocio o solo el nombre). `conPlanes`: la versión que antecede a los planes («Para mostrarte los planes…»); si no, la que se agrega al final de una respuesta.
 function chTextoPedirDatos(cfg, f, conPlanes) {
@@ -1672,6 +1708,7 @@ function chAplicarTurno(a) {
   f.preguntaDatos = a.pidioDatos === true || a.plan.ruta === 'pedirNombre' || /como te llamas|como se llama tu (?:negocio|empresa)/.test(chNorm(a.mensaje));
   if (a.explicacion === true) f.explicado = true;
   if (a.complemento === true) f.complementos = Math.min(3, f.complementos + 1);
+  if (a.sitio === true) f.sitiosVentana = Math.min(CH_TOPE_SITIO, f.sitiosVentana + 1);
   if (a.plan.soporte === true) f.soporte = true;
   if (a.anuncio === true) f.anuncio = true;
   f.ultimoMs = a.ahoraMs;

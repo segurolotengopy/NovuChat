@@ -1768,3 +1768,86 @@ describe('ronda de seguridad del 09/10: terceros, plazos, tope de avisos, perfil
     expect(f('chValidarMensaje')('NovuChat es un asistente de WhatsApp con inteligencia artificial para negocios de Bolivia: atiende a tus clientes las 24 horas, agenda citas, toma pedidos y cobra por QR, y tú lo controlas desde tu celular. ' + CIERRE_RUBRO, v({ contexto: 'empresa', rubroActual: 'belleza' }))).toBe('');
   });
 });
+
+// ================================================================================================
+// El sitio web (dato `sitioWeb`): lo anexa SOLO el código; el modelo sigue sin poder escribir ningún enlace.
+describe('el sitio web: lo anexa el código, con tope, antes de la pregunta final y si cabe', () => {
+  const SITIO = 'www.novuchat.site';
+  const FRASE = 'Si quieres ver más detalle, también lo encuentras en www.novuchat.site 🌐';
+  const conSitio = (extra: J = {}): J => ({ ...clonar(CFG), datos: { ...clonar(NOVUCHAT), ...extra } });
+  const fichaCon = (extra: J = {}): J => ({ ...fichaBase(), ultimoMs: AHORA, ...extra });
+  const PREG = '¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+
+  it('chSitioWeb: el dato visible y su frase; sin dato, sin frase o con un dominio raro, nada', () => {
+    expect(f('chSitioWeb')(CFG)).toBe(FRASE);
+    expect(f('chSitioWeb')(conSitio({ sitioWeb: '' }))).toBe('');
+    expect(f('chSitioWeb')(conSitio({ sitioWeb: undefined }))).toBe('');
+    for (const malo of ['http://novuchat.site', 'https://www.novuchat.site', 'www.novuchat.site' + '@' + 'x.com', 'novuchat.site/precios', 'www.novuchat..site', 'novuchat', 'www.novuchat.site ', 'x'.repeat(70) + '.com', 'www.novuchat.site?x=1', 'javascript:alert(1)', 'a b.com']) {
+      expect(f('chSitioWeb')(conSitio({ sitioWeb: malo })), malo).toBe(malo === 'www.novuchat.site ' ? FRASE : '');
+    }
+    const sinFrase = conSitio(); (sinFrase['datos'].textos as J) = { ...sinFrase['datos'].textos, sitioFrase: '' };
+    expect(f('chSitioWeb')(sinFrase)).toBe('');
+    const sinMarca = conSitio(); (sinMarca['datos'].textos as J) = { ...sinMarca['datos'].textos, sitioFrase: 'Visita el sitio' };
+    expect(f('chSitioWeb')(sinMarca)).toBe('');
+  });
+  it('chInsertarSitio: antes de la pregunta final (que sigue al final), una sola vez; sin pregunta, al final; con párrafos, conserva el corte', () => {
+    const ins = (t: string, ficha: J = fichaCon(), reserva = 0): J => f('chInsertarSitio')(CFG, ficha, t, reserva);
+    const r = ins('Esa no la tengo a la mano 🤔. ' + PREG);
+    expect(r.puso).toBe(true);
+    expect(r.texto).toBe('Esa no la tengo a la mano 🤔. ' + FRASE + ' ' + PREG);
+    expect(r.texto.split(SITIO).length - 1).toBe(1);
+    expect(ins('Esa no la tengo a la mano.').texto).toBe('Esa no la tengo a la mano. ' + FRASE);
+    expect(ins('Respuesta larga con contenido.\n\n¿Cómo te llamas y cómo se llama tu negocio? 😊').texto).toBe('Respuesta larga con contenido.\n\n' + FRASE + '\n\n¿Cómo te llamas y cómo se llama tu negocio? 😊');
+    expect(ins(r.texto).puso).toBe(false); // no se duplica
+  });
+  it('chInsertarSitio: tope de 2 por ventana (saneado como los demás contadores), reinicio con la ventana, y solo si CABE (con la reserva de la lista); nunca recorta el mensaje', () => {
+    const ins = (t: string, ficha: J, reserva = 0): J => f('chInsertarSitio')(CFG, ficha, t, reserva);
+    expect(ins('Hola. ' + PREG, fichaCon({ sitiosVentana: 1 })).puso).toBe(true);
+    expect(ins('Hola. ' + PREG, fichaCon({ sitiosVentana: 2 })).puso).toBe(false);
+    expect(K('CH_TOPE_SITIO')).toBe(2);
+    expect(f('chFichaVigente')(fichaCon({ sitiosVentana: 99 }), AHORA).sitiosVentana).toBe(0);
+    expect(f('chFichaVigente')(fichaCon({ sitiosVentana: -1 }), AHORA).sitiosVentana).toBe(0);
+    expect(f('chFichaVigente')(fichaCon({ sitiosVentana: 2 }), AHORA).sitiosVentana).toBe(2);
+    expect(f('chFichaVigente')(fichaCon({ sitiosVentana: 2, ultimoMs: AHORA - 25 * H }), AHORA).sitiosVentana).toBe(0);
+    const justo = 'x'.repeat(1000 - FRASE.length - 1 - 1 - PREG.length - 1) + '. ' + PREG; // 1.000 caracteres con la frase
+    expect(ins(justo, fichaCon()).puso).toBe(true);
+    expect(ins(justo + 'y', fichaCon()).puso).toBe(false);
+    const sinSitio = ins('y'.repeat(960) + '. ' + PREG, fichaCon());
+    expect(sinSitio.puso).toBe(false);
+    expect(sinSitio.texto.endsWith(PREG)).toBe(true); // el mensaje queda ENTERO
+    expect(ins('Hola. ' + PREG, fichaCon(), 990).puso).toBe(false);
+    expect(ins('Respuesta', fichaCon(), 100).puso).toBe(true);
+  });
+  it('chClienteConSitio: solo si la ruta lo pide; el historial recibe el texto sin el sitio', () => {
+    const quiere = f('chClienteConSitio')('Respuesta con contenido suficiente para probar. ' + PREG, CFG, 'x', { planes: true }, fichaCon(), true);
+    expect(quiere.sitio).toBe(true);
+    expect(quiere.texto).toContain(SITIO);
+    expect(quiere.textoSinSitio).not.toContain('novuchat.site');
+    expect(quiere.texto.endsWith(PREG)).toBe(true);
+    const no = f('chClienteConSitio')('Respuesta con contenido suficiente para probar. ' + PREG, CFG, 'x', { planes: true }, fichaCon(), false);
+    expect(no.sitio).toBeUndefined();
+    expect(no.texto).not.toContain('novuchat.site');
+    const lista = f('chClienteConSitio')('Esa no la tengo a la mano 🤔.', CFG, 'x', { planes: true, lista: true }, fichaCon(), true);
+    expect(lista.payload.interactive.type).toBe('list');
+    expect(lista.texto.split(SITIO).length - 1).toBe(1);
+    expect(lista.texto.length).toBeLessThanOrEqual(1024);
+  });
+  it('el modelo NO puede escribir el sitio ni un enlace parecido: el validador los rechaza con la causa `enlace` (o `promesa`/`sistema`, nunca pasan)', () => {
+    const v: J = { cfg: CFG, contexto: 'general', precios: false, permitidas: [], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '' };
+    const marco = (x: string): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ' + PREG, v);
+    expect(marco('Mira más detalle en la página.')).toBe('');
+    for (const x of ['Mira www.novuchat.site para más detalle.', 'Mira novuchat.site.evil.com para más detalle.', 'Mira www.novuchat.site' + '@' + 'x.com para más detalle.', 'Mira http://novuchat.site para más detalle.', 'Mira https://novuchat.site/precios para más detalle.', 'Mira novuchat.site para más detalle.']) expect(marco(x), x).not.toBe('');
+    expect(marco('Mira www.novuchat.site para más detalle.')).toBe('enlace');
+  });
+  it('los datos: `sitioWeb` y su frase se validan (un único dominio sin esquema, sin arroba, sin ruta; la frase con UN {sitio})', async () => {
+    const { validarDatos } = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'))) as { validarDatos: Fn };
+    const base = clonar(DATOS_BRUTOS) as J;
+    const ok = (mod: (d: J) => void): string => { const d = clonar(base); mod(d); try { validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
+    expect(ok(() => undefined)).toBe('');
+    expect(ok((d) => { delete d.datos.sitioWeb; })).toBe(''); // opcional
+    for (const malo of ['http://www.novuchat.site', 'www.novuchat.site' + '@' + 'x.com', 'novuchat.site/../x', 'novuchat.site/precios', 'www.novuchat..site', 'x', 'a b.com']) expect(ok((d) => { d.datos.sitioWeb = malo; }), malo).toMatch(/datos\.sitioWeb/);
+    expect(ok((d) => { d.datos.textos.sitioFrase = 'Visita el sitio'; })).toMatch(/sitioFrase/);
+    expect(ok((d) => { d.datos.textos.sitioFrase = 'Te llamamos mañana y ves {sitio}'; })).toMatch(/sitioFrase/);
+    expect(ok((d) => { delete d.datos.textos.sitioFrase; })).toMatch(/sitioFrase/);
+  });
+});

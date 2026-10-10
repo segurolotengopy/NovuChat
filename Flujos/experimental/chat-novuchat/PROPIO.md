@@ -32,6 +32,8 @@ Cerebro conversacional: instrucciones y datos del documento comercial (`admin/sc
 Esperar ráfaga, Armar turno), contexto y validación del mensaje del modelo (con su reintento y respaldos), rutas deterministas (planes, equipo, consumo, tope, banco, integración, costos de Meta,
 descuento, lista), «Confirmar envío» (restaura la ficha si Meta rechaza), hoja y calificación por hechos, y el modelo como parámetro de los datos.
 
+Propio también: el sitio web (`sitioWeb`) que anexa el código en las rutas específicas (empresa, sin dato, no documentado, complemento de planes, integraciones y costos de Meta), a lo más 2 veces por ventana y por teléfono; no agrega mensajes.
+
 ## Mensajes por conversación
 
 Un mensaje por turno del cliente (una ráfaga de clics es UN turno) más la plantilla a recepción UNA vez por ventana de 24 h. **0 agregados y 0 quitados** respecto de Captación mínima por turno, salvo (ajustes del 09/10): **+1 mensaje** en el camino «Ver planes» como primera respuesta (pide el nombre y el negocio antes de los planes; el camino de texto libre lo pide en el mismo mensaje, 0 agregados) y **+1 plantilla** a recepción cuando un segundo traspaso trae una empresa distinta, con tope de **3 plantillas por teléfono y por ventana de 24 h**;

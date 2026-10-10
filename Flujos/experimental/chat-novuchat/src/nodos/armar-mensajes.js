@@ -81,7 +81,7 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
   if (plan.ruta === 'lista') m = chLista(cfg);
   else if (plan.ruta === 'planes') {
     // R6: los planes ya se mostraron y piden más: hechos nuevos del complemento, nunca el mismo texto ni la misma imagen (salvo que pregunten por el tope de un plan).
-    if (antes.planesMostrados === true && plan.tope !== true) { m = chMensajeComplemento(cfg, { vez: antes.complementos, lista: est.lista }); complemento = true; }
+    if (antes.planesMostrados === true && plan.tope !== true) { m = chMensajeComplemento(cfg, { vez: antes.complementos, lista: est.lista, ficha: antes }); complemento = true; }
     else m = chMensajePlanes(cfg, { aMedida: plan.aMedida, repite: antes.planesMostrados === true, tope: plan.tope === true, lista: est.lista });
   }
   else if (plan.ruta === 'pedirNombre') m = chCliente(chTextoPedirDatos(cfg, antes, true), cfg, 'pedir_datos', est);
@@ -89,7 +89,8 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
     const dicho = chRespuestaFija(plan.fijo, cfg, est.lista);
     const unido = plan.fijo === 'identidad' ? { texto: dicho, pidio: false } : chConAnexoDatos(cfg, antes, dicho, 'fijo');
     anexo = unido.pidio ? 'si' : '';
-    m = chCliente(unido.texto, cfg, 'fijo', est);
+    // (el sitio web, solo en las respuestas fijas específicas: integraciones y costos de Meta)
+    m = chClienteConSitio(unido.texto, cfg, 'fijo', est, antes, plan.fijo === 'integracion' || plan.fijo === 'costoMeta');
   }
   else if (plan.ruta === 'equipo') {
     // Si el cliente dio su nombre y su negocio en este mismo turno, el traspaso no los vuelve a pedir: se usan los de la ficha NUEVA (como el aviso).
@@ -102,10 +103,11 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
     const conocido = Object.assign({}, antes, { nombre: antes.nombre || (res.lectura && res.lectura.nombre) || '', empresa: antes.empresa || (res.lectura && res.lectura.empresa) || '' });
     const unido = chConAnexoDatos(cfg, conocido, res.texto, res.contexto);
     anexo = unido.pidio ? 'si' : '';
-    m = chCliente(unido.texto, cfg, res.evento, est);
+    // (el sitio web, solo en la empresa y cuando no hay dato: `empresa`, `sin_dato`, `no_documentado`)
+    m = chClienteConSitio(unido.texto, cfg, res.evento, est, antes, ['empresa', 'sin_dato', 'no_documentado'].includes(res.evento));
   }
   mensajes.push(m);
-  nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.texto, ahoraMs: ahora, anuncio: t.anuncio === true,
+  nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.textoSinSitio || m.texto, sitio: m.sitio === true, ahoraMs: ahora, anuncio: t.anuncio === true,
     sinRecepcion: recepcion.length < 6, ciclo: ciclo, explicacion: plan.ruta === 'modelo' && ['rubro', 'otroRespuesta'].includes(res.contexto), pidioDatos: anexo !== '', complemento: complemento });
   // Pedir hablar con el equipo: la plantilla a recepción, UNA vez por ventana (`avisado` cuenta solo lo que Meta aceptó) y nunca al propio número de recepción. Con una empresa DISTINTA a la ya avisada,
   // un aviso nuevo (R5); con la misma, solo se reenvía el botón.

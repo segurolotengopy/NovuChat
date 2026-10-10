@@ -2183,4 +2183,118 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     expect(filaDe(w, MAMA)![COL.nombre]).toBe('');
     expect(JSON.stringify(j.boton('equipo').plantillas[0]!.payload)).not.toMatch(/Ventas Gratis/);
   });
+  describe('el sitio web (www.novuchat.site) lo anexa SOLO el código, en las rutas específicas y antes de la pregunta final', () => {
+    const SITIO = 'www.novuchat.site';
+    const FRASE = 'Si quieres ver más detalle, también lo encuentras en www.novuchat.site 🌐';
+    const EMPRESA_OK = 'NovuChat es un asistente de WhatsApp con inteligencia artificial para negocios de Bolivia: atiende a tus clientas las 24 horas, agenda citas, toma pedidos y cobra por QR, y tú lo controlas desde tu celular. ' + CIERRE_RUBRO;
+    const veces = (x: string): number => x.split(SITIO).length - 1;
+    const antesDeLaPregunta = (x: string): boolean => x.indexOf(SITIO) > -1 && x.indexOf(SITIO) < x.lastIndexOf('¿') && /\?\s*\p{Extended_Pictographic}?\s*$/u.test(x);
+    const empezar = (w: W) => { const j = jugar(w, MAMA); j.texto('Hola'); w.modelo.con = dice(BELLEZA, { rubro: 'belleza' }); j.lista('rubro:belleza'); return j; };
+
+    it('rutas elegidas: empresa, sin dato, no documentado, planes pedidos otra vez, integraciones y costos de Meta: UNA vez, antes de la pregunta final, sin mensajes de más', () => {
+      const w = crear();
+      const j = empezar(w);
+      w.modelo.con = dice(EMPRESA_OK);
+      const e = j.texto('Dame mas info sobre la empresa').aMi;
+      expect(e).toHaveLength(1);
+      expect(veces(e[0]!.cuerpo)).toBe(1);
+      expect(antesDeLaPregunta(e[0]!.cuerpo)).toBe(true);
+      expect(e[0]!.cuerpo).toContain(FRASE);
+      // (el tope es de 2 por ventana: las demás rutas, en otras conversaciones)
+      const una = (preparar: (w: W, j: ReturnType<typeof jugar>) => void, pregunta: string): string => {
+        const w2 = crear();
+        const j2 = empezar(w2);
+        preparar(w2, j2);
+        const t = j2.texto(pregunta);
+        expect(t.aMi, pregunta).toHaveLength(1);
+        return t.aMi[0]!.cuerpo;
+      };
+      const sinDato = una((w2) => { w2.modelo.con = 'ERROR'; }, 'Cuéntame cómo se maneja la agenda cuando hay varios especialistas en el mismo salón');
+      expect(sinDato).toMatch(/Ese dato no lo tengo a la mano/);
+      const noDoc = una((w2) => { w2.modelo.con = dice(INVENTA); }, 'Sería cobros con qr');
+      expect(noDoc).toMatch(/Eso no lo tengo documentado para tu rubro/);
+      const integ = una(() => undefined, '¿Se integra con mi ERP?');
+      expect(integ).toMatch(/Esa no la tengo a la mano/);
+      const meta = una(() => undefined, '¿Cuánto cobra Meta?');
+      expect(meta).toMatch(/Esa no la tengo a la mano/);
+      for (const [k, x] of Object.entries({ sinDato, noDoc, integ, meta })) { expect(veces(x), k).toBe(1); expect(antesDeLaPregunta(x), k).toBe(true); }
+      // planes pedidos otra vez (el complemento)
+      const w3 = crear();
+      const j3 = empezar(w3);
+      w3.modelo.con = dice(MAS);
+      j3.texto('Uff sí, todo el día pegada al celular');
+      j3.texto('Planes por favor');
+      const comp = j3.texto('Quiero ver los planes otra vez').aMi[0]!.cuerpo;
+      expect(veces(comp)).toBe(1);
+      expect(antesDeLaPregunta(comp)).toBe(true);
+      expect(comp).toMatch(/servicio prepago mensual/);
+    });
+    it('NO aparece en el saludo, el pitch, los planes, el traspaso, la plantilla, la hoja ni el historial', () => {
+      const w = crear();
+      const j = jugar(w, MAMA, { perfil: 'Ana' });
+      const saludo = j.texto('Hola').aMi[0]!;
+      expect(saludo.cuerpo).not.toContain(SITIO);
+      w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+      expect(j.lista('rubro:belleza').aMi[0]!.cuerpo).not.toContain(SITIO);
+      w.modelo.con = dice(PITCH);
+      expect(j.texto('Quiero más información').aMi[0]!.cuerpo).not.toContain(SITIO);
+      expect(j.boton('planes').aMi[0]!.cuerpo).not.toContain(SITIO);
+      w.modelo.con = dice(EMPRESA_OK);
+      expect(j.texto('¿Quiénes son ustedes?').aMi[0]!.cuerpo).toContain(SITIO); // la ruta SÍ lo lleva
+      const eq = j.boton('equipo');
+      expect(eq.aMi[0]!.cuerpo).not.toContain(SITIO);
+      expect(JSON.stringify(eq.plantillas.map((x) => x.payload))).not.toContain('novuchat.site');
+      expect(JSON.stringify(w.hoja.filas)).not.toContain('novuchat.site');
+      expect(JSON.stringify(fichaDe(w, MAMA)!['historial'])).not.toContain('novuchat.site'); // no es un hecho de la conversación
+      expect(w.turnos.every((t) => t.aMi.length <= 1)).toBe(true);
+    });
+    it('tope: a lo más 2 veces por ventana de 24 h y por teléfono; al vencer la ventana vuelve', () => {
+      const w = crear();
+      const j = empezar(w);
+      const cuerpos = ['¿Se integra con mi ERP?', '¿Cuánto cobra Meta?', '¿Se integra con Odoo?'].map((q) => j.texto(q).aMi[0]!.cuerpo);
+      expect(cuerpos.map(veces)).toEqual([1, 1, 0]);
+      expect(fichaDe(w, MAMA)!['sitiosVentana']).toBe(2);
+      expect(antesDeLaPregunta(cuerpos[1]!)).toBe(true);
+      expect(cuerpos[2]!).toMatch(/\?\s*\p{Extended_Pictographic}?\s*$/u); // sin el sitio sigue terminando en su pregunta
+      const despues = j.texto('¿Se integra con mi ERP otra vez?', 25 * 60).aMi[0]!.cuerpo;
+      expect(veces(despues)).toBe(1);
+    });
+    it('sin el dato `sitioWeb` no se anexa nada (y no hay error)', () => {
+      const f = JSON.parse(JSON.stringify(PRODUCCION)) as Flujo;
+      let tocados = 0;
+      for (const n of f.nodes as J[]) {
+        const js = n.parameters?.jsCode;
+        if (typeof js === 'string' && js.includes('"sitioWeb":"www.novuchat.site"')) { n.parameters.jsCode = js.split('"sitioWeb":"www.novuchat.site"').join('"sitioWeb":""'); tocados += 1; }
+      }
+      expect(tocados).toBeGreaterThan(0);
+      const w = crear({ flujo: f });
+      const j = empezar(w);
+      const t = j.texto('¿Se integra con mi ERP?');
+      expect(t.aMi[0]!.cuerpo).toMatch(/Esa no la tengo a la mano/);
+      expect(t.aMi[0]!.cuerpo).not.toContain('novuchat.site');
+      expect(w.malFormado).toEqual([]);
+    });
+    it('el modelo NO puede escribir el sitio ni ningún enlace: «www.novuchat.site», «novuchat.site.evil.com», «www.novuchat.site» con arroba, «http://novuchat.site» caen y el cliente recibe el respaldo', () => {
+      for (const malo of ['Puedes verlo en www.novuchat.site y te cuento más.', 'Mira novuchat.site.evil.com para más detalle.', 'Escribe a www.novuchat.site' + '@' + 'x.com para más detalle.', 'Entra a http://novuchat.site para más detalle.', 'Entra a https://novuchat.site/precios para más detalle.']) {
+        const w = crear();
+        const j = empezar(w);
+        w.modelo.con = dice('NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces para tus especialistas. ' + malo + ' ' + CIERRE_RUBRO);
+        const antes = w.modelo.reintentos.length;
+        const t = j.texto('Cuéntame cómo funciona el agendamiento con Google Calendar para mi consultorio');
+        expect(w.modelo.reintentos.length - antes, malo).toBe(1);
+        expect(t.aMi[0]!.cuerpo, malo).not.toContain(malo);
+        expect(t.aMi[0]!.cuerpo, malo).not.toMatch(/novuchat\.site\.evil|@x\.com|http/);
+      }
+    });
+    it('tras el traspaso (lista de rubros) el sitio también va dentro del mismo mensaje y la invitación sigue al final', () => {
+      const w = crear();
+      const j = empezar(w);
+      j.boton('equipo');
+      const t = j.texto('¿Se integra con mi ERP?').aMi[0]!;
+      expect(tipoInter(t)).toBe('list');
+      expect(veces(t.cuerpo)).toBe(1);
+      expect(t.cuerpo).toMatch(/Si tienes otro negocio, cuéntame de qué rubro es y te explico cómo te ayudamos 😊$/);
+      expect(t.cuerpo.length).toBeLessThanOrEqual(1024);
+    });
+  });
 });

@@ -2519,7 +2519,10 @@
      },
      "exige": {
       "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
-      "botones": "planes+equipo"
+      "botones": "planes+equipo",
+      "noContiene": [
+       "novuchat.site"
+      ]
      }
     },
     {
@@ -2551,7 +2554,8 @@
        "Para belleza tu asistente"
       ],
       "contiene": [
-       "evalúe tu caso"
+       "evalúe tu caso",
+       "www.novuchat.site"
       ],
       "botones": "planes+equipo"
      },
@@ -2566,7 +2570,10 @@
       "ruta": "planes",
       "sinModelo": true,
       "imagenPlanes": true,
-      "botones": "equipo"
+      "botones": "equipo",
+      "noContiene": [
+       "novuchat.site"
+      ]
      }
     },
     {
@@ -2579,7 +2586,8 @@
       "origen": "respaldo",
       "contiene": [
        "inteligencia artificial",
-       "24 horas"
+       "24 horas",
+       "www.novuchat.site"
       ],
       "noContiene": [
        "para no marearte"
@@ -3031,7 +3039,8 @@
      "exige": {
       "contiene": [
        "inteligencia artificial",
-       "24 horas"
+       "24 horas",
+       "www.novuchat.site"
       ],
       "botones": "planes+equipo",
       "conModelo": true
@@ -3211,6 +3220,66 @@
       "sinModelo": true,
       "imagenPlanes": true,
       "botones": "equipo"
+     }
+    }
+   ]
+  },
+  {
+   "id": "A9",
+   "titulo": "El sitio web lo anexa el código: integraciones, costos de Meta y planes otra vez, UNA vez antes de la pregunta final y a lo más 2 veces por ventana; nunca en el saludo, los planes ni el pitch",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true,
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se integra con mi ERP?",
+     "exige": {
+      "sinModelo": true,
+      "contiene": [
+       "Esa no la tengo a la mano",
+       "www.novuchat.site"
+      ],
+      "termina": "¿Te gustaría hablar con alguien de nuestro equipo para saber si es posible en tu caso? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Cuánto cobra Meta?",
+     "exige": {
+      "sinModelo": true,
+      "contiene": [
+       "www.novuchat.site"
+      ],
+      "termina": "¿Te gustaría hablar con alguien de nuestro equipo para que te ayude con esa duda? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se integra con Odoo?",
+     "exige": {
+      "sinModelo": true,
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
      }
     }
    ]
