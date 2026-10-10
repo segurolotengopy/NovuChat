@@ -1856,10 +1856,23 @@ service cloud.firestore {
                           // consola. Es el ÚNICO campo de gestión que cambia lo que
                           // el sistema hace —saca al teléfono del barrido de
                           // seguimientos— y por eso se valida su tipo abajo.
-                          && soloCampos(['etiquetas', 'atendidaPor', 'notaInterna',
-                                         'noContactar'])
+                          // H1 (09/10/2026): `atendidaPor` sale (nadie lo leía y era editable sin
+                          // efecto; la toma real llega en H2 y la escribe el servidor). Se suman
+                          // `noLeidos` y `sinLeer`, que la persona SOLO puede poner en 0 / false
+                          // (`marcaLeidaValida`): los suma la ingesta.
+                          && soloCampos(['etiquetas', 'notaInterna', 'noContactar',
+                                         'noLeidos', 'sinLeer'])
+                          && marcaLeidaValida()
                           && request.resource.data.get('noContactar', false) is bool
                           && textoOpc(request.resource.data, 'notaInterna', 1000));
+
+        // La persona solo MARCA LEÍDA: cualquier cambio de `noLeidos` lo deja en 0 y de `sinLeer`, en false
+        // (borrar el campo o escribir otro valor se niega). Un cambio de otro campo no la toca.
+        function marcaLeidaValida() {
+          let cambios = request.resource.data.diff(resource.data).affectedKeys();
+          return (!cambios.hasAny(['noLeidos']) || request.resource.data.noLeidos == 0)
+              && (!cambios.hasAny(['sinLeer']) || request.resource.data.sinLeer == false);
+        }
 
         function conversacionValida() {
           let d = request.resource.data;

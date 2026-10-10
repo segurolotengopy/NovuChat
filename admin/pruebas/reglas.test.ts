@@ -30,7 +30,7 @@ import {
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs,
   query, orderBy, limit, where, documentId, collectionGroup,
-  serverTimestamp, Timestamp, addDoc, deleteField, writeBatch, increment,
+  serverTimestamp, Timestamp, addDoc, deleteField, writeBatch, increment, getCountFromServer,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -868,8 +868,10 @@ describe('Historial de mensajes', () => {
 
   it('una persona del negocio solo toca los campos de gestión interna', async () => {
     await assertSucceeds(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), {
-      etiquetas: ['pendiente'], atendidaPor: 'u-oper-a', notaInterna: 'Llamar mañana',
+      etiquetas: ['pendiente'], notaInterna: 'Llamar mañana',
     }));
+    // H1 (09/10/2026): `atendidaPor` ya no lo escribe la persona.
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { atendidaPor: 'u-oper-a' }));
     await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { ultimoMensaje: 'falsificado' }));
     await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { telefono: '59170000003' }));
   });
@@ -3840,5 +3842,99 @@ describe('Límite de productos por plan: el catálogo no pasa del plan', () => {
     await assertSucceeds(getDoc(doc(propietario(), rutaContador(A))));
     await assertFails(getDoc(doc(adminB(), rutaContador(A))));
     await assertFails(getDoc(doc(ingestaA(), rutaContador(A))));
+  });
+});
+
+// ===========================================================================
+// H1 DE CONVERSACIONES (09/10/2026): MARCAR LEÍDA, CAMPOS DERIVADOS Y BÚSQUEDA
+//
+// La ingesta (Admin SDK) suma `noLeidos` y pone `sinLeer`; la persona del negocio
+// SOLO puede ponerlos en 0 / false. Los campos derivados de la búsqueda, el turno
+// y el autor son del servidor. Una búsqueda de palabras entre comercios NO se
+// abre en las reglas: la hace la callable `buscarConversaciones`.
+// ===========================================================================
+describe('H1 de Conversaciones: marcar leída, campos derivados y búsqueda', () => {
+  const c1 = (t: string = A) => `tenants/${t}/conversaciones/c1`;
+  async function sembrarSinLeer(t: string = A, sinLeer = true) {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), c1(t)), { noLeidos: 3, sinLeer });
+    });
+  }
+
+  it('el administrador y el operador del comercio marcan leída: noLeidos en 0 y sinLeer en false', async () => {
+    await sembrarSinLeer();
+    await assertSucceeds(updateDoc(doc(adminA(), c1()), { noLeidos: 0, sinLeer: false }));
+    await sembrarSinLeer();
+    await assertSucceeds(updateDoc(doc(operA(), c1()), { noLeidos: 0, sinLeer: false }));
+  });
+
+  it('no puede subir el contador ni escribir otro valor, ni borrar el campo', async () => {
+    await sembrarSinLeer(A, false);
+    await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: 5 }));
+    await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: '0' }));
+    await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: deleteField() }));
+    await assertFails(updateDoc(doc(operA(), c1()), { sinLeer: true }));
+    await assertFails(updateDoc(doc(operA(), c1()), { sinLeer: 'false' }));
+    await assertFails(updateDoc(doc(operA(), c1()), { sinLeer: deleteField() }));
+  });
+
+  it('un administrador del comercio A no toca las conversaciones del comercio B', async () => {
+    await sembrarSinLeer(B);
+    await assertFails(updateDoc(doc(adminA(), c1(B)), { noLeidos: 0, sinLeer: false }));
+  });
+
+  it('el propietario de NovuChat, aun con soporte vigente, no marca leída', async () => {
+    await sembrarSinLeer();
+    await assertFails(updateDoc(doc(propietarioConSoporte(), c1()), { noLeidos: 0 }));
+    await assertFails(updateDoc(doc(propietario(), c1()), { noLeidos: 0 }));
+  });
+
+  it('la persona no escribe ningún campo derivado, de turno ni de autor', async () => {
+    const campos: Record<string, unknown> = {
+      telefonoTrozos: ['0001'], nombrePalabras: ['ana'],
+      ultimoEntranteEn: Timestamp.now(), ventanaVenceEn: Timestamp.now(),
+      necesitaHumano: true, turno: { responde: 'persona' }, atendidaPor: 'u-oper-a', tenantId: A,
+      palabras: ['hola'],
+    };
+    for (const [campo, valor] of Object.entries(campos)) {
+      await assertFails(updateDoc(doc(operA(), c1()), { [campo]: valor }));
+      await assertFails(updateDoc(doc(adminA(), c1()), { [campo]: valor }));
+    }
+  });
+
+  it('cambiar noContactar con noLeidos intacto sigue permitido', async () => {
+    await sembrarSinLeer();
+    await assertSucceeds(updateDoc(doc(operA(), c1()), { noContactar: true }));
+  });
+
+  it('con el comercio suspendido se lee, pero no se marca leída', async () => {
+    await sembrarSinLeer();
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'tenants', A), { estado: 'suspendido' });
+    });
+    await assertFails(updateDoc(doc(operA(), c1()), { noLeidos: 0, sinLeer: false }));
+    await assertSucceeds(getDoc(doc(operA(), c1())));
+  });
+
+  it('NO existe una consulta de mensajes entre comercios desde el navegador', async () => {
+    await assertFails(getDocs(query(collectionGroup(adminA(), 'mensajes'), where('tenantId', '==', A))));
+    await assertFails(getDocs(query(collectionGroup(adminA(), 'mensajes'), where('palabras', 'array-contains', 'hola'))));
+  });
+
+  it('nadie crea ni edita un mensaje desde el navegador', async () => {
+    await assertFails(setDoc(doc(adminA(), `${c1()}/mensajes/m9`), {
+      direccion: 'saliente', tipo: 'text', texto: 'hola', ts: Timestamp.now(), tenantId: A, palabras: ['hola'],
+    }));
+    await assertFails(updateDoc(doc(adminA(), `${c1()}/mensajes/m1`), { palabras: ['x'] }));
+  });
+
+  it('el conteo del servidor funciona sobre el comercio propio y se niega sobre el ajeno', async () => {
+    await assertSucceeds(getCountFromServer(query(collection(adminA(), `tenants/${A}/conversaciones`))));
+    await assertFails(getCountFromServer(query(collection(adminA(), `tenants/${B}/conversaciones`))));
+  });
+
+  it('el comercio no escribe su propia bandera de pantalla', async () => {
+    await assertFails(updateDoc(doc(adminA(), 'tenants', A), { consolaConversaciones: 'nueva' }));
+    await assertFails(updateDoc(doc(operA(), 'tenants', A), { consolaConversaciones: 'nueva' }));
   });
 });

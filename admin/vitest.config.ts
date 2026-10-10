@@ -71,6 +71,7 @@ export const SUITES_PURAS = [
   'pruebas/bellido-flujo.test.ts',
   'pruebas/bitacora-tipos.test.ts',
   'pruebas/core/bitacora.test.ts',
+  'pruebas/frontera/titulo-de-pagina.test.ts',
   'pruebas/core/clave-n8n-fuera-de-argumentos.test.ts',
   'pruebas/core/publicar-flujo-credencial-ambigua.test.ts',
   'pruebas/core/credenciales-venta.test.ts',

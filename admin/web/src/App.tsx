@@ -29,6 +29,7 @@ import { Inventario } from './modulos/inventario/Inventario';
 import { Pedidos } from './modulos/pedidos/Pedidos';
 import { Cobros } from './modulos/cobros/Cobros';
 import { Captacion } from './modulos/captacion/Captacion';
+import { tramoDeTitulo } from './core/lib/tramoDeTitulo';
 import { etiquetaDeCatalogoDe, pestanasVisibles, useModulos } from './central/lib/flujos';
 import type { IdModulo } from './central/lib/flujos';
 
@@ -96,7 +97,7 @@ const TITULOS: Record<string, string> = {
 
 function useTituloDePagina(modulos: IdModulo[] | null): void {
   const { pathname } = useLocation();
-  const tramo = pathname.replace(/\/+$/, '').split('/').pop() ?? '';
+  const tramo = tramoDeTitulo(pathname);
   const nombre = tramo === 'catalogo' ? etiquetaDeCatalogoDe(modulos ?? []) : TITULOS[tramo];
   useEffect(() => {
     document.title = nombre ? `${nombre} · NovuChat` : 'NovuChat · Panel administrativo';
@@ -253,7 +254,7 @@ export function App() {
           <Proteger requiere="propietario"><><Cabecera /><CuentaNegocio /></></Proteger>} />
         <Route path="/negocio/:tenantId/configuracion" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Configuracion /></></Proteger>} />
-        <Route path="/negocio/:tenantId/conversaciones" element={
+        <Route path="/negocio/:tenantId/conversaciones/:conversacionId?" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Conversaciones /></></Proteger>} />
         <Route path="/negocio/:tenantId/usuarios" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Usuarios /></></Proteger>} />

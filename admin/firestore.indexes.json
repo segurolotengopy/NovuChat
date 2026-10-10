@@ -119,6 +119,52 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "mensajes",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "tenantId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "palabras",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "ts",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "conversaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sinLeer",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "ultimoEn",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "conversaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "atencionEstado",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "ultimoEn",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -150,6 +196,16 @@
           "queryScope": "COLLECTION"
         }
       ]
+    },
+    {
+      "collectionGroup": "mensajes",
+      "fieldPath": "palabras",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "mensajes",
+      "fieldPath": "tenantId",
+      "indexes": []
     }
   ]
 }
