@@ -28,6 +28,7 @@
  */
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { createHash } from 'node:crypto';
 import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
 // El plan inicial de las altas (Impulso con su copia de límites), el mismo que
 // escriben `altaTenant` y `alta-comercio.mjs`. Node 22.18+ carga TypeScript.
@@ -228,7 +229,9 @@ async function sembrarComercio({ id, nombre, estado, vertical, telefono, pnid, c
     mensajeErrorTemporal: 'Tuvimos un inconveniente. Intente en un momento, por favor.',
     mensajeReservaNoConfirmada: 'No pude confirmar la reserva. Le escribe recepcion enseguida.',
     mensajeComercioSuspendido: 'Por el momento no atendemos por este medio.',
-    calendarioId: `${id}@group.calendar.google.com`,
+    // Un id de calendario de grupo VÁLIDO (64 hexadecimales, lo que exige `calendarioValido` en firestore.rules): con la forma
+    // `<id>@group.calendar.google.com` la regla rechazaba TODO guardado de Configuración del comercio sembrado, tocara lo que tocara.
+    calendarioId: `${createHash('sha256').update(id).digest('hex')}@group.calendar.google.com`,
     moneda: 'BOB',
     horarios: {
       lun: '09:00-19:00', mar: '09:00-19:00', mie: '09:00-19:00',
