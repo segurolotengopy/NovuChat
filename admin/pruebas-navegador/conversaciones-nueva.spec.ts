@@ -231,6 +231,18 @@ test.describe('Conversaciones (pantalla nueva)', () => {
     await expect(fila(page, 'Ximena P.')).toBeVisible();
   });
 
+  test('NEGATIVA: una dirección con «%2F» en el id (o en `?m=`) dice «No se encontró» o la ignora, y la lista sigue viva', async ({ page }) => {
+    await sembrarConversacion(FOGON, TEL_47, HOLA, campos(TEL_47, 'Ximena P.'));
+    await abrirConversaciones(page);
+    await page.goto(`/negocio/${FOGON}/conversaciones/wa_${TEL_47}%2Fmensajes`);
+    await expect(page.getByText('No se encontró esa conversación.')).toBeVisible();
+    await expect(fila(page, 'Ximena P.')).toBeVisible();
+    // Un `?m=` con «/» se ignora: la conversación se abre igual, con sus últimos mensajes.
+    await page.goto(`/negocio/${FOGON}/conversaciones/wa_${TEL_47}?m=a%2Fb`);
+    await expect(page.locator('ol.cv-mensajes li')).toHaveCount(3);
+    await expect(fila(page, 'Ximena P.')).toBeVisible();
+  });
+
   test('NEGATIVA (aislamiento): las conversaciones de otro comercio no se ven', async ({ page }) => {
     await sembrarConversacion('salon-aurora', '59100000099', [{ direccion: 'entrante', texto: 'secreto de la peluquería', minutosAtras: 5 }],
       campos('59100000099', 'Cliente Aurora'));

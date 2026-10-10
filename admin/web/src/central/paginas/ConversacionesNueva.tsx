@@ -1,21 +1,24 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Timestamp, collection, doc, getCountFromServer, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter,
+  Timestamp, collection, doc, documentId, getCountFromServer, getDoc, getDocs, limit, onSnapshot, orderBy, query, startAfter,
   updateDoc, where, type DocumentSnapshot, type Query, type QueryConstraint,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, funciones } from '../../core/lib/firebase';
 import { useSesion } from '../../core/lib/contexto';
+import { useEstadoComercio } from '../componentes/ConsolaConversaciones';
 import { rolEn } from '../../core/lib/sesion';
 import { ListaConversaciones, type Renglon } from '../componentes/ListaConversaciones';
 import { DetalleConversacion } from '../componentes/DetalleConversacion';
 import {
-  CAMPOS_FECHA, CONTADORES_CADA_MS, CONTADORES_MINIMO_MS, CONTADORES_VACIOS, PAGINA_LISTA, REBOTE_MARCA_LEIDA_MS,
-  RESUSCRIBIR_FILTROS_MS, aplicarFiltro, buscarPorNombre, buscarPorTelefono, clasificarConsulta, consultaDeFiltro,
-  consultaDeNombre, consultasDeTelefono, debeMarcarLeida, fichaDeDocumento, filtroConReloj, mensajeContiene,
-  mezclarLista, palabraParaIndice, prefijosValidos, rutaConversaciones, textoErrorBusqueda, unirFichas, vecina,
-  PREFIJOS_PAIS_DEFECTO, type Consulta, type ConsultaPlana, type Contadores, type Ficha, type Filtro,
+  CAMPOS_FECHA, CONTADORES_CADA_MS, CONTADORES_MINIMO_MS, CONTADORES_VACIOS, PAGINA_LISTA, PAGINACION_INICIAL,
+  REBOTE_MARCA_LEIDA_MS, RESUSCRIBIR_FILTROS_MS, alAceptarPagina, alSnapshot, alSuscribir, aplicarFiltro, buscarPorNombre,
+  buscarPorTelefono, clasificarConsulta, consultaDeFiltro, consultaDeIds, consultaDeNombre, consultasDeTelefono,
+  debeMarcarLeida, esIdConversacion, esIdMensaje, fichaDeDocumento, filtroConReloj, mensajeContiene, mezclarLista,
+  palabraParaIndice, prefijosValidos, puedeGestionarConversaciones, respuestaVigente, rutaConversaciones,
+  textoErrorBusqueda, unirFichas, vecina, PREFIJOS_PAIS_DEFECTO, MAX_DIGITOS_TELEFONO,
+  type Consulta, type ConsultaPlana, type Contadores, type Ficha, type Filtro, type Paginacion,
 } from '../lib/conversaciones';
 import '../estilos/conversaciones.css';
 
@@ -91,7 +94,7 @@ function restriccionesDe(c: ConsultaPlana): QueryConstraint[] {
   const salida: QueryConstraint[] = [];
   for (const r of c.restricciones) {
     const valor = typeof r.valor === 'number' && CAMPOS_FECHA.includes(r.campo) ? Timestamp.fromMillis(r.valor) : r.valor;
-    salida.push(where(r.campo, r.op, valor));
+    salida.push(where(r.campo === '__name__' ? documentId() : r.campo, r.op, valor));
   }
   for (const o of c.orden) salida.push(orderBy(o.campo, o.dir));
   return salida;
@@ -108,6 +111,11 @@ function consultaFirestore(tenantId: string, c: ConsultaPlana, despues: QueryCon
 // ── La lista: primera página en vivo, el resto a pedido ──────────────────────
 
 interface EstadoLista {
+  /** La primera página, en vivo. */
+  enVivo: Ficha[];
+  /** Las páginas de «Cargar más»: una foto de cuando se pidieron. */
+  anteriores: Ficha[];
+  /** Las dos juntas, ordenadas (para buscar entre lo que ya se ve). */
   fichas: Ficha[];
   cargando: boolean;
   error: string | null;
@@ -127,10 +135,13 @@ function useLista(tenantId: string, filtro: Filtro, ciclo: number): EstadoLista 
   const [cargandoMas, setCargandoMas] = useState(false);
   const [cambios, setCambios] = useState(0);
   const cursor = useRef<DocumentSnapshot | null>(null);
-  const hayAnteriores = useRef(false);
   const ahoraDeLaSuscripcion = useRef(Date.now());
-  /** Quién es el dueño de lo que llega: cambia con el negocio, el filtro y cada nueva suscripción. */
-  const generacion = useRef(0);
+  /**
+   * La ÉPOCA de la paginación (`lib/conversaciones.ts`, `Paginacion`): cambia cuando entra una conversación a la primera
+   * página, cuando el oyente se vuelve a suscribir y cuando cambia el filtro o el negocio. Una respuesta de «Cargar más»
+   * que salió en otra época se descarta: si se aceptara, abriría un hueco entre la primera página y la nueva.
+   */
+  const paginacion = useRef<Paginacion>(PAGINACION_INICIAL);
   const claveVista = useRef('');
   // Los filtros con reloj se vuelven a pedir cada 5 minutos; los demás no dependen del ciclo.
   const cicloEfectivo = filtroConReloj(filtro) ? ciclo : 0;
@@ -142,18 +153,21 @@ function useLista(tenantId: string, filtro: Filtro, ciclo: number): EstadoLista 
       claveVista.current = clave;
       setEnVivo([]); setCargando(true); setError(null); setHayMas(false);
     }
-    const mia = ++generacion.current;
-    setAnteriores([]); hayAnteriores.current = false; cursor.current = null; setCargandoMas(false);
+    paginacion.current = alSuscribir(paginacion.current);
+    const mia = paginacion.current.epoca;
+    setAnteriores([]); cursor.current = null; setCargandoMas(false);
     ahoraDeLaSuscripcion.current = Date.now();
     let primera = true;
     const baja = onSnapshot(
       consultaFirestore(tenantId, consultaDeFiltro(filtro, ahoraDeLaSuscripcion.current, PAGINA_LISTA)),
       (snap) => {
-        if (mia !== generacion.current) return;
-        // Entró una conversación a la primera página: otra salió y las páginas siguientes tendrían un hueco.
+        // Entró una conversación a la primera página: otra salió. Lo cargado de «Cargar más» tendría un hueco y lo que
+        // esté volando se descarta (cambia la época).
         const entro = !primera && snap.docChanges().some((c) => c.type === 'added');
-        if (entro && hayAnteriores.current) { hayAnteriores.current = false; setAnteriores([]); }
-        if (!hayAnteriores.current) {
+        const antes = paginacion.current;
+        paginacion.current = alSnapshot(paginacion.current, entro);
+        if (entro) { setAnteriores([]); setCargandoMas(false); }
+        if (entro || !antes.hayAnteriores) {
           cursor.current = snap.docs[snap.docs.length - 1] ?? null;
           setHayMas(snap.size >= PAGINA_LISTA);
         }
@@ -164,37 +178,38 @@ function useLista(tenantId: string, filtro: Filtro, ciclo: number): EstadoLista 
         setCargando(false);
       },
       () => {
-        if (mia !== generacion.current) return;
+        if (paginacion.current.epoca < mia) return;
         setError('No se pudieron leer las conversaciones.');
         setCargando(false);
       },
     );
-    return () => { generacion.current++; baja(); };
+    return () => { paginacion.current = alSuscribir(paginacion.current); baja(); };
   }, [tenantId, filtro, cicloEfectivo]);
 
   const cargarMas = useCallback(() => {
     const desde = cursor.current;
     if (!desde || !tenantId) return;
-    const mia = generacion.current;
+    const epoca = paginacion.current.epoca;
     setCargandoMas(true);
     void getDocs(consultaFirestore(
       tenantId, consultaDeFiltro(filtro, ahoraDeLaSuscripcion.current, PAGINA_LISTA), [startAfter(desde)],
     )).then((snap) => {
-      if (mia !== generacion.current) return;
-      hayAnteriores.current = true;
+      // Otra época (entró una conversación, se re-suscribió el oyente, cambió el filtro): esta página no empalma.
+      if (!respuestaVigente(paginacion.current, epoca)) return;
+      paginacion.current = alAceptarPagina(paginacion.current);
       cursor.current = snap.docs[snap.docs.length - 1] ?? desde;
       setHayMas(snap.size >= PAGINA_LISTA);
       setAnteriores((previas) => unirFichas(previas, snap.docs.map((d) => fichaDeDocumento(d.id, d.data()))));
       setCargandoMas(false);
     }, () => {
-      if (mia !== generacion.current) return;
+      if (!respuestaVigente(paginacion.current, epoca)) return;
       setError('No se pudieron cargar más conversaciones.');
       setCargandoMas(false);
     });
   }, [tenantId, filtro]);
 
   const fichas = useMemo(() => mezclarLista(filtro, enVivo, anteriores), [filtro, enVivo, anteriores]);
-  return { fichas, cargando, error, hayMas, cargandoMas, cargarMas, cambios };
+  return { enVivo, anteriores, fichas, cargando, error, hayMas, cargandoMas, cargarMas, cambios };
 }
 
 // ── Los contadores de los chips ──────────────────────────────────────────────
@@ -202,11 +217,11 @@ function useLista(tenantId: string, filtro: Filtro, ciclo: number): EstadoLista 
 const FILTROS_A_CONTAR: readonly Filtro[] = ['todas', 'humano', 'noLeidas', 'vencer'];
 
 /**
- * Al montar y al cambiar de filtro; cada 60 s con la pestaña visible; y tras un
+ * Al montar; cada 60 s con la pestaña visible; y tras un
  * cambio en vivo, pero nunca más de uno cada 15 s. Un contador que falla queda con
  * el último valor que se supo (o sin número): no se inventa un cero.
  */
-function useContadores(tenantId: string, filtro: Filtro, cambios: number, visible: boolean): Contadores {
+function useContadores(tenantId: string, cambios: number, visible: boolean): Contadores {
   const [contadores, setContadores] = useState<Contadores>(CONTADORES_VACIOS);
   const ultimaVez = useRef(0);
   const pendiente = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -241,8 +256,9 @@ function useContadores(tenantId: string, filtro: Filtro, cambios: number, visibl
     return () => { vivo.current = false; if (pendiente.current !== null) { clearTimeout(pendiente.current); pendiente.current = null; } };
   }, []);
 
-  // Al montar y al cambiar de filtro (o de negocio): enseguida.
-  useEffect(() => { void contar(); }, [contar, filtro]);
+  // Al montar (y al cambiar de negocio, que remonta la pantalla): enseguida. Los conteos no dependen del filtro elegido,
+  // así que cambiar de filtro NO los vuelve a pedir.
+  useEffect(() => { void contar(); }, [contar]);
   // Cada 60 s, solo con la pestaña visible.
   useEffect(() => {
     if (!visible) return;
@@ -267,6 +283,9 @@ function useConversacionAbierta(tenantId: string, conversacionId: string | undef
   const [abierta, setAbierta] = useState<Abierta | null>(null);
   useEffect(() => {
     if (!tenantId || !conversacionId) { setAbierta(null); return; }
+    // Un id que no tiene la forma de una conversación (p. ej. «wa_1%2F…» en la dirección) arma una ruta de Firestore de
+    // otro nivel y `doc()` lanza: tumbaría la consola. Se trata como «no existe» sin tocar Firestore.
+    if (!esIdConversacion(conversacionId)) { setAbierta({ estado: 'no-existe' }); return; }
     setAbierta({ estado: 'cargando' });
     return onSnapshot(
       doc(db, 'tenants', tenantId, 'conversaciones', conversacionId),
@@ -287,8 +306,6 @@ interface SalidaBusqueda {
   resultados: { conversacionId: string; telefono: string; mensajeId: string; ts: unknown; direccion: string; fragmento: string }[];
   cursor: string | null;
 }
-
-const ID_CONVERSACION = /^wa_[0-9]{8,15}$/;
 
 /** `ts` puede llegar como ms, texto ISO o `{seconds}`/`{_seconds}`; lo que no se entiende es 0. */
 function aMs(v: unknown): number {
@@ -318,7 +335,9 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   const rol = rolEn(permisos, tenantId);
   const visible = usePestanaVisible();
 
-  const mensajeId = params.get('m');
+  // `?m=` viene de la dirección: un id con «/» arma una ruta de otro nivel. Si no sirve, es como no haberlo puesto.
+  const mensajeCrudo = params.get('m');
+  const mensajeId = esIdMensaje(mensajeCrudo) ? mensajeCrudo : null;
 
   const ahora = useAhora(20_000);
   const ciclo = useAhora(RESUSCRIBIR_FILTROS_MS);
@@ -331,7 +350,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
 
   // ── Datos ──────────────────────────────────────────────────────────────────
   const lista = useLista(tenantId, filtro, ciclo);
-  const conteos = useContadores(tenantId, filtro, lista.cambios, visible);
+  const conteos = useContadores(tenantId, lista.cambios, visible);
   const abierta = useConversacionAbierta(tenantId, conversacionId);
   // Solo la de la dirección: al pasar de una conversación a otra hay un instante con la ficha de la anterior.
   const fichaAbierta = abierta?.estado === 'ok' && abierta.ficha.id === conversacionId ? abierta.ficha : null;
@@ -348,17 +367,27 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   // Con 1 s de rebote (pasar de largo por una conversación no la marca), solo si quien mira es admin u oper del negocio
   // (el propietario de NovuChat NUNCA marca), con la pestaña visible y algo que marcar. Un error se ignora: marcar
   // leída es comodidad, no dato; si no se pudo (comercio suspendido, red), la conversación sigue sin leer.
+  //
+  // NO SE REINTENTA EN BUCLE. El comercio tiene que estar `activo` (suspendido, las reglas niegan toda escritura de una
+  // persona) y, si una marca FALLA (rol revocado, red), `fallidas` recuerda el `noLeidos` de entonces y no se vuelve a
+  // intentar hasta que crezca: es decir, hasta que haya algo nuevo que marcar.
+  const estadoComercio = useEstadoComercio(tenantId);
+  const fallidas = useRef<Map<string, number>>(new Map());
   const marcar = fichaAbierta !== null && debeMarcarLeida({
-    rol, propietario: permisos.propietario, visible, noLeidos: fichaAbierta.noLeidos, sinLeer: fichaAbierta.sinLeer,
+    rol, propietario: permisos.propietario, comercioActivo: estadoComercio === 'activo', visible,
+    noLeidos: fichaAbierta.noLeidos, sinLeer: fichaAbierta.sinLeer, fallo: fallidas.current.get(fichaAbierta.id),
   });
   const idAMarcar = fichaAbierta?.id ?? null;
+  const noLeidosAbierta = fichaAbierta?.noLeidos ?? 0;
   useEffect(() => {
     if (!marcar || !idAMarcar) return;
     const t = setTimeout(() => {
-      updateDoc(doc(db, 'tenants', tenantId, 'conversaciones', idAMarcar), { noLeidos: 0, sinLeer: false }).catch(() => { /* ignorado */ });
+      updateDoc(doc(db, 'tenants', tenantId, 'conversaciones', idAMarcar), { noLeidos: 0, sinLeer: false })
+        .catch(() => { fallidas.current.set(idAMarcar, noLeidosAbierta); });
     }, REBOTE_MARCA_LEIDA_MS);
     return () => clearTimeout(t);
-  }, [marcar, idAMarcar, tenantId]);
+  }, [marcar, idAMarcar, noLeidosAbierta, tenantId]);
+  const puedeGestionar = puedeGestionarConversaciones(rol, permisos.propietario);
 
   // ── Búsqueda ───────────────────────────────────────────────────────────────
   const cons: Consulta = useMemo(() => clasificarConsulta(consultaEstable), [consultaEstable]);
@@ -426,7 +455,8 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   const [buscandoPalabra, setBuscandoPalabra] = useState(false);
   const [errorPalabra, setErrorPalabra] = useState<string | null>(null);
   const cargadas = useRef<Map<string, Ficha>>(new Map());
-  cargadas.current = new Map([...lista.fichas, ...resTelefono, ...resNombre].map((f) => [f.id, f]));
+  // Lo que se ve en vivo gana sobre lo que trajo una consulta de una sola vez.
+  cargadas.current = new Map(unirFichas(resTelefono, resNombre, lista.fichas).map((f) => [f.id, f]));
 
   const buscarPalabra = useCallback(async (texto: string, cursor: string | null, vigente: () => boolean, agregar: boolean) => {
     setBuscandoPalabra(true);
@@ -435,16 +465,20 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
       const buscar = httpsCallable<EntradaBusqueda, SalidaBusqueda>(funciones, 'buscarConversaciones');
       const salida = (await buscar({ tenantId, texto, ...(cursor ? { cursor } : {}) })).data;
       const crudos = Array.isArray(salida?.resultados) ? salida.resultados : [];
-      const validos = crudos.filter((r) => r && typeof r.conversacionId === 'string' && ID_CONVERSACION.test(r.conversacionId)
+      const validos = crudos.filter((r) => r && typeof r.conversacionId === 'string' && esIdConversacion(r.conversacionId)
         && typeof r.mensajeId === 'string' && r.mensajeId !== '');
       // La ficha de cada resultado: la que ya se tiene o, si no, su documento (el servidor devuelve el mensaje, no el contacto).
+      // Una sola consulta (`documentId() in […]`, hasta 30) en vez de una lectura por resultado.
+      if (!vigente()) return;
       const faltan = [...new Set(validos.map((r) => r.conversacionId))].filter((id) => !cargadas.current.has(id));
-      const traidas = await Promise.all(faltan.map(async (id): Promise<Ficha | null> => {
-        try { const d = await getDoc(doc(db, 'tenants', tenantId, 'conversaciones', id)); return d.exists() ? fichaDeDocumento(d.id, d.data()) : null; } catch { return null; }
-      }));
+      const consultaIds = consultaDeIds(faltan);
+      let traidas: Ficha[] = [];
+      if (consultaIds) {
+        try { traidas = (await getDocs(consultaFirestore(tenantId, consultaIds))).docs.map((d) => fichaDeDocumento(d.id, d.data())); } catch { /* sin ficha: se muestra con el teléfono */ }
+      }
       if (!vigente()) return;
       const fichas = new Map(cargadas.current);
-      for (const f of traidas) if (f) fichas.set(f.id, f);
+      for (const f of traidas) fichas.set(f.id, f);
       const nuevos: Hallazgo[] = [];
       for (const r of validos) {
         const ficha = fichas.get(r.conversacionId) ?? fichaDeDocumento(r.conversacionId, { telefono: typeof r.telefono === 'string' ? r.telefono : '' });
@@ -468,18 +502,24 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   textoCrudo.current = consultaEstable.trim().slice(0, 100);
   const hayPalabras = palabras.length > 0;
   const textoDeLaBusqueda = useRef('');
+  /** Cambia con cada búsqueda nueva: lo que salió de una búsqueda anterior ya no vale, ni siquiera con el mismo texto. */
+  const busquedaId = useRef(0);
   useEffect(() => {
     setResPalabra([]); setCursorPalabra(null); setErrorPalabra(null);
+    const id = ++busquedaId.current;
     if (!hayPalabras) { textoDeLaBusqueda.current = ''; setBuscandoPalabra(false); return; }
     let vigente = true;
     textoDeLaBusqueda.current = textoCrudo.current;
-    void buscarPalabra(textoDeLaBusqueda.current, null, () => vigente, false);
+    void buscarPalabra(textoDeLaBusqueda.current, null, () => vigente && busquedaId.current === id, false);
     return () => { vigente = false; };
   }, [hayPalabras, clavePalabras, buscarPalabra]);
 
   const masPalabra = useCallback(() => {
-    if (!cursorPalabra || !textoDeLaBusqueda.current) return;
-    void buscarPalabra(textoDeLaBusqueda.current, cursorPalabra, () => true, true);
+    const t = textoDeLaBusqueda.current;
+    if (!cursorPalabra || !t) return;
+    const id = busquedaId.current;
+    // «Más resultados» solo vale mientras siga siendo ESA búsqueda: si se escribió otra cosa, su respuesta se descarta.
+    void buscarPalabra(t, cursorPalabra, () => busquedaId.current === id && textoDeLaBusqueda.current === t, true);
   }, [cursorPalabra, buscarPalabra]);
 
   const enBusqueda = cons.tipo === 'telefono' || cons.tipo === 'texto';
@@ -492,7 +532,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
     });
     if (cons.tipo === 'telefono') {
       // Lo que trajo el servidor más lo que ya está en pantalla (un documento sin `telefonoTrozos` se halla igual por el final).
-      const r = buscarPorTelefono(unirFichas(lista.fichas, resTelefono), cons.digitos, prefijos);
+      const r = buscarPorTelefono(unirFichas(resTelefono, lista.fichas), cons.digitos, prefijos);
       return {
         renglones: r.map((x) => aRenglon(x.ficha, { motivo: x.tipo === 'completo' ? 'Número completo' : x.tipo === 'final' ? 'Termina en …' + cons.digitos.slice(-4) : 'Empieza igual' })),
         estadoBusqueda: buscandoTelefono ? 'Buscando…' : r.length === 0 ? 'Ningún teléfono coincide.'
@@ -501,31 +541,36 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
     }
     if (cons.tipo === 'texto') {
       const delServidor = resNombre.filter((f) => mensajeContiene(f.nombrePalabras, f.nombre, cons.palabras));
-      const porNombre = unirFichas(buscarPorNombre(lista.fichas, cons.texto), delServidor)
+      const porNombre = unirFichas(delServidor, buscarPorNombre(lista.fichas, cons.texto))
         .sort((a, b) => (b.ultimoEn ?? 0) - (a.ultimoEn ?? 0))
         .map((f) => aRenglon(f, { motivo: 'Nombre' }));
       const porPalabra: Renglon[] = resPalabra.map((h) => {
         const f = lista.fichas.find((x) => x.id === h.ficha.id) ?? h.ficha;
         return {
           clave: `${f.id}#${h.mensajeId}`, ficha: f, href: rutaConversaciones(tenantId, f.id, h.mensajeId),
-          coincidencia: { fragmento: h.fragmento, ts: h.ts },
+          coincidencia: { fragmento: h.fragmento, ts: h.ts, palabras: cons.palabras },
         };
       });
       const todos = [...porNombre, ...porPalabra];
       let estado: string;
       if (!cons.palabras.length && !porNombre.length) estado = 'Escriba al menos 3 letras de una palabra.';
       else if (buscando) estado = `Buscando «${cons.texto}»…`;
-      else if (todos.length === 0) estado = errorPalabra ? '' : `Nada con «${cons.texto}». Solo se buscan mensajes guardados desde que se activó la búsqueda por palabra.`;
+      else if (todos.length === 0) {
+        // Con cursor: el servidor no halló nada en lo reciente pero se puede buscar más atrás (no es «nada coincide»).
+        estado = errorPalabra ? '' : cursorPalabra !== null ? `Sin resultados recientes con «${cons.texto}»; puede buscar más atrás.`
+          : `Nada con «${cons.texto}». Solo se buscan mensajes guardados desde que se activó la búsqueda por palabra.`;
+      }
       else estado = `${porPalabra.length} ${porPalabra.length === 1 ? 'mensaje' : 'mensajes'}${porNombre.length ? ` y ${porNombre.length} por nombre` : ''}.`;
       return { renglones: todos, estadoBusqueda: estado };
     }
     const pines = new Set([...fijadas.keys(), ...(conversacionId ? [conversacionId] : [])]);
-    const visibles = aplicarFiltro(mezclarLista(filtro, lista.fichas, [], fijadas), filtro, ahora, pines);
+    const visibles = aplicarFiltro(mezclarLista(filtro, lista.enVivo, lista.anteriores, fijadas), filtro, ahora, pines);
     return {
       renglones: visibles.map((f) => aRenglon(f)),
-      estadoBusqueda: cons.tipo === 'corta' ? 'Escriba al menos 4 dígitos para buscar por teléfono.' : '',
+      estadoBusqueda: cons.tipo === 'corta' ? 'Escriba al menos 4 dígitos para buscar por teléfono.'
+        : cons.tipo === 'larga' ? `Un teléfono tiene como máximo ${MAX_DIGITOS_TELEFONO} dígitos.` : '',
     };
-  }, [cons, lista.fichas, resTelefono, resNombre, resPalabra, prefijos, buscando, buscandoTelefono, errorPalabra, filtro, fijadas, ahora, tenantId, conversacionId]);
+  }, [cons, lista.fichas, lista.enVivo, lista.anteriores, resTelefono, resNombre, resPalabra, prefijos, buscando, buscandoTelefono, errorPalabra, cursorPalabra, filtro, fijadas, ahora, tenantId, conversacionId]);
 
   // ── Anterior / siguiente ───────────────────────────────────────────────────
   const claves = renglones.map((r) => r.clave);
@@ -560,6 +605,8 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
       return;
     }
     if (e.key === 'Escape') {
+      // Con el foco en otro control (la casilla «No contactar», un campo) Escape es de ese control: no cierra la conversación.
+      if (escribiendo && destino !== buscadorRef.current) return;
       if (document.activeElement === buscadorRef.current) {
         if (consulta) setConsulta(''); else buscadorRef.current?.blur();
         return;
@@ -614,7 +661,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
             hrefLista={hrefLista} hrefUltimo={hrefUltimo}
             onAnterior={vecina(claves, claveActiva, -1) ? () => irA(-1) : null}
             onSiguiente={vecina(claves, claveActiva, 1) ? () => irA(1) : null}
-            posicion={posicion}
+            posicion={posicion} puedeGestionar={puedeGestionar}
           />
         ) : (
           <div className="cv-detalle cv-detalle--vacio">

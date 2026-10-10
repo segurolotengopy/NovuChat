@@ -2,7 +2,7 @@ import type { RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import { TextoSeguro } from './TextoSeguro';
 import {
-  FILTROS, etiquetaFicha, necesitaHumanoDe, textoRestante, ventanaDeFicha, type Contadores, type Ficha, type Filtro,
+  FILTROS, etiquetaFicha, iniciales, necesitaHumanoDe, partirResaltado, textoListaVacia, textoRestante, ventanaDeFicha, type Contadores, type Ficha, type Filtro,
 } from '../lib/conversaciones';
 
 /** Un renglón de la lista: una conversación, o un mensaje encontrado dentro de una. */
@@ -11,8 +11,8 @@ export interface Renglon {
   clave: string;
   ficha: Ficha;
   href: string;
-  /** Si es un mensaje encontrado: su texto ya recortado y la hora. */
-  coincidencia?: { fragmento: string; ts: number };
+  /** Si es un mensaje encontrado: su texto ya recortado (≤ 100 caracteres), las palabras a resaltar y la hora. */
+  coincidencia?: { fragmento: string; ts: number; palabras?: readonly string[] };
   /** Si es un teléfono o un nombre encontrado: por qué coincidió. */
   motivo?: string;
 }
@@ -55,6 +55,7 @@ export function ListaConversaciones(p: PropsLista) {
           onChange={(e) => p.onConsulta(e.target.value)}
           placeholder="Buscar por teléfono, nombre o palabra  ( / )"
           aria-label="Buscar conversaciones por teléfono, nombre o palabra"
+          maxLength={100}
           title="Atajos: / busca · Alt+↑/↓ cambia de conversación · Esc vuelve"
           autoComplete="off"
           spellCheck={false}
@@ -81,9 +82,7 @@ export function ListaConversaciones(p: PropsLista) {
         {p.cargando && <li className="cv-vacio">Cargando conversaciones…</li>}
         {!p.cargando && p.renglones.length === 0 && !p.buscando && (
           <li className="cv-vacio">
-            {p.enBusqueda ? 'Nada coincide con lo que escribió.'
-              : p.filtro === 'todas' ? 'Todavía no hay conversaciones.'
-              : 'Ninguna conversación cumple este filtro.'}
+            {textoListaVacia({ enBusqueda: p.enBusqueda, hayMasPalabra: p.hayMasPalabra, filtro: p.filtro })}
           </li>
         )}
         {p.renglones.map((r) => <RenglonFicha key={r.clave} r={r} activa={r.clave === p.claveActiva} ahora={p.ahora} />)}
@@ -97,7 +96,7 @@ export function ListaConversaciones(p: PropsLista) {
         {p.enBusqueda && p.hayMasPalabra && (
           <li className="cv-mas-lista">
             <button type="button" className="btn btn-secondary" disabled={p.buscando} onClick={p.onMasPalabra}>
-              Más resultados
+              {p.renglones.length === 0 ? 'Buscar más atrás' : 'Más resultados'}
             </button>
           </li>
         )}
@@ -119,24 +118,24 @@ function RenglonFicha({ r, activa, ahora }: { r: Renglon; activa: boolean; ahora
         <span className="cv-ficha-cuerpo">
           <span className="cv-ficha-fila">
             <strong className="cv-ficha-nombre"><TextoSeguro valor={f.nombre || `+${f.telefono}`} maxLargo={40} /></strong>
-            <time className="cv-ficha-hora">{hora}</time>
+            <time className="cv-ficha-hora" dateTime={horaIso(r.coincidencia ? r.coincidencia.ts : f.ultimoEn)}>{hora}</time>
           </span>
           <span className="cv-ficha-fila">
             <span className="cv-ficha-ultimo">
               {r.coincidencia
-                ? <TextoSeguro valor={r.coincidencia.fragmento} maxLargo={120} />
+                ? <Resaltado texto={r.coincidencia.fragmento} palabras={r.coincidencia.palabras ?? []} />
                 : <TextoSeguro valor={f.ultimoMensaje} maxLargo={90} />}
             </span>
             {sinLeer && (f.noLeidos > 0
               ? <span className="cv-contador" aria-label={`${f.noLeidos} sin leer`}>{f.noLeidos}</span>
-              : <span className="cv-contador cv-contador--punto" aria-label="Sin leer" />)}
+              : <span className="cv-contador cv-contador--punto" role="img" aria-label="Sin leer" />)}
           </span>
           <span className="cv-ficha-marcas">
             {r.motivo && <span className="cv-etiqueta">{r.motivo}</span>}
             {necesitaHumanoDe(f, ahora) && <span className="cv-etiqueta cv-etiqueta--humano">Necesita humano</span>}
             {v.estado === 'por-vencer' && <span className="cv-etiqueta cv-etiqueta--vence">Vence en {textoRestante(v.restanteMs)}</span>}
             {v.estado === 'cerrada' && <span className="cv-etiqueta cv-etiqueta--cerrada">Ventana cerrada</span>}
-            {r.coincidencia && <span className="cv-ficha-telefono">+{f.telefono}</span>}
+            {r.coincidencia && <span className="cv-ficha-telefono">+<TextoSeguro valor={f.telefono} maxLargo={15} /></span>}
           </span>
         </span>
       </Link>
@@ -144,9 +143,17 @@ function RenglonFicha({ r, activa, ahora }: { r: Renglon; activa: boolean; ahora
   );
 }
 
-function iniciales(nombre: string): string {
-  const partes = nombre.trim().split(/\s+/).filter(Boolean);
-  const a = partes[0]?.[0] ?? '#';
-  const b = partes.length > 1 ? (partes[1]?.[0] ?? '') : '';
-  return (a + b).toUpperCase().replace('+', '#');
+function horaIso(ms: number | null): string | undefined {
+  return ms === null || !Number.isFinite(ms) || ms <= 0 ? undefined : new Date(ms).toISOString();
+}
+
+/** El fragmento con lo buscado marcado: se parte la cadena y cada tramo se pinta como TEXTO (<TextoSeguro>), nunca como HTML. */
+function Resaltado({ texto, palabras }: { texto: string; palabras: readonly string[] }) {
+  return (
+    <>
+      {partirResaltado(texto.slice(0, 120), palabras).map((t, i) => (t.resaltado
+        ? <mark key={i} className="cv-resalte-palabra"><TextoSeguro valor={t.texto} maxLargo={120} /></mark>
+        : <TextoSeguro key={i} valor={t.texto} maxLargo={120} />))}
+    </>
+  );
 }

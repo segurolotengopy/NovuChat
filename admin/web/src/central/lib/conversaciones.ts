@@ -28,7 +28,7 @@
  * LA UNIDAD ES LA CONVERSACIÓN, NO LA «ATENCIÓN» (CLAUDE.md, vocabulario).
  */
 import {
-  MINIMO_DIGITOS, POR_VENCER_HORAS, PREFIJOS_PAIS_DEFECTO, VENTANA_HORAS,
+  MAX_PALABRAS_CONSULTA, MINIMO_DIGITOS, POR_VENCER_HORAS, PREFIJOS_PAIS_DEFECTO, VENTANA_HORAS,
   normalizarTexto, palabrasDe, soloDigitos, trozosDeTelefono,
 } from '../../../../functions/src/core/conversacion/normalizacion';
 
@@ -54,11 +54,27 @@ export const CONTADORES_CADA_MS = 60_000;
 export const CONTADORES_MINIMO_MS = 15_000;
 /** Espera de la marca de leída: si la persona cambia de conversación enseguida, no se marca la de paso. */
 export const REBOTE_MARCA_LEIDA_MS = 1_000;
+/** Un teléfono internacional tiene como máximo 15 dígitos (E.164): más que eso no es un teléfono y no se consulta. */
+export const MAX_DIGITOS_TELEFONO = 15;
+/** Cuántos ids caben en una consulta `in` de Firestore. */
+export const MAX_IDS_CONSULTA = 30;
 /**
  * La conversación abierta va en la ruta (`/negocio/:t/conversaciones/:c`). `true`
  * desde que `App.tsx` declara esa ruta (H1-2). Con `false` iría en `?c=`.
  */
 export const CONVERSACION_EN_LA_RUTA = true;
+
+// ── Ids que vienen de afuera (la dirección, el servidor) ─────────────────────
+
+/** El id de una conversación: `wa_` y el teléfono. Lo que no tenga esta forma NO se usa para armar una ruta de Firestore. */
+export const esIdConversacion = (v: unknown): v is string => typeof v === 'string' && /^wa_[0-9]{8,15}$/.test(v);
+
+/**
+ * El id de un mensaje que viene de la dirección (`?m=`). Un id con «/» arma una ruta de otro nivel y `doc()` lanza; «.» y
+ * «..» y los del estilo `__x__` están reservados por Firestore. Lo demás (el id lo pone la ingesta) se acepta hasta 200.
+ */
+export const esIdMensaje = (v: unknown): v is string =>
+  typeof v === 'string' && v.length > 0 && v.length <= 200 && !v.includes('/') && v !== '.' && v !== '..' && !/^__.*__$/.test(v);
 
 // ── Modelo que la pantalla usa (no el documento de Firestore) ────────────────
 
@@ -170,6 +186,8 @@ export const FORMAS_CONSULTA: readonly FormaConsulta[] = [
   { id: 'telefono-trozos', filtros: [{ campo: 'telefonoTrozos', op: 'array-contains' }], orden: [] },
   { id: 'telefono-prefijo', filtros: [{ campo: 'telefono', op: '>=' }, { campo: 'telefono', op: '<' }], orden: [] },
   { id: 'nombre', filtros: [{ campo: 'nombrePalabras', op: 'array-contains' }], orden: [] },
+  // Las fichas de los resultados de la búsqueda por palabra, de una sola vez (en vez de un `getDoc` por resultado).
+  { id: 'ids', filtros: [{ campo: '__name__', op: 'in' }], orden: [] },
 ];
 
 /** La forma (sin valores) de una consulta concreta. */
@@ -219,7 +237,7 @@ export function consultasDeTelefono(digitos: string, prefijos: readonly string[]
   return [
     { restricciones: [{ campo: 'telefonoTrozos', op: 'array-contains', valor: digitos }], orden: [], limite: LIMITE_BUSQUEDA },
     ...comienzos.map((c): ConsultaPlana => ({
-      restricciones: [{ campo: 'telefono', op: '>=', valor: c }, { campo: 'telefono', op: '<', valor: c + '' }],
+      restricciones: [{ campo: 'telefono', op: '>=', valor: c }, { campo: 'telefono', op: '<', valor: c + '\uf8ff' }],
       orden: [], limite: LIMITE_BUSQUEDA,
     })),
   ];
@@ -230,12 +248,22 @@ export function consultaDeNombre(palabra: string): ConsultaPlana {
   return { restricciones: [{ campo: 'nombrePalabras', op: 'array-contains', valor: palabra }], orden: [], limite: LIMITE_BUSQUEDA };
 }
 
+/**
+ * Varias conversaciones por su id en UNA consulta (`documentId() in […]`, hasta 30). Solo entran los ids con forma de
+ * conversación, sin repetir; sin ninguno válido no hay consulta (`null`).
+ */
+export function consultaDeIds(ids: readonly string[]): ConsultaPlana | null {
+  const validos = [...new Set(ids.filter(esIdConversacion))].slice(0, MAX_IDS_CONSULTA);
+  return validos.length === 0 ? null : { restricciones: [{ campo: '__name__', op: 'in', valor: validos }], orden: [] };
+}
+
 // ── Qué es lo que la persona escribió en el buscador ─────────────────────────
 
 export type Consulta =
   | { tipo: 'vacia' }
   | { tipo: 'corta'; digitos: string }
   | { tipo: 'telefono'; digitos: string }
+  | { tipo: 'larga'; digitos: string }
   | { tipo: 'texto'; texto: string; palabras: string[] };
 
 /**
@@ -246,7 +274,8 @@ export type Consulta =
  * quita el «00»: lo que se guarda es «591…». Pero «0047» (los últimos 4) y
  * «00000047» (el número sin prefijo) también empiezan en «00» y NO son marcación
  * internacional: por eso solo se quita con 11 dígitos o más, que es lo que mide
- * un número con prefijo de país y «00» delante.
+ * un número con prefijo de país y «00» delante. Con más de 15 dígitos (el máximo de un teléfono) no es un
+ * teléfono: es `larga` y no se consulta.
  */
 export function clasificarConsulta(crudo: string): Consulta {
   const q = crudo.trim();
@@ -255,9 +284,10 @@ export function clasificarConsulta(crudo: string): Consulta {
     let digitos = soloDigitos(q);
     if (!digitos) return { tipo: 'vacia' };
     if (digitos.startsWith('00') && digitos.length >= 11) digitos = digitos.slice(2);
+    if (digitos.length > MAX_DIGITOS_TELEFONO) return { tipo: 'larga', digitos: digitos.slice(0, MAX_DIGITOS_TELEFONO) };
     return digitos.length < MINIMO_DIGITOS ? { tipo: 'corta', digitos } : { tipo: 'telefono', digitos };
   }
-  return { tipo: 'texto', texto: normalizarTexto(q).trim(), palabras: palabrasDe(q, 6) };
+  return { tipo: 'texto', texto: normalizarTexto(q).trim(), palabras: palabrasDe(q, MAX_PALABRAS_CONSULTA) };
 }
 
 /**
@@ -339,8 +369,11 @@ export function ventanaDe(ultimoEntranteEn: number | null, ahora: number): Venta
   if (ultimoEntranteEn === null) return { estado: 'sin-dato', restanteMs: 0 };
   const restanteMs = ultimoEntranteEn + VENTANA_HORAS * HORA_MS - ahora;
   if (restanteMs <= 0) return { estado: 'cerrada', restanteMs: 0 };
-  return { estado: restanteMs < POR_VENCER_HORAS * HORA_MS ? 'por-vencer' : 'abierta', restanteMs };
+  return { estado: restanteMs <= POR_VENCER_HORAS * HORA_MS ? 'por-vencer' : 'abierta', restanteMs };
 }
+
+// «Por vencer» incluye el límite: le quedan 6 h o menos. Es el mismo criterio de la consulta del filtro
+// (`ventanaVenceEn <= ahora + 6 h`) y de `cumpleFiltro`, para que la pastilla y la lista nunca se contradigan.
 
 /** La ventana de una ficha: de `ultimoEntranteEn`, o de `ventanaVenceEn` − 24 h si solo viene ese. */
 export function ventanaDeFicha(f: Pick<Ficha, 'ultimoEntranteEn' | 'ventanaVenceEn'>, ahora: number): Ventana {
@@ -421,19 +454,122 @@ export const CONTADORES_VACIOS: Contadores = { todas: null, humano: null, noLeid
 // ── Marcar leída ─────────────────────────────────────────────────────────────
 
 /**
- * ¿Hay que escribir `{noLeidos: 0, sinLeer: false}`? Solo si quien mira es del
- * negocio con rol admin u oper (el propietario de NovuChat NUNCA marca: ve con
- * una ventana de soporte y no deja huella en los datos del comercio), con la
- * pestaña visible y algo por marcar. Un documento viejo (sin los campos) no se
- * toca: ya es «leído».
+ * ¿Quién puede escribir la gestión de una conversación (marcar leída, «No contactar»)? Solo admin u oper del negocio.
+ * El propietario de NovuChat ve con una ventana de soporte y NUNCA escribe; el rol de la ingesta tampoco.
+ */
+export function puedeGestionarConversaciones(rol: string | null, propietario: boolean): boolean {
+  return !propietario && (rol === 'admin' || rol === 'oper');
+}
+
+/**
+ * ¿Hay que escribir `{noLeidos: 0, sinLeer: false}`? Solo si quien mira puede gestionar (admin u oper del negocio;
+ * el propietario NUNCA marca), el comercio está `activo` (con el comercio suspendido las reglas niegan la escritura:
+ * intentarla en cada render sería un bucle de escrituras negadas), la pestaña está visible y hay algo por marcar. Un
+ * documento viejo (sin los campos) no se toca: ya es «leído».
+ *
+ * `fallo` es el `noLeidos` que tenía la conversación cuando la última marca FALLÓ (rol revocado, red): no se
+ * reintenta hasta que `noLeidos` crezca, es decir, hasta que haya algo nuevo que marcar.
  */
 export function debeMarcarLeida(a: {
-  rol: string | null; propietario: boolean; visible: boolean; noLeidos: number; sinLeer: boolean;
+  rol: string | null; propietario: boolean; comercioActivo: boolean; visible: boolean;
+  noLeidos: number; sinLeer: boolean; fallo?: number;
 }): boolean {
-  if (a.propietario) return false;
-  if (a.rol !== 'admin' && a.rol !== 'oper') return false;
+  if (!puedeGestionarConversaciones(a.rol, a.propietario)) return false;
+  if (!a.comercioActivo) return false;
   if (!a.visible) return false;
+  if (a.fallo !== undefined && a.noLeidos <= a.fallo) return false;
   return a.noLeidos > 0 || a.sinLeer;
+}
+
+// ── La paginación de la lista: qué respuesta de «Cargar más» todavía vale ─────
+
+/**
+ * `epoca` cambia cada vez que lo que se pidió deja de ser cierto; una respuesta de «Cargar más» que salió en otra
+ * época se DESCARTA (si se aceptara, abriría un hueco: la lista en vivo ya se movió y la página vieja no empalma).
+ * Las tres carreras:
+ *  1. entra una conversación nueva a la primera página mientras `getDocs` vuela → `alSnapshot(…, entro=true)`;
+ *  2. el oyente se vuelve a suscribir (filtro con reloj cada 5 min) → `alSuscribir`;
+ *  3. cambia el filtro o el negocio → también `alSuscribir`.
+ */
+export interface Paginacion { epoca: number; hayAnteriores: boolean }
+export const PAGINACION_INICIAL: Paginacion = { epoca: 0, hayAnteriores: false };
+
+export const alSuscribir = (p: Paginacion): Paginacion => ({ epoca: p.epoca + 1, hayAnteriores: false });
+/** Un snapshot en vivo. `entro`: llegó a la primera página una conversación que no estaba. */
+export const alSnapshot = (p: Paginacion, entro: boolean): Paginacion => (entro ? alSuscribir(p) : p);
+/** ¿La respuesta que salió en `epocaCapturada` todavía vale? */
+export const respuestaVigente = (p: Paginacion, epocaCapturada: number): boolean => p.epoca === epocaCapturada;
+/** Se aceptó una página: desde ahora hay anteriores cargadas. */
+export const alAceptarPagina = (p: Paginacion): Paginacion => (p.hayAnteriores ? p : { ...p, hayAnteriores: true });
+
+// ── Lo que dice la lista cuando no hay renglones ─────────────────────────────
+
+/**
+ * El texto de la lista vacía. En una búsqueda por palabra, `buscarConversaciones` mira hasta 3 lotes de 20 por llamada y
+ * puede devolver `resultados: []` con un cursor: «no hay nada en lo reciente, pero se puede buscar más atrás». Eso NO es
+ * «nada coincide»: decirlo junto al botón «Más resultados» sería contradictorio. Sin cursor, sí es «nada coincide».
+ */
+export function textoListaVacia(a: { enBusqueda: boolean; hayMasPalabra: boolean; filtro: Filtro }): string {
+  if (a.enBusqueda) return a.hayMasPalabra ? 'Sin resultados recientes; buscar más atrás' : 'Nada coincide con lo que escribió.';
+  return a.filtro === 'todas' ? 'Todavía no hay conversaciones.' : 'Ninguna conversación cumple este filtro.';
+}
+
+// ── Resaltar lo buscado en un fragmento (partiendo la cadena, nunca con HTML) ─
+
+export interface TramoTexto { texto: string; resaltado: boolean }
+
+/**
+ * Parte `texto` en tramos, marcando los que contienen alguna de las `palabras` buscadas (ya normalizadas con `palabrasDe`).
+ * La comparación es sin tildes ni mayúsculas y por RAÍZ («alfajor» marca «alfajores» entero, hasta el final de la palabra).
+ * Devuelve solo texto: quien lo pinta lo hace con <TextoSeguro>, nunca como HTML. Los tramos, juntos, son EXACTAMENTE el texto.
+ */
+export function partirResaltado(texto: string, palabras: readonly string[]): TramoTexto[] {
+  if (typeof texto !== 'string' || texto === '') return [];
+  // El texto normalizado carácter por carácter, recordando de qué carácter original sale cada letra.
+  const origen: number[] = [];
+  let plano = '';
+  const originales = [...texto];
+  let pos = 0;
+  const inicio: number[] = [];
+  originales.forEach((c) => {
+    inicio.push(pos);
+    const n = normalizarTexto(c);
+    for (let k = 0; k < n.length; k++) origen.push(inicio.length - 1);
+    plano += n;
+    pos += c.length;
+  });
+  const marcado = new Array<boolean>(originales.length).fill(false);
+  for (const palabra of palabras) {
+    if (palabra.length === 0) continue;
+    let desde = 0;
+    for (;;) {
+      const i = plano.indexOf(palabra, desde);
+      if (i < 0) break;
+      const primero = origen[i] ?? 0;
+      let ultimo = origen[i + palabra.length - 1] ?? primero;
+      // hasta el final de la palabra que contiene la coincidencia
+      while (ultimo + 1 < originales.length && /[\p{L}\p{N}]/u.test(originales[ultimo + 1] ?? '')) ultimo++;
+      for (let k = primero; k <= ultimo; k++) marcado[k] = true;
+      desde = i + palabra.length;
+    }
+  }
+  const tramos: TramoTexto[] = [];
+  originales.forEach((c, k) => {
+    const ultimo = tramos[tramos.length - 1];
+    if (ultimo && ultimo.resaltado === marcado[k]) ultimo.texto += c;
+    else tramos.push({ texto: c, resaltado: marcado[k] === true });
+  });
+  return tramos;
+}
+
+// ── Iniciales del avatar ─────────────────────────────────────────────────────
+
+/** «Ximena P.» → «XP»; un teléfono con «+» → «#». */
+export function iniciales(nombre: string): string {
+  const partes = nombre.trim().split(/\s+/).filter(Boolean);
+  const a = partes[0]?.[0] ?? '#';
+  const b = partes.length > 1 ? (partes[1]?.[0] ?? '') : '';
+  return (a + b).toUpperCase().replace('+', '#');
 }
 
 // ── Errores de la búsqueda por palabra (callable `buscarConversaciones`) ─────
@@ -451,7 +587,9 @@ export function textoErrorBusqueda(codigo: unknown, conCursor = false): string {
     case 'permission-denied': return 'No tiene permiso para buscar en estas conversaciones.';
     case 'invalid-argument': return conCursor ? 'La búsqueda cambió; vuelva a buscar.' : 'Escriba al menos una palabra de 3 letras.';
     case 'resource-exhausted': return 'Hay demasiadas búsquedas seguidas. Espere un momento e intente de nuevo.';
-    case 'not-found': return 'La búsqueda por palabra todavía no está disponible. Puede buscar por teléfono o por nombre.';
+    // Una Function que todavía no se desplegó llega como `not-found` o, según el camino, como `internal`: el mismo aviso.
+    case 'not-found':
+    case 'internal': return 'La búsqueda por palabra todavía no está disponible. Puede buscar por teléfono o por nombre.';
     default: return 'La búsqueda por palabra no está disponible en este momento. Intente de nuevo.';
   }
 }

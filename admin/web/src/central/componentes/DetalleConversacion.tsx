@@ -7,7 +7,7 @@ import {
 import { db } from '../../core/lib/firebase';
 import { TextoSeguro } from './TextoSeguro';
 import {
-  etiquetaDia, horaCorta, mismoDia, necesitaHumanoDe, textoRestante, ventanaDeFicha, type Ficha,
+  etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
 
 /**
@@ -37,6 +37,8 @@ interface Msg {
   direccion: 'entrante' | 'saliente';
   autor: string;
   ts: number;
+  /** El documento, para pedir los anteriores `startAfter` de él sin una lectura de más y sin perder los empatados. */
+  snap: QueryDocumentSnapshot;
 }
 
 /**
@@ -65,6 +67,7 @@ function aMensaje(d: QueryDocumentSnapshot): Msg {
     direccion: x['direccion'] === 'entrante' ? 'entrante' : 'saliente',
     autor: typeof x['autor'] === 'string' ? x['autor'] : '',
     ts: ts?.toMillis ? ts.toMillis() : 0,
+    snap: d,
   };
 }
 
@@ -78,8 +81,8 @@ function unir(a: readonly Msg[], b: readonly Msg[]): Msg[] {
 
 function useMensajes(tenantId: string, conversacionId: string, mensajeId: string | null) {
   const [mensajes, setMensajes] = useState<Msg[]>([]);
-  const [tope, setTope] = useState(PAGINA);
   const [hayAntes, setHayAntes] = useState(false);
+  const [cargandoAntes, setCargandoAntes] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saltoFallido, setSaltoFallido] = useState(false);
@@ -88,31 +91,38 @@ function useMensajes(tenantId: string, conversacionId: string, mensajeId: string
   const [cargadaPara, setCargadaPara] = useState('');
   const clave = `${tenantId}/${conversacionId}/${mensajeId ?? ''}`;
   const claveVista = useRef('');
+  const mensajesRef = useRef<Msg[]>([]);
+  mensajesRef.current = mensajes;
+  const cargoAnteriores = useRef(false);
+  const cargandoAntesRef = useRef(false);
 
   // Cambió la conversación o el mensaje buscado: empieza de cero (nada de los
   // mensajes de la anterior).
   useEffect(() => {
-    setMensajes([]); setTope(PAGINA); setHayAntes(false); setCargando(true); setError(null); setSaltoFallido(false); setCargadaPara('');
+    setMensajes([]); setHayAntes(false); setCargando(true); setError(null); setSaltoFallido(false); setCargadaPara('');
+    setCargandoAntes(false);
+    cargoAnteriores.current = false; cargandoAntesRef.current = false;
     claveVista.current = clave;
   }, [clave]);
 
   const modoSalto = mensajeId !== null && !saltoFallido;
   const colMensajes = () => collection(db, 'tenants', tenantId, 'conversaciones', conversacionId, 'mensajes');
 
-  // Modo normal: LOS ÚLTIMOS `tope` mensajes, en vivo.
+  // Modo normal: el oyente en vivo mira SOLO los últimos 50. Lo que se va corriendo fuera de esa ventana (llegan
+  // mensajes nuevos) no desaparece de la pantalla: lo que se vio se acumula (`unir`). Los anteriores vienen con `getDocs`.
   useEffect(() => {
     if (!tenantId || !conversacionId || modoSalto) return;
     return onSnapshot(
-      query(colMensajes(), orderBy('ts', 'asc'), limitToLast(tope)),
+      query(colMensajes(), orderBy('ts', 'asc'), limitToLast(PAGINA)),
       (i) => {
-        setMensajes(i.docs.map(aMensaje));
-        setHayAntes(i.size >= tope);
+        setMensajes((previos) => unir(previos, i.docs.map(aMensaje)));
+        if (!cargoAnteriores.current) setHayAntes(i.size >= PAGINA);
         setCargadaPara(clave);
         setCargando(false);
       },
       () => { setError('No se pudieron leer los mensajes.'); setCargando(false); },
     );
-  }, [tenantId, conversacionId, modoSalto, tope]);
+  }, [tenantId, conversacionId, modoSalto]);
 
   // Modo salto: una ventana ALREDEDOR del mensaje que se buscó (una lectura,
   // no en vivo; «Ir a lo último» vuelve al modo normal).
@@ -141,20 +151,27 @@ function useMensajes(tenantId: string, conversacionId: string, mensajeId: string
     return () => { vigente = false; };
   }, [tenantId, conversacionId, modoSalto, mensajeId]);
 
+  // Los anteriores al primero que se ve, con `getDocs` (en los dos modos). La respuesta de otra conversación se descarta.
   const cargarAnteriores = useCallback(async () => {
-    if (!modoSalto) { setTope((t) => t + PAGINA); return; }
-    const primero = mensajes[0];
-    if (!primero) return;
-    const col = colMensajes();
-    const ref = await getDoc(doc(col, primero.id));
-    const ts = ref.data()?.['ts'];
-    if (!ts) return;
-    const antes = await getDocs(query(col, orderBy('ts', 'desc'), startAfter(ts), limit(PAGINA)));
-    setMensajes((actuales) => unir(antes.docs.map(aMensaje), actuales));
-    setHayAntes(antes.size >= PAGINA);
-  }, [modoSalto, mensajes, tenantId, conversacionId]);
+    const primero = mensajesRef.current[0];
+    if (!primero || cargandoAntesRef.current) return;
+    const miClave = claveVista.current;
+    cargandoAntesRef.current = true;
+    setCargandoAntes(true);
+    try {
+      const antes = await getDocs(query(colMensajes(), orderBy('ts', 'desc'), startAfter(primero.snap), limit(PAGINA)));
+      if (claveVista.current !== miClave) return;
+      cargoAnteriores.current = true;
+      setMensajes((actuales) => unir(antes.docs.map(aMensaje), actuales));
+      setHayAntes(antes.size >= PAGINA);
+    } catch {
+      if (claveVista.current === miClave) setError('No se pudieron cargar los mensajes anteriores.');
+    } finally {
+      if (claveVista.current === miClave) { cargandoAntesRef.current = false; setCargandoAntes(false); }
+    }
+  }, [tenantId, conversacionId]);
 
-  return { clave, cargadaPara, mensajes, hayAntes, cargando, error, modoSalto, saltoFallido, cargarAnteriores };
+  return { clave, cargadaPara, mensajes, hayAntes, cargandoAntes, cargando, error, modoSalto, saltoFallido, cargarAnteriores };
 }
 
 export interface PropsDetalle {
@@ -167,6 +184,8 @@ export interface PropsDetalle {
   onAnterior: (() => void) | null;
   onSiguiente: (() => void) | null;
   posicion: string;
+  /** Quien mira puede cambiar «No contactar» (admin u oper del negocio); el propietario de NovuChat solo mira. */
+  puedeGestionar: boolean;
 }
 
 export function DetalleConversacion(p: PropsDetalle) {
@@ -276,11 +295,16 @@ export function DetalleConversacion(p: PropsDetalle) {
         {necesitaHumanoDe(ficha, p.ahora) && (
           <span className="cv-etiqueta cv-etiqueta--humano">Necesita que intervenga una persona</span>
         )}
-        <label className="cv-nocontactar">
-          <input type="checkbox" checked={ficha.noContactar}
-            onChange={(e) => void cambiarNoContactar(e.target.checked)} />
-          {' '}No contactar
-        </label>
+        {p.puedeGestionar ? (
+          <label className="cv-nocontactar">
+            <input type="checkbox" checked={ficha.noContactar}
+              onChange={(e) => void cambiarNoContactar(e.target.checked)} />
+            {' '}No contactar
+          </label>
+        ) : (
+          // El propietario de NovuChat mira con una ventana de soporte y no escribe: el control no se ofrece.
+          ficha.noContactar && <span className="cv-etiqueta">No contactar</span>
+        )}
         {errorNoContactar && <span role="alert" className="cv-error">{errorNoContactar}</span>}
       </div>
 
@@ -295,7 +319,9 @@ export function DetalleConversacion(p: PropsDetalle) {
         <div ref={contenidoRef}>
         {m.hayAntes && (
           <div className="cv-mas">
-            <button type="button" className="btn btn-secondary" onClick={masAntiguos}>Cargar mensajes anteriores</button>
+            <button type="button" className="btn btn-secondary" disabled={m.cargandoAntes} onClick={masAntiguos}>
+              {m.cargandoAntes ? 'Cargando…' : 'Cargar mensajes anteriores'}
+            </button>
           </div>
         )}
         {m.cargando && <p className="cv-vacio">Cargando mensajes…</p>}
@@ -317,7 +343,7 @@ export function DetalleConversacion(p: PropsDetalle) {
                   {rotuloAutor && <span className="cv-autor">{rotuloAutor}</span>}
                   {ADJUNTOS[x.tipo] && <span className="adjunto">{ADJUNTOS[x.tipo]}</span>}
                   <TextoSeguro valor={x.texto} />
-                  <time>{x.ts ? horaCorta(x.ts) : ''}</time>
+                  <time dateTime={x.ts ? new Date(x.ts).toISOString() : undefined}>{x.ts ? horaCorta(x.ts) : ''}</time>
                 </div>
               </li>
             );
@@ -333,11 +359,4 @@ export function DetalleConversacion(p: PropsDetalle) {
 
     </div>
   );
-}
-
-function iniciales(nombre: string): string {
-  const partes = nombre.trim().split(/\s+/).filter(Boolean);
-  const a = partes[0]?.[0] ?? '#';
-  const b = partes.length > 1 ? (partes[1]?.[0] ?? '') : '';
-  return (a + b).toUpperCase();
 }

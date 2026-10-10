@@ -128,6 +128,7 @@
 }
 .cv-hilo:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .cv-mas { display: flex; justify-content: center; padding: var(--space-2) 0; }
+.cv-resalte-palabra { background: color-mix(in srgb, var(--color-aviso) 35%, transparent); color: inherit; border-radius: 2px; padding: 0 1px; }
 .cv-mas-lista { display: flex; justify-content: center; padding: var(--space-2) var(--space-3); }
 .cv-error-busqueda { margin: 2px 0 0; font-size: 12.5px; }
 .cv-mensajes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }

@@ -32,13 +32,18 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as Core from '../../functions/src/core/conversacion/normalizacion';
 import {
-  CONVERSACION_EN_LA_RUTA, ESTADOS_HUMANO, FILTROS, FORMAS_CONSULTA, PAGINA_LISTA, POR_VENCER_HORAS, REBOTE_MARCA_LEIDA_MS,
-  VENTANA_HORAS, aplicarFiltro, buscarPorNombre, buscarPorTelefono, clasificarConsulta, coincidenciaTelefono,
+  CONVERSACION_EN_LA_RUTA, ESTADOS_HUMANO, FILTROS, FORMAS_CONSULTA, MAX_DIGITOS_TELEFONO, MAX_IDS_CONSULTA, PAGINACION_INICIAL,
+  PAGINA_LISTA, POR_VENCER_HORAS, REBOTE_MARCA_LEIDA_MS, VENTANA_HORAS, alAceptarPagina, alSnapshot, alSuscribir,
+  aplicarFiltro, partirResaltado, textoListaVacia, consultaDeIds, esIdConversacion, esIdMensaje, iniciales, puedeGestionarConversaciones, respuestaVigente, buscarPorNombre, buscarPorTelefono, clasificarConsulta, coincidenciaTelefono,
   consultaDeFiltro, consultaDeNombre, consultasDeTelefono, cumpleFiltro, debeMarcarLeida, etiquetaDia, etiquetaFicha,
   fichaDeDocumento, filtroConReloj, formaDe, fragmento, horaCorta, mensajeContiene, mezclarLista, necesitaHumanoDe,
   normalizarTexto, ordenarPara, ordenarPorReciente, palabraParaIndice, palabrasDe, raizDe, rutaConversaciones, soloDigitos,
   textoErrorBusqueda, textoRestante, trozosDeTelefono, unirFichas, vecina, ventanaDe, ventanaDeFicha, type Ficha,
 } from '../../web/src/central/lib/conversaciones';
+
+/** El código de un archivo de admin/, sin comentarios (lo que de verdad se ejecuta). */
+const leerCodigo = (ruta: string) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', ruta), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '');
 
 const HORA = 3_600_000;
 const MIN = 60_000;
@@ -281,7 +286,8 @@ describe('3. lectura tolerante de documentos', () => {
 describe('ventana de 24 h', () => {
   it('corre desde el último mensaje DEL CLIENTE; por vencer cuando quedan menos de 6 h; cerrada a las 24', () => {
     expect(ventanaDe(AHORA - 1 * HORA, AHORA).estado).toBe('abierta');
-    expect(ventanaDe(AHORA - (24 - POR_VENCER_HORAS) * HORA, AHORA).estado).toBe('abierta');       // justo 6 h: todavía no
+    expect(ventanaDe(AHORA - (24 - POR_VENCER_HORAS) * HORA + 1, AHORA).estado).toBe('abierta');   // le quedan 6 h y 1 ms
+    expect(ventanaDe(AHORA - (24 - POR_VENCER_HORAS) * HORA, AHORA).estado).toBe('por-vencer');    // justo 6 h: SÍ (≤ 6 h)
     expect(ventanaDe(AHORA - (24 - POR_VENCER_HORAS) * HORA - MIN, AHORA).estado).toBe('por-vencer');
     expect(ventanaDe(AHORA - 23.9 * HORA, AHORA).estado).toBe('por-vencer');
     expect(ventanaDe(AHORA - 24 * HORA, AHORA).estado).toBe('cerrada');
@@ -437,6 +443,7 @@ describe('las consultas a Firestore, descritas como datos', () => {
     const armadas = [
       ...FILTROS.map((f) => consultaDeFiltro(f.id, AHORA, PAGINA_LISTA)),
       ...consultasDeTelefono('0047', ['591', '593']), consultaDeNombre('marcela'),
+      consultaDeIds(['wa_59100000047', 'wa_59100000074']) as NonNullable<ReturnType<typeof consultaDeIds>>,
     ];
     for (const c of armadas) {
       const { filtros, orden } = formaDe(c);
@@ -481,9 +488,9 @@ describe('TAREA 3: «siguiente» no saltea conversaciones', () => {
 });
 
 describe('6. marcar leída: quién, cuándo y con qué rebote', () => {
-  const base = { rol: 'oper', propietario: false, visible: true, noLeidos: 2, sinLeer: true };
+  const base = { rol: 'oper', propietario: false, comercioActivo: true, visible: true, noLeidos: 2, sinLeer: true };
 
-  it('admin y oper, con la pestaña visible y algo por marcar: se marca', () => {
+  it('admin y oper, comercio activo, pestaña visible y algo por marcar: se marca', () => {
     expect(debeMarcarLeida({ ...base, rol: 'oper' })).toBe(true);
     expect(debeMarcarLeida({ ...base, rol: 'admin' })).toBe(true);
     expect(debeMarcarLeida({ ...base, noLeidos: 0, sinLeer: true })).toBe(true);
@@ -494,12 +501,32 @@ describe('6. marcar leída: quién, cuándo y con qué rebote', () => {
     expect(debeMarcarLeida({ ...base, propietario: true })).toBe(false);
     expect(debeMarcarLeida({ ...base, propietario: true, rol: 'admin' })).toBe(false);
     expect(debeMarcarLeida({ ...base, propietario: true, rol: null })).toBe(false);
+    expect(puedeGestionarConversaciones('admin', true)).toBe(false);
   });
 
   it('NEGATIVA: sin rol de negocio, o con el rol de la ingesta, no se marca', () => {
     expect(debeMarcarLeida({ ...base, rol: null })).toBe(false);
     expect(debeMarcarLeida({ ...base, rol: 'ingesta' })).toBe(false);
     expect(debeMarcarLeida({ ...base, rol: 'propietario' })).toBe(false);
+    expect(puedeGestionarConversaciones('oper', false)).toBe(true);
+    expect(puedeGestionarConversaciones('ingesta', false)).toBe(false);
+  });
+
+  it('NEGATIVA: con el comercio suspendido (o sin saber su estado) NO se marca: las reglas niegan la escritura y sería un bucle', () => {
+    expect(debeMarcarLeida({ ...base, comercioActivo: false })).toBe(false);
+    expect(debeMarcarLeida({ ...base, comercioActivo: false, noLeidos: 9, sinLeer: true, rol: 'admin' })).toBe(false);
+  });
+
+  it('NEGATIVA: una marca que FALLÓ no se reintenta hasta que `noLeidos` crezca (rol revocado: sin bucle de escrituras negadas)', () => {
+    // La marca falló cuando tenía 2 sin leer.
+    expect(debeMarcarLeida({ ...base, noLeidos: 2, fallo: 2 })).toBe(false);
+    expect(debeMarcarLeida({ ...base, noLeidos: 1, fallo: 2 })).toBe(false);
+    // Llegó un mensaje más: hay algo nuevo que marcar, se reintenta una vez.
+    expect(debeMarcarLeida({ ...base, noLeidos: 3, fallo: 2 })).toBe(true);
+    // Fallar con solo `sinLeer` (noLeidos 0) tampoco se reintenta.
+    expect(debeMarcarLeida({ ...base, noLeidos: 0, sinLeer: true, fallo: 0 })).toBe(false);
+    // Sin fallo previo, se marca.
+    expect(debeMarcarLeida({ ...base, noLeidos: 2, fallo: undefined })).toBe(true);
   });
 
   it('NEGATIVA: con la pestaña oculta no se marca (no se lee lo que nadie está mirando)', () => {
@@ -517,6 +544,161 @@ describe('6. marcar leída: quién, cuándo y con qué rebote', () => {
   });
 });
 
+describe('la paginación de la lista: una respuesta de «Cargar más» solo vale en su época', () => {
+  it('sin nada que la cambie, la respuesta vale y deja constancia de que hay anteriores', () => {
+    let p = alSuscribir(PAGINACION_INICIAL);
+    const epoca = p.epoca;
+    expect(respuestaVigente(p, epoca)).toBe(true);
+    p = alAceptarPagina(p);
+    expect(p.hayAnteriores).toBe(true);
+    expect(p.epoca).toBe(epoca);
+  });
+
+  it('CARRERA 1: entra una conversación a la primera página mientras `getDocs` vuela → la respuesta se descarta (abriría un hueco)', () => {
+    let p = alSuscribir(PAGINACION_INICIAL);
+    const epoca = p.epoca;          // "Cargar más" captura la época aquí
+    p = alSnapshot(p, true);        // llega el snapshot con una conversación nueva
+    expect(respuestaVigente(p, epoca)).toBe(false);
+    expect(p.hayAnteriores).toBe(false);
+  });
+
+  it('CARRERA 1b: un snapshot sin conversaciones nuevas (solo cambios dentro de la ventana) NO descarta nada', () => {
+    let p = alAceptarPagina(alSuscribir(PAGINACION_INICIAL));
+    const epoca = p.epoca;
+    p = alSnapshot(p, false);
+    expect(respuestaVigente(p, epoca)).toBe(true);
+    expect(p.hayAnteriores).toBe(true);
+  });
+
+  it('CARRERA 2: el oyente se vuelve a suscribir (filtro con reloj, cada 5 min) mientras vuela → se descarta', () => {
+    let p = alSuscribir(PAGINACION_INICIAL);
+    const epoca = p.epoca;
+    p = alSuscribir(p);
+    expect(respuestaVigente(p, epoca)).toBe(false);
+  });
+
+  it('CARRERA 3: cambia el filtro (o el negocio) mientras vuela → se descarta, y lo cargado ya no cuenta como anteriores', () => {
+    let p = alAceptarPagina(alSuscribir(PAGINACION_INICIAL));
+    const epoca = p.epoca;
+    p = alSuscribir(p);             // el efecto del nuevo filtro
+    expect(respuestaVigente(p, epoca)).toBe(false);
+    expect(p.hayAnteriores).toBe(false);
+  });
+
+  it('las épocas solo crecen: una respuesta vieja nunca vuelve a valer', () => {
+    let p = PAGINACION_INICIAL;
+    const vistas: number[] = [];
+    for (let k = 0; k < 5; k++) { p = k % 2 ? alSnapshot(p, true) : alSuscribir(p); vistas.push(p.epoca); }
+    expect(vistas).toEqual([1, 2, 3, 4, 5]);
+    expect(respuestaVigente(p, 1)).toBe(false);
+  });
+});
+
+describe('ids que vienen de afuera, teléfonos largos, consulta por ids e iniciales', () => {
+  it('esIdConversacion: solo `wa_` y 8 a 15 dígitos; una ruta con «/» o «..» no es una conversación', () => {
+    expect(esIdConversacion('wa_59100000047')).toBe(true);
+    expect(esIdConversacion('wa_12345678')).toBe(true);
+    expect(esIdConversacion('wa_100000000000047')).toBe(true);
+    for (const malo of ['wa_1234567', 'wa_1000000000000476', 'wa_59100000047/mensajes', 'wa_59100000047%2Fx', 'wa_../x', '../wa_59100000047', 'wa_', '', ' wa_59100000047', 'WA_59100000047', null, undefined, 5, {}]) {
+      expect(esIdConversacion(malo), String(malo)).toBe(false);
+    }
+  });
+
+  it('esIdMensaje: sin «/», sin «.» ni «..», sin los reservados `__x__`, hasta 200', () => {
+    for (const bien of ['m0001', 'wamid.HBgM', 'a-b_c', 'x'.repeat(200)]) expect(esIdMensaje(bien), bien).toBe(true);
+    for (const malo of ['', '.', '..', 'a/b', '/', '__nombre__', 'x'.repeat(201), null, undefined, 3]) expect(esIdMensaje(malo), String(malo)).toBe(false);
+  });
+
+  it('consultaDeIds: una sola consulta `documentId() in`, solo ids válidos, sin repetir y hasta 30; sin ninguno válido, nada', () => {
+    const c = consultaDeIds(['wa_59100000047', 'wa_59100000047', 'wa_59100000074', '../x', 'basura']);
+    expect(c).toEqual({ restricciones: [{ campo: '__name__', op: 'in', valor: ['wa_59100000047', 'wa_59100000074'] }], orden: [] });
+    expect(consultaDeIds(['../x', 'x/y'])).toBeNull();
+    expect(consultaDeIds([])).toBeNull();
+    const muchos = Array.from({ length: 45 }, (_, i) => `wa_5910000${String(1000 + i)}`);
+    const grande = consultaDeIds(muchos);
+    expect(MAX_IDS_CONSULTA).toBe(30);
+    expect((grande?.restricciones[0]?.valor as string[]).length).toBe(30);
+  });
+
+  it('un teléfono tiene como máximo 15 dígitos: el borde 15 busca, 16 es «larga» y no se consulta', () => {
+    expect(MAX_DIGITOS_TELEFONO).toBe(15);
+    expect(clasificarConsulta('100000000000047')).toEqual({ tipo: 'telefono', digitos: '100000000000047' });      // 15
+    expect(clasificarConsulta('1000000000000047').tipo).toBe('larga');                                              // 16
+    expect(clasificarConsulta('+100 000 000 000 047').tipo).toBe('telefono');                                      // 15 con formato
+    expect(clasificarConsulta('+100 000 000 000 0047').tipo).toBe('larga');                                        // 16 con formato
+    expect(clasificarConsulta('9'.repeat(500)).tipo).toBe('larga');
+  });
+
+  it('el «00» internacional, en sus bordes exactos: 10 dígitos se conserva y 11 se quita', () => {
+    expect(clasificarConsulta('0000000047')).toEqual({ tipo: 'telefono', digitos: '0000000047' });        // 10: se conserva
+    expect(clasificarConsulta('00000000047')).toEqual({ tipo: 'telefono', digitos: '000000047' });        // 11: se quita el «00»
+    expect(clasificarConsulta('000000000047')).toEqual({ tipo: 'telefono', digitos: '0000000047' });      // 12: se quita
+    // con 00 + 15 dígitos (17), al quitar el «00» quedan 15: es un teléfono, no «larga»
+    expect(clasificarConsulta('00100000000000047')).toEqual({ tipo: 'telefono', digitos: '100000000000047' });
+  });
+
+  it('iniciales: dos letras del nombre, o «#» para un teléfono', () => {
+    expect(iniciales('Ximena P.')).toBe('XP');
+    expect(iniciales('marcela')).toBe('M');
+    expect(iniciales('+59100000047')).toBe('#');
+    expect(iniciales('')).toBe('#');
+    expect(iniciales('   ')).toBe('#');
+  });
+
+  it('«por vencer»: el filtro y la pastilla coinciden en TODOS los bordes (≤ 6 h por vencer; > 6 h abierta; 0 h cerrada)', () => {
+    for (const restante of [-HORA, 0, 1, 6 * HORA - 1, 6 * HORA, 6 * HORA + 1, 12 * HORA, 24 * HORA]) {
+      const f = ficha('v', { ultimoEntranteEn: AHORA + restante - 24 * HORA, ventanaVenceEn: AHORA + restante });
+      expect(cumpleFiltro(f, 'vencer', AHORA), `restante ${restante}`).toBe(ventanaDeFicha(f, AHORA).estado === 'por-vencer');
+    }
+  });
+});
+
+describe('la lista vacía y el resaltado de lo buscado', () => {
+  it('en una búsqueda por palabra, sin resultados PERO con cursor → «Sin resultados recientes; buscar más atrás» (no «Nada coincide»)', () => {
+    expect(textoListaVacia({ enBusqueda: true, hayMasPalabra: true, filtro: 'todas' })).toBe('Sin resultados recientes; buscar más atrás');
+  });
+
+  it('NEGATIVA: sin resultados y sin cursor → «Nada coincide con lo que escribió.»; fuera de una búsqueda, los textos de siempre', () => {
+    expect(textoListaVacia({ enBusqueda: true, hayMasPalabra: false, filtro: 'todas' })).toBe('Nada coincide con lo que escribió.');
+    expect(textoListaVacia({ enBusqueda: false, hayMasPalabra: false, filtro: 'todas' })).toBe('Todavía no hay conversaciones.');
+    expect(textoListaVacia({ enBusqueda: false, hayMasPalabra: false, filtro: 'noLeidas' })).toBe('Ninguna conversación cumple este filtro.');
+    // un cursor que sobra fuera de una búsqueda no cambia el texto
+    expect(textoListaVacia({ enBusqueda: false, hayMasPalabra: true, filtro: 'humano' })).toBe('Ninguna conversación cumple este filtro.');
+  });
+
+  it('la lista, con cursor y sin renglones, pinta el texto Y el botón «Buscar más atrás»; sin cursor, solo «Nada coincide»', () => {
+    const l = leerCodigo('web/src/central/componentes/ListaConversaciones.tsx');
+    expect(l).toContain('textoListaVacia({ enBusqueda: p.enBusqueda, hayMasPalabra: p.hayMasPalabra, filtro: p.filtro })');
+    expect(l).toContain("{p.renglones.length === 0 ? 'Buscar más atrás' : 'Más resultados'}");
+    expect(l).not.toContain("'Nada coincide con lo que escribió.'");   // el texto vive en la función pura, no suelto en la pantalla
+  });
+
+  it('partirResaltado: parte la cadena en tramos que, juntos, son EXACTAMENTE el texto; marca por raíz, sin tildes ni mayúsculas', () => {
+    const texto = 'Quiero Alfajores de maicena para el sábado';
+    const t = partirResaltado(texto, ['alfajor', 'maicena']);
+    expect(t.map((x) => x.texto).join('')).toBe(texto);
+    expect(t.filter((x) => x.resaltado).map((x) => x.texto)).toEqual(['Alfajores', 'maicena']);   // «alfajor» marca «Alfajores» entero
+    expect(partirResaltado('Dos Salteñas', ['saltena']).filter((x) => x.resaltado).map((x) => x.texto)).toEqual(['Salteñas']);
+  });
+
+  it('NEGATIVA: sin palabras, sin coincidencia o con texto vacío no resalta nada; el HTML del mensaje queda como texto', () => {
+    expect(partirResaltado('hola mundo', [])).toEqual([{ texto: 'hola mundo', resaltado: false }]);
+    expect(partirResaltado('hola mundo', ['zzz'])).toEqual([{ texto: 'hola mundo', resaltado: false }]);
+    expect(partirResaltado('', ['hola'])).toEqual([]);
+    const html = '<b>alfajor</b> <img src=x onerror=alert(1)>';
+    const t = partirResaltado(html, ['alfajor']);
+    expect(t.map((x) => x.texto).join('')).toBe(html);          // ni un carácter agregado ni quitado: sigue siendo texto
+    expect(t.filter((x) => x.resaltado).map((x) => x.texto)).toEqual(['alfajor']);
+  });
+
+  it('el resaltado se pinta con <TextoSeguro> en cada tramo (nunca HTML) y el fragmento se recorta a 120', () => {
+    const l = leerCodigo('web/src/central/componentes/ListaConversaciones.tsx');
+    expect(l).toContain('partirResaltado(texto.slice(0, 120), palabras)');
+    expect(l).toContain('<mark key={i} className="cv-resalte-palabra"><TextoSeguro valor={t.texto} maxLargo={120} /></mark>');
+    expect(l).toContain('<TextoSeguro key={i} valor={t.texto} maxLargo={120} />');
+  });
+});
+
 describe('errores de la búsqueda por palabra: el texto sale del CÓDIGO, nunca del mensaje', () => {
   it('cada código tiene su texto, con o sin el prefijo `functions/`', () => {
     expect(textoErrorBusqueda('functions/unauthenticated')).toBe('Su sesión venció. Vuelva a ingresar para buscar.');
@@ -531,11 +713,13 @@ describe('errores de la búsqueda por palabra: el texto sale del CÓDIGO, nunca 
     const t = textoErrorBusqueda('functions/not-found');
     expect(t).toMatch(/todavía no está disponible/);
     expect(t).toMatch(/teléfono o por nombre/);
+    // Según el camino, una Function sin desplegar llega como `internal`: el mismo aviso.
+    expect(textoErrorBusqueda('functions/internal')).toBe(t);
   });
 
   it('NEGATIVA: un código desconocido, ausente o de otro tipo da el texto genérico; nada de lo que traiga el error se muestra', () => {
     const generico = textoErrorBusqueda('functions/unavailable');
-    for (const raro of [undefined, null, 42, {}, 'functions/internal', 'functions/inventado', '', 'permission-denied: detalle interno']) {
+    for (const raro of [undefined, null, 42, {}, 'functions/inventado', '', 'permission-denied: detalle interno']) {
       expect(textoErrorBusqueda(raro)).toBe(generico);
     }
   });
@@ -593,7 +777,7 @@ describe('NEGATIVA: lo que la pantalla escribe, llama y usa (guardas de fuente)'
     expect(escrituras.filter((e) => e.includes('{ noContactar: valor }'))).toHaveLength(1);
     const lectura = escrituras.filter((e) => e.includes('{ noLeidos: 0, sinLeer: false }'));
     expect(lectura).toHaveLength(1);
-    expect(lectura[0]).toContain(".catch(() => { })");   // el error se ignora
+    expect(lectura[0]).toContain(".catch(() => { fallidas.current.set(idAMarcar, noLeidosAbierta);");   // el error se ignora y se recuerda
     for (const e of escrituras) {
       for (const campo of ['turno', 'atendidaPor', 'necesitaHumano', 'autor', 'etiquetas', 'notaInterna', 'telefono', 'ultimoMensaje']) {
         expect(e, `updateDoc escribe ${campo}`).not.toContain(campo);
@@ -603,7 +787,8 @@ describe('NEGATIVA: lo que la pantalla escribe, llama y usa (guardas de fuente)'
 
   it('la marca de leída respeta rol, propietario y pestaña visible ANTES de escribir, con el rebote de 1 s', () => {
     const f = codigo('web/src/central/paginas/ConversacionesNueva.tsx');
-    expect(f).toMatch(/const marcar = fichaAbierta !== null && debeMarcarLeida\(\{\s*rol, propietario: permisos\.propietario, visible,/);
+    expect(f).toMatch(/const marcar = fichaAbierta !== null && debeMarcarLeida\(\{\s*rol, propietario: permisos\.propietario, comercioActivo: estadoComercio === 'activo', visible,/);
+    expect(f).toContain('fallo: fallidas.current.get(fichaAbierta.id)');
     expect(f).toMatch(/if \(!marcar \|\| !idAMarcar\) return;/);
     expect(f).toContain('}, REBOTE_MARCA_LEIDA_MS);');
     expect(f).toContain('return () => clearTimeout(t);');
@@ -628,6 +813,67 @@ describe('NEGATIVA: lo que la pantalla escribe, llama y usa (guardas de fuente)'
     // la pantalla nunca lee mensajes de otras conversaciones: el detalle lee los de UNA, y la palabra va por la callable
     expect(f).not.toMatch(/'conversaciones',[^)]*'mensajes'/);
     expect(codigo('web/src/central/paginas/ConversacionesNueva.tsx')).toContain('getCountFromServer(');
+  });
+
+  it('ronda de revisión: lo que viene de la dirección y del servidor se valida ANTES de armar una ruta o una consulta', () => {
+    const f = codigo('web/src/central/paginas/ConversacionesNueva.tsx');
+    // El id de la dirección, antes de `doc()`; el `?m=` también.
+    expect(f).toMatch(/if \(!esIdConversacion\(conversacionId\)\) \{ setAbierta\(\{ estado: 'no-existe' \}\); return; \}\s*setAbierta\(\{ estado: 'cargando' \}\);/);
+    expect(f).toContain('const mensajeId = esIdMensaje(mensajeCrudo) ? mensajeCrudo : null;');
+    // Las fichas de los resultados, en UNA consulta por ids (sin un `getDoc` por resultado).
+    expect(f.match(/documentId\(\)/g)).toHaveLength(1);
+    expect(f).toContain('const consultaIds = consultaDeIds(faltan);');
+    expect(f).not.toMatch(/faltan\.map\(/);
+    // La lista y la foto de la abierta: lo vivo gana.
+    expect(f).toContain('mezclarLista(filtro, lista.enVivo, lista.anteriores, fijadas)');
+    expect(f).toContain('unirFichas(resTelefono, lista.fichas)');
+    expect(f).toContain('unirFichas(resTelefono, resNombre, lista.fichas)');
+    // «Más resultados»: vigente de verdad, y antes de pedir las fichas.
+    expect(f).toContain('busquedaId.current === id && textoDeLaBusqueda.current === t, true)');
+    expect(f.match(/if \(!vigente\(\)\) return;/g)!.length).toBeGreaterThanOrEqual(2);
+    // «Cargar más»: la época se captura y se compara.
+    expect(f).toContain('const epoca = paginacion.current.epoca;');
+    expect(f.match(/respuestaVigente\(paginacion\.current, epoca\)/g)).toHaveLength(2);
+    // Los conteos no dependen del filtro.
+    expect(f).toContain('useEffect(() => { void contar(); }, [contar]);');
+    // Escape: con el foco en otro campo no cierra la conversación.
+    expect(f).toContain('if (escribiendo && destino !== buscadorRef.current) return;');
+  });
+
+  it('ronda de revisión: el buscador no pasa de 100 letras, el teléfono de 15 dígitos y la regla de la lib usa los topes de Core', () => {
+    expect(codigo('web/src/central/componentes/ListaConversaciones.tsx')).toContain('maxLength={100}');
+    const lib = leer('web/src/central/lib/conversaciones.ts');
+    expect(lib).not.toContain('');                 // el carácter especial escrito como escape, no pegado
+    expect(lib).toContain("c + '\\uf8ff'");
+    expect(codigo('web/src/central/lib/conversaciones.ts')).toContain('palabras: palabrasDe(q, MAX_PALABRAS_CONSULTA)');
+  });
+
+  it('ronda de revisión: el hilo mira en vivo solo los últimos 50 y trae los anteriores con `getDocs`, con guarda de vigencia', () => {
+    const d = codigo('web/src/central/componentes/DetalleConversacion.tsx');
+    expect(d).toContain("orderBy('ts', 'asc'), limitToLast(PAGINA)");
+    expect(d).not.toMatch(/limitToLast\(tope\)|setTope|useState\(PAGINA\)/);
+    expect(d).toContain('startAfter(primero.snap)');
+    const cuerpo = d.slice(d.indexOf('const cargarAnteriores'), d.indexOf('return { clave, cargadaPara'));
+    expect(cuerpo).toContain('try {');
+    expect(cuerpo).toContain('} catch {');
+    expect(cuerpo.match(/claveVista\.current !== miClave/g)!.length).toBeGreaterThanOrEqual(1);
+    expect(cuerpo).not.toContain('getDoc(');            // ya no hace falta una lectura de más para saber el `ts`
+  });
+
+  it('ronda de revisión: «No contactar» solo para quien puede gestionar; teléfono por <TextoSeguro>; punto «Sin leer» con role="img"; <time dateTime>', () => {
+    const d = codigo('web/src/central/componentes/DetalleConversacion.tsx');
+    expect(d).toContain('{p.puedeGestionar ? (');
+    expect(codigo('web/src/central/paginas/ConversacionesNueva.tsx')).toContain('posicion={posicion} puedeGestionar={puedeGestionar}');
+    expect(codigo('web/src/central/paginas/ConversacionesNueva.tsx')).toContain('const puedeGestionar = puedeGestionarConversaciones(rol, permisos.propietario);');
+    const l = codigo('web/src/central/componentes/ListaConversaciones.tsx');
+    expect(l).toContain('+<TextoSeguro valor={f.telefono} maxLargo={15} />');
+    expect(l).not.toContain('+{f.telefono}');
+    expect(l).toContain('role="img" aria-label="Sin leer"');
+    expect(l).toContain('<time className="cv-ficha-hora" dateTime=');
+    expect(d).toContain('<time dateTime=');
+    // las iniciales viven en un solo lugar
+    expect(l).not.toMatch(/function iniciales/);
+    expect(d).not.toMatch(/function iniciales/);
   });
 
   it('el texto de los clientes nunca va como HTML', () => {

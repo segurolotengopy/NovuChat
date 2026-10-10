@@ -85,7 +85,7 @@ export function formasSinIndice(formas: readonly FormaConsulta[], archivo: Archi
 
 describe('cada forma de consulta de la pantalla tiene su índice declarado', () => {
   it('FORMAS_CONSULTA no está vacía y cada forma tiene un id único', () => {
-    expect(FORMAS_CONSULTA.length).toBeGreaterThanOrEqual(7);
+    expect(FORMAS_CONSULTA.length).toBeGreaterThanOrEqual(8);
     expect(new Set(FORMAS_CONSULTA.map((f) => f.id)).size).toBe(FORMAS_CONSULTA.length);
   });
 
@@ -103,7 +103,7 @@ describe('cada forma de consulta de la pantalla tiene su índice declarado', () 
 
   it('las formas de campo único: «todas», «por vencer», teléfono (trozos y prefijo) y nombre', () => {
     const unicas = FORMAS_CONSULTA.filter((f) => indiceNecesario(f) === null).map((f) => f.id);
-    expect(unicas).toEqual(['todas', 'vencer', 'telefono-trozos', 'telefono-prefijo', 'nombre']);
+    expect(unicas).toEqual(['todas', 'vencer', 'telefono-trozos', 'telefono-prefijo', 'nombre', 'ids']);
   });
 
   it('el archivo declara el compuesto de «no leídas» y el de «necesita humano» sobre `conversaciones`, ámbito COLLECTION', () => {

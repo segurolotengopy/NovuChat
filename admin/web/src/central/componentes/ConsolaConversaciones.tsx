@@ -30,3 +30,21 @@ export function useConsolaConversaciones(tenantId: string | undefined): Pantalla
   }, [tenantId]);
   return pantalla;
 }
+
+/**
+ * El estado del comercio (`tenants/{id}.estado`: `activo`, `suspendido`…), o `null` mientras se lee o si no se puede leer.
+ * La pantalla nueva lo usa para NO intentar escribir (marcar leída) en un comercio que no está activo: las reglas niegan
+ * toda escritura de una persona con el comercio suspendido, y reintentarla en cada cambio sería un bucle de escrituras
+ * negadas. `null` cuenta como «no activo»: ante la duda, no se escribe.
+ */
+export function useEstadoComercio(tenantId: string | undefined): string | null {
+  const [estado, setEstado] = useState<string | null>(null);
+  useEffect(() => {
+    setEstado(null);
+    if (!tenantId) return;
+    return onSnapshot(doc(db, 'tenants', tenantId),
+      (d) => { const e = d.data()?.['estado']; setEstado(typeof e === 'string' ? e : null); },
+      () => setEstado(null));
+  }, [tenantId]);
+  return estado;
+}
