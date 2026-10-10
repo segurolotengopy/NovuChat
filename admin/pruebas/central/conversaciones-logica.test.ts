@@ -32,9 +32,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as Core from '../../functions/src/core/conversacion/normalizacion';
 import {
-  CONVERSACION_EN_LA_RUTA, ESTADOS_HUMANO, FILTROS, FORMAS_CONSULTA, MAX_DIGITOS_TELEFONO, MAX_IDS_CONSULTA, PAGINACION_INICIAL,
+  CONVERSACION_EN_LA_RUTA, ESTADOS_HUMANO, FILTROS, FORMAS_CONSULTA, MAX_DIGITOS_TELEFONO, MAX_IDS_CONSULTA, PAGINACION_INICIAL, MAX_RESULTADOS_BUSQUEDA,
   PAGINA_LISTA, POR_VENCER_HORAS, REBOTE_MARCA_LEIDA_MS, VENTANA_HORAS, alAceptarPagina, alSnapshot, alSuscribir,
-  aplicarFiltro, partirResaltado, textoListaVacia, consultaDeIds, esIdConversacion, esIdMensaje, iniciales, puedeGestionarConversaciones, respuestaVigente, buscarPorNombre, buscarPorTelefono, clasificarConsulta, coincidenciaTelefono,
+  aplicarFiltro, cursorInvalidado, marcaBloqueada, partirResaltado, textoListaVacia, consultaDeIds, esIdConversacion, esIdMensaje, iniciales, puedeGestionarConversaciones, respuestaVigente, buscarPorNombre, buscarPorTelefono, clasificarConsulta, coincidenciaTelefono,
   consultaDeFiltro, consultaDeNombre, consultasDeTelefono, cumpleFiltro, debeMarcarLeida, etiquetaDia, etiquetaFicha,
   fichaDeDocumento, filtroConReloj, formaDe, fragmento, horaCorta, mensajeContiene, mezclarLista, necesitaHumanoDe,
   normalizarTexto, ordenarPara, ordenarPorReciente, palabraParaIndice, palabrasDe, raizDe, rutaConversaciones, soloDigitos,
@@ -517,16 +517,26 @@ describe('6. marcar leída: quién, cuándo y con qué rebote', () => {
     expect(debeMarcarLeida({ ...base, comercioActivo: false, noLeidos: 9, sinLeer: true, rol: 'admin' })).toBe(false);
   });
 
-  it('NEGATIVA: una marca que FALLÓ no se reintenta hasta que `noLeidos` crezca (rol revocado: sin bucle de escrituras negadas)', () => {
+  it('NEGATIVA: una marca que FALLÓ no se reintenta mientras `noLeidos` valga lo mismo (rol revocado: sin bucle de escrituras negadas)', () => {
     // La marca falló cuando tenía 2 sin leer.
     expect(debeMarcarLeida({ ...base, noLeidos: 2, fallo: 2 })).toBe(false);
-    expect(debeMarcarLeida({ ...base, noLeidos: 1, fallo: 2 })).toBe(false);
     // Llegó un mensaje más: hay algo nuevo que marcar, se reintenta una vez.
     expect(debeMarcarLeida({ ...base, noLeidos: 3, fallo: 2 })).toBe(true);
     // Fallar con solo `sinLeer` (noLeidos 0) tampoco se reintenta.
     expect(debeMarcarLeida({ ...base, noLeidos: 0, sinLeer: true, fallo: 0 })).toBe(false);
     // Sin fallo previo, se marca.
     expect(debeMarcarLeida({ ...base, noLeidos: 2, fallo: undefined })).toBe(true);
+  });
+
+  it('una marca fallida NO queda «pegada» si noLeidos baja y vuelve a subir (fallo=5, luego 0, luego 2 → se reintenta)', () => {
+    expect(debeMarcarLeida({ ...base, noLeidos: 5, fallo: 5 })).toBe(false);       // sigue igual: sin bucle
+    expect(debeMarcarLeida({ ...base, noLeidos: 0, sinLeer: false, fallo: 5 })).toBe(false);   // la marcó otra persona: nada que marcar
+    expect(debeMarcarLeida({ ...base, noLeidos: 2, fallo: 5 })).toBe(true);        // volvió a subir, con otro valor: se reintenta
+    expect(marcaBloqueada(5, 5)).toBe(true);
+    expect(marcaBloqueada(5, 2)).toBe(false);
+    expect(marcaBloqueada(5, 7)).toBe(false);
+    expect(marcaBloqueada(undefined, 5)).toBe(false);
+    expect(marcaBloqueada(0, 0)).toBe(true);                                        // falló solo con `sinLeer`: tampoco se repite
   });
 
   it('NEGATIVA: con la pestaña oculta no se marca (no se lee lo que nadie está mirando)', () => {
@@ -607,6 +617,7 @@ describe('ids que vienen de afuera, teléfonos largos, consulta por ids e inicia
   it('esIdMensaje: sin «/», sin «.» ni «..», sin los reservados `__x__`, hasta 200', () => {
     for (const bien of ['m0001', 'wamid.HBgM', 'a-b_c', 'x'.repeat(200)]) expect(esIdMensaje(bien), bien).toBe(true);
     for (const malo of ['', '.', '..', 'a/b', '/', '__nombre__', 'x'.repeat(201), null, undefined, 3]) expect(esIdMensaje(malo), String(malo)).toBe(false);
+    expect(esIdMensaje('__con\nsalto__')).toBe(false);          // los reservados `__x__` incluso con un salto de línea adentro
   });
 
   it('consultaDeIds: una sola consulta `documentId() in`, solo ids válidos, sin repetir y hasta 30; sin ninguno válido, nada', () => {
@@ -618,6 +629,17 @@ describe('ids que vienen de afuera, teléfonos largos, consulta por ids e inicia
     const grande = consultaDeIds(muchos);
     expect(MAX_IDS_CONSULTA).toBe(30);
     expect((grande?.restricciones[0]?.valor as string[]).length).toBe(30);
+  });
+
+  it('los resultados de una página de búsqueda caben en UNA consulta por ids', () => {
+    expect(MAX_RESULTADOS_BUSQUEDA).toBeLessThanOrEqual(MAX_IDS_CONSULTA);
+  });
+
+  it('un cursor que el servidor rechaza (invalid-argument con cursor) se invalida; sin cursor u otro código, no', () => {
+    expect(cursorInvalidado('functions/invalid-argument', true)).toBe(true);
+    expect(cursorInvalidado('invalid-argument', true)).toBe(true);
+    expect(cursorInvalidado('functions/invalid-argument', false)).toBe(false);
+    for (const otro of ['functions/unavailable', 'functions/not-found', undefined, null, 4, {}]) expect(cursorInvalidado(otro, true), String(otro)).toBe(false);
   });
 
   it('un teléfono tiene como máximo 15 dígitos: el borde 15 busca, 16 es «larga» y no se consulta', () => {
@@ -838,6 +860,27 @@ describe('NEGATIVA: lo que la pantalla escribe, llama y usa (guardas de fuente)'
     expect(f).toContain('useEffect(() => { void contar(); }, [contar]);');
     // Escape: con el foco en otro campo no cierra la conversación.
     expect(f).toContain('if (escribiendo && destino !== buscadorRef.current) return;');
+  });
+
+  it('mini-ronda: guardas de la paginación (época, `added`, oyente activo), de la marca fallida y del reacomodo del hilo', () => {
+    const f = codigo('web/src/central/paginas/ConversacionesNueva.tsx');
+    expect(f).toContain("const entro = !primera && snap.docChanges().some((c) => c.type === 'added');");
+    expect(f).toContain('paginacion.current = alSnapshot(paginacion.current, entro);');
+    expect(f).toContain('let activa = true;');
+    expect(f).toContain('return () => { activa = false; paginacion.current = alSuscribir(paginacion.current); baja(); };');
+    expect(f).not.toContain('paginacion.current.epoca < mia');
+    // la marca fallida se consulta DENTRO del temporizador, justo antes de escribir
+    expect(f).toMatch(/setTimeout\(\(\) => \{\s*if \(marcaBloqueada\(fallidas\.current\.get\(idAMarcar\), noLeidosAbierta\)\) return;\s*updateDoc\(/);
+    // un cursor invalidado se quita; el mensajeId del servidor se valida; sin la rama muerta TEXTAREA
+    expect(f).toContain('if (cursorInvalidado(codigoDe(e), cursor !== null)) setCursorPalabra(null);');
+    expect(f).toContain('&& esIdMensaje(r.mensajeId));');
+    expect(f).not.toContain("tagName === 'TEXTAREA') { destino.blur()");
+    expect(f).toContain("comercioActivo={estadoComercio === 'activo'}");
+    const d = codigo('web/src/central/componentes/DetalleConversacion.tsx');
+    expect(d).toContain('disabled={!p.comercioActivo}');
+    expect(d).toContain('.then((hubo) => { if (!hubo) restaurar.current = null; });');
+    expect(d).toContain('return !antes.empty;');
+    expect(d).toContain('    setError(null);\n    try {');
   });
 
   it('ronda de revisión: el buscador no pasa de 100 letras, el teléfono de 15 dígitos y la regla de la lib usa los topes de Core', () => {

@@ -152,20 +152,25 @@ function useMensajes(tenantId: string, conversacionId: string, mensajeId: string
   }, [tenantId, conversacionId, modoSalto, mensajeId]);
 
   // Los anteriores al primero que se ve, con `getDocs` (en los dos modos). La respuesta de otra conversación se descarta.
-  const cargarAnteriores = useCallback(async () => {
+  // Devuelve `true` solo si trajo mensajes que se sumaron a la pantalla (quien llama usa eso para saber si hay que
+  // reacomodar el scroll: con una página vacía, con un error o descartada no hay nada que reacomodar).
+  const cargarAnteriores = useCallback(async (): Promise<boolean> => {
     const primero = mensajesRef.current[0];
-    if (!primero || cargandoAntesRef.current) return;
+    if (!primero || cargandoAntesRef.current) return false;
     const miClave = claveVista.current;
     cargandoAntesRef.current = true;
     setCargandoAntes(true);
+    setError(null);
     try {
       const antes = await getDocs(query(colMensajes(), orderBy('ts', 'desc'), startAfter(primero.snap), limit(PAGINA)));
-      if (claveVista.current !== miClave) return;
+      if (claveVista.current !== miClave) return false;
       cargoAnteriores.current = true;
       setMensajes((actuales) => unir(antes.docs.map(aMensaje), actuales));
       setHayAntes(antes.size >= PAGINA);
+      return !antes.empty;
     } catch {
       if (claveVista.current === miClave) setError('No se pudieron cargar los mensajes anteriores.');
+      return false;
     } finally {
       if (claveVista.current === miClave) { cargandoAntesRef.current = false; setCargandoAntes(false); }
     }
@@ -186,6 +191,8 @@ export interface PropsDetalle {
   posicion: string;
   /** Quien mira puede cambiar «No contactar» (admin u oper del negocio); el propietario de NovuChat solo mira. */
   puedeGestionar: boolean;
+  /** El comercio está `activo`: con otro estado las reglas niegan toda escritura y el control se deshabilita. */
+  comercioActivo: boolean;
 }
 
 export function DetalleConversacion(p: PropsDetalle) {
@@ -248,7 +255,8 @@ export function DetalleConversacion(p: PropsDetalle) {
   function masAntiguos() {
     const el = hiloRef.current;
     if (el) restaurar.current = { alto: el.scrollHeight, top: el.scrollTop };
-    void m.cargarAnteriores();
+    // Si no llegó nada que sumar (página vacía, error, otra conversación), no queda un reacomodo pendiente para el próximo render.
+    void m.cargarAnteriores().then((hubo) => { if (!hubo) restaurar.current = null; });
   }
 
   async function cambiarNoContactar(valor: boolean) {
@@ -297,7 +305,8 @@ export function DetalleConversacion(p: PropsDetalle) {
         )}
         {p.puedeGestionar ? (
           <label className="cv-nocontactar">
-            <input type="checkbox" checked={ficha.noContactar}
+            <input type="checkbox" checked={ficha.noContactar} disabled={!p.comercioActivo}
+              title={p.comercioActivo ? undefined : 'El comercio no está activo: no se puede cambiar.'}
               onChange={(e) => void cambiarNoContactar(e.target.checked)} />
             {' '}No contactar
           </label>

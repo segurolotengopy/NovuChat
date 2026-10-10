@@ -15,8 +15,8 @@ import {
   CAMPOS_FECHA, CONTADORES_CADA_MS, CONTADORES_MINIMO_MS, CONTADORES_VACIOS, PAGINA_LISTA, PAGINACION_INICIAL,
   REBOTE_MARCA_LEIDA_MS, RESUSCRIBIR_FILTROS_MS, alAceptarPagina, alSnapshot, alSuscribir, aplicarFiltro, buscarPorNombre,
   buscarPorTelefono, clasificarConsulta, consultaDeFiltro, consultaDeIds, consultaDeNombre, consultasDeTelefono,
-  debeMarcarLeida, esIdConversacion, esIdMensaje, fichaDeDocumento, filtroConReloj, mensajeContiene, mezclarLista,
-  palabraParaIndice, prefijosValidos, puedeGestionarConversaciones, respuestaVigente, rutaConversaciones,
+  cursorInvalidado, debeMarcarLeida, esIdConversacion, esIdMensaje, fichaDeDocumento, filtroConReloj, mensajeContiene, mezclarLista,
+  marcaBloqueada, palabraParaIndice, prefijosValidos, puedeGestionarConversaciones, respuestaVigente, rutaConversaciones,
   textoErrorBusqueda, unirFichas, vecina, PREFIJOS_PAIS_DEFECTO, MAX_DIGITOS_TELEFONO,
   type Consulta, type ConsultaPlana, type Contadores, type Ficha, type Filtro, type Paginacion,
 } from '../lib/conversaciones';
@@ -154,13 +154,14 @@ function useLista(tenantId: string, filtro: Filtro, ciclo: number): EstadoLista 
       setEnVivo([]); setCargando(true); setError(null); setHayMas(false);
     }
     paginacion.current = alSuscribir(paginacion.current);
-    const mia = paginacion.current.epoca;
     setAnteriores([]); cursor.current = null; setCargandoMas(false);
     ahoraDeLaSuscripcion.current = Date.now();
     let primera = true;
+    let activa = true;
     const baja = onSnapshot(
       consultaFirestore(tenantId, consultaDeFiltro(filtro, ahoraDeLaSuscripcion.current, PAGINA_LISTA)),
       (snap) => {
+        if (!activa) return;
         // Entró una conversación a la primera página: otra salió. Lo cargado de «Cargar más» tendría un hueco y lo que
         // esté volando se descarta (cambia la época).
         const entro = !primera && snap.docChanges().some((c) => c.type === 'added');
@@ -178,12 +179,12 @@ function useLista(tenantId: string, filtro: Filtro, ciclo: number): EstadoLista 
         setCargando(false);
       },
       () => {
-        if (paginacion.current.epoca < mia) return;
+        if (!activa) return;
         setError('No se pudieron leer las conversaciones.');
         setCargando(false);
       },
     );
-    return () => { paginacion.current = alSuscribir(paginacion.current); baja(); };
+    return () => { activa = false; paginacion.current = alSuscribir(paginacion.current); baja(); };
   }, [tenantId, filtro, cicloEfectivo]);
 
   const cargarMas = useCallback(() => {
@@ -382,6 +383,8 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   useEffect(() => {
     if (!marcar || !idAMarcar) return;
     const t = setTimeout(() => {
+      // Última comprobación antes de escribir: si mientras tanto quedó registrada una marca fallida con este mismo valor, no.
+      if (marcaBloqueada(fallidas.current.get(idAMarcar), noLeidosAbierta)) return;
       updateDoc(doc(db, 'tenants', tenantId, 'conversaciones', idAMarcar), { noLeidos: 0, sinLeer: false })
         .catch(() => { fallidas.current.set(idAMarcar, noLeidosAbierta); });
     }, REBOTE_MARCA_LEIDA_MS);
@@ -466,7 +469,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
       const salida = (await buscar({ tenantId, texto, ...(cursor ? { cursor } : {}) })).data;
       const crudos = Array.isArray(salida?.resultados) ? salida.resultados : [];
       const validos = crudos.filter((r) => r && typeof r.conversacionId === 'string' && esIdConversacion(r.conversacionId)
-        && typeof r.mensajeId === 'string' && r.mensajeId !== '');
+        && esIdMensaje(r.mensajeId));
       // La ficha de cada resultado: la que ya se tiene o, si no, su documento (el servidor devuelve el mensaje, no el contacto).
       // Una sola consulta (`documentId() in […]`, hasta 30) en vez de una lectura por resultado.
       if (!vigente()) return;
@@ -490,6 +493,8 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
       if (!vigente()) return;
       // El texto sale del CÓDIGO del error, nunca de su mensaje. Los resultados por teléfono y por nombre siguen a la vista.
       if (!agregar) { setResPalabra([]); setCursorPalabra(null); }
+      // Un cursor que el servidor ya no acepta no se reintenta: «Más resultados» se quita.
+      if (cursorInvalidado(codigoDe(e), cursor !== null)) setCursorPalabra(null);
       setErrorPalabra(textoErrorBusqueda(codigoDe(e), cursor !== null));
     } finally {
       if (vigente()) setBuscandoPalabra(false);
@@ -611,7 +616,6 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
         if (consulta) setConsulta(''); else buscadorRef.current?.blur();
         return;
       }
-      if (destino && destino.tagName === 'TEXTAREA') { destino.blur(); return; }
       if (conversacionId) navigate(rutaConversaciones(tenantId));
     }
   };
@@ -661,7 +665,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
             hrefLista={hrefLista} hrefUltimo={hrefUltimo}
             onAnterior={vecina(claves, claveActiva, -1) ? () => irA(-1) : null}
             onSiguiente={vecina(claves, claveActiva, 1) ? () => irA(1) : null}
-            posicion={posicion} puedeGestionar={puedeGestionar}
+            posicion={posicion} puedeGestionar={puedeGestionar} comercioActivo={estadoComercio === 'activo'}
           />
         ) : (
           <div className="cv-detalle cv-detalle--vacio">

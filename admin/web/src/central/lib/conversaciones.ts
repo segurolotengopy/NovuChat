@@ -74,7 +74,7 @@ export const esIdConversacion = (v: unknown): v is string => typeof v === 'strin
  * «..» y los del estilo `__x__` están reservados por Firestore. Lo demás (el id lo pone la ingesta) se acepta hasta 200.
  */
 export const esIdMensaje = (v: unknown): v is string =>
-  typeof v === 'string' && v.length > 0 && v.length <= 200 && !v.includes('/') && v !== '.' && v !== '..' && !/^__.*__$/.test(v);
+  typeof v === 'string' && v.length > 0 && v.length <= 200 && !v.includes('/') && v !== '.' && v !== '..' && !/^__[\s\S]*__$/.test(v);
 
 // ── Modelo que la pantalla usa (no el documento de Firestore) ────────────────
 
@@ -468,7 +468,7 @@ export function puedeGestionarConversaciones(rol: string | null, propietario: bo
  * documento viejo (sin los campos) no se toca: ya es «leído».
  *
  * `fallo` es el `noLeidos` que tenía la conversación cuando la última marca FALLÓ (rol revocado, red): no se
- * reintenta hasta que `noLeidos` crezca, es decir, hasta que haya algo nuevo que marcar.
+ * reintenta mientras `noLeidos` siga valiendo lo mismo (ver `marcaBloqueada`).
  */
 export function debeMarcarLeida(a: {
   rol: string | null; propietario: boolean; comercioActivo: boolean; visible: boolean;
@@ -477,8 +477,22 @@ export function debeMarcarLeida(a: {
   if (!puedeGestionarConversaciones(a.rol, a.propietario)) return false;
   if (!a.comercioActivo) return false;
   if (!a.visible) return false;
-  if (a.fallo !== undefined && a.noLeidos <= a.fallo) return false;
+  if (marcaBloqueada(a.fallo, a.noLeidos)) return false;
   return a.noLeidos > 0 || a.sinLeer;
+}
+
+/**
+ * ¿La última marca fallida sigue «pegada»? Sí mientras `noLeidos` valga lo mismo que cuando falló: nada cambió, volver a
+ * intentar sería el bucle. Si `noLeidos` es OTRO valor (creció, o bajó —lo marcó otra persona— y volvió a subir: fallo=5,
+ * luego 0, luego 2) hay algo distinto que marcar y se reintenta. También se consulta justo antes de escribir.
+ */
+export function marcaBloqueada(fallo: number | undefined, noLeidos: number): boolean {
+  return fallo !== undefined && noLeidos === fallo;
+}
+
+/** ¿El error de la búsqueda por palabra es de un cursor que ya no sirve? Entonces «Más resultados» se quita (no se puede reintentar). */
+export function cursorInvalidado(codigo: unknown, habiaCursor: boolean): boolean {
+  return habiaCursor && typeof codigo === 'string' && codigo.replace(/^functions\//, '') === 'invalid-argument';
 }
 
 // ── La paginación de la lista: qué respuesta de «Cargar más» todavía vale ─────
