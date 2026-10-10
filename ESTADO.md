@@ -19,6 +19,9 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
   Platinum, atrasados en `Procesar respuesta`, declarado en
   `docs/versiones-por-cliente.md`. **Demo B con F3a publicada el 03/10** (74
   nodos): el QR del cobro quedó pendiente de republicar (el media ID vencía a los 30 días).
+  **Captación de NovuChat: chat v2 publicado el 10/10** (`Flujos/experimental/chat-novuchat/`,
+  44 nodos, #464, #476 y #482 —este último: los clientes de la empresa PAGAN por QR—), flujo propio. Detalle en
+  `bitacora/2026-10.md`.
 - **Cuentas:** Bellido y Platinum en prueba; demos y captación en demostración.
   Nadie está en producción.
 - **Rojos aceptados:** el ruleset de `main` sin revisor obligatorio, sin ruleset
@@ -54,8 +57,8 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
 
 1. Prueba con teléfono de Bellido y Platinum sobre `v0.11.0`; un segundo
    teléfono para el aviso al dueño del Demo B.
-2. Publicar el Demo A y la captación en la ventana de 23:30 a 01:30 (captación fuera
-   del traspaso a Silvana). Platinum no entra.
+2. Publicar el Demo A en la ventana de 23:30 a 01:30. Platinum no entra. (La captación
+   de NovuChat ya corre el chat v2, publicado el 10/10.)
 3. Decisiones D1 a D11 y la opción O0 a O4.
 4. Pendientes de cartera: Gemini prepago, alcance de Q'Taco, contrato y
    plantillas de Bellido, correo de María René (rol `oper`).
