@@ -368,7 +368,14 @@ export function validarDatos(datos, archivo) {
       if (typeof sw !== 'string' || sw.length > 60 || !/^(?:www\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(sw) || sw.includes('..')) e('datos.sitioWeb', 'tiene que ser UN dominio visible («www.ejemplo.site»): sin esquema, sin arroba, sin ruta, sin «..», de a lo más 60 caracteres');
       const fr = tx.sitioFrase;
       if (typeof fr !== 'string' || fr.split('{sitio}').length !== 2 || fr.length > 120) e('datos.textos.sitioFrase', 'con sitioWeb tiene que haber una frase de a lo más 120 caracteres con UN {sitio}');
-      else { const m2 = errorDeTextoDelCliente(fr.replace('{sitio}', 'nuestro sitio'), { permitirPreguntas: false, sinAcredita: true }); if (m2) e('datos.textos.sitioFrase', m2); }
+      else if (!/\{sitio\}(?=[\s.,;!?]|$)/.test(fr)) e('datos.textos.sitioFrase', 'el {sitio} no puede llevar nada pegado (ni «/precios» ni «:8080»): solo un espacio o un signo de puntuación después');
+      else {
+        const m2 = errorDeTextoDelCliente(fr.replace('{sitio}', 'nuestro sitio'), { permitirPreguntas: false, sinAcredita: true });
+        if (m2) e('datos.textos.sitioFrase', m2);
+        // Con el dominio REAL puesto, lo único que parece un enlace es el dominio mismo.
+        const hallados = (typeof sw === 'string' ? fr.replace('{sitio}', sw) : fr).match(new RegExp(ENLACE.source, 'gi')) || [];
+        if (hallados.length !== 1 || hallados[0].replace(/[.,;!?]+$/, '') !== sw) e('datos.textos.sitioFrase', 'con el dominio puesto, la frase tiene que contener UN solo enlace y ser exactamente sitioWeb');
+      }
     }
   }
 

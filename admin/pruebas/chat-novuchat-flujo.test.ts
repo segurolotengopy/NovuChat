@@ -2297,4 +2297,17 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
       expect(t.cuerpo.length).toBeLessThanOrEqual(1024);
     });
   });
+  it('MEDIO: un plazo de instalación que el modelo inventa («Lo instalamos en un día», «Lo dejamos listo en 24 horas») se rechaza y el cliente recibe «ese dato lo revisa el equipo»', () => {
+    for (const plazo of ['Lo instalamos en un día.', 'Lo dejamos listo en 24 horas.', 'Te dejamos funcionando en una semana.', 'Lo instalamos mañana mismo.']) {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.texto('Hola');
+      w.modelo.con = dice('NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces para tus especialistas en horarios reales. ' + plazo + ' ' + CIERRE_RUBRO);
+      const antes = w.modelo.reintentos.length;
+      const t = j.texto('¿Cuánto demora la instalación de todo?');
+      expect(w.modelo.reintentos.length - antes, plazo).toBe(1);
+      expect(t.aMi[0]!.cuerpo, plazo).not.toContain(plazo);
+      expect(t.aMi[0]!.cuerpo, plazo).toMatch(/Ese dato no lo tengo a la mano/);
+    }
+  });
 });

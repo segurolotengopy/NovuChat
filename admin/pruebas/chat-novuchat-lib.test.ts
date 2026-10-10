@@ -667,7 +667,7 @@ describe('re-revisión de seguridad sobre 62f8bd17: identidad, ofertas, promesas
     for (const x of ['Vamos a llamarte hoy.', 'Nos comunicamos mañana.', 'Conversamos esta tarde.', 'Te marcamos en un rato.', 'Te estaremos llamando.', 'Un integrante del equipo te buscará pronto.', 'Te mandamos novedades cada semana.']) expect(causa(x), x).toBe('promesa');
   });
   it('NO hay falsos positivos sobre el pitch: un tercero que le escribe al cliente y los planes accesibles', () => {
-    for (const x of ['Cuando alguien te escribe de noche, tu asistente le responde al instante.', 'Si un cliente te escribe fuera de horario, NovuChat le responde al instante.', 'Hay planes accesibles según el tamaño de tu negocio.',
+    for (const x of ['Cuando un cliente te escribe de noche, tu asistente le responde al instante.', 'Si un cliente te escribe fuera de horario, NovuChat le responde al instante.', 'Hay planes accesibles según el tamaño de tu negocio.',
       'Tus clientes te escriben a cualquier hora y NovuChat les responde en segundos.', 'Te cuento las novedades del servicio: agenda y cobra por QR.']) expect(causa(x), x).toBe('');
   });
   it('los textos del documento comercial siguen pasando el validador (6 rubros con su cierre, pitch, precios, Google Calendar, 24 horas)', () => {
@@ -1694,7 +1694,7 @@ describe('ronda de seguridad del 09/10: terceros, plazos, tope de avisos, perfil
   it('ALTO: «quien te llama» con el EQUIPO de sujeto es una promesa (la preposición «a» es obligatoria para excusar a un tercero); «responde a quien te escribe de noche» sigue pasando', () => {
     for (const x of ['Alguien de nuestro equipo es quien te llama mañana.', 'Nuestro equipo es quien te contacta hoy mismo.', 'Un asesor será quien te escribe en unos minutos.', 'Hablarás con quien te responde.', 'Es el equipo con quien te escribe.',
       'Nuestro equipo se va a contactar contigo hoy mismo.', 'Te devolveremos la llamada pronto.']) expect(marco(x), x).toBe('promesa');
-    for (const x of ['Tu asistente responde a quien te escribe de noche.', 'Cuando alguien te escribe de noche, tu asistente le responde al instante.', 'Si un cliente te escribe fuera de horario, NovuChat le responde.']) expect(marco(x), x).toBe('');
+    for (const x of ['Tu asistente responde a quien te escribe de noche.', 'Cuando un cliente te escribe de noche, tu asistente le responde al instante.', 'Si un cliente te escribe fuera de horario, NovuChat le responde.']) expect(marco(x), x).toBe('');
   });
 
   it('MEDIO: el «7 días» suelto (plazo, prueba, garantía) se rechaza; solo la forma completa «los 7 días de la semana» pasa', () => {
@@ -1849,5 +1849,60 @@ describe('el sitio web: lo anexa el código, con tope, antes de la pregunta fina
     expect(ok((d) => { d.datos.textos.sitioFrase = 'Visita el sitio'; })).toMatch(/sitioFrase/);
     expect(ok((d) => { d.datos.textos.sitioFrase = 'Te llamamos mañana y ves {sitio}'; })).toMatch(/sitioFrase/);
     expect(ok((d) => { delete d.datos.textos.sitioFrase; })).toMatch(/sitioFrase/);
+  });
+});
+
+// ================================================================================================
+// Ronda final de seguridad sobre #476.
+describe('ronda final de seguridad: plazos sin respaldo, perfiles, ofertas de botón, frase del sitio y terceros', () => {
+  const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
+  const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', v(extra));
+
+  it('MEDIO: ningún plazo de instalación o entrega sin respaldo, en general, rubro, sin dato y no documentado (causa `cifra`)', () => {
+    const plazos = ['Te dejamos funcionando en una semana.', 'Lo instalamos en un día.', 'Lo dejamos listo en 24 horas.', 'Lo instalamos mañana mismo.', 'Lo tienes esta misma semana.', 'Queda listo esta semana.', 'Lo dejamos listo en un par de días.', 'Lo instalamos en pocos días.', 'Lo tendrás en unos días.',
+      'Lo instalamos en dos semanas.', 'Queda listo en medio día.', 'Se configura en 24 horas.', 'Lo activamos en 24 horas.', 'Lo entregamos en 24 horas.', 'Queda funcionando en 24 horas.', 'Lo dejamos listo hoy mismo.', 'Lo instalamos en una hora.', 'Lo tienes en el día.', 'Lo instalamos en varios días.', 'Tarda unas semanas.'];
+    // las ocho frases de la revisión caen como `cifra`; las demás, con la causa que ya les ponga otro filtro (p. ej. «queda listo» es `afirma`), pero nunca pasan
+    const exactas = ['Te dejamos funcionando en una semana.', 'Lo instalamos en un día.', 'Lo dejamos listo en 24 horas.', 'Lo instalamos mañana mismo.', 'Lo tienes esta misma semana.', 'Lo dejamos listo en un par de días.', 'Lo instalamos en pocos días.', 'Lo tendrás en unos días.'];
+    for (const x of plazos) {
+      for (const extra of [{}, { rubroActual: 'belleza' }, { contexto: 'rubro', rubroId: 'gastronomia' }, { contexto: 'general', precios: true }]) {
+        if (exactas.includes(x)) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('cifra');
+        else expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).not.toBe('');
+      }
+    }
+  });
+  it('MEDIO: lo documentado sigue pasando (24 horas de atención, todos los días, el recordatorio «24 horas antes» y «un día antes», prepago mensual, «hoy mismo» del cierre del pitch)', () => {
+    for (const x of ['Atiende las 24 horas, todos los días.', 'Responde las 24 horas del día y funciona las 24 horas, incluso fuera de tu horario.', 'Manda un recordatorio 24 horas antes de cada cita.', 'Manda un recordatorio un día antes para bajar el ausentismo.', 'Atiende los 7 días de la semana, todos los días de la semana.',
+      'Es un servicio prepago mensual.', 'Cuéntame qué función te quitaría un mayor peso de encima hoy mismo.', 'Está disponible las 24 horas, 24/7.']) expect(marco(x), x).toBe('');
+    for (const r of NOVUCHAT['rubros'] as J[]) { if (r.explicacion) expect(f('chValidarMensaje')(r.explicacion + ' ' + NOVUCHAT['cierres'].rubro, v({ contexto: 'rubro', rubroId: r.id })), r.id).toBe(''); }
+    expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].abierta.pitch + '\n\n' + NOVUCHAT['respaldos'].abierta.cierreSinRubro, v({ contexto: 'abierta' }))).toBe('');
+  });
+
+  it('BAJO: el nombre de perfil rechaza las escrituras ajenas (homoglifos), el plural y más palabras de rol o pago', () => {
+    const nom = f('chNombreDelPerfil');
+    const cir = 'Аsеsоr'; // «Аsеsоr» con la A, la e y la o cirílicas
+    for (const x of [cir, 'Аsesor', 'Gerente', 'Gerentes Pérez', 'Cajeros', 'Cliente Frecuente', 'Atención al Cliente', 'Pago Confirmado', 'Verificado', 'Comprobante', 'Transferencia', 'Depósito Banco', 'Recibido', 'Asesores', 'Ventas', 'Bancos']) expect(nom(x), x).toBe('');
+    for (const x of ['María J. López', 'Andrés Alberdi B.', 'Ventura Ríos', 'Jean-Pierre', "O'Brien", 'Clemente Ortiz']) expect(nom(x), x).not.toBe('');
+  });
+
+  it('BAJO: en la lista tras el traspaso, ninguna oración ofrece hablar con el equipo en cualquier forma, ver o mostrar los planes, ni «un asesor»', () => {
+    for (const oferta of ['¿Quieres hablar con nuestro equipo de nuevo?', 'Puedes hablar con el equipo.', 'Te muestro los planes.', 'Puedo mostrarte los planes.', 'Quieres ver nuestros planes.', 'Quieres ver los planes.', 'Un asesor te ayuda con eso.', 'Si quieres, habla con alguien: hablar con una persona es posible.']) {
+      const m = f('chCliente')('Respuesta con contenido útil. ' + oferta, CFG, 'x', { planes: true, lista: true });
+      expect(m.texto, oferta).toMatch(/^Respuesta con contenido útil\.\n\nSi tienes otro negocio/);
+    }
+  });
+
+  it('BAJO: la frase del sitio exige que el {sitio} no lleve nada pegado y que, con el dominio real, haya UN solo enlace igual a `sitioWeb`', async () => {
+    const { validarDatos } = (await import(/* @vite-ignore */ join(CARPETA, 'construir.mjs'))) as { validarDatos: Fn };
+    const base = clonar(DATOS_BRUTOS) as J;
+    const ok = (mod: (d: J) => void): string => { const d = clonar(base); mod(d); try { validarDatos(d, 'novuchat.json'); return ''; } catch (e) { return (e as Error).message; } };
+    expect(ok(() => undefined)).toBe('');
+    for (const malo of ['Mira {sitio}/precios para más detalle', 'Mira {sitio}:8080 para más detalle', 'Mira {sitio}x para más detalle', 'Mira {sitio}@x para más detalle', 'Mira {sitio}#a para más detalle']) expect(ok((d) => { d.datos.textos.sitioFrase = malo; }), malo).toMatch(/sitioFrase/);
+    expect(ok((d) => { d.datos.textos.sitioFrase = 'Mira {sitio}.'; })).toBe('');
+    expect(ok((d) => { d.datos.textos.sitioFrase = 'Mira {sitio} y otro.sitio.com para más detalle'; })).toMatch(/sitioFrase/);
+  });
+
+  it('BAJO: «apenas/en cuanto alguien te escribe/responde, …» es una promesa; los terceros excusados son solo clientes, prospectos, interesados y pacientes', () => {
+    for (const x of ['Espera un momento; apenas alguien te escribe, coordinan la instalación.', 'En cuanto alguien te responde, cierras tu plan.', 'Cuando alguien te escribe de noche, tu asistente le responde al instante.', 'Si una persona te llama, coordinamos todo.']) expect(marco(x), x).toBe('promesa');
+    for (const x of ['Tu asistente responde a quien te escribe de noche.', 'Cuando un cliente te escribe, tu asistente le responde al instante.', 'Si un prospecto te escribe fuera de horario, NovuChat le responde.', 'Apenas un paciente te escribe, tu asistente le responde.']) expect(marco(x), x).toBe('');
   });
 });
