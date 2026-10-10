@@ -16,7 +16,13 @@
  * El emulador NO exige índices: que el índice exista lo prueba la lectura de
  * `firestore.indexes.json` (más abajo) y el despliegue.
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment,
+} from '@firebase/rules-unit-testing';
+import {
+  deleteDoc as borrarDoc, doc as docCliente, getDoc as leerDoc, setDoc as escribirDoc, updateDoc as actualizarDoc,
+} from 'firebase/firestore';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -96,6 +102,7 @@ const FIJOS = {
   sinPermiso: 'No tiene permiso para buscar en estas conversaciones.',
   pocoTexto: 'Escriba al menos una palabra de 3 letras.',
   cursor: 'La búsqueda cambió; vuelva a buscar.',
+  tope: 'Hizo demasiadas búsquedas. Espere un momento e intente de nuevo.',
   noDisponible: 'La búsqueda no está disponible en este momento. Intente de nuevo.',
 };
 
@@ -128,6 +135,7 @@ beforeEach(async () => {
   // y, con la hora congelada, dejaría de recibir cupo y se colgaría.
   vi.useRealTimers();
   for (const t of [...TODOS, 'sonda-buscar']) await db.recursiveDelete(db.doc(`tenants/${t}`));
+  for (const d of await db.collection('topesDeBusqueda').listDocuments()) await d.delete();
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(AHORA));
   await ficha(A);
@@ -590,12 +598,12 @@ describe('el orden, el tope de 20 y la paginación', () => {
     expect([...p1.resultados, ...p2.resultados].map((r) => r.mensajeId)).toEqual(buenos);
   });
 
-  it('varias palabras: si tras 3 lotes no se llegó al final, el cursor es el último LEÍDO y la página siguiente sigue de ahí', async () => {
+  it('ESTADO DEL CONTRATO: `resultados: []` con `cursor !== null` = «sin resultados en lo reciente; se puede buscar más atrás» (no es el final)', async () => {
     for (let i = 0; i < 2; i++) await mensaje(A, TEL1, `alfajor maicena ${i}`, reciente(i));
     for (let i = 0; i < 70; i++) await mensaje(A, TEL2, `alfajor solo ${i}`, reciente(100 + i));
     const p1 = await salidaDe({ tenantId: A, texto: 'alfajor maicena' }, admin(A));
     expect(p1.resultados).toEqual([]);
-    expect(p1.cursor).not.toBeNull();
+    expect(p1.cursor).not.toBeNull(); // el final es `cursor: null`, no una lista vacía
     const p2 = await salidaDe({ tenantId: A, texto: 'alfajor maicena', cursor: p1.cursor }, admin(A));
     expect(p2.resultados.map((x) => x.fragmento).sort()).toEqual(['alfajor maicena 0', 'alfajor maicena 1']);
     expect(p2.cursor).toBeNull();
@@ -637,16 +645,30 @@ describe('los registros: nunca el texto buscado', () => {
     expect(registros.join('\n').toLowerCase()).not.toContain('zanahoria');
   });
 
-  it('el registro de éxito trae solo comercio, uid, cantidad de palabras, resultados y código', async () => {
+  it('el registro de éxito trae solo comercio, uid, rol, cantidad de palabras, resultados y código', async () => {
     await mensaje(A, TEL1, 'alfajor de maicena', reciente(1));
     await salidaDe({ tenantId: A, texto: 'alfajor maicena' }, admin(A));
     const lineas = registros.map((x) => JSON.parse(x.slice(x.indexOf('{'))) as Record<string, unknown>)
       .filter((l) => l['funcion'] === 'buscarConversaciones');
     expect(lineas).toHaveLength(1);
     expect(lineas[0]).toEqual({
-      funcion: 'buscarConversaciones', codigo: 'ok', tenantId: A, uid: `u-admin-${A}`, palabras: 2, resultados: 1,
+      funcion: 'buscarConversaciones', codigo: 'ok', tenantId: A, uid: `u-admin-${A}`, rol: 'admin', palabras: 2, resultados: 1,
     });
     expect(registros.join('\n')).not.toContain('maicena');
+  });
+
+  it('el registro lleva el rol con el que se autorizó: admin, oper o soporte (sin texto ni teléfonos)', async () => {
+    await mensaje(A, TEL1, 'alfajor de maicena', reciente(1));
+    await db.doc(`tenants/${A}/accesosSoporte/u-propietario`).set({ expira: Timestamp.fromMillis(AHORA + HORA) });
+    const roles: string[] = [];
+    for (const a of [admin(A), oper(A), propietario()]) {
+      registros = [];
+      await salidaDe({ tenantId: A, texto: 'alfajor' }, a);
+      const l = JSON.parse(registros[0]!.slice(registros[0]!.indexOf('{'))) as Record<string, unknown>;
+      roles.push(String(l['rol']));
+      expect(registros.join('\n')).not.toContain(TEL1);
+    }
+    expect(roles).toEqual(['admin', 'oper', 'soporte']);
   });
 
   it('un comercio con forma rara no se copia a los registros (no se escribe lo que cada cual quiera)', async () => {
@@ -660,7 +682,10 @@ describe('los registros: nunca el texto buscado', () => {
     const sinCadenas = fuente.replace(/'[^'\n]*'/g, "''"); // 'texto' entre comillas es un rótulo, no la variable
     expect(sinCadenas).not.toMatch(/registrar\([^)]*\btexto\b/);
     expect(sinCadenas).not.toMatch(/registrar\([^)]*\bcrudo\b/);
+    expect(sinCadenas).not.toMatch(/registrar\([^)]*\b(telefono|conversacionId|cursor)\b/);
     expect(fuente).not.toMatch(/console\./);
+    // Una sola fuente del mensaje de «sin permiso»: el literal vive en acceso.ts.
+    expect(fuente).not.toContain('No tiene permiso');
     expect(fuente.match(/logger\.\w+\(/g)).toEqual(['logger.info(', 'logger.warn(']);
   });
 });
@@ -700,20 +725,244 @@ describe('una falla de infraestructura es «no disponible», nunca un permiso', 
 });
 
 // ===========================================================================
-describe('el despliegue: opciones, índice y puertas', () => {
-  it('opciones: región como las demás, hasta 5 instancias, ninguna mínima, sin App Check ni concurrencia propia', () => {
-    const o = B.opcionesDeBuscarConversaciones();
-    expect(o).toEqual({ region: REGION, maxInstances: 5 });
-    expect(Object.hasOwn(o, 'minInstances')).toBe(false);
-    expect(Object.hasOwn(o, 'enforceAppCheck')).toBe(false);
+describe('el tope por usuario: 120 por hora y 600 por día, contado en el servidor', () => {
+  // AHORA = 2026-10-09T15:00Z = 11:00 en La Paz (UTC-4 fijo).
+  const HORA_ACTUAL = '2026-10-09T11';
+  const DIA_ACTUAL = '2026-10-09';
+  const uidDe = (t: string) => `u-admin-${t}`;
+  const topes = async (uid: string) => (await db.doc(`topesDeBusqueda/${uid}`).get()).data();
+  const sembrarTope = (uid: string, d: Record<string, unknown>) =>
+    db.doc(`topesDeBusqueda/${uid}`).set({ hora: HORA_ACTUAL, dia: DIA_ACTUAL, busquedasHora: 0, busquedasDia: 0, ...d });
+  beforeEach(async () => { await mensaje(A, TEL1, 'alfajor de A', reciente(1)); });
+
+  it('cada búsqueda autorizada suma UNA en la hora y UNA en el día, con el sello de La Paz', async () => {
+    await salidaDe({ tenantId: A, texto: 'alfajor' }, admin(A));
+    await salidaDe({ tenantId: A, texto: 'alfajor' }, admin(A));
+    expect(await topes(uidDe(A))).toMatchObject({ hora: HORA_ACTUAL, dia: DIA_ACTUAL, busquedasHora: 2, busquedasDia: 2 });
   });
 
-  it('la callable exportada lleva esas opciones', () => {
-    const e = (B.buscarConversaciones as unknown as { __endpoint: { region?: string[]; maxInstances?: number; minInstances?: number } }).__endpoint;
-    expect(e.maxInstances).toBe(5);
-    // Sin instancias mínimas: el SDK deja el valor sin fijar (un «reset»), nunca un número.
-    expect(typeof e.minInstances).not.toBe('number');
-    expect(e.region).toEqual([REGION]);
+  it('la búsqueda 121 de la hora (la 120 pasa, la 121 no): resource-exhausted con el mensaje fijo, no lee mensajes ni suma', async () => {
+    await sembrarTope(uidDe(A), { busquedasHora: 119, busquedasDia: 119 });
+    expect((await salidaDe({ tenantId: A, texto: 'alfajor' }, admin(A))).resultados).toHaveLength(1); // la 120
+    const espia = vi.spyOn(db, 'collectionGroup');
+    expect(await rechazo(llamar({ tenantId: A, texto: 'alfajor' }, admin(A)))).toEqual({ code: 'resource-exhausted', message: FIJOS.tope });
+    expect(espia).not.toHaveBeenCalled();
+    expect(await topes(uidDe(A))).toMatchObject({ busquedasHora: 120, busquedasDia: 120 });
+  });
+
+  it('la hora siguiente vuelve a abrir el cupo horario (y el del día sigue contando)', async () => {
+    await sembrarTope(uidDe(A), { hora: '2026-10-09T10', busquedasHora: 120, busquedasDia: 100 });
+    await salidaDe({ tenantId: A, texto: 'alfajor' }, admin(A));
+    expect(await topes(uidDe(A))).toMatchObject({ hora: HORA_ACTUAL, busquedasHora: 1, busquedasDia: 101 });
+  });
+
+  it('la búsqueda 601 del día (la 600 pasa, la 601 no): resource-exhausted aunque la hora esté casi vacía', async () => {
+    await sembrarTope(uidDe(A), { busquedasHora: 3, busquedasDia: 599 });
+    await salidaDe({ tenantId: A, texto: 'alfajor' }, admin(A)); // la 600
+    expect(await rechazo(llamar({ tenantId: A, texto: 'alfajor' }, admin(A)))).toEqual({ code: 'resource-exhausted', message: FIJOS.tope });
+    expect(await topes(uidDe(A))).toMatchObject({ busquedasHora: 4, busquedasDia: 600 });
+  });
+
+  it('el día siguiente (La Paz) vuelve a abrir todo; la medianoche es la de La Paz, no la UTC', async () => {
+    await sembrarTope(uidDe(A), { dia: '2026-10-08', hora: '2026-10-08T23', busquedasHora: 120, busquedasDia: 600 });
+    await salidaDe({ tenantId: A, texto: 'alfajor' }, admin(A));
+    expect(await topes(uidDe(A))).toMatchObject({ dia: DIA_ACTUAL, busquedasDia: 1, busquedasHora: 1 });
+    // 03:30 UTC del 10/10 son las 23:30 del 09/10 en La Paz: sigue siendo el mismo día.
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 10, 3, 30, 0)));
+    await salidaDe({ tenantId: A, texto: 'alfajor' }, admin(A));
+    expect(await topes(uidDe(A))).toMatchObject({ dia: DIA_ACTUAL, hora: '2026-10-09T23', busquedasDia: 2, busquedasHora: 1 });
+  });
+
+  it('es POR USUARIO: otro usuario del mismo comercio no se ve afectado, y el mismo usuario comparte el tope entre comercios', async () => {
+    await sembrarTope(uidDe(A), { busquedasHora: 120, busquedasDia: 120 });
+    expect(await rechazo(llamar({ tenantId: A, texto: 'alfajor' }, admin(A)))).toMatchObject({ code: 'resource-exhausted' });
+    expect((await salidaDe({ tenantId: A, texto: 'alfajor' }, oper(A))).resultados).toHaveLength(1);
+    const dos = actor(uidDe(A), { t: { [A]: 'admin', [OTRO]: 'admin' } }); // el MISMO uid, con roles en A y en B
+    expect(await rechazo(llamar({ tenantId: OTRO, texto: 'alfajor' }, dos))).toMatchObject({ code: 'resource-exhausted' });
+  });
+
+  it('un contador ilegible se trata como agotado (falla cerrado)', async () => {
+    for (const mal of [{ busquedasHora: 'x' }, { busquedasHora: -1 }, { busquedasHora: 1.5 }, { busquedasDia: null }, { busquedasDia: '7' }]) {
+      await sembrarTope(uidDe(A), mal);
+      expect(await rechazo(llamar({ tenantId: A, texto: 'alfajor' }, admin(A))), JSON.stringify(mal)).toMatchObject({ code: 'resource-exhausted' });
+    }
+  });
+
+  it('es TRANSACCIONAL: 15 búsquedas a la vez con 115 gastadas dejan pasar exactamente 5', async () => {
+    await sembrarTope(uidDe(A), { busquedasHora: 115, busquedasDia: 115 });
+    const r = await Promise.allSettled(Array.from({ length: 15 }, () => llamar({ tenantId: A, texto: 'alfajor' }, admin(A))));
+    expect(r.filter((x) => x.status === 'fulfilled')).toHaveLength(5);
+    expect(r.filter((x) => x.status === 'rejected' && (x.reason as { code: string }).code === 'resource-exhausted')).toHaveLength(10);
+    expect(await topes(uidDe(A))).toMatchObject({ busquedasHora: 120, busquedasDia: 120 });
+  }, 60_000);
+
+  it('solo cuentan las búsquedas autorizadas y bien formadas: un rechazo no toca el tope', async () => {
+    await rechazo(llamar({ tenantId: A, texto: 'alfajor' })); // sin sesión
+    await rechazo(llamar({ tenantId: OTRO, texto: 'alfajor' }, admin(A))); // sin permiso
+    await rechazo(llamar({ tenantId: '__proto__', texto: 'alfajor' }, admin(A)));
+    await rechazo(llamar({ tenantId: A, texto: 'ab' }, admin(A))); // texto inválido
+    await rechazo(llamar({ tenantId: A, texto: 'alfajor', cursor: 'mal' }, admin(A))); // cursor mal formado
+    await rechazo(llamar({ tenantId: A, texto: 'alfajor' }, propietario())); // propietario sin ventana
+    expect(await db.collection('topesDeBusqueda').listDocuments()).toEqual([]);
+  });
+
+  it('el rechazo por tope se registra solo con su código, el uid y el motivo (sin texto)', async () => {
+    await sembrarTope(uidDe(A), { busquedasHora: 120 });
+    await rechazo(llamar({ tenantId: A, texto: 'zanahoriasecreta' }, admin(A)));
+    const l = registros.map((x) => JSON.parse(x.slice(x.indexOf('{'))) as Record<string, unknown>).find((x) => x['codigo'] === 'resource-exhausted');
+    expect(l).toEqual({ funcion: 'buscarConversaciones', codigo: 'resource-exhausted', tenantId: A, uid: uidDe(A), rol: 'admin', motivo: 'tope_hora' });
+    expect(registros.join('\n')).not.toContain('zanahoria');
+  });
+
+  it('si el tope mismo falla (Firestore caído): unavailable y no se lee ningún mensaje', async () => {
+    vi.spyOn(db, 'runTransaction').mockRejectedValue(Object.assign(new Error('boom'), { code: 14 }));
+    const espia = vi.spyOn(db, 'collectionGroup');
+    expect(await rechazo(llamar({ tenantId: A, texto: 'alfajor' }, admin(A)))).toEqual({ code: 'unavailable', message: FIJOS.noDisponible });
+    expect(espia).not.toHaveBeenCalled();
+  });
+
+  it('las constantes del contrato: 120 por hora y 600 por día', () => {
+    expect([B.TOPE_POR_HORA, B.TOPE_POR_DIA]).toEqual([120, 600]);
+  });
+});
+
+// ===========================================================================
+describe('las reglas cierran `topesDeBusqueda` al navegador (la negación final)', () => {
+  let entorno: RulesTestEnvironment;
+  beforeAll(async () => {
+    vi.useRealTimers();
+    entorno = await initializeTestEnvironment({
+      projectId: PROYECTO,
+      firestore: {
+        rules: readFileSync(join(aqui, '..', '..', 'firestore.rules'), 'utf8'),
+        host: '127.0.0.1', port: Number(process.env['FIRESTORE_EMULATOR_PORT'] ?? 8231),
+      },
+    });
+  }, 60_000);
+  // El beforeEach del archivo limpia entre pruebas: el contador y la ficha se siembran de nuevo en cada una.
+  beforeEach(async () => {
+    vi.useRealTimers();
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await escribirDoc(docCliente(ctx.firestore(), 'topesDeBusqueda/u-admin-tienda-a'), { hora: 'x', busquedasHora: 1, busquedasDia: 1 });
+      await escribirDoc(docCliente(ctx.firestore(), 'tenants/tienda-a'), { nombre: 'A', estado: 'activo' });
+    });
+  });
+  afterAll(async () => { await entorno?.cleanup(); });
+
+  const claimsDe = (nc: Record<string, unknown>, proveedor = 'password') => ({
+    nc: { v: 1, ...nc }, firebase: { sign_in_provider: proveedor, identities: {} }, email_verified: true,
+  });
+  const contextos = () => [
+    ['administrador de A, SU propio contador', entorno.authenticatedContext('u-admin-tienda-a', claimsDe({ t: { 'tienda-a': 'admin' } })).firestore(), 'u-admin-tienda-a'],
+    ['administrador de A, el contador de OTRO', entorno.authenticatedContext('u-admin-tienda-a', claimsDe({ t: { 'tienda-a': 'admin' } })).firestore(), 'u-otro'],
+    ['operador de A', entorno.authenticatedContext('u-oper-tienda-a', claimsDe({ t: { 'tienda-a': 'oper' } })).firestore(), 'u-oper-tienda-a'],
+    ['propietario de NovuChat', entorno.authenticatedContext('u-propietario', claimsDe({ t: {}, p: true }, 'google.com')).firestore(), 'u-propietario'],
+    ['sin sesión', entorno.unauthenticatedContext().firestore(), 'u-admin-tienda-a'],
+  ] as const;
+
+  it('NEGATIVA: nadie lee, crea, edita ni borra `topesDeBusqueda/{uid}` desde el cliente', async () => {
+    for (const [quien, fs, uid] of contextos()) {
+      const ref = docCliente(fs, `topesDeBusqueda/${uid}`);
+      await assertFails(leerDoc(ref));
+      await assertFails(escribirDoc(ref, { hora: 'x', busquedasHora: 0, busquedasDia: 0 }));
+      await assertFails(actualizarDoc(docCliente(fs, 'topesDeBusqueda/u-admin-tienda-a'), { busquedasHora: 0 }));
+      await assertFails(borrarDoc(docCliente(fs, 'topesDeBusqueda/u-admin-tienda-a')));
+      expect(quien).toBeTruthy();
+    }
+  });
+
+  it('control: las mismas reglas SÍ dejan al administrador de A leer la ficha de A (no es que todo esté cerrado)', async () => {
+    const fs = entorno.authenticatedContext('u-admin-tienda-a', claimsDe({ t: { 'tienda-a': 'admin' } })).firestore();
+    await assertSucceeds(leerDoc(docCliente(fs, 'tenants/tienda-a')));
+  });
+
+  it('el contador sigue intacto después de los intentos', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      const d = await leerDoc(docCliente(ctx.firestore(), 'topesDeBusqueda/u-admin-tienda-a'));
+      expect(d.data()).toMatchObject({ busquedasHora: 1, busquedasDia: 1 });
+    });
+  });
+});
+
+// ===========================================================================
+describe('el cursor que SALE pasa por la misma guarda de ruta que los resultados', () => {
+  /** Un mensaje con la palabra, etiquetado con el comercio A, pero guardado donde NO debe estar. */
+  async function corrupto(tipo: 'cruzado' | 'irregular', ms: number): Promise<void> {
+    const ruta = tipo === 'cruzado'
+      ? `tenants/${OTRO}/conversaciones/wa_${TEL2}/mensajes` // de otro comercio, con tenantId «A»
+      : `tenants/${A}/conversaciones/wa_irregular/mensajes`; // de A, con id de conversación irregular
+    await db.collection(ruta).doc().set({
+      direccion: 'entrante', tipo: 'texto', texto: 'alfajor corrupto', ts: Timestamp.fromMillis(ms), ...camposDeMensajeIndexado('alfajor corrupto', A),
+    });
+  }
+  const tipoDe = (i: number): 'cruzado' | 'irregular' => (i % 2 === 0 ? 'irregular' : 'cruzado');
+
+  it('más de 60 documentos corruptos al final de los lotes: cursor null, ningún teléfono ajeno, y se registra `cursor_irregular`', async () => {
+    for (let i = 0; i < 70; i++) await corrupto(tipoDe(i), reciente(1000 - i));
+    await mensaje(A, TEL1, 'alfajor legítimo', reciente(1));
+    const r = await salidaDe({ tenantId: A, texto: 'alfajor' }, admin(A));
+    expect(r.resultados).toEqual([]);
+    expect(r.cursor).toBeNull();
+    expect(JSON.stringify(r)).not.toContain(TEL2);
+    expect(JSON.stringify(r)).not.toContain('irregular');
+    expect(registros.join('\n')).toContain('cursor_irregular');
+    expect(registros.join('\n')).not.toContain(TEL2);
+  }, 60_000);
+
+  for (const ultimo of ['cruzado', 'irregular'] as const) {
+    it(`corruptos al final del último lote (${ultimo}): el cursor es el último documento BUENO y la página siguiente no dice «La búsqueda cambió»`, async () => {
+      // De más nuevo a más viejo: 45 corruptos, 1 bueno, 14 corruptos (el último, del tipo pedido), y 3 buenos más.
+      const buenos: string[] = [];
+      for (let i = 0; i < 60; i++) {
+        if (i === 45) buenos.push(await mensaje(A, TEL1, 'alfajor bueno 1', reciente(1000 - i)));
+        else await corrupto(i === 59 ? ultimo : tipoDe(i), reciente(1000 - i));
+      }
+      for (let k = 0; k < 3; k++) buenos.push(await mensaje(A, TEL1, `alfajor bueno ${k + 2}`, reciente(900 - k)));
+      const p1 = await salidaDe({ tenantId: A, texto: 'alfajor' }, admin(A));
+      expect(p1.resultados.map((x) => x.mensajeId)).toEqual([buenos[0]]);
+      expect(p1.cursor).toBe(`wa_${TEL1}/${buenos[0]}`);
+      expect(JSON.stringify(p1)).not.toContain(TEL2);
+      const p2 = await salidaDe({ tenantId: A, texto: 'alfajor', cursor: p1.cursor }, admin(A)); // NO lanza «cambió»
+      expect(p2.resultados.map((x) => x.mensajeId)).toEqual(buenos.slice(1));
+      expect(p2.cursor).toBeNull();
+    }, 60_000);
+  }
+
+  it('un documento hallado con un id de mensaje que no es automático no se devuelve (su cursor no se podría reanudar)', async () => {
+    await db.doc(`tenants/${A}/conversaciones/wa_${TEL1}/mensajes/id-manual`).set({
+      direccion: 'entrante', tipo: 'texto', texto: 'alfajor con id manual', ts: Timestamp.fromMillis(reciente(5)), ...camposDeMensajeIndexado('alfajor con id manual', A),
+    });
+    await mensaje(A, TEL1, 'alfajor normal', reciente(1));
+    expect((await salidaDe({ tenantId: A, texto: 'alfajor' }, admin(A))).resultados.map((x) => x.fragmento)).toEqual(['alfajor normal']);
+  });
+});
+
+// ===========================================================================
+describe('el despliegue: opciones, índice y puertas', () => {
+  it('opciones en PRODUCCIÓN: región como las demás, 5 instancias, ninguna mínima, App Check exigido y concurrencia explícita', () => {
+    const o = B.opcionesDeBuscarConversaciones({});
+    expect(o).toEqual({ region: REGION, maxInstances: 5, concurrency: 10, enforceAppCheck: true });
+    expect(Object.hasOwn(o, 'minInstances')).toBe(false);
+    expect(B.APP_CHECK_DE_BUSQUEDA).toEqual({ produccion: true, staging: false });
+    expect(B.CONCURRENCIA_DE_BUSQUEDA).toBe(10);
+  });
+
+  it('opciones en STAGING (CPU fraccionaria): sin App Check y SIN concurrencia (firebase-tools la rechaza con menos de 1 vCPU)', () => {
+    const o = B.opcionesDeBuscarConversaciones({ CPU_FRACCIONARIA: 'si' });
+    expect(o).toEqual({ region: REGION, maxInstances: 5, enforceAppCheck: false });
+    expect(Object.hasOwn(o, 'concurrency')).toBe(false);
+  });
+
+  it('opciones en el EMULADOR: sin App Check (la concurrencia no estorba)', () => {
+    expect(B.opcionesDeBuscarConversaciones({ FUNCTIONS_EMULATOR: 'true' })).toMatchObject({ enforceAppCheck: false });
+    // el emulador gana sobre producción, pero un valor raro de CPU_FRACCIONARIA no cuenta como staging
+    expect(B.opcionesDeBuscarConversaciones({ CPU_FRACCIONARIA: 'no' })).toMatchObject({ enforceAppCheck: true, concurrency: 10 });
+    expect(B.opcionesDeBuscarConversaciones({ CPU_FRACCIONARIA: 'SI' })).toMatchObject({ enforceAppCheck: true, concurrency: 10 });
+  });
+
+  it('la callable se arma con esas opciones y con el entorno real del proceso', () => {
+    expect(CODIGO('buscarConversaciones.ts')).toContain('onCall(opcionesDeBuscarConversaciones(process.env)');
+    expect(CODIGO('buscarConversaciones.ts')).not.toMatch(/enforceAppCheck:\s*true/); // ni escrito a mano: viene de la constante
   });
 
   it('CONSULTA_PALABRAS: el índice COLLECTION_GROUP de mensajes (tenantId ASC, palabras CONTAINS, ts DESC) está declarado', () => {

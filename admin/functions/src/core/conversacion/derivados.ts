@@ -33,8 +33,21 @@ import {
 } from './normalizacion.js';
 
 const HORA_MS = 3_600_000;
+/** Rango de un `Timestamp` de Firestore: de 0001-01-01 a 9999-12-31 (en milisegundos). */
+const MIN_TIMESTAMP_MS = -62_135_596_800_000;
+const MAX_TIMESTAMP_MS = 253_402_300_799_999;
 
-/** Lo que la ingesta sabe del mensaje que está guardando. */
+/** ¿Sirve este reloj? Finito y con lugar en el rango de un Timestamp, incluida la ventana de 24 h. */
+const relojValido = (ahoraMs: unknown): ahoraMs is number =>
+  typeof ahoraMs === 'number' && Number.isFinite(ahoraMs)
+  && ahoraMs >= MIN_TIMESTAMP_MS && ahoraMs + VENTANA_HORAS * HORA_MS <= MAX_TIMESTAMP_MS;
+
+/**
+ * Lo que la ingesta sabe del mensaje que está guardando. La dirección ya viene
+ * cerrada a `'entrante' | 'saliente'` por `normalizar` de la ingesta; cualquier
+ * otro valor se trata como saliente A PROPÓSITO (jamás suma no leídos ni mueve la
+ * ventana por un dato raro).
+ */
 export interface MensajeParaDerivar {
   telefono: string;
   direccion: 'entrante' | 'saliente';
@@ -49,9 +62,10 @@ export interface MensajeParaDerivar {
  *  - Solo un ENTRANTE: `ultimoEntranteEn`, `ventanaVenceEn` (+24 h), `noLeidos`
  *    (`increment(1)`) y `sinLeer: true`.
  *
- * Si `ahoraMs` no es un número finito, un entrante omite los dos campos de
- * ventana (la consola los lee como «sin dato») y conserva el resto: un reloj
- * roto jamás debe tirar abajo la ingesta de un mensaje del cliente.
+ * Si `ahoraMs` no es un número finito, o se sale del rango de un Timestamp
+ * (incluido el +24 h), un entrante omite los dos campos de ventana (la consola
+ * los lee como «sin dato») y conserva el resto: un reloj roto jamás debe tirar
+ * abajo la ingesta de un mensaje del cliente. Esta función NO lanza por el reloj.
  */
 export function camposDeConversacionPorMensaje(
   m: MensajeParaDerivar, ahoraMs: number,
@@ -61,7 +75,7 @@ export function camposDeConversacionPorMensaje(
   if (nombrePalabras.length) campos['nombrePalabras'] = nombrePalabras;
 
   if (m.direccion === 'entrante') {
-    if (typeof ahoraMs === 'number' && Number.isFinite(ahoraMs)) {
+    if (relojValido(ahoraMs)) {
       campos['ultimoEntranteEn'] = Timestamp.fromMillis(ahoraMs);
       campos['ventanaVenceEn'] = Timestamp.fromMillis(ahoraMs + VENTANA_HORAS * HORA_MS);
     }

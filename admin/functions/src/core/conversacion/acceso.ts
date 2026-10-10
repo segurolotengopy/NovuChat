@@ -4,16 +4,19 @@
  * =============================================================================
  *
  * La búsqueda por palabra usa un `collectionGroup` con el SDK Admin, que se
- * salta `firestore.rules`. Por eso el permiso se vuelve a comprobar acá, a mano,
- * y es el MISMO que las reglas dan para LEER las conversaciones (decisión D13):
+ * salta `firestore.rules`. Por eso el permiso se vuelve a comprobar acá, a mano.
+ * Es el de las reglas para LEER las conversaciones (decisión D13), con UNA
+ * diferencia deliberada y MÁS ESTRICTA para el soporte:
  *
  *   - la persona del negocio (administrador u operador de ESE comercio, con
  *     sesión de contraseña y correo verificado: `esAdminDe` / `esOperDe`), o
  *   - el propietario de NovuChat (sesión de Google) mientras el comercio le
  *     conserve una ventana de soporte vigente (`soporteVigenteDe`),
  *
- * y el comercio está `activo` o `suspendido` (un comercio suspendido SÍ puede
- * ver sus conversaciones; dado de baja o inexistente, no).
+ * y, en TODOS los casos, el comercio está `activo` o `suspendido` (un comercio
+ * suspendido SÍ puede ver sus conversaciones; dado de baja o inexistente, no).
+ * Las reglas no exigen ese estado al soporte; esta callable sí, a propósito: una
+ * búsqueda masiva sobre un comercio dado de baja no tiene dueño que la pida.
  *
  * SIN `cuentaVigenteDe` (D13). El visor de comprobantes la usa porque entrega
  * archivos de dinero; esta callable devuelve fragmentos de conversaciones que

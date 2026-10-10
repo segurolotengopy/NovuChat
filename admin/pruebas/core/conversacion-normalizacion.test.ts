@@ -264,6 +264,17 @@ describe('hallar una palabra y llegar al mensaje', () => {
       // Ningún sustituto suelto: el texto sobrevive a una ida y vuelta por UTF-8.
       expect(new TextDecoder().decode(new TextEncoder().encode(f)), `ancho ${ancho}`).toBe(f);
     }
+    // Las otras dos salidas: `ancho < 3` y palabra no hallada (corte del comienzo).
+    const emojis = '😀'.repeat(20);
+    for (const ancho of [1, 2, 3, 4, 5, 6, 7]) {
+      for (const buscadas of [[], ['inexistente']]) {
+        const f = fragmento(emojis, buscadas, ancho);
+        expect(f.length, `ancho ${ancho}`).toBeLessThanOrEqual(ancho);
+        expect(new TextDecoder().decode(new TextEncoder().encode(f)), `ancho ${ancho}`).toBe(f);
+      }
+    }
+    expect(fragmento(emojis, [], 1)).toBe('');
+    expect(fragmento(emojis, [], 2)).toBe('😀');
   });
 });
 

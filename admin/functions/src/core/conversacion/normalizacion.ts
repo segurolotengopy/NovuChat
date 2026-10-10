@@ -132,6 +132,13 @@ export function palabraParaIndice(palabras: readonly string[]): string | null {
   return mejor;
 }
 
+/** Los primeros `n` caracteres, sin dejar la mitad de un par sustituto (un emoji) al final. */
+function cortarSinPartirPar(s: string, n: number): string {
+  const c = s.slice(0, n);
+  const ultimo = c.charCodeAt(c.length - 1);
+  return c.length < s.length && ultimo >= 0xd800 && ultimo <= 0xdbff ? c.slice(0, -1) : c;
+}
+
 /**
  * Un fragmento del texto alrededor de la primera palabra encontrada, para
  * mostrar en el resultado. Nunca devuelve más de `ancho` caracteres, contando
@@ -154,7 +161,7 @@ export function fragmento(texto: string, buscadas: readonly string[], ancho = 70
   if (typeof texto !== 'string' || !(ancho >= 1)) return '';
   const limpio = texto.replace(/\s+/g, ' ').trim();
   if (limpio.length <= ancho) return limpio;
-  if (ancho < 3) return limpio.slice(0, Math.floor(ancho));
+  if (ancho < 3) return cortarSinPartirPar(limpio, Math.floor(ancho));
 
   // Texto plano (como `normalizarTexto`) con el índice de origen de cada carácter.
   let plano = '';
@@ -172,7 +179,7 @@ export function fragmento(texto: string, buscadas: readonly string[], ancho = 70
     const i = plano.indexOf(p);
     if (i >= 0 && (pos < 0 || i < pos)) pos = i;
   }
-  if (pos < 0) return limpio.slice(0, ancho - 1) + '…';
+  if (pos < 0) return cortarSinPartirPar(limpio, ancho - 1) + '…';
 
   const aqui = origen[pos] ?? 0; // dónde está la palabra en el texto ORIGINAL
   let desde = Math.max(0, aqui - Math.floor(ancho / 3));

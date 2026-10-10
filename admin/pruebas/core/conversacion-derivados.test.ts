@@ -103,14 +103,24 @@ describe('camposDeConversacionPorMensaje: lo que no es normal', () => {
   });
 
   it('NEGATIVA: un reloj roto no lanza; el entrante conserva el no leído y omite solo la ventana', () => {
-    for (const ahora of [Number.NaN, Number.POSITIVE_INFINITY, undefined as never, null as never, '1' as never]) {
+    // 1e20 y -1e20 están fuera del rango de un Timestamp; el máximo (9999-12-31) no deja lugar al +24 h.
+    for (const ahora of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1e20, -1e20, 253_402_300_799_999,
+      undefined as never, null as never, '1' as never]) {
       let c: Record<string, unknown> = {};
       expect(() => { c = camposDeConversacionPorMensaje({ telefono: TEL, direccion: 'entrante' }, ahora); }).not.toThrow();
-      expect(Object.hasOwn(c, 'ultimoEntranteEn')).toBe(false);
-      expect(Object.hasOwn(c, 'ventanaVenceEn')).toBe(false);
+      expect(Object.hasOwn(c, 'ultimoEntranteEn'), String(ahora)).toBe(false);
+      expect(Object.hasOwn(c, 'ventanaVenceEn'), String(ahora)).toBe(false);
       expect(c['sinLeer']).toBe(true);
       expect((c['noLeidos'] as FieldValue).isEqual(FieldValue.increment(1))).toBe(true);
     }
+  });
+
+  it('el borde del rango: el último reloj que deja lugar al +24 h sí abre la ventana', () => {
+    const ultimo = 253_402_300_799_999 - 24 * 3_600_000;
+    const c = camposDeConversacionPorMensaje({ telefono: TEL, direccion: 'entrante' }, ultimo);
+    expect((c['ventanaVenceEn'] as Timestamp).toMillis()).toBe(253_402_300_799_999);
+    const primero = camposDeConversacionPorMensaje({ telefono: TEL, direccion: 'entrante' }, -62_135_596_800_000);
+    expect((primero['ultimoEntranteEn'] as Timestamp).toMillis()).toBe(-62_135_596_800_000);
   });
 
   it('un teléfono con menos de 4 dígitos no indexa trozos, y no rompe', () => {
