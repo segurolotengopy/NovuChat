@@ -3,17 +3,28 @@
  * (el SDK ni valida la clave) y puertos propios, DISTINTOS de los de `scripts/emuladores.sh` (8232, 9299), para que
  * esta suite conviva con un panel armado a mano.
  */
+
+/**
+ * CARRILES. Cuatro personas o agentes pueden correr la suite a la vez, cada uno con SUS emuladores y SUS puertos: `E2E_CARRIL=1..4`
+ * suma `carril × 10` a todos los puertos (el carril 0, el de siempre, no suma nada). Sin esto, la siembra de un carril borraría los
+ * datos de otro. `bash pruebas-navegador/emuladores.sh` y `playwright` leen la misma variable.
+ */
+const CARRIL_CRUDO = process.env['E2E_CARRIL'] ?? '0';
+if (!/^[0-4]$/.test(CARRIL_CRUDO)) throw new Error('E2E_CARRIL tiene que ser un solo dígito de 0 a 4.');
+export const CARRIL = Number(CARRIL_CRUDO);
+const D = CARRIL * 10;
+
 export const PROYECTO = 'demo-novuchat-e2e';
-export const PUERTO_FIRESTORE = 8332;
-export const PUERTO_FIRESTORE_WS = 9251;
-export const PUERTO_AUTH = 9399;
-export const PUERTO_WEB = 5373;
-export const PUERTO_FUNCTIONS = 5231;
+export const PUERTO_FIRESTORE = 8332 + D;
+export const PUERTO_FIRESTORE_WS = 9251 + D;
+export const PUERTO_AUTH = 9399 + D;
+export const PUERTO_WEB = 5373 + D;
+export const PUERTO_FUNCTIONS = 5231 + D;
 export const URL_WEB = `http://127.0.0.1:${PUERTO_WEB}`;
 /** La consola ya construida y servida con las cabeceras REALES de `firebase.json` (CSP, Permissions-Policy), puerto propio. */
-export const PUERTO_CABECERAS = 5340;
+export const PUERTO_CABECERAS = 5340 + D;
 /** El catálogo web público es OTRO sitio de Hosting, con su propia política (target `catalogo` de `firebase.json`). */
-export const PUERTO_CATALOGO = 5341;
+export const PUERTO_CATALOGO = 5341 + D;
 export const URL_CATALOGO = `http://127.0.0.1:${PUERTO_CATALOGO}`;
 export const FICHA_DEL_CATALOGO = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
 export const URL_CABECERAS = `http://127.0.0.1:${PUERTO_CABECERAS}`;
@@ -38,4 +49,7 @@ export const USUARIOS = {
   adminFogon: 'admin.fogon@ejemplo.com',
   adminAurora: 'admin.aurora@ejemplo.com',
   operadorAurora: 'operador.aurora@ejemplo.com',
+  /** Se crean con `crearUsuarioDeEnsayo` (no los trae la siembra). */
+  operadorFogon: 'operador.fogon@ejemplo.com',
+  sinVerificarFogon: 'sinverificar.fogon@ejemplo.com',
 } as const;

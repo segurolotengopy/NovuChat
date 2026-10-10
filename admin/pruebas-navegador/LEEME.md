@@ -5,6 +5,12 @@ y donde aparecieron los defectos de la semana del 05/10/2026: un guardado que el
 Nacieron de la regla de Andres del 05/10 («ninguna función de la consola se entrega sin probarse completa»); la matriz de funciones es de la Cartera
 (`QTACO_matriz-pruebas-de-consola`) y esta carpeta es la parte automática.
 
+## Carriles: varias corridas a la vez
+
+`E2E_CARRIL=1..4` (0 por omisión) suma `carril × 10` a todos los puertos (Firestore 8332, Auth 9399, Functions 5231, `vite` 5373, cabeceras 5340 y catálogo 5341). Cada carril levanta SUS emuladores
+(`E2E_CARRIL=2 bash pruebas-navegador/emuladores.sh`) y corre con la misma variable (`E2E_CARRIL=2 pnpm pruebas:navegador`). Sin esto, la siembra de uno borraría los datos del otro. Cada carril escribe solo
+sus propios `*.spec.ts`; los helpers de `ayudas/`, `entorno.ts` y `preparar-datos.ts` tienen un solo dueño (la Operadora).
+
 ## Cómo se corre
 
 1. Emuladores (una terminal, quedan abiertos): `bash pruebas-navegador/emuladores.sh`. Puertos propios (Firestore 8332, Auth 9399), con las
