@@ -9,8 +9,9 @@
  * suma `carril × 10` a todos los puertos (el carril 0, el de siempre, no suma nada). Sin esto, la siembra de un carril borraría los
  * datos de otro. `bash pruebas-navegador/emuladores.sh` y `playwright` leen la misma variable.
  */
-export const CARRIL = Number(process.env['E2E_CARRIL'] ?? 0);
-if (!Number.isInteger(CARRIL) || CARRIL < 0 || CARRIL > 9) throw new Error('E2E_CARRIL tiene que ser un entero de 0 a 9.');
+const CARRIL_CRUDO = process.env['E2E_CARRIL'] ?? '0';
+if (!/^[0-4]$/.test(CARRIL_CRUDO)) throw new Error('E2E_CARRIL tiene que ser un solo dígito de 0 a 4.');
+export const CARRIL = Number(CARRIL_CRUDO);
 const D = CARRIL * 10;
 
 export const PROYECTO = 'demo-novuchat-e2e';

@@ -12,6 +12,8 @@ function bd() {
   process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${PUERTO_FIRESTORE}`;
   if (!PROYECTO.startsWith('demo-')) throw new Error('NEGADO: el proyecto de las pruebas de navegador tiene que empezar con «demo-».');
   if (!getApps().length) initializeApp({ projectId: PROYECTO });
+  // Segunda barrera: si otro módulo inicializó la app antes con otro proyecto, no se sigue.
+  if (!String(getApps()[0]?.options.projectId ?? '').startsWith('demo-')) throw new Error('NEGADO: la app de Admin no es de un proyecto demo-*.');
   return getFirestore();
 }
 
