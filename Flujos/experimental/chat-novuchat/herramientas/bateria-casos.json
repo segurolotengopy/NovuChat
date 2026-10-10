@@ -328,7 +328,7 @@
      "tipo": "texto",
      "texto": "depende, no sé",
      "seco": {
-      "mensaje": "Entiendo perfectamente, hay modelos de negocio con procesos muy particulares y por eso no usamos menús rígidos. Como nuestro objetivo es optimizar tu tiempo y no darte respuestas genéricas, ¿te gustaría hablar con alguien de nuestro equipo para contar exactamente cómo funciona tu atención hoy y ver si podemos armar un flujo a medida? 🤝"
+      "mensaje": "Con gusto lo vemos juntos, sin apuro y sin definir nada todavía. ¿Te gustaría hablar con alguien de nuestro equipo para ver tu caso con calma y encontrar el camino más sencillo para empezar? 🤝"
      },
      "exige": {
       "contiene": [
@@ -413,7 +413,8 @@
      },
      "exige": {
       "contiene": [
-       "pegada al celular"
+       "pegada al celular",
+       "cómo te llamas y cómo se llama tu"
       ]
      }
     },
@@ -430,7 +431,8 @@
       ],
       "noContiene": [
        "Setup a medida"
-      ]
+      ],
+      "botones": "equipo"
      }
     },
     {
@@ -439,8 +441,9 @@
      "exige": {
       "cta": true,
       "plantillas": 1,
-      "contiene": [
-       "cómo te llamas y cómo se llama tu negocio"
+      "noContiene": [
+       "cómo te llamas",
+       "cómo se llama"
       ]
      }
     }
@@ -1950,7 +1953,7 @@
   },
   {
    "id": "REC",
-   "titulo": "Recepción escribe desde su propio número: ve los dos botones y no recibe un botón a sí misma",
+   "titulo": "Recepción escribe desde su propio número: ve lo mismo que cualquiera (pide el nombre antes de los planes) y no recibe un botón a sí misma",
    "turnos": [
     {
      "tipo": "texto",
@@ -1974,7 +1977,22 @@
      "tipo": "boton",
      "id": "planes",
      "exige": {
-      "imagenPlanes": true
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "imagenPlanes": false,
+      "contiene": [
+       "Para mostrarte los planes que mejor te sirvan"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana, Salón Rosa",
+     "exige": {
+      "imagenPlanes": true,
+      "ruta": "planes",
+      "botones": "equipo"
      }
     },
     {
@@ -1985,7 +2003,8 @@
       "plantillas": 0,
       "contiene": [
        "Ya estás en contacto con el equipo"
-      ]
+      ],
+      "botones": "lista"
      }
     },
     {
@@ -1996,7 +2015,8 @@
       "plantillas": 0,
       "contiene": [
        "Ya estás en contacto con el equipo"
-      ]
+      ],
+      "botones": "lista"
      }
     }
    ],
@@ -2276,7 +2296,7 @@
      "tipo": "texto",
      "texto": "Cuéntame algo más sobre el punto dos de tu servicio, por favor",
      "seco": {
-      "mensaje": "Respuesta dos del asistente: NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "mensaje": "Respuesta dos del asistente: además muestra tu catálogo, toma el pedido calculando el envío y cobra enviando tu código QR, así tus clientes compran sin esperar a nadie. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
      },
      "exige": {
       "modeloVe": [
@@ -2289,7 +2309,7 @@
      "tipo": "texto",
      "texto": "Cuéntame algo más sobre el punto tres de tu servicio, por favor",
      "seco": {
-      "mensaje": "Respuesta tres del asistente: NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "mensaje": "Respuesta tres del asistente: también puedes ver todas las conversaciones desde tu celular y cambiar horarios o precios cuando quieras, desde el panel de control de la consola. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
      },
      "exige": {
       "modeloVe": [
@@ -2302,7 +2322,7 @@
      "tipo": "texto",
      "texto": "Cuéntame algo más sobre el punto cuatro de tu servicio, por favor",
      "seco": {
-      "mensaje": "Respuesta cuatro del asistente: NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "mensaje": "Respuesta cuatro del asistente: se conecta a tu Google Calendar, ofrece horarios reales y evita que dos personas queden citadas a la misma hora en una misma agenda. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
      },
      "exige": {
       "modeloVe": [
@@ -2315,7 +2335,7 @@
      "tipo": "texto",
      "texto": "Cuéntame algo más sobre el punto cinco de tu servicio, por favor",
      "seco": {
-      "mensaje": "Respuesta cinco del asistente: NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "mensaje": "Respuesta cinco del asistente: si el cliente cambia de opinión a mitad del pedido, entiende lo que escribe aunque tenga errores y recalcula el total sin que nadie intervenga. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
      },
      "exige": {
       "modeloVe": [
@@ -2328,7 +2348,7 @@
      "tipo": "texto",
      "texto": "Cuéntame algo más sobre el punto seis de tu servicio, por favor",
      "seco": {
-      "mensaje": "Respuesta seis del asistente: NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "mensaje": "Respuesta seis del asistente: manda un recordatorio automático un día antes de la cita para que baje el ausentismo y tu agenda se mantenga llena durante toda la semana. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
      },
      "exige": {
       "modeloVe": [
@@ -2341,7 +2361,7 @@
      "tipo": "texto",
      "texto": "Cuéntame algo más sobre el punto siete de tu servicio, por favor",
      "seco": {
-      "mensaje": "Respuesta siete del asistente: NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "mensaje": "Respuesta siete del asistente: cuando una consulta necesita a una persona, te lo indica y puedes escribirle directo al cliente desde tu propio WhatsApp sin perder el hilo. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
      },
      "exige": {
       "modeloVe": [
@@ -2354,7 +2374,7 @@
      "tipo": "texto",
      "texto": "Cuéntame algo más sobre el punto ocho de tu servicio, por favor",
      "seco": {
-      "mensaje": "Respuesta ocho del asistente: NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "mensaje": "Respuesta ocho del asistente: trabaja con los precios y los productos que cargaste tú mismo, de modo que nunca inventa un dato que no esté en tu catálogo ni en tus horarios. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
      },
      "exige": {
       "modeloVe": [
@@ -2477,6 +2497,550 @@
    "opciones": {
     "nivelEmojis": "pocos"
    }
+  },
+  {
+   "id": "A1",
+   "titulo": "La conversación real de Andres (belleza): invención de QR y evasión que las redes rechazan; el pedido del nombre; los botones según lo hecho; después del traspaso, la lista de rubros",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Pero explícame mejor",
+     "seco": {
+      "mensaje": "Claro 😊 Imagina que una clienta te escribe a medianoche para pedir una cita: NovuChat ve la disponibilidad real de tus especialistas, la reserva y, un día antes, le recuerda por WhatsApp su turno. Así tu equipo atiende en el salón sin vivir pegado al celular. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     },
+     "exige": {
+      "contiene": [
+       "cómo te llamas y cómo se llama tu"
+      ],
+      "botones": "planes+equipo",
+      "noRepite": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sería cobros con qr",
+     "seco": {
+      "mensaje": "Para belleza tu asistente puede enviar el código QR y coordinar el adelanto o pago total de cada cita, así tus clientas agendan sin esperar. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     },
+     "exige": {
+      "origen": "respaldo",
+      "noContiene": [
+       "adelanto",
+       "pago total",
+       "código QR",
+       "Para belleza tu asistente"
+      ],
+      "contiene": [
+       "evalúe tu caso"
+      ],
+      "botones": "planes+equipo"
+     },
+     "seco2": {
+      "mensaje": "Para belleza tu asistente puede enviar el código QR y coordinar el adelanto o pago total de cada cita, así tus clientas agendan sin esperar. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": true,
+      "botones": "equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Dame mas info sobre la empresa",
+     "seco": {
+      "mensaje": "Para no marearte con más información, mejor cuéntame qué buscas y lo vemos paso a paso. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar tu caso? 🤝"
+     },
+     "exige": {
+      "origen": "respaldo",
+      "contiene": [
+       "inteligencia artificial",
+       "24 horas"
+      ],
+      "noContiene": [
+       "para no marearte"
+      ],
+      "botones": "equipo"
+     },
+     "seco2": {
+      "mensaje": "Para no marearte con más información, mejor cuéntame qué buscas y lo vemos paso a paso. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar tu caso? 🤝"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "equipo",
+     "exige": {
+      "cta": true,
+      "plantillas": 1,
+      "noContiene": [
+       "cómo te llamas"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Atienden también los fines de semana?",
+     "seco": {
+      "mensaje": "Sí, el asistente responde las 24 horas, todos los días de la semana, incluidos fines de semana y feriados, así que tus clientes siempre reciben una respuesta inmediata. ¿Te gustaría ver cómo funciona para otro tipo de negocio que tengas? 🤝"
+     },
+     "exige": {
+      "botones": "lista",
+      "contiene": [
+       "Si tienes otro negocio, cuéntame de qué rubro es"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "A1b",
+   "titulo": "R1: si el cliente propone «cobros con QR» en belleza y el modelo lo inventa, el reintento con la causa lo corrige (no afirma ni niega)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sería cobros con qr",
+     "seco": {
+      "mensaje": "Para belleza tu asistente puede enviar el código QR y coordinar el adelanto o pago total de cada cita, así tus clientas agendan sin esperar. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     },
+     "exige": {
+      "origen": "modelo",
+      "conModelo": true,
+      "noContiene": [
+       "adelanto",
+       "pago total",
+       "código QR"
+      ],
+      "contiene": [
+       "evaluar tu caso"
+      ]
+     },
+     "seco2": {
+      "mensaje": "¡Buena idea, la tomo en cuenta! 😊 Eso no lo tengo documentado para tu rubro, así que prefiero no prometértelo. Lo que sí hago es mostrar tus servicios, revisar la disponibilidad de tus especialistas, agendar la cita y recordársela un día antes. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar tu caso? 🤝"
+     }
+    }
+   ]
+  },
+  {
+   "id": "A2",
+   "titulo": "R4 (b): si la primera respuesta es «Ver planes», se pide cordialmente el nombre y el negocio ANTES de los planes (+1 mensaje); el siguiente mensaje dispara los planes",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "imagenPlanes": false,
+      "contiene": [
+       "Para mostrarte los planes que mejor te sirvan",
+       "cómo te llamas y cómo se llama tu negocio"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana Pérez, Salón Rosa",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": true,
+      "contiene": [
+       "Setup estándar USD 65"
+      ],
+      "botones": "equipo"
+     }
+    }
+   ],
+   "ficha": {
+    "nombre": "Ana Pérez",
+    "empresa": "Salón Rosa",
+    "planesMostrados": "true",
+    "nombrePedido": "true"
+   }
+  },
+  {
+   "id": "A2b",
+   "titulo": "R4 (b): si insiste en los planes sin dar el nombre, se muestran (no se bloquea ni se pide dos veces)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": true,
+      "botones": "equipo"
+     }
+    }
+   ],
+   "ficha": {
+    "planesMostrados": "true"
+   }
+  },
+  {
+   "id": "A3",
+   "titulo": "R5: tras el traspaso, otro rubro abre un nuevo ciclo; la hoja conserva el primer negocio (C, D, F) y agrega el segundo al resumen J; empresa distinta = aviso nuevo; la misma empresa solo reenvía el botón",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Quiero ver cómo se agenda",
+     "seco": {
+      "mensaje": "Se agenda con la disponibilidad real de cada especialista y, un día antes, NovuChat manda un recordatorio por WhatsApp para que las clientas no olviden su turno ni lo dejen plantado. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     },
+     "exige": {
+      "contiene": [
+       "cómo te llamas y cómo se llama tu"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana Pérez, Salón Rosa",
+     "seco": {
+      "mensaje": "¡Gracias, Ana! Ya anoté todo.",
+      "nombre": "Ana Pérez",
+      "empresa": "Salón Rosa"
+     },
+     "exige": {
+      "contiene": [
+       "Quedó anotado"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "equipo",
+     "exige": {
+      "cta": true,
+      "plantillas": 1,
+      "noContiene": [
+       "cómo te llamas"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Quiero hablar con el equipo",
+     "exige": {
+      "cta": true,
+      "plantillas": 0,
+      "contiene": [
+       "otra vez el botón"
+      ]
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:gastronomia",
+     "seco": {
+      "mensaje": "¡Qué rico! 🍔 En horas pico ya no pierdes pedidos 🔥: NovuChat muestra tu menú, toma cada pedido registrando las notas especiales y realiza el cobro con QR 📲 para que pase directo a cocina. ¿Quieres conocer los planes?",
+      "rubro": "gastronomia"
+     },
+     "exige": {
+      "botones": "planes+equipo",
+      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Tengo una pizzería en Sopocachi",
+     "seco": {
+      "mensaje": "Qué buena zona para una pizzería, con tantos pedidos a la hora de almuerzo: NovuChat toma cada pedido desde tu carta, suma el envío y confirma el total antes de pasarlo a cocina, sin que nadie quede esperando. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     },
+     "exige": {
+      "contiene": [
+       "cómo se llama tu"
+      ],
+      "noContiene": [
+       "cómo te llamas"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Se llama Pizzería Napoli",
+     "seco": {
+      "mensaje": "¡Gracias, Ana! Ya anoté todo.",
+      "empresa": "Pizzería Napoli"
+     },
+     "exige": {
+      "contiene": [
+       "Quedó anotado"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "equipo",
+     "exige": {
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ],
+   "ficha": {
+    "rubro": "gastronomia",
+    "nombre": "Ana Pérez",
+    "empresa": "Pizzería Napoli",
+    "equipoAhora": "true"
+   },
+   "planilla": {
+    "calificacion": "Alta",
+    "contiene": {
+     "Nombre y Apellido": "Ana Pérez",
+     "Empresa / Cliente": "Salón Rosa",
+     "Rubro": "Belleza",
+     "Resumen Chatbot IA": [
+      "Otro negocio: Pizzería Napoli (Gastronomía)"
+     ]
+    },
+    "noContiene": {
+     "Empresa / Cliente": "Napoli",
+     "Rubro": "Gastronomía"
+    }
+   }
+  },
+  {
+   "id": "A4",
+   "titulo": "R6: los planes pedidos otra vez traen información complementaria verificada (sin imagen ni cifras de consumo); la tercera vez, el aviso de que ya se compartió",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Uff sí, todo el día pegada al celular",
+     "seco": {
+      "mensaje": "¡Te entiendo perfecto! 😅 Cuando estás todo el día pegada al celular, agendar y recordar citas a mano te quita tiempo, y NovuChat lo hace por ti las 24 horas. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     },
+     "exige": {
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Planes por favor",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": true,
+      "contiene": [
+       "Setup estándar USD 65"
+      ],
+      "botones": "equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Quiero ver los planes otra vez",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": false,
+      "noRepite": true,
+      "contiene": [
+       "servicio prepago mensual",
+       "tipo de cambio oficial",
+       "agendas",
+       "consola web",
+       "Setup a medida",
+       "ERP"
+      ],
+      "noContiene": [
+       "Planes mensuales (Impulso, Crecimiento, Pro) desde",
+       "conversaciones"
+      ],
+      "botones": "equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Y los precios, cuáles son",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": false,
+      "noRepite": true,
+      "contiene": [
+       "Ya te compartí el detalle de los planes"
+      ],
+      "botones": "equipo"
+     }
+    }
+   ]
+  },
+  {
+   "id": "A5",
+   "titulo": "R2: «¿Quiénes son ustedes?» y «¿Qué es NovuChat?» se contestan con los hechos verificados de la empresa, sin evadir ni derivar sin responder",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Quiénes son ustedes?",
+     "seco": {
+      "mensaje": "¡Con gusto! 😊 NovuChat es un asistente de WhatsApp con inteligencia artificial para negocios de Bolivia: atiende a tus clientes las 24 horas, responde sus consultas, agenda citas, toma pedidos y cobra por QR, y tú lo controlas desde tu celular. Es como el primer empleado de tu negocio que nunca duerme. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar tu caso? 🤝"
+     },
+     "exige": {
+      "contiene": [
+       "inteligencia artificial",
+       "24 horas"
+      ],
+      "botones": "planes+equipo",
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Y qué es NovuChat exactamente?",
+     "seco": {
+      "mensaje": "Piénsalo como tu empleado digital: un asistente con inteligencia artificial que conversa por WhatsApp con quien te escribe, resuelve sus dudas, reserva horarios y arma pedidos las 24 horas, mientras tú revisas cada charla desde la consola. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     },
+     "exige": {
+      "contiene": [
+       "empleado digital"
+      ],
+      "noRepite": true,
+      "botones": "planes+equipo"
+     }
+    }
+   ]
   }
  ]
 }

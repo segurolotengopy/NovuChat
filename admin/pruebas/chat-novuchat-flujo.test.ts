@@ -260,7 +260,7 @@ const VOSEO = /(?<![\p{L}])(quer[eé]s|ten[eé]s|pod[eé]s|dec[ií]me|cont[aá]m
 const COBRO_REAL = /pago (acreditado|verificado|recibido|confirmado)|recibimos tu pago|pago exitoso/i;
 const MULETILLAS = /^[¡!\s]*(te entiendo|qu[eé] bueno que quieras conocer m[aá]s detalles|claro|entiendo|perfecto|ok|genial)[.!¡\s\p{Extended_Pictographic}️]*$/iu;
 // Los mensajes que NO llevan los dos botones: la lista de rubros, el traspaso (su botón es el enlace a recepción) y los avisos del sistema (suspendido, uso extendido).
-const SIN_DOS_BOTONES = new Set(['lista', 'traspaso', 'suspendido', 'uso_extendido']);
+const SIN_DOS_BOTONES = new Set(['lista', 'lista_otro', 'traspaso', 'suspendido', 'uso_extendido']);
 
 interface Juego { prueba?: J; sinPropiedades?: boolean }
 
@@ -304,7 +304,9 @@ function propiedades(w: W, t: T, from: string, entrada: string, tiposSinBotones:
     expect(c.length, `${que}: cuerpo > 1.024`).toBeLessThanOrEqual(1024);
     // Ningún dígito en lo que sale salvo «24/7», «24 horas» y las cifras del mensaje de planes (65, 125, 25) que arma el código.
     const sinPermitidos = c.replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ').replace(/USD (65|125|25)\b/g, ' ');
-    expect(sinPermitidos, `${que}: dígitos de más`).not.toMatch(/\d/);
+    // (el complemento de los planes trae a propósito los tamaños de agendas y de catálogo; ver `complementoPlanes`)
+    if (!/^Te cuento un poco más de los planes/.test(c)) expect(sinPermitidos, `${que}: dígitos de más`).not.toMatch(/\d/);
+    else expect(c, `${que}: cifras de conversaciones o de consumo`).not.toMatch(/\d+\s+(conversaciones?|mensajes?|interacciones?|respuestas?|chats?)\b|ilimitad|gratis/i);
     if (e.tipo === 'interactive') {
       expect(['list', 'button', 'cta_url'], `${que}: tipo de interactivo`).toContain(tipoInter(e));
       const h = encabezadoDe(e);
@@ -324,9 +326,19 @@ function propiedades(w: W, t: T, from: string, entrada: string, tiposSinBotones:
       }
       if (tipoInter(e) === 'button') {
         for (const b of botonesDe(e)) expect(b.title.length, `${que}: título de botón > 20`).toBeLessThanOrEqual(20);
-        // D3: los DOS botones salen tras cada mensaje del asistente.
-        expect(idsBotones(e), `${que}: los dos botones`).toEqual(['planes', 'equipo']);
-        expect(titulosBotones(e)).toEqual(['Ver planes', 'Hablar con el equipo']);
+        // D3 y R5: los botones salen según lo ya hecho. Antes de ver los planes, los DOS; ya vistos, SOLO «Hablar con el equipo»; tras el traspaso, ninguno (la lista de rubros).
+        const ficha = fichaDe(w, from);
+        const ids = idsBotones(e);
+        if (ids.length === 2) {
+          expect(ids, `${que}: los dos botones`).toEqual(['planes', 'equipo']);
+          expect(titulosBotones(e)).toEqual(['Ver planes', 'Hablar con el equipo']);
+          if (ficha) expect(ficha.planesMostrados, `${que}: «Ver planes» cuando ya los vio`).toBe(false);
+        } else {
+          expect(ids, `${que}: un solo botón`).toEqual(['equipo']);
+          expect(titulosBotones(e)).toEqual(['Hablar con el equipo']);
+          if (ficha) expect(ficha.planesMostrados, `${que}: solo «Hablar con el equipo» sin haber visto los planes`).toBe(true);
+        }
+        if (ficha) expect(ficha['equipoAhora'], `${que}: «Hablar con el equipo» otra vez tras el traspaso`).toBe(false);
       }
     }
   }
@@ -699,6 +711,10 @@ describe('las conversaciones del PDF «Opciones de conversaciones»', () => {
     w.modelo.con = dice('¡Te entiendo perfecto! 😅 Es un problema clásico: cuando todo el día estás pegada al celular, agendar y recordar citas a mano te quita tiempo, y NovuChat lo hace por ti las 24 horas. ¿Quieres ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝');
     const t2 = j.texto('Uff sí, todo el día estoy pegada al celular y a veces me dejan plantada.');
     expect(t2.aMi[0]!.cuerpo).toMatch(/pegada al celular/);
+    // R4: la primera respuesta a la explicación trae, en el MISMO mensaje, el pedido cordial del nombre y del negocio (una sola vez)
+    expect(t2.aMi).toHaveLength(1);
+    expect(t2.aMi[0]!.cuerpo).toMatch(/¿(me cuentas )?cómo te llamas y cómo se llama tu (negocio|empresa)\?/);
+    expect(fichaDe(w, MAMA)!['nombrePedido']).toBe(true);
     // «Planes por favor»: el código, sin modelo
     const llamadas = w.modelo.llamadas.length;
     const t3 = j.texto('Planes por favor.');
@@ -710,13 +726,13 @@ describe('las conversaciones del PDF «Opciones de conversaciones»', () => {
     expect(e3.cuerpo).not.toMatch(/Setup a medida/);
     expect(e3.cuerpo.endsWith(CIERRE_PRECIOS)).toBe(true);
     expect(e3.cuerpo).not.toMatch(/conversaciones|productos/i);
-    expect(idsBotones(e3)).toEqual(['planes', 'equipo']);
+    expect(idsBotones(e3)).toEqual(['equipo']); // R5: los planes ya se vieron, solo queda «Hablar con el equipo»
     // «Hablar con el equipo»: traspaso con el botón de enlace a recepción y UN aviso con plantilla
     const t4 = j.boton('equipo');
     const e4 = t4.aMi[0]!;
     expect(tipoInter(e4)).toBe('cta_url');
     expect(urlDe(e4)).toMatch(new RegExp(`^https://wa\\.me/${REC}\\?text=`));
-    expect(e4.cuerpo).toMatch(/¿cómo te llamas y cómo se llama tu negocio\?/);
+    expect(e4.cuerpo).not.toMatch(/cómo te llamas|cómo se llama/); // R4: ya se pidió UNA vez
     expect(e4.cuerpo).toMatch(/alguien de nuestro equipo/);
     expect(t4.plantillas).toHaveLength(1);
     expect(t4.plantillas[0]!.a).toBe(REC);
@@ -778,7 +794,7 @@ describe('las conversaciones del PDF «Opciones de conversaciones»', () => {
     expect(t2.aMi[0]!.cuerpo).toMatch(/Esa no la tengo a la mano/);
     expect(t2.aMi[0]!.cuerpo).toMatch(/hablar con alguien de nuestro equipo/);
     expect(t2.aMi[0]!.cuerpo).not.toMatch(/integra(mos|ciones a)|ERPs/);
-    expect(idsBotones(t2.aMi[0]!)).toEqual(['planes', 'equipo']);
+    expect(idsBotones(t2.aMi[0]!)).toEqual(['equipo']); // R5: los planes ya se vieron
   });
 });
 
@@ -988,7 +1004,9 @@ describe('nombre y empresa: «Nombre, Empresa» en un mensaje, solo nombre, solo
     expect(fichaDe(w, MAMA)!['empresa']).toBe('Panadería Luna');
     expect(t.aMi[0]!.cuerpo).toMatch(/^¡Gracias! 😊 Quedó anotado\./);
     expect(t.aMi[0]!.cuerpo).not.toMatch(/te escribe pronto/);
-    expect(idsBotones(t.aMi[0]!)).toEqual(['planes', 'equipo']);
+    // R5: tras el traspaso, ningún botón: la lista de rubros con la invitación a otro negocio
+    expect(tipoInter(t.aMi[0]!)).toBe('list');
+    expect(t.aMi[0]!.cuerpo).toMatch(/Si tienes otro negocio, cuéntame de qué rubro es/);
     const fila = filaDe(w, MAMA)!;
     expect(fila[COL.nombre]).toBe('Ana Pérez');
     expect(fila[COL.empresa]).toBe('Panadería Luna');
@@ -1153,8 +1171,12 @@ describe('recepción (el número de Silvana) escribiendo desde su propio teléfo
     w.modelo.con = 'ERROR';
     const e = j.lista('rubro:salud').aMi[0]!;
     expect(idsBotones(e)).toEqual(['planes', 'equipo']);
-    const p = j.boton('planes').aMi[0]!;
-    expect(idsBotones(p)).toEqual(['planes', 'equipo']);
+    // R4: recepción ve lo mismo que cualquiera: antes de los planes se le pide, una vez, el nombre y el negocio; el siguiente mensaje dispara los planes
+    const pedido = j.boton('planes').aMi[0]!;
+    expect(pedido.cuerpo).toMatch(/Para mostrarte los planes que mejor te sirvan/);
+    expect(idsBotones(pedido)).toEqual(['planes', 'equipo']);
+    const p = j.texto('Ana, Salón Rosa').aMi[0]!;
+    expect(idsBotones(p)).toEqual(['equipo']);
     expect((encabezadoDe(p)?.['image'] as J)['link']).toBe(ARCHIVO.url);
   });
   it('«Hablar con el equipo» desde recepción responde «Ya estás en contacto con el equipo», con los dos botones, SIN plantilla de aviso y SIN botón a su propio chat', () => {
@@ -1163,15 +1185,14 @@ describe('recepción (el número de Silvana) escribiendo desde su propio teléfo
     j.texto('Hola');
     const t = j.boton('equipo');
     const e = t.aMi[0]!;
-    expect(e.cuerpo).toBe('Ya estás en contacto con el equipo 😊');
-    expect(tipoInter(e)).toBe('button');
-    expect(idsBotones(e)).toEqual(['planes', 'equipo']);
+    expect(e.cuerpo).toMatch(/^Ya estás en contacto con el equipo 😊/);
+    expect(tipoInter(e)).toBe('list'); // R5: tras el traspaso, la lista de rubros (nada oculto, nunca «Hablar con el equipo» otra vez)
     expect(t.plantillas).toHaveLength(0);
     expect(urlDe(e)).toBe('');
     expect(JSON.stringify(t.mensajes.map((m) => m.payload))).not.toMatch(new RegExp(`wa\\.me/${REC}`));
     // y por escrito
     const t2 = j.texto('Quiero hablar con una persona');
-    expect(t2.aMi[0]!.cuerpo).toBe('Ya estás en contacto con el equipo 😊');
+    expect(t2.aMi[0]!.cuerpo).toMatch(/^Ya estás en contacto con el equipo 😊/);
     expect(t2.plantillas).toHaveLength(0);
   });
   it('a un cliente cualquiera el mismo toque le da el enlace a recepción y UN aviso con plantilla; un 2.º toque en la misma ventana no repite el aviso', () => {
@@ -1768,5 +1789,269 @@ describe('revisión del PR #464: lo que arma el flujo', () => {
       expect(t.aMi[0]!.cuerpo, q).toMatch(/asistente virtual de NovuChat, con inteligencia artificial/);
       expect(t.aMi[0]!.cuerpo, q).not.toMatch(/humana|robot|gente de verdad/);
     }
+  });
+});
+
+// ================================================================================================
+// Ajustes del 09/10 tras la prueba real de Andres (R1 a R6): la conversación entera, paso a paso, contra el flujo versionado.
+describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedido de datos, los botones y los ciclos', () => {
+  const BELLEZA = '¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?';
+  const MAS = 'Claro 😊 Imagina que una clienta te escribe a medianoche para pedir una cita: NovuChat ve la disponibilidad real de tus especialistas, la reserva y, un día antes, le recuerda por WhatsApp su turno. Así tu equipo atiende en el salón sin vivir pegado al celular. ' + CIERRE_RUBRO;
+  const INVENTA = 'Para belleza tu asistente puede enviar el código QR y coordinar el adelanto o pago total de cada cita, así tus clientas agendan sin esperar. ' + CIERRE_RUBRO;
+  const EVASION = 'Para no marearte con más información, mejor cuéntame qué buscas y lo vemos paso a paso. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar tu caso? 🤝';
+  const FINDE = 'Sí, el asistente responde las 24 horas, todos los días de la semana, incluidos fines de semana y feriados, así que tus clientes siempre reciben una respuesta inmediata. ¿Te gustaría ver cómo funciona para otro tipo de negocio que tengas? 🤝';
+  const tiene = (m: Enviado, x: RegExp): boolean => x.test(m.cuerpo);
+
+  it('R1, R2, R4, R5: la conversación real de Andres (belleza), con el modelo devolviendo los textos MALOS: las redes los rechazan, un mensaje por turno', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    expect(tipoInter(j.texto('Hola').aMi[0]!)).toBe('list');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    expect(idsBotones(j.lista('rubro:belleza').aMi[0]!)).toEqual(['planes', 'equipo']);
+    // «Pero explícame mejor»: responde y, en el MISMO mensaje, pide cordialmente el nombre y el negocio (una sola vez)
+    w.modelo.con = dice(PITCH);
+    const t3 = j.texto('Pero explícame mejor');
+    expect(t3.aMi).toHaveLength(1);
+    expect(t3.aMi[0]!.cuerpo).toMatch(/nunca duerme/);
+    expect(t3.aMi[0]!.cuerpo).toMatch(/¿cómo te llamas y cómo se llama tu (negocio|empresa)\?/);
+    expect(idsBotones(t3.aMi[0]!)).toEqual(['planes', 'equipo']);
+    // «Sería cobros con qr»: el modelo inventa (en el intento y en el reintento): se rechaza, y sale «lo evalúa el equipo»
+    w.modelo.con = dice(INVENTA);
+    const antes = w.modelo.reintentos.length;
+    const t4 = j.texto('Sería cobros con qr');
+    expect(w.modelo.reintentos.length - antes).toBe(1);
+    expect(t4.aMi[0]!.cuerpo).toMatch(/Eso no lo tengo documentado para tu rubro/);
+    expect(t4.aMi[0]!.cuerpo).toMatch(/alguien de nuestro equipo evalúe tu caso/);
+    expect(t4.aMi[0]!.cuerpo).not.toMatch(/adelanto|pago total|código QR|\bQR\b/);
+    expect(t4.aMi[0]!.cuerpo).not.toMatch(/cómo te llamas/); // no se pide dos veces
+    // «Ver planes»: ya se pidió el nombre una vez, así que se muestran (imagen) y queda SOLO «Hablar con el equipo»
+    const t5 = j.boton('planes');
+    expect((encabezadoDe(t5.aMi[0]!)?.['image'] as J)['link']).toBe(ARCHIVO.url);
+    expect(idsBotones(t5.aMi[0]!)).toEqual(['equipo']);
+    // «Dame mas info sobre la empresa»: el modelo evade; la red lo rechaza y sale la respuesta con los hechos verificados
+    w.modelo.con = dice(EVASION);
+    const t6 = j.texto('Dame mas info sobre la empresa');
+    expect(t6.aMi[0]!.cuerpo).not.toMatch(/marearte/);
+    expect(t6.aMi[0]!.cuerpo).toMatch(/asistente de WhatsApp con inteligencia artificial para negocios de Bolivia/);
+    expect(t6.aMi[0]!.cuerpo).toMatch(/24 horas/);
+    expect(idsBotones(t6.aMi[0]!)).toEqual(['equipo']);
+    // «Hablar con el equipo»: enlace a recepción y UN aviso; no vuelve a pedir el nombre
+    const t7 = j.boton('equipo');
+    expect(tipoInter(t7.aMi[0]!)).toBe('cta_url');
+    expect(t7.plantillas).toHaveLength(1);
+    expect(tiene(t7.aMi[0]!, /cómo te llamas/)).toBe(false);
+    // nueva interacción tras el traspaso: responde lo que pregunta y ofrece la LISTA de rubros (ni «Ver planes» ni «Hablar con el equipo»)
+    w.modelo.con = dice(FINDE);
+    const t8 = j.texto('¿Atienden también los fines de semana?');
+    expect(tipoInter(t8.aMi[0]!)).toBe('list');
+    expect(t8.aMi[0]!.cuerpo).toMatch(/fines de semana/);
+    expect(t8.aMi[0]!.cuerpo).toMatch(/Si tienes otro negocio, cuéntame de qué rubro es y te explico cómo te ayudamos 😊$/);
+    expect(idsBotones(t8.aMi[0]!)).toEqual([]);
+    expect(plantillasTotales(w)).toBe(1);
+  });
+  it('R1: si el reintento corrige la invención, sale el texto del modelo (reconoce con calidez, dice lo documentado y ofrece al equipo)', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j.lista('rubro:belleza');
+    const BUENA = '¡Buena idea, la tomo en cuenta! 😊 Eso no lo tengo documentado para tu rubro, así que prefiero no prometértelo. Lo que sí hago es mostrar tus servicios, revisar la disponibilidad de tus especialistas, agendar la cita y recordársela un día antes. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar tu caso? 🤝';
+    const base = w.modelo.llamadas.length + w.modelo.reintentos.length;
+    w.modelo.con = (_c: J, n: number) => dice(n === base + 1 ? INVENTA : BUENA);
+    const t = j.texto('Sería cobros con qr');
+    expect(t.aMi[0]!.cuerpo.startsWith(BUENA)).toBe(true); // (es la primera respuesta a la explicación: el pedido del nombre va al final, en el mismo mensaje)
+    expect(w.modelo.reintentos).toHaveLength(1);
+    // la causa que se le dice al modelo en el reintento
+    const reintento = JSON.stringify((w.modelo.reintentos[0]!.cuerpo as J)['contents']);
+    expect(reintento).toMatch(/afirmaste una función \(cobros, QR, adelantos, seña o pagos\) que no está documentada/);
+  });
+
+  it('R4 (b): «Ver planes» como primera respuesta NO muestra los planes: pide cordialmente el nombre y el negocio (+1 mensaje); el siguiente mensaje (diga el nombre o no) los muestra; si insiste, se muestran', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ana' });
+    j.texto('Hola');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j.lista('rubro:belleza');
+    const llamadas = w.modelo.llamadas.length;
+    const t = j.boton('planes');
+    expect(t.aMi).toHaveLength(1);
+    expect(t.aMi[0]!.cuerpo).toMatch(/^¡Con gusto! 😊 Para mostrarte los planes que mejor te sirvan, ¿me cuentas cómo te llamas y cómo se llama tu negocio\?$/);
+    expect(encabezadoDe(t.aMi[0]!)).toBeUndefined();
+    expect(idsBotones(t.aMi[0]!)).toEqual(['planes', 'equipo']);
+    expect(w.modelo.llamadas).toHaveLength(llamadas);
+    expect(fichaDe(w, MAMA)!['planesMostrados']).toBe(false);
+    expect(fichaDe(w, MAMA)!['planesPendientes']).toBe(true);
+    // diga el nombre o no, el siguiente mensaje los muestra, sin pedir nada más
+    const t2 = j.texto('Ana Pérez, Salón Rosa');
+    expect((encabezadoDe(t2.aMi[0]!)?.['image'] as J)['link']).toBe(ARCHIVO.url);
+    expect(t2.aMi[0]!.cuerpo).not.toMatch(/cómo te llamas/);
+    expect(fichaDe(w, MAMA)!['nombre']).toBe('Ana Pérez');
+    expect(fichaDe(w, MAMA)!['empresa']).toBe('Salón Rosa');
+    expect(fichaDe(w, MAMA)!['planesPendientes']).toBe(false);
+    // el cliente que no da el nombre
+    const w2 = crear();
+    const j2 = jugar(w2, MAMA);
+    j2.texto('Hola');
+    w2.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j2.lista('rubro:belleza');
+    expect(encabezadoDe(j2.boton('planes').aMi[0]!)).toBeUndefined();
+    const sigue = j2.texto('después te cuento');
+    expect((encabezadoDe(sigue.aMi[0]!)?.['image'] as J)['link']).toBe(ARCHIVO.url);
+    // el que insiste con el botón
+    const w3 = crear();
+    const j3 = jugar(w3, MAMA);
+    j3.texto('Hola');
+    w3.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j3.lista('rubro:belleza');
+    j3.boton('planes');
+    expect((encabezadoDe(j3.boton('planes').aMi[0]!)?.['image'] as J)['link']).toBe(ARCHIVO.url);
+    // costo: «Ver planes» primero = 1 mensaje más que el camino de texto libre (que no agrega ninguno)
+    expect(w.turnos.filter((x) => x.aMi.length).length).toBe(w3.turnos.filter((x) => x.aMi.length).length);
+  });
+  it('R4: si ya dio el nombre y el negocio, o ya se los pidió, los planes salen directo; recepción sigue el mismo orden', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j.lista('rubro:belleza');
+    w.modelo.con = dice('Con gusto, ya te cuento más sobre cómo se agenda con tus especialistas y cómo se recuerda cada cita a tus clientas por WhatsApp. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', { nombre: 'Ana Pérez', empresa: 'Salón Rosa' });
+    const t = j.texto('Soy Ana Pérez, de Salón Rosa. ¿Cómo se agenda?');
+    expect(t.aMi[0]!.cuerpo).not.toMatch(/cómo te llamas/);
+    expect((encabezadoDe(j.boton('planes').aMi[0]!)?.['image'] as J)['link']).toBe(ARCHIVO.url);
+  });
+
+  it('R5: los botones según lo hecho, en cada estado: lista → [Ver planes][Hablar] → [Hablar] → enlace → lista; el equipo escrito otra vez reenvía el botón sin aviso', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ana' });
+    expect(tipoInter(j.texto('Hola').aMi[0]!)).toBe('list');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    expect(idsBotones(j.lista('rubro:belleza').aMi[0]!)).toEqual(['planes', 'equipo']);
+    w.modelo.con = dice(MAS);
+    expect(idsBotones(j.texto('Cuéntame cómo se agenda').aMi[0]!)).toEqual(['planes', 'equipo']);
+    expect(idsBotones(j.boton('planes').aMi[0]!)).toEqual(['equipo']);
+    w.modelo.con = dice(FINDE);
+    expect(idsBotones(j.texto('¿Atienden también los fines de semana?').aMi[0]!)).toEqual(['equipo']);
+    const eq = j.boton('equipo');
+    expect(tipoInter(eq.aMi[0]!)).toBe('cta_url');
+    expect(eq.plantillas).toHaveLength(1);
+    expect(fichaDe(w, MAMA)!['equipoAhora']).toBe(true);
+    // el cliente escribe «quiero hablar con el equipo» tras haberlo hecho: se reenvía el botón, sin nuevo aviso
+    const otra = j.texto('quiero hablar con el equipo');
+    expect(tipoInter(otra.aMi[0]!)).toBe('cta_url');
+    expect(otra.aMi[0]!.cuerpo).toMatch(/otra vez el botón/);
+    expect(otra.plantillas).toHaveLength(0);
+    // cualquier otra interacción: la respuesta y la lista de rubros (los planes ya se vieron; ni uno ni otro botón)
+    expect(tipoInter(j.texto('¿Cuánto cuesta el servicio?').aMi[0]!)).toBe('list');
+    expect(plantillasTotales(w)).toBe(1);
+  });
+  it('R5: otro rubro tras el traspaso abre un nuevo ciclo; la hoja conserva la fila y el primer negocio (C, D, F) y suma el segundo al resumen; empresa distinta = aviso nuevo; la misma, solo el botón', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ana' });
+    j.texto('Hola');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j.lista('rubro:belleza');
+    w.modelo.con = dice(MAS);
+    j.texto('Quiero ver cómo se agenda');
+    w.modelo.con = dice('¡Gracias, Ana! Ya anoté todo.', { nombre: 'Ana Pérez', empresa: 'Salón Rosa' });
+    j.texto('Ana Pérez, Salón Rosa');
+    const eq = j.boton('equipo');
+    expect(eq.plantillas).toHaveLength(1);
+    expect(JSON.stringify(eq.plantillas[0]!.payload)).toMatch(/Salón Rosa/);
+    // otro negocio: nueva explicación, nuevo ciclo
+    w.modelo.con = dice('¡Qué rico! 🍔 En horas pico ya no pierdes pedidos 🔥: NovuChat muestra tu menú, toma cada pedido registrando las notas especiales y realiza el cobro con QR 📲 para que pase directo a cocina. ¿Quieres conocer los planes?', { rubro: 'gastronomia' });
+    const g = j.lista('rubro:gastronomia');
+    expect(idsBotones(g.aMi[0]!)).toEqual(['planes', 'equipo']); // los planes no se vieron en este chat; el equipo está disponible de nuevo
+    expect(fichaDe(w, MAMA)!['equipoAhora']).toBe(false);
+    expect(fichaDe(w, MAMA)!['primero']).toEqual({ rubro: 'belleza', empresa: 'Salón Rosa' });
+    w.modelo.con = dice('Qué buena zona para una pizzería, con tantos pedidos a la hora de almuerzo: NovuChat toma cada pedido desde tu carta, suma el envío y confirma el total antes de pasarlo a cocina, sin que nadie quede esperando. ' + CIERRE_RUBRO);
+    const pide = j.texto('Tengo una pizzería en Sopocachi');
+    expect(pide.aMi[0]!.cuerpo).toMatch(/cómo se llama tu negocio\?/);
+    expect(pide.aMi[0]!.cuerpo).not.toMatch(/cómo te llamas/); // el nombre ya se sabe
+    w.modelo.con = dice('¡Gracias!', { empresa: 'Pizzería Napoli' });
+    j.texto('Pizzería Napoli');
+    const eq2 = j.boton('equipo');
+    expect(eq2.plantillas).toHaveLength(1); // empresa distinta a la avisada: aviso nuevo
+    expect(JSON.stringify(eq2.plantillas[0]!.payload)).toMatch(/Pizzería Napoli/);
+    expect(plantillasTotales(w)).toBe(2);
+    const eq3 = j.texto('quiero hablar con el equipo');
+    expect(eq3.plantillas).toHaveLength(0); // la misma empresa: solo el botón
+    expect(tipoInter(eq3.aMi[0]!)).toBe('cta_url');
+    // la hoja: UNA fila; C, D y F del primer negocio; el segundo, en el resumen
+    expect(w.hoja.filas).toHaveLength(1);
+    const fila = filaDe(w, MAMA)!;
+    expect(fila[COL.nombre]).toBe('Ana Pérez');
+    expect(fila[COL.empresa]).toBe('Salón Rosa');
+    expect(fila[COL.rubro]).toBe('Belleza');
+    expect(fila[COL.resumen]).toMatch(/Otro negocio: Pizzería Napoli \(Gastronomía\)/);
+    expect(fila[COL.resumen]).toMatch(/Rubro Belleza/);
+    expect(califDe(w, MAMA)).toBe('Alta');
+  });
+  it('R5: sin número de recepción no hay traspaso: la conversación sigue con los botones de antes', () => {
+    const w = crear({ config: { numeroRecepcion: '' }, panel: panel({ operacion: { numeroRecepcion: '', horarioAtencion: '' } }) });
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    const t = j.boton('equipo');
+    expect(t.plantillas).toHaveLength(0);
+    expect(idsBotones(t.aMi[0]!)).toEqual(['planes', 'equipo']);
+    expect(fichaDe(w, MAMA)!['equipoAhora']).toBe(false);
+  });
+
+  it('R6: los planes pedidos otra vez traen información complementaria (sin imagen ni cifras de consumo); la tercera vez, el aviso; nunca el mismo texto', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j.lista('rubro:belleza');
+    w.modelo.con = dice(MAS);
+    j.texto('Uff sí, todo el día pegada al celular');
+    const p1 = j.texto('Planes por favor').aMi[0]!;
+    expect(encabezadoDe(p1)).toBeDefined();
+    const llamadas = w.modelo.llamadas.length;
+    const p2 = j.texto('Quiero ver los planes otra vez').aMi[0]!;
+    expect(w.modelo.llamadas).toHaveLength(llamadas);
+    expect(encabezadoDe(p2)).toBeUndefined();
+    expect(p2.cuerpo).toMatch(/servicio prepago mensual/);
+    expect(p2.cuerpo).toMatch(/Impulso 1, Crecimiento hasta 5, Pro hasta 10/);
+    expect(p2.cuerpo).not.toMatch(/conversaciones/i);
+    expect(p2.cuerpo).not.toBe(p1.cuerpo);
+    expect(idsBotones(p2)).toEqual(['equipo']);
+    const p3 = j.texto('y los precios?').aMi[0]!;
+    expect(p3.cuerpo).toMatch(/Ya te compartí el detalle de los planes/);
+    expect(encabezadoDe(p3)).toBeUndefined();
+    expect(new Set([p1.cuerpo, p2.cuerpo, p3.cuerpo]).size).toBe(3);
+  });
+  it('R6: si el modelo calca su mensaje anterior, se rechaza (`repite`) y el cliente recibe otro texto', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    const MISMO = 'NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ' + CIERRE_RUBRO;
+    w.modelo.con = dice(MISMO);
+    const a = j.texto('Cuéntame cómo funciona el agendamiento con Google Calendar para mi consultorio').aMi[0]!;
+    expect(a.cuerpo).toBe(MISMO);
+    const antes = w.modelo.reintentos.length;
+    const b = j.texto('Cuéntame cómo funciona el agendamiento con Google Calendar para mi consultorio otra vez').aMi[0]!;
+    expect(w.modelo.reintentos.length - antes).toBe(1);
+    expect(b.cuerpo).not.toBe(MISMO);
+    expect(b.cuerpo).toMatch(/Para no repetirme/);
+  });
+
+  it('R3: el nombre del perfil «Andrés Alberdi B.» llega a la hoja y al aviso (antes quedaba vacío)', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Andrés Alberdi B.' });
+    j.texto('Hola');
+    expect(filaDe(w, MAMA)![COL.nombre]).toBe('Andrés Alberdi B.');
+    const t = j.boton('equipo');
+    expect(JSON.stringify(t.plantillas[0]!.payload)).toMatch(/Andrés Alberdi B\./);
+  });
+  it('un mensaje por turno y solo una plantilla por empresa: una conversación larga con dos negocios', () => {
+    const w = crear();
+    const j = jugar(w, MAMA, { perfil: 'Ana' });
+    j.texto('Hola');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j.lista('rubro:belleza');
+    j.boton('planes');
+    j.boton('planes');
+    j.boton('equipo');
+    expect(w.turnos.every((t) => t.aMi.length <= 1)).toBe(true);
   });
 });
