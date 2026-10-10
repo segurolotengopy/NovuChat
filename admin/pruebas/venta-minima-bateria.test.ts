@@ -99,6 +99,10 @@ async function correr(m: Mundo, argv: string[]): Promise<Salida> {
 }
 const json = (s: Salida): J => JSON.parse(s.salida) as J;
 
+// Las dos pruebas que corren la batería ENTERA (más de 900 turnos por el flujo armado) tardan ~20 s y el tope por defecto de la suite es 20 s: con cada lote nuevo de
+// casos quedaban al borde (09/10: +15 casos de la ubicación del local). Tope propio, holgado, solo para ellas.
+const TOPE_DE_LA_BATERIA_COMPLETA = 120_000;
+
 const temporales: string[] = [];
 afterAll(() => { for (const t of temporales) rmSync(t, { recursive: true, force: true }); });
 function carpetaConCasos(archivos: Record<string, string>): string {
@@ -126,7 +130,7 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     expect(m.red, 'ninguna llamada a la red').toHaveLength(0);
     expect(r.total.turnos).toBeGreaterThan(0);
     expect(r.negativoGlobal).toBeNull(); // una lista de casos que no nombra a E8 no lo evalúa
-  });
+  }, TOPE_DE_LA_BATERIA_COMPLETA);
 
   it('el alcance: los casos son los de los lotes 1 a 7, y cada escenario de A1 a F5 está implementado, es el negativo global o está en los pendientes', () => {
     // A10d es la variante de A10 con el delivery pendiente (ahí «no quiero delivery» SÍ pasa a recojo). El lote 3 es el de delivery opcional (A11 se redefinió con él).
@@ -139,10 +143,11 @@ describe('--seco: todos los casos pasan por el flujo armado, sin clave y sin red
     const lote5 = ['D5', 'D5b', 'D6', 'D6b', 'D6d', 'D7', 'D7b', 'D7c', 'D8']; // reserva confirmada (#437); D8c, su control, vive en D.json
     const lote6 = ['M1r', 'M1p', 'M1ref', 'M1s', 'M1sp', 'M1refp', 'M2r', 'M2p', 'L1', 'FB1', 'FB2', 'SV2', 'SV2b']; // seguridad del delivery, 2.ª ronda
     const control = ['D8c'];
+    const lote10 = ['UL1', 'UL1i', 'UL2', 'UL3', 'UL4', 'UL5', 'UL5b', 'UL6', 'UL7', 'UL8', 'UN1', 'UN2', 'UN3', 'UN4', 'UN4c']; // ubicación o dirección del LOCAL, pedida expresamente (09/10, Q'Taco; `A-ubicacion-local.json`)
     const lote9 = ['U1', 'U2', 'U2b', 'U3', 'U3b', 'U4', 'U5', 'U5m', 'U6', 'U6b']; // ubicación compartida o dirección en texto (encargo del 05/10; U5m, U6 y U6b son del PR-A: el enlace a Maps solo con la ventana abierta y el pedido de ubicación)
     const { casos, global: g } = casosDeLaCarpeta();
     const ids = casos.map((c) => String(c['id']));
-    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote7, ...lote8, ...lote9, ...control, 'C9m'].sort());
+    expect([...ids].sort()).toEqual([...lote1, ...lote2, ...lote3, ...lote4, ...lote5, ...lote6, ...lote7, ...lote8, ...lote9, ...lote10, ...control, 'C9m'].sort());
     expect([...idsPendientes()].sort(), 'lo pendiente de una rama (hoy falla contra main)').toEqual(['A7', 'A8', 'C9m', 'M2bX', 'S2d', ...(CANCELAR_EN_EL_FLUJO ? [] : lote8)].sort());
     expect(idsDeSeguridad().sort(), 'los de seguridad son exactamente los del lote 4').toEqual([...lote4].sort());
     const pendientes = ((JSON.parse(readFileSync(join(CARPETA_CASOS, 'pendientes.json'), 'utf8')) as J)['pendientes'] as J[]).map((p) => String(p['id']));
@@ -276,7 +281,7 @@ describe('E8, el negativo global', () => {
     const s = await correr(mundo(), ['--seco', '--json', '--casos', 'E8']);
     const v = json(s).negativoGlobal.violaciones as J[];
     expect(v.map((x) => `${x['caso']} T${x['turno']} ${x['frase']}`)).toEqual([]);
-  });
+  }, TOPE_DE_LA_BATERIA_COMPLETA);
 });
 
 describe('la batería MIDE el flujo: con una avería inyectada, el caso falla', () => {

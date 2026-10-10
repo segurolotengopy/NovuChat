@@ -549,7 +549,27 @@ function horarioEnFrase(h) {
   return /^\p{Lu}(?!\p{Lu})/u.test(x) ? x.charAt(0).toLowerCase() + x.slice(1) : x;
 }
 
+// LA UBICACIÓN DEL LOCAL, pedida EXPRESAMENTE (09/10/2026, Q'Taco; `Decidir turno` paso 5b): en cualquier paso y por texto o por audio. UN solo mensaje:
+// «Estamos en <dirección>.» (sin dirección pero con enlace: «Aquí puedes ver dónde estamos.») con el botón «Ver ubicación» si el enlace de Maps es VÁLIDO
+// (el mismo camino de la confirmación de la reserva; `Armar mensajes` lo vuelve a exigir); sin enlace válido, el mismo texto sin botón (no se promete un mapa que
+// no se puede abrir). NO toca el estado: ni el paso, ni el carrito, ni la reserva, ni el pedido en espera (el comprobante sigue esperándose y los botones
+// del mensaje anterior siguen valiendo). Con un pedido o una reserva en curso, el mismo mensaje lo dice al final, sin reenviar el paso.
+function aUbicacionLocal() {
+  const dir = vmLinea(cfg.direccion, 200).replace(/[.\s]+$/, '');
+  const mapa = vmEnlaceDeMapa(cfg.direccionMaps);
+  // Sin nada que dar no se promete nada: se pasa con el local (aviso + botón), conservando el cobro si lo había. `Decidir turno` no llega aquí sin dato.
+  if (!dir && !mapa) return derivar('consulta sin dato cargado', en.paso === 'esperando_comprobante' && !!en.pedido);
+  let cuerpo = dir ? 'Estamos en ' + dir + '.' : 'Aquí puedes ver dónde estamos.';
+  const hayReserva = en.paso.indexOf('reserva') === 0;
+  const hayPedido = en.paso === 'esperando_comprobante' || (Array.isArray(en.carrito) && en.carrito.length > 0) || (Array.isArray(en.pendiente) && en.pendiente.length > 0);
+  if (hayReserva) cuerpo += ' Tu reserva sigue como estaba.';
+  else if (hayPedido) cuerpo += ' Tu pedido sigue como estaba.';
+  ruta = 'consulta:direccion_local';
+  mensajes = [mapa ? { tipo: 'enlace', mapa: true, cuerpo: cuerpo, botones: [{ id: '', title: 'Ver ubicación' }], url: mapa } : texto(cuerpo)];
+}
+
 function aConsulta(clave) {
+  if (clave === 'direccion_local') return aUbicacionLocal();
   let cuerpo = '';
   if (clave === 'direccion') {
     const x = vmLinea(cfg.direccion, 200);
