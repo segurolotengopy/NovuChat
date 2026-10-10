@@ -1215,7 +1215,13 @@ function chPlazoSinRespaldo(n) {
 }
 // Quien PAGA con el QR son los clientes de la empresa, a la empresa: NovuChat, el asistente y Kenji no cobran a nadie, envían el QR del negocio. El modelo no puede decir que cobra, que «realiza el cobro»,
 // que «te cobra» ni que los clientes finales «cobran» («tus clientes cobran», «el cliente cobra»: ellos PAGAN); sí «tus clientes pagan por QR» o «envía tu QR para que paguen». («Cuánto cobra Meta» y «se cobran en bolivianos» son otra cosa y no se tocan.)
-const CH_COBRO_MAL = /\bcobr(?:a|an|as|o|amos|ar|ando|aran|ara)\s+(?:con|por|mediante|a traves de|via)\s+(?:el |tu |su |un )?(?:codigo )?qr\b|\bcobros?\s+(?:con|por|mediante|a traves de|via)\s+(?:el |tu |su )?(?:codigo )?qr\b|\b(?:realiza\w*|hace\w*|haces|hacemos|efectua\w*)\s+(?:el |los |tu |su )?cobros?\b|\bte cobra\w*|\b(?:tus |los |sus |mis |el |tu |su |mi )?clientes?(?:\s+finales)?\s+cobr(?:a|an|o|as|amos|ar|aran|ara|ando)\b|\b(?:novuchat|kenji|(?:tu|el|este) asistente|la ia|el bot)\b[^.!?]{0,30}\bcobr(?:a|an|ar|o|as)\b/;
+const CH_COBRO_MAL = /\bcobr\w*\s+(?:\w+\s+){0,3}?(?:con|por|mediante|a traves de|via)\s+(?:el |tu |su |un )?(?:codigo )?qr\b|\bcobr\w*\s+(?:codigo\s+)?qr\b|\b(?:realiza\w*|hace\w*|haces|hacemos|efectua\w*|gestiona\w*)\s+(?:el |los |la |las |tu |su )?(?:cobros?|cobranzas?)\b|\bcobros?\s+lo\s+\w+\s+(?:tu |el |este )?(?:asistente|kenji|novuchat|bot|ia)\b|\bse encarga de cobr\w*|\b(?:tus |los |sus |mis |el |tu |su |mi )?clientes?(?:\s+final(?:es)?)?\s+cobr\w*/;
+// «Te cobra…» y «NovuChat/Kenji/el asistente… cobra…» solo caen si la oración NO habla de lo que NovuChat sí cobra al negocio (instalación, setup, planes, mensualidad…) ni de Meta o de la moneda. Se mira el texto tal cual, sin guiones ni puntos intercalados («Co-bra») y con ellos hechos espacios («Cobra-por-QR»).
+const CH_COBRO_DE_NOVUCHAT = /\bte cobr\w*|\b(?:novuchat|kenji|nosotros|(?:tu|el|este) asistente|la ia|el bot)\b[^.!?]{0,30}\bcobr\w*/;
+const CH_COBRO_PROPIO = /\b(?:instalacion|setup|plan(?:es)?|mensualidad|suscripcion|configuracion|comision(?:es)?|cuota|meta|whatsapp|bolivianos?|dolar(?:es)?)\b/;
+function chCobroMal(n) {
+  return [n, cmJunto(n), n.replace(/[-_.·*]+/g, ' ')].some((t) => CH_COBRO_MAL.test(t) || t.split(/(?<=[.!?])\s+/).some((o) => CH_COBRO_DE_NOVUCHAT.test(o) && !CH_COBRO_PROPIO.test(o)));
+}
 const CH_RUBROS_CON_COBRO = ['gastronomia', 'retail', 'otro'];
 const CH_FUNCION_INVENTADA = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado|cobros?|cobra\w*|cobrar)\b|\bqr\b/;
 const CH_FUNCION_INVENTADA_FUERTE = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado)\b/;
@@ -1247,7 +1253,7 @@ function chValidarMensaje(texto, v) {
   const sinPresentacion = n.replace(CH_PRESENTACION_OK, ' ');
   // Presentarse como persona o negar ser una IA (prohibición 4) se ve ANTES que los demás hechos, para que el reintento diga la causa justa.
   if (CH_YO_DEL_MODELO.test(sinPresentacion) || CH_NIEGA_IA.test(n)) return 'persona';
-  if (CH_COBRO_MAL.test(n)) return 'sujeto_del_pago';
+  if (chCobroMal(n)) return 'sujeto_del_pago';
   // R1: no se inventan funciones. Cobros, QR, adelantos, seña y anticipos solo están documentados para gastronomía, retail y «otro» (y en el pitch general y los hechos de la empresa).
   const rubroDelMensaje = chTexto(v.rubroId || v.rubroActual);
   // (en el pitch y en la empresa el «cobro por QR» es lo documentado, pero adelantos, anticipos, seña y pago total no lo son en NINGÚN rubro)
