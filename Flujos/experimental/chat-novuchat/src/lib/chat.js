@@ -801,6 +801,16 @@ function chPreguntaEmpresa(t) {
   const n = chNorm(t);
   return n !== '' && n.split(' ').length <= 14 && CH_PREGUNTA_EMPRESA.test(n);
 }
+// «¿Atienden también los fines de semana?», «¿responde de noche?», «¿funciona en feriados?»: el documento dice «Atención en segundos 24/7». Una PREGUNTA sobre el servicio (no el horario del propio negocio del cliente).
+const CH_VERBO_HORARIO = '(?:atienden|atiende|responden|responde|contestan|contesta|funcionan|funciona|trabajan|trabaja|estan disponibles|esta disponible|opera|operan|hay atencion)';
+const CH_HORA_HORARIO = '(?:fines? de semana|sabados?|domingos?|feriados?|de noche|por la noche|en la noche|madrugada|cualquier hora|toda hora|todo el dia|las 24|24 horas|24 7|todos los dias|7 dias|siete dias|de dia y de noche)';
+const CH_PREGUNTA_HORARIO = new RegExp('\\b' + CH_VERBO_HORARIO + '\\b[^.?]{0,40}\\b' + CH_HORA_HORARIO + '\\b|\\b' + CH_HORA_HORARIO + '\\b[^.?]{0,40}\\b' + CH_VERBO_HORARIO + '\\b');
+function chPreguntaHorario(t) {
+  const n = chNorm(t);
+  const m = CH_PREGUNTA_HORARIO.exec(n);
+  if (!m || n.split(' ').length > 14 || /\b(?:mi|mis|nuestro|nuestra|nuestros|nuestras)\b/.test(n.slice(0, m.index))) return false;
+  return /[?¿]/.test(chTexto(t)) || /^(?:y |tambien )?(?:atienden|responden|funcionan|trabajan|ustedes)\b/.test(n);
+}
 // «Quiero más información», «detalles», «cómo funciona», «Y?», «?»: el pitch del documento (§8). Tolera la errata «informació».
 function chPideMasInfo(t) {
   const raw = chTexto(t).trim();
@@ -887,7 +897,8 @@ const CH_CONTEXTOS = {
 // ruta: 'lista' | 'planes' | 'equipo' | 'fijo' | 'modelo'. Un toque de botón o un detector del CÓDIGO decide; la etiqueta de un modelo nunca basta.
 // ¿Hay que pedir el nombre y el negocio antes de los planes? Solo si ya se explicó el rubro, todavía no se pidió, falta alguno de los dos y los planes no se mostraron.
 function chPedirDatosAntes(f) {
-  return !!f && f.explicado === true && f.nombrePedido !== true && f.planesMostrados !== true && f.equipoAhora !== true && !(chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '');
+  // (sin exigir `explicado`: si ya hay rubro, o se explicó algo, y por cualquier motivo no se pidió aún, se pide ANTES de mostrar los planes)
+  return !!f && (f.explicado === true || chPlano(f.rubro) !== '') && f.nombrePedido !== true && f.planesMostrados !== true && f.equipoAhora !== true && !(chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '');
 }
 function chDecidir(a) {
   const ev = Array.isArray(a.eventos) ? a.eventos : [];
@@ -924,6 +935,7 @@ function chDecidir(a) {
     if (chPreguntaTopePlan(dijo, cfg.planes)) return planes(true);
     if (chPreguntaConsumo(dijo)) return fijo('consumo');
     if (chPreguntaBanco(dijo)) return fijo('banco');
+    if (chPreguntaHorario(dijo)) return fijo('disponibilidad');
     if (chPreguntaIntegracion(dijo)) return fijo('integracion');
     if (chPideDescuento(dijo)) return fijo('descuento');
     if (chPideCostoDelServicio(dijo)) return conPlanes(false);
@@ -1183,6 +1195,7 @@ function chCubrePuntos(texto, puntos) {
     try { return new RegExp(fam).test(norm); } catch (e) { return false; }
   });
 }
+const CH_CALENDARIO = /\b(?:los\s+)?(?:7|siete)\s+d[ií]as(?:\s+(?:de|a)\s+la\s+semana)?\b(?!\s+(?:de\s+prueba|gratis|gratuit\w*|libres?|sin\s+costo|de\s+garant\w*|extra))/gi;
 const CH_RUBROS_CON_COBRO = ['gastronomia', 'retail', 'otro'];
 const CH_FUNCION_INVENTADA = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado|cobros?|cobra\w*|cobrar)\b|\bqr\b/;
 const CH_UMBRAL_REPITE = 0.75;
@@ -1238,7 +1251,8 @@ function chValidarMensaje(texto, v) {
   if (chSistemaAjeno(flat, propios, true)) return 'sistema';
   if (chConcordanciaMala(flat)) return 'concordancia';
   // Números: ninguno salvo «24/7» y «24 horas»; y, hablando de precios, las cifras de la consola. Y ningún monto fuera de ese contexto.
-  const sinPermitidos = flat.replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ');
+  // «24/7», «24 horas» y la cifra de CALENDARIO («los 7 días de la semana», «7 días»): ni consumo ni precio. («7 días de prueba» o «gratis» no: son ofertas y las frena su propia regla.)
+  const sinPermitidos = flat.replace(CH_CALENDARIO, ' ').replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ');
   const numeros = sinPermitidos.match(/\d+(?:[.,]\d+)*/g) || [];
   if (numeros.length && !(v.precios === true && numeros.every((x) => (v.permitidas || []).includes(x)))) return 'cifra';
   if (v.precios !== true && (chTieneMonto(flat) || chMontoDelModelo(flat))) return 'monto';
@@ -1311,12 +1325,19 @@ function chRespaldo(a) {
     case 'datos': {
       const nombre = lec.nombre || a.ficha.nombre;
       const empresa = lec.empresa || a.ficha.empresa;
-      return { texto: sub(nombre && empresa ? r.datosAmbos : (nombre ? r.datosSoloNombre : (empresa ? r.datosSoloEmpresa : r.datosNinguno))), evento: 'datos' };
+      // Si no dijo ni el nombre ni el negocio, NO se vuelve a pedir (una sola vez): «después te cuento» recibe la cortesía; otra cosa que el modelo no pudo contestar, «ese dato lo revisa el equipo».
+      if (!nombre && !empresa) return { texto: sub(CH_EVASIVA.test(chTexto(a.dijo).trim()) || chEsAcuse(a.dijo) || chEsAgradecimiento(a.dijo) ? r.cortesia : r.sinDato), evento: 'datos' };
+      return { texto: sub(nombre && empresa ? r.datosAmbos : (nombre ? r.datosSoloNombre : r.datosSoloEmpresa)), evento: 'datos' };
     }
     case 'ambiguo': return { texto: sub(/creo que tu caso es super particular/.test(antes) ? r.generico : r.equipo), evento: 'equipo' };
-    default:
+    case 'fuera':
       if (/creo que tu caso es super particular/.test(antes)) return { texto: sub(r.generico), evento: 'generico' };
       return { texto: sub(/no estoy seguro de haberte entendido/.test(antes) ? r.equipo : r.fuera), evento: 'fuera' };
+    default:
+      // Una pregunta COMPRENSIBLE que el modelo no pudo contestar (la rechazó una guardia o falló la llamada) no recibe el «no te entendí»: ese dato lo confirma alguien del equipo.
+      // («No estoy seguro de haberte entendido» queda para emojis sueltos y texto sin sentido: contexto `fuera`.)
+      if (/creo que tu caso es super particular/.test(antes)) return { texto: sub(r.generico), evento: 'generico' };
+      return { texto: sub(/ese dato no lo tengo a la mano/.test(antes) ? r.equipo : r.sinDato), evento: 'sin_dato' };
   }
 }
 // El desenlace de un turno de modelo: `intentos` = [{ lectura, causa }] (hasta dos). Sale el mensaje del primer intento sin causa; si no, el respaldo del contexto.
@@ -1355,7 +1376,7 @@ function chResolver(a) {
   // El rubro que el modelo detectó en una frase vale como si lo hubiera elegido (ver `chRubroNuevoDelModelo`).
   const nuevo = parseado ? chRubroNuevoDelModelo(lectura, { contexto: contexto, rubroActual: a.ficha.rubro, textos: textos, cfg: a.cfg }) : false;
   if (nuevo) { contexto = 'rubro'; rubroId = lectura.rubro; }
-  const respaldo = chRespaldo({ cfg: a.cfg, ficha: a.ficha, contexto: contexto, rubroId: rubroId, lectura: lectura });
+  const respaldo = chRespaldo({ cfg: a.cfg, ficha: a.ficha, contexto: contexto, rubroId: rubroId, lectura: lectura, dijo: textos.join(' ') });
   // El respaldo depende de por qué se rechazó al modelo: una función inventada se contesta con «lo evalúa el equipo»; una repetición, con otro texto (nunca el mismo que el anterior).
   const rd = chDatos(a.cfg).respaldos || {};
   const ultimoDicho = chUltimoDelAsistente(a.ficha);
@@ -1474,7 +1495,15 @@ function chMensajeComplemento(cfg, o) {
   const est = chCargo(cfg, false);
   const med = chCargo(cfg, true);
   let texto;
-  if ((x.vez || 0) >= 1) texto = chTexto(tx.planesAgotado);
+  const mens = chMensuales(cfg);
+  if ((x.vez || 0) >= 1) {
+    // Una línea con los MISMOS precios de la consola (sin repetir la imagen) y la invitación al equipo.
+    const r = (d.complementoPlanes || {}).resumen || {};
+    const cifra = (frase, c) => (c ? chTexto(frase).replace(/\{usd\}/g, chMonto(c.precioUsd)) : '');
+    const menor = mens.length ? { precioUsd: Math.min.apply(null, mens.map((m) => m.precioUsd)) } : null;
+    const piezas = [cifra(r.estandar, est), cifra(r.aMedida, med), cifra(r.mensual, menor)].filter((y) => y !== '');
+    texto = piezas.length ? chTexto(r.intro) + ' ' + piezas.join(', ') + '. ' + chTexto((d.cierres || {}).precios) : chTexto(tx.planesAgotado);
+  }
   else {
     const partes = ((d.complementoPlanes || {}).partes || []).filter((p) => !(/\{usdEstandar\}/.test(p) && !est) && !(/\{usdMedida\}/.test(p) && !med))
       .map((p) => chTexto(p).replace(/\{usdEstandar\}/g, est ? chMonto(est.precioUsd) : '').replace(/\{usdMedida\}/g, med ? chMonto(med.precioUsd) : ''));
@@ -1494,10 +1523,51 @@ function chTextoPedirDatos(cfg, f, conPlanes) {
   }
   return chTexto(sinEmpresa ? pd.soloEmpresa : pd.soloNombre);
 }
-// ¿Se agrega el pedido del nombre y del negocio a la respuesta de este turno? Solo en la PRIMERA respuesta del cliente a la explicación (no si ya se pidió, ni si ya los dio), y si no pasa de la longitud.
+// ¿Corresponde pedir el nombre y el negocio en este turno? En la PRIMERA respuesta del cliente a la explicación, sea cual sea el contexto (pitch, dolor, pregunta, «no documentado», empresa, cortesía),
+// salvo la propia explicación del rubro, la respuesta a este mismo pedido, un medio ilegible y la identidad. Una sola vez en la conversación (`nombrePedido`).
+function chDebePedirDatos(f, contexto) {
+  if (!(f.explicado === true || chPlano(f.rubro) !== '') || f.nombrePedido === true || (chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '')) return false;
+  return !['rubro', 'otroRespuesta', 'otro', 'multiple', 'datos', 'medio', 'identidad'].includes(contexto);
+}
+// La versión corta del pedido (cuando la respuesta es larga y no cabe la normal).
+function chTextoPedirDatosCorto(cfg, f) {
+  const pd = chDatos(cfg).pedirDatos || {};
+  const sinNombre = chPlano(f.nombre) === '';
+  const sinEmpresa = chPlano(f.empresa) === '';
+  return chTexto(sinNombre && sinEmpresa ? pd.cortoAmbos : (sinEmpresa ? pd.cortoSoloEmpresa : pd.cortoSoloNombre));
+}
+// El mensaje sin su pregunta final (las opciones ya van en los botones).
+function chSinPreguntaFinal(texto) {
+  const partes = chLineas(texto).split(/(?<=[.!?…])[ \t]+/);
+  const ultima = partes[partes.length - 1];
+  if (/\?\s*[\p{Extended_Pictographic}\uFE0F\s]*$/u.test(ultima)) {
+    const k = ultima.lastIndexOf('¿');
+    if (k > 0) partes[partes.length - 1] = ultima.slice(0, k).trim().replace(/[,;:]$/, '.');
+    else partes.pop();
+  }
+  return partes.join(' ').trim();
+}
+// Une el pedido a la respuesta del turno SIEMPRE que corresponde: si no cabe en un mensaje, se quita la pregunta final del modelo, se usa la versión corta y, por último, se recortan líneas del
+// final (nunca se deja de pedir por la longitud). Devuelve { texto, pidio }.
+function chConAnexoDatos(cfg, f, texto, contexto) {
+  const base = chLineas(texto);
+  if (!chDebePedirDatos(f, contexto)) return { texto: base, pidio: false };
+  const largo = chTextoPedirDatos(cfg, f, false);
+  const corto = chTextoPedirDatosCorto(cfg, f);
+  if (!largo && !corto) return { texto: base, pidio: false };
+  const une = (b, a) => (b + '\n\n' + a).trim();
+  const intentos = [[base, largo], [chSinPreguntaFinal(base), largo], [chSinPreguntaFinal(base), corto]];
+  for (const par of intentos) if (par[1] && une(par[0], par[1]).length <= CH_MAX_MENSAJE) return { texto: une(par[0], par[1]), pidio: true };
+  let lineas = chSinPreguntaFinal(base).split('\n');
+  while (lineas.length > 1 && une(lineas.join('\n'), corto || largo).length > CH_MAX_MENSAJE) lineas.pop();
+  let cuerpo = lineas.join('\n');
+  const resto = CH_MAX_MENSAJE - (corto || largo).length - 2;
+  if (cuerpo.length > resto) cuerpo = chCortar(cuerpo, resto).replace(/[,;:\s]+$/, '') + '…';
+  return { texto: une(cuerpo, corto || largo), pidio: true };
+}
+// El mismo criterio sin recortar nada: el pedido solo si cabe entero (lo usan las pruebas de la regla).
 function chAnexoDatos(cfg, f, texto, contexto) {
-  if (f.explicado !== true || f.nombrePedido === true || (chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '')) return '';
-  if (['rubro', 'otroRespuesta', 'otro', 'multiple', 'datos', 'medio', 'cortesia', 'identidad'].includes(contexto)) return '';
+  if (!chDebePedirDatos(f, contexto)) return '';
   const anexo = chTextoPedirDatos(cfg, f, false);
   if (!anexo) return '';
   return chLineas(texto).length + 2 + anexo.length <= CH_MAX_MENSAJE ? anexo : '';
@@ -1515,10 +1585,11 @@ function chMensajeEquipo(cfg, f, from) {
   return cmContactoConBoton({ numero: numero, desde: desde, para: 'cliente', evento: 'traspaso', cuerpo: cuerpo, botonTexto: tx.botonTraspaso || 'Escribir ahora', textoDelRespaldo: 'Escríbele aquí:', saludo: chSustituir(tx.saludoWa, cfg) });
 }
 // Las respuestas fijas del documento (consumo, banco, costos de Meta, integraciones, precios distintos): el dato + la invitación al equipo. Ninguna cifra.
-function chRespuestaFija(id, cfg) {
+function chRespuestaFija(id, cfg, sinCierre) {
   const d = chDatos(cfg);
   if (id === 'identidad') return chSustituir((d.respaldos || {}).identidad, cfg);
-  return [chTexto((d.respuestas || {})[id]), chTexto((d.cierres || {})[id])].filter((x) => x !== '').join(' ');
+  // (tras el traspaso ya no hay botones: sin la pregunta de cierre, que ofrecería lo que ya no está; la lista de rubros invita a seguir)
+  return [chTexto((d.respuestas || {})[id]), sinCierre === true && chTexto((d.respuestas || {})[id]) !== '' ? '' : chTexto((d.cierres || {})[id])].filter((x) => x !== '').join(' ');
 }
 // El aviso a recepción (plantilla, UNA vez por ventana): lo arma `chAviso` (copia de Captación mínima), con lo que se sabe del cliente.
 function chAvisoEquipo(cfg, f, from, nombrePerfil) {

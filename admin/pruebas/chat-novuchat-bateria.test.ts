@@ -246,7 +246,7 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(await violacionesCon(f, 'D2')).toEqual(expect.arrayContaining(['sin_imagen_de_planes']));
   });
   it('ajustes del 09/10: la base (sin estropear) da cero violaciones en los casos nuevos A1 a A5', async () => {
-    for (const id of ['A1', 'A1b', 'A2', 'A2b', 'A3', 'A4', 'A5', 'REC', 'P1']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
+    for (const id of ['A1', 'A1b', 'A2', 'A2b', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'REC', 'P1']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
   });
   it('R1: si la red de funciones inventadas deja de rechazar, la invención de QR en belleza llega al cliente y la batería lo dice', async () => {
     const f = estropear("CH_FUNCION_INVENTADA.test(n)) return 'funcion_inventada';", "false) return 'funcion_inventada';");
@@ -258,8 +258,14 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     const f = estropear("if (dijo !== '' && chPreguntaEmpresa(dijo)) return 'empresa';", "if (false) return 'empresa';");
     expect((await violacionesCon(f, 'A1')).length).toBeGreaterThan(0);
   });
+  it('hotfix 09/10: si el pedido del nombre se omite cuando la respuesta es larga, se dice que falta (A7); si la disponibilidad deja de ser un dato documentado, se dice (A6)', async () => {
+    const f = estropear('if (!chDebePedirDatos(f, contexto)) return { texto: base, pidio: false };\n  const largo', 'if (!chDebePedirDatos(f, contexto) || base.length + 110 > CH_MAX_MENSAJE) return { texto: base, pidio: false };\n  const largo');
+    expect(await violacionesCon(f, 'A7')).toContain('falta_lo_que_se_exige');
+    const g = estropear("if (chPreguntaHorario(dijo)) return fijo('disponibilidad');", "if (false) return fijo('disponibilidad');");
+    expect((await violacionesCon(g, 'A6')).length).toBeGreaterThan(0);
+  });
   it('R4: si «Ver planes» como primera respuesta muestra los planes sin pedir el nombre, se dice `ruta_inesperada`', async () => {
-    const f = estropear('return !!f && f.explicado === true', 'return false && f.explicado === true');
+    const f = estropear("return !!f && (f.explicado === true || chPlano(f.rubro) !== '')", 'return false && (f.explicado === true');
     expect(await violacionesCon(f, 'A2')).toContain('ruta_inesperada');
   });
   it('R5: si tras el traspaso siguen los botones en vez de la lista de rubros, se dice `botones_inesperados` y `boton_del_equipo_otra_vez`', async () => {

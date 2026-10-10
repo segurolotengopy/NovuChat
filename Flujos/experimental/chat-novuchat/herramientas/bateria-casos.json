@@ -2608,9 +2608,14 @@
       "mensaje": "Sí, el asistente responde las 24 horas, todos los días de la semana, incluidos fines de semana y feriados, así que tus clientes siempre reciben una respuesta inmediata. ¿Te gustaría ver cómo funciona para otro tipo de negocio que tengas? 🤝"
      },
      "exige": {
+      "sinModelo": true,
       "botones": "lista",
       "contiene": [
+       "Sí: NovuChat atiende las 24 horas, todos los días",
        "Si tienes otro negocio, cuéntame de qué rubro es"
+      ],
+      "noContiene": [
+       "No estoy seguro de haberte entendido"
       ]
      }
     }
@@ -2992,7 +2997,13 @@
       "imagenPlanes": false,
       "noRepite": true,
       "contiene": [
-       "Ya te compartí el detalle de los planes"
+       "En resumen",
+       "Setup estándar USD 65",
+       "Setup a medida desde USD 125",
+       "planes mensuales desde USD 25"
+      ],
+      "noContiene": [
+       "Ya te compartí"
       ],
       "botones": "equipo"
      }
@@ -3038,6 +3049,168 @@
       ],
       "noRepite": true,
       "botones": "planes+equipo"
+     }
+    }
+   ]
+  },
+  {
+   "id": "A6",
+   "titulo": "La disponibilidad (fines de semana, de noche, feriados) es un dato documentado: 24 horas, todos los días; nunca el «no te entendí»",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Atienden también los fines de semana?",
+     "exige": {
+      "sinModelo": true,
+      "contiene": [
+       "Sí: NovuChat atiende las 24 horas, todos los días, incluso fuera de tu horario"
+      ],
+      "noContiene": [
+       "No estoy seguro de haberte entendido"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿responde de noche?",
+     "exige": {
+      "sinModelo": true,
+      "contiene": [
+       "24 horas, todos los días"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿funciona en feriados?",
+     "exige": {
+      "sinModelo": true,
+      "contiene": [
+       "24 horas, todos los días"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "A7",
+   "titulo": "R4: el pedido del nombre acompaña a la primera respuesta aunque el pitch del modelo sea largo (se quita su pregunta final o se usa la versión corta); «Ver planes» nunca muestra los planes antes del pedido",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Pero explícame mejor",
+     "seco": {
+      "mensaje": "¡Claro! 😊 NovuChat es el primer empleado de tu negocio que nunca duerme:\n⏱️ Atención en segundos 24/7: responde en segundos, las 24 horas, así no pierdes ventas si te escriben fuera de horario o en horas pico, incluso de madrugada o en feriados.\n📅 Agendamiento inteligente: se conecta a tu Google Calendar, ofrece horarios reales y agenda citas sin cruces; además envía recordatorios para bajar el ausentismo de tus clientas.\n💳 Ventas y cobros por QR: muestra tu catálogo, toma el pedido calculando el envío y cobra enviando tu código QR para que el pago sea simple.\n📱 Control total: como dueño, miras todas las conversaciones y haces cambios directamente desde nuestra consola en tu celular, sin depender de nadie y con todo explicado paso a paso para que lo entiendas de una vez.\n\nPara darte un ejemplo exacto de cómo se vería en la vida real con tu propio negocio, ¿de qué rubro es y qué tarea te quita más tiempo hoy?"
+     },
+     "exige": {
+      "contiene": [
+       "cómo te llamas y cómo se llama tu"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sería cobros con qr",
+     "seco": {
+      "mensaje": "Para belleza tu asistente puede enviar el código QR y coordinar el adelanto o pago total de cada cita, así tus clientas agendan sin esperar. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     },
+     "exige": {
+      "noContiene": [
+       "cómo te llamas",
+       "adelanto"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": true,
+      "botones": "equipo"
+     }
+    }
+   ],
+   "ficha": {
+    "nombrePedido": "true",
+    "planesMostrados": "true"
+   }
+  },
+  {
+   "id": "A8",
+   "titulo": "R4: «Ver planes» después de una explicación y SIN que el pedido haya salido pide el nombre primero (el flujo corto A2, con la respuesta del modelo larga en medio)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "imagenPlanes": false,
+      "contiene": [
+       "Para mostrarte los planes"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "después te cuento",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": true,
+      "botones": "equipo"
      }
     }
    ]

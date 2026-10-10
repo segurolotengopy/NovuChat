@@ -86,9 +86,10 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
   }
   else if (plan.ruta === 'pedirNombre') m = chCliente(chTextoPedirDatos(cfg, antes, true), cfg, 'pedir_datos', est);
   else if (plan.ruta === 'fijo') {
-    const dicho = chRespuestaFija(plan.fijo, cfg);
-    anexo = plan.fijo === 'identidad' ? '' : chAnexoDatos(cfg, antes, dicho, 'fijo');
-    m = chCliente(anexo ? dicho + '\n\n' + anexo : dicho, cfg, 'fijo', est);
+    const dicho = chRespuestaFija(plan.fijo, cfg, est.lista);
+    const unido = plan.fijo === 'identidad' ? { texto: dicho, pidio: false } : chConAnexoDatos(cfg, antes, dicho, 'fijo');
+    anexo = unido.pidio ? 'si' : '';
+    m = chCliente(unido.texto, cfg, 'fijo', est);
   }
   else if (plan.ruta === 'equipo') {
     // Si el cliente dio su nombre y su negocio en este mismo turno, el traspaso no los vuelve a pedir: se usan los de la ficha NUEVA (como el aviso).
@@ -96,11 +97,12 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
     m = chMensajeEquipo(cfg, Object.assign({}, antes, { nombre: previa.nombre, empresa: previa.empresa }), from);
   }
   else {
-    // R4: en la PRIMERA respuesta del cliente a la explicación se agrega, en el MISMO mensaje, el pedido cordial del nombre y del negocio (una sola vez).
+    // R4: en la PRIMERA respuesta del cliente a la explicación, sea cual sea el contexto, se agrega en el MISMO mensaje el pedido cordial del nombre y del negocio (una sola vez).
     // (lo que el cliente acaba de decir de sí mismo, ya validado por el código, cuenta: no se le vuelve a pedir)
     const conocido = Object.assign({}, antes, { nombre: antes.nombre || (res.lectura && res.lectura.nombre) || '', empresa: antes.empresa || (res.lectura && res.lectura.empresa) || '' });
-    anexo = chAnexoDatos(cfg, conocido, res.texto, res.contexto);
-    m = chCliente(anexo ? res.texto + '\n\n' + anexo : res.texto, cfg, res.evento, est);
+    const unido = chConAnexoDatos(cfg, conocido, res.texto, res.contexto);
+    anexo = unido.pidio ? 'si' : '';
+    m = chCliente(unido.texto, cfg, res.evento, est);
   }
   mensajes.push(m);
   nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.texto, ahoraMs: ahora, anuncio: t.anuncio === true,

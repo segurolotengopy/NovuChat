@@ -147,9 +147,9 @@ const CIERRE_RUBRO_EXACTO = '¿Te gustaría ver nuestros planes o prefieres habl
 const CIERRE_PRECIOS_EXACTO = '¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝';
 const MARCADORES = ['asistente', 'negocio', 'cierreRubro', 'cierrePrecios', 'cierreEquipo'];
 const CLAVES_INSTRUCCIONES = ['rol', 'tono', 'rubros', 'cierreRubro', 'otros', 'precios', 'limites', 'restricciones', 'ambiguedad', 'abierta', 'salida', 'seguridad'];
-const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'consumo', 'banco', 'costoMeta', 'integracion', 'descuento'];
-const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento'];
-const CLAVES_RESPALDOS = ['multiple', 'otroElegido', 'otroLibre', 'fuera', 'equipo', 'generico', 'identidad', 'cortesia', 'datosAmbos', 'datosSoloNombre', 'datosSoloEmpresa', 'datosNinguno', 'empresa', 'complemento', 'noDocumentado'];
+const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad'];
+const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad'];
+const CLAVES_RESPALDOS = ['multiple', 'otroElegido', 'otroLibre', 'fuera', 'equipo', 'generico', 'identidad', 'cortesia', 'datosAmbos', 'datosSoloNombre', 'datosSoloEmpresa', 'datosNinguno', 'empresa', 'complemento', 'noDocumentado', 'sinDato'];
 const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'planesIntroRepite', 'planesIntroTopes', 'planesSinPrecios', 'traspasoConPregunta', 'traspasoSinPregunta',
   'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'planesAgotado'];
 const DESCARTES = ['numero_equivocado', 'vende_o_busca_trabajo', 'sin_negocio', 'spam_o_prueba'];
@@ -382,16 +382,28 @@ export function validarDatos(datos, archivo) {
     else pd.ambos.forEach((v, i) => conNegocio(v, `datos.pedirDatos.ambos[${i}]`, true, true));
     conNegocio(pd.soloEmpresa, 'datos.pedirDatos.soloEmpresa', false, true);
     conNegocio(pd.soloNombre, 'datos.pedirDatos.soloNombre', true, false);
+    conNegocio(pd.cortoAmbos, 'datos.pedirDatos.cortoAmbos', true, true);
+    conNegocio(pd.cortoSoloEmpresa, 'datos.pedirDatos.cortoSoloEmpresa', false, true);
+    conNegocio(pd.cortoSoloNombre, 'datos.pedirDatos.cortoSoloNombre', true, false);
     conNegocio(pd.planesAmbos, 'datos.pedirDatos.planesAmbos', true, true);
     conNegocio(pd.planesSoloEmpresa, 'datos.pedirDatos.planesSoloEmpresa', false, true);
     conNegocio(pd.planesSoloNombre, 'datos.pedirDatos.planesSoloNombre', true, false);
-    for (const c of Object.keys(pd)) if (!['ambos', 'soloEmpresa', 'soloNombre', 'planesAmbos', 'planesSoloEmpresa', 'planesSoloNombre'].includes(c)) e(`datos.pedirDatos.${c}`, 'no es un texto conocido');
+    for (const c of Object.keys(pd)) if (!['ambos', 'soloEmpresa', 'soloNombre', 'cortoAmbos', 'cortoSoloEmpresa', 'cortoSoloNombre', 'planesAmbos', 'planesSoloEmpresa', 'planesSoloNombre'].includes(c)) e(`datos.pedirDatos.${c}`, 'no es un texto conocido');
   }
   // --- R6: el complemento de los planes (hechos del documento y de la imagen; sin cifras de conversaciones ni de consumo)
   const cp = k.complementoPlanes && typeof k.complementoPlanes === 'object' && !Array.isArray(k.complementoPlanes) ? k.complementoPlanes : null;
   if (!cp) e('datos.complementoPlanes', 'falta');
   else if (!Array.isArray(cp.partes) || cp.partes.length < 1 || cp.partes.length > 4) e('datos.complementoPlanes.partes', 'tiene que ser una lista de 1 a 4 frases');
   else {
+    // El resumen de una línea (3.ª vez): frases con `{usd}`, sin otra cifra.
+    const rs0 = cp.resumen && typeof cp.resumen === 'object' && !Array.isArray(cp.resumen) ? cp.resumen : null;
+    if (!rs0) e('datos.complementoPlanes.resumen', 'falta');
+    else for (const c of ['intro', 'estandar', 'aMedida', 'mensual']) {
+      const m = errorDeTextoDelCliente(typeof rs0[c] === 'string' ? rs0[c].replace(/\{usd\}/g, 'USD') : rs0[c], { complemento: true, sinAcredita: true });
+      if (m) e(`datos.complementoPlanes.resumen.${c}`, m);
+      else if (c !== 'intro' && (rs0[c].match(/\{usd\}/g) || []).length !== 1) e(`datos.complementoPlanes.resumen.${c}`, 'tiene que traer UN {usd}');
+      else if (/\d/.test(rs0[c])) e(`datos.complementoPlanes.resumen.${c}`, 'no lleva cifras escritas: el precio sale de la consola');
+    }
     cp.partes.forEach((v, i) => {
       const m = errorDeTextoDelCliente(v.replace(/\{usdEstandar\}|\{usdMedida\}/g, 'USD'), { complemento: true, sinAcredita: true });
       if (m) e(`datos.complementoPlanes.partes[${i}]`, m);

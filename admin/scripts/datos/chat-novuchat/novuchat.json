@@ -163,7 +163,8 @@
       "banco": "¿Te gustaría hablar con alguien de nuestro equipo para ver cómo quedaría en tu negocio? 🤝",
       "costoMeta": "¿Te gustaría hablar con alguien de nuestro equipo para que te ayude con esa duda? 🤝",
       "integracion": "¿Te gustaría hablar con alguien de nuestro equipo para saber si es posible en tu caso? 🤝",
-      "descuento": "¿Te gustaría hablar con alguien de nuestro equipo para ver tu caso? 🤝"
+      "descuento": "¿Te gustaría hablar con alguien de nuestro equipo para ver tu caso? 🤝",
+      "disponibilidad": "¿Te gustaría hablar con alguien de nuestro equipo para ver cómo funcionaría en tu caso? 🤝"
     },
     "precios": {
       "estandar": "Setup estándar",
@@ -177,7 +178,8 @@
       "banco": "El asistente solo revisa visualmente el comprobante que envía tu cliente: no lo valida con el banco. Quien confirma que el dinero entró es tu banco, y tú como dueño.",
       "costoMeta": "Esa no la tengo a la mano 🤔.",
       "integracion": "Esa no la tengo a la mano 🤔.",
-      "descuento": "Los precios son los que ves en los planes: no puedo cambiarlos ni ofrecer otros valores."
+      "descuento": "Los precios son los que ves en los planes: no puedo cambiarlos ni ofrecer otros valores.",
+      "disponibilidad": "Sí: NovuChat atiende las 24 horas, todos los días, incluso fuera de tu horario."
     },
     "respaldos": {
       "abierta": {
@@ -197,6 +199,7 @@
       "datosSoloNombre": "¡Gracias! 😊 Ya anoté tu nombre. ¿Y cómo se llama tu negocio?",
       "datosSoloEmpresa": "¡Gracias! 😊 Ya anoté el nombre de tu negocio. ¿Y cómo te llamas?",
       "datosNinguno": "Para dejarlo anotado, ¿cómo te llamas y cómo se llama tu negocio? 😊",
+      "sinDato": "¡Buena pregunta! 😊 Ese dato no lo tengo a la mano y prefiero no darte uno equivocado: eso lo revisa alguien de nuestro equipo. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝",
       "empresa": "¡Con gusto! 😊 NovuChat es un asistente de WhatsApp con inteligencia artificial para negocios de Bolivia: atiende a tus clientes las 24 horas, responde, agenda citas, toma pedidos y cobra por QR, y tú lo controlas desde tu celular. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
       "complemento": "Para no repetirme, te cuento algo más 😊: NovuChat responde en segundos, las 24 horas, y se adapta a cómo trabaja tu negocio. Cuéntame qué tarea te quita más tiempo hoy en tu WhatsApp o, si prefieres, ¿te gustaría hablar con alguien de nuestro equipo? 🤝",
       "noDocumentado": "¡Buena idea, la tomo en cuenta! 😊 Eso no lo tengo documentado para tu rubro y prefiero no prometértelo: lo mejor es que alguien de nuestro equipo evalúe tu caso. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝",
@@ -236,11 +239,20 @@
       ],
       "soloEmpresa": "Por cierto, para dejarlo anotado, ¿cómo se llama tu negocio? 😊",
       "soloNombre": "Por cierto, para orientarte mejor, ¿cómo te llamas? 😊",
+      "cortoAmbos": "¿Cómo te llamas y cómo se llama tu negocio? 😊",
+      "cortoSoloEmpresa": "¿Cómo se llama tu negocio? 😊",
+      "cortoSoloNombre": "¿Cómo te llamas? 😊",
       "planesAmbos": "¡Con gusto! 😊 Para mostrarte los planes que mejor te sirvan, ¿me cuentas cómo te llamas y cómo se llama tu negocio?",
       "planesSoloEmpresa": "¡Con gusto! 😊 Para mostrarte los planes que mejor te sirvan, ¿me cuentas cómo se llama tu negocio?",
       "planesSoloNombre": "¡Con gusto! 😊 Para mostrarte los planes que mejor te sirvan, ¿me cuentas cómo te llamas?"
     },
     "complementoPlanes": {
+      "resumen": {
+        "intro": "En resumen 😊:",
+        "estandar": "Setup estándar USD {usd}",
+        "aMedida": "Setup a medida desde USD {usd}",
+        "mensual": "planes mensuales desde USD {usd}"
+      },
       "partes": [
         "Te cuento un poco más de los planes 😊: es un servicio prepago mensual, con precios en USD que se cobran en bolivianos al tipo de cambio oficial del BCB.",
         "Los planes se diferencian por cuántas agendas manejas (Impulso 1, Crecimiento hasta 5, Pro hasta 10) y por el tamaño del catálogo de productos (hasta 20, 100 y 500); Pro suma soporte prioritario y todos incluyen la consola web.",

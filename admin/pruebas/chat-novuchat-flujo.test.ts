@@ -303,7 +303,7 @@ function propiedades(w: W, t: T, from: string, entrada: string, tiposSinBotones:
     expect(c, `${que}: «menos de un minuto»`).not.toMatch(/menos de un minuto/i);
     expect(c.length, `${que}: cuerpo > 1.024`).toBeLessThanOrEqual(1024);
     // Ningún dígito en lo que sale salvo «24/7», «24 horas» y las cifras del mensaje de planes (65, 125, 25) que arma el código.
-    const sinPermitidos = c.replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ').replace(/USD (65|125|25)\b/g, ' ');
+    const sinPermitidos = c.replace(/\b(?:los\s+)?7\s+d[ií]as(?:\s+(?:de|a)\s+la\s+semana)?\b(?!\s+(?:de\s+prueba|gratis|gratuit\w*|libres?|sin\s+costo|de\s+garant\w*|extra))/gi, ' ').replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ').replace(/USD (65|125|25)\b/g, ' ');
     // (el complemento de los planes trae a propósito los tamaños de agendas y de catálogo; ver `complementoPlanes`)
     if (!/^Te cuento un poco más de los planes/.test(c)) expect(sinPermitidos, `${que}: dígitos de más`).not.toMatch(/\d/);
     else expect(c, `${que}: cifras de conversaciones o de consumo`).not.toMatch(/\d+\s+(conversaciones?|mensajes?|interacciones?|respuestas?|chats?)\b|ilimitad|gratis/i);
@@ -766,7 +766,7 @@ describe('las conversaciones del PDF «Opciones de conversaciones»', () => {
     w.modelo.con = dice('¡Te entiendo! 📊 En un estudio contable, tu equipo pierde horas respondiendo lo mismo sobre impuestos por décima vez. NovuChat no usa menús rígidos: usa inteligencia artificial que se adapta a tu forma de trabajar, y con nuestros Setups a Medida diseñamos respuestas totalmente personalizadas 🛠️. ¿Cuál es hoy tu mayor cuello de botella en WhatsApp?', { necesidad: 'respondo consultas básicas sobre impuestos por WhatsApp' });
     const t2 = j.texto('Tengo un estudio contable. Pierdo mucho tiempo respondiendo consultas básicas sobre impuestos por WhatsApp.');
     expect(t2.aMi[0]!.cuerpo).toMatch(/Setups a Medida/);
-    expect(t2.aMi[0]!.cuerpo).toMatch(/\?\s*$/);
+    expect(t2.aMi[0]!.cuerpo).toMatch(/\?\s*\p{Extended_Pictographic}?\s*$/u);
     expect(fichaDe(w, MAMA)!.necesidad).toMatch(/consultas básicas sobre impuestos/);
     w.modelo.con = dice('¡Esa es la idea! 💡 Para servicios como el tuyo diseñamos flujos a medida que se adaptan a lo que necesitas lograr, y responder al instante ayuda a no perder ni una consulta. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo para ver cómo estructuraríamos tus respuestas? 🤝');
     const t3 = j.texto('Sí, la verdad me ahorraría mucho tiempo.');
@@ -1049,14 +1049,15 @@ describe('nombre y empresa: «Nombre, Empresa» en un mensaje, solo nombre, solo
     expect(fichaDe(w, MAMA)!['nombre']).toBe('');
     expect(t.aMi[0]!.cuerpo).toMatch(/Ya anoté el nombre de tu negocio\. ¿Y cómo te llamas\?/);
   });
-  it('una respuesta que no es ni nombre ni negocio («después te cuento») no se anota y se vuelve a pedir, con contenido', () => {
+  it('una respuesta que no es ni nombre ni negocio («después te cuento») no se anota y NO se vuelve a pedir (una sola vez): recibe la cortesía', () => {
     const w = crear();
     const j = hastaElTraspaso(w);
     w.modelo.con = 'ERROR';
     const t = j.texto('después te cuento');
     expect(fichaDe(w, MAMA)!['nombre']).toBe('');
     expect(fichaDe(w, MAMA)!['empresa']).toBe('');
-    expect(t.aMi[0]!.cuerpo).toMatch(/¿cómo te llamas y cómo se llama tu negocio\?/);
+    expect(t.aMi[0]!.cuerpo).not.toMatch(/¿cómo te llamas/);
+    expect(t.aMi[0]!.cuerpo).toMatch(/^¡Con gusto! 😊/);
   });
   it('la extracción es literal y sin inyección: una fórmula («=HYPERLINK…»), caracteres invisibles o una orden no llegan a la hoja', () => {
     const w = crear();
@@ -1842,9 +1843,12 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     expect(tiene(t7.aMi[0]!, /cómo te llamas/)).toBe(false);
     // nueva interacción tras el traspaso: responde lo que pregunta y ofrece la LISTA de rubros (ni «Ver planes» ni «Hablar con el equipo»)
     w.modelo.con = dice(FINDE);
+    const llamadas8 = w.modelo.llamadas.length;
     const t8 = j.texto('¿Atienden también los fines de semana?');
+    expect(w.modelo.llamadas).toHaveLength(llamadas8); // es un dato documentado: lo contesta el código, no el modelo
     expect(tipoInter(t8.aMi[0]!)).toBe('list');
-    expect(t8.aMi[0]!.cuerpo).toMatch(/fines de semana/);
+    expect(t8.aMi[0]!.cuerpo).toMatch(/^Sí: NovuChat atiende las 24 horas, todos los días, incluso fuera de tu horario\./);
+    expect(t8.aMi[0]!.cuerpo).not.toMatch(/No estoy seguro de haberte entendido/);
     expect(t8.aMi[0]!.cuerpo).toMatch(/Si tienes otro negocio, cuéntame de qué rubro es y te explico cómo te ayudamos 😊$/);
     expect(idsBotones(t8.aMi[0]!)).toEqual([]);
     expect(plantillasTotales(w)).toBe(1);
@@ -2016,8 +2020,9 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     expect(p2.cuerpo).not.toBe(p1.cuerpo);
     expect(idsBotones(p2)).toEqual(['equipo']);
     const p3 = j.texto('y los precios?').aMi[0]!;
-    expect(p3.cuerpo).toMatch(/Ya te compartí el detalle de los planes/);
+    expect(p3.cuerpo).toMatch(/^En resumen 😊: Setup estándar USD 65, Setup a medida desde USD 125, planes mensuales desde USD 25\. ¿Te gustaría hablar con alguien de nuestro equipo/);
     expect(encabezadoDe(p3)).toBeUndefined();
+    expect(p3.cuerpo.length).toBeLessThan(260); // una línea de precios, sin repetir la imagen
     expect(new Set([p1.cuerpo, p2.cuerpo, p3.cuerpo]).size).toBe(3);
   });
   it('R6: si el modelo calca su mensaje anterior, se rechaza (`repite`) y el cliente recibe otro texto', () => {
@@ -2053,5 +2058,93 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     j.boton('planes');
     j.boton('equipo');
     expect(w.turnos.every((t) => t.aMi.length <= 1)).toBe(true);
+  });
+  it('hotfix 09/10 (R4): la secuencia EXACTA de A1 con respuestas LARGAS del modelo: el pedido del nombre acompaña a la primera respuesta aunque no quepa; «Ver planes» nunca muestra planes antes del pedido', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j.lista('rubro:belleza');
+    // el pitch del modelo ocupa casi todo el mensaje: el pedido va igual (se quita su pregunta final y, si hace falta, se usa la versión corta)
+    const LARGO = PITCH + ' ' + 'NovuChat se adapta a cómo trabajas hoy y no te obliga a cambiar nada de tu forma de atender a tus clientas en el salón. '.repeat(3);
+    expect(LARGO.length).toBeGreaterThan(850);
+    w.modelo.con = dice(LARGO.slice(0, 980).replace(/\s+\S*$/, '') + ' ¿De qué rubro es tu negocio? 🤝');
+    const t3 = j.texto('Pero explícame mejor');
+    expect(t3.aMi).toHaveLength(1);
+    expect(t3.aMi[0]!.cuerpo).toMatch(/¿(me cuentas )?cómo te llamas y cómo se llama tu (negocio|empresa)\?/);
+    expect(t3.aMi[0]!.cuerpo.length).toBeLessThanOrEqual(1000);
+    expect(fichaDe(w, MAMA)!['nombrePedido']).toBe(true);
+    // una sola vez
+    w.modelo.con = dice(INVENTA);
+    const t4 = j.texto('Sería cobros con qr');
+    expect(t4.aMi[0]!.cuerpo).not.toMatch(/cómo te llamas|cómo se llama/);
+    // el orden: el pedido ya salió, así que «Ver planes» los muestra
+    expect(encabezadoDe(j.boton('planes').aMi[0]!)).toBeDefined();
+    // el mismo recorrido sin que el pedido haya salido por cualquier motivo: «Ver planes» NO muestra los planes y pide el nombre primero
+    const w2 = crear();
+    const j2 = jugar(w2, MAMA);
+    j2.texto('Hola');
+    w2.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+    j2.lista('rubro:belleza');
+    const ficha = fichaDe(w2, MAMA)!;
+    ficha['explicado'] = false; // (por cualquier motivo la bandera de la explicación no quedó)
+    const p = j2.boton('planes');
+    expect(encabezadoDe(p.aMi[0]!)).toBeUndefined();
+    expect(p.aMi[0]!.cuerpo).toMatch(/Para mostrarte los planes que mejor te sirvan/);
+    expect(encabezadoDe(j2.texto('después te cuento').aMi[0]!)).toBeDefined();
+  });
+  it('hotfix 09/10 (R4): el pedido acompaña a la primera respuesta en CUALQUIER contexto (pitch, dolor, pregunta, no documentado, empresa, cortesía) y solo en la primera', () => {
+    const casos: [string, string, J][] = [
+      ['Dame mas info sobre la empresa', 'NovuChat es un asistente de WhatsApp con inteligencia artificial para negocios de Bolivia: atiende a tus clientes las 24 horas, agenda citas, toma pedidos y cobra por QR, y tú lo controlas desde tu celular. ' + CIERRE_RUBRO, {}],
+      ['Uff sí, todo el día pegada al celular', 'Te entiendo perfecto 😅 Cuando estás todo el día pegada al celular, agendar y recordar citas a mano te quita tiempo, y NovuChat lo hace por ti las 24 horas. ' + CIERRE_RUBRO, {}],
+      ['Sería cobros con qr', INVENTA, {}],
+      ['Gracias', 'Con gusto 😊 Aquí estoy para lo que necesites.', {}],
+    ];
+    for (const [dijo, modelo] of casos) {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.texto('Hola');
+      w.modelo.con = dice(BELLEZA, { rubro: 'belleza' });
+      j.lista('rubro:belleza');
+      w.modelo.con = dice(modelo);
+      const t = j.texto(dijo);
+      expect(t.aMi[0]!.cuerpo, dijo).toMatch(/¿(me cuentas )?cómo te llamas y cómo se llama tu (negocio|empresa)\?/);
+      expect(fichaDe(w, MAMA)!['nombrePedido'], dijo).toBe(true);
+      const t2 = j.texto('Cuéntame cómo funciona el agendamiento con Google Calendar para mi consultorio');
+      expect(t2.aMi[0]!.cuerpo, dijo).not.toMatch(/cómo te llamas y cómo se llama/);
+    }
+  });
+  it('hotfix 09/10: «¿Atienden también los fines de semana?», «¿responde de noche?», «¿funciona en feriados?» se contestan con el dato documentado (24 horas, todos los días), sin modelo y sin el «no te entendí»', () => {
+    for (const q of ['¿Atienden también los fines de semana?', '¿responde de noche?', '¿funciona en feriados?', '¿Atienden a cualquier hora?', '¿Y los domingos responden?']) {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.texto('Hola');
+      w.modelo.con = 'ERROR';
+      const t = j.texto(q);
+      expect(w.modelo.llamadas, q).toHaveLength(0);
+      expect(t.aMi[0]!.cuerpo, q).toMatch(/Sí: NovuChat atiende las 24 horas, todos los días, incluso fuera de tu horario/);
+      expect(t.aMi[0]!.cuerpo, q).not.toMatch(/No estoy seguro de haberte entendido/);
+    }
+    // el horario del PROPIO negocio del cliente no es esta pregunta
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    expect(j.texto('Mi consultorio atiende los sábados y domingos').aMi[0]!.cuerpo).not.toMatch(/Sí: NovuChat atiende/);
+  });
+  it('hotfix 09/10: si el modelo habla de «los 7 días de la semana» la guardia de cifras no lo manda al «no te entendí»; y si igual se rechaza, el respaldo de una pregunta comprensible es «ese dato lo revisa el equipo»', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    const OK = 'Sí, el asistente responde los 7 días de la semana, incluidos fines de semana y feriados, así que tus clientes siempre reciben una respuesta en segundos, de día y de noche. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+    w.modelo.con = dice(OK);
+    const t = j.texto('Y si un cliente escribe un domingo a las tres de la mañana, ¿qué pasa?');
+    expect(t.aMi[0]!.cuerpo).toBe(OK);
+    expect(w.modelo.reintentos).toHaveLength(0);
+    // rechazado dos veces (promete algo): ya no cae en «No estoy seguro de haberte entendido»
+    w.modelo.con = dice('Te llamo yo mañana para contarte todo con calma y sin apuro, porque tu pregunta es muy interesante. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝');
+    const t2 = j.texto('Cuéntame cómo se maneja la agenda cuando hay varios especialistas en el mismo salón');
+    expect(t2.aMi[0]!.cuerpo).toMatch(/Ese dato no lo tengo a la mano/);
+    expect(t2.aMi[0]!.cuerpo).not.toMatch(/No estoy seguro de haberte entendido/);
   });
 });

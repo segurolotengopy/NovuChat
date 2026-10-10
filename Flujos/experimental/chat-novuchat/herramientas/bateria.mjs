@@ -681,7 +681,7 @@ export function revisarMensaje(m, ctx = {}) {
   // El complemento de los planes (R6) trae a propósito la moneda, los tamaños de agendas y de catálogo y las categorías «ERP, CRM»: solo se le exige no dar cifras de conversaciones ni de consumo.
   const esComplemento = m.evento === 'planes_complemento';
   // Ningún dígito salvo «24/7», «24 horas» y las cifras del mensaje de planes que arma el código (65, 125 y 25 de la consola de ejemplo).
-  if (!esComplemento && /\d/.test(c.replace(ENLACE, ' ').replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ').replace(/USD (65|125|25)\b/g, ' '))) anota('digitos_de_mas');
+  if (!esComplemento && /\d/.test(c.replace(ENLACE, ' ').replace(/\b(?:los\s+)?7\s+d[ií]as(?:\s+(?:de|a)\s+la\s+semana)?\b(?!\s+(?:de\s+prueba|gratis|gratuit\w*|libres?|sin\s+costo|de\s+garant\w*|extra))/gi, ' ').replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' ').replace(/USD (65|125|25)\b/g, ' '))) anota('digitos_de_mas');
   if (esComplemento ? /\d+\s+(conversaciones?|mensajes?|interacciones?|respuestas?|chats?)\b|ilimitad|gratis/.test(n) : lib.CH_CIFRA_DE_CONSUMO.test(n)) anota('cifra_de_consumo');
   if (VALIDA_CON_EL_BANCO.test(n) || lib.CH_ACREDITA_MODELO.test(n.replace(/\bno lo valida con el banco\b/g, ' ').replace(/\bquien confirma que el dinero entro es\b[^.!?]*/g, ' '))) anota('valida_pagos_con_el_banco');
   if (!esComplemento && lib.CH_SISTEMA_CONOCIDO.test(n)) anota('sistema_ajeno_o_integracion_inventada');
