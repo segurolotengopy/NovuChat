@@ -388,6 +388,19 @@ describe('2. pestañas: el registro contra web/src/central/lib/flujos.ts y App.t
     }
   });
 
+  it('`rolesConModulo` tiene una forma válida en todo el registro', () => {
+    for (const m of MANIFIESTOS) for (const p of m.pestanas) {
+      const r = p.rolesConModulo;
+      if (r === undefined) continue;
+      const donde = `${m.modulo}/${p.ruta}`;
+      expect(IDS_MODULOS as readonly string[], `${donde}: módulo desconocido`).toContain(r.modulo);
+      expect(r.modulo, `${donde}: se nombra a sí mismo`).not.toBe(m.modulo);
+      expect(new Set(r.roles).size, `${donde}: roles repetidos`).toBe(r.roles.length);
+      expect(r.roles.length, `${donde}: sin roles`).toBeGreaterThan(0);
+      for (const rol of r.roles) expect(p.roles as readonly string[], `${donde}: ${rol} ya está en roles`).not.toContain(rol);
+    }
+  });
+
   it('«Cobros» la ve el operador SOLO con el módulo «pedidos» (decisión de Andres, 09/10/2026)', () => {
     const rolesDe = (modulos: IdModulo[], ruta: string) => pestanasDe(modulos).find((p) => p.ruta === ruta)?.roles;
     expect(manifiestoDe('cobros').pestanas.find((p) => p.ruta === 'cobros')?.rolesConModulo)
