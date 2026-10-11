@@ -1983,4 +1983,44 @@ describe('pagos por QR: nadie «cobra» salvo el negocio; los clientes PAGAN', (
     expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].abierta.pitch + '\n\n' + NOVUCHAT['respaldos'].abierta.cierreSinRubro, v({ contexto: 'abierta' }))).toBe('');
     expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].empresa, v({ contexto: 'empresa' }))).toBe('');
   });
+
+  it('rediseño: la excepción quita SOLO la cláusula legítima del final de la oración; el sujeto→verbo vuelve a la ventana de main (sin cortar en coma, emoji, ¿ ¡ : ;)', () => {
+    const seis = [{ rubroActual: 'gastronomia' }, { rubroActual: 'retail' }, { rubroActual: 'otro' }, {}, { contexto: 'abierta' }, { contexto: 'empresa' }];
+    const mal = ['Kenji cobra la mensualidad de tus socios.', 'Tu asistente cobra la cuota de tus alumnos cada mes.', 'Kenji cobra la suscripción de tus miembros.', 'Kenji cobra tu plan y también a tus comensales.', 'Kenji cobra la cuota; y el consumo de cada mesa.',
+      'Kenji les cobra la cuota a tus comensales.', 'Kenji cobra la instalación a tus compradores.', 'Kenji, tu asistente, cobra cada mesa al instante.', 'Kenji 🤖 cobra el consumo de cada mesa.', 'Kenji se encarga, además, de cobrar el consumo de cada mesa.',
+      'El asistente de NovuChat, Kenji, cobra el consumo de cada mesa.', 'NovuChat: cobra el consumo de cada mesa.', 'Kenji, además, cobra el consumo de cada mesa.', 'Con NovuChat, cobra el consumo de cada mesa.', '¿Kenji cobra cada mesa?', '¡Kenji cobra cada mesa!',
+      'Kenji; cobra cada mesa.', 'Tu asistente, que atiende, cobra cada mesa.'];
+    for (const x of mal) for (const extra of seis) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('sujeto_del_pago');
+    for (const antes of ['Kenji cobra la mensualidad de tus socios 🍔', 'Kenji cobra la cuota,', 'Tu asistente cobra el plan de tus alumnos']) for (const extra of seis) expect(f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + antes + ' ' + CIERRE_RUBRO, v(extra)), `${antes} ${JSON.stringify(extra)}`).toBe('sujeto_del_pago');
+    // las legítimas, en los mismos seis contextos, no caen por el sujeto
+    for (const x of ['Te cobramos la instalación.', 'NovuChat cobra una instalación única.', 'Te cobra la suscripción cada mes.', 'Te cobramos una cuota mensual.', 'Te cobramos el plan Impulso.', 'Kenji te cobra la mensualidad.', 'Tu asistente cobra el plan Pro cada mes.']) for (const extra of seis) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).not.toBe('sujeto_del_pago');
+    // al FINAL del mensaje, sin puntuación, también es la cláusula legítima
+    for (const x of ['Te cobra la suscripción cada mes', 'Te cobramos una cuota mensual', 'NovuChat cobra el plan Impulso']) expect(f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x, v()), x).not.toBe('sujeto_del_pago');
+    expect(marco('Tu asistente no cobra comisión por venta.')).toBe('oferta');
+    expect(marco('Kenji te cuenta cuánto cobra Meta.')).not.toBe('sujeto_del_pago');
+  });
+  // Copia CONGELADA del `CH_COBRO_MAL` de main (antes de este rediseño). Todo lo que bloquea, tiene que seguir bloqueado por `sujeto_del_pago`, salvo la lista permitida.
+  const COBRO_MAL_MAIN = /\bcobr(?:a|an|as|o|amos|ar|ando|aran|ara)\s+(?:con|por|mediante|a traves de|via)\s+(?:el |tu |su |un )?(?:codigo )?qr\b|\bcobros?\s+(?:con|por|mediante|a traves de|via)\s+(?:el |tu |su )?(?:codigo )?qr\b|\b(?:realiza\w*|hace\w*|haces|hacemos|efectua\w*)\s+(?:el |los |tu |su )?cobros?\b|\bte cobra\w*|\b(?:tus |los |sus |mis |el |tu |su |mi )?clientes?(?:\s+finales)?\s+cobr(?:a|an|o|as|amos|ar|aran|ara|ando)\b|\b(?:novuchat|kenji|(?:tu|el|este) asistente|la ia|el bot)\b[^.!?]{0,30}\bcobr(?:a|an|ar|o|as)\b/;
+  const normMain = (t: string): string => t.normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  it('DIFERENCIAL: todo lo que bloqueaba main sigue bloqueado por `sujeto_del_pago`, salvo la cláusula legítima completa al final de la oración', () => {
+    const sujetos = ['Kenji', 'NovuChat', 'Nosotros', 'Tu asistente', 'El asistente', 'Este asistente', 'La IA', 'El bot', 'Kenji,', 'Kenji 🤖', '¿Kenji', '¡Kenji', 'NovuChat:', 'Kenji;', 'El asistente de NovuChat, Kenji,', 'Kenji, tu asistente,', 'Te', 'Tus clientes', 'El cliente final'];
+    const verbos = ['cobra', 'cobran', 'cobramos', 'cobrar', 'cobras', 'cobro', 'cobrará', 'realiza el cobro', 'hace el cobro', 'te cobra', 'cobra con', 'cobra por'];
+    const propios = ['la instalación', 'la mensualidad', 'el setup', 'el plan Pro', 'una cuota mensual', 'la suscripción', 'la configuración inicial', 'tu plan cada mes'];
+    const terceros = ['la mensualidad de tus socios', 'la cuota de tus alumnos', 'el consumo de cada mesa', 'tu plan y también a tus comensales', 'a tus clientes', 'QR', 'el QR', 'cada pedido', 'la instalación a tus compradores', 'la cuota; y el consumo de cada mesa', 'cada mesa al instante', 'a tus clientes la cuota', 'el pedido por WhatsApp'];
+    // la lista permitida, escrita aparte: «te cobra» o sujeto propio + «cobrar», objeto propio y NADA más
+    const permitida = (s: string, vbConTilde: string, o: string): boolean => { const vb = normMain(vbConTilde); return propios.includes(o) && (/^te cobr\w*$/i.test(vb) || (/^(?:te|kenji|novuchat|nosotros|tu asistente|el asistente|este asistente)$/i.test(s.replace(/^[¿¡]/, '')) && /^cobr\w*$/i.test(vb))); };
+    let bloqueadasPorMain = 0;
+    const fugas: string[] = [];
+    for (const s of sujetos) for (const vb of verbos) for (const o of [...propios, ...terceros]) {
+      const frase = `${s} ${vb} ${o}.`;
+      const n = normMain(frase);
+      if (!COBRO_MAL_MAIN.test(n)) continue;
+      bloqueadasPorMain += 1;
+      if (marco(frase) !== 'sujeto_del_pago' && !permitida(s, vb, o)) fugas.push(frase);
+    }
+    expect(bloqueadasPorMain).toBeGreaterThan(300);
+    expect(fugas).toEqual([]);
+    // y las de tercero NUNCA se escapan, con ninguno de los sujetos de la lista que main ya cubría
+    for (const s of sujetos.slice(0, 16)) for (const o of terceros) for (const sep of [' ', ', ', ' 🤖 ', ': ', '; ', ', además, ']) { const frase = `${s}${sep}cobra ${o}.`; if (COBRO_MAL_MAIN.test(normMain(frase))) expect(marco(frase), frase).toBe('sujeto_del_pago'); }
+  });
 });
