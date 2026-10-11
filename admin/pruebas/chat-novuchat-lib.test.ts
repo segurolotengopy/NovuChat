@@ -75,8 +75,8 @@ describe('la biblioteca es autosuficiente y pura', () => {
     expect(d.filter((n) => !/^(ch[A-Z]|CH_)/.test(n))).toEqual([]);
     expect(sinComentarios).not.toMatch(/\bcc[A-Z]\w*\(|\bCC_[A-Z]/);
   });
-  it('mide menos de 1.800 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
-    expect(LIB.split('\n').length).toBeLessThan(1800); // 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
+  it('mide menos de 1.850 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
+    expect(LIB.split('\n').length).toBeLessThan(1850); // (tope autoimpuesto; 1.800 hasta el 11/10) 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
     expect(sinComentarios).not.toMatch(/\brot\b|\bfijas\b|\bofertas\b|\bsueltas\b|\brepetidas\b|chVariante|chRotBase|CH_ROT_|CH_PASOS|chCampana|chPresentacion|chRetomar|ccPideLista/);
   });
   it('ningún nombre de persona del equipo en lo que se arma para el cliente (el patrón del filtro sí los nombra, para rechazarlos)', () => {
@@ -420,10 +420,41 @@ describe('chDecidir: lo que resuelve el CÓDIGO y lo que cae en el modelo', () =
     expect(decidir([ev('ya soy cliente, necesito soporte')]).soporte).toBe(true);
   });
   it('un saludo inicial recibe la lista SOLO si es el primer mensaje; «Quiero más información» y todo lo demás van al modelo', () => {
-    for (const t of ['Hola', 'Buenas tardes', 'Hola, me das información.', 'hola que tal', 'buenos dias info']) expect(decidir([ev(t)]).ruta, t).toBe('lista');
-    for (const t of ['Quiero más información', 'Hola quiero precios'.replace('quiero precios', 'tengo una clínica'), '?', 'Y?', 'cuéntame un chiste', 'tengo un restaurante']) expect(decidir([ev(t)]).ruta, t).toBe('modelo');
+    for (const t of ['Hola', 'Buenas tardes', 'Hola, me das información.', 'hola que tal', 'buenos dias info']) { expect(decidir([ev(t)]).ruta, t).toBe('lista'); expect(decidir([ev(t)]).pitch, t).toBeUndefined(); }
+    for (const t of ['Hola quiero precios'.replace('quiero precios', 'tengo una clínica'), 'cuéntame un chiste', 'tengo un restaurante', 'Quiero más información para mi clínica', 'quiero más información sobre el plan Pro']) expect(decidir([ev(t)]).ruta, t).toBe('modelo');
     const conHistorial = { ...fichaBase(), historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: 'lista' }] };
     expect(decidir([ev('Hola')], conHistorial).ruta).toBe('modelo');
+  });
+  it('«Quiero más información» como PRIMER mensaje (el texto del anuncio): la lista con el pitch fijo dentro, sin modelo; con historial, rubro o más palabras, el modelo de siempre', () => {
+    for (const t of ['¡Hola! Quiero más información', 'Quiero más información', 'quiero más info', 'Más información por favor', 'detalles', 'Detalles', 'cómo funciona', 'Hola, quiero más información', 'Quiero mas informació', 'Y?', '?', 'quiero saber más', 'cuéntame más']) {
+      const p = decidir([ev(t)]);
+      expect(p.ruta, t).toBe('lista');
+      expect(p.pitch, t).toBe(true);
+      expect(p.contexto, t).toBe('');
+    }
+    // una ráfaga de dos textos abiertos: una sola decisión de lista; con un saludo en medio también
+    expect(decidir([ev('Hola'), ev('Quiero más información')]).pitch).toBe(true);
+    expect(decidir([ev('Quiero más información'), ev('detalles')]).pitch).toBe(true);
+    // con historial (no es el primer contacto) o con rubro conocido: el modelo, como antes
+    const conHistorial = { ...fichaBase(), historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: 'lista' }] };
+    for (const t of ['Quiero más información', 'Y?', '?']) expect(decidir([ev(t)], conHistorial).ruta, t).toBe('modelo');
+    expect(decidir([ev('Quiero más información')], { ...fichaBase(), rubro: 'salud' }).ruta).toBe('modelo');
+    // un clic de lista o un audio no son un texto abierto
+    expect(decidir([toque('rubro:salud')]).pitch).toBeUndefined();
+    // el cuerpo de la lista: el pitch fijo del dato + la pregunta, dentro del límite de WhatsApp (1.024), con las siete filas y sin botones de planes ni equipo
+    const m = f('chLista')(CFG, true);
+    const cuerpo = String(m.payload.interactive.body.text);
+    expect(cuerpo).toMatch(/el primer empleado de tu negocio que nunca duerme/);
+    expect(cuerpo.split('\n').filter((l: string) => /^\p{Extended_Pictographic}/u.test(l))).toHaveLength(4); // las cuatro viñetas del pitch
+    expect(cuerpo.trimEnd()).toMatch(/¿de qué rubro es\? 👇$/);
+    expect(cuerpo.length).toBeLessThanOrEqual(1024);
+    expect(m.payload.interactive.type).toBe('list');
+    expect(m.payload.interactive.action.sections[0].rows).toHaveLength(7);
+    expect(JSON.stringify(m.payload)).not.toMatch(/"id":"(planes|equipo)"/);
+    // el texto fijo pasa el validador del modelo con las mismas redes (contexto abierta: pitch, sin «cobra», sin cifras de más)
+    expect(f('chValidarMensaje')(cuerpo, { cfg: CFG, contexto: 'abierta', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '' })).toBe('');
+    // el saludo normal sigue igual
+    expect(String(f('chLista')(CFG).payload.interactive.body.text)).toMatch(/Soy Kenji, el asistente virtual de NovuChat, con inteligencia artificial/);
   });
   it('el contexto del modelo: rubro, multiple, otro, abierta, datos, identidad, cortesia, fuera, ambiguo, medio, otroRespuesta, general', () => {
     const t = (k: string): J => toque('rubro:' + k);
@@ -1958,6 +1989,38 @@ describe('pagos por QR: nadie «cobra» salvo el negocio; los clientes PAGAN', (
 });
 
 // ================================================================================================
+// El «Sí» corto que acepta una oferta: lo reconoce el código.
+describe('chAfirma y el pedido directo de hablar con el equipo', () => {
+  it('chAfirma: «sí» y compañía, con signos, tildes, mayúsculas, emojis y alargadas; no una pregunta, una negativa ni un «sí, pero…»', () => {
+    for (const x of ['Sí', 'si', 'SII', 'Siiiii', '¡Sí!', 'Sí.', 'claro', 'Claro que sí', 'OK', 'okey', 'dale', 'De acuerdo', 'por favor', 'Sí, por favor', 'sí quiero', 'me gustaría', 'me interesa', 'bueno', 'perfecto', 'listo', 'ya', 'buena idea', 'está bien', 'adelante', 'hagámoslo', 'vamos', '👍', 'Sí 👍🏽', 'sip']) expect(f('chAfirma')(x), x).toBe(true);
+    for (const x of ['no', 'No gracias', 'sí, pero cuánto cuesta', '¿Sí?', 'sí pero primero quiero saber qué incluye', 'quizás', 'hola', 'gracias', '', '   ', 'no sé', 'claro que no', 'cuánto cuesta']) expect(f('chAfirma')(x), x).toBe(false);
+  });
+  it('el pedido directo (aun dentro de un mensaje largo) se reconoce; «alguien de mi equipo» y contar un problema, no', () => {
+    const re = K('CH_PIDE_EQUIPO_DIRECTO') as RegExp;
+    const n = f('chNorm');
+    for (const x of ['Quiero hablar con alguien', 'quiero hablar con un asesor', 'quiero hablar con el equipo', 'Pásame con un asesor', 'Pásame con ventas', 'Comunícame con alguien', 'Mándenme un asesor', 'hablar con ventas', 'Hola, quiero hablar con alguien del equipo', 'Necesito hablar con una persona por favor']) expect(re.test(n(x)), x).toBe(true);
+    for (const x of ['Quiero hablar con alguien de mi equipo antes de decidir', 'Mis clientes quieren hablar con una persona', 'Hola', 'cuánto cuesta']) expect(re.test(n(x)), x).toBe(false);
+  });
+});
+
+describe('«Recuerda que soy un asistente virtual con IA» no se cuela en las respuestas ordinarias', () => {
+  const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: true, permitidas: ['65', '125', '25', '50', '90'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
+  const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('El setup de USD 65 incluye la configuración llave en mano y la conexión de tu número a WhatsApp. ' + x + ' ' + CIERRE_PRECIOS, v(extra));
+  it('rechazada (`ia_repetida`) en una respuesta de precios, rubros, general y empresa; en `identidad` pasa', () => {
+    for (const x of ['Recuerda que soy un asistente virtual con inteligencia artificial.', 'Te recuerdo que soy un asistente virtual con IA.', 'Ten en cuenta que soy un asistente virtual con inteligencia artificial.', 'Te aclaro que soy un asistente con inteligencia artificial.']) {
+      for (const extra of [{}, { rubroActual: 'retail' }, { rubroActual: 'gastronomia' }, { contexto: 'empresa' }, { contexto: 'rubro', rubroId: 'retail' }, { contexto: 'otro' }]) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('ia_repetida');
+      expect(marco(x, { contexto: 'identidad' }), x).not.toBe('ia_repetida');
+    }
+    expect(f('chInstrucciones')(CFG)).toMatch(/nunca lo recuerdes por tu cuenta en una respuesta/);
+    expect(String((L as unknown as J)['CH_CAUSAS'].ia_repetida)).toMatch(/solo se dice si el cliente lo pregunta/);
+  });
+  it('lo legítimo no cae: decirlo cuando lo preguntan (contexto general con «soy un asistente virtual») y los hechos de la empresa', () => {
+    expect(marco('Soy un asistente virtual con inteligencia artificial.')).toBe('');
+    expect(marco('Es un solo pago de USD 65 por única vez.')).toBe('');
+    expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].empresa, v({ contexto: 'empresa' }))).toBe('');
+  });
+});
+
 // Respaldo de Meta: NovuChat no es «Tech Provider certificado» (su verificación sigue en revisión) y las políticas de publicidad de Meta prohíben insinuar que Meta respalda al anunciante.
 describe('respaldo de Meta: el modelo no afirma que NovuChat es Tech Provider, está certificado ni cuenta con el respaldo de Meta', () => {
   const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
@@ -2041,5 +2104,49 @@ describe('respaldo de Meta: el modelo no afirma que NovuChat es Tech Provider, e
     for (const x of textos) for (const extra of seis) expect(f('chValidarMensaje')(envolver(x), v(extra)), x).not.toBe('respaldo_meta');
     // lo que se le entrega al cliente nunca lleva la afirmación
     expect(textos.filter((x) => f('chValidarMensaje')(envolver(x), v()) === 'respaldo_meta')).toEqual([]);
+  });
+});
+
+describe('el pedido directo de hablar con el equipo: sin negaciones, terceros ni «ventas» a secas', () => {
+  it('chPideEquipoDirecto: no deriva con negaciones, terceros, «alguien de confianza», «el equipo de mi tienda» ni «ventas» suelto; sí con los pedidos claros', () => {
+    const pide = f('chPideEquipoDirecto');
+    for (const x of ['no quiero hablar con un asesor, solo dime el precio', 'todavía no quiero hablar con un asesor', 'no quiero hablar con un vendedor, solo info', 'no puedo hablar con alguien ahora, estoy manejando', 'mis clientes podrían hablar con una persona?', 'necesito que mis clientes puedan hablar con un asesor',
+      'quiero conversar con el equipo de mi tienda primero', 'necesito hablarlo con alguien en casa', 'quiero hablar con alguien de confianza antes de decidir', 'ventas', 'Ventas', 'alguien de mi equipo', 'mi socio quiere hablar con alguien', 'no necesito hablar con nadie', 'nunca quiero hablar con un asesor', 'tampoco quiero hablar con una persona', 'aún no quiero hablar con el equipo']) expect(pide(x), x).toBe(false);
+    for (const x of ['quiero hablar con alguien', 'Quiero hablar con un asesor', 'quiero hablar con una persona', 'quiero hablar con el equipo', 'pásame con un asesor', 'Pásame con ventas', 'comunícame con el equipo', 'comunícame con alguien', 'mándenme un asesor', 'hablar con ventas', 'quiero hablar con el área de ventas', 'contacto', 'Hola, quiero hablar con alguien del equipo', 'necesito hablar con una persona por favor', 'puedo hablar con un asesor?']) expect(pide(x), x).toBe(true);
+  });
+  it('chAfirma: ni un agradecimiento ni «🙏» solos son aceptación; «listo», «ok» y «perfecto» sí (si la oferta fue una pregunta)', () => {
+    for (const x of ['gracias', 'ok gracias', 'perfecto gracias', 'listo gracias', '🙏', 'muchas gracias', 'chau']) expect(f('chAfirma')(x), x).toBe(false);
+    for (const x of ['listo', 'ok', 'perfecto', 'dale', '👍', 'sí']) expect(f('chAfirma')(x), x).toBe(true);
+  });
+  it('chPreguntaFinal: lo que ofrece un mensaje es su pregunta final, no una mención suelta', () => {
+    const q = f('chPreguntaFinal');
+    expect(q('Cuando quieras, puedes ver nuestros planes o hablar con alguien de nuestro equipo con los botones de abajo.')).toBe('');
+    expect(q('Si algún día lo necesitas, puedes hablar con el equipo desde el botón. ¿Qué día atiendes más?')).not.toMatch(/equipo/);
+    expect(q('Te cuento todo. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝')).toMatch(/hablar con alguien de nuestro equipo/);
+  });
+});
+
+describe('la regla del «Sí» es robusta: la oferta se lee aunque se pegue el pedido del nombre, falte el «¿», haya dos preguntas, enlaces o cola', () => {
+  const q = f('chPreguntaFinal');
+  it('chPreguntaFinal: ignora el pedido del nombre pegado, lo que sigue al «?», los enlaces, y entiende «?» sin «¿» y la oferta doble en dos preguntas', () => {
+    const OF = '¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝';
+    expect(q('Te cuento todo. ' + OF + '\n\nPor cierto, para dejarlo anotado, ¿cómo te llamas y cómo se llama tu negocio? 😊')).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(q(OF + ' ¿Cómo te llamas y cómo se llama tu negocio?')).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(q('Tienes más en www.novuchat.site/precios?x=1. ' + OF)).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(q(OF + ' Mira https://novuchat.site/a?b=1 para ver más.')).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(q('Te cuento todo. Te gustaría hablar con alguien de nuestro equipo para verlo juntos? 🤝')).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(q('¿Te gustaría hablar con alguien de nuestro equipo? ¿O prefieres ver nuestros planes primero?')).toMatch(/hablar con alguien de nuestro equipo.*ver nuestros planes/);
+    expect(q('Responde en segundos. ¿Qué día atiendes más? Y cuando quieras, puedes ver nuestros planes o hablar con alguien de nuestro equipo con los botones de abajo.')).not.toMatch(/equipo|planes/);
+    expect(q('Cuando quieras, puedes hablar con alguien de nuestro equipo con los botones.')).toBe('');
+    expect(q('¿Cómo te llamas y cómo se llama tu negocio?')).toBe('');
+  });
+  it('chAfirma: «Sí, gracias», «claro, gracias», «sí por favor, gracias» y «dale gracias» aceptan; «ok gracias», «listo gracias» y «gracias» solos, no', () => {
+    for (const x of ['Sí, gracias', 'claro, gracias', 'sí por favor, gracias', 'dale gracias', 'Sí gracias!']) expect(f('chAfirma')(x), x).toBe(true);
+    for (const x of ['ok gracias', 'listo gracias', 'gracias', 'perfecto gracias', 'muchas gracias', 'chau']) expect(f('chAfirma')(x), x).toBe(false);
+  });
+  it('chPideEquipoDirecto por cláusula: la negación y los terceros valen solo dentro de su cláusula', () => {
+    const pide = f('chPideEquipoDirecto');
+    for (const x of ['No, quiero hablar con alguien', 'No. Quiero hablar con un asesor', 'Ya no quiero más info, quiero hablar con alguien', 'mis clientes se quejan, quiero hablar con un asesor', 'Planes no, quiero hablar con el equipo', 'no gracias; quiero hablar con una persona']) expect(pide(x), x).toBe(true);
+    for (const x of ['no quiero hablar con un asesor, solo dime el precio', 'todavía no quiero hablar con un asesor', 'mis clientes podrían hablar con una persona?', 'no, mis clientes quieren hablar con un asesor']) expect(pide(x), x).toBe(false);
   });
 });

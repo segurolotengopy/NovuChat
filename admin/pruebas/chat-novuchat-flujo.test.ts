@@ -419,24 +419,57 @@ function rafaga(entradas: J[], from: string, preparar?: (w: W) => void, avanceMs
 }
 
 describe('capturas de Silvana (07/10): el chat sigue la charla', () => {
-  it('«Quiero mas informació» recibe el pitch del documento (§8): «el primer empleado… que nunca duerme», las 4 viñetas y una pregunta; con los dos botones', () => {
-    const w = crear();
-    w.modelo.con = dice(PITCH);
-    const t = jugar(w, MAMA).texto('Quiero mas informació');
-    expect(t.aMi).toHaveLength(1);
-    const e = t.aMi[0]!;
-    expect(e.cuerpo).toMatch(/el primer empleado de tu negocio que nunca duerme/);
-    expect(e.cuerpo.split('\n').filter((l) => /^\p{Extended_Pictographic}/u.test(l))).toHaveLength(4);
-    expect(e.cuerpo.trimEnd()).toMatch(/\?\s*$/);
-    expect(idsBotones(e)).toEqual(['planes', 'equipo']);
-    expect(w.modelo.llamadas).toHaveLength(1);
-    expect(w.modelo.reintentos).toHaveLength(0);
+  it('«¡Hola! Quiero más información» (el texto del anuncio) como PRIMER mensaje: UN mensaje de lista con el pitch del documento (§8) y la pregunta del rubro, sin botones y sin llamar al modelo; al elegir el rubro, la explicación con los dos botones', () => {
+    for (const abre of ['¡Hola! Quiero más información', 'Quiero mas informació', 'quiero más info', 'Más información por favor', 'detalles', 'cómo funciona', 'Hola, quiero más información']) {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      const t = j.texto(abre);
+      expect(t.aMi, abre).toHaveLength(1);
+      const e = t.aMi[0]!;
+      expect(tipoInter(e), abre).toBe('list');
+      expect(e.cuerpo).toMatch(/el primer empleado de tu negocio que nunca duerme/);
+      expect(e.cuerpo.split('\n').filter((l) => /^\p{Extended_Pictographic}/u.test(l))).toHaveLength(4);
+      expect(e.cuerpo.trimEnd()).toMatch(/¿de qué rubro es\? 👇$/);
+      expect(e.cuerpo.length).toBeLessThanOrEqual(1024);
+      expect(idsBotones(e)).toEqual([]);
+      expect(filasDe(e).map((x) => x['id'])).toEqual(['rubro:salud', 'rubro:belleza', 'rubro:gastronomia', 'rubro:retail', 'rubro:educacion', 'rubro:captacion', 'rubro:otro']);
+      expect(w.modelo.llamadas, abre).toHaveLength(0);
+      const f = fichaDe(w, MAMA)!;
+      expect(f.rubro, 'el pitch no cuenta como rubro').toBe('');
+      expect(f.historial.map((h) => h.r)).toEqual(['u', 'a']);
+      expect(f.historial[1]!.t).toMatch(/nunca duerme/);
+      // elegir el rubro: la explicación del rubro con los dos botones, como siempre
+      w.modelo.con = dice(EXPLICA_GASTRO, { rubro: 'gastronomia' });
+      const t2 = j.lista('rubro:gastronomia');
+      expect(idsBotones(t2.aMi[0]!)).toEqual(['planes', 'equipo']);
+      expect(fichaDe(w, MAMA)!.rubro).toBe('gastronomia');
+    }
+  });
+  it('«Hola» sigue con su lista de saludo; «Quiero más información» con historial sigue al modelo (pitch con los dos botones); una ráfaga de dos textos abiertos da UNA lista; con un rubro mencionado va al modelo', () => {
+    const w0 = crear();
+    const e0 = jugar(w0, MAMA).texto('Hola').aMi[0]!;
+    expect(e0.cuerpo).toMatch(/Soy Kenji, el asistente virtual de NovuChat, con inteligencia artificial/);
+    expect(e0.cuerpo).not.toMatch(/nunca duerme/);
+    const w1 = crear();
+    const j1 = jugar(w1, MAMA);
+    j1.texto('Hola');
+    w1.modelo.con = dice(PITCH);
+    const t1 = j1.texto('Quiero más información');
+    expect(w1.modelo.llamadas).toHaveLength(1);
+    expect(idsBotones(t1.aMi[0]!)).toEqual(['planes', 'equipo']);
+    const w3 = crear();
+    w3.modelo.con = dice(PITCH);
+    const t3 = jugar(w3, MAMA).texto('Quiero más información para mi clínica dental');
+    expect(w3.modelo.llamadas).toHaveLength(1);
+    expect(tipoInter(t3.aMi[0]!)).not.toBe('list');
   });
 
   it('el modelo contesta una muletilla («¡Te entiendo! 😊»): se rechaza, hay UN reintento, y si falla otra vez sale el pitch fijo del documento (nunca la muletilla)', () => {
     const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
     w.modelo.con = dice('¡Te entiendo! 😊');
-    const t = jugar(w, MAMA).texto('Quiero mas informació');
+    const t = j.texto('Quiero mas informació');
     expect(w.modelo.llamadas).toHaveLength(1);
     expect(w.modelo.reintentos).toHaveLength(1);
     const e = t.aMi[0]!;
@@ -453,6 +486,7 @@ describe('capturas de Silvana (07/10): el chat sigue la charla', () => {
   it('«?» después de «Quiero mas informació» NO recibe «¡Te entiendo!»: continúa la charla (con el historial) y sigue con los dos botones', () => {
     const w = crear();
     const j = jugar(w, MAMA);
+    j.texto('Hola');
     w.modelo.con = dice(PITCH);
     j.texto('Quiero mas informació');
     // segunda vez: ya se dijo el pitch → el contexto es «ambiguo» (cierre hacia el equipo); el modelo responde con contenido
@@ -1678,12 +1712,15 @@ describe('la topología y las guardias del JSON versionado', () => {
     }
     const w = crear();
     w.modelo.con = dice(PITCH);
-    jugar(w, MAMA).texto('Y?');
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    j.texto('Y?');
     expect(w.modelo.llamadas[0]!.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
   });
   it('el pedido al modelo: responseSchema con los 7 campos del contrato, sin temperature ni topP, la systemInstruction idéntica entre turnos y sin texto del cliente', () => {
     const w = crear();
     const j = jugar(w, MAMA);
+    j.texto('Hola');
     w.modelo.con = dice(PITCH);
     j.texto('Y?');
     w.modelo.con = dice('Entiendo perfectamente, hay modelos de negocio con procesos muy particulares y por eso no usamos menús rígidos. ¿Te gustaría hablar con alguien de nuestro equipo para contar cómo funciona tu atención hoy y ver si podemos armar un flujo a medida? 🤝');
@@ -2377,5 +2414,229 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     const w4 = crear(); const j4 = jugar(w4, MAMA); j4.texto('Hola'); w4.modelo.con = 'ERROR';
     expect(j4.texto('¿Quiénes son ustedes?').aMi[0]!.cuerpo).toMatch(/toma pedidos y envía el QR de tu negocio para que tus clientes paguen, y tú lo controlas desde tu celular/);
     for (const c of [g, pitch]) expect(c).not.toMatch(/\bcobra|\bcobran|\bcobro/i);
+  });
+});
+
+// ================================================================================================
+// El «Sí» que se perdía (cliente real): el asistente ofreció hablar con el equipo, el cliente dijo «Sí» y el modelo volvió a ofrecer lo mismo. Ahora lo decide el CÓDIGO.
+describe('«Sí» a la oferta de hablar con el equipo: la deriva el código, no el modelo', () => {
+  const OFERTA = 'Con gusto te cuento cómo te ayuda NovuChat a atender a tus clientes por WhatsApp todo el día, sin que tengas que estar pegado al celular. ' + CIERRE_PRECIOS;
+  const DOBLE = 'Es un problema clásico: cuando atiendes todo el día, agendar y recordar citas a mano te quita tiempo, y NovuChat lo hace por ti las 24 horas. ¿Quieres ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+  const conOferta = (texto = OFERTA) => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:belleza');
+    w.modelo.con = dice(texto);
+    j.texto('Uff sí, todo el día estoy pegada al celular y a veces me dejan plantada.'); // (esta respuesta lleva el pedido del nombre PEGADO al final: la oferta sigue siendo la del modelo)
+    return { w, j };
+  };
+  const derivo = (w: W, t: T, llamadas: number): void => {
+    expect(w.modelo.llamadas, 'no se llamó al modelo').toHaveLength(llamadas);
+    expect(fichaDe(w, MAMA)!['historial'], 'historial').toBeTruthy();
+    expect(t.aMi).toHaveLength(1);
+    expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
+    expect(urlDe(t.aMi[0]!)).toMatch(new RegExp(`^https://wa\\.me/${REC}\\?text=`));
+    expect(t.plantillas).toHaveLength(1);
+    expect(t.plantillas[0]!.a).toBe(REC);
+    const f = fichaDe(w, MAMA)!;
+    expect(f['avisado']).toBe(true);
+    expect(f['equipoAhora']).toBe(true);
+    expect((f['hechos'] as J)['pidioEquipo']).toBe(true);
+  };
+  it('la conversación real: precios del setup → «Sí» a la oferta del equipo → UNA derivación (aviso a recepción + botón), con la ficha avisado y pidioEquipo', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.boton('planes');
+    w.modelo.con = dice('El setup de USD 65 incluye la configuración llave en mano y la conexión de tu número a WhatsApp. ' + CIERRE_PRECIOS);
+    j.texto('El de 65 incluye que?');
+    w.modelo.con = dice('El setup es un pago único de USD 65; las mensualidades se pagan cada mes. ' + CIERRE_PRECIOS);
+    j.texto('Es un solo pago de x vida?');
+    const llamadas = w.modelo.llamadas.length;
+    w.modelo.con = dice('¡Excelente decisión! 😊 ' + CIERRE_PRECIOS); // lo que el modelo contestó la vez que se perdió el cliente
+    const t = j.texto('Si');
+    derivo(w, t, llamadas);
+  });
+  it('las afirmaciones cortas (con signos, tildes, mayúsculas, emojis y alargadas) aceptan la oferta', () => {
+    for (const si of ['Sí', 'si', 'Sii', 'SÍ!!!', 'Sí.', 'claro', 'Claro que sí', 'ok', 'Okey', 'dale', 'de acuerdo', 'por favor', 'Sí, por favor', 'sí quiero', 'quiero', 'me gustaría', 'me interesa', 'bueno', 'perfecto', 'listo', 'ya', 'buena idea', 'está bien', 'adelante', 'hagámoslo', 'vamos', '👍', 'Sí 👍', 'sip']) {
+      const { w, j } = conOferta();
+      const llamadas = w.modelo.llamadas.length;
+      w.modelo.con = dice('¡Excelente decisión! 😊 ' + CIERRE_PRECIOS);
+      try { derivo(w, j.texto(si), llamadas); } catch (e) { throw new Error(`«${si}»: ${(e as Error).message}`); }
+    }
+  });
+  it('«sí, pero cuánto cuesta», una pregunta, «no» y «no gracias» NO derivan', () => {
+    for (const no of ['Sí, pero cuánto cuesta el plan Pro', 'sí, pero los fines de semana colapsamos', '¿Sí?', 'no', 'No, gracias', 'no por ahora', 'quizás luego', 'sí pero primero quiero saber qué incluye']) {
+      const { w, j } = conOferta();
+      w.modelo.con = dice('Claro, te cuento más: NovuChat responde a tus clientes por WhatsApp en segundos, a cualquier hora del día. ¿Quieres ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝');
+      const t = j.texto(no);
+      expect(t.plantillas, no).toHaveLength(0);
+      expect((fichaDe(w, MAMA)!['hechos'] as J)['pidioEquipo'], no).toBe(false);
+      expect(fichaDe(w, MAMA)!['avisado'], no).toBe(false);
+    }
+  });
+  it('la oferta doble («¿ver nuestros planes o hablar con alguien de nuestro equipo?») con un «sí»: planes si aún no los vio; el equipo si ya los vio', () => {
+    const a = conOferta(DOBLE);
+    const antes = a.w.modelo.llamadas.length;
+    const t1 = a.j.texto('Sí');
+    expect(a.w.modelo.llamadas).toHaveLength(antes);
+    expect(t1.plantillas).toHaveLength(0);
+    expect(t1.aMi[0]!.cuerpo).toContain('Setup estándar USD 65');
+    expect(fichaDe(a.w, MAMA)!['planesMostrados']).toBe(true);
+    const b = conOferta(DOBLE);
+    b.j.texto('Planes por favor.');
+    b.w.modelo.con = dice(DOBLE);
+    b.j.texto('Y para qué sirve el recordatorio de las citas en mi consultorio.');
+    const llamadas = b.w.modelo.llamadas.length;
+    derivo(b.w, b.j.texto('sí'), llamadas);
+  });
+  it('pedir hablar con alguien, con todas sus formas y aun con el pedido de nombre pendiente, deriva por código', () => {
+    for (const pide of ['Quiero hablar con alguien', 'quiero hablar con un asesor', 'Quiero hablar con una persona', 'quiero hablar con un humano', 'quiero hablar con el equipo', 'Me pueden llamar?', 'me pueden contactar', 'me pueden escribir por favor', 'Comunícame con alguien', 'Pásame con un asesor', 'Pásame con ventas', 'quiero que me contacten', 'Mándenme un asesor', 'hablar con ventas', 'Hola, quiero hablar con alguien del equipo', 'sí, quiero hablar con un asesor', 'Necesito hablar con una persona por favor']) {
+      const { w, j } = conOferta('Cuéntame un poco más de tu negocio. ' + '¿Cómo te llamas y cómo se llama tu negocio? 😊');
+      const llamadas = w.modelo.llamadas.length;
+      w.modelo.con = dice('Claro, te paso con alguien de nuestro equipo. ' + CIERRE_PRECIOS);
+      derivo(w, j.texto(pide), llamadas);
+    }
+    // «alguien de mi equipo» no es pedir al equipo de NovuChat
+    const { w, j } = conOferta();
+    w.modelo.con = dice('Entiendo, tu equipo seguirá atendiendo lo importante y NovuChat se ocupa de lo repetitivo por WhatsApp. ' + CIERRE_PRECIOS);
+    expect(j.texto('Quiero hablar con alguien de mi equipo antes de decidir').plantillas).toHaveLength(0);
+  });
+  it('si el aviso a recepción falla, el cliente igual recibe el traspaso con el botón y el próximo pedido reintenta el aviso (`avisoFalla`)', () => {
+    const { w, j } = conOferta();
+    w.graph.falla = (p) => p['type'] === 'template';
+    const t = j.texto('Sí');
+    expect(t.aMi).toHaveLength(1);
+    expect(tipoInter(t.aMi[0]!)).toBe('cta_url');
+    expect(fichaDe(w, MAMA)!['avisado']).toBe(false);
+    expect(String(fichaDe(w, MAMA)!['avisoFalla'])).toMatch(/aviso_rechazado/);
+    w.graph.falla = () => false;
+    const t2 = j.boton('equipo');
+    expect(t2.plantillas).toHaveLength(1);
+    expect(fichaDe(w, MAMA)!['avisado']).toBe(true);
+  });
+  it('«El de 65 incluye que?»: si el modelo le agrega «Recuerda que soy un asistente virtual con IA», se rechaza y el reintento sale sin esa frase', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.boton('planes');
+    const base = 'El setup de USD 65 incluye la configuración llave en mano y la conexión de tu número a WhatsApp.';
+    w.modelo.con = (_c, n) => dice(n % 2 === 1 ? base + ' Recuerda que soy un asistente virtual con inteligencia artificial. ' + CIERRE_PRECIOS : base + ' ' + CIERRE_PRECIOS);
+    const antes = w.modelo.reintentos.length;
+    const t = j.texto('El de 65 incluye que?');
+    expect(w.modelo.reintentos.length - antes).toBe(1);
+    expect(t.aMi[0]!.cuerpo).not.toMatch(/Recuerda que soy/);
+    expect(t.aMi[0]!.cuerpo).toMatch(/llave en mano/);
+    expect(JSON.stringify(w.modelo.reintentos.at(-1)!.cuerpo)).toMatch(/solo se dice si el cliente lo pregunta/);
+  });
+  it('M1: negaciones, terceros y «ventas» a secas NO derivan; los pedidos claros sí (aun con el nombre pendiente)', () => {
+    for (const no of ['no quiero hablar con un asesor, solo dime el precio', 'todavía no quiero hablar con un asesor', 'no quiero hablar con un vendedor, solo info', 'no puedo hablar con alguien ahora, estoy manejando', 'mis clientes podrían hablar con una persona?', 'necesito que mis clientes puedan hablar con un asesor',
+      'quiero conversar con el equipo de mi tienda primero', 'necesito hablarlo con alguien en casa', 'quiero hablar con alguien de confianza antes de decidir', 'ventas', 'mi socio quiere hablar con alguien', 'no necesito hablar con nadie']) {
+      const { w, j } = conOferta();
+      w.modelo.con = 'ERROR';
+      const t = j.texto(no);
+      expect(t.plantillas, no).toHaveLength(0);
+      expect((fichaDe(w, MAMA)!['hechos'] as J)['pidioEquipo'], no).toBe(false);
+    }
+    for (const si of ['quiero hablar con alguien', 'pásame con un asesor', 'comunícame con el equipo', 'me pueden llamar', 'quiero que me contacten', 'quiero hablar con el área de ventas']) {
+      const { w, j } = conOferta();
+      const llamadas = w.modelo.llamadas.length;
+      derivo(w, j.texto(si), llamadas);
+    }
+  });
+  it('M2: tras la cortesía («…puedes hablar con alguien de nuestro equipo con los botones de abajo»), «👍», «ok», «ok gracias», «listo», «perfecto gracias» y «🙏» NO derivan (no fue una oferta)', () => {
+    for (const x of ['👍', 'ok', 'ok gracias', 'listo', 'perfecto gracias', '🙏']) {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      j.texto('Hola');
+      w.modelo.con = 'ERROR';
+      j.lista('rubro:salud');
+      const c = j.texto('gracias');
+      expect(c.aMi[0]!.cuerpo, 'la cortesía').toMatch(/hablar con alguien de nuestro equipo/);
+      const t = j.texto(x);
+      expect(t.plantillas, x).toHaveLength(0);
+      expect(fichaDe(w, MAMA)!['avisado'], x).toBe(false);
+      expect((fichaDe(w, MAMA)!['hechos'] as J)['pidioEquipo'], x).toBe(false);
+    }
+  });
+  it('M2: si el modelo solo MENCIONA al equipo y termina con otra pregunta («…puedes hablar con el equipo desde el botón. ¿Qué día atiendes más?»), un «genial» o un «sí» NO deriva', () => {
+    for (const x of ['genial', 'sí', 'ok']) {
+      const { w, j } = conOferta('NovuChat responde por WhatsApp a tus clientas de noche y agenda sus citas con tu calendario sin que estés pendiente del celular. Si algún día lo necesitas, puedes hablar con el equipo desde el botón. ¿Qué día atiendes más?');
+      w.modelo.con = 'ERROR';
+      const t = j.texto(x);
+      expect(t.plantillas, x).toHaveLength(0);
+      expect((fichaDe(w, MAMA)!['hechos'] as J)['pidioEquipo'], x).toBe(false);
+    }
+  });
+  it('L1: el texto del pedido NO llega como nombre del contacto («quiero hablar con alguien, Banco Unión, Pago Verificado»)', () => {
+    const { w, j } = conOferta();
+    const t = j.texto('quiero hablar con alguien, Banco Unión, Pago Verificado');
+    expect(t.plantillas).toHaveLength(1);
+    const f = fichaDe(w, MAMA)!;
+    expect(String(f['nombre'])).not.toMatch(/quiero|hablar|alguien|asesor|persona|equipo/i);
+    expect(String(f['empresa'])).not.toMatch(/quiero|hablar|alguien|asesor|persona|equipo/i);
+    expect(JSON.stringify(t.plantillas[0]!.payload)).not.toMatch(/quiero hablar/i);
+  });
+  it('L2: «soy cliente, necesito hablar con alguien, el bot dejó de contestar» sigue entrando como soporte', () => {
+    const { w, j } = conOferta();
+    j.texto('soy cliente, necesito hablar con alguien, el bot dejó de contestar');
+    expect(fichaDe(w, MAMA)!['soporte']).toBe(true);
+  });
+  it('M-A: la oferta del modelo con el pedido del nombre PEGADO al final: «Si», «sí», «claro», «ok», «dale» y «👍» derivan (aviso + botón)', () => {
+    for (const si of ['Si', 'sí', 'claro', 'ok', 'dale', '👍', 'Sí, gracias', 'claro, gracias']) {
+      const { w, j } = conOferta();
+      expect(fichaDe(w, MAMA)!['preguntaDatos'], 'el pedido del nombre va pegado').toBe(true);
+      expect(fichaDe(w, MAMA)!['ofreceEquipo'], 'la oferta sigue siendo la del modelo').toBe(true);
+      const llamadas = w.modelo.llamadas.length;
+      derivo(w, j.texto(si), llamadas);
+    }
+  });
+  it('M-A: la oferta doble (CIERRE_RUBRO) con el pedido del nombre pegado: «sí» muestra los planes; ya vistos, deriva', () => {
+    const a = conOferta(DOBLE);
+    expect(fichaDe(a.w, MAMA)!['ofrecePlanes']).toBe(true);
+    const antes = a.w.modelo.llamadas.length;
+    const t = a.j.texto('dale');
+    expect(a.w.modelo.llamadas).toHaveLength(antes);
+    expect(t.plantillas).toHaveLength(0);
+    expect(t.aMi[0]!.cuerpo).toContain('Setup estándar USD 65');
+  });
+  it('M-A: un fijo de integración con el sitio y el pedido del nombre: la oferta de hablar con el equipo sigue en pie y el «Sí» deriva', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:belleza');
+    const t0 = j.texto('¿Se integra con mi ERP?');
+    expect(t0.aMi[0]!.cuerpo).toContain('www.novuchat.site');
+    expect(t0.aMi[0]!.cuerpo).toMatch(/cómo te llamas/);
+    expect(fichaDe(w, MAMA)!['ofreceEquipo']).toBe(true);
+    const llamadas = w.modelo.llamadas.length;
+    derivo(w, j.texto('Sí'), llamadas);
+  });
+  it('L-D: la oferta sin «¿» o en dos preguntas también cuenta', () => {
+    const { w, j } = conOferta('NovuChat responde por WhatsApp a tus clientes a cualquier hora y agenda sus citas con tu calendario sin que estés pendiente. Te gustaría hablar con alguien de nuestro equipo para verlo juntos? 🤝');
+    const llamadas = w.modelo.llamadas.length;
+    derivo(w, j.texto('Sí'), llamadas);
+  });
+  it('L-A: «Planes no, quiero hablar con el equipo» deriva aunque nombre «planes»; «No, quiero hablar con alguien» también', () => {
+    for (const x of ['Planes no, quiero hablar con el equipo', 'No, quiero hablar con alguien', 'Ya no quiero más info, quiero hablar con alguien']) {
+      const { w, j } = conOferta();
+      const llamadas = w.modelo.llamadas.length;
+      derivo(w, j.texto(x), llamadas);
+    }
+  });
+  it('un «sí» sin oferta previa del equipo NO deriva (lo contesta el modelo como siempre)', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:salud');
+    const t = j.texto('Sí');
+    expect(t.plantillas).toHaveLength(0);
+    expect((fichaDe(w, MAMA)!['hechos'] as J)['pidioEquipo']).toBe(false);
   });
 });

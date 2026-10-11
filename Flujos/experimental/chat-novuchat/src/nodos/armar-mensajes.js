@@ -78,7 +78,7 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
   let anexo = '';
   // El mensaje del turno. La ficha que se guarda dice lo que salió (historial) y lo que el cliente dijo.
   let m;
-  if (plan.ruta === 'lista') m = chLista(cfg);
+  if (plan.ruta === 'lista') m = chLista(cfg, plan.pitch === true);
   else if (plan.ruta === 'planes') {
     // R6: los planes ya se mostraron y piden más: hechos nuevos del complemento, nunca el mismo texto ni la misma imagen (salvo que pregunten por el tope de un plan).
     if (antes.planesMostrados === true && plan.tope !== true) { m = chMensajeComplemento(cfg, { vez: antes.complementos, lista: est.lista, ficha: antes }); complemento = true; }

@@ -5,24 +5,49 @@
  "casos": [
   {
    "id": "S1",
-   "titulo": "«Quiero mas informació» como primer mensaje: el pitch del documento (§8)",
+   "titulo": "«Quiero mas informació» como primer mensaje (el texto del anuncio): UNA lista con el pitch fijo del documento (§8) y la pregunta del rubro; sin modelo y sin botones de planes ni equipo",
    "turnos": [
     {
      "tipo": "texto",
      "texto": "Quiero mas informació",
-     "seco": {
-      "mensaje": "¡Claro! 😊 NovuChat es el primer empleado de tu negocio que nunca duerme:\n⏱️ Atención en segundos 24/7: responde en segundos, las 24 horas, así no pierdes ventas si te escriben fuera de horario o en horas pico.\n📅 Agendamiento inteligente: se conecta a tu Google Calendar, ofrece horarios reales y agenda citas sin cruces. Además, envía recordatorios para bajar el ausentismo.\n💳 Ventas y pagos por QR: muestra tu catálogo, toma el pedido calculando el envío y envía el código QR de tu negocio para que tus clientes paguen.\n📱 Control total: como dueño, miras todas las conversaciones y haces cambios directamente desde nuestra consola en tu celular.\n\nPara darte un ejemplo exacto de cómo se vería esto en la vida real, ¿me cuentas de qué rubro es tu negocio?"
-     },
      "exige": {
+      "ruta": "lista",
+      "sinModelo": true,
+      "origen": "codigo",
+      "botones": "lista",
+      "filas": [
+       "rubro:salud",
+       "rubro:belleza",
+       "rubro:gastronomia",
+       "rubro:retail",
+       "rubro:educacion",
+       "rubro:captacion",
+       "rubro:otro"
+      ],
       "contiene": [
        "el primer empleado de tu negocio que nunca duerme",
        "⏱️",
        "📅",
        "💳",
-       "📱"
+       "📱",
+       "¿de qué rubro es?"
       ],
+      "noContiene": [
+       "Ver planes",
+       "Hablar con el equipo"
+      ]
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:gastronomia",
+     "seco": {
+      "mensaje": "¡Qué rico! 🍔 En horas pico ya no pierdes pedidos 🔥: NovuChat muestra tu menú, toma cada pedido registrando las notas especiales y envía el código QR de tu negocio para que tus clientes paguen 📲 y el pedido pase directo a cocina. ¿Quieres conocer los planes?",
+      "rubro": "gastronomia"
+     },
+     "exige": {
       "conModelo": true,
-      "origen": "modelo"
+      "botones": "planes+equipo"
      }
     }
    ]
@@ -167,8 +192,16 @@
   },
   {
    "id": "S5",
-   "titulo": "El modelo contesta una muletilla: se rechaza y sale el pitch fijo del documento",
+   "titulo": "El modelo contesta una muletilla en un «Quiero mas informació» que NO es el primer contacto: se rechaza y sale el pitch fijo del documento con los dos botones",
    "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
     {
      "tipo": "texto",
      "texto": "Quiero mas informació",
@@ -181,7 +214,8 @@
        "nunca duerme",
        "⏱️",
        "📱"
-      ]
+      ],
+      "botones": "planes+equipo"
      }
     }
    ]
@@ -3321,6 +3355,412 @@
       "noContiene": [
        "novuchat.site"
       ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "A10",
+   "titulo": "El «Sí» a la oferta de hablar con el equipo lo deriva el CÓDIGO (el cliente real que se perdió): precios → «Si» = aviso a recepción + botón, sin modelo; «sí, pero cuánto cuesta» y «no» no derivan",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "planes"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "El de 65 incluye que?",
+     "seco": {
+      "mensaje": "El setup de USD 65 incluye la configuración llave en mano y la conexión de tu número a WhatsApp. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "termina": "¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Es un solo pago de x vida?",
+     "seco": {
+      "mensaje": "El setup es un pago único de USD 65; las mensualidades se pagan cada mes. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "termina": "¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Si",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "A11",
+   "titulo": "«Sí, pero cuánto cuesta» y «no gracias» tras la oferta del equipo NO derivan (siguen al modelo o al código de siempre)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "No gracias",
+     "seco": {
+      "mensaje": "Sin problema 😊 Si más adelante quieres ver cómo se vería NovuChat en tu salón, aquí estoy para contártelo. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
+     },
+     "exige": {
+      "plantillas": 0,
+      "cta": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "L1",
+   "titulo": "El anuncio de Facebook: «¡Hola! Quiero más información» → lista con el pitch; un texto abierto más (ráfaga) no genera una segunda lista; luego «Hola» y «?» con historial siguen al modelo",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "¡Hola! Quiero más información",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true,
+      "origen": "codigo",
+      "botones": "lista",
+      "filas": [
+       "rubro:salud",
+       "rubro:belleza",
+       "rubro:gastronomia",
+       "rubro:retail",
+       "rubro:educacion",
+       "rubro:captacion",
+       "rubro:otro"
+      ],
+      "contiene": [
+       "el primer empleado de tu negocio que nunca duerme",
+       "⏱️",
+       "📅",
+       "💳",
+       "📱",
+       "¿de qué rubro es?"
+      ],
+      "noContiene": [
+       "Ver planes",
+       "Hablar con el equipo"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "?",
+     "seco": {
+      "mensaje": "Creo que tu caso es súper particular 🤔. ¿Te gustaría hablar con alguien de nuestro equipo para entender mejor qué buscas y no hacerte perder tiempo? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "planes+equipo"
+     }
+    }
+   ]
+  },
+  {
+   "id": "L2",
+   "titulo": "Primer mensaje «quiero más info»: la lista con el pitch fijo, sin modelo",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "quiero más info",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true,
+      "origen": "codigo",
+      "botones": "lista",
+      "filas": [
+       "rubro:salud",
+       "rubro:belleza",
+       "rubro:gastronomia",
+       "rubro:retail",
+       "rubro:educacion",
+       "rubro:captacion",
+       "rubro:otro"
+      ],
+      "contiene": [
+       "el primer empleado de tu negocio que nunca duerme",
+       "⏱️",
+       "📅",
+       "💳",
+       "📱",
+       "¿de qué rubro es?"
+      ],
+      "noContiene": [
+       "Ver planes",
+       "Hablar con el equipo"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "L3",
+   "titulo": "Primer mensaje «Más información por favor»: la lista con el pitch fijo, sin modelo",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Más información por favor",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true,
+      "origen": "codigo",
+      "botones": "lista",
+      "filas": [
+       "rubro:salud",
+       "rubro:belleza",
+       "rubro:gastronomia",
+       "rubro:retail",
+       "rubro:educacion",
+       "rubro:captacion",
+       "rubro:otro"
+      ],
+      "contiene": [
+       "el primer empleado de tu negocio que nunca duerme",
+       "⏱️",
+       "📅",
+       "💳",
+       "📱",
+       "¿de qué rubro es?"
+      ],
+      "noContiene": [
+       "Ver planes",
+       "Hablar con el equipo"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "L4",
+   "titulo": "Primer mensaje «detalles»: la lista con el pitch fijo, sin modelo",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "detalles",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true,
+      "origen": "codigo",
+      "botones": "lista",
+      "filas": [
+       "rubro:salud",
+       "rubro:belleza",
+       "rubro:gastronomia",
+       "rubro:retail",
+       "rubro:educacion",
+       "rubro:captacion",
+       "rubro:otro"
+      ],
+      "contiene": [
+       "el primer empleado de tu negocio que nunca duerme",
+       "⏱️",
+       "📅",
+       "💳",
+       "📱",
+       "¿de qué rubro es?"
+      ],
+      "noContiene": [
+       "Ver planes",
+       "Hablar con el equipo"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "L5",
+   "titulo": "Primer mensaje «cómo funciona»: la lista con el pitch fijo, sin modelo",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "cómo funciona",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true,
+      "origen": "codigo",
+      "botones": "lista",
+      "filas": [
+       "rubro:salud",
+       "rubro:belleza",
+       "rubro:gastronomia",
+       "rubro:retail",
+       "rubro:educacion",
+       "rubro:captacion",
+       "rubro:otro"
+      ],
+      "contiene": [
+       "el primer empleado de tu negocio que nunca duerme",
+       "⏱️",
+       "📅",
+       "💳",
+       "📱",
+       "¿de qué rubro es?"
+      ],
+      "noContiene": [
+       "Ver planes",
+       "Hablar con el equipo"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "L6",
+   "titulo": "«Hola» sigue con la lista de saludo, sin el pitch",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true,
+      "noContiene": [
+       "nunca duerme"
+      ],
+      "botones": "lista"
+     }
+    }
+   ]
+  },
+  {
+   "id": "L7",
+   "titulo": "Ráfaga de dos textos abiertos seguidos como primer contacto: UNA sola lista con el pitch",
+   "turnos": [
+    {
+     "tipo": "rafaga",
+     "eventos": [
+      {
+       "tipo": "texto",
+       "texto": "¡Hola!"
+      },
+      {
+       "tipo": "texto",
+       "texto": "Quiero más información"
+      }
+     ],
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true,
+      "origen": "codigo",
+      "botones": "lista",
+      "filas": [
+       "rubro:salud",
+       "rubro:belleza",
+       "rubro:gastronomia",
+       "rubro:retail",
+       "rubro:educacion",
+       "rubro:captacion",
+       "rubro:otro"
+      ],
+      "contiene": [
+       "el primer empleado de tu negocio que nunca duerme",
+       "¿de qué rubro es?"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "L8",
+   "titulo": "Primer mensaje con un rubro («quiero más información para mi clínica dental»): lo contesta el modelo, no la lista del pitch",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Quiero más información para mi clínica dental",
+     "seco": {
+      "mensaje": "¡Qué bien que cuides la salud de tus pacientes! 🏥 NovuChat es tu recepcionista virtual 24/7: se integra a tu Google Calendar 📅, maneja varias agendas a la vez y agenda sin cruzar horarios. Además manda un recordatorio automático un día antes para asegurar la asistencia ⏰. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "rubro": "salud"
+     },
+     "exige": {
+      "conModelo": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "A12",
+   "titulo": "El cliente que se perdió, con el pedido del nombre PEGADO a la oferta: «Hola» → rubro → pregunta de costos → respuesta con la oferta y el pedido del nombre → «Si» = UNA derivación (aviso a recepción + botón), sin modelo",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "El de 65 incluye que?",
+     "seco": {
+      "mensaje": "El setup de USD 65 incluye la configuración llave en mano y la conexión de tu número a WhatsApp. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "contiene": [
+       "cómo te llamas y cómo se llama tu",
+       "hablar con alguien de nuestro equipo"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Si",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1,
+      "botones": "cta"
      }
     }
    ]
