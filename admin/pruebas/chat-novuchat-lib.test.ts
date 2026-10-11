@@ -1956,3 +1956,68 @@ describe('pagos por QR: nadie «cobra» salvo el negocio; los clientes PAGAN', (
     expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].empresa, v({ contexto: 'empresa' }))).toBe('');
   });
 });
+
+// ================================================================================================
+// Respaldo de Meta: NovuChat no es «Tech Provider certificado» (su verificación sigue en revisión) y las políticas de publicidad de Meta prohíben insinuar que Meta respalda al anunciante.
+describe('respaldo de Meta: el modelo no afirma que NovuChat es Tech Provider, está certificado ni cuenta con el respaldo de Meta', () => {
+  const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
+  const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ' + CIERRE_RUBRO, v(extra));
+  const seis = [{ rubroActual: 'gastronomia' }, { rubroActual: 'retail' }, { rubroActual: 'otro' }, {}, { contexto: 'abierta' }, { contexto: 'empresa' }, { contexto: 'rubro', rubroId: 'retail' }];
+  const MAL = ['NovuChat es Tech Provider de Meta.', 'Somos Tech Provider.', 'Somos un proveedor de tecnología oficial.', 'Somos proveedor de tecnología autorizado por la plataforma.', 'Somos Business Solution Provider.', 'Somos BSP de WhatsApp.', 'Estamos certificados por Meta.', 'NovuChat está certificada por WhatsApp.',
+    'Estamos certificados oficialmente por Meta.', 'Somos socio oficial de Meta.', 'Somos partner certificado de WhatsApp.', 'Somos aliados oficiales de Meta.', 'Somos proveedor verificado de WhatsApp.', 'Somos proveedores autorizados de Meta.', 'Un servicio respaldado por Meta.', 'Estamos avalados por WhatsApp.', 'NovuChat está aprobada por Meta.',
+    'Somos una empresa autorizada por Meta.', 'Estamos homologados por WhatsApp.', 'Un negocio verificado por Meta.', 'Meta nos respalda.', 'Meta nos avala.', 'Meta nos certifica.', 'Meta nos aprueba.', 'Meta nos autoriza.', 'Meta lo respalda.', 'Meta respalda a NovuChat.', 'Trabajas con el respaldo de Meta.', 'Con respaldo oficial de Meta.',
+    'Con el respaldo oficial de WhatsApp.', 'Somos oficialmente autorizados.', 'Somos oficial certificados.', 'Estamos autorizados oficialmente.', 'Somos Meta Business Partner.'];
+  // «Somos…» lo ve antes la red de la identidad (`persona`): se rechaza igual; la afirmación sin ese sujeto cae por la causa nueva
+  const SOMOS = MAL.filter((x) => x.startsWith('Somos'));
+  const MAL_NUEVA = MAL.map((x) => (x.startsWith('Somos') ? x.replace(/^Somos (?:un |una )?/, 'NovuChat es ') : x));
+  it('cada afirmación de respaldo cae en `respaldo_meta`, en todos los contextos y con mayúsculas, acentos, letras espaciadas o guiones', () => {
+    for (const x of SOMOS) for (const extra of seis) expect(['persona', 'respaldo_meta'], x).toContain(marco(x, extra));
+    for (const x of MAL_NUEVA) for (const extra of seis) {
+      expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('respaldo_meta');
+      expect(marco(x.toUpperCase(), extra), `${x.toUpperCase()} ${JSON.stringify(extra)}`).toBe('respaldo_meta');
+    }
+    for (const x of ['T e c h  P r o v i d e r', 'T-e-c-h P-r-o-v-i-d-e-r', 'tech-provider', 'Tech_Provider', 'T.e.c.h Provider', 'B S P', 'B.S.P.', 'Tech Próvider']) {
+      for (const extra of seis) expect(marco('NovuChat es ' + x + '.', extra), `${x} ${JSON.stringify(extra)}`).toBe('respaldo_meta');
+    }
+    for (const x of ['Estamos c-e-r-t-i-f-i-c-a-d-o-s por Meta.', 'Estamos certificádos por Méta.', 'ESTAMOS CERTIFICADOS POR META.']) for (const extra of seis) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('respaldo_meta');
+  });
+  it('lo legítimo no cae: la conexión a Meta, la verificación del número, la API oficial, WhatsApp Business, «cuánto cobra Meta», «certificado» sin Meta y la plantilla aprobada por Meta', () => {
+    for (const x of ['La conexión a Meta es parte del Setup.', 'Hacemos la verificación de tu número ante Meta.', 'Usamos la API oficial de WhatsApp Business.', 'Atendemos por WhatsApp Business.', 'Meta cobra por cada conversación fuera de la ventana de 24 horas.', 'Tu negocio emite un certificado de calidad aparte, y tus clientes escriben a WhatsApp.',
+      'Los recordatorios usan una plantilla aprobada por Meta.', 'Cada plantilla de recordatorio aprobada por Meta sale a tu cliente.', 'El mensaje aprobado por Meta llega a tu cliente.', 'Meta aprueba las plantillas antes de enviarlas.', 'Tu número queda conectado a la plataforma de Meta.', 'Atendemos por WhatsApp con la API oficial.']) {
+      for (const extra of seis) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).not.toBe('respaldo_meta');
+    }
+  });
+  it('la regla va también en las instrucciones del modelo, y la causa nueva tiene su texto de reintento', () => {
+    expect(f('chInstrucciones')(CFG)).toMatch(/Nunca digas que NovuChat es Tech Provider, que está certificado por Meta ni que Meta lo respalda o avala; si preguntan, di que usamos la API oficial de WhatsApp Business/);
+    const cuerpo = JSON.stringify(f('chCuerpoModelo')({ cfg: CFG, ficha: fichaBase(), eventos: [{ tipo: 'texto', texto: 'hola' }], contexto: 'general', ahoraMs: Date.UTC(2026, 9, 12, 15, 0, 0), reintento: 'respaldo_meta' }));
+    expect(cuerpo).toMatch(/dijiste que NovuChat es Tech Provider, está certificado por Meta o cuenta con su respaldo/);
+    expect(cuerpo).toMatch(/atendemos por la API oficial de WhatsApp Business/);
+  });
+  it('ADITIVA: con la red nueva, `chValidarMensaje` da lo mismo que sin ella en todo el corpus, salvo en las frases que contienen una afirmación de respaldo; y los textos fijos del dato no caen por ella', () => {
+    const SIN_LA_LINEA = "  if (chRespaldoMeta(n)) return 'respaldo_meta';\n";
+    expect(LIB.split(SIN_LA_LINEA).length).toBe(2);
+    const sin = ejecutar(`${LIB.replace(SIN_LA_LINEA, '')}\n${MENSAJES}\n${FILTRO}\nreturn [{ json: { chValidarMensaje } }];`, [{}])[0] as Record<string, Fn>;
+    const textos: string[] = [];
+    const recorre = (x: unknown): void => { if (typeof x === 'string') { if (x.length > 25) textos.push(x); } else if (Array.isArray(x)) x.forEach(recorre); else if (x && typeof x === 'object') Object.values(x).forEach(recorre); };
+    const sinReglas = clonar(NOVUCHAT); delete sinReglas['instrucciones'];
+    recorre(sinReglas);
+    expect(textos.length).toBeGreaterThan(40);
+    const corpus = [...textos, ...MAL, ...MAL_NUEVA, 'Tus clientes pagan por QR directo a tu cuenta.', 'Te cobramos la instalación.', 'Kenji cobra cada pedido por QR.', 'Promoción gratis para ti.', 'Un asesor te llamará mañana.', 'Hacemos la verificación de tu número ante Meta.', 'Usamos la API oficial de WhatsApp Business.', 'La plantilla aprobada por Meta llega a tu cliente.',
+      'Eres una persona real, no soy un bot.', 'Escríbenos a hola' + '@' + 'ejemplo.com', 'Tu asistente atiende 24 horas.'];
+    const contiene = /tech\s*provider|solution\s+provider|meta\s+(?:nos|lo|respald|aval)|bsp|certific|respald|aval|aprob|autoriz|homolog|verificad|socio|partner|aliado|proveedor|oficial/i;
+    let distintas = 0;
+    const envolver = (x: string): string => (x.length > 80 ? x : 'NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ' + CIERRE_RUBRO);
+    for (const x of corpus) for (const extra of seis) {
+      const nuevo = f('chValidarMensaje')(envolver(x), v(extra));
+      const viejo = sin['chValidarMensaje']!(envolver(x), v(extra));
+      if (nuevo === viejo) continue;
+      distintas += 1;
+      expect(nuevo, x).toBe('respaldo_meta');
+      expect(contiene.test(x), x).toBe(true);
+    }
+    expect(distintas).toBeGreaterThan(0);
+    for (const x of textos) for (const extra of seis) expect(f('chValidarMensaje')(envolver(x), v(extra)), x).not.toBe('respaldo_meta');
+    // lo que se le entrega al cliente nunca lleva la afirmación
+    expect(textos.filter((x) => f('chValidarMensaje')(envolver(x), v()) === 'respaldo_meta')).toEqual([]);
+  });
+});
