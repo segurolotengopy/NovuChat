@@ -2,13 +2,13 @@
 
 > Movido de `CLAUDE.md` el 25/09/2026 (`Analisis/41-arquitectura-por-capas.md`
 > §5.5: `CLAUDE.md` queda con invariantes; las cifras y la tabla de estado del
-> §7 van acá y a `docs/arquitectura/limites.md`). El texto es el original, sin
-> cambios: los números cambian con las decisiones de Andres y se corrigen acá;
+> §7 van acá y a `docs/arquitectura/limites.md`). Los números cambian con las
+> decisiones de Andres y se corrigen acá (la última, BYOC, el 11/10/2026);
 > la regla que los aplica está en `CLAUDE.md`. Sin secretos ni identificadores.
 
 ## Base comercial — el dinero de cada decisión técnica
 
-**Vigente desde el 1 de octubre de 2026.** Análisis completo y modelo
+**Vigente desde el 1 de octubre de 2026; la modalidad BYOC, desde el 07/10/2026 (`Analisis/50`).** Análisis completo y modelo
 reproducible en `Analisis/14` a `20`; acá está lo que hay que tener presente al
 escribir código, prompts, pantallas o catálogos. **Si una decisión técnica
 contradice algo de acá, se discute antes de implementarla.**
@@ -19,7 +19,7 @@ Desde el 1 de octubre Meta cobra **cada mensaje que envía el asistente** dentro
 de la ventana de 24 h, a **0,0113 USD** para Bolivia (mercado «Rest of Latin
 America»). Antes eran gratis.
 
-- **Meta es el 94 % del costo del servicio. El modelo de IA es el 6 %.**
+- **Con Meta incluido, Meta es el 94 % del costo del servicio y el modelo de IA el 6 %.** En BYOC el comercio paga Meta: para NovuChat la IA es casi todo el costo variable, y los mensajes se siguen declarando porque son la factura del comercio.
 - **Franquicia: 1.000 mensajes gratis por número de empresa y por mes.** No
   acumula. Cada comercio tiene su número, así que tiene los suyos.
 - Los mensajes de servicio **no tienen descuento por volumen**.
@@ -32,11 +32,12 @@ America»). Antes eran gratis.
 - **Un mensaje largo y completo es más barato que dos cortos.** La regla vieja
   de «máximo 3 oraciones por mensaje» juega en contra: el límite tiene que ser
   de mensajes, no de largo.
-- **Optimizar tokens ya casi no rinde.** Cachear el prefijo ahorra 0,07 Bs sobre
-  1,5 por conversación. No gastar tiempo ahí; gastarlo en acortar la
-  conversación.
-- **La elección de modelo puede tomarse por calidad.** Pasar a Claude Haiku con
-  caché sube el costo total un 7 %.
+- **Con Meta incluido, optimizar tokens ya casi no rinde** (cachear el prefijo
+  ahorra 0,07 Bs sobre 1,5 por conversación) **y el modelo puede elegirse por
+  calidad** (Haiku con caché sube el costo total un 7 %). **En BYOC no:** la IA
+  es casi todo nuestro costo; con Haiku el margen de los planes baja de 72-77 % a
+  67-70 % (`Analisis/49`, `50`). Cada flujo declara su costo de IA por
+  conversación, y el modelo lo elige NovuChat por contrato.
 
 ### 2. La unidad de cobro: un bloque de 25 respuestas en 24 h
 
@@ -47,7 +48,11 @@ America»). Antes eran gratis.
   abre un bloque nuevo y se factura **otra** conversación; a las 24 h de la
   primera consulta la ventana se renueva y el conteo vuelve a cero. 26
   respuestas en un día = 2 conversaciones; 20 hoy y 2 mañana = 2 también, por
-  dos ventanas. **No se cobra por mensaje suelto ni por «asunto»**
+  dos ventanas. **Excepción decidida el 09/10, pendiente en el servidor**
+  (`Analisis/50` §3): la respuesta del cliente a un seguimiento que el negocio
+  envió dentro de las 48 h extiende su conversación y no abre otra. Hoy la
+  ventana es fija de 24 h y esa respuesta abre una conversación que el servidor
+  cuenta. **No se cobra por mensaje suelto ni por «asunto»**
   (`Analisis/15`).
 - **El asistente no se corta a las 25.** Sigue atendiendo, y lo que sigue se
   cobra. El corte a las 25 con respuesta fija queda sin efecto; lo que sí se
@@ -59,7 +64,8 @@ America»). Antes eran gratis.
   contador `mensajesVentana` en la conversación; `conversaciones` y
   `bloquesAdicionales` en el agregado del mes). n8n no cuenta nada.
 - **Un bloque lleno cuesta lo mismo que costaba una conversación en el tope**
-  (0,3051 USD), así que el precio mínimo de la bolsa (`Analisis/23`) no cambia.
+  (0,3051 USD), así que el precio mínimo de la bolsa con Meta incluido
+  (`Analisis/23`) no cambia.
 - **Dos umbrales de corte, en la misma unidad y parametrizables por empresa**
   (`cuenta/estado`: `umbralOperador`, `umbralBloqueo`; respaldo 50 / 100 en
   `atencion.ts`): a las **50** respuestas en la ventana el asistente deja de
@@ -84,7 +90,7 @@ America»). Antes eran gratis.
   un proveedor que fija el tipo de cambio con el que cobra invita a la sospecha.
 - **Modalidad preferida: BYOC, el comercio paga a Meta** (decisión de Andres,
   07/10/2026; `Analisis/50`). **Planes: USD 25 / 50 / 90 por 200 / 500 / 1.000
-  conversaciones.** Instalación USD 65 estándar, a medida desde 125. Margen a uso
+  conversaciones.** Instalación USD 65 estándar, a medida desde 125 (Andres, 09/10). Margen a uso
   pleno 72 % a 77 % con Gemini Flash-Lite (67 % a 70 % con Haiku 4.5).
 - **Opción excepcional, con la mensajería de Meta incluida:** los mismos precios
   por **100 / 220 / 500** conversaciones, y la bolsa de **30 conversaciones por
@@ -99,11 +105,17 @@ America»). Antes eran gratis.
     inicia más de 48 horas después del último mensaje de su cliente. Solo con
     titularidad `comercio`: a Meta cada uno le cuesta 0,074 como plantilla de
     marketing, que paga el comercio. Un seguimiento dentro de las 48 horas va en
-    la conversación del cliente y no se cobra aparte, aunque el cliente responda.
-- **El servidor todavía corta en 100 / 220 / 500 y vende solo la bolsa de 30 por
-  10** (`planes.ts`). Hasta que se construya el bloque de Central y Core, a cada
-  cliente BYOC se le asignan las conversaciones por contrato y una bolsa se
-  registra como pago manual.
+    la conversación del cliente y no se cobra aparte **en NovuChat**, aunque el
+    cliente responda; si sale después de las 24 h es una plantilla que **Meta le
+    cobra al comercio** (0,0113 si es de utilidad, 0,074 si Meta la clasifica
+    como marketing).
+- **El servidor todavía corta en 100 / 220 / 500, vende solo la bolsa de 30 por
+  10 y no distingue los mensajes salientes del negocio** (`planes.ts`,
+  `ingesta.ts`). Los topes y la bolsa de conversaciones esperan al bloque de
+  Central; la extensión de 48 h y la bolsa de seguimiento, al bloque de Core
+  (depende de #439). Hasta entonces, a cada cliente BYOC se le asignan las
+  conversaciones por contrato, una bolsa se registra como pago manual y la
+  respuesta del cliente después de 24 h se compensa por contrato.
 - **Aviso de consumo al 80 % del plan, para todos** (decisión de Andres,
   15/09/2026; antes decía 70 % como vigilancia interna). Es lo que promete el
   sitio: al llegar al 80 % de las conversaciones incluidas, se avisa al comercio
@@ -123,7 +135,9 @@ America»). Antes eran gratis.
   «atenciones» para lo que se cobra contradice el sitio y la consola.
 - **BYOC: el comercio trae su portafolio, su número y su tarjeta** (decisión de
   Andres, 23/09/2026, `Analisis/39`; preferida desde el 07/10, `Analisis/50`). El
-  plan `byoc` de `planes.ts` (USD 50 por 2.000) queda para contratos de volumen.
+  plan `byoc` de `planes.ts` (USD 50 por 2.000) sigue en el código; sale más
+  barato que Pro de lista, así que su destino (retirarlo o dejarlo para contratos
+  de volumen) lo decide Andres.
   **Lo que decidió preferirla no es el margen: es el cupo.** Meta limita los
   portafolios por cuenta personal y los números por portafolio sin verificar, y
   con la cola de clientes esos cupos se agotan; el portafolio del comercio no
@@ -190,7 +204,8 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
 | **Umbrales de operador y bloqueo** (50 / 100, por empresa) | `atencion.ts` decide; la ingesta anota `atencionEstado` y cuenta; `configuracionFlujo` devuelve `atencion.estado` si el flujo manda `telefono` | **Servidor en `main` desde el 13/09** (`pruebas/umbrales-atencion.test.ts`). **Flujos A y B obedecen en el JSON versionado** (`flujos/umbrales-atencion`, `pruebas/flujos-umbrales.test.ts`): `Traer configuración` manda `telefono` y `¿Atención normal?` bifurca antes del agente. **Falta publicarlos**, después de `v0.2.0`, y probarlos contra un teléfono real |
 | **Ítems del catálogo** que van al prompt | `configuracionFlujo`, al armar la respuesta | Hoy hay `limit(200)`, sin corte por plan |
 | **Productos del catálogo por plan** (20 / 100 / 500) | `firestore.rules` al crear o borrar un producto, en el mismo lote que el contador `contadores/catalogo`; la importación en lote por la callable `importarCatalogo` (`limiteCatalogo.ts`). El número es `limitesDeCuenta` de `planes.ts`: la copia `cuenta/estado.limites.productos` y, sin copia, el plan | **Hecho el 15/09** en `consolidado/planes-catalogo-storage`, con `pruebas/reglas.test.ts` («Límite de productos por plan») y `pruebas/modulos/productos/limite-catalogo.test.ts`. **Falta desplegarlo**, y el contador va ANTES que las reglas: `docs/seguridad/reglas-storage.md` §Despliegue |
-| **Campañas simultáneas por plan** (0 / 3 / 10, BYOC 10; confirmado por Andres el 24/09) | `firestore.rules` en `config/campanas`: `lista.size() <= limiteCampanas()`, con la copia `cuenta/estado.limites.campanas` (0 a 10) o el plan; `configuracionFlujo` recorta al tope de hoy | **Hecho el 24/09** en `claude/bellido-eleccion-del-menu`, con `pruebas/campanas-reglas.test.ts` y `pruebas/campanas.test.ts` (`DISENO.md` §4sexdecies). **Falta desplegar** reglas y Functions |
+| **Campañas simultáneas por plan** (0 / 3 / 10; el plan `byoc` de 2.000, 10; confirmado por Andres el 24/09) | `firestore.rules` en `config/campanas`: `lista.size() <= limiteCampanas()`, con la copia `cuenta/estado.limites.campanas` (0 a 10) o el plan; `configuracionFlujo` recorta al tope de hoy | **Hecho el 24/09** en `claude/bellido-eleccion-del-menu`, con `pruebas/campanas-reglas.test.ts` y `pruebas/campanas.test.ts` (`DISENO.md` §4sexdecies). **Falta desplegar** reglas y Functions |
+| **Mensajes de seguimiento fuera de 48 h y extensión de 48 h** (`Analisis/50` §3) | `ingesta.ts`: hora del último entrante, evento «seguimiento» con reserva antes del envío, contador y corte propios; bolsa de 300 por 10 en Pagar | **No existe todavía.** Bloque de Core, después de fusionar #439 |
 | **Aviso de consumo al 80 %** de las conversaciones del plan | `ingesta.ts`, en la transacción que ya cuenta: marca `cuenta/estado.avisoConsumo` una vez por mes. La consola lo muestra (tablero, estado de cuenta, cartera) y no lo calcula | **Hecho el 15/09** en `consolidado/planes-catalogo-storage`, con `pruebas/aviso-consumo.test.ts` (la ingesta real) y `pruebas/central/planes.test.ts`. Falta desplegar Functions |
 
 **La regla al agregar cualquier límite nuevo:**
