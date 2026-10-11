@@ -60,6 +60,8 @@ import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.
 // enmascarado de dos formas distintas según qué lo escribió, y eso hace
 // imposible cruzar un pedido con su bitácora de un vistazo.
 import { registrar, enmascarar } from '../../core/turno/bitacora.js';
+import { camposDeMensajeIndexado } from '../../core/conversacion/derivados.js';
+import { trozosDeTelefono } from '../../core/conversacion/normalizacion.js';
 // El umbral vive en `prompt.ts` y no acá: lo usan este módulo y
 // `configuracionFlujo`, y si viviera en uno de los dos el otro tendría que
 // importar a su propio importador. Un ciclo en ESM se resuelve en un orden
@@ -1203,8 +1205,16 @@ export const checkoutCatalogo = onRequest(
     // El pedido entra en el hilo como mensaje de tipo `order`, que es el tipo
     // que ya existía para el carrito nativo de Meta. Así el visor de
     // conversaciones lo muestra en su lugar, en orden, sin pantalla nueva.
+    //
+    // CAMPOS DERIVADOS DE CONVERSACIONES (H1). El hilo también los lee de este
+    // mensaje, que no pasa por la ingesta: `tenantId` y `palabras` para la
+    // búsqueda por texto. El `tenantId` sale de `ficha.tenantId`, la MISMA
+    // variable con que se armó la ruta de arriba; la prueba lo compara con el
+    // segmento de la ruta. El id sigue siendo el automático (`.doc()`): la
+    // búsqueda exige un id de 20 caracteres.
     lote.create(refConversacion.collection('mensajes').doc(), {
       direccion: 'entrante', tipo: 'order', texto: resumen, ts: Timestamp.now(),
+      ...camposDeMensajeIndexado(resumen, ficha.tenantId),
     });
     // Solo el resumen del hilo. NO se tocan los contadores de facturación:
     // `atenciones` e `interacciones` las cuenta la ingesta con sus propias
@@ -1215,6 +1225,16 @@ export const checkoutCatalogo = onRequest(
       ultimoMensaje: resumen.slice(0, 300),
       ultimoEn: Timestamp.now(),
       mensajesTotal: FieldValue.increment(1),
+      // LEÍDO Y BÚSQUEDA POR TELÉFONO (H1). El carrito es un mensaje entrante
+      // del cliente: sube los no leídos y marca «sin leer», con las mismas
+      // reglas que la ingesta. NO se escribe `ultimoEntranteEn` ni
+      // `ventanaVenceEn`: un carrito web no abre ni renueva la ventana de 24 h
+      // de Meta (solo la renueva un mensaje que el cliente manda por WhatsApp).
+      // Por eso no se usa `camposDeConversacionPorMensaje`, que mueve la ventana.
+      // Mismas escrituras que antes: los campos van en este `set` ya existente.
+      noLeidos: FieldValue.increment(1),
+      sinLeer: true,
+      telefonoTrozos: trozosDeTelefono(ficha.telefono),
     }, { merge: true });
 
     lote.update(db().doc(`fichasCatalogo/${ficha.id}`), {
