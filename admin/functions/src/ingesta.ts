@@ -2,15 +2,17 @@ import { REGION } from './core/region.js';
 import { MINUTOS_RETENCION_POR_DEFECTO, senaVencidaPorTiempo } from './modulos/agenda/retencion.js';
 import { milisegundosDe } from './core/turno/tiempo.js';
 import { reactivaTras, solicitudTras } from './modulos/agenda/solicitud.js';
-// F3b-1a (05/10/2026): la solicitud, sus predicados de cobro y el tiempo se
-// mudaron a `modulos/agenda/solicitud.ts`, `modulos/agenda/retencion.ts` y
-// `core/turno/tiempo.ts` sin cambiar lógica. Se reexportan para que quien ya los
-// importaba de acá (las suites, `core/turno/cierres.ts` hasta que F3b-1b lo
-// desate con ganchos) no cambie.
+// F3b-1a y F3b-1b (05/10/2026): la solicitud, el tiempo y los predicados de cobro se
+// mudaron a `modulos/agenda/solicitud.ts`, `modulos/agenda/retencion.ts`,
+// `core/turno/tiempo.ts` y `modulos/cobros/alCierre.ts` sin cambiar lógica. Se
+// reexportan para que quien ya los importaba de acá (las suites) no cambie;
+// `core/turno/cierres.ts` ya no importa este archivo: recibe sus ganchos de
+// `ganchos.ts`.
 export {
-  DIAS_ADELANTO_A_FAVOR, ETAPAS_PENDIENTES, HORAS_ANTICIPACION_PARA_CANCELAR, cierreBloqueadoPorCobro,
-  cierreDeVentaLoHaceElCotejo, reactivaTras, solicitudTras, type Solicitud,
+  DIAS_ADELANTO_A_FAVOR, ETAPAS_PENDIENTES, HORAS_ANTICIPACION_PARA_CANCELAR,
+  reactivaTras, solicitudTras, type Solicitud,
 } from './modulos/agenda/solicitud.js';
+export { cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo } from './modulos/cobros/alCierre.js';
 export { MINUTOS_RETENCION_POR_DEFECTO };
 export { milisegundosDe };
 import { existencias } from './modulos/inventario/inventario.js';
@@ -22,10 +24,6 @@ import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 import { sanearCaptacion } from './modulos/captacion/captacion.js';
 import { vozFija } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
-// H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
-// campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
-// nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
-import { camposDeConversacionPorMensaje, camposDeMensajeIndexado } from './core/conversacion/derivados.js';
 import {
   HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
   estadoDeAtencion, umbralesDeAtencion, ventanaVencida,
@@ -1071,46 +1069,12 @@ export const ingesta = onRequest(
 
       // EL MENSAJE SE GUARDA SIEMPRE, también cortado: el comercio tiene que
       // ver QUIÉN le escribió mientras el asistente no atendía.
-      // LOS CAMPOS DERIVADOS DE LA CONVERSACIÓN (H1-6), en un solo lugar para las dos
-      // ramas (corte y normal). Sin lecturas nuevas: usa el documento que la
-      // transacción ya leyó.
-      //  - LA DIRECCIÓN. La protección de `derivados.ts` para direcciones raras NO
-      //    actúa por este camino: `normalizar` ya convirtió todo lo que no es
-      //    exactamente 'saliente' en 'entrante' (comportamiento de siempre, que
-      //    mueve la facturación y por eso no se toca). Un 'SALIENTE' mal escrito
-      //    cuenta, pues, como entrante: suma un no leído, igual que suma un
-      //    mensaje entrante a las métricas.
-      //  - EL RELOJ NO RETROCEDE. `ahoraMs` se toma antes de la transacción y no
-      //    cambia al reintentarla: si otro mensaje concurrente ya escribió un
-      //    `ultimoEntranteEn` más nuevo, se conserva ese (el máximo de los dos), y
-      //    `ventanaVenceEn` sale del mismo instante, así que los dos siguen
-      //    cuadrando.
-      //  - EL NOMBRE NUEVO SIN PALABRAS BORRA EL VIEJO. Con `merge: true`, un
-      //    contacto que cambia de «María Pérez» a «😀» dejaría `nombrePalabras`
-      //    con las palabras de antes y la búsqueda hallaría a la persona por un
-      //    nombre que ya no tiene. Si el mensaje trae nombre y no deja palabras,
-      //    se borra el campo (ausente = igual que nunca escrito, que es lo que
-      //    deja el relleno). Va acá y no en `derivados.ts` para no romper la
-      //    paridad de ese archivo con el relleno de H1-5.
-      const derivadosDeConversacion = (): Record<string, unknown> => {
-        const previoMs = (conversacion.get('ultimoEntranteEn') as { toMillis?: () => number } | undefined)?.toMillis?.();
-        const reloj = typeof previoMs === 'number' && previoMs > ahoraMs ? previoMs : ahoraMs;
-        const campos = camposDeConversacionPorMensaje(mensaje, reloj);
-        return mensaje.nombreContacto && !('nombrePalabras' in campos)
-          ? { ...campos, nombrePalabras: FieldValue.delete() } : campos;
-      };
-
       const escribirMensaje = () => tx.create(refConversacion.collection('mensajes').doc(), {
         direccion: mensaje.direccion,
         tipo: mensaje.tipo,
         texto: mensaje.texto,
         ts: Timestamp.now(),
         ...(mensaje.idMeta ? { idMeta: mensaje.idMeta } : {}),
-        // `tenantId` es el MISMO que arma la ruta `tenants/${tenantId}/...` de
-        // `refConversacion` (sale de la ruta autenticada, nunca del cuerpo): la
-        // búsqueda entre comercios se acota por este campo y por el prefijo del
-        // camino, y los dos tienen que coincidir. `palabras`, hasta 30, sin texto.
-        ...camposDeMensajeIndexado(mensaje.texto, tenantId),
       });
 
       if (cortado) {
@@ -1125,9 +1089,6 @@ export const ingesta = onRequest(
           ultimoMensaje: mensaje.texto.slice(0, 300),
           ultimoEn: FieldValue.serverTimestamp(),
           ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
-          // Aunque el corte no cuente nada para la facturación, la persona del
-          // negocio sí tiene que ver que le escribieron (no leídos y búsqueda).
-          ...derivadosDeConversacion(),
         }, { merge: true });
         escribirMensaje();
         return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad };
@@ -1214,10 +1175,8 @@ export const ingesta = onRequest(
         canal: 'whatsapp',
         ultimoMensaje: mensaje.texto.slice(0, 300),
         ultimoEn: FieldValue.serverTimestamp(),
-        // La ventana de FACTURACIÓN (`atencionDesde`) y la ventana que ve la consola
-        // (`ultimoEntranteEn`, `ventanaVenceEn`, al final de este objeto) son cosas
-        // distintas: la segunda la mueve cada mensaje del cliente; la primera no.
-        // El ancla de facturación se escribe SOLO al abrir una atención. Refrescarla con cada
+        // Solo lo mueve un mensaje del cliente: ver `ultimoEntranteEn` arriba.
+        // El ancla se escribe SOLO al abrir una atención. Refrescarla con cada
         // mensaje convertiría la ventana fija en una ventana deslizante, y una
         // conversación activa nunca se renovaría: el cliente que escribe todos
         // los días quedaría contado una sola vez, para siempre.
@@ -1248,13 +1207,6 @@ export const ingesta = onRequest(
         // turno pasó a una persona. Solo se ENCIENDE desde acá; apagarlo es un
         // acto de una persona del negocio, desde la consola.
         ...(mensaje.evento === 'no_contactar' ? { noContactar: true } : {}),
-        // Derivados de Conversaciones (H1): trozos del teléfono y palabras del
-        // nombre siempre; ultimoEntranteEn, ventanaVenceEn, noLeidos y sinLeer
-        // SOLO con un entrante. Van al final y no pisan ningún campo de arriba
-        // (los nombres no se repiten con los de la facturación). Ver
-        // `derivadosDeConversacion` arriba: la dirección ya viene cerrada por
-        // `normalizar`, el reloj no retrocede y un nombre sin palabras borra el viejo.
-        ...derivadosDeConversacion(),
       }, { merge: true });
 
       escribirMensaje();
