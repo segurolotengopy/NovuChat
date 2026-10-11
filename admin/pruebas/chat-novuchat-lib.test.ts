@@ -1971,3 +1971,21 @@ describe('chAfirma y el pedido directo de hablar con el equipo', () => {
     for (const x of ['Quiero hablar con alguien de mi equipo antes de decidir', 'Mis clientes quieren hablar con una persona', 'Hola', 'cuánto cuesta']) expect(re.test(n(x)), x).toBe(false);
   });
 });
+
+describe('«Recuerda que soy un asistente virtual con IA» no se cuela en las respuestas ordinarias', () => {
+  const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: true, permitidas: ['65', '125', '25', '50', '90'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
+  const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('El setup de USD 65 incluye la configuración llave en mano y la conexión de tu número a WhatsApp. ' + x + ' ' + CIERRE_PRECIOS, v(extra));
+  it('rechazada (`ia_repetida`) en una respuesta de precios, rubros, general y empresa; en `identidad` pasa', () => {
+    for (const x of ['Recuerda que soy un asistente virtual con inteligencia artificial.', 'Te recuerdo que soy un asistente virtual con IA.', 'Ten en cuenta que soy un asistente virtual con inteligencia artificial.', 'Te aclaro que soy un asistente con inteligencia artificial.']) {
+      for (const extra of [{}, { rubroActual: 'retail' }, { rubroActual: 'gastronomia' }, { contexto: 'empresa' }, { contexto: 'rubro', rubroId: 'retail' }, { contexto: 'otro' }]) expect(marco(x, extra), `${x} ${JSON.stringify(extra)}`).toBe('ia_repetida');
+      expect(marco(x, { contexto: 'identidad' }), x).not.toBe('ia_repetida');
+    }
+    expect(f('chInstrucciones')(CFG)).toMatch(/nunca lo recuerdes por tu cuenta en una respuesta/);
+    expect(String((L as unknown as J)['CH_CAUSAS'].ia_repetida)).toMatch(/solo se dice si el cliente lo pregunta/);
+  });
+  it('lo legítimo no cae: decirlo cuando lo preguntan (contexto general con «soy un asistente virtual») y los hechos de la empresa', () => {
+    expect(marco('Soy un asistente virtual con inteligencia artificial.')).toBe('');
+    expect(marco('Es un solo pago de USD 65 por única vez.')).toBe('');
+    expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].empresa, v({ contexto: 'empresa' }))).toBe('');
+  });
+});

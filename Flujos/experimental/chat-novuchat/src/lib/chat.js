@@ -1033,6 +1033,7 @@ const CH_CAUSAS = {
   afirma: 'afirmaste como hecho algo que solo el sistema puede afirmar (que algo quedó anotado, agendado o confirmado)',
   pitch: 'no hiciste el pitch obligatorio: di que NovuChat es el primer empleado de tu negocio que nunca duerme y usa cuatro viñetas, una por línea, cada una con su emoji',
   puntos: 'no cubriste todos los puntos clave del rubro',
+  ia_repetida: 'recordaste por tu cuenta que eres un asistente virtual con inteligencia artificial; eso solo se dice si el cliente lo pregunta: quítalo y responde lo que te preguntaron',
   sujeto_del_pago: 'dijiste que NovuChat, el asistente, Kenji o los clientes de la empresa «cobran»; quien PAGA por QR son los clientes de la empresa, a la empresa: di «tus clientes pagan por QR» o «envía tu QR para que paguen»',
   funcion_inventada: 'afirmaste una función (cobros, QR, adelantos, seña o pagos) que no está documentada para el rubro del cliente; no la afirmes ni la niegues: di solo lo que sí haces en su rubro y ofrece que alguien de nuestro equipo evalúe su caso. NovuChat y el asistente no cobran: los clientes de la empresa pagan por QR a la empresa',
   repite: 'repetiste casi igual tu mensaje anterior; aporta información nueva y verificada (no la copies) y ofrece los botones vigentes',
@@ -1134,6 +1135,8 @@ function chSinNombrar(n) {
 }
 // «Cuando alguien te escribe de noche, tu asistente le responde»: quien escribe es un TERCERO (un cliente suyo), no una promesa de contacto del equipo. Se quita esa cláusula antes de buscar promesas.
 const CH_TERCERO_QUE_ESCRIBE = /\b(?:(?:cuando|si|cada vez que|apenas|en cuanto|mientras)\s+(?:un cliente|tus clientes|los clientes|un prospecto|un interesado|el cliente|un paciente|tus pacientes)|\ba\s+quien)\s+(?:te|le|les)\s+(?:escribe|escriben|llama|llaman|contacta|contactan|responde|responden)\b/gi;
+// «Recuerda que soy un asistente virtual con inteligencia artificial» dentro de una respuesta ordinaria (precio, setup, planes): robótico y repetido. Solo se dice si lo preguntan (contexto `identidad`, texto fijo) o en el primer saludo (fijo).
+const CH_RECUERDA_IA = /\b(?:recuerda|recuerdo|te recuerdo|aclaro|te aclaro|ten presente|ten en cuenta|cabe aclarar)\b[^.!?]{0,40}\b(?:soy|es)\b[^.!?]{0,25}\b(?:asistente virtual|inteligencia artificial|una ia|un bot)\b/;
 const CH_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{0,20}\b(?:ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\b|\bpersona (?:real|de verdad)\b|\bcarne y hueso\b|\bno (?:contesta|responde|atiende|hay) (?:ningun\w* )?(?:ia|inteligencia|bot|robot|maquina)\b|\bnada de (?:robots?|bots?|maquinas?)\b|\bhumano\b|\bpersonalmente\b|\bconmigo (?:hablas|conversas)\b|\bequipo humano\b|\b(?:soy|es) (?:una )?persona\b|\balguien real\b|\bhuman[oa]s?\b|\b(?:personas?|gente) (?:real(?:es)?|de verdad)\b|\b(?:persona|gente|alguien|humano|equipo|ejecutiv\w*|asesor\w*) (?:real|de verdad)\b|\bde verdad\b[^.!?]{0,20}\b(?:persona|gente|humano)\w*|\bno (?:contesta|responde|atiende|hay|habla) (?:(?:un|una|el|la|ningun\w*) )?(?:ia|inteligencia|bot|chatbot|robot|maquina|programa)\b|\bno es (?:un )?(?:mensaje |chat )?automatic\w*|\b(?:es|soy) (?:una? )?(?:chica|chico|mujer|hombre|senorita|joven)\b/;
 const CH_NOMBRE_DE_PERSONA = /\bsilvana\b|\basesora\b|\bandres\b|\bsasaki\b/;
 // Revisión del PR #464. Lo que promete el modelo se separa por tipo: una promesa de planes solo vale si el CÓDIGO confirmó `mostrar_planes`, una de equipo solo si confirmó `derivar_equipo`.
@@ -1264,6 +1267,7 @@ function chValidarMensaje(texto, v) {
   const sinPresentacion = n.replace(CH_PRESENTACION_OK, ' ');
   // Presentarse como persona o negar ser una IA (prohibición 4) se ve ANTES que los demás hechos, para que el reintento diga la causa justa.
   if (CH_YO_DEL_MODELO.test(sinPresentacion) || CH_NIEGA_IA.test(n)) return 'persona';
+  if (v.contexto !== 'identidad' && CH_RECUERDA_IA.test(n)) return 'ia_repetida';
   if (CH_COBRO_MAL.test(n)) return 'sujeto_del_pago';
   // R1: no se inventan funciones. Cobros, QR, adelantos, seña y anticipos solo están documentados para gastronomía, retail y «otro» (y en el pitch general y los hechos de la empresa).
   const rubroDelMensaje = chTexto(v.rubroId || v.rubroActual);

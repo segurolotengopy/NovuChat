@@ -2481,6 +2481,21 @@ describe('«Sí» a la oferta de hablar con el equipo: la deriva el código, no 
     expect(t2.plantillas).toHaveLength(1);
     expect(fichaDe(w, MAMA)!['avisado']).toBe(true);
   });
+  it('«El de 65 incluye que?»: si el modelo le agrega «Recuerda que soy un asistente virtual con IA», se rechaza y el reintento sale sin esa frase', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.boton('planes');
+    const base = 'El setup de USD 65 incluye la configuración llave en mano y la conexión de tu número a WhatsApp.';
+    w.modelo.con = (_c, n) => dice(n % 2 === 1 ? base + ' Recuerda que soy un asistente virtual con inteligencia artificial. ' + CIERRE_PRECIOS : base + ' ' + CIERRE_PRECIOS);
+    const antes = w.modelo.reintentos.length;
+    const t = j.texto('El de 65 incluye que?');
+    expect(w.modelo.reintentos.length - antes).toBe(1);
+    expect(t.aMi[0]!.cuerpo).not.toMatch(/Recuerda que soy/);
+    expect(t.aMi[0]!.cuerpo).toMatch(/llave en mano/);
+    expect(JSON.stringify(w.modelo.reintentos.at(-1)!.cuerpo)).toMatch(/solo se dice si el cliente lo pregunta/);
+  });
   it('un «sí» sin oferta previa del equipo NO deriva (lo contesta el modelo como siempre)', () => {
     const w = crear();
     const j = jugar(w, MAMA);
