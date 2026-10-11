@@ -75,8 +75,8 @@ describe('la biblioteca es autosuficiente y pura', () => {
     expect(d.filter((n) => !/^(ch[A-Z]|CH_)/.test(n))).toEqual([]);
     expect(sinComentarios).not.toMatch(/\bcc[A-Z]\w*\(|\bCC_[A-Z]/);
   });
-  it('mide menos de 1.800 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
-    expect(LIB.split('\n').length).toBeLessThan(1800); // 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
+  it('mide menos de 1.850 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
+    expect(LIB.split('\n').length).toBeLessThan(1850); // (tope autoimpuesto; 1.800 hasta el 11/10) 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
     expect(sinComentarios).not.toMatch(/\brot\b|\bfijas\b|\bofertas\b|\bsueltas\b|\brepetidas\b|chVariante|chRotBase|CH_ROT_|CH_PASOS|chCampana|chPresentacion|chRetomar|ccPideLista/);
   });
   it('ningún nombre de persona del equipo en lo que se arma para el cliente (el patrón del filtro sí los nombra, para rechazarlos)', () => {
@@ -1954,5 +1954,20 @@ describe('pagos por QR: nadie «cobra» salvo el negocio; los clientes PAGAN', (
     for (const r of NOVUCHAT['rubros'] as J[]) if (r.explicacion) expect(f('chValidarMensaje')(r.explicacion + ' ' + NOVUCHAT['cierres'].rubro, v({ contexto: 'rubro', rubroId: r.id })), r.id).toBe('');
     expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].abierta.pitch + '\n\n' + NOVUCHAT['respaldos'].abierta.cierreSinRubro, v({ contexto: 'abierta' }))).toBe('');
     expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].empresa, v({ contexto: 'empresa' }))).toBe('');
+  });
+});
+
+// ================================================================================================
+// El «Sí» corto que acepta una oferta: lo reconoce el código.
+describe('chAfirma y el pedido directo de hablar con el equipo', () => {
+  it('chAfirma: «sí» y compañía, con signos, tildes, mayúsculas, emojis y alargadas; no una pregunta, una negativa ni un «sí, pero…»', () => {
+    for (const x of ['Sí', 'si', 'SII', 'Siiiii', '¡Sí!', 'Sí.', 'claro', 'Claro que sí', 'OK', 'okey', 'dale', 'De acuerdo', 'por favor', 'Sí, por favor', 'sí quiero', 'me gustaría', 'me interesa', 'bueno', 'perfecto', 'listo', 'ya', 'buena idea', 'está bien', 'adelante', 'hagámoslo', 'vamos', '👍', 'Sí 👍🏽', 'sip']) expect(f('chAfirma')(x), x).toBe(true);
+    for (const x of ['no', 'No gracias', 'sí, pero cuánto cuesta', '¿Sí?', 'sí pero primero quiero saber qué incluye', 'quizás', 'hola', 'gracias', '', '   ', 'no sé', 'claro que no', 'cuánto cuesta']) expect(f('chAfirma')(x), x).toBe(false);
+  });
+  it('el pedido directo (aun dentro de un mensaje largo) se reconoce; «alguien de mi equipo» y contar un problema, no', () => {
+    const re = K('CH_PIDE_EQUIPO_DIRECTO') as RegExp;
+    const n = f('chNorm');
+    for (const x of ['Quiero hablar con alguien', 'quiero hablar con un asesor', 'quiero hablar con el equipo', 'Pásame con un asesor', 'Pásame con ventas', 'Comunícame con alguien', 'Mándenme un asesor', 'hablar con ventas', 'Hola, quiero hablar con alguien del equipo', 'Necesito hablar con una persona por favor']) expect(re.test(n(x)), x).toBe(true);
+    for (const x of ['Quiero hablar con alguien de mi equipo antes de decidir', 'Mis clientes quieren hablar con una persona', 'Hola', 'cuánto cuesta']) expect(re.test(n(x)), x).toBe(false);
   });
 });

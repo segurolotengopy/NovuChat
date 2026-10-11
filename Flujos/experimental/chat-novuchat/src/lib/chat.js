@@ -668,7 +668,7 @@ function chFichaBase() {
     hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false, interactuo: false, descarte: '' },
     avisado: false, avisoFalla: '', planesMostrados: false, soporte: false, anuncio: false,
     // Ajustes del 09/10: el ciclo de un negocio (explicado, nombre pedido, planes pendientes, equipo ya pedido), el primer negocio y los otros para la hoja.
-    explicado: false, nombrePedido: false, preguntaDatos: false, planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
+    explicado: false, nombrePedido: false, preguntaDatos: false, ofreceEquipo: false, ofrecePlanes: false, planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
     seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [],
   };
 }
@@ -701,7 +701,7 @@ function chFichaVigente(e, ahoraMs) {
       descarte: CH_DESCARTES.includes(h.descarte) ? h.descarte : '',
     },
     avisado: e.avisado === true, avisoFalla: chPlano(e.avisoFalla, 200), planesMostrados: e.planesMostrados === true, soporte: e.soporte === true, anuncio: e.anuncio === true,
-    explicado: e.explicado === true, nombrePedido: e.nombrePedido === true, preguntaDatos: e.preguntaDatos === true, planesPendientes: e.planesPendientes === true, equipoAhora: e.equipoAhora === true,
+    explicado: e.explicado === true, nombrePedido: e.nombrePedido === true, preguntaDatos: e.preguntaDatos === true, ofreceEquipo: e.ofreceEquipo === true, ofrecePlanes: e.ofrecePlanes === true, planesPendientes: e.planesPendientes === true, equipoAhora: e.equipoAhora === true,
     // Las empresas por las que ya se avisó a recepción en la ventana (a lo más 3, normalizadas) y cuántos avisos van: el tope (3) acota la plantilla por segunda empresa.
     empresasAvisadas: Array.from(new Set((Array.isArray(e.empresasAvisadas) ? e.empresasAvisadas : []).concat(typeof e.empresaAvisada === 'string' ? [e.empresaAvisada] : []).filter((x) => typeof x === 'string').map((x) => chNorm(chPlano(x, 60))).filter((x) => x !== ''))).slice(0, CH_TOPE_AVISOS),
     avisosVentana: chEntero(e.avisosVentana, 0, CH_TOPE_AVISOS), sitiosVentana: chEntero(e.sitiosVentana, 0, CH_TOPE_SITIO), sitioUltimo: e.sitioUltimo === true, complementos: chEntero(e.complementos, 0, 3),
@@ -832,6 +832,20 @@ function chEsSaludoInicial(t) {
   const p = n.split(' ');
   return p.length <= 7 && p.every((w) => CH_SALUDOS.has(w) || CH_INFO_PALABRAS.has(w)) && p.some((w) => (CH_SALUDOS.has(w) && w !== 'ustedes' && w !== 'usted' && w !== 'todos' && w !== 'todas') || w === 'info' || w === 'informacion');
 }
+// Un «sí» corto (con signos, emojis, tildes o mayúsculas) y nada más: «sí, pero cuánto cuesta», «no» y «no gracias» NO lo son (otra palabra o una pregunta).
+const CH_AFIRMA_PALABRAS = new Set('si sii sip sep yes yep claro que ok okey okay dale de acuerdo por favor porfa porfavor quiero me gustaria interesa bueno perfecto listo ya buena idea esta bien adelante hagamoslo vamos va vale obvio supuesto desde luego exacto asi es correcto genial excelente gracias pues entonces'.split(' '));
+const CH_AFIRMA_NUCLEO = /\b(?:si|sii|sip|sep|yes|yep|claro|ok|okey|okay|dale|acuerdo|quiero|gustaria|interesa|bueno|perfecto|listo|ya|idea|bien|adelante|hagamoslo|vamos|va|vale|obvio|supuesto|exacto|correcto|genial|excelente|porfa|porfavor|por favor)\b/;
+function chAfirma(t) {
+  const crudo = chTexto(t).trim();
+  if (/^(?:[\s\uFE0F]|[👍👌🙏🙌👏🤝\u{1F3FB}-\u{1F3FF}])+$/u.test(crudo)) return true;
+  const n = chNorm(crudo).replace(/(.)\1{2,}/g, '$1$1');
+  const p = n.split(' ');
+  return n !== '' && !/[?¿]/.test(crudo) && p.length <= 7 && p.every((w) => CH_AFIRMA_PALABRAS.has(w)) && CH_AFIRMA_NUCLEO.test(n);
+}
+// Pedir hablar con alguien, aunque venga dentro de un mensaje más largo o mientras el pedido de nombre o planes esté pendiente.
+const CH_PIDE_EQUIPO_DIRECTO = /\b(?:quiero|quisiera|me gustaria|necesito|prefiero|puedo|podria|podrian|puedes|podrias|deseo)\b[^.!?]{0,25}\b(?:hablar|conversar|comunicarme|contactarme|comunicar|contactar)\w*\s+con\b[^.!?]{0,20}\b(?:alguien(?! de (?:mi|mis|nuestro))|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|ventas|recepcion)\b|\b(?:comunicame|comunicanos|pasame|pasenme|pasanos|conectame|conectenme|ponme|pongame)\b[^.!?]{0,15}\bcon\b[^.!?]{0,15}\b(?:alguien|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|ventas)\b|\b(?:mandame|mandenme|enviame|envienme|mandanos)\b[^.!?]{0,6}\b(?:un|una) (?:asesor|asesora|ejecutivo|ejecutiva|vendedor|especialista|persona)\b|^(?:contacto|hablar con ventas|ventas)$/;
+const CH_OFRECE_EQUIPO = /hablar con (?:alguien de |una persona de |alguien del )?(?:nuestro |el )?equipo/;
+const CH_OFRECE_PLANES = /\bver (?:nuestros |los |todos los )?planes|\bmostrar(?:te)? (?:nuestros |los )?planes/;
 const CH_A_MEDIDA = /(^| )(a medida|personaliz\w*|integra\w*|erp|sistema propio|mi sistema|sistemas)( |$)/;
 function chPideAMedida(t) {
   return CH_A_MEDIDA.test(chNorm(t));
@@ -931,7 +945,10 @@ function chDecidir(a) {
   if (ev.some((e) => e.boton === 'equipo')) return equipo(false);
   if (ev.some((e) => e.boton === 'planes')) return conPlanes(false);
   if (dijo !== '') {
+    if (CH_PIDE_EQUIPO_DIRECTO.test(chNorm(dijo))) { plan.extraerDatos = true; return equipo(false); } // (si de paso dice su nombre y su negocio, el código los anota)
     if (chPideAsesor(dijo) || chPidioContacto(dijo)) return equipo(false);
+    // El último mensaje del asistente ofreció hablar con el equipo y el cliente acepta con un «sí» corto: se deriva por CÓDIGO (el modelo no decide). Con la oferta doble (planes o equipo), planes si aún no los vio.
+    if (ev.every((e) => e.k === 'texto' && chAfirma(e.c)) && (f.ofreceEquipo === true || CH_OFRECE_EQUIPO.test(chNorm(chUltimoDelAsistente(f))))) return f.ofrecePlanes === true && f.planesMostrados !== true ? conPlanes(false) : equipo(false);
     if (chEsSoporte(dijo)) return equipo(true);
     // Identidad: la respuesta es SIEMPRE el texto fijo del dato (reconoce ser un asistente virtual con IA); el modelo no interviene (el prompt no es una barrera).
     if (chEsIdentidad(dijo, '')) return fijo('identidad');
@@ -1707,7 +1724,8 @@ function chAplicarTurno(a) {
   if (a.plan.extraerDatos === true) {
     for (const e of ev) {
       if ((e.k !== 'texto' && e.k !== 'audio') || e.c === '') continue;
-      const del = chNombreYEmpresaDelTexto(e.c);
+      let del = chNombreYEmpresaDelTexto(e.c);
+      if (!del.nombre && !del.empresa) for (const seg of e.c.split(/[.,;!?¡¿\n]+/)) { del = chNombreYEmpresaDelTexto(seg); if (del.nombre || del.empresa) break; } // (el pedido y la presentación en un mismo mensaje: «Quiero hablar con una persona, soy Ana…»)
       if (del.nombre && !f.nombre) f.nombre = del.nombre;
       if (del.empresa && !f.empresa && chNorm(del.empresa) !== chNorm(f.nombre)) f.empresa = del.empresa;
       if (del.nombre || del.empresa) break;
@@ -1720,6 +1738,8 @@ function chAplicarTurno(a) {
   if (a.plan.ruta === 'equipo') { if (a.sinRecepcion !== true) f.equipoAhora = true; f.nombrePedido = true; }
   if (a.pidioDatos === true) f.nombrePedido = true;
   f.preguntaDatos = a.pidioDatos === true || a.plan.ruta === 'pedirNombre' || /como te llamas|como se llama tu (?:negocio|empresa)/.test(chNorm(a.mensaje));
+  // Lo que OFRECIÓ el último mensaje (la fija el código sobre el texto completo, no sobre el recorte del historial): un «sí» corto lo acepta (`chAfirma`).
+  f.ofreceEquipo = a.plan.ruta !== 'equipo' && CH_OFRECE_EQUIPO.test(chNorm(a.mensaje)); f.ofrecePlanes = CH_OFRECE_PLANES.test(chNorm(a.mensaje));
   if (a.explicacion === true) f.explicado = true;
   if (a.complemento === true) f.complementos = Math.min(3, f.complementos + 1);
   f.sitioUltimo = a.sitio === true; if (a.sitio === true) f.sitiosVentana = Math.min(CH_TOPE_SITIO, f.sitiosVentana + 1); // el sitio NO va en dos mensajes seguidos (la similitud con el anterior cruzaría 0,75)
