@@ -287,6 +287,8 @@ export function textoDeEnvio(payload) {
     const comps = objeto(payload.template).components ?? [];
     return comps.flatMap((c) => c.parameters ?? []).map((x) => String(x.text ?? '')).join(' | ');
   }
+  if (tipo === 'image') return String(objeto(payload.image).caption ?? '');
+  if (tipo === 'document') return String(objeto(payload.document).caption ?? '');
   return JSON.stringify(payload);
 }
 
@@ -630,7 +632,7 @@ export async function llamarGemini({ cuerpo, urlDelNodo, credencial, opciones, d
 /** Las funciones y patrones de la biblioteca del flujo (`src/lib/chat.js`) y las `cm*` comunes, en un contexto aislado (sin los globales de Node, como el Code de n8n). */
 export function cargarLibreria() {
   const fuente = [RUTA_LIB, RUTA_MENSAJES, RUTA_FILTRO].map((r) => readFileSync(r, 'utf8')).join('\n');
-  const nombres = ['chNorm', 'chContar', 'chSistemaAjeno', 'chObjetoDelModelo', 'chTerminaBien', 'chPlano', 'chSimilitud', 'CH_ACREDITA_MODELO', 'CH_CIFRA_DE_CONSUMO', 'CH_SISTEMA_CONOCIDO', 'CH_BLOQUEO_COMUN', 'CH_OFERTA_DEL_MODELO'];
+  const nombres = ['chFichaBase', 'chNorm', 'chContar', 'chSistemaAjeno', 'chObjetoDelModelo', 'chTerminaBien', 'chPlano', 'chSimilitud', 'CH_ACREDITA_MODELO', 'CH_CIFRA_DE_CONSUMO', 'CH_SISTEMA_CONOCIDO', 'CH_BLOQUEO_COMUN', 'CH_OFERTA_DEL_MODELO'];
   return runInNewContext(`${fuente}\n({ ${nombres.join(', ')} })`, {});
 }
 const datosDelChat = () => JSON.parse(readFileSync(RUTA_DATOS, 'utf8')).datos;
@@ -720,17 +722,17 @@ export function revisarMensaje(m, ctx = {}) {
       if (ids.includes('planes') && !(ctx.eligioRubro === true || ctx.interes === true)) anota('boton_antes_de_tiempo', '«Ver planes» sin rubro elegido ni interés del cliente');
       if (ids.includes('equipo') && ctx.equipoPermitido !== true) anota('boton_antes_de_tiempo', '«Hablar con el equipo» sin que haga falta ni se acabaran las preguntas');
       // (4) Ningún mensaje que declina o no puede resolver queda sin la salida al equipo (salvo que ya lo haya pulsado): sin callejón sin salida.
-      if (ctx.declina === true && !ids.includes('equipo') && !ctx.pulsados.has('equipo')) anota('declina_sin_boton', 'declina o no puede resolver y no ofrece al equipo: ' + c.slice(-90));
+      if (ctx.declina === true && !ids.includes('equipo') && ctx.equipoPulsado !== true) anota('declina_sin_boton', 'declina o no puede resolver y no ofrece al equipo: ' + c.slice(-90));
     }
   }
   // Lo que escribió el MODELO: contenido (no una muletilla ni una línea) y cierre con una pregunta o la invitación a elegir.
   if (ctx.origen === 'modelo' && ctx.contexto !== 'cortesia') {
-    // El mismo mínimo que el flujo: 25 palabras (10 cuando se pregunta algo corto: «Otro», los datos o un medio ilegible).
-    if (palabrasDe(c) < (['otro', 'datos', 'medio'].includes(ctx.contexto) ? 10 : 12)) anota('sin_contenido'); // (el mínimo de 25 lo exige el validador ANTES de enviar; el código puede quitar la oferta final)
+    // El mismo mínimo que el flujo: 25 palabras (10 cuando se pregunta algo corto: «Otro», los datos o un medio ilegible), medido sobre el texto del MODELO tal como lo validó el código (antes de acomodarlo a los botones).
+    const base = ctx.textoModelo ? ctx.textoModelo : c;
+    if (palabrasDe(base) < (['otro', 'datos', 'medio'].includes(ctx.contexto) ? 10 : 25)) anota('sin_contenido');
     // (tras el traspaso el mensaje es una lista: la invitación a otro negocio va al final y el cierre se mide sobre la respuesta)
-    const cuerpoModelo = m.evento === 'lista_otro' || (tipoInter(m.payload) === 'list' && ctx.equipoHecho === true) ? c.split('\n\n').slice(0, -1).join('\n\n') || c : c;
-    // (el cierre lo exige el validador ANTES de enviar; el código puede quitar la oferta final que no tiene botón, así que aquí solo se exige si el mensaje lleva botones)
-    if (!lib.chTerminaBien(cuerpoModelo) && botonesDe(m.payload).length > 0 && /\b(ver|muestro) (los |nuestros )?planes|hablar con/i.test(cuerpoModelo.slice(-200))) anota('sin_cierre');
+    const cuerpoModelo = ctx.textoModelo ? ctx.textoModelo : (m.evento === 'lista_otro' || (tipoInter(m.payload) === 'list' && ctx.equipoHecho === true) ? c.split('\n\n').slice(0, -1).join('\n\n') || c : c);
+    if (!lib.chTerminaBien(cuerpoModelo)) anota('sin_cierre');
   }
   // Un rubro estándar explicado cierra con la pregunta EXACTA del documento.
   if (ctx.contexto === 'rubro' && m.evento !== 'lista' && botonesDe(m.payload).includes('planes') && !n.endsWith(sinTildes(CIERRE_EXACTO).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim())) {
@@ -773,6 +775,12 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
   const CLIENTE = (caso.opciones ?? {}).desde === 'recepcion' ? REC : telefonoDe(caso.id, rep);
   const panel = panelDe(caso.opciones ?? {});
   const comp = { hoja: { filas: [] }, formulas: [], captura: { mensajes: [], modelo: [] }, seqSalida: 0, esperas: 0 };
+  // `fichaInicial`: el caso arranca con una ficha ya vigente (un estado que la conversación sola no alcanza: p. ej. el equipo ya pulsado sin traspaso vigente).
+  if (caso.fichaInicial) {
+    const base = lib.chFichaBase();
+    Object.assign(base, caso.fichaInicial, { historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: 'respuesta' }], ultimoMs: AHORA - 60_000 });
+    comp.sd = { chatNovuchat: { [CLIENTE]: base } };
+  }
   const celdas = (f) => Object.fromEntries(ENC.map((h, c) => [h, f[c] ?? '']));
   const celda = (valor, formato) => {
     const v = String(valor ?? '');
@@ -874,7 +882,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     return resultados;
   }
 
-  const corrida = { caso: caso.id, rep, turnos: 0, llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], conversacion: [], palabras: [], pulsados: new Set(), rubroPrev: String(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).rubro ?? ''), respondidasPrev: Number(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).respondidas) || 0, inv: { pulsado: 0, antes: 0, texto: 0 }, modeloTurnos: 0, respaldos: 0, causas: {}, esperas: 0, repeticiones: 0 };
+  const corrida = { caso: caso.id, rep, turnos: 0, llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], conversacion: [], palabras: [], pulsados: new Set(), equipoPrev: objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).equipoTocado === true, rubroPrev: String(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).rubro ?? ''), respondidasPrev: Number(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).respondidas) || 0, inv: { pulsado: 0, antes: 0, texto: 0 }, modeloTurnos: 0, respaldos: 0, causas: {}, esperas: 0, repeticiones: 0 };
   const falla = (turno, dicho, regla, texto) => corrida.violaciones.push({ caso: caso.id, rep, turno, dicho, regla, texto: String(texto).replace(/\s+/g, ' ').slice(0, 200) });
   for (const [i, t] of caso.turnos.entries()) {
     comp.captura = { mensajes: [], modelo: [] };
@@ -896,10 +904,14 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     const ctx = { lib, origen: String(resumen.origen ?? ''), contexto: String(resumen.contexto ?? ''), planesVistos: fichaDespues.planesMostrados === true, planesTocado: fichaDespues.planesTocado === true, equipoTocado: fichaDespues.equipoTocado === true, plan: String(resumen.plan ?? ''), equipoHecho: fichaDespues.equipoAhora === true };
     // Estado de las invariantes de botones: lo pulsado hasta este turno (incluido), el rubro elegido, el interés del cliente y si «Hablar con el equipo» hacía falta.
     const eventosDelTurno = t.tipo === 'rafaga' ? t.eventos : [t];
-    for (const e of eventosDelTurno) if (e.tipo === 'boton' && ['planes', 'equipo'].includes(e.id)) corrida.pulsados.add(e.id);
+    for (const e of eventosDelTurno) if (e.tipo === 'boton' && e.id === 'planes') corrida.pulsados.add(e.id);
     const textosDelTurno = eventosDelTurno.filter((e) => e.tipo === 'texto').map((e) => sinTildes(e.texto));
     const ficha = fichaDespues;
-    ctx.pulsados = corrida.pulsados;
+    // «Hablar con el equipo» pulsado = el estado de la ficha (por toque, por texto o por «Sí»); un negocio nuevo (ciclo) lo repone y puede ofrecerse otra vez.
+    const equipoPulsado = (corrida.equipoPrev === true && ficha.equipoTocado === true) || (ficha.equipoTocado === true && ficha.equipoAhora === true) || eventosDelTurno.some((e) => e.tipo === 'boton' && e.id === 'equipo' && ficha.equipoTocado === true);
+    ctx.equipoPulsado = equipoPulsado;
+    ctx.pulsados = new Set([...corrida.pulsados, ...(equipoPulsado ? ['equipo'] : [])]);
+    ctx.textoModelo = String(resumen.textoModelo ?? '');
     ctx.eligioRubro = eventosDelTurno.some((e) => e.tipo === 'fila' && /^rubro:/.test(e.id)) || (corrida.rubroPrev !== String(ficha.rubro ?? '') && String(ficha.rubro ?? '') !== '');
     ctx.interes = textosDelTurno.some((x) => /\b(cuanto|precio|precios|costo|costos|cuesta|cuestan|tarifa|plan|planes|incluye|incluyen|funciona|funcionan|interesa|interesan|empezar|comenzar|contratar|contrato|instalacion|instalar|implementar|tarda|demora|informacion|info|detalles)\b/.test(x));
     const requeridoPorMensaje = ['planes'].includes(ctx.plan) || (ctx.plan === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(String(resumen.fijo ?? ''))) || ['sin_dato', 'no_documentado', 'equipo', 'complemento', 'generico', 'ambiguo', 'otro', 'otroRespuesta'].includes(String(resumen.evento ?? ''));
@@ -907,13 +919,14 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     const acabaron = ordinaria && (textosDelTurno.some((x) => /\b(no tengo mas (dudas|preguntas)|ninguna duda|eso es todo|nada mas|ya entendi|queda claro|quiero empezar|como contrato|como se contrata|como empiezo|como empezamos|listo para empezar|donde firmo)\b/.test(x)) || (String(ficha.explicado) === 'true' && corrida.respondidasPrev >= 2) || ['otro', 'captacion'].includes(String(ficha.rubro ?? '')) || textosDelTurno.some((x) => /(^| )(a medida|personaliz\w*|integra\w*|erp|sistema propio|mi sistema|sistemas)( |$)/.test(x)) || (resumen.causas ?? []).includes('funcion_inventada'));
     // Una consulta que el chat no puede resolver es REQUERIDA: el cliente propone una función no documentada para su rubro (cobros, QR, adelanto, seña, pago total fuera de gastronomía, retail y «otro»).
     const funcionNoDocumentada = !['', 'gastronomia', 'retail', 'otro'].includes(String(ficha.rubro ?? '')) && textosDelTurno.some((x) => /\b(adelantos?|anticipos?|senias?|senas?|pagos? total(es)?|pagos? por adelantado|cobros?)\b|\bqr\b/.test(x));
-    ctx.declina = alCliente.some((m) => !m.esRespaldo && /(no lo tengo documentado|no esta documentad\w*|mi especialidad|no tengo (ese|esa|el|la) (dato|informacion)|no puedo (prometer|confirmar|asegurar)\w*|prefiero no (prometer|darte|afirmar)\w*)/.test(sinTildes(m.cuerpo)));
+    ctx.declina = alCliente.some((m) => !m.esRespaldo && /(no lo tengo documentado|no esta documentad\w*|no es mi especialidad|fuera de mi especialidad|no tengo (ese|esa|el|la) (dato|informacion)|no puedo (prometer|confirmar|asegurar)\w*|prefiero no (prometer|darte|afirmar)\w*)/.test(sinTildes(m.cuerpo)));
     ctx.equipoPermitido = requeridoPorMensaje || acabaron || funcionNoDocumentada || ctx.declina;
     if (alCliente.length) { corrida.inv.texto += 1; if (corrida.pulsados.size) corrida.inv.pulsado += 1; if (alCliente.some((m) => tipoInter(m.payload) === 'button')) corrida.inv.antes += 1; }
     for (const m of alCliente) {
       for (const x of revisarMensaje(m, ctx)) falla(i + 1, dicho, x.regla, x.texto);
       if (!m.esRespaldo) { corrida.tonos.push(tonoDe(m.cuerpo)); corrida.palabras.push(palabrasDe(m.cuerpo)); }
     }
+    corrida.equipoPrev = ficha.equipoTocado === true;
     corrida.rubroPrev = String(ficha.rubro ?? '');
     corrida.respondidasPrev = Number(ficha.respondidas) || 0;
     if (comp.captura.modelo.length) {
@@ -1070,8 +1083,8 @@ export function validarCasos(datos) {
     if (c.planilla !== undefined && (typeof c.planilla !== 'object' || c.planilla === null || Object.keys(c.planilla).some((k) => !['calificacion', 'contiene', 'noContiene'].includes(k)))) {
       throw new Error(`bateria-casos.json: ${c.id}: «planilla» solo admite calificacion, contiene y noContiene.`);
     }
-    if (c.ficha !== undefined && (typeof c.ficha !== 'object' || c.ficha === null || Object.keys(c.ficha).some((k) => !['rubro', 'nombre', 'empresa', 'necesidad', 'planesMostrados', 'equipoAhora', 'nombrePedido', 'explicado', 'planesPendientes'].includes(k)))) {
-      throw new Error(`bateria-casos.json: ${c.id}: «ficha» solo admite rubro, nombre, empresa, necesidad, planesMostrados, equipoAhora, nombrePedido, explicado y planesPendientes.`);
+    if (c.ficha !== undefined && (typeof c.ficha !== 'object' || c.ficha === null || Object.keys(c.ficha).some((k) => !['rubro', 'nombre', 'empresa', 'necesidad', 'planesMostrados', 'equipoAhora', 'equipoTocado', 'planesTocado', 'nombrePedido', 'explicado', 'planesPendientes'].includes(k)))) {
+      throw new Error(`bateria-casos.json: ${c.id}: «ficha» solo admite rubro, nombre, empresa, necesidad, planesMostrados, equipoAhora, equipoTocado, planesTocado, nombrePedido, explicado y planesPendientes.`);
     }
   }
   return casos;
@@ -1120,7 +1133,7 @@ function textoDelInforme(r) {
   o.push(`Causas de rechazo del mensaje del modelo: ${Object.entries(t.causasDeRechazo).map(([k, v]) => `${k} ${v}`).join(', ') || 'ninguna'}`);
   o.push(`Longitud: ${t.longitud.palabrasMedias} palabras por mensaje en promedio (mediana ${t.longitud.mediana}, máximo ${t.longitud.maximo}) · tono: voseo ${t.tono.voseo}, usted ${t.tono.usted} (sobre ${t.tono.mensajes} mensajes)`);
   const iv = t.invariantesDeBotones;
-  o.push(`Invariantes de botones (turnos revisados en ${iv.casos} casos): lo pulsado no reaparece ${iv.pulsadoNoReaparece} · nada se ofrece antes de tiempo ${iv.noSeOfreceAntesDeTiempo} · texto coherente con los botones ${iv.textoCoherenteConLosBotones}`);
+  o.push(`Invariantes de botones (turnos observados en ${iv.casos} casos; cada violación se informa aparte): lo pulsado no reaparece ${iv.pulsadoNoReaparece} · nada se ofrece antes de tiempo ${iv.noSeOfreceAntesDeTiempo} · texto coherente con los botones ${iv.textoCoherenteConLosBotones}`);
   o.push(`Mensajes por turno: ${Math.round(t.mensajesPorTurno * 100) / 100} (${t.mensajes} mensajes en ${t.turnos} turnos) · plantillas de aviso: ${t.plantillas}`);
   o.push(`Calificación final (hoja): ${Object.entries(t.calificaciones).map(([k, v]) => `${k || '(vacía)'} ${v}`).join(', ') || '—'} · filas por corrida ${Math.round(t.filasPorCorrida * 100) / 100}`);
   if (t.formulasEnLaHoja) o.push(`ATENCIÓN: ${t.formulasEnLaHoja} celda(s) de la hoja quedaron como fórmula (USER_ENTERED).`);

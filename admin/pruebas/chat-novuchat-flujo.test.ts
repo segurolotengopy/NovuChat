@@ -638,7 +638,7 @@ describe('el modelo es el cerebro: los tres escenarios del documento (§7)', () 
     expect(w.modelo.llamadas).toHaveLength(1);
     expect(JSON.stringify(w.modelo.llamadas[0]!.cuerpo)).toMatch(/a ver cuéntame un chiste/);
     expect(t.aMi[0]!.cuerpo).toMatch(/Soy el asistente virtual de NovuChat/);
-    expect(idsBotones(t.aMi[0]!)).toEqual(['equipo']); // (declina el chiste: la salida al equipo, no un callejón sin salida)
+    expect(idsBotones(t.aMi[0]!)).toEqual([]); // (un chiste que no hace falta responder no es una consulta sin respuesta: «mi especialidad» a secas ya no cuenta)
   });
 
   it('emojis sueltos («👽») llegan al modelo como «[Envió solo emojis…]»; si el modelo cae, sale el §7 «No estoy seguro de haberte entendido» con su pregunta, y no se repite: la 2.ª vez es el cierre hacia el equipo', () => {
@@ -2427,7 +2427,7 @@ describe('«Sí» a la oferta de hablar con el equipo: la deriva el código, no 
     w.modelo.con = 'ERROR';
     j.lista('rubro:belleza');
     j.texto('Uff sí, todo el día estoy pegada al celular y a veces me dejan plantada.'); // el modelo no responde: «ese dato lo revisa el equipo» + la oferta + el pedido del nombre pegado
-    expect(fichaDe(w, MAMA)!['ofreceEquipo'], 'el chat ofreció hablar con el equipo').toBe(true);
+    expect(['equipo', 'ambas'], 'el chat ofreció hablar con el equipo').toContain(fichaDe(w, MAMA)!['ofrecio']);
     return { w, j };
   };
   const derivo = (w: W, t: T, llamadas: number): void => {
@@ -2607,7 +2607,7 @@ describe('«Sí» a la oferta de hablar con el equipo: la deriva el código, no 
     for (const si of ['Si', 'sí', 'claro', 'ok', 'dale', '👍', 'Sí, gracias', 'claro, gracias']) {
       const { w, j } = conOferta();
       expect(fichaDe(w, MAMA)!['preguntaDatos'], 'el pedido del nombre va pegado').toBe(true);
-      expect(fichaDe(w, MAMA)!['ofreceEquipo'], 'la oferta sigue siendo la del modelo').toBe(true);
+      expect(['equipo', 'ambas'], 'la oferta sigue en pie').toContain(fichaDe(w, MAMA)!['ofrecio']);
       const llamadas = w.modelo.llamadas.length;
       derivo(w, j.texto(si), llamadas);
     }
@@ -2621,7 +2621,7 @@ describe('«Sí» a la oferta de hablar con el equipo: la deriva el código, no 
     const t0 = j.texto('¿Se integra con mi ERP?');
     expect(t0.aMi[0]!.cuerpo).toContain('www.novuchat.site');
     expect(t0.aMi[0]!.cuerpo).toMatch(/cómo te llamas/);
-    expect(fichaDe(w, MAMA)!['ofreceEquipo']).toBe(true);
+    expect(['equipo', 'ambas']).toContain(fichaDe(w, MAMA)!['ofrecio']);
     const llamadas = w.modelo.llamadas.length;
     derivo(w, j.texto('Sí'), llamadas);
   });
@@ -2812,8 +2812,8 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
     expect(t.plantillas).toHaveLength(1);
     w.modelo.con = dice(AGE.replace('varias agendas', 'varias sedes'));
     const despues = j.lista('rubro:salud').aMi[0]!;
-    expect(idsBotones(despues)).not.toContain('equipo');
-    expect(fichaDe(w, MAMA)!['equipoTocado']).toBe(true);
+    expect(idsBotones(despues)).not.toContain('equipo'); // (la explicación de un rubro no ofrece al equipo)
+    expect(fichaDe(w, MAMA)!['equipoTocado'], 'un negocio nuevo (ciclo) repone lo pulsado').toBe(false);
   });
   it('sin callejón sin salida: «Sería cobros con qr» en belleza (función no documentada) con el modelo que inventa o que declina fiel → siempre «Hablar con el equipo» y su invitación, nunca «Ver planes»; con el equipo ya pulsado, ninguno', () => {
     const FIEL = '¡Buena idea! 😊 Mi especialidad en tu rubro es mantener tu agenda llena: muestro tus servicios, reviso la disponibilidad de tus especialistas, agendo la cita y mando un recordatorio un día antes.' + Q;
@@ -2834,6 +2834,30 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
     const despues = j.texto('Sería cobros con qr').aMi[0]!;
     expect(idsBotones(despues)).toEqual([]);
     expect(despues.cuerpo).not.toMatch(/hablar con alguien de nuestro equipo/);
+  });
+  it('segundo negocio tras el traspaso: otro rubro → «¿cuánto cuesta?» → nombre → planes con el cierre de precios → «Sí» deriva otra vez (empresa nueva: aviso a recepción); y una consulta sin respuesta lleva el equipo', () => {
+    const { w, j } = tras();
+    const t1 = j.texto('Soy Ana de Salón Ana, quiero hablar con alguien');
+    expect(tipoInter(t1.aMi[0]!)).toBe('cta_url');
+    expect(t1.plantillas).toHaveLength(1);
+    expect(fichaDe(w, MAMA)!['equipoTocado']).toBe(true);
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:salud'); // otro negocio: el equipo vuelve a ser ofrecible
+    expect(fichaDe(w, MAMA)!['equipoTocado']).toBe(false);
+    expect(j.texto('¿Cuánto cuesta?').aMi[0]!.cuerpo).toMatch(/cómo se llama tu negocio/);
+    const pl = j.texto('Luis Rojas, Clínica Sol').aMi[0]!;
+    expect(idsBotones(pl)).toEqual(['equipo']);
+    const t2 = j.texto('Sí');
+    expect(tipoInter(t2.aMi[0]!)).toBe('cta_url');
+    expect(t2.plantillas).toHaveLength(1);
+    // y en otro mundo: tras el traspaso y otro rubro, una consulta sin respuesta lleva «Hablar con el equipo» (ni callejón sin salida ni promesa sin mecanismo)
+    const o = tras();
+    o.j.texto('Soy Ana de Salón Ana, quiero hablar con alguien');
+    o.w.modelo.con = 'ERROR';
+    o.j.lista('rubro:salud');
+    const e = o.j.texto('¿Se integra con mi ERP?').aMi[0]!;
+    expect(idsBotones(e)).toEqual(['equipo']);
+    expect(e.cuerpo).toMatch(/hablar con alguien de nuestro equipo/);
   });
   it('(i) el pedido directo de una persona deriva; (k) el «Sí» a una oferta real deriva; el «Sí» a «¿te gustaría ver nuestros planes?» pide los datos y luego muestra los planes', () => {
     const a = tras();

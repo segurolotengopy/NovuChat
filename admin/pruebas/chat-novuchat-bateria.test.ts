@@ -183,7 +183,7 @@ describe('los detectores de la batería: detectan y no detectan de más', () => 
     const ctx = { pulsados: new Set(), eligioRubro: true, interes: true, equipoPermitido: true, declina: true };
     expect(reglas({ tipo: 'text', cuerpo: DECLINA, evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false }, ctx)).toContain('declina_sin_boton');
     expect(reglas(msg(DECLINA + ' ¿Te gustaría hablar con alguien de nuestro equipo? 🤝', btn('equipo')), ctx)).not.toContain('declina_sin_boton');
-    expect(reglas({ tipo: 'text', cuerpo: DECLINA, evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false }, { ...ctx, pulsados: new Set(['equipo']) })).not.toContain('declina_sin_boton');
+    expect(reglas({ tipo: 'text', cuerpo: DECLINA, evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false }, { ...ctx, pulsados: new Set(['equipo']), equipoPulsado: true })).not.toContain('declina_sin_boton'); // (pulsado = el estado de la ficha: por toque, texto o «Sí»)
   });
   it('INVARIANTE 3 (global): el texto es coherente con los botones — invitar al equipo o a ver los planes sin el botón, o hablar de «los botones de abajo» sin botones, es `texto_sin_boton` (botón, texto, imagen o lista)', () => {
     expect(reglas(msg(OFERTA_EQ, btn('planes')), {})).toContain('texto_sin_boton');
@@ -205,8 +205,8 @@ describe('los detectores de la batería: detectan y no detectan de más', () => 
   });
   it('lo que escribe el MODELO exige contenido (25 palabras) y cierre con pregunta o invitación; los textos del código no', () => {
     expect(reglas(msg('Claro, con gusto te ayudo con eso.'), { origen: 'modelo' })).toContain('sin_contenido');
-    // (el cierre lo exige el validador ANTES de enviar; el código puede quitar la oferta final que no tiene botón: no se exige sobre lo ya enviado)
-    expect(reglas(msg(LARGO.replace(/¿Te gustaría.*$/, 'NovuChat trabaja las 24 horas sin parar para tu negocio todos los días.')), { origen: 'modelo' })).not.toContain('sin_cierre');
+    // (se mide sobre el texto del modelo tal como lo validó el código —`ctx.textoModelo`—, no sobre lo que quedó tras acomodarlo a los botones)
+    expect(reglas(msg(LARGO.replace(/¿Te gustaría.*$/, 'NovuChat trabaja las 24 horas sin parar para tu negocio todos los días.')), { origen: 'modelo' })).toContain('sin_cierre');
     expect(reglas(msg('Claro, con gusto te ayudo con eso.'), { origen: 'codigo' })).toEqual([]);
     expect(reglas(msg('¡Con gusto! 😊'), { origen: 'modelo', contexto: 'cortesia' })).toEqual([]);
   });
@@ -248,7 +248,7 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     for (const id of ['S5', 'E1', 'RGAS', 'D13', 'S2']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
   });
   it('si una consulta sin respuesta (integración, costo de Meta, banco, descuento) deja de llevar «Hablar con el equipo», se dice «botones_inesperados»', async () => {
-    const f = estropear("r.equipo = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(o.fijo);", 'r.equipo = false;');
+    const f = estropear("CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true,", "CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: false,");
     expect(await violacionesCon(f, 'B7')).toContain('botones_inesperados');
   });
   it('si el filtro acepta mensajes sin contenido (la muletilla «¡Te entiendo! 😊»), llega al cliente y se dice «muletilla»', async () => {
@@ -306,19 +306,43 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
   });
   it('R5: si tras el traspaso siguen los botones en vez de la lista de rubros, se dice `botones_inesperados` y `boton_del_equipo_otra_vez`', async () => {
     const f = estropear('lista: antes.equipoAhora === true && !ciclo }', 'lista: false }');
-    const r = await violacionesCon(f, 'A1');
-    expect(r).toContain('botones_inesperados');
+    expect(await violacionesCon(f, 'A1')).toContain('botones_inesperados');
+    // sin la compuerta de «equipo ya pulsado» el botón del equipo reaparece en el MISMO ciclo: lo dicen las invariantes
+    const g = estropear('const equipo = v(fila.equipo) && !s.equipoTocado;', 'const equipo = v(fila.equipo);', undefined, f);
+    const r = await violacionesCon(g, 'D17');
+    expect(r).toContain('boton_del_equipo_otra_vez');
+    expect(r).toContain('boton_pulsado_reaparece');
+    expect(await violacionesCon(FLUJO, 'D17')).toEqual([]);
   });
   it('si «Ver planes» se vuelve a ofrecer tras pulsarlo o con los planes ya vistos, se dice `ver_planes_tras_pulsarlo` y `ver_planes_cuando_ya_los_vio`', async () => {
-    const f = estropear('const ver = f.planesTocado !== true && f.planesMostrados !== true;', 'const ver = true;');
+    const f = estropear('const planes = v(fila.planes) && !s.planesTocado && !s.planesVistos;', 'const planes = v(fila.planes);');
     const v = await violacionesCon(f, 'B3');
     expect(v).toContain('boton_pulsado_reaparece'); // invariante global (1)
     expect(v).toContain('ver_planes_cuando_ya_los_vio');
   });
+  it('tras el traspaso, otro negocio (ciclo) repone el equipo: si el ciclo no lo repone, el segundo negocio no deriva (`ruta_inesperada`, `botones_inesperados`, `avisos_a_recepcion_inesperados`)', async () => {
+    const f = estropear('if (a.ciclo === true) { f.planesTocado = false; f.equipoTocado = false; f.respondidas = 0; }', 'if (a.ciclo === true) { /* sin reponer */ }');
+    expect(await violacionesCon(FLUJO, 'D14')).toEqual([]);
+    expect(await violacionesCon(FLUJO, 'D15')).toEqual([]);
+    const v14 = await violacionesCon(f, 'D14');
+    expect(v14).toContain('ruta_inesperada');
+    expect(v14).toContain('avisos_a_recepcion_inesperados');
+    expect(await violacionesCon(f, 'D15')).toContain('botones_inesperados');
+  });
+  it('INVARIANTE 4 en el flujo: si el modelo declina y el código no le pone la salida al equipo, se dice `declina_sin_boton`', async () => {
+    const f = estropear('no lo tengo documentado|', 'xx_no_coincide|');
+    expect(await violacionesCon(f, 'C2')).toContain('declina_sin_boton');
+    expect(await violacionesCon(FLUJO, 'C2')).toEqual([]);
+  });
+  it('la ruta de planes con el equipo ya pulsado (imagen con el texto de pie, sin botones) se mide con su texto (`caption`), sin falsas cifras', async () => {
+    expect(await violacionesCon(FLUJO, 'D16')).toEqual([]);
+    expect(B.textoDeEnvio({ type: 'image', image: { link: 'https://x.test/p.png', caption: 'Setup estándar USD 65' } })).toBe('Setup estándar USD 65');
+    expect(B.textoDeEnvio({ type: 'document', document: { link: 'https://x.test/p.pdf', caption: 'Planes' } })).toBe('Planes');
+  });
   it('INVARIANTES globales en el flujo: si el texto deja de acomodarse a los botones se dice `texto_sin_boton`; si el rubro ofrece también al equipo, `boton_antes_de_tiempo`; --seco da cero violaciones y el informe cuenta los turnos revisados', async () => {
-    const f1 = estropear('const cuerpo = chEmMensaje(nuevo && est.lista !== true ? chAcomodaOferta(texto, est.botones) : chLineas(texto), cfg);', 'const cuerpo = chEmMensaje(chLineas(texto), cfg);');
+    const f1 = estropear('est && est.lista === true ? chLineas(texto) : chRedondear(texto, ids, cfg)', 'chLineas(texto)');
     expect(await violacionesCon(f1, 'B1')).toContain('texto_sin_boton');
-    const f2 = estropear("if (['rubro', 'multiple'].includes(ev)) r.planes = ver;", "if (['rubro', 'multiple'].includes(ev)) { r.planes = ver; r.equipo = true; }");
+    const f2 = estropear("planes: true, equipo: false, nota: 'Eligió rubro", "planes: true, equipo: true, nota: 'Eligió rubro");
     expect(await violacionesCon(f2, 'S1')).toContain('boton_antes_de_tiempo');
     const r = await correr(['--seco', '--n', '1', '--json'], sinRed);
     const inf = JSON.parse(r.salida) as J;
@@ -329,10 +353,10 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(iv.noSeOfreceAntesDeTiempo).toBeGreaterThan(50);
     expect(iv.textoCoherenteConLosBotones).toBeGreaterThan(200);
     const txt = await correr(['--seco', '--n', '1'], sinRed);
-    expect(txt.salida).toMatch(/Invariantes de botones \(turnos revisados en \d+ casos\)/);
+    expect(txt.salida).toMatch(/Invariantes de botones \(turnos observados en \d+ casos/);
   }, 120_000);
   it('si el pedido del nombre (por «Ver planes») lleva el botón «Ver planes», se dice `ver_planes_repetido`', async () => {
-    const f = estropear("if (o.ruta === 'planes') r.equipo = true;", "if (o.ruta === 'planes') r.equipo = true;\n  else if (o.ruta === 'pedirNombre') r.planes = true;");
+    const f = estropear("s.ruta === 'pedirNombre', planes: false,", "s.ruta === 'pedirNombre', planes: true,");
     expect(await violacionesCon(f, 'B2')).toContain('ver_planes_repetido');
   });
   it('R5: si el segundo negocio pisa al primero en la hoja (C, D, F) o no se agrega al resumen, se dice `planilla_no_coincide`', async () => {

@@ -31,6 +31,7 @@ let accion = turno.plan.ruta;
 let conversacion = false;
 let res = null;
 let origen = '';
+let fila = '';
 const plan = JSON.parse(JSON.stringify(turno.plan));
 
 const texto = (s) => cmMensaje('cliente', cmTexto(s), s, s, { tipoReporte: 'text', evento: accion });
@@ -73,9 +74,10 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
   accion = plan.ruta;
   // R5: los botones salen según lo ya hecho. Tras el traspaso, la lista de rubros (invita a otro negocio); si el cliente elige un rubro, empieza OTRO ciclo (`ciclo`).
   const ciclo = antes.equipoAhora === true && plan.ruta === 'modelo' && !!(plan.rubroElegido || (res.contexto === 'rubro' && res.rubroId));
-  // Los botones los decide el CÓDIGO por turno (`chBotonesDelTurno`): «Ver planes» solo con interés y nunca tras pulsarlo; «Hablar con el equipo» solo cuando hace falta o se acabaron las preguntas, y nunca tras pulsarlo.
-  const dec = chBotonesDelTurno({ ruta: plan.ruta, fijo: plan.fijo, evento: origen === 'modelo' ? res.contexto : res.evento, ficha: antes, textos: eventos.filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => e.c), aMedida: plan.aMedida === true, causas: res.causas, rubro: plan.rubroElegido || res.rubroId || antes.rubro, texto: res.texto });
-  const est = { botones: ['planes', 'equipo'].filter((b) => dec[b] === true), planes: antes.planesMostrados === true || plan.ruta === 'planes', lista: antes.equipoAhora === true && !ciclo };
+  // Los botones y las ofertas los decide la TABLA (`CH_TABLA`, una vez por turno): «Ver planes» con interés y nunca tras pulsarlo; «Hablar con el equipo» cuando hace falta o se acabaron las preguntas y nunca tras pulsarlo.
+  const dec = chBotonesDe(chSituacion({ plan: plan, res: res, eventos: eventos, ficha: antes }));
+  fila = dec.fila;
+  const est = { botones: ['planes', 'equipo'].filter((b) => dec[b] === true), lista: antes.equipoAhora === true && !ciclo };
   let complemento = false;
   let anexo = '';
   // El mensaje del turno. La ficha que se guarda dice lo que salió (historial) y lo que el cliente dijo.
@@ -103,14 +105,14 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
     // R4: en la PRIMERA respuesta del cliente a la explicación, sea cual sea el contexto, se agrega en el MISMO mensaje el pedido cordial del nombre y del negocio (una sola vez).
     // (lo que el cliente acaba de decir de sí mismo, ya validado por el código, cuenta: no se le vuelve a pedir)
     const conocido = Object.assign({}, antes, { nombre: antes.nombre || (res.lectura && res.lectura.nombre) || '', empresa: antes.empresa || (res.lectura && res.lectura.empresa) || '' });
-    const unido = chConAnexoDatos(cfg, conocido, dec.equipo && res.origen === 'modelo' ? chConInvitacionEquipo(cfg, res.texto) : res.texto, res.contexto);
+    const unido = chConAnexoDatos(cfg, conocido, res.texto, res.contexto);
     anexo = unido.pidio ? 'si' : '';
     // (el sitio web, solo en la empresa y cuando no hay dato: `empresa`, `sin_dato`, `no_documentado`)
     m = chClienteConSitio(unido.texto, cfg, res.evento, est, antes, ['empresa', 'sin_dato', 'no_documentado'].includes(res.evento));
   }
   mensajes.push(m);
   nueva = chAplicarTurno({ ficha: antes, eventos: eventos, hasta: turno.hasta, plan: plan, res: res, mensaje: m.textoSinSitio || m.texto, sitio: m.sitio === true, ahoraMs: ahora, anuncio: t.anuncio === true,
-    sinRecepcion: recepcion.length < 6, ciclo: ciclo, explicacion: plan.ruta === 'modelo' && ['rubro', 'otroRespuesta'].includes(res.contexto), pidioDatos: anexo !== '', complemento: complemento, ordinaria: dec.ordinaria });
+    sinRecepcion: recepcion.length < 6, ciclo: ciclo, explicacion: plan.ruta === 'modelo' && ['rubro', 'otroRespuesta'].includes(res.contexto), pidioDatos: anexo !== '', complemento: complemento, ordinaria: dec.ordinaria, botones: m.botones });
   // Pedir hablar con el equipo: la plantilla a recepción, UNA vez por ventana (`avisado` cuenta solo lo que Meta aceptó) y nunca al propio número de recepción. Con una empresa DISTINTA a la ya avisada,
   // un aviso nuevo (R5); con la misma, solo se reenvía el botón.
   if (plan.ruta === 'equipo') {
@@ -164,7 +166,7 @@ const guardarPlanilla = cambio && planillaOk;
 const fichaAntes = claveOk ? chClon(antes) : null;
 const resumen = {
   plan: accion, contexto: plan.contexto || '', origen: origen, causas: res ? res.causas : [], eventos: (turno.eventos || []).length, mensajes: salida.length,
-  fijo: plan.fijo || '', evento: res ? chTexto(origen === 'modelo' ? res.contexto : res.evento) : '',
+  fila: fila, textoModelo: res && origen === 'modelo' ? chTexto(res.texto) : '', fijo: plan.fijo || '', evento: res ? chTexto(origen === 'modelo' ? res.contexto : res.evento) : '',
   llamadasModelo: turno.llamarModelo === true ? ((cnNodo('Reintentar el modelo') ? 2 : 1)) : 0, rubro: nueva.rubro, hechos: nueva.hechos, descarte: res ? res.descarte : '',
 };
 if (!salida.length) {

@@ -305,8 +305,7 @@
       "conModelo": true,
       "contiene": [
        "asistente virtual de NovuChat"
-      ],
-      "botones": "equipo"
+      ]
      }
     },
     {
@@ -4361,7 +4360,7 @@
      "tipo": "texto",
      "texto": "¿Hacen reportes de ventas por sede?",
      "seco": {
-      "mensaje": "Eso no lo tengo documentado para tu rubro y prefiero no prometértelo: hoy me dedico a mostrar tus servicios, revisar la disponibilidad de tus especialistas y agendar las citas sin cruces. ¿Quieres que te cuente más sobre eso?"
+      "mensaje": "Eso no lo tengo documentado para tu rubro: hoy me dedico a mostrar tus servicios, revisar la disponibilidad de tus especialistas y agendar las citas sin cruces. ¿Quieres que te cuente más sobre eso?"
      },
      "exige": {
       "conModelo": true,
@@ -4383,10 +4382,233 @@
      "tipo": "texto",
      "texto": "¿Y hacen reportes de ventas por cada sede?",
      "seco": {
-      "mensaje": "Eso no lo tengo documentado para tu rubro y prefiero no prometértelo: hoy me dedico a mostrar tus servicios, revisar la disponibilidad de tus especialistas y agendar las citas sin cruces. ¿Quieres que te cuente más sobre las citas?"
+      "mensaje": "Eso no lo tengo documentado para tu rubro: hoy me dedico a mostrar tus servicios, revisar la disponibilidad de tus especialistas y agendar las citas sin cruces. ¿Quieres que te cuente más sobre las citas?"
      },
      "exige": {
       "conModelo": true,
+      "botones": "lista",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "D14",
+   "titulo": "Segundo negocio tras el traspaso: otro rubro → «¿cuánto cuesta?» → nombre → planes con el cierre de precios → «Sí» = el equipo vuelve a ser ofrecible y deriva (empresa nueva: aviso a recepción)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Soy Ana de Salón Ana, quiero hablar con alguien",
+     "exige": {
+      "ruta": "equipo",
+      "sinModelo": true,
+      "cta": true,
+      "plantillas": 1
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:salud",
+     "seco": {
+      "mensaje": "¡Qué bien que cuides la salud de tus pacientes! 🏥 NovuChat es tu recepcionista virtual 24/7: se integra a tu Google Calendar 📅, maneja varias agendas a la vez y agenda sin cruzar horarios. Además manda un recordatorio automático un día antes para asegurar la asistencia ⏰. ¿Quieres conocer los planes?",
+      "rubro": "salud"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "planes"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Cuánto cuesta?",
+     "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "botones": "texto"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Luis Rojas, Clínica Sol",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": true,
+      "botones": "equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí",
+     "exige": {
+      "ruta": "equipo",
+      "sinModelo": true,
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "D15",
+   "titulo": "Segundo negocio tras el traspaso: otro rubro → «¿se integra con mi ERP?» → «Hablar con el equipo» otra vez (sin callejón sin salida ni promesa sin mecanismo)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Soy Ana de Salón Ana, quiero hablar con alguien",
+     "exige": {
+      "ruta": "equipo",
+      "sinModelo": true,
+      "cta": true,
+      "plantillas": 1
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:salud",
+     "seco": {
+      "mensaje": "¡Qué bien que cuides la salud de tus pacientes! 🏥 NovuChat es tu recepcionista virtual 24/7: se integra a tu Google Calendar 📅, maneja varias agendas a la vez y agenda sin cruzar horarios. Además manda un recordatorio automático un día antes para asegurar la asistencia ⏰. ¿Quieres conocer los planes?",
+      "rubro": "salud"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "planes"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se integra con mi ERP?",
+     "exige": {
+      "sinModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "Esa no la tengo a la mano",
+       "hablar con alguien de nuestro equipo"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "D16",
+   "titulo": "Con «Hablar con el equipo» ya pulsado y sin traspaso vigente, los planes salen como imagen con el texto de pie: sin botones y sin el cierre que invita al equipo",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Planes por favor",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "botones": "texto",
+      "contiene": [
+       "Setup estándar USD 65"
+      ],
+      "noContiene": [
+       "hablar con alguien"
+      ]
+     }
+    }
+   ],
+   "fichaInicial": {
+    "rubro": "belleza",
+    "nombre": "Ana Pérez",
+    "empresa": "Salón Rosa",
+    "nombrePedido": true,
+    "explicado": true,
+    "equipoTocado": true,
+    "equipoAhora": false
+   }
+  },
+  {
+   "id": "D17",
+   "titulo": "Con el equipo ya pulsado en este ciclo, una consulta sin respuesta («¿se integra con mi ERP?») NO vuelve a ofrecer «Hablar con el equipo» (sale la lista de rubros)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Soy Ana de Salón Ana, quiero hablar con alguien",
+     "exige": {
+      "ruta": "equipo",
+      "sinModelo": true,
+      "cta": true,
+      "plantillas": 1
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se integra con mi ERP?",
+     "exige": {
+      "sinModelo": true,
       "botones": "lista",
       "noContiene": [
        "hablar con alguien de nuestro equipo"
