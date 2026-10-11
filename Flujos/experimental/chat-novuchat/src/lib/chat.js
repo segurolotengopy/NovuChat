@@ -837,13 +837,21 @@ const CH_AFIRMA_PALABRAS = new Set('si sii sip sep yes yep claro que ok okey oka
 const CH_AFIRMA_NUCLEO = /\b(?:si|sii|sip|sep|yes|yep|claro|ok|okey|okay|dale|acuerdo|quiero|gustaria|interesa|bueno|perfecto|listo|ya|idea|bien|adelante|hagamoslo|vamos|va|vale|obvio|supuesto|exacto|correcto|genial|excelente|porfa|porfavor|por favor)\b/;
 function chAfirma(t) {
   const crudo = chTexto(t).trim();
-  if (/^(?:[\s\uFE0F]|[👍👌🙏🙌👏🤝\u{1F3FB}-\u{1F3FF}])+$/u.test(crudo)) return true;
+  if (/^(?:[\s\uFE0F]|[👍👌🙌👏🤝\u{1F3FB}-\u{1F3FF}])+$/u.test(crudo)) return true;
   const n = chNorm(crudo).replace(/(.)\1{2,}/g, '$1$1');
   const p = n.split(' ');
-  return n !== '' && !/[?¿]/.test(crudo) && p.length <= 7 && p.every((w) => CH_AFIRMA_PALABRAS.has(w)) && CH_AFIRMA_NUCLEO.test(n);
+  return n !== '' && !/[?¿]/.test(crudo) && !/\b(?:gracias|chau|chao|adios)\b/.test(n) && p.length <= 7 && p.every((w) => CH_AFIRMA_PALABRAS.has(w)) && CH_AFIRMA_NUCLEO.test(n);
 }
 // Pedir hablar con alguien, aunque venga dentro de un mensaje más largo o mientras el pedido de nombre o planes esté pendiente.
-const CH_PIDE_EQUIPO_DIRECTO = /\b(?:quiero|quisiera|me gustaria|necesito|prefiero|puedo|podria|podrian|puedes|podrias|deseo)\b[^.!?]{0,25}\b(?:hablar|conversar|comunicarme|contactarme|comunicar|contactar)\w*\s+con\b[^.!?]{0,20}\b(?:alguien(?! de (?:mi|mis|nuestro))|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|ventas|recepcion)\b|\b(?:comunicame|comunicanos|pasame|pasenme|pasanos|conectame|conectenme|ponme|pongame)\b[^.!?]{0,15}\bcon\b[^.!?]{0,15}\b(?:alguien|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|ventas)\b|\b(?:mandame|mandenme|enviame|envienme|mandanos)\b[^.!?]{0,6}\b(?:un|una) (?:asesor|asesora|ejecutivo|ejecutiva|vendedor|especialista|persona)\b|^(?:contacto|hablar con ventas|ventas)$/;
+const CH_PIDE_EQUIPO_DIRECTO = /\b(?:quiero|quisiera|me gustaria|necesito|prefiero|puedo|podria|podrian|puedes|podrias|deseo)\b[^.!?]{0,25}\b(?:hablar|conversar|comunicarme|contactarme|comunicar|contactar)\w*\s+con\b[^.!?]{0,20}\b(?:alguien(?! de (?:mi|mis|nuestro))|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|(?:el area de )?ventas|recepcion)\b|\b(?:comunicame|comunicanos|pasame|pasenme|pasanos|conectame|conectenme|ponme|pongame)\b[^.!?]{0,15}\bcon\b[^.!?]{0,15}\b(?:alguien|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|(?:el area de )?ventas)\b|\b(?:mandame|mandenme|enviame|envienme|mandanos)\b[^.!?]{0,6}\b(?:un|una) (?:asesor|asesora|ejecutivo|ejecutiva|vendedor|especialista|persona)\b|^(?:contacto|hablar con ventas)$/;
+// El pedido DIRECTO solo cuenta si no lo niega («no quiero hablar con un asesor»), no habla de terceros («mis clientes podrían hablar con una persona») ni de otra gente («alguien de confianza», «el equipo de mi tienda»).
+function chPideEquipoDirecto(t) {
+  const n = chNorm(t);
+  const m = CH_PIDE_EQUIPO_DIRECTO.exec(n);
+  return !!m && !/\b(?:no|ni|nunca|tampoco|todavia no|aun no)\s*$/.test(n.slice(0, m.index)) && !/\b(?:mis|tus|los|sus) (?:clientes|pacientes|alumnos|usuarios)\b/.test(n.slice(0, m.index + m[0].length)) && !/alguien (?:en casa|de confianza)|equipo de (?:mi|tu|su)\b/.test(n);
+}
+// Lo que OFRECE un mensaje del asistente es lo que dice su pregunta FINAL (una mención suelta del equipo, como la de «puedes hablar con el equipo con los botones», no es una oferta).
+function chPreguntaFinal(t) { const q = /¿[^¿?]*\?[^¿?]*$/.exec(chTexto(t)); return q ? chNorm(q[0]) : ''; }
 const CH_OFRECE_EQUIPO = /hablar con (?:alguien de |una persona de |alguien del )?(?:nuestro |el )?equipo/;
 const CH_OFRECE_PLANES = /\bver (?:nuestros |los |todos los )?planes|\bmostrar(?:te)? (?:nuestros |los )?planes/;
 // «Quiero más información» como PRIMER mensaje (el texto del anuncio): solo palabras de pedir información; con otra palabra (un rubro) lo contesta el modelo.
@@ -948,10 +956,10 @@ function chDecidir(a) {
   if (ev.some((e) => e.boton === 'equipo')) return equipo(false);
   if (ev.some((e) => e.boton === 'planes')) return conPlanes(false);
   if (dijo !== '') {
-    if (CH_PIDE_EQUIPO_DIRECTO.test(chNorm(dijo))) { plan.extraerDatos = true; return equipo(false); } // (si de paso dice su nombre y su negocio, el código los anota)
+    if (chPideEquipoDirecto(dijo)) { plan.extraerDatos = true; return equipo(chEsSoporte(dijo)); } // (si de paso dice su nombre y su negocio, el código los anota; si ya es cliente, entra como soporte)
     if (chPideAsesor(dijo) || chPidioContacto(dijo)) return equipo(false);
     // El último mensaje del asistente ofreció hablar con el equipo y el cliente acepta con un «sí» corto: se deriva por CÓDIGO (el modelo no decide). Con la oferta doble (planes o equipo), planes si aún no los vio.
-    if (ev.every((e) => e.k === 'texto' && chAfirma(e.c)) && (f.ofreceEquipo === true || CH_OFRECE_EQUIPO.test(chNorm(chUltimoDelAsistente(f))))) return f.ofrecePlanes === true && f.planesMostrados !== true ? conPlanes(false) : equipo(false);
+    if (ev.every((e) => e.k === 'texto' && chAfirma(e.c)) && (f.ofreceEquipo === true || CH_OFRECE_EQUIPO.test(chPreguntaFinal(chUltimoDelAsistente(f))))) return f.ofrecePlanes === true && f.planesMostrados !== true ? conPlanes(false) : equipo(false);
     if (chEsSoporte(dijo)) return equipo(true);
     // Identidad: la respuesta es SIEMPRE el texto fijo del dato (reconoce ser un asistente virtual con IA); el modelo no interviene (el prompt no es una barrera).
     if (chEsIdentidad(dijo, '')) return fijo('identidad');
@@ -1740,8 +1748,11 @@ function chAplicarTurno(a) {
   if (a.plan.extraerDatos === true) {
     for (const e of ev) {
       if ((e.k !== 'texto' && e.k !== 'audio') || e.c === '') continue;
-      let del = chNombreYEmpresaDelTexto(e.c);
-      if (!del.nombre && !del.empresa) for (const seg of e.c.split(/[.,;!?¡¿\n]+/)) { del = chNombreYEmpresaDelTexto(seg); if (del.nombre || del.empresa) break; } // (el pedido y la presentación en un mismo mensaje: «Quiero hablar con una persona, soy Ana…»)
+      // (el pedido de hablar con alguien NUNCA es el nombre: se quita antes de buscar el nombre y el negocio; «Quiero hablar con una persona, soy Ana…» aún los anota)
+      const todos = e.c.split(/[.,;!?¡¿\n]+/);
+      const trozos = todos.filter((x) => !chPideEquipoDirecto(x) && !chPideAsesor(x) && !chPidioContacto(x));
+      let del = chNombreYEmpresaDelTexto(trozos.length < todos.length ? trozos.join(', ') : e.c);
+      if (!del.nombre && !del.empresa) for (const seg of trozos) { del = chNombreYEmpresaDelTexto(seg); if (del.nombre || del.empresa) break; }
       if (del.nombre && !f.nombre) f.nombre = del.nombre;
       if (del.empresa && !f.empresa && chNorm(del.empresa) !== chNorm(f.nombre)) f.empresa = del.empresa;
       if (del.nombre || del.empresa) break;
@@ -1755,7 +1766,7 @@ function chAplicarTurno(a) {
   if (a.pidioDatos === true) f.nombrePedido = true;
   f.preguntaDatos = a.pidioDatos === true || a.plan.ruta === 'pedirNombre' || /como te llamas|como se llama tu (?:negocio|empresa)/.test(chNorm(a.mensaje));
   // Lo que OFRECIÓ el último mensaje (la fija el código sobre el texto completo, no sobre el recorte del historial): un «sí» corto lo acepta (`chAfirma`).
-  f.ofreceEquipo = a.plan.ruta !== 'equipo' && CH_OFRECE_EQUIPO.test(chNorm(a.mensaje)); f.ofrecePlanes = CH_OFRECE_PLANES.test(chNorm(a.mensaje));
+  f.ofreceEquipo = a.plan.ruta !== 'equipo' && CH_OFRECE_EQUIPO.test(chPreguntaFinal(a.mensaje)); f.ofrecePlanes = CH_OFRECE_PLANES.test(chPreguntaFinal(a.mensaje));
   if (a.explicacion === true) f.explicado = true;
   if (a.complemento === true) f.complementos = Math.min(3, f.complementos + 1);
   f.sitioUltimo = a.sitio === true; if (a.sitio === true) f.sitiosVentana = Math.min(CH_TOPE_SITIO, f.sitiosVentana + 1); // el sitio NO va en dos mensajes seguidos (la similitud con el anterior cruzaría 0,75)

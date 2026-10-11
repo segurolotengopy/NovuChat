@@ -2106,3 +2106,22 @@ describe('respaldo de Meta: el modelo no afirma que NovuChat es Tech Provider, e
     expect(textos.filter((x) => f('chValidarMensaje')(envolver(x), v()) === 'respaldo_meta')).toEqual([]);
   });
 });
+
+describe('el pedido directo de hablar con el equipo: sin negaciones, terceros ni «ventas» a secas', () => {
+  it('chPideEquipoDirecto: no deriva con negaciones, terceros, «alguien de confianza», «el equipo de mi tienda» ni «ventas» suelto; sí con los pedidos claros', () => {
+    const pide = f('chPideEquipoDirecto');
+    for (const x of ['no quiero hablar con un asesor, solo dime el precio', 'todavía no quiero hablar con un asesor', 'no quiero hablar con un vendedor, solo info', 'no puedo hablar con alguien ahora, estoy manejando', 'mis clientes podrían hablar con una persona?', 'necesito que mis clientes puedan hablar con un asesor',
+      'quiero conversar con el equipo de mi tienda primero', 'necesito hablarlo con alguien en casa', 'quiero hablar con alguien de confianza antes de decidir', 'ventas', 'Ventas', 'alguien de mi equipo', 'mi socio quiere hablar con alguien', 'no necesito hablar con nadie', 'nunca quiero hablar con un asesor', 'tampoco quiero hablar con una persona', 'aún no quiero hablar con el equipo']) expect(pide(x), x).toBe(false);
+    for (const x of ['quiero hablar con alguien', 'Quiero hablar con un asesor', 'quiero hablar con una persona', 'quiero hablar con el equipo', 'pásame con un asesor', 'Pásame con ventas', 'comunícame con el equipo', 'comunícame con alguien', 'mándenme un asesor', 'hablar con ventas', 'quiero hablar con el área de ventas', 'contacto', 'Hola, quiero hablar con alguien del equipo', 'necesito hablar con una persona por favor', 'puedo hablar con un asesor?']) expect(pide(x), x).toBe(true);
+  });
+  it('chAfirma: ni un agradecimiento ni «🙏» solos son aceptación; «listo», «ok» y «perfecto» sí (si la oferta fue una pregunta)', () => {
+    for (const x of ['gracias', 'ok gracias', 'perfecto gracias', 'listo gracias', '🙏', 'muchas gracias', 'chau']) expect(f('chAfirma')(x), x).toBe(false);
+    for (const x of ['listo', 'ok', 'perfecto', 'dale', '👍', 'sí']) expect(f('chAfirma')(x), x).toBe(true);
+  });
+  it('chPreguntaFinal: lo que ofrece un mensaje es su pregunta final, no una mención suelta', () => {
+    const q = f('chPreguntaFinal');
+    expect(q('Cuando quieras, puedes ver nuestros planes o hablar con alguien de nuestro equipo con los botones de abajo.')).toBe('');
+    expect(q('Si algún día lo necesitas, puedes hablar con el equipo desde el botón. ¿Qué día atiendes más?')).not.toMatch(/equipo/);
+    expect(q('Te cuento todo. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝')).toMatch(/hablar con alguien de nuestro equipo/);
+  });
+});
