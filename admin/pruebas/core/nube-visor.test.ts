@@ -1,21 +1,27 @@
 /**
- * `scripts/nube-visor.sh`: el invocador público de la callable `verComprobante`
- * (servicio de Cloud Run `vercomprobante`), seco por omisión.
+ * `scripts/nube-visor.sh`: el invocador público de una callable de una LISTA
+ * CERRADA (`vercomprobante` → `verComprobante`, `buscarconversaciones` →
+ * `buscarConversaciones`), seco por omisión.
  *
  * Se prueba NEGANDO, con `gcloud`, `curl` y `gh` FALSOS adelante en el PATH: el
  * `gcloud` falso guarda la política en un archivo, anota cada llamada y, al
- * fallar, menciona el id del proyecto (como el de verdad); el `curl` falso
- * contesta el JSON de Firebase si la política tiene `allUsers` y el 403 de
- * Google si no. Sin red, sin nube, sin credenciales (`entornoDelEmulador`).
+ * fallar, menciona el id del proyecto y la cuota (como el de verdad); el `curl`
+ * falso contesta el JSON de Firebase si la política tiene `allUsers` y el 403 de
+ * Google si no. Sin red, sin nube, sin credenciales reales: el entorno es
+ * `entornoDelEmulador`, y `CLOUDSDK_CONFIG` apunta a una carpeta temporal con un
+ * `application_default_credentials.json` falso (solo `quota_project_id`), puesta
+ * con `env` delante del script.
  *
  * Lo que cada grupo cierra:
- *  - sin `--confirmo <entorno>` no hay escritura (ni una llamada a gcloud);
+ *  - sin `--servicio` de la lista ni `--confirmo <entorno>` no hay ni una
+ *    llamada a gcloud;
  *  - la única escritura es `run services add|remove-iam-policy-binding
- *    vercomprobante --member=allUsers --role=roles/run.invoker` en la región
- *    de `region.ts` y el proyecto del entorno pedido;
- *  - ningún id de proyecto en la salida, en ningún modo;
- *  - idempotente, vuelta atrás, «despliega primero», y la comprobación sin
- *    sesión distingue nuestro JSON del 403 de Google.
+ *    <servicio> --member=allUsers --role=roles/run.invoker` en la región de
+ *    `region.ts` y el proyecto del entorno pedido;
+ *  - ningún id de proyecto ni la cuota en la salida, en ningún modo;
+ *  - idempotente, vuelta atrás, «despliega primero», reversión automática si
+ *    el código atiende a un anónimo, y la sonda distingue nuestro JSON del 403
+ *    de Google.
  */
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -35,38 +41,47 @@ const REGION = /export const REGION = '([a-z0-9-]+)';/.exec(
 // Ids de prueba con la forma de un id real (no existen).
 const STAGING = 'prueba-visor-stg1';
 const PROD = 'prueba-visor-prd1';
+const OTRO_ID = 'prueba-visor-otro';
 // Menos de 10 dígitos a propósito (el saneo del repositorio público los
 // bloquea); `sanear` tapa desde 6, así que la prueba sigue mordiendo.
 const NUMERO_FALSO = '987654321';
-const OTRO_ID = 'prueba-visor-otro';
-const URL_SERVICIO = `https://vercomprobante-${NUMERO_FALSO}.us-east1.run.app`;
+
+const VISOR = 'vercomprobante';
+const BUSCADOR = 'buscarconversaciones';
+const SERVICIOS = [[VISOR, 'verComprobante'], [BUSCADOR, 'buscarConversaciones']] as const;
+const urlDe = (s: string) => `https://${s}-${NUMERO_FALSO}.us-east1.run.app`;
 
 const GCLOUD_FALSO = `#!/usr/bin/env bash
 E="$FAKE_DIR"
 printf '%s\\n' "$*" >> "$E/llamadas"
-env | grep -E '^(CLOUDSDK_(AUTH_|CORE_ACCOUNT|CORE_PROJECT|API_ENDPOINT_)|GH_REPO)' >> "$E/entorno-visto" || true
-P=""; MEM=""; ROLE=""
+env | grep -E '^(CLOUDSDK_|GH_REPO=)' | grep -v '^CLOUDSDK_CONFIG=' >> "$E/entorno-visto" || true
+P=""; MEM=""; ROLE=""; SVC=""
 a=("$@")
 for ((i = 0; i < \${#a[@]}; i++)); do
   case "\${a[i]}" in
     --project) P="\${a[i+1]}" ;;
     --member=*) MEM="\${a[i]#*=}" ;;
     --role=*) ROLE="\${a[i]#*=}" ;;
+    describe|get-iam-policy|add-iam-policy-binding|remove-iam-policy-binding) SVC="\${a[i+1]}" ;;
   esac
 done
+CUOTA="$(grep -o '"quota_project_id": *"[^"]*"' "$CLOUDSDK_CONFIG/application_default_credentials.json" 2>/dev/null | sed 's/.*"\\([^"]*\\)"$/\\1/')"
 c="$*"
 case "$c" in
-  *"run services describe vercomprobante"*)
-    [[ -f "$E/existe" ]] || { echo "ERROR: (gcloud.run.services.describe) NOT_FOUND: Resource 'vercomprobante' of kind 'SERVICE' in region 'r' in project '$P' does not exist." >&2; exit 1; }
-    [[ -f "$E/niega" ]] && { echo "ERROR: PERMISSION_DENIED: cuenta@ejemplo.com sin permiso en $P (proyecto ${NUMERO_FALSO})" >&2; exit 1; }
+  *"run services describe "*)
+    [[ -f "$E/existe" ]] || { echo "ERROR: (gcloud.run.services.describe) NOT_FOUND: Resource '$SVC' of kind 'SERVICE' in region 'r' in project '$P' does not exist." >&2; exit 1; }
+    [[ -f "$E/niega" ]] && { echo "ERROR: PERMISSION_DENIED: cuenta@ejemplo.com sin permiso en $P (proyecto ${NUMERO_FALSO}, cuota $CUOTA)" >&2; exit 1; }
     # 1990 bytes de relleno y el id justo encima del corte de 2000.
     [[ -f "$E/niega-largo" ]] && { printf 'x%.0s' {1..1990} >&2; echo "$P sin permiso" >&2; exit 1; }
     [[ -f "$E/describe-roto" ]] && { echo "esto no es JSON"; exit 0; }
     etiquetas='{"goog-managed-by":"cloudfunctions"}'; [[ -f "$E/sin-etiqueta" ]] && etiquetas='{}'
-    printf '{"metadata":{"name":"vercomprobante","labels":%s},"status":{"url":"%s"}}\\n' "$etiquetas" "$(cat "$E/url")" ;;
-  *"run services get-iam-policy vercomprobante"*) cat "$E/politica.json" ;;
+    url="https://$SVC-${NUMERO_FALSO}.us-east1.run.app"; [[ -f "$E/url" ]] && url="$(cat "$E/url")"
+    printf '{"metadata":{"name":"%s","labels":%s},"status":{"url":"%s"}}\\n' "$SVC" "$etiquetas" "$url" ;;
+  *"run services get-iam-policy "*) cat "$E/politica.json" ;;
   *"run services add-iam-policy-binding"*|*"run services remove-iam-policy-binding"*)
     op=add; [[ "$c" == *remove-iam-policy-binding* ]] && op=remove
+    # LOW-3: un remove que «sale bien» pero no quita nada.
+    if [[ "$op" == remove && -f "$E/remove-no-quita" ]]; then echo '{}'; exit 0; fi
     python3 - "$E/politica.json" "$op" "$ROLE" "$MEM" <<'PY'
 import json, sys
 ruta, op, rol, mem = sys.argv[1:5]
@@ -99,12 +114,19 @@ modo="auto"; [[ -f "$E/curl-modo" ]] && modo="$(cat "$E/curl-modo")"
 if [[ "$modo" == auto ]]; then
   if python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); sys.exit(0 if any(b.get("role")=="roles/run.invoker" and "allUsers" in b.get("members",[]) for b in p.get("bindings",[])) else 1)' "$E/politica.json"; then modo=propio; else modo=403; fi
 fi
+err() { printf '{"error":{"message":"x","status":"%s"}}' "$1" > "$out"; printf '%s' "$2"; }
 case "$modo" in
-  propio) printf '{"error":{"message":"Unauthenticated","status":"UNAUTHENTICATED"}}' > "$out"; printf '401' ;;
+  propio) err UNAUTHENTICATED 401 ;;
+  precondicion) err FAILED_PRECONDITION 400 ;;
   403) printf '<html><title>403 Forbidden</title></html>' > "$out"; printf '403' ;;
   500) printf 'error' > "$out"; printf '500' ;;
+  000) printf '000' ;;
   200) printf '{"result":{"mime":"image/png","base64":""}}' > "$out"; printf '200' ;;
-  invalido) printf '{"error":{"message":"Solicitud inválida.","status":"INVALID_ARGUMENT"}}' > "$out"; printf '400' ;;
+  invalido) err INVALID_ARGUMENT 400 ;;
+  permiso403) err PERMISSION_DENIED 403 ;;
+  noencontrado) err NOT_FOUND 404 ;;
+  tope) err RESOURCE_EXHAUSTED 429 ;;
+  json403otro) err UNAVAILABLE 403 ;;
 esac
 `;
 
@@ -119,36 +141,47 @@ const SIN_NADA = { bindings: [] };
 
 let dir: string;
 let bin: string;
+let gcloudCfg: string;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'nube-visor-'));
   bin = join(dir, 'bin');
+  gcloudCfg = join(dir, 'gcloud');
   mkdirSync(bin);
+  mkdirSync(gcloudCfg);
   for (const [n, t] of [['gcloud', GCLOUD_FALSO], ['curl', CURL_FALSO], ['gh', GH_FALSO]] as const) {
     writeFileSync(join(bin, n), t);
     chmodSync(join(bin, n), 0o755);
   }
   writeFileSync(join(dir, 'existe'), '');
-  writeFileSync(join(dir, 'url'), URL_SERVICIO);
   adc(PROD);
   politica(SIN_NADA);
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 function politica(p: unknown) { writeFileSync(join(dir, 'politica.json'), JSON.stringify(p)); }
-/** Las credenciales de gcloud falsas: solo el quota_project_id (vacío = sin el campo). */
+/** Las credenciales de gcloud falsas, en el CLOUDSDK_CONFIG temporal: solo el quota_project_id (vacío = sin el campo). */
 function adc(cuota: string) {
-  writeFileSync(join(dir, 'adc.json'), cuota ? JSON.stringify({ type: 'authorized_user', quota_project_id: cuota }) : '{"type":"authorized_user"}');
+  writeFileSync(join(gcloudCfg, 'application_default_credentials.json'),
+    cuota ? JSON.stringify({ type: 'authorized_user', quota_project_id: cuota }) : '{"type":"authorized_user"}');
 }
+const marcar = (n: string, v = '') => writeFileSync(join(dir, n), v);
 const leer = (n: string) => (existsSync(join(dir, n)) ? readFileSync(join(dir, n), 'utf8') : '');
 const llamadas = () => leer('llamadas').split('\n').filter(Boolean);
 const escrituras = () => llamadas().filter((l) => /(add|remove|set)-iam-policy|projects |functions /.test(l));
 const llamadasCurl = () => leer('curl').split('\n').filter(Boolean);
 const publico = () => JSON.parse(leer('politica.json')).bindings
   .some((b: { role: string; members: string[] }) => b.role === 'roles/run.invoker' && b.members.includes('allUsers'));
+const escritura = (op: 'add' | 'remove', proyecto: string, servicio = VISOR) =>
+  `--project ${proyecto} --quiet run services ${op}-iam-policy-binding ${servicio} --region ${REGION} --member=allUsers --role=roles/run.invoker`;
 
-function correr(args: string[], vars: Record<string, string> = {}) {
-  const r = spawnSync('bash', [SCRIPT, ...args], {
+/**
+ * Corre el script. `servicio`: el `--servicio` que se antepone (null = ninguno).
+ * CLOUDSDK_CONFIG va por `env` delante: entornoDelEmulador la fija a una ruta
+ * inexistente y la suite necesita sus credenciales FALSAS (solo la cuota).
+ */
+function correr(args: string[], vars: Record<string, string> = {}, servicio: string | null = VISOR) {
+  const r = spawnSync('env', [`CLOUDSDK_CONFIG=${gcloudCfg}`, 'bash', SCRIPT, ...(servicio === null ? [] : ['--servicio', servicio]), ...args], {
     encoding: 'utf8',
     env: entornoDelEmulador(undefined, {
       PATH: `${bin}:/usr/bin:/bin`,
@@ -157,24 +190,20 @@ function correr(args: string[], vars: Record<string, string> = {}) {
       GCP_PROJECT_ID_PROD: PROD,
       NUBE_VISOR_INTENTOS: '2',
       NUBE_VISOR_ESPERA: '0',
-      NUBE_VISOR_ADC: join(dir, 'adc.json'),
       ...vars,
     }),
   });
   const salida = `${r.stdout}${r.stderr}`;
-  // Ningún id de proyecto en la salida, nunca (vale para TODAS las pruebas).
-  expect(salida).not.toContain(STAGING);
-  expect(salida).not.toContain(PROD);
-  expect(salida).not.toContain(NUMERO_FALSO);
-  expect(salida).not.toContain(OTRO_ID);
+  // Ningún id de proyecto ni la cuota en la salida, nunca (vale para TODAS las pruebas).
+  for (const prohibido of [STAGING, PROD, NUMERO_FALSO, OTRO_ID]) expect(salida).not.toContain(prohibido);
   return { codigo: r.status, salida };
 }
 
 describe('nube-visor.sh: uso y salvaguardas (nada se llama a gcloud)', () => {
-  it('--help explica los modos y sale 0', () => {
-    const r = correr(['--help']);
+  it('--help explica los modos y la lista cerrada, y sale 0', () => {
+    const r = correr(['--help'], {}, null);
     expect(r.codigo).toBe(0);
-    for (const t of ['--entorno', '--aplicar', '--confirmo', '--revertir', 'vercomprobante']) expect(r.salida).toContain(t);
+    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR]) expect(r.salida).toContain(t);
     expect(llamadas()).toEqual([]);
   });
 
@@ -199,7 +228,7 @@ describe('nube-visor.sh: uso y salvaguardas (nada se llama a gcloud)', () => {
     expect(llamadas()).toEqual([]);
   });
 
-  it('sin la variable del entorno pedido (y gh sin respuesta): sale 2; gh solo se usa para leer', () => {
+  it('sin la variable del entorno pedido (y gh sin respuesta): sale 2; gh solo se usa para leer, con --repo', () => {
     const r = correr(['--entorno', 'staging'], { GCP_PROJECT_ID_STAGING: '' });
     expect(r.codigo).toBe(2);
     expect(r.salida).toContain('GCP_PROJECT_ID_STAGING');
@@ -210,6 +239,68 @@ describe('nube-visor.sh: uso y salvaguardas (nada se llama a gcloud)', () => {
   it('un id con forma inválida: sale 2', () => {
     expect(correr(['--entorno', 'produccion'], { GCP_PROJECT_ID_PROD: 'X;rm -rf' }).codigo).toBe(2);
     expect(llamadas()).toEqual([]);
+  });
+});
+
+describe('nube-visor.sh: --servicio, lista cerrada', () => {
+  it.each([
+    ['sin --servicio', null, []],
+    ['vacío', '', []],
+    ['el nombre de la Function en camelCase (verComprobante)', 'verComprobante', []],
+    ['el nombre de la Function en camelCase (buscarConversaciones)', 'buscarConversaciones', []],
+    ['en mayúsculas', 'VERCOMPROBANTE', []],
+    ['con un espacio', 'vercomprobante ', []],
+    ['otro servicio cualquiera', 'enlacecatalogo', []],
+    ['un comodín', '*', []],
+    ['los dos nombres pegados', 'vercomprobante,buscarconversaciones', []],
+    ['--servicio dos veces', VISOR, ['--servicio', BUSCADOR]],
+    ['--servicio dos veces, el mismo', VISOR, ['--servicio', VISOR]],
+  ])('%s: sale 2 sin tocar gcloud', (_n, servicio, mas) => {
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging', ...mas], {}, servicio);
+    expect(r.codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
+  });
+
+  it('acepta la forma --servicio=<s>', () => {
+    const r = correr([`--servicio=${BUSCADOR}`, '--entorno', 'staging'], {}, null);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain(`servicio ${BUSCADOR} (buscarConversaciones)`);
+  });
+
+  it.each(SERVICIOS)('%s: seco solo lee ESE servicio y dice qué haría', (servicio, funcion) => {
+    const r = correr(['--entorno', 'produccion'], {}, servicio);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain(`servicio ${servicio} (${funcion})`);
+    expect(r.salida).toContain(`(haría) gcloud run services add-iam-policy-binding ${servicio}`);
+    expect(r.salida).toContain(`--servicio ${servicio} --entorno produccion --aplicar --confirmo produccion`);
+    expect(escrituras()).toEqual([]);
+    expect(llamadas().every((l) => l.includes(` ${servicio} --region ${REGION}`))).toBe(true);
+  });
+
+  it.each(SERVICIOS)('%s: --aplicar concede SOLO sobre ese servicio y prueba su URL', (servicio, funcion) => {
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
+    expect(r.codigo).toBe(0);
+    expect(escrituras()).toEqual([escritura('add', STAGING, servicio)]);
+    expect(r.salida).toContain(`${funcion} es invocable en staging`);
+    const c = llamadasCurl();
+    expect(c).toHaveLength(1);
+    expect(c[0]!.endsWith(` ${urlDe(servicio)}`)).toBe(true);
+  });
+
+  it.each(SERVICIOS)('%s: --revertir quita SOLO de ese servicio', (servicio, funcion) => {
+    politica(CON_PUBLICO);
+    const r = correr(['--entorno', 'produccion', '--revertir', '--aplicar', '--confirmo', 'produccion'], {}, servicio);
+    expect(r.codigo).toBe(0);
+    expect(escrituras()).toEqual([escritura('remove', PROD, servicio)]);
+    expect(r.salida).toContain(`no puede usar ${funcion} en produccion`);
+  });
+
+  it.each(SERVICIOS)('%s: la URL de OTRO servicio de la lista no se prueba', (servicio) => {
+    const otro = servicio === VISOR ? BUSCADOR : VISOR;
+    marcar('url', urlDe(otro));
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
+    expect(r.codigo).toBe(3);
+    expect(llamadasCurl()).toEqual([]);
   });
 });
 
@@ -256,7 +347,7 @@ describe('nube-visor.sh: seco (no escribe)', () => {
   });
 
   it('otro error de gcloud: lo muestra sin el id, el número ni la cuenta', () => {
-    writeFileSync(join(dir, 'niega'), '');
+    marcar('niega');
     const r = correr(['--entorno', 'produccion']);
     expect(r.codigo).toBe(3);
     expect(r.salida).toContain('PERMISSION_DENIED');
@@ -268,16 +359,19 @@ describe('nube-visor.sh: --aplicar', () => {
   it('concede EXACTAMENTE roles/run.invoker a allUsers sobre vercomprobante, relee y prueba sin sesión', () => {
     const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
     expect(r.codigo).toBe(0);
-    expect(escrituras()).toEqual([
-      `--project ${STAGING} --quiet run services add-iam-policy-binding vercomprobante --region ${REGION} --member=allUsers --role=roles/run.invoker`,
-    ]);
+    expect(escrituras()).toEqual([escritura('add', STAGING)]);
     expect(publico()).toBe(true);
     expect(JSON.parse(leer('politica.json')).bindings).toEqual(CON_PUBLICO.bindings);
     expect(r.salida).toContain('NUESTRO código');
     const c = llamadasCurl();
     expect(c).toHaveLength(1);
-    expect(c[0]!.endsWith(` ${URL_SERVICIO}`)).toBe(true);
+    expect(c[0]!.endsWith(` ${urlDe(VISOR)}`)).toBe(true);
     expect(c[0]).toContain('-X POST');
+  });
+
+  it('FAILED_PRECONDITION sin sesión también es nuestro código', () => {
+    marcar('curl-modo', 'precondicion');
+    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(0);
   });
 
   it('en producción va contra el proyecto de producción', () => {
@@ -294,21 +388,22 @@ describe('nube-visor.sh: --aplicar', () => {
     expect(escrituras()).toEqual([]);
   });
 
-  it('si sigue el 403 de Google después de conceder: sale 3 y lo dice', () => {
-    writeFileSync(join(dir, 'curl-modo'), '403');
+  // LOW-4: si el código no contesta como se espera, el binding QUEDÓ puesto y se dice.
+  it.each([
+    ['el 403 de Google', '403', 2],
+    ['un 500', '500', 2],
+    ['sin respuesta (000)', '000', 2],
+  ])('tras conceder, %s: sale 3 y dice que el binding QUEDÓ puesto', (_n, modo, intentos) => {
+    marcar('curl-modo', modo);
     const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
     expect(r.codigo).toBe(3);
-    expect(r.salida).toContain('403 de Google');
-    expect(llamadasCurl()).toHaveLength(2); // NUBE_VISOR_INTENTOS=2
+    expect(r.salida).toContain('el binding QUEDÓ puesto; si persiste: --servicio vercomprobante --entorno staging --revertir --aplicar --confirmo staging');
+    expect(llamadasCurl()).toHaveLength(intentos); // NUBE_VISOR_INTENTOS=2
+    expect(publico()).toBe(true);
   });
 
-  it('una respuesta que no es ni nuestra ni de Google: sale 3', () => {
-    writeFileSync(join(dir, 'curl-modo'), '500');
-    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(3);
-  });
-
-  it('una dirección de servicio que no es *.run.app de vercomprobante: no se llama a curl', () => {
-    writeFileSync(join(dir, 'url'), 'https://evil.example.com/vercomprobante-1.run.app');
+  it('una dirección de servicio que no es *.run.app del servicio: no se llama a curl', () => {
+    marcar('url', 'https://evil.example.com/vercomprobante-1.run.app');
     const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
     expect(r.codigo).toBe(3);
     expect(llamadasCurl()).toEqual([]);
@@ -332,11 +427,17 @@ describe('nube-visor.sh: --revertir', () => {
     ] });
     const r = correr(['--entorno', 'produccion', '--revertir', '--aplicar', '--confirmo', 'produccion']);
     expect(r.codigo).toBe(0);
-    expect(escrituras()).toEqual([
-      `--project ${PROD} --quiet run services remove-iam-policy-binding vercomprobante --region ${REGION} --member=allUsers --role=roles/run.invoker`,
-    ]);
+    expect(escrituras()).toEqual([escritura('remove', PROD)]);
     expect(JSON.parse(leer('politica.json')).bindings).toEqual([{ role: 'roles/run.admin', members: ['user:alguien@ejemplo.com'] }]);
     expect(r.salida).toContain('Vuelta atrás hecha');
+  });
+
+  it('un 403 con JSON de error NO es el de Google: la vuelta atrás no se da por comprobada', () => {
+    politica(CON_PUBLICO);
+    marcar('curl-modo', 'json403otro');
+    const r = correr(['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging']);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('respuesta inesperada (403)');
   });
 
   it('sin el binding: nada que quitar, sale 0, no escribe', () => {
@@ -347,35 +448,46 @@ describe('nube-visor.sh: --revertir', () => {
   });
 });
 
-describe('nube-visor.sh: revisión de seguridad del #490', () => {
-  // 1 (MEDIUM): si tras conceder el código atiende a un anónimo, se quita en el acto.
+describe('nube-visor.sh: el código atiende a un anónimo («abierto»)', () => {
   it.each([
     ['un 200', '200', 'abierto:200'],
-    ['un 400 INVALID_ARGUMENT (la sesión ya pasó)', 'invalido', 'abierto:400'],
-  ])('tras conceder, %s sin sesión: REVIERTE con las mismas constantes y sale 3', (_n, modo, ultima) => {
-    writeFileSync(join(dir, 'curl-modo'), modo);
+    ['un 400 INVALID_ARGUMENT', 'invalido', 'abierto:400'],
+    ['un 403 PERMISSION_DENIED en JSON (nuestro, no de Google)', 'permiso403', 'abierto:403'],
+    ['un 404 NOT_FOUND en JSON', 'noencontrado', 'abierto:404'],
+    ['un 429 RESOURCE_EXHAUSTED en JSON', 'tope', 'abierto:429'],
+  ])('tras conceder, %s sin sesión: REVIERTE, relee y sale 3', (_n, modo, ultima) => {
+    marcar('curl-modo', modo);
     const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
     expect(r.codigo).toBe(3);
     expect(r.salida).toContain(`REVERTIDO: respondió sin sesión (${ultima})`);
-    const fijo = `--region ${REGION} --member=allUsers --role=roles/run.invoker`;
-    expect(escrituras()).toEqual([
-      `--project ${STAGING} --quiet run services add-iam-policy-binding vercomprobante ${fijo}`,
-      `--project ${STAGING} --quiet run services remove-iam-policy-binding vercomprobante ${fijo}`,
-    ]);
+    expect(escrituras()).toEqual([escritura('add', STAGING), escritura('remove', STAGING)]);
     expect(publico()).toBe(false);
     expect(llamadasCurl()).toHaveLength(1); // «abierto» no se reintenta
+    // Relee después de quitar: describe, política, add, relectura, remove, relectura.
+    expect(llamadas().filter((l) => l.includes('get-iam-policy'))).toHaveLength(3);
   });
 
-  it('con el binding ya puesto (no lo puso esta corrida) y respuesta sin sesión: sale 3 sin escribir', () => {
-    politica(CON_PUBLICO);
-    writeFileSync(join(dir, 'curl-modo'), '200');
+  it('LOW-3: si el remove «sale bien» pero allUsers SIGUE: sale 3 con «SIGUE», no «REVERTIDO»', () => {
+    marcar('curl-modo', '200');
+    marcar('remove-no-quita');
     const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
     expect(r.codigo).toBe(3);
-    expect(r.salida).toContain('--revertir --aplicar --confirmo staging');
-    expect(escrituras()).toEqual([]);
+    expect(r.salida).toContain('SIGUE');
+    expect(r.salida).not.toContain('REVERTIDO');
+    expect(publico()).toBe(true);
   });
 
-  // 2: las dos variables, antes de cualquier llamada a gcloud.
+  it('con el binding ya puesto (no lo puso esta corrida): sale 3 sin escribir y dice cómo quitarlo', () => {
+    politica(CON_PUBLICO);
+    marcar('curl-modo', '200');
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('--servicio vercomprobante --entorno staging --revertir --aplicar --confirmo staging');
+    expect(escrituras()).toEqual([]);
+  });
+});
+
+describe('nube-visor.sh: proyectos y credenciales', () => {
   it.each([
     ['el id de producción como STAGING y sin PROD', { GCP_PROJECT_ID_STAGING: PROD, GCP_PROJECT_ID_PROD: '' }, 'staging', 'Falta GCP_PROJECT_ID_PROD'],
     ['sin STAGING, pidiendo producción', { GCP_PROJECT_ID_STAGING: '' }, 'produccion', 'Falta GCP_PROJECT_ID_STAGING'],
@@ -386,7 +498,6 @@ describe('nube-visor.sh: revisión de seguridad del #490', () => {
     expect(llamadas()).toEqual([]);
   });
 
-  // 3: el cruce con el quota_project_id de las credenciales.
   it('producción con --aplicar y cuota que coincide: dice «cruzado: sí» sin el id', () => {
     const r = correr(['--entorno', 'produccion', '--aplicar', '--confirmo', 'produccion']);
     expect(r.codigo).toBe(0);
@@ -404,7 +515,7 @@ describe('nube-visor.sh: revisión de seguridad del #490', () => {
 
   it.each([
     ['sin quota_project_id', () => adc('')],
-    ['sin archivo de credenciales', () => rmSync(join(dir, 'adc.json'))],
+    ['sin archivo de credenciales', () => rmSync(join(gcloudCfg, 'application_default_credentials.json'))],
   ])('producción con --aplicar %s: sale 2 sin llamar a gcloud; el seco sigue y lo avisa', (_n, preparar) => {
     preparar();
     expect(correr(['--entorno', 'produccion', '--aplicar', '--confirmo', 'produccion']).codigo).toBe(2);
@@ -414,78 +525,40 @@ describe('nube-visor.sh: revisión de seguridad del #490', () => {
     expect(seco.salida).toContain('proyecto cruzado con las credenciales: no');
   });
 
-  it('staging no exige el cruce (la cuota es la de producción)', () => {
+  it('staging no exige la cuota', () => {
     adc('');
     expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(0);
   });
 
-  // 4: sanear tapa sobre el texto completo y corta después.
-  it('un error de 1990 bytes con el id justo en el corte: ni un pedazo del id', () => {
-    writeFileSync(join(dir, 'niega-largo'), '');
-    const r = correr(['--entorno', 'produccion']);
-    expect(r.codigo).toBe(3);
-    expect(r.salida).not.toContain(PROD.slice(0, 6));
-  });
-
-  // 5: sin la etiqueta de Cloud Functions, --aplicar no escribe; el seco avisa.
-  it('servicio sin goog-managed-by=cloudfunctions: --aplicar sale 2 sin escribir; el seco solo avisa', () => {
-    writeFileSync(join(dir, 'sin-etiqueta'), '');
-    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(2);
-    expect(escrituras()).toEqual([]);
-    const seco = correr(['--entorno', 'staging']);
-    expect(seco.codigo).toBe(1);
-    expect(seco.salida).toContain('goog-managed-by=cloudfunctions');
-    politica(CON_PUBLICO);
-    expect(correr(['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging']).codigo).toBe(2);
-    expect(escrituras()).toEqual([]);
-  });
-
-  // 6: el reintento correcto es --aplicar (con el binding puesto, prueba sin escribir).
-  it('el 403 tras conceder sugiere --aplicar --confirmo, que con el binding puesto prueba y no escribe', () => {
-    writeFileSync(join(dir, 'curl-modo'), '403');
-    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
-    expect(r.salida).toContain('reintentar con --aplicar --confirmo staging: no escribe nada si ya está concedido; solo prueba');
-    rmSync(join(dir, 'curl-modo'));
-    rmSync(join(dir, 'llamadas'));
-    rmSync(join(dir, 'curl'));
-    const otra = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
-    expect(otra.codigo).toBe(0);
-    expect(escrituras()).toEqual([]);
-    expect(llamadasCurl()).toHaveLength(1);
-  });
-
-  // 7: un JSON ilegible nunca se toma por «no hay binding».
-  it('describe que no devuelve JSON: sale 3 sin escribir', () => {
-    writeFileSync(join(dir, 'describe-roto'), '');
-    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(3);
-    expect(escrituras()).toEqual([]);
-  });
-
+  // LOW-1: la cuota es la de producción; un id de staging igual a ella está mal puesto.
   it.each([
-    ['conceder', ['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], SIN_NADA],
-    ['--revertir', ['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging'], CON_PUBLICO],
-  ])('%s: si la política RELEÍDA no es JSON, sale 3 (nunca se toma por «no hay binding»)', (_n, args, antes) => {
-    politica(antes);
-    writeFileSync(join(dir, 'romper-tras-escribir'), '');
-    const r = correr(args as string[]);
+    ['seco', ['--entorno', 'staging']],
+    ['--aplicar', ['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']],
+  ])('staging (%s) cuyo id coincide con la cuota: sale 2 sin llamar a gcloud', (_n, args) => {
+    adc(STAGING);
+    const r = correr(args);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('coincide con el proyecto de las credenciales');
+    expect(llamadas()).toEqual([]);
+  });
+
+  it('una cuota de un TERCER proyecto en un error de gcloud también se tapa', () => {
+    adc(OTRO_ID);
+    marcar('niega');
+    const r = correr(['--entorno', 'staging']); // correr() exige que OTRO_ID no aparezca
     expect(r.codigo).toBe(3);
-    expect(r.salida).toContain('no es JSON legible');
+    expect(r.salida).toContain('cuota <proyecto>');
   });
 
-  it('una política que no es JSON: sale 3 sin escribir', () => {
-    writeFileSync(join(dir, 'politica.json'), 'esto no es JSON');
-    expect(correr(['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging']).codigo).toBe(3);
-    expect(escrituras()).toEqual([]);
-  });
-
-  // 8: nada del entorno cambia quién actúa ni adónde van las llamadas.
-  it('gcloud y gh no ven las variables que cambian cuenta, token, extremo, proyecto o repositorio', () => {
+  it('gcloud y gh no ven ninguna CLOUDSDK_* salvo CLOUDSDK_CONFIG, ni GH_REPO', () => {
     const hostiles = {
       CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT: 'otra@ejemplo.iam.gserviceaccount.com',
       CLOUDSDK_AUTH_ACCESS_TOKEN_FILE: '/tmp/token-ajeno',
       CLOUDSDK_CORE_ACCOUNT: 'otra@ejemplo.com',
       CLOUDSDK_API_ENDPOINT_OVERRIDES_RUN: 'https://ajeno.example.com/',
       CLOUDSDK_CORE_PROJECT: 'proyecto-ajeno-1',
+      CLOUDSDK_ACTIVE_CONFIG_NAME: 'ajena',
+      CLOUDSDK_PROPIEDAD_INVENTADA: 'x',
       GH_REPO: 'ajeno/repo',
     };
     // Sin STAGING en el entorno, para que también se llame a gh.
@@ -499,27 +572,95 @@ describe('nube-visor.sh: revisión de seguridad del #490', () => {
   });
 });
 
+describe('nube-visor.sh: revisión de seguridad del #490', () => {
+  it('un error de 1990 bytes con el id justo en el corte: ni un pedazo del id', () => {
+    marcar('niega-largo');
+    const r = correr(['--entorno', 'produccion']);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).not.toContain(PROD.slice(0, 6));
+  });
+
+  it('servicio sin goog-managed-by=cloudfunctions: --aplicar sale 2 sin escribir; el seco solo avisa', () => {
+    marcar('sin-etiqueta');
+    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(2);
+    expect(escrituras()).toEqual([]);
+    const seco = correr(['--entorno', 'staging']);
+    expect(seco.codigo).toBe(1);
+    expect(seco.salida).toContain('goog-managed-by=cloudfunctions');
+    politica(CON_PUBLICO);
+    expect(correr(['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging']).codigo).toBe(2);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('el 403 tras conceder sugiere --aplicar --confirmo, que con el binding puesto prueba y no escribe', () => {
+    marcar('curl-modo', '403');
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
+    expect(r.salida).toContain('reintentar con --aplicar --confirmo staging: no escribe nada si ya está concedido; solo prueba');
+    rmSync(join(dir, 'curl-modo'));
+    rmSync(join(dir, 'llamadas'));
+    rmSync(join(dir, 'curl'));
+    const otra = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
+    expect(otra.codigo).toBe(0);
+    expect(escrituras()).toEqual([]);
+    expect(llamadasCurl()).toHaveLength(1);
+  });
+
+  it('describe que no devuelve JSON: sale 3 sin escribir', () => {
+    marcar('describe-roto');
+    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(3);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it.each([
+    ['conceder', ['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], SIN_NADA],
+    ['--revertir', ['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging'], CON_PUBLICO],
+  ])('%s: si la política RELEÍDA no es JSON, sale 3 (nunca se toma por «no hay binding»)', (_n, args, antes) => {
+    politica(antes);
+    marcar('romper-tras-escribir');
+    const r = correr(args as string[]);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('no es JSON legible');
+  });
+
+  it('una política que no es JSON: sale 3 sin escribir', () => {
+    writeFileSync(join(dir, 'politica.json'), 'esto no es JSON');
+    expect(correr(['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging']).codigo).toBe(3);
+    expect(escrituras()).toEqual([]);
+  });
+});
+
 describe('nube-visor.sh: la fuente', () => {
   const fuente = readFileSync(SCRIPT, 'utf8');
   const codigo = fuente.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
 
-  it('estricta y sin eval', () => {
+  it('estricta, sin eval, python aislado', () => {
     expect(fuente).toContain('set -euo pipefail');
     expect(codigo).not.toMatch(/\beval\b/);
+    expect(codigo).not.toMatch(/python3(?! -I )/);
   });
 
-  it('un solo rol, un solo miembro, un solo servicio; nunca a nivel de proyecto', () => {
+  it('la lista cerrada: dos servicios con sus constantes, sin variable que agregue otro', () => {
+    expect(codigo).toContain('readonly SERVICIO_VISOR="vercomprobante"');
+    expect(codigo).toContain('readonly FUNCION_VISOR="verComprobante"');
+    expect(codigo).toContain('readonly SERVICIO_BUSCADOR="buscarconversaciones"');
+    expect(codigo).toContain('readonly FUNCION_BUSCADOR="buscarConversaciones"');
+    expect(codigo).toContain('readonly SERVICIO FUNCION');
+    // Solo dos asignaciones de SERVICIO, y desde las constantes.
+    expect([...codigo.matchAll(/\bSERVICIO="([^"]*)"/g)].map((m) => m[1])).toEqual(['$SERVICIO_VISOR', '$SERVICIO_BUSCADOR']);
+    expect(codigo).not.toMatch(/NUBE_VISOR_(SERVICIO|ADC)/);
+  });
+
+  it('un solo rol, un solo miembro; nunca a nivel de proyecto', () => {
     expect(codigo).not.toContain('allAuthenticatedUsers');
     expect(codigo).not.toMatch(/--project=/);
     expect(codigo).not.toMatch(/gcloud projects|projects (add|remove|set)-iam|set-iam-policy|functions add-iam/);
     expect([...new Set(codigo.match(/roles\/[a-zA-Z.]+/g))]).toEqual(['roles/run.invoker']);
-    expect(codigo).toMatch(/readonly SERVICIO="vercomprobante"/);
     expect(codigo).toMatch(/readonly MIEMBRO="allUsers"/);
     // Toda escritura usa las constantes, no un texto suelto.
-    for (const m of codigo.matchAll(/(add|remove)-iam-policy-binding "([^"]+)"[\s\\]+--region "([^"]+)"[\s\\]+--member="([^"]+)" --role="([^"]+)"/g)) {
-      expect(m.slice(2)).toEqual(['$SERVICIO', '$REGION', '$MIEMBRO', '$ROL']);
-    }
+    const escrituras = [...codigo.matchAll(/(add|remove)-iam-policy-binding "([^"]+)"[\s\\]+--region "([^"]+)"[\s\\]+--member="([^"]+)" --role="([^"]+)"/g)];
     // conceder, quitar (--revertir) y la reversión automática tras «abierto».
+    expect(escrituras).toHaveLength(3);
+    for (const m of escrituras) expect(m.slice(2)).toEqual(['$SERVICIO', '$REGION', '$MIEMBRO', '$ROL']);
     expect([...codigo.matchAll(/-iam-policy-binding "/g)]).toHaveLength(3);
   });
 

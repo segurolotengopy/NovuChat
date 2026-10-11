@@ -1,41 +1,46 @@
 #!/usr/bin/env bash
-# El invocador público de la callable `verComprobante` (el visor de comprobantes
-# del módulo Cobros), EN SECO por omisión.
+# El invocador público de UNA callable de una LISTA CERRADA, EN SECO por omisión:
+#   vercomprobante        → `verComprobante` (el visor de comprobantes, Cobros)
+#   buscarconversaciones  → `buscarConversaciones` (la búsqueda en conversaciones, Core)
 #
 # POR QUÉ EXISTE. Una Function HTTP o callable nueva no nace invocable si su
 # creación no salió limpia: sin `roles/run.invoker` para `allUsers`, Google
 # responde un 403 con HTML ANTES de ejecutar una línea del código, y la consola
-# no puede abrir ningún comprobante (memoria «una Function HTTP nueva no nace
-# invocable»; el mismo paso que `nube-catalogo.sh` para el catálogo).
+# no puede usarla (memoria «una Function HTTP nueva no nace invocable»; el mismo
+# paso que `nube-catalogo.sh` para el catálogo).
 #
 # POR QUÉ `allUsers` ES CORRECTO ACÁ, y no un agujero: es lo normal en una
 # callable. `allUsers` solo deja que la petición LLEGUE; la barrera es el token,
-# DENTRO del código (admin/functions/src/modulos/cobros/verComprobante.ts):
-# App Check en producción, sesión de Firebase Auth, rol en ESE comercio con la
-# cuenta releída, módulo Cobros, tope por usuario y auditoría fail-closed. Sin
-# sesión, la respuesta es un JSON de Firebase `unauthenticated` (o
-# `failed-precondition`).
+# DENTRO del código: App Check en producción y, antes de mirar la entrada, la
+# sesión (`exigirAutenticado`); después el rol en ESE comercio, el tope y el
+# resto. Sin sesión, la respuesta es un JSON de Firebase `UNAUTHENTICATED` (o
+# `FAILED_PRECONDITION`). Ninguna de las dos valida la forma de la entrada antes
+# de la sesión: un 2xx, o un JSON `INVALID_ARGUMENT`, `PERMISSION_DENIED`,
+# `NOT_FOUND` o `RESOURCE_EXHAUSTED`, sin sesión, quiere decir que el código
+# atendió a un anónimo («abierto»).
 #
-#   ./scripts/nube-visor.sh --entorno <staging|produccion>
+#   ./scripts/nube-visor.sh --servicio <s> --entorno <staging|produccion>
 #       SECO: lee la política IAM del servicio y dice qué haría. No escribe.
-#   ./scripts/nube-visor.sh --entorno <e> --aplicar --confirmo <e>
-#       Concede roles/run.invoker a allUsers SOLO sobre el servicio
-#       `vercomprobante` (idempotente; si ya está, no escribe y solo prueba),
-#       relee la política y prueba el endpoint sin sesión: tiene que contestar
-#       nuestro código, no el 403 de Google. Si contesta SIN pedir sesión (un
-#       2xx, o un 400 INVALID_ARGUMENT: el código pasó la autenticación), quita
-#       en el acto el binding que acaba de poner y sale con 3.
-#   ./scripts/nube-visor.sh --entorno <e> --revertir [--aplicar --confirmo <e>]
+#   ./scripts/nube-visor.sh --servicio <s> --entorno <e> --aplicar --confirmo <e>
+#       Concede roles/run.invoker a allUsers SOLO sobre ese servicio
+#       (idempotente; si ya está, no escribe y solo prueba), relee la política
+#       y prueba el endpoint sin sesión: tiene que contestar nuestro código, no
+#       el 403 de Google. Si contesta «abierto», quita en el acto el binding que
+#       acaba de poner, relee, y sale con 3.
+#   ./scripts/nube-visor.sh --servicio <s> --entorno <e> --revertir [--aplicar --confirmo <e>]
 #       La vuelta atrás: quita ESE binding, con las mismas protecciones.
 #
-# El proyecto: GCP_PROJECT_ID_STAGING y GCP_PROJECT_ID_PROD, LAS DOS (del
-# entorno, o `gh variable get --repo` si no están), distintas. En producción se
-# cruza con el quota_project_id de las credenciales de gcloud (la fuente de
-# nube-catalogo.sh; NUBE_VISOR_ADC cambia el archivo): si no coincide, sale con
-# 2; con --aplicar, además, sin ese cruce no se escribe. El id NUNCA se imprime:
-# se dice «staging» o «produccion». La región sale de
-# admin/functions/src/core/region.ts. Credenciales: la sesión de gcloud de
-# CLOUDSDK_CONFIG (por omisión ~/.config/gcloud-novuchat-prod); no lee secretos.
+# El servicio: obligatorio, sin valor por omisión, uno de la lista de arriba y
+# escrito así (en minúsculas). El proyecto: GCP_PROJECT_ID_STAGING y
+# GCP_PROJECT_ID_PROD, LAS DOS (del entorno, o `gh variable get --repo` si no
+# están), distintas; y se cruzan con el quota_project_id de las credenciales de
+# gcloud (CLOUDSDK_CONFIG; la fuente de nube-catalogo.sh), que es el de
+# producción: en producción tiene que coincidir (con --aplicar, además, tiene
+# que estar); en staging, NO puede coincidir. El id NUNCA se imprime: se dice
+# «staging» o «produccion». La región sale de admin/functions/src/core/region.ts.
+# Credenciales: la sesión de gcloud de CLOUDSDK_CONFIG (por omisión
+# ~/.config/gcloud-novuchat-prod); cualquier otra CLOUDSDK_* se descarta. No lee
+# secretos.
 #
 # Salida: 0 nada que hacer, o escrito y comprobado · 1 el seco encontró algo
 # pendiente · 2 uso o salvaguarda (nada escrito) · 3 error de ejecución, el
@@ -50,17 +55,28 @@ cd "$(dirname "$ESTE")/.." || exit 1
 # La ayuda es el bloque de comentarios del principio, hasta la primera línea de código.
 ayuda() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$ESTE"; }
 
-# La Function y su servicio de Cloud Run (2.ª generación: el nombre en
-# minúsculas). Fijos a propósito: este script no sirve para otro servicio.
-readonly FUNCION="verComprobante"
-readonly SERVICIO="vercomprobante"
+# LA LISTA CERRADA. Cada callable con su servicio de Cloud Run (2.ª generación:
+# el nombre en minúsculas). No hay variable de entorno ni opción que agregue otro.
+readonly SERVICIO_VISOR="vercomprobante"
+readonly FUNCION_VISOR="verComprobante"
+readonly SERVICIO_BUSCADOR="buscarconversaciones"
+readonly FUNCION_BUSCADOR="buscarConversaciones"
 readonly ROL="roles/run.invoker"
 readonly MIEMBRO="allUsers"
 readonly REPO="segurolotengopy/NovuChat"
 
-ENTORNO=""; APLICAR=0; REVERTIR=0; CONFIRMO=""
+PEDIDO=""; ENTORNO=""; APLICAR=0; REVERTIR=0; CONFIRMO=""; VISTO_SERVICIO=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --servicio|--servicio=*)
+      (( VISTO_SERVICIO == 0 )) || { echo "✗ --servicio va una sola vez" >&2; exit 2; }
+      VISTO_SERVICIO=1
+      if [[ "$1" == --servicio ]]; then
+        [[ $# -ge 2 ]] || { echo "✗ --servicio necesita ${SERVICIO_VISOR} o ${SERVICIO_BUSCADOR}" >&2; exit 2; }
+        PEDIDO="$2"; shift 2
+      else
+        PEDIDO="${1#*=}"; shift
+      fi ;;
     --entorno)    ENTORNO="${2:-}"; [[ $# -ge 2 ]] || { echo "✗ --entorno necesita staging o produccion" >&2; exit 2; }; shift 2 ;;
     --entorno=*)  ENTORNO="${1#*=}"; shift ;;
     --confirmo)   CONFIRMO="${2:-}"; [[ $# -ge 2 ]] || { echo "✗ --confirmo necesita el entorno" >&2; exit 2; }; shift 2 ;;
@@ -71,6 +87,14 @@ while [[ $# -gt 0 ]]; do
     *) echo "✗ Opción desconocida (ver --help)" >&2; exit 2 ;;
   esac
 done
+
+case "$PEDIDO" in
+  "$SERVICIO_VISOR")    SERVICIO="$SERVICIO_VISOR";    FUNCION="$FUNCION_VISOR" ;;
+  "$SERVICIO_BUSCADOR") SERVICIO="$SERVICIO_BUSCADOR"; FUNCION="$FUNCION_BUSCADOR" ;;
+  "") echo "✗ Falta --servicio ${SERVICIO_VISOR}|${SERVICIO_BUSCADOR} (no hay servicio por omisión)" >&2; exit 2 ;;
+  *)  echo "✗ --servicio tiene que ser ${SERVICIO_VISOR} o ${SERVICIO_BUSCADOR}, escrito así (lista cerrada)" >&2; exit 2 ;;
+esac
+readonly SERVICIO FUNCION
 
 case "$ENTORNO" in
   staging|produccion) ;;
@@ -88,11 +112,17 @@ REGION="$(sed -nE "s/^export const REGION = '([a-z0-9-]+)';$/\1/p" admin/functio
   || { echo "✗ No pude leer la región de admin/functions/src/core/region.ts" >&2; exit 2; }
 
 # --- El proyecto, sin imprimirlo ----------------------------------------------
-# Nada del entorno puede cambiar a QUIÉN actúa ni ADÓNDE van las llamadas.
+# Nada del entorno puede cambiar a QUIÉN actúa ni ADÓNDE van las llamadas: de las
+# CLOUDSDK_* solo queda CLOUDSDK_CONFIG (cuenta, token, impersonación, extremos,
+# proyecto y configuración activa se descartan todas), y gh va con --repo.
 export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"
-unset CLOUDSDK_ACTIVE_CONFIG_NAME CLOUDSDK_CORE_PROJECT CLOUDSDK_CORE_ACCOUNT \
-  CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT CLOUDSDK_AUTH_ACCESS_TOKEN_FILE \
-  CLOUDSDK_API_ENDPOINT_OVERRIDES_RUN GH_REPO
+while IFS= read -r variable; do
+  case "$variable" in
+    CLOUDSDK_CONFIG) ;;
+    CLOUDSDK_*) unset "$variable" ;;
+  esac
+done < <(compgen -e)
+unset GH_REPO
 
 leer_variable() { # variable del repositorio con gh, solo lectura; vacío si no se puede
   command -v gh >/dev/null 2>&1 || return 0
@@ -115,9 +145,9 @@ PROD="${GCP_PROJECT_ID_PROD:-}"
   || { echo "✗ GCP_PROJECT_ID_STAGING y GCP_PROJECT_ID_PROD son iguales: no se sabe cuál es cuál" >&2; exit 2; }
 if [[ "$ENTORNO" == "produccion" ]]; then P="$PROD"; OTRO="$STAGING"; else P="$STAGING"; OTRO="$PROD"; fi
 
-# El cruce con las credenciales de gcloud (solo producción).
+# El cruce con las credenciales de gcloud: su quota_project_id es el de PRODUCCIÓN.
 CUOTA=""
-ADC="${NUBE_VISOR_ADC:-$CLOUDSDK_CONFIG/application_default_credentials.json}"
+ADC="$CLOUDSDK_CONFIG/application_default_credentials.json"
 if [[ -r "$ADC" ]]; then
   CUOTA="$(grep -o '"quota_project_id": *"[^"]*"' "$ADC" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' | head -n 1 || true)"
 fi
@@ -132,6 +162,8 @@ if [[ "$ENTORNO" == "produccion" ]]; then
   else
     CRUCE="no (sin quota_project_id en las credenciales; con --aplicar se exige)"
   fi
+elif [[ -n "$CUOTA" && "$CUOTA" == "$P" ]]; then
+  echo "✗ El id de staging coincide con el proyecto de las credenciales, que es el de producción: no se sigue" >&2; exit 2
 fi
 
 # --- Salida -------------------------------------------------------------------
@@ -150,6 +182,7 @@ sanear() {
   local t; t="$(cat "$ERR")"
   t="${t//"$P"/<proyecto>}"
   t="${t//"$OTRO"/<proyecto>}"
+  [[ -z "$CUOTA" ]] || t="${t//"$CUOTA"/<proyecto>}"
   printf '%s\n' "$t" | sed -E 's/[0-9]{6,}/<número>/g; s/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/<cuenta>/g' \
     | head -c 2000 | head -n 4 | sed 's/^/      /' >&2 || true
 }
@@ -160,7 +193,7 @@ gc() { gcloud --project "$P" --quiet "$@"; }
 # «si» o «no»: ¿la política (JSON por stdin) tiene allUsers en roles/run.invoker,
 # sin condición? Si no es una política legible, falla (≠ 0): nunca «no» por error.
 estado_publico() {
-  python3 -c '
+  python3 -I -c '
 import json, sys
 try:
     p = json.load(sys.stdin)
@@ -176,7 +209,7 @@ print("si" if publico else "no")
 
 # Resumen de la política sin identidades: rol, si está allUsers, y cuántos más.
 resumir() {
-  python3 -c '
+  python3 -I -c '
 import json, sys
 p = json.load(sys.stdin)
 bs = p.get("bindings") or []
@@ -223,9 +256,9 @@ if ! descripcion="$(gc run services describe "$SERVICIO" --region "$REGION" --fo
   fi
   exit 3
 fi
-URL="$(printf '%s' "$descripcion" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("status") or {}).get("url") or "")' 2>/dev/null)" \
+URL="$(printf '%s' "$descripcion" | python3 -I -c 'import json,sys; print((json.load(sys.stdin).get("status") or {}).get("url") or "")' 2>/dev/null)" \
   || { falla "la descripción del servicio no es JSON legible"; exit 3; }
-GESTOR="$(printf '%s' "$descripcion" | python3 -c 'import json,sys; print(((json.load(sys.stdin).get("metadata") or {}).get("labels") or {}).get("goog-managed-by") or "")' 2>/dev/null)" \
+GESTOR="$(printf '%s' "$descripcion" | python3 -I -c 'import json,sys; print(((json.load(sys.stdin).get("metadata") or {}).get("labels") or {}).get("goog-managed-by") or "")' 2>/dev/null)" \
   || { falla "la descripción del servicio no es JSON legible"; exit 3; }
 ok "el servicio ${SERVICIO} existe en ${ENTORNO}"
 if [[ "$GESTOR" != "cloudfunctions" ]]; then
@@ -247,11 +280,13 @@ PUBLICO=0
 [[ "$ESTADO" == "si" ]] && PUBLICO=1
 
 # --- 3. La comprobación sin sesión ---------------------------------------------
-# Una petición POST sin credenciales al propio servicio, por intento. Nuestro
-# código (o Firebase por él: App Check, sesión) contesta JSON `UNAUTHENTICATED`
-# o `FAILED_PRECONDITION`; sin invocador, Google contesta 403 con HTML. Un 2xx,
-# o un 400 `INVALID_ARGUMENT` (la forma de la entrada se mira DESPUÉS de la
-# sesión), quiere decir que el código atendió a alguien sin sesión: «abierto».
+# Una petición POST sin credenciales al propio servicio, por intento, con una
+# entrada bien formada (`{"data":{}}`): el marco de Firebase no la rechaza por
+# forma. Nuestro código (o Firebase por él: App Check, sesión) contesta JSON
+# `UNAUTHENTICATED` o `FAILED_PRECONDITION`; sin invocador, Google contesta 403
+# con HTML (un 403 con JSON de error NO es de Google). Lo que solo sale DESPUÉS
+# de la sesión (2xx, `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `NOT_FOUND`,
+# `RESOURCE_EXHAUSTED`) es «abierto».
 INTENTOS="${NUBE_VISOR_INTENTOS:-9}"; ESPERA="${NUBE_VISOR_ESPERA:-10}"
 [[ "$INTENTOS" =~ ^[1-9][0-9]?$ && "$ESPERA" =~ ^[0-9]{1,2}$ ]] \
   || { echo "✗ NUBE_VISOR_INTENTOS (1-99) o NUBE_VISOR_ESPERA (0-99 s) inválidos" >&2; exit 2; }
@@ -265,20 +300,22 @@ sondear() { # imprime «propio», «google403», «abierto:<código>» u «otro:
     -X POST -H 'Content-Type: application/json' --data '{"data":{}}' "$URL" 2>/dev/null || true)"
   codigo="${linea:0:3}"
   [[ "$codigo" =~ ^[0-9]{3}$ ]] || codigo=000
-  estado="$(python3 -c '
+  # El `status` del JSON de error de Firebase, o vacío si el cuerpo no es ese JSON.
+  estado="$(python3 -I -c '
 import json, sys
 try:
     d = json.load(open(sys.argv[1], encoding="utf-8"))
     e = d.get("error") if isinstance(d, dict) else None
-    print(e.get("status", "") if isinstance(e, dict) else "")
+    s = e.get("status") if isinstance(e, dict) else None
+    print(s if isinstance(s, str) else "")
 except Exception:
     print("")
 ' "$CUERPO" 2>/dev/null || true)"
   if [[ ( "$codigo" == 401 || "$codigo" == 400 ) && ( "$estado" == UNAUTHENTICATED || "$estado" == FAILED_PRECONDITION ) ]]; then
     echo propio
-  elif [[ "$codigo" == 2[0-9][0-9] || ( "$codigo" == 400 && "$estado" == INVALID_ARGUMENT ) ]]; then
+  elif [[ "$codigo" == 2[0-9][0-9] || "$estado" =~ ^(INVALID_ARGUMENT|PERMISSION_DENIED|NOT_FOUND|RESOURCE_EXHAUSTED)$ ]]; then
     echo "abierto:${codigo}"
-  elif [[ "$codigo" == 403 ]]; then
+  elif [[ "$codigo" == 403 && -z "$estado" ]]; then
     echo google403
   else
     echo "otro:${codigo}"
@@ -314,6 +351,8 @@ comprobar_respuesta() {
   return 1
 }
 
+OPCIONES="--servicio ${SERVICIO} --entorno ${ENTORNO}"
+
 # --- 4. Decidir y, con --aplicar, escribir -------------------------------------
 echo
 if (( REVERTIR )); then
@@ -323,7 +362,7 @@ if (( REVERTIR )); then
   fi
   if (( ! APLICAR )); then
     nota "(haría) gcloud run services remove-iam-policy-binding ${SERVICIO} --region ${REGION} --member=${MIEMBRO} --role=${ROL}"
-    nota "1 pendiente. Para hacerlo: --revertir --aplicar --confirmo ${ENTORNO}"
+    nota "1 pendiente. Para hacerlo: ${OPCIONES} --revertir --aplicar --confirmo ${ENTORNO}"
     exit 1
   fi
   echo "  → quitando ${ROL} de ${MIEMBRO} en ${SERVICIO}"
@@ -335,23 +374,23 @@ if (( REVERTIR )); then
   [[ "$RELEIDO" == "no" ]] || { falla "al releer, ${MIEMBRO} SIGUE con ${ROL}"; exit 3; }
   ok "relectura: ${MIEMBRO} ya no tiene ${ROL} en ${SERVICIO}"
   comprobar_respuesta google403 || exit 3
-  echo; echo "${V}Vuelta atrás hecha.${F} La consola ya no puede abrir comprobantes en ${ENTORNO}."
+  echo; echo "${V}Vuelta atrás hecha.${F} La consola ya no puede usar ${FUNCION} en ${ENTORNO}."
   exit 0
 fi
 
 if (( PUBLICO )); then
   ok "ya concedido: ${MIEMBRO} tiene ${ROL} en ${SERVICIO}. No se escribe nada."
   if (( APLICAR )); then
-    # El binding no lo puso esta corrida: si contesta sin sesión, se avisa y se
-    # sale con 3, pero no se quita solo (la vuelta atrás es --revertir).
-    comprobar_respuesta propio || { (( $? == 2 )) && falla "quitarlo: --revertir --aplicar --confirmo ${ENTORNO}"; exit 3; }
+    # El binding no lo puso esta corrida: si la prueba falla, se avisa y se sale
+    # con 3, pero no se quita solo (la vuelta atrás es --revertir).
+    comprobar_respuesta propio || { falla "el binding ya estaba puesto; para quitarlo: ${OPCIONES} --revertir --aplicar --confirmo ${ENTORNO}"; exit 3; }
   fi
   exit 0
 fi
 if (( ! APLICAR )); then
   nota "${SERVICIO} SIN invocador: responde 403 de Google antes de correr el código"
   nota "(haría) gcloud run services add-iam-policy-binding ${SERVICIO} --region ${REGION} --member=${MIEMBRO} --role=${ROL}"
-  nota "1 pendiente. Para hacerlo: --aplicar --confirmo ${ENTORNO}"
+  nota "1 pendiente. Para hacerlo: ${OPCIONES} --aplicar --confirmo ${ENTORNO}"
   exit 1
 fi
 echo "  → concediendo ${ROL} a ${MIEMBRO} SOLO en ${SERVICIO}"
@@ -365,13 +404,21 @@ ok "relectura: ${MIEMBRO} tiene ${ROL} en ${SERVICIO}"
 if comprobar_respuesta propio; then RC=0; else RC=$?; fi
 if (( RC == 2 )); then
   # Lo que esta corrida puso, se quita en el acto: un anónimo llegó al código.
-  if gc run services remove-iam-policy-binding "$SERVICIO" --region "$REGION" \
+  if ! gc run services remove-iam-policy-binding "$SERVICIO" --region "$REGION" \
       --member="$MIEMBRO" --role="$ROL" >/dev/null 2>"$ERR"; then
-    falla "REVERTIDO: respondió sin sesión (${ULTIMA}); se quitó ${ROL} de ${MIEMBRO} en ${SERVICIO}"
-  else
-    falla "respondió sin sesión (${ULTIMA}) y NO SE PUDO REVERTIR: quitarlo YA con --revertir --aplicar --confirmo ${ENTORNO}"; sanear
+    falla "respondió sin sesión (${ULTIMA}) y NO SE PUDO REVERTIR: quitarlo YA con ${OPCIONES} --revertir --aplicar --confirmo ${ENTORNO}"; sanear
+    exit 3
   fi
+  RELEIDO="$(releer_publico)" || { falla "respondió sin sesión (${ULTIMA}); se pidió quitar el binding pero no se pudo releer: comprobar con ${OPCIONES} --revertir"; exit 3; }
+  if [[ "$RELEIDO" != "no" ]]; then
+    falla "respondió sin sesión (${ULTIMA}) y, tras quitarlo, ${MIEMBRO} SIGUE con ${ROL}: quitarlo YA con ${OPCIONES} --revertir --aplicar --confirmo ${ENTORNO}"
+    exit 3
+  fi
+  falla "REVERTIDO: respondió sin sesión (${ULTIMA}); se quitó ${ROL} de ${MIEMBRO} en ${SERVICIO} y la relectura lo confirma"
   exit 3
 fi
-(( RC == 0 )) || exit 3
+if (( RC != 0 )); then
+  falla "el binding QUEDÓ puesto; si persiste: ${OPCIONES} --revertir --aplicar --confirmo ${ENTORNO}"
+  exit 3
+fi
 echo; echo "${V}Listo.${F} ${FUNCION} es invocable en ${ENTORNO}; la barrera sigue siendo el token, dentro del código."
