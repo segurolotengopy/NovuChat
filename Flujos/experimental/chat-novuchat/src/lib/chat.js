@@ -668,7 +668,7 @@ function chFichaBase() {
     hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false, interactuo: false, descarte: '' },
     avisado: false, avisoFalla: '', planesMostrados: false, soporte: false, anuncio: false,
     // Ajustes del 09/10: el ciclo de un negocio (explicado, nombre pedido, planes pendientes, equipo ya pedido), el primer negocio y los otros para la hoja.
-    explicado: false, nombrePedido: false, preguntaDatos: false, planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, primero: null, otros: [], complementos: 0,
+    explicado: false, nombrePedido: false, preguntaDatos: false, planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
     seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [],
   };
 }
@@ -704,7 +704,7 @@ function chFichaVigente(e, ahoraMs) {
     explicado: e.explicado === true, nombrePedido: e.nombrePedido === true, preguntaDatos: e.preguntaDatos === true, planesPendientes: e.planesPendientes === true, equipoAhora: e.equipoAhora === true,
     // Las empresas por las que ya se avisó a recepción en la ventana (a lo más 3, normalizadas) y cuántos avisos van: el tope (3) acota la plantilla por segunda empresa.
     empresasAvisadas: Array.from(new Set((Array.isArray(e.empresasAvisadas) ? e.empresasAvisadas : []).concat(typeof e.empresaAvisada === 'string' ? [e.empresaAvisada] : []).filter((x) => typeof x === 'string').map((x) => chNorm(chPlano(x, 60))).filter((x) => x !== ''))).slice(0, CH_TOPE_AVISOS),
-    avisosVentana: chEntero(e.avisosVentana, 0, CH_TOPE_AVISOS), sitiosVentana: chEntero(e.sitiosVentana, 0, CH_TOPE_SITIO), complementos: chEntero(e.complementos, 0, 3),
+    avisosVentana: chEntero(e.avisosVentana, 0, CH_TOPE_AVISOS), sitiosVentana: chEntero(e.sitiosVentana, 0, CH_TOPE_SITIO), sitioUltimo: e.sitioUltimo === true, complementos: chEntero(e.complementos, 0, 3),
     primero: e.primero && typeof e.primero === 'object' && !Array.isArray(e.primero) ? { rubro: CH_ID_RUBRO.test(chTexto(e.primero.rubro)) ? e.primero.rubro : '', empresa: chNombreDeEmpresa(e.primero.empresa, true) } : null,
     otros: (Array.isArray(e.otros) ? e.otros : []).filter((x) => x && typeof x === 'object').map((x) => ({ e: chNombreDeEmpresa(x.e, true), r: CH_ID_RUBRO.test(chTexto(x.r)) ? x.r : '' })).filter((x) => x.e !== '' || x.r !== '').slice(-3),
     seq: chEntero(e.seq, 0, 1000000000), hasta: chEntero(e.hasta, 0, 1000000000),
@@ -714,7 +714,7 @@ function chFichaVigente(e, ahoraMs) {
     ultimosIds: (Array.isArray(e.ultimosIds) ? e.ultimosIds : []).filter((x) => typeof x === 'string' && x !== '' && x.length <= 200).slice(-CH_TOPE_IDS),
   };
   if (s.hasta > s.seq) s.hasta = s.seq;
-  if (ultimo && ahoraMs - ultimo >= CH_VENTANA_MS) { s.avisado = false; s.planesMostrados = false; s.soporte = false; s.equipoAhora = false; s.planesPendientes = false; s.empresasAvisadas = []; s.avisosVentana = 0; s.sitiosVentana = 0; }
+  if (ultimo && ahoraMs - ultimo >= CH_VENTANA_MS) { s.avisado = false; s.planesMostrados = false; s.soporte = false; s.equipoAhora = false; s.planesPendientes = false; s.empresasAvisadas = []; s.avisosVentana = 0; s.sitiosVentana = 0; s.sitioUltimo = false; }
   return s;
 }
 // ¿Meta ya entregó este mensaje (o ya está en la cola)? Se mira sobre la ficha cruda y no la toca.
@@ -1501,7 +1501,7 @@ function chSitioWeb(cfg) {
 function chInsertarSitio(cfg, f, texto, reserva) {
   const frase = chSitioWeb(cfg);
   const base = chLineas(texto);
-  if (!frase || !f || !(f.sitiosVentana < CH_TOPE_SITIO) || base.includes(frase) || base.length + 1 + frase.length > CH_MAX_MENSAJE - (reserva || 0)) return { texto: base, puso: false };
+  if (!frase || !f || !(f.sitiosVentana < CH_TOPE_SITIO) || f.sitioUltimo === true || base.includes(frase) || base.length + 1 + frase.length > CH_MAX_MENSAJE - (reserva || 0)) return { texto: base, puso: false };
   const i = base.lastIndexOf('¿');
   const cola = i >= 0 ? base.slice(i) : '';
   if (i < 0 || !/\?\s*[\p{Extended_Pictographic}\uFE0F\s]*$/u.test(cola)) return { texto: (base + ' ' + frase).trim(), puso: true };
@@ -1722,7 +1722,7 @@ function chAplicarTurno(a) {
   f.preguntaDatos = a.pidioDatos === true || a.plan.ruta === 'pedirNombre' || /como te llamas|como se llama tu (?:negocio|empresa)/.test(chNorm(a.mensaje));
   if (a.explicacion === true) f.explicado = true;
   if (a.complemento === true) f.complementos = Math.min(3, f.complementos + 1);
-  if (a.sitio === true) f.sitiosVentana = Math.min(CH_TOPE_SITIO, f.sitiosVentana + 1);
+  f.sitioUltimo = a.sitio === true; if (a.sitio === true) f.sitiosVentana = Math.min(CH_TOPE_SITIO, f.sitiosVentana + 1); // el sitio NO va en dos mensajes seguidos (la similitud con el anterior cruzaría 0,75)
   if (a.plan.soporte === true) f.soporte = true;
   if (a.anuncio === true) f.anuncio = true;
   f.ultimoMs = a.ahoraMs;

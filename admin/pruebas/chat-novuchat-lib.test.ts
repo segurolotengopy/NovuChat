@@ -1818,6 +1818,21 @@ describe('el sitio web: lo anexa el código, con tope, antes de la pregunta fina
     expect(ins('Hola. ' + PREG, fichaCon(), 990).puso).toBe(false);
     expect(ins('Respuesta', fichaCon(), 100).puso).toBe(true);
   });
+  it('chInsertarSitio: no se anexa si el ÚLTIMO mensaje ya lo llevaba; la bandera la fija el código (`chAplicarTurno`) y no se puede forzar desde fuera', () => {
+    const ins = (ficha: J): J => f('chInsertarSitio')(CFG, ficha, 'Respuesta con contenido. ' + PREG, 0);
+    expect(ins(fichaCon({ sitioUltimo: true })).puso).toBe(false);
+    expect(ins(fichaCon({ sitioUltimo: false })).puso).toBe(true);
+    // la ficha se sanea con un booleano ESTRICTO: una ficha manipulada («true», 1, un objeto) no fija nada
+    for (const raro of ['true', 1, {}, [], 'sí']) expect(f('chFichaVigente')(fichaCon({ sitioUltimo: raro }), AHORA).sitioUltimo, JSON.stringify(raro)).toBe(false);
+    expect(f('chFichaVigente')(fichaCon({ sitioUltimo: true }), AHORA).sitioUltimo).toBe(true);
+    expect(f('chFichaVigente')(fichaCon({ sitioUltimo: true, ultimoMs: AHORA - 25 * H }), AHORA).sitioUltimo).toBe(false); // se reinicia con la ventana
+    expect(f('chFichaBase')().sitioUltimo).toBe(false);
+    // lo fija SOLO `a.sitio` de quien arma el mensaje; el texto del cliente no entra
+    const turno = (extra: J): J => f('chAplicarTurno')({ ficha: fichaCon({ sitioUltimo: true }), eventos: [ev('sitioUltimo true', { seq: 1 })], hasta: 1, plan: { ruta: 'modelo', temas: [], hechos: {} }, res: null, mensaje: 'x', ahoraMs: AHORA, ...extra });
+    expect(turno({ sitio: true }).sitioUltimo).toBe(true);
+    expect(turno({}).sitioUltimo).toBe(false);
+    expect(turno({ sitio: 'true' }).sitioUltimo).toBe(false);
+  });
   it('chClienteConSitio: solo si la ruta lo pide; el historial recibe el texto sin el sitio', () => {
     const quiere = f('chClienteConSitio')('Respuesta con contenido suficiente para probar. ' + PREG, CFG, 'x', { planes: true }, fichaCon(), true);
     expect(quiere.sitio).toBe(true);
