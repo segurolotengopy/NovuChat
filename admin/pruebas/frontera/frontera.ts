@@ -95,7 +95,9 @@ export const RANGO: Readonly<Record<Zona, number>> = {
  * de entrada de la consola y las herramientas de desarrollo que tocan todas las
  * zonas son coordinador, por regla (F2, Z). El coordinador DE TURNO
  * (`ingesta.ts`) sigue en la raíz de Functions hasta F3b, y la prueba exige
- * que la Function `ingesta` salga de un archivo coordinador.
+ * que la Function `ingesta` salga de un archivo coordinador. `ganchos.ts` (F3b-1b)
+ * es el segundo archivo coordinador de la raíz de Functions: une el contrato de
+ * `registrarCierre` (Core) con los ganchos de los módulos.
  */
 export const ZONA_POR_ARCHIVO: Readonly<Record<string, ZonaDeArchivo>> = {
   'admin/functions/src/registro.ts': { zona: 'registro', destino: 'admin/functions/src/registro.ts' },
@@ -125,6 +127,8 @@ export const ZONA_POR_ARCHIVO: Readonly<Record<string, ZonaDeArchivo>> = {
   'admin/pruebas/storage-reglas.test.ts': { zona: 'coordinador', destino: 'admin/pruebas/storage-reglas.test.ts' },
   // Coordinador de turno; en la raíz de Functions hasta F3b.
   'admin/functions/src/ingesta.ts': { zona: 'coordinador', destino: 'admin/functions/src/ingesta.ts' },
+  // Los ganchos del cierre (F3b-1b): arma `registrarCierre` con los ganchos de Cobros y de Agenda sobre el contrato de Core; en la raíz de Functions como `ingesta.ts`.
+  'admin/functions/src/ganchos.ts': { zona: 'coordinador', destino: 'admin/functions/src/ganchos.ts' },
   // Punto de entrada de las Functions: solo reexporta (la prueba lo exige, salvo core/opcionesGlobales.ts).
   'admin/functions/src/index.ts': { zona: 'coordinador', destino: 'admin/functions/src/index.ts' },
   // Construcción de flujos (agente core-flujos); moverlos queda para F3.
