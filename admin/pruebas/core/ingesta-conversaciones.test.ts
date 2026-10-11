@@ -258,6 +258,7 @@ describe('saliente: contestar no es leer ni renueva la ventana', () => {
   });
 });
 
+let contadorRaros = 0;
 describe('el nombre del contacto y el reloj de la ventana', () => {
   it.each(['😀', 'Al', '李明'])('un contacto que pasa de «María Pérez» a «%s» (sin palabras buscables) pierde las palabras viejas', async (nuevo) => {
     await entrante(A, '5910000007001', 'hola', { nombreContacto: 'María Pérez' });
@@ -283,7 +284,7 @@ describe('el nombre del contacto y el reloj de la ventana', () => {
   });
 
   it('ultimoEntranteEn no retrocede si ya hay uno más nuevo (reintento de un choque); la ventana sale del mismo instante', async () => {
-    const futuro = Date.now() + HORA; // como si otro mensaje concurrente, más nuevo, ya hubiera confirmado
+    const futuro = Date.now() + 60_000; // como si otro mensaje concurrente, más nuevo, ya hubiera confirmado (dentro del margen de 5 min)
     await db.doc(`tenants/${A.id}/conversaciones/wa_5910000007004`).set({
       telefono: '5910000007004', canal: 'whatsapp', ultimoEntranteEn: new Date(futuro),
     });
@@ -292,6 +293,46 @@ describe('el nombre del contacto y el reloj de la ventana', () => {
     expect(ms(c['ultimoEntranteEn'])).toBe(futuro);
     expect(ms(c['ventanaVenceEn'])).toBe(futuro + 24 * HORA);
     expect(c['noLeidos']).toBe(1);
+  });
+
+  it('un ultimoEntranteEn futuro por error (+1 día, más allá del margen de 5 min) se ignora: el reloj vuelve a ahoraMs', async () => {
+    await db.doc(`tenants/${A.id}/conversaciones/wa_5910000007006`).set({
+      telefono: '5910000007006', canal: 'whatsapp', ultimoEntranteEn: new Date(Date.now() + 24 * HORA),
+    });
+    const antes = Date.now();
+    const r = await entrante(A, '5910000007006');
+    const despues = Date.now();
+    expect(r.codigo).toBe(200);
+    const c = await conversacion(A, '5910000007006');
+    expect(ms(c['ultimoEntranteEn'])).toBeGreaterThanOrEqual(antes);
+    expect(ms(c['ultimoEntranteEn'])).toBeLessThanOrEqual(despues);
+    expect(ms(c['ventanaVenceEn'])).toBe(ms(c['ultimoEntranteEn']) + 24 * HORA);
+  });
+
+  it.each([
+    ['un mapa {toMillis: 5}', { toMillis: 5 }],
+    ['un mapa {toMillis: "x"}', { toMillis: 'x' }],
+    ['un texto', '2099-01-01'],
+    ['un número enorme', 99_999_999_999_999],
+    ['null', null],
+    ['una lista', [1, 2]],
+    ['un booleano', true],
+  ])('un ultimoEntranteEn raro (%s) no tumba la ingesta: 200, mensaje guardado y reloj de ahora', async (_, raro) => {
+    const tel = `5910000007${100 + (++contadorRaros)}`;
+    await db.doc(`tenants/${A.id}/conversaciones/wa_${tel}`).set({ telefono: tel, canal: 'whatsapp', ultimoEntranteEn: raro });
+    const antes = Date.now();
+    const r = await entrante(A, tel, 'hola con previo raro');
+    expect(r.codigo).toBe(200);
+    expect(await mensajes(A, tel)).toHaveLength(1);
+    const c = await conversacion(A, tel);
+    expect(c['noLeidos']).toBe(1);
+    expect(ms(c['ultimoEntranteEn'])).toBeGreaterThanOrEqual(antes);
+  });
+
+  it('sin ultimoEntranteEn previo (ausente) tampoco falla', async () => {
+    const r = await entrante(A, '5910000007007');
+    expect(r.codigo).toBe(200);
+    expect((await conversacion(A, '5910000007007'))['noLeidos']).toBe(1);
   });
 
   it('con un ultimoEntranteEn viejo, el nuevo entrante sí lo avanza', async () => {
@@ -459,7 +500,7 @@ describe('la rama de corte también escribe los derivados', () => {
 
   it('en la rama de corte, un nombre nuevo sin palabras también borra el viejo; el reloj tampoco retrocede', async () => {
     await entrante(A, '5910000005003', 'hola', { nombreContacto: 'Ana Rojas' });
-    const futuro = Date.now() + HORA;
+    const futuro = Date.now() + 60_000;
     await db.doc(`tenants/${A.id}/conversaciones/wa_5910000005003`).set({ ultimoEntranteEn: new Date(futuro) }, { merge: true });
     await db.doc('plataforma/prepago').set({ corteActivo: false });
     await db.doc(`tenants/${A.id}/cuenta/estado`).set(VENCIDA());

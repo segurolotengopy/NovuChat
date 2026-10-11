@@ -1094,9 +1094,17 @@ export const ingesta = onRequest(
       //    se borra el campo (ausente = igual que nunca escrito, que es lo que
       //    deja el relleno). Va acá y no en `derivados.ts` para no romper la
       //    paridad de ese archivo con el relleno de H1-5.
+      const MARGEN_RELOJ_MS = 5 * 60_000;
       const derivadosDeConversacion = (): Record<string, unknown> => {
-        const previoMs = (conversacion.get('ultimoEntranteEn') as { toMillis?: () => number } | undefined)?.toMillis?.();
-        const reloj = typeof previoMs === 'number' && previoMs > ahoraMs ? previoMs : ahoraMs;
+        // Solo un `Timestamp` de verdad: un mapa como `{ toMillis: 5 }` (o cualquier
+        // valor raro) NO debe lanzar acá, porque abortaría la transacción y el
+        // mensaje del cliente no se guardaría. Y un previo que adelanta más de 5
+        // minutos al reloj no es un choque entre mensajes simultáneos sino un dato
+        // malo (un Timestamp futuro por error dejaría el reloj fijo para siempre): se ignora.
+        const previo = conversacion.get('ultimoEntranteEn');
+        const previoMs = previo instanceof Timestamp ? previo.toMillis() : undefined;
+        const reloj = previoMs !== undefined && previoMs > ahoraMs && previoMs <= ahoraMs + MARGEN_RELOJ_MS
+          ? previoMs : ahoraMs;
         const campos = camposDeConversacionPorMensaje(mensaje, reloj);
         return mensaje.nombreContacto && !('nombrePalabras' in campos)
           ? { ...campos, nombrePalabras: FieldValue.delete() } : campos;
