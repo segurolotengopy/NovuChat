@@ -38,11 +38,13 @@ const PROD = 'prueba-visor-prd1';
 // Menos de 10 dígitos a propósito (el saneo del repositorio público los
 // bloquea); `sanear` tapa desde 6, así que la prueba sigue mordiendo.
 const NUMERO_FALSO = '987654321';
+const OTRO_ID = 'prueba-visor-otro';
 const URL_SERVICIO = `https://vercomprobante-${NUMERO_FALSO}.us-east1.run.app`;
 
 const GCLOUD_FALSO = `#!/usr/bin/env bash
 E="$FAKE_DIR"
 printf '%s\\n' "$*" >> "$E/llamadas"
+env | grep -E '^(CLOUDSDK_(AUTH_|CORE_ACCOUNT|CORE_PROJECT|API_ENDPOINT_)|GH_REPO)' >> "$E/entorno-visto" || true
 P=""; MEM=""; ROLE=""
 a=("$@")
 for ((i = 0; i < \${#a[@]}; i++)); do
@@ -57,7 +59,11 @@ case "$c" in
   *"run services describe vercomprobante"*)
     [[ -f "$E/existe" ]] || { echo "ERROR: (gcloud.run.services.describe) NOT_FOUND: Resource 'vercomprobante' of kind 'SERVICE' in region 'r' in project '$P' does not exist." >&2; exit 1; }
     [[ -f "$E/niega" ]] && { echo "ERROR: PERMISSION_DENIED: cuenta@ejemplo.com sin permiso en $P (proyecto ${NUMERO_FALSO})" >&2; exit 1; }
-    printf '{"metadata":{"name":"vercomprobante","labels":{"goog-managed-by":"cloudfunctions"}},"status":{"url":"%s"}}\\n' "$(cat "$E/url")" ;;
+    # 1990 bytes de relleno y el id justo encima del corte de 2000.
+    [[ -f "$E/niega-largo" ]] && { printf 'x%.0s' {1..1990} >&2; echo "$P sin permiso" >&2; exit 1; }
+    [[ -f "$E/describe-roto" ]] && { echo "esto no es JSON"; exit 0; }
+    etiquetas='{"goog-managed-by":"cloudfunctions"}'; [[ -f "$E/sin-etiqueta" ]] && etiquetas='{}'
+    printf '{"metadata":{"name":"vercomprobante","labels":%s},"status":{"url":"%s"}}\\n' "$etiquetas" "$(cat "$E/url")" ;;
   *"run services get-iam-policy vercomprobante"*) cat "$E/politica.json" ;;
   *"run services add-iam-policy-binding"*|*"run services remove-iam-policy-binding"*)
     op=add; [[ "$c" == *remove-iam-policy-binding* ]] && op=remove
@@ -77,6 +83,7 @@ elif b is not None and mem in b["members"]:
 p["bindings"] = [x for x in bs if x.get("members")]
 json.dump(p, open(ruta, "w"))
 PY
+    [[ -f "$E/romper-tras-escribir" ]] && echo "esto no es JSON" > "$E/politica.json"
     # Como el de verdad: imprime la política entera, con cuentas del proyecto.
     printf '{"bindings":[{"role":"roles/run.admin","members":["serviceAccount:sa-deploy@%s.iam.gserviceaccount.com"]}]}\\n' "$P" ;;
   *) echo "gcloud falso: llamada no prevista" >&2; exit 97 ;;
@@ -96,11 +103,14 @@ case "$modo" in
   propio) printf '{"error":{"message":"Unauthenticated","status":"UNAUTHENTICATED"}}' > "$out"; printf '401' ;;
   403) printf '<html><title>403 Forbidden</title></html>' > "$out"; printf '403' ;;
   500) printf 'error' > "$out"; printf '500' ;;
+  200) printf '{"result":{"mime":"image/png","base64":""}}' > "$out"; printf '200' ;;
+  invalido) printf '{"error":{"message":"Solicitud inválida.","status":"INVALID_ARGUMENT"}}' > "$out"; printf '400' ;;
 esac
 `;
 
 const GH_FALSO = `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$FAKE_DIR/gh"
+env | grep -E '^GH_REPO=' >> "$FAKE_DIR/entorno-visto" || true
 exit 1
 `;
 
@@ -120,11 +130,16 @@ beforeEach(() => {
   }
   writeFileSync(join(dir, 'existe'), '');
   writeFileSync(join(dir, 'url'), URL_SERVICIO);
+  adc(PROD);
   politica(SIN_NADA);
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 function politica(p: unknown) { writeFileSync(join(dir, 'politica.json'), JSON.stringify(p)); }
+/** Las credenciales de gcloud falsas: solo el quota_project_id (vacío = sin el campo). */
+function adc(cuota: string) {
+  writeFileSync(join(dir, 'adc.json'), cuota ? JSON.stringify({ type: 'authorized_user', quota_project_id: cuota }) : '{"type":"authorized_user"}');
+}
 const leer = (n: string) => (existsSync(join(dir, n)) ? readFileSync(join(dir, n), 'utf8') : '');
 const llamadas = () => leer('llamadas').split('\n').filter(Boolean);
 const escrituras = () => llamadas().filter((l) => /(add|remove|set)-iam-policy|projects |functions /.test(l));
@@ -142,6 +157,7 @@ function correr(args: string[], vars: Record<string, string> = {}) {
       GCP_PROJECT_ID_PROD: PROD,
       NUBE_VISOR_INTENTOS: '2',
       NUBE_VISOR_ESPERA: '0',
+      NUBE_VISOR_ADC: join(dir, 'adc.json'),
       ...vars,
     }),
   });
@@ -150,6 +166,7 @@ function correr(args: string[], vars: Record<string, string> = {}) {
   expect(salida).not.toContain(STAGING);
   expect(salida).not.toContain(PROD);
   expect(salida).not.toContain(NUMERO_FALSO);
+  expect(salida).not.toContain(OTRO_ID);
   return { codigo: r.status, salida };
 }
 
@@ -187,7 +204,7 @@ describe('nube-visor.sh: uso y salvaguardas (nada se llama a gcloud)', () => {
     expect(r.codigo).toBe(2);
     expect(r.salida).toContain('GCP_PROJECT_ID_STAGING');
     expect(llamadas()).toEqual([]);
-    expect(leer('gh').split('\n').filter(Boolean)).toEqual(['variable get GCP_PROJECT_ID_STAGING']);
+    expect(leer('gh').split('\n').filter(Boolean)).toEqual(['variable get GCP_PROJECT_ID_STAGING --repo segurolotengopy/NovuChat']);
   });
 
   it('un id con forma inválida: sale 2', () => {
@@ -330,6 +347,158 @@ describe('nube-visor.sh: --revertir', () => {
   });
 });
 
+describe('nube-visor.sh: revisión de seguridad del #490', () => {
+  // 1 (MEDIUM): si tras conceder el código atiende a un anónimo, se quita en el acto.
+  it.each([
+    ['un 200', '200', 'abierto:200'],
+    ['un 400 INVALID_ARGUMENT (la sesión ya pasó)', 'invalido', 'abierto:400'],
+  ])('tras conceder, %s sin sesión: REVIERTE con las mismas constantes y sale 3', (_n, modo, ultima) => {
+    writeFileSync(join(dir, 'curl-modo'), modo);
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain(`REVERTIDO: respondió sin sesión (${ultima})`);
+    const fijo = `--region ${REGION} --member=allUsers --role=roles/run.invoker`;
+    expect(escrituras()).toEqual([
+      `--project ${STAGING} --quiet run services add-iam-policy-binding vercomprobante ${fijo}`,
+      `--project ${STAGING} --quiet run services remove-iam-policy-binding vercomprobante ${fijo}`,
+    ]);
+    expect(publico()).toBe(false);
+    expect(llamadasCurl()).toHaveLength(1); // «abierto» no se reintenta
+  });
+
+  it('con el binding ya puesto (no lo puso esta corrida) y respuesta sin sesión: sale 3 sin escribir', () => {
+    politica(CON_PUBLICO);
+    writeFileSync(join(dir, 'curl-modo'), '200');
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('--revertir --aplicar --confirmo staging');
+    expect(escrituras()).toEqual([]);
+  });
+
+  // 2: las dos variables, antes de cualquier llamada a gcloud.
+  it.each([
+    ['el id de producción como STAGING y sin PROD', { GCP_PROJECT_ID_STAGING: PROD, GCP_PROJECT_ID_PROD: '' }, 'staging', 'Falta GCP_PROJECT_ID_PROD'],
+    ['sin STAGING, pidiendo producción', { GCP_PROJECT_ID_STAGING: '' }, 'produccion', 'Falta GCP_PROJECT_ID_STAGING'],
+  ])('%s: sale 2 sin llamar a gcloud y dice cuál falta', (_n, vars, entorno, mensaje) => {
+    const r = correr(['--entorno', entorno], vars);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain(mensaje);
+    expect(llamadas()).toEqual([]);
+  });
+
+  // 3: el cruce con el quota_project_id de las credenciales.
+  it('producción con --aplicar y cuota que coincide: dice «cruzado: sí» sin el id', () => {
+    const r = correr(['--entorno', 'produccion', '--aplicar', '--confirmo', 'produccion']);
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toContain('proyecto cruzado con las credenciales: sí');
+  });
+
+  it.each([
+    ['seco', ['--entorno', 'produccion']],
+    ['--aplicar', ['--entorno', 'produccion', '--aplicar', '--confirmo', 'produccion']],
+  ])('producción (%s) con una cuota de OTRO proyecto: sale 2 sin llamar a gcloud', (_n, args) => {
+    adc(OTRO_ID);
+    expect(correr(args).codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
+  });
+
+  it.each([
+    ['sin quota_project_id', () => adc('')],
+    ['sin archivo de credenciales', () => rmSync(join(dir, 'adc.json'))],
+  ])('producción con --aplicar %s: sale 2 sin llamar a gcloud; el seco sigue y lo avisa', (_n, preparar) => {
+    preparar();
+    expect(correr(['--entorno', 'produccion', '--aplicar', '--confirmo', 'produccion']).codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
+    const seco = correr(['--entorno', 'produccion']);
+    expect(seco.codigo).toBe(1);
+    expect(seco.salida).toContain('proyecto cruzado con las credenciales: no');
+  });
+
+  it('staging no exige el cruce (la cuota es la de producción)', () => {
+    adc('');
+    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(0);
+  });
+
+  // 4: sanear tapa sobre el texto completo y corta después.
+  it('un error de 1990 bytes con el id justo en el corte: ni un pedazo del id', () => {
+    writeFileSync(join(dir, 'niega-largo'), '');
+    const r = correr(['--entorno', 'produccion']);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).not.toContain(PROD.slice(0, 6));
+  });
+
+  // 5: sin la etiqueta de Cloud Functions, --aplicar no escribe; el seco avisa.
+  it('servicio sin goog-managed-by=cloudfunctions: --aplicar sale 2 sin escribir; el seco solo avisa', () => {
+    writeFileSync(join(dir, 'sin-etiqueta'), '');
+    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(2);
+    expect(escrituras()).toEqual([]);
+    const seco = correr(['--entorno', 'staging']);
+    expect(seco.codigo).toBe(1);
+    expect(seco.salida).toContain('goog-managed-by=cloudfunctions');
+    politica(CON_PUBLICO);
+    expect(correr(['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging']).codigo).toBe(2);
+    expect(escrituras()).toEqual([]);
+  });
+
+  // 6: el reintento correcto es --aplicar (con el binding puesto, prueba sin escribir).
+  it('el 403 tras conceder sugiere --aplicar --confirmo, que con el binding puesto prueba y no escribe', () => {
+    writeFileSync(join(dir, 'curl-modo'), '403');
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
+    expect(r.salida).toContain('reintentar con --aplicar --confirmo staging: no escribe nada si ya está concedido; solo prueba');
+    rmSync(join(dir, 'curl-modo'));
+    rmSync(join(dir, 'llamadas'));
+    rmSync(join(dir, 'curl'));
+    const otra = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']);
+    expect(otra.codigo).toBe(0);
+    expect(escrituras()).toEqual([]);
+    expect(llamadasCurl()).toHaveLength(1);
+  });
+
+  // 7: un JSON ilegible nunca se toma por «no hay binding».
+  it('describe que no devuelve JSON: sale 3 sin escribir', () => {
+    writeFileSync(join(dir, 'describe-roto'), '');
+    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(3);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it.each([
+    ['conceder', ['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], SIN_NADA],
+    ['--revertir', ['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging'], CON_PUBLICO],
+  ])('%s: si la política RELEÍDA no es JSON, sale 3 (nunca se toma por «no hay binding»)', (_n, args, antes) => {
+    politica(antes);
+    writeFileSync(join(dir, 'romper-tras-escribir'), '');
+    const r = correr(args as string[]);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('no es JSON legible');
+  });
+
+  it('una política que no es JSON: sale 3 sin escribir', () => {
+    writeFileSync(join(dir, 'politica.json'), 'esto no es JSON');
+    expect(correr(['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging']).codigo).toBe(3);
+    expect(escrituras()).toEqual([]);
+  });
+
+  // 8: nada del entorno cambia quién actúa ni adónde van las llamadas.
+  it('gcloud y gh no ven las variables que cambian cuenta, token, extremo, proyecto o repositorio', () => {
+    const hostiles = {
+      CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT: 'otra@ejemplo.iam.gserviceaccount.com',
+      CLOUDSDK_AUTH_ACCESS_TOKEN_FILE: '/tmp/token-ajeno',
+      CLOUDSDK_CORE_ACCOUNT: 'otra@ejemplo.com',
+      CLOUDSDK_API_ENDPOINT_OVERRIDES_RUN: 'https://ajeno.example.com/',
+      CLOUDSDK_CORE_PROJECT: 'proyecto-ajeno-1',
+      GH_REPO: 'ajeno/repo',
+    };
+    // Sin STAGING en el entorno, para que también se llame a gh.
+    const r = correr(['--entorno', 'produccion', '--aplicar', '--confirmo', 'produccion'], { ...hostiles, GCP_PROJECT_ID_STAGING: '' });
+    expect(r.codigo).toBe(2);
+    expect(leer('gh')).toContain('--repo segurolotengopy/NovuChat');
+    const conGcloud = correr(['--entorno', 'produccion', '--aplicar', '--confirmo', 'produccion'], hostiles);
+    expect(conGcloud.codigo).toBe(0);
+    expect(llamadas().length).toBeGreaterThan(0);
+    expect(leer('entorno-visto')).toBe('');
+  });
+});
+
 describe('nube-visor.sh: la fuente', () => {
   const fuente = readFileSync(SCRIPT, 'utf8');
   const codigo = fuente.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
@@ -350,7 +519,8 @@ describe('nube-visor.sh: la fuente', () => {
     for (const m of codigo.matchAll(/(add|remove)-iam-policy-binding "([^"]+)"[\s\\]+--region "([^"]+)"[\s\\]+--member="([^"]+)" --role="([^"]+)"/g)) {
       expect(m.slice(2)).toEqual(['$SERVICIO', '$REGION', '$MIEMBRO', '$ROL']);
     }
-    expect([...codigo.matchAll(/-iam-policy-binding "/g)]).toHaveLength(2);
+    // conceder, quitar (--revertir) y la reversión automática tras «abierto».
+    expect([...codigo.matchAll(/-iam-policy-binding "/g)]).toHaveLength(3);
   });
 
   it('ningún id de proyecto escrito, y curl solo contra la URL validada del servicio', () => {
