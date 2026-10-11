@@ -34,7 +34,10 @@ const relleno = await import('../../scripts/plataforma/rellenar-conversaciones.m
 };
 const bandera = await import('../../scripts/plataforma/aplicar-consola-conversaciones.mjs') as unknown as {
   ejecutar: (cfg: Record<string, unknown>, deps: Record<string, unknown>) => Promise<number>;
+  comprobarRespaldo: (r: string, o?: Record<string, unknown>) => { ok: boolean; real?: string };
 };
+/** Como `analizarArgumentos`: la ruta REAL del respaldo se resuelve al validar, ANTES de que la carpeta exista. */
+const resuelta = (ruta: string) => bandera.comprobarRespaldo(ruta).real ?? null;
 
 const dirs: string[] = [];
 const nuevoDir = () => { const d = mkdtempSync(join('/tmp', 'conv-emu-')); chmodSync(d, 0o700); dirs.push(d); return d; };
@@ -152,8 +155,9 @@ describe('A. la bandera consolaConversaciones, como proceso contra el emulador',
       getAll: (...a: unknown[]) => (db.getAll as (...x: unknown[]) => Promise<unknown[]>)(doc, ...a.slice(1)),
     };
     const salida: string[] = [];
+    const rutaA = rutaRespaldo();
     const codigo = await bandera.ejecutar(
-      { proyecto: PROYECTO, entorno: 'emulador', tenant: t, pantalla: 'nueva', aplicar: true, revertir: false, respaldo: rutaRespaldo() },
+      { proyecto: PROYECTO, entorno: 'emulador', tenant: t, pantalla: 'nueva', aplicar: true, revertir: false, respaldo: rutaA, respaldoResuelto: resuelta(rutaA) },
       { db: dbCarrera, FieldValue, log: (x: string) => salida.push(x) },
     );
     expect(codigo, salida.join('\n')).toBe(3);
@@ -265,7 +269,7 @@ describe('B. el relleno de conversaciones, como proceso contra el emulador', () 
     });
     const salida: string[] = [];
     const codigo = await relleno.ejecutar(
-      { proyecto: PROYECTO, entorno: 'emulador', tenant: t, aplicar: true, revertir: false, respaldo: ruta },
+      { proyecto: PROYECTO, entorno: 'emulador', tenant: t, aplicar: true, revertir: false, respaldo: ruta, respaldoResuelto: resuelta(ruta) },
       { db: dbCarrera, FieldValue, FieldPath, log: (x: string) => salida.push(x) },
     );
     const texto = salida.join('\n');

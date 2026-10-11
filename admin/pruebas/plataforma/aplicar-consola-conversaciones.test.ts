@@ -16,7 +16,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
@@ -32,7 +32,7 @@ type Cfg = Record<string, unknown>;
 const mod = await import('../../scripts/plataforma/aplicar-consola-conversaciones.mjs') as unknown as {
   analizarArgumentos: (argv: string[], env?: Record<string, string>, op?: Record<string, unknown>) => { ok: boolean; problemas?: string[]; cfg?: Cfg };
   comprobarProyecto: (p: unknown, env?: Record<string, string>) => { ok: boolean; entorno?: string; motivo?: string };
-  comprobarRespaldo: (r: unknown, o?: Record<string, unknown>) => { ok: boolean; motivo?: string };
+  comprobarRespaldo: (r: unknown, o?: Record<string, unknown>) => { ok: boolean; motivo?: string; real?: string };
   esTenantExcluido: (t: unknown, env?: Record<string, string>) => boolean;
   nombreExcluido: (n: unknown, env?: Record<string, string>) => boolean;
   leerRespaldo: (ruta: string, o: { entorno: string; tenant: string }) => { ok: boolean; motivo?: string };
@@ -82,10 +82,15 @@ const correr = async (cfg: Cfg, b: ReturnType<typeof baseDe>, extra: Record<stri
   const codigo = await mod.ejecutar(cfg, { db: b.db, FieldValue: b.FieldValue, log: (t: string) => salida.push(t), ...extra });
   return { codigo, salida: salida.join('\n') };
 };
-const cfgDe = (extra: Cfg = {}): Cfg => ({
-  proyecto: PROY, entorno: 'emulador', tenant: 'tienda-prueba', pantalla: 'nueva',
-  aplicar: false, revertir: false, respaldo: null, ...extra,
-});
+/** Como `analizarArgumentos`: la ruta REAL del respaldo se resuelve al validar, ANTES de que la carpeta exista. */
+const cfgDe = (extra: Cfg = {}): Cfg => {
+  const c: Cfg = {
+    proyecto: PROY, entorno: 'emulador', tenant: 'tienda-prueba', pantalla: 'nueva',
+    aplicar: false, revertir: false, respaldo: null, ...extra,
+  };
+  if (typeof c['respaldo'] === 'string' && !('respaldoResuelto' in c)) c['respaldoResuelto'] = mod.comprobarRespaldo(c['respaldo'], { permitirExistente: true }).real ?? null;
+  return c;
+};
 const FICHA = { nombre: 'Tienda Sintetica', flujos: ['venta'] };
 
 describe('B1. argumentos y salvaguarda (puros)', () => {
@@ -314,6 +319,54 @@ describe('B2. el seco no escribe; --aplicar guarda respaldo, escribe una vez y r
     expect(m('escrito')).toContain('--revertir con el mismo respaldo');
   });
 
+  it('L5: si la carpeta del respaldo se cambia por un enlace DESPUÉS de validarla, se detiene y no escribe en la ficha', async () => {
+    const b = baseDe(FICHA);
+    const zona = nuevoDir();
+    const ruta = join(zona, 'respaldos', 'r.json');
+    const trampa = nuevoDir();
+    expect(spawnSync('git', ['init', '-q', trampa], { stdio: 'ignore' }).status).toBe(0);
+    const { codigo, salida } = await correr(cfgDe({ aplicar: true, respaldo: ruta }), b, {
+      leerRespaldo: (r: string, o: { tenant: string }) => {
+        const lectura = mod.leerRespaldo(r, { entorno: 'emulador', tenant: o.tenant });
+        renameSync(join(zona, 'respaldos'), join(zona, 'respaldos-original'));
+        symlinkSync(trampa, join(zona, 'respaldos'));
+        return lectura;
+      },
+    });
+    expect(codigo, salida).toBe(2);
+    expect(salida).toContain('La ruta del respaldo cambió durante la corrida. No se escribe nada.');
+    expect(b.escrituras).toHaveLength(0);
+    expect(b.datos()).toEqual(FICHA);
+    // Variante: el enlace lleva a una carpeta ACEPTABLE (otra del scratchpad, sin repositorio) pero DISTINTA de la validada.
+    const zona2 = nuevoDir();
+    const otraBuena = nuevoDir();
+    const b4 = baseDe(FICHA);
+    const r4 = await correr(cfgDe({ aplicar: true, respaldo: join(zona2, 'respaldos', 'r.json') }), b4, {
+      leerRespaldo: (r: string, o: { tenant: string }) => {
+        const lectura = mod.leerRespaldo(r, { entorno: 'emulador', tenant: o.tenant });
+        renameSync(join(zona2, 'respaldos'), join(zona2, 'respaldos-original'));
+        symlinkSync(otraBuena, join(zona2, 'respaldos'));
+        return lectura;
+      },
+    });
+    expect(r4.codigo, r4.salida).toBe(2);
+    expect(r4.salida).toContain('La ruta del respaldo cambió durante la corrida');
+    expect(b4.escrituras).toHaveLength(0);
+    // Una cfg armada a mano sin la ruta resuelta no puede afirmar nada.
+    const c = baseDe(FICHA);
+    expect((await correr(cfgDe({ aplicar: true, respaldo: join(nuevoDir(), 'sub', 'r.json'), respaldoResuelto: null }), c)).codigo).toBe(2);
+    expect(c.escrituras).toHaveLength(0);
+  });
+
+  it('analizarArgumentos entrega la ruta REAL validada (cfg.respaldoResuelto) para la última comprobación', () => {
+    const dir = nuevoDir();
+    const ruta = join(dir, 'sub', 'r.json');
+    const r = mod.analizarArgumentos(['--proyecto', PROY, '--tenant', 'tienda-prueba', '--pantalla', 'nueva', '--aplicar', '--respaldo', ruta], ENV_EMU);
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    expect(r.cfg?.['respaldoResuelto']).toBe(mod.comprobarRespaldo(ruta).real);
+    expect(typeof r.cfg?.['respaldoResuelto']).toBe('string');
+  });
+
   it('otro comercio: el script solo toca la ficha del --tenant dado', async () => {
     const rutas: string[] = [];
     const b = baseDe(FICHA);
@@ -459,7 +512,10 @@ describe('B4. Bellido por la ficha, y el texto del script', () => {
   it('el encabezado documenta el paso previo del respaldo y el mensaje usa «corríjala»', () => {
     const crudo = readFileSync(SCRIPT, 'utf8');
     expect(crudo).toContain('PASO PREVIO');
-    expect(crudo).toContain('respaldos-h1/<nombre>.json');
+    expect(crudo).toContain('<copia principal>/CLIENTES/QTACO/respaldos-h1/<script>-<fecha>.json');
+    expect(crudo).toContain('SIN otras sesiones escribiendo en esa');
+    expect(crudo).toContain('COPIA PRINCIPAL');
+    expect(crudo).toContain('vuelve a comprobar que la ruta real del respaldo sigue siendo la validada');
     expect(crudo).toContain('/tmp` o `/var/tmp` (fijas, no dependen de `TMPDIR`)');
     expect(crudo).toContain('corríjala a propósito');
     expect(crudo).not.toContain('corríjela');

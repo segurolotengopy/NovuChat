@@ -15,7 +15,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
@@ -41,7 +41,7 @@ const mod = await import('../../scripts/plataforma/rellenar-conversaciones.mjs')
   CAMPOS_DERIVADOS: string[]; TAMANO_PAGINA: number; TAMANO_LOTE: number;
 };
 const comun = await import('../../scripts/plataforma/aplicar-consola-conversaciones.mjs') as unknown as {
-  comprobarRespaldo: (r: unknown, o?: Record<string, unknown>) => { ok: boolean; motivo?: string };
+  comprobarRespaldo: (r: unknown, o?: Record<string, unknown>) => { ok: boolean; motivo?: string; real?: string };
   guardarRespaldo: (ruta: string, contenido: unknown) => void;
   RAICES_TEMPORALES: readonly string[];
   esTenantExcluido: (t: unknown, env?: Record<string, string>) => boolean;
@@ -76,7 +76,12 @@ function sembrar(cantidad: number, extra: (n: number) => Record<string, unknown>
   for (let n = 1; n <= cantidad; n++) inicial[rutaConv(n)] = conv(n, extra(n));
   return baseEnMemoria(inicial);
 }
-const cfgDe = (extra: Cfg = {}): Cfg => ({ proyecto: PROY, entorno: 'emulador', tenant: T, aplicar: false, revertir: false, respaldo: null, ...extra });
+/** Como `analizarArgumentos`: la ruta REAL del respaldo se resuelve al validar, ANTES de que la carpeta exista. */
+const cfgDe = (extra: Cfg = {}): Cfg => {
+  const c: Cfg = { proyecto: PROY, entorno: 'emulador', tenant: T, aplicar: false, revertir: false, respaldo: null, ...extra };
+  if (typeof c['respaldo'] === 'string' && !('respaldoResuelto' in c)) c['respaldoResuelto'] = comun.comprobarRespaldo(c['respaldo'], { permitirExistente: true }).real ?? null;
+  return c;
+};
 async function correr(cfg: Cfg, b: BaseEnMemoria, extraDeps: Record<string, unknown> = {}) {
   const salida: string[] = [];
   const codigo = await mod.ejecutar(cfg, { db: b.db, FieldValue: b.FieldValue, FieldPath: b.FieldPath, log: (t: string) => salida.push(t), ...extraDeps });
@@ -207,7 +212,19 @@ describe('R1. argumentos y salvaguarda (puros)', () => {
 
     // Negativas: lo versionable del proyecto, vista desde el worktree y desde la principal.
     expect(comun.comprobarRespaldo(join(principal, 'publico', 'r.json'), sinRaices).motivo).toContain('ignorada por git');
-    expect(comun.comprobarRespaldo(join(worktree, 'r.json'), sinRaices).motivo).toContain('ignorada por git');
+    // El destino duradero es la COPIA PRINCIPAL: un worktree se rechaza aunque su carpeta esté ignorada.
+    expect(comun.comprobarRespaldo(join(worktree, 'r.json'), sinRaices).motivo).toContain('copia principal');
+    mkdirSync(join(worktree, 'CLIENTES', 'TIENDA'), { recursive: true });
+    expect(comun.comprobarRespaldo(join(worktree, 'CLIENTES', 'TIENDA', 'respaldos-h1', 'r.json'), sinRaices).motivo).toContain('copia principal');
+    // Una carpeta externa con un `.git` que apunta al proyecto tampoco vale.
+    const externa = nuevoDir();
+    writeFileSync(join(externa, '.git'), `gitdir: ${join(principal, '.git')}\n`);
+    mkdirSync(join(externa, 'CLIENTES', 'TIENDA'), { recursive: true });
+    expect(comun.comprobarRespaldo(join(externa, 'CLIENTES', 'TIENDA', 'respaldos-h1', 'r.json'), sinRaices).ok).toBe(false);
+    const externaWt = nuevoDir();
+    writeFileSync(join(externaWt, '.git'), `gitdir: ${join(principal, '.git', 'worktrees', 'wt')}\n`);
+    mkdirSync(join(externaWt, 'CLIENTES'), { recursive: true });
+    expect(comun.comprobarRespaldo(join(externaWt, 'CLIENTES', 'r.json'), sinRaices).ok).toBe(false);
     expect(comun.comprobarRespaldo(join(principal, 'r.json'), { raiz: principal, raices: [] }).motivo).toContain('ignorada por git');
     // Negativa: otro repositorio distinto del del proyecto.
     const ajeno = join(nuevoDir(), 'ajeno');
@@ -224,6 +241,98 @@ describe('R1. argumentos y salvaguarda (puros)', () => {
     const falso = nuevoDir();
     mkdirSync(join(falso, '.git'));
     expect(comun.comprobarRespaldo(join(falso, 'r.json'), sinRaices).ok).toBe(false);
+  });
+
+  it('L7: dentro del proyecto el padre nunca puede ser escribible por «otros»; 0775 con el grupo del usuario sí pasa', () => {
+    const principal = join(nuevoDir(), 'principal');
+    mkdirSync(principal);
+    git(principal, ['init', '-q']);
+    writeFileSync(join(principal, '.gitignore'), 'CLIENTES/\n');
+    const cliente = join(principal, 'CLIENTES', 'TIENDA');
+    mkdirSync(cliente, { recursive: true });
+    const ruta = join(cliente, 'respaldos-h1', 'r.json');
+    const en = { raiz: principal, raices: [] as string[] };
+    chmodSync(cliente, 0o775);
+    expect(comun.comprobarRespaldo(ruta, en).ok).toBe(true);
+    chmodSync(cliente, 0o777);
+    expect(comun.comprobarRespaldo(ruta, en).motivo).toContain('la pueden escribir otros');
+    chmodSync(cliente, 0o757);
+    expect(comun.comprobarRespaldo(ruta, en).ok).toBe(false);
+    chmodSync(cliente, 0o700);
+    expect(comun.comprobarRespaldo(ruta, en).ok).toBe(true);
+    // Un padre con escritura de grupo es aceptable SOLO si el grupo es el del usuario (`gid` inyectado: sin privilegios no se puede armar otro grupo).
+    chmodSync(cliente, 0o775);
+    const gidPropio = statSync(cliente).gid;
+    expect(comun.comprobarRespaldo(ruta, { ...en, gid: gidPropio }).ok).toBe(true);
+    expect(comun.comprobarRespaldo(ruta, { ...en, gid: gidPropio + 1 }).motivo).toContain('la pueden escribir otros');
+    chmodSync(cliente, 0o755);
+    expect(comun.comprobarRespaldo(ruta, { ...en, gid: gidPropio + 1 }).ok).toBe(true); // sin escritura de grupo, el grupo da igual
+  });
+
+  it('fuera del proyecto (scratchpad) el padre existente tampoco puede ser escribible por grupo ni otros', () => {
+    const zona = nuevoDir();
+    const ruta = join(zona, 'respaldos', 'r.json');
+    chmodSync(zona, 0o770);
+    expect(comun.comprobarRespaldo(ruta, { raices: [zona] }).motivo).toContain('la pueden escribir otros');
+    chmodSync(zona, 0o777);
+    expect(comun.comprobarRespaldo(ruta, { raices: [zona] }).ok).toBe(false);
+    chmodSync(zona, 0o700);
+    expect(comun.comprobarRespaldo(ruta, { raices: [zona] }).ok).toBe(true);
+  });
+
+  it('L5: si la carpeta del respaldo se cambia por un enlace DESPUÉS de validarla, la corrida se detiene y no se escribe en Firestore', async () => {
+    const b = sembrar(4);
+    const zona = nuevoDir();
+    const ruta = join(zona, 'respaldos', 'r.json');
+    const cfg = cfgDe({ aplicar: true, respaldo: ruta });
+    // La carpeta «versionada» a la que alguien redirige el respaldo (un repositorio ajeno, no ignorado).
+    const trampa = nuevoDir();
+    git(trampa, ['init', '-q']);
+    const { codigo, salida } = await correr(cfg, b, {
+      // Se llama justo después de guardar el respaldo y antes de la última comprobación: ahí ocurre el cambio.
+      leerRespaldo: (r: string, o: { tenant: string }) => {
+        const lectura = mod.leerRespaldo(r, { entorno: 'emulador', tenant: o.tenant });
+        renameSync(join(zona, 'respaldos'), join(zona, 'respaldos-original'));
+        symlinkSync(trampa, join(zona, 'respaldos'));
+        return lectura;
+      },
+    });
+    expect(codigo, salida).toBe(2);
+    expect(salida).toContain('La ruta del respaldo cambió durante la corrida. No se escribe nada.');
+    expect(b.estado.escrituras).toHaveLength(0);
+    expect(b.estado.lotes).toHaveLength(0);
+    for (let n = 1; n <= 4; n++) expect(b.leer(rutaConv(n))).not.toHaveProperty('telefonoTrozos');
+    // Variante: el enlace lleva a una carpeta ACEPTABLE (otra del scratchpad, sin repositorio) pero DISTINTA de la validada.
+    const b4 = sembrar(3);
+    const zona2 = nuevoDir();
+    const otraBuena = nuevoDir();
+    const r4 = await correr(cfgDe({ aplicar: true, respaldo: join(zona2, 'respaldos', 'r.json') }), b4, {
+      leerRespaldo: (r: string, o: { tenant: string }) => {
+        const lectura = mod.leerRespaldo(r, { entorno: 'emulador', tenant: o.tenant });
+        renameSync(join(zona2, 'respaldos'), join(zona2, 'respaldos-original'));
+        symlinkSync(otraBuena, join(zona2, 'respaldos'));
+        return lectura;
+      },
+    });
+    expect(r4.codigo, r4.salida).toBe(2);
+    expect(r4.salida).toContain('La ruta del respaldo cambió durante la corrida');
+    expect(b4.estado.escrituras).toHaveLength(0);
+    // Sin cambio, la misma corrida escribe (control de la prueba).
+    const b2 = sembrar(2);
+    expect((await correr(cfgDe({ aplicar: true, respaldo: join(nuevoDir(), 'sub', 'r.json') }), b2)).codigo).toBe(0);
+    // Una cfg armada a mano sin la ruta resuelta no puede afirmar nada: se detiene.
+    const sinResuelta = cfgDe({ aplicar: true, respaldo: join(nuevoDir(), 'sub', 'r.json'), respaldoResuelto: null });
+    const b3 = sembrar(2);
+    expect((await correr(sinResuelta, b3)).codigo).toBe(2);
+    expect(b3.estado.escrituras).toHaveLength(0);
+  });
+
+  it('analizarArgumentos entrega la ruta REAL validada (cfg.respaldoResuelto) para la última comprobación', () => {
+    const ruta = join(nuevoDir(), 'sub', 'r.json');
+    const r = mod.analizarArgumentos(['--proyecto', PROY, '--tenant', T, '--aplicar', '--respaldo', ruta], ENV_EMU);
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    expect(r.cfg?.['respaldoResuelto']).toBe(comun.comprobarRespaldo(ruta).real);
+    expect(typeof r.cfg?.['respaldoResuelto']).toBe('string');
   });
 
   it('TMPDIR no amplía la lista: aunque apunte debajo de la casa, un respaldo ahí se rechaza (y el hijo sale 2)', () => {
@@ -827,8 +936,10 @@ describe('R7. el texto del script', () => {
     expect(crudo).toContain("`./normalizacion.js`");
     expect(crudo).toContain('FALLA si cambian en uno y no en el otro');
     expect(crudo).toMatch(/IDÉNTICO, el campo se borra igual/);
-    expect(crudo).toContain('respaldos-h1/<nombre>.json');
-    expect(crudo).toContain('copia principal o desde\n * un worktree');
+    expect(crudo).toContain('<copia principal>/CLIENTES/QTACO/respaldos-h1/<script>-<fecha>.json');
+    expect(crudo).toContain('SIN otras sesiones escribiendo en esa carpeta');
+    expect(crudo).toContain('COPIA PRINCIPAL del proyecto');
+    expect(crudo).toContain('vuelve a comprobar que la ruta real');
   });
   it('declara la limitación de los mensajes antiguos en el encabezado y en la salida', () => {
     const crudo = readFileSync(SCRIPT, 'utf8');

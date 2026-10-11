@@ -43,16 +43,21 @@
  * lugares; todo lo demás se rechaza (en particular `~/`, directo o debajo de él, y cualquier carpeta
  * versionable, porque un repositorio público no es su lugar):
  *   (a) el scratchpad de la sesión: dentro de `/tmp` o `/var/tmp` (fijas, no dependen de `TMPDIR`);
- *   (b) una carpeta IGNORADA POR GIT del propio proyecto, tanto desde la copia principal como desde
- *       cualquiera de sus worktrees (se compara el repositorio común, no la raíz). Es el lugar
+ *   (b) una carpeta IGNORADA POR GIT de la COPIA PRINCIPAL del proyecto (la que contiene el `.git` de
+ *       verdad). Se puede correr desde la copia principal o desde cualquier worktree (se compara el
+ *       repositorio común), pero el destino tiene que quedar en la copia principal: un worktree, otro
+ *       repositorio o una carpeta externa con un `.git` que apunte al proyecto se rechazan. Es el lugar
  *       DURADERO: `CLIENTES/<CLIENTE>/` de la copia principal está ignorada.
- * PASO PREVIO para (b): la carpeta del cliente (`CLIENTES/<CLIENTE>/`) debería existir ya (si falta, el
- * script la crea también 0700) y el respaldo va en una subcarpeta NUEVA, por ejemplo
- * `<copia principal>/CLIENTES/<CLIENTE>/respaldos-h1/<nombre>.json`: el script la crea con 0700 y no
- * exige que `CLIENTES/<CLIENTE>/` sea 0700 (suele ser 0775), solo que sea del usuario. Una subcarpeta
- * que ya existe tiene que ser del usuario y 0700. Para (a) lo mismo: la subcarpeta nueva dentro del
- * scratchpad. Tras guardar el respaldo, el script lo vuelve a LEER con la forma que `--revertir` exige y
- * se detiene (salida 2) antes de tocar la ficha si no sirve.
+ * RESPALDO DE PRODUCCIÓN: `<copia principal>/CLIENTES/QTACO/respaldos-h1/<script>-<fecha>.json`
+ * (por ejemplo `aplicar-consola-conversaciones-2026-10-12.json`), y SIN otras sesiones escribiendo en esa
+ * carpeta durante la corrida. PASO PREVIO: la carpeta del cliente (`CLIENTES/<CLIENTE>/`) debería existir
+ * ya (si falta, el script la crea también 0700) y el respaldo va en una subcarpeta NUEVA (`respaldos-h1/`):
+ * el script la crea con 0700 y no exige que `CLIENTES/<CLIENTE>/` sea 0700 (suele ser 0775): basta que sea
+ * del usuario, que nadie más (otros) la escriba y que su grupo sea el del usuario. Una subcarpeta que ya
+ * existe tiene que ser del usuario y 0700. Para (a) lo mismo: la subcarpeta nueva dentro del scratchpad.
+ * Tras guardar el respaldo, el script lo vuelve a LEER con la forma que `--revertir` exige y, justo antes de
+ * escribir, vuelve a comprobar que la ruta real del respaldo sigue siendo la validada (nadie cambió una
+ * carpeta por un enlace en el medio); si no, se detiene (salida 2) sin tocar la ficha.
  *
  * SALIDA. 0: seco sin diferencias, o escritura hecha y comprobada. 1: el seco encontró
  * diferencias (o la ficha no existe). 2: uso o salvaguarda (nada escrito). 3: error de
@@ -195,10 +200,13 @@ export const RAICES_TEMPORALES = Object.freeze(['/tmp', '/var/tmp']);
  * usuario y 0700. Si NO existe, la carpeta existente más cercana tiene que ser del usuario (en el caso (a) además no
  * escribible por otros; en el (b) puede ser 0775: `CLIENTES/<CLIENTE>/` suele serlo, y la subcarpeta nueva sí queda
  * 0700). No crea nada. `lectura`: tiene que existir (0600, del usuario); si no, no puede existir (un respaldo nunca se
- * pisa). `permitirExistente`: al aplicar, uno ya existente pasa si es regular, del usuario y 0600. `raiz` y `raices`
+ * pisa). `permitirExistente`: al aplicar, uno ya existente pasa si es regular, del usuario y 0600. `raiz`, `raices` y `gid`
  * se inyectan solo en las pruebas.
  */
-export function comprobarRespaldo(ruta, { raiz = RAIZ_REPO, raices = RAICES_TEMPORALES, lectura = false, permitirExistente = false } = {}) {
+export function comprobarRespaldo(ruta, {
+  raiz = RAIZ_REPO, raices = RAICES_TEMPORALES, lectura = false, permitirExistente = false,
+  gid = typeof process.getgid === 'function' ? process.getgid() : null,
+} = {}) {
   if (typeof ruta !== 'string' || ruta === '' || ruta.includes('\0')) return { ok: false, motivo: 'falta --respaldo' };
   if (!isAbsolute(ruta) || resolve(ruta) !== ruta) return { ok: false, motivo: '--respaldo tiene que ser una ruta absoluta y normalizada (sin «..», «.» ni barras repetidas)' };
   const resuelta = rutaRealConPendientes(ruta);
@@ -216,6 +224,9 @@ export function comprobarRespaldo(ruta, { raiz = RAIZ_REPO, raices = RAICES_TEMP
     if (destino !== proyecto) return { ok: false, motivo: '--respaldo no puede estar dentro de otro repositorio git' };
     let repoReal;
     try { repoReal = realpathSync(repo); } catch { repoReal = repo; }
+    // El lugar duradero es la COPIA PRINCIPAL (la carpeta que contiene el `.git` de verdad), no un worktree ni una carpeta
+    // externa cuyo `.git` apunte al proyecto. Se sigue aceptando la copia principal vista desde cualquier worktree.
+    if (repoReal !== dirname(proyecto)) return { ok: false, motivo: 'el respaldo duradero va en la copia principal del proyecto, no en un worktree' };
     if (!ignoradaPorGit(repoReal, real, existente)) {
       return { ok: false, motivo: '--respaldo dentro del proyecto solo vale en una carpeta ignorada por git (no versionable); use el scratchpad o una carpeta ignorada' };
     }
@@ -231,8 +242,12 @@ export function comprobarRespaldo(ruta, { raiz = RAIZ_REPO, raices = RAICES_TEMP
   } else {
     const s = statSync(existente);
     const esMia = typeof process.getuid !== 'function' || s.uid === process.getuid();
-    if (!s.isDirectory() || !esMia || (!enProyecto && (s.mode & 0o022) !== 0)) {
-      return { ok: false, motivo: '--respaldo tiene que quedar en una carpeta del usuario (la existente más cercana no es suya o, fuera del proyecto, la pueden escribir otros)' };
+    // Fuera del proyecto: ni grupo ni otros pueden escribir la carpeta existente. Dentro del proyecto: nunca «otros»; el
+    // grupo solo si es EL grupo del usuario (`CLIENTES/<CLIENTE>/` 0775 con su grupo propio sigue pasando).
+    const grupoAjeno = (s.mode & 0o020) !== 0 && gid !== null && s.gid !== gid;
+    const escribiblePorOtros = enProyecto ? ((s.mode & 0o002) !== 0 || grupoAjeno) : (s.mode & 0o022) !== 0;
+    if (!s.isDirectory() || !esMia || escribiblePorOtros) {
+      return { ok: false, motivo: '--respaldo tiene que quedar en una carpeta del usuario (la existente más cercana no es suya o la pueden escribir otros)' };
     }
   }
   let archivo = null;
@@ -308,12 +323,13 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     if (aplicar && respaldo === undefined) problemas.push('--aplicar exige --respaldo <ruta> (por omisión no hay respaldo)');
   }
   let respaldoReal = null;
+  let respaldoResuelto = null;
   if (respaldo !== undefined) {
     const r = comprobarRespaldo(respaldo, { ...opciones, lectura: revertir, permitirExistente: !revertir });
-    if (r.ok) respaldoReal = respaldo; else problemas.push(r.motivo);
+    if (r.ok) { respaldoReal = respaldo; respaldoResuelto = r.real; } else problemas.push(r.motivo);
   }
   if (problemas.length) return { ok: false, problemas };
-  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, pantalla, aplicar, revertir, respaldo: respaldoReal } };
+  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, pantalla, aplicar, revertir, respaldo: respaldoReal, respaldoResuelto } };
 }
 
 // ===========================================================================
@@ -384,6 +400,16 @@ async function leerFicha(db, tenant) {
   const ref = db.doc(`tenants/${tenant}`);
   const [snap] = await db.getAll(ref, { fieldMask: [CAMPO, 'nombre'] });
   return { ref, snap };
+}
+
+/**
+ * ¿La ruta del respaldo sigue siendo la que se validó al analizar los argumentos? Entre esa comprobación y la escritura
+ * alguien pudo cambiar una carpeta por un enlace. Se vuelve a comprobar con el archivo ya creado y se compara la ruta
+ * REAL con la guardada (`cfg.respaldoResuelto`). Sin ruta resuelta (cfg armada a mano) no se puede afirmar nada: falla.
+ */
+export function rutaDelRespaldoSigueIgual(cfg, comprobar = comprobarRespaldo) {
+  const re = comprobar(cfg.respaldo, { permitirExistente: true });
+  return Boolean(re.ok) && typeof cfg.respaldoResuelto === 'string' && re.real === cfg.respaldoResuelto;
 }
 
 /**
@@ -470,6 +496,11 @@ export async function ejecutar(cfg, deps) {
   const comprobado = (deps.leerRespaldo ?? leerRespaldo)(cfg.respaldo, cfg);
   if (!comprobado.ok) {
     log(`\n  ✗ El respaldo recién guardado no sirve para revertir (${comprobado.motivo}). No se escribe nada en la ficha; para repetir use OTRA ruta de --respaldo.\n`);
+    return 2;
+  }
+  // Última comprobación antes de tocar la ficha: la carpeta del respaldo no cambió (enlace) desde que se validó.
+  if (!rutaDelRespaldoSigueIgual(cfg, deps.comprobarRespaldo)) {
+    log('\n  ✗ La ruta del respaldo cambió durante la corrida. No se escribe nada.\n');
     return 2;
   }
   log(`\n  Respaldo guardado y releído: ${cfg.respaldo}`);

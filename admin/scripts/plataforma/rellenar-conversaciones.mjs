@@ -53,13 +53,17 @@
  * SALVAGUARDA DE PROYECTO y RESPALDO: las mismas de `aplicar-consola-conversaciones.mjs` (lista blanca por
  * `GCP_PROJECT_ID_STAGING` / `GCP_PROJECT_ID_PROD`; en producción `--aplicar` exige `--confirmo-produccion
  * <tenant>`; el id del proyecto real NUNCA se imprime). El respaldo (0600, carpeta 0700, nunca se pisa) va en el
- * scratchpad (`/tmp` o `/var/tmp`) o en una carpeta ignorada por git del proyecto, desde la copia principal o desde
- * un worktree; nunca en `~/`. PASO PREVIO para el lugar duradero: que exista `CLIENTES/<CLIENTE>/` en la copia
- * principal y pasar una subcarpeta NUEVA, por ejemplo `<copia principal>/CLIENTES/<CLIENTE>/respaldos-h1/<nombre>.json`:
- * el script la crea con 0700. Contiene los ids de conversación, que llevan el teléfono (`wa_<teléfono>`): por eso
- * es privado y no se versiona. Tras guardarlo, el script lo vuelve a LEER con la forma que `--revertir` exige y se
- * detiene (salida 2) antes de escribir en Firestore si no sirve. Una conversación cuyo id no tiene la forma que el
- * respaldo acepta se salta y se cuenta («id fuera de forma»): no entra al plan.
+ * scratchpad (`/tmp` o `/var/tmp`) o en una carpeta ignorada por git de la COPIA PRINCIPAL del proyecto (se puede
+ * correr desde la copia principal o desde un worktree, pero el destino queda en la copia principal; un worktree u otro
+ * repositorio se rechazan); nunca en `~/`. RESPALDO DE PRODUCCIÓN:
+ * `<copia principal>/CLIENTES/QTACO/respaldos-h1/<script>-<fecha>.json` (p. ej. `rellenar-conversaciones-2026-10-12.json`),
+ * SIN otras sesiones escribiendo en esa carpeta durante la corrida. PASO PREVIO: que exista `CLIENTES/<CLIENTE>/` en la copia
+ * principal y pasar una subcarpeta NUEVA (`respaldos-h1/<nombre>.json`): el script la crea con 0700. Contiene los ids de
+ * conversación, que llevan el teléfono (`wa_<teléfono>`): por eso es privado y no se versiona. Tras guardarlo, el script
+ * lo vuelve a LEER con la forma que `--revertir` exige y, justo antes de escribir, vuelve a comprobar que la ruta real
+ * sigue siendo la validada (nadie cambió una carpeta por un enlace en el medio); si algo falla se detiene (salida 2)
+ * antes de escribir en Firestore. Una conversación cuyo id no tiene la forma que el respaldo acepta se salta y se cuenta
+ * («id fuera de forma»): no entra al plan.
  *
  * SALIDA. 0: nada que hacer o escrito y comprobado. 1: el seco encontró diferencias, o quedaron conversaciones
  * saltadas por la precondición (repita con OTRA ruta de --respaldo). 2: uso o salvaguarda (nada escrito). 3: error de ejecución (solo
@@ -76,7 +80,7 @@ import { fileURLToPath } from 'node:url';
 import { MAX_PALABRAS_CONSULTA, palabrasDe, trozosDeTelefono } from '../../functions/src/core/conversacion/normalizacion.ts';
 import {
   ID_TENANT, comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo, leerRespaldoGenerico, mensajeDeInterrupcion,
-  nombreExcluido,
+  nombreExcluido, rutaDelRespaldoSigueIgual,
 } from './aplicar-consola-conversaciones.mjs';
 
 export { comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo, mensajeDeInterrupcion };
@@ -154,12 +158,13 @@ export function analizarArgumentos(argv, env = process.env, opciones = {}) {
     problemas.push('--aplicar exige --respaldo <ruta> (por omisión no hay respaldo)');
   }
   let respaldoReal = null;
+  let respaldoResuelto = null;
   if (respaldo !== undefined) {
     const r = comprobarRespaldo(respaldo, { ...opciones, lectura: revertir, permitirExistente: !revertir });
-    if (r.ok) respaldoReal = respaldo; else problemas.push(r.motivo);
+    if (r.ok) { respaldoReal = respaldo; respaldoResuelto = r.real; } else problemas.push(r.motivo);
   }
   if (problemas.length) return { ok: false, problemas };
-  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, aplicar, revertir, respaldo: respaldoReal } };
+  return { ok: true, cfg: { proyecto, entorno: proy.entorno, tenant, aplicar, revertir, respaldo: respaldoReal, respaldoResuelto } };
 }
 
 // ===========================================================================
@@ -434,6 +439,11 @@ export async function ejecutar(cfg, deps) {
   const comprobado = (deps.leerRespaldo ?? leerRespaldo)(cfg.respaldo, cfg);
   if (!comprobado.ok) {
     log(`\n  ✗ El respaldo recién guardado no sirve para revertir (${comprobado.motivo}). No se escribe nada en las conversaciones; para repetir use OTRA ruta de --respaldo.\n`);
+    return 2;
+  }
+  // Última comprobación antes de escribir: la carpeta del respaldo no cambió (enlace) desde que se validó.
+  if (!rutaDelRespaldoSigueIgual(cfg, deps.comprobarRespaldo)) {
+    log('\n  ✗ La ruta del respaldo cambió durante la corrida. No se escribe nada.\n');
     return 2;
   }
   log(`\n  Respaldo guardado y releído: ${cfg.respaldo}`);
