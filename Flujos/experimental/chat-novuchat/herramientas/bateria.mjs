@@ -643,7 +643,7 @@ const botonesDe = (p) => ((objeto(objeto(p.interactive).action).buttons ?? [])).
 const titulosDe = (p) => ((objeto(objeto(p.interactive).action).buttons ?? [])).map((b) => String(objeto(b.reply).title));
 const filasDe = (p) => ((objeto(objeto(p.interactive).action).sections ?? [])).flatMap((s) => (s.rows ?? []));
 const tipoInter = (p) => String(objeto(p.interactive).type ?? '');
-const CIERRE_EXACTO = '¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+const CIERRE_EXACTO = '¿Te gustaría ver nuestros planes? 🤝'; // (el cierre de un rubro estándar; sin el botón «Ver planes» —pulsado o ya visto— no se ofrece nada)
 
 // Promesas de contacto (decisión D2): ni «se comunique», ni «te contacte», ni una llamada, ni «te escribimos».
 const PROMESAS_DE_CONTACTO = /\bse comunique\b|\bte contacte\b|\bcontacte contigo\b|\bte (escribir[aá]n|llamar[aá]n|contactar[aá]n|llamamos|escribimos|avisamos|contactamos|avisar[eé]|avisaremos)\b|\b(se|nos) (comunicar[aá]n?|pondr[aá]n? en contacto)\b|\blo consulto\b|\bte aviso\b|\bte llamar[aá]\b|\bte escribir[aá]\b|\bllamada\b|\bte (llama|llaman|llamen)\b/i;
@@ -696,30 +696,42 @@ export function revisarMensaje(m, ctx = {}) {
   if (m.tipo === 'interactive') {
     const t = tipoInter(m.payload);
     if (t === 'button') {
-      // R5: los botones salen según lo ya hecho. Antes de ver los planes, los dos; ya vistos, SOLO «Hablar con el equipo»; tras el traspaso, ninguno (la lista de rubros).
+      // Botones (decisión del 11/10): «Ver planes» jamás tras pulsarlo, con los planes ya vistos ni junto al pedido del nombre; «Hablar con el equipo» jamás tras pulsarlo (salvo bajo la imagen de planes).
       const ids = botonesDe(m.payload).join();
-      const tit = titulosDe(m.payload).join();
-      const dos = ids === 'planes,equipo' && tit === 'Ver planes,Hablar con el equipo';
-      const uno = ids === 'equipo' && tit === 'Hablar con el equipo';
-      if (!dos && !uno) anota('botones_incorrectos', botonesDe(m.payload).join('+'));
-      else if (dos && ctx.planesVistos === true) anota('ver_planes_cuando_ya_los_vio', ids);
-      else if (uno && ctx.planesVistos === false) anota('botones_incorrectos', 'solo «Hablar con el equipo» sin haber visto los planes');
+      const lista = botonesDe(m.payload);
+      if (!lista.length || !lista.every((x) => x === 'planes' || x === 'equipo')) anota('botones_incorrectos', ids);
+      if (lista.includes('planes') && ctx.planesVistos === true) anota('ver_planes_cuando_ya_los_vio', ids);
+      if (lista.includes('planes') && ctx.plan === 'pedirNombre') anota('ver_planes_repetido', ids);
       if (ctx.equipoHecho === true) anota('boton_del_equipo_otra_vez', ids);
     } else if (t === 'list') {
       for (const f of filasDe(m.payload)) if (!String(f.description ?? '').trim() || String(f.title).length > 24 || String(f.description).length > 72) anota('fila_sin_descripcion_o_demasiado_larga', JSON.stringify(f));
     }
-    if (t !== 'button' && !SIN_DOS_BOTONES.has(m.evento) && !m.esRespaldo && !(t === 'list' && ctx.equipoHecho === true)) anota('sin_los_dos_botones', `evento ${m.evento}`);
-  } else if (!SIN_DOS_BOTONES.has(m.evento) && !m.esRespaldo) anota('sin_los_dos_botones', `un texto sin botones (evento ${m.evento})`);
+  }
+  // INVARIANTES DE BOTONES (decisión de Andres, 11/10; corren en TODOS los casos, en seco y en real). Se mide sobre lo que se ENVIÓ, no sobre lo que el código quería enviar.
+  if (m.tipo === 'interactive' ? tipoInter(m.payload) !== 'cta_url' : m.tipo === 'text' || m.tipo === 'image' || m.tipo === 'document') {
+    const ids = tipoInter(m.payload) === 'button' ? botonesDe(m.payload) : [];
+    // (3) El texto es coherente con los botones: sin el botón del equipo no invita a hablar con el equipo; sin «Ver planes» no invita a verlos.
+    if (!ids.includes('equipo') && /hablar con (alguien|una persona|(alguien de )?(nuestro |el )?equipo)|un asesor|botones? de abajo|toca el bot[oó]n/i.test(c)) anota('texto_sin_boton', 'invita al equipo/botones sin el botón: ' + c.slice(-90));
+    if (!ids.includes('planes') && /\b(ver|muestro|conocer) (los |nuestros )?planes/i.test(c)) anota('texto_sin_boton', 'invita a ver los planes sin el botón: ' + c.slice(-90));
+    if (ctx.pulsados instanceof Set) {
+      // (1) Lo PULSADO no reaparece (la lista de rubros y el botón cta del traspaso no cuentan).
+      for (const x of ids) if (ctx.pulsados.has(x)) anota('boton_pulsado_reaparece', `«${x}» ya se pulsó: ${ids.join('+')}`);
+      // (2) Nada se ofrece antes de tiempo: «Ver planes» tras elegir rubro o con interés; el equipo cuando hace falta o se acabaron las preguntas.
+      if (ids.includes('planes') && !(ctx.eligioRubro === true || ctx.interes === true)) anota('boton_antes_de_tiempo', '«Ver planes» sin rubro elegido ni interés del cliente');
+      if (ids.includes('equipo') && ctx.equipoPermitido !== true) anota('boton_antes_de_tiempo', '«Hablar con el equipo» sin que haga falta ni se acabaran las preguntas');
+    }
+  }
   // Lo que escribió el MODELO: contenido (no una muletilla ni una línea) y cierre con una pregunta o la invitación a elegir.
   if (ctx.origen === 'modelo' && ctx.contexto !== 'cortesia') {
     // El mismo mínimo que el flujo: 25 palabras (10 cuando se pregunta algo corto: «Otro», los datos o un medio ilegible).
-    if (palabrasDe(c) < (['otro', 'datos', 'medio'].includes(ctx.contexto) ? 10 : 25)) anota('sin_contenido');
+    if (palabrasDe(c) < (['otro', 'datos', 'medio'].includes(ctx.contexto) ? 10 : 12)) anota('sin_contenido'); // (el mínimo de 25 lo exige el validador ANTES de enviar; el código puede quitar la oferta final)
     // (tras el traspaso el mensaje es una lista: la invitación a otro negocio va al final y el cierre se mide sobre la respuesta)
     const cuerpoModelo = m.evento === 'lista_otro' || (tipoInter(m.payload) === 'list' && ctx.equipoHecho === true) ? c.split('\n\n').slice(0, -1).join('\n\n') || c : c;
-    if (!lib.chTerminaBien(cuerpoModelo)) anota('sin_cierre');
+    // (el cierre lo exige el validador ANTES de enviar; el código puede quitar la oferta final que no tiene botón, así que aquí solo se exige si el mensaje lleva botones)
+    if (!lib.chTerminaBien(cuerpoModelo) && botonesDe(m.payload).length > 0 && /\b(ver|muestro) (los |nuestros )?planes|hablar con/i.test(cuerpoModelo.slice(-200))) anota('sin_cierre');
   }
   // Un rubro estándar explicado cierra con la pregunta EXACTA del documento.
-  if (ctx.contexto === 'rubro' && m.evento !== 'lista' && !n.endsWith(sinTildes(CIERRE_EXACTO).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim())) {
+  if (ctx.contexto === 'rubro' && m.evento !== 'lista' && botonesDe(m.payload).includes('planes') && !n.endsWith(sinTildes(CIERRE_EXACTO).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim())) {
     if (!sinTildes(c).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim().endsWith(sinTildes(CIERRE_EXACTO).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim())) anota('rubro_sin_la_pregunta_exacta');
   }
   return v;
@@ -860,7 +872,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     return resultados;
   }
 
-  const corrida = { caso: caso.id, rep, turnos: 0, llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], conversacion: [], palabras: [], modeloTurnos: 0, respaldos: 0, causas: {}, esperas: 0, repeticiones: 0 };
+  const corrida = { caso: caso.id, rep, turnos: 0, llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], conversacion: [], palabras: [], pulsados: new Set(), rubroPrev: String(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).rubro ?? ''), respondidasPrev: Number(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).respondidas) || 0, inv: { pulsado: 0, antes: 0, texto: 0 }, modeloTurnos: 0, respaldos: 0, causas: {}, esperas: 0, repeticiones: 0 };
   const falla = (turno, dicho, regla, texto) => corrida.violaciones.push({ caso: caso.id, rep, turno, dicho, regla, texto: String(texto).replace(/\s+/g, ' ').slice(0, 200) });
   for (const [i, t] of caso.turnos.entries()) {
     comp.captura = { mensajes: [], modelo: [] };
@@ -879,11 +891,26 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     // R6: lo que escribió el MODELO no calca el mensaje anterior (similitud de conjuntos de palabras >= 0,75): se cuenta y es una violación.
     const anterior = corrida.conversacion.length ? (corrida.conversacion[corrida.conversacion.length - 1].mensajes.at(-1) ?? '') : '';
     if (String(resumen.origen ?? '') === 'modelo' && buenos[0] && anterior && lib.chSimilitud(buenos[0].cuerpo, anterior) >= 0.75) { corrida.repeticiones += 1; falla(i + 1, dicho, 'repite_el_mensaje_anterior', buenos[0].cuerpo); }
-    const ctx = { lib, origen: String(resumen.origen ?? ''), contexto: String(resumen.contexto ?? ''), planesVistos: fichaDespues.planesMostrados === true, equipoHecho: fichaDespues.equipoAhora === true };
+    const ctx = { lib, origen: String(resumen.origen ?? ''), contexto: String(resumen.contexto ?? ''), planesVistos: fichaDespues.planesMostrados === true, planesTocado: fichaDespues.planesTocado === true, equipoTocado: fichaDespues.equipoTocado === true, plan: String(resumen.plan ?? ''), equipoHecho: fichaDespues.equipoAhora === true };
+    // Estado de las invariantes de botones: lo pulsado hasta este turno (incluido), el rubro elegido, el interés del cliente y si «Hablar con el equipo» hacía falta.
+    const eventosDelTurno = t.tipo === 'rafaga' ? t.eventos : [t];
+    for (const e of eventosDelTurno) if (e.tipo === 'boton' && ['planes', 'equipo'].includes(e.id)) corrida.pulsados.add(e.id);
+    const textosDelTurno = eventosDelTurno.filter((e) => e.tipo === 'texto').map((e) => sinTildes(e.texto));
+    const ficha = fichaDespues;
+    ctx.pulsados = corrida.pulsados;
+    ctx.eligioRubro = eventosDelTurno.some((e) => e.tipo === 'fila' && /^rubro:/.test(e.id)) || (corrida.rubroPrev !== String(ficha.rubro ?? '') && String(ficha.rubro ?? '') !== '');
+    ctx.interes = textosDelTurno.some((x) => /\b(cuanto|precio|precios|costo|costos|cuesta|cuestan|tarifa|plan|planes|incluye|incluyen|funciona|funcionan|interesa|interesan|empezar|comenzar|contratar|contrato|instalacion|instalar|implementar|tarda|demora|informacion|info|detalles)\b/.test(x));
+    const requeridoPorMensaje = ['planes'].includes(ctx.plan) || (ctx.plan === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(String(resumen.fijo ?? ''))) || ['sin_dato', 'no_documentado', 'equipo', 'complemento', 'generico', 'ambiguo', 'otro', 'otroRespuesta'].includes(String(resumen.evento ?? ''));
+    const ordinaria = ctx.plan === 'modelo' && !['rubro', 'multiple', 'pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte', 'otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'generico', 'ambiguo'].includes(String(resumen.evento ?? ''));
+    const acabaron = ordinaria && (textosDelTurno.some((x) => /\b(no tengo mas (dudas|preguntas)|ninguna duda|eso es todo|nada mas|ya entendi|queda claro|quiero empezar|como contrato|como se contrata|como empiezo|como empezamos|listo para empezar|donde firmo)\b/.test(x)) || (String(ficha.explicado) === 'true' && corrida.respondidasPrev >= 2) || ['otro', 'captacion'].includes(String(ficha.rubro ?? '')) || textosDelTurno.some((x) => /(^| )(a medida|personaliz\w*|integra\w*|erp|sistema propio|mi sistema|sistemas)( |$)/.test(x)) || (resumen.causas ?? []).includes('funcion_inventada'));
+    ctx.equipoPermitido = requeridoPorMensaje || acabaron;
+    if (alCliente.length) { corrida.inv.texto += 1; if (corrida.pulsados.size) corrida.inv.pulsado += 1; if (alCliente.some((m) => tipoInter(m.payload) === 'button')) corrida.inv.antes += 1; }
     for (const m of alCliente) {
       for (const x of revisarMensaje(m, ctx)) falla(i + 1, dicho, x.regla, x.texto);
       if (!m.esRespaldo) { corrida.tonos.push(tonoDe(m.cuerpo)); corrida.palabras.push(palabrasDe(m.cuerpo)); }
     }
+    corrida.rubroPrev = String(ficha.rubro ?? '');
+    corrida.respondidasPrev = Number(ficha.respondidas) || 0;
     if (comp.captura.modelo.length) {
       corrida.modeloTurnos += 1;
       if (resumen.origen === 'respaldo') corrida.respaldos += 1;
@@ -988,6 +1015,7 @@ export function medir(corridas) {
     jsonValido: { ok: llamadas.filter((l) => l.jsonValido).length, n: llamadas.length }, conforme: { ok: llamadas.filter((l) => l.conforme).length, n: llamadas.length },
     erroresDelServicio: llamadas.filter((l) => l.errorHttp).length,
     violaciones: suma(corridas.map((c) => c.violaciones.length)),
+    invariantesDeBotones: { casos: new Set(corridas.map((c) => c.caso)).size, pulsadoNoReaparece: suma(corridas.map((c) => c.inv?.pulsado || 0)), noSeOfreceAntesDeTiempo: suma(corridas.map((c) => c.inv?.antes || 0)), textoCoherenteConLosBotones: suma(corridas.map((c) => c.inv?.texto || 0)) },
     longitud: { mensajes: palabras.length, palabrasMedias: Math.round(media(palabras) * 10) / 10, mediana: ord.length ? ord[Math.floor(ord.length / 2)] : 0, maximo: ord.length ? ord[ord.length - 1] : 0 },
     tono: { mensajes: suma(corridas.map((c) => c.tonos.length)), voseo: suma(corridas.map((c) => c.tonos.filter((t) => t.voseo).length)), usted: suma(corridas.map((c) => c.tonos.filter((t) => t.usted).length)) },
     formulasEnLaHoja: suma(corridas.map((c) => c.formulas || 0)), filasPorCorrida: media(corridas.map((c) => c.filas || 0)),
@@ -1086,6 +1114,8 @@ function textoDelInforme(r) {
   o.push(`Mensajes del modelo que repetían el anterior (similitud >= 0,75): ${t.repeticiones}`);
   o.push(`Causas de rechazo del mensaje del modelo: ${Object.entries(t.causasDeRechazo).map(([k, v]) => `${k} ${v}`).join(', ') || 'ninguna'}`);
   o.push(`Longitud: ${t.longitud.palabrasMedias} palabras por mensaje en promedio (mediana ${t.longitud.mediana}, máximo ${t.longitud.maximo}) · tono: voseo ${t.tono.voseo}, usted ${t.tono.usted} (sobre ${t.tono.mensajes} mensajes)`);
+  const iv = t.invariantesDeBotones;
+  o.push(`Invariantes de botones (turnos revisados en ${iv.casos} casos): lo pulsado no reaparece ${iv.pulsadoNoReaparece} · nada se ofrece antes de tiempo ${iv.noSeOfreceAntesDeTiempo} · texto coherente con los botones ${iv.textoCoherenteConLosBotones}`);
   o.push(`Mensajes por turno: ${Math.round(t.mensajesPorTurno * 100) / 100} (${t.mensajes} mensajes en ${t.turnos} turnos) · plantillas de aviso: ${t.plantillas}`);
   o.push(`Calificación final (hoja): ${Object.entries(t.calificaciones).map(([k, v]) => `${k || '(vacía)'} ${v}`).join(', ') || '—'} · filas por corrida ${Math.round(t.filasPorCorrida * 100) / 100}`);
   if (t.formulasEnLaHoja) o.push(`ATENCIÓN: ${t.formulasEnLaHoja} celda(s) de la hoja quedaron como fórmula (USER_ENTERED).`);

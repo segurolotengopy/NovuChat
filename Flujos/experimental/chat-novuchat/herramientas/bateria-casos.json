@@ -47,7 +47,7 @@
      },
      "exige": {
       "conModelo": true,
-      "botones": "planes+equipo"
+      "botones": "planes"
      }
     }
    ]
@@ -132,7 +132,7 @@
       "rubro": "gastronomia"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
       "conModelo": true
      }
     },
@@ -156,7 +156,7 @@
      },
      "exige": {
       "contiene": [
-       "alguien de nuestro equipo"
+       "procesos muy particulares"
       ]
      }
     }
@@ -215,7 +215,7 @@
        "⏱️",
        "📱"
       ],
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     }
    ]
@@ -366,7 +366,7 @@
      },
      "exige": {
       "contiene": [
-       "equipo"
+       "sin apuro"
       ]
      }
     }
@@ -435,7 +435,7 @@
       "rubro": "belleza"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
      }
     },
     {
@@ -518,7 +518,7 @@
       "rubro": "gastronomia"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
      }
     },
     {
@@ -599,7 +599,7 @@
      },
      "exige": {
       "contiene": [
-       "hablar con alguien de nuestro equipo"
+       "flujos a medida"
       ]
      }
     }
@@ -704,7 +704,7 @@
       "rubro": "salud"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
       "conModelo": true
      }
     }
@@ -742,7 +742,7 @@
       "rubro": "belleza"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
       "conModelo": true
      }
     }
@@ -780,7 +780,7 @@
       "rubro": "gastronomia"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
       "conModelo": true
      }
     }
@@ -818,7 +818,7 @@
       "rubro": "retail"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
       "conModelo": true
      }
     }
@@ -856,7 +856,7 @@
       "rubro": "educacion"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
       "conModelo": true
      }
     }
@@ -894,7 +894,7 @@
       "rubro": "captacion"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
       "conModelo": true
      }
     }
@@ -936,7 +936,7 @@
       "contiene": [
        "notas especiales"
       ],
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
      }
     }
    ]
@@ -970,7 +970,7 @@
       "rubro": "belleza"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
      }
     },
     {
@@ -981,7 +981,7 @@
       "rubro": "gastronomia"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
      }
     }
    ]
@@ -1323,7 +1323,7 @@
       "contiene": [
        "horas pico"
       ],
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
       "origen": "respaldo"
      }
     }
@@ -2004,7 +2004,7 @@
       "rubro": "salud"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
      }
     },
     {
@@ -2017,7 +2017,7 @@
       "contiene": [
        "Para mostrarte los planes que mejor te sirvan"
       ],
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -2060,7 +2060,7 @@
   },
   {
    "id": "M1",
-   "titulo": "Una nota de voz que pide los planes: el código la trata como lo que dijo",
+   "titulo": "Una nota de voz que pide los planes: el código la trata como lo que dijo (pide el nombre y el negocio antes; el siguiente mensaje trae los planes)",
    "turnos": [
     {
      "tipo": "texto",
@@ -2082,6 +2082,18 @@
     {
      "tipo": "audio",
      "transcripcion": "quiero información de planes",
+     "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "contiene": [
+       "cómo te llamas y cómo se llama tu negocio"
+      ],
+      "imagenPlanes": false
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana Pérez, Tienda Uno",
      "exige": {
       "ruta": "planes",
       "sinModelo": true,
@@ -2484,6 +2496,17 @@
      "tipo": "boton",
      "id": "planes",
      "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "noContiene": [
+       "USD"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Tienda Uno",
+     "exige": {
       "sinCifras": true,
       "contiene": [
        "Por ahora no tengo los planes a la mano"
@@ -2524,7 +2547,7 @@
      "id": "rubro:retail",
      "seco": "ERROR",
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
      }
     }
    ],
@@ -2552,8 +2575,8 @@
       "rubro": "belleza"
      },
      "exige": {
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
-      "botones": "planes+equipo",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
       "noContiene": [
        "novuchat.site"
       ]
@@ -2569,7 +2592,7 @@
       "contiene": [
        "cómo te llamas y cómo se llama tu"
       ],
-      "botones": "planes+equipo",
+      "botones": "texto",
       "noRepite": true
      }
     },
@@ -2591,7 +2614,7 @@
        "evalúe tu caso",
        "www.novuchat.site"
       ],
-      "botones": "planes+equipo"
+      "botones": "equipo"
      },
      "seco2": {
       "mensaje": "Para belleza tu asistente puede enviar el código QR y coordinar el adelanto o pago total de cada cita, así tus clientas agendan sin esperar. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
@@ -2626,7 +2649,7 @@
       "noContiene": [
        "para no marearte"
       ],
-      "botones": "equipo"
+      "botones": "texto"
      },
      "seco2": {
       "mensaje": "Para no marearte con más información, mejor cuéntame qué buscas y lo vemos paso a paso. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar tu caso? 🤝"
@@ -2683,7 +2706,7 @@
       "rubro": "belleza"
      },
      "exige": {
-      "botones": "planes+equipo"
+      "botones": "planes"
      }
     },
     {
@@ -2730,7 +2753,7 @@
       "rubro": "belleza"
      },
      "exige": {
-      "botones": "planes+equipo"
+      "botones": "planes"
      }
     },
     {
@@ -2744,7 +2767,7 @@
        "Para mostrarte los planes que mejor te sirvan",
        "cómo te llamas y cómo se llama tu negocio"
       ],
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -2788,7 +2811,7 @@
       "rubro": "belleza"
      },
      "exige": {
-      "botones": "planes+equipo"
+      "botones": "planes"
      }
     },
     {
@@ -2797,7 +2820,7 @@
      "exige": {
       "ruta": "pedirNombre",
       "sinModelo": true,
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -2835,7 +2858,7 @@
       "rubro": "belleza"
      },
      "exige": {
-      "botones": "planes+equipo"
+      "botones": "planes"
      }
     },
     {
@@ -2848,7 +2871,7 @@
       "contiene": [
        "cómo te llamas y cómo se llama tu"
       ],
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -2863,7 +2886,7 @@
       "contiene": [
        "Quedó anotado"
       ],
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -2896,8 +2919,8 @@
       "rubro": "gastronomia"
      },
      "exige": {
-      "botones": "planes+equipo",
-      "termina": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+      "botones": "planes",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
      }
     },
     {
@@ -2913,7 +2936,7 @@
       "noContiene": [
        "cómo te llamas"
       ],
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -2927,7 +2950,7 @@
       "contiene": [
        "Quedó anotado"
       ],
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -2981,7 +3004,7 @@
       "rubro": "belleza"
      },
      "exige": {
-      "botones": "planes+equipo"
+      "botones": "planes"
      }
     },
     {
@@ -2991,7 +3014,7 @@
       "mensaje": "¡Te entiendo perfecto! 😅 Cuando estás todo el día pegada al celular, agendar y recordar citas a mano te quita tiempo, y NovuChat lo hace por ti las 24 horas. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
      },
      "exige": {
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -3076,7 +3099,7 @@
        "24 horas",
        "www.novuchat.site"
       ],
-      "botones": "planes+equipo",
+      "botones": "texto",
       "conModelo": true
      }
     },
@@ -3091,7 +3114,7 @@
        "empleado digital"
       ],
       "noRepite": true,
-      "botones": "planes+equipo",
+      "botones": "texto",
       "noContiene": [
        "novuchat.site"
       ]
@@ -3146,7 +3169,7 @@
       "noContiene": [
        "No estoy seguro de haberte entendido"
       ],
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -3191,7 +3214,7 @@
       "rubro": "belleza"
      },
      "exige": {
-      "botones": "planes+equipo"
+      "botones": "planes"
      }
     },
     {
@@ -3204,7 +3227,7 @@
       "contiene": [
        "cómo te llamas y cómo se llama tu"
       ],
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -3218,7 +3241,7 @@
        "cómo te llamas",
        "adelanto"
       ],
-      "botones": "planes+equipo"
+      "botones": "equipo"
      }
     },
     {
@@ -3257,7 +3280,7 @@
       "rubro": "belleza"
      },
      "exige": {
-      "botones": "planes+equipo"
+      "botones": "planes"
      }
     },
     {
@@ -3270,7 +3293,7 @@
       "contiene": [
        "Para mostrarte los planes"
       ],
-      "botones": "planes+equipo"
+      "botones": "texto"
      }
     },
     {
@@ -3351,7 +3374,7 @@
      "tipo": "boton",
      "id": "planes",
      "exige": {
-      "ruta": "planes",
+      "ruta": "pedirNombre",
       "noContiene": [
        "novuchat.site"
       ]
@@ -3361,7 +3384,7 @@
   },
   {
    "id": "A10",
-   "titulo": "El «Sí» a la oferta de hablar con el equipo lo deriva el CÓDIGO (el cliente real que se perdió): precios → «Si» = aviso a recepción + botón, sin modelo; «sí, pero cuánto cuesta» y «no» no derivan",
+   "titulo": "El «Sí» a la oferta de hablar con el equipo (la del cierre de precios) lo deriva el CÓDIGO (el cliente real que se perdió): planes → «Si» = aviso a recepción + botón, sin modelo; «sí, pero cuánto cuesta» y «no» no derivan",
    "turnos": [
     {
      "tipo": "texto",
@@ -3375,28 +3398,19 @@
      "tipo": "boton",
      "id": "planes",
      "exige": {
-      "ruta": "planes"
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "botones": "texto"
      }
     },
     {
      "tipo": "texto",
-     "texto": "El de 65 incluye que?",
-     "seco": {
-      "mensaje": "El setup de USD 65 incluye la configuración llave en mano y la conexión de tu número a WhatsApp. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
-     },
+     "texto": "Ana Pérez, Tienda Uno",
      "exige": {
-      "conModelo": true,
-      "termina": "¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
-     }
-    },
-    {
-     "tipo": "texto",
-     "texto": "Es un solo pago de x vida?",
-     "seco": {
-      "mensaje": "El setup es un pago único de USD 65; las mensualidades se pagan cada mes. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
-     },
-     "exige": {
-      "conModelo": true,
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": true,
+      "botones": "equipo",
       "termina": "¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
      }
     },
@@ -3488,7 +3502,7 @@
      },
      "exige": {
       "conModelo": true,
-      "botones": "planes+equipo"
+      "botones": "equipo"
      }
     }
    ]
@@ -3716,7 +3730,7 @@
   },
   {
    "id": "A12",
-   "titulo": "El cliente que se perdió, con el pedido del nombre PEGADO a la oferta: «Hola» → rubro → pregunta de costos → respuesta con la oferta y el pedido del nombre → «Si» = UNA derivación (aviso a recepción + botón), sin modelo",
+   "titulo": "El cliente que se perdió, con el pedido del nombre PEGADO a la oferta: «Hola» → rubro → consulta sin respuesta (integración) con la oferta del equipo y el pedido del nombre pegado → «Si» = UNA derivación (aviso a recepción + botón), sin modelo",
    "turnos": [
     {
      "tipo": "texto",
@@ -3734,22 +3748,20 @@
       "rubro": "belleza"
      },
      "exige": {
-      "botones": "planes+equipo"
+      "botones": "planes"
      }
     },
     {
      "tipo": "texto",
-     "texto": "El de 65 incluye que?",
-     "seco": {
-      "mensaje": "El setup de USD 65 incluye la configuración llave en mano y la conexión de tu número a WhatsApp. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
-     },
+     "texto": "¿Se integra con mi ERP?",
      "exige": {
-      "conModelo": true,
+      "sinModelo": true,
       "contiene": [
+       "Esa no la tengo a la mano",
        "cómo te llamas y cómo se llama tu",
        "hablar con alguien de nuestro equipo"
       ],
-      "botones": "planes+equipo"
+      "botones": "equipo"
      }
     },
     {
@@ -3761,6 +3773,497 @@
       "cta": true,
       "plantillas": 1,
       "botones": "cta"
+     }
+    }
+   ]
+  },
+  {
+   "id": "N6",
+   "titulo": "Pitch genérico con historial y sin rubro → «Ver planes» pide el nombre y el negocio una vez → «Tienda Uno» → los planes (decisión del 10/10)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Quiero más información",
+     "seco": {
+      "mensaje": "¡Claro! 😊 NovuChat es el primer empleado de tu negocio que nunca duerme:\n⏱️ Atención en segundos 24/7: responde en segundos, las 24 horas, así no pierdes ventas si te escriben fuera de horario o en horas pico.\n📅 Agendamiento inteligente: se conecta a tu Google Calendar, ofrece horarios reales y agenda citas sin cruces. Además, envía recordatorios para bajar el ausentismo.\n💳 Ventas y pagos por QR: muestra tu catálogo, toma el pedido calculando el envío y envía el código QR de tu negocio para que tus clientes paguen.\n📱 Control total: como dueño, miras todas las conversaciones y haces cambios directamente desde nuestra consola en tu celular.\n\nPara darte un ejemplo exacto de cómo se vería esto en la vida real, ¿me cuentas de qué rubro es tu negocio?"
+     },
+     "exige": {
+      "conModelo": true,
+      "contiene": [
+       "nunca duerme"
+      ],
+      "botones": "texto"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "contiene": [
+       "cómo te llamas y cómo se llama tu negocio"
+      ],
+      "imagenPlanes": false
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Tienda Uno",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": true,
+      "contiene": [
+       "Setup estándar USD 65"
+      ]
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "noContiene": [
+       "cómo te llamas"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "N7",
+   "titulo": "«precios» como mensaje de una ficha con historial y sin rubro pide los datos primero; «hablar con el equipo» no los pide antes: deriva",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "precios",
+     "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "contiene": [
+       "cómo te llamas y cómo se llama tu negocio"
+      ]
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "equipo",
+     "exige": {
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "B1",
+   "titulo": "Botones: rubro → SOLO «Ver planes»; una pregunta ordinaria («¿se conecta a mi calendario?») → respuesta SIN botones ni ofertas",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "planes",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se conecta a mi calendario?",
+     "exige": {
+      "conModelo": true,
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien",
+       "ver nuestros planes"
+      ]
+     },
+     "seco": {
+      "mensaje": "Sí, NovuChat se conecta a tu Google Calendar para ver los horarios reales de tus especialistas y agendar las citas sin cruces; además envía un recordatorio un día antes para bajar el ausentismo. ¿Quieres saber algo más sobre eso?"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se puede usar desde el celular?",
+     "seco": {
+      "mensaje": "Sí, como dueño controlas todo desde tu celular: miras las conversaciones y cambias lo que necesites desde la consola sin instalar nada más en tu equipo. ¿Te gustaría hablar con alguien de nuestro equipo para ver cómo quedaría en tu salón? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien",
+       "ver nuestros planes"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "B2",
+   "titulo": "Botones: «cuánto cuesta» muestra interés → pide los datos SIN botón de planes → nombre → los planes con «Hablar con el equipo» (cierre de precios)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "planes",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Cuánto cuesta?",
+     "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "botones": "texto",
+      "contiene": [
+       "cómo te llamas y cómo se llama tu negocio"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana Pérez, Salón Rosa",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "imagenPlanes": true,
+      "botones": "equipo"
+     }
+    }
+   ]
+  },
+  {
+   "id": "B3",
+   "titulo": "Botones: «Ver planes» PULSADO no se vuelve a ofrecer nunca (ni tras el nombre, ni en una pregunta de interés, ni en la explicación de otro rubro)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "planes",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "planes",
+     "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "botones": "texto"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Tienda Uno",
+     "exige": {
+      "ruta": "planes",
+      "sinModelo": true,
+      "botones": "equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Y qué incluye el setup?",
+     "exige": {
+      "conModelo": true,
+      "noContiene": [
+       "Ver planes"
+      ]
+     },
+     "seco": {
+      "mensaje": "El Setup estándar incluye la configuración llave en mano de tu asistente y la conexión de tu número a WhatsApp, para que empiece a atender a tus clientes desde el primer día sin que tengas que hacer nada técnico. ¿Quieres saber algo más sobre eso?"
+     }
+    }
+   ]
+  },
+  {
+   "id": "B4",
+   "titulo": "Botones: si NO pulsó «Ver planes» y vuelve a mostrar interés («¿qué incluye el setup?»), se vuelve a ofrecer",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "planes",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Qué incluye el setup?",
+     "exige": {
+      "conModelo": true,
+      "botones": "planes"
+     },
+     "seco": {
+      "mensaje": "El Setup estándar incluye la configuración llave en mano de tu asistente y la conexión de tu número a WhatsApp, para que empiece a atender a tus clientes desde el primer día sin que tengas que hacer nada técnico. ¿Quieres saber algo más sobre eso?"
+     }
+    }
+   ]
+  },
+  {
+   "id": "B5",
+   "titulo": "Botones: la identidad («¿eres un robot?») y la cortesía («gracias») no llevan botones",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "planes",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Eres un robot?",
+     "exige": {
+      "sinModelo": true,
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien",
+       "ver nuestros planes"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "muchas gracias",
+     "exige": {
+      "conModelo": true,
+      "botones": "texto",
+      "noContiene": [
+       "hablar con alguien",
+       "ver nuestros planes",
+       "botones"
+      ]
+     },
+     "seco": {
+      "mensaje": "¡Con gusto! 😊 Aquí estoy para lo que necesites."
+     }
+    }
+   ]
+  },
+  {
+   "id": "B6",
+   "titulo": "Botones: el tercer turno seguido de explicación sin elegir nada ofrece «Hablar con el equipo»; pulsado, no vuelve nunca",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "planes",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se conecta a mi calendario?",
+     "exige": {
+      "conModelo": true,
+      "botones": "texto"
+     },
+     "seco": {
+      "mensaje": "Sí, NovuChat se conecta a tu Google Calendar para ver los horarios reales de tus especialistas y agendar las citas sin cruces; además envía un recordatorio un día antes para bajar el ausentismo. ¿Quieres saber algo más sobre eso?"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Y manda recordatorios a mis clientas?",
+     "exige": {
+      "conModelo": true,
+      "botones": "texto"
+     },
+     "seco": {
+      "mensaje": "Sí, NovuChat envía recordatorios por WhatsApp un día antes de cada cita para bajar el ausentismo de tu agenda y que tus clientas lleguen puntuales. ¿Quieres saber algo más sobre eso?"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Y puedo ver las conversaciones desde mi celular?",
+     "exige": {
+      "conModelo": true,
+      "botones": "texto"
+     },
+     "seco": {
+      "mensaje": "Sí, como dueño miras todas las conversaciones y haces cambios directamente desde nuestra consola en tu celular, sin necesidad de abrir una computadora ni instalar nada adicional. ¿Quieres saber algo más sobre eso?"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Y puedo tener varias agendas?",
+     "seco": {
+      "mensaje": "Sí, puedes manejar varias agendas a la vez, una por cada especialista o sede de tu negocio, y el asistente ofrece los horarios reales de cada una a tus clientas. ¿Quieres saber algo más sobre eso?"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "equipo"
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "equipo",
+     "exige": {
+      "cta": true,
+      "plantillas": 1
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Y puedo cambiar mis horarios cuando quiera?",
+     "exige": {
+      "conModelo": true,
+      "botones": "lista"
+     },
+     "seco": {
+      "mensaje": "Sí, tus horarios los ajustas tú mismo desde la consola cuando quieras y el asistente ofrece siempre los horarios reales de tu calendario a tus clientas de cada día. ¿Quieres saber algo más sobre eso?"
+     }
+    }
+   ]
+  },
+  {
+   "id": "B7",
+   "titulo": "Botones: una consulta sin respuesta («no la tengo a la mano») sí lleva «Hablar con el equipo»; el «Sí» a esa oferta deriva",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "planes",
+      "termina": "¿Te gustaría ver nuestros planes? 🤝"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se integra con mi ERP?",
+     "exige": {
+      "sinModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "Esa no la tengo a la mano"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
      }
     }
    ]

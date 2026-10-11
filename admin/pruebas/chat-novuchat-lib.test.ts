@@ -45,7 +45,8 @@ const NOVUCHAT = DATOS_BRUTOS['datos'] as J;
 const clonar = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const H = 60 * 60 * 1000;
 const AHORA = Date.UTC(2026, 9, 7, 14, 0);
-const CIERRE_RUBRO = '¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+const CIERRE_RUBRO = '¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝'; // (relleno para los validadores; el cierre EXACTO del rubro es CIERRE_RUBRO_EXACTO)
+const CIERRE_RUBRO_EXACTO = '¿Te gustaría ver nuestros planes? 🤝';
 const CIERRE_PRECIOS = '¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝';
 
 const CFG: J = {
@@ -75,8 +76,8 @@ describe('la biblioteca es autosuficiente y pura', () => {
     expect(d.filter((n) => !/^(ch[A-Z]|CH_)/.test(n))).toEqual([]);
     expect(sinComentarios).not.toMatch(/\bcc[A-Z]\w*\(|\bCC_[A-Z]/);
   });
-  it('mide menos de 1.850 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
-    expect(LIB.split('\n').length).toBeLessThan(1850); // (tope autoimpuesto; 1.800 hasta el 11/10) 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
+  it('mide menos de 1.900 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
+    expect(LIB.split('\n').length).toBeLessThan(1900); // (tope autoimpuesto; 1.800 hasta el 11/10, 1.850 hasta el 12/10) 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
     expect(sinComentarios).not.toMatch(/\brot\b|\bfijas\b|\bofertas\b|\bsueltas\b|\brepetidas\b|chVariante|chRotBase|CH_ROT_|CH_PASOS|chCampana|chPresentacion|chRetomar|ccPideLista/);
   });
   it('ningún nombre de persona del equipo en lo que se arma para el cliente (el patrón del filtro sí los nombra, para rechazarlos)', () => {
@@ -402,7 +403,8 @@ describe('chDecidir: lo que resuelve el CÓDIGO y lo que cae en el modelo', () =
   const toque = (id: string): J => ({ ...f('chEventoToque')(id, NOVUCHAT['rubros']), seq: 1, id: '', ms: 0 });
   it('un toque de botón decide solo: «Hablar con el equipo» gana a «Ver planes» si llegan juntos', () => {
     expect(decidir([toque('equipo')]).ruta).toBe('equipo');
-    expect(decidir([toque('planes')]).ruta).toBe('planes');
+    expect(decidir([toque('planes')]).ruta).toBe('pedirNombre'); // (antes de la primera muestra de planes se pide el nombre y el negocio, una vez)
+    expect(decidir([toque('planes')], { ...fichaBase(), nombrePedido: true }).ruta).toBe('planes');
     const juntos = decidir([toque('planes'), toque('equipo')]);
     expect(juntos.ruta).toBe('equipo');
     expect(juntos.hechos.pidioEquipo).toBe(true);
@@ -411,7 +413,7 @@ describe('chDecidir: lo que resuelve el CÓDIGO y lo que cae en el modelo', () =
     const casos: [string, string, string][] = [
       ['Llámame mañana', 'equipo', ''], ['quiero hablar con una persona', 'equipo', ''], ['ya soy cliente, necesito soporte', 'equipo', ''],
       ['¿Cuánto cobra Meta?', 'fijo', 'costoMeta'], ['¿Cuántas conversaciones trae el plan Impulso?', 'planes', ''], ['¿Cuántos mensajes incluye una conversación?', 'fijo', 'consumo'],
-      ['¿Valida mis transferencias con el banco?', 'fijo', 'banco'], ['¿Se conecta con SAP?', 'fijo', 'integracion'], ['Dame un descuento', 'fijo', 'descuento'], ['¿Cuánto cuesta?', 'planes', ''],
+      ['¿Valida mis transferencias con el banco?', 'fijo', 'banco'], ['¿Se conecta con SAP?', 'fijo', 'integracion'], ['Dame un descuento', 'fijo', 'descuento'], ['¿Cuánto cuesta?', 'pedirNombre', ''],
     ];
     for (const [t, ruta, fijo] of casos) {
       const p = decidir([ev(t)]);
@@ -733,10 +735,10 @@ describe('revisión del PR #464: cierre, prompt y datos', () => {
     const r = resolver(largo);
     expect(r.origen).toBe('respaldo');
     expect(r.texto.length).toBeLessThanOrEqual(1000);
-    expect(r.texto.endsWith(CIERRE_RUBRO)).toBe(true);
+    expect(r.texto.endsWith(CIERRE_RUBRO_EXACTO)).toBe(true);
     const corto = resolver('Tu clínica gana tiempo con NovuChat, que atiende en segundos y agenda sin cruces.');
     expect(corto.origen).toBe('modelo');
-    expect(corto.texto.endsWith(CIERRE_RUBRO)).toBe(true);
+    expect(corto.texto.endsWith(CIERRE_RUBRO_EXACTO)).toBe(true);
   });
   it('hotfix 09/10: la cifra de CALENDARIO («los 7 días de la semana», «7 días», «siete días», «todos los días», «fines de semana», «feriados») no se rechaza; ni de consumo ni de precio', () => {
     const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', { cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
@@ -892,7 +894,7 @@ describe('el pedido al modelo (chCuerpoModelo)', () => {
   it('chInstrucciones: el rol, los puntos clave, los cierres exactos y SOLO los precios de la consola; ningún tope; el trato lo decide la consola', () => {
     const t = f('chInstrucciones')(CFG);
     expect(t).toMatch(/Eres Kenji, el asistente comercial experto de NovuChat/);
-    expect(t).toContain(CIERRE_RUBRO);
+    expect(t).toContain(CIERRE_RUBRO_EXACTO);
     expect(t).toContain(CIERRE_PRECIOS);
     expect(t).toMatch(/Trata al cliente de tú/);
     expect(f('chInstrucciones')(cfg({ trato: 'usted' }))).toMatch(/Trata al cliente de usted/);
@@ -922,12 +924,12 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
   it('cada contexto tiene su respaldo, con contenido (nunca una muletilla) y nunca un dígito', () => {
     for (const c of ['multiple', 'otro', 'otroRespuesta', 'abierta', 'identidad', 'cortesia', 'datos', 'ambiguo', 'fuera', 'general', 'medio']) {
       const r = resp(c);
-      expect(f('chContar')(r.texto).palabras, c).toBeGreaterThanOrEqual(10);
+      expect(f('chContar')(r.texto).palabras, c).toBeGreaterThanOrEqual(c === 'cortesia' ? 5 : 10);
       expect(r.texto, c).not.toMatch(/^¡Te entiendo/);
       expect(r.texto.replace(/24\/7|24 horas/g, '')).not.toMatch(/\d/);
     }
-    expect(resp('rubro', { rubroId: 'salud' }).texto).toBe(NOVUCHAT['rubros'][0].explicacion + ' ' + CIERRE_RUBRO);
-    for (const x of NOVUCHAT['rubros'] as J[]) if (x['explicacion']) expect(resp('rubro', { rubroId: x['id'] }).texto.endsWith(CIERRE_RUBRO)).toBe(true);
+    expect(resp('rubro', { rubroId: 'salud' }).texto).toBe(NOVUCHAT['rubros'][0].explicacion + ' ' + CIERRE_RUBRO_EXACTO);
+    for (const x of NOVUCHAT['rubros'] as J[]) if (x['explicacion']) expect(resp('rubro', { rubroId: x['id'] }).texto.endsWith(CIERRE_RUBRO_EXACTO)).toBe(true);
   });
   it('«abierta»: el pitch del documento y su pregunta (con rubro: la de las funciones; sin rubro: la del rubro)', () => {
     expect(resp('abierta').texto).toMatch(/de qué rubro es tu negocio\?$/);
@@ -1025,7 +1027,7 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     expect(rec.payload.interactive.type).toBe('list'); // recepción ve lo mismo que cualquiera tras el traspaso: la lista de rubros, nunca «Hablar con el equipo» otra vez
     const sin = f('chMensajeEquipo')(cfg({ numeroRecepcion: '' }), ficha0, '59100000011');
     expect(sin.texto).toMatch(/Por ahora no puedo ponerte en contacto/);
-    expect(sin.payload.interactive.type).toBe('button');
+    expect(sin.payload.type).toBe('text'); // (sin número de recepción no hay a quién pasar: ni «Hablar con el equipo» ni ofertas)
     expect(JSON.stringify(sin.payload)).not.toMatch(/wa\.me/);
   });
   it('chRespuestaFija: el dato más la invitación al equipo, sin ninguna cifra', () => {
@@ -1092,9 +1094,9 @@ describe('chResolver: el desenlace de un turno de modelo', () => {
     const buena = revisar({ ...base, mensaje: g['explicacion'] + ' ¿Quieres saber más?', rubro: 'gastronomia' }, t);
     expect(buena.causa).toBe('');
     const r = resolver([buena], t);
-    expect(r.texto).toBe(g['explicacion'] + ' ' + CIERRE_RUBRO);
+    expect(r.texto).toBe(g['explicacion'] + ' ' + CIERRE_RUBRO_EXACTO);
     const mal = revisar({ ...base, mensaje: '¡Te entiendo! 😊', rubro: 'gastronomia' }, t);
-    expect(resolver([mal, mal], t).texto).toBe(g['explicacion'] + ' ' + CIERRE_RUBRO);
+    expect(resolver([mal, mal], t).texto).toBe(g['explicacion'] + ' ' + CIERRE_RUBRO_EXACTO);
   });
 });
 
@@ -1173,7 +1175,7 @@ describe('los datos de NovuChat (admin/scripts/datos/chat-novuchat/)', () => {
     expect(NOVUCHAT['modelo']).toBe('gemini-3.5-flash-lite');
   });
   it('los cierres exactos del documento y de la decisión D2', () => {
-    expect(NOVUCHAT['cierres'].rubro).toBe(CIERRE_RUBRO);
+    expect(NOVUCHAT['cierres'].rubro).toBe(CIERRE_RUBRO_EXACTO);
     expect(NOVUCHAT['cierres'].precios).toBe(CIERRE_PRECIOS);
     expect(JSON.stringify(NOVUCHAT)).not.toMatch(/se comunique|te contacte|contacte contigo|Silvana|asesora|Leads de Ventas|miniCRM|Kanban|menos de un minuto/i);
   });
@@ -1544,7 +1546,8 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
     const pedir = f('chPedirDatosAntes');
     expect(pedir(fichaCon({ explicado: true }))).toBe(true);
     expect(pedir(fichaCon({ explicado: true, nombre: 'Ana Pérez' }))).toBe(true); // falta el negocio
-    expect(pedir(fichaCon())).toBe(false); // todavía no se explicó nada
+    expect(pedir(fichaCon())).toBe(true); // aun sin explicación ni rubro (el pitch genérico): antes de la PRIMERA muestra de planes se pide, siempre
+    expect(pedir(fichaCon({ historial: [{ r: 'a', t: 'pitch' }] }))).toBe(true);
     for (const extra of [{ nombrePedido: true }, { planesMostrados: true }, { equipoAhora: true }, { nombre: 'Ana Pérez', empresa: 'Salón Rosa' }]) expect(pedir(fichaCon({ explicado: true, ...extra })), JSON.stringify(extra)).toBe(false);
   });
   it('R4 (b): «Ver planes» (o pedir precios) como PRIMERA respuesta pide el nombre antes de mostrar los planes; el siguiente mensaje (diga el nombre o no) los muestra; si insiste, se muestran', () => {
@@ -1564,8 +1567,14 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
     expect(decidir([toquePlanes], pendiente).ruta).toBe('planes'); // insiste: se muestran, no se pide dos veces
     expect(decidir([toquePlanes], { ...base, nombrePedido: true }).ruta).toBe('planes');
     expect(decidir([{ ...f('chEventoToque')('equipo', NOVUCHAT['rubros']), seq: 1 }], pendiente).ruta).toBe('equipo');
-    // sin explicación previa no se aplaza nada
-    expect(decidir([toquePlanes], fichaCon()).ruta).toBe('planes');
+    // sin explicación ni rubro (el pitch genérico, con historial) también se pide antes; ya pedido, ya conocidos o ya vistos, no
+    const pitch = fichaCon({ historial: [{ r: 'u', t: 'Quiero más información' }, { r: 'a', t: 'NovuChat es el primer empleado de tu negocio que nunca duerme' }] });
+    expect(decidir([toquePlanes], pitch).ruta).toBe('pedirNombre');
+    expect(decidir([ev('precios')], pitch).ruta).toBe('pedirNombre');
+    expect(decidir([ev('Tienda Uno')], { ...pitch, nombrePedido: true, planesPendientes: true }).ruta).toBe('planes');
+    expect(decidir([toquePlanes], { ...pitch, nombre: 'Ana Pérez', empresa: 'Tienda Uno' }).ruta).toBe('planes');
+    expect(decidir([toquePlanes], { ...pitch, planesMostrados: true }).ruta).toBe('planes');
+    expect(decidir([{ ...f('chEventoToque')('equipo', NOVUCHAT['rubros']), seq: 1 }], pitch).ruta).toBe('equipo');
   });
   it('R4 (a): en la primera respuesta de texto libre el pedido va EN EL MISMO mensaje, una sola vez, según lo que falte y sin «negocio» doble; no en la explicación ni en los datos', () => {
     const anexo = f('chAnexoDatos');
@@ -1778,7 +1787,7 @@ describe('ronda de seguridad del 09/10: terceros, plazos, tope de avisos, perfil
       expect(m.texto, k).toMatch(/Si tienes otro negocio, cuéntame de qué rubro es/);
     }
     // lo que se respondió queda; el emoji del saludo no se pierde ni queda solo
-    expect(f('chCliente')(rd.cortesia, CFG, 'x', { planes: true, lista: true }).texto).toMatch(/^¡Con gusto! 😊\n\n/);
+    expect(f('chCliente')(rd.cortesia, CFG, 'x', { planes: true, lista: true }).texto).toMatch(/^¡Con gusto! 😊/);
     expect(f('chCliente')(rd.identidad, CFG, 'x', { planes: true, lista: true }).texto).toMatch(/inteligencia artificial/);
     expect(f('chMensajeComplemento')(CFG, { vez: 0, lista: true }).texto).not.toMatch(ofrece);
     expect(f('chMensajePlanes')(CFG, { lista: true }).texto).not.toMatch(ofrece);
@@ -2148,5 +2157,87 @@ describe('la regla del «Sí» es robusta: la oferta se lee aunque se pegue el p
     const pide = f('chPideEquipoDirecto');
     for (const x of ['No, quiero hablar con alguien', 'No. Quiero hablar con un asesor', 'Ya no quiero más info, quiero hablar con alguien', 'mis clientes se quejan, quiero hablar con un asesor', 'Planes no, quiero hablar con el equipo', 'no gracias; quiero hablar con una persona']) expect(pide(x), x).toBe(true);
     for (const x of ['no quiero hablar con un asesor, solo dime el precio', 'todavía no quiero hablar con un asesor', 'mis clientes podrían hablar con una persona?', 'no, mis clientes quieren hablar con un asesor']) expect(pide(x), x).toBe(false);
+  });
+});
+
+// ================================================================================================
+// Botones (decisión de Andres, 11/10): «Ver planes» solo con interés y nunca tras pulsarlo; «Hablar con el equipo» solo cuando hace falta o se acabaron las preguntas y nunca tras pulsarlo; texto y botones coherentes.
+describe('los botones los decide el código: chBotonesDelTurno, chAcomodaOferta y las banderas de la ficha', () => {
+  const dec = f('chBotonesDelTurno');
+  const fi = (extra: J = {}): J => ({ ...fichaBase(), explicado: true, rubro: 'belleza', ...extra });
+  const fija = (ruta: string, fijo = '', ficha: J = fi()) => dec({ ruta, fijo, evento: '', ficha, textos: [], aMedida: false, causas: [] });
+  const modelo = (evento: string, textos: string[], ficha: J = fi(), extra: J = {}) => dec({ ruta: 'modelo', fijo: '', evento, ficha, textos, aMedida: false, causas: [], ...extra });
+  it('tabla «mensaje → botones»: rubro/multiple solo «Ver planes»; los planes y las consultas sin respuesta, «Hablar con el equipo»; identidad, cortesía, pitch, empresa, nombre, medio y pedido del nombre, ninguno', () => {
+    const b = (r: J): string => [r.planes && 'planes', r.equipo && 'equipo'].filter(Boolean).join('+') || 'ninguno';
+    expect(b(modelo('rubro', ['salud']))).toBe('planes');
+    expect(b(modelo('multiple', ['salud', 'retail']))).toBe('planes');
+    expect(b(fija('planes'))).toBe('equipo');
+    expect(b(fija('pedirNombre'))).toBe('ninguno');
+    for (const x of ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento']) expect(b(fija('fijo', x)), x).toBe('equipo');
+    expect(b(fija('fijo', 'identidad'))).toBe('ninguno');
+    expect(b(fija('fijo', 'disponibilidad'))).toBe('ninguno');
+    for (const e of ['sin_dato', 'no_documentado', 'complemento', 'equipo', 'generico', 'ambiguo', 'otro', 'otroRespuesta']) expect(b(modelo(e, ['x'])), e).toBe('equipo');
+    // (aun con un texto de interés y de «ya no tengo más dudas», que en una respuesta ordinaria darían los dos botones)
+    for (const e of ['pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte']) expect(b(modelo(e, ['¿cuánto cuesta y qué incluye? ya no tengo más dudas, quiero empezar'])), e).toBe('ninguno');
+    expect(b(modelo('general', ['¿cuánto cuesta y qué incluye? ya no tengo más dudas, quiero empezar']))).toBe('planes+equipo');
+  });
+  it('una respuesta ordinaria: sin botones; «Ver planes» solo si el cliente muestra interés; el equipo al acabarse las preguntas (≥2 respondidas, «ya no tengo más dudas», a medida, función no documentada)', () => {
+    expect(modelo('general', ['¿se conecta a mi calendario?']).planes).toBe(false);
+    expect(modelo('general', ['¿se conecta a mi calendario?']).equipo).toBe(false);
+    for (const x of ['¿qué incluye el setup?', '¿cuánto tarda la instalación?', 'me interesa', 'quiero empezar', '¿cómo funciona?']) expect(modelo('general', [x]).planes, x).toBe(true);
+    expect(modelo('general', ['¿qué incluye el setup?'], fi({ planesTocado: true })).planes).toBe(false); // pulsado: nunca más
+    expect(modelo('general', ['¿qué incluye el setup?'], fi({ planesMostrados: true })).planes).toBe(false); // ya los vio
+    expect(modelo('general', ['y otra pregunta'], fi({ respondidas: 1 })).equipo).toBe(false);
+    expect(modelo('general', ['y otra pregunta'], fi({ respondidas: 2 })).equipo).toBe(true); // el tercer turno seguido de explicación
+    expect(modelo('general', ['y otra pregunta'], fi({ respondidas: 2, explicado: false })).equipo).toBe(false);
+    for (const x of ['ya no tengo más dudas', 'quiero empezar', '¿cómo contrato?', 'eso es todo']) expect(modelo('general', [x]).equipo, x).toBe(true);
+    expect(modelo('general', ['x'], fi(), { aMedida: true }).equipo).toBe(true);
+    expect(modelo('general', ['x'], fi(), { causas: ['funcion_inventada'] }).equipo).toBe(true);
+    expect(modelo('general', ['x']).ordinaria).toBe(true);
+    expect(modelo('rubro', ['x']).ordinaria).toBe(false);
+  });
+  it('«Hablar con el equipo» pulsado no vuelve nunca; «Ver planes» pulsado o con los planes vistos, tampoco', () => {
+    const t = fi({ equipoTocado: true });
+    for (const r of [fija('planes', '', t), fija('fijo', 'integracion', t), modelo('sin_dato', ['x'], t), modelo('general', ['ya no tengo más dudas'], t)]) expect(r.equipo).toBe(false);
+    const p = fi({ planesTocado: true });
+    for (const r of [modelo('rubro', ['x'], p), modelo('multiple', ['x'], p), fija('fijo', 'disponibilidad', p)]) expect(r.planes).toBe(false);
+    expect(modelo('rubro', ['x'], fi({ planesMostrados: true })).planes).toBe(false);
+  });
+  it('chAcomodaOferta: lo que el mensaje ofrece es lo que lleva (la oferta doble se queda con la mitad que tiene botón; sin botón se quita; «los botones de abajo» sin botones se quita)', () => {
+    const a = f('chAcomodaOferta');
+    const T = 'Te cuento todo sobre el servicio y cómo funciona en tu negocio. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+    expect(a(T, ['planes', 'equipo'])).toBe(T);
+    expect(a(T, ['planes'])).toBe('Te cuento todo sobre el servicio y cómo funciona en tu negocio. ¿Te gustaría ver nuestros planes? 🤝');
+    expect(a(T, ['equipo'])).toBe('Te cuento todo sobre el servicio y cómo funciona en tu negocio. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝');
+    expect(a(T, [])).toBe('Te cuento todo sobre el servicio y cómo funciona en tu negocio.');
+    expect(a('Eso lo revisa alguien. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝', ['planes'])).toBe('Eso lo revisa alguien.');
+    expect(a('Listo. Cuando quieras, usa los botones de abajo.', [])).toBe('Listo.');
+    expect(a('Listo. Cuando quieras, usa los botones de abajo.', ['equipo'])).toBe('Listo. Cuando quieras, usa los botones de abajo.');
+    expect(a('¿Te gustaría hablar con alguien de nuestro equipo? 🤝', [])).toBe('¡Con gusto! 😊');
+    expect(a('Mira www.novuchat.site 🌐 ¿Te gustaría hablar con alguien de nuestro equipo? 🤝', [])).toBe('Mira www.novuchat.site 🌐');
+  });
+  it('chCliente: sin botones sale un mensaje de TEXTO; con uno o dos, interactivo; el respaldo del botón de planes dice «planes»', () => {
+    const c = f('chCliente');
+    expect(c('Hola, te cuento algo sobre el servicio completo.', CFG, 'x', { botones: [] }).payload.type).toBe('text');
+    expect(c('Hola, te cuento algo.', CFG, 'x', { botones: ['planes'] }).respaldo).toMatch(/Escribe «planes»/);
+    expect(c('Hola, te cuento algo.', CFG, 'x', { botones: ['equipo'] }).botones).toEqual(['equipo']);
+    expect(c('Hola, te cuento algo.', CFG, 'x', { botones: ['planes', 'equipo'] }).botones).toEqual(['planes', 'equipo']);
+  });
+  it('la ficha: `planesTocado`, `equipoTocado` y `respondidas` son del código (booleanos estrictos y un entero acotado), se sanean y vencen con la ventana', () => {
+    const v = f('chFichaVigente');
+    const AHORA = Date.UTC(2026, 9, 11, 14, 0, 0);
+    const s = v({ planesTocado: 'sí', equipoTocado: 1, respondidas: 99, ultimoMs: AHORA - 60_000 }, AHORA);
+    expect([s.planesTocado, s.equipoTocado, s.respondidas]).toEqual([false, false, 3]);
+    const t = v({ planesTocado: true, equipoTocado: true, respondidas: 2, ultimoMs: AHORA - 60_000 }, AHORA);
+    expect([t.planesTocado, t.equipoTocado, t.respondidas]).toEqual([true, true, 2]);
+    const ven = v({ planesTocado: true, equipoTocado: true, respondidas: 2, ultimoMs: AHORA - 25 * 3_600_000 }, AHORA);
+    expect([ven.planesTocado, ven.equipoTocado, ven.respondidas]).toEqual([false, false, 0]);
+    expect(v({ respondidas: 'x' }, AHORA).respondidas).toBe(0);
+    // un texto del cliente nunca las fija: solo el toque
+    const aplicar = (eventos: J[], plan: J = {}) => f('chAplicarTurno')({ ficha: fichaBase(), eventos, hasta: 1, plan: { ruta: 'modelo', hechos: {}, temas: [], ...plan }, res: null, mensaje: 'x', ahoraMs: AHORA });
+    expect(aplicar([ev('planes')]).planesTocado).toBe(false);
+    expect(aplicar([{ ...f('chEventoToque')('planes', NOVUCHAT['rubros']), seq: 1 }]).planesTocado).toBe(true);
+    expect(aplicar([ev('x')], { ruta: 'equipo' }).equipoTocado).toBe(true);
+    expect(f('chAplicarTurno')({ ficha: fichaBase(), eventos: [ev('x')], hasta: 1, plan: { ruta: 'equipo', hechos: {}, temas: [] }, res: null, mensaje: 'x', ahoraMs: AHORA, sinRecepcion: true }).equipoTocado).toBe(false);
   });
 });

@@ -666,7 +666,7 @@ function chFichaBase() {
   return {
     v: 1, ultimoMs: 0, rubro: '', nombre: '', empresa: '', necesidad: '', temas: [],
     hechos: { pidioEquipo: false, pidioPlanes: false, eligioOtro: false, interactuo: false, descarte: '' },
-    avisado: false, avisoFalla: '', planesMostrados: false, soporte: false, anuncio: false,
+    avisado: false, avisoFalla: '', planesMostrados: false, planesTocado: false, equipoTocado: false, respondidas: 0, soporte: false, anuncio: false,
     // Ajustes del 09/10: el ciclo de un negocio (explicado, nombre pedido, planes pendientes, equipo ya pedido), el primer negocio y los otros para la hoja.
     explicado: false, nombrePedido: false, preguntaDatos: false, ofreceEquipo: false, ofrecePlanes: false, planesPendientes: false, equipoAhora: false, empresasAvisadas: [], avisosVentana: 0, sitiosVentana: 0, sitioUltimo: false, primero: null, otros: [], complementos: 0,
     seq: 0, hasta: 0, cola: [], historial: [], ultimosIds: [],
@@ -700,7 +700,7 @@ function chFichaVigente(e, ahoraMs) {
       pidioEquipo: h.pidioEquipo === true, pidioPlanes: h.pidioPlanes === true, eligioOtro: h.eligioOtro === true, interactuo: h.interactuo === true,
       descarte: CH_DESCARTES.includes(h.descarte) ? h.descarte : '',
     },
-    avisado: e.avisado === true, avisoFalla: chPlano(e.avisoFalla, 200), planesMostrados: e.planesMostrados === true, soporte: e.soporte === true, anuncio: e.anuncio === true,
+    avisado: e.avisado === true, avisoFalla: chPlano(e.avisoFalla, 200), planesMostrados: e.planesMostrados === true, planesTocado: e.planesTocado === true, equipoTocado: e.equipoTocado === true, respondidas: Math.max(0, Math.min(3, Math.floor(Number(e.respondidas)) || 0)), soporte: e.soporte === true, anuncio: e.anuncio === true,
     explicado: e.explicado === true, nombrePedido: e.nombrePedido === true, preguntaDatos: e.preguntaDatos === true, ofreceEquipo: e.ofreceEquipo === true, ofrecePlanes: e.ofrecePlanes === true, planesPendientes: e.planesPendientes === true, equipoAhora: e.equipoAhora === true,
     // Las empresas por las que ya se avisó a recepción en la ventana (a lo más 3, normalizadas) y cuántos avisos van: el tope (3) acota la plantilla por segunda empresa.
     empresasAvisadas: Array.from(new Set((Array.isArray(e.empresasAvisadas) ? e.empresasAvisadas : []).concat(typeof e.empresaAvisada === 'string' ? [e.empresaAvisada] : []).filter((x) => typeof x === 'string').map((x) => chNorm(chPlano(x, 60))).filter((x) => x !== ''))).slice(0, CH_TOPE_AVISOS),
@@ -714,7 +714,7 @@ function chFichaVigente(e, ahoraMs) {
     ultimosIds: (Array.isArray(e.ultimosIds) ? e.ultimosIds : []).filter((x) => typeof x === 'string' && x !== '' && x.length <= 200).slice(-CH_TOPE_IDS),
   };
   if (s.hasta > s.seq) s.hasta = s.seq;
-  if (ultimo && ahoraMs - ultimo >= CH_VENTANA_MS) { s.avisado = false; s.planesMostrados = false; s.soporte = false; s.equipoAhora = false; s.planesPendientes = false; s.empresasAvisadas = []; s.avisosVentana = 0; s.sitiosVentana = 0; s.sitioUltimo = false; }
+  if (ultimo && ahoraMs - ultimo >= CH_VENTANA_MS) { s.avisado = false; s.planesMostrados = false; s.planesTocado = false; s.equipoTocado = false; s.respondidas = 0; s.soporte = false; s.equipoAhora = false; s.planesPendientes = false; s.empresasAvisadas = []; s.avisosVentana = 0; s.sitiosVentana = 0; s.sitioUltimo = false; }
   return s;
 }
 // ¿Meta ya entregó este mensaje (o ya está en la cola)? Se mira sobre la ficha cruda y no la toca.
@@ -932,10 +932,10 @@ const CH_CONTEXTOS = {
 // ------------------------------------------------------------------ DECIDIR: lo que se resuelve SIN el modelo, y si hace falta el modelo, con qué contexto
 //   a = { eventos, ficha (vigente), cfg, from }   ->   plan = { ruta, fijo, contexto, rubroElegido, hechos, temas, aMedida, soporte, tope }
 // ruta: 'lista' | 'planes' | 'equipo' | 'fijo' | 'modelo'. Un toque de botón o un detector del CÓDIGO decide; la etiqueta de un modelo nunca basta.
-// ¿Hay que pedir el nombre y el negocio antes de los planes? Solo si ya se explicó el rubro, todavía no se pidió, falta alguno de los dos y los planes no se mostraron.
+// ¿Hay que pedir el nombre y el negocio antes de los planes? Antes de la PRIMERA muestra de planes, siempre (decisión del 10/10), si todavía no se pidió, falta alguno de los dos y los planes no se mostraron.
 function chPedirDatosAntes(f) {
-  // (sin exigir `explicado`: si ya hay rubro, o se explicó algo, y por cualquier motivo no se pidió aún, se pide ANTES de mostrar los planes)
-  return !!f && (f.explicado === true || chPlano(f.rubro) !== '') && f.nombrePedido !== true && f.planesMostrados !== true && f.equipoAhora !== true && !(chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '');
+  // (sin exigir `explicado` ni rubro: quien llega por el pitch genérico, con historial y sin rubro, también da su nombre antes de ver los planes)
+  return !!f && f.nombrePedido !== true && f.planesMostrados !== true && f.equipoAhora !== true && !(chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '');
 }
 function chDecidir(a) {
   const ev = Array.isArray(a.eventos) ? a.eventos : [];
@@ -967,7 +967,11 @@ function chDecidir(a) {
     if (chPideEquipoDirecto(dijo)) { plan.extraerDatos = true; return equipo(chEsSoporte(dijo)); } // (si de paso dice su nombre y su negocio, el código los anota; si ya es cliente, entra como soporte)
     if (chPideAsesor(dijo) || chPidioContacto(dijo)) return equipo(false);
     // El último mensaje del asistente ofreció hablar con el equipo y el cliente acepta con un «sí» corto: se deriva por CÓDIGO (el modelo no decide). Con la oferta doble (planes o equipo), planes si aún no los vio.
-    if (ev.every((e) => e.k === 'texto' && chAfirma(e.c)) && (f.ofreceEquipo === true || CH_OFRECE_EQUIPO.test(chPreguntaFinal(chUltimoDelAsistente(f))))) return f.ofrecePlanes === true && f.planesMostrados !== true ? conPlanes(false) : equipo(false);
+    if (ev.every((e) => e.k === 'texto' && chAfirma(e.c))) {
+      // (oferta de planes —sola o doble— aceptada: planes si aún no los vio; oferta del equipo: derivación)
+      if (f.ofrecePlanes === true && f.planesMostrados !== true) return conPlanes(false);
+      if (f.ofreceEquipo === true || CH_OFRECE_EQUIPO.test(chPreguntaFinal(chUltimoDelAsistente(f)))) return equipo(false);
+    }
     if (chEsSoporte(dijo)) return equipo(true);
     // Identidad: la respuesta es SIEMPRE el texto fijo del dato (reconoce ser un asistente virtual con IA); el modelo no interviene (el prompt no es una barrera).
     if (chEsIdentidad(dijo, '')) return fijo('identidad');
@@ -1491,15 +1495,53 @@ function chEmMensaje(t, cfg) {
   if (!m) return chConEmojis(t, 'pocos');
   return (chConEmojis(t.slice(0, m.index), 'pocos') + ' ' + m[1].trim()).trim();
 }
-function chBotones() {
-  return [CH_BOTON_PLANES, CH_BOTON_EQUIPO];
-}
+function chBotones() { return [CH_BOTON_PLANES, CH_BOTON_EQUIPO]; }
 const CH_RESPALDO_BOTONES = 'Escribe «planes» para ver los planes o «equipo» para hablar con alguien de nuestro equipo.';
 const CH_RESPALDO_UN_BOTON = 'Escribe «equipo» para hablar con alguien de nuestro equipo.';
-// R5: los botones salen según lo ya hecho. `est` = { planes (ya los vio o los ve en este mensaje), lista (el traspaso con el equipo ya se hizo en este ciclo) }.
-//   inicio: la lista de rubros · tras la explicación: [Ver planes][Hablar con el equipo] · planes ya vistos: SOLO [Hablar con el equipo] · equipo ya pedido: ningún botón; la lista de rubros con la invitación a otro negocio.
+const CH_RESPALDO_PLANES = 'Escribe «planes» para ver los planes.';
+// Los botones los decide el CÓDIGO en cada turno (`chBotonesDelTurno` → `est.botones`): «Ver planes» solo cuando hay interés y nunca una vez pulsado o con los planes ya vistos; «Hablar con el equipo» solo cuando
+// hace falta (no hay respuesta, pidió contacto, error) o se acabaron las preguntas, y nunca una vez pulsado. Sin `est.botones` (los mensajes fijos de recepción): los de siempre.
 function chBotonesDe(est) {
+  if (est && Array.isArray(est.botones)) return [CH_BOTON_PLANES, CH_BOTON_EQUIPO].filter((b) => est.botones.includes(b.id));
   return est && est.planes === true ? [CH_BOTON_EQUIPO] : chBotones();
+}
+// El interés en el servicio (costos, planes, qué incluye, cómo funciona, instalarlo, empezar) y el «ya no tengo más dudas».
+const CH_INTERES = /\b(?:cuanto|precio|precios|costo|costos|cuesta|cuestan|tarifa|tarifas|plan|planes|incluye|incluyen|funciona|funcionan|interesa|interesan|empezar|comenzar|contratar|contrato|instalacion|instalar|implementar|tarda|demora|informacion|info|detalles)\b/;
+const CH_FIN_PREGUNTAS = /\b(?:no tengo mas (?:dudas|preguntas)|ninguna duda|eso es todo|nada mas|ya entendi|queda claro|quiero empezar|como contrato|como se contrata|como empiezo|como empezamos|listo para empezar|donde firmo)\b/;
+// Qué botones lleva el mensaje de este turno. o = { ruta, fijo, evento (contexto si lo escribió el modelo), ficha (la de antes), textos (lo que dijo el cliente), aMedida, causas }  ->  { planes, equipo, ordinaria }
+function chBotonesDelTurno(o) {
+  const f = o.ficha || {};
+  const ver = f.planesTocado !== true && f.planesMostrados !== true;
+  const t = (o.textos || []).map(chNorm).join(' ');
+  const r = { planes: false, equipo: false, ordinaria: false };
+  const ev = chTexto(o.evento);
+  if (o.ruta === 'planes') r.equipo = true;
+  else if (o.ruta === 'fijo') r.equipo = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(o.fijo);
+  else if (o.ruta === 'modelo') {
+    if (['rubro', 'multiple'].includes(ev)) r.planes = ver;
+    else if (['otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico'].includes(ev)) r.equipo = true;
+    else if (!['pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte'].includes(ev)) {
+      r.ordinaria = true;
+      r.planes = ver && (CH_INTERES.test(t) || (o.textos || []).some((c) => chPideCostoDelServicio(c)));
+      r.equipo = CH_FIN_PREGUNTAS.test(t) || o.aMedida === true || (o.causas || []).includes('funcion_inventada') || (f.explicado === true && f.respondidas >= 2);
+    }
+  }
+  if (f.equipoTocado === true) r.equipo = false;
+  return r;
+}
+// Texto y botones coherentes: lo que el mensaje ofrece es lo que lleva. «¿Quieres ver nuestros planes o prefieres hablar con alguien de nuestro equipo?» se queda con la mitad que tiene botón o se quita;
+// una oración que ofrece lo que no hay, o que habla de «los botones», se quita. (Lo escribe el modelo o el dato: el prompt no es una barrera.)
+const CH_OFRECE_EQ_FRASE = /hablar con (?:alguien|una persona|(?:alguien de )?(?:nuestro |el )?equipo)|un asesor/i;
+const CH_OFRECE_PL_FRASE = /(?:ver|muestro|conocer) (?:los |nuestros )?planes/i;
+function chAcomodaOferta(texto, ids) {
+  const [eq, pl] = [ids.includes('equipo'), ids.includes('planes')];
+  const lineas = chLineas(texto).split('\n').map((l) => l.split(/(?<=[.!?…][\p{Extended_Pictographic}\uFE0F]*)\s+(?![\p{Extended_Pictographic}\uFE0F])|\s+(?=¿)/u).map((o) => {
+    const e = CH_OFRECE_EQ_FRASE.test(o);
+    const p = CH_OFRECE_PL_FRASE.test(o);
+    if (e && p) return eq && pl ? o : (pl ? '¿Te gustaría ver nuestros planes? 🤝' : (eq ? '¿Te gustaría hablar con alguien de nuestro equipo? 🤝' : ''));
+    return (e && !eq) || (p && !pl) || (!eq && !pl && /toca(?:r)? el bot[oó]n|botones? de abajo/i.test(o)) ? '' : o;
+  }).filter((o) => o !== '').join(' ').trim());
+  return lineas.join('\n').replace(/\n{3,}/g, '\n\n').trim() || '¡Con gusto! 😊';
 }
 function chFilasDeRubros(cfg) {
   return (chDatos(cfg).rubros || []).slice(0, 10).map((r) => ({ id: 'rubro:' + r.id, title: r.titulo, description: r.descripcion }));
@@ -1530,10 +1572,12 @@ function chListaInvitacion(cuerpo, cfg, evento) {
 }
 // Todo mensaje del asistente (salvo la lista de rubros, el traspaso con su botón y los avisos del sistema) lleva los botones que corresponden a lo ya hecho (`est`; sin `est`, los dos).
 function chCliente(texto, cfg, evento, est) {
-  const cuerpo = chEmMensaje(chLineas(texto), cfg);
+  const nuevo = !!est && Array.isArray(est.botones);
+  const cuerpo = chEmMensaje(nuevo && est.lista !== true ? chAcomodaOferta(texto, est.botones) : chLineas(texto), cfg);
   if (est && est.lista === true) return chListaInvitacion(cuerpo, cfg, evento);
   const botones = chBotonesDe(est);
-  return cmMensaje('cliente', cmBotones(cuerpo, botones), cuerpo, cuerpo + '\n' + (botones.length === 2 ? CH_RESPALDO_BOTONES : CH_RESPALDO_UN_BOTON), { tipoReporte: 'interactive', evento: evento, botones: botones.map((b) => b.id) });
+  if (!botones.length) return cmMensaje('cliente', cmTexto(cuerpo), cuerpo, cuerpo, { tipoReporte: 'text', evento: evento, botones: [] });
+  return cmMensaje('cliente', cmBotones(cuerpo, botones), cuerpo, cuerpo + '\n' + (botones.length === 2 ? CH_RESPALDO_BOTONES : (botones[0].id === 'planes' ? CH_RESPALDO_PLANES : CH_RESPALDO_UN_BOTON)), { tipoReporte: 'interactive', evento: evento, botones: botones.map((b) => b.id) });
 }
 // El SITIO WEB lo anexa SOLO el código (el modelo no puede escribir ningún enlace: `CH_ENLACE` y la causa `enlace` siguen rechazando todo lo suyo). Una frase corta, sin promesas ni afirmar qué contiene,
 // ANTES de la pregunta final del mensaje (que sigue terminando en ella), solo en las rutas específicas, a lo más CH_TOPE_SITIO veces por ventana y por teléfono, y solo si cabe en un mensaje.
@@ -1592,15 +1636,16 @@ function chMensajePlanes(cfg, o) {
   let cuerpo;
   if (!frases.length && !archivo) cuerpo = chTexto(tx.planesSinPrecios);
   else cuerpo = [chTexto(intro)].concat(x.tope === true && archivo ? [] : frases).concat([chTexto((d.cierres || {}).precios)]).filter((y) => y !== '').join(' ');
-  cuerpo = chEmMensaje(cuerpo, cfg);
+  // (el equipo ya pulsado: sin botón; la imagen de planes sale entonces como imagen o documento con el texto de pie)
+  const sinBoton = x.equipo === false;
+  cuerpo = chEmMensaje(sinBoton ? chAcomodaOferta(cuerpo, []) : cuerpo, cfg);
   if (x.lista === true) return chListaInvitacion(cuerpo, cfg, 'planes');
-  const payload = cmBotones(cuerpo, chBotonesDe({ planes: true }));
-  if (archivo) {
-    payload.interactive.header = archivo.tipo === 'pdf'
-      ? { type: 'document', document: { link: archivo.url, filename: chPlano(archivo.nombreArchivo, 80) || 'Planes.pdf' } }
-      : { type: 'image', image: { link: archivo.url } };
-  }
-  return cmMensaje('cliente', payload, cuerpo, cuerpo + ' ' + CH_RESPALDO_UN_BOTON + (archivo ? ' ' + archivo.url : ''), { tipoReporte: 'interactive', evento: 'planes', botones: ['equipo'], conArchivo: !!archivo });
+  const pdf = !!archivo && archivo.tipo === 'pdf';
+  const encabezado = !archivo ? null : (pdf ? { link: archivo.url, filename: chPlano(archivo.nombreArchivo, 80) || 'Planes.pdf' } : { link: archivo.url });
+  let payload = cmBotones(cuerpo, chBotonesDe({ planes: true }));
+  if (sinBoton) payload = !archivo ? cmTexto(cuerpo) : Object.assign(cmBase(pdf ? 'document' : 'image'), { [pdf ? 'document' : 'image']: Object.assign({}, encabezado, { caption: cmRecorte(cuerpo, 1024) }) });
+  else if (archivo) payload.interactive.header = pdf ? { type: 'document', document: encabezado } : { type: 'image', image: encabezado };
+  return cmMensaje('cliente', payload, cuerpo, cuerpo + (sinBoton ? '' : ' ' + CH_RESPALDO_UN_BOTON) + (archivo ? ' ' + archivo.url : ''), { tipoReporte: sinBoton ? 'text' : 'interactive', evento: 'planes', botones: sinBoton ? [] : ['equipo'], conArchivo: !!archivo });
 }
 // R6: los planes ya se mostraron y el cliente pide más: se aportan hechos NUEVOS y verificados del dato `complementoPlanes` (sin imagen ni cifras de consumo); la siguiente vez, el aviso de que ya se compartió.
 //   o = { vez (cuántos complementos ya se dieron), lista }
@@ -1625,7 +1670,7 @@ function chMensajeComplemento(cfg, o) {
       .map((p) => chTexto(p).replace(/\{usdEstandar\}/g, est ? chMonto(est.precioUsd) : '').replace(/\{usdMedida\}/g, med ? chMonto(med.precioUsd) : ''));
     texto = partes.concat([chTexto((d.cierres || {}).precios)]).filter((y) => y !== '').join(' ');
   }
-  return chClienteConSitio(texto, cfg, 'planes_complemento', { planes: true, lista: x.lista === true }, x.ficha, (x.vez || 0) === 0);
+  return chClienteConSitio(texto, cfg, 'planes_complemento', { botones: x.equipo === false ? [] : ['equipo'], planes: true, lista: x.lista === true }, x.ficha, (x.vez || 0) === 0);
 }
 // R4: el pedido del nombre y del negocio. Según lo que falte (los dos, solo el negocio o solo el nombre). `conPlanes`: la versión que antecede a los planes («Para mostrarte los planes…»); si no, la que se agrega al final de una respuesta.
 function chTextoPedirDatos(cfg, f, conPlanes) {
@@ -1695,7 +1740,7 @@ function chMensajeEquipo(cfg, f, from) {
   const numero = chTexto(cfg && cfg.numeroRecepcion).replace(/\D/g, '');
   const desde = chTexto(from).replace(/\D/g, '');
   if (numero.length >= 6 && numero === desde) return chCliente(tx.recepcion, cfg, 'recepcion', { lista: true, planes: true });
-  if (numero.length < 6) return chCliente(tx.traspasoSinRecepcion, cfg, 'traspaso', f.equipoAhora === true ? { lista: true } : undefined);
+  if (numero.length < 6) return chCliente(tx.traspasoSinRecepcion, cfg, 'traspaso', f.equipoAhora === true ? { lista: true } : { botones: [] });
   const completo = chPlano(f.nombre) !== '' && chPlano(f.empresa) !== '';
   const cuerpo = chEmMensaje(chTexto(f.equipoAhora === true ? tx.traspasoRepite : (completo || f.nombrePedido === true ? tx.traspasoSinPregunta : tx.traspasoConPregunta)), cfg);
   return cmContactoConBoton({ numero: numero, desde: desde, para: 'cliente', evento: 'traspaso', cuerpo: cuerpo, botonTexto: tx.botonTraspaso || 'Escribir ahora', textoDelRespaldo: 'Escríbele aquí:', saludo: chSustituir(tx.saludoWa, cfg) });
@@ -1768,6 +1813,10 @@ function chAplicarTurno(a) {
   }
   f.temas = chTemasUnidos(f.temas, a.plan.temas).slice(0, CH_TEMAS.length);
   if (a.plan.ruta === 'planes') { f.planesMostrados = true; f.planesPendientes = false; }
+  // Lo que el cliente PULSÓ no se le vuelve a ofrecer (lo fija el código sobre el toque, nunca el cliente por texto ni el modelo); `respondidas` cuenta las respuestas ordinarias tras la explicación sin pedir planes.
+  if (ev.some((e) => e.boton === 'planes')) f.planesTocado = true;
+  if (a.plan.ruta === 'equipo' && a.sinRecepcion !== true) f.equipoTocado = true;
+  if (a.plan.ruta === 'planes') f.respondidas = 0; else if (a.ordinaria === true && f.explicado === true) f.respondidas = Math.min(3, f.respondidas + 1);
   if (a.plan.ruta === 'pedirNombre') { f.nombrePedido = true; f.planesPendientes = true; }
   // Sin número de recepción no hay traspaso: el cliente sigue con los botones de antes.
   if (a.plan.ruta === 'equipo') { if (a.sinRecepcion !== true) f.equipoAhora = true; f.nombrePedido = true; }

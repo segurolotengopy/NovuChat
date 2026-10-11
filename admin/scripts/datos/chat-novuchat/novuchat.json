@@ -157,7 +157,7 @@
       }
     ],
     "cierres": {
-      "rubro": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
+      "rubro": "¿Te gustaría ver nuestros planes? 🤝",
       "precios": "¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝",
       "equipo": "¿Te gustaría hablar con alguien de nuestro equipo para entender mejor qué buscas y no hacerte perder tiempo? 🤝",
       "consumo": "¿Te gustaría hablar con alguien de nuestro equipo para analizar el volumen de tu negocio y recomendarte el plan que mejor se ajuste a tu realidad? 🤝",
@@ -196,8 +196,8 @@
       "equipo": "Creo que tu caso es súper particular 🤔. ¿Te gustaría hablar con alguien de nuestro equipo para entender mejor qué buscas y no hacerte perder tiempo? 🤝",
       "generico": "¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
       "identidad": "Soy {asistente}, el asistente virtual de {negocio}, con inteligencia artificial 🤖. Estoy aquí para contarte cómo NovuChat puede atender tu WhatsApp las 24 horas. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝",
-      "cortesia": "¡Con gusto! 😊 Cuando quieras, puedes ver nuestros planes o hablar con alguien de nuestro equipo con los botones de abajo.",
-      "datosAmbos": "¡Gracias! 😊 Quedó anotado. Cuando quieras, puedes hablar con alguien de nuestro equipo.",
+      "cortesia": "¡Con gusto! 😊 Aquí estoy para lo que necesites.",
+      "datosAmbos": "¡Gracias! 😊 Quedó anotado.",
       "datosSoloNombre": "¡Gracias! 😊 Ya anoté tu nombre. ¿Y cómo se llama tu negocio?",
       "datosSoloEmpresa": "¡Gracias! 😊 Ya anoté el nombre de tu negocio. ¿Y cómo te llamas?",
       "datosNinguno": "Para dejarlo anotado, ¿cómo te llamas y cómo se llama tu negocio? 😊",

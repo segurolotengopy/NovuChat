@@ -104,7 +104,7 @@ describe('las conversaciones de aceptación están, con lo que cada una exige', 
   it('cada caso de rubro exige que termine con la pregunta EXACTA, y cada caso de regla dura exige que el código conteste sin modelo', () => {
     for (const id of ['RSAL', 'RBEL', 'RGAS', 'RRET', 'REDU', 'RCAP']) {
       const t = (caso(id)['turnos'] as J[])[1]!;
-      expect(t['exige'].termina).toBe('¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝');
+      expect(t['exige'].termina).toBe('¿Te gustaría ver nuestros planes? 🤝');
     }
     for (const id of ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7']) {
       const turnos = (caso(id)['turnos'] as J[]).slice(1);
@@ -159,24 +159,53 @@ describe('los detectores de la batería: detectan y no detectan de más', () => 
     ];
     for (const t of ok) expect(reglas(msg(t)), t).toEqual([]);
   });
+  const btn = (...ids: string[]): J => ({ payload: { type: 'interactive', interactive: { type: 'button', action: { buttons: ids.map((id) => ({ type: 'reply', reply: { id, title: id === 'planes' ? 'Ver planes' : 'Hablar con el equipo' } })) } } } });
+  const OFERTA_EQ = 'NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝';
+  const OFERTA_PL = 'NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría ver nuestros planes? 🤝';
+  it('INVARIANTE 1 (global): lo pulsado no reaparece — «Ver planes» o «Hablar con el equipo» ya pulsados, en cualquier mensaje posterior, son `boton_pulsado_reaparece`; el cta del traspaso y la lista no cuentan', () => {
+    const ctx = { pulsados: new Set(['planes']), eligioRubro: true, interes: true, equipoPermitido: true };
+    expect(reglas(msg(OFERTA_PL, btn('planes')), ctx)).toContain('boton_pulsado_reaparece');
+    expect(reglas(msg(OFERTA_EQ, btn('equipo')), { ...ctx, pulsados: new Set(['equipo']) })).toContain('boton_pulsado_reaparece');
+    expect(reglas(msg(OFERTA_EQ, btn('equipo')), ctx)).not.toContain('boton_pulsado_reaparece');
+    const cta = { tipo: 'interactive', cuerpo: 'Toca el botón para escribirle directo a alguien de nuestro equipo.', evento: 'traspaso', esRespaldo: false, payload: { type: 'interactive', interactive: { type: 'cta_url', action: { name: 'cta_url' } } } };
+    expect(reglas(cta, { ...ctx, pulsados: new Set(['equipo']) })).toEqual([]);
+  });
+  it('INVARIANTE 2 (global): nada se ofrece antes de tiempo — «Ver planes» sin rubro elegido ni interés, y «Hablar con el equipo» fuera de lo requerido o de «se acabaron las preguntas», son `boton_antes_de_tiempo`', () => {
+    const base = { pulsados: new Set(), eligioRubro: false, interes: false, equipoPermitido: false };
+    expect(reglas(msg(OFERTA_PL, btn('planes')), base)).toContain('boton_antes_de_tiempo');
+    expect(reglas(msg(OFERTA_EQ, btn('equipo')), base)).toContain('boton_antes_de_tiempo');
+    expect(reglas(msg(OFERTA_PL, btn('planes')), { ...base, eligioRubro: true })).toEqual([]);
+    expect(reglas(msg(OFERTA_PL, btn('planes')), { ...base, interes: true })).toEqual([]);
+    expect(reglas(msg(OFERTA_EQ, btn('equipo')), { ...base, equipoPermitido: true })).toEqual([]);
+  });
+  it('INVARIANTE 3 (global): el texto es coherente con los botones — invitar al equipo o a ver los planes sin el botón, o hablar de «los botones de abajo» sin botones, es `texto_sin_boton` (botón, texto, imagen o lista)', () => {
+    expect(reglas(msg(OFERTA_EQ, btn('planes')), {})).toContain('texto_sin_boton');
+    expect(reglas(msg(OFERTA_PL, btn('equipo')), {})).toContain('texto_sin_boton');
+    expect(reglas({ tipo: 'text', cuerpo: OFERTA_EQ, evento: 'respuesta', payload: { type: 'text', text: { body: OFERTA_EQ } }, esRespaldo: false })).toContain('texto_sin_boton');
+    expect(reglas({ tipo: 'text', cuerpo: 'Listo. Usa los botones de abajo cuando quieras.', evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false })).toContain('texto_sin_boton');
+    expect(reglas(msg(OFERTA_EQ, btn('equipo')), {})).toEqual([]);
+    expect(reglas(msg(OFERTA_PL, btn('planes')), {})).toEqual([]);
+    expect(reglas({ tipo: 'text', cuerpo: 'Para mostrarte los planes que mejor te sirvan, ¿me cuentas cómo te llamas y cómo se llama tu negocio?', evento: 'pedir_datos', payload: { type: 'text' }, esRespaldo: false })).toEqual([]);
+  });
   it('los botones: faltan, sobran, están cambiados, o el texto sin botones; la lista exige descripción en todas las filas', () => {
-    expect(reglas(msg(LARGO, { payload: { type: 'interactive', interactive: { type: 'button', action: { buttons: [{ type: 'reply', reply: { id: 'planes', title: 'Ver planes' } }] } } } }))).toContain('botones_incorrectos');
+    expect(reglas(msg(LARGO, { payload: { type: 'interactive', interactive: { type: 'button', action: { buttons: [{ type: 'reply', reply: { id: 'planes', title: 'Ver planes' } }] } } } }))).toContain('texto_sin_boton'); // (el texto ofrece al equipo y no lleva su botón)
     expect(reglas(msg(LARGO, { payload: { type: 'interactive', interactive: { type: 'button', action: { buttons: [{ type: 'reply', reply: { id: 'asesor', title: 'Hablar con un asesor' } }] } } } }))).toContain('botones_incorrectos');
-    expect(reglas({ tipo: 'text', cuerpo: LARGO, evento: 'respuesta', payload: { type: 'text', text: { body: LARGO } }, esRespaldo: false })).toContain('sin_los_dos_botones');
-    expect(reglas({ tipo: 'text', cuerpo: LARGO, evento: 'suspendido', payload: { type: 'text' }, esRespaldo: false })).toEqual([]);
+    expect(reglas({ tipo: 'text', cuerpo: LARGO, evento: 'respuesta', payload: { type: 'text', text: { body: LARGO } }, esRespaldo: false })).toContain('texto_sin_boton');
+    expect(reglas({ tipo: 'text', cuerpo: 'Este servicio está en pausa por ahora. Gracias por escribir.', evento: 'suspendido', payload: { type: 'text' }, esRespaldo: false })).toEqual([]);
     const lista = (descripcion: string): J => ({ tipo: 'interactive', cuerpo: 'x', evento: 'lista', esRespaldo: false, payload: { type: 'interactive', interactive: { type: 'list', action: { sections: [{ rows: [{ id: 'rubro:a', title: 'A', description: descripcion }] }] } } } });
     expect(reglas(lista(''))).toContain('fila_sin_descripcion_o_demasiado_larga');
     expect(reglas(lista('Con descripción'))).toEqual([]);
   });
   it('lo que escribe el MODELO exige contenido (25 palabras) y cierre con pregunta o invitación; los textos del código no', () => {
     expect(reglas(msg('Claro, con gusto te ayudo con eso.'), { origen: 'modelo' })).toContain('sin_contenido');
-    expect(reglas(msg(LARGO.replace(/¿Te gustaría.*$/, 'NovuChat trabaja las 24 horas sin parar para tu negocio todos los días.')), { origen: 'modelo' })).toContain('sin_cierre');
+    // (el cierre lo exige el validador ANTES de enviar; el código puede quitar la oferta final que no tiene botón: no se exige sobre lo ya enviado)
+    expect(reglas(msg(LARGO.replace(/¿Te gustaría.*$/, 'NovuChat trabaja las 24 horas sin parar para tu negocio todos los días.')), { origen: 'modelo' })).not.toContain('sin_cierre');
     expect(reglas(msg('Claro, con gusto te ayudo con eso.'), { origen: 'codigo' })).toEqual([]);
     expect(reglas(msg('¡Con gusto! 😊'), { origen: 'modelo', contexto: 'cortesia' })).toEqual([]);
   });
   it('un rubro explicado cierra con la pregunta EXACTA', () => {
     expect(reglas(msg(LARGO.replace('¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', '¿Quieres ver los planes?')), { origen: 'modelo', contexto: 'rubro' })).toContain('rubro_sin_la_pregunta_exacta');
-    expect(reglas(msg(LARGO), { origen: 'modelo', contexto: 'rubro' })).toEqual([]);
+    expect(reglas(msg(LARGO.replace('¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', '¿Te gustaría ver nuestros planes? 🤝')), { origen: 'modelo', contexto: 'rubro' })).toEqual([]);
   });
   it('medir: el respaldo, la tasa y las causas; `leerConversaciones` imprime lo que dijo cada uno', () => {
     const c = (extra: J): J => ({ caso: 'X', turnos: 2, llamadas: [], violaciones: [], tonos: [], mensajes: 2, plantillas: 0, fallos: [], conversacion: [], palabras: [30, 40], modeloTurnos: 2, respaldos: 1, causas: { corto: 1 }, ...extra });
@@ -211,9 +240,9 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
   it('el flujo sin estropear da cero violaciones en esos casos (la base de la comparación)', async () => {
     for (const id of ['S5', 'E1', 'RGAS', 'D13', 'S2']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
   });
-  it('si «Hablar con el equipo» deja de salir tras cada mensaje (un solo botón), se dice «botones_incorrectos»', async () => {
-    const f = estropear('function chBotones() {\n  return [CH_BOTON_PLANES, CH_BOTON_EQUIPO];\n}', 'function chBotones() {\n  return [CH_BOTON_PLANES];\n}');
-    expect(await violacionesCon(f, 'S2')).toContain('botones_incorrectos');
+  it('si una consulta sin respuesta (integración, costo de Meta, banco, descuento) deja de llevar «Hablar con el equipo», se dice «botones_inesperados»', async () => {
+    const f = estropear("r.equipo = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(o.fijo);", 'r.equipo = false;');
+    expect(await violacionesCon(f, 'B7')).toContain('botones_inesperados');
   });
   it('si el filtro acepta mensajes sin contenido (la muletilla «¡Te entiendo! 😊»), llega al cliente y se dice «muletilla»', async () => {
     const f = estropear("function chValidarMensaje(texto, v) {\n  const t = chLineas(texto);", "function chValidarMensaje(texto, v) {\n  if (chPlano(texto) !== '') return '';\n  const t = chLineas(texto);");
@@ -242,7 +271,7 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(await violacionesCon(f, 'D1')).toEqual(expect.arrayContaining(['llamo_al_modelo_sin_necesidad']));
   });
   it('si al pedir los planes ya no sale la imagen de la consola, se dice «sin_imagen_de_planes»', async () => {
-    const f = estropear("    payload.interactive.header = archivo.tipo === 'pdf'", "    void 0; if (false) payload.interactive.header = archivo.tipo === 'pdf'");
+    const f = estropear("  else if (archivo) payload.interactive.header = pdf ?", "  else if (false) payload.interactive.header = pdf ?");
     expect(await violacionesCon(f, 'D2')).toEqual(expect.arrayContaining(['sin_imagen_de_planes']));
   });
   it('ajustes del 09/10: la base (sin estropear) da cero violaciones en los casos nuevos A1 a A5', async () => {
@@ -265,18 +294,39 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect((await violacionesCon(g, 'A6')).length).toBeGreaterThan(0);
   });
   it('R4: si «Ver planes» como primera respuesta muestra los planes sin pedir el nombre, se dice `ruta_inesperada`', async () => {
-    const f = estropear("return !!f && (f.explicado === true || chPlano(f.rubro) !== '')", 'return false && (f.explicado === true');
+    const f = estropear('return !!f && f.nombrePedido !== true', 'return false && f.nombrePedido !== true');
     expect(await violacionesCon(f, 'A2')).toContain('ruta_inesperada');
   });
   it('R5: si tras el traspaso siguen los botones en vez de la lista de rubros, se dice `botones_inesperados` y `boton_del_equipo_otra_vez`', async () => {
     const f = estropear('lista: antes.equipoAhora === true && !ciclo }', 'lista: false }');
     const r = await violacionesCon(f, 'A1');
     expect(r).toContain('botones_inesperados');
-    expect(r).toContain('boton_del_equipo_otra_vez');
   });
-  it('R5: si el botón sale sin mirar los planes ya vistos, se dice `ver_planes_cuando_ya_los_vio`', async () => {
-    const f = estropear('return est && est.planes === true ? [CH_BOTON_EQUIPO] : chBotones();', 'return chBotones();');
-    expect(await violacionesCon(f, 'A4')).toContain('ver_planes_cuando_ya_los_vio');
+  it('si «Ver planes» se vuelve a ofrecer tras pulsarlo o con los planes ya vistos, se dice `ver_planes_tras_pulsarlo` y `ver_planes_cuando_ya_los_vio`', async () => {
+    const f = estropear('const ver = f.planesTocado !== true && f.planesMostrados !== true;', 'const ver = true;');
+    const v = await violacionesCon(f, 'B3');
+    expect(v).toContain('boton_pulsado_reaparece'); // invariante global (1)
+    expect(v).toContain('ver_planes_cuando_ya_los_vio');
+  });
+  it('INVARIANTES globales en el flujo: si el texto deja de acomodarse a los botones se dice `texto_sin_boton`; si el rubro ofrece también al equipo, `boton_antes_de_tiempo`; --seco da cero violaciones y el informe cuenta los turnos revisados', async () => {
+    const f1 = estropear('const cuerpo = chEmMensaje(nuevo && est.lista !== true ? chAcomodaOferta(texto, est.botones) : chLineas(texto), cfg);', 'const cuerpo = chEmMensaje(chLineas(texto), cfg);');
+    expect(await violacionesCon(f1, 'B1')).toContain('texto_sin_boton');
+    const f2 = estropear("if (['rubro', 'multiple'].includes(ev)) r.planes = ver;", "if (['rubro', 'multiple'].includes(ev)) { r.planes = ver; r.equipo = true; }");
+    expect(await violacionesCon(f2, 'S1')).toContain('boton_antes_de_tiempo');
+    const r = await correr(['--seco', '--n', '1', '--json'], sinRed);
+    const inf = JSON.parse(r.salida) as J;
+    expect(inf['violaciones'].total).toBe(0);
+    const iv = inf['total'].invariantesDeBotones;
+    expect(iv.casos).toBeGreaterThan(60);
+    expect(iv.pulsadoNoReaparece).toBeGreaterThan(20);
+    expect(iv.noSeOfreceAntesDeTiempo).toBeGreaterThan(50);
+    expect(iv.textoCoherenteConLosBotones).toBeGreaterThan(200);
+    const txt = await correr(['--seco', '--n', '1'], sinRed);
+    expect(txt.salida).toMatch(/Invariantes de botones \(turnos revisados en \d+ casos\)/);
+  }, 120_000);
+  it('si el pedido del nombre (por «Ver planes») lleva el botón «Ver planes», se dice `ver_planes_repetido`', async () => {
+    const f = estropear("if (o.ruta === 'planes') r.equipo = true;", "if (o.ruta === 'planes') r.equipo = true;\n  else if (o.ruta === 'pedirNombre') r.planes = true;");
+    expect(await violacionesCon(f, 'B2')).toContain('ver_planes_repetido');
   });
   it('R5: si el segundo negocio pisa al primero en la hoja (C, D, F) o no se agrega al resumen, se dice `planilla_no_coincide`', async () => {
     const f = estropear("const base = f.primero && typeof f.primero === 'object' ? f.primero : { rubro: f.rubro, empresa: f.empresa };", 'const base = { rubro: f.rubro, empresa: f.empresa };');
