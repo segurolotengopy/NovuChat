@@ -305,7 +305,8 @@
       "conModelo": true,
       "contiene": [
        "asistente virtual de NovuChat"
-      ]
+      ],
+      "botones": "equipo"
      }
     },
     {
@@ -4264,6 +4265,132 @@
       "ruta": "equipo",
       "cta": true,
       "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "C1",
+   "titulo": "Sin callejón sin salida: el cliente propone «cobros con QR» en belleza (no documentado) y el modelo FIEL contesta sin inventar, pero declina → el mensaje lleva «Hablar con el equipo» y lo invita (nunca «Ver planes»)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Pero explícame mejor",
+     "seco": {
+      "mensaje": "Claro 😊 Imagina que una clienta te escribe a medianoche para pedir una cita: NovuChat ve la disponibilidad real de tus especialistas, la reserva y, un día antes, le recuerda por WhatsApp su turno. Así tu equipo atiende en el salón sin vivir pegado al celular. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
+     },
+     "exige": {
+      "contiene": [
+       "cómo te llamas y cómo se llama tu"
+      ],
+      "botones": "texto",
+      "noRepite": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sería cobros con qr",
+     "seco": {
+      "mensaje": "¡Buena idea! 😊 Mi especialidad en tu rubro es mantener tu agenda llena: muestro tus servicios, reviso la disponibilidad de tus especialistas, agendo la cita y mando un recordatorio un día antes. ¿Quieres que te cuente algo más sobre eso?"
+     },
+     "exige": {
+      "origen": "modelo",
+      "botones": "equipo",
+      "contiene": [
+       "hablar con alguien de nuestro equipo"
+      ],
+      "noContiene": [
+       "Ver planes",
+       "código QR"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "C2",
+   "titulo": "Sin callejón sin salida: una respuesta ordinaria del modelo que declina («no lo tengo documentado») lleva «Hablar con el equipo» y la invitación; con el equipo ya pulsado, no",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Hacen reportes de ventas por sede?",
+     "seco": {
+      "mensaje": "Eso no lo tengo documentado para tu rubro y prefiero no prometértelo: hoy me dedico a mostrar tus servicios, revisar la disponibilidad de tus especialistas y agendar las citas sin cruces. ¿Quieres que te cuente más sobre eso?"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "hablar con alguien de nuestro equipo"
+      ]
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "equipo",
+     "exige": {
+      "cta": true,
+      "plantillas": 1
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Y hacen reportes de ventas por cada sede?",
+     "seco": {
+      "mensaje": "Eso no lo tengo documentado para tu rubro y prefiero no prometértelo: hoy me dedico a mostrar tus servicios, revisar la disponibilidad de tus especialistas y agendar las citas sin cruces. ¿Quieres que te cuente más sobre las citas?"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "lista",
+      "noContiene": [
+       "hablar con alguien de nuestro equipo"
+      ]
      }
     }
    ]

@@ -178,6 +178,13 @@ describe('los detectores de la batería: detectan y no detectan de más', () => 
     expect(reglas(msg(OFERTA_PL, btn('planes')), { ...base, interes: true })).toEqual([]);
     expect(reglas(msg(OFERTA_EQ, btn('equipo')), { ...base, equipoPermitido: true })).toEqual([]);
   });
+  it('INVARIANTE 4 (global): ningún mensaje que declina o no puede resolver queda sin la salida al equipo (`declina_sin_boton`), salvo que ya lo haya pulsado', () => {
+    const DECLINA = 'Eso no lo tengo documentado para tu rubro y prefiero no prometértelo: hoy me dedico a mostrar tus servicios y agendar las citas sin cruces en tu negocio. ¿Quieres que te cuente más sobre eso?';
+    const ctx = { pulsados: new Set(), eligioRubro: true, interes: true, equipoPermitido: true, declina: true };
+    expect(reglas({ tipo: 'text', cuerpo: DECLINA, evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false }, ctx)).toContain('declina_sin_boton');
+    expect(reglas(msg(DECLINA + ' ¿Te gustaría hablar con alguien de nuestro equipo? 🤝', btn('equipo')), ctx)).not.toContain('declina_sin_boton');
+    expect(reglas({ tipo: 'text', cuerpo: DECLINA, evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false }, { ...ctx, pulsados: new Set(['equipo']) })).not.toContain('declina_sin_boton');
+  });
   it('INVARIANTE 3 (global): el texto es coherente con los botones — invitar al equipo o a ver los planes sin el botón, o hablar de «los botones de abajo» sin botones, es `texto_sin_boton` (botón, texto, imagen o lista)', () => {
     expect(reglas(msg(OFERTA_EQ, btn('planes')), {})).toContain('texto_sin_boton');
     expect(reglas(msg(OFERTA_PL, btn('equipo')), {})).toContain('texto_sin_boton');

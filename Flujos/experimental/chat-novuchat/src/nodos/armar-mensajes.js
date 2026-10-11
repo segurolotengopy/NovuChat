@@ -74,7 +74,7 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
   // R5: los botones salen según lo ya hecho. Tras el traspaso, la lista de rubros (invita a otro negocio); si el cliente elige un rubro, empieza OTRO ciclo (`ciclo`).
   const ciclo = antes.equipoAhora === true && plan.ruta === 'modelo' && !!(plan.rubroElegido || (res.contexto === 'rubro' && res.rubroId));
   // Los botones los decide el CÓDIGO por turno (`chBotonesDelTurno`): «Ver planes» solo con interés y nunca tras pulsarlo; «Hablar con el equipo» solo cuando hace falta o se acabaron las preguntas, y nunca tras pulsarlo.
-  const dec = chBotonesDelTurno({ ruta: plan.ruta, fijo: plan.fijo, evento: origen === 'modelo' ? res.contexto : res.evento, ficha: antes, textos: eventos.filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => e.c), aMedida: plan.aMedida === true, causas: res.causas });
+  const dec = chBotonesDelTurno({ ruta: plan.ruta, fijo: plan.fijo, evento: origen === 'modelo' ? res.contexto : res.evento, ficha: antes, textos: eventos.filter((e) => (e.k === 'texto' || e.k === 'audio') && e.c !== '').map((e) => e.c), aMedida: plan.aMedida === true, causas: res.causas, rubro: plan.rubroElegido || res.rubroId || antes.rubro, texto: res.texto });
   const est = { botones: ['planes', 'equipo'].filter((b) => dec[b] === true), planes: antes.planesMostrados === true || plan.ruta === 'planes', lista: antes.equipoAhora === true && !ciclo };
   let complemento = false;
   let anexo = '';
@@ -103,7 +103,7 @@ if (plan.ruta === 'suspendido' || plan.ruta === 'uso_extendido') {
     // R4: en la PRIMERA respuesta del cliente a la explicación, sea cual sea el contexto, se agrega en el MISMO mensaje el pedido cordial del nombre y del negocio (una sola vez).
     // (lo que el cliente acaba de decir de sí mismo, ya validado por el código, cuenta: no se le vuelve a pedir)
     const conocido = Object.assign({}, antes, { nombre: antes.nombre || (res.lectura && res.lectura.nombre) || '', empresa: antes.empresa || (res.lectura && res.lectura.empresa) || '' });
-    const unido = chConAnexoDatos(cfg, conocido, res.texto, res.contexto);
+    const unido = chConAnexoDatos(cfg, conocido, dec.equipo && res.origen === 'modelo' ? chConInvitacionEquipo(cfg, res.texto) : res.texto, res.contexto);
     anexo = unido.pidio ? 'si' : '';
     // (el sitio web, solo en la empresa y cuando no hay dato: `empresa`, `sin_dato`, `no_documentado`)
     m = chClienteConSitio(unido.texto, cfg, res.evento, est, antes, ['empresa', 'sin_dato', 'no_documentado'].includes(res.evento));

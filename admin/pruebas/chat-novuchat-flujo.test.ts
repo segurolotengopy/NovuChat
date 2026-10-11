@@ -638,7 +638,7 @@ describe('el modelo es el cerebro: los tres escenarios del documento (§7)', () 
     expect(w.modelo.llamadas).toHaveLength(1);
     expect(JSON.stringify(w.modelo.llamadas[0]!.cuerpo)).toMatch(/a ver cuéntame un chiste/);
     expect(t.aMi[0]!.cuerpo).toMatch(/Soy el asistente virtual de NovuChat/);
-    expect(idsBotones(t.aMi[0]!)).toEqual([]);
+    expect(idsBotones(t.aMi[0]!)).toEqual(['equipo']); // (declina el chiste: la salida al equipo, no un callejón sin salida)
   });
 
   it('emojis sueltos («👽») llegan al modelo como «[Envió solo emojis…]»; si el modelo cae, sale el §7 «No estoy seguro de haberte entendido» con su pregunta, y no se repite: la 2.ª vez es el cierre hacia el equipo', () => {
@@ -2814,6 +2814,26 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
     const despues = j.lista('rubro:salud').aMi[0]!;
     expect(idsBotones(despues)).not.toContain('equipo');
     expect(fichaDe(w, MAMA)!['equipoTocado']).toBe(true);
+  });
+  it('sin callejón sin salida: «Sería cobros con qr» en belleza (función no documentada) con el modelo que inventa o que declina fiel → siempre «Hablar con el equipo» y su invitación, nunca «Ver planes»; con el equipo ya pulsado, ninguno', () => {
+    const FIEL = '¡Buena idea! 😊 Mi especialidad en tu rubro es mantener tu agenda llena: muestro tus servicios, reviso la disponibilidad de tus especialistas, agendo la cita y mando un recordatorio un día antes.' + Q;
+    const INVENTA = 'Para belleza tu asistente puede enviar el código QR y coordinar el adelanto o pago total de cada cita, así tus clientas agendan sin esperar. ¿Te gustaría ver nuestros planes? 🤝';
+    for (const [nombre, modelo] of [['fiel', FIEL], ['inventa', INVENTA], ['caído', 'ERROR'], ['neutro', CAL]] as [string, string][]) {
+      const { w, j } = tras();
+      w.modelo.con = dice(CAL);
+      j.texto('¿Se conecta a mi calendario?'); // (esta primera respuesta lleva el pedido del nombre: la siguiente es «datos»)
+      w.modelo.con = modelo === 'ERROR' ? 'ERROR' : dice(modelo);
+      const e = j.texto('Sería cobros con qr').aMi[0]!;
+      expect(idsBotones(e), nombre).toEqual(['equipo']);
+      expect(e.cuerpo, nombre).toMatch(/hablar con alguien de nuestro equipo/);
+      expect(e.cuerpo, nombre).not.toMatch(/ver nuestros planes|adelanto|pago total|código QR/);
+    }
+    const { w, j } = tras();
+    j.boton('equipo');
+    w.modelo.con = dice(FIEL);
+    const despues = j.texto('Sería cobros con qr').aMi[0]!;
+    expect(idsBotones(despues)).toEqual([]);
+    expect(despues.cuerpo).not.toMatch(/hablar con alguien de nuestro equipo/);
   });
   it('(i) el pedido directo de una persona deriva; (k) el «Sí» a una oferta real deriva; el «Sí» a «¿te gustaría ver nuestros planes?» pide los datos y luego muestra los planes', () => {
     const a = tras();

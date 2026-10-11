@@ -2196,6 +2196,28 @@ describe('los botones los decide el código: chBotonesDelTurno, chAcomodaOferta 
     expect(modelo('general', ['x']).ordinaria).toBe(true);
     expect(modelo('rubro', ['x']).ordinaria).toBe(false);
   });
+  it('sin callejón sin salida: el cliente propone una función NO documentada para su rubro, o el modelo declina → «Hablar con el equipo» (nunca «Ver planes»); con el equipo ya pulsado, no', () => {
+    for (const evento of ['datos', 'general', 'rubro', 'ambiguo', 'multiple', 'fuera', 'empresa']) {
+      const r = modelo(evento, ['Sería cobros con qr'], fi({ rubro: 'belleza' }), { rubro: 'belleza', texto: 'Mi especialidad en tu rubro es mantener tu agenda llena.' });
+      expect([r.planes, r.equipo], evento).toEqual([false, true]);
+    }
+    // la función no documentada solo cuenta fuera de gastronomía, retail y «otro»
+    expect(modelo('datos', ['quiero cobrar por QR'], fi({ rubro: 'gastronomia' }), { rubro: 'gastronomia', texto: 'Perfecto, gracias.' }).equipo).toBe(false);
+    for (const x of ['¿puedo pedir un adelanto?', 'quiero cobrar un anticipo', 'aceptan pago total', 'cobros por QR', 'con seña']) expect(modelo('datos', [x], fi({ rubro: 'salud' }), { rubro: 'salud', texto: 'ok' }).equipo, x).toBe(true);
+    for (const t of ['Eso no lo tengo documentado para tu rubro.', 'Mi especialidad es otra cosa.', 'No puedo prometer eso.', 'Prefiero no prometértelo.', 'No tengo ese dato a la mano.']) expect(modelo('general', ['x'], fi(), { texto: t }).equipo, t).toBe(true);
+    expect(modelo('general', ['x'], fi(), { texto: 'Claro, te cuento cómo funciona.' }).equipo).toBe(false);
+    expect(modelo('datos', ['Sería cobros con qr'], fi({ equipoTocado: true }), { rubro: 'belleza', texto: 'Mi especialidad es otra.' }).equipo).toBe(false);
+    expect(modelo('cortesia', ['Sería cobros con qr'], fi(), { rubro: 'belleza', texto: 'Mi especialidad es otra.' }).equipo).toBe(false);
+    expect(modelo('identidad', ['x'], fi(), { texto: 'No puedo prometer eso.' }).equipo).toBe(false);
+  });
+  it('chConInvitacionEquipo: agrega la invitación del dato cuando el texto no invita al equipo; no la repite; no pasa del máximo', () => {
+    const c = f('chConInvitacionEquipo');
+    const T = 'Mi especialidad en tu rubro es mantener tu agenda llena y recordar las citas.';
+    expect(c(CFG, T)).toBe(T + '\n\n' + NOVUCHAT['cierres'].equipo);
+    const ya = T + ' ¿Te gustaría hablar con alguien de nuestro equipo? 🤝';
+    expect(c(CFG, ya)).toBe(ya);
+    expect(c(CFG, 'x'.repeat(1000))).toBe('x'.repeat(1000));
+  });
   it('«Hablar con el equipo» pulsado no vuelve nunca; «Ver planes» pulsado o con los planes vistos, tampoco', () => {
     const t = fi({ equipoTocado: true });
     for (const r of [fija('planes', '', t), fija('fijo', 'integracion', t), modelo('sin_dato', ['x'], t), modelo('general', ['ya no tengo más dudas'], t)]) expect(r.equipo).toBe(false);

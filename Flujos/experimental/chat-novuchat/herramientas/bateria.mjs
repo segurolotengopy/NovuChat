@@ -719,6 +719,8 @@ export function revisarMensaje(m, ctx = {}) {
       // (2) Nada se ofrece antes de tiempo: «Ver planes» tras elegir rubro o con interés; el equipo cuando hace falta o se acabaron las preguntas.
       if (ids.includes('planes') && !(ctx.eligioRubro === true || ctx.interes === true)) anota('boton_antes_de_tiempo', '«Ver planes» sin rubro elegido ni interés del cliente');
       if (ids.includes('equipo') && ctx.equipoPermitido !== true) anota('boton_antes_de_tiempo', '«Hablar con el equipo» sin que haga falta ni se acabaran las preguntas');
+      // (4) Ningún mensaje que declina o no puede resolver queda sin la salida al equipo (salvo que ya lo haya pulsado): sin callejón sin salida.
+      if (ctx.declina === true && !ids.includes('equipo') && !ctx.pulsados.has('equipo')) anota('declina_sin_boton', 'declina o no puede resolver y no ofrece al equipo: ' + c.slice(-90));
     }
   }
   // Lo que escribió el MODELO: contenido (no una muletilla ni una línea) y cierre con una pregunta o la invitación a elegir.
@@ -903,7 +905,10 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     const requeridoPorMensaje = ['planes'].includes(ctx.plan) || (ctx.plan === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(String(resumen.fijo ?? ''))) || ['sin_dato', 'no_documentado', 'equipo', 'complemento', 'generico', 'ambiguo', 'otro', 'otroRespuesta'].includes(String(resumen.evento ?? ''));
     const ordinaria = ctx.plan === 'modelo' && !['rubro', 'multiple', 'pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte', 'otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'generico', 'ambiguo'].includes(String(resumen.evento ?? ''));
     const acabaron = ordinaria && (textosDelTurno.some((x) => /\b(no tengo mas (dudas|preguntas)|ninguna duda|eso es todo|nada mas|ya entendi|queda claro|quiero empezar|como contrato|como se contrata|como empiezo|como empezamos|listo para empezar|donde firmo)\b/.test(x)) || (String(ficha.explicado) === 'true' && corrida.respondidasPrev >= 2) || ['otro', 'captacion'].includes(String(ficha.rubro ?? '')) || textosDelTurno.some((x) => /(^| )(a medida|personaliz\w*|integra\w*|erp|sistema propio|mi sistema|sistemas)( |$)/.test(x)) || (resumen.causas ?? []).includes('funcion_inventada'));
-    ctx.equipoPermitido = requeridoPorMensaje || acabaron;
+    // Una consulta que el chat no puede resolver es REQUERIDA: el cliente propone una función no documentada para su rubro (cobros, QR, adelanto, seña, pago total fuera de gastronomía, retail y «otro»).
+    const funcionNoDocumentada = !['', 'gastronomia', 'retail', 'otro'].includes(String(ficha.rubro ?? '')) && textosDelTurno.some((x) => /\b(adelantos?|anticipos?|senias?|senas?|pagos? total(es)?|pagos? por adelantado|cobros?)\b|\bqr\b/.test(x));
+    ctx.declina = alCliente.some((m) => !m.esRespaldo && /(no lo tengo documentado|no esta documentad\w*|mi especialidad|no tengo (ese|esa|el|la) (dato|informacion)|no puedo (prometer|confirmar|asegurar)\w*|prefiero no (prometer|darte|afirmar)\w*)/.test(sinTildes(m.cuerpo)));
+    ctx.equipoPermitido = requeridoPorMensaje || acabaron || funcionNoDocumentada || ctx.declina;
     if (alCliente.length) { corrida.inv.texto += 1; if (corrida.pulsados.size) corrida.inv.pulsado += 1; if (alCliente.some((m) => tipoInter(m.payload) === 'button')) corrida.inv.antes += 1; }
     for (const m of alCliente) {
       for (const x of revisarMensaje(m, ctx)) falla(i + 1, dicho, x.regla, x.texto);

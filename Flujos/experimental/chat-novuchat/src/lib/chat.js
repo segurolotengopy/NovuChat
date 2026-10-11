@@ -839,14 +839,11 @@ function chAfirma(t) {
   const crudo = chTexto(t).trim();
   if (/^(?:[\s\uFE0F]|[👍👌🙌👏🤝\u{1F3FB}-\u{1F3FF}])+$/u.test(crudo)) return true;
   const n = chNorm(crudo).replace(/(.)\1{2,}/g, '$1$1');
-  const p = n.split(' ');
-  return n !== '' && !/[?¿]/.test(crudo) && (!/\b(?:gracias|chau|chao|adios)\b/.test(n) || /\b(?:si|sii|sip|claro|dale|porfa|por favor|quiero|gustaria|interesa)\b/.test(n)) && p.length <= 7 && p.every((w) => CH_AFIRMA_PALABRAS.has(w)) && CH_AFIRMA_NUCLEO.test(n);
+  return n !== '' && !/[?¿]/.test(crudo) && (!/\b(?:gracias|chau|chao|adios)\b/.test(n) || /\b(?:si|sii|sip|claro|dale|porfa|por favor|quiero|gustaria|interesa)\b/.test(n)) && n.split(' ').length <= 7 && n.split(' ').every((w) => CH_AFIRMA_PALABRAS.has(w)) && CH_AFIRMA_NUCLEO.test(n);
 }
-// Pedir hablar con alguien, aunque venga dentro de un mensaje más largo o mientras el pedido de nombre o planes esté pendiente.
 const CH_PIDE_EQUIPO_DIRECTO = /\b(?:quiero|quisiera|me gustaria|necesito|prefiero|puedo|podria|podrian|puedes|podrias|deseo)\b[^.!?]{0,25}\b(?:hablar|conversar|comunicarme|contactarme|comunicar|contactar)\w*\s+con\b[^.!?]{0,20}\b(?:alguien(?! de (?:mi|mis|nuestro))|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|(?:el area de )?ventas|recepcion)\b|\b(?:comunicame|comunicanos|pasame|pasenme|pasanos|conectame|conectenme|ponme|pongame)\b[^.!?]{0,15}\bcon\b[^.!?]{0,15}\b(?:alguien|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|(?:el area de )?ventas)\b|\b(?:mandame|mandenme|enviame|envienme|mandanos)\b[^.!?]{0,6}\b(?:un|una) (?:asesor|asesora|ejecutivo|ejecutiva|vendedor|especialista|persona)\b|^(?:contacto|hablar con ventas)$/;
 // El pedido DIRECTO solo cuenta si no lo niega («no quiero hablar con un asesor»), no habla de terceros («mis clientes podrían hablar con una persona») ni de otra gente («alguien de confianza», «el equipo de mi tienda»).
 function chPideEquipoDirecto(t) {
-  // (por cláusula, sobre el texto crudo: «No, quiero hablar con alguien» y «mis clientes se quejan, quiero hablar con un asesor» piden; «no quiero hablar con un asesor, solo dime el precio» no)
   return chTexto(t).split(/[.,;:!?¡¿\n]+/).some((c) => {
     const n = chNorm(c);
     const m = CH_PIDE_EQUIPO_DIRECTO.exec(n);
@@ -1499,8 +1496,7 @@ function chBotones() { return [CH_BOTON_PLANES, CH_BOTON_EQUIPO]; }
 const CH_RESPALDO_BOTONES = 'Escribe «planes» para ver los planes o «equipo» para hablar con alguien de nuestro equipo.';
 const CH_RESPALDO_UN_BOTON = 'Escribe «equipo» para hablar con alguien de nuestro equipo.';
 const CH_RESPALDO_PLANES = 'Escribe «planes» para ver los planes.';
-// Los botones los decide el CÓDIGO en cada turno (`chBotonesDelTurno` → `est.botones`): «Ver planes» solo cuando hay interés y nunca una vez pulsado o con los planes ya vistos; «Hablar con el equipo» solo cuando
-// hace falta (no hay respuesta, pidió contacto, error) o se acabaron las preguntas, y nunca una vez pulsado. Sin `est.botones` (los mensajes fijos de recepción): los de siempre.
+// Los botones los decide el CÓDIGO en cada turno (`chBotonesDelTurno` → `est.botones`): «Ver planes» con interés y nunca pulsado; «Hablar con el equipo» cuando hace falta o se acabaron las preguntas y nunca pulsado. Sin `est.botones`: los de siempre.
 function chBotonesDe(est) {
   if (est && Array.isArray(est.botones)) return [CH_BOTON_PLANES, CH_BOTON_EQUIPO].filter((b) => est.botones.includes(b.id));
   return est && est.planes === true ? [CH_BOTON_EQUIPO] : chBotones();
@@ -1526,11 +1522,17 @@ function chBotonesDelTurno(o) {
       r.equipo = CH_FIN_PREGUNTAS.test(t) || o.aMedida === true || (o.causas || []).includes('funcion_inventada') || (f.explicado === true && f.respondidas >= 2);
     }
   }
+  // Una consulta que el chat no puede resolver —el cliente propone una función no documentada para su rubro, o el modelo declina— es REQUERIDA: lleva al equipo, nunca un callejón sin salida.
+  const rub = chTexto(o.rubro || f.rubro);
+  if (o.ruta === 'modelo' && !['identidad', 'cortesia'].includes(ev) && ((rub !== '' && !CH_RUBROS_CON_COBRO.includes(rub) && CH_FUNCION_CLIENTE.test(t)) || CH_DECLINA.test(chNorm(chTexto(o.texto))))) { r.equipo = true; r.planes = false; }
   if (f.equipoTocado === true) r.equipo = false;
   return r;
 }
-// Texto y botones coherentes: lo que el mensaje ofrece es lo que lleva. «¿Quieres ver nuestros planes o prefieres hablar con alguien de nuestro equipo?» se queda con la mitad que tiene botón o se quita;
-// una oración que ofrece lo que no hay, o que habla de «los botones», se quita. (Lo escribe el modelo o el dato: el prompt no es una barrera.)
+const CH_FUNCION_CLIENTE = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado|cobros?)\b|\bqr\b/;
+const CH_DECLINA = /\b(?:no lo tengo documentado|no esta documentad\w*|mi especialidad|no tengo (?:ese|esa|el|la) (?:dato|informacion)|no puedo (?:prometer|confirmar|asegurar)\w*|prefiero no (?:prometer|darte|afirmar)\w*)\b/;
+// Si el mensaje lleva «Hablar con el equipo» pero el texto no lo invita, se le agrega la invitación del dato (si cabe).
+function chConInvitacionEquipo(cfg, texto) { const c = chTexto(chDatos(cfg).cierres.equipo); return CH_OFRECE_EQ_FRASE.test(texto) || !c || (texto + '\n\n' + c).length > CH_MAX_MENSAJE ? texto : texto + '\n\n' + c; }
+// Texto y botones coherentes: lo que el mensaje ofrece es lo que lleva (la oferta doble se queda con su mitad con botón o se quita; la oración que ofrece lo que no hay o habla de «los botones» se quita).
 const CH_OFRECE_EQ_FRASE = /hablar con (?:alguien|una persona|(?:alguien de )?(?:nuestro |el )?equipo)|un asesor/i;
 const CH_OFRECE_PL_FRASE = /(?:ver|muestro|conocer) (?:los |nuestros )?planes/i;
 function chAcomodaOferta(texto, ids) {
