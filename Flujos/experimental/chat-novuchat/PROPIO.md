@@ -30,7 +30,7 @@ Regla (Andres, 09/10/2026): **flujo propio = composición propia + núcleo comú
 
 Cerebro conversacional: instrucciones y datos del documento comercial (`admin/scripts/datos/chat-novuchat/novuchat.json`), historial y ficha por teléfono, coalescencia de clics (Registrar evento,
 Esperar ráfaga, Armar turno), contexto y validación del mensaje del modelo (con su reintento y respaldos), rutas deterministas (planes, equipo, consumo, tope, banco, integración, costos de Meta,
-descuento, lista), «Confirmar envío» (restaura la ficha si Meta rechaza), hoja y calificación por hechos, y el modelo como parámetro de los datos.
+descuento, lista —también la lista con el pitch fijo en el primer «Quiero más información» del anuncio— y el «sí» a la oferta del equipo), «Confirmar envío» (restaura la ficha si Meta rechaza), hoja y calificación por hechos, y el modelo como parámetro de los datos.
 
 Propio también: el sitio web (`sitioWeb`) que anexa el código en las rutas específicas (empresa, sin dato, no documentado, complemento de planes, integraciones y costos de Meta), a lo más 2 veces por ventana y por teléfono; no agrega mensajes.
 
