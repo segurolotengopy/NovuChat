@@ -25,7 +25,7 @@
 | Número (chip), titular y operadora | |
 | Comprobación `wa.me` (fecha y resultado) | |
 | Próxima recarga del chip | |
-| Portafolio | |
+| Portafolio (regla del 11/10/2026: el mismo donde están su página de Facebook y su cuenta publicitaria; ver `RUNBOOK.md`, etapa 2) | |
 | App (≤ 1 guion) | |
 | App ID (últimos 4) | |
 | WABA ID (últimos 4) — distinto de los demás entornos | |
