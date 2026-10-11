@@ -49,9 +49,10 @@ let cuerpoModelo = null;
 if (plan.llamarModelo === true) {
   cuerpoModelo = ccCuerpoModelo({
     paso: plan.paso0,
+    modo: plan.modo,
     cfg: cfg,
     mensaje: plan.texto,
-    preguntaHecha: ccPreguntaHecha(plan.e, cfg),
+    preguntaHecha: plan.modo === 'explicar' ? '' : ccPreguntaHecha(plan.e, cfg),
     textoDeImagen: plan.textoDeImagen,
     rubro: ccNombreDelRubro(plan.e, cfg),
     ahoraMs: ahoraMs,

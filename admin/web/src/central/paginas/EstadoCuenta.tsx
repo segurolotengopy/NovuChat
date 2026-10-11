@@ -11,6 +11,8 @@ import { consumidasDe, corteDe, estadoDeServicio } from '../lib/prepago';
 import { ResumenPrepago } from '../componentes/ResumenPrepago';
 import { EjesDeLaCuenta } from '../componentes/EjesDeLaCuenta';
 import { useEjesDeCuenta, useTipoCambio } from '../lib/lecturas';
+import { useConsolaOculta } from '../componentes/ConsolaOculta';
+import { esVisible } from '../../../../functions/src/central/consola-oculta';
 
 interface Cuenta {
   plan?: unknown;
@@ -42,6 +44,8 @@ interface Cuenta {
  */
 export function EstadoCuenta() {
   const { tenantId = '' } = useParams();
+  // El botón «Pagar» sigue a la pestaña: si NovuChat la ocultó, el botón tampoco sale.
+  const ocultos = useConsolaOculta(tenantId);
   const [cuenta, setCuenta] = useState<Cuenta | null>(null);
   const [consumidas, setConsumidas] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -107,11 +111,13 @@ export function EstadoCuenta() {
       {servicio.modalidad !== 'demostracion' && (
         <>
           <ResumenPrepago servicio={servicio} corte={corte} />
-          <p>
-            <Link className="btn btn-primary" to={`/negocio/${encodeURIComponent(tenantId)}/pagar`}>
-              Pagar
-            </Link>
-          </p>
+          {esVisible(ocultos, 'pagar') && (
+            <p>
+              <Link className="btn btn-primary" to={`/negocio/${encodeURIComponent(tenantId)}/pagar`}>
+                Pagar
+              </Link>
+            </p>
+          )}
         </>
       )}
 

@@ -35,20 +35,32 @@ const sinComentarios = (fuente: string) => fuente
 
 const pantalla = sinComentarios(leer('web/src/central/paginas/Configuracion.tsx'));
 
-/** El objeto que la pantalla manda en `updateDoc(... 'config', 'negocio' ...)`. */
+// El documento que la pantalla guarda se arma en `payloadNegocio` (la prueba del guardado completo usa la misma función).
+const payload = sinComentarios(leer('web/src/central/lib/payloadNegocio.ts'));
+
+/**
+ * Lo que la pantalla manda en `updateDoc(... 'config', 'negocio' ...)`: la llamada en la pantalla (sus argumentos)
+ * MÁS el cuerpo de `payloadNegocio`, que arma el objeto. Las dos mitades se vigilan juntas.
+ */
 function loQueGuarda(): string {
   const desde = pantalla.indexOf("updateDoc(doc(db, 'tenants', tenantId, 'config', 'negocio')");
   if (desde < 0) throw new Error('la pantalla ya no guarda con updateDoc sobre config/negocio');
-  const hasta = pantalla.indexOf('});', desde);
-  return pantalla.slice(desde, hasta);
+  const hasta = pantalla.indexOf('}));', desde);
+  const llamada = pantalla.slice(desde, hasta);
+  // La pantalla arma el documento SOLO con `payloadNegocio`, no con un objeto propio.
+  if (!llamada.includes('payloadNegocio({')) throw new Error('la pantalla ya no guarda con payloadNegocio');
+  const cuerpo = payload.indexOf('export function payloadNegocio');
+  if (cuerpo < 0) throw new Error('payloadNegocio.ts ya no exporta payloadNegocio');
+  return llamada + payload.slice(cuerpo, payload.indexOf('export function datosDeNegocio'));
 }
 
-/** El objeto con el que la pantalla arma `datos` al leer el documento. */
+/** El objeto con el que la pantalla arma `datos` al leer el documento (`datosDeNegocio`, en `payloadNegocio.ts`). */
 function loQueEntraEnDatos(): string {
-  const desde = pantalla.indexOf('setDatos({\n');
-  if (desde < 0) throw new Error('no se encontró el setDatos inicial');
-  const hasta = pantalla.indexOf('});', desde);
-  return pantalla.slice(desde, hasta);
+  if (!pantalla.includes('setDatos(datosDeNegocio(v))')) throw new Error('la pantalla ya no arma `datos` con datosDeNegocio');
+  const desde = payload.indexOf('export function datosDeNegocio');
+  if (desde < 0) throw new Error('payloadNegocio.ts ya no exporta datosDeNegocio');
+  const hasta = payload.indexOf('};', desde);
+  return payload.slice(desde, hasta);
 }
 
 describe('Comportamiento del asistente en la consola', () => {

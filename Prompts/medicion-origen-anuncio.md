@@ -126,7 +126,7 @@ pruebas que lo cubren, y que no se publica ni se despliega nada.
 1. Desplegar Functions (etiqueta `vX.Y.Z`, que **crea Andres** con
    `scripts/etiquetar-version.sh`).
 2. Publicar los cinco flujos con `publicar-flujo.sh`, **a todos o a ninguno**, y
-   dentro de la **ventana de mantenimiento de 2 a 3** (regla del 24/09).
+   dentro de la **ventana de mantenimiento de 23:30 a 01:30 (hora de Bolivia)** (regla del 24/09).
 3. **Probar contra un teléfono real**, idealmente uno que entre desde un anuncio
    de clic a WhatsApp, y reportar el resultado **real**.
 

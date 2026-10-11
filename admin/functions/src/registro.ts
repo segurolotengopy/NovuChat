@@ -81,6 +81,12 @@ export interface Pestana {
   readonly orden: number;
   /** La ve además el propietario de NovuChat (la instala y le da soporte). */
   readonly tambienPropietario?: true;
+  /**
+   * Roles que se SUMAN a `roles` solo cuando el negocio tiene también ese módulo (`pestanasDe` lo resuelve).
+   * «Cobros» la ve el operador solo si el negocio tiene Pedidos (Andres, 09/10/2026): el operador de un negocio
+   * de reservas no la ve. Es presentación; el límite lo ponen las reglas y la callable `verComprobante`.
+   */
+  readonly rolesConModulo?: { readonly modulo: IdModulo; readonly roles: readonly Rol[] };
 }
 
 export interface DocumentoDeConfig {
@@ -196,17 +202,17 @@ export const REGISTRO = [
     ],
     camposEnNegocio: [],
     colecciones: [],
-    coleccionesRaiz: [],
+    coleccionesRaiz: ['topesDelVisor'],  // contador por uid del visor de comprobantes (solo el servidor)
     // Las imágenes de comprobantes de venta (regla 2); las reglas niegan todo acceso.
     almacenamiento: ['comprobantes'],
     limites: [],
     pestanas: [
-      { ruta: 'cobros', titulo: 'Cobros', roles: ['admin'], orden: 30 },
+      { ruta: 'cobros', titulo: 'Cobros', roles: ['admin'], rolesConModulo: { modulo: 'pedidos', roles: ['oper'] }, orden: 30 },
       { ruta: 'cobro', titulo: 'Configuración de QR', roles: ['admin'], orden: 50 },
     ],
     tablero: [],
     herramientas: [],
-    functions: ['registrarQrDeCobro', 'imagenDeCobro', 'cotejarComprobanteVenta', 'guardarComprobante', 'purgarComprobantes'],
+    functions: ['registrarQrDeCobro', 'imagenDeCobro', 'cotejarComprobanteVenta', 'guardarComprobante', 'purgarComprobantes', 'verComprobante'],
     flujosProgramados: [],
     // Corregido respecto del diseño (que decía solo `despuesDelTurno`):
     // `configuracionFlujo` arma el cobro con `cobroParaElFlujo` (antes del
@@ -552,7 +558,10 @@ export const tieneModulo = (ficha: FichaConCapacidades | null | undefined, m: Id
 export function pestanasDe(modulos: readonly IdModulo[]): Pestana[] {
   return modulos
     .filter((m) => !(MODULOS_COMUNES_HOY as readonly string[]).includes(m))
-    .flatMap((m) => manifiestoDe(m).pestanas.map((p) => ({ ...p, roles: [...p.roles] })))
+    .flatMap((m) => manifiestoDe(m).pestanas.map(({ rolesConModulo, ...p }) => ({
+      ...p,
+      roles: [...p.roles, ...(rolesConModulo !== undefined && modulos.includes(rolesConModulo.modulo) ? rolesConModulo.roles : [])],
+    })))
     .sort((a, b) => a.orden - b.orden);
 }
 

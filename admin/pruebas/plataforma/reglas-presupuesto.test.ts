@@ -45,14 +45,22 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { documentoAlmacenado, payloadDeLaConsola, type Calendario, type Forma } from './guardado-configuracion-lib.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const AHORA = readFileSync(join(aqui, '..', '..', 'firestore.rules'), 'utf8');
 const ANTES = readFileSync(join(aqui, 'firestore-base-previa-h2b6.rules.txt'), 'utf8');
+/** Las reglas de main justo antes del recorte de `configNegocioValida` (fixture congelada; se retira con el recorte en producción). */
+const PREVIA_RECORTE = readFileSync(join(aqui, 'firestore-base-previa-config-negocio.rules.txt'), 'utf8');
 const PUERTO = Number(process.env['FIRESTORE_EMULATOR_PORT'] ?? 8231);
 const KMAX = 480;
 /** Expresiones que una operación con holgura en main tiene que conservar en el PR. */
 const HOLGURA = 25;
+/**
+ * Lo que tiene que sobrar en el documento COMPLETO que guarda la consola (7 días, catálogo web, ubicación, todo en su
+ * tope): 15 términos de lastre, unas 45 expresiones. Es la exigencia del recorte de `configNegocioValida`.
+ */
+const HOLGURA_DOCUMENTO_COMPLETO = 15;
 
 /** Lastre de `k` expresiones triviales colgado de `tenantOperativo`. */
 const conLastre = (reglas: string, k: number): string => {
@@ -93,6 +101,8 @@ const FICHAS: Record<string, Record<string, unknown>> = {
   agenda: { ...comun, nombre: 'A', flujos: ['agendamiento'], vertical: 'agendamiento' },
   doble: { ...comun, nombre: 'D', flujos: ['agendamiento', 'venta'], vertical: 'agendamiento' },
   novuchat: { ...comun, nombre: 'N', flujos: ['onboarding'], vertical: 'onboarding' },
+  // Una ficha escrita antes de que existiera `flujos`: solo `vertical`.
+  qtacoViejo: { ...comun, nombre: 'Q', vertical: 'venta' },
 };
 
 const DIAS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'];
@@ -154,6 +164,37 @@ pruebas.push({
   seed: (db) => setDoc(doc(db, P('config/negocio')), guardado(7)),
   correr: (fs) => updateDoc(doc(fs, P('config/negocio')), { ...negocio(7), ...sello(UA) }),
 });
+
+// EL GUARDADO COMPLETO DE LA CONSOLA (documento lleno, con lo que ya estaba guardado más lo que manda «Guardar»).
+// Los datos y el payload son los de `guardado-configuracion-lib.ts`: el payload sale de las mismas funciones que la pantalla.
+type Catalogo = 'apagado' | 'enciende' | 'ya';
+const nombreCatalogo: Record<Catalogo, string> = { apagado: 'catálogo web apagado (sin cambios)', enciende: 'ENCIENDE catálogo web', ya: 'catálogo web ya encendido' };
+const guardadoCompleto = (forma: Forma, dias: number, catalogo: Catalogo, ubicacion: boolean,
+  extra: { calendario?: Calendario; ficha?: string } = {}): Prueba => {
+  const almacenado = documentoAlmacenado(forma, {
+    dias, ubicacion, ...(extra.calendario ? { calendario: extra.calendario } : {}), catalogoWebGuardado: catalogo === 'ya',
+  });
+  return {
+    id: `guardado completo ${forma}, ${dias} días, ${nombreCatalogo[catalogo]}, ${ubicacion ? 'con' : 'sin'} ubicación`
+      + `${extra.calendario ? `, calendario ${extra.calendario}` : ''}${extra.ficha ? `, ficha ${extra.ficha}` : ''}`,
+    ficha: extra.ficha ?? 'qtaco',
+    seed: (db) => setDoc(doc(db, P('config/negocio')), almacenado),
+    correr: (fs) => updateDoc(doc(fs, P('config/negocio')), payloadDeLaConsola(almacenado, UA, catalogo !== 'apagado')),
+  };
+};
+const completos: Prueba[] = [];
+for (const forma of ['sembrado', 'tope'] as const) {
+  for (const dias of [6, 7]) {
+    for (const catalogo of ['apagado', 'enciende', 'ya'] as const) {
+      for (const ubicacion of [true, false]) completos.push(guardadoCompleto(forma, dias, catalogo, ubicacion));
+    }
+  }
+}
+for (const calendario of ['vacio', 'correo'] as const) completos.push(guardadoCompleto('tope', 7, 'enciende', true, { calendario }));
+completos.push(guardadoCompleto('tope', 7, 'enciende', true, { ficha: 'qtacoViejo' }));
+completos.push(guardadoCompleto('sembrado', 7, 'enciende', true, { ficha: 'qtacoViejo' }));
+/** El peor documento: 7 días, todo en su tope, catálogo web que se enciende, con ubicación. */
+const PEOR = guardadoCompleto('tope', 7, 'enciende', true);
 
 // Documentos de flujo.
 pruebas.push({ id: 'config/venta (update)', ficha: 'qtaco',
@@ -294,10 +335,10 @@ const violacion = async (p: Prueba, ahora: string): Promise<string | null> => {
   return (await pasa(p, ahora, mAntes)) ? null : `${p.id}: main tiene margen ${mAntes} y el PR menos`;
 };
 
-const filtrar = (): Prueba[] => {
+const filtrar = (lista: Prueba[] = pruebas): Prueba[] => {
   // PRESUPUESTO_FILTRO: expresión regular para medir solo algunas operaciones al iterar sobre las reglas.
   const filtro = process.env['PRESUPUESTO_FILTRO'] ? new RegExp(process.env['PRESUPUESTO_FILTRO']) : null;
-  return pruebas.filter((x) => !filtro || filtro.test(x.id));
+  return lista.filter((x) => !filtro || filtro.test(x.id));
 };
 
 describe('reglas: presupuesto de expresiones contra las reglas de origin/main', () => {
@@ -312,16 +353,39 @@ describe('reglas: presupuesto de expresiones contra las reglas de origin/main', 
     expect(peores, 'operaciones que violan el criterio de presupuesto').toEqual([]);
   }, 1_800_000);
 
-  it('control: una exigencia de más dentro de config/negocio SÍ la detecta el criterio', async () => {
+  it('control: una exigencia cara dentro de config/negocio SÍ la detecta el criterio', async () => {
     const trozo = "|| tieneFlujo(tenantId, 'venta'))";
     expect(AHORA.split(trozo).length - 1, 'el trozo a mutar está una vez').toBe(1);
-    const encarecida = AHORA.replace(trozo, `${trozo}\n            && tieneModuloComun(tenantId, 'productos')`);
+    // Desde el recorte de `configNegocioValida` el documento sobra ~25 términos más de lo que sobraba: una sola exigencia
+    // de módulo común ya no alcanza a bajarlo del criterio de estas filas, así que la mutación son diez (cada una lee la
+    // ficha y compara una lista). Lo que se prueba es que el criterio SABE detectar un encarecimiento, no cuánto.
+    const caras = Array.from({ length: 10 }, () => "&& tieneModuloComun(tenantId, 'productos')").join('\n            ');
+    const encarecida = AHORA.replace(trozo, `${trozo}\n            ${caras}`);
     const peores: string[] = [];
     for (const p of pruebas.filter((x) => /config\/negocio completo, [456] días, ENCIENDE/.test(x.id))) {
       const v = await violacion(p, encarecida);
       if (v) peores.push(v);
     }
     expect(peores.length, 'la regla encarecida pasó el criterio: la prueba no mide').toBeGreaterThan(0);
+  }, 600_000);
+
+  it('el guardado COMPLETO de la consola (7 días, catálogo web, ubicación, todo en su tope) sobra al menos HOLGURA_DOCUMENTO_COMPLETO términos de lastre; antes del recorte ni cabía', async () => {
+    const sinHolgura: string[] = [];
+    for (const p of filtrar(completos)) {
+      if (!(await pasa(p, AHORA, HOLGURA_DOCUMENTO_COMPLETO))) sinHolgura.push(p.id);
+    }
+    expect(sinHolgura, `guardados completos con menos de ${HOLGURA_DOCUMENTO_COMPLETO} términos de lastre de margen`).toEqual([]);
+    // La fila del encargo: con las reglas de main antes del recorte, el peor documento no pasa ni sin lastre (margen −1).
+    expect(await pasa(PEOR, PREVIA_RECORTE, 0), 'el peor documento con las reglas anteriores').toBe(false);
+  }, 600_000);
+
+  it('control: una exigencia cara dentro de config/negocio SÍ la detecta el criterio del documento completo', async () => {
+    const trozo = "|| tieneFlujo(tenantId, 'venta'))";
+    expect(AHORA.split(trozo).length - 1, 'el trozo a mutar está una vez').toBe(1);
+    // Diez exigencias de módulo común: cada una lee la ficha y compara una lista.
+    const caras = Array.from({ length: 10 }, () => "&& tieneModuloComun(tenantId, 'productos')").join('\n            ');
+    const encarecida = AHORA.replace(trozo, `${trozo}\n            ${caras}`);
+    expect(await pasa(PEOR, encarecida, HOLGURA_DOCUMENTO_COMPLETO), 'la regla encarecida pasó el criterio: la prueba no mide').toBe(false);
   }, 600_000);
 
   // Tabla completa de márgenes (lenta: ~800 reinicios del emulador). Solo con PRESUPUESTO_TABLA=1.
@@ -331,6 +395,12 @@ describe('reglas: presupuesto de expresiones contra las reglas de origin/main', 
       const mAntes = await margenHasta(p, ANTES, KMAX);
       const mAhora = await margenHasta(p, AHORA, KMAX);
       filas.push(`${p.id} | margen main ${mAntes} | margen PR ${mAhora} | gasto PR − gasto main = ${mAntes - mAhora}`);
+    }
+    // El guardado completo de la consola: «main» es la base congelada de antes del recorte.
+    for (const p of filtrar(completos)) {
+      const mAntes = await margenHasta(p, PREVIA_RECORTE, KMAX);
+      const mAhora = await margenHasta(p, AHORA, KMAX);
+      filas.push(`${p.id} | margen main antes del recorte ${mAntes} | margen PR ${mAhora} | ganancia = ${mAhora - mAntes}`);
     }
     console.log(`PRESUPUESTO (margen = K máximo de términos de lastre que la operación aguanta; más margen = más barato)\n${filas.join('\n')}`);
   }, 1_800_000);

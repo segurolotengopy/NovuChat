@@ -17,7 +17,7 @@
 | 1 | Ficha y cumplimiento | `ficha.md` | `docs/alta-cliente/plantilla-ficha.md` |
 | 2 | Análisis de solicitudes | `pedidos.md`, `solicitudes/<n>.md` | §12.4, con el agente `analista-de-solicitudes` (solo lectura) |
 | 3 | **Alta técnica** | entorno del cliente completo, `verificar-meta.sh` en verde | **`docs/alta-cliente/RUNBOOK.md`**, con el flujo guardado `/alta-cliente` y los agentes `alta-cliente`, `meta-whatsapp`, `plataforma`, `flujos-n8n` |
-| 4 | Adecuación | solo por módulos con bandera; ensayo obligatorio | §12.5; `docs/ensayo/LEEME.md`; congelamiento del §12.10 mientras F2 y F3 estén en obra |
+| 4 | Adecuación | por módulos con bandera o por piezas propias del flujo del cliente (`Flujos/clientes/<tenant>/`, con `PROPIO.md`) sobre el núcleo común incluido, nunca copiado; ensayo obligatorio | §12.5; `docs/ensayo/LEEME.md`; congelamiento del §12.10 mientras F2 y F3 estén en obra |
 | 5 | Aceptación | `aceptacion.md` sin celdas vacías | filas de los módulos encendidos más las particularidades, con identificador de ejecución por fila |
 | 6 | **Pase a producción** | `pase-a-produccion.md`, `anexo-particular.md` | **`docs/pase-a-produccion/RUNBOOK.md`**; `docs/contrato/anexo-tecnico-sla.md` |
 | 7 | Operación | `estado.md`, `pedidos.md`, `aceptacion.md` al día | §12.6 (colisiones), §12.7 (reclamos con circuito), `docs/versiones-por-cliente.md` y `scripts/estado-de-versiones.sh` |
@@ -25,9 +25,11 @@
 
 **Las tres reglas que no se negocian:** sin `cumplimiento.md` no se envía una
 propuesta; sin `pedidos.md` no se construye nada; sin `aceptacion.md` llena no
-hay pase. Y **un tenant nunca posee código** (`docs/arquitectura/tenants.md`):
-lo que un cliente necesita y no existe nace como módulo con bandera, para
-todos.
+hay pase. Y **los datos de un tenant nunca son código, y su flujo sí es
+propio** (`docs/arquitectura/tenants.md`, «El flujo de un cliente»): lo que un
+cliente necesita y no existe es una pieza propia de su flujo, declarada en
+`Flujos/clientes/<tenant>/` sobre el núcleo común obligatorio; la segunda vez
+que otro cliente la pide, pasa a módulo con bandera, para todos.
 
 ## Lo que pasó en 26 días, medido (§12.1)
 
@@ -66,7 +68,7 @@ remite al runbook de alta en la etapa 3 y al de pase en la 6.
 | 1 | **Ficha y cumplimiento** | `ficha.md` con particularidades, supuestos declarados, quién paga Meta, plan, modalidad prevista, datos de terceros que **no** se cargan | La ficha tiene datos técnicos; lo demás va a mano |
 | 2 | **Análisis de solicitudes** (§12.4) | `pedidos.md` con cada pedido clasificado, sus opciones «así se puede», esfuerzo real y decisión comercial | No existe |
 | 3 | **Alta técnica** | El runbook de alta; `verificar-meta.sh` en verde; entorno del cliente completo (`N8N_WORKFLOW_ID` incluido) | Existe y funciona |
-| 4 | **Adecuación** | Solo por módulos con bandera (§12.5); ensayo obligatorio; costo en mensajes declarado; ninguna línea de un cliente en código común | Se hizo sin etapa: 19 nodos en un JSON, bloques en el vertical |
+| 4 | **Adecuación** | Por módulos con bandera (§12.5) o por piezas propias del flujo del cliente en `Flujos/clientes/<tenant>/`, declaradas en `PROPIO.md` y sobre el núcleo común obligatorio incluido, nunca copiado; ensayo obligatorio; costo en mensajes declarado; ninguna línea de un cliente en código común | Se hizo sin etapa: 19 nodos en un JSON, bloques en el vertical |
 | 5 | **Aceptación** | `aceptacion.md` sin celdas vacías, con identificador de ejecución por fila; la suite es la unión de las filas que trae cada módulo encendido más las particularidades del cliente | Archivo vacío en los dos clientes que atienden |
 | 6 | **Pase a producción** | El runbook de pase: ejes escritos (plan, modalidad, titularidad), contrato con quién paga Meta y los cambios incluidos, acta con evidencia | Runbook del 22/09, nunca ejecutado |
 | 7 | **Operación** (§12.6, §12.7) | Reclamos con circuito; pedidos registrados y contados; correcciones por severidad; versión de módulo por tenant al día | Por chat, audio y Excel; sin registro de quién pidió qué |
@@ -192,7 +194,7 @@ en `admin/scripts/`.
 | Tipo | Ejemplos del 25/09 | Salida |
 |---|---|---|
 | **Tenant contra vertical (deriva)** | Platinum atrás de #170 y #171; Demo A sin el bloque de Platinum; Demo B atrás de #165 | Versión de módulo por tenant y excepción declarada (`docs/versiones-por-cliente.md`). Falta la comparación del JSON del cliente contra el módulo del que salió: `estado-de-versiones.sh` hoy solo compara el flujo vivo con su propio JSON. Con el JSON generado (F2, F5) la deriva desaparece por construcción |
-| **Pedido de un tenant sobre código común** | Corrector de día de semana; constante de audio; nombre de la clínica en un comentario del vertical | Prueba de ubicación: nace como módulo con bandera, encendido en quien lo pidió y apagado en los demás. Nunca texto ni nombre de un cliente en código común. Las correcciones de seguridad y de protección van a todos, sin excepción (SLA §8) |
+| **Pedido de un tenant sobre código común** | Corrector de día de semana; constante de audio; nombre de la clínica en un comentario del vertical | Prueba de ubicación: lo que pide un cliente sobre el código común no se mete ahí: es una pieza propia de su flujo (`Flujos/clientes/<tenant>/`) la primera vez, y la segunda vez que otro cliente la pide pasa a módulo con bandera, encendido en quien lo pidió y apagado en los demás. Nunca texto ni nombre de un cliente en código común. Las correcciones de seguridad y de protección van a todos, sin excepción (SLA §8) |
 | **Tenants compitiendo por un recurso** | Credencial de Calendar `invalid_client` en tres a la vez; portafolio al tope; umbrales bajados para probar que degradaron a otros teléfonos; un solo número de ensayo | Inventario de recursos compartidos (§12.9) con una decisión por recurso: por tenant, por número, o compartido con cola |
 
 ### 12.7 Reclamos y correcciones con circuito
@@ -206,7 +208,7 @@ en `admin/scripts/`.
   nadie la llama), con auditoría de quién y cuándo.
 - **Cinco pasos fijos** para cualquier reclamo de falla: ejecuciones de n8n
   leídas; causa y severidad según el SLA §5; corrección como hotfix (severidad
-  1) o en la ventana de 02:00 a 03:00; publicación **a todos** con excepciones
+  1) o en la ventana de 23:30 a 01:30; publicación **a todos** con excepciones
   declaradas; **verificación con el cliente anotada en su `aceptacion.md`**.
 - **Errores de redacción del modelo** están excluidos por el SLA §11, pero un
   patrón que se repite es un pedido de barrera por hecho, y entra al §12.4.

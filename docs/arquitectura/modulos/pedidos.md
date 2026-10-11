@@ -21,6 +21,8 @@
 | **Mensajes por conversación** | 0 |
 | **Pruebas** | `carrito-podado.test.ts`, `demo-b-catalogo.test.ts`, `entrantes-por-tipo.test.ts`; la suite del Demo B |
 
+**Ubicación compartida (05/10/2026):** si un pedido de delivery trae `ubicacion { lat, lng }` (opcional; la escribe el servidor desde el catálogo web), `Pedidos.tsx` muestra «Ubicación compartida · Abrir en Maps». El enlace se arma solo con `ubicacion.ts` (`ubicacionValida` / `enlaceAMaps`: números finitos, rango, no (0,0), 5 decimales) y se abre con `target="_blank" rel="noopener noreferrer"`; nunca se usa texto ni URL del pedido. Las reglas de `pedidos` ya permiten leer el documento entero a quien lee conversaciones, sin lista de campos: no cambian. Prueba: `admin/pruebas/modulos/pedidos/ubicacion.test.ts`. Mensajes: 0.
+
 **Observación:** hoy es parte del vertical `venta`; el checkout escribe pedidos y descuenta stock. El checkout que escribe `pedidos` sale de `catalogoWeb.ts` (que se parte) y viene acá. La pantalla Pedidos es la única de la consola que se mira con las manos ocupadas (§4nonies.1, abajo)
 
 Carpetas destino (F2): `admin/functions/src/modulos/<m>/`,

@@ -61,6 +61,16 @@ overrides:
   # compression — CVE-2026-87776, HIGH (DoS por fuga de memoria). Solo por
   # superstatic <- firebase-tools (servidor local de Hosting del CLI).
   compression: ^1.8.2
+  # @modelcontextprotocol/sdk — CVE-2026-104850, HIGH (07/10/2026): el cliente
+  # OAuth del SDK podía enviar credenciales a un servidor de autorización
+  # elegido por el servidor MCP. Corregido en 1.31.0 («Fixed Version» de
+  # Trivy). Solo lo trae firebase-tools 15 (devDependency: el CLI de despliegue
+  # y emuladores, no código de producción), que declara ^1.24.0: el salto
+  # 1.30.0 -> 1.31.0 es MENOR, dentro de su propio rango y con las mismas
+  # dependencias declaradas, así que se arregla en vez de pedir excepción. Tilde
+  # y no ^: con ^ se resolvería 1.32.1, publicada hace dos días; 1.31.0 ya
+  # cumple la ventana de 7 días que pedirá minimumReleaseAge.
+  '@modelcontextprotocol/sdk': ~1.31.0
 
 packages:
   - web

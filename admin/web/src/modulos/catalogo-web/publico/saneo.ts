@@ -52,6 +52,28 @@ export function enlaceAlChat(numero: unknown): string {
     ? `https://wa.me/${numero}` : '';
 }
 
+/** Decimales de la ubicación compartida; el servidor aplica los mismos (5). */
+export const DECIMALES_UBICACION = 5;
+
+/**
+ * Las coordenadas que entrega el navegador, o `null` si no sirven.
+ *
+ * Es la MISMA regla que `ubicacionDelPedido` del servidor (que no confía en
+ * esto): números finitos —no cadenas—, latitud −90..90, longitud −180..180,
+ * redondeo a 5 decimales (−0 pasa a 0) y (0,0) rechazado. Un cambio acá exige
+ * el mismo cambio allá, en el flujo (`_pdUbicacion`) y en la prueba.
+ */
+export function coordenadasValidas(lat: unknown, lng: unknown): { lat: number; lng: number } | null {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  const f = 10 ** DECIMALES_UBICACION;
+  const la = Math.round(lat * f) / f + 0;
+  const ln = Math.round(lng * f) / f + 0;
+  if (la === 0 && ln === 0) return null;
+  return { lat: la, lng: ln };
+}
+
 /** Precio para mostrar. Sin `Intl` pesado: dos decimales solo si hacen falta. */
 export function precioTexto(precio: number | null, moneda: string): string {
   if (precio === null) return 'A consultar';

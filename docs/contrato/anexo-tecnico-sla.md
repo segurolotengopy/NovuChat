@@ -10,8 +10,8 @@
 >
 > Cambios de la v1, los dos en el §8:
 >
-> 1. Dice **cuándo** se aplican los cambios —la ventana diaria de 02:00 a 03:00,
->    fuera del horario cubierto— y separa esa aplicación, que no interrumpe el
+> 1. Dice **cuándo** se aplican los cambios —la ventana diaria de 23:30 a 01:30
+>    (cruza la medianoche), fuera del horario cubierto— y separa esa aplicación, que no interrumpe el
 >    servicio, del mantenimiento programado que sí lo interrumpe y se anuncia
 >    con 24 horas. No agrega ningún compromiso nuevo: le pone hora a lo que la
 >    v1 ya exigía hacer fuera del horario cubierto.
@@ -184,8 +184,8 @@ se suman al saldo del Cliente. No se pagan en dinero.
   queda distinto, por qué, y qué haría falta para ponerlo al día. **Ninguna
   corrección de seguridad ni de las reglas que protegen al paciente o al
   comprador queda fuera**, en ninguna versión.
-- **Cuándo se aplican:** en la **ventana diaria de 02:00 a 03:00, hora de
-  Bolivia**, que está fuera del horario cubierto y solo se abre cuando hay algo
+- **Cuándo se aplican:** en la **ventana diaria de 23:30 a 01:30, hora de
+  Bolivia** (cruza la medianoche: dos horas), que está fuera del horario cubierto y solo se abre cuando hay algo
   que aplicar. La actualización se hace sobre el asistente en funcionamiento y
   **no interrumpe el servicio**: dura segundos y no cambia el número ni la
   conversación en curso. Por eso **no se anuncia ni se interrumpe a quien

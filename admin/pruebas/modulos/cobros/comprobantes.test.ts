@@ -50,6 +50,11 @@ class AlmacenDeMentira implements m.Almacen {
     for (const r of [...this.objetos.keys()]) if (r.startsWith(prefijo)) { this.objetos.delete(r); n++; }
     return n;
   }
+  async metadatos(ruta: string) {
+    const o = this.objetos.get(ruta);
+    return o ? { tamano: o.bytes.length } : null;
+  }
+  async leer(ruta: string) { return this.objetos.get(ruta)?.bytes ?? null; }
 }
 let almacen = new AlmacenDeMentira();
 beforeEach(() => { almacen = new AlmacenDeMentira(); m.fijarAlmacenDeComprobantesDePrueba(almacen); });
@@ -291,6 +296,64 @@ describe('almacenDeStorage con un bucket simulado', () => {
     expect(await a.guardar('r', JPG(), 'image/jpeg')).toBe('existe');
     const { almacen: b } = crear(async () => { throw Object.assign(new Error('boom'), { code: 500 }); });
     await expect(b.guardar('r', JPG(), 'image/jpeg')).rejects.toThrow('boom');
+  });
+});
+
+describe('almacenDeStorage: leer y metadatos (el visor), con un bucket simulado', () => {
+  type Fallo = { code: number | string } | null;
+  const crear = (fallo: Fallo, bytes = JPG(), size: unknown = String(bytes.length)) => {
+    const llamadas = { download: 0, getMetadata: 0, rutas: [] as string[] };
+    const lanza = () => { if (fallo) throw Object.assign(new Error('tenants/x/comprobantes/2026-10-03/secreto.jpg'), fallo); };
+    const bucket = {
+      file: (ruta: string) => {
+        llamadas.rutas.push(ruta);
+        return {
+          save: async () => undefined, exists: async () => [true] as [boolean],
+          download: async () => { llamadas.download++; lanza(); return [bytes] as [Buffer]; },
+          getMetadata: async () => { llamadas.getMetadata++; lanza(); return [{ size }] as [Record<string, unknown>]; },
+        };
+      },
+      getFiles: async () => [[]], deleteFiles: async () => undefined,
+    };
+    return { almacen: m.crearAlmacenDeStorage(() => bucket as any), llamadas };
+  };
+  it('metadatos devuelve el tamaño (que llega como cadena) y NO descarga', async () => {
+    const { almacen: a, llamadas } = crear(null, JPG(), '1234');
+    expect(await a.metadatos('r')).toEqual({ tamano: 1234 });
+    expect(llamadas.download).toBe(0);
+  });
+  it('un tamaño ilegible se trata como infinito (se rechaza, no se descarga)', async () => {
+    const { almacen: a } = crear(null, JPG(), 'no-es-numero');
+    expect((await a.metadatos('r'))?.tamano).toBe(Number.POSITIVE_INFINITY);
+  });
+  it('un 404 (número o cadena) da null en leer y en metadatos', async () => {
+    for (const code of [404, '404']) {
+      const { almacen: a } = crear({ code });
+      expect(await a.metadatos('r')).toBeNull();
+      expect(await a.leer('r')).toBeNull();
+    }
+  });
+  it('un 500 (o un error sin código) se relanza: no se confunde con «no existe»', async () => {
+    for (const fallo of [{ code: 500 }, { code: 'ECONNRESET' }, { code: 403 }]) {
+      const { almacen: a } = crear(fallo);
+      await expect(a.metadatos('r')).rejects.toThrow();
+      await expect(a.leer('r')).rejects.toThrow();
+    }
+  });
+  it('leer devuelve los bytes', async () => {
+    const bytes = PNG();
+    const { almacen: a } = crear(null, bytes);
+    expect((await a.leer('r'))?.equals(bytes)).toBe(true);
+  });
+  it('T20 (parte pura): el objeto se guarda SIN token de descarga (firebaseStorageDownloadTokens)', async () => {
+    const opciones: Record<string, any>[] = [];
+    const bucket = {
+      file: () => ({ save: async (_b: Buffer, o: Record<string, any>) => { opciones.push(o); }, exists: async () => [false] as [boolean], download: async () => [JPG()] as [Buffer], getMetadata: async () => [{}] as [Record<string, unknown>] }),
+      getFiles: async () => [[]], deleteFiles: async () => undefined,
+    };
+    await m.crearAlmacenDeStorage(() => bucket as any).guardar('r', JPG(), 'image/jpeg');
+    expect(JSON.stringify(opciones)).not.toContain('firebaseStorageDownloadTokens');
+    expect(JSON.stringify(opciones)).not.toMatch(/download.?token/i);
   });
 });
 

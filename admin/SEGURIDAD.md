@@ -538,6 +538,11 @@ además un documento en `/tenants/{t}/accesosSoporte/{uid}` con `expira` en el
 futuro. Lo crea una Cloud Function que **exige rol de administrador del negocio**,
 dura entre 1 y 24 horas y queda registrada en `/auditoria`. El propietario no
 puede otorgárselo a sí mismo: la colección es de solo lectura desde el navegador.
+Desde el 09/10/2026 la misma ventana también abre los comprobantes de pago de
+ventas cotejadas (`verComprobante`, auditado con rol «soporte», mismo tope por
+usuario); hasta que exista la pantalla que otorga la ventana, ese acceso queda
+sin camino en la consola (la pantalla que otorga la ventana, con el texto de
+consentimiento que menciona los comprobantes, llegará aparte).
 
 **Sin el control.** El proveedor tiene lectura permanente y silenciosa sobre todos
 sus clientes.
@@ -616,7 +621,7 @@ para todos, incluida la ruta de ingesta. En el hilo, una persona del negocio sol
 puede tocar tres campos de gestión interna:
 
 ```
-soloCampos(['etiquetas', 'atendidaPor', 'notaInterna'])
+soloCampos(['etiquetas', 'notaInterna', 'noContactar', 'noLeidos', 'sinLeer'])
 ```
 
 Los campos del registro —`telefono`, `ultimoMensaje`, `mensajesTotal`— quedan
@@ -775,7 +780,7 @@ otro comercio), 8 en *"Contactos del comercio"*.
 
 **Control.** `periodoContado` está en la lista blanca de campos que escribe
 **solo el principal de ingesta**, y **no** está entre los tres campos de gestión
-interna (`etiquetas`, `atendidaPor`, `notaInterna`) que puede tocar una persona
+interna (`etiquetas`, `notaInterna`, `noContactar` y la marca de leída `noLeidos`/`sinLeer`, solo hacia 0 / false; `atendidaPor` salió el 09/10/2026) que puede tocar una persona
 del negocio. Ni el admin ni el operador llegan. Y `/metricas` es de **solo
 lectura para todos**, incluido el propietario de NovuChat: la colección que
 sostiene la facturación no la puede escribir ninguna de las dos partes

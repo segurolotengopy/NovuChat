@@ -70,7 +70,7 @@ nada más de esa carpeta.
    cuando `agendar_cita` falla pero la verificación responde. Los dos van
    primero.
 4. **Ningún cliente está en producción** (modalidad), pero Platinum y Bellido
-   atienden personas reales. Se publica en la ventana de 02:00 a 03:00 igual,
+   atienden personas reales. Se publica en la ventana de 23:30 a 01:30 igual,
    y todo se ensaya antes en el número del TENANT de ensayo.
 5. **`Analisis/40` es el de planes a medida** (PR #184). La arquitectura es
    `Analisis/41`. No los confundas al citar.

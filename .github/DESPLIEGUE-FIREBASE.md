@@ -22,6 +22,7 @@ del proyecto de producción. Lo que hay:
 - **Producción** es el proyecto `${GCP_PROJECT_ID}` de `CONFIGURACION.local.md`,
   el mismo de `admin/.firebaserc`, con la consola en `consola.novuchat.site`.
   Donde abajo diga `novuchat-admin-prod`, léase ese.
+- **Storage de las Functions (2026-10-09):** `scripts/nube-prepago.sh` da a `sa-functions` solo `roles/storage.objectViewer` y `objectCreator` sobre el bucket de la consola. La purga de comprobantes (`purgarComprobantes`) necesita además borrar objetos; según el informe de la sesión Principal del 09/10/2026, esa sesión dio `roles/storage.objectUser` a `sa-functions` en staging (paso 5) y en producción (paso 7), con autorización de Andres. **No hay rastro versionado de eso**: se comprueba con `gcloud storage buckets get-iam-policy` sobre cada bucket. El visor de comprobantes (`verComprobante`) solo lee y no necesita IAM nuevo.
 - **Staging (2026-09-25):** el diseño del proyecto de staging, sus variables
   por Environment, su federación propia y la lista ordenada de escrituras en la
   nube y en GitHub están en `docs/staging/DISENO.md`; el script

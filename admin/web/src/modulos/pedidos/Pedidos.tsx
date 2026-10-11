@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { db } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
+import { enlaceDelPedido } from './ubicacion';
 
 /**
  * =============================================================================
@@ -45,12 +46,17 @@ interface Pedido {
   costoEnvio?: unknown;
   entrega?: unknown;
   direccion?: unknown;
+  /** Opcional: `{ lat, lng }` si el cliente compartió su ubicación (delivery). */
+  ubicacion?: unknown;
+  /** Opcional: cómo llegar, escrito por el cliente («a media cuadra del gas»). */
+  referencia?: unknown;
   nota?: unknown;
   estado?: unknown;
   origen?: unknown;
 }
 
 const ENTREGA: Record<string, string> = {
+  envio: '🛵 Enviar a domicilio', // lo que guarda el catálogo web
   delivery: '🛵 Enviar a domicilio',
   retiro: '🏪 Retira en el local',
   local: '🏪 Retira en el local',
@@ -111,12 +117,13 @@ export function Pedidos() {
           <div className="acciones">
             <button type="button" className="btn btn-secondary" onClick={() => descargarCsv(
               'pedidos',
-              ['Cuándo', 'Cliente', 'Entrega', 'Dirección', 'Ítems', 'Nota', 'Total', 'Moneda', 'Estado'],
+              ['Cuándo', 'Cliente', 'Entrega', 'Dirección', 'Referencia', 'Ítems', 'Nota', 'Total', 'Moneda', 'Estado'],
               pedidos.map((p) => [
                 p.creadoEn?.toDate?.().toLocaleString('es-BO') ?? '',
                 p.telefonoEnmascarado,
                 ENTREGA[String(p.entrega ?? '')] ?? p.entrega,
                 p.direccion,
+                p.referencia,
                 (Array.isArray(p.items) ? p.items as ItemPedido[] : [])
                   .map((i) => `${String(i.cantidad ?? 1)}× ${String(i.nombre ?? '')}`
                     + (detalleDelItem(i) ? ` (${detalleDelItem(i)})` : '')).join(' · '),
@@ -129,6 +136,7 @@ export function Pedidos() {
             {pedidos.map((p) => {
               const items = Array.isArray(p.items) ? p.items as ItemPedido[] : [];
               const entrega = ENTREGA[String(p.entrega ?? '')] ?? null;
+              const enlaceMaps = enlaceDelPedido(p);
               return (
                 <li key={p.id} className="tarjeta pedido">
                   <div className="pedido-cabecera">
@@ -146,6 +154,23 @@ export function Pedidos() {
                   {entrega && <p className="pedido-entrega">{entrega}</p>}
                   {typeof p.direccion === 'string' && p.direccion !== '' && (
                     <p className="pedido-direccion"><TextoSeguro valor={p.direccion} maxLargo={200} /></p>
+                  )}
+                  {/* REFERENCIA PARA LLEGAR: texto del cliente, opcional (los
+                      pedidos sin ella quedan igual). Como todo texto del
+                      pedido, va por `TextoSeguro`. */}
+                  {typeof p.referencia === 'string' && p.referencia !== '' && (
+                    <p className="pedido-direccion">
+                      Referencia: <TextoSeguro valor={p.referencia} maxLargo={200} />
+                    </p>
+                  )}
+                  {/* UBICACIÓN COMPARTIDA: opcional (los pedidos viejos no la
+                      traen). El enlace sale SOLO de dos números validados, ver
+                      `ubicacion.ts`; nada del pedido se usa como texto ni URL. */}
+                  {enlaceMaps && (
+                    <p className="pedido-direccion">
+                      Ubicación compartida ·{' '}
+                      <a href={enlaceMaps} target="_blank" rel="noopener noreferrer">Abrir en Maps</a>
+                    </p>
                   )}
 
                   <ul className="pedido-items">

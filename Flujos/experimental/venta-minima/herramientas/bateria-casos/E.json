@@ -24,9 +24,9 @@
           "esperado": {
             "mensajes": 1,
             "textos": [
-              "algunos datos no coinciden con tu pedido #",
-              "comprobante dice 1(\\.00)? y (tu|el) pedido es de 21(\\.00)?",
-              "Ya lo pas[eé] (al restaurante|a nuestro equipo)"
+              "Veo una diferencia con tu pedido #",
+              "comprobante dice 1(\\.00)?( Bs)? y (tu|el) pedido es de 21(\\.00)?( Bs)?",
+              "Ya lo pas[eé] a nuestro equipo"
             ],
             "titulos": ["Escribir al local"],
             "ruta": "^comprobante:no_cuadra",
@@ -55,7 +55,7 @@
           "cotejo": "ilegible",
           "esperado": {
             "mensajes": 1,
-            "textos": ["no pude leerlo bien", "n[ií]tido", "PDF"],
+            "textos": ["No pude leer bien tu comprobante", "n[ií]tido", "PDF"],
             "titulosNo": ["Escribir al local"],
             "ruta": "^comprobante:ilegible",
             "estado": {"paso": "esperando_comprobante", "ilegibles": 1},
@@ -82,7 +82,7 @@
           "cliente": {"tipo": "texto", "texto": "x"},
           "esperado": {
             "mensajes": 1,
-            "textos": ["falta tu comprobante"],
+            "textos": ["falta que me env[ií]es la foto o el PDF del comprobante"],
             "textosNo": ["Esta es nuestra carta", "Nachos", "Tacos al Pastor"],
             "titulos": ["Reenviar QR", "Cancelar pedido"],
             "botones": ["q|reenviar", "q|cancelar"],
@@ -128,7 +128,7 @@
   ],
   "negativoGlobal": {
     "id": "E8",
-    "titulo": "Negativo global: ninguna frase prohibida (pago acreditado, ellos, escríbeles…) en nada de lo que el cliente recibe, en ningún caso",
+    "titulo": "Negativo global: ninguna frase prohibida (pago acreditado, escríbeles…) en nada de lo que el cliente recibe, en ningún caso",
     "frases": [
       "pago acreditado",
       "pago verificado",
@@ -137,7 +137,6 @@
       "gracias por tu pago",
       "reservamos tu mesa",
       "qued[oó] cancelado",
-      "\\bellos\\b",
       "escr[ií]beles",
       "todav[ií]a no es una reserva"
     ]

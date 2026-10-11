@@ -1,0 +1,13 @@
+{
+  "hereda": "novuchat",
+  "nombreFlujo": "NovuChat — Chat NovuChat v2 (Kenji, prueba)",
+  "entrada": "prueba",
+  "credenciales": {
+    "graph": "Graph WhatsApp — pruebas (no producción)",
+    "entradaPrueba": "Entrada de prueba NovuChat (chat)"
+  },
+  "configBase": {
+    "planillaProspectosId": "",
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA"
+  }
+}

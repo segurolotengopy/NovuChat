@@ -4,6 +4,8 @@ import { httpsCallable } from 'firebase/functions';
 import { useParams } from 'react-router-dom';
 import { db, funciones } from '../../core/lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
+import { useConsolaOculta } from '../componentes/ConsolaOculta';
+import { esVisible } from '../../../../functions/src/central/consola-oculta';
 
 interface Miembro { id: string; correo?: unknown; rol?: unknown; estado?: unknown }
 
@@ -23,6 +25,11 @@ export function Usuarios() {
   const [correo, setCorreo] = useState('');
   const [rol, setRol] = useState<'admin' | 'oper'>('oper');
   const [estado, setEstado] = useState<string | null>(null);
+  // «Invitar» no se pinta si NovuChat lo ocultó para este comercio (las altas las
+  // hace NovuChat). Mientras carga la lista tampoco. Solo presentación: la
+  // callable `invitarUsuario` sigue exigiendo administrador.
+  const ocultos = useConsolaOculta(tenantId);
+  const puedeInvitar = esVisible(ocultos, 'invitar');
 
   useEffect(() => {
     if (!tenantId) return;
@@ -60,7 +67,7 @@ export function Usuarios() {
         </tbody>
       </table>
 
-      <form onSubmit={invitar}>
+      {puedeInvitar && <form onSubmit={invitar}>
         <h3>Invitar</h3>
         <label>Correo
           <input type="email" required placeholder="persona@ejemplo.com" value={correo} maxLength={254}
@@ -73,7 +80,7 @@ export function Usuarios() {
           </select>
         </label>
         <button type="submit">Enviar invitación</button>
-      </form>
+      </form>}
       {estado && <p role="status">{estado}</p>}
     </section>
   );

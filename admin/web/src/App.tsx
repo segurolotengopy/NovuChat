@@ -5,6 +5,8 @@ import { rolEn } from './core/lib/sesion';
 import { Proteger } from './core/componentes/Proteger';
 import { Marca } from './central/componentes/Marca';
 import { EncabezadoComercio } from './central/componentes/EncabezadoComercio';
+import { SiNoOculta, useConsolaOculta } from './central/componentes/ConsolaOculta';
+import { esVisible } from '../../functions/src/central/consola-oculta';
 import { Ingresar } from './central/paginas/Ingresar';
 import { Tenants } from './plataforma/paginas/Tenants';
 import { CuentaNegocio } from './plataforma/paginas/CuentaNegocio';
@@ -27,6 +29,7 @@ import { Inventario } from './modulos/inventario/Inventario';
 import { Pedidos } from './modulos/pedidos/Pedidos';
 import { Cobros } from './modulos/cobros/Cobros';
 import { Captacion } from './modulos/captacion/Captacion';
+import { tramoDeTitulo } from './core/lib/tramoDeTitulo';
 import { etiquetaDeCatalogoDe, pestanasVisibles, useModulos } from './central/lib/flujos';
 import type { IdModulo } from './central/lib/flujos';
 
@@ -61,7 +64,8 @@ import type { IdModulo } from './central/lib/flujos';
  * pestañas es cuál, ni de volver a la que estaba. Con dos pestañas de la
  * consola abiertas, menos.
  *
- * El nombre sale del último tramo de la RUTA y no de un rótulo que cada página
+ * El nombre sale de un tramo de la RUTA (`tramoDeTitulo`: el tercero bajo `/negocio`, nunca el id de una conversación)
+ * y no de un rótulo que cada página
  * escriba por su cuenta: así una pantalla nueva ya sale con título y no hay dos
  * listas de nombres que se separen con el tiempo. La única que no es literal es
  * el catálogo, que se llama «Servicios» o «Productos» según los flujos del
@@ -94,7 +98,7 @@ const TITULOS: Record<string, string> = {
 
 function useTituloDePagina(modulos: IdModulo[] | null): void {
   const { pathname } = useLocation();
-  const tramo = pathname.replace(/\/+$/, '').split('/').pop() ?? '';
+  const tramo = tramoDeTitulo(pathname);
   const nombre = tramo === 'catalogo' ? etiquetaDeCatalogoDe(modulos ?? []) : TITULOS[tramo];
   useEffect(() => {
     document.title = nombre ? `${nombre} · NovuChat` : 'NovuChat · Panel administrativo';
@@ -107,6 +111,9 @@ function Cabecera() {
   const negocios = Object.keys(permisos.tenants);
   const tenantId = tenantDeLaRuta ?? (negocios.length === 1 ? negocios[0] : undefined);
   const modulos = useModulos(tenantId);
+  // Lo que NovuChat decidió no ofrecer a este comercio (presentación, no límite).
+  // Mientras carga (`null`) no se pinta «Pagar»: no aparece y desaparece.
+  const ocultos = useConsolaOculta(tenantId);
   useTituloDePagina(modulos);
   if (!usuario) return null;
 
@@ -166,7 +173,7 @@ function Cabecera() {
             operador no compromete gasto. La puerta real es la callable, que
             exige lo mismo (`exigirAdminOPropietario`); esto es la cortesia de
             no mostrar lo que el servidor va a rechazar. */}
-        {tenantId && (esAdminDelNegocio || permisos.propietario) &&
+        {tenantId && (esAdminDelNegocio || permisos.propietario) && esVisible(ocultos, 'pagar') &&
           <NavLink to={`/negocio/${tenantId}/pagar`}>Pagar</NavLink>}
         {tenantId && esPersona &&
           <NavLink to={`/negocio/${tenantId}/reclamos`}>Reclamos</NavLink>}
@@ -248,7 +255,7 @@ export function App() {
           <Proteger requiere="propietario"><><Cabecera /><CuentaNegocio /></></Proteger>} />
         <Route path="/negocio/:tenantId/configuracion" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Configuracion /></></Proteger>} />
-        <Route path="/negocio/:tenantId/conversaciones" element={
+        <Route path="/negocio/:tenantId/conversaciones/:conversacionId?" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Conversaciones /></></Proteger>} />
         <Route path="/negocio/:tenantId/usuarios" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Usuarios /></></Proteger>} />
@@ -271,7 +278,7 @@ export function App() {
         <Route path="/negocio/:tenantId/pedidos" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Pedidos /></></Proteger>} />
         <Route path="/negocio/:tenantId/cobros" element={
-          <Proteger requiere="adminTenant"><><Cabecera /><Cobros /></></Proteger>} />
+          <Proteger requiere="miembroTenant"><><Cabecera /><Cobros /></></Proteger>} />
         <Route path="/negocio/:tenantId/cobro" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Cobro /></></Proteger>} />
         {/* CAPTACIÓN: hasta el 15/09 era el flujo propio de NovuChat y la ruta
@@ -293,7 +300,7 @@ export function App() {
         <Route path="/negocio/:tenantId/cuenta" element={
           <Proteger requiere="adminTenant"><><Cabecera /><EstadoCuenta /></></Proteger>} />
         <Route path="/negocio/:tenantId/pagar" element={
-          <Proteger requiere="adminOPropietario"><><Cabecera /><Pagar /></></Proteger>} />
+          <Proteger requiere="adminOPropietario"><><Cabecera /><SiNoOculta id="pagar"><Pagar /></SiNoOculta></></Proteger>} />
         <Route path="/negocio/:tenantId/reclamos" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Reclamos /></></Proteger>} />
         {/* Vista de plataforma: todos los comercios, por consulta de grupo. */}

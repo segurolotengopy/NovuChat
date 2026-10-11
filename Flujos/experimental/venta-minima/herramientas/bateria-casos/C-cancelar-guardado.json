@@ -1,0 +1,1336 @@
+{
+  "_saneo": "No es un flujo de n8n y no lleva identificadores: los marcadores REEMPLAZAR_* no aplican. La clave `nodes` vacía existe solo porque scripts/verificar-saneo.sh trata todo JSON bajo Flujos/ como un flujo (revisa `nodes` y busca REEMPLAZAR_).",
+  "nodes": [],
+  "seccion": "C",
+  "nota": "Escenarios B4, C1–C6 y C9 («cancelar y ver lo guardado», PR #440: cancelar el pedido guardado, ver lo guardado, volver al pedido anterior, una aclaración antes de derivar), más el audio de pedido (AU1) y el borde «cámbiame el pedido» (BO1, por confirmar con la cartera). Pasan contra #440; contra una base anterior fallan: la suite los trata como pendientes de rama mientras el flujo no traiga la cancelación (marca `no_cancela`) y como normales cuando la trae.",
+  "casos": [
+    {
+      "id": "C1",
+      "titulo": "Pedido guardado sin confirmar (resumen): «cancela mi pedido», «cancelar», «ya no quiero el pedido» y «quiero cancelar» → «Listo, canceló tu pedido» + menú; vacía el carrito y la entrega",
+      "perfil": "Lucía Ejemplo",
+      "nota": "El código #X del pedido solo existe con el QR enviado: sin confirmar el texto no lleva número (C2 y C2b sí).",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "cancela mi pedido"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Listo, cancel[eé] tu pedido"
+            ],
+            "textosNo": [
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Hacer un pedido"
+            ],
+            "botones": [
+              "m|pedido"
+            ],
+            "estado": {
+              "paso": "menu",
+              "carrito": {
+                "vacio": true
+              },
+              "entrega.entrega": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "cancela mi pedido",
+          "cancelar",
+          "ya no quiero el pedido",
+          "quiero cancelar"
+        ]
+      }
+    },
+    {
+      "id": "C1b",
+      "titulo": "Pedido de delivery con dirección guardado sin confirmar: «cancela mi pedido» lo cancela y vacía también la dirección",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "envio",
+            "direccion": "Av. Banzer 1234"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.direccion": "Av. Banzer 1234"
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "cancela mi pedido"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Listo, cancel[eé] tu pedido"
+            ],
+            "textosNo": [
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Hacer un pedido"
+            ],
+            "botones": [
+              "m|pedido"
+            ],
+            "estado": {
+              "paso": "menu",
+              "carrito": {
+                "vacio": true
+              },
+              "entrega.entrega": {
+                "vacio": true
+              },
+              "entrega.direccion": {
+                "vacio": true
+              },
+              "entrega.referencia": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C1m",
+      "titulo": "Pedido guardado y el cliente volvió al menú: «cancela mi pedido» lo cancela",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Menú"
+          },
+          "esperado": {
+            "estado": {
+              "paso": "menu",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "cancela mi pedido"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Listo, cancel[eé] tu pedido"
+            ],
+            "textosNo": [
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Hacer un pedido"
+            ],
+            "botones": [
+              "m|pedido"
+            ],
+            "estado": {
+              "paso": "menu",
+              "carrito": {
+                "vacio": true
+              },
+              "entrega.entrega": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "qr": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "titulo": "QR enviado y sin comprobante: el botón «Cancelar pedido» responde «Cancelé tu pedido #X.» (con el código) + menú, y vacía el pedido",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "estado": {
+              "paso": "esperando_comprobante"
+            },
+            "efectos": {
+              "qr": true
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Ya no"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Cancelar pedido"
+            ],
+            "textos": [
+              "falta que me env[ií]es la foto o el PDF del comprobante"
+            ]
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Cancelar pedido"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Cancel[eé] tu pedido #[A-Z0-9]{4}"
+            ],
+            "textosNo": [
+              "Esto prefiero",
+              "Listo, cancel[eé]"
+            ],
+            "titulos": [
+              "Hacer un pedido"
+            ],
+            "estado": {
+              "paso": "menu",
+              "carrito": {
+                "vacio": true
+              },
+              "pedido": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C2b",
+      "titulo": "QR enviado y sin comprobante: «cancela mi pedido» en texto dice lo mismo que el botón («Cancelé tu pedido #X.»)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "estado": {
+              "paso": "esperando_comprobante"
+            },
+            "efectos": {
+              "qr": true
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "cancela mi pedido"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Cancel[eé] tu pedido #[A-Z0-9]{4}"
+            ],
+            "textosNo": [
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Hacer un pedido"
+            ],
+            "estado": {
+              "paso": "menu",
+              "pedido": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "titulo": "Comprobante ya enviado (pasó al local): «cancela mi pedido» → «Tu pedido #X ya está con nuestro equipo. Para cancelarlo, toca «Escribir al local».» con aviso y botón; no lo cancela",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "efectos": {
+              "qr": true
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "imagen",
+            "pie": "comprobante"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "datos coinciden"
+            ],
+            "efectos": {
+              "aviso": true
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "cancela mi pedido"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu pedido #[A-Z0-9]{4} ya est[aá] con nuestro equipo",
+              "toca «Escribir al local»"
+            ],
+            "textosNo": [
+              "Cancel[eé] tu pedido",
+              "Listo, cancel[eé]"
+            ],
+            "titulos": [
+              "Escribir al local"
+            ],
+            "enlaces": [
+              "wa\\.me/59100000031"
+            ],
+            "efectos": {
+              "derivacion": true,
+              "aviso": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "titulo": "«no cancela» y «no quiero cancelar» NO cancelan: con el resumen mostrado el pedido sigue y vuelve el resumen",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "no cancela"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": [
+              "Listo, cancel[eé]",
+              "Cancel[eé] tu pedido"
+            ],
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            },
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "carrito": {
+                "longitud": 1
+              },
+              "entrega.entrega": "recojo"
+            },
+            "igualAntes": [
+              "carrito",
+              "entrega"
+            ]
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "no cancela",
+          "no quiero cancelar"
+        ]
+      }
+    },
+    {
+      "id": "C4q",
+      "titulo": "«no cancela» y «no quiero cancelar» con el QR enviado NO cancelan: el pedido sigue esperando el comprobante",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Confirmar pedido"
+          },
+          "esperado": {
+            "estado": {
+              "paso": "esperando_comprobante"
+            },
+            "efectos": {
+              "qr": true
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "no cancela"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textosNo": [
+              "Listo, cancel[eé]",
+              "Cancel[eé] tu pedido"
+            ],
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            },
+            "titulos": [
+              "Cancelar pedido"
+            ],
+            "estado": {
+              "paso": "esperando_comprobante",
+              "pedido": {
+                "vacio": false
+              }
+            },
+            "igualAntes": [
+              "pedido"
+            ]
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "no cancela",
+          "no quiero cancelar"
+        ]
+      }
+    },
+    {
+      "id": "C5",
+      "titulo": "Pedido guardado (el cliente volvió al menú): «Qué tengo guardado?», «mi pedido», «qué pedí» y «cuánto va» muestran el resumen con sus botones",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Menú"
+          },
+          "esperado": {
+            "estado": {
+              "paso": "menu",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Qué tengo guardado?"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu pedido:",
+              "2 × Tacos de Birria",
+              "Entrega: recojo en el local"
+            ],
+            "textosNo": [
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "botones": [
+              "p|confirmar"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "carrito": {
+                "longitud": 1
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "Qué tengo guardado?",
+          "mi pedido",
+          "qué pedí",
+          "cuánto va"
+        ]
+      }
+    },
+    {
+      "id": "C6",
+      "titulo": "Sin carrito: «Qué tengo guardado?» → «Todavía no tienes productos en tu pedido. Toca «Hacer un pedido» para empezar.»",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Qué tengo guardado?"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Todav[ií]a no tienes productos en tu pedido",
+              "Hacer un pedido"
+            ],
+            "textosNo": [
+              "Esto prefiero",
+              "Tu pedido:"
+            ],
+            "titulos": [
+              "Hacer un pedido"
+            ],
+            "estado": {
+              "carrito": {
+                "vacio": true
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "B4",
+      "titulo": "Tras «Cambiar algo»: «así nomás, está bien», «está bien así», «nomás», «no cambies nada» y «mejor lo que tenía» vuelven al pedido anterior",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "boton",
+            "titulo": "Cambiar algo"
+          },
+          "esperado": {
+            "estado": {
+              "carrito": {
+                "vacio": true
+              },
+              "carritoAnterior": {
+                "vacio": false
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "así nomás, está bien"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "Tu pedido:",
+              "2 × Tacos de Birria"
+            ],
+            "textosNo": [
+              "Esto prefiero",
+              "¿Quieres dejar tu pedido"
+            ],
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "carrito": {
+                "longitud": 1
+              },
+              "entrega.entrega": "recojo"
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ],
+      "variantes": {
+        "turno": 1,
+        "frases": [
+          "así nomás, está bien",
+          "está bien así",
+          "nomás",
+          "no cambies nada",
+          "mejor lo que tenía"
+        ]
+      }
+    },
+    {
+      "id": "C9",
+      "titulo": "Pedido en curso y una frase que no se entiende («Donde dije», el modelo marca quiereHablar): UNA aclaración con botones; si insiste, deriva",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Donde dije"
+          },
+          "seco": {
+            "lineas": [],
+            "quiereHablar": true
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "no te entend[ií] bien"
+            ],
+            "textosNo": [
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Seguir con mi pedido",
+              "Escribir al local",
+              "Men[uú]"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "carrito": {
+                "longitud": 1
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "Donde dije"
+          },
+          "seco": {
+            "lineas": [],
+            "quiereHablar": true
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "^transferir",
+            "titulos": [
+              "Escribir al local"
+            ],
+            "enlaces": [
+              "wa\\.me/59100000031"
+            ],
+            "efectos": {
+              "derivacion": true,
+              "aviso": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "C9p",
+      "titulo": "Pedido en curso y «quiero hablar con una persona»: deriva de una vez (sin aclaración previa)",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "quiero hablar con una persona"
+          },
+          "seco": {
+            "lineas": [],
+            "quiereHablar": true
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "^transferir",
+            "titulos": [
+              "Escribir al local"
+            ],
+            "enlaces": [
+              "wa\\.me/59100000031"
+            ],
+            "efectos": {
+              "derivacion": true,
+              "aviso": true
+            },
+            "textosNo": [
+              "no te entend[ií] bien"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "AU1",
+      "titulo": "Un audio («quiero cuatro tacos de birria», transcrito) arma el pedido: no cae al menú; pregunta si es delivery o recojo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "audio",
+            "transcripcion": "quiero cuatro tacos de birria"
+          },
+          "seco": {
+            "lineas": [
+              {
+                "producto": "tacos de birria",
+                "cantidad": 4,
+                "forma": "unidad",
+                "detalle": ""
+              }
+            ]
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "delivery o para recoger"
+            ],
+            "textosNo": [
+              "Soy el asistente virtual",
+              "Esto prefiero"
+            ],
+            "titulos": [
+              "Delivery",
+              "Recoger en el local"
+            ],
+            "estado": {
+              "paso": "pedido_entrega",
+              "carrito": {
+                "longitud": 1
+              }
+            },
+            "efectos": {
+              "modelo": true,
+              "derivacion": false,
+              "aviso": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "BO1",
+      "titulo": "Con el resumen mostrado, «cámbiame el pedido» abre el cambio como el botón «Cambiar algo» (la carta de nuevo; no \"no te entendí\", no deriva)",
+      "nota": "Decidido el 05/10 (BO1): el texto hace lo mismo que el botón `p|cambiar`; la regla está en `Decidir turno` (`pideCambiarElPedido`). Antes vivía aquí la expectativa contraria (volver a mostrar el resumen), que con el modelo real salía como «Disculpa, no te entendí».",
+      "perfil": "Lucía Ejemplo",
+      "estadoPrevio": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "hola"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "ruta": "menu"
+          }
+        },
+        {
+          "cliente": {
+            "tipo": "carrito",
+            "items": [
+              {
+                "id": "cat_birria3",
+                "cantidad": 2
+              }
+            ],
+            "entrega": "retiro"
+          },
+          "esperado": {
+            "mensajes": 1,
+            "titulos": [
+              "Confirmar pedido"
+            ],
+            "estado": {
+              "paso": "pedido_confirmar",
+              "entrega.entrega": "recojo",
+              "carrito": {
+                "longitud": 1
+              }
+            }
+          }
+        }
+      ],
+      "turnos": [
+        {
+          "cliente": {
+            "tipo": "texto",
+            "texto": "cámbiame el pedido"
+          },
+          "seco": {
+            "lineas": []
+          },
+          "esperado": {
+            "mensajes": 1,
+            "textos": [
+              "elige de nuevo todo lo que quieres",
+              "reemplaza tu pedido de ahora \\(2 × Tacos de Birria",
+              "Dejarlo como estaba"
+            ],
+            "textosNo": [
+              "Esto prefiero",
+              "no te entend",
+              "Tu pedido:"
+            ],
+            "titulos": [
+              "Dejarlo como estaba"
+            ],
+            "botones": [
+              "p|dejar"
+            ],
+            "estado": {
+              "carrito": {
+                "vacio": true
+              },
+              "carritoAnterior": {
+                "vacio": false
+              }
+            },
+            "efectos": {
+              "derivacion": false,
+              "aviso": false,
+              "modelo": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

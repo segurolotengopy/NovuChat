@@ -11,8 +11,9 @@
  *
  *  - **Solo la lee el servidor.** `storage.rules` niega todo acceso a
  *    `tenants/{t}/comprobantes/**`, también al administrador y al propietario.
- *    No hay visor en la consola. Si hace falta mirar una imagen, es un
- *    procedimiento con el SDK Admin y el «sí» de Andres.
+ *    Lo leen el administrador, el operador y el soporte vigente solo por la
+ *    callable `verComprobante` (`verComprobante.ts`), auditada y con tope; las
+ *    reglas de Storage siguen negando todo acceso directo.
  *  - **Retención de 90 días**, y se borra entera con la baja del comercio. Un
  *    comprobante vive en `tenants/{t}/comprobantes/{aaaa-mm-dd}/…`: la fecha
  *    en la ruta es lo que permite borrar por carpeta sin leer cada objeto.
@@ -64,6 +65,13 @@ export interface Almacen {
   subcarpetas(prefijo: string): Promise<string[]>;
   /** Borra todo lo que cuelga del prefijo. Devuelve cuántos objetos había. */
   borrarPrefijo(prefijo: string): Promise<number>;
+  /**
+   * El tamaño del objeto SIN descargarlo, o `null` si no existe (404). Lo usa el
+   * visor para rechazar un archivo demasiado grande antes de traerlo.
+   */
+  metadatos(ruta: string): Promise<{ tamano: number } | null>;
+  /** Los bytes del objeto, o `null` si no existe (404). Cualquier otro error se relanza. */
+  leer(ruta: string): Promise<Buffer | null>;
 }
 
 /** Lo mínimo que se usa de un bucket de Storage (así se puede probar sin Storage). */
@@ -71,10 +79,18 @@ export interface BucketMinimo {
   file(ruta: string): {
     save(bytes: Buffer, opciones: Record<string, unknown>): Promise<unknown>;
     exists(): Promise<[boolean]>;
+    download(): Promise<[Buffer]>;
+    getMetadata(): Promise<[Record<string, unknown>, ...unknown[]]>;
   };
   getFiles(opciones: Record<string, unknown>): Promise<unknown[]>;
   deleteFiles(opciones: Record<string, unknown>): Promise<unknown>;
 }
+
+/** ¿Es un 404 del SDK de Storage? (el código llega como número o como cadena). */
+const esNoEncontrado = (e: unknown): boolean => {
+  const codigo = (e as { code?: unknown } | null)?.code;
+  return codigo === 404 || codigo === '404';
+};
 
 export function crearAlmacenDeStorage(bucket: () => BucketMinimo): Almacen {
   return {
@@ -95,6 +111,26 @@ export function crearAlmacenDeStorage(bucket: () => BucketMinimo): Almacen {
   async existe(ruta) {
     const [hay] = await bucket().file(ruta).exists();
     return hay;
+  },
+  async metadatos(ruta) {
+    try {
+      const [meta] = await bucket().file(ruta).getMetadata();
+      // `size` llega como cadena en la API JSON de Storage.
+      const tamano = Number(meta['size']);
+      return { tamano: Number.isFinite(tamano) && tamano >= 0 ? tamano : Number.POSITIVE_INFINITY };
+    } catch (e) {
+      if (esNoEncontrado(e)) return null;
+      throw e;
+    }
+  },
+  async leer(ruta) {
+    try {
+      const [bytes] = await bucket().file(ruta).download();
+      return bytes;
+    } catch (e) {
+      if (esNoEncontrado(e)) return null;
+      throw e;
+    }
   },
   async subcarpetas(prefijo) {
     const [, , api] = await bucket()
@@ -121,7 +157,8 @@ export function fijarAlmacenDeComprobantesDePrueba(a: Almacen | null): void {
   }
   almacenDePrueba = a;
 }
-const almacen = (): Almacen => almacenDePrueba ?? almacenDeStorage;
+/** El almacén vigente: el de Storage, o el doble de las pruebas. Lo usa también `verComprobante`. */
+export const almacenDeComprobantes = (): Almacen => almacenDePrueba ?? almacenDeStorage;
 
 // ---------------------------------------------------------------------------
 // LA RUTA Y EL TIPO
@@ -216,7 +253,7 @@ export async function guardarBytesDeComprobante(
   }
   try {
     // Con `ifGenerationMatch: 0` una evidencia nunca se sobrescribe.
-    await (deps.almacen ?? almacen()).guardar(ruta, bytes, tipo.mime);
+    await (deps.almacen ?? almacenDeComprobantes()).guardar(ruta, bytes, tipo.mime);
   } catch {
     // El cotejo no depende de esto: el flujo sigue con `ruta: null`.
     return { codigo: 502, cuerpo: { error: 'no_se_guardo' } };
@@ -274,7 +311,7 @@ export const guardarComprobante = onRequest(
 
     // EL TOPE CUENTA SUBIDAS (no solo cotejos): cada imagen nueva anota su
     // idMeta en la solicitud, en una transacción (una escritura por imagen).
-    const a = almacen();
+    const a = almacenDeComprobantes();
     const reservar: Reservar = async (rutaNueva) => {
       const previa = entradaDe(solicitud, idMeta);
       // La ruta guardada se REVALIDA: una entrada con una ruta que no es la de
@@ -374,7 +411,7 @@ function diasEntre(hoy: string, otro: string): number {
 export async function purgarComprobantesDe(
   deps: { almacen?: Almacen; ahoraMs?: number } = {},
 ): Promise<ResultadoDePurga> {
-  const a = deps.almacen ?? almacen();
+  const a = deps.almacen ?? almacenDeComprobantes();
   const hoy = diaDeLaPaz(deps.ahoraMs ?? Date.now());
   const fichas = await getFirestore().collection('tenants').select('estado').get();
   const r: ResultadoDePurga = { tenantsRevisados: 0, carpetasBorradas: 0, objetosBorrados: 0, tenantsDeBajaBorrados: 0, errores: 0 };
@@ -407,7 +444,7 @@ export async function purgarComprobantesDe(
   return r;
 }
 
-/** Todos los días a las 03:30 de La Paz, después de la ventana de mantenimiento (de 2 a 3). */
+/** Todos los días a las 03:30 de La Paz, después de la ventana de mantenimiento (23:30 a 01:30). */
 export const purgarComprobantes = onSchedule(
   { schedule: '30 3 * * *', timeZone: 'America/La_Paz', region: REGION, timeoutSeconds: 540, maxInstances: 1 },
   async () => {

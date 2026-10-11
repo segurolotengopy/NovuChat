@@ -57,7 +57,7 @@ const NOMBRES = [
   'vmTextoDeGemini', 'vmJsonDeGemini', 'vmTextoSeguro', 'vmSd', 'vmEstadoBase', 'vmLeerEstado', 'vmEscribirEstado',
   'vmBarrer', 'vmYaVisto', 'vmMarcarVisto', 'vmAtencion', 'vmPrefijoPermitido', 'vmIdDeBoton', 'vmLeerBoton',
   'vmCodigoCorto', 'vmHuella', 'vmIdEstable', 'vmFechaLocal', 'vmHoraLocal', 'vmDiaSemana', 'vmMsLocal', 'vmFechaLegible', 'vmTablaDeDias',
-  'vmHorario', 'vmAbierto', 'vmHorarioLegible', 'VM_PROHIBIDAS', 'vmCanon', 'vmSinProhibidas',
+  'vmHorario', 'vmAbierto', 'vmHorarioLegible', 'VM_PROHIBIDAS', 'vmCanon', 'vmSinProhibidas', 'VM_ENLACE_DE_MAPA', 'vmEnlaceDeMapa',
 ] as const;
 type Lib = Record<(typeof NOMBRES)[number], Fn>;
 
@@ -215,7 +215,7 @@ describe('comun.js: red de palabras prohibidas', () => {
       expect(L.vmTextoSeguro(t), t).toBe(false);
     }
     for (const t of ['No estamos abiertos hoy', '¿A qué hora reservo?', 'Quiero reservar una mesa', 'Confirmar pedido', 'Recibí tu imagen',
-      'Estoy esperando el comprobante de tu pedido', 'Solicitud de reserva', 'El pago se coordina con el cliente al entregar o al recoger.',
+      'Sigo esperando el comprobante de tu pedido', 'Solicitud de reserva', 'El pago se coordina con el cliente al entregar o al recoger.',
       'Vino Tinto Reservado', 'Salón, sala reservada y terraza', 'Mesa reservada para eventos', 'Yo confirmo que llego a las 8']) {
       expect(L.vmTextoSeguro(t), t).toBe(true);
     }
@@ -262,17 +262,17 @@ describe('comun.js: red de palabras prohibidas', () => {
     }
     const LIMPIOS = [
       '¡Hola! Soy el asistente virtual de Q. ¿Qué quieres hacer?',
-      'Recibí tu comprobante y los datos coinciden con tu pedido #AB12. Ya lo pasé al restaurante; ellos revisan el pago en su banco antes de despacharlo.',
-      'Recibí tu comprobante, pero algunos datos no coinciden con tu pedido #AB12. Ya lo pasé al restaurante, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
-      'Recibí tu comprobante SIMULADO de tu pedido #AB12. Es una prueba: no se movió dinero. Ya lo pasé al restaurante como pedido de PRUEBA.',
+      'Recibí tu comprobante y los datos coinciden con tu pedido #AB12. Ya lo pasé a nuestro equipo; ellos revisan el pago en su banco antes de despacharlo.',
+      'Recibí tu comprobante, pero algunos datos no coinciden con tu pedido #AB12. Ya lo pasé a nuestro equipo, con los datos que leí, para que lo revisen. Guárdalo por si te lo piden. Si quieres hablar con ellos, toca el botón.',
+      'Recibí tu comprobante SIMULADO de tu pedido #AB12. Es una prueba: no se movió dinero. Ya lo pasé a nuestro equipo como pedido de PRUEBA.',
       'Listo: pasé tu pedido #AB12 al restaurante. El pago lo coordinas con ellos al recoger.',
       'Todavía es una solicitud: el restaurante la revisa según sus mesas.',
       'Listo, Ana: tu solicitud llegó al restaurante, pero todavía no es una reserva: ellos la revisan según sus mesas. Toca el botón si quieres hablar con ellos.',
-      'No pude incluir tu nota: «tequila» no está disponible por este medio.',
+      'No pude incluir tu nota: «tequila» no está disponible para pedir por WhatsApp.',
       'Atendemos lunes a domingo de 12:00 a 22:00.',
       'Para volver al inicio, escribe «menú».',
       'Revisen el pago en su banco antes de despachar.',
-      'Eso lo ve directamente el restaurante. Toca el botón para escribirles.',
+      'Eso lo ve directamente nuestro equipo. Toca el botón para escribirnos.',
       'Confirmar pedido', 'Cambiar algo', 'Enviar solicitud',
     ];
     for (const t of LIMPIOS) expect(L.vmTextoSeguro(t), t).toBe(true);
@@ -1149,6 +1149,35 @@ describe('Config del negocio', () => {
     expect(c['catalogo']).toEqual([{ id: 'a1', nombre: 'Queso fundido', precio: 40, area: 'Entradas', descripcion: 'Con chorizo', agotado: false }]);
     expect(c['phoneNumberId']).toBe(PNID);
   });
+  describe('horarioAtencionManda: el texto de «Config base» gana sobre el de la consola solo si el dato vale «si» y la base trae texto', () => {
+    const PARTIDO = 'lunes a viernes de 12:00 a 16:00 y de 18:00 a 22:00; sábado y domingo de 12:00 a 22:00';
+    const CONSOLA = 'Lunes a sábado de 12:00 a 22:00'; // lo que dice PANEL.operacion.horarioAtencion
+    const hor = (base: J, panel: J = PANEL): unknown => ok(panel, { base: { ...BASE, ...base } })['horarioAtencion'];
+    it('con el dato en «si» y la base con texto: gana la base, aunque la consola traiga el suyo', () => {
+      expect(hor({ horarioAtencion: PARTIDO, horarioAtencionManda: 'si' })).toBe(PARTIDO);
+      expect(hor({ horarioAtencion: PARTIDO, horarioAtencionManda: ' SI ' })).toBe(PARTIDO);
+    });
+    it('sin el dato: gana la consola, como siempre (los demás clientes y flujos no cambian)', () => {
+      expect(hor({ horarioAtencion: PARTIDO })).toBe(CONSOLA);
+    });
+    it('con el dato pero la base vacía, ausente o sin llenar (REEMPLAZAR_): gana la consola', () => {
+      expect(hor({ horarioAtencion: '', horarioAtencionManda: 'si' })).toBe(CONSOLA);
+      expect(hor({ horarioAtencionManda: 'si' })).toBe(CONSOLA);
+      expect(hor({ horarioAtencion: 'REEMPLAZAR_HORARIO_ATENCION_QTACO', horarioAtencionManda: 'si' })).toBe(CONSOLA);
+    });
+    it('con otro valor del dato («no», «true», vacío): gana la consola', () => {
+      for (const v of ['no', 'true', '', 'REEMPLAZAR_X', 1, true]) expect(hor({ horarioAtencion: PARTIDO, horarioAtencionManda: v }), String(v)).toBe(CONSOLA);
+    });
+    it('con el dato en «si» y la consola SIN texto: la base (igual que sin el dato)', () => {
+      const sinTexto: J = { ...PANEL, operacion: { ...(PANEL['operacion'] as J), horarioAtencion: '' } };
+      expect(hor({ horarioAtencion: PARTIDO, horarioAtencionManda: 'si' }, sinTexto)).toBe(PARTIDO);
+      expect(hor({ horarioAtencion: PARTIDO }, sinTexto)).toBe(PARTIDO);
+    });
+    it('el dato no toca lo demás de la consola (nombre, dirección, moneda siguen mandando)', () => {
+      const c = ok(PANEL, { base: { ...BASE, horarioAtencion: PARTIDO, horarioAtencionManda: 'si', nombreNegocio: 'Otro', direccion: 'Otra' } });
+      expect(c).toMatchObject({ nombreNegocio: 'Casa de Tacos', direccion: 'Calle 1 #23', moneda: 'BOB', horarioAtencion: PARTIDO });
+    });
+  });
   it('direccionMaps: del panel, solo con un enlace de Google Maps válido (la misma regla del servidor); si no, vacío', () => {
     const MAPA = 'https://www.google.com/maps/place/Q+Taco/@-17.78,-63.18,17z';
     const con = (v: unknown): string => ok({ ...PANEL, datosDelNegocio: { ...(PANEL['datosDelNegocio'] as J), direccionMaps: v } })['direccionMaps'] as string;
@@ -1441,6 +1470,31 @@ describe('Config del negocio', () => {
   it('waGraphVersion: la de «Config base» o v26.0', () => {
     expect(ok()['waGraphVersion']).toBe('v25.0');
     expect(ok(PANEL, { base: {} })['waGraphVersion']).toBe('v26.0');
+  });
+  it('voz 05/10: `direccionMaps` del panel solo pasa si es un enlace de Google Maps https de hasta 200 caracteres (segunda barrera tras el servidor)', () => {
+    const conMaps = (v: unknown): J => ok({ ...PANEL, datosDelNegocio: { ...(PANEL['datosDelNegocio'] as J), direccionMaps: v } });
+    for (const v of ['https://maps.app.goo.gl/AbC123', 'https://www.google.com/maps/place/Q+Taco/@-16.5,-68.1,17z', 'https://goo.gl/maps/xyz', '  https://maps.app.goo.gl/AbC123  ']) {
+      expect(conMaps(v)['direccionMaps'], String(v)).toBe(String(v).trim());
+    }
+    // negativos: http, otro dominio, un dominio que solo CONTIENE el de mapas, un javascript:, un enlace de 201 caracteres, algo que no es texto o ausente
+    const largo = 'https://www.google.com/maps/place/' + 'a'.repeat(170);
+    expect(largo.length).toBeGreaterThan(200);
+    for (const v of ['http://maps.app.goo.gl/AbC123', 'https://malo.test/maps', 'https://maps.app.goo.gl.malo.test/x', 'https://evil.test/?u=https://maps.app.goo.gl/x',
+      'javascript:alert(1)', 'https://usuario' + '@maps.app.goo.gl/x', 'https://maps.app.goo.gl/a b', largo, 5, null, { url: 'https://maps.app.goo.gl/x' }, '']) {
+      expect(conMaps(v)['direccionMaps'] || '', JSON.stringify(v)).toBe('');
+    }
+    expect(ok()['direccionMaps'] || '').toBe('');
+    // el respaldo (panel caído) no trae enlace de mapas: la reserva anotada sale sin botón
+    expect(correr({ statusCode: 500, body: {} })['direccionMaps'] || '').toBe('');
+  });
+  it('voz 05/10: la regla de `vmEnlaceDeMapa` es la MISMA que la del servidor (`ENLACE_DE_MAPA` de prompt.ts): el patrón y el tope', () => {
+    const servidor = readFileSync(join(RAIZ, '../../../../admin/functions/src/core/prompt/prompt.ts'), 'utf8');
+    const m = /export const ENLACE_DE_MAPA =\s*\/(.+)\/;/.exec(servidor);
+    expect(m, 'no se encontró ENLACE_DE_MAPA en prompt.ts').not.toBeNull();
+    expect(L.VM_ENLACE_DE_MAPA.source).toBe(new RegExp(m![1]!).source);
+    expect(servidor).toMatch(/t\.length <= 200 && ENLACE_DE_MAPA\.test\(t\)/);
+    expect(L.vmEnlaceDeMapa('https://maps.app.goo.gl/' + 'a'.repeat(176))).toBe('https://maps.app.goo.gl/' + 'a'.repeat(176)); // 200 justos
+    expect(L.vmEnlaceDeMapa('https://maps.app.goo.gl/' + 'a'.repeat(177))).toBe(''); // 201
   });
 });
 

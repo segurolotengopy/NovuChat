@@ -147,6 +147,16 @@ return out;
 }
 // <<< FIN validar-carrito.js
 
+// La ubicación del carrito web: {lat, lng} con números (no texto), en rango, distinta de (0, 0); 5 decimales. Si no, null.
+function cdeUbicacion(u) {
+  if (!u || typeof u !== 'object' || Array.isArray(u)) return null;
+  if (typeof u.lat !== 'number' || typeof u.lng !== 'number' || !Number.isFinite(u.lat) || !Number.isFinite(u.lng)) return null;
+  if (Math.abs(u.lat) > 90 || Math.abs(u.lng) > 180) return null;
+  // Se redondea PRIMERO y se valida el resultado: (0,000004; -0,000003) queda en (0, 0), el punto nulo de un GPS sin fijar.
+  const r = { lat: Math.round(u.lat * 1e5) / 1e5, lng: Math.round(u.lng * 1e5) / 1e5 };
+  return r.lat === 0 && r.lng === 0 ? null : r;
+}
+
 // El id de cada item viaja en el cuerpo del servidor; `validar-carrito.js` solo conserva nombre, cantidad y subtotal. Se emparejan
 // por posicion (el modulo toma `items.slice(0, 50)` en el mismo orden). Un id con otra forma queda vacio: ese item no se vende.
 // Devuelve un arreglo con los carritos que pasaron la validacion (puede estar vacio) y su numero de origen.
@@ -170,6 +180,9 @@ function cdeCarrito(entradas) {
         direccion: String(v.direccion || ''), nota: String(v.nota || ''), descartados: Number(v.descartados) || 0,
         // La referencia (opcional) la manda la página nueva; va FUERA del bloque copiado de validar-carrito.js (esa copia la fija una prueba).
         referencia: vmLinea(String(cuerpo.referencia || ''), 150),
+        // La ubicación (opcional) la manda la página: {lat, lng}. También FUERA del bloque copiado. Solo vale con dos números finitos en rango y no (0, 0),
+        // y se guarda con 5 decimales; cualquier otra cosa (texto, NaN, fuera de rango) es `null`: no se toma.
+        ubicacion: cdeUbicacion(cuerpo.ubicacion),
         itemsTotal: Number(v.itemsTotal) || 0,
         items: (Array.isArray(v.items) ? v.items : []).map((x, k) => {
           const id = crudos[k] && typeof crudos[k].id === 'string' ? crudos[k].id : '';

@@ -16,13 +16,17 @@
  *   - un carrito inválido (otro número, sin ítems, sin firma, de marca vieja) no produce nada: 0 mensajes, 0 avisos, 0 reportes;
  *   - un mensaje normal de WhatsApp sigue pasando por el receptor y SÍ se reporta como entrante (la guardia nueva no lo toca).
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type J } from './lib/flujo';
 import {
-  AHORA, boton, botonesDe, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
+  AHORA, boton, botonesDe, CARPETA_VM, CLIENTE, crear, entrega, estadoDe, idDeBoton, nodoDe, panel, PHONE_ID, QTACO, texto, turno,
 } from './lib/venta-minima-mundo';
 
 const CARRITO = 'Carrito del catálogo';
+// El pedido de dirección (PR-A 05/10): sale con el botón de ubicación; es el mismo mensaje de siempre, sin mensajes de más.
+const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta. Escríbela aquí o comparte tu ubicación con el botón. Para volver al inicio, escribe «menú».';
 
 const cabeceras = (extra: J = {}): J => ({
   'x-novuchat-numero': PHONE_ID, 'x-novuchat-timestamp': String(AHORA), 'x-novuchat-signature': `sha256=${'0'.repeat(64)}`, ...extra,
@@ -590,7 +594,7 @@ describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta e
     expect(estadoDe(w)['paso']).toBe('pedido_datos');
     w.estado.extraccion = NADA;
     const raro = turno(w, texto('...'));
-    expect(raro.mensajes[0]!.cuerpo).toBe('Para el delivery necesito la dirección exacta.');
+    expect(raro.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
     expect((estadoDe(w)['entrega'] as J)['direccion']).toBe('');
     const t = turno(w, texto('calle 1 numerro 2 Irpavi'));
     expect((estadoDe(w)['entrega'] as J)['direccion']).toBe('calle 1 numerro 2 Irpavi');
@@ -625,7 +629,7 @@ describe('delivery opcional: la secuencia real del 05/10 (dirección ya puesta e
     w.estado.extraccion = { ...NADA, quiereHablar: true };
     const t = turno(w, texto('necesito ayuda de un encargado'));
     expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('');
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/¡Claro! 🙂 Toca «Escribir al local» y conversas directamente con nuestro equipo/);
   });
 });
 
@@ -656,12 +660,12 @@ describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () 
     a.estado.extraccion = { ...NADA, quiereHablar: true };
     const t = turno(a, texto(dicho));
     expect(ent(a)['referencia'], dicho).toBe('');
-    expect(t.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(t.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
     const b = sinDireccion('cat_m1_b_' + dicho.length);
     b.estado.extraccion = { ...NADA, quiereHablar: true };
     const u = turno(b, texto(dicho));
     expect(ent(b)['direccion'], dicho).toBe('');
-    expect(u.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(u.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
   });
 
   it('M1, el caso opuesto: «Déjale al portero» con `quiereHablar` del modelo SÍ queda como referencia (tiene rasgos de un dato de entrega)', () => {
@@ -707,9 +711,9 @@ describe('#435 M1/M2: una intención no se vuelve dirección ni referencia', () 
     w.estado.extraccion = NADA;
     const uno = turno(w, texto('70012345'));
     expect(ent(w)['direccion']).toBe('');
-    expect(uno.mensajes[0]!.cuerpo).toBe('Para el delivery necesito la dirección exacta.');
+    expect(uno.mensajes[0]!.cuerpo).toBe(PIDE_DIRECCION);
     const dos = turno(w, texto('70012345'));
-    expect(dos.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona/);
+    expect(dos.mensajes[0]!.cuerpo).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
     expect(dos.avisos.length).toBeGreaterThan(0);
   });
 
@@ -782,8 +786,7 @@ describe('#435 ronda 2: rasgos de dirección y de referencia, ayuda por código,
     return w;
   };
   const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
-  const PIDE_DIRECCION = 'Para el delivery necesito la dirección exacta.';
-  const DERIVA = /Esto prefiero que lo vea una persona/;
+  const DERIVA = /Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/;
 
   it.each(['A media cuadra del gas', 'Déjale al portero', 'frente al mercado', 'Zona Sur', 'por la puerta verde'])(
     'A4 «%s» con la dirección PENDIENTE queda como REFERENCIA (no como dirección) y se vuelve a pedir la dirección, sin pasar al resumen', (dicho) => {
@@ -921,7 +924,7 @@ describe('#435 LOW-A2: la «dirección» o la «referencia» que pone el modelo 
       const t = turno(w, texto(dicho));
       expect(ent(w)['direccion'], dicho).toBe('');
       expect(ent(w)['referencia'], dicho).toBe(dicho);
-      expect(t.mensajes[0]!.cuerpo, dicho).toBe('Para el delivery necesito la dirección exacta.');
+      expect(t.mensajes[0]!.cuerpo, dicho).toBe(PIDE_DIRECCION);
       expect(estadoDe(w)['paso'], dicho).toBe('pedido_datos');
     },
   );
@@ -966,5 +969,296 @@ describe('#435 LOW-A1: cortesías y datos de entrega no son «ayuda»; «ayúden
     const w = conDireccion();
     const t = turno(w, texto(dicho));
     expect(t.avisos.length, dicho).toBeGreaterThan(0);
+  });
+  // Batería real (FPdr/FPdp): con `quiereHablar` del modelo, «ayúdenme» y «auxilio» derivan a la PRIMERA (la aclaración es para lo dudoso, no para una petición de ayuda clara),
+  // con el resumen ya dado y con la dirección pendiente.
+  it.each(['ayúdenme', 'auxilio'])('«%s» con `quiereHablar` del modelo deriva a la primera: con el resumen dado y con la dirección pendiente', (dicho) => {
+    const a = conDireccion();
+    a.estado.extraccion = { ...NADA, quiereHablar: true };
+    const ta = turno(a, texto(dicho));
+    expect(ta.avisos.length, dicho + ' (resumen dado)').toBeGreaterThan(0);
+    expect(ta.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
+    const b = crear();
+    carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_a1_p_' + String(++k).padStart(4, '0') }) });
+    b.estado.extraccion = { ...NADA, quiereHablar: true };
+    const tb = turno(b, texto(dicho));
+    expect(tb.avisos.length, dicho + ' (dirección pendiente)').toBeGreaterThan(0);
+    expect(tb.mensajes[0]!.cuerpo, dicho).toMatch(/Esto prefiero que lo vea una persona|¡Claro! 🙂 Toca «Escribir al local»|Disculpa, eso no lo puedo resolver por aquí/);
+  });
+  it.each(['no hay problema', 'alguien lo recibe', 'es para una persona'])('«%s» sin `quiereHablar` sigue sin derivar, con el resumen dado y con la dirección pendiente', (dicho) => {
+    const a = conDireccion();
+    expect(turno(a, texto(dicho)).avisos, dicho).toHaveLength(0);
+    const b = crear();
+    carrito(b, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_a1_q_' + String(++k).padStart(4, '0') }) });
+    b.estado.extraccion = NADA;
+    expect(turno(b, texto(dicho)).avisos, dicho).toHaveLength(0);
+  });
+});
+
+// =====================================================================================================
+// Batería real (caso M2bX, 3/6): con el resumen de delivery ya dado, un cierre o un pedido de cambio NO es referencia ni dirección
+// (ni dicho por el cliente ni puesto por el modelo en `referencia` / `direccion`)
+// =====================================================================================================
+describe('referencia sin cierres: «eso es todo» y «cámbiame el pedido» no se guardan como referencia ni dirección', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_cierre_' + String(++k).padStart(4, '0') }) });
+    return w;
+  };
+  const sinDireccion = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_cierre_' + String(++k).padStart(4, '0') }) });
+    return w;
+  };
+  const ent = (w: ReturnType<typeof crear>): J => estadoDe(w)['entrega'] as J;
+  const CIERRES = [
+    'eso es todo', 'Eso es todo', 'nada más', 'nada mas gracias', 'eso nomás', 'listo', 'gracias', 'ya está', 'es todo, gracias',
+    'cámbiame el pedido', 'cambia el pedido', 'modifica el pedido', 'quiero cambiar mi pedido', 'cancela el pedido',
+  ];
+
+  it.each(CIERRES)('«%s» dicho por el cliente (el modelo no asigna nada) no es referencia y no sale en el resumen', (dicho) => {
+    const w = conDireccion();
+    w.estado.extraccion = NADA;
+    const t = turno(w, texto(dicho));
+    expect(ent(w)['referencia'], dicho).toBe('');
+    expect(JSON.stringify(t.mensajes), dicho).not.toContain('(' + dicho);
+    expect(JSON.stringify(t.avisos), dicho).not.toContain(dicho);
+  });
+
+  it.each(CIERRES)('«%s» puesto por el MODELO en `referencia` no se guarda y no sale en el resumen ni en el aviso al local', (dicho) => {
+    const w = conDireccion();
+    w.estado.extraccion = { ...NADA, referencia: dicho };
+    const t = turno(w, texto(dicho));
+    expect(ent(w)['referencia'], dicho).toBe('');
+    // (Cancelar es otro flujo: reinicia el pedido entero, dirección incluida; lo demás conserva la dirección.)
+    if (!/^cancela/.test(dicho)) expect(ent(w)['direccion'], dicho).toBe('Av. Banzer 1234');
+    expect(JSON.stringify(t.mensajes), dicho).not.toContain('(' + dicho);
+    expect(JSON.stringify(t.avisos), dicho).not.toContain(dicho);
+  });
+
+  it.each(CIERRES)('«%s» puesto por el MODELO en `direccion` (con la dirección pendiente) no se guarda ni como dirección ni como referencia', (dicho) => {
+    const w = sinDireccion();
+    w.estado.extraccion = { ...NADA, direccion: dicho };
+    turno(w, texto(dicho));
+    expect(ent(w)['direccion'], dicho).toBe('');
+    expect(ent(w)['referencia'], dicho).toBe('');
+    expect(estadoDe(w)['paso'], dicho).not.toBe('pedido_confirmar');
+  });
+
+  it('el caso real: con la dirección dada y el modelo devolviendo «eso es todo» como referencia, el resumen sigue siendo «Entrega: delivery a Av. Banzer 1234» sin paréntesis', () => {
+    const w = conDireccion();
+    w.estado.extraccion = { ...NADA, referencia: 'eso es todo' };
+    const t = turno(w, texto('eso es todo'));
+    expect(t.mensajes[0]!.cuerpo).toContain('Entrega: delivery a Av. Banzer 1234');
+    expect(t.mensajes[0]!.cuerpo).not.toContain('eso es todo');
+  });
+
+  // El filtro corre sobre texto del cliente y del modelo: no puede retroceder de forma exponencial (alerta js/redos de CodeQL en el PR #440). Se prueba la función REAL del nodo.
+  const esCierreOCambio = (): ((n: string) => boolean) => {
+    const fuente = readFileSync(join(CARPETA_VM, 'src/nodos/plan-del-turno.js'), 'utf8');
+    const i = fuente.indexOf('function esCierreOCambio(n) {');
+    const j = fuente.indexOf('\n}\n', i) + 3;
+    expect(i, 'esCierreOCambio no está en plan-del-turno.js').toBeGreaterThan(0);
+    // Se ejecuta la función VERSIONADA del nodo (copiarla dejaría la prueba en verde mientras el flujo se rompe); el código es del repositorio, nunca de un tercero.
+    // Misma justificación que `bellido-flujo.test.ts`.
+    // nosemgrep: devsecops.js-eval-prohibido
+    return new Function(`${fuente.slice(i, j)}\nreturn esCierreOCambio;`)() as (n: string) => boolean;
+  };
+  it('rendimiento: 60 o 5000 repeticiones de «nomas » seguidas de «x» se resuelven en menos de 50 ms (sin retroceso exponencial)', () => {
+    const f = esCierreOCambio();
+    for (const veces of [60, 5000]) {
+      const entrada = 'nomas '.repeat(veces) + 'x';
+      const t0 = performance.now();
+      const r = f(entrada);
+      expect(performance.now() - t0, `${veces} repeticiones`).toBeLessThan(50);
+      expect(r).toBe(false);
+      const t1 = performance.now();
+      expect(f('quiero ' + 'por '.repeat(veces) + 'x')).toBe(false);
+      expect(performance.now() - t1, `${veces} preámbulos`).toBeLessThan(50);
+    }
+    expect(f('nomas '.repeat(60).trim())).toBe(true);
+  });
+  it('la función real: cierres y cambios sí; referencias válidas no', () => {
+    const f = esCierreOCambio();
+    for (const si of ['eso es todo', 'nada mas', 'listo', 'gracias', 'ya esta', 'eso seria todo', 'cambiame el pedido', 'quiero cambiar mi pedido', 'por favor cancela todo', 'modifica el pedido']) expect(f(si), si).toBe(true);
+    for (const no of ['a media cuadra del gas', 'dejale al portero', 'frente a la farmacia porton verde', 'calle 5 numero 12']) expect(f(no), no).toBe(false);
+  });
+
+  it.each(['A media cuadra del gas', 'Déjale al portero', 'frente a la farmacia, portón verde'])(
+    '«%s» SIGUE siendo una referencia válida: dicha por el cliente y puesta por el modelo', (dicho) => {
+      const a = conDireccion();
+      a.estado.extraccion = NADA;
+      const ta = turno(a, texto(dicho));
+      expect(ent(a)['referencia'], dicho).toBe(dicho);
+      expect(ta.mensajes[0]!.cuerpo, dicho).toContain('(' + dicho + ')');
+      const b = conDireccion();
+      b.estado.extraccion = { ...NADA, referencia: dicho };
+      const tb = turno(b, texto(dicho));
+      expect(ent(b)['referencia'], dicho).toBe(dicho);
+      expect(tb.mensajes[0]!.cuerpo, dicho).toContain('(' + dicho + ')');
+    },
+  );
+});
+
+// =====================================================================================================
+// BO1 (regresión leve del PR #440, batería del 05/10): con el resumen del pedido mostrado, pedir por texto que se cambie el pedido abre el
+// cambio IGUAL que el botón «Cambiar algo» (`p|cambiar`): la carta de nuevo, y lo que se elija ahí reemplaza el pedido. Antes caía en «no te entendí».
+// El filtro `esCierreOCambio` sigue impidiendo que esas frases se guarden como referencia o dirección (prueba arriba).
+// =====================================================================================================
+describe('BO1: con el resumen dado, «cámbiame el pedido» abre el cambio como el botón «Cambiar algo»', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conResumen = () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_bo1_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = NADA;
+    return { w, t };
+  };
+  const cuerpos = (t: ReturnType<typeof turno>): string => JSON.stringify(t.mensajes.map((m) => m.cuerpo));
+  const FRASES = ['cámbiame el pedido', 'quiero cambiar el pedido', 'modifica el pedido', 'Quiero cambiar mi pedido', 'cambia el pedido por favor', 'quisiera modificar mi pedido'];
+
+  it.each(FRASES)('«%s» hace lo mismo que el botón: carta de nuevo, el pedido de ahora a `carritoAnterior`, ninguna referencia, ningún aviso, sin el modelo', (dicho) => {
+    const ref = conResumen();
+    const tb = turno(ref.w, boton(idDeBoton(ref.t, 'Cambiar algo'), 'Cambiar algo'));
+    const { w } = conResumen();
+    const t = turno(w, texto(dicho));
+    expect(cuerpos(t), dicho).not.toMatch(/no te entend/i);
+    expect(cuerpos(t), dicho).toBe(cuerpos(tb));
+    expect(cuerpos(t), dicho).toMatch(/reemplaza tu pedido de ahora/);
+    expect(estadoDe(w)['paso'], dicho).toBe(estadoDe(ref.w)['paso']);
+    expect(estadoDe(w)['carrito'], dicho).toEqual(estadoDe(ref.w)['carrito']);
+    // El pedido de ahora queda en `carritoAnterior` (las líneas; el id del pedido web es propio de cada mundo).
+    const lineas = (x: ReturnType<typeof crear>): unknown => ((estadoDe(x)['carritoAnterior'] as J)['carrito'] as J[]).map((l) => [l['nombre'], l['cantidad']]);
+    expect(lineas(w), dicho).toEqual(lineas(ref.w));
+    expect((lineas(w) as unknown[]).length, dicho).toBeGreaterThan(0);
+    expect((estadoDe(w)['entrega'] as J)['referencia'], dicho).toBe('');
+    expect(t.avisos, dicho).toHaveLength(0);
+    expect(t.llamadas.extraer, dicho).toHaveLength(0);
+  });
+
+  it('no es una dirección ni una referencia aunque el modelo la ponga: abre el cambio y la referencia queda vacía', () => {
+    const { w } = conResumen();
+    w.estado.extraccion = { ...NADA, referencia: 'cámbiame el pedido' };
+    const t = turno(w, texto('cámbiame el pedido'));
+    expect((estadoDe(w)['entrega'] as J)['referencia']).toBe('');
+    expect(cuerpos(t)).toMatch(/reemplaza tu pedido de ahora/);
+  });
+
+  it.each(['quiero cambiar mi pedido a recoger', 'cambiar el pedido para otra dirección: Calle 5', 'cámbiame el pedido de la mesa 3'])(
+    '«%s» NO se toma por «Cambiar algo» (lleva algo más: sigue su camino de siempre)', (dicho) => {
+      const { w } = conResumen();
+      turno(w, texto(dicho));
+      expect(estadoDe(w)['carritoAnterior'] ?? null, dicho).toBeNull();
+    },
+  );
+
+  // Cambia un dato de «Config base» del mundo YA armado (el nodo lee la asignación en cada turno): el pedido sigue guardado y lo que cambia es el negocio.
+  const cambiarBase = (w: ReturnType<typeof crear>, nombre: string, valor: string | boolean): void => {
+    const lista = (w.mundo.flujo.nodes.find((n) => n.name === 'Config base')!.parameters['assignments'] as J)['assignments'] as J[];
+    lista.find((x) => x['name'] === nombre)!['value'] = valor;
+  };
+  // La compuerta del horario: el texto respeta el horario igual que el botón. Sin esta prueba, quitar `cerrado()` del código no rompería nada.
+  it.each(['cámbiame el pedido', 'quiero cambiar mi pedido'])('«%s» con el local CERRADO (lunes sin horario): fuera de horario, el pedido queda como estaba y no se abre el cambio', (dicho) => {
+    const { w } = conResumen();
+    const antes = JSON.stringify(estadoDe(w)['carrito']);
+    expect(antes.length, 'hay un pedido guardado').toBeGreaterThan(10);
+    cambiarBase(w, 'horario', 'lun=cerrado,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00'); // AHORA es lunes 10:00
+    const t = turno(w, texto(dicho));
+    expect(cuerpos(t), dicho).toMatch(/fuera de nuestro horario de pedidos/);
+    expect(cuerpos(t), dicho).not.toMatch(/reemplaza tu pedido de ahora/);
+    expect(estadoDe(w)['carritoAnterior'] ?? null, dicho).toBeNull();
+    expect(JSON.stringify(estadoDe(w)['carrito']), dicho).toBe(antes);
+    expect(t.avisos, dicho).toHaveLength(0);
+  });
+  it('con el local ABIERTO, la misma frase sí abre el cambio (control de la prueba de arriba)', () => {
+    const { w } = conResumen();
+    cambiarBase(w, 'horario', 'lun=08:00-23:00,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00');
+    expect(cuerpos(turno(w, texto('cámbiame el pedido')))).toMatch(/reemplaza tu pedido de ahora/);
+  });
+  it('con `pedidosActivo: false` la regla no actúa: el texto no abre el cambio ni deja `carritoAnterior`', () => {
+    const { w } = conResumen();
+    cambiarBase(w, 'pedidosActivo', false);
+    const t = turno(w, texto('cámbiame el pedido'));
+    expect(cuerpos(t)).not.toMatch(/reemplaza tu pedido de ahora/);
+    expect(estadoDe(w)['carritoAnterior'] ?? null).toBeNull();
+    expect(t.avisos).toHaveLength(0);
+  });
+  it('fuera del paso de confirmar la regla no actúa: en el menú no hay pedido que reemplazar (`carritoAnterior` vacío)', () => {
+    const w = crear();
+    turno(w, texto('hola'));
+    w.estado.extraccion = NADA;
+    turno(w, texto('cámbiame el pedido'));
+    expect(estadoDe(w)['carritoAnterior'] ?? null).toBeNull();
+  });
+});
+
+// =====================================================================================================
+// Seguimientos LOW de la revisión de seguridad del PR #440: con `quiereHablar` del modelo, ni una frase de ENTREGA con «alguien» («mandalo con alguien»,
+// «dejalo con alguien», «avisa a alguien», «me ayudas con el pedido») ni una cortesía («no hay problema», «es para una persona») derivan a la primera: sale la
+// aclaración (o la pregunta de entrega) con botones y CERO avisos; «ayúdenme» y «auxilio» siguen derivando a la primera con aviso + botón.
+// =====================================================================================================
+describe('LOW #440: con `quiereHablar`, la entrega con «alguien» y las cortesías no derivan a la primera; la ayuda clara sí', () => {
+  const NADA = { lineas: [], entrega: '', direccion: '', referencia: '', nombre: '', quiereHablar: false };
+  let k = 0;
+  const conResumen = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: 'Av. Banzer 1234', pedidoId: 'cat_low_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = { ...NADA, quiereHablar: true };
+    return w;
+  };
+  const conDireccionPendiente = () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', pedidoId: 'cat_low_' + String(++k).padStart(4, '0') }) });
+    w.estado.extraccion = { ...NADA, quiereHablar: true };
+    return w;
+  };
+  const NO_DERIVAN = ['mandalo con alguien', 'dejalo con alguien', 'avisa a alguien', 'me ayudas con el pedido', 'no hay problema', 'es para una persona'];
+
+  it.each(NO_DERIVAN)('«%s» con `quiereHablar`: 0 avisos y una aclaración con botones, con el resumen dado y con la dirección pendiente', (dicho) => {
+    for (const [donde, w] of [['resumen dado', conResumen()], ['dirección pendiente', conDireccionPendiente()]] as const) {
+      const t = turno(w, texto(dicho));
+      expect(t.avisos, `${dicho} (${donde})`).toHaveLength(0);
+      const m = t.mensajes[t.mensajes.length - 1]!;
+      expect(botonesDe(m).length, `${dicho} (${donde}): trae botones`).toBeGreaterThan(0);
+      expect(JSON.stringify(t.mensajes.map((x) => x.cuerpo)), `${dicho} (${donde})`).not.toMatch(/Esto prefiero|no lo puedo resolver por aquí|conversas directamente con nuestro equipo/);
+    }
+  });
+
+  it.each(['ayúdenme', 'auxilio'])('«%s» con `quiereHablar` sigue derivando a la primera, con aviso y con el botón «Escribir al local»', (dicho) => {
+    for (const [donde, w] of [['resumen dado', conResumen()], ['dirección pendiente', conDireccionPendiente()]] as const) {
+      const t = turno(w, texto(dicho));
+      expect(t.avisos.length, `${dicho} (${donde})`).toBeGreaterThan(0);
+      expect(botonesDe(t.mensajes[0]!).map((b) => b.title).join('|') + JSON.stringify(t.mensajes[0]), `${dicho} (${donde})`).toMatch(/Escribir al local/);
+    }
+  });
+});
+
+describe('PR-A (05/10): la ubicación del carrito de la página llega por `Carga de entrada` solo si es válida', () => {
+  const entregaDe = (w: ReturnType<typeof crear>): J => (estadoDe(w) as J)['entrega'] as J;
+  it('una ubicación válida entra (5 decimales) y vale como dirección: el pedido va directo al resumen, sin pedir la dirección', () => {
+    const w = crear();
+    const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.500004, lng: -68.15 } }) });
+    expect(t.fallo).toBeNull();
+    expect(entregaDe(w)['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+    expect(estadoDe(w)['paso']).toBe('pedido_confirmar');
+    expect(titulos(t)).toContain('Confirmar pedido');
+    expect(JSON.stringify(t.mensajes)).toContain('ubicación compartida');
+  });
+  it('negado: una ubicación inválida (texto, fuera de rango, NaN, (0, 0), incompleta) no entra y se pide la dirección con el botón de ubicación', () => {
+    for (const mala of [{ lat: '-16.5', lng: '-68.15' }, { lat: 95, lng: 0 }, { lat: -16.5, lng: 181 }, { lat: null, lng: null }, { lat: 0, lng: 0 }, { lat: -16.5 }, 'x', [], 7]) {
+      const w = crear();
+      const t = carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: mala }) });
+      expect(t.fallo, JSON.stringify(mala)).toBeNull();
+      expect(entregaDe(w)['ubicacion'], JSON.stringify(mala)).toBeUndefined();
+      expect(estadoDe(w)['paso'], JSON.stringify(mala)).toBe('pedido_datos');
+      expect(t.mensajes[0]!['payload'].interactive.type, JSON.stringify(mala)).toBe('location_request_message');
+    }
+  });
+  it('privacidad: lo que se reporta a la consola (ingesta) no lleva las coordenadas', () => {
+    const w = crear();
+    carrito(w, { headers: cabeceras(), body: cuerpo({ entrega: 'envio', direccion: '', ubicacion: { lat: -16.5, lng: -68.15 } }) });
+    expect(JSON.stringify(w.mundo.llamadas.ingesta)).not.toMatch(/-16[.,]5|68[.,]15/);
   });
 });

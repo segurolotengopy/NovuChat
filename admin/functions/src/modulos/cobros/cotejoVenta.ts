@@ -247,6 +247,9 @@ export const cotejarComprobanteVenta = onRequest(
         if (previo) {
           // El cierre ya existía (lo registró otro camino): se reescribe el cotejo, no se cuenta de nuevo.
           tx.update(refCierre, { cotejo: registroCotejo });
+          // La ruta de la imagen (ya validada contra ESTE comercio y ESTE idMeta) se agrega con
+          // merge: sin ella el visor tendría que derivarla. Sin imagen, nada cambia.
+          if (rutaImagen) tx.set(refCierre.collection('privado').doc('datos'), { rutaComprobante: rutaImagen }, { merge: true });
         } else {
           tx.set(refCierre, {
             tipo: 'venta', ocurridoEn: Timestamp.fromMillis(ahoraMs), referencia,
@@ -256,6 +259,9 @@ export const cotejarComprobanteVenta = onRequest(
           tx.set(refCierre.collection('privado').doc('datos'), {
             telefono, conversacionId: idConversacion,
             ...(nombre ? { nombreCliente: nombre } : {}),
+            // Lo lee `verComprobante` (en nombre del administrador, el operador o el soporte);
+            // solo si la ruta es la de ESTE comercio y ESTE mensaje (`rutaValidaDe`).
+            ...(rutaImagen ? { rutaComprobante: rutaImagen } : {}),
             detalle: detalleDeLaVentaCalificada(esperado, moneda, cal.estado, cal.motivo),
           });
         }

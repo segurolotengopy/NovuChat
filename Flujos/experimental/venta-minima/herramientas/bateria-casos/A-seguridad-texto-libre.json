@@ -89,8 +89,23 @@
           {
             "texto": "cancela el pedido",
             "esperado": {
+              "estado": {
+                "entrega.entrega": {
+                  "regex": "^(delivery)?$"
+                },
+                "entrega.direccion": {
+                  "regex": "^(Av\\. Banzer 1234)?$"
+                },
+                "entrega.referencia": {
+                  "vacio": true
+                }
+              },
+              "igualAntes": [
+                "entrega.referencia"
+              ],
               "textosNo": [
-                "cancela el pedido"
+                "Entrega: delivery a [^\\n]*\\(",
+                "referencia:"
               ]
             }
           },
@@ -111,7 +126,8 @@
             }
           }
         ]
-      }
+      },
+      "nota": "«cancela el pedido» puede CANCELAR el pedido (#440) o no (main): lo que nunca puede pasar es guardarla como dirección o referencia."
     },
     {
       "id": "S2",

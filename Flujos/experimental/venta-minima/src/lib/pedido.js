@@ -878,8 +878,16 @@ function _pdTipoDe(e) {
   const o = e && typeof e === 'object' ? e : {};
   return _pdTipoEntrega(o.entrega || o.modalidad || o.tipo || '');
 }
+// Una ubicación compartida válida: dos números finitos en rango y NO (0, 0) (el punto nulo de un GPS sin fijar). Misma regla que el servidor
+// (la ubicación que manda la página del catálogo); PR-A 05/10.
+// Se valida el valor YA REDONDEADO a 5 decimales (el que se guarda): (0,000004; -0,000003) queda en (0, 0) y no vale.
 function _pdUbicacion(u) {
-  return !!u && typeof u === 'object' && Number.isFinite(u.lat) && Number.isFinite(u.lng) && Math.abs(u.lat) <= 90 && Math.abs(u.lng) <= 180;
+  return !!u && typeof u === 'object' && Number.isFinite(u.lat) && Number.isFinite(u.lng) && Math.abs(u.lat) <= 90 && Math.abs(u.lng) <= 180
+    && !(Math.round(u.lat * 1e5) === 0 && Math.round(u.lng * 1e5) === 0);
+}
+// Lo que se guarda de una ubicación: 5 decimales (≈ 1 m), como el servidor.
+function _pdCopiaUbicacion(u) {
+  return { lat: Math.round(u.lat * 1e5) / 1e5, lng: Math.round(u.lng * 1e5) / 1e5 };
 }
 // El nombre de perfil de WhatsApp sirve de nombre de quien recibe solo si tiene 2 palabras o mas.
 function _pdNombreDePerfil(perfil) {
@@ -924,7 +932,7 @@ function pdFusionarEntrega(previa, extraccion) {
     nombre: _pdTexto(x.nombre, 80) || _pdTexto(p.nombre, 80),
   };
   const u = _pdUbicacion(x.ubicacion) ? x.ubicacion : p.ubicacion;
-  if (_pdUbicacion(u)) nuevo.ubicacion = { lat: u.lat, lng: u.lng };
+  if (_pdUbicacion(u)) nuevo.ubicacion = _pdCopiaUbicacion(u);
   return nuevo;
 }
 
@@ -935,10 +943,14 @@ function _pdSubtotalCent(l) {
   return _pdCentavos(l.precio) * (Number.isInteger(l.cantidad) ? l.cantidad : 0);
 }
 function _pdDestino(e, perfil) {
-  const dir = _pdTexto(e.direccion, 200) || (_pdUbicacion(e.ubicacion) ? 'ubicación compartida' : '');
+  const escrita = _pdTexto(e.direccion, 200);
+  const hayUbicacion = _pdUbicacion(e.ubicacion);
+  const dir = escrita || (hayUbicacion ? 'ubicación compartida' : '');
   const ref = _pdTexto(e.referencia, 150);
   const nom = _pdNombreEntrega(e, perfil);
-  return 'delivery a ' + (dir || 'una dirección por definir') + (ref ? ' (' + ref + ')' : '') + (nom ? ', recibe ' + nom : '');
+  // Con la dirección escrita Y la ubicación (PR-A 05/10) el resumen dice las dos: el cliente confirma lo que el local va a recibir.
+  return 'delivery a ' + (dir || 'una dirección por definir') + (ref ? ' (' + ref + ')' : '')
+    + (escrita && hayUbicacion ? ', con la ubicación que compartiste' : '') + (nom ? ', recibe ' + nom : '');
 }
 
 // El resumen que el cliente confirma (texto fijo del diseno). El total es el de la carta; con delivery se
@@ -1106,8 +1118,11 @@ function pdNuevoPedido(from, nombrePerfil, carrito, entrega, total, moneda, ahor
   if (typeof total !== 'number' || _pdCentavos(total) !== _pdCentavos(calculado)) errores.push('total_no_coincide');
   const e = entrega && typeof entrega === 'object' ? entrega : {};
   const tipo = _pdTipoDe(e);
-  const ent = { entrega: tipo, modalidad: tipo, direccion: _pdTexto(e.direccion, 200), referencia: _pdTexto(e.referencia, 150), nombre: _pdNombreEntrega(e, nombrePerfil) };
-  if (_pdUbicacion(e.ubicacion)) ent.ubicacion = { lat: e.ubicacion.lat, lng: e.ubicacion.lng };
+  // Minimización: dirección, referencia y ubicación solo se guardan con delivery (un recojo no tiene a dónde entregar; el estado puede
+  // conservar un dato viejo del cliente y no por eso se copia al pedido guardado en `sd.pedidos`).
+  const conEntrega = tipo === 'delivery';
+  const ent = { entrega: tipo, modalidad: tipo, direccion: conEntrega ? _pdTexto(e.direccion, 200) : '', referencia: conEntrega ? _pdTexto(e.referencia, 150) : '', nombre: _pdNombreEntrega(e, nombrePerfil) };
+  if (conEntrega && _pdUbicacion(e.ubicacion)) ent.ubicacion = _pdCopiaUbicacion(e.ubicacion);
   const clave = vmIdEstable('ped', tel, lineas, anclaMs, ms);
   return {
     pedidoId: clave.id,

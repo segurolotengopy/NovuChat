@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { db, funciones } from '../../core/lib/firebase';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
+import { capacidadesDeConsola, useModulos } from '../../central/lib/flujos';
 
 /**
  * =============================================================================
@@ -46,8 +47,25 @@ const MOTIVOS: Record<string, string> = {
 /** Debajo de esto el comercio tiene que enterarse antes de quedarse sin nada. */
 const POCO = 3;
 
+/**
+ * LA RUTA EXIGE EL MÓDULO (05/10/2026). Ocultar la pestaña no cerraba nada: la
+ * dirección `/negocio/{id}/inventario` se abría igual. Ahora, sin el módulo, la
+ * ruta lleva al inicio y NO abre ni una lectura (ni el catálogo ni los
+ * movimientos); mientras la ficha carga, no muestra el contenido. Es cosmético,
+ * como todo el menú: el servidor lo exige en `ajustarStock` y
+ * `dejarDeControlarStock`. El módulo lo decide el registro por la fachada
+ * (`capacidadesDeConsola`), así que un comercio de venta sin lista de módulos lo
+ * sigue viendo como siempre.
+ */
 export function Inventario() {
   const { tenantId = '' } = useParams();
+  const modulos = useModulos(tenantId);
+  if (modulos === null) return <section><h2>Inventario</h2><p>Cargando…</p></section>;
+  if (!capacidadesDeConsola(modulos).conInventario) return <Navigate to="/" replace />;
+  return <InventarioDelNegocio tenantId={tenantId} />;
+}
+
+function InventarioDelNegocio({ tenantId }: { tenantId: string }) {
   const [items, setItems] = useState<Item[] | null>(null);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [estado, setEstado] = useState<string | null>(null);

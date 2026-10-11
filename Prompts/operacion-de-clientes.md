@@ -94,7 +94,7 @@ Lee primero, en este orden: `CLAUDE.md` entero, `ESTADO.md` (asientos del 24 y
 7. **Cláusulas prohibidas** (§12.3): ninguna en propuestas, contratos ni
    guiones. Si el cliente la pide, se ofrece lo que está en la columna «qué se
    ofrece en su lugar».
-8. **Publicar solo desde `origin/main`**, en la ventana de 02:00 a 03:00,
+8. **Publicar solo desde `origin/main`**, en la ventana de 23:30 a 01:30 (hora de Bolivia),
    con ensayo previo en el número del demo, y `estado-de-versiones.sh` 8/8
    al cerrar.
 9. **Reclamos con circuito** (§12.7): todo reclamo se carga en «Reclamos» del
@@ -173,7 +173,7 @@ siguen el circuito. **Costo:** los mensajes de la prueba, contados.
 ### Bloque 4 — Pase a producción (después de H1, H3 y el bloque 3)
 `docs/pase-a-produccion/RUNBOOK.md` completo: ejes escritos con
 `asignar-plan`, contrato con quién paga Meta y cambios incluidos, acta con
-evidencia, ventana de 02:00 a 03:00 para la publicación final. Es el hito
+evidencia, ventana de 23:30 a 01:30 para la publicación final. Es el hito
 **H4** y lo revisa la sesión revisora antes del OK.
 
 ### Lo que NO se hace desde esta sesión (y por qué)

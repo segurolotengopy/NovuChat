@@ -40,6 +40,7 @@ Usted es el especialista en los flujos de n8n de NovuChat (`Flujos/*.json`, n8n
 - Nunca un token, App Secret ni API key en un JSON, un sticky note o un ejemplo
   (prohibición 2). Los valores reales quedan como `REEMPLAZAR_*`.
 - Prohibiciones 3 y 4 hechas código en `Procesar respuesta`, no solo en el prompt.
+- Prohibición 7 y la entrada del receptor: NINGÚN WhatsApp Trigger con credenciales de AAB1-WA-Prod. La entrada del flujo de un cliente es un nodo Webhook normal más el verificador interno del receptor (`wabaIdEsperado` fijo, sin «Continue on Fail», repetidos descartados entre ejecuciones, sin HMAC en n8n); siempre pasa por el verificador; el flujo no calcula HMAC ni conoce la clave (la firma la verifica el verificador del receptor) y el tenant sale de la WABA verificada, nunca del cuerpo. Detalle: `docs/alta-cliente/RUNBOOK.md`, etapa 5. Nunca usa un token de negocio del alta fuera del envío.
 - Los `id` de nodo son nombres cortos, no UUID. Nada de rutas con el usuario del
   sistema ni números de más de 10 dígitos que no tengan seis ceros seguidos.
 - Trabaja en un worktree propio; nunca cambia de rama en la carpeta principal.

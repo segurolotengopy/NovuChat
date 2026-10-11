@@ -24,7 +24,8 @@
 # Qué comprueba, y con qué código (los códigos salen de `catalogoWeb.ts`):
 #   1. `/c/<ficha>` → 200 con la CSP propia del catálogo (sin marcos, sin
 #      Google, sin Firebase, sin Functions), HSTS, nosniff, X-Frame-Options,
-#      X-Robots-Tag y Referrer-Policy: no-referrer (la ficha viaja en la ruta).
+#      X-Robots-Tag, Referrer-Policy: no-referrer (la ficha viaja en la ruta) y
+#      Permissions-Policy con `geolocation=(self)` (ubicación para la entrega).
 #   2. La consola NO está en este origen: `/` y `/index.html` → 404.
 #   3. Las Functions públicas contestan: GET `/api/catalogo/<x>/checkout` → 405
 #      (método equivocado: contestó la Function), GET `/api/catalogo/<x>` → 404
@@ -106,6 +107,12 @@ for h in strict-transport-security x-content-type-options x-frame-options x-robo
 done
 if grep -q '^referrer-policy: no-referrer' <<< "$cab"; then ok "Referrer-Policy: no-referrer"
 else mal "sin Referrer-Policy: no-referrer (la ficha viaja en la ruta)"; fi
+# La página pide la ubicación para la entrega («Usar mi ubicación actual»):
+# `geolocation=(self)` y solo eso. `(self)` y no `*`: ningún marco ajeno la usa.
+pp="$(grep '^permissions-policy:' <<< "$cab")"
+if grep -qF 'geolocation=(self)' <<< "$pp"; then ok "Permissions-Policy: geolocation=(self)"
+else mal "Permissions-Policy sin geolocation=(self): «Usar mi ubicación actual» no funcionaría"; fi
+if grep -qE 'geolocation=(\*|\(\*\))' <<< "$pp"; then mal "Permissions-Policy abre la geolocalización a cualquier origen"; fi
 
 echo "2. La consola NO está en este origen"
 esperar 404 "GET  / (nada fuera de /c/**)"              GET "$PUBLICO/"

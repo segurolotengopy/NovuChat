@@ -55,9 +55,9 @@ const AM_NUMERO_ID = AM_PRUEBA ? String(AM_CFG.phoneNumberIdEsperado || '') : (A
 const AM_REC = vmDigitos(AM_CFG.numeroRecepcion);
 const AM_REC_OK = AM_REC.length >= 8 && AM_REC.length <= 15 && AM_REC !== AM_FROM_DIG;
 const AM_GEN_CUERPO = AM_CONVERSA
-  ? 'Esto prefiero que lo vea una persona del restaurante 🙂. Toca «Escribir al local» para hablar con ellos. '
+  ? 'Disculpa, eso no lo puedo resolver por aquí 🙏. Toca «Escribir al local» y lo ves directamente con nuestro equipo. '
     + 'Para volver al inicio, escribe «menú».'
-  : 'Eso lo ve directamente el restaurante. Toca el botón para escribirles.';
+  : 'Eso lo ve directamente nuestro equipo. Toca el botón para escribirnos.';
 const AM_SEGUIR = 'Para volver al inicio, escribe «menú».';
 const AM_GEN_BOTON = 'Escribir al local';
 const AM_HORA_MS = 60 * 60 * 1000;
@@ -165,7 +165,11 @@ function amSinBoton(cuerpo) {
     const i = o.indexOf(':');
     if (i > 0) salida.push(o.slice(0, i).trimEnd() + '.');
   }
-  return salida.join(' ').trim() || 'Eso lo ve directamente el restaurante.';
+  // Si de la frase queda solo un saludo («¡Claro! 🙂»; sin contar la cola de «menú»), no es una respuesta: se completa con lo que sí es cierto.
+  const cuerpoSolo = salida.filter((o) => o !== AM_SEGUIR);
+  const letras = cuerpoSolo.join(' ').replace(/[^\p{L}]/gu, '').length;
+  if (!cuerpoSolo.length || letras < 12) return cuerpoSolo.concat(['Eso lo ve directamente nuestro equipo.']).concat(salida.filter((o) => o === AM_SEGUIR)).join(' ').trim();
+  return salida.join(' ').trim();
 }
 // El botón que abre el chat del restaurante. La URL del plan se acepta si es https y no es el chat del
 // propio cliente; si no, sale del número de recepción; sin número válido, texto sin la frase del botón.
@@ -195,7 +199,7 @@ function amEnlace(cuerpoCrudo, boton, urlDelPlan, tipoReporte, sinMenu) {
     const solo = amSinBoton(cuerpo);
     return { payload: amTexto(solo), texto: solo, respaldo: solo, tipoReporte: 'text' };
   }
-  return { payload: amCta(cuerpo, titulo, url), texto: cuerpo, respaldo: vmRecorte(cuerpo + '\n\nEscríbeles aquí: ' + url, 4000), tipoReporte: tipoReporte || 'interactive' };
+  return { payload: amCta(cuerpo, titulo, url), texto: cuerpo, respaldo: vmRecorte(cuerpo + '\n\nEscríbenos aquí: ' + url, 4000), tipoReporte: tipoReporte || 'interactive' };
 }
 function amGenerico(motivo) {
   AM_errores.push(motivo);
@@ -269,6 +273,21 @@ function amArmarUno(m) {
     if (Number.isFinite(Number(m.monto)) && m.monto !== null && m.monto !== '') extra.monto = Number(m.monto);
   }
   if (tipo === 'imagen') return amQr(m, cuerpo);
+  // El pedido de ubicación (PR-A 05/10): el botón nativo «Enviar ubicación» de WhatsApp. El texto se pide escrito O con el botón; si no cabe en
+  // 1.024 caracteres (las notas del turno lo empujan) o el envío falla, sale en texto con la versión SIN botón (`cuerpoSinBoton`): nunca se
+  // nombra un botón que no se ve. Las dos versiones pasan por la red de palabras. Es UN mensaje, el mismo que ya salía como texto.
+  if (tipo === 'ubicacion') {
+    const sinBoton = amEmojis(String(m.cuerpoSinBoton === undefined || m.cuerpoSinBoton === null ? '' : m.cuerpoSinBoton).trim()).trim();
+    if (!sinBoton) { AM_errores.push('mensaje_sin_cuerpo: ubicacion_sin_version_sin_boton'); return null; }
+    if (!amSeguro(sinBoton)) return amGenerico('texto_reemplazado_por_palabra_prohibida');
+    if (!AM_PASO && amAfirmaPase(sinBoton)) return amGenerico('pase_afirmado_sin_aviso_salido');
+    const textoSinBoton = amConSeguir(sinBoton);
+    const conBoton = amConSeguir(cuerpo);
+    if (conBoton.length > 1024) return Object.assign({ payload: amTexto(textoSinBoton), texto: textoSinBoton, respaldo: textoSinBoton, tipoReporte: 'text' }, extra);
+    return Object.assign({ payload: Object.assign(amBase('interactive'), { interactive: {
+      type: 'location_request_message', body: { text: conBoton }, action: { name: 'send_location' },
+    } }), texto: conBoton, respaldo: textoSinBoton, tipoReporte: 'interactive' }, extra);
+  }
   // El enlace a la carta (página del catálogo): el botón abre ESA dirección, no el chat del local. Vale solo con una URL segura
   // (https, dominio con nombre, sin usuario ni puerto); sin ella no se promete una carta que el cliente no puede abrir: se pasa con el local.
   if (tipo === 'enlace' && m.catalogo === true) {

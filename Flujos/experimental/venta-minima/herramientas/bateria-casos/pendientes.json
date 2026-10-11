@@ -3,19 +3,6 @@
   "nodes": [],
   "nota": "Escenarios que esta batería NO implementa todavía: esperan la rama indicada (o no se asignaron a un lote). Es una lista de seguimiento, no una suite.",
   "pendientes": [
-    {
-      "id": "B4",
-      "espera": "rama funcional",
-      "titulo": "Formas naturales de volver al pedido anterior tras «Cambiar algo»",
-      "nota": "marcado como falla en la columna «Hoy»; no figuraba en la lista de exclusión del encargo"
-    },
-    {"id": "C1", "espera": "rama funcional", "titulo": "Cancelar un pedido guardado sin confirmar"},
-    {"id": "C2", "espera": "rama funcional", "titulo": "«Cancelar pedido» con el QR enviado dice que se canceló"},
-    {"id": "C3", "espera": "rama funcional", "titulo": "Cancelar con el comprobante ya enviado: pasa al local con aviso y botón"},
-    {"id": "C4", "espera": "rama funcional", "titulo": "«no cancela» / «no quiero cancelar» no cancela"},
-    {"id": "C5", "espera": "rama funcional", "titulo": "«Qué tengo guardado» muestra el resumen con botones"},
-    {"id": "C6", "espera": "rama funcional", "titulo": "«Qué tengo guardado» sin carrito"},
-    {"id": "C9", "espera": "rama funcional", "titulo": "Frase que no se entiende: una aclaración con botones, deriva solo si insiste"},
     {"id": "E1", "espera": "rama voz", "titulo": "Comprobante que coincide: el texto nuevo, nunca «pago acreditado»"},
     {"id": "E4", "espera": "rama voz", "titulo": "Comprobante ilegible por segunda vez o sin cotejo: pasa al local con aviso"},
     {

@@ -355,14 +355,15 @@ service firebase.storage {
     // NINGUNA PERSONA LEE NI ESCRIBE AQUÍ, y esa es toda la regla. Quien escribe
     // es la Function `guardarComprobante` con el SDK Admin, que se salta estas
     // reglas, y quien borra es `purgarComprobantes` (90 días, y la carpeta
-    // entera de un comercio dado de baja). Nada se muestra en la consola.
+    // entera de un comercio dado de baja). La consola las muestra SOLO por la callable
+    // `verComprobante` (bytes, auditada y con tope), nunca por una regla de Storage.
     //
     // POR QUÉ SE NIEGA TAMBIÉN AL ADMINISTRADOR, AL OPERADOR Y AL PROPIETARIO.
     // Es el comprobante bancario de un TERCERO —el cliente final del comercio—:
     // nombre, cuenta y montos. NovuChat lo guarda como evidencia de un pago, no
-    // para repartirlo. Si el comercio necesita ver una imagen, es un
-    // procedimiento con el SDK Admin y el «sí» de Andres, no un camino de la
-    // consola. Y como no hay URL de descarga con token, tampoco existe una
+    // para repartirlo. Si el comercio necesita ver una imagen, la ve por
+    // `verComprobante` (administrador, operador o soporte vigente), no por un camino
+    // de Storage. Y como no hay URL de descarga con token, tampoco existe una
     // capacidad que se pueda reenviar.
     //
     // LA NEGACIÓN FINAL de abajo ya lo cubriría; este bloque existe para que la
