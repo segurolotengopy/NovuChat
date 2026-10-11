@@ -226,6 +226,56 @@ describe('hallar una palabra y llegar al mensaje', () => {
     expect(fragmento('hola mundo', ['hola'], Number.NaN)).toBe('');
     expect(fragmento('hola mundo largo', ['hola'], 2).length).toBeLessThanOrEqual(2);
   });
+
+  it('O1: con la palabra al final del texto no deja un «…» final falso ni corta la palabra', () => {
+    const texto = 'uno dos tres cuatro cinco seis siete ocho nueve diez once doce trece catorce quince alfajores';
+    for (const ancho of [12, 20, 33, 60]) {
+      const f = fragmento(texto, ['alfajor'], ancho);
+      expect(f.endsWith('alfajores'), `ancho ${ancho}: ${f}`).toBe(true);
+      expect(f.endsWith('…')).toBe(false);
+      expect(f.startsWith('…')).toBe(true);
+      expect(f.length).toBeLessThanOrEqual(ancho);
+    }
+    // El texto llega exacto hasta el último carácter: la ventana usa todo el ancho.
+    expect(fragmento(texto, ['alfajor'], 20)).toBe('…' + texto.slice(-19));
+  });
+
+  it('O2: NFKD desplaza la posición (… -> ..., ligaduras, ancho completo) y la ventana igual cae sobre la palabra', () => {
+    const cola = ' y además tengo varias cosas más para contar sobre el pedido del sábado en la tarde, gracias';
+    // 40 «…» (cada uno ocupa 3 caracteres en el texto plano) antes de la palabra.
+    const conPuntos = '…'.repeat(40) + ' quiero alfajores' + cola;
+    expect(fragmento(conPuntos, ['alfajor'], 30)).toContain('alfajor');
+    // Ligaduras: «ﬁ» se vuelve «fi» y las palabras se hallan igual.
+    const conLigadura = 'ﬁesta '.repeat(30) + 'alfajores' + cola;
+    expect(fragmento(conLigadura, ['alfajor'], 30)).toContain('alfajor');
+    // El ❤️ (U+2764 U+FE0F) pierde su selector en el texto plano; tampoco desplaza.
+    const conCorazones = '❤️'.repeat(40) + ' alfajores' + cola;
+    expect(fragmento(conCorazones, ['alfajor'], 30)).toContain('alfajor');
+    // Tildes y ancho completo.
+    const conAncho = 'ＡＢＣ '.repeat(20) + 'Alfajores' + cola;
+    expect(fragmento(conAncho, ['alfajor'], 30)).toContain('Alfajor');
+  });
+
+  it('un emoji (par sustituto) no se parte en el borde de la ventana', () => {
+    const texto = '😀'.repeat(30) + ' alfajores ' + '😀'.repeat(30);
+    for (let ancho = 6; ancho <= 40; ancho++) {
+      const f = fragmento(texto, ['alfajor'], ancho);
+      expect(f.length, `ancho ${ancho}`).toBeLessThanOrEqual(ancho);
+      // Ningún sustituto suelto: el texto sobrevive a una ida y vuelta por UTF-8.
+      expect(new TextDecoder().decode(new TextEncoder().encode(f)), `ancho ${ancho}`).toBe(f);
+    }
+    // Las otras dos salidas: `ancho < 3` y palabra no hallada (corte del comienzo).
+    const emojis = '😀'.repeat(20);
+    for (const ancho of [1, 2, 3, 4, 5, 6, 7]) {
+      for (const buscadas of [[], ['inexistente']]) {
+        const f = fragmento(emojis, buscadas, ancho);
+        expect(f.length, `ancho ${ancho}`).toBeLessThanOrEqual(ancho);
+        expect(new TextDecoder().decode(new TextEncoder().encode(f)), `ancho ${ancho}`).toBe(f);
+      }
+    }
+    expect(fragmento(emojis, [], 1)).toBe('');
+    expect(fragmento(emojis, [], 2)).toBe('😀');
+  });
 });
 
 describe('prefijosValidos', () => {

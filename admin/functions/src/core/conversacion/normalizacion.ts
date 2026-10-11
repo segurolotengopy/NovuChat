@@ -132,29 +132,75 @@ export function palabraParaIndice(palabras: readonly string[]): string | null {
   return mejor;
 }
 
+/** Los primeros `n` caracteres, sin dejar la mitad de un par sustituto (un emoji) al final. */
+function cortarSinPartirPar(s: string, n: number): string {
+  const c = s.slice(0, n);
+  const ultimo = c.charCodeAt(c.length - 1);
+  return c.length < s.length && ultimo >= 0xd800 && ultimo <= 0xdbff ? c.slice(0, -1) : c;
+}
+
 /**
  * Un fragmento del texto alrededor de la primera palabra encontrada, para
  * mostrar en el resultado. Nunca devuelve más de `ancho` caracteres, contando
- * los «…» de los extremos. La posición se busca en el texto normalizado, que
- * con NFKD puede diferir en uno o dos caracteres del original: solo mueve un
- * poco la ventana, nunca el límite de ancho.
+ * los «…» de los extremos.
+ *
+ * La palabra se busca en el texto normalizado, pero la ventana se corta en el
+ * ORIGINAL. NFKD no conserva las posiciones («…» pasa a «...», que son tres
+ * caracteres; un ❤️ pierde su selector U+FE0F; «ﬁ» pasa a «fi»), así que el
+ * texto plano se arma punto de código por punto de código y se guarda, para
+ * cada carácter plano, el índice del carácter original de donde salió. Así la
+ * ventana cae sobre la palabra aunque el texto traiga cientos de esos símbolos.
+ * Solo se recorre un texto más largo que `ancho`.
+ *
+ * Los extremos no parten un par sustituto (un emoji): se corre un carácter
+ * hacia adentro. Cuando la palabra queda al final del texto, la ventana se
+ * apoya en el final (con el «…» inicial ocupando su lugar) y no deja un «…»
+ * final falso que corte la palabra.
  */
 export function fragmento(texto: string, buscadas: readonly string[], ancho = 70): string {
   if (typeof texto !== 'string' || !(ancho >= 1)) return '';
   const limpio = texto.replace(/\s+/g, ' ').trim();
   if (limpio.length <= ancho) return limpio;
-  if (ancho < 3) return limpio.slice(0, Math.floor(ancho));
-  const plano = normalizarTexto(limpio);
+  if (ancho < 3) return cortarSinPartirPar(limpio, Math.floor(ancho));
+
+  // Texto plano (como `normalizarTexto`) con el índice de origen de cada carácter.
+  let plano = '';
+  const origen: number[] = [];
+  let u = 0;
+  for (const c of limpio) {
+    const n = normalizarTexto(c);
+    for (let k = 0; k < n.length; k++) origen.push(u);
+    plano += n;
+    u += c.length;
+  }
   let pos = -1;
   for (const p of buscadas) {
+    if (!p) continue;
     const i = plano.indexOf(p);
     if (i >= 0 && (pos < 0 || i < pos)) pos = i;
   }
-  if (pos < 0) return limpio.slice(0, ancho - 1) + '…';
-  const desde = Math.max(0, Math.min(pos - Math.floor(ancho / 3), limpio.length - ancho));
+  if (pos < 0) return cortarSinPartirPar(limpio, ancho - 1) + '…';
+
+  const aqui = origen[pos] ?? 0; // dónde está la palabra en el texto ORIGINAL
+  let desde = Math.max(0, aqui - Math.floor(ancho / 3));
+  if (desde > 0) {
+    // La palabra entera, si cabe: se corre la ventana hacia la derecha lo justo
+    // (sin pasar de la palabra, y dejando lugar para el «…» de los extremos).
+    const fin = aqui + (/^[\p{L}\p{N}]*/u.exec(limpio.slice(aqui))?.[0].length ?? 0);
+    desde = Math.min(Math.max(desde, fin - (ancho - 2)), aqui);
+    // Con «…» inicial la ventana tiene `ancho - 1` caracteres de texto: si la
+    // palabra queda al final, el texto llega hasta el último carácter.
+    desde = Math.min(desde, limpio.length - (ancho - 1));
+  }
+  const esSustitutoBajo = (i: number) => { const c = limpio.charCodeAt(i); return c >= 0xdc00 && c <= 0xdfff; };
+  const esSustitutoAlto = (i: number) => { const c = limpio.charCodeAt(i); return c >= 0xd800 && c <= 0xdbff; };
+  if (desde > 0 && esSustitutoBajo(desde)) desde += 1;
   const pre = desde > 0 ? 1 : 0;
   let hasta = Math.min(limpio.length, desde + ancho - pre);
-  if (hasta < limpio.length) hasta -= 1; // el «…» final ocupa un lugar
+  if (hasta < limpio.length) {
+    hasta -= 1; // el «…» final ocupa un lugar
+    if (hasta > desde && esSustitutoAlto(hasta - 1)) hasta -= 1;
+  }
   return (pre ? '…' : '') + limpio.slice(desde, hasta) + (hasta < limpio.length ? '…' : '');
 }
 
