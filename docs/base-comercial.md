@@ -82,24 +82,34 @@ America»). Antes eran gratis.
   Bolivia tiene régimen flexible desde el 29/06/2026 y el BCB publica un TCO
   diario (12,60 al 08/09/2026). **NovuChat no publica un tipo de cambio propio:**
   un proveedor que fija el tipo de cambio con el que cobra invita a la sospecha.
-- **Planes: USD 25 / 50 / 90 por 100 / 220 / 500 conversaciones**, más la bolsa
-  de **30 conversaciones por USD 10**, que no vence. Instalación USD 65. Es la
-  propuesta de Silvana, analizada y adoptada en `Analisis/21`. **El plan de
-  entrada cabe exacto en la franquicia de Meta** —100 × 10 mensajes = 1.000— y
-  por eso es el más rentable y el inmune a subidas de tarifa.
-- **Bolsa: USD 10 por 30 conversaciones** (0,333 cada una), que no vencen.
-  `Analisis/23`. **El tope de mensajes fija el precio mínimo de la bolsa:** con
-  tope 25 el mínimo para no perder nunca es 0,3632 USD/conv. **Si el tope sube,
-  hay que recalcular la bolsa.**
-- **El volumen del plan grande no se estira más allá de 500** sin rehacer la
-  cuenta de `Analisis/21` §9.4: entre 750 y 1.000 la cartera se da vuelta.
+- **Modalidad preferida: BYOC, el comercio paga a Meta** (decisión de Andres,
+  07/10/2026; `Analisis/50`). **Planes: USD 25 / 50 / 90 por 200 / 500 / 1.000
+  conversaciones.** Instalación USD 65 estándar, a medida desde 125. Margen a uso
+  pleno 72 % a 77 % con Gemini Flash-Lite (67 % a 70 % con Haiku 4.5).
+- **Opción excepcional, con la mensajería de Meta incluida:** los mismos precios
+  por **100 / 220 / 500** conversaciones, y la bolsa de **30 conversaciones por
+  USD 10** (`Analisis/21`, `23`). Para el comercio que no tiene ni quiere una
+  cuenta de Meta; no es la oferta habitual. **El plan de entrada cabe exacto en la
+  franquicia de Meta** (100 × 10 mensajes = 1.000). El volumen del plan grande no
+  se estira más allá de 500 sin rehacer `Analisis/21` §9.4. Con el tope de 25, el
+  precio mínimo de esa bolsa es 0,3632 USD por conversación.
+- **Bolsas BYOC (decisión de Andres, 09/10 y 11/10/2026; `Analisis/50` §3):**
+  - **Conversaciones:** 300 por **USD 15**, que no vencen.
+  - **Mensajes de seguimiento:** 300 por **USD 10**, para lo que el negocio
+    inicia más de 48 horas después del último mensaje de su cliente. Solo con
+    titularidad `comercio`: a Meta cada uno le cuesta 0,074 como plantilla de
+    marketing, que paga el comercio. Un seguimiento dentro de las 48 horas va en
+    la conversación del cliente y no se cobra aparte, aunque el cliente responda.
+- **El servidor todavía corta en 100 / 220 / 500 y vende solo la bolsa de 30 por
+  10** (`planes.ts`). Hasta que se construya el bloque de Central y Core, a cada
+  cliente BYOC se le asignan las conversaciones por contrato y una bolsa se
+  registra como pago manual.
 - **Aviso de consumo al 80 % del plan, para todos** (decisión de Andres,
   15/09/2026; antes decía 70 % como vigilancia interna). Es lo que promete el
   sitio: al llegar al 80 % de las conversaciones incluidas, se avisa al comercio
   y NovuChat lo ve. Es donde el margen se erosiona, y es una conversación
   comercial, no un problema de precio. Lo marca el servidor, no la pantalla.
-- **La bolsa se llama «bolsa»**, nunca «excedente» (decisión del 15/09): 30
-  conversaciones por USD 10, que no vencen.
+- **La bolsa se llama «bolsa»**, nunca «excedente» (decisión del 15/09).
 - **Productos del catálogo por plan: 20 / 100 / 500** (lo promete el sitio). La
   consola tiene que permitir buscar, filtrar y ordenar hasta 500.
 - **Agendas por plan: 1 / 5 / hasta 10.** `Analisis/24`. El techo NO es el número
@@ -112,14 +122,12 @@ America»). Antes eran gratis.
   dice que la atención —persona distinta en el período— **no se factura**. Usar
   «atenciones» para lo que se cobra contradice el sitio y la consola.
 - **BYOC: el comercio trae su portafolio, su número y su tarjeta** (decisión de
-  Andres, 23/09/2026; `Analisis/39`). **Las dos modalidades conviven:** los
-  planes de arriba siguen para el comercio chico, y BYOC —**USD 50 por 2.000
-  conversaciones**, plan `byoc` en `planes.ts`, fuera de `PLANES_PUBLICADOS`—
-  se ofrece caso por caso. **Lo que decide no es el margen: es el cupo.** Meta
-  limita a 2 portafolios por cuenta personal sin verificar, 2 números por
-  portafolio y 1 usuario de sistema administrador, y con la cola de clientes esos
-  cupos se agotan; un comercio con portafolio verificado no consume ninguno.
-  Tres reglas que van con la modalidad:
+  Andres, 23/09/2026, `Analisis/39`; preferida desde el 07/10, `Analisis/50`). El
+  plan `byoc` de `planes.ts` (USD 50 por 2.000) queda para contratos de volumen.
+  **Lo que decidió preferirla no es el margen: es el cupo.** Meta limita los
+  portafolios por cuenta personal y los números por portafolio sin verificar, y
+  con la cola de clientes esos cupos se agotan; el portafolio del comercio no
+  consume ninguno. Tres reglas que van con la modalidad:
   - **El tope se fija contra el modelo que corre.** Los 2.000 salen de Gemini
     (equilibrio 3.873). Con Haiku 4.5 el equilibrio cae a 1.542 y con Sonnet 5
     a 771: **cambiar de modelo en un comercio BYOC sin rehacer la cuenta lo pone
@@ -177,7 +185,7 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
 | Límite | Se hace cumplir en | Estado |
 |---|---|---|
 | **Agendas por plan** (1 / 5 / hasta 10) | `firestore.rules`, al crear un funcionario: contar los activos y leer el plan de `cuenta/estado` | **No existe todavía.** Hoy se pueden cargar sin tope. El número ya viaja en la copia `cuenta/estado.limites.agendas` (`planes.ts`); falta la regla, con un contador como el del catálogo |
-| **Conversaciones incluidas** (100 / 220 / 500) | `ingesta.ts`, dentro de la transacción que ya cuenta: `estadoDeServicio` (`prepago.ts`, puro) decide `sin_conversaciones` con la copia `cuenta.limites.conversaciones`, descuenta la bolsa y anota `cuenta.corte`; `configuracionFlujo` corta con el 409 que los flujos ya obedecen | **En `main` en modo observación** desde el 20/09 (`prepago/modulo-y-cortes`, `DISENO.md` §4undecies): el corte se calcula, se anota con `aplicado: false` y se cuenta lo perdido, pero **no corta** hasta que Andres encienda `plataforma/prepago.corteActivo` con `fijarCortePrepago`. Solo con `modalidad`; una demostración no se corta nunca. `pruebas/plataforma/prepago-ingesta.test.ts`, `prepago-configuracion.test.ts` |
+| **Conversaciones incluidas** (BYOC 200 / 500 / 1.000; Meta incluido 100 / 220 / 500; hoy el servidor corta en 100 / 220 / 500) | `ingesta.ts`, dentro de la transacción que ya cuenta: `estadoDeServicio` (`prepago.ts`, puro) decide `sin_conversaciones` con la copia `cuenta.limites.conversaciones`, descuenta la bolsa y anota `cuenta.corte`; `configuracionFlujo` corta con el 409 que los flujos ya obedecen | **En `main` en modo observación** desde el 20/09 (`prepago/modulo-y-cortes`, `DISENO.md` §4undecies): el corte se calcula, se anota con `aplicado: false` y se cuenta lo perdido, pero **no corta** hasta que Andres encienda `plataforma/prepago.corteActivo` con `fijarCortePrepago`. Solo con `modalidad`; una demostración no se corta nunca. `pruebas/plataforma/prepago-ingesta.test.ts`, `prepago-configuracion.test.ts` |
 | **Bloque de 25 respuestas por conversación** (la 26 factura otra) | `ingesta.ts`, en la misma transacción que cuenta (`mensajesVentana`, `bloquesAdicionales`) | **Hecho el 13/09** en `cobro/bloques-de-25`, con `pruebas/conteo-bloques.test.ts` |
 | **Umbrales de operador y bloqueo** (50 / 100, por empresa) | `atencion.ts` decide; la ingesta anota `atencionEstado` y cuenta; `configuracionFlujo` devuelve `atencion.estado` si el flujo manda `telefono` | **Servidor en `main` desde el 13/09** (`pruebas/umbrales-atencion.test.ts`). **Flujos A y B obedecen en el JSON versionado** (`flujos/umbrales-atencion`, `pruebas/flujos-umbrales.test.ts`): `Traer configuración` manda `telefono` y `¿Atención normal?` bifurca antes del agente. **Falta publicarlos**, después de `v0.2.0`, y probarlos contra un teléfono real |
 | **Ítems del catálogo** que van al prompt | `configuracionFlujo`, al armar la respuesta | Hoy hay `limit(200)`, sin corte por plan |

@@ -50,6 +50,8 @@ USD al mes, a uso pleno. «Nos queda» descuenta impuestos (16 %), infraestructu
 | **Conversaciones extra** | Conversaciones por encima de las incluidas en el plan | **300 por USD 15** | 0,050 | 11,4 (76 %) con Flash-Lite; 9,4 (63 %) con Haiku | Según su tráfico (5 respuestas y 1 aviso: unos 20 USD pasada la franquicia) |
 | **Mensajes salientes fuera de las 48 h** | Mensajes que el negocio inicia más de 48 horas después del último mensaje del cliente final (el seguimiento «a la semana», una reactivación) | **300 por USD 10** | 0,033 | 8,4 (84 %): no llevan IA | Unos 22 USD: son plantillas de marketing a 0,074. Hay que decirlo: la bolsa le cuesta más en Meta que en NovuChat |
 
+**Son generales y públicas (Andres, 11/10):** reemplazan en el sitio a las bolsas de 50 por 10, 100 por 20 y 300 por 40 que publicó v0.5.0 del sitio el 11/10. La de 30 por 10 queda solo para la opción excepcional con Meta incluido. Una bolsa de 300 conversaciones por 15 sale a 0,050 por conversación, más barata que cualquier plan; Andres lo aceptó así (ver la observación al final de esta sección).
+
 **La regla de conteo, confirmada por Andres el 09/10:**
 - El seguimiento **dentro de las 48 horas** va dentro de la conversación del lead: no abre una conversación nueva aunque pase la ventana de 24 horas.
 - Un mensaje iniciado por el negocio **después de 48 horas no cuenta como conversación**: se descuenta de la bolsa de mensajes salientes. Si el cliente final responde a ese mensaje, esa respuesta abre una conversación que sí cuenta. Si responde a un seguimiento enviado **dentro** de las 48 h, no se cobra: extiende la conversación del lead (decisión 1, abajo).
