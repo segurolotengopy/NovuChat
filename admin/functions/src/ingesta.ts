@@ -2,15 +2,17 @@ import { REGION } from './core/region.js';
 import { MINUTOS_RETENCION_POR_DEFECTO, senaVencidaPorTiempo } from './modulos/agenda/retencion.js';
 import { milisegundosDe } from './core/turno/tiempo.js';
 import { reactivaTras, solicitudTras } from './modulos/agenda/solicitud.js';
-// F3b-1a (05/10/2026): la solicitud, sus predicados de cobro y el tiempo se
-// mudaron a `modulos/agenda/solicitud.ts`, `modulos/agenda/retencion.ts` y
-// `core/turno/tiempo.ts` sin cambiar lógica. Se reexportan para que quien ya los
-// importaba de acá (las suites, `core/turno/cierres.ts` hasta que F3b-1b lo
-// desate con ganchos) no cambie.
+// F3b-1a y F3b-1b (05/10/2026): la solicitud, el tiempo y los predicados de cobro se
+// mudaron a `modulos/agenda/solicitud.ts`, `modulos/agenda/retencion.ts`,
+// `core/turno/tiempo.ts` y `modulos/cobros/alCierre.ts` sin cambiar lógica. Se
+// reexportan para que quien ya los importaba de acá (las suites) no cambie;
+// `core/turno/cierres.ts` ya no importa este archivo: recibe sus ganchos de
+// `ganchos.ts`.
 export {
-  DIAS_ADELANTO_A_FAVOR, ETAPAS_PENDIENTES, HORAS_ANTICIPACION_PARA_CANCELAR, cierreBloqueadoPorCobro,
-  cierreDeVentaLoHaceElCotejo, reactivaTras, solicitudTras, type Solicitud,
+  DIAS_ADELANTO_A_FAVOR, ETAPAS_PENDIENTES, HORAS_ANTICIPACION_PARA_CANCELAR,
+  reactivaTras, solicitudTras, type Solicitud,
 } from './modulos/agenda/solicitud.js';
+export { cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo } from './modulos/cobros/alCierre.js';
 export { MINUTOS_RETENCION_POR_DEFECTO };
 export { milisegundosDe };
 import { existencias } from './modulos/inventario/inventario.js';
