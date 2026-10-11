@@ -40,10 +40,19 @@
  * real NUNCA se imprime: se imprime `staging` o `produccion`.
  *
  * RESPALDO. Absoluto y normalizado; carpeta 0700 y archivo 0600, nunca se pisa. Lista POSITIVA de
- * lugares: el scratchpad de la sesión (dentro de la carpeta temporal del sistema, fuera de todo
- * repositorio) o una carpeta IGNORADA POR GIT del propio proyecto (`CLIENTES/`, o un nombre
- * `*.respaldo*`). Todo lo demás se rechaza: NUNCA directo en `~/` ni debajo de él, ni en una
- * carpeta versionable (un repositorio público no es su lugar).
+ * lugares; todo lo demás se rechaza (en particular `~/`, directo o debajo de él, y cualquier carpeta
+ * versionable, porque un repositorio público no es su lugar):
+ *   (a) el scratchpad de la sesión: dentro de `/tmp` o `/var/tmp` (fijas, no dependen de `TMPDIR`);
+ *   (b) una carpeta IGNORADA POR GIT del propio proyecto, tanto desde la copia principal como desde
+ *       cualquiera de sus worktrees (se compara el repositorio común, no la raíz). Es el lugar
+ *       DURADERO: `CLIENTES/<CLIENTE>/` de la copia principal está ignorada.
+ * PASO PREVIO para (b): la carpeta del cliente (`CLIENTES/<CLIENTE>/`) debería existir ya (si falta, el
+ * script la crea también 0700) y el respaldo va en una subcarpeta NUEVA, por ejemplo
+ * `<copia principal>/CLIENTES/<CLIENTE>/respaldos-h1/<nombre>.json`: el script la crea con 0700 y no
+ * exige que `CLIENTES/<CLIENTE>/` sea 0700 (suele ser 0775), solo que sea del usuario. Una subcarpeta
+ * que ya existe tiene que ser del usuario y 0700. Para (a) lo mismo: la subcarpeta nueva dentro del
+ * scratchpad. Tras guardar el respaldo, el script lo vuelve a LEER con la forma que `--revertir` exige y
+ * se detiene (salida 2) antes de tocar la ficha si no sirve.
  *
  * SALIDA. 0: seco sin diferencias, o escritura hecha y comprobada. 1: el seco encontró
  * diferencias (o la ficha no existe). 2: uso o salvaguarda (nada escrito). 3: error de
@@ -55,13 +64,12 @@
  */
 import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PANTALLAS_CONVERSACIONES, validarPantallaConversaciones } from '../../functions/src/central/consola-conversaciones.ts';
-import { comprobarProyecto, guardarRespaldo, mensajeDeInterrupcion } from './aplicar-consola-oculta.mjs';
+import { comprobarProyecto, guardarRespaldo } from './aplicar-consola-oculta.mjs';
 
-export { comprobarProyecto, guardarRespaldo, mensajeDeInterrupcion };
+export { comprobarProyecto, guardarRespaldo };
 
 const RAIZ_REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const CAMPO = 'consolaConversaciones';
@@ -86,7 +94,7 @@ const sinTildes = (s) => String(s).normalize('NFKD').replace(/\p{M}+/gu, '').toL
 /** Los ids excluidos: la lista fija más la variable de entorno (solo AGREGA, nunca quita). */
 export function excluidos(env = process.env) {
   const extra = typeof env.NOVUCHAT_TENANTS_EXCLUIDOS === 'string'
-    ? env.NOVUCHAT_TENANTS_EXCLUIDOS.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    ? env.NOVUCHAT_TENANTS_EXCLUIDOS.split(',').map((s) => sinTildes(s.trim())).filter(Boolean)
     : [];
   return [...TENANTS_EXCLUIDOS, ...extra];
 }
@@ -129,18 +137,36 @@ function rutaRealConPendientes(absoluta) {
   return null;
 }
 
-/** La raíz de repositorio git más cercana (carpeta con `.git`, directorio o archivo de un worktree), o null. */
-function raizGitDe(carpeta) {
+/**
+ * La raíz de repositorio git más cercana (carpeta con `.git`, directorio o archivo de un worktree), o null.
+ * `techo`: no sube hasta él ni más arriba (una raíz permitida es de confianza: lo que haya por encima no cuenta).
+ */
+function raizGitDe(carpeta, techo = null) {
+  if (techo !== null && !estaDentro(techo, carpeta)) return null;
   if (existsSync(join(carpeta, '.git'))) return carpeta;
   const padre = dirname(carpeta);
-  return padre === carpeta ? null : raizGitDe(padre);
+  return padre === carpeta ? null : raizGitDe(padre, techo);
+}
+
+const ENTORNO_GIT = () => ({ PATH: process.env.PATH ?? '', LC_ALL: 'C' });
+
+/**
+ * El repositorio COMÚN de una carpeta (el `.git` de verdad): un worktree y la copia principal comparten el mismo,
+ * aunque sus raíces sean distintas. null si git no lo puede decir.
+ */
+export function repositorioComun(raizRepo) {
+  const r = spawnSync('git', ['-C', raizRepo, 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+    env: ENTORNO_GIT(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (r.status !== 0 || typeof r.stdout !== 'string' || r.stdout.trim() === '') return null;
+  try { return realpathSync(r.stdout.trim()); } catch { return null; }
 }
 
 /** ¿`git` dice que esa ruta está ignorada? Solo mira; si git no está o falla, NO está ignorada. */
 export function ignoradaPorGit(raizGit, real, existente) {
   if (!raizGit || !estaDentro(raizGit, real)) return false;
   const r = spawnSync('git', ['-C', existente, 'check-ignore', '-q', '--', real], {
-    env: { PATH: process.env.PATH ?? '', LC_ALL: 'C' }, stdio: 'ignore',
+    env: ENTORNO_GIT(), stdio: 'ignore',
   });
   return r.status === 0;
 }
@@ -152,41 +178,50 @@ function directorioPrivadoDe(s) {
   return null;
 }
 
+/** Las carpetas temporales del sistema donde vive el scratchpad. FIJAS: no dependen de `TMPDIR` ni del entorno. */
+export const RAICES_TEMPORALES = Object.freeze(['/tmp', '/var/tmp']);
+
 /**
- * ¿Esta ruta sirve de respaldo? Absoluta y normalizada, en una carpeta DEL USUARIO y en uno de dos lugares:
- * (a) FUERA de todo repositorio git y dentro de la carpeta temporal del sistema (donde vive el scratchpad de la
- * sesión), o (b) dentro de ESTE proyecto pero en una carpeta que git IGNORA. Es una lista POSITIVA: todo lo demás
- * se rechaza, en particular el directorio personal (directo o debajo de él) y cualquier carpeta versionable. No crea
- * nada. `lectura`: tiene que existir (0600, del usuario); si no, no puede existir (un respaldo nunca se pisa).
- * `permitirExistente`: al aplicar, uno ya existente pasa si es regular, del usuario y 0600 (reaplicar el mismo
- * comando sale «nada que hacer»). `raiz` y `raices` se inyectan solo en las pruebas.
+ * ¿Esta ruta sirve de respaldo? Absoluta y normalizada, y en uno de dos lugares (lista POSITIVA: todo lo demás se
+ * rechaza, en particular el directorio personal, directo o debajo de él, y cualquier carpeta versionable):
+ *
+ *  (a) el SCRATCHPAD: dentro de `/tmp` o `/var/tmp` (fijas), sin que ninguna carpeta entre esa raíz y el archivo sea
+ *      un repositorio git (lo que haya por encima de la raíz no cuenta);
+ *  (b) una carpeta IGNORADA POR GIT del propio proyecto: el destino tiene que ser del MISMO repositorio común que
+ *      `raiz` (así vale tanto la copia principal como cualquiera de sus worktrees: `CLIENTES/` vive en la principal) y
+ *      `git check-ignore` tiene que decir que esa ruta se ignora.
+ *
+ * La carpeta del respaldo la crea el script con 0700 si no existe (`guardarRespaldo`). Si ya existe, tiene que ser del
+ * usuario y 0700. Si NO existe, la carpeta existente más cercana tiene que ser del usuario (en el caso (a) además no
+ * escribible por otros; en el (b) puede ser 0775: `CLIENTES/<CLIENTE>/` suele serlo, y la subcarpeta nueva sí queda
+ * 0700). No crea nada. `lectura`: tiene que existir (0600, del usuario); si no, no puede existir (un respaldo nunca se
+ * pisa). `permitirExistente`: al aplicar, uno ya existente pasa si es regular, del usuario y 0600. `raiz` y `raices`
+ * se inyectan solo en las pruebas.
  */
-export function comprobarRespaldo(ruta, { raiz = RAIZ_REPO, raices = [tmpdir(), '/tmp'], lectura = false, permitirExistente = false } = {}) {
+export function comprobarRespaldo(ruta, { raiz = RAIZ_REPO, raices = RAICES_TEMPORALES, lectura = false, permitirExistente = false } = {}) {
   if (typeof ruta !== 'string' || ruta === '' || ruta.includes('\0')) return { ok: false, motivo: 'falta --respaldo' };
   if (!isAbsolute(ruta) || resolve(ruta) !== ruta) return { ok: false, motivo: '--respaldo tiene que ser una ruta absoluta y normalizada (sin «..», «.» ni barras repetidas)' };
   const resuelta = rutaRealConPendientes(ruta);
   if (resuelta === null) return { ok: false, motivo: 'la ruta del respaldo no se puede resolver' };
   const { real, existente } = resuelta;
-  let raizReal;
-  try { raizReal = realpathSync(raiz); } catch { raizReal = raiz; }
 
-  const repo = raizGitDe(dirname(real));
+  const permitida = raices.map((r) => { try { return realpathSync(r); } catch { return null; } })
+    .find((rr) => rr !== null && estaDentro(rr, real)) ?? null;
+  const repo = raizGitDe(dirname(real), permitida);
+  let enProyecto = false;
   if (repo !== null) {
+    const destino = repositorioComun(repo);
+    const proyecto = repositorioComun(raiz);
+    if (destino === null || proyecto === null) return { ok: false, motivo: 'no se pudo determinar a qué repositorio git pertenece --respaldo' };
+    if (destino !== proyecto) return { ok: false, motivo: '--respaldo no puede estar dentro de otro repositorio git' };
     let repoReal;
     try { repoReal = realpathSync(repo); } catch { repoReal = repo; }
-    if (repoReal !== raizReal) return { ok: false, motivo: '--respaldo no puede estar dentro de otro repositorio git' };
     if (!ignoradaPorGit(repoReal, real, existente)) {
       return { ok: false, motivo: '--respaldo dentro del proyecto solo vale en una carpeta ignorada por git (no versionable); use el scratchpad o una carpeta ignorada' };
     }
-  } else {
-    const dentroDeUnaPermitida = raices.some((r) => {
-      let rr;
-      try { rr = realpathSync(r); } catch { return false; }
-      return estaDentro(rr, real);
-    });
-    if (!dentroDeUnaPermitida) {
-      return { ok: false, motivo: '--respaldo no puede quedar en «~/» ni en otra carpeta personal: use el scratchpad de la sesión o una carpeta ignorada por git del proyecto' };
-    }
+    enProyecto = true;
+  } else if (permitida === null) {
+    return { ok: false, motivo: '--respaldo no puede quedar en «~/» ni en otra carpeta personal: use el scratchpad de la sesión o una carpeta ignorada por git del proyecto' };
   }
 
   const dir = dirname(real);
@@ -196,8 +231,8 @@ export function comprobarRespaldo(ruta, { raiz = RAIZ_REPO, raices = [tmpdir(), 
   } else {
     const s = statSync(existente);
     const esMia = typeof process.getuid !== 'function' || s.uid === process.getuid();
-    if (!s.isDirectory() || !esMia || (s.mode & 0o022) !== 0) {
-      return { ok: false, motivo: '--respaldo tiene que quedar en una carpeta del usuario (la existente más cercana no es suya o la pueden escribir otros)' };
+    if (!s.isDirectory() || !esMia || (!enProyecto && (s.mode & 0o022) !== 0)) {
+      return { ok: false, motivo: '--respaldo tiene que quedar en una carpeta del usuario (la existente más cercana no es suya o, fuera del proyecto, la pueden escribir otros)' };
     }
   }
   let archivo = null;
@@ -385,7 +420,7 @@ export async function ejecutar(cfg, deps) {
     if (yaIgual) { log('\n  ✓ La ficha ya está como el respaldo: nada que revertir.\n'); return 0; }
     if (!hoyPresente || ficha[CAMPO] !== escrito) {
       log('\n  ✗ La ficha ya no tiene el valor que escribió este script: alguien lo cambió después (o este script no llegó a escribirlo). '
-        + 'Revertir pisaría ese cambio. No se escribe nada; revise la ficha y corríjela a propósito.\n');
+        + 'Revertir pisaría ese cambio. No se escribe nada; revise la ficha y corríjala a propósito.\n');
       return 2;
     }
     if (!cfg.aplicar) {
@@ -430,6 +465,13 @@ export async function ejecutar(cfg, deps) {
     if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa; elija otro nombre. No se escribe nada.\n'); return 2; }
     throw e;
   }
+  marcar('respaldo');
+  // El respaldo tiene que poder LEERSE de vuelta con la forma que --revertir exige, ANTES de tocar la ficha.
+  const comprobado = (deps.leerRespaldo ?? leerRespaldo)(cfg.respaldo, cfg);
+  if (!comprobado.ok) {
+    log(`\n  ✗ El respaldo recién guardado no sirve para revertir (${comprobado.motivo}). No se escribe nada en la ficha; para repetir use OTRA ruta de --respaldo.\n`);
+    return 2;
+  }
   log(`\n  Respaldo guardado y releído: ${cfg.respaldo}`);
 
   marcar('escribiendo');
@@ -437,7 +479,7 @@ export async function ejecutar(cfg, deps) {
     await escribirCampo(ref, cfg.pantalla, snap.updateTime);
     marcar('escrito');
   } catch (e) {
-    if (esPrecondicion(e)) { marcar('antes'); log('\n  ✗ La ficha cambió entre la lectura y la escritura: no se escribió nada. Vuelva a correr el seco.\n'); return 3; }
+    if (esPrecondicion(e)) { marcar('respaldo'); log('\n  ✗ La ficha cambió entre la lectura y la escritura: no se escribió nada. Vuelva a correr el seco y repita --aplicar con OTRA ruta de --respaldo (la anterior ya existe y no se pisa).\n'); return 3; }
     throw e;
   }
   const { snap: despues } = await leerFicha(db, cfg.tenant);
@@ -451,6 +493,23 @@ export async function ejecutar(cfg, deps) {
   return 0;
 }
 
+/** En qué punto está la corrida: 'antes' (nada guardado), 'respaldo' (guardado, la ficha sin escribir), 'escribiendo', 'escrito'. */
+const corrida = { estado: 'antes' };
+
+/** Qué decirle al operador si la corrida se corta (Ctrl-C o un error) según el punto en que quedó. */
+export function mensajeDeInterrupcion(estado, causa = 'Interrumpido por el operador') {
+  if (estado === 'antes') return `\n  ! ${causa} antes de escribir. No se guardó respaldo ni se escribió nada en la ficha.\n`;
+  if (estado === 'respaldo') {
+    return `\n  ! ${causa} con el respaldo YA guardado y la ficha sin escribir. Para repetir use OTRA ruta de --respaldo (la anterior ya existe y no se pisa).\n`;
+  }
+  if (estado === 'escrito') {
+    return `\n  ! ${causa} DESPUÉS de escribir: la escritura SÍ se hizo y la relectura no se completó. Corra el seco para verificar la ficha; `
+      + 'si hay que deshacer, use --revertir con el mismo respaldo, tenant y proyecto.\n';
+  }
+  return `\n  ! ${causa} DURANTE la escritura: puede haberse escrito o no. Existe el respaldo: corra el seco para ver en qué estado quedó la ficha `
+    + 'y, si hay que deshacer, use --revertir con el mismo respaldo, tenant y proyecto.\n';
+}
+
 async function principal() {
   const analisis = analizarArgumentos(process.argv.slice(2));
   if (!analisis.ok) {
@@ -462,12 +521,11 @@ async function principal() {
   const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
   initializeApp({ projectId: cfg.proyecto });
   const db = getFirestore();
-  let estado = 'antes';
   process.on('SIGINT', () => {
-    console.error(mensajeDeInterrupcion(estado));
+    console.error(mensajeDeInterrupcion(corrida.estado));
     process.exit(130);
   });
-  const codigo = await ejecutar(cfg, { db, FieldValue, marcarEscritura: (v) => { estado = v; } });
+  const codigo = await ejecutar(cfg, { db, FieldValue, marcarEscritura: (v) => { corrida.estado = v; } });
   await db.terminate().catch(() => {});
   process.exit(codigo);
 }
@@ -485,6 +543,7 @@ if (seEjecutaDirecto()) {
     await principal();
   } catch (e) {
     console.error(`\n  ✗ error de ejecución: ${e?.code ?? e?.name ?? 'desconocido'}\n`);
+    if (corrida.estado !== 'antes') console.error(mensajeDeInterrupcion(corrida.estado, 'Falló con un error'));
     process.exit(3);
   }
 }

@@ -17,7 +17,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
@@ -46,7 +45,7 @@ const PROY = 'demo-novuchat-pruebas';
 const ENV_REAL = { GCP_PROJECT_ID_STAGING: 'proyecto-ficticio-staging', GCP_PROJECT_ID_PROD: 'proyecto-ficticio-prod' };
 
 const dirs: string[] = [];
-const nuevoDir = () => { const d = mkdtempSync(join(tmpdir(), 'cons-conv-')); chmodSync(d, 0o700); dirs.push(d); return d; };
+const nuevoDir = () => { const d = mkdtempSync(join('/tmp', 'cons-conv-')); chmodSync(d, 0o700); dirs.push(d); return d; };
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 const rutaRespaldo = () => join(nuevoDir(), 'respaldo.json');
 
@@ -128,6 +127,9 @@ describe('B1. argumentos y salvaguarda (puros)', () => {
     expect(problemas(base, { ...ENV_EMU, NOVUCHAT_TENANTS_EXCLUIDOS: 'tienda-prueba' })).toContain('EXCLUIDO');
     expect(mod.esTenantExcluido('bellido', { NOVUCHAT_TENANTS_EXCLUIDOS: 'otro' })).toBe(true);
     expect(mod.esTenantExcluido('tienda-prueba')).toBe(false);
+    // Las entradas de la variable también se comparan sin tildes ni mayúsculas.
+    expect(mod.esTenantExcluido('dr-perez', { NOVUCHAT_TENANTS_EXCLUIDOS: ' Dr-Pérez , otro' })).toBe(true);
+    expect(mod.esTenantExcluido('dr-perez', { NOVUCHAT_TENANTS_EXCLUIDOS: '' })).toBe(false);
     expect(mod.esTenantExcluido(undefined)).toBe(false);
     expect(mod.nombreExcluido('Consultorio Béllido')).toBe(true);
     expect(mod.nombreExcluido('Tienda Sintetica')).toBe(false);
@@ -182,8 +184,10 @@ describe('B1. argumentos y salvaguarda (puros)', () => {
 
   it('el respaldo: absoluto, nunca en `~/`, carpeta 0700 y nunca pisado', () => {
     expect(mod.comprobarRespaldo('relativo/r.json').ok).toBe(false);
-    expect(mod.comprobarRespaldo(join(ADMIN, 'r.json')).motivo).toContain('ignorada por git');
-    expect(mod.comprobarRespaldo(join(process.env['HOME'] ?? '/home/x', 'r.json')).motivo).toContain('~/');
+    // Fuera de la lista positiva (ni raíz permitida ni carpeta ignorada del proyecto): rechazado. La prueba arma
+    // sus propias carpetas; no depende de que `$HOME` o `/tmp` no sean un repositorio (ver rellenar-conversaciones.test.ts).
+    const fuera = nuevoDir();
+    expect(mod.comprobarRespaldo(join(fuera, 'r.json'), { raices: [nuevoDir()] }).motivo).toContain('~/');
     expect(mod.comprobarRespaldo(join(process.env['HOME'] ?? '/home/x', 'r.json')).ok).toBe(false);
     const dir = nuevoDir();
     const ruta = join(dir, 'r.json');
@@ -282,6 +286,32 @@ describe('B2. el seco no escribe; --aplicar guarda respaldo, escribe una vez y r
     expect(b.escrituras).toHaveLength(0);
     expect(b.datos()).not.toHaveProperty('consolaConversaciones');
     expect(salida).toContain('no se escribió nada');
+  });
+
+  it('la repetición tras una precondición pide OTRA ruta de --respaldo (la de esta corrida ya existe)', async () => {
+    const b = baseDe(FICHA, { cambiaAntesDeEscribir: true });
+    const { salida } = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    expect(salida).toContain('OTRA ruta de --respaldo');
+  });
+
+  it('el respaldo recién guardado se RELEE antes de tocar la ficha: si no sirve, sale 2 y no escribe', async () => {
+    const b = baseDe(FICHA);
+    const ruta = rutaRespaldo();
+    const { codigo, salida } = await correr(cfgDe({ aplicar: true, respaldo: ruta }), b, { leerRespaldo: () => ({ ok: false, motivo: 'forma inválida de prueba' }) });
+    expect(codigo).toBe(2);
+    expect(salida).toContain('no sirve para revertir');
+    expect(salida).toContain('OTRA ruta de --respaldo');
+    expect(b.escrituras).toHaveLength(0);
+    expect(b.datos()).toEqual(FICHA);
+  });
+
+  it('si la corrida se corta, el mensaje dice en qué punto quedó', () => {
+    const m = (e: string, causa?: string) => (mod as unknown as { mensajeDeInterrupcion: (e: string, c?: string) => string }).mensajeDeInterrupcion(e, causa);
+    expect(m('antes')).toContain('No se guardó respaldo ni se escribió nada');
+    expect(m('respaldo')).toContain('OTRA ruta de --respaldo');
+    expect(m('respaldo', 'Falló con un error')).toContain('Falló con un error');
+    expect(m('escribiendo')).toContain('--revertir con el mismo respaldo');
+    expect(m('escrito')).toContain('--revertir con el mismo respaldo');
   });
 
   it('otro comercio: el script solo toca la ficha del --tenant dado', async () => {
@@ -397,7 +427,7 @@ describe('B4. Bellido por la ficha, y el texto del script', () => {
     expect(b.datos()).not.toHaveProperty('consolaConversaciones');
   });
 
-  it('el proceso sale 2 antes de abrir Firebase con Bellido, con producción sin confirmación y con pantalla inválida', () => {
+  it('el proceso sale 2 antes de abrir Firebase con Bellido, con un proyecto real y emulador heredado, y con pantalla inválida', () => {
     const correrHijo = (args: string[], extra: Record<string, string> = {}, host: string | undefined = HOST) =>
       spawnSync(process.execPath, [SCRIPT, ...args], { env: entornoDelEmulador(host, extra), encoding: 'utf8' });
     const b = correrHijo(['--proyecto', PROY, '--tenant', 'bellido', '--pantalla', 'nueva', '--aplicar', '--respaldo', rutaRespaldo()]);
@@ -405,7 +435,10 @@ describe('B4. Bellido por la ficha, y el texto del script', () => {
     expect(b.stderr).toContain('EXCLUIDO');
     expect(b.stdout).toBe('');
     const prod = correrHijo(['--proyecto', 'proyecto-ficticio-prod', '--tenant', 'tienda-prueba', '--pantalla', 'nueva', '--aplicar', '--respaldo', rutaRespaldo()], ENV_REAL, undefined);
+    // El hijo hereda las variables del emulador (`entornoDelEmulador` las fija siempre): lo que lo corta es «hay
+    // variables de emulador», no la falta de --confirmo-produccion (esa rama la cubren las pruebas puras de B1).
     expect(prod.status).toBe(2);
+    expect(prod.stderr).toContain('hay variables de emulador');
     expect(prod.stderr).not.toContain('proyecto-ficticio-prod');
     expect(correrHijo(['--proyecto', PROY, '--tenant', 'tienda-prueba', '--pantalla', 'moderna']).status).toBe(2);
   });
@@ -422,6 +455,14 @@ describe('B4. Bellido por la ficha, y el texto del script', () => {
     expect(f).toContain('constants.O_NOFOLLOW');
     expect(f).not.toMatch(/console\.(log|error)\([^)]*proyecto\b(?!s)/);
     expect(f).not.toMatch(/log\([^)]*cfg\.proyecto/);
+  });
+  it('el encabezado documenta el paso previo del respaldo y el mensaje usa «corríjala»', () => {
+    const crudo = readFileSync(SCRIPT, 'utf8');
+    expect(crudo).toContain('PASO PREVIO');
+    expect(crudo).toContain('respaldos-h1/<nombre>.json');
+    expect(crudo).toContain('/tmp` o `/var/tmp` (fijas, no dependen de `TMPDIR`)');
+    expect(crudo).toContain('corríjala a propósito');
+    expect(crudo).not.toContain('corríjela');
   });
   it('importa la validación de la pantalla del mismo archivo que la consola, no una lista propia', () => {
     expect(f).toContain('functions/src/central/consola-conversaciones.ts');

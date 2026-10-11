@@ -12,7 +12,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
@@ -38,7 +37,7 @@ const bandera = await import('../../scripts/plataforma/aplicar-consola-conversac
 };
 
 const dirs: string[] = [];
-const nuevoDir = () => { const d = mkdtempSync(join(tmpdir(), 'conv-emu-')); chmodSync(d, 0o700); dirs.push(d); return d; };
+const nuevoDir = () => { const d = mkdtempSync(join('/tmp', 'conv-emu-')); chmodSync(d, 0o700); dirs.push(d); return d; };
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 const rutaRespaldo = () => join(nuevoDir(), 'respaldo.json');
 
@@ -134,10 +133,13 @@ describe('A. la bandera consolaConversaciones, como proceso contra el emulador',
     expect((await db.doc(`tenants/${t}`).get()).data()).not.toHaveProperty('consolaConversaciones');
   });
 
-  it('producción sin --confirmo-produccion se rechaza antes de abrir nada (y no imprime el proyecto)', () => {
+  it('un proyecto real con el emulador heredado se rechaza antes de abrir nada (y no imprime el proyecto)', () => {
     const r = hijo(BANDERA, ['--proyecto', 'proyecto-ficticio-prod', '--tenant', 'tienda-sintetica', '--pantalla', 'nueva', '--aplicar', '--respaldo', rutaRespaldo()],
       ENV_REAL, undefined);
+    // El hijo hereda el emulador (`entornoDelEmulador` lo fija siempre): lo que corta es «hay variables de emulador»;
+    // la rama de --confirmo-produccion la cubren las pruebas puras (B1 y R1) con un entorno sin emulador.
     expect(r.status).toBe(2);
+    expect(r.stderr).toContain('hay variables de emulador');
     expect(r.stderr + r.stdout).not.toContain('proyecto-ficticio-prod');
   });
 
@@ -301,15 +303,15 @@ describe('B. el relleno de conversaciones, como proceso contra el emulador', () 
     for (const [id, v] of await leerTodas(t)) expect(v).toEqual(antes.get(id));
   });
 
-  it('producción: sin --confirmo-produccion se rechaza y, con él, un respaldo en ~/ también', () => {
+  it('un proyecto real con el emulador heredado se rechaza; y un respaldo en ~/ también (aunque se confirme)', () => {
     const t = 'tienda-sintetica';
     const prod = (extra: string[]) => hijo(RELLENO, ['--proyecto', 'proyecto-ficticio-prod', '--tenant', t, ...extra], ENV_REAL, undefined);
-    const sinConfirmo = prod(['--aplicar', '--respaldo', rutaRespaldo()]);
-    expect(sinConfirmo.status).toBe(2);
-    expect(sinConfirmo.stderr + sinConfirmo.stdout).not.toContain('proyecto-ficticio-prod');
+    const heredado = prod(['--aplicar', '--respaldo', rutaRespaldo()]);
+    expect(heredado.status).toBe(2);
+    expect(heredado.stderr).toContain('hay variables de emulador');
+    expect(heredado.stderr + heredado.stdout).not.toContain('proyecto-ficticio-prod');
     const enCasa = prod(['--aplicar', '--confirmo-produccion', t, '--respaldo', join(process.env['HOME'] ?? '/home/x', 'respaldo-relleno.json')]);
     expect(enCasa.status).toBe(2);
-    expect(enCasa.stderr).toContain('~/');
   });
 
   it('el respaldo en `~/` se rechaza y no se crea nada', () => {
@@ -317,8 +319,7 @@ describe('B. el relleno de conversaciones, como proceso contra el emulador', () 
     const ruta = join(casa, `respaldo-relleno-prueba-${Date.now()}.json`);
     const r = hijo(RELLENO, args(nuevoTenant(), ['--aplicar', '--respaldo', ruta]));
     expect(r.status).toBe(2);
-    expect(r.stderr).toContain('~/');
-    expect(() => statSync(ruta)).toThrow();
+    expect(() => statSync(ruta)).toThrow(); // no se creó nada
   });
 
   it('un respaldo ya existente no se pisa', async () => {

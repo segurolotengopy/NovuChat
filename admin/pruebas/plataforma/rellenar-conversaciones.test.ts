@@ -16,7 +16,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, closeSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
@@ -43,6 +42,8 @@ const mod = await import('../../scripts/plataforma/rellenar-conversaciones.mjs')
 };
 const comun = await import('../../scripts/plataforma/aplicar-consola-conversaciones.mjs') as unknown as {
   comprobarRespaldo: (r: unknown, o?: Record<string, unknown>) => { ok: boolean; motivo?: string };
+  guardarRespaldo: (ruta: string, contenido: unknown) => void;
+  RAICES_TEMPORALES: readonly string[];
   esTenantExcluido: (t: unknown, env?: Record<string, string>) => boolean;
 };
 
@@ -52,8 +53,14 @@ const PROY = 'demo-novuchat-pruebas';
 const ENV_REAL = { GCP_PROJECT_ID_STAGING: 'proyecto-ficticio-staging', GCP_PROJECT_ID_PROD: 'proyecto-ficticio-prod' };
 const T = 'tienda-prueba';
 
+/** Corre git en `cwd` (sin HOME ni configuración global: la prueba no depende de la máquina). */
+const git = (cwd: string, args: string[]) => {
+  const r = spawnSync('git', ['-C', cwd, ...args], { env: { PATH: process.env['PATH'] ?? '', LC_ALL: 'C' }, encoding: 'utf8' });
+  expect(r.status, r.stderr).toBe(0);
+};
+
 const dirs: string[] = [];
-const nuevoDir = () => { const d = mkdtempSync(join(tmpdir(), 'rell-conv-')); chmodSync(d, 0o700); dirs.push(d); return d; };
+const nuevoDir = () => { const d = mkdtempSync(join('/tmp', 'rell-conv-')); chmodSync(d, 0o700); dirs.push(d); return d; };
 afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 const rutaRespaldo = () => join(nuevoDir(), 'respaldo.json');
 
@@ -136,27 +143,24 @@ describe('R1. argumentos y salvaguarda (puros)', () => {
     expect((r.problemas ?? []).join(' ')).not.toContain('proyecto-ficticio-prod');
   });
 
-  it('el respaldo NUNCA va en `~/` ni en una carpeta versionable; sí en el scratchpad (carpeta temporal) o en una carpeta ignorada del proyecto', () => {
-    // Lista POSITIVA: solo lo que está dentro de una raíz permitida (el scratchpad) vale; lo demás, no.
+  // Todas las pruebas de la ruta del respaldo arman SUS PROPIAS carpetas temporales (nada depende de que `$HOME`,
+  // `/tmp` o `tmpdir()` no sean un repositorio) e inyectan las raíces permitidas.
+  it('el respaldo NUNCA va en `~/` ni en una carpeta versionable; sí en el scratchpad (/tmp, /var/tmp) o en una carpeta ignorada del proyecto', () => {
+    // Lista POSITIVA: solo lo que está dentro de una raíz permitida vale; lo demás, no.
     const zona = nuevoDir();
     const fuera = nuevoDir();
-    expect(comun.comprobarRespaldo(join(zona, 'r.json'), { raices: [zona] }).ok).toBe(true);
     expect(comun.comprobarRespaldo(join(zona, 'nueva', 'r.json'), { raices: [zona] }).ok).toBe(true);
     expect(comun.comprobarRespaldo(join(fuera, 'r.json'), { raices: [zona] }).motivo).toContain('~/');
     expect(comun.comprobarRespaldo(join(fuera, 'sub', 'r.json'), { raices: [zona] }).motivo).toContain('~/');
     expect(comun.comprobarRespaldo(join(zona, 'r.json'), { raices: [] }).motivo).toContain('~/');
-    // La casa real de quien corre la prueba, con la regla por omisión (no se escribe nada: solo se comprueba).
-    const casa = process.env['HOME'] ?? '/home/x';
-    expect(comun.comprobarRespaldo(join(casa, 'r.json')).motivo).toContain('~/');
-    expect(comun.comprobarRespaldo(join(casa, 'una-carpeta', 'r.json')).motivo).toContain('~/');
-    // Por omisión la carpeta temporal del sistema (donde vive el scratchpad) sí vale.
-    expect(comun.comprobarRespaldo(rutaRespaldo()).ok).toBe(true);
+    // Las raíces por omisión son FIJAS: `/tmp` y `/var/tmp`, nunca lo que diga `TMPDIR`.
+    expect([...comun.RAICES_TEMPORALES]).toEqual(['/tmp', '/var/tmp']);
     // Relativa, con «..» o repetida: rechazada.
     expect(comun.comprobarRespaldo('relativo/r.json').ok).toBe(false);
     expect(comun.comprobarRespaldo(`${nuevoDir()}/../r.json`).ok).toBe(false);
     // Dentro de un repositorio (un repo temporal que hace de «el proyecto»): solo en carpeta ignorada por git.
     const repo = nuevoDir();
-    expect(spawnSync('git', ['init', '-q', repo], { stdio: 'ignore' }).status).toBe(0);
+    git(repo, ['init', '-q']);
     writeFileSync(join(repo, '.gitignore'), 'privado/\n*.respaldo*\n');
     mkdirSync(join(repo, 'privado'), { mode: 0o700 });
     mkdirSync(join(repo, 'publico'), { mode: 0o700 });
@@ -167,7 +171,83 @@ describe('R1. argumentos y salvaguarda (puros)', () => {
     expect(comun.comprobarRespaldo(join(repo, 'r.json'), en).motivo).toContain('ignorada por git');
     expect(comun.comprobarRespaldo(join(repo, 'publico', 'x.respaldo-h1'), en).ok).toBe(true);
     // Un repositorio que NO es el proyecto, aunque ignore la carpeta, no vale.
-    expect(comun.comprobarRespaldo(join(repo, 'privado', 'r.json'), { raiz: nuevoDir(), raices: [] }).motivo).toContain('otro repositorio');
+    const otro = nuevoDir();
+    git(otro, ['init', '-q']);
+    expect(comun.comprobarRespaldo(join(repo, 'privado', 'r.json'), { raiz: otro, raices: [] }).motivo).toContain('otro repositorio');
+  });
+
+  it('DESDE UN WORKTREE: se acepta el repositorio común; una subcarpeta nueva dentro de una carpeta ignorada 0775 vale; lo versionable y `~/` siguen rechazados', () => {
+    const principal = join(nuevoDir(), 'principal');
+    mkdirSync(principal);
+    git(principal, ['init', '-q', '-b', 'main']);
+    writeFileSync(join(principal, '.gitignore'), 'CLIENTES/\n');
+    writeFileSync(join(principal, 'a.txt'), 'x');
+    git(principal, ['add', '.gitignore', 'a.txt']);
+    git(principal, ['-c', 'user.name=prueba', '-c', 'user.email=prueba@invalid', 'commit', '-q', '-m', 'inicial']);
+    const worktree = join(nuevoDir(), 'wt');
+    git(principal, ['worktree', 'add', '-q', '-b', 'rama-prueba', worktree]);
+    // `CLIENTES/<CLIENTE>/` de la copia principal: ignorada, del usuario y 0775 (como en la máquina real).
+    mkdirSync(join(principal, 'CLIENTES', 'TIENDA'), { recursive: true });
+    chmodSync(join(principal, 'CLIENTES', 'TIENDA'), 0o775);
+    const sinRaices = { raiz: worktree, raices: [] as string[] };
+
+    // Positiva: la subcarpeta NUEVA dentro de la ignorada, vista desde el worktree.
+    const ruta = join(principal, 'CLIENTES', 'TIENDA', 'respaldos-h1', 'r.json');
+    expect(comun.comprobarRespaldo(ruta, sinRaices)).toMatchObject({ ok: true });
+    // Y también vista desde la copia principal.
+    expect(comun.comprobarRespaldo(ruta, { raiz: principal, raices: [] }).ok).toBe(true);
+    // El script la crea con 0700 y el respaldo con 0600 (aunque la carpeta del cliente sea 0775).
+    comun.guardarRespaldo(ruta, { prueba: true });
+    expect((statSync(dirname(ruta)).mode & 0o777).toString(8)).toBe('700');
+    expect((statSync(ruta).mode & 0o777).toString(8)).toBe('600');
+    expect((statSync(join(principal, 'CLIENTES', 'TIENDA')).mode & 0o777).toString(8)).toBe('775');
+    // Con la subcarpeta ya creada (0700) otro respaldo nuevo dentro también vale; el mismo archivo ya no (nunca se pisa).
+    expect(comun.comprobarRespaldo(join(dirname(ruta), 'otro.json'), sinRaices).ok).toBe(true);
+    expect(comun.comprobarRespaldo(ruta, sinRaices).motivo).toContain('nunca se pisa');
+
+    // Negativas: lo versionable del proyecto, vista desde el worktree y desde la principal.
+    expect(comun.comprobarRespaldo(join(principal, 'publico', 'r.json'), sinRaices).motivo).toContain('ignorada por git');
+    expect(comun.comprobarRespaldo(join(worktree, 'r.json'), sinRaices).motivo).toContain('ignorada por git');
+    expect(comun.comprobarRespaldo(join(principal, 'r.json'), { raiz: principal, raices: [] }).motivo).toContain('ignorada por git');
+    // Negativa: otro repositorio distinto del del proyecto.
+    const ajeno = join(nuevoDir(), 'ajeno');
+    mkdirSync(ajeno);
+    git(ajeno, ['init', '-q']);
+    writeFileSync(join(ajeno, '.gitignore'), 'CLIENTES/\n');
+    mkdirSync(join(ajeno, 'CLIENTES'));
+    expect(comun.comprobarRespaldo(join(ajeno, 'CLIENTES', 'r.json'), sinRaices).motivo).toContain('otro repositorio');
+    // Negativa: fuera del proyecto y de las raíces permitidas (el caso `~/`).
+    const casa = nuevoDir();
+    expect(comun.comprobarRespaldo(join(casa, 'r.json'), sinRaices).motivo).toContain('~/');
+    expect(comun.comprobarRespaldo(join(casa, 'sub', 'r.json'), sinRaices).motivo).toContain('~/');
+    // Un `.git` "plantado" que git no reconoce no deja pasar (git no puede decir el repositorio).
+    const falso = nuevoDir();
+    mkdirSync(join(falso, '.git'));
+    expect(comun.comprobarRespaldo(join(falso, 'r.json'), sinRaices).ok).toBe(false);
+  });
+
+  it('TMPDIR no amplía la lista: aunque apunte debajo de la casa, un respaldo ahí se rechaza (y el hijo sale 2)', () => {
+    const casa = process.env['HOME'] ?? '/home/x';
+    const antes = process.env['TMPDIR'];
+    // TMPDIR = la casa misma (existe y es del usuario: con una raíz que dependa de TMPDIR, el respaldo pasaría).
+    // La ruta es de una carpeta que NO existe: la prueba no crea nada en la casa.
+    const destino = join(casa, 'respaldos-h1-inexistente-de-prueba', 'r.json');
+    process.env['TMPDIR'] = casa;
+    try {
+      expect(comun.comprobarRespaldo(destino).ok).toBe(false);
+      const hijo = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROY, '--tenant', T, '--aplicar', '--respaldo', destino],
+        { env: entornoDelEmulador(HOST, { TMPDIR: casa }), encoding: 'utf8' });
+      expect(hijo.status).toBe(2);
+      expect(() => statSync(dirname(destino))).toThrow();
+    } finally {
+      if (antes === undefined) delete process.env['TMPDIR']; else process.env['TMPDIR'] = antes;
+    }
+    // Una raíz permitida no depende de lo que haya POR ENCIMA de ella: un repo en el padre de la raíz no cuenta.
+    const padre = nuevoDir();
+    git(padre, ['init', '-q']);
+    const zona = join(padre, 'zona');
+    mkdirSync(zona, { mode: 0o700 });
+    expect(comun.comprobarRespaldo(join(zona, 'nueva', 'r.json'), { raices: [zona] }).ok).toBe(true);
   });
 
   it('el respaldo: carpeta 0700 exigida, nunca se pisa, lectura exige 0600', () => {
@@ -448,6 +528,64 @@ describe('R4. aplicar', () => {
     expect(b.estado.escrituras).toHaveLength(0);
   });
 
+  it('un id de conversación fuera de forma no entra al plan: se cuenta como «id fuera de forma» y no se escribe', async () => {
+    const b = baseEnMemoria({
+      [`tenants/${T}`]: { nombre: 'Tienda Sintetica' },
+      [`tenants/${T}/conversaciones/${ID(1)}`]: conv(1),
+      [`tenants/${T}/conversaciones/wa_con.punto`]: conv(2),
+      [`tenants/${T}/conversaciones/${'x'.repeat(101)}`]: conv(3),
+    });
+    const ruta = rutaRespaldo();
+    const { codigo, salida } = await correr(cfgDe({ aplicar: true, respaldo: ruta }), b);
+    expect(codigo, salida).toBe(0);
+    expect(salida).toMatch(/id fuera de forma\)\s*: 2\b/);
+    expect(salida).toMatch(/se tocarían \(campos que agregar\)\s*: 1\b/);
+    expect(b.estado.escrituras.map((e) => e.ruta)).toEqual([rutaConv(1)]);
+    expect(b.leer(`tenants/${T}/conversaciones/wa_con.punto`)).not.toHaveProperty('telefonoTrozos');
+    // El respaldo que se guardó SÍ se puede leer de vuelta (no lleva ids inválidos).
+    expect(mod.leerRespaldo(ruta, { entorno: 'emulador', tenant: T }).ok).toBe(true);
+  });
+
+  it('el respaldo recién guardado se RELEE antes de escribir: si no sirve, sale 2 y no se escribe nada en Firestore', async () => {
+    const b = sembrar(5);
+    const ruta = rutaRespaldo();
+    const { codigo, salida } = await correr(cfgDe({ aplicar: true, respaldo: ruta }), b, {
+      leerRespaldo: () => ({ ok: false, motivo: 'forma inválida de prueba' }),
+    });
+    expect(codigo).toBe(2);
+    expect(salida).toContain('no sirve para revertir');
+    expect(salida).toContain('OTRA ruta de --respaldo');
+    expect(b.estado.escrituras).toHaveLength(0);
+    expect(b.estado.lotes).toHaveLength(0);
+    // El archivo sí quedó (se guardó antes de releerlo): la repetición tiene que usar otra ruta.
+    expect(statSync(ruta).isFile()).toBe(true);
+    // Y por omisión se relee con el lector de verdad (el camino feliz ya lo cubren las demás pruebas).
+    const lecturas: string[] = [];
+    const b2 = sembrar(2);
+    await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b2, { leerRespaldo: (r: string, o: { tenant: string }) => { lecturas.push(o.tenant); return mod.leerRespaldo(r, { entorno: 'emulador', tenant: o.tenant }); } });
+    expect(lecturas).toEqual([T]);
+    expect(b2.estado.escrituras).toHaveLength(2);
+  });
+
+  it('las repeticiones piden OTRA ruta de --respaldo (la de esta corrida ya existe y no se pisa)', async () => {
+    const b = sembrar(3);
+    let ya = false;
+    b.estado.antesDeCommit = () => { if (!ya) { ya = true; b.tocar(rutaConv(2), { ultimoEn: 'x' }); } };
+    const { salida } = await correr(cfgDe({ aplicar: true, respaldo: rutaRespaldo() }), b);
+    expect(salida).toContain('OTRA ruta de --respaldo');
+  });
+
+  it('si la corrida se corta, el mensaje dice en qué punto quedó (respaldo guardado, escribiendo, escrito)', () => {
+    const m = (e: string, causa?: string) => (mod as unknown as { mensajeDeInterrupcion: (e: string, c?: string) => string }).mensajeDeInterrupcion(e, causa);
+    expect(m('antes')).toContain('No se guardó respaldo ni se escribió nada');
+    expect(m('respaldo')).toContain('OTRA ruta de --respaldo');
+    expect(m('respaldo', 'Falló con un error')).toContain('Falló con un error');
+    for (const e of ['escribiendo', 'escrito']) {
+      expect(m(e)).toContain('--revertir con el mismo respaldo');
+      expect(m(e)).toMatch(/[Cc]orra el seco/);
+    }
+  });
+
   it('un respaldo ya existente en la ruta no se pisa y no se escribe nada', async () => {
     const ruta = rutaRespaldo();
     writeFileSync(ruta, 'no-tocar', { mode: 0o600 });
@@ -517,7 +655,7 @@ describe('R5. Bellido y la ficha', () => {
     expect(b.estado.escrituras).toHaveLength(0);
   });
 
-  it('por línea de comandos: el proceso sale 2 antes de abrir Firebase', () => {
+  it('por línea de comandos: el proceso sale 2 antes de abrir Firebase (Bellido, sin comercio, y un proyecto real con emulador heredado)', () => {
     const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROY, '--tenant', 'bellido', '--aplicar', '--respaldo', rutaRespaldo()], {
       env: entornoDelEmulador(HOST), encoding: 'utf8',
     });
@@ -529,7 +667,11 @@ describe('R5. Bellido y la ficha', () => {
     const prodSinConfirmo = spawnSync(process.execPath, [SCRIPT, '--proyecto', 'proyecto-ficticio-prod', '--tenant', T, '--aplicar', '--respaldo', rutaRespaldo()], {
       env: entornoDelEmulador(undefined, ENV_REAL), encoding: 'utf8',
     });
+    // OJO: el hijo hereda las variables del emulador (`entornoDelEmulador` las fija siempre), así que lo que lo corta es
+    // «hay variables de emulador», NO la falta de --confirmo-produccion. Esa rama la cubren las pruebas puras de R1
+    // («producción: --aplicar sin --confirmo-produccion…») con un entorno sin emulador.
     expect(prodSinConfirmo.status).toBe(2);
+    expect(prodSinConfirmo.stderr).toContain('hay variables de emulador');
     expect(prodSinConfirmo.stderr).not.toContain('proyecto-ficticio-prod');
   });
 });
@@ -550,6 +692,9 @@ describe('R6. revertir', () => {
     const seco = await correr(rev(ruta), b);
     expect(seco.codigo).toBe(1);
     expect(seco.salida).toContain('se les borrarían campos (siguen igual): 6');
+    // Avisa lo que de verdad pasa: se borra aunque la ingesta lo haya reescrito IDÉNTICO.
+    expect(seco.salida).toContain('aunque la ingesta lo haya reescrito IDÉNTICO');
+    expect(seco.salida).toContain('queda sin buscador por teléfono');
     expect(b.estado.escrituras).toHaveLength(antes);
     const real = await correr(rev(ruta, { aplicar: true }), b);
     expect(real.codigo, real.salida).toBe(0);
@@ -673,6 +818,17 @@ describe('R7. el texto del script', () => {
     expect(f).toContain('export const TAMANO_PAGINA = 300;');
     expect(f).toContain('export const TAMANO_LOTE = 400;');
     expect(f).toContain('Math.min(deps.lote ?? TAMANO_LOTE, TAMANO_LOTE)');
+  });
+  it('el encabezado declara: sin pastilla de ventana y leídas; la copia derivarDe y su prueba de paridad; bandera 24 h después de H1-6; el revertir idéntico', () => {
+    const crudo = readFileSync(SCRIPT, 'utf8');
+    expect(crudo).toMatch(/SIN pastilla de\s+\*\s+ventana y como LEÍDAS/);
+    expect(crudo).toMatch(/AL MENOS 24 h DESPUÉS de desplegar la ingesta con H1 \(H1-6\)/);
+    expect(crudo).toContain('POR QUÉ `derivarDe` ES UNA COPIA');
+    expect(crudo).toContain("`./normalizacion.js`");
+    expect(crudo).toContain('FALLA si cambian en uno y no en el otro');
+    expect(crudo).toMatch(/IDÉNTICO, el campo se borra igual/);
+    expect(crudo).toContain('respaldos-h1/<nombre>.json');
+    expect(crudo).toContain('copia principal o desde\n * un worktree');
   });
   it('declara la limitación de los mensajes antiguos en el encabezado y en la salida', () => {
     const crudo = readFileSync(SCRIPT, 'utf8');

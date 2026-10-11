@@ -9,6 +9,12 @@
  * (`core/conversacion/normalizacion.ts`, importada, no copiada) a partir de los campos que la conversación
  * ya tiene: `telefono` y `nombreContacto`.
  *
+ * (b) POR QUÉ `derivarDe` ES UNA COPIA DE LO QUE HACE `derivados.ts`: Node con `--experimental-strip-types` no
+ * resuelve `./normalizacion.js` desde `derivados.ts` (ni carga `firebase-admin` de ahí), así que el script importa
+ * `normalizacion.ts` directo y arma él los dos campos. Para que no diverja, la prueba de paridad de
+ * `rellenar-conversaciones.test.ts` compara `derivarDe` con `camposDeConversacionPorMensaje(…, 'saliente')` de
+ * `derivados.ts` sobre un corpus y FALLA si cambian en uno y no en el otro.
+ *
  *   node scripts/plataforma/rellenar-conversaciones.mjs --proyecto <id> --tenant <id> \
  *        [--aplicar --respaldo <ruta> [--confirmo-produccion <tenant>]]
  *   node scripts/plataforma/rellenar-conversaciones.mjs --revertir --respaldo <ruta> \
@@ -22,16 +28,20 @@
  *     camposAgregados[]}` más una huella de cada valor), después escribe en lotes de a lo sumo 400 con
  *     `update` y la precondición `lastUpdateTime` de lo leído: si la conversación cambió entre la lectura y la
  *     escritura (llegó un mensaje), SE SALTA y se cuenta, no se reintenta a ciegas. Relee lo escrito.
- *   · `--revertir --aplicar`: borra SOLO los campos que este script agregó y que sigan con el valor que escribió
- *     (la huella del respaldo); lo que alguien o la ingesta cambió después no se toca.
+ *   · `--revertir --aplicar`: borra SOLO los campos que este script agregó y cuyo valor SIGA SIENDO el que
+ *     escribió (la huella del respaldo). Lo que alguien o la ingesta cambió después A OTRO VALOR no se toca; pero si la
+ *     ingesta lo reescribió IDÉNTICO, el campo se borra igual (no se puede distinguir) y esa conversación queda sin
+ *     buscador por teléfono (o por nombre) hasta su próximo mensaje. La salida del revertir lo avisa.
  *   · IDEMPOTENTE: la segunda corrida encuentra todo al día y sale con 0 sin escribir (ni respaldo).
  *   · Solo AGREGA un campo que NO existe: un campo que ya está (aunque difiera) no se toca; la ingesta lo
  *     reescribe con el siguiente mensaje de esa conversación.
  *
  * LO QUE NO HACE (A PROPÓSITO).
  *   · NO inventa `ultimoEntranteEn`, `ventanaVenceEn`, `noLeidos` ni `sinLeer`: salen de un mensaje entrante y
- *     no se derivan de lo que la conversación ya tiene. Las conversaciones antiguas aparecen «sin dato» de
- *     ventana y leídas, que es lo que la consola espera de un documento viejo.
+ *     no se derivan de lo que la conversación ya tiene. (a) Las conversaciones antiguas quedan SIN pastilla de
+ *     ventana y como LEÍDAS (la consola lee un documento viejo así) hasta que escriban su próximo mensaje.
+ *     (c) Por eso la bandera `nueva` debe encenderse AL MENOS 24 h DESPUÉS de desplegar la ingesta con H1 (H1-6):
+ *     pasado ese plazo, toda ventana abierta tiene su ancla escrita por la ingesta, no por este script.
  *   · NO TOCA MENSAJES. LIMITACIÓN: los mensajes antiguos quedan sin `palabras`; la búsqueda por palabra solo
  *     hallará mensajes NUEVOS (los que entren después de que la ingesta con H1 esté desplegada). Buscar por
  *     teléfono y por nombre sí funciona sobre las conversaciones antiguas rellenadas.
@@ -42,12 +52,17 @@
  *
  * SALVAGUARDA DE PROYECTO y RESPALDO: las mismas de `aplicar-consola-conversaciones.mjs` (lista blanca por
  * `GCP_PROJECT_ID_STAGING` / `GCP_PROJECT_ID_PROD`; en producción `--aplicar` exige `--confirmo-produccion
- * <tenant>`; el id del proyecto real NUNCA se imprime; respaldo 0600 en carpeta 0700, nunca en `~/`: va en el
- * scratchpad o en una carpeta ignorada por git del proyecto). El respaldo contiene los ids de conversación, que
- * llevan el teléfono (`wa_<teléfono>`): por eso es privado y no se versiona.
+ * <tenant>`; el id del proyecto real NUNCA se imprime). El respaldo (0600, carpeta 0700, nunca se pisa) va en el
+ * scratchpad (`/tmp` o `/var/tmp`) o en una carpeta ignorada por git del proyecto, desde la copia principal o desde
+ * un worktree; nunca en `~/`. PASO PREVIO para el lugar duradero: que exista `CLIENTES/<CLIENTE>/` en la copia
+ * principal y pasar una subcarpeta NUEVA, por ejemplo `<copia principal>/CLIENTES/<CLIENTE>/respaldos-h1/<nombre>.json`:
+ * el script la crea con 0700. Contiene los ids de conversación, que llevan el teléfono (`wa_<teléfono>`): por eso
+ * es privado y no se versiona. Tras guardarlo, el script lo vuelve a LEER con la forma que `--revertir` exige y se
+ * detiene (salida 2) antes de escribir en Firestore si no sirve. Una conversación cuyo id no tiene la forma que el
+ * respaldo acepta se salta y se cuenta («id fuera de forma»): no entra al plan.
  *
  * SALIDA. 0: nada que hacer o escrito y comprobado. 1: el seco encontró diferencias, o quedaron conversaciones
- * saltadas por la precondición (repita). 2: uso o salvaguarda (nada escrito). 3: error de ejecución (solo
+ * saltadas por la precondición (repita con OTRA ruta de --respaldo). 2: uso o salvaguarda (nada escrito). 3: error de ejecución (solo
  * `e.code ?? e.name`) o la relectura no coincide. 130: Ctrl-C.
  *
  * COSTO por cada 1000 conversaciones: seco = 1000 lecturas (+1 de la ficha). `--aplicar` = 1000 lecturas del
@@ -60,19 +75,23 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { MAX_PALABRAS_CONSULTA, palabrasDe, trozosDeTelefono } from '../../functions/src/core/conversacion/normalizacion.ts';
 import {
-  ID_TENANT, comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo, leerRespaldoGenerico, nombreExcluido,
+  ID_TENANT, comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo, leerRespaldoGenerico, mensajeDeInterrupcion,
+  nombreExcluido,
 } from './aplicar-consola-conversaciones.mjs';
 
-export { comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo };
+export { comprobarProyecto, comprobarRespaldo, esTenantExcluido, guardarRespaldo, mensajeDeInterrupcion };
 
 /** Los ÚNICOS campos que este script puede escribir. */
 export const CAMPOS_DERIVADOS = Object.freeze(['telefonoTrozos', 'nombrePalabras']);
 export const TAMANO_PAGINA = 300;
 export const TAMANO_LOTE = 400;
 const MAXIMO_RESPALDO = 64 * 1024 * 1024;
-const ID_CONVERSACION = /^[A-Za-z0-9_-]{1,100}$/;
+export const ID_CONVERSACION = /^[A-Za-z0-9_-]{1,100}$/;
 const CON_VALOR = ['proyecto', 'tenant', 'respaldo', 'confirmo-produccion'];
 const BANDERAS = ['aplicar', 'revertir'];
+
+export const AVISO_REVERTIR = 'AVISO: se borra el campo si su valor sigue siendo el que escribió este script, aunque la ingesta lo haya reescrito '
+  + 'IDÉNTICO después; esa conversación queda sin buscador por teléfono (o por nombre) hasta su próximo mensaje.';
 
 export const LIMITACION = 'LIMITACIÓN: los mensajes antiguos no se rellenan (no tienen `palabras`); la búsqueda por palabra '
   + 'solo hallará mensajes NUEVOS. Teléfono y nombre sí se hallan en las conversaciones rellenadas.';
@@ -238,11 +257,13 @@ async function* paginas(db, FieldPath, tenant, tamano) {
 
 /** Recorre todo y arma el plan: qué se agregaría a cuáles. Sin imprimir nada de las conversaciones. */
 async function escanear(db, FieldPath, tenant, tamano) {
-  const cuenta = { total: 0, tocan: 0, alDia: 0, sinDato: 0, porCampo: { telefonoTrozos: 0, nombrePalabras: 0 } };
+  const cuenta = { total: 0, tocan: 0, alDia: 0, sinDato: 0, idInvalido: 0, porCampo: { telefonoTrozos: 0, nombrePalabras: 0 } };
   const plan = [];
   for await (const pagina of paginas(db, FieldPath, tenant, tamano)) {
     for (const snap of pagina) {
       cuenta.total += 1;
+      // Un id que no cumple la forma del respaldo no entra al plan: el respaldo no podría revertirla.
+      if (!ID_CONVERSACION.test(snap.id)) { cuenta.idInvalido += 1; continue; }
       const { campos, sinTelefono } = derivarDe(snap.data() ?? {});
       const nombres = Object.keys(campos);
       if (nombres.length) {
@@ -296,12 +317,6 @@ export function leerRespaldo(ruta, { entorno, tenant }) {
 // ===========================================================================
 // EJECUCIÓN
 // ===========================================================================
-export function mensajeDeInterrupcion(estado) {
-  if (estado === 'antes') return '\n  ! Interrumpido antes de escribir. No se escribió nada en las conversaciones.\n';
-  return '\n  ! Interrumpido DURANTE la escritura: parte de los lotes pudo escribirse. Es seguro: corra el seco para ver qué falta '
-    + '(el relleno es idempotente) o --revertir con el mismo respaldo, que solo borra lo que este script escribió.\n';
-}
-
 const trozos = (arreglo, n) => Array.from({ length: Math.ceil(arreglo.length / n) }, (_, i) => arreglo.slice(i * n, (i + 1) * n));
 
 /**
@@ -364,6 +379,7 @@ export async function ejecutar(cfg, deps) {
     log(`  ya sin el campo                       : ${cuenta.yaSinCampo}`);
     log(`  campos que cambiaron después (se conservan): ${cuenta.camposConservados}`);
     log(`  conversaciones que ya no existen      : ${cuenta.sinConversacion}`);
+    log(`  ${AVISO_REVERTIR}`);
     if (plan.length === 0) { log('\n  ✓ Nada que revertir.\n'); return 0; }
     if (!cfg.aplicar) { log('\n  Seco: no se escribió nada. Agregue --aplicar para revertir.\n'); return 1; }
 
@@ -386,7 +402,7 @@ export async function ejecutar(cfg, deps) {
     const mal = await releer(db, cfg.tenant, [...porId.keys()], (id, d) => d !== null && porId.get(id).borrar.every((c) => !tiene(d, c)));
     log(`\n  Revertidas: ${escritas} · saltadas por precondición: ${saltadas} · relectura que no coincide: ${mal}`);
     if (mal > 0) { log('  ✗ La relectura no coincide en algunas. Revise con el seco.\n'); return 3; }
-    if (saltadas > 0) { log('  Quedan conversaciones que cambiaron durante la corrida: repita el seco y --aplicar.\n'); return 1; }
+    if (saltadas > 0) { log('  Quedan conversaciones que cambiaron durante la corrida: repita --revertir (seco y --aplicar) con el mismo respaldo: sigue valiendo.\n'); return 1; }
     log('  ✓ Revertido y releído.\n');
     return 0;
   }
@@ -400,6 +416,7 @@ export async function ejecutar(cfg, deps) {
   log(`    · nombrePalabras                     : ${cuenta.porCampo.nombrePalabras}`);
   log(`  ya al día                              : ${cuenta.alDia}`);
   log(`  se saltarían (sin teléfono que derivar): ${cuenta.sinDato}`);
+  log(`  se saltarían (id fuera de forma)       : ${cuenta.idInvalido}`);
   log(`  escrituras si se aplica                : ${cuenta.tocan} (una por conversación)`);
   log(`  ${LIMITACION}`);
 
@@ -411,6 +428,13 @@ export async function ejecutar(cfg, deps) {
   } catch (e) {
     if (e?.code === 'EEXIST') { log('\n  ✗ Ya existe un archivo en esa ruta de respaldo: un respaldo nunca se pisa; elija otro nombre. No se escribe nada.\n'); return 2; }
     throw e;
+  }
+  marcar('respaldo');
+  // El respaldo tiene que poder LEERSE de vuelta con la forma que --revertir exige, ANTES de escribir en Firestore.
+  const comprobado = (deps.leerRespaldo ?? leerRespaldo)(cfg.respaldo, cfg);
+  if (!comprobado.ok) {
+    log(`\n  ✗ El respaldo recién guardado no sirve para revertir (${comprobado.motivo}). No se escribe nada en las conversaciones; para repetir use OTRA ruta de --respaldo.\n`);
+    return 2;
   }
   log(`\n  Respaldo guardado y releído: ${cfg.respaldo}`);
 
@@ -430,10 +454,13 @@ export async function ejecutar(cfg, deps) {
     && Object.entries(porId.get(id).campos).every(([c, v]) => tiene(d, c) && huellaDe(d[c]) === huellaDe(v)));
   log(`\n  Escritas: ${escritas} · saltadas por precondición (cambiaron durante la corrida): ${saltadas} · relectura que no coincide: ${mal}`);
   if (mal > 0) { log('  ✗ La relectura no coincide en algunas. Revise con el seco; el respaldo permite revertir.\n'); return 3; }
-  if (saltadas > 0) { log('  Las saltadas no se reintentan solas: repita el seco y --aplicar (es idempotente).\n'); return 1; }
+  if (saltadas > 0) { log('  Las saltadas no se reintentan solas: repita el seco y --aplicar con OTRA ruta de --respaldo (la de esta corrida ya existe y no se pisa; el relleno es idempotente).\n'); return 1; }
   log('  ✓ Escrito y releído. Para deshacer: --revertir con el mismo respaldo, tenant y proyecto.\n');
   return 0;
 }
+
+/** En qué punto está la corrida: 'antes', 'respaldo', 'escribiendo' o 'escrito' (ver `mensajeDeInterrupcion`). */
+const corrida = { estado: 'antes' };
 
 async function principal() {
   const analisis = analizarArgumentos(process.argv.slice(2));
@@ -446,12 +473,11 @@ async function principal() {
   const { getFirestore, FieldValue, FieldPath } = await import('firebase-admin/firestore');
   initializeApp({ projectId: cfg.proyecto });
   const db = getFirestore();
-  let estado = 'antes';
   process.on('SIGINT', () => {
-    console.error(mensajeDeInterrupcion(estado));
+    console.error(mensajeDeInterrupcion(corrida.estado));
     process.exit(130);
   });
-  const codigo = await ejecutar(cfg, { db, FieldValue, FieldPath, marcarEscritura: (v) => { estado = v; } });
+  const codigo = await ejecutar(cfg, { db, FieldValue, FieldPath, marcarEscritura: (v) => { corrida.estado = v; } });
   await db.terminate().catch(() => {});
   process.exit(codigo);
 }
@@ -469,6 +495,7 @@ if (seEjecutaDirecto()) {
     await principal();
   } catch (e) {
     console.error(`\n  ✗ error de ejecución: ${e?.code ?? e?.name ?? 'desconocido'}\n`);
+    if (corrida.estado !== 'antes') console.error(mensajeDeInterrupcion(corrida.estado, 'Falló con un error'));
     process.exit(3);
   }
 }
