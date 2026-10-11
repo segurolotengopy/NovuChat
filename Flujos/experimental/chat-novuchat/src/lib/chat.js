@@ -846,6 +846,9 @@ function chAfirma(t) {
 const CH_PIDE_EQUIPO_DIRECTO = /\b(?:quiero|quisiera|me gustaria|necesito|prefiero|puedo|podria|podrian|puedes|podrias|deseo)\b[^.!?]{0,25}\b(?:hablar|conversar|comunicarme|contactarme|comunicar|contactar)\w*\s+con\b[^.!?]{0,20}\b(?:alguien(?! de (?:mi|mis|nuestro))|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|ventas|recepcion)\b|\b(?:comunicame|comunicanos|pasame|pasenme|pasanos|conectame|conectenme|ponme|pongame)\b[^.!?]{0,15}\bcon\b[^.!?]{0,15}\b(?:alguien|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|ventas)\b|\b(?:mandame|mandenme|enviame|envienme|mandanos)\b[^.!?]{0,6}\b(?:un|una) (?:asesor|asesora|ejecutivo|ejecutiva|vendedor|especialista|persona)\b|^(?:contacto|hablar con ventas|ventas)$/;
 const CH_OFRECE_EQUIPO = /hablar con (?:alguien de |una persona de |alguien del )?(?:nuestro |el )?equipo/;
 const CH_OFRECE_PLANES = /\bver (?:nuestros |los |todos los )?planes|\bmostrar(?:te)? (?:nuestros |los )?planes/;
+// «Quiero más información» como PRIMER mensaje (el texto del anuncio): solo palabras de pedir información; con otra palabra (un rubro) lo contesta el modelo.
+const CH_SOLO_INFO = new Set('mas mayor toda la detalle detalles datos funciona cuentame cuentenme explicame explicanos hacen ofrecen novuchat trata saber y e entonces luego es se informacio'.split(' '));
+function chSoloPideInfo(t) { return chPideMasInfo(t) && chNorm(t).split(' ').filter(Boolean).every((w) => CH_SALUDOS.has(w) || CH_INFO_PALABRAS.has(w) || CH_SOLO_INFO.has(w)); }
 const CH_A_MEDIDA = /(^| )(a medida|personaliz\w*|integra\w*|erp|sistema propio|mi sistema|sistemas)( |$)/;
 function chPideAMedida(t) {
   return CH_A_MEDIDA.test(chNorm(t));
@@ -965,6 +968,8 @@ function chDecidir(a) {
   }
   if (f.historial.length === 0 && ev.length > 0 && ev.every((e) => e.k === 'texto' && chEsSaludoInicial(e.c))) { plan.ruta = 'lista'; return plan; }
   plan.contexto = chContexto({ eventos: ev, ficha: f, cfg: cfg });
+  // Primer contacto con «quiero más información»: UN mensaje de lista con el pitch fijo dentro (sin modelo); los botones llegan en la respuesta al rubro.
+  if (plan.contexto === 'abierta' && f.historial.length === 0 && chPlano(f.rubro) === '' && ev.every((e) => e.k === 'texto' && (chEsSaludoInicial(e.c) || chSoloPideInfo(e.c)))) { plan.ruta = 'lista'; plan.pitch = true; plan.contexto = ''; }
   return plan;
 }
 
@@ -1544,9 +1549,10 @@ function chClienteConSitio(texto, cfg, evento, est, f, quiere) {
   return m;
 }
 // El primer mensaje: el saludo y la lista de rubros (los 7, cada uno con su descripción).
-function chLista(cfg) {
+function chLista(cfg, pitch) {
   const d = chDatos(cfg);
-  const cuerpo = chEmMensaje(chSustituir((d.textos || {}).saludo, cfg), cfg);
+  const ab = (d.respaldos || {}).abierta || {};
+  const cuerpo = chEmMensaje(chSustituir(pitch === true ? chTexto(ab.pitch) + '\n\n' + chTexto(ab.preguntaLista) : (d.textos || {}).saludo, cfg), cfg);
   const filas = chFilasDeRubros(cfg);
   const payload = cmLista(cuerpo, (d.textos || {}).listaBoton || 'Ver rubros', (d.textos || {}).listaTitulo || 'Rubros', filas);
   const respaldo = cuerpo + '\nPor ejemplo: ' + filas.map((f) => f.title).join(', ') + '.';

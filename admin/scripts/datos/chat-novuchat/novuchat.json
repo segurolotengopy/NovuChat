@@ -186,6 +186,7 @@
       "abierta": {
         "pitch": "¡Claro! 😊 NovuChat es el primer empleado de tu negocio que nunca duerme:\n⏱️ Atención en segundos 24/7: responde en segundos, las 24 horas, así no pierdes ventas si te escriben fuera de horario o en horas pico.\n📅 Agendamiento inteligente: se conecta a tu Google Calendar, ofrece horarios reales y agenda citas sin cruces. Además, envía recordatorios para bajar el ausentismo.\n💳 Ventas y pagos por QR: muestra tu catálogo, toma el pedido calculando el envío y envía el código QR de tu negocio para que tus clientes paguen.\n📱 Control total: como dueño, miras todas las conversaciones y haces cambios directamente desde nuestra consola en tu celular.",
         "cierreSinRubro": "Para darte un ejemplo exacto de cómo se vería esto en la vida real, ¿me cuentas de qué rubro es tu negocio?",
+        "preguntaLista": "Para darte un ejemplo exacto de cómo se vería en tu negocio, ¿de qué rubro es? 👇",
         "cierreConRubro": "¿Cuál de estas funciones te quitaría un mayor peso de encima hoy mismo?"
       },
       "multiple": "Veo que estás explorando varias de nuestras soluciones, ¡excelente! 🚀 Como NovuChat se adapta a los procesos de diferentes industrias, me ayudaría mucho enfocarme: ¿cuál de estas áreas es el corazón de tu negocio hoy, para darte la información que realmente te sirva?",

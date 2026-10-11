@@ -420,10 +420,41 @@ describe('chDecidir: lo que resuelve el CÓDIGO y lo que cae en el modelo', () =
     expect(decidir([ev('ya soy cliente, necesito soporte')]).soporte).toBe(true);
   });
   it('un saludo inicial recibe la lista SOLO si es el primer mensaje; «Quiero más información» y todo lo demás van al modelo', () => {
-    for (const t of ['Hola', 'Buenas tardes', 'Hola, me das información.', 'hola que tal', 'buenos dias info']) expect(decidir([ev(t)]).ruta, t).toBe('lista');
-    for (const t of ['Quiero más información', 'Hola quiero precios'.replace('quiero precios', 'tengo una clínica'), '?', 'Y?', 'cuéntame un chiste', 'tengo un restaurante']) expect(decidir([ev(t)]).ruta, t).toBe('modelo');
+    for (const t of ['Hola', 'Buenas tardes', 'Hola, me das información.', 'hola que tal', 'buenos dias info']) { expect(decidir([ev(t)]).ruta, t).toBe('lista'); expect(decidir([ev(t)]).pitch, t).toBeUndefined(); }
+    for (const t of ['Hola quiero precios'.replace('quiero precios', 'tengo una clínica'), 'cuéntame un chiste', 'tengo un restaurante', 'Quiero más información para mi clínica', 'quiero más información sobre el plan Pro']) expect(decidir([ev(t)]).ruta, t).toBe('modelo');
     const conHistorial = { ...fichaBase(), historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: 'lista' }] };
     expect(decidir([ev('Hola')], conHistorial).ruta).toBe('modelo');
+  });
+  it('«Quiero más información» como PRIMER mensaje (el texto del anuncio): la lista con el pitch fijo dentro, sin modelo; con historial, rubro o más palabras, el modelo de siempre', () => {
+    for (const t of ['¡Hola! Quiero más información', 'Quiero más información', 'quiero más info', 'Más información por favor', 'detalles', 'Detalles', 'cómo funciona', 'Hola, quiero más información', 'Quiero mas informació', 'Y?', '?', 'quiero saber más', 'cuéntame más']) {
+      const p = decidir([ev(t)]);
+      expect(p.ruta, t).toBe('lista');
+      expect(p.pitch, t).toBe(true);
+      expect(p.contexto, t).toBe('');
+    }
+    // una ráfaga de dos textos abiertos: una sola decisión de lista; con un saludo en medio también
+    expect(decidir([ev('Hola'), ev('Quiero más información')]).pitch).toBe(true);
+    expect(decidir([ev('Quiero más información'), ev('detalles')]).pitch).toBe(true);
+    // con historial (no es el primer contacto) o con rubro conocido: el modelo, como antes
+    const conHistorial = { ...fichaBase(), historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: 'lista' }] };
+    for (const t of ['Quiero más información', 'Y?', '?']) expect(decidir([ev(t)], conHistorial).ruta, t).toBe('modelo');
+    expect(decidir([ev('Quiero más información')], { ...fichaBase(), rubro: 'salud' }).ruta).toBe('modelo');
+    // un clic de lista o un audio no son un texto abierto
+    expect(decidir([toque('rubro:salud')]).pitch).toBeUndefined();
+    // el cuerpo de la lista: el pitch fijo del dato + la pregunta, dentro del límite de WhatsApp (1.024), con las siete filas y sin botones de planes ni equipo
+    const m = f('chLista')(CFG, true);
+    const cuerpo = String(m.payload.interactive.body.text);
+    expect(cuerpo).toMatch(/el primer empleado de tu negocio que nunca duerme/);
+    expect(cuerpo.split('\n').filter((l: string) => /^\p{Extended_Pictographic}/u.test(l))).toHaveLength(4); // las cuatro viñetas del pitch
+    expect(cuerpo.trimEnd()).toMatch(/¿de qué rubro es\? 👇$/);
+    expect(cuerpo.length).toBeLessThanOrEqual(1024);
+    expect(m.payload.interactive.type).toBe('list');
+    expect(m.payload.interactive.action.sections[0].rows).toHaveLength(7);
+    expect(JSON.stringify(m.payload)).not.toMatch(/"id":"(planes|equipo)"/);
+    // el texto fijo pasa el validador del modelo con las mismas redes (contexto abierta: pitch, sin «cobra», sin cifras de más)
+    expect(f('chValidarMensaje')(cuerpo, { cfg: CFG, contexto: 'abierta', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '' })).toBe('');
+    // el saludo normal sigue igual
+    expect(String(f('chLista')(CFG).payload.interactive.body.text)).toMatch(/Soy Kenji, el asistente virtual de NovuChat, con inteligencia artificial/);
   });
   it('el contexto del modelo: rubro, multiple, otro, abierta, datos, identidad, cortesia, fuera, ambiguo, medio, otroRespuesta, general', () => {
     const t = (k: string): J => toque('rubro:' + k);

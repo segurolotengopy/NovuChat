@@ -419,24 +419,57 @@ function rafaga(entradas: J[], from: string, preparar?: (w: W) => void, avanceMs
 }
 
 describe('capturas de Silvana (07/10): el chat sigue la charla', () => {
-  it('«Quiero mas informació» recibe el pitch del documento (§8): «el primer empleado… que nunca duerme», las 4 viñetas y una pregunta; con los dos botones', () => {
-    const w = crear();
-    w.modelo.con = dice(PITCH);
-    const t = jugar(w, MAMA).texto('Quiero mas informació');
-    expect(t.aMi).toHaveLength(1);
-    const e = t.aMi[0]!;
-    expect(e.cuerpo).toMatch(/el primer empleado de tu negocio que nunca duerme/);
-    expect(e.cuerpo.split('\n').filter((l) => /^\p{Extended_Pictographic}/u.test(l))).toHaveLength(4);
-    expect(e.cuerpo.trimEnd()).toMatch(/\?\s*$/);
-    expect(idsBotones(e)).toEqual(['planes', 'equipo']);
-    expect(w.modelo.llamadas).toHaveLength(1);
-    expect(w.modelo.reintentos).toHaveLength(0);
+  it('«¡Hola! Quiero más información» (el texto del anuncio) como PRIMER mensaje: UN mensaje de lista con el pitch del documento (§8) y la pregunta del rubro, sin botones y sin llamar al modelo; al elegir el rubro, la explicación con los dos botones', () => {
+    for (const abre of ['¡Hola! Quiero más información', 'Quiero mas informació', 'quiero más info', 'Más información por favor', 'detalles', 'cómo funciona', 'Hola, quiero más información']) {
+      const w = crear();
+      const j = jugar(w, MAMA);
+      const t = j.texto(abre);
+      expect(t.aMi, abre).toHaveLength(1);
+      const e = t.aMi[0]!;
+      expect(tipoInter(e), abre).toBe('list');
+      expect(e.cuerpo).toMatch(/el primer empleado de tu negocio que nunca duerme/);
+      expect(e.cuerpo.split('\n').filter((l) => /^\p{Extended_Pictographic}/u.test(l))).toHaveLength(4);
+      expect(e.cuerpo.trimEnd()).toMatch(/¿de qué rubro es\? 👇$/);
+      expect(e.cuerpo.length).toBeLessThanOrEqual(1024);
+      expect(idsBotones(e)).toEqual([]);
+      expect(filasDe(e).map((x) => x['id'])).toEqual(['rubro:salud', 'rubro:belleza', 'rubro:gastronomia', 'rubro:retail', 'rubro:educacion', 'rubro:captacion', 'rubro:otro']);
+      expect(w.modelo.llamadas, abre).toHaveLength(0);
+      const f = fichaDe(w, MAMA)!;
+      expect(f.rubro, 'el pitch no cuenta como rubro').toBe('');
+      expect(f.historial.map((h) => h.r)).toEqual(['u', 'a']);
+      expect(f.historial[1]!.t).toMatch(/nunca duerme/);
+      // elegir el rubro: la explicación del rubro con los dos botones, como siempre
+      w.modelo.con = dice(EXPLICA_GASTRO, { rubro: 'gastronomia' });
+      const t2 = j.lista('rubro:gastronomia');
+      expect(idsBotones(t2.aMi[0]!)).toEqual(['planes', 'equipo']);
+      expect(fichaDe(w, MAMA)!.rubro).toBe('gastronomia');
+    }
+  });
+  it('«Hola» sigue con su lista de saludo; «Quiero más información» con historial sigue al modelo (pitch con los dos botones); una ráfaga de dos textos abiertos da UNA lista; con un rubro mencionado va al modelo', () => {
+    const w0 = crear();
+    const e0 = jugar(w0, MAMA).texto('Hola').aMi[0]!;
+    expect(e0.cuerpo).toMatch(/Soy Kenji, el asistente virtual de NovuChat, con inteligencia artificial/);
+    expect(e0.cuerpo).not.toMatch(/nunca duerme/);
+    const w1 = crear();
+    const j1 = jugar(w1, MAMA);
+    j1.texto('Hola');
+    w1.modelo.con = dice(PITCH);
+    const t1 = j1.texto('Quiero más información');
+    expect(w1.modelo.llamadas).toHaveLength(1);
+    expect(idsBotones(t1.aMi[0]!)).toEqual(['planes', 'equipo']);
+    const w3 = crear();
+    w3.modelo.con = dice(PITCH);
+    const t3 = jugar(w3, MAMA).texto('Quiero más información para mi clínica dental');
+    expect(w3.modelo.llamadas).toHaveLength(1);
+    expect(tipoInter(t3.aMi[0]!)).not.toBe('list');
   });
 
   it('el modelo contesta una muletilla («¡Te entiendo! 😊»): se rechaza, hay UN reintento, y si falla otra vez sale el pitch fijo del documento (nunca la muletilla)', () => {
     const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
     w.modelo.con = dice('¡Te entiendo! 😊');
-    const t = jugar(w, MAMA).texto('Quiero mas informació');
+    const t = j.texto('Quiero mas informació');
     expect(w.modelo.llamadas).toHaveLength(1);
     expect(w.modelo.reintentos).toHaveLength(1);
     const e = t.aMi[0]!;
@@ -453,6 +486,7 @@ describe('capturas de Silvana (07/10): el chat sigue la charla', () => {
   it('«?» después de «Quiero mas informació» NO recibe «¡Te entiendo!»: continúa la charla (con el historial) y sigue con los dos botones', () => {
     const w = crear();
     const j = jugar(w, MAMA);
+    j.texto('Hola');
     w.modelo.con = dice(PITCH);
     j.texto('Quiero mas informació');
     // segunda vez: ya se dijo el pitch → el contexto es «ambiguo» (cierre hacia el equipo); el modelo responde con contenido
@@ -1678,12 +1712,15 @@ describe('la topología y las guardias del JSON versionado', () => {
     }
     const w = crear();
     w.modelo.con = dice(PITCH);
-    jugar(w, MAMA).texto('Y?');
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    j.texto('Y?');
     expect(w.modelo.llamadas[0]!.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
   });
   it('el pedido al modelo: responseSchema con los 7 campos del contrato, sin temperature ni topP, la systemInstruction idéntica entre turnos y sin texto del cliente', () => {
     const w = crear();
     const j = jugar(w, MAMA);
+    j.texto('Hola');
     w.modelo.con = dice(PITCH);
     j.texto('Y?');
     w.modelo.con = dice('Entiendo perfectamente, hay modelos de negocio con procesos muy particulares y por eso no usamos menús rígidos. ¿Te gustaría hablar con alguien de nuestro equipo para contar cómo funciona tu atención hoy y ver si podemos armar un flujo a medida? 🤝');
