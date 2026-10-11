@@ -22,6 +22,10 @@ import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 import { sanearCaptacion } from './modulos/captacion/captacion.js';
 import { vozFija } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
+// H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
+// campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
+// nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
+import { camposDeConversacionPorMensaje, camposDeMensajeIndexado } from './core/conversacion/derivados.js';
 import {
   HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
   estadoDeAtencion, umbralesDeAtencion, ventanaVencida,
@@ -1073,6 +1077,11 @@ export const ingesta = onRequest(
         texto: mensaje.texto,
         ts: Timestamp.now(),
         ...(mensaje.idMeta ? { idMeta: mensaje.idMeta } : {}),
+        // `tenantId` es el MISMO que arma la ruta `tenants/${tenantId}/...` de
+        // `refConversacion` (sale de la ruta autenticada, nunca del cuerpo): la
+        // búsqueda entre comercios se acota por este campo y por el prefijo del
+        // camino, y los dos tienen que coincidir. `palabras`, hasta 30, sin texto.
+        ...camposDeMensajeIndexado(mensaje.texto, tenantId),
       });
 
       if (cortado) {
@@ -1087,6 +1096,9 @@ export const ingesta = onRequest(
           ultimoMensaje: mensaje.texto.slice(0, 300),
           ultimoEn: FieldValue.serverTimestamp(),
           ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
+          // Aunque el corte no cuente nada para la facturación, la persona del
+          // negocio sí tiene que ver que le escribieron (no leídos y búsqueda).
+          ...camposDeConversacionPorMensaje(mensaje, ahoraMs),
         }, { merge: true });
         escribirMensaje();
         return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad };
@@ -1173,8 +1185,10 @@ export const ingesta = onRequest(
         canal: 'whatsapp',
         ultimoMensaje: mensaje.texto.slice(0, 300),
         ultimoEn: FieldValue.serverTimestamp(),
-        // Solo lo mueve un mensaje del cliente: ver `ultimoEntranteEn` arriba.
-        // El ancla se escribe SOLO al abrir una atención. Refrescarla con cada
+        // La ventana de FACTURACIÓN (`atencionDesde`) y la ventana que ve la consola
+        // (`ultimoEntranteEn`, `ventanaVenceEn`, al final de este objeto) son cosas
+        // distintas: la segunda la mueve cada mensaje del cliente; la primera no.
+        // El ancla de facturación se escribe SOLO al abrir una atención. Refrescarla con cada
         // mensaje convertiría la ventana fija en una ventana deslizante, y una
         // conversación activa nunca se renovaría: el cliente que escribe todos
         // los días quedaría contado una sola vez, para siempre.
@@ -1205,6 +1219,11 @@ export const ingesta = onRequest(
         // turno pasó a una persona. Solo se ENCIENDE desde acá; apagarlo es un
         // acto de una persona del negocio, desde la consola.
         ...(mensaje.evento === 'no_contactar' ? { noContactar: true } : {}),
+        // Derivados de Conversaciones (H1): trozos del teléfono y palabras del
+        // nombre siempre; ultimoEntranteEn, ventanaVenceEn, noLeidos y sinLeer
+        // SOLO con un entrante. Van al final y no pisan ningún campo de arriba
+        // (los nombres no se repiten con los de la facturación).
+        ...camposDeConversacionPorMensaje(mensaje, ahoraMs),
       }, { merge: true });
 
       escribirMensaje();
