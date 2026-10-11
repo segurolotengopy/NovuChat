@@ -137,19 +137,26 @@ afterAll(async () => {
 });
 
 describe('conversación NUEVA creada por un carrito web', () => {
-  it('el primer pedido deja noLeidos=1 y sinLeer=true; el segundo, noLeidos=2', async () => {
+  // Cada bloque arma su propio estado: corre igual con `-t` o en orden aleatorio.
+  let trasPrimero: Record<string, unknown> = {};
+  let trasSegundo: Record<string, unknown> = {};
+  beforeAll(async () => {
     await pedir(NUEVO);
-    const a = await conv(NUEVO);
-    expect(a['noLeidos']).toBe(1);
-    expect(a['sinLeer']).toBe(true);
+    trasPrimero = await conv(NUEVO);
     await pedir(NUEVO);
-    const b = await conv(NUEVO);
-    expect(b['noLeidos']).toBe(2);
-    expect(b['sinLeer']).toBe(true);
+    trasSegundo = await conv(NUEVO);
+  }, 60_000);
+
+  it('el primer pedido deja noLeidos=1 y sinLeer=true; el segundo, noLeidos=2', () => {
+    expect(trasPrimero['noLeidos']).toBe(1);
+    expect(trasPrimero['sinLeer']).toBe(true);
+    expect(trasSegundo['noLeidos']).toBe(2);
+    expect(trasSegundo['sinLeer']).toBe(true);
   });
 
   it('NEGANDO: no abre la ventana de 24 h: ni `ultimoEntranteEn` ni `ventanaVenceEn`', async () => {
     const d = await conv(NUEVO);
+    expect(Object.keys(d).length, 'la conversación existe y tiene campos').toBeGreaterThan(0);
     expect(d).not.toHaveProperty('ultimoEntranteEn');
     expect(d).not.toHaveProperty('ventanaVenceEn');
     // Ni la ancla de atención que usa la ingesta: un carrito no abre atención.
@@ -170,25 +177,36 @@ describe('conversación NUEVA creada por un carrito web', () => {
 });
 
 describe('conversación PREVIA con ventana abierta', () => {
-  it('suma 1 a los no leídos que ya tenía y NO mueve ni la ventana ni la ancla', async () => {
+  let antes: Record<string, unknown> = {};
+  let tras: Record<string, unknown> = {};
+  beforeAll(async () => {
+    antes = await conv(PREVIO);
     await pedir(PREVIO);
-    const d = await conv(PREVIO);
-    expect(d['noLeidos']).toBe(3);
-    expect(d['sinLeer']).toBe(true);
-    expect((d['ultimoEntranteEn'] as FirebaseFirestore.Timestamp).toMillis()).toBe(ANTES.toMillis());
-    expect((d['ventanaVenceEn'] as FirebaseFirestore.Timestamp).toMillis()).toBe(VENCE.toMillis());
+    tras = await conv(PREVIO);
+  }, 60_000);
+
+  it('suma 1 a los no leídos que ya tenía y NO mueve ni la ventana ni la ancla', () => {
+    expect(antes['noLeidos'], 'partía de algo').toBeGreaterThanOrEqual(2);
+    expect(tras['noLeidos']).toBe((antes['noLeidos'] as number) + 1);
+    expect(tras['sinLeer']).toBe(true);
+    expect((tras['ultimoEntranteEn'] as FirebaseFirestore.Timestamp).toMillis()).toBe(ANTES.toMillis());
+    expect((tras['ventanaVenceEn'] as FirebaseFirestore.Timestamp).toMillis()).toBe(VENCE.toMillis());
   });
 
-  it('NEGANDO: las marcas de facturación de la conversación quedan como estaban', async () => {
-    const d = await conv(PREVIO);
-    expect((d['atencionDesde'] as FirebaseFirestore.Timestamp).toMillis()).toBe(ANTES.toMillis());
+  it('NEGANDO: las marcas de facturación de la conversación quedan como estaban', () => {
+    expect((tras['atencionDesde'] as FirebaseFirestore.Timestamp).toMillis()).toBe(ANTES.toMillis());
     for (const k of ['periodoContado', 'respuestasDelPeriodo', 'mensajesVentana', 'periodoInteraccion', 'origen'] as const) {
-      expect(d[k], k).toEqual(MARCAS[k]);
+      expect(tras[k], k).toEqual(MARCAS[k]);
     }
   });
 });
 
 describe('el mensaje `order`', () => {
+  beforeAll(async () => {
+    await pedir(NUEVO);
+    await pedir(PREVIO);
+  }, 60_000);
+
   it('lleva `tenantId` IGUAL al segmento de su ruta (la condición de seguridad)', async () => {
     for (const c of [NUEVO, PREVIO]) {
       const docs = (await mensajes(c)).filter((m) => m.get('tipo') === 'order');
@@ -204,7 +222,9 @@ describe('el mensaje `order`', () => {
   });
 
   it('lleva `palabras` (de 1 a 30) calculadas del mismo texto que se guarda', async () => {
-    for (const m of (await mensajes(NUEVO))) {
+    const docs = await mensajes(NUEVO);
+    expect(docs.length).toBeGreaterThan(0);
+    for (const m of docs) {
       const palabras = m.get('palabras') as string[];
       expect(Array.isArray(palabras)).toBe(true);
       expect(palabras.length).toBeGreaterThan(0);
@@ -214,7 +234,9 @@ describe('el mensaje `order`', () => {
   });
 
   it('conserva sus campos de siempre: dirección entrante, tipo order y el id automático de 20 caracteres', async () => {
-    for (const m of (await mensajes(NUEVO))) {
+    const docs = await mensajes(NUEVO);
+    expect(docs.length).toBeGreaterThan(0);
+    for (const m of docs) {
       expect(m.id).toMatch(/^[A-Za-z0-9]{20}$/);
       expect(m.get('direccion')).toBe('entrante');
       expect(m.get('tipo')).toBe('order');
@@ -242,14 +264,28 @@ describe('el código: lo que no debe volver a aparecer', () => {
     join(ADMIN, 'functions', 'src', 'modulos', 'catalogo-web', 'catalogoWeb.ts'), 'utf8')
     .split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n');
 
-  it('NEGANDO: el checkout no escribe la ventana ni usa el calculador que la mueve', () => {
-    expect(f).not.toContain('ventanaVenceEn');
-    expect(f).not.toContain('ultimoEntranteEn');
+  it('NEGANDO: el checkout no usa el calculador que mueve la ventana (el comportamiento lo prueba arriba)', () => {
     expect(f).not.toContain('camposDeConversacionPorMensaje');
   });
 
   it('el `tenantId` del mensaje sale de la misma variable que arma la ruta', () => {
-    expect(f).toContain('camposDeMensajeIndexado(resumen, ficha.tenantId)');
+    expect(f).toMatch(/camposDeMensajeIndexado\(\s*resumen\s*,\s*ficha\.tenantId\s*\)/);
     expect(f).toContain('tenants/${ficha.tenantId}/conversaciones/${conversacionId}');
+  });
+
+  it('MISMO LOTE: `noLeidos` va dentro del `lote.set(refConversacion, …)` y ese set va antes del commit', () => {
+    const ini = f.search(/lote\.set\(\s*refConversacion\s*,/);
+    const commit = f.search(/await\s+lote\.commit\(\)/);
+    expect(ini, 'el lote.set de la conversación existe').toBeGreaterThan(-1);
+    expect(commit, 'el commit del lote existe').toBeGreaterThan(ini);
+    // El cuerpo del set: desde su apertura hasta el `{ merge: true })` que lo cierra.
+    const cierre = f.slice(ini).search(/\}\s*,\s*\{\s*merge\s*:\s*true\s*\}\s*\)/);
+    expect(cierre, 'el set se cierra con merge').toBeGreaterThan(-1);
+    const cuerpo = f.slice(ini, ini + cierre);
+    expect(cuerpo).toMatch(/noLeidos\s*:\s*FieldValue\.increment\(\s*1\s*\)/);
+    expect(cuerpo).toMatch(/sinLeer\s*:\s*true/);
+    // Y en ningún otro lugar del archivo (un update aparte o tras el commit).
+    expect(f.match(/noLeidos\s*:/g)?.length, 'noLeidos se escribe una sola vez').toBe(1);
+    expect(f.slice(commit)).not.toMatch(/noLeidos/);
   });
 });

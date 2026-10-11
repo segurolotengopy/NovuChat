@@ -1227,7 +1227,7 @@ export const checkoutCatalogo = onRequest(
       mensajesTotal: FieldValue.increment(1),
       // LEÍDO Y BÚSQUEDA POR TELÉFONO (H1). El carrito es un mensaje entrante
       // del cliente: sube los no leídos y marca «sin leer», con las mismas
-      // reglas que la ingesta. NO se escribe `ultimoEntranteEn` ni
+      // reglas que `derivados.ts` (la ingesta las aplica desde H1-6). NO se escribe `ultimoEntranteEn` ni
       // `ventanaVenceEn`: un carrito web no abre ni renueva la ventana de 24 h
       // de Meta (solo la renueva un mensaje que el cliente manda por WhatsApp).
       // Por eso no se usa `camposDeConversacionPorMensaje`, que mueve la ventana.
