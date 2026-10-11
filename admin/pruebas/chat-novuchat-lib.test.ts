@@ -2018,6 +2018,8 @@ describe('«Recuerda que soy un asistente virtual con IA» no se cuela en las re
     expect(marco('Soy un asistente virtual con inteligencia artificial.')).toBe('');
     expect(marco('Es un solo pago de USD 65 por única vez.')).toBe('');
     expect(f('chValidarMensaje')(NOVUCHAT['respaldos'].empresa, v({ contexto: 'empresa' }))).toBe('');
+  });
+});
 
 // Respaldo de Meta: NovuChat no es «Tech Provider certificado» (su verificación sigue en revisión) y las políticas de publicidad de Meta prohíben insinuar que Meta respalda al anunciante.
 describe('respaldo de Meta: el modelo no afirma que NovuChat es Tech Provider, está certificado ni cuenta con el respaldo de Meta', () => {
