@@ -3713,6 +3713,57 @@
      }
     }
    ]
+  },
+  {
+   "id": "A12",
+   "titulo": "El cliente que se perdió, con el pedido del nombre PEGADO a la oferta: «Hola» → rubro → pregunta de costos → respuesta con la oferta y el pedido del nombre → «Si» = UNA derivación (aviso a recepción + botón), sin modelo",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "El de 65 incluye que?",
+     "seco": {
+      "mensaje": "El setup de USD 65 incluye la configuración llave en mano y la conexión de tu número a WhatsApp. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "contiene": [
+       "cómo te llamas y cómo se llama tu",
+       "hablar con alguien de nuestro equipo"
+      ],
+      "botones": "planes+equipo"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Si",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1,
+      "botones": "cta"
+     }
+    }
+   ]
   }
  ]
 }

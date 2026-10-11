@@ -840,18 +840,26 @@ function chAfirma(t) {
   if (/^(?:[\s\uFE0F]|[👍👌🙌👏🤝\u{1F3FB}-\u{1F3FF}])+$/u.test(crudo)) return true;
   const n = chNorm(crudo).replace(/(.)\1{2,}/g, '$1$1');
   const p = n.split(' ');
-  return n !== '' && !/[?¿]/.test(crudo) && !/\b(?:gracias|chau|chao|adios)\b/.test(n) && p.length <= 7 && p.every((w) => CH_AFIRMA_PALABRAS.has(w)) && CH_AFIRMA_NUCLEO.test(n);
+  return n !== '' && !/[?¿]/.test(crudo) && (!/\b(?:gracias|chau|chao|adios)\b/.test(n) || /\b(?:si|sii|sip|claro|dale|porfa|por favor|quiero|gustaria|interesa)\b/.test(n)) && p.length <= 7 && p.every((w) => CH_AFIRMA_PALABRAS.has(w)) && CH_AFIRMA_NUCLEO.test(n);
 }
 // Pedir hablar con alguien, aunque venga dentro de un mensaje más largo o mientras el pedido de nombre o planes esté pendiente.
 const CH_PIDE_EQUIPO_DIRECTO = /\b(?:quiero|quisiera|me gustaria|necesito|prefiero|puedo|podria|podrian|puedes|podrias|deseo)\b[^.!?]{0,25}\b(?:hablar|conversar|comunicarme|contactarme|comunicar|contactar)\w*\s+con\b[^.!?]{0,20}\b(?:alguien(?! de (?:mi|mis|nuestro))|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|(?:el area de )?ventas|recepcion)\b|\b(?:comunicame|comunicanos|pasame|pasenme|pasanos|conectame|conectenme|ponme|pongame)\b[^.!?]{0,15}\bcon\b[^.!?]{0,15}\b(?:alguien|una persona|un asesor|una asesora|un humano|un ejecutivo|un especialista|un vendedor|el equipo|(?:el area de )?ventas)\b|\b(?:mandame|mandenme|enviame|envienme|mandanos)\b[^.!?]{0,6}\b(?:un|una) (?:asesor|asesora|ejecutivo|ejecutiva|vendedor|especialista|persona)\b|^(?:contacto|hablar con ventas)$/;
 // El pedido DIRECTO solo cuenta si no lo niega («no quiero hablar con un asesor»), no habla de terceros («mis clientes podrían hablar con una persona») ni de otra gente («alguien de confianza», «el equipo de mi tienda»).
 function chPideEquipoDirecto(t) {
-  const n = chNorm(t);
-  const m = CH_PIDE_EQUIPO_DIRECTO.exec(n);
-  return !!m && !/\b(?:no|ni|nunca|tampoco|todavia no|aun no)\s*$/.test(n.slice(0, m.index)) && !/\b(?:mis|tus|los|sus) (?:clientes|pacientes|alumnos|usuarios)\b/.test(n.slice(0, m.index + m[0].length)) && !/alguien (?:en casa|de confianza)|equipo de (?:mi|tu|su)\b/.test(n);
+  // (por cláusula, sobre el texto crudo: «No, quiero hablar con alguien» y «mis clientes se quejan, quiero hablar con un asesor» piden; «no quiero hablar con un asesor, solo dime el precio» no)
+  return chTexto(t).split(/[.,;:!?¡¿\n]+/).some((c) => {
+    const n = chNorm(c);
+    const m = CH_PIDE_EQUIPO_DIRECTO.exec(n);
+    return !!m && !/\b(?:no|ni|nunca|tampoco|todavia no|aun no)\s*$/.test(n.slice(0, m.index)) && !/\b(?:mis|tus|los|sus) (?:clientes|pacientes|alumnos|usuarios)\b/.test(n.slice(0, m.index + m[0].length)) && !/alguien (?:en casa|de confianza)|equipo de (?:mi|tu|su)\b/.test(n);
+  });
 }
-// Lo que OFRECE un mensaje del asistente es lo que dice su pregunta FINAL (una mención suelta del equipo, como la de «puedes hablar con el equipo con los botones», no es una oferta).
-function chPreguntaFinal(t) { const q = /¿[^¿?]*\?[^¿?]*$/.exec(chTexto(t)); return q ? chNorm(q[0]) : ''; }
+// Lo que OFRECE un mensaje del asistente es lo que dice su pregunta FINAL, sin contar el pedido del nombre que se le pega al final ni lo que venga después del «?» ni los enlaces (una mención suelta del equipo, como «puedes hablar con el equipo con los botones», no es una oferta). «¿…equipo? ¿O prefieres ver los planes?» es UNA oferta doble.
+function chPreguntaFinal(t) {
+  const qs = (chTexto(t).replace(/https?:\/\/\S+|\bwww\.\S+/gi, ' ').match(/[^?？]*[?？]/g) || []).map((c) => chNorm(c.lastIndexOf('¿') >= 0 ? c.slice(c.lastIndexOf('¿')) : c.slice(Math.max(c.lastIndexOf('.'), c.lastIndexOf('!'), c.lastIndexOf('\n')) + 1)));
+  while (qs.length && /como te llamas|como se llama tu (?:negocio|empresa)/.test(qs[qs.length - 1])) qs.pop();
+  const u = qs.length ? qs[qs.length - 1] : '';
+  return /^o /.test(u) && qs.length > 1 ? qs[qs.length - 2] + ' ' + u : u;
+}
 const CH_OFRECE_EQUIPO = /hablar con (?:alguien de |una persona de |alguien del )?(?:nuestro |el )?equipo/;
 const CH_OFRECE_PLANES = /\bver (?:nuestros |los |todos los )?planes|\bmostrar(?:te)? (?:nuestros |los )?planes/;
 // «Quiero más información» como PRIMER mensaje (el texto del anuncio): solo palabras de pedir información; con otra palabra (un rubro) lo contesta el modelo.

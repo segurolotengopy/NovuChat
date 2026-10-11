@@ -2428,10 +2428,8 @@ describe('«Sí» a la oferta de hablar con el equipo: la deriva el código, no 
     j.texto('Hola');
     w.modelo.con = 'ERROR';
     j.lista('rubro:belleza');
-    w.modelo.con = dice('Te entiendo: con tanto celular se te escapan citas, y NovuChat las agenda solo por WhatsApp. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝');
-    j.texto('Uff sí, todo el día estoy pegada al celular y a veces me dejan plantada.'); // (esta primera respuesta lleva el pedido del nombre al final)
     w.modelo.con = dice(texto);
-    j.texto('Y qué pasa cuando me escriben de noche, ya con el salón cerrado');
+    j.texto('Uff sí, todo el día estoy pegada al celular y a veces me dejan plantada.'); // (esta respuesta lleva el pedido del nombre PEGADO al final: la oferta sigue siendo la del modelo)
     return { w, j };
   };
   const derivo = (w: W, t: T, llamadas: number): void => {
@@ -2587,6 +2585,49 @@ describe('«Sí» a la oferta de hablar con el equipo: la deriva el código, no 
     const { w, j } = conOferta();
     j.texto('soy cliente, necesito hablar con alguien, el bot dejó de contestar');
     expect(fichaDe(w, MAMA)!['soporte']).toBe(true);
+  });
+  it('M-A: la oferta del modelo con el pedido del nombre PEGADO al final: «Si», «sí», «claro», «ok», «dale» y «👍» derivan (aviso + botón)', () => {
+    for (const si of ['Si', 'sí', 'claro', 'ok', 'dale', '👍', 'Sí, gracias', 'claro, gracias']) {
+      const { w, j } = conOferta();
+      expect(fichaDe(w, MAMA)!['preguntaDatos'], 'el pedido del nombre va pegado').toBe(true);
+      expect(fichaDe(w, MAMA)!['ofreceEquipo'], 'la oferta sigue siendo la del modelo').toBe(true);
+      const llamadas = w.modelo.llamadas.length;
+      derivo(w, j.texto(si), llamadas);
+    }
+  });
+  it('M-A: la oferta doble (CIERRE_RUBRO) con el pedido del nombre pegado: «sí» muestra los planes; ya vistos, deriva', () => {
+    const a = conOferta(DOBLE);
+    expect(fichaDe(a.w, MAMA)!['ofrecePlanes']).toBe(true);
+    const antes = a.w.modelo.llamadas.length;
+    const t = a.j.texto('dale');
+    expect(a.w.modelo.llamadas).toHaveLength(antes);
+    expect(t.plantillas).toHaveLength(0);
+    expect(t.aMi[0]!.cuerpo).toContain('Setup estándar USD 65');
+  });
+  it('M-A: un fijo de integración con el sitio y el pedido del nombre: la oferta de hablar con el equipo sigue en pie y el «Sí» deriva', () => {
+    const w = crear();
+    const j = jugar(w, MAMA);
+    j.texto('Hola');
+    w.modelo.con = 'ERROR';
+    j.lista('rubro:belleza');
+    const t0 = j.texto('¿Se integra con mi ERP?');
+    expect(t0.aMi[0]!.cuerpo).toContain('www.novuchat.site');
+    expect(t0.aMi[0]!.cuerpo).toMatch(/cómo te llamas/);
+    expect(fichaDe(w, MAMA)!['ofreceEquipo']).toBe(true);
+    const llamadas = w.modelo.llamadas.length;
+    derivo(w, j.texto('Sí'), llamadas);
+  });
+  it('L-D: la oferta sin «¿» o en dos preguntas también cuenta', () => {
+    const { w, j } = conOferta('NovuChat responde por WhatsApp a tus clientes a cualquier hora y agenda sus citas con tu calendario sin que estés pendiente. Te gustaría hablar con alguien de nuestro equipo para verlo juntos? 🤝');
+    const llamadas = w.modelo.llamadas.length;
+    derivo(w, j.texto('Sí'), llamadas);
+  });
+  it('L-A: «Planes no, quiero hablar con el equipo» deriva aunque nombre «planes»; «No, quiero hablar con alguien» también', () => {
+    for (const x of ['Planes no, quiero hablar con el equipo', 'No, quiero hablar con alguien', 'Ya no quiero más info, quiero hablar con alguien']) {
+      const { w, j } = conOferta();
+      const llamadas = w.modelo.llamadas.length;
+      derivo(w, j.texto(x), llamadas);
+    }
   });
   it('un «sí» sin oferta previa del equipo NO deriva (lo contesta el modelo como siempre)', () => {
     const w = crear();

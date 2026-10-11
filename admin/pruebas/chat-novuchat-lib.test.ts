@@ -2125,3 +2125,28 @@ describe('el pedido directo de hablar con el equipo: sin negaciones, terceros ni
     expect(q('Te cuento todo. ¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝')).toMatch(/hablar con alguien de nuestro equipo/);
   });
 });
+
+describe('la regla del «Sí» es robusta: la oferta se lee aunque se pegue el pedido del nombre, falte el «¿», haya dos preguntas, enlaces o cola', () => {
+  const q = f('chPreguntaFinal');
+  it('chPreguntaFinal: ignora el pedido del nombre pegado, lo que sigue al «?», los enlaces, y entiende «?» sin «¿» y la oferta doble en dos preguntas', () => {
+    const OF = '¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝';
+    expect(q('Te cuento todo. ' + OF + '\n\nPor cierto, para dejarlo anotado, ¿cómo te llamas y cómo se llama tu negocio? 😊')).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(q(OF + ' ¿Cómo te llamas y cómo se llama tu negocio?')).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(q('Tienes más en www.novuchat.site/precios?x=1. ' + OF)).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(q(OF + ' Mira https://novuchat.site/a?b=1 para ver más.')).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(q('Te cuento todo. Te gustaría hablar con alguien de nuestro equipo para verlo juntos? 🤝')).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(q('¿Te gustaría hablar con alguien de nuestro equipo? ¿O prefieres ver nuestros planes primero?')).toMatch(/hablar con alguien de nuestro equipo.*ver nuestros planes/);
+    expect(q('Responde en segundos. ¿Qué día atiendes más? Y cuando quieras, puedes ver nuestros planes o hablar con alguien de nuestro equipo con los botones de abajo.')).not.toMatch(/equipo|planes/);
+    expect(q('Cuando quieras, puedes hablar con alguien de nuestro equipo con los botones.')).toBe('');
+    expect(q('¿Cómo te llamas y cómo se llama tu negocio?')).toBe('');
+  });
+  it('chAfirma: «Sí, gracias», «claro, gracias», «sí por favor, gracias» y «dale gracias» aceptan; «ok gracias», «listo gracias» y «gracias» solos, no', () => {
+    for (const x of ['Sí, gracias', 'claro, gracias', 'sí por favor, gracias', 'dale gracias', 'Sí gracias!']) expect(f('chAfirma')(x), x).toBe(true);
+    for (const x of ['ok gracias', 'listo gracias', 'gracias', 'perfecto gracias', 'muchas gracias', 'chau']) expect(f('chAfirma')(x), x).toBe(false);
+  });
+  it('chPideEquipoDirecto por cláusula: la negación y los terceros valen solo dentro de su cláusula', () => {
+    const pide = f('chPideEquipoDirecto');
+    for (const x of ['No, quiero hablar con alguien', 'No. Quiero hablar con un asesor', 'Ya no quiero más info, quiero hablar con alguien', 'mis clientes se quejan, quiero hablar con un asesor', 'Planes no, quiero hablar con el equipo', 'no gracias; quiero hablar con una persona']) expect(pide(x), x).toBe(true);
+    for (const x of ['no quiero hablar con un asesor, solo dime el precio', 'todavía no quiero hablar con un asesor', 'mis clientes podrían hablar con una persona?', 'no, mis clientes quieren hablar con un asesor']) expect(pide(x), x).toBe(false);
+  });
+});
