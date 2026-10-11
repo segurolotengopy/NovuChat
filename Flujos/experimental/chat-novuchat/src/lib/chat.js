@@ -1018,6 +1018,7 @@ const CH_CAUSAS = {
   puntos: 'no cubriste todos los puntos clave del rubro',
   sujeto_del_pago: 'dijiste que NovuChat, el asistente, Kenji o los clientes de la empresa «cobran»; quien PAGA por QR son los clientes de la empresa, a la empresa: di «tus clientes pagan por QR» o «envía tu QR para que paguen»',
   funcion_inventada: 'afirmaste una función (cobros, QR, adelantos, seña o pagos) que no está documentada para el rubro del cliente; no la afirmes ni la niegues: di solo lo que sí haces en su rubro y ofrece que alguien de nuestro equipo evalúe su caso. NovuChat y el asistente no cobran: los clientes de la empresa pagan por QR a la empresa',
+  respaldo_meta: 'dijiste que NovuChat es Tech Provider, está certificado por Meta o cuenta con su respaldo; no lo afirmes ni lo niegues: di solo que conectamos tu número a WhatsApp',
   repite: 'repetiste casi igual tu mensaje anterior; aporta información nueva y verificada (no la copies) y ofrece los botones vigentes',
   accion: 'dijiste que ibas a mostrar los planes o a pasar al cliente con el equipo; eso lo hace el sistema con los botones, no lo prometas',
   hueco: 'el texto quedó con un hueco o un marcador',
@@ -1230,6 +1231,10 @@ function chSimilitud(a, b) {
   for (const w of A) if (B.has(w)) comun += 1;
   return comun / (A.size + B.size - comun);
 }
+// Ninguna red calla lo que el servicio no puede afirmar sobre Meta: ser Tech Provider o proveedor de tecnología oficial, estar certificado, aprobado o autorizado por Meta, o contar con su respaldo. «Plantilla aprobada por Meta» es otra cosa y no se toca.
+const CH_RESPALDO_META = /\btech\s*provider|\bbusiness\s*solutions?\s*provider|\bbsp\b|\bproveedor(?:es)?\s*de\s*tecnologia\s*(?:oficial|autorizad|certificad)|\bcertificad[oa]s?\s+(?:\w+\s+){0,2}?(?:por|de|ante|en|con)\s*(?:meta|whatsapp)|\b(?:socio|partner|aliado)s?\s*(?:(?:oficial(?:es)?|(?:certificad|autorizad|verificad)[oa]s?|de\s*negocios?)\s*)?de\s*(?:meta|whatsapp)|\bproveedor(?:es)?\s*(?:oficial(?:es)?|(?:certificad|autorizad|verificad)[oa]s?|de\s*negocios?)\s*de\s*(?:meta|whatsapp)|\b(?:respaldad|avalad|aprobad|autorizad|homologad|verificad)[oa]s?\s+(?:\w+\s+){0,2}?por\s*(?:meta|whatsapp)|\bmeta\s+(?:nos|lo)\s+(?:respald|aval|certific)|\bmeta\s+(?:nos|a novuchat|a nosotros)\s+(?:aprueb|autoriz)|\bmeta\s+(?:respald|aval)\w*\s+a\s+(?:novuchat|nosotros|kenji)|\bcon\s+(?:el\s+)?respaldo\s+(?:oficial\s+)?de\s*(?:meta|whatsapp)|\boficial(?:mente)?\s+(?:autorizad|certificad)|\b(?:autorizad|certificad)[oa]s?\s+oficialmente|\bmeta\s+(?:business\s+)?partner|\bproveedor(?:es)?\s*(?:de\s*tecnologia|tecnologic[oa]s?)\s*(?:oficial(?:es)?\s*)?de\s*(?:meta|whatsapp)|\b(?:respaldad|avalad|aprobad|autorizad|homologad|verificad|certificad|reconocid)[oa]s?\s+(?:\w+\s+){0,2}?por\s+(?:la\s+|el\s+)?(?:propia\s+|directamente\s+por\s+(?:la\s+)?(?:empresa\s+)?|empresa\s+|equipo\s+de\s+)?(?:meta|whatsapp)|\b(?:aval|visto\s+bueno|sello|bendicion)\s+(?:oficial\s+)?de\s*(?:meta|whatsapp)|\b(?:plataforma|herramienta|integrador|aliado\s+estrategico|partner)\s+oficial\s+(?:de\s+(?:la\s+plataforma\s+de\s+)?)?(?:meta|whatsapp)|\bmeta\s+(?:confia|recomienda)\s+(?:en\s+)?(?:novuchat|nosotros|kenji)|\bcertified\s+by\s+(?:meta|whatsapp)|\bendorsed\s+by|\bofficial\s+(?:meta|whatsapp)\s+partner|\bmeta[\s-]*certified|\b(?:socio|partner|aliado)s?\s+estrategic[oa]s?\s+de\s*(?:meta|whatsapp)/;
+const CH_RESPALDO_META_OK = /\b(?:plantillas?|mensajes?|recordatorios?)\s+(?:\w+\s+){0,3}?aprobad[oa]s?\s+por\s+(?:meta|whatsapp)\b/g;
+function chRespaldoMeta(n) { const s = chTexto(n).replace(CH_RESPALDO_META_OK, ' '); const u = s.replace(/\b(?:\p{L} ){2,}\p{L}\b/gu, (m) => m.replace(/ /g, '')); return [s, cmJunto(s), u, cmJunto(u)].some((t) => CH_RESPALDO_META.test(t)); }
 // Valida el MENSAJE del modelo. Devuelve '' si puede salir, o la causa (una clave de `CH_CAUSAS`).
 //   v = { cfg, contexto, precios, permitidas, textoCliente, textos, rubroId, planesOk, equipoOk }
 function chValidarMensaje(texto, v) {
@@ -1248,6 +1253,7 @@ function chValidarMensaje(texto, v) {
   // Presentarse como persona o negar ser una IA (prohibición 4) se ve ANTES que los demás hechos, para que el reintento diga la causa justa.
   if (CH_YO_DEL_MODELO.test(sinPresentacion) || CH_NIEGA_IA.test(n)) return 'persona';
   if (CH_COBRO_MAL.test(n)) return 'sujeto_del_pago';
+  if (chRespaldoMeta(n)) return 'respaldo_meta';
   // R1: no se inventan funciones. Cobros, QR, adelantos, seña y anticipos solo están documentados para gastronomía, retail y «otro» (y en el pitch general y los hechos de la empresa).
   const rubroDelMensaje = chTexto(v.rubroId || v.rubroActual);
   // (en el pitch y en la empresa el «cobro por QR» es lo documentado, pero adelantos, anticipos, seña y pago total no lo son en NINGÚN rubro)
