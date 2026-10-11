@@ -38,12 +38,13 @@ import { fileURLToPath } from 'node:url';
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8311'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
-// Alias reservados para esta suite (ninguna otra usa el 09, el 10 ni el 11).
+// Alias de esta suite: 05, 06 y 07. Cada suite fija su propio valor al cargarse y las suites corren
+// una por una (`fileParallelism: false`), así que aunque otra suite use el mismo alias no se pisan.
 // Valores de prueba, no secretos.
 const TOKENES = { a: 'valor-de-prueba-ing-conv-a', b: 'valor-de-prueba-ing-conv-b', bel: 'valor-de-prueba-ing-conv-bel' };
-process.env['INGESTA_CLIENTE10'] = TOKENES.a;
-process.env['INGESTA_CLIENTE11'] = TOKENES.b;
-process.env['INGESTA_CLIENTE09'] = TOKENES.bel;
+process.env['INGESTA_CLIENTE05'] = TOKENES.a;
+process.env['INGESTA_CLIENTE06'] = TOKENES.b;
+process.env['INGESTA_CLIENTE07'] = TOKENES.bel;
 
 // Se llama a la Function por el punto de entrada (`index.ts`), como la llamaría la red:
 // una prueba de Core no importa el coordinador (ingesta.ts) ni a Central. Por lo mismo,
@@ -66,11 +67,11 @@ const HORA = 3_600_000;
 const MENSAJE_ID = /^[A-Za-z0-9]{20}$/; // el mismo que exige `buscarConversaciones`
 
 interface Comercio { id: string; numero: string; alias: string; token: string }
-const A: Comercio = { id: 'ing-conv-a', numero: '1000000611', alias: 'cliente10', token: TOKENES.a };
-const B: Comercio = { id: 'ing-conv-b', numero: '1000000612', alias: 'cliente11', token: TOKENES.b };
+const A: Comercio = { id: 'ing-conv-a', numero: '1000000611', alias: 'cliente05', token: TOKENES.a };
+const B: Comercio = { id: 'ing-conv-b', numero: '1000000612', alias: 'cliente06', token: TOKENES.b };
 // El comercio de Bellido: mismo código, mismos campos. No hay nada de Bellido en
 // el Core; este comercio prueba que no hace falta una excepción.
-const BEL: Comercio = { id: 'ing-conv-bellido', numero: '1000000613', alias: 'cliente09', token: TOKENES.bel };
+const BEL: Comercio = { id: 'ing-conv-bellido', numero: '1000000613', alias: 'cliente07', token: TOKENES.bel };
 
 interface Respuesta { codigo: number; cuerpo: Record<string, unknown> }
 
@@ -257,6 +258,55 @@ describe('saliente: contestar no es leer ni renueva la ventana', () => {
   });
 });
 
+describe('el nombre del contacto y el reloj de la ventana', () => {
+  it.each(['😀', 'Al', '李明'])('un contacto que pasa de «María Pérez» a «%s» (sin palabras buscables) pierde las palabras viejas', async (nuevo) => {
+    await entrante(A, '5910000007001', 'hola', { nombreContacto: 'María Pérez' });
+    expect((await conversacion(A, '5910000007001'))['nombrePalabras']).toEqual(['maria', 'perez']);
+    await entrante(A, '5910000007001', 'hola otra vez', { nombreContacto: nuevo });
+    const c = await conversacion(A, '5910000007001');
+    expect(Object.keys(c)).not.toContain('nombrePalabras'); // borrado: igual que si nunca se hubiera escrito
+    expect(c['nombreContacto']).toBe(nuevo);                // el nombre sí se actualiza (como siempre)
+    expect(c['noLeidos']).toBe(2);
+  });
+
+  it('un mensaje SIN nombre no toca las palabras del nombre que ya había', async () => {
+    await entrante(A, '5910000007002', 'hola', { nombreContacto: 'María Pérez' });
+    await entrante(A, '5910000007002', 'hola otra vez');
+    await saliente(A, '5910000007002');
+    expect((await conversacion(A, '5910000007002'))['nombrePalabras']).toEqual(['maria', 'perez']);
+  });
+
+  it('el nombre nuevo sin palabras también borra en un saliente', async () => {
+    await saliente(A, '5910000007003', 'hola', { nombreContacto: 'Luis Mamani' });
+    await saliente(A, '5910000007003', 'hola', { nombreContacto: '😀' });
+    expect(Object.keys(await conversacion(A, '5910000007003'))).not.toContain('nombrePalabras');
+  });
+
+  it('ultimoEntranteEn no retrocede si ya hay uno más nuevo (reintento de un choque); la ventana sale del mismo instante', async () => {
+    const futuro = Date.now() + HORA; // como si otro mensaje concurrente, más nuevo, ya hubiera confirmado
+    await db.doc(`tenants/${A.id}/conversaciones/wa_5910000007004`).set({
+      telefono: '5910000007004', canal: 'whatsapp', ultimoEntranteEn: new Date(futuro),
+    });
+    await entrante(A, '5910000007004');
+    const c = await conversacion(A, '5910000007004');
+    expect(ms(c['ultimoEntranteEn'])).toBe(futuro);
+    expect(ms(c['ventanaVenceEn'])).toBe(futuro + 24 * HORA);
+    expect(c['noLeidos']).toBe(1);
+  });
+
+  it('con un ultimoEntranteEn viejo, el nuevo entrante sí lo avanza', async () => {
+    const viejo = Date.now() - 5 * HORA;
+    await db.doc(`tenants/${A.id}/conversaciones/wa_5910000007005`).set({
+      telefono: '5910000007005', canal: 'whatsapp', ultimoEntranteEn: new Date(viejo),
+    });
+    const antes = Date.now();
+    await entrante(A, '5910000007005');
+    const c = await conversacion(A, '5910000007005');
+    expect(ms(c['ultimoEntranteEn'])).toBeGreaterThanOrEqual(antes);
+    expect(ms(c['ventanaVenceEn'])).toBe(ms(c['ultimoEntranteEn']) + 24 * HORA);
+  });
+});
+
 // =============================================================================
 describe('el mensaje: tenantId de la ruta, palabras y su id', () => {
   it('lleva tenantId y palabras (sin repetir y con raíz); el texto completo sigue siendo el de siempre', async () => {
@@ -269,7 +319,7 @@ describe('el mensaje: tenantId de la ruta, palabras y su id', () => {
   });
 
   it('el id sigue siendo el automático: 20 caracteres alfanuméricos, aun cuando el mensaje trae idMeta', async () => {
-    await entrante(A, '5910000003002', 'uno dos tres', { idMeta: 'wamid.HBgLNTkxNzAwMDMwMDIVAgASGBQzQTQ5' });
+    await entrante(A, '5910000003002', 'uno dos tres', { idMeta: 'wamid.PRUEBA-0001' });
     await entrante(A, '5910000003002', 'cuatro cinco seis');
     await saliente(A, '5910000003002', 'siete ocho nueve', { idMeta: 'wamid.OTRO-DISTINTO' });
     const docs = await mensajes(A, '5910000003002');
@@ -334,6 +384,7 @@ describe('el mensaje: tenantId de la ruta, palabras y su id', () => {
     ['un audio sin texto', { tipo: 'audio', texto: '' }],
     ['un documento con texto de menos de 3 letras', { tipo: 'document', texto: 'ok si' }],
     ['un cuerpo sin campo texto', { tipo: 'image' }],
+    ['4.096 «ⅷ» (NFKD los engorda a 16.384 letras: no es una palabra)', { tipo: 'text', texto: 'ⅷ'.repeat(4096) }],
   ])('%s: no rompe, queda el tenantId, NO hay palabras y el entrante cuenta como no leído', async (_, parte) => {
     const r = await reportar(A, { telefono: '5910000003005', direccion: 'entrante', ...parte });
     expect(r.codigo).toBe(200);
@@ -404,6 +455,20 @@ describe('la rama de corte también escribe los derivados', () => {
     expect(m!.get('tenantId')).toBe(A.id);
     expect(m!.get('palabras')).toEqual(['necesito', 'una', 'mesa']);
     expect(m!.id).toMatch(MENSAJE_ID);
+  });
+
+  it('en la rama de corte, un nombre nuevo sin palabras también borra el viejo; el reloj tampoco retrocede', async () => {
+    await entrante(A, '5910000005003', 'hola', { nombreContacto: 'Ana Rojas' });
+    const futuro = Date.now() + HORA;
+    await db.doc(`tenants/${A.id}/conversaciones/wa_5910000005003`).set({ ultimoEntranteEn: new Date(futuro) }, { merge: true });
+    await db.doc('plataforma/prepago').set({ corteActivo: false });
+    await db.doc(`tenants/${A.id}/cuenta/estado`).set(VENCIDA());
+    const r = await entrante(A, '5910000005003', 'hola', { nombreContacto: '😀' });
+    expect(r.cuerpo['servicio']).toMatchObject({ estado: 'cortado' });
+    const c = await conversacion(A, '5910000005003');
+    expect(Object.keys(c)).not.toContain('nombrePalabras');
+    expect(ms(c['ultimoEntranteEn'])).toBe(futuro);
+    expect(c['noLeidos']).toBe(2);
   });
 
   it('un saliente cortado deja los trozos y nada de lectura ni de ventana', async () => {

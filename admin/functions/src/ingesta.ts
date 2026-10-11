@@ -1071,6 +1071,35 @@ export const ingesta = onRequest(
 
       // EL MENSAJE SE GUARDA SIEMPRE, también cortado: el comercio tiene que
       // ver QUIÉN le escribió mientras el asistente no atendía.
+      // LOS CAMPOS DERIVADOS DE LA CONVERSACIÓN (H1-6), en un solo lugar para las dos
+      // ramas (corte y normal). Sin lecturas nuevas: usa el documento que la
+      // transacción ya leyó.
+      //  - LA DIRECCIÓN. La protección de `derivados.ts` para direcciones raras NO
+      //    actúa por este camino: `normalizar` ya convirtió todo lo que no es
+      //    exactamente 'saliente' en 'entrante' (comportamiento de siempre, que
+      //    mueve la facturación y por eso no se toca). Un 'SALIENTE' mal escrito
+      //    cuenta, pues, como entrante: suma un no leído, igual que suma un
+      //    mensaje entrante a las métricas.
+      //  - EL RELOJ NO RETROCEDE. `ahoraMs` se toma antes de la transacción y no
+      //    cambia al reintentarla: si otro mensaje concurrente ya escribió un
+      //    `ultimoEntranteEn` más nuevo, se conserva ese (el máximo de los dos), y
+      //    `ventanaVenceEn` sale del mismo instante, así que los dos siguen
+      //    cuadrando.
+      //  - EL NOMBRE NUEVO SIN PALABRAS BORRA EL VIEJO. Con `merge: true`, un
+      //    contacto que cambia de «María Pérez» a «😀» dejaría `nombrePalabras`
+      //    con las palabras de antes y la búsqueda hallaría a la persona por un
+      //    nombre que ya no tiene. Si el mensaje trae nombre y no deja palabras,
+      //    se borra el campo (ausente = igual que nunca escrito, que es lo que
+      //    deja el relleno). Va acá y no en `derivados.ts` para no romper la
+      //    paridad de ese archivo con el relleno de H1-5.
+      const derivadosDeConversacion = (): Record<string, unknown> => {
+        const previoMs = (conversacion.get('ultimoEntranteEn') as { toMillis?: () => number } | undefined)?.toMillis?.();
+        const reloj = typeof previoMs === 'number' && previoMs > ahoraMs ? previoMs : ahoraMs;
+        const campos = camposDeConversacionPorMensaje(mensaje, reloj);
+        return mensaje.nombreContacto && !('nombrePalabras' in campos)
+          ? { ...campos, nombrePalabras: FieldValue.delete() } : campos;
+      };
+
       const escribirMensaje = () => tx.create(refConversacion.collection('mensajes').doc(), {
         direccion: mensaje.direccion,
         tipo: mensaje.tipo,
@@ -1098,7 +1127,7 @@ export const ingesta = onRequest(
           ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
           // Aunque el corte no cuente nada para la facturación, la persona del
           // negocio sí tiene que ver que le escribieron (no leídos y búsqueda).
-          ...camposDeConversacionPorMensaje(mensaje, ahoraMs),
+          ...derivadosDeConversacion(),
         }, { merge: true });
         escribirMensaje();
         return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad };
@@ -1222,8 +1251,10 @@ export const ingesta = onRequest(
         // Derivados de Conversaciones (H1): trozos del teléfono y palabras del
         // nombre siempre; ultimoEntranteEn, ventanaVenceEn, noLeidos y sinLeer
         // SOLO con un entrante. Van al final y no pisan ningún campo de arriba
-        // (los nombres no se repiten con los de la facturación).
-        ...camposDeConversacionPorMensaje(mensaje, ahoraMs),
+        // (los nombres no se repiten con los de la facturación). Ver
+        // `derivadosDeConversacion` arriba: la dirección ya viene cerrada por
+        // `normalizar`, el reloj no retrocede y un nombre sin palabras borra el viejo.
+        ...derivadosDeConversacion(),
       }, { merge: true });
 
       escribirMensaje();

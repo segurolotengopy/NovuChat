@@ -141,6 +141,19 @@ describe('normalización: una sola regla para la pantalla, la ingesta y la búsq
     ]);
   });
 
+  it('TOPE DE LARGO: un fragmento de más de 40 caracteres no es palabra (NFKD engorda: 4.096 «ⅷ» = 16.384 letras)', () => {
+    const gordo = 'ⅷ'.repeat(4096);
+    expect(normalizarTexto(gordo).length).toBeGreaterThan(16_000); // el riesgo es real
+    expect(palabrasDe(gordo)).toEqual([]);
+    expect(palabrasDe(`${gordo} hola`)).toEqual(['hola']);
+    expect(palabrasDe('a'.repeat(41))).toEqual([]);
+    expect(palabrasDe('b'.repeat(40))).toEqual(['b'.repeat(40)]);       // el borde pasa
+    expect(palabrasDe('hola ' + 'c'.repeat(41) + ' mundo')).toEqual(['hola', 'mundo']);
+    // La búsqueda usa la misma función: una palabra larga buscada ya no matchea (documentado).
+    expect(palabrasDe('d'.repeat(41), 6)).toEqual([]);
+    for (const p of palabrasDe(`${gordo} ${'ligadura ﬁesta '.repeat(5)}`)) expect(p.length).toBeLessThanOrEqual(40);
+  });
+
   it('tope de 30: con 31 palabras distintas queda la trigésima y no la 31', () => {
     const treinta = Array.from({ length: 31 }, (_, i) => `voz${String(i).padStart(2, '0')}`);
     const r = palabrasDe(treinta.join(' '));
