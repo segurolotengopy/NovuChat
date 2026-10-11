@@ -39,7 +39,7 @@ USD al mes, a uso pleno. «Nos queda» descuenta impuestos (16 %), infraestructu
 - **Vale para los flujos de diseño mínimo** (Agenda mínima, Venta mínima, Captación mínima). Un agente con herramientas y sin caché la rompe; ya no se construyen así.
 - **El modelo lo elige NovuChat.** Los equilibrios están lejos: Impulso pierde recién a 4.700 conversaciones con Flash-Lite y a 1.775 con Haiku.
 - **Lo que paga el comercio a Meta**, a uso pleno y con un aviso por conversación: unos 2 USD en Impulso, 23 en Crecimiento y 57 en Pro. Con varios avisos al negocio (como Q'Taco), 10, 43 y 97. En Pro, el total puede pasar de 145 USD: la imagen y el contrato lo dicen con números, nunca como «centavos» (`base-comercial` §3).
-- **Instalación 65 y «a medida desde 125».** El alta BYOC lleva una sesión de Meta con el dueño (portafolio, tarjeta, número); Q'Taco salió con 0 y Rubén con 200. Andres decide si 65 se queda.
+- **Instalación 65 y «a medida desde 125».** El alta BYOC lleva una sesión de Meta con el dueño (portafolio, tarjeta, número); Q'Taco salió con 0 y Rubén con 200. **DECIDIDO (Andres, 09/10): la instalación se queda en 65 estándar y a medida desde 125.**
 
 ## 3. Las bolsas: dos, y una regla de conteo
 
