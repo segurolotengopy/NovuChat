@@ -35,8 +35,9 @@
 # GCP_PROJECT_ID_PROD, LAS DOS (del entorno, o `gh variable get --repo` si no
 # están), distintas; y se cruzan con el quota_project_id de las credenciales de
 # gcloud (CLOUDSDK_CONFIG; la fuente de nube-catalogo.sh), que es el de
-# producción: en producción tiene que coincidir (con --aplicar, además, tiene
-# que estar); en staging, NO puede coincidir. El id NUNCA se imprime: se dice
+# producción: en producción tiene que coincidir; en staging, NO puede coincidir;
+# y con --aplicar, en los dos, tiene que estar. Sin CLOUDSDK_CONFIG ni HOME,
+# sale con 2. El id NUNCA se imprime: se dice
 # «staging» o «produccion». La región sale de admin/functions/src/core/region.ts.
 # Credenciales: la sesión de gcloud de CLOUDSDK_CONFIG (por omisión
 # ~/.config/gcloud-novuchat-prod); cualquier otra CLOUDSDK_* se descarta. No lee
@@ -115,13 +116,11 @@ REGION="$(sed -nE "s/^export const REGION = '([a-z0-9-]+)';$/\1/p" admin/functio
 # Nada del entorno puede cambiar a QUIÉN actúa ni ADÓNDE van las llamadas: de las
 # CLOUDSDK_* solo queda CLOUDSDK_CONFIG (cuenta, token, impersonación, extremos,
 # proyecto y configuración activa se descartan todas), y gh va con --repo.
+if [[ -z "${CLOUDSDK_CONFIG:-}" && -z "${HOME:-}" ]]; then
+  echo "✗ Sin CLOUDSDK_CONFIG ni HOME no sé dónde están las credenciales de gcloud: no se sigue" >&2; exit 2
+fi
 export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"
-while IFS= read -r variable; do
-  case "$variable" in
-    CLOUDSDK_CONFIG) ;;
-    CLOUDSDK_*) unset "$variable" ;;
-  esac
-done < <(compgen -e)
+for v in "${!CLOUDSDK_@}"; do [[ $v == CLOUDSDK_CONFIG ]] || unset "$v"; done
 unset GH_REPO
 
 leer_variable() { # variable del repositorio con gh, solo lectura; vacío si no se puede
@@ -151,14 +150,16 @@ ADC="$CLOUDSDK_CONFIG/application_default_credentials.json"
 if [[ -r "$ADC" ]]; then
   CUOTA="$(grep -o '"quota_project_id": *"[^"]*"' "$ADC" 2>/dev/null | sed 's/.*"\([^"]*\)"$/\1/' | head -n 1 || true)"
 fi
+# Para escribir, el cruce es obligatorio en LOS DOS entornos.
+if (( APLICAR )) && [[ -z "$CUOTA" ]]; then
+  echo "✗ Sin quota_project_id en las credenciales no se puede cruzar el proyecto: no se escribe" >&2; exit 2
+fi
 CRUCE=""
 if [[ "$ENTORNO" == "produccion" ]]; then
   if [[ -n "$CUOTA" && "$CUOTA" != "$P" ]]; then
     echo "✗ GCP_PROJECT_ID_PROD no coincide con el proyecto de las credenciales de gcloud: no se sigue" >&2; exit 2
   elif [[ -n "$CUOTA" ]]; then
     CRUCE="sí"
-  elif (( APLICAR )); then
-    echo "✗ Sin quota_project_id en las credenciales de gcloud no se puede cruzar el proyecto de producción: no se escribe" >&2; exit 2
   else
     CRUCE="no (sin quota_project_id en las credenciales; con --aplicar se exige)"
   fi
@@ -300,15 +301,20 @@ sondear() { # imprime «propio», «google403», «abierto:<código>» u «otro:
     -X POST -H 'Content-Type: application/json' --data '{"data":{}}' "$URL" 2>/dev/null || true)"
   codigo="${linea:0:3}"
   [[ "$codigo" =~ ^[0-9]{3}$ ]] || codigo=000
-  # El `status` del JSON de error de Firebase, o vacío si el cuerpo no es ese JSON.
+  # El `status` del JSON de error; «JSON_DE_ERROR» si es un JSON con `error` pero
+  # sin `status` de texto; vacío SOLO si el cuerpo no es un JSON de error (el
+  # 403 de Google es HTML). Así un 403 con cualquier JSON de error no es «de Google».
   estado="$(python3 -I -c '
 import json, sys
 try:
     d = json.load(open(sys.argv[1], encoding="utf-8"))
-    e = d.get("error") if isinstance(d, dict) else None
-    s = e.get("status") if isinstance(e, dict) else None
-    print(s if isinstance(s, str) else "")
 except Exception:
+    print(""); sys.exit(0)
+if isinstance(d, dict) and "error" in d:
+    e = d["error"]
+    s = e.get("status") if isinstance(e, dict) else None
+    print(s if isinstance(s, str) and s else "JSON_DE_ERROR")
+else:
     print("")
 ' "$CUERPO" 2>/dev/null || true)"
   if [[ ( "$codigo" == 401 || "$codigo" == 400 ) && ( "$estado" == UNAUTHENTICATED || "$estado" == FAILED_PRECONDITION ) ]]; then

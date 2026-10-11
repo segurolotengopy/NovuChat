@@ -127,6 +127,10 @@ case "$modo" in
   noencontrado) err NOT_FOUND 404 ;;
   tope) err RESOURCE_EXHAUSTED 429 ;;
   json403otro) err UNAVAILABLE 403 ;;
+  json403sinstatus) printf '{"error":{"message":"x"}}' > "$out"; printf '403' ;;
+  json403statusvacio) printf '{"error":{"message":"x","status":""}}' > "$out"; printf '403' ;;
+  json403texto) printf '{"error":"x"}' > "$out"; printf '403' ;;
+  json403statusnumero) printf '{"error":{"status":7}}' > "$out"; printf '403' ;;
 esac
 `;
 
@@ -180,8 +184,11 @@ const escritura = (op: 'add' | 'remove', proyecto: string, servicio = VISOR) =>
  * CLOUDSDK_CONFIG va por `env` delante: entornoDelEmulador la fija a una ruta
  * inexistente y la suite necesita sus credenciales FALSAS (solo la cuota).
  */
-function correr(args: string[], vars: Record<string, string> = {}, servicio: string | null = VISOR) {
-  const r = spawnSync('env', [`CLOUDSDK_CONFIG=${gcloudCfg}`, 'bash', SCRIPT, ...(servicio === null ? [] : ['--servicio', servicio]), ...args], {
+function correr(
+  args: string[], vars: Record<string, string> = {}, servicio: string | null = VISOR,
+  prefijo: string[] = [`CLOUDSDK_CONFIG=${gcloudCfg}`],
+) {
+  const r = spawnSync('env', [...prefijo, 'bash', SCRIPT, ...(servicio === null ? [] : ['--servicio', servicio]), ...args], {
     encoding: 'utf8',
     env: entornoDelEmulador(undefined, {
       PATH: `${bin}:/usr/bin:/bin`,
@@ -432,9 +439,16 @@ describe('nube-visor.sh: --revertir', () => {
     expect(r.salida).toContain('Vuelta atrás hecha');
   });
 
-  it('un 403 con JSON de error NO es el de Google: la vuelta atrás no se da por comprobada', () => {
+  // Obs 3 del #493: CUALQUIER JSON con `error`, con o sin `status` de texto.
+  it.each([
+    ['con otro status', 'json403otro'],
+    ['sin status', 'json403sinstatus'],
+    ['con status vacío', 'json403statusvacio'],
+    ['con error de texto', 'json403texto'],
+    ['con status no textual', 'json403statusnumero'],
+  ])('un 403 con JSON de error %s NO es el de Google: la vuelta atrás no se da por comprobada', (_n, modo) => {
     politica(CON_PUBLICO);
-    marcar('curl-modo', 'json403otro');
+    marcar('curl-modo', modo);
     const r = correr(['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging']);
     expect(r.codigo).toBe(3);
     expect(r.salida).toContain('respuesta inesperada (403)');
@@ -525,9 +539,35 @@ describe('nube-visor.sh: proyectos y credenciales', () => {
     expect(seco.salida).toContain('proyecto cruzado con las credenciales: no');
   });
 
-  it('staging no exige la cuota', () => {
-    adc('');
-    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging']).codigo).toBe(0);
+  // LOW-A del #493: para escribir, el cruce es obligatorio en LOS DOS entornos.
+  it.each([
+    ['staging, sin archivo de credenciales', 'staging', [], () => rmSync(join(gcloudCfg, 'application_default_credentials.json'))],
+    ['staging, sin quota_project_id', 'staging', [], () => adc('')],
+    ['staging --revertir, sin archivo de credenciales', 'staging', ['--revertir'], () => rmSync(join(gcloudCfg, 'application_default_credentials.json'))],
+    ['producción --revertir, sin quota_project_id', 'produccion', ['--revertir'], () => adc('')],
+  ])('%s, con --aplicar: sale 2 sin ninguna llamada', (_n, entorno, mas, preparar) => {
+    preparar();
+    politica(CON_PUBLICO);
+    const r = correr(['--entorno', entorno, ...mas, '--aplicar', '--confirmo', entorno]);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('Sin quota_project_id en las credenciales no se puede cruzar el proyecto: no se escribe');
+    expect(llamadas()).toEqual([]);
+    expect(llamadasCurl()).toEqual([]);
+    expect(publico()).toBe(true);
+  });
+
+  it('staging en seco sin credenciales sí lee (no escribe)', () => {
+    rmSync(join(gcloudCfg, 'application_default_credentials.json'));
+    expect(correr(['--entorno', 'staging']).codigo).toBe(1);
+    expect(escrituras()).toEqual([]);
+  });
+
+  // Obs 1 del #493: sin CLOUDSDK_CONFIG ni HOME, salida 2 (no el 1 de `set -u`, que significa «pendiente»).
+  it('sin CLOUDSDK_CONFIG ni HOME: sale 2 con mensaje claro y sin llamadas', () => {
+    const r = correr(['--entorno', 'staging'], {}, VISOR, ['-u', 'HOME', '-u', 'CLOUDSDK_CONFIG']);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('Sin CLOUDSDK_CONFIG ni HOME');
+    expect(llamadas()).toEqual([]);
   });
 
   // LOW-1: la cuota es la de producción; un id de staging igual a ella está mal puesto.
