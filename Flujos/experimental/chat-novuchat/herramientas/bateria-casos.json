@@ -6203,6 +6203,66 @@
      }
     }
    ]
+  },
+  {
+   "id": "NUM7",
+   "titulo": "Número propio como respuesta al pedido del nombre: «Soy Ana de Panadería Sol, ¿puedo usar mi número actual?» recibe la respuesta fija y se conservan el nombre y el negocio",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Cuánto cuesta?",
+     "exige": {
+      "ruta": "pedirNombre",
+      "sinModelo": true,
+      "botones": "texto"
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Soy Ana de Panadería Sol, ¿puedo usar mi número actual?",
+     "exige": {
+      "ruta": "fijo",
+      "sinModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar."
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
   }
  ]
 }
