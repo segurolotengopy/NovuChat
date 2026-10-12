@@ -2317,7 +2317,10 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
   });
   it('DECLINAR sin vocabulario previsto: toda forma de «no lo sé» lleva el equipo, y si el modelo mismo ofreció al equipo la oferta no se quita sin botón (la clase del cliente perdido)', () => {
     const sit = (texto: string, extra: J = {}, textos: string[] = ['¿También responde en Telegram?'], origen = 'modelo'): J => f('chSituacion')({ plan: { ruta: 'modelo' }, res: { origen, contexto: 'general', texto, causas: [] }, eventos: textos.map((x) => ev(x)), ficha: { ...fichaBase(), explicado: true, rubro: 'belleza', ...extra } });
-    const FRASES = ['Eso no lo tengo a la mano.', 'Ese dato no la tengo a la mano.', 'No lo tengo a la mano ahora mismo.', 'No sabría decirte con certeza.', 'No sabría decir si está previsto.', 'Desconozco si está previsto.', 'Eso no lo sé con certeza.', 'No lo sé con seguridad.', 'No cuento con ese dato.', 'No cuento con la información.'];
+    const FRASES = ['Eso no lo tengo a la mano.', 'Ese dato no la tengo a la mano.', 'No lo tengo a la mano ahora mismo.', 'No sabría decirte con certeza.', 'No sabría decirte eso.', 'Desconozco ese dato.', 'Desconozco si está previsto.', 'Eso no lo sé con certeza.', 'Ese tema no lo sé con seguridad.', 'No cuento con ese dato.', 'No cuento con la información.'];
+    // frases que NO declinan: la misma palabra con otro objeto, seguida de «pero», o dentro de una cita
+    const NO_DECLINAN = ['Desconozco cuántos mensajes recibes hoy, pero te cuento cómo funciona.', 'No sabría decirte cuál es tu mejor horario sin conocer tu salón, pero NovuChat lo agenda.', 'Si alguien te responde «no lo sé con certeza», desconfía y pide el dato por escrito.', 'Desconozco ese dato, pero te cuento esto.', 'No sabría decirte eso, pero sí cómo funciona.'];
+    for (const x of NO_DECLINAN) { expect(sit(x)['declina'], x).toBe(false); expect(f('chBotonesDe')(sit(x)), x).toMatchObject({ equipo: false }); }
     for (const x of FRASES) { const q = sit(x); expect(q['declina'], x).toBe(true); expect(f('chBotonesDe')(q), x).toMatchObject({ equipo: true }); }
     for (const x of ['Claro, te cuento cómo funciona.', 'Sé que es un tema importante.']) expect(sit(x)['declina'], x).toBe(false);
     // sin ninguna de esas frases: el modelo cierra ofreciendo al equipo => el sistema lo conserva con su botón (y sin «Ver planes»)
@@ -2326,6 +2329,19 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect([o['modeloOfreceEq'], o['declina']]).toEqual([true, true]);
     expect(f('chBotonesDe')(o)).toMatchObject({ fila: 'declina-ofrece-equipo', equipo: true, planes: false, ofrecio: 'equipo' });
     expect(f('chOfreceAlEquipo')(ofrece)).toBe(true);
+    // otras formas de ofrecer al equipo (la pregunta FINAL con cualquier mención de «nuestro/el/del equipo», una persona, un asesor o alguien de nuestro…) también cuentan, y se conservan con su botón
+    const PARAFRASIS = ['¿Quieres que alguien de nuestro equipo lo revise contigo?', '¿Te gustaría conversarlo con nuestro equipo?', '¿Te gustaría hablarlo con nuestro equipo?', '¿Te gustaría que nuestro equipo lo vea contigo?', '¿Prefieres que lo vea una persona?', '¿Quieres que te atienda un asesor?', '¿Quieres verlo con el equipo?'];
+    for (const q of PARAFRASIS) {
+      const texto = 'Hoy NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces; sobre eso no tengo claro si está disponible hoy. ' + q;
+      const sp = sit(texto);
+      expect([sp['modeloOfreceEq'], sp['declina']], q).toEqual([true, true]);
+      expect(f('chBotonesDe')(sp), q).toMatchObject({ equipo: true, planes: false, ofrecio: 'equipo' });
+      expect(f('chRedondear')(texto, ['equipo'], CFG), q).toContain(q); // (con su botón la oferta se queda tal cual)
+      expect(f('chRedondear')(texto, [], CFG), q).not.toContain(q); // (sin el botón se quita: nunca una oferta sin mecanismo)
+    }
+    // una frase afirmativa suelta sobre el equipo no es una oferta ni se quita
+    expect(f('chRedondear')('El setup lo configura el equipo de NovuChat, y tu asistente queda listo para atender. ¿Qué día atiendes más?', [], CFG)).toMatch(/lo configura el equipo de NovuChat/);
+    expect(f('chOfreceAlEquipo')('El setup lo configura el equipo de NovuChat. ¿Qué día atiendes más?')).toBe(false);
     expect(f('chOfreceAlEquipo')('Hoy atendemos por WhatsApp. ¿Qué día atiendes más?')).toBe(false);
     // un texto de respaldo o de un desenlace no cuenta como oferta del modelo
     expect(sit(ofrece, {}, ['x'], 'respaldo')['modeloOfreceEq']).toBe(false);
@@ -2370,6 +2386,8 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect(decidir(con('equipo', 'Te cuento todo sin ofrecer nada.')).ruta).toBe('equipo');
     // fichas anteriores (sin `ofrecio`): la pregunta final del último mensaje
     expect(decidir(con('', EQ)).ruta).toBe('equipo');
+    expect(decidir(con('', 'Te cuento todo. ¿Quieres que alguien de nuestro equipo lo revise contigo?')).ruta).toBe('equipo');
+    expect(decidir(con('', 'Te cuento todo. ¿Te gustaría conversarlo con nuestro equipo?')).ruta).toBe('equipo');
     expect(decidir(con('', PL)).ruta).toBe('planes');
     expect(decidir(con('', 'Si algún día lo necesitas, puedes hablar con el equipo. ¿Qué día atiendes más?')).ruta).toBe('modelo');
     // el «sí, pero…», la negativa y el agradecimiento no aceptan nada

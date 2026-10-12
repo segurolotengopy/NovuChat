@@ -2896,6 +2896,43 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
     w.modelo.con = dice(DECLINA[0]!);
     expect(idsBotones(j.texto('¿Funciona con Instagram?').aMi[0]!)).toContain('equipo');
   });
+  it('el modelo declina («no tengo claro si está disponible hoy») y cierra con CUALQUIER paráfrasis de ofrecer al equipo ⇒ botón del equipo, y «Sí, me gustaría» deriva con cta y UN aviso', () => {
+    const BASE = 'Hoy NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario. Sobre ese otro canal no tengo claro si está disponible hoy. ';
+    for (const q of ['¿Quieres que alguien de nuestro equipo lo revise contigo?', '¿Te gustaría conversarlo con nuestro equipo?', '¿Te gustaría hablarlo con nuestro equipo?', '¿Te gustaría que nuestro equipo lo vea contigo?']) {
+      for (const previas of [true, false]) {
+        const { w, j } = tras();
+        if (previas) { w.modelo.con = dice(CAL); j.texto('¿Se conecta a mi calendario?'); j.texto('Ana Pérez, Salón Rosa'); }
+        w.modelo.con = dice(BASE + q);
+        const e = j.texto('¿También responde en Telegram?').aMi[0]!;
+        expect(idsBotones(e), q).toEqual(['equipo']);
+        expect(e.cuerpo, q).toContain(q);
+        const t = j.texto('Sí, me gustaría');
+        expect(tipoInter(t.aMi[0]!), q).toBe('cta_url');
+        expect(t.plantillas, q).toHaveLength(1);
+      }
+    }
+  });
+  it('frases que NO declinan («Desconozco cuántos mensajes recibes hoy, pero…», «No sabría decirte cuál es tu mejor horario…, pero…») no ponen el botón antes de tiempo, y el «Sí» a la pregunta del modelo NO deriva', () => {
+    const BASE = 'Hoy NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario. ';
+    for (const modelo of [
+      BASE + 'Desconozco cuántos mensajes recibes hoy, pero eso mismo lo puedes medir con el asistente. ¿Quieres que te cuente cómo se ve esa medición?',
+      BASE + 'No sabría decirte cuál es tu mejor horario sin conocer tu salón, pero el asistente ofrece los horarios reales. ¿Quieres que te cuente cómo se configuran?',
+      BASE + 'Algunos negocios responden «no lo sé con certeza» cuando no miran su agenda, y por eso el asistente la consulta. ¿Quieres que te cuente cómo lo hace?',
+    ]) {
+      const { w, j } = tras();
+      w.modelo.con = dice(CAL);
+      j.texto('¿Se conecta a mi calendario?');
+      j.texto('Ana Pérez, Salón Rosa');
+      w.modelo.con = dice(modelo);
+      const e = j.texto('¿Cómo sabré cuándo atiendes más?').aMi[0]!;
+      expect(idsBotones(e), modelo).not.toContain('equipo');
+      expect((e.cuerpo.match(/hablar con alguien de nuestro equipo/g) ?? []).length, modelo).toBe(0);
+      w.modelo.con = dice(CAL);
+      const t = j.texto('Sí');
+      expect(tipoInter(t.aMi[0]!), modelo).not.toBe('cta_url');
+      expect(t.plantillas, modelo).toHaveLength(0);
+    }
+  });
   it('«Ana Pérez, Salón Rosa. ¿Y qué incluye el setup?» anota Y contesta: nunca queda solo el acuse', () => {
     const { w, j } = tras();
     w.modelo.con = dice(CAL);

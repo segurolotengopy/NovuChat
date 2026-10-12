@@ -915,9 +915,9 @@ const CH_CAUSAS = {
   vacio: 'no dijiste nada',
   corto: 'fue demasiado corto o sin contenido: escribe al menos 25 palabras útiles y concretas',
   largo: 'fue demasiado largo: máximo unas 140 palabras',
-  sin_cierre: 'no terminó con una pregunta ni con la invitación a ver los planes o hablar con alguien de nuestro equipo',
+  sin_cierre: 'no terminó con una pregunta sobre el negocio del cliente: cierra con una pregunta concreta sobre su negocio',
   persona: 'hablaste como una persona o negaste ser una inteligencia artificial',
-  promesa: 'prometiste que alguien llamará, escribirá, contactará o responderá; solo puedes ofrecer que hable con alguien de nuestro equipo',
+  promesa: 'prometiste que alguien llamará, escribirá, contactará o responderá; no prometas nada que no puedas cumplir ahora mismo: contesta con lo que sabes y cierra con una pregunta sobre su negocio',
   oferta: 'ofreciste algo gratis, un descuento, un regalo o una promoción',
   monto: 'escribiste un monto o una cifra que no corresponde',
   cifra: 'escribiste un número que no está permitido',
@@ -1354,12 +1354,14 @@ const CH_RESPALDO_PLANES = 'Escribe «planes» para ver los planes.';
 const CH_INTERES = /\b(?:cuanto|precio|precios|costo|costos|cuesta|cuestan|tarifa|tarifas|plan|planes|incluye|incluyen|funciona|funcionan|interesa|interesan|empezar|comenzar|contratar|contrato|instalacion|instalar|implementar|tarda|demora|informacion|info|detalles)\b/;
 const CH_FIN_PREGUNTAS = /\b(?:no tengo mas (?:dudas|preguntas)|ninguna duda|eso es todo|nada mas|ya entendi|queda claro|quiero empezar|como contrato|como se contrata|como empiezo|como empezamos|listo para empezar|donde firmo)\b/;
 const CH_FUNCION_CLIENTE = /\b(?:adelantos?|anticipos?|senias?|senas?|pagos? total(?:es)?|pagos? por adelantado|cobros?|cobrar|cobran)\b|\b(?:pagos?|cobros?|cobrar|pagar) (?:con|por|mediante|via) (?:el |tu |un )?(?:codigo )?qr\b|\bqr (?:de pago|para (?:cobrar|pagar))\b/;
-const CH_DECLINA = /\b(?:no (?:lo|la) tengo a la mano|no sabr\w+ decir\w*|desconozco|no (?:lo )?se con (?:certeza|seguridad)|no cuento con (?:ese|esa|el|la) (?:dato|informacion)|no lo tengo documentado|no esta documentad\w*|no es mi especialidad|fuera de mi especialidad|no tengo (?:ese|esa|el|la) (?:dato|informacion)|no puedo (?:prometer|confirmar|asegurar)\w*|prefiero no (?:prometer|darte|afirmar)\w*)\b/;
+const CH_DECLINA = /\b(?:no (?:lo|la) tengo a la mano|no sabr\w+ decir\w* (?:eso|ese dato|esa informacion|esa pregunta|con (?:certeza|seguridad)|si (?:ese|esa|eso|esta|existe|hay|se))(?!.*\bpero\b)|desconozco (?:eso|ese dato|esa informacion|esa pregunta|lo que (?:preguntas|consultas)|si (?:ese|esa|eso|esta|existe|hay|se))(?!.*\bpero\b)|(?:eso|ese dato|esa informacion|esa pregunta|ese tema|ese otro canal|lo que preguntas) no (?:lo )?se con (?:certeza|seguridad)(?!.*\bpero\b)|no cuento con (?:ese|esa|el|la) (?:dato|informacion)|no lo tengo documentado|no esta documentad\w*|no es mi especialidad|fuera de mi especialidad|no tengo (?:ese|esa|el|la) (?:dato|informacion)|no puedo (?:prometer|confirmar|asegurar)\w*|prefiero no (?:prometer|darte|afirmar)\w*)\b/;
+// (por oración: el «pero» que sigue a un «desconozco…» o un «no sabría decirte…» en la misma oración dice que el modelo SÍ contestó)
+function chDeclinaTexto(texto) { return chTexto(texto).split(/[.!?¿\n]+/).some((o) => CH_DECLINA.test(chNorm(o))); }
 const CH_SIN_RESPUESTA = ['otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico'];
 const CH_SIN_OFERTA = ['pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte'];
 const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'];
 // ¿El texto que el MODELO escribió ofrece hablar con el equipo? (su pregunta final, o —si no tiene pregunta final— cualquier oración): sin depender de CÓMO declina, eso dice que no pudo resolver.
-function chOfreceAlEquipo(texto) { const q = chPreguntaFinal(texto); return CH_OFRECE_EQ.test(q) || (q === '' && CH_OFRECE_EQ.test(chNorm(texto))); }
+function chOfreceAlEquipo(texto) { const q = chPreguntaFinal(texto); return CH_OFRECE_EQ.test(q) || (q === '' && /\bhablar con (?:alguien|una persona|(?:nuestro |el )?equipo)|\bun asesor\b/.test(chNorm(texto))); }
 // Las señales del turno, calculadas UNA vez. a = { plan, res (resultado del modelo), eventos, ficha (la de antes) }
 function chSituacion(a) {
   const f = a.ficha || {};
@@ -1375,7 +1377,7 @@ function chSituacion(a) {
     interes: CH_INTERES.test(t) || textos.some((c) => chPideCostoDelServicio(c)),
     acabadas: CH_FIN_PREGUNTAS.test(t) || (f.explicado === true && f.respondidas >= 2),
     // declina = el cliente propone una función no documentada para su rubro, o el modelo no la puede resolver (declina o la inventó)
-    declina: p.ruta === 'modelo' && ((rub !== '' && !CH_RUBROS_CON_COBRO.includes(rub) && CH_FUNCION_CLIENTE.test(t)) || CH_DECLINA.test(chNorm(chTexto(r.texto))) || (r.causas || []).includes('funcion_inventada') || modeloOfreceEq),
+    declina: p.ruta === 'modelo' && ((rub !== '' && !CH_RUBROS_CON_COBRO.includes(rub) && CH_FUNCION_CLIENTE.test(t)) || chDeclinaTexto(r.texto) || (r.causas || []).includes('funcion_inventada') || modeloOfreceEq),
     modeloOfreceEq: modeloOfreceEq, planesTocado: f.planesTocado === true, planesVistos: f.planesMostrados === true, equipoTocado: f.equipoTocado === true,
   };
 }
@@ -1406,14 +1408,15 @@ function chBotonesDe(s) {
   return { fila: fila.id, planes: planes, equipo: equipo, ordinaria: fila.id.startsWith('ordinaria'), ofrecio: planes && equipo ? 'ambas' : (planes ? 'planes' : (equipo ? 'equipo' : 'ninguna')) };
 }
 // Texto y botones coherentes: se quita lo que el mensaje ofrece y no lleva (la oferta doble se queda con su mitad con botón; «los botones de abajo» sin botones; la revisión «por alguien de nuestro equipo» sin el botón sería una promesa sin mecanismo) y se agrega la invitación de lo que sí lleva y el texto no invita. Lo escribe el modelo o el dato: el prompt no es una barrera.
-const CH_OFRECE_EQ = /hablar con (?:alguien|una persona|(?:alguien de )?(?:nuestro |el )?equipo)|un asesor/i;
+const CH_OFRECE_EQ = /\bhablar con (?:alguien|una persona)|\b(?:nuestro|el|del) equipo\b|\buna persona\b|\bun asesor\b|\balguien de nuestro\b/i;
 const CH_OFRECE_PL = /(?:ver|conocer) (?:los |nuestros |todos los )?planes|(?:muestro|mostrarte) (?:los |nuestros )?planes(?! que mejor te sirvan)/i;
 const CH_ATRIBUYE_EQ = /(?:[:;,]\s*)?(?:y )?(?:eso|esto) lo (?:revisa|evalúa|confirma) alguien de nuestro equipo|(?:[:;,]\s*)?(?:así que )?lo mejor es que alguien de nuestro equipo evalúe tu caso/gi;
 function chRedondear(texto, ids, cfg) {
   const [eq, pl] = [ids.includes('equipo'), ids.includes('planes')];
   const lineas = chLineas(texto).split('\n').map((l) => l.split(/(?<=[.!?…][\p{Extended_Pictographic}\uFE0F]*)\s+(?![\p{Extended_Pictographic}\uFE0F])|\s+(?=¿)/u).map((x) => {
     const o = eq ? x : x.replace(CH_ATRIBUYE_EQ, '');
-    const [e, p] = [CH_OFRECE_EQ.test(o), CH_OFRECE_PL.test(o)];
+    const on = chNorm(o);
+    const [e, p] = [CH_OFRECE_EQ.test(on) && (/[?？]/.test(o) || /\bhablar con\b|\bun asesor\b/.test(on)), CH_OFRECE_PL.test(o)];
     if (e && p) return eq && pl ? o : (pl ? '¿Te gustaría ver nuestros planes? 🤝' : (eq ? '¿Te gustaría hablar con alguien de nuestro equipo? 🤝' : ''));
     return (e && !eq) || (p && !pl) || (!eq && !pl && /toca(?:r)? el bot[oó]n|botones? de abajo/i.test(o)) ? '' : o;
   }).filter((o) => o !== '').join(' ').trim());
