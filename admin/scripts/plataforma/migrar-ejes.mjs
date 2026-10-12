@@ -96,7 +96,7 @@ registerHooks({
   },
 });
 const {
-  PLANES, CATALOGO_PLANES, copiaDeLimites, esIdPlan, limitesDeCuenta, mismoMarcador, periodoDe,
+  PLANES, CATALOGO_PLANES, copiaDeLimites, esIdPlan, limitesDe, limitesDeCuenta, mismoMarcador, periodoDe,
 } = await import('../../functions/src/central/cuenta/planes.ts');
 const { camposDerivados, consumidasDe, esModalidad, estadoDeServicio } = await import('../../functions/src/central/cuenta/prepago.ts');
 const { MODELO_POR_DEFECTO, esModelo, esTitularidad } = await import('../../functions/src/central/ejes.ts');
@@ -134,7 +134,9 @@ const sinTenant = rutasSnap.docs.filter((r) => !tenantsSnap.docs.some((t) => t.i
 
 console.log(`\n  Migración a los tres ejes · proyecto ${PROYECTO} · ${APLICAR ? 'APLICAR' : 'seco'}`);
 console.log(`  Tenants en Firestore: ${tenantsSnap.size}${SOLO ? ` (se mira solo «${SOLO}»)` : ''} · rutas de WhatsApp: ${rutasSnap.size}`);
-console.log(`  Plan para los demos: ${PLAN_DEMOS} (${PLANES[PLAN_DEMOS].productos} productos, ${PLANES[PLAN_DEMOS].conversaciones} conversaciones)`);
+// Las conversaciones del plan dependen de la TARIFA (`planes.ts`): el encabezado dice de cuál son
+// las cifras. Lo que se escribe NO cambia: ya sale de `copiaDeLimites`, con la tarifa de cada cuenta.
+console.log(`  Plan para los demos: ${PLAN_DEMOS} (${PLANES[PLAN_DEMOS].productos} productos, ${limitesDe(PLAN_DEMOS, 'meta_incluido').conversaciones} conversaciones con la tarifa meta_incluido, la de una cuenta sin campo; ${limitesDe(PLAN_DEMOS, 'estandar').conversaciones} con estandar)`);
 console.log(`  Operador: ${OPERADOR}`);
 if (sinTenant.length) console.log(`  ✗ Rutas cuyo tenant no existe (no se tocan): ${sinTenant.map((r) => cola(r.id)).join(', ')}`);
 if (SOLO && tenants.length === 0) { console.error(`\n  ✗ No existe el comercio «${SOLO}».\n`); process.exit(1); }
