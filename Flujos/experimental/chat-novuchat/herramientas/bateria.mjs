@@ -632,7 +632,7 @@ export async function llamarGemini({ cuerpo, urlDelNodo, credencial, opciones, d
 /** Las funciones y patrones de la biblioteca del flujo (`src/lib/chat.js`) y las `cm*` comunes, en un contexto aislado (sin los globales de Node, como el Code de n8n). */
 export function cargarLibreria() {
   const fuente = [RUTA_LIB, RUTA_MENSAJES, RUTA_FILTRO].map((r) => readFileSync(r, 'utf8')).join('\n');
-  const nombres = ['chFichaBase', 'chNorm', 'chContar', 'chSistemaAjeno', 'chObjetoDelModelo', 'chTerminaBien', 'chPlano', 'chSimilitud', 'CH_ACREDITA_MODELO', 'CH_CIFRA_DE_CONSUMO', 'CH_SISTEMA_CONOCIDO', 'CH_BLOQUEO_COMUN', 'CH_OFERTA_DEL_MODELO'];
+  const nombres = ['chFichaBase', 'chPreguntaFinal', 'chNorm', 'chContar', 'chSistemaAjeno', 'chObjetoDelModelo', 'chTerminaBien', 'chPlano', 'chSimilitud', 'CH_ACREDITA_MODELO', 'CH_CIFRA_DE_CONSUMO', 'CH_SISTEMA_CONOCIDO', 'CH_BLOQUEO_COMUN', 'CH_OFERTA_DEL_MODELO'];
   return runInNewContext(`${fuente}\n({ ${nombres.join(', ')} })`, {});
 }
 const datosDelChat = () => JSON.parse(readFileSync(RUTA_DATOS, 'utf8')).datos;
@@ -721,6 +721,8 @@ export function revisarMensaje(m, ctx = {}) {
       // (2) Nada se ofrece antes de tiempo: «Ver planes» tras elegir rubro o con interés; el equipo cuando hace falta o se acabaron las preguntas.
       if (ids.includes('planes') && !(ctx.eligioRubro === true || ctx.interes === true)) anota('boton_antes_de_tiempo', '«Ver planes» sin rubro elegido ni interés del cliente');
       if (ids.includes('equipo') && ctx.equipoPermitido !== true) anota('boton_antes_de_tiempo', '«Hablar con el equipo» sin que haga falta ni se acabaran las preguntas');
+      // (5) La oferta del equipo que escribió el modelo no se pierde: si su pregunta final invitaba al equipo, el mensaje enviado lleva el botón (nada de callejón sin salida ni de «Sí» que no deriva).
+      if (ctx.ofertaDelModelo === true && !ids.includes('equipo') && ctx.equipoPulsado !== true) anota('oferta_del_modelo_quitada', 'el modelo ofreció al equipo y el mensaje salió sin su botón: ' + c.slice(-90));
       // (4) Ningún mensaje que declina o no puede resolver queda sin la salida al equipo (salvo que ya lo haya pulsado): sin callejón sin salida.
       if (ctx.declina === true && !ids.includes('equipo') && ctx.equipoPulsado !== true) anota('declina_sin_boton', 'declina o no puede resolver y no ofrece al equipo: ' + c.slice(-90));
     }
@@ -882,7 +884,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     return resultados;
   }
 
-  const corrida = { caso: caso.id, rep, turnos: 0, llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], conversacion: [], palabras: [], pulsados: new Set(), equipoPrev: objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).equipoTocado === true, rubroPrev: String(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).rubro ?? ''), respondidasPrev: Number(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).respondidas) || 0, inv: { pulsado: 0, antes: 0, texto: 0 }, modeloTurnos: 0, respaldos: 0, causas: {}, esperas: 0, repeticiones: 0 };
+  const corrida = { caso: caso.id, rep, turnos: 0, llamadas: [], violaciones: [], tonos: [], mensajes: 0, plantillas: 0, fallos: [], conversacion: [], palabras: [], pulsados: new Set(), equipoPrev: objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).equipoTocado === true, rubroPrev: String(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).rubro ?? ''), respondidasPrev: Number(objeto(objeto(comp.sd?.chatNovuchat)[CLIENTE]).respondidas) || 0, inv: { pulsado: 0, antes: 0, texto: 0, oferta: 0 }, modeloTurnos: 0, respaldos: 0, causas: {}, esperas: 0, repeticiones: 0 };
   const falla = (turno, dicho, regla, texto) => corrida.violaciones.push({ caso: caso.id, rep, turno, dicho, regla, texto: String(texto).replace(/\s+/g, ' ').slice(0, 200) });
   for (const [i, t] of caso.turnos.entries()) {
     comp.captura = { mensajes: [], modelo: [] };
@@ -920,8 +922,10 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     // Una consulta que el chat no puede resolver es REQUERIDA: el cliente propone una función no documentada para su rubro (cobros, QR, adelanto, seña, pago total fuera de gastronomía, retail y «otro»).
     const funcionNoDocumentada = !['', 'gastronomia', 'retail', 'otro'].includes(String(ficha.rubro ?? '')) && textosDelTurno.some((x) => /\b(adelantos?|anticipos?|senias?|senas?|pagos? total(es)?|pagos? por adelantado|cobros?)\b|\bqr\b/.test(x));
     ctx.declina = alCliente.some((m) => !m.esRespaldo && /(no lo tengo documentado|no esta documentad\w*|no es mi especialidad|fuera de mi especialidad|no tengo (ese|esa|el|la) (dato|informacion)|no puedo (prometer|confirmar|asegurar)\w*|prefiero no (prometer|darte|afirmar)\w*)/.test(sinTildes(m.cuerpo)));
-    ctx.equipoPermitido = requeridoPorMensaje || acabaron || funcionNoDocumentada || ctx.declina;
-    if (alCliente.length) { corrida.inv.texto += 1; if (corrida.pulsados.size) corrida.inv.pulsado += 1; if (alCliente.some((m) => tipoInter(m.payload) === 'button')) corrida.inv.antes += 1; }
+    // Invariante SIN VOCABULARIO de declinación: si la pregunta final de lo que escribió el MODELO ofrecía hablar con el equipo, el mensaje enviado lleva el botón del equipo (salvo que ya lo haya pulsado).
+    ctx.ofertaDelModelo = ctx.origen === 'modelo' && ctx.plan === 'modelo' && /hablar con (alguien|una persona|(alguien de )?(nuestro |el )?equipo)|un asesor/.test(lib.chPreguntaFinal(String(resumen.textoModelo ?? '')));
+    ctx.equipoPermitido = requeridoPorMensaje || acabaron || funcionNoDocumentada || ctx.declina || ctx.ofertaDelModelo;
+    if (alCliente.length) { corrida.inv.texto += 1; if (corrida.pulsados.size) corrida.inv.pulsado += 1; if (alCliente.some((m) => tipoInter(m.payload) === 'button')) corrida.inv.antes += 1; if (ctx.ofertaDelModelo === true) corrida.inv.oferta += 1; }
     for (const m of alCliente) {
       for (const x of revisarMensaje(m, ctx)) falla(i + 1, dicho, x.regla, x.texto);
       if (!m.esRespaldo) { corrida.tonos.push(tonoDe(m.cuerpo)); corrida.palabras.push(palabrasDe(m.cuerpo)); }
@@ -1033,7 +1037,7 @@ export function medir(corridas) {
     jsonValido: { ok: llamadas.filter((l) => l.jsonValido).length, n: llamadas.length }, conforme: { ok: llamadas.filter((l) => l.conforme).length, n: llamadas.length },
     erroresDelServicio: llamadas.filter((l) => l.errorHttp).length,
     violaciones: suma(corridas.map((c) => c.violaciones.length)),
-    invariantesDeBotones: { casos: new Set(corridas.map((c) => c.caso)).size, pulsadoNoReaparece: suma(corridas.map((c) => c.inv?.pulsado || 0)), noSeOfreceAntesDeTiempo: suma(corridas.map((c) => c.inv?.antes || 0)), textoCoherenteConLosBotones: suma(corridas.map((c) => c.inv?.texto || 0)) },
+    invariantesDeBotones: { casos: new Set(corridas.map((c) => c.caso)).size, pulsadoNoReaparece: suma(corridas.map((c) => c.inv?.pulsado || 0)), noSeOfreceAntesDeTiempo: suma(corridas.map((c) => c.inv?.antes || 0)), textoCoherenteConLosBotones: suma(corridas.map((c) => c.inv?.texto || 0)), ofertaDelModeloConservada: suma(corridas.map((c) => c.inv?.oferta || 0)) },
     longitud: { mensajes: palabras.length, palabrasMedias: Math.round(media(palabras) * 10) / 10, mediana: ord.length ? ord[Math.floor(ord.length / 2)] : 0, maximo: ord.length ? ord[ord.length - 1] : 0 },
     tono: { mensajes: suma(corridas.map((c) => c.tonos.length)), voseo: suma(corridas.map((c) => c.tonos.filter((t) => t.voseo).length)), usted: suma(corridas.map((c) => c.tonos.filter((t) => t.usted).length)) },
     formulasEnLaHoja: suma(corridas.map((c) => c.formulas || 0)), filasPorCorrida: media(corridas.map((c) => c.filas || 0)),
@@ -1133,7 +1137,7 @@ function textoDelInforme(r) {
   o.push(`Causas de rechazo del mensaje del modelo: ${Object.entries(t.causasDeRechazo).map(([k, v]) => `${k} ${v}`).join(', ') || 'ninguna'}`);
   o.push(`Longitud: ${t.longitud.palabrasMedias} palabras por mensaje en promedio (mediana ${t.longitud.mediana}, máximo ${t.longitud.maximo}) · tono: voseo ${t.tono.voseo}, usted ${t.tono.usted} (sobre ${t.tono.mensajes} mensajes)`);
   const iv = t.invariantesDeBotones;
-  o.push(`Invariantes de botones (turnos observados en ${iv.casos} casos; cada violación se informa aparte): lo pulsado no reaparece ${iv.pulsadoNoReaparece} · nada se ofrece antes de tiempo ${iv.noSeOfreceAntesDeTiempo} · texto coherente con los botones ${iv.textoCoherenteConLosBotones}`);
+  o.push(`Invariantes de botones (turnos observados en ${iv.casos} casos; cada violación se informa aparte): lo pulsado no reaparece ${iv.pulsadoNoReaparece} · nada se ofrece antes de tiempo ${iv.noSeOfreceAntesDeTiempo} · texto coherente con los botones ${iv.textoCoherenteConLosBotones} · oferta del modelo conservada ${iv.ofertaDelModeloConservada}`);
   o.push(`Mensajes por turno: ${Math.round(t.mensajesPorTurno * 100) / 100} (${t.mensajes} mensajes en ${t.turnos} turnos) · plantillas de aviso: ${t.plantillas}`);
   o.push(`Calificación final (hoja): ${Object.entries(t.calificaciones).map(([k, v]) => `${k || '(vacía)'} ${v}`).join(', ') || '—'} · filas por corrida ${Math.round(t.filasPorCorrida * 100) / 100}`);
   if (t.formulasEnLaHoja) o.push(`ATENCIÓN: ${t.formulasEnLaHoja} celda(s) de la hoja quedaron como fórmula (USER_ENTERED).`);

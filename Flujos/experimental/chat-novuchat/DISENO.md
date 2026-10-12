@@ -65,12 +65,13 @@ debajo de los envíos y la hoja. No hay ciclos: ningún nodo lee por nombre algo
 | 6 | `respuesta-fija` | no | no | ninguna | Identidad y disponibilidad: se contestan completas, sin invitaciones. |
 | 7 | `sin-respuesta` | no | sí | equipo | Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo. |
 | 8 | `rubro-declina` | sí | sí | planes y equipo | Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo. |
-| 9 | `declina` | solo con interés | sí | planes y equipo | El cliente propone una función no documentada para su rubro o el modelo declina: nunca un callejón sin salida. |
-| 10 | `rubro` | sí | no | planes | Eligió rubro: es interés; se ofrece «Ver planes» y nada más. |
-| 11 | `sin-oferta` | no | no | ninguna | Pitch, identidad, cortesía, empresa, medio ilegible, respuesta al nombre, fuera de contexto, descarte: sin botones ni invitaciones. |
-| 12 | `ordinaria-acabadas` | solo con interés | sí | planes y equipo | Respuesta ordinaria al acabarse las preguntas («no tengo más dudas», «quiero empezar», tercera respuesta seguida) o a medida. |
-| 13 | `ordinaria-interes` | sí | no | planes | Respuesta ordinaria a una pregunta de interés (costos, qué incluye, cómo funciona, instalación): se ofrece «Ver planes». |
-| 14 | `ordinaria` | no | no | ninguna | Respuesta ordinaria: se contesta sin botones ni invitaciones. |
+| 9 | `declina-ofrece-equipo` | no | sí | equipo | El modelo no pudo resolver y su pregunta final ofrece hablar con el equipo: se conserva esa oferta con su botón (aunque la pregunta traiga una palabra de interés). |
+| 10 | `declina` | solo con interés | sí | planes y equipo | El cliente propone una función no documentada para su rubro, o el modelo declina: nunca un callejón sin salida (con «Ver planes» solo si hay interés). |
+| 11 | `rubro` | sí | no | planes | Eligió rubro: es interés; se ofrece «Ver planes» y nada más. |
+| 12 | `sin-oferta` | no | no | ninguna | Pitch, identidad, cortesía, empresa, medio ilegible, respuesta al nombre (si además pregunta algo con interés, se contesta como ordinaria), fuera de contexto, descarte: sin botones ni invitaciones. |
+| 13 | `ordinaria-acabadas` | solo con interés | sí | planes y equipo | Respuesta ordinaria al acabarse las preguntas («no tengo más dudas», «quiero empezar», tercera respuesta seguida) o a medida. |
+| 14 | `ordinaria-interes` | sí | no | planes | Respuesta ordinaria a una pregunta de interés (costos, qué incluye, cómo funciona, instalación): se ofrece «Ver planes». |
+| 15 | `ordinaria` | no | no | ninguna | Respuesta ordinaria: se contesta sin botones ni invitaciones. |
 <!-- TABLA-BOTONES:FIN -->
 - **Modelo («Catch All»)**: todo lo demás: clics múltiples, emojis, «Y?», «?» con historial, «Quiero más información» con historial (pitch del §8), fuera de contexto, rubro mezclado, «Otro», preguntas sueltas.
 - **Validación** (`chValidarMensaje`, en «Validar respuesta» y «Armar mensajes»): contenido mínimo (25 palabras), cierre con pregunta o invitación, identidad, promesas y nombres de personas,

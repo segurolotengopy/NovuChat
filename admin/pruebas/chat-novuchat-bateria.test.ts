@@ -185,6 +185,15 @@ describe('los detectores de la batería: detectan y no detectan de más', () => 
     expect(reglas(msg(DECLINA + ' ¿Te gustaría hablar con alguien de nuestro equipo? 🤝', btn('equipo')), ctx)).not.toContain('declina_sin_boton');
     expect(reglas({ tipo: 'text', cuerpo: DECLINA, evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false }, { ...ctx, pulsados: new Set(['equipo']), equipoPulsado: true })).not.toContain('declina_sin_boton'); // (pulsado = el estado de la ficha: por toque, texto o «Sí»)
   });
+  it('INVARIANTE 5 (global, sin vocabulario): si la pregunta final de lo que escribió el modelo ofrece al equipo y el mensaje sale sin su botón, es `oferta_del_modelo_quitada`; con el botón, o con el equipo ya pulsado, no', () => {
+    const MODELO_OFRECE = 'Hoy NovuChat atiende por WhatsApp y responde en segundos a tus clientas. Sobre ese canal, lo mejor es verlo con una persona. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝';
+    const ctx = { origen: 'modelo', plan: 'modelo', pulsados: new Set(), eligioRubro: true, interes: true, equipoPermitido: true, ofertaDelModelo: true };
+    const sin = { tipo: 'text', cuerpo: 'Hoy NovuChat atiende por WhatsApp y responde en segundos a tus clientas, y sobre ese canal lo mejor es verlo con una persona.', evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false };
+    expect(reglas(sin, ctx)).toContain('oferta_del_modelo_quitada');
+    expect(reglas(msg(MODELO_OFRECE, btn('equipo')), ctx)).not.toContain('oferta_del_modelo_quitada');
+    expect(reglas(sin, { ...ctx, pulsados: new Set(['equipo']), equipoPulsado: true })).not.toContain('oferta_del_modelo_quitada');
+    expect(reglas(sin, { ...ctx, ofertaDelModelo: false })).not.toContain('oferta_del_modelo_quitada');
+  });
   it('INVARIANTE 3 (global): el texto es coherente con los botones — invitar al equipo o a ver los planes sin el botón, o hablar de «los botones de abajo» sin botones, es `texto_sin_boton` (botón, texto, imagen o lista)', () => {
     expect(reglas(msg(OFERTA_EQ, btn('planes')), {})).toContain('texto_sin_boton');
     expect(reglas(msg(OFERTA_PL, btn('equipo')), {})).toContain('texto_sin_boton');
@@ -333,6 +342,16 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     const f = estropear('no lo tengo documentado|', 'xx_no_coincide|');
     expect(await violacionesCon(f, 'C2')).toContain('declina_sin_boton');
     expect(await violacionesCon(FLUJO, 'C2')).toEqual([]);
+  });
+  it('INVARIANTE 5 en el flujo: si el modelo ofrece al equipo SIN ninguna frase de declinación (F6) y el código deja de conservar esa oferta, se dice `oferta_del_modelo_quitada`; el flujo sano da cero en F1 a F6', async () => {
+    for (const id of ['F1', 'F2', 'F3', 'F4', 'F5', 'F6']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
+    const f = estropear('|| modeloOfreceEq),', '),');
+    expect(await violacionesCon(f, 'F6')).toContain('oferta_del_modelo_quitada');
+    // y las frases de declinación nuevas se siguen cubriendo por sí solas (F1 a F5 no dependen de la señal sin vocabulario)
+    for (const id of ['F1', 'F2', 'F3', 'F4', 'F5']) expect(await violacionesCon(f, id), id).not.toContain('oferta_del_modelo_quitada');
+    // sin la lista de frases ampliada, el modelo que declina y NO ofrece nada (C2) sigue necesitando su botón
+    const g = estropear('no lo tengo documentado|', 'xx_no_coincide|');
+    expect(await violacionesCon(g, 'C2')).toContain('declina_sin_boton');
   });
   it('la ruta de planes con el equipo ya pulsado (imagen con el texto de pie, sin botones) se mide con su texto (`caption`), sin falsas cifras', async () => {
     expect(await violacionesCon(FLUJO, 'D16')).toEqual([]);

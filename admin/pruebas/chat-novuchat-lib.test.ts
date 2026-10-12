@@ -1088,6 +1088,19 @@ describe('chResolver: el desenlace de un turno de modelo', () => {
     expect(conModelo.texto).toMatch(/Quedó anotado/);
     expect(conModelo.texto).not.toMatch(/te escribe pronto/);
   });
+  it('«datos» con una pregunta o un interés: el código anota (\u00abQuedó anotado\u00bb) y el modelo CONTESTA; nunca queda solo el acuse', () => {
+    const t = ['Ana Pérez, Salón Rosa. ¿Y cuánto tarda la instalación?'];
+    const p = plan({ contexto: 'datos' });
+    const r = resolver([revisar({ ...base, mensaje: BUENO, nombre: 'Ana Pérez', empresa: 'Salón Rosa' }, t, 'datos')], t, p);
+    expect(r.origen).toBe('modelo');
+    expect(r.texto.startsWith(NOVUCHAT['respaldos'].datosAmbos)).toBe(true);
+    expect(r.texto).toContain(BUENO);
+    // sin pregunta ni interés, el acuse del código sigue siendo todo
+    const t2 = ['Ana Pérez, Salón Rosa'];
+    expect(resolver([revisar({ ...base, mensaje: BUENO, nombre: 'Ana Pérez', empresa: 'Salón Rosa' }, t2, 'datos')], t2, p).texto).toBe(NOVUCHAT['respaldos'].datosAmbos);
+    // y si el modelo falla, sale el respaldo de los datos (que siempre termina en una pregunta o en el acuse), nunca un texto vacío
+    expect(resolver([{ lectura: { ok: false, motivo: 'error' }, causa: 'sin_respuesta' }], t, p).texto).toMatch(/anot/);
+  });
   it('un rubro estándar cierra con la pregunta exacta, y su respaldo es la explicación del dato', () => {
     const t = ['Tengo un restaurante'];
     const g = (NOVUCHAT['rubros'] as J[]).find((r) => r['id'] === 'gastronomia')!;
@@ -2165,10 +2178,13 @@ describe('la regla del «Sí» es robusta: la oferta se lee aunque se pegue el p
 const RUTAS_FIJAS = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'identidad', 'disponibilidad'];
 const EVENTOS = ['rubro', 'multiple', 'otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico', 'pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte', 'general', 'respuesta'];
 const TIPOS: J[] = [{ ruta: 'lista' }, { ruta: 'equipo' }, { ruta: 'pedirNombre' }, { ruta: 'planes' }, ...RUTAS_FIJAS.map((fijo) => ({ ruta: 'fijo', fijo })), ...EVENTOS.map((ev) => ({ ruta: 'modelo', ev }))];
-const BOOLS = ['aMedida', 'interes', 'acabadas', 'declina', 'planesTocado', 'planesVistos', 'equipoTocado'];
+const BOOLS = ['aMedida', 'interes', 'acabadas', 'declina', 'modeloOfreceEq', 'planesTocado', 'planesVistos', 'equipoTocado'];
 /** Todas las situaciones: cada tipo de mensaje × cada combinación de las siete señales booleanas. */
 function* situaciones(): Generator<J> {
-  for (const t of TIPOS) for (let m = 0; m < 1 << BOOLS.length; m++) yield { fijo: '', ev: '', ...t, ...Object.fromEntries(BOOLS.map((b, k) => [b, (m & (1 << k)) !== 0])) };
+  for (const t of TIPOS) for (let m = 0; m < 1 << BOOLS.length; m++) {
+    const s = { fijo: '', ev: '', ...t, ...Object.fromEntries(BOOLS.map((b, k) => [b, (m & (1 << k)) !== 0])) };
+    if (!(s['modeloOfreceEq'] && !s['declina'])) yield s; // (que el modelo ofrezca al equipo ES declinar: esa combinación no existe)
+  }
 }
 function tablaEnMarkdown(tabla: J[]): string {
   const celda = (x: unknown): string => (x === true ? 'sí' : x === 'interes' ? 'solo con interés' : 'no');
@@ -2186,7 +2202,7 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect(new Set(T.map((x) => x['id'])).size, 'ids únicos').toBe(T.length);
     expect(T.at(-1)!['id']).toBe('ordinaria'); // la última fila siempre coincide: toda situación tiene fila
   });
-  it('PROPIEDADES sobre las 4.096 situaciones: lo pulsado no reaparece; «Ver planes» nunca sin interés; el equipo solo si es requerido o se acabaron las preguntas; nunca un callejón sin salida; el pedido de datos no lleva botón de planes', () => {
+  it('PROPIEDADES sobre las 6.144 situaciones: lo pulsado no reaparece; «Ver planes» nunca sin interés; el equipo solo si es requerido o se acabaron las preguntas; nunca un callejón sin salida; el pedido de datos no lleva botón de planes', () => {
     const cuenta: Record<string, number> = {};
     const ok = (k: string): void => { cuenta[k] = (cuenta[k] ?? 0) + 1; };
     const sinRespuesta = ['otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico'];
@@ -2205,7 +2221,7 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
       ok('2 planes con interés');
       // (3) el equipo solo si es REQUERIDO o se ACABARON las preguntas (la oferta de planes, el cierre de precios, una consulta sin respuesta, a medida, función no documentada)
       if (r.equipo) {
-        const ordinaria = s.ruta === 'modelo' && !sinRespuesta.includes(s.ev) && !sinOferta.includes(s.ev) && s.ev !== 'rubro' && s.ev !== 'multiple';
+        const ordinaria = s.ruta === 'modelo' && !sinRespuesta.includes(s.ev) && (!sinOferta.includes(s.ev) || (s.ev === 'datos' && s.interes)) && s.ev !== 'rubro' && s.ev !== 'multiple';
         const requerido = s.ruta === 'planes' || (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev)))) || (ordinaria && (s.aMedida || s.acabadas));
         expect(requerido, donde).toBe(true);
       }
@@ -2227,8 +2243,8 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
       expect(r.ordinaria, donde).toBe(String(r.fila).startsWith('ordinaria'));
       ok('8 fila de la tabla');
     }
-    expect(n).toBe(4096);
-    expect(Object.values(cuenta).every((v) => v === 4096)).toBe(true);
+    expect(n).toBe(6144);
+    expect(Object.values(cuenta).every((v) => v === 6144)).toBe(true);
     console.log('[tabla] situaciones enumeradas por invariante:', JSON.stringify(cuenta));
   });
   it('PROPIEDAD del texto: para cada combinación de botones y cada mensaje, `chRedondear` no ofrece lo que no lleva y SÍ invita a lo que lleva; nunca sale vacío ni pasa del máximo', () => {
@@ -2298,6 +2314,36 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     // declinar y mostrar interés en precios conserva «Ver planes» (y suma el equipo)
     const s = sit(['¿cuánto cuesta el plan?'], { texto: 'No puedo confirmarte sin datos de tu volumen. ¿Quieres ver los planes?' });
     expect(botones(s)).toMatchObject({ fila: 'declina', planes: true, equipo: true });
+  });
+  it('DECLINAR sin vocabulario previsto: toda forma de «no lo sé» lleva el equipo, y si el modelo mismo ofreció al equipo la oferta no se quita sin botón (la clase del cliente perdido)', () => {
+    const sit = (texto: string, extra: J = {}, textos: string[] = ['¿También responde en Telegram?'], origen = 'modelo'): J => f('chSituacion')({ plan: { ruta: 'modelo' }, res: { origen, contexto: 'general', texto, causas: [] }, eventos: textos.map((x) => ev(x)), ficha: { ...fichaBase(), explicado: true, rubro: 'belleza', ...extra } });
+    const FRASES = ['Eso no lo tengo a la mano.', 'Ese dato no la tengo a la mano.', 'No lo tengo a la mano ahora mismo.', 'No sabría decirte con certeza.', 'No sabría decir si está previsto.', 'Desconozco si está previsto.', 'Eso no lo sé con certeza.', 'No lo sé con seguridad.', 'No cuento con ese dato.', 'No cuento con la información.'];
+    for (const x of FRASES) { const q = sit(x); expect(q['declina'], x).toBe(true); expect(f('chBotonesDe')(q), x).toMatchObject({ equipo: true }); }
+    for (const x of ['Claro, te cuento cómo funciona.', 'Sé que es un tema importante.']) expect(sit(x)['declina'], x).toBe(false);
+    // sin ninguna de esas frases: el modelo cierra ofreciendo al equipo => el sistema lo conserva con su botón (y sin «Ver planes»)
+    const ofrece = 'Hoy atendemos por WhatsApp. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝';
+    const o = sit(ofrece);
+    expect([o['modeloOfreceEq'], o['declina']]).toEqual([true, true]);
+    expect(f('chBotonesDe')(o)).toMatchObject({ fila: 'declina-ofrece-equipo', equipo: true, planes: false, ofrecio: 'equipo' });
+    expect(f('chOfreceAlEquipo')(ofrece)).toBe(true);
+    expect(f('chOfreceAlEquipo')('Hoy atendemos por WhatsApp. ¿Qué día atiendes más?')).toBe(false);
+    // un texto de respaldo o de un desenlace no cuenta como oferta del modelo
+    expect(sit(ofrece, {}, ['x'], 'respaldo')['modeloOfreceEq']).toBe(false);
+    // ya pulsado el equipo, no reaparece
+    expect(f('chBotonesDe')(sit(ofrece, { equipoTocado: true }))).toMatchObject({ equipo: false });
+  });
+  it('fichas de antes (con `ofreceEquipo`/`ofrecePlanes` y sin `ofrecio`) se migran: el «Sí» tras la oferta de equipo deriva; tras la de planes pide los datos y muestra planes', () => {
+    const AHORA2 = Date.UTC(2026, 9, 11, 14, 0, 0);
+    const vig = (e: J): J => f('chFichaVigente')({ ultimoMs: AHORA2 - 60_000, ...e }, AHORA2);
+    expect(vig({ ofreceEquipo: true, ofrecePlanes: false })['ofrecio']).toBe('equipo');
+    expect(vig({ ofreceEquipo: true, ofrecePlanes: true })['ofrecio']).toBe('ambas');
+    expect(vig({ ofreceEquipo: false, ofrecePlanes: true })['ofrecio']).toBe('planes');
+    expect(vig({ ofreceEquipo: false, ofrecePlanes: false })['ofrecio']).toBe('');
+    expect(vig({ ofreceEquipo: true, ofrecio: 'planes' })['ofrecio']).toBe('planes'); // si ya trae la bandera nueva, manda ella
+    const vieja = (extra: J): J => ({ ...fichaBase(), explicado: true, rubro: 'belleza', nombrePedido: true, nombre: 'Ana', empresa: 'Salon Rosa', ultimoMs: AHORA2 - 60_000, historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: 'Te cuento todo sin una pregunta final reconocible.' }], ...extra });
+    const decidir = (ficha: J): J => f('chDecidir')({ eventos: [ev('Sí, me gustaría')], ficha: vig(ficha), cfg: CFG, from: '59100000011' });
+    expect(decidir(vieja({ ofreceEquipo: true, ofrecePlanes: false })).ruta).toBe('equipo');
+    expect(decidir(vieja({ ofreceEquipo: false, ofrecePlanes: true })).ruta).toBe('planes');
   });
   it('los casos del último bloqueo: sinDato sin botón de equipo NUNCA promete al equipo; con él, lo invita', () => {
     const rd = NOVUCHAT['respaldos'];

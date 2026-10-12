@@ -779,7 +779,7 @@ describe('las conversaciones del PDF «Opciones de conversaciones»', () => {
     w.modelo.con = dice('¡Ese es el momento donde más dinero se pierde por no responder a tiempo! 🔥 NovuChat toma el pedido, suma el envío y envía tu QR para que tus clientes paguen en segundos, incluso los fines de semana, cuando todo se llena. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', { necesidad: 'los fines de semana colapsamos' });
     const t = j.texto('Sí, pero los fines de semana colapsamos.');
     expect(t.aMi[0]!.cuerpo).toMatch(/fines de semana/);
-    expect(idsBotones(t.aMi[0]!)).toEqual([]);
+    expect(idsBotones(t.aMi[0]!)).toEqual(['equipo']); // (el modelo ofreció al equipo: se conserva la oferta con su botón)
     const t2 = j.boton('equipo');
     expect(tipoInter(t2.aMi[0]!)).toBe('cta_url');
     expect(filaDe(w, MAMA)![COL.resumen]).toMatch(/Necesidad: Sí, pero los fines de semana colapsamos|Rubro Gastronomía/);
@@ -800,9 +800,9 @@ describe('las conversaciones del PDF «Opciones de conversaciones»', () => {
     expect(fichaDe(w, MAMA)!.necesidad).toMatch(/consultas básicas sobre impuestos/);
     w.modelo.con = dice('¡Esa es la idea! 💡 Para servicios como el tuyo diseñamos flujos a medida que se adaptan a lo que necesitas lograr, y responder al instante ayuda a no perder ni una consulta. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo para ver cómo estructuraríamos tus respuestas? 🤝');
     const t3 = j.texto('Sí, la verdad me ahorraría mucho tiempo.');
-    // (es la respuesta al pedido del nombre: ni ofrece al equipo ni lleva botones; el equipo sale cuando hace falta)
-    expect(t3.aMi[0]!.cuerpo).not.toMatch(/hablar con alguien de nuestro equipo/);
-    expect(idsBotones(t3.aMi[0]!)).toEqual([]);
+    // (el modelo ofreció al equipo —«¿ver nuestros planes o hablar con alguien de nuestro equipo?»—: esa oferta se conserva con SU botón, nunca un callejón sin salida)
+    expect(t3.aMi[0]!.cuerpo).toMatch(/hablar con alguien de nuestro equipo/);
+    expect(idsBotones(t3.aMi[0]!)).toEqual(['equipo']);
     const fila = filaDe(w, MAMA)!;
     expect(fila[COL.rubro]).toBe('Otro / a medida');
     expect(fila[COL.calificacion]).toBe('Media');
@@ -2176,7 +2176,7 @@ describe('ajustes del 09/10 (R1 a R6): la conversación real, el orden del pedid
     const OK = 'Sí, el asistente responde los 7 días de la semana, incluidos fines de semana y feriados, así que tus clientes siempre reciben una respuesta en segundos, de día y de noche. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
     w.modelo.con = dice(OK);
     const t = j.texto('Y si un cliente escribe un domingo a las tres de la mañana, ¿qué pasa?');
-    expect(t.aMi[0]!.cuerpo).toBe(OK.replace(/ ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo\? 🤝$/, '')); // (la oferta final no lleva botones: el código la quita)
+    expect(t.aMi[0]!.cuerpo).toBe(OK.replace('¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', '¿Te gustaría hablar con alguien de nuestro equipo? 🤝')); // (el modelo ofreció al equipo: se conserva esa oferta con su botón y se quita la de los planes, que no lleva)
     expect(w.modelo.reintentos).toHaveLength(0);
     // rechazado dos veces (promete algo): ya no cae en «No estoy seguro de haberte entendido»
     w.modelo.con = dice('Te llamo yo mañana para contarte todo con calma y sin apuro, porque tu pregunta es muy interesante. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝');
@@ -2475,7 +2475,7 @@ describe('«Sí» a la oferta de hablar con el equipo: la deriva el código, no 
     }
   });
   it('la oferta doble («¿ver nuestros planes o hablar con alguien de nuestro equipo?», interés + «ya no tengo más dudas») con un «sí»: planes si aún no los vio; el equipo si ya los vio', () => {
-    const DOBLE = 'Perfecto, con esto ya tienes lo necesario para empezar cuando quieras: NovuChat atiende tu WhatsApp todo el día y agenda sin cruces. ¿Quieres ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+    const DOBLE = 'Perfecto, con esto ya tienes lo necesario para empezar cuando quieras: NovuChat atiende tu WhatsApp todo el día y agenda sin cruces. ¿Quieres saber algo más sobre eso?'; // (el código agrega la invitación doble: planes por el interés, equipo por las preguntas acabadas)
     const doble = () => {
       const w = crear();
       const j = jugar(w, MAMA);
@@ -2858,6 +2858,52 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
     const e = o.j.texto('¿Se integra con mi ERP?').aMi[0]!;
     expect(idsBotones(e)).toEqual(['equipo']);
     expect(e.cuerpo).toMatch(/hablar con alguien de nuestro equipo/);
+  });
+  it('declinar con cualquier palabra: «no lo tengo a la mano», «no sabría decirte con certeza», «desconozco», «no lo sé con certeza» o el modelo que él mismo ofrece al equipo, o una pregunta de interés ⇒ «Hablar con el equipo»; y el «Sí, me gustaría» deriva con UN aviso', () => {
+    const BASE = 'Hoy NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario. ';
+    const DECLINA = [
+      BASE + 'Sobre ese otro canal no lo tengo a la mano.' + Q,
+      BASE + 'Sobre ese otro canal no sabría decirte con certeza.' + Q,
+      BASE + 'Desconozco si ese otro canal está previsto.' + Q,
+      BASE + 'Eso no lo sé con certeza.' + Q,
+      BASE + '¿Te gustaría hablar con alguien de nuestro equipo? 🤝',
+    ];
+    for (const modelo of DECLINA) {
+      const { w, j } = tras();
+      w.modelo.con = dice(CAL);
+      j.texto('¿Se conecta a mi calendario?');
+      j.texto('Ana Pérez, Salón Rosa');
+      w.modelo.con = dice(modelo);
+      const e = j.texto('¿También responde en Telegram?').aMi[0]!;
+      expect(idsBotones(e), modelo).toEqual(['equipo']);
+      expect(e.cuerpo, modelo).toMatch(/hablar con alguien de nuestro equipo/);
+      const t = j.texto('Sí, me gustaría');
+      expect(tipoInter(t.aMi[0]!), modelo).toBe('cta_url');
+      expect(t.plantillas, modelo).toHaveLength(1);
+    }
+    // (la misma consulta SIN dudas previas: aún no se «acabaron las preguntas», así que el botón del equipo lo da solo declinar)
+    for (const modelo of DECLINA) {
+      const c = tras();
+      c.w.modelo.con = dice(modelo);
+      const e = c.j.texto('¿También responde en Telegram?').aMi[0]!;
+      expect(idsBotones(e), modelo).toEqual(['equipo']);
+    }
+    // con una palabra de interés («¿Funciona con Instagram?») sigue habiendo salida: el equipo (y, de haberlo, «Ver planes» solo si no lo pulsó)
+    const { w, j } = tras();
+    w.modelo.con = dice(CAL);
+    j.texto('¿Se conecta a mi calendario?');
+    j.texto('Ana Pérez, Salón Rosa');
+    w.modelo.con = dice(DECLINA[0]!);
+    expect(idsBotones(j.texto('¿Funciona con Instagram?').aMi[0]!)).toContain('equipo');
+  });
+  it('«Ana Pérez, Salón Rosa. ¿Y qué incluye el setup?» anota Y contesta: nunca queda solo el acuse', () => {
+    const { w, j } = tras();
+    w.modelo.con = dice(CAL);
+    j.texto('¿Se conecta a mi calendario?');
+    w.modelo.con = dice(INC);
+    const e = j.texto('Ana Pérez, Salón Rosa. ¿Y qué incluye el setup?').aMi[0]!;
+    expect(e.cuerpo).toMatch(/anot/);
+    expect(e.cuerpo).toMatch(/configuración llave en mano/);
   });
   it('(i) el pedido directo de una persona deriva; (k) el «Sí» a una oferta real deriva; el «Sí» a «¿te gustaría ver nuestros planes?» pide los datos y luego muestra los planes', () => {
     const a = tras();

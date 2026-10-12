@@ -2871,7 +2871,7 @@
       "contiene": [
        "cómo te llamas y cómo se llama tu"
       ],
-      "botones": "texto"
+      "botones": "equipo"
      }
     },
     {
@@ -2936,7 +2936,7 @@
       "noContiene": [
        "cómo te llamas"
       ],
-      "botones": "texto"
+      "botones": "equipo"
      }
     },
     {
@@ -3014,7 +3014,7 @@
       "mensaje": "¡Te entiendo perfecto! 😅 Cuando estás todo el día pegada al celular, agendar y recordar citas a mano te quita tiempo, y NovuChat lo hace por ti las 24 horas. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝"
      },
      "exige": {
-      "botones": "texto"
+      "botones": "equipo"
      }
     },
     {
@@ -3099,7 +3099,7 @@
        "24 horas",
        "www.novuchat.site"
       ],
-      "botones": "texto",
+      "botones": "equipo",
       "conModelo": true
      }
     },
@@ -3114,7 +3114,7 @@
        "empleado digital"
       ],
       "noRepite": true,
-      "botones": "texto",
+      "botones": "equipo",
       "noContiene": [
        "novuchat.site"
       ]
@@ -3917,14 +3917,14 @@
      "tipo": "texto",
      "texto": "¿Se puede usar desde el celular?",
      "seco": {
-      "mensaje": "Sí, como dueño controlas todo desde tu celular: miras las conversaciones y cambias lo que necesites desde la consola sin instalar nada más en tu equipo. ¿Te gustaría hablar con alguien de nuestro equipo para ver cómo quedaría en tu salón? 🤝"
+      "mensaje": "Sí, como dueño controlas todo desde tu celular: miras las conversaciones y cambias lo que necesites desde la consola sin instalar nada más en tu equipo. ¿Te gustaría ver nuestros planes para tu salón? 🤝"
      },
      "exige": {
       "conModelo": true,
       "botones": "texto",
       "noContiene": [
-       "hablar con alguien",
-       "ver nuestros planes"
+       "ver nuestros planes",
+       "hablar con alguien"
       ]
      }
     }
@@ -4613,6 +4613,432 @@
       "noContiene": [
        "hablar con alguien de nuestro equipo"
       ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "F1",
+   "titulo": "Sin callejón sin salida: el modelo declina con «no lo tengo a la mano» y ofrece al equipo → el mensaje lleva «Hablar con el equipo» y «Sí, me gustaría» deriva (aviso a recepción + botón)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se conecta a mi calendario?",
+     "seco": {
+      "mensaje": "Sí, NovuChat se conecta a tu Google Calendar para ver los horarios reales de tus especialistas y agendar las citas sin cruces; además envía un recordatorio un día antes para bajar el ausentismo. ¿Quieres saber algo más sobre eso?"
+     },
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana Pérez, Salón Rosa",
+     "seco": "ERROR",
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿También responde en Telegram?",
+     "seco": {
+      "mensaje": "Hoy NovuChat atiende por WhatsApp: responde en segundos y agenda las citas de tus especialistas sin cruces. Ese otro canal no lo tengo a la mano para confirmártelo con certeza. ¿Te gustaría hablar con alguien de nuestro equipo para verlo? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "hablar con alguien de nuestro equipo"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí, me gustaría",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "F2",
+   "titulo": "Sin callejón sin salida: el modelo declina con «no sabría decirte con certeza» y ofrece al equipo → el mensaje lleva «Hablar con el equipo» y «Sí, me gustaría» deriva (aviso a recepción + botón)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se conecta a mi calendario?",
+     "seco": {
+      "mensaje": "Sí, NovuChat se conecta a tu Google Calendar para ver los horarios reales de tus especialistas y agendar las citas sin cruces; además envía un recordatorio un día antes para bajar el ausentismo. ¿Quieres saber algo más sobre eso?"
+     },
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana Pérez, Salón Rosa",
+     "seco": "ERROR",
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿También responde en Telegram?",
+     "seco": {
+      "mensaje": "Hoy NovuChat atiende por WhatsApp: responde en segundos y agenda las citas de tus especialistas sin cruces. No sabría decirte con certeza si ese otro canal está previsto para tu rubro. ¿Te gustaría hablar con alguien de nuestro equipo para verlo? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "hablar con alguien de nuestro equipo"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí, me gustaría",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "F3",
+   "titulo": "Sin callejón sin salida: el modelo declina con «desconozco si está previsto» y ofrece al equipo → el mensaje lleva «Hablar con el equipo» y «Sí, me gustaría» deriva (aviso a recepción + botón)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se conecta a mi calendario?",
+     "seco": {
+      "mensaje": "Sí, NovuChat se conecta a tu Google Calendar para ver los horarios reales de tus especialistas y agendar las citas sin cruces; además envía un recordatorio un día antes para bajar el ausentismo. ¿Quieres saber algo más sobre eso?"
+     },
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana Pérez, Salón Rosa",
+     "seco": "ERROR",
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿También responde en Telegram?",
+     "seco": {
+      "mensaje": "Hoy NovuChat atiende por WhatsApp: responde en segundos y agenda las citas de tus especialistas sin cruces. Desconozco si ese otro canal está previsto para tu rubro, así que prefiero no afirmarlo. ¿Te gustaría hablar con alguien de nuestro equipo para verlo? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "hablar con alguien de nuestro equipo"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí, me gustaría",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "F4",
+   "titulo": "Sin callejón sin salida: el modelo declina con «eso no lo sé con certeza» y ofrece al equipo → el mensaje lleva «Hablar con el equipo» y «Sí, me gustaría» deriva (aviso a recepción + botón)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se conecta a mi calendario?",
+     "seco": {
+      "mensaje": "Sí, NovuChat se conecta a tu Google Calendar para ver los horarios reales de tus especialistas y agendar las citas sin cruces; además envía un recordatorio un día antes para bajar el ausentismo. ¿Quieres saber algo más sobre eso?"
+     },
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana Pérez, Salón Rosa",
+     "seco": "ERROR",
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿También responde en Telegram?",
+     "seco": {
+      "mensaje": "Hoy NovuChat atiende por WhatsApp: responde en segundos y agenda las citas de tus especialistas sin cruces. Eso no lo sé con certeza y prefiero no darte un dato equivocado. ¿Te gustaría hablar con alguien de nuestro equipo para verlo? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "hablar con alguien de nuestro equipo"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí, me gustaría",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "F5",
+   "titulo": "Lo mismo con una palabra de interés en la pregunta («¿Funciona con Instagram?»): la oferta del equipo del modelo NO se cambia por «Ver planes»",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se conecta a mi calendario?",
+     "seco": {
+      "mensaje": "Sí, NovuChat se conecta a tu Google Calendar para ver los horarios reales de tus especialistas y agendar las citas sin cruces; además envía un recordatorio un día antes para bajar el ausentismo. ¿Quieres saber algo más sobre eso?"
+     },
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana Pérez, Salón Rosa",
+     "seco": "ERROR",
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Funciona con Instagram?",
+     "seco": {
+      "mensaje": "Hoy NovuChat atiende por WhatsApp: responde en segundos y agenda las citas de tus especialistas sin cruces. Ese otro canal no lo tengo a la mano para confirmártelo con certeza. ¿Te gustaría hablar con alguien de nuestro equipo para verlo? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "hablar con alguien de nuestro equipo"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí, me gustaría",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "F6",
+   "titulo": "Oferta del modelo SIN ninguna frase de declinación (el modelo solo cierra ofreciendo hablar con el equipo): el sistema la conserva con su botón y «Sí, me gustaría» deriva (la señal no depende del vocabulario)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se conecta a mi calendario?",
+     "seco": {
+      "mensaje": "Sí, NovuChat se conecta a tu Google Calendar para ver los horarios reales de tus especialistas y agendar las citas sin cruces; además envía un recordatorio un día antes para bajar el ausentismo. ¿Quieres saber algo más sobre eso?"
+     },
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Ana Pérez, Salón Rosa",
+     "seco": "ERROR",
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿También responde en Telegram?",
+     "seco": {
+      "mensaje": "Hoy NovuChat atiende por WhatsApp: responde en segundos y agenda las citas de tus especialistas sin cruces. Sobre ese otro canal, lo mejor es verlo con una persona. ¿Te gustaría hablar con alguien de nuestro equipo para verlo? 🤝"
+     },
+     "exige": {
+      "conModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "hablar con alguien de nuestro equipo"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí, me gustaría",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
      }
     }
    ]
