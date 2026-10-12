@@ -6060,7 +6060,7 @@
   },
   {
    "id": "NUM4",
-   "titulo": "Número propio con el equipo ya pulsado: la respuesta fija sale sin la invitación (lo pulsado no reaparece)",
+   "titulo": "Número propio con el equipo ya pulsado (y el nombre ya dado): la respuesta fija sale sin la invitación (lo pulsado no reaparece)",
    "turnos": [
     {
      "tipo": "texto",
@@ -6095,6 +6095,14 @@
     },
     {
      "tipo": "texto",
+     "texto": "Ana de Salón Rosa",
+     "seco": "ERROR",
+     "exige": {
+      "conModelo": true
+     }
+    },
+    {
+     "tipo": "texto",
      "texto": "¿Puedo usar mi número actual?",
      "exige": {
       "ruta": "fijo",
@@ -6105,6 +6113,92 @@
       "noContiene": [
        "hablar con alguien de nuestro equipo",
        "ver nuestros planes"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "NUM5",
+   "titulo": "«Mi WhatsApp queda saturado…» es la descripción de un problema, no una pregunta sobre el número: la contesta el modelo, no la ruta fija",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "mi WhatsApp queda saturado los fines de semana",
+     "seco": {
+      "mensaje": "Sí, NovuChat se conecta a tu Google Calendar para ver los horarios reales de tus especialistas y agendar las citas sin cruces; además envía un recordatorio un día antes para bajar el ausentismo. ¿Quieres saber algo más sobre eso?"
+     },
+     "exige": {
+      "conModelo": true,
+      "noContiene": [
+       "Al conectar tu número con el asistente"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "NUM6",
+   "titulo": "El modelo afirma que el número sigue funcionando en la app del celular (coexistencia): la red lo rechaza y el cliente nunca lo lee",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Se conecta a mi WhatsApp?",
+     "seco": {
+      "mensaje": "Sí, puedes seguir usando tu WhatsApp en el celular y el asistente responde al mismo tiempo, así que tus chats no se pierden y todo sigue como siempre en tu negocio. ¿Quieres saber algo más sobre eso?"
+     },
+     "exige": {
+      "conModelo": true,
+      "noContiene": [
+       "seguir usando",
+       "al mismo tiempo",
+       "no se pierden"
       ]
      }
     }

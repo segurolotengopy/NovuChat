@@ -684,6 +684,8 @@ export function revisarMensaje(m, ctx = {}) {
   if (MULETILLA.test(c)) anota('muletilla');
   if (/minicrm|kanban|leads de ventas/i.test(c)) anota('minicrm_o_leads_de_ventas');
   if (/menos de un minuto/i.test(c)) anota('menos_de_un_minuto');
+  // El número de un prospecto no sigue funcionando en la app del celular ni convive con el asistente (frase oficial del sitio): ningún mensaje lo afirma. Regex propia de la batería.
+  if (/coexist|conviv|seguir(?:as|a)? usando[^.?!]{0,30}(?:whatsapp|numero)[^.?!]{0,40}(?:celular|aplicacion|app\b)|se pierden? (?:tus|sus) (?:chats|conversaciones)|(?:celular|app\b)[^.?!]{0,30}(?:a la vez|al mismo tiempo)/.test(n)) anota('coexistencia_afirmada');
   // El complemento de los planes (R6) trae a propósito la moneda, los tamaños de agendas y de catálogo y las categorías «ERP, CRM»: solo se le exige no dar cifras de conversaciones ni de consumo.
   const esComplemento = m.evento === 'planes_complemento';
   // Ningún dígito salvo «24/7», «24 horas» y las cifras del mensaje de planes que arma el código (65, 125 y 25 de la consola de ejemplo).

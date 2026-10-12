@@ -1031,12 +1031,24 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     expect(JSON.stringify(sin.payload)).not.toMatch(/wa\.me/);
   });
   it('el NÚMERO PROPIO del prospecto: cada variante (acentos, mayúsculas, sin signos, audio transcrito) va a la ruta fija `numeroActual`; los negativos no', () => {
-    const SI = ['¿Puedo usar mi número actual?', 'puedo usar mi numero', 'PUEDO USAR MI NUMERO ACTUAL', '¿Puedo usar mi WhatsApp?', '¿Puedo usar mi línea?', '¿Puedo utilizar mi número personal?', '¿Tengo que comprar un número nuevo?', '¿Tengo que comprar otra línea?', '¿Tengo que comprar otro chip?', '¿Necesito un número nuevo para el asistente?', '¿Debo sacar un número aparte?', '¿Mi número seguirá funcionando en el celular?', '¿Mi número va a seguir funcionando en la app?', '¿Mi WhatsApp seguirá funcionando en WhatsApp normal?', '¿Puedo seguir usando mi WhatsApp en mi celular?', '¿Se pierde mi número?', '¿Se pierden mis chats?', '¿Pierdo mi número si lo conecto?', '¿Puedo conectar el que ya tengo?', '¿Qué número necesito?', '¿Coexisten?', '¿Pueden coexistir los dos?', '¿Puedo usar los dos, el WhatsApp del celular y el del asistente?', 'Quiero usar mi número actual, se puede', 'puedo conectar mi numero', '¿Mi número actual sirve?'];
-    const NO = ['¿Cuánto cuesta el número?', '¿Cuánto cuesta usar mi número?', 'Mi número de teléfono es 71234567', 'Me llamo Ana, mi número es 7123', '¿Cuál es tu número?', '¿Atienden en este número?', 'Quiero ver mi número de pedidos', '¿Cuántos mensajes incluye?', '¿Se conecta a mi calendario?', '¿Se conecta con mi WhatsApp?', '¿Puedo usar mi calendario?', 'Tengo una línea de crédito', '¿Puedo dejar mi número?', 'Hola', '¿Qué incluye el setup?', '¿Pueden usar el sistema los dos socios?'];
+    const SI = ['¿Puedo usar mi número actual?', 'puedo usar mi numero', 'PUEDO USAR MI NUMERO ACTUAL', '¿Puedo usar mi WhatsApp?', '¿Puedo usar mi línea?', '¿Puedo utilizar mi número personal?', '¿Tengo que comprar un número nuevo?', '¿Tengo que comprar otra línea?', '¿Tengo que comprar otro chip?', '¿Necesito un número nuevo para el asistente?', '¿Debo sacar un número aparte?', '¿Mi número seguirá funcionando en el celular?', '¿Mi número va a seguir funcionando en la app?', '¿Mi WhatsApp seguirá funcionando en WhatsApp normal?', '¿Puedo seguir usando mi WhatsApp en mi celular?', '¿Se pierde mi número?', '¿Se pierden mis chats?', '¿Pierdo mi número si lo conecto?', '¿Puedo conectar el que ya tengo?', '¿Qué número necesito?', '¿Coexisten?', '¿Pueden coexistir los dos?', '¿Puedo usar los dos, el WhatsApp del celular y el del asistente?', 'Quiero usar mi número actual, se puede', 'puedo conectar mi numero', '¿Mi número actual sirve?', '¿Necesito otro chip?', '¿Mi WhatsApp personal sirve?', '¿Mi número cambia?', '¿Se puede vincular mi número?', '¿Puedo integrar mi WhatsApp?', '¿Coexiste con mi WhatsApp personal?'];
+    const NO = ['¿Cuánto cuesta el número?', '¿Cuánto cuesta usar mi número?', 'Mi número de teléfono es 71234567', 'Me llamo Ana, mi número es 7123', '¿Cuál es tu número?', '¿Atienden en este número?', 'Quiero ver mi número de pedidos', '¿Cuántos mensajes incluye?', '¿Se conecta a mi calendario?', '¿Se conecta con mi WhatsApp?', '¿Puedo usar mi calendario?', 'Tengo una línea de crédito', '¿Puedo dejar mi número?', 'Hola', '¿Qué incluye el setup?', '¿Pueden usar el sistema los dos socios?',
+      // descripciones del problema del cliente (no preguntas sobre el número)
+      'mi WhatsApp queda saturado los fines de semana', 'mi número sigue recibiendo mensajes de madrugada', 'tengo una pastelería y mi whatsapp sigue sonando todo el día con pedidos', 'mi numero de clientes sigue creciendo', 'mi número de citas queda corto', 'Tengo una imprenta y mi WhatsApp queda lleno de pedidos', 'Soy Ana de Imprenta Sol, mi WhatsApp queda lleno todo el día',
+      // otras preguntas (planes, contacto, datos de facturación, catálogo, integración)
+      '¿Qué línea necesito para empezar, Impulso o Pro?', '¿Qué número uso para contactarlos?', '¿Qué número uso para escribirles?', '¿Qué número uso para pagar?', '¿Qué número necesito darte para la factura?', '¿Puedo poner mi número de NIT en la factura?', '¿Puedo usar mi número de carnet para registrarme?', '¿Puedo poner mi WhatsApp en el catálogo?', '¿Puedo usar mi número para recibir los avisos de mis clientes?', '¿Coexiste con mi sistema de facturación?', '¿Puedo integrar mi WhatsApp con mi ERP?'];
     const det = f('chPreguntaNumeroActual');
     const decidir = (eventos: J[]): J => f('chDecidir')({ eventos, ficha: fichaBase(), cfg: CFG, from: '59100000011' });
     for (const x of SI) { expect(det(x), x).toBe(true); const p = decidir([ev(x)]); expect([x, p.ruta, p.fijo]).toEqual([x, 'fijo', 'numeroActual']); }
     for (const x of NO) { expect(det(x), x).toBe(false); expect([x, decidir([ev(x)]).fijo]).not.toEqual([x, 'numeroActual']); }
+    // no se evalúa donde ya contesta otra ruta: la respuesta al nombre/negocio (`datos`) y la respuesta del rubro «Otro» (`otroRespuesta`)
+    const conFicha = (ficha: J, x: string): J => f('chDecidir')({ eventos: [ev(x)], ficha: { ...fichaBase(), historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: 'Dime tu nombre' }], ...ficha }, cfg: CFG, from: '59100000011' });
+    expect(conFicha({ preguntaDatos: true }, 'Ana de Panadería Sol, ¿puedo usar mi número actual?').fijo).not.toBe('numeroActual');
+    expect(conFicha({ rubro: 'otro', historial: [{ r: 'a', t: '¿Cuál es tu mayor cuello de botella?' }] }, '¿Puedo usar mi número actual?').fijo).not.toBe('numeroActual');
+    expect(conFicha({}, '¿Puedo usar mi número actual?')).toMatchObject({ ruta: 'fijo', fijo: 'numeroActual' });
+    // con los planes pendientes (el cliente contesta el pedido del nombre con esta pregunta), el nombre no se pierde
+    expect(conFicha({ planesPendientes: true }, '¿Puedo usar mi número actual?')).toMatchObject({ ruta: 'fijo', fijo: 'numeroActual', extraerDatos: true });
+    expect(conFicha({}, '¿Puedo usar mi número actual?')['extraerDatos']).not.toBe(true);
     const t = f('chRespuestaFija')('numeroActual', CFG);
     expect(t).toBe('Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar. ¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso? 🤝');
     expect(t).not.toMatch(/\bAPI\b|coexisten|certificad|https?:/i);
@@ -2138,6 +2150,46 @@ describe('respaldo de Meta: el modelo no afirma que NovuChat es Tech Provider, e
     for (const x of textos) for (const extra of seis) expect(f('chValidarMensaje')(envolver(x), v(extra)), x).not.toBe('respaldo_meta');
     // lo que se le entrega al cliente nunca lleva la afirmación
     expect(textos.filter((x) => f('chValidarMensaje')(envolver(x), v()) === 'respaldo_meta')).toEqual([]);
+  });
+});
+
+describe('el modelo no afirma que el número sigue funcionando en la app del celular ni que convive con el asistente', () => {
+  const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
+  const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ' + CIERRE_RUBRO, v(extra));
+  const contextos = [{}, { contexto: 'abierta' }, { contexto: 'empresa' }, { contexto: 'otroRespuesta' }, { rubroActual: 'retail' }];
+  const MAL = ['¡Claro! Puedes seguir usando tu WhatsApp en el celular y el asistente responde al mismo tiempo.', 'Podrás seguir usando tu número en la aplicación del celular.', 'Sí, tu WhatsApp personal sirve perfectamente para el asistente, y tus chats no se pierden.', 'Tu número convive con la app del celular gracias a la coexistencia.', 'Tus conversaciones se conservan.', 'Se pierden tus chats al conectarlo.', 'Tu número y la app del celular funcionan a la vez.', 'Tu número sigue funcionando en el celular.', 'La coexistencia está disponible.'];
+  const BIEN = ['Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.', 'El asistente responde por WhatsApp a varios clientes al mismo tiempo.', 'Como dueño, miras todas las conversaciones desde nuestra consola en tu celular.', 'Maneja varias agendas a la vez y agenda sin cruces.'];
+  it('cada afirmación cae en `coexiste`, en todos los contextos; lo legítimo no cae', () => {
+    // (en `abierta` y `empresa` manda antes la regla del pitch o de los puntos clave: se rechaza igual)
+    for (const x of MAL) for (const extra of contextos) { const r = marco(x, extra); if (['abierta', 'empresa'].includes(String(extra['contexto']))) expect(r, `${x} ${JSON.stringify(extra)}`).not.toBe(''); else expect(r, `${x} ${JSON.stringify(extra)}`).toBe('coexiste'); }
+    for (const x of BIEN) for (const extra of contextos) expect(marco(x, extra), x).not.toBe('coexiste');
+    const causa = String((L as unknown as J)['CH_CAUSAS'].coexiste);
+    expect(causa).toMatch(/recomendamos un número nuevo y dedicado al asistente/);
+    expect(causa).toMatch(/lo revisan con el equipo/);
+  });
+  it('ADITIVA: con la red nueva, `chValidarMensaje` da lo mismo que sin ella en todo el corpus, salvo en las frases de coexistencia; y los textos del dato no caen por ella', () => {
+    const SIN_LA_LINEA = "  if (CH_COEXISTE_MODELO.test(n)) return 'coexiste';\n";
+    expect(LIB.split(SIN_LA_LINEA).length).toBe(2);
+    const sin = ejecutar(`${LIB.replace(SIN_LA_LINEA, '')}\n${MENSAJES}\n${FILTRO}\nreturn [{ json: { chValidarMensaje } }];`, [{}])[0] as Record<string, Fn>;
+    const textos: string[] = [];
+    const recorre = (x: unknown): void => { if (typeof x === 'string') { if (x.length > 25) textos.push(x); } else if (Array.isArray(x)) x.forEach(recorre); else if (x && typeof x === 'object') Object.values(x).forEach(recorre); };
+    const sinReglas = clonar(NOVUCHAT); delete sinReglas['instrucciones'];
+    recorre(sinReglas);
+    expect(textos.length).toBeGreaterThan(40);
+    const corpus = [...textos, ...MAL, ...BIEN, 'Un asesor te llamará mañana.', 'Tus clientes pagan por QR directo a tu cuenta.', 'Somos Tech Provider de Meta.', 'Eres una persona real, no soy un bot.', 'Tu asistente atiende 24 horas.'];
+    const envolver = (x: string): string => (x.length > 80 ? x : 'NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ' + CIERRE_RUBRO);
+    let distintas = 0;
+    for (const x of corpus) for (const extra of contextos) {
+      const nuevo = f('chValidarMensaje')(envolver(x), v(extra));
+      const viejo = sin['chValidarMensaje']!(envolver(x), v(extra));
+      if (nuevo === viejo) continue;
+      distintas += 1;
+      expect(nuevo, x).toBe('coexiste');
+      expect(viejo, x).toBe('');
+      expect(MAL.includes(x), x).toBe(true);
+    }
+    expect(distintas).toBeGreaterThan(0);
+    expect(textos.filter((x) => f('chValidarMensaje')(envolver(x), v()) === 'coexiste')).toEqual([]);
   });
 });
 

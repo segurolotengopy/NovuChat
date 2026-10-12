@@ -2931,6 +2931,7 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
     // con el equipo ya pulsado: la respuesta sale, sin botón ni invitación (lo pulsado no reaparece)
     const { w, j } = tras();
     j.boton('equipo');
+    j.texto('Ana de Salón Rosa'); // (el traspaso pide el nombre; ya contestado, la pregunta siguiente es una consulta más)
     const e = j.texto('¿Puedo usar mi número actual?').aMi[0]!;
     expect(e.cuerpo).toContain(FRASE);
     expect(idsBotones(e)).toEqual([]);
@@ -2943,6 +2944,39 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
       expect(x.cuerpo, q).not.toContain(FRASE);
     }
     expect(w).toBeDefined();
+  });
+  it('la ruta del número propio NO roba lo que contestan otras rutas: descripciones del problema, preguntas de planes o de facturación, la respuesta del rubro «Otro» y la respuesta al nombre', () => {
+    const FRASE = 'Al conectar tu número con el asistente';
+    // (1) descripciones y otras preguntas: las contesta el modelo, no la ruta fija
+    for (const q of ['mi WhatsApp queda saturado los fines de semana', 'tengo una pastelería y mi whatsapp sigue sonando todo el día con pedidos', '¿Qué línea necesito para empezar, Impulso o Pro?', '¿Puedo poner mi número de NIT en la factura?', '¿Coexiste con mi sistema de facturación?']) {
+      const { w, j } = tras();
+      w.modelo.con = dice(CAL);
+      const llamadas = w.modelo.llamadas.length;
+      const e = j.texto(q).aMi[0]!;
+      expect(e.cuerpo, q).not.toContain(FRASE);
+      expect(w.modelo.llamadas.length, q).toBeGreaterThan(llamadas);
+    }
+    // (2) rubro «Otro»: la respuesta al cuello de botella la contesta el contexto `otroRespuesta`
+    const o = tras();
+    o.j.lista('rubro:otro');
+    o.w.modelo.con = dice(CAL);
+    const llamadasO = o.w.modelo.llamadas.length;
+    const eo = o.j.texto('Tengo una imprenta y mi WhatsApp queda lleno de pedidos todo el día').aMi[0]!;
+    expect(eo.cuerpo).not.toContain(FRASE);
+    expect(o.w.modelo.llamadas.length).toBeGreaterThan(llamadasO);
+    // (3) respuesta al pedido del nombre: no se pierde el nombre ni el negocio
+    const d = tras();
+    d.j.texto('¿Cuánto cuesta?');
+    d.w.modelo.con = dice(CAL);
+    const ed = d.j.texto('Soy Ana de Imprenta Sol, mi WhatsApp queda lleno todo el día').aMi[0]!;
+    expect(ed.cuerpo).not.toContain(FRASE);
+    expect(String(fichaDe(d.w, MAMA)!['nombre'])).toMatch(/Ana/);
+    // y con los planes pendientes, el nombre del cliente que además pregunta por su número tampoco se pierde en la ruta fija
+    const p = tras();
+    p.j.texto('¿Cuánto cuesta?');
+    const ep = p.j.texto('Soy Ana de Panadería Sol, ¿puedo usar mi número actual?').aMi[0]!;
+    expect(String(fichaDe(p.w, MAMA)!['nombre'])).toMatch(/Ana/);
+    expect(ep.cuerpo).not.toContain(FRASE); // (quien contesta el pedido del nombre recibe los planes; la ruta del número no se evalúa en ese turno)
   });
   it('las preguntas de descubrimiento que mencionan al equipo o a una persona NO ofrecen al equipo: sin botón, y el «Sí» no deriva ni gasta una plantilla', () => {
     const BASE = CAL.replace(Q, '') + ' ';

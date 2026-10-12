@@ -344,7 +344,7 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(await violacionesCon(FLUJO, 'C2')).toEqual([]);
   });
   it('INVARIANTE 5 en el flujo: si el modelo ofrece al equipo SIN ninguna frase de declinación (F6) y el código deja de conservar esa oferta, se dice `oferta_del_modelo_quitada`; el flujo sano da cero en F1 a F6', async () => {
-    for (const id of ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'PA1', 'PA2', 'PA3', 'PA4', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5', 'NO6', 'NO7', 'NO8', 'NUM1', 'NUM2', 'NUM3', 'NUM4']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
+    for (const id of ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'PA1', 'PA2', 'PA3', 'PA4', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5', 'NO6', 'NO7', 'NO8', 'NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5', 'NUM6']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
     const f = estropear('|| modeloOfreceEq),', '),');
     expect(await violacionesCon(f, 'F6')).toContain('oferta_del_modelo_quitada');
     // otras paráfrasis de ofrecer al equipo («¿Quieres que alguien de nuestro equipo lo revise contigo?», «¿Te gustaría conversarlo con nuestro equipo?»…): si el código vuelve a reconocer solo «hablar con alguien/el equipo», la oferta sale sin botón y la batería lo dice
@@ -363,12 +363,18 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(await violacionesCon(g, 'C2')).toContain('declina_sin_boton');
   });
   it('el número propio del prospecto: si el detector del código se apaga, la pregunta cae al modelo y se dice (`ruta_inesperada`, `llamo_al_modelo_sin_necesidad`); si la ruta fija pierde el botón del equipo, `botones_inesperados`', async () => {
-    const sin = estropear("    if (chPreguntaNumeroActual(dijo)) return fijo('numeroActual');\n", '');
+    const sin = estropear("if (chPreguntaNumeroActual(dijo) && !['datos', 'otroRespuesta'].includes(chContexto({ eventos: ev, ficha: f, cfg: cfg }))) return fijo('numeroActual');", '');
     const v = await violacionesCon(sin, 'NUM1');
     expect(v).toEqual(expect.arrayContaining(['ruta_inesperada']));
     const sinBoton = estropear("'descuento', 'numeroActual'];", "'descuento'];");
     expect(await violacionesCon(sinBoton, 'NUM1')).toContain('botones_inesperados');
     expect(await violacionesCon(FLUJO, 'NUM1')).toEqual([]);
+    // la alternativa de continuidad vuelve a tomar «sigue»/«queda» sueltos: la descripción del problema pasa a la ruta fija
+    const suelta = estropear('(?:(?:seguira|seguiria|va a seguir|podra seguir|podre seguir) funcionando|funcionara|funcionaria', '(?:sigue|queda|funcionando|funcionara|funcionaria');
+    expect(await violacionesCon(suelta, 'NUM5')).toContain('trae_lo_que_no_debe');
+    // la red del modelo (coexistencia): sin ella, la afirmación llega al cliente y la batería la dice
+    const sinRed = estropear("  if (CH_COEXISTE_MODELO.test(n)) return 'coexiste';\n", '');
+    expect(await violacionesCon(sinRed, 'NUM6')).toContain('coexistencia_afirmada');
   });
   it('la ruta de planes con el equipo ya pulsado (imagen con el texto de pie, sin botones) se mide con su texto (`caption`), sin falsas cifras', async () => {
     expect(await violacionesCon(FLUJO, 'D16')).toEqual([]);
