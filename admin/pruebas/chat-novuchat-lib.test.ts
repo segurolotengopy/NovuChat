@@ -1249,7 +1249,7 @@ describe('los datos de NovuChat (admin/scripts/datos/chat-novuchat/)', () => {
     invalido((d) => { d['datos']['respuestas']['consumo'] = 'Incluye 300 conversaciones por mes.'; }, /«datos\.respuestas\.consumo»/);
     invalido((d) => { d['datos']['respuestas']['banco'] = 'El asistente valida cada transferencia con el banco.'; }, /«datos\.respuestas\.banco»/);
     invalido((d) => { d['datos']['respaldos']['abierta']['pitch'] = '¡Claro! NovuChat atiende tu WhatsApp todo el día.'; }, /«datos\.respaldos\.abierta\.pitch»/);
-    invalido((d) => { d['datos']['respaldos']['abierta']['pitch'] = d['datos']['respaldos']['abierta']['pitch'].replace('en segundos, las 24 horas', 'en menos de un minuto'); }, /menos de un minuto/);
+    invalido((d) => { d['datos']['respaldos']['abierta']['pitch'] = d['datos']['respaldos']['abierta']['pitch'].replace('responde en segundos', 'responde en menos de un minuto'); }, /menos de un minuto/);
     invalido((d) => { d['datos']['respaldos']['equipo'] = 'Alguien de nuestro equipo te contacte pronto. ¿Te parece?'; }, /«datos\.respaldos\.equipo»/);
     invalido((d) => { d['datos']['respaldos']['multiple'] = 'Es gratis para ti. ¿Cuál área es la tuya?'; }, /«datos\.respaldos\.multiple»/);
     invalido((d) => { d['datos']['respaldos']['fuera'] = 'Mira www.estafa.com y dime. ¿Qué proceso te quita más tiempo?'; }, /«datos\.respaldos\.fuera».*enlace/);
