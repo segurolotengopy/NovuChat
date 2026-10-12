@@ -5,7 +5,7 @@
  *
  * El defecto que cierra este bloque: `asignar-plan.mjs --plan`,
  * `actualizarEstadoCuenta` con `plan` y el pago de otro plan reescribían la
- * copia `cuenta/estado.limites` con `limitesDe(plan)`, así que a un comercio
+ * copia `cuenta/estado.limites` con `limitesDe(plan, 'meta_incluido')`, así que a un comercio
  * con 4 cambios al mes por contrato (su plan trae 2) un cambio de plan
  * posterior se los devolvía a los del plan, en silencio. El contrato se
  * marca ahora en `cuenta/estado.limitesPorContrato` y `copiaDeLimites`
@@ -72,12 +72,12 @@ const auditoria = async (accion: string, t = A) =>
 
 /** Un comercio en producción con Pro (2 cambios al mes) y 4 por contrato, ya marcados. */
 const PRO_CON_CONTRATO = {
-  plan: 'pro', limites: { ...limitesDe('pro'), cambiosIncluidos: 4 }, limitesPorContrato: ['cambiosIncluidos'],
+  plan: 'pro', limites: { ...limitesDe('pro', 'meta_incluido'), cambiosIncluidos: 4 }, limitesPorContrato: ['cambiosIncluidos'],
   catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12',
 };
 /** El mismo, sin contrato: la copia es la del plan. */
 const PRO_SIN_CONTRATO = {
-  plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12',
+  plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12',
 };
 
 async function sembrar(t: string, datos: Record<string, unknown>) {
@@ -90,7 +90,7 @@ async function sembrar(t: string, datos: Record<string, unknown>) {
 
 beforeEach(async () => {
   await sembrar(A, PRO_CON_CONTRATO);
-  await sembrar(B, { plan: 'impulso', limites: limitesDe('impulso'), catalogoPlanes: CATALOGO_PLANES });
+  await sembrar(B, { plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES });
   for (const d of (await db.collection('cobrosPendientes').get()).docs) await d.ref.delete();
   await db.doc('plataforma/tipoCambio').set({ tco: TCO, fecha: FECHA_HOY, fuente: 'BCB' });
 });
@@ -98,17 +98,17 @@ beforeEach(async () => {
 // ===========================================================================
 describe('copiaDeLimites (pura): qué distingue un contrato de un plan', () => {
   it('SIN marcador no hay contrato, aunque la copia diga otro número que el plan (no se adivina comparando)', () => {
-    const vieja = { plan: 'pro', limites: { ...limitesDe('pro'), cambiosIncluidos: 4 } };
+    const vieja = { plan: 'pro', limites: { ...limitesDe('pro', 'meta_incluido'), cambiosIncluidos: 4 } };
     expect(porContratoDe(vieja)).toEqual([]);
     // Y un cambio de plan la reescribe con los del plan, como siempre.
-    expect(copiaDeLimites(vieja, { plan: 'crecimiento' }).limites).toEqual(limitesDe('crecimiento'));
+    expect(copiaDeLimites(vieja, { plan: 'crecimiento' }).limites).toEqual(limitesDe('crecimiento', 'meta_incluido'));
   });
 
   it('un marcador sobre un valor inválido NO es contrato: rige el del plan y no se afirma lo contrario', () => {
     for (const malo of [-1, 2.5, MAXIMO_CAMBIOS_INCLUIDOS + 1, '4', null]) {
-      const c = { plan: 'pro', limites: { ...limitesDe('pro'), cambiosIncluidos: malo }, limitesPorContrato: ['cambiosIncluidos'] };
+      const c = { plan: 'pro', limites: { ...limitesDe('pro', 'meta_incluido'), cambiosIncluidos: malo }, limitesPorContrato: ['cambiosIncluidos'] };
       expect(porContratoDe(c), String(malo)).toEqual([]);
-      expect(limitesDeCuenta(c).cambiosIncluidos).toBe(limitesDe('pro').cambiosIncluidos);
+      expect(limitesDeCuenta(c).cambiosIncluidos).toBe(limitesDe('pro', 'meta_incluido').cambiosIncluidos);
     }
     // Claves que no pueden ir por contrato se ignoran. Desde F1b (decisión de
     // Andres del 26/09) `conversaciones` SÍ puede, con su propia validación:
@@ -120,19 +120,19 @@ describe('copiaDeLimites (pura): qué distingue un contrato de un plan', () => {
 
   it('un cambio de plan CONSERVA el valor por contrato y lo informa; el resto es la copia del plan nuevo', () => {
     const r = copiaDeLimites(PRO_CON_CONTRATO, { plan: 'crecimiento' });
-    expect(r.limites).toEqual({ ...limitesDe('crecimiento'), cambiosIncluidos: 4 });
+    expect(r.limites).toEqual({ ...limitesDe('crecimiento', 'meta_incluido'), cambiosIncluidos: 4 });
     expect(r.porContrato).toEqual(['cambiosIncluidos']);
     expect(r.conservados).toEqual({ cambiosIncluidos: 4 });
-    expect(r.delPlan.cambiosIncluidos).toBe(limitesDe('crecimiento').cambiosIncluidos);
+    expect(r.delPlan.cambiosIncluidos).toBe(limitesDe('crecimiento', 'meta_incluido').cambiosIncluidos);
   });
 
   it('fijar sin plan toca SOLO esa clave (una clave ajena como `campanas` se queda); `null` vuelve al del plan', () => {
-    const conCampanas = { ...PRO_SIN_CONTRATO, limites: { ...limitesDe('pro'), campanas: 5 } };
+    const conCampanas = { ...PRO_SIN_CONTRATO, limites: { ...limitesDe('pro', 'meta_incluido'), campanas: 5 } };
     const fija = copiaDeLimites(conCampanas, { cambiosIncluidos: 6 });
-    expect(fija.limites).toEqual({ ...limitesDe('pro'), campanas: 5, cambiosIncluidos: 6 });
+    expect(fija.limites).toEqual({ ...limitesDe('pro', 'meta_incluido'), campanas: 5, cambiosIncluidos: 6 });
     expect(fija.porContrato).toEqual(['cambiosIncluidos']);
     const quita = copiaDeLimites(PRO_CON_CONTRATO, { cambiosIncluidos: null });
-    expect(quita.limites['cambiosIncluidos']).toBe(limitesDe('pro').cambiosIncluidos);
+    expect(quita.limites['cambiosIncluidos']).toBe(limitesDe('pro', 'meta_incluido').cambiosIncluidos);
     expect(quita.porContrato).toEqual([]);
     expect(mismoMarcador(PRO_CON_CONTRATO, quita.porContrato)).toBe(false);
   });
@@ -155,7 +155,7 @@ describe('actualizarEstadoCuenta: fijar y quitar el contrato (la callable de Neg
     await rechaza(cuentaDe({ cambiosIncluidos: 4 }, PROPIETARIO_CON_CONTRASENA), 'permission-denied');
     await rechaza(cuentaDe({ cambiosIncluidos: 4 }, null), 'unauthenticated');
     const c = await cuenta();
-    expect(c['limites']).toEqual(limitesDe('pro'));
+    expect(c['limites']).toEqual(limitesDe('pro', 'meta_incluido'));
     expect(c['limitesPorContrato']).toBeUndefined();
     expect(await auditoria('limites_por_contrato')).toHaveLength(0);
   });
@@ -190,16 +190,16 @@ describe('actualizarEstadoCuenta: fijar y quitar el contrato (la callable de Neg
       await rechaza(cuentaDe({ cambiosIncluidos: malo }), 'invalid-argument');
       await rechaza(cuentaDe({ cambiosIncluidos: malo, plan: 'crecimiento' }), 'invalid-argument');
     }
-    expect(await cuenta()).toMatchObject({ plan: 'pro', limites: limitesDe('pro') });
+    expect(await cuenta()).toMatchObject({ plan: 'pro', limites: limitesDe('pro', 'meta_incluido') });
     expect((await cuenta())['limitesPorContrato']).toBeUndefined();
   });
 
   it('el propietario lo fija por contrato: copia, marcador y auditoría con el antes y el después', async () => {
     await sembrar(A, PRO_SIN_CONTRATO);
     const r = await cuentaDe({ cambiosIncluidos: 4 });
-    expect(r).toMatchObject({ ok: true, limites: { ...limitesDe('pro'), cambiosIncluidos: 4 } });
+    expect(r).toMatchObject({ ok: true, limites: { ...limitesDe('pro', 'meta_incluido'), cambiosIncluidos: 4 } });
     const c = await cuenta();
-    expect(c['limites']).toEqual({ ...limitesDe('pro'), cambiosIncluidos: 4 });
+    expect(c['limites']).toEqual({ ...limitesDe('pro', 'meta_incluido'), cambiosIncluidos: 4 });
     expect(c['limitesPorContrato']).toEqual(['cambiosIncluidos']);
     // No es un cambio de plan: ni plan, ni catálogo, ni auditoría de plan.
     expect(c['plan']).toBe('pro');
@@ -214,7 +214,7 @@ describe('actualizarEstadoCuenta: fijar y quitar el contrato (la callable de Neg
   it('UN CAMBIO DE PLAN NO PISA EL CONTRATO: sube y baja de plan y los 4 siguen, con constancia en la auditoría', async () => {
     await cuentaDe({ plan: 'crecimiento' });
     let c = await cuenta();
-    expect(c['limites']).toEqual({ ...limitesDe('crecimiento'), cambiosIncluidos: 4 });
+    expect(c['limites']).toEqual({ ...limitesDe('crecimiento', 'meta_incluido'), cambiosIncluidos: 4 });
     expect(c['limitesPorContrato']).toEqual(['cambiosIncluidos']);
     const [a] = await auditoria('cambiar_plan');
     expect(a).toMatchObject({ planAntes: 'pro', planDespues: 'crecimiento', conservadosPorContrato: { cambiosIncluidos: 4 } });
@@ -228,21 +228,21 @@ describe('actualizarEstadoCuenta: fijar y quitar el contrato (la callable de Neg
   it('quitarlo es explícito (`null`): vuelve al del plan, se borra el marcador, y el siguiente cambio de plan ya sigue al plan', async () => {
     await cuentaDe({ cambiosIncluidos: null });
     let c = await cuenta();
-    expect(c['limites']).toEqual(limitesDe('pro'));
+    expect(c['limites']).toEqual(limitesDe('pro', 'meta_incluido'));
     expect(c['limitesPorContrato']).toBeUndefined();
     const [a] = await auditoria('limites_por_contrato');
     expect(a).toMatchObject({ antes: { valor: 4, porContrato: true }, despues: { valor: 2, porContrato: false } });
     await cuentaDe({ plan: 'crecimiento' });
     c = await cuenta();
-    expect(c['limites']).toEqual(limitesDe('crecimiento'));
+    expect(c['limites']).toEqual(limitesDe('crecimiento', 'meta_incluido'));
   });
 
   it('plan y contrato en la misma llamada: manda lo pedido, en una sola escritura', async () => {
     await cuentaDe({ plan: 'crecimiento', cambiosIncluidos: 7 });
-    expect((await cuenta())['limites']).toEqual({ ...limitesDe('crecimiento'), cambiosIncluidos: 7 });
+    expect((await cuenta())['limites']).toEqual({ ...limitesDe('crecimiento', 'meta_incluido'), cambiosIncluidos: 7 });
     await cuentaDe({ plan: 'pro', cambiosIncluidos: null });
     const c = await cuenta();
-    expect(c['limites']).toEqual(limitesDe('pro'));
+    expect(c['limites']).toEqual(limitesDe('pro', 'meta_incluido'));
     expect(c['limitesPorContrato']).toBeUndefined();
   });
 
@@ -254,7 +254,7 @@ describe('actualizarEstadoCuenta: fijar y quitar el contrato (la callable de Neg
       code: 'failed-precondition', message: expect.stringMatching(/anule el cobro pendiente primero/),
     });
     let c = await cuenta();
-    expect(c).toMatchObject({ plan: 'pro', limites: { ...limitesDe('pro'), cambiosIncluidos: 4 } });
+    expect(c).toMatchObject({ plan: 'pro', limites: { ...limitesDe('pro', 'meta_incluido'), cambiosIncluidos: 4 } });
     expect((await db.doc(`tenants/${A}`).get()).get('plan')).toBe('pro');
     expect(await auditoria('cambiar_plan')).toHaveLength(0);
     // El MISMO plan del pendiente no choca, y un pendiente ya cerrado tampoco.
@@ -315,30 +315,30 @@ describe('pagar otro plan también es cambiar de plan: NO pisa el contrato', () 
     });
     const c = await cuenta();
     expect(c['plan']).toBe('crecimiento');
-    expect(c['limites']).toEqual({ ...limitesDe('crecimiento'), cambiosIncluidos: 4 });
+    expect(c['limites']).toEqual({ ...limitesDe('crecimiento', 'meta_incluido'), cambiosIncluidos: 4 });
     expect(c['limitesPorContrato']).toEqual(['cambiosIncluidos']);
     // TRAZABLE (LOW 1 de #212): la auditoría del pago dice la copia antes y
     // después y lo conservado, con el vocabulario de `cambiar_plan`.
     const [a] = await auditoria('pago_manual');
     expect(a).toMatchObject({
       planAntes: 'pro', planDespues: 'crecimiento',
-      limitesAntes: { ...limitesDe('pro'), cambiosIncluidos: 4 },
-      limitesDespues: { ...limitesDe('crecimiento'), cambiosIncluidos: 4 },
+      limitesAntes: { ...limitesDe('pro', 'meta_incluido'), cambiosIncluidos: 4 },
+      limitesDespues: { ...limitesDe('crecimiento', 'meta_incluido'), cambiosIncluidos: 4 },
       conservadosPorContrato: { cambiosIncluidos: 4 },
     });
   });
 
   it('sin contrato, pagar otro plan sigue dejando la copia del plan (como siempre)', async () => {
     const { limitesPorContrato: _m, ...sinContrato } = sinMesPagado;
-    await sembrar(A, { ...sinContrato, limites: limitesDe('pro') });
+    await sembrar(A, { ...sinContrato, limites: limitesDe('pro', 'meta_incluido') });
     await correr(indice.registrarPagoManual, {
       pagoId: pagos.nuevoPagoId(), tenantId: A, tipo: 'mensualidad', plan: 'crecimiento', meses: 1,
       medio: 'efectivo', referencia: 'recibido por la prueba', tcoAplicado: TCO, tcoFuente: 'BCB', tcoFecha: FECHA_HOY,
       montoRecibidoBs: 630,
     });
-    expect((await cuenta())['limites']).toEqual(limitesDe('crecimiento'));
+    expect((await cuenta())['limites']).toEqual(limitesDe('crecimiento', 'meta_incluido'));
     const [a] = await auditoria('pago_manual');
-    expect(a).toMatchObject({ limitesAntes: limitesDe('pro'), limitesDespues: limitesDe('crecimiento') });
+    expect(a).toMatchObject({ limitesAntes: limitesDe('pro', 'meta_incluido'), limitesDespues: limitesDe('crecimiento', 'meta_incluido') });
     expect(a['conservadosPorContrato']).toBeUndefined();
   });
 

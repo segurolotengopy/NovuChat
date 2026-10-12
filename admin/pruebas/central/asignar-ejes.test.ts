@@ -62,11 +62,11 @@ beforeEach(async () => {
   }
   await db.doc(`tenants/${A}`).set({ nombre: 'A', estado: 'activo', plan: 'crecimiento', flujos: ['agendamiento'] });
   await db.doc(`tenants/${A}/cuenta/estado`).set({
-    plan: 'crecimiento', limites: limitesDe('crecimiento'), modalidad: 'prepago', periodoPagado: '2099-12',
+    plan: 'crecimiento', limites: limitesDe('crecimiento', 'meta_incluido'), modalidad: 'prepago', periodoPagado: '2099-12',
     cambios: { '2020-01': 1 },
   });
   await db.doc(`tenants/${B}`).set({ nombre: 'B', estado: 'activo', plan: 'impulso', flujos: ['venta'], modelo: 'claude-haiku-4-5' });
-  await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', limites: limitesDe('impulso') });
+  await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido') });
   await db.doc(`rutasWhatsApp/${NUM_A}`).set({ tenantId: A, flujo: 'agendamiento', wabaId: WABA, aliasSecreto: 'cliente30', estado: 'activo' });
   await db.doc(`rutasWhatsApp/${NUM_A2}`).set({ tenantId: A, flujo: 'venta', wabaId: WABA, aliasSecreto: 'cliente31', estado: 'activo', titularidad: 'comercio' });
   await db.doc(`rutasWhatsApp/${NUM_B}`).set({ tenantId: B, flujo: 'venta', wabaId: WABA, aliasSecreto: 'cliente32', estado: 'activo' });

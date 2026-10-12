@@ -635,7 +635,7 @@ describe('1quater. El pago en revisión se resuelve, con auditoría y sesión re
     expect(p?.['revision']).toBeUndefined();
     // La cuenta: el plan del QR con SU copia de límites, el mes sumado, sin pendiente ni corte.
     const c = await cuenta();
-    expect(c).toMatchObject({ plan: 'crecimiento', limites: limitesDe('crecimiento'), periodoPagado: HOY, modalidad: 'prepago' });
+    expect(c).toMatchObject({ plan: 'crecimiento', limites: limitesDe('crecimiento', 'meta_incluido'), periodoPagado: HOY, modalidad: 'prepago' });
     expect(c['pagoPendienteId']).toBeUndefined();
     expect(c['corte']).toBeUndefined();
     // El espejo de la ficha.
@@ -646,7 +646,7 @@ describe('1quater. El pago en revisión se resuelve, con auditoría y sesión re
     // La auditoría, con el antes y el después como `cambiar_plan`.
     expect(await auditoria('pago_manual_confirma_qr')).toMatchObject([{
       pagoId, uid: 'prop', revision: 'plan_distinto', montoRecibidoBs: 630, motivoDiferencia: 'QR emitido antes del cambio a Pro',
-      planAntes: 'pro', planDespues: 'crecimiento', limitesAntes: PRO, limitesDespues: limitesDe('crecimiento'),
+      planAntes: 'pro', planDespues: 'crecimiento', limitesAntes: PRO, limitesDespues: limitesDe('crecimiento', 'meta_incluido'),
     }]);
 
     // UN SEGUNDO AVISO DEL BANCO NO SUMA OTRO MES: ni por el aviso (el índice

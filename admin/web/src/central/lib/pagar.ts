@@ -21,8 +21,8 @@ import {
   aplicarPago, descripcionDe, esPago, fechaEscrita, importeBs, modalidadDe, montoUsdDe, tipoCambioVigente,
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
-import { PLANES, PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, limitesDeCuenta, type IdPlanVendible } from './planes';
-import { porContratoDe, precioMensualDe, precioPorContratoDe } from '../../../../functions/src/central/cuenta/planes';
+import { PLANES, PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, limitesDe, limitesDeCuenta, type IdPlanVendible } from './planes';
+import { porContratoDe, precioMensualDe, precioPorContratoDe, tarifaDe } from '../../../../functions/src/central/cuenta/planes';
 
 export type { Pago, TipoCambio };
 
@@ -49,7 +49,10 @@ export function planDeLaCuenta(cuenta: CuentaCruda | null | undefined, plan: Pla
     nombre: PLANES[plan].nombre,
     precioUsd: precioMensualDe(c, plan),
     precioPorContrato: precioPorContratoDe(c) !== null,
-    conversaciones: conversacionesPorContrato ? limitesDeCuenta(c).conversaciones : PLANES[plan].conversaciones,
+    // Sin contrato, lo que trae el plan con la TARIFA de esta cuenta
+    // (`tarifaDe`): una cuenta sin campo es `meta_incluido` y ve 100 / 220 / 500,
+    // no el 200 / 500 / 1.000 del catálogo estándar.
+    conversaciones: conversacionesPorContrato ? limitesDeCuenta(c).conversaciones : limitesDe(plan, tarifaDe(c)).conversaciones,
     conversacionesPorContrato,
   };
 }

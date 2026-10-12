@@ -78,15 +78,15 @@ const pago = async (id: string, t = A) => (await db.doc(`tenants/${t}/pagos/${id
 
 /** Un comercio en producción con Pro, al día, sin contrato. */
 const PRO = {
-  plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12',
+  plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12',
 };
 /** El mismo, con 800 conversaciones y USD 120 por contrato. */
 const PRO_CON_CONTRATO = {
-  ...PRO, limites: { ...limitesDe('pro'), conversaciones: 800 }, limitesPorContrato: ['conversaciones'], precioPorContrato: 120,
+  ...PRO, limites: { ...limitesDe('pro', 'meta_incluido'), conversaciones: 800 }, limitesPorContrato: ['conversaciones'], precioPorContrato: 120,
 };
 /** Una cuenta en prueba este mes, con 7 conversaciones de prueba. */
 const EN_PRUEBA = {
-  plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prueba', periodoPrueba: MES, bolsaPrueba: 7,
+  plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prueba', periodoPrueba: MES, bolsaPrueba: 7,
 };
 
 // --- el cobrador en memoria, como `cobro-prepago.test.ts` --------------------
@@ -113,7 +113,7 @@ beforeEach(async () => {
     for (const d of (await db.collection(c).get()).docs) await d.ref.delete();
   }
   await sembrar(A, PRO);
-  await sembrar(B, { plan: 'impulso', limites: limitesDe('impulso'), catalogoPlanes: CATALOGO_PLANES });
+  await sembrar(B, { plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES });
   await db.doc('plataforma/tipoCambio').set({ tco: TCO, fecha: FECHA_HOY, fuente: 'BCB' });
   await db.doc('plataforma/prepago').set({ corteActivo: false, cobrador: { baseUrl: 'https://cobrador.prueba', consumidor: 'novuchat', vigenciaHoras: 72 } });
 });
@@ -161,7 +161,7 @@ describe('2. La copia y el precio mandan sobre el plan, también después de cam
     await cuentaDe({ conversaciones: 800, precioPorContrato: 120 });
     const c = await cuenta();
     expect(c).toMatchObject({
-      plan: 'pro', limites: { ...limitesDe('pro'), conversaciones: 800 }, limitesPorContrato: ['conversaciones'],
+      plan: 'pro', limites: { ...limitesDe('pro', 'meta_incluido'), conversaciones: 800 }, limitesPorContrato: ['conversaciones'],
       precioPorContrato: 120, montoMensual: 120, estadoPago: 'al_dia',
     });
     expect(estadoDeServicio(c, 0, Date.now())).toMatchObject({ incluidas: 800, mensualidadUsd: 120 });
@@ -186,7 +186,7 @@ describe('2. La copia y el precio mandan sobre el plan, también después de cam
     await cuentaDe({ plan: 'impulso' });
     const c = await cuenta();
     expect(c).toMatchObject({
-      plan: 'impulso', limites: { ...limitesDe('impulso'), conversaciones: 800 }, limitesPorContrato: ['conversaciones'],
+      plan: 'impulso', limites: { ...limitesDe('impulso', 'meta_incluido'), conversaciones: 800 }, limitesPorContrato: ['conversaciones'],
       precioPorContrato: 120, montoMensual: 120,
     });
     expect(limitesDeCuenta(c).conversaciones).toBe(800);
@@ -212,7 +212,7 @@ describe('2. La copia y el precio mandan sobre el plan, también después de cam
     await sembrar(A, PRO_CON_CONTRATO);
     await cuentaDe({ conversaciones: null, precioPorContrato: null });
     const c = await cuenta();
-    expect(c['limites']).toEqual(limitesDe('pro'));
+    expect(c['limites']).toEqual(limitesDe('pro', 'meta_incluido'));
     expect(c['limitesPorContrato']).toBeUndefined();
     expect(c['precioPorContrato']).toBeUndefined();
     expect(c['montoMensual']).toBe(PLANES.pro.precioUsd);
