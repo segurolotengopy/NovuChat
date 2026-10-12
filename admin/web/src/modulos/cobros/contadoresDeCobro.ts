@@ -95,3 +95,75 @@ export function cobroRealActivo(venta: unknown): boolean {
   const hay = (v: unknown) => typeof v === 'string' && v !== '';
   return c['activo'] === true && hay(c['ficha']) && hay(c['cargaUtil']);
 }
+
+// ---------------------------------------------------------------------------
+// Lectura de la pantalla: dos lecturas INDEPENDIENTES (`metricas` y `config/venta`).
+//
+// Las reglas dejan a un miembro leer las dos, pero al propietario de NovuChat
+// solo `metricas`: si fueran un solo `Promise.all`, la denegación de
+// `config/venta` tumbaba también los contadores. Ahora cada lectura tiene su
+// propio estado, y «no sé si el cobro es real» se trata distinto de «no es real».
+// ---------------------------------------------------------------------------
+
+/** Resultado de una lectura: leída, denegada por las reglas, o fallida por otra causa. */
+export type EstadoLectura = 'ok' | 'denegada' | 'error';
+
+export type Pintado = 'error' | 'nada' | 'simulado' | 'tabla';
+
+export interface PeriodoDeCobro { id: string; [k: string]: unknown }
+
+export interface LecturaDeContadores {
+  metricas: EstadoLectura;
+  config: EstadoLectura;
+  periodos: PeriodoDeCobro[];
+  /** Solo vale si `config === 'ok'`; en cualquier otro caso es «desconocido», no «falso». */
+  real: boolean;
+}
+
+/** `permission-denied` de Firestore es «denegada»; cualquier otra falla, «error». */
+export function estadoDeError(e: unknown): EstadoLectura {
+  const codigo = (e as { code?: unknown } | null | undefined)?.code;
+  return codigo === 'permission-denied' || codigo === 'firestore/permission-denied' ? 'denegada' : 'error';
+}
+
+/**
+ * Qué se pinta. Si `metricas` no se leyó es siempre error: no se oculta. Con
+ * los contadores leídos, la línea «Cobro simulado» solo sale si `config/venta`
+ * se LEYÓ y dice que el cobro no es real (prohibición 3: no afirmar un modo que
+ * no se conoce). Con la configuración denegada o fallida se muestran los
+ * contadores sin ninguna afirmación sobre el modo.
+ */
+export function decidirPintado(
+  metricas: EstadoLectura, config: EstadoLectura, real: boolean, hayLineas: boolean,
+): Pintado {
+  if (metricas !== 'ok') return 'error';
+  if (!hayLineas) return 'nada';
+  if (config === 'ok' && !real) return 'simulado';
+  return 'tabla';
+}
+
+/**
+ * Hace las dos lecturas por separado: ninguna puede tumbar a la otra. Los
+ * lectores se inyectan para probarlo sin Firestore.
+ */
+export async function leerContadores(
+  leerMetricas: () => Promise<PeriodoDeCobro[]>,
+  leerVenta: () => Promise<unknown>,
+): Promise<LecturaDeContadores> {
+  const config = (async (): Promise<{ estado: EstadoLectura; real: boolean }> => {
+    try {
+      return { estado: 'ok', real: cobroRealActivo(await leerVenta()) };
+    } catch (e) {
+      return { estado: estadoDeError(e), real: false };
+    }
+  })();
+  let metricas: EstadoLectura = 'ok';
+  let periodos: PeriodoDeCobro[] = [];
+  try {
+    periodos = await leerMetricas();
+  } catch (e) {
+    metricas = estadoDeError(e);
+  }
+  const c = await config;
+  return { metricas, config: c.estado, periodos, real: c.real };
+}
