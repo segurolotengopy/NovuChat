@@ -44,6 +44,8 @@ export const MINIMO_DIGITOS = 4;
 export const MAX_PALABRAS_POR_MENSAJE = 30;
 /** Tope de palabras de una consulta del buscador. El nombre del contacto usa `palabrasDe(nombre, 6)` (decisión D4). */
 export const MAX_PALABRAS_CONSULTA = 6;
+/** Una palabra de más letras que esto no se indexa ni se busca (ver `palabrasDe`). */
+export const MAX_LARGO_PALABRA = 40;
 /** Tope de resultados de una búsqueda por texto. */
 export const MAX_RESULTADOS_BUSQUEDA = 20;
 /** Prefijo de país por defecto. En el servidor sale de `prefijosPermitidos` del tenant. */
@@ -82,8 +84,17 @@ export function raizDe(palabra: string): string {
 }
 
 /**
- * Las palabras a indexar de un texto: normalizadas, de 3 letras o más, con su
+ * Las palabras a indexar de un texto: normalizadas, de 3 a 40 letras, con su
  * raíz, sin repetir y como mucho 30 (decisión D9). El orden es el de aparición.
+ *
+ * EL TOPE DE LARGO (40). La normalización NFKD puede ENGORDAR un carácter: un
+ * «ⅷ» pasa a «viii», una ligadura a dos letras. Un texto de 4.096 de esos daría
+ * un «fragmento» de 16.384 caracteres, que iría tal cual al documento del
+ * mensaje (y chocaría con el límite de un valor indexado). Ninguna palabra real
+ * del español pasa de 40 letras, así que un fragmento más largo no es una
+ * palabra y se descarta. Consecuencia buscada: una palabra de más de 40 letras
+ * en la BÚSQUEDA tampoco cuenta (usa esta misma función) y no halla nada.
+ * CONGELADA desde H1-6, junto con el resto de la regla.
  */
 export function palabrasDe(texto: unknown, max: number = MAX_PALABRAS_POR_MENSAJE): string[] {
   if (!(max >= 1)) return []; // 0, negativos, NaN, null: nada que indexar
@@ -91,7 +102,7 @@ export function palabrasDe(texto: unknown, max: number = MAX_PALABRAS_POR_MENSAJ
   const salida: string[] = [];
   const vistas = new Set<string>();
   for (const t of normalizarTexto(texto).split(/[^a-z0-9]+/)) {
-    if (t.length < 3) continue;
+    if (t.length < 3 || t.length > MAX_LARGO_PALABRA) continue;
     const r = raizDe(t);
     if (vistas.has(r)) continue;
     vistas.add(r);
