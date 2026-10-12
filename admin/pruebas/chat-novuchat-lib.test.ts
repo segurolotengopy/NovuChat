@@ -45,7 +45,8 @@ const NOVUCHAT = DATOS_BRUTOS['datos'] as J;
 const clonar = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const H = 60 * 60 * 1000;
 const AHORA = Date.UTC(2026, 9, 7, 14, 0);
-const CIERRE_RUBRO = '¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+const CIERRE_RUBRO = '¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝'; // (relleno para los validadores; el cierre EXACTO del rubro es CIERRE_RUBRO_EXACTO)
+const CIERRE_RUBRO_EXACTO = '¿Te gustaría ver nuestros planes? 🤝';
 const CIERRE_PRECIOS = '¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝';
 
 const CFG: J = {
@@ -75,8 +76,8 @@ describe('la biblioteca es autosuficiente y pura', () => {
     expect(d.filter((n) => !/^(ch[A-Z]|CH_)/.test(n))).toEqual([]);
     expect(sinComentarios).not.toMatch(/\bcc[A-Z]\w*\(|\bCC_[A-Z]/);
   });
-  it('mide menos de 1.850 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
-    expect(LIB.split('\n').length).toBeLessThan(1850); // (tope autoimpuesto; 1.800 hasta el 11/10) 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
+  it('mide menos de 1.800 líneas (el viejo, 2.224) y no trae los contadores ni las listas que se dejaron fuera a propósito', () => {
+    expect(LIB.split('\n').length).toBeLessThan(1800); // (tope autoimpuesto; la tabla única de botones lo devuelve a 1.800) 1.500 en la entrega original; los ajustes del 09/10 (nombre, botones por estado, complemento, empresa) lo subieron
     expect(sinComentarios).not.toMatch(/\brot\b|\bfijas\b|\bofertas\b|\bsueltas\b|\brepetidas\b|chVariante|chRotBase|CH_ROT_|CH_PASOS|chCampana|chPresentacion|chRetomar|ccPideLista/);
   });
   it('ningún nombre de persona del equipo en lo que se arma para el cliente (el patrón del filtro sí los nombra, para rechazarlos)', () => {
@@ -402,7 +403,8 @@ describe('chDecidir: lo que resuelve el CÓDIGO y lo que cae en el modelo', () =
   const toque = (id: string): J => ({ ...f('chEventoToque')(id, NOVUCHAT['rubros']), seq: 1, id: '', ms: 0 });
   it('un toque de botón decide solo: «Hablar con el equipo» gana a «Ver planes» si llegan juntos', () => {
     expect(decidir([toque('equipo')]).ruta).toBe('equipo');
-    expect(decidir([toque('planes')]).ruta).toBe('planes');
+    expect(decidir([toque('planes')]).ruta).toBe('pedirNombre'); // (antes de la primera muestra de planes se pide el nombre y el negocio, una vez)
+    expect(decidir([toque('planes')], { ...fichaBase(), nombrePedido: true }).ruta).toBe('planes');
     const juntos = decidir([toque('planes'), toque('equipo')]);
     expect(juntos.ruta).toBe('equipo');
     expect(juntos.hechos.pidioEquipo).toBe(true);
@@ -411,7 +413,7 @@ describe('chDecidir: lo que resuelve el CÓDIGO y lo que cae en el modelo', () =
     const casos: [string, string, string][] = [
       ['Llámame mañana', 'equipo', ''], ['quiero hablar con una persona', 'equipo', ''], ['ya soy cliente, necesito soporte', 'equipo', ''],
       ['¿Cuánto cobra Meta?', 'fijo', 'costoMeta'], ['¿Cuántas conversaciones trae el plan Impulso?', 'planes', ''], ['¿Cuántos mensajes incluye una conversación?', 'fijo', 'consumo'],
-      ['¿Valida mis transferencias con el banco?', 'fijo', 'banco'], ['¿Se conecta con SAP?', 'fijo', 'integracion'], ['Dame un descuento', 'fijo', 'descuento'], ['¿Cuánto cuesta?', 'planes', ''],
+      ['¿Valida mis transferencias con el banco?', 'fijo', 'banco'], ['¿Se conecta con SAP?', 'fijo', 'integracion'], ['Dame un descuento', 'fijo', 'descuento'], ['¿Cuánto cuesta?', 'pedirNombre', ''],
     ];
     for (const [t, ruta, fijo] of casos) {
       const p = decidir([ev(t)]);
@@ -733,10 +735,10 @@ describe('revisión del PR #464: cierre, prompt y datos', () => {
     const r = resolver(largo);
     expect(r.origen).toBe('respaldo');
     expect(r.texto.length).toBeLessThanOrEqual(1000);
-    expect(r.texto.endsWith(CIERRE_RUBRO)).toBe(true);
+    expect(r.texto.endsWith(CIERRE_RUBRO_EXACTO)).toBe(true);
     const corto = resolver('Tu clínica gana tiempo con NovuChat, que atiende en segundos y agenda sin cruces.');
     expect(corto.origen).toBe('modelo');
-    expect(corto.texto.endsWith(CIERRE_RUBRO)).toBe(true);
+    expect(corto.texto.endsWith(CIERRE_RUBRO_EXACTO)).toBe(true);
   });
   it('hotfix 09/10: la cifra de CALENDARIO («los 7 días de la semana», «7 días», «siete días», «todos los días», «fines de semana», «feriados») no se rechaza; ni de consumo ni de precio', () => {
     const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', { cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
@@ -892,7 +894,7 @@ describe('el pedido al modelo (chCuerpoModelo)', () => {
   it('chInstrucciones: el rol, los puntos clave, los cierres exactos y SOLO los precios de la consola; ningún tope; el trato lo decide la consola', () => {
     const t = f('chInstrucciones')(CFG);
     expect(t).toMatch(/Eres Kenji, el asistente comercial experto de NovuChat/);
-    expect(t).toContain(CIERRE_RUBRO);
+    expect(t).toContain(CIERRE_RUBRO_EXACTO);
     expect(t).toContain(CIERRE_PRECIOS);
     expect(t).toMatch(/Trata al cliente de tú/);
     expect(f('chInstrucciones')(cfg({ trato: 'usted' }))).toMatch(/Trata al cliente de usted/);
@@ -922,12 +924,12 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
   it('cada contexto tiene su respaldo, con contenido (nunca una muletilla) y nunca un dígito', () => {
     for (const c of ['multiple', 'otro', 'otroRespuesta', 'abierta', 'identidad', 'cortesia', 'datos', 'ambiguo', 'fuera', 'general', 'medio']) {
       const r = resp(c);
-      expect(f('chContar')(r.texto).palabras, c).toBeGreaterThanOrEqual(10);
+      expect(f('chContar')(r.texto).palabras, c).toBeGreaterThanOrEqual(c === 'cortesia' ? 5 : 10);
       expect(r.texto, c).not.toMatch(/^¡Te entiendo/);
       expect(r.texto.replace(/24\/7|24 horas/g, '')).not.toMatch(/\d/);
     }
-    expect(resp('rubro', { rubroId: 'salud' }).texto).toBe(NOVUCHAT['rubros'][0].explicacion + ' ' + CIERRE_RUBRO);
-    for (const x of NOVUCHAT['rubros'] as J[]) if (x['explicacion']) expect(resp('rubro', { rubroId: x['id'] }).texto.endsWith(CIERRE_RUBRO)).toBe(true);
+    expect(resp('rubro', { rubroId: 'salud' }).texto).toBe(NOVUCHAT['rubros'][0].explicacion + ' ' + CIERRE_RUBRO_EXACTO);
+    for (const x of NOVUCHAT['rubros'] as J[]) if (x['explicacion']) expect(resp('rubro', { rubroId: x['id'] }).texto.endsWith(CIERRE_RUBRO_EXACTO)).toBe(true);
   });
   it('«abierta»: el pitch del documento y su pregunta (con rubro: la de las funciones; sin rubro: la del rubro)', () => {
     expect(resp('abierta').texto).toMatch(/de qué rubro es tu negocio\?$/);
@@ -982,11 +984,11 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     expect(m.payload.interactive.action.button).toBe('Ver rubros');
   });
   it('chCliente: dos botones de respuesta («Ver planes», «Hablar con el equipo») y el respaldo en texto que dice cómo pedirlos', () => {
-    const m = f('chCliente')('Un mensaje. ¿Seguimos?', CFG, 'respuesta');
+    const m = f('chCliente')('Un mensaje. ¿Seguimos?', CFG, 'respuesta', { botones: ['planes', 'equipo'] });
     expect(m.payload.interactive.type).toBe('button');
     expect(m.payload.interactive.action.buttons.map((b: J) => [b.reply.id, b.reply.title])).toEqual([['planes', 'Ver planes'], ['equipo', 'Hablar con el equipo']]);
     expect(m.respaldo).toMatch(/Escribe «planes» para ver los planes o «equipo» para hablar con alguien de nuestro equipo\./);
-    expect(f('chCliente')('x '.repeat(900), CFG, 'x').payload.interactive.body.text.length).toBeLessThanOrEqual(1024);
+    expect(f('chCliente')('x '.repeat(900), CFG, 'x', { botones: ['planes', 'equipo'] }).payload.interactive.body.text.length).toBeLessThanOrEqual(1024);
   });
   it('chMensajePlanes: con la imagen de la consola, las cifras de la consola, el Setup a medida solo si toca, y el cierre exacto', () => {
     const m = f('chMensajePlanes')(CFG, {});
@@ -1025,7 +1027,7 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     expect(rec.payload.interactive.type).toBe('list'); // recepción ve lo mismo que cualquiera tras el traspaso: la lista de rubros, nunca «Hablar con el equipo» otra vez
     const sin = f('chMensajeEquipo')(cfg({ numeroRecepcion: '' }), ficha0, '59100000011');
     expect(sin.texto).toMatch(/Por ahora no puedo ponerte en contacto/);
-    expect(sin.payload.interactive.type).toBe('button');
+    expect(sin.payload.type).toBe('text'); // (sin número de recepción no hay a quién pasar: ni «Hablar con el equipo» ni ofertas)
     expect(JSON.stringify(sin.payload)).not.toMatch(/wa\.me/);
   });
   it('chRespuestaFija: el dato más la invitación al equipo, sin ninguna cifra', () => {
@@ -1086,15 +1088,28 @@ describe('chResolver: el desenlace de un turno de modelo', () => {
     expect(conModelo.texto).toMatch(/Quedó anotado/);
     expect(conModelo.texto).not.toMatch(/te escribe pronto/);
   });
+  it('«datos» con una pregunta o un interés: el código anota (\u00abQuedó anotado\u00bb) y el modelo CONTESTA; nunca queda solo el acuse', () => {
+    const t = ['Ana Pérez, Salón Rosa. ¿Y cuánto tarda la instalación?'];
+    const p = plan({ contexto: 'datos' });
+    const r = resolver([revisar({ ...base, mensaje: BUENO, nombre: 'Ana Pérez', empresa: 'Salón Rosa' }, t, 'datos')], t, p);
+    expect(r.origen).toBe('modelo');
+    expect(r.texto.startsWith(NOVUCHAT['respaldos'].datosAmbos)).toBe(true);
+    expect(r.texto).toContain(BUENO);
+    // sin pregunta ni interés, el acuse del código sigue siendo todo
+    const t2 = ['Ana Pérez, Salón Rosa'];
+    expect(resolver([revisar({ ...base, mensaje: BUENO, nombre: 'Ana Pérez', empresa: 'Salón Rosa' }, t2, 'datos')], t2, p).texto).toBe(NOVUCHAT['respaldos'].datosAmbos);
+    // y si el modelo falla, sale el respaldo de los datos (que siempre termina en una pregunta o en el acuse), nunca un texto vacío
+    expect(resolver([{ lectura: { ok: false, motivo: 'error' }, causa: 'sin_respuesta' }], t, p).texto).toMatch(/anot/);
+  });
   it('un rubro estándar cierra con la pregunta exacta, y su respaldo es la explicación del dato', () => {
     const t = ['Tengo un restaurante'];
     const g = (NOVUCHAT['rubros'] as J[]).find((r) => r['id'] === 'gastronomia')!;
     const buena = revisar({ ...base, mensaje: g['explicacion'] + ' ¿Quieres saber más?', rubro: 'gastronomia' }, t);
     expect(buena.causa).toBe('');
     const r = resolver([buena], t);
-    expect(r.texto).toBe(g['explicacion'] + ' ' + CIERRE_RUBRO);
+    expect(r.texto).toBe(g['explicacion'] + ' ' + CIERRE_RUBRO_EXACTO);
     const mal = revisar({ ...base, mensaje: '¡Te entiendo! 😊', rubro: 'gastronomia' }, t);
-    expect(resolver([mal, mal], t).texto).toBe(g['explicacion'] + ' ' + CIERRE_RUBRO);
+    expect(resolver([mal, mal], t).texto).toBe(g['explicacion'] + ' ' + CIERRE_RUBRO_EXACTO);
   });
 });
 
@@ -1173,7 +1188,7 @@ describe('los datos de NovuChat (admin/scripts/datos/chat-novuchat/)', () => {
     expect(NOVUCHAT['modelo']).toBe('gemini-3.5-flash-lite');
   });
   it('los cierres exactos del documento y de la decisión D2', () => {
-    expect(NOVUCHAT['cierres'].rubro).toBe(CIERRE_RUBRO);
+    expect(NOVUCHAT['cierres'].rubro).toBe(CIERRE_RUBRO_EXACTO);
     expect(NOVUCHAT['cierres'].precios).toBe(CIERRE_PRECIOS);
     expect(JSON.stringify(NOVUCHAT)).not.toMatch(/se comunique|te contacte|contacte contigo|Silvana|asesora|Leads de Ventas|miniCRM|Kanban|menos de un minuto/i);
   });
@@ -1544,7 +1559,8 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
     const pedir = f('chPedirDatosAntes');
     expect(pedir(fichaCon({ explicado: true }))).toBe(true);
     expect(pedir(fichaCon({ explicado: true, nombre: 'Ana Pérez' }))).toBe(true); // falta el negocio
-    expect(pedir(fichaCon())).toBe(false); // todavía no se explicó nada
+    expect(pedir(fichaCon())).toBe(true); // aun sin explicación ni rubro (el pitch genérico): antes de la PRIMERA muestra de planes se pide, siempre
+    expect(pedir(fichaCon({ historial: [{ r: 'a', t: 'pitch' }] }))).toBe(true);
     for (const extra of [{ nombrePedido: true }, { planesMostrados: true }, { equipoAhora: true }, { nombre: 'Ana Pérez', empresa: 'Salón Rosa' }]) expect(pedir(fichaCon({ explicado: true, ...extra })), JSON.stringify(extra)).toBe(false);
   });
   it('R4 (b): «Ver planes» (o pedir precios) como PRIMERA respuesta pide el nombre antes de mostrar los planes; el siguiente mensaje (diga el nombre o no) los muestra; si insiste, se muestran', () => {
@@ -1564,8 +1580,14 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
     expect(decidir([toquePlanes], pendiente).ruta).toBe('planes'); // insiste: se muestran, no se pide dos veces
     expect(decidir([toquePlanes], { ...base, nombrePedido: true }).ruta).toBe('planes');
     expect(decidir([{ ...f('chEventoToque')('equipo', NOVUCHAT['rubros']), seq: 1 }], pendiente).ruta).toBe('equipo');
-    // sin explicación previa no se aplaza nada
-    expect(decidir([toquePlanes], fichaCon()).ruta).toBe('planes');
+    // sin explicación ni rubro (el pitch genérico, con historial) también se pide antes; ya pedido, ya conocidos o ya vistos, no
+    const pitch = fichaCon({ historial: [{ r: 'u', t: 'Quiero más información' }, { r: 'a', t: 'NovuChat es el primer empleado de tu negocio que nunca duerme' }] });
+    expect(decidir([toquePlanes], pitch).ruta).toBe('pedirNombre');
+    expect(decidir([ev('precios')], pitch).ruta).toBe('pedirNombre');
+    expect(decidir([ev('Tienda Uno')], { ...pitch, nombrePedido: true, planesPendientes: true }).ruta).toBe('planes');
+    expect(decidir([toquePlanes], { ...pitch, nombre: 'Ana Pérez', empresa: 'Tienda Uno' }).ruta).toBe('planes');
+    expect(decidir([toquePlanes], { ...pitch, planesMostrados: true }).ruta).toBe('planes');
+    expect(decidir([{ ...f('chEventoToque')('equipo', NOVUCHAT['rubros']), seq: 1 }], pitch).ruta).toBe('equipo');
   });
   it('R4 (a): en la primera respuesta de texto libre el pedido va EN EL MISMO mensaje, una sola vez, según lo que falte y sin «negocio» doble; no en la explicación ni en los datos', () => {
     const anexo = f('chAnexoDatos');
@@ -1606,19 +1628,19 @@ describe('ajustes del 09/10 (R1 a R6): la biblioteca', () => {
 
   it('R5: los botones salen según lo ya hecho (los dos / solo «Hablar con el equipo» / la lista de rubros con la invitación)', () => {
     const ids = (m: J): string[] => (m.payload.interactive.action.buttons ?? []).map((b: J) => b.reply.id);
-    expect(ids(f('chCliente')('Texto de prueba con contenido suficiente.', CFG, 'x'))).toEqual(['planes', 'equipo']);
-    expect(ids(f('chCliente')('Texto.', CFG, 'x', { planes: false, lista: false }))).toEqual(['planes', 'equipo']);
-    const uno = f('chCliente')('Texto.', CFG, 'x', { planes: true, lista: false });
+    expect(ids(f('chCliente')('Texto de prueba con contenido suficiente.', CFG, 'x', { botones: ['planes', 'equipo'] }))).toEqual(['planes', 'equipo']);
+    expect(ids(f('chCliente')('Texto.', CFG, 'x', { botones: ['planes', 'equipo'], lista: false }))).toEqual(['planes', 'equipo']);
+    const uno = f('chCliente')('Texto.', CFG, 'x', { botones: ['equipo'], lista: false });
     expect(ids(uno)).toEqual(['equipo']);
     expect(uno.payload.interactive.action.buttons[0].reply.title).toBe('Hablar con el equipo');
     expect(uno.respaldo).toMatch(/Escribe «equipo»/);
-    const lista = f('chCliente')('Te cuento algo útil.', CFG, 'x', { planes: true, lista: true });
+    const lista = f('chCliente')('Te cuento algo útil.', CFG, 'x', { botones: [], lista: true });
     expect(lista.payload.interactive.type).toBe('list');
     expect(lista.texto).toMatch(/^Te cuento algo útil\.\n\nSi tienes otro negocio, cuéntame de qué rubro es y te explico cómo te ayudamos/);
     expect(lista.payload.interactive.action.sections[0].rows).toHaveLength(7);
     expect(lista.texto.length).toBeLessThanOrEqual(1024);
     // un cuerpo largo se recorta; la invitación nunca
-    const larga = f('chCliente')('Palabra. '.repeat(200), CFG, 'x', { planes: true, lista: true });
+    const larga = f('chCliente')('Palabra. '.repeat(200), CFG, 'x', { botones: [], lista: true });
     expect(larga.texto.length).toBeLessThanOrEqual(1000);
     expect(larga.texto).toMatch(/Si tienes otro negocio, cuéntame de qué rubro es y te explico cómo te ayudamos 😊$/);
     // los planes tras el traspaso: lista sin imagen; antes, un solo botón con la imagen
@@ -1778,13 +1800,13 @@ describe('ronda de seguridad del 09/10: terceros, plazos, tope de avisos, perfil
       expect(m.texto, k).toMatch(/Si tienes otro negocio, cuéntame de qué rubro es/);
     }
     // lo que se respondió queda; el emoji del saludo no se pierde ni queda solo
-    expect(f('chCliente')(rd.cortesia, CFG, 'x', { planes: true, lista: true }).texto).toMatch(/^¡Con gusto! 😊\n\n/);
+    expect(f('chCliente')(rd.cortesia, CFG, 'x', { planes: true, lista: true }).texto).toMatch(/^¡Con gusto! 😊/);
     expect(f('chCliente')(rd.identidad, CFG, 'x', { planes: true, lista: true }).texto).toMatch(/inteligencia artificial/);
     expect(f('chMensajeComplemento')(CFG, { vez: 0, lista: true }).texto).not.toMatch(ofrece);
     expect(f('chMensajePlanes')(CFG, { lista: true }).texto).not.toMatch(ofrece);
     expect(f('chMensajePlanes')(CFG, { lista: true }).texto).toMatch(/Setup estándar USD 65/);
     // y con botones (antes del traspaso) el cierre sigue
-    expect(f('chCliente')(rd.sinDato, CFG, 'x', { planes: true }).texto).toMatch(/hablar con alguien de nuestro equipo\? 🤝$/);
+    expect(f('chCliente')(rd.sinDato, CFG, 'x', { botones: ['equipo'] }).texto).toMatch(/hablar con alguien de nuestro equipo\? 🤝$/);
   });
 
   it('BAJO (d): adelantos, anticipos, seña y pago total no se permiten ni en el pitch ni en la empresa, en ningún rubro; el cobro por QR documentado sí', () => {
@@ -1865,12 +1887,12 @@ describe('el sitio web: lo anexa el código, con tope, antes de la pregunta fina
     expect(turno({ sitio: 'true' }).sitioUltimo).toBe(false);
   });
   it('chClienteConSitio: solo si la ruta lo pide; el historial recibe el texto sin el sitio', () => {
-    const quiere = f('chClienteConSitio')('Respuesta con contenido suficiente para probar. ' + PREG, CFG, 'x', { planes: true }, fichaCon(), true);
+    const quiere = f('chClienteConSitio')('Respuesta con contenido suficiente para probar. ' + PREG, CFG, 'x', { botones: ['planes', 'equipo'] }, fichaCon(), true);
     expect(quiere.sitio).toBe(true);
     expect(quiere.texto).toContain(SITIO);
     expect(quiere.textoSinSitio).not.toContain('novuchat.site');
     expect(quiere.texto.endsWith(PREG)).toBe(true);
-    const no = f('chClienteConSitio')('Respuesta con contenido suficiente para probar. ' + PREG, CFG, 'x', { planes: true }, fichaCon(), false);
+    const no = f('chClienteConSitio')('Respuesta con contenido suficiente para probar. ' + PREG, CFG, 'x', { botones: ['planes', 'equipo'] }, fichaCon(), false);
     expect(no.sitio).toBeUndefined();
     expect(no.texto).not.toContain('novuchat.site');
     const lista = f('chClienteConSitio')('Esa no la tengo a la mano 🤔.', CFG, 'x', { planes: true, lista: true }, fichaCon(), true);
@@ -2148,5 +2170,248 @@ describe('la regla del «Sí» es robusta: la oferta se lee aunque se pegue el p
     const pide = f('chPideEquipoDirecto');
     for (const x of ['No, quiero hablar con alguien', 'No. Quiero hablar con un asesor', 'Ya no quiero más info, quiero hablar con alguien', 'mis clientes se quejan, quiero hablar con un asesor', 'Planes no, quiero hablar con el equipo', 'no gracias; quiero hablar con una persona']) expect(pide(x), x).toBe(true);
     for (const x of ['no quiero hablar con un asesor, solo dime el precio', 'todavía no quiero hablar con un asesor', 'mis clientes podrían hablar con una persona?', 'no, mis clientes quieren hablar con un asesor']) expect(pide(x), x).toBe(false);
+  });
+});
+
+// ================================================================================================
+// LA TABLA ÚNICA de botones y ofertas (decisión de Andres, 11/10): `CH_TABLA` + `chSituacion` + `chBotonesDe` + `chRedondear` + `chActualizarBanderas`. Se prueba POR PROPIEDAD sobre todo el espacio de situaciones.
+const RUTAS_FIJAS = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'identidad', 'disponibilidad'];
+const EVENTOS = ['rubro', 'multiple', 'otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico', 'pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte', 'general', 'respuesta'];
+const TIPOS: J[] = [{ ruta: 'lista' }, { ruta: 'equipo' }, { ruta: 'pedirNombre' }, { ruta: 'planes' }, ...RUTAS_FIJAS.map((fijo) => ({ ruta: 'fijo', fijo })), ...EVENTOS.map((ev) => ({ ruta: 'modelo', ev }))];
+const BOOLS = ['aMedida', 'interes', 'acabadas', 'declina', 'modeloOfreceEq', 'planesTocado', 'planesVistos', 'equipoTocado'];
+/** Todas las situaciones: cada tipo de mensaje × cada combinación de las siete señales booleanas. */
+function* situaciones(): Generator<J> {
+  for (const t of TIPOS) for (let m = 0; m < 1 << BOOLS.length; m++) {
+    const s = { fijo: '', ev: '', ...t, ...Object.fromEntries(BOOLS.map((b, k) => [b, (m & (1 << k)) !== 0])) };
+    if (!(s['modeloOfreceEq'] && !s['declina'])) yield s; // (que el modelo ofrezca al equipo ES declinar: esa combinación no existe)
+  }
+}
+function tablaEnMarkdown(tabla: J[]): string {
+  const celda = (x: unknown): string => (x === true ? 'sí' : x === 'interes' ? 'solo con interés' : 'no');
+  const oferta = (f: J): string => (f.planes !== false && f.equipo ? 'planes y equipo' : f.planes !== false ? 'planes' : f.equipo ? 'equipo' : 'ninguna');
+  return ['| # | Fila | «Ver planes» | «Hablar con el equipo» | Oferta del texto | Cuándo y por qué |', '|---|---|---|---|---|---|', ...tabla.map((f, k) => `| ${k + 1} | \`${f.id}\` | ${celda(f.planes)} | ${celda(f.equipo)} | ${oferta(f)} | ${f.nota} |`)].join('\n');
+}
+describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre todas las situaciones y piezas', () => {
+  const T = (L as unknown as J)['CH_TABLA'] as J[];
+  const botones = f('chBotonesDe');
+  it('DISENO.md trae la tabla EXACTA del código (generada desde `CH_TABLA`): ni una fila de más ni de menos, en el mismo orden', () => {
+    const doc = readFileSync(join(CARPETA, 'DISENO.md'), 'utf8');
+    const m = /<!-- TABLA-BOTONES:INICIO -->\n([\s\S]*?)\n<!-- TABLA-BOTONES:FIN -->/.exec(doc);
+    expect(m, 'faltan los marcadores TABLA-BOTONES en DISENO.md').not.toBeNull();
+    expect(m![1]).toBe(tablaEnMarkdown(T));
+    expect(new Set(T.map((x) => x['id'])).size, 'ids únicos').toBe(T.length);
+    expect(T.at(-1)!['id']).toBe('ordinaria'); // la última fila siempre coincide: toda situación tiene fila
+  });
+  it('PROPIEDADES sobre las 6.144 situaciones: lo pulsado no reaparece; «Ver planes» nunca sin interés; el equipo solo si es requerido o se acabaron las preguntas; nunca un callejón sin salida; el pedido de datos no lleva botón de planes', () => {
+    const cuenta: Record<string, number> = {};
+    const ok = (k: string): void => { cuenta[k] = (cuenta[k] ?? 0) + 1; };
+    const sinRespuesta = ['otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico'];
+    const sinOferta = ['pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte'];
+    let n = 0;
+    for (const s of situaciones()) {
+      n += 1;
+      const r = botones(s);
+      const donde = JSON.stringify(s) + ' → ' + JSON.stringify(r);
+      // (1) lo pulsado (o ya visto) no reaparece
+      if (s.planesTocado || s.planesVistos) expect(r.planes, donde).toBe(false);
+      if (s.equipoTocado) expect(r.equipo, donde).toBe(false);
+      ok('1 pulsado no reaparece');
+      // (2) «Ver planes» nunca sin interés: eligió rubro o el cliente mostró interés
+      if (r.planes) expect(s.interes || s.ev === 'rubro' || s.ev === 'multiple', donde).toBe(true);
+      ok('2 planes con interés');
+      // (3) el equipo solo si es REQUERIDO o se ACABARON las preguntas (la oferta de planes, el cierre de precios, una consulta sin respuesta, a medida, función no documentada)
+      if (r.equipo) {
+        const ordinaria = s.ruta === 'modelo' && !sinRespuesta.includes(s.ev) && (!sinOferta.includes(s.ev) || (s.ev === 'datos' && s.interes)) && s.ev !== 'rubro' && s.ev !== 'multiple';
+        const requerido = s.ruta === 'planes' || (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev)))) || (ordinaria && (s.aMedida || s.acabadas));
+        expect(requerido, donde).toBe(true);
+      }
+      ok('3 equipo si es requerido o se acabaron las preguntas');
+      // (4) nunca un callejón sin salida: lo que el chat no resuelve lleva al equipo (si no se pulsó en este ciclo)
+      const noResuelve = (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev))));
+      if (noResuelve && !s.equipoTocado) expect(r.equipo, donde).toBe(true);
+      ok('4 sin callejón sin salida');
+      // (5) el pedido de datos, la lista y el traspaso no llevan botones de la tabla
+      if (['pedirNombre', 'lista', 'equipo'].includes(s.ruta)) expect([r.planes, r.equipo], donde).toEqual([false, false]);
+      ok('5 pedido de datos, lista y traspaso sin botones');
+      // (6) el cierre de precios: los planes se acaban con la oferta del equipo
+      if (s.ruta === 'planes' && !s.equipoTocado) expect(r.equipo, donde).toBe(true);
+      // (7) la oferta (`ofrecio`) es exactamente lo que lleva
+      expect(r.ofrecio, donde).toBe(r.planes && r.equipo ? 'ambas' : r.planes ? 'planes' : r.equipo ? 'equipo' : 'ninguna');
+      ok('7 ofrecio = botones');
+      // (8) la fila existe y es una de la tabla; ordinaria ⇔ las filas «ordinaria*»
+      expect(T.map((x) => x['id'])).toContain(r.fila);
+      expect(r.ordinaria, donde).toBe(String(r.fila).startsWith('ordinaria'));
+      ok('8 fila de la tabla');
+    }
+    expect(n).toBe(6144);
+    expect(Object.values(cuenta).every((v) => v === 6144)).toBe(true);
+    console.log('[tabla] situaciones enumeradas por invariante:', JSON.stringify(cuenta));
+  });
+  it('PROPIEDAD del texto: para cada combinación de botones y cada mensaje, `chRedondear` no ofrece lo que no lleva y SÍ invita a lo que lleva; nunca sale vacío ni pasa del máximo', () => {
+    const red = f('chRedondear');
+    const textos = ['Te cuento cómo funciona. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', 'Te cuento cómo funciona y atiende todo el día.', 'Ese dato no lo tengo a la mano y prefiero no darte uno equivocado: eso lo revisa alguien de nuestro equipo. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝',
+      'Eso no lo tengo documentado para tu rubro y prefiero no prometértelo: lo mejor es que alguien de nuestro equipo evalúe tu caso.', 'Cuando quieras, puedes ver nuestros planes o hablar con alguien de nuestro equipo con los botones de abajo.', 'Mira www.novuchat.site 🌐 ¿Te gustaría ver nuestros planes? 🤝',
+      '¿Te gustaría hablar con alguien de nuestro equipo? 🤝', 'Respuesta con contenido útil para el cliente.\n\nPor cierto, ¿cómo te llamas y cómo se llama tu negocio? 😊', 'Un asesor te ayuda con eso. Puedo mostrarte los planes. Si tienes otro negocio, cuéntame.'];
+    let combos = 0;
+    for (const ids of [[], ['planes'], ['equipo'], ['planes', 'equipo']]) for (const t of textos) {
+      const r = red(t, ids, CFG);
+      const q = f('chPreguntaFinal')(r);
+      combos += 1;
+      expect(r.trim().length, `${ids} ${t}`).toBeGreaterThan(0);
+      expect(r.length).toBeLessThanOrEqual(1000);
+      if (!ids.includes('equipo')) { expect(r, `${ids} ${t}`).not.toMatch(/hablar con (?:alguien|una persona|(?:alguien de )?(?:nuestro |el )?equipo)|un asesor/i); expect(r).not.toMatch(/lo revisa alguien de nuestro equipo|alguien de nuestro equipo evalúe/i); }
+      if (!ids.includes('planes')) expect(r, `${ids} ${t}`).not.toMatch(/(?:ver|conocer) (?:los |nuestros )?planes/i);
+      if (ids.length === 0) expect(r, `${ids} ${t}`).not.toMatch(/botones? de abajo/i);
+      if (ids.includes('equipo')) expect(ids.includes('planes') ? r : q, `${ids} ${t}`).toMatch(/hablar con alguien de nuestro equipo|hablar con (?:una persona|el equipo)/);
+      if (ids.includes('planes')) expect(ids.includes('equipo') ? r : q, `${ids} ${t}`).toMatch(/ver (?:nuestros |los )?planes/);
+    }
+    expect(combos).toBe(36);
+    // la invitación va ANTES del pedido del nombre pegado al final
+    const conPedido = red('Respuesta con contenido útil para el cliente.\n\nPor cierto, ¿cómo te llamas y cómo se llama tu negocio? 😊', ['equipo'], CFG);
+    expect(conPedido.indexOf('hablar con alguien de nuestro equipo')).toBeGreaterThan(-1);
+    expect(conPedido.indexOf('hablar con alguien de nuestro equipo')).toBeLessThan(conPedido.indexOf('¿cómo te llamas'));
+    // el pedido de los planes («Para mostrarte los planes…») no se toma por una oferta
+    expect(red('¡Con gusto! 😊 Para mostrarte los planes que mejor te sirvan, ¿me cuentas cómo te llamas y cómo se llama tu negocio?', [], CFG)).toMatch(/Para mostrarte los planes que mejor te sirvan/);
+  });
+  it('PROPIEDAD de las banderas: un ciclo nuevo repone lo pulsado y lo respondido (no el tope de avisos); lo pulsado solo lo fija un toque o el traspaso; `ofrecio` sale de los botones enviados', () => {
+    const AHORA = Date.UTC(2026, 9, 11, 14, 0, 0);
+    const aplicar = (ficha: J, a: J): J => f('chAplicarTurno')({ ficha, hasta: 1, plan: { ruta: 'modelo', hechos: {}, temas: [] }, res: null, mensaje: 'x', ahoraMs: AHORA, eventos: [ev('x')], ...a });
+    let n = 0;
+    for (const planesTocado of [false, true]) for (const equipoTocado of [false, true]) for (const respondidas of [0, 2, 3]) for (const ciclo of [false, true]) {
+      const base = { ...fichaBase(), planesTocado, equipoTocado, respondidas, avisosVentana: 2, empresasAvisadas: ['x'], avisado: true };
+      const r = aplicar(base, { ciclo, botones: ['equipo'] });
+      n += 1;
+      if (ciclo) { expect([r.planesTocado, r.equipoTocado, r.respondidas], `ciclo ${JSON.stringify(base)}`).toEqual([false, false, 0]); } else { expect([r.planesTocado, r.equipoTocado]).toEqual([planesTocado, equipoTocado]); }
+      expect([r.avisosVentana, r.empresasAvisadas, r.avisado], 'el tope de avisos no se repone').toEqual([2, ['x'], true]);
+    }
+    expect(n).toBe(24);
+    for (const [botones, esperado] of [[[], 'ninguna'], [['planes'], 'planes'], [['equipo'], 'equipo'], [['planes', 'equipo'], 'ambas']] as [string[], string][]) expect(aplicar(fichaBase(), { botones }).ofrecio).toBe(esperado);
+    expect(aplicar(fichaBase(), { plan: { ruta: 'equipo', hechos: {}, temas: [] }, botones: ['equipo'] }).ofrecio).toBe('ninguna');
+    expect(aplicar(fichaBase(), { eventos: [ev('planes')] }).planesTocado).toBe(false); // un texto «planes» no es una pulsación
+    expect(aplicar(fichaBase(), { eventos: [{ ...f('chEventoToque')('planes', NOVUCHAT['rubros']), seq: 1 }] }).planesTocado).toBe(true);
+    expect(aplicar(fichaBase(), { plan: { ruta: 'equipo', hechos: {}, temas: [] } }).equipoTocado).toBe(true);
+    expect(aplicar(fichaBase(), { plan: { ruta: 'equipo', hechos: {}, temas: [] }, sinRecepcion: true }).equipoTocado).toBe(false);
+    // la ficha se sanea: banderas estrictas y `ofrecio` de lista cerrada
+    const v = f('chFichaVigente')({ planesTocado: 'sí', equipoTocado: 1, respondidas: 99, ofrecio: 'cualquiera', ultimoMs: AHORA - 60_000 }, AHORA);
+    expect([v.planesTocado, v.equipoTocado, v.respondidas, v.ofrecio]).toEqual([false, false, 3, '']);
+    const ven = f('chFichaVigente')({ planesTocado: true, equipoTocado: true, respondidas: 2, ofrecio: 'equipo', ultimoMs: AHORA - 25 * 3_600_000 }, AHORA);
+    expect([ven.planesTocado, ven.equipoTocado, ven.respondidas]).toEqual([false, false, 0]);
+  });
+  it('chSituacion: las señales salen del cliente y del desenlace; el interés y las dudas acabadas; la función no documentada SOLO de pago/cobro/adelanto/seña y solo fuera de gastronomía, retail y «otro»; declinar sin «mi especialidad» a secas', () => {
+    const sit = (textos: string[], res: J = {}, plan: J = {}, ficha: J = {}): J => f('chSituacion')({ plan: { ruta: 'modelo', ...plan }, res: { origen: 'modelo', contexto: 'general', texto: 'ok', causas: [], ...res }, eventos: textos.map((x) => ev(x)), ficha: { ...fichaBase(), rubro: 'belleza', ...ficha } });
+    for (const x of ['¿cuánto cuesta?', '¿qué incluye el setup?', 'me interesa', 'quiero empezar', '¿cuánto tarda la instalación?', '¿cómo funciona?']) expect(sit([x]).interes, x).toBe(true);
+    expect(sit(['¿se conecta a mi calendario?']).interes).toBe(false);
+    for (const x of ['no tengo más dudas', 'eso es todo', 'quiero empezar', '¿cómo contrato?']) expect(sit([x]).acabadas, x).toBe(true);
+    expect(sit(['hola'], {}, {}, { explicado: true, respondidas: 2 }).acabadas).toBe(true);
+    expect(sit(['hola'], {}, {}, { explicado: true, respondidas: 1 }).acabadas).toBe(false);
+    for (const x of ['Sería cobros con qr', '¿puedo pedir un adelanto?', 'quiero cobrar un anticipo', 'aceptan pago total', 'con seña', 'cobrar por QR']) expect(sit([x]).declina, x).toBe(true);
+    for (const x of ['tengo un qr en la puerta del salón', 'me gusta el color rojo']) expect(sit([x]).declina, x).toBe(false);
+    expect(sit(['quiero cobrar por QR'], {}, {}, { rubro: 'gastronomia' }).declina).toBe(false);
+    for (const t of ['Eso no lo tengo documentado para tu rubro.', 'Eso no es mi especialidad.', 'Está fuera de mi especialidad.', 'No puedo prometer eso.', 'Prefiero no prometértelo.', 'No tengo ese dato a la mano.']) expect(sit(['x'], { texto: t }).declina, t).toBe(true);
+    for (const t of ['¡Me encantaría, pero mi especialidad es otra cosa!', 'Mi especialidad es agendar citas.', 'Claro, te cuento más.']) expect(sit(['x'], { texto: t }).declina, t).toBe(false);
+    expect(botones(sit(['x'], { texto: 'No puedo prometer eso.', contexto: 'identidad' }))).toMatchObject({ fila: 'sin-oferta', equipo: false }); // identidad y cortesía nunca llevan la salida
+    expect(sit(['x'], { causas: ['funcion_inventada'] }).declina).toBe(true);
+    // declinar y mostrar interés en precios conserva «Ver planes» (y suma el equipo)
+    const s = sit(['¿cuánto cuesta el plan?'], { texto: 'No puedo confirmarte sin datos de tu volumen. ¿Quieres ver los planes?' });
+    expect(botones(s)).toMatchObject({ fila: 'declina', planes: true, equipo: true });
+  });
+  it('DECLINAR sin vocabulario previsto: toda forma de «no lo sé» lleva el equipo, y si el modelo mismo ofreció al equipo la oferta no se quita sin botón (la clase del cliente perdido)', () => {
+    const sit = (texto: string, extra: J = {}, textos: string[] = ['¿También responde en Telegram?'], origen = 'modelo'): J => f('chSituacion')({ plan: { ruta: 'modelo' }, res: { origen, contexto: 'general', texto, causas: [] }, eventos: textos.map((x) => ev(x)), ficha: { ...fichaBase(), explicado: true, rubro: 'belleza', ...extra } });
+    const FRASES = ['Eso no lo tengo a la mano.', 'Ese dato no la tengo a la mano.', 'No lo tengo a la mano ahora mismo.', 'No sabría decirte con certeza.', 'No sabría decirte eso.', 'Desconozco ese dato.', 'Desconozco si está previsto.', 'Eso no lo sé con certeza.', 'Ese tema no lo sé con seguridad.', 'No cuento con ese dato.', 'No cuento con la información.'];
+    // frases que NO declinan: la misma palabra con otro objeto, seguida de «pero», o dentro de una cita
+    const NO_DECLINAN = ['Desconozco cuántos mensajes recibes hoy, pero te cuento cómo funciona.', 'No sabría decirte cuál es tu mejor horario sin conocer tu salón, pero NovuChat lo agenda.', 'Si alguien te responde «no lo sé con certeza», desconfía y pide el dato por escrito.', 'Desconozco ese dato, pero te cuento esto.', 'No sabría decirte eso, pero sí cómo funciona.'];
+    for (const x of NO_DECLINAN) { expect(sit(x)['declina'], x).toBe(false); expect(f('chBotonesDe')(sit(x)), x).toMatchObject({ equipo: false }); }
+    for (const x of FRASES) { const q = sit(x); expect(q['declina'], x).toBe(true); expect(f('chBotonesDe')(q), x).toMatchObject({ equipo: true }); }
+    for (const x of ['Claro, te cuento cómo funciona.', 'Sé que es un tema importante.']) expect(sit(x)['declina'], x).toBe(false);
+    // sin ninguna de esas frases: el modelo cierra ofreciendo al equipo => el sistema lo conserva con su botón (y sin «Ver planes»)
+    const ofrece = 'Hoy atendemos por WhatsApp. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝';
+    const o = sit(ofrece);
+    expect([o['modeloOfreceEq'], o['declina']]).toEqual([true, true]);
+    expect(f('chBotonesDe')(o)).toMatchObject({ fila: 'declina-ofrece-equipo', equipo: true, planes: false, ofrecio: 'equipo' });
+    expect(f('chOfreceAlEquipo')(ofrece)).toBe(true);
+    // otras formas de ofrecer al equipo (la pregunta FINAL con cualquier mención de «nuestro/el/del equipo», una persona, un asesor o alguien de nuestro…) también cuentan, y se conservan con su botón
+    const PARAFRASIS = ['¿Quieres que alguien de nuestro equipo lo revise contigo?', '¿Te gustaría conversarlo con nuestro equipo?', '¿Te gustaría hablarlo con nuestro equipo?', '¿Te gustaría que nuestro equipo lo vea contigo?', '¿Prefieres que lo vea una persona?', '¿Quieres que te atienda un asesor?', '¿Quieres verlo con el equipo?'];
+    for (const q of PARAFRASIS) {
+      const texto = 'Hoy NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces; sobre eso no tengo claro si está disponible hoy. ' + q;
+      const sp = sit(texto);
+      expect([sp['modeloOfreceEq'], sp['declina']], q).toEqual([true, true]);
+      expect(f('chBotonesDe')(sp), q).toMatchObject({ equipo: true, planes: false, ofrecio: 'equipo' });
+      expect(f('chRedondear')(texto, ['equipo'], CFG), q).toContain(q); // (con su botón la oferta se queda tal cual)
+      expect(f('chRedondear')(texto, [], CFG), q).not.toContain(q); // (sin el botón se quita: nunca una oferta sin mecanismo)
+    }
+    // preguntas de DESCUBRIMIENTO que mencionan al equipo o a una persona NO son una oferta: ni botón, ni se quitan, ni el «Sí» deriva
+    const DESCUBRIMIENTO = ['¿Hoy te responde una persona o lo haces tú?', '¿Hoy lleva los mensajes una persona de tu equipo o lo haces tú?', '¿Quién del equipo responde hoy los mensajes?', '¿Cuántos mensajes recibe el equipo al día?', '¿Tienes una persona dedicada a responder?', '¿Lo maneja el equipo de recepción o tú misma?', '¿Cuántas personas hay en tu equipo?', '¿Tienes un equipo de ventas?'];
+    for (const q of DESCUBRIMIENTO) {
+      const texto = 'Hoy NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces, para que no pierdas ventas fuera de horario. ' + q;
+      const sd = sit(texto);
+      expect([sd['modeloOfreceEq'], sd['declina']], q).toEqual([false, false]);
+      expect(f('chBotonesDe')(sd), q).toMatchObject({ equipo: false });
+      expect(f('chRedondear')(texto, [], CFG), q).toContain(q);
+      expect(f('chOfreceAlEquipo')(texto), q).toBe(false);
+    }
+    expect(f('chOfreceAlEquipo')('El equipo de NovuChat configura todo por ti y tu asistente queda listo. ¿Qué día atiendes más?')).toBe(false);
+    for (const q of ['¿Quieres que alguien de nuestro equipo lo revise contigo?', '¿Te gustaría hablar con alguien de nuestro equipo? 🤝', '¿Te gustaría conversarlo con nuestro equipo?', '¿Te gustaría que nuestro equipo lo vea contigo?', '¿Prefieres hablar con un asesor?']) expect(f('chOfreceAlEquipo')('Te cuento cómo funciona. ' + q), q).toBe(true);
+    // una frase afirmativa suelta sobre el equipo no es una oferta ni se quita
+    expect(f('chRedondear')('El setup lo configura el equipo de NovuChat, y tu asistente queda listo para atender. ¿Qué día atiendes más?', [], CFG)).toMatch(/lo configura el equipo de NovuChat/);
+    expect(f('chOfreceAlEquipo')('El setup lo configura el equipo de NovuChat. ¿Qué día atiendes más?')).toBe(false);
+    expect(f('chOfreceAlEquipo')('Hoy atendemos por WhatsApp. ¿Qué día atiendes más?')).toBe(false);
+    // un texto de respaldo o de un desenlace no cuenta como oferta del modelo
+    expect(sit(ofrece, {}, ['x'], 'respaldo')['modeloOfreceEq']).toBe(false);
+    // ya pulsado el equipo, no reaparece
+    expect(f('chBotonesDe')(sit(ofrece, { equipoTocado: true }))).toMatchObject({ equipo: false });
+  });
+  it('fichas de antes (con `ofreceEquipo`/`ofrecePlanes` y sin `ofrecio`) se migran: el «Sí» tras la oferta de equipo deriva; tras la de planes pide los datos y muestra planes', () => {
+    const AHORA2 = Date.UTC(2026, 9, 11, 14, 0, 0);
+    const vig = (e: J): J => f('chFichaVigente')({ ultimoMs: AHORA2 - 60_000, ...e }, AHORA2);
+    expect(vig({ ofreceEquipo: true, ofrecePlanes: false })['ofrecio']).toBe('equipo');
+    expect(vig({ ofreceEquipo: true, ofrecePlanes: true })['ofrecio']).toBe('ambas');
+    expect(vig({ ofreceEquipo: false, ofrecePlanes: true })['ofrecio']).toBe('planes');
+    expect(vig({ ofreceEquipo: false, ofrecePlanes: false })['ofrecio']).toBe('');
+    expect(vig({ ofreceEquipo: true, ofrecio: 'planes' })['ofrecio']).toBe('planes'); // si ya trae la bandera nueva, manda ella
+    const vieja = (extra: J): J => ({ ...fichaBase(), explicado: true, rubro: 'belleza', nombrePedido: true, nombre: 'Ana', empresa: 'Salon Rosa', ultimoMs: AHORA2 - 60_000, historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: 'Te cuento todo sin una pregunta final reconocible.' }], ...extra });
+    const decidir = (ficha: J): J => f('chDecidir')({ eventos: [ev('Sí, me gustaría')], ficha: vig(ficha), cfg: CFG, from: '59100000011' });
+    expect(decidir(vieja({ ofreceEquipo: true, ofrecePlanes: false })).ruta).toBe('equipo');
+    expect(decidir(vieja({ ofreceEquipo: false, ofrecePlanes: true })).ruta).toBe('planes');
+  });
+  it('los casos del último bloqueo: sinDato sin botón de equipo NUNCA promete al equipo; con él, lo invita', () => {
+    const rd = NOVUCHAT['respaldos'];
+    const red = f('chRedondear');
+    const sin = red(f('chSustituir')(rd.sinDato, CFG), [], CFG);
+    expect(sin).not.toMatch(/alguien de nuestro equipo/);
+    expect(sin).toMatch(/Ese dato no lo tengo a la mano/);
+    const nodoc = red(f('chSustituir')(rd.noDocumentado, CFG), [], CFG);
+    expect(nodoc).not.toMatch(/alguien de nuestro equipo/);
+    expect(red(f('chSustituir')(rd.sinDato, CFG), ['equipo'], CFG)).toMatch(/¿Te gustaría hablar con alguien de nuestro equipo\? 🤝$/);
+  });
+  it('el «Sí» se resuelve con `ficha.ofrecio` (lo que DE VERDAD se ofreció); la pregunta final del último mensaje solo vale para fichas anteriores sin la bandera', () => {
+    const decidir = (ficha: J, texto = 'Sí'): J => f('chDecidir')({ eventos: [ev(texto)], ficha, cfg: CFG, from: '59100000011' });
+    const con = (ofrecio: string, ultimo: string, extra: J = {}): J => ({ ...fichaBase(), explicado: true, rubro: 'belleza', nombrePedido: true, historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: ultimo }], ofrecio, ...extra });
+    const EQ = 'Te cuento todo. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝';
+    const PL = 'Te cuento todo. ¿Te gustaría ver nuestros planes? 🤝';
+    const AMBAS = 'Te cuento todo. ¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+    expect(decidir(con('equipo', EQ)).ruta).toBe('equipo');
+    expect(decidir(con('planes', PL)).ruta).toBe('planes');
+    expect(decidir(con('ambas', AMBAS)).ruta).toBe('planes'); // la oferta doble: planes si aún no los vio
+    expect(decidir(con('ambas', AMBAS, { planesMostrados: true })).ruta).toBe('equipo');
+    // la bandera manda: si lo enviado no ofreció nada, el texto no basta (aunque lo parezca)
+    expect(decidir(con('ninguna', EQ)).ruta).toBe('modelo');
+    expect(decidir(con('equipo', 'Te cuento todo sin ofrecer nada.')).ruta).toBe('equipo');
+    // fichas anteriores (sin `ofrecio`): la pregunta final del último mensaje
+    expect(decidir(con('', EQ)).ruta).toBe('equipo');
+    expect(decidir(con('', 'Te cuento todo. ¿Quieres que alguien de nuestro equipo lo revise contigo?')).ruta).toBe('equipo');
+    expect(decidir(con('', 'Te cuento todo. ¿Te gustaría conversarlo con nuestro equipo?')).ruta).toBe('equipo');
+    expect(decidir(con('', PL)).ruta).toBe('planes');
+    expect(decidir(con('', 'Si algún día lo necesitas, puedes hablar con el equipo. ¿Qué día atiendes más?')).ruta).toBe('modelo');
+    // el «sí, pero…», la negativa y el agradecimiento no aceptan nada
+    for (const x of ['sí, pero cuánto cuesta el plan', 'no', 'no gracias', 'ok gracias']) expect(decidir(con('equipo', EQ), x).ruta, x).not.toBe('equipo');
+  });
+  it('chCliente: sin botones sale un mensaje de TEXTO; con uno o dos, interactivo; el respaldo dice cómo pedirlos; la lista tras el traspaso no ofrece nada', () => {
+    const c = f('chCliente');
+    expect(c('Hola, te cuento algo sobre el servicio completo.', CFG, 'x', { botones: [] }).payload.type).toBe('text');
+    expect(c('Hola, te cuento algo.', CFG, 'x', { botones: ['planes'] }).respaldo).toMatch(/Escribe «planes»/);
+    expect(c('Hola, te cuento algo.', CFG, 'x', { botones: ['equipo'] }).botones).toEqual(['equipo']);
+    expect(c('Hola, te cuento algo.', CFG, 'x', { botones: ['planes', 'equipo'] }).botones).toEqual(['planes', 'equipo']);
+    expect(c('Hola, te cuento algo.', CFG, 'x').payload.type).toBe('text');
+    expect(c('Respuesta útil. Puedo mostrarte los planes.', CFG, 'x', { lista: true, botones: [] }).payload.interactive.type).toBe('list');
   });
 });

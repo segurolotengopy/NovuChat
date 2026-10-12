@@ -52,6 +52,27 @@ debajo de los envíos y la hoja. No hay ciclos: ningún nodo lee por nombre algo
   sistema que no es WhatsApp/Meta/Google Calendar/Google Sheets/QR, descuento, y la lista de rubros al primer saludo. Desde recepción el botón responde «Ya estás en contacto con el equipo».
 - **Primer contacto con «Quiero más información»** (el texto prellenado del anuncio de Facebook; `chSoloPideInfo`): UN mensaje de lista cuyo cuerpo es el pitch FIJO de los datos (`respaldos.abierta.pitch` + `preguntaLista`, ≈730 caracteres, tope 1.024) y las siete filas, sin modelo y sin botones (WhatsApp no combina lista y botones; «Ver planes» y «Hablar con el equipo» salen al elegir el rubro). Con historial, rubro conocido o más palabras sigue al modelo.
 - **El «sí» a una oferta del equipo** lo deriva el código (`chAfirma` + `ficha.ofreceEquipo/ofrecePlanes`, fijados sobre el texto completo del último mensaje): aviso a recepción y botón; con la oferta doble, planes si aún no los vio. Pedir hablar con alguien (`CH_PIDE_EQUIPO_DIRECTO`) también deriva por código.
+- **Botones y ofertas: UNA SOLA TABLA (Andres, 11/10)**. Los decide el CÓDIGO en cada turno con `chSituacion` (las señales: ruta/evento, interés, preguntas acabadas, declina, lo pulsado) → `CH_TABLA` (la primera fila que coincide gana) → `chBotonesDe` (con las compuertas: lo pulsado o ya visto no reaparece) → `chRedondear` (el texto ofrece SOLO lo que lleva y invita a lo que lleva) → `chActualizarBanderas` (`planesTocado`, `equipoTocado`, `respondidas`, `ofrecio`; un ciclo nuevo repone lo pulsado, no el tope de avisos). Reglas: (1) lo pulsado no reaparece; (2) «Ver planes» con interés, nunca antes; (3) «Hablar con el equipo» solo si es requerido o se acabaron las preguntas; (4) al pedir planes se piden los datos UNA vez, sin botón de planes; (5) texto y botones coherentes; (6) un «sí» acepta solo lo que de verdad se ofreció (`ficha.ofrecio`); (7) nunca un callejón sin salida. La batería tiene cuatro invariantes globales (`boton_pulsado_reaparece`, `boton_antes_de_tiempo`, `texto_sin_boton`, `declina_sin_boton`) que corren en todos los casos, en seco y en real. Esta tabla la GENERA el test desde el código y debe coincidir:
+
+<!-- TABLA-BOTONES:INICIO -->
+| # | Fila | «Ver planes» | «Hablar con el equipo» | Oferta del texto | Cuándo y por qué |
+|---|---|---|---|---|---|
+| 1 | `lista` | no | no | ninguna | La lista de rubros (saludo o pitch del primer contacto): la lista misma es la salida; nada se ofrece antes de elegir rubro. |
+| 2 | `traspaso` | no | no | ninguna | El traspaso lleva su propio botón de contacto (enlace a recepción) y el aviso a recepción. |
+| 3 | `pide-datos` | no | no | ninguna | Pidió planes y faltan nombre y negocio: se piden UNA vez, sin botón de planes (los planes salen al contestar). |
+| 4 | `planes` | no | sí | equipo | Los planes (o su tope y complemento): se acabaron las preguntas de precio, cierra con la oferta del equipo. |
+| 5 | `consulta-sin-respuesta` | no | sí | equipo | Integración, costo de Meta, banco, descuento o consumo: el chat no lo resuelve, requiere al equipo. |
+| 6 | `respuesta-fija` | no | no | ninguna | Identidad y disponibilidad: se contestan completas, sin invitaciones. |
+| 7 | `sin-respuesta` | no | sí | equipo | Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo. |
+| 8 | `rubro-declina` | sí | sí | planes y equipo | Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo. |
+| 9 | `declina-ofrece-equipo` | no | sí | equipo | El modelo no pudo resolver y su pregunta final ofrece hablar con el equipo: se conserva esa oferta con su botón (aunque la pregunta traiga una palabra de interés). |
+| 10 | `declina` | solo con interés | sí | planes y equipo | El cliente propone una función no documentada para su rubro, o el modelo declina: nunca un callejón sin salida (con «Ver planes» solo si hay interés). |
+| 11 | `rubro` | sí | no | planes | Eligió rubro: es interés; se ofrece «Ver planes» y nada más. |
+| 12 | `sin-oferta` | no | no | ninguna | Pitch, identidad, cortesía, empresa, medio ilegible, respuesta al nombre (si además pregunta algo con interés, se contesta como ordinaria), fuera de contexto, descarte: sin botones ni invitaciones. |
+| 13 | `ordinaria-acabadas` | solo con interés | sí | planes y equipo | Respuesta ordinaria al acabarse las preguntas («no tengo más dudas», «quiero empezar», tercera respuesta seguida) o a medida. |
+| 14 | `ordinaria-interes` | sí | no | planes | Respuesta ordinaria a una pregunta de interés (costos, qué incluye, cómo funciona, instalación): se ofrece «Ver planes». |
+| 15 | `ordinaria` | no | no | ninguna | Respuesta ordinaria: se contesta sin botones ni invitaciones. |
+<!-- TABLA-BOTONES:FIN -->
 - **Modelo («Catch All»)**: todo lo demás: clics múltiples, emojis, «Y?», «?» con historial, «Quiero más información» con historial (pitch del §8), fuera de contexto, rubro mezclado, «Otro», preguntas sueltas.
 - **Validación** (`chValidarMensaje`, en «Validar respuesta» y «Armar mensajes»): contenido mínimo (25 palabras), cierre con pregunta o invitación, identidad, promesas y nombres de personas,
   ofertas, cifras (solo 24/7, 24 horas y, hablando de precios, 65/125/25 de la consola), sistemas ajenos, validar pagos con el banco, hechos que solo afirma el código, acciones que solo hacen los botones,

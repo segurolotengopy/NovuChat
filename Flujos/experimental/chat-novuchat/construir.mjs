@@ -143,7 +143,7 @@ const CAMPOS_CONFIG = ['waGraphVersion', 'phoneNumberIdEsperado', 'numeroRecepci
   'planillaProspectosHoja', 'prefijosPermitidos', 'nivelEmojis', 'mensajeComercioSuspendido'];
 const CREDENCIALES = ['trigger', 'ingesta', 'graph', 'planilla'];
 const ID_RUBRO = /^[a-z0-9_-]{1,40}$/;
-const CIERRE_RUBRO_EXACTO = '¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝';
+const CIERRE_RUBRO_EXACTO = '¿Te gustaría ver nuestros planes? 🤝'; // (el equipo ya no se ofrece junto a «Ver planes»: solo cuando hace falta o se acabaron las preguntas; decisión de Andres del 11/10)
 const CIERRE_PRECIOS_EXACTO = '¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝';
 const MARCADORES = ['asistente', 'negocio', 'cierreRubro', 'cierrePrecios', 'cierreEquipo'];
 const CLAVES_INSTRUCCIONES = ['rol', 'tono', 'rubros', 'cierreRubro', 'otros', 'precios', 'limites', 'restricciones', 'ambiguedad', 'abierta', 'salida', 'seguridad'];
