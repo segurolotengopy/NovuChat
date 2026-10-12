@@ -641,7 +641,7 @@ const datosDelChat = () => JSON.parse(readFileSync(RUTA_DATOS, 'utf8')).datos;
 const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const palabrasDe = (s) => String(s).replace(/https?:\/\/\S+/g, ' ').split(/\s+/).filter((x) => /[\p{L}\p{N}]/u.test(x)).length;
 const sinTildes = (t) => String(t ?? '').normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-// El último «¿…?» de lo que escribió el MODELO (sin el pedido del nombre), normalizado: lo que él mismo ofrecía al cerrar. Regex propia de la batería, a propósito más amplia que la del código.
+// El último «¿…?» de lo que escribió el MODELO (sin el pedido del nombre), normalizado: lo que él mismo ofrecía al cerrar. Regex propia de la batería: un VERBO de ofrecimiento («quieres/te gustaría/prefieres/te parece…») más equipo, asesor, persona o alguien; la palabra suelta («¿Hoy te responde una persona?») no es una oferta.
 const ultimaPreguntaDelModelo = (t) => { const qs = (String(t ?? '').match(/¿[^?¿]*\?/g) || []).map(sinTildes).filter((q) => !/como te llamas|como se llama tu/.test(q)); return qs.length ? qs[qs.length - 1] : ''; };
 const botonesDe = (p) => ((objeto(objeto(p.interactive).action).buttons ?? [])).map((b) => String(objeto(b.reply).id));
 const titulosDe = (p) => ((objeto(objeto(p.interactive).action).buttons ?? [])).map((b) => String(objeto(b.reply).title));
@@ -925,7 +925,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     const funcionNoDocumentada = !['', 'gastronomia', 'retail', 'otro'].includes(String(ficha.rubro ?? '')) && textosDelTurno.some((x) => /\b(adelantos?|anticipos?|senias?|senas?|pagos? total(es)?|pagos? por adelantado|cobros?)\b|\bqr\b/.test(x));
     ctx.declina = alCliente.some((m) => !m.esRespaldo && /(no lo tengo documentado|no esta documentad\w*|no es mi especialidad|fuera de mi especialidad|no tengo (ese|esa|el|la) (dato|informacion)|no puedo (prometer|confirmar|asegurar)\w*|prefiero no (prometer|darte|afirmar)\w*|no (lo|la) tengo a la mano|no sabria decir\w* (eso|ese dato|con certeza|con seguridad)|desconozco (eso|ese dato|esa informacion|si )|(eso|ese dato|esa informacion|esa pregunta|ese tema|ese otro canal|lo que preguntas) no (lo )?se con (certeza|seguridad)|no cuento con (ese|esa|el|la) (dato|informacion)|no tengo claro)/.test(sinTildes(m.cuerpo)));
     // Invariante SIN VOCABULARIO de declinación: si la pregunta final de lo que escribió el MODELO ofrecía hablar con el equipo, el mensaje enviado lleva el botón del equipo (salvo que ya lo haya pulsado).
-    ctx.ofertaDelModelo = ctx.origen === 'modelo' && ctx.plan === 'modelo' && /\bequipo\b|asesor|\bpersona\b/.test(ultimaPreguntaDelModelo(String(resumen.textoModelo ?? '')));
+    ctx.ofertaDelModelo = ctx.origen === 'modelo' && ctx.plan === 'modelo' && /\b(?:quieres|te gustaria|prefieres|te parece|deseas)\b[^?]*\b(?:equipo|asesor|asesores|persona|alguien)\b/.test(ultimaPreguntaDelModelo(String(resumen.textoModelo ?? '')));
     ctx.equipoPermitido = requeridoPorMensaje || acabaron || funcionNoDocumentada || ctx.declina || ctx.ofertaDelModelo;
     if (alCliente.length) { corrida.inv.texto += 1; if (corrida.pulsados.size) corrida.inv.pulsado += 1; if (alCliente.some((m) => tipoInter(m.payload) === 'button')) corrida.inv.antes += 1; if (ctx.ofertaDelModelo === true) corrida.inv.oferta += 1; }
     for (const m of alCliente) {

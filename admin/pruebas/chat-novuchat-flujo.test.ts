@@ -2912,6 +2912,23 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
       }
     }
   });
+  it('las preguntas de descubrimiento que mencionan al equipo o a una persona NO ofrecen al equipo: sin botón, y el «Sí» no deriva ni gasta una plantilla', () => {
+    const BASE = CAL.replace(Q, '') + ' ';
+    for (const q of ['¿Hoy lleva los mensajes una persona de tu equipo o lo haces tú?', '¿Quién del equipo lleva hoy los mensajes?', '¿Cuántos mensajes recibe el equipo al día?', '¿Tienes una persona dedicada a responder?', '¿Lo maneja el equipo de recepción o tú misma?', '¿Cuántas personas hay en tu equipo?', '¿Tienes un equipo de ventas?']) {
+      const { w, j } = tras();
+      w.modelo.con = dice(CAL);
+      j.texto('¿Se conecta a mi calendario?');
+      j.texto('Ana Pérez, Salón Rosa');
+      w.modelo.con = dice(BASE + q);
+      const e = j.texto('¿Cómo sabré cuándo atiendes más?').aMi[0]!;
+      expect(idsBotones(e), q).not.toContain('equipo');
+      expect(e.cuerpo, q).toContain(q);
+      w.modelo.con = dice(CAL);
+      const t = j.texto('Sí');
+      expect(tipoInter(t.aMi[0]!), q).not.toBe('cta_url');
+      expect(t.plantillas, q).toHaveLength(0);
+    }
+  });
   it('frases que NO declinan («Desconozco cuántos mensajes recibes hoy, pero…», «No sabría decirte cuál es tu mejor horario…, pero…») no ponen el botón antes de tiempo, y el «Sí» a la pregunta del modelo NO deriva', () => {
     const BASE = 'Hoy NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario. ';
     for (const modelo of [

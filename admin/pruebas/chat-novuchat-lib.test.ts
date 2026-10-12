@@ -2339,6 +2339,18 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
       expect(f('chRedondear')(texto, ['equipo'], CFG), q).toContain(q); // (con su botón la oferta se queda tal cual)
       expect(f('chRedondear')(texto, [], CFG), q).not.toContain(q); // (sin el botón se quita: nunca una oferta sin mecanismo)
     }
+    // preguntas de DESCUBRIMIENTO que mencionan al equipo o a una persona NO son una oferta: ni botón, ni se quitan, ni el «Sí» deriva
+    const DESCUBRIMIENTO = ['¿Hoy te responde una persona o lo haces tú?', '¿Hoy lleva los mensajes una persona de tu equipo o lo haces tú?', '¿Quién del equipo responde hoy los mensajes?', '¿Cuántos mensajes recibe el equipo al día?', '¿Tienes una persona dedicada a responder?', '¿Lo maneja el equipo de recepción o tú misma?', '¿Cuántas personas hay en tu equipo?', '¿Tienes un equipo de ventas?'];
+    for (const q of DESCUBRIMIENTO) {
+      const texto = 'Hoy NovuChat atiende tu WhatsApp en segundos y agenda citas sin cruces, para que no pierdas ventas fuera de horario. ' + q;
+      const sd = sit(texto);
+      expect([sd['modeloOfreceEq'], sd['declina']], q).toEqual([false, false]);
+      expect(f('chBotonesDe')(sd), q).toMatchObject({ equipo: false });
+      expect(f('chRedondear')(texto, [], CFG), q).toContain(q);
+      expect(f('chOfreceAlEquipo')(texto), q).toBe(false);
+    }
+    expect(f('chOfreceAlEquipo')('El equipo de NovuChat configura todo por ti y tu asistente queda listo. ¿Qué día atiendes más?')).toBe(false);
+    for (const q of ['¿Quieres que alguien de nuestro equipo lo revise contigo?', '¿Te gustaría hablar con alguien de nuestro equipo? 🤝', '¿Te gustaría conversarlo con nuestro equipo?', '¿Te gustaría que nuestro equipo lo vea contigo?', '¿Prefieres hablar con un asesor?']) expect(f('chOfreceAlEquipo')('Te cuento cómo funciona. ' + q), q).toBe(true);
     // una frase afirmativa suelta sobre el equipo no es una oferta ni se quita
     expect(f('chRedondear')('El setup lo configura el equipo de NovuChat, y tu asistente queda listo para atender. ¿Qué día atiendes más?', [], CFG)).toMatch(/lo configura el equipo de NovuChat/);
     expect(f('chOfreceAlEquipo')('El setup lo configura el equipo de NovuChat. ¿Qué día atiendes más?')).toBe(false);

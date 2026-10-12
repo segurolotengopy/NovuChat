@@ -344,12 +344,15 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(await violacionesCon(FLUJO, 'C2')).toEqual([]);
   });
   it('INVARIANTE 5 en el flujo: si el modelo ofrece al equipo SIN ninguna frase de declinación (F6) y el código deja de conservar esa oferta, se dice `oferta_del_modelo_quitada`; el flujo sano da cero en F1 a F6', async () => {
-    for (const id of ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'PA1', 'PA2', 'PA3', 'PA4', 'NO1', 'NO2', 'NO3']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
+    for (const id of ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'PA1', 'PA2', 'PA3', 'PA4', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5', 'NO6', 'NO7', 'NO8']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
     const f = estropear('|| modeloOfreceEq),', '),');
     expect(await violacionesCon(f, 'F6')).toContain('oferta_del_modelo_quitada');
     // otras paráfrasis de ofrecer al equipo («¿Quieres que alguien de nuestro equipo lo revise contigo?», «¿Te gustaría conversarlo con nuestro equipo?»…): si el código vuelve a reconocer solo «hablar con alguien/el equipo», la oferta sale sin botón y la batería lo dice
-    const estrecha = estropear('const CH_OFRECE_EQ = /\\bhablar con (?:alguien|una persona)|\\b(?:nuestro|el|del) equipo\\b|\\buna persona\\b|\\bun asesor\\b|\\balguien de nuestro\\b/i;', 'const CH_OFRECE_EQ = /hablar con (?:alguien|una persona|(?:alguien de )?(?:nuestro |el )?equipo)|un asesor/i;');
+    const estrecha = estropear('const CH_OFRECE_EQ = /\\bhablar(?:lo)? con (?:alguien|una persona|un asesor|(?:nuestro|el) equipo)|\\bnuestro equipo\\b|\\balguien (?:de nuestro|del) equipo\\b|\\bcon (?:el|nuestro) equipo\\b|\\b(?:lo vea|lo revise|te atienda|te ayude) (?:una persona|un asesor)\\b/i;', 'const CH_OFRECE_EQ = /hablar con (?:alguien|una persona|(?:alguien de )?(?:nuestro |el )?equipo)|un asesor/i;');
     for (const id of ['PA1', 'PA2', 'PA3', 'PA4']) expect(await violacionesCon(estrecha, id), id).toContain('oferta_del_modelo_quitada');
+    // la constante demasiado amplia (la MENCIÓN del equipo o de «una persona», no la forma de ofrecer) pone el botón ante preguntas de descubrimiento: la batería lo dice antes de tiempo
+    const ancha = estropear('const CH_OFRECE_EQ = /\\bhablar(?:lo)? con (?:alguien|una persona|un asesor|(?:nuestro|el) equipo)|\\bnuestro equipo\\b|\\balguien (?:de nuestro|del) equipo\\b|\\bcon (?:el|nuestro) equipo\\b|\\b(?:lo vea|lo revise|te atienda|te ayude) (?:una persona|un asesor)\\b/i;', 'const CH_OFRECE_EQ = /\\bhablar con (?:alguien|una persona)|\\b(?:nuestro|el|del) equipo\\b|\\buna persona\\b|\\bun asesor\\b|\\balguien de nuestro\\b/i;');
+    for (const id of ['NO4', 'NO5', 'NO6', 'NO7', 'NO8']) expect(await violacionesCon(ancha, id), id).toEqual(expect.arrayContaining([expect.stringMatching(/boton_antes_de_tiempo/)]));
     // «Desconozco cuántos mensajes recibes…, pero…» NO declina: si la palabra suelta vuelve a bastar, el botón sale antes de tiempo
     const suelta = estropear('desconozco (?:eso|ese dato|esa informacion|esa pregunta|lo que (?:preguntas|consultas)|si (?:ese|esa|eso|esta|existe|hay|se))(?!.*\\bpero\\b)', 'desconozco');
     expect(await violacionesCon(suelta, 'NO1')).toEqual(expect.arrayContaining([expect.stringMatching(/botones_inesperados|boton_antes_de_tiempo/)]));

@@ -1408,7 +1408,7 @@ function chBotonesDe(s) {
   return { fila: fila.id, planes: planes, equipo: equipo, ordinaria: fila.id.startsWith('ordinaria'), ofrecio: planes && equipo ? 'ambas' : (planes ? 'planes' : (equipo ? 'equipo' : 'ninguna')) };
 }
 // Texto y botones coherentes: se quita lo que el mensaje ofrece y no lleva (la oferta doble se queda con su mitad con botón; «los botones de abajo» sin botones; la revisión «por alguien de nuestro equipo» sin el botón sería una promesa sin mecanismo) y se agrega la invitación de lo que sí lleva y el texto no invita. Lo escribe el modelo o el dato: el prompt no es una barrera.
-const CH_OFRECE_EQ = /\bhablar con (?:alguien|una persona)|\b(?:nuestro|el|del) equipo\b|\buna persona\b|\bun asesor\b|\balguien de nuestro\b/i;
+const CH_OFRECE_EQ = /\bhablar(?:lo)? con (?:alguien|una persona|un asesor|(?:nuestro|el) equipo)|\bnuestro equipo\b|\balguien (?:de nuestro|del) equipo\b|\bcon (?:el|nuestro) equipo\b|\b(?:lo vea|lo revise|te atienda|te ayude) (?:una persona|un asesor)\b/i;
 const CH_OFRECE_PL = /(?:ver|conocer) (?:los |nuestros |todos los )?planes|(?:muestro|mostrarte) (?:los |nuestros )?planes(?! que mejor te sirvan)/i;
 const CH_ATRIBUYE_EQ = /(?:[:;,]\s*)?(?:y )?(?:eso|esto) lo (?:revisa|evalúa|confirma) alguien de nuestro equipo|(?:[:;,]\s*)?(?:así que )?lo mejor es que alguien de nuestro equipo evalúe tu caso/gi;
 function chRedondear(texto, ids, cfg) {
@@ -1416,7 +1416,7 @@ function chRedondear(texto, ids, cfg) {
   const lineas = chLineas(texto).split('\n').map((l) => l.split(/(?<=[.!?…][\p{Extended_Pictographic}\uFE0F]*)\s+(?![\p{Extended_Pictographic}\uFE0F])|\s+(?=¿)/u).map((x) => {
     const o = eq ? x : x.replace(CH_ATRIBUYE_EQ, '');
     const on = chNorm(o);
-    const [e, p] = [CH_OFRECE_EQ.test(on) && (/[?？]/.test(o) || /\bhablar con\b|\bun asesor\b/.test(on)), CH_OFRECE_PL.test(o)];
+    const [e, p] = [(CH_OFRECE_EQ.test(on) && (/[?？]/.test(o) || /\bhablar(?:lo)? con\b/.test(on))) || (!/[?？]/.test(o) && /\bun asesor\b/.test(on)), CH_OFRECE_PL.test(o)];
     if (e && p) return eq && pl ? o : (pl ? '¿Te gustaría ver nuestros planes? 🤝' : (eq ? '¿Te gustaría hablar con alguien de nuestro equipo? 🤝' : ''));
     return (e && !eq) || (p && !pl) || (!eq && !pl && /toca(?:r)? el bot[oó]n|botones? de abajo/i.test(o)) ? '' : o;
   }).filter((o) => o !== '').join(' ').trim());
