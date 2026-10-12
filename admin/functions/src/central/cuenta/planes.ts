@@ -28,12 +28,15 @@
  *    escribe solo quien cambia el plan, en la misma transacción, y NINGÚN
  *    límite ni ninguna regla lo lee nunca.
  *
- * LOS NÚMEROS DE LOS PLANES PUBLICADOS son los que publica el sitio
- * (`Novuchat-site`, `src/contenido/precios.es.ts`, verificado el 15/09/2026) y
- * los de la «Base comercial» de `CLAUDE.md`. Un PR que cambie uno de ellos
- * cambia los tres lugares; `pruebas/central/planes.test.ts` compara este archivo con
- * `docs/base-comercial.md`. `byoc` NO se publica y por eso no está en esa comparación: se
- * ofrece caso por caso (`Analisis/39`).
+ * LOS NÚMEROS DE LOS PLANES PUBLICADOS: la fuente es `docs/base-comercial.md`
+ * (la «Base comercial»), y el catálogo vigente es el de `CATALOGO_PLANES`
+ * (2026-10-12: 200 / 500 / 1.000 con la tarifa estándar, 100 / 220 / 500 con
+ * Meta incluido). `pruebas/central/planes.test.ts` compara este archivo con ese
+ * documento y falla si dejan de coincidir. El sitio (`Novuchat-site`,
+ * `src/contenido/precios.es.ts`) se alinea en su propia sesión, a la par de la
+ * etiqueta que despliega este catálogo: un PR que cambie un número de acá
+ * cambia el código y el documento, y avisa al sitio. `byoc` NO se publica y
+ * por eso no está en esa comparación: se ofrece caso por caso (`Analisis/39`).
  */
 
 // -----------------------------------------------------------------------------
