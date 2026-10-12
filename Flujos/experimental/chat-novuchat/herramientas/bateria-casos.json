@@ -5886,6 +5886,229 @@
      }
     }
    ]
+  },
+  {
+   "id": "NUM1",
+   "titulo": "Número propio: «¿Puedo usar mi número actual?» → respuesta fija con la frase oficial, solo «Hablar con el equipo», sin modelo; «Sí» deriva (aviso a recepción + botón)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Puedo usar mi número actual?",
+     "exige": {
+      "ruta": "fijo",
+      "sinModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
+       "hablar con alguien de nuestro equipo"
+      ],
+      "noContiene": [
+       "API",
+       "certificado",
+       "ver nuestros planes"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "NUM2",
+   "titulo": "Número propio sin signos ni acentos («tengo que comprar un numero nuevo») → la misma respuesta fija",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "tengo que comprar un numero nuevo",
+     "exige": {
+      "ruta": "fijo",
+      "sinModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
+       "hablar con alguien de nuestro equipo"
+      ],
+      "noContiene": [
+       "API",
+       "certificado",
+       "ver nuestros planes"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "NUM3",
+   "titulo": "Número propio: «¿Mi número seguirá funcionando en el celular?» → la misma respuesta fija",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Mi número seguirá funcionando en el celular?",
+     "exige": {
+      "ruta": "fijo",
+      "sinModelo": true,
+      "botones": "equipo",
+      "contiene": [
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
+       "hablar con alguien de nuestro equipo"
+      ],
+      "noContiene": [
+       "API",
+       "certificado",
+       "ver nuestros planes"
+      ]
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "Sí",
+     "exige": {
+      "sinModelo": true,
+      "ruta": "equipo",
+      "cta": true,
+      "plantillas": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "NUM4",
+   "titulo": "Número propio con el equipo ya pulsado: la respuesta fija sale sin la invitación (lo pulsado no reaparece)",
+   "turnos": [
+    {
+     "tipo": "texto",
+     "texto": "Hola",
+     "exige": {
+      "ruta": "lista",
+      "sinModelo": true
+     }
+    },
+    {
+     "tipo": "fila",
+     "id": "rubro:belleza",
+     "seco": {
+      "mensaje": "¡Qué lindo rubro! ✨ NovuChat muestra tus servicios y motiva a tus clientes a agendar en el momento. Revisa la disponibilidad de tus especialistas 💇, agenda la cita y manda un recordatorio 24 horas antes 🔔 para mantener tu agenda llena. ¿Quieres conocer los planes?",
+      "rubro": "belleza"
+     },
+     "exige": {
+      "termina": "¿Te gustaría ver nuestros planes? 🤝",
+      "botones": "planes",
+      "noContiene": [
+       "novuchat.site"
+      ]
+     }
+    },
+    {
+     "tipo": "boton",
+     "id": "equipo",
+     "exige": {
+      "cta": true,
+      "plantillas": 1
+     }
+    },
+    {
+     "tipo": "texto",
+     "texto": "¿Puedo usar mi número actual?",
+     "exige": {
+      "ruta": "fijo",
+      "sinModelo": true,
+      "contiene": [
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar."
+      ],
+      "noContiene": [
+       "hablar con alguien de nuestro equipo",
+       "ver nuestros planes"
+      ]
+     }
+    }
+   ]
   }
  ]
 }

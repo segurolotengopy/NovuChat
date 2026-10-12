@@ -2912,6 +2912,38 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
       }
     }
   });
+  it('«¿Puedo usar mi número actual?» y sus variantes: respuesta FIJA con la frase oficial, sin llamar al modelo, solo «Hablar con el equipo»; el «Sí» deriva con UN aviso; con el equipo ya pulsado sale sin botón; los negativos no activan la ruta', () => {
+    const FRASE = 'Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.';
+    const VARIANTES = ['¿Puedo usar mi número actual?', 'puedo usar mi numero actual', '¿Tengo que comprar un número nuevo?', '¿Mi número seguirá funcionando en el celular?', '¿Puedo seguir usando mi WhatsApp en mi celular?', '¿Se pierden mis chats?', '¿Puedo conectar el que ya tengo?', '¿Qué número necesito?', '¿Coexisten?'];
+    for (const q of VARIANTES) {
+      const { w, j } = tras();
+      const llamadas = w.modelo.llamadas.length;
+      const e = j.texto(q).aMi[0]!;
+      expect(w.modelo.llamadas, q).toHaveLength(llamadas);
+      expect(e.cuerpo, q).toContain(FRASE);
+      expect(e.cuerpo, q).toContain('¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso?');
+      expect(e.cuerpo, q).not.toMatch(/\bAPI\b|coexisten|certificad|ver nuestros planes/i);
+      expect(idsBotones(e), q).toEqual(['equipo']);
+      const t = j.texto('Sí');
+      expect(tipoInter(t.aMi[0]!), q).toBe('cta_url');
+      expect(t.plantillas, q).toHaveLength(1);
+    }
+    // con el equipo ya pulsado: la respuesta sale, sin botón ni invitación (lo pulsado no reaparece)
+    const { w, j } = tras();
+    j.boton('equipo');
+    const e = j.texto('¿Puedo usar mi número actual?').aMi[0]!;
+    expect(e.cuerpo).toContain(FRASE);
+    expect(idsBotones(e)).toEqual([]);
+    expect(e.cuerpo).not.toMatch(/hablar con alguien de nuestro equipo/);
+    // los negativos NO activan la ruta fija (siguen su camino de siempre)
+    for (const q of ['¿Cuánto cuesta el número?', 'Mi número de teléfono es 71234567', '¿Atienden en este número?', '¿Cuál es tu número?']) {
+      const c = tras();
+      c.w.modelo.con = dice(CAL);
+      const x = c.j.texto(q).aMi[0]!;
+      expect(x.cuerpo, q).not.toContain(FRASE);
+    }
+    expect(w).toBeDefined();
+  });
   it('las preguntas de descubrimiento que mencionan al equipo o a una persona NO ofrecen al equipo: sin botón, y el «Sí» no deriva ni gasta una plantilla', () => {
     const BASE = CAL.replace(Q, '') + ' ';
     for (const q of ['¿Hoy lleva los mensajes una persona de tu equipo o lo haces tú?', '¿Quién del equipo lleva hoy los mensajes?', '¿Cuántos mensajes recibe el equipo al día?', '¿Tienes una persona dedicada a responder?', '¿Lo maneja el equipo de recepción o tú misma?', '¿Cuántas personas hay en tu equipo?', '¿Tienes un equipo de ventas?']) {

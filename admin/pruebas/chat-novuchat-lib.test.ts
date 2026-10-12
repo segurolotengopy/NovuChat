@@ -413,7 +413,7 @@ describe('chDecidir: lo que resuelve el CÓDIGO y lo que cae en el modelo', () =
     const casos: [string, string, string][] = [
       ['Llámame mañana', 'equipo', ''], ['quiero hablar con una persona', 'equipo', ''], ['ya soy cliente, necesito soporte', 'equipo', ''],
       ['¿Cuánto cobra Meta?', 'fijo', 'costoMeta'], ['¿Cuántas conversaciones trae el plan Impulso?', 'planes', ''], ['¿Cuántos mensajes incluye una conversación?', 'fijo', 'consumo'],
-      ['¿Valida mis transferencias con el banco?', 'fijo', 'banco'], ['¿Se conecta con SAP?', 'fijo', 'integracion'], ['Dame un descuento', 'fijo', 'descuento'], ['¿Cuánto cuesta?', 'pedirNombre', ''],
+      ['¿Valida mis transferencias con el banco?', 'fijo', 'banco'], ['¿Se conecta con SAP?', 'fijo', 'integracion'], ['Dame un descuento', 'fijo', 'descuento'], ['¿Puedo usar mi número actual?', 'fijo', 'numeroActual'], ['¿Cuánto cuesta?', 'pedirNombre', ''],
     ];
     for (const [t, ruta, fijo] of casos) {
       const p = decidir([ev(t)]);
@@ -1029,6 +1029,18 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     expect(sin.texto).toMatch(/Por ahora no puedo ponerte en contacto/);
     expect(sin.payload.type).toBe('text'); // (sin número de recepción no hay a quién pasar: ni «Hablar con el equipo» ni ofertas)
     expect(JSON.stringify(sin.payload)).not.toMatch(/wa\.me/);
+  });
+  it('el NÚMERO PROPIO del prospecto: cada variante (acentos, mayúsculas, sin signos, audio transcrito) va a la ruta fija `numeroActual`; los negativos no', () => {
+    const SI = ['¿Puedo usar mi número actual?', 'puedo usar mi numero', 'PUEDO USAR MI NUMERO ACTUAL', '¿Puedo usar mi WhatsApp?', '¿Puedo usar mi línea?', '¿Puedo utilizar mi número personal?', '¿Tengo que comprar un número nuevo?', '¿Tengo que comprar otra línea?', '¿Tengo que comprar otro chip?', '¿Necesito un número nuevo para el asistente?', '¿Debo sacar un número aparte?', '¿Mi número seguirá funcionando en el celular?', '¿Mi número va a seguir funcionando en la app?', '¿Mi WhatsApp seguirá funcionando en WhatsApp normal?', '¿Puedo seguir usando mi WhatsApp en mi celular?', '¿Se pierde mi número?', '¿Se pierden mis chats?', '¿Pierdo mi número si lo conecto?', '¿Puedo conectar el que ya tengo?', '¿Qué número necesito?', '¿Coexisten?', '¿Pueden coexistir los dos?', '¿Puedo usar los dos, el WhatsApp del celular y el del asistente?', 'Quiero usar mi número actual, se puede', 'puedo conectar mi numero', '¿Mi número actual sirve?'];
+    const NO = ['¿Cuánto cuesta el número?', '¿Cuánto cuesta usar mi número?', 'Mi número de teléfono es 71234567', 'Me llamo Ana, mi número es 7123', '¿Cuál es tu número?', '¿Atienden en este número?', 'Quiero ver mi número de pedidos', '¿Cuántos mensajes incluye?', '¿Se conecta a mi calendario?', '¿Se conecta con mi WhatsApp?', '¿Puedo usar mi calendario?', 'Tengo una línea de crédito', '¿Puedo dejar mi número?', 'Hola', '¿Qué incluye el setup?', '¿Pueden usar el sistema los dos socios?'];
+    const det = f('chPreguntaNumeroActual');
+    const decidir = (eventos: J[]): J => f('chDecidir')({ eventos, ficha: fichaBase(), cfg: CFG, from: '59100000011' });
+    for (const x of SI) { expect(det(x), x).toBe(true); const p = decidir([ev(x)]); expect([x, p.ruta, p.fijo]).toEqual([x, 'fijo', 'numeroActual']); }
+    for (const x of NO) { expect(det(x), x).toBe(false); expect([x, decidir([ev(x)]).fijo]).not.toEqual([x, 'numeroActual']); }
+    const t = f('chRespuestaFija')('numeroActual', CFG);
+    expect(t).toBe('Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar. ¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso? 🤝');
+    expect(t).not.toMatch(/\bAPI\b|coexisten|certificad|https?:/i);
+    expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: 'numeroActual' }, res: null, eventos: [ev('¿Puedo usar mi número actual?')], ficha: fichaBase() }))).toMatchObject({ fila: 'consulta-sin-respuesta', equipo: true, planes: false, ofrecio: 'equipo' });
   });
   it('chRespuestaFija: el dato más la invitación al equipo, sin ninguna cifra', () => {
     for (const id of ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento']) {
@@ -2175,7 +2187,7 @@ describe('la regla del «Sí» es robusta: la oferta se lee aunque se pegue el p
 
 // ================================================================================================
 // LA TABLA ÚNICA de botones y ofertas (decisión de Andres, 11/10): `CH_TABLA` + `chSituacion` + `chBotonesDe` + `chRedondear` + `chActualizarBanderas`. Se prueba POR PROPIEDAD sobre todo el espacio de situaciones.
-const RUTAS_FIJAS = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'identidad', 'disponibilidad'];
+const RUTAS_FIJAS = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual', 'identidad', 'disponibilidad'];
 const EVENTOS = ['rubro', 'multiple', 'otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico', 'pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte', 'general', 'respuesta'];
 const TIPOS: J[] = [{ ruta: 'lista' }, { ruta: 'equipo' }, { ruta: 'pedirNombre' }, { ruta: 'planes' }, ...RUTAS_FIJAS.map((fijo) => ({ ruta: 'fijo', fijo })), ...EVENTOS.map((ev) => ({ ruta: 'modelo', ev }))];
 const BOOLS = ['aMedida', 'interes', 'acabadas', 'declina', 'modeloOfreceEq', 'planesTocado', 'planesVistos', 'equipoTocado'];
@@ -2202,7 +2214,7 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect(new Set(T.map((x) => x['id'])).size, 'ids únicos').toBe(T.length);
     expect(T.at(-1)!['id']).toBe('ordinaria'); // la última fila siempre coincide: toda situación tiene fila
   });
-  it('PROPIEDADES sobre las 6.144 situaciones: lo pulsado no reaparece; «Ver planes» nunca sin interés; el equipo solo si es requerido o se acabaron las preguntas; nunca un callejón sin salida; el pedido de datos no lleva botón de planes', () => {
+  it('PROPIEDADES sobre las 6.336 situaciones: lo pulsado no reaparece; «Ver planes» nunca sin interés; el equipo solo si es requerido o se acabaron las preguntas; nunca un callejón sin salida; el pedido de datos no lleva botón de planes', () => {
     const cuenta: Record<string, number> = {};
     const ok = (k: string): void => { cuenta[k] = (cuenta[k] ?? 0) + 1; };
     const sinRespuesta = ['otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico'];
@@ -2222,12 +2234,12 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
       // (3) el equipo solo si es REQUERIDO o se ACABARON las preguntas (la oferta de planes, el cierre de precios, una consulta sin respuesta, a medida, función no documentada)
       if (r.equipo) {
         const ordinaria = s.ruta === 'modelo' && !sinRespuesta.includes(s.ev) && (!sinOferta.includes(s.ev) || (s.ev === 'datos' && s.interes)) && s.ev !== 'rubro' && s.ev !== 'multiple';
-        const requerido = s.ruta === 'planes' || (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev)))) || (ordinaria && (s.aMedida || s.acabadas));
+        const requerido = s.ruta === 'planes' || (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev)))) || (ordinaria && (s.aMedida || s.acabadas));
         expect(requerido, donde).toBe(true);
       }
       ok('3 equipo si es requerido o se acabaron las preguntas');
       // (4) nunca un callejón sin salida: lo que el chat no resuelve lleva al equipo (si no se pulsó en este ciclo)
-      const noResuelve = (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev))));
+      const noResuelve = (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev))));
       if (noResuelve && !s.equipoTocado) expect(r.equipo, donde).toBe(true);
       ok('4 sin callejón sin salida');
       // (5) el pedido de datos, la lista y el traspaso no llevan botones de la tabla
@@ -2243,8 +2255,8 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
       expect(r.ordinaria, donde).toBe(String(r.fila).startsWith('ordinaria'));
       ok('8 fila de la tabla');
     }
-    expect(n).toBe(6144);
-    expect(Object.values(cuenta).every((v) => v === 6144)).toBe(true);
+    expect(n).toBe(6336);
+    expect(Object.values(cuenta).every((v) => v === 6336)).toBe(true);
     console.log('[tabla] situaciones enumeradas por invariante:', JSON.stringify(cuenta));
   });
   it('PROPIEDAD del texto: para cada combinación de botones y cada mensaje, `chRedondear` no ofrece lo que no lleva y SÍ invita a lo que lleva; nunca sale vacío ni pasa del máximo', () => {
