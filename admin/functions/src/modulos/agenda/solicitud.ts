@@ -1,7 +1,8 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import { MS_VENTANA_ATENCION } from '../../core/conteo/atencion.js';
 import { milisegundosDe } from '../../core/turno/tiempo.js';
-import { CAMPOS_REGLA_2_EN_NULO, esReglaDos, limiteDe, totalUtilizable } from '../cobros/cobroVenta.js';
+import { cierreBloqueadoPorCobro, cierreDeVentaLoHaceElCotejo, cobroDosCerrado } from '../cobros/alCierre.js';
+import { CAMPOS_REGLA_2_EN_NULO, esReglaDos, totalUtilizable } from '../cobros/cobroVenta.js';
 
 /**
  * =============================================================================
@@ -12,12 +13,19 @@ import { CAMPOS_REGLA_2_EN_NULO, esReglaDos, limiteDe, totalUtilizable } from '.
  * cambiar una línea de lógica, para que ningún módulo importe el archivo del
  * coordinador (la deuda de `fronteras.test.ts`). `ingesta.ts` las reexporta para
  * que sus importadores de siempre no cambien; la equivalencia con lo de antes la
- * fija `pruebas/core/equivalencia-f3b1a.test.ts`.
+ * fija `pruebas/modulos/agenda/solicitud-equivalencia.test.ts`.
  *
- * Por qué viven en Agenda y no en Cobros: la solicitud es el estado de la seña de
- * una cita (y de la venta que comparte su forma), y Agenda declara `dependeDe:
+ * F3b-1b (05/10/2026): los predicados de la regla 2 del cobro (`cierreBloqueadoPorCobro`,
+ * `cierreDeVentaLoHaceElCotejo`, `cobroDosCerrado`) y la ventana de 24 h pasaron a
+ * `modulos/cobros/alCierre.ts`, que es de quien sabe qué es un cobro: Core los
+ * recibe como gancho y Agenda los importa de ahí (`dependeDe: ['cobros']`). Lo
+ * que Agenda aporta al cierre de una cita, `solicitudTras(…, 'cita_agendada', …)`,
+ * lo entrega `modulos/agenda/alCierre.ts`.
+ *
+ * Por qué la solicitud vive en Agenda y no en Cobros: es el estado de la seña de
+ * una cita (y de la venta que comparte su forma); Agenda declara `dependeDe:
  * ['cobros']`, de modo que los predicados de la regla 2 se toman de
- * `cobros/cobroVenta.ts` (`limiteDe`, `esReglaDos`) sin importar hacia arriba.
+ * `cobros/` (`alCierre.ts`, `cobroVenta.ts`) sin importar hacia arriba.
  */
 
 /**
@@ -110,52 +118,8 @@ function solicitudNueva(etapa: Solicitud['etapa'], ahora: Timestamp): Solicitud 
   };
 }
 
-/** La ventana en la que un cobro de regla 2 cerrado sigue siendo ESTE caso: pasada, es otra conversación. */
-const MS_VENTANA_COBRO = 24 * 3_600_000;
-
 type Plano = Record<string, unknown>;
 const comoPlano = (v: unknown): Plano | null => (typeof v === 'object' && v !== null ? v as Plano : null);
-
-/** ¿Es un cobro de regla 2 que ya no está en curso (en revisión, cancelado, vencido o vencido por reloj)? */
-function cobroDosCerrado(p: Plano, ahoraMs: number): boolean {
-  const etapa = typeof p['etapa'] === 'string' ? p['etapa'] : '';
-  const limite = limiteDe(p);
-  return etapa === 'en_revision' || etapa === 'cancelada' || etapa === 'vencida'
-    || (etapa === 'qr_enviado' && limite !== null && ahoraMs >= limite);
-}
-
-/**
- * ¿Un cierre (`cita_agendada`, o el de una venta) NO debe mover esta solicitud?
- * Sí cuando es un cobro de regla 2 que ya no está en curso —`en_revision`,
- * `cancelada`, `vencida`, o `qr_enviado` con el límite efectivo ya pasado
- * (vencida por reloj sin que nadie la anotara; D6).
- * **`en_revision` bloquea SIEMPRE**: no vence por reloj, lo resuelve una persona.
- * `cancelada`, `vencida` y `qr_enviado` vencido bloquean **solo mientras sigue
- * siendo ESTE caso**, hasta 24 h después del límite efectivo (`limiteDe`);
- * pasado ese plazo `solicitudDeCobroTras` lo trata como otra conversación y el
- * cierre ya puede crear su solicitud. Pura. Con regla 1, nunca.
- */
-export function cierreBloqueadoPorCobro(previa: unknown, ahoraMs: number): boolean {
-  const p = comoPlano(previa);
-  if (!p || !esReglaDos(p) || !cobroDosCerrado(p, ahoraMs)) return false;
-  if (p['etapa'] === 'en_revision') return true;
-  const limite = limiteDe(p);
-  return limite !== null && ahoraMs - limite <= MS_VENTANA_COBRO;
-}
-
-/**
- * ¿Un cierre de VENTA con cobro REAL lo debe hacer solo `cotejarComprobanteVenta`?
- * Sí si el cobro de regla 2 está bloqueado (arriba) o sigue a tiempo en
- * `qr_enviado`: con cobro real el único que cierra es el cotejo del comprobante.
- * Lo consulta `registrarCierre`; el modo simulado sigue cerrando por ahí.
- */
-export function cierreDeVentaLoHaceElCotejo(previa: unknown, ahoraMs: number): boolean {
-  const p = comoPlano(previa);
-  if (!p || !esReglaDos(p)) return false;
-  const limite = limiteDe(p);
-  return cierreBloqueadoPorCobro(p, ahoraMs)
-    || (p['etapa'] === 'qr_enviado' && limite !== null && ahoraMs < limite);
-}
 
 /**
  * Qué `solicitud` queda guardada después de este mensaje. `null` = no se toca.
