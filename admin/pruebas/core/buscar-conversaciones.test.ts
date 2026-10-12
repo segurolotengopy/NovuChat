@@ -1007,10 +1007,19 @@ describe('el despliegue: opciones, índice y puertas', () => {
     expect(hay).toBe(true);
   });
 
-  it('acceso.ts no usa cuentaVigenteDe ni Auth (D13) y la callable no se exporta aún desde index.ts', () => {
+  it('acceso.ts no usa cuentaVigenteDe ni Auth (D13) y index.ts exporta la callable exactamente una vez (H1-6)', () => {
     expect(CODIGO('acceso.ts')).not.toMatch(/cuentaVigenteDe|getAuth|firebase-admin\/auth/);
     const index = readFileSync(join(aqui, '..', '..', 'functions', 'src', 'index.ts'), 'utf8');
-    expect(index).not.toMatch(/buscarConversaciones/); // la exporta H1-6, después de #439
+    // Sin comentarios: el nombre dicho en un comentario no cuenta como exportación.
+    const sinComentarios = index.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    // Cuenta las exportaciones del nombre (la ruta del archivo también lo contiene, y no cuenta).
+    const exportaciones = sinComentarios.match(/export\s*\{[^}]*\bbuscarConversaciones\b[^}]*\}/g) ?? [];
+    expect(exportaciones).toHaveLength(1);
+    expect(sinComentarios).toMatch(
+      /export\s*\{\s*buscarConversaciones\s*\}\s*from\s*'\.\/core\/conversacion\/buscarConversaciones\.js'/);
+    // Y después de las opciones globales (región y cuenta), que son el primer import.
+    expect(index.indexOf("import './core/opcionesGlobales.js'")).toBeGreaterThanOrEqual(0);
+    expect(index.indexOf("import './core/opcionesGlobales.js'")).toBeLessThan(index.search(/export\s*\{\s*buscarConversaciones/));
   });
 
   it('las reglas siguen sin abrir los mensajes a una consulta de grupo', () => {

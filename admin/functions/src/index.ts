@@ -89,3 +89,9 @@ export { verificarCampanas } from './modulos/campanas/verificarCampanas.js';
 export { crearCobroPrepago, avisoCobrador, sondeoCobros, barridoCobros, imagenDePago } from './central/pagar/cobroPrepago.js';
 export { tipoCambioBcb } from './central/servicios/tipoCambioBcb.js';
 export { importarCatalogo } from './modulos/productos/limiteCatalogo.js'; // límite de productos por plan: ver limiteCatalogo.ts
+// BÚSQUEDA EN CONVERSACIONES (H1-6). Callable del Core: busca una palabra en los
+// mensajes de UN comercio con los campos derivados que escribe la ingesta. Va
+// DESPUÉS de las opciones globales (región y cuenta sa-functions, primer import
+// de este archivo). Sin la bandera `consolaConversaciones` nadie la llama; el
+// orden de puesta en producción (índices, etiqueta, invocador, bandera) está en el PR.
+export { buscarConversaciones } from './core/conversacion/buscarConversaciones.js';

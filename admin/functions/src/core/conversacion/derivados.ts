@@ -43,10 +43,13 @@ const relojValido = (ahoraMs: unknown): ahoraMs is number =>
   && ahoraMs >= MIN_TIMESTAMP_MS && ahoraMs + VENTANA_HORAS * HORA_MS <= MAX_TIMESTAMP_MS;
 
 /**
- * Lo que la ingesta sabe del mensaje que está guardando. La dirección ya viene
- * cerrada a `'entrante' | 'saliente'` por `normalizar` de la ingesta; cualquier
- * otro valor se trata como saliente A PROPÓSITO (jamás suma no leídos ni mueve la
- * ventana por un dato raro).
+ * Lo que la ingesta sabe del mensaje que está guardando. El tipo cierra la
+ * dirección a `'entrante' | 'saliente'`. Si otro llamador (que no sea la ingesta)
+ * pasa cualquier otro valor, aquí se trata como saliente A PROPÓSITO (jamás suma
+ * no leídos ni mueve la ventana por un dato raro). OJO: por el camino de la
+ * ingesta esa protección NO actúa, porque su `normalizar` ya convierte todo lo
+ * que no es exactamente 'saliente' en 'entrante' (comportamiento de siempre, que
+ * mueve la facturación y no se cambia acá).
  */
 export interface MensajeParaDerivar {
   telefono: string;
