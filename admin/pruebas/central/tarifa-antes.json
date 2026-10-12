@@ -1,0 +1,1012 @@
+{
+  "impulso_prueba_copia_100": {
+    "avisos": [
+      null,
+      {
+        "conversaciones": 80,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      },
+      {
+        "conversaciones": 100,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      },
+      {
+        "conversaciones": 176,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      },
+      {
+        "conversaciones": 400,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      }
+    ],
+    "bolsa2": {
+      "bolsa": 60,
+      "cubiertoHasta": "2026-10",
+      "modalidad": "prueba",
+      "periodoPagado": "",
+      "plan": "impulso"
+    },
+    "cambiarACrecimiento": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "limites": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "porContrato": []
+    },
+    "cambiarAImpulso": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "limites": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "porContrato": []
+    },
+    "cambiarAPro": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "limites": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "porContrato": []
+    },
+    "campanas": 0,
+    "camposDerivados": {
+      "estadoPago": "al_dia",
+      "moneda": "USD",
+      "montoMensual": 0,
+      "proximoVencimientoMs": "2026-11-01T03:59:59.999Z"
+    },
+    "consolaPagar": [
+      {
+        "conversaciones": 100,
+        "conversacionesPorContrato": false,
+        "nombre": "Impulso",
+        "precioPorContrato": false,
+        "precioUsd": 25
+      },
+      {
+        "conversaciones": 220,
+        "conversacionesPorContrato": false,
+        "nombre": "Crecimiento",
+        "precioPorContrato": false,
+        "precioUsd": 50
+      },
+      {
+        "conversaciones": 500,
+        "conversacionesPorContrato": false,
+        "nombre": "Pro",
+        "precioPorContrato": false,
+        "precioUsd": 90
+      }
+    ],
+    "estadoDeServicio": {
+      "bolsa": 0,
+      "bolsaPrueba": 20,
+      "consumidas": 79,
+      "corteDesdeMs": null,
+      "cubierto": true,
+      "cubiertoHasta": "2026-10",
+      "disponibles": 20,
+      "enPrueba": true,
+      "fase": "cubierto",
+      "graciaHasta": null,
+      "incluidas": 0,
+      "incoherente": false,
+      "mensualidadUsd": 0,
+      "modalidad": "prueba",
+      "motivo": null,
+      "operativo": true,
+      "periodo": "2026-10",
+      "plan": "impulso",
+      "restanteDelPlan": 0
+    },
+    "limitesDeCuenta": {
+      "agendas": 1,
+      "cambiosIncluidos": 0,
+      "conversaciones": 100,
+      "origen": "cuenta",
+      "productos": 20
+    },
+    "porContrato": [],
+    "precioMensualUsd": 25,
+    "renovar1": {
+      "bolsa": 0,
+      "cubiertoHasta": "2026-11",
+      "modalidad": "prueba",
+      "periodoPagado": "2026-11",
+      "plan": "impulso"
+    },
+    "renovar6": {
+      "bolsa": 30,
+      "cubiertoHasta": "2027-04",
+      "modalidad": "prueba",
+      "periodoPagado": "2027-04",
+      "plan": "impulso"
+    },
+    "sinCambioDePlan": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "limites": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "porContrato": []
+    }
+  },
+  "impulso_produccion_copia_100": {
+    "avisos": [
+      null,
+      {
+        "conversaciones": 80,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      },
+      {
+        "conversaciones": 100,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      },
+      {
+        "conversaciones": 176,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      },
+      {
+        "conversaciones": 400,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      }
+    ],
+    "bolsa2": {
+      "bolsa": 90,
+      "cubiertoHasta": "2026-10",
+      "modalidad": "prepago",
+      "periodoPagado": "2026-10",
+      "plan": "impulso"
+    },
+    "cambiarACrecimiento": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "limites": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "porContrato": []
+    },
+    "cambiarAImpulso": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "limites": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "porContrato": []
+    },
+    "cambiarAPro": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "limites": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "porContrato": []
+    },
+    "campanas": 0,
+    "camposDerivados": {
+      "estadoPago": "al_dia",
+      "moneda": "USD",
+      "montoMensual": 25,
+      "proximoVencimientoMs": "2026-11-01T03:59:59.999Z"
+    },
+    "consolaPagar": [
+      {
+        "conversaciones": 100,
+        "conversacionesPorContrato": false,
+        "nombre": "Impulso",
+        "precioPorContrato": false,
+        "precioUsd": 25
+      },
+      {
+        "conversaciones": 220,
+        "conversacionesPorContrato": false,
+        "nombre": "Crecimiento",
+        "precioPorContrato": false,
+        "precioUsd": 50
+      },
+      {
+        "conversaciones": 500,
+        "conversacionesPorContrato": false,
+        "nombre": "Pro",
+        "precioPorContrato": false,
+        "precioUsd": 90
+      }
+    ],
+    "estadoDeServicio": {
+      "bolsa": 30,
+      "bolsaPrueba": 0,
+      "consumidas": 79,
+      "corteDesdeMs": null,
+      "cubierto": true,
+      "cubiertoHasta": "2026-10",
+      "disponibles": 51,
+      "enPrueba": false,
+      "fase": "cubierto",
+      "graciaHasta": null,
+      "incluidas": 100,
+      "incoherente": false,
+      "mensualidadUsd": 25,
+      "modalidad": "prepago",
+      "motivo": null,
+      "operativo": true,
+      "periodo": "2026-10",
+      "plan": "impulso",
+      "restanteDelPlan": 21
+    },
+    "limitesDeCuenta": {
+      "agendas": 1,
+      "cambiosIncluidos": 0,
+      "conversaciones": 100,
+      "origen": "cuenta",
+      "productos": 20
+    },
+    "porContrato": [],
+    "precioMensualUsd": 25,
+    "renovar1": {
+      "bolsa": 30,
+      "cubiertoHasta": "2026-11",
+      "modalidad": "prepago",
+      "periodoPagado": "2026-11",
+      "plan": "impulso"
+    },
+    "renovar6": {
+      "bolsa": 60,
+      "cubiertoHasta": "2027-04",
+      "modalidad": "prepago",
+      "periodoPagado": "2027-04",
+      "plan": "impulso"
+    },
+    "sinCambioDePlan": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "limites": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "porContrato": []
+    }
+  },
+  "crecimiento_sin_copia": {
+    "avisos": [
+      null,
+      null,
+      null,
+      {
+        "conversaciones": 176,
+        "limite": 220,
+        "mes": "2026-10",
+        "umbral": 0.8
+      },
+      {
+        "conversaciones": 400,
+        "limite": 220,
+        "mes": "2026-10",
+        "umbral": 0.8
+      }
+    ],
+    "bolsa2": {
+      "bolsa": 60,
+      "cubiertoHasta": "2026-10",
+      "modalidad": "prepago",
+      "periodoPagado": "2026-10",
+      "plan": "crecimiento"
+    },
+    "cambiarACrecimiento": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "limites": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "porContrato": []
+    },
+    "cambiarAImpulso": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "limites": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "porContrato": []
+    },
+    "cambiarAPro": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "limites": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "porContrato": []
+    },
+    "campanas": 3,
+    "camposDerivados": {
+      "estadoPago": "al_dia",
+      "moneda": "USD",
+      "montoMensual": 50,
+      "proximoVencimientoMs": "2026-11-01T03:59:59.999Z"
+    },
+    "consolaPagar": [
+      {
+        "conversaciones": 100,
+        "conversacionesPorContrato": false,
+        "nombre": "Impulso",
+        "precioPorContrato": false,
+        "precioUsd": 25
+      },
+      {
+        "conversaciones": 220,
+        "conversacionesPorContrato": false,
+        "nombre": "Crecimiento",
+        "precioPorContrato": false,
+        "precioUsd": 50
+      },
+      {
+        "conversaciones": 500,
+        "conversacionesPorContrato": false,
+        "nombre": "Pro",
+        "precioPorContrato": false,
+        "precioUsd": 90
+      }
+    ],
+    "estadoDeServicio": {
+      "bolsa": 0,
+      "bolsaPrueba": 0,
+      "consumidas": 79,
+      "corteDesdeMs": null,
+      "cubierto": true,
+      "cubiertoHasta": "2026-10",
+      "disponibles": 141,
+      "enPrueba": false,
+      "fase": "cubierto",
+      "graciaHasta": null,
+      "incluidas": 220,
+      "incoherente": false,
+      "mensualidadUsd": 50,
+      "modalidad": "prepago",
+      "motivo": null,
+      "operativo": true,
+      "periodo": "2026-10",
+      "plan": "crecimiento",
+      "restanteDelPlan": 141
+    },
+    "limitesDeCuenta": {
+      "agendas": 5,
+      "cambiosIncluidos": 1,
+      "conversaciones": 220,
+      "origen": "plan",
+      "productos": 100
+    },
+    "porContrato": [],
+    "precioMensualUsd": 50,
+    "renovar1": {
+      "bolsa": 0,
+      "cubiertoHasta": "2026-11",
+      "modalidad": "prepago",
+      "periodoPagado": "2026-11",
+      "plan": "crecimiento"
+    },
+    "renovar6": {
+      "bolsa": 30,
+      "cubiertoHasta": "2027-04",
+      "modalidad": "prepago",
+      "periodoPagado": "2027-04",
+      "plan": "crecimiento"
+    },
+    "sinCambioDePlan": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "limites": {},
+      "porContrato": []
+    }
+  },
+  "demo_pro": {
+    "avisos": [
+      null,
+      null,
+      null,
+      null,
+      {
+        "conversaciones": 400,
+        "limite": 500,
+        "mes": "2026-10",
+        "umbral": 0.8
+      }
+    ],
+    "bolsa2": {
+      "bolsa": 60,
+      "cubiertoHasta": "",
+      "modalidad": "demostracion",
+      "periodoPagado": "",
+      "plan": "pro"
+    },
+    "cambiarACrecimiento": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "limites": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "porContrato": []
+    },
+    "cambiarAImpulso": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "limites": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "porContrato": []
+    },
+    "cambiarAPro": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "limites": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "porContrato": []
+    },
+    "campanas": 10,
+    "camposDerivados": {
+      "estadoPago": "sin_cargo",
+      "moneda": "USD",
+      "montoMensual": 0,
+      "proximoVencimientoMs": null
+    },
+    "consolaPagar": [
+      {
+        "conversaciones": 100,
+        "conversacionesPorContrato": false,
+        "nombre": "Impulso",
+        "precioPorContrato": false,
+        "precioUsd": 25
+      },
+      {
+        "conversaciones": 220,
+        "conversacionesPorContrato": false,
+        "nombre": "Crecimiento",
+        "precioPorContrato": false,
+        "precioUsd": 50
+      },
+      {
+        "conversaciones": 500,
+        "conversacionesPorContrato": false,
+        "nombre": "Pro",
+        "precioPorContrato": false,
+        "precioUsd": 90
+      }
+    ],
+    "estadoDeServicio": {
+      "bolsa": 0,
+      "bolsaPrueba": 0,
+      "consumidas": 79,
+      "corteDesdeMs": null,
+      "cubierto": true,
+      "cubiertoHasta": "",
+      "disponibles": null,
+      "enPrueba": false,
+      "fase": "cubierto",
+      "graciaHasta": null,
+      "incluidas": 0,
+      "incoherente": false,
+      "mensualidadUsd": 0,
+      "modalidad": "demostracion",
+      "motivo": null,
+      "operativo": true,
+      "periodo": "2026-10",
+      "plan": "pro",
+      "restanteDelPlan": 0
+    },
+    "limitesDeCuenta": {
+      "agendas": 10,
+      "cambiosIncluidos": 2,
+      "conversaciones": 500,
+      "origen": "cuenta",
+      "productos": 500
+    },
+    "porContrato": [],
+    "precioMensualUsd": 90,
+    "renovar1": {
+      "bolsa": 0,
+      "cubiertoHasta": "2026-10",
+      "modalidad": "demostracion",
+      "periodoPagado": "2026-10",
+      "plan": "pro"
+    },
+    "renovar6": {
+      "bolsa": 30,
+      "cubiertoHasta": "2027-03",
+      "modalidad": "demostracion",
+      "periodoPagado": "2027-03",
+      "plan": "pro"
+    },
+    "sinCambioDePlan": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "limites": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "porContrato": []
+    }
+  },
+  "pro_prueba_cambios_por_contrato": {
+    "avisos": [
+      null,
+      null,
+      null,
+      null,
+      {
+        "conversaciones": 400,
+        "limite": 500,
+        "mes": "2026-10",
+        "umbral": 0.8
+      }
+    ],
+    "bolsa2": {
+      "bolsa": 60,
+      "cubiertoHasta": "2026-10",
+      "modalidad": "prueba",
+      "periodoPagado": "",
+      "plan": "pro"
+    },
+    "cambiarACrecimiento": {
+      "conservados": {
+        "cambiosIncluidos": 4
+      },
+      "delPlan": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "limites": {
+        "agendas": 5,
+        "cambiosIncluidos": 4,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "porContrato": [
+        "cambiosIncluidos"
+      ]
+    },
+    "cambiarAImpulso": {
+      "conservados": {
+        "cambiosIncluidos": 4
+      },
+      "delPlan": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "limites": {
+        "agendas": 1,
+        "cambiosIncluidos": 4,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "porContrato": [
+        "cambiosIncluidos"
+      ]
+    },
+    "cambiarAPro": {
+      "conservados": {
+        "cambiosIncluidos": 4
+      },
+      "delPlan": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "limites": {
+        "agendas": 10,
+        "cambiosIncluidos": 4,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "porContrato": [
+        "cambiosIncluidos"
+      ]
+    },
+    "campanas": 10,
+    "camposDerivados": {
+      "estadoPago": "al_dia",
+      "moneda": "USD",
+      "montoMensual": 0,
+      "proximoVencimientoMs": "2026-11-01T03:59:59.999Z"
+    },
+    "consolaPagar": [
+      {
+        "conversaciones": 100,
+        "conversacionesPorContrato": false,
+        "nombre": "Impulso",
+        "precioPorContrato": false,
+        "precioUsd": 25
+      },
+      {
+        "conversaciones": 220,
+        "conversacionesPorContrato": false,
+        "nombre": "Crecimiento",
+        "precioPorContrato": false,
+        "precioUsd": 50
+      },
+      {
+        "conversaciones": 500,
+        "conversacionesPorContrato": false,
+        "nombre": "Pro",
+        "precioPorContrato": false,
+        "precioUsd": 90
+      }
+    ],
+    "estadoDeServicio": {
+      "bolsa": 0,
+      "bolsaPrueba": 20,
+      "consumidas": 79,
+      "corteDesdeMs": null,
+      "cubierto": true,
+      "cubiertoHasta": "2026-10",
+      "disponibles": 20,
+      "enPrueba": true,
+      "fase": "cubierto",
+      "graciaHasta": null,
+      "incluidas": 0,
+      "incoherente": false,
+      "mensualidadUsd": 0,
+      "modalidad": "prueba",
+      "motivo": null,
+      "operativo": true,
+      "periodo": "2026-10",
+      "plan": "pro",
+      "restanteDelPlan": 0
+    },
+    "limitesDeCuenta": {
+      "agendas": 10,
+      "cambiosIncluidos": 4,
+      "conversaciones": 500,
+      "origen": "cuenta",
+      "productos": 500
+    },
+    "porContrato": [
+      "cambiosIncluidos"
+    ],
+    "precioMensualUsd": 90,
+    "renovar1": {
+      "bolsa": 0,
+      "cubiertoHasta": "2026-11",
+      "modalidad": "prueba",
+      "periodoPagado": "2026-11",
+      "plan": "pro"
+    },
+    "renovar6": {
+      "bolsa": 30,
+      "cubiertoHasta": "2027-04",
+      "modalidad": "prueba",
+      "periodoPagado": "2027-04",
+      "plan": "pro"
+    },
+    "sinCambioDePlan": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "limites": {
+        "agendas": 10,
+        "cambiosIncluidos": 4,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "porContrato": [
+        "cambiosIncluidos"
+      ]
+    }
+  },
+  "basico_viejo": {
+    "avisos": [
+      null,
+      {
+        "conversaciones": 80,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      },
+      {
+        "conversaciones": 100,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      },
+      {
+        "conversaciones": 176,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      },
+      {
+        "conversaciones": 400,
+        "limite": 100,
+        "mes": "2026-10",
+        "umbral": 0.8
+      }
+    ],
+    "bolsa2": {
+      "bolsa": 60,
+      "cubiertoHasta": "2026-10",
+      "modalidad": "prepago",
+      "periodoPagado": "2026-10",
+      "plan": "impulso"
+    },
+    "cambiarACrecimiento": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "limites": {
+        "agendas": 5,
+        "cambiosIncluidos": 1,
+        "conversaciones": 220,
+        "productos": 100
+      },
+      "porContrato": []
+    },
+    "cambiarAImpulso": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "limites": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "porContrato": []
+    },
+    "cambiarAPro": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "limites": {
+        "agendas": 10,
+        "cambiosIncluidos": 2,
+        "conversaciones": 500,
+        "productos": 500
+      },
+      "porContrato": []
+    },
+    "campanas": 0,
+    "camposDerivados": {
+      "estadoPago": "al_dia",
+      "moneda": "USD",
+      "montoMensual": 25,
+      "proximoVencimientoMs": "2026-11-01T03:59:59.999Z"
+    },
+    "consolaPagar": [
+      {
+        "conversaciones": 100,
+        "conversacionesPorContrato": false,
+        "nombre": "Impulso",
+        "precioPorContrato": false,
+        "precioUsd": 25
+      },
+      {
+        "conversaciones": 220,
+        "conversacionesPorContrato": false,
+        "nombre": "Crecimiento",
+        "precioPorContrato": false,
+        "precioUsd": 50
+      },
+      {
+        "conversaciones": 500,
+        "conversacionesPorContrato": false,
+        "nombre": "Pro",
+        "precioPorContrato": false,
+        "precioUsd": 90
+      }
+    ],
+    "estadoDeServicio": {
+      "bolsa": 0,
+      "bolsaPrueba": 0,
+      "consumidas": 79,
+      "corteDesdeMs": null,
+      "cubierto": true,
+      "cubiertoHasta": "2026-10",
+      "disponibles": 21,
+      "enPrueba": false,
+      "fase": "cubierto",
+      "graciaHasta": null,
+      "incluidas": 100,
+      "incoherente": false,
+      "mensualidadUsd": 25,
+      "modalidad": "prepago",
+      "motivo": null,
+      "operativo": true,
+      "periodo": "2026-10",
+      "plan": "impulso",
+      "restanteDelPlan": 21
+    },
+    "limitesDeCuenta": {
+      "agendas": 1,
+      "cambiosIncluidos": 0,
+      "conversaciones": 100,
+      "origen": "respaldo",
+      "productos": 20
+    },
+    "porContrato": [],
+    "precioMensualUsd": 25,
+    "renovar1": {
+      "bolsa": 0,
+      "cubiertoHasta": "2026-11",
+      "modalidad": "prepago",
+      "periodoPagado": "2026-11",
+      "plan": "impulso"
+    },
+    "renovar6": {
+      "bolsa": 30,
+      "cubiertoHasta": "2027-04",
+      "modalidad": "prepago",
+      "periodoPagado": "2027-04",
+      "plan": "impulso"
+    },
+    "sinCambioDePlan": {
+      "conservados": {},
+      "delPlan": {
+        "agendas": 1,
+        "cambiosIncluidos": 0,
+        "conversaciones": 100,
+        "productos": 20
+      },
+      "limites": {},
+      "porContrato": []
+    }
+  }
+}

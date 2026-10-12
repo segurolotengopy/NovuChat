@@ -49,7 +49,7 @@ async function sembrar(datos: Record<string, unknown> | null) {
 }
 
 // Crecimiento incluye 1 cambio al mes; en prepago, cubierto.
-const CRECIMIENTO = { plan: 'crecimiento', limites: limitesDe('crecimiento'), modalidad: 'prepago', periodoPagado: '2099-12' };
+const CRECIMIENTO = { plan: 'crecimiento', limites: limitesDe('crecimiento', 'meta_incluido'), modalidad: 'prepago', periodoPagado: '2099-12' };
 
 beforeEach(() => sembrar(CRECIMIENTO));
 
@@ -114,12 +114,12 @@ describe('El límite se hace cumplir en el servidor', () => {
   });
 
   it('manda la COPIA de la cuenta: con `limites.cambiosIncluidos: 0` NO entra ni el primero; con 3, entran tres', async () => {
-    await sembrar({ ...CRECIMIENTO, limites: { ...limitesDe('crecimiento'), cambiosIncluidos: 0 } });
+    await sembrar({ ...CRECIMIENTO, limites: { ...limitesDe('crecimiento', 'meta_incluido'), cambiosIncluidos: 0 } });
     await rechaza(llamar({ tenantId: T, descripcion: DESCRIPCION }), 'resource-exhausted');
     expect((await cuenta())['cambios']).toBeUndefined();
 
     // Lo vendido a medida («hasta 4 al mes» era un caso real): la copia manda sobre el plan.
-    await sembrar({ plan: 'impulso', limites: { ...limitesDe('impulso'), cambiosIncluidos: 3 }, modalidad: 'prepago', periodoPagado: '2099-12' });
+    await sembrar({ plan: 'impulso', limites: { ...limitesDe('impulso', 'meta_incluido'), cambiosIncluidos: 3 }, modalidad: 'prepago', periodoPagado: '2099-12' });
     for (let i = 1; i <= 3; i += 1) {
       expect((await llamar({ tenantId: T, descripcion: `Cambio número ${i} del contrato` })).usados).toBe(i);
     }
@@ -140,7 +140,7 @@ describe('El límite se hace cumplir en el servidor', () => {
   });
 
   it('una DEMOSTRACIÓN se cuenta y nunca se niega, con cualquier plan', async () => {
-    await sembrar({ plan: 'impulso', limites: limitesDe('impulso'), modalidad: 'demostracion' });
+    await sembrar({ plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'), modalidad: 'demostracion' });
     for (let i = 1; i <= 3; i += 1) {
       const r = await llamar({ tenantId: T, descripcion: `Ajuste ${i} del demo` });
       expect(r).toMatchObject({ usados: i, incluidos: null, ilimitado: true, forzado: false });
@@ -164,7 +164,7 @@ describe('El límite se hace cumplir en el servidor', () => {
   });
 
   it('una cuenta sin modalidad es demostración por ausencia: se cuenta y no se niega', async () => {
-    await sembrar({ plan: 'impulso', limites: limitesDe('impulso') });
+    await sembrar({ plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido') });
     const r = await llamar({ tenantId: T, descripcion: DESCRIPCION });
     expect(r).toMatchObject({ usados: 1, ilimitado: true });
     expect(await cuenta()).toMatchObject({ plan: 'impulso', cambios: { [MES]: 1 } });
