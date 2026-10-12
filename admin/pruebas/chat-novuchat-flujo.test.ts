@@ -377,7 +377,7 @@ function jugar(w: W, from: string, opc: { perfil?: string; referral?: J; sinProp
 const dice = (mensaje: string, extra: J = {}): J => Object.assign({ mensaje }, extra);
 // Textos del modelo que SÍ cumplen las reglas (los usan las pruebas que necesitan un modelo bueno).
 const EXPLICA_GASTRO = '¡Qué rico! 🍔 En horas pico ya no pierdes pedidos 🔥: NovuChat muestra tu menú, toma cada pedido registrando las notas especiales y envía tu QR para que tus clientes paguen 📲 para que pase directo a cocina.';
-const PITCH = '¡Claro! 😊 NovuChat es el primer empleado de tu negocio que nunca duerme:\n⏱️ Atención en segundos 24/7: responde en segundos, las 24 horas, así no pierdes ventas fuera de horario.\n📅 Agendamiento inteligente: se conecta a tu Google Calendar, ofrece horarios reales y agenda citas sin cruces.\n💳 Ventas y pagos por QR: muestra tu catálogo, toma el pedido calculando el envío y envía el código QR de tu negocio para que tus clientes paguen.\n📱 Control total: como dueño, miras todas las conversaciones y haces cambios desde nuestra consola en tu celular.\n\nPara darte un ejemplo exacto de cómo se vería esto en la vida real, ¿me cuentas de qué rubro es tu negocio?';
+const PITCH = '¡Claro! 😊 NovuChat es el primer empleado de tu negocio que nunca duerme:\n⏱️ Atención 24/7: responde en segundos, así no pierdes ventas fuera de horario.\n📅 Agendamiento inteligente: se conecta a tu Google Calendar, ofrece horarios reales y agenda citas sin cruces.\n💳 Ventas y pagos por QR: muestra tu catálogo, toma el pedido calculando el envío y envía el código QR de tu negocio para que tus clientes paguen.\n📱 Control total: como dueño, miras todas las conversaciones y haces cambios desde nuestra consola en tu celular.\n\nPara darte un ejemplo exacto de cómo se vería esto en la vida real, ¿me cuentas de qué rubro es tu negocio?';
 
 describe('el flujo armado: lo que se versiona', () => {
   it('trae lo que tiene que traer (smoke del armado)', () => {
@@ -679,7 +679,7 @@ describe('un caso por rubro: cada uno termina con la pregunta EXACTA del documen
     ['salud', 'Salud', /recepcionista virtual 24\/7/],
     ['belleza', 'Belleza', /recordatorio 24 horas antes/],
     ['gastronomia', 'Gastronomía', /horas pico/],
-    ['retail', 'Retail', /por las noches/],
+    ['retail', 'Retail', /sigue vendiendo por ti/],
     ['educacion', 'Educación', /consultas de padres/],
     ['captacion', 'Captación de clientes', /panel de control/],
   ];
