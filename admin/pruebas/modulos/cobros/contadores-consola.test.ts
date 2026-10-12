@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  COLUMNAS, cobroRealActivo, decidirPintado, estadoDeError, leerContadores, lineasDeCobros, mesLegible,
+  COLUMNAS, NOTA_SIN_MODO, cobroRealActivo, decidirPintado, estadoDeError, leerContadores, lineasDeCobros, mesLegible,
   ultimosMesesDeCobro, type EstadoLectura,
 } from '../../../web/src/modulos/cobros/contadoresDeCobro.ts';
 
@@ -133,10 +133,21 @@ describe('dos lecturas independientes: metricas y config/venta', () => {
     it('ambas ok con cobro no real: «cobro simulado»', () => {
       expect(decidirPintado(ok, ok, false, true)).toBe('simulado');
     });
-    it('metricas ok y config denegada: tabla, SIN afirmar que es simulado (real desconocido no es real = false)', () => {
-      expect(decidirPintado(ok, denegada, false, true)).toBe('tabla');
-      expect(decidirPintado(ok, denegada, true, true)).toBe('tabla');
-      expect(decidirPintado(ok, error, false, true)).toBe('tabla');
+    it('metricas ok y config denegada o fallida: tabla CON nota de modo desconocido; ni «simulado» ni tabla a secas', () => {
+      for (const c of [denegada, error]) {
+        for (const real of [true, false]) {
+          expect(decidirPintado(ok, c, real, true)).toBe('tabla_sin_modo');
+        }
+      }
+    });
+    it('«tabla» a secas solo con config LEÍDA y cobro real; «simulado» solo con config leída y no real', () => {
+      for (const c of [ok, denegada, error]) {
+        for (const real of [true, false]) {
+          const p = decidirPintado(ok, c, real, true);
+          expect(p === 'tabla').toBe(c === 'ok' && real);
+          expect(p === 'simulado').toBe(c === 'ok' && !real);
+        }
+      }
     });
     it('metricas falla (denegada o error): mensaje de error, con cualquier config', () => {
       for (const m of [denegada, error]) {
@@ -158,6 +169,7 @@ describe('dos lecturas independientes: metricas y config/venta', () => {
     it('permission-denied es denegada; lo demás, error', () => {
       expect(estadoDeError({ code: 'permission-denied' })).toBe('denegada');
       expect(estadoDeError({ code: 'unavailable' })).toBe('error');
+      expect(estadoDeError({ code: 'firestore/permission-denied' })).toBe('error'); // el SDK web no usa prefijo
       expect(estadoDeError(new Error('x'))).toBe('error');
       expect(estadoDeError(undefined)).toBe('error');
       expect(estadoDeError(null)).toBe('error');
@@ -184,16 +196,16 @@ describe('dos lecturas independientes: metricas y config/venta', () => {
       }
     });
 
-    it('config/venta denegada (propietario de NovuChat): los contadores se leen y no se dice «simulado»', async () => {
+    it('config/venta denegada (propietario de NovuChat): los contadores se leen, con nota de modo desconocido y sin «simulado»', async () => {
       const l = await leerContadores(() => Promise.resolve(periodos), denegar);
       expect(l).toMatchObject({ metricas: 'ok', config: 'denegada', periodos });
-      expect(decidirPintado(l.metricas, l.config, l.real, lineasDeCobros(l.periodos).length > 0)).toBe('tabla');
+      expect(decidirPintado(l.metricas, l.config, l.real, lineasDeCobros(l.periodos).length > 0)).toBe('tabla_sin_modo');
     });
 
     it('config/venta con otro fallo: lo mismo', async () => {
       const l = await leerContadores(() => Promise.resolve(periodos), caer);
       expect(l).toMatchObject({ metricas: 'ok', config: 'error', periodos });
-      expect(decidirPintado(l.metricas, l.config, l.real, true)).toBe('tabla');
+      expect(decidirPintado(l.metricas, l.config, l.real, true)).toBe('tabla_sin_modo');
     });
 
     it('metricas falla con config ok: error, no se traga', async () => {
@@ -243,9 +255,27 @@ describe('dos lecturas independientes: metricas y config/venta', () => {
     it('cada lector de leerContadores tiene su propio try/catch (el código puro no usa Promise.all)', () => {
       const puro = readFileSync(join(carpeta, 'contadoresDeCobro.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
       expect(puro).not.toMatch(/Promise\s*\.\s*(?:all|allSettled|race|any)/);
-      const cuerpo = puro.slice(puro.indexOf('export async function leerContadores'));
+      const desde = puro.indexOf('export async function leerContadores');
+      expect(desde).toBeGreaterThan(-1);
+      // Hasta el cierre de la función: la primera línea que empieza en columna 0 con «}».
+      const cuerpo = puro.slice(desde).split(/^}/m)[0] ?? '';
+      expect(cuerpo).toMatch(/cobroRealActivo/);
       expect((cuerpo.match(/\btry\s*\{/g) ?? []).length).toBeGreaterThanOrEqual(2);
       expect((cuerpo.match(/\bcatch\s*\(/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('la tabla sin modo SIEMPRE lleva la línea neutra, y la nota no afirma ningún modo', () => {
+      // El .tsx pinta la nota exactamente cuando la decisión es `tabla_sin_modo`, y desde la constante.
+      expect(tsx).toMatch(/pintado === 'tabla_sin_modo' && <p className="ayuda">\{NOTA_SIN_MODO\}<\/p>/);
+      expect(tsx.match(/NOTA_SIN_MODO/g)?.length).toBe(2); // el import y el uso
+      // La nota está antes de la tabla.
+      expect(tsx.indexOf('NOTA_SIN_MODO}')).toBeLessThan(tsx.indexOf('<table'));
+      expect(NOTA_SIN_MODO).toBe(
+        'No se pudo leer el modo de cobro de este negocio (real o simulado): estas cifras pueden ser de demostración.');
+      // Neutra: no dice que el cobro sea real, ni acreditado, ni verificado.
+      expect(NOTA_SIN_MODO).not.toMatch(/acreditad|verificad|recibimos|es real|es simulado|cobro real activo/i);
+      // El .tsx no tiene otra rama que pinte la tabla sin pasar por la decisión.
+      expect(tsx.match(/<table/g)).toHaveLength(1);
     });
 
     it('«Cobro simulado» solo se pinta desde el caso «simulado» de la decisión', () => {

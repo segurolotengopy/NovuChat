@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, documentId, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../core/lib/firebase';
 import {
-  COLUMNAS, decidirPintado, leerContadores, lineasDeCobros, mesLegible, ultimosMesesDeCobro,
+  COLUMNAS, NOTA_SIN_MODO, decidirPintado, leerContadores, lineasDeCobros, mesLegible, ultimosMesesDeCobro,
   type LecturaDeContadores,
 } from './contadoresDeCobro';
 
@@ -11,7 +11,8 @@ import {
  *
  * Lee `metricas/{aaaa-mm}` con la regla que ya existe (lectura del miembro).
  * No muestra listas, imágenes ni datos del comprobante. Sin ningún contador de
- * la regla nueva en ningún mes, no pinta nada.
+ * la regla nueva en ningún mes, no pinta nada. Si no se pudo leer el modo de
+ * cobro (real o simulado), la tabla lleva una nota neutra delante.
  *
  * Prohibición 3: el cotejo lee datos de una imagen, que se edita. «Válido»
  * quiere decir que los datos coincidieron; quien confirma que la plata entró
@@ -28,6 +29,8 @@ export function ContadoresDeCobro({ tenantId }: { tenantId: string }) {
   // denegación no debe tumbar los contadores.
   const [lectura, setLectura] = useState<LecturaDeContadores | null>(null);
   useEffect(() => {
+    // Al cambiar de negocio no se muestra lo del anterior mientras llega lo nuevo.
+    setLectura(null);
     if (!tenantId) return;
     let vivo = true;
     void leerContadores(
@@ -51,6 +54,7 @@ export function ContadoresDeCobro({ tenantId }: { tenantId: string }) {
   return (
     <article className="tarjeta" aria-label="Comprobantes por mes">
       <h3>Comprobantes por mes (últimos 6 meses)</h3>
+      {pintado === 'tabla_sin_modo' && <p className="ayuda">{NOTA_SIN_MODO}</p>}
       <div style={{ overflowX: 'auto' }}>
         <table className="table">
           <thead>
