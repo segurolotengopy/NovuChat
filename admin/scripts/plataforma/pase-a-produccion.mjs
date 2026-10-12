@@ -88,7 +88,7 @@ registerHooks({
     }
   },
 });
-const { PLANES, limitesDe, limitesDeCuenta } = await import('../../functions/src/central/cuenta/planes.ts');
+const { PLANES, esTarifa, limitesDe, limitesDeCuenta, tarifaDe } = await import('../../functions/src/central/cuenta/planes.ts');
 const { umbralesDeAtencion } = await import('../../functions/src/core/conteo/atencion.ts');
 const { corteAplicable, modalidadDe, tipoCambioVigente } = await import('../../functions/src/central/cuenta/prepago.ts');
 
@@ -172,13 +172,18 @@ else falta('Comercio', 'sin flujos en la ficha');
 // 2 · Plan -------------------------------------------------------------------
 const plan = cuenta.plan;
 if (Object.prototype.hasOwnProperty.call(PLANES, plan ?? '')) {
-  cumple('Plan', `${PLANES[plan].nombre} (USD ${PLANES[plan].precioUsd} · ${PLANES[plan].conversaciones} conversaciones)`);
-  const esperado = limitesDe(plan);
+  // LA TARIFA DE LA CUENTA decide cuántas conversaciones trae el plan (200/500/1.000 con
+  // `estandar`; 100/220/500 con `meta_incluido`). Una cuenta sin el campo es `meta_incluido`
+  // (`tarifaDe`): es el caso de Bellido, y su copia de 100 es la correcta, no un desfase.
+  const tarifa = tarifaDe(cuenta);
+  const tarifaTexto = esTarifa(cuenta.tarifa) ? `tarifa ${tarifa}` : `sin campo de tarifa: rige ${tarifa}`;
+  const esperado = limitesDe(plan, tarifa);
+  cumple('Plan', `${PLANES[plan].nombre} (USD ${PLANES[plan].precioUsd} · ${esperado.conversaciones} conversaciones · ${tarifaTexto})`);
   const vigentes = limitesDeCuenta(cuenta);
   const iguales = vigentes.origen === 'cuenta'
     && ['conversaciones', 'productos', 'agendas'].every((k) => cuenta.limites?.[k] === esperado[k]);
-  if (iguales) cumple('Plan', 'copia de límites igual a la del plan');
-  else falta('Plan', `copia de límites ausente o distinta del plan (origen ${vigentes.origen}): asignar-plan.mjs en seco`);
+  if (iguales) cumple('Plan', `copia de límites igual a la del plan (${tarifaTexto})`);
+  else falta('Plan', `copia de límites ausente o distinta del plan (origen ${vigentes.origen}; el plan con ${tarifaTexto} trae ${esperado.conversaciones} conversaciones): asignar-plan.mjs en seco`);
   const agendas = funcionarios.docs.filter((d) => d.get('activo') !== false).length;
   if (agendas <= vigentes.agendas) cumple('Plan', `agendas activas ${agendas} de ${vigentes.agendas}`);
   else falta('Plan', `agendas activas ${agendas}, el plan admite ${vigentes.agendas}: subir de plan o dar de baja una agenda`);
