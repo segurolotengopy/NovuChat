@@ -191,6 +191,7 @@ test.describe('PRO-01 · Productos: lista, búsqueda, filtros, orden y paginaci�
     // A ritmo de persona: se espera a que la URL refleje cada cambio antes del siguiente (ver el hallazgo H1 del informe).
     await control(page, 'Precio desde').fill('20');
     await expect(page).toHaveURL(/pmin=20/);
+    await expect(contador(page)).toHaveText(resumen(enRango(20, Infinity).length, 1, true)); // ya se pintó (la URL cambia antes que la pantalla)
     await control(page, 'hasta').fill('40');
     await expect(page).toHaveURL(/pmax=40/);
     await expect(page).toHaveURL(/pmin=20/);
@@ -277,6 +278,8 @@ test.describe('PRO-01 · Productos: lista, búsqueda, filtros, orden y paginaci�
     await expect(page).not.toHaveURL(/[?&]p=/);
     const esperados = TODOS.filter((i) => i.activo && i.area === 'tacos' && i.precio !== undefined && i.precio <= 50).length;
     await expect(page).toHaveURL(/area=tacos/);
+    const tacosActivos = TODOS.filter((i) => i.activo && i.area === 'tacos').length;
+    await expect(contador(page)).toHaveText(resumen(tacosActivos, 1, true)); // la pantalla ya se repintó con el área
     await control(page, 'hasta').fill('50');
     await expect(page).toHaveURL(/pmax=50/);
     await expect(page).toHaveURL(/estado=activo/);
