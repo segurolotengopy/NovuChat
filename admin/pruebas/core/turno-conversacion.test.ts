@@ -104,7 +104,7 @@ const turnoDe = async (data: unknown, a: Actor, c: Callable = CALLABLES.tomar) =
 // ---------------------------------------------------------------------------
 const A = 'tienda-a';
 const OTRO = 'tienda-b';
-const TODOS = [A, OTRO, 'tienda-baja', 'tienda-susp', 'tienda-fantasma', 'tienda-rara', 'tienda-clasica', 'consultorio-bellido', 'bellido', 'constructor', 'sonda-turno'];
+const TODOS = [A, OTRO, 'tienda-baja', 'tienda-susp', 'tienda-fantasma', 'tienda-rara', 'tienda-clasica', 'consultorio-bellido', 'bellido', 'constructor', 'TIENDA-A', 'ab', 'sonda-turno'];
 const TEL1 = '59100000001';
 const TEL2 = '59100000002';
 const CONV1 = `wa_${TEL1}`;
@@ -436,6 +436,16 @@ for (const [clave, nombre] of Object.entries(NOMBRES) as Array<[keyof typeof NOM
           .toEqual({ code: 'permission-denied', message: FIJOS.sinPermiso });
       }
       expect(espia).not.toHaveBeenCalled();
+    });
+
+    it('aunque el token traiga rol sobre un id mal formado Y ese comercio exista, se rechaza por la forma (defensa en profundidad)', async () => {
+      for (const t of ['TIENDA-A', 'ab']) {
+        await ficha(t);
+        await conversacion(t, CONV1);
+        expect(cm(await rechazo(llamar({ tenantId: t, conversacionId: CONV1 }, admin(t)))), t).toEqual({ code: 'permission-denied', message: FIJOS.sinPermiso });
+        expect((await leerConv(t, CONV1))['turno'], t).toBeUndefined();
+      }
+      expect(await hayEscrituras()).toEqual({ tope: 0, aud: 0 });
     });
 
     it('datos que no son un objeto (texto, nulo, lista, número): sin permiso, sin tocar Firestore', async () => {
