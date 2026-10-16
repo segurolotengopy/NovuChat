@@ -22,6 +22,7 @@
 | `limites.md` | La tabla de límites comerciales y dónde se hace cumplir cada uno (copia del §7 de la base comercial) |
 | `agentes.md` | Los agentes por zona: la zona de escritura efectiva de cada uno y en qué difiere de `Analisis/41` §8.1 |
 | `zona-de-escritura.md` | El gancho de Claude Code que limita a cada agente a su zona: de dónde lee la zona, qué rechaza y qué no cubre |
+| `conversaciones.md` | Conversaciones: la callable `buscarConversaciones`, los campos derivados que escribe la ingesta, la normalización congelada, la pantalla nueva detrás de `consolaConversaciones`, los scripts de bandera y relleno, y el resumen de H2 |
 | `../base-comercial.md` | La base comercial completa: el dinero de cada decisión técnica |
 
 ## Sección por sección
@@ -147,3 +148,7 @@ cita sigue resolviéndose.
   §12.5, §12.10) son de la revisora y no se editan desde acá.
 - `docs/arquitectura/consola-oculta.md`: la lista `consolaOculta` por comercio
   (presentación, no límite), el script que la escribe y qué oculta cada id.
+- `docs/arquitectura/conversaciones.md` (16/10/2026): H1 de Conversaciones tal como
+  está en `main` (búsqueda por palabra, no leídos, ventana de 24 h, índices, bandera,
+  relleno y reversión) y, al final, el resumen de H2 que apunta a su contrato.
+  Es documento nuevo: no mueve ninguna sección de `admin/DISENO.md`.
