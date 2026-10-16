@@ -34,19 +34,24 @@
  * conversación como leída, no toca `atencionEstado`, el conteo de 25, `mensajesVentana` ni los
  * umbrales. Cero mensajes por conversación.
  *
+ * TOMAR DOS VECES NO RENUEVA `actividadPersonaEn`: la repetición idempotente no escribe nada. Lo
+ * renueva enviar un mensaje (H2-2); quien quiera más de 30 minutos escribe.
+ * Un turno ajeno VENCIDO que se encuentra al tomar se reemplaza por el nuevo (auditoría con `previo`);
+ * si la ventana está cerrada y no se puede tomar, el vencido se persiste devuelto antes de rechazar.
+ *
  * COSTO por toma efectiva: lecturas de la ficha, del tope y de la conversación; escrituras del tope,
  * de la conversación (`turno`) y de la auditoría. Una repetición idempotente: solo el tope.
  */
 import { onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import {
-  atenderTurno, auditarEnTransaccion, errorDeTurno, opcionesDeTurno, turnoAFirestore,
+  atenderTurno, auditarEnTransaccion, errorDeTurno, opcionesDeTurno, persistirVencimiento, turnoAFirestore,
   type ContextoDeTurno, type SalidaDeTurno,
 } from './turnoServidor.js';
 import { turnoEfectivo, ventanaDeMetaAbierta, type Turno } from './turno.js';
 
 /** La transacción de la toma (exportada para las pruebas). */
 export async function tomar(c: ContextoDeTurno): Promise<SalidaDeTurno> {
-  return c.db.runTransaction(async (tx) => {
+  const r = await c.db.runTransaction<SalidaDeTurno & { cerrada?: true }>(async (tx) => {
     const snap = await tx.get(c.ref);
     if (!snap.exists) throw errorDeTurno('noExiste');
     const ultimoEntranteEn: unknown = snap.get('ultimoEntranteEn');
@@ -56,13 +61,20 @@ export async function tomar(c: ContextoDeTurno): Promise<SalidaDeTurno> {
       if (turno.tomadoPor === c.uid) return { turno }; // idempotente: ya es suya
       throw errorDeTurno('ocupada', { tomadoPor: turno.tomadoPor });
     }
-    if (!ventanaDeMetaAbierta(ultimoEntranteEn, c.ahoraMs)) throw errorDeTurno('ventanaCerrada');
+    if (!ventanaDeMetaAbierta(ultimoEntranteEn, c.ahoraMs)) {
+      // Con la ventana cerrada no se toma, pero un turno ajeno ya vencido se deja devuelto: el error
+      // se lanza DESPUÉS de confirmar (lanzar adentro deshace la escritura).
+      persistirVencimiento(tx, c, veredicto, turno, snap.get('turno'));
+      return { turno: null, cerrada: true };
+    }
 
     const nuevo: Turno = { responde: 'persona', tomadoPor: c.uid, tomadoEn: c.ahoraMs, actividadPersonaEn: c.ahoraMs };
     tx.update(c.ref, { turno: turnoAFirestore(nuevo) });
     auditarEnTransaccion(tx, c, 'conversacion_tomada', { previo: veredicto.motivo });
     return { turno: nuevo };
   });
+  if (r.cerrada) throw errorDeTurno('ventanaCerrada');
+  return { turno: r.turno };
 }
 
 export const tomarConversacion = onCall(opcionesDeTurno(process.env), (p: CallableRequest) =>

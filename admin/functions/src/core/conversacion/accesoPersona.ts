@@ -72,47 +72,51 @@ export function habilitadoParaPersona(tenantId: unknown, ficha: DocumentData | n
   return !esTenantExcluido(tenantId) && !nombreExcluido(ficha['nombre']);
 }
 
-export interface PersonaAutorizada {
-  uid: string;
-  rol: RolDePersona;
-  /** La ficha del comercio ya leída (se lee una sola vez por llamada). */
-  ficha: DocumentData;
+/**
+ * El rol DE ESTE comercio, del token, sin leer nada: la forma del id y luego admin u oper. El soporte
+ * no está en la lista.
+ */
+export function exigirRolDePersona(p: CallableRequest, tenantId: unknown): RolDePersona {
+  exigirAutenticado(p);
+  const sinPermiso = () => new HttpsError(ErroresDeTurno.sinPermiso.code, ErroresDeTurno.sinPermiso.message);
+  if (typeof tenantId !== 'string' || !ID_COMERCIO.test(tenantId)) throw sinPermiso();
+  if (esAdminDe(p, tenantId)) return 'admin';
+  if (esOperDe(p, tenantId)) return 'oper';
+  throw sinPermiso();
 }
 
-/**
- * Exige que quien llama sea administrador u operador de `tenantId`, que el comercio esté activo y
- * que esté habilitado para la intervención de una persona.
- *
- * @throws HttpsError `unauthenticated`, `permission-denied` (sin rol, comercio mal escrito, no
- *         activo, o no habilitado) o `unavailable` (falla de Firestore).
- */
-export async function exigirPersonaDe(
-  p: CallableRequest, tenantId: unknown, db: Firestore,
-): Promise<PersonaAutorizada> {
-  const uid = exigirAutenticado(p);
-  const sinPermiso = () => new HttpsError(ErroresDeTurno.sinPermiso.code, ErroresDeTurno.sinPermiso.message);
-
-  // 1. La forma, antes de cualquier ruta o clave.
-  if (typeof tenantId !== 'string' || !ID_COMERCIO.test(tenantId)) throw sinPermiso();
-
-  // 2. El rol DE ESTE comercio, del token. El soporte no está en la lista.
-  let rol: RolDePersona;
-  if (esAdminDe(p, tenantId)) rol = 'admin';
-  else if (esOperDe(p, tenantId)) rol = 'oper';
-  else throw sinPermiso();
-
+/** El comercio: `activo` y habilitado (bandera `nueva`, no Bellido). Devuelve su ficha. */
+export async function exigirComercioHabilitado(tenantId: string, db: Firestore): Promise<DocumentData> {
   try {
-    // 3. El comercio: activo. 4. Habilitado (bandera 'nueva' y no excluido).
     const snap = await db.doc(`tenants/${tenantId}`).get();
     const ficha = snap.exists ? snap.data() : undefined;
-    if (!ficha || ficha['estado'] !== 'activo') throw sinPermiso();
+    if (!ficha || ficha['estado'] !== 'activo') {
+      throw new HttpsError(ErroresDeTurno.sinPermiso.code, ErroresDeTurno.sinPermiso.message);
+    }
     if (!habilitadoParaPersona(tenantId, ficha)) {
       throw new HttpsError(ErroresDeTurno.noHabilitado.code, ErroresDeTurno.noHabilitado.message);
     }
-    return { uid, rol, ficha };
+    return ficha;
   } catch (e) {
     if (e instanceof HttpsError) throw e;
     // Firestore (o lo que sea) falló: no es una respuesta sobre el permiso.
     throw new HttpsError(ErroresDeTurno.noDisponible.code, ErroresDeTurno.noDisponible.message);
   }
+}
+
+export interface PersonaAutorizada {
+  uid: string;
+  rol: RolDePersona;
+  /** La ficha del comercio ya leída. */
+  ficha: DocumentData;
+}
+
+/** Las dos cosas juntas, en orden: el rol del token y luego la ficha. */
+export async function exigirPersonaDe(
+  p: CallableRequest, tenantId: unknown, db: Firestore,
+): Promise<PersonaAutorizada> {
+  const uid = exigirAutenticado(p);
+  const rol = exigirRolDePersona(p, tenantId);
+  const ficha = await exigirComercioHabilitado(tenantId as string, db);
+  return { uid, rol, ficha };
 }

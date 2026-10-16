@@ -6,9 +6,11 @@
  * Las dos callables recorren el mismo camino y solo difieren en la transacción del medio:
  *
  *   1. sesión                      -> `unauthenticated`
- *   2. persona del comercio PEDIDO, comercio activo y habilitado (`exigirPersonaDe`)
+ *   2. el rol de la persona en el comercio PEDIDO, del token (`exigirRolDePersona`)
  *   3. la forma del id de conversación (`wa_` y 8 a 15 dígitos) -> `invalid-argument`
- *   4. EL TOPE por usuario (60 por hora y 300 por día) -> `resource-exhausted`
+ *   4. EL TOPE por usuario (60 por hora y 300 por día) -> `resource-exhausted`; y DESPUÉS la ficha:
+ *      comercio activo y habilitado (`exigirComercioHabilitado`). El tope va primero a propósito: una
+ *      cuenta con rol en un comercio no habilitado no fuerza lecturas sin freno (gasta cupo).
  *   5. la transacción de la callable (lee la conversación, decide, escribe el turno Y la auditoría)
  *
  * AUDITORÍA FALLA-CERRADA Y ATÓMICA. `conversacion_tomada` / `conversacion_devuelta` se escriben en
@@ -19,7 +21,9 @@
  * (tomar lo que ya se tiene, devolver lo que ya está devuelto) no escribe ni audita: la repetición
  * es inofensiva y no llena el registro. NO usa la bitácora (`registrar()` se traga los errores).
  * El escritor `auditar` de `central/comunes.ts` no se importa (Core no depende de Central): este
- * archivo escribe el MISMO documento `{accion, uid, en, ...detalle}`.
+ * archivo escribe el MISMO documento `{accion, uid, en, ...detalle}`. NUNCA el id de conversación
+ * entero (lleva el teléfono, y el propietario de NovuChat lee la auditoría sin ventana de soporte):
+ * solo `telefono4`, los últimos 4 dígitos.
  *
  * LOS REGISTROS (`logger`): comercio, uid, rol, código, motivo y los ÚLTIMOS 4 DÍGITOS del teléfono.
  * Nunca el teléfono entero, nunca el texto de un error.
@@ -37,9 +41,9 @@ import { Timestamp, getFirestore, type DocumentReference, type Firestore, type T
 import { REGION } from '../region.js';
 import { exigirAutenticado } from '../seguridad/autorizacion.js';
 import { ID_COMERCIO } from './acceso.js';
-import { exigirPersonaDe, type RolDePersona } from './accesoPersona.js';
+import { exigirComercioHabilitado, exigirRolDePersona, type RolDePersona } from './accesoPersona.js';
 import {
-  ErroresDeTurno, ID_CONVERSACION, UID_DE_PERSONA, type ClaveDeError, type Turno,
+  ErroresDeTurno, ID_CONVERSACION, UID_DE_PERSONA, leerTurno, type ClaveDeError, type Turno, type Veredicto,
 } from './turno.js';
 
 // ---------------------------------------------------------------------------
@@ -196,8 +200,24 @@ export function auditarEnTransaccion(
   const ref = c.db.collection(`tenants/${c.tenantId}/auditoria`).doc();
   tx.create(ref, {
     accion, uid: c.uid, en: Timestamp.fromMillis(c.ahoraMs),
-    rol: c.rol, conversacionId: c.conversacionId, resultado: 'ok', ...detalle,
+    rol: c.rol, telefono4: ultimos4(c.conversacionId) ?? null, resultado: 'ok', ...detalle,
   });
+}
+
+/**
+ * Si el turno guardado dice «persona» pero ya venció (inactividad o ventana), lo PERSISTE ya
+ * devuelto (`turnoEfectivo`) y lo audita como `conversacion_devuelta` con el motivo, en la misma
+ * transacción (el llamador devuelve el turno efectivo que ya calculó). Sin esto el documento quedaría en «responde una persona» hasta el próximo mensaje
+ * del cliente y el oyente de la consola mostraría un estado falso. Si no hay nada vencido, no hace nada.
+ */
+export function persistirVencimiento(
+  tx: Transaction, c: ContextoDeTurno, veredicto: Veredicto, efectivo: Turno | null, guardado: unknown,
+): void {
+  const lectura = leerTurno(guardado);
+  if (efectivo === null || lectura.estado !== 'ok' || lectura.turno.responde !== 'persona') return;
+  if (veredicto.motivo !== 'inactividad' && veredicto.motivo !== 'ventana') return;
+  tx.update(c.ref, { turno: turnoAFirestore(efectivo) });
+  auditarEnTransaccion(tx, c, 'conversacion_devuelta', { motivo: veredicto.motivo, tomadoPor: efectivo.tomadoPor });
 }
 
 /** Un `Turno` (ms) a los campos de Firestore. Los opcionales ausentes no se escriben. */
@@ -238,24 +258,32 @@ export async function atenderTurno(
       registrar(funcion, 'unauthenticated');
       throw e;
     }
-    // 2. Persona del comercio pedido, activo y habilitado.
+    // 2. El rol DE ESTE comercio, del token (sin lecturas).
     try {
-      ({ rol } = await exigirPersonaDe(p, tenantId, db));
+      rol = exigirRolDePersona(p, tenantId);
     } catch (e) {
       registrar(funcion, e instanceof HttpsError ? e.code : 'unavailable', { tenantId, uid });
       throw e;
     }
-    const t = tenantId as string; // validado por `exigirPersonaDe`
+    const t = tenantId as string; // validado por `exigirRolDePersona`
     // 3. La forma del id de conversación; la ruta se ARMA bajo el comercio pedido, el cliente no manda ninguna.
     if (typeof conversacionId !== 'string' || !ID_CONVERSACION.test(conversacionId)) {
       registrar(funcion, 'invalid-argument', { tenantId: t, uid, rol, motivo: 'conversacion' });
       throw errorDeTurno('solicitudInvalida');
     }
-    // 4. EL TOPE por usuario.
+    // 4. EL TOPE por usuario, ANTES de leer la ficha: quien tiene rol en un comercio no habilitado
+    //    tampoco puede forzar lecturas sin freno.
     const motivoDeTope = await consumirCupoDeTurno(db, uid, ahoraMs);
     if (motivoDeTope !== null) {
       registrar(funcion, 'resource-exhausted', { tenantId: t, uid, rol, conversacionId, motivo: motivoDeTope });
       throw errorDeTurno('tope');
+    }
+    // 4b. El comercio: activo y habilitado.
+    try {
+      await exigirComercioHabilitado(t, db);
+    } catch (e) {
+      registrar(funcion, e instanceof HttpsError ? e.code : 'unavailable', { tenantId: t, uid, rol });
+      throw e;
     }
     // 5. La transacción de la callable. Sus rechazos (no existe, ocupada…) se registran acá.
     const ref = db.doc(`tenants/${t}/conversaciones/${conversacionId}`);

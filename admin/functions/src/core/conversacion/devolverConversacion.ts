@@ -15,11 +15,15 @@
  *  - Solo QUIEN LA TIENE o un ADMINISTRADOR del comercio. Un operador que no es quien la tiene
  *    recibe `failed-precondition` con el uid de quien sí en `details.tomadoPor`. El administrador que
  *    la devuelve por otro deja su propio uid en la auditoría y el de quien la tenía en `tomadoPor`.
- *  - IDEMPOTENTE: devolver lo que nadie tiene (sin turno, ya devuelto, ilegible) o lo que ya venció
- *    por inactividad o por la ventana devuelve el estado de HOY sin escribir ni auditar. Un
- *    vencimiento no lo persiste esta callable: lo calcula `turnoVigente` cada vez que hace falta y
- *    lo escribirá la ingesta al llegar el siguiente mensaje (H2-3); quien lea el documento a mano
- *    debe aplicar la misma regla, no fiarse de `turno.responde` solo.
+ *  - IDEMPOTENTE: devolver lo que nadie tiene (sin turno, ya devuelto, ilegible) devuelve el estado
+ *    de HOY sin escribir ni auditar.
+ *  - Si el turno YA VENCIÓ (inactividad o ventana) y el documento sigue en «persona», se PERSISTE
+ *    devuelto (`responde:'asistente'`, `devueltoEn` = cuándo venció, `motivoDevolucion`) y se audita
+ *    `conversacion_devuelta` con ese `motivo`, en la misma transacción, para que la consola no se
+ *    quede en «Responde una persona». Cualquiera de las dos personas del comercio puede dispararlo.
+ *  - La auditoría guarda `tomadoPor` (uid opaco de una persona del MISMO comercio, necesario para
+ *    saber a quién se la quitó un administrador) y NUNCA el id de conversación entero: solo
+ *    `telefono4`, los últimos 4 dígitos.
  *  - Una transacción escribe el turno (`responde:'asistente'`, `devueltoEn`, `motivoDevolucion:
  *    'manual'`, conservando quién la tomó y cuándo) y la auditoría `conversacion_devuelta`, o
  *    ninguna (falla cerrada). Dos devoluciones a la vez: una escribe, la otra encuentra lo hecho.
@@ -28,7 +32,7 @@
  */
 import { onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import {
-  atenderTurno, auditarEnTransaccion, errorDeTurno, opcionesDeTurno, turnoAFirestore,
+  atenderTurno, auditarEnTransaccion, errorDeTurno, opcionesDeTurno, persistirVencimiento, turnoAFirestore,
   type ContextoDeTurno, type SalidaDeTurno,
 } from './turnoServidor.js';
 import { turnoEfectivo, type Turno } from './turno.js';
@@ -40,7 +44,10 @@ export async function devolver(c: ContextoDeTurno): Promise<SalidaDeTurno> {
     if (!snap.exists) throw errorDeTurno('noExiste');
     const { veredicto, turno } = turnoEfectivo(snap.get('turno'), { ultimoEntranteEn: snap.get('ultimoEntranteEn') }, c.ahoraMs);
 
-    // Nadie la tiene ahora (nunca se tomó, ya se devolvió, venció, o el dato está roto): nada que hacer.
+    // Venció por inactividad o ventana y el documento sigue diciendo «persona»: se PERSISTE devuelto
+    // (y se audita con el motivo) para que el oyente de la consola vea el cambio.
+    persistirVencimiento(tx, c, veredicto, turno, snap.get('turno'));
+    // Nadie la tiene ahora (nunca se tomó, ya se devolvió, venció —y arriba se persistió— o el dato está roto).
     if (veredicto.motivo !== 'tomado' || turno === null) return { turno };
 
     if (turno.tomadoPor !== c.uid && c.rol !== 'admin') throw errorDeTurno('noEsSuya', { tomadoPor: turno.tomadoPor });

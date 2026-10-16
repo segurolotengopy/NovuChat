@@ -205,10 +205,10 @@ describe('tomar: el camino feliz', () => {
     expect(despues).not.toHaveProperty('necesitaHumano');
   });
 
-  it('escribe la auditoría `conversacion_tomada` (quién, con qué rol, cuál conversación) y NADA más fuera del tope', async () => {
+  it('escribe la auditoría `conversacion_tomada` (quién, con qué rol, últimos 4 dígitos) y NADA más fuera del tope', async () => {
     await tomar({ tenantId: A, conversacionId: CONV1 }, ANA(A));
     expect(await auditorias(A)).toEqual([{
-      accion: 'conversacion_tomada', uid: 'u-ana', en: ts(AHORA), rol: 'oper', conversacionId: CONV1, resultado: 'ok', previo: 'sin_turno',
+      accion: 'conversacion_tomada', uid: 'u-ana', en: ts(AHORA), rol: 'oper', telefono4: '0001', resultado: 'ok', previo: 'sin_turno',
     }]);
     expect(await auditorias(OTRO)).toEqual([]);
     expect((await db.collection('topesDeTurno').listDocuments()).map((d) => d.id)).toEqual(['u-ana']);
@@ -254,7 +254,7 @@ describe('devolver: el camino feliz', () => {
     await devolver({ tenantId: A, conversacionId: CONV1 }, ANA(A));
     const aud = (await auditorias(A)).filter((x) => x['accion'] === 'conversacion_devuelta');
     expect(aud).toEqual([{
-      accion: 'conversacion_devuelta', uid: 'u-ana', en: ts(AHORA + 10 * MIN), rol: 'oper', conversacionId: CONV1, resultado: 'ok', tomadoPor: 'u-ana',
+      accion: 'conversacion_devuelta', uid: 'u-ana', en: ts(AHORA + 10 * MIN), rol: 'oper', telefono4: '0001', resultado: 'ok', tomadoPor: 'u-ana',
     }]);
   });
 
@@ -368,7 +368,7 @@ for (const [clave, nombre] of Object.entries(NOMBRES) as Array<[keyof typeof NOM
         await db.doc('tenants/tienda-rara').set({ nombre: 'rara', consolaConversaciones: 'nueva', ...(estado === undefined ? {} : { estado }) });
         expect(await rechazo(llamar({ tenantId: 'tienda-rara', conversacionId: CONV1 }, oper('tienda-rara'))), String(estado)).toMatchObject({ code: 'permission-denied', message: FIJOS.sinPermiso });
       }
-      expect(await hayEscrituras()).toEqual({ tope: 0, aud: 0 });
+      expect((await hayEscrituras()).aud).toBe(0); // sin auditoría; el cupo SÍ se gastó (el tope va antes de la ficha)
     });
 
     it('un fallo de Firestore al leer la ficha es `unavailable`, JAMÁS «sin permiso»', async () => {
@@ -409,11 +409,16 @@ for (const [clave, nombre] of Object.entries(NOMBRES) as Array<[keyof typeof NOM
       expect(cm(await rechazaHabilitacion('tienda-clasica', { nombre: 'Consultorio Béllido' }))).toEqual({ code: 'permission-denied', message: FIJOS.noHabilitado });
     });
 
-    it('un rechazo por habilitación no deja NADA: ni turno, ni auditoría, ni tope', async () => {
+    it('un rechazo por habilitación no deja turno ni auditoría, pero GASTA cupo: una cuenta con rol en un comercio no habilitado no fuerza lecturas sin tope', async () => {
       await rechazaHabilitacion('bellido');
       await rechazaHabilitacion('tienda-clasica', { consolaConversaciones: 'clasica' });
       expect((await leerConv('bellido', CONV1))['turno']).toBeUndefined();
-      expect(await hayEscrituras()).toEqual({ tope: 0, aud: 0 });
+      expect(await hayEscrituras()).toEqual({ tope: 2, aud: 0 });
+      // y con el tope agotado ni siquiera se lee la ficha
+      await db.doc('topesDeTurno/' + 'u-oper-bellido').set({ hora: '2026-10-16T11', dia: '2026-10-16', cambiosHora: 60, cambiosDia: 60 });
+      const espia = vi.spyOn(db, 'doc');
+      expect(await rechazo(llamar({ tenantId: 'bellido', conversacionId: CONV1 }, oper('bellido')))).toMatchObject({ code: 'resource-exhausted' });
+      expect(espia.mock.calls.map((c) => c[0])).not.toContain('tenants/bellido');
     });
 
     it('la bandera es la del comercio PEDIDO: tener la pantalla nueva en B no habilita A', async () => {
@@ -660,13 +665,22 @@ describe('devolver: quién puede, y qué pasa cuando nadie la tiene', () => {
     expect((await leerConv(A, CONV1))['turno']).toEqual({ basura: true });
   });
 
-  it('la DEVOLUCIÓN POR INACTIVIDAD: pasados 30 min devolver no escribe; informa el estado de hoy (asistente, «inactividad»)', async () => {
+  it('la DEVOLUCIÓN POR INACTIVIDAD: pasados 30 min devolver PERSISTE el vencimiento (asistente, «inactividad») y lo audita', async () => {
     await tomar(datos, ANA(A));
     vi.setSystemTime(new Date(AHORA + 30 * MIN));
     const t = await turnoDe(datos, BRUNO(A), CALLABLES.devolver); // ni siquiera hace falta ser quien la tenía
-    expect(t).toEqual({ responde: 'asistente', tomadoPor: 'u-ana', tomadoEn: AHORA, actividadPersonaEn: AHORA, devueltoEn: AHORA + 30 * MIN, motivoDevolucion: 'inactividad' });
-    expect((await leerConv(A, CONV1))['turno']).toMatchObject({ responde: 'persona' }); // lo guardado no cambia
-    expect((await auditorias(A)).filter((x) => x['accion'] === 'conversacion_devuelta')).toEqual([]);
+    const esperado = { responde: 'asistente', tomadoPor: 'u-ana', tomadoEn: AHORA, actividadPersonaEn: AHORA, devueltoEn: AHORA + 30 * MIN, motivoDevolucion: 'inactividad' };
+    expect(t).toEqual(esperado);
+    expect((await leerConv(A, CONV1))['turno']).toEqual({
+      responde: 'asistente', tomadoPor: 'u-ana', tomadoEn: ts(AHORA), actividadPersonaEn: ts(AHORA), devueltoEn: ts(AHORA + 30 * MIN), motivoDevolucion: 'inactividad',
+    });
+    const dev = (await auditorias(A)).filter((x) => x['accion'] === 'conversacion_devuelta');
+    expect(dev).toEqual([{
+      accion: 'conversacion_devuelta', uid: 'u-bruno', en: ts(AHORA + 30 * MIN), rol: 'oper', telefono4: '0001', resultado: 'ok', motivo: 'inactividad', tomadoPor: 'u-ana',
+    }]);
+    // y repetirlo ya no escribe ni audita
+    await devolver(datos, BRUNO(A));
+    expect((await auditorias(A)).filter((x) => x['accion'] === 'conversacion_devuelta')).toHaveLength(1);
   });
 
   it('un milisegundo antes de los 30 min, un operador ajeno todavía no puede devolverla', async () => {
@@ -675,12 +689,27 @@ describe('devolver: quién puede, y qué pasa cuando nadie la tiene', () => {
     expect(await rechazo(devolver(datos, BRUNO(A)))).toMatchObject({ code: 'failed-precondition', message: FIJOS.noEsSuya });
   });
 
-  it('la DEVOLUCIÓN POR VENTANA vencida: se informa «ventana» con devueltoEn = el cierre de la ventana', async () => {
+  it('la DEVOLUCIÓN POR VENTANA vencida: se persiste «ventana» con devueltoEn = el cierre de la ventana, y se audita', async () => {
     const ultimo = AHORA - 23 * HORA - 55 * MIN;
     await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ ultimoEntranteEn: ts(ultimo), turno: turnoGuardado() });
     vi.setSystemTime(new Date(AHORA + 10 * MIN)); // ya pasaron las 24 h del último mensaje del cliente
     const t = await turnoDe(datos, ANA(A), CALLABLES.devolver);
     expect(t).toMatchObject({ responde: 'asistente', motivoDevolucion: 'ventana', devueltoEn: ultimo + 24 * HORA });
+    expect((await leerConv(A, CONV1))['turno']).toMatchObject({ responde: 'asistente', motivoDevolucion: 'ventana', devueltoEn: ts(ultimo + 24 * HORA) });
+    expect((await auditorias(A))[0]).toMatchObject({ accion: 'conversacion_devuelta', motivo: 'ventana', uid: 'u-ana' });
+  });
+
+  it('tomar con la ventana CERRADA rechaza, pero deja persistido devuelto el turno ajeno ya vencido (y lo audita)', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ ultimoEntranteEn: ts(AHORA - 25 * HORA), turno: turnoGuardado() });
+    expect(cm(await rechazo(tomar(datos, BRUNO(A))))).toEqual({ code: 'failed-precondition', message: FIJOS.ventanaCerrada });
+    expect((await leerConv(A, CONV1))['turno']).toMatchObject({ responde: 'asistente', tomadoPor: 'u-ana', motivoDevolucion: 'ventana' });
+    expect((await auditorias(A)).map((x) => x['accion'])).toEqual(['conversacion_devuelta']);
+  });
+
+  it('tomar con la ventana cerrada y SIN turno vencido no escribe nada más que el tope', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ ultimoEntranteEn: ts(AHORA - 25 * HORA) });
+    await rechazo(tomar(datos, BRUNO(A)));
+    expect((await leerConv(A, CONV1))['turno']).toBeUndefined();
     expect((await hayEscrituras()).aud).toBe(0);
   });
 
@@ -765,15 +794,17 @@ describe('el tope por usuario: 60 por hora y 300 por día, contado en el servido
     expect(await topes('u-ana')).toMatchObject({ cambiosHora: 60, cambiosDia: 60 });
   }, 60_000);
 
-  it('solo cuentan las llamadas autorizadas, habilitadas y bien formadas: un rechazo previo no toca el tope', async () => {
+  it('solo cuentan las llamadas con rol válido y bien formadas: un rechazo previo no toca el tope', async () => {
     await rechazo(tomar(datos)); // sin sesión
     await rechazo(tomar({ tenantId: OTRO, conversacionId: CONV1 }, ANA(A))); // sin permiso
     await rechazo(tomar({ tenantId: '__proto__', conversacionId: CONV1 }, ANA(A)));
     await rechazo(tomar({ tenantId: A, conversacionId: 'mal' }, ANA(A))); // id mal formado
     await rechazo(tomar(datos, propietario())); // soporte
-    await ficha(A, { consolaConversaciones: 'clasica' });
-    await rechazo(tomar(datos, ANA(A))); // sin habilitación
     expect(await db.collection('topesDeTurno').listDocuments()).toEqual([]);
+    // En cambio, quien tiene rol válido pero el comercio no está habilitado SÍ gasta cupo (el tope va antes de leer la ficha).
+    await ficha(A, { consolaConversaciones: 'clasica' });
+    await rechazo(tomar(datos, ANA(A)));
+    expect((await db.collection('topesDeTurno').listDocuments()).map((d) => d.id)).toEqual(['u-ana']);
   });
 
   it('el cupo se consume ANTES de leer: una llamada autorizada y bien formada cuenta aunque la transacción falle', async () => {
@@ -840,6 +871,36 @@ describe('la auditoría es FALLA-CERRADA y atómica con el cambio de turno', () 
     } as never);
     expect(cm(await rechazo(tomar(datos, ANA(A))))).toEqual({ code: 'unavailable', message: FIJOS.noDisponible });
     expect((await leerConv(A, CONV1))['turno']).toBeUndefined();
+  });
+
+  it('la auditoría NUNCA guarda el id de conversación ni el teléfono: ni `conversacionId` ni ninguna secuencia de 8 o más dígitos', async () => {
+    await tomar(datos, ANA(A));
+    await devolver(datos, admin(A));
+    vi.setSystemTime(new Date(AHORA + 40 * MIN));
+    await tomar(datos, BRUNO(A));
+    vi.setSystemTime(new Date(AHORA + 80 * MIN));
+    await devolver(datos, BRUNO(A)); // por inactividad
+    const docs = await auditorias(A);
+    expect(docs.length).toBeGreaterThanOrEqual(4);
+    for (const d of docs) {
+      expect(d).not.toHaveProperty('conversacionId');
+      expect(d['telefono4']).toBe('0001');
+      const plano = JSON.stringify(d, (_k, v) => (v instanceof Timestamp ? 'ts' : v));
+      expect(plano).not.toMatch(/\d{8,}/);
+      expect(plano).not.toContain(TEL1);
+      expect(plano).not.toContain('wa_');
+    }
+  });
+
+  it('la forma del documento de auditoría es la de `central/comunes.ts` en los campos comunes: accion, uid, en (Timestamp)', async () => {
+    const comunes = readFileSync(join(aqui, '..', '..', 'functions', 'src', 'central', 'comunes.ts'), 'utf8');
+    expect(comunes).toMatch(/accion, uid, en: Timestamp\.now\(\), \.\.\.detalle/);
+    await tomar(datos, ANA(A));
+    const d = (await auditorias(A))[0] ?? {};
+    for (const k of ['accion', 'uid', 'en']) expect(d, k).toHaveProperty(k);
+    expect(d['en']).toBeInstanceOf(Timestamp);
+    expect(typeof d['accion']).toBe('string');
+    expect(typeof d['uid']).toBe('string');
   });
 
   it('el documento de auditoría lo crea el servidor con `create` (nunca sobrescribe): el id es nuevo en cada cambio', async () => {
