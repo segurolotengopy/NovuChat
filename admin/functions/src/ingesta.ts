@@ -27,6 +27,7 @@ import { registrar } from './core/turno/bitacora.js';
 // H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
 // campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
 // nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
+import { decidirPausa, persistirVencimientoDeIngesta, conPausa } from './core/conversacion/pausa.js';
 import { camposDeConversacionPorMensaje, camposDeMensajeIndexado } from './core/conversacion/derivados.js';
 import {
   HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
@@ -1071,6 +1072,15 @@ export const ingesta = onRequest(
         corte.reanudado = corteGuardado.aplicado;
       }
 
+      // LA PAUSA POR PERSONA (H2-2, `core/conversacion/pausa.ts`). Solo con un entrante: es el
+      // mensaje que el asistente tendría que contestar. Se decide con lo que esta transacción ya
+      // leyó (cero lecturas extra). Un turno vencido se persiste devuelto aquí mismo. El cuerpo
+      // que manda n8n nunca decide nada de esto: el turno solo lo escribe el servidor.
+      const pausa = mensaje.direccion === 'entrante'
+        ? decidirPausa(conversacion.get('turno'), conversacion.get('ultimoEntranteEn'), ahoraMs) : null;
+      if (pausa) persistirVencimientoDeIngesta(tx, db, tenantId, refConversacion, idConversacion, pausa, ahoraMs);
+      const pausadaPorPersona = pausa?.pausada === true;
+
       // EL MENSAJE SE GUARDA SIEMPRE, también cortado: el comercio tiene que
       // ver QUIÉN le escribió mientras el asistente no atendía.
       // LOS CAMPOS DERIVADOS DE LA CONVERSACIÓN (H1-6), en un solo lugar para las dos
@@ -1140,7 +1150,7 @@ export const ingesta = onRequest(
           ...derivadosDeConversacion(),
         }, { merge: true });
         escribirMensaje();
-        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad };
+        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad, pausadaPorPersona };
       }
 
       // LA BOLSA (§4undecies.3, punto 6): abrir una conversación con las
@@ -1366,7 +1376,7 @@ export const ingesta = onRequest(
         });
       }
 
-      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad };
+      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad, pausadaPorPersona };
     });
 
     // Lo que viaja a n8n y al registro sobre el prepago: el estado del
@@ -1468,11 +1478,14 @@ export const ingesta = onRequest(
     // él. El flujo vivo ignora el cuerpo y sigue funcionando igual.
     respuesta.status(200).json({
       atencion: {
-        ...veredicto.atencion,
+        ...conPausa(veredicto.atencion, veredicto.pausadaPorPersona),
         ventanaVenceEn: veredicto.atencion.ventanaVenceEn === null
           ? null : new Date(veredicto.atencion.ventanaVenceEn).toISOString(),
       },
-      avisarRecepcion: veredicto.aviso,
+      // Con la pausa de una persona (H2-2) el aviso va vacío y se agrega `pausadoPorPersona`;
+      // sin pausa, las claves son las de siempre.
+      avisarRecepcion: veredicto.pausadaPorPersona ? '' : veredicto.aviso,
+      ...(veredicto.pausadaPorPersona ? { pausadoPorPersona: true } : {}),
       // El prepago (bloque A-0): `cortado` si este mensaje no se atendió. El
       // flujo vivo ignora el cuerpo; el corte real entra por el 409 de
       // `configuracionFlujo`, que los tres flujos ya obedecen. SOLO con
@@ -1661,11 +1674,16 @@ export const configuracionFlujo = onRequest(
       ? (() => {
           const marcas = (conversacion.data() ?? {}) as Record<string, unknown>;
           const estado = estadoDeAtencion(marcas, umbralesDeAtencion(cuenta?.data()), Date.now());
+          // LA PAUSA POR PERSONA (H2-2): misma regla que la ingesta. Lectura pura, sin persistir
+          // (el vencimiento lo escribe la ingesta con el siguiente entrante). Con pausa,
+          // 'bloqueado' y aviso vacío; `atencionEstado` del documento no se toca.
+          const pausada = decidirPausa(marcas['turno'], marcas['ultimoEntranteEn'], ahoraMs).pausada;
           return {
-            ...estado,
+            ...conPausa(estado, pausada),
             ventanaVenceEn: estado.ventanaVenceEn === null
               ? null : new Date(estado.ventanaVenceEn).toISOString(),
-            avisarRecepcion: avisoDeTransicion(marcas['atencionEstado'], estado.estado),
+            avisarRecepcion: pausada ? '' : avisoDeTransicion(marcas['atencionEstado'], estado.estado),
+            ...(pausada ? { pausadoPorPersona: true } : {}),
           };
         })()
       : null;
