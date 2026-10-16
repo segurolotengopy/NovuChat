@@ -22,6 +22,12 @@ import { getFirestore } from 'firebase-admin/firestore';
  * ningún número y sigue habiendo UN SECRETO POR NÚMERO: comprometer el de un
  * comercio no alcanza a los demás, que era la propiedad que se quería.
  *
+ * H2-3 (16/10/2026): la credencial de un número (firma o token) ahora TAMBIÉN autoriza
+ * `reclamarSalidaPersona` y `confirmarSalidaPersona`, y con ella el flujo lee el texto y el `to` de los
+ * mensajes de persona pendientes de su comercio. Ampliación de privilegio aceptada (contrato §4). El modo
+ * HMAC del reclamo se puede reproducir durante la ventana de 5 minutos (sin nonce): solo reclamaría lo que
+ * ya estaba pendiente. Aceptado.
+ *
  * LO QUE NO CAMBIA, porque es lo que sostiene el aislamiento:
  *
  *   - La cabecera con el número solo SELECCIONA con qué clave verificar. No
