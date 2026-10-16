@@ -1,0 +1,552 @@
+{
+  "name": "NovuChat — Salida de persona",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 300
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "REEMPLAZAR_RUTA_TIMBRE",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "sp-timbre",
+      "name": "Timbre",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Salida de persona (timbre)"
+        }
+      },
+      "notes": "El timbre de la Function `enviarComoPersona`: un POST SIN DATOS con `Authorization: Bearer <clave>` (Header Auth). El mensaje no viaja por aqui: el flujo lo reclama. La ruta es una URL de capacidad: el marcador `REEMPLAZAR_RUTA_TIMBRE` se fija al publicar y la ruta real vive solo en Secret Manager (SALIDA_PERSONA_RUTAS)."
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "sp-barrido",
+      "name": "Barrido cada minuto",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -300,
+        400
+      ],
+      "notes": "Reclama igual que el timbre: si un timbre se perdio, el mensaje `pendiente` sale en el minuto siguiente."
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "sp1",
+              "name": "phoneNumberId",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID"
+            },
+            {
+              "id": "sp2",
+              "name": "waGraphVersion",
+              "type": "string",
+              "value": "v26.0"
+            },
+            {
+              "id": "sp3",
+              "name": "releBaseUrl",
+              "type": "string",
+              "value": "REEMPLAZAR_URL_INTERNA_DEL_RELE"
+            },
+            {
+              "id": "sp4",
+              "name": "maxVueltas",
+              "type": "number",
+              "value": 10
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "sp-config",
+      "name": "Config base",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -60,
+        300
+      ],
+      "notes": "Todo lo que cambia por numero. `releBaseUrl` es la direccion del rele B9 por la red interna (http, nunca expuesta); `maxVueltas` x 10 mensajes es el tope por toque (lo demas lo toma el barrido)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// SALIDA DE PERSONA, paso 1: ¿este toque es para este flujo?\n//\n// El flujo atiende UN numero (se instala por alias: la misma plantilla con otro\n// `phoneNumberId` en `Config base`). Dos disparadores llegan aqui: el\n// timbre de la Function (POST sin datos) y el barrido de cada minuto, que\n// reclama igual por si un timbre se perdio.\n//\n// - Sin `phoneNumberId` configurado el flujo NO corre: un error visible en la\n//   ejecucion, nunca un reclamo con un numero de marcador.\n// - Un timbre que trae `X-NovuChat-Numero` de OTRO numero se descarta: la ruta\n//   del webhook ya es de este numero, esto es solo un cinturon.\n// - La clave y la firma del timbre las verifica el Header Auth del webhook; este\n//   nodo no tiene `crypto` y no las toca.\nconst cfg = $('Config base').first().json;\nconst numero = String(cfg.phoneNumberId ?? '').trim();\nif (!/^[0-9]{8,20}$/.test(numero)) {\n  throw new Error('Salida de persona: Config base no tiene el phoneNumberId de este flujo.');\n}\n\nconst timbre = $('Timbre');\nlet origen = 'barrido';\nif (timbre.isExecuted) {\n  origen = 'timbre';\n  const cabeceras = (timbre.first().json.headers) || {};\n  const deQuien = String(cabeceras['x-novuchat-numero'] ?? '').trim();\n  if (deQuien && deQuien !== numero) return [];\n}\n\nreturn [{ json: { origen, phoneNumberId: numero } }];"
+      },
+      "id": "sp-validar",
+      "name": "Validar toque",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        300
+      ],
+      "notes": "Cada ejecucion empieza aqui: sin phoneNumberId falla visible; un timbre de otro numero se descarta."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/reclamarSalidaPersona",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Config base').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "sp-reclamar",
+      "name": "Reclamar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        420,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (REEMPLAZAR_ALIAS)"
+        }
+      },
+      "notes": "Pasa los mensajes `pendiente` a `enviando` de forma atomica y devuelve hasta 10 con su canal. Sin `Continue on Fail`: un error se ve en la ejecucion.",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "// SALIDA DE PERSONA, paso 3: de la lista reclamada a un envio por mensaje.\n//\n// Entra la respuesta de `reclamarSalidaPersona`: { mensajes: [...] } con hasta 10\n// mensajes ya pasados a `enviando`. Sale UN item por mensaje con lo que los nodos\n// de envio necesitan. Lista vacia = fin del bucle (no sale ningun item).\n//\n// Un mensaje que NO se puede enviar por un defecto propio (canal que no es\n// 'rele' ni 'graph', texto vacio, direccion invalida, rele sin configurar) lleva\n// `sinEnvio` con un codigo: el Switch lo manda directo a `Resultado del envío`,\n// que lo confirma como rechazado. Nunca se queda en `enviando` ni se envia a ciegas.\nconst cfg = $('Config base').first().json;\nconst entrada = $input.all()[0];\nconst lista = entrada && entrada.json && Array.isArray(entrada.json.mensajes) ? entrada.json.mensajes : [];\nconst releBase = String(cfg.releBaseUrl ?? '').trim();\nconst releListo = /^http:\\/\\/[A-Za-z0-9._-]+(:[0-9]{2,5})?$/.test(releBase);\n\nconst salida = [];\nfor (const m of lista) {\n  const p = (m && typeof m === 'object') ? m : {};\n  const mensajeId = String(p.mensajeId ?? '');\n  const conversacionId = String(p.conversacionId ?? '');\n  const texto = typeof p.texto === 'string' ? p.texto : '';\n  const to = String(p.to ?? '');\n  const canal = String(p.canal ?? '');\n  const claveRele = String(p.claveRele ?? '');\n\n  let sinEnvio = '';\n  let reintentable = false;\n  if (!mensajeId || !conversacionId) sinEnvio = 'NV-RECLAMO';\n  else if (canal !== 'rele' && canal !== 'graph') sinEnvio = 'NV-CANAL';\n  else if (!/^[0-9]{8,15}$/.test(to)) sinEnvio = 'NV-DESTINO';\n  else if (texto.trim() === '' || texto.length > 1000) sinEnvio = 'NV-TEXTO';\n  else if (canal === 'rele' && !/^[A-Za-z0-9_.:-]{16,128}$/.test(claveRele)) sinEnvio = 'NV-CLAVE';\n  else if (canal === 'rele' && !releListo) { sinEnvio = 'NV-RELE-CONFIG'; reintentable = true; }\n\n  salida.push({ json: {\n    mensajeId, conversacionId, canal, claveRele,\n    sinEnvio, reintentable,\n    // Por donde sigue el Switch: un mensaje con defecto propio NUNCA entra a un nodo de envio.\n    ruta: sinEnvio ? 'ninguna' : canal,\n    // Mismo cuerpo para el rele y para Graph: el rele reenvia a Graph tal cual.\n    cuerpoEnvio: { messaging_product: 'whatsapp', to, type: 'text', text: { body: texto } },\n  }});\n}\nreturn salida;"
+      },
+      "id": "sp-planificar",
+      "name": "Planificar lote",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "notes": "Un item por mensaje reclamado. Lista vacia = fin del bucle."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c-rele",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "rele",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "rele"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c-graph",
+                    "leftValue": "={{ $json.ruta }}",
+                    "rightValue": "graph",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "graph"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "sin envío"
+        }
+      },
+      "id": "sp-canal",
+      "name": "Por canal",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        900,
+        300
+      ],
+      "notes": "`rele` -> relé B9; `graph` -> Graph con la credencial vigente; cualquier otra cosa se confirma como rechazada sin enviar."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config base').first().json.releBaseUrl }}/v1/envio/mensajes/{{ $('Config base').first().json.phoneNumberId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.claveRele }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.cuerpoEnvio) }}",
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1000
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "sp-rele",
+      "name": "Enviar por el relé",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "AAB1 envío · REEMPLAZAR_ALIAS"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Envio serie (1 por segundo) con `Idempotency-Key` = `claveRele`. Sin reintentos: un resultado incierto NUNCA se reenvia solo. El `Continue on Fail` es solo para que un tiempo agotado llegue a `Resultado del envío` como incierto."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Config base').first().json.waGraphVersion }}/{{ $('Config base').first().json.phoneNumberId }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.cuerpoEnvio) }}",
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1000
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "sp-graph",
+      "name": "Enviar por Graph",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        400
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp REEMPLAZAR_ALIAS (envío)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Camino directo a Graph (Q'Taco hasta el traslado). Sin reintentos por la misma razon."
+    },
+    {
+      "parameters": {
+        "jsCode": "// SALIDA DE PERSONA, paso 5: de la respuesta del rele o de Graph al resultado\n// que se confirma. Se ejecuta una vez por mensaje (modo \"cada item\").\n//\n// Reglas (contrato H2 §4; rele B9 y Graph):\n//   2xx con id de mensaje ........................ aceptado + idMeta\n//   2xx sin id legible ........................... incierto (Meta pudo aceptarlo)\n//   error de red, tiempo agotado, 504, WM-3041 ... incierto: NUNCA se reenvia solo\n//   5xx sin codigo, WM-3030/3035/3042 ............ incierto\n//   codigo de Meta o del rele (4xx / WM-3040) .... rechazado + codigo (+ reintentable)\n//   sin envio por defecto propio ................. rechazado + codigo NV-*\n// El texto del mensaje nunca sale de este nodo.\nconst p = $('Planificar lote').item.json;\nconst r = $input.item.json;\n\nconst base = { mensajeId: p.mensajeId, conversacionId: p.conversacionId };\nconst limpio = (v) => String(v ?? '').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40) || 'DESCONOCIDO';\nconst rechazo = (codigo, reintentable) => ({ json: { ...base, resultado: 'rechazado', codigo: limpio(codigo), reintentable: reintentable === true } });\nconst incierto = () => ({ json: { ...base, resultado: 'incierto' } });\n\nif (p.sinEnvio) return rechazo(p.sinEnvio, p.reintentable === true);\n\n// Un error del nodo HTTP (red, tiempo agotado): el mensaje pudo salir.\nif (r.error !== undefined && r.statusCode === undefined) return incierto();\n\nconst estado = Number(r.statusCode);\nlet cuerpo = r.body;\nif (typeof cuerpo === 'string') { try { cuerpo = JSON.parse(cuerpo); } catch (e) { cuerpo = {}; } }\nif (cuerpo === null || typeof cuerpo !== 'object') cuerpo = {};\n\nif (estado >= 200 && estado < 300) {\n  const primero = Array.isArray(cuerpo.messages) ? cuerpo.messages[0] : undefined;\n  const id = primero && typeof primero.id === 'string' ? primero.id : '';\n  if (/^[A-Za-z0-9_.=:+/-]{1,120}$/.test(id)) return { json: { ...base, resultado: 'aceptado', idMeta: id } };\n  return incierto();\n}\n\nconst err = (cuerpo.error && typeof cuerpo.error === 'object') ? cuerpo.error : {};\nif (p.canal === 'rele') {\n  const wm = typeof err.codigo === 'string' ? err.codigo : '';\n  if (estado === 504 || ['WM-3041', 'WM-3035', 'WM-3030', 'WM-3042'].includes(wm)) return incierto();\n  if (wm === '') return (estado >= 500 || !Number.isFinite(estado)) ? incierto() : rechazo('HTTP-' + estado, false);\n  // WM-3040: Meta rechazo; el codigo de Meta (131047...) manda sobre el del rele.\n  const codigo = err.metaCodigo !== undefined && err.metaCodigo !== null ? err.metaCodigo : wm;\n  const reintentable = err.reintentable === true || wm === 'WM-3037' || wm === 'WM-3038';\n  return rechazo(codigo, reintentable);\n}\n\n// Graph directo: un 5xx o una respuesta sin codigo no dice si salio.\nif (!(estado >= 400 && estado < 500) || (typeof err.code !== 'number' && typeof err.code !== 'string')) return incierto();\nconst codigoMeta = err.code;\nreturn rechazo(codigoMeta, Number(codigoMeta) === 130429 || err.is_transient === true);",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "sp-resultado",
+      "name": "Resultado del envío",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1380,
+        300
+      ],
+      "notes": "De la respuesta del relé o de Graph al resultado: aceptado + idMeta, rechazado + codigo (+ reintentable) o incierto."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/confirmarSalidaPersona",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Config base').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "sp-confirmar",
+      "name": "Confirmar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1620,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (REEMPLAZAR_ALIAS)"
+        }
+      },
+      "notes": "Confirma cada mensaje. Sin `Continue on Fail`; solo se reintenta por red (la confirmacion repetida es inofensiva).",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "jsCode": "// SALIDA DE PERSONA, paso 7: ¿se confirmo todo?, y ¿hay otra vuelta?\n//\n// Entra la respuesta de `confirmarSalidaPersona` de cada mensaje del lote (el nodo\n// HTTP ya las proceso TODAS antes de llegar aqui). Si alguna confirmacion no fue\n// un 200 con ok, la ejecucion FALLA con un mensaje que nombra el mensaje y el\n// resultado (nunca el texto ni el telefono): una confirmacion perdida es un error\n// visible, no un exito falso. El mensaje queda `enviando` y el siguiente reclamo\n// lo pasa a `incierto` a los 2 minutos; nunca se reenvia solo.\n//\n// Sin fallas: sale UN item que vuelve a `Reclamar`. El bucle termina cuando el\n// reclamo llega vacio (`Planificar lote` no emite nada) o al llegar al tope de\n// vueltas de `Config base` (lo que quede pendiente lo toma el barrido).\nconst cfg = $('Config base').first().json;\nconst enviados = $('Resultado del envío').all();\nconst fallas = [];\n$input.all().forEach((it, i) => {\n  const r = it.json || {};\n  const cuerpo = (r.body && typeof r.body === 'object') ? r.body : {};\n  if (Number(r.statusCode) !== 200 || cuerpo.ok !== true) {\n    const e = enviados[i] ? enviados[i].json : {};\n    fallas.push(`${String(e.mensajeId ?? '?')} (${String(e.resultado ?? '?')}) -> HTTP ${String(r.statusCode ?? 'sin respuesta')}`);\n  }\n});\nif (fallas.length > 0) {\n  throw new Error('Salida de persona: no se pudo confirmar ' + fallas.length + ' mensaje(s): ' + fallas.join('; '));\n}\n\nconst tope = Math.max(1, Math.min(50, Number(cfg.maxVueltas) || 10));\nif ($runIndex + 1 >= tope) return [];\nreturn [{ json: { vuelta: $runIndex + 1 } }];"
+      },
+      "id": "sp-verificar",
+      "name": "Verificar y seguir",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1860,
+        300
+      ],
+      "notes": "Si alguna confirmacion no fue 200 ok, la ejecucion falla visible. Si todo bien, vuelve a `Reclamar` hasta que llegue vacio."
+    }
+  ],
+  "connections": {
+    "Timbre": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Barrido cada minuto": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config base": {
+      "main": [
+        [
+          {
+            "node": "Validar toque",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar toque": {
+      "main": [
+        [
+          {
+            "node": "Reclamar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reclamar": {
+      "main": [
+        [
+          {
+            "node": "Planificar lote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planificar lote": {
+      "main": [
+        [
+          {
+            "node": "Por canal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Por canal": {
+      "main": [
+        [
+          {
+            "node": "Enviar por el relé",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar por Graph",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resultado del envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar por el relé": {
+      "main": [
+        [
+          {
+            "node": "Resultado del envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar por Graph": {
+      "main": [
+        [
+          {
+            "node": "Resultado del envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado del envío": {
+      "main": [
+        [
+          {
+            "node": "Confirmar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmar": {
+      "main": [
+        [
+          {
+            "node": "Verificar y seguir",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar y seguir": {
+      "main": [
+        [
+          {
+            "node": "Reclamar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
