@@ -101,9 +101,9 @@ describe('cada forma de consulta de la pantalla tiene su índice declarado', () 
     ]);
   });
 
-  it('las formas de campo único: «todas», «por vencer», teléfono (trozos y prefijo) y nombre', () => {
+  it('las formas de campo único: «todas», «por vencer», teléfono (trozos y prefijo), nombre, ids y (H2) «turno.responde»', () => {
     const unicas = FORMAS_CONSULTA.filter((f) => indiceNecesario(f) === null).map((f) => f.id);
-    expect(unicas).toEqual(['todas', 'vencer', 'telefono-trozos', 'telefono-prefijo', 'nombre', 'ids']);
+    expect(unicas).toEqual(['todas', 'vencer', 'telefono-trozos', 'telefono-prefijo', 'nombre', 'ids', 'turno-persona']);
   });
 
   it('el archivo declara el compuesto de «no leídas» y el de «necesita humano» sobre `conversaciones`, ámbito COLLECTION', () => {
