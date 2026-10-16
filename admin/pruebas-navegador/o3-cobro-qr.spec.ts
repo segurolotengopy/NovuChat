@@ -146,6 +146,6 @@ test.describe('COB-02 · «Cambiar el QR» con el cobro real activo (reemplazoQr
     await fijarCobroReal(FOGON, ACTIVO);
     await abrirQr(page);
     await expect(cambiar(page)).toBeVisible();
-    await expect(page.getByText(/apag|se cort|dejar[aá] de cobrar/i).first()).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText(/apagar(á)? el cobro|se corta(rá)? el cobro|dejar[aá] de cobrar|cortar el cobro/i).first()).toBeVisible({ timeout: 3_000 });
   });
 });
