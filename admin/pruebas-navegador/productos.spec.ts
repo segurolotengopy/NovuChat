@@ -102,6 +102,17 @@ test.describe('Productos', () => {
     await expect(page.getByText(/4 de \d+ productos/)).toBeVisible();
   });
 
+  test('DEFECTO (PRO-02): un nombre que ya existe en un ítem cargado por script (identificador `item-1`) tampoco debería poder repetirse', async ({ page }) => {
+    // Prueba hermana: «un nombre que ya existe (o que se escribe casi igual)…», que pasa porque ese ítem se cargó por la pantalla.
+    // `agregar` compara el identificador derivado del nombre con los ítems cargados: un ítem sembrado o importado con otro
+    // identificador (la siembra usa `item-1`) no se reconoce y la pantalla crea un duplicado. Hoy FALLA; si se corrige, se quita la marca.
+    test.fail(true, 'PRO-02 (matriz): nombre repetido en un ítem con otro identificador crea un duplicado en vez de decir «Ya hay un ítem con ese nombre»');
+    await page.getByLabel('Nombre').last().fill('Pique macho');
+    await page.getByLabel(/^Precio/).last().fill('1');
+    await page.getByRole('button', { name: 'Agregar' }).click();
+    await expect(page.getByText(/Ya hay un ítem con ese nombre/)).toBeVisible({ timeout: 5_000 });
+  });
+
   test('buscar por nombre deja solo lo que coincide', async ({ page }) => {
     await page.getByLabel('Buscar').fill('pique');
     await expect(fila(page, 'Pique macho')).toBeVisible();
