@@ -1065,3 +1065,33 @@ con el OK de Andres; los dos parámetros son, en orden, el **nombre del negocio*
   resuelve el interruptor **No contactar** de la pantalla de conversaciones.
 
 Se cubren en `admin/pruebas/platinum-flujo.test.ts`, bloque **(n)**.
+
+---
+
+## 9. Flujo común de Core: Salida de persona (`salida-de-persona.json`)
+
+Es el flujo que **envía lo que una persona escribe desde la consola** (H2, contrato
+del 16/10/2026 §4). No es de un cliente ni de un módulo: se instala por número
+con la misma plantilla (cambian `phoneNumberId`, el relé, las credenciales y la
+ruta del timbre), y no lleva texto ni nombre de cliente.
+
+- **Camino:** `Timbre` (webhook sin datos, Header Auth) y `Barrido cada minuto`
+  → `Reclamar` (`reclamarSalidaPersona`, pasa `pendiente` a `enviando`) →
+  `Por canal` → relé B9 (`Idempotency-Key` = `claveRele`) o Graph → `Juntar
+  salidas` → `Resultado del envío` → `Confirmar` (`confirmarSalidaPersona`) →
+  `Verificar y seguir`, que vuelve a `Reclamar` hasta que el reclamo llega
+  vacío (tope `maxVueltas` × 10 mensajes por toque).
+- **Un 504, un tiempo agotado o un error de red es `incierto` y nunca se reenvía
+  solo.** `Reclamar` no reintenta (una respuesta perdida dejaría mensajes
+  `enviando` que no salieron); `Confirmar` sí (es idempotente) y, si agota los
+  intentos, la ejecución falla visible.
+- **Por qué el nodo `Set` se llama «Config base»:** el Code «Config del negocio»
+  de los otros flujos trae datos del servidor; este flujo no los necesita, y las
+  pruebas (`ensamblador.test.ts`, `higiene-flujos.test.ts`) y `preparar-import.sh`
+  buscan el marcador `REEMPLAZAR_` en un nodo con ese nombre.
+- **No guarda ejecuciones exitosas ni manuales** (`saveDataSuccessExecution:
+  none`): las del barrido, casi siempre vacías, no dejan textos, teléfonos ni la
+  cabecera `Authorization` del timbre. Las fallidas sí se guardan.
+- La ruta real del timbre vive solo en Secret Manager (`SALIDA_PERSONA_RUTAS`);
+  el JSON lleva `REEMPLAZAR_RUTA_TIMBRE`. La publicación por número (H2-F2) es
+  un bloque aparte.

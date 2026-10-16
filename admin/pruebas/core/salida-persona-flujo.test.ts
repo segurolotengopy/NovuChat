@@ -76,7 +76,7 @@ type Enviar = (nodoDeEnvio: 'Enviar por el relé' | 'Enviar por Graph', l: Llama
 /** Una ejecucion completa: lo que hace n8n desde el toque hasta que el reclamo llega vacio (o falla). */
 function ejecutarFlujo(opciones: {
   servidor: ReturnType<typeof servidor>; enviar: Enviar; config?: J; timbre?: J;
-  confirmarFalla?: (c: J) => { statusCode: number; body: J } | null;
+  confirmarFalla?: (c: J, intento: number) => { statusCode: number; body: J } | null;
 }) {
   const cfg = opciones.config ?? CONFIG;
   const refs: Record<string, J | J[]> = { 'Config base': cfg };
@@ -84,9 +84,11 @@ function ejecutarFlujo(opciones: {
   const llamadas: Llamada[] = [];
   const confirmadas: J[] = [];
   let vueltas = 0;
+  const intentosDeConfirmar: number[] = [];
+  let corridasDeResultado = 0;
 
   const valido = correr(codigoDe(flujo, 'Validar toque'), [{}], refs);
-  if (valido.length === 0) return { llamadas, confirmadas, vueltas, descartado: true };
+  if (valido.length === 0) return { llamadas, confirmadas, vueltas, descartado: true, intentosDeConfirmar, juntadas: 0 };
 
   const reglas = (nodo(flujo, 'Por canal').parameters['rules'] as { values: { conditions: { conditions: { rightValue: string }[] } }[] }).values
     .map((r) => r.conditions.conditions[0]!.rightValue);
@@ -123,15 +125,27 @@ function ejecutarFlujo(opciones: {
     });
     for (const c of resultados) {
       const cuerpoConfirmar = JSON.parse(String(expresion(nodo(flujo, 'Confirmar').parameters['jsonBody'], c, refs))) as J;
-      const forzada = opciones.confirmarFalla?.(cuerpoConfirmar) ?? null;
-      const r = forzada ?? opciones.servidor.confirmar(cuerpoConfirmar);
+      // El nodo `Confirmar` reintenta (retryOnFail) ante red/5xx/429 y, si se agota, la ejecucion FALLA.
+      const parametros = nodo(flujo, 'Confirmar');
+      const intentosMax = parametros.retryOnFail ? Number(parametros.maxTries ?? 3) : 1;
+      let r: { statusCode: number; body: J } | null = null;
+      for (let intento = 1; intento <= intentosMax; intento++) {
+        intentosDeConfirmar.push(intento);
+        const forzada = opciones.confirmarFalla?.(cuerpoConfirmar, intento) ?? null;
+        const x = forzada ?? opciones.servidor.confirmar(cuerpoConfirmar);
+        if (x.statusCode === 429 || x.statusCode >= 500) continue;
+        if (x.statusCode >= 400) throw new Error(`Confirmar: HTTP ${x.statusCode}`);
+        r = x; break;
+      }
+      if (!r) throw new Error('Confirmar: reintentos agotados');
       confirmadas.push(cuerpoConfirmar);
       respuestasConfirmar.push(r);
     }
+    corridasDeResultado += 1; // «Juntar salidas» entrega UNA tanda a Resultado/Confirmar/Verificar por vuelta
     const sigue = correr(codigoDe(flujo, 'Verificar y seguir'), respuestasConfirmar, { ...refs, 'Resultado del envío': resultados }, { $runIndex: vuelta });
     if (sigue.length === 0) break;
   }
-  return { llamadas, confirmadas, vueltas, descartado: false };
+  return { llamadas, confirmadas, vueltas, descartado: false, intentosDeConfirmar, juntadas: corridasDeResultado };
 }
 
 const ok = (id: string) => ({ statusCode: 200, body: { messages: [{ id }], contacts: [{ wa_id: '59170000001' }] } });
@@ -200,6 +214,43 @@ describe('Salida de persona: el bucle', () => {
     expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: '131047', reintentable: false });
   });
 
+  it('relé: WM-3040 sin metaCodigo, con un metaCodigo desconocido, y un WM desconocido o 3036 son INCIERTOS', () => {
+    const casos: [number, J][] = [
+      [502, { error: { codigo: 'WM-3040', reintentable: false } }],
+      [502, { error: { codigo: 'WM-3040', metaCodigo: 999999 } }],
+      [422, { error: { codigo: 'WM-3036' } }],
+      [500, { error: { codigo: 'WM-3099' } }],
+      [400, {}],
+      [404, { error: { codigo: 'WM-3030' } }],
+    ];
+    for (const [statusCode, body] of casos) {
+      const s = servidor('rele', [doc(18)]);
+      ejecutarFlujo({ servidor: s, enviar: () => ({ statusCode, body }) });
+      expect(s.docs[0]!.estado, JSON.stringify(body)).toBe('incierto');
+    }
+  });
+
+  it.each(['WM-3010', 'WM-3011', 'WM-3012', 'WM-3031', 'WM-3032', 'WM-3033', 'WM-3034', 'WM-3039'])('relé: %s (rechazo previo a Graph) es rechazado', (wm) => {
+    const s = servidor('rele', [doc(19)]);
+    ejecutarFlujo({ servidor: s, enviar: () => ({ statusCode: 400, body: { error: { codigo: wm } } }) });
+    expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: wm });
+  });
+
+  it('un envio que no devuelve ni error ni respuesta grita (no se inventa una confirmacion)', () => {
+    const s = servidor('graph', [doc(23)]);
+    expect(() => ejecutarFlujo({ servidor: s, enviar: () => ({}) })).toThrow(/no devolvio respuesta/);
+  });
+
+  it('un lote mixto (validos y con defecto propio) pasa por UNA sola tanda de Resultado/Confirmar/Verificar y un solo reclamo siguiente', () => {
+    const docs = [doc(20), { ...doc(21), texto: '' }, doc(22)];
+    const s = servidor('rele', docs);
+    const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.M') });
+    expect(r.llamadas).toHaveLength(2);
+    expect(s.reclamos).toEqual([3, 0]);
+    expect(r.juntadas).toBe(1);
+    expect(docs.map((d) => d.estado)).toEqual(['aceptado', 'rechazado', 'aceptado']);
+  });
+
   it('rechazo reintentable: 130429 por Graph y WM-3037 por el relé llevan reintentable true', () => {
     const g = servidor('graph', [doc(8)]);
     ejecutarFlujo({ servidor: g, enviar: () => ({ statusCode: 429, body: { error: { code: 130429, message: 'Rate limit' } } }) });
@@ -240,24 +291,26 @@ describe('Salida de persona: el bucle', () => {
     }
   });
 
-  it('confirmacion fallida: la ejecucion FALLA con el mensaje y el resultado, sin el texto ni el telefono', () => {
+  it('confirmacion que falla siempre (503): se reintenta 3 veces y la ejecucion FALLA visible', () => {
     const s = servidor('rele', [doc(15, 'texto privado del cliente')]);
-    let error: Error | null = null;
-    try {
-      ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.X'), confirmarFalla: () => ({ statusCode: 503, body: {} }) });
-    } catch (e) { error = e as Error; }
-    expect(error).not.toBeNull();
-    expect(error!.message).toContain('no se pudo confirmar 1 mensaje(s)');
-    expect(error!.message).toContain(s.docs[0]!.mensajeId);
-    expect(error!.message).toContain('aceptado');
-    expect(error!.message).toContain('HTTP 503');
-    expect(error!.message).not.toContain('texto privado');
-    expect(error!.message).not.toContain('59170000');
+    const intentos: number[] = [];
+    expect(() => ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.X'), confirmarFalla: (_c, i) => { intentos.push(i); return { statusCode: 503, body: {} }; } }))
+      .toThrow(/Confirmar: reintentos agotados/);
+    expect(intentos).toEqual([1, 2, 3]);
+    expect(s.docs[0]!.estado).toBe('enviando'); // el siguiente reclamo lo pasa a incierto; nunca se reenvia
+  });
+
+  it('503 y luego 200: la confirmacion se aplica UNA sola vez', () => {
+    const s = servidor('rele', [doc(17)]);
+    const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.R'), confirmarFalla: (_c, i) => (i === 1 ? { statusCode: 503, body: {} } : null) });
+    expect(s.confirmaciones).toHaveLength(1);
+    expect(s.docs[0]!.estado).toBe('aceptado');
+    expect(r.intentosDeConfirmar.slice(0, 2)).toEqual([1, 2]);
   });
 
   it('un 200 sin ok:true tampoco se toma por confirmado', () => {
     const s = servidor('rele', [doc(16)]);
-    expect(() => ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.Y'), confirmarFalla: () => ({ statusCode: 200, body: {} }) })).toThrow(/no se pudo confirmar/);
+    expect(() => ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.Y'), confirmarFalla: () => ({ statusCode: 200, body: {} }) })).toThrow(/no se pudo confirmar 1 mensaje/);
   });
 
   it('bucle con 11 mensajes: reclamos de 10, 1 y 0; los 11 enviados una vez, en orden, cada uno confirmado una vez', () => {
@@ -319,7 +372,7 @@ describe('Salida de persona: la estructura del flujo', () => {
     expect(entradas(flujo, 'Reclamar').sort()).toEqual(['Validar toque', 'Verificar y seguir']);
     expect(destinos(flujo, 'Por canal', 0)).toEqual(['Enviar por el relé']);
     expect(destinos(flujo, 'Por canal', 1)).toEqual(['Enviar por Graph']);
-    expect(destinos(flujo, 'Por canal', 2)).toEqual(['Resultado del envío']);
+    expect(destinos(flujo, 'Por canal', 2)).toEqual(['Juntar salidas']);
   });
 
   it('sin «Continue on Fail» silencioso en Reclamar, Confirmar ni Verificar; los envios no reintentan', () => {
@@ -329,8 +382,6 @@ describe('Salida de persona: la estructura del flujo', () => {
     for (const n of ['Enviar por el relé', 'Enviar por Graph']) {
       expect(nodo(flujo, n).retryOnFail, n).toBeUndefined();
     }
-    // Confirmar no aborta en no-2xx (lo vigila `Verificar y seguir`, que sí falla).
-    expect(JSON.stringify(nodo(flujo, 'Confirmar').parameters)).toContain('"neverError":true');
   });
 
   it('el envio es en serie y el relé lleva Idempotency-Key; las credenciales son nombres, no valores', () => {
@@ -339,6 +390,34 @@ describe('Salida de persona: la estructura del flujo', () => {
     }
     expect(JSON.stringify(nodo(flujo, 'Enviar por el relé').parameters)).toContain('Idempotency-Key');
     for (const n of flujo.nodes) for (const c of Object.values(n.credentials ?? {})) expect(c.id, n.name).toBe('');
+  });
+
+  it('las tres salidas de «Por canal» pasan por «Juntar salidas» (UN camino por vuelta) antes de Resultado', () => {
+    for (let i = 0; i < 3; i++) {
+      const hasta = i === 2 ? destinos(flujo, 'Por canal', 2) : destinos(flujo, i === 0 ? 'Enviar por el relé' : 'Enviar por Graph');
+      expect(hasta).toEqual(['Juntar salidas']);
+    }
+    expect(entradas(flujo, 'Resultado del envío')).toEqual(['Juntar salidas']);
+    expect(entradas(flujo, 'Confirmar')).toEqual(['Resultado del envío']);
+    const m = nodo(flujo, 'Juntar salidas');
+    expect(m.type).toBe('n8n-nodes-base.merge');
+    expect(m.parameters).toEqual({ numberInputs: 3 });
+  });
+
+  it('las ejecuciones exitosas y manuales no se guardan; la credencial del timbre es POR ALIAS; los envios esperan 10 s', () => {
+    expect(flujo.settings).toMatchObject({ saveDataSuccessExecution: 'none', saveManualExecutions: false, executionOrder: 'v1' });
+    expect(nodo(flujo, 'Timbre').credentials?.['httpHeaderAuth']?.name).toMatch(/REEMPLAZAR_ALIAS/);
+    for (const n of ['Enviar por el relé', 'Enviar por Graph']) {
+      expect((nodo(flujo, n).parameters['options'] as J)['timeout'], n).toBe(10000);
+    }
+    // 10 envios en serie (10 s + 1 s de intervalo) < los 2 minutos del `enviando`.
+    expect(10 * (10_000 + 1000)).toBeLessThan(2 * 60_000);
+  });
+
+  it('Reclamar no reintenta solo; Confirmar reintenta 3 veces y falla visible', () => {
+    expect(nodo(flujo, 'Reclamar').retryOnFail).toBeUndefined();
+    expect(nodo(flujo, 'Confirmar')).toMatchObject({ retryOnFail: true, maxTries: 3 });
+    expect(JSON.stringify(nodo(flujo, 'Confirmar').parameters)).not.toContain('neverError":true');
   });
 
   it('el relé se llama solo por http interno y la URL sale de Config base', () => {
@@ -354,7 +433,7 @@ describe('Salida de persona: la estructura del flujo', () => {
     for (const n of flujo.nodes.filter((x) => x.type === 'n8n-nodes-base.code')) {
       const js = String(n.parameters['jsCode']);
       for (const g of GLOBALES_FUERA_DEL_SANDBOX) {
-        expect(new RegExp(`(?<![\\w$.])${g.replace('$', '\\$')}\\s*[.(]`).test(js), `${n.name} usa ${g}`).toBe(false);
+        expect(new RegExp(`(?<![\\w$.])${g.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[.(]`).test(js), `${n.name} usa ${g}`).toBe(false);
       }
     }
   });
