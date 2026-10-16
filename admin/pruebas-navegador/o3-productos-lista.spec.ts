@@ -2,7 +2,7 @@ import { test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
 import prepararDatos from './preparar-datos';
 import {
-  FOGON, catalogoDeQtaco, entrar, esperar as expect, fijarPlanCrecimiento, fijarStock, sembrarCatalogo, sembrarFotoSubida,
+  FOGON, catalogoDeQtaco, entrar, esperar as expect, fijarPlanCrecimiento, fijarStock, sembrarCatalogo, sembrarFotoSubida, vaciarCatalogo,
   type ItemDeCatalogo,
 } from './ayudas/o3-datos';
 
@@ -49,7 +49,9 @@ async function precios(page: Page): Promise<(number | null)[]> {
 }
 
 test.describe('PRO-01 · Productos: lista, búsqueda, filtros, orden y paginación (79 ítems, plan Crecimiento)', () => {
+  test.afterAll(async () => { await vaciarCatalogo(FOGON); });
   test.beforeAll(async () => {
+    test.setTimeout(120_000);
     prepararDatos();
     await fijarPlanCrecimiento(FOGON);
     await sembrarCatalogo(FOGON, TODOS);
@@ -375,7 +377,9 @@ test.describe('PRO-01 · Productos: lista, búsqueda, filtros, orden y paginaci�
 });
 
 test.describe('PRO-01 · con UN ítem con existencias, la columna y el filtro de Existencias sí aparecen (control de la negativa)', () => {
+  test.afterAll(async () => { await vaciarCatalogo(FOGON); });
   test.beforeAll(async () => {
+    test.setTimeout(120_000);
     prepararDatos();
     await fijarPlanCrecimiento(FOGON);
     const items: ItemDeCatalogo[] = catalogoDeQtaco();

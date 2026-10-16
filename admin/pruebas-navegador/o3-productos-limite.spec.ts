@@ -4,7 +4,7 @@ import prepararDatos from './preparar-datos';
 import { crearUsuarioDeEnsayo } from './ayudas/datos';
 import {
   FOGON, catalogoDeQtaco, clienteDeReglas, entrar, esperar as expect, existeItem, fijarPlanCrecimiento, leerContadorCatalogo, nombreDoc,
-  sembrarCatalogo, type ClienteDeReglas,
+  sembrarCatalogo, vaciarCatalogo, type ClienteDeReglas,
 } from './ayudas/o3-datos';
 
 /**
@@ -64,6 +64,7 @@ function altaDeItem(uid: string, id: string, items: number | null, extra: Record
 
 test.describe('PRO-10 · Límite de productos por plan (pantalla)', () => {
   test.beforeEach(() => { test.setTimeout(90_000); });
+  test.afterEach(async () => { await vaciarCatalogo(FOGON); });
 
   test('con 79 de 100: dice «79 de 100 productos (plan Crecimiento)», sin aviso, y «Agregar» está habilitado', async ({ page }) => {
     await sembrarN(79);
@@ -187,9 +188,11 @@ test.describe('PRO-10 · Límite de productos por plan (las reglas del servidor,
   // Las negativas con el plan lleno no cambian nada: el catálogo de 100 se siembra UNA vez (menos carga sobre el emulador).
   let admin: ClienteDeReglas;
   test.beforeAll(async () => {
+    test.setTimeout(120_000);
     await sembrarN(100);
     admin = await clienteDeReglas(USUARIOS.adminFogon);
   });
+  test.afterAll(async () => { await vaciarCatalogo(FOGON); });
   test.beforeEach(() => { test.setTimeout(90_000); });
 
   test('NEGATIVA: con 100 de 100, un alta que lleva el contador a 101 la rechazan las reglas, y el catálogo queda igual', async () => {
@@ -234,6 +237,7 @@ test.describe('PRO-10 · Límite de productos por plan (las reglas del servidor,
     await fijarPlanCrecimiento(FOGON);
     admin = await clienteDeReglas(USUARIOS.adminFogon);
   });
+  test.afterEach(async () => { await vaciarCatalogo(FOGON); });
 
   test('NEGATIVA: un ítem con existencias (`stock`) no se crea desde el navegador, ni con lugar libre', async () => {
     await sembrarCatalogo(FOGON, catalogoDeQtaco(50));

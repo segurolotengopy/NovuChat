@@ -124,6 +124,23 @@ export async function sembrarFotoSubida(tenantId: string, id: string): Promise<v
   });
 }
 
+/**
+ * Deja el catálogo y las fotos del comercio vacíos, de a 20 documentos. Se llama al terminar los bloques que sembraron 79 o 100 ítems: la
+ * siembra siguiente (`sembrar.mjs --limpiar`) borra de golpe todo el comercio y, con el emulador cargado, 100 borrados simultáneos fallan
+ * ocasionalmente («100 deletes failed»). Borrar antes, poco a poco, le deja a esa siembra un comercio liviano.
+ */
+export async function vaciarCatalogo(tenantId: string): Promise<void> {
+  const db = bd();
+  for (const coleccion of ['catalogo', 'fotosCatalogo']) {
+    const refs = await db.collection(`tenants/${tenantId}/${coleccion}`).listDocuments();
+    for (let i = 0; i < refs.length; i += 20) {
+      const lote = db.batch();
+      for (const r of refs.slice(i, i + 20)) lote.delete(r);
+      await lote.commit();
+    }
+  }
+}
+
 export async function leerContadorCatalogo(tenantId: string): Promise<number | undefined> {
   const v = (await bd().doc(`tenants/${tenantId}/contadores/catalogo`).get()).get('items');
   return typeof v === 'number' ? v : undefined;
