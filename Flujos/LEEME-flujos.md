@@ -1095,3 +1095,18 @@ ruta del timbre), y no lleva texto ni nombre de cliente.
 - La ruta real del timbre vive solo en Secret Manager (`SALIDA_PERSONA_RUTAS`);
   el JSON lleva `REEMPLAZAR_RUTA_TIMBRE`. La publicación por número (H2-F2) es
   un bloque aparte.
+- **Pendiente de verificar en n8n real (obligatorio antes de publicar):** el
+  emparejamiento `$('Planificar lote').item` a través del Merge `Juntar salidas`
+  y que el Merge dispare UNA vez aunque alguna entrada llegue vacía NO están
+  verificados (las pruebas simulan el orden, no n8n). El ensayo en el Demo A debe
+  ser un lote mixto —un mensaje válido por el relé y uno con texto vacío, otro por
+  Graph si se puede— más un segundo reclamo no vacío. Plan B si falla: calcular el
+  resultado antes de juntar.
+- **Tiempos:** `maxVueltas` × ~115 s (10 envíos de hasta 10 s más 1 s de intervalo,
+  más la confirmación) frente a `executionTimeout` de 300 s: con el relé degradado
+  la ejecución se corta y lo que quedó `enviando` pasa a `incierto` (cuenta, no se
+  reenvía). Con el relé sano el bucle termina en segundos.
+- **Asimetría relé/Graph:** el relé clasifica con lista permitida (un rechazo
+  desconocido es `incierto`); Graph directo trata un 4xx con `error.code` como
+  `rechazado` aunque el código no esté en la lista. Un rechazo desconocido de Meta
+  es, pues, `rechazado` por Graph e `incierto` por el relé.

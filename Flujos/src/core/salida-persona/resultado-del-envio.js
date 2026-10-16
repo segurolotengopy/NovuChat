@@ -27,10 +27,11 @@ if (p.sinEnvio) return rechazo(p.sinEnvio, p.reintentable === true);
 // Un error del nodo HTTP (red, tiempo agotado): el mensaje pudo salir.
 if (r.error !== undefined && r.statusCode === undefined) return incierto();
 
-// Ni error ni respuesta: el nodo de envio no devolvio nada. Se grita (la confirmacion no se
-// inventa); el mensaje queda `enviando` y el siguiente reclamo lo da por incierto.
+// Ni error ni respuesta: el nodo de envio no devolvio nada. El mensaje pudo salir, asi que es
+// `incierto` (nunca se reenvia) con una marca para el registro, sin texto ni telefono. Un item
+// raro NO tumba la confirmacion de los demas del lote.
 const origen = p.canal === 'rele' ? 'Enviar por el relé' : 'Enviar por Graph';
-if (r.statusCode === undefined) throw new Error('Salida de persona: ' + origen + ' no devolvio respuesta para ' + p.mensajeId);
+if (r.statusCode === undefined) return { json: { ...incierto().json, aviso: 'sin-respuesta', origen } };
 
 const estado = Number(r.statusCode);
 let cuerpo = r.body;

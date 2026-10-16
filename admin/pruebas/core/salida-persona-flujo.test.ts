@@ -23,6 +23,8 @@ import {
 
 const ARCHIVO = 'salida-de-persona.json';
 const flujo = leerFlujo(ARCHIVO);
+/** Lo que entrega un reclamo como maximo (MAXIMO_POR_RECLAMO de H2-3); el servidor simulado lo usa igual. */
+const MAXIMO_POR_RECLAMO = 10;
 const NUMERO = '1000000001';
 const RELE = 'http://rele-de-prueba:8082';
 const CONFIG: J = { phoneNumberId: NUMERO, waGraphVersion: 'v26.0', releBaseUrl: RELE, maxVueltas: 10 };
@@ -41,7 +43,7 @@ function servidor(canal: string, docs: Doc[]) {
     reclamar(): J {
       const entregados: J[] = [];
       for (const d of docs) {
-        if (entregados.length >= 10) break;
+        if (entregados.length >= MAXIMO_POR_RECLAMO) break;
         if (d.estado !== 'pendiente') continue;
         d.estado = 'enviando';
         entregados.push({
@@ -85,10 +87,9 @@ function ejecutarFlujo(opciones: {
   const confirmadas: J[] = [];
   let vueltas = 0;
   const intentosDeConfirmar: number[] = [];
-  let corridasDeResultado = 0;
 
   const valido = correr(codigoDe(flujo, 'Validar toque'), [{}], refs);
-  if (valido.length === 0) return { llamadas, confirmadas, vueltas, descartado: true, intentosDeConfirmar, juntadas: 0 };
+  if (valido.length === 0) return { llamadas, confirmadas, vueltas, descartado: true, intentosDeConfirmar };
 
   const reglas = (nodo(flujo, 'Por canal').parameters['rules'] as { values: { conditions: { conditions: { rightValue: string }[] } }[] }).values
     .map((r) => r.conditions.conditions[0]!.rightValue);
@@ -141,11 +142,10 @@ function ejecutarFlujo(opciones: {
       confirmadas.push(cuerpoConfirmar);
       respuestasConfirmar.push(r);
     }
-    corridasDeResultado += 1; // «Juntar salidas» entrega UNA tanda a Resultado/Confirmar/Verificar por vuelta
     const sigue = correr(codigoDe(flujo, 'Verificar y seguir'), respuestasConfirmar, { ...refs, 'Resultado del envío': resultados }, { $runIndex: vuelta });
     if (sigue.length === 0) break;
   }
-  return { llamadas, confirmadas, vueltas, descartado: false, intentosDeConfirmar, juntadas: corridasDeResultado };
+  return { llamadas, confirmadas, vueltas, descartado: false, intentosDeConfirmar };
 }
 
 const ok = (id: string) => ({ statusCode: 200, body: { messages: [{ id }], contacts: [{ wa_id: '59170000001' }] } });
@@ -236,18 +236,25 @@ describe('Salida de persona: el bucle', () => {
     expect(s.docs[0]).toMatchObject({ estado: 'rechazado', codigo: wm });
   });
 
-  it('un envio que no devuelve ni error ni respuesta grita (no se inventa una confirmacion)', () => {
-    const s = servidor('graph', [doc(23)]);
-    expect(() => ejecutarFlujo({ servidor: s, enviar: () => ({}) })).toThrow(/no devolvio respuesta/);
+  it('un envio que no devuelve ni error ni respuesta: ese item queda incierto con aviso y los otros dos se confirman bien', () => {
+    const docs = [doc(23), doc(24), doc(25)];
+    const s = servidor('graph', docs);
+    const r = ejecutarFlujo({ servidor: s, enviar: (_n, _l, i) => (i === 1 ? {} : ok(`wamid.${i}`)) });
+    expect(docs.map((d) => d.estado)).toEqual(['aceptado', 'incierto', 'aceptado']);
+    expect(r.confirmadas).toHaveLength(3);
+    // La marca no viaja al servidor: el cuerpo de Confirmar lista solo los campos del contrato.
+    expect(Object.keys(r.confirmadas[1]!).sort()).toEqual(['conversacionId', 'mensajeId', 'resultado']);
+    const directo = correr(codigoDe(flujo, 'Resultado del envío'), [{}], { 'Planificar lote': { mensajeId: docs[1]!.mensajeId, conversacionId: docs[1]!.conversacionId, canal: 'graph', sinEnvio: '' } }) as unknown as { json: J };
+    expect(directo.json).toMatchObject({ resultado: 'incierto', aviso: 'sin-respuesta' });
+    expect(JSON.stringify([directo.json['aviso'], directo.json['origen']])).not.toMatch(/Hola|5917/);
   });
 
-  it('un lote mixto (validos y con defecto propio) pasa por UNA sola tanda de Resultado/Confirmar/Verificar y un solo reclamo siguiente', () => {
+  it('un lote mixto (validos y con defecto propio): cada mensaje se confirma una vez y hay un solo reclamo siguiente (la tanda unica la garantiza la topologia: ver «Juntar salidas»)', () => {
     const docs = [doc(20), { ...doc(21), texto: '' }, doc(22)];
     const s = servidor('rele', docs);
     const r = ejecutarFlujo({ servidor: s, enviar: () => ok('wamid.M') });
     expect(r.llamadas).toHaveLength(2);
     expect(s.reclamos).toEqual([3, 0]);
-    expect(r.juntadas).toBe(1);
     expect(docs.map((d) => d.estado)).toEqual(['aceptado', 'rechazado', 'aceptado']);
   });
 
@@ -410,8 +417,12 @@ describe('Salida de persona: la estructura del flujo', () => {
     for (const n of ['Enviar por el relé', 'Enviar por Graph']) {
       expect((nodo(flujo, n).parameters['options'] as J)['timeout'], n).toBe(10000);
     }
-    // 10 envios en serie (10 s + 1 s de intervalo) < los 2 minutos del `enviando`.
-    expect(10 * (10_000 + 1000)).toBeLessThan(2 * 60_000);
+    // El peor caso sale de LOS NODOS, no de constantes: tope por reclamo x (timeout + intervalo) < 2 min del `enviando`.
+    for (const n of ['Enviar por el relé', 'Enviar por Graph']) {
+      const o = nodo(flujo, n).parameters['options'] as { timeout: number; batching: { batch: { batchSize: number; batchInterval: number } } };
+      expect(o.batching.batch.batchSize, n).toBe(1);
+      expect(MAXIMO_POR_RECLAMO * (o.timeout + o.batching.batch.batchInterval), n).toBeLessThan(2 * 60_000);
+    }
   });
 
   it('Reclamar no reintenta solo; Confirmar reintenta 3 veces y falla visible', () => {
