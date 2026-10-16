@@ -1059,7 +1059,7 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     const t = f('chRespuestaFija')('numeroActual', CFG);
     expect(t).toBe('Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar. ¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso? 🤝');
     expect(t).not.toMatch(/coexisten|certificad|https?:/i);
-    expect(f('chRespuestaFija')('coexistencia', CFG)).toBe('Meta ofrece un modo en que la app WhatsApp Business y la API conviven, con limitaciones (por ejemplo, sin grupos). Hoy no lo ofrecemos. ¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso? 🤝');
+    expect(f('chRespuestaFija')('coexistencia', CFG)).toBe('Meta ofrece un modo en que la app WhatsApp Business y la API conviven, con limitaciones (por ejemplo, sin grupos). Hoy no lo ofrecemos. ¿Te gustaría hablar con alguien de nuestro equipo para ver qué opción te sirve? 🤝');
     expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: 'numeroActual' }, res: null, eventos: [ev('¿Puedo usar mi número actual?')], ficha: fichaBase() }))).toMatchObject({ fila: 'consulta-sin-respuesta', equipo: true, planes: false, ofrecio: 'equipo' });
   });
   it('chRespuestaFija: el dato más la invitación al equipo, sin ninguna cifra', () => {
