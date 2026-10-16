@@ -63,18 +63,19 @@ test.describe('Conversaciones (pantalla nueva)', () => {
   });
   test.afterEach(async () => { await fijarPantallaConversaciones(FOGON, null); });
 
-  test('con la bandera se ve la pantalla nueva: lista, filtros SIN «El asistente atiende» y ningún Tomar ni campo para escribir', async ({ page }) => {
+  test('con la bandera se ve la pantalla nueva: lista, filtros (con «El asistente atiende», de H2), «Tomar conversación» y el campo para escribir SOLO tras tomar', async ({ page }) => {
     await sembrarConversacion(FOGON, TEL_47, HOLA, campos(TEL_47, 'Ximena P.', { noLeidos: 2 }));
     await abrirConversaciones(page);
     await expect(fila(page, 'Ximena P.')).toContainText('Para recoger');
-    for (const chip of ['Todas', 'Necesita humano', 'No leídas', 'Ventana por vencer']) {
+    for (const chip of ['Todas', 'El asistente atiende', 'Necesita humano', 'No leídas', 'Ventana por vencer']) {
       await expect(page.getByRole('button', { name: new RegExp(`^${chip}`) })).toBeVisible();
     }
-    await expect(page.getByRole('button', { name: /El asistente atiende/ })).toHaveCount(0);
     await fila(page, 'Ximena P.').click();
     await expect(page.getByTestId('detalle')).toBeVisible();
-    await expect(page.getByRole('button', { name: /Tomar|Devolver/ })).toHaveCount(0);
-    await expect(page.locator('textarea')).toHaveCount(0);
+    await expect(page.getByTestId('estado-turno')).toHaveText('Responde el asistente');
+    await expect(page.getByRole('button', { name: 'Tomar conversación' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Devolver/ })).toHaveCount(0);
+    await expect(page.locator('textarea')).toHaveCount(0);      // sin tomar no hay campo para escribir (la toma y el envío: conversaciones-turno.spec.ts)
     await expect(page.getByText(/PROTOTIPO|simulaci/i)).toHaveCount(0);
   });
 
@@ -118,7 +119,7 @@ test.describe('Conversaciones (pantalla nueva)', () => {
     await expect(fila(page, 'Pablo Q.')).toBeVisible();
     await fila(page, 'Pablo Q.').click();
     await expect(page.locator('ol.cv-mensajes li')).toHaveCount(3);
-    await expect(page.locator('.cv-pastilla')).toHaveCount(0);
+    await expect(page.locator('.cv-pastilla')).toHaveText('Ventana: sin dato');   // sin `ultimoEntranteEn` se dice «sin dato», no «cerrada»
     await expect(fila(page, 'Pablo Q.').locator('.cv-contador')).toHaveCount(0);
     await page.waitForTimeout(2_500);   // más que el rebote de 1 s: si fuera a escribir, ya lo habría hecho
     expect(await leerCampo(`tenants/${FOGON}/conversaciones/wa_${TEL_74}`, 'noLeidos')).toBeUndefined();

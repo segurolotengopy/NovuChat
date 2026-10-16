@@ -7,7 +7,7 @@ Nacieron de la regla de Andres del 05/10 («ninguna función de la consola se en
 
 ## Carriles: varias corridas a la vez
 
-`E2E_CARRIL=1..4` (0 por omisión) suma `carril × 10` a todos los puertos (Firestore 8332, Auth 9399, Functions 5231, `vite` 5373, cabeceras 5340 y catálogo 5341). Cada carril levanta SUS emuladores
+`E2E_CARRIL=1..5` (0 por omisión) suma `carril × 10` a todos los puertos (Firestore 8332, Auth 9399, Functions 5231, `vite` 5373, cabeceras 5340 y catálogo 5341). Cada carril levanta SUS emuladores
 (`E2E_CARRIL=2 bash pruebas-navegador/emuladores.sh`) y corre con la misma variable (`E2E_CARRIL=2 pnpm pruebas:navegador`). Sin esto, la siembra de uno borraría los datos del otro. Cada carril escribe solo
 sus propios `*.spec.ts`; los helpers de `ayudas/`, `entorno.ts` y `preparar-datos.ts` tienen un solo dueño (la Operadora).
 
@@ -35,6 +35,7 @@ La siembra y los datos de prueba se niegan a correr contra un proyecto que no em
 | Pedidos | vacío y aparición en vivo, delivery con detalle y nota, HTML como texto, aislamiento entre comercios, exportar CSV. **Sin función hoy** (PR-C de Cartera): filtros, cambio de estado, ubicación compartida |
 | Productos | alta, edición, baja, volver a ofrecer y eliminar con el contador del plan; negativas (eliminar solo lo dado de baja, «No», foto no https, sin nombre); búsqueda; aislamiento |
 | Conversaciones | lista y hilo, adjuntos marcados, HTML como texto, «No contactar», hilo vacío, aislamiento. **Sin función hoy**: la consola NO reproduce audio ni video ni muestra la imagen del comprobante (solo los marca); la prueba lo fija |
+| Conversaciones: intervención de una persona (H2, `conversaciones-turno.spec.ts`, pantalla nueva) | Tomar y Devolver (qué manda la pantalla, el estado cambia en vivo, el oper no ve botones y el admin devuelve la de otra), enviar (campos exactos, clave válida, doble clic = una llamada, 504 = «No se pudo confirmar si llegó» y el reintento usa la MISMA clave, `incierto` no se reenvía solo), tope de 1.000 y contador, ventana de 24 h (cuenta regresiva, cerrada, sin dato), filtro «El asistente atiende», teclado, aislamiento y nada en el almacenamiento del navegador. Las TRES callables (`tomarConversacion`, `devolverConversacion`, `enviarComoPersona`) se **simulan** con un «servidor» de mentira que escribe `turno` y el mensaje con el SDK Admin: se prueba la pantalla contra el contrato, no las Functions |
 | Campañas | plan Impulso (0, no ofrece el formulario) y plan Crecimiento (3): crear, editar, eliminar, tope del plan; negativas (sin texto, fin antes del inicio, empieza en el pasado, texto repetido, cancelar), aislamiento |
 | Tablero | cifras, horario de hoy, períodos, enlace a Productos |
 | Usuarios | lista con rol y estado, aislamiento. **Invitar** necesita el emulador de Functions: se prueba a mano en staging |

@@ -6,9 +6,15 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../core/lib/firebase';
 import { TextoSeguro } from './TextoSeguro';
+import { BarraTurno } from './BarraTurno';
+import { EscribirComoPersona } from './EscribirComoPersona';
 import {
-  etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, ventanaDeFicha, type Ficha,
+  etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
+import {
+  accionesDeTurno, estadoDeMensaje, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, ventanaAbiertaParaTomar,
+  type CapaTurno, type EstadoMensajePersona,
+} from '../lib/turno';
 
 /**
  * EL DETALLE DE UNA CONVERSACIÓN: un solo hilo, con su propio scroll.
@@ -36,6 +42,13 @@ interface Msg {
   tipo: string;
   direccion: 'entrante' | 'saliente';
   autor: string;
+  /** El uid de la persona que lo escribió (solo en los mensajes de `autor: 'persona'`). Se muestra abreviado. */
+  autorUid: string;
+  /** Estado del envío de un mensaje de una persona; `null` si no lo trae (el del asistente y los de antes de H2 no). */
+  estadoEnvio: EstadoMensajePersona | null;
+  /** Si fue rechazado: el código de Meta o del relé (texto), y los segundos de espera si el servidor los manda. */
+  codigoEnvio: string;
+  esperaSegundos: unknown;
   ts: number;
   /** El documento, para pedir los anteriores `startAfter` de él sin una lectura de más y sin perder los empatados. */
   snap: QueryDocumentSnapshot;
@@ -66,6 +79,10 @@ function aMensaje(d: QueryDocumentSnapshot): Msg {
     tipo: typeof x['tipo'] === 'string' ? x['tipo'] : 'text',
     direccion: x['direccion'] === 'entrante' ? 'entrante' : 'saliente',
     autor: typeof x['autor'] === 'string' ? x['autor'] : '',
+    autorUid: typeof x['autorUid'] === 'string' ? x['autorUid'].slice(0, 128) : '',
+    estadoEnvio: x['autor'] === 'persona' ? estadoDeMensaje(x['estadoEnvio']) : null,
+    codigoEnvio: typeof x['codigoEnvio'] === 'string' ? x['codigoEnvio'].slice(0, 20) : '',
+    esperaSegundos: x['esperaSegundos'],
     ts: ts?.toMillis ? ts.toMillis() : 0,
     snap: d,
   };
@@ -193,6 +210,12 @@ export interface PropsDetalle {
   puedeGestionar: boolean;
   /** El comercio está `activo`: con otro estado las reglas niegan toda escritura y el control se deshabilita. */
   comercioActivo: boolean;
+  /** H2: el uid de quien mira (para saber si la conversación la tiene «usted»); `null` sin sesión. */
+  miUid: string | null;
+  /** H2: quien mira es admin del negocio (puede devolver la conversación de otra persona). */
+  esAdmin: boolean;
+  /** H2: las tres callables (tomar, devolver, enviar). Las pruebas la reemplazan. */
+  capa: CapaTurno;
 }
 
 export function DetalleConversacion(p: PropsDetalle) {
@@ -269,6 +292,13 @@ export function DetalleConversacion(p: PropsDetalle) {
   }
 
   const v = ventanaDeFicha(ficha, p.ahora);
+  // Quién responde AHORA: el veredicto del servidor (Core), no el campo crudo: un turno vencido ya es del asistente.
+  const turno = turnoDeFicha(ficha, p.ahora);
+  const situacion = situacionDeTurno(turno, p.miUid);
+  const acciones = accionesDeTurno({
+    situacion, puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo,
+    ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora),
+  });
 
   let diaPrevio = 0;
   return (
@@ -285,7 +315,11 @@ export function DetalleConversacion(p: PropsDetalle) {
           </span>
         </div>
         {/* Sin dato (una conversación de antes de H1): no se pinta pastilla, porque «cerrada» sería falso. */}
-        {v.estado !== 'sin-dato' && (
+        {ficha.ultimoEntranteEn === null && (
+          // Misma regla que el campo de escribir: sin `ultimoEntranteEn` no se sabe, y se dice.
+          <span className="cv-pastilla cv-pastilla--cerrada" title="No consta cuándo escribió el cliente por última vez">Ventana: sin dato</span>
+        )}
+        {ficha.ultimoEntranteEn !== null && v.estado !== 'sin-dato' && (
           <span className={`cv-pastilla cv-pastilla--${v.estado}`} title="Ventana de 24 h de WhatsApp: desde el último mensaje del cliente">
             {v.estado === 'cerrada' ? 'Ventana cerrada' : `Ventana: ${textoRestante(v.restanteMs)}`}
           </span>
@@ -317,6 +351,11 @@ export function DetalleConversacion(p: PropsDetalle) {
         {errorNoContactar && <span role="alert" className="cv-error">{errorNoContactar}</span>}
       </div>
 
+      <BarraTurno
+        tenantId={tenantId} conversacionId={ficha.id} turno={turno} situacion={situacion}
+        acciones={acciones} miUid={p.miUid} capa={p.capa}
+      />
+
       {m.saltoFallido && (
         <p className="cv-aviso-linea" role="status">
           El mensaje buscado ya no está en esta conversación. Se muestran los últimos.
@@ -342,17 +381,28 @@ export function DetalleConversacion(p: PropsDetalle) {
             const nuevoDia = !mismoDia(x.ts, diaPrevio);
             diaPrevio = x.ts;
             // Solo se rotula cuando el mensaje dice quién lo escribió (los de hoy no lo dicen: no se inventa).
-            const rotuloAutor = x.direccion === 'saliente'
-              ? (x.autor === 'persona' ? 'Persona del negocio' : x.autor === 'asistente' ? 'Asistente' : '') : '';
+            // El de una persona lleva su uid ABREVIADO («usted» si es el de quien mira), nunca entero.
+            const rotuloAutor = x.direccion === 'saliente' ? rotuloDeAutor(x.autor, x.autorUid, p.miUid) : '';
+            const esPersona = x.direccion === 'saliente' && x.autor === 'persona';
             return (
               <li key={x.id} className="cv-fila">
                 {nuevoDia && x.ts > 0 && <div className="cv-dia"><span>{etiquetaDia(x.ts, p.ahora)}</span></div>}
                 <div data-mid={x.id}
-                  className={`cv-burbuja cv-burbuja--${x.direccion}${x.id === mensajeId && m.modoSalto ? ' cv-burbuja--buscada' : ''}`}>
-                  {rotuloAutor && <span className="cv-autor">{rotuloAutor}</span>}
+                  className={`cv-burbuja cv-burbuja--${x.direccion}${esPersona ? ' cv-burbuja--persona' : ''}${x.id === mensajeId && m.modoSalto ? ' cv-burbuja--buscada' : ''}`}>
+                  {rotuloAutor && <span className="cv-autor"><TextoSeguro valor={rotuloAutor} maxLargo={40} /></span>}
                   {ADJUNTOS[x.tipo] && <span className="adjunto">{ADJUNTOS[x.tipo]}</span>}
                   <TextoSeguro valor={x.texto} />
                   <time dateTime={x.ts ? new Date(x.ts).toISOString() : undefined}>{x.ts ? horaCorta(x.ts) : ''}</time>
+                  {esPersona && x.estadoEnvio && (
+                    <span className={`cv-envio cv-envio--${x.estadoEnvio}`} data-estado={x.estadoEnvio}>
+                      {textoEstadoMensaje(x.estadoEnvio)}
+                    </span>
+                  )}
+                  {esPersona && x.estadoEnvio === 'rechazado' && (
+                    <span className="cv-envio cv-envio--motivo" data-testid="motivo-rechazo">
+                      {textoRechazoMeta(x.codigoEnvio, x.esperaSegundos)}
+                    </span>
+                  )}
                 </div>
               </li>
             );
@@ -366,6 +416,12 @@ export function DetalleConversacion(p: PropsDetalle) {
         </div>
       </div>
 
+      {acciones.verEscribir && (
+        <EscribirComoPersona
+          key={ficha.id} tenantId={tenantId} conversacionId={ficha.id}
+          ultimoEntranteEn={ficha.ultimoEntranteEn} habilitados={acciones.habilitados} capa={p.capa} miUid={p.miUid}
+        />
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import type { RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import { TextoSeguro } from './TextoSeguro';
 import {
-  FILTROS, etiquetaFicha, iniciales, necesitaHumanoDe, partirResaltado, textoListaVacia, textoRestante, ventanaDeFicha, type Contadores, type Ficha, type Filtro,
+  FILTROS, etiquetaFicha, iniciales, necesitaHumanoDe, partirResaltado, textoListaVacia, textoRestante, turnoDeFicha, ventanaDeFicha, type Contadores, type Ficha, type Filtro,
 } from '../lib/conversaciones';
 
 /** Un renglón de la lista: una conversación, o un mensaje encontrado dentro de una. */
@@ -70,6 +70,7 @@ export function ListaConversaciones(p: PropsLista) {
         <div className="cv-filtros" role="group" aria-label="Filtrar conversaciones">
           {FILTROS.map((f) => (
             <button key={f.id} type="button" className="cv-chip" aria-pressed={p.filtro === f.id}
+              title={f.id === 'asistente' ? 'El número puede diferir de la lista si algún turno viene mal formado, vencido o con la ventana cerrada: la lista usa el mismo veredicto que el servidor.' : undefined}
               onClick={() => p.onFiltro(f.id)}>
               {f.rotulo}
               {p.conteos[f.id] !== null && <span className="cv-chip-n">{p.conteos[f.id]}</span>}
@@ -82,7 +83,7 @@ export function ListaConversaciones(p: PropsLista) {
         {p.cargando && <li className="cv-vacio">Cargando conversaciones…</li>}
         {!p.cargando && p.renglones.length === 0 && !p.buscando && (
           <li className="cv-vacio">
-            {textoListaVacia({ enBusqueda: p.enBusqueda, hayMasPalabra: p.hayMasPalabra, filtro: p.filtro })}
+            {textoListaVacia({ enBusqueda: p.enBusqueda, hayMasPalabra: p.hayMasPalabra, filtro: p.filtro, hayMas: p.hayMas })}
           </li>
         )}
         {p.renglones.map((r) => <RenglonFicha key={r.clave} r={r} activa={r.clave === p.claveActiva} ahora={p.ahora} />)}
@@ -133,6 +134,7 @@ function RenglonFicha({ r, activa, ahora }: { r: Renglon; activa: boolean; ahora
           <span className="cv-ficha-marcas">
             {r.motivo && <span className="cv-etiqueta">{r.motivo}</span>}
             {necesitaHumanoDe(f, ahora) && <span className="cv-etiqueta cv-etiqueta--humano">Necesita humano</span>}
+            {turnoDeFicha(f, ahora) && <span className="cv-etiqueta cv-etiqueta--persona">Responde una persona</span>}
             {v.estado === 'por-vencer' && <span className="cv-etiqueta cv-etiqueta--vence">Vence en {textoRestante(v.restanteMs)}</span>}
             {v.estado === 'cerrada' && <span className="cv-etiqueta cv-etiqueta--cerrada">Ventana cerrada</span>}
             {r.coincidencia && <span className="cv-ficha-telefono">+<TextoSeguro valor={f.telefono} maxLargo={15} /></span>}
