@@ -33,8 +33,8 @@ const { renderToStaticMarkup } = desdeWeb('react-dom/server') as { renderToStati
 const { BarraTurno } = await import('../../web/src/central/componentes/BarraTurno');
 const { EscribirComoPersona } = await import('../../web/src/central/componentes/EscribirComoPersona');
 
-const YO = 'uidDeLaCajera0123456789abcd';
-const OTRA = 'uidDeOtraPersona0123456789ab';
+const YO = 'uidDeLaCajeraAbCdEfGhIjKlMnOp';
+const OTRA = 'uidDeOtraPersonaAbCdEfGhIjKlM';
 const CAPA: CapaTurno = { tomar: async () => ({}), devolver: async () => ({}), enviar: async () => ({}) };
 
 /** BarraTurno tal como la arma el Detalle: la situación y las acciones salen de la lógica. */

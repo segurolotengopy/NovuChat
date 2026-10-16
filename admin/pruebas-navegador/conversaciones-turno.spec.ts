@@ -26,7 +26,7 @@ const CONV = `wa_${TEL}`;
 const CONV_B = `wa_${TEL_B}`;
 const RUTA_CONV = `tenants/${FOGON}/conversaciones/${CONV}`;
 const HORA = 3_600_000;
-const OTRO_UID = 'uidDeOtraPersonaDelNegocio0123456789';
+const OTRO_UID = 'uidDeOtraPersonaDelNegocioAbCdEfGhIj';
 
 function bd() {
   process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${PUERTO_FIRESTORE}`;

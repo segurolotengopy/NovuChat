@@ -34,8 +34,8 @@ const HORA = 3_600_000;
 const MIN = 60_000;
 const AHORA = Date.UTC(2026, 9, 16, 16, 0, 0);
 const marca = (ms: number) => ({ toMillis: () => ms });
-const YO = 'uidDeLaCajera0123456789abcd';
-const OTRA = 'uidDeOtraPersona0123456789ab';
+const YO = 'uidDeLaCajeraAbCdEfGhIjKlMnOp';
+const OTRA = 'uidDeOtraPersonaAbCdEfGhIjKlM';
 
 describe('1. el turno se lee con tolerancia', () => {
   it('una persona responde solo con `responde: "persona"` exacto y un `tomadoPor` de texto', () => {
