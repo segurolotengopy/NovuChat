@@ -684,6 +684,8 @@ export function revisarMensaje(m, ctx = {}) {
   if (MULETILLA.test(c)) anota('muletilla');
   if (/minicrm|kanban|leads de ventas/i.test(c)) anota('minicrm_o_leads_de_ventas');
   if (/menos de un minuto/i.test(c)) anota('menos_de_un_minuto');
+  // El número de un prospecto no sigue funcionando en la app del celular ni convive con el asistente (frase oficial del sitio): ningún mensaje lo afirma. Regex propia de la batería.
+  if (/coexist|conviv|seguir(?:as|a)? usando[^.?!]{0,30}(?:whatsapp|numero)[^.?!]{0,40}(?:celular|aplicacion|app\b)|se pierden? (?:tus|sus) (?:chats|conversaciones)|(?:celular|app\b)[^.?!]{0,30}(?:a la vez|al mismo tiempo)/.test(n)) anota('coexistencia_afirmada');
   // El complemento de los planes (R6) trae a propósito la moneda, los tamaños de agendas y de catálogo y las categorías «ERP, CRM»: solo se le exige no dar cifras de conversaciones ni de consumo.
   const esComplemento = m.evento === 'planes_complemento';
   // Ningún dígito salvo «24/7», «24 horas» y las cifras del mensaje de planes que arma el código (65, 125 y 25 de la consola de ejemplo).
@@ -918,7 +920,7 @@ export async function correrCaso({ caso, rep, flujo, lib, opciones, credencial, 
     ctx.textoModelo = String(resumen.textoModelo ?? '');
     ctx.eligioRubro = eventosDelTurno.some((e) => e.tipo === 'fila' && /^rubro:/.test(e.id)) || (corrida.rubroPrev !== String(ficha.rubro ?? '') && String(ficha.rubro ?? '') !== '');
     ctx.interes = textosDelTurno.some((x) => /\b(cuanto|precio|precios|costo|costos|cuesta|cuestan|tarifa|plan|planes|incluye|incluyen|funciona|funcionan|interesa|interesan|empezar|comenzar|contratar|contrato|instalacion|instalar|implementar|tarda|demora|informacion|info|detalles)\b/.test(x));
-    const requeridoPorMensaje = ['planes'].includes(ctx.plan) || (ctx.plan === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(String(resumen.fijo ?? ''))) || ['sin_dato', 'no_documentado', 'equipo', 'complemento', 'generico', 'ambiguo', 'otro', 'otroRespuesta'].includes(String(resumen.evento ?? ''));
+    const requeridoPorMensaje = ['planes'].includes(ctx.plan) || (ctx.plan === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'].includes(String(resumen.fijo ?? ''))) || ['sin_dato', 'no_documentado', 'equipo', 'complemento', 'generico', 'ambiguo', 'otro', 'otroRespuesta'].includes(String(resumen.evento ?? ''));
     const ordinaria = ctx.plan === 'modelo' && !['rubro', 'multiple', 'pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte', 'otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'generico', 'ambiguo'].includes(String(resumen.evento ?? ''));
     const acabaron = ordinaria && (textosDelTurno.some((x) => /\b(no tengo mas (dudas|preguntas)|ninguna duda|eso es todo|nada mas|ya entendi|queda claro|quiero empezar|como contrato|como se contrata|como empiezo|como empezamos|listo para empezar|donde firmo)\b/.test(x)) || (String(ficha.explicado) === 'true' && corrida.respondidasPrev >= 2) || ['otro', 'captacion'].includes(String(ficha.rubro ?? '')) || textosDelTurno.some((x) => /(^| )(a medida|personaliz\w*|integra\w*|erp|sistema propio|mi sistema|sistemas)( |$)/.test(x)) || (resumen.causas ?? []).includes('funcion_inventada'));
     // Una consulta que el chat no puede resolver es REQUERIDA: el cliente propone una función no documentada para su rubro (cobros, QR, adelanto, seña, pago total fuera de gastronomía, retail y «otro»).
