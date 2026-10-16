@@ -31,7 +31,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../../web/src/core/lib/firebase', () => ({ db: {} }));
 
 import {
-  IDS_FLUJOS, IDS_MODULOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS, REGISTRO, carpetasDe, documentoDeCobro,
+  COLECCIONES_CERRADAS_DEL_CORE, IDS_FLUJOS, IDS_MODULOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS, REGISTRO, carpetasDe, documentoDeCobro,
   documentoDeFlujo, esFlujo, esModulo, etiquetaDeCatalogo, flujosDeFicha, manifiestoDe, modulosDeFicha, modulosDeFlujos, pestanasDe, tieneModulo,
   type FichaConCapacidades, type IdFlujo, type IdModulo, type Manifiesto, type Pestana,
 } from '../../functions/src/registro.ts';
@@ -639,6 +639,43 @@ describe('visor de comprobantes (09/10/2026): lo que el registro declara', () =>
     expect(manifiestoDe('cobros').coleccionesRaiz).toContain('topesDelVisor');
     // La callable la exporta index.ts, y ninguna otra la declara.
     for (const m of MANIFIESTOS) if (m.modulo !== 'cobros') expect(m.functions, m.modulo).not.toContain('verComprobante');
+  });
+});
+
+describe('colecciones cerradas del Core (H2-R, 16/10/2026)', () => {
+  const raiz = [...COLECCIONES_CERRADAS_DEL_CORE.raiz];
+  const deTenant = [...COLECCIONES_CERRADAS_DEL_CORE.tenant];
+  const PRUEBAS = leer('admin/pruebas/reglas.test.ts');
+  const soloCerrado = (cuerpo: string) => escrituraDe(cuerpo) === 'solo-servidor' && /allow\s+read\s*,\s*write\s*:\s*if\s+false\s*;/.test(sinAnidados(cuerpo));
+
+  it('cada colección raíz tiene su match EXPLÍCITO fuera del tenant, cerrado a lectura y escritura', () => {
+    for (const c of raiz) {
+      const b = bloqueMatch(REGLAS, c);
+      expect(b, `${c}: sin match explícito (dependería solo de la negación final)`).not.toBeNull();
+      expect(b!.inicio > TENANTS!.fin || b!.inicio < TENANTS!.inicio, `${c} está dentro del tenant`).toBe(true);
+      expect(soloCerrado(b!.cuerpo), `${c}: debe ser «allow read, write: if false»`).toBe(true);
+    }
+  });
+
+  it('cada colección del tenant tiene su match EXPLÍCITO dentro de /tenants, cerrado a lectura y escritura', () => {
+    for (const c of deTenant) {
+      const cuerpo = bloqueDeColeccion(c);
+      expect(cuerpo, `${c}: sin match explícito en /tenants`).not.toBeNull();
+      expect(soloCerrado(cuerpo!), `${c}: debe ser «allow read, write: if false»`).toBe(true);
+    }
+  });
+
+  it('cada una tiene su prueba negativa en reglas.test.ts', () => {
+    for (const c of [...raiz, ...deTenant]) {
+      expect(PRUEBAS, `${c}: sin prueba en reglas.test.ts`).toMatch(new RegExp('[`\'"/]' + c + '/'));
+    }
+  });
+
+  it('no se repiten con el registro de módulos (una colección, un dueño)', () => {
+    for (const m of MANIFIESTOS) for (const c of [...raiz, ...deTenant]) {
+      expect(m.coleccionesRaiz, `${m.modulo}: ${c}`).not.toContain(c);
+      expect(m.colecciones, `${m.modulo}: ${c}`).not.toContain(c);
+    }
   });
 });
 

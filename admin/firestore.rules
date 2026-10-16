@@ -1837,9 +1837,12 @@ service cloud.firestore {
         // deja de acumular datos personales de clientes finales de un comercio
         // que ya no presta el servicio. No es solo una palanca de cobranza: es
         // minimización de datos.
+        // H2 (16/10/2026): `turno` (quién responde) lo escribe SOLO el servidor con
+        // el SDK Admin. Ni el token de ingesta lo siembra al crear...
         allow create: if esIngesta(tenantId)
                       && tenantOperativo(tenantId)
-                      && conversacionValida();
+                      && conversacionValida()
+                      && !request.resource.data.keys().hasAny(['turno']);
         allow delete: if false;
 
         // Dos ramas de actualización disjuntas:
@@ -1848,8 +1851,14 @@ service cloud.firestore {
         //     los campos de gestión (etiquetas, nota interna, no contactar y la marca de leída:
         //     `noLeidos` y `sinLeer`, solo hacia 0 / false). Sin `hasOnly`, un operador podría
         //     reescribir `ultimoMensaje` o `telefono` y falsear el historial.
+        // ... ni lo cambia ni lo borra al actualizar. Se mira `affectedKeys` y no
+        // `keys()`: `request.resource.data` trae los campos ya existentes, y un
+        // documento con `turno` escrito por Admin no podría actualizar
+        // `ultimoMensaje` si se prohibiera la presencia del campo.
         allow update: if (esIngesta(tenantId) && tenantOperativo(tenantId)
-                          && conversacionValida())
+                          && conversacionValida()
+                          && !request.resource.data.diff(resource.data).affectedKeys()
+                                .hasAny(['turno']))
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
                           // `noContactar` es la lista de no molestar (bloque 4): una
@@ -1915,7 +1924,21 @@ service cloud.firestore {
                  // `evento: 'no_contactar'` y la apaga —o la enciende a mano— una
                  // persona del negocio desde la consola. Mientras esté en `true`
                  // no le sale ningún seguimiento automático.
-                 , 'noContactar'])
+                 , 'noContactar'
+                 // H1 (09/10/2026), CAMPOS DERIVADOS que suma la ingesta con el SDK
+                 // Admin (que no pasa por estas reglas). Se listan para que la lista
+                 // blanca de un cliente SDK con token de ingesta no quede desactualizada
+                 // y se tipan abajo. La PERSONA del negocio no los escribe: su rama
+                 // de `update` sigue limitada a `soloCampos([...])` (etiquetas,
+                 // notaInterna, noContactar y la marca de leída), y esta función solo
+                 // la evalúa la rama de la ingesta.
+                 , 'telefonoTrozos', 'nombrePalabras', 'ultimoEntranteEn',
+                 'ventanaVenceEn', 'noLeidos', 'sinLeer'
+                 // H2 (16/10/2026): quién responde. `turno` lo escriben SOLO el
+                 // servidor (tomar, devolver, enviar) y la transacción de la ingesta
+                 // (devolución por inactividad o por ventana). Ninguna persona del
+                 // negocio lo escribe: no está en su `soloCampos`.
+                 , 'turno'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
                     // `horarios` es la etapa del bloque 4: el asistente ofreció
@@ -1938,7 +1961,48 @@ service cloud.firestore {
             // un número común y corriente: cualquier otra cosa es un defecto.
             && d.get('respuestasDelPeriodo', 0) is int
             && d.get('respuestasDelPeriodo', 0) >= 0
-            && d.get('canal', '') in ['whatsapp'];
+            && d.get('canal', '') in ['whatsapp']
+            && derivadosValidos(d)
+            && turnoValido(d);
+        }
+
+        // Tipo y tope de los derivados de H1: ni siquiera el principal de ingesta
+        // siembra otra forma. Cada campo es opcional (ausente pasa) y, si viene,
+        // trae su tipo. Las listas son de texto y acotadas a lo que el servidor
+        // escribe (`derivados.ts`: hasta 16 trozos de teléfono y 6 palabras).
+        function derivadosValidos(d) {
+          return (!d.keys().hasAny(['telefonoTrozos'])
+                  || (d.telefonoTrozos is list && d.telefonoTrozos.size() <= 16))
+              && (!d.keys().hasAny(['nombrePalabras'])
+                  || (d.nombrePalabras is list && d.nombrePalabras.size() <= 6))
+              // Cota de futuro: la hora de un entrante no puede adelantarse más de
+              // un minuto al reloj del servidor (holgura de reloj), o un token de
+              // ingesta falsearía la ventana de 24 h y el orden del hilo.
+              && (!d.keys().hasAny(['ultimoEntranteEn'])
+                  || (d.ultimoEntranteEn is timestamp
+                      && d.ultimoEntranteEn <= request.time + duration.value(1, 'm')))
+              // La ventana vence 24 h después del último entrante: tope de 24 h y 1 min.
+              && (!d.keys().hasAny(['ventanaVenceEn'])
+                  || (d.ventanaVenceEn is timestamp
+                      && d.ventanaVenceEn <= request.time + duration.value(1441, 'm')))
+              && (!d.keys().hasAny(['noLeidos'])
+                  || (d.noLeidos is int && d.noLeidos >= 0))
+              && (!d.keys().hasAny(['sinLeer']) || d.sinLeer is bool);
+        }
+
+        // H2 (16/10/2026): `turno` es un mapa con `responde` y quién lo tomó. Lo
+        // real lo escribe el servidor con el SDK Admin; esta validación solo
+        // impide que, con un token de ingesta, entre otra forma (un `responde`
+        // inventado, o un `turno` que no sea mapa).
+        function turnoValido(d) {
+          return !d.keys().hasAny(['turno'])
+            || (d.turno is map
+                && d.turno.keys().hasOnly(['responde', 'tomadoPor', 'tomadoEn',
+                                           'actividadPersonaEn', 'devueltoEn',
+                                           'motivoDevolucion'])
+                && d.turno.get('responde', '') in ['persona', 'asistente']
+                && cadena(d.turno.get('tomadoPor', null), 128)
+                && d.turno.get('motivoDevolucion', 'manual') in ['manual', 'inactividad', 'ventana']);
         }
 
         // ---------------------------------------------------------------------
@@ -1955,8 +2019,20 @@ service cloud.firestore {
 
           function mensajeValido() {
             let d = request.resource.data;
-            return d.keys().hasOnly(['direccion', 'tipo', 'texto', 'ts', 'idMeta'])
+            return d.keys().hasOnly(['direccion', 'tipo', 'texto', 'ts', 'idMeta',
+                                     // H1: lo que indexa la búsqueda (`derivados.ts`):
+                                     // el comercio de la ruta y hasta 30 palabras.
+                                     'tenantId', 'palabras'])
+              // H2 (16/10/2026): `autor`, `autorUid`, `estadoEnvio`, `codigoEnvio` y
+              // `reintentable` los escribe SOLO la Function con el SDK Admin. Se
+              // prohíben a la ingesta: con su token no se fabrica un mensaje «de
+              // persona». El mensaje es inmutable (update/delete: false).
+              && !d.keys().hasAny(['autor', 'autorUid', 'estadoEnvio',
+                                   'codigoEnvio', 'reintentable'])
               && d.get('direccion', '') in ['entrante', 'saliente']
+              && d.get('tenantId', tenantId) == tenantId
+              && (!d.keys().hasAny(['palabras'])
+                  || (d.palabras is list && d.palabras.size() <= 30))
               && d.get('tipo', '') in ['text', 'interactive', 'image', 'audio',
                                        'document', 'order', 'location', 'otro']
               // Tope de tamaño del texto. El contenido es DATO NO CONFIABLE:
@@ -1989,9 +2065,18 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /metricas/{periodo} {
         allow get, list: if esMiembro(tenantId) || esPropietario();
-        allow create, update: if esIngesta(tenantId)
-                              && tenantOperativo(tenantId)
-                              && metricaValida();
+        // `mensajesPersona` (H2) lo suma SOLO el servidor con el SDK Admin: la rama
+        // cliente (token de ingesta) ni lo crea ni lo modifica; los otros
+        // contadores siguen como antes.
+        allow create: if esIngesta(tenantId)
+                      && tenantOperativo(tenantId)
+                      && metricaValida()
+                      && !request.resource.data.keys().hasAny(['mensajesPersona']);
+        allow update: if esIngesta(tenantId)
+                      && tenantOperativo(tenantId)
+                      && metricaValida()
+                      && !request.resource.data.diff(resource.data).affectedKeys()
+                            .hasAny(['mensajesPersona']);
         allow delete: if false;
 
         // Lista blanca también acá: si el principal de ingesta quedara
@@ -2045,8 +2130,19 @@ service cloud.firestore {
             // eso las claves se validan abajo, una por una: si el principal de
             // ingesta quedara comprometido, un mapa libre sería exactamente el
             // campo arbitrario que esta lista blanca existe para impedir.
-            'entrantesPorTipo'
-          ]) && entrantesPorTipoValido();
+            'entrantesPorTipo',
+            // H2 (16/10/2026). `mensajesPersona` = los que escribió una persona del negocio desde
+            // la consola (cuentan en los 1.000 gratis del mes, no en el bloque de
+            // 25 ni en los umbrales). Enteros no negativos; los suma el servidor
+            // (SDK Admin) o el principal de ingesta, nunca una persona.
+            'mensajesPersona'
+          ]) && entrantesPorTipoValido()
+            && contadorEntero('mensajesPersona');
+        }
+
+        function contadorEntero(campo) {
+          return !request.resource.data.keys().hasAny([campo])
+            || (request.resource.data[campo] is int && request.resource.data[campo] >= 0);
         }
 
         /** El mapa, si viene, trae SOLO los tipos que la ingesta normaliza
@@ -2373,6 +2469,21 @@ service cloud.firestore {
         allow get, list: if esAdmin(tenantId) || esPropietario();
         allow create, update, delete: if false;
       }
+
+      // -----------------------------------------------------------------------
+      // /salida/{claveIdempotencia} — el envío lógico de una persona (H2, 16/10/2026).
+      // `{ estado: 'pendiente'|'enviado'|'incierto'|'fallido', mensajeId?, codigo?,
+      // creadoEn, actualizadoEn }`. Lo escribe y lo lee SOLO el servidor: la clave de
+      // idempotencia es lo que impide enviar dos veces el mismo mensaje y, si el
+      // navegador pudiera borrarla o crearla, el tope y la idempotencia no existirían.
+      // Cerrado a todos, también al propietario y a un administrador del comercio
+      // (el estado del envío le llega por el mensaje, no por este documento). Match
+      // EXPLÍCITO y no solo la negación final: que el cierre no dependa de que nadie
+      // agregue un comodín arriba.
+      // -----------------------------------------------------------------------
+      match /salida/{clave} {
+        allow read, write: if false;
+      }
     }
 
     // =========================================================================
@@ -2564,6 +2675,23 @@ service cloud.firestore {
     // sería un tope. Vive fuera de /tenants porque el tope es del usuario.
     // =========================================================================
     match /topesDelVisor/{uid} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // /topesDeBusqueda/{uid} y /topesDeTurno/{uid} — contadores de tope por usuario (Core).
+    //
+    // `buscarConversaciones` y `tomarConversacion`/`devolverConversacion` frenan una
+    // cuenta que abusa con un contador transaccional por `uid`, global (no por
+    // comercio). Lo lee y lo escribe SOLO la callable, con el SDK Admin. Ni el
+    // navegador, ni la ingesta, ni el propietario, ni el mismo usuario: si el
+    // usuario pudiera borrar su contador, el tope no sería un tope. Match
+    // explícito (antes dependían solo de la negación final).
+    // =========================================================================
+    match /topesDeBusqueda/{uid} {
+      allow read, write: if false;
+    }
+    match /topesDeTurno/{uid} {
       allow read, write: if false;
     }
 
