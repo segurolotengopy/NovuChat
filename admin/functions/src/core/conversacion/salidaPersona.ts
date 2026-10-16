@@ -37,6 +37,9 @@
  * flujo la verifique). El secreto tiene que existir, con `secretAccessor` para `sa-functions`, ANTES de
  * desplegar: es un paso de producción que pide la coordinadora con el «sí» de Andres.
  *
+ * UN SOLO SECRETO con todos los timbres (aceptado): al ampliar a más números se pasa a uno por alias, para que
+ * comprometer uno no entregue los demás.
+ *
  * Un timbre que falla NO falla el envío: el mensaje ya está guardado como `pendiente` y el siguiente
  * timbre (de cualquier envío del comercio) lo reclama. La persona ve `pendiente`, nunca un éxito falso.
  */
@@ -60,6 +63,13 @@ export const CLAVE_DE_ENVIO = /^[A-Za-z0-9_.:-]{16,128}$/;
 export const BLOQUEO_DE_CARRERA_MS = 45_000;
 /** Un `enviando` más viejo que esto se da por `incierto` (contrato §4). */
 export const ENVIANDO_MAXIMO_MS = 2 * 60_000;
+/**
+ * Un `pendiente` más viejo que esto, o cuya ventana de Meta ya se cerró, no se entrega: pasa a `rechazado`
+ * con el código `caducado` (reintentable), sin contar. Un mensaje que esperó minutos por un timbre perdido
+ * ya no es lo que la persona quiso decir, y fuera de la ventana Meta lo rechazaría.
+ */
+export const PENDIENTE_MAXIMO_MS = 2 * 60_000;
+export const CODIGO_CADUCADO = 'caducado';
 /** Cuántos mensajes entrega un reclamo, como máximo. */
 export const MAXIMO_POR_RECLAMO = 10;
 /** Cuánto espera la Function al webhook del timbre (el flujo responde de inmediato). */

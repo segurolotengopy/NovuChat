@@ -7,7 +7,7 @@
  * Firestore: el emulador (puerto `FIRESTORE_EMULATOR_PORT`, 8231 por defecto).
  */
 import {
-  assertFails, initializeTestEnvironment, type RulesTestEnvironment,
+  assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import {
   addDoc as agregarDoc, collection as coleccion, deleteDoc as borrarDoc, doc as docCliente, getDoc as leerDoc,
@@ -388,7 +388,12 @@ describe('la ventana de Meta: ultimoEntranteEn + 24 h con margen de 60 s (nunca 
 // ===========================================================================
 describe('el bloqueo de 45 s tras un entrante sin responder', () => {
   const conEntrante = (hace: number, o: Record<string, unknown> = {}) =>
-    conversacion(A, CONV1, { ultimoEntranteEn: ts(AHORA - hace), ...o });
+    // Por defecto la persona tomó hace 30 s (después de que el entrante entró, o casi): hay carrera que cubrir.
+    conversacion(A, CONV1, {
+      ultimoEntranteEn: ts(AHORA - hace),
+      turno: { responde: 'persona', tomadoPor: 'u-ana', tomadoEn: ts(AHORA - 30_000), actividadPersonaEn: ts(AHORA - 20_000) },
+      ...o,
+    });
 
   it('NEGATIVA: a 10 s del entrante espera 35 s', async () => {
     await conEntrante(10_000);
@@ -404,6 +409,23 @@ describe('el bloqueo de 45 s tras un entrante sin responder', () => {
     expect((await rechazo(enviar(base()))).code).toBe('failed-precondition');
     await conEntrante(45_000);
     expect(await enviar(base())).toMatchObject({ estado: 'pendiente' });
+  });
+
+  it('NO se aplica si el turno ya estaba tomado ANTES del entrante (más de 60 s): la ingesta ya calló al asistente', async () => {
+    await conEntrante(10_000, { turno: { responde: 'persona', tomadoPor: 'u-ana', tomadoEn: ts(AHORA - 10_000 - 61_000), actividadPersonaEn: ts(AHORA - 20_000) } });
+    expect(await enviar(base())).toMatchObject({ estado: 'pendiente' });
+  });
+
+  it('el bloqueo SIGUE si tomó hace menos de 60 s antes del entrante, o después de él', async () => {
+    await conEntrante(10_000, { turno: { responde: 'persona', tomadoPor: 'u-ana', tomadoEn: ts(AHORA - 10_000 - 59_000), actividadPersonaEn: ts(AHORA - 20_000) } });
+    expect((await rechazo(enviar(base()))).code).toBe('failed-precondition');
+    await conEntrante(10_000, { turno: { responde: 'persona', tomadoPor: 'u-ana', tomadoEn: ts(AHORA - 3000), actividadPersonaEn: ts(AHORA - 3000) } });
+    expect((await rechazo(enviar(base({ claveIdempotencia: claveN(2) })))).code).toBe('failed-precondition');
+  });
+
+  it('«el modelo respondió» (sin ultimoSalientePersonaEn) y la persona toma y envía dentro de los 45 s: sigue bloqueando', async () => {
+    await conEntrante(20_000, { ultimoEn: ts(AHORA - 5000), turno: { responde: 'persona', tomadoPor: 'u-ana', tomadoEn: ts(AHORA - 4000), actividadPersonaEn: ts(AHORA - 4000) } });
+    expect((await rechazo(enviar(base()))).details).toMatchObject({ motivo: 'espera' });
   });
 
   it('si la persona ya respondió a ese entrante, escribe sin esperar; si su último mensaje es ANTERIOR al entrante, espera', async () => {
@@ -618,6 +640,8 @@ describe('las reglas de Firestore cierran lo que escribe el servidor', () => {
       await escribirDoc(docCliente(ctx.firestore(), 'topesDeEnvio/u_u-ana'), { min: 'x', n: 1 });
       await escribirDoc(docCliente(ctx.firestore(), `tenants/tienda-a/conversaciones/${CONV1}`), {
         telefono: TEL1, canal: 'whatsapp', turno: { responde: 'persona', tomadoPor: 'u-ana' },
+        notaInterna: '', ultimoMensaje: 'hola',
+        envioPersona: { desde: TsCliente.now(), n: 2 }, ultimoSalientePersonaEn: TsCliente.now(),
       });
     });
   });
@@ -651,8 +675,23 @@ describe('las reglas de Firestore cierran lo que escribe el servidor', () => {
     const conv = docCliente(fs, `tenants/tienda-a/conversaciones/${CONV1}`);
     await assertFails(actualizarDoc(conv, { turno: { responde: 'asistente', tomadoPor: 'u-ana' } }));
     await assertFails(actualizarDoc(conv, { 'turno.actividadPersonaEn': TsCliente.now() }));
+    // Cada campo del envío, UNO por vez, con la conversación ya válida: lo que falla es el campo, no «todo».
     await assertFails(actualizarDoc(conv, { envioPersona: { desde: TsCliente.now(), n: 0 } }));
-    await assertFails(actualizarDoc(conv, { ultimoSalientePersonaEn: TsCliente.now() }));
+    await assertFails(actualizarDoc(conv, { 'envioPersona.n': 0 }));
+    await assertFails(actualizarDoc(conv, { ultimoSalientePersonaEn: TsCliente.fromMillis(5000) }));
+    await assertFails(escribirDoc(docCliente(fs, `tenants/tienda-a/conversaciones/${CONV2}`), {
+      telefono: TEL2, canal: 'whatsapp', envioPersona: { desde: TsCliente.now(), n: 0 } }));
+    await assertFails(escribirDoc(docCliente(fs, `tenants/tienda-a/conversaciones/${CONV2}`), {
+      telefono: TEL2, canal: 'whatsapp', ultimoSalientePersonaEn: TsCliente.now() }));
+  });
+
+  it('control positivo: una conversación que YA tiene esos campos sigue siendo actualizable por lo permitido (ingesta y persona)', async () => {
+    const conv = (f: () => ReturnType<typeof ctx.oper>) => docCliente(f(), `tenants/tienda-a/conversaciones/${CONV1}`);
+    await assertSucceeds(actualizarDoc(conv(ctx.ingesta), { ultimoMensaje: 'nuevo resumen' }));
+    await assertSucceeds(actualizarDoc(conv(ctx.oper), { notaInterna: 'cliente frecuente' }));
+    await assertSucceeds(actualizarDoc(conv(ctx.admin), { etiquetas: ['vip'] }));
+    // La ingesta puede crear una conversación NUEVA sin esos campos.
+    await assertSucceeds(escribirDoc(docCliente(ctx.ingesta(), `tenants/tienda-a/conversaciones/${CONV2}`), { telefono: TEL2, canal: 'whatsapp' }));
   });
 
   it('NEGATIVA: la persona (admin u operador) tampoco crea mensajes ni toca el turno; y el soporte menos', async () => {

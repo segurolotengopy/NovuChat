@@ -87,7 +87,9 @@ beforeEach(async () => {
   await db.doc(`rutasWhatsApp/${NUM_A}`).set({ tenantId: A, estado: 'activo', aliasSecreto: 'cliente08', flujo: 'agendamiento' });
   await db.doc(`rutasWhatsApp/${NUM_B}`).set({ tenantId: B, estado: 'activo', aliasSecreto: 'cliente09', flujo: 'agendamiento' });
   for (const [t, conv] of [[A, CONV1], [A, CONV2], [B, CONV1]] as const) {
-    await db.doc(`tenants/${t}/conversaciones/${conv}`).set({ telefono: conv.slice(3), canal: 'whatsapp' });
+    await db.doc(`tenants/${t}/conversaciones/${conv}`).set({
+      telefono: conv.slice(3), canal: 'whatsapp', ultimoEntranteEn: Timestamp.fromMillis(Date.now() - MIN),
+    });
   }
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); delete process.env['SALIDA_PERSONA_RUTAS']; });
@@ -189,6 +191,40 @@ describe('reclamar: el reclamo atómico', () => {
   it('un mensaje sin `phoneNumberId` (de antes de que hubiera dos líneas) lo reclama el flujo del comercio', async () => {
     await sembrar(CLAVE(1));
     await refMsg(CLAVE(1)).update({ phoneNumberId: (await import('firebase-admin/firestore')).FieldValue.delete() });
+    expect(entregados(await reclamar())).toHaveLength(1);
+  });
+});
+
+describe('reclamar: la caducidad del `pendiente`', () => {
+  it('NEGATIVA: un pendiente de 10 min no se entrega: queda rechazado `caducado`, reintentable y SIN contar', async () => {
+    await sembrar(CLAVE(1), { ts: Timestamp.fromMillis(Date.now() - 10 * MIN) });
+    expect(entregados(await reclamar())).toEqual([]);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: true, contado: false });
+    expect(await metricas()).toEqual({});
+  });
+  it('NEGATIVA: un pendiente reciente con la ventana de Meta ya cerrada no se entrega ni cuenta', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ ultimoEntranteEn: Timestamp.fromMillis(Date.now() - 25 * 3_600_000) });
+    await sembrar(CLAVE(1));
+    expect(entregados(await reclamar())).toEqual([]);
+    expect(await msg(CLAVE(1))).toMatchObject({ estadoEnvio: 'rechazado', codigoEnvio: 'caducado', reintentable: true });
+    expect(await metricas()).toEqual({});
+  });
+  it('NEGATIVA: sin `ultimoEntranteEn` (dato anómalo) tampoco se entrega', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ ultimoEntranteEn: (await import('firebase-admin/firestore')).FieldValue.delete() });
+    await sembrar(CLAVE(1));
+    expect(entregados(await reclamar())).toEqual([]);
+    expect((await msg(CLAVE(1)))['codigoEnvio']).toBe('caducado');
+  });
+  it('un pendiente viejo de OTRA línea también caduca y no atasca el lote: los pendientes buenos salen', async () => {
+    for (let i = 1; i <= 25; i++) await sembrar(CLAVE(i), { phoneNumberId: NUM_A2, ts: Timestamp.fromMillis(Date.now() - 20 * MIN + i) });
+    await sembrar(CLAVE(90));
+    for (let vuelta = 0; vuelta < 3; vuelta++) await reclamar(); // cada reclamo mira hasta 20
+    const todos = (await db.collection(`tenants/${A}/conversaciones/${CONV1}/mensajes`).get()).docs;
+    expect(todos.filter((d) => d.get('codigoEnvio') === 'caducado')).toHaveLength(25);
+    expect((await msg(CLAVE(90)))['estadoEnvio']).toBe('enviando');
+  });
+  it('un pendiente de menos de 2 minutos con ventana abierta sigue entregándose', async () => {
+    await sembrar(CLAVE(1), { ts: Timestamp.fromMillis(Date.now() - 100_000) });
     expect(entregados(await reclamar())).toHaveLength(1);
   });
 });

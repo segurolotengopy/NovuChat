@@ -32,9 +32,14 @@
  *    de facturación). Sin dato, cerrada. Enviar NO abre ni extiende la ventana de Meta.
  *  - El BLOQUEO DE 45 s: tras un entrante que nadie respondió, no se envía hasta pasados 45 s (la
  *    carrera de 5 a 20 s entre que el asistente leyó el estado y el modelo contesta). Una vez que la
- *    persona respondió a ese entrante, escribe sin esperar.
- *  - LA CLAVE ESTÁ ATADA a (conversación, persona, hash del texto): reusarla con otro texto, otra
- *    persona u otra conversación es `failed-precondition`. Con los mismos datos devuelve lo guardado.
+ *    persona respondió a ese entrante, escribe sin esperar. NO se aplica si el turno ya estaba tomado
+ *    ANTES del entrante (`turno.tomadoEn < ultimoEntranteEn - 60 s`): la ingesta ya calló al asistente y no
+ *    hay carrera. Eso relaja la letra del contrato §9 (que bloqueaba siempre); se decidió en la revisión de
+ *    #510. Si el modelo ya respondió y la persona envía dentro de los 45 s con un turno reciente, sigue bloqueando.
+ *  - LA CLAVE ESTÁ ATADA a (conversación, persona, hash del texto): reusarla con otro texto u otra
+ *    persona es `failed-precondition`. La atadura a la conversación es la RUTA del documento
+ *    (`conversaciones/{id}/mensajes/{clave}`): la misma clave en OTRA conversación crea un mensaje nuevo
+ *    e independiente, no una colisión. Con los mismos datos devuelve lo guardado.
  *    El mensaje se crea con `tx.create` en `mensajes/{clave}`: dos envíos a la vez con la misma clave,
  *    gana uno.
  *  - LOS TOPES, que se leen del plan (`limitesDePersona`, inyectada) y se cuentan en la MISMA
@@ -136,6 +141,8 @@ interface Creado extends SalidaDeEnvio { repetido: boolean }
 
 const numeroValido = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
 const MINUTO_MS = 60_000;
+/** Cuánto antes del entrante tiene que haber sido tomada la conversación para no haber carrera. */
+const MARGEN_TURNO_PREVIO_MS = 60_000;
 /** El minuto en UTC (`aaaa-mm-ddThh:mm`) y el día de La Paz (UTC-4 fijo), como los otros contadores. */
 const minutoDe = (ms: number): string => new Date(ms).toISOString().slice(0, 16);
 const diaDe = (ms: number): string => new Date(ms - 4 * 3_600_000).toISOString().slice(0, 10);
@@ -191,7 +198,12 @@ export async function crearMensajeDePersona(
     // 4. EL BLOQUEO DE 45 s tras un entrante sin responder.
     const ultimoEntrante = milisegundosDeMomento(ultimoEntranteEn) as number; // la ventana abierta lo garantiza
     const ultimoDePersona = milisegundosDeMomento(conv.get('ultimoSalientePersonaEn'));
-    if ((ultimoDePersona === null || ultimoDePersona < ultimoEntrante) && ahoraMs < ultimoEntrante + BLOQUEO_DE_CARRERA_MS) {
+    // EXCEPCIÓN (ronda de revisión de #510, relaja la letra del contrato §9): si la persona ya tenía el turno
+    // ANTES del entrante (más de 60 s antes), la ingesta de ese entrante ya calló al asistente y no hay carrera
+    // que cubrir. Si el turno es más reciente, o casi simultáneo, el bloqueo sigue.
+    const turnoAnteriorAlEntrante = turno.tomadoEn < ultimoEntrante - MARGEN_TURNO_PREVIO_MS;
+    if (!turnoAnteriorAlEntrante
+        && (ultimoDePersona === null || ultimoDePersona < ultimoEntrante) && ahoraMs < ultimoEntrante + BLOQUEO_DE_CARRERA_MS) {
       throw errorDeEnvio('esperar', {
         motivo: 'espera', esperaSegundos: Math.max(1, Math.ceil((ultimoEntrante + BLOQUEO_DE_CARRERA_MS - ahoraMs) / 1000)),
       });

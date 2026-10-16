@@ -15,6 +15,12 @@
  *   mismo mensaje. Sin nada pendiente, `mensajes: []`. Errores: 405 (método), 401 (credencial; sin
  *   decir por qué) y 404 (número sin comercio de forma válida).
  *
+ * PRIVILEGIO: la credencial de ingesta de un número (firma.ts) ahora también autoriza reclamar y confirmar, y
+ * con ella el flujo lee el texto y el destino de los mensajes de persona pendientes de su comercio (ampliación
+ * aceptada en el contrato §4). El modo HMAC es reproducible durante 5 minutos (sin nonce): reproducirlo solo
+ * reclama lo que ya estaba pendiente. Aceptado. Un `enviando` pasa a `incierto` solo cuando llega OTRO
+ * reclamo; el barrido por minuto de H2-F lo dispara.
+ *
  * LO QUE NO SE FÍA
  *   - El COMERCIO sale de la ruta autenticada, nunca del cuerpo (que ni se lee).
  *   - Un mensaje se entrega solo si la ruta dice lo mismo que el mensaje: su comercio y, si el mensaje
@@ -23,6 +29,11 @@
  *     `pendiente` (hablar con sus clientes es de un comercio activo).
  *   - El canal (`rele` o `graph`) es de `rutasWhatsApp/{n}.canalSalida`, sin valor = `graph`.
  *   - `claveRele` = 48 hex de sha256(comercio, conversación, clave): es la Idempotency-Key del relé.
+ *
+ * LA CADUCIDAD DEL `pendiente`. Un `pendiente` con más de 2 minutos (`PENDIENTE_MAXIMO_MS`), o cuya ventana
+ * de Meta ya se cerró según `ultimoEntranteEn`, NO se entrega: pasa a `rechazado` con `codigoEnvio:
+ * 'caducado'` y `reintentable: true`, sin contar en `mensajesPersona`. Se decide aunque el mensaje sea de
+ * otra línea, para que los viejos no ocupen el lote de la consulta.
  *
  * LA LIMPIEZA. Un mensaje `enviando` por más de 2 minutos (el flujo cayó antes de confirmar) pasa a
  * `incierto` y se cuenta (puede haber llegado). Nunca se vuelve a `pendiente` ni se reenvía solo.
@@ -38,9 +49,9 @@ import { REGION } from '../region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada, type Ruta } from '../seguridad/firma.js';
 import { ID_COMERCIO } from './acceso.js';
 import {
-  ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, canalDeSalidaDe, claveReleDe, sumarMensajePersona, type CanalDeSalida,
+  CODIGO_CADUCADO, ENVIANDO_MAXIMO_MS, MAXIMO_POR_RECLAMO, PENDIENTE_MAXIMO_MS, canalDeSalidaDe, claveReleDe, sumarMensajePersona, type CanalDeSalida,
 } from './salidaPersona.js';
-import { milisegundosDeMomento } from './turno.js';
+import { milisegundosDeMomento, ventanaDeMetaAbierta } from './turno.js';
 
 export interface MensajeReclamado {
   mensajeId: string;
@@ -58,8 +69,8 @@ const CAMINO = /^tenants\/([^/]+)\/conversaciones\/(wa_[0-9]{8,15})\/mensajes\/(
 /** El reclamo (exportado para las pruebas). */
 export async function reclamarSalida(
   ruta: Ruta, db: Firestore = getFirestore(), ahoraMs: number = Date.now(),
-): Promise<{ mensajes: MensajeReclamado[]; inciertos: number }> {
-  const vacio = { mensajes: [] as MensajeReclamado[], inciertos: 0 };
+): Promise<{ mensajes: MensajeReclamado[]; inciertos: number; caducados: number }> {
+  const vacio = { mensajes: [] as MensajeReclamado[], inciertos: 0, caducados: 0 };
   const { tenantId, phoneNumberId } = ruta;
   const [tenant, rutaDoc] = await Promise.all([
     db.doc(`tenants/${tenantId}`).get(), db.doc(`rutasWhatsApp/${phoneNumberId}`).get(),
@@ -77,18 +88,34 @@ export async function reclamarSalida(
 
   const mensajes: MensajeReclamado[] = [];
   let inciertos = 0;
+  let caducados = 0;
   for (const candidato of candidatos.docs) {
     if (mensajes.length >= MAXIMO_POR_RECLAMO) break;
     const m = CAMINO.exec(candidato.ref.path);
     if (!m || m[1] !== tenantId) continue; // otro camino: no es de este comercio
     const [, , conversacionId, clave] = m as unknown as [string, string, string, string];
 
-    const r = await db.runTransaction(async (tx): Promise<'reclamado' | 'incierto' | 'nada'> => {
-      const s = await tx.get(candidato.ref);
+    const r = await db.runTransaction(async (tx): Promise<'reclamado' | 'incierto' | 'caducado' | 'nada'> => {
+      // Lecturas primero (Firestore exige las lecturas antes de las escrituras): el mensaje y su conversación.
+      const [s, conv] = await Promise.all([tx.get(candidato.ref), tx.get(candidato.ref.parent.parent!)]);
       if (!s.exists || s.get('tenantId') !== tenantId || s.get('direccion') !== 'saliente' || s.get('autor') !== 'persona') return 'nada';
+      const estado: unknown = s.get('estadoEnvio');
+      // LA CADUCIDAD, antes de mirar de qué línea es: un `pendiente` viejo de otra línea tampoco puede
+      // quedarse en la cola ocupando lugar. Sin entregarse, sin contar, reintentable.
+      if (estado === 'pendiente') {
+        const desde = milisegundosDeMomento(s.get('ts'));
+        const vencido = desde === null || ahoraMs - desde >= PENDIENTE_MAXIMO_MS
+          || !conv.exists || !ventanaDeMetaAbierta(conv.get('ultimoEntranteEn'), ahoraMs);
+        if (vencido) {
+          tx.update(candidato.ref, {
+            estadoEnvio: 'rechazado', codigoEnvio: CODIGO_CADUCADO, reintentable: true,
+            confirmadoEn: Timestamp.fromMillis(ahoraMs), contado: false,
+          });
+          return 'caducado';
+        }
+      }
       const de: unknown = s.get('phoneNumberId');
       if (typeof de === 'string' && de !== phoneNumberId) return 'nada';
-      const estado: unknown = s.get('estadoEnvio');
       if (estado === 'pendiente') {
         tx.update(candidato.ref, { estadoEnvio: 'enviando', reclamadoEn: Timestamp.fromMillis(ahoraMs) });
         return 'reclamado';
@@ -105,6 +132,7 @@ export async function reclamarSalida(
       return 'nada';
     });
     if (r === 'incierto') { inciertos += 1; continue; }
+    if (r === 'caducado') { caducados += 1; continue; }
     if (r !== 'reclamado') continue;
     const datos = candidato.data();
     mensajes.push({
@@ -112,7 +140,7 @@ export async function reclamarSalida(
       to: conversacionId.slice(3), texto: String(datos['texto'] ?? ''), tipo: 'text', canal,
     });
   }
-  return { mensajes, inciertos };
+  return { mensajes, inciertos, caducados };
 }
 
 export const reclamarSalidaPersona = onRequest(
@@ -129,9 +157,9 @@ export const reclamarSalidaPersona = onRequest(
     if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
     if (!ID_COMERCIO.test(ruta.tenantId)) { respuesta.status(404).send('numero no asignado'); return; }
     try {
-      const { mensajes, inciertos } = await reclamarSalida(ruta);
+      const { mensajes, inciertos, caducados } = await reclamarSalida(ruta);
       // Solo el comercio, cuántos y por qué; nunca el texto, el teléfono ni la clave.
-      logger.info('reclamarSalidaPersona', { tenantId: ruta.tenantId, entregados: mensajes.length, inciertos });
+      logger.info('reclamarSalidaPersona', { tenantId: ruta.tenantId, entregados: mensajes.length, inciertos, caducados });
       respuesta.status(200).json({ mensajes });
     } catch (e) {
       const c = (e as { code?: unknown } | null)?.code;

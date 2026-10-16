@@ -29,6 +29,9 @@
  * llegado y Meta lo cobra) y NO con `rechazado`; sin doble conteo: un `incierto` que pasa a `aceptado` ya
  * estaba contado (`contado: true`), y uno que pasa a `rechazado` se resta una vez. No toca `salientes`,
  * `mensajesVentana`, el bloque de 25 ni los umbrales: cero mensajes por conversación.
+ * El −1 de un `incierto` que resulta `rechazado` cae en el mes de la confirmación, no en el del envío
+ * (aceptado). PENDIENTE declarado: ningún cálculo de franquicia lee todavía `mensajesPersona`; lo asume
+ * Core bloque 2.
  */
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';

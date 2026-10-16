@@ -1842,7 +1842,8 @@ service cloud.firestore {
         allow create: if esIngesta(tenantId)
                       && tenantOperativo(tenantId)
                       && conversacionValida()
-                      && !request.resource.data.keys().hasAny(['turno']);
+                      && !request.resource.data.keys().hasAny(['turno', 'envioPersona',
+                                                               'ultimoSalientePersonaEn']);
         allow delete: if false;
 
         // Dos ramas de actualización disjuntas:
@@ -1858,7 +1859,7 @@ service cloud.firestore {
         allow update: if (esIngesta(tenantId) && tenantOperativo(tenantId)
                           && conversacionValida()
                           && !request.resource.data.diff(resource.data).affectedKeys()
-                                .hasAny(['turno']))
+                                .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn']))
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
                           // `noContactar` es la lista de no molestar (bloque 4): una
@@ -1938,7 +1939,12 @@ service cloud.firestore {
                  // servidor (tomar, devolver, enviar) y la transacción de la ingesta
                  // (devolución por inactividad o por ventana). Ninguna persona del
                  // negocio lo escribe: no está en su `soloCampos`.
-                 , 'turno'])
+                 // H2-3 (16/10/2026): `envioPersona` (el contador de mensajes de persona de la
+                 // ventana) y `ultimoSalientePersonaEn` los escribe SOLO `enviarComoPersona`. Se
+                 // toleran acá como `turno` (para que la ingesta pueda actualizar una conversación
+                 // que ya los tiene) y las ramas `create`/`update` de arriba le PROHÍBEN crearlos
+                 // o cambiarlos (`affectedKeys`).
+                 , 'turno', 'envioPersona', 'ultimoSalientePersonaEn'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
                     // `horarios` es la etapa del bloque 4: el asistente ofreció
@@ -1963,7 +1969,11 @@ service cloud.firestore {
             && d.get('respuestasDelPeriodo', 0) >= 0
             && d.get('canal', '') in ['whatsapp']
             && derivadosValidos(d)
-            && turnoValido(d);
+            && turnoValido(d)
+            && (!d.keys().hasAny(['envioPersona'])
+                || (d.envioPersona is map && d.envioPersona.get('n', -1) is int))
+            && (!d.keys().hasAny(['ultimoSalientePersonaEn'])
+                || d.ultimoSalientePersonaEn is timestamp);
         }
 
         // Tipo y tope de los derivados de H1: ni siquiera el principal de ingesta
@@ -2604,6 +2614,12 @@ service cloud.firestore {
     // asignadoPor } y, escritas por otras piezas, propiedades de la LÍNEA:
     // aliasSecreto, numeroPublico, webhookCarrito.
     // =========================================================================
+    // NOTA H2-3: la credencial de ingesta de un número (HMAC o token, `firma.ts`) ahora TAMBIÉN
+    // autoriza `reclamarSalidaPersona` y `confirmarSalidaPersona`, y con ella el flujo lee el texto y
+    // el destino de los mensajes de persona pendientes de su comercio. Es una ampliación de
+    // privilegio aceptada en el contrato §4. Las reglas de arriba siguen sin dejar que ese token
+    // escriba `autor`, `estadoEnvio`, `turno`, `envioPersona` ni nada del envío: lo hace solo el
+    // servidor con Admin.
     match /rutasWhatsApp/{phoneNumberId} {
       allow get, list: if esPropietario();
       // Ningún navegador escribe este documento; lo escriben solo el SDK Admin
