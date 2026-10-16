@@ -21,7 +21,7 @@ ahí va su ficha (`ficha.md`, desde `plantilla-ficha.md`) y su estado
 Este es el ORDEN entre las etapas de abajo; cada etapa sigue siendo el detalle de su tarea.
 
 1. **Flujo y pruebas con el cliente**, sobre una línea de pruebas de NovuChat (distinta del número de prueba de Meta y del Demo A, prohibición 6) y una copia de prueba que lleva **un solo modo de cobro** (simulado o real, nunca los dos; prohibición 3). Incluye el cobro real; los textos de las plantillas quedan fijados en este paso como contrato. **La aceptación de la etapa 6 se hace aquí**, en la línea de pruebas y con la copia de prueba.
-2. **Alta con el número DEFINITIVO, nuevo y dedicado.** Al entrar a la API el número deja de servir en la app del celular. Entra **directo a la WABA del cliente** desde `/alta`, con la SIM presente y la tarjeta del cliente.
+2. **Alta con el número DEFINITIVO, nuevo y dedicado.** Al entrar a la API el número deja de servir en la app del celular. Entra **directo a la WABA del cliente** desde `/alta`, con la SIM presente y la tarjeta del cliente. **Regla firme (11/10/2026): el alta se hace en el MISMO portafolio donde el cliente tiene su página de Facebook y su cuenta publicitaria** (ver el recuadro de la etapa 2).
 3. **WABA, plantillas, nombre visible y ficha** con la sesión que opera el receptor. Las plantillas se piden el **mismo día del alta**; la aprobación de Meta se midió en 12 a 28 horas.
 4. **Entre habilitar y producción NO hay pruebas con cambios.** Solo verificación de solo lectura (la ficha, la lectura de la ruta) y, al abrir, un **humo controlado con el cliente presente**: «hola», un pedido y la lectura de la cola, que hace la sesión que opera el receptor (NovuChat no corre comandos del receptor; prohibición 5). Sobre el número definitivo solo va este humo.
 5. **Producción con el número nuevo y los flujos ya probados.** Se activan juntos el flujo con datos reales, el `cliente:alta` del receptor (lo ejecuta la sesión que opera el receptor, con el «sí» de Andres) y la ruta en la plataforma, y la cuenta pasa de prueba a producción. Se sugieren dos días de vigilancia después de abrir.
@@ -75,6 +75,21 @@ un secreto: eso lo hace una persona.
    bloquea la verificación por intentos.
 
 ## 2 · Meta (con el cliente, en su portafolio)
+
+> **REGLA FIRME (11/10/2026; fuente: Andres con Silvana, probado con el chat
+> de NovuChat).** El cliente hace el alta de AAB1 (`wa.aab1.website/alta`) en el
+> **MISMO portafolio de Meta** donde tiene su página de Facebook y su cuenta
+> publicitaria.
+>
+> - **Para anuncios de clic a WhatsApp**, el cliente conecta su cuenta de
+>   WhatsApp a su página dentro de ese portafolio y **no necesita ningún
+>   código**: el número aparece en el anuncio sin pedirlo.
+> - **Motivo medido.** Fuera de ese portafolio, Ads Manager pide validar el
+>   número con un código por WhatsApp. Ese código **no llega a ningún celular**
+>   en un número de la Cloud API: entra como webhook y lo recibe el bot.
+> - **Crítico para socios con un portafolio por cliente** (por ejemplo, Rubén
+>   Roca): al hacer el alta se elige el portafolio **de ese cliente**, no el del
+>   socio.
 
 **Decisión de Andres del 08/10/2026: todos los clientes van por AAB1 y el alta
 se hace solo por `wa.aab1.website/alta`** (portafolio, WABA, número, método de

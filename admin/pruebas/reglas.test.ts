@@ -2519,9 +2519,65 @@ describe('Cierres', () => {
     await assertFails(deleteDoc(doc(ingestaA(), `tenants/${A}/cierres/c1`)));
   });
 
-  it('el negocio lee sus cierres y NovuChat también, para explicar la factura', async () => {
+  it('el negocio lee sus cierres y NovuChat también, para explicar el indicador de Consumo', async () => {
     await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/cierres/c1`)));
     await assertSucceeds(getDoc(doc(propietario(), `tenants/${A}/cierres/c1`)));
+  });
+
+  // LA LECTURA DEL PROPIETARIO NO DEPENDE DE LA VENTANA DE SOPORTE (decisión
+  // del 09/10/2026, ver el comentario de la regla). Estas pruebas la fijan en
+  // los dos sentidos: que la ventana no abre ni cierra nada en `cierres`, y
+  // que ninguna ventana abre lo que no debe (privado, escritura, proveedor).
+  describe('el propietario y la ventana de soporte', () => {
+    const sembrar = async () => {
+      await entorno.withSecurityRulesDisabled(async (ctx) => {
+        for (const t of [A, B]) {
+          await setDoc(doc(ctx.firestore(), `tenants/${t}/cierres/c1`), {
+            tipo: 'cita', ocurridoEn: Timestamp.now(), referencia: 'evt_abc123',
+            telefonoEnmascarado: '5917****001', monto: 50, moneda: 'BOB',
+          });
+          await setDoc(doc(ctx.firestore(), `tenants/${t}/cierres/c1/privado/datos`),
+            { nombreCliente: 'Ana', servicio: 'Manicure' });
+        }
+      });
+    };
+    const sinVentana = [
+      ['sin ventana', propietario],
+      ['con ventana vigente', propietarioConSoporte],
+      ['con ventana vencida', propietarioSoporteVencido],
+    ] as const;
+
+    it.each(sinVentana)('lee los cierres de los DOS comercios %s', async (_n, quien) => {
+      await sembrar();
+      for (const t of [A, B]) {
+        await assertSucceeds(getDoc(doc(quien(), `tenants/${t}/cierres/c1`)));
+        await assertSucceeds(getDocs(query(
+          collection(quien(), `tenants/${t}/cierres`), orderBy('ocurridoEn', 'desc'), limit(50))));
+      }
+    });
+
+    it.each(sinVentana)('NO lee el detalle privado de ningún comercio %s', async (_n, quien) => {
+      await sembrar();
+      for (const t of [A, B]) {
+        await assertFails(getDoc(doc(quien(), `tenants/${t}/cierres/c1/privado/datos`)));
+        await assertFails(getDocs(collection(quien(), `tenants/${t}/cierres/c1/privado`)));
+      }
+    });
+
+    it.each(sinVentana)('NO escribe un cierre ni el sello de comprobado %s', async (_n, quien) => {
+      await sembrar();
+      await assertFails(updateDoc(doc(quien(), `tenants/${A}/cierres/c1`),
+        { comprobadoPor: 'u-novuchat', comprobadoEn: serverTimestamp() }));
+      await assertFails(updateDoc(doc(quien(), `tenants/${A}/cierres/c1`), { monto: 1 }));
+      await assertFails(deleteDoc(doc(quien(), `tenants/${A}/cierres/c1`)));
+      await assertFails(setDoc(doc(quien(), `tenants/${A}/cierres/c9`), cierre()));
+    });
+
+    it('con sesión de contraseña el claim de propietario es inerte, haya ventana o no', async () => {
+      await sembrar();
+      await assertFails(getDoc(doc(propietarioConPassword(), `tenants/${A}/cierres/c1`)));
+      await assertFails(getDocs(collection(propietarioConPassword(), `tenants/${A}/cierres`)));
+    });
   });
 
   it('un comercio no ve los cierres de otro', async () => {

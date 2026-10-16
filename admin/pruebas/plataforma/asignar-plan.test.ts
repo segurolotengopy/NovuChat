@@ -77,7 +77,7 @@ beforeAll(async () => {
   // Un comercio en producción con Pro (2 cambios al mes), sin contrato todavía.
   await db.doc(`tenants/${CONTRATO}`).set({ nombre: 'Contrato', estado: 'activo', plan: 'pro', flujos: ['agendamiento'] });
   await db.doc(`tenants/${CONTRATO}/cuenta/estado`).set({
-    plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12',
+    plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12',
   });
   await db.doc(`tenants/${CONTRATO_SIN_CUENTA}`).set({ nombre: 'Sin cuenta', estado: 'activo', plan: 'basico' });
 });
@@ -436,7 +436,7 @@ describe('asignar-plan.mjs F1b: --conversaciones, --precio, --periodo-prueba y -
   const MES = mesBolivia(Date.now());
   const MES_SIGUIENTE = sumarMeses(MES, 1);
   const MES_PASADO = sumarMeses(MES, -1);
-  const PRO_PREPAGO = { plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12' };
+  const PRO_PREPAGO = { plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12' };
   const EN_PRUEBA = { plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prueba', periodoPrueba: MES, bolsaPrueba: 7 };
 
   async function sembrarF1b(t: string, datos: Record<string, unknown>) {
@@ -676,5 +676,56 @@ describe('asignar-plan.mjs, revisión del #221: prueba sobre meses pagados, tech
     expect(auditadas[0]).toMatchObject({
       uid: 'operador@ejemplo.com', origen: 'script', antes: { valorCrudo: 0.05 }, despues: null, plan: 'pro',
     });
+  });
+});
+
+describe('asignar-plan.mjs: el encabezado dice las conversaciones de la TARIFA de la cuenta (PR-4a)', () => {
+  const ESTANDAR = 'plan-tarifa-estandar';
+  const SIN_TARIFA = 'plan-tarifa-sin-campo';
+
+  beforeAll(async () => {
+    for (const t of [ESTANDAR, SIN_TARIFA]) {
+      await db.recursiveDelete(db.doc(`tenants/${t}`));
+      await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', plan: 'impulso', flujos: ['venta'] });
+    }
+    await db.doc(`tenants/${ESTANDAR}/cuenta/estado`).set({
+      plan: 'impulso', limites: limitesDe('impulso', 'estandar'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prueba',
+      tarifa: 'estandar',
+    });
+    // El caso Bellido: Impulso, copia 100, sin el campo.
+    await db.doc(`tenants/${SIN_TARIFA}/cuenta/estado`).set({
+      plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prueba',
+    });
+  });
+
+  const encabezado = (salida: string) => /^ {2}Plan {6}: .*$/m.exec(salida)?.[0] ?? '';
+  const queda = (salida: string) => /^ {2}Queda {5}: .*$/m.exec(salida)?.[0] ?? '';
+
+  it('una cuenta estándar ve 200 / 500 / 1.000, y el encabezado coincide con lo que queda en la copia', () => {
+    for (const [plan, n] of [['impulso', 200], ['crecimiento', 500], ['pro', 1000]] as const) {
+      const r = correr('--tenant', ESTANDAR, '--plan', plan);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(encabezado(r.salida), plan).toContain(`${n} conversaciones`);
+      expect(encabezado(r.salida), plan).toContain('tarifa estandar');
+      if (plan !== 'impulso') expect(queda(r.salida), plan).toContain(`${n} conversaciones`);
+    }
+  });
+
+  it('una cuenta SIN el campo (Bellido) ve 100 / 220 / 500: ni 200 ni 500 de lista, y lo dice', () => {
+    for (const [plan, n] of [['impulso', 100], ['crecimiento', 220], ['pro', 500]] as const) {
+      const r = correr('--tenant', SIN_TARIFA, '--plan', plan);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(encabezado(r.salida), plan).toContain(`${n} conversaciones`);
+      expect(encabezado(r.salida), plan).toContain('sin campo de tarifa: rige meta_incluido');
+      if (plan !== 'impulso') expect(queda(r.salida), plan).toContain(`${n} conversaciones`);
+    }
+  });
+
+  it('el encabezado solo lee: ni en seco se escribe la tarifa en la cuenta de Bellido', async () => {
+    const antes = (await db.doc(`tenants/${SIN_TARIFA}/cuenta/estado`).get()).data();
+    correr('--tenant', SIN_TARIFA, '--plan', 'impulso');
+    const despues = (await db.doc(`tenants/${SIN_TARIFA}/cuenta/estado`).get()).data();
+    expect(despues).toEqual(antes);
+    expect(despues).not.toHaveProperty('tarifa');
   });
 });

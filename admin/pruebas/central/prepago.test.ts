@@ -36,7 +36,7 @@ const CON_TCO = { tco: TCO, numeroRecepcion: '70000001' };
 
 /** Una cuenta prepago con Crecimiento y su copia de límites. */
 const prepago = (extra: Partial<CuentaCruda> = {}): CuentaCruda => ({
-  modalidad: 'prepago', plan: 'crecimiento', limites: limitesDe('crecimiento'), ...extra,
+  modalidad: 'prepago', plan: 'crecimiento', limites: limitesDe('crecimiento', 'meta_incluido'), ...extra,
 });
 
 describe('Períodos en hora de Bolivia', () => {
@@ -175,7 +175,7 @@ describe('El saldo de conversaciones', () => {
     // Escrita negando, como pide `CLAUDE.md` §7.3. El tope de BYOC es cuatro
     // veces el de Pro, así que lo que hay que probar es que EXISTE: un plan
     // grande sin corte es la forma más fácil de perder plata sin enterarse.
-    const byoc = prepago({ periodoPagado: '2026-10', plan: 'byoc', limites: limitesDe('byoc') });
+    const byoc = prepago({ periodoPagado: '2026-10', plan: 'byoc', limites: limitesDe('byoc', 'meta_incluido') });
 
     const ultima = estadoDeServicio(byoc, 1999, AHORA);
     expect(ultima).toMatchObject({ incluidas: 2000, disponibles: 1, operativo: true });

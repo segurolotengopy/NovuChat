@@ -2092,6 +2092,17 @@ service cloud.firestore {
       // ocultar campos sueltos en una lectura.
       // -----------------------------------------------------------------------
       match /cierres/{cierreId} {
+        // EL PROPIETARIO LEE ESTO SIN VENTANA DE SOPORTE, A PROPÓSITO (revisado
+        // el 09/10/2026 con el hallazgo previo al visor de comprobantes). Es la
+        // misma categoría que `/bitacora` y `/metricas`: metadatos sin contenido
+        // de conversación y sin datos que identifiquen a la persona (teléfono
+        // enmascarado, tipo, referencia, importe, cotejo). Lo que identifica
+        // vive en `/privado`, que NO abre ninguna ventana. Exigir
+        // `soporteVigente` acá obligaría al comercio a compartir TODAS sus
+        // conversaciones para que NovuChat pudiera mirar una tabla enmascarada:
+        // más privilegio, no menos. La única pantalla que lo usa es el detalle
+        // de Consumo. Si algún día `cotejo` o los cierres crecen con datos de
+        // terceros, la salida es moverlos a `/privado`, no cerrar esta lectura.
         allow get, list: if esMiembro(tenantId) || esPropietario();
         allow create: if esIngesta(tenantId) && tenantOperativo(tenantId) && cierreValido();
         // No se corrige ni se borra un cierre: es un registro de auditoría. Un

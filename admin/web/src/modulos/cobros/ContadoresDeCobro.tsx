@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, documentId, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../core/lib/firebase';
-import { COLUMNAS, cobroRealActivo, lineasDeCobros, mesLegible, ultimosMesesDeCobro } from './contadoresDeCobro';
+import {
+  COLUMNAS, NOTA_SIN_MODO, decidirPintado, leerContadores, lineasDeCobros, mesLegible, ultimosMesesDeCobro,
+  type LecturaDeContadores,
+} from './contadoresDeCobro';
 
 /**
  * CONTADORES DE COBRO — solo números, una línea por mes.
  *
  * Lee `metricas/{aaaa-mm}` con la regla que ya existe (lectura del miembro).
  * No muestra listas, imágenes ni datos del comprobante. Sin ningún contador de
- * la regla nueva en ningún mes, no pinta nada.
+ * la regla nueva en ningún mes, no pinta nada. Si no se pudo leer el modo de
+ * cobro (real o simulado), la tabla lleva una nota neutra delante.
  *
  * Prohibición 3: el cotejo lee datos de una imagen, que se edita. «Válido»
  * quiere decir que los datos coincidieron; quien confirma que la plata entró
@@ -16,37 +20,33 @@ import { COLUMNAS, cobroRealActivo, lineasDeCobros, mesLegible, ultimosMesesDeCo
  * nunca de pagos acreditados o verificados.
  */
 export function ContadoresDeCobro({ tenantId }: { tenantId: string }) {
-  const [periodos, setPeriodos] = useState<{ id: string; [k: string]: unknown }[]>([]);
-  const [fallo, setFallo] = useState(false);
   const meses = useMemo(() => ultimosMesesDeCobro(6), []);
 
   // Lectura única, no en vivo: el documento del mes en curso cambia con cada
   // mensaje y los contadores no necesitan estar al segundo.
-  const [real, setReal] = useState<boolean | null>(null);
+  // `metricas` y `config/venta` se leen por separado (`leerContadores`): el
+  // propietario de NovuChat lee `metricas` pero no `config/venta`, y esa
+  // denegación no debe tumbar los contadores.
+  const [lectura, setLectura] = useState<LecturaDeContadores | null>(null);
   useEffect(() => {
+    // Al cambiar de negocio no se muestra lo del anterior mientras llega lo nuevo.
+    setLectura(null);
     if (!tenantId) return;
     let vivo = true;
-    void (async () => {
-      try {
-        const [m, v] = await Promise.all([
-          getDocs(query(collection(db, 'tenants', tenantId, 'metricas'), where(documentId(), 'in', meses))),
-          getDoc(doc(db, 'tenants', tenantId, 'config', 'venta')),
-        ]);
-        if (!vivo) return;
-        setPeriodos(m.docs.map((d) => ({ id: d.id, ...d.data() })));
-        setReal(cobroRealActivo(v.data()));
-        setFallo(false);
-      } catch {
-        if (vivo) { setPeriodos([]); setFallo(true); }
-      }
-    })();
+    void leerContadores(
+      async () => (await getDocs(query(collection(db, 'tenants', tenantId, 'metricas'), where(documentId(), 'in', meses))))
+        .docs.map((d) => ({ id: d.id, ...d.data() })),
+      async () => (await getDoc(doc(db, 'tenants', tenantId, 'config', 'venta'))).data(),
+    ).then((l) => { if (vivo) setLectura(l); });
     return () => { vivo = false; };
   }, [tenantId, meses]);
 
-  const lineas = lineasDeCobros(periodos);
-  if (fallo) return <p role="alert">No se pudieron leer los contadores de comprobantes.</p>;
-  if (lineas.length === 0 || real === null) return null;
-  if (!real) {
+  if (!lectura) return null;
+  const lineas = lineasDeCobros(lectura.periodos);
+  const pintado = decidirPintado(lectura.metricas, lectura.config, lectura.real, lineas.length > 0);
+  if (pintado === 'error') return <p role="alert">No se pudieron leer los contadores de comprobantes.</p>;
+  if (pintado === 'nada') return null;
+  if (pintado === 'simulado') {
     return <p className="ayuda">Cobro simulado: los comprobantes no se cotejan.</p>;
   }
   const mesEnCurso = ultimosMesesDeCobro(1)[0];
@@ -54,6 +54,7 @@ export function ContadoresDeCobro({ tenantId }: { tenantId: string }) {
   return (
     <article className="tarjeta" aria-label="Comprobantes por mes">
       <h3>Comprobantes por mes (últimos 6 meses)</h3>
+      {pintado === 'tabla_sin_modo' && <p className="ayuda">{NOTA_SIN_MODO}</p>}
       <div style={{ overflowX: 'auto' }}>
         <table className="table">
           <thead>

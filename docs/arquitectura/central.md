@@ -834,7 +834,7 @@ de caracteres que el cobrador admite (`[A-Za-z0-9:_.-]`, hasta 120).
 | `plan` | `IdPlanVendible` (`planes.ts:42`) | Functions | Solo en `mensualidad`. Del catálogo, nunca texto libre |
 | `meses` | entero 1..6 | Functions | Solo en `mensualidad`. El tope 6 se hace cumplir acá (`MESES_MAXIMO = 6` en `prepago.ts`), no en la pantalla |
 | `cantidad` | entero 1..12 | Functions | Solo en `bolsa` |
-| `montoUsd` | número | Functions | El de la lista (`PLANES[plan].precioUsd × meses`, `BOLSA.precioUsd × cantidad`, `INSTALACION_USD`) |
+| `montoUsd` | número | Functions | El de la lista (`PLANES[plan].precioUsd × meses`, `BOLSA.precioUsd × cantidad`, `INSTALACION_USD`). Pendiente (`docs/base-comercial.md` §3): las bolsas BYOC de 300 conversaciones por 15 y de 300 mensajes de seguimiento por 10, con la de 30 por 10 solo para Meta incluido |
 | `monto` | entero | Functions | Bolivianos, redondeados con `importeBs`. Es lo que va al QR |
 | `moneda` / `monedaLista` | `'BOB'` / `'USD'` | Functions | Constantes, para que el documento se explique solo |
 | `tcoAplicado` | número 5..40 | Functions | El TCO del BCB del **día de emisión**. Sin él, `importeBs` lanza y el pago no se crea |

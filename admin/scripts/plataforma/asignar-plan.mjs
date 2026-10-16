@@ -141,8 +141,8 @@ registerHooks({
 const {
   PLANES, CATALOGO_PLANES, CLAVES_POR_CONTRATO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD,
   RANGO_POR_CONTRATO, copiaDeLimites,
-  esIdPlan, limitesDe, mismoMarcador, porContratoDe, precioMensualDe, precioPorContratoDe, precioPorContratoValido,
-  valorPorContratoValido,
+  esIdPlan, esTarifa, limitesDe, mismoMarcador, porContratoDe, precioMensualDe, precioPorContratoDe, precioPorContratoValido,
+  tarifaDe, valorPorContratoValido,
 } = await import('../../functions/src/central/cuenta/planes.ts');
 const {
   BOLSA_PRUEBA_MAXIMA, MODALIDADES, PruebaInvalida, bolsaPruebaValida, camposDerivados, consumidasDe, esModalidad,
@@ -247,7 +247,16 @@ const refRuta = NUMERO ? db.doc(`rutasWhatsApp/${NUMERO}`) : null;
 // Los límites DEL PLAN pedido, para el encabezado. Lo que queda en la copia
 // (con lo conservado por contrato) se decide en la transacción, contra la
 // cuenta leída: `copiaDeLimites`.
-const limites = PLAN ? limitesDe(PLAN) : null;
+//
+// Las conversaciones del plan dependen de la TARIFA de la cuenta (200/500/1.000 con
+// `estandar`, 100/220/500 con `meta_incluido`), así que el encabezado lee la cuenta
+// UNA VEZ antes de imprimir (solo lectura; sin el campo rige `meta_incluido`,
+// `tarifaDe`). Es informativo: lo que se escribe lo decide la transacción, con la
+// cuenta leída dentro de ella.
+const cuentaPrevia = PLAN ? (await refCuenta.get()).data() ?? {} : {};
+const tarifaPrevia = tarifaDe(cuentaPrevia);
+const limites = PLAN ? limitesDe(PLAN, tarifaPrevia) : null;
+const tarifaTexto = esTarifa(cuentaPrevia.tarifa) ? `tarifa ${tarifaPrevia}` : `sin campo de tarifa: rige ${tarifaPrevia}`;
 const texto = (l) => (l && typeof l === 'object'
   ? `${l.conversaciones ?? '?'} conversaciones · ${l.productos ?? '?'} productos · ${l.agendas ?? '?'} agendas`
     + ` · ${l.cambiosIncluidos ?? '?'} cambios/mes`
@@ -259,7 +268,7 @@ const textoPrueba = (p) => (p.periodoPrueba
 const paraAuditoria = (v) => (v instanceof FieldValue ? null : v instanceof Timestamp ? v.toMillis() : v ?? null);
 
 console.log(`\n  Negocio   : ${TENANT}`);
-if (PLAN) console.log(`  Plan      : ${PLAN} (${PLANES[PLAN].nombre}, USD ${PLANES[PLAN].precioUsd}) · ${texto(limites)} · catálogo ${CATALOGO_PLANES}`);
+if (PLAN) console.log(`  Plan      : ${PLAN} (${PLANES[PLAN].nombre}, USD ${PLANES[PLAN].precioUsd}) · ${texto(limites)} · ${tarifaTexto} · catálogo ${CATALOGO_PLANES}`);
 if (MODALIDAD) console.log(`  Modalidad : ${MODALIDAD}`);
 if (MODELO) console.log(`  Modelo    : ${MODELO}`);
 if (TITULARIDAD) console.log(`  Número    : ${cola(NUMERO)} → titularidad ${TITULARIDAD}`);

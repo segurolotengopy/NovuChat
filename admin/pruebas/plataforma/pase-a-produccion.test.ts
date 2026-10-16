@@ -15,7 +15,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { limitesDe } from '../../functions/src/central/cuenta/planes.ts';
+import { limitesDe, type Tarifa } from '../../functions/src/central/cuenta/planes.ts';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -34,7 +34,12 @@ const SIN_PLAN = 'pase-sin-plan';
 const DEMO = 'pase-demo';
 const MARCADORES = 'pase-marcadores';
 const EN_PRUEBA = 'pase-en-prueba';
-const TENANTS = [LISTO, SIN_PLAN, DEMO, MARCADORES, EN_PRUEBA, 'novuchat'];
+// LA TARIFA DE LA CUENTA (PR-4a): cuatro cuentas de Impulso que solo difieren en tarifa y copia.
+const ESTANDAR_200 = 'pase-estandar-200';
+const BELLIDO_100 = 'pase-bellido-100';
+const ESTANDAR_DESFASE = 'pase-estandar-desfase';
+const META_DESFASE = 'pase-meta-desfase';
+const TENANTS = [LISTO, SIN_PLAN, DEMO, MARCADORES, EN_PRUEBA, 'novuchat', ESTANDAR_200, BELLIDO_100, ESTANDAR_DESFASE, META_DESFASE];
 
 // Números con seis ceros seguidos (convención del repositorio público).
 const NUM_LISTO = '1000000081';
@@ -124,7 +129,7 @@ beforeAll(async () => {
   await ruta(NUM_SIN_PLAN, SIN_PLAN, WABA_COMPARTIDA, 'cliente21');
 
   // DEMO: modalidad demostración con un plan del catálogo (F1: el plan no dice que es un demo).
-  await sembrarComercio(DEMO, { plan: 'pro', limites: limitesDe('pro'), modalidad: 'demostracion' }, negocioSano, 'pro');
+  await sembrarComercio(DEMO, { plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), modalidad: 'demostracion' }, negocioSano, 'pro');
 
   // NOVUCHAT: la propia NovuChat, aunque tuviera un plan vendible.
   await sembrarComercio('novuchat', { plan: 'impulso' }, negocioSano, 'impulso');
@@ -137,6 +142,18 @@ beforeAll(async () => {
     horarioTexto: 'Lun a vie 9 a 19 (supuesto)',
   }, 'crecimiento');
   await ruta(NUM_MARCADORES, MARCADORES, WABA_COMPARTIDA, 'cliente22');
+
+  // LAS CUATRO DE LA TARIFA. Todas son Impulso en producción; solo cambian el campo `tarifa` y la copia.
+  const impulso = (tarifa: Tarifa | undefined, copia: Tarifa) => ({
+    plan: 'impulso', limites: limitesDe('impulso', copia), catalogoPlanes: '2026-10-11',
+    modalidad: 'prueba', periodoPrueba: mesBolivia,
+    ...(tarifa ? { tarifa } : {}),
+  });
+  await sembrarComercio(ESTANDAR_200, impulso('estandar', 'estandar'), negocioSano, 'impulso');
+  // El caso Bellido: Impulso, copia 100, SIN el campo de tarifa.
+  await sembrarComercio(BELLIDO_100, impulso(undefined, 'meta_incluido'), negocioSano, 'impulso');
+  await sembrarComercio(ESTANDAR_DESFASE, impulso('estandar', 'meta_incluido'), negocioSano, 'impulso');
+  await sembrarComercio(META_DESFASE, impulso('meta_incluido', 'estandar'), negocioSano, 'impulso');
 
   // EN PRUEBA: todo bien, pero todavía sin el primer pago.
   await sembrarComercio(EN_PRUEBA, {
@@ -260,5 +277,47 @@ describe('pase-a-produccion.mjs', () => {
     const r = correr(LISTO, '--aceptacion', ACEPTACION_A_MEDIAS);
     expect(r.codigo).toBe(1);
     expect(r.salida).toMatch(/✗ 2 de 3 pruebas sin resultado real anotado/);
+  });
+});
+
+describe('pase-a-produccion.mjs: la copia de límites se compara con la TARIFA de la cuenta (PR-4a)', () => {
+  const copia = (tarifa: Tarifa) => limitesDe('impulso', tarifa).conversaciones;
+
+  it('una cuenta estándar con la copia de 200 tiene la copia igual: no es un falso «no pasa»', () => {
+    const r = correr(ESTANDAR_200);
+    expect(copia('estandar')).toBe(200);
+    expect(r.salida).toMatch(/✓ copia de límites igual a la del plan \(tarifa estandar\)/);
+    expect(r.salida).toMatch(/✓ Impulso \(USD 25 · 200 conversaciones · tarifa estandar\)/);
+    expect(r.salida).not.toMatch(/✗ copia de límites/);
+  });
+
+  it('EL CASO BELLIDO: Impulso, copia 100 y SIN campo de tarifa da «copia igual», con 100 conversaciones, y no propone reescribirla', () => {
+    expect(copia('meta_incluido')).toBe(100);
+    const r = correr(BELLIDO_100);
+    expect(r.salida).toMatch(/✓ copia de límites igual a la del plan \(sin campo de tarifa: rige meta_incluido\)/);
+    expect(r.salida).toMatch(/✓ Impulso \(USD 25 · 100 conversaciones · sin campo de tarifa: rige meta_incluido\)/);
+    // Ni «distinta», ni la invitación a pasar por asignar-plan, ni la cifra del catálogo estándar.
+    expect(r.salida).not.toMatch(/✗ copia de límites/);
+    expect(r.salida).not.toMatch(/asignar-plan\.mjs en seco/);
+    expect(r.salida).not.toMatch(/200 conversaciones/);
+  });
+
+  it('la regla sigue cazando desfases reales: estándar con copia 100, o Meta incluido con copia 200, son «distinta»', () => {
+    const e = correr(ESTANDAR_DESFASE);
+    expect(e.codigo).toBe(1);
+    expect(e.salida).toMatch(/✗ copia de límites ausente o distinta del plan \(origen cuenta; el plan con tarifa estandar trae 200 conversaciones\)/);
+    const m = correr(META_DESFASE);
+    expect(m.codigo).toBe(1);
+    expect(m.salida).toMatch(/✗ copia de límites ausente o distinta del plan \(origen cuenta; el plan con tarifa meta_incluido trae 100 conversaciones\)/);
+  });
+
+  it('sigue siendo solo lectura: la cuenta de Bellido no cambia con el pase', async () => {
+    const ref = db.doc(`tenants/${BELLIDO_100}/cuenta/estado`);
+    const antes = await ref.get();
+    correr(BELLIDO_100);
+    const despues = await ref.get();
+    expect(despues.updateTime?.toMillis()).toBe(antes.updateTime?.toMillis());
+    expect(despues.data()).toEqual(antes.data());
+    expect(despues.data()).not.toHaveProperty('tarifa');
   });
 });

@@ -38,7 +38,7 @@ const NOV_01 = Date.UTC(2026, 10, 1, 16, 0, 0);
 
 const PRO_CON_CONTRATO = {
   plan: 'pro', modalidad: 'prepago', periodoPagado: '2099-12',
-  limites: { ...limitesDe('pro'), conversaciones: 800 }, limitesPorContrato: ['conversaciones'],
+  limites: { ...limitesDe('pro', 'meta_incluido'), conversaciones: 800 }, limitesPorContrato: ['conversaciones'],
   precioPorContrato: 120,
 };
 
@@ -51,29 +51,29 @@ describe('la lista cerrada se abrió a las conversaciones (decisión de Andres d
 
   it('un marcador sobre conversaciones fuera de rango NO es contrato: rige el del plan', () => {
     for (const malo of [0, -1, 2.5, LIMITE_MAXIMO + 1, '800', null]) {
-      const c = { plan: 'pro', limites: { ...limitesDe('pro'), conversaciones: malo }, limitesPorContrato: ['conversaciones'] };
+      const c = { plan: 'pro', limites: { ...limitesDe('pro', 'meta_incluido'), conversaciones: malo }, limitesPorContrato: ['conversaciones'] };
       expect(porContratoDe(c), String(malo)).toEqual([]);
-      expect(limitesDeCuenta(c).conversaciones).toBe(limitesDe('pro').conversaciones);
+      expect(limitesDeCuenta(c).conversaciones).toBe(limitesDe('pro', 'meta_incluido').conversaciones);
     }
   });
 
   it('LA COPIA MANDA SOBRE EL PLAN: un cambio de plan conserva las conversaciones por contrato, y lo informa', () => {
     const r = copiaDeLimites(PRO_CON_CONTRATO, { plan: 'impulso' });
-    expect(r.limites).toEqual({ ...limitesDe('impulso'), conversaciones: 800 });
+    expect(r.limites).toEqual({ ...limitesDe('impulso', 'meta_incluido'), conversaciones: 800 });
     expect(r.porContrato).toEqual(['conversaciones']);
     expect(r.conservados).toEqual({ conversaciones: 800 });
     expect(limitesDeCuenta({ plan: 'impulso', limites: r.limites }).conversaciones).toBe(800);
   });
 
   it('las dos claves a la vez: se fijan juntas, se conservan juntas, y se quitan de a una', () => {
-    const fija = copiaDeLimites({ plan: 'pro', limites: limitesDe('pro') }, { conversaciones: 650, cambiosIncluidos: 4 });
-    expect(fija.limites).toEqual({ ...limitesDe('pro'), conversaciones: 650, cambiosIncluidos: 4 });
+    const fija = copiaDeLimites({ plan: 'pro', limites: limitesDe('pro', 'meta_incluido') }, { conversaciones: 650, cambiosIncluidos: 4 });
+    expect(fija.limites).toEqual({ ...limitesDe('pro', 'meta_incluido'), conversaciones: 650, cambiosIncluidos: 4 });
     expect(fija.porContrato).toEqual(['cambiosIncluidos', 'conversaciones']);
     const cuenta = { plan: 'pro', limites: fija.limites, limitesPorContrato: fija.porContrato };
     const baja = copiaDeLimites(cuenta, { plan: 'crecimiento' });
     expect(baja.conservados).toEqual({ cambiosIncluidos: 4, conversaciones: 650 });
     const quita = copiaDeLimites(cuenta, { conversaciones: null });
-    expect(quita.limites).toEqual({ ...limitesDe('pro'), cambiosIncluidos: 4 });
+    expect(quita.limites).toEqual({ ...limitesDe('pro', 'meta_incluido'), cambiosIncluidos: 4 });
     expect(quita.porContrato).toEqual(['cambiosIncluidos']);
   });
 
@@ -155,7 +155,7 @@ describe('el precio por contrato: qué es válido y quién lo usa', () => {
 // ===========================================================================
 describe('la bolsa de prueba se usa tal cual', () => {
   const enPrueba = (extra: Record<string, unknown> = {}) => ({
-    plan: 'pro', limites: limitesDe('pro'), modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 40, ...extra,
+    plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 40, ...extra,
   });
 
   it('estadoDeServicio usa la bolsa escrita (40), no la de lista (20): disponibles, consumo y corte', () => {
@@ -258,11 +258,11 @@ describe('pruebaNueva: fijar o extender la prueba, con las reglas del servidor',
 // se rechaza; y el estado que queda se afirma, no se supone.
 // ===========================================================================
 describe('#221 MEDIUM: la prueba no se cruza con meses pagados', () => {
-  const PRO = limitesDe('pro').conversaciones;
+  const PRO = limitesDe('pro', 'meta_incluido').conversaciones;
 
   it('EL CASO DE LA REVISIÓN: prueba vencida en agosto + pagado octubre + extender a octubre → se rechaza', () => {
     const cuenta = {
-      plan: 'pro', limites: limitesDe('pro'), modalidad: 'prueba',
+      plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), modalidad: 'prueba',
       periodoPrueba: '2026-08', pruebaDesde: '2026-07', bolsaPrueba: 20, periodoPagado: '2026-10',
     };
     expect(() => pruebaNueva(cuenta, { periodoPrueba: '2026-10' }, SEP_26)).toThrow(PruebaInvalida);
@@ -277,7 +277,7 @@ describe('#221 MEDIUM: la prueba no se cruza con meses pagados', () => {
   });
 
   it('una cuenta en prueba que YA PAGÓ octubre por adelantado no extiende la prueba a octubre', () => {
-    const prueba = { plan: 'pro', limites: limitesDe('pro'), modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 20 };
+    const prueba = { plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 20 };
     const trasPago = aplicarPago(prueba, { tipo: 'mensualidad', plan: 'pro', meses: 1 }, SEP_26);
     expect(trasPago.periodoPagado).toBe('2026-10');
     const pagada = { ...prueba, periodoPagado: trasPago.periodoPagado };
@@ -313,7 +313,7 @@ describe('#221 MEDIUM: la prueba no se cruza con meses pagados', () => {
   it('LA DEFENSA DE estadoDeServicio: una prueba escrita sobre un mes pagado → ese mes rige como pagado', () => {
     // Una cuenta que otra puerta (o una versión anterior) dejó así.
     const cruzada = {
-      plan: 'pro', limites: limitesDe('pro'), modalidad: 'prueba',
+      plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), modalidad: 'prueba',
       periodoPrueba: '2026-10', pruebaDesde: '2026-09', bolsaPrueba: 20, periodoPagado: '2026-10',
     };
     for (const instante of [SEP_26, OCT_27]) {
@@ -330,7 +330,7 @@ describe('#221 MEDIUM: la prueba no se cruza con meses pagados', () => {
   });
 
   it('LA DEFENSA NO SE PASA: la prueba que pagó el mes SIGUIENTE por adelantado sigue en prueba en su mes', () => {
-    const prueba = { plan: 'pro', limites: limitesDe('pro'), modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 20 };
+    const prueba = { plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 20 };
     const pagada = { ...prueba, periodoPagado: aplicarPago(prueba, { tipo: 'mensualidad', plan: 'pro', meses: 1 }, SEP_26).periodoPagado };
     expect(estadoDeServicio(pagada, 0, SEP_26)).toMatchObject({ enPrueba: true, incluidas: 0, disponibles: 20, mensualidadUsd: 0 });
     expect(estadoDeServicio(pagada, 0, OCT_27)).toMatchObject({ enPrueba: false, incluidas: PRO, mensualidadUsd: 90 });

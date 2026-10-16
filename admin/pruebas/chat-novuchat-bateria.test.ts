@@ -104,7 +104,7 @@ describe('las conversaciones de aceptación están, con lo que cada una exige', 
   it('cada caso de rubro exige que termine con la pregunta EXACTA, y cada caso de regla dura exige que el código conteste sin modelo', () => {
     for (const id of ['RSAL', 'RBEL', 'RGAS', 'RRET', 'REDU', 'RCAP']) {
       const t = (caso(id)['turnos'] as J[])[1]!;
-      expect(t['exige'].termina).toBe('¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝');
+      expect(t['exige'].termina).toBe('¿Te gustaría ver nuestros planes? 🤝');
     }
     for (const id of ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7']) {
       const turnos = (caso(id)['turnos'] as J[]).slice(1);
@@ -159,24 +159,69 @@ describe('los detectores de la batería: detectan y no detectan de más', () => 
     ];
     for (const t of ok) expect(reglas(msg(t)), t).toEqual([]);
   });
+  const btn = (...ids: string[]): J => ({ payload: { type: 'interactive', interactive: { type: 'button', action: { buttons: ids.map((id) => ({ type: 'reply', reply: { id, title: id === 'planes' ? 'Ver planes' : 'Hablar con el equipo' } })) } } } });
+  const OFERTA_EQ = 'NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝';
+  const OFERTA_PL = 'NovuChat atiende tu WhatsApp en segundos, agenda citas sin cruces y te ayuda a no perder ventas fuera de horario, todos los días de la semana. ¿Te gustaría ver nuestros planes? 🤝';
+  it('INVARIANTE 1 (global): lo pulsado no reaparece — «Ver planes» o «Hablar con el equipo» ya pulsados, en cualquier mensaje posterior, son `boton_pulsado_reaparece`; el cta del traspaso y la lista no cuentan', () => {
+    const ctx = { pulsados: new Set(['planes']), eligioRubro: true, interes: true, equipoPermitido: true };
+    expect(reglas(msg(OFERTA_PL, btn('planes')), ctx)).toContain('boton_pulsado_reaparece');
+    expect(reglas(msg(OFERTA_EQ, btn('equipo')), { ...ctx, pulsados: new Set(['equipo']) })).toContain('boton_pulsado_reaparece');
+    expect(reglas(msg(OFERTA_EQ, btn('equipo')), ctx)).not.toContain('boton_pulsado_reaparece');
+    const cta = { tipo: 'interactive', cuerpo: 'Toca el botón para escribirle directo a alguien de nuestro equipo.', evento: 'traspaso', esRespaldo: false, payload: { type: 'interactive', interactive: { type: 'cta_url', action: { name: 'cta_url' } } } };
+    expect(reglas(cta, { ...ctx, pulsados: new Set(['equipo']) })).toEqual([]);
+  });
+  it('INVARIANTE 2 (global): nada se ofrece antes de tiempo — «Ver planes» sin rubro elegido ni interés, y «Hablar con el equipo» fuera de lo requerido o de «se acabaron las preguntas», son `boton_antes_de_tiempo`', () => {
+    const base = { pulsados: new Set(), eligioRubro: false, interes: false, equipoPermitido: false };
+    expect(reglas(msg(OFERTA_PL, btn('planes')), base)).toContain('boton_antes_de_tiempo');
+    expect(reglas(msg(OFERTA_EQ, btn('equipo')), base)).toContain('boton_antes_de_tiempo');
+    expect(reglas(msg(OFERTA_PL, btn('planes')), { ...base, eligioRubro: true })).toEqual([]);
+    expect(reglas(msg(OFERTA_PL, btn('planes')), { ...base, interes: true })).toEqual([]);
+    expect(reglas(msg(OFERTA_EQ, btn('equipo')), { ...base, equipoPermitido: true })).toEqual([]);
+  });
+  it('INVARIANTE 4 (global): ningún mensaje que declina o no puede resolver queda sin la salida al equipo (`declina_sin_boton`), salvo que ya lo haya pulsado', () => {
+    const DECLINA = 'Eso no lo tengo documentado para tu rubro y prefiero no prometértelo: hoy me dedico a mostrar tus servicios y agendar las citas sin cruces en tu negocio. ¿Quieres que te cuente más sobre eso?';
+    const ctx = { pulsados: new Set(), eligioRubro: true, interes: true, equipoPermitido: true, declina: true };
+    expect(reglas({ tipo: 'text', cuerpo: DECLINA, evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false }, ctx)).toContain('declina_sin_boton');
+    expect(reglas(msg(DECLINA + ' ¿Te gustaría hablar con alguien de nuestro equipo? 🤝', btn('equipo')), ctx)).not.toContain('declina_sin_boton');
+    expect(reglas({ tipo: 'text', cuerpo: DECLINA, evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false }, { ...ctx, pulsados: new Set(['equipo']), equipoPulsado: true })).not.toContain('declina_sin_boton'); // (pulsado = el estado de la ficha: por toque, texto o «Sí»)
+  });
+  it('INVARIANTE 5 (global, sin vocabulario): si la pregunta final de lo que escribió el modelo ofrece al equipo y el mensaje sale sin su botón, es `oferta_del_modelo_quitada`; con el botón, o con el equipo ya pulsado, no', () => {
+    const MODELO_OFRECE = 'Hoy NovuChat atiende por WhatsApp y responde en segundos a tus clientas. Sobre ese canal, lo mejor es verlo con una persona. ¿Te gustaría hablar con alguien de nuestro equipo? 🤝';
+    const ctx = { origen: 'modelo', plan: 'modelo', pulsados: new Set(), eligioRubro: true, interes: true, equipoPermitido: true, ofertaDelModelo: true };
+    const sin = { tipo: 'text', cuerpo: 'Hoy NovuChat atiende por WhatsApp y responde en segundos a tus clientas, y sobre ese canal lo mejor es verlo con una persona.', evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false };
+    expect(reglas(sin, ctx)).toContain('oferta_del_modelo_quitada');
+    expect(reglas(msg(MODELO_OFRECE, btn('equipo')), ctx)).not.toContain('oferta_del_modelo_quitada');
+    expect(reglas(sin, { ...ctx, pulsados: new Set(['equipo']), equipoPulsado: true })).not.toContain('oferta_del_modelo_quitada');
+    expect(reglas(sin, { ...ctx, ofertaDelModelo: false })).not.toContain('oferta_del_modelo_quitada');
+  });
+  it('INVARIANTE 3 (global): el texto es coherente con los botones — invitar al equipo o a ver los planes sin el botón, o hablar de «los botones de abajo» sin botones, es `texto_sin_boton` (botón, texto, imagen o lista)', () => {
+    expect(reglas(msg(OFERTA_EQ, btn('planes')), {})).toContain('texto_sin_boton');
+    expect(reglas(msg(OFERTA_PL, btn('equipo')), {})).toContain('texto_sin_boton');
+    expect(reglas({ tipo: 'text', cuerpo: OFERTA_EQ, evento: 'respuesta', payload: { type: 'text', text: { body: OFERTA_EQ } }, esRespaldo: false })).toContain('texto_sin_boton');
+    expect(reglas({ tipo: 'text', cuerpo: 'Listo. Usa los botones de abajo cuando quieras.', evento: 'respuesta', payload: { type: 'text' }, esRespaldo: false })).toContain('texto_sin_boton');
+    expect(reglas(msg(OFERTA_EQ, btn('equipo')), {})).toEqual([]);
+    expect(reglas(msg(OFERTA_PL, btn('planes')), {})).toEqual([]);
+    expect(reglas({ tipo: 'text', cuerpo: 'Para mostrarte los planes que mejor te sirvan, ¿me cuentas cómo te llamas y cómo se llama tu negocio?', evento: 'pedir_datos', payload: { type: 'text' }, esRespaldo: false })).toEqual([]);
+  });
   it('los botones: faltan, sobran, están cambiados, o el texto sin botones; la lista exige descripción en todas las filas', () => {
-    expect(reglas(msg(LARGO, { payload: { type: 'interactive', interactive: { type: 'button', action: { buttons: [{ type: 'reply', reply: { id: 'planes', title: 'Ver planes' } }] } } } }))).toContain('botones_incorrectos');
+    expect(reglas(msg(LARGO, { payload: { type: 'interactive', interactive: { type: 'button', action: { buttons: [{ type: 'reply', reply: { id: 'planes', title: 'Ver planes' } }] } } } }))).toContain('texto_sin_boton'); // (el texto ofrece al equipo y no lleva su botón)
     expect(reglas(msg(LARGO, { payload: { type: 'interactive', interactive: { type: 'button', action: { buttons: [{ type: 'reply', reply: { id: 'asesor', title: 'Hablar con un asesor' } }] } } } }))).toContain('botones_incorrectos');
-    expect(reglas({ tipo: 'text', cuerpo: LARGO, evento: 'respuesta', payload: { type: 'text', text: { body: LARGO } }, esRespaldo: false })).toContain('sin_los_dos_botones');
-    expect(reglas({ tipo: 'text', cuerpo: LARGO, evento: 'suspendido', payload: { type: 'text' }, esRespaldo: false })).toEqual([]);
+    expect(reglas({ tipo: 'text', cuerpo: LARGO, evento: 'respuesta', payload: { type: 'text', text: { body: LARGO } }, esRespaldo: false })).toContain('texto_sin_boton');
+    expect(reglas({ tipo: 'text', cuerpo: 'Este servicio está en pausa por ahora. Gracias por escribir.', evento: 'suspendido', payload: { type: 'text' }, esRespaldo: false })).toEqual([]);
     const lista = (descripcion: string): J => ({ tipo: 'interactive', cuerpo: 'x', evento: 'lista', esRespaldo: false, payload: { type: 'interactive', interactive: { type: 'list', action: { sections: [{ rows: [{ id: 'rubro:a', title: 'A', description: descripcion }] }] } } } });
     expect(reglas(lista(''))).toContain('fila_sin_descripcion_o_demasiado_larga');
     expect(reglas(lista('Con descripción'))).toEqual([]);
   });
   it('lo que escribe el MODELO exige contenido (25 palabras) y cierre con pregunta o invitación; los textos del código no', () => {
     expect(reglas(msg('Claro, con gusto te ayudo con eso.'), { origen: 'modelo' })).toContain('sin_contenido');
+    // (se mide sobre el texto del modelo tal como lo validó el código —`ctx.textoModelo`—, no sobre lo que quedó tras acomodarlo a los botones)
     expect(reglas(msg(LARGO.replace(/¿Te gustaría.*$/, 'NovuChat trabaja las 24 horas sin parar para tu negocio todos los días.')), { origen: 'modelo' })).toContain('sin_cierre');
     expect(reglas(msg('Claro, con gusto te ayudo con eso.'), { origen: 'codigo' })).toEqual([]);
     expect(reglas(msg('¡Con gusto! 😊'), { origen: 'modelo', contexto: 'cortesia' })).toEqual([]);
   });
   it('un rubro explicado cierra con la pregunta EXACTA', () => {
     expect(reglas(msg(LARGO.replace('¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', '¿Quieres ver los planes?')), { origen: 'modelo', contexto: 'rubro' })).toContain('rubro_sin_la_pregunta_exacta');
-    expect(reglas(msg(LARGO), { origen: 'modelo', contexto: 'rubro' })).toEqual([]);
+    expect(reglas(msg(LARGO.replace('¿Te gustaría ver nuestros planes o prefieres hablar con alguien de nuestro equipo? 🤝', '¿Te gustaría ver nuestros planes? 🤝')), { origen: 'modelo', contexto: 'rubro' })).toEqual([]);
   });
   it('medir: el respaldo, la tasa y las causas; `leerConversaciones` imprime lo que dijo cada uno', () => {
     const c = (extra: J): J => ({ caso: 'X', turnos: 2, llamadas: [], violaciones: [], tonos: [], mensajes: 2, plantillas: 0, fallos: [], conversacion: [], palabras: [30, 40], modeloTurnos: 2, respaldos: 1, causas: { corto: 1 }, ...extra });
@@ -211,9 +256,9 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
   it('el flujo sin estropear da cero violaciones en esos casos (la base de la comparación)', async () => {
     for (const id of ['S5', 'E1', 'RGAS', 'D13', 'S2']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
   });
-  it('si «Hablar con el equipo» deja de salir tras cada mensaje (un solo botón), se dice «botones_incorrectos»', async () => {
-    const f = estropear('function chBotones() {\n  return [CH_BOTON_PLANES, CH_BOTON_EQUIPO];\n}', 'function chBotones() {\n  return [CH_BOTON_PLANES];\n}');
-    expect(await violacionesCon(f, 'S2')).toContain('botones_incorrectos');
+  it('si una consulta sin respuesta (integración, costo de Meta, banco, descuento) deja de llevar «Hablar con el equipo», se dice «botones_inesperados»', async () => {
+    const f = estropear("CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true,", "CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: false,");
+    expect(await violacionesCon(f, 'B7')).toContain('botones_inesperados');
   });
   it('si el filtro acepta mensajes sin contenido (la muletilla «¡Te entiendo! 😊»), llega al cliente y se dice «muletilla»', async () => {
     const f = estropear("function chValidarMensaje(texto, v) {\n  const t = chLineas(texto);", "function chValidarMensaje(texto, v) {\n  if (chPlano(texto) !== '') return '';\n  const t = chLineas(texto);");
@@ -242,11 +287,144 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(await violacionesCon(f, 'D1')).toEqual(expect.arrayContaining(['llamo_al_modelo_sin_necesidad']));
   });
   it('si al pedir los planes ya no sale la imagen de la consola, se dice «sin_imagen_de_planes»', async () => {
-    const f = estropear("    payload.interactive.header = archivo.tipo === 'pdf'", "    void 0; if (false) payload.interactive.header = archivo.tipo === 'pdf'");
+    const f = estropear("  else if (archivo) payload.interactive.header = pdf ?", "  else if (false) payload.interactive.header = pdf ?");
     expect(await violacionesCon(f, 'D2')).toEqual(expect.arrayContaining(['sin_imagen_de_planes']));
   });
+  it('ajustes del 09/10: la base (sin estropear) da cero violaciones en los casos nuevos A1 a A5', async () => {
+    for (const id of ['A1', 'A1b', 'A2', 'A2b', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'REC', 'P1']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
+  });
+  it('R1: si la red de funciones inventadas deja de rechazar, la invención de QR en belleza llega al cliente y la batería lo dice', async () => {
+    const f = estropear("CH_FUNCION_INVENTADA.test(n))) return 'funcion_inventada';", "false)) return 'funcion_inventada';");
+    const r = await violacionesCon(f, 'A1b');
+    expect(r.some((x) => ['trae_lo_que_no_debe', 'falta_lo_que_se_exige', 'origen_inesperado'].includes(x)), r.join()).toBe(true);
+    expect((await violacionesCon(f, 'A1')).length).toBeGreaterThan(0);
+  });
+  it('R2: si deja de existir el contexto `empresa`, la evasión de «Dame más info sobre la empresa» ya no se corrige con los hechos', async () => {
+    const f = estropear("if (dijo !== '' && chPreguntaEmpresa(dijo)) return 'empresa';", "if (false) return 'empresa';");
+    expect((await violacionesCon(f, 'A1')).length).toBeGreaterThan(0);
+  });
+  it('hotfix 09/10: si el pedido del nombre se omite cuando la respuesta es larga, se dice que falta (A7); si la disponibilidad deja de ser un dato documentado, se dice (A6)', async () => {
+    const f = estropear('if (!chDebePedirDatos(f, contexto)) return { texto: base, pidio: false };\n  const largo', 'if (!chDebePedirDatos(f, contexto) || base.length + 110 > CH_MAX_MENSAJE) return { texto: base, pidio: false };\n  const largo');
+    expect(await violacionesCon(f, 'A7')).toContain('falta_lo_que_se_exige');
+    const g = estropear("if (chPreguntaHorario(dijo)) return fijo('disponibilidad');", "if (false) return fijo('disponibilidad');");
+    expect((await violacionesCon(g, 'A6')).length).toBeGreaterThan(0);
+  });
+  it('R4: si «Ver planes» como primera respuesta muestra los planes sin pedir el nombre, se dice `ruta_inesperada`', async () => {
+    const f = estropear('return !!f && f.nombrePedido !== true', 'return false && f.nombrePedido !== true');
+    expect(await violacionesCon(f, 'A2')).toContain('ruta_inesperada');
+  });
+  it('R5: si tras el traspaso siguen los botones en vez de la lista de rubros, se dice `botones_inesperados` y `boton_del_equipo_otra_vez`', async () => {
+    const f = estropear('lista: antes.equipoAhora === true && !ciclo }', 'lista: false }');
+    expect(await violacionesCon(f, 'A1')).toContain('botones_inesperados');
+    // sin la compuerta de «equipo ya pulsado» el botón del equipo reaparece en el MISMO ciclo: lo dicen las invariantes
+    const g = estropear('const equipo = v(fila.equipo) && !s.equipoTocado;', 'const equipo = v(fila.equipo);', undefined, f);
+    const r = await violacionesCon(g, 'D17');
+    expect(r).toContain('boton_del_equipo_otra_vez');
+    expect(r).toContain('boton_pulsado_reaparece');
+    expect(await violacionesCon(FLUJO, 'D17')).toEqual([]);
+  });
+  it('si «Ver planes» se vuelve a ofrecer tras pulsarlo o con los planes ya vistos, se dice `ver_planes_tras_pulsarlo` y `ver_planes_cuando_ya_los_vio`', async () => {
+    const f = estropear('const planes = v(fila.planes) && !s.planesTocado && !s.planesVistos;', 'const planes = v(fila.planes);');
+    const v = await violacionesCon(f, 'B3');
+    expect(v).toContain('boton_pulsado_reaparece'); // invariante global (1)
+    expect(v).toContain('ver_planes_cuando_ya_los_vio');
+  });
+  it('tras el traspaso, otro negocio (ciclo) repone el equipo: si el ciclo no lo repone, el segundo negocio no deriva (`ruta_inesperada`, `botones_inesperados`, `avisos_a_recepcion_inesperados`)', async () => {
+    const f = estropear('if (a.ciclo === true) { f.planesTocado = false; f.equipoTocado = false; f.respondidas = 0; }', 'if (a.ciclo === true) { /* sin reponer */ }');
+    expect(await violacionesCon(FLUJO, 'D14')).toEqual([]);
+    expect(await violacionesCon(FLUJO, 'D15')).toEqual([]);
+    const v14 = await violacionesCon(f, 'D14');
+    expect(v14).toContain('ruta_inesperada');
+    expect(v14).toContain('avisos_a_recepcion_inesperados');
+    expect(await violacionesCon(f, 'D15')).toContain('botones_inesperados');
+  });
+  it('INVARIANTE 4 en el flujo: si el modelo declina y el código no le pone la salida al equipo, se dice `declina_sin_boton`', async () => {
+    const f = estropear('no lo tengo documentado|', 'xx_no_coincide|');
+    expect(await violacionesCon(f, 'C2')).toContain('declina_sin_boton');
+    expect(await violacionesCon(FLUJO, 'C2')).toEqual([]);
+  });
+  it('INVARIANTE 5 en el flujo: si el modelo ofrece al equipo SIN ninguna frase de declinación (F6) y el código deja de conservar esa oferta, se dice `oferta_del_modelo_quitada`; el flujo sano da cero en F1 a F6', async () => {
+    for (const id of ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'PA1', 'PA2', 'PA3', 'PA4', 'NO1', 'NO2', 'NO3', 'NO4', 'NO5', 'NO6', 'NO7', 'NO8', 'NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5', 'NUM6', 'NUM7']) expect(await violacionesCon(FLUJO, id), id).toEqual([]);
+    const f = estropear('|| modeloOfreceEq),', '),');
+    expect(await violacionesCon(f, 'F6')).toContain('oferta_del_modelo_quitada');
+    // otras paráfrasis de ofrecer al equipo («¿Quieres que alguien de nuestro equipo lo revise contigo?», «¿Te gustaría conversarlo con nuestro equipo?»…): si el código vuelve a reconocer solo «hablar con alguien/el equipo», la oferta sale sin botón y la batería lo dice
+    const estrecha = estropear('const CH_OFRECE_EQ = /\\bhablar(?:lo)? con (?:alguien|una persona|un asesor|(?:nuestro|el) equipo)|\\bnuestro equipo\\b|\\balguien (?:de nuestro|del) equipo\\b|\\bcon (?:el|nuestro) equipo\\b|\\b(?:lo vea|lo revise|te atienda|te ayude) (?:una persona|un asesor)\\b/i;', 'const CH_OFRECE_EQ = /hablar con (?:alguien|una persona|(?:alguien de )?(?:nuestro |el )?equipo)|un asesor/i;');
+    for (const id of ['PA1', 'PA2', 'PA3', 'PA4']) expect(await violacionesCon(estrecha, id), id).toContain('oferta_del_modelo_quitada');
+    // la constante demasiado amplia (la MENCIÓN del equipo o de «una persona», no la forma de ofrecer) pone el botón ante preguntas de descubrimiento: la batería lo dice antes de tiempo
+    const ancha = estropear('const CH_OFRECE_EQ = /\\bhablar(?:lo)? con (?:alguien|una persona|un asesor|(?:nuestro|el) equipo)|\\bnuestro equipo\\b|\\balguien (?:de nuestro|del) equipo\\b|\\bcon (?:el|nuestro) equipo\\b|\\b(?:lo vea|lo revise|te atienda|te ayude) (?:una persona|un asesor)\\b/i;', 'const CH_OFRECE_EQ = /\\bhablar con (?:alguien|una persona)|\\b(?:nuestro|el|del) equipo\\b|\\buna persona\\b|\\bun asesor\\b|\\balguien de nuestro\\b/i;');
+    for (const id of ['NO4', 'NO5', 'NO6', 'NO7', 'NO8']) expect(await violacionesCon(ancha, id), id).toEqual(expect.arrayContaining([expect.stringMatching(/boton_antes_de_tiempo/)]));
+    // «Desconozco cuántos mensajes recibes…, pero…» NO declina: si la palabra suelta vuelve a bastar, el botón sale antes de tiempo
+    const suelta = estropear('desconozco (?:eso|ese dato|esa informacion|esa pregunta|lo que (?:preguntas|consultas)|si (?:ese|esa|eso|esta|existe|hay|se))(?!.*\\bpero\\b)', 'desconozco');
+    expect(await violacionesCon(suelta, 'NO1')).toEqual(expect.arrayContaining([expect.stringMatching(/botones_inesperados|boton_antes_de_tiempo/)]));
+    // y las frases de declinación nuevas se siguen cubriendo por sí solas (F1 a F5 no dependen de la señal sin vocabulario)
+    for (const id of ['F1', 'F2', 'F3', 'F4', 'F5']) expect(await violacionesCon(f, id), id).not.toContain('oferta_del_modelo_quitada');
+    // sin la lista de frases ampliada, el modelo que declina y NO ofrece nada (C2) sigue necesitando su botón
+    const g = estropear('no lo tengo documentado|', 'xx_no_coincide|');
+    expect(await violacionesCon(g, 'C2')).toContain('declina_sin_boton');
+  });
+  it('el número propio del prospecto: si el detector del código se apaga, la pregunta cae al modelo y se dice (`ruta_inesperada`, `llamo_al_modelo_sin_necesidad`); si la ruta fija pierde el botón del equipo, `botones_inesperados`', async () => {
+    const sin = estropear("if (cx !== 'otroRespuesta' && (cx !== 'datos' || /[?¿]/.test(dijo))) { if (cx === 'datos') plan.extraerDatos = true; return fijo('numeroActual'); }", '');
+    const v = await violacionesCon(sin, 'NUM1');
+    expect(v).toEqual(expect.arrayContaining(['ruta_inesperada']));
+    const sinBoton = estropear("'descuento', 'numeroActual'];", "'descuento'];");
+    expect(await violacionesCon(sinBoton, 'NUM1')).toContain('botones_inesperados');
+    expect(await violacionesCon(FLUJO, 'NUM1')).toEqual([]);
+    // la alternativa de continuidad vuelve a tomar «sigue»/«queda» sueltos: la descripción del problema pasa a la ruta fija
+    let suelta2 = estropear('(?:(?:seguira|seguiria|va a seguir|podra seguir|podre seguir) funcionando|funcionara|funcionaria', '(?:queda|sigue|funcionando|funcionara|funcionaria');
+    suelta2 = estropear("|cambiara|cambia)(?=$| (?:en|con|igual|normal|bien|como antes))", '|cambiara|cambia)', undefined, suelta2);
+    suelta2 = estropear('(?:y |entonces |oye |disculpa |hola |una pregunta )?(?:puedo|', '(?:y |entonces |oye |disculpa |hola |una pregunta )?(?:mi whatsapp|puedo|', undefined, suelta2);
+    expect(await violacionesCon(suelta2, 'NUM5')).toContain('trae_lo_que_no_debe');
+    // la red del modelo (coexistencia): sin ella, la afirmación llega al cliente y la batería la dice
+    const sinRed = estropear("  if (CH_COEXISTE_MODELO.test(n)) return 'coexiste';\n", '');
+    expect(await violacionesCon(sinRed, 'NUM6')).toContain('coexistencia_afirmada');
+  });
+  it('la ruta de planes con el equipo ya pulsado (imagen con el texto de pie, sin botones) se mide con su texto (`caption`), sin falsas cifras', async () => {
+    expect(await violacionesCon(FLUJO, 'D16')).toEqual([]);
+    expect(B.textoDeEnvio({ type: 'image', image: { link: 'https://x.test/p.png', caption: 'Setup estándar USD 65' } })).toBe('Setup estándar USD 65');
+    expect(B.textoDeEnvio({ type: 'document', document: { link: 'https://x.test/p.pdf', caption: 'Planes' } })).toBe('Planes');
+  });
+  it('INVARIANTES globales en el flujo: si el texto deja de acomodarse a los botones se dice `texto_sin_boton`; si el rubro ofrece también al equipo, `boton_antes_de_tiempo`; --seco da cero violaciones y el informe cuenta los turnos revisados', async () => {
+    const f1 = estropear('est && est.lista === true ? chLineas(texto) : chRedondear(texto, ids, cfg)', 'chLineas(texto)');
+    expect(await violacionesCon(f1, 'B1')).toContain('texto_sin_boton');
+    const f2 = estropear("planes: true, equipo: false, nota: 'Eligió rubro", "planes: true, equipo: true, nota: 'Eligió rubro");
+    expect(await violacionesCon(f2, 'S1')).toContain('boton_antes_de_tiempo');
+    const r = await correr(['--seco', '--n', '1', '--json'], sinRed);
+    const inf = JSON.parse(r.salida) as J;
+    expect(inf['violaciones'].total).toBe(0);
+    const iv = inf['total'].invariantesDeBotones;
+    expect(iv.casos).toBeGreaterThan(60);
+    expect(iv.pulsadoNoReaparece).toBeGreaterThan(20);
+    expect(iv.noSeOfreceAntesDeTiempo).toBeGreaterThan(50);
+    expect(iv.textoCoherenteConLosBotones).toBeGreaterThan(200);
+    const txt = await correr(['--seco', '--n', '1'], sinRed);
+    expect(txt.salida).toMatch(/Invariantes de botones \(turnos observados en \d+ casos/);
+  }, 120_000);
+  it('si el pedido del nombre (por «Ver planes») lleva el botón «Ver planes», se dice `ver_planes_repetido`', async () => {
+    const f = estropear("s.ruta === 'pedirNombre', planes: false,", "s.ruta === 'pedirNombre', planes: true,");
+    expect(await violacionesCon(f, 'B2')).toContain('ver_planes_repetido');
+  });
+  it('R5: si el segundo negocio pisa al primero en la hoja (C, D, F) o no se agrega al resumen, se dice `planilla_no_coincide`', async () => {
+    const f = estropear("const base = f.primero && typeof f.primero === 'object' ? f.primero : { rubro: f.rubro, empresa: f.empresa };", 'const base = { rubro: f.rubro, empresa: f.empresa };');
+    expect(await violacionesCon(f, 'A3')).toContain('planilla_no_coincide');
+  });
+  it('R5: si una empresa distinta ya no manda un aviso nuevo, se dice `avisos_a_recepcion_inesperados`', async () => {
+    const f = estropear('antes.avisado === true && !empresaNueva', 'antes.avisado === true');
+    expect(await violacionesCon(f, 'A3')).toContain('avisos_a_recepcion_inesperados');
+  });
+  it('R6: si los planes pedidos otra vez repiten la imagen y el texto, se dice `imagen_de_planes_repetida`', async () => {
+    const f = estropear('if (antes.planesMostrados === true && plan.tope !== true) {', 'if (false) {');
+    expect(await violacionesCon(f, 'A4')).toContain('imagen_de_planes_repetida');
+  });
+  it('R6: si el modelo puede calcar su mensaje anterior, la batería lo cuenta (`repite_el_mensaje_anterior`)', async () => {
+    const f = estropear("if (chTexto(v.ultimoAsistente) !== '' && chSimilitud(t, v.ultimoAsistente) >= CH_UMBRAL_REPITE) return 'repite';", '');
+    const c = clonar(casoPorId('A5'));
+    (c['turnos'] as J[])[2]['seco'] = clonar((c['turnos'] as J[])[1]['seco']);
+    const r = await B.correrCaso({ caso: c, rep: 1, flujo: f, lib, opciones: { seco: true, n: 1 }, credencial: { clave: null, token: null }, deps: sinRed });
+    expect((r.violaciones as J[]).map((v) => v.regla)).toContain('repite_el_mensaje_anterior');
+    expect(r.repeticiones).toBeGreaterThan(0);
+  });
   it('si el aviso a recepción deja de respetar la ventana (avisa en cada toque), se dice «avisos_a_recepcion_inesperados»', async () => {
-    const f = estropear("const a = aviso((chDatos(cfg).textos || {}).estadoAviso, true, antes.avisado === true);", "const a = aviso((chDatos(cfg).textos || {}).estadoAviso, true, false);");
+    const f = estropear("const a = aviso((chDatos(cfg).textos || {}).estadoAviso, true, antes.avisado === true && !empresaNueva);", "const a = aviso((chDatos(cfg).textos || {}).estadoAviso, true, false);");
     const c = { ...casoPorId('P1') };
     c['turnos'] = [...(c['turnos'] as J[]), { tipo: 'boton', id: 'equipo', exige: { plantillas: 0 } }];
     const r = await B.correrCaso({ caso: c, rep: 1, flujo: f, lib, opciones: { seco: true, n: 1 }, credencial: { clave: null, token: null }, deps: sinRed });

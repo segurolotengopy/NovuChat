@@ -52,7 +52,7 @@ const auditorias = async (t: string) =>
   (await db.collection(`tenants/${t}/auditoria`).where('accion', '==', 'migrar_ejes').get()).size;
 
 const LIMITES_VIEJOS_DEMO = { conversaciones: 500, productos: 500, agendas: 10 };
-const TRES = (p: string) => { const { cambiosIncluidos: _c, ...tres } = limitesDe(p); return tres; };
+const TRES = (p: string) => { const { cambiosIncluidos: _c, ...tres } = limitesDe(p, 'meta_incluido'); return tres; };
 
 beforeAll(async () => {
   for (const t of TENANTS) await db.recursiveDelete(db.doc(`tenants/${t}`));
@@ -97,7 +97,7 @@ beforeAll(async () => {
 
   // Uno ya con los ejes: sin cambios.
   await db.doc(`tenants/${LISTO}`).set({ nombre: 'Listo', estado: 'activo', plan: 'pro', modelo: MODELO_POR_DEFECTO });
-  await db.doc(`tenants/${LISTO}/cuenta/estado`).set({ plan: 'pro', limites: limitesDe('pro'), modalidad: 'demostracion' });
+  await db.doc(`tenants/${LISTO}/cuenta/estado`).set({ plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), modalidad: 'demostracion' });
   await db.doc(`rutasWhatsApp/${NUM.listo}`).set({ tenantId: LISTO, flujo: 'venta', aliasSecreto: 'demoC', estado: 'activo', titularidad: 'novuchat' });
 
   // Un demo por plan con un valor POR CONTRATO ya marcado (revisión de #212,
@@ -151,7 +151,7 @@ describe('migrar-ejes.mjs', () => {
     expect(r.salida).toMatch(/✓ releído: plan impulso · espejo impulso · modalidad demostracion · modelo gemini-3\.5-flash-lite · cambiosIncluidos 0 · estadoPago sin_cargo/);
     expect(r.salida).toMatch(/número …0061 titularidad novuchat/);
     expect(await cuenta(DEMO)).toMatchObject({
-      plan: 'impulso', limites: limitesDe('impulso'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'demostracion',
+      plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'demostracion',
       estadoPago: 'sin_cargo', montoMensual: 0, moneda: 'USD',
     });
     expect((await cuenta(DEMO))['proximoVencimiento']).toBeUndefined();
@@ -173,7 +173,7 @@ describe('migrar-ejes.mjs', () => {
 
     const ok = correr('--tenant', DEMO_GRANDE, '--plan-demos', 'pro', '--aplicar');
     expect(ok.codigo, ok.salida).toBe(0);
-    expect(await cuenta(DEMO_GRANDE)).toMatchObject({ plan: 'pro', limites: limitesDe('pro'), modalidad: 'demostracion' });
+    expect(await cuenta(DEMO_GRANDE)).toMatchObject({ plan: 'pro', limites: limitesDe('pro', 'meta_incluido'), modalidad: 'demostracion' });
     expect((await ficha(DEMO_GRANDE))['plan']).toBe('pro');
   });
 
@@ -184,7 +184,7 @@ describe('migrar-ejes.mjs', () => {
     expect(r.salida).toMatch(/número …0064 titularidad comercio/);
     for (const n of [NUM.byoc1, NUM.byoc2]) expect((await ruta(n))['titularidad']).toBe('comercio');
     expect(await cuenta(BYOC)).toMatchObject({
-      plan: 'byoc', limites: limitesDe('byoc'), modalidad: 'prepago', periodoPagado: '2099-12', estadoPago: 'al_dia', montoMensual: 50,
+      plan: 'byoc', limites: limitesDe('byoc', 'meta_incluido'), modalidad: 'prepago', periodoPagado: '2099-12', estadoPago: 'al_dia', montoMensual: 50,
     });
     expect((await ficha(BYOC))['modelo']).toBe(MODELO_POR_DEFECTO);
   });
@@ -194,7 +194,7 @@ describe('migrar-ejes.mjs', () => {
     expect(r.codigo, r.salida).toBe(0);
     // La copia gana `cambiosIncluidos`; el vencimiento derivado, que faltaba, se completa.
     expect(r.salida).toMatch(/cambia {2}: cuenta \[limites, proximoVencimiento\] · ficha \[—\] · rutas 1/);
-    expect((await cuenta(REAL))['limites']).toEqual(limitesDe('crecimiento'));
+    expect((await cuenta(REAL))['limites']).toEqual(limitesDe('crecimiento', 'meta_incluido'));
     expect((await ruta(NUM.real))['titularidad']).toBe('novuchat');
     expect(await cuenta(REAL)).toMatchObject({ modalidad: 'prepago', estadoPago: 'al_dia', montoMensual: 50 });
   });
@@ -229,7 +229,7 @@ describe('migrar-ejes.mjs', () => {
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(/cambiosIncluidos 4/);
     const c = await cuenta(DEMO_CONTRATO);
-    expect(c).toMatchObject({ plan: 'impulso', limites: { ...limitesDe('impulso'), cambiosIncluidos: 4 }, modalidad: 'demostracion' });
+    expect(c).toMatchObject({ plan: 'impulso', limites: { ...limitesDe('impulso', 'meta_incluido'), cambiosIncluidos: 4 }, modalidad: 'demostracion' });
     // El marcador sigue: ni se borra ni se reescribe.
     expect(c['limitesPorContrato']).toEqual(['cambiosIncluidos']);
     expect(correr('--tenant', DEMO_CONTRATO, '--aplicar').salida).toMatch(/= sin cambios/);
@@ -238,7 +238,7 @@ describe('migrar-ejes.mjs', () => {
   it('SIN marcador, la copia de un demo es exactamente la del plan: ningún tenant de hoy cambia por este bloque', async () => {
     // Es la garantía para el seco en producción: nadie tiene `limitesPorContrato`.
     for (const t of [DEMO, DEMO_GRANDE]) expect((await cuenta(t))['limitesPorContrato']).toBeUndefined();
-    expect((await cuenta(DEMO))['limites']).toEqual(limitesDe('impulso'));
+    expect((await cuenta(DEMO))['limites']).toEqual(limitesDe('impulso', 'meta_incluido'));
   });
 
   it('un tenant que no existe se dice', () => {

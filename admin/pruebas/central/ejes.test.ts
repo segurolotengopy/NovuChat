@@ -48,8 +48,8 @@ describe('El plan: solo límites, sin demostración y sin quién paga Meta', () 
   });
 
   it('un `plan: \'demostracion\'` que quedó sin migrar cae en el más chico, como cualquier plan desconocido', () => {
-    expect(limitesDe('demostracion')).toEqual(limitesDe(PLAN_POR_DEFECTO));
-    expect(limitesDeCuenta({ plan: 'demostracion' })).toMatchObject({ ...limitesDe('impulso'), origen: 'respaldo' });
+    expect(limitesDe('demostracion', 'meta_incluido')).toEqual(limitesDe(PLAN_POR_DEFECTO, 'meta_incluido'));
+    expect(limitesDeCuenta({ plan: 'demostracion' })).toMatchObject({ ...limitesDe('impulso', 'meta_incluido'), origen: 'respaldo' });
   });
 
   it('ningún plan dice quién paga Meta: eso es la titularidad del número', () => {
@@ -68,12 +68,12 @@ describe('El plan: solo límites, sin demostración y sin quién paga Meta', () 
       expect(p.cambiosIncluidos).toBeGreaterThanOrEqual(0);
       expect(p.cambiosIncluidos).toBeLessThanOrEqual(MAXIMO_CAMBIOS_INCLUIDOS);
     }
-    expect(CATALOGO_PLANES).toBe('2026-09-25');
+    expect(CATALOGO_PLANES).toBe('2026-10-12');
   });
 
   it('la copia que se escribe lleva cambiosIncluidos, y una cuenta nueva también', () => {
-    expect(limitesDe('crecimiento')).toEqual({ conversaciones: 220, productos: 100, agendas: 5, cambiosIncluidos: 1 });
-    expect(cuentaInicial().limites).toEqual(limitesDe(PLAN_POR_DEFECTO));
+    expect(limitesDe('crecimiento', 'meta_incluido')).toEqual({ conversaciones: 220, productos: 100, agendas: 5, cambiosIncluidos: 1 });
+    expect(cuentaInicial().limites).toEqual(limitesDe(PLAN_POR_DEFECTO, 'estandar'));
     expect(cuentaInicial().limites.cambiosIncluidos).toBe(0);
   });
 
@@ -100,7 +100,7 @@ describe('La modalidad es el único eje que decide si se cobra', () => {
 
   it('un demo es modalidad demostración con CUALQUIER plan: nunca se corta y no paga', () => {
     for (const plan of Object.keys(PLANES)) {
-      const e = estadoDeServicio({ plan, modalidad: 'demostracion', limites: limitesDe(plan) }, 99_999, bo(2026, 10, 15));
+      const e = estadoDeServicio({ plan, modalidad: 'demostracion', limites: limitesDe(plan, 'meta_incluido') }, 99_999, bo(2026, 10, 15));
       expect(e, plan).toMatchObject({ operativo: true, modalidad: 'demostracion', plan, mensualidadUsd: 0 });
       expect(e.disponibles).toBe(Number.POSITIVE_INFINITY);
     }

@@ -28,12 +28,15 @@
  *    escribe solo quien cambia el plan, en la misma transacción, y NINGÚN
  *    límite ni ninguna regla lo lee nunca.
  *
- * LOS NÚMEROS DE LOS PLANES PUBLICADOS son los que publica el sitio
- * (`Novuchat-site`, `src/contenido/precios.es.ts`, verificado el 15/09/2026) y
- * los de la «Base comercial» de `CLAUDE.md`. Un PR que cambie uno de ellos
- * cambia los tres lugares; `pruebas/central/planes.test.ts` compara este archivo con
- * `CLAUDE.md`. `byoc` NO se publica y por eso no está en esa comparación: se
- * ofrece caso por caso (`Analisis/39`).
+ * LOS NÚMEROS DE LOS PLANES PUBLICADOS: la fuente es `docs/base-comercial.md`
+ * (la «Base comercial»), y el catálogo vigente es el de `CATALOGO_PLANES`
+ * (2026-10-12: 200 / 500 / 1.000 con la tarifa estándar, 100 / 220 / 500 con
+ * Meta incluido). `pruebas/central/planes.test.ts` compara este archivo con ese
+ * documento y falla si dejan de coincidir. El sitio (`Novuchat-site`,
+ * `src/contenido/precios.es.ts`) se alinea en su propia sesión, a la par de la
+ * etiqueta que despliega este catálogo: un PR que cambie un número de acá
+ * cambia el código y el documento, y avisa al sitio. `byoc` NO se publica y
+ * por eso no está en esa comparación: se ofrece caso por caso (`Analisis/39`).
  */
 
 // -----------------------------------------------------------------------------
@@ -131,7 +134,7 @@ export const MAXIMO_CAMPANAS = 10;
  * límites, para saber más tarde con qué catálogo se asignó cada plan. Se cambia
  * CADA VEZ que cambia un número de abajo.
  */
-export const CATALOGO_PLANES = '2026-09-25';
+export const CATALOGO_PLANES = '2026-10-12';
 
 /**
  * El techo de cambios operados incluidos que se puede copiar a una cuenta.
@@ -145,8 +148,13 @@ export const MAXIMO_CAMBIOS_INCLUIDOS = 100;
  * sitio: los TRES PRIMEROS son los publicados (`PLANES_PUBLICADOS`), y `byoc`
  * es una modalidad que se ofrece caso por caso (`Analisis/39`).
  *
- * Impulso 25/100, Crecimiento 50/220, Pro 90/500 (`Analisis/21`, adoptado el
- * 08/09). Productos 20/100/500 (decisión de Andres, 15/09, como promete el
+ * Impulso 25/200, Crecimiento 50/500, Pro 90/1.000: precio en USD / conversaciones
+ * incluidas al mes, en la TARIFA ESTÁNDAR (BYOC: el comercio paga a Meta; decisión
+ * de Andres, 07/10 y 11-12/10/2026, `Analisis/50`). Con la tarifa `meta_incluido`
+ * (la excepcional, hoy Bellido) los mismos precios traen 100/220/500
+ * (`CONVERSACIONES_META_INCLUIDO`, `Analisis/21`, adoptado el 08/09). La tarifa
+ * es un dato de la cuenta (`cuenta/estado.tarifa`, `tarifaDe`), nunca del plan ni
+ * de la titularidad de un número. Productos 20/100/500 (decisión de Andres, 15/09, como promete el
  * sitio). Agendas 1/5/10 (`Analisis/24`: el techo lo pone la latencia del
  * candado, que consulta cada calendario; no prometer más sin el arreglo del §4).
  *
@@ -184,15 +192,15 @@ export const MAXIMO_CAMBIOS_INCLUIDOS = 100;
  */
 export const PLANES: Readonly<Record<IdPlanVendible, Readonly<Plan>>> = {
   impulso: {
-    nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1,
+    nombre: 'Impulso', precioUsd: 25, conversaciones: 200, productos: 20, agendas: 1,
     campanas: 0, cambiosIncluidos: 0,
   },
   crecimiento: {
-    nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5,
+    nombre: 'Crecimiento', precioUsd: 50, conversaciones: 500, productos: 100, agendas: 5,
     campanas: 3, cambiosIncluidos: 1,
   },
   pro: {
-    nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10,
+    nombre: 'Pro', precioUsd: 90, conversaciones: 1000, productos: 500, agendas: 10,
     campanas: MAXIMO_CAMPANAS, cambiosIncluidos: 2,
   },
   byoc: {
@@ -243,6 +251,69 @@ export const PLAN_DEMOSTRACION = null;
  */
 export const PLANES_ASIGNABLES = PLANES as unknown as Readonly<Record<IdPlan, Readonly<Plan>>>;
 
+// -----------------------------------------------------------------------------
+// LA TARIFA: quién paga la mensajería de Meta, por CUENTA
+// -----------------------------------------------------------------------------
+
+/**
+ * LA TARIFA DE LA CUENTA (`cuenta/estado.tarifa`, Andres, 11-12/10/2026): cuántas
+ * conversaciones trae cada plan según quién paga la mensajería de Meta.
+ *
+ *  - `estandar`: el comercio trae su propio portafolio de Meta (BYOC) y paga a
+ *    Meta directamente. Los planes traen lo que dice `PLANES` (200 / 500 / 1.000).
+ *  - `meta_incluido`: NovuChat paga Meta y lo incluye en el precio. Es la opción
+ *    excepcional (hoy, Bellido) y trae `CONVERSACIONES_META_INCLUIDO`
+ *    (100 / 220 / 500) por los mismos precios.
+ *
+ * POR QUÉ UN CAMPO DE LA CUENTA Y NO LA TITULARIDAD DEL NÚMERO. La titularidad
+ * es por número y decide quién paga Meta de ESE número (`ejes.ts`); no sirve
+ * para elegir cuántas conversaciones se venden: Q'Taco es BYOC por contrato y
+ * su número sigue en la WABA de NovuChat hasta el traslado. Tampoco va en
+ * `limites` (la copia que escriben los pagos) ni en el plan: es un eje propio,
+ * como `precioPorContrato`.
+ */
+export type Tarifa = 'estandar' | 'meta_incluido';
+
+/** Los valores válidos, en el orden en que se muestran. */
+export const TARIFAS: readonly Tarifa[] = ['estandar', 'meta_incluido'];
+
+export const esTarifa = (v: unknown): v is Tarifa =>
+  typeof v === 'string' && (TARIFAS as readonly string[]).includes(v);
+
+/** La tarifa con que NACE una cuenta nueva (`cuentaInicial`): el comercio paga su Meta. */
+export const TARIFA_DE_ALTA: Tarifa = 'estandar';
+
+/**
+ * LA TARIFA DE UNA CUENTA SIN CAMPO, o con uno que no es válido: `meta_incluido`,
+ * la de los límites MENORES. Es el mismo principio de `PLAN_POR_DEFECTO`: ante la
+ * duda se falla hacia el límite menor, nunca hacia el mayor. Y es lo que deja a
+ * Bellido, a Platinum y a los demos idénticos SIN escribir sus cuentas: ninguna
+ * de ellas trae el campo, y todas siguen en 100 / 220 / 500. Cambiar esta
+ * constante a `estandar` subiría los topes de toda cuenta existente de un día
+ * para otro; `pruebas/central/planes.test.ts` lo vigila.
+ */
+export const TARIFA_DE_RESPALDO: Tarifa = 'meta_incluido';
+
+/**
+ * LA TARIFA QUE RIGE PARA UNA CUENTA: la de `cuenta/estado.tarifa` si es válida;
+ * si no, `TARIFA_DE_RESPALDO`. Es la única lectura del campo: quien necesite
+ * saber la tarifa llama a esta función, no mira el documento.
+ */
+export function tarifaDe(cuenta: Record<string, unknown> | null | undefined): Tarifa {
+  const v = cuenta?.['tarifa'];
+  return esTarifa(v) ? v : TARIFA_DE_RESPALDO;
+}
+
+/**
+ * LAS CONVERSACIONES INCLUIDAS CON LA TARIFA `meta_incluido`, por plan: los
+ * mismos precios del catálogo con la mensajería de Meta adentro (`Analisis/21`).
+ * `byoc` trae 2.000 con las dos tarifas: es un contrato de volumen excepcional
+ * (no se publica) y no tiene versión «con Meta incluido».
+ */
+export const CONVERSACIONES_META_INCLUIDO: Readonly<Record<IdPlanVendible, number>> = {
+  impulso: 100, crecimiento: 220, pro: 500, byoc: 2000,
+};
+
 /**
  * EL RESPALDO ES EL PLAN MÁS CHICO. Un comercio sin copia de límites y con un
  * plan que no está en el catálogo (el `'basico'` que escribían las altas viejas)
@@ -252,12 +323,45 @@ export const PLANES_ASIGNABLES = PLANES as unknown as Readonly<Record<IdPlan, Re
 export const PLAN_POR_DEFECTO: IdPlanVendible = 'impulso';
 
 /**
- * LA BOLSA: 30 conversaciones por USD 10, que no vencen (`Analisis/23`). El
- * precio mínimo depende del bloque de 25 (`atencion.ts`): si el bloque sube,
- * hay que recalcularla. El sitio la llama «excedente»; acá, y en la consola, es
- * «bolsa» (decisión de Andres, 15/09).
+ * LAS BOLSAS: conversaciones extra que no vencen. La que corresponde depende de
+ * la TARIFA de la cuenta (`tarifaDe`).
+ *
+ * `BOLSA_META_INCLUIDO`: 30 por USD 10 (`Analisis/23`), la de la tarifa
+ * `meta_incluido`. El precio mínimo depende del bloque de 25 (`atencion.ts`): si
+ * el bloque sube, hay que recalcularla. El sitio la llama «excedente»; acá, y en
+ * la consola, es «bolsa» (decisión de Andres, 15/09).
+ *
+ * `BOLSA_CONVERSACIONES`: 300 por USD 15, la de la tarifa `estandar` (Andres,
+ * 09 y 11/10/2026, `Analisis/50` §3).
+ *
+ * `BOLSA_SALIENTES`: 300 mensajes de seguimiento por USD 10 (misma decisión).
+ * Está definida y NO se vende: la habilita el bloque de Core que la cumple.
+ *
+ * ESTAS CONSTANTES SOLO DICEN CUÁNTO Y A QUÉ PRECIO. Quién puede comprar cuál lo
+ * decide `prepago.ts` en el servidor (PR siguiente del bloque); en este PR el
+ * único tipo de pago que existe sigue siendo la bolsa de 30.
  */
-export const BOLSA = { conversaciones: 30, precioUsd: 10 } as const;
+export const BOLSA_META_INCLUIDO = { conversaciones: 30, precioUsd: 10 } as const;
+export const BOLSA_CONVERSACIONES = { conversaciones: 300, precioUsd: 15 } as const;
+export const BOLSA_SALIENTES = { mensajes: 300, precioUsd: 10 } as const;
+
+/**
+ * LA BOLSA DE SIEMPRE (30 por USD 10), con el nombre que ya leen `prepago.ts`,
+ * `pagos.ts` y la consola.
+ *
+ * @deprecated Es `BOLSA_META_INCLUIDO`. Se quita cuando los lectores elijan la
+ * bolsa según la tarifa de la cuenta.
+ */
+export const BOLSA = BOLSA_META_INCLUIDO;
+
+/**
+ * EL REGALO DE UN PAGO DE 6 MESES (`MESES_MAXIMO`): 30 conversaciones a la bolsa.
+ * Es un número PROPIO: no se deriva de ninguna bolsa de venta, para que cambiar
+ * la bolsa que se vende (o su tarifa) no cambie lo que ya se prometió. Hoy
+ * `aplicarPago` (`prepago.ts`) todavía lo lee de `BOLSA`; el PR siguiente lo
+ * cambia a esta constante, y `planes.test.ts` fija que el regalo sea 30.
+ */
+export const REGALO_SEIS_MESES_CONVERSACIONES = 30;
 
 /** Instalación estándar, llave en mano, en dólares. */
 export const INSTALACION_USD = 65;
@@ -324,29 +428,49 @@ export function planQuePuedePedir(planActual: unknown, pedido: unknown): boolean
 }
 
 /**
- * Los límites de un plan del catálogo, o sea LA COPIA que se escribe en la
- * cuenta al asignarlo. Uno desconocido da los del más chico. Desde F1 la copia
- * lleva también `cambiosIncluidos`; `campanas` sigue afuera (ver `Plan`).
+ * Los límites de un plan del catálogo con una TARIFA, o sea LA COPIA que se
+ * escribe en la cuenta al asignarlo. Un plan desconocido da los del más chico.
+ * Desde F1 la copia lleva también `cambiosIncluidos`; `campanas` sigue afuera
+ * (ver `Plan`).
+ *
+ * LA TARIFA ES OBLIGATORIA EN LA FIRMA (Andres, 12/10/2026): así el compilador
+ * marca a todo llamador que antes daba por hecho un solo juego de conversaciones,
+ * y ninguno puede olvidarse de elegir. Quien tiene la cuenta pasa `tarifaDe(cuenta)`;
+ * quien da de alta pasa `TARIFA_DE_ALTA`. Los scripts `.mjs` no tienen tipos: un
+ * valor ausente o inválido cae en `TARIFA_DE_RESPALDO` (los límites menores).
  */
-export function limitesDe(plan: unknown): Limites {
-  const p = esPlanVendible(plan) ? PLANES[plan] : PLANES[PLAN_POR_DEFECTO];
+export function limitesDe(plan: unknown, tarifa: Tarifa): Limites {
+  const id = esPlanVendible(plan) ? plan : PLAN_POR_DEFECTO;
+  const p = PLANES[id];
+  const conversaciones = (esTarifa(tarifa) ? tarifa : TARIFA_DE_RESPALDO) === 'meta_incluido'
+    ? CONVERSACIONES_META_INCLUIDO[id]
+    : p.conversaciones;
   return {
-    conversaciones: p.conversaciones, productos: p.productos, agendas: p.agendas,
+    conversaciones, productos: p.productos, agendas: p.agendas,
     cambiosIncluidos: p.cambiosIncluidos,
   };
 }
 
 /**
  * LO QUE NACE EN `cuenta/estado` AL DAR DE ALTA UN COMERCIO: el plan más chico
- * con su copia de límites y la versión del catálogo. Lo usan `altaTenant`
- * (index.ts), `scripts/plataforma/alta-comercio.mjs` y el sembrador local, para que las
+ * con su copia de límites, la versión del catálogo y la TARIFA `estandar`
+ * (`TARIFA_DE_ALTA`). Lo usan `altaTenant` (index.ts),
+ * `scripts/plataforma/alta-comercio.mjs` y el sembrador local, para que las
  * tres altas escriban lo mismo. Antes escribían `plan: 'basico'`, que no es un
  * plan del catálogo y no traía copia: el comercio caía en el respaldo sin que
  * nadie lo supiera. Subir de plan después es `asignar-plan.mjs` o
  * `actualizarEstadoCuenta`.
+ *
+ * ESCRIBIR LA TARIFA EN EL ALTA ES LO QUE EVITA QUE UNA CUENTA NUEVA CAIGA EN EL
+ * RESPALDO (`meta_incluido`): sin el campo tendría 100 conversaciones y no 200.
  */
-export function cuentaInicial(): { plan: IdPlanVendible; limites: Limites; catalogoPlanes: string } {
-  return { plan: PLAN_POR_DEFECTO, limites: limitesDe(PLAN_POR_DEFECTO), catalogoPlanes: CATALOGO_PLANES };
+export function cuentaInicial(): {
+  plan: IdPlanVendible; limites: Limites; catalogoPlanes: string; tarifa: Tarifa;
+} {
+  return {
+    plan: PLAN_POR_DEFECTO, limites: limitesDe(PLAN_POR_DEFECTO, TARIFA_DE_ALTA),
+    catalogoPlanes: CATALOGO_PLANES, tarifa: TARIFA_DE_ALTA,
+  };
 }
 
 const limiteValido = (v: unknown): v is number =>
@@ -384,8 +508,8 @@ export interface LimitesDeCuenta extends Limites {
  * cumplir un límite.
  *
  * Manda la COPIA (`cuenta.limites`), que es lo que se contrató. Sin copia —los
- * comercios dados de alta antes del 15/09— rigen los del plan, si el plan es
- * del catálogo, y si no, los de Impulso. Cada límite se decide por separado: un
+ * comercios dados de alta antes del 15/09— rigen los del plan CON LA TARIFA DE LA
+ * CUENTA (`tarifaDe`), si el plan es del catálogo, y si no, los de Impulso. Cada límite se decide por separado: un
  * `productos` corrupto en la copia no invalida las conversaciones.
  *
  * `origen` se juzga con los TRES límites de siempre, no con `cambiosIncluidos`:
@@ -394,7 +518,7 @@ export interface LimitesDeCuenta extends Limites {
  * «de la cuenta» para los otros tres (que es lo que miran las reglas).
  */
 export function limitesDeCuenta(cuenta: Record<string, unknown> | null | undefined): LimitesDeCuenta {
-  const delPlan = limitesDe(cuenta?.['plan']);
+  const delPlan = limitesDe(cuenta?.['plan'], tarifaDe(cuenta));
   const crudo = cuenta?.['limites'];
   const copia = typeof crudo === 'object' && crudo !== null ? crudo as Record<string, unknown> : {};
   const elegir = (k: 'conversaciones' | 'productos' | 'agendas'): number => {
@@ -513,6 +637,12 @@ export interface PedidoDeCopia {
   /** Cambio de plan: la copia pasa a ser la del plan, SALVO lo que va por contrato. */
   plan?: IdPlanVendible;
   /**
+   * La tarifa con que se calculan los límites del plan. Ausente, la de la cuenta
+   * (`tarifaDe`): un cambio de plan NUNCA cambia la tarifa por su cuenta. Se
+   * pasa solo cuando quien escribe cambia la tarifa en el mismo paso.
+   */
+  tarifa?: Tarifa;
+  /**
    * Un entero válido (`cambiosIncluidosValidos`) lo fija POR CONTRATO; `null`
    * lo QUITA y vuelve a regir el del plan. Ausente, no se toca (y si estaba
    * por contrato, un cambio de plan lo conserva).
@@ -557,7 +687,7 @@ export interface CopiaNueva {
  */
 export function copiaDeLimites(cuenta: Record<string, unknown> | null | undefined, pedido: PedidoDeCopia): CopiaNueva {
   const planVigente = pedido.plan ?? (esPlanVendible(cuenta?.['plan']) ? cuenta?.['plan'] as IdPlanVendible : PLAN_POR_DEFECTO);
-  const delPlan = limitesDe(planVigente);
+  const delPlan = limitesDe(planVigente, pedido.tarifa ?? tarifaDe(cuenta));
   const crudo = cuenta?.['limites'];
   const actual = typeof crudo === 'object' && crudo !== null ? crudo as Record<string, unknown> : {};
   const previos = porContratoDe(cuenta);

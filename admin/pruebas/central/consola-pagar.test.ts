@@ -28,7 +28,7 @@ import {
   BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, cobroSeMuestraParaPagar, mesEscrito, pideVolverAEntrar, planInicial,
   planesOfrecidos, vistaDelPedido,
 } from '../../web/src/central/lib/pagar';
-import { PLANES_PUBLICADOS } from '../../functions/src/central/cuenta/planes';
+import { CONVERSACIONES_META_INCLUIDO, PLANES_PUBLICADOS } from '../../functions/src/central/cuenta/planes';
 import { facturaMetaAlComercio } from '../../web/src/central/lib/ejes';
 import { ResumenPrepago } from '../../web/src/central/componentes/ResumenPrepago';
 import { estadoDeServicio, type Corte } from '../../functions/src/central/cuenta/prepago';
@@ -218,9 +218,17 @@ describe('ResumenPrepago: el corte observado no existe para el comercio, y se ll
 
   it('muestra el saldo con las bolsas, que es lo que de verdad le queda', () => {
     const html = dibujar({ modalidad: 'prepago', plan: 'impulso', periodoPagado: '2026-10', bolsa: 30 }, 40, null);
-    expect(html).toContain(`de ${PLANES.impulso.conversaciones} incluidas`);
+    // Una cuenta SIN `tarifa` es `meta_incluido` (100), no la estándar (200).
+    expect(html).toContain(`de ${CONVERSACIONES_META_INCLUIDO.impulso} incluidas`);
+    expect(html).not.toContain(`de ${PLANES.impulso.conversaciones} incluidas`);
     expect(html).toContain('30 en bolsas');
     expect(html).toContain('90'); // 100 - 40 + 30
+  });
+
+  it('una cuenta con la tarifa estándar muestra las 200 de Impulso', () => {
+    const html = dibujar({ modalidad: 'prepago', plan: 'impulso', periodoPagado: '2026-10', tarifa: 'estandar' }, 40, null);
+    expect(html).toContain(`de ${PLANES.impulso.conversaciones} incluidas`);
+    expect(html).not.toContain(`de ${CONVERSACIONES_META_INCLUIDO.impulso} incluidas`);
   });
 
   it('al comercio se le dice «producción», nunca «prepago» (Analisis/41 §6.1 punto 6)', () => {
