@@ -191,7 +191,7 @@ export interface ContextoDeTurno {
 
 /**
  * Escribe, DENTRO de la transacción, el documento de auditoría: `{accion, uid, en, rol,
- * conversacionId, resultado:'ok', ...detalle}`. Sin texto de mensajes. Si algo falla acá (la
+ * telefono4, resultado:'ok', ...detalle}` (nunca el id de conversación). Sin texto de mensajes. Si algo falla acá (la
  * referencia o la escritura) la transacción entera falla y el turno no cambia.
  */
 export function auditarEnTransaccion(
@@ -216,8 +216,30 @@ export function persistirVencimiento(
   const lectura = leerTurno(guardado);
   if (efectivo === null || lectura.estado !== 'ok' || lectura.turno.responde !== 'persona') return;
   if (veredicto.motivo !== 'inactividad' && veredicto.motivo !== 'ventana') return;
+  escribirDevolucion(tx, {
+    db: c.db, tenantId: c.tenantId, ref: c.ref, conversacionId: c.conversacionId,
+    actor: { uid: c.uid, rol: c.rol }, ahoraMs: c.ahoraMs,
+  }, efectivo, veredicto.motivo);
+}
+
+/** Quién escribe la devolución: una persona (callable) o la ingesta (`uid` y `rol` 'ingesta'). */
+export interface ContextoDeDevolucion {
+  db: Firestore; tenantId: string; ref: DocumentReference; conversacionId: string;
+  actor: { uid: string; rol: RolDePersona | 'ingesta' }; ahoraMs: number;
+}
+
+/**
+ * LA forma de una devolución por vencimiento, compartida por la callable y la ingesta: el turno
+ * devuelto y su auditoría `conversacion_devuelta` (`{accion, uid, en, rol, telefono4, resultado,
+ * motivo, tomadoPor}`), en la misma transacción. El visor de auditoría no valida `rol`.
+ */
+export function escribirDevolucion(tx: Transaction, c: ContextoDeDevolucion, efectivo: Turno, motivo: string): void {
   tx.update(c.ref, { turno: turnoAFirestore(efectivo) });
-  auditarEnTransaccion(tx, c, 'conversacion_devuelta', { motivo: veredicto.motivo, tomadoPor: efectivo.tomadoPor });
+  tx.create(c.db.collection(`tenants/${c.tenantId}/auditoria`).doc(), {
+    accion: 'conversacion_devuelta', uid: c.actor.uid, en: Timestamp.fromMillis(c.ahoraMs),
+    rol: c.actor.rol, telefono4: ultimos4(c.conversacionId) ?? null, resultado: 'ok',
+    motivo, tomadoPor: efectivo.tomadoPor,
+  });
 }
 
 /** Un `Turno` (ms) a los campos de Firestore. Los opcionales ausentes no se escriben. */

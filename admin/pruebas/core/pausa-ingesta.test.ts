@@ -17,12 +17,12 @@
  *  7. Los contadores de facturación y las operaciones de la transacción son los de siempre
  *     (Bellido incluido). Cero mensajes por conversación: esta suite no envía nada.
  *
- * Puertos del emulador propios de este PR: 8361 / 9281.
+ * Puertos del emulador propios de este PR: 8231 por convención (esta ola la corrió en 8361 / 9281).
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PROYECTO = 'demo-novuchat-pruebas';
-process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8361'}`;
+process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
 // Alias de esta suite: 05, 06 y 07 (las suites corren una por una). Valores de prueba, no secretos.
 const TOKENES = { a: 'valor-de-prueba-pausa-a', b: 'valor-de-prueba-pausa-b', bel: 'valor-de-prueba-pausa-bel' };
@@ -31,7 +31,7 @@ process.env['INGESTA_CLIENTE06'] = TOKENES.b;
 process.env['INGESTA_CLIENTE07'] = TOKENES.bel;
 
 const { ingesta, configuracionFlujo } = await import('../../functions/src/index.ts');
-const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
+const { getFirestore, Timestamp, FieldValue } = await import('firebase-admin/firestore');
 const db = getFirestore();
 
 const MIN = 60_000;
@@ -229,7 +229,7 @@ describe('con el turno de una persona vigente, las DOS respuestas callan al asis
 
 // =============================================================================
 describe('sin pausa, las claves de las respuestas son las de siempre', () => {
-  it('sin turno, devuelto o con turno de otra conversación: nada nuevo en ingesta ni en configuración', async () => {
+  it('sin turno o devuelto a mano: nada nuevo en ingesta ni en configuración', async () => {
     const casos: Array<[string, unknown]> = [
       ['sin turno', undefined],
       ['devuelto a mano', { ...turnoDe(Date.now(), { responde: 'asistente' }), devueltoEn: Timestamp.now(), motivoDevolucion: 'manual' }],
@@ -288,6 +288,18 @@ describe('un turno vencido se persiste devuelto y el asistente responde ese mens
     expect((await auditoria(A))[0]).toMatchObject({ accion: 'conversacion_devuelta', motivo: 'ventana', telefono4: '2002' });
   });
 
+  it('configuracionFlujo con un turno VENCIDO responde normal y NO persiste ni audita', async () => {
+    const tel = '59100000022005';
+    const ahora = Date.now();
+    await sembrar(A, tel, { turno: turnoDe(ahora, { actividad: ahora - 40 * MIN }) });
+    const antes = (await conversacion(A, tel))['turno'];
+    const cfg = await configuracion(A, tel);
+    expect(atencionDe(cfg)['estado']).toBe('normal');
+    expect(atencionDe(cfg)['pausadoPorPersona']).toBeUndefined();
+    expect((await conversacion(A, tel))['turno']).toEqual(antes);
+    expect(await auditoria(A)).toHaveLength(0);
+  });
+
   it('un segundo mensaje no vuelve a auditar ni a escribir el turno (ya está devuelto)', async () => {
     const tel = '59100000022003';
     const ahora = Date.now();
@@ -308,7 +320,9 @@ describe('un turno vencido se persiste devuelto y el asistente responde ese mens
       modalidad: 'prepago', plan: 'crecimiento', limites: { conversaciones: 500, productos: 100, agendas: 2, cambiosIncluidos: 10 },
       periodoPagado: '2020-01', corteActivo: true,
     });
-    await entrante(A, tel);
+    const r = await entrante(A, tel);
+    // Se tomó de verdad la rama de corte.
+    expect((r.cuerpo['servicio'] as Datos)['estado']).toBe('cortado');
     expect(((await conversacion(A, tel))['turno'] as Datos)['responde']).toBe('asistente');
     await db.doc('plataforma/prepago').delete();
   });
@@ -339,6 +353,18 @@ describe('ante la duda, responde el asistente (turno ilegible, roto o del futuro
     const cfg = await configuracion(A, tel);
     expect(atencionDe(cfg)['estado']).toBe('normal');
     expect(atencionDe(cfg)['pausadoPorPersona']).toBeUndefined();
+  });
+
+  it('un turno sin ultimoEntranteEn (dato anómalo): responde el asistente y no se escribe nada', async () => {
+    const tel = '59100000023003';
+    await sembrar(A, tel, { turno: turnoDe(Date.now()) });
+    await refConv(A, tel).update({ ultimoEntranteEn: FieldValue.delete() });
+    const antes = (await conversacion(A, tel))['turno'];
+    const r = await entrante(A, tel);
+    expect(r.cuerpo['pausadoPorPersona']).toBeUndefined();
+    expect(atencionDe(r)['estado']).toBe('normal');
+    expect((await conversacion(A, tel))['turno']).toEqual(antes);
+    expect(await auditoria(A)).toHaveLength(0);
   });
 
   it('el último entrante del futuro (más de 5 min) tampoco pausa', async () => {
@@ -435,7 +461,7 @@ describe('lo que NO cambia: facturación, operaciones y lo que reporta n8n', () 
       const con = await escenario(c, '59100000025002', turnoDe(Date.now()));
       expect(con.operaciones).toEqual(sin.operaciones);
       expect(con.conv).toEqual(sin.conv);
-      expect(con.met).toEqual({ ...sin.met, personasAtendidas: sin.met['personasAtendidas'] });
+      expect(con.met).toEqual(sin.met);
     });
 
   it('el vencimiento persistido agrega EXACTAMENTE un update y un create de auditoría, y ninguna lectura', async () => {

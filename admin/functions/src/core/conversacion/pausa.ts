@@ -16,6 +16,11 @@
  *
  * FALLA HACIA RESPONDER. Un turno ilegible, con fechas rotas o del futuro, sin `ultimoEntranteEn`
  * o ya vencido, NO pausa: responde el asistente («ante la duda, normal», como en `turno.ts`).
+ * De esos, solo se PERSISTE (devolución y auditoría) un vencimiento real, con `venceEnMs`
+ * calculable (inactividad o ventana). Un turno ilegible, o sin `ultimoEntranteEn` (dato anómalo,
+ * la ventana no se puede calcular), responde el asistente y NO escribe nada.
+ * Durante la pausa el aviso de transición de umbral a recepción se anula (`avisarRecepcion: ''`)
+ * y al devolver la conversación no se reenvía (aceptado).
  * El riesgo residual (una ventana de 5 a 20 s entre que se lee el estado y el modelo contesta,
  * en la que la persona puede tomar la conversación) lo cubre `enviarComoPersona` (H2-3) con un
  * bloqueo de envío tras un entrante sin responder; no se resuelve acá.
@@ -26,9 +31,9 @@
  * `conversacion_devuelta`, solo `telefono4`, nunca el teléfono ni el id de la conversación).
  * La conversación ya se leyó; esto no agrega ninguna lectura ni ningún mensaje.
  */
-import { Timestamp, type DocumentReference, type Firestore, type Transaction } from 'firebase-admin/firestore';
+import { type DocumentReference, type Firestore, type Transaction } from 'firebase-admin/firestore';
 import { leerTurno, turnoEfectivo, type Turno, type Veredicto } from './turno.js';
-import { turnoAFirestore, ultimos4 } from './turnoServidor.js';
+import { escribirDevolucion } from './turnoServidor.js';
 
 export interface DecisionDePausa {
   /** `true` si responde una persona y el turno sigue vigente: el asistente calla. */
@@ -43,7 +48,8 @@ export function decidirPausa(turno: unknown, ultimoEntranteEn: unknown, ahoraMs:
   const { veredicto, turno: efectivo } = turnoEfectivo(turno, { ultimoEntranteEn }, ahoraMs);
   const lectura = leerTurno(turno);
   const vencio = veredicto.motivo === 'inactividad' || veredicto.motivo === 'ventana';
-  const porPersistir = vencio && efectivo !== null && lectura.estado === 'ok' && lectura.turno.responde === 'persona'
+  // Sin `venceEnMs` (turno sin `ultimoEntranteEn`: dato anómalo) no se persiste nada.
+  const porPersistir = vencio && veredicto.venceEnMs !== undefined && efectivo !== null && lectura.estado === 'ok' && lectura.turno.responde === 'persona'
     ? efectivo : null;
   return { pausada: veredicto.responde === 'persona', veredicto, porPersistir };
 }
@@ -59,12 +65,10 @@ export function persistirVencimientoDeIngesta(
 ): void {
   const efectivo = decision.porPersistir;
   if (efectivo === null) return;
-  tx.update(refConversacion, { turno: turnoAFirestore(efectivo) });
-  tx.create(db.collection(`tenants/${tenantId}/auditoria`).doc(), {
-    accion: 'conversacion_devuelta', uid: 'ingesta', en: Timestamp.fromMillis(ahoraMs),
-    rol: 'ingesta', telefono4: ultimos4(idConversacion) ?? null, resultado: 'ok',
-    motivo: decision.veredicto.motivo, tomadoPor: efectivo.tomadoPor,
-  });
+  escribirDevolucion(tx, {
+    db, tenantId, ref: refConversacion, conversacionId: idConversacion,
+    actor: { uid: 'ingesta', rol: 'ingesta' }, ahoraMs,
+  }, efectivo, decision.veredicto.motivo);
 }
 
 /**
