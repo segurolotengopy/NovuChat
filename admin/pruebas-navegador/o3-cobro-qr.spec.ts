@@ -115,17 +115,7 @@ test.describe('COB-02 · «Cambiar el QR» con el cobro real activo (reemplazoQr
     await expect(page.getByText(AVISO_OCULTO)).toHaveCount(0);
   });
 
-  test('DOCUMENTA lo que hace hoy la pantalla (R7): sin la lista, cambiar el QR con el cobro activo no pide confirmación ni advierte antes, y recién después dice «todavía sin cobrar»', async ({ page }) => {
-    const { llamadas } = await simularFuncion(page, 'registrarQrDeCobro', { resultado: { registrado: true, problemas: [], advertencias: [], documento: 'venta' } });
-    let dialogos = 0;
-    page.on('dialog', async (d) => { dialogos += 1; await d.dismiss(); });
-    await fijarCobroReal(FOGON, ACTIVO);
-    await abrirQr(page);
-    await expect(page.getByText('Cobrando', { exact: true })).toBeVisible();
-    // Antes de enviar, nada en pantalla avisa que el cobro se va a cortar.
-    const antes = (await page.locator('body').innerText()).toLowerCase();
-    for (const aviso of ['apag', 'se corta', 'se cortará', 'dejará de cobrar', 'dejara de cobrar', 'confirmar el cambio']) expect(antes, aviso).not.toContain(aviso);
-
+  async function llenarYEnviar(page: Page): Promise<void> {
     await page.getByLabel('Imagen del QR').setInputFiles({ name: 'qr.png', mimeType: 'image/png', buffer: qrEnPng('SINTETICO-QR-DE-PRUEBA-0002') });
     await page.getByLabel('¿A nombre de quién está la cuenta?').fill('Q Taco de Prueba SRL');
     await page.getByLabel('Número de la cuenta que recibe el dinero').fill('123456789');
@@ -133,13 +123,29 @@ test.describe('COB-02 · «Cambiar el QR» con el cobro real activo (reemplazoQr
     await page.getByLabel(/Miré en mi banco y confirmo/).check();
     await page.getByLabel(/NO tiene un importe fijo grabado/).check();
     await formulario(page).click();
-    await expect(page.getByText('QR guardado y verificado')).toBeVisible();
-    expect(llamadas).toHaveLength(1); // se mandó sin ninguna confirmación intermedia
-    expect(dialogos).toBe(0);
+  }
 
-    // Lo que hace el servidor al registrar (`cobro.ts`): el cobro vuelve a `activo: false`. La pantalla pasa de «Cobrando» a «sin cobrar».
+  test('prueba hermana de R7: sin la lista, cambiar el QR con el cobro activo se envía y, al registrar, la pantalla pasa de «Cobrando» a «todavía sin cobrar»', async ({ page }) => {
+    const { llamadas } = await simularFuncion(page, 'registrarQrDeCobro', { resultado: { registrado: true, problemas: [], advertencias: [], documento: 'venta' } });
+    await fijarCobroReal(FOGON, ACTIVO);
+    await abrirQr(page);
+    await expect(page.getByText('Cobrando', { exact: true })).toBeVisible();
+    await llenarYEnviar(page);
+    await expect(page.getByText('QR guardado y verificado')).toBeVisible();
+    expect(llamadas).toHaveLength(1);
+    // Lo que hace el servidor al registrar (`cobro.ts`): el cobro vuelve a `activo: false`.
     await fijarCobroReal(FOGON, { ...ACTIVO, activo: false });
     await expect(page.getByText('Guardado, todavía sin cobrar')).toBeVisible();
     await expect(page.getByText('Cobrando', { exact: true })).toHaveCount(0);
+  });
+
+  test('DEFECTO COB-02 / R7: con el cobro real activo, la pantalla debería advertir ANTES de enviar que cambiar el QR corta el cobro', async ({ page }) => {
+    // Hoy FALLA: no hay advertencia ni confirmación (la prueba hermana de arriba lo recorre). Cuando se corrija (o NovuChat oculte el
+    // reemplazo con `reemplazoQr`, caso cubierto arriba), esta prueba se pone roja y se quita la marca.
+    test.fail(true, 'COB-02 / R7 (matriz): cambiar el QR con el cobro real activo no advierte antes que se corta el cobro');
+    await fijarCobroReal(FOGON, ACTIVO);
+    await abrirQr(page);
+    await expect(cambiar(page)).toBeVisible();
+    await expect(page.getByText(/apag|se cort|dejar[aá] de cobrar/i).first()).toBeVisible({ timeout: 3_000 });
   });
 });

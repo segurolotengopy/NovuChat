@@ -252,14 +252,23 @@ test.describe('COB-08 · Configuración de QR: textos en cada estado', () => {
     await barrer(page, 'QR · guardado con advertencias');
   });
 
-  test('DOCUMENTA lo que hace hoy la pantalla (prohibición 3): con un QR de demostración cargado Y el cobro real activo, la pantalla dice a la vez «Cobrando» y «Hay un QR de demostración cargado»', async ({ page }) => {
-    // Los dos modos son excluyentes (CLAUDE.md, prohibición 3), pero la pantalla no lo impide ni lo marca: lo decide el script de NovuChat
-    // que activa el cobro real. Esta prueba fija lo que se ve si los datos llegaran así; si la pantalla lo corrige, se invierte.
+  test('prueba hermana: con el cobro real activo y SIN QR de demostración, la pantalla dice «Cobrando» y que no hay QR de demostración', async ({ page }) => {
+    await fijarCobroReal(FOGON, ACTIVO);
+    await fijarQrDeDemostracion(FOGON, false);
+    await abrirQr(page);
+    await expect(page.getByText('Cobrando', { exact: true })).toBeVisible();
+    await expect(page.getByText('No hay ningún QR de demostración cargado.')).toBeVisible();
+    await barrer(page, 'QR · cobro real sin demostración');
+  });
+
+  test('DEFECTO prohibición 3 (modos excluyentes): con un QR de demostración cargado Y el cobro real activo, la pantalla no debería decir a la vez «Cobrando» y «Hay un QR de demostración cargado»', async ({ page }) => {
+    // Hoy FALLA: dice las dos cosas. Los dos modos nunca conviven en un negocio (CLAUDE.md, prohibición 3); la exclusión hoy la hace
+    // solo el script que activa el cobro real. Cuando la pantalla lo marque o lo oculte, se pone roja y se quita la marca.
+    test.fail(true, 'prohibición 3 (CLAUDE.md): cobro simulado y real a la vez se muestran sin marca alguna en Configuración de QR');
     await fijarCobroReal(FOGON, ACTIVO);
     await fijarQrDeDemostracion(FOGON, true);
     await abrirQr(page);
     await expect(page.getByText('Cobrando', { exact: true })).toBeVisible();
-    await expect(page.getByText('Hay un QR de demostración cargado.')).toBeVisible();
-    await barrer(page, 'QR · demostración y cobro real a la vez');
+    await expect(page.getByText('Hay un QR de demostración cargado.')).toHaveCount(0, { timeout: 3_000 });
   });
 });
