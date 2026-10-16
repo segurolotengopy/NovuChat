@@ -432,6 +432,27 @@ export const REGISTRO = [
   },
 ] as const satisfies readonly Manifiesto[];
 
+/**
+ * COLECCIONES DEL CORE QUE SOLO ESCRIBE EL SERVIDOR (H2-R, 16/10/2026).
+ *
+ * Los manifiestos de arriba son de módulos que se encienden por tenant. Estas
+ * colecciones son de TODO tenant, sin módulo: contadores de tope y el documento
+ * del envío lógico de una persona. Se declaran acá para que `registro.test.ts`
+ * exija lo mismo que a un módulo: un `match` EXPLÍCITO con `allow read, write:
+ * if false` (no depender solo de la negación final, que un día alguien puede
+ * aflojar con un comodín) y su prueba negativa en `reglas.test.ts`.
+ *
+ * `raiz`: fuera del tenant, un documento por `uid` (el tope es del usuario, no
+ * del comercio). `tenant`: bajo `tenants/{t}/`.
+ * `topesDeBusqueda` no tenía declaración ni `match` propio antes de esta pieza
+ * (dependía de la negación final); `topesDelVisor` es de Cobros y sigue en su
+ * manifiesto.
+ */
+export const COLECCIONES_CERRADAS_DEL_CORE = {
+  raiz: ['topesDeBusqueda', 'topesDeTurno'],
+  tenant: ['salida'],
+} as const;
+
 export const esModulo = (v: unknown): v is IdModulo =>
   typeof v === 'string' && (IDS_MODULOS as readonly string[]).includes(v);
 
