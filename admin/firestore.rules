@@ -2695,6 +2695,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // /topesDeEnvio/u_{uid} y /topesDeEnvio/t_{comercio} — los contadores de `enviarComoPersona`
+    // (H2-3): envíos por minuto de la persona, y por minuto y por día del comercio. Los lee y los
+    // escribe SOLO esa callable, con el SDK Admin, dentro de la transacción que crea el mensaje. Ni la
+    // persona, ni la ingesta, ni el propietario: quien pudiera borrar su contador se quitaría el tope.
+    match /topesDeEnvio/{contador} {
+      allow read, write: if false;
+    }
+
     // =========================================================================
     // NEGACIÓN FINAL. Todo lo que no coincidió con una regla de arriba queda
     // prohibido: colecciones nuevas, rutas mal escritas, experimentos olvidados.
