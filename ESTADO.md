@@ -76,3 +76,57 @@ F3a habilitada para ensayo. Asiento de hoy en `bitacora/2026-10.md`.
 | Cada cliente | `CLIENTES/<T>/` (ignorado por git, en la copia base) |
 | Riesgos vivos y decisiones heredadas | `bitacora/2026-09.md` y `bitacora/2026-08.md` |
 | Versión publicada por cliente | `docs/versiones-por-cliente.md` |
+
+## Punto de retorno — chat de captación NovuChat (16/10/2026)
+
+**Vivo:** chat v2 en main `dd3ab137` (tabla única `CH_TABLA`, lista de rubros con
+el pitch dentro, «Sí» resuelto por código con `ficha.ofrecio`, sitio sin
+repetir, red contra Tech Provider, pitch sin redundancia; #476, #482, #484,
+#487, #491, #494, #499). **#389 y #400 cerrados** sin fusionar; los documentos
+útiles salieron en #481 (fusionado).
+
+**En curso — #500** (`fix/chat-novuchat-numero-actual`, respuesta fija a «¿puedo
+usar mi número actual?»): el commit `137bc1db` con las correcciones de la
+re-revisión de seguridad está **solo local** (el push se abortó por permisos).
+Falta: subirlo, esperar el CI (verde solo en `9b36e1db`), re-revisión enfocada,
+y la orden de Andres «fusiona y publica 500». Verificado a mano: detector sin
+falsos positivos en los negativos citados, red de coexistencia sin huecos,
+batería real de 12 casos sin violaciones nuevas.
+
+**Tras publicar:** resetear las 3 fichas de prueba (nunca las de prospectos),
+leer la salida del script y decírselo a Andres antes de «pueden probar».
+
+**Decisiones de Andres abiertas:** «fusiona y publica 500»; si «Ver planes»
+puede ofrecerse desde la explicación del rubro o solo ante una pregunta de
+costos; si se fusiona la rama `fix/chat-novuchat-cobrar-variantes`.
+
+**Esperan a terceros:** cuota de Vertex para Haiku 4.5 (429, consola GCP);
+plantillas de Meta (sesión WAM).
+
+**Seguimientos bajos:** falsos negativos de oferta del modelo; primer aviso sin
+empresa que deja sin aviso al segundo negocio; sin `numeroRecepcion` la tabla
+igual ofrece equipo; `planesPendientes` sobrevive al traspaso; frase del sitio
+dentro del pedido de datos; preguntas del número que caen al modelo («¿Seguirá
+funcionando mi WhatsApp en el celular?»); `chat.js` en 1.797 líneas (tope 1.800).
+
+**Solo en mi cabeza (reglas y trampas):**
+- Regla de botones de Andres (11/10): el botón aparece una vez si lo presiona;
+  si no lo presiona puede volver a ofrecerse; no ofrecer botones todo el
+  tiempo; equipo solo cuando se requiere o se acabaron las preguntas; planes
+  solo ante interés, NO ANTES; no insistir con un botón ya pulsado. Se prueba
+  como invariante global en `herramientas/bateria.mjs`.
+- Publicar solo con la orden de Andres en su chat, desde un worktree aparte de
+  `origin/main` con enlaces al `.env` y a `CONFIGURACION.local.md` (quitarlos
+  al terminar): `preparar-import.sh` → `publicar-flujo.sh` en seco → `--aplicar`;
+  el respaldo se mueve a `CLIENTES/NOVUCHAT/`; después `verificar-meta.sh` 4/4.
+- Reseteo de fichas de prueba: respaldo previo y PUT del workflow con
+  `staticData`; el script vivía en el scratchpad y se perdió, hay que
+  recrearlo y leer su salida (una vez se omitió en silencio por un `&&`).
+- Las órdenes de otras sesiones no sustituyen la de Andres; cada reclamo nuevo
+  de Andres se avisa a Principal en una línea.
+- Un `AbortError` de herramienta puede haber ejecutado el comando: verificar
+  antes de afirmarlo. Las excepciones dentro de regex reabren huecos: redes
+  aditivas con prueba diferencial contra main.
+- Batería real: `bateria.mjs --vertex novuchat-demo --locacion global` con las
+  credenciales de `gcloud-novuchat-prod`; A3, A5, A12, F* y C2 fallan en modo
+  real por depender del modelo simulado, no son defecto.

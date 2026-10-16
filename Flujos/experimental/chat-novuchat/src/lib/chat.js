@@ -193,6 +193,27 @@ function chPreguntaBanco(t) {
   const objeto = CH_OBJETO_DE_PAGO.test(n);
   return (banco && (verbo || objeto) && pregunta) || (verbo && objeto && pregunta);
 }
+// El número PROPIO del prospecto («¿puedo usar mi número actual?», «¿tengo que comprar uno nuevo?», «¿seguirá funcionando en el celular?», «¿se pierden mis chats?», «¿coexisten?»): lo contesta el CÓDIGO con la frase oficial del sitio, sin modelo. Solo una PREGUNTA sobre SU número o su WhatsApp y la continuidad con la app; «tu número» (el de NovuChat), el costo, los datos de contacto (NIT, carnet, factura) y la descripción de su problema («mi WhatsApp queda saturado») no entran.
+const CH_NUM_OBJ = '(?:numero|numeros|whatsapp|wasap|watsap|linea|chip)', CH_NUM_APP = '(?:celular|telefono|aplicacion|app|movil|whatsapp normal|whatsapp comun|whatsapp personal|normal|comun|personal)';
+const CH_NUM_ACTUAL = '(?:actual|propio|personal|que ya (?:tengo|uso|tenemos|usamos)|que uso ahora|que tengo ahora|de siempre)';
+// (lista BLANCA tras «mi número»: solo el fin de la frase, «actual», «o uno nuevo», «para/con el asistente» o «en el celular»; «mi WhatsApp para vender», «con Instagram» o «a Google Calendar» son otra cosa)
+const CH_NUM_FIN = '(?=$| (?:actual|propio|personal|de siempre|que ya (?:tengo|uso|tenemos|usamos)|o (?:uno|otro|otra) nuevo|(?:para|con) (?:el asistente|ustedes|novuchat|kenji)|en (?:el|la|mi) (?:celular|app|aplicacion)))';
+const CH_NUMERO_PROPIO = new RegExp([
+  '\\b(?:puedo|podria|podemos|podriamos|se puede|puede|pueden|es posible|sirve|sirven|vale|conecto|conectar|conectarlo|conectarla|usar|usarlo|usarla|utilizar|utilizarlo|seguir usando|seguir con|mantener|reutilizar|migrar|trasladar|vincular|vincularlo|integrar|integrarlo|asociar)\\b(?: (?:usar|utilizar|conectar|conectarlo|seguir usando|seguir|mantener|reutilizar|migrar|trasladar|poner|ponerlo))?(?: (?:con|en|a|para))? (?:mi|mis|nuestro|nuestros) ' + CH_NUM_OBJ + '\\b' + CH_NUM_FIN, '\\b(?:mi|nuestro) ' + CH_NUM_OBJ + ' ' + CH_NUM_ACTUAL + '\\b(?: \\w+){0,3} (?:sirve|sirven|funciona|vale|conecta|conectar|usar|seguir)\\b', '\\b(?:puedo|podria|podemos|se puede|es posible|sirve|vale|funciona|funcionaria|usar|conectar|utilizar|seguir usando)\\b(?: \\w+){0,4} ' + CH_NUM_OBJ + ' ' + CH_NUM_ACTUAL + '\\b', '\\b(?:conectar|conectarlo|conecto|usar|usarlo|poner|ponerlo|seguir usando)\\b(?: \\w+){0,3} que ya (?:tengo|uso|tenemos|usamos)\\b',
+  '\\b(?:comprar|sacar|adquirir|conseguir|contratar|necesito|necesitamos|requiere|requieren|tengo que (?:comprar|sacar|tener|usar|conseguir)|debo (?:comprar|sacar|tener|usar|conseguir)|hay que (?:comprar|sacar|tener|usar|conseguir))\\b(?: \\w+){0,4} ' + CH_NUM_OBJ + ' (?:nuevo|nueva|aparte|dedicado|dedicada|distinto|distinta|diferente|exclusivo|exclusiva)\\b', '\\b(?:comprar|sacar|adquirir|conseguir)\\b(?: \\w+){0,3} (?:otro|otra|un|una) (?:numero|linea|chip)\\b(?! de )', '\\b(?:necesito|necesitamos|tengo que tener|debo tener|hay que tener|hace falta) (?:otro|otra|un|una) (?:numero|linea|chip)\\b(?! de )', '\\b(?:que|cual) (?:numero|chip) (?:necesito|necesitamos|debo usar|tengo que usar|se necesita|hace falta|requiere|requieren)\\b(?! (?:darte|dar|dejar|enviar|mandar|pasar|escribir))(?!(?: \\w+){0,3} para (?:contactar\\w*|escribir\\w*|pagar|facturar|la factura|empezar|darte|dar\\w*|enviar\\w*|mandar\\w*|llamar\\w*|registr\\w*))',
+  '\\b(?:mi|mis|nuestro) ' + CH_NUM_OBJ + '\\b(?! de )(?: \\w+){0,4} (?:(?:seguira|seguiria|va a seguir|podra seguir|podre seguir) funcionando|funcionara|funcionaria|dejara de funcionar|se perdera|(?:seguira|quedara) igual|cambiara|cambia)(?=$| (?:en|con|igual|normal|bien|como antes))', '\\b(?:numero|whatsapp|wasap|watsap)\\b(?: \\w+){0,5} (?:(?:seguira|seguiria|va a seguir) funcionando|sigue funcionando|funcionara|dejara de funcionar)\\b(?: \\w+){0,4} ' + CH_NUM_APP + '\\b', '\\b(?:seguir usando|seguir teniendo|seguir con|usar|tener)\\b(?: \\w+){0,3} (?:whatsapp|wasap|watsap|mi numero)\\b(?: \\w+){0,4} ' + CH_NUM_APP + '\\b',
+  '\\b(?:se pierde|se perdera|se pierden|se borran?|se eliminan?|voy a perder|perdere|pierdo|perderia)\\b(?: \\w+){0,3} (?:mi numero|mis chats|mis conversaciones|mis contactos|mis grupos|mi whatsapp)\\b',
+].join('|'));
+const CH_NUM_PREGUNTA = /^(?:y |entonces |oye |disculpa |hola |una pregunta )?(?:puedo|podria|podemos|se puede|puede|pueden|es posible|tengo que|debo|necesito|necesitamos|hay que|hace falta|seguira|seguiria|va a seguir|sirve|funciona|funcionara|que numero|cual numero|que chip|coexist\w*|conecto|como conecto|quiero usar|quisiera usar|queremos usar|quiero conectar|quisiera conectar)\b|\b(?:se puede|es posible|quiero saber|quisiera saber|queria saber|me pregunto|tengo una duda)\b/;
+function chPreguntaNumeroActual(t) {
+  const n = chNorm(t);
+  if (!/\b(?:numero|numeros|whatsapp|wasap|watsap|linea|chip|chats|conversaciones|contactos|que ya tengo|coexist\w*)\b/.test(n)) return false;
+  if (/\b(?:cuanto|cuanta|cuesta|cuestan|precio|precios|costo|costos|tarifa|tarifas)\b/.test(n) || /\bcon (?:mi|el|un|una|nuestro|nuestra) (?:sistema|erp|crm|software|programa|sap|excel|facturacion|contabilidad|tienda|calendario|pagina|sitio|web|base de datos)\b/.test(n)) return false;
+  if (!/[?¿]/.test(chTexto(t)) && !CH_NUM_PREGUNTA.test(n)) return false;
+  if (CH_NUMERO_PROPIO.test(n)) return true;
+  if (/\bcoexist\w*\b/.test(n)) return /\b(?:whatsapp|wasap|numero|app|aplicacion|celular|telefono)\b/.test(n) || n.split(' ').length <= 4;
+  return /\b(?:los dos|ambos|a la vez|al mismo tiempo|en paralelo)\b/.test(n) && /\b(?:whatsapp|wasap|numero|celular|aplicacion|app|telefono)\b/.test(n) && /\b(?:usar|tener|funcionan|funcionar|funciona|convivir|seguir)\b/.test(n);
+}
 // Los sistemas que el servicio SÍ nombra (documento §6): ninguno más se puede afirmar.
 const CH_SISTEMAS_PROPIOS = ['whatsapp', 'whatsapp business', 'meta', 'google calendar', 'google', 'calendar', 'calendario', 'google sheets', 'sheets', 'qr', 'codigo qr', 'minicrm', 'panel de control'];
 const CH_PREGUNTA_INTEGRACION = /\b(?:se |puede |pueden |podria |podrian |podemos |logra |lograria )?(?:conecta|conectan|conectar|conectarse|conectarlo|integra|integran|integrar|integrarse|integrarlo|sincroniza|sincronizan|sincronizar|vincula|vinculan|vincular|es compatible|son compatibles|compatible|compatibles|integracion|integraciones|conexion|conexiones)\s+(?:directamente |tambien |bien )?(?:con|a|al|a la)\s+(.{1,60})$/;
@@ -832,7 +853,7 @@ function chDecidir(a) {
   const pedirDatos = () => { plan.ruta = 'pedirNombre'; plan.hechos.pidioPlanes = true; return plan; };
   const aplazaPlanes = () => chPedirDatosAntes(f);
   const conPlanes = (tope) => (tope !== true && aplazaPlanes() ? pedirDatos() : planes(tope));
-  const fijo = (id) => { plan.ruta = 'fijo'; plan.fijo = id; return plan; };
+  const fijo = (id) => { plan.ruta = 'fijo'; plan.fijo = id; if (f.planesPendientes === true) plan.extraerDatos = true; return plan; };
   if (ev.some((e) => e.boton === 'equipo')) return equipo(false);
   if (ev.some((e) => e.boton === 'planes')) return conPlanes(false);
   if (dijo !== '') {
@@ -853,6 +874,7 @@ function chDecidir(a) {
     if (chPreguntaConsumo(dijo)) return fijo('consumo');
     if (chPreguntaBanco(dijo)) return fijo('banco');
     if (chPreguntaHorario(dijo)) return fijo('disponibilidad');
+    if (chPreguntaNumeroActual(dijo)) { const cx = chContexto({ eventos: ev, ficha: f, cfg: cfg }); if (cx !== 'otroRespuesta' && (cx !== 'datos' || /[?¿]/.test(dijo))) { if (cx === 'datos') plan.extraerDatos = true; return fijo('numeroActual'); } }
     if (chPreguntaIntegracion(dijo)) return fijo('integracion');
     if (chPideDescuento(dijo)) return fijo('descuento');
     if (chPideCostoDelServicio(dijo)) return conPlanes(false);
@@ -934,6 +956,7 @@ const CH_CAUSAS = {
   ia_repetida: 'recordaste por tu cuenta que eres un asistente virtual con inteligencia artificial; eso solo se dice si el cliente lo pregunta: quítalo y responde lo que te preguntaron',
   sujeto_del_pago: 'dijiste que NovuChat, el asistente, Kenji o los clientes de la empresa «cobran»; quien PAGA por QR son los clientes de la empresa, a la empresa: di «tus clientes pagan por QR» o «envía tu QR para que paguen»',
   funcion_inventada: 'afirmaste una función (cobros, QR, adelantos, seña o pagos) que no está documentada para el rubro del cliente; no la afirmes ni la niegues: di solo lo que sí haces en su rubro y ofrece que alguien de nuestro equipo evalúe su caso. NovuChat y el asistente no cobran: los clientes de la empresa pagan por QR a la empresa',
+  coexiste: 'afirmaste que el número sigue funcionando en la app del celular o que convive con el asistente; no lo afirmes: di que recomendamos un número nuevo y dedicado al asistente y que lo revisan con el equipo',
   respaldo_meta: 'dijiste que NovuChat es Tech Provider, está certificado por Meta o cuenta con su respaldo; no lo afirmes ni lo niegues: di solo que conectamos tu número a WhatsApp',
   repite: 'repetiste casi igual tu mensaje anterior; aporta información nueva y verificada (no la copies) y ofrece los botones vigentes',
   accion: 'dijiste que ibas a mostrar los planes o a pasar al cliente con el equipo; eso lo hace el sistema con los botones, no lo prometas',
@@ -1132,6 +1155,8 @@ function chSimilitud(a, b) {
 const CH_RESPALDO_META = /\btech\s*provider|\bbusiness\s*solutions?\s*provider|\bbsp\b|\bproveedor(?:es)?\s*de\s*tecnologia\s*(?:oficial|autorizad|certificad)|\bcertificad[oa]s?\s+(?:\w+\s+){0,2}?(?:por|de|ante|en|con)\s*(?:meta|whatsapp)|\b(?:socio|partner|aliado)s?\s*(?:(?:oficial(?:es)?|(?:certificad|autorizad|verificad)[oa]s?|de\s*negocios?)\s*)?de\s*(?:meta|whatsapp)|\bproveedor(?:es)?\s*(?:oficial(?:es)?|(?:certificad|autorizad|verificad)[oa]s?|de\s*negocios?)\s*de\s*(?:meta|whatsapp)|\b(?:respaldad|avalad|aprobad|autorizad|homologad|verificad)[oa]s?\s+(?:\w+\s+){0,2}?por\s*(?:meta|whatsapp)|\bmeta\s+(?:nos|lo)\s+(?:respald|aval|certific)|\bmeta\s+(?:nos|a novuchat|a nosotros)\s+(?:aprueb|autoriz)|\bmeta\s+(?:respald|aval)\w*\s+a\s+(?:novuchat|nosotros|kenji)|\bcon\s+(?:el\s+)?respaldo\s+(?:oficial\s+)?de\s*(?:meta|whatsapp)|\boficial(?:mente)?\s+(?:autorizad|certificad)|\b(?:autorizad|certificad)[oa]s?\s+oficialmente|\bmeta\s+(?:business\s+)?partner|\bproveedor(?:es)?\s*(?:de\s*tecnologia|tecnologic[oa]s?)\s*(?:oficial(?:es)?\s*)?de\s*(?:meta|whatsapp)|\b(?:respaldad|avalad|aprobad|autorizad|homologad|verificad|certificad|reconocid)[oa]s?\s+(?:\w+\s+){0,2}?por\s+(?:la\s+|el\s+)?(?:propia\s+|directamente\s+por\s+(?:la\s+)?(?:empresa\s+)?|empresa\s+|equipo\s+de\s+)?(?:meta|whatsapp)|\b(?:aval|visto\s+bueno|sello|bendicion)\s+(?:oficial\s+)?de\s*(?:meta|whatsapp)|\b(?:plataforma|herramienta|integrador|aliado\s+estrategico|partner)\s+oficial\s+(?:de\s+(?:la\s+plataforma\s+de\s+)?)?(?:meta|whatsapp)|\bmeta\s+(?:confia|recomienda)\s+(?:en\s+)?(?:novuchat|nosotros|kenji)|\bcertified\s+by\s+(?:meta|whatsapp)|\bendorsed\s+by|\bofficial\s+(?:meta|whatsapp)\s+partner|\bmeta[\s-]*certified|\b(?:socio|partner|aliado)s?\s+estrategic[oa]s?\s+de\s*(?:meta|whatsapp)/;
 const CH_RESPALDO_META_OK = /\b(?:plantillas?|mensajes?|recordatorios?)\s+(?:\w+\s+){0,3}?aprobad[oa]s?\s+por\s+(?:meta|whatsapp)\b/g;
 function chRespaldoMeta(n) { const s = chTexto(n).replace(CH_RESPALDO_META_OK, ' '); const u = s.replace(/\b(?:\p{L} ){2,}\p{L}\b/gu, (m) => m.replace(/ /g, '')); return [s, cmJunto(s), u, cmJunto(u)].some((t) => CH_RESPALDO_META.test(t)); }
+// El modelo NO afirma que el número sigue funcionando en la app del celular ni que coexiste con el asistente: al conectarlo pasa al canal oficial de WhatsApp Business y deja de funcionar en la app. Red ADITIVA (va al final de `chValidarMensaje`: no cambia ninguna otra causa).
+const CH_COEXISTE_MODELO = new RegExp(['\\bcoexist\\w*', '\\b(?:numero|whatsapp|app|aplicacion|celular)(?: \\w+){0,5} conviv\\w*', '\\bconviv\\w*(?: \\w+){0,5} (?:numero|whatsapp|app|aplicacion|celular)\\b', '\\bseguir(?:as|a|an)? usando(?: \\w+){0,3} (?:whatsapp|numero|linea)(?: \\w+){0,6} (?:celular|aplicacion|app|telefono)\\b', '\\bseguir(?:as|a|an)? usandolo(?: \\w+){0,3} (?:celular|aplicacion|app|telefono)\\b', '\\b(?:no )?se pierden? (?:tus|sus) (?:chats|conversaciones|contactos|grupos)\\b', '\\bno (?:pierdes|perderas) (?:tus )?(?:chats|conversaciones|contactos)\\b', '\\btus (?:chats|conversaciones|contactos|grupos) (?:no se pierden|se conservan|se mantienen|siguen igual|quedan igual)\\b', '\\btu (?:whatsapp|numero|linea) (?:personal|actual)(?: \\w+){0,3} (?:sirve|funciona)\\b', '\\btu (?:numero|whatsapp)(?: \\w+){0,2} (?:queda|quedara|sigue|seguira) igual\\b', '\\bno (?:deja|dejara) de funcionar\\b', '\\b(?:sigue(?:s|n)?|seguira|va a seguir|seguiria) funcionando(?: \\w+){0,4} (?:celular|aplicacion|app|telefono)\\b', '\\b(?:app|aplicacion)(?: del celular)? y el asistente(?: \\w+){0,4} (?:al mismo tiempo|a la vez)\\b', '\\b(?:numero|whatsapp)(?: \\w+){0,5} (?:celular|aplicacion|app)(?: \\w+){0,5} (?:al mismo tiempo|a la vez|en paralelo|simultaneamente)\\b', '\\b(?:al mismo tiempo|a la vez|en paralelo|simultaneamente)(?: \\w+){0,5} (?:numero|whatsapp)(?: \\w+){0,5} (?:celular|aplicacion|app)\\b'].join('|'));
 // Valida el MENSAJE del modelo. Devuelve '' si puede salir, o la causa (una clave de `CH_CAUSAS`).
 //   v = { cfg, contexto, precios, permitidas, textoCliente, textos, rubroId, planesOk, equipoOk }
 function chValidarMensaje(texto, v) {
@@ -1197,6 +1222,7 @@ function chValidarMensaje(texto, v) {
     if (r && !chCubrePuntos(flat, r.puntosClave)) return 'puntos';
   }
   if (v.contexto !== 'cortesia' && !chTerminaBien(t)) return 'sin_cierre';
+  if (CH_COEXISTE_MODELO.test(n)) return 'coexiste';
   return '';
 }
 // Lee y valida la respuesta del modelo. `{ lectura, causa }`: causa '' si el mensaje puede salir. `sin_respuesta` (un fallo de la llamada) NO se reintenta.
@@ -1359,7 +1385,7 @@ const CH_DECLINA = /\b(?:no (?:lo|la) tengo a la mano|no sabr\w+ decir\w* (?:eso
 function chDeclinaTexto(texto) { return chTexto(texto).split(/[.!?¿\n]+/).some((o) => CH_DECLINA.test(chNorm(o))); }
 const CH_SIN_RESPUESTA = ['otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico'];
 const CH_SIN_OFERTA = ['pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte'];
-const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'];
+const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'];
 // ¿El texto que el MODELO escribió ofrece hablar con el equipo? (su pregunta final, o —si no tiene pregunta final— cualquier oración): sin depender de CÓMO declina, eso dice que no pudo resolver.
 function chOfreceAlEquipo(texto) { const q = chPreguntaFinal(texto); return CH_OFRECE_EQ.test(q) || (q === '' && /\bhablar con (?:alguien|una persona|(?:nuestro |el )?equipo)|\bun asesor\b/.test(chNorm(texto))); }
 // Las señales del turno, calculadas UNA vez. a = { plan, res (resultado del modelo), eventos, ficha (la de antes) }
@@ -1387,7 +1413,7 @@ const CH_TABLA = [
   { id: 'traspaso', cuando: (s) => s.ruta === 'equipo', planes: false, equipo: false, nota: 'El traspaso lleva su propio botón de contacto (enlace a recepción) y el aviso a recepción.' },
   { id: 'pide-datos', cuando: (s) => s.ruta === 'pedirNombre', planes: false, equipo: false, nota: 'Pidió planes y faltan nombre y negocio: se piden UNA vez, sin botón de planes (los planes salen al contestar).' },
   { id: 'planes', cuando: (s) => s.ruta === 'planes', planes: false, equipo: true, nota: 'Los planes (o su tope y complemento): se acabaron las preguntas de precio, cierra con la oferta del equipo.' },
-  { id: 'consulta-sin-respuesta', cuando: (s) => s.ruta === 'fijo' && CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true, nota: 'Integración, costo de Meta, banco, descuento o consumo: el chat no lo resuelve, requiere al equipo.' },
+  { id: 'consulta-sin-respuesta', cuando: (s) => s.ruta === 'fijo' && CH_FIJO_SIN_RESPUESTA.includes(s.fijo), planes: false, equipo: true, nota: 'Integración, costo de Meta, banco, descuento, consumo o el número propio del prospecto: el chat no lo resuelve, requiere al equipo.' },
   { id: 'respuesta-fija', cuando: (s) => s.ruta === 'fijo', planes: false, equipo: false, nota: 'Identidad y disponibilidad: se contestan completas, sin invitaciones.' },
   { id: 'sin-respuesta', cuando: (s) => CH_SIN_RESPUESTA.includes(s.ev), planes: false, equipo: true, nota: 'Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo.' },
   { id: 'rubro-declina', cuando: (s) => s.declina && (s.ev === 'rubro' || s.ev === 'multiple'), planes: true, equipo: true, nota: 'Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo.' },
