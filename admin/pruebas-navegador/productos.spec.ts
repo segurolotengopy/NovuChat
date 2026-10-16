@@ -110,7 +110,10 @@ test.describe('Productos', () => {
     await page.getByLabel('Nombre').last().fill('Pique macho');
     await page.getByLabel(/^Precio/).last().fill('1');
     await page.getByRole('button', { name: 'Agregar' }).click();
-    await expect(page.getByText(/Ya hay un ítem con ese nombre/)).toBeVisible({ timeout: 5_000 });
+    // Lo correcto: sigue habiendo UNA sola fila «Pique macho» y el contador no sube. El síntoma de hoy: aparece una segunda fila y el contador pasa a 4.
+    await expect(page.getByText('Agregado.')).toHaveCount(0, { timeout: 5_000 });
+    await expect(fila(page, 'Pique macho')).toHaveCount(1, { timeout: 5_000 });
+    await expect(page.getByText(/3 de \d+ productos/)).toBeVisible({ timeout: 5_000 });
   });
 
   test('buscar por nombre deja solo lo que coincide', async ({ page }) => {

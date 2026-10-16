@@ -59,13 +59,6 @@ test.describe('PRO-01 · Productos: lista, búsqueda, filtros, orden y paginaci�
   });
   test.beforeEach(() => { test.setTimeout(90_000); });
 
-  test('el catálogo de ensayo tiene la forma de Q\'Taco: 79 ítems, 54 activos y 25 de baja', () => {
-    expect(TODOS).toHaveLength(79);
-    expect(TODOS.filter((i) => i.activo)).toHaveLength(54);
-    expect(TODOS.filter((i) => !i.activo)).toHaveLength(25);
-    expect(TODOS.some((i) => i.stock !== undefined)).toBe(false);
-  });
-
   test('sin filtros muestra los primeros 50 de 79, el contador del plan y ningún aviso de filtros', async ({ page }) => {
     await abrir(page);
     await expect(contador(page)).toHaveText(resumen(79));

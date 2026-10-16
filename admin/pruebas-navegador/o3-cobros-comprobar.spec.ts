@@ -124,6 +124,9 @@ test.describe('COB-07 · «Comprobar» (el negocio afirma que lo vio en su banco
     }];
     expect((await admin.lote(horaPropia)).codigo).toBe('PERMISSION_DENIED');
     expect((await leerDoc(cierre('c1')))?.['comprobadoPor']).toBeUndefined();
+    // Control positivo local: el MISMO lote armado bien (su uid, hora del servidor) sí pasa; los rechazos de arriba son por el uid y la hora.
+    expect(await admin.lote(comprobar('c1', admin.uid))).toMatchObject({ ok: true });
+    expect((await leerDoc(cierre('c1')))?.['comprobadoPor']).toBe(admin.uid);
   });
 
   test('NEGATIVA: el operador ve la lista pero no tiene «Comprobar» ni «Exportar»; lo que ve es el estado y «Ver»', async ({ page }) => {
