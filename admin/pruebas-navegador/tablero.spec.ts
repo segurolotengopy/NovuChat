@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
 import { ingresar } from './ayudas/ingresar';
 import { fijarHorarios } from './ayudas/datos';
-import { FOGON, crearOperadorFogon, fijarDoc, limpiarBitacora, quitarCampo, sembrarEventosDeBitacora } from './ayudas/o1-comun';
+import { FOGON, crearOperadorFogon, fijarDoc, limpiarBitacora, quitarCampo, sembrarEventosDeBitacora } from './o1-comun';
 import prepararDatos from './preparar-datos';
 
 // Con varios carriles corriendo a la vez la máquina se carga y los 30 s de siempre no alcanzan (la siembra de cada prueba y el ingreso cuentan).

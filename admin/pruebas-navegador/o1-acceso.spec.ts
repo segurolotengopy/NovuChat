@@ -5,7 +5,7 @@ import { fijarModulos, leerFicha } from './ayudas/datos';
 import {
   AURORA, CORREO_PROPIETARIO_SIMULADO, FOGON, MODULOS_QTACO, crearOperadorFogon, crearPropietarioSimulado,
   enlaceMiCuenta, esperarMenu, sinPermiso,
-} from './ayudas/o1-comun';
+} from './o1-comun';
 import prepararDatos from './preparar-datos';
 
 /**

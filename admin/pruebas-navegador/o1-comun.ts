@@ -2,8 +2,8 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { expect, type Page } from '@playwright/test';
-import { CLAVE_DE_PRUEBA, PROYECTO, PUERTO_AUTH, PUERTO_FIRESTORE } from '../entorno';
-import { crearUsuarioDeEnsayo } from './datos';
+import { CLAVE_DE_PRUEBA, PROYECTO, PUERTO_AUTH, PUERTO_FIRESTORE } from './entorno';
+import { crearUsuarioDeEnsayo } from './ayudas/datos';
 
 /**
  * Ayudas del carril 1 (acceso, menú, consola oculta, Configuración, Tablero). Las escribe un solo dueño (O1); las ayudas comunes
@@ -101,8 +101,15 @@ export async function limpiarBitacora(tenantId: string): Promise<void> {
 // presentación (el servidor sigue permitiendo) y que el comercio no puede escribir lo que no le toca (negativa).
 // ---------------------------------------------------------------------------------------------------------------------
 
+/** Barrera: solo proyecto `demo-*` y solo el host local. Si no, no se hace ninguna petición. */
+function soloEmulador(url: string): string {
+  if (!PROYECTO.startsWith('demo-')) throw new Error('NEGADO: el proyecto de las pruebas de navegador tiene que empezar con «demo-».');
+  if (new URL(url).hostname !== '127.0.0.1') throw new Error('NEGADO: las pruebas de navegador solo hablan con los emuladores en 127.0.0.1.');
+  return url;
+}
+
 async function idTokenDe(correo: string): Promise<string> {
-  const r = await fetch(`http://127.0.0.1:${PUERTO_AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=clave-ficticia`, {
+  const r = await fetch(soloEmulador(`http://127.0.0.1:${PUERTO_AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=clave-ficticia`), {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: correo, password: CLAVE_DE_PRUEBA, returnSecureToken: true }),
   });
@@ -127,6 +134,7 @@ function aValorFs(v: unknown): ValorFs {
  */
 export async function escribirComoUsuario(correo: string, ruta: string, campos: Record<string, unknown>, opciones: { conSelloDe?: string } = {}):
   Promise<{ aceptado: boolean; estado: number }> {
+  soloEmulador(`http://127.0.0.1:${PUERTO_FIRESTORE}`);
   const token = await idTokenDe(correo);
   const nombre = `projects/${PROYECTO}/databases/(default)/documents/${ruta}`;
   const todos = { ...campos, ...(opciones.conSelloDe ? { actualizadoPor: opciones.conSelloDe } : {}) };
@@ -136,7 +144,7 @@ export async function escribirComoUsuario(correo: string, ruta: string, campos: 
     ...(opciones.conSelloDe ? { updateTransforms: [{ fieldPath: 'actualizadoEn', setToServerValue: 'REQUEST_TIME' }] } : {}),
     currentDocument: { exists: true },
   };
-  const r = await fetch(`http://127.0.0.1:${PUERTO_FIRESTORE}/v1/projects/${PROYECTO}/databases/(default)/documents:commit`, {
+  const r = await fetch(soloEmulador(`http://127.0.0.1:${PUERTO_FIRESTORE}/v1/projects/${PROYECTO}/databases/(default)/documents:commit`), {
     method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify({ writes: [escritura] }),
   });

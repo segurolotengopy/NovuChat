@@ -4,7 +4,7 @@ import { ingresar } from './ayudas/ingresar';
 import { fijarCobroReal, fijarConsolaOculta, fijarModulos, leerDoc, leerFicha } from './ayudas/datos';
 import {
   CORREO_PROPIETARIO_SIMULADO, FOGON, MODULOS_QTACO, crearPropietarioSimulado, enlacesDelMenu, escribirComoUsuario, fijarDoc,
-} from './ayudas/o1-comun';
+} from './o1-comun';
 import prepararDatos from './preparar-datos';
 
 /**

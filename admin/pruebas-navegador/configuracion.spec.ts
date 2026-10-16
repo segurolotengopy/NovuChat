@@ -4,7 +4,7 @@ import { ingresar } from './ayudas/ingresar';
 import { abrirConfiguracion, cargarDia, DIAS, resultadoDeGuardar } from './ayudas/configuracion';
 import { leerDoc } from './ayudas/datos';
 import { simularFuncion } from './ayudas/funciones';
-import { FOGON, escribirSinTope } from './ayudas/o1-comun';
+import { FOGON, escribirSinTope } from './o1-comun';
 import prepararDatos from './preparar-datos';
 
 // Con varios carriles corriendo a la vez la máquina se carga y los 30 s de siempre no alcanzan (la siembra de cada prueba y el ingreso cuentan).
