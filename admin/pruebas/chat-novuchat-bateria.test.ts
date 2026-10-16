@@ -363,10 +363,10 @@ describe('la batería FALLA si se revierte lo que importa (se estropea el flujo 
     expect(await violacionesCon(g, 'C2')).toContain('declina_sin_boton');
   });
   it('el número propio del prospecto: si el detector del código se apaga, la pregunta cae al modelo y se dice (`ruta_inesperada`, `llamo_al_modelo_sin_necesidad`); si la ruta fija pierde el botón del equipo, `botones_inesperados`', async () => {
-    const sin = estropear("if (cx !== 'otroRespuesta' && (cx !== 'datos' || /[?¿]/.test(dijo))) { if (cx === 'datos') plan.extraerDatos = true; return fijo('numeroActual'); }", '');
+    const sin = estropear("if (cx !== 'otroRespuesta' && (cx !== 'datos' || /[?¿]/.test(dijo))) { if (cx === 'datos') plan.extraerDatos = true; return fijo(/\\bcoexist|\\bconviv/.test(chNorm(dijo)) ? 'coexistencia' : 'numeroActual'); }", '');
     const v = await violacionesCon(sin, 'NUM1');
     expect(v).toEqual(expect.arrayContaining(['ruta_inesperada']));
-    const sinBoton = estropear("'descuento', 'numeroActual'];", "'descuento'];");
+    const sinBoton = estropear("'descuento', 'numeroActual', 'coexistencia'];", "'descuento'];");
     expect(await violacionesCon(sinBoton, 'NUM1')).toContain('botones_inesperados');
     expect(await violacionesCon(FLUJO, 'NUM1')).toEqual([]);
     // la alternativa de continuidad vuelve a tomar «sigue»/«queda» sueltos: la descripción del problema pasa a la ruta fija

@@ -147,8 +147,8 @@ const CIERRE_RUBRO_EXACTO = '¿Te gustaría ver nuestros planes? 🤝'; // (el e
 const CIERRE_PRECIOS_EXACTO = '¿Te gustaría hablar con alguien de nuestro equipo para evaluar juntos qué plan es el ideal para empezar? 🤝';
 const MARCADORES = ['asistente', 'negocio', 'cierreRubro', 'cierrePrecios', 'cierreEquipo'];
 const CLAVES_INSTRUCCIONES = ['rol', 'tono', 'rubros', 'cierreRubro', 'otros', 'precios', 'limites', 'restricciones', 'ambiguedad', 'abierta', 'salida', 'seguridad'];
-const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual'];
-const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual'];
+const CLAVES_CIERRES = ['rubro', 'precios', 'equipo', 'consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual', 'coexistencia'];
+const CLAVES_RESPUESTAS = ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento', 'disponibilidad', 'numeroActual', 'coexistencia'];
 const CLAVES_RESPALDOS = ['multiple', 'otroElegido', 'otroLibre', 'fuera', 'equipo', 'generico', 'identidad', 'cortesia', 'datosAmbos', 'datosSoloNombre', 'datosSoloEmpresa', 'datosNinguno', 'empresa', 'complemento', 'noDocumentado', 'sinDato'];
 const CLAVES_TEXTOS = ['saludo', 'listaBoton', 'listaTitulo', 'planesIntro', 'planesIntroRepite', 'planesIntroTopes', 'planesSinPrecios', 'traspasoConPregunta', 'traspasoSinPregunta',
   'traspasoRepite', 'traspasoSinRecepcion', 'recepcion', 'botonTraspaso', 'saludoWa', 'estadoAviso', 'falla', 'medioIlegible', 'invitaOtroRubro', 'planesAgotado'];
@@ -173,7 +173,7 @@ function errorDeTextoDelCliente(v, opc = {}) {
   if (BLOQUEO_COMUN.test(n)) return 'trae una gratuidad, una garantía, que no hay límites, una moneda o la minimización de un costo';
   if (CIFRA_DE_CONSUMO.test(n)) return 'trae una cifra de consumo o de capacidad: los topes los muestra la imagen de planes';
   if (opc.sinAcredita !== true && ACREDITA_MODELO.test(n)) return 'afirma que el servicio valida, verifica o acredita pagos o que consulta al banco';
-  if (SISTEMA_CONOCIDO.test(n) || LIB.chSistemaAjeno(v, ['NovuChat', 'Kenji', 'Impulso', 'Crecimiento', 'Pro', 'Setups', 'Setup'], false)) return 'nombra un sistema, plataforma, banco o pasarela que el servicio no nombra';
+  if (SISTEMA_CONOCIDO.test(n) || LIB.chSistemaAjeno(v.replace(/(WhatsApp Business) \(la API\)(?= y, con la conexión que usamos hoy)/g, '$1').replace(/(WhatsApp Business y) la API(?= conviven, con limitaciones)/g, '$1'), ['NovuChat', 'Kenji', 'Impulso', 'Crecimiento', 'Pro', 'Setups', 'Setup'], false)) return 'nombra un sistema, plataforma, banco o pasarela que el servicio no nombra';
   if (/\d/.test(v.replace(/\b24\s*\/\s*7\b|\b24\s+horas\b/gi, ' '))) return 'trae un número (solo «24/7» y «24 horas»): las cifras de precios las pone el código desde la consola';
   if (opc.permitirPreguntas === false && /[?¿]/.test(v)) return 'no lleva «?» ni «¿»: el código agrega la pregunta';
   return '';
