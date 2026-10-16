@@ -3,7 +3,7 @@ import { USUARIOS } from './entorno';
 import { ingresar } from './ayudas/ingresar';
 import { fijarCobroReal, fijarConsolaOculta, fijarModulos, leerDoc, leerFicha } from './ayudas/datos';
 import {
-  CORREO_PROPIETARIO_SIMULADO, FOGON, MODULOS_QTACO, crearPropietarioSimulado, enlacesDelMenu, escribirComoUsuario, fijarDoc,
+  CORREO_PROPIETARIO_SIMULADO, FOGON, MODULOS_QTACO, crearPropietarioSimulado, enlacesDelMenu, escribirComoUsuario, esperarFichaLeida, fijarDoc,
 } from './o1-comun';
 import prepararDatos from './preparar-datos';
 
@@ -17,8 +17,9 @@ import prepararDatos from './preparar-datos';
  * sigue permitido por el servidor si alguien lo pide a mano. Las callables de Invitar, Pagar y el registro del QR NO se prueban acá
  * (no hay emulador de Functions): su permiso lo cubren las pruebas de `functions/`.
  *
- * Una pieza oculta se comprueba DESPUÉS de una espera corta: mientras la lista carga la consola tampoco la pinta, y sin la espera
- * «oculta» pasaría aun con la pieza que sí debe verse. El caso sin id (que espera de verdad hasta que aparece) prueba que llega a tiempo.
+ * Una pieza oculta se comprueba DESPUÉS de una señal positiva (`esperarFichaLeida`: el encabezado ya muestra el nombre del comercio, que
+ * sale de la misma ficha que la lista): mientras la lista carga la consola tampoco pinta la pieza, y sin esa señal «oculta» pasaría aun con
+ * la pieza que sí debe verse. El caso sin id (que espera de verdad hasta que aparece) prueba que la lista llega.
  */
 
 // Con varios carriles corriendo a la vez la máquina se carga y los 30 s de siempre no alcanzan (la siembra de cada prueba y el ingreso cuentan).
@@ -29,13 +30,11 @@ type Id = (typeof IDS)[number];
 
 const REGISTRADO_ACTIVO = { nombreCuenta: 'Q Taco de Prueba SRL', cuentas: ['123456789'], banco: 'Banco de Prueba', venceEl: '2027-12-31', activo: true };
 
-const ESPERA_DE_LA_LISTA_MS = 1000;
-
 /** Abre la pantalla donde vive la pieza de `id`, la deja cargada, y dice si se ve. */
 async function seVe(page: Page, id: Id, quiereVerla: boolean): Promise<boolean> {
   const marcar = async (pieza: ReturnType<Page['locator']>) => {
     if (quiereVerla) await expect(pieza).toBeVisible();
-    else await page.waitForTimeout(ESPERA_DE_LA_LISTA_MS);
+    else await esperarFichaLeida(page);
     return (await pieza.count()) > 0 && (await pieza.first().isVisible());
   };
   switch (id) {

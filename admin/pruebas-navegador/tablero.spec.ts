@@ -2,11 +2,15 @@ import { expect, test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
 import { ingresar } from './ayudas/ingresar';
 import { fijarHorarios } from './ayudas/datos';
-import { FOGON, crearOperadorFogon, fijarDoc, limpiarBitacora, quitarCampo, sembrarEventosDeBitacora } from './o1-comun';
+import { FOGON, crearOperadorFogon, esperarFichaLeida, fijarDoc, limpiarBitacora, quitarCampo, sembrarEventosDeBitacora } from './o1-comun';
 import prepararDatos from './preparar-datos';
 
 // Con varios carriles corriendo a la vez la máquina se carga y los 30 s de siempre no alcanzan (la siembra de cada prueba y el ingreso cuentan).
 test.describe.configure({ timeout: 90_000 });
+
+/** Las tarjetas que solo ve el administrador (títulos h3 de `Tablero.tsx`). */
+const TARJETAS_DEL_ADMINISTRADOR = ['Conversaciones', 'Mensajes del asistente', 'Derivaciones a operador', 'Cuenta'];
+const tarjeta = (page: Page, titulo: string) => page.getByRole('heading', { level: 3, name: titulo, exact: true });
 
 const TODOS_LOS_DIAS = Object.fromEntries(['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'].map((d) => [d, '10:00-20:00']));
 
@@ -21,6 +25,8 @@ test.describe('Tablero', () => {
     await expect(page.getByText('DERIVACIONES A OPERADOR')).toBeVisible();
     await expect(page.getByText('LO QUE EL ASISTENTE SABE OFRECER')).toBeVisible();
     await expect(page.getByText('Al día')).toBeVisible();
+    // Positiva de los localizadores que el operador NO debe cumplir (TAB-02): el administrador sí los ve.
+    for (const titulo of TARJETAS_DEL_ADMINISTRADOR) await expect(tarjeta(page, titulo), `el administrador debe ver «${titulo}»`).toBeVisible();
     // Las cifras salen de la siembra: 12 conversaciones este mes, 3 productos.
     await expect(page.getByText('12', { exact: true }).first()).toBeVisible();
   });
@@ -52,6 +58,7 @@ test.describe('Tablero: aviso del 80 %, tope de 1500 eventos y horario (TAB-01)'
   // Los eventos sembrados se borran con la página ya cerrada: borrarlos con un oyente abierto satura al emulador.
   test.afterEach(async ({ page }) => { test.setTimeout(150_000); await page.goto('about:blank'); await limpiarBitacora(FOGON); });
 
+  // El aviso lleva el mes de `periodoDe()` (planes.ts), que es UTC a propósito: es el mismo que usa la ingesta al marcarlo. No es el mes boliviano (UTC−4).
   const mesActual = () => new Date().toISOString().slice(0, 7);
   const mesAnterior = () => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 7); };
   const aviso = (page: Page) => page.getByText(/Llegaste al \d+ % de las conversaciones de tu plan/);
@@ -137,7 +144,10 @@ test.describe('Tablero del operador (TAB-02)', () => {
     await expect(page.getByRole('heading', { level: 3, name: 'Hoy', exact: true })).toBeVisible();
     await expect(page.getByText('LO QUE EL ASISTENTE SABE OFRECER')).toBeVisible();
     await expect(page.getByRole('link', { name: /Editar/ })).toHaveCount(0);
-    for (const prohibido of ['MENSAJES DEL ASISTENTE', 'DERIVACIONES A OPERADOR', 'CUENTA', 'Al día']) await expect(page.getByText(prohibido, { exact: true })).toHaveCount(0);
+    // Los rótulos están en mayúsculas solo por CSS: en el DOM son los títulos de tarjeta (h3) de `Tablero.tsx`. El mismo localizador se prueba
+    // con el administrador en «muestra las cifras del comercio…» (aserción positiva), para que «no está» no pase por un rótulo mal escrito.
+    for (const titulo of TARJETAS_DEL_ADMINISTRADOR) await expect(tarjeta(page, titulo), `el operador no debe ver «${titulo}»`).toHaveCount(0);
+    await expect(page.getByText('Al día', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('group', { name: 'Período' })).toHaveCount(0);
     await expect(page.getByRole('alert')).toHaveCount(0);
   });
@@ -183,7 +193,7 @@ test.describe('Encabezado del comercio: nombre y chip PRUEBA / PRODUCCIÓN (ACC-
     await expect(franja(page)).toContainText('Parrilla El Fogon');
     await page.getByRole('link', { name: 'Pedidos', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Pedidos', level: 2 })).toBeVisible();
-    await page.waitForTimeout(1000);
+    await esperarFichaLeida(page);
     await expect(chip(page)).toHaveCount(0);
     await expect(page.getByText('PRODUCCIÓN')).toHaveCount(0);
     await expect(page.getByRole('alert')).toHaveCount(0);

@@ -37,15 +37,23 @@ La siembra y los datos de prueba se niegan a correr contra un proyecto que no em
 | Conversaciones | lista y hilo, adjuntos marcados, HTML como texto, «No contactar», hilo vacío, aislamiento. **Sin función hoy**: la consola NO reproduce audio ni video ni muestra la imagen del comprobante (solo los marca); la prueba lo fija |
 | Conversaciones: intervención de una persona (H2, `conversaciones-turno.spec.ts`, pantalla nueva) | Tomar y Devolver (qué manda la pantalla, el estado cambia en vivo, el oper no ve botones y el admin devuelve la de otra), enviar (campos exactos, clave válida, doble clic = una llamada, 504 = «No se pudo confirmar si llegó» y el reintento usa la MISMA clave, `incierto` no se reenvía solo), tope de 1.000 y contador, ventana de 24 h (cuenta regresiva, cerrada, sin dato), filtro «El asistente atiende», teclado, aislamiento y nada en el almacenamiento del navegador. Las TRES callables (`tomarConversacion`, `devolverConversacion`, `enviarComoPersona`) se **simulan** con un «servidor» de mentira que escribe `turno` y el mensaje con el SDK Admin: se prueba la pantalla contra el contrato, no las Functions |
 | Campañas | plan Impulso (0, no ofrece el formulario) y plan Crecimiento (3): crear, editar, eliminar, tope del plan; negativas (sin texto, fin antes del inicio, empieza en el pasado, texto repetido, cancelar), aislamiento |
-| Tablero | cifras, horario de hoy, períodos, enlace a Productos |
+| Tablero (TAB-01, TAB-02) | cifras, horario de hoy, períodos, enlace a Productos; aviso del 80 % (y el de otro mes, sin aviso, operador), tope de 1500 eventos (y 1499), «Sin horario fijo», «Hoy cerrado»; el operador ve solo «Hoy» y «Lo que el asistente sabe ofrecer» |
+| Encabezado del comercio (ACC-07) | nombre y chip PRUEBA / PRODUCCIÓN en vivo, modalidad desconocida nunca es PRODUCCIÓN, el operador no ve chip ni error de permiso, aislamiento |
+| Guardia de rutas (ACC-05, `o1-acceso.spec.ts`) | tabla ruta × rol: sin sesión, administrador, operador, administrador de otro comercio (en los dos sentidos), rutas de NovuChat, rutas inexistentes, módulos que el comercio no tiene (`/inventario`, `/captacion`, `/agenda` con `test.fail`) |
+| Menú por módulos y rol (ACC-06) | con y sin `modulos` (respaldo por `flujos`), `modulos` vacío, operador con y sin Pedidos (ve «Cobros» solo con Pedidos), sin Agenda/Captación/Negocios/Inventario |
+| Consola oculta (`o1-consola-oculta.spec.ts`) | los cinco ids ocultan solo su pieza, ids desconocidos y valores que no son lista no ocultan nada, el propietario (simulado con el claim `p`) lo ve todo, ocultar es solo presentación (el servidor sigue aceptando el horario) y el comercio no puede escribir la lista |
+| Configuración: guardado completo (CFG-01, CFG-09) | el documento más grande (7 días, catálogo web, ubicación, textos al tope) termina en «Guardado.»; un negativo por campo (topes de pantalla y de servidor, nombre vacío, número de recepción fuera de 8 a 15 dígitos, nombre del asistente > 40) |
 | Usuarios | lista con rol y estado, aislamiento. **Invitar** necesita el emulador de Functions: se prueba a mano en staging |
 | Catálogo web público (cabeceras reales de su sitio) | política y `Permissions-Policy` puestas (hoy `geolocation=()`: el PR-B de ubicación la abre y esa línea se actualiza); carga, foto https, buscar, carrito, retiro y envío (la dirección es obligatoria), «Volver al chat», qué manda el navegador (solo identificadores y cantidades), errores 429 / 404 / 409 |
 
 ## Defectos conocidos que las pruebas ya reproducen (`test.fail`)
 
-- **ALT-C**: `firestore.rules` supera el tope de 1000 expresiones de las reglas de Firestore y rechaza **todo** guardado de Configuración
-  («El servidor rechazó el cambio»), incluso sin cambiar nada. Existe también en producción (v0.13.2). Las dos pruebas marcadas con `test.fail`
-  (guardar los 7 días, guardar un enlace de Maps válido) pasan hoy *por fallar*; cuando las reglas nuevas lleguen a `main` se ponen en rojo y se quita la marca.
+- **ACC-05, `/negocio/<id>/agenda`** (`o1-acceso.spec.ts`): un administrador de un comercio SIN el módulo Agenda ve la pantalla «Agenda» con su formulario
+  (`Funcionarios.tsx` no mira los módulos; Inventario redirige y Captación lo explica). Es de presentación: las reglas cierran la escritura. La prueba
+  «NEGATIVA: Agenda, que Q'Taco no tiene…» lleva `test.fail`; su pareja «Agenda SÍ abre, con su heading…» (Aurora, que tiene el módulo) prueba que el heading
+  es el que se pinta. Cuando la pantalla se corrija, la marca se pone en rojo y se quita.
+- **ALT-C** (Configuración rechazaba todo guardado por el tope de 1000 expresiones) está resuelto desde #472: las dos marcas `test.fail` se quitaron y el
+  guardado completo («CFG-09») ahora es una prueba normal.
 
 ## Lo que falta
 

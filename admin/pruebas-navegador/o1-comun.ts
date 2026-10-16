@@ -179,3 +179,13 @@ export async function escribirSinTope(page: Page, etiqueta: string | RegExp, val
     el.dispatchEvent(new Event('input', { bubbles: true }));
   }, valor);
 }
+
+/**
+ * Espera a que la ficha del comercio ya esté leída por la consola y deja pasar dos cuadros de pintura. La franja del encabezado lee la
+ * MISMA ficha (`tenants/{id}`) que `useConsolaOculta` y que `useModulos`: cuando muestra el nombre, el SDK ya entregó ese documento a
+ * todos los oyentes de la página. Sirve de señal positiva antes de afirmar que algo «no se ve», en lugar de una espera fija.
+ */
+export async function esperarFichaLeida(page: Page, nombreDelComercio = 'Parrilla El Fogon'): Promise<void> {
+  await expect(page.getByLabel('Comercio', { exact: true })).toContainText(nombreDelComercio);
+  await page.evaluate(() => new Promise<void>((listo) => requestAnimationFrame(() => requestAnimationFrame(() => listo()))));
+}

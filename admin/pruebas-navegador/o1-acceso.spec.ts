@@ -134,7 +134,17 @@ test.describe('ACC-05: guardia de rutas por rol y por comercio', () => {
     await expect(page.getByRole('button', { name: /guardar/i })).toHaveCount(0);
   });
 
+  test('Agenda SÍ abre, con su heading «Agenda», para el administrador de un comercio que tiene el módulo (pareja del test.fail de abajo)', async ({ page }) => {
+    await ingresar(page, USUARIOS.adminAurora);
+    await page.goto(rutaDe(AURORA, 'agenda'));
+    await expect(page.getByRole('heading', { name: 'Agenda', exact: true })).toBeVisible();
+    await expect(sinPermiso(page)).toHaveCount(0);
+  });
+
   test('NEGATIVA: Agenda, que Q\'Taco no tiene, no se abre escribiendo la dirección (ni /funcionarios)', async ({ page }) => {
+    // Lo que falla hoy es EXACTAMENTE la aserción `toHaveCount(0)` sobre el heading «Agenda» (la pantalla de Agenda sí se pinta). La
+    // pareja de arriba prueba que ese heading es el que se pinta cuando el comercio SÍ tiene el módulo, así que esta marca no cubre un
+    // fallo genérico (login, ruta mal escrita): si el heading cambiara de nombre, la pareja se pondría roja.
     // ACC-05: `App.tsx` deja la ruta `/agenda` con solo el guardia de administrador y `Funcionarios` no mira los módulos (a
     // diferencia de `Inventario`, que redirige, y de `Captacion`, que lo explica): un administrador de Q'Taco ve la pantalla
     // «Agenda» con su formulario aunque el menú no la ofrezca. El servidor sí cierra la escritura (reglas por módulo), por eso es
