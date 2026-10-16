@@ -16,10 +16,11 @@ import {
   REBOTE_MARCA_LEIDA_MS, RESUSCRIBIR_FILTROS_MS, alAceptarPagina, alSnapshot, alSuscribir, aplicarFiltro, buscarPorNombre,
   buscarPorTelefono, clasificarConsulta, consultaDeFiltro, consultaDeIds, consultaDeNombre, consultasDeTelefono,
   cursorInvalidado, debeMarcarLeida, esIdConversacion, esIdMensaje, fichaDeDocumento, filtroConReloj, mensajeContiene, mezclarLista,
-  marcaBloqueada, palabraParaIndice, prefijosValidos, puedeGestionarConversaciones, respuestaVigente, rutaConversaciones,
+  marcaBloqueada, palabraParaIndice, consultaDePersona, contadorAsistente, prefijosValidos, puedeGestionarConversaciones, respuestaVigente, rutaConversaciones,
   textoErrorBusqueda, unirFichas, vecina, PREFIJOS_PAIS_DEFECTO, MAX_DIGITOS_TELEFONO,
   type Consulta, type ConsultaPlana, type Contadores, type Ficha, type Filtro, type Paginacion,
 } from '../lib/conversaciones';
+import { capaTurnoReal } from '../lib/turno';
 import '../estilos/conversaciones.css';
 
 /**
@@ -35,11 +36,12 @@ import '../estilos/conversaciones.css';
  * SE MUESTRA SOLO CON LA BANDERA `tenants/{id}.consolaConversaciones = 'nueva'`
  * (ver `Conversaciones.tsx`, el selector). La pantalla de siempre queda intacta.
  *
- * QUÉ ESCRIBE: dos cosas, y nada más. «No contactar» (en el detalle) y la marca de
+ * QUÉ ESCRIBE DIRECTO EN FIRESTORE: dos cosas, y nada más. «No contactar» (en el detalle) y la marca de
  * leída: `{ noLeidos: 0, sinLeer: false }`, que las reglas solo aceptan hacia cero
- * y solo de una persona del negocio (admin u oper). No tiene «Tomar», «Devolver» ni
- * campo para escribir: eso llega en H2. La única Function que llama es
- * `buscarConversaciones`. Ningún `fetch`, ningún almacenamiento del navegador.
+ * y solo de una persona del negocio (admin u oper). Todo lo demás pasa por el servidor:
+ * `buscarConversaciones` (la búsqueda por palabra) y, desde H2, `tomarConversacion`,
+ * `devolverConversacion` y `enviarComoPersona` (`lib/turno.ts`; el campo `turno` y los mensajes de
+ * una persona los escribe SOLO el servidor). Ningún `fetch`, ningún almacenamiento del navegador.
  *
  * QUÉ LEE (todo bajo `/tenants/{t}`, la ruta decide qué se puede leer; no hay un
  * `where('tenantId', …)` que un usuario pudiera cambiar para mirar otro negocio):
@@ -231,15 +233,20 @@ function useContadores(tenantId: string, cambios: number, visible: boolean): Con
   const contar = useCallback(async () => {
     ultimaVez.current = Date.now();
     const ahora = Date.now();
-    const cuentas = await Promise.all(FILTROS_A_CONTAR.map(async (f): Promise<number | null> => {
-      try {
-        return (await getCountFromServer(consultaFirestore(tenantId, consultaDeFiltro(f, ahora)))).data().count;
-      } catch { return null; }
-    }));
+    const contarConsulta = async (c: ConsultaPlana): Promise<number | null> => {
+      try { return (await getCountFromServer(consultaFirestore(tenantId, c))).data().count; } catch { return null; }
+    };
+    const [cuentas, conPersona] = await Promise.all([
+      Promise.all(FILTROS_A_CONTAR.map((f) => contarConsulta(consultaDeFiltro(f, ahora)))),
+      contarConsulta(consultaDePersona()),
+    ]);
     if (!vivo.current) return;
     setContadores((previos) => {
       const nuevos = { ...previos };
       FILTROS_A_CONTAR.forEach((f, i) => { const n = cuentas[i]; if (n !== undefined && n !== null) nuevos[f] = n; });
+      // «El asistente atiende» = todas menos las que tiene una persona. Si falta alguno de los dos, queda el último número que se supo.
+      const asistente = contadorAsistente(nuevos.todas, conPersona);
+      if (asistente !== null) nuevos.asistente = asistente;
       return nuevos;
     });
   }, [tenantId]);
@@ -332,8 +339,11 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
   const { conversacionId } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { permisos } = useSesion();
+  const { permisos, usuario } = useSesion();
   const rol = rolEn(permisos, tenantId);
+  const miUid = usuario?.uid ?? null;
+  // Las tres callables de H2 (tomar, devolver, enviar): una sola capa, que las pruebas pueden reemplazar.
+  const capa = useMemo(() => capaTurnoReal(funciones), []);
   const visible = usePestanaVisible();
 
   // `?m=` viene de la dirección: un id con «/» arma una ruta de otro nivel. Si no sirve, es como no haberlo puesto.
@@ -666,6 +676,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
             onAnterior={vecina(claves, claveActiva, -1) ? () => irA(-1) : null}
             onSiguiente={vecina(claves, claveActiva, 1) ? () => irA(1) : null}
             posicion={posicion} puedeGestionar={puedeGestionar} comercioActivo={estadoComercio === 'activo'}
+            miUid={miUid} esAdmin={rol === 'admin' && !permisos.propietario} capa={capa}
           />
         ) : (
           <div className="cv-detalle cv-detalle--vacio">

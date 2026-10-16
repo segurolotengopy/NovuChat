@@ -31,6 +31,7 @@ import {
   MAX_PALABRAS_CONSULTA, MINIMO_DIGITOS, POR_VENCER_HORAS, PREFIJOS_PAIS_DEFECTO, VENTANA_HORAS,
   normalizarTexto, palabrasDe, soloDigitos, trozosDeTelefono,
 } from '../../../../functions/src/core/conversacion/normalizacion';
+import { turnoDeDocumento, type Turno } from './turno';
 
 // Lo de Core que la pantalla y sus pruebas usan, por un solo punto de entrada.
 export {
@@ -91,8 +92,10 @@ export interface Ficha {
   ventanaVenceEn: number | null;
   noLeidos: number;
   sinLeer: boolean;
-  /** `necesitaHumano === true` en el documento (lo escribirá H2; en H1 casi siempre `false`). */
+  /** `necesitaHumano === true` en el documento (lo escribe el evento «transferido», no H2 de texto). */
   necesitaHumano: boolean;
+  /** Una persona responde (H2). `null` = responde el asistente: ausente, de otro tipo o con un valor raro. Lo escribe el servidor. */
+  turno: Turno | null;
   /** `normal`, `operador` o `bloqueado` (lo anota la ingesta); '' si falta. */
   atencionEstado: string;
   noContactar: boolean;
@@ -100,11 +103,12 @@ export interface Ficha {
   nombrePalabras: string[];
 }
 
-export type Filtro = 'todas' | 'humano' | 'noLeidas' | 'vencer';
+export type Filtro = 'todas' | 'asistente' | 'humano' | 'noLeidas' | 'vencer';
 
-/** Sin «El asistente atiende»: en H1 nadie toma conversaciones, así que sería idéntico a «Todas». */
+/** Desde H2 hay «El asistente atiende»: las que no tiene una persona (ausente = asistente). */
 export const FILTROS: readonly { id: Filtro; rotulo: string }[] = [
   { id: 'todas', rotulo: 'Todas' },
+  { id: 'asistente', rotulo: 'El asistente atiende' },
   { id: 'humano', rotulo: 'Necesita humano' },
   { id: 'noLeidas', rotulo: 'No leídas' },
   { id: 'vencer', rotulo: 'Ventana por vencer' },
@@ -144,6 +148,7 @@ export function fichaDeDocumento(id: string, datos: Record<string, unknown> | nu
     noLeidos,
     sinLeer: x['sinLeer'] === true,
     necesitaHumano: x['necesitaHumano'] === true,
+    turno: turnoDeDocumento(x['turno']),
     atencionEstado: str(x['atencionEstado']),
     noContactar: x['noContactar'] === true,
     telefonoTrozos: lista(x['telefonoTrozos']),
@@ -188,6 +193,8 @@ export const FORMAS_CONSULTA: readonly FormaConsulta[] = [
   { id: 'nombre', filtros: [{ campo: 'nombrePalabras', op: 'array-contains' }], orden: [] },
   // Las fichas de los resultados de la búsqueda por palabra, de una sola vez (en vez de un `getDoc` por resultado).
   { id: 'ids', filtros: [{ campo: '__name__', op: 'in' }], orden: [] },
+  // H2: cuántas tienen una persona (para el número de «El asistente atiende»: todas menos estas). Un solo campo: sin índice compuesto.
+  { id: 'turno-persona', filtros: [{ campo: 'turno.responde', op: '==' }], orden: [] },
 ];
 
 /** La forma (sin valores) de una consulta concreta. */
@@ -200,6 +207,9 @@ export function consultaDeFiltro(filtro: Filtro, ahora: number, limite?: number)
   const con = (c: ConsultaPlana): ConsultaPlana => (limite === undefined ? c : { ...c, limite });
   switch (filtro) {
     case 'todas':
+    // «El asistente atiende» pide la misma página que «Todas» y descarta en pantalla las que tiene una persona: una
+    // consulta de «el campo no existe o no es persona» no se puede hacer en Firestore (`!=` deja afuera los documentos sin campo).
+    case 'asistente':
       return con({ restricciones: [], orden: [{ campo: 'ultimoEn', dir: 'desc' }] });
     case 'humano':
       // Solo las de las últimas 24 h: «necesita humano» de hace una semana ya no es una urgencia.
@@ -221,6 +231,11 @@ export function consultaDeFiltro(filtro: Filtro, ahora: number, limite?: number)
         orden: [{ campo: 'ventanaVenceEn', dir: 'asc' }],
       });
   }
+}
+
+/** Las conversaciones que tiene una persona (solo se cuentan; con `turno.responde == 'persona'`). */
+export function consultaDePersona(): ConsultaPlana {
+  return { restricciones: [{ campo: 'turno.responde', op: '==', valor: 'persona' }], orden: [] };
 }
 
 /** ¿El filtro depende del reloj? Esos se vuelven a pedir cada 5 minutos. */
@@ -406,6 +421,7 @@ export function necesitaHumanoDe(f: Ficha, ahora: number): boolean {
 export function cumpleFiltro(f: Ficha, filtro: Filtro, ahora: number): boolean {
   switch (filtro) {
     case 'todas': return true;
+    case 'asistente': return f.turno === null;
     case 'humano': return necesitaHumanoDe(f, ahora);
     case 'noLeidas': return f.sinLeer;
     case 'vencer': return f.ventanaVenceEn !== null && f.ventanaVenceEn > ahora && f.ventanaVenceEn <= ahora + POR_VENCER_HORAS * HORA_MS;
@@ -449,7 +465,12 @@ export function mezclarLista(
 
 /** Los contadores de los chips: `null` = todavía no se pudo contar (no se inventa un cero). */
 export type Contadores = Record<Filtro, number | null>;
-export const CONTADORES_VACIOS: Contadores = { todas: null, humano: null, noLeidas: null, vencer: null };
+export const CONTADORES_VACIOS: Contadores = { todas: null, asistente: null, humano: null, noLeidas: null, vencer: null };
+
+/** «El asistente atiende» = todas menos las que tiene una persona; sin alguno de los dos números, sin número (no se inventa). */
+export function contadorAsistente(todas: number | null, conPersona: number | null): number | null {
+  return todas === null || conPersona === null ? null : Math.max(0, todas - conPersona);
+}
 
 // ── Marcar leída ─────────────────────────────────────────────────────────────
 

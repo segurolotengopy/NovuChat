@@ -54,7 +54,7 @@ function ficha(id: string, extra: Partial<Ficha> = {}): Ficha {
   const telefono = extra.telefono ?? id.replace(/^wa_/, '');
   return {
     id, telefono, nombre: id, ultimoMensaje: '', ultimoEn: AHORA - 10 * MIN, ultimoEntranteEn: AHORA - 10 * MIN,
-    ventanaVenceEn: AHORA - 10 * MIN + 24 * HORA, noLeidos: 0, sinLeer: false, necesitaHumano: false, atencionEstado: 'normal',
+    ventanaVenceEn: AHORA - 10 * MIN + 24 * HORA, noLeidos: 0, sinLeer: false, necesitaHumano: false, turno: null, atencionEstado: 'normal',
     noContactar: false, telefonoTrozos: trozosDeTelefono(telefono), nombrePalabras: palabrasDe(extra.nombre ?? id, 6), ...extra,
   };
 }
@@ -320,9 +320,9 @@ describe('filtros', () => {
   ];
   const ids = (f: Parameters<typeof aplicarFiltro>[1]) => aplicarFiltro(lista, f, AHORA).map((x) => x.id);
 
-  it('los filtros son estos cuatro: NO hay «El asistente atiende» (en H1 nadie toma conversaciones)', () => {
-    expect(FILTROS.map((f) => f.id)).toEqual(['todas', 'humano', 'noLeidas', 'vencer']);
-    expect(FILTROS.map((f) => f.rotulo).join('|')).not.toMatch(/asistente atiende/i);
+  it('los filtros son estos cinco; desde H2 está «El asistente atiende» (las que no tiene una persona)', () => {
+    expect(FILTROS.map((f) => f.id)).toEqual(['todas', 'asistente', 'humano', 'noLeidas', 'vencer']);
+    expect(FILTROS.find((f) => f.id === 'asistente')?.rotulo).toBe('El asistente atiende');
   });
 
   it('cada filtro deja lo que dice', () => {
@@ -782,6 +782,10 @@ describe('NEGATIVA: lo que la pantalla escribe, llama y usa (guardas de fuente)'
     'web/src/central/componentes/ListaConversaciones.tsx',
     'web/src/central/componentes/ConsolaConversaciones.tsx',
     'web/src/central/lib/conversaciones.ts',
+    // H2 (intervención de una persona): las mismas guardas valen para lo nuevo.
+    'web/src/central/componentes/BarraTurno.tsx',
+    'web/src/central/componentes/EscribirComoPersona.tsx',
+    'web/src/central/lib/turno.ts',
   ];
   const codigo = (ruta: string) => sinComentarios(leer(ruta));
 
@@ -818,9 +822,11 @@ describe('NEGATIVA: lo que la pantalla escribe, llama y usa (guardas de fuente)'
     expect(f).toContain('return () => clearTimeout(t);');
   });
 
-  it('la única Function que llama es `buscarConversaciones`, con `{ tenantId, texto, cursor? }`', () => {
+  it('las Functions que llama son cuatro: `buscarConversaciones` y, desde H2, `tomarConversacion`, `devolverConversacion` y `enviarComoPersona`', () => {
     const llamadas = ARCHIVOS.flatMap((r) => [...codigo(r).matchAll(/httpsCallable\s*(?:<[^>]*>)?\(([^)]*)\)/g)].map((m) => m[1]?.replace(/\s+/g, ' ')));
-    expect(llamadas).toEqual(["funciones, 'buscarConversaciones'"]);
+    expect(llamadas).toEqual([
+      "funciones, 'buscarConversaciones'", "funciones, 'tomarConversacion'", "funciones, 'devolverConversacion'", "funciones, 'enviarComoPersona'",
+    ]);
     expect(codigo('web/src/central/paginas/ConversacionesNueva.tsx')).toContain("await buscar({ tenantId, texto, ...(cursor ? { cursor } : {}) })");
   });
 
@@ -928,10 +934,10 @@ describe('NEGATIVA: lo que la pantalla escribe, llama y usa (guardas de fuente)'
     }
   });
 
-  it('nada del prototipo sobrevive: ni banner, ni simulación, ni Tomar/Devolver/escribir, ni `prototipoSemilla`', () => {
+  it('nada del prototipo sobrevive: ni banner, ni simulación, ni `prototipoSemilla` (Tomar, Devolver y el campo de escribir ya son de verdad, de H2)', () => {
     for (const ruta of ARCHIVOS) {
       const c = codigo(ruta);
-      for (const viejo of ['SIMULACION', 'Simulacion', 'simulacion', 'prototipoSemilla', 'quienSoy', 'Tomar la conversación', 'Devolver', 'cv-prototipo', 'PROTOTIPO', '<textarea']) {
+      for (const viejo of ['SIMULACION', 'Simulacion', 'simulacion', 'prototipoSemilla', 'quienSoy', 'cv-prototipo', 'PROTOTIPO']) {
         expect(c, `${ruta} conserva ${viejo}`).not.toContain(viejo);
       }
     }

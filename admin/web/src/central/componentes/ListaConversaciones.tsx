@@ -133,6 +133,7 @@ function RenglonFicha({ r, activa, ahora }: { r: Renglon; activa: boolean; ahora
           <span className="cv-ficha-marcas">
             {r.motivo && <span className="cv-etiqueta">{r.motivo}</span>}
             {necesitaHumanoDe(f, ahora) && <span className="cv-etiqueta cv-etiqueta--humano">Necesita humano</span>}
+            {f.turno && <span className="cv-etiqueta cv-etiqueta--persona">Responde una persona</span>}
             {v.estado === 'por-vencer' && <span className="cv-etiqueta cv-etiqueta--vence">Vence en {textoRestante(v.restanteMs)}</span>}
             {v.estado === 'cerrada' && <span className="cv-etiqueta cv-etiqueta--cerrada">Ventana cerrada</span>}
             {r.coincidencia && <span className="cv-ficha-telefono">+<TextoSeguro valor={f.telefono} maxLargo={15} /></span>}
