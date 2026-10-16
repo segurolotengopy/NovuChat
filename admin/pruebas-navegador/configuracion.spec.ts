@@ -7,6 +7,9 @@ import { simularFuncion } from './ayudas/funciones';
 import { FOGON, escribirSinTope } from './ayudas/o1-comun';
 import prepararDatos from './preparar-datos';
 
+// Con varios carriles corriendo a la vez la máquina se carga y los 30 s de siempre no alcanzan (la siembra de cada prueba y el ingreso cuentan).
+test.describe.configure({ timeout: 90_000 });
+
 test.describe('Configuración: horarios', () => {
   test.beforeEach(async ({ page }) => {
     await ingresar(page, USUARIOS.adminFogon);

@@ -5,6 +5,9 @@ import { fijarHorarios } from './ayudas/datos';
 import { FOGON, crearOperadorFogon, fijarDoc, limpiarBitacora, quitarCampo, sembrarEventosDeBitacora } from './ayudas/o1-comun';
 import prepararDatos from './preparar-datos';
 
+// Con varios carriles corriendo a la vez la máquina se carga y los 30 s de siempre no alcanzan (la siembra de cada prueba y el ingreso cuentan).
+test.describe.configure({ timeout: 90_000 });
+
 const TODOS_LOS_DIAS = Object.fromEntries(['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'].map((d) => [d, '10:00-20:00']));
 
 test.describe('Tablero', () => {

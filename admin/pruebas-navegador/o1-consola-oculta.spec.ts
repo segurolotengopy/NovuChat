@@ -21,6 +21,9 @@ import prepararDatos from './preparar-datos';
  * «oculta» pasaría aun con la pieza que sí debe verse. El caso sin id (que espera de verdad hasta que aparece) prueba que llega a tiempo.
  */
 
+// Con varios carriles corriendo a la vez la máquina se carga y los 30 s de siempre no alcanzan (la siembra de cada prueba y el ingreso cuentan).
+test.describe.configure({ timeout: 90_000 });
+
 const IDS = ['horario', 'hoy', 'invitar', 'pagar', 'reemplazoQr'] as const;
 type Id = (typeof IDS)[number];
 

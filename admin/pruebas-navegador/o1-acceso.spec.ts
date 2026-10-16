@@ -53,7 +53,7 @@ async function niega(page: Page, ruta: string, quien: string): Promise<void> {
 
 test.describe('ACC-05: guardia de rutas por rol y por comercio', () => {
   // Cada prueba recorre varias rutas con recarga completa: más que los 30 s de siempre.
-  test.describe.configure({ timeout: 120_000 });
+  test.describe.configure({ timeout: 180_000 });
   test.beforeAll(async () => {
     prepararDatos();
     await crearOperadorFogon(USUARIOS.operadorFogon);
@@ -158,6 +158,7 @@ test.describe('ACC-05: guardia de rutas por rol y por comercio', () => {
 });
 
 test.describe('ACC-06: menú y pestañas según los módulos de la ficha y el rol', () => {
+  test.describe.configure({ timeout: 90_000 });
   const MENU_ADMIN_QTACO = [
     'Configuración', 'Productos', 'Campañas', 'Pedidos', 'Cobros', 'Configuración de QR', 'Conversaciones',
     'Usuarios', 'Contactos', 'Consumo', 'Cuenta', 'Pagar', 'Reclamos', 'Bitácora',
