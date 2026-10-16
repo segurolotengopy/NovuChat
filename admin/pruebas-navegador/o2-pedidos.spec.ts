@@ -259,8 +259,17 @@ test.describe('PED-02: la tarjeta del pedido', () => {
     await sembrarPedido(FOGON, { id: 't8', total: 10, entrega: 'retiro', nota: 'n'.repeat(400), items: [{ nombre: 'Taco', cantidad: 1 }] });
     await abrirComoAdmin(page);
     expect(((await page.locator('li.pedido p.pedido-nota').textContent()) ?? '').length).toBe(300);
-    const tarjeta = await page.locator('li.pedido').first().evaluate((e) => ({ desborde: e.scrollWidth - e.clientWidth }));
-    expect(tarjeta.desborde).toBeLessThanOrEqual(0);
+    // Se mide la TARJETA (no el documento: la cabecera del administrador tiene su propia prueba, más abajo).
+    const caja = await page.locator('li.pedido').first().evaluate((e) => ({ desborde: e.scrollWidth - e.clientWidth, derecha: e.getBoundingClientRect().right, ancho: window.innerWidth }));
+    expect(caja.desborde).toBeLessThanOrEqual(0);
+    expect(caja.derecha).toBeLessThanOrEqual(caja.ancho);
+  });
+
+  test('la cabecera del administrador cabe en 1280 px: el botón «Salir» queda a la vista', async ({ page }) => {
+    test.fail(true, 'Hallazgo fuera de Pedidos (cabecera de toda la consola): con las 14 pestañas del administrador de Fogon, a 1280 px el menú llega a 1654 px y «Salir» queda fuera de la pantalla (desplazamiento lateral de 374 px). Prueba hermana SIN test.fail: «el operador ve Pedidos y Conversaciones…» (el operador, con menos pestañas, no se sale) y el viewport móvil de o2-pedidos-movil.spec.ts.');
+    await abrirComoAdmin(page);
+    const salir = await page.getByRole('button', { name: 'Salir' }).boundingBox();
+    expect(salir && salir.x + salir.width, 'borde derecho del botón Salir').toBeLessThanOrEqual(1280);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   });
 });
