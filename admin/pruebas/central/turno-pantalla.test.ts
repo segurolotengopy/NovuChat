@@ -224,6 +224,8 @@ describe('C. NEGATIVAS de fuente de lo nuevo', () => {
     expect(c).toContain('enCurso.current = true;');
     expect(c).toContain('readOnly={enviando}');
     expect(c).toMatch(/disabled=\{!puedeEnviar\}/);
+    // «Enviar» solo con algo escrito, dentro del tope, con la ventana abierta y sin otro envío en curso.
+    expect(c).toContain('const puedeEnviar = !enviando && motivo === null && texto.hayTexto && !texto.excede;');
     expect(c).not.toMatch(/setTimeout|setInterval\([^)]*enviar|reintent\w*\s*\(/i);
     const b = codigo('web/src/central/componentes/BarraTurno.tsx');
     expect(b).toContain('if (enCurso.current || !acciones.habilitados) return;');
@@ -247,6 +249,12 @@ describe('C. NEGATIVAS de fuente de lo nuevo', () => {
 
 describe('D. el Detalle junta las piezas', () => {
   const d = codigo('web/src/central/componentes/DetalleConversacion.tsx');
+
+  it('el rol de admin que se pasa al Detalle descarta al propietario de NovuChat (solo lee)', () => {
+    const p = codigo('web/src/central/paginas/ConversacionesNueva.tsx');
+    expect(p).toContain("esAdmin={rol === 'admin' && !permisos.propietario}");
+    expect(p).toContain('const puedeGestionar = puedeGestionarConversaciones(rol, permisos.propietario);');
+  });
 
   it('pinta la barra del turno y, SOLO si quien mira tiene la conversación, el campo para escribir', () => {
     expect(d).toContain('<BarraTurno');
