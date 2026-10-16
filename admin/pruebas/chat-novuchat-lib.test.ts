@@ -413,7 +413,7 @@ describe('chDecidir: lo que resuelve el CÓDIGO y lo que cae en el modelo', () =
     const casos: [string, string, string][] = [
       ['Llámame mañana', 'equipo', ''], ['quiero hablar con una persona', 'equipo', ''], ['ya soy cliente, necesito soporte', 'equipo', ''],
       ['¿Cuánto cobra Meta?', 'fijo', 'costoMeta'], ['¿Cuántas conversaciones trae el plan Impulso?', 'planes', ''], ['¿Cuántos mensajes incluye una conversación?', 'fijo', 'consumo'],
-      ['¿Valida mis transferencias con el banco?', 'fijo', 'banco'], ['¿Se conecta con SAP?', 'fijo', 'integracion'], ['Dame un descuento', 'fijo', 'descuento'], ['¿Cuánto cuesta?', 'pedirNombre', ''],
+      ['¿Valida mis transferencias con el banco?', 'fijo', 'banco'], ['¿Se conecta con SAP?', 'fijo', 'integracion'], ['Dame un descuento', 'fijo', 'descuento'], ['¿Puedo usar mi número actual?', 'fijo', 'numeroActual'], ['¿Cuánto cuesta?', 'pedirNombre', ''],
     ];
     for (const [t, ruta, fijo] of casos) {
       const p = decidir([ev(t)]);
@@ -1029,6 +1029,35 @@ describe('los textos de respaldo y los mensajes que arma el código', () => {
     expect(sin.texto).toMatch(/Por ahora no puedo ponerte en contacto/);
     expect(sin.payload.type).toBe('text'); // (sin número de recepción no hay a quién pasar: ni «Hablar con el equipo» ni ofertas)
     expect(JSON.stringify(sin.payload)).not.toMatch(/wa\.me/);
+  });
+  it('el NÚMERO PROPIO del prospecto: cada variante (acentos, mayúsculas, sin signos, audio transcrito) va a la ruta fija `numeroActual`; los negativos no', () => {
+    const SI = ['¿Puedo usar mi número actual?', 'puedo usar mi numero', 'PUEDO USAR MI NUMERO ACTUAL', '¿Puedo usar mi WhatsApp?', '¿Puedo usar mi línea?', '¿Puedo utilizar mi número personal?', '¿Tengo que comprar un número nuevo?', '¿Tengo que comprar otra línea?', '¿Tengo que comprar otro chip?', '¿Necesito un número nuevo para el asistente?', '¿Debo sacar un número aparte?', '¿Mi número seguirá funcionando en el celular?', '¿Mi número va a seguir funcionando en la app?', '¿Mi WhatsApp seguirá funcionando en WhatsApp normal?', '¿Puedo seguir usando mi WhatsApp en mi celular?', '¿Se pierde mi número?', '¿Se pierden mis chats?', '¿Pierdo mi número si lo conecto?', '¿Puedo conectar el que ya tengo?', '¿Qué número necesito?', '¿Coexisten?', '¿Pueden coexistir los dos?', '¿Puedo usar los dos, el WhatsApp del celular y el del asistente?', 'Quiero usar mi número actual, se puede', 'puedo conectar mi numero', '¿Mi número actual sirve?', '¿Necesito otro chip?', '¿Mi WhatsApp personal sirve?', '¿Mi número cambia?', '¿Se puede vincular mi número?', '¿Puedo integrar mi WhatsApp?', '¿Coexiste con mi WhatsApp personal?', '¿Funciona con mi número actual?', '¿Voy a perder mis conversaciones?', '¿Se borran mis chats?', '¿Puedo usar mi número o uno nuevo?', '¿Puedo usar mi WhatsApp para el asistente?'];
+    const NO = ['¿Cuánto cuesta el número?', '¿Cuánto cuesta usar mi número?', 'Mi número de teléfono es 71234567', 'Me llamo Ana, mi número es 7123', '¿Cuál es tu número?', '¿Atienden en este número?', 'Quiero ver mi número de pedidos', '¿Cuántos mensajes incluye?', '¿Se conecta a mi calendario?', '¿Se conecta con mi WhatsApp?', '¿Puedo usar mi calendario?', 'Tengo una línea de crédito', '¿Puedo dejar mi número?', 'Hola', '¿Qué incluye el setup?', '¿Pueden usar el sistema los dos socios?',
+      // descripciones del problema del cliente (no preguntas sobre el número)
+      'mi WhatsApp queda saturado los fines de semana', 'mi número sigue recibiendo mensajes de madrugada', 'tengo una pastelería y mi whatsapp sigue sonando todo el día con pedidos', 'mi numero de clientes sigue creciendo', 'mi número de citas queda corto', 'Tengo una imprenta y mi WhatsApp queda lleno de pedidos', 'Soy Ana de Imprenta Sol, mi WhatsApp queda lleno todo el día',
+      // otras preguntas (planes, contacto, datos de facturación, catálogo, integración)
+      '¿Qué línea necesito para empezar, Impulso o Pro?', '¿Qué número uso para contactarlos?', '¿Qué número uso para escribirles?', '¿Qué número uso para pagar?', '¿Qué número necesito darte para la factura?', '¿Puedo poner mi número de NIT en la factura?', '¿Puedo usar mi número de carnet para registrarme?', '¿Puedo poner mi WhatsApp en el catálogo?', '¿Puedo usar mi número para recibir los avisos de mis clientes?', '¿Coexiste con mi sistema de facturación?', '¿Puedo integrar mi WhatsApp con mi ERP?',
+      // afirmaciones sin signos que NO son preguntas sobre el número, y «mi WhatsApp» seguido de otro uso
+      'mi whatsapp se bloquea cuando llegan muchos mensajes', 'mi whatsapp funcionaría mejor con un asistente', 'mi WhatsApp cambia mucho de horario', 'mi whatsapp deja de funcionar a veces por la señal', 'mi numero se pierde entre tantos anuncios', 'pierdo mis chats cada vez que cambio de celular', 'Mi WhatsApp cambia de dueño en la tarde, lo maneja mi hermana',
+      '¿Puedo usar mi WhatsApp para vender?', '¿Puedo usar mi WhatsApp para campañas?', '¿Puedo usar mi WhatsApp con Instagram?', '¿Puedo usar mi número para el catálogo?', '¿Puedo conectar mi WhatsApp a Google Calendar?', '¿Por qué mi WhatsApp se bloquea?'];
+    const det = f('chPreguntaNumeroActual');
+    const decidir = (eventos: J[]): J => f('chDecidir')({ eventos, ficha: fichaBase(), cfg: CFG, from: '59100000011' });
+    for (const x of SI) { expect(det(x), x).toBe(true); const p = decidir([ev(x)]); expect([x, p.ruta, p.fijo]).toEqual([x, 'fijo', 'numeroActual']); }
+    for (const x of NO) { expect(det(x), x).toBe(false); expect([x, decidir([ev(x)]).fijo]).not.toEqual([x, 'numeroActual']); }
+    // no se evalúa donde ya contesta otra ruta: la respuesta al nombre/negocio (`datos`) y la respuesta del rubro «Otro» (`otroRespuesta`)
+    const conFicha = (ficha: J, x: string): J => f('chDecidir')({ eventos: [ev(x)], ficha: { ...fichaBase(), historial: [{ r: 'u', t: 'hola' }, { r: 'a', t: 'Dime tu nombre' }], ...ficha }, cfg: CFG, from: '59100000011' });
+    expect(conFicha({ preguntaDatos: true }, 'Soy Ana de Imprenta Sol, mi WhatsApp queda lleno todo el día').fijo).not.toBe('numeroActual');
+    // (en `datos`, con una pregunta sobre el número: la ruta fija sí corre y el nombre se conserva)
+    expect(conFicha({ preguntaDatos: true }, 'Soy Ana de Panadería Sol, ¿puedo usar mi número actual?')).toMatchObject({ ruta: 'fijo', fijo: 'numeroActual', extraerDatos: true });
+    expect(conFicha({ rubro: 'otro', historial: [{ r: 'a', t: '¿Cuál es tu mayor cuello de botella?' }] }, '¿Puedo usar mi número actual?').fijo).not.toBe('numeroActual');
+    expect(conFicha({}, '¿Puedo usar mi número actual?')).toMatchObject({ ruta: 'fijo', fijo: 'numeroActual' });
+    // con los planes pendientes (el cliente contesta el pedido del nombre con esta pregunta), el nombre no se pierde
+    expect(conFicha({ planesPendientes: true }, '¿Puedo usar mi número actual?')).toMatchObject({ ruta: 'fijo', fijo: 'numeroActual', extraerDatos: true });
+    expect(conFicha({}, '¿Puedo usar mi número actual?')['extraerDatos']).not.toBe(true);
+    const t = f('chRespuestaFija')('numeroActual', CFG);
+    expect(t).toBe('Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar. ¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso? 🤝');
+    expect(t).not.toMatch(/\bAPI\b|coexisten|certificad|https?:/i);
+    expect(f('chBotonesDe')(f('chSituacion')({ plan: { ruta: 'fijo', fijo: 'numeroActual' }, res: null, eventos: [ev('¿Puedo usar mi número actual?')], ficha: fichaBase() }))).toMatchObject({ fila: 'consulta-sin-respuesta', equipo: true, planes: false, ofrecio: 'equipo' });
   });
   it('chRespuestaFija: el dato más la invitación al equipo, sin ninguna cifra', () => {
     for (const id of ['consumo', 'banco', 'costoMeta', 'integracion', 'descuento']) {
@@ -2129,6 +2158,46 @@ describe('respaldo de Meta: el modelo no afirma que NovuChat es Tech Provider, e
   });
 });
 
+describe('el modelo no afirma que el número sigue funcionando en la app del celular ni que convive con el asistente', () => {
+  const v = (extra: J = {}): J => ({ cfg: CFG, contexto: 'general', precios: false, permitidas: ['65', '125', '25'], textoCliente: '', textos: [], rubroId: '', planesOk: false, equipoOk: false, rubroActual: '', ultimoAsistente: '', ...extra });
+  const marco = (x: string, extra: J = {}): string => f('chValidarMensaje')('NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ' + CIERRE_RUBRO, v(extra));
+  const contextos = [{}, { contexto: 'abierta' }, { contexto: 'empresa' }, { contexto: 'otroRespuesta' }, { rubroActual: 'retail' }];
+  const MAL = ['¡Claro! Puedes seguir usando tu WhatsApp en el celular y el asistente responde al mismo tiempo.', 'Podrás seguir usando tu número en la aplicación del celular.', 'Sí, tu WhatsApp personal sirve perfectamente para el asistente, y tus chats no se pierden.', 'Tu número convive con la app del celular gracias a la coexistencia.', 'Tus conversaciones se conservan.', 'Se pierden tus chats al conectarlo.', 'Tu número y la app del celular funcionan a la vez.', 'Tu número sigue funcionando en el celular.', 'La coexistencia está disponible.', 'Tu número seguirá funcionando en la app del celular.', 'No pierdes tus chats al conectarlo.', 'Tu número queda igual en tu celular.', 'Tu WhatsApp sigue igual.', 'No deja de funcionar en el celular.', 'La app del celular y el asistente funcionan al mismo tiempo.', 'Puedes seguir usándolo en el celular.', 'El asistente convive con tu WhatsApp.'];
+  const BIEN = ['Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.', 'El asistente responde por WhatsApp a varios clientes al mismo tiempo.', 'Como dueño, miras todas las conversaciones desde nuestra consola en tu celular.', 'Maneja varias agendas a la vez y agenda sin cruces.', 'Así no se pierden tus mensajes de madrugada.', 'Tu asistente convive con tu equipo de recepción.'];
+  it('cada afirmación cae en `coexiste`, en todos los contextos; lo legítimo no cae', () => {
+    // (en `abierta` y `empresa` manda antes la regla del pitch o de los puntos clave: se rechaza igual)
+    for (const x of MAL) for (const extra of contextos) { const r = marco(x, extra); if (['abierta', 'empresa'].includes(String(extra['contexto']))) expect(r, `${x} ${JSON.stringify(extra)}`).not.toBe(''); else expect(r, `${x} ${JSON.stringify(extra)}`).toBe('coexiste'); }
+    for (const x of BIEN) for (const extra of contextos) expect(marco(x, extra), x).not.toBe('coexiste');
+    const causa = String((L as unknown as J)['CH_CAUSAS'].coexiste);
+    expect(causa).toMatch(/recomendamos un número nuevo y dedicado al asistente/);
+    expect(causa).toMatch(/lo revisan con el equipo/);
+  });
+  it('ADITIVA: con la red nueva, `chValidarMensaje` da lo mismo que sin ella en todo el corpus, salvo en las frases de coexistencia; y los textos del dato no caen por ella', () => {
+    const SIN_LA_LINEA = "  if (CH_COEXISTE_MODELO.test(n)) return 'coexiste';\n";
+    expect(LIB.split(SIN_LA_LINEA).length).toBe(2);
+    const sin = ejecutar(`${LIB.replace(SIN_LA_LINEA, '')}\n${MENSAJES}\n${FILTRO}\nreturn [{ json: { chValidarMensaje } }];`, [{}])[0] as Record<string, Fn>;
+    const textos: string[] = [];
+    const recorre = (x: unknown): void => { if (typeof x === 'string') { if (x.length > 25) textos.push(x); } else if (Array.isArray(x)) x.forEach(recorre); else if (x && typeof x === 'object') Object.values(x).forEach(recorre); };
+    const sinReglas = clonar(NOVUCHAT); delete sinReglas['instrucciones'];
+    recorre(sinReglas);
+    expect(textos.length).toBeGreaterThan(40);
+    const corpus = [...textos, ...MAL, ...BIEN, 'Un asesor te llamará mañana.', 'Tus clientes pagan por QR directo a tu cuenta.', 'Somos Tech Provider de Meta.', 'Eres una persona real, no soy un bot.', 'Tu asistente atiende 24 horas.'];
+    const envolver = (x: string): string => (x.length > 80 ? x : 'NovuChat atiende tu WhatsApp en segundos y te ayuda a no perder ventas fuera de horario. ' + x + ' ' + CIERRE_RUBRO);
+    let distintas = 0;
+    for (const x of corpus) for (const extra of contextos) {
+      const nuevo = f('chValidarMensaje')(envolver(x), v(extra));
+      const viejo = sin['chValidarMensaje']!(envolver(x), v(extra));
+      if (nuevo === viejo) continue;
+      distintas += 1;
+      expect(nuevo, x).toBe('coexiste');
+      expect(viejo, x).toBe('');
+      expect(MAL.includes(x), x).toBe(true);
+    }
+    expect(distintas).toBeGreaterThan(0);
+    expect(textos.filter((x) => f('chValidarMensaje')(envolver(x), v()) === 'coexiste')).toEqual([]);
+  });
+});
+
 describe('el pedido directo de hablar con el equipo: sin negaciones, terceros ni «ventas» a secas', () => {
   it('chPideEquipoDirecto: no deriva con negaciones, terceros, «alguien de confianza», «el equipo de mi tienda» ni «ventas» suelto; sí con los pedidos claros', () => {
     const pide = f('chPideEquipoDirecto');
@@ -2175,7 +2244,7 @@ describe('la regla del «Sí» es robusta: la oferta se lee aunque se pegue el p
 
 // ================================================================================================
 // LA TABLA ÚNICA de botones y ofertas (decisión de Andres, 11/10): `CH_TABLA` + `chSituacion` + `chBotonesDe` + `chRedondear` + `chActualizarBanderas`. Se prueba POR PROPIEDAD sobre todo el espacio de situaciones.
-const RUTAS_FIJAS = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'identidad', 'disponibilidad'];
+const RUTAS_FIJAS = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual', 'identidad', 'disponibilidad'];
 const EVENTOS = ['rubro', 'multiple', 'otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico', 'pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte', 'general', 'respuesta'];
 const TIPOS: J[] = [{ ruta: 'lista' }, { ruta: 'equipo' }, { ruta: 'pedirNombre' }, { ruta: 'planes' }, ...RUTAS_FIJAS.map((fijo) => ({ ruta: 'fijo', fijo })), ...EVENTOS.map((ev) => ({ ruta: 'modelo', ev }))];
 const BOOLS = ['aMedida', 'interes', 'acabadas', 'declina', 'modeloOfreceEq', 'planesTocado', 'planesVistos', 'equipoTocado'];
@@ -2202,7 +2271,7 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
     expect(new Set(T.map((x) => x['id'])).size, 'ids únicos').toBe(T.length);
     expect(T.at(-1)!['id']).toBe('ordinaria'); // la última fila siempre coincide: toda situación tiene fila
   });
-  it('PROPIEDADES sobre las 6.144 situaciones: lo pulsado no reaparece; «Ver planes» nunca sin interés; el equipo solo si es requerido o se acabaron las preguntas; nunca un callejón sin salida; el pedido de datos no lleva botón de planes', () => {
+  it('PROPIEDADES sobre las 6.336 situaciones: lo pulsado no reaparece; «Ver planes» nunca sin interés; el equipo solo si es requerido o se acabaron las preguntas; nunca un callejón sin salida; el pedido de datos no lleva botón de planes', () => {
     const cuenta: Record<string, number> = {};
     const ok = (k: string): void => { cuenta[k] = (cuenta[k] ?? 0) + 1; };
     const sinRespuesta = ['otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico'];
@@ -2222,12 +2291,12 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
       // (3) el equipo solo si es REQUERIDO o se ACABARON las preguntas (la oferta de planes, el cierre de precios, una consulta sin respuesta, a medida, función no documentada)
       if (r.equipo) {
         const ordinaria = s.ruta === 'modelo' && !sinRespuesta.includes(s.ev) && (!sinOferta.includes(s.ev) || (s.ev === 'datos' && s.interes)) && s.ev !== 'rubro' && s.ev !== 'multiple';
-        const requerido = s.ruta === 'planes' || (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev)))) || (ordinaria && (s.aMedida || s.acabadas));
+        const requerido = s.ruta === 'planes' || (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev)))) || (ordinaria && (s.aMedida || s.acabadas));
         expect(requerido, donde).toBe(true);
       }
       ok('3 equipo si es requerido o se acabaron las preguntas');
       // (4) nunca un callejón sin salida: lo que el chat no resuelve lleva al equipo (si no se pulsó en este ciclo)
-      const noResuelve = (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev))));
+      const noResuelve = (s.ruta === 'fijo' && ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'].includes(s.fijo)) || (s.ruta === 'modelo' && (sinRespuesta.includes(s.ev) || (s.declina && !['identidad', 'cortesia'].includes(s.ev))));
       if (noResuelve && !s.equipoTocado) expect(r.equipo, donde).toBe(true);
       ok('4 sin callejón sin salida');
       // (5) el pedido de datos, la lista y el traspaso no llevan botones de la tabla
@@ -2243,8 +2312,8 @@ describe('LA TABLA ÚNICA de botones y ofertas: documento, propiedades sobre tod
       expect(r.ordinaria, donde).toBe(String(r.fila).startsWith('ordinaria'));
       ok('8 fila de la tabla');
     }
-    expect(n).toBe(6144);
-    expect(Object.values(cuenta).every((v) => v === 6144)).toBe(true);
+    expect(n).toBe(6336);
+    expect(Object.values(cuenta).every((v) => v === 6336)).toBe(true);
     console.log('[tabla] situaciones enumeradas por invariante:', JSON.stringify(cuenta));
   });
   it('PROPIEDAD del texto: para cada combinación de botones y cada mensaje, `chRedondear` no ofrece lo que no lleva y SÍ invita a lo que lleva; nunca sale vacío ni pasa del máximo', () => {
