@@ -2,7 +2,7 @@ import { test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
 import prepararDatos from './preparar-datos';
 import { fijarCobroReal, fijarConsolaOculta } from './ayudas/datos';
-import { FOGON, entrar, esperar as expect } from './ayudas/o3-datos';
+import { FOGON, entrar, esperar as expect } from './o3-comun';
 import { qrEnPng } from './ayudas/qr';
 import { simularFuncion } from './ayudas/funciones';
 

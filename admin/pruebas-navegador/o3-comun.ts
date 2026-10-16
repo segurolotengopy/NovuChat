@@ -1,14 +1,15 @@
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { expect, type Page } from '@playwright/test';
-import { CLAVE_DE_PRUEBA, PROYECTO, PUERTO_AUTH, PUERTO_FIRESTORE } from '../entorno';
-import { PNG_1X1 } from './png';
+import { CLAVE_DE_PRUEBA, PROYECTO, PUERTO_AUTH, PUERTO_FIRESTORE } from './entorno';
+import { PNG_1X1 } from './ayudas/png';
 
 /**
- * Ayudas propias del CARRIL 3 (Cobros y Productos). No tocan `ayudas/datos.ts` (es de la Operadora): replican su barrera.
+ * Ayudas propias del CARRIL 3 (Cobros y Productos), junto a sus specs `o3-*`. No tocan `ayudas/` (es de la Operadora): replican su barrera.
  * El SDK Admin se salta las reglas, así que se usa SOLO contra el emulador: la variable `FIRESTORE_EMULATOR_HOST` se FUERZA al
  * puerto del carril y, con un proyecto que no empiece por «demo-», se niega.
  */
+// TODO(#478): cuando se fusione, reemplazar esta `bd()` por la que exporta `ayudas/datos.ts`.
 function bd() {
   process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${PUERTO_FIRESTORE}`;
   if (!PROYECTO.startsWith('demo-')) throw new Error('NEGADO: el proyecto de las pruebas de navegador tiene que empezar con «demo-».');
@@ -28,6 +29,7 @@ export const esperar = expect.configure({ timeout: 20_000 });
 // Entrada paciente: la máquina de pruebas corre varias suites a la vez y el inicio de sesión tarda más de lo que la configuración espera
 // ---------------------------------------------------------------------------------------------------------------------
 
+// TODO(#478): cuando se fusione, reemplazar `entrar` por `ingresar()` de `ayudas/ingresar.ts` con su `esperaMs` opcional.
 /** Igual que `ingresar`, con más paciencia (30 s) para que una máquina cargada no dé un rojo que no es de la pantalla. */
 export async function entrar(page: Page, correo: string): Promise<void> {
   await page.goto('/');

@@ -4,7 +4,7 @@ import prepararDatos from './preparar-datos';
 import {
   FOGON, catalogoDeQtaco, entrar, esperar as expect, fijarPlanCrecimiento, fijarStock, sembrarCatalogo, sembrarFotoSubida, vaciarCatalogo,
   type ItemDeCatalogo,
-} from './ayudas/o3-datos';
+} from './o3-comun';
 
 /**
  * PRO-01 — lista, búsqueda, filtros, orden y paginación del catálogo (`/catalogo`), con la forma de Q'Taco: 79 ítems, 54 activos y 25 de baja,

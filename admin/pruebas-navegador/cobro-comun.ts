@@ -1,6 +1,6 @@
-import { test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
-import { entrar, esperar as expect } from './ayudas/o3-datos';
+import { ingresar } from './ayudas/ingresar';
 import { fijarCobroReal } from './ayudas/datos';
 import { pngSinCodigo, qrEnPng } from './ayudas/qr';
 import { simularFuncion } from './ayudas/funciones';
@@ -11,7 +11,7 @@ const TEXTO_DEL_QR = 'SINTETICO-QR-DE-PRUEBA-0001';
 const REGISTRADO = { nombreCuenta: 'Q Taco de Prueba SRL', cuentas: ['123456789'], banco: 'Banco de Prueba', venceEl: '2027-12-31' };
 
 async function abrirQr(page: Page): Promise<void> {
-  await entrar(page, USUARIOS.adminFogon);
+  await ingresar(page, USUARIOS.adminFogon);
   await page.getByRole('link', { name: 'Configuración de QR', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Configuración de QR' })).toBeVisible();
 }
@@ -146,7 +146,7 @@ export function pruebasDeConfiguracionDeQr(): void {
 
     test('NEGATIVA (aislamiento): el QR de otro comercio no se ve, ni por la dirección directa', async ({ page }) => {
       await fijarCobroReal(FOGON, { ...REGISTRADO, nombreCuenta: 'Cuenta del Fogon', activo: true });
-      await entrar(page, USUARIOS.adminAurora);
+      await ingresar(page, USUARIOS.adminAurora);
       await page.goto('/negocio/parrilla-el-fogon/cobro');
       await page.waitForTimeout(1500);
       await expect(page.getByText('Cuenta del Fogon')).toHaveCount(0);

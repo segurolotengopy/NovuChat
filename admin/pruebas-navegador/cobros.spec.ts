@@ -1,13 +1,13 @@
-import { test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
-import { entrar, esperar as expect } from './ayudas/o3-datos';
+import { ingresar } from './ayudas/ingresar';
 import { fijarCobroReal, limpiarCierres, sembrarCierre, sembrarContadoresDelMes } from './ayudas/datos';
 import prepararDatos from './preparar-datos';
 
 const FOGON = 'parrilla-el-fogon';
 
 async function abrirCobros(page: Page): Promise<void> {
-  await entrar(page, USUARIOS.adminFogon);
+  await ingresar(page, USUARIOS.adminFogon);
   await page.getByRole('link', { name: 'Cobros', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Cobros', exact: true }).first()).toBeVisible();
 }

@@ -1,6 +1,6 @@
-import { test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
-import { entrar, esperar as expect } from './ayudas/o3-datos';
+import { ingresar } from './ayudas/ingresar';
 import prepararDatos from './preparar-datos';
 
 const fila = (page: Page, nombre: string) => page.getByRole('row', { name: new RegExp(nombre) });
@@ -17,7 +17,7 @@ test.describe('Productos', () => {
   test.beforeEach(async ({ page }) => {
     test.setTimeout(90_000);
     prepararDatos(); // cada prueba parte del mismo catálogo (3 productos) y del mismo contador del plan
-    await entrar(page, USUARIOS.adminFogon);
+    await ingresar(page, USUARIOS.adminFogon);
     await page.getByRole('link', { name: 'Productos', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Productos', exact: true })).toBeVisible();
   });

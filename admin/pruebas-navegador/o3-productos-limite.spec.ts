@@ -5,7 +5,7 @@ import { crearUsuarioDeEnsayo } from './ayudas/datos';
 import {
   FOGON, catalogoDeQtaco, clienteDeReglas, entrar, esperar as expect, existeItem, fijarPlanCrecimiento, leerContadorCatalogo, nombreDoc,
   sembrarCatalogo, vaciarCatalogo, type ClienteDeReglas,
-} from './ayudas/o3-datos';
+} from './o3-comun';
 
 /**
  * PRO-10 — límite de productos por plan (Crecimiento: 100). La pantalla dice «N de 100», avisa desde el 90 %, y en el tope deshabilita

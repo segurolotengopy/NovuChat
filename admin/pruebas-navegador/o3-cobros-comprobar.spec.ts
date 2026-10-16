@@ -4,7 +4,7 @@ import prepararDatos from './preparar-datos';
 import { crearUsuarioDeEnsayo, leerDoc, limpiarCierres, sembrarCierre } from './ayudas/datos';
 import {
   FOGON, UID_ADMIN_FOGON, clienteDeReglas, entrar, esperar as expect, nombreDoc, sembrarCierreCrudo, type ClienteDeReglas,
-} from './ayudas/o3-datos';
+} from './o3-comun';
 
 /**
  * COB-07 — «Comprobar»: el negocio afirma que lo vio en su banco. Se marca UNA vez (`comprobadoPor` + `comprobadoEn`), no se desmarca ni se

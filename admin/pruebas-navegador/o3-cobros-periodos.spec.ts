@@ -2,7 +2,7 @@ import { test, type Page } from '@playwright/test';
 import { USUARIOS } from './entorno';
 import prepararDatos from './preparar-datos';
 import { diaDeBolivia, limpiarCierres, sembrarCierre } from './ayudas/datos';
-import { FOGON, entrar, esperar as expect, sembrarCierreCrudo } from './ayudas/o3-datos';
+import { FOGON, entrar, esperar as expect, sembrarCierreCrudo } from './o3-comun';
 
 /**
  * COB-06 — Cobros: lista, período y totales. Seis cierres en tres períodos:
