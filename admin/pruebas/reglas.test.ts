@@ -4121,31 +4121,35 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
   });
 
   describe('metricas y auditoria: la persona no escribe, y los contadores nuevos solo entran bien formados', () => {
-    it('la persona, el propietario y otro comercio no escriben los contadores de H2', async () => {
-      for (const campo of ['mensajesPersona', 'salientesFueraDe48h']) {
-        await assertFails(setDoc(doc(adminA(), `tenants/${A}/metricas/2026-10`), { [campo]: 1 }, { merge: true }));
-        await assertFails(setDoc(doc(operA(), `tenants/${A}/metricas/2026-10`), { [campo]: 1 }, { merge: true }));
-        await assertFails(setDoc(doc(propietario(), `tenants/${A}/metricas/2026-10`), { [campo]: 1 }, { merge: true }));
-        await assertFails(setDoc(doc(ingestaA(), `tenants/${B}/metricas/2026-10`), { [campo]: 1 }, { merge: true }));
-      }
+    it('la persona, el propietario, otro comercio y la propia ingesta no escriben mensajesPersona', async () => {
+      const ruta = `tenants/${A}/metricas/2026-10`;
+      await assertFails(setDoc(doc(adminA(), ruta), { mensajesPersona: 1 }, { merge: true }));
+      await assertFails(setDoc(doc(operA(), ruta), { mensajesPersona: 1 }, { merge: true }));
+      await assertFails(setDoc(doc(propietario(), ruta), { mensajesPersona: 1 }, { merge: true }));
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${B}/metricas/2026-10`), { mensajesPersona: 1 }, { merge: true }));
+      // la ingesta del propio comercio tampoco: lo suma solo el servidor (SDK Admin)
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-11`), { mensajesPersona: 1 }));
+      await assertFails(setDoc(doc(ingestaA(), ruta), { mensajesPersona: 1 }, { merge: true }));
+      await assertFails(setDoc(doc(ingestaA(), ruta), { mensajesPersona: 3, salientes: 4 }, { merge: true }));
     });
 
-    it('la ingesta del comercio los suma como enteros no negativos y nada más', async () => {
-      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`),
-        { mensajesPersona: 3, salientesFueraDe48h: 1, salientes: 4 }, { merge: true }));
-      for (const campo of ['mensajesPersona', 'salientesFueraDe48h']) {
-        await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), { [campo]: -1 }, { merge: true }));
-        await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), { [campo]: 1.5 }, { merge: true }));
-        await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), { [campo]: '3' }, { merge: true }));
-        await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), { [campo]: null }, { merge: true }));
-      }
-      // la lista blanca sigue cerrada
+    it('la ingesta sigue sumando los contadores de siempre, y `salientesFueraDe48h` no existe', async () => {
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), { salientes: 4 }, { merge: true }));
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), { salientesFueraDe48h: 1 }, { merge: true }));
       await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), { mensajesHumano: 1 }, { merge: true }));
+    });
+
+    it('si el servidor ya escribio mensajesPersona, la ingesta puede seguir actualizando otros contadores', async () => {
+      await entorno.withSecurityRulesDisabled(async (ctx) => {
+        await setDoc(doc(ctx.firestore(), `tenants/${A}/metricas/2026-10`), { mensajesPersona: 3 });
+      });
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), { salientes: 5 }, { merge: true }));
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), { mensajesPersona: 99 }, { merge: true }));
     });
 
     it('control positivo: las personas del comercio y NovuChat leen los contadores nuevos', async () => {
       await entorno.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(doc(ctx.firestore(), `tenants/${A}/metricas/2026-10`), { mensajesPersona: 3, salientesFueraDe48h: 1 });
+        await setDoc(doc(ctx.firestore(), `tenants/${A}/metricas/2026-10`), { mensajesPersona: 3 });
       });
       await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/metricas/2026-10`)));
       await assertSucceeds(getDoc(doc(operA(), `tenants/${A}/metricas/2026-10`)));
@@ -4165,54 +4169,66 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
   });
 
   describe('lo que el principal de ingesta puede sembrar en la conversación y el mensaje', () => {
-    it('acepta los derivados de H1 y un turno bien formado', async () => {
+    it('acepta los derivados de H1 bien formados', async () => {
       await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c2`), {
         telefono: '59170000002', ultimoMensaje: 'Buenas', canal: 'whatsapp', ultimoEn: serverTimestamp(), mensajesTotal: 1,
         telefonoTrozos: ['70000002', '0000002'], nombrePalabras: ['ana'], ultimoEntranteEn: Timestamp.now(),
-        ventanaVenceEn: Timestamp.now(), noLeidos: 1, sinLeer: true, turno: turnoOk,
-      }));
-      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c3`), {
-        telefono: '59170000003', ultimoMensaje: 'x', canal: 'whatsapp', ultimoEn: serverTimestamp(), mensajesTotal: 1,
-        turno: { ...turnoOk, responde: 'asistente', motivoDevolucion: 'inactividad', devueltoEn: Timestamp.now() },
+        ventanaVenceEn: Timestamp.fromMillis(Date.now() + 23 * 3600e3), noLeidos: 1, sinLeer: true,
       }));
     });
 
-    it('rechaza un derivado o un turno con otra forma', async () => {
+    it('rechaza un derivado con otra forma, y una fecha en el futuro', async () => {
       const base = { telefono: '59170000004', ultimoMensaje: 'x', canal: 'whatsapp', ultimoEn: serverTimestamp(), mensajesTotal: 1 };
       const malos: Array<Record<string, unknown>> = [
         { telefonoTrozos: 'no-lista' }, { telefonoTrozos: Array.from({ length: 17 }, (_, i) => String(i)) },
         { nombrePalabras: Array.from({ length: 7 }, (_, i) => `p${i}`) }, { nombrePalabras: 'ana' },
         { ultimoEntranteEn: 'ayer' }, { ventanaVenceEn: 123 },
+        { ultimoEntranteEn: Timestamp.fromMillis(Date.now() + 3600e3) },
+        { ultimoEntranteEn: Timestamp.fromMillis(Date.now() + 10 * 24 * 3600e3) },
+        { ventanaVenceEn: Timestamp.fromMillis(Date.now() + 48 * 3600e3) },
         { noLeidos: -1 }, { noLeidos: 1.5 }, { noLeidos: '1' }, { sinLeer: 'si' },
-        { turno: 'persona' }, { turno: { responde: 'robot', tomadoPor: 'u' } },
-        { turno: { ...turnoOk, extra: 1 } }, { turno: { ...turnoOk, motivoDevolucion: 'otro' } },
-        { turno: { ...turnoOk, tomadoPor: 'x'.repeat(129) } },
         { campoInventado: 1 },
       ];
       for (const extra of malos) await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c4`), { ...base, ...extra }));
     });
 
-    it('un token de ingesta de otro comercio no siembra turno', async () => {
-      await assertFails(setDoc(doc(ingestaA(), `tenants/${B}/conversaciones/c4`), {
-        telefono: '59170000004', ultimoMensaje: 'x', canal: 'whatsapp', ultimoEn: serverTimestamp(), mensajesTotal: 1, turno: turnoOk,
-      }));
+    it('el token de ingesta NO crea una conversacion con `turno`, bien o mal formado', async () => {
+      const base = { telefono: '59170000004', ultimoMensaje: 'x', canal: 'whatsapp', ultimoEn: serverTimestamp(), mensajesTotal: 1 };
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c4`), { ...base, turno: turnoOk }));
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c4`),
+        { ...base, turno: { ...turnoOk, responde: 'asistente', motivoDevolucion: 'inactividad' } }));
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c4`), { ...base, turno: 'persona' }));
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${B}/conversaciones/c4`), { ...base, turno: turnoOk }));
     });
 
-    it('acepta el mensaje de una persona con su estado de envío y rechaza lo mal formado', async () => {
+    it('con un `turno` ya escrito por el servidor, la ingesta actualiza lo demas pero no lo toca', async () => {
+      await entorno.withSecurityRulesDisabled(async (ctx) => { await updateDoc(doc(ctx.firestore(), c1()), { turno: turnoOk }); });
+      const sobre = { telefono: '59170000001' };
+      // positivo: el resumen del hilo se actualiza aunque el documento tenga turno
+      await assertSucceeds(setDoc(doc(ingestaA(), c1()), { ultimoMensaje: 'otro', ...sobre }, { merge: true }));
+      // negativas: ni lo cambia, ni lo borra
+      await assertFails(updateDoc(doc(ingestaA(), c1()), { turno: { ...turnoOk, responde: 'asistente' } }));
+      await assertFails(updateDoc(doc(ingestaA(), c1()), { 'turno.responde': 'asistente' }));
+      await assertFails(updateDoc(doc(ingestaA(), c1()), { turno: deleteField() }));
+    });
+
+    it('el token de ingesta NO siembra `turno` en una conversacion que no lo tiene', async () => {
+      await assertFails(updateDoc(doc(ingestaA(), c1()), { turno: turnoOk }));
+    });
+
+    it('el token de ingesta NO crea un mensaje con autor ni estado de envio; el mensaje comun si entra', async () => {
       const m = { direccion: 'saliente', tipo: 'text', texto: 'hola', ts: Timestamp.now(), tenantId: A };
-      await assertSucceeds(setDoc(doc(ingestaA(), `${c1()}/mensajes/clave-0000000000001`), {
-        ...m, autor: 'persona', autorUid: 'u-oper-a', estadoEnvio: 'pendiente', palabras: ['hola'],
-      }));
-      await assertSucceeds(setDoc(doc(ingestaA(), `${c1()}/mensajes/clave-0000000000002`), {
-        ...m, autor: 'persona', autorUid: 'u-oper-a', estadoEnvio: 'rechazado', codigoEnvio: '131047', reintentable: false,
-      }));
-      const malos: Array<Record<string, unknown>> = [
-        { autor: 'bot' }, { autor: 1 }, { estadoEnvio: 'enviado' }, { estadoEnvio: 7 },
-        { codigoEnvio: 131047 }, { codigoEnvio: 'x'.repeat(41) }, { autorUid: 'x'.repeat(129) }, { autorUid: 5 },
-        { reintentable: 'si' }, { tenantId: B }, { palabras: 'hola' }, { palabras: Array.from({ length: 31 }, (_, i) => `p${i}`) },
-        { campoInventado: 1 },
+      await assertSucceeds(setDoc(doc(ingestaA(), `${c1()}/mensajes/clave-0000000000001`), { ...m, palabras: ['hola'] }));
+      const prohibidos: Array<Record<string, unknown>> = [
+        { autor: 'persona' }, { autor: 'asistente' }, { autorUid: 'u-oper-a' }, { estadoEnvio: 'pendiente' },
+        { estadoEnvio: 'aceptado' }, { codigoEnvio: '131047' }, { reintentable: false },
+        { autor: 'persona', autorUid: 'u-oper-a', estadoEnvio: 'pendiente' },
       ];
       let i = 10;
+      for (const extra of prohibidos) await assertFails(setDoc(doc(ingestaA(), `${c1()}/mensajes/clave-${i++}`), { ...m, ...extra }));
+      const malos: Array<Record<string, unknown>> = [
+        { tenantId: B }, { palabras: 'hola' }, { palabras: Array.from({ length: 31 }, (_, j) => `p${j}`) }, { campoInventado: 1 },
+      ];
       for (const extra of malos) await assertFails(setDoc(doc(ingestaA(), `${c1()}/mensajes/clave-${i++}`), { ...m, ...extra }));
     });
 
