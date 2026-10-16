@@ -9,10 +9,10 @@ import { TextoSeguro } from './TextoSeguro';
 import { BarraTurno } from './BarraTurno';
 import { EscribirComoPersona } from './EscribirComoPersona';
 import {
-  etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, ventanaDeFicha, type Ficha,
+  etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
 import {
-  accionesDeTurno, estadoDeMensaje, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje,
+  accionesDeTurno, estadoDeMensaje, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, ventanaAbiertaParaTomar,
   type CapaTurno, type EstadoMensajePersona,
 } from '../lib/turno';
 
@@ -46,6 +46,9 @@ interface Msg {
   autorUid: string;
   /** Estado del envío de un mensaje de una persona; `null` si no lo trae (el del asistente y los de antes de H2 no). */
   estadoEnvio: EstadoMensajePersona | null;
+  /** Si fue rechazado: el código de Meta o del relé (texto), y los segundos de espera si el servidor los manda. */
+  codigoEnvio: string;
+  esperaSegundos: unknown;
   ts: number;
   /** El documento, para pedir los anteriores `startAfter` de él sin una lectura de más y sin perder los empatados. */
   snap: QueryDocumentSnapshot;
@@ -78,6 +81,8 @@ function aMensaje(d: QueryDocumentSnapshot): Msg {
     autor: typeof x['autor'] === 'string' ? x['autor'] : '',
     autorUid: typeof x['autorUid'] === 'string' ? x['autorUid'].slice(0, 128) : '',
     estadoEnvio: x['autor'] === 'persona' ? estadoDeMensaje(x['estadoEnvio']) : null,
+    codigoEnvio: typeof x['codigoEnvio'] === 'string' ? x['codigoEnvio'].slice(0, 20) : '',
+    esperaSegundos: x['esperaSegundos'],
     ts: ts?.toMillis ? ts.toMillis() : 0,
     snap: d,
   };
@@ -287,9 +292,12 @@ export function DetalleConversacion(p: PropsDetalle) {
   }
 
   const v = ventanaDeFicha(ficha, p.ahora);
-  const situacion = situacionDeTurno(ficha.turno, p.miUid);
+  // Quién responde AHORA: el veredicto del servidor (Core), no el campo crudo: un turno vencido ya es del asistente.
+  const turno = turnoDeFicha(ficha, p.ahora);
+  const situacion = situacionDeTurno(turno, p.miUid);
   const acciones = accionesDeTurno({
     situacion, puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo,
+    ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora),
   });
 
   let diaPrevio = 0;
@@ -307,7 +315,11 @@ export function DetalleConversacion(p: PropsDetalle) {
           </span>
         </div>
         {/* Sin dato (una conversación de antes de H1): no se pinta pastilla, porque «cerrada» sería falso. */}
-        {v.estado !== 'sin-dato' && (
+        {ficha.ultimoEntranteEn === null && (
+          // Misma regla que el campo de escribir: sin `ultimoEntranteEn` no se sabe, y se dice.
+          <span className="cv-pastilla cv-pastilla--cerrada" title="No consta cuándo escribió el cliente por última vez">Ventana: sin dato</span>
+        )}
+        {ficha.ultimoEntranteEn !== null && v.estado !== 'sin-dato' && (
           <span className={`cv-pastilla cv-pastilla--${v.estado}`} title="Ventana de 24 h de WhatsApp: desde el último mensaje del cliente">
             {v.estado === 'cerrada' ? 'Ventana cerrada' : `Ventana: ${textoRestante(v.restanteMs)}`}
           </span>
@@ -340,7 +352,7 @@ export function DetalleConversacion(p: PropsDetalle) {
       </div>
 
       <BarraTurno
-        tenantId={tenantId} conversacionId={ficha.id} turno={ficha.turno} situacion={situacion}
+        tenantId={tenantId} conversacionId={ficha.id} turno={turno} situacion={situacion}
         acciones={acciones} miUid={p.miUid} capa={p.capa}
       />
 
@@ -386,6 +398,11 @@ export function DetalleConversacion(p: PropsDetalle) {
                       {textoEstadoMensaje(x.estadoEnvio)}
                     </span>
                   )}
+                  {esPersona && x.estadoEnvio === 'rechazado' && (
+                    <span className="cv-envio cv-envio--motivo" data-testid="motivo-rechazo">
+                      {textoRechazoMeta(x.codigoEnvio, x.esperaSegundos)}
+                    </span>
+                  )}
                 </div>
               </li>
             );
@@ -402,7 +419,7 @@ export function DetalleConversacion(p: PropsDetalle) {
       {acciones.verEscribir && (
         <EscribirComoPersona
           key={ficha.id} tenantId={tenantId} conversacionId={ficha.id}
-          ultimoEntranteEn={ficha.ultimoEntranteEn} habilitados={acciones.habilitados} capa={p.capa}
+          ultimoEntranteEn={ficha.ultimoEntranteEn} habilitados={acciones.habilitados} capa={p.capa} miUid={p.miUid}
         />
       )}
     </div>

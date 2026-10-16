@@ -17,9 +17,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  accionesDeTurno, situacionDeTurno, turnoDeDocumento, type CapaTurno,
+  accionesDeTurno, situacionDeTurno, turnoDeConversacion, type CapaTurno,
 } from '../../web/src/central/lib/turno';
-import { puedeGestionarConversaciones } from '../../web/src/central/lib/conversaciones';
+import { puedeGestionarConversaciones, textoListaVacia } from '../../web/src/central/lib/conversaciones';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const ADMIN = join(aqui, '..', '..');
@@ -38,18 +38,27 @@ const OTRA = 'uidDeOtraPersonaAbCdEfGhIjKlM';
 const CAPA: CapaTurno = { tomar: async () => ({}), devolver: async () => ({}), enviar: async () => ({}) };
 
 /** BarraTurno tal como la arma el Detalle: la situación y las acciones salen de la lógica. */
-function barra(o: { turno?: unknown; rol: string | null; propietario?: boolean; activo?: boolean }): string {
+function barra(o: { turno?: unknown; rol: string | null; propietario?: boolean; activo?: boolean; ventanaAbierta?: boolean }): string {
   const turno = turnoDeDocumento(o.turno);
   const propietario = o.propietario ?? false;
   const situacion = situacionDeTurno(turno, YO);
   const acciones = accionesDeTurno({
     situacion, puedeGestionar: puedeGestionarConversaciones(o.rol, propietario),
-    esAdmin: o.rol === 'admin' && !propietario, comercioActivo: o.activo ?? true,
+    esAdmin: o.rol === 'admin' && !propietario, comercioActivo: o.activo ?? true, ventanaAbierta: o.ventanaAbierta ?? true,
   });
   return renderToStaticMarkup(createElement(BarraTurno, {
     tenantId: 'comercio-x', conversacionId: 'wa_59100000047', turno, situacion, acciones, miUid: YO, capa: CAPA,
   }));
 }
+/** El turno como lo ve la pantalla ahora, con el último mensaje del cliente hace 1 h; completa las fechas si el caso no las trae. */
+const turnoDeDocumento = (v: unknown) => {
+  const ahora = Date.now();
+  const m = (ms: number) => ({ toMillis: () => ms });
+  return turnoDeConversacion(
+    v && typeof v === 'object' && !Array.isArray(v) && 'responde' in v && !('tomadoEn' in v)
+      ? { tomadoEn: m(ahora - 5 * 60_000), actividadPersonaEn: m(ahora - 60_000), ...v } : v,
+    ahora - 3_600_000, ahora);
+};
 const MIO = { responde: 'persona', tomadoPor: YO };
 const AJENO = { responde: 'persona', tomadoPor: OTRA };
 
@@ -80,6 +89,12 @@ describe('A. quién responde y los botones', () => {
     expect(admin).toContain('Devolver al asistente');
     expect(admin).not.toContain('Tomar conversación');
     expect(admin).not.toContain(OTRA);          // el uid nunca entero
+  });
+
+  it('con la ventana cerrada o sin dato «Tomar» no se ofrece y se explica por qué', () => {
+    const h = barra({ rol: 'admin', ventanaAbierta: false });
+    expect(h).not.toContain('Tomar conversación');
+    expect(h).toContain('No se puede tomar: la ventana de 24 h de WhatsApp está cerrada o no consta');
   });
 
   it('NEGATIVA: el propietario de NovuChat, el soporte y la ingesta solo LEEN: el estado sí, ningún botón', () => {
@@ -114,9 +129,10 @@ describe('A. quién responde y los botones', () => {
 
   it('NEGATIVA: un uid con HTML se escapa y se abrevia; nunca llega como marcado', () => {
     const h = barra({ rol: 'oper', turno: { responde: 'persona', tomadoPor: '<img src=x onerror=alert(1)>' + 'z'.repeat(20) } });
+    // un uid que no tiene forma de uid vuelve ilegible el turno (como en el servidor): responde el asistente y no se pinta nada suyo
     expect(h).not.toContain('<img');
-    expect(h).not.toContain('onerror=alert');
-    expect(h).toContain('&lt;img');
+    expect(h).not.toContain('onerror');
+    expect(h).toContain('Responde el asistente');
   });
 });
 
@@ -261,7 +277,9 @@ describe('D. el Detalle junta las piezas', () => {
     expect(d).toMatch(/\{acciones\.verEscribir && \(\s*<EscribirComoPersona/);
     expect(d).toContain('ultimoEntranteEn={ficha.ultimoEntranteEn}');       // la ventana de Meta: NO `ventanaVenceEn` (contrato §2)
     expect(d).not.toMatch(/<EscribirComoPersona[^>]*ventanaVenceEn/);
-    expect(d).toContain('situacionDeTurno(ficha.turno, p.miUid)');
+    expect(d).toContain('situacionDeTurno(turno, p.miUid)');
+    expect(d).toContain('const turno = turnoDeFicha(ficha, p.ahora);');
+    expect(d).toContain('ventanaAbierta: ventanaAbiertaParaTomar(ficha.ultimoEntranteEn, p.ahora)');
     expect(d).toContain('puedeGestionar: p.puedeGestionar, esAdmin: p.esAdmin, comercioActivo: p.comercioActivo');
   });
 
@@ -280,8 +298,38 @@ describe('D. el Detalle junta las piezas', () => {
   });
 
   it('la lista marca las que tiene una persona y el filtro «El asistente atiende» existe', () => {
-    expect(codigo('web/src/central/componentes/ListaConversaciones.tsx')).toContain('{f.turno && <span className="cv-etiqueta cv-etiqueta--persona">Responde una persona</span>}');
+    expect(codigo('web/src/central/componentes/ListaConversaciones.tsx')).toContain('{turnoDeFicha(f, ahora) && <span className="cv-etiqueta cv-etiqueta--persona">Responde una persona</span>}');
     expect(codigo('web/src/central/lib/conversaciones.ts')).toContain("{ id: 'asistente', rotulo: 'El asistente atiende' }");
+  });
+
+  it('la cabecera dice «Ventana: sin dato» cuando falta `ultimoEntranteEn` (misma regla que el campo de escribir)', () => {
+    expect(d).toContain('{ficha.ultimoEntranteEn === null && (');
+    expect(d).toContain('Ventana: sin dato');
+    expect(d).toContain("{ficha.ultimoEntranteEn !== null && v.estado !== 'sin-dato' && (");
+  });
+
+  it('el rechazo de un mensaje se explica con `textoRechazoMeta(codigoEnvio)`, sin pintar el código crudo', () => {
+    expect(d).toContain('textoRechazoMeta(x.codigoEnvio, x.esperaSegundos)');
+    expect(d).not.toMatch(/\{x\.codigoEnvio\}/);
+  });
+
+  it('«El asistente atiende» vacío con más por cargar no dice «no hay»; el número del chip avisa que puede diferir', () => {
+    expect(textoListaVacia({ enBusqueda: false, hayMasPalabra: false, filtro: 'asistente', hayMas: true })).toMatch(/hay más para cargar/);
+    expect(textoListaVacia({ enBusqueda: false, hayMasPalabra: false, filtro: 'asistente', hayMas: false })).toBe('Ninguna conversación cumple este filtro.');
+    expect(textoListaVacia({ enBusqueda: false, hayMasPalabra: false, filtro: 'todas', hayMas: true })).toBe('Todavía no hay conversaciones.');
+    const l = codigo('web/src/central/componentes/ListaConversaciones.tsx');
+    expect(l).toContain('filtro: p.filtro, hayMas: p.hayMas');
+    expect(l).toContain("title={f.id === 'asistente' ? 'El número puede diferir de la lista si algún turno viene mal formado");
+  });
+
+  it('los borradores sin confirmar viven en MEMORIA del módulo, separados por persona y conversación; se borran al confirmarse', () => {
+    const e = codigo('web/src/central/componentes/EscribirComoPersona.tsx');
+    expect(e).toContain('const BORRADORES = new Map<');
+    expect(e).toContain("`${p.miUid ?? ''}|${p.tenantId}|${p.conversacionId}`");
+    expect(e).toContain('BORRADORES.set(llave, { crudo, borrador: abierto });');
+    expect(e).toContain('BORRADORES.delete(llave)');
+    expect(e).toContain("useState(guardado?.crudo ?? '')");
+    expect(e).toContain('useRef<Borrador | null>(guardado?.borrador ?? null)');
   });
 
   it('«Necesita humano» sigue leyéndose de `necesitaHumano` (H2 de texto no lo escribe)', () => {

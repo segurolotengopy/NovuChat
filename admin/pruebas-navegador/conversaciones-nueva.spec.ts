@@ -119,7 +119,7 @@ test.describe('Conversaciones (pantalla nueva)', () => {
     await expect(fila(page, 'Pablo Q.')).toBeVisible();
     await fila(page, 'Pablo Q.').click();
     await expect(page.locator('ol.cv-mensajes li')).toHaveCount(3);
-    await expect(page.locator('.cv-pastilla')).toHaveCount(0);
+    await expect(page.locator('.cv-pastilla')).toHaveText('Ventana: sin dato');   // sin `ultimoEntranteEn` se dice «sin dato», no «cerrada»
     await expect(fila(page, 'Pablo Q.').locator('.cv-contador')).toHaveCount(0);
     await page.waitForTimeout(2_500);   // más que el rebote de 1 s: si fuera a escribir, ya lo habría hecho
     expect(await leerCampo(`tenants/${FOGON}/conversaciones/wa_${TEL_74}`, 'noLeidos')).toBeUndefined();

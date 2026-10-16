@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { TextoSeguro } from './TextoSeguro';
 import {
-  AVISO_TOMAR, ESPERA_CAMBIO_MS, cambioVisible, codigoDeError, textoErrorTurno, textoEstadoTurno,
+  AVISO_TOMAR, ESPERA_CAMBIO_MS, cambioVisible, codigoDeError, detallesDeError, textoErrorTurno, textoEstadoTurno,
   type Acciones, type CapaTurno, type SituacionTurno, type Turno,
 } from '../lib/turno';
 
@@ -60,7 +60,7 @@ export function BarraTurno(p: PropsBarraTurno) {
       if (accion === 'tomar') await p.capa.tomar(entrada); else await p.capa.devolver(entrada);
       if (vivo.current) setEsperando(accion);
     } catch (e) {
-      if (vivo.current) setError(textoErrorTurno(accion, codigoDeError(e)));
+      if (vivo.current) setError(textoErrorTurno(accion, codigoDeError(e), detallesDeError(e)));
     } finally {
       enCurso.current = false;
       if (vivo.current) setTrabajando(null);
@@ -86,6 +86,12 @@ export function BarraTurno(p: PropsBarraTurno) {
           </button>
           <p id="cv-turno-aviso" className="cv-turno-aviso">{AVISO_TOMAR}</p>
         </>
+      )}
+
+      {acciones.sinTomarPorVentana && (
+        <p className="cv-turno-aviso" id="cv-turno-sin-ventana">
+          No se puede tomar: la ventana de 24 h de WhatsApp está cerrada o no consta cuándo escribió el cliente. Podrá hacerlo cuando el cliente vuelva a escribir.
+        </p>
       )}
 
       {acciones.verDevolver && (

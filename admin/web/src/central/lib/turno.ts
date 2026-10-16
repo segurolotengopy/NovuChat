@@ -25,54 +25,42 @@
  * LOS ERRORES SALEN DE `e.code`, NUNCA DE `e.message`: el mensaje de una Function puede traer detalles internos.
  */
 import { httpsCallable, type Functions } from 'firebase/functions';
+// La regla del turno es de CORE y la consola usa la MISMA que el servidor (Central → Core, hacia abajo): ni una
+// cifra ni una comparación duplicadas. Un turno vencido por inactividad o por la ventana, o con fechas rotas, es «asistente».
+import {
+  INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, turnoVigente, ventanaDeMetaAbierta, type Turno,
+} from '../../../../functions/src/core/conversacion/turno';
+
+export { INACTIVIDAD_MS, MARGEN_ENVIO_MS, VENTANA_META_MS, leerTurno, turnoVigente, ventanaDeMetaAbierta };
+export type { Turno };
 
 // ── Constantes (las cifras de límite las pone el servidor; estas son del texto o de la forma) ─────────────
 
 /** Largo máximo del texto de una persona (contrato §2: 1–1.000 caracteres). El servidor vuelve a comprobarlo. */
 export const MAX_TEXTO_PERSONA = 1000;
-/** La ventana de Meta: 24 h desde el último mensaje del cliente. */
-export const VENTANA_META_MS = 24 * 3_600_000;
-/** El servidor deja un margen de 60 s antes de las 24 h (contrato §2): la consola no ofrece enviar dentro de ese margen. */
-export const MARGEN_VENTANA_MS = 60_000;
 /** Largo de la clave de idempotencia (contrato §2: 16–128 de `[A-Za-z0-9_.:-]`). */
 export const CLAVE_MIN = 16;
 export const CLAVE_MAX = 128;
-/**
- * SOLO PARA EL TEXTO de aviso. El plazo real de devolución por inactividad es una constante del servidor (30 min en H2,
- * contrato §1) y se calcula allá al llegar el siguiente mensaje: la consola no devuelve nada por su cuenta.
- */
-export const INACTIVIDAD_DEVOLUCION_MIN = 30;
+/** SOLO PARA EL TEXTO de aviso (minutos), derivado de la constante de Core. */
+export const INACTIVIDAD_DEVOLUCION_MIN = INACTIVIDAD_MS / 60_000;
 /** Cuánto se espera, tras una respuesta correcta, a que el cambio llegue por el oyente en vivo antes de soltar los botones. */
 export const ESPERA_CAMBIO_MS = 4_000;
 
 // ── El turno, leído de la conversación ───────────────────────────────────────
 
-/** Una persona tiene la conversación. Si no hay `Turno`, responde el asistente. */
-export interface Turno {
-  tomadoPor: string;
-  /** ms desde 1970; null si el documento no lo trae. */
-  tomadoEn: number | null;
-  actividadPersonaEn: number | null;
-}
-
-function ms(v: unknown): number | null {
-  const t = v as { toMillis?: () => number } | null | undefined;
-  if (!t || typeof t.toMillis !== 'function') return null;
-  const n = t.toMillis();
-  return Number.isFinite(n) ? n : null;
-}
+/** La hora del último mensaje del cliente, con la forma que Core espera de una fecha de Firestore. */
+const comoMomento = (ms: number | null) => (ms === null ? undefined : { toMillis: () => ms });
 
 /**
- * El campo `turno` del documento → `Turno` si una persona responde, `null` en cualquier otro caso (ausente, no es un
- * objeto, `responde` distinto de 'persona' exacto, o sin `tomadoPor` válido). Nunca lanza.
+ * Quién responde AHORA, con el veredicto del servidor (`turnoVigente`): `Turno` si una persona responde, `null` si
+ * responde el asistente por cualquier motivo (sin turno, devuelto, vencido por inactividad o por la ventana, o ilegible).
+ * `turnoCrudo` es el campo `turno` tal como vino del documento. Nunca lanza.
  */
-export function turnoDeDocumento(valor: unknown): Turno | null {
-  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return null;
-  const t = valor as Record<string, unknown>;
-  if (t['responde'] !== 'persona') return null;
-  const por = t['tomadoPor'];
-  if (typeof por !== 'string' || por.trim() === '' || por.length > CLAVE_MAX) return null;
-  return { tomadoPor: por, tomadoEn: ms(t['tomadoEn']), actividadPersonaEn: ms(t['actividadPersonaEn']) };
+export function turnoDeConversacion(turnoCrudo: unknown, ultimoEntranteEn: number | null, ahora: number): Turno | null {
+  const v = turnoVigente(turnoCrudo, { ultimoEntranteEn: comoMomento(ultimoEntranteEn) }, ahora);
+  if (v.responde !== 'persona') return null;
+  const l = leerTurno(turnoCrudo);
+  return l.estado === 'ok' ? l.turno : null;
 }
 
 export type SituacionTurno = 'asistente' | 'mio' | 'ajeno';
@@ -112,10 +100,13 @@ export interface EntradaAcciones {
   esAdmin: boolean;
   /** El comercio está `activo`: con otro estado el servidor rechaza todo, y los controles se ven deshabilitados. */
   comercioActivo: boolean;
+  /** La ventana de 24 h está abierta (el servidor rechaza tomar con la ventana cerrada o sin dato). */
+  ventanaAbierta: boolean;
 }
 
 export interface Acciones {
   verTomar: boolean;
+  sinTomarPorVentana: boolean;
   verDevolver: boolean;
   verEscribir: boolean;
   /** Los controles que se ven, ¿se pueden pulsar? Falso con el comercio no activo. */
@@ -124,14 +115,16 @@ export interface Acciones {
 
 /**
  * Los botones que se ofrecen. El propietario y el soporte solo LEEN: sin `puedeGestionar` no se ve ninguno.
- *  · Tomar: solo cuando responde el asistente (si ya la tiene otra persona, el servidor lo rechazaría).
+ *  · Tomar: solo cuando responde el asistente y la ventana de 24 h está abierta (si no, el servidor lo rechaza).
  *  · Devolver: quien la tiene, o un admin.
  *  · Escribir: solo quien la tiene (el servidor exige el turno de ESA persona).
  */
 export function accionesDeTurno(a: EntradaAcciones): Acciones {
-  if (!a.puedeGestionar) return { verTomar: false, verDevolver: false, verEscribir: false, habilitados: false };
+  if (!a.puedeGestionar) return { verTomar: false, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: false };
   return {
-    verTomar: a.situacion === 'asistente',
+    verTomar: a.situacion === 'asistente' && a.ventanaAbierta,
+    // «Tomar» escondido por la ventana: la pantalla lo explica en vez de callar.
+    sinTomarPorVentana: a.situacion === 'asistente' && !a.ventanaAbierta,
     verDevolver: a.situacion === 'mio' || (a.situacion === 'ajeno' && a.esAdmin),
     verEscribir: a.situacion === 'mio',
     habilitados: a.comercioActivo,
@@ -154,13 +147,19 @@ export interface VentanaEnvio { estado: EstadoVentanaEnvio; restanteMs: number }
 /**
  * La ventana corre desde `ultimoEntranteEn` (el último mensaje del CLIENTE). No hay respaldo con `ventanaVenceEn`: el
  * contrato (§2) dice que el servidor usa `ultimoEntranteEn` y sin dato rechaza; la consola tampoco ofrece enviar.
- * Dentro del margen de 60 s antes de las 24 h tampoco se ofrece. Un valor del futuro (reloj adelantado) no pasa de 24 h.
+ * Dentro del margen de 60 s antes de las 24 h tampoco se ofrece. Un valor del futuro a más de 5 min es dato malo y cuenta como cerrada (igual que en el servidor).
  */
 export function ventanaDeEnvio(ultimoEntranteEn: number | null, ahora: number): VentanaEnvio {
   if (ultimoEntranteEn === null || !Number.isFinite(ultimoEntranteEn)) return { estado: 'sin-dato', restanteMs: 0 };
   const restante = Math.min(VENTANA_META_MS, ultimoEntranteEn + VENTANA_META_MS - ahora);
-  if (restante <= MARGEN_VENTANA_MS) return { estado: 'cerrada', restanteMs: Math.max(0, restante) };
+  // La misma pregunta que le hace el servidor (Core), con su margen de 60 s: un «último mensaje» del futuro lejano es dato malo = cerrada.
+  if (!ventanaDeMetaAbierta(comoMomento(ultimoEntranteEn), ahora, MARGEN_ENVIO_MS)) return { estado: 'cerrada', restanteMs: Math.max(0, restante) };
   return { estado: 'abierta', restanteMs: restante };
+}
+
+/** ¿La ventana está abierta para TOMAR? Core sin margen (el margen de 60 s es del envío). Sin dato o dato malo = cerrada. */
+export function ventanaAbiertaParaTomar(ultimoEntranteEn: number | null, ahora: number): boolean {
+  return ventanaDeMetaAbierta(comoMomento(ultimoEntranteEn), ahora);
 }
 
 /** «03:20:15» (horas, minutos y segundos: es una cuenta regresiva). */
@@ -279,6 +278,17 @@ export function codigoDeError(e: unknown): string {
   return typeof c === 'string' ? c.replace(/^functions\//, '') : '';
 }
 
+/** Los `details` estructurados del error (no el `message`): objeto o nada. */
+export function detallesDeError(e: unknown): Record<string, unknown> {
+  const d = e && typeof e === 'object' ? (e as { details?: unknown }).details : undefined;
+  return d && typeof d === 'object' && !Array.isArray(d) ? (d as Record<string, unknown>) : {};
+}
+
+/** Segundos de espera que manda el servidor: un entero de 1 a 3.600; lo demás no se usa. */
+function segundosDe(v: unknown): number | null {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 3600 ? v : null;
+}
+
 /**
  * ¿Después de este error NO se sabe si el servidor llegó a registrar el envío? Sí cuando no hubo respuesta (red, tiempo
  * agotado, error interno): ahí el envío se queda con su clave y repetirlo es seguro, porque el servidor lo reconoce.
@@ -289,33 +299,73 @@ export function resultadoDesconocido(codigo: string): boolean {
 
 export const TEXTO_INCIERTO = 'No se pudo confirmar si llegó';
 
+/** El tope de envíos de una persona que se alcanzó (`details.tope`, contrato §8): cada uno se dice distinto. */
+function textoTope(detalles: Record<string, unknown>): string {
+  switch (detalles['tope']) {
+    case 'minuto': {
+      const n = segundosDe(detalles['esperaSegundos']);
+      return n === null ? 'Límite de envíos por minuto; intente de nuevo en unos segundos.' : `Límite de envíos por minuto; intente en ${n} s.`;
+    }
+    case 'conversacion':
+      return 'Alcanzó el máximo de mensajes de una persona para esta conversación en esta ventana de 24 h. Esperar unos segundos no lo cambia.';
+    case 'dia':
+      return 'Alcanzó el máximo de mensajes de personas que el comercio puede enviar por día. Esperar unos segundos no lo cambia.';
+    default:
+      return 'Alcanzó un límite de envíos. Consulte con su administrador antes de intentar de nuevo.';
+  }
+}
+
 /** El texto que ve la persona, según la acción y el código del error. Los códigos y textos son fijos. */
-export function textoErrorTurno(accion: AccionTurno, codigo: string): string {
+export function textoErrorTurno(accion: AccionTurno, codigo: string, detalles: Record<string, unknown> = {}): string {
   if (accion === 'enviar' && resultadoDesconocido(codigo)) {
     return `${TEXTO_INCIERTO}. Revise la conversación. Si vuelve a pulsar «Enviar», se reintenta este mismo envío y no se duplica.`;
   }
   switch (codigo) {
     case 'unauthenticated': return 'Su sesión venció. Vuelva a ingresar.';
     case 'permission-denied':
-      return accion === 'enviar' ? 'No tiene permiso para escribir en esta conversación.'
-        : 'No tiene permiso para intervenir en las conversaciones de este comercio.';
-    case 'failed-precondition':
+      return 'No tiene permiso para intervenir en esta conversación, o esta función no está habilitada para su comercio.';
+    case 'failed-precondition': {
+      const otra = typeof detalles['tomadoPor'] === 'string' && detalles['tomadoPor'] !== ''
+        ? ` (${etiquetaUid(detalles['tomadoPor'], null)})` : '';
       return accion === 'tomar'
-        ? 'No se pudo tomar: otra persona ya la tiene, o intervenir todavía no está habilitado para este comercio. El estado de arriba dice quién la tiene.'
+        ? (otra ? `No se pudo tomar: ya la tiene otra persona${otra}.`
+          : 'No se pudo tomar: la tiene otra persona, o la ventana de 24 h de WhatsApp está cerrada. El estado de arriba dice cuál.')
         : accion === 'devolver'
-          ? 'No se pudo devolver: la conversación ya no está a cargo suyo. El estado de arriba muestra quién responde.'
-          : 'No se envió: usted ya no tiene esta conversación, o la ventana de 24 h de WhatsApp se cerró. Revise el estado de arriba.';
+          ? 'No se pudo devolver: solo quien la atiende, o un administrador, puede hacerlo. El estado de arriba muestra quién responde.'
+          : 'No se envió: usted ya no tiene esta conversación, la ventana de 24 h de WhatsApp se cerró, o esa clave de envío ya se usó con otro texto. Revise el estado de arriba.';
+    }
     case 'invalid-argument':
       return accion === 'enviar' ? `El mensaje debe tener entre 1 y ${miles(MAX_TEXTO_PERSONA)} caracteres.`
         : 'La conversación no es válida.';
     case 'resource-exhausted':
-      return accion === 'enviar' ? 'Alcanzó el límite de envíos por ahora. Espere unos segundos e intente de nuevo.'
-        : 'Demasiados intentos seguidos. Espere unos segundos e intente de nuevo.';
+      return accion === 'enviar' ? textoTope(detalles) : 'Alcanzó el tope de cambios de atención por hora o por día.';
     case 'not-found': return 'La conversación ya no existe, o intervenir todavía no está disponible.';
     default:
       return accion === 'tomar' ? 'No se pudo tomar la conversación. Intente de nuevo.'
         : accion === 'devolver' ? 'No se pudo devolver la conversación. Intente de nuevo.'
           : 'No se pudo enviar el mensaje. Intente de nuevo.';
+  }
+}
+
+/**
+ * Por qué WhatsApp (o el relé) no aceptó un mensaje: texto FIJO por código (`codigoEnvio` del mensaje, contrato §8).
+ * Un código que no se conoce no se muestra tal cual: se dice «no lo aceptó» sin inventar el motivo. WM-3037 dice
+ * «intente en N s» solo si el servidor mandó los segundos.
+ */
+export function textoRechazoMeta(codigo: unknown, esperaSegundos?: unknown): string {
+  switch (typeof codigo === 'string' ? codigo.trim() : '') {
+    case '131047': return 'Pasaron más de 24 horas desde el último mensaje del cliente: WhatsApp ya no admite un mensaje libre.';
+    case '130429': return 'WhatsApp recibió demasiados mensajes en poco tiempo. Intente de nuevo en unos minutos.';
+    case '131026': return 'WhatsApp no pudo entregarlo: ese número no tiene WhatsApp o no acepta mensajes.';
+    case '131049': return 'WhatsApp decidió no entregarlo, para cuidar la experiencia del cliente con muchos mensajes de comercios.';
+    case '131051': return 'WhatsApp no admite ese tipo de mensaje.';
+    case '131052': return 'WhatsApp no pudo descargar el archivo del mensaje.';
+    case '131053': return 'WhatsApp no pudo subir el archivo: formato o tamaño no admitido.';
+    case 'WM-3037': {
+      const n = segundosDe(esperaSegundos);
+      return n === null ? 'Límite de envíos; intente de nuevo en unos instantes.' : `Límite de envíos; intente en ${n} s.`;
+    }
+    default: return 'WhatsApp no aceptó el mensaje.';
   }
 }
 
@@ -368,7 +418,7 @@ export async function ejecutarEnvio(
     const codigo = codigoDeError(e);
     const desconocido = resultadoDesconocido(codigo);
     return {
-      salida: { tipo: 'error', codigo, texto: textoErrorTurno('enviar', codigo), desconocido },
+      salida: { tipo: 'error', codigo, texto: textoErrorTurno('enviar', codigo, detallesDeError(e)), desconocido },
       borrador: desconocido ? b : null, clave: b.clave,
     };
   }

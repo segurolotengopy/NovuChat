@@ -134,7 +134,8 @@ async function simularServidor(page: Page): Promise<Servidor> {
   return { llamadas, contestar: (nombre, g) => { f[nombre] = g; } };
 }
 
-const error = (estado: number, status: string): Respuesta => ({ estado, error: { message: 'DETALLE-INTERNO-DEL-SERVIDOR-NO-VISIBLE', status } });
+const error = (estado: number, status: string, details?: Record<string, unknown>): Respuesta =>
+  ({ estado, error: { message: 'DETALLE-INTERNO-DEL-SERVIDOR-NO-VISIBLE', status, ...(details ? { details } : {}) } as { message: string; status: string } });
 
 // ── Ayudas de pantalla ───────────────────────────────────────────────────────
 
@@ -244,7 +245,7 @@ test.describe('Conversaciones: intervención de una persona (H2)', () => {
     servidor.contestar('tomarConversacion', () => error(400, 'FAILED_PRECONDITION'));
     await tomar(page).click();
     const alerta = page.locator('#cv-turno-error');
-    await expect(alerta).toContainText('otra persona ya la tiene');
+    await expect(alerta).toContainText('la tiene otra persona');
     await expect(page.locator('body')).not.toContainText('DETALLE-INTERNO');
     await expect(tomar(page)).toBeEnabled();
     await expect(tomar(page)).toHaveAttribute('aria-describedby', /cv-turno-error/);
@@ -289,18 +290,18 @@ test.describe('Conversaciones: intervención de una persona (H2)', () => {
     await expect(mensaje).toContainText('Listo, ya le preparo el pedido.');
     await expect(mensaje).toContainText('Persona (usted)');
     await expect(mensaje.locator('.cv-burbuja')).toHaveClass(/cv-burbuja--persona/);
-    await expect(mensaje.locator('.cv-envio')).toHaveText('Enviando…');
+    await expect(mensaje.locator('[data-estado]')).toHaveText('Enviando…');
     await expect(campo(page)).toHaveValue('');                       // el texto salió del campo
     // El flujo de n8n confirma: el estado cambia en vivo.
     const ref = bd().doc(`tenants/${FOGON}/conversaciones/${CONV}/mensajes/${String(envio.datos['claveIdempotencia'])}`);
     await ref.update({ estadoEnvio: 'aceptado' });
-    await expect(mensaje.locator('.cv-envio')).toHaveText('Enviado a WhatsApp');
+    await expect(mensaje.locator('[data-estado]')).toHaveText('Enviado a WhatsApp');
     await ref.update({ estadoEnvio: 'incierto' });
-    await expect(mensaje.locator('.cv-envio')).toHaveText('No se pudo confirmar si llegó');
+    await expect(mensaje.locator('[data-estado]')).toHaveText('No se pudo confirmar si llegó');
     await ref.update({ estadoEnvio: 'rechazado' });
-    await expect(mensaje.locator('.cv-envio')).toContainText('no se envió');
+    await expect(mensaje.locator('[data-estado]')).toContainText('no se envió');
     // Los mensajes del asistente y los del cliente no llevan estado de envío.
-    await expect(page.locator('.cv-envio')).toHaveCount(1);
+    await expect(page.locator('[data-estado]')).toHaveCount(1);
   });
 
   test('el mensaje de un asistente y el de una persona se distinguen; el uid de otra persona va abreviado y el HTML se ve como texto', async ({ page }) => {
@@ -407,9 +408,18 @@ test.describe('Conversaciones: intervención de una persona (H2)', () => {
     await abrir(page);
     await tomarYEsperar(page);
     await campo(page).fill('Hola');
+    servidor.contestar('enviarComoPersona', () => error(429, 'RESOURCE_EXHAUSTED', { tope: 'minuto', esperaSegundos: 37 }));
+    await enviar(page).click();
+    await expect(page.locator('#cv-redactor-error')).toHaveText('Límite de envíos por minuto; intente en 37 s.');
+    servidor.contestar('enviarComoPersona', () => error(429, 'RESOURCE_EXHAUSTED', { tope: 'dia' }));
+    await enviar(page).click();
+    await expect(page.locator('#cv-redactor-error')).toContainText('por día');
+    servidor.contestar('enviarComoPersona', () => error(429, 'RESOURCE_EXHAUSTED', { tope: 'conversacion' }));
+    await enviar(page).click();
+    await expect(page.locator('#cv-redactor-error')).toContainText('esta conversación en esta ventana de 24 h');
     servidor.contestar('enviarComoPersona', () => error(429, 'RESOURCE_EXHAUSTED'));
     await enviar(page).click();
-    await expect(page.locator('#cv-redactor-error')).toContainText('límite de envíos');
+    await expect(page.locator('#cv-redactor-error')).toContainText('Alcanzó un límite de envíos');
     await expect(campo(page)).toHaveValue('Hola');
     await expect(campo(page)).toHaveAttribute('aria-invalid', 'true');
     await expect(campo(page)).toHaveAttribute('aria-describedby', /cv-redactor-error/);
@@ -483,8 +493,8 @@ test.describe('Conversaciones: intervención de una persona (H2)', () => {
     await expect(page.getByRole('timer')).toBeVisible();
   });
 
-  test('ventana CERRADA (más de 24 h): no se puede enviar y se explica; el campo queda deshabilitado', async ({ page }) => {
-    await sembrarConversacion(FOGON, TEL, HOLA, campos(TEL, 'Ximena P.', { entranteHaceMin: 26 * 60 }));
+  test('ventana por cerrar (36 s): se puede tomar, pero el campo ya no deja enviar (margen de 60 s del servidor) y lo explica', async ({ page }) => {
+    await sembrarConversacion(FOGON, TEL, HOLA, campos(TEL, 'Ximena P.', { entranteHaceMin: 24 * 60 - 0.6 }));
     await simularServidor(page);
     await abrir(page);
     await tomarYEsperar(page);
@@ -494,14 +504,61 @@ test.describe('Conversaciones: intervención de una persona (H2)', () => {
     await expect(page.getByTestId('cuenta-regresiva')).toHaveCount(0);
   });
 
-  test('SIN DATO de `ultimoEntranteEn` (conversación de antes de H1): no se puede enviar y se explica', async ({ page }) => {
-    await sembrarConversacion(FOGON, TEL, HOLA, campos(TEL, 'Ximena P.', { entranteHaceMin: null }));
+  test('ventana CERRADA (más de 24 h) o SIN DATO: «Tomar» no se ofrece (el servidor lo rechaza) y se explica; la cabecera dice «sin dato» si falta', async ({ page }) => {
+    await sembrarConversacion(FOGON, TEL, HOLA, campos(TEL, 'Ximena P.', { entranteHaceMin: 26 * 60 }));
+    await sembrarConversacion(FOGON, TEL_B, HOLA, campos(TEL_B, 'Mauricio T.', { entranteHaceMin: null }));
     await simularServidor(page);
     await abrir(page);
+    await expect(tomar(page)).toHaveCount(0);
+    await expect(page.locator('#cv-turno-sin-ventana')).toContainText('No se puede tomar');
+    await expect(page.locator('.cv-pastilla')).toContainText('Ventana cerrada');
+    await page.goto(`/negocio/${FOGON}/conversaciones/${CONV_B}`);
+    await expect(page.getByTestId('detalle')).toBeVisible();
+    await expect(tomar(page)).toHaveCount(0);
+    await expect(page.locator('#cv-turno-sin-ventana')).toBeVisible();
+    await expect(page.locator('.cv-pastilla')).toHaveText('Ventana: sin dato');
+  });
+
+  test('un turno que venció por inactividad (31 min) se ve como «Responde el asistente» y «Tomar» está disponible para cualquiera', async ({ page }) => {
+    await sembrarConversacion(FOGON, TEL, HOLA, campos(TEL, 'Ximena P.', { turno: turnoDe(OTRO_UID, 31) }));
+    await abrir(page);
+    await expect(estado(page)).toHaveText('Responde el asistente');
+    await expect(tomar(page)).toBeVisible();
+    await expect(page.locator('.cv-ficha', { hasText: 'Ximena P.' })).not.toContainText('Responde una persona');
+  });
+
+  test('un mensaje rechazado explica el motivo con un texto fijo por el código de Meta', async ({ page }) => {
+    await sembrarConversacion(FOGON, TEL, HOLA, campos(TEL, 'Ximena P.', { turno: turnoDe(OTRO_UID) }));
+    const col = bd().collection(`tenants/${FOGON}/conversaciones/${CONV}/mensajes`);
+    await col.doc('r1').set({ direccion: 'saliente', autor: 'persona', autorUid: OTRO_UID, texto: 'uno', estadoEnvio: 'rechazado', codigoEnvio: '131047', ts: Timestamp.now() });
+    await col.doc('r2').set({ direccion: 'saliente', autor: 'persona', autorUid: OTRO_UID, texto: 'dos', estadoEnvio: 'rechazado', codigoEnvio: '999999', ts: Timestamp.now() });
+    await col.doc('r3').set({ direccion: 'saliente', autor: 'persona', autorUid: OTRO_UID, texto: 'tres', estadoEnvio: 'rechazado', codigoEnvio: 'WM-3037', esperaSegundos: 12, ts: Timestamp.now() });
+    await abrir(page);
+    const motivo = (t: string) => page.locator('.cv-burbuja', { hasText: t }).getByTestId('motivo-rechazo');
+    await expect(motivo('uno')).toContainText('Pasaron más de 24 horas');
+    await expect(motivo('dos')).toHaveText('WhatsApp no aceptó el mensaje.');
+    await expect(motivo('tres')).toHaveText('Límite de envíos; intente en 12 s.');
+    await expect(page.locator('body')).not.toContainText('999999');
+  });
+
+  test('al cambiar de conversación con un envío sin confirmar, al volver quedan el texto y LA MISMA clave (en memoria, no en el navegador)', async ({ page }) => {
+    await sembrarConversacion(FOGON, TEL, HOLA, campos(TEL, 'Ximena P.'));
+    await sembrarConversacion(FOGON, TEL_B, HOLA, campos(TEL_B, 'Mauricio T.'));
+    const servidor = await simularServidor(page);
+    await abrir(page);
     await tomarYEsperar(page);
-    await expect(page.locator('#cv-redactor-ayuda')).toContainText('No consta cuándo escribió el cliente');
-    await expect(campo(page)).toBeDisabled();
-    await expect(enviar(page)).toBeDisabled();
+    servidor.contestar('enviarComoPersona', () => error(504, 'DEADLINE_EXCEEDED'));
+    await campo(page).fill('Pendiente de confirmar');
+    await enviar(page).click();
+    await expect(page.locator('#cv-redactor-error')).toContainText('No se pudo confirmar si llegó');
+    await page.locator('.cv-ficha', { hasText: 'Mauricio T.' }).click();
+    await expect(page.getByTestId('detalle')).toContainText('Mauricio T.');
+    await page.locator('.cv-ficha', { hasText: 'Ximena P.' }).click();
+    await expect(campo(page)).toHaveValue('Pendiente de confirmar');
+    await enviar(page).click();
+    const envios = () => servidor.llamadas.filter((l) => l.nombre === 'enviarComoPersona');
+    await expect.poll(() => envios().length).toBe(2);
+    expect(envios()[1]!.datos['claveIdempotencia']).toBe(envios()[0]!.datos['claveIdempotencia']);
   });
 
   test('filtro «El asistente atiende»: deja las que no tiene una persona; su número es todas menos las de una persona', async ({ page }) => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  TEXTO_INCIERTO, ejecutarEnvio, estadoDelTexto, motivoVentana, textoContador, textoCuentaRegresiva, ventanaDeEnvio,
+  TEXTO_INCIERTO, claveDelEnvio, ejecutarEnvio, estadoDelTexto, motivoVentana, textoContador, textoCuentaRegresiva, ventanaDeEnvio,
   type Borrador, type CapaTurno,
 } from '../lib/turno';
 
@@ -22,7 +22,19 @@ import {
  *  · Ctrl+Enter (o Cmd+Enter) envía; Enter solo agrega un salto de línea.
  */
 
+/**
+ * BORRADORES SIN CONFIRMAR, EN MEMORIA DEL MÓDULO (no en el almacenamiento del navegador: se pierden al recargar).
+ * Si la persona cambia de conversación con un envío sin confirmar, al volver conserva el texto y LA MISMA clave: así
+ * reintentar no duplica. Se guarda desde antes de llamar (un envío en vuelo cuenta como sin confirmar) y se borra al
+ * confirmarse. La clave del mapa lleva el uid: otra persona en el mismo navegador no ve ni reutiliza lo de ésta.
+ */
+const BORRADORES = new Map<string, { crudo: string; borrador: Borrador }>();
+const claveDeBorrador = (p: { miUid: string | null; tenantId: string; conversacionId: string }) =>
+  `${p.miUid ?? ''}|${p.tenantId}|${p.conversacionId}`;
+
 export interface PropsEscribir {
+  /** El uid de quien escribe (solo para separar los borradores sin confirmar). */
+  miUid: string | null;
   tenantId: string;
   conversacionId: string;
   /** Hora del último mensaje DEL CLIENTE (de ahí corre la ventana de 24 h); `null` = sin dato. */
@@ -33,12 +45,13 @@ export interface PropsEscribir {
 }
 
 export function EscribirComoPersona(p: PropsEscribir) {
-  const [crudo, setCrudo] = useState('');
+  const guardado = BORRADORES.get(claveDeBorrador(p));
+  const [crudo, setCrudo] = useState(guardado?.crudo ?? '');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [ahora, setAhora] = useState(() => Date.now());
-  const borrador = useRef<Borrador | null>(null);
+  const borrador = useRef<Borrador | null>(guardado?.borrador ?? null);
   const enCurso = useRef(false);
   const vivo = useRef(true);
   useEffect(() => { vivo.current = true; return () => { vivo.current = false; }; }, []);
@@ -65,10 +78,15 @@ export function EscribirComoPersona(p: PropsEscribir) {
     setEnviando(true);
     setError(null);
     setAviso(null);
+    const llave = claveDeBorrador(p);
     try {
+      const abierto = claveDelEnvio(borrador.current, texto.texto);
+      borrador.current = abierto;
+      BORRADORES.set(llave, { crudo, borrador: abierto });   // un envío en vuelo cuenta como sin confirmar
       const hecho = await ejecutarEnvio(
-        p.capa, { tenantId: p.tenantId, conversacionId: p.conversacionId, texto: texto.texto }, borrador.current);
+        p.capa, { tenantId: p.tenantId, conversacionId: p.conversacionId, texto: texto.texto }, abierto);
       borrador.current = hecho.borrador;             // cerrado si el servidor contestó; abierto (misma clave) si no hubo respuesta
+      if (hecho.borrador) BORRADORES.set(llave, { crudo, borrador: hecho.borrador }); else BORRADORES.delete(llave);
       if (!vivo.current) return;
       const { salida } = hecho;
       if (salida.tipo === 'error') {

@@ -19,28 +19,45 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
-  AVISO_TOMAR, CLAVE_MAX, CLAVE_MIN, ESPERA_CAMBIO_MS, INACTIVIDAD_DEVOLUCION_MIN, MARGEN_VENTANA_MS, MAX_TEXTO_PERSONA,
+  AVISO_TOMAR, CLAVE_MAX, CLAVE_MIN, ESPERA_CAMBIO_MS, INACTIVIDAD_DEVOLUCION_MIN, MARGEN_ENVIO_MS, MAX_TEXTO_PERSONA,
   TEXTO_INCIERTO, VENTANA_META_MS, accionesDeTurno, cambioVisible, claveDelEnvio, codigoDeError, ejecutarEnvio, esClaveValida,
   estadoDeMensaje, estadoDelTexto, etiquetaUid, interpretarEnvio, motivoVentana, nuevaClave, resultadoDesconocido,
   rotuloDeAutor, situacionDeTurno, textoContador, textoCuentaRegresiva, textoErrorTurno, textoEstadoMensaje, textoEstadoTurno,
-  turnoDeDocumento, ventanaDeEnvio, type Borrador, type CapaTurno,
+  turnoDeConversacion, ventanaDeEnvio, detallesDeError, textoRechazoMeta, ventanaAbiertaParaTomar, INACTIVIDAD_DEVOLUCION_MIN,
+  type Borrador, type CapaTurno,
 } from '../../web/src/central/lib/turno';
 import {
   CONTADORES_VACIOS, FILTROS, FORMAS_CONSULTA, VENTANA_HORAS, aplicarFiltro, consultaDeFiltro, consultaDePersona, contadorAsistente,
-  cumpleFiltro, fichaDeDocumento, filtroConReloj, formaDe, puedeGestionarConversaciones, type Ficha,
+  cumpleFiltro, turnoDeFicha, fichaDeDocumento, filtroConReloj, formaDe, puedeGestionarConversaciones, type Ficha,
 } from '../../web/src/central/lib/conversaciones';
 
 const HORA = 3_600_000;
 const MIN = 60_000;
 const AHORA = Date.UTC(2026, 9, 16, 16, 0, 0);
 const marca = (ms: number) => ({ toMillis: () => ms });
+/** El turno como lo ve la pantalla a las 16:00, con el último mensaje del cliente hace 1 h; completa las fechas si el caso no las trae. */
+const turnoDeDocumento = (v: unknown) => turnoDeConversacion(
+  v && typeof v === 'object' && !Array.isArray(v) && 'responde' in v && !('tomadoEn' in v)
+    ? { tomadoEn: marca(AHORA - 5 * MIN), actividadPersonaEn: marca(AHORA - MIN), ...v } : v, AHORA - HORA, AHORA);
 const YO = 'uidDeLaCajeraAbCdEfGhIjKlMnOp';
 const OTRA = 'uidDeOtraPersonaAbCdEfGhIjKlM';
 
 describe('1. el turno se lee con tolerancia', () => {
   it('una persona responde solo con `responde: "persona"` exacto y un `tomadoPor` de texto', () => {
     const t = turnoDeDocumento({ responde: 'persona', tomadoPor: YO, tomadoEn: marca(AHORA - 5 * MIN), actividadPersonaEn: marca(AHORA - MIN) });
-    expect(t).toEqual({ tomadoPor: YO, tomadoEn: AHORA - 5 * MIN, actividadPersonaEn: AHORA - MIN });
+    expect(t).toMatchObject({ responde: 'persona', tomadoPor: YO, tomadoEn: AHORA - 5 * MIN, actividadPersonaEn: AHORA - MIN });
+  });
+
+  it('el veredicto es el del SERVIDOR (`turnoVigente` de Core): vencido por inactividad o por la ventana, o con fechas rotas = asistente', () => {
+    const doc = (actividadHace: number) => ({ responde: 'persona', tomadoPor: YO, tomadoEn: marca(AHORA - 40 * MIN), actividadPersonaEn: marca(AHORA - actividadHace) });
+    expect(turnoDeConversacion(doc(29 * MIN), AHORA - HORA, AHORA)).not.toBeNull();
+    expect(turnoDeConversacion(doc(30 * MIN), AHORA - HORA, AHORA)).toBeNull();          // 30 min sin actividad
+    expect(turnoDeConversacion(doc(MIN), AHORA - 24 * HORA, AHORA)).toBeNull();          // ventana cerrada
+    expect(turnoDeConversacion(doc(MIN), null, AHORA)).toBeNull();                       // sin dato = cerrada
+    expect(turnoDeConversacion(doc(MIN), AHORA + HORA, AHORA)).toBeNull();               // último entrante del futuro = dato malo
+    expect(turnoDeConversacion({ ...doc(MIN), actividadPersonaEn: marca(AHORA + HORA) }, AHORA - HORA, AHORA)).toBeNull();
+    expect(turnoDeConversacion({ responde: 'asistente', tomadoPor: YO, tomadoEn: marca(AHORA), actividadPersonaEn: marca(AHORA) }, AHORA - HORA, AHORA)).toBeNull();
+    expect(INACTIVIDAD_DEVOLUCION_MIN).toBe(30);
   });
 
   it('ausente, vacío, de otro tipo o con valores raros = responde el asistente (`null`), sin lanzar', () => {
@@ -63,15 +80,15 @@ describe('1. el turno se lee con tolerancia', () => {
     for (const v of raros) expect(turnoDeDocumento(v), JSON.stringify(v)).toBeNull();
   });
 
-  it('las fechas raras del turno quedan en `null` y no rompen la lectura', () => {
-    const t = turnoDeDocumento({ responde: 'persona', tomadoPor: YO, tomadoEn: 'ayer', actividadPersonaEn: { toMillis: () => NaN } });
-    expect(t).toEqual({ tomadoPor: YO, tomadoEn: null, actividadPersonaEn: null });
+  it('las fechas raras del turno lo vuelven ilegible = asistente, y no rompen la lectura', () => {
+    expect(turnoDeDocumento({ responde: 'persona', tomadoPor: YO, tomadoEn: 'ayer', actividadPersonaEn: { toMillis: () => NaN } })).toBeNull();
   });
 
   it('la ficha de una conversación de antes de H2 (sin `turno`) es del asistente; con `turno` válido es de una persona', () => {
-    expect(fichaDeDocumento('wa_59100000047', { nombreContacto: 'X' }).turno).toBeNull();
-    expect(fichaDeDocumento('wa_59100000047', { turno: 'persona' }).turno).toBeNull();
-    expect(fichaDeDocumento('wa_59100000047', { turno: { responde: 'persona', tomadoPor: YO } }).turno?.tomadoPor).toBe(YO);
+    const quien = (d: Record<string, unknown>) => turnoDeFicha(fichaDeDocumento('wa_59100000047', { ultimoEntranteEn: marca(AHORA - HORA), ...d }), AHORA);
+    expect(quien({ nombreContacto: 'X' })).toBeNull();
+    expect(quien({ turno: 'persona' })).toBeNull();
+    expect(quien({ turno: { responde: 'persona', tomadoPor: YO, tomadoEn: marca(AHORA - MIN), actividadPersonaEn: marca(AHORA - MIN) } })?.tomadoPor).toBe(YO);
   });
 
   it('el estado visible: «Responde una persona (usted)» / «(ab12cd…)» / «Responde el asistente»; el uid NUNCA entero', () => {
@@ -106,17 +123,17 @@ describe('1. el turno se lee con tolerancia', () => {
 describe('2. quién ve qué', () => {
   const base = { comercioActivo: true };
   const ver = (situacion: 'asistente' | 'mio' | 'ajeno', rol: string | null, propietario = false) =>
-    accionesDeTurno({ situacion, puedeGestionar: puedeGestionarConversaciones(rol, propietario), esAdmin: rol === 'admin' && !propietario, ...base });
+    accionesDeTurno({ situacion, puedeGestionar: puedeGestionarConversaciones(rol, propietario), esAdmin: rol === 'admin' && !propietario, ventanaAbierta: true, ...base });
 
   it('admin y oper del negocio ven «Tomar» cuando responde el asistente', () => {
     for (const rol of ['admin', 'oper']) {
       const a = ver('asistente', rol);
-      expect(a).toEqual({ verTomar: true, verDevolver: false, verEscribir: false, habilitados: true });
+      expect(a).toEqual({ verTomar: true, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: true });
     }
   });
 
   it('NEGATIVA: el propietario de NovuChat, el soporte (sin rol), la ingesta y quien no tiene rol NO ven ningún botón ni el campo', () => {
-    const nadie = { verTomar: false, verDevolver: false, verEscribir: false, habilitados: false };
+    const nadie = { verTomar: false, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: false };
     for (const situacion of ['asistente', 'mio', 'ajeno'] as const) {
       expect(ver(situacion, 'admin', true), `propietario ${situacion}`).toEqual(nadie);
       expect(ver(situacion, null), `sin rol ${situacion}`).toEqual(nadie);
@@ -126,15 +143,26 @@ describe('2. quién ve qué', () => {
   });
 
   it('«Devolver» y el campo de escribir: quien la tiene; un admin puede devolver la de otra, un oper no; nadie escribe en la de otra', () => {
-    expect(ver('mio', 'oper')).toEqual({ verTomar: false, verDevolver: true, verEscribir: true, habilitados: true });
-    expect(ver('mio', 'admin')).toEqual({ verTomar: false, verDevolver: true, verEscribir: true, habilitados: true });
-    expect(ver('ajeno', 'admin')).toEqual({ verTomar: false, verDevolver: true, verEscribir: false, habilitados: true });
-    expect(ver('ajeno', 'oper')).toEqual({ verTomar: false, verDevolver: false, verEscribir: false, habilitados: true });
+    expect(ver('mio', 'oper')).toEqual({ verTomar: false, sinTomarPorVentana: false, verDevolver: true, verEscribir: true, habilitados: true });
+    expect(ver('mio', 'admin')).toEqual({ verTomar: false, sinTomarPorVentana: false, verDevolver: true, verEscribir: true, habilitados: true });
+    expect(ver('ajeno', 'admin')).toEqual({ verTomar: false, sinTomarPorVentana: false, verDevolver: true, verEscribir: false, habilitados: true });
+    expect(ver('ajeno', 'oper')).toEqual({ verTomar: false, sinTomarPorVentana: false, verDevolver: false, verEscribir: false, habilitados: true });
     expect(ver('asistente', 'oper').verEscribir).toBe(false);          // sin tomar no hay campo
   });
 
+  it('«Tomar» se esconde con la ventana cerrada o sin dato (el servidor lo rechaza) y la pantalla lo explica', () => {
+    const a = accionesDeTurno({ situacion: 'asistente', puedeGestionar: true, esAdmin: false, comercioActivo: true, ventanaAbierta: false });
+    expect(a.verTomar).toBe(false);
+    expect(a.sinTomarPorVentana).toBe(true);
+    expect(ventanaAbiertaParaTomar(AHORA - HORA, AHORA)).toBe(true);
+    expect(ventanaAbiertaParaTomar(AHORA - 24 * HORA, AHORA)).toBe(false);
+    expect(ventanaAbiertaParaTomar(null, AHORA)).toBe(false);
+    // quien no puede gestionar no ve ni el aviso
+    expect(accionesDeTurno({ situacion: 'asistente', puedeGestionar: false, esAdmin: false, comercioActivo: true, ventanaAbierta: false }).sinTomarPorVentana).toBe(false);
+  });
+
   it('con el comercio no activo los controles se VEN pero no se pueden usar', () => {
-    const a = accionesDeTurno({ situacion: 'asistente', puedeGestionar: true, esAdmin: true, comercioActivo: false });
+    const a = accionesDeTurno({ situacion: 'asistente', puedeGestionar: true, esAdmin: true, comercioActivo: false, ventanaAbierta: true });
     expect(a.verTomar).toBe(true);
     expect(a.habilitados).toBe(false);
   });
@@ -152,7 +180,7 @@ describe('2. quién ve qué', () => {
 describe('3. la ventana de Meta y su cuenta regresiva', () => {
   it('son 24 h, las mismas que usa el resto de la pantalla', () => {
     expect(VENTANA_META_MS).toBe(VENTANA_HORAS * HORA);
-    expect(MARGEN_VENTANA_MS).toBe(60_000);
+    expect(MARGEN_ENVIO_MS).toBe(60_000);
   });
 
   it('corre desde `ultimoEntranteEn` y cuenta lo que queda', () => {
@@ -170,8 +198,8 @@ describe('3. la ventana de Meta y su cuenta regresiva', () => {
   });
 
   it('en el margen de 60 s antes de las 24 h, y pasadas las 24 h, está cerrada', () => {
-    expect(ventanaDeEnvio(AHORA - VENTANA_META_MS + MARGEN_VENTANA_MS + 1, AHORA).estado).toBe('abierta');
-    expect(ventanaDeEnvio(AHORA - VENTANA_META_MS + MARGEN_VENTANA_MS, AHORA).estado).toBe('cerrada');
+    expect(ventanaDeEnvio(AHORA - VENTANA_META_MS + MARGEN_ENVIO_MS + 1, AHORA).estado).toBe('abierta');
+    expect(ventanaDeEnvio(AHORA - VENTANA_META_MS + MARGEN_ENVIO_MS, AHORA).estado).toBe('cerrada');
     expect(ventanaDeEnvio(AHORA - VENTANA_META_MS, AHORA)).toEqual({ estado: 'cerrada', restanteMs: 0 });
     expect(ventanaDeEnvio(AHORA - 30 * HORA, AHORA)).toEqual({ estado: 'cerrada', restanteMs: 0 });
     expect(motivoVentana(ventanaDeEnvio(AHORA - 30 * HORA, AHORA))).toMatch(/ventana de 24 h de WhatsApp está cerrada/);
@@ -179,7 +207,8 @@ describe('3. la ventana de Meta y su cuenta regresiva', () => {
   });
 
   it('un reloj adelantado (un último mensaje "del futuro") no da más de 24 h', () => {
-    expect(ventanaDeEnvio(AHORA + 5 * HORA, AHORA).restanteMs).toBe(VENTANA_META_MS);
+    expect(ventanaDeEnvio(AHORA + 5 * HORA, AHORA).estado).toBe('cerrada');       // a más de 5 min del futuro: dato malo, como en el servidor
+    expect(ventanaDeEnvio(AHORA + 60_000, AHORA).restanteMs).toBe(VENTANA_META_MS);   // un adelanto chico no pasa de 24 h
   });
 
   it('la cuenta regresiva en horas, minutos y segundos', () => {
@@ -340,11 +369,69 @@ describe('5. los errores salen de `e.code`, nunca de `e.message`', () => {
     }
   });
 
-  it('«ya la tiene otra persona» al tomar; «cerró la ventana» al enviar; el tope de envíos pide esperar', () => {
-    expect(textoErrorTurno('tomar', 'failed-precondition')).toMatch(/otra persona ya la tiene/);
+  it('«ya la tiene otra persona» al tomar (con `details.tomadoPor`, abreviado); sin el detalle, un texto que también nombra la ventana', () => {
+    expect(textoErrorTurno('tomar', 'failed-precondition', { tomadoPor: OTRA })).toBe(`No se pudo tomar: ya la tiene otra persona (${OTRA.slice(0, 6)}…).`);
+    expect(textoErrorTurno('tomar', 'failed-precondition', { tomadoPor: OTRA })).not.toContain(OTRA);
+    expect(textoErrorTurno('tomar', 'failed-precondition')).toMatch(/otra persona, o la ventana de 24 h/);
+    expect(textoErrorTurno('tomar', 'failed-precondition', { tomadoPor: 5 })).toMatch(/ventana de 24 h/);
     expect(textoErrorTurno('enviar', 'failed-precondition')).toMatch(/ventana de 24 h/);
-    expect(textoErrorTurno('enviar', 'resource-exhausted')).toMatch(/Espere/);
     expect(textoErrorTurno('enviar', 'invalid-argument')).toContain('1.000');
+    expect(textoErrorTurno('tomar', 'permission-denied')).toMatch(/no está habilitada para su comercio/);
+  });
+
+  it('el tope de envíos (`details.tope`): minuto con sus segundos, conversación y día sin prometer que esperar sirve; sin detalle, texto neutro', () => {
+    const t = (d?: Record<string, unknown>) => textoErrorTurno('enviar', 'resource-exhausted', d);
+    expect(t({ tope: 'minuto', esperaSegundos: 42 })).toBe('Límite de envíos por minuto; intente en 42 s.');
+    expect(t({ tope: 'minuto' })).toMatch(/unos segundos/);
+    for (const raro of [0, -3, 1.5, 99999, '42', null, NaN]) expect(t({ tope: 'minuto', esperaSegundos: raro })).toMatch(/unos segundos/);
+    expect(t({ tope: 'conversacion' })).toMatch(/esta conversación en esta ventana de 24 h/);
+    expect(t({ tope: 'conversacion' })).toMatch(/no lo cambia/);
+    expect(t({ tope: 'dia' })).toMatch(/por día/);
+    expect(t({ tope: 'dia' })).toMatch(/no lo cambia/);
+    expect(t({ tope: 'dia', esperaSegundos: 5 })).not.toMatch(/ 5 s/);
+    for (const neutro of [undefined, {}, { tope: 'otro' }, { tope: 5 }]) {
+      expect(t(neutro as Record<string, unknown> | undefined)).toBe('Alcanzó un límite de envíos. Consulte con su administrador antes de intentar de nuevo.');
+    }
+    // los tres dicen cosas distintas, y ninguno es el viejo «espere unos segundos» genérico
+    expect(new Set([t({ tope: 'minuto' }), t({ tope: 'conversacion' }), t({ tope: 'dia' })]).size).toBe(3);
+    // tomar/devolver tienen su propio tope
+    expect(textoErrorTurno('tomar', 'resource-exhausted', { tope: 'dia' })).toMatch(/cambios de atención/);
+  });
+
+  it('un error de envío con `details.tope` llega al texto (la capa lee `details`, no `message`)', async () => {
+    const capa: CapaTurno = { tomar: async () => ({}), devolver: async () => ({}),
+      enviar: async () => { throw Object.assign(new Error('NO-SE-LEE'), { code: 'functions/resource-exhausted', details: { tope: 'dia' } }); } };
+    const r = await ejecutarEnvio(capa, { tenantId: 'c', conversacionId: 'wa_59100000047', texto: 'x' }, null);
+    expect(r.salida).toMatchObject({ tipo: 'error', codigo: 'resource-exhausted' });
+    expect((r.salida as { texto: string }).texto).toMatch(/por día/);
+    expect(JSON.stringify(r)).not.toContain('NO-SE-LEE');
+  });
+
+  it('los `details` del error son un objeto o nada; nunca el `message`', () => {
+    expect(detallesDeError({ details: { tope: 'dia' } })).toEqual({ tope: 'dia' });
+    for (const v of [undefined, null, 'x', {}, { details: 'dia' }, { details: ['dia'] }, { details: null }, { message: 'tope dia' }]) expect(detallesDeError(v)).toEqual({});
+  });
+
+  it('el motivo de un rechazo de Meta: texto fijo por código (131047, 130429, 131026, 131049, 131051, 131052, 131053, WM-3037)', () => {
+    const codigos = ['131047', '130429', '131026', '131049', '131051', '131052', '131053', 'WM-3037'];
+    const textos = codigos.map((c) => textoRechazoMeta(c));
+    expect(new Set(textos).size).toBe(codigos.length);                          // cada código, su texto
+    for (const x of textos) { expect(x.length).toBeGreaterThan(25); expect(x).not.toMatch(/^\d{6}$/); }
+    expect(textoRechazoMeta('131047')).toMatch(/^Pasaron más de 24 horas/);
+    for (const c of codigos) expect(textoRechazoMeta(c), c).not.toBe('WhatsApp no aceptó el mensaje.');   // todos los códigos del contrato tienen su texto
+    expect(textoRechazoMeta('131053')).toMatch(/formato o tamaño/);
+    expect(textoRechazoMeta('131052')).toMatch(/descargar/);
+    expect(textoRechazoMeta('131026')).toMatch(/no tiene WhatsApp/);
+    expect(textoRechazoMeta('WM-3037', 12)).toBe('Límite de envíos; intente en 12 s.');
+    expect(textoRechazoMeta('WM-3037')).toBe('Límite de envíos; intente de nuevo en unos instantes.');
+    expect(textoRechazoMeta('WM-3037', 'doce')).not.toMatch(/ s\./);
+    expect(textoRechazoMeta('131047', 12)).not.toMatch(/ 12 /);                  // los segundos solo valen para WM-3037
+  });
+
+  it('NEGATIVA: un código que no se conoce (o raro) no se muestra tal cual ni se inventa su motivo', () => {
+    for (const raro of ['999999', '<img src=x>', '', undefined, null, 131047, {}, 'WM-9999']) {
+      expect(textoRechazoMeta(raro), String(raro)).toBe('WhatsApp no aceptó el mensaje.');
+    }
   });
 
   it('un envío sin respuesta dice «No se pudo confirmar si llegó» y que repetirlo no duplica; sin reenvío automático', () => {
@@ -392,13 +479,31 @@ describe('6. el estado del mensaje saliente de una persona', () => {
 });
 
 describe('7. el filtro «El asistente atiende»', () => {
-  const ficha = (id: string, persona: boolean): Ficha => fichaDeDocumento(id, persona ? { turno: { responde: 'persona', tomadoPor: OTRA } } : {});
+  const ficha = (id: string, persona: boolean): Ficha => fichaDeDocumento(id, {
+    ultimoEntranteEn: marca(AHORA - HORA),
+    ...(persona ? { turno: { responde: 'persona', tomadoPor: OTRA, tomadoEn: marca(AHORA - 5 * MIN), actividadPersonaEn: marca(AHORA - MIN) } } : {}),
+  });
   const lista = [ficha('wa_59100000001', false), ficha('wa_59100000002', true), ficha('wa_59100000003', false), ficha('wa_59100000004', true)];
 
   it('deja las que no tiene una persona (ausente = asistente)', () => {
     expect(aplicarFiltro(lista, 'asistente', AHORA).map((f) => f.id)).toEqual(['wa_59100000001', 'wa_59100000003']);
     expect(cumpleFiltro(ficha('wa_59100000009', true), 'asistente', AHORA)).toBe(false);
     expect(aplicarFiltro(lista, 'todas', AHORA)).toHaveLength(4);
+  });
+
+  it('un turno VENCIDO (30 min sin actividad) o con la ventana cerrada cuenta como «el asistente atiende», igual que en el servidor', () => {
+    const viejo = fichaDeDocumento('wa_59100000005', {
+      ultimoEntranteEn: marca(AHORA - HORA),
+      turno: { responde: 'persona', tomadoPor: OTRA, tomadoEn: marca(AHORA - 2 * HORA), actividadPersonaEn: marca(AHORA - 31 * MIN) },
+    });
+    const cerrada = fichaDeDocumento('wa_59100000006', {
+      ultimoEntranteEn: marca(AHORA - 25 * HORA),
+      turno: { responde: 'persona', tomadoPor: OTRA, tomadoEn: marca(AHORA - 5 * MIN), actividadPersonaEn: marca(AHORA - MIN) },
+    });
+    for (const f of [viejo, cerrada]) {
+      expect(turnoDeFicha(f, AHORA)).toBeNull();
+      expect(cumpleFiltro(f, 'asistente', AHORA)).toBe(true);
+    }
   });
 
   it('está en la lista de filtros, justo después de «Todas», con su rótulo', () => {

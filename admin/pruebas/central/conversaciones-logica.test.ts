@@ -690,7 +690,7 @@ describe('la lista vacía y el resaltado de lo buscado', () => {
 
   it('la lista, con cursor y sin renglones, pinta el texto Y el botón «Buscar más atrás»; sin cursor, solo «Nada coincide»', () => {
     const l = leerCodigo('web/src/central/componentes/ListaConversaciones.tsx');
-    expect(l).toContain('textoListaVacia({ enBusqueda: p.enBusqueda, hayMasPalabra: p.hayMasPalabra, filtro: p.filtro })');
+    expect(l).toContain('textoListaVacia({ enBusqueda: p.enBusqueda, hayMasPalabra: p.hayMasPalabra, filtro: p.filtro, hayMas: p.hayMas })');
     expect(l).toContain("{p.renglones.length === 0 ? 'Buscar más atrás' : 'Más resultados'}");
     expect(l).not.toContain("'Nada coincide con lo que escribió.'");   // el texto vive en la función pura, no suelto en la pantalla
   });

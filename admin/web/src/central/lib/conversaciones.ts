@@ -31,7 +31,7 @@ import {
   MAX_PALABRAS_CONSULTA, MINIMO_DIGITOS, POR_VENCER_HORAS, PREFIJOS_PAIS_DEFECTO, VENTANA_HORAS,
   normalizarTexto, palabrasDe, soloDigitos, trozosDeTelefono,
 } from '../../../../functions/src/core/conversacion/normalizacion';
-import { turnoDeDocumento, type Turno } from './turno';
+import { turnoDeConversacion, type Turno } from './turno';
 
 // Lo de Core que la pantalla y sus pruebas usan, por un solo punto de entrada.
 export {
@@ -94,8 +94,8 @@ export interface Ficha {
   sinLeer: boolean;
   /** `necesitaHumano === true` en el documento (lo escribe el evento «transferido», no H2 de texto). */
   necesitaHumano: boolean;
-  /** Una persona responde (H2). `null` = responde el asistente: ausente, de otro tipo o con un valor raro. Lo escribe el servidor. */
-  turno: Turno | null;
+  /** El campo `turno` TAL COMO VINO del documento (lo escribe el servidor). Quién responde AHORA se decide con `turnoDeFicha`. */
+  turno: unknown;
   /** `normal`, `operador` o `bloqueado` (lo anota la ingesta); '' si falta. */
   atencionEstado: string;
   noContactar: boolean;
@@ -148,7 +148,7 @@ export function fichaDeDocumento(id: string, datos: Record<string, unknown> | nu
     noLeidos,
     sinLeer: x['sinLeer'] === true,
     necesitaHumano: x['necesitaHumano'] === true,
-    turno: turnoDeDocumento(x['turno']),
+    turno: x['turno'],
     atencionEstado: str(x['atencionEstado']),
     noContactar: x['noContactar'] === true,
     telefonoTrozos: lista(x['telefonoTrozos']),
@@ -417,11 +417,19 @@ export function necesitaHumanoDe(f: Ficha, ahora: number): boolean {
   return ESTADOS_HUMANO.includes(f.atencionEstado) && f.ultimoEn !== null && f.ultimoEn >= ahora - VENTANA_HORAS * HORA_MS;
 }
 
+/**
+ * ¿Responde una persona AHORA? El mismo veredicto del servidor (`turnoVigente` de Core): un turno vencido por inactividad
+ * o por la ventana de 24 h, devuelto, ilegible o con fechas rotas es «responde el asistente» (`null`).
+ */
+export function turnoDeFicha(f: Pick<Ficha, 'turno' | 'ultimoEntranteEn'>, ahora: number): Turno | null {
+  return turnoDeConversacion(f.turno, f.ultimoEntranteEn, ahora);
+}
+
 /** Qué filtros cumple una conversación (el mismo criterio que la consulta del servidor). */
 export function cumpleFiltro(f: Ficha, filtro: Filtro, ahora: number): boolean {
   switch (filtro) {
     case 'todas': return true;
-    case 'asistente': return f.turno === null;
+    case 'asistente': return turnoDeFicha(f, ahora) === null;
     case 'humano': return necesitaHumanoDe(f, ahora);
     case 'noLeidas': return f.sinLeer;
     case 'vencer': return f.ventanaVenceEn !== null && f.ventanaVenceEn > ahora && f.ventanaVenceEn <= ahora + POR_VENCER_HORAS * HORA_MS;
@@ -544,8 +552,10 @@ export const alAceptarPagina = (p: Paginacion): Paginacion => (p.hayAnteriores ?
  * puede devolver `resultados: []` con un cursor: «no hay nada en lo reciente, pero se puede buscar más atrás». Eso NO es
  * «nada coincide»: decirlo junto al botón «Más resultados» sería contradictorio. Sin cursor, sí es «nada coincide».
  */
-export function textoListaVacia(a: { enBusqueda: boolean; hayMasPalabra: boolean; filtro: Filtro }): string {
+export function textoListaVacia(a: { enBusqueda: boolean; hayMasPalabra: boolean; filtro: Filtro; hayMas?: boolean }): string {
   if (a.enBusqueda) return a.hayMasPalabra ? 'Sin resultados recientes; buscar más atrás' : 'Nada coincide con lo que escribió.';
+  // Un filtro que se aplica sobre lo ya cargado («El asistente atiende») puede dejar la página vacía con más por traer: no es «no hay».
+  if (a.filtro !== 'todas' && a.hayMas) return 'Ninguna de las conversaciones cargadas cumple este filtro; hay más para cargar.';
   return a.filtro === 'todas' ? 'Todavía no hay conversaciones.' : 'Ninguna conversación cumple este filtro.';
 }
 
