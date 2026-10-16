@@ -653,6 +653,22 @@
     "labels": {},
     "callableTrigger": {}
   },
+  "devolverConversacion": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": 10,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
   "ejesDeCuenta": {
     "availableMemoryMb": null,
     "timeoutSeconds": null,
@@ -1854,6 +1870,22 @@
       "retryConfig": {},
       "timeZone": "America/La_Paz"
     }
+  },
+  "tomarConversacion": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": 10,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
   },
   "ubicacionDeEnlace": {
     "availableMemoryMb": null,
