@@ -181,7 +181,7 @@ const CLAVES_CONFIG_ATENCION = [...CLAVES_ATENCION, 'avisarRecepcion'].sort();
 // =============================================================================
 describe('con el turno de una persona vigente, las DOS respuestas callan al asistente', () => {
   it('la ingesta: bloqueado, aviso vacío, pausadoPorPersona; el turno y atencionEstado no se tocan', async () => {
-    const tel = '5910000621001';
+    const tel = '59100000021001';
     const turno = turnoDe(Date.now());
     await sembrar(A, tel, { turno });
     const antes = await conversacion(A, tel);
@@ -204,7 +204,7 @@ describe('con el turno de una persona vigente, las DOS respuestas callan al asis
   });
 
   it('configuracionFlujo: lo mismo, con el aviso vacío y la marca junto a avisarRecepcion', async () => {
-    const tel = '5910000621002';
+    const tel = '59100000021002';
     await sembrar(A, tel, { turno: turnoDe(Date.now()) });
     const r = await configuracion(A, tel);
     expect(r.codigo).toBe(200);
@@ -219,7 +219,7 @@ describe('con el turno de una persona vigente, las DOS respuestas callan al asis
   });
 
   it('un SALIENTE (el asistente reporta lo que ya dijo) no cambia: sin la clave nueva', async () => {
-    const tel = '5910000621003';
+    const tel = '59100000021003';
     await sembrar(A, tel, { turno: turnoDe(Date.now()) });
     const r = await saliente(A, tel);
     expect(Object.keys(r.cuerpo).sort()).toEqual(['atencion', 'avisarRecepcion']);
@@ -236,7 +236,7 @@ describe('sin pausa, las claves de las respuestas son las de siempre', () => {
     ];
     let i = 0;
     for (const [nombre, turno] of casos) {
-      const tel = `591000062110${i++}`;
+      const tel = `5910000002110${i++}`;
       await sembrar(A, tel, { turno });
       const e = await entrante(A, tel);
       expect(Object.keys(e.cuerpo).sort(), nombre).toEqual(['atencion', 'avisarRecepcion']);
@@ -252,7 +252,7 @@ describe('sin pausa, las claves de las respuestas son las de siempre', () => {
 // =============================================================================
 describe('un turno vencido se persiste devuelto y el asistente responde ese mensaje', () => {
   it('por INACTIVIDAD (31 min): turno devuelto, auditoría con telefono4, estado normal', async () => {
-    const tel = '5910000622001';
+    const tel = '59100000022001';
     const ahora = Date.now();
     await sembrar(A, tel, { turno: turnoDe(ahora, { tomadoEn: ahora - 3 * HORA, actividad: ahora - 31 * MIN }) });
     const r = await entrante(A, tel);
@@ -276,7 +276,7 @@ describe('un turno vencido se persiste devuelto y el asistente responde ese mens
   });
 
   it('por VENTANA (último entrante hace 25 h): devuelto con motivo ventana', async () => {
-    const tel = '5910000622002';
+    const tel = '59100000022002';
     const ahora = Date.now();
     await sembrar(A, tel, { turno: turnoDe(ahora), ultimoEntrante: ahora - 25 * HORA });
     const r = await entrante(A, tel);
@@ -289,7 +289,7 @@ describe('un turno vencido se persiste devuelto y el asistente responde ese mens
   });
 
   it('un segundo mensaje no vuelve a auditar ni a escribir el turno (ya está devuelto)', async () => {
-    const tel = '5910000622003';
+    const tel = '59100000022003';
     const ahora = Date.now();
     await sembrar(A, tel, { turno: turnoDe(ahora, { actividad: ahora - 40 * MIN }) });
     await entrante(A, tel);
@@ -300,7 +300,7 @@ describe('un turno vencido se persiste devuelto y el asistente responde ese mens
   });
 
   it('en la rama de CORTE por prepago también se persiste el vencimiento', async () => {
-    const tel = '5910000622004';
+    const tel = '59100000022004';
     const ahora = Date.now();
     await sembrar(A, tel, { turno: turnoDe(ahora, { actividad: ahora - 40 * MIN }) });
     await db.doc('plataforma/prepago').set({ corteActivo: false });
@@ -328,7 +328,7 @@ describe('ante la duda, responde el asistente (turno ilegible, roto o del futuro
     ['null', () => null],
   ];
   it.each(casos)('%s: no pausa, no escribe el turno y no audita', async (_n, hacer) => {
-    const tel = '5910000623001';
+    const tel = '59100000023001';
     await sembrar(A, tel, { turno: hacer() });
     const antes = (await conversacion(A, tel))['turno'];
     const r = await entrante(A, tel);
@@ -342,7 +342,7 @@ describe('ante la duda, responde el asistente (turno ilegible, roto o del futuro
   });
 
   it('el último entrante del futuro (más de 5 min) tampoco pausa', async () => {
-    const tel = '5910000623002';
+    const tel = '59100000023002';
     const t = Date.now();
     await sembrar(A, tel, { turno: turnoDe(t), ultimoEntrante: t + 2 * HORA });
     const r = await entrante(A, tel);
@@ -358,7 +358,7 @@ describe('el bloqueo por umbral sigue siendo de los umbrales y se combina con la
 
   it('sin pausa: el bloqueo por umbral responde como siempre (sin la clave nueva)', async () => {
     await cuentaAlDia(A, CUENTA);
-    const tel = '5910000624001';
+    const tel = '59100000024001';
     await sembrar(A, tel, { marcas: enBloqueo() });
     const r = await entrante(A, tel);
     expect(atencionDe(r)['estado']).toBe('bloqueado');
@@ -368,7 +368,7 @@ describe('el bloqueo por umbral sigue siendo de los umbrales y se combina con la
 
   it('con pausa sobre un bloqueo por umbral: bloqueado, aviso vacío, atencionEstado intacto', async () => {
     await cuentaAlDia(A, CUENTA);
-    const tel = '5910000624002';
+    const tel = '59100000024002';
     await sembrar(A, tel, { turno: turnoDe(Date.now()), marcas: enBloqueo() });
     const r = await entrante(A, tel);
     expect(atencionDe(r)['estado']).toBe('bloqueado');
@@ -379,7 +379,7 @@ describe('el bloqueo por umbral sigue siendo de los umbrales y se combina con la
 
   it('en estado operador, la pausa anula también el aviso fijo, y atencionEstado sigue en el valor del umbral', async () => {
     await cuentaAlDia(A, CUENTA);
-    const tel = '5910000624003';
+    const tel = '59100000024003';
     await sembrar(A, tel, { turno: turnoDe(Date.now()), marcas: enOperador() });
     const r = await entrante(A, tel);
     expect(atencionDe(r)['estado']).toBe('bloqueado');
@@ -393,7 +393,7 @@ describe('el bloqueo por umbral sigue siendo de los umbrales y se combina con la
 
   it('la pausa se quita y el umbral vuelve a mandar solo (sin turno, en operador, responde operador)', async () => {
     await cuentaAlDia(A, CUENTA);
-    const tel = '5910000624004';
+    const tel = '59100000024004';
     await sembrar(A, tel, { marcas: enOperador() });
     const r = await entrante(A, tel);
     expect(atencionDe(r)['estado']).toBe('operador');
@@ -402,7 +402,7 @@ describe('el bloqueo por umbral sigue siendo de los umbrales y se combina con la
 
   it('la bitácora y las métricas de umbral siguen contando el hecho aunque haya pausa', async () => {
     await cuentaAlDia(A, CUENTA);
-    const tel = '5910000624005';
+    const tel = '59100000024005';
     await sembrar(A, tel, { turno: turnoDe(Date.now()), marcas: { atencionDesde: Timestamp.now(), mensajesVentana: 3, atencionEstado: 'normal' } });
     await entrante(A, tel);
     // La transición normal -> operador ocurrió de verdad: se anota, y el aviso a n8n va vacío.
@@ -430,20 +430,20 @@ describe('lo que NO cambia: facturación, operaciones y lo que reporta n8n', () 
 
   it.each([['Comercio A', A], ['Bellido', BEL]] as Array<[string, Comercio]>)(
     '%s: con turno vigente los contadores y las lecturas/escrituras son idénticas a las de sin turno', async (_n, c) => {
-      const sin = await escenario(c, '5910000625001', undefined);
+      const sin = await escenario(c, '59100000025001', undefined);
       await limpiar(c); await cuentaAlDia(c);
-      const con = await escenario(c, '5910000625002', turnoDe(Date.now()));
+      const con = await escenario(c, '59100000025002', turnoDe(Date.now()));
       expect(con.operaciones).toEqual(sin.operaciones);
       expect(con.conv).toEqual(sin.conv);
       expect(con.met).toEqual({ ...sin.met, personasAtendidas: sin.met['personasAtendidas'] });
     });
 
   it('el vencimiento persistido agrega EXACTAMENTE un update y un create de auditoría, y ninguna lectura', async () => {
-    const base = await escenario(B, '5910000625003', undefined);
+    const base = await escenario(B, '59100000025003', undefined);
     await limpiar(B); await cuentaAlDia(B);
     vi.restoreAllMocks();
     contarTransacciones();
-    const tel = '5910000625004';
+    const tel = '59100000025004';
     const ahora = Date.now();
     await sembrar(B, tel, { turno: turnoDe(ahora, { actividad: ahora - 45 * MIN }) });
     await entrante(B, tel);
@@ -458,7 +458,7 @@ describe('lo que NO cambia: facturación, operaciones y lo que reporta n8n', () 
   });
 
   it('lo que reporta n8n nunca trae autor persona ni turno: se ignora', async () => {
-    const tel = '5910000625005';
+    const tel = '59100000025005';
     const falso = { responde: 'persona', tomadoPor: 'uid-falso', tomadoEn: Timestamp.now(), actividadPersonaEn: Timestamp.now() };
     const r = await entrante(A, tel, {
       autor: 'persona', autorUid: 'uid-falso', estadoEnvio: 'pendiente', turno: falso,
