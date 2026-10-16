@@ -164,6 +164,22 @@
       "retryConfig": {}
     }
   },
+  "buscarConversaciones": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": 10,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
   "catalogoPublico": {
     "availableMemoryMb": null,
     "timeoutSeconds": null,
@@ -628,6 +644,22 @@
     "maxInstances": 10,
     "ingressSettings": null,
     "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "devolverConversacion": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": 10,
     "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
     "vpc": null,
     "platform": "gcfv2",
@@ -1838,6 +1870,22 @@
       "retryConfig": {},
       "timeZone": "America/La_Paz"
     }
+  },
+  "tomarConversacion": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": 10,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
   },
   "ubicacionDeEnlace": {
     "availableMemoryMb": null,

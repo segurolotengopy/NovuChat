@@ -31,7 +31,7 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from '../core/seguridad/autorizacion.js';
-import { limitesDe, limitesDeCuenta, porContratoDe, precioMensualDe, precioPorContratoDe } from './cuenta/planes.js';
+import { limitesDe, limitesDeCuenta, porContratoDe, precioMensualDe, precioPorContratoDe, esTarifa, tarifaDe } from './cuenta/planes.js';
 import { modalidadDe, type CuentaCruda } from './cuenta/prepago.js';
 import {
   MODELOS, TITULARIDADES, cambiosDelMes, esModelo, esTitularidad, modeloDe, titularidadDe,
@@ -139,6 +139,7 @@ export const ejesDeCuenta = onCall(async (peticion) => {
   if (!ficha.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
   const cuenta = (cuentaDoc.data() ?? {}) as Record<string, unknown>;
   const limites = limitesDeCuenta(cuenta);
+  const tarifa = tarifaDe(cuenta);
   const cambios = cambiosDelMes(cuenta, Date.now());
 
   return {
@@ -151,9 +152,16 @@ export const ejesDeCuenta = onCall(async (peticion) => {
       // plan, para que Negocios diga «4 por contrato; el plan trae 2» sin
       // calcular nada. Un cambio de plan conserva lo que va por contrato.
       porContrato: porContratoDe(cuenta),
-      cambiosIncluidosDelPlan: limitesDe(cuenta['plan']).cambiosIncluidos,
-      conversacionesDelPlan: limitesDe(cuenta['plan']).conversaciones,
+      // Lo que trae el plan CON LA TARIFA DE ESTA CUENTA (`tarifaDe`): una
+      // cuenta sin campo es `meta_incluido` y el plan trae 100 / 220 / 500.
+      cambiosIncluidosDelPlan: limitesDe(cuenta['plan'], tarifa).cambiosIncluidos,
+      conversacionesDelPlan: limitesDe(cuenta['plan'], tarifa).conversaciones,
     },
+    // LA TARIFA (`cuenta/estado.tarifa`): la que rige (con respaldo) y si la
+    // cuenta la trae escrita, para que Negocios distinga «Meta incluido» de
+    // «sin campo todavía», como `modalidadExplicita`.
+    tarifa,
+    tarifaExplicita: esTarifa(cuenta['tarifa']),
     // LA MENSUALIDAD QUE RIGE (F1b) y de dónde sale: la del contrato si la
     // cuenta tiene `precioPorContrato`, si no la del plan. Es la misma cifra
     // que cobra el QR (`montoUsdDe`) y que deriva `montoMensual`: Cuenta,

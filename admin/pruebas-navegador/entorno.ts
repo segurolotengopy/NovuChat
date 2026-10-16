@@ -5,12 +5,12 @@
  */
 
 /**
- * CARRILES. Cuatro personas o agentes pueden correr la suite a la vez, cada uno con SUS emuladores y SUS puertos: `E2E_CARRIL=1..4`
+ * CARRILES. Hasta cinco personas o agentes pueden correr la suite a la vez, cada uno con SUS emuladores y SUS puertos: `E2E_CARRIL=1..5`
  * suma `carril × 10` a todos los puertos (el carril 0, el de siempre, no suma nada). Sin esto, la siembra de un carril borraría los
  * datos de otro. `bash pruebas-navegador/emuladores.sh` y `playwright` leen la misma variable.
  */
 const CARRIL_CRUDO = process.env['E2E_CARRIL'] ?? '0';
-if (!/^[0-4]$/.test(CARRIL_CRUDO)) throw new Error('E2E_CARRIL tiene que ser un solo dígito de 0 a 4.');
+if (!/^[0-5]$/.test(CARRIL_CRUDO)) throw new Error('E2E_CARRIL tiene que ser un solo dígito de 0 a 5.');
 export const CARRIL = Number(CARRIL_CRUDO);
 const D = CARRIL * 10;
 

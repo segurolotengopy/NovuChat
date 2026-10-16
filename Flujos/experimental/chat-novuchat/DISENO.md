@@ -9,7 +9,7 @@ por teléfono lo guarda y lo pasa este mismo flujo, explícito, en cada llamada.
 | Archivo | Qué es |
 |---|---|
 | `flujo.plantilla.json` | El flujo sin código ni datos (`@@…` en cada Code, `@@cred:…`, `@@dato:…`). Es lo que se edita |
-| `src/lib/chat.js` | Biblioteca pura (prefijo `ch`, ~1.370 líneas). Primera parte: copia adaptada de Captación mínima (detectores, extracción de nombre y empresa, filtros del modelo, aviso); el resto es nuevo |
+| `src/lib/chat.js` | Biblioteca pura (prefijo `ch`, ~1.650 líneas). Primera parte: copia adaptada de Captación mínima (detectores, extracción de nombre y empresa, filtros del modelo, aviso); el resto es nuevo |
 | `src/nodos/*.js` | Un archivo por nodo Code. Qué es común y qué propio: `PROPIO.md` |
 | `construir.mjs` | Arma los dos JSON con `../comun-sin-agente/construir.mjs`, valida los datos, inyecta `@@datos` y aplica las guardias. `--verificar` no escribe; un argumento desconocido sale con 2 sin escribir |
 | `chat-novuchat.novuchat.json` / `.prueba.json` | Producción (con «WhatsApp Trigger») y prueba (con «Entrada de prueba»), 44 nodos cada uno |
@@ -36,7 +36,7 @@ debajo de los envíos y la hoja. No hay ciclos: ningún nodo lee por nombre algo
 
 - **Evento** `{k, t, c, rubro, boton}`: `t` es lo que lee el modelo (`[Eligió el rubro: Salud]`, `[Nota de voz] …`, `[Envió solo emojis o signos: 👽]`); `c`, lo que el cliente escribió o dijo
   (sobre `c` corren los detectores). Un texto del cliente nunca trae corchetes (no puede fingir un evento del sistema) ni los delimitadores `<<<` `>>>`.
-- **Ficha** (`staticData.global.chatNovuchat[tel]`, 19 campos, saneada campo por campo): `rubro`, `nombre`, `empresa`, `necesidad`, `temas`, `hechos`
+- **Ficha** (`staticData.global.chatNovuchat[tel]`, ~30 campos, saneada campo por campo): `rubro`, `nombre`, `empresa`, `necesidad`, `temas`, `hechos`
   (`pidioEquipo`, `pidioPlanes`, `eligioOtro`, `interactuo`, `descarte`), `avisado`, `planesMostrados`, `soporte`, `anuncio`, `seq`, `hasta`, `cola` (eventos sin responder, ≤6),
   `historial` (últimas 8 entradas, ≤300 caracteres) y `ultimosIds` (5). Ventana de 24 h (vencen aviso, planes y soporte), olvido a las 48 h. Sin contadores de rotación.
   Escriben: «Registrar evento» (el evento), «Armar mensajes» (todo lo demás) y «Confirmar envío» (`avisado`; y restaura `fichaAntes`, con la cola, si Meta rechaza el envío).
@@ -50,15 +50,49 @@ debajo de los envíos y la hoja. No hay ciclos: ningún nodo lee por nombre algo
 - **Código, sin modelo**: toque «Ver planes» (imagen de la consola + precios con las cifras de la consola + cierre de D2), toque «Hablar con el equipo» (enlace a recepción, pide nombre y negocio,
   plantilla de aviso UNA vez por ventana, fila en la hoja), pedido de una persona o de una llamada, soporte, costos de Meta, tope de un plan (imagen), consumo (sin dígitos), banco, integración con un
   sistema que no es WhatsApp/Meta/Google Calendar/Google Sheets/QR, descuento, y la lista de rubros al primer saludo. Desde recepción el botón responde «Ya estás en contacto con el equipo».
-- **Modelo («Catch All»)**: todo lo demás: clics múltiples, emojis, «Y?», «?», «Quiero más información» (pitch del §8), fuera de contexto, rubro mezclado, «Otro», preguntas sueltas.
+- **Primer contacto con «Quiero más información»** (el texto prellenado del anuncio de Facebook; `chSoloPideInfo`): UN mensaje de lista cuyo cuerpo es el pitch FIJO de los datos (`respaldos.abierta.pitch` + `preguntaLista`, ≈730 caracteres, tope 1.024) y las siete filas, sin modelo y sin botones (WhatsApp no combina lista y botones; «Ver planes» y «Hablar con el equipo» salen al elegir el rubro). Con historial, rubro conocido o más palabras sigue al modelo.
+- **El «sí» a una oferta del equipo** lo deriva el código (`chAfirma` + `ficha.ofreceEquipo/ofrecePlanes`, fijados sobre el texto completo del último mensaje): aviso a recepción y botón; con la oferta doble, planes si aún no los vio. Pedir hablar con alguien (`CH_PIDE_EQUIPO_DIRECTO`) también deriva por código.
+- **Botones y ofertas: UNA SOLA TABLA (Andres, 11/10)**. Los decide el CÓDIGO en cada turno con `chSituacion` (las señales: ruta/evento, interés, preguntas acabadas, declina, lo pulsado) → `CH_TABLA` (la primera fila que coincide gana) → `chBotonesDe` (con las compuertas: lo pulsado o ya visto no reaparece) → `chRedondear` (el texto ofrece SOLO lo que lleva y invita a lo que lleva) → `chActualizarBanderas` (`planesTocado`, `equipoTocado`, `respondidas`, `ofrecio`; un ciclo nuevo repone lo pulsado, no el tope de avisos). Reglas: (1) lo pulsado no reaparece; (2) «Ver planes» con interés, nunca antes; (3) «Hablar con el equipo» solo si es requerido o se acabaron las preguntas; (4) al pedir planes se piden los datos UNA vez, sin botón de planes; (5) texto y botones coherentes; (6) un «sí» acepta solo lo que de verdad se ofreció (`ficha.ofrecio`); (7) nunca un callejón sin salida. La batería tiene cuatro invariantes globales (`boton_pulsado_reaparece`, `boton_antes_de_tiempo`, `texto_sin_boton`, `declina_sin_boton`) que corren en todos los casos, en seco y en real. Esta tabla la GENERA el test desde el código y debe coincidir:
+
+<!-- TABLA-BOTONES:INICIO -->
+| # | Fila | «Ver planes» | «Hablar con el equipo» | Oferta del texto | Cuándo y por qué |
+|---|---|---|---|---|---|
+| 1 | `lista` | no | no | ninguna | La lista de rubros (saludo o pitch del primer contacto): la lista misma es la salida; nada se ofrece antes de elegir rubro. |
+| 2 | `traspaso` | no | no | ninguna | El traspaso lleva su propio botón de contacto (enlace a recepción) y el aviso a recepción. |
+| 3 | `pide-datos` | no | no | ninguna | Pidió planes y faltan nombre y negocio: se piden UNA vez, sin botón de planes (los planes salen al contestar). |
+| 4 | `planes` | no | sí | equipo | Los planes (o su tope y complemento): se acabaron las preguntas de precio, cierra con la oferta del equipo. |
+| 5 | `consulta-sin-respuesta` | no | sí | equipo | Integración, costo de Meta, banco, descuento, consumo o el número propio del prospecto: el chat no lo resuelve, requiere al equipo. |
+| 6 | `respuesta-fija` | no | no | ninguna | Identidad y disponibilidad: se contestan completas, sin invitaciones. |
+| 7 | `sin-respuesta` | no | sí | equipo | Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo. |
+| 8 | `rubro-declina` | sí | sí | planes y equipo | Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo. |
+| 9 | `declina-ofrece-equipo` | no | sí | equipo | El modelo no pudo resolver y su pregunta final ofrece hablar con el equipo: se conserva esa oferta con su botón (aunque la pregunta traiga una palabra de interés). |
+| 10 | `declina` | solo con interés | sí | planes y equipo | El cliente propone una función no documentada para su rubro, o el modelo declina: nunca un callejón sin salida (con «Ver planes» solo si hay interés). |
+| 11 | `rubro` | sí | no | planes | Eligió rubro: es interés; se ofrece «Ver planes» y nada más. |
+| 12 | `sin-oferta` | no | no | ninguna | Pitch, identidad, cortesía, empresa, medio ilegible, respuesta al nombre (si además pregunta algo con interés, se contesta como ordinaria), fuera de contexto, descarte: sin botones ni invitaciones. |
+| 13 | `ordinaria-acabadas` | solo con interés | sí | planes y equipo | Respuesta ordinaria al acabarse las preguntas («no tengo más dudas», «quiero empezar», tercera respuesta seguida) o a medida. |
+| 14 | `ordinaria-interes` | sí | no | planes | Respuesta ordinaria a una pregunta de interés (costos, qué incluye, cómo funciona, instalación): se ofrece «Ver planes». |
+| 15 | `ordinaria` | no | no | ninguna | Respuesta ordinaria: se contesta sin botones ni invitaciones. |
+<!-- TABLA-BOTONES:FIN -->
+- **Modelo («Catch All»)**: todo lo demás: clics múltiples, emojis, «Y?», «?» con historial, «Quiero más información» con historial (pitch del §8), fuera de contexto, rubro mezclado, «Otro», preguntas sueltas.
 - **Validación** (`chValidarMensaje`, en «Validar respuesta» y «Armar mensajes»): contenido mínimo (25 palabras), cierre con pregunta o invitación, identidad, promesas y nombres de personas,
   ofertas, cifras (solo 24/7, 24 horas y, hablando de precios, 65/125/25 de la consola), sistemas ajenos, validar pagos con el banco, hechos que solo afirma el código, acciones que solo hacen los botones,
   pitch (4 viñetas) y puntos clave del rubro. UN reintento con la causa (lista cerrada); después, el respaldo del contexto (explicación del dato, pitch, fallback del §7): nunca una muletilla.
   Una `accion` del modelo solo se ejecuta si el código la confirma con las palabras del cliente. Un rubro estándar cierra con la pregunta EXACTA (el código la pone si falta).
 
+## Ajustes del 09/10 tras la prueba real de Andres (R1 a R6)
+
+- **R1 no inventar funciones**: en un rubro que no es gastronomía, retail ni «otro» (ni en el pitch ni en la empresa), lo que escribe el modelo no puede traer adelanto, anticipo, seña, pago total, cobro ni QR (causa `funcion_inventada`): un reintento con la causa y, si insiste, el respaldo «eso lo evalúa alguien de nuestro equipo».
+- **R2 contexto `empresa`**: «Dame más info sobre la empresa», «¿quiénes son?», «¿qué hacen?», «¿qué es NovuChat?» se contestan con los hechos verificados del dato `empresa` (`hechos`, `puntosClave`); una evasión no pasa (`puntos`).
+- **R3 nombre del perfil** (`chNombreDelPerfil`): acepta iniciales, puntos, guiones, apóstrofos y tildes; rechaza fórmulas, enlaces, teléfonos, dígitos, `@`, controles, invisibles y órdenes. Los emojis se quitan.
+- **R4 pedir el nombre y el negocio, una vez** (`explicado`, `nombrePedido`, `planesPendientes`, `preguntaDatos`): en la primera respuesta del cliente a la explicación, en el MISMO mensaje; si esa respuesta es «Ver planes», se pide ANTES de mostrarlos y el siguiente mensaje los muestra (+1 mensaje en ese camino).
+- **Retoques del mismo día** (la prueba real de A1): el pedido del nombre acompaña a la primera respuesta en CUALQUIER contexto (pitch, dolor, pregunta, «no documentado», empresa, cortesía) y NUNCA se omite por la longitud (se quita la pregunta final del modelo o se usa la versión corta); «Ver planes» pide el nombre antes aunque la bandera de la explicación no haya quedado, y quien no contesta el pedido no vuelve a recibirlo. La cifra de CALENDARIO («los 7 días de la semana», «7 días») no es consumo ni precio y se permite. «¿Atienden fines de semana / de noche / en feriados?» es un dato documentado (24 horas, todos los días) que contesta el código; una pregunta comprensible que el modelo no pudo contestar recibe «ese dato lo revisa alguien de nuestro equipo» y el «No estoy seguro de haberte entendido» queda para emojis y texto sin sentido.
+- **Sitio web** (`sitioWeb`, `textos.sitioFrase`): lo anexa SOLO el código, dentro del mismo mensaje (0 mensajes más), antes de la pregunta final y solo si cabe, en estas rutas: la empresa, sin dato, no documentado, los planes pedidos otra vez (complemento), integraciones y costos de Meta; a lo más 2 veces por ventana de 24 h (`sitiosVentana`); nunca en el saludo, el pitch, los planes, el traspaso, la plantilla, la hoja ni el historial. El modelo sigue sin poder escribir ningún enlace (`enlace`). Sin el dato, no se anexa nada.
+- **R5 botones según lo hecho**: lista → [Ver planes][Hablar con el equipo] → [Hablar con el equipo] (planes vistos) → enlace → la LISTA de rubros con «Si tienes otro negocio…» (nunca un callejón). Un rubro elegido tras el traspaso abre otro ciclo: la hoja conserva C, D y F del primer negocio (`primero`) y agrega «Otro negocio: <empresa> (<rubro>)» al resumen J; una empresa distinta manda otro aviso (`empresaAvisada`), la misma solo el botón.
+- **R6 no calcar**: planes ya mostrados → `complementoPlanes` (hechos de la imagen y del documento, sin imagen ni cifras de consumo; después, «ya te compartí…»); un mensaje del modelo con similitud de palabras >= 0,75 con el anterior se rechaza (`repite`) y sale un respaldo distinto. El prompt pide «aporta algo nuevo y verificado», no «no repitas».
+
 ## Costo por conversación (base comercial §1)
 
-**Un mensaje por turno del cliente** (más la plantilla a recepción, una vez por ventana de 24 h, cuando pide al equipo). Respecto de Captación mínima: 0 mensajes agregados; la ráfaga de clics
+**Un mensaje por turno del cliente** (más la plantilla a recepción, una vez por ventana de 24 h, cuando pide al equipo; **+1 plantilla** por cada empresa DISTINTA en un segundo traspaso, con TOPE: como máximo **3 plantillas a recepción por teléfono y por ventana de 24 h** (la primera + hasta 2 empresas distintas; `empresasAvisadas` ≤ 3 y `avisosVentana` ≤ 3 en la ficha, que se reinician al vencer la ventana). Pasado el tope, el traspaso solo reenvía el botón; **+1 mensaje** solo en el camino «Ver planes» como primera respuesta, que pide el nombre antes de los planes). Respecto de Captación mínima: 0 mensajes agregados; la ráfaga de clics
 baja de N respuestas a UNA. **Llamadas al modelo: 0 o 1 por turno** (2 si una guardia rechaza el mensaje): en el caso medio, lista (0) + rubro (1) + «Y?» (1) + planes (0) + equipo (0) + datos (1).
 
 ## Riesgos y lo que no se hizo

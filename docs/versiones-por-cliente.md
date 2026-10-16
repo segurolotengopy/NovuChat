@@ -31,15 +31,30 @@ Una excepción necesita las tres cosas, o no es una excepción:
 | Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | Atrasado en 1 nodo: `Procesar respuesta` (el #284, detector de «ya», `5aad7da`; código compartido). Por qué: el Demo A es el número de ensayo y no tiene pacientes; decidido por Andres el 30/09/2026 (según la sesión Principal) mientras Bellido sale a piloto, y Bellido ya lo tiene. Lo cierra: la próxima publicación de flujos, que llevará también el #286. **Además, F3a (02/10/2026):** `Procesar respuesta` lleva la corrección `NIEGA_IA` (#359) en `main` sin publicar. Por qué: Andres decidió el 02/10 preparar y fusionar F3a en `main` y publicar solo tras el veredicto H2 de la revisora, con ensayo previo. Lo cierra: la publicación de F3a en la ventana de 23:30 a 01:30 después de H2. |
 | Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | Atrasado en 1 nodo: `Procesar respuesta` (el #284, detector de «ya», `5aad7da`; código compartido). Por qué: Platinum es un demo, sin pacientes; decidido por Andres el 30/09/2026 (según la sesión Principal) mientras Bellido sale a piloto, y Bellido ya lo tiene. Lo cierra: la próxima publicación de flujos, que llevará también el #286. **Además, F3a (02/10/2026):** `Procesar respuesta` lleva `NIEGA_IA` (#359) en `main` y **Platinum no se publica con F3a** (decisión de Andres del 02/10, D7): su JSON versionado no está alineado con lo que corre en producción y publicarlo lo haría retroceder. Lo cierra: F3b (núcleo unificado de reservas), que lo publica alineado. |
 | Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | **Corre otro flujo, el piloto «Agenda mínima v0»** (publicado el 01/10/2026 a la 01:24 con autorización de Andres): `Flujos/experimental/agenda-minima/agenda-minima.v0.json`, 45 nodos, de `e3d4af9` (PR #354; el piloto se publicó el 01/10 desde `f3f7411`, PR #293, fusionado en `c0ea17e`; el cambio de `e3d4af9` es solo el código de los 11 nodos Code que pegan `_comun.js`, la corrección de `cnAtencion`, y su prueba real con teléfono está pendiente), no el JSON versionado de esta fila (el de A, 96 nodos, descartado). Se publica con `herramientas/flujo-de-prueba.mjs --sobre-bellido`, **no** con `publicar-flujo.sh`. Por qué: es el piloto que Andres decidió el 30/09/2026 tras el concurso entre el flujo actual y este. **Plan ante una falla de B (Andres, 01/10/2026): se corrige B; no se vuelve al flujo anterior ni al candidato A, que se descartó.** El respaldo del flujo anterior de 96 nodos no es plan del piloto. Lo cierra: la decisión de Andres sobre el piloto (y cambiar esta columna al JSON de B cuando `estado-de-versiones.sh` sepa compararlo contra el vivo); hasta entonces `estado-de-versiones.sh` lo verá «atrasado, CON excepción declarada», que es lo esperado. Historia: hasta el 30/09 corría el flujo publicado desde `main` con #284 (96 nodos, hotfix de protección del 27/09 más mejoras adelantadas, sobre la base `e02a756`); esa versión queda como respaldo |
-| Q'Taco (piloto) | `.env.qtaco` | `Flujos/experimental/venta-minima/venta-minima.qtaco.json` | En construcción: se publicará con `publicar-flujo.sh --crear`, excepción experimental como Bellido. |
+| Q'Taco | `.env.qtaco` | `Flujos/experimental/venta-minima/venta-minima.qtaco.json` | Difiere solo en el dato `destinatariosAviso` de `Config base`: en producción lleva un único destinatario (recepción) y la preparación estándar repone dos desde `CONFIGURACION.local.md`. Por qué: Andres decidió en la apertura que el aviso de cocina no se manda; el código del flujo es el mismo. Lo cierra: quitar el segundo número de aviso de `CONFIGURACION.local.md` (la copia local, ignorada por git); o, mejor, dejar un solo destinatario en la plantilla versionada `admin/scripts/datos/venta-minima/qtaco.json`; entonces `estado-de-versiones.sh` lo verá al día. Se revisa en la próxima publicación de Q'Taco. |
 | Demo B (venta y cobro) | `.env.demo-b` | `Flujos/demo-b-venta-cobro.json` | — |
-| NovuChat (captación) | `.env.novuchat` | `Flujos/novuchat-onboarding.json` | **F3a en `main` sin publicar (02/10/2026):** fallo del modelo con botón (#360) y campaña por texto, según se fusionen. Por qué: Andres decidió el 02/10 publicar F3a solo tras el veredicto H2; además la publicación de captación no puede caer durante el traspaso del chat interno al portafolio de Silvana (D10). Lo cierra: la publicación de F3a después de H2 y fuera del traspaso. |
+| Chat NovuChat v2 (captación) | `.env.novuchat` | `Flujos/experimental/chat-novuchat/chat-novuchat.novuchat.json` | — |
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |
 | Platinum (seguimientos) | `.env.platinum-seguimientos` | `Flujos/agendamiento-seguimientos.json` | — |
 | Platinum (señas vencidas) | `.env.platinum-senas` | `Flujos/agendamiento-senas-vencidas.json` | — |
 
 > El guion `—` significa **sin excepción**: ese flujo tiene que estar al día con
 > su JSON versionado, y el script falla si no lo está.
+
+> **Estado al 10/10/2026 (dos filas actualizadas).**
+> - **Q'Taco** corre «Venta mínima v0» (flujo propio, 50 nodos), origen `main`
+>   `e44da19d` (con #473, el enlace de Maps cuando piden la dirección del
+>   local), publicado el 09/10/2026 a las 23:50 (La Paz) con `publicar-flujo.sh`;
+>   abrió al público el 08/10. Antes la fila decía «en construcción»; la
+>   única diferencia con la preparación estándar es de datos (ver su fila).
+> - **Chat NovuChat v2** reemplaza a la fila «NovuChat (captación)»: el chat
+>   interno de NovuChat ya no corre `novuchat-onboarding.json`
+>   sino un flujo propio de 44 nodos, `Flujos/experimental/chat-novuchat/`
+>   (#476, `main` `310deb10`), publicado el 10/10/2026 por la sesión «Novuchat
+>   chat» con relectura OK (activo, retención none/all, Meta 4/4). Es un tipo
+>   propio, sin base común unificada todavía (los huecos están declarados en su
+>   `PROPIO.md`). La excepción de F3a de la fila vieja deja de aplicar a este
+>   flujo; `novuchat-onboarding.json` queda como histórico sin fila.
 
 ## Estado al 28/09/2026 (medios entrantes en el Demo B y la captación)
 

@@ -87,12 +87,12 @@ beforeAll(async () => {
   await db.doc(`tenants/${NOVUCHAT}/cuenta/estado`).set({ plan: 'pro', modalidad: 'demostracion' });
   await tipoCambio('2026-10-27');
 
-  const crecimiento = { plan: 'crecimiento', limites: limitesDe('crecimiento') };
+  const crecimiento = { plan: 'crecimiento', limites: limitesDe('crecimiento', 'meta_incluido') };
   await db.doc(`tenants/${TENANTS.demo}`).set({ nombre: 'Demo', estado: 'activo', plan: 'crecimiento' });
   await db.doc(`tenants/${TENANTS.demo}/cuenta/estado`).set({ ...crecimiento, telefonosPago: ['59170000001'] });
   await db.doc(`tenants/${TENANTS.prueba}`).set({ nombre: 'Prueba', estado: 'activo', plan: 'impulso' });
   await db.doc(`tenants/${TENANTS.prueba}/cuenta/estado`).set({
-    plan: 'impulso', limites: limitesDe('impulso'), modalidad: 'prueba', periodoPrueba: '2026-10', bolsaPrueba: 9,
+    plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'), modalidad: 'prueba', periodoPrueba: '2026-10', bolsaPrueba: 9,
     telefonosPago: ['59170000002'],
   });
   await db.doc(`tenants/${TENANTS.prepago}`).set({ nombre: 'Prepago', estado: 'activo', plan: 'crecimiento' });
@@ -104,7 +104,7 @@ beforeAll(async () => {
   await db.doc(`tenants/${TENANTS.sinTel}/cuenta/estado`).set({ ...crecimiento, modalidad: 'prepago', periodoPagado: '2026-10' });
   await db.doc(`tenants/${TENANTS.cortado}`).set({ nombre: 'Cortado', estado: 'activo', plan: 'impulso' });
   await db.doc(`tenants/${TENANTS.cortado}/cuenta/estado`).set({
-    plan: 'impulso', limites: limitesDe('impulso'), modalidad: 'prepago', periodoPagado: '2026-10',
+    plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'), modalidad: 'prepago', periodoPagado: '2026-10',
     telefonosPago: ['59170000005'],
     corte: { motivo: 'sin_pago', desde: Timestamp.fromMillis(bo(2026, 11, 3)), perdidas: 7, mensajesPerdidos: 20, aplicado: true },
   });

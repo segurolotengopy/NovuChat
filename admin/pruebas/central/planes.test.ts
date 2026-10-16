@@ -17,26 +17,31 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES, PLANES_ASIGNABLES,
-  PLANES_PUBLICADOS, PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo,
+  AVISO_CONSUMO, BOLSA, BOLSA_CONVERSACIONES, BOLSA_META_INCLUIDO, BOLSA_SALIENTES, CATALOGO_PLANES,
+  CONVERSACIONES_META_INCLUIDO, INSTALACION_USD, LIMITE_MAXIMO, PLANES, PLANES_ASIGNABLES,
+  PLANES_PUBLICADOS, PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, REGALO_SEIS_MESES_CONVERSACIONES,
+  avisoConsumoPendiente, avisoDeConsumo,
   esIdPlan, esPlanVendible, limitesDe, limitesDeCuenta, planQuePuedePedir, umbralDeAviso,
 } from '../../functions/src/central/cuenta/planes.ts';
 
 const MES = '2026-10';
 
+/** «1.000» en la base comercial es mil: el separador de miles de Bolivia es el punto. */
+const entero = (texto: string | undefined): number => Number((texto ?? '').replaceAll('.', ''));
+
 describe('El catálogo', () => {
-  it('son los números que publica el sitio (verificados el 15/09/2026), más los cambios incluidos de F1', () => {
+  it('son los números de la tarifa estándar (BYOC, 11-12/10/2026), más los cambios incluidos de F1', () => {
     expect(PLANES).toEqual({
       impulso: {
-        nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1,
+        nombre: 'Impulso', precioUsd: 25, conversaciones: 200, productos: 20, agendas: 1,
         campanas: 0, cambiosIncluidos: 0,
       },
       crecimiento: {
-        nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5,
+        nombre: 'Crecimiento', precioUsd: 50, conversaciones: 500, productos: 100, agendas: 5,
         campanas: 3, cambiosIncluidos: 1,
       },
       pro: {
-        nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10,
+        nombre: 'Pro', precioUsd: 90, conversaciones: 1000, productos: 500, agendas: 10,
         campanas: 10, cambiosIncluidos: 2,
       },
       byoc: {
@@ -44,7 +49,13 @@ describe('El catálogo', () => {
         campanas: 10, cambiosIncluidos: 2,
       },
     });
+    expect(CONVERSACIONES_META_INCLUIDO).toEqual({ impulso: 100, crecimiento: 220, pro: 500, byoc: 2000 });
+    // La bolsa de siempre (30 por USD 10) no cambió, y sigue llamándose BOLSA
+    // para quien todavía la lee con ese nombre.
     expect(BOLSA).toEqual({ conversaciones: 30, precioUsd: 10 });
+    expect(BOLSA_META_INCLUIDO).toEqual({ conversaciones: 30, precioUsd: 10 });
+    expect(BOLSA_CONVERSACIONES).toEqual({ conversaciones: 300, precioUsd: 15 });
+    expect(BOLSA_SALIENTES).toEqual({ mensajes: 300, precioUsd: 10 });
     expect(INSTALACION_USD).toBe(65);
     expect(AVISO_CONSUMO).toBe(0.8);
     expect(CATALOGO_PLANES).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -57,17 +68,44 @@ describe('El catálogo', () => {
     // que rige el dinero, y esta prueba es la que lo comprueba.
     const aqui = dirname(fileURLToPath(import.meta.url));
     const claude = readFileSync(join(aqui, '..', '..', '..', 'docs', 'base-comercial.md'), 'utf8');
-    const planes = claude.match(/Planes: USD (\d+) \/ (\d+) \/ (\d+) por (\d+) \/ (\d+) \/ (\d+) conversaciones/);
+    // Las frases cruzan saltos de línea en el documento (está escrito a 80
+    // columnas) y las cifras de mil llevan punto («1.000»): por eso `\s+` entre
+    // palabras y `[\d.]+` en las conversaciones, leídas con `entero`.
+    const planes = claude.match(
+      /Planes:\s+USD\s+(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)\s+por\s+([\d.]+)\s*\/\s*([\d.]+)\s*\/\s*([\d.]+)\s+conversaciones/,
+    );
     expect(planes, 'docs/base-comercial.md ya no enuncia los planes con la misma frase').not.toBeNull();
-    const [, p1, p2, p3, c1, c2, c3] = (planes ?? []).map(Number);
+    const [p1, p2, p3] = [planes?.[1], planes?.[2], planes?.[3]].map(entero);
+    const [c1, c2, c3] = [planes?.[4], planes?.[5], planes?.[6]].map(entero);
     expect([PLANES.impulso.precioUsd, PLANES.crecimiento.precioUsd, PLANES.pro.precioUsd]).toEqual([p1, p2, p3]);
     expect([PLANES.impulso.conversaciones, PLANES.crecimiento.conversaciones, PLANES.pro.conversaciones])
       .toEqual([c1, c2, c3]);
 
-    // La frase cruza un salto de línea en el documento: `\s+` y no un espacio.
-    const bolsa = claude.match(/bolsa\s+de \*\*(\d+) conversaciones por USD (\d+)\*\*/);
+    // La opción excepcional, con la mensajería de Meta incluida: los mismos
+    // precios con otras conversaciones.
+    const metaIncluido = claude.match(
+      /mismos\s+precios\s+por\s+\*\*([\d.]+)\s*\/\s*([\d.]+)\s*\/\s*([\d.]+)\*\*\s+conversaciones/,
+    );
+    expect(metaIncluido, 'docs/base-comercial.md ya no enuncia la opción con Meta incluido con la misma frase').not.toBeNull();
+    expect([CONVERSACIONES_META_INCLUIDO.impulso, CONVERSACIONES_META_INCLUIDO.crecimiento, CONVERSACIONES_META_INCLUIDO.pro])
+      .toEqual([entero(metaIncluido?.[1]), entero(metaIncluido?.[2]), entero(metaIncluido?.[3])]);
+
+    // La bolsa de la opción excepcional (30 por USD 10)...
+    const bolsa = claude.match(/bolsa\s+de\s+\*\*(\d+)\s+conversaciones\s+por\s+USD\s+(\d+)\*\*/);
     expect(bolsa).not.toBeNull();
-    expect([BOLSA.conversaciones, BOLSA.precioUsd]).toEqual([Number(bolsa?.[1]), Number(bolsa?.[2])]);
+    expect([BOLSA.conversaciones, BOLSA.precioUsd]).toEqual([entero(bolsa?.[1]), entero(bolsa?.[2])]);
+    expect([BOLSA_META_INCLUIDO.conversaciones, BOLSA_META_INCLUIDO.precioUsd])
+      .toEqual([entero(bolsa?.[1]), entero(bolsa?.[2])]);
+
+    // ...y las dos bolsas BYOC (300 por USD 15, y 300 mensajes de seguimiento por USD 10).
+    const bolsaConversaciones = claude.match(/\*\*Conversaciones:\*\*\s+([\d.]+)\s+por\s+\*\*USD\s+(\d+)\*\*/);
+    expect(bolsaConversaciones, 'docs/base-comercial.md ya no enuncia la bolsa de conversaciones BYOC').not.toBeNull();
+    expect([BOLSA_CONVERSACIONES.conversaciones, BOLSA_CONVERSACIONES.precioUsd])
+      .toEqual([entero(bolsaConversaciones?.[1]), entero(bolsaConversaciones?.[2])]);
+    const bolsaSalientes = claude.match(/\*\*Mensajes de seguimiento:\*\*\s+([\d.]+)\s+por\s+\*\*USD\s+(\d+)\*\*/);
+    expect(bolsaSalientes, 'docs/base-comercial.md ya no enuncia la bolsa de seguimiento BYOC').not.toBeNull();
+    expect([BOLSA_SALIENTES.mensajes, BOLSA_SALIENTES.precioUsd])
+      .toEqual([entero(bolsaSalientes?.[1]), entero(bolsaSalientes?.[2])]);
 
     const instalacion = claude.match(/Instalación USD (\d+)/);
     expect(Number(instalacion?.[1])).toBe(INSTALACION_USD);
@@ -78,8 +116,15 @@ describe('El catálogo', () => {
       .toEqual([Number(agendas?.[1]), Number(agendas?.[2]), Number(agendas?.[3])]);
   });
 
-  it('el plan de entrada cabe exacto en la franquicia de Meta (100 × 10 = 1.000)', () => {
-    expect(PLANES.impulso.conversaciones * 10).toBe(1000);
+  it('con Meta incluido, el plan de entrada cabe exacto en la franquicia de Meta (100 × 10 = 1.000)', () => {
+    // Esto vale solo para la tarifa `meta_incluido`: es la que paga Meta. En la
+    // estándar el comercio paga el suyo y el plan trae 200.
+    expect(CONVERSACIONES_META_INCLUIDO.impulso * 10).toBe(1000);
+    expect(limitesDe('impulso', 'meta_incluido').conversaciones * 10).toBe(1000);
+  });
+
+  it('el regalo de un pago de 6 meses es de 30 conversaciones, con cualquier bolsa que se venda', () => {
+    expect(REGALO_SEIS_MESES_CONVERSACIONES).toBe(30);
   });
 
   it('«demostracion» YA NO ES UN PLAN (F1): lo asignable es el catálogo y nada más', () => {
@@ -149,19 +194,26 @@ describe('Identificadores de plan', () => {
     }
   });
 
-  it('limitesDe da los del plan (con los cambios incluidos), y los del más chico si el plan no existe', () => {
-    expect(limitesDe('crecimiento')).toEqual({ conversaciones: 220, productos: 100, agendas: 5, cambiosIncluidos: 1 });
-    expect(limitesDe('basico')).toEqual({ conversaciones: 100, productos: 20, agendas: 1, cambiosIncluidos: 0 });
+  it('limitesDe da los del plan con la tarifa (con los cambios incluidos), y los del más chico si el plan no existe', () => {
+    expect(limitesDe('crecimiento', 'estandar')).toEqual({ conversaciones: 500, productos: 100, agendas: 5, cambiosIncluidos: 1 });
+    expect(limitesDe('crecimiento', 'meta_incluido')).toEqual({ conversaciones: 220, productos: 100, agendas: 5, cambiosIncluidos: 1 });
+    expect(limitesDe('basico', 'meta_incluido')).toEqual({ conversaciones: 100, productos: 20, agendas: 1, cambiosIncluidos: 0 });
+    expect(limitesDe('basico', 'estandar')).toEqual({ conversaciones: 200, productos: 20, agendas: 1, cambiosIncluidos: 0 });
     // El plan viejo de los demos es hoy un plan desconocido: el más chico.
-    expect(limitesDe('demostracion')).toEqual(limitesDe('impulso'));
-    expect(limitesDe(undefined)).toEqual(limitesDe('impulso'));
-    expect(limitesDe('toString')).toEqual(limitesDe('impulso'));
+    for (const t of ['estandar', 'meta_incluido'] as const) {
+      expect(limitesDe('demostracion', t)).toEqual(limitesDe('impulso', t));
+      expect(limitesDe(undefined, t)).toEqual(limitesDe('impulso', t));
+      expect(limitesDe('toString', t)).toEqual(limitesDe('impulso', t));
+    }
   });
 
   it('limitesDe devuelve una copia: modificarla no toca el catálogo', () => {
-    const l = limitesDe('pro');
+    const l = limitesDe('pro', 'estandar');
     l.conversaciones = 1;
-    expect(PLANES.pro.conversaciones).toBe(500);
+    expect(PLANES.pro.conversaciones).toBe(1000);
+    const m = limitesDe('pro', 'meta_incluido');
+    m.conversaciones = 1;
+    expect(CONVERSACIONES_META_INCLUIDO.pro).toBe(500);
   });
 });
 
@@ -173,14 +225,14 @@ describe('Los límites que rigen para una cuenta', () => {
   });
 
   it('sin copia (comercio viejo), rigen los del plan', () => {
-    expect(limitesDeCuenta({ plan: 'pro' })).toEqual({ ...limitesDe('pro'), origen: 'plan' });
+    expect(limitesDeCuenta({ plan: 'pro' })).toEqual({ ...limitesDe('pro', 'meta_incluido'), origen: 'plan' });
   });
 
   it('sin copia y con un plan que no es del catálogo, NO recibe más que Impulso', () => {
-    expect(limitesDeCuenta({ plan: 'basico' })).toEqual({ ...limitesDe('impulso'), origen: 'respaldo' });
-    expect(limitesDeCuenta({ plan: 'demostracion' })).toEqual({ ...limitesDe('impulso'), origen: 'respaldo' });
-    expect(limitesDeCuenta(undefined)).toEqual({ ...limitesDe('impulso'), origen: 'respaldo' });
-    expect(limitesDeCuenta({})).toEqual({ ...limitesDe('impulso'), origen: 'respaldo' });
+    expect(limitesDeCuenta({ plan: 'basico' })).toEqual({ ...limitesDe('impulso', 'meta_incluido'), origen: 'respaldo' });
+    expect(limitesDeCuenta({ plan: 'demostracion' })).toEqual({ ...limitesDe('impulso', 'meta_incluido'), origen: 'respaldo' });
+    expect(limitesDeCuenta(undefined)).toEqual({ ...limitesDe('impulso', 'meta_incluido'), origen: 'respaldo' });
+    expect(limitesDeCuenta({})).toEqual({ ...limitesDe('impulso', 'meta_incluido'), origen: 'respaldo' });
   });
 
   it('un límite corrupto en la copia se reemplaza por el del plan, uno por uno', () => {
@@ -191,7 +243,7 @@ describe('Los límites que rigen para una cuenta', () => {
     expect(limitesDeCuenta(cuenta)).toEqual({ conversaciones: 220, productos: 100, agendas: 5, cambiosIncluidos: 1, origen: 'plan' });
     // Cero, negativo y fracciones tampoco son límites.
     const raro = { plan: 'basico', limites: { conversaciones: 0, productos: -3, agendas: 1.5 } };
-    expect(limitesDeCuenta(raro)).toEqual({ ...limitesDe('impulso'), origen: 'respaldo' });
+    expect(limitesDeCuenta(raro)).toEqual({ ...limitesDe('impulso', 'meta_incluido'), origen: 'respaldo' });
   });
 
   it('una copia anterior a F1 (sin cambiosIncluidos) sigue siendo «de la cuenta», y los cambios salen del plan', () => {
@@ -209,14 +261,14 @@ describe('El aviso de consumo al 80 %', () => {
   });
 
   it('con 79 de 100 NO avisa; con 80, sí', () => {
-    const cuenta = { plan: 'impulso', limites: limitesDe('impulso') };
+    const cuenta = { plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido') };
     expect(avisoDeConsumo(cuenta, 79, MES)).toBeNull();
     expect(avisoDeConsumo(cuenta, 80, MES)).toEqual({ mes: MES, umbral: 0.8, conversaciones: 80, limite: 100 });
   });
 
   it('avisa UNA vez: con el aviso del mes anotado, 81 y 100 ya no avisan', () => {
     const cuenta = {
-      plan: 'impulso', limites: limitesDe('impulso'),
+      plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'),
       avisoConsumo: { mes: MES, umbral: 0.8, conversaciones: 80, limite: 100 },
     };
     expect(avisoConsumoPendiente(cuenta, MES)).toBe(false);
@@ -227,7 +279,7 @@ describe('El aviso de consumo al 80 %', () => {
 
   it('el mes nuevo vuelve a poder avisar', () => {
     const cuenta = {
-      plan: 'impulso', limites: limitesDe('impulso'),
+      plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'),
       avisoConsumo: { mes: '2026-09', umbral: 0.8, conversaciones: 80, limite: 100 },
     };
     expect(avisoConsumoPendiente(cuenta, MES)).toBe(true);
@@ -250,13 +302,13 @@ describe('El aviso de consumo al 80 %', () => {
   });
 
   it('un demo avisa al 80 % de SU plan (F1): con Pro, a las 400', () => {
-    const demo = { plan: 'pro', modalidad: 'demostracion', limites: limitesDe('pro') };
+    const demo = { plan: 'pro', modalidad: 'demostracion', limites: limitesDe('pro', 'meta_incluido') };
     expect(avisoDeConsumo(demo, 399, MES)).toBeNull();
     expect(avisoDeConsumo(demo, 400, MES)).toMatchObject({ limite: 500 });
   });
 
   it('si los límites bajaron a mitad de mes y ya estaba por encima, avisa con la siguiente', () => {
-    expect(avisoDeConsumo({ plan: 'impulso', limites: limitesDe('impulso') }, 150, MES))
+    expect(avisoDeConsumo({ plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido') }, 150, MES))
       .toMatchObject({ conversaciones: 150, limite: 100 });
   });
 

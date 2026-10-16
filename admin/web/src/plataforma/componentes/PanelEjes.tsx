@@ -10,7 +10,8 @@ import {
   periodoPruebaAceptable, precioMensualDe, precioPorContratoDe, precioPorContratoValido, pruebaDeCuenta, techoDePrueba,
   type CambiosVista, type EjesDeCuenta, type Modalidad, type Modelo, type NumeroDeCuenta, type Titularidad,
 } from '../../central/lib/ejes';
-import { MAXIMO_CAMBIOS_INCLUIDOS, PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../central/lib/planes';
+import { MAXIMO_CAMBIOS_INCLUIDOS, PLANES, esPlanVendible, limitesDe, nombreDePlan, type IdPlanVendible } from '../../central/lib/planes';
+import { tarifaDe, type Tarifa } from '../../../../functions/src/central/cuenta/planes';
 import { importeBs, tipoCambioVigente } from '../../central/lib/prepago';
 import { avisoPrecioPorContrato } from '../../central/lib/pagar';
 import { UMBRALES_ATENCION, UMBRAL_MAXIMO, umbralesDeAtencion } from '../../core/lib/atencion';
@@ -73,6 +74,12 @@ export interface PanelEjesProps {
 
 const PLANES_VENDIBLES = Object.keys(PLANES) as IdPlanVendible[];
 
+/** Quién paga la mensajería de Meta, dicho en la pantalla (`planes.ts`, `Tarifa`). */
+const ETIQUETA_TARIFA: Record<Tarifa, string> = {
+  estandar: 'Estándar (el comercio paga su Meta)',
+  meta_incluido: 'Meta incluido (NovuChat paga Meta)',
+};
+
 export function PanelEjes(p: PanelEjesProps) {
   return (
     <section className="ejes-panel">
@@ -129,6 +136,8 @@ function SeccionPlan(p: PanelEjesProps) {
   const tc = tipoCambioVigente(p.tipoCambio, p.ahoraMs);
   const nombre = nombreDePlan(actual);
   const resumen = resumenDeCambio('Plan', nombre ?? String(actual ?? '—'), PLANES[elegido].nombre);
+  const tarifa = tarifaDe(p.cuenta);
+  const tarifaEscrita = p.cuenta?.['tarifa'] === tarifa;
   // Con precio por contrato, el plan nuevo NO cambia la mensualidad: se dice
   // antes de confirmar, no después (observación de la revisión del #221).
   const aviso = avisoPrecioPorContrato(p.cuenta, elegido);
@@ -143,12 +152,18 @@ function SeccionPlan(p: PanelEjesProps) {
             {precioPorContratoDe(p.cuenta) !== null && <span className="text-muted"> de lista</span>}
             {tc && <span className="text-muted"> · Bs {importeBs(PLANES[actual].precioUsd, tc.tco)} al {tc.tco} del {tc.fecha}</span>}</>}
         </p>
+        {/* Las conversaciones de cada plan dependen de la TARIFA de la cuenta (`tarifaDe`; sin campo, Meta incluido):
+            el selector dice las que escribirá la callable, no las del catálogo estándar. */}
+        <p className="ayuda" data-tarifa={tarifa}>
+          Tarifa: <strong>{ETIQUETA_TARIFA[tarifa]}</strong>
+          {!tarifaEscrita && <span className="text-muted"> · sin el campo en la cuenta: rige Meta incluido</span>}
+        </p>
         <label htmlFor="eje-plan">Cambiar a</label>{' '}
         <select id="eje-plan" value={elegido} disabled={p.ocupado || pendiente}
           onChange={(e) => setElegido(e.target.value as IdPlanVendible)}>
           {PLANES_VENDIBLES.map((id) => (
             <option key={id} value={id}>
-              {PLANES[id].nombre} · USD {PLANES[id].precioUsd} · {PLANES[id].conversaciones} conversaciones
+              {PLANES[id].nombre} · USD {PLANES[id].precioUsd} · {limitesDe(id, tarifa).conversaciones} conversaciones
               {tc ? ` · Bs ${importeBs(PLANES[id].precioUsd, tc.tco)}` : ''}
             </option>
           ))}
