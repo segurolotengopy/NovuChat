@@ -61,7 +61,7 @@ debajo de los envíos y la hoja. No hay ciclos: ningún nodo lee por nombre algo
 | 2 | `traspaso` | no | no | ninguna | El traspaso lleva su propio botón de contacto (enlace a recepción) y el aviso a recepción. |
 | 3 | `pide-datos` | no | no | ninguna | Pidió planes y faltan nombre y negocio: se piden UNA vez, sin botón de planes (los planes salen al contestar). |
 | 4 | `planes` | no | sí | equipo | Los planes (o su tope y complemento): se acabaron las preguntas de precio, cierra con la oferta del equipo. |
-| 5 | `consulta-sin-respuesta` | no | sí | equipo | Integración, costo de Meta, banco, descuento o consumo: el chat no lo resuelve, requiere al equipo. |
+| 5 | `consulta-sin-respuesta` | no | sí | equipo | Integración, costo de Meta, banco, descuento, consumo o el número propio del prospecto: el chat no lo resuelve, requiere al equipo. |
 | 6 | `respuesta-fija` | no | no | ninguna | Identidad y disponibilidad: se contestan completas, sin invitaciones. |
 | 7 | `sin-respuesta` | no | sí | equipo | Sin dato, no documentado, a medida («Otro»), cierre hacia el equipo o error del modelo: requiere al equipo. |
 | 8 | `rubro-declina` | sí | sí | planes y equipo | Eligió rubro y además propone una función no documentada: «Ver planes» y la salida al equipo. |
