@@ -5922,11 +5922,10 @@
       "sinModelo": true,
       "botones": "equipo",
       "contiene": [
-       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
        "hablar con alguien de nuestro equipo"
       ],
       "noContiene": [
-       "API",
        "certificado",
        "ver nuestros planes"
       ]
@@ -5979,11 +5978,10 @@
       "sinModelo": true,
       "botones": "equipo",
       "contiene": [
-       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
        "hablar con alguien de nuestro equipo"
       ],
       "noContiene": [
-       "API",
        "certificado",
        "ver nuestros planes"
       ]
@@ -6036,11 +6034,10 @@
       "sinModelo": true,
       "botones": "equipo",
       "contiene": [
-       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.",
        "hablar con alguien de nuestro equipo"
       ],
       "noContiene": [
-       "API",
        "certificado",
        "ver nuestros planes"
       ]
@@ -6108,7 +6105,7 @@
       "ruta": "fijo",
       "sinModelo": true,
       "contiene": [
-       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar."
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar."
       ],
       "noContiene": [
        "hablar con alguien de nuestro equipo",
@@ -6248,7 +6245,7 @@
       "sinModelo": true,
       "botones": "equipo",
       "contiene": [
-       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar."
+       "Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar."
       ]
      }
     },

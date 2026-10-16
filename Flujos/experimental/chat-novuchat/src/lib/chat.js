@@ -874,7 +874,7 @@ function chDecidir(a) {
     if (chPreguntaConsumo(dijo)) return fijo('consumo');
     if (chPreguntaBanco(dijo)) return fijo('banco');
     if (chPreguntaHorario(dijo)) return fijo('disponibilidad');
-    if (chPreguntaNumeroActual(dijo)) { const cx = chContexto({ eventos: ev, ficha: f, cfg: cfg }); if (cx !== 'otroRespuesta' && (cx !== 'datos' || /[?¿]/.test(dijo))) { if (cx === 'datos') plan.extraerDatos = true; return fijo('numeroActual'); } }
+    if (chPreguntaNumeroActual(dijo)) { const cx = chContexto({ eventos: ev, ficha: f, cfg: cfg }); if (cx !== 'otroRespuesta' && (cx !== 'datos' || /[?¿]/.test(dijo))) { if (cx === 'datos') plan.extraerDatos = true; return fijo(/\bcoexist|\bconviv/.test(chNorm(dijo)) ? 'coexistencia' : 'numeroActual'); } }
     if (chPreguntaIntegracion(dijo)) return fijo('integracion');
     if (chPideDescuento(dijo)) return fijo('descuento');
     if (chPideCostoDelServicio(dijo)) return conPlanes(false);
@@ -1385,7 +1385,7 @@ const CH_DECLINA = /\b(?:no (?:lo|la) tengo a la mano|no sabr\w+ decir\w* (?:eso
 function chDeclinaTexto(texto) { return chTexto(texto).split(/[.!?¿\n]+/).some((o) => CH_DECLINA.test(chNorm(o))); }
 const CH_SIN_RESPUESTA = ['otro', 'otroRespuesta', 'equipo', 'sin_dato', 'no_documentado', 'complemento', 'ambiguo', 'generico'];
 const CH_SIN_OFERTA = ['pitch', 'abierta', 'identidad', 'cortesia', 'empresa', 'medio', 'datos', 'fuera', 'descarte'];
-const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual'];
+const CH_FIJO_SIN_RESPUESTA = ['costoMeta', 'consumo', 'banco', 'integracion', 'descuento', 'numeroActual', 'coexistencia'];
 // ¿El texto que el MODELO escribió ofrece hablar con el equipo? (su pregunta final, o —si no tiene pregunta final— cualquier oración): sin depender de CÓMO declina, eso dice que no pudo resolver.
 function chOfreceAlEquipo(texto) { const q = chPreguntaFinal(texto); return CH_OFRECE_EQ.test(q) || (q === '' && /\bhablar con (?:alguien|una persona|(?:nuestro |el )?equipo)|\bun asesor\b/.test(chNorm(texto))); }
 // Las señales del turno, calculadas UNA vez. a = { plan, res (resultado del modelo), eventos, ficha (la de antes) }

@@ -2913,8 +2913,8 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
     }
   });
   it('«¿Puedo usar mi número actual?» y sus variantes: respuesta FIJA con la frase oficial, sin llamar al modelo, solo «Hablar con el equipo»; el «Sí» deriva con UN aviso; con el equipo ya pulsado sale sin botón; los negativos no activan la ruta', () => {
-    const FRASE = 'Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business y deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.';
-    const VARIANTES = ['¿Puedo usar mi número actual?', 'puedo usar mi numero actual', '¿Tengo que comprar un número nuevo?', '¿Mi número seguirá funcionando en el celular?', '¿Puedo seguir usando mi WhatsApp en mi celular?', '¿Se pierden mis chats?', '¿Puedo conectar el que ya tengo?', '¿Qué número necesito?', '¿Coexisten?'];
+    const FRASE = 'Al conectar tu número con el asistente, ese número pasa al canal oficial de WhatsApp Business (la API) y, con la conexión que usamos hoy, deja de funcionar en la aplicación del celular. Por eso recomendamos un número nuevo y dedicado al asistente. Lo revisamos contigo antes de conectar.';
+    const VARIANTES = ['¿Puedo usar mi número actual?', 'puedo usar mi numero actual', '¿Tengo que comprar un número nuevo?', '¿Mi número seguirá funcionando en el celular?', '¿Puedo seguir usando mi WhatsApp en mi celular?', '¿Se pierden mis chats?', '¿Puedo conectar el que ya tengo?', '¿Qué número necesito?'];
     for (const q of VARIANTES) {
       const { w, j } = tras();
       const llamadas = w.modelo.llamadas.length;
@@ -2922,11 +2922,21 @@ describe('los botones por turno: «Ver planes» con interés, «Hablar con el eq
       expect(w.modelo.llamadas, q).toHaveLength(llamadas);
       expect(e.cuerpo, q).toContain(FRASE);
       expect(e.cuerpo, q).toContain('¿Te gustaría hablar con alguien de nuestro equipo para revisarlo en tu caso?');
-      expect(e.cuerpo, q).not.toMatch(/\bAPI\b|coexisten|certificad|ver nuestros planes/i);
+      expect(e.cuerpo, q).not.toMatch(/coexisten|certificad|ver nuestros planes/i);
       expect(idsBotones(e), q).toEqual(['equipo']);
       const t = j.texto('Sí');
       expect(tipoInter(t.aMi[0]!), q).toBe('cta_url');
       expect(t.plantillas, q).toHaveLength(1);
+    }
+    // coexistencia/convivencia con la app: respuesta fija propia (WAM, 16/10): existe en Meta, con limitaciones, y hoy no se ofrece; sin modelo, sin promesa, con el botón del equipo
+    for (const q of ['¿Coexisten?', '¿Coexiste con mi WhatsApp personal?']) {
+      const { w, j } = tras();
+      const llamadas = w.modelo.llamadas.length;
+      const e = j.texto(q).aMi[0]!;
+      expect(w.modelo.llamadas, q).toHaveLength(llamadas);
+      expect(e.cuerpo, q).toContain('Meta ofrece un modo en que la app WhatsApp Business y la API conviven, con limitaciones (por ejemplo, sin grupos). Hoy no lo ofrecemos.');
+      expect(e.cuerpo, q).not.toMatch(/evaluamos|pronto|proximamente|próximamente|respaldo de Meta|certificad|ver nuestros planes/i);
+      expect(idsBotones(e), q).toEqual(['equipo']);
     }
     // con el equipo ya pulsado: la respuesta sale, sin botón ni invitación (lo pulsado no reaparece)
     const { w, j } = tras();
