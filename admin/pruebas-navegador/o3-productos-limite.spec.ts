@@ -184,12 +184,13 @@ test.describe('PRO-10 · Límite de productos por plan (pantalla)', () => {
 });
 
 test.describe('PRO-10 · Límite de productos por plan (las reglas del servidor, sin pantalla)', () => {
+  // Las negativas con el plan lleno no cambian nada: el catálogo de 100 se siembra UNA vez (menos carga sobre el emulador).
   let admin: ClienteDeReglas;
-  test.beforeEach(async () => {
-    test.setTimeout(90_000);
+  test.beforeAll(async () => {
     await sembrarN(100);
     admin = await clienteDeReglas(USUARIOS.adminFogon);
   });
+  test.beforeEach(() => { test.setTimeout(90_000); });
 
   test('NEGATIVA: con 100 de 100, un alta que lleva el contador a 101 la rechazan las reglas, y el catálogo queda igual', async () => {
     const r = await admin.lote(altaDeItem(admin.uid, 'p-101', 101));
@@ -221,6 +222,17 @@ test.describe('PRO-10 · Límite de productos por plan (las reglas del servidor,
     const r = await admin.lote([{ delete: nombreDoc(`tenants/${FOGON}/catalogo/p-003`) }]);
     expect(r.codigo).toBe('PERMISSION_DENIED');
     expect(await existeItem(FOGON, 'p-003')).toBe(true);
+  });
+
+});
+
+test.describe('PRO-10 · Límite de productos por plan (las reglas del servidor, con lugar libre)', () => {
+  let admin: ClienteDeReglas;
+  test.beforeEach(async () => {
+    test.setTimeout(90_000);
+    prepararDatos();
+    await fijarPlanCrecimiento(FOGON);
+    admin = await clienteDeReglas(USUARIOS.adminFogon);
   });
 
   test('NEGATIVA: un ítem con existencias (`stock`) no se crea desde el navegador, ni con lugar libre', async () => {
