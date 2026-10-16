@@ -101,7 +101,7 @@ Todo en `admin/functions/src/ingesta.ts`, dentro de la transacción que ya exist
   en entrante, saliente y cortado
   (`pruebas/core/ingesta-conversaciones.test.ts`, «lo que NO cambia»).
 
-**Segundo escritor: el carrito web.** `catalogoWeb.ts:1217-1237` (#485) escribe en
+**Segundo escritor: el carrito web.** `modulos/catalogo-web/catalogoWeb.ts:1217-1237` (#485) escribe en
 el mensaje `order` los campos `tenantId` y `palabras`, y en la conversación
 `noLeidos`, `sinLeer` y `telefonoTrozos`, pero **no** `ultimoEntranteEn` ni
 `ventanaVenceEn`: un carrito web no abre ni renueva la ventana de 24 h de Meta.
@@ -154,7 +154,7 @@ dejaría a cualquier cuenta autenticada preguntar por los mensajes de otro comer
 y nombre se buscan desde la consola, directo a Firestore, bajo `/tenants/{t}`.
 
 - **Entrada** `{tenantId, texto, cursor?}`; el servidor ignora cualquier otra clave
-  (`:288-298`, `:313`). Texto de 1 a 100 caracteres con al menos una palabra de 3
+  (el envoltorio `onCall` está en `:288-298`; `atender`, en `:313`, solo lee las claves que usa). Texto de 1 a 100 caracteres con al menos una palabra de 3
   letras (`MAX_TEXTO`, `:135`).
 - **Salida** `{palabras, resultados:[{conversacionId, telefono, mensajeId, ts,
   direccion, fragmento}], cursor}` (`:155-169`). Nunca el texto completo: un
@@ -348,7 +348,7 @@ omisión, con el «sí» de Andres y en la ventana 23:30–01:30
 **Reversión hacia adelante, no hacia atrás.** Redesplegar una etiqueta anterior
 **falla** si la nueva agregó una Function: el despliegue de producción corre
 `firebase deploy --non-interactive` sin `--force` salvo que
-`vars.FIREBASE_DEPLOY_FORCE` lo active (`.github/workflows/ci-node-firebase.yml:2045`
+`vars.FIREBASE_DEPLOY_FORCE` lo active (`.github/workflows/ci-node-firebase.yml:2046-2048`
 y `:2093`), y firebase-tools se niega a borrar una Function que está en la nube y
 no en el código. Para H1-6 la reversión es la rama **`core/h1-6-reversion`**
 (`07adc3d9`, existe en `origin`, **no está fusionada**): quita los tres `...spread`

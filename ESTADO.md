@@ -8,7 +8,7 @@
 > bitácora del mes. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos. (`Analisis/41` §5.5 y §9.4.)
 
-**Última actualización:** 2026-10-16, sobre `origin/main` `dd3ab137`. La
+**Última actualización:** 2026-10-16, sobre `origin/main` `f647a8e6` (con #500). La
 versión anterior de este archivo era del 03/10 y estaba atrasada; el detalle de
 esos días sigue en `bitacora/2026-10.md`. Asiento de hoy en la bitácora.
 
@@ -38,11 +38,11 @@ esos días sigue en `bitacora/2026-10.md`. Asiento de hoy en la bitácora.
 
 ## En `main`, sin etiquetar
 
-18 commits sobre `v0.15.2`, cuatro fusiones: #495 (Cobros: los contadores leen
+Cinco fusiones sobre `v0.15.2`: #495 (Cobros: los contadores leen
 métricas y `config/venta` por separado), #497 (Central: la tarifa de la cuenta,
 `estandar | meta_incluido`, y el catálogo 200/500/1.000; PR-1 del bloque 1), #498
 (Plataforma: el pase, el selector de plan y los encabezados leen las
-conversaciones de la tarifa; PR-4a) y #499 (chat v2, pitch). Más los textos de
+conversaciones de la tarifa; PR-4a) #499 (chat v2, pitch) y #500 (chat v2, respuesta fija sobre el número propio). Más los textos de
 bolsas y BYOC en `docs/base-comercial.md` y `limites.md`. En producción el servidor
 sigue cortando en 100/220/500 (bitácora del 11/10) hasta la etiqueta del bloque 1.
 
