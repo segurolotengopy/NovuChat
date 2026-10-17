@@ -8,7 +8,7 @@ import { CLAVE_DE_PRUEBA, PROYECTO, PUERTO_AUTH, PUERTO_FIRESTORE } from '../ent
  * el servidor, como un pedido del catálogo web). SOLO contra el emulador: la variable `FIRESTORE_EMULATOR_HOST` se FUERZA a nuestro puerto (un valor heredado no gana, y con ella el SDK ignora las
  * credenciales reales) y, con un proyecto que no sea `demo-`, se niega.
  */
-function bd() {
+export function bd() {
   process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${PUERTO_FIRESTORE}`;
   if (!PROYECTO.startsWith('demo-')) throw new Error('NEGADO: el proyecto de las pruebas de navegador tiene que empezar con «demo-».');
   if (!getApps().length) initializeApp({ projectId: PROYECTO });
@@ -39,9 +39,18 @@ export async function sembrarPedido(tenantId: string, p: PedidoDePrueba): Promis
   });
 }
 
-/** Deja el comercio sin pedidos (cada prueba arranca vacía). */
+/**
+ * Deja el comercio sin pedidos (cada prueba arranca vacía). Borra por lotes (hasta 400 por lote): `recursiveDelete` falló a medias
+ * («100 deletes failed») con 100 pedidos y la máquina cargada, y dejó la prueba siguiente con datos viejos.
+ */
 export async function limpiarPedidos(tenantId: string): Promise<void> {
-  await bd().recursiveDelete(bd().collection(`tenants/${tenantId}/pedidos`));
+  const db = bd();
+  const refs = await db.collection(`tenants/${tenantId}/pedidos`).listDocuments();
+  for (let i = 0; i < refs.length; i += 400) {
+    const lote = db.batch();
+    for (const r of refs.slice(i, i + 400)) lote.delete(r);
+    await lote.commit();
+  }
 }
 
 /** Fija el horario de los 7 días del comercio (por el SDK Admin: no depende de que el guardado de la consola funcione). */
