@@ -22,8 +22,12 @@
 #     wif         pool y proveedor de identidad federada PROPIOS de staging
 #     cuentas     sa-deploy-staging y sa-functions con los mismos roles acotados
 #                 que producción; el binding del Environment `staging`
-#     secretos    los 25 secretos que las Functions declaran, con valores
-#                 aleatorios, y su secretAccessor para sa-functions
+#     secretos    los secretos que las Functions declaran (26): aleatorios, salvo
+#                 SALIDA_PERSONA_RUTAS, que nace con `{}`; y su secretAccessor
+#                 para sa-functions
+#     salida-persona  SOLO sobre un staging que ya existe: amplía la condición de
+#                 desplegadorSecretos con SALIDA_PERSONA_, crea SALIDA_PERSONA_RUTAS
+#                 (`{}`) y su secretAccessor. Se corre UNA vez (idempotente)
 #     sitio       el SEGUNDO sitio de Hosting de staging (T-37: la página pública del
 #                 catálogo, otro origen que la consola). Va ANTES de `github`
 #     storage     el rol del agente de Storage (DESPUÉS de crear el bucket a mano)
@@ -47,7 +51,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 FASE="${1:-}"; shift || true
 if [[ "$FASE" == "-h" || "$FASE" == "--help" || -z "$FASE" ]]; then
-  sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'; exit 0
+  sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'; exit 0
 fi
 P=""; APLICAR=0; SIN_STORAGE=0; SITIO_CAT=""
 while [[ $# -gt 0 ]]; do
@@ -58,13 +62,13 @@ while [[ $# -gt 0 ]]; do
     --sin-storage) SIN_STORAGE=1; shift ;;
     --sitio-catalogo)   SITIO_CAT="${2:?--sitio-catalogo necesita el id}"; shift 2 ;;
     --sitio-catalogo=*) SITIO_CAT="${1#*=}"; shift ;;
-    -h|--help)     sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)     sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opción desconocida: $1" >&2; exit 2 ;;
   esac
 done
 case "$FASE" in
-  apis|firestore|app|wif|cuentas|secretos|sitio|storage|invocadores|github|verificar) ;;
-  *) echo "Uso: $0 <apis|firestore|app|wif|cuentas|secretos|sitio|storage|invocadores|github|verificar> --proyecto <id> [--aplicar] [--sitio-catalogo <id>]" >&2; exit 2 ;;
+  apis|firestore|app|wif|cuentas|secretos|salida-persona|sitio|storage|invocadores|github|verificar) ;;
+  *) echo "Uso: $0 <apis|firestore|app|wif|cuentas|secretos|salida-persona|sitio|storage|invocadores|github|verificar> --proyecto <id> [--aplicar] [--sitio-catalogo <id>]" >&2; exit 2 ;;
 esac
 [[ "$P" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ --proyecto: ID de proyecto de Google Cloud inválido" >&2; exit 2; }
 # T-37: la página pública del catálogo vive en un segundo sitio de Hosting. Su id
@@ -210,6 +214,76 @@ fase_wif() {
   fi
 }
 
+# --- Secretos: el binding con condición y la creación de un secreto ---------------
+SECRETO_SALIDA_PERSONA="SALIDA_PERSONA_RUTAS"
+PREFIJO_SALIDA_PERSONA="SALIDA_PERSONA_"
+
+# 0 si sa-deploy-staging ya tiene el binding de desplegadorSecretos con la
+# condición «secretos-de-las-functions». Solo lectura.
+binding_de_secretos_existe() {
+  gc projects get-iam-policy "$P" --format=json 2>/dev/null | python3 -I -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+m = "serviceAccount:" + sys.argv[1]
+sys.exit(0 if any(b.get("role", "").endswith("/desplegadorSecretos") and m in b.get("members", [])
+                  and (b.get("condition") or {}).get("title") == "secretos-de-las-functions"
+                  for b in d.get("bindings", [])) else 1)' "$SA_DEPLOY"
+}
+
+# Edita EN SU LUGAR la condición del binding (política leída con su etag): agrega
+# `|| resource.name.startsWith("projects/<número>/secrets/<prefijo>")`.
+# Salidas: 0 ya cubierto · 10 cambió (el archivo queda listo para set-iam-policy)
+#          · 3 no encontré el binding, o tiene más de un miembro (no se toca nada).
+# Nunca imprime la expresión entera ni el número del proyecto.
+ampliar_condicion_secretos() { # <archivo-política> <número> <prefijo>
+  python3 -I - "$1" "$2" "$SA_DEPLOY" "$3" <<'PY'
+import json, sys
+ruta, n, sa, prefijo = sys.argv[1:5]
+d = json.load(open(ruta)); miembro = f'serviceAccount:{sa}'
+clausula = f'resource.name.startsWith("projects/{n}/secrets/{prefijo}")'
+for b in d.get('bindings', []):
+    c = b.get('condition') or {}
+    if b.get('role', '').endswith('/desplegadorSecretos') and miembro in b['members'] and c.get('title') == 'secretos-de-las-functions':
+        if len(b['members']) != 1:
+            print('  \x1b[31m✗\x1b[0m el binding con condición tiene más de un miembro: no toco nada'); sys.exit(3)
+        if f'secrets/{prefijo}"' in c['expression']:
+            print(f'  \x1b[32m✓\x1b[0m la condición ya cubre {prefijo}'); sys.exit(0)
+        c['expression'] = c['expression'] + ' || ' + clausula
+        d['version'] = 3  # obligatorio con permisos condicionados
+        json.dump(d, open(ruta, 'w'))
+        print(f'  \x1b[33m·\x1b[0m la condición no cubre {prefijo}: se agrega una cláusula por prefijo')
+        sys.exit(10)
+print('  \x1b[31m✗\x1b[0m no encuentro el binding con condición de sa-deploy-staging (¿falta la fase cuentas?): no toco nada'); sys.exit(3)
+PY
+}
+
+# El valor inicial de un secreto, por una tubería (nunca a la pantalla). El mapa de
+# timbres nace VACÍO: `{}` es un JSON válido, ningún alias = ningún timbre
+# (destinoDeTimbre devuelve null y no se toca nada). Los demás, 64 hex aleatorios.
+valor_inicial() {
+  if [[ "$1" == "$SECRETO_SALIDA_PERSONA" ]]; then printf '{}'
+  else openssl rand -hex 32 | tr -d '\n'; fi
+}
+
+asegurar_secreto() { # <nombre>: lo crea si falta y da secretAccessor a sa-functions
+  local s="$1"
+  if existe gc secrets describe "$s"; then nota "$s ya existe"
+  elif (( APLICAR )); then
+    valor_inicial "$s" | gc secrets create "$s" --replication-policy=automatic --data-file=- >/dev/null
+    if [[ "$s" == "$SECRETO_SALIDA_PERSONA" ]]; then hecho "$s creado (mapa vacío {}: ningún timbre)"
+    else hecho "$s creado (valor aleatorio, no mostrado)"; fi
+  elif [[ "$s" == "$SECRETO_SALIDA_PERSONA" ]]; then
+    nota "[seco] printf '{}' | gcloud secrets create $s --data-file=-"
+  else
+    nota "[seco] openssl rand -hex 32 | gcloud secrets create $s --data-file=-"
+  fi
+  correr "$s: secretAccessor para sa-functions" -- gc secrets add-iam-policy-binding "$s" \
+    --member="serviceAccount:$SA_FUNCTIONS" --role=roles/secretmanager.secretAccessor
+}
+
 fase_cuentas() {
   titulo "Cuentas de servicio y roles (los mismos acotados que producción)"
   local num prefijo r
@@ -243,13 +317,21 @@ fase_cuentas() {
       --member="serviceAccount:$SA_DEPLOY" --role=roles/iam.serviceAccountUser
   done
   # Secretos: rol a medida que NO lee valores ni cambia accesos, con condición
-  # por prefijo (INGESTA_, GEMINI_API_KEY, COBRADOR_).
+  # por prefijo (INGESTA_, GEMINI_API_KEY, COBRADOR_, SALIDA_PERSONA_).
   if existe gc iam roles describe desplegadorSecretos; then nota "el rol desplegadorSecretos ya existe"
   else correr "crear el rol desplegadorSecretos" -- gc iam roles create desplegadorSecretos --title="Desplegador de secretos" \
       --permissions=secretmanager.secrets.get,secretmanager.versions.get,secretmanager.versions.list,secretmanager.secrets.getIamPolicy --stage=GA; fi
-  local cond="expression=resource.name.startsWith(\"projects/${num}/secrets/INGESTA_\") || resource.name.startsWith(\"projects/${num}/secrets/GEMINI_API_KEY\") || resource.name.startsWith(\"projects/${num}/secrets/COBRADOR_\"),title=secretos-de-las-functions"
-  correr "sa-deploy-staging: desplegadorSecretos con condición" -- gc projects add-iam-policy-binding "$P" \
-    --member="serviceAccount:$SA_DEPLOY" --role="projects/${P}/roles/desplegadorSecretos" --condition="$cond"
+  # IDEMPOTENCIA: `add-iam-policy-binding` con OTRA expresión no reemplaza el binding
+  # de condición que ya existe: agregaría uno paralelo. Por eso, si el binding ya
+  # está, esta fase no lo toca; ampliarlo es trabajo de la fase `salida-persona`,
+  # que lo edita en su lugar con `set-iam-policy` (con etag).
+  if binding_de_secretos_existe; then
+    nota "el binding con condición «secretos-de-las-functions» ya existe: no se toca (para ampliarlo, fase salida-persona)"
+  else
+    local cond="expression=resource.name.startsWith(\"projects/${num}/secrets/INGESTA_\") || resource.name.startsWith(\"projects/${num}/secrets/GEMINI_API_KEY\") || resource.name.startsWith(\"projects/${num}/secrets/COBRADOR_\") || resource.name.startsWith(\"projects/${num}/secrets/SALIDA_PERSONA_\"),title=secretos-de-las-functions"
+    correr "sa-deploy-staging: desplegadorSecretos con condición" -- gc projects add-iam-policy-binding "$P" \
+      --member="serviceAccount:$SA_DEPLOY" --role="projects/${P}/roles/desplegadorSecretos" --condition="$cond"
+  fi
   # sa-functions: lo que las Functions usan y nada más (fase A de producción).
   for r in roles/datastore.user roles/firebaseauth.admin roles/eventarc.eventReceiver roles/run.invoker roles/logging.logWriter; do
     correr "sa-functions: $r" -- gc projects add-iam-policy-binding "$P" --member="serviceAccount:$SA_FUNCTIONS" --role="$r" --condition=None
@@ -278,20 +360,40 @@ fase_secretos() {
   local n=0
   while read -r s; do
     n=$((n + 1))
-    if existe gc secrets describe "$s"; then nota "$s ya existe"
-    elif (( APLICAR )); then
-      # 64 caracteres hex, sin salto de línea (lo que rotar-ingesta.sh verifica).
-      openssl rand -hex 32 | tr -d '\n' | gc secrets create "$s" --replication-policy=automatic --data-file=- >/dev/null
-      hecho "$s creado (valor aleatorio, no mostrado)"
-    else
-      nota "[seco] openssl rand -hex 32 | gcloud secrets create $s --data-file=-"
-    fi
-    correr "$s: secretAccessor para sa-functions" -- gc secrets add-iam-policy-binding "$s" \
-      --member="serviceAccount:$SA_FUNCTIONS" --role=roles/secretmanager.secretAccessor
+    asegurar_secreto "$s"
   done < <(secretos_declarados)
   nota "$n secretos declarados por el código"
   nota "GEMINI_API_KEY queda con un valor aleatorio: las Functions que llaman a Gemini fallarán en staging"
   nota "hasta que Andres cargue una clave propia de staging: gcloud secrets versions add GEMINI_API_KEY --data-file=- --project $P"
+}
+
+fase_salida_persona() {
+  titulo "Salida de persona (H2-3): SALIDA_PERSONA_RUTAS en $P, sobre un staging ya creado"
+  # Por qué existe (17/10/2026): el despliegue a staging falló desde #510 con 403 en
+  # secretmanager.secrets.get de SALIDA_PERSONA_RUTAS. Dos causas: el secreto no
+  # existía (la fase `secretos` se corrió cuando eran 25) y la condición por prefijo
+  # de desplegadorSecretos no cubría SALIDA_PERSONA_. Esta fase arregla las dos sin
+  # repetir las otras. Idempotente; seco por omisión.
+  local num tmp respaldo rc
+  num="$(numero_proyecto)"
+  tmp="$(mktemp)"; respaldo="$(mktemp)"; chmod 600 "$tmp" "$respaldo"
+  gc projects get-iam-policy "$P" --format=json > "$tmp"
+  cp "$tmp" "$respaldo"
+  if ampliar_condicion_secretos "$tmp" "$num" "$PREFIJO_SALIDA_PERSONA"; then rc=0; else rc=$?; fi
+  case "$rc" in
+    0) rm -f "$respaldo" ;;
+    10)
+      # set-iam-policy lleva el etag leído: si alguien cambió la política entretanto,
+      # FALLA en vez de pisarla. El binding no se quita ni se vuelve a poner: se edita
+      # su expresión en la misma escritura atómica, así que no hay instante sin permiso.
+      nota "respaldo de la política ANTES del cambio (solo identidades y roles, sin secretos): $respaldo"
+      correr "ampliar la condición de desplegadorSecretos con $PREFIJO_SALIDA_PERSONA" -- gc projects set-iam-policy "$P" "$tmp" ;;
+    *) falla "no se pudo preparar el cambio de la condición (código $rc): no se escribió nada"; rm -f "$respaldo" "$tmp"; exit 1 ;;
+  esac
+  rm -f "$tmp"
+  asegurar_secreto "$SECRETO_SALIDA_PERSONA"
+  nota "con valor {} no hay ningún timbre: cargar un alias es otro paso (scripts/nube-salida-persona.sh --agregar-alias, en producción)"
+  nota "después de esta fase, el despliegue a staging ya encuentra el secreto y puede leer sus metadatos"
 }
 
 fase_storage() {
@@ -407,4 +509,4 @@ fase_verificar() {
   done
 }
 
-"fase_${FASE}"
+"fase_${FASE//-/_}"
