@@ -121,7 +121,7 @@ export async function consumirCupoDeTurno(
 // REGISTROS Y ERRORES
 // ---------------------------------------------------------------------------
 
-export type NombreDeCallableDeTurno = 'tomarConversacion' | 'devolverConversacion' | 'enviarComoPersona';
+export type NombreDeCallableDeTurno = 'tomarConversacion' | 'devolverConversacion';
 
 interface DatosDeRegistro {
   tenantId?: unknown; uid?: string; rol?: RolDePersona; conversacionId?: unknown; motivo?: string;
@@ -176,7 +176,7 @@ export interface SalidaDeTurno {
 }
 
 /** La acción de auditoría de cada callable (lista cerrada). */
-export type AccionDeTurno = 'conversacion_tomada' | 'conversacion_devuelta' | 'mensaje_persona_creado';
+export type AccionDeTurno = 'conversacion_tomada' | 'conversacion_devuelta';
 
 export interface ContextoDeTurno {
   db: Firestore;
@@ -191,9 +191,8 @@ export interface ContextoDeTurno {
 
 /**
  * Escribe, DENTRO de la transacción, el documento de auditoría: `{accion, uid, en, rol,
- * telefono4, resultado:'ok', ...detalle}`. El teléfono NUNCA va entero ni dentro del id de
- * conversación: solo `telefono4`, los últimos 4 dígitos. Sin texto de mensajes. Si algo falla
- * acá (la referencia o la escritura) la transacción entera falla y el turno no cambia.
+ * telefono4, resultado:'ok', ...detalle}` (nunca el id de conversación). Sin texto de mensajes. Si algo falla acá (la
+ * referencia o la escritura) la transacción entera falla y el turno no cambia.
  */
 export function auditarEnTransaccion(
   tx: Transaction, c: ContextoDeTurno, accion: AccionDeTurno, detalle: Record<string, string | number | null> = {},

@@ -452,55 +452,6 @@ export function limitesDe(plan: unknown, tarifa: Tarifa): Limites {
 }
 
 /**
- * LOS TOPES DE LOS MENSAJES QUE ESCRIBE UNA PERSONA (H2-3, `enviarComoPersona`,
- * decisión de Andres del 16/10/2026: «Sí, 7 días y topes 10, 25 y 300»).
- *
- * Un mensaje de persona dentro de la ventana de 24 h NO es gratis: pasada la
- * franquicia de 1.000 por número y mes cuesta 0,0113 USD de Meta
- * (`docs/base-comercial.md` §1), y con la titularidad `novuchat` lo paga NovuChat
- * sin ingreso adicional. De ahí el tope por conversación:
- *
- *  - `porConversacion`: cuántos puede mandar la persona en una ventana de 24 h de
- *    UNA conversación. 10 con la tarifa `meta_incluido` o con un número de
- *    titularidad `novuchat` (peor caso: 0,113 USD de Meta a cargo de NovuChat por
- *    conversación tomada). 25 SOLO con la tarifa `estandar` Y la titularidad
- *    `comercio` (BYOC: el comercio paga su Meta; el tope solo frena abusos). Las
- *    dos condiciones a la vez: una sola no alcanza, y ante la duda el menor.
- *  - `porDia`: 300 por comercio y día, sea quien sea la titularidad.
- *  - `porMinuto`: 10 por minuto (por persona y por comercio), dentro de los 60 por
- *    minuto y 1.000 por día del relé, que comparte con el asistente.
- *
- * Es una función APARTE de `limitesDe` y NO toca `Limites` ni la copia de la
- * cuenta (`cuenta/estado.limites`): son topes de protección de una acción, no
- * una cuota contratada, y agregarlos a la copia habría vuelto «incompletas» las
- * cuentas que ya existen. Las cifras viven ACÁ (el plan) y no en el código del
- * envío, que las recibe por inyección (`CLAUDE.md`, Base comercial §7.4).
- * `plan` se acepta para que mañana un plan pueda traer topes propios sin cambiar
- * la firma; hoy no cambia ninguna cifra.
- */
-export interface LimitesDePersona {
-  porConversacion: number;
-  porDia: number;
-  porMinuto: number;
-}
-
-export const MENSAJES_PERSONA_POR_CONVERSACION = { novuchat: 10, comercio: 25 } as const;
-export const MENSAJES_PERSONA_POR_DIA = 300;
-export const MENSAJES_PERSONA_POR_MINUTO = 10;
-
-export function limitesDePersona(
-  plan: unknown, tarifa: Tarifa, titularidad: 'novuchat' | 'comercio',
-): LimitesDePersona {
-  void plan;
-  const byoc = tarifa === 'estandar' && titularidad === 'comercio';
-  return {
-    porConversacion: byoc ? MENSAJES_PERSONA_POR_CONVERSACION.comercio : MENSAJES_PERSONA_POR_CONVERSACION.novuchat,
-    porDia: MENSAJES_PERSONA_POR_DIA,
-    porMinuto: MENSAJES_PERSONA_POR_MINUTO,
-  };
-}
-
-/**
  * LO QUE NACE EN `cuenta/estado` AL DAR DE ALTA UN COMERCIO: el plan más chico
  * con su copia de límites, la versión del catálogo y la TARIFA `estandar`
  * (`TARIFA_DE_ALTA`). Lo usan `altaTenant` (index.ts),

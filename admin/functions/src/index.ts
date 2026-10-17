@@ -101,13 +101,3 @@ export { buscarConversaciones } from './core/conversacion/buscarConversaciones.j
 // Functions: la etiqueta que las lleve exige rama de reversión hacia adelante lista.
 export { tomarConversacion } from './core/conversacion/tomarConversacion.js';
 export { devolverConversacion } from './core/conversacion/devolverConversacion.js';
-// ESCRIBIR COMO PERSONA (H2-3, solo TEXTO). `enviarComoPersona` valida, deja el mensaje `pendiente`
-// y toca el timbre del flujo «Salida de persona»; el flujo llama a `reclamarSalidaPersona` y
-// `confirmarSalidaPersona` con la credencial de la ingesta de su número. Core no importa Central: los
-// topes (`limitesDePersona`), la tarifa y la titularidad entran inyectados desde `central/cuenta/enviarComoPersona.ts`. Agrega TRES
-// Functions: antes de etiquetar hacen falta el índice COLLECTION_GROUP de `mensajes`, el secreto
-// `SALIDA_PERSONA_RUTAS` con `secretAccessor` para sa-functions, el invocador público de las tres y
-// la rama de reversión hacia adelante (detalle en el PR).
-export { enviarComoPersona } from './central/cuenta/enviarComoPersona.js';
-export { reclamarSalidaPersona } from './core/conversacion/reclamarSalidaPersona.js';
-export { confirmarSalidaPersona } from './core/conversacion/confirmarSalidaPersona.js';

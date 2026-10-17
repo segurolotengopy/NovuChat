@@ -1939,11 +1939,9 @@ service cloud.firestore {
                  // servidor (tomar, devolver, enviar) y la transacción de la ingesta
                  // (devolución por inactividad o por ventana). Ninguna persona del
                  // negocio lo escribe: no está en su `soloCampos`.
-                 // H2-3 (16/10/2026): `envioPersona` (el contador de mensajes de persona de la
-                 // ventana) y `ultimoSalientePersonaEn` los escribe SOLO `enviarComoPersona`. Se
-                 // toleran acá como `turno` (para que la ingesta pueda actualizar una conversación
-                 // que ya los tiene) y las ramas `create`/`update` de arriba le PROHÍBEN crearlos
-                 // o cambiarlos (`affectedKeys`).
+                 // REVERSIÓN de H2-3: `envioPersona` y `ultimoSalientePersonaEn` se SIGUEN tolerando en
+                 // `hasOnly` (una conversación que ya los tenga no debe dejar de poder actualizarse por la
+                 // ingesta) y las ramas `create`/`update` siguen prohibiendo a la ingesta escribirlos.
                  , 'turno', 'envioPersona', 'ultimoSalientePersonaEn'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
@@ -1969,11 +1967,7 @@ service cloud.firestore {
             && d.get('respuestasDelPeriodo', 0) >= 0
             && d.get('canal', '') in ['whatsapp']
             && derivadosValidos(d)
-            && turnoValido(d)
-            && (!d.keys().hasAny(['envioPersona'])
-                || (d.envioPersona is map && d.envioPersona.get('n', -1) is int))
-            && (!d.keys().hasAny(['ultimoSalientePersonaEn'])
-                || d.ultimoSalientePersonaEn is timestamp);
+            && turnoValido(d);
         }
 
         // Tipo y tope de los derivados de H1: ni siquiera el principal de ingesta
@@ -2614,12 +2608,6 @@ service cloud.firestore {
     // asignadoPor } y, escritas por otras piezas, propiedades de la LÍNEA:
     // aliasSecreto, numeroPublico, webhookCarrito.
     // =========================================================================
-    // NOTA H2-3: la credencial de ingesta de un número (HMAC o token, `firma.ts`) ahora TAMBIÉN
-    // autoriza `reclamarSalidaPersona` y `confirmarSalidaPersona`, y con ella el flujo lee el texto y
-    // el destino de los mensajes de persona pendientes de su comercio. Es una ampliación de
-    // privilegio aceptada en el contrato §4. Las reglas de arriba siguen sin dejar que ese token
-    // escriba `autor`, `estadoEnvio`, `turno`, `envioPersona` ni nada del envío: lo hace solo el
-    // servidor con Admin.
     match /rutasWhatsApp/{phoneNumberId} {
       allow get, list: if esPropietario();
       // Ningún navegador escribe este documento; lo escriben solo el SDK Admin
@@ -2708,14 +2696,6 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /topesDeTurno/{uid} {
-      allow read, write: if false;
-    }
-
-    // /topesDeEnvio/u_{uid} y /topesDeEnvio/t_{comercio} — los contadores de `enviarComoPersona`
-    // (H2-3): envíos por minuto de la persona, y por minuto y por día del comercio. Los lee y los
-    // escribe SOLO esa callable, con el SDK Admin, dentro de la transacción que crea el mensaje. Ni la
-    // persona, ni la ingesta, ni el propietario: quien pudiera borrar su contador se quitaría el tope.
-    match /topesDeEnvio/{contador} {
       allow read, write: if false;
     }
 
