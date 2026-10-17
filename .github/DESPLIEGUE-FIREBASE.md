@@ -165,9 +165,12 @@ del proyecto de producción. Lo que hay:
     **Reglas del alias, sin excepción:** (a) NINGÚN agente ni persona lee el archivo de
     entrega (ni `cat` ni la herramienta de lectura): contiene la URL de capacidad y la
     clave; (b) **`--agregar-alias --aplicar` NO se corre** hasta que exista un consumidor
-    revisado, `scripts/cargar-timbre-n8n.sh` (pendiente en H2-F2), que cargará por la API
-    de n8n la credencial Header Auth (nombre `Authorization`, valor `Bearer <clave>`) y el
-    `path` del webhook sin imprimirlos, y borrará el archivo; (c) no se corre en paralelo
+    revisado, `scripts/cargar-timbre-n8n.sh` (H2-F2; procedimiento en `docs/ensayo/LEEME.md`
+    §7), que carga por la API de n8n la credencial Header Auth (nombre `Authorization`,
+    valor `Bearer <clave>`) y el `path` del webhook sin imprimirlos, y borra el archivo
+    solo si todo salió bien. Cuando se corra, el orden es: `--agregar-alias --aplicar`,
+    luego `cargar-timbre-n8n.sh --aplicar` en la misma sesión (la entrega no se deja
+    pendiente); (c) no se corre en paralelo
     (sin control de concurrencia: dos altas simultáneas se pisan); (d) `--quitar-alias`
     no destruye las versiones anteriores del secreto ni borra la credencial ni el
     webhook de n8n: eso se hace aparte. Staging: `scripts/preparar-staging.sh salida-persona`.

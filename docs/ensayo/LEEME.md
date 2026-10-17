@@ -358,3 +358,88 @@ en seco primero y su `--aplicar` con el «sí» de Andres:
 | **Que el aviso llegue a OTRA persona** | Con un solo teléfono el aviso llega al mismo chat del cliente (el interruptor lo permite solo en el ensayo) | Con Q'Taco: el destinatario del aviso es otra persona y el propio número se descarta |
 | **«No pude pasarle…»** | Con un solo teléfono la ventana siempre está abierta | La suite |
 | **Los nombres de credencial en la instancia, la credencial del Trigger vivo y la ruta de Meta** | No se pueden probar sin n8n ni Meta reales: la suite (`venta-minima-herramienta-demo-a.test.ts`) prueba la herramienta contra un n8n de mentira | El seco real y los pasos D y 4 de arriba |
+
+## 7 · Ensayar el timbre de «Salida de persona» en el Demo A (H2-F2)
+
+> Es el ensayo del flujo común `Flujos/salida-de-persona.json` (`Flujos/LEEME-flujos.md`
+> §9), por número, **sin tocar el flujo conversacional del Demo A** ni su número: se crea un
+> flujo **nuevo** en el n8n del Demo A, «NovuChat — Salida de persona (`<alias>`)», con su
+> propia credencial de timbre. Alias del ensayo: **`demoa`**. Andres autoriza y Claude opera;
+> **nadie lee el archivo de entrega** (contiene la URL de capacidad y la clave).
+
+**Piezas.** `scripts/nube-salida-persona.sh` (nube: secreto `SALIDA_PERSONA_RUTAS`; genera la
+ruta y la clave) y `scripts/cargar-timbre-n8n.sh` (n8n: las consume y las borra). Pruebas:
+`admin/pruebas/core/nube-salida-persona.test.ts` y `cargar-timbre-n8n.test.ts` (contra un `gcloud`
+y un `curl` falsos).
+
+**Por qué no `publicar-flujo.sh`, `preparar-import.sh` ni `ensayo-flujo.sh`.** Llenan desde UNA
+tabla sin sufijo por número, abortan con marcadores sin reponer, **completan las credenciales por
+TIPO** (la trampa del 15/09: un nodo que manda a Meta con la credencial de ingesta) y
+`ensayo-flujo.sh` republica el flujo del Demo A. `cargar-timbre-n8n.sh` asigna cada credencial **por
+nombre exacto y tipo**, se niega si falta o está repetida, y revisa que `Enviar por el relé` /
+`Enviar por Graph` nunca lleven la de ingesta, que no haya un WhatsApp Trigger ni una credencial de
+AAB1-WA-Prod.
+
+**La clave de la API de n8n** sale del `.env` indicado con `--env` (el mismo, ignorado y chmod 600,
+de `publicar-flujo.sh`; solo se leen `N8N_BASE_URL` y `N8N_API_KEY`, sin ejecutarlo) y viaja a curl
+por la entrada estándar (`-H @-`), nunca por argumentos ni por pantalla. Con `--aplicar` el script se
+niega si el `.env` no es del usuario o tiene permisos de más.
+
+### Antes de empezar
+
+1. **Credenciales que el script NO crea y que deben existir en n8n** con estos nombres y tipos:
+   `NovuChat ingesta (demoa)` y `AAB1 envío · demoa` (Header Auth) y `WhatsApp demoa (envío)`
+   (`whatsAppApi`). Si no existen, el seco lo dice y no se sigue; crearlas es de otra sesión
+   (ingesta: `rotar-ingesta.sh n8n`; AAB1: el token del alta lo carga la sesión del receptor; la de
+   WhatsApp, quien tenga el token del Demo A). **A decidir con Andres antes del ensayo:** si el Demo A
+   no usa el relé, qué credencial lleva `Enviar por el relé` (el nodo la exige).
+2. **La tabla local** (`CONFIGURACION.local.md`, o `CONFIG_LOCAL_MD`) con
+   `REEMPLAZAR_PHONE_NUMBER_ID_DEMOA` y `REEMPLAZAR_URL_INTERNA_DEL_RELE_DEMOA` (o, para el Demo A,
+   las filas sin sufijo con `--tabla-demo-a`). Se agregan sin mostrar el valor (`marcador-local.sh`).
+3. Pasos 1 a 3 de `nube-salida-persona.sh` ya hechos (`.github/DESPLIEGUE-FIREBASE.md`), la ventana de
+   mantenimiento y el «sí» de Andres. Todo desde un worktree al día, con `.env` enlazado.
+
+### El procedimiento (cada paso: seco, leerlo entero, luego `--aplicar` con el «sí»)
+
+    # 1. El alias en la nube: genera ruta y clave y deja la entrega (modo 600, $XDG_RUNTIME_DIR)
+    export N8N_BASE_URL="$(grep -E '^N8N_BASE_URL=' .env | cut -d= -f2-)"
+    GCP_PROJECT_ID_PROD=<id de producción> ./scripts/nube-salida-persona.sh --agregar-alias demoa
+    ... --agregar-alias demoa --aplicar --confirmo produccion
+    # 2. En n8n, EN LA MISMA SESIÓN (la entrega no se deja pendiente)
+    ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env                                   # seco
+    ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env --aplicar --confirmo produccion
+    # 3. Redesplegar las Functions que declaran el secreto (la versión nueva no se ve hasta entonces)
+    # 4. Activar (paso aparte: empieza el barrido de cada minuto)
+    ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env --activar                          # seco
+    ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env --activar --aplicar --confirmo produccion
+
+El script de n8n respalda el estado vivo del alias (lista de flujos «Salida de persona» con su estado
+activo, el flujo del alias completo y las credenciales sin valores) en un directorio de modo 700
+antes de escribir, e imprime su ruta. Crea el flujo **inactivo**; si ya existía, conserva su estado.
+Si algo falla, la entrega **se conserva** y el mensaje dice cómo seguir (es idempotente: se puede
+repetir). Solo cuando todo se relee bien destruye la entrega.
+
+**La prueba (a verificar en el ensayo):** un lote mixto —un mensaje válido por el relé, uno con texto
+vacío, otro por Graph si se puede— más un segundo reclamo no vacío (`Flujos/LEEME-flujos.md` §9,
+«Pendiente de verificar en n8n real»), y que el timbre (`enviarComoPersona`) abra el webhook con el
+`Bearer` y rechace sin él.
+
+### Lo que queda «a verificar en el ensayo» (no se puede saber sin n8n real)
+
+- Que n8n 2.36.5 acepte `PATCH /credentials/{id}` (lo usa `rotar-ingesta.sh`), `DELETE /credentials/{id}`,
+  `DELETE /workflows/{id}` y el cuerpo `{name,nodes,connections,settings}` del flujo.
+- Que el `Webhook` con `path` explícito se registre en `/webhook/<path>` al activar (el `webhookId` del
+  nodo no se fija).
+- Que el valor del `Bearer` autentique de verdad: la API no devuelve el valor guardado, así que se
+  comprueba con el timbre real.
+
+### La restauración (en este orden; seco primero, `--aplicar` con el «sí»)
+
+    ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env --quitar                           # seco
+    ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env --quitar --aplicar --confirmo produccion
+    GCP_PROJECT_ID_PROD=<id de producción> ./scripts/nube-salida-persona.sh --quitar-alias demoa --aplicar --confirmo produccion
+    # y redesplegar; destruir las versiones anteriores del secreto a mano (gcloud secrets versions destroy)
+
+`--quitar` desactiva y borra el flujo del alias y **solo** la credencial del timbre (nunca las de
+ingesta, AAB1 ni WhatsApp), relee que no quede nada y deja el respaldo previo. Al terminar se borra
+el respaldo (`rm -rf` de su directorio).
