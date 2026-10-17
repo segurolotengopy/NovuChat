@@ -475,12 +475,39 @@
               ]
             }
           },
-          "delivery no",
-          "sin delivery",
+          {
+            "texto": "delivery no",
+            "esperado": {
+              "estado": {
+                "entrega.entrega": {
+                  "regex": "^(delivery|recojo)$"
+                }
+              },
+              "igualAntes": [
+                "entrega.referencia",
+                "carrito"
+              ]
+            }
+          },
+          {
+            "texto": "sin delivery",
+            "esperado": {
+              "estado": {
+                "entrega.entrega": {
+                  "regex": "^(delivery|recojo)$"
+                }
+              },
+              "igualAntes": [
+                "entrega.referencia",
+                "carrito"
+              ]
+            }
+          },
           "prefiero delivery",
           "quiero que me manden"
         ]
-      }
+      },
+      "nota": "«delivery no» y «sin delivery» pueden quedar en delivery (en seco, el modelo fijo no marca nada) o pasar a recojo (con el modelo real; la cartera lo confirmó como lo deseado el 05/10: el cliente corrige con el botón). El esperado acepta las dos; lo que NO acepta es guardarlas como referencia o como dirección."
     },
     {
       "id": "M2p",
@@ -673,12 +700,49 @@
               ]
             }
           },
-          "delivery no",
-          "sin delivery",
+          {
+            "texto": "delivery no",
+            "esperado": {
+              "estado": {
+                "entrega.entrega": {
+                  "regex": "^(delivery|recojo)$"
+                },
+                "entrega.direccion": {
+                  "vacio": true
+                }
+              },
+              "titulosNo": [],
+              "igualAntes": [
+                "entrega.direccion",
+                "entrega.referencia",
+                "carrito"
+              ]
+            }
+          },
+          {
+            "texto": "sin delivery",
+            "esperado": {
+              "estado": {
+                "entrega.entrega": {
+                  "regex": "^(delivery|recojo)$"
+                },
+                "entrega.direccion": {
+                  "vacio": true
+                }
+              },
+              "titulosNo": [],
+              "igualAntes": [
+                "entrega.direccion",
+                "entrega.referencia",
+                "carrito"
+              ]
+            }
+          },
           "prefiero delivery",
           "quiero que me manden"
         ]
-      }
+      },
+      "nota": "«delivery no» y «sin delivery» pueden quedar en delivery (en seco, el modelo fijo no marca nada) o pasar a recojo (con el modelo real; la cartera lo confirmó como lo deseado el 05/10: el cliente corrige con el botón). El esperado acepta las dos; lo que NO acepta es guardarlas como referencia o como dirección."
     },
     {
       "id": "L1",
