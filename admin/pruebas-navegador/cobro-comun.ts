@@ -29,7 +29,7 @@ async function llenar(page: Page, imagen: Buffer | null, nombre = 'image/png'): 
 /** Las pruebas de «Configuración de QR» (`/cobro`), las mismas con `vite` y con las cabeceras reales (el QR se lee de una imagen en el navegador). */
 export function pruebasDeConfiguracionDeQr(): void {
   test.describe('Configuración de QR', () => {
-    test.beforeEach(async () => { prepararDatos(); await fijarCobroReal(FOGON, null); });
+    test.beforeEach(async () => { test.setTimeout(90_000); prepararDatos(); await fijarCobroReal(FOGON, null); });
 
     test('sin QR dice que todavía no hay y ofrece cargarlo', async ({ page }) => {
       await abrirQr(page);
@@ -69,6 +69,18 @@ export function pruebasDeConfiguracionDeQr(): void {
       await page.getByRole('button', { name: 'Guardar mi QR' }).click();
       expect(llamadas).toHaveLength(0);
       expect(await page.getByLabel('Imagen del QR').evaluate((i: HTMLInputElement) => i.validity.valueMissing)).toBe(true);
+    });
+
+    test('NEGATIVA: sin el nombre de la cuenta ni el número el formulario no se envía y no llama al servidor', async ({ page }) => {
+      const { llamadas } = await simularFuncion(page, 'registrarQrDeCobro', { resultado: { registrado: true, problemas: [], advertencias: [] } });
+      await abrirQr(page);
+      await page.getByLabel('Imagen del QR').setInputFiles({ name: 'qr.png', mimeType: 'image/png', buffer: qrEnPng(TEXTO_DEL_QR) });
+      await page.getByLabel('¿Qué día vence el QR?').fill('2027-12-31');
+      await page.getByRole('button', { name: 'Guardar mi QR' }).click();
+      expect(llamadas).toHaveLength(0);
+      expect(await page.getByLabel('¿A nombre de quién está la cuenta?').evaluate((i: HTMLInputElement) => i.validity.valueMissing)).toBe(true);
+      expect(await page.getByLabel('Número de la cuenta que recibe el dinero').evaluate((i: HTMLInputElement) => i.validity.valueMissing)).toBe(true);
+      await expect(page.getByText('QR guardado y verificado')).toHaveCount(0);
     });
 
     test('NEGATIVA: una imagen sin ningún código dice qué hacer y no llama al servidor', async ({ page }) => {
