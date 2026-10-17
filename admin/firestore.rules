@@ -1843,7 +1843,7 @@ service cloud.firestore {
                       && tenantOperativo(tenantId)
                       && conversacionValida()
                       && !request.resource.data.keys().hasAny(['turno', 'envioPersona',
-                                                               'ultimoSalientePersonaEn']);
+                                                               'ultimoSalientePersonaEn', 'phoneNumberId']);
         allow delete: if false;
 
         // Dos ramas de actualización disjuntas:
@@ -1859,7 +1859,7 @@ service cloud.firestore {
         allow update: if (esIngesta(tenantId) && tenantOperativo(tenantId)
                           && conversacionValida()
                           && !request.resource.data.diff(resource.data).affectedKeys()
-                                .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn']))
+                                .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId']))
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
                           // `noContactar` es la lista de no molestar (bloque 4): una
@@ -1944,7 +1944,13 @@ service cloud.firestore {
                  // toleran acá como `turno` (para que la ingesta pueda actualizar una conversación
                  // que ya los tiene) y las ramas `create`/`update` de arriba le PROHÍBEN crearlos
                  // o cambiarlos (`affectedKeys`).
-                 , 'turno', 'envioPersona', 'ultimoSalientePersonaEn'])
+                 , 'turno', 'envioPersona', 'ultimoSalientePersonaEn'
+                 // H2-3b (17/10/2026): `phoneNumberId` es la línea del último entrante del
+                 // cliente. Se tolera aquí (para poder actualizar una conversación que ya lo tiene) pero las
+                 // ramas create/update le PROHÍBEN al token de ingesta crearlo o cambiarlo por SDK cliente. Lo suma SOLO la ingesta (SDK Admin) en un entrante, desde la ruta autenticada, nunca
+                 // desde el cuerpo; la persona del negocio no lo escribe (no está en su
+                 // `soloCampos`). `enviarComoPersona` lo usa para elegir por qué línea sale.
+                 , 'phoneNumberId'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
                     // `horarios` es la etapa del bloque 4: el asistente ofreció
@@ -1969,6 +1975,8 @@ service cloud.firestore {
             && d.get('respuestasDelPeriodo', 0) >= 0
             && d.get('canal', '') in ['whatsapp']
             && derivadosValidos(d)
+            && (!d.keys().hasAny(['phoneNumberId'])
+                || (d.phoneNumberId is string && d.phoneNumberId.matches('^[0-9]{6,25}$')))
             && turnoValido(d)
             && (!d.keys().hasAny(['envioPersona'])
                 || (d.envioPersona is map && d.envioPersona.get('n', -1) is int))

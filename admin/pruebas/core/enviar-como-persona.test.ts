@@ -491,6 +491,74 @@ describe('el canal: exactamente una ruta activa con alias', () => {
 });
 
 // ===========================================================================
+describe('H2-3b: con dos líneas sale por la de la conversación (`phoneNumberId`)', () => {
+  const fijo = 'El canal de envío de este comercio no está disponible.';
+  const NUMERO_B = '1000000702';
+  const dosLineas = async () => { await ruta({ aliasSecreto: 'cliente09' }); await ruta({ aliasSecreto: 'cliente10' }, NUMERO_B); };
+  it('la conversación de la línea B envía por B y no por A (y el mensaje queda atado a B)', async () => {
+    await dosLineas();
+    process.env['SALIDA_PERSONA_RUTAS'] = JSON.stringify({
+      cliente09: { ruta: URL_TIMBRE, clave: CLAVE_TIMBRE }, cliente10: { ruta: `${URL_TIMBRE}-b`, clave: CLAVE_TIMBRE } });
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ phoneNumberId: NUMERO_B });
+    expect(await enviar(base())).toMatchObject({ estado: 'pendiente' });
+    expect(timbres).toHaveLength(1);
+    expect(timbres[0]![0]).toBe(`${URL_TIMBRE}-b`);
+    expect(timbres[0]![1]).toBe(NUMERO_B);
+    expect((await mensajes())[0]!.get('phoneNumberId')).toBe(NUMERO_B);
+  });
+  it('la conversación de la línea A envía por A', async () => {
+    await dosLineas();
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ phoneNumberId: NUMERO });
+    await enviar(base());
+    expect(timbres[0]![1]).toBe(NUMERO);
+  });
+  it('NEGATIVA: un `phoneNumberId` de OTRO comercio rechaza con el mensaje fijo, sin enviar ni escribir', async () => {
+    await ruta({ tenantId: OTRO }, NUMERO_B);
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ phoneNumberId: NUMERO_B });
+    expect(await rechazo(enviar(base()))).toMatchObject({ code: 'failed-precondition', message: fijo });
+    expect(await mensajes()).toHaveLength(0);
+    expect(timbres).toHaveLength(0);
+  });
+  it('NEGATIVA: la ruta de la conversación inactiva (o sin alias) rechaza aunque la otra línea esté activa; nunca cae a la otra', async () => {
+    await ruta({ estado: 'suspendido' }, NUMERO_B);
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ phoneNumberId: NUMERO_B });
+    expect((await rechazo(enviar(base()))).message).toBe(fijo);
+    await ruta({ aliasSecreto: '' }, NUMERO_B);
+    expect((await rechazo(enviar(base()))).message).toBe(fijo);
+    expect(await mensajes()).toHaveLength(0);
+    expect(timbres).toHaveLength(0);
+  });
+  it('NEGATIVA: un `phoneNumberId` que no corresponde a ninguna ruta rechaza; uno malformado también (no se ignora)', async () => {
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ phoneNumberId: '1000000799' });
+    expect((await rechazo(enviar(base()))).message).toBe(fijo);
+    for (const malo of ['no-es-numero', '12345', '', 1000000701]) {
+      await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ phoneNumberId: malo });
+      expect((await rechazo(enviar(base()))).message).toBe(fijo);
+    }
+    expect(await mensajes()).toHaveLength(0);
+    expect(timbres).toHaveLength(0);
+  });
+  it('NEGATIVA: si la línea de la conversación cambia entre elegir el canal y la transacción, no se envía', async () => {
+    await dosLineas();
+    await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ phoneNumberId: NUMERO });
+    const original = db.runTransaction.bind(db) as (f: (tx: unknown) => Promise<unknown>, o?: unknown) => Promise<unknown>;
+    vi.spyOn(db, 'runTransaction').mockImplementation((async (f: (tx: unknown) => Promise<unknown>, o?: unknown) => {
+      await db.doc(`tenants/${A}/conversaciones/${CONV1}`).update({ phoneNumberId: NUMERO_B });
+      return original(f, o);
+    }) as unknown as typeof db.runTransaction);
+    expect((await rechazo(enviar(base()))).message).toBe(fijo);
+    expect(await mensajes()).toHaveLength(0);
+    expect(timbres).toHaveLength(0);
+  });
+  it('sin `phoneNumberId` (conversación anterior): con dos líneas activas rechaza; con una sola, envía', async () => {
+    await dosLineas();
+    expect((await rechazo(enviar(base()))).message).toBe(fijo);
+    await db.doc(`rutasWhatsApp/${NUMERO_B}`).delete();
+    expect(await enviar(base())).toMatchObject({ estado: 'pendiente' });
+  });
+});
+
+// ===========================================================================
 describe('los topes: las cifras salen del plan y se cuentan en la transacción', () => {
   const ritmo = (n: number) => entornoBase(AHORA + n * 7000); // 7 s entre envíos: nunca 10 en un minuto
   const mandar = (n: number, a: Actor = ANA, conv = CONV1) => enviar(base({ claveIdempotencia: claveN(n), conversacionId: conv }), a, ritmo(n));
@@ -692,6 +760,25 @@ describe('las reglas de Firestore cierran lo que escribe el servidor', () => {
     await assertSucceeds(actualizarDoc(conv(ctx.admin), { etiquetas: ['vip'] }));
     // La ingesta puede crear una conversación NUEVA sin esos campos.
     await assertSucceeds(escribirDoc(docCliente(ctx.ingesta(), `tenants/tienda-a/conversaciones/${CONV2}`), { telefono: TEL2, canal: 'whatsapp' }));
+  });
+
+  it('H2-3b NEGATIVA: `phoneNumberId` en la conversación NO lo escribe nadie por SDK cliente (ni la ingesta); la ingesta sí actualiza otros campos si ya lo tiene', async () => {
+    const conv = (f: () => ReturnType<typeof ctx.oper>) => docCliente(f(), `tenants/tienda-a/conversaciones/${CONV1}`);
+    for (const valor of ['1000000701', '123456', '1'.repeat(25), '12345', '1'.repeat(26), '10000007a1', '', 1000000701, null, ['1000000701']]) {
+      await assertFails(actualizarDoc(conv(ctx.ingesta), { phoneNumberId: valor }));
+    }
+    for (const f of [ctx.admin, ctx.oper, ctx.propietario, ctx.anonimo]) {
+      await assertFails(actualizarDoc(conv(f), { phoneNumberId: '1000000701' }));
+    }
+    const otro = entorno.authenticatedContext('svc-b', claims({ t: { 'tienda-b': 'ingesta' } }, 'custom')).firestore();
+    await assertFails(actualizarDoc(docCliente(otro, `tenants/tienda-a/conversaciones/${CONV1}`), { phoneNumberId: '1000000701' }));
+    await assertFails(escribirDoc(docCliente(otro, `tenants/tienda-a/conversaciones/${CONV2}`), { telefono: TEL2, canal: 'whatsapp', phoneNumberId: '1000000701' }));
+    await assertFails(escribirDoc(docCliente(ctx.ingesta(), `tenants/tienda-a/conversaciones/${CONV2}`), { telefono: TEL2, canal: 'whatsapp', phoneNumberId: '1000000701' }));
+    // Control positivo: una conversación que YA lo tiene sigue siendo actualizable por la ingesta (otros campos).
+    await entorno.withSecurityRulesDisabled(async (c) => {
+      await actualizarDoc(docCliente(c.firestore(), `tenants/tienda-a/conversaciones/${CONV1}`), { phoneNumberId: '1000000701' });
+    });
+    await assertSucceeds(actualizarDoc(conv(ctx.ingesta), { ultimoMensaje: 'nuevo resumen' }));
   });
 
   it('NEGATIVA: la persona (admin u operador) tampoco crea mensajes ni toca el turno; y el soporte menos', async () => {
