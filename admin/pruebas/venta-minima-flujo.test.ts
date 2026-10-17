@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { configBase, destinos, type Flujo, type J } from './lib/flujo';
-import { cotejo409, cotejoEnRevision, cotejoIlegible, cotejoReintentar, cotejoTardio, cotejoValido, cotejoYaResuelto, guardadoBien, guardadoFalla, RUTA_GUARDADA } from './lib/cotejo-venta';
+import { BINARIOS, cotejo409, cotejoEnRevision, cotejoIlegible, cotejoReintentar, cotejoTardio, cotejoValido, cotejoYaResuelto, guardadoBien, guardadoFalla, guardadoSegunFirma, RUTA_GUARDADA } from './lib/cotejo-venta';
 import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
@@ -137,11 +137,12 @@ function crear(op: OpcionesDeLaPrueba = {}) {
     'Reportar mensaje (saliente)': () => ({ ok: true }),
     'Registrar cierre': () => ({ ok: true }),
     'Obtener URL del medio': () => ({ url: 'https://medios.ejemplo.invalid/m', mime_type: 'image/jpeg', file_size: 100_000 }),
-    'Descargar medio': () => ({}),
+    // El binario que baja Meta: el tipo que declara y los primeros bytes (para que el doble de «Guardar comprobante» compruebe el tipo como el servidor).
+    'Descargar medio': () => ({ binario: BINARIOS['jpeg'] }),
     'Transcribir audio': () => ({ content: { parts: [{ text: 'quiero 4 tacos de birria' }] } }),
     'Leer comprobante (imagen)': () => lecturaCorrecta('63.00'),
     'Leer comprobante (PDF)': () => lecturaCorrecta('63.00'),
-    'Guardar comprobante': () => guardadoBien(),
+    'Guardar comprobante': (ll) => guardadoSegunFirma(ll.item['binario']),
     'Cotejar en el servidor': () => estado.cotejo,
     Extraer: () => { estado.extraer++; return estado.extraccion ? resp(estado.extraccion) : { error: { message: 'sin extracción declarada' } }; },
     'Enviar a WhatsApp': envio('Enviar a WhatsApp'),
@@ -2321,21 +2322,30 @@ describe('cobro', () => {
     expect(tieneEnlace(t)).toBe(true);
   });
 
-  it('el comprobante ilegible: la primera vez lo pide de nuevo (sin aviso); la segunda avisa con «comprobante ilegible» y pasa con el restaurante', () => {
-    const ilegible = cotejoIlegible();
-    const p = pedidoConComprobante({ cotejo: ilegible, ventana: 5 });
-    expect(cuerpos(p.comp)[0]).toMatch(/No pude leer bien tu comprobante: ¿me lo envías de nuevo/);
-    expect(p.comp.avisos).toHaveLength(0);
+  it('el comprobante ilegible NUNCA avisa por su cuenta: dos ilegibles piden otro sin aviso y el aviso lo da el servidor con `en_revision`, exactamente UNO', () => {
+    const p = pedidoConComprobante({ cotejo: cotejoIlegible({ intentos: 1, intentosRestantes: 2 }), ventana: 5 });
+    const uno = p.comp;
+    p.w.estado.cotejo = cotejoIlegible({ intentos: 2, intentosRestantes: 1 });
+    const dos = p.c.imagen('media-10');
+    for (const t of [uno, dos]) {
+      expect(cuerpos(t)[0]).toMatch(/No pude leer bien tu comprobante: ¿me lo envías de nuevo/);
+      expect(t.avisos).toHaveLength(0);
+      expect(cuerpos(t).join('\n')).not.toMatch(/ya (lo |la )?pas[eé]/i);
+      expect(tieneEnlace(t)).toBe(false);
+    }
     expect(estadoDe(p.w.mundo)['paso']).toBe('esperando_comprobante');
-    const segunda = p.c.imagen('media-10');
-    expect(segunda.avisos.filter((a) => a.tipo === 'template').length).toBeGreaterThan(0);
-    expect(segunda.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('comprobante ilegible');
-    expect(tieneEnlace(segunda)).toBe(true);
-    expect(cuerpos(segunda).join('\n')).toMatch(/Como no se lee bien, ya lo pasé a nuestro equipo/);
-    // Negativo: si la segunda foto es nítida y cuadra, se avisa «datos coinciden», no «ilegible».
-    const p2 = pedidoConComprobante({ cotejo: ilegible, ventana: 5 });
-    p2.w.estado.cotejo = cotejoValido({ cierreId: 'venta_y' });
-    const buena = p2.c.imagen('media-10');
+    p.w.estado.cotejo = cotejoEnRevision({ motivo: 'ilegible' });
+    const tres = p.c.imagen('media-11');
+    expect(tres.avisos.filter((a) => a.tipo === 'template').length).toBeGreaterThan(0);
+    expect(tres.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('comprobante sin cotejar');
+    expect(tieneEnlace(tres)).toBe(true);
+    expect(estadoDe(p.w.mundo)['paso']).toBe('menu');
+    // Un solo aviso por destinatario: una plantilla a cada uno, no una por intento.
+    expect(plantillasA(tres, AV1)).toHaveLength(1);
+    // Negativo: si la tercera foto es nítida y válida, se avisa «datos coinciden», no «ilegible».
+    const q = pedidoConComprobante({ cotejo: cotejoIlegible(), ventana: 5 });
+    q.w.estado.cotejo = cotejoValido({ cierreId: 'venta_y' });
+    const buena = q.c.imagen('media-10');
     expect(buena.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).toContain('comprobante: datos coinciden');
     expect(buena.avisos.map((a) => parametrosDe(a).join(' ')).join(' ')).not.toContain('ilegible');
   });
@@ -6156,7 +6166,7 @@ describe('visor de comprobantes (regla 2): guardar la imagen y cotejar con /cote
   it('CADA ESTADO: qué lee el cliente, si hay aviso al local y a dónde va el paso; siempre UN solo mensaje al cliente (+0 mensajes)', () => {
     const casos: [string, J, RegExp, 'aviso' | 'sin aviso', string, RegExp | null][] = [
       ['valido', cotejoValido(), /Los datos coinciden con tu pedido/, 'aviso', 'menu', /datos coinciden/],
-      ['aproximado', cotejoValido({ estado: 'aproximado', motivo: 'nombre_aproximado' }), /Los datos coinciden con tu pedido/, 'aviso', 'menu', /datos coinciden/],
+      ['aproximado', cotejoValido({ estado: 'aproximado', motivo: 'nombre_aproximado' }), /Los datos coinciden con tu pedido/, 'aviso', 'menu', /datos casi coinciden, revisar/],
       ['reintentar con diferencia', cotejoReintentar('monto_menor', { montoLeido: 60, importe: 84 }), /Veo una diferencia con tu pedido #\w+: el comprobante dice 60 Bs y tu pedido es de 84 Bs/, 'sin aviso', 'esperando_comprobante', null],
       ['reintentar ilegible', cotejoIlegible(), /No pude leer bien tu comprobante/, 'sin aviso', 'esperando_comprobante', null],
       ['tardio', cotejoTardio(), /Llegó después de los 15 minutos del QR/, 'aviso', 'menu', /sin cotejar/],
@@ -6348,6 +6358,97 @@ describe('visor de comprobantes (regla 2): guardar la imagen y cotejar con /cote
       const c = f.nodes.find((x) => x.name === 'Cotejar en el servidor') as NonNullable<(typeof f.nodes)[number]>;
       expect(String(c.parameters['url'])).toMatch(/\/cotejarComprobanteVenta$/);
       expect(String(c.parameters['jsonBody'])).toContain('ruta: typeof $json.ruta');
+    }
+  });
+
+  // --- seguimiento de la revisión de código (17/10/2026) ------------------------------------------------------------
+  it('`guardarComprobante` rechaza con 415 si el Content-Type del binario no coincide con la firma de los bytes: el cotejo corre con `ruta: null`; si coincide, con la ruta', () => {
+    const casos: [string, J, boolean][] = [
+      ['jpeg con su tipo', BINARIOS['jpeg'] as J, true],
+      ['png con su tipo', BINARIOS['png'] as J, true],
+      ['pdf con su tipo', BINARIOS['pdf'] as J, true],
+      ['bytes de jpeg declarados como octet-stream', { ...BINARIOS['jpeg'], mimeType: 'application/octet-stream' }, false],
+      ['bytes de jpeg declarados como image/jpg', { ...BINARIOS['jpeg'], mimeType: 'image/jpg' }, false],
+      ['bytes de png declarados como jpeg', { ...BINARIOS['png'], mimeType: 'image/jpeg' }, false],
+      ['bytes desconocidos declarados como jpeg', { mimeType: 'image/jpeg', bytesHex: '00112233' }, false],
+      ['sin binario', {}, false],
+    ];
+    for (const [nombre, binario, guarda] of casos) {
+      const p = conQr();
+      p.w.mundo.dobles['Descargar medio'] = () => ({ binario });
+      const cotejar: LlamadaDoble[] = [];
+      p.w.mundo.dobles['Cotejar en el servidor'] = (ll) => { cotejar.push(ll); return p.w.estado.cotejo; };
+      const t = p.c.imagen('media-9');
+      expect(cotejar, nombre).toHaveLength(1);
+      expect((cotejar[0] as LlamadaDoble).cuerpo?.['ruta'], nombre).toBe(guarda ? RUTA_GUARDADA : null);
+      expect(cuerpos(t).join('\n'), nombre).toContain('Los datos coinciden'); // el cliente no nota la diferencia
+    }
+  });
+
+  it('`enRevision` solo es un comprobante si el flujo todavía tiene el pedido: sin pedido guardado o con uno de más de 72 h NO se descarga ni se coteja', () => {
+    const intento = (tocar: (p: ReturnType<typeof conQr>) => void): ResultadoTurno => {
+      const p = conQr({}, { pendiente: false, enRevision: true });
+      tocar(p);
+      p.w.estado.cotejo = cotejoYaResuelto();
+      return p.c.imagen('media-9');
+    };
+    // Control: con el pedido en el estado, la foto va al servidor.
+    const con = intento(() => undefined);
+    expect(con.ejecutados.has('Descargar medio')).toBe(true);
+    expect(con.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    // Sin ningún pedido (ni en el estado ni guardado).
+    const sin = intento((p) => { delete sdVm(p.w.mundo)['estados'][CLIENTE]; sdVm(p.w.mundo)['pedidos'] = {}; });
+    // Con el pedido guardado pero de hace más de 72 h.
+    const viejo = intento((p) => {
+      delete sdVm(p.w.mundo)['estados'][CLIENTE];
+      for (const ped of Object.values(sdVm(p.w.mundo)['pedidos'] as J)) (ped as J)['guardadoMs'] = 1;
+    });
+    for (const [nombre, t] of [['sin pedido', sin], ['pedido vencido', viejo]] as const) {
+      for (const n of ['Obtener URL del medio', 'Descargar medio', 'Guardar comprobante', 'Leer comprobante (imagen)', 'Cotejar en el servidor']) expect(t.ejecutados.has(n), `${nombre}: ${n}`).toBe(false);
+      expect(t.avisos, nombre).toHaveLength(0);
+    }
+    // Y con el pedido guardado reciente (sin estado) sí se atribuye.
+    const reciente = intento((p) => { delete sdVm(p.w.mundo)['estados'][CLIENTE]; });
+    expect(reciente.ejecutados.has('Cotejar en el servidor')).toBe(true);
+  });
+
+  it('con el plazo de regla 2 vencido el recordatorio NO dice «sigo esperando» y «Reenviar QR» sale como QR NUEVO (`qr_enviado`, `reglaCobro: 2`) sin sumar mensajes', () => {
+    const vencido = { pendiente: false, vencidoHaceMin: 20 };
+    const p = conQr({}, vencido);
+    const r = p.c.escribe('ya pagué');
+    expect(cuerpos(r)[0]).toMatch(/El plazo del QR de tu pedido #\w+ ya venció/);
+    expect(cuerpos(r).join('\n')).not.toMatch(/Sigo esperando|sigue pendiente/);
+    expect(titulosDe(r.mensajes[0] as NonNullable<(typeof r.mensajes)[number]>)).toEqual(['Reenviar QR', 'Cancelar pedido']);
+    expect(r.mensajes).toHaveLength(1);
+    expect(todoElTexto(r)).not.toMatch(PROHIBIDO);
+    const re = p.c.toca(idDeBoton(r, 'Reenviar QR'), 'Reenviar QR');
+    expect(re.mensajes).toHaveLength(1);
+    expect(re.mensajes[0]?.payload['image']?.link).toBe(QR_URL);
+    const rep = re.llamadas.ingesta.find((x) => x['tipo'] === 'image') as J;
+    expect(rep).toMatchObject({ evento: 'qr_enviado', reglaCobro: 2, monto: 84 });
+    expect(String(rep['referencia'])).toBe(p.ref);
+    // Opuestos: con el cobro pendiente el recordatorio es el de siempre y el reenvío NO lleva evento ni regla; con regla 1 vencida, tampoco.
+    for (const [nombre, cobro] of [['pendiente', {}], ['regla 1 vencida', { pendiente: false, vencidoHaceMin: 20, regla: 1 }]] as [string, J][]) {
+      const q = conQr({}, cobro);
+      const rq = q.c.escribe('ya pagué');
+      expect(cuerpos(rq)[0], nombre).not.toMatch(/ya venció/);
+      const rr = q.c.toca(idDeBoton(rq, 'Reenviar QR'), 'Reenviar QR');
+      const rrep = rr.llamadas.ingesta.find((x) => x['tipo'] === 'image') as J;
+      for (const clave of ['evento', 'reglaCobro']) expect(Object.keys(rrep), `${nombre}: ${clave}`).not.toContain(clave);
+    }
+  });
+
+  it('con el plazo vencido y el pedido ya fuera del flujo, tanto el recordatorio como el reenvío derivan con aviso al local y botón (nunca un QR sin pedido)', () => {
+    for (const accion of ['texto', 'reenviar'] as const) {
+      const p = conQr({}, { pendiente: false, vencidoHaceMin: 20 });
+      const r = p.c.escribe('ya pagué');
+      const idReenviar = idDeBoton(r, 'Reenviar QR');
+      sdVm(p.w.mundo)['estados'][CLIENTE]['pedido'] = null; // el paso sigue esperando, pero el pedido ya no está
+      const t = accion === 'texto' ? p.c.escribe('ya pagué') : p.c.toca(idReenviar, 'Reenviar QR');
+      expect(t.avisos.length, accion).toBeGreaterThan(0);
+      expect(tieneEnlace(t), accion).toBe(true);
+      expect(t.mensajes.some((m) => m.tipo === 'image'), accion).toBe(false);
+      expect(t.llamadas.ingesta.some((x) => x['evento'] === 'qr_enviado'), accion).toBe(false);
     }
   });
 });

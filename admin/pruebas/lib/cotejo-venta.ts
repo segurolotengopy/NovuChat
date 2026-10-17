@@ -32,3 +32,30 @@ export const RUTA_GUARDADA = 'tenants/qtaco/comprobantes/2026-10-05/Kq3aZ09bcdEF
 export const guardadoBien = () => ({ statusCode: 200, body: { ruta: RUTA_GUARDADA } });
 /** Un rechazo de `guardarComprobante` (409 `sin_cobro_pendiente` o `demasiados_comprobantes`, 413, 415, 502...). */
 export const guardadoFalla = (codigo = 409, error = 'sin_cobro_pendiente') => ({ statusCode: codigo, body: { error } });
+
+// --- el doble de `guardarComprobante` que comprueba el tipo, como el servidor -----------------------------------------------
+/** Lo que baja «Descargar medio» en el doble: el tipo que declara el binario y los primeros bytes (en hexadecimal). */
+export interface BinarioDeMentira { mimeType: string; bytesHex: string }
+export const BINARIOS: Record<string, BinarioDeMentira> = {
+  jpeg: { mimeType: 'image/jpeg', bytesHex: 'ffd8ffe000104a464946' },
+  png: { mimeType: 'image/png', bytesHex: '89504e470d0a1a0a0000' },
+  webp: { mimeType: 'image/webp', bytesHex: '52494646a400000057454250' },
+  pdf: { mimeType: 'application/pdf', bytesHex: '255044462d312e340a' },
+};
+/** El mismo criterio de `tipoPorFirma` (`comprobantes.ts`): el tipo real sale de los primeros bytes. */
+function mimePorFirma(hex: string): string | null {
+  const h = hex.toLowerCase();
+  if (h.startsWith('ffd8ff')) return 'image/jpeg';
+  if (h.startsWith('89504e470d0a1a0a')) return 'image/png';
+  if (h.startsWith('52494646') && h.slice(16, 24) === '57454250') return 'image/webp';
+  if (h.startsWith('255044462d')) return 'application/pdf';
+  return null;
+}
+/** `guardarComprobante` del servidor: 415 si los bytes no son de un tipo admitido o NO coinciden con el `Content-Type` declarado; si no, 200 con la ruta. */
+export function guardadoSegunFirma(binario: unknown) {
+  const b = (typeof binario === 'object' && binario !== null ? binario : {}) as Partial<BinarioDeMentira>;
+  const real = mimePorFirma(String(b.bytesHex ?? ''));
+  const declarado = String(b.mimeType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  if (!real || declarado !== real) return guardadoFalla(415, 'tipo_no_admitido');
+  return guardadoBien();
+}

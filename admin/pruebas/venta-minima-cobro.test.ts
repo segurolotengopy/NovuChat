@@ -466,10 +466,14 @@ describe('cbResultadoVenta: lo que contestó `/cotejarComprobanteVenta` (regla 2
     body: { estado, motivo: 'ok', intentos: 0, intentosRestantes: 3, importe: 63, moneda: 'BOB', montoLeido: 63, montoDistinto: false, cierreId: 'venta_ped-2026', evento: null, avisarComercio: true, repetido: false, ...extra },
   });
 
-  it('valido y aproximado -> cuadra (los datos coinciden), con el importe y el cierre del servidor', () => {
-    for (const e of ['valido', 'aproximado']) {
-      expect(L.cbResultadoVenta(cuerpo(e)), e).toEqual({ resultado: 'cuadra', diferencias: [], importe: 63, cierreId: 'venta_ped-2026', causa: '' });
-    }
+  it('valido -> cuadra y aproximado -> aproximado (los datos coinciden), con el importe y el cierre del servidor', () => {
+    expect(L.cbResultadoVenta(cuerpo('valido'))).toEqual({ resultado: 'cuadra', diferencias: [], importe: 63, cierreId: 'venta_ped-2026', causa: '' });
+    // `aproximado` se distingue para el aviso al local («casi coinciden, revisar»), no para el cliente.
+    expect(L.cbResultadoVenta(cuerpo('aproximado'))).toEqual({ resultado: 'aproximado', diferencias: [], importe: 63, cierreId: 'venta_ped-2026', causa: '' });
+    expect(L.cbTextoAlCliente('aproximado', { codigo: 'K7QX', avisoSalio: true })).toEqual(L.cbTextoAlCliente('cuadra', { codigo: 'K7QX', avisoSalio: true }));
+    expect(L.cbEstadoParaAviso('aproximado')).toBe('comprobante: datos casi coinciden, revisar');
+    expect(L.cbEstadoParaAviso('aproximado')).not.toBe(L.cbEstadoParaAviso('cuadra'));
+    expect(L.CB_PROHIBIDAS.test(L.cbCanon(L.cbEstadoParaAviso('aproximado')))).toBe(false);
   });
 
   it('reintentar con un comprobante que no se lee -> ilegible (se pide uno más nítido); cada motivo de la lista', () => {
@@ -698,20 +702,15 @@ describe('cbTextoAlCliente: los textos fijos y la prohibición 3', () => {
     expect(T('no_cuadra', { avisoSalio: true, diferencia: 'El comprobante dice 5 y el pedido es de 63.' }).cuerpo).toContain('el comprobante dice 5 Bs y tu pedido es de 63 Bs');
   });
 
-  it('ilegible, primera vez: lo pide de nuevo, sin aviso y sin botón; la segunda, lo pasa a nuestro equipo', () => {
-    const primera = T('ilegible', { ilegibles: 1 });
-    expect(primera).toEqual({
+  it('ilegible: SIEMPRE pide uno más nítido, sin aviso y sin botón, en cualquier intento y haya salido o no un aviso; la derivación la decide el servidor (`en_revision`)', () => {
+    const esperado = {
       cuerpo: 'Gracias por enviarlo. No pude leer bien tu comprobante: ¿me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?',
       enlace: false, aviso: false,
-    });
-    expect(T('ilegible', {}).aviso).toBe(false);
-    const segunda = T('ilegible', { ilegibles: 2, avisoSalio: true });
-    expect(segunda.aviso).toBe(true);
-    expect(segunda.enlace).toBe(true);
-    expect(segunda.cuerpo).toBe('Gracias por enviarlo de nuevo. Como no se lee bien, ya lo pasé a nuestro equipo para que revise tu pedido #K7QX directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.');
-    expect(T('ilegible', { ilegibles: 3, avisoSalio: false }).cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
-    expect(T('ilegible', { ilegibles: 3, avisoSalio: false }).cuerpo).toBe(
-      'Gracias por enviarlo de nuevo. Como no se lee bien, no pude pasarle tu pedido a nuestro equipo en este momento: escríbenos directamente con el botón. Guarda tu comprobante por si te lo pedimos.');
+    };
+    for (const o of [{}, { ilegibles: 1 }, { ilegibles: 2, avisoSalio: true }, { ilegibles: 3, avisoSalio: false }, { avisoSalio: true }]) {
+      expect(T('ilegible', o), JSON.stringify(o)).toEqual(esperado);
+      expect(T('ilegible', o).cuerpo).not.toMatch(/ya (lo |la )?pas[eé]/i);
+    }
   });
 
   it('redacción: cada versión una sola vez «tu comprobante» y nunca se llama «pago» a un comprobante (salvo «revisa el pago en nuestro banco» de «coincide»)', () => {

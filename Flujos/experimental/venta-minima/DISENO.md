@@ -752,8 +752,9 @@ llama a `guardarComprobante`, para que la consola muestre el comprobante (visor)
 
   | Respuesta del servidor | Resultado | Al cliente | Aviso al local |
   |---|---|---|---|
-  | `valido`, `aproximado` | `cuadra` | «Los datos coinciden con tu pedido…» | sí (una vez) |
-  | `reintentar` y no se lee (`ilegible`, `falta_*`) | `ilegible` | pide uno más nítido; el segundo ilegible se pasa al equipo | no (el 2.º, sí) |
+  | `valido` | `cuadra` | «Los datos coinciden con tu pedido…» | sí (una vez): «comprobante: datos coinciden» |
+  | `aproximado` | `aproximado` | el mismo texto | sí (una vez): «comprobante: datos casi coinciden, revisar» |
+  | `reintentar` y no se lee (`ilegible`, `falta_*`) | `ilegible` | pide uno más nítido, en cualquier intento (el flujo ya no cuenta ilegibles: lo decide el servidor) | **nunca**; el aviso sale con `en_revision` |
   | `reintentar` con diferencia | `reintentar` | la diferencia en frase fija (solo números del servidor) y pide el correcto, con botón | no |
   | `tardio` / `en_revision` | `sin_cotejo` con causa | «Llegó después de los 15 minutos del QR…» / «Como ya van varios intentos…», con botón | sí (una vez) |
   | `ya_resuelto`, `repetido: true`, o `avisarComercio` distinto de `true` | `ya_cotejado` | «Ya tengo el comprobante…» | no |
@@ -768,6 +769,14 @@ llama a `guardarComprobante`, para que la consola muestre el comprobante (visor)
   petición y por los datos de ejecución (retención M-1 ya aceptada). Reversión: volver al JSON del 09/10 con `publicar-flujo.sh` (el servidor no cambia).
 - **No hecho aquí (a propósito).** Ensayo en el Demo A (B2: exige una ruta `venta` del Demo A y cobro real con un QR de NovuChat) y publicación. `cbResultado` (la traducción de la seña) queda en `cobro.js`, probada, sin uso en el flujo.
 - Pruebas: `venta-minima-cobro.test.ts` (`cbResultadoVenta`, `cbRutaGuardada`, textos), `venta-minima-flujo.test.ts` («visor de comprobantes (regla 2)»), `venta-minima-integracion.test.ts`, `venta-minima-decision.test.ts` y el tope en `venta-minima-catalogo-topologia.test.ts`.
+
+### Revisión de código del visor (17/10/2026): lo que cambió y lo que queda para el ensayo
+
+- **Un `reintentar` (ilegible o con diferencia) nunca avisa ni dice «ya lo pasé».** Se quitó el contador propio `en.ilegibles` de la decisión: la derivación a una persona es del servidor, con `en_revision` al tercer inválido (un solo aviso).
+- **`enRevision` solo cuenta como comprobante si el flujo todavía tiene el pedido** (el del estado o uno guardado de este teléfono, de menos de 72 h). Sin pedido la foto es una imagen cualquiera y no se baja. **Seguimiento de Core-Functions:** el servidor no pone cota de 24 h a la etapa `en_revision` (sí a `tardio`); conviene que la ponga, para que el flujo no dependa de la antigüedad del pedido guardado.
+- **Plazo de regla 2 vencido** (`regla: 2`, sin cobro pendiente, `vencidoHaceMin` numérico): el recordatorio dice que el plazo del QR venció (nada de «sigo esperando») y «Reenviar QR» sale como QR NUEVO, con `evento: qr_enviado` y `reglaCobro: 2`, para que el servidor abra un plazo nuevo. Es el mismo mensaje que ya se reenviaba: 0 mensajes agregados. Si el pedido ya no está en el flujo, deriva con aviso y botón.
+- **`aproximado`** llega al aviso como «comprobante: datos casi coinciden, revisar» (nuevo resultado `aproximado` en `avisos.js`); al cliente se le dice lo mismo que con `valido`.
+- **Para el ensayo (B2) hay que verificar, con una ejecución real:** (1) que `ruta` NO sea null en el cierre `venta_…` y que `verComprobante` muestre la imagen (el `Content-Type` del binario que baja Meta debe coincidir con la firma de los bytes, o `guardarComprobante` responde 415); (2) que `$('Guardar comprobante').first()` funcione desde «Interpretar lectura» (nodo en otra rama, ya ejecutado). Las suites usan un doble que devuelve 415 si el tipo declarado no coincide con la firma de los bytes (`guardadoSegunFirma`), pero no prueban n8n real.
 
 ## Lo que falta para publicar (pendientes de la persona)
 

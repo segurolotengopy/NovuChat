@@ -482,7 +482,8 @@ const CB_FRASE_DEL_MOTIVO = {
 // `respCotejo` = la respuesta completa de `Cotejar en el servidor` (`/cotejarComprobanteVenta`). Devuelve
 //   {resultado, diferencias, importe, cierreId, causa}
 // con `resultado` en el vocabulario que ya entiende el resto del flujo:
-//   valido | aproximado        -> cuadra       (los datos coinciden; el local confirma en su banco)
+//   valido                     -> cuadra       (los datos coinciden; el local confirma en su banco)
+//   aproximado                 -> aproximado   (al cliente, el mismo texto; al local, «datos casi coinciden, revisar»)
 //   reintentar, no se lee      -> ilegible     (se pide uno más nítido)
 //   reintentar, otro motivo    -> reintentar   (se dice la diferencia y se pide el correcto)
 //   tardio | en_revision       -> sin_cotejo   con `causa` (aviso al local + botón)
@@ -513,7 +514,8 @@ function cbResultadoVenta(respCotejo) {
   // valido, aproximado, tardio, en_revision: el aviso al local sale UNA vez (lo dice el servidor); el mismo comprobante otra vez, o un estado que
   // el servidor ya avisó, no manda un segundo aviso.
   if (cuerpo.repetido === true || cuerpo.avisarComercio !== true) { salida.resultado = 'ya_cotejado'; return salida; }
-  if (estado === 'valido' || estado === 'aproximado') { salida.resultado = 'cuadra'; return salida; }
+  if (estado === 'valido') { salida.resultado = 'cuadra'; return salida; }
+  if (estado === 'aproximado') { salida.resultado = 'aproximado'; return salida; }
   salida.resultado = 'sin_cotejo';
   salida.causa = estado;
   return salida;
@@ -527,6 +529,7 @@ function cbResultadoVenta(respCotejo) {
 // (`ya_cotejado`). Sin resultado de cotejo (`sin_qr` o vacío) es el plan B.
 function cbEstadoParaAviso(resultado) {
   if (resultado === 'cuadra') return 'comprobante: datos coinciden';
+  if (resultado === 'aproximado') return 'comprobante: datos casi coinciden, revisar';
   if (resultado === 'no_cuadra') return 'comprobante: NO coinciden';
   if (resultado === 'ilegible') return 'comprobante ilegible';
   if (resultado === 'sin_cotejo') return 'comprobante sin cotejar';
@@ -572,7 +575,6 @@ function cbDiferencia(diferencias, moneda) {
 //   codigo      el código corto del pedido;
 //   avisoSalio  true SOLO si Meta devolvió un `wamid` para al menos un aviso;
 //   diferencia  la diferencia (texto o lista) que dio el servidor;
-//   ilegibles   cuántos comprobantes ilegibles lleva el pedido, contando este;
 //   entrega     'delivery' o 'recojo' (para `sin_qr`);
 //   moneda      la moneda del negocio («Bs») para decir los montos de una diferencia;
 //   causa       con `sin_cotejo`: 'tardio' (llegó pasados los 15 minutos) o 'en_revision' (varios intentos); otro valor = el texto general.
@@ -582,6 +584,7 @@ function cbDiferencia(diferencias, moneda) {
 // «pago» a un comprobante que no es el banco (prohibición 3): se agradece el COMPROBANTE («Gracias por enviar tu comprobante»), nunca «gracias por tu pago».
 // Voz 05/10: el restaurante habla en «nosotros / nuestro equipo»; nada de «ellos», «escríbeles» ni «con los datos que leí».
 function cbTextoAlCliente(resultado, opciones) {
+  if (resultado === 'aproximado') resultado = 'cuadra'; // al cliente se le dice lo mismo; la diferencia es del aviso al local
   const o = cbEsObjeto(opciones) ? opciones : {};
   const cod = cbCodigo(o.codigo);
   const pedido = cod ? 'tu pedido #' + cod : 'tu pedido';
@@ -615,18 +618,10 @@ function cbTextoAlCliente(resultado, opciones) {
     };
   }
   if (resultado === 'ilegible') {
-    const n = Number(o.ilegibles);
-    if (!(n >= 2)) {
-      return {
-        cuerpo: 'Gracias por enviarlo. No pude leer bien tu comprobante: ¿me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?',
-        enlace: false, aviso: false,
-      };
-    }
+    // Un comprobante que no se lee NUNCA avisa al local ni dice «ya lo pasé»: solo pide otro. Quién lo deriva a una persona es el servidor (`en_revision`, al tercer inválido).
     return {
-      cuerpo: salio
-        ? 'Gracias por enviarlo de nuevo. Como no se lee bien, ya lo pasé a nuestro equipo para que revise ' + pedido + ' directamente; guárdalo por si te lo pedimos. Si quieres escribirnos, toca el botón.'
-        : 'Gracias por enviarlo de nuevo. Como no se lee bien, ' + sinAviso.charAt(0).toLowerCase() + sinAviso.slice(1) + ' ' + guardar,
-      enlace: true, aviso: true,
+      cuerpo: 'Gracias por enviarlo. No pude leer bien tu comprobante: ¿me lo envías de nuevo, más nítido o en PDF desde la app de tu banco?',
+      enlace: false, aviso: false,
     };
   }
   if (resultado === 'reintentar') {

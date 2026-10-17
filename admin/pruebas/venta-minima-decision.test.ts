@@ -985,17 +985,20 @@ describe('Plan del turno: el comprobante', () => {
     expect(p['pedido']).toBeNull();
   });
 
-  it('ilegible: la primera vez se pide de nuevo (sin aviso, sigue esperando); la segunda se avisa', () => {
+  it('ilegible: NUNCA avisa por su cuenta (ni la primera, ni la segunda, ni la décima): pide otro y sigue esperando; solo `en_revision` del servidor avisa', () => {
     const m = enEspera();
-    const a = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejo('ilegible') }));
-    expect(a.p!['aviso']).toBeNull();
-    expect(a.p!['mensajes'][0]['cuerpo']).toContain('no pude leerlo bien');
-    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
-    expect(estadoDe(m)['ilegibles']).toBe(1);
-    expect(estadoDe(m)['pedido']).not.toBeNull();
-    const b = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejo('ilegible') }));
-    expect(b.p!['aviso']['datos']).toMatchObject({ resultado: 'ilegible', estado: 'comprobante ilegible' });
-    expect(b.p!['condicionados']['siSalio'][0]['cuerpo']).toContain('Ya lo pasé a nuestro equipo');
+    for (let i = 0; i < 4; i++) {
+      const a = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: cotejoIlegible() }));
+      expect(a.p!['aviso'], `intento ${i + 1}`).toBeNull();
+      expect(a.p!['condicionados'], `intento ${i + 1}`).toBeNull();
+      expect(a.p!['mensajes'][0]['cuerpo']).toContain('no pude leerlo bien');
+      expect(a.p!['mensajes'][0]['cuerpo']).not.toMatch(/ya (lo |la )?pas[eé]/i);
+      expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+      expect(estadoDe(m)['pedido']).not.toBeNull();
+    }
+    // El servidor decide: al tercer inválido contesta `en_revision` y ESE turno avisa (uno solo).
+    const b = registrar(turno(m, { tipo: 'image', esComprobante: true, cotejo: { statusCode: 200, body: { ...RESPUESTA_VALIDA, estado: 'en_revision', motivo: 'ilegible', cierreId: null, avisarComercio: true } } }));
+    expect(b.p!['aviso']['datos']).toMatchObject({ resultado: 'sin_cotejo', estado: 'comprobante sin cotejar' });
     expect(estadoDe(m)['paso']).toBe('menu');
   });
 
@@ -1006,13 +1009,13 @@ describe('Plan del turno: el comprobante', () => {
     const n = enEspera();
     const q = turno(n, { tipo: 'image', esComprobante: true }).p!; // ni lectura ni cotejo corrieron
     expect(q['aviso']['datos']['resultado']).toBe('sin_cotejo');
-    // Una lectura ilegible sin cotejo es «ilegible»: la primera vez se pide de nuevo, la segunda se avisa.
+    // Una lectura ilegible sin cotejo es «ilegible»: se pide de nuevo, sin aviso (no hay servidor que cuente intentos ni derive).
     const l = enEspera();
-    const r = turno(l, { tipo: 'image', esComprobante: true, lectura: { legible: false } }).p!;
-    expect(r['aviso']).toBeNull();
-    expect(r['mensajes'][0]['cuerpo']).toContain('no pude leerlo bien');
-    const r2 = turno(l, { tipo: 'image', esComprobante: true, lectura: { legible: false } }).p!;
-    expect(r2['aviso']['datos']['resultado']).toBe('ilegible');
+    for (let i = 0; i < 3; i++) {
+      const r = turno(l, { tipo: 'image', esComprobante: true, lectura: { legible: false } }).p!;
+      expect(r['aviso']).toBeNull();
+      expect(r['mensajes'][0]['cuerpo']).toContain('no pude leerlo bien');
+    }
   });
 
   it('`ya_resuelto` (ya cotejado): «Ya tengo el comprobante», sin aviso nuevo; y cualquier 409 es «sin cotejar», nunca «ya cotejado»', () => {

@@ -55,8 +55,8 @@
 //     `pdQuitarSinDelivery` devuelve `quitados` como lista de textos o de líneas con `nombre`.
 //  c. `rsValidar` recibe `horario` tal cual viene de la configuración (texto), y su `reserva`
 //     (con el campo inválido vacío) es lo que se guarda en el estado.
-//  d. `cbTextoAlCliente` devuelve {cuerpo, enlace, aviso}; se pasa `ilegibles` contando el
-//     comprobante de este turno, y `diferencia` como la lista de diferencias del servidor.
+//  d. `cbTextoAlCliente` devuelve {cuerpo, enlace, aviso}; se pasa `diferencia` como la lista de diferencias del servidor
+//     (un ilegible o un reintentar NUNCA avisa: la derivación la decide el servidor con `en_revision`).
 //     `cbResultadoVenta(resp)` traduce la respuesta de `/cotejarComprobanteVenta` (regla 2) con listas
 //     cerradas: todo 409, 4xx, 5xx, timeout o estado desconocido es `sin_cotejo`, y el mismo comprobante
 //     otra vez (`repetido`) o un estado que el servidor ya avisó es `ya_cotejado` (sin segundo aviso).
@@ -1318,6 +1318,12 @@ function confirmarPedido() {
 // =============================================================================================
 // COMPROBANTE
 // =============================================================================================
+// Regla 2 con el plazo de 15 minutos vencido (el servidor dice `vencidoHaceMin`, sin cobro pendiente): el QR de este pedido ya no vale.
+function cobroVencidoRegla2() {
+  const c = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
+  return c.regla === 2 && c.pendiente !== true && typeof c.vencidoHaceMin === 'number' && c.vencidoHaceMin >= 0 && c.activo === true && c.modo !== 'simulado';
+}
+
 function aRecordatorio() {
   const ped = en.pedido;
   if (!ped) return derivar('esperando comprobante sin pedido en el flujo');
@@ -1341,8 +1347,13 @@ function aRecordatorio() {
     : (textoSuelto
       ? 'Tu pedido #' + ped.codigo + ' sigue pendiente: falta que me envíes la foto o el PDF del comprobante del QR. Si ya no lo quieres, toca «Cancelar pedido».'
       : 'Sigo esperando el comprobante de tu pedido #' + ped.codigo + ': envíame aquí la foto o el PDF. Si necesitas el QR otra vez, toca «Reenviar QR».');
+  // Con el plazo de 15 minutos vencido NO se dice «sigo esperando»: se dice la verdad (el QR venció) y lo que sí se cumple: un comprobante que llegue se
+  // pasa a nuestro equipo, y «Reenviar QR» manda un QR nuevo con plazo nuevo.
+  const vencido = !sim && cobroVencidoRegla2();
   mensajes = [{ tipo: 'botones',
-    cuerpo: cuerpo,
+    cuerpo: vencido
+      ? 'El plazo del QR de tu pedido #' + ped.codigo + ' ya venció. Si ya pagaste, envíame aquí la foto o el PDF del comprobante y lo pasamos a nuestro equipo. Si necesitas un QR nuevo, toca «Reenviar QR».'
+      : cuerpo,
     botones: [
       { id: vmIdDeBoton('q', 'reenviar'), title: 'Reenviar QR' },
       { id: vmIdDeBoton('q', 'cancelar'), title: 'Cancelar pedido' },
@@ -1364,8 +1375,11 @@ function aReenviarQr() {
   const pie = ped && cbHayQr(cobro) ? cbCaption(ped, { titular: simulado ? '' : cobro.titular, moneda: monedaTxt, delivery: ped.modalidad === 'delivery', simulado: simulado }) : '';
   if (!pie) return derivar('no se pudo reenviar el QR');
   // Lleva el monto y la referencia del pedido para que `Armar mensajes` compruebe el total, pero NO el evento
-  // `qr_enviado`: el servidor ya abrió ese cobro y reenviar la imagen no lo reabre.
+  // `qr_enviado`: el servidor ya abrió ese cobro y reenviar la imagen no lo reabre (salvo el plazo vencido, abajo).
   mensajes = [{ tipo: 'imagen', cuerpo: pie, url: cobro.qrUrl, monto: ped.total, referencia: ped.pedidoId }];
+  // Con el plazo de regla 2 vencido, el reenvío es un QR NUEVO: lleva el evento `qr_enviado` (y `Armar mensajes` le suma `reglaCobro: 2`) y el servidor abre un plazo nuevo.
+  // Es el mismo mensaje que ya se reenvía: no suma ninguno.
+  if (!simulado && cobroVencidoRegla2()) mensajes[0].evento = 'qr_enviado';
 }
 
 // El pedido al que apunta la referencia del servidor (`cobro.pedidoRef`), o el del estado si no hay referencia. La referencia se busca SOLO entre los pedidos
@@ -1446,8 +1460,7 @@ function aComprobante() {
     const lectura = vmPrimero('Interpretar lectura');
     if (lectura && lectura.legible === false) resultado = 'ilegible';
   }
-  const ilegibles = resultado === 'ilegible' ? en.ilegibles + 1 : en.ilegibles;
-  const base = { codigo: ped.codigo, causa: causa, diferencia: diferencias, ilegibles: ilegibles, entrega: ped.modalidad, moneda: monedaTxt, resumen: cbResumenCorto(ped.lineas, ped.modalidad, { real: ped.simulado !== true }) };
+  const base = { codigo: ped.codigo, causa: causa, diferencia: diferencias, entrega: ped.modalidad, moneda: monedaTxt, resumen: cbResumenCorto(ped.lineas, ped.modalidad, { real: ped.simulado !== true }) };
   const conAviso = cbTextoAlCliente(resultado, Object.assign({ avisoSalio: true }, base));
   ruta = 'comprobante:' + resultado;
 
@@ -1455,7 +1468,6 @@ function aComprobante() {
     // Primer comprobante ilegible o con una diferencia que el servidor deja corregir (se pide de nuevo) o uno ya cotejado: sin aviso.
     mensajes = [mensajeDeCb(conAviso)];
     if (resultado === 'ilegible' || resultado === 'reintentar') {
-      en.ilegibles = ilegibles;
       en.pedido = en.pedido || ped;
       en.paso = 'esperando_comprobante';
     } else {

@@ -672,15 +672,20 @@ describe('comprobante: cuadra, no cuadra e ilegible, de punta a punta', () => {
     }
   });
 
-  it('ilegible: la primera vez se pide de nuevo sin avisar; la segunda se avisa', () => {
+  it('ilegible: ni la primera ni la segunda avisan (el servidor cuenta 1 y 2 intentos); el aviso sale UNA vez, con `en_revision`', () => {
     const { m } = pagando();
-    const a = comprobante(m, cotejoIlegible());
+    turno(m, { from: AV1, texto: 'hola' });
+    const a = comprobante(m, cotejoIlegible({ intentos: 1, intentosRestantes: 2 }));
     expect(a.armados).toEqual([]);
     expect(cuerpos(a).join('\n')).toContain('No pude leer bien tu comprobante');
     expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
-    const b = comprobante(m, cotejoIlegible());
-    expect(b.armados.length).toBeGreaterThan(0);
-    expect(params(plantillas(b)[0]!)[3]).toBe('comprobante ilegible');
+    const b = comprobante(m, cotejoIlegible({ intentos: 2, intentosRestantes: 1 }));
+    expect(b.armados).toEqual([]);
+    expect(cuerpos(b).join('\n')).not.toMatch(/ya lo pas[ée]/i);
+    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
+    const c = comprobante(m, cotejoEnRevision({ motivo: 'ilegible' }));
+    expect(c.armados.filter((x) => x['para'] === AV1 && x['clase'] === 'plantilla')).toHaveLength(1);
+    expect(params(plantillas(c)[0]!)[3]).toBe('comprobante sin cotejar');
     expect(estadoDe(m)['paso']).toBe('menu');
   });
 

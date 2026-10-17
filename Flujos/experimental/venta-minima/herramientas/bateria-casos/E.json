@@ -58,7 +58,7 @@
             "textos": ["No pude leer bien tu comprobante", "n[ií]tido", "PDF"],
             "titulosNo": ["Escribir al local"],
             "ruta": "^comprobante:ilegible",
-            "estado": {"paso": "esperando_comprobante", "ilegibles": 1},
+            "estado": {"paso": "esperando_comprobante"},
             "efectos": {"aviso": false, "derivacion": false, "qr": false}
           }
         }
