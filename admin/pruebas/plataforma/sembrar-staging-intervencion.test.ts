@@ -226,6 +226,8 @@ describe('siembra y limpieza', () => {
       expect(ms.size).toBeGreaterThanOrEqual(4);
       expect(ms.size).toBeLessThanOrEqual(6);
       for (const m of ms.docs) expect(m.get(S.CAMPO_MARCA)).toBe(S.MARCA);
+      expect(d.get('canal')).toBe('whatsapp');
+      for (const m of ms.docs) expect(m.get('tipo')).toBe('text');
     }
     // Todo documento del comercio lleva la marca (es lo que `--limpiar` usa).
     for (const ruta of await rutasDe(S.TENANT_ID)) {
@@ -244,6 +246,8 @@ describe('siembra y limpieza', () => {
     expect(texto).not.toContain(u?.password as string);
     expect(texto).not.toMatch(/591000000\d{2}/);
     expect(texto).toMatch(/CONTRASENA/);
+    expect(texto).toMatch(/Admin SDK/);
+    expect(texto).toMatch(/NO sirve/);                 // el enlace por correo no sirve con @ejemplo.com
   });
 
   it('es idempotente: dos --aplicar dejan los mismos documentos y UN solo usuario', async () => {
@@ -295,6 +299,56 @@ describe('siembra y limpieza', () => {
     await correr(auth, { limpiar: true, aplicar: true });
     expect(await rutasDe(S.TENANT_ID)).toEqual([]);
     expect(auth.usuarios.size).toBe(1);
+  });
+
+  it('siembra interrumpida (ficha borrada, subcolecciones vivas): --limpiar --aplicar las deja en cero', async () => {
+    const auth = authEnMemoria();
+    await sembrarAjeno();
+    const ajenoAntes = await rutasDe(AJENO);
+    await correr(auth, { aplicar: true });
+    await db.doc(`tenants/${S.TENANT_ID}`).delete();               // la interrupcion
+    expect((await rutasDe(S.TENANT_ID)).length).toBeGreaterThan(5);  // quedan huerfanos
+    const seco = await correr(auth, { limpiar: true });
+    expect(seco.texto).toMatch(/interrumpida/);
+    expect((await rutasDe(S.TENANT_ID)).length).toBeGreaterThan(5);  // el seco no borra
+    expect((await correr(auth, { limpiar: true, aplicar: true })).codigo).toBe(0);
+    expect(await rutasDe(S.TENANT_ID)).toEqual([]);
+    expect(await rutasDe(AJENO)).toEqual(ajenoAntes);
+    expect(auth.usuarios.size).toBe(0); // la membresia marcada demuestra que la sembro este script
+  });
+
+  it('siembra interrumpida: --aplicar recoge los huerfanos y deja el mismo resultado que una siembra limpia', async () => {
+    const auth = authEnMemoria();
+    await correr(auth, { aplicar: true });
+    const limpia = await rutasDe(S.TENANT_ID);
+    await db.doc(`tenants/${S.TENANT_ID}`).delete();
+    await db.doc(`tenants/${S.TENANT_ID}/conversaciones/wa_59100000077`).set({ [S.CAMPO_MARCA]: S.MARCA, telefono: '59100000077' });
+    const { codigo, texto } = await correr(auth, { aplicar: true });
+    expect(codigo).toBe(0);
+    expect(texto).toMatch(/interrumpida/);
+    expect(await rutasDe(S.TENANT_ID)).toEqual(limpia);
+    expect(auth.usuarios.size).toBe(1);
+  });
+
+  it('re-siembra con la cuenta de Auth borrada a mano: no queda un miembros/<uid viejo> huerfano', async () => {
+    const auth = authEnMemoria();
+    await correr(auth, { aplicar: true });
+    const viejo = [...auth.usuarios.keys()][0] as string;
+    auth.usuarios.delete(viejo);
+    await correr(auth, { aplicar: true });
+    const miembros = await db.collection(`tenants/${S.TENANT_ID}/miembros`).get();
+    expect(miembros.size).toBe(1);
+    expect(miembros.docs[0]?.id).not.toBe(viejo);
+    expect(miembros.docs[0]?.id).toBe([...auth.usuarios.keys()][0]);
+  });
+
+  it('--limpiar no borra una cuenta del correo fijo sin claims ni membresia marcada: solo avisa', async () => {
+    const auth = authEnMemoria();
+    await auth.createUser({ email: S.CORREO_ADMIN, password: 'x', emailVerified: true });
+    const { codigo, texto } = await correr(auth, { limpiar: true, aplicar: true });
+    expect(codigo).toBe(0);
+    expect(auth.usuarios.size).toBe(1);
+    expect(texto).toMatch(/NO se toca/);
   });
 
   it('si el id ya existe y NO lo sembro este script: salida 1 y no se toca nada (ni sembrando ni limpiando)', async () => {

@@ -178,20 +178,26 @@ export async function ejecutar(cfg, deps) {
     di(`  x El id ${TENANT_ID} ya existe y NO lo sembro este script: no se toca.\n`);
     return 1;
   }
+  // Una siembra o una limpieza interrumpida puede dejar subcolecciones SIN ficha (huerfanas). El id es fijo
+  // (`prueba-intervencion`) y sin ficha no hay un comercio vivo que proteger: se recogen igual.
+  const subcolecciones = await refTenant.listCollections();
   const usuario = await auth.getUserByEmail(CORREO_ADMIN).catch(() => null);
 
-  if (cfg.limpiar) return limpiar(cfg, { ...deps, di, refTenant, ficha, usuario });
-  return sembrar(cfg, { ...deps, di, refTenant, ficha, usuario, ahoraMs });
+  if (cfg.limpiar) return limpiar(cfg, { ...deps, di, refTenant, ficha, usuario, subcolecciones });
+  return sembrar(cfg, { ...deps, di, refTenant, ficha, usuario, ahoraMs, subcolecciones });
 }
 
-async function sembrar(cfg, { db, auth, Timestamp, di, refTenant, ficha, usuario, ahoraMs }) {
+async function sembrar(cfg, { db, auth, Timestamp, di, refTenant, ficha, usuario, ahoraMs, subcolecciones }) {
   const convs = conversacionesDeSiembra(ahoraMs);
   const ts = (ms) => Timestamp.fromMillis(ms);
   const ahora = ts(ahoraMs);
   const nMensajes = convs.reduce((n, c) => n + c.mensajes.length, 0);
   const escrituras = 8 + convs.length + nMensajes;
 
-  di(ficha.exists ? '  El comercio ya esta sembrado: se REESCRIBE con horas nuevas (sin duplicar).' : '  El comercio no existe: se crea.');
+  const huerfanas = !ficha.exists && subcolecciones.length > 0;
+  di(ficha.exists ? '  El comercio ya esta sembrado: se REESCRIBE con horas nuevas (sin duplicar).'
+    : huerfanas ? '  El comercio no tiene ficha pero quedan datos de una siembra interrumpida: se limpian y se crea de nuevo.'
+      : '  El comercio no existe: se crea.');
   di(`  Plan      : ${PLAN} · bandera consolaConversaciones: nueva · flujo ${FLUJO}`);
   di(`  Admin     : ${CORREO_ADMIN} (${usuario ? 'la cuenta ya existe: no se toca su clave' : 'se crea'})`);
   for (const c of convs) {
@@ -215,8 +221,10 @@ async function sembrar(cfg, { db, auth, Timestamp, di, refTenant, ficha, usuario
     di('  ok cuenta creada');
   }
 
-  // 2. Una re-siembra parte de cero en las conversaciones, para que las horas queden coherentes.
-  if (ficha.exists) await db.recursiveDelete(refTenant.collection('conversaciones'));
+  // 2. Una re-siembra parte de cero en las conversaciones (las horas quedan coherentes) y en las membresias (una
+  //    cuenta de Auth borrada a mano dejaria un `miembros/<uid viejo>` huerfano). Siempre, haya ficha o no.
+  await db.recursiveDelete(refTenant.collection('conversaciones'));
+  await db.recursiveDelete(refTenant.collection('miembros'));
 
   // 3. Todo en un lote: ficha, cuenta, contador, negocio, flujo, membresia, auditoria y conversaciones.
   const cuenta = { plan: PLAN, limites: limitesDe(PLAN, TARIFA_DE_ALTA), catalogoPlanes: CATALOGO_PLANES, tarifa: TARIFA_DE_ALTA };
@@ -245,14 +253,14 @@ async function sembrar(cfg, { db, auth, Timestamp, di, refTenant, ficha, usuario
   for (const c of convs) {
     const ref = db.doc(`tenants/${TENANT_ID}/conversaciones/wa_${c.telefono}`);
     lote.set(ref, marcado({
-      telefono: c.telefono, nombreContacto: c.nombre, ultimoMensaje: c.ultimoTexto, ultimoEn: ts(c.ultimoEn),
+      telefono: c.telefono, canal: 'whatsapp', nombreContacto: c.nombre, ultimoMensaje: c.ultimoTexto, ultimoEn: ts(c.ultimoEn),
       telefonoTrozos: trozosDeTelefono(c.telefono), nombrePalabras: palabrasDe(c.nombre, 6),
       ultimoEntranteEn: ts(c.entranteEn), ventanaVenceEn: ts(c.ventanaVenceEn),
       noLeidos: c.noLeidos, sinLeer: c.noLeidos > 0, atencionEstado: 'normal',
     }));
     c.mensajes.forEach((x, i) => {
       lote.set(ref.collection('mensajes').doc(`m${i}`), marcado(sin({
-        direccion: x.direccion, texto: x.texto, ts: ts(ahoraMs - x.minutosAtras * MIN),
+        direccion: x.direccion, tipo: 'text', texto: x.texto, ts: ts(ahoraMs - x.minutosAtras * MIN),
         tenantId: TENANT_ID, palabras: palabrasDe(x.texto),
       })));
     });
@@ -267,35 +275,32 @@ async function sembrar(cfg, { db, auth, Timestamp, di, refTenant, ficha, usuario
   di('  ok rol de administrador');
 
   di('\n  CONTRASENA: este script no fija ninguna ni la muestra. La cuenta nacio con una clave aleatoria');
-  di('  descartada; la contrasena se fija por otro camino autorizado (enlace de restablecimiento que');
-  di('  genera y entrega una persona). Hasta entonces nadie puede entrar con ella.\n');
+  di('  descartada y nadie puede entrar con ella. El correo @ejemplo.com no recibe mensajes: un enlace de');
+  di('  restablecimiento por correo NO sirve. El acceso lo genera, con el Admin SDK y sin imprimir ningun');
+  di('  valor, OTRA accion que Andres autorice por separado.\n');
   di('  Para borrar todo lo sembrado: --limpiar --aplicar.\n');
   return 0;
 }
 
-async function limpiar(cfg, { db, auth, di, refTenant, ficha, usuario }) {
-  // Solo se borra la cuenta de Auth que es la membresia de ESTE tenant y no tiene rol en otro.
-  const soloDeEste = (u) => {
-    const t = u?.customClaims?.nc?.t ?? {};
-    return Object.keys(t).every((k) => k === TENANT_ID);
-  };
-  let miembro = false;
-  if (usuario && ficha.exists) miembro = (await db.doc(`tenants/${TENANT_ID}/miembros/${usuario.uid}`).get()).get(CAMPO_MARCA) === MARCA;
-  // Una cuenta sin ficha (siembra a medias) tambien se recoge, si su unico rol es el de este tenant.
-  const borrarUsuario = Boolean(usuario) && soloDeEste(usuario) && (miembro || !ficha.exists);
+async function limpiar(cfg, { db, auth, di, refTenant, ficha, usuario, subcolecciones }) {
+  // La cuenta de Auth se borra SOLO si se puede demostrar que la sembro este script: su membresia en este
+  // tenant lleva la marca, y no tiene rol en ningun otro comercio. Sin esa prueba, se avisa y no se toca.
+  const soloDeEste = (u) => Object.keys(u?.customClaims?.nc?.t ?? {}).every((k) => k === TENANT_ID);
+  let sembrada = false;
+  if (usuario) sembrada = (await db.doc(`tenants/${TENANT_ID}/miembros/${usuario.uid}`).get()).get(CAMPO_MARCA) === MARCA;
+  const borrarUsuario = Boolean(usuario) && sembrada && soloDeEste(usuario);
+  const hayArbol = ficha.exists || subcolecciones.length > 0;
 
-  di(`  Comercio  : ${ficha.exists ? 'se borra su arbol completo (solo este tenant)' : 'no existe: nada que borrar'}`);
-  di(`  Admin     : ${!usuario ? 'no existe' : borrarUsuario ? 'se borra la cuenta' : 'existe, pero no es de la siembra o tiene rol en otro comercio: NO se toca'}\n`);
+  di(`  Comercio  : ${hayArbol ? `se borra su arbol (solo este tenant${ficha.exists ? '' : '; sin ficha: restos de una siembra interrumpida'})` : 'no existe: nada que borrar'}`);
+  di(`  Admin     : ${!usuario ? 'no existe' : borrarUsuario ? 'se borra la cuenta' : 'existe, pero no se puede demostrar que la sembro este script o tiene rol en otro comercio: NO se toca'}\n`);
   if (!cfg.aplicar) {
     di('  Seco: no se borro nada. Agregue --aplicar.\n');
     return 0;
   }
-  if (ficha.exists) {
-    // La ficha primero: corta el acceso de una sesion viva; despues el resto del arbol.
-    await refTenant.delete();
-    await db.recursiveDelete(refTenant);
-    di('  ok comercio borrado');
-  }
+  // La FICHA AL FINAL: si se interrumpe, la ficha (con su marca) queda y la proxima corrida sigue limpiando.
+  for (const col of subcolecciones) await db.recursiveDelete(col);
+  if (ficha.exists) await refTenant.delete();
+  if (hayArbol) di('  ok comercio borrado');
   if (borrarUsuario) {
     await auth.deleteUser(usuario.uid);
     di('  ok cuenta de Auth borrada');
