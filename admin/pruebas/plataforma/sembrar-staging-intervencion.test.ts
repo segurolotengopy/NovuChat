@@ -44,17 +44,23 @@ function authEnMemoria() {
   let n = 0;
   return {
     usuarios,
+    errorDeBusqueda: null as string | null,
     async getUserByEmail(email: string) {
+      if (this.errorDeBusqueda) throw Object.assign(new Error('x'), { code: this.errorDeBusqueda });
       const u = [...usuarios.values()].find((x) => x.email === email);
       if (!u) throw Object.assign(new Error('no hay'), { code: 'auth/user-not-found' });
       return structuredClone(u);
     },
-    async createUser(p: { email: string; password: string; emailVerified: boolean }) {
-      const u: Usuario = { uid: `uid-${++n}`, email: p.email, emailVerified: p.emailVerified, password: p.password };
+    async createUser(p: { uid?: string; email: string; password: string; emailVerified: boolean }) {
+      const u: Usuario = { uid: p.uid ?? `uid-${++n}`, email: p.email, emailVerified: p.emailVerified, password: p.password };
       usuarios.set(u.uid, u);
       return structuredClone(u);
     },
-    async setCustomUserClaims(uid: string, c: Record<string, unknown>) { (usuarios.get(uid) as Usuario).customClaims = c; },
+    fallaClaims: false,
+    async setCustomUserClaims(uid: string, c: Record<string, unknown>) {
+      if (this.fallaClaims) throw new Error('interrumpido');
+      (usuarios.get(uid) as Usuario).customClaims = c;
+    },
     async deleteUser(uid: string) { usuarios.delete(uid); },
   };
 }
@@ -330,16 +336,14 @@ describe('siembra y limpieza', () => {
     expect(auth.usuarios.size).toBe(1);
   });
 
-  it('re-siembra con la cuenta de Auth borrada a mano: no queda un miembros/<uid viejo> huerfano', async () => {
+  it('re-siembra con la cuenta de Auth borrada a mano o con membresias viejas: no queda un miembros/<uid viejo>', async () => {
     const auth = authEnMemoria();
     await correr(auth, { aplicar: true });
-    const viejo = [...auth.usuarios.keys()][0] as string;
-    auth.usuarios.delete(viejo);
+    await db.doc(`tenants/${S.TENANT_ID}/miembros/uid-viejo`).set({ [S.CAMPO_MARCA]: S.MARCA, rol: 'admin' });
+    auth.usuarios.clear();
     await correr(auth, { aplicar: true });
     const miembros = await db.collection(`tenants/${S.TENANT_ID}/miembros`).get();
-    expect(miembros.size).toBe(1);
-    expect(miembros.docs[0]?.id).not.toBe(viejo);
-    expect(miembros.docs[0]?.id).toBe([...auth.usuarios.keys()][0]);
+    expect(miembros.docs.map((d) => d.id)).toEqual([[...auth.usuarios.keys()][0]]);
   });
 
   it('--limpiar no borra una cuenta del correo fijo sin claims ni membresia marcada: solo avisa', async () => {
@@ -349,6 +353,60 @@ describe('siembra y limpieza', () => {
     expect(codigo).toBe(0);
     expect(auth.usuarios.size).toBe(1);
     expect(texto).toMatch(/NO se toca/);
+  });
+
+  it('siembra: una cuenta del correo fijo sin membresia marcada se sale con 1, sin claims ni membresia ni escrituras', async () => {
+    const auth = authEnMemoria();
+    const ajena = await auth.createUser({ email: S.CORREO_ADMIN, password: 'x', emailVerified: true });
+    for (const extra of [{}, { aplicar: true }]) {
+      const { codigo, texto } = await correr(auth, extra);
+      expect(codigo).toBe(1);
+      expect(texto).not.toContain(ajena.uid);
+    }
+    expect(auth.usuarios.get(ajena.uid)?.customClaims).toBeUndefined();
+    expect(await rutasDe(S.TENANT_ID)).toEqual([]);
+  });
+
+  it('un error de Auth que no es «usuario no encontrado» termina en error: no dice «se crea» ni omite el borrado', async () => {
+    const auth = authEnMemoria();
+    await correr(auth, { aplicar: true });
+    const antes = await rutasDe(S.TENANT_ID);
+    auth.errorDeBusqueda = 'auth/insufficient-permission';
+    for (const extra of [{}, { aplicar: true }, { limpiar: true }, { limpiar: true, aplicar: true }]) {
+      await expect(correr(auth, extra)).rejects.toMatchObject({ code: 'auth/insufficient-permission' });
+    }
+    expect(await rutasDe(S.TENANT_ID)).toEqual(antes);
+    expect(auth.usuarios.size).toBe(1);
+  });
+
+  it('interrupcion entre pasos al sembrar (cuenta creada, rol sin asignar): repetir --aplicar termina bien con una sola cuenta', async () => {
+    const auth = authEnMemoria();
+    auth.fallaClaims = true;
+    await expect(correr(auth, { aplicar: true })).rejects.toThrow('interrumpido');
+    expect(auth.usuarios.size).toBe(1);
+    auth.fallaClaims = false;
+    expect((await correr(auth, { aplicar: true })).codigo).toBe(0);
+    expect(auth.usuarios.size).toBe(1);
+    const [u] = [...auth.usuarios.values()];
+    expect((u?.customClaims as { nc: { t: object } }).nc.t).toEqual({ [S.TENANT_ID]: 'admin' });
+  });
+
+  it('huerfanos parciales sin ficha en CUALQUIER subcoleccion: --aplicar los borra todos', async () => {
+    const auth = authEnMemoria();
+    await db.doc(`tenants/${S.TENANT_ID}/extra/x`).set({ [S.CAMPO_MARCA]: S.MARCA });
+    await db.doc(`tenants/${S.TENANT_ID}/auditoria/vieja`).set({ [S.CAMPO_MARCA]: S.MARCA });
+    await db.doc(`tenants/${S.TENANT_ID}/miembros/uid-viejo`).set({ [S.CAMPO_MARCA]: S.MARCA });
+    await correr(auth, { aplicar: true });
+    const rutas = await rutasDe(S.TENANT_ID);
+    expect(rutas.some((r) => r.includes('/extra/') || r.endsWith('/auditoria/vieja') || r.endsWith('uid-viejo'))).toBe(false);
+  });
+
+  it('interrupcion al limpiar (cuenta de Auth ya borrada, arbol vivo): repetir --limpiar --aplicar lo termina', async () => {
+    const auth = authEnMemoria();
+    await correr(auth, { aplicar: true });
+    auth.usuarios.clear();
+    expect((await correr(auth, { limpiar: true, aplicar: true })).codigo).toBe(0);
+    expect(await rutasDe(S.TENANT_ID)).toEqual([]);
   });
 
   it('si el id ya existe y NO lo sembro este script: salida 1 y no se toca nada (ni sembrando ni limpiando)', async () => {

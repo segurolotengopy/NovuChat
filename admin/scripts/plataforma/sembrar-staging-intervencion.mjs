@@ -28,9 +28,12 @@
  *     (ficha + cuenta/estado con la copia de limites del catalogo, y auditoria `cambiar_plan`) y la
  *     bandera `consolaConversaciones: 'nueva'` de `aplicar-consola-conversaciones.mjs`.
  *   · UN administrador con correo @ejemplo.com. SIN CONTRASENA: la cuenta nace con una clave aleatoria
- *     que no se imprime ni se guarda; la contrasena se fija por otro camino autorizado (un enlace de
- *     restablecimiento que genera y entrega una persona). El correo se marca verificado (es ficticio y
- *     las reglas lo exigen para cualquier rol de comercio).
+ *     que no se imprime ni se guarda; la contrasena la fija OTRA accion que Andres autorice
+ *     (Admin SDK; el correo @ejemplo.com no recibe mensajes, un enlace por correo no sirve). La cuenta se crea con
+ *     `emailVerified: true` (es ficticia y las reglas exigen el correo verificado para cualquier rol de comercio),
+ *     con uid fijo y su membresia marcada escrita ANTES. Si ya existe una cuenta con ese correo y no se demuestra
+ *     que la sembro este script (membresia marcada), sale con 1 sin tocarla. Un error de Auth distinto de
+ *     `auth/user-not-found` termina con 3.
  *   · Tres conversaciones de 4 a 6 mensajes, con la estructura que lee la consola (`ultimoEntranteEn`,
  *     `ventanaVenceEn`, `telefonoTrozos`, `nombrePalabras`, `noLeidos`, mensajes con `ts`): ventana
  *     ABIERTA (quedan ~23 h), POR VENCER (quedan ~45 min) y VENCIDA (hace 6 h). Las horas se calculan
@@ -46,7 +49,7 @@
  * Auth la primera vez (la re-siembra reescribe lo mismo). 0 mensajes por conversacion. Seco: 1 lectura
  * de Firestore y 1 consulta de Auth.
  *
- * SALIDA: 0 hecho (o seco); 1 conflicto (el id existe y no es de la siembra); 2 salvaguarda o
+ * SALIDA: 0 hecho (o seco); 1 conflicto (el id o la cuenta existen y no son de la siembra); 2 salvaguarda o
  * argumentos (nada abierto ni escrito); 3 error inesperado (solo `e.code ?? e.name`).
  */
 import { randomBytes } from 'node:crypto';
@@ -62,6 +65,8 @@ export const NOMBRE_COMERCIO = 'Comercio de PRUEBA - intervencion (ficticio)';
 export const MARCA = 'sembrar-staging-intervencion';
 export const CAMPO_MARCA = 'sembradoPor';
 export const CORREO_ADMIN = 'admin-prueba-intervencion@ejemplo.com';
+/** uid fijo de la cuenta sembrada: la membresia marcada se escribe ANTES que la cuenta, asi una interrupcion no deja una cuenta sin prueba de origen. */
+export const UID_ADMIN = 'siembra-prueba-intervencion-admin';
 export const PLAN = 'pro';
 export const FLUJO = 'agendamiento';
 
@@ -161,6 +166,25 @@ const sin = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== 
 const marcado = (o) => ({ ...o, [CAMPO_MARCA]: MARCA });
 
 /**
+ * La cuenta de Auth de un correo, o null SOLO si no existe (`auth/user-not-found`). Cualquier otro error (permisos,
+ * red) se propaga: no se puede decir «se crea» ni omitir un borrado si no se pudo mirar.
+ */
+export async function buscarUsuario(auth, correo) {
+  try {
+    return await auth.getUserByEmail(correo);
+  } catch (e) {
+    if (e?.code === 'auth/user-not-found') return null;
+    throw e;
+  }
+}
+
+/** ¿La membresia de esa cuenta en ESTE tenant lleva la marca de la siembra? Es la unica prueba de que la creo este script. */
+async function esSembrada(db, usuario) {
+  if (!usuario) return false;
+  return (await db.doc(`tenants/${TENANT_ID}/miembros/${usuario.uid}`).get()).get(CAMPO_MARCA) === MARCA;
+}
+
+/**
  * El flujo entero, con todo inyectado (en las pruebas, un Firestore del emulador y un Auth en memoria).
  * `deps`: { db, auth, Timestamp, ahoraMs, imprimir(linea) }. Devuelve el codigo de salida.
  */
@@ -181,7 +205,7 @@ export async function ejecutar(cfg, deps) {
   // Una siembra o una limpieza interrumpida puede dejar subcolecciones SIN ficha (huerfanas). El id es fijo
   // (`prueba-intervencion`) y sin ficha no hay un comercio vivo que proteger: se recogen igual.
   const subcolecciones = await refTenant.listCollections();
-  const usuario = await auth.getUserByEmail(CORREO_ADMIN).catch(() => null);
+  const usuario = await buscarUsuario(auth, CORREO_ADMIN);
 
   if (cfg.limpiar) return limpiar(cfg, { ...deps, di, refTenant, ficha, usuario, subcolecciones });
   return sembrar(cfg, { ...deps, di, refTenant, ficha, usuario, ahoraMs, subcolecciones });
@@ -194,6 +218,12 @@ async function sembrar(cfg, { db, auth, Timestamp, di, refTenant, ficha, usuario
   const nMensajes = convs.reduce((n, c) => n + c.mensajes.length, 0);
   const escrituras = 8 + convs.length + nMensajes;
 
+  // Una cuenta con ese correo que NO se demuestra sembrada por este script no se toca: ni claims ni membresia.
+  if (usuario && !(await esSembrada(db, usuario))) {
+    di('  x Ya existe una cuenta con el correo de prueba y no se puede demostrar que la sembro este script');
+    di('    (su membresia en este comercio no lleva la marca). No se asigno rol ni membresia; nada se escribio.\n');
+    return 1;
+  }
   const huerfanas = !ficha.exists && subcolecciones.length > 0;
   di(ficha.exists ? '  El comercio ya esta sembrado: se REESCRIBE con horas nuevas (sin duplicar).'
     : huerfanas ? '  El comercio no tiene ficha pero quedan datos de una siembra interrumpida: se limpian y se crea de nuevo.'
@@ -211,20 +241,11 @@ async function sembrar(cfg, { db, auth, Timestamp, di, refTenant, ficha, usuario
     return 0;
   }
 
-  // 1. La cuenta de Auth. Clave aleatoria que NO se imprime ni se guarda; nadie la conoce.
-  let u = usuario;
-  if (!u) {
-    u = await auth.createUser({
-      email: CORREO_ADMIN, displayName: 'Admin de prueba (ficticio)',
-      password: randomBytes(32).toString('base64url'), emailVerified: true,
-    });
-    di('  ok cuenta creada');
-  }
-
-  // 2. Una re-siembra parte de cero en las conversaciones (las horas quedan coherentes) y en las membresias (una
-  //    cuenta de Auth borrada a mano dejaria un `miembros/<uid viejo>` huerfano). Siempre, haya ficha o no.
-  await db.recursiveDelete(refTenant.collection('conversaciones'));
-  await db.recursiveDelete(refTenant.collection('miembros'));
+  // 1. Lo previo: todas las subcolecciones del tenant (ruta constante) salvo `miembros`, que se poda al final para
+  //    que una interrupcion nunca deje la cuenta sembrada sin su membresia marcada. Asi «se limpian» es verdad
+  //    tambien con restos parciales y sin ficha.
+  for (const col of subcolecciones) if (col.id !== 'miembros') await db.recursiveDelete(col);
+  const uid = usuario?.uid ?? UID_ADMIN;
 
   // 3. Todo en un lote: ficha, cuenta, contador, negocio, flujo, membresia, auditoria y conversaciones.
   const cuenta = { plan: PLAN, limites: limitesDe(PLAN, TARIFA_DE_ALTA), catalogoPlanes: CATALOGO_PLANES, tarifa: TARIFA_DE_ALTA };
@@ -241,7 +262,7 @@ async function sembrar(cfg, { db, auth, Timestamp, di, refTenant, ficha, usuario
   }));
   const documento = documentoDeFlujo(FLUJO);
   if (documento) lote.set(db.doc(`tenants/${TENANT_ID}/config/${documento}`), marcado({ actualizadoPor: MARCA, actualizadoEn: ahora }));
-  lote.set(db.doc(`tenants/${TENANT_ID}/miembros/${u.uid}`), marcado({ correo: CORREO_ADMIN, rol: 'admin', estado: 'activo', desde: ahora }));
+  lote.set(db.doc(`tenants/${TENANT_ID}/miembros/${uid}`), marcado({ correo: CORREO_ADMIN, rol: 'admin', estado: 'activo', desde: ahora }));
   // Ids fijos: la re-siembra pisa, no acumula.
   const aud = (id, datos) => lote.set(db.doc(`tenants/${TENANT_ID}/auditoria/${id}`), marcado({
     uid: MARCA, origen: 'script', script: MARCA, en: ahora, ...datos,
@@ -268,6 +289,18 @@ async function sembrar(cfg, { db, auth, Timestamp, di, refTenant, ficha, usuario
   await lote.commit();
   di('  ok ficha, cuenta, plan, bandera, membresia y conversaciones');
 
+  // 2. La cuenta de Auth (despues de la membresia marcada). Clave aleatoria que NO se imprime ni se guarda.
+  let u = usuario;
+  if (!u) {
+    u = await auth.createUser({
+      uid: UID_ADMIN, email: CORREO_ADMIN, displayName: 'Admin de prueba (ficticio)',
+      password: randomBytes(32).toString('base64url'), emailVerified: true,
+    });
+    di('  ok cuenta creada');
+  }
+  // 3. Se podan las membresias de cualquier otra cuenta (p. ej. una cuenta borrada a mano: `miembros/<uid viejo>`).
+  for (const d of await refTenant.collection('miembros').listDocuments()) if (d.id !== u.uid) await d.delete();
+
   // 4. El rol en el token (la misma forma que `alta-comercio.mjs`: claves de una letra).
   const previos = u.customClaims ?? {};
   const nc = previos.nc ?? {};
@@ -286,8 +319,7 @@ async function limpiar(cfg, { db, auth, di, refTenant, ficha, usuario, subcolecc
   // La cuenta de Auth se borra SOLO si se puede demostrar que la sembro este script: su membresia en este
   // tenant lleva la marca, y no tiene rol en ningun otro comercio. Sin esa prueba, se avisa y no se toca.
   const soloDeEste = (u) => Object.keys(u?.customClaims?.nc?.t ?? {}).every((k) => k === TENANT_ID);
-  let sembrada = false;
-  if (usuario) sembrada = (await db.doc(`tenants/${TENANT_ID}/miembros/${usuario.uid}`).get()).get(CAMPO_MARCA) === MARCA;
+  const sembrada = await esSembrada(db, usuario);
   const borrarUsuario = Boolean(usuario) && sembrada && soloDeEste(usuario);
   const hayArbol = ficha.exists || subcolecciones.length > 0;
 
@@ -297,14 +329,15 @@ async function limpiar(cfg, { db, auth, di, refTenant, ficha, usuario, subcolecc
     di('  Seco: no se borro nada. Agregue --aplicar.\n');
     return 0;
   }
-  // La FICHA AL FINAL: si se interrumpe, la ficha (con su marca) queda y la proxima corrida sigue limpiando.
-  for (const col of subcolecciones) await db.recursiveDelete(col);
-  if (ficha.exists) await refTenant.delete();
-  if (hayArbol) di('  ok comercio borrado');
+  // PRIMERO la cuenta de Auth (mientras su membresia marcada la sigue demostrando sembrada), DESPUES el arbol, y la
+  // FICHA al final: una interrupcion en cualquier punto deja lo bastante para que la proxima corrida termine.
   if (borrarUsuario) {
     await auth.deleteUser(usuario.uid);
     di('  ok cuenta de Auth borrada');
   }
+  for (const col of subcolecciones) await db.recursiveDelete(col);
+  if (ficha.exists) await refTenant.delete();
+  if (hayArbol) di('  ok comercio borrado');
   di('  Hecho.\n');
   return 0;
 }
