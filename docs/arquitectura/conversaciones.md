@@ -101,6 +101,12 @@ Todo en `admin/functions/src/ingesta.ts`, dentro de la transacción que ya exist
   en entrante, saliente y cortado
   (`pruebas/core/ingesta-conversaciones.test.ts`, «lo que NO cambia»).
 
+- **La línea del cliente (H2-3b)**: la ingesta escribe `phoneNumberId` en la conversación, en el mismo
+  `tx.set` de los derivados (cero lecturas y cero escrituras extra). Sale de la ruta autenticada, nunca del
+  cuerpo, y solo si son dígitos de 6 a 25. `enviarComoPersona` sale por esa ruta (del mismo comercio y
+  activa); si no corresponde, rechaza sin enviar. Las conversaciones anteriores no lo tienen y se ven con la
+  regla de antes (exactamente una ruta activa); el campo se completa con el siguiente mensaje del cliente.
+
 **Segundo escritor: el carrito web.** `modulos/catalogo-web/catalogoWeb.ts:1217-1237` (#485) escribe en
 el mensaje `order` los campos `tenantId` y `palabras`, y en la conversación
 `noLeidos`, `sinLeer` y `telefonoTrozos`, pero **no** `ultimoEntranteEn` ni

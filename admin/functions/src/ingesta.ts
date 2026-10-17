@@ -1115,7 +1115,13 @@ export const ingesta = onRequest(
         const previoMs = previo instanceof Timestamp ? previo.toMillis() : undefined;
         const reloj = previoMs !== undefined && previoMs > ahoraMs && previoMs <= ahoraMs + MARGEN_RELOJ_MS
           ? previoMs : ahoraMs;
-        const campos = camposDeConversacionPorMensaje(mensaje, reloj);
+        // H2-3b: la línea por la que entró (de la ruta autenticada, nunca del cuerpo). Va en la
+        // misma escritura: cero lecturas y cero escrituras extra. Solo si es de dígitos 6 a 25
+        // (lo que las reglas aceptan): un id raro no debe tirar abajo la transacción.
+        const campos = {
+          ...camposDeConversacionPorMensaje(mensaje, reloj),
+          ...(/^[0-9]{6,25}$/.test(ruta.phoneNumberId) ? { phoneNumberId: ruta.phoneNumberId } : {}),
+        };
         return mensaje.nombreContacto && !('nombrePalabras' in campos)
           ? { ...campos, nombrePalabras: FieldValue.delete() } : campos;
       };

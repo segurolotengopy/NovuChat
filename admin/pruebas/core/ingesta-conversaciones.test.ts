@@ -464,6 +464,29 @@ describe('duplicados y reintentos: nunca más no leídos que mensajes contados',
 });
 
 // =============================================================================
+describe('H2-3b: la conversación guarda la línea por la que escribió el cliente', () => {
+  it('entrante y saliente dejan `phoneNumberId` = el de la ruta autenticada; el cuerpo no lo pisa y dos comercios no se mezclan', async () => {
+    await entrante(A, '5910000007001', 'hola', { phoneNumberId: B.numero });
+    expect((await conversacion(A, '5910000007001'))['phoneNumberId']).toBe(A.numero);
+    await saliente(A, '5910000007001', 'con gusto', { phoneNumberId: B.numero });
+    expect((await conversacion(A, '5910000007001'))['phoneNumberId']).toBe(A.numero);
+    await entrante(B, '5910000007001', 'hola');
+    expect((await conversacion(B, '5910000007001'))['phoneNumberId']).toBe(B.numero);
+    expect((await conversacion(A, '5910000007001'))['phoneNumberId']).toBe(A.numero);
+  });
+
+  it('en la rama de corte también se guarda, y siguen siendo los mismos tx.set (cero escrituras extra)', async () => {
+    await db.doc('plataforma/prepago').set({ corteActivo: false });
+    await db.doc(`tenants/${A.id}/cuenta/estado`).set({
+      modalidad: 'prepago', plan: 'crecimiento', limites: limitesDe('crecimiento'),
+      periodoPagado: periodoAnterior(periodoAnterior(mesBolivia(Date.now()))), corteActivo: true,
+    });
+    const r = await entrante(A, '5910000007002', 'necesito una mesa');
+    expect(r.cuerpo['servicio']).toMatchObject({ estado: 'cortado' });
+    expect((await conversacion(A, '5910000007002'))['phoneNumberId']).toBe(A.numero);
+  });
+});
+
 describe('la rama de corte también escribe los derivados', () => {
   const VENCIDA = () => ({
     modalidad: 'prepago', plan: 'crecimiento', limites: limitesDe('crecimiento'),

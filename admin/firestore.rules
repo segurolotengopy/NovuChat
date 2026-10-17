@@ -1944,7 +1944,12 @@ service cloud.firestore {
                  // toleran acá como `turno` (para que la ingesta pueda actualizar una conversación
                  // que ya los tiene) y las ramas `create`/`update` de arriba le PROHÍBEN crearlos
                  // o cambiarlos (`affectedKeys`).
-                 , 'turno', 'envioPersona', 'ultimoSalientePersonaEn'])
+                 , 'turno', 'envioPersona', 'ultimoSalientePersonaEn'
+                 // H2-3b (17/10/2026): `phoneNumberId` es la línea por la que escribió el
+                 // cliente. Lo suma la ingesta (SDK Admin) desde la ruta autenticada, nunca
+                 // desde el cuerpo; la persona del negocio no lo escribe (no está en su
+                 // `soloCampos`). `enviarComoPersona` lo usa para elegir por qué línea sale.
+                 , 'phoneNumberId'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
                     // `horarios` es la etapa del bloque 4: el asistente ofreció
@@ -1969,6 +1974,8 @@ service cloud.firestore {
             && d.get('respuestasDelPeriodo', 0) >= 0
             && d.get('canal', '') in ['whatsapp']
             && derivadosValidos(d)
+            && (!d.keys().hasAny(['phoneNumberId'])
+                || (d.phoneNumberId is string && d.phoneNumberId.matches('^[0-9]{6,25}$')))
             && turnoValido(d)
             && (!d.keys().hasAny(['envioPersona'])
                 || (d.envioPersona is map && d.envioPersona.get('n', -1) is int))
