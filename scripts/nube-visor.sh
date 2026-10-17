@@ -3,6 +3,8 @@
 #   vercomprobante          → `verComprobante` (callable; el visor de comprobantes, Cobros)
 #   buscarconversaciones    → `buscarConversaciones` (callable; la búsqueda en conversaciones, Core)
 #   enviarcomopersona       → `enviarComoPersona` (callable; la persona escribe desde la consola, Core, H2-3)
+#   tomarconversacion       → `tomarConversacion` (callable; la persona toma la conversación, Core, H2-1)
+#   devolverconversacion    → `devolverConversacion` (callable; la devuelve al asistente, Core, H2-1)
 #   reclamarsalidapersona   → `reclamarSalidaPersona` (HTTP; la llama el flujo n8n con la credencial de la
 #                              ingesta del número, Core, H2-3)
 #   confirmarsalidapersona  → `confirmarSalidaPersona` (HTTP; ídem)
@@ -76,11 +78,15 @@ readonly SERVICIO_BUSCADOR="buscarconversaciones"
 readonly FUNCION_BUSCADOR="buscarConversaciones"
 readonly SERVICIO_ENVIAR="enviarcomopersona"
 readonly FUNCION_ENVIAR="enviarComoPersona"
+readonly SERVICIO_TOMAR="tomarconversacion"
+readonly FUNCION_TOMAR="tomarConversacion"
+readonly SERVICIO_DEVOLVER="devolverconversacion"
+readonly FUNCION_DEVOLVER="devolverConversacion"
 readonly SERVICIO_RECLAMAR="reclamarsalidapersona"
 readonly FUNCION_RECLAMAR="reclamarSalidaPersona"
 readonly SERVICIO_CONFIRMAR="confirmarsalidapersona"
 readonly FUNCION_CONFIRMAR="confirmarSalidaPersona"
-readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}"
+readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}"
 readonly ROL="roles/run.invoker"
 readonly MIEMBRO="allUsers"
 readonly REPO="segurolotengopy/NovuChat"
@@ -113,6 +119,8 @@ case "$PEDIDO" in
   "$SERVICIO_VISOR")     SERVICIO="$SERVICIO_VISOR";     FUNCION="$FUNCION_VISOR";     TIPO="callable" ;;
   "$SERVICIO_BUSCADOR")  SERVICIO="$SERVICIO_BUSCADOR";  FUNCION="$FUNCION_BUSCADOR";  TIPO="callable" ;;
   "$SERVICIO_ENVIAR")    SERVICIO="$SERVICIO_ENVIAR";    FUNCION="$FUNCION_ENVIAR";    TIPO="callable" ;;
+  "$SERVICIO_TOMAR")     SERVICIO="$SERVICIO_TOMAR";     FUNCION="$FUNCION_TOMAR";     TIPO="callable" ;;
+  "$SERVICIO_DEVOLVER")  SERVICIO="$SERVICIO_DEVOLVER";  FUNCION="$FUNCION_DEVOLVER";  TIPO="callable" ;;
   "$SERVICIO_RECLAMAR")  SERVICIO="$SERVICIO_RECLAMAR";  FUNCION="$FUNCION_RECLAMAR";  TIPO="http" ;;
   "$SERVICIO_CONFIRMAR") SERVICIO="$SERVICIO_CONFIRMAR"; FUNCION="$FUNCION_CONFIRMAR"; TIPO="http" ;;
   "") echo "✗ Falta --servicio ${LISTA_SERVICIOS} (no hay servicio por omisión)" >&2; exit 2 ;;

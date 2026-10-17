@@ -49,11 +49,14 @@ const NUMERO_FALSO = '987654321';
 const VISOR = 'vercomprobante';
 const BUSCADOR = 'buscarconversaciones';
 const ENVIAR = 'enviarcomopersona';
+const TOMAR = 'tomarconversacion';
+const DEVOLVER = 'devolverconversacion';
 const RECLAMAR = 'reclamarsalidapersona';
 const CONFIRMAR = 'confirmarsalidapersona';
 const HTTP = [RECLAMAR, CONFIRMAR] as const;
 const SERVICIOS = [
   [VISOR, 'verComprobante'], [BUSCADOR, 'buscarConversaciones'], [ENVIAR, 'enviarComoPersona'],
+  [TOMAR, 'tomarConversacion'], [DEVOLVER, 'devolverConversacion'],
   [RECLAMAR, 'reclamarSalidaPersona'], [CONFIRMAR, 'confirmarSalidaPersona'],
 ] as const;
 const urlDe = (s: string) => `https://${s}-${NUMERO_FALSO}.us-east1.run.app`;
@@ -224,7 +227,7 @@ describe('nube-visor.sh: uso y salvaguardas (nada se llama a gcloud)', () => {
   it('--help explica los modos y la lista cerrada, y sale 0', () => {
     const r = correr(['--help'], {}, null);
     expect(r.codigo).toBe(0);
-    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, RECLAMAR, CONFIRMAR]) expect(r.salida).toContain(t);
+    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, TOMAR, DEVOLVER, RECLAMAR, CONFIRMAR]) expect(r.salida).toContain(t);
     expect(llamadas()).toEqual([]);
   });
 
@@ -273,7 +276,11 @@ describe('nube-visor.sh: --servicio, lista cerrada', () => {
     ['el nombre de la Function en camelCase (reclamarSalidaPersona)', 'reclamarSalidaPersona', []],
     ['el nombre de la Function en camelCase (confirmarSalidaPersona)', 'confirmarSalidaPersona', []],
     ['ingesta (Function HTTP fuera de la lista)', 'ingesta', []],
-    ['tomarconversacion (callable fuera de la lista)', 'tomarconversacion', []],
+    ['el nombre de la Function en camelCase (tomarConversacion)', 'tomarConversacion', []],
+    ['el nombre de la Function en camelCase (devolverConversacion)', 'devolverConversacion', []],
+    ['un prefijo (tomar)', 'tomarconversac', []],
+    ['un prefijo (devolver)', 'devolver', []],
+    ['buscarconversacion (sin la s final)', 'buscarconversacion', []],
     ['un prefijo de la lista', 'reclamarsalida', []],
     ['una lista con barra', 'enviarcomopersona|reclamarsalidapersona', []],
     ['en mayúsculas', 'VERCOMPROBANTE', []],
@@ -745,9 +752,11 @@ describe('nube-visor.sh: la fuente', () => {
     expect(codigo).not.toMatch(/python3(?! -I )/);
   });
 
-  it('la lista cerrada: cinco servicios con sus constantes, sin variable que agregue otro', () => {
+  it('la lista cerrada: siete servicios con sus constantes, sin variable que agregue otro', () => {
     for (const [c, v] of [
       ['SERVICIO_ENVIAR', 'enviarcomopersona'], ['FUNCION_ENVIAR', 'enviarComoPersona'],
+      ['SERVICIO_TOMAR', 'tomarconversacion'], ['FUNCION_TOMAR', 'tomarConversacion'],
+      ['SERVICIO_DEVOLVER', 'devolverconversacion'], ['FUNCION_DEVOLVER', 'devolverConversacion'],
       ['SERVICIO_RECLAMAR', 'reclamarsalidapersona'], ['FUNCION_RECLAMAR', 'reclamarSalidaPersona'],
       ['SERVICIO_CONFIRMAR', 'confirmarsalidapersona'], ['FUNCION_CONFIRMAR', 'confirmarSalidaPersona'],
     ] as const) expect(codigo).toContain(`readonly ${c}="${v}"`);
@@ -756,9 +765,9 @@ describe('nube-visor.sh: la fuente', () => {
     expect(codigo).toContain('readonly SERVICIO_BUSCADOR="buscarconversaciones"');
     expect(codigo).toContain('readonly FUNCION_BUSCADOR="buscarConversaciones"');
     expect(codigo).toContain('readonly SERVICIO FUNCION');
-    // Solo cinco asignaciones de SERVICIO, y desde las constantes.
+    // Solo siete asignaciones de SERVICIO, y desde las constantes.
     expect([...codigo.matchAll(/\bSERVICIO="([^"]*)"/g)].map((m) => m[1])).toEqual([
-      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR']);
+      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR']);
     // Solo las dos HTTP son de tipo http.
     expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(2);
     expect(codigo).not.toMatch(/NUBE_VISOR_(SERVICIO|ADC)/);
