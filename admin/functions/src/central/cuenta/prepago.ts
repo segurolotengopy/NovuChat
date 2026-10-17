@@ -69,14 +69,18 @@
  * habría perdido, y atiende igual. Encender la bandera es una decisión de
  * Andres, no un despliegue.
  */
+import type { Titularidad } from '../ejes.js';
 import {
-  BOLSA, INSTALACION_USD, PLANES, PLAN_POR_DEFECTO, aCentavos, esPlanVendible, limitesDeCuenta, precioMensualDe,
+  BOLSA, BOLSA_CONVERSACIONES, BOLSA_META_INCLUIDO, BOLSA_SALIENTES, INSTALACION_USD, PLANES, PLAN_POR_DEFECTO,
+  REGALO_SEIS_MESES_CONVERSACIONES, aCentavos, esPlanVendible, limitesDeCuenta, precioMensualDe, tarifaDe,
   type IdPlanVendible,
 } from './planes.js';
 
 // Lo que la consola y los pagos necesitan del catálogo lo reexportamos desde
 // acá, para que `web/src/central/lib/prepago.ts` tenga un solo origen.
-export { BOLSA, INSTALACION_USD, PLANES, PLANES_ASIGNABLES } from './planes.js';
+export {
+  BOLSA, BOLSA_CONVERSACIONES, BOLSA_META_INCLUIDO, BOLSA_SALIENTES, INSTALACION_USD, PLANES, PLANES_ASIGNABLES,
+} from './planes.js';
 
 // -----------------------------------------------------------------------------
 // MODALIDAD, MONEDAS Y TIPO DE CAMBIO
@@ -772,7 +776,24 @@ export function camposDerivados(estado: EstadoServicio, cuenta: CuentaCruda | nu
 export type Pago =
   | { tipo: 'mensualidad'; plan: IdPlanVendible; meses: number }
   | { tipo: 'bolsa'; cantidad: number }
+  | { tipo: 'bolsaConversaciones'; cantidad: number }
+  | { tipo: 'bolsaSalientes'; cantidad: number }
   | { tipo: 'instalacion' };
+
+/**
+ * ¿SE VENDE LA BOLSA DE MENSAJES DE SEGUIMIENTO? NO, todavía. Es una CONSTANTE
+ * y no una bandera de Firestore a propósito: nadie puede encenderla antes de
+ * que exista el código que la cumple (el conteo de salientes, Bloque 2). La
+ * pone en `true` el PR que la consume. Mientras sea `false`, `bolsaPermitida`
+ * la rechaza con 'no_habilitada' para cualquier cuenta.
+ */
+export const VENTA_BOLSA_SALIENTES = false as boolean;
+
+/** Los tipos de pago que son una bolsa (todos llevan `cantidad`). */
+export const TIPOS_DE_BOLSA = ['bolsa', 'bolsaConversaciones', 'bolsaSalientes'] as const;
+export type TipoDeBolsa = (typeof TIPOS_DE_BOLSA)[number];
+export const esTipoDeBolsa = (v: unknown): v is TipoDeBolsa =>
+  typeof v === 'string' && (TIPOS_DE_BOLSA as readonly string[]).includes(v);
 
 const enteroEntre = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
@@ -782,11 +803,52 @@ export function esPago(v: unknown): v is Pago {
   if (typeof v !== 'object' || v === null) return false;
   const p = v as Record<string, unknown>;
   if (p['tipo'] === 'instalacion') return true;
-  if (p['tipo'] === 'bolsa') return enteroEntre(p['cantidad'], 1, BOLSAS_MAXIMO);
+  if (esTipoDeBolsa(p['tipo'])) return enteroEntre(p['cantidad'], 1, BOLSAS_MAXIMO);
   if (p['tipo'] === 'mensualidad') {
     return esPlanVendible(p['plan']) && enteroEntre(p['meses'], 1, MESES_MAXIMO);
   }
   return false;
+}
+
+export type RechazoDeBolsa = 'tarifa' | 'titularidad' | 'no_habilitada';
+
+/** Textos fijos de rechazo, para el servidor y la consola (español de Bolivia). */
+export const MENSAJE_BOLSA_NO_PERMITIDA: Readonly<Record<RechazoDeBolsa, string>> = {
+  tarifa: 'Esa bolsa no corresponde a la tarifa de su cuenta.',
+  titularidad: 'La bolsa de mensajes de seguimiento es solo para números cuyo dueño es el comercio.',
+  no_habilitada: 'Esa bolsa todavía no está a la venta.',
+};
+
+/**
+ * ¿PUEDE ESTA CUENTA COMPRAR ESTA BOLSA? PURA; la decide el servidor antes de
+ * emitir un QR o registrar un pago. Devuelve `null` si puede, o el motivo:
+ *
+ *  - `bolsa` (30 por USD 10): solo `meta_incluido`.
+ *  - `bolsaConversaciones` (300 por USD 15): solo `estandar`.
+ *  - `bolsaSalientes` (300 por USD 10): apagada (`VENTA_BOLSA_SALIENTES`) y,
+ *    encendida, solo `estandar` con algún número de titularidad `comercio`.
+ *
+ * Una cuenta sin campo `tarifa` es `meta_incluido` (`tarifaDe`). `titularidades`
+ * son las de los números del tenant (`rutasWhatsApp`); acá se comparan como
+ * texto para no importar `ejes.ts`, que ya importa este archivo. Un pago que no
+ * es bolsa no se juzga: devuelve `null`.
+ */
+export function bolsaPermitida(
+  cuenta: CuentaCruda | Record<string, unknown> | null | undefined,
+  pago: { tipo?: unknown },
+  titularidades: readonly Titularidad[],
+  /** Solo para probar la rama encendida sin cambiar la constante exportada. */
+  ventaSalientes: boolean = VENTA_BOLSA_SALIENTES,
+): RechazoDeBolsa | null {
+  const tarifa = tarifaDe(cuenta as Record<string, unknown> | null | undefined);
+  if (pago.tipo === 'bolsa') return tarifa === 'meta_incluido' ? null : 'tarifa';
+  if (pago.tipo === 'bolsaConversaciones') return tarifa === 'estandar' ? null : 'tarifa';
+  if (pago.tipo === 'bolsaSalientes') {
+    if (!ventaSalientes) return 'no_habilitada';
+    if (tarifa !== 'estandar') return 'tarifa';
+    return titularidades.some((t) => t === 'comercio') ? null : 'titularidad';
+  }
+  return null;
 }
 
 function exigirPago(pago: Pago): void {
@@ -807,7 +869,9 @@ function exigirPago(pago: Pago): void {
 export function montoUsdDe(pago: Pago, cuenta?: CuentaCruda | Record<string, unknown> | null): number {
   exigirPago(pago);
   if (pago.tipo === 'instalacion') return INSTALACION_USD;
-  if (pago.tipo === 'bolsa') return BOLSA.precioUsd * pago.cantidad;
+  if (pago.tipo === 'bolsa') return BOLSA_META_INCLUIDO.precioUsd * pago.cantidad;
+  if (pago.tipo === 'bolsaConversaciones') return BOLSA_CONVERSACIONES.precioUsd * pago.cantidad;
+  if (pago.tipo === 'bolsaSalientes') return BOLSA_SALIENTES.precioUsd * pago.cantidad;
   const precio = cuenta === undefined ? PLANES[pago.plan].precioUsd : precioMensualDe(cuenta as Record<string, unknown> | null, pago.plan);
   return aCentavos(precio * pago.meses);
 }
@@ -843,10 +907,15 @@ export function montoFueraDeContrato(
 export function descripcionDe(pago: Pago): string {
   exigirPago(pago);
   if (pago.tipo === 'instalacion') return 'Instalación';
-  if (pago.tipo === 'bolsa') {
+  if (pago.tipo === 'bolsa' || pago.tipo === 'bolsaConversaciones') {
+    const n = pago.tipo === 'bolsa' ? BOLSA_META_INCLUIDO.conversaciones : BOLSA_CONVERSACIONES.conversaciones;
+    return pago.cantidad === 1 ? `Bolsa de ${n} conversaciones` : `${pago.cantidad} bolsas de ${n} conversaciones`;
+  }
+  if (pago.tipo === 'bolsaSalientes') {
+    const n = BOLSA_SALIENTES.mensajes;
     return pago.cantidad === 1
-      ? `Bolsa de ${BOLSA.conversaciones} conversaciones`
-      : `${pago.cantidad} bolsas de ${BOLSA.conversaciones} conversaciones`;
+      ? `Bolsa de ${n} mensajes de seguimiento`
+      : `${pago.cantidad} bolsas de ${n} mensajes de seguimiento`;
   }
   return `${PLANES[pago.plan].nombre} · ${pago.meses === 1 ? '1 mes' : `${pago.meses} meses`}`;
 }
@@ -894,19 +963,24 @@ export function aplicarPago(cuenta: CuentaCruda | null | undefined, pago: Pago, 
   const estado = estadoDeServicio(cuenta, 0, ahoraMs);
   const periodoPagado = esPeriodo(cuenta?.periodoPagado) ? cuenta.periodoPagado : '';
 
-  if (pago.tipo === 'instalacion') {
+  // La bolsa de seguimiento NO suma a las conversaciones: sus saldos
+  // (`bolsaSalientes*`) los escribe `aplicacionDe` (pagos.ts, PR-3).
+  if (pago.tipo === 'instalacion' || pago.tipo === 'bolsaSalientes') {
     return {
       plan: estado.plan, modalidad: estado.modalidad, periodoPagado, bolsa: estado.bolsa,
       cubiertoHasta: estado.cubiertoHasta,
     };
   }
 
-  if (pago.tipo === 'bolsa') {
+  if (pago.tipo === 'bolsa' || pago.tipo === 'bolsaConversaciones') {
+    // Se acredita LO PAGADO (decisión 3 del plan): la cantidad la fija el tipo
+    // del pago, no la tarifa que la cuenta tenga al confirmarse.
+    const por = pago.tipo === 'bolsa' ? BOLSA_META_INCLUIDO.conversaciones : BOLSA_CONVERSACIONES.conversaciones;
     return {
       plan: estado.plan,
       modalidad: estado.modalidad,
       periodoPagado,
-      bolsa: estado.bolsa + BOLSA.conversaciones * pago.cantidad,
+      bolsa: estado.bolsa + por * pago.cantidad,
       cubiertoHasta: estado.cubiertoHasta,
     };
   }
@@ -920,7 +994,7 @@ export function aplicarPago(cuenta: CuentaCruda | null | undefined, pago: Pago, 
     plan: pago.plan,
     modalidad: estado.modalidad,
     periodoPagado: nuevo,
-    bolsa: estado.bolsa + (pago.meses === MESES_MAXIMO ? BOLSA.conversaciones : 0),
+    bolsa: estado.bolsa + (pago.meses === MESES_MAXIMO ? REGALO_SEIS_MESES_CONVERSACIONES : 0),
     cubiertoHasta: nuevo,
   };
 }
@@ -1286,7 +1360,11 @@ export function recordatoriosDebidos(
   }
 
   // --- Sin conversaciones ---------------------------------------------------
-  if (estado.motivo === 'sin_conversaciones' && corte?.motivo === 'sin_conversaciones' && tco !== null) {
+  // La plantilla aprobada por Meta promete «30 por USD 10», la bolsa de Meta
+  // incluido. A una cuenta `estandar` (su bolsa es de 300 por USD 15) le
+  // presentaría un cobro como lo que no es (prohibición 3): no se le emite.
+  if (tarifaDe(cuenta as Record<string, unknown> | null | undefined) === 'meta_incluido'
+      && estado.motivo === 'sin_conversaciones' && corte?.motivo === 'sin_conversaciones' && tco !== null) {
     agregar('sinConversaciones', `agotadas_${mesActual}`,
       [String(estado.incluidas), planNombre, String(importeBs(BOLSA.precioUsd, tco))], true);
   }
