@@ -16,7 +16,7 @@
  *  - la fase `cuentas` ya no agrega un segundo binding paralelo si el de condición existe.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, openSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,7 +56,17 @@ esac
 `;
 
 let dir: string;
-const leer = (n: string) => (existsSync(join(dir, n)) ? readFileSync(join(dir, n), 'utf8') : '');
+/** Sin comprobar-y-luego-usar (js/file-system-race): una sola operación sobre el descriptor, con try/catch. */
+const existe = (ruta: string): boolean => {
+  try { closeSync(openSync(ruta, 'r')); return true; } catch { return false; }
+};
+const modoDe = (ruta: string): number => {
+  const fd = openSync(ruta, 'r');
+  try { return fstatSync(fd).mode & 0o777; } finally { closeSync(fd); }
+};
+const leer = (n: string): string => {
+  try { return readFileSync(join(dir, n), 'utf8'); } catch { return ''; }
+};
 const llamadas = () => leer('llamadas').split('\n').filter(Boolean);
 const escrituras = () => llamadas().filter((l) => /set-iam-policy|secrets create/.test(l));
 const expresion = (): string =>
@@ -140,9 +150,9 @@ describe('preparar-staging.sh salida-persona', () => {
     const ds = readdirSync(join(dir, 'tmp'));
     expect(ds).toHaveLength(1);
     const d = join(dir, 'tmp', ds[0]!);
-    expect(statSync(d).mode & 0o777).toBe(0o700);
+    expect(modoDe(d)).toBe(0o700);
     expect(readdirSync(d)).toEqual(['respaldo-politica.json']);
-    expect(statSync(join(d, 'respaldo-politica.json')).mode & 0o777).toBe(0o600);
+    expect(modoDe(join(d, 'respaldo-politica.json'))).toBe(0o600);
     expect(readFileSync(join(d, 'respaldo-politica.json'), 'utf8')).toContain('secrets/GEMINI_API_KEY');
     expect(readFileSync(join(d, 'respaldo-politica.json'), 'utf8')).not.toContain('SALIDA_PERSONA_');
   });

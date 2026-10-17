@@ -20,7 +20,7 @@
  *    entrega es un archivo de modo 600 que el script no imprime.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, openSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -105,7 +105,17 @@ function secreto(valor: unknown) {
     bindings: [{ role: 'roles/secretmanager.secretAccessor', members: [`serviceAccount:sa-functions@${PROD}.iam.gserviceaccount.com`] }],
   }));
 }
-const leer = (n: string) => (existsSync(join(dir, n)) ? readFileSync(join(dir, n), 'utf8') : '');
+/** Sin comprobar-y-luego-usar (js/file-system-race): una sola operación sobre el descriptor, con try/catch. */
+const existe = (ruta: string): boolean => {
+  try { closeSync(openSync(ruta, 'r')); return true; } catch { return false; }
+};
+const modoDe = (ruta: string): number => {
+  const fd = openSync(ruta, 'r');
+  try { return fstatSync(fd).mode & 0o777; } finally { closeSync(fd); }
+};
+const leer = (n: string): string => {
+  try { return readFileSync(join(dir, n), 'utf8'); } catch { return ''; }
+};
 const llamadas = () => leer('llamadas').split('\n').filter(Boolean);
 const escrituras = () => llamadas().filter((l) => /set-iam-policy|secrets create|versions add|add-iam-policy-binding/.test(l));
 const expresion = (): string =>
@@ -243,7 +253,7 @@ describe('nube-salida-persona.sh: pasos 1 a 3', () => {
     expect(r.salida).toContain('(haría) crear SALIDA_PERSONA_RUTAS');
     expect(escrituras()).toEqual([]);
     expect(expresion()).toBe(CONDICION_VIEJA);
-    expect(existsSync(join(dir, 'secreto'))).toBe(false);
+    expect(existe(join(dir, 'secreto'))).toBe(false);
   });
 
   it('aplicar: amplía la condición con el prefijo EXACTO, conserva lo anterior y no usa comodines', () => {
@@ -270,7 +280,7 @@ describe('nube-salida-persona.sh: pasos 1 a 3', () => {
     const ds = readdirSync(join(dir, 'tmp'));
     expect(ds).toHaveLength(1);
     const d = join(dir, 'tmp', ds[0]!);
-    expect(statSync(d).mode & 0o777).toBe(0o700);
+    expect(modoDe(d)).toBe(0o700);
     expect(readdirSync(d)).toEqual(['respaldo-politica.json']);
     expect(readFileSync(join(d, 'respaldo-politica.json'), 'utf8')).toContain('secrets/GEMINI_API_KEY');
     expect(readFileSync(join(d, 'respaldo-politica.json'), 'utf8')).not.toContain('SALIDA_PERSONA_');
@@ -344,7 +354,7 @@ describe('nube-salida-persona.sh: pasos 1 a 3', () => {
     const r = correr(APLICAR);
     expect(r.codigo).toBe(3);
     expect(r.salida).not.toContain('cuenta@ejemplo.com');
-    expect(existsSync(join(dir, 'secreto'))).toBe(false);
+    expect(existe(join(dir, 'secreto'))).toBe(false);
   });
 
   it('--revertir-iam quita solo la cláusula nueva (y es idempotente)', () => {
@@ -373,7 +383,7 @@ describe('nube-salida-persona.sh: --agregar-alias y --quitar-alias', () => {
     const r = correr(['--agregar-alias', 'nuevo']);
     expect(r.codigo).toBe(1);
     expect(escrituras()).toEqual([]);
-    expect(existsSync(join(runtime, 'novuchat-salida-persona-nuevo.json'))).toBe(false);
+    expect(existe(join(runtime, 'novuchat-salida-persona-nuevo.json'))).toBe(false);
     expect(mapa()).toEqual(previo);
   });
 
@@ -388,8 +398,8 @@ describe('nube-salida-persona.sh: --agregar-alias y --quitar-alias', () => {
     expect(m.nuevo!.clave.length).toBeGreaterThanOrEqual(32);
     expect(leer('versiones').trim()).toBe('2');
     const entrega = join(runtime, 'novuchat-salida-persona-nuevo.json');
-    expect(existsSync(entrega)).toBe(true);
-    expect(statSync(entrega).mode & 0o777).toBe(0o600);
+    expect(existe(entrega)).toBe(true);
+    expect(modoDe(entrega)).toBe(0o600);
     const e = JSON.parse(readFileSync(entrega, 'utf8')) as { ruta: string; clave: string; path: string };
     expect(e.ruta).toBe(m.nuevo!.ruta);
     expect(e.clave).toBe(m.nuevo!.clave);
@@ -416,7 +426,7 @@ describe('nube-salida-persona.sh: --agregar-alias y --quitar-alias', () => {
     const r = correr(['--agregar-alias', 'nuevo', ...APLICAR]);
     expect(r.codigo).toBe(3);
     expect(mapa().nuevo).toBeDefined();
-    expect(existsSync(join(runtime, 'novuchat-salida-persona-nuevo.json'))).toBe(true);
+    expect(existe(join(runtime, 'novuchat-salida-persona-nuevo.json'))).toBe(true);
     expect(r.salida).toContain('--quitar-alias nuevo');
   });
 
@@ -458,8 +468,8 @@ describe('nube-salida-persona.sh: --agregar-alias y --quitar-alias', () => {
     const r = correr(['--agregar-alias', 'nuevo', ...APLICAR]);
     expect(r.codigo).toBe(3);
     expect(mapa()).toEqual(previo);
-    expect(existsSync(join(runtime, 'novuchat-salida-persona-nuevo.json'))).toBe(false);
-    expect(existsSync(join(runtime, '.novuchat-salida-persona-nuevo.tmp'))).toBe(false);
+    expect(existe(join(runtime, 'novuchat-salida-persona-nuevo.json'))).toBe(false);
+    expect(existe(join(runtime, '.novuchat-salida-persona-nuevo.tmp'))).toBe(false);
     expect(r.salida).not.toContain('ejemplo.com');
   });
 
