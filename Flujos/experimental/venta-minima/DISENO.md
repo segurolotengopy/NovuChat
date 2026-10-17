@@ -73,9 +73,9 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   salida (`RETENCION_POR_SALIDA`) y `--verificar` EXIGE `all`/`all` en Q'Taco (bajar a `none` o a `default` falla con un mensaje que cita esta decisión) y sigue impidiendo que
   cualquier otro archivo guarde algo sin declararlo.
   - **Riesgo M-1, DECLARADO y ACEPTADO por Andres. Qué queda en la base de n8n, por cada ejecución (completo):**
-    (a) el encabezado `Authorization` del webhook `Carrito del catálogo` **es la credencial `NovuChat ingesta (Q'Taco)`, la misma de SEIS nodos** (`Carrito del catálogo`,
-    `Traer configuración`, `Reportar mensaje (entrante)`, `Reportar mensaje (saliente)`, `Cotejar en el servidor` y `Registrar cierre`): quien la lea puede llamar a la ingesta,
-    a la configuración, al cotejo y al cierre de ese comercio, no solo al webhook;
+    (a) el encabezado `Authorization` del webhook `Carrito del catálogo` **es la credencial `NovuChat ingesta (Q'Taco)`, la misma de SIETE nodos** (`Carrito del catálogo`,
+    `Traer configuración`, `Reportar mensaje (entrante)`, `Reportar mensaje (saliente)`, `Guardar comprobante`, `Cotejar en el servidor` y `Registrar cierre`): quien la lea puede llamar a la ingesta,
+    a la configuración, al cotejo, al cierre de ese comercio y a la subida de comprobantes (acotada en el servidor: cobro de regla 2 abierto, tipo y tamaño), no solo al webhook;
     (b) los datos de los clientes (teléfono, nombre de perfil, dirección, notas, pedidos), las **notas de voz** y los **comprobantes de pago** (imagen o PDF: nombre, banco,
     cuenta y monto) y las **salidas de Gemini** (la transcripción del audio y los datos extraídos del pedido y del comprobante), además de los enlaces de la carta y la URL del QR;
     (c) **cada ejecución guarda una copia del flujo con sus valores reales**: las rutas de los DOS webhooks (el del receptor y el del carrito, que son URL de capacidad) y la URL
