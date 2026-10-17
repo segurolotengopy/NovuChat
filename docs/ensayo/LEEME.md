@@ -350,7 +350,7 @@ en seco primero y su `--aplicar` con el «sí» de Andres:
 
 | Qué | Por qué | Dónde se mira |
 |---|---|---|
-| **QR y comprobante** | La ruta del Demo A es `agendamiento`: el servidor no manda `config/venta` ni cobro | Con la línea de Q'Taco, con un QR de NovuChat e importe simbólico (prohibición 3) |
+| **QR y comprobante** | Con la ruta en `agendamiento` el servidor no manda `config/venta` ni cobro | Con `--flujo venta` (§7) y un QR de NovuChat de importe simbólico (prohibición 3), o con la línea de Q'Taco |
 | **Plantillas** | Son de la WABA de Q'Taco; aquí van vacías a propósito | Con Q'Taco, con `pedido_registrado` aprobada |
 | **Receptor y verificador** | La entrada es el Trigger del Demo A, no la entrega firmada | Con Q'Taco, en la ventana de mantenimiento |
 | **Promociones** | Las campañas del comercio `ensayo` no son las de Q'Taco | Con Q'Taco |
@@ -358,3 +358,58 @@ en seco primero y su `--aplicar` con el «sí» de Andres:
 | **Que el aviso llegue a OTRA persona** | Con un solo teléfono el aviso llega al mismo chat del cliente (el interruptor lo permite solo en el ensayo) | Con Q'Taco: el destinatario del aviso es otra persona y el propio número se descarta |
 | **«No pude pasarle…»** | Con un solo teléfono la ventana siempre está abierta | La suite |
 | **Los nombres de credencial en la instancia, la credencial del Trigger vivo y la ruta de Meta** | No se pueden probar sin n8n ni Meta reales: la suite (`venta-minima-herramienta-demo-a.test.ts`) prueba la herramienta contra un n8n de mentira | El seco real y los pasos D y 4 de arriba |
+
+## 7 · Ensayo del flujo de VENTA (QR de cobro y comprobante): `ensayo.mjs --flujo venta`
+
+El ensayo del §6 no prueba QR ni comprobante porque la ruta del Demo A dice `agendamiento` y la
+ingesta decide `config/venta` y el cobro por **`ruta.flujo`**, no por la ficha. Con
+`--flujo venta` el script cubre las dos cosas, y solo mientras dura el ensayo:
+
+- la ficha de `tenants/ensayo` queda con `vertical: venta`, `flujos: ['venta']` y **sin** lista
+  `modulos` propia (los módulos salen del registro: productos, cobros, pedidos, catálogo web…);
+- la ruta del número lleva `flujo: venta` y recuerda el valor anterior en `ensayoFlujoDe`;
+  `--restaurar` lo devuelve junto con `tenantId`;
+- se vacían, **solo bajo `tenants/ensayo`**, además de lo de siempre: pedidos, cierres,
+  conversaciones (con sus mensajes), contactos, movimientos de stock, comprobaciones de imagen,
+  salida y métricas. La auditoría se conserva. El id `ensayo` es una constante del código.
+
+Sin `--flujo` el flujo sale de la ruta, como en el §6, pero `--preparar` **siempre** fija en `ensayo`
+`flujos: [el del ensayo]` y `vertical` (nunca acumula los de ensayos anteriores), borra su lista
+`modulos` y, si la ficha traía venta, vacía también los restos de venta.
+
+**Con la ruta ya en ensayo** solo se repite el mismo ensayo (mismo `--cliente` y mismo `--flujo`); para
+otro cliente u otro flujo, primero `--restaurar` (así una carga fallida no deja el número con un
+comercio vaciado de otro ensayo). Si la carga falla con la ruta ya en ensayo, el mensaje dice que la
+ruta sigue en ensayo y el comercio quedó vacío: reintentar o `--restaurar`. Si la ruta no tenía campo
+`flujo`, se guarda un marcador nulo y `--restaurar` borra el campo en vez de inventar uno. Valores válidos: `venta` o
+`agendamiento`; cualquier otro sale con 2 sin leer nada de la nube.
+
+Cerrojos que siguen igual (probados negando en `admin/pruebas/ensayo.test.ts`): solo se desvía
+el número de un comercio con `modalidad: demostracion` escrita; el comercio que paga o el que no
+tiene modalidad no se desvía; sin `--aplicar` no se escribe nada; no se imprimen ids completos.
+
+### Orden (cada paso en seco primero; `--aplicar` con el «sí» de Andres)
+
+1. Antes de empezar: lo del §6 (A a D). **No se pisa otro ensayo**: ver la regla de coordinación.
+2. `ensayo.mjs --preparar --cliente qtaco --flujo venta --archivo <copia del borrador de Q'Taco o
+   `negocio-*.json` de venta, en el scratchpad> --local <tabla local>` (seco, leído entero, y luego
+   `--aplicar`). Con QR: cargar en `ensayo` un QR **de NovuChat** con importe simbólico
+   (`activar-cobro-real.mjs`; prohibición 3 de `CLAUDE.md`), nunca el de Q'Taco.
+3. `flujo-de-prueba.mjs --sobre-demo-a` con el JSON de venta (pasos 4 y 5 del §6).
+4. Pruebas con el teléfono de Andres: pedido, QR, comprobante, derivación.
+5. **Doble restauración, en este orden**, y verificada con `--estado`:
+   1. el flujo: `flujo-de-prueba.mjs --restaurar-respaldo` (§6, paso 6.1);
+   2. el estado por teléfono: `publicar-flujo.sh --reiniciar-estado` (seco, luego `--aplicar`);
+   3. la ruta: `ensayo.mjs --restaurar` (seco, luego `--aplicar`). Imprime
+      `Flujo     : venta -> agendamiento`;
+   4. `ensayo.mjs --estado` (la línea `Ensayo` conserva el último flujo preparado: no es un fallo; el
+      siguiente ensayo siempre fija sus flujos). Debe mostrar el flujo de la ruta ya restaurado: tiene que decir `Desviada  : no` y la ruta con su flujo de siempre
+      (`flujo agendamiento` en la primera línea). Si dice `sí`, no se terminó.
+6. Limpieza y filas de `ESTADO.md` / `versiones-por-cliente.md`, como en el §6 (paso 6.4).
+
+### Regla de coordinación: el Demo A es UN solo recurso, con turnos
+
+Mientras un ensayo desvía su ruta o cambia su flujo, **ningún otro ensayo ni demo comercial lo
+usa**. Turnos acordados: el **domingo 18/10, de 09:40 a 11:30**, el ensayo de H2-F; el ensayo de
+venta va **después**, solo cuando el anterior terminó su doble restauración y `--estado` lo
+confirma. Dos ensayos a la vez dejarían la ruta con el `ensayoDe` del primero.
