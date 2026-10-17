@@ -357,6 +357,8 @@ def cmd_respaldar(wfs_f, creds_f, alias, salida):
     completo = None
     if vivo:
         completo = json.loads(json.dumps(vivo[0]))
+        for k in ("pinData", "staticData"):  # pueden traer cabeceras con el Bearer de una prueba del editor
+            completo.pop(k, None)
         for nodo in completo.get("nodes", []):
             ps = nodo.get("parameters") or {}
             if "path" in ps:  # la ruta del timbre es una URL de capacidad: no se respalda
@@ -441,13 +443,20 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
 
 
 def publicada(wf):
-    return wf.get("versionId") == wf.get("activeVersionId")
+    """None si el flujo está activo y n8n no manda versionId/activeVersionId válidos (no se compara None con None)."""
+    if not wf.get("active"):
+        return False
+    if not (id_valido(wf.get("versionId")) and id_valido(wf.get("activeVersionId"))):
+        return None
+    return wf["versionId"] == wf["activeVersionId"]
 
 
 def cmd_publicada(wf_f):
     """n8n 2.x separa borrador y publicada: tras un PUT de un flujo activo la activa sigue siendo la vieja."""
-    wf = cargar(wf_f)
-    print("si" if publicada(wf) else "no")
+    r = publicada(cargar(wf_f))
+    if r is None:
+        salir(4, "n8n no devolvió versionId y activeVersionId válidos de un flujo activo: no se puede saber qué versión corre")
+    print("si" if r else "no")
 
 
 def cmd_verificar(wf_f, path_f, alias, activo_esperado, creds_f="-"):
@@ -476,10 +485,14 @@ def cmd_verificar(wf_f, path_f, alias, activo_esperado, creds_f="-"):
             if nodo.get("webhookId") != webhook_id(alias):
                 errores.append("el webhookId del Timbre no es el estable del alias")
     errores += revisar_roles(wf.get("nodes", []), alias)
-    if activo_esperado in ("true", "false") and bool(wf.get("active")) != (activo_esperado == "true"):
+    if activo_esperado in ("true", "false", "true-borrador") and bool(wf.get("active")) != (activo_esperado != "false"):
         errores.append("el estado activo vivo no es el esperado (%s)" % activo_esperado)
-    if activo_esperado == "true" and not publicada(wf):
-        errores.append("la versión PUBLICADA no es la última guardada (versionId distinto de activeVersionId): corre la vieja")
+    if activo_esperado == "true":
+        pub = publicada(wf)
+        if pub is None:
+            errores.append("n8n no devolvió versionId y activeVersionId válidos: no se puede comprobar la versión publicada")
+        elif not pub:
+            errores.append("la versión PUBLICADA no es la última guardada (versionId distinto de activeVersionId): corre la vieja")
     if errores:
         salir(4, "\n".join("    " + e for e in errores))
     print("coincide con lo esperado (%d nodos)" % len(wf.get("nodes", [])))
@@ -523,7 +536,7 @@ echo
 
 leer_estado
 echo "Estado vivo"
-py buscar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/plan.json" || { falla "n8n tiene un estado ambiguo para este alias"; exit 3; }
+py buscar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/plan.json" || { falla "n8n tiene un estado ambiguo para este alias, o un id con forma inesperada (nada escrito)"; exit 2; }
 WF_ID="$(py campo "$WORK/plan.json" wfId)"; WF_ACTIVO="$(py campo "$WORK/plan.json" wfActivo)"; TIMBRE_ID="$(py campo "$WORK/plan.json" timbreId)"
 if py respaldar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/respaldo-vivo.json"; then :; else falla "no pude armar el respaldo"; exit 3; fi
 (( ! APLICAR )) || CONSERVAR=1
@@ -535,7 +548,7 @@ if [[ "$MODO" == activar ]]; then
   api GET "/workflows/${WF_ID}"; exigir 200 "no pude leer el flujo" || exit 3
   cp "$WORK/rta.json" "$WORK/vivo.json"
   if ! SAL="$(py verificar "$WORK/vivo.json" - "$ALIAS" any "$WORK/credenciales.json")"; then falla "el flujo vivo no está completo; no se activa:"; echo "$SAL" >&2; exit 2; fi
-  PUB="$(py publicada "$WORK/vivo.json")"
+  PUB="$(py publicada "$WORK/vivo.json")" || { falla "no puedo saber qué versión corre (n8n no mandó versionId/activeVersionId de un flujo activo)"; exit 3; }
   if [[ "$WF_ACTIVO" == true && "$PUB" == si ]]; then ok "ya está activo y la versión publicada es la última guardada: nada que hacer"; exit 0; fi
   if [[ "$WF_ACTIVO" == true ]]; then nota "está activo pero corre una versión ANTERIOR (borrador sin publicar): hay que publicar la última"; fi
   hacer "activar/publicar el flujo (empieza el barrido de cada minuto y el timbre responde)"
@@ -636,17 +649,23 @@ fi
 echo "Comprobación (relectura)"
 api GET "/workflows/${WF_ID}"; exigir 200 "no pude releer el flujo" || fallar "falló la relectura"
 cp "$WORK/rta.json" "$WORK/vivo.json"
-ESPERADO="false"; [[ "$WF_ACTIVO" != true ]] || ESPERADO="true"
+ESPERADO="false"; [[ "$WF_ACTIVO" != true ]] || ESPERADO="true-borrador"
 leer_estado
-if [[ "$ESPERADO" == true && "$(py publicada "$WORK/vivo.json")" == no ]]; then
-  # n8n 2.x separa borrador y publicada: el PUT de un flujo activo deja corriendo la versión vieja.
-  nota "el PUT dejó la versión publicada atrás (versionId distinto de activeVersionId): se publica la última"
-  api POST "/workflows/${WF_ID}/activate"; exigir '200|201' "no pude publicar la última versión" || fallar "falló la publicación"
-  api GET "/workflows/${WF_ID}"; exigir 200 "no pude releer el flujo" || fallar "falló la relectura"
-  cp "$WORK/rta.json" "$WORK/vivo.json"
-fi
-if ! SAL="$(py verificar "$WORK/vivo.json" "$WORK/path" "$ALIAS" "$ESPERADO" "$WORK/credenciales.json")"; then fallar "la relectura NO coincide:
+# Primero se verifica el BORRADOR recién guardado; solo si es correcto se publica (n8n 2.x separa
+# borrador y publicada: el PUT de un flujo activo deja corriendo la versión vieja).
+if ! SAL="$(py verificar "$WORK/vivo.json" "$WORK/path" "$ALIAS" "$ESPERADO" "$WORK/credenciales.json")"; then fallar "el borrador guardado NO coincide (no se publicó):
 ${SAL}"; fi
+if [[ "$ESPERADO" == true-borrador ]]; then
+  PUB="$(py publicada "$WORK/vivo.json")" || fallar "no puedo saber qué versión corre (n8n no mandó versionId/activeVersionId)"
+  if [[ "$PUB" == no ]]; then
+    nota "borrador verificado; la versión publicada va atrás: se publica la última"
+    api POST "/workflows/${WF_ID}/activate"; exigir '200|201' "no pude publicar la última versión" || fallar "falló la publicación"
+    api GET "/workflows/${WF_ID}"; exigir 200 "no pude releer el flujo" || fallar "falló la relectura"
+    cp "$WORK/rta.json" "$WORK/vivo.json"
+  fi
+  if ! SAL="$(py verificar "$WORK/vivo.json" "$WORK/path" "$ALIAS" true "$WORK/credenciales.json")"; then fallar "tras publicar, la relectura NO coincide:
+${SAL}"; fi
+fi
 ok "$SAL"
 py buscar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/plan3.json" >/dev/null || fallar "estado ambiguo al releer"
 [[ -n "$(py campo "$WORK/plan3.json" timbreId)" ]] || fallar "la credencial del timbre no aparece al releer"

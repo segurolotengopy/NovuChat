@@ -66,7 +66,12 @@ def guardar(n, d): json.dump(d, open(os.path.join(E, n), "w"))
 ruta = url.split("/api/v1", 1)[1]
 limpia = ruta.split("?")[0]
 open(os.path.join(E, "llamadas"), "a").write(metodo + " " + limpia + "\\n")
+def sin_versiones(x):
+    if isinstance(x, dict): return {k: sin_versiones(v) for k, v in x.items() if k not in ("versionId", "activeVersionId")}
+    if isinstance(x, list): return [sin_versiones(i) for i in x]
+    return x
 def responder(codigo, cuerpo=None):
+    if cuerpo is not None and os.path.exists(os.path.join(E, "sin-versiones")): cuerpo = sin_versiones(cuerpo)
     if salida: open(salida, "w").write(json.dumps(cuerpo if cuerpo is not None else {}))
     print(codigo); sys.exit(0)
 if cabeza != "X-N8N-API-KEY: " + os.environ["FAKE_API_KEY"]: responder(401, {"message": "unauthorized"})
@@ -97,7 +102,11 @@ if partes[0] == "workflows":
     if len(partes) == 2 and metodo == "PUT":
         if set(cuerpo) - {"name", "nodes", "connections", "settings"}: responder(400, {"message": "additional properties"})
         # n8n 2.x: borrador y publicada se separan; el PUT de un flujo activo NO publica la nueva versión
-        w.update(cuerpo); w["versionId"] = "ver%d" % (n() + 100); guardar("contador.json", n())
+        w.update(cuerpo)
+        if os.path.exists(os.path.join(E, "corrompe-borrador")):
+            for x in w["nodes"]:
+                if x["name"] == "Enviar por Graph": x.pop("credentials", None)
+        w["versionId"] = "ver%d" % (n() + 100); guardar("contador.json", n())
         if w.get("active") and os.path.exists(os.path.join(E, "publica-al-guardar")): w["activeVersionId"] = w["versionId"]
         guardar("wfs.json", wf); responder(200, w)
     if len(partes) == 2 and metodo == "DELETE": wf.remove(w); guardar("wfs.json", wf); responder(200, w)
@@ -698,7 +707,7 @@ describe('cargar-timbre-n8n.sh: endurecimiento (ronda de revisión)', () => {
     const f = flujos(); f[0].id = 'w1/../../credentials'; writeFileSync(join(dir, 'wfs.json'), JSON.stringify(f));
     entrega();
     const r = correr([...A(), ...APLICAR]);
-    expect(r.codigo).toBe(3);
+    expect(r.codigo).toBe(2);
     expect(llamadas().filter((l) => l.includes('..'))).toEqual([]);
   });
 
@@ -708,5 +717,74 @@ describe('cargar-timbre-n8n.sh: endurecimiento (ronda de revisión)', () => {
     const r = correr([...A(), '--activar', ...APLICAR]);
     expect(r.codigo).toBe(2);
     expect(flujos()[0].active).toBe(false);
+  });
+});
+
+describe('cargar-timbre-n8n.sh: segunda mini-ronda', () => {
+  const activoPublicado = () => {
+    const f = flujos(); f[0].active = true; f[0].activeVersionId = f[0].versionId;
+    writeFileSync(join(dir, 'wfs.json'), JSON.stringify(f));
+  };
+
+  it('el borrador se verifica ANTES de publicar: si el guardado no coincide, no hay ni un activate', () => {
+    expect(correr([...A(), ...APLICAR]).codigo).toBe(0);
+    activoPublicado();
+    entrega();
+    writeFileSync(join(dir, 'corrompe-borrador'), '');
+    const antes = llamadas().length;
+    const r = correr([...A(), ...APLICAR]);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('borrador');
+    expect(llamadas().slice(antes).some((l) => /activate/.test(l))).toBe(false);
+    expect(existe(entregaRuta())).toBe(true);
+  });
+
+  it('un n8n que no manda versionId/activeVersionId de un flujo activo: falla en recarga y en --activar (no compara None con None)', () => {
+    expect(correr([...A(), ...APLICAR]).codigo).toBe(0);
+    activoPublicado();
+    entrega();
+    writeFileSync(join(dir, 'sin-versiones'), '');
+    const r = correr([...A(), ...APLICAR]);
+    expect(r.codigo).toBe(3);
+    expect(existe(entregaRuta())).toBe(true);
+    const a = correr([...A(), '--activar', ...APLICAR]);
+    expect(a.codigo).toBe(3);
+    expect(a.salida).not.toContain('nada que hacer');
+  });
+
+  it('el respaldo no guarda pinData ni staticData del flujo vivo', () => {
+    expect(correr([...A(), ...APLICAR]).codigo).toBe(0);
+    const f = flujos() as unknown as Array<Record<string, unknown>>;
+    f[0].pinData = { Reclamar: [{ json: { cabecera: 'Bearer secreto-de-editor' } }] };
+    f[0].staticData = { global: { auth: 'Bearer otro-secreto-de-editor' } };
+    writeFileSync(join(dir, 'wfs.json'), JSON.stringify(f));
+    const r = correr([...A(), '--quitar', ...APLICAR]);
+    const m = /respaldo previo[^:]*: (\S+respaldo-vivo\.json)/.exec(r.salida);
+    expect(m).not.toBeNull();
+    const t = leerTxt(m![1]);
+    expect(t).not.toContain('secreto-de-editor');
+    expect(t).not.toContain('pinData');
+    expect(t).not.toContain('staticData');
+  });
+
+  it('el cuerpo que arma `plan` deja el stickyNote con <marcador> y no recibe ningún valor', () => {
+    const fuente = leerTxt(SCRIPT);
+    const m = /<<'PY'\n([\s\S]*?)\nPY\n/.exec(fuente);
+    expect(m).not.toBeNull();
+    const lib = join(dir, 'lib.py');
+    writeFileSync(lib, m![1]);
+    const f = JSON.parse(leerTxt(FLUJO_REAL)) as { nodes: Nodo[] };
+    f.nodes.push({ name: 'Nota', type: 'n8n-nodes-base.stickyNote', parameters: { content: 'ruta REEMPLAZAR_RUTA_TIMBRE y REEMPLAZAR_PHONE_NUMBER_ID' } });
+    writeFileSync(join(dir, 'f.json'), JSON.stringify(f));
+    writeFileSync(join(dir, 'l.json'), JSON.stringify({ data: [] }));
+    writeFileSync(join(dir, 'c.json'), JSON.stringify({ data: creds() }));
+    writeFileSync(join(dir, 't.json'), JSON.stringify({ phone: PHONE, rele: RELE }));
+    writeFileSync(join(dir, 'p.txt'), PATH);
+    const r = spawnSync('python3', ['-I', lib, 'plan', join(dir, 'f.json'), join(dir, 'l.json'), join(dir, 'c.json'), join(dir, 't.json'), join(dir, 'p.txt'), ALIAS, '', join(dir, 'cuerpo.json'), join(dir, 'plan.json')], { encoding: 'utf8' });
+    expect(r.status).toBe(0);
+    const cuerpo = JSON.parse(leerTxt(join(dir, 'cuerpo.json'))) as { nodes: Array<{ name: string; parameters: Record<string, unknown> }> };
+    expect(cuerpo.nodes.find((n) => n.name === 'Nota')!.parameters.content).toBe('ruta <marcador> y <marcador>');
+    expect(JSON.stringify(cuerpo.nodes.find((n) => n.name === 'Nota'))).not.toContain(PATH);
+    expect(cuerpo.nodes.find((n) => n.name === 'Timbre')!.parameters.path).toBe(PATH);
   });
 });
