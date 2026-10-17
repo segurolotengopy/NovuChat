@@ -48,7 +48,14 @@ const NUMERO_FALSO = '987654321';
 
 const VISOR = 'vercomprobante';
 const BUSCADOR = 'buscarconversaciones';
-const SERVICIOS = [[VISOR, 'verComprobante'], [BUSCADOR, 'buscarConversaciones']] as const;
+const ENVIAR = 'enviarcomopersona';
+const RECLAMAR = 'reclamarsalidapersona';
+const CONFIRMAR = 'confirmarsalidapersona';
+const HTTP = [RECLAMAR, CONFIRMAR] as const;
+const SERVICIOS = [
+  [VISOR, 'verComprobante'], [BUSCADOR, 'buscarConversaciones'], [ENVIAR, 'enviarComoPersona'],
+  [RECLAMAR, 'reclamarSalidaPersona'], [CONFIRMAR, 'confirmarSalidaPersona'],
+] as const;
 const urlDe = (s: string) => `https://${s}-${NUMERO_FALSO}.us-east1.run.app`;
 
 const GCLOUD_FALSO = `#!/usr/bin/env bash
@@ -110,12 +117,19 @@ E="$FAKE_DIR"
 printf '%s\\n' "$*" >> "$E/curl"
 out=""; a=("$@")
 for ((i = 0; i < \${#a[@]}; i++)); do [[ "\${a[i]}" == -o ]] && out="\${a[i+1]}"; done
+# Las dos Functions HTTP (ingesta) contestan TEXTO, no el JSON de Firebase.
+http=0; [[ "\${a[\${#a[@]}-1]}" == *reclamarsalidapersona* || "\${a[\${#a[@]}-1]}" == *confirmarsalidapersona* ]] && http=1
 modo="auto"; [[ -f "$E/curl-modo" ]] && modo="$(cat "$E/curl-modo")"
 if [[ "$modo" == auto ]]; then
   if python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); sys.exit(0 if any(b.get("role")=="roles/run.invoker" and "allUsers" in b.get("members",[]) for b in p.get("bindings",[])) else 1)' "$E/politica.json"; then modo=propio; else modo=403; fi
 fi
 err() { printf '{"error":{"message":"x","status":"%s"}}' "$1" > "$out"; printf '%s' "$2"; }
+if (( http )) && [[ "$modo" == propio ]]; then printf 'no autorizado' > "$out"; printf '401'; exit 0; fi
+if (( http )) && [[ "$modo" == http404 ]]; then printf 'numero no asignado' > "$out"; printf '404'; exit 0; fi
+if (( http )) && [[ "$modo" == http400 ]]; then printf 'solicitud invalida' > "$out"; printf '400'; exit 0; fi
+if (( http )) && [[ "$modo" == http401json ]]; then err UNAUTHENTICATED 401; exit 0; fi
 case "$modo" in
+  http401otro) printf 'otro texto' > "$out"; printf '401' ;;
   propio) err UNAUTHENTICATED 401 ;;
   precondicion) err FAILED_PRECONDITION 400 ;;
   403) printf '<html><title>403 Forbidden</title></html>' > "$out"; printf '403' ;;
@@ -210,7 +224,7 @@ describe('nube-visor.sh: uso y salvaguardas (nada se llama a gcloud)', () => {
   it('--help explica los modos y la lista cerrada, y sale 0', () => {
     const r = correr(['--help'], {}, null);
     expect(r.codigo).toBe(0);
-    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR]) expect(r.salida).toContain(t);
+    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, RECLAMAR, CONFIRMAR]) expect(r.salida).toContain(t);
     expect(llamadas()).toEqual([]);
   });
 
@@ -255,6 +269,13 @@ describe('nube-visor.sh: --servicio, lista cerrada', () => {
     ['vacío', '', []],
     ['el nombre de la Function en camelCase (verComprobante)', 'verComprobante', []],
     ['el nombre de la Function en camelCase (buscarConversaciones)', 'buscarConversaciones', []],
+    ['el nombre de la Function en camelCase (enviarComoPersona)', 'enviarComoPersona', []],
+    ['el nombre de la Function en camelCase (reclamarSalidaPersona)', 'reclamarSalidaPersona', []],
+    ['el nombre de la Function en camelCase (confirmarSalidaPersona)', 'confirmarSalidaPersona', []],
+    ['ingesta (Function HTTP fuera de la lista)', 'ingesta', []],
+    ['tomarconversacion (callable fuera de la lista)', 'tomarconversacion', []],
+    ['un prefijo de la lista', 'reclamarsalida', []],
+    ['una lista con barra', 'enviarcomopersona|reclamarsalidapersona', []],
     ['en mayúsculas', 'VERCOMPROBANTE', []],
     ['con un espacio', 'vercomprobante ', []],
     ['otro servicio cualquiera', 'enlacecatalogo', []],
@@ -669,6 +690,51 @@ describe('nube-visor.sh: revisión de seguridad del #490', () => {
   });
 });
 
+describe('nube-visor.sh: las Functions HTTP de la ingesta (H2-3)', () => {
+  it.each(HTTP)('%s: sin credencial contesta 401 «no autorizado» (nuestro código): concede y sale 0', (servicio) => {
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toContain('NUESTRO código');
+    expect(escrituras()).toEqual([escritura('add', STAGING, servicio)]);
+  });
+
+  it.each(HTTP)('%s: un 2xx, 400 o 404 sin credencial es «abierto»: revierte y sale 3', (servicio) => {
+    for (const [modo, codigo] of [['200', 200], ['http400', 400], ['http404', 404]] as const) {
+      politica(SIN_NADA);
+      marcar('llamadas', ''); marcar('curl', ''); marcar('curl-modo', modo);
+      const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
+      expect(r.codigo).toBe(3);
+      expect(r.salida).toContain(`REVERTIDO: respondió sin sesión (abierto:${codigo})`);
+      expect(escrituras()).toEqual([escritura('add', STAGING, servicio), escritura('remove', STAGING, servicio)]);
+      expect(publico()).toBe(false);
+    }
+  });
+
+  it.each(HTTP)('%s: el 403 HTML de Google no cuenta como nuestro; un 401 que no es el texto nuestro tampoco', (servicio) => {
+    marcar('curl-modo', '403');
+    let r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('403 de Google');
+    politica(SIN_NADA);
+    marcar('curl-modo', 'http401otro');
+    r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('respuesta inesperada (401)');
+  });
+
+  it.each(HTTP)('%s: el JSON UNAUTHENTICATED de una callable NO vale como respuesta de una HTTP', (servicio) => {
+    marcar('curl-modo', 'http401json');
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('respuesta inesperada (401)');
+  });
+
+  it('una callable (enviarcomopersona) sigue exigiendo el JSON de Firebase, no el texto', () => {
+    marcar('curl-modo', 'propio');
+    expect(correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, ENVIAR).codigo).toBe(0);
+  });
+});
+
 describe('nube-visor.sh: la fuente', () => {
   const fuente = readFileSync(SCRIPT, 'utf8');
   const codigo = fuente.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
@@ -679,14 +745,22 @@ describe('nube-visor.sh: la fuente', () => {
     expect(codigo).not.toMatch(/python3(?! -I )/);
   });
 
-  it('la lista cerrada: dos servicios con sus constantes, sin variable que agregue otro', () => {
+  it('la lista cerrada: cinco servicios con sus constantes, sin variable que agregue otro', () => {
+    for (const [c, v] of [
+      ['SERVICIO_ENVIAR', 'enviarcomopersona'], ['FUNCION_ENVIAR', 'enviarComoPersona'],
+      ['SERVICIO_RECLAMAR', 'reclamarsalidapersona'], ['FUNCION_RECLAMAR', 'reclamarSalidaPersona'],
+      ['SERVICIO_CONFIRMAR', 'confirmarsalidapersona'], ['FUNCION_CONFIRMAR', 'confirmarSalidaPersona'],
+    ] as const) expect(codigo).toContain(`readonly ${c}="${v}"`);
     expect(codigo).toContain('readonly SERVICIO_VISOR="vercomprobante"');
     expect(codigo).toContain('readonly FUNCION_VISOR="verComprobante"');
     expect(codigo).toContain('readonly SERVICIO_BUSCADOR="buscarconversaciones"');
     expect(codigo).toContain('readonly FUNCION_BUSCADOR="buscarConversaciones"');
     expect(codigo).toContain('readonly SERVICIO FUNCION');
-    // Solo dos asignaciones de SERVICIO, y desde las constantes.
-    expect([...codigo.matchAll(/\bSERVICIO="([^"]*)"/g)].map((m) => m[1])).toEqual(['$SERVICIO_VISOR', '$SERVICIO_BUSCADOR']);
+    // Solo cinco asignaciones de SERVICIO, y desde las constantes.
+    expect([...codigo.matchAll(/\bSERVICIO="([^"]*)"/g)].map((m) => m[1])).toEqual([
+      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR']);
+    // Solo las dos HTTP son de tipo http.
+    expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(2);
     expect(codigo).not.toMatch(/NUBE_VISOR_(SERVICIO|ADC)/);
   });
 

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# El invocador público de UNA callable de una LISTA CERRADA, EN SECO por omisión:
-#   vercomprobante        → `verComprobante` (el visor de comprobantes, Cobros)
-#   buscarconversaciones  → `buscarConversaciones` (la búsqueda en conversaciones, Core)
+# El invocador público de UNA Function de una LISTA CERRADA, EN SECO por omisión:
+#   vercomprobante          → `verComprobante` (callable; el visor de comprobantes, Cobros)
+#   buscarconversaciones    → `buscarConversaciones` (callable; la búsqueda en conversaciones, Core)
+#   enviarcomopersona       → `enviarComoPersona` (callable; la persona escribe desde la consola, Core, H2-3)
+#   reclamarsalidapersona   → `reclamarSalidaPersona` (HTTP; la llama el flujo n8n con la credencial de la
+#                              ingesta del número, Core, H2-3)
+#   confirmarsalidapersona  → `confirmarSalidaPersona` (HTTP; ídem)
 #
 # POR QUÉ EXISTE. Una Function HTTP o callable nueva no nace invocable si su
 # creación no salió limpia: sin `roles/run.invoker` para `allUsers`, Google
@@ -18,6 +22,14 @@
 # de la sesión: un 2xx, o un JSON `INVALID_ARGUMENT`, `PERMISSION_DENIED`,
 # `NOT_FOUND` o `RESOURCE_EXHAUSTED`, sin sesión, quiere decir que el código
 # atendió a un anónimo («abierto»).
+#
+# LAS DOS HTTP (`reclamarsalidapersona`, `confirmarsalidapersona`) NO son
+# callables: no hay sesión de Firebase ni App Check; la barrera es la credencial
+# de la ingesta del número (`rutaAutenticada`, secreto por alias), que el código
+# exige ANTES de mirar la entrada. Sin ella contestan `401` con el texto «no
+# autorizado» (no JSON): eso es «nuestro código». Un 2xx, un `400` o un `404`
+# sin credencial sería «abierto» (se revierte). Es el mismo modelo que la
+# ingesta, que también es pública a nivel de Cloud Run y se protege por dentro.
 #
 #   ./scripts/nube-visor.sh --servicio <s> --entorno <staging|produccion>
 #       SECO: lee la política IAM del servicio y dice qué haría. No escribe.
@@ -62,6 +74,13 @@ readonly SERVICIO_VISOR="vercomprobante"
 readonly FUNCION_VISOR="verComprobante"
 readonly SERVICIO_BUSCADOR="buscarconversaciones"
 readonly FUNCION_BUSCADOR="buscarConversaciones"
+readonly SERVICIO_ENVIAR="enviarcomopersona"
+readonly FUNCION_ENVIAR="enviarComoPersona"
+readonly SERVICIO_RECLAMAR="reclamarsalidapersona"
+readonly FUNCION_RECLAMAR="reclamarSalidaPersona"
+readonly SERVICIO_CONFIRMAR="confirmarsalidapersona"
+readonly FUNCION_CONFIRMAR="confirmarSalidaPersona"
+readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}"
 readonly ROL="roles/run.invoker"
 readonly MIEMBRO="allUsers"
 readonly REPO="segurolotengopy/NovuChat"
@@ -73,7 +92,7 @@ while [[ $# -gt 0 ]]; do
       (( VISTO_SERVICIO == 0 )) || { echo "✗ --servicio va una sola vez" >&2; exit 2; }
       VISTO_SERVICIO=1
       if [[ "$1" == --servicio ]]; then
-        [[ $# -ge 2 ]] || { echo "✗ --servicio necesita ${SERVICIO_VISOR} o ${SERVICIO_BUSCADOR}" >&2; exit 2; }
+        [[ $# -ge 2 ]] || { echo "✗ --servicio necesita uno de ${LISTA_SERVICIOS}" >&2; exit 2; }
         PEDIDO="$2"; shift 2
       else
         PEDIDO="${1#*=}"; shift
@@ -89,13 +108,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# TIPO: callable (responde JSON de Firebase) o http (responde texto 401 «no autorizado»).
 case "$PEDIDO" in
-  "$SERVICIO_VISOR")    SERVICIO="$SERVICIO_VISOR";    FUNCION="$FUNCION_VISOR" ;;
-  "$SERVICIO_BUSCADOR") SERVICIO="$SERVICIO_BUSCADOR"; FUNCION="$FUNCION_BUSCADOR" ;;
-  "") echo "✗ Falta --servicio ${SERVICIO_VISOR}|${SERVICIO_BUSCADOR} (no hay servicio por omisión)" >&2; exit 2 ;;
-  *)  echo "✗ --servicio tiene que ser ${SERVICIO_VISOR} o ${SERVICIO_BUSCADOR}, escrito así (lista cerrada)" >&2; exit 2 ;;
+  "$SERVICIO_VISOR")     SERVICIO="$SERVICIO_VISOR";     FUNCION="$FUNCION_VISOR";     TIPO="callable" ;;
+  "$SERVICIO_BUSCADOR")  SERVICIO="$SERVICIO_BUSCADOR";  FUNCION="$FUNCION_BUSCADOR";  TIPO="callable" ;;
+  "$SERVICIO_ENVIAR")    SERVICIO="$SERVICIO_ENVIAR";    FUNCION="$FUNCION_ENVIAR";    TIPO="callable" ;;
+  "$SERVICIO_RECLAMAR")  SERVICIO="$SERVICIO_RECLAMAR";  FUNCION="$FUNCION_RECLAMAR";  TIPO="http" ;;
+  "$SERVICIO_CONFIRMAR") SERVICIO="$SERVICIO_CONFIRMAR"; FUNCION="$FUNCION_CONFIRMAR"; TIPO="http" ;;
+  "") echo "✗ Falta --servicio ${LISTA_SERVICIOS} (no hay servicio por omisión)" >&2; exit 2 ;;
+  *)  echo "✗ --servicio tiene que ser uno de ${LISTA_SERVICIOS}, escrito así (lista cerrada)" >&2; exit 2 ;;
 esac
-readonly SERVICIO FUNCION
+readonly SERVICIO FUNCION TIPO
 
 case "$ENTORNO" in
   staging|produccion) ;;
@@ -317,7 +340,21 @@ if isinstance(d, dict) and "error" in d:
 else:
     print("")
 ' "$CUERPO" 2>/dev/null || true)"
-  if [[ ( "$codigo" == 401 || "$codigo" == 400 ) && ( "$estado" == UNAUTHENTICATED || "$estado" == FAILED_PRECONDITION ) ]]; then
+  if [[ "$TIPO" == http ]]; then
+    # Función HTTP con credencial de ingesta: sin ella, 401 con el texto exacto
+    # «no autorizado» y sin JSON de error. Lo que solo sale DESPUÉS de la
+    # credencial (2xx, 400, 404) es «abierto».
+    local cuerpo; cuerpo="$(head -c 200 "$CUERPO" 2>/dev/null || true)"
+    if [[ "$codigo" == 401 && "$cuerpo" == "no autorizado" ]]; then
+      echo propio
+    elif [[ "$codigo" == 2[0-9][0-9] || "$codigo" == 400 || "$codigo" == 404 ]] && [[ "$cuerpo" != "<"* ]]; then
+      echo "abierto:${codigo}"
+    elif [[ "$codigo" == 403 && -z "$estado" ]]; then
+      echo google403
+    else
+      echo "otro:${codigo}"
+    fi
+  elif [[ ( "$codigo" == 401 || "$codigo" == 400 ) && ( "$estado" == UNAUTHENTICATED || "$estado" == FAILED_PRECONDITION ) ]]; then
     echo propio
   elif [[ "$codigo" == 2[0-9][0-9] || "$estado" =~ ^(INVALID_ARGUMENT|PERMISSION_DENIED|NOT_FOUND|RESOURCE_EXHAUSTED)$ ]]; then
     echo "abierto:${codigo}"
