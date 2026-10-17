@@ -23,7 +23,9 @@ export interface PedidoDePagoManual {
   comprobante: File | null;
 }
 
-type Tipo = Pago['tipo'];
+// Los tipos que este formulario ofrece hoy. Las bolsas nuevas (`bolsaConversaciones`, `bolsaSalientes`)
+// las trae PR-4b, con la tarifa de la cuenta; mientras tanto el formulario no las ofrece.
+type Tipo = Extract<Pago['tipo'], 'mensualidad' | 'bolsa' | 'instalacion'>;
 
 /**
  * CARGAR UN PAGO A MANO, CON COMPROBANTE (lo que A-3b prometía; `DISENO.md`
