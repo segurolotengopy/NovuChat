@@ -101,11 +101,14 @@ Todo en `admin/functions/src/ingesta.ts`, dentro de la transacción que ya exist
   en entrante, saliente y cortado
   (`pruebas/core/ingesta-conversaciones.test.ts`, «lo que NO cambia»).
 
-- **La línea del cliente (H2-3b)**: la ingesta escribe `phoneNumberId` en la conversación, en el mismo
-  `tx.set` de los derivados (cero lecturas y cero escrituras extra). Sale de la ruta autenticada, nunca del
-  cuerpo, y solo si son dígitos de 6 a 25. `enviarComoPersona` sale por esa ruta (del mismo comercio y
-  activa); si no corresponde, rechaza sin enviar. Las conversaciones anteriores no lo tienen y se ven con la
-  regla de antes (exactamente una ruta activa); el campo se completa con el siguiente mensaje del cliente.
+- **La línea del último entrante (H2-3b)**: la ingesta escribe `phoneNumberId` en la conversación SOLO con un
+  entrante (se mueve junto con `ultimoEntranteEn`: la ventana de Meta es por par número-cliente); un saliente no
+  lo toca ni lo borra ni lo crea. Va en el mismo `tx.set` de los derivados y sale de la ruta autenticada, nunca
+  del cuerpo (dígitos de 6 a 25). Las reglas lo toleran en `conversacionValida` pero se lo prohíben al token de
+  ingesta por SDK cliente. `enviarComoPersona` sale por esa ruta (del mismo comercio y activa); si no
+  corresponde, o el valor está malformado, o cambió entre la lectura y la transacción, rechaza sin enviar. Las
+  conversaciones anteriores no lo tienen y se ven con la regla de antes (exactamente una ruta activa).
+  **Costo**: ingesta, 0 lecturas y 0 escrituras extra; envío, +1 lectura de la conversación.
 
 **Segundo escritor: el carrito web.** `modulos/catalogo-web/catalogoWeb.ts:1217-1237` (#485) escribe en
 el mensaje `order` los campos `tenantId` y `palabras`, y en la conversación

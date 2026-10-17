@@ -187,6 +187,11 @@ export async function crearMensajeDePersona(
       };
     }
 
+    // 1b. LA LÍNEA. Si la conversación ya tiene `phoneNumberId` y no es el del canal elegido (la
+    //     línea cambió entre la lectura del canal y esta transacción), no se envía. Sin lecturas extra.
+    const lineaActual: unknown = conv.get('phoneNumberId');
+    if (lineaActual !== undefined && lineaActual !== canal.phoneNumberId) throw errorDeEnvio('canal');
+
     // 2. EL TURNO de ESA persona, vigente.
     const ultimoEntranteEn: unknown = conv.get('ultimoEntranteEn');
     const { veredicto, turno } = turnoEfectivo(conv.get('turno'), { ultimoEntranteEn }, ahoraMs);
@@ -346,11 +351,12 @@ export async function atenderEnvio(
     }
     // 6. El canal y los topes del plan.
     //    La línea es la de la conversación (`phoneNumberId`, escrito por la ingesta): con dos líneas
-    //    sale por la misma por la que escribió el cliente. Una lectura más (la transacción la
+    //    sale por la línea del último mensaje entrante del cliente. Una lectura más (la transacción la
     //    vuelve a leer para decidir; esta solo elige el canal).
     const lineaDe: unknown = (await db.doc(`tenants/${t}/conversaciones/${conversacionId}`).get()).get('phoneNumberId');
-    const linea = typeof lineaDe === 'string' && /^[0-9]{6,25}$/.test(lineaDe) ? lineaDe : undefined;
-    const encontrado = await canalDe(db, t, linea);
+    // Presente pero malformado (no es texto de 6 a 25 dígitos): rechaza, no se trata como ausente.
+    const lineaMala = lineaDe !== undefined && (typeof lineaDe !== 'string' || !/^[0-9]{6,25}$/.test(lineaDe));
+    const encontrado = lineaMala ? null : await canalDe(db, t, typeof lineaDe === 'string' ? lineaDe : undefined);
     if (!encontrado) {
       registrar(funcion, 'failed-precondition', { tenantId: t, uid, rol, motivo: 'canal' });
       throw errorDeEnvio('canal');

@@ -464,15 +464,31 @@ describe('duplicados y reintentos: nunca más no leídos que mensajes contados',
 });
 
 // =============================================================================
-describe('H2-3b: la conversación guarda la línea por la que escribió el cliente', () => {
-  it('entrante y saliente dejan `phoneNumberId` = el de la ruta autenticada; el cuerpo no lo pisa y dos comercios no se mezclan', async () => {
-    await entrante(A, '5910000007001', 'hola', { phoneNumberId: B.numero });
-    expect((await conversacion(A, '5910000007001'))['phoneNumberId']).toBe(A.numero);
-    await saliente(A, '5910000007001', 'con gusto', { phoneNumberId: B.numero });
-    expect((await conversacion(A, '5910000007001'))['phoneNumberId']).toBe(A.numero);
-    await entrante(B, '5910000007001', 'hola');
-    expect((await conversacion(B, '5910000007001'))['phoneNumberId']).toBe(B.numero);
-    expect((await conversacion(A, '5910000007001'))['phoneNumberId']).toBe(A.numero);
+describe('H2-3b: la conversación guarda la línea del ÚLTIMO ENTRANTE', () => {
+  const NUMERO_2 = '1000000614';
+  const A2: Comercio = { ...A, numero: NUMERO_2 };
+  beforeAll(async () => {
+    await db.doc(`rutasWhatsApp/${NUMERO_2}`).set({ tenantId: A.id, flujo: 'agendamiento', aliasSecreto: A.alias, estado: 'activo' });
+  });
+  afterAll(async () => { await db.doc(`rutasWhatsApp/${NUMERO_2}`).delete(); });
+
+  it('un comercio con dos rutas: el entrante por A deja A, el entrante por B deja B, y un saliente por A no lo mueve', async () => {
+    const tel = '5910000007001';
+    await entrante(A, tel, 'hola', { phoneNumberId: B.numero });
+    expect((await conversacion(A, tel))['phoneNumberId']).toBe(A.numero);
+    await entrante(A2, tel, 'hola otra vez');
+    expect((await conversacion(A, tel))['phoneNumberId']).toBe(NUMERO_2);
+    await saliente(A, tel, 'seguimiento por la otra linea', { phoneNumberId: B.numero });
+    expect((await conversacion(A, tel))['phoneNumberId']).toBe(NUMERO_2);
+  });
+
+  it('un saliente sobre una conversación sin el campo no lo crea; dos comercios no se mezclan', async () => {
+    const tel = '5910000007003';
+    await saliente(A, tel, 'primero sale el asistente');
+    expect('phoneNumberId' in (await conversacion(A, tel))).toBe(false);
+    await entrante(B, tel, 'hola');
+    expect((await conversacion(B, tel))['phoneNumberId']).toBe(B.numero);
+    expect('phoneNumberId' in (await conversacion(A, tel))).toBe(false);
   });
 
   it('en la rama de corte también se guarda, y siguen siendo los mismos tx.set (cero escrituras extra)', async () => {
