@@ -423,6 +423,9 @@ describe('5. los errores salen de `e.code`, nunca de `e.message`', () => {
     expect(textoRechazoMeta('131052')).toMatch(/descargar/);
     expect(textoRechazoMeta('131026')).toMatch(/no tiene WhatsApp/);
     expect(textoRechazoMeta('WM-3037', 12)).toBe('Límite de envíos; intente en 12 s.');
+    expect(textoRechazoMeta('caducado')).toBe('No se envió a tiempo; puede reintentar.');   // no es un rechazo de WhatsApp: el texto genérico sería falso
+    expect(textoRechazoMeta(' caducado ')).not.toMatch(/WhatsApp no aceptó/);
+    expect(textoRechazoMeta('CADUCADO')).toBe('WhatsApp no aceptó el mensaje.');   // solo el código exacto del servidor
     expect(textoRechazoMeta('WM-3037')).toBe('Límite de envíos; intente de nuevo en unos instantes.');
     expect(textoRechazoMeta('WM-3037', 'doce')).not.toMatch(/ s\./);
     expect(textoRechazoMeta('131047', 12)).not.toMatch(/ 12 /);                  // los segundos solo valen para WM-3037
