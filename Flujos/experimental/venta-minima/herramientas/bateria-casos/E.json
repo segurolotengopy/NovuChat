@@ -5,7 +5,7 @@
   "casos": [
     {
       "id": "E2",
-      "titulo": "Comprobante de otro importe (Bs 1 contra un pedido de 21): dice la diferencia y pasa con el local",
+      "titulo": "Comprobante de otro importe (Bs 1 contra un pedido de 21): dice la diferencia y pide el correcto, sin avisar todavía",
       "estadoPrevio": [
         {
           "cliente": {"tipo": "carrito", "items": [{"id": "cat_birria1", "cantidad": 1}], "entrega": "retiro"},
@@ -20,17 +20,17 @@
         {
           "cliente": {"tipo": "imagen"},
           "lectura": {"monto": "1.00"},
-          "cotejo": {"resultado": "no_cuadra", "diferencias": ["El comprobante dice 1.00 y el pedido es de 21.00"]},
+          "cotejo": {"estado": "reintentar", "motivo": "monto_menor", "montoLeido": 1, "importe": 21, "cierreId": null, "avisarComercio": false, "intentos": 1, "intentosRestantes": 2},
           "esperado": {
             "mensajes": 1,
             "textos": [
               "Veo una diferencia con tu pedido #",
               "comprobante dice 1(\\.00)?( Bs)? y (tu|el) pedido es de 21(\\.00)?( Bs)?",
-              "Ya lo pas[eé] a nuestro equipo"
+              "env[ií]ame de nuevo el comprobante correcto"
             ],
             "titulos": ["Escribir al local"],
-            "ruta": "^comprobante:no_cuadra",
-            "efectos": {"aviso": true, "qr": false, "modelo": false}
+            "ruta": "^comprobante:reintentar",
+            "efectos": {"aviso": false, "qr": false, "modelo": false}
           }
         }
       ]
@@ -115,7 +115,7 @@
       "turnos": [
         {
           "cliente": {"tipo": "imagen"},
-          "cotejo": {"statusCode": 409, "body": {"error": "sin_sena_pendiente"}},
+          "cotejo": {"estado": "ya_resuelto", "motivo": "ya_resuelto", "avisarComercio": false},
           "esperado": {
             "mensajes": 1,
             "textos": ["Ya tengo el comprobante de tu pedido #"],

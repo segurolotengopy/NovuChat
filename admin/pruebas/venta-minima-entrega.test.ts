@@ -5,7 +5,7 @@
  *
  * EL CASO QUE LO ORIGINÓ (03/10/2026, Demo B). El QR del cobro falló porque Meta rechazó un media ID vencido; el texto iba
  * en el PIE de la imagen y el cliente no recibió nada, y n8n mostró `success`. La regla (`NOVUCHAT_plan-entrega-de-lo-prometido`,
- * PR-7 es Q'Taco) y cómo la cumple este flujo SIN NODOS NUEVOS (presupuesto de 50 nodos de producción):
+ * PR-7 es Q'Taco) y cómo la cumple este flujo SIN NODOS NUEVOS (presupuesto de nodos de producción; subió de 50 a 51 el 17/10/2026, por decisión de Andres, para `Guardar comprobante`):
  *
  *   R1  un envío cuenta como hecho solo si Meta devolvió un `messages[0].id` no vacío. `¿Falló el envío?` decide por ese id
  *       (no por `$json.error`) y el reporte saliente cuenta solo con `idMeta`;
@@ -316,18 +316,18 @@ describe('las guardias de entrega de `construir.mjs --verificar` (sobre los JSON
 // =====================================================================================================
 // 5. El presupuesto de nodos: la regla de entrega NO sumó ningún nodo
 // =====================================================================================================
-describe('presupuesto de nodos de producción (Andres, 03/10/2026): 50 como máximo', () => {
-  it('el JSON de Q\'Taco tiene como máximo 50 nodos y NO tiene un nodo «Entrega fallida» (R3 va dentro de «Resumen del turno»)', () => {
-    expect(QTACO.nodes.length).toBeLessThanOrEqual(50);
+describe('presupuesto de nodos de producción (Andres, 03/10/2026; 51 desde el 17/10/2026): 51 como máximo', () => {
+  it('el JSON de Q\'Taco tiene como máximo 51 nodos y NO tiene un nodo «Entrega fallida» (R3 va dentro de «Resumen del turno»)', () => {
+    expect(QTACO.nodes.length).toBeLessThanOrEqual(51);
     expect(QTACO.nodes.map((n) => n.name)).not.toContain('Entrega fallida');
   });
 
-  it('`--verificar` FALLA si un JSON de producción crece por encima de 50 nodos', () => {
+  it('`--verificar` FALLA si un JSON de producción crece por encima de 51 nodos', () => {
     const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
       f.nodes.push({ id: 'uno-de-mas', name: 'Uno de más', type: 'n8n-nodes-base.noOp', parameters: {} } as Flujo['nodes'][number]);
     }));
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/tiene 51 nodos y el tope de producción es 50/);
+    expect(r.stderr).toMatch(/tiene 52 nodos y el tope de producción es 51/);
   });
 
   it('el error de entrega es de verdad un error de n8n: `FalloDeNodo` (y no un `success` con un aviso adentro)', () => {

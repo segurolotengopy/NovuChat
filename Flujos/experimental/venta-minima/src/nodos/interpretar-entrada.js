@@ -143,7 +143,10 @@ const pedidoDeLaRef = (() => {
   return !ref || String(enEstado.pedidoId) === ref ? enEstado : null;
 })();
 const pedidoSimulado = !!pedidoDeLaRef && pedidoDeLaRef.simulado === true;
-const llegaComoComprobanteReal = (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.modo !== 'simulado' && cobro.pendiente === true;
+// REGLA 2 (15 minutos, 3 intentos): además del QR pendiente, la foto de un cobro que ya venció hace menos de 24 h (`vencidoHaceMin`, un número) o que está
+// con una persona (`enRevision`) también se manda al servidor, que decide `tardio` o `en_revision` y avisa al local una sola vez. Con la regla 1 nada cambia.
+const cobroTardioOEnRevision = cobro.regla === 2 && (cobro.enRevision === true || (typeof cobro.vencidoHaceMin === 'number' && cobro.vencidoHaceMin >= 0));
+const llegaComoComprobanteReal = (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.modo !== 'simulado' && (cobro.pendiente === true || cobroTardioOEnRevision);
 
 return [{ json: {
   from: from,

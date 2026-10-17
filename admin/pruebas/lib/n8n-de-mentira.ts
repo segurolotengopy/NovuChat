@@ -52,6 +52,7 @@
  *   ingesta  → `Reportar mensaje (entrante)`, `Reportar mensaje (saliente)`
  *   cierre   → `Registrar cierre`
  *   cotejo   → `Cotejar en el servidor`
+ *   guardar  → `Guardar comprobante`
  *   extraer  → `Extraer`
  *   resumen  → `Resumen del turno` (un Code: su primer ítem de salida)
  * Los nombres por omisión son los del §4.4 del diseño de Venta mínima y se
@@ -110,7 +111,7 @@ export interface LlamadaDoble {
 export type RespuestaDoble = J | J[];
 export type Doble = RespuestaDoble | ((llamada: LlamadaDoble) => RespuestaDoble);
 
-export type Rol = 'mensajes' | 'avisos' | 'ingesta' | 'cierre' | 'cotejo' | 'extraer' | 'resumen';
+export type Rol = 'mensajes' | 'avisos' | 'ingesta' | 'cierre' | 'cotejo' | 'guardar' | 'extraer' | 'resumen';
 export type RolesDelMundo = Partial<Record<Rol, string | string[]>>;
 
 /** Los nombres de nodo por rol, los del §4.4 del diseño de Venta mínima. */
@@ -120,6 +121,7 @@ export const ROLES_POR_OMISION: Record<Rol, string[]> = {
   ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)'],
   cierre: ['Registrar cierre'],
   cotejo: ['Cotejar en el servidor'],
+  guardar: ['Guardar comprobante'],
   extraer: ['Extraer'],
   resumen: ['Resumen del turno'],
 };
@@ -179,7 +181,7 @@ export interface RespuestaWebhook {
   cuerpo: unknown;
 }
 
-export interface Llamadas { ingesta: J[]; cierre: J[]; cotejo: J[]; extraer: J[] }
+export interface Llamadas { ingesta: J[]; cierre: J[]; cotejo: J[]; guardar: J[]; extraer: J[] }
 
 export interface ResultadoTurno {
   mensajes: Enviado[];
@@ -337,7 +339,7 @@ const RE_ITEM = /\$\(\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1\s*\)\s*\.item\b/g;
 interface Item { json: J; linaje: Record<string, J> }
 
 const ROLES_DE_ENVIO: Rol[] = ['mensajes', 'avisos'];
-const ROLES_DE_LLAMADA: Rol[] = ['ingesta', 'cierre', 'cotejo', 'extraer'];
+const ROLES_DE_LLAMADA: Rol[] = ['ingesta', 'cierre', 'cotejo', 'guardar', 'extraer'];
 const ENTRADAS_CONOCIDAS = ['WhatsApp Trigger', 'Entrada de prueba', 'Entrega del receptor'];
 
 export function crearMundo(op: OpcionesMundo): Mundo {
@@ -378,7 +380,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
   const sdNodos: Record<string, J> = {};
   const dobles: Record<string, Doble> = { ...(op.dobles ?? {}) };
   const repetidos = new Map<string, Set<string>>();
-  const llamadas: Llamadas = { ingesta: [], cierre: [], cotejo: [], extraer: [] };
+  const llamadas: Llamadas = { ingesta: [], cierre: [], cotejo: [], guardar: [], extraer: [] };
   const contadorDeLlamadas: Record<string, number> = {};
   let ahoraMs = op.ahoraMs;
   let turnos = 0;
@@ -790,7 +792,7 @@ export function crearMundo(op: OpcionesMundo): Mundo {
     const salidas: Record<string, J[][]> = {};
     const porNodo: Record<string, J[]> = {};
     const resultado: ResultadoTurno = {
-      mensajes: [], avisos: [], llamadas: { ingesta: [], cierre: [], cotejo: [], extraer: [] }, resumen: null,
+      mensajes: [], avisos: [], llamadas: { ingesta: [], cierre: [], cotejo: [], guardar: [], extraer: [] }, resumen: null,
       respuestasWebhook: [], orden, ejecutados: new Set<string>(), salidas, porNodo, registro: [], fallo: null,
       mensajesA: (tel) => resultado.mensajes.filter((m) => m.a === tel),
       avisosA: (tel) => resultado.avisos.filter((m) => m.a === tel),

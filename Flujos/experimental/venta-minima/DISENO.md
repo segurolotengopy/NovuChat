@@ -58,7 +58,7 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - en producción, ningún webhook con ruta de prueba y solo dos entradas: la del receptor y `Carrito del catálogo` (con su forma
     exacta: POST, `headerAuth` con la credencial de la ingesta, `onReceived`, ruta como `REEMPLAZAR_RUTA_CARRITO_QTACO`, conectado solo a
     `Carga de entrada`, solo en la variante del receptor);
-  - presupuesto de nodos: los JSON de producción tienen **50 nodos como máximo** (49 + el webhook del carrito);
+  - presupuesto de nodos: los JSON de producción tienen **51 nodos como máximo** (49 + el webhook del carrito + `Guardar comprobante`; el tope subió de 50 a 51 por decisión de Andres el 17/10/2026, para el visor de comprobantes);
   - «se entrega lo que se promete» (R1, R3, R5; ver «Entrega de lo prometido»);
   - cada `venta-minima.*.json` versionado tiene su archivo de datos (si no, queda huérfano); un `*.local.json` (lo que deja
     `preparar-import.sh`, con valores reales) no cuenta como huérfano;
@@ -112,7 +112,7 @@ de Q'Taco pasa de 49 a **50 como máximo**, y `--verificar` falla si crece. El �
   `Carga de entrada`, que valida el carrito SOLO si ese nodo corrió. Su ruta es el marcador propio `REEMPLAZAR_RUTA_CARRITO_QTACO` (no el del Demo B).
 - Pruebas: `venta-minima-entrega.test.ts` (negando) y `venta-minima-catalogo-topologia.test.ts`.
 
-## El grafo (50 nodos en producción de Q'Taco; 46 en la prueba)
+## El grafo (51 nodos en producción de Q'Taco; 47 en la prueba)
 
 ```
 Entrega del receptor → Verificar firma con el receptor → ¿Firma válida? ─sí→ Aceptar (200) → Descartar repetidos ─┐
@@ -123,7 +123,8 @@ Carga de entrada → Config base → ¿Es un mensaje? → Traer configuración �
   → ¿Reportar? (entrante) → Reportar mensaje (entrante) → ¿Comercio operativo? ─no→ Comercio no operativo ─┐
                                                                     └sí→ ¿Atención normal? ─no→ Uso extendido ─┤
      ¿Bajar medio? → Obtener URL → ¿Tamaño aceptable? → Descargar medio → ¿Es audio? → Transcribir audio ─┐      │
-        (comprobante) ¿Es PDF? → Leer comprobante (PDF | imagen) → Interpretar lectura → Cotejar ─────────┤      │
+        (comprobante) ¿Es audio? ─no→ Guardar comprobante (rama terminal, sin salidas)                          │      │
+                                  └no→ ¿Es PDF? → Leer comprobante (PDF | imagen) → Interpretar lectura → Cotejar ─┤      │
   Decidir turno → ¿Extraer? → Extraer → Plan del turno → Armar avisos ◄────────────────────────────────────┴──────┘
   Armar avisos → ¿Hay avisos? → Enviar aviso → Reunir avisos → ¿Falló el aviso? → Aviso de respaldo
                       └sin avisos → Armar mensajes ◄──────────────────────────────────────┴───────────┘
@@ -136,8 +137,8 @@ Carga de entrada → Config base → ¿Es un mensaje? → Traer configuración �
 `Reportar mensaje (entrante)` va **arriba** de `Decidir turno` en el lienzo (la suite lo verifica por posición y
 por orden de ejecución). Los envíos al cliente van arriba del cierre, y el resumen cuelga de `Armar mensajes` por debajo de todo.
 
-El plano hablaba de 50 nodos; el JSON de producción tiene **49** porque `¿Avisar de verdad?` y `Simular aviso` solo existen
-en la prueba (L2): son 51 menos esos dos.
+El plano hablaba de 50 nodos; el JSON de producción tiene **49** (hasta el 16/10) porque `¿Avisar de verdad?` y `Simular aviso` solo existen
+en la prueba (L2): son 51 menos esos dos. Con `Guardar comprobante` (17/10/2026) son **51**.
 
 ## En qué se aparta del plano (y por qué)
 
@@ -732,6 +733,41 @@ Un audio transcrito, «quiero cuatro tacos de birria», caía al menú sin llama
 - **Privacidad:** la ubicación vive en el estado por teléfono (60 min, o 24 h con un comprobante en espera), en `sd.pedidos` (72 h / 500), en el aviso al rol `completo` y en los datos de ejecución de n8n. No va a la consola ni a la ingesta (el reporte dice solo «el cliente compartió una ubicación») ni al cierre.
 - **Pruebas:** `venta-minima-integracion` («PR-A»: botón, respaldo, negados por paso, ubicación inválida, dirección + ubicación, aviso con y sin ventana, texto de terceros, privacidad, carrito de la página), `venta-minima-catalogo-punta-a-punta` (`Carga de entrada`), `venta-minima-avisos` (enlace), `venta-minima-pedido` ((0, 0), 5 decimales, resumen) y la batería U5m (ventana cerrada: sin enlace), U6 y U6b.
 - **Costo:** 0 mensajes agregados o quitados por conversación (el pedido de dirección reemplaza al texto que ya salía; el aviso al local no cambia de cantidad).
+
+## Visor de comprobantes: regla 2, imagen guardada y cotejo de venta (17/10/2026)
+
+Decisión de Andres (11/10, vía la Principal; tope y plazo el 17/10): el flujo usa `/cotejarComprobanteVenta` (regla 2: **15 minutos**, 3 intentos, imagen guardada 90 días) y
+llama a `guardarComprobante`, para que la consola muestre el comprobante (visor). Diseño: `QTaco-diseno-cambio-de-flujo-cotejo-regla-2-y-visor` (12/10) y plan de implementación (17/10).
+**Cero mensajes agregados al cliente**: los textos nuevos reemplazan a los de la seña; el aviso al local ya existía. El plazo de 15 minutos y los tardíos al local están decididos.
+
+- **El QR real abre un cobro de regla 2.** `Armar mensajes` (`amQr`) agrega `reglaCobro: 2` al evento `qr_enviado` SOLO si el cobro es real (no simulado) y el QR es el original (el reenvío no lleva
+  evento ni regla). `Reportar mensaje (saliente)` lo copia (`reglaCobro`, `evento`, `referencia`, `monto`) junto con el `idMeta` del mensaje del QR: sin ese id el servidor no abre el cobro.
+- **`Guardar comprobante`** (HTTP, nodo nuevo, el único agregado): `POST guardarComprobante` con los bytes de `Descargar medio` (`contentType: binaryData`, campo `data`; el tipo del archivo sale
+  del binario y el servidor lo comprueba por los bytes), cabeceras `X-NovuChat-Numero|Telefono|IdMeta` y el token del número (una firma no cubre una imagen: con firma el servidor responde 401).
+  Cuelga de la salida «no es audio» de `¿Es audio?`, **sin salidas** (no pisa el binario que lee Gemini) y **arriba** de `¿Es PDF?` en el lienzo, para correr antes (orden `v1`). Respuesta completa
+  con `neverError`: un 409 (`sin_cobro_pendiente`, `demasiados_comprobantes`), 413, 415 o 502 no rompen el turno. `Interpretar lectura` toma la `ruta` solo si es un 200 con la forma
+  `tenants/<comercio>/comprobantes/<aaaa-mm-dd>/<nombre>.<jpg|png|webp|pdf>` (`cbRutaGuardada`); si no, `ruta: null` y **el cotejo corre igual**.
+- **`Cotejar en el servidor`** llama a `cotejarComprobanteVenta` con `{telefono, legible, leido, idMeta, ruta}`. Ya no es copia del Demo B.
+- **La traducción** (`cbResultadoVenta`, listas cerradas) lleva el estado a los resultados que el flujo ya conocía, sin tocar `avisos.js`:
+
+  | Respuesta del servidor | Resultado | Al cliente | Aviso al local |
+  |---|---|---|---|
+  | `valido`, `aproximado` | `cuadra` | «Los datos coinciden con tu pedido…» | sí (una vez) |
+  | `reintentar` y no se lee (`ilegible`, `falta_*`) | `ilegible` | pide uno más nítido; el segundo ilegible se pasa al equipo | no (el 2.º, sí) |
+  | `reintentar` con diferencia | `reintentar` | la diferencia en frase fija (solo números del servidor) y pide el correcto, con botón | no |
+  | `tardio` / `en_revision` | `sin_cotejo` con causa | «Llegó después de los 15 minutos del QR…» / «Como ya van varios intentos…», con botón | sí (una vez) |
+  | `ya_resuelto`, `repetido: true`, o `avisarComercio` distinto de `true` | `ya_cotejado` | «Ya tengo el comprobante…» | no |
+  | **Todo lo demás**: cualquier 409, 4xx, 5xx, corte, cuerpo roto, estado desconocido | `sin_cotejo` | «Ya lo pasé a nuestro equipo…» solo si el aviso salió; si no, el botón | sí |
+
+  Nunca «pago acreditado/verificado/recibimos tu pago» (las redes `VM_/CB_/AV_PROHIBIDAS` se conservan). Lo leído de la imagen no llega al cliente.
+- **Entrada tardía.** Con `cobro.regla === 2`, `Interpretar entrada` acepta como comprobante también la foto de un cobro vencido hace menos de 24 h (`vencidoHaceMin`, un número) o con el cobro
+  en revisión (`enRevision`), que `cbCobroReal` copia del panel. Con la regla 1, o sin nada pendiente, la foto sigue siendo una imagen cualquiera.
+- **Costo.** Mensajes por conversación: **0** (un mensaje al cliente por comprobante, como antes; avisos al local ≤ los de antes). Por comprobante: +1 llamada HTTP (`guardarComprobante`) y 1 objeto
+  en Storage ≤ 5 MB (PDF ≤ 10 MB) por 90 días. El peor caso del turno suma el timeout de `Guardar comprobante` (15 s) y sigue dentro de los 120 s de la ejecución.
+- **Riesgos.** Un QR de regla 1 enviado antes de publicar cae en `sin_cotejo` (aviso + botón); Gemini sin saldo (402) lleva todo a «ilegible» y a revisión humana; la imagen pasa por el cuerpo de la
+  petición y por los datos de ejecución (retención M-1 ya aceptada). Reversión: volver al JSON del 09/10 con `publicar-flujo.sh` (el servidor no cambia).
+- **No hecho aquí (a propósito).** Ensayo en el Demo A (B2: exige una ruta `venta` del Demo A y cobro real con un QR de NovuChat) y publicación. `cbResultado` (la traducción de la seña) queda en `cobro.js`, probada, sin uso en el flujo.
+- Pruebas: `venta-minima-cobro.test.ts` (`cbResultadoVenta`, `cbRutaGuardada`, textos), `venta-minima-flujo.test.ts` («visor de comprobantes (regla 2)»), `venta-minima-integracion.test.ts`, `venta-minima-decision.test.ts` y el tope en `venta-minima-catalogo-topologia.test.ts`.
 
 ## Lo que falta para publicar (pendientes de la persona)
 

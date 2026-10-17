@@ -569,7 +569,7 @@ describe('n8n de mentira: los roles', () => {
     expect(t.avisos.map((m) => [m.nodo, m.a, m.cuerpo, m.respaldo])).toEqual([
       ['Enviar aviso', '59100000022', 'a | b', false], ['Aviso de respaldo', '59100000022', 'texto', true],
     ]);
-    expect(t.llamadas).toEqual({ ingesta: [{ direccion: 'saliente' }], cierre: [{ tipo: 'registro', detalle: 'd' }], cotejo: [{ monto: 55 }], extraer: [{ contents: [] }] });
+    expect(t.llamadas).toEqual({ ingesta: [{ direccion: 'saliente' }], cierre: [{ tipo: 'registro', detalle: 'd' }], cotejo: [{ monto: 55 }], guardar: [], extraer: [{ contents: [] }] });
     expect(t.resumen).toEqual({ resumen: { ok: true } });
     expect(t.mensajesA(TEL)).toHaveLength(2);
     expect(t.mensajesA('59100000099')).toHaveLength(0);

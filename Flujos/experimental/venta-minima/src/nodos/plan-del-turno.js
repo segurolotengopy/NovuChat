@@ -36,7 +36,7 @@
 //     reserva = {from, nombrePerfil, telefono, nombre, codigo, reserva}; transferencia =
 //     {from, nombrePerfil, telefono, nombre, codigo, motivo}, donde `motivo` es lo que escribió
 //     el cliente (lo pide `avisos.js`) y la razón interna va en `ruta`. `resultado` ∈ cuadra |
-//     no_cuadra | ilegible | sin_cotejo | sin_qr | ya_cotejado.
+//     no_cuadra | ilegible | reintentar | sin_cotejo | sin_qr | ya_cotejado.
 //  4. `rsAnotar` escribe en `sd`, y este nodo no escribe en `sd`: el plan pide `anotarReserva:
 //     true` y T7b llama `rsAnotar(sd, from, ahoraMs)` cuando `aviso.tipo === 'reserva'`. SIN
 //     ESE LLAMADO EL TOPE DE RESERVAS POR DÍA NO FUNCIONA.
@@ -57,8 +57,9 @@
 //     (con el campo inválido vacío) es lo que se guarda en el estado.
 //  d. `cbTextoAlCliente` devuelve {cuerpo, enlace, aviso}; se pasa `ilegibles` contando el
 //     comprobante de este turno, y `diferencia` como la lista de diferencias del servidor.
-//     `cbResultado(resp, previo)` recibe como `previo` el resultado guardado del pedido ('' si
-//     no hay), así un 409 de un QR vencido no se lee como «ya cotejado».
+//     `cbResultadoVenta(resp)` traduce la respuesta de `/cotejarComprobanteVenta` (regla 2) con listas
+//     cerradas: todo 409, 4xx, 5xx, timeout o estado desconocido es `sin_cotejo`, y el mismo comprobante
+//     otra vez (`repetido`) o un estado que el servidor ya avisó es `ya_cotejado` (sin segundo aviso).
 //  e. El pedido de un comprobante se busca primero por la referencia que manda el servidor
 //     (`cobro.pedidoRef`, en `sd.pedidos`) y, si no está, en el estado del teléfono. Sin pedido,
 //     el comprobante se deriva a una persona.
@@ -1433,24 +1434,27 @@ function aComprobante() {
   let resultado = 'sin_cotejo';
   let diferencias = [];
   let cierreId = '';
+  let causa = '';
   if (vmNodo('Cotejar en el servidor')) {
-    const c = cbResultado(vmPrimero('Cotejar en el servidor'), String(ped.resultado || ''));
+    // `/cotejarComprobanteVenta` (regla 2): listas cerradas; cualquier 409, 4xx, 5xx, timeout o estado desconocido da `sin_cotejo`.
+    const c = cbResultadoVenta(vmPrimero('Cotejar en el servidor'));
     resultado = c.resultado;
     diferencias = c.diferencias || [];
     cierreId = c.cierreId || '';
+    causa = c.causa || '';
   } else {
     const lectura = vmPrimero('Interpretar lectura');
     if (lectura && lectura.legible === false) resultado = 'ilegible';
   }
   const ilegibles = resultado === 'ilegible' ? en.ilegibles + 1 : en.ilegibles;
-  const base = { codigo: ped.codigo, diferencia: diferencias, ilegibles: ilegibles, entrega: ped.modalidad, moneda: monedaTxt, resumen: cbResumenCorto(ped.lineas, ped.modalidad, { real: ped.simulado !== true }) };
+  const base = { codigo: ped.codigo, causa: causa, diferencia: diferencias, ilegibles: ilegibles, entrega: ped.modalidad, moneda: monedaTxt, resumen: cbResumenCorto(ped.lineas, ped.modalidad, { real: ped.simulado !== true }) };
   const conAviso = cbTextoAlCliente(resultado, Object.assign({ avisoSalio: true }, base));
   ruta = 'comprobante:' + resultado;
 
   if (!conAviso.aviso) {
-    // Primer comprobante ilegible (se pide de nuevo) o uno ya cotejado: sin aviso.
+    // Primer comprobante ilegible o con una diferencia que el servidor deja corregir (se pide de nuevo) o uno ya cotejado: sin aviso.
     mensajes = [mensajeDeCb(conAviso)];
-    if (resultado === 'ilegible') {
+    if (resultado === 'ilegible' || resultado === 'reintentar') {
       en.ilegibles = ilegibles;
       en.pedido = en.pedido || ped;
       en.paso = 'esperando_comprobante';
