@@ -133,6 +133,9 @@ if (( http )) && [[ "$modo" == http400 ]]; then printf 'solicitud invalida' > "$
 if (( http )) && [[ "$modo" == http401json ]]; then err UNAUTHENTICATED 401; exit 0; fi
 case "$modo" in
   http401otro) printf 'otro texto' > "$out"; printf '401' ;;
+  http409) printf 'transicion no permitida' > "$out"; printf '409' ;;
+  http503) printf 'no disponible' > "$out"; printf '503' ;;
+  http200html) printf '<html>hola</html>' > "$out"; printf '200' ;;
   propio) err UNAUTHENTICATED 401 ;;
   precondicion) err FAILED_PRECONDITION 400 ;;
   403) printf '<html><title>403 Forbidden</title></html>' > "$out"; printf '403' ;;
@@ -327,7 +330,7 @@ describe('nube-visor.sh: --servicio, lista cerrada', () => {
     const r = correr(['--entorno', 'produccion', '--revertir', '--aplicar', '--confirmo', 'produccion'], {}, servicio);
     expect(r.codigo).toBe(0);
     expect(escrituras()).toEqual([escritura('remove', PROD, servicio)]);
-    expect(r.salida).toContain(`no puede usar ${funcion} en produccion`);
+    expect(r.salida).toContain(`ya no puede ${(HTTP as readonly string[]).includes(servicio) ? 'llamar a' : 'usar'} ${funcion} en produccion`);
   });
 
   it.each(SERVICIOS)('%s: la URL de OTRO servicio de la lista no se prueba', (servicio) => {
@@ -705,8 +708,8 @@ describe('nube-visor.sh: las Functions HTTP de la ingesta (H2-3)', () => {
     expect(escrituras()).toEqual([escritura('add', STAGING, servicio)]);
   });
 
-  it.each(HTTP)('%s: un 2xx, 400 o 404 sin credencial es «abierto»: revierte y sale 3', (servicio) => {
-    for (const [modo, codigo] of [['200', 200], ['http400', 400], ['http404', 404]] as const) {
+  it.each(HTTP)('%s: cualquier respuesta distinta del 401 propio y del 403 de Google es «abierto»: revierte y sale 3', (servicio) => {
+    for (const [modo, codigo] of [['200', 200], ['http400', 400], ['http404', 404], ['http409', 409], ['http503', 503], ['500', 500], ['http200html', 200], ['http401otro', 401], ['http401json', 401]] as const) {
       politica(SIN_NADA);
       marcar('llamadas', ''); marcar('curl', ''); marcar('curl-modo', modo);
       const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
@@ -717,23 +720,33 @@ describe('nube-visor.sh: las Functions HTTP de la ingesta (H2-3)', () => {
     }
   });
 
-  it.each(HTTP)('%s: el 403 HTML de Google no cuenta como nuestro; un 401 que no es el texto nuestro tampoco', (servicio) => {
+  it.each(HTTP)('%s: el 403 HTML de Google sigue siendo de Google (no revierte, el binding queda)', (servicio) => {
     marcar('curl-modo', '403');
-    let r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
-    expect(r.codigo).toBe(3);
-    expect(r.salida).toContain('403 de Google');
-    politica(SIN_NADA);
-    marcar('curl-modo', 'http401otro');
-    r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
-    expect(r.codigo).toBe(3);
-    expect(r.salida).toContain('respuesta inesperada (401)');
-  });
-
-  it.each(HTTP)('%s: el JSON UNAUTHENTICATED de una callable NO vale como respuesta de una HTTP', (servicio) => {
-    marcar('curl-modo', 'http401json');
     const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
     expect(r.codigo).toBe(3);
-    expect(r.salida).toContain('respuesta inesperada (401)');
+    expect(r.salida).toContain('403 de Google');
+    expect(escrituras()).toEqual([escritura('add', STAGING, servicio)]);
+  });
+
+  it.each(HTTP)('%s: sin respuesta (000) no revierte a ciegas', (servicio) => {
+    marcar('curl-modo', '000');
+    const r = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, servicio);
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('respuesta inesperada (000)');
+    expect(escrituras()).toEqual([escritura('add', STAGING, servicio)]);
+  });
+
+  it('los mensajes de una HTTP hablan de la credencial y del flujo n8n; los de una callable, del token', () => {
+    const h = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, RECLAMAR);
+    expect(h.salida).toContain('401 «no autorizado»');
+    expect(h.salida).toContain('la barrera sigue siendo la credencial de ingesta del número');
+    expect(h.salida).not.toContain('JSON de Firebase');
+    const r = correr(['--entorno', 'staging', '--revertir', '--aplicar', '--confirmo', 'staging'], {}, RECLAMAR);
+    expect(r.salida).toContain('El flujo n8n «Salida de persona» ya no puede llamar a reclamarSalidaPersona');
+    politica(SIN_NADA);
+    const c = correr(['--entorno', 'staging', '--aplicar', '--confirmo', 'staging'], {}, ENVIAR);
+    expect(c.salida).toContain('JSON de Firebase');
+    expect(c.salida).toContain('la barrera sigue siendo el token');
   });
 
   it('una callable (enviarcomopersona) sigue exigiendo el JSON de Firebase, no el texto', () => {

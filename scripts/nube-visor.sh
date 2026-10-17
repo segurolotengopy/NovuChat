@@ -29,8 +29,9 @@
 # callables: no hay sesión de Firebase ni App Check; la barrera es la credencial
 # de la ingesta del número (`rutaAutenticada`, secreto por alias), que el código
 # exige ANTES de mirar la entrada. Sin ella contestan `401` con el texto «no
-# autorizado» (no JSON): eso es «nuestro código». Un 2xx, un `400` o un `404`
-# sin credencial sería «abierto» (se revierte). Es el mismo modelo que la
+# autorizado» (no JSON): eso es «nuestro código». Cualquier otra
+# respuesta HTTP (2xx, 400, 404, 409, 500, 503…), salvo el 403 HTML de Google y
+# el error de red (000), cuenta como «abierto» y se revierte: falla hacia cerrar. Es el mismo modelo que la
 # ingesta, que también es pública a nivel de Cloud Run y se protege por dentro.
 #
 #   ./scripts/nube-visor.sh --servicio <s> --entorno <staging|produccion>
@@ -322,6 +323,15 @@ PUBLICO=0
 INTENTOS="${NUBE_VISOR_INTENTOS:-9}"; ESPERA="${NUBE_VISOR_ESPERA:-10}"
 [[ "$INTENTOS" =~ ^[1-9][0-9]?$ && "$ESPERA" =~ ^[0-9]{1,2}$ ]] \
   || { echo "✗ NUBE_VISOR_INTENTOS (1-99) o NUBE_VISOR_ESPERA (0-99 s) inválidos" >&2; exit 2; }
+if [[ "$TIPO" == http ]]; then
+  SIN="credencial"; MSG_ESPERADO="texto 401 «no autorizado»"
+  MSG_PROPIO="sin credencial contesta NUESTRO código (401 «no autorizado»), no el 403 de Google"
+  QUE_DEJA="El flujo n8n «Salida de persona» ya no puede llamar a"; BARRERA="la credencial de ingesta del número"
+else
+  SIN="sesión"; MSG_ESPERADO="JSON de Firebase"
+  MSG_PROPIO="sin sesión contesta NUESTRO código (JSON de Firebase), no el 403 de Google"
+  QUE_DEJA="La consola ya no puede usar"; BARRERA="el token"
+fi
 URL_VALIDA="^https://${SERVICIO}-[a-z0-9-]+(\.[a-z0-9-]+)*\.run\.app/?$"
 ULTIMA=""
 
@@ -350,17 +360,20 @@ else:
 ' "$CUERPO" 2>/dev/null || true)"
   if [[ "$TIPO" == http ]]; then
     # Función HTTP con credencial de ingesta: sin ella, 401 con el texto exacto
-    # «no autorizado» y sin JSON de error. Lo que solo sale DESPUÉS de la
-    # credencial (2xx, 400, 404) es «abierto».
+    # «no autorizado». Todo lo demás, salvo el 403 HTML de Google y el error de
+    # red (000), cuenta como «abierto».
     local cuerpo; cuerpo="$(head -c 200 "$CUERPO" 2>/dev/null || true)"
     if [[ "$codigo" == 401 && "$cuerpo" == "no autorizado" ]]; then
       echo propio
-    elif [[ "$codigo" == 2[0-9][0-9] || "$codigo" == 400 || "$codigo" == 404 ]] && [[ "$cuerpo" != "<"* ]]; then
-      echo "abierto:${codigo}"
     elif [[ "$codigo" == 403 && -z "$estado" ]]; then
       echo google403
+    elif [[ "$codigo" == 000 ]]; then
+      echo "otro:${codigo}"   # error de red: no se revierte a ciegas
     else
-      echo "otro:${codigo}"
+      # Falla hacia REVERTIR: cualquier otra respuesta HTTP (409, 500, 503, 2xx con
+      # HTML, un 401 con otro texto, un 403 con JSON…) no es ni nuestro 401 ni el
+      # 403 de Google; no se puede asegurar que la credencial se exija.
+      echo "abierto:${codigo}"
     fi
   elif [[ ( "$codigo" == 401 || "$codigo" == 400 ) && ( "$estado" == UNAUTHENTICATED || "$estado" == FAILED_PRECONDITION ) ]]; then
     echo propio
@@ -388,16 +401,16 @@ comprobar_respuesta() {
   done
   if [[ "$ULTIMA" == "$esperado" ]]; then
     case "$ULTIMA" in
-      propio)    ok "sin sesión contesta NUESTRO código (JSON de Firebase), no el 403 de Google" ;;
+      propio)    ok "$MSG_PROPIO" ;;
       google403) ok "sin invocador: Google contesta 403 antes del código, como se esperaba" ;;
     esac
     return 0
   fi
   case "$ULTIMA" in
-    abierto:*) falla "respondió SIN sesión (${ULTIMA#abierto:}): el código atendió a un anónimo"; return 2 ;;
+    abierto:*) falla "respondió SIN ${SIN}: ${ULTIMA#abierto:} no es ni nuestro ${MSG_ESPERADO} ni el 403 de Google; se asume que el código atendió a un anónimo"; return 2 ;;
     propio)    falla "contesta nuestro código: el binding sigue surtiendo efecto" ;;
     google403) falla "contesta el 403 de Google: el invocador no surte efecto (¿propagación de IAM? reintentar con --aplicar --confirmo ${ENTORNO}: no escribe nada si ya está concedido; solo prueba)" ;;
-    *)         falla "respuesta inesperada (${ULTIMA#otro:}): ni nuestro JSON ni el 403 de Google" ;;
+    *)         falla "respuesta inesperada (${ULTIMA#otro:}): ni ${MSG_ESPERADO} ni el 403 de Google" ;;
   esac
   return 1
 }
@@ -425,7 +438,7 @@ if (( REVERTIR )); then
   [[ "$RELEIDO" == "no" ]] || { falla "al releer, ${MIEMBRO} SIGUE con ${ROL}"; exit 3; }
   ok "relectura: ${MIEMBRO} ya no tiene ${ROL} en ${SERVICIO}"
   comprobar_respuesta google403 || exit 3
-  echo; echo "${V}Vuelta atrás hecha.${F} La consola ya no puede usar ${FUNCION} en ${ENTORNO}."
+  echo; echo "${V}Vuelta atrás hecha.${F} ${QUE_DEJA} ${FUNCION} en ${ENTORNO}."
   exit 0
 fi
 
@@ -472,4 +485,4 @@ if (( RC != 0 )); then
   falla "el binding QUEDÓ puesto; si persiste: ${OPCIONES} --revertir --aplicar --confirmo ${ENTORNO}"
   exit 3
 fi
-echo; echo "${V}Listo.${F} ${FUNCION} es invocable en ${ENTORNO}; la barrera sigue siendo el token, dentro del código."
+echo; echo "${V}Listo.${F} ${FUNCION} es invocable en ${ENTORNO}; la barrera sigue siendo ${BARRERA}, dentro del código."
