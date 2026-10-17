@@ -373,7 +373,15 @@ ingesta decide `config/venta` y el cobro por **`ruta.flujo`**, no por la ficha. 
   conversaciones (con sus mensajes), contactos, movimientos de stock, comprobaciones de imagen,
   salida y métricas. La auditoría se conserva. El id `ensayo` es una constante del código.
 
-Sin `--flujo` el comportamiento es el del §6, sin cambios. Valores válidos: `venta` o
+Sin `--flujo` el flujo sale de la ruta, como en el §6, pero `--preparar` **siempre** fija en `ensayo`
+`flujos: [el del ensayo]` y `vertical` (nunca acumula los de ensayos anteriores), borra su lista
+`modulos` y, si la ficha traía venta, vacía también los restos de venta.
+
+**Con la ruta ya en ensayo** solo se repite el mismo ensayo (mismo `--cliente` y mismo `--flujo`); para
+otro cliente u otro flujo, primero `--restaurar` (así una carga fallida no deja el número con un
+comercio vaciado de otro ensayo). Si la carga falla con la ruta ya en ensayo, el mensaje dice que la
+ruta sigue en ensayo y el comercio quedó vacío: reintentar o `--restaurar`. Si la ruta no tenía campo
+`flujo`, se guarda un marcador nulo y `--restaurar` borra el campo en vez de inventar uno. Valores válidos: `venta` o
 `agendamiento`; cualquier otro sale con 2 sin leer nada de la nube.
 
 Cerrojos que siguen igual (probados negando en `admin/pruebas/ensayo.test.ts`): solo se desvía
@@ -394,7 +402,8 @@ tiene modalidad no se desvía; sin `--aplicar` no se escribe nada; no se imprime
    2. el estado por teléfono: `publicar-flujo.sh --reiniciar-estado` (seco, luego `--aplicar`);
    3. la ruta: `ensayo.mjs --restaurar` (seco, luego `--aplicar`). Imprime
       `Flujo     : venta -> agendamiento`;
-   4. `ensayo.mjs --estado`: tiene que decir `Desviada  : no` y la ruta con su flujo de siempre
+   4. `ensayo.mjs --estado` (la línea `Ensayo` conserva el último flujo preparado: no es un fallo; el
+      siguiente ensayo siempre fija sus flujos). Debe mostrar el flujo de la ruta ya restaurado: tiene que decir `Desviada  : no` y la ruta con su flujo de siempre
       (`flujo agendamiento` en la primera línea). Si dice `sí`, no se terminó.
 6. Limpieza y filas de `ESTADO.md` / `versiones-por-cliente.md`, como en el §6 (paso 6.4).
 
