@@ -735,6 +735,8 @@ describe('cargar-timbre-n8n.sh: segunda mini-ronda', () => {
     const r = correr([...A(), ...APLICAR]);
     expect(r.codigo).toBe(3);
     expect(r.salida).toContain('borrador');
+    expect(r.salida).toContain('YA se subió a n8n');
+    expect(r.salida).toContain('Publish manual');
     expect(llamadas().slice(antes).some((l) => /activate/.test(l))).toBe(false);
     expect(existe(entregaRuta())).toBe(true);
   });
@@ -746,9 +748,11 @@ describe('cargar-timbre-n8n.sh: segunda mini-ronda', () => {
     writeFileSync(join(dir, 'sin-versiones'), '');
     const r = correr([...A(), ...APLICAR]);
     expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('versionId');
     expect(existe(entregaRuta())).toBe(true);
     const a = correr([...A(), '--activar', ...APLICAR]);
     expect(a.codigo).toBe(3);
+    expect(a.salida).toContain('versionId');
     expect(a.salida).not.toContain('nada que hacer');
   });
 

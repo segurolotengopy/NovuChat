@@ -653,7 +653,7 @@ ESPERADO="false"; [[ "$WF_ACTIVO" != true ]] || ESPERADO="true-borrador"
 leer_estado
 # Primero se verifica el BORRADOR recién guardado; solo si es correcto se publica (n8n 2.x separa
 # borrador y publicada: el PUT de un flujo activo deja corriendo la versión vieja).
-if ! SAL="$(py verificar "$WORK/vivo.json" "$WORK/path" "$ALIAS" "$ESPERADO" "$WORK/credenciales.json")"; then fallar "el borrador guardado NO coincide (no se publicó):
+if ! SAL="$(py verificar "$WORK/vivo.json" "$WORK/path" "$ALIAS" "$ESPERADO" "$WORK/credenciales.json")"; then fallar "el borrador guardado NO coincide y NO se publicó, pero el cambio YA se subió a n8n: un Publish manual desde el editor lo publicaría roto; no lo publique, corrija y vuelva a correr (o use --quitar):
 ${SAL}"; fi
 if [[ "$ESPERADO" == true-borrador ]]; then
   PUB="$(py publicada "$WORK/vivo.json")" || fallar "no puedo saber qué versión corre (n8n no mandó versionId/activeVersionId)"
