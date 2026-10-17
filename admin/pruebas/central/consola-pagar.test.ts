@@ -25,7 +25,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOLSA, INSTALACION_USD, MESES_MAXIMO, PLANES, importeBs } from '../../functions/src/central/cuenta/prepago';
 import {
-  BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, bolsasOfrecidas, rechazoDeBolsa, cobroSeMuestraParaPagar, mesEscrito, pideVolverAEntrar, planInicial,
+  BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, bolsasOfrecidas, bolsasParaPantalla, rechazoDeBolsa, tipoTrasCambioDeBolsas, cobroSeMuestraParaPagar, mesEscrito, pideVolverAEntrar, planInicial,
   planesOfrecidos, vistaDelPedido,
 } from '../../web/src/central/lib/pagar';
 import { CONVERSACIONES_META_INCLUIDO, PLANES_PUBLICADOS } from '../../functions/src/central/cuenta/planes';
@@ -380,6 +380,26 @@ describe('las bolsas que ofrece Pagar salen de la tarifa de la cuenta (bolsaPerm
   });
 });
 
+describe('Pagar con la cuenta sin cargar: no ofrece ninguna bolsa hasta tenerla', () => {
+  it('cuenta === null: lista vacía (ni 30 por 10 ni 300 por 15)', () => {
+    expect(bolsasParaPantalla(null, ['comercio'])).toEqual([]);
+  });
+
+  it('cuenta cargada sin tarifa: 30 por USD 10; con estandar: 300 por USD 15', () => {
+    expect(bolsasParaPantalla({}).map((b) => `${b.unidades}x${b.precioUsd}`)).toEqual(['30x10']);
+    expect(bolsasParaPantalla({ tarifa: 'estandar' }).map((b) => `${b.unidades}x${b.precioUsd}`)).toEqual(['300x15']);
+  });
+
+  it('si la bolsa elegida deja de ofrecerse, el tipo vuelve a mensualidad; si sigue, se conserva', () => {
+    expect(tipoTrasCambioDeBolsas('bolsa', bolsasParaPantalla({ tarifa: 'estandar' }))).toBe('mensualidad');
+    expect(tipoTrasCambioDeBolsas('bolsa', bolsasParaPantalla(null))).toBe('mensualidad');
+    expect(tipoTrasCambioDeBolsas('bolsa', bolsasParaPantalla({}))).toBe('bolsa');
+    expect(tipoTrasCambioDeBolsas('bolsaConversaciones', bolsasParaPantalla({ tarifa: 'estandar' }))).toBe('bolsaConversaciones');
+    expect(tipoTrasCambioDeBolsas('instalacion', [])).toBe('instalacion');
+    expect(tipoTrasCambioDeBolsas('mensualidad', [])).toBe('mensualidad');
+  });
+});
+
 describe('un rechazo de bolsa del servidor muestra el texto fijo, no uno genérico ni inventado', () => {
   it('permission-denied y failed-precondition con details.motivo usan MENSAJE_BOLSA_NO_PERMITIDA', () => {
     for (const [code, motivo] of [
@@ -402,7 +422,8 @@ describe('un rechazo de bolsa del servidor muestra el texto fijo, no uno genéri
   it('Pagar.tsx usa rechazoDeBolsa al emitir y no escribe «30 conversaciones» ni un precio de bolsa a mano', () => {
     const fuente = sinComentarios(leer('web/src/central/paginas/Pagar.tsx'));
     expect(fuente).toContain('rechazoDeBolsa(e)');
-    expect(fuente).toContain('bolsasOfrecidas(');
+    expect(fuente).toContain('bolsasParaPantalla(');
+    expect(fuente).toContain('tipoTrasCambioDeBolsas(');
     expect(fuente).not.toMatch(/\bBOLSA\b|PRECIOS\.bolsa/);
     expect(fuente).not.toMatch(/USD\s*(10|15)\b/);
   });
@@ -411,7 +432,7 @@ describe('un rechazo de bolsa del servidor muestra el texto fijo, no uno genéri
 describe('AvisoConsumo no promete la bolsa que el servidor rechazaría', () => {
   const aviso = { porcentaje: 80, conversaciones: 80, limite: 100 };
   const pinta = (cuenta?: Record<string, unknown> | null) =>
-    renderToStaticMarkup(createElement(AvisoConsumo, { aviso, cuenta })).replace(/<!--.*?-->/g, '');
+    renderToStaticMarkup(createElement(AvisoConsumo, { aviso, cuenta }));
 
   it('a estandar le dice 300 conversaciones por USD 15, no 30 por USD 10', () => {
     const html = pinta({ tarifa: 'estandar' });
@@ -419,8 +440,16 @@ describe('AvisoConsumo no promete la bolsa que el servidor rechazaría', () => {
     expect(html).not.toMatch(/30 conversaciones|USD 10/);
   });
 
-  it('sin tarifa o con meta_incluido dice lo de hoy: 30 por USD 10', () => {
-    for (const c of [undefined, null, {}, { tarifa: 'meta_incluido' }]) {
+  it('si no se sabe la cuenta (sin la prop o null) no nombra ninguna bolsa, ni la de 30 ni la de 300', () => {
+    for (const c of [undefined, null]) {
+      const html = pinta(c);
+      expect(html).toContain('Llegaste al 80 %');
+      expect(html).not.toMatch(/bolsa|USD/);
+    }
+  });
+
+  it('con la cuenta cargada, sin tarifa o con meta_incluido, dice lo de hoy: 30 por USD 10', () => {
+    for (const c of [{}, { tarifa: 'meta_incluido' }]) {
       const html = pinta(c);
       expect(html).toContain('una bolsa de 30 conversaciones por USD 10');
       expect(html).not.toMatch(/300|USD 15/);

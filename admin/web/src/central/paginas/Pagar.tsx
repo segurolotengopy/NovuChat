@@ -6,7 +6,7 @@ import { Link, useParams } from 'react-router-dom';
 import { auth, db, funciones, urlDeFuncionHttp } from '../../core/lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, ESTADO_DEL_COBRO, bolsaDe, bolsasOfrecidas, rechazoDeBolsa, type TipoBolsa, MESES_POSIBLES, PRECIOS, cobroSeMuestraParaPagar, cuentaEnDemostracion, mesEscrito,
+  BOLSAS_POSIBLES, ESTADO_DEL_COBRO, bolsaDe, bolsasParaPantalla, rechazoDeBolsa, tipoTrasCambioDeBolsas, type TipoBolsa, MESES_POSIBLES, PRECIOS, cobroSeMuestraParaPagar, cuentaEnDemostracion, mesEscrito,
   pideVolverAEntrar, planDeLaCuenta, planesQuePuedePagar, vistaDelPedido, type Pago, type PlanEnVenta,
 } from '../lib/pagar';
 import { fechaCorta } from '../lib/prepago';
@@ -165,12 +165,13 @@ export function Pagar() {
   // LAS BOLSAS DE ESTA CUENTA (por su tarifa), las mismas que el servidor deja
   // comprar (`bolsaPermitida`). La titularidad de los números sale de `ejes`.
   const bolsas = useMemo(
-    () => bolsasOfrecidas(cuenta, (ejes?.numeros ?? []).map((n) => n.titularidad)),
+    () => bolsasParaPantalla(cuenta, (ejes?.numeros ?? []).map((n) => n.titularidad)),
     [cuenta, ejes]);
   // Si la bolsa elegida ya no se ofrece (la cuenta cambió de tarifa con la
   // pantalla abierta), se vuelve a la mensualidad en vez de pedir lo que se rechaza.
   useEffect(() => {
-    if (tipo !== 'mensualidad' && tipo !== 'instalacion' && !bolsas.some((b) => b.tipo === tipo)) setTipo('mensualidad');
+    const nuevo = tipoTrasCambioDeBolsas(tipo, bolsas);
+    if (nuevo !== tipo) setTipo(nuevo);
   }, [bolsas, tipo]);
 
   const pedido: Pago | null = useMemo(() => {

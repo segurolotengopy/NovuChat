@@ -18,9 +18,10 @@ export function AvisoConsumo({ aviso, cuenta }: {
   aviso: AvisoConsumoVista;
   /** La cuenta (`cuenta/estado`), de la que sale la tarifa. Sin campo `tarifa`: `meta_incluido`. */
   cuenta?: Record<string, unknown> | null;
+  // `undefined` = no se sabe la cuenta: no se nombra ninguna bolsa. `{}` = cuenta sin tarifa: la de siempre.
 }) {
   // Solo de conversaciones: la de seguimiento no es lo que se agota.
-  const bolsa = bolsasOfrecidas(cuenta ?? null).find((b) => b.tipo !== 'bolsaSalientes');
+  const bolsa = cuenta === undefined || cuenta === null ? undefined : bolsasOfrecidas(cuenta).find((b) => b.tipo !== 'bolsaSalientes');
   return (
     <p className="ayuda aviso-datos aviso-consumo" role="status">
       <strong>

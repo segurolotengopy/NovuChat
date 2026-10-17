@@ -266,6 +266,22 @@ export function bolsasOfrecidas(
     .map((tipo) => BOLSAS_DEL_CATALOGO[tipo]);
 }
 
+/**
+ * LAS BOLSAS QUE MUESTRA LA PANTALLA. Mientras la cuenta no llegó (`null`, la
+ * escucha de `cuenta/estado` todavía no respondió) NO se ofrece ninguna: el
+ * respaldo de `bolsasOfrecidas` (sin tarifa = 30 por USD 10) vale para una
+ * cuenta CARGADA sin el campo, no para una que aún no se leyó, porque a una
+ * `estandar` se le ofrecería un instante lo que el servidor rechaza.
+ */
+export const bolsasParaPantalla = (
+  cuenta: CuentaCruda | Record<string, unknown> | null,
+  titularidades: readonly Titularidad[] = [],
+): readonly BolsaOfrecida[] => (cuenta === null ? [] : bolsasOfrecidas(cuenta, titularidades));
+
+/** Qué tipo de pago queda elegido si la bolsa elegida dejó de ofrecerse: vuelve a la mensualidad. */
+export const tipoTrasCambioDeBolsas = <T extends string>(tipo: T, bolsas: readonly BolsaOfrecida[]): T | 'mensualidad' =>
+  tipo !== 'mensualidad' && tipo !== 'instalacion' && !bolsas.some((b) => b.tipo === tipo) ? 'mensualidad' : tipo;
+
 /** Los datos de una bolsa por su tipo (para el texto de «cada bolsa son…»). */
 export const bolsaDe = (tipo: TipoBolsa): BolsaOfrecida => BOLSAS_DEL_CATALOGO[tipo];
 
