@@ -1,0 +1,14 @@
+{
+  "flujo": "salida-de-persona.json",
+  "conservanMarcadores": {
+    "Config base": "REEMPLAZAR_",
+    "Timbre": "REEMPLAZAR_"
+  },
+  "codigo": {
+    "Validar toque": "core/salida-persona/validar-toque.js",
+    "Planificar lote": "core/salida-persona/planificar-lote.js",
+    "Resultado del envío": "core/salida-persona/resultado-del-envio.js",
+    "Verificar y seguir": "core/salida-persona/verificar-y-seguir.js"
+  },
+  "prompts": {}
+}

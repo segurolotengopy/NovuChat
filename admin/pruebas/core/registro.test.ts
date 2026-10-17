@@ -337,7 +337,7 @@ describe('1. estructura del registro', () => {
     // la prueba no tiene que escribir ningún nombre de cliente.
     const GENERICAS = new Set([
       'agendamiento', 'seguimientos', 'senas', 'vencidas', 'demo', 'recordatorios', 'venta', 'cobro',
-      'novuchat', 'onboarding', 'captacion', 'negocio', 'resto', 'json',
+      'novuchat', 'onboarding', 'captacion', 'negocio', 'resto', 'json', 'salida', 'persona',
     ]);
     const nombres = new Set(
       [...readdirSync(join(RAIZ, 'Flujos')), ...readdirSync(join(RAIZ, 'admin/scripts/datos'))]

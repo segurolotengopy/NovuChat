@@ -62,6 +62,7 @@ const moduloDe = (nodo: string): string => {
 const MARCADORES_DECLARADOS_APARTE: Record<string, Record<string, string>> = {
   'demo-b-venta-cobro.json': { 'Carrito del catálogo': 'REEMPLAZAR_' },
   'novuchat-onboarding.json': { '¿Es un mensaje?': 'REEMPLAZAR_' },
+  'salida-de-persona.json': { 'Timbre': 'REEMPLAZAR_' },
 };
 const SIN_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) === null);
 
@@ -78,8 +79,8 @@ afterAll(() => { for (const d of temporales) rmSync(d, { recursive: true, force:
 const bytes = (ruta: string) => readFileSync(ruta);
 
 describe('Inventario: qué flujos tienen manifiesto', () => {
-  it('hay 8 JSON de flujo, y el vertical de reservas (Demo A y Platinum) tiene manifiesto', () => {
-    expect(FLUJOS).toHaveLength(8);
+  it('hay 9 JSON de flujo, y el vertical de reservas (Demo A y Platinum) tiene manifiesto', () => {
+    expect(FLUJOS).toHaveLength(9);
     expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-a-agendamiento.json', 'platinum-agendamiento.json']));
     // Desde el 28/09/2026 el Demo B y la captación también tienen manifiesto,
     // SOLO para los dos nodos de medios entrantes («Preparar transcripción» y
