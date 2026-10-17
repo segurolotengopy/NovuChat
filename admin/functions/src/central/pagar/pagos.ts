@@ -70,10 +70,11 @@ import { randomBytes } from 'node:crypto';
 import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from '../../core/seguridad/autorizacion.js';
 import { registrar } from '../../core/turno/bitacora.js';
 import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from '../servicios/tipoCambio.js';
-import { CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from '../cuenta/planes.js';
+import { BOLSA_SALIENTES, CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from '../cuenta/planes.js';
+import { titularidadDe, type Titularidad } from '../ejes.js';
 import {
-  BOLSA, INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,
-  corteDe, descripcionDe, esFecha, esModalidad, esPago, estadoDeServicio, importeBs, importeCobrable, montoFueraDeContrato,
+  INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,
+  MENSAJE_BOLSA_NO_PERMITIDA, bolsaPermitida, corteDe, descripcionDe, esFecha, esModalidad, esPago, esTipoDeBolsa, estadoDeServicio, importeBs, importeCobrable, montoFueraDeContrato,
   montoUsdDe, type CuentaCruda, type Pago,
 } from '../cuenta/prepago.js';
 
@@ -115,6 +116,38 @@ export function conceptoDe(pago: Pago): string {
   if (pago.tipo === 'bolsaConversaciones') return `NovuChat · Bolsa conversaciones x ${pago.cantidad}`;
   if (pago.tipo === 'bolsaSalientes') return `NovuChat · Bolsa seguimiento x ${pago.cantidad}`;
   return `NovuChat · ${PLANES[pago.plan].nombre} · ${pago.meses} ${pago.meses === 1 ? 'mes' : 'meses'}`;
+}
+
+// ---------------------------------------------------------------------------
+// QUÉ BOLSA PUEDE COMPRAR UNA CUENTA — la decide el servidor (PR-3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Las titularidades de los números del comercio: las de `rutasWhatsApp` donde
+ * `tenantId == tenantId`, y SOLO esas (un comercio nunca lee las rutas de otro).
+ * Una ruta sin el campo cuenta como `novuchat` (`titularidadDe`, el lado
+ * seguro). Con `tx`, la lectura entra en la transacción del llamador.
+ */
+export async function titularidadesDelComercio(tenantId: string, tx?: Transaction): Promise<Titularidad[]> {
+  const consulta = db().collection('rutasWhatsApp').where('tenantId', '==', tenantId);
+  const rutas = tx ? await tx.get(consulta) : await consulta.get();
+  return rutas.docs.map((d) => titularidadDe(d.data()));
+}
+
+/**
+ * Lanza el rechazo de `bolsaPermitida` con su texto fijo (`MENSAJE_BOLSA_NO_PERMITIDA`).
+ * Un pedido que no es bolsa pasa sin mirar nada. Es la puerta del SERVIDOR:
+ * la pantalla puede ocultar la bolsa que no corresponde, pero armar la petición
+ * a mano no la compra. `tarifa` y `titularidad` son un «no le corresponde»
+ * (`permission-denied`); `no_habilitada` es «todavía no» (`failed-precondition`).
+ */
+export function exigirBolsaPermitida(
+  cuenta: Record<string, unknown> | null | undefined, pedido: Pago, titularidades: readonly Titularidad[],
+): void {
+  const motivo = bolsaPermitida(cuenta, pedido, titularidades);
+  if (motivo === null) return;
+  throw new HttpsError(motivo === 'no_habilitada' ? 'failed-precondition' : 'permission-denied',
+    MENSAJE_BOLSA_NO_PERMITIDA[motivo], { motivo });
 }
 
 // ---------------------------------------------------------------------------
@@ -266,7 +299,7 @@ export function pagoDe(datos: Record<string, unknown>): Pago | null {
   const tipo = datos['tipo'];
   const candidato: Record<string, unknown> = tipo === 'mensualidad'
     ? { tipo, plan: datos['plan'], meses: datos['meses'] }
-    : tipo === 'bolsa' ? { tipo, cantidad: datos['cantidad'] }
+    : esTipoDeBolsa(tipo) ? { tipo, cantidad: datos['cantidad'] }
     : { tipo };
   return esPago(candidato) ? candidato : null;
 }
@@ -395,9 +428,22 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion, soltar: 
   if (suelta) delete cuentaNueva['pagoPendienteId'];
   delete cuentaNueva['corte'];
 
+  // LA BOLSA DE SEGUIMIENTO TIENE SU PROPIO SALDO (`bolsa` es solo de
+  // conversaciones). Se acredita LO PAGADO: la cantidad del pedido por lo que
+  // trae la bolsa, y se anota qué pago fue (`Compra`) y cómo quedó el saldo
+  // (`Base`). El corte propio de salientes (`corteSalientes`) lo escribe y lo
+  // borra el Bloque 2 (decisión B): acá no se toca.
+  const previo = pago.cuenta['bolsaSalientes'];
+  const saldoSalientes = typeof previo === 'number' && Number.isInteger(previo) && previo > 0 ? previo : 0;
+  const salientes = pedido.tipo === 'bolsaSalientes'
+    ? { bolsaSalientes: saldoSalientes + BOLSA_SALIENTES.mensajes * pedido.cantidad,
+      bolsaSalientesCompra: pago.id, bolsaSalientesBase: saldoSalientes + BOLSA_SALIENTES.mensajes * pedido.cantidad }
+    : {};
+
   const escrituraCuenta: Record<string, unknown> = {
     ...ademas.cuenta,
     bolsa: tras.bolsa,
+    ...salientes,
     ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
     ...(suelta ? { pagoPendienteId: FieldValue.delete() } : {}),
     corte: FieldValue.delete(),
@@ -759,11 +805,11 @@ function pedidoDe(datos: Record<string, unknown>): Pago {
   const tipo = datos['tipo'];
   const candidato: Record<string, unknown> = tipo === 'mensualidad'
     ? { tipo, plan: datos['plan'], meses: datos['meses'] }
-    : tipo === 'bolsa' ? { tipo, cantidad: datos['cantidad'] }
+    : esTipoDeBolsa(tipo) ? { tipo, cantidad: datos['cantidad'] }
     : { tipo };
   if (!esPago(candidato)) {
     throw new HttpsError('invalid-argument',
-      'Pedido inválido: tipo mensualidad (plan del catálogo, meses 1 a 6), bolsa (cantidad 1 a 12) o instalacion.');
+      'Pedido inválido: tipo mensualidad (plan del catálogo, meses 1 a 6), bolsa, bolsaConversaciones o bolsaSalientes (cantidad 1 a 12) o instalacion.');
   }
   return candidato;
 }
@@ -930,7 +976,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOpti
     const base: Record<string, unknown> = {
       tipo: pedido.tipo,
       ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
-      ...(pedido.tipo === 'bolsa' ? { cantidad: pedido.cantidad } : {}),
+      ...('cantidad' in pedido ? { cantidad: pedido.cantidad } : {}),
       montoUsd, monto, moneda: MONEDA_COBRO, monedaLista: MONEDA_LISTA,
       tcoAplicado, tcoFuente, tcoFecha, tcoReferencia,
       medio, canal: 'manual', referencia,
@@ -947,6 +993,12 @@ export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOpti
       }
       if (pagoDoc.exists) throw new HttpsError('already-exists', 'Ese pagoId ya existe.');
       const cuenta = cuentaDoc.data() ?? {};
+      // QUÉ BOLSA SE PUEDE VENDER, contra la cuenta releída acá (PR-3): la
+      // tarifa que rige es la de este momento, no la que mostró la pantalla.
+      // Solo la bolsa de seguimiento necesita las titularidades.
+      if (esTipoDeBolsa(pedido.tipo)) {
+        exigirBolsaPermitida(cuenta, pedido, pedido.tipo === 'bolsaSalientes' ? await titularidadesDelComercio(tenantId, tx) : []);
+      }
       // EL PRECIO NO CAMBIÓ POR EL CAMINO (F1b): si entre la validación y esta
       // transacción alguien fijó o quitó un precio por contrato, el importe
       // comparado con lo recibido ya no es el de la cuenta. No se adivina: se
@@ -977,7 +1029,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOpti
         accion: 'pago_manual', uid, en: ahora,
         pagoId, tipo: pedido.tipo,
         ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
-        ...(pedido.tipo === 'bolsa' ? { cantidad: pedido.cantidad } : {}),
+        ...('cantidad' in pedido ? { cantidad: pedido.cantidad } : {}),
         montoUsd, monto, montoRecibidoBs, tcoAplicado, tcoFuente, tcoFecha, tcoReferencia, medio, referencia,
         evidencia: rutaEvidencia, evidenciaMeta, motivoDiferencia: motivoDiferencia || null,
         pendienteAnulado,
@@ -1182,4 +1234,4 @@ export const anularPagoPendiente = crearAnularPagoPendiente();
 export const consultarPagoPendiente = crearConsultarPagoPendiente();
 
 // Reexportado para quien arme un pago y necesite el precio de lista.
-export { BOLSA, INSTALACION_USD, PLANES };
+export { INSTALACION_USD, PLANES };
