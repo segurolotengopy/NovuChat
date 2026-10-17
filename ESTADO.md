@@ -8,7 +8,8 @@
 > bitácora del mes. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos. (`Analisis/41` §5.5 y §9.4.)
 
-**Última actualización:** 2026-10-16, sobre `origin/main` `f647a8e6` (con #500). La
+**Última actualización:** 2026-10-17 (decisiones de Andres del día); la base del
+resto es `origin/main` `f647a8e6` del 16/10 (con #500). La
 versión anterior de este archivo era del 03/10 y estaba atrasada; el detalle de
 esos días sigue en `bitacora/2026-10.md`. Asiento de hoy en la bitácora.
 
@@ -53,8 +54,20 @@ sigue cortando en 100/220/500 (bitácora del 11/10) hasta la etiqueta del bloque
 - **H2 «intervención de una persona» (texto): en construcción.** Contrato único
   del 16/10 (fuera del repositorio, en `~/CLAUDE_DESCARGAS/`); resumen en
   `docs/arquitectura/conversaciones.md` §12. Ola 1 en marcha: H2-1 (turno), H2-C
-  (consola) y H1-7. No existe nada de H2 en `main`. Medios y plantilla fuera de
+  (consola) y H1-7. **Al 17/10, H2 de texto está en `main`** (#503, #504, #506,
+  #507, #510, #511 y #512, fusionados); #515 (secreto y permiso) y #516
+  (`phoneNumberId`) están en revisión. **Etiqueta de H2 prevista la noche del
+  18/10** (23:30–01:30 como más temprano), condicionada a #515 fusionado y al
+  despliegue a staging verde con el secreto aplicado; si no, el 19/10. «Tomar»
+  sigue apagado para los clientes hasta ensayar H2-F. Medios y plantilla fuera de
   ventana son H3 y esperan una decisión de Andres.
+- **Decisiones de Andres del 17/10** («Vamos con tus 6 recomendaciones»; detalle en
+  la bitácora): (a) estado de la conversación en el servidor, opción O2; (b)
+  enmiendas a `Analisis/41` §6.1.3, §2.3 y §2.2, que aplica F3b; (c) PR-5 de F3b
+  (Bellido) en espera; (d) cierre de la rearquitectura con 8 condiciones, la 7 solo
+  con Q'Taco y NovuChat, F4 y F5 fuera de «terminada»; (e) la etiqueta de planes y
+  bolsas va aparte de la de H2, y Q'Taco sigue en `meta_incluido` hasta ~07/11; (f)
+  la noche de la etiqueta de H2, como arriba.
 - **Bloque 1 de planes y bolsas:** hechos PR-1 y PR-4a. Faltan PR-2, PR-3, PR-4b,
   PR-5, PR-D y la etiqueta (según el informe de la coordinadora del 16/10).
 - **Bloque 2 de Core:** seguimientos fuera de 48 h (`ultimoEntranteEn` ya existe)
@@ -62,8 +75,9 @@ sigue cortando en 100/220/500 (bitácora del 11/10) hasta la etiqueta del bloque
 
 ## Lo próximo, en orden
 
-1. Terminar H2 de texto por olas (cada etiqueta que agregue Functions con su rama
-   de reversión hacia adelante lista y probada **antes** de etiquetar).
+1. Etiquetar H2 de texto (noche del 18/10 si se cumple la condición) y ensayar
+   H2-F (cada etiqueta que agregue Functions con su rama de reversión hacia
+   adelante lista y probada **antes** de etiquetar).
 2. Bloque 1 de planes y bolsas, bloqueante para vender la bolsa; después el bloque 2.
 3. Operar Conversaciones en Q'Taco: índices `READY`, invocador, relleno y bandera,
    con la ventana 23:30–01:30 y el «sí» de Andres.
