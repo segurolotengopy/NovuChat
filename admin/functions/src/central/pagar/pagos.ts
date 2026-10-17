@@ -112,6 +112,8 @@ export const esPedidoDePago = esPago;
 export function conceptoDe(pago: Pago): string {
   if (pago.tipo === 'instalacion') return 'NovuChat · Instalacion';
   if (pago.tipo === 'bolsa') return `NovuChat · Bolsa x ${pago.cantidad}`;
+  if (pago.tipo === 'bolsaConversaciones') return `NovuChat · Bolsa conversaciones x ${pago.cantidad}`;
+  if (pago.tipo === 'bolsaSalientes') return `NovuChat · Bolsa seguimiento x ${pago.cantidad}`;
   return `NovuChat · ${PLANES[pago.plan].nombre} · ${pago.meses} ${pago.meses === 1 ? 'mes' : 'meses'}`;
 }
 

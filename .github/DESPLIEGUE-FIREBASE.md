@@ -23,11 +23,11 @@ del proyecto de producción. Lo que hay:
   el mismo de `admin/.firebaserc`, con la consola en `consola.novuchat.site`.
   Donde abajo diga `novuchat-admin-prod`, léase ese.
 - **Storage de las Functions (2026-10-09):** `scripts/nube-prepago.sh` da a `sa-functions` solo `roles/storage.objectViewer` y `objectCreator` sobre el bucket de la consola. La purga de comprobantes (`purgarComprobantes`) necesita además borrar objetos; según el informe de la sesión Principal del 09/10/2026, esa sesión dio `roles/storage.objectUser` a `sa-functions` en staging (paso 5) y en producción (paso 7), con autorización de Andres. **No hay rastro versionado de eso**: se comprueba con `gcloud storage buckets get-iam-policy` sobre cada bucket. El visor de comprobantes (`verComprobante`) solo lee y no necesita IAM nuevo **de Storage** (sí el invocador, abajo).
-- **Invocador de `verComprobante` y `buscarConversaciones` (`scripts/nube-visor.sh`):** una callable nueva puede quedar sin `roles/run.invoker` para `allUsers` y responder un 403 de Google, en HTML, antes de correr su código. Es el mismo paso que `scripts/nube-catalogo.sh` hace para el catálogo. `allUsers` solo deja que la petición llegue: la barrera es el token, dentro del código (App Check en producción, sesión, rol en ese comercio, tope y lo demás de cada callable).
-  - **Servicios:** el script atiende una lista cerrada, y `--servicio` es obligatorio: `vercomprobante` (la callable `verComprobante`) o `buscarconversaciones` (la callable `buscarConversaciones`). Cualquier otro nombre, incluido el de la Function en camelCase, sale con 2.
-  - **Cuándo se corre:** después del **primer despliegue a producción** de cada callable. `vercomprobante` va tras el despliegue que la trae; `buscarconversaciones`, en la **noche de H1-6**, tras su despliegue. En staging se corre cuando la fase `invocadores` de `preparar-staging.sh` no lo haya cubierto. Siempre con el «sí» de Andres, en la ventana **23:30–01:30**, y **primero en seco** (`--servicio <s> --entorno produccion`: lee la política de ese servicio y no escribe). Después, `--servicio <s> --entorno produccion --aplicar --confirmo produccion`.
-  - **Qué hace:** solo concede ese rol, a ese miembro y sobre ese servicio. Después relee la política y prueba el endpoint sin sesión. Tiene que contestar un JSON de Firebase `UNAUTHENTICATED` o `FAILED_PRECONDITION`, no el 403 de Google. Un 403 cuyo cuerpo es un JSON de error (cualquier JSON con `error`, con o sin `status` de texto) no cuenta como de Google.
-  - **Reversión automática:** si el endpoint contesta algo que nuestro código solo da después de la sesión (un 2xx, o un JSON `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `NOT_FOUND` o `RESOURCE_EXHAUSTED`), quita en el acto el binding que acaba de poner, relee la política y sale con 3. Si `allUsers` sigue, lo dice («SIGUE»).
+- **Invocador de `verComprobante`, `buscarConversaciones` y las cinco de H2-1 y H2-3 (`scripts/nube-visor.sh`):** una callable nueva puede quedar sin `roles/run.invoker` para `allUsers` y responder un 403 de Google, en HTML, antes de correr su código. Es el mismo paso que `scripts/nube-catalogo.sh` hace para el catálogo. `allUsers` solo deja que la petición llegue: la barrera es el token, dentro del código (App Check en producción, sesión, rol en ese comercio, tope y lo demás de cada callable).
+  - **Servicios:** el script atiende una lista cerrada, y `--servicio` es obligatorio: `vercomprobante`, `buscarconversaciones`, `enviarcomopersona` (callable `enviarComoPersona`), `tomarconversacion` y `devolverconversacion` (callables `tomarConversacion` y `devolverConversacion`, H2-1), `reclamarsalidapersona` y `confirmarsalidapersona` (Functions HTTP que llama el flujo n8n con la credencial de la ingesta). Las HTTP no tienen sesión ni App Check: su barrera es esa credencial, dentro del código; sin ella contestan `401` con el texto «no autorizado», y el script lo toma como «nuestro código» (un 2xx, 400 o 404 sin credencial es «abierto» y se revierte). Cualquier otro nombre, incluido el de la Function en camelCase, sale con 2.
+  - **Cuándo se corre:** después del **primer despliegue a producción** de cada callable. `vercomprobante` va tras el despliegue que la trae; `buscarconversaciones`, en la **noche de H1-6**, tras su despliegue; las de H2-1 y H2-3, tras el despliegue de la etiqueta que las lleva y antes de encender nada que las use. En staging se corre cuando la fase `invocadores` de `preparar-staging.sh` no lo haya cubierto. Siempre con el «sí» de Andres, en la ventana **23:30–01:30**, y **primero en seco** (`--servicio <s> --entorno produccion`: lee la política de ese servicio y no escribe). Después, `--servicio <s> --entorno produccion --aplicar --confirmo produccion`.
+  - **Qué hace:** solo concede ese rol, a ese miembro y sobre ese servicio. Después relee la política y prueba el endpoint sin sesión. Tiene que contestar un JSON de Firebase `UNAUTHENTICATED` o `FAILED_PRECONDITION`, no el 403 de Google. Un 403 cuyo cuerpo es un JSON de error (cualquier JSON con `error`, con o sin `status` de texto) no cuenta como de Google. En las dos Functions HTTP (`reclamarsalidapersona`, `confirmarsalidapersona`) tiene que contestar `401` con el texto exacto «no autorizado» (la credencial de ingesta falta), no el 403 HTML de Google.
+  - **Reversión automática:** si el endpoint contesta algo que nuestro código solo da después de la sesión (un 2xx, o un JSON `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `NOT_FOUND` o `RESOURCE_EXHAUSTED`), quita en el acto el binding que acaba de poner, relee la política y sale con 3. Si `allUsers` sigue, lo dice («SIGUE»). En las HTTP, «abierto» es cualquier respuesta HTTP distinta del 401 «no autorizado» propio y del 403 de Google (2xx, 400, 404, 409, 500, 503, un 401 con otro texto…): falla hacia revertir. Solo un error de red (000) no revierte a ciegas.
   - **Si la prueba falla de otro modo** (un 403 de Google, un 5xx o sin respuesta), avisa que el binding quedó puesto y cómo quitarlo.
   - **Proyectos:** exige `GCP_PROJECT_ID_STAGING` y `GCP_PROJECT_ID_PROD`, las dos y distintas. Las cruza con el `quota_project_id` de las credenciales de `CLOUDSDK_CONFIG`, que es el de producción: en producción tiene que coincidir, en staging no puede coincidir, y con `--aplicar` tiene que estar en los dos entornos. Descarta toda otra variable `CLOUDSDK_*`, y sin `CLOUDSDK_CONFIG` ni `HOME` sale con 2.
   - **Reintento y vuelta atrás:** si el 403 de Google persiste por la propagación de IAM, se reintenta con `--aplicar --confirmo produccion`: con el binding ya puesto no escribe, solo prueba. La vuelta atrás es `--revertir` (seco, y luego con `--aplicar --confirmo produccion`). El id del proyecto no se imprime en ningún modo.
@@ -90,7 +90,8 @@ del proyecto de producción. Lo que hay:
     falta alguno. Hoy la cuenta de las Functions tiene acceso a los 23.
   - Se otorga **una sola vez, con una condición de IAM**:
     `resource.name.startsWith("projects/<número>/secrets/INGESTA_") ||
-    resource.name.startsWith("projects/<número>/secrets/GEMINI_API_KEY")`. Así
+    resource.name.startsWith("projects/<número>/secrets/GEMINI_API_KEY")`, más
+    las cláusulas `COBRADOR_` y `SALIDA_PERSONA_` (ver abajo). Así
     los secretos nuevos de la reserva quedan cubiertos solos. **La lista de
     secretos se saca del manifiesto de las Functions, nunca de una búsqueda**:
     el 12/09 una búsqueda que no aceptaba dígitos dejó 20 de los 23 afuera, y
@@ -137,6 +138,39 @@ del proyecto de producción. Lo que hay:
     incluya, porque fallaría en el paso de secretos. Mientras el cobrador no
     tenga URL pública (bloque 4 de C), las pruebas corren contra el doble
     `admin/pruebas/dobles/cobrador.ts`.
+  - **El secreto del timbre de la salida de persona** (H2-3, 17/10/2026;
+    `admin/functions/src/core/conversacion/salidaPersona.ts`): `SALIDA_PERSONA_RUTAS`,
+    un JSON `{alias: {ruta, clave}}` con la URL de capacidad del webhook «Salida de
+    persona» de cada número. **Tampoco cae en la condición de IAM original**: a los
+    tres prefijos (`INGESTA_`, `GEMINI_API_KEY`, `COBRADOR_`) se suma un cuarto,
+    `SALIDA_PERSONA_`, **exacto y sin comodines**. Sin él, ni con el secreto creado, la
+    cuenta de despliegue puede leer sus metadatos, y `firebase deploy` falla con *«403
+    secretmanager.secrets.get denied (or it may not exist)»* (staging, desde #510).
+    Antes de la primera etiqueta que lo incluya, **un solo script, en seco y luego con
+    `--aplicar`**: `scripts/nube-salida-persona.sh` (1: amplía EN SU LUGAR la condición
+    con `set-iam-policy` y el etag leído, con respaldo de la política anterior;
+    2: crea el secreto con el valor `{}`, que es un JSON válido sin ningún alias, es
+    decir, **ningún timbre**: el código devuelve `null` y no toca nada; 3: `secretAccessor`
+    para `sa-functions`). Cargar un alias real es otro paso, posterior y solo para el
+    ensayo: `--agregar-alias <alias>` (genera ruta y clave, las fusiona en una versión
+    nueva sin imprimirlas, y las entrega en un archivo de modo 600 en `$XDG_RUNTIME_DIR`);
+    `--quitar-alias` lo deshace. **Una versión agregada después de desplegar no la ve
+    ninguna instancia hasta el próximo despliegue** (firebase-tools fija el número de
+    versión; ver `docs/produccion/rotar-secreto-ingesta.md` §1.1). La vuelta atrás de la
+    condición es `--revertir-iam`. **`--aplicar` exige además `GCP_PROJECT_ID_PROD` en
+    el entorno, igual al proyecto de las credenciales** (como `nube-visor.sh`), y relee al
+    final política, secreto y acceso para confirmar lo escrito. Los temporales (y, con
+    cambio de IAM, el respaldo de la política anterior) van a un directorio de modo 700;
+    el respaldo NO se borra solo: el operador lo borra a mano cuando la comprobación sale en ✓.
+    **Reglas del alias, sin excepción:** (a) NINGÚN agente ni persona lee el archivo de
+    entrega (ni `cat` ni la herramienta de lectura): contiene la URL de capacidad y la
+    clave; (b) **`--agregar-alias --aplicar` NO se corre** hasta que exista un consumidor
+    revisado, `scripts/cargar-timbre-n8n.sh` (pendiente en H2-F2), que cargará por la API
+    de n8n la credencial Header Auth (nombre `Authorization`, valor `Bearer <clave>`) y el
+    `path` del webhook sin imprimirlos, y borrará el archivo; (c) no se corre en paralelo
+    (sin control de concurrencia: dos altas simultáneas se pisan); (d) `--quitar-alias`
+    no destruye las versiones anteriores del secreto ni borra la credencial ni el
+    webhook de n8n: eso se hace aparte. Staging: `scripts/preparar-staging.sh salida-persona`.
   - **Ampliar la reserva de clientes** (más de 20) exige un paso **a mano**:
     dar `secretAccessor` sobre cada secreto nuevo a la cuenta de las Functions,
     **`sa-functions`**, secreto por secreto.

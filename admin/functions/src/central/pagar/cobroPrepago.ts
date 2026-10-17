@@ -539,6 +539,12 @@ export const crearCobroPrepago = onCall(
     if (!esPedidoDePago(pedido)) {
       throw new HttpsError('invalid-argument', 'Pedido inválido: mensualidad (plan y 1 a 6 meses), bolsa (1 a 12) o instalación.');
     }
+    // Las bolsas nuevas todavía no se cobran por QR (las soporta PR-3): sin
+    // este rechazo caerían en la rama final y emitirían un QR de INSTALACIÓN,
+    // un cobro presentado como otra cosa.
+    if (pedido.tipo === 'bolsaConversaciones' || pedido.tipo === 'bolsaSalientes') {
+      throw new HttpsError('invalid-argument', 'Esa bolsa todavía no se puede pagar por QR.');
+    }
     const limpio: PedidoDePago = pedido.tipo === 'mensualidad'
       ? { tipo: 'mensualidad', plan: pedido.plan, meses: pedido.meses }
       : pedido.tipo === 'bolsa' ? { tipo: 'bolsa', cantidad: pedido.cantidad } : { tipo: 'instalacion' };

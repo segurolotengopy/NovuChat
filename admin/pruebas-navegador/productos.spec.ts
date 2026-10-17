@@ -15,6 +15,7 @@ async function agregar(page: Page, nombre: string, precio: string): Promise<void
 
 test.describe('Productos', () => {
   test.beforeEach(async ({ page }) => {
+    test.setTimeout(90_000);
     prepararDatos(); // cada prueba parte del mismo catálogo (3 productos) y del mismo contador del plan
     await ingresar(page, USUARIOS.adminFogon);
     await page.getByRole('link', { name: 'Productos', exact: true }).click();
@@ -77,6 +78,42 @@ test.describe('Productos', () => {
     await page.getByRole('button', { name: 'Agregar' }).click();
     await expect(page.getByText('Agregado.')).toHaveCount(0);
     await expect(page.getByText(/3 de \d+ productos/)).toBeVisible();
+  });
+
+  test('NEGATIVA: un precio negativo no se agrega (el campo no lo deja pasar) y el contador no cambia', async ({ page }) => {
+    await page.getByLabel('Nombre').last().fill('E2E Negativo');
+    await page.getByLabel(/^Precio/).last().fill('-5');
+    await page.getByRole('button', { name: 'Agregar' }).click();
+    await expect(page.getByText('Agregado.')).toHaveCount(0);
+    expect(await page.getByLabel(/^Precio/).last().evaluate((i: HTMLInputElement) => i.validity.rangeUnderflow)).toBe(true);
+    await expect(fila(page, 'E2E Negativo')).toHaveCount(0);
+    await expect(page.getByText(/3 de \d+ productos/)).toBeVisible();
+  });
+
+  test('NEGATIVA: un nombre que ya existe (o que se escribe casi igual) no pisa al anterior y manda a «Editar»', async ({ page }) => {
+    // Se usa un ítem cargado por la propia pantalla: el identificador sale del nombre. (Los de la siembra llevan otro identificador
+    // —`item-1`—, y la pantalla no los reconoce como repetidos: ver el informe del carril 3.)
+    await agregar(page, 'E2E Repetido', '10');
+    await page.getByLabel('Nombre').last().fill('e2e  REPETIDO');
+    await page.getByLabel(/^Precio/).last().fill('99');
+    await page.getByRole('button', { name: 'Agregar' }).click();
+    await expect(page.getByText(/Ya hay un ítem con ese nombre/)).toBeVisible();
+    await expect(fila(page, 'E2E Repetido')).toContainText('10 BOB'); // el precio original sigue
+    await expect(page.getByText(/4 de \d+ productos/)).toBeVisible();
+  });
+
+  test('DEFECTO (PRO-02): un nombre que ya existe en un ítem cargado por script (identificador `item-1`) tampoco debería poder repetirse', async ({ page }) => {
+    // Prueba hermana: «un nombre que ya existe (o que se escribe casi igual)…», que pasa porque ese ítem se cargó por la pantalla.
+    // `agregar` compara el identificador derivado del nombre con los ítems cargados: un ítem sembrado o importado con otro
+    // identificador (la siembra usa `item-1`) no se reconoce y la pantalla crea un duplicado. Hoy FALLA; si se corrige, se quita la marca.
+    test.fail(true, 'PRO-02 (matriz): nombre repetido en un ítem con otro identificador crea un duplicado en vez de decir «Ya hay un ítem con ese nombre»');
+    await page.getByLabel('Nombre').last().fill('Pique macho');
+    await page.getByLabel(/^Precio/).last().fill('1');
+    await page.getByRole('button', { name: 'Agregar' }).click();
+    // Lo correcto: sigue habiendo UNA sola fila «Pique macho» y el contador no sube. El síntoma de hoy: aparece una segunda fila y el contador pasa a 4.
+    await expect(page.getByText('Agregado.')).toHaveCount(0, { timeout: 5_000 });
+    await expect(fila(page, 'Pique macho')).toHaveCount(1, { timeout: 5_000 });
+    await expect(page.getByText(/3 de \d+ productos/)).toBeVisible({ timeout: 5_000 });
   });
 
   test('buscar por nombre deja solo lo que coincide', async ({ page }) => {

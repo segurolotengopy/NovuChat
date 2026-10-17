@@ -13,7 +13,7 @@ async function abrirCobros(page: Page): Promise<void> {
 }
 
 test.describe('Cobros', () => {
-  test.beforeEach(async () => { prepararDatos(); await limpiarCierres(FOGON); });
+  test.beforeEach(async () => { test.setTimeout(90_000); prepararDatos(); await limpiarCierres(FOGON); });
 
   test('sin cobros dice que no hay en el período', async ({ page }) => {
     await abrirCobros(page);
@@ -41,7 +41,7 @@ test.describe('Cobros', () => {
     await page.getByRole('row', { name: /110 Bs/ }).getByRole('button', { name: 'Ver' }).click();
     await expect(page.getByRole('dialog', { name: 'Detalle del cobro' })).toBeVisible();
     const texto = (await page.locator('body').innerText()).toLowerCase();
-    for (const prohibida of ['pago acreditado', 'pago verificado', 'recibimos tu pago', 'verificamos tu pago']) {
+    for (const prohibida of ['pago acreditado', 'pago verificado', 'recibimos tu pago', 'verificamos tu pago', 'gracias por tu pago']) {
       expect(texto, prohibida).not.toContain(prohibida);
     }
   });

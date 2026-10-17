@@ -88,6 +88,7 @@ export const SUITES_PURAS = [
   'pruebas/core/marcador-local-reemplazar.test.ts',
   'pruebas/campanas-consola.test.ts',
   'pruebas/central/contrato-f1b-puras.test.ts',
+  'pruebas/central/prepago-bolsas.test.ts',
   'pruebas/candado-agenda.test.ts',
   'pruebas/calendario-fechas-en-el-nodo.test.ts',
   'pruebas/capacidades-comunes.test.ts',
