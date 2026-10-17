@@ -161,7 +161,7 @@ del proyecto de producción. Lo que hay:
     el entorno, igual al proyecto de las credenciales** (como `nube-visor.sh`), y relee al
     final política, secreto y acceso para confirmar lo escrito. Los temporales (y, con
     cambio de IAM, el respaldo de la política anterior) van a un directorio de modo 700;
-    el respaldo se borra cuando la comprobación sale en ✓.
+    el respaldo NO se borra solo: el operador lo borra a mano cuando la comprobación sale en ✓.
     **Reglas del alias, sin excepción:** (a) NINGÚN agente ni persona lee el archivo de
     entrega (ni `cat` ni la herramienta de lectura): contiene la URL de capacidad y la
     clave; (b) **`--agregar-alias --aplicar` NO se corre** hasta que exista un consumidor

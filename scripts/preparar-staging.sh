@@ -233,12 +233,15 @@ import json, sys
 try:
     d = json.load(sys.stdin)
     bs = d.get("bindings", [])
+    if not isinstance(bs, list) or not all(isinstance(b, dict) for b in bs):
+        sys.exit(2)
+    m = "serviceAccount:" + sys.argv[1]
+    hay = any(b.get("role", "").endswith("/desplegadorSecretos") and m in b.get("members", [])
+              and (b.get("condition") or {}).get("title") == "secretos-de-las-functions"
+              for b in bs)
 except Exception:
     sys.exit(2)
-m = "serviceAccount:" + sys.argv[1]
-sys.exit(0 if any(b.get("role", "").endswith("/desplegadorSecretos") and m in b.get("members", [])
-                  and (b.get("condition") or {}).get("title") == "secretos-de-las-functions"
-                  for b in bs) else 1)' "$SA_DEPLOY"
+sys.exit(0 if hay else 1)' "$SA_DEPLOY"
 }
 
 # Edita EN SU LUGAR la condición del binding (política leída con su etag): agrega
@@ -294,9 +297,15 @@ asegurar_secreto() { # <nombre>: lo crea si falta y da secretAccessor a sa-funct
 
 fase_cuentas() {
   titulo "Cuentas de servicio y roles (los mismos acotados que producción)"
-  local num prefijo r
+  local num prefijo r rc_b=0
   num="$(numero_proyecto)"
   read -r _ _ prefijo <<< "$(ids_de_github)"
+  # ANTES de crear o cambiar nada: si la política no se puede leer o entender, no se sabe si el
+  # binding con condición existe y se aborta sin haber aplicado ningún otro binding.
+  binding_de_secretos_existe || rc_b=$?
+  if (( rc_b >= 2 )); then
+    falla "no pude leer o entender la política del proyecto: no se sabe si el binding existe; no se aplica nada (reintentar)"; exit 1
+  fi
   for cuenta in sa-deploy-staging:"Despliegue de la consola (CI, staging)" sa-functions:"Cuenta de las Cloud Functions"; do
     if existe gc iam service-accounts describe "${cuenta%%:*}@${P}.iam.gserviceaccount.com"; then nota "${cuenta%%:*} ya existe"
     else correr "crear ${cuenta%%:*}" -- gc iam service-accounts create "${cuenta%%:*}" --display-name="${cuenta#*:}"; fi
@@ -333,11 +342,7 @@ fase_cuentas() {
   # de condición que ya existe: agregaría uno paralelo. Por eso, si el binding ya
   # está, esta fase no lo toca; ampliarlo es trabajo de la fase `salida-persona`,
   # que lo edita en su lugar con `set-iam-policy` (con etag).
-  local rc_b=0
-  binding_de_secretos_existe || rc_b=$?
-  if (( rc_b >= 2 )); then
-    falla "no pude leer la política del proyecto: no se sabe si el binding existe, así que no se crea ninguno (reintentar)"; exit 1
-  elif (( rc_b == 0 )); then
+  if (( rc_b == 0 )); then
     nota "el binding con condición «secretos-de-las-functions» ya existe: no se toca (para ampliarlo, fase salida-persona)"
   else
     local cond="expression=resource.name.startsWith(\"projects/${num}/secrets/INGESTA_\") || resource.name.startsWith(\"projects/${num}/secrets/GEMINI_API_KEY\") || resource.name.startsWith(\"projects/${num}/secrets/COBRADOR_\") || resource.name.startsWith(\"projects/${num}/secrets/SALIDA_PERSONA_\"),title=secretos-de-las-functions"
@@ -352,7 +357,7 @@ fase_cuentas() {
   # Editor por defecto; se lo quita y le deja lo de Cloud Build.
   correr "cómputo: roles/cloudbuild.builds.builder" -- gc_mudo projects add-iam-policy-binding "$P" \
     --member="serviceAccount:${sa_computo}" --role=roles/cloudbuild.builds.builder --condition=None
-  correr "cómputo: quitar roles/editor" -- gc projects remove-iam-policy-binding "$P" \
+  correr "cómputo: quitar roles/editor" -- gc_mudo projects remove-iam-policy-binding "$P" \
     --member="serviceAccount:${sa_computo}" --role=roles/editor --condition=None
   # El binding de la federación: SOLO el sujeto del Environment `staging`.
   correr "federación → sa-deploy-staging (sujeto environment:staging)" -- gc_mudo iam service-accounts add-iam-policy-binding "$SA_DEPLOY" \

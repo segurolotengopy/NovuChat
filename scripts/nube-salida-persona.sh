@@ -127,6 +127,12 @@ if [[ -r "$ADC" ]]; then
 fi
 [[ -n "$P" ]] || { echo "✗ No encuentro el proyecto en las credenciales de gcloud (quota_project_id)" >&2; exit 2; }
 [[ "$P" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ El proyecto de las credenciales no tiene la forma de un id de Google Cloud" >&2; exit 2; }
+# EL CERROJO DEL ALTA, EN CÓDIGO: --agregar-alias --aplicar deja la ruta y la clave en un
+# archivo que alguien tiene que cargar en n8n y borrar sin imprimirlo. Hasta que exista
+# el consumidor revisado y ejecutable en el repositorio, no se escribe nada.
+if (( APLICAR )) && [[ "$MODO" == agregar && ! -x "$(dirname "$ESTE")/cargar-timbre-n8n.sh" ]]; then
+  echo "✗ --agregar-alias --aplicar: falta el consumidor revisado (scripts/cargar-timbre-n8n.sh). No se escribió nada." >&2; exit 2
+fi
 if (( APLICAR )) && [[ -z "${GCP_PROJECT_ID_PROD:-}" ]]; then
   echo "✗ --aplicar exige GCP_PROJECT_ID_PROD en el entorno, igual al proyecto de las credenciales (doble llave). No se escribió nada." >&2; exit 2
 fi
@@ -226,8 +232,9 @@ paso_iam() { # <ampliar|quitar>
         if (( APLICAR )); then
           # El respaldo es la política LEÍDA (TMP ya trae la edición): se vuelve a leer sin tocar.
           gc projects get-iam-policy "$P" --format=json >"$RESPALDO" 2>"$ERR" || { falla "no pude guardar el respaldo:"; sanear; exit 3; }
-          chmod 600 "$RESPALDO"; CONSERVAR=1
+          chmod 600 "$RESPALDO"
           gc projects set-iam-policy "$P" "$TMP" >/dev/null 2>"$ERR" || { falla "set-iam-policy falló (¿cambió la política entretanto? el etag lo impide):"; sanear; exit 3; }
+          CONSERVAR=1   # solo tras el éxito: si set-iam-policy falla, nada cambió y no se deja respaldo
           ok "política del proyecto actualizada"
           nota "respaldo de la política anterior (identidades y roles, sin secretos; modo 600): ${RESPALDO}"
           nota "bórrelo (rm -rf del directorio que lo contiene) cuando la comprobación final salga en ✓"
