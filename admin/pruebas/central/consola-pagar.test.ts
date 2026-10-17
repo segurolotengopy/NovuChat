@@ -25,11 +25,13 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOLSA, INSTALACION_USD, MESES_MAXIMO, PLANES, importeBs } from '../../functions/src/central/cuenta/prepago';
 import {
-  BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, cobroSeMuestraParaPagar, mesEscrito, pideVolverAEntrar, planInicial,
+  BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, bolsasOfrecidas, bolsasParaPantalla, rechazoDeBolsa, tipoTrasCambioDeBolsas, cobroSeMuestraParaPagar, mesEscrito, pideVolverAEntrar, planInicial,
   planesOfrecidos, vistaDelPedido,
 } from '../../web/src/central/lib/pagar';
 import { CONVERSACIONES_META_INCLUIDO, PLANES_PUBLICADOS } from '../../functions/src/central/cuenta/planes';
 import { facturaMetaAlComercio } from '../../web/src/central/lib/ejes';
+import { AvisoConsumo } from '../../web/src/central/componentes/AvisoConsumo';
+import { MENSAJE_BOLSA_NO_PERMITIDA, VENTA_BOLSA_SALIENTES, bolsaPermitida } from '../../functions/src/central/cuenta/prepago';
 import { ResumenPrepago } from '../../web/src/central/componentes/ResumenPrepago';
 import { estadoDeServicio, type Corte } from '../../functions/src/central/cuenta/prepago';
 
@@ -320,5 +322,148 @@ describe('el cobro que el banco ya confirmó y espera en revisión (tercera vuel
     expect(pagar).toContain("if (pideVolverAEntrar(e) && conGoogle) setReintento(p);");
     expect(pagar).toContain('reauthenticateWithPopup(auth.currentUser, proveedor)');
     expect(pagar).toContain('await emitirPedido(pendienteDeEmitir);');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// BLOQUE 1 · PR-5: LA PANTALLA OFRECE LA BOLSA DE LA TARIFA, Y NADA QUE EL SERVIDOR RECHAZARÍA
+// -----------------------------------------------------------------------------
+describe('las bolsas que ofrece Pagar salen de la tarifa de la cuenta (bolsaPermitida)', () => {
+  const resumen = (tipos: readonly { tipo: string; unidades: number; precioUsd: number }[]) =>
+    tipos.map((b) => `${b.tipo}:${b.unidades}x${b.precioUsd}`);
+
+  it('estandar: ofrece 300 por USD 15 y NO la de 30 por USD 10', () => {
+    const o = bolsasOfrecidas({ tarifa: 'estandar' });
+    expect(resumen(o)).toEqual(['bolsaConversaciones:300x15']);
+    expect(o.some((b) => b.tipo === 'bolsa')).toBe(false);
+    expect(o.some((b) => b.unidades === 30 || b.precioUsd === 10)).toBe(false);
+  });
+
+  it('meta_incluido: ofrece 30 por USD 10, igual que hoy, y NO la de 300 por 15', () => {
+    const o = bolsasOfrecidas({ tarifa: 'meta_incluido' });
+    expect(resumen(o)).toEqual(['bolsa:30x10']);
+    expect(o.some((b) => b.tipo === 'bolsaConversaciones')).toBe(false);
+  });
+
+  it('sin campo de tarifa (Bellido, demos, null): idéntico a hoy, 30 por USD 10', () => {
+    for (const c of [{}, { plan: 'impulso' }, null, undefined, { tarifa: 'otra' }]) {
+      const o = bolsasOfrecidas(c as never);
+      expect(resumen(o), JSON.stringify(c)).toEqual(['bolsa:30x10']);
+      expect(o.some((b) => b.unidades === 300 && b.precioUsd === 15)).toBe(false);
+    }
+  });
+
+  it('la bolsa de seguimiento (300 por USD 10) no aparece con la constante apagada, ni con números del comercio', () => {
+    expect(VENTA_BOLSA_SALIENTES).toBe(false);
+    for (const t of ['estandar', 'meta_incluido', undefined]) {
+      const o = bolsasOfrecidas({ tarifa: t }, ['comercio']);
+      expect(o.some((b) => b.tipo === 'bolsaSalientes'), String(t)).toBe(false);
+    }
+  });
+
+  it('todo lo que se ofrece lo acepta el servidor, y lo que no se ofrece lo rechaza (la pantalla no inventa)', () => {
+    for (const cuenta of [{ tarifa: 'estandar' }, { tarifa: 'meta_incluido' }, {}]) {
+      const ofrecidos = bolsasOfrecidas(cuenta, ['comercio']).map((b) => b.tipo);
+      for (const tipo of ['bolsa', 'bolsaConversaciones', 'bolsaSalientes'] as const) {
+        expect(bolsaPermitida(cuenta, { tipo }, ['comercio']) === null, `${JSON.stringify(cuenta)} ${tipo}`)
+          .toBe(ofrecidos.includes(tipo));
+      }
+    }
+  });
+
+  it('el importe de la vista previa de la bolsa de 300 es el del servidor: USD 15 por bolsa', () => {
+    const v = vistaDelPedido({ tarifa: 'estandar' }, { tipo: 'bolsaConversaciones', cantidad: 2 }, TC, AHORA)!;
+    expect(v.montoUsd).toBe(30);
+    expect(v.montoBs).toBe(importeBs(30, TC.tco));
+    expect(v.descripcion).toBe('2 bolsas de 300 conversaciones');
+    expect(vistaDelPedido({}, { tipo: 'bolsa', cantidad: 2 }, TC, AHORA)!.montoUsd).toBe(20);
+  });
+});
+
+describe('Pagar con la cuenta sin cargar: no ofrece ninguna bolsa hasta tenerla', () => {
+  it('cuenta === null: lista vacía (ni 30 por 10 ni 300 por 15)', () => {
+    expect(bolsasParaPantalla(null, ['comercio'])).toEqual([]);
+  });
+
+  it('cuenta cargada sin tarifa: 30 por USD 10; con estandar: 300 por USD 15', () => {
+    expect(bolsasParaPantalla({}).map((b) => `${b.unidades}x${b.precioUsd}`)).toEqual(['30x10']);
+    expect(bolsasParaPantalla({ tarifa: 'estandar' }).map((b) => `${b.unidades}x${b.precioUsd}`)).toEqual(['300x15']);
+  });
+
+  it('si la bolsa elegida deja de ofrecerse, el tipo vuelve a mensualidad; si sigue, se conserva', () => {
+    expect(tipoTrasCambioDeBolsas('bolsa', bolsasParaPantalla({ tarifa: 'estandar' }))).toBe('mensualidad');
+    expect(tipoTrasCambioDeBolsas('bolsa', bolsasParaPantalla(null))).toBe('mensualidad');
+    expect(tipoTrasCambioDeBolsas('bolsa', bolsasParaPantalla({}))).toBe('bolsa');
+    expect(tipoTrasCambioDeBolsas('bolsaConversaciones', bolsasParaPantalla({ tarifa: 'estandar' }))).toBe('bolsaConversaciones');
+    expect(tipoTrasCambioDeBolsas('instalacion', [])).toBe('instalacion');
+    expect(tipoTrasCambioDeBolsas('mensualidad', [])).toBe('mensualidad');
+  });
+});
+
+describe('un rechazo de bolsa del servidor muestra el texto fijo, no uno genérico ni inventado', () => {
+  it('permission-denied y failed-precondition con details.motivo usan MENSAJE_BOLSA_NO_PERMITIDA', () => {
+    for (const [code, motivo] of [
+      ['functions/permission-denied', 'tarifa'], ['functions/permission-denied', 'titularidad'],
+      ['functions/failed-precondition', 'no_habilitada'], ['failed-precondition', 'no_habilitada'],
+    ] as const) {
+      expect(rechazoDeBolsa({ code, message: 'Mensaje cualquiera del servidor', details: { motivo } }))
+        .toBe(MENSAJE_BOLSA_NO_PERMITIDA[motivo]);
+    }
+  });
+
+  it('otros errores (otro código, otro motivo, sin details) no se disfrazan de rechazo de bolsa', () => {
+    expect(rechazoDeBolsa({ code: 'functions/unauthenticated', details: { motivo: 'tarifa' } })).toBeNull();
+    expect(rechazoDeBolsa({ code: 'functions/permission-denied', details: { motivo: 'inventado' } })).toBeNull();
+    expect(rechazoDeBolsa({ code: 'functions/permission-denied', message: 'Solo el propietario' })).toBeNull();
+    expect(rechazoDeBolsa({ code: 'functions/failed-precondition', details: { motivo: 'toString' } })).toBeNull();
+    expect(rechazoDeBolsa(null)).toBeNull();
+  });
+
+  it('Pagar.tsx usa rechazoDeBolsa al emitir y no escribe «30 conversaciones» ni un precio de bolsa a mano', () => {
+    const fuente = sinComentarios(leer('web/src/central/paginas/Pagar.tsx'));
+    expect(fuente).toContain('rechazoDeBolsa(e)');
+    expect(fuente).toContain('bolsasParaPantalla(');
+    expect(fuente).toContain('tipoTrasCambioDeBolsas(');
+    expect(fuente).not.toMatch(/\bBOLSA\b|PRECIOS\.bolsa/);
+    expect(fuente).not.toMatch(/USD\s*(10|15)\b/);
+  });
+});
+
+describe('AvisoConsumo no promete la bolsa que el servidor rechazaría', () => {
+  const aviso = { porcentaje: 80, conversaciones: 80, limite: 100 };
+  const pinta = (cuenta?: Record<string, unknown> | null) =>
+    renderToStaticMarkup(createElement(AvisoConsumo, { aviso, cuenta }));
+
+  it('a estandar le dice 300 conversaciones por USD 15, no 30 por USD 10', () => {
+    const html = pinta({ tarifa: 'estandar' });
+    expect(html).toContain('una bolsa de 300 conversaciones por USD 15');
+    expect(html).not.toMatch(/30 conversaciones|USD 10/);
+  });
+
+  it('si no se sabe la cuenta (sin la prop o null) no nombra ninguna bolsa, ni la de 30 ni la de 300', () => {
+    for (const c of [undefined, null]) {
+      const html = pinta(c);
+      expect(html).toContain('Llegaste al 80 %');
+      expect(html).not.toMatch(/bolsa|USD/);
+    }
+  });
+
+  it('con la cuenta cargada, sin tarifa o con meta_incluido, dice lo de hoy: 30 por USD 10', () => {
+    for (const c of [{}, { tarifa: 'meta_incluido' }]) {
+      const html = pinta(c);
+      expect(html).toContain('una bolsa de 30 conversaciones por USD 10');
+      expect(html).not.toMatch(/300|USD 15/);
+    }
+  });
+});
+
+describe('ResumenPrepago: el saldo de seguimiento no se muestra mientras la bolsa no se vende', () => {
+  it('con la constante apagada no hay fila, aunque el saldo sea mayor que 0', () => {
+    expect(VENTA_BOLSA_SALIENTES).toBe(false);
+    const html = renderToStaticMarkup(createElement(ResumenPrepago, {
+      servicio: estadoDeServicio({ plan: 'impulso', modalidad: 'prepago' }, 0, AHORA), corte: null, bolsaSalientes: 120,
+    }));
+    expect(html).not.toContain('seguimiento');
+    expect(html).toContain('Conversaciones del mes');
   });
 });
