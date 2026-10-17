@@ -27,10 +27,10 @@ import {
 } from '../../../../functions/src/central/cuenta/planes';
 
 export {
-  AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES,
+  AVISO_CONSUMO, BOLSA_CONVERSACIONES, BOLSA_META_INCLUIDO, BOLSA_SALIENTES, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES,
   PLANES_PUBLICADOS, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo, esPlanVendible,
   limitesDe, limitesDeCuenta, periodoDe, umbralDeAviso, limiteDeCampanas, MAXIMO_CAMPANAS,
-  MAXIMO_CAMBIOS_INCLUIDOS,
+  MAXIMO_CAMBIOS_INCLUIDOS, REGALO_SEIS_MESES_CONVERSACIONES, tarifaDe,
 } from '../../../../functions/src/central/cuenta/planes';
 export type {
   AvisoConsumo, IdPlanVendible, Limites, LimitesDeCuenta, Plan,

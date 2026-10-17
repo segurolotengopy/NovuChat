@@ -68,14 +68,14 @@ import {
   VIGENCIA_HORAS_POR_DEFECTO, type AvisoDeConfirmacion, type Cobrador, type CobroDelCobrador, type RespuestaCrear,
 } from './cobrador.js';
 import {
-  MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, importeCobrable, modalidadDe, montoFueraDeContrato, montoUsdDe,
+  MONEDA_COBRO, MONEDA_LISTA, descripcionDe, esTipoDeBolsa, importeBs, importeCobrable, modalidadDe, montoFueraDeContrato, montoUsdDe,
   type CuentaCruda,
 } from '../cuenta/prepago.js';
 import { SinTipoDeCambio, tipoCambioDe } from '../servicios/tipoCambio.js';
 import { planQuePuedePedir, precioMensualDe } from '../cuenta/planes.js';
 import { exigirSesionReciente } from '../../core/seguridad/autorizacion.js';
 import {
-  auditoriaDeLimites, cambioAutorizado, conceptoDe, esPedidoDePago, puertaDePagos,
+  auditoriaDeLimites, cambioAutorizado, conceptoDe, esPedidoDePago, exigirBolsaPermitida, puertaDePagos, titularidadesDelComercio,
   type Confirmacion, type PedidoDePago, type PuertaDePagos,
 } from './pagos.js';
 
@@ -326,6 +326,14 @@ export async function crearCobroInterno(
       throw new HttpsError('failed-precondition', 'Este comercio no está en condiciones de emitir un cobro.');
     }
     const cuenta = cuentaDoc.data() ?? {};
+    // QUÉ BOLSA SE PUEDE COMPRAR (PR-3), contra la cuenta leída en esta
+    // transacción y ANTES de reservar o de pedirle el QR al banco: una cuenta
+    // `estandar` no emite el QR de 30 por USD 10 ni una `meta_incluido` el de
+    // 300 por USD 15, vengan de la consola, de WhatsApp o de una petición
+    // armada a mano. Solo la bolsa de seguimiento necesita las titularidades.
+    if (esTipoDeBolsa(pedido.tipo)) {
+      exigirBolsaPermitida(cuenta, pedido, pedido.tipo === 'bolsaSalientes' ? await titularidadesDelComercio(tenantId, tx) : []);
+    }
     // UNA CUENTA EN DEMOSTRACIÓN NO EMITE COBROS (Andres, 26/09/2026, opción
     // B): en demostración el precio es cero y un pago ya no cambia la
     // modalidad, así que el comercio pagaría por nada. Tampoco el propietario:
@@ -398,7 +406,7 @@ export async function crearCobroInterno(
           // allá con este importe, y otro importe sería un 409 del cobrador.
           const mismo = p['tipo'] === pedido.tipo && p['monto'] === monto
             && (pedido.tipo !== 'mensualidad' || (p['plan'] === pedido.plan && p['meses'] === pedido.meses))
-            && (pedido.tipo !== 'bolsa' || p['cantidad'] === pedido.cantidad);
+            && (!('cantidad' in pedido) || p['cantidad'] === pedido.cantidad);
           if (!mismo) throw new HttpsError('failed-precondition', 'Hay un cobro reservado con otro pedido. Cancélelo antes de emitir otro.', vivo);
           return {
             pagoId: pendienteId, fichaQr: cobro?.fichaQr ?? '', reutilizado: true, cobroId: sinImagen ? cobro.id : null,
@@ -423,7 +431,7 @@ export async function crearCobroInterno(
       tipo: pedido.tipo,
       ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
       ...(autoriza ? { cambioAutorizadoPor: quien.uid } : {}),
-      ...(pedido.tipo === 'bolsa' ? { cantidad: pedido.cantidad } : {}),
+      ...('cantidad' in pedido ? { cantidad: pedido.cantidad } : {}),
       montoUsd, monto, moneda: MONEDA_COBRO, monedaLista: MONEDA_LISTA,
       tcoAplicado: tc.tco, tcoFuente: tc.fuente, tcoFecha: tc.fecha,
       montoRecibidoBs: null,
@@ -537,17 +545,14 @@ export const crearCobroPrepago = onCall(
       tipo: datos['tipo'], plan: datos['plan'], meses: datos['meses'], cantidad: datos['cantidad'],
     };
     if (!esPedidoDePago(pedido)) {
-      throw new HttpsError('invalid-argument', 'Pedido inválido: mensualidad (plan y 1 a 6 meses), bolsa (1 a 12) o instalación.');
+      throw new HttpsError('invalid-argument', 'Pedido inválido: mensualidad (plan y 1 a 6 meses), bolsa de conversaciones o de seguimiento (1 a 12) o instalación.');
     }
-    // Las bolsas nuevas todavía no se cobran por QR (las soporta PR-3): sin
-    // este rechazo caerían en la rama final y emitirían un QR de INSTALACIÓN,
-    // un cobro presentado como otra cosa.
-    if (pedido.tipo === 'bolsaConversaciones' || pedido.tipo === 'bolsaSalientes') {
-      throw new HttpsError('invalid-argument', 'Esa bolsa todavía no se puede pagar por QR.');
-    }
+    // Cada tipo de bolsa se arma con su propia rama: una que cayera en la
+    // final emitiría un QR de INSTALACIÓN, un cobro presentado como otra cosa.
+    // Si la cuenta puede comprarla lo decide `crearCobroInterno`, en la reserva.
     const limpio: PedidoDePago = pedido.tipo === 'mensualidad'
       ? { tipo: 'mensualidad', plan: pedido.plan, meses: pedido.meses }
-      : pedido.tipo === 'bolsa' ? { tipo: 'bolsa', cantidad: pedido.cantidad } : { tipo: 'instalacion' };
+      : esTipoDeBolsa(pedido.tipo) ? { tipo: pedido.tipo, cantidad: pedido.cantidad as number } : { tipo: 'instalacion' };
     // Si la sesión es reciente se decide acá, con el token; si hace falta
     // (otro plan, pedido por el propietario) se decide en la reserva, contra
     // la cuenta leída. Un administrador nunca firma: da igual.

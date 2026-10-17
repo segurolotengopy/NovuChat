@@ -361,6 +361,7 @@ export function textoRechazoMeta(codigo: unknown, esperaSegundos?: unknown): str
     case '131051': return 'WhatsApp no admite ese tipo de mensaje.';
     case '131052': return 'WhatsApp no pudo descargar el archivo del mensaje.';
     case '131053': return 'WhatsApp no pudo subir el archivo: formato o tamaño no admitido.';
+    case 'caducado': return 'No se envió a tiempo; puede reintentar.';   // el servidor lo emite cuando el mensaje esperó demasiado (reclamarSalidaPersona)
     case 'WM-3037': {
       const n = segundosDe(esperaSegundos);
       return n === null ? 'Límite de envíos; intente de nuevo en unos instantes.' : `Límite de envíos; intente en ${n} s.`;

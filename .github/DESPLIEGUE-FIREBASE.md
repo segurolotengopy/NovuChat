@@ -166,7 +166,7 @@ del proyecto de producción. Lo que hay:
     entrega (ni `cat` ni la herramienta de lectura): contiene la URL de capacidad y la
     clave; (b) **`--agregar-alias --aplicar` NO se corre** hasta que exista un consumidor
     revisado, `scripts/cargar-timbre-n8n.sh` (H2-F2; procedimiento en `docs/ensayo/LEEME.md`
-    §7), que carga por la API de n8n la credencial Header Auth (nombre `Authorization`,
+    §8), que carga por la API de n8n la credencial Header Auth (nombre `Authorization`,
     valor `Bearer <clave>`) y el `path` del webhook sin imprimirlos, y borra el archivo
     solo si todo salió bien. Cuando se corra, el orden es: `--agregar-alias --aplicar`,
     luego `cargar-timbre-n8n.sh --aplicar` en la misma sesión (la entrega no se deja

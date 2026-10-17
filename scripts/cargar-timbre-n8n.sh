@@ -54,7 +54,7 @@
 # asignar una credencial por TIPO, imprimir la clave, la ruta, el phoneNumberId, la
 # URL del relé o un id, ni escribir sin --aplicar --confirmo produccion.
 #
-# A VERIFICAR EN EL ENSAYO (no se puede saber sin n8n real; ver docs/ensayo/LEEME.md §7):
+# A VERIFICAR EN EL ENSAYO (no se puede saber sin n8n real; ver docs/ensayo/LEEME.md §8):
 #   - que n8n acepte PATCH /credentials/{id} (rotar-ingesta.sh lo usa) y DELETE;
 #   - que el webhook con `path` explícito se registre en /webhook/<path> al activar;
 #   - que la API acepte el cuerpo {name,nodes,connections,settings} tal cual;

@@ -99,7 +99,7 @@ export function EstadoCuenta() {
         <strong>{situacion}</strong>
       </p>
 
-      {aviso && <AvisoConsumo aviso={aviso} />}
+      {aviso && <AvisoConsumo aviso={aviso} cuenta={cuenta as Record<string, unknown>} />}
 
       <h3>Su cuenta</h3>
       {errorEjes && <p role="alert">{errorEjes}</p>}
@@ -110,7 +110,8 @@ export function EstadoCuenta() {
           MODALIDAD que decidió el servidor, nunca por el plan. */}
       {servicio.modalidad !== 'demostracion' && (
         <>
-          <ResumenPrepago servicio={servicio} corte={corte} />
+          <ResumenPrepago servicio={servicio} corte={corte}
+            bolsaSalientes={Number((cuenta as Record<string, unknown>)['bolsaSalientes'] ?? 0) || 0} />
           {esVisible(ocultos, 'pagar') && (
             <p>
               <Link className="btn btn-primary" to={`/negocio/${encodeURIComponent(tenantId)}/pagar`}>

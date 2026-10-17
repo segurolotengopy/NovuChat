@@ -6,10 +6,11 @@ import { Link, useParams } from 'react-router-dom';
 import { auth, db, funciones, urlDeFuncionHttp } from '../../core/lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, PRECIOS, cobroSeMuestraParaPagar, cuentaEnDemostracion, mesEscrito,
+  BOLSAS_POSIBLES, ESTADO_DEL_COBRO, bolsaDe, bolsasParaPantalla, rechazoDeBolsa, tipoTrasCambioDeBolsas, type TipoBolsa, MESES_POSIBLES, PRECIOS, cobroSeMuestraParaPagar, cuentaEnDemostracion, mesEscrito,
   pideVolverAEntrar, planDeLaCuenta, planesQuePuedePagar, vistaDelPedido, type Pago, type PlanEnVenta,
 } from '../lib/pagar';
-import { BOLSA, fechaCorta } from '../lib/prepago';
+import { fechaCorta } from '../lib/prepago';
+import { REGALO_SEIS_MESES_CONVERSACIONES } from '../lib/planes';
 import { EjesDeLaCuenta } from '../componentes/EjesDeLaCuenta';
 import { useEjesDeCuenta } from '../lib/lecturas';
 import { facturaMetaAlComercio } from '../lib/ejes';
@@ -43,7 +44,7 @@ import { facturaMetaAlComercio } from '../lib/ejes';
  * es el secreto.
  */
 
-type Tipo = 'mensualidad' | 'bolsa' | 'instalacion';
+type Tipo = 'mensualidad' | TipoBolsa | 'instalacion';
 
 interface Pendiente {
   pagoId: string;
@@ -161,9 +162,21 @@ export function Pagar() {
   const planes = useMemo(() => planesQuePuedePagar(cuenta), [cuenta]);
   useEffect(() => { if (plan === null && planes[0]) setPlan(planes[0]); }, [planes, plan]);
 
+  // LAS BOLSAS DE ESTA CUENTA (por su tarifa), las mismas que el servidor deja
+  // comprar (`bolsaPermitida`). La titularidad de los números sale de `ejes`.
+  const bolsas = useMemo(
+    () => bolsasParaPantalla(cuenta, (ejes?.numeros ?? []).map((n) => n.titularidad)),
+    [cuenta, ejes]);
+  // Si la bolsa elegida ya no se ofrece (la cuenta cambió de tarifa con la
+  // pantalla abierta), se vuelve a la mensualidad en vez de pedir lo que se rechaza.
+  useEffect(() => {
+    const nuevo = tipoTrasCambioDeBolsas(tipo, bolsas);
+    if (nuevo !== tipo) setTipo(nuevo);
+  }, [bolsas, tipo]);
+
   const pedido: Pago | null = useMemo(() => {
     if (tipo === 'instalacion') return { tipo: 'instalacion' };
-    if (tipo === 'bolsa') return { tipo: 'bolsa', cantidad };
+    if (tipo === 'bolsa' || tipo === 'bolsaConversaciones' || tipo === 'bolsaSalientes') return { tipo, cantidad };
     return plan === null ? null : { tipo: 'mensualidad', plan, meses };
   }, [tipo, plan, meses, cantidad]);
 
@@ -191,7 +204,7 @@ export function Pagar() {
       // El servidor manda mensajes pensados para el comercio («Ya hay un cobro
       // pendiente», «No hay tipo de cambio del día»): se muestran tal cual y no
       // se reemplazan por uno genérico, que obligaría a llamar por teléfono.
-      setError(mensajeDeError(e, 'No se pudo emitir el cobro.'));
+      setError(rechazoDeBolsa(e) ?? mensajeDeError(e, 'No se pudo emitir el cobro.'));
       await consultar(true);
     } finally { setTrabajando(false); }
   };
@@ -275,10 +288,12 @@ export function Pagar() {
                 <input type="radio" name="tipo" checked={tipo === 'mensualidad'}
                   onChange={() => setTipo('mensualidad')} /> Mensualidad
               </label>
-              <label>
-                <input type="radio" name="tipo" checked={tipo === 'bolsa'}
-                  onChange={() => setTipo('bolsa')} /> Bolsa de conversaciones
-              </label>
+              {bolsas.map((b) => (
+                <label key={b.tipo}>
+                  <input type="radio" name="tipo" checked={tipo === b.tipo}
+                    onChange={() => setTipo(b.tipo)} /> {b.etiqueta}
+                </label>
+              ))}
               <label>
                 <input type="radio" name="tipo" checked={tipo === 'instalacion'}
                   onChange={() => setTipo('instalacion')} /> Instalación
@@ -330,25 +345,25 @@ export function Pagar() {
                     existe: no hay descuento por pagar varios meses. */}
                 <p className="ayuda">
                   Pagando {MESES_POSIBLES.length} meses de una vez se suma una bolsa de{' '}
-                  {BOLSA.conversaciones} conversaciones sin costo. No hay descuento sobre la
+                  {REGALO_SEIS_MESES_CONVERSACIONES} conversaciones sin costo. No hay descuento sobre la
                   mensualidad.
                 </p>
               </>
             )}
 
-            {tipo === 'bolsa' && (
+            {(tipo === 'bolsa' || tipo === 'bolsaConversaciones' || tipo === 'bolsaSalientes') && (
               <>
                 <label htmlFor="cantidad">Cuántas bolsas</label>
                 <select id="cantidad" value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))}>
                   {BOLSAS_POSIBLES.map((c) => (
                     <option key={c} value={c}>
-                      {c === 1 ? '1 bolsa' : `${c} bolsas`} · {c * PRECIOS.bolsa.conversaciones} conversaciones
+                      {c === 1 ? '1 bolsa' : `${c} bolsas`} · {c * bolsaDe(tipo).unidades} {bolsaDe(tipo).unidad}
                     </option>
                   ))}
                 </select>
                 <p className="ayuda">
-                  Cada bolsa son {PRECIOS.bolsa.conversaciones} conversaciones por USD{' '}
-                  {PRECIOS.bolsa.precioUsd}, y no vencen.
+                  Cada bolsa son {bolsaDe(tipo).unidades} {bolsaDe(tipo).unidad} por USD{' '}
+                  {bolsaDe(tipo).precioUsd}, y no vencen.
                 </p>
               </>
             )}
