@@ -12,7 +12,7 @@ fila más en la tabla de marcadores) y el de producción, `${GCP_PROJECT_ID}`.
 
 **Costo, en las tres unidades de este repositorio:** mensajes de WhatsApp por
 conversación, **0** (staging no se conecta a Meta ni a n8n); dinero, **≈ 2 USD
-al mes** (25 secretos en Secret Manager a 0,06 USD; Artifact Registry y Cloud
+al mes** (26 secretos en Secret Manager a 0,06 USD; Artifact Registry y Cloud
 Run con tráfico de prueba están dentro de la franquicia; Cloud Scheduler, 2 de
 los 3 trabajos gratis); minutos de GitHub Actions, **≈ 10 más por push a
 `main`** que toque `admin/` (construir-staging 1,5 + desplegar-staging 4 +
@@ -31,7 +31,7 @@ humo-staging 1 + DAST 3), gratis en un repositorio público.
 | Hosting | **Un solo sitio**, el que nace con el proyecto (`<id>.web.app`) | Producción también tiene uno solo: `admin/firebase.json` no declara `site` ni `target` de Hosting, y el catálogo web `/c/**` vive en el mismo sitio |
 | Federación | **Pool y proveedor propios en el proyecto de staging** (§4) | No se toca nada de producción para levantar staging |
 | Variables `VITE_*` | **Por Environment `staging`**, con el mismo nombre que las del repositorio | §3. Un paquete de staging con las variables de producción es la falla que `Analisis/28` §1 describe |
-| Secreto de ingesta | **Propio: los 25 secretos que el código declara, con valores aleatorios nuevos** | §5. Nunca los de producción |
+| Secreto de ingesta | **Propio: los 26 secretos que el código declara, con valores aleatorios nuevos (salvo `SALIDA_PERSONA_RUTAS`: `{}`)** | §5. Nunca los de producción |
 | Datos | **Solo datos de prueba** creados por scripts del repositorio; **ningún cliente real, ningún número de WhatsApp real** | §6, DAT-07 |
 | Primer despliegue de Functions | **Con la cuenta dueña del proyecto, desde la máquina de Andres, con `--dry-run` antes**; los siguientes, el pipeline | §8 paso 11. Es como nació producción, y evita darle a la cuenta de despliegue permisos de IAM que después no necesita |
 | App Check | **Apagado en staging** (`VITE_APPCHECK_SITE_KEY: ''` fijada en el job `construir-staging`; GitHub no admite una variable de Environment vacía) | La clave de producción está atada a su dominio; una clave nueva es un paso más de consola que no aporta al humo |
@@ -164,7 +164,7 @@ reglas, índices, `firebasestorage.viewer`, Functions gen 2 (Run, Build,
 Artifact Registry, Eventarc), **Cloud Scheduler** (dos `onSchedule`),
 `iam.serviceAccountUser` solo sobre `sa-functions`, App Engine y cómputo, y el
 rol a medida `desplegadorSecretos` con condición por prefijo (`INGESTA_`,
-`GEMINI_API_KEY`, `COBRADOR_`). `sa-functions` tiene lo de la fase A de
+`GEMINI_API_KEY`, `COBRADOR_`, `SALIDA_PERSONA_`). `sa-functions` tiene lo de la fase A de
 producción y `secretAccessor` secreto por secreto. La cuenta de cómputo queda
 como en la fase C: solo `cloudbuild.builds.builder`.
 
@@ -172,14 +172,28 @@ como en la fase C: solo `cloudbuild.builds.builder`.
 
 ## 5. Secretos de las Functions
 
-El código declara con `defineSecret` **25 secretos** (`INGESTA_DEMOA`,
+El código declara con `defineSecret` **26 secretos** (`INGESTA_DEMOA`,
 `INGESTA_DEMOB`, `INGESTA_CLIENTE01`…`20`, `GEMINI_API_KEY`, `COBRADOR_TOKEN`,
-`COBRADOR_AVISO_SECRETO`; la lista la lee el script del código, nunca de una
+`COBRADOR_AVISO_SECRETO`, `SALIDA_PERSONA_RUTAS`; la lista la lee el script del código, nunca de una
 búsqueda a mano). `firebase deploy --non-interactive` falla si falta uno, así
 que existen todos, **con valores aleatorios de 64 caracteres hex generados en
 el momento y jamás mostrados** (`openssl rand -hex 32 | gcloud secrets create
 … --data-file=-`). Ninguno es el de producción; ninguno viaja por chat.
 
+- `SALIDA_PERSONA_RUTAS` (H2-3) es la excepción a «valor aleatorio»: es el mapa
+  `{alias: {ruta, clave}}` de los timbres y nace `{}`, un JSON válido sin ningún
+  alias, que el código lee como «ningún timbre» (no toca nada; el mensaje queda
+  `pendiente`). Un hex aleatorio no parsearía y daría el mismo resultado, pero
+  sería un valor que parece válido y no lo es. **Incidente del 17/10/2026:** el
+  despliegue a staging falló desde #510 con *403 secretmanager.secrets.get* por
+  dos causas independientes: la fase `secretos` se había corrido cuando eran 25, y
+  la condición de `desplegadorSecretos` no cubría `SALIDA_PERSONA_`. Sobre un
+  staging ya creado, **una sola vez**: `scripts/preparar-staging.sh
+  salida-persona --proyecto <id>` (seco) y luego con `--aplicar`. Edita la
+  condición EN SU LUGAR con `set-iam-policy` y el etag leído (un
+  `add-iam-policy-binding` con otra expresión agregaría un binding paralelo, no
+  lo reemplazaría; por eso `cuentas` ya no lo intenta si el binding existe),
+  deja un respaldo de la política anterior, crea el secreto y da `secretAccessor`.
 - Las claves de ingesta de staging no las conoce ningún flujo de n8n, y eso es
   correcto: staging no recibe mensajes. Si algún día un flujo de ensayo apunta
   a staging, se carga su credencial con `scripts/rotar-ingesta.sh n8n
@@ -257,7 +271,7 @@ persona) o Claude con el script. Todo lo del script se corre **primero sin
 | 7 | App web «Consola (staging)» y sus `VITE_*` al Environment `staging` (+ `GCP_PROJECT_NUMBER_STAGING`; App Check vacío lo fija el workflow) | Claude | `S app` | `gh variable list --env staging` muestra las seis | Sí (`gh variable delete`) |
 | 8 | Pool `github` y proveedor `novuchat` propios, condición por identificadores y sujeto `environment:staging` | Claude | `S wif` | `gcloud iam workload-identity-pools providers describe` muestra la condición | Sí |
 | 9 | `sa-deploy-staging` y `sa-functions` con sus roles; rol `desplegadorSecretos`; binding de la federación; cómputo sin Editor | Claude | `S cuentas` | `S verificar` (Policy Troubleshooter de los siete permisos que más fallaron en producción) | Sí, rol por rol |
-| 10 | 25 secretos con valor aleatorio y `secretAccessor` para `sa-functions` | Claude | `S secretos` | `S verificar`: 25 secretos = 25 declarados | Sí (`secrets delete`) |
+| 10 | 26 secretos (25 con valor aleatorio, `SALIDA_PERSONA_RUTAS` con `{}`) y `secretAccessor` para `sa-functions` | Claude | `S secretos` | `S verificar`: 26 secretos = 26 declarados | Sí (`secrets delete`) |
 | 11 | Rol del agente de Storage (`firestoreServiceAgent`) — **después del paso 6** | Claude | `S storage` | `gcloud projects get-iam-policy` lo muestra | Sí |
 | 12 | **Primer despliegue, con la cuenta dueña**: reglas, índices, Functions y Storage, simulado antes | Claude, con OK, desde `admin/` con `.firebaserc` local con el alias `staging` | `npx firebase-tools@15.28.1 deploy --only firestore:rules,firestore:indexes,functions,storage --project <id> --dry-run` y después sin `--dry-run` (hosting queda fuera del `--dry-run`, como en CI; `functions/.env` con `SITIO_PUBLICO=https://<id>.web.app`) | `gcloud run services list --region us-east1` muestra las Functions con `sa-functions@<id>`; `humo-staging.sh` con `STAGING_URL` y el proyecto en el entorno | Reglas: historial en la consola; Functions: redesplegar el commit anterior |
 | 12b | **Invocadores**: `roles/run.invoker` para `allUsers` en cada Function HTTP o callable (el mismo conjunto que producción: 47 el 26/09). Una Function nueva no nace invocable si su creación no salió limpia; en el primer despliegue faltaban 29 | Claude | `S invocadores` | `S verificar` dice «las N Functions HTTP o callables son invocables»; el humo da los códigos del código, no 403 de Google | Sí (`remove-iam-policy-binding`) |
