@@ -157,7 +157,20 @@ del proyecto de producción. Lo que hay:
     `--quitar-alias` lo deshace. **Una versión agregada después de desplegar no la ve
     ninguna instancia hasta el próximo despliegue** (firebase-tools fija el número de
     versión; ver `docs/produccion/rotar-secreto-ingesta.md` §1.1). La vuelta atrás de la
-    condición es `--revertir-iam`. Staging: `scripts/preparar-staging.sh salida-persona`.
+    condición es `--revertir-iam`. **`--aplicar` exige además `GCP_PROJECT_ID_PROD` en
+    el entorno, igual al proyecto de las credenciales** (como `nube-visor.sh`), y relee al
+    final política, secreto y acceso para confirmar lo escrito. Los temporales (y, con
+    cambio de IAM, el respaldo de la política anterior) van a un directorio de modo 700;
+    el respaldo se borra cuando la comprobación sale en ✓.
+    **Reglas del alias, sin excepción:** (a) NINGÚN agente ni persona lee el archivo de
+    entrega (ni `cat` ni la herramienta de lectura): contiene la URL de capacidad y la
+    clave; (b) **`--agregar-alias --aplicar` NO se corre** hasta que exista un consumidor
+    revisado, `scripts/cargar-timbre-n8n.sh` (pendiente en H2-F2), que cargará por la API
+    de n8n la credencial Header Auth (nombre `Authorization`, valor `Bearer <clave>`) y el
+    `path` del webhook sin imprimirlos, y borrará el archivo; (c) no se corre en paralelo
+    (sin control de concurrencia: dos altas simultáneas se pisan); (d) `--quitar-alias`
+    no destruye las versiones anteriores del secreto ni borra la credencial ni el
+    webhook de n8n: eso se hace aparte. Staging: `scripts/preparar-staging.sh salida-persona`.
   - **Ampliar la reserva de clientes** (más de 20) exige un paso **a mano**:
     dar `secretAccessor` sobre cada secreto nuevo a la cuenta de las Functions,
     **`sa-functions`**, secreto por secreto.

@@ -43,6 +43,21 @@
 # contenido. Sin $XDG_RUNTIME_DIR válido, --agregar-alias se niega: no hay plan B por
 # pantalla ni por disco persistente.
 #
+# QUIÉN CONSUME LA ENTREGA, Y QUIÉN NO. NINGÚN agente ni persona lee ese archivo (ni
+# `cat` ni la herramienta de lectura): su contenido es la URL de capacidad y la clave
+# del webhook. `--agregar-alias --aplicar` NO se corre hasta que exista un consumidor
+# revisado, `scripts/cargar-timbre-n8n.sh` (pendiente en H2-F2), que por la API de n8n
+# crea la credencial Header Auth con nombre `Authorization` y valor `Bearer <clave>`,
+# fija el `path` del webhook, no imprime ninguno de los dos y borra el archivo. El
+# archivo trae un campo `como_usar` con eso mismo. Hoy, `--agregar-alias` sin
+# `--aplicar` (seco) sí se puede correr.
+#
+# LÍMITES. No hay control de concurrencia: no se corre dos veces a la vez (dos
+# `--agregar-alias` en paralelo leen el mismo mapa y el segundo pisa al primero).
+# `--quitar-alias` escribe una versión nueva sin el alias, pero NO destruye las versiones
+# anteriores (siguen habilitadas y contienen la ruta y la clave) ni borra la credencial
+# ni el webhook de n8n: eso se hace aparte (`gcloud secrets versions destroy` y n8n).
+#
 # UN DETALLE QUE IMPORTA. firebase-tools FIJA el número de versión de cada secreto al
 # desplegar: una versión agregada después NO la ven las instancias hasta el próximo
 # despliegue de las Functions que lo declaran (docs/produccion/rotar-secreto-ingesta.md
@@ -50,8 +65,14 @@
 #
 # El proyecto: el quota_project_id de las credenciales de gcloud (CLOUDSDK_CONFIG, por
 # omisión ~/.config/gcloud-novuchat-prod; cualquier otra CLOUDSDK_* se descarta), que es
-# el de producción. Si GCP_PROJECT_ID_PROD está en el entorno, tiene que coincidir; si
+# el de producción. Si GCP_PROJECT_ID_PROD está en el entorno, tiene que coincidir; con
+# --aplicar tiene que estar SIEMPRE y ser igual (como nube-visor.sh). Si
 # GCP_PROJECT_ID_STAGING está, tiene que ser distinto. El id NUNCA se imprime.
+#
+# RESPALDO Y TEMPORALES. Todo temporal vive en un directorio de modo 700 (dentro de
+# $XDG_RUNTIME_DIR si es válido; si no, `mktemp -d`) que se borra al salir. El seco no
+# deja nada. Con --aplicar, el respaldo de la política anterior queda en ese directorio
+# (se imprime la ruta): bórrelo cuando la comprobación posterior salga en ✓.
 #
 # Salida: 0 nada que hacer, o escrito y comprobado · 1 el seco encontró algo pendiente
 # · 2 uso o salvaguarda (nada escrito) · 3 error de ejecución.
@@ -106,6 +127,9 @@ if [[ -r "$ADC" ]]; then
 fi
 [[ -n "$P" ]] || { echo "✗ No encuentro el proyecto en las credenciales de gcloud (quota_project_id)" >&2; exit 2; }
 [[ "$P" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ El proyecto de las credenciales no tiene la forma de un id de Google Cloud" >&2; exit 2; }
+if (( APLICAR )) && [[ -z "${GCP_PROJECT_ID_PROD:-}" ]]; then
+  echo "✗ --aplicar exige GCP_PROJECT_ID_PROD en el entorno, igual al proyecto de las credenciales (doble llave). No se escribió nada." >&2; exit 2
+fi
 if [[ -n "${GCP_PROJECT_ID_PROD:-}" && "$GCP_PROJECT_ID_PROD" != "$P" ]]; then
   echo "✗ GCP_PROJECT_ID_PROD no coincide con el proyecto de las credenciales: no se sigue" >&2; exit 2
 fi
@@ -119,9 +143,22 @@ nota()  { echo "  ${A}·${F} $*"; }
 falla() { echo "  ${R}✗${F} $*" >&2; }
 hacer() { if (( APLICAR )); then echo "  → $*"; else echo "  (haría) $*"; fi; }
 
-ERR="$(mktemp)"; TMP="$(mktemp)"; ENTREGA_TMP=""
-chmod 600 "$ERR" "$TMP"
-limpiar() { rm -f "$ERR" "$TMP"; [[ -z "$ENTREGA_TMP" ]] || rm -f "$ENTREGA_TMP"; }
+# Directorio de trabajo de modo 700 (mktemp -d lo crea así): ahí van la política leída,
+# los errores de gcloud y el respaldo. Se borra al salir; solo con --aplicar y un
+# cambio de IAM se conserva el respaldo (CONSERVAR=1).
+BASE_TMP="${TMPDIR:-/tmp}"
+if [[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" && -O "$XDG_RUNTIME_DIR" && "$(stat -c '%a' "$XDG_RUNTIME_DIR" 2>/dev/null)" == "700" ]]; then
+  BASE_TMP="$XDG_RUNTIME_DIR"
+fi
+WORK="$(mktemp -d "$BASE_TMP/nube-salida-persona.XXXXXX")"
+chmod 700 "$WORK"
+ERR="$WORK/err"; TMP="$WORK/politica.json"; RESPALDO="$WORK/respaldo-politica.json"
+: >"$ERR"; ENTREGA_TMP=""; CONSERVAR=0
+limpiar() {
+  [[ -z "$ENTREGA_TMP" ]] || rm -f "$ENTREGA_TMP"
+  if (( CONSERVAR )); then find "$WORK" -mindepth 1 ! -name 'respaldo-politica.json' -delete 2>/dev/null || true
+  else rm -rf "$WORK"; fi
+}
 trap limpiar EXIT
 
 # Lo que gcloud dice al fallar puede traer el id, el número o una cuenta: se tapan.
@@ -176,26 +213,36 @@ for b in d.get("bindings", []):
 print("no encuentro el binding con condición de la cuenta de despliegue"); sys.exit(3)
 '
 paso_iam() { # <ampliar|quitar>
-  local modo="$1" rc respaldo
+  local modo="$1" rc
   if ! gc projects get-iam-policy "$P" --format=json >"$TMP" 2>"$ERR"; then falla "no pude leer la política del proyecto:"; sanear; exit 3; fi
-  respaldo="$(mktemp)"; chmod 600 "$respaldo"; cp "$TMP" "$respaldo"
-  if python3 -I -c "$PY_IAM" "$modo" "$TMP" "$N" "$SA_DEP" "$PREFIJO" >"$ERR.py" 2>&1; then rc=0; else rc=$?; fi
-  if [[ -s "$ERR.py" ]]; then falla "$(cat "$ERR.py")"; fi
-  rm -f "$ERR.py"
+  if python3 -I -c "$PY_IAM" "$modo" "$TMP" "$N" "$SA_DEP" "$PREFIJO" >"$WORK/py" 2>&1; then rc=0; else rc=$?; fi
+  if [[ -s "$WORK/py" ]]; then falla "$(cat "$WORK/py")"; fi
   case "$rc" in
-    0) rm -f "$respaldo"
-       if [[ "$modo" == ampliar ]]; then ok "la condición de la cuenta de despliegue ya cubre ${PREFIJO}"
+    0) if [[ "$modo" == ampliar ]]; then ok "la condición de la cuenta de despliegue ya cubre ${PREFIJO}"
        else ok "la condición no tiene la cláusula ${PREFIJO}: nada que quitar"; fi ;;
     10) PENDIENTES=$((PENDIENTES + 1))
         if [[ "$modo" == ampliar ]]; then nota "la condición no cubre ${PREFIJO}"; hacer "agregar a la condición: || startsWith(\"projects/<número>/secrets/${PREFIJO}\")"
         else nota "la condición cubre ${PREFIJO}"; hacer "quitar de la condición la cláusula de ${PREFIJO}"; fi
         if (( APLICAR )); then
-          nota "respaldo de la política ANTES del cambio (identidades y roles, sin secretos), modo 600: $respaldo"
+          # El respaldo es la política LEÍDA (TMP ya trae la edición): se vuelve a leer sin tocar.
+          gc projects get-iam-policy "$P" --format=json >"$RESPALDO" 2>"$ERR" || { falla "no pude guardar el respaldo:"; sanear; exit 3; }
+          chmod 600 "$RESPALDO"; CONSERVAR=1
           gc projects set-iam-policy "$P" "$TMP" >/dev/null 2>"$ERR" || { falla "set-iam-policy falló (¿cambió la política entretanto? el etag lo impide):"; sanear; exit 3; }
           ok "política del proyecto actualizada"
-        else rm -f "$respaldo"; fi ;;
-    *) rm -f "$respaldo"; exit 3 ;;
+          nota "respaldo de la política anterior (identidades y roles, sin secretos; modo 600): ${RESPALDO}"
+          nota "bórrelo (rm -rf del directorio que lo contiene) cuando la comprobación final salga en ✓"
+        fi ;;
+    *) exit 3 ;;
   esac
+}
+
+# Relee y confirma lo escrito. <ampliar|quitar>: el estado final que debe tener la condición.
+comprobar_iam() {
+  local modo="$1" rc
+  gc projects get-iam-policy "$P" --format=json >"$WORK/relectura.json" 2>"$ERR" || { falla "no pude releer la política:"; sanear; exit 3; }
+  if python3 -I -c "$PY_IAM" "$modo" "$WORK/relectura.json" "$N" "$SA_DEP" "$PREFIJO" >/dev/null 2>&1; then rc=0; else rc=$?; fi
+  (( rc == 0 )) || { falla "al releer, la condición NO quedó como se pidió"; exit 3; }
+  ok "relectura: la condición quedó como se pidió"
 }
 
 secreto_existe() { gc secrets describe "$SECRETO" >/dev/null 2>"$ERR"; }
@@ -209,7 +256,7 @@ sys.exit(0 if any(b["role"] == "roles/secretmanager.secretAccessor" and "service
 }
 
 mensaje_final() {
-  if (( APLICAR )); then echo; echo "Hecho. Corra el diagnóstico de nuevo (sin --aplicar): todo tiene que salir en ✓."
+  if (( APLICAR )); then echo; echo "Hecho y comprobado por relectura. Si quiere, corra el diagnóstico de nuevo (sin --aplicar): todo tiene que salir en ✓."
   elif (( PENDIENTES )); then echo; echo "Diagnóstico: ${PENDIENTES} paso(s) pendiente(s); no se escribió nada. Con --aplicar --confirmo produccion se hace lo marcado «(haría)»."; exit 1
   else echo; echo "Diagnóstico: no falta nada."; fi
 }
@@ -240,6 +287,13 @@ if [[ "$MODO" == preparar ]]; then
       ok "acceso concedido"
     fi
   fi
+  if (( APLICAR )); then
+    echo "Comprobación (relectura)"
+    comprobar_iam ampliar
+    secreto_existe || { falla "al releer, ${SECRETO} no existe"; exit 3; }
+    tiene_accessor || { falla "al releer, sa-functions NO puede leer ${SECRETO}"; exit 3; }
+    ok "${SECRETO} existe y sa-functions puede leerlo: escrito y comprobado"
+  fi
   mensaje_final
   exit 0
 fi
@@ -247,6 +301,7 @@ fi
 if [[ "$MODO" == revertir ]]; then
   echo "Vuelta atrás del paso 1"
   paso_iam quitar
+  if (( APLICAR )); then comprobar_iam quitar; fi
   mensaje_final
   exit 0
 fi
@@ -281,7 +336,8 @@ if modo == "agregar":
     mapa[alias] = {"ruta": ruta, "clave": clave}
     fd = os.open(entrega, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as f:
-        json.dump({"alias": alias, "ruta": ruta, "path": seg, "clave": clave}, f)
+        json.dump({"alias": alias, "ruta": ruta, "path": seg, "clave": clave,
+                   "como_usar": "n8n: credencial Header Auth, nombre Authorization, valor Bearer + espacio + clave; path del webhook = path. Cargar por la API sin imprimir y BORRAR este archivo."}, f)
     sys.stdout.write(json.dumps(mapa, separators=(",", ":")))
 else:
     if not esta:
@@ -318,10 +374,12 @@ if [[ "$MODO" == agregar ]]; then
       NUEVO=""; falla "gcloud no pudo agregar la versión (se descarta lo generado):"; sanear; exit 3
     fi
     NUEVO=""
-    if ! leer_mapa | python3 -I -c "$PY_MAPA" ver "$ALIAS" "" "" | grep -q '^presente '; then
-      falla "al releer, el alias NO está en la versión vigente"; exit 3
-    fi
+    # La versión YA se escribió: la entrega se conserva pase lo que pase con la relectura
+    # (borrarla perdería la única copia de la clave que está en el secreto).
     mv "$ENTREGA_TMP" "$DESTINO"; ENTREGA_TMP=""
+    if ! leer_mapa | python3 -I -c "$PY_MAPA" ver "$ALIAS" "" "" | grep -q '^presente '; then
+      falla "se escribió la versión pero la relectura no confirma el alias; la entrega se CONSERVÓ en ${DESTINO}. Para deshacer: --quitar-alias ${ALIAS} --aplicar --confirmo produccion (y ver el mapa antes)"; exit 3
+    fi
     ok "versión nueva de ${SECRETO} con el alias; relectura confirmada"
     ok "entrega (modo 600, memoria): ${DESTINO}"
     nota "quien la consuma carga el path y la clave en n8n y BORRA el archivo"

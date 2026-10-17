@@ -16,7 +16,7 @@
  *  - la fase `cuentas` ya no agrega un segundo binding paralelo si el de condición existe.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,8 +38,10 @@ c="$*"
 printf '%s\\n' "$c" >> "$E/llamadas"
 case "$c" in
   *"projects describe"*) echo "${NUMERO}" ;;
-  *"projects get-iam-policy"*) cat "$E/proyecto.json" ;;
-  *"projects set-iam-policy"*) for a in "$@"; do f="$a"; done; cp "$f" "$E/proyecto.json" ;;
+  *"projects get-iam-policy"*) [[ -f "$E/falla-lectura" ]] && { echo "ERROR: lectura" >&2; exit 1; }; cat "$E/proyecto.json" ;;
+  # Como el de verdad: set-iam-policy IMPRIME la política entera (con el número del proyecto).
+  *"projects set-iam-policy"*) for a in "$@"; do f="$a"; done; cp "$f" "$E/proyecto.json"; cat "$f" ;;
+  *"add-iam-policy-binding"*) echo "{\"bindings\":[{\"members\":[\"projects/${NUMERO}/x\"]}]}" ;;
   *"secrets describe"*) n="\${c#*secrets describe }"; n="\${n%% *}"; [[ -f "$E/secreto-$n" ]] || exit 1 ;;
   *"secrets create"*) n="\${c#*secrets create }"; n="\${n%% *}"; cat > "$E/secreto-$n" ;;
   *) : ;;
@@ -75,6 +77,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'preparar-staging-'));
   const bin = join(dir, 'bin');
   mkdirSync(bin);
+  mkdirSync(join(dir, 'tmp'));
   for (const [n, t] of [['gcloud', GCLOUD_FALSO], ['gh', GH_FALSO]] as const) {
     writeFileSync(join(bin, n), t); chmodSync(join(bin, n), 0o755);
   }
@@ -85,7 +88,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 function correr(fase: string, extra: string[] = []) {
   const r = spawnSync('bash', [SCRIPT, fase, '--proyecto', STAGING, ...extra], {
     encoding: 'utf8',
-    env: entornoDelEmulador(undefined, { PATH: `${join(dir, 'bin')}:/usr/bin:/bin`, FAKE_DIR: dir, CLOUDSDK_CONFIG: join(dir, 'gcloud') }),
+    env: entornoDelEmulador(undefined, { PATH: `${join(dir, 'bin')}:/usr/bin:/bin`, FAKE_DIR: dir, CLOUDSDK_CONFIG: join(dir, 'gcloud'), TMPDIR: join(dir, 'tmp'), XDG_RUNTIME_DIR: '' }),
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 }
@@ -125,8 +128,29 @@ describe('preparar-staging.sh salida-persona', () => {
     expect(escrituras()).toEqual([]);
   });
 
-  it('no imprime el número del proyecto', () => {
+  it('no imprime el número del proyecto (el falso imprime la política entera, como el de verdad)', () => {
     expect(correr('salida-persona', ['--aplicar']).salida).not.toContain(NUMERO);
+    expect(correr('secretos', ['--aplicar']).salida).not.toContain(NUMERO);
+  });
+
+  it('el seco no deja ningún temporal; con --aplicar queda SOLO el respaldo, de modo 700/600', () => {
+    correr('salida-persona');
+    expect(readdirSync(join(dir, 'tmp'))).toEqual([]);
+    correr('salida-persona', ['--aplicar']);
+    const ds = readdirSync(join(dir, 'tmp'));
+    expect(ds).toHaveLength(1);
+    const d = join(dir, 'tmp', ds[0]!);
+    expect(statSync(d).mode & 0o777).toBe(0o700);
+    expect(readdirSync(d)).toEqual(['respaldo-politica.json']);
+    expect(statSync(join(d, 'respaldo-politica.json')).mode & 0o777).toBe(0o600);
+    expect(readFileSync(join(d, 'respaldo-politica.json'), 'utf8')).toContain('secrets/GEMINI_API_KEY');
+    expect(readFileSync(join(d, 'respaldo-politica.json'), 'utf8')).not.toContain('SALIDA_PERSONA_');
+  });
+
+  it('si algo falla, no queda ningún temporal', () => {
+    politica(null);
+    correr('salida-persona', ['--aplicar']);
+    expect(readdirSync(join(dir, 'tmp'))).toEqual([]);
   });
 });
 
@@ -136,6 +160,13 @@ describe('preparar-staging.sh cuentas y secretos', () => {
     expect(r.codigo).toBe(0);
     expect(r.salida).toContain('ya existe: no se toca');
     expect(r.salida).not.toContain('desplegadorSecretos con condición');
+  });
+
+  it('cuentas: si la política NO se puede leer, aborta y no crea un binding paralelo', () => {
+    writeFileSync(join(dir, 'falla-lectura'), '');
+    const r = correr('cuentas', ['--aplicar']);
+    expect(r.codigo).not.toBe(0);
+    expect(llamadas().filter((l) => /desplegadorSecretos/.test(l) && /add-iam-policy-binding/.test(l))).toEqual([]);
   });
 
   it('cuentas en un proyecto nuevo: la condición lleva los cuatro prefijos', () => {

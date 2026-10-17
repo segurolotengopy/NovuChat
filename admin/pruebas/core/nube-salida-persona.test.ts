@@ -20,7 +20,7 @@
  *    entrega es un archivo de modo 600 que el script no imprime.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,10 +56,10 @@ case "$c" in
   *"secrets create"*)
     cat > "$E/secreto"; echo 1 > "$E/versiones"; echo '{"bindings":[]}' > "$E/secreto-iam.json" ;;
   *"secrets versions list"*) n="$(cat "$E/versiones" 2>/dev/null || echo 0)"; for ((i = 1; i <= n; i++)); do echo "projects/x/secrets/s/versions/$i"; done ;;
-  *"secrets versions access"*) cat "$E/secreto" ;;
+  *"secrets versions access"*) [[ -f "$E/falla-relectura" && -f "$E/escrito" ]] && { echo "ERROR: lectura en ${PROD}" >&2; exit 1; }; cat "$E/secreto" ;;
   *"secrets versions add"*)
     [[ -f "$E/falla-add" ]] && { cat > /dev/null; echo "ERROR: no se pudo en ${PROD}" >&2; exit 1; }
-    cat > "$E/secreto"; echo $(( $(cat "$E/versiones") + 1 )) > "$E/versiones" ;;
+    cat > "$E/secreto"; : > "$E/escrito"; echo $(( $(cat "$E/versiones") + 1 )) > "$E/versiones" ;;
   *"secrets get-iam-policy"*) cat "$E/secreto-iam.json" ;;
   *"secrets add-iam-policy-binding"*)
     python3 - "$E/secreto-iam.json" "$c" <<'PY'
@@ -117,6 +117,7 @@ beforeEach(() => {
   bin = join(dir, 'bin');
   gcloudCfg = join(dir, 'gcloud');
   runtime = join(dir, 'run');
+  mkdirSync(join(dir, 'tmp'));
   mkdirSync(bin); mkdirSync(gcloudCfg); mkdirSync(runtime, { mode: 0o700 });
   chmodSync(runtime, 0o700);
   writeFileSync(join(bin, 'gcloud'), GCLOUD_FALSO);
@@ -149,9 +150,10 @@ function correr(args: string[], vars: Record<string, string> = {}, prefijo: stri
     env: entornoDelEmulador(undefined, {
       PATH: `${bin}:/usr/bin:/bin`,
       FAKE_DIR: dir,
-      GCP_PROJECT_ID_PROD: '',
+      GCP_PROJECT_ID_PROD: PROD,
       GCP_PROJECT_ID_STAGING: '',
       XDG_RUNTIME_DIR: runtime,
+      TMPDIR: join(dir, 'tmp'),
       N8N_BASE_URL: BASE_N8N,
       ...vars,
     }),
@@ -200,6 +202,16 @@ describe('nube-salida-persona.sh: uso y salvaguardas (ni una llamada a gcloud)',
     expect(llamadas()).toEqual([]);
   });
 
+  it('--aplicar sin GCP_PROJECT_ID_PROD: se rechaza (2) sin tocar gcloud; el seco sí corre', () => {
+    for (const args of [APLICAR, ['--quitar-alias', 'a1', ...APLICAR], ['--revertir-iam', ...APLICAR]]) {
+      const r = correr(args, { GCP_PROJECT_ID_PROD: '' });
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('GCP_PROJECT_ID_PROD');
+    }
+    expect(llamadas()).toEqual([]);
+    expect(correr([], { GCP_PROJECT_ID_PROD: '' }).codigo).toBe(1);
+  });
+
   it('GCP_PROJECT_ID_PROD distinto del de las credenciales: sale 2', () => {
     expect(correr([], { GCP_PROJECT_ID_PROD: 'otro-proyecto-xyz' }).codigo).toBe(2);
     expect(llamadas()).toEqual([]);
@@ -246,6 +258,28 @@ describe('nube-salida-persona.sh: pasos 1 a 3', () => {
     const pol = JSON.parse(leer('proyecto.json')) as { bindings: { role: string; members: string[] }[] };
     expect(pol.bindings).toHaveLength(2);
     expect(pol.bindings[0]!.role).toBe('roles/run.admin');
+  });
+
+  it('el seco no deja ningún temporal; con --aplicar queda SOLO el respaldo (modo 700/600)', () => {
+    const sinXdg = { XDG_RUNTIME_DIR: '' }; // cae a mktemp -d bajo TMPDIR
+    correr([], sinXdg);
+    expect(readdirSync(join(dir, 'tmp'))).toEqual([]);
+    const r = correr(APLICAR, sinXdg);
+    expect(r.salida).toContain('relectura');
+    expect(r.salida).toContain('escrito y comprobado');
+    const ds = readdirSync(join(dir, 'tmp'));
+    expect(ds).toHaveLength(1);
+    const d = join(dir, 'tmp', ds[0]!);
+    expect(statSync(d).mode & 0o777).toBe(0o700);
+    expect(readdirSync(d)).toEqual(['respaldo-politica.json']);
+    expect(readFileSync(join(d, 'respaldo-politica.json'), 'utf8')).toContain('secrets/GEMINI_API_KEY');
+    expect(readFileSync(join(d, 'respaldo-politica.json'), 'utf8')).not.toContain('SALIDA_PERSONA_');
+  });
+
+  it('si set-iam-policy falla, no queda ningún temporal', () => {
+    writeFileSync(join(dir, 'falla-set'), '');
+    correr(APLICAR);
+    expect(readdirSync(join(dir, 'tmp'))).toEqual([]);
   });
 
   it('aplicar: el secreto nace {} y sa-functions recibe secretAccessor (y nada más)', () => {
@@ -366,6 +400,24 @@ describe('nube-salida-persona.sh: --agregar-alias y --quitar-alias', () => {
     // Ningún argumento de gcloud lleva valores: todo viaja por la entrada estándar.
     expect(leer('llamadas')).not.toContain(m.nuevo!.clave);
     expect(leer('llamadas')).not.toContain(e.path);
+  });
+
+  it('agregar: la entrega trae cómo usar la clave', () => {
+    secreto(previo);
+    correr(['--agregar-alias', 'nuevo', ...APLICAR]);
+    const e = JSON.parse(readFileSync(join(runtime, 'novuchat-salida-persona-nuevo.json'), 'utf8')) as { como_usar: string };
+    expect(e.como_usar).toContain('Authorization');
+    expect(e.como_usar).toContain('Bearer');
+  });
+
+  it('si la relectura falla DESPUÉS de escribir: sale 3, la entrega se CONSERVA y dice cómo deshacer', () => {
+    secreto(previo);
+    writeFileSync(join(dir, 'falla-relectura'), '');
+    const r = correr(['--agregar-alias', 'nuevo', ...APLICAR]);
+    expect(r.codigo).toBe(3);
+    expect(mapa().nuevo).toBeDefined();
+    expect(existsSync(join(runtime, 'novuchat-salida-persona-nuevo.json'))).toBe(true);
+    expect(r.salida).toContain('--quitar-alias nuevo');
   });
 
   it('agregar dos veces el mismo alias: se niega (no rota en silencio) y no escribe', () => {

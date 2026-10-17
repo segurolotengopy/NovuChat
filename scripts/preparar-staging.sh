@@ -102,7 +102,7 @@ correr() {
     # sigue a --body (secretos y variables de GitHub) se imprime como <valor>:
     # la pantalla y el historial no son lugar para identificadores ni secretos.
     local primero="$1" ocultar=0; shift
-    [[ "$primero" == gc ]] && primero="gcloud --project $P --quiet"
+    [[ "$primero" == gc || "$primero" == gc_mudo ]] && primero="gcloud --project $P --quiet"
     printf '  [seco] %s\n         $ %s' "$que" "$primero"
     for a in "$@"; do
       if (( ocultar )); then printf ' %s' '<valor>'; ocultar=0
@@ -112,6 +112,9 @@ correr() {
 }
 # gcloud con el proyecto fijo, siempre.
 gc() { gcloud --project "$P" --quiet "$@"; }
+# Igual que gc, sin stdout: set-iam-policy y add-iam-policy-binding IMPRIMEN la política
+# entera (identidades, número del proyecto). Los errores siguen por stderr.
+gc_mudo() { gc "$@" >/dev/null; }
 existe() { "$@" >/dev/null 2>&1; }
 
 numero_proyecto() { gc projects describe "$P" --format='value(projectNumber)'; }
@@ -218,19 +221,24 @@ fase_wif() {
 SECRETO_SALIDA_PERSONA="SALIDA_PERSONA_RUTAS"
 PREFIJO_SALIDA_PERSONA="SALIDA_PERSONA_"
 
-# 0 si sa-deploy-staging ya tiene el binding de desplegadorSecretos con la
-# condición «secretos-de-las-functions». Solo lectura.
+# Solo lectura. 0 = sa-deploy-staging ya tiene el binding de desplegadorSecretos con la
+# condición «secretos-de-las-functions» · 1 = NO está (la política se leyó bien) ·
+# 2 = no se pudo leer o entender la política (quien llama ABORTA: «no sé» no es «no está»,
+# y crear un binding paralelo con la política ilegible es justo lo que hay que evitar).
 binding_de_secretos_existe() {
-  gc projects get-iam-policy "$P" --format=json 2>/dev/null | python3 -I -c '
+  local pol
+  pol="$(gc projects get-iam-policy "$P" --format=json 2>/dev/null)" || return 2
+  printf '%s' "$pol" | python3 -I -c '
 import json, sys
 try:
     d = json.load(sys.stdin)
+    bs = d.get("bindings", [])
 except Exception:
-    sys.exit(1)
+    sys.exit(2)
 m = "serviceAccount:" + sys.argv[1]
 sys.exit(0 if any(b.get("role", "").endswith("/desplegadorSecretos") and m in b.get("members", [])
                   and (b.get("condition") or {}).get("title") == "secretos-de-las-functions"
-                  for b in d.get("bindings", [])) else 1)' "$SA_DEPLOY"
+                  for b in bs) else 1)' "$SA_DEPLOY"
 }
 
 # Edita EN SU LUGAR la condición del binding (política leída con su etag): agrega
@@ -280,7 +288,7 @@ asegurar_secreto() { # <nombre>: lo crea si falta y da secretAccessor a sa-funct
   else
     nota "[seco] openssl rand -hex 32 | gcloud secrets create $s --data-file=-"
   fi
-  correr "$s: secretAccessor para sa-functions" -- gc secrets add-iam-policy-binding "$s" \
+  correr "$s: secretAccessor para sa-functions" -- gc_mudo secrets add-iam-policy-binding "$s" \
     --member="serviceAccount:$SA_FUNCTIONS" --role=roles/secretmanager.secretAccessor
 }
 
@@ -303,7 +311,7 @@ fase_cuentas() {
            roles/serviceusage.serviceUsageConsumer roles/firebasestorage.viewer \
            roles/cloudfunctions.developer roles/run.admin roles/artifactregistry.writer \
            roles/cloudbuild.builds.editor roles/eventarc.admin roles/cloudscheduler.admin; do
-    correr "sa-deploy-staging: $r" -- gc projects add-iam-policy-binding "$P" --member="serviceAccount:$SA_DEPLOY" --role="$r" --condition=None
+    correr "sa-deploy-staging: $r" -- gc_mudo projects add-iam-policy-binding "$P" --member="serviceAccount:$SA_DEPLOY" --role="$r" --condition=None
   done
   # Actuar como: sa-functions (con la que corren), App Engine (firebase deploy lo
   # exige aunque nadie corra con ella) y cómputo (construye las Functions).
@@ -313,7 +321,7 @@ fase_cuentas() {
   local dominio_appengine="appspot.gserviceaccount.com" dominio_computo="developer.gserviceaccount.com"
   local sa_computo="${num}-compute@${dominio_computo}"
   for cuenta in "$SA_FUNCTIONS" "${P}@${dominio_appengine}" "$sa_computo"; do
-    correr "sa-deploy-staging actúa como ${cuenta%%@*}" -- gc iam service-accounts add-iam-policy-binding "$cuenta" \
+    correr "sa-deploy-staging actúa como ${cuenta%%@*}" -- gc_mudo iam service-accounts add-iam-policy-binding "$cuenta" \
       --member="serviceAccount:$SA_DEPLOY" --role=roles/iam.serviceAccountUser
   done
   # Secretos: rol a medida que NO lee valores ni cambia accesos, con condición
@@ -325,25 +333,29 @@ fase_cuentas() {
   # de condición que ya existe: agregaría uno paralelo. Por eso, si el binding ya
   # está, esta fase no lo toca; ampliarlo es trabajo de la fase `salida-persona`,
   # que lo edita en su lugar con `set-iam-policy` (con etag).
-  if binding_de_secretos_existe; then
+  local rc_b=0
+  binding_de_secretos_existe || rc_b=$?
+  if (( rc_b >= 2 )); then
+    falla "no pude leer la política del proyecto: no se sabe si el binding existe, así que no se crea ninguno (reintentar)"; exit 1
+  elif (( rc_b == 0 )); then
     nota "el binding con condición «secretos-de-las-functions» ya existe: no se toca (para ampliarlo, fase salida-persona)"
   else
     local cond="expression=resource.name.startsWith(\"projects/${num}/secrets/INGESTA_\") || resource.name.startsWith(\"projects/${num}/secrets/GEMINI_API_KEY\") || resource.name.startsWith(\"projects/${num}/secrets/COBRADOR_\") || resource.name.startsWith(\"projects/${num}/secrets/SALIDA_PERSONA_\"),title=secretos-de-las-functions"
-    correr "sa-deploy-staging: desplegadorSecretos con condición" -- gc projects add-iam-policy-binding "$P" \
+    correr "sa-deploy-staging: desplegadorSecretos con condición" -- gc_mudo projects add-iam-policy-binding "$P" \
       --member="serviceAccount:$SA_DEPLOY" --role="projects/${P}/roles/desplegadorSecretos" --condition="$cond"
   fi
   # sa-functions: lo que las Functions usan y nada más (fase A de producción).
   for r in roles/datastore.user roles/firebaseauth.admin roles/eventarc.eventReceiver roles/run.invoker roles/logging.logWriter; do
-    correr "sa-functions: $r" -- gc projects add-iam-policy-binding "$P" --member="serviceAccount:$SA_FUNCTIONS" --role="$r" --condition=None
+    correr "sa-functions: $r" -- gc_mudo projects add-iam-policy-binding "$P" --member="serviceAccount:$SA_FUNCTIONS" --role="$r" --condition=None
   done
   # Cómputo: solo construye (fase C de producción). Un proyecto nuevo le da
   # Editor por defecto; se lo quita y le deja lo de Cloud Build.
-  correr "cómputo: roles/cloudbuild.builds.builder" -- gc projects add-iam-policy-binding "$P" \
+  correr "cómputo: roles/cloudbuild.builds.builder" -- gc_mudo projects add-iam-policy-binding "$P" \
     --member="serviceAccount:${sa_computo}" --role=roles/cloudbuild.builds.builder --condition=None
   correr "cómputo: quitar roles/editor" -- gc projects remove-iam-policy-binding "$P" \
     --member="serviceAccount:${sa_computo}" --role=roles/editor --condition=None
   # El binding de la federación: SOLO el sujeto del Environment `staging`.
-  correr "federación → sa-deploy-staging (sujeto environment:staging)" -- gc iam service-accounts add-iam-policy-binding "$SA_DEPLOY" \
+  correr "federación → sa-deploy-staging (sujeto environment:staging)" -- gc_mudo iam service-accounts add-iam-policy-binding "$SA_DEPLOY" \
     --role=roles/iam.workloadIdentityUser \
     --member="principal://iam.googleapis.com/projects/${num}/locations/global/workloadIdentityPools/github/subject/${prefijo}:environment:staging"
 }
@@ -374,23 +386,38 @@ fase_salida_persona() {
   # existía (la fase `secretos` se corrió cuando eran 25) y la condición por prefijo
   # de desplegadorSecretos no cubría SALIDA_PERSONA_. Esta fase arregla las dos sin
   # repetir las otras. Idempotente; seco por omisión.
-  local num tmp respaldo rc
+  local num tmp rc base
   num="$(numero_proyecto)"
-  tmp="$(mktemp)"; respaldo="$(mktemp)"; chmod 600 "$tmp" "$respaldo"
+  # Temporales en un directorio de modo 700 (mktemp -d), dentro de $XDG_RUNTIME_DIR si es válido.
+  # Se borra al salir, también si algo falla; solo con --aplicar y un cambio se conserva el respaldo.
+  base="${TMPDIR:-/tmp}"
+  if [[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" && -O "$XDG_RUNTIME_DIR" && "$(stat -c '%a' "$XDG_RUNTIME_DIR" 2>/dev/null)" == "700" ]]; then base="$XDG_RUNTIME_DIR"; fi
+  DIR_TRABAJO="$(mktemp -d "$base/preparar-staging.XXXXXX")"; chmod 700 "$DIR_TRABAJO"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$DIR_TRABAJO'" EXIT
+  tmp="$DIR_TRABAJO/politica.json"
   gc projects get-iam-policy "$P" --format=json > "$tmp"
-  cp "$tmp" "$respaldo"
   if ampliar_condicion_secretos "$tmp" "$num" "$PREFIJO_SALIDA_PERSONA"; then rc=0; else rc=$?; fi
   case "$rc" in
-    0) rm -f "$respaldo" ;;
+    0) ;;
     10)
       # set-iam-policy lleva el etag leído: si alguien cambió la política entretanto,
       # FALLA en vez de pisarla. El binding no se quita ni se vuelve a poner: se edita
       # su expresión en la misma escritura atómica, así que no hay instante sin permiso.
-      nota "respaldo de la política ANTES del cambio (solo identidades y roles, sin secretos): $respaldo"
-      correr "ampliar la condición de desplegadorSecretos con $PREFIJO_SALIDA_PERSONA" -- gc projects set-iam-policy "$P" "$tmp" ;;
-    *) falla "no se pudo preparar el cambio de la condición (código $rc): no se escribió nada"; rm -f "$respaldo" "$tmp"; exit 1 ;;
+      if (( APLICAR )); then
+        gc projects get-iam-policy "$P" --format=json > "$DIR_TRABAJO/respaldo-politica.json"
+        chmod 600 "$DIR_TRABAJO/respaldo-politica.json"
+      fi
+      correr "ampliar la condición de desplegadorSecretos con $PREFIJO_SALIDA_PERSONA" -- gc_mudo projects set-iam-policy "$P" "$tmp"
+      if (( APLICAR )); then
+        rm -f "$tmp"
+        trap - EXIT   # éxito: se conserva SOLO el respaldo (se borró lo demás)
+        nota "respaldo de la política anterior (identidades y roles, sin secretos; modo 600): $DIR_TRABAJO/respaldo-politica.json"
+        nota "bórrelo (rm -rf de ese directorio) cuando 'verificar' salga en ✓"
+      fi ;;
+    *) falla "no se pudo preparar el cambio de la condición (código $rc): no se escribió nada"; exit 1 ;;
   esac
-  rm -f "$tmp"
+  if (( ! APLICAR )) || [[ "$rc" == 0 ]]; then rm -rf "$DIR_TRABAJO"; trap - EXIT; fi
   asegurar_secreto "$SECRETO_SALIDA_PERSONA"
   nota "con valor {} no hay ningún timbre: cargar un alias es otro paso (scripts/nube-salida-persona.sh --agregar-alias, en producción)"
   nota "después de esta fase, el despliegue a staging ya encuentra el secreto y puede leer sus metadatos"
@@ -400,7 +427,7 @@ fase_storage() {
   titulo "Agente de Storage: rol para que storage.rules pueda leer Firestore"
   local num; num="$(numero_proyecto)"
   # Existe recién después de crear el bucket en la consola (docs/seguridad/reglas-storage.md §3.1).
-  correr "service-…@gcp-sa-firebasestorage: roles/firebaserules.firestoreServiceAgent" -- gc projects add-iam-policy-binding "$P" \
+  correr "service-…@gcp-sa-firebasestorage: roles/firebaserules.firestoreServiceAgent" -- gc_mudo projects add-iam-policy-binding "$P" \
     --member="serviceAccount:service-${num}@gcp-sa-firebasestorage.iam.gserviceaccount.com" \
     --role=roles/firebaserules.firestoreServiceAgent --condition=None
 }
@@ -455,7 +482,7 @@ fase_invocadores() {
       continue
     fi
     faltan=$((faltan + 1))
-    correr "$s: roles/run.invoker para allUsers" -- gc run services add-iam-policy-binding "$s" \
+    correr "$s: roles/run.invoker para allUsers" -- gc_mudo run services add-iam-policy-binding "$s" \
       --region "$REGION" --member=allUsers --role=roles/run.invoker
   done < <(invocables)
   hecho "$total Functions HTTP o callables; $faltan sin invocador al empezar"
