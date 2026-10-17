@@ -316,6 +316,18 @@ describe('1. Crear el cobro', () => {
     expect((await db.collection(`tenants/${A}/pagos`).get()).size).toBe(0);
   });
 
+  it('las bolsas nuevas NO emiten un QR de instalación (todavía no se cobran por QR)', async () => {
+    // Control positivo: la bolsa de siempre sí pasa la puerta.
+    expect(await crear({ tenantId: A, tipo: 'bolsa', cantidad: 1 })).toMatchObject({ estado: 'pendiente', tipo: 'bolsa' });
+    const antes = doble.cobros.size;
+    for (const tipo of ['bolsaConversaciones', 'bolsaSalientes']) {
+      await rechaza(crear({ tenantId: A, tipo, cantidad: 1 }), 'invalid-argument');
+    }
+    expect(doble.cobros.size).toBe(antes);
+    const instalaciones = (await db.collection(`tenants/${A}/pagos`).where('tipo', '==', 'instalacion').get()).size;
+    expect(instalaciones).toBe(0);
+  });
+
   it('los límites viven acá: 7 meses no, 0 bolsas no, plan demostracion no, tipo inventado no', async () => {
     await rechaza(crear({ tenantId: A, tipo: 'mensualidad', plan: 'crecimiento', meses: 7 }), 'invalid-argument');
     await rechaza(crear({ tenantId: A, tipo: 'mensualidad', plan: 'crecimiento', meses: 0 }), 'invalid-argument');

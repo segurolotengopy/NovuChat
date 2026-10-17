@@ -1400,7 +1400,7 @@ export function resumenDeCuenta(estado: EstadoServicio, nombreNegocio: string): 
   if (estado.motivo === 'sin_conversaciones') {
     return `${negocio}: el asistente está detenido porque se agotaron las conversaciones ` +
       `${estado.enPrueba ? 'de la prueba' : `del plan ${planNombre}`}. ` +
-      `Una bolsa de ${BOLSA.conversaciones} lo reactiva al instante.`;
+      'Una bolsa lo reactiva al instante.';
   }
   const hasta = estado.cubiertoHasta ? fechaFinDelPeriodo(estado.cubiertoHasta) : '';
   if (estado.fase === 'gracia') {

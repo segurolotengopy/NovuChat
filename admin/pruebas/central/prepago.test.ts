@@ -556,6 +556,11 @@ describe('El resumen de la cuenta', () => {
     expect(resumenDeCuenta(estadoDeServicio(c, 10, bo(2026, 10, 15)), 'Salón')).toContain('pagado hasta el 31/10/2026');
     expect(resumenDeCuenta(estadoDeServicio(c, 10, bo(2026, 11, 1, 12)), 'Salón')).toContain('sigue atendiendo hasta el 03/11/2026');
     expect(resumenDeCuenta(estadoDeServicio(c, 10, bo(2026, 11, 5)), 'Salón')).toContain('detenido');
+    // Sin cantidad fija: la bolsa depende de la tarifa (30 o 300).
+    const agotada = prepago({ periodoPagado: '2026-10', corte: { motivo: 'sin_conversaciones', desde: ts(bo(2026, 10, 20)) } });
+    const t = resumenDeCuenta(estadoDeServicio(agotada, 220, bo(2026, 10, 20, 10)), 'Salón');
+    expect(t).toContain('Una bolsa lo reactiva al instante.');
+    expect(t).not.toMatch(/\b30\b/);
     expect(resumenDeCuenta(estadoDeServicio({}, 0, bo(2026, 11, 5)), 'Demo')).toContain('demostración');
     expect(PLANES.crecimiento.precioUsd).toBe(50);
   });
