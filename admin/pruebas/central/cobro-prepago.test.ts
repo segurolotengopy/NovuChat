@@ -316,17 +316,19 @@ describe('1. Crear el cobro', () => {
     expect((await db.collection(`tenants/${A}/pagos`).get()).size).toBe(0);
   });
 
-  it('las bolsas nuevas NO emiten un QR de instalación (todavía no se cobran por QR)', async () => {
-    // Control positivo: la bolsa de siempre sí pasa la puerta.
+  it('las bolsas nuevas NUNCA emiten un QR de instalación: o se emiten como lo que son, o se rechazan', async () => {
+    // La cuenta A no tiene `tarifa` (= meta_incluido): la bolsa de siempre pasa,
+    // la de 300 conversaciones no le corresponde y la de seguimiento no se vende.
+    // El detalle de cada puerta está en `bolsas-pagos.test.ts`.
     expect(await crear({ tenantId: A, tipo: 'bolsa', cantidad: 1 })).toMatchObject({ estado: 'pendiente', tipo: 'bolsa' });
     const antes = doble.cobros.size;
-    for (const tipo of ['bolsaConversaciones', 'bolsaSalientes']) {
-      await rechaza(crear({ tenantId: A, tipo, cantidad: 1 }), 'invalid-argument');
-    }
+    await rechaza(crear({ tenantId: A, tipo: 'bolsaConversaciones', cantidad: 1 }), 'permission-denied');
+    await rechaza(crear({ tenantId: A, tipo: 'bolsaSalientes', cantidad: 1 }), 'failed-precondition');
     expect(doble.cobros.size).toBe(antes);
     const instalaciones = (await db.collection(`tenants/${A}/pagos`).where('tipo', '==', 'instalacion').get()).size;
     expect(instalaciones).toBe(0);
   });
+
 
   it('los límites viven acá: 7 meses no, 0 bolsas no, plan demostracion no, tipo inventado no', async () => {
     await rechaza(crear({ tenantId: A, tipo: 'mensualidad', plan: 'crecimiento', meses: 7 }), 'invalid-argument');
