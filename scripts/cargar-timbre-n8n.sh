@@ -19,7 +19,9 @@
 #            <alias>)» con `Authorization: Bearer <clave>`;
 #         3. crea o actualiza el flujo «NovuChat — Salida de persona (<alias>)» con
 #            path del webhook = el de la entrega, phoneNumberId y URL interna del relé de
-#            la tabla; lo deja INACTIVO si lo crea (si ya existía, conserva su estado);
+#            la tabla y un `webhookId` estable por alias; lo deja INACTIVO si lo crea (si ya
+#            existía y estaba activo, conserva ese estado Y publica la última versión: n8n 2.x
+#            separa borrador y publicada, y sin eso seguiría corriendo la vieja);
 #         4. relee lo escrito y, solo si todo coincide, BORRA el archivo de entrega.
 #       Si algo falla, el archivo de entrega se CONSERVA y se dice cómo seguir.
 #   ./scripts/cargar-timbre-n8n.sh --alias <alias> --activar [--aplicar --confirmo produccion]
@@ -59,7 +61,10 @@
 #   - que el Header Auth con `Bearer <clave>` autentique de verdad el timbre.
 #
 # Salida: 0 hecho y comprobado, o nada que hacer · 1 el seco encontró pasos pendientes
-# · 2 uso o salvaguarda (nada escrito) · 3 error de ejecución (puede haber escrito).
+# · 2 uso, salvaguarda o validación previa (entrega, tabla, plan; nada escrito) · 3 error de
+# ejecución (n8n, relectura; puede haber escrito). Con --aplicar exige $XDG_RUNTIME_DIR válido
+# y no admite --flujo. El respaldo no lleva la ruta ni la clave del timbre (el path va como
+# <capacidad> con su sha256); sí lleva ids, nombres, phoneNumberId y URL del relé.
 set -euo pipefail
 ESTE="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$ESTE")/.." || exit 1
@@ -84,6 +89,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ "$ALIAS" =~ ^[A-Za-z][A-Za-z0-9]{1,29}$ ]] || { echo "✗ --alias inválido o ausente (letras y dígitos, de 2 a 30, empieza con letra)" >&2; exit 2; }
+if (( APLICAR )) && [[ "$FLUJO" != "Flujos/salida-de-persona.json" ]]; then
+  echo "✗ --flujo (otro JSON) solo se permite en seco: con --aplicar se carga únicamente Flujos/salida-de-persona.json. No se escribió nada." >&2; exit 2
+fi
 if (( APLICAR )) && [[ "$CONFIRMO" != "produccion" ]]; then
   echo "✗ --aplicar exige --confirmo produccion (escrito a mano). No se escribió nada." >&2; exit 2
 fi
@@ -110,6 +118,11 @@ hacer() { if (( APLICAR )); then echo "  → $*"; else echo "  (haría) $*"; fi;
 
 # --- Directorio de trabajo de modo 700 ---------------------------------------------
 BASE_TMP="${TMPDIR:-/tmp}"
+# Con escritura (--aplicar) el directorio de trabajo, el respaldo y la entrega viven SOLO en
+# $XDG_RUNTIME_DIR (memoria, modo 700, del usuario): no hay plan B en /tmp.
+if (( APLICAR )) && [[ -z "${XDG_RUNTIME_DIR:-}" || ! -d "$XDG_RUNTIME_DIR" || ! -O "$XDG_RUNTIME_DIR" || "$(stat -c '%a' "$XDG_RUNTIME_DIR" 2>/dev/null)" != "700" ]]; then
+  echo "✗ --aplicar exige un \$XDG_RUNTIME_DIR válido (del usuario y de modo 700): ahí van el respaldo y la entrega, nunca a /tmp. No se escribió nada." >&2; exit 2
+fi
 if [[ -n "${XDG_RUNTIME_DIR:-}" && -d "$XDG_RUNTIME_DIR" && -O "$XDG_RUNTIME_DIR" && "$(stat -c '%a' "$XDG_RUNTIME_DIR" 2>/dev/null)" == "700" ]]; then
   BASE_TMP="$XDG_RUNTIME_DIR"
 fi
@@ -126,7 +139,7 @@ trap limpiar EXIT
 
 # --- La parte en python: todo lo que toca valores vive acá, y no los imprime ----------
 cat >"$WORK/lib.py" <<'PY'
-import json, os, re, stat, sys
+import hashlib, json, os, re, stat, sys
 
 NOMBRE_BASE = "NovuChat — Salida de persona"
 RE_TOKEN = re.compile(r"REEMPLAZAR_[A-Z][A-Z0-9_]*")
@@ -257,9 +270,28 @@ def revisar_roles(nodos, alias):
     """El nodo que manda a Meta o al relé nunca lleva la credencial de ingesta."""
     n = nombres(alias)
     errores = []
+    esperado = {  # nodo -> (tipo de credencial, nombre exacto)
+        "Timbre": ("httpHeaderAuth", n["timbre"]),
+        "Reclamar": ("httpHeaderAuth", n["ingesta"]),
+        "Confirmar": ("httpHeaderAuth", n["ingesta"]),
+        "Enviar por el relé": ("httpHeaderAuth", n["rele"]),
+        "Enviar por Graph": ("whatsAppApi", n["graph"]),
+    }
+    por_nombre = {x.get("name"): x for x in nodos}
+    for nom, (tipo, cred) in esperado.items():
+        x = por_nombre.get(nom)
+        if x is None:
+            errores.append("falta el nodo %s" % nom)
+            continue
+        c = x.get("credentials") or {}
+        if set(c) != {tipo} or (c[tipo] or {}).get("name") != cred:
+            errores.append("%s debe llevar exactamente la credencial %s «%s»" % (nom, tipo, cred))
+    t = por_nombre.get("Timbre")
+    if t is not None and (t.get("parameters") or {}).get("authentication") != "headerAuth":
+        errores.append("el nodo Timbre no exige authentication=headerAuth: quedaría abierto")
     ids_ingesta = set()
     for nodo in nodos:
-        for t, ref in (nodo.get("credentials") or {}).items():
+        for tp, ref in (nodo.get("credentials") or {}).items():
             if (ref or {}).get("name") == n["ingesta"]:
                 ids_ingesta.add(ref.get("id"))
     for nodo in nodos:
@@ -267,22 +299,28 @@ def revisar_roles(nodos, alias):
         if "whatsapptrigger" in tipo:
             errores.append("el flujo trae un WhatsApp Trigger (%s): no se carga" % nodo.get("name"))
         p = json.dumps(nodo.get("parameters") or {})
+        if "httprequest" in tipo and re.search(r"subscriptions|subscribed_apps|/register|message_templates", p, re.I):
+            errores.append("%s llama a subscriptions/subscribed_apps/register/message_templates: eso es de otra sesión" % nodo.get("name"))
         manda = nodo.get("name") in ("Enviar por el relé", "Enviar por Graph") or "graph.facebook.com" in p or "releBaseUrl" in p
-        for t, ref in (nodo.get("credentials") or {}).items():
+        for tp, ref in (nodo.get("credentials") or {}).items():
             nom = (ref or {}).get("name", "")
-            if re.search(r"WA-Prod|AAB1-WA", nom, re.I):
-                errores.append("%s usa una credencial de AAB1-WA-Prod: prohibido" % nodo.get("name"))
+            if re.search(r"WA-Prod|AAB1-WA|segurolotengo", nom, re.I):
+                errores.append("%s usa una credencial de AAB1-WA-Prod o de otro sistema: prohibido" % nodo.get("name"))
             if manda and (nom == n["ingesta"] or (ref or {}).get("id") in ids_ingesta):
                 errores.append("%s manda a Meta o al relé y llevaría la credencial de ingesta" % nodo.get("name"))
-            if nodo.get("name") in ("Reclamar", "Confirmar") and nom != n["ingesta"]:
-                errores.append("%s debe llevar «%s»" % (nodo.get("name"), n["ingesta"]))
-            if nodo.get("name") == "Enviar por el relé" and nom != n["rele"]:
-                errores.append("Enviar por el relé debe llevar «%s»" % n["rele"])
-            if nodo.get("name") == "Enviar por Graph" and nom != n["graph"]:
-                errores.append("Enviar por Graph debe llevar «%s»" % n["graph"])
-            if nodo.get("name") == "Timbre" and nom != n["timbre"]:
-                errores.append("Timbre debe llevar «%s»" % n["timbre"])
     return errores
+
+
+RE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def id_valido(x):
+    return isinstance(x, str) and RE_ID.match(x) is not None
+
+
+def webhook_id(alias):
+    import uuid
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, "novuchat-salida-persona/" + alias))
 
 
 def buscar(wfs, creds, alias):
@@ -299,6 +337,9 @@ def cmd_buscar(wfs_f, creds_f, alias, plan_out):
         salir(4, "hay %d flujos llamados «%s»: no se elige uno" % (len(w), nombres(alias)["flujo"]))
     if len(c) > 1:
         salir(4, "hay %d credenciales «%s»: no se elige una" % (len(c), nombres(alias)["timbre"]))
+    for x in w + c:
+        if not id_valido(x.get("id")):
+            salir(4, "n8n devolvió un id con forma inesperada: no se sigue")
     escribir_600(plan_out, json.dumps({
         "wfId": w[0]["id"] if w else "", "wfActivo": bool(w[0].get("active")) if w else False,
         "timbreId": c[0]["id"] if c else ""}))
@@ -313,12 +354,22 @@ def cmd_respaldar(wfs_f, creds_f, alias, salida):
     vivo = [x for x in wfs if x.get("name") == n["flujo"]]
     cred = [{"id": x.get("id"), "name": x.get("name"), "type": x.get("type")}
             for x in creds if x.get("name") in (n["timbre"], n["ingesta"], n["rele"], n["graph"])]
+    completo = None
+    if vivo:
+        completo = json.loads(json.dumps(vivo[0]))
+        for nodo in completo.get("nodes", []):
+            ps = nodo.get("parameters") or {}
+            if "path" in ps:  # la ruta del timbre es una URL de capacidad: no se respalda
+                antes = str(ps["path"])
+                ps["path"] = "<capacidad>"
+                ps["path_sha256"] = hashlib.sha256(antes.encode("utf-8")).hexdigest()
     escribir_600(salida, json.dumps({
         "alias": alias,
+        "nota": "sin la ruta ni la clave del timbre; lleva ids, nombres, phoneNumberId y URL interna del rele",
         "workflows_salida_de_persona": [{"id": x.get("id"), "name": x.get("name"), "active": x.get("active")} for x in propios],
-        "workflow_del_alias_completo": vivo[0] if vivo else None,
-        "credenciales_del_alias_sin_valores": cred}, ensure_ascii=False))
-    print("respaldo: %d flujo(s) de salida de persona, %s del alias, %d credencial(es) del alias (sin valores)" % (
+        "workflow_del_alias_completo": completo,
+        "credenciales_del_alias_sin_ninguna_clave": cred}, ensure_ascii=False))
+    print("respaldo: %d flujo(s) de salida de persona, %s del alias, %d credencial(es) del alias (sin la ruta ni la clave del timbre)" % (
         len(propios), "con el flujo completo" if vivo else "sin flujo", len(cred)))
 
 
@@ -331,7 +382,7 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
                   "REEMPLAZAR_PHONE_NUMBER_ID": t["phone"], "REEMPLAZAR_URL_INTERNA_DEL_RELE": t["rele"]}
 
     def sustituir(s, clave):
-        if clave == "notes":  # las notas no llevan valores: la ruta es una URL de capacidad
+        if clave in ("notes", "content"):  # notas y stickyNote no llevan valores: la ruta es una URL de capacidad
             return RE_TOKEN.sub("<marcador>", s)
         return RE_TOKEN.sub(lambda m: reemplazos.get(m.group(0), m.group(0)), s)
 
@@ -358,6 +409,9 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
                     errores.append("%s: hay %d credenciales %s llamadas «%s» (tiene que haber exactamente una)" % (nodo["name"], len(h), tipo, nom))
                     continue
                 ident = h[0]["id"]
+                if not id_valido(ident):
+                    errores.append("%s: id de credencial con forma inesperada" % nodo["name"])
+                    continue
             nodo["credentials"][tipo] = {"id": ident, "name": nom}
     errores += revisar_roles(flujo["nodes"], alias)
     for nodo in flujo["nodes"]:
@@ -368,6 +422,12 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
     w, c = buscar(wfs, creds, alias)
     if len(w) > 1 or len(c) > 1:
         salir(4, "hay duplicados del flujo o de la credencial del timbre: no se elige uno")
+    for x in w + c:
+        if not id_valido(x.get("id")):
+            salir(4, "n8n devolvió un id con forma inesperada: no se sigue")
+    for nodo in flujo["nodes"]:
+        if nodo.get("name") == "Timbre":
+            nodo["webhookId"] = webhook_id(alias)  # estable por alias: no depende de guardar desde el editor
     cuerpo = {"name": n["flujo"], "nodes": flujo["nodes"], "connections": flujo["connections"],
               "settings": flujo.get("settings", {})}
     escribir_600(cuerpo_out, json.dumps(cuerpo, ensure_ascii=False))
@@ -380,11 +440,24 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
             print("    %s <- «%s» (por nombre y tipo %s)" % (nodo["name"], ref["name"], tipo))
 
 
-def cmd_verificar(wf_f, path_f, alias, activo_esperado):
-    """Relectura (o previa a activar): sin marcadores, ids presentes, roles y path correctos."""
+def publicada(wf):
+    return wf.get("versionId") == wf.get("activeVersionId")
+
+
+def cmd_publicada(wf_f):
+    """n8n 2.x separa borrador y publicada: tras un PUT de un flujo activo la activa sigue siendo la vieja."""
+    wf = cargar(wf_f)
+    print("si" if publicada(wf) else "no")
+
+
+def cmd_verificar(wf_f, path_f, alias, activo_esperado, creds_f="-"):
+    """Relectura (o previa a activar): sin marcadores, ids vivos, roles, path y webhookId correctos."""
     wf = cargar(wf_f)
     n = nombres(alias)
     path = open(path_f, encoding="utf-8").read() if path_f != "-" else None
+    vivas = None
+    if creds_f != "-":
+        vivas = {(c.get("id"), c.get("name"), c.get("type")) for c in cargar(creds_f)["data"]}
     errores = []
     if wf.get("name") != n["flujo"]:
         errores.append("el nombre del flujo no es el esperado")
@@ -392,13 +465,21 @@ def cmd_verificar(wf_f, path_f, alias, activo_esperado):
         errores.append("el flujo vivo todavía tiene marcadores sin reponer")
     for nodo in wf.get("nodes", []):
         for t, ref in (nodo.get("credentials") or {}).items():
-            if not (ref or {}).get("id") or ref.get("id") == "PENDIENTE-DEL-TIMBRE":
-                errores.append("%s: credencial sin id" % nodo.get("name"))
-        if path and nodo.get("name") == "Timbre" and (nodo.get("parameters") or {}).get("path") != path:
-            errores.append("el path del Timbre vivo no es el de la entrega")
+            i = (ref or {}).get("id")
+            if not id_valido(i) or i == "PENDIENTE-DEL-TIMBRE":
+                errores.append("%s: credencial sin id válido" % nodo.get("name"))
+            elif vivas is not None and (i, ref.get("name"), t) not in vivas:
+                errores.append("%s: la credencial «%s» no está en la lista viva de n8n" % (nodo.get("name"), ref.get("name")))
+        if nodo.get("name") == "Timbre":
+            if path and (nodo.get("parameters") or {}).get("path") != path:
+                errores.append("el path del Timbre vivo no es el de la entrega")
+            if nodo.get("webhookId") != webhook_id(alias):
+                errores.append("el webhookId del Timbre no es el estable del alias")
     errores += revisar_roles(wf.get("nodes", []), alias)
     if activo_esperado in ("true", "false") and bool(wf.get("active")) != (activo_esperado == "true"):
         errores.append("el estado activo vivo no es el esperado (%s)" % activo_esperado)
+    if activo_esperado == "true" and not publicada(wf):
+        errores.append("la versión PUBLICADA no es la última guardada (versionId distinto de activeVersionId): corre la vieja")
     if errores:
         salir(4, "\n".join("    " + e for e in errores))
     print("coincide con lo esperado (%d nodos)" % len(wf.get("nodes", [])))
@@ -449,20 +530,22 @@ if py respaldar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/re
 
 # ======================================================================== ACTIVAR
 if [[ "$MODO" == activar ]]; then
-  [[ -n "$WF_ID" ]] || { falla "el flujo del alias no existe: cárguelo primero (sin --activar)"; exit 3; }
-  [[ -n "$TIMBRE_ID" ]] || { falla "la credencial del timbre no existe: cargue primero"; exit 3; }
+  [[ -n "$WF_ID" ]] || { falla "el flujo del alias no existe: cárguelo primero (sin --activar)"; exit 2; }
+  [[ -n "$TIMBRE_ID" ]] || { falla "la credencial del timbre no existe: cargue primero"; exit 2; }
   api GET "/workflows/${WF_ID}"; exigir 200 "no pude leer el flujo" || exit 3
   cp "$WORK/rta.json" "$WORK/vivo.json"
-  if ! py verificar "$WORK/vivo.json" - "$ALIAS" any; then falla "el flujo vivo no está completo; no se activa"; exit 3; fi
-  if [[ "$WF_ACTIVO" == true ]]; then ok "ya está activo: nada que hacer"; exit 0; fi
-  hacer "activar el flujo (empieza el barrido de cada minuto y el timbre responde)"
+  if ! SAL="$(py verificar "$WORK/vivo.json" - "$ALIAS" any "$WORK/credenciales.json")"; then falla "el flujo vivo no está completo; no se activa:"; echo "$SAL" >&2; exit 2; fi
+  PUB="$(py publicada "$WORK/vivo.json")"
+  if [[ "$WF_ACTIVO" == true && "$PUB" == si ]]; then ok "ya está activo y la versión publicada es la última guardada: nada que hacer"; exit 0; fi
+  if [[ "$WF_ACTIVO" == true ]]; then nota "está activo pero corre una versión ANTERIOR (borrador sin publicar): hay que publicar la última"; fi
+  hacer "activar/publicar el flujo (empieza el barrido de cada minuto y el timbre responde)"
   if (( ! APLICAR )); then echo; echo "Diagnóstico: 1 paso pendiente; no se escribió nada. Con --aplicar --confirmo produccion se hace lo marcado «(haría)»."; exit 1; fi
   api POST "/workflows/${WF_ID}/activate"; exigir '200|201' "no pude activar" || exit 3
   api GET "/workflows/${WF_ID}"; exigir 200 "no pude releer" || exit 3
   cp "$WORK/rta.json" "$WORK/vivo.json"
-  py verificar "$WORK/vivo.json" - "$ALIAS" true >/dev/null || { falla "al releer, el flujo NO quedó activo"; exit 3; }
-  ok "activo, comprobado por relectura"
-  nota "respaldo previo (sin valores, modo 600): ${WORK}/respaldo-vivo.json"
+  py verificar "$WORK/vivo.json" - "$ALIAS" true "$WORK/credenciales.json" >/dev/null || { falla "al releer, el flujo NO quedó activo con su última versión publicada"; exit 3; }
+  ok "activo y publicado (versionId = activeVersionId), comprobado por relectura"
+  nota "respaldo previo (sin la ruta ni la clave del timbre; modo 600): ${WORK}/respaldo-vivo.json"
   exit 0
 fi
 
@@ -493,7 +576,7 @@ if [[ "$MODO" == quitar ]]; then
   [[ -z "$(py campo "$WORK/plan2.json" wfId)" && -z "$(py campo "$WORK/plan2.json" timbreId)" ]] \
     || { falla "al releer, algo del alias SIGUE en n8n"; exit 3; }
   ok "relectura: no queda flujo ni credencial del timbre de ${ALIAS}"
-  nota "respaldo previo (sin valores, modo 600): ${WORK}/respaldo-vivo.json"
+  nota "respaldo previo (sin la ruta ni la clave del timbre; modo 600): ${WORK}/respaldo-vivo.json"
   exit 0
 fi
 
@@ -506,15 +589,15 @@ if [[ -z "$DIR" || ! -d "$DIR" || ! -O "$DIR" || "$(stat -c '%a' "$DIR" 2>/dev/n
 fi
 DESTINO="$DIR/novuchat-salida-persona-${ALIAS}.json"
 if ! SAL="$(py entrega "$DESTINO" "$ALIAS" "$N8N_BASE_URL" "$WORK/cuerpo-cred.json" "$WORK/path")"; then
-  falla "${SAL:-entrega inválida}"; nota "la entrega la deja nube-salida-persona.sh --agregar-alias ${ALIAS} --aplicar"; exit 3
+  falla "${SAL:-entrega inválida}"; nota "la entrega la deja nube-salida-persona.sh --agregar-alias ${ALIAS} --aplicar"; exit 2
 fi
 ok "entrega válida (archivo propio de modo 600, alias y ruta coinciden; no se imprime nada)"
 LOCAL="${CONFIG_LOCAL_MD:-CONFIGURACION.local.md}"
-if ! SAL="$(py tabla "$LOCAL" "$ALIAS" "$SINSUFIJO" "$WORK/tabla.json")"; then falla "${SAL}"; exit 3; fi
+if ! SAL="$(py tabla "$LOCAL" "$ALIAS" "$SINSUFIJO" "$WORK/tabla.json")"; then falla "${SAL}"; exit 2; fi
 ok "tabla: phoneNumberId y URL interna del relé presentes y con forma válida (no se imprimen)"
 echo "Plan"
 if ! SAL="$(py plan "$FLUJO" "$WORK/flujos.json" "$WORK/credenciales.json" "$WORK/tabla.json" "$WORK/path" "$ALIAS" "$TIMBRE_ID" "$WORK/cuerpo-flujo.json" "$WORK/plan.json")"; then
-  falla "el plan se aborta (no se escribió nada):"; echo "$SAL" >&2; exit 3
+  falla "el plan se aborta (no se escribió nada):"; echo "$SAL" >&2; exit 2
 fi
 echo "$SAL"
 if [[ -n "$WF_ID" && "$WF_ACTIVO" == true ]]; then nota "el flujo ya está ACTIVO: se actualiza y conserva ese estado (n8n lo vuelve a registrar)"; fi
@@ -526,7 +609,7 @@ if (( ! APLICAR )); then
 fi
 
 FALLO_ENTREGA="la entrega se CONSERVÓ en ${DESTINO}: corrija la causa y vuelva a correr (es idempotente), o deshaga con --quitar --alias ${ALIAS}"
-fallar() { falla "$1"; nota "$FALLO_ENTREGA"; nota "respaldo previo (sin valores, modo 600): ${WORK}/respaldo-vivo.json"; exit 3; }
+fallar() { falla "$1"; nota "$FALLO_ENTREGA"; nota "respaldo previo (sin la ruta ni la clave del timbre; modo 600): ${WORK}/respaldo-vivo.json"; exit 3; }
 
 echo "Escritura"
 if [[ -n "$TIMBRE_ID" ]]; then
@@ -554,10 +637,17 @@ echo "Comprobación (relectura)"
 api GET "/workflows/${WF_ID}"; exigir 200 "no pude releer el flujo" || fallar "falló la relectura"
 cp "$WORK/rta.json" "$WORK/vivo.json"
 ESPERADO="false"; [[ "$WF_ACTIVO" != true ]] || ESPERADO="true"
-if ! SAL="$(py verificar "$WORK/vivo.json" "$WORK/path" "$ALIAS" "$ESPERADO")"; then fallar "la relectura NO coincide:
+leer_estado
+if [[ "$ESPERADO" == true && "$(py publicada "$WORK/vivo.json")" == no ]]; then
+  # n8n 2.x separa borrador y publicada: el PUT de un flujo activo deja corriendo la versión vieja.
+  nota "el PUT dejó la versión publicada atrás (versionId distinto de activeVersionId): se publica la última"
+  api POST "/workflows/${WF_ID}/activate"; exigir '200|201' "no pude publicar la última versión" || fallar "falló la publicación"
+  api GET "/workflows/${WF_ID}"; exigir 200 "no pude releer el flujo" || fallar "falló la relectura"
+  cp "$WORK/rta.json" "$WORK/vivo.json"
+fi
+if ! SAL="$(py verificar "$WORK/vivo.json" "$WORK/path" "$ALIAS" "$ESPERADO" "$WORK/credenciales.json")"; then fallar "la relectura NO coincide:
 ${SAL}"; fi
 ok "$SAL"
-leer_estado
 py buscar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/plan3.json" >/dev/null || fallar "estado ambiguo al releer"
 [[ -n "$(py campo "$WORK/plan3.json" timbreId)" ]] || fallar "la credencial del timbre no aparece al releer"
 ok "la credencial del timbre existe (su valor no se puede leer por la API: se prueba en el ensayo)"
@@ -567,5 +657,5 @@ if command -v shred >/dev/null 2>&1; then shred -u "$DESTINO" 2>/dev/null || rm 
 if [[ -e "$DESTINO" ]]; then falla "no pude borrar la entrega: bórrela a mano (rm) antes de seguir"; exit 3; fi
 ok "archivo de entrega destruido"
 nota "el flujo queda como se describe arriba; activarlo es un paso aparte: --alias ${ALIAS} --activar --aplicar --confirmo produccion"
-nota "respaldo previo (sin valores, modo 600): ${WORK}/respaldo-vivo.json (bórrelo cuando el ensayo termine)"
+nota "respaldo previo (sin la ruta ni la clave del timbre; modo 600): ${WORK}/respaldo-vivo.json (bórrelo cuando el ensayo termine)"
 exit 0

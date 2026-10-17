@@ -402,20 +402,29 @@ niega si el `.env` no es del usuario o tiene permisos de más.
 ### El procedimiento (cada paso: seco, leerlo entero, luego `--aplicar` con el «sí»)
 
     # 1. El alias en la nube: genera ruta y clave y deja la entrega (modo 600, $XDG_RUNTIME_DIR)
-    export N8N_BASE_URL="$(grep -E '^N8N_BASE_URL=' .env | cut -d= -f2-)"
+    export N8N_BASE_URL="$(grep -E '^N8N_BASE_URL=' .env | tail -n 1 | cut -d= -f2- | tr -d "\"'")"
     GCP_PROJECT_ID_PROD=<id de producción> ./scripts/nube-salida-persona.sh --agregar-alias demoa
     ... --agregar-alias demoa --aplicar --confirmo produccion
     # 2. En n8n, EN LA MISMA SESIÓN (la entrega no se deja pendiente)
     ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env                                   # seco
     ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env --aplicar --confirmo produccion
-    # 3. Redesplegar las Functions que declaran el secreto (la versión nueva no se ve hasta entonces)
+    # 3. Redesplegar la Function que declara SALIDA_PERSONA_RUTAS: enviarComoPersona (las otras dos,
+    #    reclamarSalidaPersona y confirmarSalidaPersona, no leen ese secreto). firebase-tools fija el
+    #    número de versión del secreto al desplegar, así que la versión nueva no se ve hasta entonces:
+    #    se despliega con la próxima etiqueta v* (la crea Andres: scripts/etiquetar-version.sh vX.Y.Z
+    #    --commit <sha>; el CI despliega) o, en staging, con el push a main.
     # 4. Activar (paso aparte: empieza el barrido de cada minuto)
     ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env --activar                          # seco
     ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env --activar --aplicar --confirmo produccion
 
 El script de n8n respalda el estado vivo del alias (lista de flujos «Salida de persona» con su estado
 activo, el flujo del alias completo y las credenciales sin valores) en un directorio de modo 700
-antes de escribir, e imprime su ruta. Crea el flujo **inactivo**; si ya existía, conserva su estado.
+antes de escribir, e imprime su ruta; el respaldo **no** lleva la ruta ni la clave del timbre (el `path` va
+como `<capacidad>` con su sha256), pero sí ids, nombres, phoneNumberId y URL del relé. Con `--aplicar`
+exige `$XDG_RUNTIME_DIR` válido (nunca cae a `/tmp`) y no admite `--flujo`. Crea el flujo **inactivo**;
+si ya existía y estaba activo, conserva ese estado y **publica la última versión** (n8n 2.x separa
+borrador y publicada: se compara `versionId` con `activeVersionId` y se falla si siguen distintos).
+El Timbre lleva un `webhookId` estable por alias, para no depender de guardar desde el editor.
 Si algo falla, la entrega **se conserva** y el mensaje dice cómo seguir (es idempotente: se puede
 repetir). Solo cuando todo se relee bien destruye la entrega.
 
@@ -438,7 +447,8 @@ vacío, otro por Graph si se puede— más un segundo reclamo no vacío (`Flujos
     ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env --quitar                           # seco
     ./scripts/cargar-timbre-n8n.sh --alias demoa --env .env --quitar --aplicar --confirmo produccion
     GCP_PROJECT_ID_PROD=<id de producción> ./scripts/nube-salida-persona.sh --quitar-alias demoa --aplicar --confirmo produccion
-    # y redesplegar; destruir las versiones anteriores del secreto a mano (gcloud secrets versions destroy)
+    # y redesplegar enviarComoPersona (misma vía que el paso 3); destruir las versiones anteriores
+    # del secreto a mano (gcloud secrets versions destroy)
 
 `--quitar` desactiva y borra el flujo del alias y **solo** la credencial del timbre (nunca las de
 ingesta, AAB1 ni WhatsApp), relee que no quede nada y deja el respaldo previo. Al terminar se borra
