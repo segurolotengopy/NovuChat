@@ -79,8 +79,7 @@ import {
 // Lo que la consola y los pagos necesitan del catálogo lo reexportamos desde
 // acá, para que `web/src/central/lib/prepago.ts` tenga un solo origen.
 export {
-  BOLSA, BOLSA_CONVERSACIONES, BOLSA_META_INCLUIDO, BOLSA_SALIENTES, INSTALACION_USD, PLANES, PLANES_ASIGNABLES,
-} from './planes.js';
+  BOLSA, BOLSA_CONVERSACIONES, BOLSA_META_INCLUIDO, BOLSA_SALIENTES, INSTALACION_USD, PLANES, PLANES_ASIGNABLES } from './planes.js';
 
 // -----------------------------------------------------------------------------
 // MODALIDAD, MONEDAS Y TIPO DE CAMBIO
