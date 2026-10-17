@@ -36,12 +36,20 @@
  *     código;
  *   - la ruta recuerda de dónde vino (`ensayoDe`) y `--restaurar` vuelve solo
  *     ahí;
- *   - sin `--aplicar` no escribe nada.
+ *   - sin `--aplicar` no escribe nada;
+ *   - `--flujo venta` (ensayo de un flujo de venta, QR y comprobante): la ficha
+ *     de `ensayo` pasa a `venta` y la ruta del número lleva `flujo: 'venta'`
+ *     MIENTRAS DURA (la ingesta decide `config/venta` y el cobro por
+ *     `ruta.flujo`); recuerda el valor anterior en `ensayoFlujoDe` y
+ *     `--restaurar` lo devuelve. Además de lo de siempre se vacían, SOLO bajo
+ *     `tenants/ensayo`, lo que un ensayo de venta deja (pedidos, cierres,
+ *     conversaciones, contactos…). Valores: `venta` o `agendamiento`; sin la
+ *     opción nada cambia (el flujo sale de la ruta, como siempre).
  *
  *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --estado
  *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --preparar \
  *     --cliente platinum --archivo scripts/datos/negocio-platinum.json \
- *     --local <ruta a CONFIGURACION.local.md> [--aplicar]
+ *     --local <ruta a CONFIGURACION.local.md> [--flujo venta|agendamiento] [--aplicar]
  *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --restaurar [--aplicar]
  *
  * Nunca imprime identificadores completos ni valores de la tabla local.
@@ -65,11 +73,14 @@ const NUMERO = (opcion('numero') ?? '').trim();
 const CLIENTE = (opcion('cliente') ?? '').trim().toLowerCase();
 const ARCHIVO = opcion('archivo');
 const LOCAL = opcion('local');
+const FLUJO = opcion('flujo');
+const FLUJOS_VALIDOS = ['venta', 'agendamiento'];
 
 const cola = (v) => (v ? `…${String(v).slice(-4)}` : '—');
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');
 if (!/^[0-9]{6,25}$/.test(NUMERO)) problemas.push('--numero no es un phone_number_id');
+if (FLUJO !== null && !FLUJOS_VALIDOS.includes(FLUJO)) problemas.push('--flujo debe ser venta o agendamiento');
 if (MODO.length !== 1) problemas.push('elija UNO: --preparar, --restaurar o --estado');
 if (MODO[0] === '--preparar') {
   if (!/^[a-z0-9][a-z0-9-]{2,59}$/.test(CLIENTE)) problemas.push('--cliente inválido');
@@ -121,7 +132,12 @@ const origen = String(ruta.get('ensayoDe') ?? '');
 console.log(`\n  Número    : ${cola(NUMERO)} · alias ${ruta.get('aliasSecreto') ?? '?'} · flujo ${ruta.get('flujo') ?? '?'}`);
 console.log(`  Apunta a  : ${actual}${origen ? ` (en ensayo; su comercio es ${origen}, cliente ${ruta.get('ensayoCliente') ?? '?'})` : ''}`);
 
-if (MODO[0] === '--estado') await salir(0);
+if (MODO[0] === '--estado') {
+  const fe = await db.doc(`tenants/${ENSAYO}`).get();
+  console.log(`  Ensayo    : ${fe.exists ? `flujos ${JSON.stringify(fe.get('flujos') ?? [])} · vertical ${fe.get('vertical') ?? '?'}` : 'el comercio `ensayo` no existe'}`);
+  console.log(`  Desviada  : ${actual === ENSAYO ? 'sí' : 'no'}${ruta.get('ensayoFlujoDe') ? ` · flujo de la ruta restaurable a ${ruta.get('ensayoFlujoDe')}` : ''}`);
+  await salir(0);
+}
 
 // ---------------------------------------------------------------- restaurar --
 if (MODO[0] === '--restaurar') {
@@ -131,14 +147,20 @@ if (MODO[0] === '--restaurar') {
   }
   console.log(`  Vuelve a  : ${origen}`);
   if (!APLICAR) { console.log('\n  Seco: no se escribió nada. Agregue --aplicar.\n'); await salir(0); }
+  // El flujo de la ruta solo vuelve si este script lo cambió (`ensayoFlujoDe`).
+  const flujoOriginal = ruta.get('ensayoFlujoDe');
+  console.log(`  Flujo     : ${flujoOriginal ? `${ruta.get('flujo') ?? '?'} -> ${flujoOriginal}` : 'sin cambio'}`);
   await refRuta.update({
     tenantId: origen, ensayoDe: FieldValue.delete(), ensayoCliente: FieldValue.delete(),
-    ensayoDesde: FieldValue.delete(),
+    ensayoDesde: FieldValue.delete(), ensayoFlujoDe: FieldValue.delete(),
+    ...(typeof flujoOriginal === 'string' && flujoOriginal ? { flujo: flujoOriginal } : {}),
   });
   await db.collection(`tenants/${origen}/auditoria`).add({
     accion: 'ensayo_terminado', uid: 'ensayo', en: Timestamp.now(), phoneNumberId: NUMERO,
   });
-  const ok = (await refRuta.get()).get('tenantId') === origen;
+  const despues = await refRuta.get();
+  const ok = despues.get('tenantId') === origen
+    && (typeof flujoOriginal !== 'string' || !flujoOriginal || despues.get('flujo') === flujoOriginal);
   console.log(`\n  ${ok ? '✓' : '✗'} La ruta apunta otra vez a ${origen}.`);
   console.log('  Falta el flujo: scripts/ensayo-flujo.sh --restaurar.\n');
   await salir(ok ? 0 : 1);
@@ -167,7 +189,14 @@ let datos;
 try { datos = JSON.parse(readFileSync(ARCHIVO, 'utf8')); } catch (e) {
   console.error(`\n  ✗ No se pudo leer ${ARCHIVO}: ${e instanceof Error ? e.message : e}\n`); await salir(2);
 }
-const flujoCliente = String(ruta.get('flujo') ?? 'agendamiento');
+// Sin --flujo, el de la ruta (como siempre); con --flujo, el pedido.
+const flujoDeRuta = String(ruta.get('flujo') ?? 'agendamiento');
+const flujoCliente = FLUJO ?? flujoDeRuta;
+// Un ensayo ya preparado conserva el flujo ORIGINAL de la ruta, no el del ensayo.
+const flujoOriginalRuta = ruta.get('ensayoFlujoDe') ?? flujoDeRuta;
+// Lo que un ensayo de venta deja, bajo `tenants/ensayo` y nada más (constante).
+const COLECCIONES_DE_VENTA = ['pedidos', 'cierres', 'conversaciones', 'contactos', 'movimientosStock',
+  'comprobacionesImagen', 'salida', 'metricas'];
 const ensayado = aMarcadoresDeEnsayo(datos, CLIENTE);
 ensayado._fuente = `ensayo de ${CLIENTE}, desde ${ARCHIVO}`;
 const marcadores = [...new Set(JSON.stringify(ensayado).match(/REEMPLAZAR_[A-Z0-9_]+/g) ?? [])];
@@ -189,10 +218,13 @@ const colecciones = ['catalogo', 'funcionarios'];
 const aBorrar = [];
 if (fichaEnsayo.exists) {
   for (const c of colecciones) aBorrar.push(...(await db.collection(`tenants/${ENSAYO}/${c}`).select().get()).docs.map((d) => d.ref));
+  if (FLUJO === 'venta') {
+    for (const c of COLECCIONES_DE_VENTA) aBorrar.push(...(await db.collection(`tenants/${ENSAYO}/${c}`).select().get()).docs.map((d) => d.ref));
+  }
   for (const d of ['config/negocio', 'config/agendamiento', 'config/venta', 'contadores/catalogo']) aBorrar.push(db.doc(`tenants/${ENSAYO}/${d}`));
 }
 console.log(`  Ensayo    : ${fichaEnsayo.exists ? `existe; se vacían ${aBorrar.length} documento(s) antes de cargar` : 'se crea'}`);
-console.log(`  Ruta      : ${actual} -> ${ENSAYO}`);
+console.log(`  Ruta      : ${actual} -> ${ENSAYO}${FLUJO && FLUJO !== flujoOriginalRuta ? ` · flujo ${flujoOriginalRuta} -> ${FLUJO} (se devuelve al restaurar)` : ''}`);
 
 if (!APLICAR) {
   console.log('\n  Seco: no se escribió nada. La carga se muestra con cargar-negocio en seco:');
@@ -231,7 +263,16 @@ if (APLICAR) {
       estadoPago: 'sin_cargo', montoMensual: 0, moneda: 'USD', actualizadoEn: Timestamp.now(),
     }, { merge: true });
   } else {
-    await refEnsayo.update({ estado: 'activo', vertical: flujoCliente, flujos: FieldValue.arrayUnion(flujoCliente) });
+    // Con --flujo la ficha queda con ESE flujo solo y sin lista `modulos` propia
+    // (que mandaría sobre `flujos`); sin él, como siempre.
+    await refEnsayo.update(FLUJO
+      ? { estado: 'activo', vertical: FLUJO, flujos: [FLUJO], modulos: FieldValue.delete() }
+      : { estado: 'activo', vertical: flujoCliente, flujos: FieldValue.arrayUnion(flujoCliente) });
+    // Los documentos de venta con subcolecciones (conversaciones/mensajes) se
+    // borran enteros; el resto va en lote.
+    if (FLUJO === 'venta') {
+      for (const c of COLECCIONES_DE_VENTA) await db.recursiveDelete(db.collection(`tenants/${ENSAYO}/${c}`));
+    }
     for (let i = 0; i < aBorrar.length; i += 400) {
       const lote = db.batch();
       for (const r of aBorrar.slice(i, i + 400)) lote.delete(r);
@@ -266,6 +307,9 @@ if (!APLICAR) { console.log('\n  Seco: no se escribió nada. Agregue --aplicar.\
 // 5. Recién con la carga hecha, la ruta: el demo empieza a responder como el cliente.
 await refRuta.update({
   tenantId: ENSAYO, ensayoDe: comercioDeOrigen, ensayoCliente: CLIENTE, ensayoDesde: Timestamp.now(),
+  // Solo con --flujo y si cambia: lo que hay que devolver al restaurar.
+  ...(FLUJO && FLUJO !== flujoOriginalRuta ? { flujo: FLUJO, ensayoFlujoDe: flujoOriginalRuta } : {}),
+  ...(FLUJO && FLUJO === flujoOriginalRuta && ruta.get('ensayoFlujoDe') ? { flujo: FLUJO } : {}),
 });
 await db.collection(`tenants/${ENSAYO}/auditoria`).add({
   accion: 'ensayo_preparado', uid: 'ensayo', en: Timestamp.now(), phoneNumberId: NUMERO,

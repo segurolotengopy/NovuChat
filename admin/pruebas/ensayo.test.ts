@@ -17,6 +17,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'plataforma', 'ensayo.mjs');
+const VENTA = join(aqui, '..', 'scripts', 'datos', 'negocio-demo-venta-resto.json');
 const PLATINUM = join(aqui, '..', 'scripts', 'datos', 'negocio-platinum.json');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -149,3 +150,117 @@ describe('ensayo.mjs', () => {
     expect((await db.doc(`rutasWhatsApp/${NUM_CLIENTE}`).get()).get('tenantId')).toBe(CLIENTE_REAL);
   });
 });
+
+describe('ensayo.mjs --flujo venta', () => {
+  const NUM_VENTA = '1000000073';
+  const NUM_PAGA = '1000000074';
+  const AJENO = 'ens-ajeno';
+  const prepararVenta = (numero: string, extra: string[] = []) => correr('--numero', numero, '--preparar',
+    '--cliente', 'qtaco', '--archivo', VENTA, '--local', LOCAL, ...extra);
+  const ruta = async (n: string) => (await db.doc(`rutasWhatsApp/${n}`).get()).data() ?? {};
+
+  beforeAll(async () => {
+    await db.recursiveDelete(db.doc('tenants/ensayo'));
+    await db.doc(`rutasWhatsApp/${NUM_VENTA}`).set({ tenantId: DEMO, flujo: 'agendamiento', aliasSecreto: 'demoA', estado: 'activo' });
+    await db.doc(`rutasWhatsApp/${NUM_PAGA}`).set({ tenantId: CLIENTE_REAL, flujo: 'agendamiento', aliasSecreto: 'cliente09', estado: 'activo' });
+    await db.doc(`tenants/${AJENO}`).set({ nombre: 'Ajeno', estado: 'activo', vertical: 'venta', flujos: ['venta'], plan: 'pro' });
+    await db.doc(`tenants/${AJENO}/pedidos/p1`).set({ total: 10 });
+    await db.doc(`tenants/${AJENO}/conversaciones/c1`).set({ x: 1 });
+  });
+
+  it('un valor de --flujo inválido se rechaza con salida 2, y nada se escribe', async () => {
+    for (const malo of ['otro', 'VENTA', '']) {
+      const r = prepararVenta(NUM_VENTA, ['--flujo', malo, '--aplicar']);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toMatch(/--flujo debe ser venta o agendamiento/);
+    }
+    expect((await ruta(NUM_VENTA))['tenantId']).toBe(DEMO);
+    expect((await db.doc('tenants/ensayo').get()).exists).toBe(false);
+  });
+
+  it('el número de un comercio que paga NO se desvía con --flujo venta', async () => {
+    const r = prepararVenta(NUM_PAGA, ['--flujo', 'venta', '--aplicar']);
+    expect(r.codigo).not.toBe(0);
+    expect(r.salida).toMatch(/no es un comercio de demostración/);
+    expect(await ruta(NUM_PAGA)).toMatchObject({ tenantId: CLIENTE_REAL, flujo: 'agendamiento' });
+    expect((await db.doc('tenants/ensayo').get()).exists).toBe(false);
+  });
+
+  it('un demo sin modalidad escrita tampoco se desvía', async () => {
+    await db.doc('tenants/ens-sin-modalidad').set({ nombre: 'S', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'] });
+    await db.doc('rutasWhatsApp/1000000075').set({ tenantId: 'ens-sin-modalidad', flujo: 'agendamiento', aliasSecreto: 'x', estado: 'activo' });
+    const r = prepararVenta('1000000075', ['--flujo', 'venta', '--aplicar']);
+    expect(r.codigo).not.toBe(0);
+    expect((await ruta('1000000075'))['tenantId']).toBe('ens-sin-modalidad');
+  });
+
+  it('en seco no escribe nada (ni ficha, ni ruta)', async () => {
+    const r = prepararVenta(NUM_VENTA, ['--flujo', 'venta']);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(await ruta(NUM_VENTA)).toMatchObject({ tenantId: DEMO, flujo: 'agendamiento' });
+    expect((await db.doc('tenants/ensayo').get()).exists).toBe(false);
+  });
+
+  it('con --aplicar: ficha de venta, ruta con flujo venta, vacía lo de un ensayo anterior y no toca a otros', async () => {
+    // Un ensayo anterior (agendamiento) deja una ficha vieja y restos de venta.
+    await db.doc('tenants/ensayo').set({ nombre: 'Ensayo', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'],
+      modulos: ['productos', 'agenda'], plan: 'pro' });
+    await db.doc('tenants/ensayo/cuenta/estado').set({ plan: 'pro', modalidad: 'demostracion' });
+    await db.doc('tenants/ensayo/pedidos/viejo').set({ total: 1 });
+    await db.doc('tenants/ensayo/cierres/viejo').set({ total: 1 });
+    await db.doc('tenants/ensayo/conversaciones/viejo').set({ x: 1 });
+    await db.doc('tenants/ensayo/conversaciones/viejo/mensajes/m1').set({ t: 'hola' });
+    await db.doc('tenants/ensayo/auditoria/conservada').set({ a: 1 });
+    const r = prepararVenta(NUM_VENTA, ['--flujo', 'venta', '--aplicar']);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).not.toContain(NUM_VENTA);
+    expect(await ruta(NUM_VENTA)).toMatchObject({ tenantId: 'ensayo', ensayoDe: DEMO, flujo: 'venta', ensayoFlujoDe: 'agendamiento' });
+    const ficha = (await db.doc('tenants/ensayo').get()).data() ?? {};
+    expect(ficha['vertical']).toBe('venta');
+    expect(ficha['flujos']).toEqual(['venta']);
+    expect(ficha['modulos']).toBeUndefined();
+    for (const d of ['pedidos/viejo', 'cierres/viejo', 'conversaciones/viejo', 'conversaciones/viejo/mensajes/m1']) {
+      expect((await db.doc(`tenants/ensayo/${d}`).get()).exists, d).toBe(false);
+    }
+    expect((await db.collection('tenants/ensayo/catalogo').get()).size).toBeGreaterThan(0);
+    // Otros tenants, intactos.
+    expect((await db.doc(`tenants/${AJENO}/pedidos/p1`).get()).exists).toBe(true);
+    expect((await db.doc(`tenants/${AJENO}/conversaciones/c1`).get()).exists).toBe(true);
+    expect((await db.doc(`tenants/${DEMO}/config/negocio`).get()).get('nombreNegocio')).toBe('Demo de siempre');
+  });
+
+  it('--estado muestra el flujo de `ensayo` y si la ruta está desviada', () => {
+    const r = correr('--numero', NUM_VENTA, '--estado');
+    expect(r.codigo).toBe(0);
+    expect(r.salida).toMatch(/flujos \["venta"\] · vertical venta/);
+    expect(r.salida).toMatch(/Desviada {2}: sí/);
+    expect(r.salida).not.toContain(NUM_VENTA);
+  });
+
+  it('--restaurar tras un ensayo de venta devuelve ruta Y flujo de la ruta; en seco no toca', async () => {
+    expect(correr('--numero', NUM_VENTA, '--restaurar').codigo).toBe(0);
+    expect(await ruta(NUM_VENTA)).toMatchObject({ tenantId: 'ensayo', flujo: 'venta' });
+    const r = correr('--numero', NUM_VENTA, '--restaurar', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    const despues = await ruta(NUM_VENTA);
+    expect(despues['tenantId']).toBe(DEMO);
+    expect(despues['flujo']).toBe('agendamiento');
+    for (const k of ['ensayoDe', 'ensayoCliente', 'ensayoDesde', 'ensayoFlujoDe']) expect(despues[k], k).toBeUndefined();
+    const estado = correr('--numero', NUM_VENTA, '--estado');
+    expect(estado.salida).toMatch(/Desviada {2}: no/);
+    // La ficha de `ensayo` sigue coherente (venta, activa) y el ajeno intacto.
+    expect((await db.doc('tenants/ensayo').get()).get('flujos')).toEqual(['venta']);
+    expect((await db.doc(`tenants/${AJENO}/pedidos/p1`).get()).exists).toBe(true);
+  });
+
+  it('sin --flujo nada cambia: el flujo sale de la ruta y la ruta no se toca de más', async () => {
+    const r = prepararVenta(NUM_VENTA, ['--aplicar']);
+    expect(r.codigo, r.salida).toBe(0);
+    const d = await ruta(NUM_VENTA);
+    expect(d).toMatchObject({ tenantId: 'ensayo', ensayoDe: DEMO, flujo: 'agendamiento' });
+    expect(d['ensayoFlujoDe']).toBeUndefined();
+    expect(correr('--numero', NUM_VENTA, '--restaurar', '--aplicar').codigo).toBe(0);
+    expect((await ruta(NUM_VENTA))['flujo']).toBe('agendamiento');
+  });
+});
+
