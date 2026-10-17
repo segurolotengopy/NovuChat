@@ -17,10 +17,12 @@
  * que se factura.
  */
 import {
-  BOLSA, BOLSAS_MAXIMO, INSTALACION_USD, MESES_MAXIMO,
+  BOLSA_CONVERSACIONES, BOLSA_META_INCLUIDO, BOLSA_SALIENTES, BOLSAS_MAXIMO, INSTALACION_USD, MENSAJE_BOLSA_NO_PERMITIDA,
+  MESES_MAXIMO, bolsaPermitida,
   aplicarPago, descripcionDe, esPago, fechaEscrita, importeBs, modalidadDe, montoUsdDe, tipoCambioVigente,
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
+import type { Titularidad } from './ejes';
 import { PLANES, PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, limitesDe, limitesDeCuenta, type IdPlanVendible } from './planes';
 import { porContratoDe, precioMensualDe, precioPorContratoDe, tarifaDe } from '../../../../functions/src/central/cuenta/planes';
 
@@ -206,8 +208,82 @@ export function mesEscrito(periodo: string): string {
     .replace(/^\d+ de /, '');
 }
 
-/** El precio de lista, para la tabla de planes. */
-export const PRECIOS = { bolsa: BOLSA, instalacionUsd: INSTALACION_USD } as const;
+/**
+ * El precio de lista, para la tabla de planes. `bolsa` es la de 30 por USD 10
+ * y la lee todavía `FormularioPagoManual` (zona de Plataforma, PR-4b): la
+ * pantalla Pagar ya NO la usa, pide `bolsasOfrecidas` según la tarifa.
+ * @deprecated `bolsa`: se quita cuando PR-4b elija la bolsa por tarifa.
+ */
+export const PRECIOS = { bolsa: BOLSA_META_INCLUIDO, instalacionUsd: INSTALACION_USD } as const;
+
+/** Un tipo de pago que es una bolsa, tal como lo pide el servidor. */
+export type TipoBolsa = 'bolsa' | 'bolsaConversaciones' | 'bolsaSalientes';
+
+/** Una bolsa que se le puede ofrecer a la cuenta: qué tipo de pago es, cuánto trae y cuánto cuesta. */
+export interface BolsaOfrecida {
+  tipo: TipoBolsa;
+  /** Qué trae cada bolsa, con su unidad. */
+  unidades: number;
+  unidad: 'conversaciones' | 'mensajes de seguimiento';
+  precioUsd: number;
+  /** El texto de la opción, para el radio. */
+  etiqueta: string;
+}
+
+const BOLSAS_DEL_CATALOGO: Readonly<Record<TipoBolsa, BolsaOfrecida>> = {
+  bolsa: {
+    tipo: 'bolsa', unidades: BOLSA_META_INCLUIDO.conversaciones, unidad: 'conversaciones',
+    precioUsd: BOLSA_META_INCLUIDO.precioUsd, etiqueta: 'Bolsa de conversaciones',
+  },
+  bolsaConversaciones: {
+    tipo: 'bolsaConversaciones', unidades: BOLSA_CONVERSACIONES.conversaciones, unidad: 'conversaciones',
+    precioUsd: BOLSA_CONVERSACIONES.precioUsd, etiqueta: 'Bolsa de conversaciones',
+  },
+  bolsaSalientes: {
+    tipo: 'bolsaSalientes', unidades: BOLSA_SALIENTES.mensajes, unidad: 'mensajes de seguimiento',
+    precioUsd: BOLSA_SALIENTES.precioUsd, etiqueta: 'Bolsa de mensajes de seguimiento',
+  },
+};
+
+/**
+ * LAS BOLSAS QUE ESTA CUENTA PUEDE COMPRAR, y ninguna otra. No decide la
+ * pantalla: pregunta a `bolsaPermitida`, la misma función con la que el
+ * servidor rechaza la bolsa que no corresponde (`crearCobroPrepago`,
+ * `registrarPagoManual`). Si la pantalla ofreciera una que el servidor corta,
+ * el comercio vería un botón que promete algo que no se cumple.
+ *
+ *  - `estandar`: la de 300 conversaciones por USD 15.
+ *  - `meta_incluido` o sin campo `tarifa` (Bellido, demos): la de siempre, 30 por USD 10.
+ *  - La de seguimiento, mientras `VENTA_BOLSA_SALIENTES` sea `false`, no sale;
+ *    encendida, solo si algún número es del comercio (`titularidades`).
+ */
+export function bolsasOfrecidas(
+  cuenta: CuentaCruda | Record<string, unknown> | null | undefined,
+  titularidades: readonly Titularidad[] = [],
+): readonly BolsaOfrecida[] {
+  return (['bolsa', 'bolsaConversaciones', 'bolsaSalientes'] as const)
+    .filter((tipo) => bolsaPermitida(cuenta, { tipo }, titularidades) === null)
+    .map((tipo) => BOLSAS_DEL_CATALOGO[tipo]);
+}
+
+/** Los datos de una bolsa por su tipo (para el texto de «cada bolsa son…»). */
+export const bolsaDe = (tipo: TipoBolsa): BolsaOfrecida => BOLSAS_DEL_CATALOGO[tipo];
+
+/**
+ * EL TEXTO DE UN RECHAZO DE BOLSA DEL SERVIDOR, o `null` si el error es otro.
+ * El servidor rechaza con `permission-denied` o `failed-precondition` y
+ * `details.motivo` ('tarifa' | 'titularidad' | 'no_habilitada'); el texto es
+ * el fijo de `MENSAJE_BOLSA_NO_PERMITIDA`, no uno armado acá ni el genérico.
+ */
+export function rechazoDeBolsa(e: unknown): string | null {
+  const err = e as { code?: unknown; details?: unknown } | null | undefined;
+  if (err?.code !== 'functions/permission-denied' && err?.code !== 'functions/failed-precondition'
+    && err?.code !== 'permission-denied' && err?.code !== 'failed-precondition') return null;
+  const motivo = (err.details as { motivo?: unknown } | null | undefined)?.motivo;
+  return typeof motivo === 'string' && Object.prototype.hasOwnProperty.call(MENSAJE_BOLSA_NO_PERMITIDA, motivo)
+    ? MENSAJE_BOLSA_NO_PERMITIDA[motivo as keyof typeof MENSAJE_BOLSA_NO_PERMITIDA]
+    : null;
+}
 
 // -----------------------------------------------------------------------------
 // EL COBRO PENDIENTE, COMO LO LEE EL COMERCIO
