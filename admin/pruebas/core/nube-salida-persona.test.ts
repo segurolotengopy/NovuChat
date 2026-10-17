@@ -20,7 +20,7 @@
  *    entrega es un archivo de modo 600 que el script no imprime.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, fstatSync, openSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, closeSync, fstatSync, openSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +29,9 @@ import { entornoDelEmulador } from './entorno-del-hijo.ts';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const RAIZ = join(AQUI, '..', '..', '..');
-const SCRIPT = join(RAIZ, 'scripts', 'nube-salida-persona.sh');
+const SCRIPT_REAL = join(RAIZ, 'scripts', 'nube-salida-persona.sh');
+// Se prueba una COPIA en un repo temporal: el cerrojo mira si existe, junto al script, el consumidor ejecutable.
+let SCRIPT = SCRIPT_REAL;
 
 // Ids de prueba con la forma de un id real (no existen).
 const PROD = 'prueba-salida-prd1';
@@ -128,6 +130,11 @@ beforeEach(() => {
   gcloudCfg = join(dir, 'gcloud');
   runtime = join(dir, 'run');
   mkdirSync(join(dir, 'tmp'));
+  mkdirSync(join(dir, 'repo', 'scripts'), { recursive: true });
+  copyFileSync(SCRIPT_REAL, join(dir, 'repo', 'scripts', 'nube-salida-persona.sh'));
+  writeFileSync(join(dir, 'repo', 'scripts', 'cargar-timbre-n8n.sh'), '#!/usr/bin/env bash\nexit 0\n');
+  chmodSync(join(dir, 'repo', 'scripts', 'cargar-timbre-n8n.sh'), 0o755);
+  SCRIPT = join(dir, 'repo', 'scripts', 'nube-salida-persona.sh');
   mkdirSync(bin); mkdirSync(gcloudCfg); mkdirSync(runtime, { mode: 0o700 });
   chmodSync(runtime, 0o700);
   writeFileSync(join(bin, 'gcloud'), GCLOUD_FALSO);
@@ -222,6 +229,22 @@ describe('nube-salida-persona.sh: uso y salvaguardas (ni una llamada a gcloud)',
     expect(correr([], { GCP_PROJECT_ID_PROD: '' }).codigo).toBe(1);
   });
 
+  it('--agregar-alias --aplicar sin el consumidor revisado ejecutable: sale 2 sin tocar gcloud; el seco sí corre', () => {
+    secreto({});
+    rmSync(join(dir, 'repo', 'scripts', 'cargar-timbre-n8n.sh'));
+    const r = correr(['--agregar-alias', 'nuevo', ...APLICAR]);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('cargar-timbre-n8n.sh');
+    expect(llamadas()).toEqual([]);
+    // Presente pero NO ejecutable: tampoco abre el cerrojo.
+    writeFileSync(join(dir, 'repo', 'scripts', 'cargar-timbre-n8n.sh'), 'x');
+    expect(correr(['--agregar-alias', 'nuevo', ...APLICAR]).codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
+    expect(correr(['--agregar-alias', 'nuevo']).codigo).toBe(1);
+    // --quitar-alias no depende del consumidor.
+    expect(correr(['--quitar-alias', 'a1', ...APLICAR]).codigo).toBe(0);
+  });
+
   it('GCP_PROJECT_ID_PROD distinto del de las credenciales: sale 2', () => {
     expect(correr([], { GCP_PROJECT_ID_PROD: 'otro-proyecto-xyz' }).codigo).toBe(2);
     expect(llamadas()).toEqual([]);
@@ -286,10 +309,12 @@ describe('nube-salida-persona.sh: pasos 1 a 3', () => {
     expect(readFileSync(join(d, 'respaldo-politica.json'), 'utf8')).not.toContain('SALIDA_PERSONA_');
   });
 
-  it('si set-iam-policy falla, no queda ningún temporal', () => {
+  it('si set-iam-policy falla, no queda ningún temporal NI respaldo', () => {
     writeFileSync(join(dir, 'falla-set'), '');
-    correr(APLICAR);
+    const r = correr(APLICAR, { XDG_RUNTIME_DIR: '' }); // el directorio de trabajo es el de TMPDIR
+    expect(r.codigo).toBe(3);
     expect(readdirSync(join(dir, 'tmp'))).toEqual([]);
+    expect(readdirSync(runtime)).toEqual([]);
   });
 
   it('aplicar: el secreto nace {} y sa-functions recibe secretAccessor (y nada más)', () => {

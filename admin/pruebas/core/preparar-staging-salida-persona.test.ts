@@ -41,7 +41,7 @@ case "$c" in
   *"projects get-iam-policy"*) [[ -f "$E/falla-lectura" ]] && { echo "ERROR: lectura" >&2; exit 1; }; cat "$E/proyecto.json" ;;
   # Como el de verdad: set-iam-policy IMPRIME la política entera (con el número del proyecto).
   *"projects set-iam-policy"*) for a in "$@"; do f="$a"; done; cp "$f" "$E/proyecto.json"; cat "$f" ;;
-  *"add-iam-policy-binding"*) echo "{\"bindings\":[{\"members\":[\"projects/${NUMERO}/x\"]}]}" ;;
+  *"remove-iam-policy-binding"*|*"add-iam-policy-binding"*) echo "{\"bindings\":[{\"members\":[\"POLITICA_IMPRESA ${NUMERO}\"]}]}" ;;
   *"secrets describe"*) n="\${c#*secrets describe }"; n="\${n%% *}"; [[ -f "$E/secreto-$n" ]] || exit 1 ;;
   *"secrets create"*) n="\${c#*secrets create }"; n="\${n%% *}"; cat > "$E/secreto-$n" ;;
   *) : ;;
@@ -177,6 +177,17 @@ describe('preparar-staging.sh cuentas y secretos', () => {
     const r = correr('cuentas', ['--aplicar']);
     expect(r.codigo).not.toBe(0);
     expect(llamadas().filter((l) => /desplegadorSecretos/.test(l) && /add-iam-policy-binding/.test(l))).toEqual([]);
+  });
+
+  it('cuentas: una política con un binding que no es un objeto aborta ANTES de aplicar ningún binding', () => {
+    writeFileSync(join(dir, 'proyecto.json'), JSON.stringify({ bindings: ['raro'] }));
+    const r = correr('cuentas', ['--aplicar']);
+    expect(r.codigo).not.toBe(0);
+    expect(llamadas().filter((l) => /(add|remove)-iam-policy-binding|service-accounts create/.test(l))).toEqual([]);
+  });
+
+  it('cuentas aplicado: add y remove de bindings no imprimen la política', () => {
+    expect(correr('cuentas', ['--aplicar']).salida).not.toContain('POLITICA_IMPRESA');
   });
 
   it('cuentas en un proyecto nuevo: la condición lleva los cuatro prefijos', () => {
