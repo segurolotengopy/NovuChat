@@ -11,9 +11,13 @@ interface Miembro { id: string; correo?: unknown; rol?: unknown; estado?: unknow
 interface Invitacion { id: string; correo?: unknown; rol?: unknown; estado?: unknown; venceEn?: unknown }
 
 /** Mensaje del servidor si lo hay (los rechazos de invitar traen el motivo exacto). */
-const mensajeDe = (e: unknown, defecto: string): string =>
-  typeof (e as { message?: unknown })?.message === 'string' && (e as { message: string }).message !== ''
-    ? (e as { message: string }).message : defecto;
+const mensajeDe = (e: unknown, defecto: string): string => {
+  const m = (e as { message?: unknown })?.message;
+  const codigo = String((e as { code?: unknown })?.code ?? '');
+  // Un error `internal` del servidor llega sin texto útil: se usa el mensaje en español por defecto.
+  if (typeof m !== 'string' || m === '' || m.toLowerCase() === 'internal' || codigo.endsWith('/internal')) return defecto;
+  return m;
+};
 
 /** Milisegundos de un Timestamp de Firestore (o NaN). */
 const msDe = (v: unknown): number =>
@@ -110,6 +114,7 @@ export function Usuarios() {
   const cancelar = async (i: Invitacion) => {
     setEstado(null);
     try {
+      // Depende del PR-I0: `cancelarInvitacion` aún no se exporta en index.ts.
       const r = await httpsCallable(funciones, 'cancelarInvitacion')({ tenantId, invitacionId: i.id });
       setEstado((r.data as { mensaje?: string } | null)?.mensaje ?? 'Invitación cancelada.');
     } catch (err) {

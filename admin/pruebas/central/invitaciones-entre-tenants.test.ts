@@ -13,6 +13,19 @@
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+// El claim se pone AL FINAL de aceptar: para probar su falla se envuelve `asignarRol` (lo demás es real).
+const control = vi.hoisted(() => ({ antes: null as null | (() => Promise<void>) }));
+vi.mock('../../functions/src/core/seguridad/claims.ts', async (original) => {
+  const real = await original<typeof import('../../functions/src/core/seguridad/claims.ts')>();
+  return {
+    ...real,
+    asignarRol: async (...a: Parameters<typeof real.asignarRol>) => {
+      if (control.antes && a[2] !== null) await control.antes();
+      return real.asignarRol(...a);
+    },
+  };
+});
+
 const HAY_AUTH = Boolean(process.env['FIREBASE_AUTH_EMULATOR_HOST']);
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -54,7 +67,7 @@ const claimsDe = async (uid: string) =>
 const sesionDe = async (uid: string, extra: { proveedor?: string; verificado?: boolean } = {}) => ({
   uid,
   token: {
-    nc: await claimsDe(uid), email: correoDe(uid),
+    nc: await claimsDe(uid), email: correoDe(uid), auth_time: Math.floor(Date.now() / 1000),
     firebase: { sign_in_provider: extra.proveedor ?? 'password' }, email_verified: extra.verificado ?? true,
   },
 });
@@ -73,9 +86,14 @@ const suite = HAY_AUTH ? describe : describe.skip;
 
 suite('invitaciones con aceptación', () => {
   beforeAll(async () => { for (const u of USUARIOS) await crear(u); });
-  afterEach(() => { vi.restoreAllMocks(); });
+  const limpiarM = () => Promise.all(Array.from({ length: 22 }, async (_, i) => {
+    await db.doc(`tenants/iv-m${i}/invitaciones/${ID_ANA}`).delete();
+    await db.doc(`tenants/iv-m${i}`).delete();
+  }));
+  afterEach(async () => { vi.restoreAllMocks(); control.antes = null; await limpiarM(); });
 
   async function sembrar(conTitular = true): Promise<void> {
+    await limpiarM();
     for (const t of [A, B, C]) {
       for (const sub of ['auditoria', 'miembros', 'invitaciones']) {
         for (const d of (await db.collection(`tenants/${t}/${sub}`).get()).docs) await d.ref.delete();
@@ -299,19 +317,76 @@ suite('invitaciones con aceptación', () => {
     expect(await auditoria(A, 'aceptar_invitacion')).toHaveLength(1);
   });
 
-  it('cancelada en medio (entre el claim y la confirmación): se retira el claim y no queda miembro', async () => {
+  it('si el claim falla AL FINAL, se revierte: sin claim, sin miembro y la invitación vuelve a pendiente', async () => {
     await sembrar();
     await sembrarInv(A, ANA);
-    await expect(inv.procesarRespuesta(
-      { uid: 'iv-ana', correoToken: ANA, tenantId: A, invitacionId: ID_ANA, respuesta: 'aceptar', ahoraMs: Date.now() },
-      { despuesDeAsignar: async () => {
-        expect((await claimsDe('iv-ana'))?.t[A]).toBe('oper'); // el claim ya estaba puesto
-        await cancelar({ tenantId: A, invitacionId: ID_ANA }, await sesionDe('iv-adminA'));
-      } },
-    )).rejects.toMatchObject({ code: 'failed-precondition', message: MENSAJE.noVigente });
-    expect((await claimsDe('iv-ana'))?.t ?? {}).not.toHaveProperty(A);
+    control.antes = async () => {
+      // en este punto la confirmación ya está escrita (estado intermedio inerte: miembro sin claim)
+      expect((await miembro(A, 'iv-ana')).exists).toBe(true);
+      expect(await claimsDe('iv-ana')).toBeNull();
+      // y una cancelación ya no puede ganar: está aceptada
+      await expect(cancelar({ tenantId: A, invitacionId: ID_ANA }, await sesionDe('iv-adminA'))).rejects.toMatchObject({ code: 'not-found' });
+      throw new Error('falla simulada de Auth');
+    };
+    await expect(responder({ tenantId: A, invitacionId: ID_ANA, respuesta: 'aceptar' }, await sesionDe('iv-ana')))
+      .rejects.toMatchObject({ code: 'failed-precondition' });
+    control.antes = null;
+    expect(await claimsDe('iv-ana')).toBeNull();
     expect((await miembro(A, 'iv-ana')).exists).toBe(false);
-    expect(await docInv(A, ID_ANA)).toMatchObject({ estado: 'revocada', motivo: 'cancelada' });
+    const d = await docInv(A, ID_ANA);
+    expect(d).toMatchObject({ estado: 'pendiente', resueltaPor: null });
+    expect(d).not.toHaveProperty('compensacionPendiente');
+    expect(await auditoria(A, 'aceptar_invitacion_revertida')).toHaveLength(1);
+    // CONTROL: reintentar ahora funciona
+    await responder({ tenantId: A, invitacionId: ID_ANA, respuesta: 'aceptar' }, await sesionDe('iv-ana'));
+    expect((await claimsDe('iv-ana'))?.t[A]).toBe('oper');
+  });
+
+  it('cancelada ANTES de aceptar: no hay claim ni miembro', async () => {
+    await sembrar();
+    await sembrarInv(A, ANA);
+    await cancelar({ tenantId: A, invitacionId: ID_ANA }, await sesionDe('iv-adminA'));
+    await expect(responder({ tenantId: A, invitacionId: ID_ANA, respuesta: 'aceptar' }, await sesionDe('iv-ana')))
+      .rejects.toMatchObject({ code: 'failed-precondition', message: MENSAJE.noVigente });
+    expect(await claimsDe('iv-ana')).toBeNull();
+    expect((await miembro(A, 'iv-ana')).exists).toBe(false);
+  });
+
+  it('con titular, un admin invitado por quien NO es titular no entra (el titular pudo fijarse después); el invitado por el titular, sí', async () => {
+    await sembrar(false);
+    await sembrarInv(A, ANA, { rol: 'admin', creadaPor: 'iv-adminA' });
+    await db.doc(`tenants/${A}`).update({ titularCuentaUid: 'iv-titA' });
+    await expect(responder({ tenantId: A, invitacionId: ID_ANA, respuesta: 'aceptar' }, await sesionDe('iv-ana')))
+      .rejects.toMatchObject({ code: 'permission-denied' });
+    expect(await claimsDe('iv-ana')).toBeNull();
+    expect((await miembro(A, 'iv-ana')).exists).toBe(false);
+    expect((await docInv(A, ID_ANA))!['estado']).toBe('pendiente');
+    // CONTROL
+    await db.doc(`tenants/${A}/invitaciones/${ID_ANA}`).update({ creadaPor: 'iv-titA' });
+    await responder({ tenantId: A, invitacionId: ID_ANA, respuesta: 'aceptar' }, await sesionDe('iv-ana'));
+    expect((await claimsDe('iv-ana'))?.t[A]).toBe('admin');
+  });
+
+  it('VIGENCIA: un admin al que ya se le retiró el rol no invita ni cancela aunque su token siga viejo', async () => {
+    await sembrar();
+    await sembrarInv(A, ANA);
+    const viejo = await sesionDe('iv-adminA'); // token con el claim admin
+    await asignarRol('iv-adminA', A, null);
+    await expect(invitar({ tenantId: A, correo: 'nuevo@ejemplo.com' }, viejo)).rejects.toMatchObject({ code: 'permission-denied' });
+    await expect(cancelar({ tenantId: A, invitacionId: ID_ANA }, viejo)).rejects.toMatchObject({ code: 'permission-denied' });
+    expect((await docInv(A, ID_ANA))!['estado']).toBe('pendiente');
+    expect(await docInv(A, idInvitacion('nuevo@ejemplo.com'))).toBeUndefined();
+  });
+
+  it('misInvitaciones: un fallo de índice (código 9) se registra y responde un mensaje claro', async () => {
+    await sembrar();
+    const rotura = Object.assign(new Error('9 FAILED_PRECONDITION: falta indice'), { code: 9 });
+    vi.spyOn(db.constructor.prototype as { collectionGroup: () => unknown }, 'collectionGroup').mockImplementation(() => { throw rotura; });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await expect(mis(await sesionDe('iv-ana'))).rejects.toMatchObject({
+      code: 'failed-precondition', message: 'No se pudieron leer sus invitaciones por ahora. Intente más tarde.',
+    });
+    expect(log).toHaveBeenCalled();
   });
 
   it('negocio dado de baja: la invitación no se acepta (not-found)', async () => {
@@ -366,9 +441,5 @@ suite('invitaciones con aceptación', () => {
     }
     const r = await mis(await sesionDe('iv-ana')) as { invitaciones: unknown[] };
     expect(r.invitaciones.length).toBe(20);
-    for (let i = 0; i < 22; i += 1) {
-      await db.doc(`tenants/iv-m${i}/invitaciones/${ID_ANA}`).delete();
-      await db.doc(`tenants/iv-m${i}`).delete();
-    }
   });
 });

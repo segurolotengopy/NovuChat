@@ -10,10 +10,24 @@
 // `invitacionesDecision.ts`; acá solo se lee, se llama a esas funciones y se escribe.
 // `firestore.rules` NO cambia: la colección ya es de solo lectura para admin y propietario, y
 // el invitado nunca la lee directo: pasa por `misInvitaciones`.
+//
+// LÍMITES CONOCIDOS (documentados a propósito):
+//  - Aceptar NO es atómico: el claim vive en Auth y la ficha en Firestore, y no hay transacción
+//    entre los dos. Por eso el orden hace inerte el estado intermedio: PRIMERO la transacción
+//    (miembro + aceptada + auditoría; sin claim un miembro no puede nada) y AL FINAL el claim; si
+//    el claim falla se revierte, y si ni la reversión se logra queda `compensacionPendiente: true`
+//    en la invitación. El riesgo residual es de disponibilidad (una persona aceptada sin acceso),
+//    nunca de escalada. `asignarRol` (claims.ts) es de Rearquitectura y no se toca.
+//  - `misInvitaciones` lee hasta 100 invitaciones por correo (consulta de grupo por `correo`, un
+//    solo índice simple) y filtra el estado y el plazo en memoria; no hay filtro por estado porque
+//    exigiría un índice compuesto. Devuelve a lo sumo 20.
+//  - Cancelar y volver a invitar reinicia el tope de 5 reenvíos: reciclaje ACEPTADO por Andres.
+//  - Depende del PR-I0: la exportación en `index.ts` y el índice de `invitaciones.correo`.
 import { Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { asignarRol, type Rol } from '../core/seguridad/claims.js';
+import { cuentaVigenteDe } from '../core/seguridad/vigencia.js';
 import {
   correoVerificado, exigirAdminDe, exigirAutenticado, proveedorDe,
 } from '../core/seguridad/autorizacion.js';
@@ -22,7 +36,7 @@ import {
   MENSAJE, aceptadaMensaje, decidirInvitar, decidirResponder, esIdInvitacion,
   estadoEfectivo, idInvitacion, msDe, normalizarCorreo, venceEnDesde, type RolInvitado,
 } from './invitacionesDecision.js';
-import { titularDe } from './titular.js';
+import { titularDe, titularDeFicha } from './titular.js';
 
 const datosDe = (peticion: { data: unknown }): Record<string, unknown> =>
   (typeof peticion.data === 'object' && peticion.data !== null ? peticion.data : {}) as Record<string, unknown>;
@@ -49,6 +63,16 @@ function sesionInvitado(p: Parameters<typeof exigirAutenticado>[0]): { uid: stri
   return { uid, correo };
 }
 
+/**
+ * Como los callables sensibles: además del token, la cuenta debe seguir existiendo, habilitada,
+ * con el rol admin de ESTE negocio y sin sesiones revocadas (el token vale hasta una hora).
+ */
+async function exigirAdminVigente(p: CallableRequest, uid: string, tenantId: string): Promise<void> {
+  const authTime = p.auth?.token?.['auth_time'];
+  const vigente = typeof authTime === 'number' && await cuentaVigenteDe(uid, authTime, 'admin', tenantId);
+  if (!vigente) throw new HttpsError('permission-denied', 'Solo el administrador del negocio.');
+}
+
 const auditoriaNueva = (tenantId: string) => db().collection(`tenants/${tenantId}/auditoria`).doc();
 const invitacionesDe = (tenantId: string) => db().collection(`tenants/${tenantId}/invitaciones`);
 
@@ -59,6 +83,7 @@ export const invitarUsuario = onCall(async (peticion) => {
   const datos = datosDe(peticion);
   const tenantId = tenantValido(datos['tenantId']);
   const uid = exigirAdminDe(peticion, tenantId);
+  await exigirAdminVigente(peticion, uid, tenantId);
 
   const correo = normalizarCorreo(datos['correo']);
   if (correo === null) throw new HttpsError('invalid-argument', 'Correo inválido.');
@@ -137,7 +162,15 @@ export const misInvitaciones = onCall(async (peticion) => {
   const id = idInvitacion(correo);
   const ahora = Date.now();
   // Consulta de grupo por correo: necesita el índice de `invitaciones.correo` (PR-I0).
-  const cand = await db().collectionGroup('invitaciones').where('correo', '==', correo).limit(50).get();
+  let cand;
+  try {
+    cand = await db().collectionGroup('invitaciones').where('correo', '==', correo).limit(100).get();
+  } catch (e) {
+    // FAILED_PRECONDITION (9) = falta el índice de grupo (PR-I0): se registra y se responde claro.
+    const codigo = (e as { code?: unknown }).code;
+    console.error('misInvitaciones: no se pudo consultar', codigo === 9 ? 'falta el indice de invitaciones.correo' : codigo);
+    throw new HttpsError('failed-precondition', 'No se pudieron leer sus invitaciones por ahora. Intente más tarde.');
+  }
 
   const salida: Array<{ tenantId: string; invitacionId: string; nombreNegocio: string; rol: RolInvitado; venceEn: number }> = [];
   const revisadas = await Promise.all(cand.docs.map(async (d) => {
@@ -159,18 +192,11 @@ export const misInvitaciones = onCall(async (peticion) => {
 // ---------------------------------------------------------------------------
 // RESPONDER (aceptar o rechazar)
 // ---------------------------------------------------------------------------
-interface Ganchos {
-  /** Solo para pruebas: corre entre el claim y la transacción de confirmación. */
-  despuesDeAsignar?: () => Promise<void>;
-}
-
 /**
- * La lógica de `responderInvitacion`, separada del callable para poder probar la carrera
- * «cancelada en medio» con un gancho. El callable no pasa ganchos.
+ * La lógica de `responderInvitacion` (el callable es lo único que se exporta).
  */
-export async function procesarRespuesta(
+async function procesarRespuesta(
   p: { uid: string; correoToken: string; tenantId: string; invitacionId: string; respuesta: 'aceptar' | 'rechazar'; ahoraMs: number },
-  ganchos: Ganchos = {},
 ): Promise<{ ok: true; mensaje: string }> {
   const { uid, correoToken, tenantId, invitacionId, respuesta, ahoraMs } = p;
   // Una persona solo ve y responde LA invitación de su propio correo: cualquier otro id
@@ -178,7 +204,8 @@ export async function procesarRespuesta(
   if (invitacionId !== idInvitacion(correoToken)) throw new HttpsError('not-found', MENSAJE.noEncontrada);
 
   const ref = invitacionesDe(tenantId).doc(invitacionId);
-  const [snap, fichaSnap] = await Promise.all([ref.get(), db().doc(`tenants/${tenantId}`).get()]);
+  const fichaRef = db().doc(`tenants/${tenantId}`);
+  const [snap, fichaSnap] = await Promise.all([ref.get(), fichaRef.get()]);
   const ficha = fichaSnap.data();
 
   let tieneAcceso = false;
@@ -221,18 +248,16 @@ export async function procesarRespuesta(
     return { ok: true, mensaje: MENSAJE.rechazada };
   }
 
-  // ACEPTAR. Primero el claim (puede fallar: cuenta vinculada a Google, tope de claims) y
-  // después la confirmación atómica. Si la confirmación no se logra, el claim se retira.
-  try {
-    await asignarRol(uid, tenantId, rol as Rol);
-  } catch {
-    throw new HttpsError('failed-precondition', 'Esta cuenta no puede recibir ese acceso. Pida ayuda a NovuChat.');
-  }
-  if (ganchos.despuesDeAsignar) await ganchos.despuesDeAsignar();
-
-  const confirmar = () => db().runTransaction(async (tx) => {
-    const s = await tx.get(ref);
-    if (!s.exists || s.data()?.['correo'] !== correoToken || estadoEfectivo(s.data(), ahoraMs) !== 'pendiente') return false;
+  // ACEPTAR. Orden pensado para que el estado intermedio sea INERTE:
+  //  1. la transacción (miembro + aceptada + auditoría): sin claim, un miembro no puede nada;
+  //  2. al final, el claim. Si falla, se revierte (ver `revertirAceptacion`).
+  const confirmacion = await db().runTransaction(async (tx) => {
+    const [s, f] = await Promise.all([tx.get(ref), tx.get(fichaRef)]);
+    if (!s.exists || s.data()?.['correo'] !== correoToken || estadoEfectivo(s.data(), ahoraMs) !== 'pendiente') return 'no-vigente' as const;
+    // Con titular, un admin solo entra si lo invitó el titular (el titular pudo fijarse DESPUÉS
+    // de crearse la invitación): se relee acá, dentro de la transacción.
+    const titular = titularDeFicha(f.data());
+    if (rol === 'admin' && titular !== null && s.data()?.['creadaPor'] !== titular) return 'solo-titular' as const;
     tx.update(ref, { estado: 'aceptada', motivo: null, resueltaEn: Timestamp.fromMillis(ahoraMs), resueltaPor: uid });
     tx.set(db().doc(`tenants/${tenantId}/miembros/${uid}`), {
       correo: correoToken, rol, estado: 'activo', desde: Timestamp.fromMillis(ahoraMs),
@@ -241,26 +266,48 @@ export async function procesarRespuesta(
     tx.create(auditoriaNueva(tenantId), {
       accion: 'aceptar_invitacion', uid, en: Timestamp.fromMillis(ahoraMs), invitacion: invitacionId, rol,
     });
-    return true;
+    return 'ok' as const;
   });
+  if (confirmacion === 'no-vigente') throw new HttpsError('failed-precondition', MENSAJE.noVigente);
+  if (confirmacion === 'solo-titular') throw new HttpsError('permission-denied', MENSAJE.soloTitularInvitaAdmin);
 
-  let hecho = false;
-  for (let intento = 0; intento < 2 && !hecho; intento += 1) {
-    try { hecho = await confirmar(); } catch { /* se reintenta una vez; luego se compensa */ }
-    if (!hecho) {
-      // Otra llamada simultánea PUDO aceptarla por mí: si ya figura aceptada por este uid, el
-      // claim es legítimo y NO se retira (retirarlo dejaría un miembro activo sin acceso).
-      const ahora = (await ref.get()).data();
-      if (ahora?.['estado'] === 'aceptada' && ahora['resueltaPor'] === uid) return { ok: true, mensaje: aceptadaMensaje(nombreDe(ficha)) };
-      if (ahora?.['estado'] !== 'pendiente') break; // definitivo: cancelada o vencida en medio
-    }
-  }
-  if (!hecho) {
-    await asignarRol(uid, tenantId, null, { revocarSesiones: true })
-      .catch((e: unknown) => console.error('invitacion: no se pudo retirar el claim', tenantId, e instanceof Error ? e.name : 'error'));
-    throw new HttpsError('failed-precondition', MENSAJE.noVigente);
+  try {
+    await asignarRol(uid, tenantId, rol as Rol);
+  } catch {
+    // Cuenta vinculada a Google, tope de claims o caída de Auth: la aceptación no quedó completa.
+    await revertirAceptacion(ref, tenantId, uid, invitacionId, ahoraMs);
+    throw new HttpsError('failed-precondition', 'Esta cuenta no puede recibir ese acceso. Pida ayuda a NovuChat.');
   }
   return { ok: true, mensaje: aceptadaMensaje(nombreDe(ficha)) };
+}
+
+/**
+ * Deshace la confirmación cuando el claim no se pudo poner: borra el miembro y devuelve la
+ * invitación a `pendiente` (la persona puede reintentar). Reintenta una vez; si ni así, NO se
+ * pierde en silencio: `compensacionPendiente: true` en la invitación y un log de error.
+ */
+async function revertirAceptacion(
+  ref: FirebaseFirestore.DocumentReference, tenantId: string, uid: string, invitacionId: string, ahoraMs: number,
+): Promise<void> {
+  const miembroRef = db().doc(`tenants/${tenantId}/miembros/${uid}`);
+  for (let intento = 0; intento < 2; intento += 1) {
+    try {
+      await db().runTransaction(async (tx) => {
+        const [s, m] = await Promise.all([tx.get(ref), tx.get(miembroRef)]);
+        if (s.exists && s.data()?.['estado'] === 'aceptada' && s.data()?.['resueltaPor'] === uid) {
+          tx.update(ref, { estado: 'pendiente', motivo: null, resueltaEn: null, resueltaPor: null });
+        }
+        if (m.exists && m.data()?.['invitacion'] === invitacionId) tx.delete(miembroRef);
+        tx.create(auditoriaNueva(tenantId), {
+          accion: 'aceptar_invitacion_revertida', uid, en: Timestamp.fromMillis(ahoraMs), invitacion: invitacionId,
+        });
+      });
+      return;
+    } catch { /* se reintenta una vez */ }
+  }
+  console.error('invitacion: no se pudo revertir la aceptacion', tenantId, invitacionId);
+  await ref.update({ compensacionPendiente: true }).catch(() =>
+    console.error('invitacion: tampoco se pudo marcar compensacionPendiente', tenantId, invitacionId));
 }
 
 const nombreDe = (ficha: Record<string, unknown> | undefined): string =>
@@ -283,6 +330,7 @@ export const cancelarInvitacion = onCall(async (peticion) => {
   const datos = datosDe(peticion);
   const tenantId = tenantValido(datos['tenantId']);
   const uid = exigirAdminDe(peticion, tenantId);
+  await exigirAdminVigente(peticion, uid, tenantId);
   const invitacionId = invitacionValida(datos['invitacionId']);
   const ahora = Date.now();
   const ref = invitacionesDe(tenantId).doc(invitacionId);

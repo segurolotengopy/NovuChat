@@ -47,7 +47,7 @@ const claimsDe = async (uid: string) =>
   ((await getAuth().getUser(uid)).customClaims?.['nc'] ?? null) as { t: Record<string, string>; v: number } | null;
 const validoDesde = async (uid: string) => (await getAuth().getUser(uid)).tokensValidAfterTime ?? '';
 const sesionDe = async (uid: string) => ({
-  uid, token: { nc: await claimsDe(uid), firebase: { sign_in_provider: 'password' }, email_verified: true },
+  uid, token: { nc: await claimsDe(uid), firebase: { sign_in_provider: 'password' }, email_verified: true, auth_time: Math.floor(Date.now() / 1000) },
 });
 const auditoria = async (t: string) => (await db.collection(`tenants/${t}/auditoria`).get()).docs.map((d) => d.data());
 const miembro = async (t: string, u: string) => (await db.doc(`tenants/${t}/miembros/${u}`).get());
