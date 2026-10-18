@@ -23,6 +23,7 @@
 | `agentes.md` | Los agentes por zona: la zona de escritura efectiva de cada uno y en qué difiere de `Analisis/41` §8.1 |
 | `zona-de-escritura.md` | El gancho de Claude Code que limita a cada agente a su zona: de dónde lee la zona, qué rechaza y qué no cubre |
 | `conversaciones.md` | Conversaciones: la callable `buscarConversaciones`, los campos derivados que escribe la ingesta, la normalización congelada, la pantalla nueva detrás de `consolaConversaciones`, los scripts de bandera y relleno, y el resumen de H2 |
+| `estado-de-conversacion.md` | F3b: el contrato del estado de la conversación en el servidor (opción O2): petición `sesion`, respuesta `conversacion`/`visto`, `comprometer`/`asentar`, documentos de turno, política de falla, enmiendas a `Analisis/41` y lista de PR |
 | `../base-comercial.md` | La base comercial completa: el dinero de cada decisión técnica |
 
 ## Sección por sección
