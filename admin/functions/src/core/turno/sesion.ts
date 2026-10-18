@@ -47,7 +47,26 @@ const RE_PNID = /^[A-Za-z0-9_-]{1,64}$/;
 const RE_TELEFONO = /^[0-9]{8,15}$/;
 const RE_ESPACIO = /^[a-z][a-z0-9-]{0,31}$/;
 const RE_EJECUCION = /^[A-Za-z0-9_-]{1,64}$/;
-const RE_COMPROMISO = /^[A-Za-z0-9_.:-]{8,128}$/;
+/**
+ * El id empieza con alfanumérico (excluye `__proto__` y afines) y no puede ser
+ * un nombre de `Object.prototype` (`constructor`, `toString`, `hasOwnProperty`…):
+ * el id se usa como clave de mapas y un nombre heredado leería basura.
+ * Además, los mapas del núcleo no tienen prototipo y se leen con `Object.hasOwn`.
+ */
+const RE_COMPROMISO = /^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$/;
+const NOMBRES_HEREDADOS: ReadonlySet<string> = new Set(Object.getOwnPropertyNames(Object.prototype));
+const idCompromisoValido = (v: unknown): v is string =>
+  typeof v === 'string' && RE_COMPROMISO.test(v) && !NOMBRES_HEREDADOS.has(v);
+
+/** Mapa sin prototipo. */
+function mapaVacio<T>(): Record<string, T> {
+  return Object.create(null) as Record<string, T>;
+}
+const propio = (o: object | undefined | null, k: string): boolean => !!o && Object.hasOwn(o, k);
+const esEnteroNoNegativo = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0;
+const consumoValido = (c: unknown): c is ConsumoDeCupo =>
+  typeof c === 'object' && c !== null && esEnteroNoNegativo((c as ConsumoDeCupo).cantidad) &&
+  Number.isFinite((c as ConsumoDeCupo).en);
 /** Los wamid de Meta son ASCII imprimible: sin sustitutos sueltos que colisionarían al hashear. */
 const RE_ID_MENSAJE = /^[\x21-\x7e]{1,256}$/;
 const RE_CLAVE = /^[a-z][a-z0-9_-]{0,31}$/;
@@ -146,7 +165,7 @@ export interface CupoEscrito {
 export type DecisionCompromiso =
   | { resultado: 'repetido'; conversacion: Conversacion }
   | { resultado: 'conflicto_version'; conversacion: Conversacion }
-  | { resultado: 'cupo_negado'; motivo: 'sin_tope' | 'agotado'; clave: string; conversacion: Conversacion }
+  | { resultado: 'cupo_negado'; motivo: 'sin_tope' | 'agotado' | 'datos_invalidos'; clave: string; conversacion: Conversacion }
   | {
       resultado: 'comprometido';
       conversacion: Conversacion;
@@ -268,7 +287,7 @@ export function validarSesion(sesion: unknown, telefono: string | null): Resulta
 
   // comprometer / asentar
   if (sesion.idMensaje !== undefined) return forma();
-  if (typeof sesion.idCompromiso !== 'string' || !RE_COMPROMISO.test(sesion.idCompromiso)) return forma();
+  if (!idCompromisoValido(sesion.idCompromiso)) return forma();
 
   if (accion === 'asentar') {
     // Devolver los cupos de un compromiso no lleva estado, vencimiento ni cupos
@@ -471,6 +490,7 @@ export interface EntradaCompromiso {
  * negativos la versión NO se mueve: no se devuelve nada que escribir.
  */
 export function decidirCompromiso(e: EntradaCompromiso): DecisionCompromiso {
+  if (!idCompromisoValido(e.idCompromiso)) throw new RangeError('idCompromiso invalido');
   const actual = leerConversacion(e.doc, e.ahoraMs);
   const previos = e.doc?.compromisos ?? [];
   if (previos.includes(e.idCompromiso)) return { resultado: 'repetido', conversacion: actual };
@@ -478,9 +498,15 @@ export function decidirCompromiso(e: EntradaCompromiso): DecisionCompromiso {
 
   for (const c of e.cupos) {
     if (c.tope <= 0) return { resultado: 'cupo_negado', motivo: 'sin_tope', clave: c.clave, conversacion: actual };
-    const doc = e.cuposActuales[c.id];
+    const doc = propio(e.cuposActuales, c.id) ? e.cuposActuales[c.id] : undefined;
     // Un cupo vencido todavía presente (el TTL borra con demora) cuenta como vacío.
-    const usados = doc && (doc.vence === null || doc.vence > e.ahoraMs) ? doc.usados : 0;
+    const vivoDoc = doc && (doc.vence === null || doc.vence > e.ahoraMs);
+    // Datos corruptos (NaN, negativo, fraccionario): NUNCA se concede, porque
+    // `NaN + cantidad > tope` es false y dejaría el cupo sin tope.
+    if (vivoDoc && !esEnteroNoNegativo(doc.usados)) {
+      return { resultado: 'cupo_negado', motivo: 'datos_invalidos', clave: c.clave, conversacion: actual };
+    }
+    const usados = vivoDoc ? doc.usados : 0;
     if (usados + c.cantidad > c.tope) {
       return { resultado: 'cupo_negado', motivo: 'agotado', clave: c.clave, conversacion: actual };
     }
@@ -490,10 +516,16 @@ export function decidirCompromiso(e: EntradaCompromiso): DecisionCompromiso {
   const vence = e.ahoraMs + e.venceEnMin * MS_MIN;
   const estadoJson = e.estado === null ? null : JSON.stringify(e.estado);
   const cupos: CupoEscrito[] = e.cupos.map((c) => {
-    const doc = e.cuposActuales[c.id];
+    const doc = propio(e.cuposActuales, c.id) ? e.cuposActuales[c.id] : undefined;
     const vivo = doc && (doc.vence === null || doc.vence > e.ahoraMs) ? doc : undefined;
-    const por = podarPor({ ...(vivo?.por ?? {}), [e.idCompromiso]: { cantidad: c.cantidad, en: e.ahoraMs } });
-    return { id: c.id, usados: (vivo?.usados ?? 0) + c.cantidad, tope: c.tope, vence: c.vence, por };
+    const por = mapaVacio<ConsumoDeCupo>();
+    // Solo se arrastran las entradas propias y bien formadas.
+    if (vivo?.por && typeof vivo.por === 'object') {
+      for (const [k, v] of Object.entries(vivo.por)) if (consumoValido(v)) por[k] = v;
+    }
+    por[e.idCompromiso] = { cantidad: c.cantidad, en: e.ahoraMs };
+    const podado = podarPor(por);
+    return { id: c.id, usados: (vivo?.usados ?? 0) + c.cantidad, tope: c.tope, vence: c.vence, por: podado };
   });
   return {
     resultado: 'comprometido',
@@ -518,7 +550,9 @@ export function podarPor(por: Record<string, ConsumoDeCupo>): Record<string, Con
   const entradas = Object.entries(por);
   if (entradas.length <= MAX_POR) return por;
   entradas.sort((a, b) => b[1].en - a[1].en || (a[0] < b[0] ? 1 : -1));
-  return Object.fromEntries(entradas.slice(0, MAX_POR));
+  const salida = mapaVacio<ConsumoDeCupo>();
+  for (const [k, v] of entradas.slice(0, MAX_POR)) salida[k] = v;
+  return salida;
 }
 
 export type DecisionAsentar =
@@ -526,6 +560,10 @@ export type DecisionAsentar =
   | { resultado: 'asentado'; cupos: { id: string; usados: number; por: Record<string, ConsumoDeCupo> }[] };
 
 /**
+ * IMPORTANTE para la capa de E/S (PR-2a): pasarle SOLO cupos del mismo pnid y
+ * del mismo teléfono (o de alcance número/comercio), y correr `asentar` en una
+ * transacción que RELEA `por` (el mapa se decide sobre lo leído ahí).
+ *
  * `asentar`: DEVUELVE los cupos que consumió ese compromiso (la entrega no se
  * hizo). Por cada cupo con `por[idCompromiso]`: `usados -= cantidad` (nunca
  * bajo 0) y se borra esa entrada. Sin ningún cupo que lo tenga (ya asentado,
@@ -536,11 +574,16 @@ export function decidirAsentar(
   idCompromiso: string, cuposActuales: Readonly<Record<string, DocCupo | undefined>>,
 ): DecisionAsentar {
   const cupos: { id: string; usados: number; por: Record<string, ConsumoDeCupo> }[] = [];
+  // Un id heredado nunca es un compromiso: no hay nada que devolver.
+  if (!idCompromisoValido(idCompromiso)) return { resultado: 'nada_que_asentar' };
   for (const [id, doc] of Object.entries(cuposActuales)) {
-    const consumo = doc?.por?.[idCompromiso];
-    if (!doc || !consumo) continue;
-    const por = { ...doc.por };
-    delete por[idCompromiso];
+    if (!doc || typeof doc.por !== 'object' || doc.por === null || !propio(doc.por, idCompromiso)) continue;
+    const consumo = doc.por[idCompromiso];
+    // Datos corruptos: no se asienta (queda consumido, el lado conservador) y
+    // nunca se escribe un NaN.
+    if (!consumoValido(consumo) || !esEnteroNoNegativo(doc.usados)) continue;
+    const por = mapaVacio<ConsumoDeCupo>();
+    for (const [k, v] of Object.entries(doc.por)) if (k !== idCompromiso) por[k] = v;
     cupos.push({ id, usados: Math.max(0, doc.usados - consumo.cantidad), por });
   }
   return cupos.length === 0 ? { resultado: 'nada_que_asentar' } : { resultado: 'asentado', cupos };

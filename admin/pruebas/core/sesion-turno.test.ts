@@ -524,6 +524,71 @@ describe('decidirAsentar', () => {
   });
 });
 
+describe('ids heredados de Object.prototype y datos corruptos', () => {
+  const ahora = 1_800_000_000_000;
+  const NOMBRES = ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'isPrototypeOf', 'valueOf', 'propertyIsEnumerable', 'toLocaleString'];
+  const pedido = { clave: 'aviso', alcance: 'comercio' as const, periodo: 'dia' as const, cantidad: 1, tope: 2 };
+  const cupos = planDeCupos('1234', TEL, [pedido], ahora);
+  const id = cupos[0].id;
+  const ent = (extra: Partial<EntradaCompromiso> = {}): EntradaCompromiso => ({
+    doc: null, ahoraMs: ahora, versionLeida: 0, idCompromiso: 'nuevo-0000001', estado: null, venceEnMin: 5,
+    cupos, cuposActuales: {}, ...extra,
+  });
+
+  it('validarSesion rechaza esos nombres como idCompromiso (comprometer y asentar)', () => {
+    for (const n of NOMBRES) {
+      expect(malo(comprometer({ idCompromiso: n })).status).toBe(400);
+      expect(malo({ v: 1, accion: 'asentar', espacio: 'venta', ejecucion: 'ej-1', idCompromiso: n }).status).toBe(400);
+    }
+    expect(malo(comprometer({ idCompromiso: '_algo-largo' })).status).toBe(400);
+  });
+  it('decidirCompromiso se niega a operar con esos ids', () => {
+    for (const n of NOMBRES) expect(() => decidirCompromiso(ent({ idCompromiso: n }))).toThrow();
+  });
+  it('decidirAsentar con esos ids no asienta ni toca nada, aunque el cupo exista', () => {
+    const doc = { usados: 5, vence: ahora + D, por: { 'turno-0000001': { cantidad: 2, en: ahora } } };
+    for (const n of NOMBRES) expect(decidirAsentar(n, { [id]: doc })).toEqual({ resultado: 'nada_que_asentar' });
+  });
+  it('un por con la clave __proto__ propia no se lee como heredada ni se arrastra', () => {
+    const por = JSON.parse('{"__proto__":{"cantidad":9,"en":1},"bueno-00000001":{"cantidad":1,"en":2}}');
+    const r = decidirCompromiso(ent({ cuposActuales: { [id]: { usados: 1, vence: ahora + D, por } } }));
+    if (r.resultado !== 'comprometido') throw new Error('x');
+    expect(Object.getPrototypeOf(r.cupos[0].por)).toBeNull();
+    expect(Object.hasOwn(r.cupos[0].por, '__proto__')).toBe(true); // clave propia ajena al prototipo, no lo cambia
+    expect(r.cupos[0].usados).toBe(2);
+  });
+  it('comprometer NO concede si usados del documento es NaN, negativo, fraccionario o no numérico', () => {
+    for (const usados of [NaN, -1, 1.5, Infinity, '1' as unknown as number, undefined as unknown as number]) {
+      const r = decidirCompromiso(ent({ cuposActuales: { [id]: { usados, vence: ahora + D } } }));
+      expect(r).toMatchObject({ resultado: 'cupo_negado', motivo: 'datos_invalidos', clave: 'aviso' });
+      expect(r).not.toHaveProperty('cupos');
+    }
+  });
+  it('asentar con usados corrupto o cantidad corrupta no asienta (nunca escribe NaN)', () => {
+    const buena = { cantidad: 1, en: ahora };
+    for (const doc of [
+      { usados: NaN, vence: null, por: { 'turno-0000001': buena } },
+      { usados: -3, vence: null, por: { 'turno-0000001': buena } },
+      { usados: 2, vence: null, por: { 'turno-0000001': { cantidad: NaN, en: ahora } } },
+      { usados: 2, vence: null, por: { 'turno-0000001': { cantidad: -1, en: ahora } } },
+      { usados: 2, vence: null, por: { 'turno-0000001': { en: ahora } } },
+      { usados: 2, vence: null, por: { 'turno-0000001': 'x' } },
+    ]) {
+      expect(decidirAsentar('turno-0000001', { [id]: doc as never })).toEqual({ resultado: 'nada_que_asentar' });
+    }
+  });
+  it('entradas corruptas de por no se arrastran al nuevo documento', () => {
+    const por = { malo: { cantidad: NaN, en: 1 }, bueno: { cantidad: 1, en: 2 }, raro: 'x' } as never;
+    const r = decidirCompromiso(ent({ cuposActuales: { [id]: { usados: 1, vence: ahora + D, por } } }));
+    if (r.resultado !== 'comprometido') throw new Error('x');
+    expect(Object.keys(r.cupos[0].por).sort()).toEqual(['bueno', 'nuevo-0000001']);
+  });
+  it('un id de cupo heredado en cuposActuales no se lee como documento', () => {
+    const r = decidirCompromiso(ent({ cupos: [{ ...cupos[0], id: 'constructor' }] }));
+    expect(r.resultado).toBe('comprometido');
+  });
+});
+
 describe('pureza del archivo', () => {
   // Se quitan los comentarios: lo que se niega es el CÓDIGO.
   const codigo = FUENTE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
