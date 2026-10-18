@@ -148,6 +148,21 @@ suite('titular de la cuenta protegido', () => {
     expect((await miembro(A, 'TA')).exists).toBe(false);
   });
 
+  it('CONTROL: titularCuentaUid null explicito = sin titular (quitar funciona)', async () => {
+    await sembrar();
+    await db.doc(`tenants/${A}`).set({ titularCuentaUid: null });
+    expect(await quitar({ tenantId: A, uid: 'TA' }, await sesionDe('adminA'))).toEqual({ ok: true });
+    expect((await miembro(A, 'TA')).exists).toBe(false);
+  });
+
+  it('un titularCuentaUid guardado con espacios sigue protegiendo al titular', async () => {
+    await sembrar();
+    await db.doc(`tenants/${A}`).set({ titularCuentaUid: ' TA ' });
+    await expect(quitar({ tenantId: A, uid: 'TA' }, await sesionDe('adminA')))
+      .rejects.toMatchObject({ code: 'failed-precondition' });
+    expect((await miembro(A, 'TA')).exists).toBe(true);
+  });
+
   it('CONTROL: un admin que no es titular puede quitarse a sí mismo', async () => {
     await sembrar();
     expect(await quitar({ tenantId: A, uid: 'adminA' }, await sesionDe('adminA'))).toEqual({ ok: true });
