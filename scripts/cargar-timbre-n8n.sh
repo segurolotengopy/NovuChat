@@ -30,11 +30,37 @@
 #   ./scripts/cargar-timbre-n8n.sh --alias <alias> --quitar [--aplicar --confirmo produccion]
 #       RESTAURACIÓN: desactiva y borra el flujo del alias y borra la credencial del
 #       timbre de ese alias (nunca las de ingesta, AAB1 ni WhatsApp). Respalda antes.
+#   ./scripts/cargar-timbre-n8n.sh --alias <alias> --crear-credenciales [--aplicar --confirmo produccion]
+#       CREAR LAS TRES CREDENCIALES PREVIAS que el flujo exige por nombre exacto y tipo y que
+#       ningún otro script crea (paso 0 del ensayo, antes de cargar el timbre):
+#         · «NovuChat ingesta (<alias>)»  httpHeaderAuth  `Authorization: Bearer <INGESTA_<ALIAS>,
+#           versión latest>`: el valor sale de Secret Manager por TUBERÍA hasta el cuerpo del pedido
+#           a n8n (patrón de rotar-ingesta.sh); no se imprime, no va a argumentos ni a un archivo;
+#         · «AAB1 envío · <alias>»  httpHeaderAuth  con un valor INERTE (`Bearer INERTE-NO-ENVIAR`):
+#           decisión D2 de Andres (17/10): la rama del relé NO se prueba en el Demo A y su canal es
+#           `graph`; nunca se escribe el token ni la URL reales del relé;
+#         · «WhatsApp <alias> (envío)»  whatsAppApi  con accessToken = WA_TOKEN y businessAccountId
+#           = WABA_ID de --env (leídas por nombre, sin ejecutar el archivo).
+#       Idempotente: si una ya existe con ese nombre y tipo NO se toca (se avisa); si hay
+#       duplicados, o el nombre existe con otro tipo, se aborta sin escribir. Con --aplicar lee el
+#       secreto de ingesta con gcloud (CLOUDSDK_CONFIG aislado; --proyecto o PROYECTO, por omisión
+#       novuchat-demo, el mismo valor que rotar-ingesta.sh).
+#   ./scripts/cargar-timbre-n8n.sh --alias <alias> --quitar-credenciales [--aplicar --confirmo produccion]
+#       RESTAURACIÓN de las tres anteriores: borra SOLO esas tres, por nombre y tipo exactos
+#       (nunca otras, nunca con otro tipo), y se niega mientras el flujo del alias siga cargado
+#       (primero --quitar). Respalda antes.
 #
 # OPCIONES. --env <archivo>: de él SOLO se leen N8N_BASE_URL y N8N_API_KEY (no se
 # ejecuta; con --aplicar exige que sea del usuario y de modo 600). --flujo <json>: otro
 # JSON de flujo (para pruebas). --tabla-demo-a: usa las filas SIN sufijo
 # (REEMPLAZAR_PHONE_NUMBER_ID, REEMPLAZAR_URL_INTERNA_DEL_RELE) en vez de las del alias.
+# --rele-inerte --canal-graph (solo al CARGAR): repone REEMPLAZAR_URL_INTERNA_DEL_RELE con
+# `http://relay-inerte.invalid` (dominio reservado .invalid: no resuelve nunca) y NO exige ni usa la
+# fila del relé de la tabla; es para el Demo A, que sale por `graph`. El script no puede leer la ruta
+# del alias (vive en Firestore): por eso exige que se AFIRME con --canal-graph que
+# `rutasWhatsApp/{numero}.canalSalida` no es `rele` (sin valor = graph), y lo comprueba quien opera.
+# Si fuera `rele`, el nodo del relé fallaría a propósito (el dominio .invalid no se resuelve).
+# --proyecto <id>: proyecto de Secret Manager para --crear-credenciales.
 #
 # LA CLAVE DE LA API DE N8N. Sale de `--env` (el mismo `.env` ignorado, chmod 600, que
 # usan publicar-flujo.sh y rotar-ingesta.sh) y viaja a curl por la entrada estándar
@@ -58,7 +84,11 @@
 #   - que n8n acepte PATCH /credentials/{id} (rotar-ingesta.sh lo usa) y DELETE;
 #   - que el webhook con `path` explícito se registre en /webhook/<path> al activar;
 #   - que la API acepte el cuerpo {name,nodes,connections,settings} tal cual;
-#   - que el Header Auth con `Bearer <clave>` autentique de verdad el timbre.
+#   - que el Header Auth con `Bearer <clave>` autentique de verdad el timbre;
+#   - que n8n acepte POST /credentials con {name,type,data} para httpHeaderAuth y whatsAppApi (el
+#     esquema de whatsAppApi, accessToken + businessAccountId, es el que ya usan
+#     importar-flujo-cliente.sh y credenciales-cliente.sh) y que valide el cuerpo de whatsAppApi;
+#   - que el valor de la ingesta lo acepte el servidor (se prueba con rotar-ingesta.sh probar).
 #
 # Salida: 0 hecho y comprobado, o nada que hacer · 1 el seco encontró pasos pendientes
 # · 2 uso, salvaguarda o validación previa (entrega, tabla, plan; nada escrito) · 3 error de
@@ -72,7 +102,8 @@ cd "$(dirname "$ESTE")/.." || exit 1
 ayuda() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$ESTE"; }
 
 APLICAR=0; CONFIRMO=""; MODO="cargar"; ALIAS=""; ENV_FILE=".env"; FLUJO="Flujos/salida-de-persona.json"; SINSUFIJO=0
-fijar_modo() { [[ "$MODO" == cargar ]] || { echo "✗ Un solo modo a la vez (--activar o --quitar)" >&2; exit 2; }; MODO="$1"; }
+RELE_INERTE=0; CANAL_GRAPH=0; PROYECTO="${PROYECTO:-novuchat-demo}"
+fijar_modo() { [[ "$MODO" == cargar ]] || { echo "✗ Un solo modo a la vez (--activar, --quitar, --crear-credenciales o --quitar-credenciales)" >&2; exit 2; }; MODO="$1"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --alias)       [[ $# -ge 2 ]] || { echo "✗ --alias necesita el alias" >&2; exit 2; }; ALIAS="$2"; shift 2 ;;
@@ -81,6 +112,11 @@ while [[ $# -gt 0 ]]; do
     --tabla-demo-a) SINSUFIJO=1; shift ;;
     --activar)     fijar_modo activar; shift ;;
     --quitar)      fijar_modo quitar; shift ;;
+    --crear-credenciales)   fijar_modo crear-cred; shift ;;
+    --quitar-credenciales)  fijar_modo quitar-cred; shift ;;
+    --rele-inerte) RELE_INERTE=1; shift ;;
+    --canal-graph) CANAL_GRAPH=1; shift ;;
+    --proyecto)    [[ $# -ge 2 ]] || { echo "✗ --proyecto necesita un id" >&2; exit 2; }; PROYECTO="$2"; shift 2 ;;
     --aplicar)     APLICAR=1; shift ;;
     --confirmo)    [[ $# -ge 2 ]] || { echo "✗ --confirmo necesita produccion" >&2; exit 2; }; CONFIRMO="$2"; shift 2 ;;
     --confirmo=*)  CONFIRMO="${1#*=}"; shift ;;
@@ -89,6 +125,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ "$ALIAS" =~ ^[A-Za-z][A-Za-z0-9]{1,29}$ ]] || { echo "✗ --alias inválido o ausente (letras y dígitos, de 2 a 30, empieza con letra)" >&2; exit 2; }
+[[ "$PROYECTO" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ --proyecto / PROYECTO no tiene la forma de un id de proyecto de GCP" >&2; exit 2; }
+if (( RELE_INERTE )) && [[ "$MODO" != cargar ]]; then echo "✗ --rele-inerte solo se usa al cargar el flujo (modo por omisión)" >&2; exit 2; fi
+if (( RELE_INERTE && ! CANAL_GRAPH )); then
+  echo "✗ --rele-inerte exige --canal-graph: afirme que rutasWhatsApp/{numero}.canalSalida del alias NO es «rele» (el script no puede leerla). No se escribió nada." >&2; exit 2
+fi
+if (( CANAL_GRAPH && ! RELE_INERTE )); then echo "✗ --canal-graph solo acompaña a --rele-inerte" >&2; exit 2; fi
 if (( APLICAR )) && [[ "$FLUJO" != "Flujos/salida-de-persona.json" ]]; then
   echo "✗ --flujo (otro JSON) solo se permite en seco: con --aplicar se carga únicamente Flujos/salida-de-persona.json. No se escribió nada." >&2; exit 2
 fi
@@ -232,7 +274,10 @@ def cmd_entrega(archivo, alias, base, cuerpo_out, path_out):
     escribir_600(path_out, path)
 
 
-def cmd_tabla(local, alias, sinsufijo, salida):
+RELE_INERTE = "http://relay-inerte.invalid"
+
+
+def cmd_tabla(local, alias, sinsufijo, salida, inerte="0"):
     suf = "" if sinsufijo == "1" else "_" + alias.upper()
     kp, kr = "REEMPLAZAR_PHONE_NUMBER_ID" + suf, "REEMPLAZAR_URL_INTERNA_DEL_RELE" + suf
     try:
@@ -245,10 +290,12 @@ def cmd_tabla(local, alias, sinsufijo, salida):
         m = fila.match(l)
         if m and "pendiente" not in l.lower() and m.group(2).strip().strip("`").strip():
             tabla[m.group(1)] = m.group(2).strip().strip("`").strip()
-    faltan = [k for k in (kp, kr) if k not in tabla]
+    requeridas = (kp,) if inerte == "1" else (kp, kr)
+    faltan = [k for k in requeridas if k not in tabla]
     if faltan:
         salir(4, "faltan en la tabla (o están pendientes): " + ", ".join(faltan))
-    phone, rele = tabla[kp], tabla[kr].rstrip("/")
+    # Con --rele-inerte la fila real del relé se IGNORA aunque exista: su URL no viaja al flujo.
+    phone, rele = tabla[kp], (RELE_INERTE if inerte == "1" else tabla[kr].rstrip("/"))
     if not RE_PHONE.match(phone):
         salir(4, "el valor de %s no tiene la forma de un phone number id" % kp)
     if not RE_RELE.match(rele):
@@ -498,6 +545,104 @@ def cmd_verificar(wf_f, path_f, alias, activo_esperado, creds_f="-"):
     print("coincide con lo esperado (%d nodos)" % len(wf.get("nodes", [])))
 
 
+# --- Las tres credenciales previas (--crear-credenciales / --quitar-credenciales) -------------
+VALOR_RELE_INERTE = "Bearer INERTE-NO-ENVIAR"
+CRED_TIPOS = (("ingesta", "httpHeaderAuth"), ("rele", "httpHeaderAuth"), ("graph", "whatsAppApi"))
+RE_INGESTA = re.compile(r"[0-9a-f]{64}")  # fullmatch: con $ un salto de línea final pasaría
+RE_WA_TOKEN = re.compile(r"^[A-Za-z0-9_|.-]{20,600}$")
+RE_WABA = re.compile(r"^[0-9]{8,20}$")
+
+
+def valor_de_env(archivo, nombre):
+    """Lo mismo que valor_env del shell: última asignación NOMBRE=..., sin comillas; el archivo no se ejecuta."""
+    val = ""
+    try:
+        with open(archivo, encoding="utf-8") as f:
+            for linea in f:
+                if linea.startswith(nombre + "="):
+                    val = linea.rstrip("\n").split("=", 1)[1].replace('"', "").replace("'", "")
+    except OSError:
+        return ""
+    return val
+
+
+def cmd_cred_estado(creds_f, alias, modo, plan_out):
+    """Por cada una de las tres: cuántas hay con ese nombre Y tipo exactos. Duplicados -> aborta;
+    al crear, el mismo nombre con otro tipo también aborta (no se pisa ni se adivina)."""
+    creds = cargar(creds_f)["data"]
+    n = nombres(alias)
+    plan, errores = {}, []
+    for clave, tipo in CRED_TIPOS:
+        nom = n[clave]
+        mismas = [c for c in creds if c.get("name") == nom and c.get("type") == tipo]
+        otras = [c for c in creds if c.get("name") == nom and c.get("type") != tipo]
+        if len(mismas) > 1:
+            errores.append("hay %d credenciales %s llamadas «%s» (tiene que haber a lo sumo una)" % (len(mismas), tipo, nom))
+        if otras and modo == "crear":
+            errores.append("«%s» ya existe pero de OTRO tipo (se esperaba %s): no se pisa" % (nom, tipo))
+        if mismas and not id_valido(mismas[0].get("id")):
+            errores.append("n8n devolvió un id con forma inesperada para «%s»" % nom)
+        plan[clave] = mismas[0]["id"] if len(mismas) == 1 and id_valido(mismas[0].get("id")) else ""
+    if errores:
+        salir(4, "\n".join("    " + e for e in errores))
+    escribir_600(plan_out, json.dumps(plan))
+    for clave, tipo in CRED_TIPOS:
+        print("    «%s» (%s): %s" % (n[clave], tipo, "existe" if plan[clave] else "no existe"))
+
+
+def cmd_cred_entorno(archivo):
+    """El token y la cuenta de WhatsApp de --env tienen forma válida. Dice cuál falla, nunca su valor."""
+    mal = []
+    if not RE_WA_TOKEN.match(valor_de_env(archivo, "WA_TOKEN")):
+        mal.append("WA_TOKEN (falta o no tiene la forma de un token)")
+    if not RE_WABA.match(valor_de_env(archivo, "WABA_ID")):
+        mal.append("WABA_ID (falta o no son 8 a 20 dígitos)")
+    if mal:
+        salir(4, "en --env: " + "; ".join(mal))
+
+
+def cmd_cred_valida_ingesta():
+    """stdin = el secreto: 64 hexadecimales, sin salto de línea (la forma que fija rotar-ingesta.sh)."""
+    v = sys.stdin.buffer.read()
+    ok = RE_INGESTA.fullmatch(v.decode("ascii", "replace")) is not None
+    del v
+    sys.exit(0 if ok else 1)
+
+
+def cmd_cred_cuerpo(clave, archivo_env, alias):
+    """Imprime el cuerpo POST /credentials de UNA de las tres, para una sustitución de procesos: nada pasa
+    por argumentos ni por un archivo. Si el valor no tiene la forma esperada no imprime nada (n8n rechazará)."""
+    n = nombres(alias)
+    if clave == "ingesta":
+        v = sys.stdin.buffer.read().decode("ascii", "replace")
+        if not RE_INGESTA.fullmatch(v):
+            sys.exit(1)
+        cuerpo = {"name": n["ingesta"], "type": "httpHeaderAuth", "data": {"name": "Authorization", "value": "Bearer " + v}}
+    elif clave == "rele":
+        cuerpo = {"name": n["rele"], "type": "httpHeaderAuth", "data": {"name": "Authorization", "value": VALOR_RELE_INERTE}}
+    elif clave == "graph":
+        tok, waba = valor_de_env(archivo_env, "WA_TOKEN"), valor_de_env(archivo_env, "WABA_ID")
+        if not (RE_WA_TOKEN.match(tok) and RE_WABA.match(waba)):
+            sys.exit(1)
+        cuerpo = {"name": n["graph"], "type": "whatsAppApi", "data": {"accessToken": tok, "businessAccountId": waba}}
+    else:
+        sys.exit(1)
+    sys.stdout.write(json.dumps(cuerpo))
+
+
+def cmd_cred_verificar(creds_f, alias, esperado):
+    """Relectura: cada una de las tres existe exactamente una vez (esperado=presentes) o ninguna (ausentes)."""
+    creds = cargar(creds_f)["data"]
+    n = nombres(alias)
+    malas = []
+    for clave, tipo in CRED_TIPOS:
+        cuantas = len([c for c in creds if c.get("name") == n[clave] and c.get("type") == tipo])
+        if cuantas != (1 if esperado == "presentes" else 0):
+            malas.append("«%s» (%s): hay %d" % (n[clave], tipo, cuantas))
+    if malas:
+        salir(4, "\n".join("    " + m for m in malas))
+
+
 if __name__ == "__main__":
     globals()["cmd_" + sys.argv[1]](*sys.argv[2:])
 PY
@@ -540,6 +685,96 @@ py buscar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/plan.jso
 WF_ID="$(py campo "$WORK/plan.json" wfId)"; WF_ACTIVO="$(py campo "$WORK/plan.json" wfActivo)"; TIMBRE_ID="$(py campo "$WORK/plan.json" timbreId)"
 if py respaldar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/respaldo-vivo.json"; then :; else falla "no pude armar el respaldo"; exit 3; fi
 (( ! APLICAR )) || CONSERVAR=1
+
+# ======================================================================== CREDENCIALES PREVIAS
+if [[ "$MODO" == crear-cred || "$MODO" == quitar-cred ]]; then
+  fallar_c() { falla "$1"; nota "respaldo previo (modo 600): ${WORK}/respaldo-vivo.json"; exit 3; }
+  # El valor de la ingesta viaja de gcloud a python por una tubería; python imprime el cuerpo y curl lo lee
+  # por una sustitución de procesos (/dev/fd): el valor no pasa por argumentos, pantalla ni archivo.
+  leer_valor() { gcloud secrets versions access latest --secret="INGESTA_${ALIAS^^}" --project "$PROYECTO"; }
+  if [[ "$MODO" == crear-cred ]]; then
+    echo "Credenciales previas del alias"
+    if ! SAL="$(py cred_estado "$WORK/credenciales.json" "$ALIAS" crear "$WORK/cred-plan.json")"; then
+      falla "el estado de las credenciales impide seguir (nada escrito):"; echo "$SAL" >&2; exit 2
+    fi
+    echo "$SAL"
+    ID_ING="$(py campo "$WORK/cred-plan.json" ingesta)"; ID_REL="$(py campo "$WORK/cred-plan.json" rele)"; ID_GRA="$(py campo "$WORK/cred-plan.json" graph)"
+    PEND=0
+    if [[ -n "$ID_ING" ]]; then nota "«NovuChat ingesta (${ALIAS})» ya existe: NO se sobrescribe (para cambiar su valor: rotar-ingesta.sh n8n)"
+    else
+      PEND=$((PEND + 1))
+      if (( APLICAR )); then
+        command -v gcloud >/dev/null 2>&1 || { falla "falta gcloud para leer el secreto INGESTA_${ALIAS^^}"; exit 2; }
+        export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"; unset CLOUDSDK_ACTIVE_CONFIG_NAME
+        if ! leer_valor 2>"$ERR" | py cred_valida_ingesta; then
+          falla "no pude leer INGESTA_${ALIAS^^} (versión latest) de Secret Manager, o no tiene la forma esperada (64 hexadecimales sin salto). Nada escrito."; exit 2
+        fi
+        ok "el secreto INGESTA_${ALIAS^^} (latest) se lee y tiene la forma esperada (no se imprime)"
+      else
+        nota "el seco no lee el secreto INGESTA_${ALIAS^^}: se lee solo con --aplicar, y antes de escribir nada"
+      fi
+      hacer "crear «NovuChat ingesta (${ALIAS})» (Header Auth, Bearer del secreto INGESTA_${ALIAS^^})"
+    fi
+    if [[ -n "$ID_REL" ]]; then nota "«AAB1 envío · ${ALIAS}» ya existe: NO se sobrescribe"
+    else PEND=$((PEND + 1)); hacer "crear «AAB1 envío · ${ALIAS}» (Header Auth con valor INERTE; el relé no se prueba en el Demo A)"; fi
+    if [[ -n "$ID_GRA" ]]; then nota "«WhatsApp ${ALIAS} (envío)» ya existe: NO se sobrescribe"
+    else
+      PEND=$((PEND + 1))
+      if ! SAL="$(py cred_entorno "$ENV_FILE")"; then falla "${SAL} (nada escrito)"; exit 2; fi
+      hacer "crear «WhatsApp ${ALIAS} (envío)» (whatsAppApi con WA_TOKEN y WABA_ID de --env; no se imprimen)"
+    fi
+    if (( ! PEND )); then echo; ok "las tres credenciales ya existen: nada que hacer"; exit 0; fi
+    if (( ! APLICAR )); then echo; echo "Diagnóstico: ${PEND} paso(s) pendiente(s); no se escribió nada. Con --aplicar --confirmo produccion se hace lo marcado «(haría)»."; exit 1; fi
+    echo "Escritura"
+    if [[ -z "$ID_ING" ]]; then
+      api POST "/credentials" <(leer_valor 2>/dev/null | py cred_cuerpo ingesta "$ENV_FILE" "$ALIAS"); exigir '200|201' "no pude crear la credencial de ingesta" || fallar_c "falló la credencial de ingesta"
+      py id "$WORK/rta.json" >/dev/null || fallar_c "n8n creó la credencial de ingesta pero no devolvió su id"
+      ok "«NovuChat ingesta (${ALIAS})» creada"
+    fi
+    if [[ -z "$ID_REL" ]]; then
+      api POST "/credentials" <(py cred_cuerpo rele "$ENV_FILE" "$ALIAS" </dev/null); exigir '200|201' "no pude crear la credencial del relé" || fallar_c "falló la credencial del relé"
+      py id "$WORK/rta.json" >/dev/null || fallar_c "n8n creó la credencial del relé pero no devolvió su id"
+      ok "«AAB1 envío · ${ALIAS}» creada con valor INERTE"
+    fi
+    if [[ -z "$ID_GRA" ]]; then
+      api POST "/credentials" <(py cred_cuerpo graph "$ENV_FILE" "$ALIAS" </dev/null); exigir '200|201' "no pude crear la credencial de WhatsApp" || fallar_c "falló la credencial de WhatsApp"
+      py id "$WORK/rta.json" >/dev/null || fallar_c "n8n creó la credencial de WhatsApp pero no devolvió su id"
+      ok "«WhatsApp ${ALIAS} (envío)» creada"
+    fi
+    leer_estado
+    SAL="$(py cred_verificar "$WORK/credenciales.json" "$ALIAS" presentes)" || fallar_c "al releer, las tres credenciales no quedaron una vez cada una:
+${SAL}"
+    ok "relectura: las tres existen, una vez cada una, con su tipo"
+    nota "los valores no se pueden leer por la API: la de ingesta se prueba con rotar-ingesta.sh probar; la de WhatsApp y el timbre, en el ensayo"
+    nota "respaldo previo (sin valores; modo 600): ${WORK}/respaldo-vivo.json (bórrelo cuando el ensayo termine)"
+    exit 0
+  fi
+  # --- quitar-cred: SOLO las tres, por nombre y tipo exactos ---
+  echo "Credenciales previas del alias"
+  if ! SAL="$(py cred_estado "$WORK/credenciales.json" "$ALIAS" quitar "$WORK/cred-plan.json")"; then
+    falla "hay duplicados entre las credenciales del alias (nada escrito):"; echo "$SAL" >&2; exit 2
+  fi
+  echo "$SAL"
+  if [[ -n "$WF_ID" ]]; then
+    falla "el flujo «NovuChat — Salida de persona (${ALIAS})» sigue cargado y usa estas credenciales: quítelo primero (--quitar). Nada escrito."; exit 2
+  fi
+  PEND=0
+  declare -A IDS=([ingesta]="$(py campo "$WORK/cred-plan.json" ingesta)" [rele]="$(py campo "$WORK/cred-plan.json" rele)" [graph]="$(py campo "$WORK/cred-plan.json" graph)")
+  for k in ingesta rele graph; do [[ -z "${IDS[$k]}" ]] || { PEND=$((PEND + 1)); hacer "borrar la credencial «${k}» del alias (solo esa, por nombre y tipo exactos)"; }; done
+  if (( ! PEND )); then ok "no queda ninguna de las tres: nada que hacer"; exit 0; fi
+  if (( ! APLICAR )); then echo; echo "Diagnóstico: ${PEND} paso(s) pendiente(s); no se escribió nada. Con --aplicar --confirmo produccion se hace lo marcado «(haría)»."; exit 1; fi
+  for k in ingesta rele graph; do
+    [[ -n "${IDS[$k]}" ]] || continue
+    api DELETE "/credentials/${IDS[$k]}"; exigir '200|204' "no pude borrar la credencial «${k}»" || fallar_c "falló el borrado"
+    ok "credencial «${k}» borrada"
+  done
+  leer_estado
+  SAL="$(py cred_verificar "$WORK/credenciales.json" "$ALIAS" ausentes)" || fallar_c "al releer, algo de las tres SIGUE en n8n:
+${SAL}"
+  ok "relectura: no queda ninguna de las tres del alias ${ALIAS}"
+  nota "respaldo previo (sin valores; modo 600): ${WORK}/respaldo-vivo.json (bórrelo cuando el ensayo termine)"
+  exit 0
+fi
 
 # ======================================================================== ACTIVAR
 if [[ "$MODO" == activar ]]; then
@@ -606,8 +841,9 @@ if ! SAL="$(py entrega "$DESTINO" "$ALIAS" "$N8N_BASE_URL" "$WORK/cuerpo-cred.js
 fi
 ok "entrega válida (archivo propio de modo 600, alias y ruta coinciden; no se imprime nada)"
 LOCAL="${CONFIG_LOCAL_MD:-CONFIGURACION.local.md}"
-if ! SAL="$(py tabla "$LOCAL" "$ALIAS" "$SINSUFIJO" "$WORK/tabla.json")"; then falla "${SAL}"; exit 2; fi
-ok "tabla: phoneNumberId y URL interna del relé presentes y con forma válida (no se imprimen)"
+if ! SAL="$(py tabla "$LOCAL" "$ALIAS" "$SINSUFIJO" "$WORK/tabla.json" "$RELE_INERTE")"; then falla "${SAL}"; exit 2; fi
+if (( RELE_INERTE )); then ok "tabla: phoneNumberId presente; el relé va INERTE (http://relay-inerte.invalid), canal graph afirmado por quien opera"
+else ok "tabla: phoneNumberId y URL interna del relé presentes y con forma válida (no se imprimen)"; fi
 echo "Plan"
 if ! SAL="$(py plan "$FLUJO" "$WORK/flujos.json" "$WORK/credenciales.json" "$WORK/tabla.json" "$WORK/path" "$ALIAS" "$TIMBRE_ID" "$WORK/cuerpo-flujo.json" "$WORK/plan.json")"; then
   falla "el plan se aborta (no se escribió nada):"; echo "$SAL" >&2; exit 2

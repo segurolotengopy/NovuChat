@@ -170,7 +170,16 @@ del proyecto de producción. Lo que hay:
     valor `Bearer <clave>`) y el `path` del webhook sin imprimirlos, y borra el archivo
     solo si todo salió bien. Cuando se corra, el orden es: `--agregar-alias --aplicar`,
     luego `cargar-timbre-n8n.sh --aplicar` en la misma sesión (la entrega no se deja
-    pendiente); (c) no se corre en paralelo
+    pendiente). **Antes de cargar el timbre** deben existir en n8n, por nombre y tipo
+    exactos, las tres credenciales que el flujo exige y que ningún otro script crea:
+    `cargar-timbre-n8n.sh --alias <alias> --crear-credenciales` (seco por omisión;
+    `--aplicar --confirmo produccion`) las crea sin imprimir valores: la de ingesta con el
+    secreto `INGESTA_<ALIAS>` (latest) leído de Secret Manager por tubería; la del relé
+    con un valor inerte (`Bearer INERTE-NO-ENVIAR`, decisión D2); la de WhatsApp con
+    `WA_TOKEN` y `WABA_ID` de `--env`. Se deshacen con `--quitar-credenciales` (solo
+    esas tres; antes `--quitar`). Para un alias que sale por `graph` y no usa el relé,
+    la carga lleva `--rele-inerte --canal-graph` (URL `http://relay-inerte.invalid`);
+    (c) no se corre en paralelo
     (sin control de concurrencia: dos altas simultáneas se pisan); (d) `--quitar-alias`
     no destruye las versiones anteriores del secreto ni borra la credencial ni el
     webhook de n8n: eso se hace aparte. Staging: `scripts/preparar-staging.sh salida-persona`.
