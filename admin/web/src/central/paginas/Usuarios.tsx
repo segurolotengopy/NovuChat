@@ -10,6 +10,18 @@ import { esVisible } from '../../../../functions/src/central/consola-oculta';
 interface Miembro { id: string; correo?: unknown; rol?: unknown; estado?: unknown }
 
 /**
+ * ESPEJO de `titularDeFicha` (módulo titular del servidor): la web no puede importar del
+ * servidor (arrastraría el SDK Admin). Mismo criterio, con `trim()` idéntico; una prueba de
+ * fuente (`usuarios-titular-pantalla.test.ts`) compara ambos con los mismos casos.
+ */
+function titularDeFicha(ficha: Record<string, unknown> | undefined): string | null {
+  const valor = ficha?.['titularCuentaUid'];
+  if (typeof valor !== 'string') return null;
+  const recortado = valor.trim();
+  return recortado !== '' ? recortado : null;
+}
+
+/**
  * Usuarios del negocio. La lista sale del ESPEJO /tenants/{t}/miembros, que es
  * de solo lectura: sirve para pintar la tabla, no para autorizar. El permiso
  * verdadero vive en los custom claims.
@@ -44,7 +56,7 @@ export function Usuarios() {
   useEffect(() => {
     if (!tenantId) return;
     return onSnapshot(doc(db, 'tenants', tenantId),
-      (f) => setTitular(typeof f.data()?.['titularCuentaUid'] === 'string' && f.data()?.['titularCuentaUid'] !== '' ? (f.data()?.['titularCuentaUid'] as string) : null),
+      (f) => setTitular(titularDeFicha(f.data())),
       () => setTitular(null));
   }, [tenantId]);
 
