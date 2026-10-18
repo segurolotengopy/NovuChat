@@ -4,26 +4,37 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  PENDIENTE_CADUCA_MS, TEXTO_CADUCADO, TEXTO_INCIERTO, estadoDeMensaje, vencidoDeEnvio, textoCuentaRegresiva, textoEstadoMensaje, ventanaDeEnvio,
+  ENVIANDO_CADUCA_MS, PENDIENTE_CADUCA_MS, TEXTO_CADUCADO, TEXTO_INCIERTO, estadoDeMensaje, vencidoDeEnvio, textoCuentaRegresiva, textoEstadoMensaje, ventanaDeEnvio,
 } from '../../web/src/central/lib/turno';
 import { ventanaDeFicha } from '../../web/src/central/lib/conversaciones';
-import { PENDIENTE_MAXIMO_MS } from '../../functions/src/core/conversacion/salidaPersona';
+import { ENVIANDO_MAXIMO_MS, PENDIENTE_MAXIMO_MS } from '../../functions/src/core/conversacion/salidaPersona';
 
 const T0 = 1_800_000_000_000;
-const rotulo = (estadoCrudo: string, ts: number, ahora: number) => {
+const rotulo = (estadoCrudo: string, ts: number, ahora: number, reclamadoEn: number | null = null) => {
   const e = estadoDeMensaje(estadoCrudo)!;
-  return textoEstadoMensaje(e, vencidoDeEnvio(estadoCrudo, ts, ahora));
+  return textoEstadoMensaje(e, vencidoDeEnvio(estadoCrudo, ts, ahora, reclamadoEn));
 };
 
 describe('un pendiente caduca en la pantalla, sin escribir nada', () => {
   it('la cifra es la del servidor', () => expect(PENDIENTE_CADUCA_MS).toBe(PENDIENTE_MAXIMO_MS));
+  it('la cifra de enviando es la del servidor', () => expect(ENVIANDO_CADUCA_MS).toBe(ENVIANDO_MAXIMO_MS));
+  it('las dos frases terminan igual (sin punto)', () => {
+    expect(TEXTO_CADUCADO.endsWith('.')).toBe(false);
+    expect(TEXTO_INCIERTO.endsWith('.')).toBe(false);
+  });
   it('de 1:59 sigue «Enviando…»', () => expect(rotulo('pendiente', T0, T0 + 119_000)).toBe('Enviando…'));
   it('justo en 2:00 todavía «Enviando…»', () => expect(rotulo('pendiente', T0, T0 + 120_000)).toBe('Enviando…'));
   it('de 2:01 dice que no se envió a tiempo', () => expect(rotulo('pendiente', T0, T0 + 121_000)).toBe(TEXTO_CADUCADO));
-  it('`enviando` vencido NO dice «no se envió»: pudo llegar, es incierto', () => {
-    expect(rotulo('enviando', T0, T0 + 119_000)).toBe('Enviando…');
-    expect(rotulo('enviando', T0, T0 + 121_000)).toBe(TEXTO_INCIERTO);
-    expect(rotulo('enviando', T0, T0 + 121_000)).not.toBe(TEXTO_CADUCADO);
+  it('`enviando` se mide desde reclamadoEn, no desde la creación', () => {
+    const viejo = T0, reciente = T0 + 600_000, ahora = T0 + 601_000;
+    expect(rotulo('enviando', viejo, ahora, reciente)).toBe('Enviando…');           // ts viejo, reclamado hace 1 s
+    expect(rotulo('enviando', viejo, reciente + 119_000, reciente)).toBe('Enviando…');
+    expect(rotulo('enviando', viejo, reciente + 121_000, reciente)).toBe(TEXTO_INCIERTO);
+    expect(rotulo('enviando', viejo, reciente + 121_000, reciente)).not.toBe(TEXTO_CADUCADO);
+  });
+  it('`enviando` sin reclamadoEn no se inventa: sigue «Enviando…»', () => {
+    expect(rotulo('enviando', T0, T0 + 9e9)).toBe('Enviando…');
+    expect(rotulo('enviando', T0, T0 + 9e9, Number.NaN)).toBe('Enviando…');
   });
   it('no promete reintento que la pantalla no tiene', () => expect(TEXTO_CADUCADO).not.toMatch(/reintent/i));
   it('aceptado, rechazado e incierto con fecha vieja no cambian', () => {

@@ -48,6 +48,8 @@ interface Msg {
   estadoEnvio: EstadoMensajePersona | null;
   /** El estado tal cual viene (`enviando` y `pendiente` se ven igual salvo cuando vencen). */
   envioCrudo: unknown;
+  /** Cuándo lo reclamó el flujo (ms); `null` si no consta. */
+  reclamadoEn: number | null;
   /** Si fue rechazado: el código de Meta o del relé (texto), y los segundos de espera si el servidor los manda. */
   codigoEnvio: string;
   esperaSegundos: unknown;
@@ -84,6 +86,8 @@ function aMensaje(d: QueryDocumentSnapshot): Msg {
     autorUid: typeof x['autorUid'] === 'string' ? x['autorUid'].slice(0, 128) : '',
     estadoEnvio: x['autor'] === 'persona' ? estadoDeMensaje(x['estadoEnvio']) : null,
     envioCrudo: x['autor'] === 'persona' ? x['estadoEnvio'] : null,
+    reclamadoEn: typeof (x['reclamadoEn'] as { toMillis?: unknown } | undefined)?.toMillis === 'function'
+      ? (x['reclamadoEn'] as { toMillis: () => number }).toMillis() : null,
     codigoEnvio: typeof x['codigoEnvio'] === 'string' ? x['codigoEnvio'].slice(0, 20) : '',
     esperaSegundos: x['esperaSegundos'],
     ts: ts?.toMillis ? ts.toMillis() : 0,
@@ -387,7 +391,7 @@ export function DetalleConversacion(p: PropsDetalle) {
             // El de una persona lleva su uid ABREVIADO («usted» si es el de quien mira), nunca entero.
             const rotuloAutor = x.direccion === 'saliente' ? rotuloDeAutor(x.autor, x.autorUid, p.miUid) : '';
             const esPersona = x.direccion === 'saliente' && x.autor === 'persona';
-            const vencido = vencidoDeEnvio(x.envioCrudo, x.ts, p.ahora);
+            const vencido = vencidoDeEnvio(x.envioCrudo, x.ts, p.ahora, x.reclamadoEn);
             return (
               <li key={x.id} className="cv-fila">
                 {nuevoDia && x.ts > 0 && <div className="cv-dia"><span>{etiquetaDia(x.ts, p.ahora)}</span></div>}

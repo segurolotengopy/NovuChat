@@ -253,22 +253,35 @@ export function estadoDeMensaje(v: unknown): EstadoMensajePersona | null {
  * `core/conversacion/salidaPersona.ts`; una prueba exige que sean iguales, porque ese archivo no se puede importar en el navegador).
  */
 export const PENDIENTE_CADUCA_MS = 2 * 60_000;
+/** Un `enviando` se da por `incierto` a los 2 min de `reclamadoEn` (`ENVIANDO_MAXIMO_MS` del servidor; una prueba exige que sean iguales). */
+export const ENVIANDO_CADUCA_MS = 2 * 60_000;
 /** Sin «puede reintentar»: la pantalla no tiene botón de reintento, y solo se ofrece lo que se cumple. */
-export const TEXTO_CADUCADO = 'No se envió a tiempo.';
+export const TEXTO_CADUCADO = 'No se envió a tiempo';
 
 /** Qué estado crudo venció: `pendiente` (nunca reclamado: seguro no salió) o `enviando` (el servidor lo da por `incierto`: pudo llegar). */
 export type VencidoDeEnvio = 'pendiente' | 'enviando' | null;
 
 /**
- * ¿Un mensaje lleva demasiado esperando? Se DERIVA de la hora del mensaje (`ts`, en milisegundos; 0 o ausente = sin dato)
- * y del reloj de la pantalla, sin escribir nada: la caducidad real la escribe el servidor solo cuando el flujo reclama,
- * y si el flujo está apagado nunca llegaría. Recibe el estado CRUDO porque `estadoDeMensaje` junta `enviando` y `pendiente`.
- * Sin hora no se inventa nada; los demás estados no se afectan.
+ * ¿Un mensaje lleva demasiado esperando? Se DERIVA de relojes y marcas, sin escribir nada: la caducidad real la escribe el
+ * servidor solo cuando el flujo reclama, y si el flujo está apagado nunca llegaría. Recibe el estado CRUDO porque
+ * `estadoDeMensaje` junta `enviando` y `pendiente`. Cada uno se mide como lo mide el servidor:
+ *  · `pendiente`: desde la creación (`ts`) + `PENDIENTE_CADUCA_MS`.
+ *  · `enviando`: desde `reclamadoEn` (cuándo lo tomó el flujo) + `ENVIANDO_CADUCA_MS`; sin `reclamadoEn` no se inventa nada.
+ * Sin hora legible no se afecta; los demás estados tampoco.
+ *
+ * LÍMITE CONOCIDO: el reloj es el del navegador. Uno adelantado 2 min o más puede mostrar «No se envió a tiempo.» de un
+ * `pendiente` reciente hasta que llegue el siguiente snapshot. No hay arreglo barato (la consola no calcula el reloj del servidor).
  */
-export function vencidoDeEnvio(estadoCrudo: unknown, ts: number, ahora: number): VencidoDeEnvio {
-  if (estadoCrudo !== 'pendiente' && estadoCrudo !== 'enviando') return null;
-  if (!Number.isFinite(ts) || ts <= 0 || !Number.isFinite(ahora) || ahora - ts <= PENDIENTE_CADUCA_MS) return null;
-  return estadoCrudo;
+export function vencidoDeEnvio(estadoCrudo: unknown, ts: number, ahora: number, reclamadoEn: number | null = null): VencidoDeEnvio {
+  if (!Number.isFinite(ahora)) return null;
+  if (estadoCrudo === 'pendiente') {
+    return Number.isFinite(ts) && ts > 0 && ahora - ts > PENDIENTE_CADUCA_MS ? 'pendiente' : null;
+  }
+  if (estadoCrudo === 'enviando') {
+    return reclamadoEn !== null && Number.isFinite(reclamadoEn) && reclamadoEn > 0 && ahora - reclamadoEn >= ENVIANDO_CADUCA_MS
+      ? 'enviando' : null;
+  }
+  return null;
 }
 
 /**
