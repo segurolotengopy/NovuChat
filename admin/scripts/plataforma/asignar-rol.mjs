@@ -43,6 +43,7 @@
  * seco terminó bien), 1 si no pudo, 2 si la llamada está mal.
  */
 import { randomBytes } from 'node:crypto';
+import { rechazoPorTitular } from './titular-cuenta.mjs';
 import {
   ID_CLIENTE, clienteDeTenant, comprobarDestino, guardarEnlaceDeContrasena, raizDelProyecto,
 } from './enlace-privado.mjs';
@@ -105,6 +106,17 @@ if (!ficha.exists) {
 }
 console.log(`  Negocio  : ${ficha.get('nombre') ?? '(sin nombre)'} · estado ${ficha.get('estado') ?? '?'}\n`);
 
+// EL TITULAR DE LA CUENTA NO SE QUITA NI SE DEGRADA DESDE ACÁ (decisión de Andres, 17/10/2026):
+// solo NovuChat lo cambia, con `fijar-titular.mjs`. Se comprueba antes del seco para que
+// el seco ya lo diga. Dar `admin` a quien es titular no cambia nada y se permite.
+if (QUITAR || ROL === 'oper') {
+  const rechazo = await rechazoPorTitular({ db, tenant: TENANT, correo: CORREO, accion: QUITAR ? 'quitar' : 'oper' });
+  if (rechazo) {
+    console.error(`  ✗ ${rechazo}\n`);
+    process.exit(1);
+  }
+}
+
 // Dónde iría el enlace si la cuenta hay que crearla. Solo se sabe con --aplicar
 // (hay que preguntarle a Auth), así que acá se informa y abajo se exige.
 const ENLACE = QUITAR ? null : { raiz: raizDelProyecto(), cliente: CLIENTE, nombre: `enlace-${ROL}-${TENANT}` };
@@ -128,6 +140,11 @@ const existente = await auth.getUserByEmail(CORREO).catch(() => null);
 if (QUITAR) {
   if (!existente) {
     console.error('  ✗ No hay ninguna cuenta con ese correo: no hay nada que quitar.\n');
+    process.exit(1);
+  }
+  const rechazoUid = await rechazoPorTitular({ db, tenant: TENANT, correo: CORREO, uidAuth: existente.uid, accion: 'quitar' });
+  if (rechazoUid) {
+    console.error(`  ✗ ${rechazoUid}\n`);
     process.exit(1);
   }
   const previo = (existente.customClaims ?? {}).nc ?? {};
@@ -157,6 +174,13 @@ if (!existente && !destino.existe) {
   console.error(`  ✗ No existe CLIENTES/${CLIENTE}/ en la copia principal, y ahí va el enlace de contraseña.`);
   console.error('    Indique la carpeta con --cliente. No se escribió nada.\n');
   process.exit(1);
+}
+if (existente && ROL === 'oper') {
+  const rechazoUid = await rechazoPorTitular({ db, tenant: TENANT, correo: CORREO, uidAuth: existente.uid, accion: 'oper' });
+  if (rechazoUid) {
+    console.error(`  ✗ ${rechazoUid}\n`);
+    process.exit(1);
+  }
 }
 let usuario = existente;
 if (!usuario) {

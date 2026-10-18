@@ -119,6 +119,9 @@ export const altaTenant = onCall(async (peticion) => {
     // trámites en Meta que no se pueden hacer en la misma transacción.
     waPhoneNumberId: null, waWabaId: null,
     creadoEn: Timestamp.now(), creadoPor: uid,
+    // El titular de la cuenta es el administrador inicial; solo NovuChat lo cambia
+    // (`scripts/plataforma/fijar-titular.mjs`). No es la «titularidad» del número.
+    titularCuentaUid: usuarioAdmin.uid, titularCuentaEn: Timestamp.now(), titularCuentaPor: 'alta-tenant',
   });
   lote.create(db().doc(`tenants/${tenantId}/config/negocio`), {
     nombreNegocio: nombre,

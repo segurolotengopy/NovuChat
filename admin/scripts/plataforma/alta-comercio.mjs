@@ -141,6 +141,8 @@ lote.create(db.doc(`tenants/${TENANT}`), {
   nombre: NOMBRE, estado: 'activo', plan: cuenta.plan,
   vertical: FLUJOS[0], flujos: FLUJOS,
   waPhoneNumberId: null, waWabaId: null, ...sello,
+  // El titular de la cuenta (no la «titularidad» del número): el administrador inicial. Solo NovuChat lo cambia (`fijar-titular.mjs`).
+  titularCuentaUid: usuario.uid, titularCuentaEn: sello.creadoEn, titularCuentaPor: 'alta-comercio',
 });
 lote.create(db.doc(`tenants/${TENANT}/cuenta/estado`), {
   ...cuenta, actualizadoEn: Timestamp.now(),
