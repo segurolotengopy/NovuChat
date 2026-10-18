@@ -56,10 +56,10 @@ const suite = HAY_AUTH ? describe : describe.skip;
 
 suite('quitarUsuario con un destino que no es miembro del tenant', () => {
   beforeAll(async () => {
-    for (const u of ['adminA', 'miembroA', 'soloB', 'nadie', 'propietario', 'ingestaB']) await crear(u);
+    for (const u of ['qu-adminA', 'qu-miembroA', 'qu-soloB', 'qu-nadie', 'qu-propietario', 'qu-ingestaB']) await crear(u);
     // La ingesta es una identidad de servicio: sin ningún método interactivo.
-    await getAuth().deleteUser('ingestaB');
-    await getAuth().createUser({ uid: 'ingestaB' });
+    await getAuth().deleteUser('qu-ingestaB');
+    await getAuth().createUser({ uid: 'qu-ingestaB' });
   });
 
   async function sembrar(): Promise<void> {
@@ -68,23 +68,23 @@ suite('quitarUsuario con un destino que no es miembro del tenant', () => {
       for (const d of (await db.collection(`tenants/${t}/miembros`).get()).docs) await d.ref.delete();
     }
     // Se reinician los claims de todos para que cada caso parta igual.
-    for (const u of ['adminA', 'miembroA', 'soloB', 'nadie', 'propietario', 'ingestaB']) {
+    for (const u of ['qu-adminA', 'qu-miembroA', 'qu-soloB', 'qu-nadie', 'qu-propietario', 'qu-ingestaB']) {
       await getAuth().setCustomUserClaims(u, null);
     }
-    await asignarRol('adminA', A, 'admin');
-    await asignarRol('miembroA', A, 'oper');
-    await asignarRol('soloB', B, 'oper');
-    await getAuth().setCustomUserClaims('propietario', { nc: { p: true, t: { [B]: 'admin' }, v: 7 } });
-    await getAuth().setCustomUserClaims('ingestaB', { nc: { t: { [B]: 'ingesta' }, v: 3 } });
-    await db.doc(`tenants/${A}/miembros/adminA`).set({ rol: 'admin' });
-    await db.doc(`tenants/${A}/miembros/miembroA`).set({ rol: 'oper' });
-    await db.doc(`tenants/${B}/miembros/soloB`).set({ rol: 'oper' });
+    await asignarRol('qu-adminA', A, 'admin');
+    await asignarRol('qu-miembroA', A, 'oper');
+    await asignarRol('qu-soloB', B, 'oper');
+    await getAuth().setCustomUserClaims('qu-propietario', { nc: { p: true, t: { [B]: 'admin' }, v: 7 } });
+    await getAuth().setCustomUserClaims('qu-ingestaB', { nc: { t: { [B]: 'ingesta' }, v: 3 } });
+    await db.doc(`tenants/${A}/miembros/qu-adminA`).set({ rol: 'admin' });
+    await db.doc(`tenants/${A}/miembros/qu-miembroA`).set({ rol: 'oper' });
+    await db.doc(`tenants/${B}/miembros/qu-soloB`).set({ rol: 'oper' });
     // tokensValidAfterTime tiene resolución de segundos: se espera para que
     // una revocación se distinga de la creación.
     await espera(1100);
   }
 
-  const NO_MIEMBROS = ['soloB', 'nadie', 'propietario', 'ingestaB'];
+  const NO_MIEMBROS = ['qu-soloB', 'qu-nadie', 'qu-propietario', 'qu-ingestaB'];
 
   it('un destino que no es miembro de A se rechaza con not-found y no se toca nada (usuario de B, sin rol, propietario, ingesta)', async () => {
     await sembrar();
@@ -92,7 +92,7 @@ suite('quitarUsuario con un destino que no es miembro del tenant', () => {
     for (const u of NO_MIEMBROS) antes[u] = { validoDesde: await validoDesde(u), claims: await claimsDe(u) };
 
     for (const u of NO_MIEMBROS) {
-      await expect(quitar({ tenantId: A, uid: u }, await sesionDe('adminA')))
+      await expect(quitar({ tenantId: A, uid: u }, await sesionDe('qu-adminA')))
         .rejects.toMatchObject({ code: 'not-found' });
       expect(await validoDesde(u)).toBe(antes[u]!.validoDesde); // sesiones intactas
       expect(await claimsDe(u)).toEqual(antes[u]!.claims); // claims y nc.v intactos
@@ -101,25 +101,39 @@ suite('quitarUsuario con un destino que no es miembro del tenant', () => {
     expect(await auditoriaDe(B)).toHaveLength(0);
   });
 
+  it('un uid con forma inválida (barras, "..", espacios, vacío) se rechaza con invalid-argument y no toca nada', async () => {
+    await sembrar();
+    const antes = { validoDesde: await validoDesde('qu-miembroA'), claims: await claimsDe('qu-miembroA') };
+    for (const uid of ['x/y/z', '..', 'a b', '', `tenants/${B}/miembros/qu-soloB`]) {
+      await expect(quitar({ tenantId: A, uid }, await sesionDe('qu-adminA')))
+        .rejects.toMatchObject({ code: 'invalid-argument' });
+    }
+    expect(await validoDesde('qu-miembroA')).toBe(antes.validoDesde);
+    expect(await claimsDe('qu-miembroA')).toEqual(antes.claims);
+    expect((await db.doc(`tenants/${A}/miembros/qu-miembroA`).get()).exists).toBe(true);
+    expect((await db.doc(`tenants/${B}/miembros/qu-soloB`).get()).exists).toBe(true);
+    expect(await auditoriaDe(A)).toHaveLength(0);
+  });
+
   // ---- Control positivo: lo legítimo sigue funcionando. ----
   it('CONTROL: quitar a un miembro real de A borra su ficha, su rol en A, revoca sus sesiones y audita', async () => {
     await sembrar();
-    const antes = await validoDesde('miembroA');
+    const antes = await validoDesde('qu-miembroA');
 
-    expect(await quitar({ tenantId: A, uid: 'miembroA' }, await sesionDe('adminA'))).toEqual({ ok: true });
+    expect(await quitar({ tenantId: A, uid: 'qu-miembroA' }, await sesionDe('qu-adminA'))).toEqual({ ok: true });
 
-    expect((await db.doc(`tenants/${A}/miembros/miembroA`).get()).exists).toBe(false);
-    expect((await claimsDe('miembroA'))?.t).toEqual({});
-    expect(await validoDesde('miembroA')).not.toBe(antes);
-    expect(await auditoriaDe(A)).toEqual([expect.objectContaining({ destino: 'miembroA' })]);
+    expect((await db.doc(`tenants/${A}/miembros/qu-miembroA`).get()).exists).toBe(false);
+    expect((await claimsDe('qu-miembroA'))?.t).toEqual({});
+    expect(await validoDesde('qu-miembroA')).not.toBe(antes);
+    expect(await auditoriaDe(A)).toEqual([expect.objectContaining({ destino: 'qu-miembroA' })]);
   });
 
   it('CONTROL: el admin de B no puede usar su rol sobre A; un oper de A tampoco', async () => {
     await sembrar();
-    await asignarRol('soloB', B, 'admin');
-    await expect(quitar({ tenantId: A, uid: 'miembroA' }, await sesionDe('soloB')))
+    await asignarRol('qu-soloB', B, 'admin');
+    await expect(quitar({ tenantId: A, uid: 'qu-miembroA' }, await sesionDe('qu-soloB')))
       .rejects.toMatchObject({ code: 'permission-denied' });
-    await expect(quitar({ tenantId: A, uid: 'adminA' }, await sesionDe('miembroA')))
+    await expect(quitar({ tenantId: A, uid: 'qu-adminA' }, await sesionDe('qu-miembroA')))
       .rejects.toMatchObject({ code: 'permission-denied' });
   });
 });
