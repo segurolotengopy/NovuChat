@@ -188,7 +188,10 @@ Las tomó el autor de PR-1 donde el plan no precisaba; quedan **decididas** y, d
 el §2 a §5 dicen otra cosa, mandan estas.
 
 **Petición**
-- Todos los tiempos van en milisegundos.
+- El campo `venceEnMin` de la petición sigue en **minutos** (1..4320). Los
+  milisegundos son solo el interior del núcleo (`desde`, `vence`, `actualizadoEn`,
+  `ahoraMs` y los cálculos de período, como números epoch ms); el servidor calcula
+  `vence` con `venceEnMin * 60_000`.
 - `ejecucion` es obligatoria en todas las acciones.
 - `leer` rechaza `idCompromiso`, `estado`, `venceEnMin` y `cupos`;
   `comprometer` y `asentar` rechazan `idMensaje`.
