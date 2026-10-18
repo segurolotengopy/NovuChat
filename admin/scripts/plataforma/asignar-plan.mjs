@@ -69,6 +69,15 @@
  *                               BOLSA_PRUEBA_MAXIMA → `bolsaPrueba`. Solo con
  *                               modalidad prueba. Extender la prueba NO la
  *                               reinicia: si hace falta, se pide.
+ *   --tarifa <t>                estandar | meta_incluido → `tarifa` de la cuenta, con la
+ *                               auditoría `cambiar_tarifa`. Un valor inválido sale con 2 antes
+ *                               de leer la nube. Sola, escribe SOLO el campo: la copia
+ *                               `limites` no se reescribe. Con `--plan`, la copia del plan se
+ *                               calcula con esta tarifa. Sin ella, rige la de la cuenta
+ *                               (`tarifaDe`; sin campo, meta_incluido). Para varios comercios
+ *                               a la vez: `migrar-tarifa.mjs`. Un comercio con clientes en
+ *                               producción solo se nombra con el «sí» de Andres (la salida de
+ *                               `--aplicar` lo recuerda).
  *   --operador <correo>         OBLIGATORIO: quien queda en la auditoría
  *                               (`uid`, `titularidadPor`, `origen: 'script'`),
  *                               no el nombre del script (LOW-3 de #207).
@@ -123,6 +132,7 @@ const CONVERSACIONES = opcion('conversaciones');
 const PRECIO = opcion('precio');
 const PERIODO_PRUEBA = opcion('periodo-prueba');
 const BOLSA_PRUEBA = opcion('bolsa-prueba');
+const TARIFA = opcion('tarifa');
 const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
 
 // --- los módulos del servidor, sin compilar ---------------------------------
@@ -165,6 +175,9 @@ if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: 
 if (!ID_TENANT.test(TENANT)) problemas.push('--tenant inválido (minúsculas, guiones, 3 a 60)');
 if (PLAN !== null && !esIdPlan(PLAN)) {
   problemas.push(`--plan desconocido: ${PLAN || '(vacío)'}. Del catálogo: ${Object.keys(PLANES).join(', ')}`);
+}
+if (TARIFA !== null && !esTarifa(TARIFA)) {
+  problemas.push(`--tarifa desconocida: ${TARIFA || '(vacía)'}. Una de: estandar, meta_incluido`);
 }
 if (MODALIDAD !== null && !esModalidad(MODALIDAD)) {
   problemas.push(`--modalidad desconocida: ${MODALIDAD || '(vacía)'}. Una de: ${MODALIDADES.join(', ')}`);
@@ -219,18 +232,18 @@ if (BOLSA_PRUEBA !== null) {
 }
 const pideAlgoDePrueba = MODALIDAD !== null || PERIODO_PRUEBA !== null || BOLSA_PRUEBA !== null;
 const pideAlgo = PLAN !== null || MODALIDAD !== null || MODELO !== null || TITULARIDAD !== null || CAMBIOS !== null
-  || CONVERSACIONES !== null || PRECIO !== null || PERIODO_PRUEBA !== null || BOLSA_PRUEBA !== null
+  || CONVERSACIONES !== null || PRECIO !== null || PERIODO_PRUEBA !== null || BOLSA_PRUEBA !== null || TARIFA !== null
   || Object.keys(umbrales).length > 0;
 if (!pideAlgo) {
   problemas.push('nada que asignar: --plan, --modalidad, --modelo, --titularidad/--numero, --cambios, --conversaciones, '
-    + '--precio, --periodo-prueba, --bolsa-prueba o --umbral-*');
+    + '--precio, --periodo-prueba, --bolsa-prueba, --tarifa o --umbral-*');
 }
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
   console.error('\n  node scripts/plataforma/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <id> [--plan <plan>] [--modalidad <m>]');
   console.error('      [--modelo <id>] [--titularidad <t> --numero <phone_number_id>] [--umbral-operador N --umbral-bloqueo M]');
   console.error('      [--cambios <N|plan>] [--conversaciones <N|plan>] [--precio <USD|plan>]');
-  console.error('      [--periodo-prueba <aaaa-mm>] [--bolsa-prueba <N>] [--aplicar]\n');
+  console.error('      [--periodo-prueba <aaaa-mm>] [--bolsa-prueba <N>] [--tarifa <estandar|meta_incluido>] [--aplicar]\n');
   process.exit(2);
 }
 
@@ -254,9 +267,9 @@ const refRuta = NUMERO ? db.doc(`rutasWhatsApp/${NUMERO}`) : null;
 // `tarifaDe`). Es informativo: lo que se escribe lo decide la transacción, con la
 // cuenta leída dentro de ella.
 const cuentaPrevia = PLAN ? (await refCuenta.get()).data() ?? {} : {};
-const tarifaPrevia = tarifaDe(cuentaPrevia);
+const tarifaPrevia = TARIFA ?? tarifaDe(cuentaPrevia);
 const limites = PLAN ? limitesDe(PLAN, tarifaPrevia) : null;
-const tarifaTexto = esTarifa(cuentaPrevia.tarifa) ? `tarifa ${tarifaPrevia}` : `sin campo de tarifa: rige ${tarifaPrevia}`;
+const tarifaTexto = TARIFA ? `tarifa ${TARIFA} (se fija ahora)` : esTarifa(cuentaPrevia.tarifa) ? `tarifa ${tarifaPrevia}` : `sin campo de tarifa: rige ${tarifaPrevia}`;
 const texto = (l) => (l && typeof l === 'object'
   ? `${l.conversaciones ?? '?'} conversaciones · ${l.productos ?? '?'} productos · ${l.agendas ?? '?'} agendas`
     + ` · ${l.cambiosIncluidos ?? '?'} cambios/mes`
@@ -269,6 +282,9 @@ const paraAuditoria = (v) => (v instanceof FieldValue ? null : v instanceof Time
 
 console.log(`\n  Negocio   : ${TENANT}`);
 if (PLAN) console.log(`  Plan      : ${PLAN} (${PLANES[PLAN].nombre}, USD ${PLANES[PLAN].precioUsd}) · ${texto(limites)} · ${tarifaTexto} · catálogo ${CATALOGO_PLANES}`);
+if (TARIFA) {
+  console.log(`  Tarifa    : ${TARIFA}${PLAN ? ' (la copia de límites del plan se calcula con ella)' : ' (la copia de límites NO se reescribe: con --plan se recalcula)'}`);
+}
 if (MODALIDAD) console.log(`  Modalidad : ${MODALIDAD}`);
 if (MODELO) console.log(`  Modelo    : ${MODELO}`);
 if (TITULARIDAD) console.log(`  Número    : ${cola(NUMERO)} → titularidad ${TITULARIDAD}`);
@@ -347,7 +363,7 @@ try {
     }
     // Un valor o un precio por contrato sin cuenta ni plan dejaría una cuenta
     // parcial, con una copia de una sola clave y sin plan (LOW-4 de #207).
-    if ((pideCopiaPorContrato || precioPedido !== undefined) && !PLAN && !cuenta.exists) {
+    if ((pideCopiaPorContrato || precioPedido !== undefined || TARIFA !== null) && !PLAN && !cuenta.exists) {
       resumen = { error: `«${TENANT}» no tiene cuenta: primero --plan.` };
       return;
     }
@@ -358,7 +374,7 @@ try {
     // callable y el pago de otro plan.
     const escritura = {};
     const copia = PLAN || pideCopiaPorContrato
-      ? copiaDeLimites(actual, { ...(PLAN ? { plan: PLAN } : {}), ...valoresPedidos })
+      ? copiaDeLimites(actual, { ...(PLAN ? { plan: PLAN } : {}), ...(TARIFA ? { tarifa: TARIFA } : {}), ...valoresPedidos })
       : null;
     const marcadorCambia = Boolean(copia) && !mismoMarcador(actual, copia.porContrato);
     const copiaCambia = Boolean(copia) && (marcadorCambia || !(actual.limites && typeof actual.limites === 'object'
@@ -389,6 +405,10 @@ try {
     if (precioCambia) escritura.precioPorContrato = precioPedido === null ? FieldValue.delete() : precioPedido;
     else if (precioRotoSeLimpia) escritura.precioPorContrato = FieldValue.delete();
 
+    // LA TARIFA: solo el campo. La copia `limites` no se reescribe por esto; si viene con --plan, la copia
+    // del plan ya se calculó con esta tarifa (arriba).
+    const tarifaCambia = TARIFA !== null && actual.tarifa !== TARIFA;
+    if (tarifaCambia) escritura.tarifa = TARIFA;
     if (MODALIDAD && actual.modalidad !== MODALIDAD) escritura.modalidad = MODALIDAD;
     // LA PRUEBA: la decide `pruebaNueva` (`prepago.ts`), la misma función que
     // la callable, con la modalidad que queda.
@@ -506,6 +526,9 @@ try {
         plan: PLAN ?? actual.plan ?? null, delPlan: copia.delPlan[clave],
       });
     }
+    if (tarifaCambia) {
+      auditar({ accion: 'cambiar_tarifa', antes: { tarifa: actual.tarifa ?? null, rige: tarifaDe(actual) }, despues: { tarifa: TARIFA } });
+    }
     if (precioCambia) {
       auditar({
         accion: 'precio_por_contrato',
@@ -523,7 +546,7 @@ try {
     const otros = Object.keys(escritura)
       .filter((k) => ![
         'plan', 'limites', 'limitesPorContrato', 'catalogoPlanes', 'precioPorContrato', 'actualizadoEn',
-        'estadoPago', 'montoMensual', 'moneda', 'proximoVencimiento',
+        'estadoPago', 'montoMensual', 'moneda', 'proximoVencimiento', 'tarifa',
       ].includes(k))
       .sort();
     if (otros.length) {
@@ -557,6 +580,10 @@ if (resumen.derivados) console.log(`  Derivados : ${JSON.stringify(resumen.deriv
 // LO QUE PASA CON EL CONTRATO, dicho en el seco y en el aplicado: un cambio de
 // plan que conserva un valor por contrato lo anuncia, y uno que lo fija o lo
 // quita dice el antes y el después.
+if (TARIFA && !PLAN && esIdPlan(a.plan) && a.limites && a.limites.conversaciones !== limitesDe(a.plan, TARIFA).conversaciones) {
+  console.log(`  ⚠ Copia    : la copia de límites (${a.limites.conversaciones} conversaciones) queda DESALINEADA con la tarifa ${TARIFA}`
+    + ` (el plan ${a.plan} trae ${limitesDe(a.plan, TARIFA).conversaciones}). Quien hace cumplir lee la copia. Para alinearla: --plan ${a.plan} --tarifa ${TARIFA}.`);
+}
 const q = resumen.queda;
 if (q) {
   for (const [k, v] of Object.entries(q.conservados)) {
@@ -591,6 +618,8 @@ if (!APLICAR) {
   process.exit(0);
 }
 
+console.log('\n  Recordatorio: un comercio con clientes en producción solo se nombra con el «sí» de Andres.');
+
 // --- verificación por relectura ---------------------------------------------
 const [cuenta, ficha, ruta] = await Promise.all([refCuenta.get(), refFicha.get(), refRuta ? refRuta.get() : null]);
 const leida = cuenta.data() ?? {};
@@ -603,13 +632,14 @@ const esperada = resumen.queda;
 const okCopia = !esperada || (['conversaciones', 'productos', 'agendas', 'cambiosIncluidos'].every((k) => copia[k] === esperada.limites[k])
   && mismoMarcador(leida, esperada.porContrato));
 const okPlan = !PLAN || (leida.plan === PLAN && ficha.get('plan') === PLAN && leida.catalogoPlanes === CATALOGO_PLANES);
+const okTarifa = !TARIFA || leida.tarifa === TARIFA;
 const okModalidad = !MODALIDAD || leida.modalidad === MODALIDAD;
 const okModelo = !MODELO || ficha.get('modelo') === MODELO;
 const okTitularidad = !TITULARIDAD || ruta?.get('titularidad') === TITULARIDAD;
 const okUmbrales = Object.entries(umbrales).every(([k, v]) => leida[k] === v);
 const okPrecio = precioPedido === undefined || precioPorContratoDe(leida) === precioPedido;
 const okPrueba = !resumen.prueba || JSON.stringify(pruebaActual(leida)) === JSON.stringify(resumen.prueba);
-const ok = okPlan && okCopia && okModalidad && okModelo && okTitularidad && okUmbrales && okPrecio && okPrueba;
+const ok = okTarifa && okPlan && okCopia && okModalidad && okModelo && okTitularidad && okUmbrales && okPrecio && okPrueba;
 const marcadorLeido = porContratoDe(leida);
 const precioLeido = precioPorContratoDe(leida);
 console.log(`\n  ${ok ? '✓' : '✗'} Verificación: plan ${leida.plan} · espejo ${ficha.get('plan')} · ${texto(copia)}`

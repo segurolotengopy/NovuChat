@@ -1,4 +1,4 @@
-import { fechaCorta, type Corte, type EstadoServicio } from '../lib/prepago';
+import { VENTA_BOLSA_SALIENTES, fechaCorta, type Corte, type EstadoServicio } from '../lib/prepago';
 import { mesEscrito } from '../lib/pagar';
 
 /**
@@ -21,9 +21,11 @@ import { mesEscrito } from '../lib/pagar';
  * fueron atendidos. Es el número que mueve a pagar —son clientes suyos, no una
  * deuda nuestra— y por eso va acá y en los recordatorios.
  */
-export function ResumenPrepago({ servicio, corte }: {
+export function ResumenPrepago({ servicio, corte, bolsaSalientes = 0 }: {
   servicio: EstadoServicio;
   corte: Corte | null;
+  /** Saldo de la bolsa de seguimiento (`cuenta/estado.bolsaSalientes`). No se muestra mientras no se venda. */
+  bolsaSalientes?: number;
 }) {
   const corteVisible = corte && corte.aplicado ? corte : null;
   return (
@@ -58,6 +60,12 @@ export function ResumenPrepago({ servicio, corte }: {
               {Number.isFinite(servicio.disponibles) && <> · quedan <strong>{servicio.disponibles}</strong></>}
             </td>
           </tr>
+          {VENTA_BOLSA_SALIENTES && bolsaSalientes > 0 && (
+            <tr>
+              <th>Mensajes de seguimiento</th>
+              <td>{bolsaSalientes} en bolsas</td>
+            </tr>
+          )}
           {corteVisible && corteVisible.perdidas > 0 && (
             <tr>
               <th>Clientes sin atender</th>

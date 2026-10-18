@@ -90,7 +90,8 @@ del proyecto de producción. Lo que hay:
     falta alguno. Hoy la cuenta de las Functions tiene acceso a los 23.
   - Se otorga **una sola vez, con una condición de IAM**:
     `resource.name.startsWith("projects/<número>/secrets/INGESTA_") ||
-    resource.name.startsWith("projects/<número>/secrets/GEMINI_API_KEY")`. Así
+    resource.name.startsWith("projects/<número>/secrets/GEMINI_API_KEY")`, más
+    las cláusulas `COBRADOR_` y `SALIDA_PERSONA_` (ver abajo). Así
     los secretos nuevos de la reserva quedan cubiertos solos. **La lista de
     secretos se saca del manifiesto de las Functions, nunca de una búsqueda**:
     el 12/09 una búsqueda que no aceptaba dígitos dejó 20 de los 23 afuera, y
@@ -137,6 +138,51 @@ del proyecto de producción. Lo que hay:
     incluya, porque fallaría en el paso de secretos. Mientras el cobrador no
     tenga URL pública (bloque 4 de C), las pruebas corren contra el doble
     `admin/pruebas/dobles/cobrador.ts`.
+  - **El secreto del timbre de la salida de persona** (H2-3, 17/10/2026;
+    `admin/functions/src/core/conversacion/salidaPersona.ts`): `SALIDA_PERSONA_RUTAS`,
+    un JSON `{alias: {ruta, clave}}` con la URL de capacidad del webhook «Salida de
+    persona» de cada número. **Tampoco cae en la condición de IAM original**: a los
+    tres prefijos (`INGESTA_`, `GEMINI_API_KEY`, `COBRADOR_`) se suma un cuarto,
+    `SALIDA_PERSONA_`, **exacto y sin comodines**. Sin él, ni con el secreto creado, la
+    cuenta de despliegue puede leer sus metadatos, y `firebase deploy` falla con *«403
+    secretmanager.secrets.get denied (or it may not exist)»* (staging, desde #510).
+    Antes de la primera etiqueta que lo incluya, **un solo script, en seco y luego con
+    `--aplicar`**: `scripts/nube-salida-persona.sh` (1: amplía EN SU LUGAR la condición
+    con `set-iam-policy` y el etag leído, con respaldo de la política anterior;
+    2: crea el secreto con el valor `{}`, que es un JSON válido sin ningún alias, es
+    decir, **ningún timbre**: el código devuelve `null` y no toca nada; 3: `secretAccessor`
+    para `sa-functions`). Cargar un alias real es otro paso, posterior y solo para el
+    ensayo: `--agregar-alias <alias>` (genera ruta y clave, las fusiona en una versión
+    nueva sin imprimirlas, y las entrega en un archivo de modo 600 en `$XDG_RUNTIME_DIR`);
+    `--quitar-alias` lo deshace. **Una versión agregada después de desplegar no la ve
+    ninguna instancia hasta el próximo despliegue** (firebase-tools fija el número de
+    versión; ver `docs/produccion/rotar-secreto-ingesta.md` §1.1). La vuelta atrás de la
+    condición es `--revertir-iam`. **`--aplicar` exige además `GCP_PROJECT_ID_PROD` en
+    el entorno, igual al proyecto de las credenciales** (como `nube-visor.sh`), y relee al
+    final política, secreto y acceso para confirmar lo escrito. Los temporales (y, con
+    cambio de IAM, el respaldo de la política anterior) van a un directorio de modo 700;
+    el respaldo NO se borra solo: el operador lo borra a mano cuando la comprobación sale en ✓.
+    **Reglas del alias, sin excepción:** (a) NINGÚN agente ni persona lee el archivo de
+    entrega (ni `cat` ni la herramienta de lectura): contiene la URL de capacidad y la
+    clave; (b) **`--agregar-alias --aplicar` NO se corre** hasta que exista un consumidor
+    revisado, `scripts/cargar-timbre-n8n.sh` (H2-F2; procedimiento en `docs/ensayo/LEEME.md`
+    §8), que carga por la API de n8n la credencial Header Auth (nombre `Authorization`,
+    valor `Bearer <clave>`) y el `path` del webhook sin imprimirlos, y borra el archivo
+    solo si todo salió bien. Cuando se corra, el orden es: `--agregar-alias --aplicar`,
+    luego `cargar-timbre-n8n.sh --aplicar` en la misma sesión (la entrega no se deja
+    pendiente). **Antes de cargar el timbre** deben existir en n8n, por nombre y tipo
+    exactos, las tres credenciales que el flujo exige y que ningún otro script crea:
+    `cargar-timbre-n8n.sh --alias <alias> --crear-credenciales` (seco por omisión;
+    `--aplicar --confirmo produccion`) las crea sin imprimir valores: la de ingesta con el
+    secreto `INGESTA_<ALIAS>` (latest) leído de Secret Manager por tubería; la del relé
+    con un valor inerte (`Bearer INERTE-NO-ENVIAR`, decisión D2); la de WhatsApp con
+    `WA_TOKEN` y `WABA_ID` de `--env`. Se deshacen con `--quitar-credenciales` (solo
+    esas tres; antes `--quitar`). Para un alias que sale por `graph` y no usa el relé,
+    la carga lleva `--rele-inerte --canal-graph` (URL `http://relay-inerte.invalid`);
+    (c) no se corre en paralelo
+    (sin control de concurrencia: dos altas simultáneas se pisan); (d) `--quitar-alias`
+    no destruye las versiones anteriores del secreto ni borra la credencial ni el
+    webhook de n8n: eso se hace aparte. Staging: `scripts/preparar-staging.sh salida-persona`.
   - **Ampliar la reserva de clientes** (más de 20) exige un paso **a mano**:
     dar `secretAccessor` sobre cada secreto nuevo a la cuenta de las Functions,
     **`sa-functions`**, secreto por secreto.

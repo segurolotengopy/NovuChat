@@ -54,11 +54,13 @@
  *    `atencionEstado`. Actualiza `ultimoEn`, `ultimoMensaje`, `ultimoSalientePersonaEn` y
  *    `turno.actividadPersonaEn` (enviar cuenta como actividad: renueva los 30 minutos).
  *
- * EL CANAL. Exactamente UNA ruta activa con alias secreto en `rutasWhatsApp` para el comercio; si hay
- * ninguna o varias, `failed-precondition` con mensaje fijo. Con dos líneas hay que saber por cuál sale,
- * y la ingesta todavía no registra el `phoneNumberId` de cada conversación (pendiente, fuera de esta
- * zona): hasta entonces un comercio de dos líneas no puede enviar. La ruta elegida queda en el mensaje
- * (`phoneNumberId`) para que solo el flujo de ESE número lo reclame.
+ * EL CANAL (H2-3b). La conversación guarda el `phoneNumberId` de la línea por la que escribió el cliente
+ * (lo escribe la ingesta desde la ruta autenticada). Con él, sale por ESA ruta, que debe ser del mismo
+ * comercio y estar activa con alias secreto; si no corresponde a ninguna ruta activa del comercio,
+ * `failed-precondition` con mensaje fijo y sin enviar (nunca se cae a otra línea). Sin él (conversaciones
+ * anteriores a H2-3b) se mantiene lo de antes: exactamente UNA ruta activa; con ninguna o varias, el
+ * mismo rechazo. La ruta elegida queda en el mensaje (`phoneNumberId`) para que solo el flujo de ESE
+ * número lo reclame.
  *
  * CORE NO IMPORTA CENTRAL. Los topes (`limitesDePersona`), la tarifa (`tarifaDe`) y la titularidad
  * (`titularidadDe`) viven en Central y entran por inyección (`crearEnviarComoPersona(deps)`, que arma
@@ -185,6 +187,11 @@ export async function crearMensajeDePersona(
       };
     }
 
+    // 1b. LA LÍNEA. Si la conversación ya tiene `phoneNumberId` y no es el del canal elegido (la
+    //     línea cambió entre la lectura del canal y esta transacción), no se envía. Sin lecturas extra.
+    const lineaActual: unknown = conv.get('phoneNumberId');
+    if (lineaActual !== undefined && lineaActual !== canal.phoneNumberId) throw errorDeEnvio('canal');
+
     // 2. EL TURNO de ESA persona, vigente.
     const ultimoEntranteEn: unknown = conv.get('ultimoEntranteEn');
     const { veredicto, turno } = turnoEfectivo(conv.get('turno'), { ultimoEntranteEn }, ahoraMs);
@@ -266,11 +273,23 @@ const CONTROLES = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 // El id de un documento de Firestore no puede ser `__algo__` (reservado).
 const ID_RESERVADO = /^__.*__$/;
 
-/** La ruta de salida del comercio: exactamente una, activa y con alias; si no, `null`. */
-async function canalDe(db: Firestore, tenantId: string): Promise<{ canal: Canal; ruta: DocumentData } | null> {
+/**
+ * La ruta de salida del comercio, activa y con alias; si no, `null`.
+ *  - Con `phoneNumberId` (el de la conversación, que escribe la ingesta): ESA ruta, que debe ser
+ *    del mismo comercio (la búsqueda ya es por `tenantId`) y estar activa. Si no, `null`: nunca se
+ *    cae a otra línea.
+ *  - Sin él (conversaciones anteriores a H2-3b): exactamente UNA ruta activa, como antes.
+ */
+async function canalDe(
+  db: Firestore, tenantId: string, phoneNumberId?: string,
+): Promise<{ canal: Canal; ruta: DocumentData } | null> {
   const rutas = await db.collection('rutasWhatsApp').where('tenantId', '==', tenantId).get();
   const activas = rutas.docs.filter((r) => r.get('estado') === 'activo'
     && typeof r.get('aliasSecreto') === 'string' && String(r.get('aliasSecreto')).length > 0);
+  if (phoneNumberId !== undefined) {
+    const propia = activas.find((r) => r.id === phoneNumberId);
+    return propia ? { canal: { phoneNumberId: propia.id, alias: String(propia.get('aliasSecreto')) }, ruta: propia.data() } : null;
+  }
   if (activas.length !== 1) return null;
   const r = activas[0]!;
   return { canal: { phoneNumberId: r.id, alias: String(r.get('aliasSecreto')) }, ruta: r.data() };
@@ -331,7 +350,13 @@ export async function atenderEnvio(
       throw e;
     }
     // 6. El canal y los topes del plan.
-    const encontrado = await canalDe(db, t);
+    //    La línea es la de la conversación (`phoneNumberId`, escrito por la ingesta): con dos líneas
+    //    sale por la línea del último mensaje entrante del cliente. Una lectura más (la transacción la
+    //    vuelve a leer para decidir; esta solo elige el canal).
+    const lineaDe: unknown = (await db.doc(`tenants/${t}/conversaciones/${conversacionId}`).get()).get('phoneNumberId');
+    // Presente pero malformado (no es texto de 6 a 25 dígitos): rechaza, no se trata como ausente.
+    const lineaMala = lineaDe !== undefined && (typeof lineaDe !== 'string' || !/^[0-9]{6,25}$/.test(lineaDe));
+    const encontrado = lineaMala ? null : await canalDe(db, t, typeof lineaDe === 'string' ? lineaDe : undefined);
     if (!encontrado) {
       registrar(funcion, 'failed-precondition', { tenantId: t, uid, rol, motivo: 'canal' });
       throw errorDeEnvio('canal');
@@ -379,7 +404,7 @@ export async function atenderEnvio(
  * La callable. Se arma con los topes, la tarifa y la titularidad que le pasa `index.ts`: Core no importa
  * Central. Región y App Check como `tomarConversacion` (App Check solo en producción), más el secreto del
  * timbre. Agrega una Function: la etiqueta que la lleve exige rama de reversión lista, el secreto creado y
- * el invocador público (`scripts/nube-visor.sh`), todo antes de etiquetar.
+ * el invocador público (`scripts/nube-visor.sh`, que exige la etiqueta ya desplegada: va tras el despliegue de la etiqueta).
  */
 export function crearEnviarComoPersona(deps: DependenciasDeEnvio) {
   return onCall(

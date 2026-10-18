@@ -119,6 +119,9 @@ export const altaTenant = onCall(async (peticion) => {
     // trámites en Meta que no se pueden hacer en la misma transacción.
     waPhoneNumberId: null, waWabaId: null,
     creadoEn: Timestamp.now(), creadoPor: uid,
+    // El titular de la cuenta es el administrador inicial; solo NovuChat lo cambia
+    // (`scripts/plataforma/fijar-titular.mjs`). No es la «titularidad» del número.
+    titularCuentaUid: usuarioAdmin.uid, titularCuentaEn: Timestamp.now(), titularCuentaPor: 'alta-tenant',
   });
   lote.create(db().doc(`tenants/${tenantId}/config/negocio`), {
     nombreNegocio: nombre,
@@ -143,8 +146,11 @@ export const altaTenant = onCall(async (peticion) => {
   });
   await lote.commit();
 
+  // ¿La cuenta del titular ya tenía acceso a otros comercios? Se deja en la auditoría.
+  const cuentaExistente = Object.keys(((usuarioAdmin.customClaims ?? {})['nc'] as { t?: object } | undefined)?.t ?? {})
+    .some((t) => t !== tenantId);
   await asignarRol(usuarioAdmin.uid, tenantId, 'admin');
-  await auditar(tenantId, 'alta_tenant', uid, { admin: usuarioAdmin.uid });
+  await auditar(tenantId, 'alta_tenant', uid, { admin: usuarioAdmin.uid, cuentaExistente });
 
   return { tenantId };
 });

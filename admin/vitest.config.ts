@@ -36,6 +36,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
  * El CI sigue corriendo `pruebas:reglas`: los dos proyectos, con emulador.
  */
 export const SUITES_PURAS = [
+  'pruebas/core/claims-asignar-rol.test.ts',
   'pruebas/agenda-minima-flujo.test.ts',
   'pruebas/agenda-minima-lib.test.ts',
   'pruebas/agenda-minima-herramienta-actualizar.test.ts',
@@ -88,6 +89,7 @@ export const SUITES_PURAS = [
   'pruebas/core/marcador-local-reemplazar.test.ts',
   'pruebas/campanas-consola.test.ts',
   'pruebas/central/contrato-f1b-puras.test.ts',
+  'pruebas/central/prepago-bolsas.test.ts',
   'pruebas/candado-agenda.test.ts',
   'pruebas/calendario-fechas-en-el-nodo.test.ts',
   'pruebas/capacidades-comunes.test.ts',
@@ -115,6 +117,7 @@ export const SUITES_PURAS = [
   'pruebas/core/conversacion-normalizacion.test.ts',
   'pruebas/core/conversacion-derivados.test.ts',
   'pruebas/core/nube-visor.test.ts',
+  'pruebas/core/cargar-timbre-n8n.test.ts',
   'pruebas/conteo-bloques.test.ts',
   'pruebas/central/contrasena-minimo.test.ts',
   'pruebas/frontera/despliegue.test.ts',
@@ -156,6 +159,9 @@ export const SUITES_PURAS = [
   'pruebas/plataforma/region-y-cuenta.test.ts',
   'pruebas/plataforma/scripts-con-registro.test.ts',
   'pruebas/central/saneo.test.ts',
+  'pruebas/central/titular-decision.test.ts',
+  'pruebas/central/usuarios-titular-pantalla.test.ts',
+  'pruebas/central/titular-falla-cerrado.test.ts',
   'pruebas/sena-cotejo.test.ts',
   'pruebas/senas-vencidas.test.ts',
   'pruebas/umbrales-atencion.test.ts',

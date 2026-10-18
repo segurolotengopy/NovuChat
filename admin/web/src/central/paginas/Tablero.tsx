@@ -303,6 +303,8 @@ interface ResumenNegocio {
   items: number; agendas: number; estadoPago: unknown; motivoPago: unknown;
   /** Aviso del 80 % de ESTE mes, si el servidor lo marcó. Solo el administrador. */
   avisoConsumo: Aviso | null;
+  /** `cuenta/estado` crudo, para la tarifa del aviso. */
+  cuentaCruda: Record<string, unknown> | null;
 }
 
 function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boolean }) {
@@ -358,6 +360,7 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
           estadoPago: cuenta?.get('estadoPago'),
           motivoPago: cuenta?.get('motivoVisible'),
           avisoConsumo: avisoConsumoVigente(cuenta?.data()),
+          cuentaCruda: cuenta?.data() ?? null,
         });
       } catch {
         if (vivo) setError('No se pudo leer el resumen del negocio.');
@@ -376,7 +379,7 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
     {/* ARRIBA DE TODO, antes del selector: es lo único de esta pantalla que
         pide una decisión, y el comercio tiene que verlo antes de pasarse, no
         descubrirlo en la factura. */}
-    {esAdmin && datos.avisoConsumo && <AvisoConsumo aviso={datos.avisoConsumo} />}
+    {esAdmin && datos.avisoConsumo && <AvisoConsumo aviso={datos.avisoConsumo} cuenta={datos.cuentaCruda} />}
     {esAdmin && (
       <>
         <SelectorDePeriodo valor={periodo} onCambio={setPeriodo} />

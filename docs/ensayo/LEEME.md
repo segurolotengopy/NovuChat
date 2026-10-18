@@ -350,7 +350,7 @@ en seco primero y su `--aplicar` con el «sí» de Andres:
 
 | Qué | Por qué | Dónde se mira |
 |---|---|---|
-| **QR y comprobante** | La ruta del Demo A es `agendamiento`: el servidor no manda `config/venta` ni cobro | Con la línea de Q'Taco, con un QR de NovuChat e importe simbólico (prohibición 3) |
+| **QR y comprobante** | Con la ruta en `agendamiento` el servidor no manda `config/venta` ni cobro | Con `--flujo venta` (§7) y un QR de NovuChat de importe simbólico (prohibición 3), o con la línea de Q'Taco |
 | **Plantillas** | Son de la WABA de Q'Taco; aquí van vacías a propósito | Con Q'Taco, con `pedido_registrado` aprobada |
 | **Receptor y verificador** | La entrada es el Trigger del Demo A, no la entrega firmada | Con Q'Taco, en la ventana de mantenimiento |
 | **Promociones** | Las campañas del comercio `ensayo` no son las de Q'Taco | Con Q'Taco |
@@ -358,3 +358,191 @@ en seco primero y su `--aplicar` con el «sí» de Andres:
 | **Que el aviso llegue a OTRA persona** | Con un solo teléfono el aviso llega al mismo chat del cliente (el interruptor lo permite solo en el ensayo) | Con Q'Taco: el destinatario del aviso es otra persona y el propio número se descarta |
 | **«No pude pasarle…»** | Con un solo teléfono la ventana siempre está abierta | La suite |
 | **Los nombres de credencial en la instancia, la credencial del Trigger vivo y la ruta de Meta** | No se pueden probar sin n8n ni Meta reales: la suite (`venta-minima-herramienta-demo-a.test.ts`) prueba la herramienta contra un n8n de mentira | El seco real y los pasos D y 4 de arriba |
+
+## 7 · Ensayo del flujo de VENTA (QR de cobro y comprobante): `ensayo.mjs --flujo venta`
+
+El ensayo del §6 no prueba QR ni comprobante porque la ruta del Demo A dice `agendamiento` y la
+ingesta decide `config/venta` y el cobro por **`ruta.flujo`**, no por la ficha. Con
+`--flujo venta` el script cubre las dos cosas, y solo mientras dura el ensayo:
+
+- la ficha de `tenants/ensayo` queda con `vertical: venta`, `flujos: ['venta']` y **sin** lista
+  `modulos` propia (los módulos salen del registro: productos, cobros, pedidos, catálogo web…);
+- la ruta del número lleva `flujo: venta` y recuerda el valor anterior en `ensayoFlujoDe`;
+  `--restaurar` lo devuelve junto con `tenantId`;
+- se vacían, **solo bajo `tenants/ensayo`**, además de lo de siempre: pedidos, cierres,
+  conversaciones (con sus mensajes), contactos, movimientos de stock, comprobaciones de imagen,
+  salida y métricas. La auditoría se conserva. El id `ensayo` es una constante del código.
+
+Sin `--flujo` el flujo sale de la ruta, como en el §6, pero `--preparar` **siempre** fija en `ensayo`
+`flujos: [el del ensayo]` y `vertical` (nunca acumula los de ensayos anteriores), borra su lista
+`modulos` y, si la ficha traía venta, vacía también los restos de venta.
+
+**Con la ruta ya en ensayo** solo se repite el mismo ensayo (mismo `--cliente` y mismo `--flujo`); para
+otro cliente u otro flujo, primero `--restaurar` (así una carga fallida no deja el número con un
+comercio vaciado de otro ensayo). Si la carga falla con la ruta ya en ensayo, el mensaje dice que la
+ruta sigue en ensayo y el comercio quedó vacío: reintentar o `--restaurar`. Si la ruta no tenía campo
+`flujo`, se guarda un marcador nulo y `--restaurar` borra el campo en vez de inventar uno. Valores válidos: `venta` o
+`agendamiento`; cualquier otro sale con 2 sin leer nada de la nube.
+
+Cerrojos que siguen igual (probados negando en `admin/pruebas/ensayo.test.ts`): solo se desvía
+el número de un comercio con `modalidad: demostracion` escrita; el comercio que paga o el que no
+tiene modalidad no se desvía; sin `--aplicar` no se escribe nada; no se imprimen ids completos.
+
+### Orden (cada paso en seco primero; `--aplicar` con el «sí» de Andres)
+
+1. Antes de empezar: lo del §6 (A a D). **No se pisa otro ensayo**: ver la regla de coordinación.
+2. `ensayo.mjs --preparar --cliente qtaco --flujo venta --archivo <copia del borrador de Q'Taco o
+   `negocio-*.json` de venta, en el scratchpad> --local <tabla local>` (seco, leído entero, y luego
+   `--aplicar`). Con QR: cargar en `ensayo` un QR **de NovuChat** con importe simbólico
+   (`activar-cobro-real.mjs`; prohibición 3 de `CLAUDE.md`), nunca el de Q'Taco.
+3. `flujo-de-prueba.mjs --sobre-demo-a` con el JSON de venta (pasos 4 y 5 del §6).
+4. Pruebas con el teléfono de Andres: pedido, QR, comprobante, derivación.
+5. **Doble restauración, en este orden**, y verificada con `--estado`:
+   1. el flujo: `flujo-de-prueba.mjs --restaurar-respaldo` (§6, paso 6.1);
+   2. el estado por teléfono: `publicar-flujo.sh --reiniciar-estado` (seco, luego `--aplicar`);
+   3. la ruta: `ensayo.mjs --restaurar` (seco, luego `--aplicar`). Imprime
+      `Flujo     : venta -> agendamiento`;
+   4. `ensayo.mjs --estado` (la línea `Ensayo` conserva el último flujo preparado: no es un fallo; el
+      siguiente ensayo siempre fija sus flujos). Debe mostrar el flujo de la ruta ya restaurado: tiene que decir `Desviada  : no` y la ruta con su flujo de siempre
+      (`flujo agendamiento` en la primera línea). Si dice `sí`, no se terminó.
+6. Limpieza y filas de `ESTADO.md` / `versiones-por-cliente.md`, como en el §6 (paso 6.4).
+
+### Regla de coordinación: el Demo A es UN solo recurso, con turnos
+
+Mientras un ensayo desvía su ruta o cambia su flujo, **ningún otro ensayo ni demo comercial lo
+usa**. Turnos acordados: el **domingo 18/10, de 09:40 a 11:30**, el ensayo de H2-F; el ensayo de
+venta va **después**, solo cuando el anterior terminó su doble restauración y `--estado` lo
+confirma. Dos ensayos a la vez dejarían la ruta con el `ensayoDe` del primero.
+
+## 8 · Ensayar el timbre de «Salida de persona» en el Demo A (H2-F2)
+
+> Es el ensayo del flujo común `Flujos/salida-de-persona.json` (`Flujos/LEEME-flujos.md`
+> §9), por número, **sin tocar el flujo conversacional del Demo A** ni su número: se crea un
+> flujo **nuevo** en el n8n del Demo A, «NovuChat — Salida de persona (`<alias>`)», con su
+> propia credencial de timbre. Alias del ensayo: **`demoA`**. Andres autoriza y Claude opera;
+> **nadie lee el archivo de entrega** (contiene la URL de capacidad y la clave).
+
+**Piezas.** `scripts/nube-salida-persona.sh` (nube: secreto `SALIDA_PERSONA_RUTAS`; genera la
+ruta y la clave) y `scripts/cargar-timbre-n8n.sh` (n8n: las consume y las borra). Pruebas:
+`admin/pruebas/core/nube-salida-persona.test.ts` y `cargar-timbre-n8n.test.ts` (contra un `gcloud`
+y un `curl` falsos).
+
+**Por qué no `publicar-flujo.sh`, `preparar-import.sh` ni `ensayo-flujo.sh`.** Llenan desde UNA
+tabla sin sufijo por número, abortan con marcadores sin reponer, **completan las credenciales por
+TIPO** (la trampa del 15/09: un nodo que manda a Meta con la credencial de ingesta) y
+`ensayo-flujo.sh` republica el flujo del Demo A. `cargar-timbre-n8n.sh` asigna cada credencial **por
+nombre exacto y tipo**, se niega si falta o está repetida, y revisa que `Enviar por el relé` /
+`Enviar por Graph` nunca lleven la de ingesta, que no haya un WhatsApp Trigger ni una credencial de
+AAB1-WA-Prod.
+
+**La clave de la API de n8n** sale del `.env` indicado con `--env` (el mismo, ignorado y chmod 600,
+de `publicar-flujo.sh`; solo se leen `N8N_BASE_URL` y `N8N_API_KEY`, sin ejecutarlo) y viaja a curl
+por la entrada estándar (`-H @-`), nunca por argumentos ni por pantalla. Con `--aplicar` el script se
+niega si el `.env` no es del usuario o tiene permisos de más.
+
+### Antes de empezar
+
+1. **Tres credenciales previas, por nombre y tipo exactos** (la carga del timbre se niega si falta
+   una o está repetida): `NovuChat ingesta (demoA)` y `AAB1 envío · demoA` (Header Auth) y
+   `WhatsApp demoA (envío)` (`whatsAppApi`). Las crea el paso 0 del procedimiento,
+   `cargar-timbre-n8n.sh --crear-credenciales`, con estas reglas (decisión de Andres, 17/10):
+   - **ingesta**: `Authorization: Bearer <secreto INGESTA_DEMOA, versión latest>`, leído de Secret
+     Manager por tubería hasta el cuerpo del pedido a n8n (nunca a pantalla, argumentos ni archivo).
+     Requiere gcloud con las credenciales aisladas de producción (`CLOUDSDK_CONFIG`; `--proyecto` o
+     `PROYECTO`, por omisión `novuchat-demo`). Para cambiar después su valor: `rotar-ingesta.sh n8n`.
+   - **AAB1 envío**: valor **inerte** (`Bearer INERTE-NO-ENVIAR`). D2: la rama del relé no se prueba en
+     el Demo A y su canal es `graph`; nunca el token ni la URL reales del relé.
+   - **WhatsApp**: `accessToken` = `WA_TOKEN` y `businessAccountId` = `WABA_ID`, leídas del `--env`
+     (sin ejecutarlo). El `.env` indicado debe traer las del Demo A.
+   Si ya existe una con ese nombre y tipo, **no se sobrescribe**: se REUTILIZA y no se marca como creada
+   por el script; si hay duplicados o el nombre existe con otro tipo, se aborta sin escribir.
+   **Salvaguardas** (revisión de seguridad del PR #532): (a) solo para alias de ensayo, `demoA` y `demoB`
+   (un alias de cliente real, p. ej. Bellido, tiene credenciales vivas con estos mismos nombres y estos modos
+   se niegan con 2 sin tocar n8n); (b) `--quitar-credenciales` borra únicamente las que **creó este script**
+   (sus ids quedan en `$XDG_RUNTIME_DIR/novuchat-credenciales-creadas-<alias>.json`, modo 600; si no hay
+   registro, no borra nada y lo dice) y se niega si cualquier flujo vivo de n8n las cita por id o nombre;
+   (c) antes de crear la de WhatsApp, el `WA_APP_ID` y el `WABA_ID` del `--env` se cotejan sin red contra las
+   huellas de apps/WABAs ajenas (`scripts/lib/apps-ajenas.sh`) y, con `--aplicar`, Graph debe confirmar que el
+   token es de una app propia; si no se puede comprobar, aborta (el `.env` necesita `WA_APP_ID`); (d) con
+   `--aplicar` el proyecto se indica con `--proyecto <id>` (no se hereda de la variable `PROYECTO`);
+   (e) el secreto se lee como `latest` salvo `--version <N>`: `latest` puede no ser la versión desplegada, así
+   que **antes de cargar el timbre** se corre `rotar-ingesta.sh probar --secreto INGESTA_DEMOA --version <N>`.
+2. **La tabla local** (`CONFIGURACION.local.md`, o `CONFIG_LOCAL_MD`) con
+   `REEMPLAZAR_PHONE_NUMBER_ID_DEMOA` y `REEMPLAZAR_URL_INTERNA_DEL_RELE_DEMOA` (o, para el Demo A,
+   las filas sin sufijo con `--tabla-demo-a`). Se agregan sin mostrar el valor (`marcador-local.sh`).
+   **Si el alias sale por `graph` y no usa el relé (el Demo A, D2)**, la fila del relé no hace falta:
+   la carga lleva `--rele-inerte --canal-graph`, que repone `REEMPLAZAR_URL_INTERNA_DEL_RELE` con
+   `http://relay-inerte.invalid` (dominio reservado `.invalid`, no resuelve nunca; aunque la tabla traiga
+   la URL real, no viaja al flujo). El script no puede leer la ruta del alias (vive en Firestore,
+   `rutasWhatsApp/{numero}.canalSalida`): `--canal-graph` es la **afirmación de quien opera** de que no
+   vale `rele` (sin valor = `graph`), y se comprueba antes. Si valiera `rele`, el nodo del relé fallaría
+   a propósito.
+3. Pasos 1 a 3 de `nube-salida-persona.sh` ya hechos (`.github/DESPLIEGUE-FIREBASE.md`), la ventana de
+   mantenimiento y el «sí» de Andres. Todo desde un worktree al día, con `.env` enlazado.
+
+### El procedimiento (cada paso: seco, leerlo entero, luego `--aplicar` con el «sí»)
+
+    # 1. El alias en la nube: genera ruta y clave y deja la entrega (modo 600, $XDG_RUNTIME_DIR)
+    export N8N_BASE_URL="$(grep -E '^N8N_BASE_URL=' .env | tail -n 1 | cut -d= -f2- | tr -d "\"'")"
+    GCP_PROJECT_ID_PROD=<id de producción> ./scripts/nube-salida-persona.sh --agregar-alias demoA
+    ... --agregar-alias demoA --aplicar --confirmo produccion
+    # 2a. Las tres credenciales previas (si faltan; idempotente)
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --crear-credenciales               # seco
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --crear-credenciales --proyecto <id> --aplicar --confirmo produccion
+    # 2b. En n8n, EN LA MISMA SESIÓN (la entrega no se deja pendiente); el Demo A sale por graph
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --rele-inerte --canal-graph        # seco
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --rele-inerte --canal-graph --aplicar --confirmo produccion
+    # 3. Redesplegar la Function que declara SALIDA_PERSONA_RUTAS: enviarComoPersona (las otras dos,
+    #    reclamarSalidaPersona y confirmarSalidaPersona, no leen ese secreto). firebase-tools fija el
+    #    número de versión del secreto al desplegar, así que la versión nueva no se ve hasta entonces:
+    #    se despliega con la próxima etiqueta v* (la crea Andres: scripts/etiquetar-version.sh vX.Y.Z
+    #    --commit <sha>; el CI despliega) o, en staging, con el push a main.
+    # 4. Activar (paso aparte: empieza el barrido de cada minuto)
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --activar                          # seco
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --activar --aplicar --confirmo produccion
+
+El script de n8n respalda el estado vivo del alias (lista de flujos «Salida de persona» con su estado
+activo, el flujo del alias completo y las credenciales sin valores) en un directorio de modo 700
+antes de escribir, e imprime su ruta; el respaldo **no** lleva la ruta ni la clave del timbre (el `path` va
+como `<capacidad>` con su sha256), pero sí ids, nombres, phoneNumberId y URL del relé. Con `--aplicar`
+exige `$XDG_RUNTIME_DIR` válido (nunca cae a `/tmp`) y no admite `--flujo`. Crea el flujo **inactivo**;
+si ya existía y estaba activo, conserva ese estado y **publica la última versión** (n8n 2.x separa
+borrador y publicada: se compara `versionId` con `activeVersionId` y se falla si siguen distintos).
+El Timbre lleva un `webhookId` estable por alias, para no depender de guardar desde el editor.
+Si algo falla, la entrega **se conserva** y el mensaje dice cómo seguir (es idempotente: se puede
+repetir). Solo cuando todo se relee bien destruye la entrega.
+
+**La prueba (a verificar en el ensayo):** un lote mixto —un mensaje válido por el relé, uno con texto
+vacío, otro por Graph si se puede— más un segundo reclamo no vacío (`Flujos/LEEME-flujos.md` §9,
+«Pendiente de verificar en n8n real»), y que el timbre (`enviarComoPersona`) abra el webhook con el
+`Bearer` y rechace sin él.
+
+### Lo que queda «a verificar en el ensayo» (no se puede saber sin n8n real)
+
+- Que n8n 2.36.5 acepte `PATCH /credentials/{id}` (lo usa `rotar-ingesta.sh`), `DELETE /credentials/{id}`,
+  `DELETE /workflows/{id}` y el cuerpo `{name,nodes,connections,settings}` del flujo.
+- Que el `Webhook` con `path` explícito se registre en `/webhook/<path>` al activar (el `webhookId` del
+  nodo no se fija).
+- Que el valor del `Bearer` autentique de verdad: la API no devuelve el valor guardado, así que se
+  comprueba con el timbre real.
+- Que `POST /credentials` acepte los tres cuerpos de `--crear-credenciales` (`httpHeaderAuth` con
+  `{name,value}` y `whatsAppApi` con `{accessToken,businessAccountId}`, el esquema que ya usan
+  `importar-flujo-cliente.sh` y `credenciales-cliente.sh`), y que la de ingesta sea aceptada por el
+  servidor (`rotar-ingesta.sh probar`). Que el `.env` de `--env` traiga `WA_TOKEN` y `WABA_ID` del Demo A.
+
+### La restauración (en este orden; seco primero, `--aplicar` con el «sí»)
+
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --quitar                           # seco
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --quitar --aplicar --confirmo produccion
+    GCP_PROJECT_ID_PROD=<id de producción> ./scripts/nube-salida-persona.sh --quitar-alias demoA --aplicar --confirmo produccion
+    # y redesplegar enviarComoPersona (misma vía que el paso 3); destruir las versiones anteriores
+    # del secreto a mano (gcloud secrets versions destroy)
+    # por último, las tres credenciales previas (solo después de --quitar: se niega con el flujo cargado)
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --quitar-credenciales              # seco
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --quitar-credenciales --aplicar --confirmo produccion
+
+`--quitar` desactiva y borra el flujo del alias y **solo** la credencial del timbre (nunca las de
+ingesta, AAB1 ni WhatsApp), relee que no quede nada y deja el respaldo previo.
+`--quitar-credenciales` borra **solo** esas tres, por nombre y tipo exactos (un homónimo de otro tipo
+o de otro alias no se toca), aborta si hay duplicados y relee que no quede ninguna. Al terminar se borra
+el respaldo (`rm -rf` de su directorio).
