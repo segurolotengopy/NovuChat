@@ -76,9 +76,10 @@ por comercio no activo, y **antes** del `Promise.all` del catálogo. Devuelve
 | `versionLeida` distinta de la actual | `conflicto_version`, con el estado ganador |
 | cupo con tope 0 o ausente | `cupo_negado` / `sin_tope` |
 | cupo agotado | `cupo_negado` / `agotado` (la versión no se mueve) |
-| todo pasa | `version + 1`, cupos incrementados (`por[idCompromiso]`), `comprometido` |
+| todo pasa | `version + 1`, cupos incrementados (`por[idCompromiso]` = `{cantidad, en}`, §11), `comprometido` |
 
-`asentar` devuelve `asentado` o `nada_que_asentar` y es idempotente. Los resultados
+`asentar` **devuelve (libera)** los cupos que consumió ese compromiso y devuelve
+`asentado` o `nada_que_asentar`; es idempotente (§11). Los resultados
 de negocio salen como 200; los errores, como 400, 401, 404, 405, 409 (sin
 escritura), 413 y 500. La versión es optimista, sin candado por teléfono (el
 documento es por contacto).
@@ -111,7 +112,7 @@ Criterio vigente: «solo se ofrece lo que se cumple» (`CLAUDE.md`).
 - Entrega fallida **sin** hecho externo: compromiso compensatorio con la versión
   recién comprometida y el estado previo (ancla B0). **Con** hecho externo (aviso
   enviado o cierre): paso `menu`, como hoy.
-- `asentar` falla: el cupo queda consumido (conservador).
+- `asentar` falla: el cupo no se libera y queda consumido (conservador).
 - Los avisos al local de Q'Taco salen antes de `Armar mensajes`: comprometer antes
   de enviar obliga a comprometer antes de `¿Hay avisos?`.
 
@@ -180,3 +181,44 @@ turno, cerca de 0,00007 USD por conversación.
 
 D-7 (pregunta 1) y la pregunta 5 son las que piden respuesta de Andres antes de
 PR-4b y de cerrar H2b; las demás tienen recomendación y se resuelven en su PR.
+
+## 11. Decisiones tomadas al construir PR-1
+
+Las tomó el autor de PR-1 donde el plan no precisaba; quedan **decididas** y, donde
+el §2 a §5 dicen otra cosa, mandan estas.
+
+**Petición**
+- Todos los tiempos van en milisegundos.
+- `ejecucion` es obligatoria en todas las acciones.
+- `leer` rechaza `idCompromiso`, `estado`, `venceEnMin` y `cupos`;
+  `comprometer` y `asentar` rechazan `idMensaje`.
+- Una clave extraña dentro de `sesion` (por ejemplo `tenantId`) responde 400.
+- `idMensaje`: ASCII imprimible, `^[\x21-\x7e]{1,256}$`.
+- `phoneNumberId`: `/^[A-Za-z0-9_-]{1,64}$/`.
+
+**Cupos**
+- Clave de cupo: `/^[a-z][a-z0-9_-]{0,31}$/` (admite guion bajo; no choca con el
+  centinela `_` porque empieza con letra y `~` separa los componentes).
+- Dos cupos con la misma terna clave/alcance/período responden 400.
+- `tope` es opcional; ausente equivale a 0 y da `sin_tope`.
+- Los períodos se guardan como `aaaa-mm-dd` (día) y `aaaa-mm-ddThh` (hora), en
+  `America/La_Paz`.
+- Un cupo vencido que el TTL aún no borró cuenta como vacío.
+- `idCupo` e `idVisto` **no** incluyen `espacio`, a propósito: valen por número y
+  contacto.
+- `por` de cada cupo guarda `{cantidad, en}` por `idCompromiso` y conserva las 50
+  entradas más recientes según `en`.
+
+**Orden y vencimiento**
+- Orden de decisión: `repetido`, luego `conflicto_version`, luego cupos (un
+  reintento llega con `versionLeida` vieja).
+- Los cupos se evalúan todos antes de conceder alguno (todo o nada).
+- Un `vence` igual a `ahora` cuenta como vencido (`<=`).
+- Un `estadoJson` corrupto se lee como `null` sin marcar `vencido`.
+
+**`asentar`**
+- Devuelve (libera) los cupos que consumió ese compromiso: `usados -= cantidad` y
+  borra su entrada en `por`. Resultado `asentado` o `nada_que_asentar`;
+  idempotente.
+- Exige `idCompromiso`; rechaza `estado`, `venceEnMin` y `cupos`; `versionLeida` es
+  opcional y se ignora.
