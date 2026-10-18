@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { useParams } from 'react-router-dom';
 import { db, funciones } from '../../core/lib/firebase';
@@ -24,6 +24,9 @@ export function Usuarios() {
   const [miembros, setMiembros] = useState<Miembro[]>([]);
   const [correo, setCorreo] = useState('');
   const [rol, setRol] = useState<'admin' | 'oper'>('oper');
+  // Titular de la cuenta: se lee de la ficha (las reglas dejan el get a los miembros).
+  // Solo presentación: quien impide quitarlo o degradarlo es el servidor.
+  const [titular, setTitular] = useState<string | null>(null);
   const [estado, setEstado] = useState<string | null>(null);
   // «Invitar» no se pinta si NovuChat lo ocultó para este comercio (las altas las
   // hace NovuChat). Mientras carga la lista tampoco. Solo presentación: la
@@ -37,6 +40,17 @@ export function Usuarios() {
       (i) => setMiembros(i.docs.map((d) => ({ id: d.id, ...d.data() }))),
       () => setEstado('No se pudo leer la lista de usuarios.'));
   }, [tenantId]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    return onSnapshot(doc(db, 'tenants', tenantId),
+      (f) => setTitular(typeof f.data()?.['titularCuentaUid'] === 'string' && f.data()?.['titularCuentaUid'] !== '' ? (f.data()?.['titularCuentaUid'] as string) : null),
+      () => setTitular(null));
+  }, [tenantId]);
+
+  const correoTitular = miembros.find((m) => m.id === titular)?.correo;
+  const pideDegradarTitular = titular !== null && rol === 'oper' && typeof correoTitular === 'string'
+    && correo.trim().toLowerCase() === correoTitular.toLowerCase();
 
   const invitar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +73,7 @@ export function Usuarios() {
         <tbody>
           {miembros.map((m) => (
             <tr key={m.id}>
-              <td><TextoSeguro valor={m.correo} maxLargo={254} /></td>
+              <td><TextoSeguro valor={m.correo} maxLargo={254} />{m.id === titular && <strong> Titular</strong>}</td>
               <td><TextoSeguro valor={m.rol} maxLargo={20} /></td>
               <td><TextoSeguro valor={m.estado} maxLargo={20} /></td>
             </tr>
@@ -79,6 +93,7 @@ export function Usuarios() {
             <option value="admin">Administrador — además edita la configuración</option>
           </select>
         </label>
+        {pideDegradarTitular && <p role="alert">Esa persona es la titular de la cuenta: no se la puede pasar a Operador. Lo cambia NovuChat.</p>}
         <button type="submit">Enviar invitación</button>
       </form>}
       {estado && <p role="status">{estado}</p>}
