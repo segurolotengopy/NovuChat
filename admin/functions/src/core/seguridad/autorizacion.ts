@@ -63,7 +63,9 @@ export const esPropietario = (p: CallableRequest): boolean =>
 
 /** ¿Es administrador de ESE comercio, con contraseña y correo verificado? */
 export const esAdminDe = (p: CallableRequest, tenantId: string): boolean =>
-  Boolean(p.auth?.uid) && claimsDe(p).t[tenantId] === 'admin'
+  Boolean(p.auth?.uid) && typeof tenantId === 'string'
+  && Object.hasOwn(claimsDe(p).t, tenantId)
+  && claimsDe(p).t[tenantId] === 'admin'
   && proveedorDe(p) === 'password' && correoVerificado(p);
 
 /**
@@ -78,7 +80,8 @@ export const esAdminDe = (p: CallableRequest, tenantId: string): boolean =>
  * por la cadena de prototipos, solo por una clave propia del comercio.
  */
 export const esOperDe = (p: CallableRequest, tenantId: string): boolean =>
-  Boolean(p.auth?.uid) && Object.hasOwn(claimsDe(p).t, tenantId)
+  Boolean(p.auth?.uid) && typeof tenantId === 'string'
+  && Object.hasOwn(claimsDe(p).t, tenantId)
   && claimsDe(p).t[tenantId] === 'oper'
   && proveedorDe(p) === 'password' && correoVerificado(p);
 
