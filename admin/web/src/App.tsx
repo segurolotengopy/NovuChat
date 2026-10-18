@@ -1,7 +1,8 @@
-import { NavLink, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
+import { NavLink, Navigate, Outlet, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { useEffect } from 'react';
 import { ProveedorSesion, useSesion } from './core/lib/contexto';
 import { rolEn } from './core/lib/sesion';
+import { cuentasDe, guardarUltima } from './core/lib/cuentaActiva';
 import { Proteger } from './core/componentes/Proteger';
 import { Marca } from './central/componentes/Marca';
 import { EncabezadoComercio } from './central/componentes/EncabezadoComercio';
@@ -20,7 +21,9 @@ import { Pagar } from './central/paginas/Pagar';
 import { Reclamos } from './central/paginas/Reclamos';
 import { Bitacora } from './central/paginas/Bitacora';
 import { Funcionarios } from './modulos/agenda/Funcionarios';
-import { Tablero } from './central/paginas/Tablero';
+import { Tablero, TableroDeLaCuenta } from './central/paginas/Tablero';
+import { SoloConVariasCuentas } from './central/componentes/SoloConVariasCuentas';
+import { SelectorDeCuenta } from './central/componentes/SelectorDeCuenta';
 import { MiCuenta } from './central/paginas/MiCuenta';
 import { Catalogo } from './modulos/productos/Catalogo';
 import { Campanas } from './modulos/campanas/Campanas';
@@ -73,6 +76,8 @@ import type { IdModulo } from './central/lib/flujos';
  */
 const TITULOS: Record<string, string> = {
   '': 'Inicio',
+  inicio: 'Inicio',
+  cuentas: 'Elegir cuenta',
   negocios: 'Negocios',
   administrar: 'Administrar negocio',
   bitacora: 'Bitácora',
@@ -108,13 +113,22 @@ function useTituloDePagina(modulos: IdModulo[] | null): void {
 function Cabecera() {
   const { usuario, permisos, salir } = useSesion();
   const { tenantId: tenantDeLaRuta } = useParams();
+  const { pathname } = useLocation();
   const negocios = Object.keys(permisos.tenants);
+  const cuentas = cuentasDe(permisos);
+  const uid = usuario?.uid ?? '';
   const tenantId = tenantDeLaRuta ?? (negocios.length === 1 ? negocios[0] : undefined);
   const modulos = useModulos(tenantId);
   // Lo que NovuChat decidió no ofrecer a este comercio (presentación, no límite).
   // Mientras carga (`null`) no se pinta «Pagar»: no aparece y desaparece.
   const ocultos = useConsolaOculta(tenantId);
   useTituloDePagina(modulos);
+  // Recuerda la última cuenta usada: solo una preferencia para destacarla en el
+  // selector; la autorización la decide el servidor en cada petición.
+  const miembroDeLaRuta = tenantDeLaRuta !== undefined && cuentas.includes(tenantDeLaRuta);
+  useEffect(() => {
+    if (uid && tenantDeLaRuta && miembroDeLaRuta) guardarUltima(uid, tenantDeLaRuta);
+  }, [uid, tenantDeLaRuta, miembroDeLaRuta]);
   if (!usuario) return null;
 
   const rol = tenantId ? rolEn(permisos, tenantId) : null;
@@ -134,9 +148,12 @@ function Cabecera() {
       <nav>
         {permisos.propietario && <NavLink to="/negocios">Negocios</NavLink>}
         {permisos.propietario && <NavLink to="/bitacora">Bitácora</NavLink>}
-        {/* Con varios negocios y sin uno elegido, la salida es el inicio, que
-            los lista. Adivinar cuál quiere ver sería peor que preguntarlo. */}
-        {!tenantId && negocios.length > 1 && <NavLink to="/" end>Mis negocios</NavLink>}
+        {/* Con varias cuentas se ofrece volver al selector (salvo que ya se esté
+            en él o en el inicio, que lo muestra): adivinar cuál quiere ver sería
+            peor que preguntarlo. Dentro de una cuenta, «Inicio» lleva a SU tablero. */}
+        {!permisos.propietario && cuentas.length > 1 && pathname !== '/cuentas' && pathname !== '/' &&
+          <NavLink to="/cuentas">Cambiar de cuenta</NavLink>}
+        {tenantId && esPersona && <NavLink to={`/negocio/${tenantId}/inicio`}>Inicio</NavLink>}
         {tenantId && esAdminDelNegocio &&
           <NavLink to={`/negocio/${tenantId}/configuracion`}>Configuración</NavLink>}
         {tenantId && esAdminDelNegocio && modulos &&
@@ -231,6 +248,15 @@ function DesvioAAgenda() {
   return <Navigate to={`/negocio/${tenantId}/agenda`} replace />;
 }
 
+/**
+ * Todo `/negocio/:tenantId/*` cuelga de acá con `key={tenantId}`: al pasar de
+ * una cuenta a otra se desmonta el árbol y no se pinta estado de la anterior.
+ */
+function PorCuenta() {
+  const { tenantId } = useParams();
+  return <Outlet key={tenantId} />;
+}
+
 function Inicio() {
   return <><Cabecera /><Tablero /></>;
 }
@@ -241,6 +267,8 @@ export function App() {
       <Routes>
         <Route path="/ingresar" element={<Entrada />} />
         <Route path="/" element={<Proteger><Inicio /></Proteger>} />
+        <Route path="/cuentas" element={
+          <Proteger><SoloConVariasCuentas><><Cabecera /><SelectorDeCuenta /></></SoloConVariasCuentas></Proteger>} />
         {/* Mi cuenta la ve CUALQUIERA que haya entrado, sin importar el rol ni
             si tiene un negocio asociado: hasta quien todavía no fue vinculado
             necesita poder cambiar su contraseña. */}
@@ -253,6 +281,12 @@ export function App() {
             Solo el propietario, y cada acción la valida el servidor. */}
         <Route path="/negocios/:tenantId/administrar" element={
           <Proteger requiere="propietario"><><Cabecera /><CuentaNegocio /></></Proteger>} />
+        {/* Las rutas del negocio comparten un árbol con key={tenantId}; se dejan a la
+            sangría de las demás para que el diff y las pruebas que leen este
+            archivo vean cada <Route> igual que antes. */}
+        <Route element={<PorCuenta />}>
+        <Route path="/negocio/:tenantId/inicio" element={
+          <Proteger requiere="miembroTenant"><><Cabecera /><TableroDeLaCuenta /></></Proteger>} />
         <Route path="/negocio/:tenantId/configuracion" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Configuracion /></></Proteger>} />
         <Route path="/negocio/:tenantId/conversaciones/:conversacionId?" element={
@@ -303,11 +337,12 @@ export function App() {
           <Proteger requiere="adminOPropietario"><><Cabecera /><SiNoOculta id="pagar"><Pagar /></SiNoOculta></></Proteger>} />
         <Route path="/negocio/:tenantId/reclamos" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Reclamos /></></Proteger>} />
+        <Route path="/negocio/:tenantId/bitacora" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><Bitacora /></></Proteger>} />
+        </Route>
         {/* Vista de plataforma: todos los comercios, por consulta de grupo. */}
         <Route path="/bitacora" element={
           <Proteger requiere="propietario"><><Cabecera /><Bitacora /></></Proteger>} />
-        <Route path="/negocio/:tenantId/bitacora" element={
-          <Proteger requiere="adminTenant"><><Cabecera /><Bitacora /></></Proteger>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ProveedorSesion>
