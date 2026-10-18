@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
+import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
 import { AQUI, ARCHIVO_DE_DATOS, CONFIG, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 import { nodosDeEnvio } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
@@ -29,14 +30,14 @@ const nodo = (f: Flujo, n: string) => f.nodes.find((x) => x.name === n)!;
 
 describe('armado: --verificar y el tope de nodos', () => {
   it('`construir.mjs --verificar` sale en 0 y dice que las dos variantes están al día', () => {
-    const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--verificar'], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--verificar'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toContain('rroca-ruben.json al día');
     expect(r.stdout).toContain('rroca-ruben.prueba.json al día');
   });
 
   it('un argumento desconocido NO escribe nada: sale en 2', () => {
-    const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--ayuda'], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--ayuda'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     expect(r.status).toBe(2);
   });
 
@@ -203,9 +204,22 @@ const entre = (t: string, ini: string, fin: string): string => {
 };
 
 describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen', () => {
-  it('«Puerta del turno» y «Resumen del turno»: BYTE A BYTE idénticos', () => {
+  it('«Puerta del turno»: BYTE A BYTE idéntica', () => {
     expect(propio('puerta-del-turno.js')).toBe(chat('puerta-del-turno.js'));
-    expect(propio('resumen-del-turno.js')).toBe(chat('resumen-del-turno.js'));
+  });
+
+  it('«Resumen del turno»: el origen más SOLO la verificación de entrega (R3: sin `messages[0].id` del principal ni del respaldo, la ejecución falla)', () => {
+    const propia = propio('resumen-del-turno.js');
+    const origen = chat('resumen-del-turno.js');
+    const ancla = "const items = cnTodos('Armar mensajes');\n";
+    expect(origen.split(ancla)).toHaveLength(2);
+    const [antes, despues] = origen.split(ancla);
+    expect(propia.startsWith(antes! + ancla)).toBe(true);
+    expect(propia.endsWith(despues!)).toBe(true);
+    const agregado = propia.slice((antes! + ancla).length, propia.length - despues!.length);
+    expect(agregado).toContain("throw new Error('Entrega fallida");
+    expect(agregado).toContain("cnNodo('Enviar a WhatsApp')");
+    expect(agregado).toContain("cnTodos('Enviar respaldo')");
   });
 
   it('`_comun.js`: el origen más SOLO las sustituciones declaradas (la clave de la ficha y sin el barrido de datos de otros flujos)', () => {

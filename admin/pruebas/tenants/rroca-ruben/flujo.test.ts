@@ -399,12 +399,18 @@ describe('solo se reporta como enviado lo que Meta aceptó', () => {
     expect(String(salientes[0]!['idMeta'])).toMatch(/^wamid\.OUTEnviarrespaldo/);
   });
 
-  it('Meta rechaza el envío Y el respaldo: no se reporta NADA como enviado', () => {
+  it('Meta rechaza el envío Y el respaldo: la ejecución termina en ERROR («Entrega fallida») y no se reporta NADA como enviado', () => {
     const w = crear({ envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
-    const t = hablar(w, ANA, mTexto('hola'));
-    expect(t.fallo).toBeNull();
+    expect(() => hablar(w, ANA, mTexto('hola'))).toThrow(/Entrega fallida/);
     expect(w.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente')).toHaveLength(0);
+    const t = hablar(crear({ envio: { 'Enviar a WhatsApp': 'lanza', 'Enviar respaldo': 'lanza' } }), BETO, mTexto('hola'), { toleraFallo: true });
+    expect(t.fallo?.nodo).toBe('Resumen del turno');
     expect(t.ejecutados.has('Reportar mensaje (saliente)')).toBe(false);
+  });
+
+  it('un turno sin mensaje (pausa) no es una entrega fallida: no hay nada que entregar', () => {
+    const w = crear({ ingesta: { ok: true, atencion: { estado: 'bloqueado', respuestasEnVentana: 30 } }, envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
+    expect(hablar(w, ANA, mTexto('hola'), { toleraFallo: true }).fallo).toBeNull();
   });
 });
 
