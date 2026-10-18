@@ -162,6 +162,7 @@ export const SUITES_PURAS = [
   'pruebas/central/titular-decision.test.ts',
   'pruebas/central/usuarios-titular-pantalla.test.ts',
   'pruebas/central/titular-falla-cerrado.test.ts',
+  'pruebas/central/invitaciones-decision.test.ts',
   'pruebas/sena-cotejo.test.ts',
   'pruebas/senas-vencidas.test.ts',
   'pruebas/umbrales-atencion.test.ts',

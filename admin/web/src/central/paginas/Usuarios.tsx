@@ -8,6 +8,16 @@ import { useConsolaOculta } from '../componentes/ConsolaOculta';
 import { esVisible } from '../../../../functions/src/central/consola-oculta';
 
 interface Miembro { id: string; correo?: unknown; rol?: unknown; estado?: unknown }
+interface Invitacion { id: string; correo?: unknown; rol?: unknown; estado?: unknown; venceEn?: unknown }
+
+/** Mensaje del servidor si lo hay (los rechazos de invitar traen el motivo exacto). */
+const mensajeDe = (e: unknown, defecto: string): string =>
+  typeof (e as { message?: unknown })?.message === 'string' && (e as { message: string }).message !== ''
+    ? (e as { message: string }).message : defecto;
+
+/** Milisegundos de un Timestamp de Firestore (o NaN). */
+const msDe = (v: unknown): number =>
+  typeof (v as { toMillis?: unknown })?.toMillis === 'function' ? (v as { toMillis: () => number }).toMillis() : Number.NaN;
 
 /**
  * ESPEJO de `titularDeFicha` (módulo titular del servidor): la web no puede importar del
@@ -39,6 +49,7 @@ export function Usuarios() {
   // Titular de la cuenta: se lee de la ficha (las reglas dejan el get a los miembros).
   // Solo presentación: quien impide quitarlo o degradarlo es el servidor.
   const [titular, setTitular] = useState<string | null>(null);
+  const [invitaciones, setInvitaciones] = useState<Invitacion[]>([]);
   const [estado, setEstado] = useState<string | null>(null);
   // «Invitar» no se pinta si NovuChat lo ocultó para este comercio (las altas las
   // hace NovuChat). Mientras carga la lista tampoco. Solo presentación: la
@@ -51,6 +62,15 @@ export function Usuarios() {
     return onSnapshot(collection(db, 'tenants', tenantId, 'miembros'),
       (i) => setMiembros(i.docs.map((d) => ({ id: d.id, ...d.data() }))),
       () => setEstado('No se pudo leer la lista de usuarios.'));
+  }, [tenantId]);
+
+  // Las invitaciones las lee el administrador (las reglas se lo dejan solo a él): para un
+  // operador la lectura se niega y la sección simplemente no aparece.
+  useEffect(() => {
+    if (!tenantId) return;
+    return onSnapshot(collection(db, 'tenants', tenantId, 'invitaciones'),
+      (i) => setInvitaciones(i.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      () => setInvitaciones([]));
   }, [tenantId]);
 
   useEffect(() => {
@@ -69,13 +89,39 @@ export function Usuarios() {
     setEstado(null);
     try {
       const invitar = httpsCallable(funciones, 'invitarUsuario');
-      await invitar({ tenantId, correo, rol });
-      setEstado('Invitación enviada.');
+      const r = await invitar({ tenantId, correo, rol });
+      setEstado((r.data as { mensaje?: string } | null)?.mensaje ?? 'Invitación registrada.');
       setCorreo('');
-    } catch {
-      setEstado('No se pudo enviar la invitación.');
+    } catch (err) {
+      setEstado(mensajeDe(err, 'No se pudo enviar la invitación.'));
     }
   };
+
+  const reenviar = async (i: Invitacion) => {
+    setEstado(null);
+    try {
+      const r = await httpsCallable(funciones, 'invitarUsuario')({ tenantId, correo: i.correo, rol: i.rol === 'admin' ? 'admin' : 'oper' });
+      setEstado((r.data as { mensaje?: string } | null)?.mensaje ?? 'Invitación reenviada.');
+    } catch (err) {
+      setEstado(mensajeDe(err, 'No se pudo reenviar la invitación.'));
+    }
+  };
+
+  const cancelar = async (i: Invitacion) => {
+    setEstado(null);
+    try {
+      const r = await httpsCallable(funciones, 'cancelarInvitacion')({ tenantId, invitacionId: i.id });
+      setEstado((r.data as { mensaje?: string } | null)?.mensaje ?? 'Invitación cancelada.');
+    } catch (err) {
+      setEstado(mensajeDe(err, 'No se pudo cancelar la invitación.'));
+    }
+  };
+
+  // Solo las que esperan respuesta: las aceptadas ya son usuarias y las canceladas o
+  // rechazadas no se listan. «Vencida» se calcula con el plazo aunque el documento diga pendiente.
+  const ahora = Date.now();
+  const abiertas = invitaciones.filter((i) => i.estado === 'pendiente' || i.estado === 'vencida');
+  const vencida = (i: Invitacion) => i.estado === 'vencida' || !(msDe(i.venceEn) > ahora);
 
   return (
     <section>
@@ -92,6 +138,26 @@ export function Usuarios() {
           ))}
         </tbody>
       </table>
+
+      {abiertas.length > 0 && <>
+        <h3>Invitaciones</h3>
+        <table>
+          <thead><tr><th>Correo</th><th>Rol</th><th>Vigencia</th><th>Acción</th></tr></thead>
+          <tbody>
+            {abiertas.map((i) => (
+              <tr key={i.id}>
+                <td><TextoSeguro valor={i.correo} maxLargo={254} /></td>
+                <td><TextoSeguro valor={i.rol} maxLargo={20} /></td>
+                <td>{vencida(i) ? 'Vencida' : `Vence el ${new Date(msDe(i.venceEn)).toLocaleDateString('es-BO')}`}</td>
+                <td>
+                  {puedeInvitar && <button type="button" onClick={() => void reenviar(i)}>Reenviar</button>}
+                  <button type="button" onClick={() => void cancelar(i)}>Cancelar</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </>}
 
       {puedeInvitar && <form onSubmit={invitar}>
         <h3>Invitar</h3>

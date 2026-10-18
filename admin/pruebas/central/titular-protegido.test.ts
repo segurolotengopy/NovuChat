@@ -99,16 +99,16 @@ suite('titular de la cuenta protegido', () => {
     expect(await auditoria(A)).toHaveLength(0);
   });
 
-  it('reinvitar al titular como oper se rechaza y su claim sigue admin', async () => {
+  it('reinvitar al titular como oper se rechaza (I1: ya es miembro) y su claim sigue admin', async () => {
     await sembrar();
     const antes = await claimsDe('TA');
     for (const quien of ['adminA', 'TA']) {
       await expect(invitar({ tenantId: A, correo: CORREO_TA, rol: 'oper' }, await sesionDe(quien)))
-        .rejects.toMatchObject({ code: 'failed-precondition' });
+        .rejects.toMatchObject({ code: 'already-exists' });
     }
     // un rol ausente equivale a oper
     await expect(invitar({ tenantId: A, correo: CORREO_TA }, await sesionDe('adminA')))
-      .rejects.toMatchObject({ code: 'failed-precondition' });
+      .rejects.toMatchObject({ code: 'already-exists' });
     expect(await claimsDe('TA')).toEqual(antes);
     expect((await miembro(A, 'TA')).data()?.['rol']).toBe('admin');
     expect(await auditoria(A)).toHaveLength(0);
@@ -135,11 +135,15 @@ suite('titular de la cuenta protegido', () => {
     expect(await auditoria(A)).toEqual([expect.objectContaining({ destino: 'operA' })]);
   });
 
-  it('CONTROL: reinvitar al titular como admin sigue permitido', async () => {
+  it('I1: reinvitar al titular, ni como admin, cambia algo: es miembro y se rechaza sin tocar su claim', async () => {
     await sembrar();
-    expect(await invitar({ tenantId: A, correo: CORREO_TA, rol: 'admin' }, await sesionDe('adminA')))
-      .toMatchObject({ ok: true });
+    // un admin que no es titular ni siquiera puede invitar admins si hay titular; el titular, sí, pero ya es miembro
+    await expect(invitar({ tenantId: A, correo: CORREO_TA, rol: 'admin' }, await sesionDe('adminA')))
+      .rejects.toMatchObject({ code: 'permission-denied' });
+    await expect(invitar({ tenantId: A, correo: CORREO_TA, rol: 'admin' }, await sesionDe('TA')))
+      .rejects.toMatchObject({ code: 'already-exists' });
     expect((await claimsDe('TA'))?.t[A]).toBe('admin');
+    expect((await miembro(A, 'TA')).data()?.['rol']).toBe('admin');
   });
 
   it('CONTROL: un negocio sin titular se comporta como hoy (se puede quitar a quien sea)', async () => {
