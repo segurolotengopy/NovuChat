@@ -814,7 +814,7 @@ describe('cargar-timbre-n8n.sh: segunda mini-ronda', () => {
 describe('cargar-timbre-n8n.sh: crear y quitar las tres credenciales previas', { timeout: 90_000 }, () => {
   const GCLOUD_FALSO = `#!/bin/bash
 echo "$*" >> "$FAKE_DIR/gcloud-llamadas"
-if [ "$1 $2" = "config get-value" ]; then echo "cuenta@ejemplo.test"; exit 0; fi
+if [ "$1 $2" = "config get-value" ]; then echo "cuenta-de-prueba"; exit 0; fi
 if [ -e "$FAKE_DIR/gcloud-falla" ]; then echo "error de prueba" >&2; exit 1; fi
 if [ -e "$FAKE_DIR/secreto-segunda" ] && [ "$(grep -c '^secrets' "$FAKE_DIR/gcloud-llamadas")" -ge 2 ]; then cat "$FAKE_DIR/secreto-segunda"; exit 0; fi
 cat "$FAKE_DIR/secreto"
@@ -1122,7 +1122,7 @@ cat "$FAKE_DIR/secreto"
       // el seco muestra el proyecto por omisión y la cuenta, no el de la variable
       const s = correr([...A(), '--crear-credenciales'], { PROYECTO: 'otro-proyecto-x' });
       expect(s.salida).toContain('novuchat-demo (por omisión)');
-      expect(s.salida).toContain('cuenta@ejemplo.test');
+      expect(s.salida).toContain('cuenta-de-prueba');
       expect(s.salida).not.toContain('otro-proyecto-x');
     });
 
