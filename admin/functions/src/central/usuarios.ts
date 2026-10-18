@@ -50,7 +50,15 @@ export const quitarUsuario = onCall(async (peticion) => {
   const destino = texto(datos['uid'], 128);
   if (!destino) throw new HttpsError('invalid-argument', 'Falta el usuario.');
 
-  await db().doc(`tenants/${tenantId}/miembros/${destino}`).delete();
+  // Solo se quita a un MIEMBRO de este negocio. Sin esta comprobación, un administrador de A
+  // que conociera el uid de alguien de B (o del propietario) le revocaba todas las sesiones
+  // y le subía la versión de sus claims: una empresa tocaba a un usuario de otra. Se lee
+  // la ficha antes de borrar o revocar nada, y se audita solo después.
+  const fichaMiembro = db().doc(`tenants/${tenantId}/miembros/${destino}`);
+  if (!(await fichaMiembro.get()).exists) {
+    throw new HttpsError('not-found', 'Ese usuario no es miembro del negocio.');
+  }
+  await fichaMiembro.delete();
   // Revocación inmediata: sin esto el usuario retirado sigue leyendo hasta una
   // hora, que es lo que dura su ID token.
   await asignarRol(destino, tenantId, null, { revocarSesiones: true });

@@ -1,23 +1,16 @@
 /**
- * `quitarUsuario` ENTRE TENANTS — reproduce un defecto de seguridad (sin
- * corregirlo) con los emuladores de Auth y de Firestore.
+ * `quitarUsuario` ENTRE TENANTS — con los emuladores de Auth y de Firestore.
  *
- * El defecto: la callable comprueba que quien llama es admin de `tenantId`,
- * pero NO que `uid` sea miembro de ese tenant. Entonces un admin de A, con el
- * uid de alguien que no es de A, le REVOCA las sesiones y le SUBE `nc.v`,
- * y deja en la auditoría de A un `quitar_usuario` con ese uid ajeno.
- *
- * Qué documentan las pruebas:
- *  - «HOY»: lo que pasa con el código actual (el defecto, afirmado tal cual).
- *  - `it.fails`: el comportamiento deseado (rechazar y no tocar nada). Pasa
- *    mientras el defecto exista y se pone ROJA el día que se corrija: quien lo
- *    corrija debe quitar la marca `.fails` y borrar el bloque «HOY».
- *  - Control positivo: quitar a un miembro real de A sí funciona.
+ * Defecto corregido: la callable comprobaba que quien llama es admin de
+ * `tenantId`, pero no que `uid` fuera miembro de ese tenant; el admin de A le
+ * revocaba las sesiones y subía el `nc.v` a cualquier uid conocido. Ahora un
+ * destino sin ficha en `tenants/A/miembros` se rechaza con `not-found`, sin
+ * tocar sesiones, claims ni auditoría. Los CONTROLES prueban que quitar a un
+ * miembro real sigue funcionando.
  *
  * Se SALTA si no hay emulador de Auth (FIREBASE_AUTH_EMULATOR_HOST): el CI de
  * hoy levanta solo Firestore. Correr con Auth (puertos propios, proyecto demo-*):
  *   firebase emulators:start --only auth --project demo-novuchat-pruebas
- *     (con un firebase.json cuyo emulador de auth use el puerto elegido)
  *   FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:<puerto> FIRESTORE_EMULATOR_PORT=<p> \
  *     bash pruebas/correr.sh pruebas/central/quitar-usuario-entre-tenants.test.ts
  */
@@ -91,63 +84,21 @@ suite('quitarUsuario con un destino que no es miembro del tenant', () => {
     await espera(1100);
   }
 
-  it('HOY: el admin de A revoca las sesiones y sube nc.v de un usuario que solo es de B; sus roles de B se conservan', async () => {
+  const NO_MIEMBROS = ['soloB', 'nadie', 'propietario', 'ingestaB'];
+
+  it('un destino que no es miembro de A se rechaza con not-found y no se toca nada (usuario de B, sin rol, propietario, ingesta)', async () => {
     await sembrar();
-    const antes = { validoDesde: await validoDesde('soloB'), claims: await claimsDe('soloB') };
-    expect(antes.claims).toMatchObject({ t: { [B]: 'oper' } });
+    const antes: Record<string, { validoDesde: string; claims: Awaited<ReturnType<typeof claimsDe>> }> = {};
+    for (const u of NO_MIEMBROS) antes[u] = { validoDesde: await validoDesde(u), claims: await claimsDe(u) };
 
-    const r = await quitar({ tenantId: A, uid: 'soloB' }, await sesionDe('adminA'));
-
-    expect(r).toEqual({ ok: true }); // no rechaza
-    const despues = { validoDesde: await validoDesde('soloB'), claims: await claimsDe('soloB') };
-    expect(despues.validoDesde).not.toBe(antes.validoDesde); // sesiones revocadas
-    expect(despues.claims?.v).toBe((antes.claims?.v ?? 0) + 1); // sube nc.v
-    expect(despues.claims?.t).toEqual({ [B]: 'oper' }); // el rol de B NO se pierde
-    // Queda auditoría EN A con el uid ajeno.
-    expect(await auditoriaDe(A)).toEqual([expect.objectContaining({ uid: 'adminA', destino: 'soloB' })]);
-    expect(await auditoriaDe(B)).toHaveLength(0);
-    // Y no existía ni existe ficha de miembro de soloB en A.
-    expect((await db.doc(`tenants/${A}/miembros/soloB`).get()).exists).toBe(false);
-  });
-
-  it('HOY: lo mismo con un uid sin ningún rol ("nadie") y con el propietario y la ingesta de B', async () => {
-    await sembrar();
-    const previo: Record<string, { validoDesde: string; claims: Awaited<ReturnType<typeof claimsDe>> }> = {};
-    for (const u of ['nadie', 'propietario', 'ingestaB']) previo[u] = { validoDesde: await validoDesde(u), claims: await claimsDe(u) };
-
-    for (const u of ['nadie', 'propietario', 'ingestaB']) {
-      expect(await quitar({ tenantId: A, uid: u }, await sesionDe('adminA'))).toEqual({ ok: true });
-      expect(await validoDesde(u)).not.toBe(previo[u]!.validoDesde); // sesión revocada
+    for (const u of NO_MIEMBROS) {
+      await expect(quitar({ tenantId: A, uid: u }, await sesionDe('adminA')))
+        .rejects.toMatchObject({ code: 'not-found' });
+      expect(await validoDesde(u)).toBe(antes[u]!.validoDesde); // sesiones intactas
+      expect(await claimsDe(u)).toEqual(antes[u]!.claims); // claims y nc.v intactos
     }
-    // "nadie" gana un claim vacío con v=1 (antes no tenía claims).
-    expect(await claimsDe('nadie')).toMatchObject({ t: {}, v: 1 });
-    // El propietario conserva `p` y su rol en B; solo sube la versión.
-    expect(await claimsDe('propietario')).toEqual({ p: true, t: { [B]: 'admin' }, v: 8 });
-    // La ingesta conserva su rol en B; solo sube la versión.
-    expect(await claimsDe('ingestaB')).toMatchObject({ t: { [B]: 'ingesta' }, v: 4 });
-    expect(await auditoriaDe(A)).toHaveLength(3);
-  });
-
-  // ---- El comportamiento deseado. Hoy FALLA, y `it.fails` lo vuelve verde. ----
-  it.fails('DESEADO: un destino que no es miembro de A se rechaza y no se revoca ni se toca nada', async () => {
-    await sembrar();
-    const antes = { validoDesde: await validoDesde('soloB'), claims: await claimsDe('soloB') };
-
-    await expect(quitar({ tenantId: A, uid: 'soloB' }, await sesionDe('adminA')))
-      .rejects.toMatchObject({ code: expect.stringMatching(/^(not-found|permission-denied)$/) });
-
-    expect(await validoDesde('soloB')).toBe(antes.validoDesde);
-    expect(await claimsDe('soloB')).toEqual(antes.claims);
     expect(await auditoriaDe(A)).toHaveLength(0);
-  });
-
-  it.fails('DESEADO: lo mismo para un uid sin ningún rol', async () => {
-    await sembrar();
-    const antes = { validoDesde: await validoDesde('nadie'), claims: await claimsDe('nadie') };
-    await expect(quitar({ tenantId: A, uid: 'nadie' }, await sesionDe('adminA')))
-      .rejects.toMatchObject({ code: expect.stringMatching(/^(not-found|permission-denied)$/) });
-    expect(await validoDesde('nadie')).toBe(antes.validoDesde);
-    expect(await claimsDe('nadie')).toEqual(antes.claims);
+    expect(await auditoriaDe(B)).toHaveLength(0);
   });
 
   // ---- Control positivo: lo legítimo sigue funcionando. ----
