@@ -36,6 +36,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
  * El CI sigue corriendo `pruebas:reglas`: los dos proyectos, con emulador.
  */
 export const SUITES_PURAS = [
+  'pruebas/central/cuenta-activa.test.ts',
   'pruebas/core/claims-asignar-rol.test.ts',
   'pruebas/agenda-minima-flujo.test.ts',
   'pruebas/agenda-minima-lib.test.ts',
