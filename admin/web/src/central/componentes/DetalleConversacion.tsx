@@ -12,7 +12,7 @@ import {
   etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
 import {
-  accionesDeTurno, estadoDeMensaje, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, ventanaAbiertaParaTomar,
+  accionesDeTurno, estadoDeMensaje, pendienteCaducado, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, ventanaAbiertaParaTomar,
   type CapaTurno, type EstadoMensajePersona,
 } from '../lib/turno';
 
@@ -384,6 +384,7 @@ export function DetalleConversacion(p: PropsDetalle) {
             // El de una persona lleva su uid ABREVIADO («usted» si es el de quien mira), nunca entero.
             const rotuloAutor = x.direccion === 'saliente' ? rotuloDeAutor(x.autor, x.autorUid, p.miUid) : '';
             const esPersona = x.direccion === 'saliente' && x.autor === 'persona';
+            const caducado = pendienteCaducado(x.estadoEnvio, x.ts, p.ahora);
             return (
               <li key={x.id} className="cv-fila">
                 {nuevoDia && x.ts > 0 && <div className="cv-dia"><span>{etiquetaDia(x.ts, p.ahora)}</span></div>}
@@ -394,8 +395,8 @@ export function DetalleConversacion(p: PropsDetalle) {
                   <TextoSeguro valor={x.texto} />
                   <time dateTime={x.ts ? new Date(x.ts).toISOString() : undefined}>{x.ts ? horaCorta(x.ts) : ''}</time>
                   {esPersona && x.estadoEnvio && (
-                    <span className={`cv-envio cv-envio--${x.estadoEnvio}`} data-estado={x.estadoEnvio}>
-                      {textoEstadoMensaje(x.estadoEnvio)}
+                    <span className={`cv-envio cv-envio--${caducado ? 'rechazado' : x.estadoEnvio}`} data-estado={caducado ? 'caducado' : x.estadoEnvio}>
+                      {textoEstadoMensaje(x.estadoEnvio, caducado)}
                     </span>
                   )}
                   {esPersona && x.estadoEnvio === 'rechazado' && (
