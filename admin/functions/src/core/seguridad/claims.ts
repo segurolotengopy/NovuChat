@@ -102,13 +102,22 @@ const leerClaim = (claims: Record<string, unknown> | undefined): ClaimNovuChat =
  * `revocarSesiones` invalida los refresh tokens del usuario. Sin eso, el usuario
  * conserva los permisos viejos hasta que caduque su ID token: hasta una hora de
  * ventana en la que un empleado despedido sigue leyendo conversaciones.
+ *
+ * QUITAR UN ROL QUE NO EXISTE NO HACE NADA (`{ cambio: false }`). Si el tenant
+ * no figura en el claim `t` del usuario, no hay nada que quitar: no se sube
+ * `nc.v`, no se escriben claims y no se revocan sesiones. Porque revocar es una
+ * escritura con efecto sobre la persona: un administrador del comercio A que
+ * llamara con el uid de un usuario del comercio B le cerraría la sesión a ese
+ * usuario (denegación de servicio entre comercios). Es defensa en profundidad:
+ * el llamador (`quitarUsuario`) debe comprobar además que el destino sea
+ * miembro. Asignar un rol no nulo y quitar uno que sí existía no cambian.
  */
 export async function asignarRol(
   uid: string,
   tenantId: string,
   rol: Rol | null,
   opciones: { revocarSesiones?: boolean } = {},
-): Promise<void> {
+): Promise<{ cambio: boolean }> {
   const auth = getAuth();
 
   // Solo al OTORGAR. Quitar un rol nunca se bloquea por el proveedor: si hay que
@@ -131,6 +140,11 @@ export async function asignarRol(
   const usuario = await auth.getUser(uid);
   const actual = leerClaim(usuario.customClaims);
 
+  // Nada que quitar: sin escritura, sin versión nueva y sin revocación.
+  if (rol === null && !Object.prototype.hasOwnProperty.call(actual.t, tenantId)) {
+    return { cambio: false };
+  }
+
   const tenants = { ...actual.t };
   if (rol === null) delete tenants[tenantId];
   else tenants[tenantId] = rol;
@@ -146,6 +160,7 @@ export async function asignarRol(
 
   await auth.setCustomUserClaims(uid, { nc: nuevo });
   if (opciones.revocarSesiones ?? rol === null) await auth.revokeRefreshTokens(uid);
+  return { cambio: true };
 }
 
 /** Marca (o desmarca) a alguien como propietario de la plataforma NovuChat. */
