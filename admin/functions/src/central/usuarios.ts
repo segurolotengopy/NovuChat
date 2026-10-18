@@ -6,6 +6,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { asignarRol } from '../core/seguridad/claims.js';
 import { exigirAdminDe } from '../core/seguridad/autorizacion.js';
 import { ID_TENANT, auditar, db, texto } from './comunes.js';
+import { decidirSobreTitular, titularDe } from './titular.js';
 
 // ---------------------------------------------------------------------------
 // USUARIOS DEL NEGOCIO
@@ -31,6 +32,11 @@ export const invitarUsuario = onCall(async (peticion) => {
   // comercio sin verificar no ve nada aunque tenga el claim. Se avisa acá para
   // que quien invita entienda por qué la persona "entra pero no ve".
   const verificado = destino.emailVerified;
+
+  // El titular de la cuenta no se degrada desde la consola (solo NovuChat lo cambia).
+  // Va antes de escribir la ficha o los claims.
+  const motivo = decidirSobreTitular({ accion: 'invitar', destino: destino.uid, titular: await titularDe(tenantId), rol });
+  if (motivo) throw new HttpsError('failed-precondition', motivo);
 
   await db().doc(`tenants/${tenantId}/miembros/${destino.uid}`).set({
     correo, rol, estado: verificado ? 'activo' : 'pendiente_verificacion',
@@ -58,6 +64,9 @@ export const quitarUsuario = onCall(async (peticion) => {
   if (!(await fichaMiembro.get()).exists) {
     throw new HttpsError('not-found', 'Ese usuario no es miembro del negocio.');
   }
+  // El titular de la cuenta no se quita (ni lo hace él mismo): antes de borrar o revocar nada.
+  const motivo = decidirSobreTitular({ accion: 'quitar', destino, titular: await titularDe(tenantId) });
+  if (motivo) throw new HttpsError('failed-precondition', motivo);
   await fichaMiembro.delete();
   // Revocación inmediata: sin esto el usuario retirado sigue leyendo hasta una
   // hora, que es lo que dura su ID token.
