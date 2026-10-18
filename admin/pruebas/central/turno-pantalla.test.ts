@@ -288,7 +288,7 @@ describe('D. el Detalle junta las piezas', () => {
     expect(d).toContain("esPersona ? ' cv-burbuja--persona' : ''");
     expect(d).toContain('rotuloDeAutor(x.autor, x.autorUid, p.miUid)');
     expect(d).toContain('{esPersona && x.estadoEnvio && (');
-    expect(d).toContain('textoEstadoMensaje(x.estadoEnvio)');
+    expect(d).toMatch(/textoEstadoMensaje\(x\.estadoEnvio(, vencido(, x\.codigoEnvio)?)?\)/);   // el rótulo del envío; con el vencimiento y el código solo lo precisan
     expect(d).toContain("estadoEnvio: x['autor'] === 'persona' ? estadoDeMensaje(x['estadoEnvio']) : null");
     // el estado de envío solo se lee de los mensajes de una persona (el del asistente no lo trae)
     const css = leer('web/src/central/estilos/conversaciones.css');

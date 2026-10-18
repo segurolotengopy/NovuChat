@@ -94,6 +94,7 @@ export const SUITES_PURAS = [
   'pruebas/campanas-consola.test.ts',
   'pruebas/central/contrato-f1b-puras.test.ts',
   'pruebas/central/prepago-bolsas.test.ts',
+  'pruebas/central/turno-honestidad.test.ts',
   'pruebas/candado-agenda.test.ts',
   'pruebas/calendario-fechas-en-el-nodo.test.ts',
   'pruebas/capacidades-comunes.test.ts',
