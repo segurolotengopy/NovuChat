@@ -39,6 +39,8 @@ export const SUITES_PURAS = [
   'pruebas/central/cuenta-activa.test.ts',
   'pruebas/central/cuenta-activa-rutas.test.ts',
   'pruebas/core/claims-asignar-rol.test.ts',
+  'pruebas/core/varias-cuentas-autorizacion.test.ts',
+  'pruebas/central/cuenta-activa-personas.test.ts',
   'pruebas/agenda-minima-flujo.test.ts',
   'pruebas/agenda-minima-lib.test.ts',
   'pruebas/agenda-minima-herramienta-actualizar.test.ts',
