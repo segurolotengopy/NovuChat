@@ -729,3 +729,89 @@ describe('asignar-plan.mjs: el encabezado dice las conversaciones de la TARIFA d
     expect(despues).not.toHaveProperty('tarifa');
   });
 });
+
+describe('asignar-plan.mjs: --tarifa (PR-4b)', () => {
+  const T1 = 'plan-tarifa-pide';
+  const copiaDe = async () => (await cuenta(T1))['limites'];
+
+  beforeAll(async () => {
+    await db.recursiveDelete(db.doc(`tenants/${T1}`));
+    await db.doc(`tenants/${T1}`).set({ nombre: T1, estado: 'activo', plan: 'impulso', flujos: ['venta'] });
+    // El caso Bellido: Impulso, copia 100, sin el campo.
+    await db.doc(`tenants/${T1}/cuenta/estado`).set({
+      plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prueba',
+    });
+  });
+
+  it('un valor inválido sale con 2, antes de leer la nube, y no escribe', async () => {
+    const antes = await cuenta(T1);
+    for (const v of ['premium', '', 'ESTANDAR']) {
+      const r = correr('--tenant', T1, '--tarifa', v, '--aplicar');
+      expect(r.codigo, v).toBe(2);
+      expect(r.salida).toContain('--tarifa desconocida');
+    }
+    expect(await cuenta(T1)).toEqual(antes);
+  });
+
+  it('SIN --tarifa nada cambia: la cuenta sin campo sigue en meta_incluido y no se le escribe el campo', async () => {
+    const r = correr('--tenant', T1, '--plan', 'crecimiento', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toContain('sin campo de tarifa: rige meta_incluido');
+    const c = await cuenta(T1);
+    expect(c).not.toHaveProperty('tarifa');
+    expect((c['limites'] as { conversaciones: number }).conversaciones).toBe(220);
+    expect(await auditorias('cambiar_tarifa', T1)).toEqual([]);
+  });
+
+  it('--tarifa sola sobre una cuenta con plan AVISA que la copia queda desalineada y cómo alinearla', async () => {
+    const T3 = 'plan-tarifa-desalineada';
+    await db.recursiveDelete(db.doc(`tenants/${T3}`));
+    await db.doc(`tenants/${T3}`).set({ nombre: T3, estado: 'activo', plan: 'impulso' });
+    await db.doc(`tenants/${T3}/cuenta/estado`).set({
+      plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prueba',
+    });
+    const r = correr('--tenant', T3, '--tarifa', 'estandar');
+    expect(r.salida).toContain('DESALINEADA');
+    expect(r.salida).toContain('--plan impulso --tarifa estandar');
+    // Con --plan la copia se alinea: sin aviso.
+    expect(correr('--tenant', T3, '--tarifa', 'estandar', '--plan', 'impulso').salida).not.toContain('DESALINEADA');
+    expect(correr('--tenant', T3, '--tarifa', 'estandar', '--aplicar').salida).toContain('Recordatorio: un comercio con clientes en producción');
+  });
+
+  it('en seco no escribe; --tarifa SOLA escribe el campo y NO reescribe la copia `limites`', async () => {
+    const copia = await copiaDe();
+    const seco = correr('--tenant', T1, '--tarifa', 'estandar');
+    expect(seco.codigo, seco.salida).toBe(0);
+    expect(seco.salida).toContain('la copia de límites NO se reescribe');
+    expect(await cuenta(T1)).not.toHaveProperty('tarifa');
+    const r = correr('--tenant', T1, '--tarifa', 'estandar', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect((await cuenta(T1))['tarifa']).toBe('estandar');
+    expect(await copiaDe()).toEqual(copia);
+    const a = await auditorias('cambiar_tarifa', T1);
+    expect(a).toHaveLength(1);
+    expect(a[0]).toMatchObject({ uid: 'operador@ejemplo.com', antes: { tarifa: null, rige: 'meta_incluido' }, despues: { tarifa: 'estandar' } });
+  });
+
+  it('--tarifa con --plan: la copia del plan se calcula con la tarifa pedida (500), y se relee', async () => {
+    const r = correr('--tenant', T1, '--plan', 'pro', '--tarifa', 'estandar', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toContain('1000 conversaciones');
+    expect(((await cuenta(T1))['limites'] as { conversaciones: number }).conversaciones).toBe(1000);
+    // Las dos constancias, en la misma corrida: el cambio de tarifa y el de plan.
+    const t = await auditorias('cambiar_tarifa', T1);
+    const p = await auditorias('cambiar_plan', T1);
+    expect(t.some((x) => (x['despues'] as { tarifa: string }).tarifa === 'estandar')).toBe(true);
+    expect(p.some((x) => x['planDespues'] === 'pro')).toBe(true);
+  });
+
+  it('sin cuenta NO crea una cuenta parcial solo con la tarifa', async () => {
+    const T2 = 'plan-tarifa-sin-cuenta';
+    await db.recursiveDelete(db.doc(`tenants/${T2}`));
+    await db.doc(`tenants/${T2}`).set({ nombre: T2, estado: 'activo', plan: 'impulso' });
+    const r = correr('--tenant', T2, '--tarifa', 'estandar', '--aplicar');
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('primero --plan');
+    expect((await db.doc(`tenants/${T2}/cuenta/estado`).get()).exists).toBe(false);
+  });
+});
