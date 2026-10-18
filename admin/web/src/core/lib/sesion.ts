@@ -53,7 +53,9 @@ export async function leerPermisos(usuario: User | null, forzarRefresco = false)
   };
 }
 
-export const rolEn = (p: Permisos, tenantId: string): Rol | null => p.tenants[tenantId] ?? null;
+// `hasOwn`: un id como `constructor` o `toString` no es una cuenta (no hereda del prototipo).
+export const rolEn = (p: Permisos, tenantId: string): Rol | null =>
+  Object.hasOwn(p.tenants, tenantId) ? p.tenants[tenantId]! : null;
 export const esAdmin = (p: Permisos, tenantId: string) => rolEn(p, tenantId) === 'admin';
 export const puedeVerConversaciones = (p: Permisos, tenantId: string) =>
   rolEn(p, tenantId) === 'admin' || rolEn(p, tenantId) === 'oper';
