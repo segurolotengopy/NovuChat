@@ -99,9 +99,10 @@ const leerClaim = (claims: Record<string, unknown> | undefined): ClaimNovuChat =
 /**
  * Asigna (o quita, con rol `null`) el rol de un usuario en un tenant.
  *
- * `revocarSesiones` invalida los refresh tokens del usuario. Sin eso, el usuario
- * conserva los permisos viejos hasta que caduque su ID token: hasta una hora de
- * ventana en la que un empleado despedido sigue leyendo conversaciones.
+ * `revocarSesiones` invalida los refresh tokens del usuario: corta que renueve
+ * la sesión. NO invalida el ID token ya emitido, que sigue siendo válido hasta
+ * ~1 hora; en esa ventana lo que protege son las callables sensibles, que
+ * verifican el rol real (`cuentaVigenteDe`) y no solo el claim del token.
  *
  * QUITAR UN ROL QUE NO EXISTE NO HACE NADA (`{ cambio: false }`). Si el tenant
  * no figura en el claim `t` del usuario, no hay nada que quitar: no se sube
