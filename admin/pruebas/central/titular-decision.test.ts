@@ -34,6 +34,10 @@ describe('titularDeFicha', () => {
   it('un texto no vacío es el titular', () => {
     expect(titularDeFicha({ titularCuentaUid: 'TA' })).toBe('TA');
   });
+  it('devuelve el uid RECORTADO (con espacios no falla abierto)', () => {
+    expect(titularDeFicha({ titularCuentaUid: '  TA \n' })).toBe('TA');
+    expect(decidirSobreTitular({ accion: 'quitar', destino: 'TA', titular: titularDeFicha({ titularCuentaUid: ' TA ' }) })).toBe(MOTIVO_TITULAR);
+  });
   it('campo ausente, ficha ausente, vacío, solo espacios, número, objeto, lista o booleano = sin titular', () => {
     for (const v of [undefined, '', '   ', 7, {}, ['TA'], true, null]) {
       expect(titularDeFicha({ titularCuentaUid: v })).toBeNull();

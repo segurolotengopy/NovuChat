@@ -17,7 +17,11 @@ export const MOTIVO_TITULAR = 'No se puede quitar al titular de la cuenta. Lo ca
 /** El titular según el contenido de la ficha: texto no vacío, o null. Pura. */
 export function titularDeFicha(ficha: Record<string, unknown> | undefined): string | null {
   const valor = ficha?.['titularCuentaUid'];
-  return typeof valor === 'string' && valor.trim() !== '' ? valor : null;
+  if (typeof valor !== 'string') return null;
+  // Se devuelve RECORTADO: un uid con espacios jamás coincidiría con el destino y la
+  // protección fallaría abierta. La consola (Usuarios.tsx) usa el mismo criterio.
+  const recortado = valor.trim();
+  return recortado !== '' ? recortado : null;
 }
 
 /** Lee la ficha del negocio y devuelve su titular (null si no tiene). */
