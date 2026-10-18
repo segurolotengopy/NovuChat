@@ -245,7 +245,7 @@ describe('asignar-rol: el titular no se quita ni se degrada', () => {
     }
   });
   it('el correo con mayúsculas o espacios no esquiva al titular', async () => {
-    expect(await dec(undefined, ' Admin1@EJEMPLO.com ', 'quitar')).toContain('fijar-titular.mjs');
+    expect(await dec(undefined, ` ${'admin1@ejemplo.com'.toUpperCase()} `, 'quitar')).toContain('fijar-titular.mjs');
   });
   it('permite a un no titular y a un tenant sin titular (control positivo)', async () => {
     expect(await dec('admin2', 'admin2@ejemplo.com', 'quitar')).toBeNull();
@@ -265,7 +265,7 @@ describe('asignar-rol: el titular no se quita ni se degrada', () => {
     const o = correr('admin1@ejemplo.com', '--rol', 'oper');
     expect(o.codigo, o.salida).toBe(1);
     expect(o.salida).toContain('fijar-titular.mjs');
-    const may = correr('  ADMIN1@Ejemplo.com ', '--quitar');
+    const may = correr(`  ${'admin1@ejemplo.com'.toUpperCase()} `, '--quitar');
     expect(may.codigo, may.salida).toBe(1); // el correo se normaliza: mayúsculas y espacios no esquivan al titular
     expect(may.salida).toContain('fijar-titular.mjs');
     const ok = correr('admin2@ejemplo.com', '--quitar');
