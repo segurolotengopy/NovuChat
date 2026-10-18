@@ -49,8 +49,24 @@ export const quitarUsuario = onCall(async (peticion) => {
   const uid = exigirAdminDe(peticion, tenantId);
   const destino = texto(datos['uid'], 128);
   if (!destino) throw new HttpsError('invalid-argument', 'Falta el usuario.');
+  // La forma de un uid de Firebase Auth: sin barras ni nada que cambie la ruta del documento.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(destino)) throw new HttpsError('invalid-argument', 'Usuario inválido.');
 
-  await db().doc(`tenants/${tenantId}/miembros/${destino}`).delete();
+  // Solo se quita a un MIEMBRO de este negocio. Sin esta comprobación, un administrador de A
+  // que conociera el uid de alguien de B (o del propietario) le revocaba todas las sesiones
+  // y le subía la versión de sus claims: una empresa tocaba a un usuario de otra. La ficha
+  // se borra con precondición de existencia (atómica) antes de revocar nada, y se audita
+  // solo después.
+  const fichaMiembro = db().doc(`tenants/${tenantId}/miembros/${destino}`);
+  try {
+    await fichaMiembro.delete({ exists: true });
+  } catch (e) {
+    // NOT_FOUND de Firestore (código gRPC 5): la ficha no existía.
+    if ((e as { code?: unknown }).code === 5) {
+      throw new HttpsError('not-found', 'Ese usuario no es miembro del negocio.');
+    }
+    throw e;
+  }
   // Revocación inmediata: sin esto el usuario retirado sigue leyendo hasta una
   // hora, que es lo que dura su ID token.
   await asignarRol(destino, tenantId, null, { revocarSesiones: true });
