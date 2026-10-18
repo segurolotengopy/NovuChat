@@ -41,7 +41,7 @@ const PUERTO = Number(process.env['FIRESTORE_EMULATOR_PORT'] ?? 8331);
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${PUERTO}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
 
-const { atenderSesion, idCupo, idSesion, idVisto } = await import('../../functions/src/core/turno/sesionFirestore.ts');
+const { atenderSesion, idCupo, idSesion, idVisto, PRESUPUESTO_MS } = await import('../../functions/src/core/turno/sesionFirestore.ts');
 const { periodoDe } = await import('../../functions/src/core/turno/sesion.ts');
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -53,6 +53,8 @@ const TEL = '59100000001';
 const TEL2 = '59100000002';
 const AHORA = Date.UTC(2026, 9, 18, 15, 0, 0);
 const MIN = 60_000;
+/** Las pruebas de LÓGICA no deben depender de qué tan lento resuelve el emulador una colisión; el presupuesto real se prueba aparte. */
+const PRESUPUESTO_LOGICA = 120_000;
 
 let db: Firestore;
 let entorno: RulesTestEnvironment;
@@ -78,7 +80,7 @@ const comp = (): string => `compromiso-${String(++n).padStart(6, '0')}`;
 
 type Sesion = Record<string, unknown>;
 const pedir = (r: Ruta, sesion: Sesion, tel: string | null = TEL, ahora = AHORA) =>
-  atenderSesion(db, r, { telefono: tel, sesion: { v: 1, espacio: 'venta', ejecucion: ejec(), ...sesion } }, ahora);
+  atenderSesion(db, r, { telefono: tel, sesion: { v: 1, espacio: 'venta', ejecucion: ejec(), ...sesion } }, ahora, { presupuestoMs: PRESUPUESTO_LOGICA });
 const leer = (r: Ruta, extra: Sesion = {}, tel: string | null = TEL, ahora = AHORA) => pedir(r, { accion: 'leer', ...extra }, tel, ahora);
 const comprometer = (r: Ruta, extra: Sesion, tel: string | null = TEL, ahora = AHORA) =>
   pedir(r, { accion: 'comprometer', idCompromiso: comp(), estado: { paso: 1 }, venceEnMin: 60, versionLeida: 0, ...extra }, tel, ahora);
@@ -343,6 +345,26 @@ describe('idempotencia', () => {
     expect((await refCupo('contacto', 'avisos', PN2, TEL).get()).data()?.['usados']).toBe(1);
   });
 
+  it('cupo del comercio: asentar desde OTRO contacto con el mismo idCompromiso no devuelve nada', async () => {
+    const id = 'compromiso-comercio-01';
+    await comprometer(ruta(), { idCompromiso: id, cupos: [cupoDia({ alcance: 'comercio', tope: 5 })] }, TEL);
+    const entrada = ((await refCupo('comercio').get()).data()?.['por'] as Record<string, { tel?: string }>)[id];
+    expect(entrada?.tel).toBe(TEL);
+    const ajeno = await asentar(ruta(), id, {}, TEL2);
+    expect(ajeno.json['resultado']).toBe('nada_que_asentar');
+    expect((await refCupo('comercio').get()).data()?.['usados']).toBe(1);
+    // el dueño sí lo devuelve
+    expect((await asentar(ruta(), id, {}, TEL)).json['resultado']).toBe('asentado');
+    expect((await refCupo('comercio').get()).data()?.['usados']).toBe(0);
+  });
+
+  it('cupo del comercio con entrada vieja sin `tel`: nadie la devuelve (queda consumida)', async () => {
+    const id = 'compromiso-viejo-0001';
+    await refCupo('comercio').set({ usados: 1, tope: 5, por: { [id]: { cantidad: 1, en: AHORA } }, vence: Timestamp.fromMillis(AHORA + 9 * 3_600_000) });
+    for (const tel of [TEL, TEL2]) expect((await asentar(ruta(), id, {}, tel)).json['resultado']).toBe('nada_que_asentar');
+    expect((await refCupo('comercio').get()).data()?.['usados']).toBe(1);
+  });
+
   it('asentar nunca toca otro comercio', async () => {
     const id = 'compromiso-ajeno-0001';
     await comprometer(ruta(OTRO), { idCompromiso: id, cupos: [cupoDia()] });
@@ -423,9 +445,60 @@ describe('vencimiento y datos corruptos', () => {
     expect(conv(l)['estado']).toBeNull();
   });
 
-  it('`version` corrupta en la sesión: datos_invalidos', async () => {
-    await refSesion().set({ version: -1, estadoJson: null, vence: Timestamp.fromMillis(AHORA + MIN), compromisos: [] });
-    expect((await comprometer(ruta(), { versionLeida: 0 })).json['resultado']).toBe('datos_invalidos');
+  it('sesión corrupta + versionLeida 0: se AUTORREPARA (versión 1, reparadoEn, compromisos viejos fuera)', async () => {
+    await refSesion().set({ version: -1, estadoJson: null, vence: Timestamp.fromMillis(AHORA + MIN), compromisos: ['viejo-0000001'] });
+    const l = await leer(ruta());
+    expect(conv(l)).toMatchObject({ version: 0, estado: null, corrupta: true });
+    const r = await comprometer(ruta(), { versionLeida: 0, estado: { ok: 1 } });
+    expect(r.json['resultado']).toBe('comprometido');
+    expect(conv(r)['version']).toBe(1);
+    const d = (await refSesion().get()).data() as Record<string, unknown>;
+    expect(d['version']).toBe(1);
+    expect(d['reparadoEn']).toBeInstanceOf(Timestamp);
+    expect(d['compromisos']).not.toContain('viejo-0000001');
+    // ya sana: leer no marca `corrupta`
+    const sana = conv(await leer(ruta()));
+    expect(sana['version']).toBe(1);
+    expect(sana['corrupta']).toBeUndefined();
+  });
+
+  it('sesión corrupta + versionLeida distinta de 0: datos_invalidos SIN escribir', async () => {
+    const datos = { version: -1, estadoJson: null, vence: Timestamp.fromMillis(AHORA + MIN), compromisos: [] };
+    await refSesion().set(datos);
+    for (const v of [1, 5]) {
+      const r = await comprometer(ruta(), { versionLeida: v });
+      expect(r.json['resultado']).toBe('datos_invalidos');
+      expect(conv(r)).toMatchObject({ corrupta: true });
+    }
+    expect((await refSesion().get()).data()).toMatchObject({ version: -1 });
+    expect((await refSesion().get()).data()?.['reparadoEn']).toBeUndefined();
+  });
+
+  it('autorreparación con un cupo agotado: no concede de más ni escribe la sesión', async () => {
+    await refCupo('contacto').set({ usados: 3, tope: 3, por: {}, vence: Timestamp.fromMillis(AHORA + 9 * 3_600_000) });
+    await refSesion().set({ version: 'x', vence: Timestamp.fromMillis(AHORA + MIN) });
+    const r = await comprometer(ruta(), { versionLeida: 0, cupos: [cupoDia()] });
+    expect(r.json).toMatchObject({ resultado: 'cupo_negado', motivo: 'agotado' });
+    expect((await refSesion().get()).data()?.['version']).toBe('x');
+  });
+
+  it('`compromisos` con elementos que no son cadenas: sesión corrupta', async () => {
+    await refSesion().set({ version: 3, estadoJson: null, vence: Timestamp.fromMillis(AHORA + MIN), compromisos: ['ok-00000001', 7, null] });
+    expect(conv(await leer(ruta()))).toMatchObject({ corrupta: true });
+    expect((await comprometer(ruta(), { versionLeida: 3 })).json['resultado']).toBe('datos_invalidos');
+  });
+
+  it('`estadoJson` que no es cadena: sesión corrupta', async () => {
+    await refSesion().set({ version: 3, estadoJson: { a: 1 }, vence: Timestamp.fromMillis(AHORA + MIN), compromisos: [] });
+    expect(conv(await leer(ruta()))).toMatchObject({ corrupta: true });
+    expect((await comprometer(ruta(), { versionLeida: 3 })).json['resultado']).toBe('datos_invalidos');
+  });
+
+  it('un visto con `vence` corrupto cuenta como repetido y no se reescribe', async () => {
+    const ref = db.collection('tenants').doc(T).collection('vistosDeTurno').doc(idVisto(PN, 'wamid.ROTO'));
+    await ref.set({ ejecucion: 'x', vence: 'siempre', phoneNumberId: PN });
+    expect((await leer(ruta(), { idMensaje: 'wamid.ROTO' })).json['visto']).toBe('repetido');
+    expect((await ref.get()).data()?.['vence']).toBe('siempre');
   });
 
   it('un estadoJson corrupto se lee como null sin marcar vencido', async () => {
@@ -447,6 +520,35 @@ describe('ids con nombres de Object.prototype', () => {
   it('una clave de cupo con forma de nombre heredado en minúsculas no se concede por herencia', async () => {
     const r = await comprometer(ruta(), { cupos: [cupoDia({ clave: 'tostring', tope: 1 })] });
     expect(r.json['resultado']).toBe('comprometido');
+  });
+});
+
+// ------------------------------------------------------------ presupuesto
+
+describe('presupuesto de tiempo', () => {
+  it('con el presupuesto agotado responde 503 con mensaje fijo y NO escribe', async () => {
+    const cuerpo = (sesion: Sesion) => ({ telefono: TEL, sesion: { v: 1, espacio: 'venta', ejecucion: ejec(), ...sesion } });
+    const cero = { presupuestoMs: 0 };
+    const c = await atenderSesion(db, ruta(), cuerpo({ accion: 'comprometer', idCompromiso: comp(), estado: { a: 1 }, venceEnMin: 5, versionLeida: 0, cupos: [cupoDia()] }), AHORA, cero);
+    expect(c.status).toBe(503);
+    expect(c.json).toEqual({ error: 'sesion: ocupada, reintente' });
+    const l = await atenderSesion(db, ruta(), cuerpo({ accion: 'leer', idMensaje: 'wamid.TIEMPO' }), AHORA, cero);
+    expect(l.status).toBe(503);
+    const a = await atenderSesion(db, ruta(), cuerpo({ accion: 'asentar', idCompromiso: comp() }), AHORA, cero);
+    expect(a.status).toBe(503);
+    expect((await refSesion().get()).exists).toBe(false);
+    expect((await refCupo('contacto').get()).exists).toBe(false);
+    expect((await db.collection('tenants').doc(T).collection('vistosDeTurno').get()).size).toBe(0);
+  });
+
+  it('con contención real y el presupuesto por defecto: 200 o 503, nunca 500, y a lo sumo un `nuevo`', async () => {
+    const cuerpo = () => ({ telefono: TEL, sesion: { v: 1, accion: 'leer', espacio: 'venta', ejecucion: ejec(), idMensaje: 'wamid.PRESUPUESTO' } });
+    const inicio = Date.now();
+    const rs = await Promise.all(Array.from({ length: 20 }, () => atenderSesion(db, ruta(), cuerpo(), AHORA, { presupuestoMs: PRESUPUESTO_MS })));
+    expect(rs.every((r) => r.status === 200 || r.status === 503)).toBe(true);
+    expect(rs.filter((r) => r.json['visto'] === 'nuevo').length).toBeLessThanOrEqual(1);
+    // Cada intento ya iniciado puede terminar (el emulador tarda ~3 s en resolver una colisión), pero no se inician otros.
+    expect(Date.now() - inicio).toBeLessThan(10_000);
   });
 });
 
