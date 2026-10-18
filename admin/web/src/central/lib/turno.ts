@@ -256,21 +256,28 @@ export const PENDIENTE_CADUCA_MS = 2 * 60_000;
 /** Sin «puede reintentar»: la pantalla no tiene botón de reintento, y solo se ofrece lo que se cumple. */
 export const TEXTO_CADUCADO = 'No se envió a tiempo.';
 
+/** Qué estado crudo venció: `pendiente` (nunca reclamado: seguro no salió) o `enviando` (el servidor lo da por `incierto`: pudo llegar). */
+export type VencidoDeEnvio = 'pendiente' | 'enviando' | null;
+
 /**
- * ¿Un `pendiente` lleva demasiado esperando? Se DERIVA de la hora del mensaje (`ts`, en milisegundos; 0 o ausente = sin dato)
+ * ¿Un mensaje lleva demasiado esperando? Se DERIVA de la hora del mensaje (`ts`, en milisegundos; 0 o ausente = sin dato)
  * y del reloj de la pantalla, sin escribir nada: la caducidad real la escribe el servidor solo cuando el flujo reclama,
- * y si el flujo está apagado nunca llegaría. Solo afecta al `pendiente`; sin hora no se inventa nada.
+ * y si el flujo está apagado nunca llegaría. Recibe el estado CRUDO porque `estadoDeMensaje` junta `enviando` y `pendiente`.
+ * Sin hora no se inventa nada; los demás estados no se afectan.
  */
-export function pendienteCaducado(e: EstadoMensajePersona | null, ts: number, ahora: number): boolean {
-  return e === 'pendiente' && Number.isFinite(ts) && ts > 0 && Number.isFinite(ahora) && ahora - ts > PENDIENTE_CADUCA_MS;
+export function vencidoDeEnvio(estadoCrudo: unknown, ts: number, ahora: number): VencidoDeEnvio {
+  if (estadoCrudo !== 'pendiente' && estadoCrudo !== 'enviando') return null;
+  if (!Number.isFinite(ts) || ts <= 0 || !Number.isFinite(ahora) || ahora - ts <= PENDIENTE_CADUCA_MS) return null;
+  return estadoCrudo;
 }
 
 /**
  * «Aceptado» es que WhatsApp lo recibió para entregarlo: NO es «entregado» ni «leído», y mucho menos dinero acreditado.
  * «Incierto» no se reenvía solo: lo decide la persona.
  */
-export function textoEstadoMensaje(e: EstadoMensajePersona, caducado = false): string {
-  if (e === 'pendiente' && caducado) return TEXTO_CADUCADO;
+export function textoEstadoMensaje(e: EstadoMensajePersona, vencido: VencidoDeEnvio = null): string {
+  if (e === 'pendiente' && vencido === 'pendiente') return TEXTO_CADUCADO;
+  if (e === 'pendiente' && vencido === 'enviando') return TEXTO_INCIERTO;
   switch (e) {
     case 'pendiente': return 'Enviando…';
     case 'aceptado': return 'Enviado a WhatsApp';

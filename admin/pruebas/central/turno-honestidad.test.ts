@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  PENDIENTE_CADUCA_MS, TEXTO_CADUCADO, estadoDeMensaje, pendienteCaducado, textoCuentaRegresiva, textoEstadoMensaje, ventanaDeEnvio,
+  PENDIENTE_CADUCA_MS, TEXTO_CADUCADO, TEXTO_INCIERTO, estadoDeMensaje, vencidoDeEnvio, textoCuentaRegresiva, textoEstadoMensaje, ventanaDeEnvio,
 } from '../../web/src/central/lib/turno';
 import { ventanaDeFicha } from '../../web/src/central/lib/conversaciones';
 import { PENDIENTE_MAXIMO_MS } from '../../functions/src/core/conversacion/salidaPersona';
@@ -12,7 +12,7 @@ import { PENDIENTE_MAXIMO_MS } from '../../functions/src/core/conversacion/salid
 const T0 = 1_800_000_000_000;
 const rotulo = (estadoCrudo: string, ts: number, ahora: number) => {
   const e = estadoDeMensaje(estadoCrudo)!;
-  return textoEstadoMensaje(e, pendienteCaducado(e, ts, ahora));
+  return textoEstadoMensaje(e, vencidoDeEnvio(estadoCrudo, ts, ahora));
 };
 
 describe('un pendiente caduca en la pantalla, sin escribir nada', () => {
@@ -20,9 +20,10 @@ describe('un pendiente caduca en la pantalla, sin escribir nada', () => {
   it('de 1:59 sigue «Enviando…»', () => expect(rotulo('pendiente', T0, T0 + 119_000)).toBe('Enviando…'));
   it('justo en 2:00 todavía «Enviando…»', () => expect(rotulo('pendiente', T0, T0 + 120_000)).toBe('Enviando…'));
   it('de 2:01 dice que no se envió a tiempo', () => expect(rotulo('pendiente', T0, T0 + 121_000)).toBe(TEXTO_CADUCADO));
-  it('`enviando` se comporta igual', () => {
+  it('`enviando` vencido NO dice «no se envió»: pudo llegar, es incierto', () => {
     expect(rotulo('enviando', T0, T0 + 119_000)).toBe('Enviando…');
-    expect(rotulo('enviando', T0, T0 + 121_000)).toBe(TEXTO_CADUCADO);
+    expect(rotulo('enviando', T0, T0 + 121_000)).toBe(TEXTO_INCIERTO);
+    expect(rotulo('enviando', T0, T0 + 121_000)).not.toBe(TEXTO_CADUCADO);
   });
   it('no promete reintento que la pantalla no tiene', () => expect(TEXTO_CADUCADO).not.toMatch(/reintent/i));
   it('aceptado, rechazado e incierto con fecha vieja no cambian', () => {
@@ -33,9 +34,9 @@ describe('un pendiente caduca en la pantalla, sin escribir nada', () => {
   });
   it('sin hora del mensaje no se inventa: sigue «Enviando…»', () => {
     expect(rotulo('pendiente', 0, T0)).toBe('Enviando…');
-    expect(pendienteCaducado('pendiente', Number.NaN, T0)).toBe(false);
+    expect(vencidoDeEnvio('pendiente', Number.NaN, T0)).toBeNull();
   });
-  it('un estado ausente no caduca', () => expect(pendienteCaducado(null, T0, T0 + 9e9)).toBe(false));
+  it('un estado ausente no caduca', () => expect(vencidoDeEnvio(null, T0, T0 + 9e9)).toBeNull());
 });
 
 describe('la cuenta regresiva sale de ultimoEntranteEn', () => {

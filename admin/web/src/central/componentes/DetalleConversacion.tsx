@@ -12,7 +12,7 @@ import {
   etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
 import {
-  accionesDeTurno, estadoDeMensaje, pendienteCaducado, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, ventanaAbiertaParaTomar,
+  accionesDeTurno, estadoDeMensaje, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar,
   type CapaTurno, type EstadoMensajePersona,
 } from '../lib/turno';
 
@@ -46,6 +46,8 @@ interface Msg {
   autorUid: string;
   /** Estado del envío de un mensaje de una persona; `null` si no lo trae (el del asistente y los de antes de H2 no). */
   estadoEnvio: EstadoMensajePersona | null;
+  /** El estado tal cual viene (`enviando` y `pendiente` se ven igual salvo cuando vencen). */
+  envioCrudo: unknown;
   /** Si fue rechazado: el código de Meta o del relé (texto), y los segundos de espera si el servidor los manda. */
   codigoEnvio: string;
   esperaSegundos: unknown;
@@ -81,6 +83,7 @@ function aMensaje(d: QueryDocumentSnapshot): Msg {
     autor: typeof x['autor'] === 'string' ? x['autor'] : '',
     autorUid: typeof x['autorUid'] === 'string' ? x['autorUid'].slice(0, 128) : '',
     estadoEnvio: x['autor'] === 'persona' ? estadoDeMensaje(x['estadoEnvio']) : null,
+    envioCrudo: x['autor'] === 'persona' ? x['estadoEnvio'] : null,
     codigoEnvio: typeof x['codigoEnvio'] === 'string' ? x['codigoEnvio'].slice(0, 20) : '',
     esperaSegundos: x['esperaSegundos'],
     ts: ts?.toMillis ? ts.toMillis() : 0,
@@ -384,7 +387,7 @@ export function DetalleConversacion(p: PropsDetalle) {
             // El de una persona lleva su uid ABREVIADO («usted» si es el de quien mira), nunca entero.
             const rotuloAutor = x.direccion === 'saliente' ? rotuloDeAutor(x.autor, x.autorUid, p.miUid) : '';
             const esPersona = x.direccion === 'saliente' && x.autor === 'persona';
-            const caducado = pendienteCaducado(x.estadoEnvio, x.ts, p.ahora);
+            const vencido = vencidoDeEnvio(x.envioCrudo, x.ts, p.ahora);
             return (
               <li key={x.id} className="cv-fila">
                 {nuevoDia && x.ts > 0 && <div className="cv-dia"><span>{etiquetaDia(x.ts, p.ahora)}</span></div>}
@@ -395,8 +398,8 @@ export function DetalleConversacion(p: PropsDetalle) {
                   <TextoSeguro valor={x.texto} />
                   <time dateTime={x.ts ? new Date(x.ts).toISOString() : undefined}>{x.ts ? horaCorta(x.ts) : ''}</time>
                   {esPersona && x.estadoEnvio && (
-                    <span className={`cv-envio cv-envio--${caducado ? 'rechazado' : x.estadoEnvio}`} data-estado={caducado ? 'caducado' : x.estadoEnvio}>
-                      {textoEstadoMensaje(x.estadoEnvio, caducado)}
+                    <span className={`cv-envio cv-envio--${vencido === 'pendiente' ? 'rechazado' : vencido === 'enviando' ? 'incierto' : x.estadoEnvio}`} data-estado={vencido ?? x.estadoEnvio}>
+                      {textoEstadoMensaje(x.estadoEnvio, vencido)}
                     </span>
                   )}
                   {esPersona && x.estadoEnvio === 'rechazado' && (
