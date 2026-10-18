@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { Confirmacion } from './Confirmacion';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, avisoPrecioPorContrato, mesEscrito, planDeLaCuenta, planesOfrecidos, planInicial,
-  type PlanEnVenta,
+  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, avisoPrecioPorContrato, bolsaDe, bolsasOfrecidas, mesEscrito, planDeLaCuenta,
+  planesOfrecidos, planInicial, tipoTrasCambioDeBolsas, type PlanEnVenta, type TipoBolsa,
 } from '../../central/lib/pagar';
 import { tipoCambioVigente, type Pago } from '../../central/lib/prepago';
 import {
@@ -23,9 +23,9 @@ export interface PedidoDePagoManual {
   comprobante: File | null;
 }
 
-// Los tipos que este formulario ofrece hoy. Las bolsas nuevas (`bolsaConversaciones`, `bolsaSalientes`)
-// las trae PR-4b, con la tarifa de la cuenta; mientras tanto el formulario no las ofrece.
-type Tipo = Extract<Pago['tipo'], 'mensualidad' | 'bolsa' | 'instalacion'>;
+// Lo que el operador puede elegir: la mensualidad, la instalación y la bolsa que corresponde a la TARIFA de la
+// cuenta (`bolsasOfrecidas`, que pregunta a `bolsaPermitida`, la misma regla con que el servidor rechaza).
+export type Tipo = 'mensualidad' | 'instalacion' | TipoBolsa;
 
 /**
  * CARGAR UN PAGO A MANO, CON COMPROBANTE (lo que A-3b prometía; `DISENO.md`
@@ -45,15 +45,17 @@ type Tipo = Extract<Pago['tipo'], 'mensualidad' | 'bolsa' | 'instalacion'>;
  * se puede cambiar: si difiere del vigente, el servidor exige
  * `motivoDiferencia`, y acá se avisa antes.
  */
-export function FormularioPagoManual({ cuenta, tipoCambio, ahoraMs, ocupado, onRegistrar }: {
+export function FormularioPagoManual({ cuenta, tipoCambio, ahoraMs, ocupado, onRegistrar, tipoInicial = 'mensualidad' }: {
   cuenta: Record<string, unknown> | null | undefined;
   tipoCambio: unknown;
   ahoraMs: number;
   ocupado: boolean;
   onRegistrar: (pedido: PedidoDePagoManual) => void;
+  /** Qué radio nace marcado. Solo lo usan las pruebas para dibujar el desplegable de una bolsa. */
+  tipoInicial?: Tipo;
 }) {
   const vigente = tipoCambioVigente(tipoCambio, ahoraMs);
-  const [tipo, setTipo] = useState<Tipo>('mensualidad');
+  const [tipoElegido, setTipo] = useState<Tipo>(tipoInicial);
   const [plan, setPlan] = useState<PlanEnVenta>(planInicial(cuenta));
   const [meses, setMeses] = useState(1);
   const [cantidad, setCantidad] = useState(1);
@@ -68,9 +70,14 @@ export function FormularioPagoManual({ cuenta, tipoCambio, ahoraMs, ocupado, onR
   const [pendiente, setPendiente] = useState(false);
 
   const planes = useMemo(() => planesOfrecidos(cuenta), [cuenta]);
+  // Las bolsas de ESTA cuenta, según su tarifa: estandar ve 300 por USD 15; meta_incluido o sin campo, 30 por USD 10.
+  // Sin titularidades (la consola no las lee): la de seguimiento no sale mientras `VENTA_BOLSA_SALIENTES` sea `false`,
+  // y encendida tampoco hasta que el bloque 2 traiga la consulta de titularidades.
+  const bolsas = useMemo(() => bolsasOfrecidas(cuenta), [cuenta]);
+  const tipo: Tipo = tipoTrasCambioDeBolsas(tipoElegido, bolsas);
   const pedido: Pago = tipo === 'instalacion' ? { tipo }
-    : tipo === 'bolsa' ? { tipo, cantidad }
-    : { tipo, plan, meses };
+    : tipo === 'mensualidad' ? { tipo, plan, meses }
+    : { tipo, cantidad };
   const tcoNumero = Number(tco);
   const vista = vistaDelPagoManual(cuenta, pedido, tcoNumero, ahoraMs);
   const montoRecibidoBs = recibido.trim() === '' ? (vista?.montoBs ?? null) : Number(recibido);
@@ -100,11 +107,15 @@ export function FormularioPagoManual({ cuenta, tipoCambio, ahoraMs, ocupado, onR
       </p>
       <fieldset>
         <legend>Qué pagó</legend>
-        {(['mensualidad', 'bolsa', 'instalacion'] as const).map((t) => (
+        {([
+          { t: 'mensualidad' as Tipo, texto: 'Mensualidad' },
+          ...bolsas.map((b) => ({ t: b.tipo as Tipo, texto: b.etiqueta })),
+          { t: 'instalacion' as Tipo, texto: 'Instalación' },
+        ]).map(({ t, texto }) => (
           <label key={t}>
             <input type="radio" name="pago-tipo" checked={tipo === t} disabled={ocupado || pendiente}
               onChange={() => setTipo(t)} />{' '}
-            {t === 'mensualidad' ? 'Mensualidad' : t === 'bolsa' ? 'Bolsa de conversaciones' : 'Instalación'}
+            {texto}
           </label>
         ))}
       </fieldset>
@@ -131,12 +142,14 @@ export function FormularioPagoManual({ cuenta, tipoCambio, ahoraMs, ocupado, onR
           </select>
         </>
       )}
-      {tipo === 'bolsa' && (
+      {tipo !== 'mensualidad' && tipo !== 'instalacion' && (
         <>
           <label htmlFor="pago-cantidad">Cuántas bolsas</label>
           <select id="pago-cantidad" value={cantidad} disabled={ocupado || pendiente} onChange={(e) => setCantidad(Number(e.target.value))}>
             {BOLSAS_POSIBLES.map((c) => (
-              <option key={c} value={c}>{c === 1 ? '1 bolsa' : `${c} bolsas`} · {c * PRECIOS.bolsa.conversaciones} conversaciones</option>
+              <option key={c} value={c}>
+                {c === 1 ? '1 bolsa' : `${c} bolsas`} · {c * bolsaDe(tipo).unidades} {bolsaDe(tipo).unidad} · USD {c * bolsaDe(tipo).precioUsd}
+              </option>
             ))}
           </select>
         </>
