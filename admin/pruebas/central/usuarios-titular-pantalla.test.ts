@@ -14,6 +14,9 @@ function criterioDe(codigo: string): (f: Record<string, unknown> | undefined) =>
   const m = /function titularDeFicha\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(codigo);
   if (!m) throw new Error('no se encontro titularDeFicha');
   const js = m[1]!.replace(/: string \| null/g, '').replace(/as string/g, '');
+  // La prueba ejecuta SOLO el cuerpo de una función del propio repositorio (leído del fuente, no de entrada
+  // externa) para comprobar que el espejo de la web da lo mismo que el servidor.
+  // nosemgrep: devsecops.js-eval-prohibido
   return new Function('ficha', js) as (f: Record<string, unknown> | undefined) => string | null;
 }
 
