@@ -55,6 +55,15 @@ describe('FormularioPagoManual: la bolsa según la tarifa de la cuenta', () => {
     }
   });
 
+  it('con la cuenta sin cargar (null o undefined) no ofrece ninguna bolsa, ni la de 30 por USD 10', () => {
+    for (const cuenta of [null, undefined]) {
+      const html = dibujar(cuenta as never, 'bolsa');
+      expect(etiquetas(html)).toEqual(['Mensualidad', 'Instalación']);
+      expect(html).not.toContain('id="pago-cantidad"');
+      expect(html).not.toContain('30 conversaciones');
+    }
+  });
+
   it('un tipo de bolsa que la tarifa no permite no se dibuja: vuelve a la mensualidad (no deja elegir la rechazada)', () => {
     const html = dibujar({ tarifa: 'estandar' }, 'bolsa');
     expect(html).not.toContain('id="pago-cantidad"');
@@ -75,6 +84,6 @@ describe('FormularioPagoManual: la bolsa según la tarifa de la cuenta', () => {
     const fuente = readFileSync(join(aqui, '..', '..', 'web', 'src', 'plataforma', 'componentes', 'FormularioPagoManual.tsx'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     expect(fuente).not.toMatch(/PRECIOS\.bolsa/);
-    expect(fuente).toMatch(/bolsasOfrecidas\(cuenta\)/);
+    expect(fuente).toMatch(/bolsasParaPantalla\(cuenta \?\? null\)/);
   });
 });

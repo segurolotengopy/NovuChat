@@ -763,6 +763,21 @@ describe('asignar-plan.mjs: --tarifa (PR-4b)', () => {
     expect(await auditorias('cambiar_tarifa', T1)).toEqual([]);
   });
 
+  it('--tarifa sola sobre una cuenta con plan AVISA que la copia queda desalineada y cómo alinearla', async () => {
+    const T3 = 'plan-tarifa-desalineada';
+    await db.recursiveDelete(db.doc(`tenants/${T3}`));
+    await db.doc(`tenants/${T3}`).set({ nombre: T3, estado: 'activo', plan: 'impulso' });
+    await db.doc(`tenants/${T3}/cuenta/estado`).set({
+      plan: 'impulso', limites: limitesDe('impulso', 'meta_incluido'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prueba',
+    });
+    const r = correr('--tenant', T3, '--tarifa', 'estandar');
+    expect(r.salida).toContain('DESALINEADA');
+    expect(r.salida).toContain('--plan impulso --tarifa estandar');
+    // Con --plan la copia se alinea: sin aviso.
+    expect(correr('--tenant', T3, '--tarifa', 'estandar', '--plan', 'impulso').salida).not.toContain('DESALINEADA');
+    expect(correr('--tenant', T3, '--tarifa', 'estandar', '--aplicar').salida).toContain('Recordatorio: un comercio con clientes en producción');
+  });
+
   it('en seco no escribe; --tarifa SOLA escribe el campo y NO reescribe la copia `limites`', async () => {
     const copia = await copiaDe();
     const seco = correr('--tenant', T1, '--tarifa', 'estandar');
@@ -783,6 +798,11 @@ describe('asignar-plan.mjs: --tarifa (PR-4b)', () => {
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toContain('1000 conversaciones');
     expect(((await cuenta(T1))['limites'] as { conversaciones: number }).conversaciones).toBe(1000);
+    // Las dos constancias, en la misma corrida: el cambio de tarifa y el de plan.
+    const t = await auditorias('cambiar_tarifa', T1);
+    const p = await auditorias('cambiar_plan', T1);
+    expect(t.some((x) => (x['despues'] as { tarifa: string }).tarifa === 'estandar')).toBe(true);
+    expect(p.some((x) => x['planDespues'] === 'pro')).toBe(true);
   });
 
   it('sin cuenta NO crea una cuenta parcial solo con la tarifa', async () => {

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Confirmacion } from './Confirmacion';
 import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, avisoPrecioPorContrato, bolsaDe, bolsasOfrecidas, mesEscrito, planDeLaCuenta,
+  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, avisoPrecioPorContrato, bolsaDe, bolsasParaPantalla, mesEscrito, planDeLaCuenta,
   planesOfrecidos, planInicial, tipoTrasCambioDeBolsas, type PlanEnVenta, type TipoBolsa,
 } from '../../central/lib/pagar';
 import { tipoCambioVigente, type Pago } from '../../central/lib/prepago';
@@ -24,7 +24,7 @@ export interface PedidoDePagoManual {
 }
 
 // Lo que el operador puede elegir: la mensualidad, la instalación y la bolsa que corresponde a la TARIFA de la
-// cuenta (`bolsasOfrecidas`, que pregunta a `bolsaPermitida`, la misma regla con que el servidor rechaza).
+// cuenta (`bolsasParaPantalla`, que pregunta a `bolsaPermitida`, la misma regla con que el servidor rechaza).
 export type Tipo = 'mensualidad' | 'instalacion' | TipoBolsa;
 
 /**
@@ -73,7 +73,7 @@ export function FormularioPagoManual({ cuenta, tipoCambio, ahoraMs, ocupado, onR
   // Las bolsas de ESTA cuenta, según su tarifa: estandar ve 300 por USD 15; meta_incluido o sin campo, 30 por USD 10.
   // Sin titularidades (la consola no las lee): la de seguimiento no sale mientras `VENTA_BOLSA_SALIENTES` sea `false`,
   // y encendida tampoco hasta que el bloque 2 traiga la consulta de titularidades.
-  const bolsas = useMemo(() => bolsasOfrecidas(cuenta), [cuenta]);
+  const bolsas = useMemo(() => bolsasParaPantalla(cuenta ?? null), [cuenta]);
   const tipo: Tipo = tipoTrasCambioDeBolsas(tipoElegido, bolsas);
   const pedido: Pago = tipo === 'instalacion' ? { tipo }
     : tipo === 'mensualidad' ? { tipo, plan, meses }

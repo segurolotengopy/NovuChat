@@ -32,6 +32,8 @@ const ESTANDAR = 'mt-ya-estandar';
 const BAJA = 'mt-baja';
 const SIN_CUENTA = 'mt-sin-cuenta';
 const AUSENTE = 'mt-no-existe';
+const REPETIDO = 'mt-repetido';
+const VUELTA = 'mt-vuelta';
 const NUM = '1000000091';
 const AHORA = Date.UTC(2026, 9, 17, 16, 0, 0);
 
@@ -49,7 +51,7 @@ const servicio = (c: Record<string, unknown>) => estadoDeServicio(c, consumidasD
 const COPIA_BELLIDO = limitesDe('impulso', 'meta_incluido');
 
 beforeAll(async () => {
-  for (const t of [BELLIDO, OTRO, ESTANDAR, BAJA, SIN_CUENTA]) await db.recursiveDelete(db.doc(`tenants/${t}`));
+  for (const t of [BELLIDO, OTRO, ESTANDAR, BAJA, SIN_CUENTA, REPETIDO, VUELTA]) await db.recursiveDelete(db.doc(`tenants/${t}`));
   await db.doc(`rutasWhatsApp/${NUM}`).delete();
   await db.doc(`tenants/${BELLIDO}`).set({ nombre: 'Como Bellido', estado: 'activo', plan: 'impulso', flujos: ['agendamiento'] });
   await db.doc(`tenants/${BELLIDO}/cuenta/estado`).set({
@@ -146,7 +148,7 @@ describe('migrar-tarifa.mjs: --aplicar', () => {
     expect((await db.doc(`tenants/${AUSENTE}/cuenta/estado`).get()).exists).toBe(false);
   });
 
-  it('escribe SOLO `tarifa` y la auditoría; la copia, el plan, el precio, la bolsa y los derivados quedan idénticos; el ajeno no se toca', async () => {
+  it('escribe SOLO `tarifa` (y actualizadoEn) y la auditoría; la copia, el plan, el precio, la bolsa y los derivados quedan idénticos; el ajeno no se toca', async () => {
     const antes = await cuenta(BELLIDO);
     const ajeno = await cuenta(OTRO);
     const ruta = (await db.doc(`rutasWhatsApp/${NUM}`).get()).data();
@@ -155,8 +157,13 @@ describe('migrar-tarifa.mjs: --aplicar', () => {
     expect(r.salida).toContain('✓ releído: tarifa estandar');
     const despues = await cuenta(BELLIDO);
     expect(despues['tarifa']).toBe('estandar');
-    const { tarifa: _t, ...resto } = despues;
+    expect(despues['actualizadoEn']).toBeDefined();
+    const { tarifa: _t, actualizadoEn: _a, ...resto } = despues;
     expect(resto).toEqual(antes);
+    // Lo que lee el servidor no cambia: la copia manda, no el campo.
+    const sAntes = servicio(antes);
+    const sDespues = servicio(despues);
+    for (const k of Object.keys(sAntes) as (keyof typeof sAntes)[]) expect(sDespues[k], `estadoDeServicio.${String(k)}`).toEqual(sAntes[k]);
     expect(despues['limites']).toEqual(COPIA_BELLIDO);
     expect(await cuenta(OTRO)).toEqual(ajeno);
     expect(await auditorias(OTRO)).toEqual([]);
@@ -170,19 +177,37 @@ describe('migrar-tarifa.mjs: --aplicar', () => {
   });
 
   it('repetirlo no escribe ni deja otra auditoría; y un comercio que ya la tiene no se toca', async () => {
-    const r = correr(...base, '--tenant', BELLIDO, '--tenant', ESTANDAR, '--tarifa', 'estandar', '--aplicar');
+    // Siembra su propio estado: pasa también si corre solo.
+    await db.recursiveDelete(db.doc(`tenants/${REPETIDO}`));
+    await db.doc(`tenants/${REPETIDO}`).set({ nombre: 'Repetido', estado: 'activo', plan: 'impulso' });
+    await db.doc(`tenants/${REPETIDO}/cuenta/estado`).set({ plan: 'impulso', limites: COPIA_BELLIDO, modalidad: 'prepago' });
+    expect(correr(...base, '--tenant', REPETIDO, '--tarifa', 'estandar', '--aplicar').codigo).toBe(0);
+    expect(await auditorias(REPETIDO)).toHaveLength(1);
+    const r = correr(...base, '--tenant', REPETIDO, '--tenant', ESTANDAR, '--tarifa', 'estandar', '--aplicar');
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toContain('ya tiene tarifa estandar');
-    expect(await auditorias(BELLIDO)).toHaveLength(1);
+    expect(r.salida).toContain('Recordatorio: un comercio con clientes en producción');
+    expect(await auditorias(REPETIDO)).toHaveLength(1);
     expect(await auditorias(ESTANDAR)).toEqual([]);
   });
 
   it('se puede volver a meta_incluido y queda auditado el antes; solo nombrados', async () => {
-    const r = correr(...base, '--tenant', BELLIDO, '--tarifa', 'meta_incluido', '--aplicar');
+    await db.recursiveDelete(db.doc(`tenants/${VUELTA}`));
+    await db.doc(`tenants/${VUELTA}`).set({ nombre: 'Vuelta', estado: 'activo', plan: 'impulso' });
+    await db.doc(`tenants/${VUELTA}/cuenta/estado`).set({ plan: 'impulso', limites: COPIA_BELLIDO, modalidad: 'prepago', tarifa: 'estandar' });
+    const r = correr(...base, '--tenant', VUELTA, '--tarifa', 'meta_incluido', '--aplicar');
     expect(r.codigo, r.salida).toBe(0);
-    expect((await cuenta(BELLIDO))['tarifa']).toBe('meta_incluido');
-    const a = (await auditorias(BELLIDO)).find((x) => (x['despues'] as { tarifa: string }).tarifa === 'meta_incluido');
+    expect((await cuenta(VUELTA))['tarifa']).toBe('meta_incluido');
+    const a = (await auditorias(VUELTA)).find((x) => (x['despues'] as { tarifa: string }).tarifa === 'meta_incluido');
     expect(a?.['antes']).toMatchObject({ tarifa: 'estandar' });
     expect((await cuenta(OTRO))).not.toHaveProperty('tarifa');
+  });
+
+  it('cuenta sin campo + meta_incluido: el seco dice «sin cambio de lo que rige» y aun así escribe el campo', async () => {
+    const seco = correr(...base, '--tenant', OTRO, '--tarifa', 'meta_incluido');
+    expect(seco.salida).toContain('sin cambio de lo que rige');
+    expect(await cuenta(OTRO)).not.toHaveProperty('tarifa');
+    expect(correr(...base, '--tenant', OTRO, '--tarifa', 'meta_incluido', '--aplicar').codigo).toBe(0);
+    expect((await cuenta(OTRO))['tarifa']).toBe('meta_incluido');
   });
 });

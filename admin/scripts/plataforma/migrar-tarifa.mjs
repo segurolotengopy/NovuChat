@@ -14,6 +14,7 @@
  *   - Con `--tenant <id>` (repetible) y `--tarifa <t>`: propone el cambio de cada comercio nombrado
  *     y, con `--aplicar`, escribe SOLO el campo `tarifa` de `tenants/{t}/cuenta/estado`, más la
  *     auditoría `migrar_tarifa` (antes y después) en la MISMA transacción, y RELEE al terminar.
+ *   - Escribe `tarifa` y `actualizadoEn` (como asignar-plan y migrar-ejes), nada más.
  *   - NUNCA toca la copia `limites`, ni `plan`, ni los derivados, ni la ficha, ni las rutas, ni un
  *     tenant que no se nombró. La copia se actualiza, si hace falta, con `asignar-plan.mjs --plan`.
  *   - Un tenant que no existe, dado de baja o sin `cuenta/estado` se RECHAZA antes de escribir nada:
@@ -25,6 +26,10 @@
  *   node scripts/plataforma/migrar-tarifa.mjs --proyecto <id> --operador <correo>
  *   node scripts/plataforma/migrar-tarifa.mjs --proyecto <id> --operador <correo> --tenant <id> --tarifa estandar
  *   node scripts/plataforma/migrar-tarifa.mjs --proyecto <id> --operador <correo> --tenant <id> --tarifa estandar --aplicar
+ *
+ * UN COMERCIO CON CLIENTES EN PRODUCCIÓN solo se nombra con el «sí» de Andres, por acción: la tarifa cambia la
+ * bolsa que puede comprar y las cifras que ve. El script no distingue comercios por nombre (un tenant nunca
+ * posee código): la salida de `--aplicar` lo recuerda.
  *
  * DECISIÓN C: Q'Taco se queda en `meta_incluido` hasta el traslado de su número (~07/11): no se
  * nombra ahora. Nunca imprime un número completo: solo sus últimos cuatro dígitos.
@@ -129,13 +134,16 @@ if (rechazos.length) {
 console.log('');
 let cambian = 0;
 let fallos = 0;
+const fallaron = [];
+if (APLICAR) console.log('  Recordatorio: un comercio con clientes en producción solo se nombra con el «sí» de Andres.\n');
 for (const t of NOMBRADOS) {
   const d = cuentas.get(t).data() ?? {};
   const antes = tarifaDe(d);
   const lim = limitesDeCuenta(d);
   if (d.tarifa === TARIFA) { console.log(`  = ${t}: ya tiene tarifa ${TARIFA}, sin cambios`); continue; }
   cambian += 1;
-  console.log(`  ${t}: tarifa ${d.tarifa ?? '(sin campo)'} (rige ${antes}) → ${TARIFA}; la copia (${lim.conversaciones} conversaciones) NO se toca`);
+  const sinCambioDeLoQueRige = antes === TARIFA ? ' · sin cambio de lo que rige (solo se escribe el campo)' : '';
+  console.log(`  ${t}: tarifa ${d.tarifa ?? '(sin campo)'} (rige ${antes}) → ${TARIFA}${sinCambioDeLoQueRige}; la copia (${lim.conversaciones} conversaciones) NO se toca`);
   if (!APLICAR) continue;
 
   const ref = db.doc(`tenants/${t}/cuenta/estado`);
@@ -147,27 +155,29 @@ for (const t of NOMBRADOS) {
       if (!f.exists || f.get('estado') === 'dado_de_baja' || !c.exists) return 'rechazado';
       const previa = c.get('tarifa');
       if (previa === TARIFA) return 'igual';
-      tx.update(ref, { tarifa: TARIFA });
+      const ahora = Timestamp.now();
+      tx.update(ref, { tarifa: TARIFA, actualizadoEn: ahora });
       tx.create(db.collection(`tenants/${t}/auditoria`).doc(), {
-        accion: 'migrar_tarifa', uid: OPERADOR, origen: 'script', script: 'migrar-tarifa', en: Timestamp.now(),
+        accion: 'migrar_tarifa', uid: OPERADOR, origen: 'script', script: 'migrar-tarifa', en: ahora,
         antes: { tarifa: previa ?? null, rige: tarifaDe(c.data()) }, despues: { tarifa: TARIFA, rige: TARIFA },
       });
       return 'escrito';
     });
   } catch (e) {
-    fallos += 1;
+    fallos += 1; fallaron.push(t);
     console.log(`    ✗ falló: ${e instanceof Error ? e.message : String(e)}`);
     continue;
   }
-  if (resultado === 'rechazado') { fallos += 1; console.log('    ✗ rechazado dentro de la transacción: no se escribió'); continue; }
+  if (resultado === 'rechazado') { fallos += 1; fallaron.push(t); console.log('    ✗ rechazado dentro de la transacción: no se escribió'); continue; }
   if (resultado === 'igual') { console.log('    = otro escritor ya la había fijado'); continue; }
   const leida = (await ref.get()).get('tarifa');
   const ok = leida === TARIFA;
-  if (!ok) fallos += 1;
+  if (!ok) { fallos += 1; fallaron.push(t); }
   console.log(`    ${ok ? '✓' : '✗'} releído: tarifa ${leida ?? '(sin campo)'}`);
 }
 
 console.log(`\n  Nombrados: ${NOMBRADOS.length} · con cambio: ${cambian} · fallos: ${fallos}`);
+if (fallaron.length) console.log(`  ✗ Fallaron: ${fallaron.join(', ')}`);
 if (!APLICAR) console.log('  Seco: no se escribió nada. Agregue --aplicar (con el OK de Andres).\n');
 else console.log('');
 process.exit(fallos > 0 ? 1 : 0);

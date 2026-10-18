@@ -75,7 +75,9 @@
  *                               `limites` no se reescribe. Con `--plan`, la copia del plan se
  *                               calcula con esta tarifa. Sin ella, rige la de la cuenta
  *                               (`tarifaDe`; sin campo, meta_incluido). Para varios comercios
- *                               a la vez: `migrar-tarifa.mjs`.
+ *                               a la vez: `migrar-tarifa.mjs`. Un comercio con clientes en
+ *                               producción solo se nombra con el «sí» de Andres (la salida de
+ *                               `--aplicar` lo recuerda).
  *   --operador <correo>         OBLIGATORIO: quien queda en la auditoría
  *                               (`uid`, `titularidadPor`, `origen: 'script'`),
  *                               no el nombre del script (LOW-3 de #207).
@@ -578,6 +580,10 @@ if (resumen.derivados) console.log(`  Derivados : ${JSON.stringify(resumen.deriv
 // LO QUE PASA CON EL CONTRATO, dicho en el seco y en el aplicado: un cambio de
 // plan que conserva un valor por contrato lo anuncia, y uno que lo fija o lo
 // quita dice el antes y el después.
+if (TARIFA && !PLAN && esIdPlan(a.plan) && a.limites && a.limites.conversaciones !== limitesDe(a.plan, TARIFA).conversaciones) {
+  console.log(`  ⚠ Copia    : la copia de límites (${a.limites.conversaciones} conversaciones) queda DESALINEADA con la tarifa ${TARIFA}`
+    + ` (el plan ${a.plan} trae ${limitesDe(a.plan, TARIFA).conversaciones}). Quien hace cumplir lee la copia. Para alinearla: --plan ${a.plan} --tarifa ${TARIFA}.`);
+}
 const q = resumen.queda;
 if (q) {
   for (const [k, v] of Object.entries(q.conservados)) {
@@ -611,6 +617,8 @@ if (!APLICAR) {
   console.log('\n  Seco: no se escribió nada. Agregue --aplicar.\n');
   process.exit(0);
 }
+
+console.log('\n  Recordatorio: un comercio con clientes en producción solo se nombra con el «sí» de Andres.');
 
 // --- verificación por relectura ---------------------------------------------
 const [cuenta, ficha, ruta] = await Promise.all([refCuenta.get(), refFicha.get(), refRuta ? refRuta.get() : null]);
