@@ -403,7 +403,7 @@ export function DetalleConversacion(p: PropsDetalle) {
                   <time dateTime={x.ts ? new Date(x.ts).toISOString() : undefined}>{x.ts ? horaCorta(x.ts) : ''}</time>
                   {esPersona && x.estadoEnvio && (
                     <span className={`cv-envio cv-envio--${vencido === 'pendiente' ? 'rechazado' : vencido === 'enviando' ? 'incierto' : x.estadoEnvio}`} data-estado={vencido ?? x.estadoEnvio}>
-                      {textoEstadoMensaje(x.estadoEnvio, vencido)}
+                      {textoEstadoMensaje(x.estadoEnvio, vencido, x.codigoEnvio)}
                     </span>
                   )}
                   {esPersona && x.estadoEnvio === 'rechazado' && (

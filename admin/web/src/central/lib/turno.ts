@@ -257,6 +257,8 @@ export const PENDIENTE_CADUCA_MS = 2 * 60_000;
 export const ENVIANDO_CADUCA_MS = 2 * 60_000;
 /** Sin «puede reintentar»: la pantalla no tiene botón de reintento, y solo se ofrece lo que se cumple. */
 export const TEXTO_CADUCADO = 'No se envió a tiempo';
+/** El servidor marcó el mensaje `caducado`: venció antes de poder enviarse; WhatsApp ni lo vio ni lo rechazó. */
+export const TEXTO_CADUCO = 'Caducó antes de poder enviarse';
 
 /** Qué estado crudo venció: `pendiente` (nunca reclamado: seguro no salió) o `enviando` (el servidor lo da por `incierto`: pudo llegar). */
 export type VencidoDeEnvio = 'pendiente' | 'enviando' | null;
@@ -288,7 +290,10 @@ export function vencidoDeEnvio(estadoCrudo: unknown, ts: number, ahora: number, 
  * «Aceptado» es que WhatsApp lo recibió para entregarlo: NO es «entregado» ni «leído», y mucho menos dinero acreditado.
  * «Incierto» no se reenvía solo: lo decide la persona.
  */
-export function textoEstadoMensaje(e: EstadoMensajePersona, vencido: VencidoDeEnvio = null): string {
+export function textoEstadoMensaje(e: EstadoMensajePersona, vencido: VencidoDeEnvio = null, codigo?: unknown): string {
+  // `caducado` lo escribe el servidor cuando el mensaje esperó demasiado: WhatsApp NUNCA lo vio, así que «WhatsApp no lo
+  // aceptó» sería falso. Se dice lo que pasó.
+  if (e === 'rechazado' && typeof codigo === 'string' && codigo.trim() === 'caducado') return TEXTO_CADUCO;
   if (e === 'pendiente' && vencido === 'pendiente') return TEXTO_CADUCADO;
   if (e === 'pendiente' && vencido === 'enviando') return TEXTO_INCIERTO;
   switch (e) {

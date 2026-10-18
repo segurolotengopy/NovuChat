@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  ENVIANDO_CADUCA_MS, PENDIENTE_CADUCA_MS, TEXTO_CADUCADO, TEXTO_INCIERTO, estadoDeMensaje, vencidoDeEnvio, textoCuentaRegresiva, textoEstadoMensaje, ventanaDeEnvio,
+  ENVIANDO_CADUCA_MS, PENDIENTE_CADUCA_MS, TEXTO_CADUCADO, TEXTO_CADUCO, TEXTO_INCIERTO, estadoDeMensaje, vencidoDeEnvio, textoCuentaRegresiva, textoEstadoMensaje, ventanaDeEnvio,
 } from '../../web/src/central/lib/turno';
 import { ventanaDeFicha } from '../../web/src/central/lib/conversaciones';
 import { ENVIANDO_MAXIMO_MS, PENDIENTE_MAXIMO_MS } from '../../functions/src/core/conversacion/salidaPersona';
@@ -68,5 +68,23 @@ describe('la cuenta regresiva sale de ultimoEntranteEn', () => {
   it('sin dato: sin dato, nunca una cuenta inventada', () => {
     expect(ventanaDeEnvio(null, ahora).estado).toBe('sin-dato');
     expect(ventanaDeEnvio(null, ahora).restanteMs).toBe(0);
+  });
+
+  describe('un mensaje caducado no dice que WhatsApp lo rechazó (hallazgo D)', () => {
+    it('rechazado con código caducado → «Caducó antes de poder enviarse»', () => {
+      expect(textoEstadoMensaje('rechazado', null, 'caducado')).toBe(TEXTO_CADUCO);
+      expect(textoEstadoMensaje('rechazado', null, ' caducado ')).toBe(TEXTO_CADUCO);
+      expect(TEXTO_CADUCO).not.toMatch(/WhatsApp no lo aceptó/);
+    });
+    it('CONTROL: un rechazo real de WhatsApp o sin código sigue diciendo que no lo aceptó', () => {
+      for (const c of ['131047', '130429', 'WM-3037', undefined, null, '', 'CADUCADO']) {
+        expect(textoEstadoMensaje('rechazado', null, c)).toBe('WhatsApp no lo aceptó: no se envió');
+      }
+    });
+    it('el código caducado no cambia otros estados', () => {
+      expect(textoEstadoMensaje('aceptado', null, 'caducado')).toBe('Enviado a WhatsApp');
+      expect(textoEstadoMensaje('incierto', null, 'caducado')).toBe('No se pudo confirmar si llegó');
+      expect(textoEstadoMensaje('pendiente', null, 'caducado')).toBe('Enviando…');
+    });
   });
 });
