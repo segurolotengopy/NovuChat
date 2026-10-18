@@ -34,7 +34,6 @@ export const MAX_COMPROMISOS = 5;
 /** Tope de servidor de un cupo: ningún cupo es un límite comercial. */
 export const MAX_TOPE = 1000;
 export const MAX_VENCE_MIN = 4320;
-const MAX_ID_MENSAJE = 256;
 /** Entradas de `por` que se conservan en un cupo (las más recientes). */
 export const MAX_POR = 50;
 
@@ -49,6 +48,8 @@ const RE_TELEFONO = /^[0-9]{8,15}$/;
 const RE_ESPACIO = /^[a-z][a-z0-9-]{0,31}$/;
 const RE_EJECUCION = /^[A-Za-z0-9_-]{1,64}$/;
 const RE_COMPROMISO = /^[A-Za-z0-9_.:-]{8,128}$/;
+/** Los wamid de Meta son ASCII imprimible: sin sustitutos sueltos que colisionarían al hashear. */
+const RE_ID_MENSAJE = /^[\x21-\x7e]{1,256}$/;
 const RE_CLAVE = /^[a-z][a-z0-9_-]{0,31}$/;
 
 /** Errores fijos: el cuerpo nunca repite lo que mandó el flujo. */
@@ -81,6 +82,7 @@ export interface PeticionSesion {
   canal: 'wa';
   ejecucion: string;
   idMensaje?: string;
+  /** En `leer` es opcional y se IGNORA; en `asentar` también; `comprometer` la exige. */
   versionLeida?: number;
   idCompromiso?: string;
   /** Solo en `comprometer`/`asentar`; `undefined` = no vino. */
@@ -111,10 +113,16 @@ export interface Conversacion {
   vencido: boolean;
 }
 
+/** Lo que un compromiso consumió de un cupo; `en` (ms) ordena la poda, no el orden de las claves. */
+export interface ConsumoDeCupo {
+  cantidad: number;
+  en: number;
+}
+
 export interface DocCupo {
   usados: number;
   vence: number | null;
-  por?: Record<string, number>;
+  por?: Record<string, ConsumoDeCupo>;
 }
 
 export interface CupoPlan {
@@ -132,7 +140,7 @@ export interface CupoEscrito {
   usados: number;
   tope: number;
   vence: number;
-  por: Record<string, number>;
+  por: Record<string, ConsumoDeCupo>;
 }
 
 export type DecisionCompromiso =
@@ -242,7 +250,7 @@ export function validarSesion(sesion: unknown, telefono: string | null): Resulta
     }
     let idMensaje: string | undefined;
     if (sesion.idMensaje !== undefined) {
-      if (typeof sesion.idMensaje !== 'string' || sesion.idMensaje.length < 1 || sesion.idMensaje.length > MAX_ID_MENSAJE) {
+      if (typeof sesion.idMensaje !== 'string' || !RE_ID_MENSAJE.test(sesion.idMensaje)) {
         return forma();
       }
       idMensaje = sesion.idMensaje;
@@ -260,42 +268,57 @@ export function validarSesion(sesion: unknown, telefono: string | null): Resulta
 
   // comprometer / asentar
   if (sesion.idMensaje !== undefined) return forma();
-  if (versionLeida === undefined) return forma();
   if (typeof sesion.idCompromiso !== 'string' || !RE_COMPROMISO.test(sesion.idCompromiso)) return forma();
 
+  if (accion === 'asentar') {
+    // Devolver los cupos de un compromiso no lleva estado, vencimiento ni cupos
+    // nuevos (no tendrían significado) y no depende de la versión: la
+    // `versionLeida`, si viene, se valida como entero pero se IGNORA.
+    if (sesion.estado !== undefined || sesion.venceEnMin !== undefined || sesion.cupos !== undefined) return forma();
+    return {
+      ok: true,
+      peticion: {
+        v: 1, accion, espacio: sesion.espacio, canal: 'wa', ejecucion: sesion.ejecucion,
+        idCompromiso: sesion.idCompromiso, cupos: [],
+      },
+    };
+  }
+
+  if (versionLeida === undefined) return forma();
   const cupos = sesion.cupos === undefined ? [] : validarCupos(sesion.cupos);
   if (cupos === null) return forma();
 
-  let estado: Record<string, unknown> | null | undefined;
-  if (sesion.estado !== undefined) {
-    if (sesion.estado !== null && !esObjetoPlano(sesion.estado)) return forma();
-    estado = sesion.estado as Record<string, unknown> | null;
+  if (sesion.estado === undefined || sesion.venceEnMin === undefined) return forma();
+  if (sesion.estado !== null && !esObjetoPlano(sesion.estado)) return forma();
+  const estado = sesion.estado as Record<string, unknown> | null;
+  if (
+    !Number.isInteger(sesion.venceEnMin) || (sesion.venceEnMin as number) < 1 ||
+    (sesion.venceEnMin as number) > MAX_VENCE_MIN
+  ) {
+    return forma();
   }
-  let venceEnMin: number | undefined;
-  if (sesion.venceEnMin !== undefined) {
-    if (!Number.isInteger(sesion.venceEnMin) || (sesion.venceEnMin as number) < 1 || (sesion.venceEnMin as number) > MAX_VENCE_MIN) {
+  const venceEnMin = sesion.venceEnMin as number;
+
+  if (estado !== null) {
+    // Primero una cota barata (un solo recorrido de `stringify`) y recién
+    // después la profundidad: un objeto ancho y enorme no se recorre dos veces.
+    // CUANDO SE SUPERAN LAS DOS GANA EL TAMAÑO (413), porque se mide primero.
+    // Un anidado tan hondo que `stringify` no puede recorrerlo es forma inválida.
+    let largo: number;
+    try {
+      largo = Buffer.byteLength(JSON.stringify(estado), 'utf8');
+    } catch {
       return forma();
     }
-    venceEnMin = sesion.venceEnMin as number;
-  }
-  // Comprometer reemplaza el estado: sin estado y sin vencimiento no hay qué guardar.
-  if (accion === 'comprometer' && (estado === undefined || venceEnMin === undefined)) return forma();
-
-  if (estado !== undefined && estado !== null) {
+    if (largo > MAX_ESTADO_BYTES) return { ok: false, status: 413, error: ERRORES_SESION.grande };
     if (profundidadSupera(estado, MAX_PROFUNDIDAD)) return forma();
-    if (Buffer.byteLength(JSON.stringify(estado), 'utf8') > MAX_ESTADO_BYTES) {
-      return { ok: false, status: 413, error: ERRORES_SESION.grande };
-    }
   }
 
   return {
     ok: true,
     peticion: {
       v: 1, accion, espacio: sesion.espacio, canal: 'wa', ejecucion: sesion.ejecucion,
-      versionLeida, idCompromiso: sesion.idCompromiso,
-      ...(estado === undefined ? {} : { estado }),
-      ...(venceEnMin === undefined ? {} : { venceEnMin }),
-      cupos,
+      versionLeida, idCompromiso: sesion.idCompromiso, estado, venceEnMin, cupos,
     },
   };
 }
@@ -312,16 +335,23 @@ export function idSesion(pnid: string, espacio: string, telefono: string): strin
   return `${exigir(RE_PNID, pnid, 'pnid')}~${exigir(RE_ESPACIO, espacio, 'espacio')}~wa_${exigir(RE_TELEFONO, telefono, 'telefono')}`;
 }
 
-/** sha256 hex de `pnid|idMensaje`: el id de Meta puede traer caracteres que Firestore no admite. */
+/**
+ * sha256 hex de `pnid|idMensaje`. NO lleva `espacio` A PROPÓSITO: los vistos
+ * son por número, y un mismo mensaje no puede ser «nuevo» en dos espacios del
+ * mismo número. El id de Meta puede traer caracteres que Firestore no admite. */
 export function idVisto(pnid: string, idMensaje: string): string {
   exigir(RE_PNID, pnid, 'pnid');
-  if (typeof idMensaje !== 'string' || idMensaje.length < 1 || idMensaje.length > MAX_ID_MENSAJE) {
+  if (typeof idMensaje !== 'string' || !RE_ID_MENSAJE.test(idMensaje)) {
     throw new RangeError('idMensaje invalido');
   }
   return createHash('sha256').update(`${pnid}|${idMensaje}`, 'utf8').digest('hex');
 }
 
-/** `{pnid}~{clave}~{wa_tel|_}~{periodo}` */
+/**
+ * `{pnid}~{clave}~{wa_tel|_}~{periodo}`. Sin `espacio` A PROPÓSITO: los cupos
+ * son por número y contacto, y todos los espacios de un mismo número comparten
+ * la clave (si no, un flujo esquivaría el tope cambiando de espacio).
+ */
 export function idCupo(
   pnid: string, clave: string, alcance: AlcanceCupo, telefono: string | null, periodo: string,
 ): string {
@@ -462,9 +492,7 @@ export function decidirCompromiso(e: EntradaCompromiso): DecisionCompromiso {
   const cupos: CupoEscrito[] = e.cupos.map((c) => {
     const doc = e.cuposActuales[c.id];
     const vivo = doc && (doc.vence === null || doc.vence > e.ahoraMs) ? doc : undefined;
-    const por = { ...(vivo?.por ?? {}), [e.idCompromiso]: c.cantidad };
-    const claves = Object.keys(por);
-    for (const k of claves.slice(0, Math.max(0, claves.length - MAX_POR))) delete por[k];
+    const por = podarPor({ ...(vivo?.por ?? {}), [e.idCompromiso]: { cantidad: c.cantidad, en: e.ahoraMs } });
     return { id: c.id, usados: (vivo?.usados ?? 0) + c.cantidad, tope: c.tope, vence: c.vence, por };
   });
   return {
@@ -477,4 +505,43 @@ export function decidirCompromiso(e: EntradaCompromiso): DecisionCompromiso {
     cupos,
     conversacion: { version, estado: e.estado, desde: e.ahoraMs, vence, vencido: false },
   };
+}
+
+/**
+ * Deja en `por` las MAX_POR entradas con `en` más reciente. Se ordena por `en`
+ * y NO por el orden de las claves: Firestore devuelve los mapas ordenados por
+ * clave y `Object.keys` pone primero las claves enteras, así que «las primeras
+ * en insertarse» no existe como concepto. Empates de `en`: la clave menor se
+ * descarta primero, para que el resultado sea determinista.
+ */
+export function podarPor(por: Record<string, ConsumoDeCupo>): Record<string, ConsumoDeCupo> {
+  const entradas = Object.entries(por);
+  if (entradas.length <= MAX_POR) return por;
+  entradas.sort((a, b) => b[1].en - a[1].en || (a[0] < b[0] ? 1 : -1));
+  return Object.fromEntries(entradas.slice(0, MAX_POR));
+}
+
+export type DecisionAsentar =
+  | { resultado: 'nada_que_asentar' }
+  | { resultado: 'asentado'; cupos: { id: string; usados: number; por: Record<string, ConsumoDeCupo> }[] };
+
+/**
+ * `asentar`: DEVUELVE los cupos que consumió ese compromiso (la entrega no se
+ * hizo). Por cada cupo con `por[idCompromiso]`: `usados -= cantidad` (nunca
+ * bajo 0) y se borra esa entrada. Sin ningún cupo que lo tenga (ya asentado,
+ * podado o inexistente) -> `nada_que_asentar`, sin escribir: repetirlo no hace
+ * nada. Si asentar falla, el cupo queda consumido (lado conservador).
+ */
+export function decidirAsentar(
+  idCompromiso: string, cuposActuales: Readonly<Record<string, DocCupo | undefined>>,
+): DecisionAsentar {
+  const cupos: { id: string; usados: number; por: Record<string, ConsumoDeCupo> }[] = [];
+  for (const [id, doc] of Object.entries(cuposActuales)) {
+    const consumo = doc?.por?.[idCompromiso];
+    if (!doc || !consumo) continue;
+    const por = { ...doc.por };
+    delete por[idCompromiso];
+    cupos.push({ id, usados: Math.max(0, doc.usados - consumo.cantidad), por });
+  }
+  return cupos.length === 0 ? { resultado: 'nada_que_asentar' } : { resultado: 'asentado', cupos };
 }

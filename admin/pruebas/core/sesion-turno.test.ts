@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  decidirCompromiso, decidirVisto, ERRORES_SESION, finDelPeriodo, idCupo, idSesion, idVisto,
+  decidirAsentar, decidirCompromiso, decidirVisto, podarPor, ERRORES_SESION, finDelPeriodo, idCupo, idSesion, idVisto,
   leerConversacion, periodoDe, planDeCupos, validarSesion, venceDeCupo,
   type DocSesion, type EntradaCompromiso,
 } from '../../functions/src/core/turno/sesion';
@@ -121,6 +121,36 @@ describe('validarSesion: lo que entra', () => {
     expect(malo(comprometer({ idMensaje: 'wamid.X' })).status).toBe(400);
   });
 
+  it('idMensaje: solo ASCII imprimible; sustitutos sueltos que antes colisionaban -> 400', () => {
+    const base = { v: 1, espacio: 'venta', ejecucion: 'ej-1' };
+    for (const m of ['\ud800', '\udc00', 'wamid.\ud800', 'con espacio', 'tab\t', 'ñ', 'é', 'a\u0000b', '\x7f']) {
+      expect(malo({ ...base, idMensaje: m }).status).toBe(400);
+    }
+    expect(validarSesion({ ...base, idMensaje: 'wamid.HBgLNTkxNzAw==/+_-' }, TEL).ok).toBe(true);
+    expect(() => idVisto('1234', '\ud800')).toThrow();
+    expect(() => idVisto('1234', '\udc00')).toThrow();
+  });
+
+  describe('asentar', () => {
+    const asentar = (extra: Record<string, unknown> = {}) => ({
+      v: 1, accion: 'asentar', espacio: 'venta', ejecucion: 'ej-1', idCompromiso: 'ej-1:turno-1', ...extra,
+    });
+    it('exige idCompromiso y ejecucion; versionLeida es opcional e ignorada', () => {
+      expect(validarSesion(asentar(), TEL)).toMatchObject({ ok: true, peticion: { accion: 'asentar', idCompromiso: 'ej-1:turno-1', cupos: [] } });
+      const r = validarSesion(asentar({ versionLeida: 9 }), TEL);
+      expect(r.ok && r.peticion).not.toHaveProperty('versionLeida');
+      expect(malo(asentar({ idCompromiso: undefined })).status).toBe(400);
+      expect(malo(asentar({ idCompromiso: 'a/b/c/d/e/f' })).status).toBe(400);
+      expect(malo(asentar({ ejecucion: undefined })).status).toBe(400);
+      expect(malo(asentar({ versionLeida: -1 })).status).toBe(400);
+    });
+    it('campos sobrantes (estado, venceEnMin, cupos, idMensaje) -> 400', () => {
+      for (const extra of [{ estado: {} }, { estado: null }, { venceEnMin: 5 }, { cupos: [] }, { idMensaje: 'x' }]) {
+        expect(malo(asentar(extra)).status).toBe(400);
+      }
+    });
+  });
+
   it('leer no admite compromiso, estado, vencimiento ni cupos', () => {
     const base = { v: 1, espacio: 'venta', ejecucion: 'ej-1' };
     for (const extra of [{ idCompromiso: 'ej-1:turno-1' }, { estado: {} }, { venceEnMin: 5 }, { cupos: [] }]) {
@@ -181,7 +211,10 @@ describe('validarSesion: lo que entra', () => {
       };
       expect(validarSesion(comprometer({ estado: anidar(20) }), TEL).ok).toBe(true);
       expect(malo(comprometer({ estado: anidar(21) })).status).toBe(400);
-      expect(malo(comprometer({ estado: anidar(5000) })).status).toBe(400);
+      // Ambos límites superados: gana el tamaño, que se mide primero.
+      expect(malo(comprometer({ estado: anidar(5000) })).status).toBe(413);
+      // Hondo pero chico: profundidad.
+      expect(malo(comprometer({ estado: anidar(100) })).status).toBe(400);
       expect(malo(comprometer({ estado: { a: [[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]] } })).status).toBe(400);
     });
   });
@@ -386,11 +419,11 @@ describe('decidirCompromiso', () => {
     it('incrementa, registra por[idCompromiso] y fija tope y vence', () => {
       const cupos = plan([{ ...pedido, tope: 10, cantidad: 4 }]);
       const r = decidirCompromiso(entrada({
-        cupos, cuposActuales: { [cupos[0].id]: { usados: 2, vence: ahora + D, por: { previo: 2 } } },
+        cupos, cuposActuales: { [cupos[0].id]: { usados: 2, vence: ahora + D, por: { previo: { cantidad: 2, en: ahora - 5 } } } },
       }));
       if (r.resultado !== 'comprometido') throw new Error('x');
       expect(r.cupos).toEqual([{
-        id: cupos[0].id, usados: 6, tope: 10, vence: venceDeCupo(ahora, 'hora'), por: { previo: 2, 'nuevo-0000001': 4 },
+        id: cupos[0].id, usados: 6, tope: 10, vence: venceDeCupo(ahora, 'hora'), por: { previo: { cantidad: 2, en: ahora - 5 }, 'nuevo-0000001': { cantidad: 4, en: ahora } },
       }]);
     });
     it('un cupo vencido que el TTL aún no borró cuenta como vacío', () => {
@@ -407,16 +440,34 @@ describe('decidirCompromiso', () => {
       expect(r).toMatchObject({ resultado: 'cupo_negado', motivo: 'agotado', clave: 'malo' });
       expect(r).not.toHaveProperty('cupos');
     });
-    it('`por` conserva solo las 50 entradas más recientes', () => {
+    it('`por` conserva los 50 más recientes por `en`, no por orden de claves', () => {
       const cupos = plan([{ ...pedido, tope: 1000 }]);
-      const por: Record<string, number> = {};
-      for (let i = 0; i < 50; i++) por[`viejo-${String(i).padStart(3, '0')}`] = 1;
-      const r = decidirCompromiso(entrada({ cupos, cuposActuales: { [cupos[0].id]: { usados: 50, vence: ahora + D, por } } }));
+      // Claves enteras y alfabéticas, y la más vieja con la clave que ordena ÚLTIMA:
+      // si la poda siguiera el orden de las claves, se perdería otra.
+      const por: Record<string, { cantidad: number; en: number }> = {};
+      for (let i = 0; i < 49; i++) por[String(10000000 + i)] = { cantidad: 1, en: ahora - 1000 + i };
+      por.zzzzzzzz = { cantidad: 1, en: ahora - 99999 };
+      por.aaaaaaaa = { cantidad: 1, en: ahora - 500 };
+      // lectura que reordena alfabéticamente (como Firestore)
+      const reordenado = Object.fromEntries(Object.entries(por).sort(([x], [y]) => (x < y ? -1 : 1)));
+      const r = decidirCompromiso(entrada({ idCompromiso: '12345678', cupos, cuposActuales: { [cupos[0].id]: { usados: 51, vence: ahora + D, por: reordenado } } }));
       if (r.resultado !== 'comprometido') throw new Error('x');
       const claves = Object.keys(r.cupos[0].por);
       expect(claves).toHaveLength(50);
-      expect(claves).not.toContain('viejo-000');
-      expect(claves).toContain('nuevo-0000001');
+      expect(claves).not.toContain('zzzzzzzz'); // la más vieja por `en`
+      expect(claves).toContain('aaaaaaaa');
+      expect(claves).toContain('12345678'); // idCompromiso numérico recién agregado
+      expect(r.cupos[0].por['12345678']).toEqual({ cantidad: 1, en: ahora });
+    });
+    it('podarPor no toca lo que cabe y es determinista en empates', () => {
+      const chico = { a: { cantidad: 1, en: 1 } };
+      expect(podarPor(chico)).toBe(chico);
+      const muchos: Record<string, { cantidad: number; en: number }> = {};
+      for (let i = 0; i < 52; i++) muchos[`k${String(i).padStart(2, '0')}`] = { cantidad: 1, en: 7 };
+      const p = Object.keys(podarPor(muchos));
+      expect(p).toHaveLength(50);
+      expect(p).not.toContain('k00');
+      expect(p).not.toContain('k01');
     });
     it('planDeCupos: el cupo de comercio no depende del teléfono; el de contacto sí', () => {
       const a = planDeCupos(PNID, '59170000001', [{ clave: 'aviso', alcance: 'comercio', periodo: 'dia', cantidad: 1 }], ahora);
@@ -434,6 +485,42 @@ describe('decidirCompromiso', () => {
     decidirCompromiso(entrada({ doc: d }));
     decidirCompromiso(entrada({ doc: d, versionLeida: 0 }));
     expect(JSON.stringify(d)).toBe(copia);
+  });
+});
+
+describe('decidirAsentar', () => {
+  const ahora = 1_800_000_000_000;
+  const cuposDe = () => ({
+    c1: { usados: 5, vence: ahora + D, por: { 'turno-0000001': { cantidad: 2, en: ahora }, 'otro-00000001': { cantidad: 3, en: ahora } } },
+    c2: { usados: 2, vence: ahora + D, por: { 'turno-0000001': { cantidad: 2, en: ahora } } },
+    c3: { usados: 4, vence: ahora + D, por: { 'otro-00000001': { cantidad: 4, en: ahora } } },
+  });
+  it('asentado: libera solo los cupos de ese compromiso y borra su entrada', () => {
+    const r = decidirAsentar('turno-0000001', cuposDe());
+    expect(r).toEqual({
+      resultado: 'asentado',
+      cupos: [
+        { id: 'c1', usados: 3, por: { 'otro-00000001': { cantidad: 3, en: ahora } } },
+        { id: 'c2', usados: 0, por: {} },
+      ],
+    });
+  });
+  it('repetirlo (con lo ya escrito) -> nada_que_asentar', () => {
+    const r = decidirAsentar('turno-0000001', cuposDe());
+    if (r.resultado !== 'asentado') throw new Error('x');
+    const despues = { ...cuposDe(), ...Object.fromEntries(r.cupos.map((c) => [c.id, { usados: c.usados, vence: ahora + D, por: c.por }])) };
+    expect(decidirAsentar('turno-0000001', despues)).toEqual({ resultado: 'nada_que_asentar' });
+  });
+  it('compromiso inexistente o sin cupos -> nada_que_asentar', () => {
+    expect(decidirAsentar('nunca-0000001', cuposDe())).toEqual({ resultado: 'nada_que_asentar' });
+    expect(decidirAsentar('turno-0000001', {})).toEqual({ resultado: 'nada_que_asentar' });
+    expect(decidirAsentar('turno-0000001', { x: undefined, y: { usados: 1, vence: null } })).toEqual({ resultado: 'nada_que_asentar' });
+  });
+  it('nunca baja de 0 y no muta la entrada', () => {
+    const entrada = { c: { usados: 1, vence: ahora + D, por: { 'turno-0000001': { cantidad: 5, en: ahora } } } };
+    const copia = JSON.stringify(entrada);
+    expect(decidirAsentar('turno-0000001', entrada)).toMatchObject({ resultado: 'asentado', cupos: [{ usados: 0 }] });
+    expect(JSON.stringify(entrada)).toBe(copia);
   });
 });
 
