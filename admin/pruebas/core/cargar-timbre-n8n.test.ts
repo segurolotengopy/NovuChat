@@ -18,6 +18,7 @@
  *  - --activar es un paso aparte, y --quitar revierte solo lo del timbre del alias.
  */
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import { chmodSync, closeSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -44,6 +45,7 @@ const ALIAS = 'demoA';
 const INGESTA = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
 const WA_TOKEN = 'marcadorDeTokenDePrueba_abc123XYZ';
 const WABA_ID = '24681357';
+const APP_ID = '13579246';
 const SECRETOS = [PATH, CLAVE, PHONE, 'rele-interno', API_KEY, INGESTA, WA_TOKEN, WABA_ID];
 
 const CURL_FALSO = `#!/usr/bin/env python3
@@ -69,6 +71,9 @@ def leer(n, por_omision):
     try: return json.load(open(os.path.join(E, n)))
     except Exception: return por_omision
 def guardar(n, d): json.dump(d, open(os.path.join(E, n), "w"))
+if "graph.facebook.com" in url:
+    open(os.path.join(E, "graph-llamadas"), "a").write(metodo + " " + url.split("graph.facebook.com", 1)[1].split("?")[0] + "\\n")
+    print(open(os.path.join(E, "graph-app.json")).read() if os.path.exists(os.path.join(E, "graph-app.json")) else "{}"); sys.exit(0)
 ruta = url.split("/api/v1", 1)[1]
 limpia = ruta.split("?")[0]
 open(os.path.join(E, "llamadas"), "a").write(metodo + " " + limpia + "\\n")
@@ -806,10 +811,12 @@ describe('cargar-timbre-n8n.sh: segunda mini-ronda', () => {
   });
 });
 
-describe('cargar-timbre-n8n.sh: crear y quitar las tres credenciales previas', () => {
+describe('cargar-timbre-n8n.sh: crear y quitar las tres credenciales previas', { timeout: 90_000 }, () => {
   const GCLOUD_FALSO = `#!/bin/bash
 echo "$*" >> "$FAKE_DIR/gcloud-llamadas"
+if [ "$1 $2" = "config get-value" ]; then echo "cuenta@ejemplo.test"; exit 0; fi
 if [ -e "$FAKE_DIR/gcloud-falla" ]; then echo "error de prueba" >&2; exit 1; fi
+if [ -e "$FAKE_DIR/secreto-segunda" ] && [ "$(grep -c '^secrets' "$FAKE_DIR/gcloud-llamadas")" -ge 2 ]; then cat "$FAKE_DIR/secreto-segunda"; exit 0; fi
 cat "$FAKE_DIR/secreto"
 `;
   const N = {
@@ -817,8 +824,10 @@ cat "$FAKE_DIR/secreto"
     rele: `AAB1 envío · ${ALIAS}`,
     graph: `WhatsApp ${ALIAS} (envío)`,
   };
-  const CRUZ = ['--crear-credenciales'];
+  const PROY = ['--proyecto', 'novuchat-demo'];
+  const CRUZ = ['--crear-credenciales', ...PROY];
   const QUITA = ['--quitar-credenciales'];
+  const graphLlamadas = () => leerTxt(join(dir, 'graph-llamadas')).split('\n').filter(Boolean);
 
   /** Todo lo que haya quedado en disco (runtime y tmp) NO puede traer un valor secreto. Sin comprobar-y-luego-usar. */
   const archivos = (d: string): string[] => {
@@ -831,15 +840,16 @@ cat "$FAKE_DIR/secreto"
       for (const f of archivos(d)) for (const s of [INGESTA, WA_TOKEN, WABA_ID]) expect(leerTxt(f), f).not.toContain(s);
     }
   };
-  const gcloudLlamadas = () => leerTxt(join(dir, 'gcloud-llamadas')).split('\n').filter(Boolean);
+  const gcloudLlamadas = () => leerTxt(join(dir, 'gcloud-llamadas')).split('\n').filter(Boolean).filter((l) => !l.startsWith('config get-value'));
   const dato = (nombre: string) => creds().find((c) => c.name === nombre);
-  const envConWA = () => writeFileSync(envFile, `N8N_BASE_URL=${BASE}\nN8N_API_KEY=${API_KEY}\nWA_TOKEN="${WA_TOKEN}"\nWABA_ID=${WABA_ID}\n`, { mode: 0o600 });
+  const envConWA = () => writeFileSync(envFile, `N8N_BASE_URL=${BASE}\nN8N_API_KEY=${API_KEY}\nWA_TOKEN="${WA_TOKEN}"\nWABA_ID=${WABA_ID}\nWA_APP_ID=${APP_ID}\n`, { mode: 0o600 });
 
   beforeEach(() => {
     writeFileSync(join(bin, 'gcloud'), GCLOUD_FALSO);
     chmodSync(join(bin, 'gcloud'), 0o755);
     writeFileSync(join(dir, 'secreto'), INGESTA);
     envConWA();
+    writeFileSync(join(dir, 'graph-app.json'), JSON.stringify({ id: APP_ID, name: 'NovuChat-Demo-A' }));
     // una instancia SIN las tres, con una ajena
     writeFileSync(join(dir, 'creds.json'), JSON.stringify([{ id: 'o1', name: 'NovuChat ingesta (otro)', type: 'httpHeaderAuth' }]));
   });
@@ -864,7 +874,7 @@ cat "$FAKE_DIR/secreto"
     expect(dato(N.graph)).toMatchObject({ type: 'whatsAppApi', _data: { accessToken: WA_TOKEN, businessAccountId: WABA_ID } });
     // el secreto sale de INGESTA_DEMOA (alias en mayúsculas), versión latest, de Secret Manager
     expect(gcloudLlamadas().length).toBeGreaterThan(0);
-    for (const l of gcloudLlamadas()) expect(l).toMatch(/^secrets versions access latest --secret=INGESTA_DEMOA --project \S+$/);
+    for (const l of gcloudLlamadas()) expect(l).toMatch(/^secrets versions access latest --secret=INGESTA_DEMOA --project novuchat-demo$/);
     // solo POST /credentials: ni flujos, ni PATCH, ni DELETE, ni credenciales ajenas
     expect(escrituras()).toEqual(['POST /credentials', 'POST /credentials', 'POST /credentials']);
     expect(creds().find((c) => c.id === 'o1')?.name).toBe('NovuChat ingesta (otro)');
@@ -966,6 +976,164 @@ cat "$FAKE_DIR/secreto"
     expect(nodo('Enviar por el relé').credentials?.httpHeaderAuth?.id).toBe(dato(N.rele)!.id);
     expect(nodo('Enviar por Graph').credentials?.whatsAppApi?.id).toBe(dato(N.graph)!.id);
     expect(nodo('Enviar por el relé').credentials?.httpHeaderAuth?.id).not.toBe(dato(N.ingesta)!.id);
+  });
+
+  describe('alias de ensayo: lista blanca (un alias de cliente real no usa estos modos)', () => {
+    it.each([
+      ['--crear-credenciales', ['--crear-credenciales', ...PROY]],
+      ['--quitar-credenciales', ['--quitar-credenciales']],
+      ['--rele-inerte', ['--rele-inerte', '--canal-graph']],
+    ])('Bellido en %s: sale 2 sin tocar n8n (ni siquiera lo lee), también con --aplicar', (_n, modo) => {
+      for (const extra of [[], APLICAR]) {
+        const r = spawnSync('bash', [SCRIPT, '--alias', 'Bellido', '--env', envFile, ...modo, ...extra], {
+          encoding: 'utf8',
+          env: entornoDelEmulador(undefined, { PATH: `${bin}:/usr/bin:/bin`, FAKE_DIR: dir, FAKE_API_KEY: API_KEY, XDG_RUNTIME_DIR: runtime, TMPDIR: join(dir, 'tmp'), CONFIG_LOCAL_MD: tablaMd }),
+        });
+        expect(r.status).toBe(2);
+        expect(`${r.stdout}${r.stderr}`).toContain('alias de ensayo');
+      }
+      expect(llamadas()).toEqual([]);
+      expect(gcloudLlamadas()).toEqual([]);
+    });
+
+    it('«demoa» con otra capitalización tampoco pasa; «demoB» sí es un alias de ensayo', () => {
+      expect(correr(['--alias', 'demoa', '--env', envFile, '--quitar-credenciales']).codigo).toBe(2);
+      expect(llamadas()).toEqual([]);
+      expect(correr(['--alias', 'demoB', '--env', envFile, '--quitar-credenciales']).codigo).toBe(0);
+    });
+  });
+
+  describe('--quitar-credenciales: solo lo que creó este script y que nadie cita', () => {
+    const tresPreexistentes = () => writeFileSync(join(dir, 'creds.json'), JSON.stringify([
+      { id: 'p1', name: N.ingesta, type: 'httpHeaderAuth' },
+      { id: 'p2', name: N.rele, type: 'httpHeaderAuth' },
+      { id: 'p3', name: N.graph, type: 'whatsAppApi' },
+    ]));
+
+    it('credenciales preexistentes (sin registro de este script): NO se borran, y lo dice', () => {
+      tresPreexistentes();
+      const r = correr([...A(), ...QUITA, ...APLICAR]);
+      expect(r.codigo).toBe(0);
+      expect(r.salida).toContain('NO la creó este script');
+      expect(escrituras()).toEqual([]);
+      expect(creds().map((c) => c.id)).toEqual(['p1', 'p2', 'p3']);
+    });
+
+    it('crear sobre preexistentes avisa que las REUTILIZA; quitar después no las borra', () => {
+      tresPreexistentes();
+      const c = correr([...A(), ...CRUZ, ...APLICAR]);
+      expect(c.codigo).toBe(0);
+      expect(c.salida).toContain('REUTILIZA');
+      expect(c.salida).toContain('NO la creó este script');
+      expect(escrituras()).toEqual([]);
+      expect(correr([...A(), ...QUITA, ...APLICAR]).codigo).toBe(0);
+      expect(creds().map((x) => x.id)).toEqual(['p1', 'p2', 'p3']);
+    });
+
+    it('si falta una, crea esa y --quitar solo borra la que creó (las preexistentes se quedan)', () => {
+      writeFileSync(join(dir, 'creds.json'), JSON.stringify([{ id: 'p1', name: N.ingesta, type: 'httpHeaderAuth' }]));
+      expect(correr([...A(), ...CRUZ, ...APLICAR]).codigo).toBe(0);
+      expect(creds()).toHaveLength(3);
+      expect(correr([...A(), ...QUITA, ...APLICAR]).codigo).toBe(0);
+      expect(creds().map((x) => x.id)).toEqual(['p1']);
+    });
+
+    it.each([
+      ['por id', (id: string) => ({ httpHeaderAuth: { id, name: 'otro nombre' } })],
+      ['por nombre', () => ({ httpHeaderAuth: { id: '', name: N.rele } })],
+    ])('un flujo vivo cualquiera que cita una de las tres %s: sale 2 y no borra nada', (_n, cita) => {
+      expect(correr([...A(), ...CRUZ, ...APLICAR]).codigo).toBe(0);
+      const ing = dato(N.ingesta)!.id;
+      writeFileSync(join(dir, 'wfs.json'), JSON.stringify([
+        { id: 'wajeno', name: 'Flujo de un cliente', active: true, nodes: [{ name: 'Nodo', type: 'n8n-nodes-base.httpRequest', parameters: {}, credentials: cita(ing) }], connections: {}, settings: {} },
+      ]));
+      const antes = escrituras().length;
+      const r = correr([...A(), ...QUITA, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('Flujo de un cliente');
+      expect(escrituras().length).toBe(antes);
+      expect(creds().filter((c) => Object.values(N).includes(c.name))).toHaveLength(3);
+    });
+  });
+
+  describe('candado contra tokens ajenos en la credencial de WhatsApp', () => {
+    const h = (s: string) => createHash('sha256').update(s).digest('hex');
+
+    it('la app del .env con huella de app ajena: sale 2 sin escribir (seco y --aplicar), sin llamar a Graph', () => {
+      for (const extra of [[], APLICAR]) {
+        const r = correr([...A(), ...CRUZ, ...extra], { NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: h(APP_ID) });
+        expect(r.codigo).toBe(2);
+        expect(r.salida).toContain('prohibiciones 5 y 7');
+      }
+      expect(escrituras()).toEqual([]);
+      expect(graphLlamadas()).toEqual([]);
+    });
+
+    it('la WABA del .env con huella de WABA ajena: sale 2 sin escribir', () => {
+      const r = correr([...A(), ...CRUZ, ...APLICAR], { NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA: h(WABA_ID) });
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+      expect(graphLlamadas()).toEqual([]);
+    });
+
+    it.each([
+      ['Graph dice que el token es de AAB1-WA-Prod', { id: APP_ID, name: 'AAB1-WA-Prod' }],
+      ['Graph contesta otra app que la del .env', { id: '99887766', name: 'NovuChat-Demo-A' }],
+      ['Graph contesta un error (no se puede comprobar)', { error: { message: 'Invalid OAuth access token' } }],
+      ['Graph no contesta', {}],
+    ])('con --aplicar, si %s: aborta antes de escribir', (_n, rta) => {
+      writeFileSync(join(dir, 'graph-app.json'), JSON.stringify(rta));
+      const r = correr([...A(), ...CRUZ, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+      expect(gcloudLlamadas()).toEqual([]);
+    });
+
+    it('un .env sin WA_APP_ID: aborta (sin saber de qué app es el token no se carga)', () => {
+      writeFileSync(envFile, `N8N_BASE_URL=${BASE}\nN8N_API_KEY=${API_KEY}\nWA_TOKEN=${WA_TOKEN}\nWABA_ID=${WABA_ID}\n`, { mode: 0o600 });
+      expect(correr([...A(), ...CRUZ, ...APLICAR]).codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    it('el caso propio: Graph confirma la app y se crea; el seco no consulta a Graph', () => {
+      expect(correr([...A(), ...CRUZ]).codigo).toBe(1);
+      expect(graphLlamadas()).toEqual([]);
+      expect(correr([...A(), ...CRUZ, ...APLICAR]).codigo).toBe(0);
+      expect(graphLlamadas()).toEqual(['GET /v26.0/app']);
+    });
+  });
+
+  describe('versión del secreto, proyecto y cuerpo vacío', () => {
+    it('--version <N> lee esa versión; sin ella es latest y el seco avisa que puede no ser la desplegada', () => {
+      const seco = correr([...A(), ...CRUZ]);
+      expect(seco.salida).toContain('latest');
+      expect(seco.salida).toContain('rotar-ingesta.sh probar');
+      expect(correr([...A(), ...CRUZ, '--version', '7', ...APLICAR]).codigo).toBe(0);
+      for (const l of gcloudLlamadas()) expect(l).toContain('secrets versions access 7 ');
+      expect(correr([...A(), ...CRUZ, '--version', 'x1']).codigo).toBe(2);
+    });
+
+    it('con --aplicar el proyecto NO se hereda de la variable PROYECTO: sin --proyecto sale 2 sin escribir', () => {
+      const r = correr([...A(), '--crear-credenciales', ...APLICAR], { PROYECTO: 'otro-proyecto-x' });
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('--proyecto');
+      expect(escrituras()).toEqual([]);
+      expect(gcloudLlamadas()).toEqual([]);
+      // el seco muestra el proyecto por omisión y la cuenta, no el de la variable
+      const s = correr([...A(), '--crear-credenciales'], { PROYECTO: 'otro-proyecto-x' });
+      expect(s.salida).toContain('novuchat-demo (por omisión)');
+      expect(s.salida).toContain('cuenta@ejemplo.test');
+      expect(s.salida).not.toContain('otro-proyecto-x');
+    });
+
+    it('si la segunda lectura del secreto sale vacía, no se envía ningún cuerpo vacío a n8n: sale 3', () => {
+      writeFileSync(join(dir, 'secreto-segunda'), '');
+      const r = correr([...A(), ...CRUZ, ...APLICAR]);
+      expect(r.codigo).toBe(3);
+      expect(r.salida).toContain('vacío');
+      expect(escrituras()).toEqual([]);
+      expect(creds()).toHaveLength(1);
+    });
   });
 
   describe('--quitar-credenciales', () => {

@@ -42,13 +42,20 @@
 #         · «WhatsApp <alias> (envío)»  whatsAppApi  con accessToken = WA_TOKEN y businessAccountId
 #           = WABA_ID de --env (leídas por nombre, sin ejecutar el archivo).
 #       Idempotente: si una ya existe con ese nombre y tipo NO se toca (se avisa); si hay
-#       duplicados, o el nombre existe con otro tipo, se aborta sin escribir. Con --aplicar lee el
-#       secreto de ingesta con gcloud (CLOUDSDK_CONFIG aislado; --proyecto o PROYECTO, por omisión
-#       novuchat-demo, el mismo valor que rotar-ingesta.sh).
+#       duplicados, o el nombre existe con otro tipo, se aborta sin escribir. Una existente se
+#       REUTILIZA y NO se marca como creada por este script. SOLO para alias de ensayo (demoA, demoB):
+#       un alias de cliente real tiene credenciales vivas con esos nombres. Con --aplicar lee el
+#       secreto de ingesta con gcloud (CLOUDSDK_CONFIG aislado; --proyecto <id> es OBLIGATORIO con
+#       --aplicar y no se hereda de ninguna variable; --version <N> o latest, por omisión latest, que
+#       puede no ser la versión desplegada: corra rotar-ingesta.sh probar antes de cargar el timbre).
+#       Antes de crear la de WhatsApp cierra el paso a una app o WABA ajenas (huellas de
+#       scripts/lib/apps-ajenas.sh, sin red; con --aplicar, además, Graph dice de qué app es el
+#       token). Anota en $XDG_RUNTIME_DIR el id de cada credencial que CREÓ.
 #   ./scripts/cargar-timbre-n8n.sh --alias <alias> --quitar-credenciales [--aplicar --confirmo produccion]
-#       RESTAURACIÓN de las tres anteriores: borra SOLO esas tres, por nombre y tipo exactos
-#       (nunca otras, nunca con otro tipo), y se niega mientras el flujo del alias siga cargado
-#       (primero --quitar). Respalda antes.
+#       RESTAURACIÓN: borra SOLO las que CREÓ este script (registro de ids), por nombre y tipo exactos;
+#       las que ya existían antes no se borran (se dice). Se niega si el flujo del alias sigue cargado
+#       (primero --quitar) o si CUALQUIER flujo vivo de n8n cita (por id o nombre) alguna de las tres.
+#       Alias de ensayo solamente. Respalda antes.
 #
 # OPCIONES. --env <archivo>: de él SOLO se leen N8N_BASE_URL y N8N_API_KEY (no se
 # ejecuta; con --aplicar exige que sea del usuario y de modo 600). --flujo <json>: otro
@@ -99,10 +106,18 @@ set -euo pipefail
 ESTE="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$ESTE")/.." || exit 1
 
+# El candado común contra las apps/WABAs de WhatsApp-Modular (CLAUDE.md, prohibiciones 5 y 7). Se carga
+# ANTES de leer nada del --env (que aquí nunca se ejecuta).
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source scripts/lib/apps-ajenas.sh
+
 ayuda() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$ESTE"; }
 
 APLICAR=0; CONFIRMO=""; MODO="cargar"; ALIAS=""; ENV_FILE=".env"; FLUJO="Flujos/salida-de-persona.json"; SINSUFIJO=0
-RELE_INERTE=0; CANAL_GRAPH=0; PROYECTO="${PROYECTO:-novuchat-demo}"
+RELE_INERTE=0; CANAL_GRAPH=0; PROYECTO="novuchat-demo"; PROYECTO_EXPLICITO=0; VERSION_SECRETO="latest"
+# Alias de ENSAYO: los únicos para los que existen estos modos. Un alias de cliente real (p. ej. Bellido) tiene
+# credenciales VIVAS con estos mismos nombres: este script no las crea ni las toca.
+ALIAS_ENSAYO="demoA demoB"
 fijar_modo() { [[ "$MODO" == cargar ]] || { echo "✗ Un solo modo a la vez (--activar, --quitar, --crear-credenciales o --quitar-credenciales)" >&2; exit 2; }; MODO="$1"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -116,7 +131,8 @@ while [[ $# -gt 0 ]]; do
     --quitar-credenciales)  fijar_modo quitar-cred; shift ;;
     --rele-inerte) RELE_INERTE=1; shift ;;
     --canal-graph) CANAL_GRAPH=1; shift ;;
-    --proyecto)    [[ $# -ge 2 ]] || { echo "✗ --proyecto necesita un id" >&2; exit 2; }; PROYECTO="$2"; shift 2 ;;
+    --proyecto)    [[ $# -ge 2 ]] || { echo "✗ --proyecto necesita un id" >&2; exit 2; }; PROYECTO="$2"; PROYECTO_EXPLICITO=1; shift 2 ;;
+    --version)     [[ $# -ge 2 ]] || { echo "✗ --version necesita latest o un número" >&2; exit 2; }; VERSION_SECRETO="$2"; shift 2 ;;
     --aplicar)     APLICAR=1; shift ;;
     --confirmo)    [[ $# -ge 2 ]] || { echo "✗ --confirmo necesita produccion" >&2; exit 2; }; CONFIRMO="$2"; shift 2 ;;
     --confirmo=*)  CONFIRMO="${1#*=}"; shift ;;
@@ -125,7 +141,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ "$ALIAS" =~ ^[A-Za-z][A-Za-z0-9]{1,29}$ ]] || { echo "✗ --alias inválido o ausente (letras y dígitos, de 2 a 30, empieza con letra)" >&2; exit 2; }
-[[ "$PROYECTO" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ --proyecto / PROYECTO no tiene la forma de un id de proyecto de GCP" >&2; exit 2; }
+[[ "$PROYECTO" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ --proyecto no tiene la forma de un id de proyecto de GCP" >&2; exit 2; }
+[[ "$VERSION_SECRETO" =~ ^(latest|[0-9]{1,6})$ ]] || { echo "✗ --version tiene que ser latest o un número" >&2; exit 2; }
+if [[ "$MODO" == crear-cred || "$MODO" == quitar-cred ]] || (( RELE_INERTE )); then
+  case " $ALIAS_ENSAYO " in
+    *" $ALIAS "*) ;;
+    *) echo "✗ El alias «${ALIAS}» no es un alias de ensayo (${ALIAS_ENSAYO}): --crear-credenciales, --quitar-credenciales y --rele-inerte son solo para el ensayo. Un alias de cliente real tiene credenciales vivas con esos nombres y no usa estos modos. No se tocó n8n." >&2; exit 2 ;;
+  esac
+fi
 if (( RELE_INERTE )) && [[ "$MODO" != cargar ]]; then echo "✗ --rele-inerte solo se usa al cargar el flujo (modo por omisión)" >&2; exit 2; fi
 if (( RELE_INERTE && ! CANAL_GRAPH )); then
   echo "✗ --rele-inerte exige --canal-graph: afirme que rutasWhatsApp/{numero}.canalSalida del alias NO es «rele» (el script no puede leerla). No se escribió nada." >&2; exit 2
@@ -566,11 +589,42 @@ def valor_de_env(archivo, nombre):
     return val
 
 
-def cmd_cred_estado(creds_f, alias, modo, plan_out):
+def leer_registro(ruta, alias):
+    """Lo que ESTE script creó para el alias: {clave: id}. Sin archivo, o si no es un archivo propio de modo 600,
+    el registro está vacío (y entonces no se borra nada)."""
+    try:
+        fd = os.open(ruta, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        return {}
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or (st.st_mode & 0o077):
+            os.close(fd)
+            return {}
+        with os.fdopen(fd, "r", encoding="utf-8") as f:
+            d = json.load(f)
+    except Exception:
+        return {}
+    c = d.get("creadas") if isinstance(d, dict) and d.get("alias") == alias else None
+    return {k: v for k, v in c.items() if isinstance(v, str) and id_valido(v)} if isinstance(c, dict) else {}
+
+
+def cmd_cred_registrar(ruta, alias, clave, ident):
+    """Anota que este script creó la credencial `clave` del alias con ese id (el registro vive en $XDG_RUNTIME_DIR)."""
+    if clave not in dict(CRED_TIPOS) or not id_valido(ident):
+        salir(4, "registro con clave o id inválidos")
+    c = leer_registro(ruta, alias)
+    c[clave] = ident
+    escribir_600(ruta, json.dumps({"alias": alias, "creadas": c}))
+
+
+def cmd_cred_estado(creds_f, alias, modo, plan_out, registro):
     """Por cada una de las tres: cuántas hay con ese nombre Y tipo exactos. Duplicados -> aborta;
-    al crear, el mismo nombre con otro tipo también aborta (no se pisa ni se adivina)."""
+    al crear, el mismo nombre con otro tipo también aborta (no se pisa ni se adivina).
+    Dice además si la creó este script (id en el registro) o si es una EXISTENTE ajena a él."""
     creds = cargar(creds_f)["data"]
     n = nombres(alias)
+    reg = leer_registro(registro, alias)
     plan, errores = {}, []
     for clave, tipo in CRED_TIPOS:
         nom = n[clave]
@@ -583,11 +637,30 @@ def cmd_cred_estado(creds_f, alias, modo, plan_out):
         if mismas and not id_valido(mismas[0].get("id")):
             errores.append("n8n devolvió un id con forma inesperada para «%s»" % nom)
         plan[clave] = mismas[0]["id"] if len(mismas) == 1 and id_valido(mismas[0].get("id")) else ""
+        plan["c_" + clave] = bool(plan[clave]) and reg.get(clave) == plan[clave]
     if errores:
         salir(4, "\n".join("    " + e for e in errores))
     escribir_600(plan_out, json.dumps(plan))
     for clave, tipo in CRED_TIPOS:
-        print("    «%s» (%s): %s" % (n[clave], tipo, "existe" if plan[clave] else "no existe"))
+        est = "no existe" if not plan[clave] else ("existe (la creó este script)" if plan["c_" + clave] else "existe (NO la creó este script)")
+        print("    «%s» (%s): %s" % (n[clave], tipo, est))
+
+
+def cmd_cred_en_uso(flujos_f, creds_f, alias):
+    """Aborta (4) si CUALQUIER flujo vivo cita, por id o por nombre, alguna de las tres credenciales del alias.
+    La lista de flujos de n8n ya trae los nodos."""
+    wfs, creds = cargar(flujos_f)["data"], cargar(creds_f)["data"]
+    n = nombres(alias)
+    nom = {n[k] for k, _ in CRED_TIPOS}
+    ids = {c.get("id") for c in creds for k, t in CRED_TIPOS if c.get("name") == n[k] and c.get("type") == t}
+    citan = []
+    for w in wfs:
+        for nodo in w.get("nodes") or []:
+            for ref in (nodo.get("credentials") or {}).values():
+                if isinstance(ref, dict) and ((ref.get("id") and ref.get("id") in ids) or ref.get("name") in nom):
+                    citan.append(str(w.get("name")))
+    if citan:
+        salir(4, "\n".join("    el flujo «%s» cita una de ellas" % x for x in sorted(set(citan))))
 
 
 def cmd_cred_entorno(archivo):
@@ -689,57 +762,103 @@ if py respaldar "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS" "$WORK/re
 # ======================================================================== CREDENCIALES PREVIAS
 if [[ "$MODO" == crear-cred || "$MODO" == quitar-cred ]]; then
   fallar_c() { falla "$1"; nota "respaldo previo (modo 600): ${WORK}/respaldo-vivo.json"; exit 3; }
-  # El valor de la ingesta viaja de gcloud a python por una tubería; python imprime el cuerpo y curl lo lee
-  # por una sustitución de procesos (/dev/fd): el valor no pasa por argumentos, pantalla ni archivo.
-  leer_valor() { gcloud secrets versions access latest --secret="INGESTA_${ALIAS^^}" --project "$PROYECTO"; }
+  # Registro de lo que ESTE script creó (ids), en la memoria del usuario: solo eso puede borrar --quitar-credenciales.
+  REGISTRO="/nonexistent/sin-registro"
+  if [[ "$BASE_TMP" == "${XDG_RUNTIME_DIR:-}" ]]; then REGISTRO="${XDG_RUNTIME_DIR}/novuchat-credenciales-creadas-${ALIAS}.json"; fi
+  # El valor de la ingesta viaja de gcloud a python por una tubería; el cuerpo queda un instante en una variable
+  # del shell (memoria) y curl lo lee por una sustitución de procesos: no pasa por argumentos, pantalla ni archivo.
+  leer_valor() { gcloud secrets versions access "$VERSION_SECRETO" --secret="INGESTA_${ALIAS^^}" --project "$PROYECTO"; }
+  post_cred() { # <cuerpo>: se niega a enviar un cuerpo vacío (p. ej. si la segunda lectura del secreto falló)
+    [[ -n "$1" ]] || { falla "el cuerpo de la credencial salió vacío (¿falló la lectura del valor?): no se envía nada"; return 1; }
+    api POST "/credentials" <(printf '%s' "$1")
+  }
+  # Candado contra tokens ajenos: la credencial de WhatsApp lleva WA_TOKEN, y una app o WABA del otro sistema
+  # (prohibiciones 5 y 7 de CLAUDE.md) no puede quedar cargada en n8n por un .env equivocado.
+  candado_meta() {
+    local app waba ver
+    app="$(valor_env WA_APP_ID)"; waba="$(valor_env WABA_ID)"; ver="$(valor_env WA_GRAPH_VERSION)"; ver="${ver:-v26.0}"
+    es_id "$app" || { falla "WA_APP_ID (en --env) falta o no tiene forma de id de app: sin saber de qué app es el token no se crea la credencial de WhatsApp"; return 1; }
+    es_id "$waba" || { falla "WABA_ID (en --env) no tiene forma de id"; return 1; }
+    [[ "$ver" =~ ^v[0-9]+\.[0-9]+$ ]] || { falla "WA_GRAPH_VERSION (en --env) no tiene la forma vNN.N"; return 1; }
+    if huella_ajena "$app"; then falla "la app …${app: -4} de --env está entre las huellas de apps ajenas: NovuChat no carga su token (CLAUDE.md, prohibiciones 5 y 7)"; return 1; fi
+    if waba_ajena "$waba"; then falla "la WABA …${waba: -4} de --env figura entre las huellas de WABAs ajenas: no se carga su token sin una decisión expresa de Andres (CLAUDE.md, prohibiciones 5 y 7)"; return 1; fi
+    ok "WA_APP_ID y WABA_ID de --env: ninguno figura entre las huellas de apps o WABAs ajenas (sin red)"
+    if (( APLICAR )); then
+      # shellcheck disable=SC2034  # las lee negar_app_ajena (subshell: el token no sale de acá)
+      if ! ( WA_TOKEN="$(valor_env WA_TOKEN)"; WA_APP_ID="$app"; WABA_ID="$waba"; G="https://graph.facebook.com/${ver}"; negar_app_ajena "$app" token ); then
+        falla "no se pudo comprobar que el token de --env sea de una app propia (o es ajena): sin eso no se carga"; return 1
+      fi
+      ok "Graph confirma que el token es de una app propia (verificado antes de escribir)"
+    else
+      nota "el seco no consulta a Graph: con --aplicar se comprueba de qué app es el token antes de escribir"
+    fi
+  }
   if [[ "$MODO" == crear-cred ]]; then
     echo "Credenciales previas del alias"
-    if ! SAL="$(py cred_estado "$WORK/credenciales.json" "$ALIAS" crear "$WORK/cred-plan.json")"; then
+    if ! SAL="$(py cred_estado "$WORK/credenciales.json" "$ALIAS" crear "$WORK/cred-plan.json" "$REGISTRO")"; then
       falla "el estado de las credenciales impide seguir (nada escrito):"; echo "$SAL" >&2; exit 2
     fi
     echo "$SAL"
     ID_ING="$(py campo "$WORK/cred-plan.json" ingesta)"; ID_REL="$(py campo "$WORK/cred-plan.json" rele)"; ID_GRA="$(py campo "$WORK/cred-plan.json" graph)"
     PEND=0
-    if [[ -n "$ID_ING" ]]; then nota "«NovuChat ingesta (${ALIAS})» ya existe: NO se sobrescribe (para cambiar su valor: rotar-ingesta.sh n8n)"
+    # la de WhatsApp primero: si el .env trae una app ajena, no se llega ni a leer el secreto de ingesta
+    if [[ -n "$ID_GRA" ]]; then nota "«WhatsApp ${ALIAS} (envío)» ya existe: se REUTILIZA una existente (no se marca como creada por este script); NO se sobrescribe"
     else
       PEND=$((PEND + 1))
+      if ! SAL="$(py cred_entorno "$ENV_FILE")"; then falla "${SAL} (nada escrito)"; exit 2; fi
+      candado_meta || { echo "  (nada escrito)" >&2; exit 2; }
+      hacer "crear «WhatsApp ${ALIAS} (envío)» (whatsAppApi con WA_TOKEN y WABA_ID de --env; no se imprimen)"
+    fi
+    if [[ -n "$ID_ING" ]]; then nota "«NovuChat ingesta (${ALIAS})» ya existe: se REUTILIZA una existente (si no la creó este script, no es suya); NO se sobrescribe (para cambiar su valor: rotar-ingesta.sh n8n)"
+    else
+      PEND=$((PEND + 1))
+      export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"; unset CLOUDSDK_ACTIVE_CONFIG_NAME
       if (( APLICAR )); then
+        (( PROYECTO_EXPLICITO )) || { falla "con --aplicar el proyecto de Secret Manager se indica con --proyecto <id>: no se hereda de ninguna variable del entorno. Nada escrito."; exit 2; }
         command -v gcloud >/dev/null 2>&1 || { falla "falta gcloud para leer el secreto INGESTA_${ALIAS^^}"; exit 2; }
-        export CLOUDSDK_CONFIG="${CLOUDSDK_CONFIG:-$HOME/.config/gcloud-novuchat-prod}"; unset CLOUDSDK_ACTIVE_CONFIG_NAME
+      fi
+      CUENTA="(sin gcloud)"
+      if command -v gcloud >/dev/null 2>&1; then CUENTA="$(gcloud config get-value account 2>/dev/null | sed -E 's/[0-9]{6,}/…/g' || true)"; [[ -n "$CUENTA" ]] || CUENTA="(sin cuenta activa)"; fi
+      nota "Secret Manager: proyecto ${PROYECTO}$( (( PROYECTO_EXPLICITO )) || echo ' (por omisión)'), cuenta de gcloud ${CUENTA}, versión ${VERSION_SECRETO}"
+      if [[ "$VERSION_SECRETO" == latest ]]; then nota "«latest» puede no ser la versión desplegada de la Function: corra rotar-ingesta.sh probar (o fije --version <N>) ANTES de cargar el timbre"; fi
+      if (( APLICAR )); then
         if ! leer_valor 2>"$ERR" | py cred_valida_ingesta; then
-          falla "no pude leer INGESTA_${ALIAS^^} (versión latest) de Secret Manager, o no tiene la forma esperada (64 hexadecimales sin salto). Nada escrito."; exit 2
+          falla "no pude leer INGESTA_${ALIAS^^} (versión ${VERSION_SECRETO}) de Secret Manager, o no tiene la forma esperada (64 hexadecimales sin salto). Nada escrito."; exit 2
         fi
-        ok "el secreto INGESTA_${ALIAS^^} (latest) se lee y tiene la forma esperada (no se imprime)"
+        ok "el secreto INGESTA_${ALIAS^^} (${VERSION_SECRETO}) se lee y tiene la forma esperada (no se imprime)"
       else
         nota "el seco no lee el secreto INGESTA_${ALIAS^^}: se lee solo con --aplicar, y antes de escribir nada"
       fi
       hacer "crear «NovuChat ingesta (${ALIAS})» (Header Auth, Bearer del secreto INGESTA_${ALIAS^^})"
     fi
-    if [[ -n "$ID_REL" ]]; then nota "«AAB1 envío · ${ALIAS}» ya existe: NO se sobrescribe"
+    if [[ -n "$ID_REL" ]]; then nota "«AAB1 envío · ${ALIAS}» ya existe: se REUTILIZA una existente (no se marca como creada por este script); NO se sobrescribe"
     else PEND=$((PEND + 1)); hacer "crear «AAB1 envío · ${ALIAS}» (Header Auth con valor INERTE; el relé no se prueba en el Demo A)"; fi
-    if [[ -n "$ID_GRA" ]]; then nota "«WhatsApp ${ALIAS} (envío)» ya existe: NO se sobrescribe"
-    else
-      PEND=$((PEND + 1))
-      if ! SAL="$(py cred_entorno "$ENV_FILE")"; then falla "${SAL} (nada escrito)"; exit 2; fi
-      hacer "crear «WhatsApp ${ALIAS} (envío)» (whatsAppApi con WA_TOKEN y WABA_ID de --env; no se imprimen)"
-    fi
     if (( ! PEND )); then echo; ok "las tres credenciales ya existen: nada que hacer"; exit 0; fi
     if (( ! APLICAR )); then echo; echo "Diagnóstico: ${PEND} paso(s) pendiente(s); no se escribió nada. Con --aplicar --confirmo produccion se hace lo marcado «(haría)»."; exit 1; fi
     echo "Escritura"
+    crear_post() { post_cred "$1" && exigir '200|201' "$2"; } # <cuerpo> <qué se hacía>
+    registrar() { # <clave>: anota el id que n8n acaba de devolver
+      local nuevo
+      nuevo="$(py id "$WORK/rta.json")" || fallar_c "n8n creó la credencial «$1» pero no devolvió su id"
+      py cred_registrar "$REGISTRO" "$ALIAS" "$1" "$nuevo" || fallar_c "no pude anotar en el registro la credencial «$1» que acabo de crear"
+    }
     if [[ -z "$ID_ING" ]]; then
-      api POST "/credentials" <(leer_valor 2>/dev/null | py cred_cuerpo ingesta "$ENV_FILE" "$ALIAS"); exigir '200|201' "no pude crear la credencial de ingesta" || fallar_c "falló la credencial de ingesta"
-      py id "$WORK/rta.json" >/dev/null || fallar_c "n8n creó la credencial de ingesta pero no devolvió su id"
-      ok "«NovuChat ingesta (${ALIAS})» creada"
+      CUERPO="$(leer_valor 2>/dev/null | py cred_cuerpo ingesta "$ENV_FILE" "$ALIAS" || true)"
+      crear_post "$CUERPO" "no pude crear la credencial de ingesta" || { CUERPO=""; fallar_c "falló la credencial de ingesta"; }
+      CUERPO=""
+      registrar ingesta; ok "«NovuChat ingesta (${ALIAS})» creada"
     fi
     if [[ -z "$ID_REL" ]]; then
-      api POST "/credentials" <(py cred_cuerpo rele "$ENV_FILE" "$ALIAS" </dev/null); exigir '200|201' "no pude crear la credencial del relé" || fallar_c "falló la credencial del relé"
-      py id "$WORK/rta.json" >/dev/null || fallar_c "n8n creó la credencial del relé pero no devolvió su id"
-      ok "«AAB1 envío · ${ALIAS}» creada con valor INERTE"
+      CUERPO="$(py cred_cuerpo rele "$ENV_FILE" "$ALIAS" </dev/null || true)"
+      crear_post "$CUERPO" "no pude crear la credencial del relé" || { CUERPO=""; fallar_c "falló la credencial del relé"; }
+      CUERPO=""
+      registrar rele; ok "«AAB1 envío · ${ALIAS}» creada con valor INERTE"
     fi
     if [[ -z "$ID_GRA" ]]; then
-      api POST "/credentials" <(py cred_cuerpo graph "$ENV_FILE" "$ALIAS" </dev/null); exigir '200|201' "no pude crear la credencial de WhatsApp" || fallar_c "falló la credencial de WhatsApp"
-      py id "$WORK/rta.json" >/dev/null || fallar_c "n8n creó la credencial de WhatsApp pero no devolvió su id"
-      ok "«WhatsApp ${ALIAS} (envío)» creada"
+      CUERPO="$(py cred_cuerpo graph "$ENV_FILE" "$ALIAS" </dev/null || true)"
+      crear_post "$CUERPO" "no pude crear la credencial de WhatsApp" || { CUERPO=""; fallar_c "falló la credencial de WhatsApp"; }
+      CUERPO=""
+      registrar graph; ok "«WhatsApp ${ALIAS} (envío)» creada"
     fi
     leer_estado
     SAL="$(py cred_verificar "$WORK/credenciales.json" "$ALIAS" presentes)" || fallar_c "al releer, las tres credenciales no quedaron una vez cada una:
@@ -749,29 +868,39 @@ ${SAL}"
     nota "respaldo previo (sin valores; modo 600): ${WORK}/respaldo-vivo.json (bórrelo cuando el ensayo termine)"
     exit 0
   fi
-  # --- quitar-cred: SOLO las tres, por nombre y tipo exactos ---
+  # --- quitar-cred: SOLO las que CREÓ este script (registro), por nombre y tipo exactos, y que ningún flujo cite ---
   echo "Credenciales previas del alias"
-  if ! SAL="$(py cred_estado "$WORK/credenciales.json" "$ALIAS" quitar "$WORK/cred-plan.json")"; then
+  if ! SAL="$(py cred_estado "$WORK/credenciales.json" "$ALIAS" quitar "$WORK/cred-plan.json" "$REGISTRO")"; then
     falla "hay duplicados entre las credenciales del alias (nada escrito):"; echo "$SAL" >&2; exit 2
   fi
   echo "$SAL"
   if [[ -n "$WF_ID" ]]; then
     falla "el flujo «NovuChat — Salida de persona (${ALIAS})» sigue cargado y usa estas credenciales: quítelo primero (--quitar). Nada escrito."; exit 2
   fi
+  if ! SAL="$(py cred_en_uso "$WORK/flujos.json" "$WORK/credenciales.json" "$ALIAS")"; then
+    falla "hay flujos vivos en n8n que citan estas credenciales: no se borra ninguna (nada escrito):"; echo "$SAL" >&2; exit 2
+  fi
+  ok "ningún flujo vivo cita las credenciales del alias"
   PEND=0
-  declare -A IDS=([ingesta]="$(py campo "$WORK/cred-plan.json" ingesta)" [rele]="$(py campo "$WORK/cred-plan.json" rele)" [graph]="$(py campo "$WORK/cred-plan.json" graph)")
-  for k in ingesta rele graph; do [[ -z "${IDS[$k]}" ]] || { PEND=$((PEND + 1)); hacer "borrar la credencial «${k}» del alias (solo esa, por nombre y tipo exactos)"; }; done
-  if (( ! PEND )); then ok "no queda ninguna de las tres: nada que hacer"; exit 0; fi
+  declare -A IDS=()
+  for k in ingesta rele graph; do
+    ID="$(py campo "$WORK/cred-plan.json" "$k")"; CREADA="$(py campo "$WORK/cred-plan.json" "c_$k")"
+    if [[ -z "$ID" ]]; then continue; fi
+    if [[ "$CREADA" == true ]]; then IDS[$k]="$ID"; PEND=$((PEND + 1)); hacer "borrar la credencial «${k}» del alias (la creó este script; solo esa, por nombre y tipo exactos)"
+    else nota "la credencial «${k}» existe pero NO la creó este script (no hay registro, o ya existía antes): NO se borra; si corresponde, bórrela a mano en n8n"; fi
+  done
+  if (( ! PEND )); then ok "no hay nada que este script haya creado y deba borrar: nada que hacer"; exit 0; fi
   if (( ! APLICAR )); then echo; echo "Diagnóstico: ${PEND} paso(s) pendiente(s); no se escribió nada. Con --aplicar --confirmo produccion se hace lo marcado «(haría)»."; exit 1; fi
   for k in ingesta rele graph; do
-    [[ -n "${IDS[$k]}" ]] || continue
+    [[ -n "${IDS[$k]:-}" ]] || continue
     api DELETE "/credentials/${IDS[$k]}"; exigir '200|204' "no pude borrar la credencial «${k}»" || fallar_c "falló el borrado"
     ok "credencial «${k}» borrada"
   done
+  rm -f "$REGISTRO"
   leer_estado
-  SAL="$(py cred_verificar "$WORK/credenciales.json" "$ALIAS" ausentes)" || fallar_c "al releer, algo de las tres SIGUE en n8n:
+  SAL="$(py cred_verificar "$WORK/credenciales.json" "$ALIAS" ausentes)" || nota "relectura: quedan las que este script no creó (no se tocaron):
 ${SAL}"
-  ok "relectura: no queda ninguna de las tres del alias ${ALIAS}"
+  ok "relectura hecha"
   nota "respaldo previo (sin valores; modo 600): ${WORK}/respaldo-vivo.json (bórrelo cuando el ensayo termine)"
   exit 0
 fi

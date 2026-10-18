@@ -454,8 +454,19 @@ niega si el `.env` no es del usuario o tiene permisos de más.
      el Demo A y su canal es `graph`; nunca el token ni la URL reales del relé.
    - **WhatsApp**: `accessToken` = `WA_TOKEN` y `businessAccountId` = `WABA_ID`, leídas del `--env`
      (sin ejecutarlo). El `.env` indicado debe traer las del Demo A.
-   Si ya existe una con ese nombre y tipo, **no se sobrescribe** (se avisa); si hay duplicados o el
-   nombre existe con otro tipo, se aborta sin escribir.
+   Si ya existe una con ese nombre y tipo, **no se sobrescribe**: se REUTILIZA y no se marca como creada
+   por el script; si hay duplicados o el nombre existe con otro tipo, se aborta sin escribir.
+   **Salvaguardas** (revisión de seguridad del PR #532): (a) solo para alias de ensayo, `demoA` y `demoB`
+   (un alias de cliente real, p. ej. Bellido, tiene credenciales vivas con estos mismos nombres y estos modos
+   se niegan con 2 sin tocar n8n); (b) `--quitar-credenciales` borra únicamente las que **creó este script**
+   (sus ids quedan en `$XDG_RUNTIME_DIR/novuchat-credenciales-creadas-<alias>.json`, modo 600; si no hay
+   registro, no borra nada y lo dice) y se niega si cualquier flujo vivo de n8n las cita por id o nombre;
+   (c) antes de crear la de WhatsApp, el `WA_APP_ID` y el `WABA_ID` del `--env` se cotejan sin red contra las
+   huellas de apps/WABAs ajenas (`scripts/lib/apps-ajenas.sh`) y, con `--aplicar`, Graph debe confirmar que el
+   token es de una app propia; si no se puede comprobar, aborta (el `.env` necesita `WA_APP_ID`); (d) con
+   `--aplicar` el proyecto se indica con `--proyecto <id>` (no se hereda de la variable `PROYECTO`);
+   (e) el secreto se lee como `latest` salvo `--version <N>`: `latest` puede no ser la versión desplegada, así
+   que **antes de cargar el timbre** se corre `rotar-ingesta.sh probar --secreto INGESTA_DEMOA --version <N>`.
 2. **La tabla local** (`CONFIGURACION.local.md`, o `CONFIG_LOCAL_MD`) con
    `REEMPLAZAR_PHONE_NUMBER_ID_DEMOA` y `REEMPLAZAR_URL_INTERNA_DEL_RELE_DEMOA` (o, para el Demo A,
    las filas sin sufijo con `--tabla-demo-a`). Se agregan sin mostrar el valor (`marcador-local.sh`).
@@ -477,7 +488,7 @@ niega si el `.env` no es del usuario o tiene permisos de más.
     ... --agregar-alias demoA --aplicar --confirmo produccion
     # 2a. Las tres credenciales previas (si faltan; idempotente)
     ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --crear-credenciales               # seco
-    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --crear-credenciales --aplicar --confirmo produccion
+    ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --crear-credenciales --proyecto <id> --aplicar --confirmo produccion
     # 2b. En n8n, EN LA MISMA SESIÓN (la entrega no se deja pendiente); el Demo A sale por graph
     ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --rele-inerte --canal-graph        # seco
     ./scripts/cargar-timbre-n8n.sh --alias demoA --env .env --rele-inerte --canal-graph --aplicar --confirmo produccion
