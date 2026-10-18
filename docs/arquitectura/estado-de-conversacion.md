@@ -76,6 +76,7 @@ por comercio no activo, y **antes** del `Promise.all` del catálogo. Devuelve
 | `versionLeida` distinta de la actual | `conflicto_version`, con el estado ganador |
 | cupo con tope 0 o ausente | `cupo_negado` / `sin_tope` |
 | cupo agotado | `cupo_negado` / `agotado` (la versión no se mueve) |
+| documento del cupo con `usados` que no es entero >= 0, o datos corruptos | `cupo_negado` / `datos_invalidos` (no se concede; la versión no se mueve) |
 | todo pasa | `version + 1`, cupos incrementados (`por[idCompromiso]` = `{cantidad, en}`, §11), `comprometido` |
 
 `asentar` **devuelve (libera)** los cupos que consumió ese compromiso y devuelve
@@ -223,5 +224,9 @@ el §2 a §5 dicen otra cosa, mandan estas.
 - Devuelve (libera) los cupos que consumió ese compromiso: `usados -= cantidad` y
   borra su entrada en `por`. Resultado `asentado` o `nada_que_asentar`;
   idempotente.
+- Ids de compromiso: primer carácter alfanumérico, y se rechazan los nombres de
+  `Object.prototype` (`constructor`, `toString`, …). Toda lectura de mapas usa
+  `Object.hasOwn` y los mapas se crean sin prototipo. Datos corruptos dan
+  `datos_invalidos` o `nada_que_asentar`; nunca se concede por NaN.
 - Exige `idCompromiso`; rechaza `estado`, `venceEnMin` y `cupos`; `versionLeida` es
   opcional y se ignora.
