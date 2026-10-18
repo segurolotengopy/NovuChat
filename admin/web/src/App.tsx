@@ -113,6 +113,7 @@ function useTituloDePagina(modulos: IdModulo[] | null): void {
 function Cabecera() {
   const { usuario, permisos, salir } = useSesion();
   const { tenantId: tenantDeLaRuta } = useParams();
+  const { pathname } = useLocation();
   const negocios = Object.keys(permisos.tenants);
   const cuentas = cuentasDe(permisos);
   const uid = usuario?.uid ?? '';
@@ -147,9 +148,12 @@ function Cabecera() {
       <nav>
         {permisos.propietario && <NavLink to="/negocios">Negocios</NavLink>}
         {permisos.propietario && <NavLink to="/bitacora">Bitácora</NavLink>}
-        {/* Con varios negocios y sin uno elegido, la salida es el inicio, que
-            los lista. Adivinar cuál quiere ver sería peor que preguntarlo. */}
-        {!permisos.propietario && cuentas.length > 1 && <NavLink to="/cuentas">Cambiar de cuenta</NavLink>}
+        {/* Con varias cuentas se ofrece volver al selector (salvo que ya se esté
+            en él o en el inicio, que lo muestra): adivinar cuál quiere ver sería
+            peor que preguntarlo. Dentro de una cuenta, «Inicio» lleva a SU tablero. */}
+        {!permisos.propietario && cuentas.length > 1 && pathname !== '/cuentas' && pathname !== '/' &&
+          <NavLink to="/cuentas">Cambiar de cuenta</NavLink>}
+        {tenantId && esPersona && <NavLink to={`/negocio/${tenantId}/inicio`}>Inicio</NavLink>}
         {tenantId && esAdminDelNegocio &&
           <NavLink to={`/negocio/${tenantId}/configuracion`}>Configuración</NavLink>}
         {tenantId && esAdminDelNegocio && modulos &&
@@ -263,11 +267,11 @@ export function App() {
       <Routes>
         <Route path="/ingresar" element={<Entrada />} />
         <Route path="/" element={<Proteger><Inicio /></Proteger>} />
+        <Route path="/cuentas" element={
+          <Proteger><SoloConVariasCuentas><><Cabecera /><SelectorDeCuenta /></></SoloConVariasCuentas></Proteger>} />
         {/* Mi cuenta la ve CUALQUIERA que haya entrado, sin importar el rol ni
             si tiene un negocio asociado: hasta quien todavía no fue vinculado
             necesita poder cambiar su contraseña. */}
-        <Route path="/cuentas" element={
-          <Proteger><SoloConVariasCuentas><><Cabecera /><SelectorDeCuenta /></></SoloConVariasCuentas></Proteger>} />
         <Route path="/mi-cuenta" element={
           <Proteger><><Cabecera /><MiCuenta /></></Proteger>} />
         <Route path="/negocios" element={
@@ -277,36 +281,39 @@ export function App() {
             Solo el propietario, y cada acción la valida el servidor. */}
         <Route path="/negocios/:tenantId/administrar" element={
           <Proteger requiere="propietario"><><Cabecera /><CuentaNegocio /></></Proteger>} />
+        {/* Las rutas del negocio comparten un árbol con key={tenantId}; se dejan a la
+            sangría de las demás para que el diff y las pruebas que leen este
+            archivo vean cada <Route> igual que antes. */}
         <Route element={<PorCuenta />}>
-          <Route path="/negocio/:tenantId/inicio" element={
+        <Route path="/negocio/:tenantId/inicio" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><TableroDeLaCuenta /></></Proteger>} />
-          <Route path="/negocio/:tenantId/configuracion" element={
+        <Route path="/negocio/:tenantId/configuracion" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Configuracion /></></Proteger>} />
-          <Route path="/negocio/:tenantId/conversaciones/:conversacionId?" element={
+        <Route path="/negocio/:tenantId/conversaciones/:conversacionId?" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Conversaciones /></></Proteger>} />
-          <Route path="/negocio/:tenantId/usuarios" element={
+        <Route path="/negocio/:tenantId/usuarios" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Usuarios /></></Proteger>} />
-          <Route path="/negocio/:tenantId/contactos" element={
+        <Route path="/negocio/:tenantId/contactos" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Contactos /></></Proteger>} />
         {/* Pestañas de FLUJO. Se pintan solo si el negocio tiene ese flujo, y
             las reglas rechazan la escritura si no lo tiene: la ruta existe
             siempre, la puerta la cierra el servidor. */}
-          <Route path="/negocio/:tenantId/catalogo" element={
+        <Route path="/negocio/:tenantId/catalogo" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Catalogo /></></Proteger>} />
-          <Route path="/negocio/:tenantId/campanas" element={
+        <Route path="/negocio/:tenantId/campanas" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Campanas /></></Proteger>} />
-          <Route path="/negocio/:tenantId/agenda" element={
+        <Route path="/negocio/:tenantId/agenda" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Funcionarios /></></Proteger>} />
-          <Route path="/negocio/:tenantId/funcionarios" element={<DesvioAAgenda />} />
-          <Route path="/negocio/:tenantId/inventario" element={
+        <Route path="/negocio/:tenantId/funcionarios" element={<DesvioAAgenda />} />
+        <Route path="/negocio/:tenantId/inventario" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Inventario /></></Proteger>} />
         {/* PEDIDOS la ve también el OPERADOR: es la pantalla del cocinero y del
             repartidor. Es la única ruta de flujo que no exige administrador. */}
-          <Route path="/negocio/:tenantId/pedidos" element={
+        <Route path="/negocio/:tenantId/pedidos" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Pedidos /></></Proteger>} />
-          <Route path="/negocio/:tenantId/cobros" element={
+        <Route path="/negocio/:tenantId/cobros" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Cobros /></></Proteger>} />
-          <Route path="/negocio/:tenantId/cobro" element={
+        <Route path="/negocio/:tenantId/cobro" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Cobro /></></Proteger>} />
         {/* CAPTACIÓN: hasta el 15/09 era el flujo propio de NovuChat y la ruta
             pedía propietario, igual que la regla de su documento. Desde ese
@@ -315,22 +322,22 @@ export function App() {
             operador no, como en las demás pestañas de configuración de flujo.
             Si el negocio no tiene el flujo, la pantalla lo dice y la regla
             rechaza la lectura: la puerta la cierra el servidor. */}
-          <Route path="/negocio/:tenantId/captacion" element={
+        <Route path="/negocio/:tenantId/captacion" element={
           <Proteger requiere="adminOPropietario"><><Cabecera /><Captacion /></></Proteger>} />
-          <Route path="/negocio/:tenantId/consumo" element={
+        <Route path="/negocio/:tenantId/consumo" element={
           <Proteger requiere="miembroOPropietario"><><Cabecera /><Consumo /></></Proteger>} />
         {/* Los dos nombres anteriores de esta pantalla —«Uso» y «Cierres»—
             siguen funcionando. Un enlace viejo en un correo o en un marcador no
             tiene por qué romperse porque nosotros cambiamos de vocabulario. */}
-          <Route path="/negocio/:tenantId/uso" element={<DesvioAConsumo />} />
-          <Route path="/negocio/:tenantId/cierres" element={<DesvioAConsumo />} />
-          <Route path="/negocio/:tenantId/cuenta" element={
+        <Route path="/negocio/:tenantId/uso" element={<DesvioAConsumo />} />
+        <Route path="/negocio/:tenantId/cierres" element={<DesvioAConsumo />} />
+        <Route path="/negocio/:tenantId/cuenta" element={
           <Proteger requiere="adminTenant"><><Cabecera /><EstadoCuenta /></></Proteger>} />
-          <Route path="/negocio/:tenantId/pagar" element={
+        <Route path="/negocio/:tenantId/pagar" element={
           <Proteger requiere="adminOPropietario"><><Cabecera /><SiNoOculta id="pagar"><Pagar /></SiNoOculta></></Proteger>} />
-          <Route path="/negocio/:tenantId/reclamos" element={
+        <Route path="/negocio/:tenantId/reclamos" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Reclamos /></></Proteger>} />
-          <Route path="/negocio/:tenantId/bitacora" element={
+        <Route path="/negocio/:tenantId/bitacora" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Bitacora /></></Proteger>} />
         </Route>
         {/* Vista de plataforma: todos los comercios, por consulta de grupo. */}

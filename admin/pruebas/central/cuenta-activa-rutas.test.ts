@@ -22,6 +22,7 @@ vi.mock('firebase/firestore', async (orig) => {
 });
 
 import { TableroDeLaCuenta } from '../../web/src/central/paginas/Tablero';
+import { rolEn } from '../../web/src/core/lib/sesion';
 import { SoloConVariasCuentas } from '../../web/src/central/componentes/SoloConVariasCuentas';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -48,6 +49,14 @@ describe('/negocio/:tenantId/inicio', () => {
       expect(ver(id), id).toContain('Sin permiso');
     }
     expect(lecturas.n).toBe(0);
+  });
+  it('CONTROL POSITIVO: con un id propio (admin u oper) NO aparece «Sin permiso» y se entra al tablero', () => {
+    for (const rol of ['admin', 'oper']) {
+      poner({ a: rol });
+      const html = ver('a');
+      expect(html, rol).not.toContain('Sin permiso');
+      expect(html, rol).not.toContain('RAIZ'); // el efecto de lectura no corre en render estático: se pinta el tablero (cargando)
+    }
   });
   it('un rol ingesta tampoco entra al tablero de una persona', () => {
     poner({ m: 'ingesta' });
@@ -78,6 +87,17 @@ describe('/cuentas', () => {
   });
 });
 
+describe('rolEn: solo claves propias del token', () => {
+  const p = { propietario: false, tenants: { a: 'admin' as const }, version: 1 };
+  it('constructor, toString, __proto__ y hasOwnProperty dan null; el rol propio sigue funcionando', () => {
+    for (const id of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']) {
+      expect(rolEn(p, id), id).toBeNull();
+    }
+    expect(rolEn(p, 'a')).toBe('admin');
+    expect(rolEn(p, 'b')).toBeNull();
+  });
+});
+
 describe('App.tsx: el cableado', () => {
   const app = readFileSync(join(aqui, '..', '..', 'web', 'src', 'App.tsx'), 'utf8');
   it('/cuentas va dentro de Proteger (sin sesión, a /ingresar) y no es pública', () => {
@@ -86,7 +106,15 @@ describe('App.tsx: el cableado', () => {
   it('inicio pide miembroTenant; todo /negocio/:tenantId cuelga de un árbol con key', () => {
     expect(app).toMatch(/path="\/negocio\/:tenantId\/inicio" element=\{\s*<Proteger requiere="miembroTenant">/);
     expect(app).toContain('<Outlet key={tenantId} />');
-    expect(app).toContain('<Route element={<PorCuenta />}>');
+    const ini = app.indexOf('<Route element={<PorCuenta />}>');
+    const fin = app.indexOf('</Route>', ini);
+    expect(ini).toBeGreaterThan(-1);
+    const dentro = app.slice(ini, fin);
+    const fuera = app.slice(0, ini) + app.slice(fin);
+    const todas = app.match(/<Route path="\/negocio\/:tenantId[^"]*"/g) ?? [];
+    expect(todas.length).toBeGreaterThan(15);
+    expect(dentro.match(/<Route path="\/negocio\/:tenantId[^"]*"/g)).toEqual(todas);
+    expect(fuera).not.toContain('path="/negocio/:tenantId');
   });
   it('los títulos nuevos', () => {
     expect(app).toContain("cuentas: 'Elegir cuenta'");
@@ -94,6 +122,8 @@ describe('App.tsx: el cableado', () => {
   });
   it('la cabecera ofrece «Cambiar de cuenta» y recuerda la última', () => {
     expect(app).toContain('Cambiar de cuenta');
+    expect(app).toContain("pathname !== '/cuentas' && pathname !== '/'");
+    expect(app).toContain('/inicio`}>Inicio</NavLink>');
     expect(app).not.toContain('Mis negocios');
     expect(app).toContain('guardarUltima(uid, tenantDeLaRuta)');
   });

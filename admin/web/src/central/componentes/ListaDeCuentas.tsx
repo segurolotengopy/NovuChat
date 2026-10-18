@@ -28,7 +28,7 @@ export function ListaDeCuentas({ cuentas, ultima, alElegir }: {
 }) {
   const ordenadas = [...cuentas].sort((a, b) => Number(b.id === ultima) - Number(a.id === ultima));
   return (
-    <ul className="selector-cuentas">
+    <ul style={{ listStyle: 'none', padding: 0 }}>
       {ordenadas.map((c) => {
         const esUltima = c.id === ultima;
         const ficha = c.ficha;
@@ -50,7 +50,7 @@ export function ListaDeCuentas({ cuentas, ultima, alElegir }: {
         return (
           <li key={c.id} className="tarjeta">
             {baja
-              ? <span aria-disabled="true" className="deshabilitado" style={{ opacity: 0.6 }}>{cuerpo}</span>
+              ? <span aria-disabled="true" style={{ opacity: 0.6 }}>{cuerpo}</span>
               : <Link to={`/negocio/${encodeURIComponent(c.id)}/inicio`} onClick={() => alElegir?.(c.id)}>{cuerpo}</Link>}
           </li>
         );
