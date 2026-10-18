@@ -1,0 +1,614 @@
+{
+  "name": "REEMPLAZAR_NOMBRE_DEL_FLUJO",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 120,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveExecutionProgress": false,
+    "saveManualExecutions": false
+  },
+  "nodes": [
+    {
+      "id": "entrega-receptor",
+      "name": "Entrega del receptor",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1560,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "@@dato:receptor.ruta@@",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "notes": "SOLO en la variante del receptor de clientes (camino B). Recibe la entrega firmada del receptor (cabeceras X-AAB1-Delivery-Id, X-AAB1-Timestamp, X-AAB1-Signature y X-AAB1-Attempt). La ruta es una URL de capacidad: va como marcador y la reemplaza preparar-import.sh. El Code de n8n no tiene crypto: la firma la verifica el receptor, por la red interna, en el nodo siguiente."
+    },
+    {
+      "id": "verificar-firma",
+      "name": "Verificar firma con el receptor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1320,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "@@dato:receptor.urlVerificador@@",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ firma: $json.headers['x-aab1-signature'] ?? '', timestamp: $json.headers['x-aab1-timestamp'] ?? '', deliveryId: $json.headers['x-aab1-delivery-id'] ?? '', cuerpo: JSON.stringify($json.body), wabaIdEsperado: \"@@dato:receptor.wabaIdEsperado@@\" }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "notes": "SIN «Continue on Fail» ni onError, a propósito: con él, un 503 del verificador daría 401 y la entrega moriría en vez de reintentarse. El cuerpo se arma con JSON.stringify, nunca interpolando. El verificador solo se llama por la red interna y nunca se expone. `wabaIdEsperado` va fijo (marcador)."
+    },
+    {
+      "id": "firma-valida",
+      "name": "¿Firma válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1080,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "firma-valida",
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "aceptar-200",
+      "name": "Aceptar (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -840,
+        200
+      ],
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "rechazar-401",
+      "name": "Rechazar (401)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -840,
+        420
+      ],
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "notes": "Una firma inválida corta aquí: 0 mensajes, 0 avisos, 0 llamadas."
+    },
+    {
+      "id": "descartar-repetidos",
+      "name": "Descartar repetidos",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        200
+      ],
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "dedupeValue": "={{ $('Verificar firma con el receptor').item.json.deliveryId }}",
+        "options": {}
+      },
+      "notes": "Descarta una entrega ya vista (el receptor reintenta) entre ejecuciones, por deliveryId. Los repetidos por id de mensaje de Meta los frena además `Interpretar entrada`."
+    },
+    {
+      "id": "entrada-de-prueba",
+      "name": "Entrada de prueba",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -300,
+        520
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "@@dato:pruebaRuta@@",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:entradaPrueba"
+        }
+      },
+      "notes": "SOLO en rroca-ruben.prueba.json, que se importa únicamente para ensayar y se DESACTIVA y BORRA al terminar. Exige una credencial de cabecera propia (la ruta, además, es una URL de capacidad). Recibe la misma carga que Meta dentro de `body` y, opcionales, modoPrueba, telefonoDePrueba y enviarDeVerdad (solo `modoPrueba === true` lo activa). Responde con «Resumen del turno»."
+    },
+    {
+      "id": "config-base",
+      "name": "Config base",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -40,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": []
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "notes": "LO CONFIGURABLE DEL NEGOCIO que no es de la consola. Se llena desde admin/scripts/datos/chat-novuchat/<archivo>.json: marcadores REEMPLAZAR_* para los identificadores, que el publicador sustituye. Nunca un token ni un identificador real aquí."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@comun:nodos/carga-de-entrada.js"
+      },
+      "id": "carga-de-entrada",
+      "name": "Carga de entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "notes": "Deja la entrada en una sola forma y FILTRA: solo pasan las cargas con `messages`, sin `statuses` y del número esperado (`phoneNumberIdEsperado` de «Config base»). Si CORRIÓ «Entrega del receptor», el evento es su `body.value`. Los acuses de estado y los mensajes de otro número se descartan aquí, antes de traer la configuración."
+    },
+    {
+      "id": "traer-configuracion",
+      "name": "Traer configuración",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.prueba && $json.prueba.modoPrueba === true ? String($('Config base').first().json.phoneNumberIdEsperado || '') : String($json.phoneNumberId || '') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || '') }) }}",
+        "options": {
+          "timeout": 4000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "De la consola salen, en PR-1, el nombre del negocio, el número de recepción, el nombre del asistente, el trato y la atención. Con el panel caído, «Config del negocio» usa el respaldo de «Config base»."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@comun:nodos/config-del-negocio.js"
+      },
+      "id": "config-del-negocio",
+      "name": "Config del negocio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "notes": "Lo configurable del negocio en un solo nodo: la consola sobre el respaldo de «Config base». Copia adaptada de chat-novuchat (HUECO declarado en PROPIO.md)."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@todo:nodos/interpretar-entrada.js"
+      },
+      "id": "interpretar-entrada",
+      "name": "Interpretar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        300
+      ],
+      "notes": "Normaliza texto, toque de botón, toque de lista, audio, imagen, documento, ubicación y cualquier otro tipo. Nada se descarta salvo duplicados de entrega, reacciones y sistema, números inválidos y prefijos no permitidos. La clave de la conversación es `messages[0].from`."
+    },
+    {
+      "id": "si-reportar-entrante",
+      "name": "¿Reportar? (entrante)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1160,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba no se llama a la ingesta."
+    },
+    {
+      "id": "reportar-mensaje-entrante",
+      "name": "Reportar mensaje (entrante)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        140
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const t = $('Interpretar entrada').first().json; return JSON.stringify({ telefono: t.from, direccion: 'entrante', tipo: t.tipo || 'text', texto: t.textoReporte || '', idMeta: t.mensajeId || '', nombreContacto: t.nombrePerfil || '', origen: t.origen || 'directo', evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String(t.texto || '')) ? 'no_contactar' : undefined }); })() }}",
+        "options": {
+          "timeout": 4000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "Una llamada a la ingesta por cada mensaje entrante, ANTES de la rama que responde (arriba en el lienzo): si la respuesta se reportara antes que el mensaje que la provocó, el aviso de uso extendido no saldría nunca. Su respuesta puede traer `atencion` y `servicio`."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@comun:nodos/puerta-del-turno.js"
+      },
+      "id": "puerta-del-turno",
+      "name": "Puerta del turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        300
+      ],
+      "notes": "¿Se sigue con este mensaje? Reúne el comercio suspendido (texto neutro, sin revelar el motivo) y el uso extendido (aviso fijo; en «bloqueado», la pausa por persona, no sale NADA y no se llama a ningún modelo). Corre DESPUÉS de «Reportar mensaje (entrante)», que trae la atención. En PR-1 no avisa a recepción (es PR-3)."
+    },
+    {
+      "parameters": {
+        "jsCode": "@@todo+mensajes:nodos/armar-mensajes.js"
+      },
+      "id": "armar-mensajes",
+      "name": "Armar mensajes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        300
+      ],
+      "notes": "PR-1: UN mensaje por turno (el saludo fijo del asistente virtual de Rubén) o ninguno (bloqueado). Armado por código, sin modelo. Escribe la ficha del teléfono, siempre con la clave `messages[0].from`."
+    },
+    {
+      "id": "meta-acepto",
+      "name": "¿Meta aceptó?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3320,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!($json && !$json.error && Array.isArray($json.messages) && $json.messages[0] && $json.messages[0].id) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "PUERTA de la entrega (regla I-ENTREGA 3): el reporte saliente solo corre si Meta devolvio `messages[0].id` y ningun `error`, sea del envio o de su respaldo. Lo pega `construir.mjs` entre «¿Reportar? (saliente)» y «Reportar mensaje (saliente)» sin tocar los nodos comunes."
+    },
+    {
+      "id": "resumen-del-turno",
+      "name": "Resumen del turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        600
+      ],
+      "parameters": {
+        "jsCode": "@@comun:nodos/resumen-del-turno.js"
+      },
+      "notes": "Ultima rama de «Armar mensajes». En la variante de prueba, «Entrada de prueba» responde con esto."
+    }
+  ],
+  "connections": {
+    "Entrega del receptor": {
+      "main": [
+        [
+          {
+            "node": "Verificar firma con el receptor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar firma con el receptor": {
+      "main": [
+        [
+          {
+            "node": "¿Firma válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Firma válida?": {
+      "main": [
+        [
+          {
+            "node": "Aceptar (200)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rechazar (401)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aceptar (200)": {
+      "main": [
+        [
+          {
+            "node": "Descartar repetidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descartar repetidos": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entrada de prueba": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config base": {
+      "main": [
+        [
+          {
+            "node": "Carga de entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carga de entrada": {
+      "main": [
+        [
+          {
+            "node": "Traer configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traer configuración": {
+      "main": [
+        [
+          {
+            "node": "Config del negocio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config del negocio": {
+      "main": [
+        [
+          {
+            "node": "Interpretar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interpretar entrada": {
+      "main": [
+        [
+          {
+            "node": "¿Reportar? (entrante)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reportar? (entrante)": {
+      "main": [
+        [
+          {
+            "node": "Reportar mensaje (entrante)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Puerta del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reportar mensaje (entrante)": {
+      "main": [
+        [
+          {
+            "node": "Puerta del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Puerta del turno": {
+      "main": [
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar mensajes": {
+      "main": [
+        [
+          {
+            "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Meta aceptó?": {
+      "main": [
+        [
+          {
+            "node": "Reportar mensaje (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  }
+}
