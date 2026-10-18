@@ -565,7 +565,7 @@ export async function correrCaso({ caso, rep, flujo, opciones, credencial, deps 
     'Leer comprobante (imagen)': () => lecturaDe(turnoActual.t, captura),
     'Leer comprobante (PDF)': () => lecturaDe(turnoActual.t, captura),
     // Guardar la imagen: el servidor la guardaria y devolveria su ruta. La imagen de la bateria no existe, asi que solo se devuelve la ruta.
-    'Guardar comprobante': () => ({ statusCode: 200, body: { ruta: 'tenants/qtaco/comprobantes/2026-10-06/Bateria0123456789abcdefghijklmnopqrstuvwxyzAB_-.jpg' } }),
+    'Guardar comprobante': () => ({ statusCode: 200, body: { ruta: 'tenants/qtaco/comprobantes/2026-10-06/Bateria01234abcdeabcdefghijklmnopqrstuvwxyzAB_-.jpg' } }),
     'Cotejar en el servidor': () => cotejoDe(turnoActual.t),
     Extraer: async (ll) => {
       captura.extraer++;

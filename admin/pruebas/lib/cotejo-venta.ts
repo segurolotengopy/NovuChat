@@ -28,7 +28,7 @@ export const cotejoYaResuelto = (extra: J = {}) => r200({ ...BASE, estado: 'ya_r
 export const cotejo409 = (error: string) => ({ statusCode: 409, body: { error } });
 
 /** La ruta que devuelve `guardarComprobante` con un 200. */
-export const RUTA_GUARDADA = 'tenants/qtaco/comprobantes/2026-10-05/Kq3aZ09bcdEFGHIJklmnopqrstuvwxyz0123456789_-A.jpg';
+export const RUTA_GUARDADA = 'tenants/qtaco/comprobantes/2026-10-05/Kq3aZ09bcdEFGHIJklmnopqrstuvwxyz01234abcde_-A.jpg';
 export const guardadoBien = () => ({ statusCode: 200, body: { ruta: RUTA_GUARDADA } });
 /** Un rechazo de `guardarComprobante` (409 `sin_cobro_pendiente` o `demasiados_comprobantes`, 413, 415, 502...). */
 export const guardadoFalla = (codigo = 409, error = 'sin_cobro_pendiente') => ({ statusCode: codigo, body: { error } });

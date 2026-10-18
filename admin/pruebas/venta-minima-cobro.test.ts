@@ -555,7 +555,7 @@ describe('cbResultadoVenta: lo que contestó `/cotejarComprobanteVenta` (regla 2
 });
 
 describe('cbRutaGuardada: la imagen que guardó `guardarComprobante`', () => {
-  const RUTA = 'tenants/qtaco/comprobantes/2026-10-17/Kq3_-aZ09bcdEFGHIJklmnopqrstuvwxyz0123456789.jpg';
+  const RUTA = 'tenants/qtaco/comprobantes/2026-10-17/Kq3_-aZ09bcdEFGHIJklmnopqrstuvwxyz01234abcde.jpg';
   it('200 con una ruta de comprobante válida -> la ruta (para el cotejo)', () => {
     for (const ext of ['jpg', 'png', 'webp', 'pdf']) {
       const r = RUTA.replace('.jpg', `.${ext}`);
