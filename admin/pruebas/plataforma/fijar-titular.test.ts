@@ -6,14 +6,14 @@
  * emulador de Firestore con un Auth de mentira (el Auth de los procesos hijos está apagado a
  * propósito). Se prueba negando, con control positivo.
  */
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 // @ts-expect-error módulo .mjs sin tipos
-import { adminsActivos, fijarTitular, rechazoPorTitular } from '../../scripts/plataforma/titular-cuenta.mjs';
+import { adminsActivos, fijarTitular, otrosComercios, rechazoPorTitular } from '../../scripts/plataforma/titular-cuenta.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const ADMIN = join(aqui, '..', '..');
@@ -103,6 +103,7 @@ describe('fijar-titular: lo que no se puede', () => {
 });
 
 describe('fijar-titular --aplicar', () => {
+  beforeEach(sembrar);
   it('escribe solo los tres campos y la auditoría; miembros, claims y el resto, intactos', async () => {
     const fichaAntes = await ficha(T);
     const miembrosAntes = await miembros(T);
@@ -132,18 +133,18 @@ describe('fijar-titular --aplicar', () => {
   });
 
   it('--quitar deja la cuenta sin titular y lo audita; repetirlo se rechaza', async () => {
+    await db.doc(`tenants/${T}`).update({ titularCuentaUid: 'admin2' });
     const r = await fijar(null, true);
     expect(r).toMatchObject({ ok: true, aplicado: true, anterior: 'admin2', nuevo: null });
     expect((await ficha(T))['titularCuentaUid']).toBeNull();
     const aud = await auditorias(T);
-    expect(aud).toHaveLength(2);
+    expect(aud).toHaveLength(1);
     expect(aud.some((a) => a['despues']?.titularCuentaUid === null && a['antes']?.titularCuentaUid === 'admin2')).toBe(true);
     expect((await fijar(null, true)).ok).toBe(false);
-    expect(await auditorias(T)).toHaveLength(2);
+    expect(await auditorias(T)).toHaveLength(1);
   });
 
   it('una comprobación que cambia dentro de la transacción aborta sin escribir', async () => {
-    await db.doc(`tenants/${T}`).update({ titularCuentaUid: 'admin1' });
     // La membresía pasa a baja entre la comprobación y la escritura: la transacción la relee.
     const authQueBaja = {
       getUser: async (uid: string) => {
@@ -153,14 +154,14 @@ describe('fijar-titular --aplicar', () => {
     };
     const antes = await ficha(T);
     const n = (await auditorias(T)).length;
-    await expect(fijarTitular({ db, auth: authQueBaja, tenant: T, uid: 'admin2', operador: OP, aplicar: true }))
-      .rejects.toThrow(/cambió/);
+    const r = await fijarTitular({ db, auth: authQueBaja, tenant: T, uid: 'admin2', operador: OP, aplicar: true });
+    expect(r.ok).toBe(false); // el motivo vuelve como dato: la línea de comandos imprime una línea, sin traza
+    expect(r.motivo).toMatch(/cambió|no está activa/);
     expect(await ficha(T)).toEqual(antes);
     expect(await auditorias(T)).toHaveLength(n);
   });
 
   it('la relectura detecta un fallo: si la ficha no queda como se escribió, devuelve ok:false', async () => {
-    await sembrar();
     // Un db cuya relectura miente: el primer get de la ficha es real, el último devuelve otro titular.
     let lecturas = 0;
     const dbMentiroso = new Proxy(db, {
@@ -190,8 +191,8 @@ describe('fijar-titular --aplicar', () => {
 });
 
 describe('fijar-titular sin --tenant: solo lista', () => {
+  beforeEach(sembrar);
   it('lista los administradores activos y no escribe', async () => {
-    await sembrar();
     const antes = await ficha(T);
     const l = await adminsActivos({ db, auth, tenant: T });
     expect(l.map((a: { uid: string }) => a.uid).sort()).toEqual(['admin1', 'admin2', 'soloficha']);
@@ -207,6 +208,22 @@ describe('fijar-titular.mjs: la línea de comandos', () => {
     });
     return { codigo: r.status, salida: `${r.stdout ?? ''}${r.stderr ?? ''}` };
   };
+  it('sin --tenant, con el emulador sin Auth: no escribe nada y no vuelca una traza (código 0 o 1 con un motivo)', async () => {
+    await sembrar();
+    const antes = await ficha(T);
+    const r = correr('--proyecto', PROYECTO, '--operador', OP);
+    expect([0, 1], r.salida).toContain(r.codigo);
+    expect(r.salida).not.toMatch(/at .*\.mjs:\d+/);
+    expect(await ficha(T)).toEqual(antes);
+  });
+  it('con --tenant y un uid que no es miembro: código 1, el motivo en una línea y nada escrito', async () => {
+    await sembrar();
+    const antes = await ficha(T);
+    const r = correr('--proyecto', PROYECTO, '--operador', OP, '--tenant', T, '--uid', 'ajeno1', '--aplicar');
+    expect(r.codigo, r.salida).toBe(1);
+    expect(r.salida).toContain('no es miembro de este comercio');
+    expect(await ficha(T)).toEqual(antes);
+  });
   it('sin --operador, con --uid sin --tenant o con --quitar y --uid: código 2', () => {
     for (const a of [[], ['--proyecto', PROYECTO], ['--proyecto', PROYECTO, '--operador', OP, '--uid', 'abc123'],
       ['--proyecto', PROYECTO, '--operador', OP, '--tenant', T, '--quitar', '--uid', 'abc123'],
@@ -227,6 +244,9 @@ describe('asignar-rol: el titular no se quita ni se degrada', () => {
       expect(await dec('admin1', 'otro@ejemplo.com', accion)).toContain('fijar-titular.mjs');
     }
   });
+  it('el correo con mayúsculas o espacios no esquiva al titular', async () => {
+    expect(await dec(undefined, ' Admin1@EJEMPLO.com ', 'quitar')).toContain('fijar-titular.mjs');
+  });
   it('permite a un no titular y a un tenant sin titular (control positivo)', async () => {
     expect(await dec('admin2', 'admin2@ejemplo.com', 'quitar')).toBeNull();
     expect(await dec('oper1', 'oper1@ejemplo.com', 'oper')).toBeNull();
@@ -245,6 +265,9 @@ describe('asignar-rol: el titular no se quita ni se degrada', () => {
     const o = correr('admin1@ejemplo.com', '--rol', 'oper');
     expect(o.codigo, o.salida).toBe(1);
     expect(o.salida).toContain('fijar-titular.mjs');
+    const may = correr('  ADMIN1@Ejemplo.com ', '--quitar');
+    expect(may.codigo, may.salida).toBe(1); // el correo se normaliza: mayúsculas y espacios no esquivan al titular
+    expect(may.salida).toContain('fijar-titular.mjs');
     const ok = correr('admin2@ejemplo.com', '--quitar');
     expect(ok.codigo, ok.salida).toBe(0);
     const ok2 = correr('admin1@ejemplo.com', '--rol', 'admin');
@@ -261,5 +284,25 @@ describe('las dos altas fijan el titular', () => {
     expect(mjs).toMatch(/lote\.create\(db\.doc\(`tenants\/\$\{TENANT\}`\), \{[\s\S]*?titularCuentaUid: usuario\.uid[\s\S]*?\}\);/);
     // Y el administrador inicial es el mismo que recibe la membresía.
     expect(mjs).toMatch(/miembros\/\$\{usuario\.uid\}`\), \{\s*correo: ADMIN, rol: 'admin'/);
+  });
+
+  // Las altas necesitan Auth (getUserByEmail, claims), que los hijos de prueba no tienen
+  // (`alta-plan-inicial.test.ts` lo dice): su comportamiento de Firestore no es ejecutable aquí.
+  // Se prueba la regla pura que usan y se deja el regex como respaldo.
+  it('alta-comercio: una cuenta con acceso a otros comercios exige --reutilizar-cuenta', () => {
+    const mjs = sinComentarios(readFileSync(join(SCRIPTS, 'alta-comercio.mjs'), 'utf8'));
+    const claims = { nc: { t: { 'otro-comercio-largo': 'admin', [T]: 'admin' } } };
+    expect(otrosComercios(claims, 'ftit-nuevo')).toHaveLength(2); // con acceso a otros: pide bandera
+    expect(otrosComercios(claims, T)).toEqual(['otro-comercio-largo']);
+    expect(otrosComercios({ nc: { t: {} } }, 'ftit-nuevo')).toEqual([]); // cuenta sin otros: no necesita bandera
+    expect(otrosComercios(undefined, 'ftit-nuevo')).toEqual([]); // cuenta nueva
+    expect(mjs).toMatch(/otros\.length > 0 && !REUTILIZAR\) \{[\s\S]*?process\.exit\(1\)/);
+    expect(mjs).toContain("args.includes('--reutilizar-cuenta')");
+    // la comprobación va antes del seco y de toda escritura
+    expect(mjs.indexOf('!REUTILIZAR')).toBeLessThan(mjs.indexOf('if (!APLICAR)'));
+  });
+  it('altaTenant audita cuentaExistente', () => {
+    const ts = sinComentarios(readFileSync(join(ADMIN, 'functions', 'src', 'plataforma', 'tenants.ts'), 'utf8'));
+    expect(ts).toMatch(/'alta_tenant', uid, \{ admin: usuarioAdmin\.uid, cuentaExistente \}/);
   });
 });

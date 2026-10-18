@@ -54,7 +54,7 @@ const bandera = (n) => args.includes(`--${n}`);
 
 const PROYECTO = opcion('proyecto');
 const TENANT = opcion('tenant');
-const CORREO = opcion('correo');
+const CORREO = (opcion('correo') ?? '').trim().toLowerCase();
 const NOMBRE = opcion('nombre') ?? '';
 const QUITAR = bandera('quitar');
 const ROL = opcion('rol') ?? (QUITAR ? null : 'oper');
@@ -109,13 +109,11 @@ console.log(`  Negocio  : ${ficha.get('nombre') ?? '(sin nombre)'} · estado ${f
 // EL TITULAR DE LA CUENTA NO SE QUITA NI SE DEGRADA DESDE ACÁ (decisión de Andres, 17/10/2026):
 // solo NovuChat lo cambia, con `fijar-titular.mjs`. Se comprueba antes del seco para que
 // el seco ya lo diga. Dar `admin` a quien es titular no cambia nada y se permite.
-if (QUITAR || ROL === 'oper') {
-  const rechazo = await rechazoPorTitular({ db, tenant: TENANT, correo: CORREO, accion: QUITAR ? 'quitar' : 'oper' });
-  if (rechazo) {
-    console.error(`  ✗ ${rechazo}\n`);
-    process.exit(1);
-  }
-}
+const cortarSiTitular = async (accion, uidAuth) => {
+  const rechazo = await rechazoPorTitular({ db, tenant: TENANT, correo: CORREO, uidAuth, accion });
+  if (rechazo) { console.error(`  ✗ ${rechazo}\n`); process.exit(1); }
+};
+if (QUITAR || ROL === 'oper') await cortarSiTitular(QUITAR ? 'quitar' : 'oper');
 
 // Dónde iría el enlace si la cuenta hay que crearla. Solo se sabe con --aplicar
 // (hay que preguntarle a Auth), así que acá se informa y abajo se exige.
@@ -142,11 +140,7 @@ if (QUITAR) {
     console.error('  ✗ No hay ninguna cuenta con ese correo: no hay nada que quitar.\n');
     process.exit(1);
   }
-  const rechazoUid = await rechazoPorTitular({ db, tenant: TENANT, correo: CORREO, uidAuth: existente.uid, accion: 'quitar' });
-  if (rechazoUid) {
-    console.error(`  ✗ ${rechazoUid}\n`);
-    process.exit(1);
-  }
+  await cortarSiTitular('quitar', existente.uid);
   const previo = (existente.customClaims ?? {}).nc ?? {};
   const tenants = { ...(previo.t ?? {}) };
   const teniaEl = tenants[TENANT];
@@ -175,13 +169,7 @@ if (!existente && !destino.existe) {
   console.error('    Indique la carpeta con --cliente. No se escribió nada.\n');
   process.exit(1);
 }
-if (existente && ROL === 'oper') {
-  const rechazoUid = await rechazoPorTitular({ db, tenant: TENANT, correo: CORREO, uidAuth: existente.uid, accion: 'oper' });
-  if (rechazoUid) {
-    console.error(`  ✗ ${rechazoUid}\n`);
-    process.exit(1);
-  }
-}
+if (existente && ROL === 'oper') await cortarSiTitular('oper', existente.uid);
 let usuario = existente;
 if (!usuario) {
   usuario = await auth.createUser({

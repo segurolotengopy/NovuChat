@@ -146,8 +146,11 @@ export const altaTenant = onCall(async (peticion) => {
   });
   await lote.commit();
 
+  // ¿La cuenta del titular ya tenía acceso a otros comercios? Se deja en la auditoría.
+  const cuentaExistente = Object.keys(((usuarioAdmin.customClaims ?? {})['nc'] as { t?: object } | undefined)?.t ?? {})
+    .some((t) => t !== tenantId);
   await asignarRol(usuarioAdmin.uid, tenantId, 'admin');
-  await auditar(tenantId, 'alta_tenant', uid, { admin: usuarioAdmin.uid });
+  await auditar(tenantId, 'alta_tenant', uid, { admin: usuarioAdmin.uid, cuentaExistente });
 
   return { tenantId };
 });

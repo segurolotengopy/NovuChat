@@ -29,6 +29,14 @@ export async function motivoSiNoPuedeSerTitular({ db, auth, tenant, uid }) {
   return null;
 }
 
+/**
+ * Los comercios, distintos de `tenant`, a los que una cuenta ya tiene acceso (por sus claims).
+ * Lo usa `alta-comercio.mjs`: reutilizar una cuenta así exige `--reutilizar-cuenta`.
+ */
+export function otrosComercios(customClaims, tenant) {
+  return Object.keys((((customClaims ?? {}).nc ?? {}).t) ?? {}).filter((t) => t !== tenant);
+}
+
 /** Los administradores activos de un comercio (ficha y claim coinciden). Solo lee. */
 export async function adminsActivos({ db, auth, tenant }) {
   const snap = await db.collection(`tenants/${tenant}/miembros`).where('estado', '==', 'activo').get();
@@ -61,22 +69,26 @@ export async function fijarTitular({ db, auth, tenant, uid, operador, aplicar })
   if (!aplicar) return { ok: true, aplicado: false, anterior, nuevo: uid ?? null };
 
   const ahora = Timestamp.now();
-  await db.runTransaction(async (tx) => {
-    const f = await tx.get(ref);
-    if ((f.get('titularCuentaUid') ?? null) !== anterior) throw new Error('el titular cambió mientras tanto; repita');
-    if (uid) {
-      const m = await tx.get(db.doc(`tenants/${tenant}/miembros/${uid}`));
-      if (!m.exists || m.get('estado') !== 'activo' || m.get('rol') !== 'admin') {
-        throw new Error('la membresía cambió mientras tanto; repita');
+  try {
+    await db.runTransaction(async (tx) => {
+      const f = await tx.get(ref);
+      if ((f.get('titularCuentaUid') ?? null) !== anterior) throw new Error('el titular cambió mientras tanto; repita');
+      if (uid) {
+        const m = await tx.get(db.doc(`tenants/${tenant}/miembros/${uid}`));
+        if (!m.exists || m.get('estado') !== 'activo' || m.get('rol') !== 'admin') {
+          throw new Error('la membresía cambió mientras tanto; repita');
+        }
       }
-    }
-    // Solo estos tres campos; el resto de la ficha no se toca.
-    tx.update(ref, { titularCuentaUid: uid ?? null, titularCuentaEn: ahora, titularCuentaPor: 'fijar-titular' });
-    tx.create(db.collection(`tenants/${tenant}/auditoria`).doc(), {
-      accion: 'fijar_titular', uid: operador, origen: 'script', script: 'fijar-titular', en: ahora,
-      antes: { titularCuentaUid: anterior }, despues: { titularCuentaUid: uid ?? null },
+      // Solo estos tres campos; el resto de la ficha no se toca.
+      tx.update(ref, { titularCuentaUid: uid ?? null, titularCuentaEn: ahora, titularCuentaPor: 'fijar-titular' });
+      tx.create(db.collection(`tenants/${tenant}/auditoria`).doc(), {
+        accion: 'fijar_titular', uid: operador, origen: 'script', script: 'fijar-titular', en: ahora,
+        antes: { titularCuentaUid: anterior }, despues: { titularCuentaUid: uid ?? null },
+      });
     });
-  });
+  } catch (e) {
+    return { ok: false, motivo: e instanceof Error ? e.message : String(e), anterior };
+  }
   const relectura = (await ref.get()).get('titularCuentaUid') ?? null;
   if (relectura !== (uid ?? null)) return { ok: false, motivo: 'la relectura no coincide con lo escrito', anterior, nuevo: relectura };
   return { ok: true, aplicado: true, anterior, nuevo: relectura };
@@ -93,7 +105,7 @@ export async function rechazoPorTitular({ db, tenant, correo, uidAuth, accion })
   const titular = ficha.get('titularCuentaUid') ?? null;
   if (!titular) return null;
   const uids = new Set(uidAuth ? [uidAuth] : []);
-  const porCorreo = await db.collection(`tenants/${tenant}/miembros`).where('correo', '==', correo).get();
+  const porCorreo = await db.collection(`tenants/${tenant}/miembros`).where('correo', '==', String(correo ?? '').trim().toLowerCase()).get();
   for (const d of porCorreo.docs) uids.add(d.id);
   if (!uids.has(titular)) return null;
   const que = accion === 'quitar' ? 'quitar el acceso al' : 'dejar como operador al';

@@ -17,6 +17,10 @@
  *   - `--quitar` deja la cuenta sin titular (auditado);
  *   - sin `--tenant` solo LISTA los administradores activos, de cada comercio, sin escribir.
  *
+ * «SIN TITULAR» ES UN ESTADO VÁLIDO: los comercios anteriores a este cambio y los sembrados de
+ * emulador y de demos no lo fijan, y la consola lo tolera. `titularCuentaUid: null` (el
+ * resultado de `--quitar`) significa lo mismo que el campo ausente.
+ *
  * Un comercio con clientes en producción solo se nombra con el «sí» de Andres, por acción.
  * `--operador <correo>` es obligatorio: es quien queda en la auditoría.
  *
@@ -74,7 +78,8 @@ if (!TENANT) {
   process.exit(0);
 }
 
-const r = await fijarTitular({ db, auth, tenant: TENANT, uid: QUITAR ? null : UID, operador: OPERADOR, aplicar: APLICAR });
+const r = await fijarTitular({ db, auth, tenant: TENANT, uid: QUITAR ? null : UID, operador: OPERADOR, aplicar: APLICAR })
+  .catch((e) => ({ ok: false, motivo: e instanceof Error ? e.message : String(e) }));
 if (!r.ok) {
   console.error(`  ✗ ${r.motivo}. No se escribió nada.\n`);
   process.exit(1);
