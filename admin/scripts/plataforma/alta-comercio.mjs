@@ -31,9 +31,18 @@
  * `--cliente` es la carpeta de `CLIENTES/`; por defecto, el tenant en mayúsculas
  * con `_` por `-`. Tiene que existir: la crea la etapa «preparar» del alta.
  *
+ * EL ADMINISTRADOR INICIAL QUEDA COMO TITULAR DE LA CUENTA (`titularCuentaUid`, ver
+ * `fijar-titular.mjs`), y puede ser una cuenta compartida: una misma persona puede
+ * administrar varios comercios con un solo usuario (caso del selector de cuentas). Por eso,
+ * si el correo ya existe y esa cuenta ya tiene acceso a OTROS comercios, el alta se
+ * detiene (también en seco) y exige `--reutilizar-cuenta`: reutilizarla es legítimo, pero
+ * tiene que ser una decisión explícita, porque ese usuario será el titular del comercio nuevo.
+ * Una cuenta nueva, o una sin acceso a otros comercios, no necesita la bandera.
+ *
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
 import { randomBytes } from 'node:crypto';
+import { otrosComercios } from './titular-cuenta.mjs';
 import {
   ID_CLIENTE, clienteDeTenant, comprobarDestino, guardarEnlaceDeContrasena, raizDelProyecto,
 } from './enlace-privado.mjs';
@@ -44,6 +53,7 @@ import { documentoDeFlujo, esFlujo } from '../../functions/src/registro.ts';
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
 const APLICAR = args.includes('--aplicar');
+const REUTILIZAR = args.includes('--reutilizar-cuenta');
 
 const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();
@@ -66,7 +76,7 @@ if (!ID_CLIENTE.test(CLIENTE)) problemas.push('--cliente inválido (la carpeta d
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
   console.error('\n  node scripts/plataforma/alta-comercio.mjs --proyecto <id> --tenant <id> --nombre "<nombre>" \\');
-  console.error('      --flujos agendamiento[,venta] --admin <correo> [--nombre-admin "<nombre>"] [--cliente <CARPETA>] [--aplicar]\n');
+  console.error('      --flujos agendamiento[,venta] --admin <correo> [--nombre-admin "<nombre>"] [--cliente <CARPETA>] [--reutilizar-cuenta] [--aplicar]\n');
   process.exit(2);
 }
 
@@ -107,6 +117,14 @@ const yaExiste = await auth.getUserByEmail(ADMIN).catch(() => null);
 if (yaExiste) {
   console.log(`  ! Ya hay una cuenta con ese correo (${yaExiste.uid.slice(0, 8)}…).`);
   console.log('    Se le dará el rol en este negocio, sin tocar su contraseña.\n');
+  const otros = otrosComercios(yaExiste.customClaims, TENANT);
+  if (otros.length > 0 && !REUTILIZAR) {
+    console.error(`  ✗ Esa cuenta ya tiene acceso a ${otros.length} comercio(s) (${otros.map((t) => `${t.slice(0, 8)}…`).join(', ')}).`);
+    console.error('    Quedaría como TITULAR de este comercio nuevo. Si es lo que se quiere, agregue --reutilizar-cuenta.');
+    console.error('    No se escribió nada.\n');
+    process.exit(1);
+  }
+  if (otros.length > 0) console.log(`  ! Se reutiliza una cuenta con acceso a ${otros.length} comercio(s) más (--reutilizar-cuenta).\n`);
 }
 
 if (!APLICAR) {
@@ -141,6 +159,8 @@ lote.create(db.doc(`tenants/${TENANT}`), {
   nombre: NOMBRE, estado: 'activo', plan: cuenta.plan,
   vertical: FLUJOS[0], flujos: FLUJOS,
   waPhoneNumberId: null, waWabaId: null, ...sello,
+  // El titular de la cuenta (no la «titularidad» del número): el administrador inicial. Solo NovuChat lo cambia (`fijar-titular.mjs`).
+  titularCuentaUid: usuario.uid, titularCuentaEn: sello.creadoEn, titularCuentaPor: 'alta-comercio',
 });
 lote.create(db.doc(`tenants/${TENANT}/cuenta/estado`), {
   ...cuenta, actualizadoEn: Timestamp.now(),
