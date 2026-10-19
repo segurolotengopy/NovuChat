@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, ARCHIVO_DE_DATOS, AVISO_A_RECEPCION_EXISTE, CONFIG, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
+import { AQUI, ARCHIVO_DE_DATOS, CONFIG, NODOS_DEL_AVISO, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 import { nodosDeEnvio } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
 
 const ESTA = dirname(fileURLToPath(import.meta.url));
@@ -450,14 +450,34 @@ describe('HUECOS: nodos JSON de la plantilla, comparados con sus orígenes (sin 
   });
 });
 
-describe('«solo se ofrece lo que se cumple»: PR-1 no es publicable hasta que exista el aviso a recepción (PR-3)', () => {
-  it('mientras el aviso no exista, el JSON de producción lleva `meta.noPublicable` y la guardia lo exige', () => {
-    expect(AVISO_A_RECEPCION_EXISTE).toBe(false);
-    expect(typeof (PRODUCCION as J)['meta']?.noPublicable).toBe('string');
+describe('«solo se ofrece lo que se cumple»: con el aviso a recepción (PR-3) el flujo es publicable, y la guardia EXIGE que el aviso esté', () => {
+  it('el JSON de producción ya no lleva `meta.noPublicable` y la guardia rechaza que la marca vuelva', () => {
+    expect((PRODUCCION as J)['meta']?.noPublicable).toBeUndefined();
     expect(guardias('produccion', PRODUCCION)).toEqual([]);
-    const sinMarca = copia(PRODUCCION) as J;
-    delete sinMarca['meta'];
-    expect(guardias('produccion', sinMarca as Flujo).join('|')).toMatch(/noPublicable/);
+    const conMarca = copia(PRODUCCION) as J;
+    conMarca['meta'] = { noPublicable: 'x' };
+    expect(guardias('produccion', conMarca as Flujo).join('|')).toMatch(/noPublicable/);
+  });
+  it('el JSON FALLA si se quita el aviso: sin «Armar avisos», sin «¿Hay avisos?» o sin «Enviar aviso» (en producción y en la prueba)', () => {
+    for (const [variante, f] of [['produccion', PRODUCCION], ['prueba', PRUEBA]] as const) {
+      for (const n of NODOS_DEL_AVISO) {
+        const sin = copia(f) as J;
+        sin['nodes'] = sin['nodes'].filter((x: J) => x['name'] !== n);
+        expect(guardias(variante, sin as Flujo).join('|'), `${variante} sin ${n}`).toContain(`falta el nodo «${n}»`);
+      }
+    }
+  });
+  it('el JSON FALLA si «Armar avisos» pierde la plantilla o la ventana de Rubén, o si el aviso se desconecta o corre DESPUÉS de armar el mensaje', () => {
+    const sinPlantilla = copia(PRODUCCION) as J;
+    const n = sinPlantilla['nodes'].find((x: J) => x['name'] === 'Armar avisos');
+    n['parameters']['jsCode'] = String(n['parameters']['jsCode']).replace(/rrPlantilla\(/g, 'rrOtra(');
+    expect(guardias('produccion', sinPlantilla as Flujo).join('|')).toMatch(/no lleva la plantilla ni la ventana/);
+    const desconectado = copia(PRODUCCION) as J;
+    desconectado['connections']['Armar avisos'] = { main: [[]] };
+    expect(guardias('produccion', desconectado as Flujo).join('|')).toMatch(/«Armar avisos» no está conectado/);
+    const tarde = copia(PRODUCCION) as J;
+    tarde['connections']['Enviar aviso'] = { main: [[]] };
+    expect(guardias('produccion', tarde as Flujo).join('|')).toMatch(/«Enviar aviso» no cuelga de «Armar mensajes»/);
   });
 });
 

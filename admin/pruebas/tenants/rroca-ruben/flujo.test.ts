@@ -359,8 +359,13 @@ describe('la puerta del turno: pausa por persona, uso extendido y comercio no op
 
   it('USO EXTENDIDO («operador»): UN aviso fijo (cuenta como respuesta) y nada más; sin saludo encima', () => {
     const w = crear({ ingesta: atencion('operador', { mensajeFijo: 'Una persona del equipo seguirá aquí.' }) });
+    // PR-3: el texto promete atención humana, así que AVISA a Rubén (su ventana de 24 h está abierta: texto libre) y trae el botón para escribirle.
+    (w.sd as J)['rroca'] = { [REC]: { ultimoMs: AHORA - 5 * 60_000, turnos: 1 } };
     const t = hablar(w, ANA, mTexto('hola'));
     expect(textos(t)).toEqual(['Una persona del equipo seguirá aquí.']);
+    expect(t.mensajes[0]!.payload['interactive']?.type).toBe('cta_url');
+    expect(t.avisos).toHaveLength(1);
+    expect(t.avisos[0]!.a).toBe(REC);
   });
 
   it('el estado de la ingesta manda sobre el de la consola; sin respuesta de la ingesta, vale el de la consola', () => {
