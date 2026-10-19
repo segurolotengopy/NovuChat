@@ -9,7 +9,7 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { Flujo } from '../../lib/flujo';
@@ -54,8 +54,8 @@ describe('guardia de publicación: la ruta feliz y el JSON versionado de hoy', (
   it('el JSON versionado de hoy NO es publicable: marcadores y plantillas PENDING', () => {
     const h = guardiaDePublicacion({ flujo: PRODUCCION, datos: DATOS_VERSIONADOS }) as string[];
     expect(h.filter((x) => /marcador sin sustituir/.test(x)).length).toBeGreaterThan(0);
-    expect(h.join('|')).toMatch(/Config base: avisoComprobanteEstado es «PENDING»/);
-    expect(h.join('|')).toMatch(/datos: avisoConsultaEstado es «PENDING»/);
+    expect(h.join('|')).toMatch(/Config base: avisoComprobanteEstado es \(distinto de APPROVED\)/);
+    expect(h.join('|')).toMatch(/datos: avisoConsultaEstado es \(distinto de APPROVED\)/);
   });
 
   it('los datos versionados siguen en PENDING (hasta que Meta apruebe): la prueba de "datos" es real', () => {
@@ -159,10 +159,49 @@ describe('guardia de publicación: las plantillas de aviso tienen que estar APPR
     expect(h.some((x) => x.includes('avisoComprobanteEstado'))).toBe(false);
   });
 
-  it('el mensaje no muestra el contenido de un estado largo (se recorta)', () => {
+  it('el mensaje no muestra NADA del valor del estado (solo «distinto de APPROVED»)', () => {
     const f = publicable(PRODUCCION);
-    fijar(f, 'avisoConsultaEstado', 'X'.repeat(200));
-    expect(hallazgos(f).join('|')).not.toContain('X'.repeat(30));
+    fijar(f, 'avisoConsultaEstado', 'SECRETO-' + 'X'.repeat(200));
+    const t = hallazgos(f).join('|');
+    expect(t).not.toContain('SECRETO');
+    expect(t).not.toContain('XX');
+    expect(t).toContain('(distinto de APPROVED)');
+  });
+});
+
+describe('guardia de publicación: marcadores en cualquier parte del flujo y en cualquier grafía', () => {
+  it('un marcador en pinData o en staticData se niega y se atribuye al campo', () => {
+    const f = publicable(PRODUCCION) as unknown as Record<string, unknown>;
+    f['pinData'] = { Nodo: [{ json: { x: 'REEMPLAZAR_EN_PIN' } }] };
+    f['staticData'] = { global: { y: 'REEMPLAZAR_EN_STATIC' } };
+    const t = hallazgos(f as unknown as Flujo).join('|');
+    expect(t).toContain('REEMPLAZAR_EN_PIN (pinData)');
+    expect(t).toContain('REEMPLAZAR_EN_STATIC (staticData)');
+  });
+  it('un marcador en settings, connections o el nivel superior también se niega', () => {
+    const f = publicable(PRODUCCION) as unknown as Record<string, unknown>;
+    f['settings'] = { a: 'REEMPLAZAR_EN_SETTINGS' };
+    f['connections'] = { 'REEMPLAZAR_EN_CONEXION': {} };
+    f['meta'] = 'REEMPLAZAR_ARRIBA';
+    const t = hallazgos(f as unknown as Flujo).join('|');
+    expect(t).toContain('REEMPLAZAR_EN_SETTINGS');
+    expect(t).toContain('REEMPLAZAR_EN_CONEXION');
+    expect(t).toContain('REEMPLAZAR_ARRIBA');
+  });
+  for (const raro of ['REEMPLAZAR_ruben', 'reemplazar_x', 'REEMPLAZAR_-X', 'Reemplazar_Mixto']) {
+    it(`«${raro}» es un marcador: se niega en un nodo y como nombre de plantilla`, () => {
+      const f = publicable(PRODUCCION);
+      (f.nodes[0] as unknown as { notes: string }).notes = raro;
+      expect(hallazgos(f).join('|')).toContain(raro);
+      const g = publicable(PRODUCCION);
+      fijar(g, 'avisoComprobantePlantilla', raro);
+      expect(hallazgos(g).join('|')).toContain('falta el nombre de la plantilla (avisoComprobantePlantilla)');
+    });
+  }
+  it('los comentarios «REEMPLAZAR_*» y «REEMPLAZAR_…» siguen sin ser marcadores', () => {
+    const f = publicable(PRODUCCION);
+    (f.nodes[0] as unknown as { notes: string }).notes = 'texto REEMPLAZAR_* y REEMPLAZAR_… de comentario';
+    expect(hallazgos(f)).toEqual([]);
   });
 });
 
@@ -176,7 +215,7 @@ describe('construir.mjs --publicable: la línea de comandos', () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/NO se puede publicar todavía/);
     expect(r.stderr).toMatch(/marcador sin sustituir: REEMPLAZAR_/);
-    expect(r.stderr).toMatch(/PENDING/);
+    expect(r.stderr).toMatch(/distinto de APPROVED/);
   });
 
   it('con un flujo sustituido pero los datos versionados en PENDING sigue negado (los datos cuentan)', () => {
@@ -184,7 +223,7 @@ describe('construir.mjs --publicable: la línea de comandos', () => {
     writeFileSync(ruta, JSON.stringify(publicable(PRODUCCION)));
     const r = correr('--flujo', ruta);
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/datos: avisoComprobanteEstado es «PENDING»/);
+    expect(r.stderr).toMatch(/datos: avisoComprobanteEstado es \(distinto de APPROVED\)/);
     expect(r.stderr).not.toMatch(/marcador sin sustituir/);
   });
 
@@ -196,6 +235,15 @@ describe('construir.mjs --publicable: la línea de comandos', () => {
     const r = correr('--flujo', rutaF, '--datos', rutaD);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toMatch(/se puede publicar/);
+  });
+
+  it('un JSON inválido no filtra su contenido en el mensaje de error', () => {
+    const ruta = join(dir, 'roto.json');
+    writeFileSync(ruta, '{"token": "CONTENIDO-SECRETO-123" ,,, }');
+    const r = correr('--flujo', ruta);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/JSON inválido/);
+    expect(r.stderr + r.stdout).not.toMatch(/SECRETO|token|position|Unexpected/);
   });
 
   it('un flujo que no existe o un argumento sobrante salen en error y no publican', () => {
@@ -288,6 +336,90 @@ describe('publicar-flujo.sh: la guardia y la confirmación del flujo de Rubén',
     const r = correr(['--flujo', RUBEN, '--aplicar', '--confirmo-ruben']);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/NEGADO: el flujo de Rubén no se publica/);
+  });
+});
+
+describe('publicar-flujo.sh: la guardia mira también el flujo VIVO (destino) y --encender', () => {
+  const SCRIPT = join(REPO, 'scripts/publicar-flujo.sh');
+  const dir = mkdtempSync(join(tmpdir(), 'rroca-vivo-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  // Un `curl` de juguete: escribe el flujo vivo simulado en el -o y responde 200. Nada sale a la red.
+  const bin = join(dir, 'bin');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'curl'), '#!/usr/bin/env bash\necho "$*" >> "$LOG_CURL"\nwhile [[ $# -gt 0 ]]; do case "$1" in -o) O="$2"; shift 2;; -X) M="$2"; shift 2;; *) shift;; esac; done\n'
+    + '[[ -n "$O" ]] && cp "$VIVO_SIMULADO" "$O"\nprintf 200\n');
+  chmodSync(join(bin, 'curl'), 0o755);
+  const envRel = join(dir, 'env');
+  writeFileSync(envRel, 'N8N_API_KEY=clave-de-juguete\nN8N_WORKFLOW_ID=1\nN8N_BASE_URL=http://n8n.invalido\n');
+  const vivoRuben = join(dir, 'vivo-ruben.json');
+  writeFileSync(vivoRuben, JSON.stringify({ name: 'NovuChat — RROCA-Ruben producción', active: false, nodes: [] }));
+  const vivoOtro = join(dir, 'vivo-otro.json');
+  writeFileSync(vivoOtro, JSON.stringify({ name: 'Otro cliente', active: false, nodes: [] }));
+  const otroArchivo = join(dir, 'cualquier-cosa.json');
+  writeFileSync(otroArchivo, JSON.stringify({ name: 'Otro cliente', nodes: [{ name: 'X', type: 'n8n-nodes-base.set', parameters: { v: 'REEMPLAZAR_ALGO' } }] }));
+  const log = join(dir, 'curl.log');
+  const correr = (args: string[], vivo: string) => {
+    writeFileSync(log, '');
+    return spawnSync('bash', [SCRIPT, ...args, '--env', relative(REPO, envRel)], {
+      cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+      env: entornoDelEmulador(undefined, { PATH: `${bin}:${process.env['PATH'] ?? ''}`, VIVO_SIMULADO: vivo, LOG_CURL: log }),
+    });
+  };
+  const escribio = (): boolean => /POST|PUT|PATCH|activate/.test(leer(log));
+
+  it('otro archivo + --forzar + --aplicar contra un flujo vivo de Rubén: se NIEGA por la guardia y no escribe', () => {
+    const r = correr(['--flujo', otroArchivo, '--forzar', '--aplicar', '--confirmo-ruben'], vivoRuben);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/NEGADO/);
+    expect(r.stdout + r.stderr).toMatch(/flujo vivo de destino/);
+    expect(escribio()).toBe(false);
+  });
+  it('con la guardia en verde pero sin terminal ni --confirmo-ruben, el destino de Rubén también se NIEGA', () => {
+    const buena = join(dir, 'buena.json');
+    writeFileSync(buena, JSON.stringify(publicable(PRODUCCION)));
+    const datos = join(dir, 'datos-ok.json');
+    writeFileSync(datos, JSON.stringify({ ...JSON.parse(leer(ARCHIVO_DE_DATOS)), configBase: datosAprobados().configBase }));
+    // La guardia lee los datos versionados (PENDING): sigue negada; se prueba que ni con otro nombre se esquiva.
+    const r = correr(['--flujo', buena, '--forzar', '--aplicar'], vivoRuben);
+    expect(r.status).toBe(1);
+    expect(escribio()).toBe(false);
+  });
+  it('un flujo vivo de otro cliente NO activa la guardia de Rubén (nada cambia para los demás)', () => {
+    const r = correr(['--flujo', otroArchivo], vivoOtro);
+    expect(r.stdout + r.stderr).not.toMatch(/Flujo de Rubén/);
+  });
+  it('--encender --aplicar sobre el flujo vivo de Rubén sin confirmación se NIEGA y no activa', () => {
+    const r = correr(['--encender', '--aplicar'], vivoRuben);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/solo se publica con --confirmo-ruben/);
+    expect(escribio()).toBe(false);
+  });
+  it('--encender --aplicar --confirmo-ruben sobre el flujo vivo de Rubén sí activa', () => {
+    const r = correr(['--encender', '--aplicar', '--confirmo-ruben'], vivoRuben);
+    expect(r.status, r.stderr).toBe(0);
+    expect(escribio()).toBe(true);
+  });
+  it('--encender en seco no pide confirmación ni escribe', () => {
+    const r = correr(['--encender'], vivoRuben);
+    expect(r.status, r.stderr).toBe(0);
+    expect(escribio()).toBe(false);
+  });
+  it('--apagar --aplicar sobre el flujo vivo de Rubén NO necesita confirmación (es seguro)', () => {
+    const r = correr(['--apagar', '--aplicar'], vivoRuben);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stderr).not.toMatch(/NEGADO/);
+    expect(leer(log)).toMatch(/deactivate/);
+  });
+  it('--encender --aplicar sobre un flujo de otro cliente no pide confirmación de Rubén', () => {
+    const r = correr(['--encender', '--aplicar'], vivoOtro);
+    expect(r.status, r.stderr).toBe(0);
+  });
+  it('el archivo de origen se reconoce sin distinguir mayúsculas', () => {
+    const mayus = join(dir, 'RROCA-Ruben-x.json');
+    writeFileSync(mayus, JSON.stringify({ name: 'Otro cliente', nodes: [] }));
+    const r = correr(['--flujo', mayus, '--aplicar'], vivoOtro);
+    expect(r.status).toBe(1);
+    expect(r.stderr + r.stdout).toMatch(/archivo de origen/);
   });
 });
 

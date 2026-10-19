@@ -254,13 +254,18 @@ export const CLAVES_DE_PLANTILLA = [
   { estado: 'avisoComprobanteEstado', nombre: 'avisoComprobantePlantilla' },
   { estado: 'avisoConsultaEstado', nombre: 'avisoConsultaPlantilla' },
 ];
-const VALOR_LLENO = (v) => typeof v === 'string' && v.trim() !== '' && !/REEMPLAZAR_/.test(v);
+// Un marcador es CUALQUIER `REEMPLAZAR_` (sin distinguir mayúsculas, tras normalizar a NFKC); `REEMPLAZAR_*` y `REEMPLAZAR_…` son texto de comentarios y se quitan antes de mirar.
+const MARCADOR_CRUDO = /reemplazar_/i;
+// Tampoco lo es el literal de expresión regular `^REEMPLAZAR_/` que usa el código de los nodos para descartar marcadores sin llenar.
+const sinComentarios = (t) => t.normalize('NFKC').replace(/\^REEMPLAZAR_\//gi, '').replace(/REEMPLAZAR_(?:\*|…|\.\.\.)/gi, '');
+const hayMarcador = (t) => MARCADOR_CRUDO.test(sinComentarios(String(t)));
+const VALOR_LLENO = (v) => typeof v === 'string' && v.trim() !== '' && !hayMarcador(v);
 
 function hallazgosDePlantillas(cb, donde) {
   const h = [];
   if (!cb || typeof cb !== 'object') return [`${donde}: no trae los datos de las plantillas de aviso`];
   for (const { estado, nombre } of CLAVES_DE_PLANTILLA) {
-    if (cb[estado] !== 'APPROVED') h.push(`${donde}: ${estado} es «${String(cb[estado] === undefined ? 'ausente' : cb[estado]).slice(0, 20)}» y tiene que ser APPROVED (Meta aún no aprobó la plantilla)`);
+    if (cb[estado] !== 'APPROVED') h.push(`${donde}: ${estado} es ${cb[estado] === undefined ? '«ausente»' : '(distinto de APPROVED)'} y tiene que ser APPROVED (Meta aún no aprobó la plantilla)`);
     if (!VALOR_LLENO(cb[nombre])) h.push(`${donde}: falta el nombre de la plantilla (${nombre})`);
   }
   if (!VALOR_LLENO(cb.avisoPlantillaIdioma)) h.push(`${donde}: falta el idioma de las plantillas (avisoPlantillaIdioma)`);
@@ -271,8 +276,13 @@ export function guardiaDePublicacion({ flujo, datos }) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
   // 1. Marcadores sin sustituir, en cualquier parte del flujo (parámetros, credenciales, rutas). `REEMPLAZAR_…` con puntos suspensivos o `REEMPLAZAR_*` es texto de un comentario, no un marcador.
+  // Se mira TODO el flujo (settings, pinData, staticData, connections, nivel superior), no solo `nodes`; si se puede, se atribuye al nodo.
   const marcadores = new Set();
-  for (const n of nodos) for (const m of JSON.stringify(n).match(/REEMPLAZAR_[A-Z0-9][A-Z0-9_]*/g) || []) marcadores.add(`${m} (nodo «${n.name}»)`);
+  const marcasEn = (v) => (sinComentarios(JSON.stringify(v) || '').match(/reemplazar_[a-z0-9_\-]*/gi) || []);
+  const enNodos = new Set();
+  for (const n of nodos) for (const m of marcasEn(n)) { marcadores.add(`${m} (nodo «${n.name}»)`); enNodos.add(m); }
+  const { nodes: _nodos, ...resto } = flujo || {};
+  for (const [campo, valor] of Object.entries(resto)) for (const m of marcasEn(valor)) if (!enNodos.has(m) || campo === 'pinData' || campo === 'staticData') marcadores.add(`${m} (${campo === 'pinData' || campo === 'staticData' ? campo : `campo «${campo}»`})`);
   if (!nodos.length) h.push('el flujo no trae nodos');
   for (const m of marcadores) h.push(`marcador sin sustituir: ${m}`);
   // 2. Las plantillas, en lo que se publica («Config base»)…
@@ -370,7 +380,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const rutaFlujo = opcion('--flujo') || join(AQUI, 'rroca-ruben.json');
       const textoFlujo = leerSiExiste(rutaFlujo, 'el flujo');
       if (textoFlujo === null) throw new Error(`no existe el flujo ${rutaFlujo}`);
-      const hallazgos = guardiaDePublicacion({ flujo: JSON.parse(textoFlujo), datos: cargarDatos(opcion('--datos') || ARCHIVO_DE_DATOS) });
+      let flujoJson;
+      try { flujoJson = JSON.parse(textoFlujo); } catch { throw new Error(`JSON inválido en ${rutaFlujo}`); }
+      const hallazgos = guardiaDePublicacion({ flujo: flujoJson, datos: cargarDatos(opcion('--datos') || ARCHIVO_DE_DATOS) });
       if (hallazgos.length) {
         console.error('✗ El flujo de Rubén NO se puede publicar todavía:');
         for (const x of hallazgos) console.error(`  - ${x}`);
@@ -379,7 +391,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.log('✓ Sin marcadores REEMPLAZAR_* y con las plantillas de aviso APPROVED: se puede publicar (con la confirmación de publicar-flujo.sh).');
       process.exit(0);
     } catch (e) {
-      console.error(`✗ ${e instanceof Error ? e.message : String(e)}`);
+      // Un SyntaxError puede traer un fragmento del archivo: mensaje fijo, sin contenido.
+      console.error(e instanceof SyntaxError ? '✗ JSON inválido' : `✗ ${e instanceof Error ? e.message : String(e)}`);
       process.exit(1);
     }
   }

@@ -94,20 +94,16 @@ if [[ "$FLUJO" != *.local.json && -f "$PREPARADO" ]]; then
 fi
 
 # --- LA GUARDIA DEL FLUJO DE RUBEN (tenant rroca-ruben, PR-5) ------------------
-# Se reconoce por el nombre del archivo o por el nombre del flujo. Antes de leer
-# el .env y de hablar con n8n. El JSON versionado lleva marcadores REEMPLAZAR_*
-# y las plantillas de aviso en PENDING: publicarlo asi deja el aviso a Rubén sin
-# salir fuera de su ventana, o la entrada del receptor con una ruta falsa.
-# `--encender`/`--apagar` no escriben el contenido: no pasan por aqui.
-ES_RUBEN=0
-if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
-  if [[ "$(basename "$FLUJO")" == rroca-ruben* ]] \
-     || python3 -c "import json,sys;sys.exit(0 if 'rroca-ruben' in str(json.load(open(sys.argv[1],encoding='utf-8')).get('name','')) else 1)" "$FLUJO" 2>/dev/null; then
-    ES_RUBEN=1
-  fi
-fi
-if [[ $ES_RUBEN -eq 1 ]]; then
-  echo "Flujo de Rubén (rroca-ruben): se revisa la guardia de publicación."
+# Se reconoce por el nombre del archivo o por el nombre del flujo de ORIGEN, sin
+# distinguir mayusculas, antes de leer el .env y de hablar con n8n; y se REPITE
+# despues de leer el flujo VIVO (destino): si el vivo es el de Ruben, la guardia
+# y la confirmacion valen aunque el archivo se llame de otra forma, con --forzar
+# o con --env. El JSON versionado lleva marcadores REEMPLAZAR_* y las plantillas
+# de aviso en PENDING: publicarlo asi deja el aviso a Rubén sin salir fuera de su
+# ventana, o la entrada del receptor con una ruta falsa.
+# `--apagar` no escribe contenido y es seguro: nunca pide confirmacion.
+ruben_guardia() {  # $1 = motivo (texto para el mensaje)
+  echo "Flujo de Rubén (rroca-ruben): se revisa la guardia de publicación ($1)."
   if node Flujos/experimental/rroca-ruben/construir.mjs --publicable --flujo "$FLUJO"; then
     GUARDIA_OK=1
   else
@@ -118,18 +114,32 @@ if [[ $ES_RUBEN -eq 1 ]]; then
       printf '\033[1;31m✗ NEGADO: el flujo de Rubén no se publica con marcadores sin sustituir ni con plantillas sin aprobar.\033[0m\n' >&2
       exit 1
     fi
-    if [[ $CONFIRMO_RUBEN -ne 1 ]]; then
-      if [[ -t 0 ]]; then
-        read -r -p "Va a escribir el flujo de Rubén en n8n. Escriba PUBLICAR RUBEN para confirmar: " RESPUESTA
-        [[ "$RESPUESTA" == "PUBLICAR RUBEN" ]] || { echo "✗ Sin confirmación: no se publica." >&2; exit 1; }
-      else
-        echo "✗ NEGADO: sin terminal, el flujo de Rubén solo se publica con --confirmo-ruben." >&2
-        exit 1
-      fi
-    fi
+    ruben_confirmar
   elif [[ $GUARDIA_OK -ne 1 ]]; then
     printf '\033[0;33m  (en seco se sigue; con --aplicar se niega)\033[0m\n\n'
   fi
+}
+ruben_confirmar() {
+  if [[ $CONFIRMO_RUBEN -ne 1 ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "Va a escribir el flujo de Rubén en n8n. Escriba PUBLICAR RUBEN para confirmar: " RESPUESTA
+      [[ "$RESPUESTA" == "PUBLICAR RUBEN" ]] || { echo "✗ Sin confirmación: no se publica." >&2; exit 1; }
+    else
+      echo "✗ NEGADO: sin terminal, el flujo de Rubén solo se publica con --confirmo-ruben." >&2
+      exit 1
+    fi
+  fi
+}
+ES_RUBEN=0
+if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
+  BASE_MIN="$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$BASE_MIN" == rroca-ruben* ]] \
+     || python3 -c "import json,sys;sys.exit(0 if 'rroca-ruben' in str(json.load(open(sys.argv[1],encoding='utf-8')).get('name','')).lower() else 1)" "$FLUJO" 2>/dev/null; then
+    ES_RUBEN=1
+  fi
+fi
+if [[ $ES_RUBEN -eq 1 ]]; then
+  ruben_guardia "archivo de origen"
 fi
 
 [[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
@@ -159,6 +169,20 @@ if [[ "$COD" != "200" ]]; then
   esac
   head -c 300 "$TMP/vivo.json" 2>/dev/null || true
   exit 1
+fi
+
+# --- la guardia, repetida sobre el flujo VIVO (destino) ------------------------
+# El nombre del archivo de origen no prueba nada sobre el destino: el id sale de
+# N8N_WORKFLOW_ID. Si el flujo vivo es el de Rubén, se exige lo mismo que arriba.
+NOMBRE_VIVO_MIN=$(python3 -c "import json,sys;print(str(json.load(open(sys.argv[1],encoding='utf-8')).get('name','')).lower())" "$TMP/vivo.json" 2>/dev/null || echo "")
+if [[ "$NOMBRE_VIVO_MIN" == *rroca-ruben* ]]; then
+  if [[ $ENCENDER -eq 1 ]]; then
+    # Activar = publicar: pide la confirmacion (no hay contenido que revisar).
+    [[ $APLICAR -eq 1 ]] && ruben_confirmar
+  elif [[ $APAGAR -eq 0 && $ES_RUBEN -eq 0 ]]; then
+    ES_RUBEN=1
+    ruben_guardia "flujo vivo de destino"
+  fi
 fi
 
 # --- ENCENDER O APAGAR UN FLUJO QUE YA EXISTE ---------------------------------
