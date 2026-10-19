@@ -1244,8 +1244,19 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
       { id: 'o1', name: 'NovuChat ingesta (otro)', type: 'httpHeaderAuth' },
       ...extra,
     ]));
-    writeFileSync(join(dir, 'wfs.json'), '[]');
+    writeFlujosVivos();
   };
+  // Los flujos vivos del cliente que citan sus credenciales: la atadura al alias se comprueba contra ellos.
+  const nodoVivo = (nombre: string, tipo: string, id: string, nom: string, phone?: string): Nodo => ({
+    name: nombre, type: 'n8n-nodes-base.httpRequest', parameters: phone ? { phoneNumberId: phone } : {},
+    credentials: { [tipo]: { id, name: nom } },
+  });
+  const flujoVivo = (id: string, name: string, nodes: Nodo[]) => ({ id, name, active: true, nodes, connections: {}, settings: {} });
+  const writeFlujosVivos = (vivos: unknown[] = [flujoVivo('wv', 'Venta del cliente', [
+    nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta, PHONE),
+    nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio, PHONE),
+  ])]) => writeFileSync(join(dir, 'wfs.json'), JSON.stringify(vivos));
+  const propio = () => flujos().find((f) => f.name === `NovuChat — Salida de persona (${REAL})`)!;
   const INERTE = ['--rele-inerte', '--canal-graph'];
 
   beforeEach(() => { instanciaReal(); entregaReal(); SIN_RELE(); });
@@ -1253,7 +1264,7 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
   it('carga el flujo de cliente04 con las credenciales EXISTENTES por su nombre real (apóstrofo incluido), relé inerte, inactivo', () => {
     const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
     expect(r.codigo).toBe(0);
-    const f = flujos()[0];
+    const f = propio();
     expect(f.name).toBe(`NovuChat — Salida de persona (${REAL})`);
     expect(f.active).toBe(false);
     const p = (n: string) => f.nodes.find((x) => x.name === n)!;
@@ -1288,16 +1299,16 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
   it('--activar y --quitar con el mismo mapa; --quitar no borra las credenciales existentes', () => {
     expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
     expect(correr([...AR(), ...MAPA, '--activar', ...APLICAR]).codigo).toBe(0);
-    expect(flujos()[0].active).toBe(true);
+    expect(propio().active).toBe(true);
     expect(correr([...AR(), '--quitar', ...APLICAR]).codigo).toBe(0);
-    expect(flujos()).toEqual([]);
+    expect(flujos().map((f) => f.id)).toEqual(['wv']);
     expect(creds().map((c) => c.id).sort()).toEqual(['o1', 'qg', 'qi', 'qr']);
   });
 
   it('--activar con un mapa distinto del que se cargó: se niega (el flujo vivo cita otras credenciales)', () => {
     expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
     expect(correr([...AR(), '--activar', ...APLICAR]).codigo).toBe(2);
-    expect(flujos()[0].active).toBe(false);
+    expect(propio().active).toBe(false);
   });
 
   it.each([
@@ -1312,6 +1323,10 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
     ['un nombre con espacios en los extremos', ['--cred-ingesta', ' ' + NOM.ingesta, '--cred-envio', NOM.envio, '--cred-rele', NOM.rele]],
     ['un nombre de más de 100 caracteres', ['--cred-ingesta', 'x'.repeat(101), '--cred-envio', NOM.envio, '--cred-rele', NOM.rele]],
     ['un nombre de AAB1-WA-Prod', ['--cred-ingesta', NOM.ingesta, '--cred-envio', 'AAB1-WA-Prod (envío)', '--cred-rele', NOM.rele]],
+    ['un nombre «SeguroLo Tengo»', ['--cred-ingesta', 'SeguroLo Tengo ingesta', '--cred-envio', NOM.envio, '--cred-rele', NOM.rele]],
+    ['un nombre «WhatsApp-Modular»', ['--cred-ingesta', NOM.ingesta, '--cred-envio', 'WhatsApp-Modular envío', '--cred-rele', NOM.rele]],
+    ['un nombre «Receptor»', ['--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.envio, '--cred-rele', 'Receptor clientes']],
+    ['un nombre «OTP»', ['--cred-ingesta', 'otp_service', '--cred-envio', NOM.envio, '--cred-rele', NOM.rele]],
     ['un rol que nombra el timbre', ['--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.envio, '--cred-rele', `Salida de persona (timbre ${REAL})`]],
     ['una opción sin valor', ['--cred-ingesta']],
   ])('mapa inválido (%s): sale 2 sin llamar a n8n, también con --aplicar', (_n, mapa) => {
@@ -1377,6 +1392,81 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
     expect(escrituras()).toEqual([]);
   });
 
+  describe('atadura de las credenciales al número del alias', () => {
+    const ajeno = '555000111';
+    const fallaSinEscribir = (r: { codigo: number | null; salida: string }) => {
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('no están atadas al número de este alias');
+      expect(r.salida).not.toContain(NOM.ingesta);
+      expect(r.salida).not.toContain(NOM.envio);
+      expect(escrituras()).toEqual([]);
+      expect(existe(join(runtime, `novuchat-salida-persona-${REAL}.json`))).toBe(true);
+    };
+
+    it('mapa vinculado: carga, y el seco dice «vinculada al alias: sí» por rol', () => {
+      const seco = correr([...AR(), ...MAPA, ...INERTE]);
+      expect(seco.codigo).toBe(1);
+      expect(seco.salida).toContain('credencial de ingesta vinculada al alias: sí');
+      expect(seco.salida).toContain('credencial de envío vinculada al alias: sí');
+      expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
+    });
+
+    it('mapa con la ingesta de otro alias (la cita solo un flujo con otro número), aborta sin escribir', () => {
+      writeFlujosVivos([
+        flujoVivo('wa', 'Venta de otro comercio', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta, ajeno)]),
+        flujoVivo('wv', 'Venta del cliente', [nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio, PHONE)]),
+      ]);
+      const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+      fallaSinEscribir(r);
+      expect(r.salida).toContain('credencial de ingesta vinculada al alias: no');
+      expect(r.salida).toContain('credencial de envío vinculada al alias: sí');
+    });
+
+    it('mapa con el envío de otro alias, aborta sin escribir', () => {
+      writeFlujosVivos([
+        flujoVivo('wv', 'Venta del cliente', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta, PHONE)]),
+        flujoVivo('wa', 'Venta de otro comercio', [nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio, ajeno)]),
+      ]);
+      const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+      fallaSinEscribir(r);
+      expect(r.salida).toContain('credencial de envío vinculada al alias: no');
+    });
+
+    it('una credencial que cita además un flujo con OTRO número, aborta aunque otro flujo la ate al alias', () => {
+      writeFlujosVivos([
+        flujoVivo('wv', 'Venta del cliente', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta, PHONE), nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio, PHONE)]),
+        flujoVivo('wa', 'Venta de otro comercio', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta, ajeno)]),
+      ]);
+      fallaSinEscribir(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]));
+    });
+
+    it('ningún flujo vivo cita las credenciales: no hay atadura, aborta sin escribir', () => {
+      writeFlujosVivos([]);
+      fallaSinEscribir(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]));
+      fallaSinEscribir(correr([...AR(), ...MAPA, ...INERTE]));
+    });
+
+    it('el número del alias dentro de otro número más largo no cuenta como atadura', () => {
+      writeFlujosVivos([
+        flujoVivo('wi', 'Ingesta del cliente', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta, `1${PHONE}`)]),
+        flujoVivo('wv', 'Envío del cliente', [nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio, PHONE)]),
+      ]);
+      fallaSinEscribir(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]));
+    });
+
+    it('sin la fila del teléfono del alias en la tabla, aborta sin escribir', () => {
+      tabla({});
+      const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    it('--tabla-demo-a no se combina con las credenciales existentes', () => {
+      expect(correr([...AR(), ...MAPA, ...INERTE, '--tabla-demo-a']).codigo).toBe(2);
+      expect(llamadas()).toEqual([]);
+    });
+  });
+
   describe('valor inerte del relé', () => {
     it('--rele-inerte exige --canal-graph también para un cliente real', () => {
       expect(correr([...AR(), ...MAPA, '--rele-inerte']).codigo).toBe(2);
@@ -1390,7 +1480,7 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
       tabla({});
       expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(2);
       expect(escrituras()).toEqual([]);
-      expect(flujos()).toEqual([]);
+      expect(flujos().map((f) => f.id)).toEqual(['wv']);
     });
 
     it('sin --rele-inerte, la fila del relé de la tabla (pendiente o ausente) sigue siendo obligatoria', () => {
@@ -1403,7 +1493,7 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
     it('la URL real del relé de la tabla NO viaja al flujo con --rele-inerte', () => {
       tabla({ [`REEMPLAZAR_PHONE_NUMBER_ID_${REAL.toUpperCase()}`]: PHONE, [`REEMPLAZAR_URL_INTERNA_DEL_RELE_${REAL.toUpperCase()}`]: RELE });
       expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
-      const t = JSON.stringify(flujos()[0]);
+      const t = JSON.stringify(propio());
       expect(t).toContain('relay-inerte.invalid');
       expect(t).not.toContain('rele-interno');
     });
