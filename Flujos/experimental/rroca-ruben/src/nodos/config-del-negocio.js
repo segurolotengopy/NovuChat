@@ -84,11 +84,11 @@ if (codigo === 409) {
 
 // --- el MODO PRUEBA ---
 const prueba = carga.prueba && carga.prueba.modoPrueba === true ? carga.prueba : null;
-// S7: `telefonosDePrueba` (opcional, en «Config base») limita a qué números puede dirigirse una ejecución de PRUEBA: si el teléfono pedido no está en la lista, no se envía nada. Sin lista
-// (o con el marcador sin llenar), no se restringe.
+// S7: `telefonosDePrueba` (opcional, en «Config base») limita a qué números puede dirigirse una ejecución de PRUEBA: si el teléfono pedido no está en la lista, no se envía nada. En ESTE flujo se NIEGA POR DEFECTO
+// (diferencia declarada con chat-novuchat): sin lista, o con el marcador sin llenar, ningún teléfono está permitido.
 const permitidos = valor(base.telefonosDePrueba).split(',').map((x) => cnDigitos(x)).filter((x) => x.length >= 6);
 const telefonoDePrueba = prueba ? cnDigitos(prueba.telefonoDePrueba) : '';
-const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefonoDePrueba) >= 0;
+const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;
 
 return [{ json: Object.assign({}, cfg, {
   waGraphVersion: /^v\d{1,2}\.\d{1,2}$/.test(String(base.waGraphVersion || '')) ? String(base.waGraphVersion) : 'v26.0',

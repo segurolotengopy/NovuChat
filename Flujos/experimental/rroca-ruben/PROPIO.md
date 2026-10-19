@@ -28,8 +28,10 @@ Cada hueco tiene su prueba en `armado.test.ts` («HUECOS»): la copia es el orig
 | `src/nodos/carga-de-entrada.js` (filtro de eventos de Meta) | `chat-novuchat/src/nodos/carga-de-entrada.js` | Se AGREGA la rama del receptor: si corrió «Entrega del receptor», el evento es su `body.value` (y `field` solo `messages`) y el veredicto del verificador nunca se lee como mensaje. `core/normalizar-entrada.js` es del contrato del agente |
 | `src/nodos/interpretar-entrada.js` (normalización: text, interactive, button, audio/voz, image, document, location, sticker, contacts y cualquier otro) | `chat-novuchat/src/nodos/interpretar-entrada.js` | Se QUITA el contrato del chat (eventos, rubros) y se AGREGA `categoria` (`conversacion`, `medio`, `otro`); un toque de botón o lista deja su `id` como texto. Clave de conversación: `messages[0].from` |
 | `src/nodos/config-del-negocio.js` (consola → configuración) | `chat-novuchat/src/nodos/config-del-negocio.js` | Se QUITAN la oferta (planes y cargos), la planilla y los datos propios del chat. **Idénticos al origen**: la lectura de la respuesta (200 / 409 / otra), el bloque de atención y el del modo prueba. `core/config-del-negocio.js` (403 líneas) es del agente |
+| `src/nodos/config-del-negocio.js`, modo prueba: `telefonoPermitido` | el mismo bloque de `chat-novuchat` | **Niega por defecto**: `permitidos.length > 0 && …` (el origen permite todo si la lista está vacía). Sin `telefonosDePrueba`, o con el marcador `REEMPLAZAR_*` sin llenar, ningún teléfono está permitido en el JSON de prueba |
 | `RR_NIEGA_IA` en `src/lib/rr.js` (NIEGA_IA, prohibición 4) | `CH_NIEGA_IA` de `chat-novuchat/src/lib/chat.js` | Ninguna en la expresión (idéntica); solo cambia el nombre. Aplicada al texto normalizado en `rrSeguro` |
-| Nodos JSON de «Traer configuración», «Config base», «¿Reportar? (entrante)», «Reportar mensaje (entrante)», «¿Meta aceptó?» en `flujo.plantilla.json` | `chat-novuchat/flujo.plantilla.json` | Notas propias; posiciones propias |
+| Los 6 nodos de la entrada verificada del receptor (Entrega del receptor, Verificar firma con el receptor, ¿Firma válida?, Aceptar (200), Rechazar (401), Descartar repetidos) en `flujo.plantilla.json` | `venta-minima/flujo.plantilla.json` | **Ninguna** en `parameters`, tipo, credenciales y opciones; solo `notes`, `position` e `id` propios. Prueba en `armado.test.ts` («HUECOS: nodos JSON») |
+| Nodos JSON de «Traer configuración», «Config base», «¿Reportar? (entrante)», «Reportar mensaje (entrante)», «¿Meta aceptó?» en `flujo.plantilla.json` | `chat-novuchat/flujo.plantilla.json` | **Ninguna** salvo `notes`, `position` e `id` propios; misma prueba |
 
 Lo del cobro (`cbCobroReal`, `cbResultadoVenta`, `cbRutaGuardada`, `CB_PROHIBIDAS` de `venta-minima/src/lib/cobro.js` y `avPlantilla`, `avTexto`, `avLimpio`, `avDestinatarios` de `avisos.js`) entra en PR-2 y PR-3 como hueco declarado con su prueba byte a byte.
 
@@ -38,6 +40,13 @@ Lo del cobro (`cbCobroReal`, `cbResultadoVenta`, `cbRutaGuardada`, `CB_PROHIBIDA
 - `src/lib/rr.js`: el saludo fijo del asistente virtual de Rubén (PR-1), el mínimo ante NIEGA_IA, la ficha por teléfono (ids de Meta, turnos) y su barrido. En PR-2 crecen aquí el catálogo de 4 productos (el precio vive solo en el catálogo de la consola), el total, los estados y los textos fijos.
 - `src/nodos/armar-mensajes.js`: un ítem por mensaje, o ninguno; escribe la ficha con la clave `messages[0].from`.
 - `flujo.plantilla.json`, `construir.mjs`, y los datos `admin/scripts/datos/rroca-ruben/rroca-ruben.json` (solo marcadores `REEMPLAZAR_*`).
+
+## Condiciones declaradas de PR-1 (no se resuelven aquí)
+
+- **NO se publica ni se activa en un número real hasta el PR-3** («solo se ofrece lo que se cumple»). En estado «operador» el texto de uso extendido promete atención humana sin aviso a recepción, y el saludo fijo no ofrece pasar con recepción. Lo hace cumplir el armador: el JSON de producción lleva `meta.noPublicable` y la guardia de `--verificar` lo exige mientras `AVISO_A_RECEPCION_EXISTE` sea `false` en `construir.mjs`. PR-3 agrega el aviso con botón y cambia esa constante.
+- **FALLA ABIERTA DE LA PAUSA, declarada** (decisión de Cartera). `puerta-del-turno.js` es idéntica al origen y no se toca. Si la ingesta y la consola caen en el MISMO turno, no hay estado de atención y la puerta devuelve «normal»: una persona en pausa recibiría el saludo. La prueba «falla abierta, declarada» fija ese comportamiento; PR-3 evaluará volverlo cerrado.
+- **Cruce «suspendido antes que bloqueado»**: la puerta evalúa primero el comercio no operativo; una persona en pausa con el comercio suspendido recibiría el texto neutro de comercio suspendido (un mensaje), no el silencio de la pausa.
+- **Modo prueba**: niega por defecto (ver la tabla de huecos).
 
 ## Mensajes por conversación
 

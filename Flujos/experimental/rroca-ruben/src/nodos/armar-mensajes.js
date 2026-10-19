@@ -33,10 +33,12 @@ if (claveOk) {
   rrBarrer(fichas.mapa, ahora);
 }
 
-const resumen = { plan: puerta.ruta || 'nada', mensajes: texto === '' ? 0 : 1, categoria: t.categoria || '' };
 let numero = from;
 if (prueba) numero = telPrueba;
-if (texto === '' || !numero) {
+// `mensajes` se calcula DESPUÉS de decidir el número: en prueba con un teléfono no permitido (`telPrueba` vacío) no sale nada y el resumen lo dice.
+const sale = texto !== '' && numero !== '';
+const resumen = { plan: puerta.ruta || 'nada', mensajes: sale ? 1 : 0, categoria: t.categoria || '' };
+if (!sale) {
   return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen } }];
 }
 const m = cmMensaje('cliente', cmTexto(texto), texto, texto, { tipoReporte: 'text', evento: puerta.ruta || '' });

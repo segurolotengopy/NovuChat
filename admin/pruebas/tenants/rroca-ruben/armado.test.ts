@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, ARCHIVO_DE_DATOS, CONFIG, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
+import { AQUI, ARCHIVO_DE_DATOS, AVISO_A_RECEPCION_EXISTE, CONFIG, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 import { nodosDeEnvio } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
 
 const ESTA = dirname(fileURLToPath(import.meta.url));
@@ -271,7 +271,9 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
       ['const base = cnPrimero', "if (!cuerpo || typeof cuerpo !== 'object') cuerpo = {};\n"],
       ['const util = (v)', "const valor = (v) => (typeof v === 'string' && !/^REEMPLAZAR_/.test(v.trim())) ? v.trim() : '';\n"],
       ['// --- ATENCIÓN', "atencionVenceEn: util(at.ventanaVenceEn) || '',\n};\n"],
-      ['const prueba = carga.prueba', 'const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefonoDePrueba) >= 0;\n'],
+      ['const prueba = carga.prueba', "modoPrueba === true ? carga.prueba : null;\n"],
+      ['const permitidos = valor(', ".filter((x) => x.length >= 6);\n"],
+      ['const telefonoDePrueba = prueba', "cnDigitos(prueba.telefonoDePrueba) : '';\n"],
       ['  waGraphVersion:', "String(base.waGraphVersion) : 'v26.0',\n"],
       ["  phoneNumberId: String(carga.phoneNumberId || ''),", "  enviarDeVerdad: prueba ? prueba.enviarDeVerdad === true && telefonoPermitido : true,\n"],
     ];
@@ -279,6 +281,9 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
       const trozo = entre(o, ini, fin);
       expect(c.includes(trozo), `el bloque «${ini.slice(0, 40)}» no es idéntico al origen`).toBe(true);
     }
+    // La ÚNICA diferencia del modo prueba (declarada en PROPIO.md): `telefonoPermitido` niega por defecto.
+    expect(entre(o, 'const telefonoPermitido', ';\n')).toBe('const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefonoDePrueba) >= 0;\n');
+    expect(entre(c, 'const telefonoPermitido', ';\n')).toBe('const telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;\n');
     // Lo QUE SE QUITÓ: la oferta (planes y cargos), la planilla y los datos propios del chat.
     for (const quitado of ['CH_DATOS', 'limpiarOferta', 'planillaProspectosId', 'archivoPlanes', 'cargosUnicos']) expect(c).not.toContain(quitado);
   });
@@ -287,6 +292,46 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
     const origen = /^const CH_NIEGA_IA = (\/.+\/);$/m.exec(leer(join(CHAT, 'src/lib/chat.js')))![1];
     const copiaRr = /^const RR_NIEGA_IA = (\/.+\/);$/m.exec(leer(join(RROCA, 'src/lib/rr.js')))![1];
     expect(copiaRr).toBe(origen);
+  });
+});
+
+describe('HUECOS: nodos JSON de la plantilla, comparados con sus orígenes (sin `notes`, `position` ni `id`)', () => {
+  const plantilla = (ruta: string): Flujo => JSON.parse(leer(ruta)) as Flujo;
+  const limpio = (n: J): string => {
+    const { notes: _n, position: _p, id: _i, ...resto } = n as J;
+    return JSON.stringify(resto);
+  };
+  const RR = plantilla(join(RROCA, 'flujo.plantilla.json'));
+  const comparar = (origen: Flujo, nombres: string[]): void => {
+    for (const n of nombres) {
+      const a = nodo(RR, n);
+      const b = origen.nodes.find((x) => x.name === n);
+      expect(a, `falta en rroca-ruben: ${n}`).toBeDefined();
+      expect(b, `falta en el origen: ${n}`).toBeDefined();
+      expect(limpio(a as J), n).toBe(limpio(b as J));
+    }
+  };
+  it('los 6 nodos de la entrada verificada del receptor son IDÉNTICOS a los de venta-minima', () => {
+    comparar(plantilla(join(FLUJOS, 'venta-minima/flujo.plantilla.json')), ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos']);
+  });
+  it('«Traer configuración», «Config base», «¿Reportar? (entrante)», «Reportar mensaje (entrante)» y «¿Meta aceptó?» son IDÉNTICOS a los de chat-novuchat', () => {
+    comparar(plantilla(join(CHAT, 'flujo.plantilla.json')), ['Traer configuración', 'Config base', '¿Reportar? (entrante)', 'Reportar mensaje (entrante)', '¿Meta aceptó?']);
+  });
+  it('la comparación niega: un cambio en `parameters` de la copia se detecta', () => {
+    const a = copia(nodo(RR, 'Traer configuración')) as J;
+    a['parameters'] = { ...a['parameters'], url: 'https://otro.example.invalid/x' };
+    expect(limpio(a)).not.toBe(limpio(nodo(RR, 'Traer configuración') as J));
+  });
+});
+
+describe('«solo se ofrece lo que se cumple»: PR-1 no es publicable hasta que exista el aviso a recepción (PR-3)', () => {
+  it('mientras el aviso no exista, el JSON de producción lleva `meta.noPublicable` y la guardia lo exige', () => {
+    expect(AVISO_A_RECEPCION_EXISTE).toBe(false);
+    expect(typeof (PRODUCCION as J)['meta']?.noPublicable).toBe('string');
+    expect(guardias('produccion', PRODUCCION)).toEqual([]);
+    const sinMarca = copia(PRODUCCION) as J;
+    delete sinMarca['meta'];
+    expect(guardias('produccion', sinMarca as Flujo).join('|')).toMatch(/noPublicable/);
   });
 });
 
