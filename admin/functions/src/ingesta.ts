@@ -24,6 +24,8 @@ import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 import { sanearCaptacion } from './modulos/captacion/captacion.js';
 import { vozFija } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
+import { atenderSesion } from './core/turno/sesionFirestore.js';
+import { validarSesion } from './core/turno/sesion.js';
 // H1-6: los campos derivados de Conversaciones (búsqueda y no leídos). Son más
 // campos en los MISMOS create/set de la transacción: cero lecturas ni escrituras
 // nuevas y cero mensajes. Los escribe el Core para todos los comercios, inertes.
@@ -1534,6 +1536,24 @@ export const ingesta = onRequest(
  * 3. n8n NO DEBE CACHEAR ESTO MÁS DE 60 SEGUNDOS. La suspensión es una palanca
  *    comercial y tiene que surtir efecto ya. Un caché largo la vuelve inútil.
  */
+/**
+ * Registro estructurado de lo anómalo del estado de la conversación: una sesión `corrupta`
+ * (puede venir en cualquier acción), un `datos_invalidos` o un fallo del servidor. Nunca lleva el
+ * teléfono ni el cuerpo: solo el comercio, la acción y el resultado.
+ */
+function registrarAnomaliaDeSesion(
+  tenantId: string, accion: string, status: number, json: Record<string, unknown>,
+): void {
+  const conv = json['conversacion'] as { corrupta?: unknown } | undefined;
+  const corrupta = conv?.corrupta === true;
+  const invalidos = json['resultado'] === 'datos_invalidos';
+  if (!corrupta && !invalidos && status < 500) return;
+  logger.warn('configuracionFlujo: estado de la conversacion anomalo', {
+    evento: EVENTO_CONFIGURACION, tenantId, accion, status,
+    resultado: typeof json['resultado'] === 'string' ? json['resultado'] : null, corrupta,
+  });
+}
+
 export const configuracionFlujo = onRequest(
   {
     region: REGION,
@@ -1600,6 +1620,28 @@ export const configuracionFlujo = onRequest(
       return;
     }
 
+    // EL ESTADO DE LA CONVERSACIÓN ENTRE TURNOS (F3b, `docs/arquitectura/estado-de-conversacion.md`).
+    // Solo si el cuerpo trae `sesion`; sin ella nada de esto corre y la respuesta es la de siempre.
+    // La clave de aislamiento es `tenantId` + `phoneNumberId` de la ruta autenticada: nada del
+    // cuerpo elige tenant. Se valida acá, antes de leer nada más, para que un cuerpo inválido sea 400.
+    // `comprometer` y `asentar` responden por este camino corto; `leer` sigue más abajo y agrega
+    // `conversacion` y `visto` a la respuesta. Este camino no escribe en `conversaciones/*` ni en
+    // `metricas/*` (de ahí sale el conteo facturado): 0 mensajes por conversación.
+    const pideSesion = cuerpo['sesion'] !== undefined;
+    let accionSesion: string | null = null;
+    if (pideSesion) {
+      const v = validarSesion(cuerpo['sesion'], telefono);
+      if (!v.ok) { respuesta.status(v.status).json({ error: v.error }); return; }
+      accionSesion = v.peticion.accion;
+      if (accionSesion !== 'leer') {
+        const rutaSesion = { tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo };
+        const resultado = await atenderSesion(db, rutaSesion, { ...cuerpo, telefono }, Date.now());
+        registrarAnomaliaDeSesion(comercio.tenantId, accionSesion, resultado.status, resultado.json);
+        respuesta.status(resultado.status).json(resultado.json);
+        return;
+      }
+    }
+
     // Lecturas en paralelo. n8n resuelve «quién atiende una limpieza
     // facial» EN MEMORIA sobre estas listas, sin consultas adicionales: son
     // colecciones chicas (200 servicios, 50 funcionarios como tope) y traerlas
@@ -1610,7 +1652,7 @@ export const configuracionFlujo = onRequest(
     const docVertical = documentoDeVertical(comercio.flujo);
     const ahoraMs = Date.now();
 
-    const [catalogo, funcionarios, especifica, rotulos, conversacion, cuenta, metricas, plataformaPrepago, campanas] =
+    const [catalogo, funcionarios, especifica, rotulos, docConversacion, cuenta, metricas, plataformaPrepago, campanas] =
       await Promise.all([
         db.collection(`tenants/${comercio.tenantId}/catalogo`)
           .where('activo', '==', true).limit(200).get(),
@@ -1658,8 +1700,8 @@ export const configuracionFlujo = onRequest(
     // teléfonos nuevos sigue entrando por la ingesta y por las peticiones con
     // teléfono; por eso encender la bandera exige que todos los flujos
     // publicados manden `telefono` (ESTADO.md, 20/09). `sin_pago` corta igual.
-    const ventanaAbierta = telefono === null || (conversacion !== null
-      && !ventanaVencida((conversacion.data() ?? {}) as MarcasDeConteo, ahoraMs));
+    const ventanaAbierta = telefono === null || (docConversacion !== null
+      && !ventanaVencida((docConversacion.data() ?? {}) as MarcasDeConteo, ahoraMs));
     if (!servicio.operativo && corteAplica
         && !(servicio.motivo === 'sin_conversaciones' && ventanaAbierta)) {
       logger.info('configuracionFlujo: turno cortado por prepago', {
@@ -1678,9 +1720,9 @@ export const configuracionFlujo = onRequest(
     // turno, la marca queda actualizada para el siguiente y no se avisa dos
     // veces. La decisión de callar o de pasar al operador se toma ACÁ, antes
     // del modelo: un saliente ya enviado no se puede rechazar.
-    const atencion = telefono && conversacion
+    const atencion = telefono && docConversacion
       ? (() => {
-          const marcas = (conversacion.data() ?? {}) as Record<string, unknown>;
+          const marcas = (docConversacion.data() ?? {}) as Record<string, unknown>;
           const estado = estadoDeAtencion(marcas, umbralesDeAtencion(cuenta?.data()), Date.now());
           // LA PAUSA POR PERSONA (H2-2): misma regla que la ingesta. Lectura pura, sin persistir
           // (el vencimiento lo escribe la ingesta con el siguiente entrante). Con pausa,
@@ -1695,6 +1737,18 @@ export const configuracionFlujo = onRequest(
           };
         })()
       : null;
+
+    // `leer` de la sesión: DESPUÉS de la pausa y la atención y ANTES del enlace del catálogo (que
+    // escribe una ficha: un 503 de la sesión no debe dejarla hecha), y solo si vino `sesion`. Un 503 o un
+    // 500 se devuelven tal cual (el flujo los trata como falla y responde genérico con botón).
+    let sesionLeida: Record<string, unknown> = {};
+    if (pideSesion) {
+      const leida = await atenderSesion(db, { tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo },
+        { ...cuerpo, telefono }, Date.now());
+      registrarAnomaliaDeSesion(comercio.tenantId, 'leer', leida.status, leida.json);
+      if (leida.status !== 200) { respuesta.status(leida.status).json(leida.json); return; }
+      sesionLeida = { conversacion: leida.json['conversacion'], visto: leida.json['visto'] };
+    }
 
     const catalogoWebActivo = negocio['catalogoWebActivo'] === true;
     // Se calcula una sola vez: decide qué se manda al prompt y, además, se
@@ -1838,6 +1892,7 @@ export const configuracionFlujo = onRequest(
     });
 
     respuesta.status(200).json({
+      ...sesionLeida,
       tenantId: comercio.tenantId,
       flujo: comercio.flujo,
       estadoComercio: derivados.estadoComercio,
@@ -2045,7 +2100,7 @@ export const configuracionFlujo = onRequest(
               String(negocio['moneda'] ?? 'BOB'),
               (ficha) => `https://${REGION}-${process.env['GCLOUD_PROJECT'] ?? ''}`
                 + `.cloudfunctions.net/imagenDeCobro?f=${ficha}`,
-              conversacion?.get('solicitud'),
+              docConversacion?.get('solicitud'),
             ) }
         : {}),
 
@@ -2062,7 +2117,7 @@ export const configuracionFlujo = onRequest(
               String(negocio['moneda'] ?? 'BOB'),
               (ficha) => `https://${REGION}-${process.env['GCLOUD_PROJECT'] ?? ''}`
                 + `.cloudfunctions.net/imagenDeCobro?f=${ficha}`,
-              conversacion?.get('solicitud'),
+              docConversacion?.get('solicitud'),
             ) }
         : {}),
 

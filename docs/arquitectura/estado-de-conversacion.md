@@ -60,7 +60,7 @@ La de hoy; **solo si vino `sesion`** se agregan
 `conversacion: { version, estado, desde, vence, vencido }` y
 `visto: 'nuevo' | 'repetido' | null`.
 
-- Sesión corrupta: igual que ausente más `corrupta: true` (el campo falta, o es falso, si no), para que el flujo no planifique sobre una versión 0 falsa; el siguiente `comprometer` con `versionLeida` 0 la autorrepara (§4).
+- Sesión corrupta: igual que ausente más `corrupta: true`, **en cualquier acción** (`leer`, `comprometer` y `asentar` devuelven la `conversacion` con la marca; el campo falta, o es falso, si no), para que el flujo no planifique sobre una versión 0 falsa; el siguiente `comprometer` con `versionLeida` 0 la autorrepara (§4).
 - Documento ausente: `{ version: 0, estado: null, desde: null, vence: null, vencido: false }`.
 - `vence` pasado: `estado: null, vencido: true`, conservando la versión.
 - Sin `sesion`, la respuesta es **idéntica a la de hoy, byte a byte**.
@@ -150,7 +150,7 @@ PR-4a, PR-4b, PR-6b); escritor B en paralelo (H2b, PR-6a).
 | PR-0 | Este contrato en papel y la línea en `indice.md`; las 3 enmiendas al plano las hace la revisora | metodo / revisora | en curso (este PR) |
 | PR-1 | Núcleo puro `core/turno/sesion.ts` y su suite en `SUITES_PURAS` | `core-functions` | pendiente (depende de PR-0) |
 | PR-2a | Transacciones `core/turno/sesionFirestore.ts` y su suite de emulador | `core-functions` | pendiente |
-| PR-2b | Rama `sesion` en `configuracionFlujo` (despacho); renombrar la variable local `conversacion` a `docConversacion` | coordinadora | pendiente; producción con «sí» de Andres |
+| PR-2b | Rama `sesion` en `configuracionFlujo` (despacho); renombrar la variable local `conversacion` a `docConversacion` | coordinadora | construido en la rama `core/f3b-pr2b-despacho-y-ttl`; producción con «sí» de Andres |
 | PR-3 | TTL e índices en `firestore.indexes.json` (políticas primero en staging) | coordinadora | pendiente; puede ir en la etiqueta de PR-2b |
 | PR-4a | Q'Taco adopta estado y vistos | `flujos-n8n` con Cartera | pendiente; espera PR-2b en producción y #519 |
 | PR-4b | Q'Taco: cupos (`av.dia`, `transferencias`, `avisosPedido`) | `flujos-n8n` | pendiente; depende de PR-4a y D-7 |
@@ -241,3 +241,10 @@ el §2 a §5 dicen otra cosa, mandan estas.
 - El documento de sesión reparado lleva `reparadoEn`; el de cupo y el de visto llevan `phoneNumberId`.
 - `asentar` encuentra los cupos con una consulta por `por.{idCompromiso}.cantidad`: necesita el índice automático de subcampo de mapa (PR-3 no debe exentar `por`, solo `estadoJson`).
 - Presupuesto de tiempo de 3,5 s medido con reloj real: se comprueba al empezar cada intento de la transacción y antes de escribir; al agotarse, 503 `sesion: ocupada, reintente`. En el emulador una colisión tarda ~3 s en resolverse, así que bajo mucha contención el 503 es esperable; en Firestore real no está medido.
+
+## 13. Decisiones al construir PR-2b y PR-3
+
+- `por[idCompromiso]` de un cupo guarda `{cantidad, en, tel}` (§12); `tel` es parte del contrato de lo guardado, aunque no viaja en la petición ni en la respuesta.
+- `comprometer` aborta con `datos_invalidos` (sin escribir) si, tras la poda de `por`, la entrada del propio compromiso no sobrevivió: guardar `{tel}` sin cantidad dejaría un consumo que `asentar` no puede devolver.
+- Despacho en `configuracionFlujo`: con `sesion` se valida primero (400 sin leer nada más, después del 409 por comercio no activo); `comprometer` y `asentar` responden por el camino corto, antes de leer el catálogo; `leer` corre DESPUÉS de la pausa y la atención y agrega `conversacion` y `visto` a la respuesta de siempre. Un 500 o 503 de `atenderSesion` se devuelve tal cual (el flujo lo trata como falla, §6). Un `corrupta` o un `datos_invalidos` deja un renglón de registro estructurado (`estado de la conversacion anomalo`) sin el teléfono.
+- TTL: política sobre `vence` en `sesionesDeTurno`, `vistosDeTurno` y `cuposDeTurno`; `estadoJson` exento de índice. `por` NO se exenta: `asentar` consulta por `por.<id>.cantidad` y necesita el índice automático de subcampo.

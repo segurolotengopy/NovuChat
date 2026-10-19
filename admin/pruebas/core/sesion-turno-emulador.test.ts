@@ -277,6 +277,18 @@ describe('cupos', () => {
     expect((await refCupo('contacto').get()).data()?.['usados']).toBe(1);
   });
 
+  it('si la poda de `por` se llevara la entrada del propio compromiso: datos_invalidos y nada se escribe', async () => {
+    // 50 entradas más nuevas que el ahora del pedido: la del compromiso nuevo es la más vieja y la poda la descarta.
+    const por: Record<string, unknown> = {};
+    for (let i = 0; i < 50; i++) por[`previo-${String(i).padStart(4, '0')}`] = { cantidad: 1, en: AHORA + 1_000_000 + i, tel: TEL };
+    await refCupo('contacto').set({ usados: 1, tope: 3, por, vence: Timestamp.fromMillis(AHORA + 9 * 3_600_000) });
+    const r = await comprometer(ruta(), { cupos: [cupoDia()] });
+    expect(r.json).toMatchObject({ resultado: 'datos_invalidos' });
+    expect((await refCupo('contacto').get()).data()?.['usados']).toBe(1);
+    expect(Object.keys((await refCupo('contacto').get()).data()?.['por'] as object)).toHaveLength(50);
+    expect((await refSesion().get()).exists).toBe(false);
+  });
+
   it('una clave de cupo con nombre heredado (`constructor`) funciona como cualquier otra, sin leer del prototipo', async () => {
     const cupos = [cupoDia({ clave: 'constructor', tope: 1 })];
     expect((await comprometer(ruta(), { cupos })).json['resultado']).toBe('comprometido');

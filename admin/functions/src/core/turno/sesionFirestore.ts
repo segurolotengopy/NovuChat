@@ -247,6 +247,11 @@ async function comprometer(
     }
     if (d.resultado !== 'comprometido') return { resultado: d.resultado, conversacion: d.conversacion };
 
+    // La entrada de este compromiso debe haber sobrevivido a la poda de `por`; si no, guardar `{tel}`
+    // sin cantidad dejaría un consumo que `asentar` no puede devolver. Se aborta antes de escribir.
+    if (d.cupos.some((k) => !Object.hasOwn(k.por, p.idCompromiso as string))) {
+      return { resultado: 'datos_invalidos', conversacion: d.conversacion };
+    }
     vivo();
     tx.set(refSesion, {
       ...(reparar ? { reparadoEn: Timestamp.fromMillis(ahoraMs) } : {}),
