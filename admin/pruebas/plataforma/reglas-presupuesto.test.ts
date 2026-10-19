@@ -354,7 +354,7 @@ describe('reglas: presupuesto de expresiones contra las reglas de origin/main', 
   }, 1_800_000);
 
   it('control: una exigencia cara dentro de config/negocio SÍ la detecta el criterio', async () => {
-    const trozo = "|| tieneFlujo(tenantId, 'venta'))";
+    const trozo = "|| tieneCatalogoWeb(tenantId))";
     expect(AHORA.split(trozo).length - 1, 'el trozo a mutar está una vez').toBe(1);
     // Desde el recorte de `configNegocioValida` el documento sobra ~25 términos más de lo que sobraba: una sola exigencia
     // de módulo común ya no alcanza a bajarlo del criterio de estas filas, así que la mutación son diez (cada una lee la
@@ -380,7 +380,7 @@ describe('reglas: presupuesto de expresiones contra las reglas de origin/main', 
   }, 600_000);
 
   it('control: una exigencia cara dentro de config/negocio SÍ la detecta el criterio del documento completo', async () => {
-    const trozo = "|| tieneFlujo(tenantId, 'venta'))";
+    const trozo = "|| tieneCatalogoWeb(tenantId))";
     expect(AHORA.split(trozo).length - 1, 'el trozo a mutar está una vez').toBe(1);
     // Diez exigencias de módulo común: cada una lee la ficha y compara una lista.
     const caras = Array.from({ length: 10 }, () => "&& tieneModuloComun(tenantId, 'productos')").join('\n            ');
