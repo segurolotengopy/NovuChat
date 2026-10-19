@@ -1,0 +1,59 @@
+{
+  "_fuente": "Datos del negocio de la «Venta digital de Rubén» (tenant rroca-ruben, flujo Flujos/experimental/rroca-ruben/). Se carga con admin/scripts/datos/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben. Los precios y los ids del catálogo son los que lee el flujo (rrCatalogo): el monto de un QR sale de aquí y de ningún otro lado.",
+  "_pendiente": {
+    "_nota": "NO SE APLICA mientras quede algún marcador REEMPLAZAR_* en este archivo (la guardia de pruebas/tenants/rroca-ruben/negocio.test.ts y la de publicación lo niegan). Rubén todavía debe dar estos datos; al llegar, se reemplaza cada marcador por el dato real y se agrega al negocio donde corresponde (horarios en negocio.horarios, el resto en negocio.instruccionesExtra).",
+    "horarioDeRecepcion": "REEMPLAZAR_HORARIO_RUBEN",
+    "nombreDeRecepcion": "REEMPLAZAR_NOMBRE_RECEPCION_RUBEN",
+    "enlacesDeEntrega": "REEMPLAZAR_ENLACES_ENTREGA_RUBEN"
+  },
+  "negocio": {
+    "nombreNegocio": "REEMPLAZAR_NOMBRE_VISIBLE_RUBEN",
+    "descripcion": "Venta digital de Rubén Roca: un libro con bonos, un prompt de cierre de ventas y videos para crear contenido con IA, solos o en un pack. Se entregan por este mismo WhatsApp; la entrega la hace Rubén.",
+    "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_RUBEN",
+    "zonaHoraria": "America/La_Paz",
+    "moneda": "BOB",
+    "tratamiento": "tu",
+    "estiloEmojis": "pocos",
+    "politicaCancelacion": "REEMPLAZAR_TEXTO_GARANTIA_RUBEN",
+    "prefijosPermitidos": [
+      "591"
+    ],
+    "datosQueNoTenemos": [
+      "garantía y devolución",
+      "factura",
+      "otros medios de pago",
+      "plazo de entrega"
+    ],
+    "instruccionesExtra": "ENTREGA: la hace Rubén a mano por este chat, después de revisar el comprobante. Nunca prometas un plazo de entrega.\nPAGO: solo por el QR del comercio. No inventes otros medios de pago, factura, garantía ni devoluciones: ofrece pasar con Rubén.\nNo digas que un pago está acreditado: Rubén revisa el comprobante."
+  },
+  "catalogo": [
+    {
+      "nombre": "Pack completo",
+      "descripcion": "Libro con 4 bonos, Closer de Ventas y curso de videos con IA",
+      "precio": 60,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Libro + bonos",
+      "descripcion": "Libro «IA para Emprendedores Independientes» con sus 4 bonos",
+      "precio": 32,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Closer: ventas",
+      "descripcion": "Prompt Maestro de Cierre de Ventas (Closer)",
+      "precio": 20,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Videos IA",
+      "descripcion": "Videos tutoriales para crear contenido con IA",
+      "precio": 25,
+      "moneda": "BOB",
+      "activo": true
+    }
+  ]
+}
