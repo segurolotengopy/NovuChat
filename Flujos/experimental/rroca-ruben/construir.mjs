@@ -35,6 +35,13 @@ import { injertar } from '../comun-sin-agente/src/envio.mjs';
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-ruben/rroca-ruben.json');
 export const TOPE_DE_NODOS = 48;
+/**
+ * «Solo se ofrece lo que se cumple»: en estado «operador» el texto promete atención humana sin aviso a recepción, y el saludo fijo no ofrece pasar con recepción.
+ * Mientras no exista el aviso a recepción con su botón (PR-3), el JSON de PRODUCCIÓN lleva `meta.noPublicable` y la guardia lo exige: este flujo NO se publica
+ * ni se activa en un número real. Al llegar PR-3, esta constante pasa a `true` en el mismo PR que agrega el aviso (y la prueba que lo fija se actualiza).
+ */
+export const AVISO_A_RECEPCION_EXISTE = false;
+export const MARCA_NO_PUBLICABLE = 'PR-1: no se publica ni se activa en un número real hasta el PR-3 (aviso a recepción con botón; «solo se ofrece lo que se cumple»)';
 
 /**
  * El config del armador genérico. Vive aquí y no en un `construir.config.json`: el saneo del repo público trata todo JSON bajo `Flujos/` como un export de n8n.
@@ -162,6 +169,9 @@ export function guardias(variante, flujo) {
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva');
+  if (variante === 'produccion' && !AVISO_A_RECEPCION_EXISTE && !(flujo && flujo.meta && typeof flujo.meta.noPublicable === 'string' && flujo.meta.noPublicable !== '')) {
+    h.push('falta `meta.noPublicable`: sin el aviso a recepción (PR-3) este flujo no se publica ni se activa en un número real');
+  }
   if (variante === 'produccion') {
     if (nombres.has(NODO_PRUEBA)) h.push(`contiene «${NODO_PRUEBA}» (activa el modo prueba): solo va en el JSON de prueba`);
     for (const n of NODOS_DEL_RECEPTOR) if (!nombres.has(n)) h.push(`falta el nodo «${n}» de la entrada verificada del receptor`);
@@ -251,6 +261,7 @@ export function armarRroca(proyecto, datos, v) {
   rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}";
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
+  if (!prueba && !AVISO_A_RECEPCION_EXISTE) flujo.meta = { ...(flujo.meta || {}), noPublicable: MARCA_NO_PUBLICABLE };
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
   return JSON.stringify(flujo, null, 2) + '\n';
 }

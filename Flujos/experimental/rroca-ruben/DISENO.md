@@ -33,6 +33,15 @@ Entrada de prueba ────────────────────�
 - **Pausa por persona** (`bloqueado`): la puerta corre después del reporte entrante, y ni «¿Bajar medio?» ni «Decidir turno» ni el modelo ni el aviso hacen nada: cero envío, cero modelo, cero descarga.
 - **Núcleo**: sesión por `messages[0].from`; filtro de eventos; normalización de entrada; consola con respaldo; comercio no operativo; uso extendido; entrada verificada del receptor (`wabaIdEsperado` fijo, sin «Continue on Fail», repetidos descartados entre ejecuciones).
 
+## Condiciones y límites declarados (PR-1)
+
+- **No publicable hasta el PR-3.** Este PR NO se publica ni se activa en un número real: en estado «operador» el texto promete atención humana sin aviso a recepción, y el saludo fijo no ofrece pasar con recepción («solo se ofrece lo que se cumple»). El JSON de producción lleva `meta.noPublicable` y `construir.mjs --verificar` lo exige mientras no exista el aviso (`AVISO_A_RECEPCION_EXISTE`).
+- **Falla abierta de la pausa, declarada.** Si la ingesta y la consola caen en el mismo turno, la puerta devuelve «normal» y la persona en pausa recibe el saludo (`puerta-del-turno.js` es idéntica al origen y no se cambia). Una prueba la fija con su nombre; PR-3 evaluará volverlo cerrado. Cruce relacionado: el comercio suspendido se evalúa antes que la pausa, y una persona en pausa recibiría el texto neutro de comercio suspendido.
+- **Un mensaje por entrega.** Solo se procesa `messages[0]` de cada entrega. A confirmar con WhatsApp-Modular que el receptor entrega un mensaje por entrega; si entregara varios, los demás se perderían.
+- **«Entrega fallida» no tiene alerta.** Si ni el envío ni su respaldo devuelven `messages[0].id`, la ejecución termina en error y n8n la lista; no hay aviso. Se prohíbe `errorWorkflow` (guardia). La alerta es de PR-3 o de un monitor externo.
+- **Retención de datos personales.** Las ejecuciones fallidas se guardan completas (`saveDataErrorExecution: all`) y contienen el teléfono y el texto del cliente. La poda es de la instancia de n8n (~14 días, aceptado por Andres); este flujo no la controla. Las exitosas no se guardan.
+- **Modo prueba niega por defecto**: sin `telefonosDePrueba` (o con el marcador sin llenar) ningún teléfono está permitido en el JSON de prueba, y el resumen dice 0 mensajes.
+
 ## Qué NO hace este PR
 
 Plantillas de aviso, derivación completa con ventana de 24 h, y el rescate de las 22 h (PR-3 y PR-4). Tampoco crea datos en la plataforma (alta, número, `config/venta`, catálogo, QR): son escrituras con «sí» y van en PR-5.

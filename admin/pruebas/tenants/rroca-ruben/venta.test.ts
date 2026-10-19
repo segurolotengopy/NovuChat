@@ -150,7 +150,7 @@ function crear(o: Opciones = {}) {
     flujo: o.flujo ?? PRODUCCION,
     dobles,
     ahoraMs: AHORA,
-    configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, ...(o.cobroSimuladoActivo !== undefined ? { cobroSimuladoActivo: o.cobroSimuladoActivo } : {}) },
+    configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: ANA, ...(o.cobroSimuladoActivo !== undefined ? { cobroSimuladoActivo: o.cobroSimuladoActivo } : {}) },
   });
   return { mundo, cobro: de(ANA), cobros, de };
 }

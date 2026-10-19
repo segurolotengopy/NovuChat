@@ -59,6 +59,8 @@ interface Opciones {
   /** Cómo contesta Meta: 'acepta', 'error' o 'cae' (lanza). Por nodo de envío. */
   envio?: Partial<Record<'Enviar a WhatsApp' | 'Enviar respaldo', 'acepta' | 'error' | 'lanza'>>;
   verificador?: (ll: LlamadaDoble) => J;
+  /** El valor de `telefonosDePrueba` en «Config base» (por omisión, ANA y BETO). */
+  telefonosDePrueba?: string;
 }
 const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
   statusCode: 200,
@@ -87,7 +89,7 @@ function crear(o: Opciones = {}) {
     flujo: o.flujo ?? PRODUCCION,
     dobles,
     ahoraMs: AHORA,
-    configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC },
+    configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}` },
   });
   return mundo;
 }
@@ -338,6 +340,23 @@ describe('la puerta del turno: pausa por persona, uso extendido y comercio no op
     expect(enviados(hablar(w, BETO, mTexto('hola')))).toBe(1);
   });
 
+  it('falla abierta, declarada: si la ingesta y la consola caen en el MISMO turno, la puerta devuelve «normal» y la persona en pausa recibe el saludo (PR-3 evaluará volverlo cerrado)', () => {
+    // Con la ingesta sana, la pausa se respeta…
+    expect(enviados(hablar(crear({ ingesta: atencion('bloqueado') }), ANA, mTexto('hola')))).toBe(0);
+    // …pero sin ninguna de las dos fuentes de atención no hay estado y se contesta (comportamiento ACTUAL, fijado a propósito).
+    const w = crear({ panel: 'cae', ingesta: { ok: true } });
+    const t = hablar(w, ANA, mTexto('hola'));
+    expect(t.fallo).toBeNull();
+    expect(t.porNodo['Puerta del turno']![0]!['ruta']).toBe('sigue');
+    expect(textos(t)).toHaveLength(1);
+    expect(textos(t)[0]).toMatch(SALUDO);
+  });
+
+  it('cruce declarado: «suspendido» se evalúa antes que «bloqueado»: una persona en pausa con el comercio suspendido recibe el texto neutro', () => {
+    const w = crear({ ingesta: atencion('bloqueado'), panel: panelOk({ estadoComercio: 'suspendido' }) });
+    expect(textos(hablar(w, ANA, mTexto('hola')))).toEqual([SUSPENDIDO]);
+  });
+
   it('USO EXTENDIDO («operador»): UN aviso fijo (cuenta como respuesta) y nada más; sin saludo encima', () => {
     const w = crear({ ingesta: atencion('operador', { mensajeFijo: 'Una persona del equipo seguirá aquí.' }) });
     const t = hablar(w, ANA, mTexto('hola'));
@@ -445,6 +464,34 @@ describe('el modo prueba y el JSON de prueba', () => {
     expect(r['mensajes'][0].texto).toMatch(SALUDO);
     // En prueba el destino es el teléfono de prueba.
     expect(r['mensajes'][0].payload.to).toBe(ANA);
+  });
+
+  it('el modo prueba NIEGA POR DEFECTO: sin `telefonosDePrueba` (vacío o con el marcador) no sale nada, ni al teléfono pedido, y el resumen dice 0 mensajes', () => {
+    for (const lista of ['', 'REEMPLAZAR_TELEFONOS_DE_PRUEBA']) {
+      const w = crear({ flujo: PRUEBA, telefonosDePrueba: lista });
+      const t = w.turno(prueba({ enviarDeVerdad: true }));
+      expect(t.fallo).toBeNull();
+      expect(t.porNodo['Config del negocio']![0]!['telefonoDePrueba']).toBe('');
+      expect(t.porNodo['Config del negocio']![0]!['enviarDeVerdad']).toBe(false);
+      expect(t.ejecutados.has('Enviar a WhatsApp')).toBe(false);
+      expect(w.llamadas.ingesta).toHaveLength(0);
+      expect((t.resumen as J)['mensajes']).toHaveLength(0);
+    }
+  });
+
+  it('`resumen.mensajes` se calcula DESPUÉS de decidir el número: con la lista restrictiva y un teléfono no permitido, dice 0 y no hay mensaje', () => {
+    const w = crear({ flujo: PRUEBA, telefonosDePrueba: REC });
+    const t = w.turno(prueba({ enviarDeVerdad: false, telefonoDePrueba: ANA }));
+    expect(t.fallo).toBeNull();
+    expect((t.resumen as J)['mensajes']).toHaveLength(0);
+    const armado = t.porNodo['Armar mensajes']![0]!;
+    expect(armado['sinMensajes']).toBe(true);
+    expect((armado['resumen'] as J)['mensajes']).toBe(0);
+    // Y con el teléfono en la lista, sale 1 y el resumen dice 1.
+    const w2 = crear({ flujo: PRUEBA, telefonosDePrueba: ANA });
+    const t2 = w2.turno(prueba({ enviarDeVerdad: false, telefonoDePrueba: ANA }));
+    expect(((t2.porNodo['Armar mensajes']![0]!['resumen']) as J)['mensajes']).toBe(1);
+    expect((t2.resumen as J)['mensajes']).toHaveLength(1);
   });
 
   it('en modo prueba el `phone_number_id` del cuerpo se ignora y el destino es solo el teléfono de prueba', () => {

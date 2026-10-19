@@ -123,10 +123,13 @@ if (claveOk) {
   rrBarrer(fichas.mapa, ahora);
 }
 
-const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: m ? 1 : 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado ? (avisoSalio ? 'salio' : 'no_salio') : 'ninguno' };
+const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado ? (avisoSalio ? 'salio' : 'no_salio') : 'ninguno' };
 let numero = from;
 if (prueba) numero = telPrueba;
-if (!m || !numero) {
+// `mensajes` se calcula DESPUÉS de decidir el número: en prueba con un teléfono no permitido (`telPrueba` vacío) no sale nada y el resumen lo dice.
+const sale = !!m && numero !== '';
+resumen.mensajes = sale ? 1 : 0;
+if (!sale) {
   return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen } }];
 }
 m.payload.to = numero;
