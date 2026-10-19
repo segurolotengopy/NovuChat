@@ -58,7 +58,7 @@
 #       Alias de ensayo solamente. Respalda antes.
 #
 # CLIENTES REALES (credenciales EXISTENTES: `--cred-ingesta`, `--cred-envio`, `--cred-rele`). Un alias de
-# cliente real (p. ej. cliente04 = Q'Taco, cliente05 = la cuenta Ruben de Rubén Roca) NO usa los nombres
+# cliente real (p. ej. cliente04, cliente05; el comercio de cada alias vive en CLIENTES/) NO usa los nombres
 # `NovuChat ingesta (<alias>)`, `WhatsApp <alias> (envío)` ni `AAB1 envío · <alias>`: sus credenciales ya
 # existen en n8n con otros nombres. Estas tres opciones dicen el NOMBRE REAL de cada rol, y el flujo se
 # carga con ellas en lugar de las de ensayo (cargar, --activar y --quitar; el timbre sigue siendo
@@ -70,7 +70,12 @@
 # si falta o está repetida se aborta sin escribir. No se crea ni se modifica ninguna de las tres (no hay
 # valores de por medio) y no se combinan con --crear-credenciales ni --quitar-credenciales. Los tres nombres
 # tienen que ser distintos entre sí y del timbre, sin caracteres de control, y ninguno puede ser de
-# AAB1-WA-Prod. Nombres con apóstrofo o espacios son válidos (el alias, no: ^[A-Za-z][A-Za-z0-9]{1,29}$).
+# AAB1-WA-Prod ni de WhatsApp-Modular (se compara normalizado: sin mayúsculas, espacios, guiones ni guiones bajos).
+# ATADURA AL ALIAS: antes de escribir, la credencial de ingesta y la de envío tienen que estar citadas por al menos
+# un flujo vivo (distinto del propio del alias) cuyos parámetros contengan el phoneNumberId de la tabla local
+# (`REEMPLAZAR_PHONE_NUMBER_ID_<ALIAS>`), y ningún flujo vivo con OTRO phoneNumberId puede citarlas; si no, se
+# aborta sin escribir. El seco imprime «vinculada al alias: sí/no» por rol. No se combina con --tabla-demo-a.
+# Nombres con apóstrofo o espacios son válidos (el alias, no: ^[A-Za-z][A-Za-z0-9]{1,29}$).
 # VALOR INERTE DEL RELÉ ANTES DEL TRASLADO: use `--rele-inerte --canal-graph` (válido para cualquier alias):
 # la URL del relé del flujo es `http://relay-inerte.invalid` y el rol relé debe nombrar una credencial
 # httpHeaderAuth EXISTENTE con valor inerte (no se lee ni se toca: la clave real la emite la sesión de
@@ -185,7 +190,10 @@ if (( CRED_DADAS > 0 )); then
     if [[ ${#_nom} -gt 100 || "$_nom" =~ [[:cntrl:]] || "$_nom" =~ ^[[:space:]] || "$_nom" =~ [[:space:]]$ ]]; then
       echo "✗ Un nombre de credencial no es válido (hasta 100 caracteres, sin caracteres de control ni espacios en los extremos). No se tocó n8n." >&2; exit 2
     fi
-    if [[ "$_nom" =~ (WA-Prod|AAB1-WA|[Ss]egurolotengo) ]]; then
+    # Se normaliza antes de comparar (minúsculas, sin espacios, guiones ni guiones bajos): «SeguroLo Tengo»,
+    # «WhatsApp-Modular», «Receptor» y «OTP» son del otro sistema aunque cambien las mayúsculas o los separadores.
+    _norm="${_nom,,}"; _norm="${_norm//[ _-]/}"
+    if [[ "$_norm" =~ (segurolotengo|aab1wa|waprod|whatsappmodular|receptor|otp) ]]; then
       echo "✗ Un nombre de credencial parece de AAB1-WA-Prod o de otro sistema: NovuChat no la usa (CLAUDE.md, prohibiciones 5 y 7). No se tocó n8n." >&2; exit 2
     fi
     if [[ "$_nom" == "Salida de persona (timbre ${ALIAS})" ]]; then
@@ -194,6 +202,9 @@ if (( CRED_DADAS > 0 )); then
   done
   if [[ "$CRED_INGESTA" == "$CRED_ENVIO" || "$CRED_INGESTA" == "$CRED_RELE" || "$CRED_ENVIO" == "$CRED_RELE" ]]; then
     echo "✗ Los tres roles (ingesta, envío y relé) tienen que nombrar credenciales DISTINTAS: el nodo que manda a Meta o al relé nunca lleva la de ingesta. No se tocó n8n." >&2; exit 2
+  fi
+  if (( SINSUFIJO )); then
+    echo "✗ --tabla-demo-a no se combina con las credenciales existentes: la atadura al alias exige la fila del teléfono de ESE alias. No se tocó n8n." >&2; exit 2
   fi
   export TIMBRE_CRED_INGESTA="$CRED_INGESTA" TIMBRE_CRED_ENVIO="$CRED_ENVIO" TIMBRE_CRED_RELE="$CRED_RELE"
 fi
@@ -357,6 +368,8 @@ def cmd_entrega(archivo, alias, base, cuerpo_out, path_out):
 
 
 RELE_INERTE = "http://relay-inerte.invalid"
+# Nombres de credencial del otro sistema (WhatsApp-Modular), ya normalizados: minúsculas y sin espacios, guiones ni guiones bajos.
+RE_AJENO = re.compile(r"segurolotengo|aab1wa|waprod|whatsappmodular|receptor|otp")
 
 
 def cmd_tabla(local, alias, sinsufijo, salida, inerte="0"):
@@ -433,7 +446,7 @@ def revisar_roles(nodos, alias):
         manda = nodo.get("name") in ("Enviar por el relé", "Enviar por Graph") or "graph.facebook.com" in p or "releBaseUrl" in p
         for tp, ref in (nodo.get("credentials") or {}).items():
             nom = (ref or {}).get("name", "")
-            if re.search(r"WA-Prod|AAB1-WA|segurolotengo", nom, re.I):
+            if RE_AJENO.search(re.sub(r"[\s_-]", "", nom.lower())):
                 errores.append("%s usa una credencial de AAB1-WA-Prod o de otro sistema: prohibido" % nodo.get("name"))
             if manda and (nom == n["ingesta"] or (ref or {}).get("id") in ids_ingesta):
                 errores.append("%s manda a Meta o al relé y llevaría la credencial de ingesta" % nodo.get("name"))
@@ -504,6 +517,61 @@ def cmd_respaldar(wfs_f, creds_f, alias, salida):
         len(propios), "con el flujo completo" if vivo else "sin flujo", len(cred)))
 
 
+def credenciales_existentes():
+    return any(os.environ.get(v) for v in ("TIMBRE_CRED_INGESTA", "TIMBRE_CRED_ENVIO", "TIMBRE_CRED_RELE"))
+
+
+RE_URL_NUMERO = re.compile(r"graph\.facebook\.com/v[0-9]+\.[0-9]+/([0-9]{8,20})/")
+
+
+def numeros_de_telefono(nodos):
+    """Los phoneNumberId literales que citan los parámetros de los nodos (clave phoneNumberId o URL de Graph)."""
+    hallados = set()
+
+    def ver(x):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k in ("phoneNumberId", "phone_number_id") and isinstance(v, str) and re.fullmatch(r"[0-9]{8,20}", v):
+                    hallados.add(v)
+                ver(v)
+        elif isinstance(x, list):
+            for i in x:
+                ver(i)
+        elif isinstance(x, str):
+            hallados.update(RE_URL_NUMERO.findall(x))
+
+    for nodo in nodos:
+        ver(nodo.get("parameters") or {})
+    return hallados
+
+
+def vincular_al_alias(wfs, indice, n, phone):
+    """Ata las credenciales de ingesta y de envío al número del alias, sin otra llamada a n8n.
+    Cada una tiene que estar citada por al menos un flujo vivo (distinto del propio del alias) cuyos parámetros
+    contengan el phoneNumberId de la tabla local, y ningún flujo vivo con OTRO phoneNumberId puede citarla.
+    Devuelve [(rol, vinculada)] sin nombres ni valores."""
+    resultado = []
+    for rol, tipo, etiqueta in (("ingesta", "httpHeaderAuth", "ingesta"), ("graph", "whatsAppApi", "envío")):
+        nom = n[rol]
+        ids = {c.get("id") for c in indice.get((tipo, nom), [])}
+        propios, ajenos = 0, 0
+        for w in wfs:
+            if w.get("name") == n["flujo"]:
+                continue
+            nodos = w.get("nodes") or []
+            cita = any(isinstance(ref, dict) and ((ref.get("id") and ref.get("id") in ids) or ref.get("name") == nom)
+                       for nodo in nodos for ref in (nodo.get("credentials") or {}).values())
+            if not cita:
+                continue
+            texto = json.dumps([nodo.get("parameters") or {} for nodo in nodos], ensure_ascii=False)
+            if re.search(r"(?<![0-9])" + re.escape(phone) + r"(?![0-9])", texto):
+                propios += 1
+            elif numeros_de_telefono(nodos):
+                ajenos += 1
+        resultado.append((etiqueta, propios >= 1 and ajenos == 0))
+    return resultado
+
+
 def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_out, plan_out):
     n = nombres(alias)
     flujo = cargar(flujo_f)
@@ -558,6 +626,10 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
             errores.append("el nodo Timbre no quedó con el path de la entrega")
     if errores:
         salir(4, "\n".join("    " + e for e in errores))
+    vinculos = vincular_al_alias(wfs, indice, n, t["phone"]) if credenciales_existentes() else []
+    if any(not ok for _, ok in vinculos):
+        salir(4, "\n".join("    credencial de %s vinculada al alias: %s" % (r, "sí" if ok else "no") for r, ok in vinculos)
+              + "\n    las credenciales del mapa no están atadas al número de este alias (sin nombres ni valores): no se escribe nada")
     w, c = buscar(wfs, creds, alias)
     if len(w) > 1 or len(c) > 1:
         salir(4, "hay duplicados del flujo o de la credencial del timbre: no se elige uno")
@@ -577,6 +649,8 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
     for nodo in flujo["nodes"]:
         for tipo, ref in (nodo.get("credentials") or {}).items():
             print("    %s <- «%s» (por nombre y tipo %s)" % (nodo["name"], ref["name"], tipo))
+    for r, ok in vinculos:
+        print("    credencial de %s vinculada al alias: %s" % (r, "sí" if ok else "no"))
 
 
 def publicada(wf):
