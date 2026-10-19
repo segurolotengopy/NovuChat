@@ -64,6 +64,13 @@ const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : nu
 const esAudio = tipo === 'audio' && mediaId !== '';
 const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';
 const categoria = (tipo === 'text' || tipo === 'interactive' || tipo === 'button') ? 'conversacion' : ((tipo === 'audio' || tipo === 'image' || tipo === 'document') ? 'medio' : 'otro');
+// PR-2: ¿esta imagen o documento es el comprobante de un QR abierto? Lo dice el SERVIDOR (`cobro` de `Traer configuración`), nunca el texto ni la imagen. Con cobro REAL: hay un QR pendiente, el cobro está
+// en revisión o el plazo venció hace menos de 24 h (el servidor decide qué hacer). Con cobro SIMULADO: cualquier foto con el QR pendiente es el comprobante de la prueba (no se baja ni se coteja).
+const rrCobroDelTurno = rrCobro(rrPanelDe(cnPrimero('Traer configuración')), cnPrimero('Config base'));
+const rrEsVisual = (tipo === 'image' || tipo === 'document');
+const esComprobante = rrEsVisual && mediaId !== '' && rrCobroDelTurno.modo === 'real' && (rrCobroDelTurno.pendiente || rrCobroDelTurno.enRevision || rrCobroDelTurno.vencidoHaceMin !== null);
+const comprobanteSimulado = rrEsVisual && rrCobroDelTurno.modo === 'simulado' && rrCobroDelTurno.pendiente;
+const mimeType = visual && typeof visual.mime_type === 'string' ? visual.mime_type.slice(0, 100) : '';
 
 return [{ json: {
   from: from,
@@ -76,6 +83,9 @@ return [{ json: {
   textoReporte: textoReporte,
   pie: pie,
   categoria: categoria,
+  esComprobante: esComprobante,
+  comprobanteSimulado: comprobanteSimulado,
+  mimeType: mimeType,
   anuncio: !!ref,
   origen: ref ? 'anuncio' : 'directo',
   esAudio: esAudio,

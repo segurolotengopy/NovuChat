@@ -11,7 +11,7 @@
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos. El código de los nodos lo arma el armador genérico
  * `../comun-sin-agente/construir.mjs` (importado, no copiado) con el `CONFIG` de este archivo. Lo propio de este archivo:
  *
- *   - `@@dato:a.b.c@@` (en cualquier texto de la plantilla) por ese dato; `@@cred:ingesta|graph|entradaPrueba` (nombre de credencial) por el del archivo de datos;
+ *   - `@@dato:a.b.c@@` (en cualquier texto de la plantilla) por ese dato; `@@cred:ingesta|graph|entradaPrueba|medios|gemini` (nombre de credencial) por el del archivo de datos;
  *   - «Config base» se llena con `configBase` (texto, número o booleano);
  *   - LA CADENA DE ENVÍO es común (`../comun-sin-agente/src/envio.mjs`, `injertar()`), con las credenciales por NOMBRE; la «puerta de la entrega» `¿Meta aceptó?`
  *     (propia) solo reencamina una conexión: el reporte saliente cuenta si Meta devolvió `messages[0].id` y ningún `error`;
@@ -43,9 +43,9 @@ export const TOPE_DE_NODOS = 48;
 export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
-  librerias: ['src/lib/rr.js'],
+  librerias: ['src/lib/cobro.js', 'src/lib/avisos.js', 'src/lib/rr.js'],
   comun: ['src/nodos/_comun.js'],
-  paquetes: { mensajes: ['../comun-sin-agente/src/mensajes.js'] },
+  paquetes: { mensajes: ['../comun-sin-agente/src/mensajes.js'], filtro: ['../comun-sin-agente/src/filtro-redaccion.js'] },
   variantes: [
     { archivo: 'rroca-ruben.json', quitar: 'Entrada de prueba', nombre: 'se toma de los datos' },
     { archivo: 'rroca-ruben.prueba.json', quitar: ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'], nombre: 'se toma de los datos' },
@@ -90,6 +90,7 @@ const FORMAS_CONFIG = {
   numeroRecepcion: /^(\d{6,20}|REEMPLAZAR_[A-Z0-9_]+)$/,
   prefijosPermitidos: /^\d{1,4}(,\d{1,4})*$/,
   telefonosDePrueba: /^(\d{6,20}(,\d{6,20})*|REEMPLAZAR_[A-Z0-9_]+)$/,
+  modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
 
@@ -104,7 +105,7 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
   const cadena = (ruta2, v) => { if (typeof v !== 'string' || v.trim() === '') errores.push(`${ruta2}: falta`); };
   cadena('nombreFlujo', d.nombreFlujo);
   cadena('nombreFlujoPrueba', d.nombreFlujoPrueba);
-  for (const c of ['ingesta', 'graph', 'graphPrueba', 'entradaPrueba']) cadena(`credenciales.${c}`, (d.credenciales || {})[c]);
+  for (const c of ['ingesta', 'graph', 'graphPrueba', 'entradaPrueba', 'medios', 'gemini']) cadena(`credenciales.${c}`, (d.credenciales || {})[c]);
   for (const c of ['ruta', 'urlVerificador', 'wabaIdEsperado']) {
     const v = (d.receptor || {})[c];
     cadena(`receptor.${c}`, v);
@@ -141,8 +142,10 @@ function reemplazarTextos(valor, datos, donde) {
 const asignaciones = (configBase) => Object.entries(configBase).map(([nombre, valor]) => ({ id: `cb_${nombre}`, name: nombre, type: typeof valor, value: valor }));
 
 // ----------------------------------------------------------------- las guardias de lo armado
-export function anfitrionPermitido(url) {
+export function anfitrionPermitido(url, nombreDelNodo = '') {
   if (MARCADOR.test(url)) return true;
+  // La única excepción: «Descargar medio» baja el medio de la URL que le devuelve Meta (la anterior, «¿Tamaño aceptable?», exige https y un tamaño).
+  if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
   const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
   if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
   return ANFITRIONES.includes(m[1].toLowerCase());
@@ -189,7 +192,7 @@ export function guardias(variante, flujo) {
   // Un nodo HTTP solo habla con Meta, con Gemini y con las Functions de la consola.
   for (const n of nodos.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
     const url = String(p(n).url || '');
-    if (!anfitrionPermitido(url)) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
+    if (!anfitrionPermitido(url, n.name)) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
   }
   // Retención de ejecuciones, orden y zona horaria.
   const st = (flujo && flujo.settings) || {};
@@ -225,7 +228,7 @@ export function armarRroca(proyecto, datos, v) {
   for (const n of plantilla.nodes) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
     for (const c of Object.values(n.credentials || {})) {
-      const m = /^@@cred:(ingesta|graph|entradaPrueba)$/.exec(String(c.name));
+      const m = /^@@cred:(ingesta|graph|entradaPrueba|medios|gemini)$/.exec(String(c.name));
       if (m) c.name = dato(datos, `credenciales.${m[1]}`, `${donde} · ${n.name}`);
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
@@ -234,12 +237,18 @@ export function armarRroca(proyecto, datos, v) {
   injertar(plantilla, {
     credenciales: { graph: dato(datos, prueba ? 'credenciales.graphPrueba' : 'credenciales.graph', donde), ingesta: dato(datos, 'credenciales.ingesta', donde) },
     ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`,
-    desde: [2120, 160],
+    desde: [5480, 160],
   });
   // Puerta de la entrega (propia): el reporte saliente cuelga de «¿Meta aceptó?». Solo se reencamina la CONEXIÓN de la cadena común; sus nodos quedan intactos.
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);
   reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
+  // El reporte saliente de ESTE flujo (propio): igual al común, más el EVENTO del QR. `qr_enviado` lleva `reglaCobro: 2` (solo el QR REAL: abre el cobro de 15 minutos, 3 intentos),
+  // `referencia` (el pedido) y `monto` (el del catálogo): contra ese número coteja el servidor. El evento viaja SOLO si el envío principal (la imagen) fue aceptado: si cayó el respaldo
+  // en texto, el cliente no tiene QR y el cobro no se abre.
+  const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
+  if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes("evento: m.evento")) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
+  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}";
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);

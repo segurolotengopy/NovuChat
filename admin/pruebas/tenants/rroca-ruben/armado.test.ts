@@ -136,11 +136,13 @@ describe('armado: orden del lienzo y sin modelo en PR-1', () => {
     expect(destinos('Reportar mensaje (entrante)', 0)).toEqual(['Puerta del turno']);
   });
 
-  it('PR-1 no tiene modelo, cobro, QR, comprobante, rescate ni disparadores por tiempo', () => {
+  it('PR-2 lleva el modelo (HTTP a Gemini, un dato), la lectura del comprobante, el cotejo y el aviso mínimo; NO lleva agente, memoria de n8n, «Registrar cierre» ni disparadores por tiempo (el rescate es PR-4)', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
       const tipos = f.nodes.map((n) => n.type).join('\n');
-      expect(tipos).not.toMatch(/langchain|googleGemini|scheduleTrigger|cron/i);
-      expect(f.nodes.map((n) => n.name).join('\n')).not.toMatch(/modelo|QR|comprobante|cobro|rescate/i);
+      expect(tipos).not.toMatch(/langchain\.(agent|memory|lmChat|chain)|scheduleTrigger|cron|whatsAppTrigger/i);
+      const nombres = f.nodes.map((n) => n.name);
+      for (const n of ['Conversar con el modelo', 'Guardar comprobante', 'Cotejar en el servidor', 'Interpretar lectura', 'Decidir turno', 'Armar avisos', 'Enviar aviso']) expect(nombres, n).toContain(n);
+      expect(nombres.join('\n')).not.toMatch(/Registrar cierre|rescate|Schedule/i);
     }
   });
 
@@ -171,11 +173,135 @@ describe('armado: lo común se INCLUYE desde su fuente, no se copia', () => {
     expect(CONFIG.paquetes.mensajes).toEqual(['../comun-sin-agente/src/mensajes.js']);
   });
 
-  it('la cadena de envío es la de `envio.mjs` (`injertar`), nodo por nodo; solo el reporte se reencamina a «¿Meta aceptó?»', () => {
-    const cadena = nodosDeEnvio({ credenciales: { graph: 'Graph WhatsApp Ruben (Bearer)', ingesta: 'NovuChat ingesta (Ruben)' }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [2120, 160] });
-    for (const n of cadena.nodes) expect(nodo(PRODUCCION, n.name), n.name).toEqual(n);
+  it('la cadena de envío es la de `envio.mjs` (`injertar`), nodo por nodo; solo el reporte se reencamina a «¿Meta aceptó?» y el reporte saliente suma el EVENTO del QR (propio)', () => {
+    const cadena = nodosDeEnvio({ credenciales: { graph: 'Graph WhatsApp Ruben (Bearer)', ingesta: 'NovuChat ingesta (Ruben)' }, ingestaUrl: 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', desde: [5480, 160] });
+    for (const n of cadena.nodes) {
+      if (n.name === 'Reportar mensaje (saliente)') continue;
+      expect(nodo(PRODUCCION, n.name), n.name).toEqual(n);
+    }
+    // El reporte saliente es la cadena común con UN cambio declarado: el cuerpo (`jsonBody`) lleva el evento `qr_enviado`.
+    const comun = cadena.nodes.find((n) => n.name === 'Reportar mensaje (saliente)')!;
+    const propio = nodo(PRODUCCION, 'Reportar mensaje (saliente)');
+    expect({ ...propio, parameters: { ...propio.parameters, jsonBody: '' } }).toEqual({ ...comun, parameters: { ...comun.parameters, jsonBody: '' } });
+    const cuerpo = String(propio.parameters['jsonBody']);
+    for (const campo of ['r.evento = m.evento', 'r.reglaCobro = 2', 'r.referencia = m.referencia', 'r.monto = m.monto']) expect(cuerpo).toContain(campo);
+    // El evento viaja SOLO si el envío principal (la imagen) fue aceptado: si cayó el respaldo en texto, el cobro no se abre.
+    expect(cuerpo).toContain("$('Enviar a WhatsApp').item.json");
     expect(PRODUCCION.connections['¿Reportar? (saliente)']!['main']![0]!.map((c) => c.node)).toEqual(['¿Meta aceptó?']);
     expect(PRODUCCION.connections['¿Meta aceptó?']!['main']![0]!.map((c) => c.node)).toEqual(['Reportar mensaje (saliente)']);
+  });
+
+  it('«Armar mensajes» lleva `filtro-redaccion.js` byte a byte, desde `comun-sin-agente/src/` (el modelo no sale sin pasar por él)', () => {
+    const fuente = leer(join(FLUJOS, 'comun-sin-agente/src/filtro-redaccion.js')).trimEnd();
+    expect(codigo(PRODUCCION, 'Armar mensajes')).toContain(fuente);
+    expect(CONFIG.paquetes.filtro).toEqual(['../comun-sin-agente/src/filtro-redaccion.js']);
+    expect(codigo(PRODUCCION, 'Armar mensajes')).toContain('cmRevisarRedaccion(');
+  });
+});
+
+describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)', () => {
+  const y = (f: Flujo, n: string): number => nodo(f, n).position![1];
+  const x = (f: Flujo, n: string): number => nodo(f, n).position![0];
+  const destinos = (f: Flujo, n: string, salida = 0): string[] => (f.connections[n]!['main']![salida] ?? []).map((c) => c.node);
+
+  it('cuenta de nodos: producción y prueba dentro del tope (48) y de la meta de producción (46)', () => {
+    expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(46);
+    expect(PRUEBA.nodes.length).toBeLessThanOrEqual(46);
+    expect(PRODUCCION.nodes.length).toBe(PRUEBA.nodes.length + 5);
+  });
+
+  it('«Reportar mensaje (entrante)» sigue ARRIBA de toda la rama que responde (medios, decisión, modelo, avisos y mensajes)', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      const arriba = y(f, 'Reportar mensaje (entrante)');
+      for (const n of ['Puerta del turno', '¿Bajar medio?', 'Decidir turno', 'Conversar con el modelo', 'Armar avisos', 'Enviar aviso', 'Armar mensajes']) expect(arriba, n).toBeLessThan(y(f, n));
+      expect(y(f, 'Resumen del turno')).toBeGreaterThan(y(f, 'Armar mensajes'));
+    }
+  });
+
+  it('«Guardar comprobante» es un nodo TERMINAL, cuelga de «Descargar medio» y va ARRIBA de «¿Es PDF?» (corre antes: la imagen se guarda aunque la lectura falle)', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      expect(f.connections['Guardar comprobante']).toBeUndefined();
+      expect(destinos(f, 'Descargar medio')).toEqual(['Guardar comprobante', '¿Es PDF?']);
+      expect(y(f, 'Guardar comprobante')).toBeLessThan(y(f, '¿Es PDF?'));
+      expect(nodo(f, 'Guardar comprobante').parameters['url']).toBe('https://us-east1-novuchat-demo.cloudfunctions.net/guardarComprobante');
+    }
+  });
+
+  it('la cadena del comprobante: Puerta → ¿Bajar medio? → URL → tamaño → descarga → (guardar | PDF?) → lectura → cotejo → Decidir turno; todo lo que falla cae en «Decidir turno», que lo trata como «sin cotejar»', () => {
+    const f = PRODUCCION;
+    expect(destinos(f, 'Puerta del turno')).toEqual(['¿Bajar medio?']);
+    expect(destinos(f, '¿Bajar medio?', 0)).toEqual(['Obtener URL del medio']);
+    expect(destinos(f, '¿Bajar medio?', 1)).toEqual(['Decidir turno']);
+    expect(destinos(f, 'Obtener URL del medio')).toEqual(['¿Tamaño aceptable?']);
+    expect(destinos(f, '¿Tamaño aceptable?', 0)).toEqual(['Descargar medio']);
+    expect(destinos(f, '¿Tamaño aceptable?', 1)).toEqual(['Decidir turno']);
+    expect(destinos(f, '¿Es PDF?', 0)).toEqual(['Leer comprobante (PDF)']);
+    expect(destinos(f, '¿Es PDF?', 1)).toEqual(['Leer comprobante (imagen)']);
+    expect(destinos(f, 'Leer comprobante (PDF)')).toEqual(['Interpretar lectura']);
+    expect(destinos(f, 'Leer comprobante (imagen)')).toEqual(['Interpretar lectura']);
+    expect(destinos(f, 'Interpretar lectura')).toEqual(['Cotejar en el servidor']);
+    expect(destinos(f, 'Cotejar en el servidor')).toEqual(['Decidir turno']);
+    expect(destinos(f, 'Decidir turno')).toEqual(['¿Conversar con el modelo?']);
+    expect(destinos(f, '¿Conversar con el modelo?', 0)).toEqual(['Conversar con el modelo']);
+    expect(destinos(f, '¿Conversar con el modelo?', 1)).toEqual(['Armar avisos']);
+    expect(destinos(f, 'Conversar con el modelo')).toEqual(['Armar avisos']);
+    expect(destinos(f, 'Armar avisos')).toEqual(['¿Hay avisos?']);
+    expect(destinos(f, '¿Hay avisos?', 0)).toEqual(['Enviar aviso']);
+    expect(destinos(f, '¿Hay avisos?', 1)).toEqual(['Armar mensajes']);
+    expect(destinos(f, 'Enviar aviso')).toEqual(['Armar mensajes']);
+    expect(destinos(f, 'Armar mensajes')).toEqual(['Resumen del turno', '¿Enviar de verdad?']);
+  });
+
+  it('el avance de izquierda a derecha respeta el orden de ejecución: el aviso corre ANTES de armar el mensaje que dice si salió', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      expect(x(f, 'Enviar aviso')).toBeLessThan(x(f, 'Armar mensajes'));
+      expect(x(f, 'Decidir turno')).toBeLessThan(x(f, 'Armar avisos'));
+      expect(x(f, 'Cotejar en el servidor')).toBeLessThan(x(f, 'Decidir turno'));
+    }
+  });
+
+  it('la pausa por persona no baja medios ni llama al modelo: ambas puertas miran la ruta de la puerta del turno', () => {
+    expect(String(nodo(PRODUCCION, '¿Bajar medio?').parameters['conditions']!['conditions'][0].leftValue)).toContain("ruta === 'sigue'");
+    expect(String(nodo(PRODUCCION, 'Decidir turno').parameters['jsCode'])).toContain("puerta.ruta !== 'sigue'");
+  });
+
+  it('ningún JSON lleva la clave `link` (el QR sale por `id`): ni en los parámetros ni en el código de los nodos', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      const t = JSON.stringify(f);
+      expect(t).not.toMatch(/\blink\s*:/);
+      expect(t).not.toMatch(/\\"link\\"|"link"/);
+      expect(t).not.toMatch(/image:\s*\{\s*link/);
+    }
+    // El armado del QR usa `image: { id: … }`.
+    expect(String(nodo(PRODUCCION, 'Armar mensajes').parameters['jsCode'])).toMatch(/image: \{ id: mediaId, caption: pie \}/);
+  });
+
+  it('los medios: «Descargar medio» es el ÚNICO nodo que baja de la URL que devuelve Meta; cualquier otra expresión de URL la rechaza la guardia', () => {
+    expect(anfitrionPermitido('={{ $json.url }}', 'Descargar medio')).toBe(true);
+    expect(anfitrionPermitido('={{ $json.url }}', 'Traer configuración')).toBe(false);
+    expect(anfitrionPermitido('={{ $json.otra }}', 'Descargar medio')).toBe(false);
+    const roto = copia(PRODUCCION);
+    nodo(roto, 'Descargar medio').parameters['url'] = '={{ $json.otraCosa }}';
+    expect(guardias('produccion', roto).join('|')).toMatch(/anfitrión/);
+    const roto2 = copia(PRODUCCION);
+    nodo(roto2, 'Conversar con el modelo').parameters['url'] = 'https://evil.example.invalid/x';
+    expect(guardias('produccion', roto2).join('|')).toMatch(/anfitrión/);
+  });
+
+  it('la verificación del receptor sigue igual: sin «Continue on Fail» en ninguno de los nodos nuevos que decide el turno', () => {
+    for (const n of ['Decidir turno', 'Armar avisos', 'Armar mensajes', 'Interpretar lectura']) {
+      expect((nodo(PRODUCCION, n) as J)['onError'], n).toBeUndefined();
+    }
+  });
+
+  it('el modelo y la credencial de Gemini son DATOS (nada escrito en el flujo): el modelo sale de «Config base» y la credencial va por nombre', () => {
+    expect(String(nodo(PRODUCCION, 'Conversar con el modelo').parameters['url'])).toContain('{{ $json.modelo }}');
+    const cb = (nodo(PRODUCCION, 'Config base').parameters['assignments'] as J)['assignments'] as J[];
+    expect(cb.find((a) => a['name'] === 'modelo')!['value']).toBe('gemini-3.5-flash-lite');
+    expect(cb.find((a) => a['name'] === 'cobroSimuladoActivo')!['value']).toBe(false);
+    for (const n of ['Conversar con el modelo', 'Leer comprobante (PDF)', 'Leer comprobante (imagen)']) {
+      expect(String((nodo(PRODUCCION, n).credentials as J)['googlePalmApi'].name), n).toBe('Gemini (Ruben)');
+    }
   });
 });
 
@@ -245,7 +371,7 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
     expect(propio('carga-de-entrada.js')).toBe(esperado);
   });
 
-  it('«Interpretar entrada»: el origen sin el contrato del chat (eventos y rubros) y con la `categoria`', () => {
+  it('«Interpretar entrada»: el origen sin el contrato del chat (eventos y rubros), con la `categoria` y (PR-2) con `esComprobante`, `comprobanteSimulado` y `mimeType`', () => {
     const esperado = derivar(chat('interpretar-entrada.js'), [
       ['// INTERPRETAR ENTRADA: el mensaje entrante, normalizado a UN evento de texto para el modelo.', '// INTERPRETAR ENTRADA: el mensaje entrante, normalizado (tipo, texto, medio y categoría). PR-1 no tiene modelo: la categoría solo dice qué clase de entrada llegó.'],
       ['// Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen SIN `evento`: lo arma «Registrar evento» con lo que lean los nodos de medios.', '// Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen con `categoria: medio` y su `mediaId`; todo lo demás conversable, con `categoria: conversacion`; cualquier otro tipo, con `categoria: otro` (el flujo igual contesta cortésmente).'],
@@ -258,8 +384,8 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
       ["  // Un botón sin texto no es una imagen: queda como «una respuesta rápida».\n  evento = texto.trim() === '' ? chEventoOtro('button') : chEventoTexto(texto);\n", ''],
       ['  evento = chEventoOtro(tipo);\n', ''],
       ["if (tipo === 'text' && !evento) return [];", "if (tipo === 'text' && texto.trim() === '') return [];"],
-      ["const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\n", "const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\nconst categoria = (tipo === 'text' || tipo === 'interactive' || tipo === 'button') ? 'conversacion' : ((tipo === 'audio' || tipo === 'image' || tipo === 'document') ? 'medio' : 'otro');\n"],
-      ['  evento: evento,\n', '  categoria: categoria,\n'],
+      ["const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\n", "const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\nconst categoria = (tipo === 'text' || tipo === 'interactive' || tipo === 'button') ? 'conversacion' : ((tipo === 'audio' || tipo === 'image' || tipo === 'document') ? 'medio' : 'otro');\n"+'// PR-2: ¿esta imagen o documento es el comprobante de un QR abierto? Lo dice el SERVIDOR (`cobro` de `Traer configuración`), nunca el texto ni la imagen. Con cobro REAL: hay un QR pendiente, el cobro está\n// en revisión o el plazo venció hace menos de 24 h (el servidor decide qué hacer). Con cobro SIMULADO: cualquier foto con el QR pendiente es el comprobante de la prueba (no se baja ni se coteja).\nconst rrCobroDelTurno = rrCobro(rrPanelDe(cnPrimero(\'Traer configuración\')), cnPrimero(\'Config base\'));\nconst rrEsVisual = (tipo === \'image\' || tipo === \'document\');\nconst esComprobante = rrEsVisual && mediaId !== \'\' && rrCobroDelTurno.modo === \'real\' && (rrCobroDelTurno.pendiente || rrCobroDelTurno.enRevision || rrCobroDelTurno.vencidoHaceMin !== null);\nconst comprobanteSimulado = rrEsVisual && rrCobroDelTurno.modo === \'simulado\' && rrCobroDelTurno.pendiente;\nconst mimeType = visual && typeof visual.mime_type === \'string\' ? visual.mime_type.slice(0, 100) : \'\';\n'],
+      ['  evento: evento,\n', '  categoria: categoria,\n  esComprobante: esComprobante,\n  comprobanteSimulado: comprobanteSimulado,\n  mimeType: mimeType,\n'],
     ]);
     expect(propio('interpretar-entrada.js')).toBe(esperado);
   });
