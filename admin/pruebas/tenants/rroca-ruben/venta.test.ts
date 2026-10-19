@@ -857,6 +857,8 @@ describe('+0 mensajes agregados al cliente y nunca textos prohibidos', () => {
 
   it('todos los textos fijos de PR-2 cumplen las prohibiciones 3 y 4 (frases prohibidas sobre CADA texto)', () => {
     const codigo = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
+    // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
+    // nosemgrep: devsecops.js-eval-prohibido
     const fn = new Function(codigo + '\nreturn { RR_NIEGA_IA, rrNorm, CB_PROHIBIDAS, cbCanon, rrTextoComprobante, rrTextoDerivacion, rrTextoComplemento, rrTextoComplementos, rrTextoQrPendiente, rrPieQr, rrSaludo, RR_TEXTO_INGRESOS, RR_TEXTO_IMAGEN, RR_TEXTO_AUDIO, RR_TEXTO_OTRO, RR_TEXTO_MODELO_CAIDO };');
     const L = fn() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
     const cat = { pack: 60, libro: 32, closer: 20, videos: 25 };
