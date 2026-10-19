@@ -184,7 +184,13 @@ function livianos(): Caso[] {
     modulosMapa: { estado: 'activo', flujos: ['venta'], modulos: { agenda: true } },
   };
   for (const [f, ficha] of Object.entries(FICHAS)) {
-    for (const cw of [true, false, 'true', 1, null]) add(`cw=${JSON.stringify(cw)}|ficha=${f}`, { catalogoWebActivo: cw }, { ficha });
+    for (const cw of [true, false, 'true', 1, null]) {
+      // CAMBIO INTENCIONAL DE H2b-1: la ficha con la lista `modulos` que trae `catalogo-web` (aunque su flujo sea solo
+      // `agendamiento`) ahora SÍ enciende el catálogo web; la base anterior lo decidía por el flujo `venta` y lo negaba
+      // (el emulador rotula esa denegación con el texto del límite). Es el único caso de esta tabla declarado válido a mano.
+      const esperado = f === 'modulosLista' && cw === true ? ({ esperado: 'P' } as const) : {};
+      add(`cw=${JSON.stringify(cw)}|ficha=${f}`, { catalogoWebActivo: cw }, { ficha, ...esperado });
+    }
   }
   add('ficha=inexistente', { direccion: 'y' }, { ficha: null });
 

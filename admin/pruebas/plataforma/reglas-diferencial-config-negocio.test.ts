@@ -295,7 +295,19 @@ describe('reglas: el recorte de config/negocio decide IGUAL que la base anterior
     console.log(`DIFERENCIAL otros documentos: ${otrosAntes.size} operaciones (${nombresDeFichas.length} fichas × ${OPS.length}); `
       + `permitidas ${[...otrosAhora.values()].filter((v) => v === 'P').length}; diferencias: ${difs.length}`
       + (difs.length ? `\n${difs.map((k) => `  ${k}: antes ${otrosAntes.get(k)} -> ahora ${otrosAhora.get(k)}`).join('\n')}` : ''));
-    expect(difs).toEqual([]);
+    // CAMBIOS INTENCIONALES DE H2b-1, enumerados (no una tolerancia): encender el catálogo web se decide por el módulo
+    // `catalogo-web` de la lista `modulos`, no por el flujo `venta`. Las dos fichas tienen el flujo `venta` (o ambos) y
+    // una lista `modulos` SIN `catalogo-web`: la base anterior lo permitía por el flujo y ahora se niega. La contraparte
+    // (lista con `catalogo-web` y sin `venta` ahora se permite) está en la parte A, caso `cw=true|ficha=modulosLista`.
+    const INTENCIONALES_H2B1 = [
+      ['modulosSoloAgenda | update config/negocio catalogoWebActivo=true', 'P', 'N'],
+      ['modulosVacia | update config/negocio catalogoWebActivo=true', 'P', 'N'],
+    ] as const;
+    expect(difs.sort()).toEqual(INTENCIONALES_H2B1.map(([k]) => k).sort());
+    for (const [k, antes, ahora] of INTENCIONALES_H2B1) {
+      expect(otrosAntes.get(k), `${k}: antes`).toBe(antes);
+      expect(otrosAhora.get(k), `${k}: ahora`).toBe(ahora);
+    }
     expect([...otrosAhora.values()].filter((v) => v === 'LIMITE')).toEqual([]);
   }, 1_800_000);
 
