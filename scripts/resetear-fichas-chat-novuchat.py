@@ -8,7 +8,9 @@ Uso (desde la copia base, con el entorno del chat cargado y sin imprimir nada):
 Lee N8N_BASE_URL / N8N_API_KEY / N8N_WORKFLOW_ID del entorno (no los imprime).
 Nunca toca las fichas de prospectos: solo las que terminan en los sufijos dados.
 Regla de Andres (11/10): se resetea antes de decir «pueden probar» y se le avisa.
-Seco por defecto; --aplicar escribe. Antes de escribir, respalda el estado
+Seco por defecto; --aplicar escribe (y exige --respaldo <carpeta>). El PUT sobre un
+flujo activo puede reiniciar sus webhooks: aplicarlo en la ventana de mantenimiento
+23:30-01:30. Si el flujo cambia entre la lectura y la escritura, aborta sin escribir. Antes de escribir, respalda el estado
 completo (modo 600). Solo cambia staticData: nodos, conexiones y settings se
 reescriben TAL CUAL estan publicados. Verifica al final releyendo el flujo.
 """
@@ -28,7 +30,11 @@ if not SUFIJOS or any(not (x.isdigit() and len(x) == 8) for x in SUFIJOS):
 if len(SUFIJOS) > 3 or len(set(SUFIJOS)) != len(SUFIJOS):
     sys.exit("✗ --sufijos admite como maximo 3 sufijos distintos (las 3 fichas de prueba).")
 APLICAR = "--aplicar" in sys.argv
-DESTINO = opcion("--respaldo") or "."
+DESTINO = opcion("--respaldo")
+# El respaldo trae TODOS los telefonos: con --aplicar la carpeta es obligatoria y
+# explicita (nunca el directorio actual, que puede ser el repositorio).
+if APLICAR and not DESTINO:
+    sys.exit("✗ --aplicar exige --respaldo <carpeta> (el respaldo guarda el estado completo).")
 
 base = os.environ["N8N_BASE_URL"].rstrip("/") + "/api/v1"
 wid = os.environ["N8N_WORKFLOW_ID"]
@@ -72,6 +78,13 @@ if not APLICAR:
 if not objetivo:
     print("\nNada que borrar.")
     sys.exit(0)
+
+# El GET de arriba y el PUT no son atomicos y el PUT reemplaza TODO el staticData:
+# si una conversacion escribio su ficha entre ambos, se perderia. Se relee justo
+# antes y, si algo cambio, no se escribe nada (correr de nuevo, con poco trafico).
+_, justo = llamar("GET")
+if justo.get("staticData") != vivo.get("staticData") or justo.get("nodes") != vivo.get("nodes"):
+    sys.exit("✗ El flujo cambio entre la lectura y la escritura: no se escribio nada. Vuelva a correrlo.")
 
 sello = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 ruta = os.path.join(DESTINO, f"respaldo-estado-chat-novuchat-{sello}.local.json")

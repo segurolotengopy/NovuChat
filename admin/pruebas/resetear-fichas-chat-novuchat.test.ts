@@ -6,7 +6,7 @@
  * sufijos, rechaza más de 3 sufijos o repetidos, y se niega a borrar cuando un sufijo es ambiguo.
  */
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -27,6 +27,9 @@ let servidor: Server;
 let url = '';
 let vivo: J = {};
 let puts: J[] = [];
+// Simula una conversación que escribe su ficha entre la lectura y la escritura: en el GET número `n` el estado ya cambió.
+let cambiaEnElGet = 0;
+let gets = 0;
 const carpetas: string[] = [];
 
 function leer(req: IncomingMessage): Promise<string> {
@@ -44,6 +47,10 @@ beforeAll(async () => {
       puts.push(cuerpo);
       vivo = { ...vivo, staticData: cuerpo.staticData };
     }
+    if (req.method === 'GET') {
+      gets += 1;
+      if (cambiaEnElGet && gets === cambiaEnElGet) vivo = { ...vivo, staticData: { global: { chatNovuchat: { ...vivo.staticData.global.chatNovuchat, 'nueva-ficha': { a: 9 } } } } };
+    }
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify(vivo));
   });
@@ -56,6 +63,8 @@ afterAll(() => {
 });
 afterEach(() => {
   puts = [];
+  cambiaEnElGet = 0;
+  gets = 0;
 });
 
 function flujo(mapa: J | null): J {
@@ -70,11 +79,11 @@ function flujo(mapa: J | null): J {
 }
 const mapaCompleto = (): J => ({ [ficha(PRUEBA[0]!)]: { a: 1 }, [ficha(PRUEBA[1]!)]: { a: 2 }, [ficha(PRUEBA[2]!)]: { a: 3 }, [ficha(PROSPECTO)]: { prospecto: true } });
 
-function correr(args: string[]): Promise<{ codigo: number; salida: string }> {
+function correr(args: string[], conRespaldo = true): Promise<{ codigo: number; salida: string }> {
   const carpeta = mkdtempSync(join(tmpdir(), 'reset-fichas-'));
   carpetas.push(carpeta);
   return new Promise((ok) => {
-    const p = spawn('python3', ['-I', SCRIPT, ...args, '--respaldo', carpeta], {
+    const p = spawn('python3', ['-I', SCRIPT, ...args, ...(conRespaldo ? ['--respaldo', carpeta] : [])], {
       env: { PATH: process.env.PATH ?? '', N8N_BASE_URL: url, N8N_API_KEY: 'clave-de-prueba', N8N_WORKFLOW_ID: 'W1' },
     });
     let salida = '';
@@ -132,9 +141,16 @@ describe('resetear-fichas-chat-novuchat.py', () => {
 
   it('NEGACIÓN: rechaza sufijos repetidos, sin sufijos y sufijos que no son 8 dígitos', async () => {
     vivo = flujo(mapaCompleto());
-    for (const args of [['--sufijos', `${PRUEBA[0]},${PRUEBA[0]}`], [], ['--sufijos', '1234'], ['--sufijos', 'abcdefgh']]) {
+    const casos: [string[], string][] = [
+      [['--sufijos', `${PRUEBA[0]},${PRUEBA[0]}`], 'como maximo 3'],
+      [[], 'Falta --sufijos'],
+      [['--sufijos', '1234'], 'Falta --sufijos'],
+      [['--sufijos', 'abcdefgh'], 'Falta --sufijos'],
+    ];
+    for (const [args, mensaje] of casos) {
       const r = await correr([...args, '--aplicar']);
       expect(r.codigo).not.toBe(0);
+      expect(r.salida).toContain(mensaje);
     }
     expect(puts).toHaveLength(0);
   });
@@ -151,6 +167,33 @@ describe('resetear-fichas-chat-novuchat.py', () => {
     vivo = flujo(null);
     const r = await correr(['--sufijos', PRUEBA.join(','), '--aplicar']);
     expect(r.codigo).not.toBe(0);
+    expect(r.salida).toContain('No hay staticData');
     expect(puts).toHaveLength(0);
+  });
+
+  it('NEGACIÓN: --aplicar sin --respaldo se rechaza (no escribe el respaldo en el directorio actual)', async () => {
+    vivo = flujo(mapaCompleto());
+    const r = await correr(['--sufijos', PRUEBA.join(','), '--aplicar'], false);
+    expect(r.codigo).not.toBe(0);
+    expect(r.salida).toContain('exige --respaldo');
+    expect(puts).toHaveLength(0);
+  });
+
+  it('NEGACIÓN: si el flujo cambia entre la lectura y la escritura no escribe nada', async () => {
+    vivo = flujo(mapaCompleto());
+    cambiaEnElGet = 2; // el 1.º GET es la lectura; el 2.º, justo antes del PUT, ya trae una ficha nueva
+    const r = await correr(['--sufijos', PRUEBA.join(','), '--aplicar']);
+    expect(r.codigo).not.toBe(0);
+    expect(r.salida).toContain('cambio entre la lectura y la escritura');
+    expect(puts).toHaveLength(0);
+    expect(readdirSync(carpetaDe(r.salida))).toHaveLength(0);
+  });
+
+  it('el respaldo es exactamente el estado leído antes de escribir', async () => {
+    vivo = flujo(mapaCompleto());
+    const antes = structuredClone(vivo.staticData);
+    const r = await correr(['--sufijos', PRUEBA.join(','), '--aplicar']);
+    const archivo = readdirSync(carpetaDe(r.salida))[0]!;
+    expect(JSON.parse(readFileSync(join(carpetaDe(r.salida), archivo), 'utf8'))).toEqual(antes);
   });
 });
