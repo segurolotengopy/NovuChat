@@ -24,6 +24,11 @@
     "prefijosPermitidos": "591",
     "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
     "modelo": "gemini-3.5-flash-lite",
-    "cobroSimuladoActivo": false
+    "cobroSimuladoActivo": false,
+    "avisoComprobantePlantilla": "aviso_comprobante_recibido",
+    "avisoComprobanteEstado": "PENDING",
+    "avisoConsultaPlantilla": "aviso_consulta_para_ruben",
+    "avisoConsultaEstado": "PENDING",
+    "avisoPlantillaIdioma": "es"
   }
 }

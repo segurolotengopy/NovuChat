@@ -24,8 +24,16 @@ const cat = plan.cat && typeof plan.cat === 'object' ? plan.cat : {};
 const fichaAntes = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from));
 
 const rrId = (j) => { const m = j && j.messages; return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== ''; };
-const avisoPlaneado = !!plan.aviso;
-const avisoSalio = (avisoPlaneado && (cnTodos('Enviar aviso').some(rrId) || (prueba && cfg.enviarDeVerdad !== true))) || plan.avisoRepetido === true;
+// Lo que pasó con el aviso a Rubén lo dice «Armar avisos» (`planeado`: había un aviso y se armó, por texto libre o por plantilla; `repetido`: ya salió uno por el mismo motivo hace menos de 30 minutos;
+// `motivoFallo`: por qué no se pudo armar, p. ej. «plantilla_no_configurada»). «Ya le avisé» exige un `wamid` real de «Enviar aviso»; sin eso, el texto dice la verdad y trae el botón.
+const av = cnPrimero('Armar avisos') || {};
+const avisoPlaneado = av.planeado === true;
+const avisoRepetido = av.repetido === true;
+const avisoEnviado = avisoPlaneado && (cnTodos('Enviar aviso').some(rrId) || (prueba && cfg.enviarDeVerdad !== true));
+// Un aviso suprimido por el límite de 30 minutos trató OTRO contenido en los motivos de texto variable (la consulta que el modelo no supo, el comprobante sin cotejar): ahí NO se dice «le avisé» de esta vez.
+const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo');
+const avisoSalio = avisoEnviado || (avisoRepetido && !repetidoVariable);
+const estadoAviso = repetidoVariable ? 'repetido' : avisoSalio;
 
 let m = null;               // el item del mensaje (cmMensaje) o null
 let tipoDePlan = String(plan.tipo || 'nada');
@@ -51,7 +59,10 @@ const conRuben = (cuerpo) => {
 const menu1 = () => rrMenu(1, cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []));
 
 if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
-  if (puerta.responder === true && String(puerta.texto || '').trim() !== '') m = texto(String(puerta.texto));
+  if (puerta.ruta === 'uso_extendido' && puerta.responder === true && String(puerta.texto || '').trim() !== '') {
+    // Estado «operador»: el texto fijo promete que una persona continúa la conversación. Solo sale tal cual si el aviso a Rubén salió; si no, el texto dice la verdad. Siempre con el botón de Rubén.
+    m = conRuben(avisoSalio ? String(puerta.texto) : rrTextoDerivacion('consulta', false));
+  } else if (puerta.responder === true && String(puerta.texto || '').trim() !== '') m = texto(String(puerta.texto));
 } else if (puerta.ruta === 'sigue') {
   // El botón «usado» sale del PRODUCTO del QR (también si el producto se eligió por texto prellenado, sin botón) o, si no, del botón pulsado.
   if (tipoDePlan === 'qr' && RR_PRODUCTOS[plan.producto]) usadoNuevo = RR_PRODUCTOS[plan.producto].boton;
@@ -67,21 +78,27 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   } else if (tipoDePlan === 'modelo') {
     // LO QUE REDACTA EL MODELO: se revisa y se pule; un rechazo (monto, promesa, enlace, negar ser IA, varias preguntas…), un error del servicio o un texto vacío caen al texto fijo.
     const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
-    const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
-      maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [rrExtraRedaccion],
-    });
-    const bueno = rev.motivo === '' && rev.texto.trim() !== '';
-    const cuerpo = bueno ? rev.texto : RR_TEXTO_MODELO_CAIDO;
-    if (bueno) ultimoModelo = cuerpo.slice(0, 300);
-    m = conBotones(cuerpo, menu1());
-    tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
+    if (rrEsDerivar(crudo)) {
+      // DERIVAR: el modelo no supo responder. La palabra jamás llega al cliente: aviso a Rubén (lo armó «Armar avisos») y el botón.
+      tipoDePlan = 'derivar';
+      m = conRuben(rrTextoDerivacion('consulta', estadoAviso));
+    } else {
+      const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
+        maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [rrExtraRedaccion],
+      });
+      const bueno = rev.motivo === '' && rev.texto.trim() !== '';
+      const cuerpo = bueno ? rev.texto : RR_TEXTO_MODELO_CAIDO;
+      if (bueno) ultimoModelo = cuerpo.slice(0, 300);
+      m = conBotones(cuerpo, menu1());
+      tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
+    }
   } else if (tipoDePlan === 'qr') {
     const monto = rrPrecio(cat, plan.producto);
     const mediaId = rrMediaId(plan.mediaId);
     if (monto === null || monto !== plan.monto || mediaId === '' || !/^[A-Za-z0-9]{3,40}$/.test(String(plan.pedidoId || ''))) {
       // Nunca un QR sin monto del catálogo o sin id de medio: se deriva a Rubén.
       tipoDePlan = 'derivar';
-      m = conRuben(rrTextoDerivacion('sin_medio', false));
+      m = conRuben(rrTextoDerivacion('qr_sin_aviso', false));
     } else {
       const pie = rrSeguro(rrPieQr(plan.producto, monto, plan.pedidoId, plan.conPresentacion === true, plan.simulado === true));
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
@@ -96,10 +113,10 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   } else if (tipoDePlan === 'qr_pendiente') {
     m = conRuben(rrTextoQrPendiente(plan.producto, plan.monto));
   } else if (tipoDePlan === 'comprobante') {
-    const r = rrTextoComprobante(plan.resultado, plan.causa, avisoSalio, plan.diferencia);
+    const r = rrTextoComprobante(plan.resultado, plan.causa, estadoAviso, plan.diferencia);
     m = r.boton === true ? conRuben(r.cuerpo) : texto(r.cuerpo);
   } else if (tipoDePlan === 'derivar') {
-    m = conRuben(rrTextoDerivacion(plan.motivo, avisoSalio));
+    m = conRuben(rrTextoDerivacion(plan.motivo, estadoAviso));
   } else if (tipoDePlan === 'imagen_otra') {
     m = texto(RR_TEXTO_IMAGEN);
   } else if (tipoDePlan === 'audio') {
@@ -120,7 +137,8 @@ if (claveOk) {
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
   if (m) ficha.saludado = true;
-  if (avisoPlaneado && plan.aviso.tipo === 'consulta' && avisoSalio) ficha.ultimoAvisoConsultaMs = ahora;
+  // El límite de 30 minutos por motivo: se fija solo si el aviso SALIÓ (no si se repitió ni si no se pudo enviar).
+  if (avisoPlaneado && !avisoRepetido && avisoSalio && typeof av.clave === 'string' && RR_CLAVES_AVISO.indexOf(av.clave) >= 0) ficha.avisosConsulta[av.clave] = ahora;
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);
   if (ultimoModelo !== undefined) ficha.ultimoModelo = ultimoModelo;
   // MARCA PROVISIONAL del QR: se fija aquí (el id del pedido y la guarda de 15 minutos necesitan existir ya) pero `Resumen del turno` la DESCARTA con `qrPrevio` si Meta no devolvió el `wamid` del QR
@@ -133,7 +151,7 @@ if (claveOk) {
   rrBarrer(fichas.mapa, ahora);
 }
 
-const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado ? (avisoSalio ? 'salio' : 'no_salio') : 'ninguno' };
+const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio || avisoRepetido ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno') };
 let numero = from;
 if (prueba) numero = telPrueba;
 // `mensajes` se calcula DESPUÉS de decidir el número: en prueba con un teléfono no permitido (`telPrueba` vacío) no sale nada y el resumen lo dice.
