@@ -144,7 +144,16 @@ function crear(o: Opciones = {}) {
     'Guardar comprobante': () => o.guardar ?? { statusCode: 200, body: { ruta: 'tenants/rroca-ruben/comprobantes/2026-10-05/abc_1.jpg' } },
     'Leer comprobante (imagen)': () => (o.lectura === 'ilegible' ? {} : geminiTexto(JSON.stringify(o.lectura ?? { monto: '60.00', cuentaDestino: '59100000077', nombreCuenta: 'Titular Ejemplo', fecha: '05/10/2026', hora: '10:02', banco: 'Banco Ejemplo' }))),
     'Leer comprobante (PDF)': () => geminiTexto(JSON.stringify({ monto: '60.00', cuentaDestino: '59100000077', nombreCuenta: 'Titular Ejemplo', fecha: '05/10/2026', hora: '10:02', banco: 'Banco Ejemplo' })),
-    'Cotejar en el servidor': o.cotejo ?? cotejoValido,
+    // Como el servidor: un cotejo que RESUELVE el cobro (válido, aproximado, tardío, en revisión, ya resuelto) lo cierra; «reintentar» lo deja abierto.
+    'Cotejar en el servidor': (ll) => {
+      const r = (o.cotejo ?? cotejoValido)(ll);
+      const estado = String((r['body'] as J | undefined)?.['estado'] ?? '');
+      if (r['statusCode'] === 200 && estado !== 'reintentar') {
+        const tel = ll.cuerpo?.['telefono'];
+        for (const [t, c] of Object.entries(cobros)) if (tel === undefined || t === String(tel)) c.pendiente = false;
+      }
+      return r;
+    },
   };
   const mundo: Mundo = crearMundo({
     flujo: o.flujo ?? PRODUCCION,
@@ -869,6 +878,73 @@ describe('el JSON de prueba: el aviso y el QR respetan el modo prueba', () => {
     expect(r['mensajes'][0].payload.type).toBe('image');
     expect(r['mensajes'][0].payload.image.id).toBe(MEDIA_QR);
     expect(tieneClaveLink(r['mensajes'][0].payload)).toBe(false);
+  });
+});
+
+describe('revisión del PR-2: la guarda del QR se libera al resolverse el comprobante', () => {
+  const qrAbierto = /QR abierto/i;
+  const conQr3 = (o: Opciones = {}): Mundial => { const w = crear(o); pedirQr(w, 'libro'); return w; };
+
+  it('QR del libro -> comprobante válido (el servidor cierra el cobro) -> «Closer» y el prellenado 3/4 dan su oferta y el botón da un QR de 20 Bs, NO «Ya tienes un QR abierto»', () => {
+    for (const siguiente of ['boton', 'prellenado3', 'prellenado4', 'texto'] as const) {
+      const w = conQr3({ lectura: { monto: '32.00', cuentaDestino: '59100000077', nombreCuenta: 'Titular Ejemplo', fecha: '05/10/2026', hora: '10:02', banco: 'Banco Ejemplo' } });
+      const c = unico(hablar(w, ANA, mImagen()));
+      expect(c.cuerpo).toMatch(/comprobante/);
+      expect(w.cobro.pendiente).toBe(false);
+      const t = siguiente === 'boton' ? hablar(w, ANA, mBoton('b_closer')) : hablar(w, ANA, mTexto(siguiente === 'prellenado3' ? PRELLENADOS.closer : siguiente === 'prellenado4' ? PRELLENADOS.videos : 'cuéntame más'));
+      const m = unico(t);
+      expect(m.cuerpo, siguiente).not.toMatch(qrAbierto);
+      if (siguiente === 'boton') {
+        expect(m.tipo).toBe('image');
+        expect(m.cuerpo).toMatch(/ingresa exactamente 20 Bs/);
+      }
+    }
+  });
+
+  it('el comprobante «reintentar» o «ilegible» CONSERVA la guarda: un toque de «Closer» sigue dando «Ya tienes un QR abierto»', () => {
+    const malo = { statusCode: 200, body: { estado: 'reintentar', motivo: 'monto_menor', importe: 32, montoLeido: 10 } };
+    const w = conQr3({ cotejo: () => malo });
+    unico(hablar(w, ANA, mImagen()));
+    expect(w.cobro.pendiente).toBe(true);
+    expect(Number(((w.mundo.sd['rroca'] ?? {}) as J)[ANA]['qrHastaMs'])).toBeGreaterThan(0);
+    const w2 = conQr3({ cotejo: () => ({ statusCode: 200, body: { estado: 'reintentar', motivo: 'falta_monto', importe: 32 } }) });
+    unico(hablar(w2, ANA, mImagen()));
+    // Aunque la consola tardara en saberlo, la guarda local sigue.
+    w2.cobro.pendiente = false;
+    const t = hablar(w2, ANA, mBoton('b_closer'));
+    expect(unico(t).cuerpo).toMatch(qrAbierto);
+  });
+
+  it('cada resultado resuelto (válido, aproximado, repetido, tardío, en revisión) libera la guarda local', () => {
+    const casos: J[] = [
+      { statusCode: 200, body: { estado: 'valido', avisarComercio: true, importe: 32 } },
+      { statusCode: 200, body: { estado: 'aproximado', avisarComercio: true, importe: 32 } },
+      { statusCode: 200, body: { estado: 'valido', repetido: true, avisarComercio: false, importe: 32 } },
+      { statusCode: 200, body: { estado: 'tardio', avisarComercio: true, importe: 32 } },
+      { statusCode: 200, body: { estado: 'en_revision', avisarComercio: true } },
+      { statusCode: 200, body: { estado: 'ya_resuelto' } },
+    ];
+    for (const caso of casos) {
+      const w = conQr3({ cotejo: () => caso });
+      unico(hablar(w, ANA, mImagen()));
+      expect(Number(((w.mundo.sd['rroca'] ?? {}) as J)[ANA]['qrHastaMs']), JSON.stringify(caso)).toBe(0);
+    }
+  });
+
+  it('prellenado 5 (consulta) con un QR abierto recibe el recordatorio del QR, no reabre el saludo; sin QR abierto, el saludo', () => {
+    const w = conQr3();
+    const t = hablar(w, ANA, mTexto(PRELLENADOS.consulta));
+    expect(unico(t).cuerpo).toMatch(qrAbierto);
+    expect(eventosQr(w)).toHaveLength(1);
+    const w2 = crear();
+    expect(unico(hablar(w2, ANA, mTexto(PRELLENADOS.consulta))).cuerpo).toMatch(/¿Qué duda tienes sobre el libro\?$/);
+  });
+
+  it('el producto elegido por prellenado de TEXTO también se marca como usado: libro por texto -> el QR vence -> «gracias, lo pienso» -> el menú no vuelve a ofrecer «Libro + Bonos»', () => {
+    const w = conQr3();
+    w.cobro.pendiente = false;
+    const m = unico(hablar(w, ANA, mTexto('gracias, lo pienso'), { avanzarMin: 20 }));
+    expect(titulos(m)).toEqual(['Pack Completo 60 Bs', 'Ver complementos']);
   });
 });
 
