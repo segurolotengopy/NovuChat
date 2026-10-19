@@ -109,13 +109,32 @@ America»). Antes eran gratis.
     cliente responda; si sale después de las 24 h es una plantilla que **Meta le
     cobra al comercio** (0,0113 si es de utilidad, 0,074 si Meta la clasifica
     como marketing).
-- **El servidor todavía corta en 100 / 220 / 500, vende solo la bolsa de 30 por
-  10 y no distingue los mensajes salientes del negocio** (`planes.ts`,
-  `ingesta.ts`). Los topes y la bolsa de conversaciones esperan al bloque de
-  Central; la extensión de 48 h y la bolsa de seguimiento, al bloque de Core
-  (depende de #439). Hasta entonces, a cada cliente BYOC se le asignan las
-  conversaciones por contrato, una bolsa se registra como pago manual y la
-  respuesta del cliente después de 24 h se compensa por contrato.
+- **Vigente en producción hoy (v0.15.x) y lo que ya está en `main`**
+  (17/10/2026): en producción el servidor todavía corta en 100 / 220 / 500,
+  vende solo la bolsa de 30 por 10 y no distingue los mensajes salientes del
+  negocio. En `main` ya está el Bloque 1 «planes y bolsas» y **sale con la
+  etiqueta de ese bloque** (PR-2, PR-3 y PR-5 juntos, aparte de la de H2):
+  - **Tarifa por cuenta**, `estandar` (el comercio paga su Meta; es la de las
+    altas nuevas, `TARIFA_DE_ALTA`) o `meta_incluido` (la excepcional). Una
+    cuenta sin el campo es `meta_incluido`, el límite menor. Los topes salen de
+    la tarifa: 200 / 500 / 1.000 en `estandar`, 100 / 220 / 500 en
+    `meta_incluido` (`limitesDe`, `planes.ts`).
+  - **Tres tipos de bolsa**, y el servidor decide cuál puede comprar cada cuenta
+    (`bolsaPermitida`, al emitir el QR y en el pago manual): la de 30 por USD 10
+    solo en `meta_incluido`; la de 300 conversaciones por USD 15 solo en
+    `estandar`; la de 300 mensajes de seguimiento por USD 10 solo en `estandar`
+    con titularidad `comercio`, y **está apagada** (`VENTA_BOLSA_SALIENTES =
+    false`) hasta que el Bloque 2 construya el conteo y el corte del
+    seguimiento. Se acredita lo **pagado**, no lo pedido.
+  - **La plantilla `conversaciones_agotadas` no se emite a `estandar`**: promete
+    la bolsa de 30 por 10 y a esa cuenta le presentaría un cobro como lo que no
+    es. Pagar y el aviso de consumo ofrecen la bolsa de la tarifa.
+  - **Todavía no existe** (Bloque 2): el conteo de mensajes de seguimiento
+    fuera de 48 h y su corte. Hasta entonces, la respuesta del cliente después
+    de 24 h se compensa por contrato.
+  - Los clientes existentes se pasan de tarifa con `migrar-tarifa.mjs` (en seco
+    por defecto) o con `asignar-plan --tarifa`, solo con el «sí» de Andres.
+    Q'Taco se queda en `meta_incluido` hasta el traslado de su WABA.
 - **Aviso de consumo al 80 % del plan, para todos** (decisión de Andres,
   15/09/2026; antes decía 70 % como vigilancia interna). Es lo que promete el
   sitio: al llegar al 80 % de las conversaciones incluidas, se avisa al comercio
@@ -199,14 +218,14 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
 | Límite | Se hace cumplir en | Estado |
 |---|---|---|
 | **Agendas por plan** (1 / 5 / hasta 10) | `firestore.rules`, al crear un funcionario: contar los activos y leer el plan de `cuenta/estado` | **No existe todavía.** Hoy se pueden cargar sin tope. El número ya viaja en la copia `cuenta/estado.limites.agendas` (`planes.ts`); falta la regla, con un contador como el del catálogo |
-| **Conversaciones incluidas** (BYOC 200 / 500 / 1.000; Meta incluido 100 / 220 / 500; hoy el servidor corta en 100 / 220 / 500) | `ingesta.ts`, dentro de la transacción que ya cuenta: `estadoDeServicio` (`prepago.ts`, puro) decide `sin_conversaciones` con la copia `cuenta.limites.conversaciones`, descuenta la bolsa y anota `cuenta.corte`; `configuracionFlujo` corta con el 409 que los flujos ya obedecen | **En `main` en modo observación** desde el 20/09 (`prepago/modulo-y-cortes`, `DISENO.md` §4undecies): el corte se calcula, se anota con `aplicado: false` y se cuenta lo perdido, pero **no corta** hasta que Andres encienda `plataforma/prepago.corteActivo` con `fijarCortePrepago`. Solo con `modalidad`; una demostración no se corta nunca. `pruebas/plataforma/prepago-ingesta.test.ts`, `prepago-configuracion.test.ts` |
+| **Conversaciones incluidas** (BYOC 200 / 500 / 1.000; Meta incluido 100 / 220 / 500; en producción hoy el servidor corta en 100 / 220 / 500; en `main` el tope sale de la tarifa de la cuenta y sale con la etiqueta del Bloque 1) | `ingesta.ts`, dentro de la transacción que ya cuenta: `estadoDeServicio` (`prepago.ts`, puro) decide `sin_conversaciones` con la copia `cuenta.limites.conversaciones`, descuenta la bolsa y anota `cuenta.corte`; `configuracionFlujo` corta con el 409 que los flujos ya obedecen | **En `main` en modo observación** desde el 20/09 (`prepago/modulo-y-cortes`, `DISENO.md` §4undecies): el corte se calcula, se anota con `aplicado: false` y se cuenta lo perdido, pero **no corta** hasta que Andres encienda `plataforma/prepago.corteActivo` con `fijarCortePrepago`. Solo con `modalidad`; una demostración no se corta nunca. `pruebas/plataforma/prepago-ingesta.test.ts`, `prepago-configuracion.test.ts` |
 | **Bloque de 25 respuestas por conversación** (la 26 factura otra) | `ingesta.ts`, en la misma transacción que cuenta (`mensajesVentana`, `bloquesAdicionales`) | **Hecho el 13/09** en `cobro/bloques-de-25`, con `pruebas/conteo-bloques.test.ts` |
 | **Umbrales de operador y bloqueo** (50 / 100, por empresa) | `atencion.ts` decide; la ingesta anota `atencionEstado` y cuenta; `configuracionFlujo` devuelve `atencion.estado` si el flujo manda `telefono` | **Servidor en `main` desde el 13/09** (`pruebas/umbrales-atencion.test.ts`). **Flujos A y B obedecen en el JSON versionado** (`flujos/umbrales-atencion`, `pruebas/flujos-umbrales.test.ts`): `Traer configuración` manda `telefono` y `¿Atención normal?` bifurca antes del agente. **Falta publicarlos**, después de `v0.2.0`, y probarlos contra un teléfono real |
 | **Ítems del catálogo** que van al prompt | `configuracionFlujo`, al armar la respuesta | Hoy hay `limit(200)`, sin corte por plan |
 | **Productos del catálogo por plan** (20 / 100 / 500) | `firestore.rules` al crear o borrar un producto, en el mismo lote que el contador `contadores/catalogo`; la importación en lote por la callable `importarCatalogo` (`limiteCatalogo.ts`). El número es `limitesDeCuenta` de `planes.ts`: la copia `cuenta/estado.limites.productos` y, sin copia, el plan | **Hecho el 15/09** en `consolidado/planes-catalogo-storage`, con `pruebas/reglas.test.ts` («Límite de productos por plan») y `pruebas/modulos/productos/limite-catalogo.test.ts`. **Falta desplegarlo**, y el contador va ANTES que las reglas: `docs/seguridad/reglas-storage.md` §Despliegue |
 | **Campañas simultáneas por plan** (0 / 3 / 10; el plan `byoc` de 2.000, 10; confirmado por Andres el 24/09) | `firestore.rules` en `config/campanas`: `lista.size() <= limiteCampanas()`, con la copia `cuenta/estado.limites.campanas` (0 a 10) o el plan; `configuracionFlujo` recorta al tope de hoy | **Hecho el 24/09** en `claude/bellido-eleccion-del-menu`, con `pruebas/campanas-reglas.test.ts` y `pruebas/campanas.test.ts` (`DISENO.md` §4sexdecies). **Falta desplegar** reglas y Functions |
-| **Mensajes de seguimiento fuera de 48 h y extensión de 48 h** (`Analisis/50` §3) | `ingesta.ts`: hora del último entrante, evento «seguimiento» con reserva antes del envío, contador y corte propios; bolsa de 300 por 10 en Pagar | **No existe todavía.** Bloque de Core, después de fusionar #439 |
-| **Aviso de consumo al 80 %** de las conversaciones del plan | `ingesta.ts`, en la transacción que ya cuenta: marca `cuenta/estado.avisoConsumo` una vez por mes. La consola lo muestra (tablero, estado de cuenta, cartera) y no lo calcula | **Hecho el 15/09** en `consolidado/planes-catalogo-storage`, con `pruebas/aviso-consumo.test.ts` (la ingesta real) y `pruebas/central/planes.test.ts`. Falta desplegar Functions |
+| **Mensajes de seguimiento fuera de 48 h y extensión de 48 h** (`Analisis/50` §3) | `ingesta.ts`: hora del último entrante, evento «seguimiento» con reserva antes del envío, contador y corte propios; bolsa de 300 por 10 en Pagar | **No existe todavía.** Bloque 2 (decisión de Andres, 17/10/2026); la venta de la bolsa está apagada en `main` (`VENTA_BOLSA_SALIENTES`) |
+| **Aviso de consumo al 80 %** de las conversaciones del plan | `ingesta.ts`, en la transacción que ya cuenta: marca `cuenta/estado.avisoConsumo` una vez por mes. La consola lo muestra (tablero, estado de cuenta, cartera) y no lo calcula | **Hecho el 15/09** en `consolidado/planes-catalogo-storage`, con `pruebas/aviso-consumo.test.ts` (la ingesta real) y `pruebas/central/planes.test.ts`. Falta desplegar Functions. Desde el Bloque 1 (en `main`, sale con su etiqueta) el aviso ofrece la bolsa de la tarifa de la cuenta |
 
 **La regla al agregar cualquier límite nuevo:**
 

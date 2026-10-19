@@ -830,11 +830,11 @@ de caracteres que el cobrador admite (`[A-Za-z0-9:_.-]`, hasta 120).
 
 | Campo | Tipo | Quién lo escribe | Por qué |
 |---|---|---|---|
-| `tipo` | `'mensualidad' \| 'bolsa' \| 'instalacion'` | Functions | `instalacion` es el agregado de `Analisis/29` §2.5: hoy los USD 65 no tienen dónde registrarse. No suma meses ni bolsas |
+| `tipo` | `'mensualidad' \| 'bolsa' \| 'bolsaConversaciones' \| 'bolsaSalientes' \| 'instalacion'` | Functions | `instalacion` es el agregado de `Analisis/29` §2.5: hoy los USD 65 no tienen dónde registrarse. No suma meses ni bolsas |
 | `plan` | `IdPlanVendible` (`planes.ts:42`) | Functions | Solo en `mensualidad`. Del catálogo, nunca texto libre |
 | `meses` | entero 1..6 | Functions | Solo en `mensualidad`. El tope 6 se hace cumplir acá (`MESES_MAXIMO = 6` en `prepago.ts`), no en la pantalla |
 | `cantidad` | entero 1..12 | Functions | Solo en `bolsa` |
-| `montoUsd` | número | Functions | El de la lista (`PLANES[plan].precioUsd × meses`, `BOLSA.precioUsd × cantidad`, `INSTALACION_USD`). Pendiente (`docs/base-comercial.md` §3): las bolsas BYOC de 300 conversaciones por 15 y de 300 mensajes de seguimiento por 10, con la de 30 por 10 solo para Meta incluido |
+| `montoUsd` | número | Functions | El de la lista (`PLANES[plan].precioUsd × meses`, `BOLSA.precioUsd × cantidad`, `INSTALACION_USD`). Las bolsas BYOC de 300 conversaciones por 15 y de 300 mensajes de seguimiento por 10 (esta apagada) y la de 30 por 10 solo para Meta incluido: ver «Tarifa y bolsas por cuenta», al final de este documento |
 | `monto` | entero | Functions | Bolivianos, redondeados con `importeBs`. Es lo que va al QR |
 | `moneda` / `monedaLista` | `'BOB'` / `'USD'` | Functions | Constantes, para que el documento se explique solo |
 | `tcoAplicado` | número 5..40 | Functions | El TCO del BCB del **día de emisión**. Sin él, `importeBs` lanza y el pago no se crea |
@@ -1503,3 +1503,41 @@ deducir**. Las coordenadas del pin se pedían en dos campos, con la instrucción
 de hacer clic derecho en Google Maps; nadie iba a hacerlo. Se sacan del enlace
 que el comercio ya pega (`functions/src/central/negocio/mapa.ts`), y la pantalla solo informa
 si quedaron detectadas.
+
+## Tarifa y bolsas por cuenta (Bloque 1 «planes y bolsas», 17/10/2026)
+
+En `main`; sale a producción con la etiqueta del Bloque 1 (PR-2, PR-3 y PR-5
+juntos), aparte de la de H2. Hasta entonces producción corta en 100 / 220 / 500
+y vende solo la bolsa de 30 por USD 10. El dinero está en
+`docs/base-comercial.md` §3; acá, dónde vive cada pieza.
+
+- **La tarifa** es un campo de `cuenta/estado`: `estandar` (el comercio paga su
+  Meta) o `meta_incluido`. `tarifaDe` (`central/cuenta/planes.ts`) devuelve
+  `meta_incluido` si el campo falta o no es válido, el límite menor, así que
+  Bellido, Platinum y los demos no cambian sin escribir sus cuentas. Las altas
+  nuevas nacen `estandar` (`TARIFA_DE_ALTA`). `limitesDe(plan, tarifa)` exige la
+  tarifa en la firma y elige entre `CONVERSACIONES_META_INCLUIDO` y las
+  conversaciones del plan.
+- **Tres tipos de pago de bolsa** (`tipo` de `/pagos`, `TIPOS_DE_BOLSA` en
+  `prepago.ts`): `bolsa` (30 por USD 10, `BOLSA_META_INCLUIDO`; `BOLSA` queda
+  como alias hasta un PR de Functions que lo quite), `bolsaConversaciones` (300
+  por USD 15) y `bolsaSalientes` (300 mensajes de seguimiento por USD 10).
+- **`bolsaPermitida(cuenta, pago, titularidades)`** (pura, `prepago.ts`) decide
+  si la cuenta puede comprar esa bolsa y devuelve `null` o el motivo (`tarifa`,
+  `titularidad`, `no_habilitada`). `pagos.ts` la aplica en el servidor al emitir
+  el QR y en el pago manual, con el texto fijo `MENSAJE_BOLSA_NO_PERMITIDA`; la
+  pantalla solo ofrece lo que el servidor aceptaría. Se acredita lo **pagado**
+  (el tipo del pago), no lo que la consola pidió.
+- **`VENTA_BOLSA_SALIENTES`** (`prepago.ts`) está en `false`: `bolsaSalientes`
+  se rechaza con `no_habilitada`. Se enciende en el PR del Bloque 2 que
+  construya el conteo. Ya existen los saldos `bolsaSalientes`,
+  `bolsaSalientesCompra` y `bolsaSalientesBase`; el corte propio
+  (`corteSalientes`) y `salientesFueraDe48h` son del Bloque 2.
+- **La plantilla `conversaciones_agotadas`** promete la bolsa de 30 por 10: no
+  se emite a una cuenta `estandar` (`recordatoriosDebidos`), porque le
+  presentaría un cobro como lo que no es.
+- **Cuentas existentes:** `asignar-plan --tarifa` y
+  `admin/scripts/plataforma/migrar-tarifa.mjs` (en seco por defecto; `--aplicar`
+  con el «sí» de Andres y en la ventana de mantenimiento si hay clientes en
+  producción). El formulario de pago manual de Plataforma ofrece la bolsa de la
+  tarifa de la cuenta.
