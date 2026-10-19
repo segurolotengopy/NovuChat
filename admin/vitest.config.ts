@@ -124,6 +124,7 @@ export const SUITES_PURAS = [
   'pruebas/core/sesion-turno.test.ts',
   'pruebas/core/nube-visor.test.ts',
   'pruebas/core/cargar-timbre-n8n.test.ts',
+  'pruebas/resetear-fichas-chat-novuchat.test.ts',
   'pruebas/conteo-bloques.test.ts',
   'pruebas/central/contrasena-minimo.test.ts',
   'pruebas/frontera/despliegue.test.ts',
