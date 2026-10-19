@@ -65,9 +65,26 @@ describe('negocio-rroca-ruben.json: el catálogo es el que espera el flujo', () 
     expect(TEXTO).not.toMatch(/\b(vos|tenés|querés|podés|sos)\b/i);
   });
 
-  it('declara lo que NO se sabe (garantía y devolución, factura, otros medios de pago, plazo de entrega)', () => {
+  it('declara lo que NO se sabe (garantía y devolución, factura, otros medios de pago, otro plazo de entrega)', () => {
     const no = (D.negocio['datosQueNoTenemos'] as string[]).join('|');
     for (const x of [/garant/, /factura/, /medios de pago/, /plazo de entrega/]) expect(no).toMatch(x);
+  });
+
+  it('DECISIONES DEL 19/10: horario abierto 24/7 (explícito, sin marcador), F4 desaparece (ningún dato de enlaces) y F5 es texto, no marcador', () => {
+    const h = D.negocio['horarios'] as Record<string, string>;
+    for (const dia of ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']) expect(h[dia], dia).toBe('00:00-23:59');
+    expect((D as unknown as { _pendiente: Record<string, string> })._pendiente['horarioDeRecepcion']).toBe('Abierto siempre (24/7)');
+    // NovuChat no entrega enlaces: ninguna clave ni marcador de enlaces de entrega, en ninguna grafía.
+    expect(TEXTO).not.toMatch(/enlacesDeEntrega|ENLACES_ENTREGA/i);
+    expect(Object.keys((D as unknown as { _pendiente: object })._pendiente)).not.toContain('enlacesDeEntrega');
+    // La garantía/devolución es un texto que pasa con el autor, no un marcador; y no promete.
+    const pol = String(D.negocio['politicaCancelacion']);
+    expect(pol).not.toMatch(/REEMPLAZAR_/);
+    expect(pol).toMatch(/no las promete/);
+    // El negocio no promete que el bot entregue ni que ya se envió.
+    expect(String(D.negocio['instruccionesExtra'])).toMatch(/hasta en 24 horas/);
+    expect(String(D.negocio['instruccionesExtra'])).toMatch(/nunca entrega ni envía enlaces/);
+    expect(TEXTO).not.toMatch(/ya te lo enviamos/i);
   });
 });
 
@@ -81,8 +98,8 @@ describe('negocio-rroca-ruben.json: repositorio público y marcadores', () => {
   });
 
   const PENDIENTES = [
-    'REEMPLAZAR_NOMBRE_VISIBLE_RUBEN', 'REEMPLAZAR_HORARIO_RUBEN', 'REEMPLAZAR_NUMERO_RECEPCION_RUBEN',
-    'REEMPLAZAR_NOMBRE_RECEPCION_RUBEN', 'REEMPLAZAR_ENLACES_ENTREGA_RUBEN', 'REEMPLAZAR_TEXTO_GARANTIA_RUBEN',
+    'REEMPLAZAR_NOMBRE_VISIBLE_RUBEN', 'REEMPLAZAR_NUMERO_RECEPCION_RUBEN',
+    'REEMPLAZAR_NOMBRE_RECEPCION_RUBEN',
   ];
   it('lleva un marcador por cada dato que Rubén todavía no dio', () => {
     for (const m of PENDIENTES) expect(TEXTO, m).toContain(m);

@@ -198,6 +198,14 @@ function tieneClaveLink(v: unknown): boolean {
   return false;
 }
 const PROHIBIDAS = /acreditad|verificad|validad|recibimos tu pago|pago (recibido|confirmado|aprobado)|tu pago (lleg|ingres|est[aá] (list|ok))/i;
+// Textos de derivación del 19/10/2026 (F5 y F): factura/garantía/devolución, otros medios de pago, reclamos y la queja de no entrega pasan con el autor.
+const D_FACTURA = 'Sobre factura, garantía o devolución puedes conversar directamente con el autor, Rubén; desde aquí no puedo prometerte nada de eso.';
+const D_OTRO = 'Eso lo ve directamente el autor, Rubén, y puedes conversarlo con él.';
+const D_NO_ENTREGA = 'Lamento la espera. Rubén revisa el pago y envía el material por este chat hasta en 24 horas; desde aquí no puedo confirmarte si ya salió.';
+const CON_AVISO = ' Le avisé; también puedes escribirle directo con el botón.';
+const SIN_AVISO = ' No pude avisarle; escríbele directo con el botón.';
+// El texto de «comprobante recibido» (cuadra, aviso salido): decisión del 19/10/2026, «hasta en 24 horas».
+const IGUAL_QUE_ANTES = 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Rubén: él revisará el pago y te enviará los enlaces del material por este chat hasta en 24 horas.';
 const SIN_BANCO = /banco|ejemplo|titular|cuenta|\b59100000077\b/i;
 
 // El QR de un pedido: lo que se ve y lo que se reporta.
@@ -563,11 +571,16 @@ describe('la conversación: el modelo solo conversa', () => {
   });
 
   it('derivar: factura, otro medio de pago, garantía, reclamo y hablar con una persona pasan a Rubén con aviso y botón; el texto del cliente no se copia al mensaje', () => {
-    for (const texto of ['necesito factura por favor', 'puedo pagar en efectivo?', 'tiene garantía o devolución?', 'tengo un reclamo, no me llegó nada', 'quiero hablar con una persona']) {
+    const casos: Array<[string, string]> = [
+      ['necesito factura por favor', D_FACTURA + CON_AVISO], ['puedo pagar en efectivo?', D_OTRO + CON_AVISO], ['tiene garantía o devolución?', D_FACTURA + CON_AVISO],
+      ['tengo un reclamo', D_OTRO + CON_AVISO], ['tengo un reclamo, no me llegó nada', D_NO_ENTREGA + CON_AVISO],
+      ['quiero hablar con una persona', 'Eso lo ve Rubén directamente. Le avisé; también puedes escribirle directo con el botón.'],
+    ];
+    for (const [texto, esperado] of casos) {
       const w = crear();
       const t = hablar(w, ANA, mTexto(texto));
       const m = unico(t);
-      expect(m.cuerpo, texto).toBe('Eso lo ve Rubén directamente. Le avisé; también puedes escribirle directo con el botón.');
+      expect(m.cuerpo, texto).toBe(esperado);
       expect(m.payload['interactive']?.type).toBe('cta_url');
       expect(avisosDe(t)).toHaveLength(1);
       expect(avisosDe(t)[0]).toMatch(/^NovuChat: consulta para Rubén\./);
@@ -580,7 +593,7 @@ describe('la conversación: el modelo solo conversa', () => {
       const w = crear({ aviso });
       const t = hablar(w, ANA, mTexto('necesito factura'));
       const m = unico(t);
-      expect(m.cuerpo, aviso).toBe('Eso lo ve Rubén directamente. No pude avisarle a Rubén; escríbele directo con el botón.');
+      expect(m.cuerpo, aviso).toBe(D_FACTURA + SIN_AVISO);
       expect(m.cuerpo).not.toMatch(/le avis[eé]|ya pas[eé]|te escribir|te llamar|lo consulto/i);
       expect(m.payload['interactive']?.type).toBe('cta_url');
     }
@@ -609,7 +622,6 @@ describe('el comprobante', () => {
     pedirQr(w, 'pack');
     return w;
   }
-  const IGUAL_QUE_ANTES = 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Rubén: él lo revisa y te envía el material por este chat.';
 
   it('los datos coinciden y el aviso salió con `wamid` real: el texto exacto, sin plazo y sin «validado»; se guarda la imagen ANTES de leerla, se lee y se coteja con la ruta guardada', () => {
     const w = conQr();
@@ -617,7 +629,8 @@ describe('el comprobante', () => {
     const m = unico(t);
     expect(m.cuerpo).toBe(IGUAL_QUE_ANTES);
     expect(m.cuerpo).not.toMatch(PROHIBIDAS);
-    expect(m.cuerpo).not.toMatch(/minutos|horas|hoy|mañana|pronto/i);
+    // El único plazo que sale es «hasta en 24 horas» (decisión del 19/10/2026); ningún otro.
+    expect(m.cuerpo.replace('hasta en 24 horas', '')).not.toMatch(/minutos|horas|hoy|mañana|pronto/i);
     expect(avisosDe(t)).toHaveLength(1);
     expect(avisosDe(t)[0]).toContain('Estado: comprobante: datos coinciden');
     expect(avisosDe(t)[0]).toContain('Pack Completo');
@@ -896,6 +909,7 @@ describe('+0 mensajes agregados al cliente y nunca textos prohibidos', () => {
     for (const [p, sim] of [['pack', false], ['libro', false], ['closer', true], ['videos', false]] as const) for (const c of [true, false]) textos.push(L.rrPieQr(p, 60, 'RRABC1', c, sim));
     for (const q of [cat, {}]) for (const preg of ['¿a?', '¿b?']) textos.push(L.rrSaludo(q, preg));
     for (const mot of ['sin_cobro', 'sin_medio', 'sin_precio', 'consulta', 'en_revision', 'qr_sin_aviso']) for (const s of [true, false, 'repetido']) textos.push(L.rrTextoDerivacion(mot, s));
+    for (const clave of ['factura', 'garantia', 'otro_medio_pago', 'reclamo', 'no_entrega']) for (const s of [true, false]) textos.push(L.rrTextoDerivacion('consulta', s, clave));
     for (const r of ['cuadra', 'aproximado', 'reintentar', 'ilegible', 'ya_cotejado', 'simulado', 'sin_cotejo']) for (const c of ['', 'tardio', 'en_revision']) for (const s of [true, false, 'repetido']) textos.push(L.rrTextoComprobante(r, c, s, 'el comprobante dice 5 Bs y tu pedido es de 60 Bs').cuerpo);
     expect(textos.length).toBeGreaterThan(60);
     // Un QR que no se pudo mostrar sin que se intentara avisar no dice «No pude avisarle»: no hubo intento.
@@ -1122,7 +1136,7 @@ describe('PR-3 · el aviso a Rubén: texto libre dentro de 23,5 h de su último 
     expect(e.payload['template']?.name).toBe('aviso_consulta_para_ruben');
     expect(e.payload['template']?.language?.code).toBe('es');
     expect(parametrosDe(e)).toEqual(['factura', '+' + ANA, 'texto literal del cliente: «necesito factura para mi empresa»']);
-    expect(unico(t).cuerpo).toBe('Eso lo ve Rubén directamente. Le avisé; también puedes escribirle directo con el botón.');
+    expect(unico(t).cuerpo).toBe(D_FACTURA + CON_AVISO);
     // Los nombres salen del dato, no del código: otro nombre en «Config base» es el que se usa.
     const w2 = crear({ ...cuandoRubenEscribio(null) });
     const nodoBase = w2.mundo.flujo.nodes.find((n) => n.name === 'Config base')!;
@@ -1137,8 +1151,9 @@ describe('PR-3 · el aviso a Rubén: texto libre dentro de 23,5 h de su último 
     const e = t.avisos[0]!;
     expect(e.tipo).toBe('template');
     expect(e.payload['template']?.name).toBe('aviso_comprobante_recibido');
-    expect(parametrosDe(e)).toEqual(['Ana', 'el Pack Completo', '60', '+' + ANA]);
-    expect(unico(t).cuerpo).toBe('Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Rubén: él lo revisa y te envía el material por este chat.');
+    // La hora límite (último mensaje del cliente + 23 h, La Paz) viaja DENTRO de la variable del producto: ninguna variable ni mensaje de más.
+    expect(parametrosDe(e)).toEqual(['Ana', 'el Pack Completo, responder antes de 06/10 09:01 hora de La Paz', '60', '+' + ANA]);
+    expect(unico(t).cuerpo).toBe(IGUAL_QUE_ANTES);
     // Con el texto libre (ventana abierta) el aviso es el de siempre.
     const w2 = crear(cuandoRubenEscribio(30));
     pedirQr(w2, 'pack');
@@ -1172,7 +1187,7 @@ describe('PR-3 · el aviso a Rubén: texto libre dentro de 23,5 h de su último 
       expect(t.avisos, nombre).toHaveLength(0);
       expect(t.ejecutados.has('Enviar aviso'), nombre).toBe(false);
       const m = unico(t);
-      expect(m.cuerpo, nombre).toBe('Eso lo ve Rubén directamente. No pude avisarle a Rubén; escríbele directo con el botón.');
+      expect(m.cuerpo, nombre).toBe(D_FACTURA + SIN_AVISO);
       expect(m.cuerpo).not.toMatch(/ya pas[eé]|le avis[eé]/i);
       expect(m.payload['interactive']?.type).toBe('cta_url');
       expect((t.porNodo['Armar avisos']![0] as J)['motivoFallo'], nombre).toBe('plantilla_no_configurada');
@@ -1230,7 +1245,8 @@ describe('PR-3 · la derivación completa: el aviso lleva el MOTIVO exacto', () 
       expect(t.avisos, texto).toHaveLength(1);
       expect(motivosDe(t), texto).toContain(motivo);
       expect(unico(t).payload['interactive']?.type, texto).toBe('cta_url');
-      expect(unico(t).cuerpo, texto).toBe('Eso lo ve Rubén directamente. Le avisé; también puedes escribirle directo con el botón.');
+      const intro = /factura|devolución/.test(texto) ? D_FACTURA : (/paypal|reclamo/.test(texto) ? D_OTRO : 'Eso lo ve Rubén directamente.');
+      expect(unico(t).cuerpo, texto).toBe(intro + CON_AVISO);
     }
   });
 
@@ -1341,7 +1357,7 @@ describe('PR-3 · la derivación completa: el aviso lleva el MOTIVO exacto', () 
     const e = t.avisos[0]!;
     expect(e.payload['template']?.name).toBe('aviso_consulta_para_ruben');
     expect(((e.payload['template']?.components?.[0]?.parameters ?? []) as J[]).map((p) => String(p['text']))).toEqual([
-      'comprobante tardío: llegó después de los 15 minutos del QR', '+' + ANA, 'el Pack Completo por 60 Bs']);
+      'comprobante tardío: llegó después de los 15 minutos del QR', '+' + ANA, 'el Pack Completo por 60 Bs, responder antes de 06/10 09:01 hora de La Paz']);
     expect(unico(t).cuerpo).toContain('Ya lo pasé a Rubén');
   });
 
@@ -1373,7 +1389,7 @@ describe('PR-3 · la derivación completa: el aviso lleva el MOTIVO exacto', () 
     expect(hablar(w, ANA, mTexto('necesito factura de nuevo'), { avanzarMin: 30 }).avisos).toHaveLength(1);
     // El cliente sigue recibiendo su respuesta con el botón aunque el aviso se repita.
     const t = hablar(w, ANA, mTexto('necesito factura de nuevo'), { avanzarMin: 1 });
-    expect(unico(t).cuerpo).toBe('Eso lo ve Rubén directamente. Le avisé; también puedes escribirle directo con el botón.');
+    expect(unico(t).cuerpo).toBe(D_FACTURA + CON_AVISO);
   });
 
   it('los avisos de comprobante no se limitan por motivo (el servidor ya avisa una vez por comprobante)', () => {
@@ -1481,5 +1497,112 @@ describe('PR-3 · todo aviso pasa por `avLimpio`: sin enlaces, sin llaves, sin �
     const t2 = hablar(crear(), BETO, mTexto('quiero hablar con Rubén'));
     expect(t2.avisos).toHaveLength(1);
     expect(unico(t2).payload['interactive']?.type).toBe('cta_url');
+  });
+});
+
+describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas, hora límite del aviso y queja de no entrega', () => {
+  const HOY_LIMITE = 'responder antes de 06/10 09:01 hora de La Paz'; // el comprobante llega 1 minuto después de AHORA (el QR ocupó un turno): 05/10 10:01 La Paz + 23 h
+  const QUEJAS = [
+    'no me llegó', 'No me llego el enlace', 'NO LLEGÓ EL MATERIAL', 'no llego el libro', 'sigo esperando', 'Sigo esperando el link', 'no recibí nada', 'no recibi el enlace',
+    'todavía no me llegó', 'aun no me llego', 'sigo sin recibir el material', 'nunca me llegó', 'no me enviaron nada', 'no me mandaron el libro',
+  ];
+  const sinEnlaceNiPromesa = /https?:|www\.|\.com|wa\.me|ya te lo enviamos|ya te lo envi|ya te lo mand|acreditad|verificad|recibimos tu pago|ya (se )?(envi|mand|entreg)/i;
+
+  it('F: la queja de NO ENTREGA se detecta POR CÓDIGO (con y sin tildes, mayúsculas): aviso + botón, sin afirmar ni prometer que se entregó, y el modelo ni se llama', () => {
+    for (const q of QUEJAS) {
+      const w = crear({ modelo: geminiTexto('Ya te lo enviamos, revisa tu chat.') });
+      const t = hablar(w, ANA, mTexto(q));
+      const m = unico(t);
+      expect(m.cuerpo, q).toBe(D_NO_ENTREGA + CON_AVISO);
+      expect(m.cuerpo, q).not.toMatch(sinEnlaceNiPromesa);
+      expect(m.payload['interactive']?.type, q).toBe('cta_url');
+      expect(t.ejecutados.has('Conversar con el modelo'), q).toBe(false);
+      expect(t.avisos, q).toHaveLength(1);
+      expect(t.avisos[0]!.cuerpo, q).toContain('Motivo: queja de no entrega');
+    }
+  });
+
+  it('F negando: si el aviso NO salió, no dice «le avisé» ni «ya te lo enviamos»; sigue con el botón', () => {
+    for (const aviso of ['error', 'sin-id', 'id-vacio', 'lanza'] as const) {
+      const t = hablar(crear({ aviso }), ANA, mTexto('no me llegó'));
+      const m = unico(t);
+      expect(m.cuerpo, aviso).toBe(D_NO_ENTREGA + SIN_AVISO);
+      expect(m.cuerpo).not.toMatch(/le avis[eé]|ya pas[eé]|ya te lo envi/i);
+      expect(m.payload['interactive']?.type).toBe('cta_url');
+    }
+  });
+
+  it('F negando: tras un comprobante recibido, «no me llegó» sigue derivando (no «ya te lo enviamos», ni acreditado ni verificado)', () => {
+    const w = crear();
+    pedirQr(w, 'pack');
+    hablar(w, ANA, mImagen());
+    const t = hablar(w, ANA, mTexto('sigo esperando, no me llegó'), { avanzarMin: 60 });
+    const m = unico(t);
+    expect(m.cuerpo).toBe(D_NO_ENTREGA + CON_AVISO);
+    expect(m.cuerpo).not.toMatch(sinEnlaceNiPromesa);
+    expect(t.avisos).toHaveLength(1);
+  });
+
+  it('F: lo que NO es una queja de entrega no se confunde (una pregunta de compra sigue su camino)', () => {
+    for (const q of ['hola', 'quiero comprar el libro', '¿cuánto cuesta?', 'me llegó tu anuncio']) {
+      const t = hablar(crear(), ANA, mTexto(q));
+      expect(unico(t).cuerpo, q).not.toContain('Lamento la espera');
+    }
+  });
+
+  it('D: «comprobante recibido» dice que el autor revisará el pago y enviará los enlaces hasta en 24 horas; nunca acreditado, verificado ni «ya te lo enviamos»', () => {
+    const w = crear();
+    pedirQr(w, 'libro');
+    const m = unico(hablar(w, ANA, mImagen()));
+    expect(m.cuerpo).toBe(IGUAL_QUE_ANTES);
+    expect(m.cuerpo).toContain('revisará el pago');
+    expect(m.cuerpo).toContain('hasta en 24 horas');
+    expect(m.cuerpo).not.toMatch(sinEnlaceNiPromesa);
+    expect(m.cuerpo).not.toMatch(PROHIBIDAS);
+  });
+
+  it('E: el aviso al autor por comprobante lleva «responder antes de» = último mensaje del cliente + 23 h en La Paz, en el MISMO aviso (0 mensajes agregados), en texto libre y en plantilla', () => {
+    const libre = crear();
+    pedirQr(libre, 'pack');
+    const t = hablar(libre, ANA, mImagen());
+    expect(t.avisos).toHaveLength(1);
+    expect(t.avisos[0]!.cuerpo).toContain(HOY_LIMITE);
+    expect(t.mensajes.filter((e) => !e.respaldo)).toHaveLength(1);
+    const plantilla = crear({ plantillas: 'aprobadas', rubenEscribioHaceMin: null });
+    pedirQr(plantilla, 'pack');
+    const tp = hablar(plantilla, ANA, mImagen());
+    expect(tp.avisos).toHaveLength(1);
+    expect(tp.avisos[0]!.tipo).toBe('template');
+    const params = ((tp.avisos[0]!.payload['template']?.components?.[0]?.parameters ?? []) as J[]).map((p) => String(p['text']));
+    expect(params).toHaveLength(4);
+    expect(params.join('|')).toContain(HOY_LIMITE);
+    // Se calcula del ÚLTIMO mensaje del cliente: con el comprobante 60 minutos después del QR, la hora límite corre con él (10:00 en vez de 09:01).
+    const w2 = crear();
+    pedirQr(w2, 'pack');
+    const t2 = hablar(w2, ANA, mImagen(), { avanzarMin: 60 });
+    expect(t2.avisos[0]!.cuerpo).toContain('responder antes de 06/10 10:00 hora de La Paz');
+    // Solo el aviso de comprobante: el de consulta no lo lleva.
+    expect(hablar(crear(), BETO, mTexto('necesito factura')).avisos[0]!.cuerpo).not.toContain('responder antes de');
+  });
+
+  it('F2 y F4: ningún texto del flujo promete ni envía un enlace de entrega, y el flujo no carga ningún marcador de enlaces', () => {
+    for (const f of ['rroca-ruben.json', 'rroca-ruben.prueba.json']) {
+      const txt = readFileSync(join(CARPETA, f), 'utf8');
+      expect(txt, f).not.toMatch(/ENLACES_ENTREGA|enlacesDeEntrega/i);
+      expect(txt, f).not.toMatch(/te enviamos (el|los) (enlace|link)|aquí tienes (el|tu) (enlace|link)/i);
+    }
+    const t = hablar(crear(), ANA, mTexto('hola'));
+    expect(unico(t).cuerpo).not.toMatch(/https?:|www\./i);
+  });
+
+  it('F5: factura, garantía, devolución, otros medios de pago y reclamos pasan con el autor (aviso + botón) y NUNCA prometen garantía, devolución ni resultados', () => {
+    for (const q of ['necesito factura', 'quiero una devolución', 'tiene garantía', 'puedo pagar con paypal', 'tengo un reclamo']) {
+      const t = hablar(crear(), ANA, mTexto(q));
+      const m = unico(t);
+      expect(m.cuerpo, q).toMatch(/autor, Rubén/);
+      expect(m.cuerpo, q).not.toMatch(/te (garantizo|devolvemos|devolveremos|reembolsamos)|tienes garant|hay garant|sí hay devoluci|puedes devolver/i);
+      expect(m.payload['interactive']?.type, q).toBe('cta_url');
+      expect(t.avisos, q).toHaveLength(1);
+    }
   });
 });

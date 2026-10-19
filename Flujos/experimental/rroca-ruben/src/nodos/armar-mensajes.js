@@ -116,7 +116,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     const r = rrTextoComprobante(plan.resultado, plan.causa, estadoAviso, plan.diferencia);
     m = r.boton === true ? conRuben(r.cuerpo) : texto(r.cuerpo);
   } else if (tipoDePlan === 'derivar') {
-    m = conRuben(rrTextoDerivacion(plan.motivo, estadoAviso));
+    m = conRuben(rrTextoDerivacion(plan.motivo, estadoAviso, plan.clave));
   } else if (tipoDePlan === 'imagen_otra') {
     m = texto(RR_TEXTO_IMAGEN);
   } else if (tipoDePlan === 'audio') {

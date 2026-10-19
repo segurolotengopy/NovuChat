@@ -69,3 +69,12 @@ El rescate de las 22 h (PR-4). Tampoco crea datos en la plataforma (alta, númer
 - Llamadas al modelo: 0 o 1 por turno de conversación libre (Gemini Flash-Lite, ~0,0005 USD por llamada medido en otro flujo) y 1 lectura por comprobante.
 - Escrituras en GitHub / corridas de CI: un PR y su CI; 2 suites nuevas (`huecos.test.ts`, `venta.test.ts`) y ampliaciones de `armado.test.ts` y `flujo.test.ts`.
 - Escrituras en la nube: **0** (no se publica nada; los JSON quedan versionados).
+
+## Decisiones de Andres del 19/10/2026
+
+- **Sin enlaces de NovuChat (F4 desaparece).** El flujo no entrega ni promete enviar enlaces: el autor revisa el pago, entra a la consola y los envía. No existe el dato `enlacesDeEntrega` ni su marcador.
+- **Horario abierto 24/7 (F2).** `negocio.horarios` va con `00:00-23:59` los siete días; el asistente no promete respuesta humana inmediata.
+- **Factura, garantía, devolución, otros medios de pago, reclamos (F5): texto, no marcador.** Aviso + botón al WhatsApp del autor (`rrTextoDerivacion` con la clave); nunca se promete garantía, devolución ni resultados.
+- **Plazo.** El texto de «comprobante recibido» dice que el autor revisará el pago y enviará los enlaces «hasta en 24 horas».
+- **Hora límite en el aviso al autor.** `armar-avisos.js`: «responder antes de dd/mm HH:MM hora de La Paz» = instante del último mensaje del cliente (el comprobante) + 23 h, UTC-4 fijo. Va dentro del mismo aviso (texto libre, o la variable del producto/resumen de la plantilla): 0 mensajes agregados.
+- **Queja de no entrega (F).** `rrDerivacion` (rr.js) detecta por código «no me llegó», «sigo esperando», «no recibí»… (clave `no_entrega`): aviso + botón, sin afirmar que se entregó.
