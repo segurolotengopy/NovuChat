@@ -6452,3 +6452,178 @@ describe('visor de comprobantes (regla 2): guardar la imagen y cotejar con /cote
     }
   });
 });
+
+// 7. LA PAUSA POR PERSONA («Tomar» en la consola): el flujo CALLA por completo
+// =====================================================================================================
+// La forma REAL que devuelven los servidores (`pausa.ts`, `ingesta.ts`): `atencion.estado = 'bloqueado'`, `avisarRecepcion = ''` y
+// `pausadoPorPersona: true`. En el panel (`configuracionFlujo`) viaja DENTRO de `atencion`; en la respuesta de la ingesta, `avisarRecepcion`
+// y `pausadoPorPersona` viajan también en la raíz. Las pruebas de «bloqueado» de arriba usan `avisarRecepcion: 'bloqueado'` (el umbral de
+// 200 respuestas), que es OTRA cosa: acá se prueba la pausa, negando.
+describe('la pausa por persona: el flujo calla por completo (forma real de la ingesta y del panel)', () => {
+  const ATENCION_PAUSA: J = { estado: 'bloqueado', mensajeFijo: null, ventanaVenceEn: null, respuestasEnVentana: 3, avisarRecepcion: '', pausadoPorPersona: true };
+  // La ingesta (`ingesta.ts`): el bloque `atencion` NO trae `avisarRecepcion` ni `pausadoPorPersona` (van en la raíz).
+  const RESPUESTA_INGESTA_PAUSA: J = { atencion: { estado: 'bloqueado', mensajeFijo: null, ventanaVenceEn: null, respuestasEnVentana: 3 }, avisarRecepcion: '', pausadoPorPersona: true };
+  const RESPUESTA_INGESTA_NORMAL: J = { atencion: { estado: 'normal', mensajeFijo: null, ventanaVenceEn: null, respuestasEnVentana: 3 }, avisarRecepcion: '' };
+  /** Todos los nodos que descargan, leen, transcriben, cotejan o consultan al modelo: en pausa, ninguno corre. */
+  const NODOS_DE_MEDIOS = ['Obtener URL del medio', 'Descargar medio', 'Leer comprobante (imagen)', 'Leer comprobante (PDF)', 'Transcribir audio', 'Cotejar en el servidor', 'Extraer'];
+  const NODOS_DE_ENVIO = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo'];
+
+  /** Pone al mundo en pausa: la ingesta responde con la forma real y el panel también (los dos servidores deciden igual). */
+  const pausar = (w: Mundial, atencionPanel: J = ATENCION_PAUSA, ingesta: J = RESPUESTA_INGESTA_PAUSA): void => {
+    w.estado.panel = { ...w.estado.panel, atencion: atencionPanel };
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => ingesta;
+  };
+  const reanudar = (w: Mundial): void => {
+    w.estado.panel = { ...w.estado.panel, atencion: { estado: 'normal' } };
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => RESPUESTA_INGESTA_NORMAL;
+  };
+  const fotoDelEstado = (w: Mundial): string => JSON.stringify({ estados: sdVm(w.mundo)['estados'] ?? {}, pedidos: sdVm(w.mundo)['pedidos'] ?? {} });
+  /** Un turno en pausa: 0 mensajes al cliente, 0 avisos, 0 llamadas al modelo ni a medios ni al cotejo, 0 cierres, sin saliente reportado y estado intacto. */
+  const callaPorCompleto = (w: Mundial, t: ResultadoTurno, antes: string, etiqueta: string, geminiAntes = 0): void => {
+    expect(t.mensajes, `${etiqueta}: mensajes`).toHaveLength(0);
+    expect(t.avisos, `${etiqueta}: avisos`).toHaveLength(0);
+    expect(t.llamadas.extraer, `${etiqueta}: modelo`).toHaveLength(0);
+    expect(t.llamadas.cotejo, `${etiqueta}: cotejo`).toHaveLength(0);
+    expect(t.llamadas.cierre, `${etiqueta}: cierre`).toHaveLength(0);
+    expect(w.estado.extraer, `${etiqueta}: Gemini (conteo del doble)`).toBe(geminiAntes);
+    for (const n of [...NODOS_DE_MEDIOS, ...NODOS_DE_ENVIO, 'Registrar cierre']) expect(t.ejecutados.has(n), `${etiqueta}: corrió «${n}»`).toBe(false);
+    // Lo único que se reporta es el entrante (el rótulo); ningún saliente.
+    expect(t.llamadas.ingesta.filter((x) => x['direccion'] === 'saliente'), `${etiqueta}: saliente reportado`).toHaveLength(0);
+    expect(fotoDelEstado(w), `${etiqueta}: el estado cambió`).toBe(antes);
+  };
+  /** Mundo con un pedido confirmado, QR enviado y cobro pendiente en el panel (listo para recibir un comprobante). */
+  const conCobroAbierto = () => {
+    const r = armarPedido({ ventana: 5 });
+    const qr = confirmarPedido(r);
+    const abierto = qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado');
+    r.w.estado.panel = panel({ ...conCobroPendiente(String(abierto?.['referencia'] ?? ''), Number(abierto?.['monto'])) });
+    return r.w;
+  };
+
+  it('(1) texto del cliente, en el menú y en medio de un pedido: ni una palabra, ni modelo, ni aviso; y el entrante se reporta UNA vez (la consola lo muestra a quien tomó la conversación)', () => {
+    const w = crear();
+    const c = con(w);
+    pausar(w);
+    for (const texto of ['hola', 'quiero 4 tacos de birria', '¿dónde están ubicados?', 'quiero hablar con una persona', 'menú']) {
+      const antes = fotoDelEstado(w);
+      const t = c.escribe(texto);
+      callaPorCompleto(w, t, antes, texto);
+      const entrantes = t.llamadas.ingesta.filter((x) => x['direccion'] === 'entrante');
+      expect(entrantes, texto).toHaveLength(1);
+    }
+    // Un pedido a medias queda como estaba: la pausa no lo borra ni lo avanza.
+    reanudar(w);
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    c.escribe('quiero 4 tacos de birria');
+    const conPedido = fotoDelEstado(w);
+    const gemini = w.estado.extraer;
+    pausar(w);
+    callaPorCompleto(w, c.toca('p|cambiar', 'Cambiar algo'), conPedido, 'botón en medio de un pedido', gemini);
+    callaPorCompleto(w, c.escribe('mejor 6 tacos'), conPedido, 'texto en medio de un pedido', gemini);
+    // Solo el panel (la ingesta no trae la pausa): `configuracionFlujo` también la decide, y el flujo calla igual.
+    w.mundo.dobles['Reportar mensaje (entrante)'] = () => ({ ok: true });
+    callaPorCompleto(w, c.escribe('hola'), conPedido, 'pausa solo en el panel', gemini);
+  });
+
+  it('(2) imagen con cobro pendiente (comprobante): no se obtiene la URL, no se descarga, no se lee y no se cotejan en el servidor', () => {
+    const w = conCobroAbierto();
+    const c = con(w);
+    pausar(w);
+    w.estado.panel = { ...w.estado.panel, atencion: ATENCION_PAUSA };
+    const antes = fotoDelEstado(w);
+    const cotejosAntes = w.estado.cotejo;
+    const gemini = w.estado.extraer;
+    const t = c.imagen('media-9');
+    callaPorCompleto(w, t, antes, 'comprobante en imagen', gemini);
+    expect(w.estado.cotejo).toBe(cotejosAntes);
+    // Negando: sin pausa, el mismo comprobante sí se descarga, se lee y se coteja.
+    const libre = conCobroAbierto();
+    const l = con(libre).imagen('media-9');
+    expect(l.ejecutados.has('Obtener URL del medio')).toBe(true);
+    expect(l.ejecutados.has('Descargar medio')).toBe(true);
+    expect(l.ejecutados.has('Leer comprobante (imagen)')).toBe(true);
+    expect(l.llamadas.cotejo.length).toBeGreaterThan(0);
+    expect(l.mensajes.length).toBeGreaterThan(0);
+  });
+
+  it('(3) PDF con cobro pendiente: tampoco se descarga, ni se lee, ni se coteja', () => {
+    const w = conCobroAbierto();
+    pausar(w);
+    const antes = fotoDelEstado(w);
+    const gemini = w.estado.extraer;
+    callaPorCompleto(w, con(w).documento(), antes, 'comprobante en PDF', gemini);
+    const libre = conCobroAbierto();
+    const l = con(libre).documento();
+    expect(l.ejecutados.has('Leer comprobante (PDF)')).toBe(true);
+    expect(l.llamadas.cotejo.length).toBeGreaterThan(0);
+    expect(l.mensajes.length).toBeGreaterThan(0);
+  });
+
+  it('(4) audio: no se descarga ni se transcribe, y el modelo no se consulta; sin pausa el mismo audio sí se transcribe', () => {
+    const w = crear();
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    pausar(w);
+    const antes = fotoDelEstado(w);
+    callaPorCompleto(w, con(w).audio(), antes, 'audio');
+    const libre = crear();
+    libre.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const l = con(libre).audio();
+    expect(l.ejecutados.has('Transcribir audio')).toBe(true);
+    expect(l.mensajes.length).toBeGreaterThan(0);
+  });
+
+  it('(5) carrito del catálogo web con la ventana ABIERTA: sin resumen, sin botones, sin aviso y el estado del cliente intacto', () => {
+    const cabeceras: J = { 'x-novuchat-numero': PHONE_ID, 'x-novuchat-timestamp': String(AHORA), 'x-novuchat-signature': `sha256=${'0'.repeat(64)}` };
+    const carritoWeb: J = {
+      tipo: 'carrito', tenantId: 'qtaco', telefono: CLIENTE, accion: 'responder', pedidoId: 'p-100', conversacionId: 'c-100',
+      ventanaAbierta: true, items: [{ id: 'birria3', nombre: 'Tacos de Birria (orden de 3)', cantidad: 2, subtotal: 110 }],
+      total: 110, moneda: 'Bs', entrega: 'retiro', costoEnvio: 0,
+    };
+    const w = crear();
+    pausar(w);
+    const antes = fotoDelEstado(w);
+    const t = w.mundo.turno({ headers: cabeceras, body: carritoWeb }, { via: 'Carrito del catálogo', tolerarFallo: true });
+    expect(t.fallo).toBeNull();
+    expect(t.ejecutados.has('Traer configuración')).toBe(true); // el carrito SÍ llegó hasta decidir con la configuración (negativo de «no corrió por otro motivo»)
+    callaPorCompleto(w, t, antes, 'carrito');
+    // Negando: sin pausa, el mismo carrito sí produce el resumen.
+    const libre = crear();
+    const l = libre.mundo.turno({ headers: cabeceras, body: carritoWeb }, { via: 'Carrito del catálogo', tolerarFallo: true });
+    expect(l.mensajes.length).toBeGreaterThan(0);
+    expect(Object.keys(estadoDe(libre.mundo)).length).toBeGreaterThan(0);
+  });
+
+  it('(6) DOCUMENTA LO QUE EL FLUJO HACE HOY: con `avisarRecepcion: bloqueado` en la configuración (umbral) y `""` en la ingesta, el cliente no recibe nada pero el aviso a recepción de la configuración SÍ sale', () => {
+    // Hoy `vmAtencion` toma `avisarIngesta || avisarCfg`: el `''` de la pausa no anula el valor de la configuración (y el bloque `atencion` de la ingesta no trae `avisarRecepcion`). En producción
+    // `configuracionFlujo` también devuelve `''` con pausa, así que esta combinación no se da; la prueba fija el comportamiento del flujo
+    // (no la intención de `pausa.ts`, que dice que el aviso de transición se anula). Si el flujo cambia, esta prueba lo dirá.
+    const w = crear();
+    pausar(w, { ...ATENCION_PAUSA, avisarRecepcion: 'bloqueado', respuestasEnVentana: 200 });
+    const gemini = w.estado.extraer;
+    const t = con(w).escribe('hola');
+    expect(t.mensajes).toHaveLength(0);
+    expect(t.llamadas.extraer).toHaveLength(0);
+    expect(t.llamadas.cierre).toHaveLength(0);
+    expect(w.estado.extraer).toBe(gemini);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    // Y con `''` en los dos lados, ningún aviso (la forma real de la pausa).
+    const real = crear();
+    pausar(real);
+    expect(con(real).escribe('hola').avisos).toHaveLength(0);
+  });
+
+  it('(7) control positivo: sin pausa, los mismos mensajes sí responden (texto, botón y audio), con la misma ingesta salvo la pausa', () => {
+    const w = crear();
+    reanudar(w);
+    const c = con(w);
+    expect(c.escribe('hola').mensajes.length).toBeGreaterThan(0);
+    expect(c.escribe('¿dónde están ubicados?').mensajes.length).toBeGreaterThan(0);
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    expect(c.audio().mensajes.length).toBeGreaterThan(0);
+    // Y la pausa es reversible: pausa, silencio; se devuelve, vuelve a responder.
+    pausar(w);
+    callaPorCompleto(w, c.escribe('hola'), fotoDelEstado(w), 'en pausa', w.estado.extraer);
+    reanudar(w);
+    expect(c.escribe('hola').mensajes.length).toBeGreaterThan(0);
+  });
+});

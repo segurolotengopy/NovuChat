@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   Timestamp, collection, doc, getCountFromServer, getDoc, limit, onSnapshot,
   orderBy, query, where,
@@ -15,6 +15,8 @@ import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
 import { GraficoDias, type DiaDeGrafico } from '../componentes/GraficoDias';
 import { avisoConsumoVigente, type AvisoConsumoVista as Aviso } from '../lib/planes';
 import { AvisoConsumo } from '../componentes/AvisoConsumo';
+import { SelectorDeCuenta } from '../componentes/SelectorDeCuenta';
+import { cuentasDe } from '../../core/lib/cuentaActiva';
 
 /**
  * TABLERO DE INICIO, DISTINTO SEGÚN QUIÉN ENTRA.
@@ -307,7 +309,8 @@ interface ResumenNegocio {
   cuentaCruda: Record<string, unknown> | null;
 }
 
-function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boolean }) {
+/** El tablero de UNA cuenta. */
+export function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boolean }) {
   const modulos = useModulos(tenantId) ?? [];
   const nombreItems = capacidadesDeConsola(modulos).etiquetaCatalogo.toLowerCase();
   // La tarjeta «Hoy» no se pinta si NovuChat la ocultó (el horario lo dice el
@@ -523,7 +526,7 @@ export function Tablero() {
     );
   }
 
-  const ids = Object.keys(permisos.tenants);
+  const ids = cuentasDe(permisos);
   if (ids.length === 0) {
     return (
       <SinSalida titulo="Tu cuenta todavía no está asociada a ningún negocio">
@@ -536,15 +539,28 @@ export function Tablero() {
     );
   }
 
-  // Con varios negocios, uno debajo del otro: son pocos (un dueño de PyME
-  // administra uno, a lo sumo tres locales) y verlos juntos evita el paso extra
-  // de elegir antes de saber cuál necesita atención.
+  // Una cuenta: su tablero. Varias: el selector (ya no se apilan los tableros).
+  if (ids.length > 1) return <SelectorDeCuenta />;
   return (
     <section>
-      <h2>{ids.length === 1 ? 'Tu negocio' : 'Tus negocios'}</h2>
-      {ids.map((id) => (
-        <TableroComercio key={id} tenantId={id} esAdmin={permisos.tenants[id] === 'admin'} />
-      ))}
+      <h2>Tu negocio</h2>
+      <TableroComercio tenantId={ids[0]!} esAdmin={permisos.tenants[ids[0]!] === 'admin'} />
     </section>
   );
+}
+
+/**
+ * El tablero de la cuenta que nombra la URL (`/negocio/:tenantId/inicio`).
+ * El `:tenantId` se compara con los claims (cosmético: el servidor igual juzga
+ * cada lectura). Un id ajeno o inexistente da el mismo «Sin permiso».
+ */
+export function TableroDeLaCuenta() {
+  const { tenantId = '' } = useParams();
+  const { permisos, cargando } = useSesion();
+  if (cargando) return <p>Cargando…</p>;
+  const rol = Object.hasOwn(permisos.tenants, tenantId) ? permisos.tenants[tenantId] : undefined;
+  if (rol !== 'admin' && rol !== 'oper') {
+    return <p className="situacion alerta">Sin permiso para ver esta cuenta.</p>;
+  }
+  return <TableroComercio key={tenantId} tenantId={tenantId} esAdmin={rol === 'admin'} />;
 }

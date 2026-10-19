@@ -36,7 +36,11 @@ import { configDefaults, defineConfig } from 'vitest/config';
  * El CI sigue corriendo `pruebas:reglas`: los dos proyectos, con emulador.
  */
 export const SUITES_PURAS = [
+  'pruebas/central/cuenta-activa.test.ts',
+  'pruebas/central/cuenta-activa-rutas.test.ts',
   'pruebas/core/claims-asignar-rol.test.ts',
+  'pruebas/core/varias-cuentas-autorizacion.test.ts',
+  'pruebas/central/cuenta-activa-personas.test.ts',
   'pruebas/agenda-minima-flujo.test.ts',
   'pruebas/agenda-minima-lib.test.ts',
   'pruebas/agenda-minima-herramienta-actualizar.test.ts',
@@ -90,6 +94,7 @@ export const SUITES_PURAS = [
   'pruebas/campanas-consola.test.ts',
   'pruebas/central/contrato-f1b-puras.test.ts',
   'pruebas/central/prepago-bolsas.test.ts',
+  'pruebas/central/turno-honestidad.test.ts',
   'pruebas/candado-agenda.test.ts',
   'pruebas/calendario-fechas-en-el-nodo.test.ts',
   'pruebas/capacidades-comunes.test.ts',
@@ -116,6 +121,7 @@ export const SUITES_PURAS = [
   'pruebas/modulos/cobros/contadores-consola.test.ts',
   'pruebas/core/conversacion-normalizacion.test.ts',
   'pruebas/core/conversacion-derivados.test.ts',
+  'pruebas/core/sesion-turno.test.ts',
   'pruebas/core/nube-visor.test.ts',
   'pruebas/core/cargar-timbre-n8n.test.ts',
   'pruebas/conteo-bloques.test.ts',

@@ -107,3 +107,36 @@ describe('esOperDe: todo lo demás es falso', () => {
     expect(esOperDe(peticion({ nc: { t: heredado } }), T)).toBe(false);
   });
 });
+
+describe('esAdminDe: el tenantId debe ser texto y clave propia', () => {
+  const admin = (nc?: unknown) => peticion({ nc: nc ?? { t: { [T]: 'admin' } } });
+
+  it('el caso legítimo sigue autorizando', () => {
+    expect(esAdminDe(admin(), T)).toBe(true);
+  });
+
+  it('un arreglo, objeto, número o nulo como tenantId no autoriza (sin coerción a texto)', () => {
+    for (const id of [[T], { toString: () => T }, 1, null, undefined, true]) {
+      expect(esAdminDe(admin(), id as unknown as string)).toBe(false);
+    }
+  });
+
+  it("nombres de Object.prototype ('constructor', '__proto__') no autorizan", () => {
+    for (const id of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+      expect(esAdminDe(admin(), id)).toBe(false);
+    }
+  });
+
+  it('un rol heredado por la cadena de prototipos no cuenta', () => {
+    const heredado = Object.create({ [T]: 'admin' }) as Record<string, string>;
+    expect(esAdminDe(admin({ t: heredado }), T)).toBe(false);
+  });
+});
+
+describe('esOperDe: el tenantId debe ser texto', () => {
+  it('un arreglo, objeto o número como tenantId no autoriza', () => {
+    for (const id of [[T], { toString: () => T }, 1, null]) {
+      expect(esOperDe(peticion(), id as unknown as string)).toBe(false);
+    }
+  });
+});
