@@ -340,7 +340,7 @@ jobs:
 
       - name: Node.js con cache
         if: steps.pm.outputs.hay_componente == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: ${{ steps.pm.outputs.pm }}
@@ -482,7 +482,7 @@ jobs:
         run: corepack enable
 
       - name: Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: ${{ needs.preparar.outputs.pm }}
@@ -777,7 +777,7 @@ jobs:
         run: corepack enable
 
       - name: Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: ${{ needs.preparar.outputs.pm }}
@@ -893,7 +893,7 @@ jobs:
           exit 1
 
       - name: Guardar dist/
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dist-production
           path: ${{ env.RUTA_COMPONENTE }}/${{ steps.dist.outputs.ruta }}/
@@ -910,7 +910,7 @@ jobs:
         run: node scripts/modulos/catalogo-web/verificar-sitio-publico.mjs
 
       - name: Guardar dist-catalogo/ (segundo sitio de Hosting)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dist-catalogo-production
           path: ${{ env.RUTA_COMPONENTE }}/web/dist-catalogo/
@@ -925,7 +925,7 @@ jobs:
       # «Cannot find module 'firebase-functions/...'» (v0.1.0, 2026-09-12).
       # En la maquina de quien despliega a mano sigue recompilando siempre.
       - name: Guardar functions/ (lib compilado + package-lock)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: functions-production
           path: |
@@ -1020,7 +1020,7 @@ jobs:
         run: corepack enable
 
       - name: Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: ${{ needs.preparar.outputs.pm }}
@@ -1096,7 +1096,7 @@ jobs:
           exit 1
 
       - name: Guardar dist/
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dist-staging
           path: ${{ env.RUTA_COMPONENTE }}/${{ steps.dist.outputs.ruta }}/
@@ -1113,7 +1113,7 @@ jobs:
         run: node scripts/modulos/catalogo-web/verificar-sitio-publico.mjs
 
       - name: Guardar dist-catalogo/ (segundo sitio de Hosting)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dist-catalogo-staging
           path: ${{ env.RUTA_COMPONENTE }}/web/dist-catalogo/
@@ -1121,7 +1121,7 @@ jobs:
           if-no-files-found: error
 
       - name: Guardar functions/ (lib compilado + package-lock)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: functions-staging
           path: |
@@ -1370,7 +1370,7 @@ jobs:
           service_account: ${{ secrets.GCP_SA_DEPLOY_STAGING }}
 
       - name: Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -1626,7 +1626,7 @@ jobs:
           service_account: ${{ secrets.GCP_SA_DEPLOY_DEV }}
 
       - name: Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -1850,7 +1850,7 @@ jobs:
           service_account: ${{ secrets.GCP_SA_DEPLOY_PROD }}
 
       - name: Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.NODE_VERSION }}
 
