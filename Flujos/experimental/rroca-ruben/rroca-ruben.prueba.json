@@ -1,0 +1,773 @@
+{
+  "name": "NovuChat — Venta digital de Rubén (rroca-ruben, prueba)",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 120,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveExecutionProgress": false,
+    "saveManualExecutions": false
+  },
+  "nodes": [
+    {
+      "id": "entrada-de-prueba",
+      "name": "Entrada de prueba",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -300,
+        520
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "REEMPLAZAR_RUTA_DE_PRUEBA",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Entrada de prueba Ruben"
+        }
+      },
+      "notes": "SOLO en rroca-ruben.prueba.json, que se importa únicamente para ensayar y se DESACTIVA y BORRA al terminar. Exige una credencial de cabecera propia (la ruta, además, es una URL de capacidad). Recibe la misma carga que Meta dentro de `body` y, opcionales, modoPrueba, telefonoDePrueba y enviarDeVerdad (solo `modoPrueba === true` lo activa). Responde con «Resumen del turno»."
+    },
+    {
+      "id": "config-base",
+      "name": "Config base",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -40,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cb_waGraphVersion",
+              "name": "waGraphVersion",
+              "type": "string",
+              "value": "v26.0"
+            },
+            {
+              "id": "cb_phoneNumberIdEsperado",
+              "name": "phoneNumberIdEsperado",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_RUBEN"
+            },
+            {
+              "id": "cb_numeroRecepcion",
+              "name": "numeroRecepcion",
+              "type": "string",
+              "value": "REEMPLAZAR_NUMERO_RECEPCION_RUBEN"
+            },
+            {
+              "id": "cb_nombreNegocio",
+              "name": "nombreNegocio",
+              "type": "string",
+              "value": "Rubén Roca"
+            },
+            {
+              "id": "cb_mensajeComercioSuspendido",
+              "name": "mensajeComercioSuspendido",
+              "type": "string",
+              "value": "En este momento no podemos atenderte por este medio. Gracias por escribirnos."
+            },
+            {
+              "id": "cb_prefijosPermitidos",
+              "name": "prefijosPermitidos",
+              "type": "string",
+              "value": "591"
+            },
+            {
+              "id": "cb_telefonosDePrueba",
+              "name": "telefonosDePrueba",
+              "type": "string",
+              "value": "REEMPLAZAR_TELEFONOS_DE_PRUEBA"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "notes": "LO CONFIGURABLE DEL NEGOCIO que no es de la consola. Se llena desde admin/scripts/datos/chat-novuchat/<archivo>.json: marcadores REEMPLAZAR_* para los identificadores, que el publicador sustituye. Nunca un token ni un identificador real aquí."
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================================================\n// UTILIDADES COMUNES DE LOS NODOS DE LA «VENTA DIGITAL DE RUBÉN» (prefijo `cn`)\n// =============================================================================\n// El constructor las pega entre la librería (`rr.js`, y las `cm*` en los nodos que las piden) y el código de cada nodo. JavaScript plano: sin `require`, `URL`,\n// `Buffer` ni `crypto`, y nada de red. Lo que se lee de otro nodo se lee POR NOMBRE y solo si corrió (`isExecuted`): un nodo que no corrió no se lee con `.item`.\n// Ningún nodo lee por nombre algo que corre más de una vez en la ejecución (no hay ciclos): `first()` es siempre «el único».\n\n// El nodo `nombre` si existe Y corrió en esta ejecución; si no, null. En un JSON que no lo trae (el de producción no tiene «Entrada de prueba») `$()` lanza.\nfunction cnNodo(nombre) {\n  try {\n    const n = $(nombre);\n    return n && n.isExecuted ? n : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnPrimero(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return null;\n  try {\n    const i = n.first();\n    return i && i.json ? i.json : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnTodos(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return [];\n  try {\n    return n.all().map((i) => (i && i.json) || {});\n  } catch (e) {\n    return [];\n  }\n}\nfunction cnCfg() {\n  return cnPrimero('Config del negocio') || {};\n}\nfunction cnDigitos(v) {\n  return String(v === undefined || v === null ? '' : v).replace(/\\D/g, '');\n}\nfunction cnRecorte(t, max) {\n  const s = String(t === undefined || t === null ? '' : t);\n  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;\n}\n// El texto de una respuesta de Gemini (generateContent, o el nodo de LangChain con `simplify`). '' si vino un error o algo que no se reconoce.\nfunction cnTextoDeGemini(j) {\n  if (!j || typeof j !== 'object' || j.error) return '';\n  const partes = (c) => (c && Array.isArray(c.parts))\n    ? c.parts.map((p) => (p && typeof p.text === 'string') ? p.text : '').join('\\n') : '';\n  if (typeof j.content === 'string') return j.content;\n  const c1 = partes(j.content);\n  if (c1) return c1;\n  const cand = Array.isArray(j.candidates) ? j.candidates[0] : null;\n  const c2 = cand ? partes(cand.content) : '';\n  if (c2) return c2;\n  for (const k of ['text', 'transcription', 'output', 'response']) {\n    if (typeof j[k] === 'string' && j[k].trim()) return j[k];\n  }\n  return '';\n}\n// El objeto JSON que Gemini devolvió como texto; null si no es un objeto.\nfunction cnJsonDeGemini(j) {\n  const t = cnTextoDeGemini(j).trim().replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n  if (!t) return null;\n  const m = /\\{[\\s\\S]*\\}/.exec(t);\n  try {\n    const o = JSON.parse(m ? m[0] : t);\n    return o && typeof o === 'object' && !Array.isArray(o) ? o : null;\n  } catch (e) {\n    return null;\n  }\n}\n// La clave de la ficha es el teléfono de origen y solo dígitos: nunca un nombre que toque el prototipo.\nfunction cnClaveValida(from) {\n  return /^\\d{6,20}$/.test(String(from || ''));\n}\n// Las fichas de los teléfonos (`staticData.global.rroca`). Un nodo que SOLO LEE no escribe nada en los datos estáticos. Los que escriben (con `escribir` verdadero) crean el mapa si falta.\nfunction cnMapaDeFichas(escribir) {\n  let sd = null;\n  try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }\n  if (!sd) return { sd: null, mapa: {} };\n  const valido = sd.rroca && typeof sd.rroca === 'object' && !Array.isArray(sd.rroca);\n  if (!valido) {\n    if (escribir !== true) return { sd: sd, mapa: {} };\n    sd.rroca = {};\n  }\n  return { sd: sd, mapa: sd.rroca };\n}\nfunction cnFichaDe(mapa, from) {\n  return cnClaveValida(from) && Object.prototype.hasOwnProperty.call(mapa, from) ? mapa[from] : null;\n}\n// La atención del teléfono: lo que devolvió la ingesta del entrante si lo trae, y si no, lo que dijo `configuracionFlujo`. Ante la duda, normal.\nfunction cnAtencion(rIngesta, cfg) {\n  const a = rIngesta && typeof rIngesta === 'object' && rIngesta.atencion && typeof rIngesta.atencion === 'object'\n    ? rIngesta.atencion : null;\n  const estados = ['normal', 'operador', 'bloqueado'];\n  const estado = a && estados.indexOf(a.estado) >= 0 ? a.estado\n    : (estados.indexOf(cfg.atencionEstado) >= 0 ? cfg.atencionEstado : 'normal');\n  const avisarIngesta = rIngesta && typeof rIngesta === 'object' ? rIngesta.avisarRecepcion : '';\n  const avisarCfg = a && a.avisarRecepcion !== undefined ? a.avisarRecepcion : cfg.atencionAvisarRecepcion;\n  const avisar = ['operador', 'bloqueado'].indexOf(avisarIngesta || avisarCfg) >= 0 ? (avisarIngesta || avisarCfg) : '';\n  return {\n    estado: estado,\n    avisar: avisar,\n    mensajeFijo: String((a && a.mensajeFijo) || cfg.atencionMensajeFijo || '').trim(),\n    respuestas: Number(a && a.respuestasEnVentana !== undefined ? a.respuestasEnVentana : cfg.atencionRespuestas) || 0,\n    venceEn: String((a && a.ventanaVenceEn) || cfg.atencionVenceEn || ''),\n  };\n}\n\n// CARGA DE ENTRADA: deja la entrada en UNA forma, venga de donde venga, y FILTRA los eventos: solo pasan las cargas con `messages`, sin `statuses` y del número esperado\n// (`phone_number_id` = `phoneNumberIdEsperado` de «Config base»). Los acuses de estado y los mensajes de otro número se descartan AQUÍ, antes de traer la configuración.\n//\n// Formas que acepta:\n//   1. el disparador de WhatsApp: {messages, metadata, contacts} en la raíz;\n//   2. un Webhook: lo mismo dentro de `body`;\n//   3. la carga completa de la Cloud API: {entry:[{changes:[{value:{...}}]}]}, en la raíz o dentro de `body`;\n//   4. la del receptor: si CORRIÓ «Entrega del receptor», el evento es su `body.value` (y si `body.field` viene, tiene que ser `messages`: otro campo —un cambio de plantilla, de calidad— no es un mensaje). Ese nodo manda\n//      sobre las otras tres: lo que pasa por «Verificar firma con el receptor» ya no es el evento sino su veredicto, y NUNCA se lee como un mensaje.\n//\n// EL MODO PRUEBA NO SE LEE DE LA CARGA. Solo lo activa el nodo «Entrada de prueba» (un Webhook que el JSON de producción NO tiene): se pregunta si ese nodo corrió y se\n// lee SU cuerpo, con `=== true`. Una carga de WhatsApp con `modoPrueba` adentro —en la raíz, en el mensaje o en un texto— no lo activa jamás.\nfunction cnValorDeMeta(c) {\n  if (!c || typeof c !== 'object') return null;\n  if (Array.isArray(c.messages) || Array.isArray(c.statuses)) return c;\n  const entradas = Array.isArray(c.entry) ? c.entry : [];\n  for (const e of entradas) {\n    const cambios = e && Array.isArray(e.changes) ? e.changes : [];\n    for (const ch of cambios) {\n      const v = ch && ch.value;\n      if (v && typeof v === 'object' && (Array.isArray(v.messages) || Array.isArray(v.statuses))) return v;\n    }\n  }\n  return null;\n}\n\nfunction cnPrueba() {\n  const w = cnPrimero('Entrada de prueba');\n  const b = w && w.body && typeof w.body === 'object' ? w.body : null;\n  if (!b || b.modoPrueba !== true) return null;\n  return {\n    modoPrueba: true,\n    telefonoDePrueba: cnDigitos(b.telefonoDePrueba),\n    enviarDeVerdad: b.enviarDeVerdad === true,\n  };\n}\n\nconst ahoraMs = Date.now();\nconst prueba = cnPrueba();\nconst esperado = String((cnPrimero('Config base') || {}).phoneNumberIdEsperado || '');\nconst receptor = cnPrimero('Entrega del receptor');\nconst cuerpoReceptor = receptor && receptor.body && typeof receptor.body === 'object' ? receptor.body : {};\nconst salida = [];\nfor (const it of $input.all()) {\n  const j = (it && it.json) || {};\n  const b = !receptor && j.body && typeof j.body === 'object' ? j.body : null;\n  const v = receptor\n    ? (cuerpoReceptor.value && typeof cuerpoReceptor.value === 'object' && (cuerpoReceptor.field === undefined || cuerpoReceptor.field === 'messages') ? cnValorDeMeta(cuerpoReceptor.value) : null)\n    : (cnValorDeMeta(j) || cnValorDeMeta(b));\n  const metadata = (v && v.metadata) || (j.metadata) || (b && b.metadata) || {};\n  const messages = v && Array.isArray(v.messages) ? v.messages : [];\n  const statuses = v && Array.isArray(v.statuses) ? v.statuses : [];\n  const phoneNumberId = String(metadata.phone_number_id || '');\n  // El filtro de eventos: nada de acuses, nada sin mensaje y nada de otro número.\n  if (!messages.length || statuses.length || esperado === '' || phoneNumberId !== esperado) continue;\n  salida.push({ json: {\n    messaging_product: 'whatsapp',\n    metadata: metadata,\n    contacts: v && Array.isArray(v.contacts) ? v.contacts : [],\n    messages: messages,\n    statuses: statuses,\n    phoneNumberId: phoneNumberId,\n    ahoraMs: ahoraMs,\n    prueba: prueba,\n  } });\n}\nreturn salida;\n"
+      },
+      "id": "carga-de-entrada",
+      "name": "Carga de entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "notes": "Deja la entrada en una sola forma y FILTRA: solo pasan las cargas con `messages`, sin `statuses` y del número esperado (`phoneNumberIdEsperado` de «Config base»). Si CORRIÓ «Entrega del receptor», el evento es su `body.value`. Los acuses de estado y los mensajes de otro número se descartan aquí, antes de traer la configuración."
+    },
+    {
+      "id": "traer-configuracion",
+      "name": "Traer configuración",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.prueba && $json.prueba.modoPrueba === true ? String($('Config base').first().json.phoneNumberIdEsperado || '') : String($json.phoneNumberId || '') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || '') }) }}",
+        "options": {
+          "timeout": 4000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Ruben)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "De la consola salen, en PR-1, el nombre del negocio, el número de recepción, el nombre del asistente, el trato y la atención. Con el panel caído, «Config del negocio» usa el respaldo de «Config base»."
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================================================\n// UTILIDADES COMUNES DE LOS NODOS DE LA «VENTA DIGITAL DE RUBÉN» (prefijo `cn`)\n// =============================================================================\n// El constructor las pega entre la librería (`rr.js`, y las `cm*` en los nodos que las piden) y el código de cada nodo. JavaScript plano: sin `require`, `URL`,\n// `Buffer` ni `crypto`, y nada de red. Lo que se lee de otro nodo se lee POR NOMBRE y solo si corrió (`isExecuted`): un nodo que no corrió no se lee con `.item`.\n// Ningún nodo lee por nombre algo que corre más de una vez en la ejecución (no hay ciclos): `first()` es siempre «el único».\n\n// El nodo `nombre` si existe Y corrió en esta ejecución; si no, null. En un JSON que no lo trae (el de producción no tiene «Entrada de prueba») `$()` lanza.\nfunction cnNodo(nombre) {\n  try {\n    const n = $(nombre);\n    return n && n.isExecuted ? n : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnPrimero(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return null;\n  try {\n    const i = n.first();\n    return i && i.json ? i.json : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnTodos(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return [];\n  try {\n    return n.all().map((i) => (i && i.json) || {});\n  } catch (e) {\n    return [];\n  }\n}\nfunction cnCfg() {\n  return cnPrimero('Config del negocio') || {};\n}\nfunction cnDigitos(v) {\n  return String(v === undefined || v === null ? '' : v).replace(/\\D/g, '');\n}\nfunction cnRecorte(t, max) {\n  const s = String(t === undefined || t === null ? '' : t);\n  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;\n}\n// El texto de una respuesta de Gemini (generateContent, o el nodo de LangChain con `simplify`). '' si vino un error o algo que no se reconoce.\nfunction cnTextoDeGemini(j) {\n  if (!j || typeof j !== 'object' || j.error) return '';\n  const partes = (c) => (c && Array.isArray(c.parts))\n    ? c.parts.map((p) => (p && typeof p.text === 'string') ? p.text : '').join('\\n') : '';\n  if (typeof j.content === 'string') return j.content;\n  const c1 = partes(j.content);\n  if (c1) return c1;\n  const cand = Array.isArray(j.candidates) ? j.candidates[0] : null;\n  const c2 = cand ? partes(cand.content) : '';\n  if (c2) return c2;\n  for (const k of ['text', 'transcription', 'output', 'response']) {\n    if (typeof j[k] === 'string' && j[k].trim()) return j[k];\n  }\n  return '';\n}\n// El objeto JSON que Gemini devolvió como texto; null si no es un objeto.\nfunction cnJsonDeGemini(j) {\n  const t = cnTextoDeGemini(j).trim().replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n  if (!t) return null;\n  const m = /\\{[\\s\\S]*\\}/.exec(t);\n  try {\n    const o = JSON.parse(m ? m[0] : t);\n    return o && typeof o === 'object' && !Array.isArray(o) ? o : null;\n  } catch (e) {\n    return null;\n  }\n}\n// La clave de la ficha es el teléfono de origen y solo dígitos: nunca un nombre que toque el prototipo.\nfunction cnClaveValida(from) {\n  return /^\\d{6,20}$/.test(String(from || ''));\n}\n// Las fichas de los teléfonos (`staticData.global.rroca`). Un nodo que SOLO LEE no escribe nada en los datos estáticos. Los que escriben (con `escribir` verdadero) crean el mapa si falta.\nfunction cnMapaDeFichas(escribir) {\n  let sd = null;\n  try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }\n  if (!sd) return { sd: null, mapa: {} };\n  const valido = sd.rroca && typeof sd.rroca === 'object' && !Array.isArray(sd.rroca);\n  if (!valido) {\n    if (escribir !== true) return { sd: sd, mapa: {} };\n    sd.rroca = {};\n  }\n  return { sd: sd, mapa: sd.rroca };\n}\nfunction cnFichaDe(mapa, from) {\n  return cnClaveValida(from) && Object.prototype.hasOwnProperty.call(mapa, from) ? mapa[from] : null;\n}\n// La atención del teléfono: lo que devolvió la ingesta del entrante si lo trae, y si no, lo que dijo `configuracionFlujo`. Ante la duda, normal.\nfunction cnAtencion(rIngesta, cfg) {\n  const a = rIngesta && typeof rIngesta === 'object' && rIngesta.atencion && typeof rIngesta.atencion === 'object'\n    ? rIngesta.atencion : null;\n  const estados = ['normal', 'operador', 'bloqueado'];\n  const estado = a && estados.indexOf(a.estado) >= 0 ? a.estado\n    : (estados.indexOf(cfg.atencionEstado) >= 0 ? cfg.atencionEstado : 'normal');\n  const avisarIngesta = rIngesta && typeof rIngesta === 'object' ? rIngesta.avisarRecepcion : '';\n  const avisarCfg = a && a.avisarRecepcion !== undefined ? a.avisarRecepcion : cfg.atencionAvisarRecepcion;\n  const avisar = ['operador', 'bloqueado'].indexOf(avisarIngesta || avisarCfg) >= 0 ? (avisarIngesta || avisarCfg) : '';\n  return {\n    estado: estado,\n    avisar: avisar,\n    mensajeFijo: String((a && a.mensajeFijo) || cfg.atencionMensajeFijo || '').trim(),\n    respuestas: Number(a && a.respuestasEnVentana !== undefined ? a.respuestasEnVentana : cfg.atencionRespuestas) || 0,\n    venceEn: String((a && a.ventanaVenceEn) || cfg.atencionVenceEn || ''),\n  };\n}\n\n// CONFIG DEL NEGOCIO: lo configurable del negocio, en UN solo nodo.\n//\n// LA CONSOLA MANDA, PERO NUNCA DEJA AL CLIENTE SIN RESPUESTA. `Traer configuración` devuelve la respuesta completa (código y cuerpo, `neverError`) y aquí se decide con el código:\n//   200 + tenantId -> configuración del panel; sus valores PISAN a los de `Config base`;\n//   409            -> SUSPENDIDO: es una respuesta válida, no un error;\n//   otra           -> no se pudo saber -> respaldo de `Config base`.\n//\n// DE LA CONSOLA salen SOLO (PR-1): el nombre del negocio, el número de recepción (el de Rubén), el nombre del asistente, el trato y la atención (los umbrales de uso extendido).\n// El catálogo y el cobro entran en PR-2; el precio vive solo en el catálogo. Este nodo es una COPIA ADAPTADA de `chat-novuchat/src/nodos/config-del-negocio.js` (HUECO declarado en\n// PROPIO.md): se quitaron la oferta (planes y cargos), la planilla y los datos del chat, y se conservaron BYTE A BYTE los bloques de lectura de la respuesta, de atención y del modo prueba.\n\nconst base = cnPrimero('Config base') || {};\nconst carga = cnPrimero('Carga de entrada') || {};\nconst primero = $input.first();\nconst resp = (primero && primero.json) || {};\nconst codigo = Number(resp.statusCode);\nlet cuerpo = resp.body === undefined ? {} : resp.body;\nif (typeof cuerpo === 'string') { try { cuerpo = JSON.parse(cuerpo); } catch (e) { cuerpo = {}; } }\nif (!cuerpo || typeof cuerpo !== 'object') cuerpo = {};\n\nconst util = (v) => (typeof v === 'string' && v.trim() !== '') ? v.trim() : undefined;\nconst soloLlenos = (o) => Object.fromEntries(Object.entries(o).filter((par) => par[1] !== undefined));\n// Un marcador sin llenar (`REEMPLAZAR_…`) no es un valor.\nconst valor = (v) => (typeof v === 'string' && !/^REEMPLAZAR_/.test(v.trim())) ? v.trim() : '';\n// Texto de la consola que va a un mensaje: una línea, sin corchetes ni llaves ni los delimitadores del turno.\nconst linea = (v, max) => String(v === undefined || v === null ? '' : v)\n  .replace(/<<<|>>>/g, '').replace(/[\\[\\]{}]/g, '')\n  .replace(/[\\r\\n\\t]+/g, ' ').replace(/\\s{2,}/g, ' ').trim().slice(0, max);\n\n// --- ATENCIÓN: los umbrales de uso extendido (el servidor decide; este nodo obedece) ---\nconst at = (codigo === 200 && cuerpo.atencion && typeof cuerpo.atencion === 'object') ? cuerpo.atencion : {};\nconst atencion = {\n  atencionEstado: ['normal', 'operador', 'bloqueado'].indexOf(at.estado) >= 0 ? at.estado : 'normal',\n  atencionMensajeFijo: util(at.mensajeFijo)\n    || 'Gracias por tu paciencia. Para atenderte mejor, una persona del equipo va a continuar esta conversación.',\n  atencionAvisarRecepcion: ['operador', 'bloqueado'].indexOf(at.avisarRecepcion) >= 0 ? at.avisarRecepcion : '',\n  atencionRespuestas: (typeof at.respuestasEnVentana === 'number' && Number.isFinite(at.respuestasEnVentana)) ? at.respuestasEnVentana : 0,\n  atencionVenceEn: util(at.ventanaVenceEn) || '',\n};\n\n// --- Lo de `Config base` (respaldo) ---\nconst deBase = {\n  nombreNegocio: linea(valor(base.nombreNegocio), 60),\n  numeroRecepcion: cnDigitos(valor(base.numeroRecepcion)),\n  prefijosPermitidos: valor(base.prefijosPermitidos) || '591',\n  mensajeComercioSuspendido: linea(valor(base.mensajeComercioSuspendido), 300)\n    || 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.',\n  nombreAsistente: '',\n  trato: 'tu',\n};\n\nlet cfg;\nif (codigo === 409) {\n  cfg = Object.assign({}, deBase, atencion, {\n    estadoComercio: 'suspendido',\n    // Texto neutro del panel: no menciona pagos ni deudas.\n    mensajeComercioSuspendido: linea(util(cuerpo.mensajeCortesia), 300) || deBase.mensajeComercioSuspendido,\n    configDeLaConsola: false, panelDice: 'no operativo',\n  });\n} else if (!(codigo === 200 && typeof cuerpo.tenantId === 'string')) {\n  cfg = Object.assign({}, deBase, atencion, {\n    estadoComercio: 'operativo', configDeLaConsola: false, panelSinRespuesta: true, codigoDelPanel: Number.isFinite(codigo) ? codigo : 0,\n  });\n} else {\n  const dn = cuerpo.datosDelNegocio && typeof cuerpo.datosDelNegocio === 'object' ? cuerpo.datosDelNegocio : {};\n  const op = cuerpo.operacion && typeof cuerpo.operacion === 'object' ? cuerpo.operacion : {};\n  const voz = cuerpo.voz && typeof cuerpo.voz === 'object' ? cuerpo.voz : {};\n  const recepcion = util(op.numeroRecepcion);\n  const deLaConsola = soloLlenos({\n    nombreNegocio: util(dn.nombreNegocio) ? linea(dn.nombreNegocio, 60) : undefined,\n    // Solo dígitos: es el destino del botón a una persona.\n    numeroRecepcion: recepcion ? (cnDigitos(recepcion) || undefined) : undefined,\n    prefijosPermitidos: Array.isArray(op.prefijosPermitidos) && op.prefijosPermitidos.length ? op.prefijosPermitidos.join(',') : undefined,\n  });\n  const estadoDeLaConsola = util(cuerpo.estadoComercio);\n  cfg = Object.assign({}, deBase, deLaConsola, atencion, {\n    // Mandan aunque vengan vacíos: el nombre del asistente. El trato es una frase de la consola (`usted`, `tú`, `vos`, neutro): solo «usted» cambia el trato.\n    nombreAsistente: linea(voz.nombreAsistente, 40),\n    trato: /usted/i.test(String(voz.tratamiento || '')) ? 'usted' : 'tu',\n    estadoComercio: estadoDeLaConsola === 'activo' ? 'operativo' : (estadoDeLaConsola ? 'suspendido' : 'operativo'),\n    configDeLaConsola: true,\n  });\n}\n\n// --- el MODO PRUEBA ---\nconst prueba = carga.prueba && carga.prueba.modoPrueba === true ? carga.prueba : null;\n// S7: `telefonosDePrueba` (opcional, en «Config base») limita a qué números puede dirigirse una ejecución de PRUEBA: si el teléfono pedido no está en la lista, no se envía nada. En ESTE flujo se NIEGA POR DEFECTO\n// (diferencia declarada con chat-novuchat): sin lista, o con el marcador sin llenar, ningún teléfono está permitido.\nconst permitidos = valor(base.telefonosDePrueba).split(',').map((x) => cnDigitos(x)).filter((x) => x.length >= 6);\nconst telefonoDePrueba = prueba ? cnDigitos(prueba.telefonoDePrueba) : '';\nconst telefonoPermitido = permitidos.length > 0 && permitidos.indexOf(telefonoDePrueba) >= 0;\n\nreturn [{ json: Object.assign({}, cfg, {\n  waGraphVersion: /^v\\d{1,2}\\.\\d{1,2}$/.test(String(base.waGraphVersion || '')) ? String(base.waGraphVersion) : 'v26.0',\n  phoneNumberId: String(carga.phoneNumberId || ''),\n  // El modo prueba. Solo lo trae `Carga de entrada` cuando corrió «Entrada de prueba».\n  modoPrueba: prueba !== null,\n  telefonoDePrueba: prueba && telefonoPermitido ? telefonoDePrueba : '',\n  enviarDeVerdad: prueba ? prueba.enviarDeVerdad === true && telefonoPermitido : true,\n}) }];\n"
+      },
+      "id": "config-del-negocio",
+      "name": "Config del negocio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ],
+      "notes": "Lo configurable del negocio en un solo nodo: la consola sobre el respaldo de «Config base». Copia adaptada de chat-novuchat (HUECO declarado en PROPIO.md)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================================================\n// LIBRERÍA PROPIA DE LA «VENTA DIGITAL DE RUBÉN» (prefijo `rr`) — PR-1: el esqueleto\n// =============================================================================\n// El constructor la pega delante de los nodos que la piden (modo `todo`). JavaScript plano: sin `require`, `URL`, `Buffer` ni `crypto`, y nada de red.\n// En PR-2 a PR-4 crece aquí lo propio del flujo (catálogo de 4 productos, total, estados, textos fijos de la venta, rescate); en PR-1 solo lo del esqueleto:\n// el saludo fijo, la barrera NIEGA_IA y la ficha por teléfono.\n\n// NIEGA_IA (prohibición 4 de CLAUDE.md): ningún texto que ve el cliente puede negar que es una IA. COPIA DECLARADA de `CH_NIEGA_IA` de\n// `Flujos/experimental/chat-novuchat/src/lib/chat.js` (HUECO en PROPIO.md): la expresión es idéntica y una prueba la compara. Se aplica al texto NORMALIZADO (`rrNorm`).\nconst RR_NIEGA_IA = /\\bno (?:soy|es|eres|estas hablando con|hablas con)\\b[^.!?]{0,20}\\b(?:ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\\b|\\bpersona (?:real|de verdad)\\b|\\bcarne y hueso\\b|\\bno (?:contesta|responde|atiende|hay) (?:ningun\\w* )?(?:ia|inteligencia|bot|robot|maquina)\\b|\\bnada de (?:robots?|bots?|maquinas?)\\b|\\bhumano\\b|\\bpersonalmente\\b|\\bconmigo (?:hablas|conversas)\\b|\\bequipo humano\\b|\\b(?:soy|es) (?:una )?persona\\b|\\balguien real\\b|\\bhuman[oa]s?\\b|\\b(?:personas?|gente) (?:real(?:es)?|de verdad)\\b|\\b(?:persona|gente|alguien|humano|equipo|ejecutiv\\w*|asesor\\w*) (?:real|de verdad)\\b|\\bde verdad\\b[^.!?]{0,20}\\b(?:persona|gente|humano)\\w*|\\bno (?:contesta|responde|atiende|hay|habla) (?:(?:un|una|el|la|ningun\\w*) )?(?:ia|inteligencia|bot|chatbot|robot|maquina|programa)\\b|\\bno es (?:un )?(?:mensaje |chat )?automatic\\w*|\\b(?:es|soy) (?:una? )?(?:chica|chico|mujer|hombre|senorita|joven)\\b/;\n\n// Texto fijo de PR-1. Lo arma el código; no hay modelo. Se presenta como asistente virtual (prohibición 4) y no promete nada.\nconst RR_SALUDO = 'Hola, soy el asistente virtual de Rubén. Te puedo ayudar con el libro «IA para Emprendedores Independientes». ¿Qué te gustaría saber?';\n// Lo mínimo si, por un cambio mal hecho, el saludo cayera en NIEGA_IA: nunca sale un texto que niegue ser una IA.\nconst RR_SALUDO_MINIMO = 'Hola, soy el asistente virtual de Rubén.';\n\nconst RR_TOPE_FICHAS = 300;   // fichas guardadas a lo más (n8n graba TODAS en cada ejecución)\nconst RR_TOPE_IDS = 5;        // ids de Meta que se recuerdan por ficha (entregas repetidas)\nconst RR_OLVIDO_MS = 48 * 60 * 60 * 1000;\n\nfunction rrTexto(v) { return v === undefined || v === null ? '' : String(v); }\nfunction rrNorm(t) {\n  return rrTexto(t).normalize('NFKC').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase()\n    .replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim();\n}\n// El texto que ve el cliente, con la barrera aplicada: si niega ser una IA, sale el mínimo.\nfunction rrSeguro(texto) {\n  return RR_NIEGA_IA.test(rrNorm(texto)) ? RR_SALUDO_MINIMO : texto;\n}\n// La ficha de un teléfono: nueva, o la guardada si es un objeto. Solo cuenta lo de ESE teléfono.\nfunction rrFichaVigente(f) {\n  const ids = f && Array.isArray(f.ultimosIds) ? f.ultimosIds.filter((x) => typeof x === 'string') : [];\n  return { ultimosIds: ids.slice(-RR_TOPE_IDS), turnos: f && Number.isFinite(f.turnos) ? f.turnos : 0, ultimoMs: f && Number.isFinite(f.ultimoMs) ? f.ultimoMs : 0 };\n}\nfunction rrYaVisto(ficha, id) {\n  const x = rrTexto(id);\n  return x !== '' && !!ficha && typeof ficha === 'object' && Array.isArray(ficha.ultimosIds) && ficha.ultimosIds.includes(x);\n}\nfunction rrRecordarId(f, id) {\n  const x = rrTexto(id);\n  const ids = (Array.isArray(f.ultimosIds) ? f.ultimosIds : []).slice();\n  if (x !== '' && x.length <= 200 && !ids.includes(x)) ids.push(x);\n  f.ultimosIds = ids.slice(-RR_TOPE_IDS);\n  return f;\n}\n// Barre el mapa: fuera las de más de 48 h (o sin hora) y, si pasan del tope, las más viejas.\nfunction rrBarrer(mapa, ahoraMs) {\n  if (!mapa || typeof mapa !== 'object') return mapa;\n  for (const k of Object.keys(mapa)) {\n    const u = mapa[k] && Number.isFinite(mapa[k].ultimoMs) ? mapa[k].ultimoMs : 0;\n    if (!(u > 0) || ahoraMs - u > RR_OLVIDO_MS) delete mapa[k];\n  }\n  const claves = Object.keys(mapa);\n  if (claves.length > RR_TOPE_FICHAS) {\n    claves.sort((a, b) => mapa[a].ultimoMs - mapa[b].ultimoMs);\n    for (const k of claves.slice(0, claves.length - RR_TOPE_FICHAS)) delete mapa[k];\n  }\n  return mapa;\n}\n\n// =============================================================================\n// UTILIDADES COMUNES DE LOS NODOS DE LA «VENTA DIGITAL DE RUBÉN» (prefijo `cn`)\n// =============================================================================\n// El constructor las pega entre la librería (`rr.js`, y las `cm*` en los nodos que las piden) y el código de cada nodo. JavaScript plano: sin `require`, `URL`,\n// `Buffer` ni `crypto`, y nada de red. Lo que se lee de otro nodo se lee POR NOMBRE y solo si corrió (`isExecuted`): un nodo que no corrió no se lee con `.item`.\n// Ningún nodo lee por nombre algo que corre más de una vez en la ejecución (no hay ciclos): `first()` es siempre «el único».\n\n// El nodo `nombre` si existe Y corrió en esta ejecución; si no, null. En un JSON que no lo trae (el de producción no tiene «Entrada de prueba») `$()` lanza.\nfunction cnNodo(nombre) {\n  try {\n    const n = $(nombre);\n    return n && n.isExecuted ? n : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnPrimero(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return null;\n  try {\n    const i = n.first();\n    return i && i.json ? i.json : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnTodos(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return [];\n  try {\n    return n.all().map((i) => (i && i.json) || {});\n  } catch (e) {\n    return [];\n  }\n}\nfunction cnCfg() {\n  return cnPrimero('Config del negocio') || {};\n}\nfunction cnDigitos(v) {\n  return String(v === undefined || v === null ? '' : v).replace(/\\D/g, '');\n}\nfunction cnRecorte(t, max) {\n  const s = String(t === undefined || t === null ? '' : t);\n  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;\n}\n// El texto de una respuesta de Gemini (generateContent, o el nodo de LangChain con `simplify`). '' si vino un error o algo que no se reconoce.\nfunction cnTextoDeGemini(j) {\n  if (!j || typeof j !== 'object' || j.error) return '';\n  const partes = (c) => (c && Array.isArray(c.parts))\n    ? c.parts.map((p) => (p && typeof p.text === 'string') ? p.text : '').join('\\n') : '';\n  if (typeof j.content === 'string') return j.content;\n  const c1 = partes(j.content);\n  if (c1) return c1;\n  const cand = Array.isArray(j.candidates) ? j.candidates[0] : null;\n  const c2 = cand ? partes(cand.content) : '';\n  if (c2) return c2;\n  for (const k of ['text', 'transcription', 'output', 'response']) {\n    if (typeof j[k] === 'string' && j[k].trim()) return j[k];\n  }\n  return '';\n}\n// El objeto JSON que Gemini devolvió como texto; null si no es un objeto.\nfunction cnJsonDeGemini(j) {\n  const t = cnTextoDeGemini(j).trim().replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n  if (!t) return null;\n  const m = /\\{[\\s\\S]*\\}/.exec(t);\n  try {\n    const o = JSON.parse(m ? m[0] : t);\n    return o && typeof o === 'object' && !Array.isArray(o) ? o : null;\n  } catch (e) {\n    return null;\n  }\n}\n// La clave de la ficha es el teléfono de origen y solo dígitos: nunca un nombre que toque el prototipo.\nfunction cnClaveValida(from) {\n  return /^\\d{6,20}$/.test(String(from || ''));\n}\n// Las fichas de los teléfonos (`staticData.global.rroca`). Un nodo que SOLO LEE no escribe nada en los datos estáticos. Los que escriben (con `escribir` verdadero) crean el mapa si falta.\nfunction cnMapaDeFichas(escribir) {\n  let sd = null;\n  try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }\n  if (!sd) return { sd: null, mapa: {} };\n  const valido = sd.rroca && typeof sd.rroca === 'object' && !Array.isArray(sd.rroca);\n  if (!valido) {\n    if (escribir !== true) return { sd: sd, mapa: {} };\n    sd.rroca = {};\n  }\n  return { sd: sd, mapa: sd.rroca };\n}\nfunction cnFichaDe(mapa, from) {\n  return cnClaveValida(from) && Object.prototype.hasOwnProperty.call(mapa, from) ? mapa[from] : null;\n}\n// La atención del teléfono: lo que devolvió la ingesta del entrante si lo trae, y si no, lo que dijo `configuracionFlujo`. Ante la duda, normal.\nfunction cnAtencion(rIngesta, cfg) {\n  const a = rIngesta && typeof rIngesta === 'object' && rIngesta.atencion && typeof rIngesta.atencion === 'object'\n    ? rIngesta.atencion : null;\n  const estados = ['normal', 'operador', 'bloqueado'];\n  const estado = a && estados.indexOf(a.estado) >= 0 ? a.estado\n    : (estados.indexOf(cfg.atencionEstado) >= 0 ? cfg.atencionEstado : 'normal');\n  const avisarIngesta = rIngesta && typeof rIngesta === 'object' ? rIngesta.avisarRecepcion : '';\n  const avisarCfg = a && a.avisarRecepcion !== undefined ? a.avisarRecepcion : cfg.atencionAvisarRecepcion;\n  const avisar = ['operador', 'bloqueado'].indexOf(avisarIngesta || avisarCfg) >= 0 ? (avisarIngesta || avisarCfg) : '';\n  return {\n    estado: estado,\n    avisar: avisar,\n    mensajeFijo: String((a && a.mensajeFijo) || cfg.atencionMensajeFijo || '').trim(),\n    respuestas: Number(a && a.respuestasEnVentana !== undefined ? a.respuestasEnVentana : cfg.atencionRespuestas) || 0,\n    venceEn: String((a && a.ventanaVenceEn) || cfg.atencionVenceEn || ''),\n  };\n}\n\n// INTERPRETAR ENTRADA: el mensaje entrante, normalizado (tipo, texto, medio y categoría). PR-1 no tiene modelo: la categoría solo dice qué clase de entrada llegó.\n//\n// Cubre text, interactive (list_reply ANTES que button_reply), button, audio/voice, image, document, location, sticker, contacts y cualquier otro tipo. Nunca se lee `.text.body` sin\n// pasar por aquí. LA CLAVE DE LA CONVERSACIÓN ES EL NÚMERO DE ORIGEN (`messages[0].from`): dos clientes jamás comparten ficha. Si no son solo dígitos (6 a 20), el mensaje se descarta.\n//\n// NADA se descarta antes del modelo salvo: no hay mensaje, el número no es válido, el prefijo de país no está permitido (responder a un número extranjero cuesta su tarifa), Meta\n// reenvió un mensaje que ya se procesó (los últimos ids de la ficha y los de la cola), y lo que no es una conversación (reacciones, bienvenida, sistema, efímeros).\n// Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen con `categoria: medio` y su `mediaId`; todo lo demás conversable, con `categoria: conversacion`; cualquier otro tipo, con `categoria: otro` (el flujo igual contesta cortésmente).\nconst carga = cnPrimero('Carga de entrada') || {};\nconst cfg = cnCfg();\nconst msg = Array.isArray(carga.messages) ? carga.messages[0] : undefined;\nif (!msg || typeof msg !== 'object') return [];\nif (['reaction', 'request_welcome', 'system', 'ephemeral'].indexOf(String(msg.type || '')) >= 0) return [];\n\nconst from = String(msg.from || '');\nif (!cnClaveValida(from)) return [];\nconst prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.trim()).filter(Boolean);\nif (prefijos.length && !prefijos.some((p) => from.startsWith(p))) return [];\n\nconst mensajeId = String(msg.id || '').slice(0, 200);\nif (mensajeId && rrYaVisto(cnFichaDe(cnMapaDeFichas(false).mapa, from), mensajeId)) return [];\n\nconst tipo = msg.type === 'voice' ? 'audio' : String(msg.type || 'desconocido');\nconst sel = msg.interactive ? (msg.interactive.list_reply || msg.interactive.button_reply) : null;\nconst audio = msg.audio || msg.voice || null;\nconst visual = tipo === 'image' ? msg.image : (tipo === 'document' ? msg.document : null);\nconst idDelMedio = (m) => { const id = m && m.id ? String(m.id) : ''; return /^[A-Za-z0-9_-]{1,100}$/.test(id) ? id : ''; };\nconst mediaId = tipo === 'audio' ? idDelMedio(audio) : (visual ? idDelMedio(visual) : '');\n\n// El texto del cliente se recorta en el borde (1.500): una regex de costo cuadrático sobre miles de espacios tardaba segundos.\nlet texto = '';\nlet textoReporte = '';\nlet pie = '';\nif (tipo === 'text') {\n  texto = String((msg.text && msg.text.body) || '').slice(0, 1500);\n  textoReporte = texto;\n} else if (tipo === 'interactive') {\n  // Un toque no es texto: lo que cuenta es su id, y solo si tiene la forma esperada.\n  const id = String((sel && sel.id) || '');\n  texto = /^[a-z0-9:_-]{1,200}$/.test(id) ? id : '';\n  textoReporte = 'El cliente seleccionó una opción: ' + String((sel && sel.title) || '').slice(0, 100).replace(/[\\u0000-\\u001f\\u007f\\u2028\\u2029]/g, ' ');\n} else if (tipo === 'button') {\n  texto = String((msg.button && (msg.button.text || msg.button.payload)) || '').slice(0, 1500);\n  textoReporte = 'El cliente tocó el botón: ' + texto;\n} else if (tipo === 'audio') {\n  textoReporte = '(audio) el cliente envió una nota de voz';\n} else if (tipo === 'image') {\n  // El pie de foto es texto que escribió el cliente. Lo leído en la imagen va aparte, rotulado como dato.\n  pie = String((msg.image && msg.image.caption) || '').slice(0, 1500);\n  texto = pie;\n  textoReporte = '(imagen) el cliente envió una foto';\n} else if (tipo === 'document') {\n  pie = String((msg.document && msg.document.caption) || '').slice(0, 1500);\n  texto = pie;\n  textoReporte = '(documento) el cliente envió un archivo';\n} else {\n  textoReporte = '(' + tipo.replace(/[^a-z_]/g, '') + ') el cliente envió un mensaje de tipo ' + tipo.replace(/[^a-z_]/g, '');\n}\n// Un texto vacío (solo espacios) no es una conversación.\nif (tipo === 'text' && texto.trim() === '') return [];\n\nconst contacto = Array.isArray(carga.contacts) ? carga.contacts[0] : undefined;\nconst ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;\nconst esAudio = tipo === 'audio' && mediaId !== '';\nconst esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\nconst categoria = (tipo === 'text' || tipo === 'interactive' || tipo === 'button') ? 'conversacion' : ((tipo === 'audio' || tipo === 'image' || tipo === 'document') ? 'medio' : 'otro');\n\nreturn [{ json: {\n  from: from,\n  // El nombre de perfil llega a avisos y planillas: sin <, >, &, saltos ni controles; 60 caracteres.\n  nombrePerfil: String((contacto && contacto.profile && contacto.profile.name) || '').slice(0, 200).replace(/[\\u0000-\\u001f\\u007f\\u2028\\u2029<>&]/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 60),\n  phoneNumberId: carga.phoneNumberId || String((carga.metadata && carga.metadata.phone_number_id) || ''),\n  mensajeId: mensajeId,\n  tipo: tipo,\n  texto: texto,\n  textoReporte: textoReporte,\n  pie: pie,\n  categoria: categoria,\n  anuncio: !!ref,\n  origen: ref ? 'anuncio' : 'directo',\n  esAudio: esAudio,\n  esVisual: esVisual,\n  esDocumento: tipo === 'document',\n  mediaId: mediaId,\n  ahoraMs: Number(carga.ahoraMs) || Date.now(),\n  prueba: carga.prueba || null,\n} }];\n"
+      },
+      "id": "interpretar-entrada",
+      "name": "Interpretar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        300
+      ],
+      "notes": "Normaliza texto, toque de botón, toque de lista, audio, imagen, documento, ubicación y cualquier otro tipo. Nada se descarta salvo duplicados de entrega, reacciones y sistema, números inválidos y prefijos no permitidos. La clave de la conversación es `messages[0].from`."
+    },
+    {
+      "id": "si-reportar-entrante",
+      "name": "¿Reportar? (entrante)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1160,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba no se llama a la ingesta."
+    },
+    {
+      "id": "reportar-mensaje-entrante",
+      "name": "Reportar mensaje (entrante)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        140
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const t = $('Interpretar entrada').first().json; return JSON.stringify({ telefono: t.from, direccion: 'entrante', tipo: t.tipo || 'text', texto: t.textoReporte || '', idMeta: t.mensajeId || '', nombreContacto: t.nombrePerfil || '', origen: t.origen || 'directo', evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String(t.texto || '')) ? 'no_contactar' : undefined }); })() }}",
+        "options": {
+          "timeout": 4000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Ruben)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "Una llamada a la ingesta por cada mensaje entrante, ANTES de la rama que responde (arriba en el lienzo): si la respuesta se reportara antes que el mensaje que la provocó, el aviso de uso extendido no saldría nunca. Su respuesta puede traer `atencion` y `servicio`."
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================================================\n// UTILIDADES COMUNES DE LOS NODOS DE LA «VENTA DIGITAL DE RUBÉN» (prefijo `cn`)\n// =============================================================================\n// El constructor las pega entre la librería (`rr.js`, y las `cm*` en los nodos que las piden) y el código de cada nodo. JavaScript plano: sin `require`, `URL`,\n// `Buffer` ni `crypto`, y nada de red. Lo que se lee de otro nodo se lee POR NOMBRE y solo si corrió (`isExecuted`): un nodo que no corrió no se lee con `.item`.\n// Ningún nodo lee por nombre algo que corre más de una vez en la ejecución (no hay ciclos): `first()` es siempre «el único».\n\n// El nodo `nombre` si existe Y corrió en esta ejecución; si no, null. En un JSON que no lo trae (el de producción no tiene «Entrada de prueba») `$()` lanza.\nfunction cnNodo(nombre) {\n  try {\n    const n = $(nombre);\n    return n && n.isExecuted ? n : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnPrimero(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return null;\n  try {\n    const i = n.first();\n    return i && i.json ? i.json : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnTodos(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return [];\n  try {\n    return n.all().map((i) => (i && i.json) || {});\n  } catch (e) {\n    return [];\n  }\n}\nfunction cnCfg() {\n  return cnPrimero('Config del negocio') || {};\n}\nfunction cnDigitos(v) {\n  return String(v === undefined || v === null ? '' : v).replace(/\\D/g, '');\n}\nfunction cnRecorte(t, max) {\n  const s = String(t === undefined || t === null ? '' : t);\n  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;\n}\n// El texto de una respuesta de Gemini (generateContent, o el nodo de LangChain con `simplify`). '' si vino un error o algo que no se reconoce.\nfunction cnTextoDeGemini(j) {\n  if (!j || typeof j !== 'object' || j.error) return '';\n  const partes = (c) => (c && Array.isArray(c.parts))\n    ? c.parts.map((p) => (p && typeof p.text === 'string') ? p.text : '').join('\\n') : '';\n  if (typeof j.content === 'string') return j.content;\n  const c1 = partes(j.content);\n  if (c1) return c1;\n  const cand = Array.isArray(j.candidates) ? j.candidates[0] : null;\n  const c2 = cand ? partes(cand.content) : '';\n  if (c2) return c2;\n  for (const k of ['text', 'transcription', 'output', 'response']) {\n    if (typeof j[k] === 'string' && j[k].trim()) return j[k];\n  }\n  return '';\n}\n// El objeto JSON que Gemini devolvió como texto; null si no es un objeto.\nfunction cnJsonDeGemini(j) {\n  const t = cnTextoDeGemini(j).trim().replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n  if (!t) return null;\n  const m = /\\{[\\s\\S]*\\}/.exec(t);\n  try {\n    const o = JSON.parse(m ? m[0] : t);\n    return o && typeof o === 'object' && !Array.isArray(o) ? o : null;\n  } catch (e) {\n    return null;\n  }\n}\n// La clave de la ficha es el teléfono de origen y solo dígitos: nunca un nombre que toque el prototipo.\nfunction cnClaveValida(from) {\n  return /^\\d{6,20}$/.test(String(from || ''));\n}\n// Las fichas de los teléfonos (`staticData.global.rroca`). Un nodo que SOLO LEE no escribe nada en los datos estáticos. Los que escriben (con `escribir` verdadero) crean el mapa si falta.\nfunction cnMapaDeFichas(escribir) {\n  let sd = null;\n  try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }\n  if (!sd) return { sd: null, mapa: {} };\n  const valido = sd.rroca && typeof sd.rroca === 'object' && !Array.isArray(sd.rroca);\n  if (!valido) {\n    if (escribir !== true) return { sd: sd, mapa: {} };\n    sd.rroca = {};\n  }\n  return { sd: sd, mapa: sd.rroca };\n}\nfunction cnFichaDe(mapa, from) {\n  return cnClaveValida(from) && Object.prototype.hasOwnProperty.call(mapa, from) ? mapa[from] : null;\n}\n// La atención del teléfono: lo que devolvió la ingesta del entrante si lo trae, y si no, lo que dijo `configuracionFlujo`. Ante la duda, normal.\nfunction cnAtencion(rIngesta, cfg) {\n  const a = rIngesta && typeof rIngesta === 'object' && rIngesta.atencion && typeof rIngesta.atencion === 'object'\n    ? rIngesta.atencion : null;\n  const estados = ['normal', 'operador', 'bloqueado'];\n  const estado = a && estados.indexOf(a.estado) >= 0 ? a.estado\n    : (estados.indexOf(cfg.atencionEstado) >= 0 ? cfg.atencionEstado : 'normal');\n  const avisarIngesta = rIngesta && typeof rIngesta === 'object' ? rIngesta.avisarRecepcion : '';\n  const avisarCfg = a && a.avisarRecepcion !== undefined ? a.avisarRecepcion : cfg.atencionAvisarRecepcion;\n  const avisar = ['operador', 'bloqueado'].indexOf(avisarIngesta || avisarCfg) >= 0 ? (avisarIngesta || avisarCfg) : '';\n  return {\n    estado: estado,\n    avisar: avisar,\n    mensajeFijo: String((a && a.mensajeFijo) || cfg.atencionMensajeFijo || '').trim(),\n    respuestas: Number(a && a.respuestasEnVentana !== undefined ? a.respuestasEnVentana : cfg.atencionRespuestas) || 0,\n    venceEn: String((a && a.ventanaVenceEn) || cfg.atencionVenceEn || ''),\n  };\n}\n\n// PUERTA DEL TURNO: ¿se sigue con este mensaje? Reúne lo que antes eran «Comercio no operativo» y «Uso extendido» (el servidor decide; este nodo obedece).\n//\n//   suspendido    -> el comercio está suspendido o dado de baja (la consola o el reporte del entrante lo dicen). PROHIBIDO revelar el motivo: el prospecto no tiene por qué enterarse de\n//                    que el negocio debe dinero. El texto es neutro y sale de «Config del negocio». Se corta ANTES de cualquier llamada al modelo, a la planilla o a recepción.\n//   uso_extendido -> el cliente pasó el umbral de operador o el de bloqueo: operador responde el aviso fijo (cuenta como cualquier respuesta) y la PRIMERA vez avisa a recepción;\n//                    bloqueado no responde nada. NO se llama al modelo.\n//   sigue         -> todo lo demás: medios, registro del evento, espera de la ráfaga, modelo.\n//\n// La atención sale de lo que devolvió la ingesta del entrante si lo trae y, si no, de `configuracionFlujo` (`cnAtencion`). Sin modelo; sin ficha.\nconst FIJO = 'Gracias por tu paciencia. Para atenderte mejor, una persona del equipo va a continuar esta conversación.';\nconst cfg = cnCfg();\nconst t = cnPrimero('Interpretar entrada') || {};\nconst previo = cnPrimero('Reportar mensaje (entrante)');\nconst cortado = !!(previo && previo.servicio && previo.servicio.estado === 'cortado');\nif (cfg.estadoComercio !== 'operativo' || cortado) {\n  const aviso = String(cfg.mensajeComercioSuspendido || '').trim() || 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.';\n  return [{ json: { ruta: 'suspendido', texto: aviso, responder: true, transferir: false, motivo: '', from: t.from } }];\n}\nconst a = cnAtencion(previo, cfg);\nif (a.estado !== 'normal') {\n  const operador = a.estado !== 'bloqueado';\n  return [{ json: {\n    ruta: 'uso_extendido', from: t.from,\n    responder: operador,\n    texto: operador ? (a.mensajeFijo || FIJO) : '',\n    transferir: a.avisar === 'operador' || a.avisar === 'bloqueado',\n    motivo: operador\n      ? 'uso extendido: ' + a.respuestas + ' respuestas en su ventana de 24 horas; el asistente le avisó que lo atiende una persona'\n      : 'llegó a ' + a.respuestas + ' respuestas en su ventana de 24 horas; el asistente no le responde más',\n  } }];\n}\nreturn [{ json: { ruta: 'sigue', texto: '', responder: false, transferir: false, motivo: '', from: t.from } }];\n"
+      },
+      "id": "puerta-del-turno",
+      "name": "Puerta del turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        300
+      ],
+      "notes": "¿Se sigue con este mensaje? Reúne el comercio suspendido (texto neutro, sin revelar el motivo) y el uso extendido (aviso fijo; en «bloqueado», la pausa por persona, no sale NADA y no se llama a ningún modelo). Corre DESPUÉS de «Reportar mensaje (entrante)», que trae la atención. En PR-1 no avisa a recepción (es PR-3)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================================================\n// LIBRERÍA PROPIA DE LA «VENTA DIGITAL DE RUBÉN» (prefijo `rr`) — PR-1: el esqueleto\n// =============================================================================\n// El constructor la pega delante de los nodos que la piden (modo `todo`). JavaScript plano: sin `require`, `URL`, `Buffer` ni `crypto`, y nada de red.\n// En PR-2 a PR-4 crece aquí lo propio del flujo (catálogo de 4 productos, total, estados, textos fijos de la venta, rescate); en PR-1 solo lo del esqueleto:\n// el saludo fijo, la barrera NIEGA_IA y la ficha por teléfono.\n\n// NIEGA_IA (prohibición 4 de CLAUDE.md): ningún texto que ve el cliente puede negar que es una IA. COPIA DECLARADA de `CH_NIEGA_IA` de\n// `Flujos/experimental/chat-novuchat/src/lib/chat.js` (HUECO en PROPIO.md): la expresión es idéntica y una prueba la compara. Se aplica al texto NORMALIZADO (`rrNorm`).\nconst RR_NIEGA_IA = /\\bno (?:soy|es|eres|estas hablando con|hablas con)\\b[^.!?]{0,20}\\b(?:ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\\b|\\bpersona (?:real|de verdad)\\b|\\bcarne y hueso\\b|\\bno (?:contesta|responde|atiende|hay) (?:ningun\\w* )?(?:ia|inteligencia|bot|robot|maquina)\\b|\\bnada de (?:robots?|bots?|maquinas?)\\b|\\bhumano\\b|\\bpersonalmente\\b|\\bconmigo (?:hablas|conversas)\\b|\\bequipo humano\\b|\\b(?:soy|es) (?:una )?persona\\b|\\balguien real\\b|\\bhuman[oa]s?\\b|\\b(?:personas?|gente) (?:real(?:es)?|de verdad)\\b|\\b(?:persona|gente|alguien|humano|equipo|ejecutiv\\w*|asesor\\w*) (?:real|de verdad)\\b|\\bde verdad\\b[^.!?]{0,20}\\b(?:persona|gente|humano)\\w*|\\bno (?:contesta|responde|atiende|hay|habla) (?:(?:un|una|el|la|ningun\\w*) )?(?:ia|inteligencia|bot|chatbot|robot|maquina|programa)\\b|\\bno es (?:un )?(?:mensaje |chat )?automatic\\w*|\\b(?:es|soy) (?:una? )?(?:chica|chico|mujer|hombre|senorita|joven)\\b/;\n\n// Texto fijo de PR-1. Lo arma el código; no hay modelo. Se presenta como asistente virtual (prohibición 4) y no promete nada.\nconst RR_SALUDO = 'Hola, soy el asistente virtual de Rubén. Te puedo ayudar con el libro «IA para Emprendedores Independientes». ¿Qué te gustaría saber?';\n// Lo mínimo si, por un cambio mal hecho, el saludo cayera en NIEGA_IA: nunca sale un texto que niegue ser una IA.\nconst RR_SALUDO_MINIMO = 'Hola, soy el asistente virtual de Rubén.';\n\nconst RR_TOPE_FICHAS = 300;   // fichas guardadas a lo más (n8n graba TODAS en cada ejecución)\nconst RR_TOPE_IDS = 5;        // ids de Meta que se recuerdan por ficha (entregas repetidas)\nconst RR_OLVIDO_MS = 48 * 60 * 60 * 1000;\n\nfunction rrTexto(v) { return v === undefined || v === null ? '' : String(v); }\nfunction rrNorm(t) {\n  return rrTexto(t).normalize('NFKC').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase()\n    .replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim();\n}\n// El texto que ve el cliente, con la barrera aplicada: si niega ser una IA, sale el mínimo.\nfunction rrSeguro(texto) {\n  return RR_NIEGA_IA.test(rrNorm(texto)) ? RR_SALUDO_MINIMO : texto;\n}\n// La ficha de un teléfono: nueva, o la guardada si es un objeto. Solo cuenta lo de ESE teléfono.\nfunction rrFichaVigente(f) {\n  const ids = f && Array.isArray(f.ultimosIds) ? f.ultimosIds.filter((x) => typeof x === 'string') : [];\n  return { ultimosIds: ids.slice(-RR_TOPE_IDS), turnos: f && Number.isFinite(f.turnos) ? f.turnos : 0, ultimoMs: f && Number.isFinite(f.ultimoMs) ? f.ultimoMs : 0 };\n}\nfunction rrYaVisto(ficha, id) {\n  const x = rrTexto(id);\n  return x !== '' && !!ficha && typeof ficha === 'object' && Array.isArray(ficha.ultimosIds) && ficha.ultimosIds.includes(x);\n}\nfunction rrRecordarId(f, id) {\n  const x = rrTexto(id);\n  const ids = (Array.isArray(f.ultimosIds) ? f.ultimosIds : []).slice();\n  if (x !== '' && x.length <= 200 && !ids.includes(x)) ids.push(x);\n  f.ultimosIds = ids.slice(-RR_TOPE_IDS);\n  return f;\n}\n// Barre el mapa: fuera las de más de 48 h (o sin hora) y, si pasan del tope, las más viejas.\nfunction rrBarrer(mapa, ahoraMs) {\n  if (!mapa || typeof mapa !== 'object') return mapa;\n  for (const k of Object.keys(mapa)) {\n    const u = mapa[k] && Number.isFinite(mapa[k].ultimoMs) ? mapa[k].ultimoMs : 0;\n    if (!(u > 0) || ahoraMs - u > RR_OLVIDO_MS) delete mapa[k];\n  }\n  const claves = Object.keys(mapa);\n  if (claves.length > RR_TOPE_FICHAS) {\n    claves.sort((a, b) => mapa[a].ultimoMs - mapa[b].ultimoMs);\n    for (const k of claves.slice(0, claves.length - RR_TOPE_FICHAS)) delete mapa[k];\n  }\n  return mapa;\n}\n\n// =============================================================================\n// UTILIDADES COMUNES DE LOS NODOS DE LA «VENTA DIGITAL DE RUBÉN» (prefijo `cn`)\n// =============================================================================\n// El constructor las pega entre la librería (`rr.js`, y las `cm*` en los nodos que las piden) y el código de cada nodo. JavaScript plano: sin `require`, `URL`,\n// `Buffer` ni `crypto`, y nada de red. Lo que se lee de otro nodo se lee POR NOMBRE y solo si corrió (`isExecuted`): un nodo que no corrió no se lee con `.item`.\n// Ningún nodo lee por nombre algo que corre más de una vez en la ejecución (no hay ciclos): `first()` es siempre «el único».\n\n// El nodo `nombre` si existe Y corrió en esta ejecución; si no, null. En un JSON que no lo trae (el de producción no tiene «Entrada de prueba») `$()` lanza.\nfunction cnNodo(nombre) {\n  try {\n    const n = $(nombre);\n    return n && n.isExecuted ? n : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnPrimero(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return null;\n  try {\n    const i = n.first();\n    return i && i.json ? i.json : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnTodos(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return [];\n  try {\n    return n.all().map((i) => (i && i.json) || {});\n  } catch (e) {\n    return [];\n  }\n}\nfunction cnCfg() {\n  return cnPrimero('Config del negocio') || {};\n}\nfunction cnDigitos(v) {\n  return String(v === undefined || v === null ? '' : v).replace(/\\D/g, '');\n}\nfunction cnRecorte(t, max) {\n  const s = String(t === undefined || t === null ? '' : t);\n  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;\n}\n// El texto de una respuesta de Gemini (generateContent, o el nodo de LangChain con `simplify`). '' si vino un error o algo que no se reconoce.\nfunction cnTextoDeGemini(j) {\n  if (!j || typeof j !== 'object' || j.error) return '';\n  const partes = (c) => (c && Array.isArray(c.parts))\n    ? c.parts.map((p) => (p && typeof p.text === 'string') ? p.text : '').join('\\n') : '';\n  if (typeof j.content === 'string') return j.content;\n  const c1 = partes(j.content);\n  if (c1) return c1;\n  const cand = Array.isArray(j.candidates) ? j.candidates[0] : null;\n  const c2 = cand ? partes(cand.content) : '';\n  if (c2) return c2;\n  for (const k of ['text', 'transcription', 'output', 'response']) {\n    if (typeof j[k] === 'string' && j[k].trim()) return j[k];\n  }\n  return '';\n}\n// El objeto JSON que Gemini devolvió como texto; null si no es un objeto.\nfunction cnJsonDeGemini(j) {\n  const t = cnTextoDeGemini(j).trim().replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n  if (!t) return null;\n  const m = /\\{[\\s\\S]*\\}/.exec(t);\n  try {\n    const o = JSON.parse(m ? m[0] : t);\n    return o && typeof o === 'object' && !Array.isArray(o) ? o : null;\n  } catch (e) {\n    return null;\n  }\n}\n// La clave de la ficha es el teléfono de origen y solo dígitos: nunca un nombre que toque el prototipo.\nfunction cnClaveValida(from) {\n  return /^\\d{6,20}$/.test(String(from || ''));\n}\n// Las fichas de los teléfonos (`staticData.global.rroca`). Un nodo que SOLO LEE no escribe nada en los datos estáticos. Los que escriben (con `escribir` verdadero) crean el mapa si falta.\nfunction cnMapaDeFichas(escribir) {\n  let sd = null;\n  try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }\n  if (!sd) return { sd: null, mapa: {} };\n  const valido = sd.rroca && typeof sd.rroca === 'object' && !Array.isArray(sd.rroca);\n  if (!valido) {\n    if (escribir !== true) return { sd: sd, mapa: {} };\n    sd.rroca = {};\n  }\n  return { sd: sd, mapa: sd.rroca };\n}\nfunction cnFichaDe(mapa, from) {\n  return cnClaveValida(from) && Object.prototype.hasOwnProperty.call(mapa, from) ? mapa[from] : null;\n}\n// La atención del teléfono: lo que devolvió la ingesta del entrante si lo trae, y si no, lo que dijo `configuracionFlujo`. Ante la duda, normal.\nfunction cnAtencion(rIngesta, cfg) {\n  const a = rIngesta && typeof rIngesta === 'object' && rIngesta.atencion && typeof rIngesta.atencion === 'object'\n    ? rIngesta.atencion : null;\n  const estados = ['normal', 'operador', 'bloqueado'];\n  const estado = a && estados.indexOf(a.estado) >= 0 ? a.estado\n    : (estados.indexOf(cfg.atencionEstado) >= 0 ? cfg.atencionEstado : 'normal');\n  const avisarIngesta = rIngesta && typeof rIngesta === 'object' ? rIngesta.avisarRecepcion : '';\n  const avisarCfg = a && a.avisarRecepcion !== undefined ? a.avisarRecepcion : cfg.atencionAvisarRecepcion;\n  const avisar = ['operador', 'bloqueado'].indexOf(avisarIngesta || avisarCfg) >= 0 ? (avisarIngesta || avisarCfg) : '';\n  return {\n    estado: estado,\n    avisar: avisar,\n    mensajeFijo: String((a && a.mensajeFijo) || cfg.atencionMensajeFijo || '').trim(),\n    respuestas: Number(a && a.respuestasEnVentana !== undefined ? a.respuestasEnVentana : cfg.atencionRespuestas) || 0,\n    venceEn: String((a && a.ventanaVenceEn) || cfg.atencionVenceEn || ''),\n  };\n}\n\n// =============================================================================\n// MENSAJES (prefijo `cm`): los constructores de lo que sale por WhatsApp, en JavaScript plano\n// =============================================================================\n// Se pega DELANTE del código de un nodo Code (el construir.mjs de esta carpeta lo hace con la marca\n// `@@comun+mensajes:…` o `@@solo+mensajes:…`): el nodo Code de n8n no tiene módulos. Es AUTOSUFICIENTE: no\n// usa ninguna función `cn*` ni ningún nodo, no lee la configuración y no llama a la red, así que sirve igual en\n// cualquier flujo. Sin `require`, `URL`, `Buffer` ni `crypto` (el Code de n8n no los tiene).\n//\n// Sacado de `agenda-minima/src/nodos/armar-mensajes.js`, que sigue con sus copias. Los límites son los de la\n// Cloud API de Meta: texto 4096, cuerpo interactivo 1024, botón 20, tres botones, fila de lista 24 y su\n// descripción 72, diez filas, id de botón o de fila 200.\n//\n// El PAYLOAD que sale de aquí lleva `to: ''` a propósito: el destinatario lo pone un solo nodo, el último\n// (en modo prueba, TODO va al teléfono de prueba), y no cada constructor.\n//\n// Un ITEM de salida es `{ para, payload, texto, respaldo, ...extra }`:\n//   para     quién lo recibe, en palabras del flujo («cliente», «recepcion»…);\n//   payload  el cuerpo de la Cloud API;\n//   texto    lo que se reporta a la consola (nunca el contenido de un medio);\n//   respaldo texto plano que se manda SI Meta rechaza el interactivo (nunca se pierde un mensaje).\n\nfunction cmRecorte(t, max) {\n  const s = String(t === undefined || t === null ? '' : t);\n  if (s.length <= max) return s;\n  let corte = s.slice(0, max - 1);\n  // Nunca se parte un emoji (un par sustituto) por la mitad: Meta rechaza el mensaje con un medio carácter.\n  if (/[\\uD800-\\uDBFF]$/.test(corte)) corte = corte.slice(0, -1);\n  return corte.trimEnd() + '…';\n}\nfunction cmBase(tipo) {\n  return { messaging_product: 'whatsapp', recipient_type: 'individual', to: '', type: tipo };\n}\nfunction cmTexto(cuerpo) {\n  return Object.assign(cmBase('text'), { text: { preview_url: true, body: cmRecorte(cuerpo, 4000) } });\n}\nfunction cmBotones(cuerpo, botones) {\n  return Object.assign(cmBase('interactive'), { interactive: {\n    type: 'button', body: { text: cmRecorte(cuerpo, 1024) },\n    action: { buttons: (botones || []).slice(0, 3).map((b) => ({ type: 'reply', reply: { id: cmRecorte(b.id, 200), title: cmRecorte(b.title, 20) } })) },\n  } });\n}\nfunction cmLista(cuerpo, boton, titulo, filas) {\n  return Object.assign(cmBase('interactive'), { interactive: {\n    type: 'list', body: { text: cmRecorte(cuerpo, 1024) },\n    action: { button: cmRecorte(boton, 20), sections: [{ title: cmRecorte(titulo, 24), rows: (filas || []).slice(0, 10).map((f) => ({\n      id: cmRecorte(f.id, 200), title: cmRecorte(f.title, 24), description: cmRecorte(f.description || '', 72) })) }] },\n  } });\n}\nfunction cmEnlace(cuerpo, texto, url) {\n  // Un botón con enlace solo lleva `https://`: cualquier otro esquema (`javascript:`, `http:`…) no sale como botón,\n  // sale el texto sin el enlace.\n  if (!/^https:\\/\\/[^\\s]+$/i.test(String(url))) return cmTexto(cuerpo);\n  return Object.assign(cmBase('interactive'), { interactive: {\n    type: 'cta_url', body: { text: cmRecorte(cuerpo, 1024) },\n    action: { name: 'cta_url', parameters: { display_text: cmRecorte(texto, 20), url: String(url) } },\n  } });\n}\n// El enlace que abre un chat de WhatsApp con un número (solo dígitos) y un saludo ya escrito.\nfunction cmUrlWa(numero, saludo) {\n  return 'https://wa.me/' + String(numero).replace(/\\D/g, '') + '?text=' + encodeURIComponent(cmRecorte(saludo || '', 300));\n}\nfunction cmMensaje(para, payload, texto, respaldo, extra) {\n  return Object.assign({ para: para, payload: payload, texto: texto, respaldo: respaldo || texto }, extra || {});\n}\n// Un texto que nombra «el botón» cuando no hay botón queda mal: se le quitan esas frases.\nfunction cmSinMencionDelBoton(cuerpo, porDefecto) {\n  const s = String(cuerpo || '').replace(/\\s*T[oó]ca(le)? el bot[oó]n[^.!?]*[.!?]?/gi, '')\n    .replace(/\\s*tocando el bot[oó]n/gi, '').replace(/\\s+([.,])/g, '$1').trim();\n  return s || String(porDefecto || '');\n}\n// PASAR CON UNA PERSONA: el mensaje con el botón que abre su chat, o solo texto si no hay a quién mandarlo.\n//   op = { numero, desde, cuerpo, botonTexto, saludo, para?, evento?, textoDelRespaldo?, sinNumero? }\n// Hay botón solo si `numero` existe y NO es el de quien escribe (`desde`): un botón a su propio chat no sirve.\n// Devuelve el item, con `tipoReporte` ('interactive' o 'text') y `conBoton`.\nfunction cmContactoConBoton(op) {\n  const numero = String(op.numero || '').replace(/\\D/g, '');\n  const desde = String(op.desde || '').replace(/\\D/g, '');\n  const para = op.para || 'cliente';\n  if (numero && numero !== desde) {\n    const url = cmUrlWa(numero, op.saludo || '');\n    const pie = '\\n\\n' + cmRecorte(op.textoDelRespaldo || 'Escríbele aquí:', 100) + ' ' + url;\n    // El respaldo es TEXTO (tope 4000): se recorta el cuerpo, nunca el enlace del final.\n    return cmMensaje(para, cmEnlace(op.cuerpo, op.botonTexto || 'Escribir', url), op.cuerpo,\n      cmRecorte(op.cuerpo, 4000 - pie.length) + pie,\n      { tipoReporte: 'interactive', evento: op.evento, conBoton: true });\n  }\n  const sinBoton = cmSinMencionDelBoton(op.cuerpo, op.sinNumero || 'Eso lo coordina una persona del equipo.');\n  return cmMensaje(para, cmTexto(sinBoton), sinBoton, sinBoton, { tipoReporte: 'text', evento: op.evento, conBoton: false });\n}\n\n// ARMAR MENSAJES (PR-1, el esqueleto): lo que sale al cliente, armado por CÓDIGO. No hay modelo, ni cobro, ni QR, ni comprobante, ni rescate (son PR-2 a PR-4).\n//\n// UN SOLO MENSAJE por turno, o ninguno:\n//   puerta «sigue»            -> el saludo fijo del asistente virtual de Rubén (para cualquier texto, toque o medio);\n//   puerta «suspendido»        -> el texto neutro del comercio (sin revelar el motivo);\n//   puerta «uso_extendido»     -> el aviso fijo, solo si el estado es «operador»; si es «bloqueado» (pausa por persona) NO SALE NADA: cero envío y cero modelo;\n// Todo texto pasa por `rrSeguro` (NIEGA_IA, prohibición 4). El aviso a recepción de un uso extendido es de PR-3: aquí `transferir` no envía nada.\n//\n// La ficha del teléfono (`rroca[<messages[0].from>]`) se escribe AQUÍ, una sola vez por turno: la clave es SIEMPRE el número de origen, así que dos teléfonos jamás comparten estado.\n// Hasta en un turno sin mensaje (bloqueado) se recuerda el id de Meta, para que una entrega repetida no se cuente dos veces.\nconst cfg = cnCfg();\nconst t = cnPrimero('Interpretar entrada') || {};\nconst puerta = cnPrimero('Puerta del turno') || {};\nconst from = String(t.from || '');\nconst ahora = Number(t.ahoraMs) || Date.now();\nconst prueba = cfg.modoPrueba === true;\nconst telPrueba = String(cfg.telefonoDePrueba || '');\nconst claveOk = cnClaveValida(from);\n\nlet texto = '';\nif (puerta.ruta === 'sigue') texto = RR_SALUDO;\nelse if ((puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') && puerta.responder === true) texto = String(puerta.texto || '');\ntexto = texto.trim() === '' ? '' : rrSeguro(texto);\n\n// La ficha: un solo lugar, al final del turno.\nif (claveOk) {\n  const fichas = cnMapaDeFichas(true);\n  const ficha = rrFichaVigente(cnFichaDe(fichas.mapa, from));\n  rrRecordarId(ficha, t.mensajeId);\n  ficha.turnos += 1;\n  ficha.ultimoMs = ahora;\n  fichas.mapa[from] = ficha;\n  rrBarrer(fichas.mapa, ahora);\n}\n\nlet numero = from;\nif (prueba) numero = telPrueba;\n// `mensajes` se calcula DESPUÉS de decidir el número: en prueba con un teléfono no permitido (`telPrueba` vacío) no sale nada y el resumen lo dice.\nconst sale = texto !== '' && numero !== '';\nconst resumen = { plan: puerta.ruta || 'nada', mensajes: sale ? 1 : 0, categoria: t.categoria || '' };\nif (!sale) {\n  return [{ json: { sinMensajes: true, para: '', payload: null, texto: '', respaldo: '', reportar: false, from: from, plan: resumen.plan, resumen: resumen } }];\n}\nconst m = cmMensaje('cliente', cmTexto(texto), texto, texto, { tipoReporte: 'text', evento: puerta.ruta || '' });\nm.payload.to = numero;\nreturn [{ json: {\n  para: numero, destino: m.para, payload: m.payload, texto: m.texto, respaldo: m.respaldo,\n  tipoReporte: m.tipoReporte, evento: m.evento, esInteractivo: false, esAviso: false, marcaAvisado: false, empresaAviso: '',\n  // Solo lo que sale al cliente se reporta; en modo prueba, nada.\n  reportar: !prueba,\n  phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0', from: from, sinMensajes: false,\n  plan: resumen.plan, resumen: resumen,\n} }];\n"
+      },
+      "id": "armar-mensajes",
+      "name": "Armar mensajes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        300
+      ],
+      "notes": "PR-1: UN mensaje por turno (el saludo fijo del asistente virtual de Rubén) o ninguno (bloqueado). Armado por código, sin modelo. Escribe la ficha del teléfono, siempre con la clave `messages[0].from`."
+    },
+    {
+      "id": "meta-acepto",
+      "name": "¿Meta aceptó?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3320,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!($json && !$json.error && Array.isArray($json.messages) && $json.messages[0] && $json.messages[0].id) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "PUERTA de la entrega (regla I-ENTREGA 3): el reporte saliente solo corre si Meta devolvio `messages[0].id` y ningun `error`, sea del envio o de su respaldo. Lo pega `construir.mjs` entre «¿Reportar? (saliente)» y «Reportar mensaje (saliente)» sin tocar los nodos comunes."
+    },
+    {
+      "id": "resumen-del-turno",
+      "name": "Resumen del turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        600
+      ],
+      "parameters": {
+        "jsCode": "// =============================================================================\n// UTILIDADES COMUNES DE LOS NODOS DE LA «VENTA DIGITAL DE RUBÉN» (prefijo `cn`)\n// =============================================================================\n// El constructor las pega entre la librería (`rr.js`, y las `cm*` en los nodos que las piden) y el código de cada nodo. JavaScript plano: sin `require`, `URL`,\n// `Buffer` ni `crypto`, y nada de red. Lo que se lee de otro nodo se lee POR NOMBRE y solo si corrió (`isExecuted`): un nodo que no corrió no se lee con `.item`.\n// Ningún nodo lee por nombre algo que corre más de una vez en la ejecución (no hay ciclos): `first()` es siempre «el único».\n\n// El nodo `nombre` si existe Y corrió en esta ejecución; si no, null. En un JSON que no lo trae (el de producción no tiene «Entrada de prueba») `$()` lanza.\nfunction cnNodo(nombre) {\n  try {\n    const n = $(nombre);\n    return n && n.isExecuted ? n : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnPrimero(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return null;\n  try {\n    const i = n.first();\n    return i && i.json ? i.json : null;\n  } catch (e) {\n    return null;\n  }\n}\nfunction cnTodos(nombre) {\n  const n = cnNodo(nombre);\n  if (!n) return [];\n  try {\n    return n.all().map((i) => (i && i.json) || {});\n  } catch (e) {\n    return [];\n  }\n}\nfunction cnCfg() {\n  return cnPrimero('Config del negocio') || {};\n}\nfunction cnDigitos(v) {\n  return String(v === undefined || v === null ? '' : v).replace(/\\D/g, '');\n}\nfunction cnRecorte(t, max) {\n  const s = String(t === undefined || t === null ? '' : t);\n  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;\n}\n// El texto de una respuesta de Gemini (generateContent, o el nodo de LangChain con `simplify`). '' si vino un error o algo que no se reconoce.\nfunction cnTextoDeGemini(j) {\n  if (!j || typeof j !== 'object' || j.error) return '';\n  const partes = (c) => (c && Array.isArray(c.parts))\n    ? c.parts.map((p) => (p && typeof p.text === 'string') ? p.text : '').join('\\n') : '';\n  if (typeof j.content === 'string') return j.content;\n  const c1 = partes(j.content);\n  if (c1) return c1;\n  const cand = Array.isArray(j.candidates) ? j.candidates[0] : null;\n  const c2 = cand ? partes(cand.content) : '';\n  if (c2) return c2;\n  for (const k of ['text', 'transcription', 'output', 'response']) {\n    if (typeof j[k] === 'string' && j[k].trim()) return j[k];\n  }\n  return '';\n}\n// El objeto JSON que Gemini devolvió como texto; null si no es un objeto.\nfunction cnJsonDeGemini(j) {\n  const t = cnTextoDeGemini(j).trim().replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\n  if (!t) return null;\n  const m = /\\{[\\s\\S]*\\}/.exec(t);\n  try {\n    const o = JSON.parse(m ? m[0] : t);\n    return o && typeof o === 'object' && !Array.isArray(o) ? o : null;\n  } catch (e) {\n    return null;\n  }\n}\n// La clave de la ficha es el teléfono de origen y solo dígitos: nunca un nombre que toque el prototipo.\nfunction cnClaveValida(from) {\n  return /^\\d{6,20}$/.test(String(from || ''));\n}\n// Las fichas de los teléfonos (`staticData.global.rroca`). Un nodo que SOLO LEE no escribe nada en los datos estáticos. Los que escriben (con `escribir` verdadero) crean el mapa si falta.\nfunction cnMapaDeFichas(escribir) {\n  let sd = null;\n  try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }\n  if (!sd) return { sd: null, mapa: {} };\n  const valido = sd.rroca && typeof sd.rroca === 'object' && !Array.isArray(sd.rroca);\n  if (!valido) {\n    if (escribir !== true) return { sd: sd, mapa: {} };\n    sd.rroca = {};\n  }\n  return { sd: sd, mapa: sd.rroca };\n}\nfunction cnFichaDe(mapa, from) {\n  return cnClaveValida(from) && Object.prototype.hasOwnProperty.call(mapa, from) ? mapa[from] : null;\n}\n// La atención del teléfono: lo que devolvió la ingesta del entrante si lo trae, y si no, lo que dijo `configuracionFlujo`. Ante la duda, normal.\nfunction cnAtencion(rIngesta, cfg) {\n  const a = rIngesta && typeof rIngesta === 'object' && rIngesta.atencion && typeof rIngesta.atencion === 'object'\n    ? rIngesta.atencion : null;\n  const estados = ['normal', 'operador', 'bloqueado'];\n  const estado = a && estados.indexOf(a.estado) >= 0 ? a.estado\n    : (estados.indexOf(cfg.atencionEstado) >= 0 ? cfg.atencionEstado : 'normal');\n  const avisarIngesta = rIngesta && typeof rIngesta === 'object' ? rIngesta.avisarRecepcion : '';\n  const avisarCfg = a && a.avisarRecepcion !== undefined ? a.avisarRecepcion : cfg.atencionAvisarRecepcion;\n  const avisar = ['operador', 'bloqueado'].indexOf(avisarIngesta || avisarCfg) >= 0 ? (avisarIngesta || avisarCfg) : '';\n  return {\n    estado: estado,\n    avisar: avisar,\n    mensajeFijo: String((a && a.mensajeFijo) || cfg.atencionMensajeFijo || '').trim(),\n    respuestas: Number(a && a.respuestasEnVentana !== undefined ? a.respuestasEnVentana : cfg.atencionRespuestas) || 0,\n    venceEn: String((a && a.ventanaVenceEn) || cfg.atencionVenceEn || ''),\n  };\n}\n\n// RESUMEN DEL TURNO: el último nodo. En producción no hace nada visible. En la variante de prueba, «Entrada de prueba» responde con lo que devuelve este nodo (modo `lastNode`):\n// los mensajes del turno y un resumen, para que un corredor externo evalúe cada turno sin depender de WhatsApp.\n//\n// Lee TODO por nombre de «Armar mensajes» y no de lo que devolvieron los nodos de envío ni de reporte (un nodo desactivado deja pasar su entrada). Cuelga de «Armar mensajes» por debajo\n// de todo el lienzo, así que con `executionOrder: v1` corre después de los envíos y del cierre.\nconst items = cnTodos('Armar mensajes');\n\n// ENTREGA (regla I-ENTREGA, «se entrega lo que se promete»): este nodo corre DESPUÉS de los envíos (está abajo en el lienzo y `executionOrder` es v1). Un mensaje al cliente cuenta como\n// entregado SOLO si Meta devolvió un `messages[0].id` no vacío, por el envío principal o por su respaldo en texto. Si hubo mensajes que no salieron ni por uno ni por el otro, la\n// ejecución termina en ERROR (visible en n8n) en vez de en `success`. No se reporta nada como enviado (`¿Meta aceptó?` exige el id) y el error no lleva texto ni número del cliente.\n// Con el envío saltado (modo prueba sin `enviarDeVerdad`) `Enviar a WhatsApp` no corrió y no hay nada que verificar.\nconst rrId = (j) => {\n  const m = j && j.messages;\n  return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== '';\n};\nif (cnNodo('Enviar a WhatsApp')) {\n  const rrEsperados = items.filter((i) => i && i.sinMensajes !== true).length;\n  const rrEntregados = cnTodos('Enviar a WhatsApp').filter(rrId).length + cnTodos('Enviar respaldo').filter(rrId).length;\n  if (rrEntregados < rrEsperados) {\n    throw new Error('Entrega fallida: Meta rechazó el envío y su respaldo en texto; ' + (rrEsperados - rrEntregados) + ' de ' + rrEsperados + ' mensaje(s) al cliente sin entregar. El cliente no recibió respuesta.');\n  }\n}\nconst cfg = cnCfg();\nconst primero = items[0] || {};\nconst mensajes = items.filter((i) => i && i.sinMensajes !== true).map((i) => ({\n  para: i.para, destino: i.destino, payload: i.payload, texto: i.texto, respaldo: i.respaldo, reportar: i.reportar === true,\n}));\nconst r = primero.resumen || { plan: primero.plan || 'nada', mensajes: 0 };\nreturn [{ json: {\n  ok: true,\n  modoPrueba: cfg.modoPrueba === true,\n  mensajes: mensajes,\n  resumen: Object.assign({}, r, { mensajesSalientes: mensajes.length }),\n} }];\n"
+      },
+      "notes": "Ultima rama de «Armar mensajes». En la variante de prueba, «Entrada de prueba» responde con esto."
+    },
+    {
+      "id": "enviar-si",
+      "name": "¿Enviar de verdad?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2120,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; return $json.sinMensajes !== true && (c.modoPrueba !== true || (c.enviarDeVerdad === true && !!c.telefonoDePrueba)); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba con enviarDeVerdad falsa el envio se saltea y los mensajes quedan como enviados."
+    },
+    {
+      "id": "enviar",
+      "name": "Enviar a WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2360,
+        20
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp — pruebas (no producción)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String($json.waGraphVersion)) ? $json.waGraphVersion : 'v26.0' }}/{{ String($json.phoneNumberId).replace(/\\D/g, '') }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "notes": "Un solo nodo para todo (texto, botones, lista, enlace, plantilla). Envía de a uno con 1,5 s entre mensajes: Meta entregaba un mensaje y el siguiente fuera de orden."
+    },
+    {
+      "id": "fallo-si",
+      "name": "¿Falló el envío?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2600,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!($json && $json.error) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo mira un campo `error` explicito; sin el, no fallo."
+    },
+    {
+      "id": "enviar-respaldo",
+      "name": "Enviar respaldo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2840,
+        20
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp — pruebas (no producción)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String($('Armar mensajes').item.json.waGraphVersion)) ? $('Armar mensajes').item.json.waGraphVersion : 'v26.0' }}/{{ String($('Armar mensajes').item.json.phoneNumberId).replace(/\\D/g, '') }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $('Armar mensajes').item.json.para, type: 'text', text: { preview_url: true, body: String($('Armar mensajes').item.json.respaldo || '').slice(0, 4000) } }) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "notes": "Si Meta rechaza el interactivo o la plantilla, sale el mismo contenido como texto. Envía de a uno con 1,5 s entre mensajes."
+    },
+    {
+      "id": "reportar-sal-si",
+      "name": "¿Reportar? (saliente)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3080,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Armar mensajes').item.json.reportar === true && !($json && $json.error) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo lo que se envio AL CLIENTE se reporta (para = «cliente»), no en modo prueba y no si ni el respaldo salió (sin idMeta no se cuenta como enviado)."
+    },
+    {
+      "id": "reportar-saliente",
+      "name": "Reportar mensaje (saliente)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3320,
+        20
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Ruben)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; return JSON.stringify({ telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '', evento: m.evento }); })() }}",
+        "options": {}
+      },
+      "notes": "Una llamada por cada mensaje enviado al cliente. Lee el texto del nodo que arma los mensajes, no de la respuesta del envio."
+    }
+  ],
+  "connections": {
+    "Entrada de prueba": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config base": {
+      "main": [
+        [
+          {
+            "node": "Carga de entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carga de entrada": {
+      "main": [
+        [
+          {
+            "node": "Traer configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traer configuración": {
+      "main": [
+        [
+          {
+            "node": "Config del negocio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config del negocio": {
+      "main": [
+        [
+          {
+            "node": "Interpretar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interpretar entrada": {
+      "main": [
+        [
+          {
+            "node": "¿Reportar? (entrante)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reportar? (entrante)": {
+      "main": [
+        [
+          {
+            "node": "Reportar mensaje (entrante)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Puerta del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reportar mensaje (entrante)": {
+      "main": [
+        [
+          {
+            "node": "Puerta del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Puerta del turno": {
+      "main": [
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar mensajes": {
+      "main": [
+        [
+          {
+            "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Enviar de verdad?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Meta aceptó?": {
+      "main": [
+        [
+          {
+            "node": "Reportar mensaje (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "¿Enviar de verdad?": {
+      "main": [
+        [
+          {
+            "node": "Enviar a WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Falló el envío?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar a WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "¿Falló el envío?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Falló el envío?": {
+      "main": [
+        [
+          {
+            "node": "Enviar respaldo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Reportar? (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar respaldo": {
+      "main": [
+        [
+          {
+            "node": "¿Reportar? (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reportar? (saliente)": {
+      "main": [
+        [
+          {
+            "node": "¿Meta aceptó?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Reportar mensaje (saliente)": {
+      "main": [
+        []
+      ]
+    }
+  }
+}
