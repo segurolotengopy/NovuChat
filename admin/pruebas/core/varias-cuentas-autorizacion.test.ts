@@ -110,13 +110,8 @@ describe('ids hostiles: ninguno resuelve por prototipo ni por parecido', () => {
       expect(esOperDe(mixto, id as string)).toBe(false);
     }
   });
-  // DEFECTO MENOR HALLADO (no corregido: esta zona escribe solo pruebas).
-  // `esAdminDe` indexa `claimsDe(p).t[tenantId]` sin comprobar que tenantId sea
-  // texto: `['r1']` se vuelve la clave 'r1' y pasa. No cruza cuentas (solo
-  // equivale a una cuenta propia), pero el criterio debería ser estricto como
-  // en `esOperDe` (Object.hasOwn) y exigir typeof string.
-  // Ubicación: admin/functions/src/core/seguridad/autorizacion.ts, esAdminDe (l.~73).
-  it.fails('un tenantId que no es texto (arreglo de un elemento) no debería autorizar', () => {
+  // Corregido en #540: esAdminDe exige tenantId de texto y clave propia.
+  it('un tenantId que no es texto (arreglo de un elemento) no autoriza', () => {
     expect(esAdminDe(ruben, ['r1'] as unknown as string)).toBe(false);
   });
 });
