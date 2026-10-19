@@ -13,7 +13,7 @@
 //   imagen_otra, audio, otro   respuestas fijas a lo que no es un comprobante ni texto.
 //
 // EL MONTO NUNCA SALE DEL CLIENTE NI DEL MODELO: es el precio del catálogo del producto (`rrPrecio`). Un producto que no sea uno de los 4 no genera QR. Un botón es un botón solo si llegó como
-// `interactive` (un texto que diga «b_pack» no lo es). El estado de si hay un QR abierto lo manda el SERVIDOR (`cobro.pendiente`); `ficha.qrHastaMs` evita abrir dos seguidos mientras la consola se entera.
+// `interactive` (un texto que diga «b_pack» no lo es). El estado de si hay un QR abierto lo manda el SERVIDOR (`cobro.pendiente`); `ficha.qrHastaMs` evita abrir dos seguidos mientras la consola se entera (se libera al resolverse el comprobante).
 const cfg = cnCfg();
 const t = cnPrimero('Interpretar entrada') || {};
 const puerta = cnPrimero('Puerta del turno') || {};
@@ -78,7 +78,8 @@ if (t.tipo === 'interactive') {
 const pre = rrPrellenado(norm);
 if (pre === 'pack' || pre === 'libro') return salir(elegir(pre, ''));
 if (pre === 'closer' || pre === 'videos') return salir(hayQrAbierto ? elegir(pre, '') : { tipo: 'complemento', producto: pre, cat: cat, conPresentacion: !ficha.saludado });
-if (pre === 'consulta') return salir({ tipo: 'saludo', pregunta: 'consulta', cat: cat });
+// Con un QR abierto, la consulta tampoco reabre el saludo: recibe el recordatorio del QR (un solo QR a la vez).
+if (pre === 'consulta') return salir(hayQrAbierto ? { tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat } : { tipo: 'saludo', pregunta: 'consulta', cat: cat });
 const motivo = rrMotivoDeDerivacion(norm);
 if (motivo) return salir({ tipo: 'derivar', motivo: 'consulta', aviso: avisoDeConsulta(motivo), avisoRepetido: repetido(), cat: cat });
 if (rrPreguntaPorIngresos(norm)) return salir({ tipo: 'ingresos', cat: cat });

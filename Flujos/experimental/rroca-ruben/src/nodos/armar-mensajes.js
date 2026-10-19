@@ -34,6 +34,7 @@ let usadoNuevo = '';        // el botón de este turno que no debe reaparecer
 let ultimoModelo = fichaAntes.ultimoModelo;
 let pedidoNuevo = null;
 let qrPrevio = null;        // la ficha antes de la marca provisional del QR
+let qrLiberado = null;      // la guarda de QR abierto que este turno de comprobante libera (se restaura si el aviso al cliente no sale)
 
 const texto = (cuerpo, extra) => { const c = rrSeguro(cuerpo); return cmMensaje('cliente', cmTexto(c), c, c, Object.assign({ tipoReporte: 'text' }, extra || {})); };
 const conBotones = (cuerpo, botones, extra) => {
@@ -52,7 +53,9 @@ const menu1 = () => rrMenu(1, cat, fichaAntes.usados.concat(usadoNuevo ? [usadoN
 if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   if (puerta.responder === true && String(puerta.texto || '').trim() !== '') m = texto(String(puerta.texto));
 } else if (puerta.ruta === 'sigue') {
-  usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS ? String(plan.boton) : '';
+  // El botón «usado» sale del PRODUCTO del QR (también si el producto se eligió por texto prellenado, sin botón) o, si no, del botón pulsado.
+  if (tipoDePlan === 'qr' && RR_PRODUCTOS[plan.producto]) usadoNuevo = RR_PRODUCTOS[plan.producto].boton;
+  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS ? String(plan.boton) : '';
   if (tipoDePlan === 'saludo') {
     m = conBotones(rrSaludo(cat, plan.pregunta === 'consulta' ? RR_PREGUNTA_CONSULTA : RR_PREGUNTA_GENERAL), plan.conMenu === true ? menu1() : []);
   } else if (tipoDePlan === 'complemento') {
@@ -123,6 +126,9 @@ if (claveOk) {
   // MARCA PROVISIONAL del QR: se fija aquí (el id del pedido y la guarda de 15 minutos necesitan existir ya) pero `Resumen del turno` la DESCARTA con `qrPrevio` si Meta no devolvió el `wamid` del QR
   // (sale el respaldo en texto): un QR que no salió no deja al cliente 15 minutos con «Ya tienes un QR abierto».
   if (pedidoNuevo) { qrPrevio = { pedidos: ficha.pedidos, producto: ficha.producto, qrHastaMs: ficha.qrHastaMs }; ficha.pedidos += 1; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RR_MINUTOS_QR * 60 * 1000; }
+  // El comprobante resuelto (todo menos «reintentar» e «ilegible», que siguen con el cobro abierto) cierra el cobro o lo pasa a Rubén: la guarda de 15 minutos del QR ya no tiene sentido
+  // y su tiempo restante daría un falso «Ya tienes un QR abierto». Se guarda el valor previo para restaurarlo si la respuesta no sale (`Resumen del turno`).
+  if (tipoDePlan === 'comprobante' && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible' && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   fichas.mapa[from] = ficha;
   rrBarrer(fichas.mapa, ahora);
 }
@@ -146,6 +152,7 @@ const salida = {
   plan: resumen.plan, resumen: resumen,
 };
 if (qrPrevio) salida.qrPrevio = qrPrevio;
+if (qrLiberado) salida.qrLiberado = qrLiberado;
 if (m.reglaCobro === 2) salida.reglaCobro = 2;
 if (m.referencia) salida.referencia = m.referencia;
 if (m.monto !== undefined) salida.monto = m.monto;

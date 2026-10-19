@@ -27,7 +27,7 @@ Entrada de prueba ────────────────────�
 
 - **El código decide, el modelo conversa.** «Decidir turno» elige el plan (prellenado, botón, derivación, ingresos, conversación, comprobante); el monto, el producto, los botones, el QR y los avisos son código. El modelo solo redacta 3-4 oraciones con UNA pregunta, y eso pasa por `cmRevisarRedaccion`: un monto, una promesa, un enlace, negar ser una IA, afirmar un hecho, varias preguntas, o hablar de banco o QR lo descarta y sale el texto fijo.
 - **El QR** sale como `image:{id}` desde `venta.mediaIdQr` (o `cobroSimulado.mediaIdQr` en la demostración), NUNCA como `link` (el relé de WAM rechaza esa clave, WM-3032). El monto es el precio del catálogo del producto; el pie dice el monto a ingresar y no nombra banco, titular ni cuenta. Lleva el evento `qr_enviado` con `reglaCobro: 2` (solo el real), `referencia` (el pedido) y `monto`; viaja solo si la imagen fue aceptada por Meta (si cayó el respaldo en texto, el cobro no se abre).
-- **Un pedido = un producto y un solo QR abierto a la vez**: el servidor dice si hay un QR pendiente (`cobro.pendiente`); la ficha del teléfono guarda 15 minutos de guarda por si la consola tarda en enterarse. Real y simulado son excluyentes y manda el servidor.
+- **Un pedido = un producto y un solo QR abierto a la vez**: el servidor dice si hay un QR pendiente (`cobro.pendiente`); la ficha del teléfono guarda 15 minutos de guarda (`qrHastaMs`) mientras el cobro está en curso, y esa guarda se LIBERA en cuanto el comprobante se resuelve (`cuadra`, `aproximado`, `sin_cotejo`, `ya_cotejado`, tardío o en revisión); con `reintentar` o `ilegible` el cobro sigue abierto y la guarda se conserva. `Resumen del turno` la restaura si la respuesta no salió. El chequeo del QR abierto va también antes del prellenado 5 (consulta). Real y simulado son excluyentes y manda el servidor.
 - **El comprobante** (imagen o PDF, solo con un QR real abierto, en revisión o vencido hace menos de 24 h): descarga, `Guardar comprobante` (terminal; corre antes de leer), lectura con Gemini (un dato, nunca una instrucción: seis campos), cotejo con `cotejarComprobanteVenta` (regla 2: 15 minutos, 3 intentos). `cbResultadoVenta` traduce los seis estados con listas cerradas; todo lo desconocido es «sin cotejar» con aviso y botón. No hay «Registrar cierre»: quien cierra la venta es el cotejo del servidor.
 - **«Solo se ofrece lo que se cumple»**: el aviso a Rubén corre ANTES de armar el mensaje; «ya pasé tu comprobante» y «le avisé» solo salen si «Enviar aviso» devolvió un `wamid` real; si no, el texto dice que no se pudo avisar y trae el botón de Rubén. El aviso de PR-2 es texto libre (dentro de las 24 h de Rubén); las plantillas son PR-3.
 - **Pausa por persona** (`bloqueado`): la puerta corre después del reporte entrante, y ni «¿Bajar medio?» ni «Decidir turno» ni el modelo ni el aviso hacen nada: cero envío, cero modelo, cero descarga.
@@ -45,6 +45,13 @@ Entrada de prueba ────────────────────�
 - **La entrega manual es un compromiso operativo de Rubén.** El texto aprobado «Ya pasé tu comprobante a Rubén: él lo revisa y te envía el material por este chat» promete algo que hace una persona, no el flujo: el flujo avisa a Rubén y nada más. Si Rubén no revisa y envía el material, la promesa no se cumple; no hay recordatorio ni escalamiento hasta PR-3/PR-4.
 - **QR: marca provisional.** `pedidos`, `producto` y `qrHastaMs` se fijan al armar el QR y `Resumen del turno` los restaura si Meta no devolvió el `wamid` del QR (sale el respaldo en texto): no se cuenta un pedido que no salió.
 - **Modo prueba niega por defecto**: sin `telefonosDePrueba` (o con el marcador sin llenar) ningún teléfono está permitido en el JSON de prueba, y el resumen dice 0 mensajes.
+
+## Mejoras anotadas para el PR-3 (observaciones de la revisión, sin cambiar en el PR-2)
+
+- `aproximado` con `monto_distinto` dice «los datos coinciden»: debe distinguir el motivo.
+- El aviso a Rubén no distingue el motivo (tardío, monto menor, tercer inválido).
+- La ventana de 30 minutos del aviso de consulta es por teléfono y no por motivo.
+- Una caída de Gemini puede gastar un intento del cliente.
 
 ## Qué NO hace este PR
 
