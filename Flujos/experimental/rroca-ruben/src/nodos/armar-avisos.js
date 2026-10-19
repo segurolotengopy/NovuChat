@@ -7,7 +7,8 @@
 //     material, descuento, QR no disponible), el modelo cuando contesta DERIVAR (no supo responder) y el estado «operador» (el texto fijo promete que una persona continúa la conversación).
 //     La pausa por persona (`bloqueado`) NO avisa: cero envío.
 //   - A lo más UN aviso de consulta por teléfono Y POR MOTIVO (`clave`) cada 30 minutos (`avisosConsulta` de la ficha; «Armar mensajes» lo fija solo si el aviso SALIÓ). Dentro de la ventana, `repetido`:
-//     el aviso de hace un rato sigue en pie. Los avisos de comprobante no se limitan aquí (el servidor ya avisa una sola vez por comprobante).
+//     el aviso de hace un rato sigue en pie. Los avisos de comprobante tampoco se limitan aquí, SALVO el «sin cotejar» sin causa (imagen grande o corrupta, cotejo caído), que lleva la clave
+//     `comprobante_sin_cotejo` y rige igual: ese caso no tiene un comprobante único detrás, y sin límite un cliente podría avisarle a Rubén sin freno.
 //
 // Todo texto pasa por `avLimpio` (sin enlaces, sin llaves, sin palabras prohibidas, con tope). El aviso NUNCA reenvía la imagen del comprobante ni dice «pago acreditado». En modo prueba el aviso va
 // al teléfono de prueba, nunca al de Rubén. Un destinatario igual a quien escribe se descarta (`avDestinatarios`).
@@ -59,7 +60,8 @@ const monto = montoNum ? montoNum + ' Bs' : 'sin monto';
 const motivoComprobante = aviso.tipo === 'comprobante' ? avLimpio(aviso.motivo, 160) : '';
 const guardado = aviso.guardada === true ? 'La imagen queda guardada en la consola.' : 'No se pudo guardar la imagen: pídele el comprobante al cliente.';
 const motivoConsulta = avLimpio(aviso.motivo, 100) || 'consulta';
-const mensaje = aviso.tipo === 'consulta' && aviso.mensaje ? avLimpio(aviso.mensaje, 160) : '';
+// Las comillas «» del texto del cliente se neutralizan: con ellas podría cerrar la cita y fingir otro campo del aviso.
+const mensaje = aviso.tipo === 'consulta' && aviso.mensaje ? avLimpio(String(aviso.mensaje).replace(/[«»]/g, ' '), 160) : '';
 
 // La plantilla que corresponde: el comprobante que cuadra usa la de comprobante (4 variables); todo lo demás, la de consulta (3 variables).
 const cual = aviso.tipo === 'comprobante' && motivoComprobante === '' ? 'comprobante' : 'consulta';

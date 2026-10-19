@@ -919,7 +919,7 @@
       ],
       "parameters": {
         "method": "POST",
-        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion || 'v26.0' }}/{{ $json.phoneNumberId }}/messages",
+        "url": "=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String($json.waGraphVersion)) ? $json.waGraphVersion : 'v26.0' }}/{{ String($json.phoneNumberId).replace(/\\D/g, '') }}/messages",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,

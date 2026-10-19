@@ -479,6 +479,28 @@ describe('«solo se ofrece lo que se cumple»: con el aviso a recepción (PR-3) 
     tarde['connections']['Enviar aviso'] = { main: [[]] };
     expect(guardias('produccion', tarde as Flujo).join('|')).toMatch(/«Enviar aviso» no cuelga de «Armar mensajes»/);
   });
+  it('el JSON FALLA si «¿Hay avisos?» no manda la rama sin aviso a «Armar mensajes», o si «Enviar aviso» pierde la credencial o su `onError` (en producción y en la prueba)', () => {
+    for (const [variante, f] of [['produccion', PRODUCCION], ['prueba', PRUEBA]] as const) {
+      expect(guardias(variante, f), variante).toEqual([]);
+      const sinRama = copia(f) as J;
+      sinRama['connections']['¿Hay avisos?'] = { main: [sinRama['connections']['¿Hay avisos?'].main[0], []] };
+      expect(guardias(variante, sinRama as Flujo).join('|'), `${variante} sin rama sin aviso`).toMatch(/«¿Hay avisos\?» no envía la rama sin aviso/);
+      const sinCred = copia(f) as J;
+      delete sinCred['nodes'].find((x: J) => x['name'] === 'Enviar aviso')['credentials'];
+      expect(guardias(variante, sinCred as Flujo).join('|'), `${variante} sin credencial`).toMatch(/«Enviar aviso» no lleva credencial/);
+      const sinError = copia(f) as J;
+      delete sinError['nodes'].find((x: J) => x['name'] === 'Enviar aviso')['onError'];
+      expect(guardias(variante, sinError as Flujo).join('|'), `${variante} sin onError`).toMatch(/«Enviar aviso» no lleva `onError: continueRegularOutput`/);
+    }
+  });
+  it('«Enviar aviso» sanea la versión de Graph y el id del número igual que «Enviar a WhatsApp»', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      const url = (nombre: string) => String((f['nodes'] as J[]).find((x: J) => x['name'] === nombre)!['parameters']['url']);
+      expect(url('Enviar aviso')).toBe(url('Enviar a WhatsApp'));
+      expect(url('Enviar aviso')).toContain("replace(/\\D/g, '')");
+      expect(url('Enviar aviso')).toContain('/^v\\d+\\.\\d$/');
+    }
+  });
 });
 
 describe('saneo del repo público: lo armado no lleva identificadores', () => {

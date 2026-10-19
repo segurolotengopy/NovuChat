@@ -96,7 +96,7 @@ const RR_VENTANA_AVISO_CONSULTA_MS = 30 * 60 * 1000;   // a lo más un aviso de 
 // La ventana de servicio de Meta es de 24 h desde el último mensaje de Rubén al número; se deja un margen de media hora: dentro va texto libre, fuera va plantilla.
 const RR_VENTANA_RUBEN_MS = 23.5 * 60 * 60 * 1000;
 // Los motivos de los avisos de consulta (la clave limita el aviso: uno cada 30 minutos por teléfono y clave).
-const RR_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_ruben', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_supo', 'atencion_humana'];
+const RR_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_ruben', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo'];
 const RR_MINUTOS_QR = 15;   // el plazo de la regla 2 del cobro: lo manda el servidor; aquí solo es una guarda para no abrir dos QR seguidos
 
 function rrProductoDeBoton(id) {

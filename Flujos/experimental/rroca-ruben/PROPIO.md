@@ -60,7 +60,7 @@ Cuando #519 se fusione y exista el módulo común de Cobros y de Avisos, estos d
 
 ## Mensajes por conversación
 
-**0 agregados al cliente** en PR-1 y PR-2: UN mensaje por turno del cliente, o ninguno (pausa `bloqueado`); la prueba lo niega recorriendo una charla completa. El aviso a Rubén (a SU número, texto libre o plantilla: +1 mensaje a otra persona por comprobante, derivación o cliente en estado «operador», con tope de uno cada 30 minutos por teléfono y motivo en las consultas) no suma mensajes al cliente; el rescate de las 22 h (+1 por conversación a medias, 0,0113 USD) es PR-4. Llamadas al modelo: 0 o 1 por turno de conversación libre (0 en saludos, botones, prellenados, derivaciones y comprobantes), y 0 con la pausa.
+**0 agregados al cliente** en PR-1 y PR-2: UN mensaje por turno del cliente, o ninguno (pausa `bloqueado`); la prueba lo niega recorriendo una charla completa. El aviso a Rubén (a SU número, texto libre o plantilla: +1 mensaje a otra persona por comprobante, derivación o cliente en estado «operador», con tope de uno cada 30 minutos por teléfono y motivo en las consultas y en el comprobante «sin cotejar» sin causa; límite conocido: no hay tope global por hora, remediación en DISENO.md para el PR-5) no suma mensajes al cliente; el rescate de las 22 h (+1 por conversación a medias, 0,0113 USD) es PR-4. Llamadas al modelo: 0 o 1 por turno de conversación libre (0 en saludos, botones, prellenados, derivaciones y comprobantes), y 0 con la pausa.
 
 ## Datos que el flujo espera de la consola (`configuracionFlujo`) y de «Config base»
 
