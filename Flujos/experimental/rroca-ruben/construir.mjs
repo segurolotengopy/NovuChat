@@ -36,12 +36,10 @@ export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-ruben/rroca-ruben.json');
 export const TOPE_DE_NODOS = 48;
 /**
- * «Solo se ofrece lo que se cumple»: en estado «operador» el texto promete atención humana sin aviso a recepción, y el saludo fijo no ofrece pasar con recepción.
- * Mientras no exista el aviso a recepción con su botón (PR-3), el JSON de PRODUCCIÓN lleva `meta.noPublicable` y la guardia lo exige: este flujo NO se publica
- * ni se activa en un número real. Al llegar PR-3, esta constante pasa a `true` en el mismo PR que agrega el aviso (y la prueba que lo fija se actualiza).
+ * «Solo se ofrece lo que se cumple»: el aviso a recepción (PR-3) existe, así que el JSON de producción ya NO lleva `meta.noPublicable`. La guardia de `--verificar` ahora exige lo contrario: que el aviso
+ * esté (los nodos «Armar avisos», «¿Hay avisos?» y «Enviar aviso», conectados antes de «Armar mensajes», y la lógica de plantilla y de ventana en «Armar avisos»), y que no quede la marca vieja.
  */
-export const AVISO_A_RECEPCION_EXISTE = false;
-export const MARCA_NO_PUBLICABLE = 'PR-2: no se publica ni se activa en un número real hasta el PR-3 (aviso a recepción con botón; «solo se ofrece lo que se cumple»)';
+export const NODOS_DEL_AVISO = ['Armar avisos', '¿Hay avisos?', 'Enviar aviso'];
 
 /**
  * El config del armador genérico. Vive aquí y no en un `construir.config.json`: el saneo del repo público trata todo JSON bajo `Flujos/` como un export de n8n.
@@ -98,6 +96,12 @@ const FORMAS_CONFIG = {
   prefijosPermitidos: /^\d{1,4}(,\d{1,4})*$/,
   telefonosDePrueba: /^(\d{6,20}(,\d{6,20})*|REEMPLAZAR_[A-Z0-9_]+)$/,
   modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/,
+  // Las plantillas de aviso a Rubén (PR-3). El estado es el de Meta: solo APPROVED habilita el aviso fuera de la ventana de Rubén; PENDING o REJECTED lo dejan en «plantilla_no_configurada».
+  avisoComprobantePlantilla: /^[a-z0-9_]{1,100}$/,
+  avisoConsultaPlantilla: /^[a-z0-9_]{1,100}$/,
+  avisoComprobanteEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
+  avisoConsultaEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
+  avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
 
@@ -169,9 +173,17 @@ export function guardias(variante, flujo) {
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva');
-  if (variante === 'produccion' && !AVISO_A_RECEPCION_EXISTE && !(flujo && flujo.meta && typeof flujo.meta.noPublicable === 'string' && flujo.meta.noPublicable !== '')) {
-    h.push('falta `meta.noPublicable`: sin el aviso a recepción (PR-3) este flujo no se publica ni se activa en un número real');
-  }
+  // El aviso a recepción es obligatorio (PR-3): sin él, en estado «operador» el texto promete atención humana sin respaldo. Sin la marca vieja y con la cadena del aviso completa.
+  if (flujo && flujo.meta && flujo.meta.noPublicable !== undefined) h.push('trae `meta.noPublicable`: el aviso a recepción ya existe (PR-3) y la marca sobra');
+  for (const n of NODOS_DEL_AVISO) if (!nombres.has(n)) h.push(`falta el nodo «${n}»: sin el aviso a recepción este flujo no se publica ni se activa en un número real`);
+  const armarAvisos = por('Armar avisos');
+  const codigoAvisos = String(p(armarAvisos).jsCode || '');
+  if (armarAvisos && !(/rrPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos) && /RR_VENTANA_RUBEN_MS/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la plantilla ni la ventana de Rubén: el aviso fuera de las 24 h no saldría');
+  const conex = (flujo && flujo.connections) || {};
+  const destinosDe = (nombre, salida) => (((conex[nombre] || {}).main || [])[salida] || []).map((x) => x.node);
+  if (nombres.has('Armar avisos') && !destinosDe('Armar avisos', 0).includes('¿Hay avisos?')) h.push('«Armar avisos» no está conectado a «¿Hay avisos?»');
+  if (nombres.has('¿Hay avisos?') && !destinosDe('¿Hay avisos?', 0).includes('Enviar aviso')) h.push('«¿Hay avisos?» no envía por «Enviar aviso»');
+  if (nombres.has('Enviar aviso') && !destinosDe('Enviar aviso', 0).includes('Armar mensajes')) h.push('«Enviar aviso» no cuelga de «Armar mensajes»: el aviso tiene que correr ANTES de armar el mensaje que dice si salió');
   if (variante === 'produccion') {
     if (nombres.has(NODO_PRUEBA)) h.push(`contiene «${NODO_PRUEBA}» (activa el modo prueba): solo va en el JSON de prueba`);
     for (const n of NODOS_DEL_RECEPTOR) if (!nombres.has(n)) h.push(`falta el nodo «${n}» de la entrada verificada del receptor`);
@@ -261,7 +273,6 @@ export function armarRroca(proyecto, datos, v) {
   rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}";
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
-  if (!prueba && !AVISO_A_RECEPCION_EXISTE) flujo.meta = { ...(flujo.meta || {}), noPublicable: MARCA_NO_PUBLICABLE };
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
   return JSON.stringify(flujo, null, 2) + '\n';
 }
