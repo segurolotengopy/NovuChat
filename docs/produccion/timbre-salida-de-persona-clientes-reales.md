@@ -19,9 +19,15 @@ ejecuta nada: cada paso que escribe lo corre Claude con el «sí» de Andres.
   no (`^[A-Za-z][A-Za-z0-9]{1,29}$`).
 - Siguen en pie los cerrojos: los tres nombres distintos entre sí y distintos del
   timbre; ninguno de AAB1-WA-Prod ni de WhatsApp-Modular (se compara normalizado,
-  sin mayúsculas, espacios, guiones ni guiones bajos, contra `segurolotengo`,
-  `aab1wa`, `waprod`, `whatsappmodular`, `receptor` y `otp`); el nodo que manda a Meta o al relé nunca lleva
-  la de ingesta (por nombre ni por id).
+  con la misma lista y la misma normalización en el shell y en el cerrojo de roles:
+  minúsculas y sin espacios —el NBSP incluido—, guiones ni guiones bajos, contra
+  `segurolotengo`, `aab1wa`, `waprod`, `whatsappmodular`, `receptor` y `otp`); el nodo
+  que manda a Meta o al relé nunca lleva la de ingesta (por nombre ni por id). Además,
+  un alias que **no** es de ensayo (`demoA`, `demoB`) no se carga ni se activa sin
+  las tres opciones: sin ellas se buscarían credenciales por el alias, que nada ata a
+  su número, y se aborta con 2 sin tocar n8n. `--quitar` no las necesita. Las
+  variables `TIMBRE_CRED_*` heredadas del entorno se ignoran: solo valen las que el
+  script fija a partir de las opciones.
 - **`--rele-inerte --canal-graph` vale ahora para cualquier alias** (antes solo
   `demoA` y `demoB`): la URL del relé del flujo es `http://relay-inerte.invalid` y no
   se exige la fila del relé de la tabla. `--canal-graph` es la afirmación de quien
@@ -31,17 +37,25 @@ ejecuta nada: cada paso que escribe lo corre Claude con el «sí» de Andres.
   `demoA` y `demoB`** y no se combinan con las tres opciones nuevas.
 - **Atadura al alias (antes de escribir).** Un nombre bien formado no prueba que la
   credencial sea de ese número: con la ingesta de otro comercio el flujo reclamaría
-  sus mensajes y los enviaría desde el número equivocado. Por eso la credencial de
-  ingesta y la de envío tienen que estar citadas por al menos un flujo vivo (ya
-  descargado, sin otra llamada; distinto del propio del alias) cuyos parámetros
-  contengan el `phoneNumberId` de la fila `REEMPLAZAR_PHONE_NUMBER_ID_<ALIAS>`, y
-  ningún flujo vivo con **otro** `phoneNumberId` puede citarlas. Si no se cumple,
-  aborta sin escribir con un mensaje fijo, sin nombres ni valores. El seco imprime un
-  renglón por rol: `credencial de ingesta vinculada al alias: sí/no` (y de envío).
-  El rol relé no se ata (no tiene flujo propio que lo cite). No se combina con
-  `--tabla-demo-a`. Consecuencia práctica: el cliente tiene que tener ya un flujo
-  vivo que use esas credenciales con su número escrito en los parámetros; si su
-  número sale de una expresión, la atadura no lo ve y el script se niega.
+  sus mensajes y los enviaría desde el número equivocado. El script lee los flujos de
+  n8n ya descargados (sin otra llamada) y, de cada uno que cita la credencial (por id,
+  o por nombre **y tipo**), extrae su número: el valor de un nodo Set (`Config base`:
+  `assignments.assignments[*]` o, en versiones viejas, `values.string[*]`) cuyo nombre
+  empieza por `phoneNumberId` o es `phone_number_id` (se quita un `=` inicial), más
+  una clave `phoneNumberId` literal o una URL de Graph. La credencial de ingesta y
+  la de envío quedan **vinculadas** solo si (1) al menos un flujo **activo**, distinto
+  del propio del alias, la cita y tiene el número de la fila
+  `REEMPLAZAR_PHONE_NUMBER_ID_<ALIAS>`, y (2) **ningún** flujo que la cite, activo o
+  no, tiene un número distinto del alias, aunque también tenga el del alias. Si no
+  se cumple, aborta sin escribir con un mensaje fijo, sin nombres ni valores. El seco
+  imprime un renglón por rol: `credencial de ingesta vinculada al alias: sí/no` (y de
+  envío). El rol relé no se ata (no tiene flujo propio que lo cite). No se combina con
+  `--tabla-demo-a`.
+  **Alcance de la garantía:** prueba que ningún flujo existente en n8n use esa
+  credencial con otro número literal; no prueba nada sobre flujos que aún no existen,
+  ni sobre un flujo cuyo número solo salga de una expresión o de otro lugar (no lo ve:
+  ni lo cuenta como propio ni como ajeno). Por eso el cliente tiene que tener ya un
+  flujo activo con su número escrito en el nodo Set; si no, el script se niega.
 - El mapa de nombres hay que repetirlo en `--activar`: el script verifica el flujo
   vivo contra los nombres que se le dan, y si no coinciden se niega. `--quitar` no
   necesita el mapa: borra solo el flujo y la credencial del timbre del alias.

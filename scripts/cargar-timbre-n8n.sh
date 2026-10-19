@@ -70,11 +70,13 @@
 # si falta o está repetida se aborta sin escribir. No se crea ni se modifica ninguna de las tres (no hay
 # valores de por medio) y no se combinan con --crear-credenciales ni --quitar-credenciales. Los tres nombres
 # tienen que ser distintos entre sí y del timbre, sin caracteres de control, y ninguno puede ser de
-# AAB1-WA-Prod ni de WhatsApp-Modular (se compara normalizado: sin mayúsculas, espacios, guiones ni guiones bajos).
-# ATADURA AL ALIAS: antes de escribir, la credencial de ingesta y la de envío tienen que estar citadas por al menos
-# un flujo vivo (distinto del propio del alias) cuyos parámetros contengan el phoneNumberId de la tabla local
-# (`REEMPLAZAR_PHONE_NUMBER_ID_<ALIAS>`), y ningún flujo vivo con OTRO phoneNumberId puede citarlas; si no, se
-# aborta sin escribir. El seco imprime «vinculada al alias: sí/no» por rol. No se combina con --tabla-demo-a.
+# AAB1-WA-Prod ni de WhatsApp-Modular (se compara normalizado: sin mayúsculas, espacios —NBSP incluido—, guiones ni guiones bajos).
+# ATADURA AL ALIAS: antes de escribir, la credencial de ingesta y la de envío (citadas por id, o por nombre Y tipo)
+# tienen que ser usadas por al menos un flujo ACTIVO (distinto del propio del alias) cuyo número —el de sus nodos Set
+# `phoneNumberId*`/`phone_number_id`, o una URL de Graph— sea el de la tabla local (`REEMPLAZAR_PHONE_NUMBER_ID_<ALIAS>`),
+# y ningún flujo, activo o no, que las cite puede tener otro número, aunque también tenga el del alias; si no, se
+# aborta sin escribir. Un alias que no es de ensayo exige las tres opciones al cargar y al activar. El seco imprime
+# «vinculada al alias: sí/no» por rol. No se combina con --tabla-demo-a.
 # Nombres con apóstrofo o espacios son válidos (el alias, no: ^[A-Za-z][A-Za-z0-9]{1,29}$).
 # VALOR INERTE DEL RELÉ ANTES DEL TRASLADO: use `--rele-inerte --canal-graph` (válido para cualquier alias):
 # la URL del relé del flujo es `http://relay-inerte.invalid` y el rol relé debe nombrar una credencial
@@ -127,6 +129,8 @@
 # y no admite --flujo. El respaldo no lleva la ruta ni la clave del timbre (el path va como
 # <capacidad> con su sha256); sí lleva ids, nombres, phoneNumberId y URL del relé.
 set -euo pipefail
+# Las variables TIMBRE_CRED_* las FIJA este script a partir del mapa (--cred-*); una heredada del entorno no vale.
+unset TIMBRE_CRED_INGESTA TIMBRE_CRED_ENVIO TIMBRE_CRED_RELE
 ESTE="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$ESTE")/.." || exit 1
 
@@ -142,6 +146,8 @@ RELE_INERTE=0; CANAL_GRAPH=0; PROYECTO="novuchat-demo"; PROYECTO_EXPLICITO=0; VE
 # Alias de ENSAYO: los únicos para los que existen estos modos. Un alias de cliente real (p. ej. Bellido) tiene
 # credenciales VIVAS con estos mismos nombres: este script no las crea ni las toca.
 ALIAS_ENSAYO="demoA demoB"
+# Lista negra de nombres de credencial del otro sistema, ya normalizados: la usan este shell y lib.py.
+export TIMBRE_RE_AJENO='segurolotengo|aab1wa|waprod|whatsappmodular|receptor|otp'
 # Nombres REALES de las credenciales existentes de un cliente (vacíos = los de ensayo, derivados del alias).
 CRED_INGESTA=""; CRED_ENVIO=""; CRED_RELE=""; CRED_DADAS=0
 fijar_modo() { [[ "$MODO" == cargar ]] || { echo "✗ Un solo modo a la vez (--activar, --quitar, --crear-credenciales o --quitar-credenciales)" >&2; exit 2; }; MODO="$1"; }
@@ -190,10 +196,10 @@ if (( CRED_DADAS > 0 )); then
     if [[ ${#_nom} -gt 100 || "$_nom" =~ [[:cntrl:]] || "$_nom" =~ ^[[:space:]] || "$_nom" =~ [[:space:]]$ ]]; then
       echo "✗ Un nombre de credencial no es válido (hasta 100 caracteres, sin caracteres de control ni espacios en los extremos). No se tocó n8n." >&2; exit 2
     fi
-    # Se normaliza antes de comparar (minúsculas, sin espacios, guiones ni guiones bajos): «SeguroLo Tengo»,
-    # «WhatsApp-Modular», «Receptor» y «OTP» son del otro sistema aunque cambien las mayúsculas o los separadores.
-    _norm="${_nom,,}"; _norm="${_norm//[ _-]/}"
-    if [[ "$_norm" =~ (segurolotengo|aab1wa|waprod|whatsappmodular|receptor|otp) ]]; then
+    # Se normaliza antes de comparar (minúsculas, sin espacios —incluido el NBSP—, guiones ni guiones bajos):
+    # «SeguroLo Tengo», «WhatsApp-Modular», «Receptor» y «OTP» son del otro sistema aunque cambien las mayúsculas o los
+    # separadores. Es la MISMA normalización y la MISMA lista que usa el cerrojo de roles de Python (lib.py).
+    if NOM_A_REVISAR="$_nom" python3 -I -c 'import os, re, sys; sys.exit(0 if re.search(os.environ["TIMBRE_RE_AJENO"], re.sub(r"[\s_-]", "", os.environ["NOM_A_REVISAR"].lower())) else 1)'; then
       echo "✗ Un nombre de credencial parece de AAB1-WA-Prod o de otro sistema: NovuChat no la usa (CLAUDE.md, prohibiciones 5 y 7). No se tocó n8n." >&2; exit 2
     fi
     if [[ "$_nom" == "Salida de persona (timbre ${ALIAS})" ]]; then
@@ -207,6 +213,14 @@ if (( CRED_DADAS > 0 )); then
     echo "✗ --tabla-demo-a no se combina con las credenciales existentes: la atadura al alias exige la fila del teléfono de ESE alias. No se tocó n8n." >&2; exit 2
   fi
   export TIMBRE_CRED_INGESTA="$CRED_INGESTA" TIMBRE_CRED_ENVIO="$CRED_ENVIO" TIMBRE_CRED_RELE="$CRED_RELE"
+fi
+# Un alias que no es de ensayo (cliente real) carga y activa SOLO con el mapa de credenciales existentes: sin él se
+# buscarían las de ensayo por el alias, que no están atadas a su número, y la atadura (vincular_al_alias) no correría.
+if (( CRED_DADAS == 0 )) && [[ "$MODO" == cargar || "$MODO" == activar ]]; then
+  case " $ALIAS_ENSAYO " in
+    *" $ALIAS "*) ;;
+    *) echo "✗ El alias «${ALIAS}» no es un alias de ensayo (${ALIAS_ENSAYO}): un cliente real se carga y se activa con --cred-ingesta, --cred-envio y --cred-rele (credenciales existentes, atadas a su número). No se tocó n8n." >&2; exit 2 ;;
+  esac
 fi
 if (( RELE_INERTE )) && [[ "$MODO" != cargar ]]; then echo "✗ --rele-inerte solo se usa al cargar el flujo (modo por omisión)" >&2; exit 2; fi
 if (( RELE_INERTE && ! CANAL_GRAPH )); then
@@ -368,8 +382,8 @@ def cmd_entrega(archivo, alias, base, cuerpo_out, path_out):
 
 
 RELE_INERTE = "http://relay-inerte.invalid"
-# Nombres de credencial del otro sistema (WhatsApp-Modular), ya normalizados: minúsculas y sin espacios, guiones ni guiones bajos.
-RE_AJENO = re.compile(r"segurolotengo|aab1wa|waprod|whatsappmodular|receptor|otp")
+# Nombres de credencial del otro sistema (WhatsApp-Modular), ya normalizados: minúsculas y sin espacios (NBSP incluido), guiones ni guiones bajos.
+RE_AJENO = re.compile(os.environ["TIMBRE_RE_AJENO"])  # la fija el shell: una sola lista
 
 
 def cmd_tabla(local, alias, sinsufijo, salida, inerte="0"):
@@ -522,17 +536,32 @@ def credenciales_existentes():
 
 
 RE_URL_NUMERO = re.compile(r"graph\.facebook\.com/v[0-9]+\.[0-9]+/([0-9]{8,20})/")
+RE_DIGITOS = re.compile(r"[0-9]{8,20}")
+
+
+def _es_campo_de_telefono(nombre):
+    return isinstance(nombre, str) and (nombre.startswith("phoneNumberId") or nombre == "phone_number_id")
+
+
+def _digitos(valor):
+    """El valor literal de un número (quitando un `=` inicial de n8n), o None si no son solo dígitos."""
+    if not isinstance(valor, str):
+        return None
+    v = valor[1:] if valor.startswith("=") else valor
+    return v if RE_DIGITOS.fullmatch(v) else None
 
 
 def numeros_de_telefono(nodos):
-    """Los phoneNumberId literales que citan los parámetros de los nodos (clave phoneNumberId o URL de Graph)."""
+    """Los phoneNumberId literales que cita un flujo. La forma real vive en un nodo Set (assignments.assignments[*]
+    o, en versiones viejas, values.string[*]) con `name` phoneNumberId* / phone_number_id y `value` de dígitos; los
+    nodos de envío lo toman por expresión. Se reconocen además una clave phoneNumberId literal y las URL de Graph."""
     hallados = set()
 
     def ver(x):
         if isinstance(x, dict):
             for k, v in x.items():
-                if k in ("phoneNumberId", "phone_number_id") and isinstance(v, str) and re.fullmatch(r"[0-9]{8,20}", v):
-                    hallados.add(v)
+                if _es_campo_de_telefono(k) and _digitos(v):
+                    hallados.add(_digitos(v))
                 ver(v)
         elif isinstance(x, list):
             for i in x:
@@ -540,15 +569,31 @@ def numeros_de_telefono(nodos):
         elif isinstance(x, str):
             hallados.update(RE_URL_NUMERO.findall(x))
 
+    def asignaciones(ps):
+        lista = []
+        a = ps.get("assignments")
+        if isinstance(a, dict) and isinstance(a.get("assignments"), list):
+            lista += a["assignments"]
+        v = ps.get("values")
+        if isinstance(v, dict) and isinstance(v.get("string"), list):
+            lista += v["string"]
+        return lista
+
     for nodo in nodos:
-        ver(nodo.get("parameters") or {})
+        ps = nodo.get("parameters") or {}
+        ver(ps)
+        if str(nodo.get("type", "")).lower().endswith(".set"):
+            for it in asignaciones(ps):
+                if isinstance(it, dict) and _es_campo_de_telefono(it.get("name")) and _digitos(it.get("value")):
+                    hallados.add(_digitos(it.get("value")))
     return hallados
 
 
 def vincular_al_alias(wfs, indice, n, phone):
     """Ata las credenciales de ingesta y de envío al número del alias, sin otra llamada a n8n.
-    Cada una tiene que estar citada por al menos un flujo vivo (distinto del propio del alias) cuyos parámetros
-    contengan el phoneNumberId de la tabla local, y ningún flujo vivo con OTRO phoneNumberId puede citarla.
+    Cada una tiene que estar citada (por id, o por nombre Y tipo) por al menos un flujo ACTIVO, distinto del propio
+    del alias, cuyo número (el que dicen sus nodos Set) sea el de la tabla local; y ningún flujo (activo o no) que
+    la cite puede tener un número distinto del alias, aunque también tenga el del alias.
     Devuelve [(rol, vinculada)] sin nombres ni valores."""
     resultado = []
     for rol, tipo, etiqueta in (("ingesta", "httpHeaderAuth", "ingesta"), ("graph", "whatsAppApi", "envío")):
@@ -559,15 +604,15 @@ def vincular_al_alias(wfs, indice, n, phone):
             if w.get("name") == n["flujo"]:
                 continue
             nodos = w.get("nodes") or []
-            cita = any(isinstance(ref, dict) and ((ref.get("id") and ref.get("id") in ids) or ref.get("name") == nom)
-                       for nodo in nodos for ref in (nodo.get("credentials") or {}).values())
+            cita = any(isinstance(ref, dict) and ((ref.get("id") and ref.get("id") in ids) or (ctipo == tipo and ref.get("name") == nom))
+                       for nodo in nodos for ctipo, ref in (nodo.get("credentials") or {}).items())
             if not cita:
                 continue
-            texto = json.dumps([nodo.get("parameters") or {} for nodo in nodos], ensure_ascii=False)
-            if re.search(r"(?<![0-9])" + re.escape(phone) + r"(?![0-9])", texto):
-                propios += 1
-            elif numeros_de_telefono(nodos):
+            numeros = numeros_de_telefono(nodos)
+            if numeros - {phone}:
                 ajenos += 1
+            elif phone in numeros and w.get("active"):
+                propios += 1
         resultado.append((etiqueta, propios >= 1 and ajenos == 0))
     return resultado
 
