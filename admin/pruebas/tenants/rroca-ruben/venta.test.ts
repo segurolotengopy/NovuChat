@@ -767,7 +767,9 @@ describe('el comprobante', () => {
       const t = hablar(w, ANA, mImagen(), { avanzarMin: 2 });
       enviados += t.avisos.length;
       // Al cliente se le dice la verdad: el aviso de hace un rato sigue en pie, y trae el botón.
-      expect(unico(t).cuerpo).toMatch(/no pude cotejarlo/);
+      // El texto EXACTO: el aviso suprimido trató otro comprobante, así que no se promete «ya lo pasé».
+      expect(unico(t).cuerpo).toBe('Recibí tu comprobante, pero no pude cotejarlo. Rubén ya recibió el aviso de un comprobante anterior; si quieres, escríbele directo con el botón.');
+      expect(unico(t).cuerpo).not.toMatch(/Ya lo pasé/);
       expect(unico(t).payload['interactive']?.type).toBe('cta_url');
     }
     expect(enviados).toBe(1);
@@ -893,9 +895,11 @@ describe('+0 mensajes agregados al cliente y nunca textos prohibidos', () => {
     for (const k of ['closer', 'videos']) for (const c of [true, false]) textos.push(L.rrTextoComplemento(k, cat, c));
     for (const [p, sim] of [['pack', false], ['libro', false], ['closer', true], ['videos', false]] as const) for (const c of [true, false]) textos.push(L.rrPieQr(p, 60, 'RRABC1', c, sim));
     for (const q of [cat, {}]) for (const preg of ['¿a?', '¿b?']) textos.push(L.rrSaludo(q, preg));
-    for (const mot of ['sin_cobro', 'sin_medio', 'sin_precio', 'consulta', 'en_revision']) for (const s of [true, false]) textos.push(L.rrTextoDerivacion(mot, s));
-    for (const r of ['cuadra', 'aproximado', 'reintentar', 'ilegible', 'ya_cotejado', 'simulado', 'sin_cotejo']) for (const c of ['', 'tardio', 'en_revision']) for (const s of [true, false]) textos.push(L.rrTextoComprobante(r, c, s, 'el comprobante dice 5 Bs y tu pedido es de 60 Bs').cuerpo);
+    for (const mot of ['sin_cobro', 'sin_medio', 'sin_precio', 'consulta', 'en_revision', 'qr_sin_aviso']) for (const s of [true, false, 'repetido']) textos.push(L.rrTextoDerivacion(mot, s));
+    for (const r of ['cuadra', 'aproximado', 'reintentar', 'ilegible', 'ya_cotejado', 'simulado', 'sin_cotejo']) for (const c of ['', 'tardio', 'en_revision']) for (const s of [true, false, 'repetido']) textos.push(L.rrTextoComprobante(r, c, s, 'el comprobante dice 5 Bs y tu pedido es de 60 Bs').cuerpo);
     expect(textos.length).toBeGreaterThan(60);
+    // Un QR que no se pudo mostrar sin que se intentara avisar no dice «No pude avisarle»: no hubo intento.
+    expect(L.rrTextoDerivacion('qr_sin_aviso', false)).not.toMatch(/avisarle|le avis/i);
     for (const t of textos) {
       expect(t, t).not.toMatch(PROHIBIDAS);
       expect(L.CB_PROHIBIDAS.test(L.cbCanon(t)), `CB_PROHIBIDAS: ${t}`).toBe(false);
@@ -1250,6 +1254,54 @@ describe('PR-3 · la derivación completa: el aviso lleva el MOTIVO exacto', () 
     // Si el aviso no salió, no se dice «le avisé».
     const t = hablar(crear({ modelo: geminiTexto('DERIVAR'), aviso: 'error' }), ANA, mTexto('¿el libro sirve para enfermeras?'));
     expect(unico(t).cuerpo).toBe('Eso lo ve Rubén directamente. No pude avisarle a Rubén; escríbele directo con el botón.');
+  });
+
+  it('la segunda consulta distinta que el modelo no sabe (aviso suprimido por el límite) NO lee «Le avisé»: dice la verdad y trae el botón', () => {
+    const w = crear({ modelo: geminiTexto('DERIVAR') });
+    const primero = hablar(w, ANA, mTexto('¿sirve para enfermeras?'));
+    expect(unico(primero).cuerpo).toBe('Eso lo ve Rubén directamente. Le avisé; también puedes escribirle directo con el botón.');
+    const segundo = hablar(w, ANA, mTexto('¿y para abogados en Sucre?'), { avanzarMin: 5 });
+    expect(segundo.avisos).toHaveLength(0);
+    expect(unico(segundo).cuerpo).toBe('Eso lo ve Rubén directamente. Rubén ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.');
+    expect(unico(segundo).cuerpo).not.toMatch(/Le avisé;/);
+    expect(unico(segundo).payload['interactive']?.type).toBe('cta_url');
+  });
+
+  it('escenario A: un aviso «sin cotejar» y, 2 minutos después, otro comprobante sin cotejar suprimido: el segundo NO lee «Ya lo pasé a Rubén»', () => {
+    const w = crear({ tamano: 6_000_000 });
+    pedirQr(w, 'pack');
+    expect(unico(hablar(w, ANA, mImagen())).cuerpo).toMatch(/Ya lo pasé a Rubén/);
+    const t = hablar(w, ANA, mImagen(), { avanzarMin: 2 });
+    expect(t.avisos).toHaveLength(0);
+    expect(unico(t).cuerpo).not.toMatch(/Ya lo pasé/);
+    expect(unico(t).cuerpo).toMatch(/Rubén ya recibió el aviso de un comprobante anterior/);
+  });
+
+  it('DERIVAR mezclado con otro texto («DERIVAR a Rubén», «DERIVAR. Eso lo ve Rubén») también es una derivación y la palabra no llega al cliente', () => {
+    for (const crudo of ['DERIVAR a Rubén', 'DERIVAR. Eso lo ve Rubén', 'Derivar: factura']) {
+      const t = hablar(crear({ modelo: geminiTexto(crudo) }), ANA, mTexto('¿el libro sirve para una enfermera con turnos nocturnos en Sucre?'));
+      const m = unico(t);
+      expect(m.cuerpo, crudo).toBe('Eso lo ve Rubén directamente. Le avisé; también puedes escribirle directo con el botón.');
+      expect(m.cuerpo).not.toMatch(/derivar/i);
+      expect(t.avisos).toHaveLength(1);
+    }
+    // Red secundaria: la palabra en medio de una frase del modelo cae al texto fijo, nunca al cliente.
+    const t = hablar(crear({ modelo: geminiTexto('Creo que lo mejor es derivar tu caso a Rubén. ¿Te cuento del libro?') }), ANA, mTexto('hola, ¿cómo funciona el libro en la práctica?'));
+    expect(unico(t).cuerpo).not.toMatch(/derivar/i);
+  });
+
+  it('falsos positivos de la derivación: tarjeta de presentación, mayorista, cobro en efectivo y hablar con un socio NO derivan (siguen al modelo)', () => {
+    for (const texto of ['quiero crear una tarjeta de presentación con IA', 'vendo por mayor y quiero automatizar', 'soy mayorista de ropa', 'cobro en efectivo en mi tienda', 'quiero hablar con mi socio antes de comprar']) {
+      const t = hablar(crear({ modelo: geminiTexto('Claro, el libro te muestra cómo hacerlo paso a paso. ¿En qué rubro estás?') }), ANA, mTexto(texto));
+      expect(t.avisos, texto).toHaveLength(0);
+      expect(t.ejecutados.has('Conversar con el modelo'), texto).toBe(true);
+      expect(unico(t).cuerpo, texto).not.toMatch(/Eso lo ve Rubén/);
+    }
+    for (const texto of ['puedo pagar con tarjeta?', 'aceptan descuento por mayor', 'quiero hablar con un asesor']) {
+      const t = hablar(crear(), ANA, mTexto(texto));
+      expect(t.avisos, texto).toHaveLength(1);
+      expect(t.ejecutados.has('Conversar con el modelo'), texto).toBe(false);
+    }
   });
 
   it('un cliente que escribe «DERIVAR» no fuerza nada: el modelo es quien decide, y el límite de 30 minutos por motivo lo acota', () => {

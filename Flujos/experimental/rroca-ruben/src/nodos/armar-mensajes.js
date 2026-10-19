@@ -29,7 +29,11 @@ const rrId = (j) => { const m = j && j.messages; return Array.isArray(m) && !!m[
 const av = cnPrimero('Armar avisos') || {};
 const avisoPlaneado = av.planeado === true;
 const avisoRepetido = av.repetido === true;
-const avisoSalio = (avisoPlaneado && (cnTodos('Enviar aviso').some(rrId) || (prueba && cfg.enviarDeVerdad !== true))) || avisoRepetido;
+const avisoEnviado = avisoPlaneado && (cnTodos('Enviar aviso').some(rrId) || (prueba && cfg.enviarDeVerdad !== true));
+// Un aviso suprimido por el límite de 30 minutos trató OTRO contenido en los motivos de texto variable (la consulta que el modelo no supo, el comprobante sin cotejar): ahí NO se dice «le avisé» de esta vez.
+const repetidoVariable = avisoRepetido && (av.clave === 'no_supo' || av.clave === 'comprobante_sin_cotejo');
+const avisoSalio = avisoEnviado || (avisoRepetido && !repetidoVariable);
+const estadoAviso = repetidoVariable ? 'repetido' : avisoSalio;
 
 let m = null;               // el item del mensaje (cmMensaje) o null
 let tipoDePlan = String(plan.tipo || 'nada');
@@ -77,7 +81,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     if (rrEsDerivar(crudo)) {
       // DERIVAR: el modelo no supo responder. La palabra jamás llega al cliente: aviso a Rubén (lo armó «Armar avisos») y el botón.
       tipoDePlan = 'derivar';
-      m = conRuben(rrTextoDerivacion('consulta', avisoSalio));
+      m = conRuben(rrTextoDerivacion('consulta', estadoAviso));
     } else {
       const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
         maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [rrExtraRedaccion],
@@ -94,7 +98,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     if (monto === null || monto !== plan.monto || mediaId === '' || !/^[A-Za-z0-9]{3,40}$/.test(String(plan.pedidoId || ''))) {
       // Nunca un QR sin monto del catálogo o sin id de medio: se deriva a Rubén.
       tipoDePlan = 'derivar';
-      m = conRuben(rrTextoDerivacion('sin_medio', false));
+      m = conRuben(rrTextoDerivacion('qr_sin_aviso', false));
     } else {
       const pie = rrSeguro(rrPieQr(plan.producto, monto, plan.pedidoId, plan.conPresentacion === true, plan.simulado === true));
       const respaldo = 'No pude mostrarte el QR en este momento. Escríbeme de nuevo en unos minutos para intentarlo otra vez.';
@@ -109,10 +113,10 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   } else if (tipoDePlan === 'qr_pendiente') {
     m = conRuben(rrTextoQrPendiente(plan.producto, plan.monto));
   } else if (tipoDePlan === 'comprobante') {
-    const r = rrTextoComprobante(plan.resultado, plan.causa, avisoSalio, plan.diferencia);
+    const r = rrTextoComprobante(plan.resultado, plan.causa, estadoAviso, plan.diferencia);
     m = r.boton === true ? conRuben(r.cuerpo) : texto(r.cuerpo);
   } else if (tipoDePlan === 'derivar') {
-    m = conRuben(rrTextoDerivacion(plan.motivo, avisoSalio));
+    m = conRuben(rrTextoDerivacion(plan.motivo, estadoAviso));
   } else if (tipoDePlan === 'imagen_otra') {
     m = texto(RR_TEXTO_IMAGEN);
   } else if (tipoDePlan === 'audio') {
@@ -147,7 +151,7 @@ if (claveOk) {
   rrBarrer(fichas.mapa, ahora);
 }
 
-const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno') };
+const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio || avisoRepetido ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno') };
 let numero = from;
 if (prueba) numero = telPrueba;
 // `mensajes` se calcula DESPUÉS de decidir el número: en prueba con un teléfono no permitido (`telPrueba` vacío) no sale nada y el resumen lo dice.

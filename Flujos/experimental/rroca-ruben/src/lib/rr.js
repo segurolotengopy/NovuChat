@@ -192,12 +192,12 @@ function rrIntencionDeCompra(n) {
 // Devuelve { clave, motivo } (la clave limita el aviso; el motivo es lo que lee Rubén) o null.
 function rrDerivacion(n) {
   if (/\bfactura\b|\bnit\b/.test(n)) return { clave: 'factura', motivo: 'factura' };
-  if (/\botro (medio|metodo|forma) de pago\b|\b(efectivo|tarjeta|paypal|zelle|tigo money|contra entrega|en cuotas|numero de cuenta|datos de la cuenta)\b/.test(n)) return { clave: 'otro_medio_pago', motivo: 'otro medio de pago' };
+  if (/\botro (medio|metodo|forma) de pago\b|\b(paypal|zelle|tigo money|contra entrega|en cuotas|numero de cuenta|datos de la cuenta)\b|\b(pagar|pago|pagarte|pagarle|cancelar) (con|en|por) (tarjeta|efectivo)\b/.test(n)) return { clave: 'otro_medio_pago', motivo: 'otro medio de pago' };
   if (/\b(garantia|devolucion|devolver|reembolso|estafa)\b/.test(n)) return { clave: 'garantia', motivo: 'garantía o devolución' };
   if (/\b(reclamo|queja|no me llego|no me ha llegado|no recibi)\b/.test(n)) return { clave: 'reclamo', motivo: 'reclamo' };
-  if (/\b(hablar con|comunicame con|pasame con|contactar a|numero de) (ruben|una persona|alguien|un humano|el dueno|el autor)\b|\bquiero hablar con\b/.test(n)) return { clave: 'hablar_con_ruben', motivo: 'quiere hablar con Rubén' };
+  if (/\b(hablar con|comunicame con|pasame con|contactar a|numero de) (ruben|una persona|alguien|un humano|el dueno|el autor)\b|\bquiero hablar con (ruben|una persona|alguien|un humano|un asesor|asesor|el dueno|el autor)\b/.test(n)) return { clave: 'hablar_con_ruben', motivo: 'quiere hablar con Rubén' };
   if (/\bno (puedo|logro|me deja) (abrir|descargar|entrar|acceder)\b|\bno abre\b|\b(link|enlace) (roto|no (abre|funciona))\b/.test(n)) return { clave: 'acceso_material', motivo: 'problema para abrir o descargar el material' };
-  if (/\b(descuento|rebaja|mas barato|precio especial|mayorista|por mayor)\b/.test(n)) return { clave: 'descuento', motivo: 'pide descuento o precio especial' };
+  if (/\b(descuento|rebaja|mas barato|precio especial|precio de mayorista|precio por mayor)\b/.test(n)) return { clave: 'descuento', motivo: 'pide descuento o precio especial' };
   return null;
 }
 function rrMotivoDeDerivacion(n) {
@@ -206,7 +206,7 @@ function rrMotivoDeDerivacion(n) {
 }
 // El modelo no sabe responder: por regla de su instrucción contesta SOLO la palabra DERIVAR. Lo decide el código, y esa palabra jamás llega al cliente.
 function rrEsDerivar(crudo) {
-  return /^derivar$/.test(rrNorm(crudo));
+  return /^derivar\b/.test(rrNorm(crudo));
 }
 // El MOTIVO exacto de un aviso por un comprobante que no cuadra, para que Rubén sepa qué mirar. `estado` = lo que dijo el servidor (tardio, en_revision, aproximado) o '' (sin cotejar);
 // `motivoSrv` = el campo `motivo` del cotejo (una lista cerrada; lo desconocido no se copia). Nunca copia texto leído del comprobante.
@@ -309,6 +309,9 @@ function rrTextoQrPendiente(producto, monto) {
 }
 // Derivación a Rubén. `salio` = el aviso devolvió un `wamid` real: SOLO entonces se dice «le avisé».
 function rrTextoDerivacion(motivo, salio) {
+  // `salio` = 'repetido': el aviso quedó suprimido por el límite de 30 minutos y lo que Rubén recibió trató OTRO contenido; no se dice «le avisé» de ESTA consulta.
+  if (salio === 'repetido' && motivo === 'consulta') return 'Eso lo ve Rubén directamente. Rubén ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.';
+  if (motivo === 'qr_sin_aviso') return 'Por ahora no puedo mostrarte el QR de pago. Escríbele directo a Rubén con el botón.';
   const base = motivo === 'sin_cobro' || motivo === 'sin_medio' || motivo === 'sin_precio' ? 'Por ahora no puedo mostrarte el QR de pago.'
     : (motivo === 'en_revision' ? 'Tu comprobante anterior está en revisión con Rubén.' : 'Eso lo ve Rubén directamente.');
   if (motivo === 'en_revision') return base + ' Si quieres escribirle, toca el botón.';
@@ -353,6 +356,7 @@ function rrTextoComprobante(resultado, causa, salio, diferencia) {
       ? { cuerpo: 'Como ya van varios intentos, pasé tu comprobante a Rubén para que lo revise directamente. Si quieres escribirle, toca el botón.', boton: true }
       : { cuerpo: 'Como ya van varios intentos, tu comprobante necesita que lo vea Rubén, pero no pude avisarle. Escríbele directo con el botón.', boton: true };
   }
+  if (salio === 'repetido') return { cuerpo: 'Recibí tu comprobante, pero no pude cotejarlo. Rubén ya recibió el aviso de un comprobante anterior; si quieres, escríbele directo con el botón.', boton: true };
   return salio === true
     ? { cuerpo: 'Recibí tu comprobante, pero no pude cotejarlo. Ya lo pasé a Rubén para que lo revise; si quieres escribirle, toca el botón.', boton: true }
     : { cuerpo: 'Recibí tu comprobante, pero no pude cotejarlo ni avisarle a Rubén. Escríbele directo con el botón.', boton: true };
@@ -399,6 +403,8 @@ function rrExtraRedaccion(texto, norm) {
   if ((String(texto).match(/\?/g) || []).length > 1) return 'varias_preguntas';
   if (String(texto).split(/(?<=[.!?…])\s+/).filter((x) => x.trim()).length > 5) return 'largo_en_oraciones';
   if (/\b(qr|banco|titular|mercantil)\b/.test(norm)) return 'datos_de_cobro';
+  // La palabra DERIVAR es una orden interna: si el modelo la mezcla con otro texto, jamás llega al cliente.
+  if (/\bderivar\b/.test(norm)) return 'palabra_interna';
   // Afirmaciones comerciales que el flujo no puede cumplir (descuentos, regalos, garantías, devoluciones, plazos): el modelo no las inventa; caen al texto fijo.
   if (/descuent|gratis|gratuito|promoci|oferta|garant|devoluc|reembols|en \d+ (min|hora|dia)/.test(norm)) return 'afirmacion_comercial';
   return '';
