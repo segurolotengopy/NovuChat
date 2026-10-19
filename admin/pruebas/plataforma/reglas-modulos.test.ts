@@ -196,9 +196,11 @@ type Operacion = {
   prep?: (t: string) => Promise<void>;
   ejecutar: (t: string) => Promise<unknown>;
 };
-/** Lo que el oráculo espera de cada operación para un tenant. `catalogoWebActivo` (config/negocio) se decide HOY por `flujos`, no por `modulos`: TODO(H2b) con el PR que escriba `modulos`. */
+/** Lo que el oráculo espera de cada operación para un tenant. `catalogoWebActivo` (config/negocio) se decide por el módulo `catalogo-web` (H2b-1): con `modulos` lista manda la lista; sin ella, el respaldo de `tieneModulo` (flujo `venta`). */
 const abreOp = (t: Tenant, cap: Operacion['cap']): boolean => {
   if (cap !== 'catalogoWebActivo') return t.abre.includes(cap);
+  const m = t.ficha['modulos'];
+  if (Array.isArray(m)) return m.includes('catalogo-web');
   const f = t.ficha['flujos'];
   return Array.isArray(f) ? f.includes('venta') : t.ficha['vertical'] === 'venta';
 };
@@ -402,17 +404,32 @@ describe('reglas por módulo: batería de capacidades (emulador)', () => {
     });
   }
 
-  // COMPUERTA (seguridad LOW 1 del #422). Hoy `catalogoWebActivo` en `configNegocioValida` se decide por `flujos`
-  // y NO mira `modulos` (por presupuesto de expresiones: ver el TODO en `firestore.rules`). Este es el
-  // comportamiento CORRECTO que falta: con `catalogo-web` apagado en `modulos`, encender el catálogo web se niega.
-  // `it.fails` pasa mientras la regla falla; cuando el PR que escriba `modulos` la arregle, esta prueba se pone
-  // en rojo y obliga a quitar el `.fails`.
-  it.fails('TODO H2b: ficha con `catalogo-web` apagado en `modulos`: `catalogoWebActivo=true` se niega', async () => {
-    const t: Tenant = { id: 'mcw', ficha: { ...base, flujos: ['venta'], modulos: ['pedidos', 'productos', 'campanas'] }, abre: [] };
-    await sembrar(t);
-    const abre = await permitida(() => updateDoc(doc(comoAdmin('mcw'), T('mcw', 'config/negocio')),
-      { catalogoWebActivo: true, ...sello('u-admin-mcw') }));
-    expect(abre).toBe(false);
+  // H2b-1: la puerta del catálogo web en `configNegocioValida` es el MÓDULO `catalogo-web`, no el flujo `venta`.
+  const enciende = async (id: string, ficha: Record<string, unknown>, como: 'propio' | 'ajeno' = 'propio'): Promise<boolean> => {
+    await sembrar({ id, ficha, abre: [] });
+    const db = como === 'propio' ? comoAdmin(id) : comoAdmin(id, 'otro-comercio');
+    return permitida(() => updateDoc(doc(db, T(id, 'config/negocio')),
+      { catalogoWebActivo: true, ...sello(`u-admin-${id}`) }));
+  };
+
+  it('ficha con `catalogo-web` apagado en `modulos` (aunque tenga el flujo `venta`): `catalogoWebActivo=true` se niega', async () => {
+    expect(await enciende('mcw', { ...base, flujos: ['venta'], modulos: ['pedidos', 'productos', 'campanas'] })).toBe(false);
+  });
+
+  it('ficha con el módulo `catalogo-web` y SIN el flujo `venta`: `catalogoWebActivo=true` se permite', async () => {
+    expect(await enciende('mcx', { ...base, flujos: ['agendamiento'], modulos: ['catalogo-web'] })).toBe(true);
+  });
+
+  it('ficha con el módulo `catalogo-web` y flujo `venta`: se permite (control positivo)', async () => {
+    expect(await enciende('mcy', { ...base, flujos: ['venta'], modulos: ['catalogo-web'] })).toBe(true);
+  });
+
+  it('otro comercio nunca enciende el catálogo web de este, ni con el módulo', async () => {
+    expect(await enciende('mcz', { ...base, flujos: ['venta'], modulos: ['catalogo-web'] }, 'ajeno')).toBe(false);
+  });
+
+  it('sin `modulos` y sin el flujo `venta` no se enciende (el respaldo de `tieneModulo` no abre por otro flujo)', async () => {
+    expect(await enciende('mcv', { ...base, flujos: ['agendamiento'] })).toBe(false);
   });
 
   it('el oráculo no es vacío: hay casos que permiten y casos que niegan por cada operación', () => {
@@ -474,6 +491,10 @@ const mutaciones: Array<{ nombre: string; reglas: () => string }> = [
     reglas: () => mutarFuncion(REGLAS, 'tieneOnboarding', (c) => c.replace("tieneModulo(tenantId, 'captacion')", "tieneFlujo(tenantId, 'onboarding')")) },
   { nombre: 'catalogo-web (config/marca) se abre con cualquier ficha',
     reglas: () => REGLAS.replaceAll("tieneModulo(tenantId, 'catalogo-web')", 'true') },
+  { nombre: 'catalogoWebActivo vuelve a decidirse por el flujo `venta` (ignora modulos)',
+    reglas: () => sustituir("|| tieneCatalogoWeb(tenantId))\n            // PALETA", "|| tieneFlujo(tenantId, 'venta'))\n            // PALETA") },
+  { nombre: 'tieneCatalogoWeb ignora la lista `modulos` (solo mira el flujo)',
+    reglas: () => mutarFuncion(REGLAS, 'tieneCatalogoWeb', (c) => c.replace("'catalogo-web' in ficha.modulos", "tieneFlujo(tenantId, 'venta')")) },
   { nombre: 'catálogo: se quita la exigencia del módulo productos',
     reglas: () => REGLAS.replaceAll("&& tieneModuloComun(tenantId, 'productos')", '') },
   { nombre: 'config/marca (CREATE): se quita la exigencia de catalogo-web',

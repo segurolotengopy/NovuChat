@@ -290,6 +290,18 @@ service cloud.firestore {
            : false);
     }
 
+    // `tieneModulo(tenantId, 'catalogo-web')` con solo su rama: misma semántica y
+    // mismo respaldo (sin lista `modulos`, el flujo `venta`; se quita en H2b-3), pero
+    // sin la cadena de ternarios de las demás ramas. Existe porque `config/negocio`
+    // completo está a pocos términos del tope de expresiones y la cadena entera le
+    // costaba 10 términos de margen (medido en `reglas-presupuesto.test.ts`).
+    function tieneCatalogoWeb(tenantId) {
+      let ficha = get(/databases/$(database)/documents/tenants/$(tenantId)).data;
+      return ficha.get('modulos', null) is list
+        ? 'catalogo-web' in ficha.modulos
+        : tieneFlujo(tenantId, 'venta');
+    }
+
     // Los módulos COMUNES (`productos`, `campanas`) los tiene todo comercio hoy:
     // sin `modulos` en la ficha, abre como antes (todo comercio activo); con la
     // lista, solo si el módulo está en ella. Un negocio que no existe no abre (el
@@ -954,18 +966,15 @@ service cloud.firestore {
             // para que un salón pueda seguir guardando su configuración con el
             // campo en falso, en vez de que la regla le rechace la pantalla
             // entera por un campo que no le corresponde.
-            // TODO(H2b, PR que escriba `modulos`): aquí va
-            // `tieneModulo(tenantId, 'catalogo-web')`; hay que volver a medir el
-            // margen antes de hacerlo (`config/negocio` completo, con 6 días de
-            // horario y catálogo web, llegaba al tope de 1.000 expresiones: margen
-            // 0 en la base anterior; tras el recorte el documento «tope» de 7 días
-            // con ubicación deja margen 22 términos, ~60 expresiones, y la variante
-            // más ajustada medida deja 20; medido en
-            // `reglas-presupuesto.test.ts`). Mientras tanto se conserva el costo
-            // de la base (`tieneFlujo`) y esta línea NO mira `modulos`: la
-            // prueba `it.fails` de `reglas-modulos.test.ts` obliga a voltearla.
+            // La puerta del catálogo web es el MÓDULO `catalogo-web` de la ficha, no el
+            // flujo `venta` (H2b-1): un comercio con `venta` pero sin el módulo no lo
+            // enciende, y uno con el módulo lo enciende con cualquier flujo. OJO: sin
+            // la lista `modulos` en la ficha rige el respaldo de `tieneModulo` (el
+            // flujo `venta`), que se quita en H2b-3; hasta entonces ese comercio
+            // sigue pudiendo encenderlo. `tieneCatalogoWeb` es esa misma decisión con
+            // menos costo en expresiones (margen medido en `reglas-presupuesto.test.ts`).
             && (catalogoWeb == false
-                || tieneFlujo(tenantId, 'venta'))
+                || tieneCatalogoWeb(tenantId))
             // PALETA: una de cinco, y NADA más.
             //
             // Antes esto era un `colorMarca` en `#rrggbb`. Aun con esa
