@@ -57,13 +57,32 @@
 #       (primero --quitar) o si CUALQUIER flujo vivo de n8n cita (por id o nombre) alguna de las tres.
 #       Alias de ensayo solamente. Respalda antes.
 #
+# CLIENTES REALES (credenciales EXISTENTES: `--cred-ingesta`, `--cred-envio`, `--cred-rele`). Un alias de
+# cliente real (p. ej. cliente04 = Q'Taco, cliente05 = la cuenta Ruben de Rubén Roca) NO usa los nombres
+# `NovuChat ingesta (<alias>)`, `WhatsApp <alias> (envío)` ni `AAB1 envío · <alias>`: sus credenciales ya
+# existen en n8n con otros nombres. Estas tres opciones dicen el NOMBRE REAL de cada rol, y el flujo se
+# carga con ellas en lugar de las de ensayo (cargar, --activar y --quitar; el timbre sigue siendo
+# `Salida de persona (timbre <alias>)`, que crea este script):
+#     --cred-ingesta <nombre>  rol ingesta, httpHeaderAuth (Reclamar y Confirmar)
+#     --cred-envio   <nombre>  rol envío por Graph, whatsAppApi (Enviar por Graph)
+#     --cred-rele    <nombre>  rol relé, httpHeaderAuth (Enviar por el relé)
+# Van LAS TRES o ninguna. El nombre se busca por nombre Y tipo exactos y tiene que haber exactamente una;
+# si falta o está repetida se aborta sin escribir. No se crea ni se modifica ninguna de las tres (no hay
+# valores de por medio) y no se combinan con --crear-credenciales ni --quitar-credenciales. Los tres nombres
+# tienen que ser distintos entre sí y del timbre, sin caracteres de control, y ninguno puede ser de
+# AAB1-WA-Prod. Nombres con apóstrofo o espacios son válidos (el alias, no: ^[A-Za-z][A-Za-z0-9]{1,29}$).
+# VALOR INERTE DEL RELÉ ANTES DEL TRASLADO: use `--rele-inerte --canal-graph` (válido para cualquier alias):
+# la URL del relé del flujo es `http://relay-inerte.invalid` y el rol relé debe nombrar una credencial
+# httpHeaderAuth EXISTENTE con valor inerte (no se lee ni se toca: la clave real la emite la sesión de
+# WhatsApp-Modular). El canal es `graph` mientras `rutasWhatsApp/{numero}.canalSalida` no sea `rele`.
+#
 # OPCIONES. --env <archivo>: de él SOLO se leen N8N_BASE_URL y N8N_API_KEY (no se
 # ejecuta; con --aplicar exige que sea del usuario y de modo 600). --flujo <json>: otro
 # JSON de flujo (para pruebas). --tabla-demo-a: usa las filas SIN sufijo
 # (REEMPLAZAR_PHONE_NUMBER_ID, REEMPLAZAR_URL_INTERNA_DEL_RELE) en vez de las del alias.
 # --rele-inerte --canal-graph (solo al CARGAR): repone REEMPLAZAR_URL_INTERNA_DEL_RELE con
 # `http://relay-inerte.invalid` (dominio reservado .invalid: no resuelve nunca) y NO exige ni usa la
-# fila del relé de la tabla; es para el Demo A, que sale por `graph`. El script no puede leer la ruta
+# fila del relé de la tabla; es para el Demo A y para un cliente real antes del traslado: salen por `graph`. El script no puede leer la ruta
 # del alias (vive en Firestore): por eso exige que se AFIRME con --canal-graph que
 # `rutasWhatsApp/{numero}.canalSalida` no es `rele` (sin valor = graph), y lo comprueba quien opera.
 # Si fuera `rele`, el nodo del relé fallaría a propósito (el dominio .invalid no se resuelve).
@@ -118,6 +137,8 @@ RELE_INERTE=0; CANAL_GRAPH=0; PROYECTO="novuchat-demo"; PROYECTO_EXPLICITO=0; VE
 # Alias de ENSAYO: los únicos para los que existen estos modos. Un alias de cliente real (p. ej. Bellido) tiene
 # credenciales VIVAS con estos mismos nombres: este script no las crea ni las toca.
 ALIAS_ENSAYO="demoA demoB"
+# Nombres REALES de las credenciales existentes de un cliente (vacíos = los de ensayo, derivados del alias).
+CRED_INGESTA=""; CRED_ENVIO=""; CRED_RELE=""; CRED_DADAS=0
 fijar_modo() { [[ "$MODO" == cargar ]] || { echo "✗ Un solo modo a la vez (--activar, --quitar, --crear-credenciales o --quitar-credenciales)" >&2; exit 2; }; MODO="$1"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -129,6 +150,9 @@ while [[ $# -gt 0 ]]; do
     --quitar)      fijar_modo quitar; shift ;;
     --crear-credenciales)   fijar_modo crear-cred; shift ;;
     --quitar-credenciales)  fijar_modo quitar-cred; shift ;;
+    --cred-ingesta) [[ $# -ge 2 ]] || { echo "✗ --cred-ingesta necesita el nombre de la credencial" >&2; exit 2; }; CRED_INGESTA="$2"; CRED_DADAS=$((CRED_DADAS + 1)); shift 2 ;;
+    --cred-envio)  [[ $# -ge 2 ]] || { echo "✗ --cred-envio necesita el nombre de la credencial" >&2; exit 2; }; CRED_ENVIO="$2"; CRED_DADAS=$((CRED_DADAS + 1)); shift 2 ;;
+    --cred-rele)   [[ $# -ge 2 ]] || { echo "✗ --cred-rele necesita el nombre de la credencial" >&2; exit 2; }; CRED_RELE="$2"; CRED_DADAS=$((CRED_DADAS + 1)); shift 2 ;;
     --rele-inerte) RELE_INERTE=1; shift ;;
     --canal-graph) CANAL_GRAPH=1; shift ;;
     --proyecto)    [[ $# -ge 2 ]] || { echo "✗ --proyecto necesita un id" >&2; exit 2; }; PROYECTO="$2"; PROYECTO_EXPLICITO=1; shift 2 ;;
@@ -143,11 +167,35 @@ done
 [[ "$ALIAS" =~ ^[A-Za-z][A-Za-z0-9]{1,29}$ ]] || { echo "✗ --alias inválido o ausente (letras y dígitos, de 2 a 30, empieza con letra)" >&2; exit 2; }
 [[ "$PROYECTO" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ --proyecto no tiene la forma de un id de proyecto de GCP" >&2; exit 2; }
 [[ "$VERSION_SECRETO" =~ ^(latest|[0-9]{1,6})$ ]] || { echo "✗ --version tiene que ser latest o un número" >&2; exit 2; }
-if [[ "$MODO" == crear-cred || "$MODO" == quitar-cred ]] || (( RELE_INERTE )); then
+if [[ "$MODO" == crear-cred || "$MODO" == quitar-cred ]]; then
   case " $ALIAS_ENSAYO " in
     *" $ALIAS "*) ;;
-    *) echo "✗ El alias «${ALIAS}» no es un alias de ensayo (${ALIAS_ENSAYO}): --crear-credenciales, --quitar-credenciales y --rele-inerte son solo para el ensayo. Un alias de cliente real tiene credenciales vivas con esos nombres y no usa estos modos. No se tocó n8n." >&2; exit 2 ;;
+    *) echo "✗ El alias «${ALIAS}» no es un alias de ensayo (${ALIAS_ENSAYO}): --crear-credenciales y --quitar-credenciales son solo para el ensayo. Un alias de cliente real tiene credenciales vivas y usa --cred-ingesta, --cred-envio y --cred-rele. No se tocó n8n." >&2; exit 2 ;;
   esac
+fi
+# Credenciales existentes por nombre real: las tres o ninguna, nombres válidos y distintos.
+if (( CRED_DADAS > 0 )); then
+  if (( CRED_DADAS != 3 )) || [[ -z "$CRED_INGESTA" || -z "$CRED_ENVIO" || -z "$CRED_RELE" ]]; then
+    echo "✗ Las credenciales existentes se indican las TRES (--cred-ingesta, --cred-envio y --cred-rele), una vez cada una y con nombre: falta un rol, está repetido o vacío. No se tocó n8n." >&2; exit 2
+  fi
+  if [[ "$MODO" == crear-cred || "$MODO" == quitar-cred ]]; then
+    echo "✗ --cred-ingesta, --cred-envio y --cred-rele usan credenciales EXISTENTES: no se combinan con --crear-credenciales ni --quitar-credenciales. No se tocó n8n." >&2; exit 2
+  fi
+  for _nom in "$CRED_INGESTA" "$CRED_ENVIO" "$CRED_RELE"; do
+    if [[ ${#_nom} -gt 100 || "$_nom" =~ [[:cntrl:]] || "$_nom" =~ ^[[:space:]] || "$_nom" =~ [[:space:]]$ ]]; then
+      echo "✗ Un nombre de credencial no es válido (hasta 100 caracteres, sin caracteres de control ni espacios en los extremos). No se tocó n8n." >&2; exit 2
+    fi
+    if [[ "$_nom" =~ (WA-Prod|AAB1-WA|[Ss]egurolotengo) ]]; then
+      echo "✗ Un nombre de credencial parece de AAB1-WA-Prod o de otro sistema: NovuChat no la usa (CLAUDE.md, prohibiciones 5 y 7). No se tocó n8n." >&2; exit 2
+    fi
+    if [[ "$_nom" == "Salida de persona (timbre ${ALIAS})" ]]; then
+      echo "✗ Un rol no puede nombrar la credencial del timbre del alias. No se tocó n8n." >&2; exit 2
+    fi
+  done
+  if [[ "$CRED_INGESTA" == "$CRED_ENVIO" || "$CRED_INGESTA" == "$CRED_RELE" || "$CRED_ENVIO" == "$CRED_RELE" ]]; then
+    echo "✗ Los tres roles (ingesta, envío y relé) tienen que nombrar credenciales DISTINTAS: el nodo que manda a Meta o al relé nunca lleva la de ingesta. No se tocó n8n." >&2; exit 2
+  fi
+  export TIMBRE_CRED_INGESTA="$CRED_INGESTA" TIMBRE_CRED_ENVIO="$CRED_ENVIO" TIMBRE_CRED_RELE="$CRED_RELE"
 fi
 if (( RELE_INERTE )) && [[ "$MODO" != cargar ]]; then echo "✗ --rele-inerte solo se usa al cargar el flujo (modo por omisión)" >&2; exit 2; fi
 if (( RELE_INERTE && ! CANAL_GRAPH )); then
@@ -230,7 +278,7 @@ def cargar(ruta):
         return json.load(f)
 
 
-def nombres(alias):
+def nombres_de_ensayo(alias):
     return {
         "timbre": "Salida de persona (timbre %s)" % alias,
         "ingesta": "NovuChat ingesta (%s)" % alias,
@@ -238,6 +286,17 @@ def nombres(alias):
         "graph": "WhatsApp %s (envío)" % alias,
         "flujo": "%s (%s)" % (NOMBRE_BASE, alias),
     }
+
+
+def nombres(alias):
+    """Los de ensayo, salvo que el shell (ya validado) haya dado los nombres REALES de las credenciales existentes."""
+    n = nombres_de_ensayo(alias)
+    dados = {k: os.environ.get(v, "") for k, v in (("ingesta", "TIMBRE_CRED_INGESTA"), ("graph", "TIMBRE_CRED_ENVIO"), ("rele", "TIMBRE_CRED_RELE"))}
+    if any(dados.values()):
+        if not all(dados.values()):
+            salir(4, "los nombres de credenciales existentes llegaron incompletos")
+        n.update(dados)
+    return n
 
 
 def cmd_lista(archivo):
@@ -459,6 +518,14 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
         return RE_TOKEN.sub(lambda m: reemplazos.get(m.group(0), m.group(0)), s)
 
     flujo = recorrer(flujo, sustituir)
+    # Credenciales existentes con otro nombre: el JSON trae los de ensayo (ya con el alias repuesto) y cada
+    # rol se reasigna al nombre REAL dado por el shell; el resto del plan sigue buscando por nombre y tipo.
+    ensayo = nombres_de_ensayo(alias)
+    for nodo in flujo["nodes"]:
+        for tipo, ref in (nodo.get("credentials") or {}).items():
+            for rol in ("ingesta", "rele", "graph"):
+                if (ref or {}).get("name") == ensayo[rol]:
+                    ref["name"] = n[rol]
     sobran = sorted(set(RE_TOKEN.findall(json.dumps(flujo, ensure_ascii=False))))
     if sobran:
         salir(4, "quedan marcadores sin reponer: " + ", ".join(sobran))

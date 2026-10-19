@@ -982,7 +982,6 @@ cat "$FAKE_DIR/secreto"
     it.each([
       ['--crear-credenciales', ['--crear-credenciales', ...PROY]],
       ['--quitar-credenciales', ['--quitar-credenciales']],
-      ['--rele-inerte', ['--rele-inerte', '--canal-graph']],
     ])('Bellido en %s: sale 2 sin tocar n8n (ni siquiera lo lee), también con --aplicar', (_n, modo) => {
       for (const extra of [[], APLICAR]) {
         const r = spawnSync('bash', [SCRIPT, '--alias', 'Bellido', '--env', envFile, ...modo, ...extra], {
@@ -1222,5 +1221,222 @@ cat "$FAKE_DIR/secreto"
       writeFileSync(ruta, JSON.stringify(f));
       expect(correr([...A(), '--flujo', ruta, '--rele-inerte', '--canal-graph']).codigo).toBe(2);
     });
+  });
+});
+
+describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--cred-ingesta, --cred-envio, --cred-rele)', () => {
+  const REAL = 'cliente04';
+  const NOM = { ingesta: "NovuChat ingesta (Q'Taco)", envio: "WhatsApp Q'Taco (envío)", rele: "Relé inerte Q'Taco (sin clave real)" };
+  const MAPA = ['--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.envio, '--cred-rele', NOM.rele];
+  const R = ['--alias', REAL, '--env'];
+  const AR = () => [...R, envFile];
+  const SIN_RELE = () => tabla({ [`REEMPLAZAR_PHONE_NUMBER_ID_${REAL.toUpperCase()}`]: PHONE });
+  const entregaReal = (alias = REAL) => {
+    const ruta = join(runtime, `novuchat-salida-persona-${alias}.json`);
+    writeFileSync(ruta, JSON.stringify({ alias, ruta: `${BASE}/webhook/${PATH}`, path: PATH, clave: CLAVE }), { mode: 0o600 });
+    chmodSync(ruta, 0o600);
+  };
+  const instanciaReal = (extra: Cred[] = []) => {
+    writeFileSync(join(dir, 'creds.json'), JSON.stringify([
+      { id: 'qi', name: NOM.ingesta, type: 'httpHeaderAuth' },
+      { id: 'qg', name: NOM.envio, type: 'whatsAppApi' },
+      { id: 'qr', name: NOM.rele, type: 'httpHeaderAuth' },
+      { id: 'o1', name: 'NovuChat ingesta (otro)', type: 'httpHeaderAuth' },
+      ...extra,
+    ]));
+    writeFileSync(join(dir, 'wfs.json'), '[]');
+  };
+  const INERTE = ['--rele-inerte', '--canal-graph'];
+
+  beforeEach(() => { instanciaReal(); entregaReal(); SIN_RELE(); });
+
+  it('carga el flujo de cliente04 con las credenciales EXISTENTES por su nombre real (apóstrofo incluido), relé inerte, inactivo', () => {
+    const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+    expect(r.codigo).toBe(0);
+    const f = flujos()[0];
+    expect(f.name).toBe(`NovuChat — Salida de persona (${REAL})`);
+    expect(f.active).toBe(false);
+    const p = (n: string) => f.nodes.find((x) => x.name === n)!;
+    expect(p('Reclamar').credentials?.httpHeaderAuth).toEqual({ id: 'qi', name: NOM.ingesta });
+    expect(p('Confirmar').credentials?.httpHeaderAuth).toEqual({ id: 'qi', name: NOM.ingesta });
+    expect(p('Enviar por Graph').credentials?.whatsAppApi).toEqual({ id: 'qg', name: NOM.envio });
+    expect(p('Enviar por el relé').credentials?.httpHeaderAuth).toEqual({ id: 'qr', name: NOM.rele });
+    expect(p('Timbre').credentials?.httpHeaderAuth?.name).toBe(`Salida de persona (timbre ${REAL})`);
+    const texto = JSON.stringify(f);
+    expect(texto).toContain('http://relay-inerte.invalid');
+    expect(texto).not.toContain('REEMPLAZAR_');
+    expect(texto).not.toContain('NovuChat ingesta (cliente04)');
+    expect(existe(join(runtime, `novuchat-salida-persona-${REAL}.json`))).toBe(false);
+  });
+
+  it('sin crear credenciales con valores: la única credencial nueva es la del timbre, y no se escribe sobre las existentes', () => {
+    expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
+    const nuevas = creds().filter((c) => !['qi', 'qg', 'qr', 'o1'].includes(c.id));
+    expect(nuevas.map((c) => c.name)).toEqual([`Salida de persona (timbre ${REAL})`]);
+    for (const l of escrituras()) expect(l).not.toMatch(/credentials\/(qi|qg|qr|o1)/);
+    expect(creds().filter((c) => ['qi', 'qg', 'qr'].includes(c.id)).every((c) => c._data === undefined)).toBe(true);
+  });
+
+  it('el seco solo lee, deja la entrega y sale 1', () => {
+    const r = correr([...AR(), ...MAPA, ...INERTE]);
+    expect(r.codigo).toBe(1);
+    expect(escrituras()).toEqual([]);
+    expect(existe(join(runtime, `novuchat-salida-persona-${REAL}.json`))).toBe(true);
+    expect(r.salida).toContain(NOM.ingesta);
+  });
+
+  it('--activar y --quitar con el mismo mapa; --quitar no borra las credenciales existentes', () => {
+    expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
+    expect(correr([...AR(), ...MAPA, '--activar', ...APLICAR]).codigo).toBe(0);
+    expect(flujos()[0].active).toBe(true);
+    expect(correr([...AR(), '--quitar', ...APLICAR]).codigo).toBe(0);
+    expect(flujos()).toEqual([]);
+    expect(creds().map((c) => c.id).sort()).toEqual(['o1', 'qg', 'qi', 'qr']);
+  });
+
+  it('--activar con un mapa distinto del que se cargó: se niega (el flujo vivo cita otras credenciales)', () => {
+    expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
+    expect(correr([...AR(), '--activar', ...APLICAR]).codigo).toBe(2);
+    expect(flujos()[0].active).toBe(false);
+  });
+
+  it.each([
+    ['falta --cred-rele', ['--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.envio]],
+    ['falta --cred-ingesta', ['--cred-envio', NOM.envio, '--cred-rele', NOM.rele]],
+    ['falta --cred-envio', ['--cred-ingesta', NOM.ingesta, '--cred-rele', NOM.rele]],
+    ['un rol vacío', ['--cred-ingesta', '', '--cred-envio', NOM.envio, '--cred-rele', NOM.rele]],
+    ['un rol repetido', ['--cred-ingesta', NOM.ingesta, '--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.envio]],
+    ['el mismo nombre en dos roles', ['--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.ingesta, '--cred-rele', NOM.rele]],
+    ['envío = ingesta', ['--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.envio, '--cred-rele', NOM.ingesta]],
+    ['un nombre con carácter de control', ['--cred-ingesta', 'a\tb', '--cred-envio', NOM.envio, '--cred-rele', NOM.rele]],
+    ['un nombre con espacios en los extremos', ['--cred-ingesta', ' ' + NOM.ingesta, '--cred-envio', NOM.envio, '--cred-rele', NOM.rele]],
+    ['un nombre de más de 100 caracteres', ['--cred-ingesta', 'x'.repeat(101), '--cred-envio', NOM.envio, '--cred-rele', NOM.rele]],
+    ['un nombre de AAB1-WA-Prod', ['--cred-ingesta', NOM.ingesta, '--cred-envio', 'AAB1-WA-Prod (envío)', '--cred-rele', NOM.rele]],
+    ['un rol que nombra el timbre', ['--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.envio, '--cred-rele', `Salida de persona (timbre ${REAL})`]],
+    ['una opción sin valor', ['--cred-ingesta']],
+  ])('mapa inválido (%s): sale 2 sin llamar a n8n, también con --aplicar', (_n, mapa) => {
+    for (const extra of [[], APLICAR]) {
+      expect(correr([...AR(), ...mapa, ...INERTE, ...extra]).codigo).toBe(2);
+    }
+    expect(llamadas()).toEqual([]);
+    expect(existe(join(runtime, `novuchat-salida-persona-${REAL}.json`))).toBe(true);
+  });
+
+  it('el mapa no se combina con --crear-credenciales ni --quitar-credenciales', () => {
+    for (const modo of ['--crear-credenciales', '--quitar-credenciales']) {
+      expect(correr([...AR(), ...MAPA, modo, '--proyecto', 'novuchat-demo']).codigo).toBe(2);
+    }
+    expect(llamadas()).toEqual([]);
+  });
+
+  it('un cliente real sigue sin poder usar --crear-credenciales ni --quitar-credenciales (lista blanca intacta)', () => {
+    for (const modo of ['--crear-credenciales', '--quitar-credenciales']) {
+      const r = correr([...AR(), modo, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('alias de ensayo');
+    }
+    expect(llamadas()).toEqual([]);
+  });
+
+  it.each([
+    ['con apóstrofo', "Q'Taco"],
+    ['con espacio', 'Q Taco'],
+    ['con guion', 'cliente-04'],
+    ['con punto y coma', 'a1;rm'],
+    ['demasiado corto', 'a'],
+    ['que empieza con dígito', '4cliente'],
+  ])('alias %s: no es un alias válido (sale 2 sin tocar n8n)', (_n, alias) => {
+    expect(correr(['--alias', alias, '--env', envFile, ...MAPA, ...INERTE]).codigo).toBe(2);
+    expect(llamadas()).toEqual([]);
+  });
+
+  it('una credencial del mapa que no existe en n8n: aborta sin escribir y conserva la entrega', () => {
+    instanciaReal();
+    writeFileSync(join(dir, 'creds.json'), JSON.stringify(creds().filter((c) => c.id !== 'qg')));
+    const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain(NOM.envio);
+    expect(escrituras()).toEqual([]);
+    expect(existe(join(runtime, `novuchat-salida-persona-${REAL}.json`))).toBe(true);
+  });
+
+  it('una credencial del mapa con otro tipo (ingesta como whatsAppApi): aborta sin escribir', () => {
+    writeFileSync(join(dir, 'creds.json'), JSON.stringify(creds().map((c) => (c.id === 'qi' ? { ...c, type: 'whatsAppApi' } : c))));
+    expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(2);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('dos credenciales con el mismo nombre y tipo: aborta sin escribir (no se elige una)', () => {
+    writeFileSync(join(dir, 'creds.json'), JSON.stringify([...creds(), { id: 'qr2', name: NOM.rele, type: 'httpHeaderAuth' }]));
+    expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(2);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('sin el mapa, un cliente real con otros nombres sigue abortando (credenciales por nombre del alias)', () => {
+    expect(correr([...AR(), ...INERTE, ...APLICAR]).codigo).toBe(2);
+    expect(escrituras()).toEqual([]);
+  });
+
+  describe('valor inerte del relé', () => {
+    it('--rele-inerte exige --canal-graph también para un cliente real', () => {
+      expect(correr([...AR(), ...MAPA, '--rele-inerte']).codigo).toBe(2);
+      expect(correr([...AR(), ...MAPA, '--canal-graph']).codigo).toBe(2);
+      expect(llamadas()).toEqual([]);
+    });
+
+    it('con la fila de la tabla en «pendiente» o con el marcador sin reemplazar, aborta; el relé inerte no la exige', () => {
+      tabla({ [`REEMPLAZAR_PHONE_NUMBER_ID_${REAL.toUpperCase()}`]: 'pendiente' });
+      expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(2);
+      tabla({});
+      expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+      expect(flujos()).toEqual([]);
+    });
+
+    it('sin --rele-inerte, la fila del relé de la tabla (pendiente o ausente) sigue siendo obligatoria', () => {
+      expect(correr([...AR(), ...MAPA, ...APLICAR]).codigo).toBe(2);
+      tabla({ [`REEMPLAZAR_PHONE_NUMBER_ID_${REAL.toUpperCase()}`]: PHONE, [`REEMPLAZAR_URL_INTERNA_DEL_RELE_${REAL.toUpperCase()}`]: 'pendiente' });
+      expect(correr([...AR(), ...MAPA, ...APLICAR]).codigo).toBe(2);
+      expect(escrituras()).toEqual([]);
+    });
+
+    it('la URL real del relé de la tabla NO viaja al flujo con --rele-inerte', () => {
+      tabla({ [`REEMPLAZAR_PHONE_NUMBER_ID_${REAL.toUpperCase()}`]: PHONE, [`REEMPLAZAR_URL_INTERNA_DEL_RELE_${REAL.toUpperCase()}`]: RELE });
+      expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
+      const t = JSON.stringify(flujos()[0]);
+      expect(t).toContain('relay-inerte.invalid');
+      expect(t).not.toContain('rele-interno');
+    });
+  });
+
+  it('no imprime secretos: ni la clave del timbre, ni el path, ni el phoneNumberId (correr() lo comprueba en cada salida)', () => {
+    const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+    expect(r.salida).not.toContain(CLAVE);
+    expect(r.salida).not.toContain(PATH);
+    expect(r.salida).not.toContain(PHONE);
+    expect(r.salida).not.toContain(API_KEY);
+  });
+
+  it('el nodo de envío nunca lleva la ingesta aunque el JSON lo pida (cerrojo de roles con nombres reales)', () => {
+    const f = JSON.parse(leerTxt(FLUJO_REAL)) as { nodes: Nodo[] };
+    f.nodes.find((n) => n.name === 'Enviar por el relé')!.credentials = { httpHeaderAuth: { id: '', name: 'NovuChat ingesta (REEMPLAZAR_ALIAS)' } };
+    const ruta = join(dir, 'trampa-real.json');
+    writeFileSync(ruta, JSON.stringify(f));
+    expect(correr([...AR(), '--flujo', ruta, ...MAPA, ...INERTE]).codigo).toBe(2);
+    expect(escrituras()).toEqual([]);
+  });
+
+  it('demoA y demoB sin regresión: sin mapa siguen con los nombres de ensayo', () => {
+    instancia();
+    entrega();
+    tabla();
+    expect(correr([...A(), ...APLICAR]).codigo).toBe(0);
+    expect(flujos()[0].nodes.find((x) => x.name === 'Reclamar')!.credentials?.httpHeaderAuth?.name).toBe(`NovuChat ingesta (${ALIAS})`);
+  });
+
+  it('--help documenta las tres opciones y el relé inerte', () => {
+    const r = correr(['--help']);
+    expect(r.codigo).toBe(0);
+    for (const t of ['--cred-ingesta', '--cred-envio', '--cred-rele', 'CLIENTES REALES', 'VALOR INERTE DEL RELÉ']) expect(r.salida).toContain(t);
   });
 });
