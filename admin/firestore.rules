@@ -276,7 +276,7 @@ service cloud.firestore {
     // completo con 6 días de horario y catálogo web llegaba al tope (margen 0 en
     // la base anterior; tras el recorte, el documento «tope» de 7 días con
     // ubicación deja margen 22 términos, ~60 expresiones, y la variante más
-    // ajustada medida deja 20, según `reglas-presupuesto.test.ts`); por eso la
+    // ajustada medida deja 16 tras H2b-1, según `reglas-presupuesto.test.ts`); por eso la
     // ficha se lee UNA vez (`let`), sin mapa ni `exists`: una ficha inexistente hace fallar el
     // `get` y la regla deniega, igual que antes. Medido en
     // `pruebas/plataforma/reglas-presupuesto.test.ts`.
@@ -291,7 +291,8 @@ service cloud.firestore {
     }
 
     // `tieneModulo(tenantId, 'catalogo-web')` con solo su rama: misma semántica y
-    // mismo respaldo (sin lista `modulos`, el flujo `venta`; se quita en H2b-3), pero
+    // mismo respaldo (sin lista `modulos`, el flujo `venta`; deja de regir cuando la migración de H2b-3 escriba
+    // `modulos` en todas las fichas), pero
     // sin la cadena de ternarios de las demás ramas. Existe porque `config/negocio`
     // completo está a pocos términos del tope de expresiones y la cadena entera le
     // costaba 10 términos de margen (medido en `reglas-presupuesto.test.ts`).
@@ -970,7 +971,8 @@ service cloud.firestore {
             // flujo `venta` (H2b-1): un comercio con `venta` pero sin el módulo no lo
             // enciende, y uno con el módulo lo enciende con cualquier flujo. OJO: sin
             // la lista `modulos` en la ficha rige el respaldo de `tieneModulo` (el
-            // flujo `venta`), que se quita en H2b-3; hasta entonces ese comercio
+            // flujo `venta`), que deja de regir cuando la migración de H2b-3 escriba `modulos`
+            // en todas las fichas; hasta entonces ese comercio
             // sigue pudiendo encenderlo. `tieneCatalogoWeb` es esa misma decisión con
             // menos costo en expresiones (margen medido en `reglas-presupuesto.test.ts`).
             && (catalogoWeb == false
