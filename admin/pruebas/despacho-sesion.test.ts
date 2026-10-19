@@ -199,7 +199,7 @@ describe('`leer` conserva los campos de atención y de pausa', () => {
     expect(r.cuerpo['conversacion']).toMatchObject({ version: 0 });
   });
 
-  it('con una persona atendiendo (pausa): `pausadoPorPersona` y `atencion` bloqueada, junto a `conversacion`', async () => {
+  it('con una persona atendiendo (pausa): `atencion` bloqueada con `pausadoPorPersona`, junto a `conversacion`', async () => {
     await refConv().set({
       atencionDesde: Timestamp.fromMillis(AHORA - HORA), mensajesVentana: 1, ultimoEntranteEn: Timestamp.fromMillis(AHORA - 30_000),
       turno: {
@@ -209,8 +209,7 @@ describe('`leer` conserva los campos de atención y de pausa', () => {
     });
     const base = await pedir({ telefono: TEL });
     const r = await pedir({ telefono: TEL, sesion: sesion({ accion: 'leer' }) });
-    expect(base.cuerpo['pausadoPorPersona']).toBe(true);
-    expect(r.cuerpo['pausadoPorPersona']).toBe(true);
+    expect(base.cuerpo['atencion']).toMatchObject({ pausadoPorPersona: true });
     expect(r.cuerpo['atencion']).toEqual(base.cuerpo['atencion']);
     expect(r.cuerpo['atencion']).toMatchObject({ estado: 'bloqueado' });
     expect(r.cuerpo['conversacion']).toMatchObject({ version: 0 });
