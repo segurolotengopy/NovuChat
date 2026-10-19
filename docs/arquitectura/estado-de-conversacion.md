@@ -60,6 +60,7 @@ La de hoy; **solo si vino `sesion`** se agregan
 `conversacion: { version, estado, desde, vence, vencido }` y
 `visto: 'nuevo' | 'repetido' | null`.
 
+- Sesión corrupta: igual que ausente más `corrupta: true` (el campo falta, o es falso, si no), para que el flujo no planifique sobre una versión 0 falsa; el siguiente `comprometer` con `versionLeida` 0 la autorrepara (§4).
 - Documento ausente: `{ version: 0, estado: null, desde: null, vence: null, vencido: false }`.
 - `vence` pasado: `estado: null, vencido: true`, conservando la versión.
 - Sin `sesion`, la respuesta es **idéntica a la de hoy, byte a byte**.
@@ -77,7 +78,10 @@ por comercio no activo, y **antes** del `Promise.all` del catálogo. Devuelve
 | cupo con tope 0 o ausente | `cupo_negado` / `sin_tope` |
 | cupo agotado | `cupo_negado` / `agotado` (la versión no se mueve) |
 | documento del cupo con `usados` que no es entero >= 0, o datos corruptos | `cupo_negado` / `datos_invalidos` (no se concede; la versión no se mueve) |
+| documento de sesión corrupto (`version`, `vence`, `estadoJson` o `compromisos` ilegibles) | `datos_invalidos`, **sin escritura**; salvo autorreparación con `versionLeida` 0 (abajo) |
 | todo pasa | `version + 1`, cupos incrementados (`por[idCompromiso]` = `{cantidad, en}`, §11), `comprometido` |
+
+**Autorreparación.** Si la sesión está corrupta y `versionLeida` es 0 (lo que `leer` le mostró al flujo), `comprometer` la trata como ausente y la reescribe desde la versión 1 con la marca `reparadoEn`; los compromisos anteriores se pierden (solo puede volver a cobrar un cupo, nunca concederlo de más). Con otra `versionLeida` responde `datos_invalidos` y no escribe. Si el presupuesto de tiempo (3,5 s) se agota, cualquier acción responde **503** con mensaje fijo y sin escritura.
 
 `asentar` **devuelve (libera)** los cupos que consumió ese compromiso y devuelve
 `asentado` o `nada_que_asentar`; es idempotente (§11). Los resultados
@@ -92,7 +96,7 @@ Solo por Admin SDK; **nada bajo `conversaciones`**.
 | Colección | Clave | Campos |
 |---|---|---|
 | `tenants/{t}/sesionesDeTurno` | `{pnid}~{espacio}~wa_{tel}` | `version`, `estadoJson` (cadena opaca), `vence`, `actualizadoEn`, `flujo`, `phoneNumberId`, `espacio`, `compromisos[5]` |
-| `tenants/{t}/vistosDeTurno` | `sha256(pnid\|idMensaje)` | `ejecucion`, `vence` (24 h) |
+| `tenants/{t}/vistosDeTurno` | `sha256(pnid\|idMensaje)` | `ejecucion`, `phoneNumberId`, `vence` (24 h) |
 | `tenants/{t}/cuposDeTurno` | `{pnid}~{clave}~{wa_tel\|_}~{periodo}` | `usados`, `tope`, `por`, `vence` (fin del período + 24 h; períodos en `America/La_Paz`) |
 
 El vencimiento lo limpia un TTL sobre `vence` en los tres grupos (PR-3), con
@@ -230,3 +234,10 @@ el §2 a §5 dicen otra cosa, mandan estas.
   `datos_invalidos` o `nada_que_asentar`; nunca se concede por NaN.
 - Exige `idCompromiso`; rechaza `estado`, `venceEnMin` y `cupos`; `versionLeida` es
   opcional y se ignora.
+
+## 12. Decisiones al construir PR-2a
+
+- `por[idCompromiso]` de un cupo guarda también `tel` (el contacto que comprometió). Un cupo del comercio (`_`) lo comparten todos los contactos, y `asentar` solo lo devuelve si `tel` coincide; una entrada vieja sin `tel` no coincide con nadie (queda consumida, lado conservador).
+- El documento de sesión reparado lleva `reparadoEn`; el de cupo y el de visto llevan `phoneNumberId`.
+- `asentar` encuentra los cupos con una consulta por `por.{idCompromiso}.cantidad`: necesita el índice automático de subcampo de mapa (PR-3 no debe exentar `por`, solo `estadoJson`).
+- Presupuesto de tiempo de 3,5 s medido con reloj real: se comprueba al empezar cada intento de la transacción y antes de escribir; al agotarse, 503 `sesion: ocupada, reintente`. En el emulador una colisión tarda ~3 s en resolverse, así que bajo mucha contención el 503 es esperable; en Firestore real no está medido.
