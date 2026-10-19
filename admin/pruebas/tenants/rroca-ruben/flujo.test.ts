@@ -1,5 +1,5 @@
 /**
- * «VENTA DIGITAL DE RUBÉN» (tenant rroca-ruben) — PR-1, EL ESQUELETO DE PUNTA A PUNTA, SIN RED.
+ * «VENTA DIGITAL DE RUBÉN» (tenant rroca-ruben) — PR-1 (el esqueleto) CON LA CONVERSACIÓN DE PR-2, DE PUNTA A PUNTA, SIN RED. El cobro y la conversación de PR-2 están en `venta.test.ts`.
  *
  * Caja negra sobre los JSON VERSIONADOS (`rroca-ruben.json`, con la entrada verificada del receptor, y `rroca-ruben.prueba.json`, con la «Entrada de prueba») corridos con el n8n de
  * mentira (`../../lib/n8n-de-mentira`): la red (verificador, consola, ingesta, Graph) son dobles; el código de los nodos es el real.
@@ -7,7 +7,7 @@
  * ESTA SUITE ESCRIBE NEGANDO: la sesión es el número de origen (dos teléfonos no comparten estado), los acuses de estado no pasan, los repetidos no se cuentan dos veces, la pausa
  * («bloqueado») no envía NADA aunque el entrante sí se cuenta, una carga con `modoPrueba` adentro no activa el modo prueba, y un rechazo de Meta no se reporta como enviado.
  *
- * MENSAJES: 0 agregados (un solo saludo por turno, o ninguno). Reloj: lunes 05/10/2026, 10:00 en La Paz. Teléfonos ficticios con seis ceros.
+ * MENSAJES: 0 agregados (un solo mensaje por turno, o ninguno). Desde PR-2 un saludo suelto recibe el saludo fijo, una conversación libre va al modelo (aquí un doble) y un medio recibe su texto fijo. Reloj: lunes 05/10/2026, 10:00 en La Paz. Teléfonos ficticios con seis ceros.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -80,6 +80,8 @@ function crear(o: Opciones = {}) {
     'Traer configuración': () => (o.panel === 'cae' ? { statusCode: 503, body: {} } : (o.panel ?? panelOk())),
     'Reportar mensaje (entrante)': () => o.ingesta ?? { ok: true },
     'Reportar mensaje (saliente)': () => ({ ok: true }),
+    'Conversar con el modelo': () => ({ candidates: [{ content: { parts: [{ text: 'Cuéntame un poco más de tu negocio para orientarte mejor. ¿Qué vendes hoy?' }] } }] }),
+    'Enviar aviso': () => ({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.AVISO' }] }),
     'Enviar a WhatsApp': enviar('Enviar a WhatsApp'),
     'Enviar respaldo': enviar('Enviar respaldo'),
   };
@@ -96,20 +98,21 @@ const hablar = (m: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: 
 const textos = (t: ResultadoTurno): string[] => t.mensajes.map((e) => e.cuerpo);
 const enviados = (t: ResultadoTurno): number => t.mensajes.filter((e) => e.nodo === 'Enviar a WhatsApp' || e.nodo === 'Enviar respaldo').length;
 
-describe('el saludo de PR-1: uno solo, armado por código, del asistente virtual', () => {
-  it('cualquier texto recibe UN saludo al mismo teléfono, que se presenta como asistente virtual y no niega serlo', () => {
+describe('el saludo: uno solo, armado por código, del asistente virtual', () => {
+  it('un saludo suelto recibe UN saludo fijo al mismo teléfono, que se presenta como asistente virtual, no niega serlo y no promete nada', () => {
     const w = crear();
-    const t = hablar(w, ANA, mTexto('hola, cuánto cuesta el pack?'));
+    const t = hablar(w, ANA, mTexto('hola'));
     expect(t.fallo).toBeNull();
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]!.a).toBe(ANA);
     expect(t.mensajes[0]!.tipo).toBe('text');
     expect(t.mensajes[0]!.cuerpo).toMatch(SALUDO);
     expect(t.mensajes[0]!.cuerpo.toLowerCase()).not.toMatch(/no soy (un |una )?(bot|ia|asistente|robot)|soy (una )?persona|humano/);
-    // El saludo no promete nada ni toca precios (eso es de PR-2): ninguna cifra.
-    expect(t.mensajes[0]!.cuerpo).not.toMatch(/\d/);
-    // Se reporta con el id real de Meta.
+    // Sin catálogo en la consola no hay precios que decir: ninguna cifra de dinero.
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/\bBs\b/);
+    // Se reporta con el id real de Meta, y sin llamar al modelo.
     expect(t.llamadas.ingesta.some((c) => c['direccion'] === 'saliente' && /^wamid\.OUT/.test(String(c['idMeta'])))).toBe(true);
+    expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
   });
 
   it('el endpoint contesta 200 al receptor y la firma se verifica con el waba FIJO, no con lo que diga la entrega', () => {
@@ -231,28 +234,29 @@ describe('el filtro de eventos', () => {
 });
 
 describe('la normalización de entrada: ningún tipo rompe el flujo ni se queda sin respuesta cortés', () => {
-  const casos: Array<[string, J, string]> = [
-    ['texto', mTexto('hola'), 'conversacion'],
-    ['toque de lista', mLista('opcion:uno'), 'conversacion'],
-    ['toque de botón', mBoton('boton:uno'), 'conversacion'],
-    ['botón de plantilla', { type: 'button', button: { text: 'Hola', payload: 'p' } }, 'conversacion'],
-    ['imagen', mImagen(), 'medio'],
-    ['audio', mAudio(), 'medio'],
-    ['nota de voz', { type: 'voice', voice: { id: 'media-voz' } }, 'medio'],
-    ['documento', mDocumento(), 'medio'],
-    ['ubicación', { type: 'location', location: { latitude: -16.5, longitude: -68.1 } }, 'otro'],
-    ['sticker', { type: 'sticker', sticker: { id: 'media-stk' } }, 'otro'],
-    ['contactos', { type: 'contacts', contacts: [{ name: { formatted_name: 'X' } }] }, 'otro'],
-    ['un pedido del catálogo', { type: 'order', order: { catalog_id: 'c', product_items: [] } }, 'otro'],
-    ['un tipo que no existe', { type: 'holograma', holograma: {} }, 'otro'],
+  const SALUDO_O_MODELO = /^(Hola, soy el asistente virtual de Rubén\.|Cuéntame un poco más)/;
+  const casos: Array<[string, J, string, RegExp]> = [
+    ['texto', mTexto('hola'), 'conversacion', SALUDO],
+    ['toque de lista', mLista('opcion:uno'), 'conversacion', SALUDO],
+    ['toque de botón', mBoton('boton:uno'), 'conversacion', SALUDO],
+    ['botón de plantilla', { type: 'button', button: { text: 'Hola', payload: 'p' } }, 'conversacion', SALUDO_O_MODELO],
+    ['imagen', mImagen(), 'medio', /^Recibí tu imagen/],
+    ['audio', mAudio(), 'medio', /^Por ahora no puedo escuchar audios/],
+    ['nota de voz', { type: 'voice', voice: { id: 'media-voz' } }, 'medio', /^Por ahora no puedo escuchar audios/],
+    ['documento', mDocumento(), 'medio', /^Recibí tu imagen/],
+    ['ubicación', { type: 'location', location: { latitude: -16.5, longitude: -68.1 } }, 'otro', /^Por aquí solo puedo leer mensajes de texto/],
+    ['sticker', { type: 'sticker', sticker: { id: 'media-stk' } }, 'otro', /^Por aquí solo puedo leer mensajes de texto/],
+    ['contactos', { type: 'contacts', contacts: [{ name: { formatted_name: 'X' } }] }, 'otro', /^Por aquí solo puedo leer mensajes de texto/],
+    ['un pedido del catálogo', { type: 'order', order: { catalog_id: 'c', product_items: [] } }, 'otro', /^Por aquí solo puedo leer mensajes de texto/],
+    ['un tipo que no existe', { type: 'holograma', holograma: {} }, 'otro', /^Por aquí solo puedo leer mensajes de texto/],
   ];
-  for (const [nombre, msg, categoria] of casos) {
-    it(`${nombre}: UN saludo cortés y la categoría «${categoria}»`, () => {
+  for (const [nombre, msg, categoria, esperado] of casos) {
+    it(`${nombre}: UNA respuesta cortés (${esperado.source.slice(0, 30)}…) y la categoría «${categoria}»`, () => {
       const w = crear();
       const t = hablar(w, ANA, msg);
       expect(t.fallo).toBeNull();
       expect(t.mensajes).toHaveLength(1);
-      expect(t.mensajes[0]!.cuerpo).toMatch(SALUDO);
+      expect(t.mensajes[0]!.cuerpo).toMatch(esperado);
       expect(t.porNodo['Interpretar entrada']![0]!['categoria']).toBe(categoria);
     });
   }

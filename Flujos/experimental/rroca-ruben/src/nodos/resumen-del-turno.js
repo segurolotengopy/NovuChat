@@ -14,6 +14,21 @@ const rrId = (j) => {
   return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== '';
 };
 if (cnNodo('Enviar a WhatsApp')) {
+  // Si el QR no salió por el envío principal (sale el respaldo en texto o nada), se DESCARTA la marca provisional de «Armar mensajes»: ni pedido contado ni QR «abierto» por 15 minutos.
+  const rrPrevio = (items[0] || {}).qrPrevio;
+  if (rrPrevio && typeof rrPrevio === 'object' && !cnTodos('Enviar a WhatsApp').some(rrId)) {
+    const rrDesde = String((items[0] || {}).from || '');
+    const rrFichas = cnMapaDeFichas(true);
+    const rrF = cnFichaDe(rrFichas.mapa, rrDesde);
+    if (rrF) { rrF.pedidos = Number(rrPrevio.pedidos) || 0; rrF.producto = String(rrPrevio.producto || ''); rrF.qrHastaMs = Number(rrPrevio.qrHastaMs) || 0; }
+  }
+  // La guarda liberada por un comprobante resuelto vuelve si no salió nada al cliente (ni el envío ni su respaldo).
+  const rrLib = (items[0] || {}).qrLiberado;
+  if (rrLib && typeof rrLib === 'object' && !cnTodos('Enviar a WhatsApp').some(rrId) && !cnTodos('Enviar respaldo').some(rrId)) {
+    const rrFichas2 = cnMapaDeFichas(true);
+    const rrF2 = cnFichaDe(rrFichas2.mapa, String((items[0] || {}).from || ''));
+    if (rrF2) rrF2.qrHastaMs = Number(rrLib.qrHastaMs) || 0;
+  }
   const rrEsperados = items.filter((i) => i && i.sinMensajes !== true).length;
   const rrEntregados = cnTodos('Enviar a WhatsApp').filter(rrId).length + cnTodos('Enviar respaldo').filter(rrId).length;
   if (rrEntregados < rrEsperados) {

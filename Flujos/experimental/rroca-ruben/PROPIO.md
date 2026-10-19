@@ -1,8 +1,8 @@
 # Venta digital de Rubén (tenant `rroca-ruben`): qué es común y qué es propio
 
 Regla (Andres, 09/10/2026): **flujo propio = composición propia + núcleo común obligatorio**. Lo común se incluye desde su fuente, nunca se copia; lo propio vive aquí.
-Zona: `Flujos/experimental/rroca-ruben/` (precedente `chat-novuchat`); se muda después a `Flujos/clientes/`. Este es el **PR-1: el esqueleto**. Sin modelo, sin cobro, sin QR, sin comprobante, sin rescate (PR-2 a PR-4).
-Pruebas: `admin/pruebas/tenants/rroca-ruben/armado.test.ts` (armado, huecos byte a byte, saneo) y `flujo.test.ts` (punta a punta con el n8n de mentira).
+Zona: `Flujos/experimental/rroca-ruben/` (precedente `chat-novuchat`); se muda después a `Flujos/clientes/`. Este es el **PR-1 (el esqueleto) más el PR-2 (la conversación y el cobro)**: conversación con el modelo, menús de botones, QR de monto abierto, comprobante y cotejo. Todavía sin plantillas, sin derivación completa (PR-3) y sin rescate (PR-4).
+Pruebas: `admin/pruebas/tenants/rroca-ruben/` — `armado.test.ts` (armado, topología, huecos del núcleo byte a byte, saneo), `huecos.test.ts` (huecos del cobro y los avisos contra su origen), `flujo.test.ts` (el esqueleto) y `venta.test.ts` (la conversación y el cobro), las dos últimas punta a punta con el n8n de mentira.
 Armado: `node Flujos/experimental/rroca-ruben/construir.mjs` escribe `rroca-ruben.json` y `rroca-ruben.prueba.json`; con `--verificar` no escribe y sale 1 si difieren o violan una guardia.
 
 ## Común, INCLUIDO desde su fuente (sin copia)
@@ -14,7 +14,7 @@ Armado: `node Flujos/experimental/rroca-ruben/construir.mjs` escribe `rroca-rube
 | Armador (plantilla + código → JSON, `--verificar`) | `comun-sin-agente/construir.mjs` (`leerProyecto`, `armarVariante`) |
 | Entrada verificada del receptor (6 nodos: Entrega, verificador interno, ¿Firma válida?, 200, 401, Descartar repetidos) | Los mismos nodos de `venta-minima/flujo.plantilla.json`, sin el carrito del catálogo; `wabaIdEsperado` FIJO (marcador `REEMPLAZAR_*`), sin «Continue on Fail», repetidos descartados entre ejecuciones. `construir.mjs` lo hace cumplir |
 
-Pendiente en PR-2 (se incluirá, no se copiará): `comun-sin-agente/src/filtro-redaccion.js` (paquete `filtro`) para lo que redacte el modelo.
+| Filtro de la redacción del modelo (`cmRevisarRedaccion`: monto, promesa, enlace, negar ser IA, afirmar un hecho) | `comun-sin-agente/src/filtro-redaccion.js` (paquete `filtro`, solo en «Armar mensajes») |
 
 ## Común SIN fuente utilizable: copiado de `chat-novuchat` y declarado (HUECOS, a resolver en el módulo común)
 
@@ -26,19 +26,29 @@ Cada hueco tiene su prueba en `armado.test.ts` («HUECOS»): la copia es el orig
 | `src/nodos/resumen-del-turno.js` | `chat-novuchat/src/nodos/resumen-del-turno.js` | Se AGREGA, tras leer los ítems, la verificación de entrega (R3, regla I-ENTREGA): si ni el envío ni su respaldo devolvieron `messages[0].id`, la ejecución termina en ERROR («Entrega fallida»). Es el sumidero que exige `pruebas/core/entregas.test.ts` para `Enviar a WhatsApp` y `Enviar respaldo` |
 | `src/nodos/_comun.js` (`cn*`: leer nodos por nombre, atención, ficha por teléfono) | `chat-novuchat/src/nodos/_comun.js` | La clave de la ficha en los datos estáticos (`chatNovuchat` → `rroca`), el título, y se quita el barrido de datos de otros flujos. No hay fuente común: cada flujo tiene la suya |
 | `src/nodos/carga-de-entrada.js` (filtro de eventos de Meta) | `chat-novuchat/src/nodos/carga-de-entrada.js` | Se AGREGA la rama del receptor: si corrió «Entrega del receptor», el evento es su `body.value` (y `field` solo `messages`) y el veredicto del verificador nunca se lee como mensaje. `core/normalizar-entrada.js` es del contrato del agente |
-| `src/nodos/interpretar-entrada.js` (normalización: text, interactive, button, audio/voz, image, document, location, sticker, contacts y cualquier otro) | `chat-novuchat/src/nodos/interpretar-entrada.js` | Se QUITA el contrato del chat (eventos, rubros) y se AGREGA `categoria` (`conversacion`, `medio`, `otro`); un toque de botón o lista deja su `id` como texto. Clave de conversación: `messages[0].from` |
-| `src/nodos/config-del-negocio.js` (consola → configuración) | `chat-novuchat/src/nodos/config-del-negocio.js` | Se QUITAN la oferta (planes y cargos), la planilla y los datos propios del chat. **Idénticos al origen**: la lectura de la respuesta (200 / 409 / otra), el bloque de atención y el del modo prueba. `core/config-del-negocio.js` (403 líneas) es del agente |
+| `src/nodos/interpretar-entrada.js` (normalización: text, interactive, button, audio/voz, image, document, location, sticker, contacts y cualquier otro) | `chat-novuchat/src/nodos/interpretar-entrada.js` | Se QUITA el contrato del chat (eventos, rubros) y se AGREGA `categoria` (`conversacion`, `medio`, `otro`); un toque de botón o lista deja su `id` como texto. Clave de conversación: `messages[0].from`. PR-2 AGREGA `esComprobante` (imagen o documento con un QR REAL abierto, en revisión o vencido hace menos de 24 h: lo dice el servidor), `comprobanteSimulado` y `mimeType` |
+| `src/nodos/config-del-negocio.js` (consola → configuración) | `chat-novuchat/src/nodos/config-del-negocio.js` | Se QUITAN la oferta (planes y cargos), la planilla y los datos propios del chat. **Idénticos al origen**: la lectura de la respuesta (200 / 409 / otra), el bloque de atención y el del modo prueba. `core/config-del-negocio.js` (403 líneas) es del agente. El catálogo y el cobro NO pasan por este nodo: «Decidir turno» y «Interpretar entrada» los leen de la respuesta de «Traer configuración» (`rrPanelDe`), para no tocar este hueco |
 | `src/nodos/config-del-negocio.js`, modo prueba: `telefonoPermitido` | el mismo bloque de `chat-novuchat` | **Niega por defecto**: `permitidos.length > 0 && …` (el origen permite todo si la lista está vacía). Sin `telefonosDePrueba`, o con el marcador `REEMPLAZAR_*` sin llenar, ningún teléfono está permitido en el JSON de prueba |
 | `RR_NIEGA_IA` en `src/lib/rr.js` (NIEGA_IA, prohibición 4) | `CH_NIEGA_IA` de `chat-novuchat/src/lib/chat.js` | Ninguna en la expresión (idéntica); solo cambia el nombre. Aplicada al texto normalizado en `rrSeguro` |
 | Los 6 nodos de la entrada verificada del receptor (Entrega del receptor, Verificar firma con el receptor, ¿Firma válida?, Aceptar (200), Rechazar (401), Descartar repetidos) en `flujo.plantilla.json` | `venta-minima/flujo.plantilla.json` | **Ninguna** en `parameters`, tipo, credenciales y opciones; solo `notes`, `position` e `id` propios. Prueba en `armado.test.ts` («HUECOS: nodos JSON») |
 | Nodos JSON de «Traer configuración», «Config base», «¿Reportar? (entrante)», «Reportar mensaje (entrante)», «¿Meta aceptó?» en `flujo.plantilla.json` | `chat-novuchat/flujo.plantilla.json` | **Ninguna** salvo `notes`, `position` e `id` propios; misma prueba |
 
-Lo del cobro (`cbCobroReal`, `cbResultadoVenta`, `cbRutaGuardada`, `CB_PROHIBIDAS` de `venta-minima/src/lib/cobro.js` y `avPlantilla`, `avTexto`, `avLimpio`, `avDestinatarios` de `avisos.js`) entra en PR-2 y PR-3 como hueco declarado con su prueba byte a byte.
+### Huecos del cobro y de los avisos (PR-2): copiados de `venta-minima` (rama #519) y declarados
+
+El módulo común de Cobros y el de Avisos todavía no existen. Cada declaración (función o constante) se copia **BYTE A BYTE**, sin ninguna sustitución, y `huecos.test.ts` la compara con su origen (hash fijado, `venta-minima` del árbol cuando ya trae #519, y la rama `origin/cartera/qtaco-visor-comprobantes` si el repositorio la tiene). Hay una prueba que niega las declaraciones de más: la copia no trae nada que no esté en la lista.
+
+| Pieza en este flujo | Origen | Qué se copió (y qué NO) |
+|---|---|---|
+| `src/lib/cobro.js` | `venta-minima/src/lib/cobro.js` | `CB_PROHIBIDAS`, `cbCanon` (+ confusables), `cbLinea`, `cbEsObjeto`, `cbTotalValido`, `cbMonto`, `cbMoneda`, `cbCodigo`, `cbUrlSegura`, `cbCobroReal`, la lectura del comprobante (`cbTextoDeGemini`, `cbObjetoUnico`, `cbCampoLeido`, `cbLectura`), `cbCuerpoDe`, `cbRutaGuardada`, `cbResultadoVenta` (+ sus listas cerradas), `cbEstadoParaAviso`, `cbImporteDelServidor`, `cbDiferencia`, `CB_ROTULO_SIMULADO`. **No** se copian los textos de un restaurante (`cbTextoAlCliente`) ni el QR por dirección (`cbMensajeQr`): aquí el QR sale por `id` de medio |
+| `src/lib/avisos.js` | `venta-minima/src/lib/avisos.js` | `avLimpio` (con `avSinProhibidas`, `avCanon`, `avNorm`…), `avTexto`, `avPlantilla` (gancho de PR-3, sin usar todavía), `avDestinatarios` (+ `avUnificar`, `avPrefijos`, `avDigitos`), `avPrimerNombre`, `avParametro` |
+
+Cuando #519 se fusione y exista el módulo común de Cobros y de Avisos, estos dos archivos se reemplazan por la inclusión desde su fuente (zona Core de la futura mudanza a `Flujos/clientes/`) y las pruebas pasan a compararlos con el módulo.
 
 ## Propio de Rubén
 
-- `src/lib/rr.js`: el saludo fijo del asistente virtual de Rubén (PR-1), el mínimo ante NIEGA_IA, la ficha por teléfono (ids de Meta, turnos) y su barrido. En PR-2 crecen aquí el catálogo de 4 productos (el precio vive solo en el catálogo de la consola), el total, los estados y los textos fijos.
-- `src/nodos/armar-mensajes.js`: un ítem por mensaje, o ninguno; escribe la ficha con la clave `messages[0].from`.
+- `src/lib/rr.js`: el catálogo de 4 productos (`pack`, `libro`, `closer`, `videos`: el precio vive SOLO en el catálogo de la consola), los 5 prellenados de la landing, los menús de botones, el cobro (real o simulado), el id del pedido, el prompt del modelo y TODOS los textos fijos; la barrera `rrSeguro` (NIEGA_IA y `CB_PROHIBIDAS` sobre todo lo que sale) y la ficha por teléfono.
+- `src/nodos/decidir-turno.js`: el código decide el turno (prellenado, botón, derivación, ingresos, conversación, comprobante); el modelo solo conversa. `src/nodos/interpretar-lectura.js`, `src/nodos/armar-avisos.js` (aviso mínimo, texto libre) y los nodos HTTP de medios, lectura (Gemini), cotejo y modelo de `flujo.plantilla.json`.
+- `src/nodos/armar-mensajes.js`: un ítem por mensaje, o ninguno; arma el QR como `image:{id}`, los menús sin los botones ya pulsados y los textos del comprobante según el aviso; escribe la ficha con la clave `messages[0].from`. `construir.mjs` sustituye el cuerpo del reporte saliente común por el propio, que agrega el evento `qr_enviado` (`reglaCobro: 2`, `referencia`, `monto`).
 - `flujo.plantilla.json`, `construir.mjs`, y los datos `admin/scripts/datos/rroca-ruben/rroca-ruben.json` (solo marcadores `REEMPLAZAR_*`).
 
 ## Condiciones declaradas de PR-1 (no se resuelven aquí)
@@ -50,4 +60,12 @@ Lo del cobro (`cbCobroReal`, `cbResultadoVenta`, `cbRutaGuardada`, `CB_PROHIBIDA
 
 ## Mensajes por conversación
 
-**0 agregados** en PR-1: un saludo por turno del cliente, o ninguno (pausa `bloqueado`). El aviso a Rubén (+1 por comprobante o derivación) es PR-3; el rescate de las 22 h (+1 por conversación a medias, 0,0113 USD) es PR-4. Las llamadas al modelo son 0 (no hay modelo).
+**0 agregados al cliente** en PR-1 y PR-2: UN mensaje por turno del cliente, o ninguno (pausa `bloqueado`); la prueba lo niega recorriendo una charla completa. El aviso a Rubén (un texto libre a SU número: +1 por comprobante o derivación) existe en forma mínima en PR-2 y se completa con plantillas en PR-3; el rescate de las 22 h (+1 por conversación a medias, 0,0113 USD) es PR-4. Llamadas al modelo: 0 o 1 por turno de conversación libre (0 en saludos, botones, prellenados, derivaciones y comprobantes), y 0 con la pausa.
+
+## Datos que el flujo espera de la consola (`configuracionFlujo`) y de «Config base»
+
+- `catalogo[]` con los ids `pack-completo`, `libro-bonos`, `closer-ventas` y `videos-ia` y un `precio` numérico (60, 32, 20, 25 Bs): el monto del QR y de los botones sale de ahí; un precio inválido o un ítem `agotado` no se ofrece ni se cobra.
+- `venta.mediaIdQr`: el id de medio de Meta del QR (solo letras, dígitos, `-` y `_`). Sin él no hay QR: se deriva a Rubén con aviso y botón. En la demostración, `cobroSimulado.mediaIdQr`.
+- `cobroReal` + `cobro` (`activo`, `qr.url` https, `pendiente`, `monto`, `pedido`, `regla`, `enRevision`, `vencidoHaceMin`): el SERVIDOR dice si hay cobro real y si hay un QR abierto; la dirección del QR (`qr.url`) solo sirve para saber que el cobro real está completo y NUNCA viaja en un mensaje.
+- «Config base»: `modelo` (Gemini, por defecto `gemini-3.5-flash-lite`) y `cobroSimuladoActivo` (booleano, `false` por defecto: sin él, `cobroSimulado` del servidor se ignora).
+- Credenciales por nombre: `ingesta`, `graph`, `medios` (WhatsApp, para bajar el comprobante) y `gemini` (modelo y lectura del comprobante).

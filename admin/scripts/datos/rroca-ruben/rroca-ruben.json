@@ -5,7 +5,9 @@
     "ingesta": "NovuChat ingesta (Ruben)",
     "graph": "Graph WhatsApp Ruben (Bearer)",
     "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
-    "entradaPrueba": "Entrada de prueba Ruben"
+    "entradaPrueba": "Entrada de prueba Ruben",
+    "medios": "WhatsApp Ruben (envío)",
+    "gemini": "Gemini (Ruben)"
   },
   "receptor": {
     "ruta": "REEMPLAZAR_RUTA_RECEPTOR_RROCA_RUBEN",
@@ -20,6 +22,8 @@
     "nombreNegocio": "Rubén Roca",
     "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
     "prefijosPermitidos": "591",
-    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA"
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
+    "modelo": "gemini-3.5-flash-lite",
+    "cobroSimuladoActivo": false
   }
 }
