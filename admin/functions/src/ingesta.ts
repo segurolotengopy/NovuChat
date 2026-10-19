@@ -1635,7 +1635,7 @@ export const configuracionFlujo = onRequest(
       accionSesion = v.peticion.accion;
       if (accionSesion !== 'leer') {
         const rutaSesion = { tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo };
-        const resultado = await atenderSesion(db, rutaSesion, cuerpo, Date.now());
+        const resultado = await atenderSesion(db, rutaSesion, { ...cuerpo, telefono }, Date.now());
         registrarAnomaliaDeSesion(comercio.tenantId, accionSesion, resultado.status, resultado.json);
         respuesta.status(resultado.status).json(resultado.json);
         return;
@@ -1737,6 +1737,18 @@ export const configuracionFlujo = onRequest(
           };
         })()
       : null;
+
+    // `leer` de la sesión: DESPUÉS de la pausa y la atención y ANTES del enlace del catálogo (que
+    // escribe una ficha: un 503 de la sesión no debe dejarla hecha), y solo si vino `sesion`. Un 503 o un
+    // 500 se devuelven tal cual (el flujo los trata como falla y responde genérico con botón).
+    let sesionLeida: Record<string, unknown> = {};
+    if (pideSesion) {
+      const leida = await atenderSesion(db, { tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo },
+        { ...cuerpo, telefono }, Date.now());
+      registrarAnomaliaDeSesion(comercio.tenantId, 'leer', leida.status, leida.json);
+      if (leida.status !== 200) { respuesta.status(leida.status).json(leida.json); return; }
+      sesionLeida = { conversacion: leida.json['conversacion'], visto: leida.json['visto'] };
+    }
 
     const catalogoWebActivo = negocio['catalogoWebActivo'] === true;
     // Se calcula una sola vez: decide qué se manda al prompt y, además, se
@@ -1878,17 +1890,6 @@ export const configuracionFlujo = onRequest(
         : {}),
       ...(motivoSinEnlace ? { catalogoEnlaceMotivo: motivoSinEnlace } : {}),
     });
-
-    // `leer` de la sesión: DESPUÉS de la pausa y la atención, y solo si vino `sesion`. Un 503 o un
-    // 500 se devuelven tal cual (el flujo los trata como falla y responde genérico con botón).
-    let sesionLeida: Record<string, unknown> = {};
-    if (pideSesion) {
-      const leida = await atenderSesion(db, { tenantId: comercio.tenantId, phoneNumberId, flujo: comercio.flujo },
-        cuerpo, Date.now());
-      registrarAnomaliaDeSesion(comercio.tenantId, 'leer', leida.status, leida.json);
-      if (leida.status !== 200) { respuesta.status(leida.status).json(leida.json); return; }
-      sesionLeida = { conversacion: leida.json['conversacion'], visto: leida.json['visto'] };
-    }
 
     respuesta.status(200).json({
       ...sesionLeida,

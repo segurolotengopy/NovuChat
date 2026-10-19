@@ -32,7 +32,7 @@ process.env['INGESTA_CLIENTE18'] = TOKEN_B;
 
 const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
-const { getFirestore } = await import('firebase-admin/firestore');
+const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { configuracionFlujo } = await import('../functions/src/ingesta.ts');
 
@@ -43,6 +43,7 @@ const TB = 'despacho-b';
 const NUMERO_A = '1000000711';
 const NUMERO_B = '1000000712';
 const TEL = '59100000011';
+const HORA = 3_600_000;
 const AHORA = Date.UTC(2026, 9, 18, 15, 0, 0);
 
 interface Respuesta { codigo: number; cuerpo: Record<string, unknown> }
@@ -160,13 +161,59 @@ describe('comprometer y asentar', () => {
     expect(a.cuerpo['resultado']).toBe('asentado');
   });
 
-  it('no escriben en `conversaciones/*` ni en `metricas/*` (el conteo facturado)', async () => {
-    const antes = [await documentos(`tenants/${TA}/conversaciones`), await documentos(`tenants/${TA}/metricas`)];
+  it('no escriben en `conversaciones/*` ni en `metricas/*` (el conteo facturado): ni datos ni updateTime', async () => {
+    const refConv = db.doc(`tenants/${TA}/conversaciones/wa_${TEL}`);
+    const refMet = db.doc(`tenants/${TA}/metricas/2026-10`);
+    await refConv.set({ mensajesVentana: 3, atencionDesde: Timestamp.fromMillis(AHORA - HORA), canal: 'wa' });
+    await refMet.set({ conversaciones: 7, mensajes: 21 });
+    const foto = async () => {
+      const [c, m] = await Promise.all([refConv.get(), refMet.get()]);
+      return { c: c.data(), cT: c.updateTime?.toMillis(), m: m.data(), mT: m.updateTime?.toMillis() };
+    };
+    const antes = await foto();
+    const conversacionesAntes = await documentos(`tenants/${TA}/conversaciones`);
+    const metricasAntes = await documentos(`tenants/${TA}/metricas`);
     await pedir({ telefono: TEL, sesion: sesion({ accion: 'leer', idMensaje: 'wamid.SINCONTEO1' }) });
     await pedir({ telefono: TEL, sesion: comprometer({ idCompromiso: 'compromiso-conteo-1' }) });
     await pedir({ telefono: TEL, sesion: sesion({ accion: 'asentar', idCompromiso: 'compromiso-conteo-1' }) });
     expect(await escriturasDeTurno(TA)).toBeGreaterThan(0);
-    expect([await documentos(`tenants/${TA}/conversaciones`), await documentos(`tenants/${TA}/metricas`)]).toEqual(antes);
+    expect(await foto()).toEqual(antes);
+    expect(await documentos(`tenants/${TA}/conversaciones`)).toBe(conversacionesAntes);
+    expect(await documentos(`tenants/${TA}/metricas`)).toBe(metricasAntes);
+    await refConv.delete();
+    await refMet.delete();
+  });
+});
+
+describe('`leer` conserva los campos de atención y de pausa', () => {
+  const refConv = () => db.doc(`tenants/${TA}/conversaciones/wa_${TEL}`);
+  afterAll(async () => { await refConv().delete(); await db.doc(`tenants/${TA}/cuenta/estado`).delete(); });
+
+  it('con el umbral del operador alcanzado: `atencion` igual que sin `sesion`, junto a `conversacion`', async () => {
+    await db.doc(`tenants/${TA}/cuenta/estado`).set({ umbralOperador: 30, umbralBloqueo: 60 });
+    await refConv().set({ atencionDesde: Timestamp.fromMillis(AHORA - HORA), mensajesVentana: 30, ultimoEntranteEn: Timestamp.fromMillis(AHORA - 60_000) });
+    const base = await pedir({ telefono: TEL });
+    const r = await pedir({ telefono: TEL, sesion: sesion({ accion: 'leer' }) });
+    expect(base.cuerpo['atencion']).toMatchObject({ estado: 'operador' });
+    expect(r.cuerpo['atencion']).toEqual(base.cuerpo['atencion']);
+    expect(r.cuerpo['conversacion']).toMatchObject({ version: 0 });
+  });
+
+  it('con una persona atendiendo (pausa): `pausadoPorPersona` y `atencion` bloqueada, junto a `conversacion`', async () => {
+    await refConv().set({
+      atencionDesde: Timestamp.fromMillis(AHORA - HORA), mensajesVentana: 1, ultimoEntranteEn: Timestamp.fromMillis(AHORA - 30_000),
+      turno: {
+        responde: 'persona', tomadoPor: 'uid-persona',
+        tomadoEn: Timestamp.fromMillis(AHORA - 60_000), actividadPersonaEn: Timestamp.fromMillis(AHORA - 30_000),
+      },
+    });
+    const base = await pedir({ telefono: TEL });
+    const r = await pedir({ telefono: TEL, sesion: sesion({ accion: 'leer' }) });
+    expect(base.cuerpo['pausadoPorPersona']).toBe(true);
+    expect(r.cuerpo['pausadoPorPersona']).toBe(true);
+    expect(r.cuerpo['atencion']).toEqual(base.cuerpo['atencion']);
+    expect(r.cuerpo['atencion']).toMatchObject({ estado: 'bloqueado' });
+    expect(r.cuerpo['conversacion']).toMatchObject({ version: 0 });
   });
 });
 
@@ -208,6 +255,16 @@ describe('seguridad', () => {
       }
     }
     expect(await escriturasDeTurno(TA)).toBe(0);
+  });
+
+  it('el teléfono se recorta una sola vez: con espacios en los bordes funciona igual y se usa recortado; con espacios adentro, 400', async () => {
+    const r = await pedir({ telefono: `  ${TEL} `, sesion: comprometer({ idCompromiso: 'compromiso-recorte-1' }) });
+    expect(r.cuerpo['resultado']).toBe('comprometido');
+    const ids = (await db.collection(`tenants/${TA}/sesionesDeTurno`).get()).docs.map((d) => d.id);
+    expect(ids).toEqual([`${NUMERO_A}~venta~wa_${TEL}`]);
+    for (const tel of ['5910000 0011', '591 00000011']) {
+      expect((await pedir({ telefono: tel, sesion: sesion({ accion: 'leer' }) })).codigo).toBe(400);
+    }
   });
 
   it('una `v` desconocida o ausente: 400', async () => {
