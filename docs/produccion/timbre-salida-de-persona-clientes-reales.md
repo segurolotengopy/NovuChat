@@ -1,4 +1,4 @@
-# Timbre de la salida de persona para clientes reales (`cliente04`, `cliente05`)
+# Timbre de la salida de persona para clientes reales (`<ALIAS>`)
 
 Procedimiento para cargar en n8n el flujo «NovuChat — Salida de persona» de un
 **cliente real** con `scripts/cargar-timbre-n8n.sh`. El ensayo del Demo A
@@ -18,7 +18,9 @@ ejecuta nada: cada paso que escribe lo corre Claude con el «sí» de Andres.
   aborta sin escribir. Los nombres pueden llevar apóstrofo o espacios; el **alias**
   no (`^[A-Za-z][A-Za-z0-9]{1,29}$`).
 - Siguen en pie los cerrojos: los tres nombres distintos entre sí y distintos del
-  timbre; ninguno de AAB1-WA-Prod; el nodo que manda a Meta o al relé nunca lleva
+  timbre; ninguno de AAB1-WA-Prod ni de WhatsApp-Modular (se compara normalizado,
+  sin mayúsculas, espacios, guiones ni guiones bajos, contra `segurolotengo`,
+  `aab1wa`, `waprod`, `whatsappmodular`, `receptor` y `otp`); el nodo que manda a Meta o al relé nunca lleva
   la de ingesta (por nombre ni por id).
 - **`--rele-inerte --canal-graph` vale ahora para cualquier alias** (antes solo
   `demoA` y `demoB`): la URL del relé del flujo es `http://relay-inerte.invalid` y no
@@ -27,6 +29,19 @@ ejecuta nada: cada paso que escribe lo corre Claude con el «sí» de Andres.
   `graph`); el script no puede leerla.
 - `--crear-credenciales` y `--quitar-credenciales` **siguen siendo solo para
   `demoA` y `demoB`** y no se combinan con las tres opciones nuevas.
+- **Atadura al alias (antes de escribir).** Un nombre bien formado no prueba que la
+  credencial sea de ese número: con la ingesta de otro comercio el flujo reclamaría
+  sus mensajes y los enviaría desde el número equivocado. Por eso la credencial de
+  ingesta y la de envío tienen que estar citadas por al menos un flujo vivo (ya
+  descargado, sin otra llamada; distinto del propio del alias) cuyos parámetros
+  contengan el `phoneNumberId` de la fila `REEMPLAZAR_PHONE_NUMBER_ID_<ALIAS>`, y
+  ningún flujo vivo con **otro** `phoneNumberId` puede citarlas. Si no se cumple,
+  aborta sin escribir con un mensaje fijo, sin nombres ni valores. El seco imprime un
+  renglón por rol: `credencial de ingesta vinculada al alias: sí/no` (y de envío).
+  El rol relé no se ata (no tiene flujo propio que lo cite). No se combina con
+  `--tabla-demo-a`. Consecuencia práctica: el cliente tiene que tener ya un flujo
+  vivo que use esas credenciales con su número escrito en los parámetros; si su
+  número sale de una expresión, la atadura no lo ve y el script se niega.
 - El mapa de nombres hay que repetirlo en `--activar`: el script verifica el flujo
   vivo contra los nombres que se le dan, y si no coinciden se niega. `--quitar` no
   necesita el mapa: borra solo el flujo y la credencial del timbre del alias.
@@ -50,9 +65,10 @@ ejecuta nada: cada paso que escribe lo corre Claude con el «sí» de Andres.
    `..._CLIENTE04`, `..._CLIENTE05`). Con `--rele-inerte` la fila del relé no se
    exige. «pendiente» o vacío abortan. Se agrega sin mostrar el valor
    (`marcador-local.sh`); el archivo no se lee ni por script.
-3. **Alias real del cliente** (`cliente04` = Q'Taco, `cliente05` = la cuenta Ruben
-   de Rubén Roca): es el alias de `rutasWhatsApp/{numero}.aliasSecreto`; lo lee
-   Rearquitectura en seco, no está en archivos versionados.
+3. **Alias real del cliente** (`cliente04`, `cliente05`): es el alias de
+   `rutasWhatsApp/{numero}.aliasSecreto`; lo lee Rearquitectura en seco. Los alias ya
+   están en `main` (`firma.ts`); lo que no va en archivos versionados es la
+   asociación alias-comercio, que queda en `CLIENTES/`.
 4. `.env` con `N8N_BASE_URL` y `N8N_API_KEY` (modo 600, del usuario) y
    `$XDG_RUNTIME_DIR` válido (modo 700). Worktree al día con `main`.
 5. Fuera de 18:00 a 22:00, no la noche de una etiqueta, ventana de mantenimiento
@@ -62,8 +78,7 @@ ejecuta nada: cada paso que escribe lo corre Claude con el «sí» de Andres.
 
 `<NOMBRE_INGESTA>`, `<NOMBRE_ENVIO>` y `<NOMBRE_RELE>` son los nombres reales que
 Cartera lee en el paso P0. Ejemplos de forma, sin valor real: `NovuChat ingesta
-(Q'Taco)`, `WhatsApp Q'Taco (envío)`; para Rubén, `NovuChat ingesta (Ruben)`,
-`WhatsApp Ruben (envío)`.
+(<COMERCIO>)` y `WhatsApp <COMERCIO> (envío)`.
 
 | # | Paso | Quién | Escribe en producción | «Sí» de Andres |
 |---|---|---|---|---|
@@ -119,7 +134,7 @@ Se corre primero cada uno **sin** `--aplicar` y se lee entero.
 - Un `SALIDA_PERSONA_RUTAS` sin el alias del cliente deja los envíos de persona en
   `pendiente` y caducan; el asistente sigue normal.
 
-## Después del traslado (~07/11, Q'Taco)
+## Después del traslado (~07/11, primer cliente real)
 
 El relé deja de ser inerte cuando la sesión de WhatsApp-Modular emite la clave real
 (con «sí» de Andres) y `rutasWhatsApp/{numero}.canalSalida` pasa a `rele`. Ese día
@@ -137,3 +152,16 @@ una de estas dos salidas, que decide Principal: (a) crearla a mano en el panel d
 n8n con un valor inerte, o (b) agregar al script un modo acotado que cree solo esa
 con un valor inerte fijo (sin ningún secreto) y la registre como creada por él. Sin
 una de las dos, el paso 1 aborta nombrando el rol que falta.
+
+**Sospecha abierta: token real en el rol relé.** Hoy, con `--rele-inerte` la URL del
+relé del flujo es inerte y la credencial del relé no viaja a ningún lado útil. Pero si
+alguien pasa en `--cred-rele` una credencial que guarda un token real (por ejemplo un
+«Bearer» de Graph) y luego recarga **sin** `--rele-inerte`, ese token viajaría a la URL
+real del relé, que es otro destino. El script no puede leer el valor de la credencial,
+y exigir `--rele-inerte` para el rol relé de un cliente real choca con el diseño
+documentado arriba («Después del traslado»: se recarga sin `--rele-inerte` con la
+credencial del relé ya con su clave real), así que no se cambió. Mitigación vigente:
+la regla de la sección «Lo que hay que tener antes» (la credencial del relé es distinta
+de las demás y su valor lo carga la sesión de WhatsApp-Modular) y el seco previo de
+cada recarga. Queda a decisión de Principal si conviene un indicador explícito
+(`--rele-real`) que distinga la recarga posterior al traslado.
