@@ -499,7 +499,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ String($json.url || '').startsWith('https://') && Number($json.file_size) > 0 && Number($json.file_size) <= ($('Interpretar entrada').first().json.esAudio === true ? 720000 : 5000000) }}",
+              "leftValue": "={{ /^https:\\/\\/([a-z0-9-]+\\.)*(fbsbx\\.com|fbcdn\\.net|facebook\\.com)\\//i.test(String($json.url || '')) && Number($json.file_size) > 0 && Number($json.file_size) <= ($('Interpretar entrada').first().json.esAudio === true ? 720000 : 5000000) }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",

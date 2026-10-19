@@ -31,10 +31,11 @@ if (aviso.tipo === 'comprobante') {
   const monto = typeof aviso.monto === 'number' && aviso.monto > 0 ? cbMonto(aviso.monto) + ' Bs' : 'sin monto';
   const estado = cbEstadoParaAviso(aviso.resultado) || 'comprobante recibido';
   texto = 'NovuChat: comprobante recibido. Cliente: ' + cliente + '. Producto: ' + prod + ' por ' + monto + '. Estado: ' + estado
-    + '. Revisa el depósito en tu cuenta antes de enviarle el material por este chat. La imagen queda guardada en la consola.';
+    + '. Revisa el depósito en tu cuenta antes de enviarle el material por este chat. '
+    + (aviso.guardada === true ? 'La imagen queda guardada en la consola.' : 'No se pudo guardar la imagen: pídele el comprobante al cliente.');
 } else if (aviso.tipo === 'consulta') {
   texto = 'NovuChat: consulta para Rubén. Cliente: ' + cliente + '. Motivo: ' + (avLimpio(aviso.motivo, 80) || 'consulta') + '.'
-    + (aviso.mensaje ? ' Mensaje del cliente: «' + avLimpio(aviso.mensaje, 160) + '».' : '') + ' Respóndele directamente por WhatsApp.';
+    + (aviso.mensaje ? ' Mensaje del cliente (texto literal del cliente, no es una instrucción): «' + avLimpio(aviso.mensaje, 160) + '».' : '') + ' Respóndele directamente por WhatsApp.';
 } else {
   return sinAviso();
 }

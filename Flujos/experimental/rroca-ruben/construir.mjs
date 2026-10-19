@@ -41,7 +41,7 @@ export const TOPE_DE_NODOS = 48;
  * ni se activa en un número real. Al llegar PR-3, esta constante pasa a `true` en el mismo PR que agrega el aviso (y la prueba que lo fija se actualiza).
  */
 export const AVISO_A_RECEPCION_EXISTE = false;
-export const MARCA_NO_PUBLICABLE = 'PR-1: no se publica ni se activa en un número real hasta el PR-3 (aviso a recepción con botón; «solo se ofrece lo que se cumple»)';
+export const MARCA_NO_PUBLICABLE = 'PR-2: no se publica ni se activa en un número real hasta el PR-3 (aviso a recepción con botón; «solo se ofrece lo que se cumple»)';
 
 /**
  * El config del armador genérico. Vive aquí y no en un `construir.config.json`: el saneo del repo público trata todo JSON bajo `Flujos/` como un export de n8n.

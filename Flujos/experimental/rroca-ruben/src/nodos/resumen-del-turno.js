@@ -14,6 +14,14 @@ const rrId = (j) => {
   return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== '';
 };
 if (cnNodo('Enviar a WhatsApp')) {
+  // Si el QR no salió por el envío principal (sale el respaldo en texto o nada), se DESCARTA la marca provisional de «Armar mensajes»: ni pedido contado ni QR «abierto» por 15 minutos.
+  const rrPrevio = (items[0] || {}).qrPrevio;
+  if (rrPrevio && typeof rrPrevio === 'object' && !cnTodos('Enviar a WhatsApp').some(rrId)) {
+    const rrDesde = String((items[0] || {}).from || '');
+    const rrFichas = cnMapaDeFichas(true);
+    const rrF = cnFichaDe(rrFichas.mapa, rrDesde);
+    if (rrF) { rrF.pedidos = Number(rrPrevio.pedidos) || 0; rrF.producto = String(rrPrevio.producto || ''); rrF.qrHastaMs = Number(rrPrevio.qrHastaMs) || 0; }
+  }
   const rrEsperados = items.filter((i) => i && i.sinMensajes !== true).length;
   const rrEntregados = cnTodos('Enviar a WhatsApp').filter(rrId).length + cnTodos('Enviar respaldo').filter(rrId).length;
   if (rrEntregados < rrEsperados) {

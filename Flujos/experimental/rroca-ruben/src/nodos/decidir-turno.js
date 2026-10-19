@@ -31,16 +31,21 @@ const norm = rrNorm(t.texto);
 const hayQrAbierto = cobro.pendiente === true || ficha.qrHastaMs > ahora;
 const producto = ficha.producto || '';
 const consulta = (motivo) => ({ tipo: 'consulta', motivo: motivo, mensaje: String(t.texto || '').slice(0, 200) });
+// A lo más UN aviso de consulta por teléfono cada 30 minutos (`ultimoAvisoConsultaMs`, que «Armar mensajes» fija solo si el aviso SALIÓ): un cliente no puede llenar el WhatsApp de Rubén.
+// Dentro de la ventana no hay aviso nuevo y `avisoRepetido` le dice a «Armar mensajes» que el aviso de hace un rato sigue en pie.
+const avisoDeConsulta = (motivo) => (ficha.ultimoAvisoConsultaMs > 0 && ahora - ficha.ultimoAvisoConsultaMs < RR_VENTANA_AVISO_CONSULTA_MS ? null : consulta(motivo));
+const repetido = () => ficha.ultimoAvisoConsultaMs > 0 && ahora - ficha.ultimoAvisoConsultaMs < RR_VENTANA_AVISO_CONSULTA_MS;
 
 // 1. Un comprobante (o la foto de la prueba simulada).
 if (t.esComprobante === true || t.comprobanteSimulado === true) {
   if (t.comprobanteSimulado === true) return salir({ tipo: 'comprobante', resultado: 'simulado', causa: '', diferencia: '', cat: cat, producto: producto, aviso: null });
   // El cotejo corrió solo si hubo medio utilizable; si no (tamaño, descarga, servidor caído), `cbResultadoVenta` lo deja en «sin cotejar» con aviso y botón: nunca «cuadra».
   const r = cbResultadoVenta(cnNodo('Cotejar en el servidor') ? cnPrimero('Cotejar en el servidor') : null);
+  const guardada = cbRutaGuardada(cnNodo('Guardar comprobante') ? cnPrimero('Guardar comprobante') : null) !== null;
   const avisa = r.resultado === 'cuadra' || r.resultado === 'aproximado' || r.resultado === 'sin_cotejo';
   return salir({
     tipo: 'comprobante', resultado: r.resultado, causa: r.causa, diferencia: r.resultado === 'reintentar' ? cbDiferencia(r.diferencias, 'Bs') : '', cat: cat, producto: producto,
-    aviso: avisa ? { tipo: 'comprobante', resultado: r.resultado, producto: producto && RR_PRODUCTOS[producto] ? RR_PRODUCTOS[producto].nombre : 'sin producto', monto: cobro.monto } : null,
+    aviso: avisa ? { tipo: 'comprobante', resultado: r.resultado, producto: producto && RR_PRODUCTOS[producto] ? RR_PRODUCTOS[producto].nombre : 'sin producto', monto: cobro.monto, guardada: guardada } : null,
   });
 }
 // 2. Lo que no es texto ni toque.
@@ -56,7 +61,7 @@ const elegir = (k, boton) => {
   if (cobro.enRevision === true) return { tipo: 'derivar', motivo: 'en_revision', aviso: null, cat: cat, boton: boton };
   const precio = rrPrecio(cat, k);
   const sinQr = cobro.modo === 'ninguno' ? 'sin_cobro' : (cobro.mediaId === '' ? 'sin_medio' : (precio === null ? 'sin_precio' : ''));
-  if (sinQr) return { tipo: 'derivar', motivo: sinQr, aviso: consulta('QR no disponible (' + sinQr + ')'), cat: cat, boton: boton };
+  if (sinQr) return { tipo: 'derivar', motivo: sinQr, aviso: avisoDeConsulta('QR no disponible (' + sinQr + ')'), avisoRepetido: repetido(), cat: cat, boton: boton };
   return { tipo: 'qr', producto: k, monto: precio, simulado: cobro.modo === 'simulado', mediaId: cobro.mediaId, pedidoId: rrIdPedido(ahora, ficha.pedidos + 1), conPresentacion: !ficha.saludado, cat: cat, boton: boton };
 };
 
@@ -75,7 +80,7 @@ if (pre === 'pack' || pre === 'libro') return salir(elegir(pre, ''));
 if (pre === 'closer' || pre === 'videos') return salir(hayQrAbierto ? elegir(pre, '') : { tipo: 'complemento', producto: pre, cat: cat, conPresentacion: !ficha.saludado });
 if (pre === 'consulta') return salir({ tipo: 'saludo', pregunta: 'consulta', cat: cat });
 const motivo = rrMotivoDeDerivacion(norm);
-if (motivo) return salir({ tipo: 'derivar', motivo: 'consulta', aviso: consulta(motivo), cat: cat });
+if (motivo) return salir({ tipo: 'derivar', motivo: 'consulta', aviso: avisoDeConsulta(motivo), avisoRepetido: repetido(), cat: cat });
 if (rrPreguntaPorIngresos(norm)) return salir({ tipo: 'ingresos', cat: cat });
 // Con un QR abierto, cualquier texto recibe el recordatorio (un solo QR a la vez); el modelo no interviene.
 if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });

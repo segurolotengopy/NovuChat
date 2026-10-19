@@ -25,7 +25,7 @@ const fichaAntes = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from));
 
 const rrId = (j) => { const m = j && j.messages; return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== ''; };
 const avisoPlaneado = !!plan.aviso;
-const avisoSalio = avisoPlaneado && (cnTodos('Enviar aviso').some(rrId) || (prueba && cfg.enviarDeVerdad !== true));
+const avisoSalio = (avisoPlaneado && (cnTodos('Enviar aviso').some(rrId) || (prueba && cfg.enviarDeVerdad !== true))) || plan.avisoRepetido === true;
 
 let m = null;               // el item del mensaje (cmMensaje) o null
 let tipoDePlan = String(plan.tipo || 'nada');
@@ -33,6 +33,7 @@ let llamadasModelo = decision.llamarModelo === true ? 1 : 0;
 let usadoNuevo = '';        // el botón de este turno que no debe reaparecer
 let ultimoModelo = fichaAntes.ultimoModelo;
 let pedidoNuevo = null;
+let qrPrevio = null;        // la ficha antes de la marca provisional del QR
 
 const texto = (cuerpo, extra) => { const c = rrSeguro(cuerpo); return cmMensaje('cliente', cmTexto(c), c, c, Object.assign({ tipoReporte: 'text' }, extra || {})); };
 const conBotones = (cuerpo, botones, extra) => {
@@ -116,9 +117,12 @@ if (claveOk) {
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
   if (m) ficha.saludado = true;
+  if (avisoPlaneado && plan.aviso.tipo === 'consulta' && avisoSalio) ficha.ultimoAvisoConsultaMs = ahora;
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);
   if (ultimoModelo !== undefined) ficha.ultimoModelo = ultimoModelo;
-  if (pedidoNuevo) { ficha.pedidos += 1; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RR_MINUTOS_QR * 60 * 1000; }
+  // MARCA PROVISIONAL del QR: se fija aquí (el id del pedido y la guarda de 15 minutos necesitan existir ya) pero `Resumen del turno` la DESCARTA con `qrPrevio` si Meta no devolvió el `wamid` del QR
+  // (sale el respaldo en texto): un QR que no salió no deja al cliente 15 minutos con «Ya tienes un QR abierto».
+  if (pedidoNuevo) { qrPrevio = { pedidos: ficha.pedidos, producto: ficha.producto, qrHastaMs: ficha.qrHastaMs }; ficha.pedidos += 1; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RR_MINUTOS_QR * 60 * 1000; }
   fichas.mapa[from] = ficha;
   rrBarrer(fichas.mapa, ahora);
 }
@@ -141,6 +145,7 @@ const salida = {
   phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0', from: from, sinMensajes: false,
   plan: resumen.plan, resumen: resumen,
 };
+if (qrPrevio) salida.qrPrevio = qrPrevio;
 if (m.reglaCobro === 2) salida.reglaCobro = 2;
 if (m.referencia) salida.referencia = m.referencia;
 if (m.monto !== undefined) salida.monto = m.monto;
