@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
-import { UX_CONTADOR, UX_ESTADO, contarPresentaciones, esPresentacion, preguntaPorIdentidad, vigilarUx, violacionesDeParrafos, violacionesDeUx, type UxMsg } from './vigilante-ux';
+import { UX_CONTADOR, UX_ESTADO, contarPresentaciones, esPresentacion, preguntaPorIdentidad, seDeclaraIA, vigilarUx, violacionesDeParrafos, violacionesDeUx, type UxMsg } from './vigilante-ux';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-ruben');
@@ -2397,6 +2397,28 @@ describe('UNA SOLA PRESENTACIÓN (Silvana, 20/10/2026) · el saludo no dice dos 
       expect(presentaciones(ya.cuerpo)).toBeLessThanOrEqual(1);
       expect(ya.cuerpo).toContain('¿Qué negocio tienes?');
       expect(ya.cuerpo).not.toMatch(/Soy el asistente de Rubén/);
+      expect(ya.cuerpo).toMatch(/asistente virtual/);
+    });
+  }
+
+  // La presentación que NO dice qué es el asistente se quita SIEMPRE ya saludado (regla de Silvana); el título del libro («IA para Emprendedores») y «el programa del libro» no son una declaración de IA.
+  const SIN_IA = [
+    'Soy el asistente de Rubén, autor de IA para Emprendedores. ¿Qué negocio tienes?',
+    'Soy el asistente de Rubén y te ayudo a aplicar la IA en tu negocio.',
+    'Soy el asistente de Rubén y te cuento del programa del libro.',
+  ];
+  for (const [i, frase] of SIN_IA.entries()) {
+    it(`NEGADA (sin IA ${i + 1}): «${frase.slice(0, 50)}…» ya saludado sale con CERO presentaciones; como primer mensaje, UNA y con «asistente virtual»`, () => {
+      const w = crear({ modelo: geminiTexto(frase) });
+      hablar(w, BETO, mTexto('hola'));
+      const ya = unico(hablar(w, BETO, mTexto('cómo me ayuda en mi taller de costura')));
+      expect(presentaciones(ya.cuerpo)).toBe(0);
+      expect(ya.cuerpo).not.toMatch(/asistente/i);
+      expect(ya.cuerpo.trim()).not.toBe('');
+      const w2 = crear({ modelo: geminiTexto(frase) });
+      const primero = unico(hablar(w2, ANA, mTexto(PRIMERO_LARGO)));
+      expect(presentaciones(primero.cuerpo)).toBe(1);
+      expect(primero.cuerpo).toContain('asistente virtual');
     });
   }
 
@@ -2544,14 +2566,14 @@ describe('REGLA DURA 4, BARRERA ESTRUCTURAL · la lista de identidad es una mejo
   };
   // Formas que ninguna lista prevé: llegan al modelo, y lo que el modelo responda sobre su identidad NO se pierde.
   const IMPREVISTAS = ['dime la verdad, ¿qué eres tú exactamente?', '¿estás vivo?', '¿tienes cerebro o qué?', 'sos de carne y hueso o qué', 'te escribe alguien de carne y hueso', '¿quién maneja este chat?', 'con qué clase de ser converso', 'oye contéstame con sinceridad por favor', '¿tú qué cosa eres?', 'ya, pero dime con quién estoy chateando', 'aclárame qué tipo de ayudante eres', '¿sos un empleado de Rubén?'];
-  const RESPUESTAS = ['Sí, soy el asistente virtual de Rubén, una inteligencia artificial.', 'Buena pregunta. Sí, soy el asistente virtual de Rubén, una inteligencia artificial. ¿Qué negocio tienes?', 'Soy el asistente virtual de Rubén.'];
+  const RESPUESTAS = ['Sí, soy el asistente virtual de Rubén, una inteligencia artificial.', 'Buena pregunta. Sí, soy el asistente virtual de Rubén, una inteligencia artificial. ¿Qué negocio tienes?', 'Soy el asistente virtual de Rubén.', 'No soy Rubén, soy su asistente virtual.', 'Soy el asistente de Rubén, no una persona.', 'Soy el asistente automático de Rubén. ¿Qué negocio tienes?', 'Soy el asistente digital de Rubén, una inteligencia artificial.'];
   for (const pregunta of IMPREVISTAS) {
     it(`NEGADA: «${pregunta}» ya saludado y con el modelo respondiendo su identidad: el cuerpo saliente la trae y NUNCA empieza por «Gracias por escribir»`, () => {
       for (const resp of RESPUESTAS) {
         const { w } = conModelo(resp);
         hablar(w, ANA, mTexto('hola'));
         const m = unico(hablar(w, ANA, mTexto(pregunta)));
-        expect(m.cuerpo, resp).toMatch(/asistente virtual|inteligencia artificial/);
+        expect(m.cuerpo, resp).toMatch(/asistente (virtual|automático|digital)|inteligencia artificial|no una persona|No soy Rubén/);
         expect(m.cuerpo).not.toMatch(/^Gracias por escribir/);
         expect(m.cuerpo.trim()).not.toBe('');
       }
@@ -2625,5 +2647,80 @@ describe('REGLA DURA 4, BARRERA ESTRUCTURAL · la lista de identidad es una mejo
     expect(violacionesDeUx(new Set(), hola, [{ tipo: 'text', cuerpo: 'Gracias por escribir.', payload: {} }], undefined, ia)).not.toEqual([]);
     expect(violacionesDeUx(new Set(), hola, [{ tipo: 'text', cuerpo: ia, payload: {} }], undefined, ia)).toEqual([]);
     expect(violacionesDeUx(new Set(), hola, [{ tipo: 'text', cuerpo: 'Gracias por escribir.', payload: {} }], undefined, 'Hola.')).toEqual([]);
+  });
+});
+
+describe('RONDA 3 · suplantación de Rubén, respuestas honestas, «recibo/llega», identidad ampliada y vigilante', () => {
+  const conModelo = (texto: string): { w: Mundial; llamadas: () => number } => {
+    let n = 0;
+    const w = crear({ modelo: () => { n += 1; return geminiTexto(texto); } });
+    return { w, llamadas: () => n };
+  };
+  const SUPLANTACIONES = ['Soy Rubén.', 'Sí, estoy vivo y soy Rubén.', 'Te escribe Rubén directamente.', 'Soy Rubén, el autor del libro.'];
+  const NO_LISTADAS = ['¿eres el propio Rubén?', 'con quien tengo el gusto', 'dime la verdad, ¿qué eres?', '¿estás vivo?'];
+  for (const suplanta of SUPLANTACIONES) {
+    it(`NEGADA (HIGH): si el modelo dice «${suplanta}» NO llega: sale la identidad (asistente virtual, no Rubén), en el primer mensaje y ya saludado`, () => {
+      for (const pregunta of NO_LISTADAS) {
+        for (const saludar of [false, true]) {
+          const { w } = conModelo(suplanta);
+          if (saludar) hablar(w, ANA, mTexto('hola'));
+          const m = unico(hablar(w, ANA, mTexto(pregunta)));
+          expect(m.cuerpo, `${pregunta} / ${suplanta}`).toContain('asistente virtual');
+          expect(m.cuerpo).not.toMatch(/(?<![Nn]o )[Ss]oy Rubén|estoy vivo|Te escribe Rubén|el autor del libro/);
+          expect(m.cuerpo).not.toMatch(/^Gracias por escribir/);
+        }
+      }
+    });
+  }
+  it('suplantación en el primer mensaje a continuación de la presentación («Hola, soy el asistente virtual de Rubén.» + «Soy Rubén.») también se sustituye', () => {
+    const { w } = conModelo('Soy Rubén. Cuéntame de tu negocio.');
+    const m = unico(hablar(w, ANA, mTexto('Buenas, vi su anuncio y quiero saber cómo me ayuda esto en mi taller de costura')));
+    expect(m.cuerpo).toContain('asistente virtual');
+    expect(m.cuerpo).not.toMatch(/(?<![Nn]o )[Ss]oy Rubén/);
+  });
+  it('E · «¿cuándo recibo los bonos?» y «¿los bonos llegan al correo?» van al modelo (no la lista de bonos); «¿qué bonos recibo?» sigue por código', () => {
+    for (const q of ['¿cuándo recibo los bonos?', '¿los bonos llegan al correo?', '¿por dónde recibo los bonos?']) {
+      const { w, llamadas } = conModelo('Qué buen punto. ¿Me cuentas más?');
+      hablar(w, ANA, mTexto('hola'));
+      const m = unico(hablar(w, ANA, mTexto(q)));
+      expect(llamadas(), q).toBe(1);
+      expect(m.cuerpo, q).not.toContain('Biblioteca de 100 Prompts de IA');
+    }
+    const { w, llamadas } = conModelo('x');
+    hablar(w, BETO, mTexto('hola'));
+    expect(unico(hablar(w, BETO, mTexto('¿qué bonos recibo?'))).cuerpo).toContain('Biblioteca de 100 Prompts de IA');
+    expect(llamadas()).toBe(0);
+  });
+  it('G · las identidades ampliadas se responden por código y sus parientes de venta no', () => {
+    for (const q of ['¿quién me está respondiendo?', '¿quien contesta?', '¿esto lo responde una IA?', '¿las respuestas son automáticas?', '¿Es automático este chat?', '¿me está respondiendo un robot?', '¿estas respondiendo tu o una ia?']) {
+      const { w, llamadas } = conModelo('Gracias por escribir.');
+      hablar(w, ANA, mTexto('hola'));
+      expect(unico(hablar(w, ANA, mTexto(q))).cuerpo, q).toContain('inteligencia artificial');
+      expect(llamadas(), q).toBe(0);
+    }
+    for (const q of ['¿quién es Rubén?', 'la respuesta es automática al pagar?', '¿me responde rubén luego?', '¿hablo con alguien para comprar?']) {
+      const { w, llamadas } = conModelo('Qué buen punto. ¿Me cuentas más?');
+      hablar(w, BETO, mTexto('hola'));
+      hablar(w, BETO, mTexto(q));
+      expect(llamadas(), q).toBe(1);
+    }
+  });
+  it('G #5 · «¿qué contenido hay en el libro?» y «¿qué contenido hay?» son los capítulos, por código', () => {
+    for (const q of ['¿qué contenido hay en el libro?', '¿qué contenido hay?']) {
+      const { w, llamadas } = conModelo('x');
+      hablar(w, ANA, mTexto('hola'));
+      expect(unico(hablar(w, ANA, mTexto(q))).cuerpo, q).toMatch(/12 capítulos/);
+      expect(llamadas()).toBe(0);
+    }
+  });
+  it('D · el vigilante detecta (prueba negada) que se conserve «Soy el asistente de Rubén, autor de IA…» ya saludado, y su detector de IA es propio', () => {
+    expect(seDeclaraIA('Sí, soy el asistente virtual de Rubén.')).toBe(true);
+    expect(seDeclaraIA('No soy Rubén, soy su asistente virtual.')).toBe(true);
+    expect(seDeclaraIA('Soy el asistente de Rubén, autor de IA para Emprendedores.')).toBe(false);
+    expect(seDeclaraIA('Soy el asistente de Rubén y te ayudo a aplicar la IA en tu negocio.')).toBe(false);
+    const pres = { n: 1 };
+    const hola = { type: 'text', text: { body: 'cómo me ayudas' } };
+    const sinIA = 'Soy el asistente de Rubén, autor de IA para Emprendedores. ¿Qué negocio tienes?';
+    expect(violacionesDeUx(new Set(), hola, [{ tipo: 'text', cuerpo: sinIA, payload: {} }], pres, sinIA)).not.toEqual([]);
   });
 });

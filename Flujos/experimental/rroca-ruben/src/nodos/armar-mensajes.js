@@ -118,7 +118,9 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       // PRESENTACIÓN GARANTIZADA: (a) el pulido común quita la presentación inicial del modelo: si el modelo dijo QUÉ ES (IA, virtual…) y eso no sobrevivió, se antepone la presentación fija (regla dura 4: jamás sale
       // «Gracias por escribir…» en lugar de reconocerlo); (b) como primer mensaje, el cliente que llega por un anuncio siempre lee «asistente virtual» una vez.
       const modeloDijoIA = rrTienePresentacionIA(crudo);
-      const falta = modeloDijoIA ? !rrTienePresentacionIA(cuerpo) : (!fichaAntes.saludado && rrUnaPresentacion(cuerpo, 0) === cuerpo);
+      const diceAsistenteVirtual = /asistente virtual|inteligencia artificial/.test(rrNorm(cuerpo));
+      // Primer mensaje: el cliente SIEMPRE lee «asistente virtual» (o «inteligencia artificial»); si el modelo dijo qué es y eso se perdió, también.
+      const falta = modeloDijoIA ? !rrTienePresentacionIA(cuerpo) : (!fichaAntes.saludado && !diceAsistenteVirtual);
       const conPresentacion = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
       m = conBotones(conPresentacion, op);
       tipoDePlan = bueno ? 'modelo' : 'modelo_caido';

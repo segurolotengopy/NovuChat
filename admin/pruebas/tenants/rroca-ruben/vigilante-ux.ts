@@ -57,13 +57,23 @@ export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de
  */
 export const preguntaPorIdentidad = (texto: string): boolean => {
   const n = LIB.rrNorm(texto);
-  return /\b(eres|sos|es|usted|hablo|hablando|conversando|quien|hay|voce|estou|who|are you|is this|am i|me responde|me atiende|me contesta)\b.*\b(bot|b0t|vot|robot|robo|chatbot|chatgpt|gemini|ia|ai|inteligencia|maquina|programa|persona|pessoa|humano|humana|human|real|alguien|alguem|gente|asistente|ruben|automatic\w*|automated)\b|\bde verdad\b|\b(real person|real human|persona real|alguien real|ser humano)\b|\bquien (eres|me)\b|\bcon quien hablo\b|\bruben eres\b|^(bot|robot|chatbot|b0t|vot|contestador)$/.test(n);
+  return /\b(eres|sos|es|son|usted|hablo|hablando|conversando|quien|hay|voce|estou|who|are you|is this|am i|responde\w*|contesta\w*|atiend\w*|escrib\w*|respondiendo|estas)\b.*\b(bot|b0t|vot|robot|robo|chatbot|chatgpt|gemini|ia|ai|inteligencia|maquina|programa|persona|pessoa|humano|humana|human|real|alguien|alguem|gente|asistente|ruben|automatic\w*|automated)\b|\bde verdad\b|\b(real person|real human|persona real|alguien real|ser humano)\b|\bquien (eres|me|contesta|responde|atiende|escribe)\b|\bcon quien hablo\b|\bruben eres\b|^(bot|robot|chatbot|b0t|vot|contestador)$/.test(n);
 };
 /** El texto que devolvió el modelo en un turno (el doble de «Conversar con el modelo»), o ''. */
 export const textoDelModelo = (registro: { nodo: string; respuesta?: unknown }[]): string => {
   const r = registro.find((x) => x.nodo === 'Conversar con el modelo')?.respuesta as J | undefined;
   return String(r?.['candidates']?.[0]?.content?.parts?.[0]?.text ?? '');
 };
+/**
+ * ¿El texto del modelo SE DECLARA una IA / asistente virtual / no una persona? Detector PROPIO y estrecho del vigilante (no usa `rrDiceIA` ni `rrTienePresentacionIA` del flujo: sería tautológico).
+ * Mira el texto oración por oración, sin el título del libro («IA para Emprendedores»).
+ */
+export const seDeclaraIA = (texto: string): boolean => {
+  const t = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/ia para emprendedores( independientes)?/g, ' ');
+  return /asistente virtual|asistente (automatico|digital|artificial)|inteligencia artificial|(?<!\bno )\bsoy (una |un )?(ia|bot|chatbot|robot|programa)\b|\bno (soy )?(una |un )?(persona|humano|humana)\b|\bno soy ruben\b/.test(t);
+};
+/** ¿El modelo se hizo pasar por Rubén o por una persona viva? (detector propio del vigilante). El flujo lo sustituye por la identidad, que es una presentación legítima. */
+export const suplantaARuben = (texto: string): boolean => /(?<!\bno )\b(soy|te escribe|te atiende|aqui) (yo )?(el mismo |el propio )?ruben\b|\bsoy (el )?autor\b|\bestoy vivo\b/.test(LIB.rrNorm(texto));
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, textoModelo = ''): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
@@ -72,10 +82,10 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
   const infoSinVer = (idToque === 'b_info' || idToque === 'b_precios') && !!presentaciones && presentaciones.n === 0 && mensajes.some((m) => esPresentacion(m.cuerpo));
   if (idToque && !infoSinVer) pulsados.add(idToque);
   const textoEntrante = entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '';
-  const modeloDijoIA = LIB.rrTienePresentacionIA(textoModelo);
-  const preguntaIA = preguntaPorIdentidad(textoEntrante) || modeloDijoIA;
+  const modeloDijoIA = seDeclaraIA(textoModelo);
+  const preguntaIA = preguntaPorIdentidad(textoEntrante) || modeloDijoIA || suplantaARuben(textoModelo);
   // INVARIANTE (regla dura 4): si el modelo dijo qué es el asistente (IA, virtual…), el mensaje que salió lo trae; jamás se pierde esa respuesta.
-  if (modeloDijoIA && mensajes.length && !mensajes.some((m) => LIB.rrTienePresentacionIA(m.cuerpo))) v.push('el modelo reconoció ser un asistente virtual/IA y el mensaje que salió no lo trae (regla dura 4)');
+  if (modeloDijoIA && mensajes.length && !mensajes.some((m) => seDeclaraIA(m.cuerpo))) v.push('el modelo reconoció ser un asistente virtual/IA y el mensaje que salió no lo trae (regla dura 4)');
   const eligioProducto = ['b_pack', 'b_libro', 'b_closer', 'b_videos'].includes(idToque) || /^Hola Rubén, quiero (el Pack Completo|el libro IA para Emprendedores)/.test(textoEntrante);
   const enElTurno = mensajes.reduce((n, m) => n + contarPresentaciones(m.cuerpo), 0);
   if (enElTurno > 1) v.push(`la presentación del asistente salió ${enElTurno} veces en el mismo turno`);
@@ -87,7 +97,8 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
     if (/opciones|¿cu[aá]l prefieres|¿qu[eé] opci[oó]n|¿con cu[aá]l/i.test(m.cuerpo) && m.tipo !== 'interactive') v.push('el texto pregunta por opciones pero el mensaje no trae ningún botón');
     v.push(...violacionesDeParrafos(m.cuerpo));
     // (La cuenta es de PRESENTACIONES, no de la palabra «asistente»: el capítulo 9 del libro dice «asistente personal de IA».) Ver `enElTurno` arriba.
-    if (presentaciones && esPresentacion(m.cuerpo)) {
+    // La cuenta por teléfono usa `contarPresentaciones` (ve también «Soy el asistente de Rubén, autor de…»), no solo la frase «asistente virtual de Rubén».
+    if (presentaciones && (esPresentacion(m.cuerpo) || contarPresentaciones(m.cuerpo) > 0)) {
       presentaciones.n += 1;
       // Quien PREGUNTA qué es el asistente («¿eres un bot?») recibe la presentación aunque ya la haya leído (prohibición 4).
       if (presentaciones.n > 1 && !preguntaIA) v.push('la presentación del asistente salió más de una vez en la conversación');
