@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { User } from 'firebase/auth';
 import { leerPermisos } from '../../web/src/core/lib/sesion';
 import { puedeGestionarConversaciones } from '../../web/src/central/lib/conversaciones';
+import { AVISO_PROPIETARIO, mostrarAvisoPropietario } from '../../web/src/central/lib/turno';
 
 const usuario = (nc: unknown, signInProvider: string | null): User =>
   ({ getIdTokenResult: async () => ({ claims: { nc }, signInProvider }) }) as unknown as User;
@@ -36,5 +37,22 @@ describe('propietario efectivo según el proveedor de la sesión', () => {
     for (const prov of [null, 'github.com', 'phone', 'custom']) {
       expect((await leerPermisos(usuario(nc, prov))).propietario).toBe(false);
     }
+  });
+});
+
+describe('aviso al propietario en Conversaciones', () => {
+  it('solo se muestra al propietario efectivo', async () => {
+    const google = await leerPermisos(usuario(nc, 'google.com'));
+    const clave = await leerPermisos(usuario(nc, 'password'));
+    const sinRol = await leerPermisos(usuario({ t: {}, v: 1 }, 'password'));
+    expect(mostrarAvisoPropietario(google.propietario)).toBe(true);
+    expect(mostrarAvisoPropietario(clave.propietario)).toBe(false); // admin/oper por contraseña
+    expect(mostrarAvisoPropietario(sinRol.propietario)).toBe(false); // sin rol
+    expect(mostrarAvisoPropietario(false)).toBe(false);
+  });
+  it('el texto existe, explica y no usa voseo', () => {
+    expect(AVISO_PROPIETARIO).toContain('propietario de NovuChat (solo lectura)');
+    expect(AVISO_PROPIETARIO).toContain('correo y contraseña');
+    expect(AVISO_PROPIETARIO).not.toMatch(/\b(sos|tenés|podés|entrá|salí)\b/i);
   });
 });
