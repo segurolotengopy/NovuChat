@@ -200,6 +200,93 @@ describe('segunda revisión de seguridad (02/10): lo que seguía pasando', () =>
   });
 });
 
+describe('hallazgo de seguridad de Cartera (20/10): pago en plural y variantes, forma, alfabeto e IA', () => {
+  const rechaza = (lista: string[]): void => { for (const t of lista) expect(motivo(t), t).toBe('afirma_un_hecho'); };
+  const pasa = (lista: string[], o?: object): void => { for (const t of lista) expect(motivo(t, o), t).toBe(''); };
+  const CIR_A = String.fromCharCode(0x0430); // «а» cirílica, escrita por código para que el archivo no la lleve
+  const CIR_O = String.fromCharCode(0x043e); // «о» cirílica
+  const GRI_O = String.fromCharCode(0x03bf); // «ο» griega
+  it('plurales y variantes de recepción: pagos, comprobantes, plata, dinero', () => {
+    rechaza(['Recibimos tus pagos', 'Ya nos llegaron tus comprobantes', 'Tus pagos están en orden', 'Ya tenemos tu plata', 'Ya tenemos tu dinero',
+      'Tenemos tu comprobante', 'Tus comprobantes ya llegaron', 'Tu depósito está acreditado', 'Tus transferencias están ok', 'Tu abono está bien',
+      'Ya recibí tu plata', 'Tu pago por QR llegó', 'El Tigo Money ya llegó', 'Tu tarjeta fue aprobada', 'El efectivo fue recibido', 'Tu cobro está completo']);
+  });
+  it('«cancelar» es pagar en Bolivia: cancelaste / cancelamos', () => {
+    rechaza(['Ya cancelaste el libro', 'Cancelaste tu pedido', 'Cancelamos el saldo', 'Ya pagaste el libro', 'Pagamos el saldo', 'Ya cancelaron todo']);
+  });
+  it('NIEGA: lo legítimo sobre el pago sigue saliendo', () => {
+    pasa(['Puedes pagar con QR', 'Envíame el comprobante de pago', '¿Ya pagaste? Mándame la captura', '¿Ya cancelaste? Mándame la captura', 'Si pagaste, mándame el comprobante',
+      'Aceptamos QR, transferencia, Tigo Money, tarjeta y efectivo', 'Para pagar toca el botón', 'Te paso el QR para pagar', 'Cuando pagues, envía el comprobante']);
+    pasa(['El pedido cuesta 60 Bs'], { permitirMontos: true });
+  });
+  it('NIEGA: «página», «paginación», «cancelar la suscripción» y «abono» como insumo no son un pago', () => {
+    pasa(['La página está bien', 'Visita la página web', 'Tu página de pedidos tiene un menú', 'Las páginas están en orden', 'La paginación está ok',
+      'Para cancelar la suscripción escríbenos', 'El abono para plantas está en el catálogo', 'El cobro se hace en caja']);
+    rechaza(['Tus pagos están bien', 'Los pagos ya llegaron', 'Tu abono ya llegó', 'Tu cobro fue aprobado', 'Pagas recibidas']);
+  });
+  it('evasión por forma: letras sueltas, guiones, puntos, ancho completo y caracteres invisibles', () => {
+    rechaza(['Recibimos tu p-a-g-o', 'Recibimos tu p.a.g.o', 'Recibimos tu p a g o', 'Recibimos tu p_a_g_o', 'Recibimos tu ｐａｇｏ', 'Recibimos tu pa​go', 'Tu pago está a c r e d i t a d o',
+      'Ya c a n c e l a s t e el libro', 'R E C I B I M O S tu pago']);
+  });
+  it('NIEGA: la normalización de forma no rompe montos, teléfonos ni horas', () => {
+    pasa(['Escríbenos al 7 1 2 3 4 5 6 7', 'Tenemos lugar a las 11:30 o a las 16.30', 'Llama al 2-234567'], { permitirMontos: true });
+    expect(motivo('Cuesta 250 Bs.')).toBe('monto');
+  });
+  it('alfabeto mezclado dentro de una palabra latina se rechaza (homoglifos)', () => {
+    rechaza([`p${CIR_A}go`, `c${CIR_O}nfirmado`, `Recibimos tu p${CIR_A}go`, `Pag${GRI_O} recibido`, `Tu cita qued${CIR_O}`]);
+  });
+  it('NIEGA: emojis, signos y texto en un solo alfabeto no se rechazan por el alfabeto', () => {
+    pasa(['Hola 😊 ¿En qué te ayudo? 👍', 'Tenemos lugar el viernes… ¿Te sirve? ✨', 'Привет, ¿en qué te ayudo?']);
+  });
+  it('negar ser una IA con «asistente» o «virtual»', () => {
+    rechaza(['Soy Rubén, no un asistente', 'No soy un asistente', 'No soy un asistente virtual', 'No soy el asistente virtual', 'Soy Ana, no el asistente virtual',
+      'Soy Ana, no un agente virtual', 'No, no soy virtual', 'Soy Ana, no la virtual', 'Soy Rubén y no una asistente']);
+  });
+  it('NIEGA: presentarse como el asistente virtual sí sale', () => {
+    pasa(['Soy el asistente virtual de Rubén', 'Soy la asistente virtual del consultorio', 'Hablas con el asistente virtual de Rubén']);
+  });
+});
+
+describe('revisión de seguridad del #568 (20/10): estados del pago, evasión de forma, negar ser IA, preguntas, tope', () => {
+  const rechaza = (lista: string[]): void => { for (const t of lista) expect(motivo(t), t).toBe('afirma_un_hecho'); };
+  const pasa = (lista: string[], o?: object): void => { for (const t of lista) expect(motivo(t, o), t).toBe(''); };
+  it('HIGH: estados y formas de dar el pago por bueno (cada frase es una prueba negada)', () => {
+    rechaza(['Pago OK', 'Pago: OK', 'Pago 👍', 'Recibido, gracias', 'Ok, recibido', 'Gracias por tu pago', 'Pago aceptado', 'Comprobante aceptado', 'Comprobante OK',
+      'Pago procesado', 'Tu pago se procesó', 'Pago completado', 'Pago listo', 'Pago hecho', 'Listo tu pago', 'Ya está tu pago', 'Ya está tu plata',
+      'Tu comprobante es válido', 'El comprobante es correcto', 'Ya vi tu pago', 'Vimos tu transferencia', 'Ya vimos el depósito', 'El pago se reflejó',
+      'Tu transferencia se reflejó en la cuenta', 'Ya cayó la plata', 'Ya me cayó tu QR', 'La plata ya está en la cuenta', 'Transacción exitosa',
+      'La operación fue exitosa', 'Tu cuenta está saldada', 'Ya no debes nada', 'Todo en orden con tu pago', 'Payment ok', 'Paid', 'Got your payment']);
+  });
+  it('MEDIUM: evasión por forma (cifras por letras, letras repetidas, abreviatura, dinero, espacios dobles)', () => {
+    rechaza(['Pag0 recibido', 'P4go recibido', 'Paaago recibido', 'pagoo recibido', 'Recibimos tu pag', 'Recibimos tus Bs', '💰 recibido', 'P a g o   r e c i b i d o .',
+      'R3cibimos tu p4go', 'Pagooo aceptaaado']);
+  });
+  it('MEDIUM: negar ser una IA con sistema, automático, «en persona», «no hay bots», voseo y «No, soy Ana»', () => {
+    rechaza(['No soy automático', 'Soy Ana, de recepción, no un sistema', 'Acá no hay robots', 'Nada de bots aquí', 'No te contesta una máquina', 'Te atiende Ana en persona',
+      'Hablas conmigo, Ana, en persona', 'No sos un bot vos, ni yo', 'No, soy Ana', 'No soy un sistema']);
+  });
+  it('NIEGA: lo legítimo de siempre sigue saliendo', () => {
+    pasa(['Puedes pagar con QR', 'Envíame el comprobante de pago', 'La página está bien', 'Aceptamos QR, transferencia, Tigo Money, tarjeta y efectivo',
+      'Soy el asistente virtual de Rubén', 'No, soy el asistente virtual de Rubén', 'Puedes venir en persona al local', 'Puedes pagar en persona', 'Te paso el QR listo para pagar',
+      'Hay un sistema de reservas en línea', 'Gracias por tu mensaje', 'Mándame el comprobante, ok', 'Nos vemos a las 9 de la mañana']);
+  });
+  it('LOW: la negación cercana y la pregunta no afirman; lo que dice el código (llegó y coinciden) SIGUE bloqueado', () => {
+    pasa(['Tu comprobante todavía no llegó', '¿Tu pago fue con QR?', '¿Ya recibiste el QR?', '¿Ellos pagaron el envío? no sé', '¿Ya pagaste? Mándame la captura']);
+    rechaza(['Tu comprobante llegó y los datos coinciden', '¿Hola? Recibimos tu pago', '¿Hola, recibimos tu pago', 'Recibimos tu pago ¿algo más?']);
+  });
+  it('LOW: el tope de largo no sube con las opciones y el filtro no se vuelve cuadrático', () => {
+    expect(motivo('a'.repeat(3000), { maximo: 1e9 })).toBe('largo');
+    for (const t of ['a'.repeat(50000), 'p.'.repeat(25000), '¿pagaste '.repeat(220), 'p a '.repeat(490), '¿'.repeat(1990), 'a '.repeat(990) + 'pagaste', '¿pagaste '.repeat(500)]) {
+      const t0 = Date.now();
+      motivo(t, { maximo: 1e9 });
+      expect(Date.now() - t0, t.slice(0, 12)).toBeLessThan(200);
+    }
+  });
+  it('LOW (documentado): la unión de letras deforma «a las 9 a m o 10 a m» solo en la copia de comparación y no afirma nada', () => {
+    pasa(['Tenemos a las 9 a m o 10 a m', 'Abrimos a las 9 a. m. y cerramos a las 6 p. m.']);
+  });
+});
+
 describe('las reglas de NovuChat no se apagan con opciones', () => {
   it('ninguna opción vuelve válido «quedó agendada», una promesa o un hueco', () => {
     const apagar = { permitirMontos: true, enlacesPermitidos: null, prohibidos: [], extra: [], quienPromete: [], maximo: 100000, textoDelCliente: '' }; // enlacesPermitidos:null solo apaga la revisión de enlaces
@@ -242,5 +329,52 @@ describe('pulir la redacción', () => {
   it('un texto vacío o ausente queda vacío', () => {
     expect(pulir('')).toBe('');
     expect(F.cmPulirRedaccion(undefined)).toBe('');
+  });
+});
+
+// BANCO COMPARTIDO de frases (esquema en la cabecera `_leeme` del JSON). Lo no marcado `conocido` se AFIRMA; los huecos conocidos solo se informan.
+interface EntradaBanco { texto: string; grupo: string; nota: string; estado_hoy: 'bloquea' | 'pasa'; conocido?: true; cliente?: string }
+const BANCO = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/redaccion-pago-banco.json'), 'utf8')) as { deben_bloquearse: EntradaBanco[]; deben_pasar: EntradaBanco[] };
+describe('banco compartido de frases de redacción (admin/pruebas/fixtures/redaccion-pago-banco.json)', () => {
+  it('tiene las dos listas y cada entrada cumple el esquema', () => {
+    for (const e of [...BANCO.deben_bloquearse, ...BANCO.deben_pasar]) {
+      expect(typeof e.texto, e.texto).toBe('string');
+      expect(['pago', 'evasion', 'ia', 'legitima']).toContain(e.grupo);
+      expect(['bloquea', 'pasa']).toContain(e.estado_hoy);
+    }
+    expect(BANCO.deben_bloquearse.length).toBeGreaterThan(100);
+    expect(BANCO.deben_pasar.length).toBeGreaterThan(30);
+  });
+  it('todo `deben_bloquearse` no conocido se bloquea', () => {
+    for (const e of BANCO.deben_bloquearse.filter((x) => !x.conocido)) expect(motivo(e.texto, e.cliente ? { textoDelCliente: e.cliente } : undefined), e.texto).not.toBe('');
+  });
+  it('todo `deben_pasar` no conocido pasa', () => {
+    for (const e of BANCO.deben_pasar.filter((x) => !x.conocido)) expect(motivo(e.texto, e.cliente ? { textoDelCliente: e.cliente } : undefined), e.texto).toBe('');
+  });
+  it('los huecos conocidos se informan (no se afirman) y el estado_hoy declarado coincide con la realidad', () => {
+    const huecos = [...BANCO.deben_bloquearse, ...BANCO.deben_pasar].filter((x) => x.conocido);
+    for (const e of huecos) expect(e.estado_hoy === 'bloquea', e.texto).toBe(motivo(e.texto, e.cliente ? { textoDelCliente: e.cliente } : undefined) !== '');
+    // eslint-disable-next-line no-console
+    console.info(`huecos conocidos del filtro: ${huecos.length}\n` + huecos.map((e) => `  [${e.estado_hoy}] ${e.texto}`).join('\n'));
+  });
+});
+
+describe('re-revisión de seguridad del #568: negación ante «¿eres un bot?» y el techo de largo', () => {
+  const bot = { textoDelCliente: '¿eres un bot?' };
+  it('ante la pregunta de si es un bot / IA / persona, una negación en la respuesta bloquea', () => {
+    for (const t of ['Claro que no, soy Rubén', 'Jaja no, soy Rubén', 'Nop, soy Rubén', 'No, te escribe Rubén', 'Nel, soy Rubén', 'Para nada, soy Rubén']) expect(motivo(t, bot), t).toBe('identidad');
+    expect(motivo('¿IA? No, soy Rubén', { textoDelCliente: '¿eres IA?' })).toBe('identidad');
+    expect(motivo('No, te escribe Rubén', { textoDelCliente: '¿hablo con una persona?' })).toBe('identidad');
+  });
+  it('NIEGA: presentarse como asistente virtual, responder sin negación y la negación sola pasan', () => {
+    expect(motivo('Soy el asistente virtual de Rubén', bot)).toBe('');
+    expect(motivo('Sí, soy un asistente virtual', bot)).toBe('');
+    expect(motivo('Aquí te ayudo con lo que necesites', bot)).toBe('');
+    expect(motivo('No, no tenemos ese libro')).toBe('');
+    expect(motivo('No, no tenemos ese libro', { textoDelCliente: '¿tienen el libro de cuentos?' })).toBe('');
+  });
+  it('el techo de largo es 2000 aunque las opciones pidan más', () => {
+    expect(motivo('a'.repeat(2001), { maximo: 1e9 })).toBe('largo');
+    expect(motivo('a'.repeat(2000), { maximo: 1e9 })).toBe('');
   });
 });

@@ -43,6 +43,18 @@
  *  - Mensajes de error FIJOS; ningún log trae ruta, hash, `idMeta`, bytes ni el
  *    mensaje de un error de Storage o Firestore: solo su `code`.
  *
+ * SEGUNDA FORMA DE ENTRADA, SIN CIERRE: `{tenantId, conversacionId, idMeta}`.
+ * Un comprobante inválido, ilegible, tardío o en revisión nunca crea cierre
+ * (decisión de Andres, 03/10), pero el administrador necesita verlo. La forma
+ * nueva lo abre desde el registro por comprobante de la conversación
+ * (`solicitud.comprobantes[]`). Es EXCLUYENTE con `cierreId` (ambos o ninguno:
+ * `invalid-argument`). Todo lo anterior a la resolución (rol, cuenta vigente,
+ * ventana de soporte, ficha, módulo, tope) es el MISMO código; lo posterior
+ * (ruta validada, tamaño, tipo por los bytes, auditoría fail-closed) también.
+ * La ruta sale SIEMPRE de la entrada del registro, nunca del cliente. La
+ * auditoría de esta forma lleva `{rol, origen:'recibido', telefonoEnmascarado}`:
+ * jamás el `conversacionId` ni el teléfono en claro (solo `****` y 3 dígitos, más `objeto`).
+ *
  * APP CHECK: se exige SOLO en esta callable, y solo donde el cliente lo manda
  * (`APP_CHECK_DEL_VISOR`). Exigirlo en el resto de las Functions o en Firestore
  * es un cambio APARTE y de riesgo: antes hay que medir cuántos tokens verificados
@@ -66,7 +78,7 @@ import { ID_TENANT, auditar, db } from '../../central/comunes.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
 import { diaDeLaPaz } from './cotejo.js';
 import {
-  MAXIMO_IMAGEN, MAXIMO_PDF, almacenDeComprobantes, rutaDeComprobante, rutaValidaDe, tipoPorFirma,
+  MAXIMO_IMAGEN, MAXIMO_PDF, almacenDeComprobantes, nombreDeObjeto, rutaDeComprobante, rutaValidaDe, tipoPorFirma,
   type ExtensionDeComprobante,
 } from './comprobantes.js';
 
@@ -102,6 +114,9 @@ export const TOPE_POR_DIA = 100;
 export const MIMES_DEL_VISOR = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
 
 const ID_CIERRE = /^venta_[A-Za-z0-9_-]{1,120}$/;
+const ID_CONVERSACION = /^wa_[0-9]{10,15}$/;
+/** La forma de un wamid de Meta: sin saltos de línea ni caracteres de control. */
+const ID_META = /^[A-Za-z0-9._=:+/-]{1,120}$/;
 /** Un uid de Firebase Auth como id de documento. */
 const UID_SEGURO = /^[A-Za-z0-9_-]{1,128}$/;
 const EXTENSIONES: readonly ExtensionDeComprobante[] = ['jpg', 'png', 'webp', 'pdf'];
@@ -118,6 +133,9 @@ const MENSAJES = {
   noHay: 'No hay un comprobante guardado para este cobro.',
   tope: 'Alcanzó el tope de comprobantes por hora o por día.',
   noDisponible: 'No se pudo abrir el comprobante. Intente más tarde.',
+  // Propios de la forma sin cierre (fijos): aquí no hay «cobro».
+  noHayRecibido: 'No se encontró ese comprobante.',
+  noElegibleRecibido: 'Este comprobante no se puede mostrar.',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -192,19 +210,82 @@ export const verComprobante = onCall(opcionesDeVerComprobante(process.env), asyn
   }
 });
 
+/** Lo que la resolución de un comprobante recibido entrega al visor. */
+export interface ComprobanteRecibido {
+  idMeta: string;
+  estado: string;
+  motivo: string;
+  en: unknown;
+  ruta: unknown;
+  importe?: unknown;
+  montoLeido?: unknown;
+  montoDistinto?: unknown;
+  intentos?: unknown;
+}
+
+/**
+ * RESOLUCIÓN DEL COMPROBANTE SIN CIERRE: de `(comercio, conversación, idMeta)` a
+ * los datos del comprobante, o `null` si no existe. Hoy lee la entrada con ESE
+ * `idMeta` exacto en `tenants/{t}/conversaciones/{conversacionId}.solicitud.comprobantes[]`
+ * (cualquier estado). NO valida la ruta ni toca el almacén: eso lo hace el visor.
+ *
+ * FASE 2: cuando `cotejarComprobanteVenta` escriba la colección
+ * `tenants/{t}/comprobantesRecibidos/{nombreDeObjeto(idMeta)}`, SOLO cambia el
+ * cuerpo de esta función; la firma y todo lo demás del visor quedan igual.
+ */
+export async function resolverComprobanteRecibido(
+  firestore: FirebaseFirestore.Firestore, tenantId: string, conversacionId: string, idMeta: string,
+): Promise<ComprobanteRecibido | null> {
+  const doc = await firestore.doc(`tenants/${tenantId}/conversaciones/${conversacionId}`).get();
+  if (!doc.exists) return null;
+  const solicitud: unknown = doc.get('solicitud');
+  const lista = esObjeto(solicitud) && Array.isArray(solicitud['comprobantes']) ? (solicitud['comprobantes'] as unknown[]) : [];
+  const entrada = lista.find((c) => esObjeto(c) && c['idMeta'] === idMeta);
+  if (!esObjeto(entrada)) return null;
+  return {
+    idMeta,
+    estado: typeof entrada['estado'] === 'string' ? entrada['estado'] : '',
+    motivo: typeof entrada['motivo'] === 'string' ? entrada['motivo'] : '',
+    en: entrada['en'], ruta: entrada['ruta'],
+    importe: entrada['importe'], montoLeido: entrada['montoLeido'],
+    montoDistinto: entrada['montoDistinto'], intentos: entrada['intentos'],
+  };
+}
+
 async function atender(p: CallableRequest): Promise<{ mime: string; base64: string }> {
   // 1. Identidad. Sin sesión (o sin App Check, que Firebase responde antes): nada que auditar.
   const uid = exigirAutenticado(p);
 
-  // 2. Forma de la entrada. El servidor ignora cualquier otra clave.
+  // 2. Forma de la entrada. El servidor ignora cualquier otra clave. Dos formas, EXCLUYENTES.
   const datos = esObjeto(p.data) ? p.data : {};
   const tenantId = datos['tenantId'];
   const cierreId = datos['cierreId'];
-  if (typeof tenantId !== 'string' || !ID_TENANT.test(tenantId)
-    || typeof cierreId !== 'string' || !ID_CIERRE.test(cierreId)) {
+  const conversacionId = datos['conversacionId'];
+  const idMetaPedido = datos['idMeta'];
+  const hayCierre = cierreId !== undefined;
+  const hayRecibido = conversacionId !== undefined || idMetaPedido !== undefined;
+  const formaConCierre = typeof cierreId === 'string' && ID_CIERRE.test(cierreId);
+  const formaRecibido = typeof conversacionId === 'string' && ID_CONVERSACION.test(conversacionId)
+    && typeof idMetaPedido === 'string' && ID_META.test(idMetaPedido);
+  if (typeof tenantId !== 'string' || !ID_TENANT.test(tenantId) || (hayCierre && hayRecibido)
+    || (hayCierre ? !formaConCierre : !formaRecibido)) {
     registrarRechazo('invalid-argument', uid);
     throw new HttpsError('invalid-argument', MENSAJES.invalido);
   }
+  // DECISIÓN PENDIENTE seguridad (c): `firestore.rules` deja leer `/auditoria` al propietario de NovuChat
+  // SIN ventana de soporte (`esAdmin(tenantId) || esPropietario()`). Aquí ya se reduce lo expuesto (solo 3
+  // dígitos y `objeto`), pero falta un PR aparte para que /auditoria exija la ventana al propietario.
+  // No se cambian las reglas acá.
+  /** Qué identifica la vista en la auditoría: el cierre, o el teléfono ENMASCARADO (nunca el id de la conversación). */
+  const referencia: Record<string, unknown> = formaConCierre
+    ? { cierreId }
+    : {
+      origen: 'recibido',
+      // Solo los últimos 3 dígitos: el identificador real del comprobante es `objeto`.
+      telefonoEnmascarado: `****${String(conversacionId).slice(-3)}`,
+      // sha256 base64url del idMeta = nombre del archivo en Storage. Nunca el idMeta crudo, en el asiento ni en el log.
+      objeto: nombreDeObjeto(String(idMetaPedido)),
+    };
 
   // 3. Rol del token PARA ESTE comercio. Ninguna otra pertenencia sirve.
   const rol: RolVerificado | null = esAdminDe(p, tenantId) ? 'admin'
@@ -249,13 +330,16 @@ async function atender(p: CallableRequest): Promise<{ mime: string; base64: stri
     mensaje: string,
   ): Promise<never> => {
     try {
-      await auditar(tenantId, 'comprobante_visto', uid, { rol, cierreId, resultado: 'rechazado', motivo });
+      await auditar(tenantId, 'comprobante_visto', uid, { rol, ...referencia, resultado: 'rechazado', motivo });
     } catch (e) {
       registrarRechazo('unavailable', uid, `auditoria_${codigoDe(e)}`);
       throw new HttpsError('unavailable', MENSAJES.noDisponible);
     }
     registrarRechazo(codigo, uid, motivo);
-    throw new HttpsError(codigo, mensaje);
+    const propio = formaConCierre ? mensaje
+      : mensaje === MENSAJES.noHay ? MENSAJES.noHayRecibido
+        : mensaje === MENSAJES.noElegible ? MENSAJES.noElegibleRecibido : mensaje;
+    throw new HttpsError(codigo, propio);
   };
 
   // 7. El módulo, DEL REGISTRO (la regla de Firestore `tieneModulo` da falso para cobros).
@@ -269,26 +353,40 @@ async function atender(p: CallableRequest): Promise<{ mime: string; base64: stri
     return rechazar('tope', 'resource-exhausted', MENSAJES.tope);
   }
 
-  // 9. El cierre: una venta con comprobante cotejado como válido o aproximado.
-  const refCierre = db().doc(`tenants/${tenantId}/cierres/${cierreId}`);
-  const [cierre, privado] = await Promise.all([refCierre.get(), refCierre.collection('privado').doc('datos').get()]);
-  if (!cierre.exists) return rechazar('sin_comprobante', 'not-found', MENSAJES.noHay);
-  const cotejo: unknown = cierre.get('cotejo');
-  if (cierre.get('tipo') !== 'venta' || !esObjeto(cotejo)
-    || (cotejo['calidad'] !== 'valido' && cotejo['calidad'] !== 'aproximado')
-    || typeof cotejo['idMeta'] !== 'string' || cotejo['idMeta'].trim() === '') {
-    return rechazar('no_elegible', 'failed-precondition', MENSAJES.noElegible);
+  // 9. La resolución: de dónde salen el idMeta, el instante y la ruta guardada. Una u otra forma.
+  let idMeta: string;
+  let guardadaCruda: unknown;
+  let en: unknown;
+  if (formaConCierre) {
+    // El cierre: una venta con comprobante cotejado como válido o aproximado.
+    const refCierre = db().doc(`tenants/${tenantId}/cierres/${cierreId}`);
+    const [cierre, privado] = await Promise.all([refCierre.get(), refCierre.collection('privado').doc('datos').get()]);
+    if (!cierre.exists) return rechazar('sin_comprobante', 'not-found', MENSAJES.noHay);
+    const cotejo: unknown = cierre.get('cotejo');
+    if (cierre.get('tipo') !== 'venta' || !esObjeto(cotejo)
+      || (cotejo['calidad'] !== 'valido' && cotejo['calidad'] !== 'aproximado')
+      || typeof cotejo['idMeta'] !== 'string' || cotejo['idMeta'].trim() === '') {
+      return rechazar('no_elegible', 'failed-precondition', MENSAJES.noElegible);
+    }
+    idMeta = cotejo['idMeta'];
+    guardadaCruda = privado.exists ? privado.get('rutaComprobante') : undefined;
+    en = cotejo['en'];
+  } else {
+    // Sin cierre: cualquier estado es elegible; basta que la conversación lo tenga anotado.
+    const recibido = await resolverComprobanteRecibido(db(), tenantId, String(conversacionId), String(idMetaPedido));
+    if (recibido === null) return rechazar('sin_comprobante', 'not-found', MENSAJES.noHay);
+    idMeta = recibido.idMeta;
+    guardadaCruda = recibido.ruta;
+    en = recibido.en;
   }
-  const idMeta = cotejo['idMeta'];
 
-  // 10. La ruta. La guardada en el cierre, si es la de ESTE comercio y ESTE mensaje; si no, se deriva.
+  // 10. La ruta. La guardada, si es la de ESTE comercio y ESTE mensaje; si no, se deriva.
   const almacen = almacenDeComprobantes();
   const candidatas: string[] = [];
-  const guardada = rutaValidaDe(privado.exists ? privado.get('rutaComprobante') : undefined, tenantId, idMeta);
+  const guardada = rutaValidaDe(guardadaCruda, tenantId, idMeta);
   if (guardada !== null) {
     candidatas.push(guardada);
   } else {
-    const en: unknown = cotejo['en'];
     const enMs = en instanceof Timestamp ? en.toMillis() : Number.NaN;
     if (Number.isFinite(enMs)) {
       for (const dia of [diaDeLaPaz(enMs), diaDeLaPaz(enMs - DIA_MS)]) {
@@ -334,7 +432,7 @@ async function atender(p: CallableRequest): Promise<{ mime: string; base64: stri
 
   // 14. FAIL-CLOSED: si la vista no quedó anotada, no sale ningún byte.
   try {
-    await auditar(tenantId, 'comprobante_visto', uid, { rol, cierreId, resultado: 'ok' });
+    await auditar(tenantId, 'comprobante_visto', uid, { rol, ...referencia, resultado: 'ok' });
   } catch (e) {
     registrarRechazo('unavailable', uid, `auditoria_${codigoDe(e)}`);
     throw new HttpsError('unavailable', MENSAJES.noDisponible);
