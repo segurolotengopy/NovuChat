@@ -35,9 +35,10 @@
 # pide confirmacion explicita (escribir PUBLICAR RUBEN; sin terminal, solo con
 # --confirmo-ruben). En seco informa lo que falta, sin abortar. La guardia estricta es del
 # flujo CONVERSACIONAL («NovuChat — Venta digital de Rubén…» o rroca-ruben[.prueba][.local].json);
-# cualquier otro flujo con rroca-ruben en el nombre exige solo la confirmacion. Con --crear el
-# flujo vivo es la referencia de credenciales y no se evalua como destino; --encender revisa el
-# flujo VIVO con la guardia. Los demas flujos no cambian.
+# cualquier otro flujo con rroca-ruben en el nombre exige solo la confirmacion. Rige la clase mas
+# estricta entre el archivo y el flujo vivo. Con --crear el flujo vivo es la referencia de
+# credenciales (si es de Ruben, exige la confirmacion); --encender revisa el flujo VIVO con la
+# guardia; --reiniciar-estado sobre un vivo de Ruben pide la confirmacion. Los demas flujos no cambian.
 #
 # EL ARCHIVO Y EL FLUJO VIVO TIENEN QUE SER EL MISMO FLUJO, y el script lo
 # comprueba por el nombre antes de escribir: el id sale de `--env` y el archivo
@@ -99,18 +100,24 @@ fi
 
 # --- LA GUARDIA DEL FLUJO DE RUBEN (tenant rroca-ruben, PR-5) ------------------
 # Se reconoce por el nombre del archivo o por el nombre del flujo de ORIGEN, sin
-# distinguir mayusculas, antes de leer el .env y de hablar con n8n; y se REPITE
-# despues de leer el flujo VIVO (destino): si el vivo es el de Ruben, la guardia
-# y la confirmacion valen aunque el archivo se llame de otra forma, con --forzar
-# o con --env. El JSON versionado lleva marcadores REEMPLAZAR_* y las plantillas
-# de aviso en PENDING: publicarlo asi deja el aviso a Rubén sin salir fuera de su
-# ventana, o la entrada del receptor con una ruta falsa.
+# distinguir mayusculas (y normalizado NFKC), antes de leer el .env y de hablar con
+# n8n; y se completa despues de leer el flujo VIVO (destino). La clase FINAL es la
+# MAS ESTRICTA entre origen y vivo (estricto gana a confirmar) y `ruben_guardia` se
+# llama UNA sola vez con ella: si el origen ya es estricto se llama antes de tocar
+# el .env (el vivo no puede endurecerla); si no, se difiere hasta leer el vivo, de
+# modo que un archivo renombrado con --forzar contra el flujo conversacional vivo
+# exige igual `--publicable`. Con --crear el vivo es solo la REFERENCIA de
+# credenciales: si es de Ruben, o el contenido nuevo trae «Config base» con claves
+# de plantilla de aviso, se exige al menos la confirmacion (y --publicable si el
+# contenido nuevo es estricto). El JSON versionado lleva marcadores REEMPLAZAR_* y las
+# plantillas de aviso en PENDING: publicarlo asi deja el aviso a Rubén sin salir
+# fuera de su ventana, o la entrada del receptor con una ruta falsa.
 # `--apagar` no escribe contenido y es seguro: nunca pide confirmacion.
 ruben_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto | confirmar
   if [[ "$3" != "estricto" ]]; then
     # Otro flujo del tenant (p. ej. el de rescate): no lleva la Config base con las plantillas,
     # asi que `--publicable` no aplica; solo se exige la confirmacion.
-    echo "Flujo del tenant rroca-ruben que no es el conversacional ($1): solo se pide la confirmacion."
+    echo "Flujo del tenant rroca-ruben sin revision de plantillas ($1): solo se pide la confirmacion."
     if [[ $APLICAR -eq 1 ]]; then ruben_confirmar; fi
     return 0
   fi
@@ -133,19 +140,34 @@ ruben_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto | c
 # Clasifica un flujo del tenant: vacio (no es de Ruben) | confirmar (cualquier flujo con rroca-ruben
 # en el nombre del archivo o del flujo) | estricto (el CONVERSACIONAL: el que genera construir.mjs,
 # «NovuChat — Venta digital de Rubén (rroca-ruben…)», o sus archivos rroca-ruben[.prueba][.local].json).
-ruben_clase() {  # $1 = archivo JSON ; $2 = nombre del archivo en minusculas
-  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
-import json, re, sys
-ruta, base = sys.argv[1], sys.argv[2]
+ruben_clase() {  # $1 = archivo JSON ; $2 = nombre del archivo en minusculas ; $3 = 1: mirar tambien el contenido (--crear)
+  python3 - "$1" "$2" "${3:-0}" <<'PY' 2>/dev/null || true
+import json, re, sys, unicodedata
+ruta, base, contenido = sys.argv[1], unicodedata.normalize("NFKC", sys.argv[2]).lower(), sys.argv[3] == "1"
+claves = {"avisoComprobanteEstado", "avisoConsultaEstado", "avisoComprobantePlantilla", "avisoConsultaPlantilla"}
+nombre, tiene_plantillas = "", False
 try:
-    nombre = str(json.load(open(ruta, encoding="utf-8")).get("name", "")).lower()
+    flujo = json.load(open(ruta, encoding="utf-8"))
+    nombre = unicodedata.normalize("NFKC", str(flujo.get("name", ""))).lower()
+    if contenido:
+        for n in flujo.get("nodes") or []:
+            if n.get("name") == "Config base":
+                asig = ((n.get("parameters") or {}).get("assignments") or {}).get("assignments") or []
+                if any(a.get("name") in claves for a in asig):
+                    tiene_plantillas = True
 except Exception:
-    nombre = ""
-if re.fullmatch(r"rroca-ruben(\.prueba)?(\.local)?\.json", base) or nombre.startswith("novuchat — venta digital de rub"):
+    pass
+if re.fullmatch(r"rroca-ruben(\.prueba)?(\.local)?\.json", base) or nombre.startswith("novuchat — venta digital de rub") or tiene_plantillas:
     print("estricto")
 elif base.startswith("rroca-ruben") or "rroca-ruben" in nombre:
     print("confirmar")
 PY
+}
+# La mas estricta de dos clases (vacio < confirmar < estricto).
+ruben_mayor() {
+  if [[ "$1" == "estricto" || "$2" == "estricto" ]]; then echo estricto
+  elif [[ -n "$1" || -n "$2" ]]; then echo confirmar
+  fi
 }
 ruben_confirmar() {
   if [[ $CONFIRMO_RUBEN -ne 1 ]]; then
@@ -158,12 +180,14 @@ ruben_confirmar() {
     fi
   fi
 }
-ES_RUBEN=0
+CLASE_ORIGEN=""
+GUARDIA_HECHA=0
 if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
-  CLASE_RUBEN="$(ruben_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')")"
-  if [[ -n "$CLASE_RUBEN" ]]; then
-    ES_RUBEN=1
-    ruben_guardia "archivo de origen" "$FLUJO" "$CLASE_RUBEN"
+  CLASE_ORIGEN="$(ruben_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')" "$CREAR")"
+  if [[ "$CLASE_ORIGEN" == "estricto" ]]; then
+    # Ya es la clase mas estricta: el vivo no la cambia, asi que se decide aqui, antes de tocar el .env.
+    GUARDIA_HECHA=1
+    ruben_guardia "archivo de origen" "$FLUJO" "estricto"
   fi
 fi
 
@@ -200,16 +224,33 @@ fi
 # El nombre del archivo de origen no prueba nada sobre el destino: el id sale de
 # N8N_WORKFLOW_ID. Si el flujo vivo es el de Rubén, se exige lo mismo que arriba.
 CLASE_VIVO="$(ruben_clase "$TMP/vivo.json" "")"
-if [[ -n "$CLASE_VIVO" ]]; then
-  if [[ $ENCENDER -eq 1 ]]; then
-    # Activar = publicar: se revisa el flujo VIVO con la guardia (si es el conversacional) y despues
-    # pide la confirmacion (no hay contenido nuevo que revisar).
-    ruben_guardia "encender el flujo vivo" "$TMP/vivo.json" "$CLASE_VIVO"
-  elif [[ $APAGAR -eq 0 && $ES_RUBEN -eq 0 && $CREAR -eq 0 ]]; then
-    # Con --crear `vivo.json` es la REFERENCIA de credenciales, no el destino: no se evalua.
-    ES_RUBEN=1
-    ruben_guardia "flujo vivo de destino" "$FLUJO" "$CLASE_VIVO"
+if [[ -n "$CLASE_VIVO" && $ENCENDER -eq 1 ]]; then
+  # Activar = publicar: se revisa el flujo VIVO con la guardia (si es el conversacional) y despues
+  # pide la confirmacion (no hay contenido nuevo que revisar).
+  ruben_guardia "encender el flujo vivo" "$TMP/vivo.json" "$CLASE_VIVO"
+elif [[ $APAGAR -eq 0 && $ENCENDER -eq 0 && $REINICIAR -eq 0 && $GUARDIA_HECHA -eq 0 ]]; then
+  if [[ $CREAR -eq 1 ]]; then
+    # El vivo es la REFERENCIA de credenciales, no el destino: si es de Ruben, basta la confirmacion.
+    CLASE_FINAL="$(ruben_mayor "$CLASE_ORIGEN" "$([[ -n "$CLASE_VIVO" ]] && echo confirmar)")"
+    MOTIVO="$([[ -n "$CLASE_ORIGEN" ]] && echo "archivo de origen" || echo "referencia de --crear")"
+  else
+    CLASE_FINAL="$(ruben_mayor "$CLASE_ORIGEN" "$CLASE_VIVO")"
+    if [[ -n "$CLASE_VIVO" && "$CLASE_FINAL" == "$CLASE_VIVO" && "$CLASE_ORIGEN" != "$CLASE_FINAL" ]]; then
+      MOTIVO="flujo vivo de destino"
+    else
+      MOTIVO="archivo de origen"
+    fi
   fi
+  if [[ -n "$CLASE_FINAL" ]]; then
+    GUARDIA_HECHA=1
+    ruben_guardia "$MOTIVO" "$FLUJO" "$CLASE_FINAL"
+  fi
+fi
+# `--reiniciar-estado` reescribe el flujo vivo sin usar el archivo (que ni se evalua con --publicable): si el
+# vivo es de Ruben, pide la confirmacion explicita y nada mas.
+if [[ $REINICIAR -eq 1 && -n "$CLASE_VIVO" && $GUARDIA_HECHA -eq 0 ]]; then
+  GUARDIA_HECHA=1
+  ruben_guardia "reiniciar el estado del flujo vivo" "$TMP/vivo.json" "confirmar"
 fi
 
 # --- ENCENDER O APAGAR UN FLUJO QUE YA EXISTE ---------------------------------
