@@ -80,6 +80,19 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
     }
     const botones = ((m.payload['interactive']?.action?.buttons ?? []) as J[]);
     if (botones.length > 3) v.push('más de 3 botones');
+    for (const b of botones) {
+      const titulo = String(b['reply']?.title);
+      if (/\d/.test(titulo)) {
+        // Un botón con precio termina SIEMPRE en « <monto> Bs», sin palabras cortadas ni preposición colgando.
+        const m = /^(.*?) (\d+(?:,\d+)?) Bs$/.exec(titulo);
+        if (!m) v.push(`botón con precio que no termina en « <monto> Bs»: «${titulo}»`);
+        else {
+          const vocabulario = new Set(['Mejor', 'el', 'Pack', ...Object.values(LIB.RA_PRODUCTOS).flatMap((p) => String((p as { titulo?: string }).titulo ?? '').split(' '))]);
+          for (const palabra of m[1]!.split(' ')) if (!vocabulario.has(palabra)) v.push(`botón con una palabra cortada o desconocida «${palabra}» en «${titulo}»`);
+          if (/\b(de|del|el|la|y)$/i.test(m[1]!)) v.push(`botón con una preposición colgando: «${titulo}»`);
+        }
+      }
+    }
     for (const b of botones) if (String(b['reply']?.title).length > 20) v.push(`título de botón de más de 20 caracteres: «${b['reply']?.title}»`);
     for (const s of ((m.payload['interactive']?.action?.sections ?? []) as J[])) for (const r of ((s['rows'] ?? []) as J[])) if (String(r['title']).length > 24) v.push(`título de fila de más de 24 caracteres: «${r['title']}»`);
     if (/"link"\s*:/.test(JSON.stringify(m.payload))) v.push('el payload lleva una clave `link` (el QR sale por id de medio)');

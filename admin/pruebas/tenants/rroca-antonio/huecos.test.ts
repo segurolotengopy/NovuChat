@@ -145,10 +145,19 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     }
   });
 
-  it('¿Reportar? (entrante) y Reportar mensaje (entrante) son los de chat-novuchat; solo cambia el nombre del nodo de entrada que leen', () => {
-    for (const n of ['¿Reportar? (entrante)', 'Reportar mensaje (entrante)']) {
-      expect(sinLibres(de(plantilla, n)), n).toEqual(sinLibres(renombrado(de(chat, n)) as J));
-    }
+  it('¿Reportar? (entrante) es el de chat-novuchat (solo cambia el nombre del nodo de entrada que lee)', () => {
+    expect(sinLibres(de(plantilla, '¿Reportar? (entrante)'))).toEqual(sinLibres(renombrado(de(chat, '¿Reportar? (entrante)')) as J));
+  });
+
+  it('Reportar mensaje (entrante) es el de chat-novuchat con UN cambio PROPIO declarado: el `evento` ya no sale de la regex heredada («no me mandaron el material» la disparaba) sino de una regex acotada a PETICIONES más `riesgoEscrito`', () => {
+    const origen = JSON.stringify(sinLibres(renombrado(de(chat, 'Reportar mensaje (entrante)')) as J));
+    const propio = JSON.stringify(sinLibres(de(plantilla, 'Reportar mensaje (entrante)')));
+    const viejo = origen.match(/evento: \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\) \? 'no_contactar' : undefined/);
+    expect(viejo, 'el origen ya no trae la regex heredada: hay que revisar la declaración').not.toBeNull();
+    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\)\) \? 'no_contactar' : undefined/);
+    expect(nuevo, 'el propio no trae el evento declarado').not.toBeNull();
+    // Todo lo demás es idéntico al origen.
+    expect(propio.replace(nuevo![0], 'EVENTO')).toBe(origen.replace(viejo![0], 'EVENTO'));
   });
 
   it('los nodos de medios (bajar, tamaño, descarga, audio, documento) son los de chat-novuchat con los campos del contrato común (`esMedioAudio`, `esMedioVisual`) y las credenciales por nombre', () => {

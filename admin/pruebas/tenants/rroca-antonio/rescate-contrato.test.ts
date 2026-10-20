@@ -54,13 +54,18 @@ describe('punto 1: cada entrante se reporta con `tipo` y el `texto` real', () =>
   });
 });
 
-describe('punto 3: la expresión de «no me escribas» del reporte entrante se conserva', () => {
-  it('«no me escribas más», «déjenme de escribir», «bórrame», «stop» salen con `evento: no_contactar`; una frase normal no', () => {
-    const w = mundo();
-    for (const texto of ['no me escribas más', 'dejen de escribir por favor', 'bórrame de la lista', 'stop', 'no quiero más mensajes']) {
-      expect(noContactar(hablar(w, ANA, mTexto(texto))).length, texto).toBeGreaterThan(0);
+describe('punto 3: la petición de «no me escribas» del reporte entrante (regex PROPIA acotada a peticiones)', () => {
+  it('«no me escribas más», «no me manden mensajes», «no me llamen», «no me molesten», «déjenme de escribir», «bórrame», «stop» salen con `evento: no_contactar`', () => {
+    for (const texto of ['no me escribas más', 'no me manden más mensajes', 'por favor no me llamen', 'no me molesten', 'dejen de escribir por favor', 'bórrame de la lista', 'stop', 'no quiero más mensajes', 'no me contacten']) {
+      const t = hablar(mundo(), ANA, mTexto(texto));
+      expect(noContactar(t).filter((c) => c['direccion'] === 'entrante').length, texto).toBe(1);
     }
-    expect(noContactar(hablar(mundo(), ANA, mTexto('quiero escribirte una duda'))).filter((c) => c['direccion'] === 'entrante')).toHaveLength(0);
+  });
+  it('las QUEJAS no son una petición: «no me mandaron el material», «no me contactan», «pagué y no me contactan», «no me llegó», «no me escribieron» NO marcan `no_contactar`', () => {
+    for (const texto of ['no me mandaron el material', 'no me contactan', 'pagué y no me contactan', 'no me llegó nada', 'no me escribieron todavía', 'no me llamaron', 'quiero escribirte una duda']) {
+      const t = hablar(mundo(), ANA, mTexto(texto));
+      expect(noContactar(t), texto).toHaveLength(0);
+    }
   });
 });
 

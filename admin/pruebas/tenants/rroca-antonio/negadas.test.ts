@@ -12,9 +12,11 @@
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
+import { readFileSync } from 'node:fs';
 import { ANGULOS, PRELLENADOS, COMPROBANTE, ANA, BETO, REC, crear, entrega, hablar, mAudio, mBoton, mDocumento, mImagen, mLista, mTexto, panelConAgotados, panelConQr, panelOk, valorMeta, type Opciones } from './mundo';
 import { LIB, UX_CONTADOR, vigilarUx, violacionesDeParrafos, violacionesDeUx, type UxMsg } from './vigilante-ux';
 
+const PRODUCCION_JSON = JSON.parse(readFileSync(new URL('../../../../Flujos/experimental/rroca-antonio/rroca-antonio.json', import.meta.url), 'utf8')) as { nodes: J[] };
 const nuevo = (o: Opciones = {}): Mundo => { const w = crear(o); vigilarUx(w); return w; };
 const NEGADAS_PAGO = /acreditad|verificad|validad|recibimos tu pago|pago (?:recibido|confirmado|aprobado|exitoso)|ya (?:pag[oó]|llegó tu pago)/i;
 const ENLACES = /https?:\/\/|www\.|\b[a-z0-9-]+\.(?:com|net|org|bo|app|me)\b/i;
@@ -365,14 +367,15 @@ describe('LOW 1 y 2: el aviso del pago con riesgo, y `no_contactar` aunque el en
     }
   });
   it('si ni el envío ni el respaldo salen, `no_contactar` se reporta igual (la persona no recibe un rescate)', () => {
-    const w = nuevo({ envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
-    const t = hablar(w, ANA, mTexto('mi pareja me golpea'), { toleraFallo: true });
+    const w = nuevo({ medio: { transcripcion: 'mi pareja me golpea' }, envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
+    const t = hablar(w, ANA, mAudio(), { toleraFallo: true });
     expect(t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar')).toHaveLength(1);
     expect(t.ejecutados.has('Reportar protección')).toBe(true);
     // Si el mensaje salió, no se duplica el reporte.
     const v = nuevo();
     const u = hablar(v, ANA, mTexto('mi pareja me golpea'));
-    expect(u.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar')).toHaveLength(1);
+    // El riesgo escrito viaja en el entrante Y en el saliente (el servidor marca un solo hecho; el reporte aparte no corre).
+    expect(u.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar').map((c) => c['direccion']).sort()).toEqual(['entrante', 'saliente']);
     expect(u.ejecutados.has('Reportar protección')).toBe(false);
   });
 });
@@ -416,5 +419,72 @@ describe('plantillas de Antonio (ya existen en Meta, PENDING): el caso de riesgo
     const t = hablar(w, ANA, mImagen());
     expect(t.avisos).toHaveLength(0);
     expect(t.mensajes[0]!.cuerpo).toMatch(/no pude avisarle a Antonio/);
+  });
+});
+
+describe('revisión de código de #576', () => {
+  it('(1) el reporte de protección: el riesgo escrito viaja en el reporte del ENTRANTE (sin reporte aparte ni mensaje de más), y «Reportar protección» no reintenta', () => {
+    const w = nuevo({ envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
+    const t = hablar(w, ANA, mTexto('mi pareja me golpea'), { toleraFallo: true });
+    const nc = t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar');
+    expect(nc).toHaveLength(1);
+    expect(nc[0]!['direccion']).toBe('entrante');
+    expect(t.ejecutados.has('Reportar protección')).toBe(false);
+    const f = PRODUCCION_JSON.nodes.find((n: J) => n['name'] === 'Reportar protección')!;
+    expect(f['retryOnFail']).toBeUndefined();
+  });
+  it('(1) EFECTO DECLARADO: si el riesgo solo se conoce por un audio, una imagen o la marca del modelo Y fallan el envío y su respaldo, `Reportar protección` agrega UN reporte entrante (la ingesta escribe un mensaje por reporte); sin él, la persona podría recibir un rescate', () => {
+    const w = nuevo({ medio: { transcripcion: 'mi marido me pega' }, envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
+    const t = hablar(w, ANA, mAudio(), { toleraFallo: true });
+    expect(t.ejecutados.has('Reportar protección')).toBe(true);
+    const nc = t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar');
+    expect(nc).toHaveLength(1);
+    expect(nc[0]).toMatchObject({ direccion: 'entrante', idMeta: '' });
+  });
+  it('(2) un botón con precio conserva SIEMPRE « <monto> Bs», con ≤ 20 caracteres, sin palabras cortadas ni preposición colgando, también con precios de 2 decimales', () => {
+    const catalogo = [
+      { id: 'pack-completo', precio: 49.5 }, { id: 'libro', precio: 35.25 }, { id: 'workbook', precio: 20.75 },
+      { id: 'guia-de-conversaciones', precio: 19.9 }, { id: 'calendario-de-conexion', precio: 17.5 }, { id: 'preguntas-profundas', precio: 15.5 },
+    ];
+    const w = nuevo({ panel: panelOk({ catalogo }) });
+    const t = hablar(w, ANA, mTexto(PRELLENADOS.calendario));
+    const titulos = ((t.mensajes[0]!.payload['interactive'].action.buttons ?? []) as J[]).map((b) => String(b['reply'].title));
+    expect(titulos.length).toBeGreaterThan(1);
+    for (const x of titulos) {
+      expect(x.length).toBeLessThanOrEqual(20);
+      expect(x).toMatch(/ \d+(?:,\d+)? Bs$/);
+      expect(x).not.toMatch(/\b(de|del|el|la|y)\s+\d+(?:,\d+)? Bs$/i);
+    }
+    const v = nuevo({ panel: panelOk({ catalogo }) });
+    hablar(v, ANA, mTexto('hola'));
+    const m = hablar(v, ANA, mTexto('quiero comprar'));
+    for (const b of (m.mensajes[0]!.payload['interactive'].action.buttons as J[]).filter((x) => /\d/.test(String(x['reply'].title)))) expect(String(b['reply'].title)).toMatch(/ \d+(?:,\d+)? Bs$/);
+  });
+  it('(4) tras un comprobante, «¿cómo pago el workbook?», «quiero el libro» y «¿cuánto cuesta el pack?» son una compra nueva (no una queja de no entrega)', () => {
+    const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } });
+    hablar(w, ANA, mImagen());
+    w.dobles['Traer configuración'] = () => panelOk();
+    w.avanzar(31);
+    const a = hablar(w, ANA, mTexto('¿cómo pago el workbook?'));
+    expect(a.avisos).toHaveLength(0);
+    expect(a.mensajes[0]!.cuerpo).not.toMatch(/comprobantes y envía el material/);
+    expect(a.mensajes).toHaveLength(1);
+    const b = hablar(w, ANA, mTexto('¿cuánto cuesta el pack?'));
+    expect(b.mensajes[0]!.cuerpo).toMatch(/49 Bs/);
+    const c = hablar(w, ANA, mTexto('quiero el libro'));
+    expect(c.mensajes[0]!.tipo).toBe('image');
+  });
+  it('(5) un toque en «Bonos sueltos» que el plan no atiende (QR abierto, o antes del saludo) NO marca el botón como usado', () => {
+    const w = nuevo();
+    hablar(w, ANA, mTexto(PRELLENADOS.pack));
+    hablar(w, ANA, mBoton('b_bonos'));
+    expect((w.sd['antonio'] as J)[ANA]['usados']).not.toContain('b_bonos');
+    const v = nuevo();
+    hablar(v, BETO, mBoton('b_bonos'));
+    expect((v.sd['antonio'] as J)[BETO]['usados']).not.toContain('b_bonos');
+    const u = nuevo();
+    hablar(u, ANA, mTexto('hola'));
+    hablar(u, ANA, mBoton('b_bonos'));
+    expect((u.sd['antonio'] as J)[ANA]['usados']).toContain('b_bonos');
   });
 });
