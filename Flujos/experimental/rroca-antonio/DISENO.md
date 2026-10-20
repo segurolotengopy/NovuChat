@@ -13,7 +13,7 @@ Base: `origin/main` `d260cca8`. Sin teléfonos completos ni datos bancarios en e
 | PR-B | Conversación, catálogo, QR, comprobante, avisos, derivación y violencia | Pendiente |
 | PR-C | Datos del negocio, guardia de publicación, contrato del rescate, documentación | Pendiente |
 
-**PR-A no es publicable**: el JSON lleva `meta.noPublicable` y la guardia de `construir.mjs --verificar` EXIGE esa marca. No hay conversación todavía: un texto o un toque no recibe respuesta; solo la puerta cerrada (comercio suspendido, uso extendido, pausa) y lo que el canal no lee (sticker, ubicación, contacto, pedido) tienen respuesta. PR-B quita la marca y la guardia pasa a exigir lo contrario.
+**PR-A no debe publicarse**: el JSON lleva `meta.noPublicable`, pero hoy SOLO `construir.mjs --verificar` la lee y la EXIGE; `publicar-flujo.sh` no la lee y `meta` no llega a n8n, así que la marca no frena nada al publicar. Lo único que hoy frena una publicación son los marcadores `REEMPLAZAR_*` sin sustituir. **Requisito de PR-C:** una guardia `--publicable` en `construir.mjs` y su confirmación en `publicar-flujo.sh` para `rroca-antonio`, como la de Rubén (no se edita `publicar-flujo.sh` en PR-A). No hay conversación todavía: un texto o un toque no recibe respuesta; solo la puerta cerrada (comercio suspendido, uso extendido, pausa) y lo que el canal no lee (sticker, ubicación, contacto, pedido) tienen respuesta. PR-B quita la marca y la guardia pasa a exigir lo contrario.
 
 ## Paso 0: lo verificado en el código (20/10/2026)
 
@@ -52,7 +52,9 @@ Base: `origin/main` `d260cca8`. Sin teléfonos completos ni datos bancarios en e
 
 - **Números no bolivianos:** texto fijo + botón de Antonio, sin QR, explicando que el pago es con QR boliviano. Es 1 mensaje por turno (≈0,0113 USD, `docs/base-comercial.md` §1). Hoy `prefijosPermitidos` (por defecto 591) descarta esos números sin responder; PR-B debe cambiar ese comportamiento para responder con el texto fijo.
 
-## Límites de PR-A (declarados, no resueltos aquí)
+## Límites de PR-A
+
+- **Gasto sin efecto si se activa:** en PR-A los medios (audio, imagen, PDF) pasan por Gemini y el resultado se descarta (no hay conversación). Solo ocurre si alguien activa el flujo; por eso no se activa hasta PR-B. (declarados, no resueltos aquí)
 
 - Solo se lee `messages[0]` de cada entrega (límite heredado).
 - «Uso extendido» en estado `operador` pide avisar a recepción (`transferir`): sin avisos (PR-B) no sale ese aviso; el cliente sí recibe el texto fijo.

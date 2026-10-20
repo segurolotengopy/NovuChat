@@ -10,6 +10,7 @@
  *     solo `id`, `notes` y `position` son propios (y el nombre de un nodo, donde se declara abajo).
  * Si el origen cambia, la prueba falla y obliga a decidir: volver a copiar o resolver el módulo común.
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +23,8 @@ const EXP = join(REPO, 'Flujos/experimental');
 const ANTONIO = join(EXP, 'rroca-antonio');
 const leer = (r: string): string => readFileSync(r, 'utf8');
 const nodoDe = (ruta: string): string => leer(join(ANTONIO, 'src/nodos', ruta));
+const NQUITADAS = 43;
+const HUELLA = '64c6d92c2bf67d58';
 const origenChat = (a: string): string => leer(join(EXP, 'chat-novuchat/src/nodos', a));
 
 /** Reemplaza `de` por `a` exigiendo que aparezca exactamente una vez (si el origen cambia, la sustitución deja de aplicar y la prueba lo dice). */
@@ -52,6 +55,33 @@ describe('HUECOS del núcleo: el código copiado de chat-novuchat, con SOLO las 
     const o = new Set(origen.split('\n'));
     return propio.split('\n').filter((l) => l.trim() !== '' && !o.has(l));
   };
+
+  /** Líneas con código del origen que el propio ya no trae: tienen que ser exactamente las declaradas (lista cerrada). */
+  const quitadasDe = (propio: string, origen: string): string[] => {
+    const p = new Set(propio.split('\n'));
+    return origen.split('\n').filter((l) => l.trim() !== '' && !l.trim().startsWith('//') && !p.has(l));
+  };
+
+  it('carga-de-entrada.js: las únicas líneas de código del origen que se quitan son las dos que el receptor y la prueba reemplazan', () => {
+    expect(quitadasDe(nodoDe('carga-de-entrada.js'), origenChat('carga-de-entrada.js'))).toEqual([
+      "  const b = j.body && typeof j.body === 'object' ? j.body : null;",
+      '  const v = cnValorDeMeta(j) || cnValorDeMeta(b);',
+    ]);
+  });
+
+  it('config-del-negocio.js: las líneas de código del origen que se quitan son SOLO la oferta, la planilla y los datos del chat (lista cerrada)', () => {
+    const quitadas = quitadasDe(nodoDe('config-del-negocio.js'), origenChat('config-del-negocio.js'));
+    // Y nada del bloque de atención, de la lectura 200/409/otra ni del modo prueba se quita.
+    // Excepciones declaradas: los 3 `Object.assign` que llevaban la oferta, y `telefonoPermitido`, que aquí NIEGA por defecto.
+    expect(quitadas.filter((l) => /atencion|statusCode|codigo === |telefonoDePrueba|enviarDeVerdad/.test(l))).toEqual([
+      '  cfg = Object.assign({}, deBase, sinOferta, atencion, {',
+      '  cfg = Object.assign({}, deBase, sinOferta, atencion, {',
+      '  cfg = Object.assign({}, deBase, deLaConsola, limpiarOferta(ob), atencion, {',
+      'const telefonoPermitido = permitidos.length === 0 || permitidos.indexOf(telefonoDePrueba) >= 0;',
+    ]);
+    // La lista se fija con un hash para no repetir 60 líneas: si el origen o la copia cambian, falla y obliga a revisar qué se quitó.
+    expect({ n: quitadas.length, huella: createHash('sha256').update(quitadas.join('\n')).digest('hex').slice(0, 16) }).toEqual({ n: NQUITADAS, huella: HUELLA });
+  });
 
   it('carga-de-entrada.js: toda línea está en el origen, salvo la rama del receptor y la lectura del `body` solo con «Entrada de prueba» (lista cerrada)', () => {
     const propias = propiasDe(nodoDe('carga-de-entrada.js'), origenChat('carga-de-entrada.js'));

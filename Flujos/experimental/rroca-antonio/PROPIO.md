@@ -46,7 +46,7 @@ Pendientes de declarar en PR-B (aún sin código en PR-A): H-COBRO (declaracione
 
 ## Condiciones declaradas de PR-A (no se resuelven aquí)
 
-- **`meta.noPublicable`**: el JSON no se publica ni se activa en un número real hasta PR-B.
+- **`meta.noPublicable`**: hoy solo `construir.mjs --verificar` la lee y la exige; `publicar-flujo.sh` no la lee y `meta` no llega a n8n. Lo único que frena publicar son los marcadores `REEMPLAZAR_*`. El flujo no debe publicarse ni activarse en un número real hasta PR-B. Requisito de PR-C: guardia `--publicable` y confirmación en `publicar-flujo.sh` para `rroca-antonio`, como la de Rubén.
 - **Falla abierta de la pausa**: heredada de `chat-novuchat` con la puerta idéntica; ver `DISENO.md`.
 - **Cruce «suspendido antes que bloqueado»**: la puerta evalúa primero el comercio no operativo.
 - **Modo prueba**: niega por defecto.
