@@ -231,7 +231,16 @@ describe('las entradas: 5 prellenados y 7 ángulos de anuncio', () => {
   });
 });
 
-describe('P1 (opción b): el Pack y el Bono 4 `agotado` son un DATO de la consola, conmutable', () => {
+describe('catálogo COMPLETO por defecto; la bandera `agotado` de la consola sigue respetándose si algún día se marca (soporte conservado)', () => {
+  it('por defecto el Pack (49) y la Guía (Bono 4, 19) están disponibles: el prellenado del Pack abre el QR de 49 y el menú y la lista los ofrecen', () => {
+    const w = nuevo();
+    expect(salientes(hablar(w, ANA, mTexto(PRELLENADOS.pack)))[0]).toMatchObject({ evento: 'qr_enviado', monto: 49 });
+    const v = nuevo();
+    saludar(v);
+    expect(ids(hablar(v, ANA, mTexto('quiero comprar')))).toEqual(['b_pack', 'b_libro', 'b_bonos']);
+    expect(filas(hablar(v, ANA, mBoton('b_bonos'))).map((r) => r['id'])).toEqual(['b_workbook', 'b_guia', 'b_calendario', 'b_preguntas']);
+  });
+
   it('con el Pack agotado, el prellenado del Pack deriva a Antonio con aviso y botón: ningún QR, ningún monto', () => {
     const w = nuevo({ panel: panelConAgotados('pack-completo', 'guia-de-conversaciones') });
     const t = hablar(w, ANA, mTexto(PRELLENADOS.pack));
@@ -384,7 +393,9 @@ describe('el comprobante: el cotejo lo hace el servidor; el flujo traduce su est
     expect(Object.keys(cuerpo['leido']).sort()).toEqual(['banco', 'cuentaDestino', 'fecha', 'hora', 'monto', 'nombreCuenta']);
     const tx = t.mensajes[0]!.cuerpo;
     expect(tx).toMatch(/Recibí tu comprobante y los datos coinciden con tu compra/);
-    expect(tx).toMatch(/él revisará el pago y te enviará el material por este chat hasta en 6 horas/);
+    expect(tx).toMatch(/en cuanto lo revise, él te enviará el material por este chat\./);
+    // Decisión de Andres: ningún plazo en horas para el cliente.
+    expect(tx).not.toMatch(/\d+ horas?|hasta en/);
     expect(tx).not.toMatch(PROHIBIDAS);
     expect(tx).not.toMatch(/enlaces?/i);
     expect(t.avisos).toHaveLength(1);
@@ -535,11 +546,19 @@ describe('los avisos a Antonio: «ya le avisé» solo si salió', () => {
     }
   });
 
-  it('el plazo es DATO: sin plazo no se promete «hasta en N horas»; con 3 horas, el texto y la hora límite lo siguen', () => {
-    const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE }, base: { plazoEntregaHoras: 0 } });
-    expect(hablar(w, ANA, mImagen()).mensajes[0]!.cuerpo).toMatch(/te enviará el material por este chat\.$/);
-    const v = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE }, base: { plazoEntregaHoras: 3 } });
-    expect(hablar(v, ANA, mImagen()).mensajes[0]!.cuerpo).toMatch(/hasta en 3 horas/);
+  it('el cliente NO lee ningún plazo en horas (ni con 0, 3 ni 6): `plazoEntregaHoras` solo fija la hora límite INTERNA del aviso a Antonio', () => {
+    for (const horas of [0, 3, 6]) {
+      const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE }, base: { plazoEntregaHoras: horas } });
+      hablar(w, REC, mTexto('hola'));
+      const t = hablar(w, ANA, mImagen());
+      expect(t.mensajes[0]!.cuerpo, String(horas)).not.toMatch(/\d+ horas?|hasta en|minutos/);
+      expect(t.mensajes[0]!.cuerpo).toMatch(/en cuanto lo revise/);
+      // La hora límite del aviso sigue el dato (10:0x de La Paz + horas); sin plazo, el cierre de la ventana de 24 h (23 h después).
+      const limite = /responder antes de (\d{2})\/10 (\d{2}):\d{2}/.exec(t.avisos[0]!.cuerpo);
+      expect(limite, String(horas)).not.toBeNull();
+      if (horas > 0) expect(Number(limite![2]), String(horas)).toBe(10 + horas);
+      else expect(limite![1]).toBe('06');
+    }
   });
 
   it('el aviso de comprobante nunca copia el texto leído en la imagen ni reenvía la imagen; el nombre de perfil llega saneado', () => {
@@ -626,7 +645,7 @@ describe('la derivación a Antonio: texto fijo, aviso y botón', () => {
     hablar(w, ANA, mImagen());
     w.dobles['Traer configuración'] = () => panelOk();
     const t = hablar(w, ANA, mTexto('todavía no me llegó el material'));
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Antonio revisa el pago y envía el material por este chat hasta en 6 horas; desde aquí no puedo confirmarte si ya salió/);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Antonio revisa los comprobantes y envía el material por este chat en cuanto los revisa; desde aquí no puedo confirmarte si ya salió/);
     const v = nuevo();
     saludar(v);
     expect(hablar(v, ANA, mTexto('todavía no me llegó nada')).avisos).toHaveLength(0);

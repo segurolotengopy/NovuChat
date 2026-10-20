@@ -309,7 +309,7 @@ describe('MEDIUM 1: el modelo no habla del estado de un pago ni de una entrega, 
     hablar(w, ANA, mTexto('hola'));
     expect(hablar(w, ANA, mTexto('discutimos siempre por lo mismo y no sé qué hacer')).mensajes[0]!.cuerpo).toMatch(/capítulos 4 y 5/);
   });
-  it('«ya pagué, ¿cuándo llega mi libro?» tras un comprobante NO llama al modelo: derivación de no entrega con el plazo del dato, aviso y botón', () => {
+  it('«ya pagué, ¿cuándo llega mi libro?» tras un comprobante NO llama al modelo: derivación de no entrega sin plazo en horas, aviso y botón', () => {
     const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE }, modeloDice: 'Todo en orden, el material ya salió.' });
     hablar(w, ANA, mImagen());
     w.dobles['Traer configuración'] = () => panelOk();
@@ -317,7 +317,7 @@ describe('MEDIUM 1: el modelo no habla del estado de un pago ni de una entrega, 
       w.avanzar(31);
       const t = hablar(w, ANA, mTexto(texto));
       expect(t.ejecutados.has('Conversar con el modelo'), texto).toBe(false);
-      expect(t.mensajes[0]!.cuerpo, texto).toMatch(/Antonio revisa el pago y envía el material por este chat hasta en 6 horas; desde aquí no puedo confirmarte si ya salió/);
+      expect(t.mensajes[0]!.cuerpo, texto).toMatch(/Antonio revisa los comprobantes y envía el material por este chat en cuanto los revisa; desde aquí no puedo confirmarte si ya salió/);
       expect(t.mensajes[0]!.cuerpo).not.toMatch(NEGADAS_PAGO);
       expect(t.mensajes[0]!.tipo).toBe('interactive');
     }
