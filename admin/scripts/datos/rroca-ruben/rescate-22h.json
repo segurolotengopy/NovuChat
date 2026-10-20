@@ -1,0 +1,22 @@
+{
+  "tenant": "rroca-ruben",
+  "nombreFlujo": "NovuChat — Rescate 22 h (rroca-ruben)",
+  "credenciales": {
+    "ingesta": "NovuChat ingesta (Ruben)",
+    "graph": "Graph WhatsApp Ruben (Bearer)",
+    "gemini": "Google Gemini(PaLM) Api account"
+  },
+  "configBase": {
+    "phoneNumberId": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_RUBEN",
+    "waGraphVersion": "v26.0",
+    "modelo": "gemini-3.5-flash-lite",
+    "listaDePrueba": true,
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_RESCATE_RROCA_RUBEN",
+    "telefonosExcluidos": "",
+    "rescateQuien": "Rubén",
+    "rescateContexto": "Rubén Elías Roca es autor del libro digital «IA para Emprendedores Independientes», con cuatro bonos, pensado para emprendedores sin conocimientos técnicos.",
+    "rescateSaludo": "Hola, soy el asistente virtual de Rubén.",
+    "rescateTextoFijo": "Hola, soy el asistente virtual de Rubén. Quedó pendiente tu consulta sobre «IA para Emprendedores». ¿Te quedó alguna duda para empezar?",
+    "quienPromete": "ruben"
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "name": "se toma de los datos",
+  "nodes": [
+    {
+      "id": "cada-10",
+      "name": "Cada 10 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "*/10 * * * *" }]
+        }
+      },
+      "notes": "Disparador propio del rescate de 22 h: cada 10 minutos. No hay webhook ni WhatsApp Trigger. Activar o desactivar este flujo ES encender o apagar el rescate del negocio."
+    },
+    {
+      "id": "config-base",
+      "name": "Config base",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [240, 300],
+      "parameters": {
+        "assignments": { "assignments": [] },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "notes": "LO CONFIGURABLE DEL NEGOCIO. Se llena desde admin/scripts/datos/<tenant>/rescate-22h.json: marcadores REEMPLAZAR_* para los identificadores, que el publicador sustituye. Nunca un token ni un identificador real aquí. listaDePrueba verdadero = solo los teléfonos de prueba."
+    },
+    {
+      "id": "reclamar",
+      "name": "Reclamar rescates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "@@url:reclamar@@",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-NovuChat-Numero", "value": "={{ String($('Config base').first().json.phoneNumberId || '').replace(/\\D/g, '') }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const c = $('Config base').first().json; const lista = (v) => String(v || '').split(',').map((x) => x.replace(/\\D/g, '')).filter((x) => x.length >= 8 && x.length <= 15); const b = { v: 1, tope: 20, excluir: lista(c.telefonosExcluidos).slice(0, 50) }; if (c.listaDePrueba !== false) b.soloTelefonos = lista(c.telefonosDePrueba).slice(0, 20); return JSON.stringify(b); })() }}",
+        "options": {
+          "timeout": 15000,
+          "response": { "response": { "fullResponse": true, "neverError": true } }
+        }
+      },
+      "credentials": { "httpHeaderAuth": { "id": "", "name": "@@cred:ingesta" } },
+      "notes": "POST reclamarRescates: el SERVIDOR decide quién toca rescate (22 h a 23 h 30 min sin mensaje del cliente, sin compra, sin pasar a una persona) y lo MARCA antes de contestar. Sin onError y sin reintentos: si falla, la ejecución falla y se ve. Con la lista de prueba encendida manda soloTelefonos y el servidor no gasta el rescate de un cliente real."
+    },
+    {
+      "id": "preparar",
+      "name": "Preparar rescates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 300],
+      "parameters": { "jsCode": "@@todo:nodos/preparar-rescates.js" },
+      "notes": "Valida la respuesta (línea, teléfono, corte de 23 h 50 min, lista de prueba) y arma la llamada al modelo. Sin rescates no emite nada: no hay llamadas ni envíos."
+    },
+    {
+      "id": "redactar",
+      "name": "Redactar rescate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 300],
+      "credentials": { "googlePalmApi": { "id": "", "name": "@@cred:gemini" } },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $json.modelo }}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.cuerpoModelo) }}",
+        "options": { "timeout": 20000 }
+      },
+      "notes": "generateContent de Gemini: el modelo redacta SOLO el cuerpo. Si falla, la respuesta trae `error` y «Armar rescate» usa el texto fijo."
+    },
+    {
+      "id": "armar",
+      "name": "Armar rescate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 300],
+      "parameters": { "jsCode": "@@todo+filtro:nodos/armar-rescate.js" },
+      "notes": "Verifica el cuerpo del modelo con el filtro de redacción y antepone el saludo fijo («asistente virtual»); ante cualquier falla, sale el texto fijo. Un ítem por mensaje para la cadena de envío común. Sin `evento`."
+    },
+    {
+      "id": "meta-acepto",
+      "name": "¿Meta aceptó?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [2160, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!($json && !$json.error && Array.isArray($json.messages) && $json.messages[0] && $json.messages[0].id) }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "PUERTA de la entrega (regla I-ENTREGA 3): el reporte saliente solo corre si Meta devolvió `messages[0].id` y ningún `error`, sea del envío o de su respaldo. Lo conecta `construir.mjs` a la salida de «¿Falló el envío?» y de «Enviar respaldo», antes de «¿Reportar? (saliente)», sin tocar los nodos comunes."
+    }
+  ],
+  "connections": {
+    "Cada 10 minutos": { "main": [[{ "node": "Config base", "type": "main", "index": 0 }]] },
+    "Config base": { "main": [[{ "node": "Reclamar rescates", "type": "main", "index": 0 }]] },
+    "Reclamar rescates": { "main": [[{ "node": "Preparar rescates", "type": "main", "index": 0 }]] },
+    "Preparar rescates": { "main": [[{ "node": "Redactar rescate", "type": "main", "index": 0 }]] },
+    "Redactar rescate": { "main": [[{ "node": "Armar rescate", "type": "main", "index": 0 }]] },
+    "¿Meta aceptó?": { "main": [[{ "node": "¿Reportar? (saliente)", "type": "main", "index": 0 }], []] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 300,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveExecutionProgress": false,
+    "saveManualExecutions": false
+  }
+}
