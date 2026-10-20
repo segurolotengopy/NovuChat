@@ -3,7 +3,7 @@
  * `vigilarUx(mundo)` envuelve `mundo.turno`: cada escenario que habla con el flujo pasa por aquí. Invariantes:
  *   1. UN BOTÓN YA PULSADO NO REAPARECE en ningún mensaje posterior de esa conversación (ni en la respuesta al toque), por teléfono; `b_pack`/`b_libro` tampoco tras un prellenado que abrió el QR;
  *   2. NO SE OFRECE ALGO ANTES DE TIEMPO: el QR (pagar) solo sale si en ese turno el cliente eligió un producto (botón de producto o prellenado del Pack/Libro), y ningún texto de pago aparece sin QR;
- *   3. UNA SOLA PRESENTACIÓN por mensaje («asistente» a lo más una vez) Y UNA POR TELÉFONO: la presentación («asistente virtual de Rubén», el saludo largo) sale a lo más una vez en toda la conversación;
+ *   3. UNA SOLA PRESENTACIÓN por mensaje (contada por oración con `rrEsPresentacion`, NO por la palabra «asistente») Y UNA POR TELÉFONO (salvo a quien pregunta qué es el asistente): la presentación («asistente virtual de Rubén», el saludo largo) sale a lo más una vez en toda la conversación;
  *   4. PÁRRAFOS: cada párrafo (separado por una línea en blanco) tiene a lo más DOS oraciones y, con dos, a lo más 220 caracteres; sin saltos triples ni espacios sobrantes. La partición en oraciones es la
  *      de la LIBRERÍA (`rrOraciones` de `rr.js`): no puede haber desacuerdo entre quien reparte y quien vigila.
  *   3b. (Silvana, 20/10/2026) LA PRESENTACIÓN SE DICE UNA SOLA VEZ: a lo más una oración de presentación por mensaje y, sumando todos los mensajes de un turno, a lo más una.
@@ -19,7 +19,7 @@ import type { Mundo } from '../../lib/n8n-de-mentira';
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-ruben/src/lib');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
 // nosemgrep: devsecops.js-eval-prohibido
-export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean };
+export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion, rrNorm, rrPreguntaPorIA };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean; rrNorm: (t: string) => string; rrPreguntaPorIA: (n: string) => boolean };
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }
 interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number }
@@ -55,8 +55,11 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
   const idToque = entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : '';
-  if (idToque) pulsados.add(idToque);
+  // Excepción declarada (M3): «Más información» que llega como PRIMER mensaje de un teléfono recibe el saludo, que la ofrece: el cliente aún no la ha visto, así que no cuenta como pulsada.
+  const infoSinVer = idToque === 'b_info' && !!presentaciones && presentaciones.n === 0 && mensajes.some((m) => esPresentacion(m.cuerpo));
+  if (idToque && !infoSinVer) pulsados.add(idToque);
   const textoEntrante = entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '';
+  const preguntaIA = LIB.rrPreguntaPorIA(LIB.rrNorm(textoEntrante));
   const eligioProducto = ['b_pack', 'b_libro', 'b_closer', 'b_videos'].includes(idToque) || /^Hola Rubén, quiero (el Pack Completo|el libro IA para Emprendedores)/.test(textoEntrante);
   const enElTurno = mensajes.reduce((n, m) => n + contarPresentaciones(m.cuerpo), 0);
   if (enElTurno > 1) v.push(`la presentación del asistente salió ${enElTurno} veces en el mismo turno`);
@@ -67,10 +70,11 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
     if (m.tipo === 'interactive' && idsDeBotones(m).length && !eligioProducto && /(pagar|\bqr\b)/i.test(((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.title)).join(' '))) v.push('un botón de pago antes de elegir producto');
     if (/opciones|¿cu[aá]l prefieres|¿qu[eé] opci[oó]n|¿con cu[aá]l/i.test(m.cuerpo) && m.tipo !== 'interactive') v.push('el texto pregunta por opciones pero el mensaje no trae ningún botón');
     v.push(...violacionesDeParrafos(m.cuerpo));
-    if ((m.cuerpo.match(/asistente/gi) ?? []).length > 1) v.push('el mensaje se presenta más de una vez («asistente» repetido)');
+    // (La cuenta es de PRESENTACIONES, no de la palabra «asistente»: el capítulo 9 del libro dice «asistente personal de IA».) Ver `enElTurno` arriba.
     if (presentaciones && esPresentacion(m.cuerpo)) {
       presentaciones.n += 1;
-      if (presentaciones.n > 1) v.push('la presentación del asistente salió más de una vez en la conversación');
+      // Quien PREGUNTA qué es el asistente («¿eres un bot?») recibe la presentación aunque ya la haya leído (prohibición 4).
+      if (presentaciones.n > 1 && !preguntaIA) v.push('la presentación del asistente salió más de una vez en la conversación');
     }
     // Un prellenado del Pack o del Libro que abrió el QR "usa" su botón: no reaparece después.
     if (m.tipo === 'image') {
