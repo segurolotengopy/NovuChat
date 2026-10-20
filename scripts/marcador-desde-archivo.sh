@@ -32,6 +32,8 @@
 #   · el marcador debe tener la forma `REEMPLAZAR_…` y la clave debe corresponder a
 #     su nombre (un PHONE_NUMBER_ID no recibe un waba_id);
 #   · el valor es solo dígitos (10 a 20) antes de entregarlo.
+# OJO: con --aplicar sobre una fila que YA existe y sin --reemplazar no se escribe nada y la salida es 0
+# (el mensaje lo dice); quien automatice debe leer el mensaje o usar --reemplazar.
 # Salidas: 0 hecho o seco sin problemas · 1 el valor no se pudo tomar o validar ·
 # 2 uso o salvaguarda (nada escrito).
 # =============================================================================
@@ -99,14 +101,16 @@ exec 3< "$REAL"
   || { echo "✗ El archivo de origen cambió mientras se abría: no se escribe nada." >&2; exit 2; }
 CONTENIDO="$(cat <&3)"
 exec 3<&-
-n="$(printf '%s\n' "$CONTENIDO" | grep -Ec "^- ${CLAVE}: *[^[:space:]]+ *\$" || true)"
+n="$(printf '%s\n' "$CONTENIDO" | grep -Ec "^- ${CLAVE}:[[:space:]]*[^[:space:]]+[[:space:]]*\$" || true)"
 [ "$n" = "1" ] || { echo "✗ Se esperaba UNA línea «- ${CLAVE}: …» y hay $n: no se escribe nada." >&2; exit 1; }
-VALOR="$(printf '%s\n' "$CONTENIDO" | sed -n -E "s/^- ${CLAVE}: *([^[:space:]]+) *\$/\1/p")"
+VALOR="$(printf '%s\n' "$CONTENIDO" | sed -n -E "s/^- ${CLAVE}:[[:space:]]*([^[:space:]]+)[[:space:]]*\$/\1/p")"
 unset CONTENIDO
 printf '%s' "$VALOR" | grep -Eq '^[0-9]{10,20}$' \
   || { echo "✗ El valor de ${CLAVE} no tiene forma de identificador (solo dígitos, 10 a 20): no se escribe nada." >&2; exit 1; }
 
 if [ "$APLICAR" -eq 0 ]; then
+  [ -r "$LOCAL" ] && [ -f "$LOCAL" ] \
+    || { echo "✗ La tabla de valores locales no existe o no se puede leer: --aplicar fallaría." >&2; exit 1; }
   existe="no"
   "$AQUI/marcador-local.sh" --archivo "$LOCAL" --verificar "$MARCADOR" >/dev/null 2>&1 && existe="sí"
   echo "Seco: ${CLAVE} se leyó de CLIENTES/${CLIENTE}/ con forma válida (valor no mostrado)."
@@ -120,5 +124,5 @@ fi
 if [ "$REEMPLAZAR" -eq 1 ]; then
   MARCADOR_VALOR="$VALOR" "$AQUI/marcador-local.sh" --archivo "$LOCAL" --marcador "$MARCADOR" --reemplazar
 else
-  MARCADOR_VALOR="$VALOR" "$AQUI/marcador-local.sh" --archivo "$LOCAL" --marcador "$MARCADOR" --nota "copiado de CLIENTES/ (ids-meta.local.md)"
+  MARCADOR_VALOR="$VALOR" "$AQUI/marcador-local.sh" --archivo "$LOCAL" --marcador "$MARCADOR" --nota "copiado de CLIENTES/${CLIENTE}/$(basename -- "$REAL")"
 fi

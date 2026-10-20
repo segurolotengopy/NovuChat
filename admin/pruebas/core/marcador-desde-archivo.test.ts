@@ -82,6 +82,7 @@ describe('marcador-desde-archivo.sh', () => {
   it('NEGACIÓN: una clave que no corresponde al marcador (waba_id a un PHONE_NUMBER_ID) se rechaza', () => {
     const r = correr(['--marcador', MARCADOR, '--de', origen, '--clave', 'waba_id', '--cliente', 'X', '--aplicar']);
     expect(r.status).not.toBe(0);
+    expect(todo(r)).toContain('solo va a un marcador');
     expect(readFileSync(local, 'utf8')).toBe(TABLA);
     expect(todo(r)).not.toContain(WABA);
   });
@@ -144,6 +145,7 @@ describe('marcador-desde-archivo.sh', () => {
   it('NEGACIÓN: un marcador mal formado se rechaza', () => {
     const r = correr(['--marcador', 'REEMPLAZAR_x|y', '--de', origen, '--clave', 'phone_number_id', '--cliente', 'X', '--aplicar']);
     expect(r.status).not.toBe(0);
+    expect(todo(r)).toContain('Un marcador es REEMPLAZAR_');
     expect(readFileSync(local, 'utf8')).toBe(TABLA);
   });
 
@@ -166,7 +168,44 @@ describe('marcador-desde-archivo.sh', () => {
   it('NEGACIÓN: sin --cliente se rechaza; con una carpeta mal escrita también', () => {
     const sin = correr(['--marcador', MARCADOR, '--de', origen, '--clave', 'phone_number_id', '--aplicar']);
     expect(sin.status).not.toBe(0);
+    expect(todo(sin)).toContain('Faltan');
     const mal = correr(['--marcador', MARCADOR, '--de', origen, '--clave', 'phone_number_id', '--cliente', '../X', '--aplicar']);
     expect(mal.status).not.toBe(0);
+    expect(todo(mal)).toContain('mayúsculas, dígitos');
+  });
+
+  it('NEGACIÓN: un origen escribible por el grupo (0o620) se rechaza con su motivo', () => {
+    chmodSync(origen, 0o620);
+    const r = correr([...base(), '--aplicar']);
+    expect(r.status).not.toBe(0);
+    expect(todo(r)).toContain('grupo');
+    expect(readFileSync(local, 'utf8')).toBe(TABLA);
+  });
+
+  it('en seco con la fila ya existente lo dice, y con --aplicar escribe la nota y conserva las demás filas', () => {
+    writeFileSync(local, `${TABLA}| \`${MARCADOR}\` | viejo-valor |  |\n`, { mode: 0o600 });
+    const seco = correr(base());
+    expect(todo(seco)).toContain('ya está en la tabla: sí');
+    const otra = 'REEMPLAZAR_PHONE_NUMBER_ID_CLIENTE06';
+    const r = correr(['--marcador', otra, '--de', origen, '--clave', 'phone_number_id', '--cliente', 'X', '--aplicar']);
+    expect(r.status).toBe(0);
+    const texto = readFileSync(local, 'utf8');
+    expect(texto).toContain('| `REEMPLAZAR_OTRO` | otro-valor |');
+    expect(texto).toContain('viejo-valor');
+    expect(texto).toContain('copiado de CLIENTES/X/ids-meta.local.md');
+  });
+
+  it('NEGACIÓN: una tabla de valores inexistente aborta el seco con motivo (no dice "no está en la tabla")', () => {
+    rmSync(local);
+    const r = correr(base());
+    expect(r.status).not.toBe(0);
+    expect(todo(r)).toContain('no existe o no se puede leer');
+  });
+
+  it('acepta finales de línea CRLF en el origen', () => {
+    writeFileSync(origen, `- phone_number_id: ${PHONE}\r\n`, { mode: 0o600 });
+    const r = correr([...base(), '--aplicar']);
+    expect(r.status).toBe(0);
+    expect(readFileSync(local, 'utf8')).toContain(`| \`${MARCADOR}\` | ${PHONE} |`);
   });
 });
