@@ -18,7 +18,7 @@
 | **Herramientas** | las del carrito del esqueleto de venta |
 | **Nodos (lo que queda en n8n)** | nodos Code del Demo B sin extraer (15, con Core, Cobros y Catálogo web); F2 los extrae con `ensamblar-flujo.mjs extraer` |
 | **Ganchos** | `alCierre` (venta) |
-| **Mensajes por conversación** | 0 |
+| **Mensajes por conversación** | 0 (la Function; el rescate de 22 h lo envía el flujo n8n consumidor, +1 por conversación rescatada) |
 | **Pruebas** | `carrito-podado.test.ts`, `demo-b-catalogo.test.ts`, `entrantes-por-tipo.test.ts`; la suite del Demo B |
 
 **Ubicación compartida (05/10/2026):** si un pedido de delivery trae `ubicacion { lat, lng }` (opcional; la escribe el servidor desde el catálogo web), `Pedidos.tsx` muestra «Ubicación compartida · Abrir en Maps». El enlace se arma solo con `ubicacion.ts` (`ubicacionValida` / `enlaceAMaps`: números finitos, rango, no (0,0), 5 decimales) y se abre con `target="_blank" rel="noopener noreferrer"`; nunca se usa texto ni URL del pedido. Las reglas de `pedidos` ya permiten leer el documento entero a quien lee conversaciones, sin lista de campos: no cambian. Prueba: `admin/pruebas/modulos/pedidos/ubicacion.test.ts`. Mensajes: 0.
@@ -28,6 +28,22 @@
 Carpetas destino (F2): `admin/functions/src/modulos/<m>/`,
 `admin/web/src/modulos/<m>/`, `Flujos/src/modulos/<m>/`,
 `admin/pruebas/modulos/<m>/`, y una línea en el registro.
+
+## Rescate de 22 h (`reclamarRescates`)
+
+**Qué es.** Una Function HTTP del módulo (`admin/functions/src/modulos/pedidos/rescates.ts`, declarada en el manifiesto) que **decide y marca** a quién se le escribe UN mensaje de texto libre cuando la conversación de venta lleva entre 22 h y 23 h 30 min sin un mensaje del cliente. **No envía**: el envío y la redacción son de un flujo de n8n por comercio (otro PR), que la llama con la credencial de ingesta de su número. Plan de diseño: `RUBENROCA_plan-rescate_2026-10-20`, paso 1.
+
+**Contrato.** `POST` con `{ v: 1, soloTelefonos?, excluir?, tope? }` (`validarCuerpo`: clave extra, `v` distinto de 1, más de 20 teléfonos de prueba, más de 50 excluidos o un `tope` fuera de 1 a 20 son `400`). Responde `200 { phoneNumberId, rescates: [{ telefono, ultimoEntranteMs, textos }] }`, con `motivo` (`lista_vacia`, `servicio_no_operativo`, `tope_diario`) cuando no hay nada que devolver. Errores: `405`, `401 'no autorizado'`, `409 { estado }` (ruta no activa) y `409 { estado: 'flujo_no_admitido' }` si la ruta no es de `venta`. La respuesta no lleva `nombreContacto` ni mensajes del asistente; solo hasta 6 textos entrantes de 300 caracteres.
+
+**A quién nunca** (`motivoParaNoRescatar`, pura, en este orden): teléfono inválido, excluido (incluido el número de recepción), fuera de la lista de prueba, otra línea, ya rescatado (cualquier valor en `rescate`), `noContactar`, atención distinta de normal, sin ventana, turno de una persona (tomado en las 24 h previas al último mensaje del cliente, vigente o ilegible), compró (`agendada`, `en_revision`, `a_favor` o `cotejos` > 0), antes de 22 h, después de 23 h 30 min. Además, por los mensajes recientes (`leerMensajesParaRescate`): cualquier imagen o documento entrante en la ventana (posible comprobante) y los rechazos explícitos («no me interesa», «no, gracias», «stop»…; «lo voy a pensar» no cuenta).
+
+**Unicidad.** La marca `rescate { enviadoEn, phoneNumberId, anclaMs }` se escribe ANTES de enviar, con `merge`, dentro de una transacción que relee y vuelve a decidir; no se borra nunca: un rescate por contacto y por comercio, para siempre. Si el envío falla, ese rescate se pierde (mejor que dos). Toda escritura a `conversaciones` debe llevar `merge`: una sin él borraría la marca (verificado el 20/10/2026: no hay ninguna en `functions/src`).
+
+**Topes de protección** (constantes del servidor, no comerciales): 20 por corrida y `TOPE_DIARIO_POR_COMERCIO = 150` marcas en 24 h (conteo `count()` sobre `rescate.enviadoEn`, índice de campo simple; gasto máximo ~1,70 USD por día y comercio a 0,0113 USD).
+
+**Multi-tenant y privacidad.** El comercio y la línea salen de la credencial, nunca del cuerpo; solo se lee y marca `tenants/{ruta.tenantId}/conversaciones` con `phoneNumberId` igual al de la ruta. Se respeta el corte del prepago (`corteAplicable` y `estadoDeServicio`). Nunca se registra en el log un teléfono ni un texto; la bitácora recibe `seguimiento_enviado` con `codigo: 'rescate'`.
+
+**Costo.** La Function agrega 0 mensajes; el flujo que la consume agrega +1 por conversación rescatada (`docs/base-comercial.md` §1). Pruebas: `admin/pruebas/modulos/pedidos/rescates-decision.test.ts` (pura) y `rescates.test.ts` (emulador). Pedidos no importa de `modulos/cobros`.
 
 ## Secciones movidas desde `admin/DISENO.md`
 

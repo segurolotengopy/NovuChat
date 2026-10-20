@@ -36,6 +36,8 @@ export { ubicacionDeEnlace } from './central/negocio/mapa.js';
 // Recordatorio de solicitud pendiente (bloque 4, `Analisis/31` §4): el
 // barrido de la hora pregunta a quién le toca y marca ANTES de enviar.
 export { seguimientosPendientes, seguimientoEnviado } from './modulos/agenda/seguimientos.js';
+// Rescate de 22 h (Pedidos): decide y marca; el envío es de un flujo de n8n por comercio.
+export { reclamarRescates } from './modulos/pedidos/rescates.js';
 // CATÁLOGO WEB PROPIO. Tres endpoints públicos y una función de configuración;
 // el porqué de cada uno está en `catalogoWeb.ts`. Se exportan desde acá, como
 // todo lo demás, para que exista un solo inventario de lo que se despliega.

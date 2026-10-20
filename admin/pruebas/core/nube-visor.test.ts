@@ -53,11 +53,13 @@ const TOMAR = 'tomarconversacion';
 const DEVOLVER = 'devolverconversacion';
 const RECLAMAR = 'reclamarsalidapersona';
 const CONFIRMAR = 'confirmarsalidapersona';
-const HTTP = [RECLAMAR, CONFIRMAR] as const;
+const RESCATES = 'reclamarrescates';
+const HTTP = [RECLAMAR, CONFIRMAR, RESCATES] as const;
 const SERVICIOS = [
   [VISOR, 'verComprobante'], [BUSCADOR, 'buscarConversaciones'], [ENVIAR, 'enviarComoPersona'],
   [TOMAR, 'tomarConversacion'], [DEVOLVER, 'devolverConversacion'],
   [RECLAMAR, 'reclamarSalidaPersona'], [CONFIRMAR, 'confirmarSalidaPersona'],
+  [RESCATES, 'reclamarRescates'],
 ] as const;
 const urlDe = (s: string) => `https://${s}-${NUMERO_FALSO}.us-east1.run.app`;
 
@@ -120,8 +122,8 @@ E="$FAKE_DIR"
 printf '%s\\n' "$*" >> "$E/curl"
 out=""; a=("$@")
 for ((i = 0; i < \${#a[@]}; i++)); do [[ "\${a[i]}" == -o ]] && out="\${a[i+1]}"; done
-# Las dos Functions HTTP (ingesta) contestan TEXTO, no el JSON de Firebase.
-http=0; [[ "\${a[\${#a[@]}-1]}" == *reclamarsalidapersona* || "\${a[\${#a[@]}-1]}" == *confirmarsalidapersona* ]] && http=1
+# Las tres Functions HTTP (ingesta) contestan TEXTO, no el JSON de Firebase.
+http=0; [[ "\${a[\${#a[@]}-1]}" == *reclamarsalidapersona* || "\${a[\${#a[@]}-1]}" == *confirmarsalidapersona* || "\${a[\${#a[@]}-1]}" == *reclamarrescates* ]] && http=1
 modo="auto"; [[ -f "$E/curl-modo" ]] && modo="$(cat "$E/curl-modo")"
 if [[ "$modo" == auto ]]; then
   if python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); sys.exit(0 if any(b.get("role")=="roles/run.invoker" and "allUsers" in b.get("members",[]) for b in p.get("bindings",[])) else 1)' "$E/politica.json"; then modo=propio; else modo=403; fi
@@ -230,7 +232,7 @@ describe('nube-visor.sh: uso y salvaguardas (nada se llama a gcloud)', () => {
   it('--help explica los modos y la lista cerrada, y sale 0', () => {
     const r = correr(['--help'], {}, null);
     expect(r.codigo).toBe(0);
-    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, TOMAR, DEVOLVER, RECLAMAR, CONFIRMAR]) expect(r.salida).toContain(t);
+    for (const t of ['--servicio', '--entorno', '--aplicar', '--confirmo', '--revertir', VISOR, BUSCADOR, ENVIAR, TOMAR, DEVOLVER, RECLAMAR, CONFIRMAR, RESCATES]) expect(r.salida).toContain(t);
     expect(llamadas()).toEqual([]);
   });
 
@@ -765,24 +767,25 @@ describe('nube-visor.sh: la fuente', () => {
     expect(codigo).not.toMatch(/python3(?! -I )/);
   });
 
-  it('la lista cerrada: siete servicios con sus constantes, sin variable que agregue otro', () => {
+  it('la lista cerrada: ocho servicios con sus constantes, sin variable que agregue otro', () => {
     for (const [c, v] of [
       ['SERVICIO_ENVIAR', 'enviarcomopersona'], ['FUNCION_ENVIAR', 'enviarComoPersona'],
       ['SERVICIO_TOMAR', 'tomarconversacion'], ['FUNCION_TOMAR', 'tomarConversacion'],
       ['SERVICIO_DEVOLVER', 'devolverconversacion'], ['FUNCION_DEVOLVER', 'devolverConversacion'],
       ['SERVICIO_RECLAMAR', 'reclamarsalidapersona'], ['FUNCION_RECLAMAR', 'reclamarSalidaPersona'],
       ['SERVICIO_CONFIRMAR', 'confirmarsalidapersona'], ['FUNCION_CONFIRMAR', 'confirmarSalidaPersona'],
+      ['SERVICIO_RESCATES', 'reclamarrescates'], ['FUNCION_RESCATES', 'reclamarRescates'],
     ] as const) expect(codigo).toContain(`readonly ${c}="${v}"`);
     expect(codigo).toContain('readonly SERVICIO_VISOR="vercomprobante"');
     expect(codigo).toContain('readonly FUNCION_VISOR="verComprobante"');
     expect(codigo).toContain('readonly SERVICIO_BUSCADOR="buscarconversaciones"');
     expect(codigo).toContain('readonly FUNCION_BUSCADOR="buscarConversaciones"');
     expect(codigo).toContain('readonly SERVICIO FUNCION');
-    // Solo siete asignaciones de SERVICIO, y desde las constantes.
+    // Solo ocho asignaciones de SERVICIO, y desde las constantes.
     expect([...codigo.matchAll(/\bSERVICIO="([^"]*)"/g)].map((m) => m[1])).toEqual([
-      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR']);
-    // Solo las dos HTTP son de tipo http.
-    expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(2);
+      '$SERVICIO_VISOR', '$SERVICIO_BUSCADOR', '$SERVICIO_ENVIAR', '$SERVICIO_TOMAR', '$SERVICIO_DEVOLVER', '$SERVICIO_RECLAMAR', '$SERVICIO_CONFIRMAR', '$SERVICIO_RESCATES']);
+    // Solo las tres HTTP son de tipo http.
+    expect([...codigo.matchAll(/TIPO="http"/g)]).toHaveLength(3);
     expect(codigo).not.toMatch(/NUBE_VISOR_(SERVICIO|ADC)/);
   });
 

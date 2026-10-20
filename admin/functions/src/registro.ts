@@ -322,7 +322,8 @@ export const REGISTRO = [
     herramientas: [],
     // (i) resuelto: `checkoutCatalogo` es la única Function que escribe
     // `pedidos` desde el carrito; hoy vive en `catalogoWeb.ts`, que F2 parte.
-    functions: ['checkoutCatalogo'],
+    // `reclamarRescates`: rescate de 22 h (decide y marca; el envío es de un flujo de n8n).
+    functions: ['checkoutCatalogo', 'reclamarRescates'],
     flujosProgramados: [],
     ganchos: ['alCierre'],
     mensajes: 0,

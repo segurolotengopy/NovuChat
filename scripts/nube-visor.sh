@@ -8,6 +8,8 @@
 #   reclamarsalidapersona   → `reclamarSalidaPersona` (HTTP; la llama el flujo n8n con la credencial de la
 #                              ingesta del número, Core, H2-3)
 #   confirmarsalidapersona  → `confirmarSalidaPersona` (HTTP; ídem)
+#   reclamarrescates        → `reclamarRescates` (HTTP; la llama el flujo n8n de rescate de 22 h con la
+#                              credencial de la ingesta del número, módulo Pedidos)
 #
 # POR QUÉ EXISTE. Una Function HTTP o callable nueva no nace invocable si su
 # creación no salió limpia: sin `roles/run.invoker` para `allUsers`, Google
@@ -25,7 +27,7 @@
 # `NOT_FOUND` o `RESOURCE_EXHAUSTED`, sin sesión, quiere decir que el código
 # atendió a un anónimo («abierto»).
 #
-# LAS DOS HTTP (`reclamarsalidapersona`, `confirmarsalidapersona`) NO son
+# LAS TRES HTTP (`reclamarsalidapersona`, `confirmarsalidapersona`, `reclamarrescates`) NO son
 # callables: no hay sesión de Firebase ni App Check; la barrera es la credencial
 # de la ingesta del número (`rutaAutenticada`, secreto por alias), que el código
 # exige ANTES de mirar la entrada. Sin ella contestan `401` con el texto «no
@@ -87,7 +89,9 @@ readonly SERVICIO_RECLAMAR="reclamarsalidapersona"
 readonly FUNCION_RECLAMAR="reclamarSalidaPersona"
 readonly SERVICIO_CONFIRMAR="confirmarsalidapersona"
 readonly FUNCION_CONFIRMAR="confirmarSalidaPersona"
-readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}"
+readonly SERVICIO_RESCATES="reclamarrescates"
+readonly FUNCION_RESCATES="reclamarRescates"
+readonly LISTA_SERVICIOS="${SERVICIO_VISOR}|${SERVICIO_BUSCADOR}|${SERVICIO_ENVIAR}|${SERVICIO_TOMAR}|${SERVICIO_DEVOLVER}|${SERVICIO_RECLAMAR}|${SERVICIO_CONFIRMAR}|${SERVICIO_RESCATES}"
 readonly ROL="roles/run.invoker"
 readonly MIEMBRO="allUsers"
 readonly REPO="segurolotengopy/NovuChat"
@@ -124,6 +128,7 @@ case "$PEDIDO" in
   "$SERVICIO_DEVOLVER")  SERVICIO="$SERVICIO_DEVOLVER";  FUNCION="$FUNCION_DEVOLVER";  TIPO="callable" ;;
   "$SERVICIO_RECLAMAR")  SERVICIO="$SERVICIO_RECLAMAR";  FUNCION="$FUNCION_RECLAMAR";  TIPO="http" ;;
   "$SERVICIO_CONFIRMAR") SERVICIO="$SERVICIO_CONFIRMAR"; FUNCION="$FUNCION_CONFIRMAR"; TIPO="http" ;;
+  "$SERVICIO_RESCATES")  SERVICIO="$SERVICIO_RESCATES";  FUNCION="$FUNCION_RESCATES";  TIPO="http" ;;
   "") echo "✗ Falta --servicio ${LISTA_SERVICIOS} (no hay servicio por omisión)" >&2; exit 2 ;;
   *)  echo "✗ --servicio tiene que ser uno de ${LISTA_SERVICIOS}, escrito así (lista cerrada)" >&2; exit 2 ;;
 esac
