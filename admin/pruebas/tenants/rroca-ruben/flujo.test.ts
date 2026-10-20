@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
+import { vigilarUx } from './vigilante-ux';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-ruben');
@@ -28,7 +29,7 @@ const BETO = '59100000022';
 const REC = '59100000031'; // recepción: el WhatsApp de Rubén
 const AHORA = Date.UTC(2026, 9, 5, 14, 0, 0);
 const SUSPENDIDO = 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.';
-const SALUDO = /^Hola, soy el asistente virtual de Rubén\./;
+const SALUDO = /^¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual de Rubén\./;
 
 // ------------------------------------------------------------------------------ mensajes entrantes
 let seq = 0;
@@ -91,6 +92,8 @@ function crear(o: Opciones = {}) {
     ahoraMs: AHORA,
     configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}` },
   });
+  // Los invariantes de UX (botones que no reaparecen, una presentación por teléfono, párrafos) vigilan también los saludos de esta suite.
+  vigilarUx(mundo);
   return mundo;
 }
 const hablar = (m: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>
@@ -105,8 +108,10 @@ describe('el saludo: uno solo, armado por código, del asistente virtual', () =>
     expect(t.fallo).toBeNull();
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]!.a).toBe(ANA);
-    expect(t.mensajes[0]!.tipo).toBe('text');
+    // Saludo corto con botones en el MISMO mensaje; sin catálogo, solo «Hablar con Rubén» (no se ofrece «Ver precios» sin precios).
+    expect(t.mensajes[0]!.tipo).toBe('interactive');
     expect(t.mensajes[0]!.cuerpo).toMatch(SALUDO);
+    expect((t.mensajes[0]!.cuerpo.match(/asistente/gi) ?? []).length).toBe(1);
     expect(t.mensajes[0]!.cuerpo.toLowerCase()).not.toMatch(/no soy (un |una )?(bot|ia|asistente|robot)|soy (una )?persona|humano/);
     // Sin catálogo en la consola no hay precios que decir: ninguna cifra de dinero.
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/\bBs\b/);
@@ -234,7 +239,7 @@ describe('el filtro de eventos', () => {
 });
 
 describe('la normalización de entrada: ningún tipo rompe el flujo ni se queda sin respuesta cortés', () => {
-  const SALUDO_O_MODELO = /^(Hola, soy el asistente virtual de Rubén\.|Cuéntame un poco más)/;
+  const SALUDO_O_MODELO = /^(¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual de Rubén\.|Cuéntame un poco más)/;
   const casos: Array<[string, J, string, RegExp]> = [
     ['texto', mTexto('hola'), 'conversacion', SALUDO],
     ['toque de lista', mLista('opcion:uno'), 'conversacion', SALUDO],
