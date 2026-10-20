@@ -223,7 +223,7 @@ def listar():
             return todas
 nombre = os.environ["CREDENCIAL"]
 valor = sys.stdin.buffer.read().decode("utf-8", "replace")
-if not (len(valor) == 64 and all(c in "0123456789abcdef" for c in valor)):
+if not (len(valor) == 64 and all(c in "abcdef" or "0" <= c <= "9" for c in valor)):
     print("  ✗ el secreto no tiene la forma esperada (64 hexadecimales, sin salto) o no se pudo leer: no se escribe nada")
     sys.exit(1)
 print("  ✓ el secreto tiene la forma esperada")
