@@ -331,3 +331,30 @@ describe('pulir la redacción', () => {
     expect(F.cmPulirRedaccion(undefined)).toBe('');
   });
 });
+
+// BANCO COMPARTIDO de frases (esquema en la cabecera `_leeme` del JSON). Lo no marcado `conocido` se AFIRMA; los huecos conocidos solo se informan.
+interface EntradaBanco { texto: string; grupo: string; nota: string; estado_hoy: 'bloquea' | 'pasa'; conocido?: true }
+const BANCO = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/redaccion-pago-banco.json'), 'utf8')) as { deben_bloquearse: EntradaBanco[]; deben_pasar: EntradaBanco[] };
+describe('banco compartido de frases de redacción (admin/pruebas/fixtures/redaccion-pago-banco.json)', () => {
+  it('tiene las dos listas y cada entrada cumple el esquema', () => {
+    for (const e of [...BANCO.deben_bloquearse, ...BANCO.deben_pasar]) {
+      expect(typeof e.texto, e.texto).toBe('string');
+      expect(['pago', 'evasion', 'ia', 'legitima']).toContain(e.grupo);
+      expect(['bloquea', 'pasa']).toContain(e.estado_hoy);
+    }
+    expect(BANCO.deben_bloquearse.length).toBeGreaterThan(100);
+    expect(BANCO.deben_pasar.length).toBeGreaterThan(30);
+  });
+  it('todo `deben_bloquearse` no conocido se bloquea', () => {
+    for (const e of BANCO.deben_bloquearse.filter((x) => !x.conocido)) expect(motivo(e.texto), e.texto).not.toBe('');
+  });
+  it('todo `deben_pasar` no conocido pasa', () => {
+    for (const e of BANCO.deben_pasar.filter((x) => !x.conocido)) expect(motivo(e.texto), e.texto).toBe('');
+  });
+  it('los huecos conocidos se informan (no se afirman) y el estado_hoy declarado coincide con la realidad', () => {
+    const huecos = [...BANCO.deben_bloquearse, ...BANCO.deben_pasar].filter((x) => x.conocido);
+    for (const e of huecos) expect(e.estado_hoy === 'bloquea', e.texto).toBe(motivo(e.texto) !== '');
+    // eslint-disable-next-line no-console
+    console.info(`huecos conocidos del filtro: ${huecos.length}\n` + huecos.map((e) => `  [${e.estado_hoy}] ${e.texto}`).join('\n'));
+  });
+});
