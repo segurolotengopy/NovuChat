@@ -709,7 +709,7 @@ describe('violencia o miedo: se corta la venta y SIEMPRE se reporta `no_contacta
     expect(noContactar(t)).toBe(true);
   });
 
-  it('un comprobante que SÍ cuadra junto a un mensaje de riesgo: al cliente solo se le habla de su seguridad, pero Antonio igual recibe el aviso del pago real', () => {
+  it('un comprobante que cuadra o casi cuadra (aproximado) junto a un mensaje de riesgo (ver negadas.test.ts): al cliente solo se le habla de su seguridad, pero Antonio igual recibe el aviso del pago real', () => {
     const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } });
     const t = hablar(w, ANA, mImagen({ caption: 'mi pareja me amenaza' }));
     expect(t.mensajes[0]!.cuerpo).toMatch(/Lamento mucho/);

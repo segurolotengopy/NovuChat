@@ -104,6 +104,7 @@ export function crear(o: Opciones = {}): Mundo {
     'Traer configuración': () => (o.panel === 'cae' ? { statusCode: 503, body: {} } : (o.panel ?? panelOk())),
     'Reportar mensaje (entrante)': () => o.ingesta ?? { ok: true },
     'Reportar mensaje (saliente)': () => ({ ok: true }),
+    'Reportar protección': () => ({ ok: true }),
     'Obtener URL del medio (general)': () => ({ id: 'm', url: m.url ?? 'https://lookaside.fbsbx.com/whatsapp_business/attachments/medio-1', mime_type: m.mime ?? 'image/jpeg', file_size: m.bytes ?? 100_000 }),
     'Descargar medio': () => ({ descargado: true }),
     'Cotejar en el servidor': () => (o.cotejo === 'cae' ? { statusCode: 503, body: {} } : (o.cotejo ?? COTEJO_VALIDO)),
@@ -127,6 +128,7 @@ export function crear(o: Opciones = {}): Mundo {
   return crearMundo({
     flujo: o.flujo ?? PRODUCCION,
     dobles,
+    roles: { ingesta: ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Reportar protección'] },
     ahoraMs: AHORA,
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`,

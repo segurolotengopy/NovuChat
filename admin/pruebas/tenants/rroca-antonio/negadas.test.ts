@@ -288,3 +288,91 @@ describe('los números no bolivianos: texto fijo + botón, sin QR, UN mensaje ca
     expect(hablar(w, EXT, mTexto('hola')).mensajes).toHaveLength(1);
   });
 });
+
+describe('MEDIUM 1: el modelo no habla del estado de un pago ni de una entrega, ni de plazos', () => {
+  const frases = [
+    'Tu pago se está procesando y pronto tendrás el material en tu correo.',
+    'Todo en orden con tu compra; el material ya salió.',
+    'El material te llegará en unos minutos por este chat.',
+    'Te lo envían en pocas horas.', 'Lo tendrás en un par de días.', 'Enseguida lo recibes.', 'Revisa tu correo, ahí llega el libro.',
+  ];
+  it('cada una de estas redacciones del modelo cae al texto fijo', () => {
+    for (const crudo of frases) {
+      const w = nuevo({ modeloDice: crudo });
+      hablar(w, ANA, mTexto('hola'));
+      const t = hablar(w, ANA, mTexto('estamos distanciados desde hace meses'));
+      expect(t.mensajes[0]!.cuerpo, crudo).toMatch(/Gracias por escribir\. Cuéntame un poco más/);
+    }
+  });
+  it('lo legítimo sigue pasando: hablar del método y de los capítulos sin pagos, entregas ni plazos', () => {
+    const w = nuevo({ modeloDice: 'Entiendo lo que cuentas. Los capítulos 4 y 5 trabajan justo las pausas. ¿Qué suele pasar cuando discuten?' });
+    hablar(w, ANA, mTexto('hola'));
+    expect(hablar(w, ANA, mTexto('discutimos siempre por lo mismo y no sé qué hacer')).mensajes[0]!.cuerpo).toMatch(/capítulos 4 y 5/);
+  });
+  it('«ya pagué, ¿cuándo llega mi libro?» tras un comprobante NO llama al modelo: derivación de no entrega con el plazo del dato, aviso y botón', () => {
+    const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE }, modeloDice: 'Todo en orden, el material ya salió.' });
+    hablar(w, ANA, mImagen());
+    w.dobles['Traer configuración'] = () => panelOk();
+    for (const texto of ['ya pagué, ¿cuándo llega mi libro?', '¿ya revisaron mi transferencia?', 'el material, ¿cuándo?']) {
+      w.avanzar(31);
+      const t = hablar(w, ANA, mTexto(texto));
+      expect(t.ejecutados.has('Conversar con el modelo'), texto).toBe(false);
+      expect(t.mensajes[0]!.cuerpo, texto).toMatch(/Antonio revisa el pago y envía el material por este chat hasta en 6 horas; desde aquí no puedo confirmarte si ya salió/);
+      expect(t.mensajes[0]!.cuerpo).not.toMatch(NEGADAS_PAGO);
+      expect(t.mensajes[0]!.tipo).toBe('interactive');
+    }
+  });
+});
+
+describe('MEDIUM 2: la protección corre también con la puerta cerrada y fuera del país', () => {
+  const protegido = (t: ResultadoTurno): void => {
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Lamento mucho lo que estás pasando/);
+    expect(t.mensajes[0]!.tipo).toBe('text');
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/\d+\s*Bs|QR|banco boliviano|una persona del equipo|no podemos atenderte/);
+    expect(t.llamadas.ingesta.some((c) => c['direccion'] === 'saliente' && c['evento'] === 'no_contactar')).toBe(true);
+  };
+  it('en estado «operador» (uso extendido): el texto de protección y `no_contactar`, no el aviso fijo', () => {
+    const w = nuevo({ ingesta: { ok: true, atencion: { estado: 'operador', respuestasEnVentana: 55 } } });
+    protegido(hablar(w, ANA, mTexto('mi pareja me golpea')));
+  });
+  it('con el comercio suspendido: el texto de protección y `no_contactar`, no el texto neutro', () => {
+    const w = nuevo({ panel: { statusCode: 409, body: { estado: 'suspendido' } } });
+    protegido(hablar(w, ANA, mTexto('mi esposo me amenaza')));
+  });
+  it('con un número no boliviano: el texto de protección y `no_contactar`, no el de «QR boliviano»', () => {
+    protegido(hablar(nuevo(), '54100000077', mTexto('le tengo miedo a mi pareja')));
+  });
+  it('la pausa por persona («bloqueado») sigue en silencio: responde Antonio', () => {
+    const w = nuevo({ ingesta: { ok: true, atencion: { estado: 'bloqueado', respuestasEnVentana: 30 } } });
+    expect(hablar(w, ANA, mTexto('mi pareja me golpea')).mensajes).toHaveLength(0);
+  });
+});
+
+describe('LOW 1 y 2: el aviso del pago con riesgo, y `no_contactar` aunque el envío falle', () => {
+  it('un comprobante que cuadra Y que casi cuadra junto a un riesgo: el aviso a Antonio lleva la línea fija (sin copiar lo que escribió), y la ficha registra el comprobante y libera el QR', () => {
+    for (const estado of ['valido', 'aproximado']) {
+      const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado, motivo: 'monto_distinto', avisarComercio: true } } });
+      hablar(w, REC, mTexto('hola'));
+      const t = hablar(w, ANA, mImagen({ caption: 'mi pareja me amenaza con matarme' }));
+      expect(t.avisos, estado).toHaveLength(1);
+      expect(t.avisos[0]!.cuerpo).toMatch(/La persona mencionó miedo o violencia; contactarla solo para entregar el material/);
+      expect(t.avisos[0]!.cuerpo).not.toMatch(/amenaza|matarme/);
+      expect(t.mensajes[0]!.cuerpo).toMatch(/Lamento mucho/);
+      const f = (w.sd['antonio'] as J)[ANA];
+      expect(f['comprobanteMs'], estado).toBeGreaterThan(0);
+      expect(f['qrHastaMs'], estado).toBe(0);
+    }
+  });
+  it('si ni el envío ni el respaldo salen, `no_contactar` se reporta igual (la persona no recibe un rescate)', () => {
+    const w = nuevo({ envio: { 'Enviar a WhatsApp': 'error', 'Enviar respaldo': 'error' } });
+    const t = hablar(w, ANA, mTexto('mi pareja me golpea'), { toleraFallo: true });
+    expect(t.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar')).toHaveLength(1);
+    expect(t.ejecutados.has('Reportar protección')).toBe(true);
+    // Si el mensaje salió, no se duplica el reporte.
+    const v = nuevo();
+    const u = hablar(v, ANA, mTexto('mi pareja me golpea'));
+    expect(u.llamadas.ingesta.filter((c) => c['evento'] === 'no_contactar')).toHaveLength(1);
+    expect(u.ejecutados.has('Reportar protección')).toBe(false);
+  });
+});

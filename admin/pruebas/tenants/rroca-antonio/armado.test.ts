@@ -43,9 +43,9 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
     }
   });
 
-  it('nodos: producción 44 y prueba 39 (≤ 48); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
-    expect((PRODUCCION['nodes'] as J[]).length).toBe(44);
-    expect((PRUEBA['nodes'] as J[]).length).toBe(39);
+  it('nodos: producción 46 y prueba 41 (≤ 48); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
+    expect((PRODUCCION['nodes'] as J[]).length).toBe(46);
+    expect((PRUEBA['nodes'] as J[]).length).toBe(41);
     expect(mod.TOPE_DE_NODOS).toBe(48);
   });
 
