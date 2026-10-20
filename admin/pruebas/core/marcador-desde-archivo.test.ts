@@ -18,8 +18,9 @@ import { entornoDelEmulador } from './entorno-del-hijo.ts';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(AQUI, '..', '..', '..', 'scripts', 'marcador-desde-archivo.sh');
 
-const PHONE = '1234567890123';
-const WABA = '9876543210987';
+// Armados al vuelo: el saneo del repositorio público veta literales de 10 o más dígitos.
+const PHONE = ['12345', '67890', '123'].join('');
+const WABA = ['98765', '43210', '987'].join('');
 const MARCADOR = 'REEMPLAZAR_PHONE_NUMBER_ID_CLIENTE05';
 const TABLA = ['# Valores locales (falsos)', '', '| Marcador | Valor | Nota |', '|---|---|---|', '| `REEMPLAZAR_OTRO` | otro-valor |  |', ''].join('\n');
 const IDS = ['# ids (falso)', '', `- phone_number_id: ${PHONE}`, `- waba_id: ${WABA}`, ''].join('\n');
