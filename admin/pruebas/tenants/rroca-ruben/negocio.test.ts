@@ -119,12 +119,12 @@ describe('negocio-rroca-ruben.json: repositorio público y marcadores', () => {
           { name: 'avisoComprobanteEstado', value: 'APPROVED' }, { name: 'avisoComprobantePlantilla', value: 'aviso_comprobante_recibido' },
           { name: 'avisoConsultaEstado', value: 'APPROVED' }, { name: 'avisoConsultaPlantilla', value: 'aviso_consulta_para_ruben' }, { name: 'avisoPlantillaIdioma', value: 'es' },
           // Publicación de PRUEBA con lista restringida (la guardia de apertura exige declararla: sin lista sería abrir al público).
-          { name: 'telefonosDePrueba', value: 'lista-de-prueba' },
+          { name: 'telefonosDePrueba', value: '59100000042' },
         ] } } },
         { name: 'Negocio', parameters: { archivo: texto } },
       ],
     } as unknown as Flujo);
-    const datos = { configBase: { avisoComprobanteEstado: 'APPROVED', avisoComprobantePlantilla: 'a', avisoConsultaEstado: 'APPROVED', avisoConsultaPlantilla: 'b', avisoPlantillaIdioma: 'es', telefonosDePrueba: 'lista-de-prueba' } };
+    const datos = { configBase: { avisoComprobanteEstado: 'APPROVED', avisoComprobantePlantilla: 'a', avisoConsultaEstado: 'APPROVED', avisoConsultaPlantilla: 'b', avisoPlantillaIdioma: 'es', telefonosDePrueba: '59100000042' } };
     const h = guardiaDePublicacion({ flujo: envolver(TEXTO), datos }) as string[];
     expect(h).toHaveLength(PENDIENTES.length);
     for (const m of PENDIENTES) expect(h.join('|')).toContain(m);

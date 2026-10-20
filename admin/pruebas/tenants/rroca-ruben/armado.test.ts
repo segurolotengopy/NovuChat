@@ -7,14 +7,15 @@
  * `PROPIO.md`; y que el JSON traiga lo que el saneo del repo público rechaza (rutas de webhook, UUID, tokens, secuencias de 10 o más dígitos sin seis ceros).
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { Flujo, J } from '../../lib/flujo';
+import { ejecutar, type Flujo, type J } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, ARCHIVO_DE_DATOS, CONFIG, NODOS_DEL_AVISO, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
+import { ADAPTADOR_TRANSCRIPCION, AQUI, ARCHIVO_DE_DATOS, CONFIG, NODOS_DEL_AVISO, NOMBRES_DEL_NUCLEO, NUCLEO_TRANSCRIPCION, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 import { nodosDeEnvio } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
 
 const ESTA = dirname(fileURLToPath(import.meta.url));
@@ -208,6 +209,9 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
     expect(PRODUCCION.nodes.length).toBeLessThanOrEqual(46);
     expect(PRUEBA.nodes.length).toBeLessThanOrEqual(46);
     expect(PRODUCCION.nodes.length).toBe(PRUEBA.nodes.length + 5);
+    // MEDIOS ENTRANTES: 39 → 44 en producción y 34 → 39 en la prueba (5 nodos: ¿Es audio?, Transcribir audio, Preparar transcripción, ¿Es comprobante? y Ver imagen).
+    expect(PRODUCCION.nodes.length).toBe(44);
+    expect(PRUEBA.nodes.length).toBe(39);
   });
 
   it('«Reportar mensaje (entrante)» sigue ARRIBA de toda la rama que responde (medios, decisión, modelo, avisos y mensajes)', () => {
@@ -218,10 +222,18 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
     }
   });
 
-  it('«Guardar comprobante» es un nodo TERMINAL, cuelga de «Descargar medio» y va ARRIBA de «¿Es PDF?» (corre antes: la imagen se guarda aunque la lectura falle)', () => {
+  it('«Guardar comprobante» es un nodo TERMINAL, cuelga de «¿Es comprobante?» y va ARRIBA de «¿Es PDF?» (corre antes: la imagen se guarda aunque la lectura falle); una foto sin cobro JAMÁS llega a él', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
       expect(f.connections['Guardar comprobante']).toBeUndefined();
-      expect(destinos(f, 'Descargar medio')).toEqual(['Guardar comprobante', '¿Es PDF?']);
+      expect(destinos(f, 'Descargar medio')).toEqual(['¿Es audio?']);
+      expect(destinos(f, '¿Es audio?', 0)).toEqual(['Transcribir audio']);
+      expect(destinos(f, '¿Es audio?', 1)).toEqual(['¿Es comprobante?']);
+      expect(destinos(f, '¿Es comprobante?', 0)).toEqual(['Guardar comprobante', '¿Es PDF?']);
+      expect(destinos(f, '¿Es comprobante?', 1)).toEqual(['Ver imagen']);
+      expect(destinos(f, 'Transcribir audio')).toEqual(['Preparar transcripción']);
+      expect(destinos(f, 'Preparar transcripción')).toEqual(['Decidir turno']);
+      expect(destinos(f, 'Ver imagen')).toEqual(['Decidir turno']);
+      for (const n of ['¿Es audio?', 'Transcribir audio', 'Preparar transcripción', '¿Es comprobante?', 'Ver imagen']) expect(y(f, n), n).toBeGreaterThan(y(f, 'Reportar mensaje (entrante)'));
       expect(y(f, 'Guardar comprobante')).toBeLessThan(y(f, '¿Es PDF?'));
       expect(nodo(f, 'Guardar comprobante').parameters['url']).toBe('https://us-east1-novuchat-demo.cloudfunctions.net/guardarComprobante');
     }
@@ -235,6 +247,8 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
     expect(destinos(f, 'Obtener URL del medio')).toEqual(['¿Tamaño aceptable?']);
     expect(destinos(f, '¿Tamaño aceptable?', 0)).toEqual(['Descargar medio']);
     expect(destinos(f, '¿Tamaño aceptable?', 1)).toEqual(['Decidir turno']);
+    expect(destinos(f, 'Descargar medio')).toEqual(['¿Es audio?']);
+    expect(destinos(f, '¿Es comprobante?', 0)).toEqual(['Guardar comprobante', '¿Es PDF?']);
     expect(destinos(f, '¿Es PDF?', 0)).toEqual(['Leer comprobante (PDF)']);
     expect(destinos(f, '¿Es PDF?', 1)).toEqual(['Leer comprobante (imagen)']);
     expect(destinos(f, 'Leer comprobante (PDF)')).toEqual(['Interpretar lectura']);
@@ -299,7 +313,7 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
     const cb = (nodo(PRODUCCION, 'Config base').parameters['assignments'] as J)['assignments'] as J[];
     expect(cb.find((a) => a['name'] === 'modelo')!['value']).toBe('gemini-3.5-flash-lite');
     expect(cb.find((a) => a['name'] === 'cobroSimuladoActivo')!['value']).toBe(false);
-    for (const n of ['Conversar con el modelo', 'Leer comprobante (PDF)', 'Leer comprobante (imagen)']) {
+    for (const n of ['Conversar con el modelo', 'Leer comprobante (PDF)', 'Leer comprobante (imagen)', 'Transcribir audio', 'Ver imagen']) {
       expect(String((nodo(PRODUCCION, n).credentials as J)['googlePalmApi'].name), n).toBe('Google Gemini(PaLM) Api account');
     }
   });
@@ -373,10 +387,12 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
     expect(propio('carga-de-entrada.js')).toBe(esperado);
   });
 
-  it('«Interpretar entrada»: el origen sin el contrato del chat (eventos y rubros), con la `categoria` y (PR-2) con `esComprobante`, `comprobanteSimulado` y `mimeType`', () => {
+  it('«Interpretar entrada»: el origen sin el contrato del chat (eventos y rubros), con la `categoria`, (PR-2) con `esComprobante`, `comprobanteSimulado` y `mimeType` y (medios entrantes) con `extranjero`, `verImagen`, `imagenTope`, `visionApagada`, `oirAudio`, `audioTope` y `audioApagado`', () => {
     const esperado = derivar(chat('interpretar-entrada.js'), [
       ['// INTERPRETAR ENTRADA: el mensaje entrante, normalizado a UN evento de texto para el modelo.', '// INTERPRETAR ENTRADA: el mensaje entrante, normalizado (tipo, texto, medio y categoría). PR-1 no tiene modelo: la categoría solo dice qué clase de entrada llegó.'],
-      ['// Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen SIN `evento`: lo arma «Registrar evento» con lo que lean los nodos de medios.', '// Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen con `categoria: medio` y su `mediaId`; todo lo demás conversable, con `categoria: conversacion`; cualquier otro tipo, con `categoria: otro` (el flujo igual contesta cortésmente).'],
+      ['// Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen SIN `evento`: lo arma «Registrar evento» con lo que lean los nodos de medios.', '// UN NÚMERO DE OTRO PAÍS (prefijo fuera de `prefijosPermitidos`) YA NO SE DESCARTA EN SILENCIO: sale marcado `extranjero` (sin descargar nada, sin QR, sin aviso) y «Decidir turno» le responde una vez al día.\n// Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen con `categoria: medio` y su `mediaId`; todo lo demás conversable, con `categoria: conversacion`; cualquier otro tipo, con `categoria: otro` (el flujo igual contesta cortésmente).'],
+      ['el prefijo de país no está permitido (responder a un número extranjero cuesta su tarifa), Meta', 'Meta'],
+      ["const prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.trim()).filter(Boolean);\nif (prefijos.length && !prefijos.some((p) => from.startsWith(p))) return [];\n", 'const extranjero = rrEsExtranjero(from, cfg.prefijosPermitidos);\n'],
       ['chYaVisto(cnFichaDe(', 'rrYaVisto(cnFichaDe('],
       ['const rubros = (cfg.datos && cfg.datos.rubros) || [];\n', ''],
       ['let evento = null;\n', ''],
@@ -386,10 +402,14 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
       ["  // Un botón sin texto no es una imagen: queda como «una respuesta rápida».\n  evento = texto.trim() === '' ? chEventoOtro('button') : chEventoTexto(texto);\n", ''],
       ['  evento = chEventoOtro(tipo);\n', ''],
       ["if (tipo === 'text' && !evento) return [];", "if (tipo === 'text' && texto.trim() === '') return [];"],
-      ["const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\n", "const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\nconst categoria = (tipo === 'text' || tipo === 'interactive' || tipo === 'button') ? 'conversacion' : ((tipo === 'audio' || tipo === 'image' || tipo === 'document') ? 'medio' : 'otro');\n"+'// PR-2: ¿esta imagen o documento es el comprobante de un QR abierto? Lo dice el SERVIDOR (`cobro` de `Traer configuración`), nunca el texto ni la imagen. Con cobro REAL: hay un QR pendiente, el cobro está\n// en revisión o el plazo venció hace menos de 24 h (el servidor decide qué hacer). Con cobro SIMULADO: cualquier foto con el QR pendiente es el comprobante de la prueba (no se baja ni se coteja).\nconst rrCobroDelTurno = rrCobro(rrPanelDe(cnPrimero(\'Traer configuración\')), cnPrimero(\'Config base\'));\nconst rrEsVisual = (tipo === \'image\' || tipo === \'document\');\nconst esComprobante = rrEsVisual && mediaId !== \'\' && rrCobroDelTurno.modo === \'real\' && (rrCobroDelTurno.pendiente || rrCobroDelTurno.enRevision || rrCobroDelTurno.vencidoHaceMin !== null);\nconst comprobanteSimulado = rrEsVisual && rrCobroDelTurno.modo === \'simulado\' && rrCobroDelTurno.pendiente;\nconst mimeType = visual && typeof visual.mime_type === \'string\' ? visual.mime_type.slice(0, 100) : \'\';\n'],
+      ["const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\n", "const esVisual = (tipo === 'image' || tipo === 'document') && mediaId !== '';\nconst categoria = (tipo === 'text' || tipo === 'interactive' || tipo === 'button') ? 'conversacion' : ((tipo === 'audio' || tipo === 'image' || tipo === 'document') ? 'medio' : 'otro');\n"+'// PR-2: ¿esta imagen o documento es el comprobante de un QR abierto? Lo dice el SERVIDOR (`cobro` de `Traer configuración`), nunca el texto ni la imagen. Con cobro REAL: hay un QR pendiente, el cobro está\n// en revisión o el plazo venció hace menos de 24 h (el servidor decide qué hacer). Con cobro SIMULADO: cualquier foto con el QR pendiente es el comprobante de la prueba (no se baja ni se coteja).\nconst rrCobroDelTurno = rrCobro(rrPanelDe(cnPrimero(\'Traer configuración\')), cnPrimero(\'Config base\'));\nconst rrEsVisual = (tipo === \'image\' || tipo === \'document\');\nconst esComprobante = rrEsVisual && mediaId !== \'\' && rrCobroDelTurno.modo === \'real\' && (rrCobroDelTurno.pendiente || rrCobroDelTurno.enRevision || rrCobroDelTurno.vencidoHaceMin !== null);\nconst comprobanteSimulado = rrEsVisual && rrCobroDelTurno.modo === \'simulado\' && rrCobroDelTurno.pendiente;\nconst mimeType = visual && typeof visual.mime_type === \'string\' ? visual.mime_type.slice(0, 100) : \'\';\n'
+        + "// MEDIOS ENTRANTES: un documento solo es comprobante si es un PDF o una imagen (lo demás no lo lee Gemini: un archivo no soportado nunca se baja). ¿Se mira esta foto o se escucha este audio? Lo decide el código ANTES de bajar nada (tipo y formato, sin cobro pendiente ni QR en la guarda para la foto, y el tope diario por teléfono: `rrMediosDelTurno`, rr.js).\n"
+        + "const mimeBase = mimeType.split(';')[0].trim().toLowerCase();\n"
+        + "const docIlegible = tipo === 'document' && mimeBase !== 'application/pdf' && RR_MIME_VISION.indexOf(mimeBase) < 0;\n"
+        + "const rrMedios = rrMediosDelTurno({ tipo: tipo, mediaId: mediaId, mimeType: mimeType, esComprobante: esComprobante, comprobanteSimulado: comprobanteSimulado, extranjero: extranjero, ficha: rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from)), ahoraMs: ahoraTurno, base: cnPrimero('Config base') || {} });\n"],
       ['const msg = Array.isArray(carga.messages) ? carga.messages[0] : undefined;\n', 'const msg = Array.isArray(carga.messages) ? carga.messages[0] : undefined;\n'+"// El instante en que el CLIENTE escribió (Meta manda `timestamp` en segundos): de ahí parte la hora límite del aviso. Solo vale si es un número finito, no posterior al reloj del proceso y\n// de las últimas 24 h; si no, `mensajeMs` es el reloj del proceso. `ahoraMs` (el reloj del proceso) sigue siendo el de las ventanas y las fichas.\nconst ahoraTurno = Number(carga.ahoraMs) || Date.now();\nconst tsMeta = msg && /^\\d{1,12}$/.test(String(msg.timestamp)) ? Number(msg.timestamp) * 1000 : NaN;\nconst mensajeMs = Number.isFinite(tsMeta) && tsMeta <= ahoraTurno && ahoraTurno - tsMeta <= 24 * 60 * 60 * 1000 ? tsMeta : ahoraTurno;\n"],
       ['  ahoraMs: Number(carga.ahoraMs) || Date.now(),\n', '  ahoraMs: ahoraTurno,\n  mensajeMs: mensajeMs,\n'],
-      ['  evento: evento,\n', '  categoria: categoria,\n  esComprobante: esComprobante,\n  comprobanteSimulado: comprobanteSimulado,\n  mimeType: mimeType,\n'],
+      ['  evento: evento,\n', '  categoria: categoria,\n  esComprobante: esComprobante && !extranjero && !docIlegible,\n  comprobanteSimulado: comprobanteSimulado && !extranjero,\n  mimeType: mimeType,\n  extranjero: extranjero,\n  verImagen: rrMedios.verImagen,\n  imagenTope: rrMedios.imagenTope,\n  visionApagada: rrMedios.visionApagada,\n  oirAudio: rrMedios.oirAudio,\n  audioTope: rrMedios.audioTope,\n  audioApagado: rrMedios.audioApagado,\n'],
     ]);
     expect(propio('interpretar-entrada.js')).toBe(esperado);
   });
@@ -541,5 +561,100 @@ describe('saneo del repo público: lo armado no lleva identificadores', () => {
   it('un dato real en el archivo de datos lo rechaza el armador (la ruta del receptor tiene que ser un marcador)', () => {
     const ruta = join(ESTA, 'no-existe.json');
     expect(() => cargarDatos(ruta)).toThrow(/no existe/);
+  });
+});
+
+// ------------------------------------------------------------------------------------------------------------------------------------
+// MEDIOS ENTRANTES (20/10/2026): el NÚCLEO COMÚN de la transcripción va INCLUIDO tal cual (nunca copiado) y su salida la traduce un adaptador propio.
+// ------------------------------------------------------------------------------------------------------------------------------------
+describe('NÚCLEO INCLUIDO: «Preparar transcripción» es el archivo común de core, byte a byte, con dos nombres de nodo traducidos', () => {
+  const codigo = (f: Flujo, n: string): string => String(nodo(f, n).parameters['jsCode']);
+  const NUCLEO = leer(NUCLEO_TRANSCRIPCION).trimEnd();
+  const CODIGO = codigo(PRODUCCION, 'Preparar transcripción');
+  const correrPrep = (transcripcion: string, tam = 100_000): J => {
+    const salida = ejecutar(CODIGO, [{ content: { parts: [{ text: transcripcion }] } }], { 'Interpretar entrada': { from: '59100000011', tipo: 'audio' }, 'Obtener URL del medio': { file_size: tam } });
+    expect(salida).toHaveLength(1);
+    return salida[0]!;
+  };
+
+  it('el código armado CONTIENE el archivo del core, sin cambiar un byte, y la traducción tiene exactamente esos dos nombres', () => {
+    expect(CODIGO).toContain(NUCLEO);
+    expect(codigo(PRUEBA, 'Preparar transcripción')).toContain(NUCLEO);
+    expect(Object.keys(NOMBRES_DEL_NUCLEO)).toEqual(['Normalizar entrada', 'Obtener URL del medio (general)']);
+    expect(NOMBRES_DEL_NUCLEO).toEqual({ 'Normalizar entrada': 'Interpretar entrada', 'Obtener URL del medio (general)': 'Obtener URL del medio' });
+    expect(CODIGO).toContain(leer(ADAPTADOR_TRANSCRIPCION).trimEnd());
+  });
+
+  it('CONTRATO con el core: las cadenas que el adaptador entiende siguen literalmente en él (si el core cambia, esta prueba falla y el flujo se rearma)', () => {
+    for (const c of ["'(audio transcripto) '", 'nota de voz de más de cinco minutos', 'la nota de voz seguía', "$('Normalizar entrada')", "$('Obtener URL del medio (general)')", 'return out;']) expect(NUCLEO, c).toContain(c);
+  });
+
+  it('la ejecución: una transcripción es «ok»; vacía es «no_entendido»; más de 720 kB es «largo»; 5.000 caracteres se recortan y lo dicen', () => {
+    expect(correrPrep('Hola, tengo una tienda de ropa')).toEqual({ audioEstado: 'ok', audioTexto: 'Hola, tengo una tienda de ropa', audioRecortado: false });
+    expect(correrPrep('')).toMatchObject({ audioEstado: 'no_entendido', audioTexto: '' });
+    expect(correrPrep('   ')).toMatchObject({ audioEstado: 'no_entendido' });
+    expect(correrPrep('Hola', 800_000)).toMatchObject({ audioEstado: 'largo', audioTexto: '' });
+    const largo = correrPrep('palabra '.repeat(625));
+    expect(largo['audioEstado']).toBe('ok');
+    expect(largo['audioRecortado']).toBe(true);
+    expect(String(largo['audioTexto']).length).toBeLessThanOrEqual(4400);
+  });
+
+  it('NEGANDO: un cliente que DICE «la nota de voz seguía» o «nota de voz de más de cinco minutos» no engaña al adaptador (solo vale lo que escribió el núcleo, después del primer salto)', () => {
+    expect(correrPrep('la nota de voz seguía y no me escuchaste')).toMatchObject({ audioEstado: 'ok', audioRecortado: false });
+    expect(correrPrep('esta nota de voz de más de cinco minutos es una broma')).toMatchObject({ audioEstado: 'ok', audioRecortado: false });
+  });
+
+  it('el tope de bytes del audio es UNO solo: `RR_AUDIO_MAX_BYTES` (rr.js) = `LIMITE_BYTES` del núcleo = el de «¿Tamaño aceptable?»; el del PDF es 10 MB y el de la foto 5 MB', () => {
+    expect(leer(join(RROCA, 'src/lib/rr.js'))).toContain('const RR_AUDIO_MAX_BYTES = 720000;');
+    expect(NUCLEO).toContain('const SEGUNDOS_MAX = 300;');
+    expect(NUCLEO).toContain('const BYTES_POR_SEGUNDO = 2400;');
+    expect(300 * 2400).toBe(720000);
+    expect(leer(join(FLUJOS, '../src/core/medios/medio-no-aceptado.js'))).toMatch(/MAX_AUDIO = 720000/);
+    const exp = String(nodo(PRODUCCION, '¿Tamaño aceptable?').parameters['conditions']!['conditions'][0].leftValue);
+    expect(exp).toContain('esAudio === true ? 720000 : (String($(\'Interpretar entrada\').first().json.mimeType || \'\').toLowerCase().startsWith(\'application/pdf\') ? 10000000 : 5000000)');
+    expect(leer(join(RROCA, 'src/lib/rr.js'))).toContain('const RR_PDF_MAX_BYTES = 10000000;');
+  });
+
+  it('«Transcribir audio» tiene los MISMOS parámetros que el del Demo B; ambos nodos de Gemini no cortan el turno si fallan', () => {
+    const demoB = JSON.parse(leer(join(FLUJOS, '../demo-b-venta-cobro.json'))) as Flujo;
+    expect(nodo(PRODUCCION, 'Transcribir audio').parameters).toEqual(nodo(demoB, 'Transcribir audio').parameters);
+    for (const n of ['Transcribir audio', 'Ver imagen']) {
+      expect((nodo(PRODUCCION, n) as J)['onError'], n).toBe('continueRegularOutput');
+      expect((nodo(PRODUCCION, n) as J)['alwaysOutputData'], n).toBe(true);
+    }
+    // «Ver imagen» solo CLASIFICA: no lleva opciones de resolución ni más de 200 tokens de salida.
+    expect(nodo(PRODUCCION, 'Ver imagen').parameters['options']).toEqual({ maxOutputTokens: 200 });
+  });
+
+  it('NEGANDO (guardias): un núcleo alterado, un Gemini sin `alwaysOutputData` o conectado a otro nodo dan hallazgo', () => {
+    const alterado = copia(PRODUCCION);
+    nodo(alterado, 'Preparar transcripción').parameters['jsCode'] = String(nodo(alterado, 'Preparar transcripción').parameters['jsCode']).replace('const SEGUNDOS_MAX = 300;', 'const SEGUNDOS_MAX = 3000;');
+    expect(guardias('produccion', alterado).join('|')).toMatch(/no incluye TAL CUAL el núcleo común/);
+    const sinSalida = copia(PRODUCCION);
+    delete (nodo(sinSalida, 'Transcribir audio') as J)['alwaysOutputData'];
+    expect(guardias('produccion', sinSalida).join('|')).toMatch(/«Transcribir audio» tiene que llevar onError/);
+    const sinVer = copia(PRODUCCION);
+    (nodo(sinVer, 'Ver imagen') as J)['onError'] = undefined;
+    expect(guardias('produccion', sinVer).join('|')).toMatch(/«Ver imagen» tiene que llevar onError/);
+    const desviado = copia(PRODUCCION);
+    desviado.connections['Transcribir audio'] = { main: [[{ node: 'Armar mensajes', type: 'main', index: 0 }]] } as never;
+    expect(guardias('produccion', desviado).join('|')).toMatch(/«Transcribir audio» tiene que conectarse solo a «Preparar transcripción»/);
+  });
+
+  it('`topeAudiosDia` y `topeImagenesDia` tienen forma validada en los datos (0 a 30 y 0 a 20)', () => {
+    const base = JSON.parse(leer(ARCHIVO_DE_DATOS)) as { configBase: Record<string, unknown> };
+    const probar = (campo: string, valor: unknown): string => {
+      const d = copia(base);
+      d.configBase[campo] = valor;
+      const ruta = join(tmpdir(), `rroca-tope-${campo}-${String(valor)}.json`);
+      writeFileSync(ruta, JSON.stringify(d));
+      try { cargarDatos(ruta); return 'ok'; } catch (e) { return (e as Error).message; } finally { rmSync(ruta, { force: true }); }
+    };
+    expect(probar('topeAudiosDia', '31')).toMatch(/topeAudiosDia: forma no válida/);
+    expect(probar('topeImagenesDia', '21')).toMatch(/topeImagenesDia: forma no válida/);
+    expect(probar('topeAudiosDia', '-1')).toMatch(/forma no válida/);
+    expect(probar('topeAudiosDia', '10')).toBe('ok');
+    expect(probar('topeImagenesDia', '0')).toBe('ok');
   });
 });

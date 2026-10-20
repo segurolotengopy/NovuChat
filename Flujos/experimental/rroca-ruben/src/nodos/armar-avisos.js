@@ -30,7 +30,7 @@ let aviso = plan.aviso && typeof plan.aviso === 'object' ? plan.aviso : null;
 if (!aviso && puerta.ruta === 'uso_extendido' && puerta.responder === true && String(puerta.texto || '').trim() !== '') {
   aviso = { tipo: 'consulta', clave: 'atencion_humana', motivo: 'uso extendido: se le dijo al cliente que una persona continúa la conversación', mensaje: '' };
 }
-if (!aviso && plan.tipo === 'modelo' && rrEsDerivar(cnTextoDeGemini(cnPrimero('Conversar con el modelo')))) {
+if (!aviso && plan.tipo === 'modelo' && plan.origen !== 'imagen' && rrEsDerivar(cnTextoDeGemini(cnPrimero('Conversar con el modelo')))) {
   aviso = { tipo: 'consulta', clave: 'no_supo', motivo: 'consulta que el asistente no supo responder', mensaje: String(plan.textoCliente || '').slice(0, 200) };
 }
 const clave = aviso && typeof aviso.clave === 'string' && RR_CLAVES_AVISO.indexOf(aviso.clave) >= 0 ? aviso.clave : '';

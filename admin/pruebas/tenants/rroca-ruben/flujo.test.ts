@@ -83,6 +83,11 @@ function crear(o: Opciones = {}) {
     'Reportar mensaje (saliente)': () => ({ ok: true }),
     'Conversar con el modelo': () => ({ candidates: [{ content: { parts: [{ text: 'Cuéntame un poco más de tu negocio para orientarte mejor. ¿Qué vendes hoy?' }] } }] }),
     'Enviar aviso': () => ({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.AVISO' }] }),
+    // MEDIOS ENTRANTES: Meta entrega la URL, se baja el medio y Gemini no devuelve nada utilizable (el peor caso: el cliente igual recibe una respuesta cortés).
+    'Obtener URL del medio': () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'image/jpeg', file_size: 100_000 }),
+    'Descargar medio': () => ({}),
+    'Transcribir audio': () => ({}),
+    'Ver imagen': () => ({}),
     'Enviar a WhatsApp': enviar('Enviar a WhatsApp'),
     'Enviar respaldo': enviar('Enviar respaldo'),
   };
@@ -186,10 +191,17 @@ describe('la sesión es el número de origen', () => {
     }
   });
 
-  it('un prefijo de país no permitido no recibe respuesta (responder a un número extranjero cuesta su tarifa)', () => {
-    const w = crear();
+  it('un prefijo de país no permitido YA NO se descarta en silencio: recibe UN texto fijo con el botón de Rubén (modo prueba: al teléfono de prueba), y dentro del día ningún otro', () => {
+    // 'Entrada de prueba' manda al teléfono de prueba; el número extranjero es solo el ORIGEN. Se prueba con la lista que lo permite.
+    const w = crear({ telefonosDePrueba: `${ANA},54100000011` });
     const t = hablar(w, '54100000011', mTexto('hola'));
-    expect(t.mensajes).toHaveLength(0);
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/^Hola, soy el asistente virtual de Rubén\. El pago del libro se hace con un QR boliviano/);
+    expect(t.porNodo['Interpretar entrada']![0]!['extranjero']).toBe(true);
+    // Sin descarga, sin modelo, sin aviso, sin QR.
+    for (const n of ['Obtener URL del medio', 'Conversar con el modelo', 'Enviar aviso', 'Ver imagen', 'Transcribir audio']) expect(t.ejecutados.has(n), n).toBe(false);
+    // Dentro del día: nada (acota el costo de un barrido de números).
+    expect(hablar(w, '54100000011', mTexto('hola otra vez')).mensajes).toHaveLength(0);
   });
 });
 
@@ -246,9 +258,9 @@ describe('la normalización de entrada: ningún tipo rompe el flujo ni se queda 
     ['toque de botón', mBoton('boton:uno'), 'conversacion', SALUDO],
     ['botón de plantilla', { type: 'button', button: { text: 'Hola', payload: 'p' } }, 'conversacion', SALUDO_O_MODELO],
     ['imagen', mImagen(), 'medio', /^Recibí tu imagen/],
-    ['audio', mAudio(), 'medio', /^Por ahora no puedo escuchar audios/],
-    ['nota de voz', { type: 'voice', voice: { id: 'media-voz' } }, 'medio', /^Por ahora no puedo escuchar audios/],
-    ['documento', mDocumento(), 'medio', /^Recibí tu imagen/],
+    ['audio', mAudio(), 'medio', /^Recibí tu nota de voz, pero no se escuchó bien/],
+    ['nota de voz', { type: 'voice', voice: { id: 'media-voz' } }, 'medio', /^Recibí tu nota de voz, pero no se escuchó bien/],
+    ['documento', mDocumento(), 'medio', /^Recibí tu archivo/],
     ['ubicación', { type: 'location', location: { latitude: -16.5, longitude: -68.1 } }, 'otro', /^Por aquí solo puedo leer mensajes de texto/],
     ['sticker', { type: 'sticker', sticker: { id: 'media-stk' } }, 'otro', /^Por aquí solo puedo leer mensajes de texto/],
     ['contactos', { type: 'contacts', contacts: [{ name: { formatted_name: 'X' } }] }, 'otro', /^Por aquí solo puedo leer mensajes de texto/],
