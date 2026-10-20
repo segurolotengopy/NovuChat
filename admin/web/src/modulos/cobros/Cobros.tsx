@@ -153,6 +153,8 @@ function CobrosDelNegocio() {
     // Los comprobantes que no coincidieron no crean cobro: viven en la conversación
     // (`solicitud.comprobantes`). Filtro simple, sin `orderBy` (no pide índice
     // compuesto): se ordenan del más nuevo al más viejo en memoria.
+    // FASE 2: una colección propia (`comprobantesRecibidos`) reemplazará esta fuente; la pantalla
+    // solo conoce filas normalizadas (`ComprobanteRecibido`), así que solo cambia este efecto.
     return onSnapshot(
       query(collection(db, 'tenants', tenantId, 'conversaciones'), where('solicitud.reglaCobro', '==', 2), limit(100)),
       (s) => setRecibidos(aplanarComprobantes(s.docs.map((d) => ({ id: d.id, ...d.data() })))),
