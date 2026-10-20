@@ -219,6 +219,11 @@ describe('hallazgo de seguridad de Cartera (20/10): pago en plural y variantes, 
       'Aceptamos QR, transferencia, Tigo Money, tarjeta y efectivo', 'Para pagar toca el botón', 'Te paso el QR para pagar', 'Cuando pagues, envía el comprobante']);
     pasa(['El pedido cuesta 60 Bs'], { permitirMontos: true });
   });
+  it('NIEGA: «página», «paginación», «cancelar la suscripción» y «abono» como insumo no son un pago', () => {
+    pasa(['La página está bien', 'Visita la página web', 'Tu página de pedidos tiene un menú', 'Las páginas están en orden', 'La paginación está ok',
+      'Para cancelar la suscripción escríbenos', 'El abono para plantas está en el catálogo', 'El cobro se hace en caja']);
+    rechaza(['Tus pagos están bien', 'Los pagos ya llegaron', 'Tu abono ya llegó', 'Tu cobro fue aprobado', 'Pagas recibidas']);
+  });
   it('evasión por forma: letras sueltas, guiones, puntos, ancho completo y caracteres invisibles', () => {
     rechaza(['Recibimos tu p-a-g-o', 'Recibimos tu p.a.g.o', 'Recibimos tu p a g o', 'Recibimos tu p_a_g_o', 'Recibimos tu ｐａｇｏ', 'Recibimos tu pa​go', 'Tu pago está a c r e d i t a d o',
       'Ya c a n c e l a s t e el libro', 'R E C I B I M O S tu pago']);

@@ -58,8 +58,10 @@ const CM_PROMESAS = /lo consulto|lo consultar[eé]|consultar[eé]|\b(te|le) avis
 // «hablas con una persona», «persona real», «de carne y hueso».
 // Medios y sustantivos del pago. Medios que existen en Bolivia: QR simple, transferencia, Tigo Money, tarjeta, efectivo y depósito.
 // (Yape, Nequi, PIX… no existen aquí y no se listan.)
-const CM_PAGO = '(?:pag\\w*|comprobantes?|abon\\w*|cobr\\w*|cancel\\w*|plata|dinero|depositos?|transferencias?|qr|tigo ?money|tarjeta|efectivo|vouchers?)';
-const CM_PAGO_HECHO = '(?:pag\\w*|comprobantes?|abon\\w*|plata|dinero|depositos?|transferencias?|vouchers?)';
+// Formas EXPLÍCITAS (nunca `pag\w*`: «página» no es un pago) y sin `cancel*` (cancelar una suscripción no es pagar; «cancelaste/cancelamos/cancelaron» tienen su regla).
+// «abono» (también fertilizante) y «cobro» solo cuentan junto a un estado o verbo de recepción.
+const CM_PAGO = '(?:pagos?|pagad[oa]s?|pagar|pagas?|pagan|pague|pagaste|pagamos|pagaron|comprobantes?|abonos?|abonad[oa]s?|abonar|abonaste|abonamos|abonaron|cobros?|cobrad[oa]s?|cobrar|cobramos|cobraron|plata|dinero|depositos?|transferencias?|qr|tigo ?money|tarjeta|efectivo|vouchers?)';
+const CM_PAGO_HECHO = '(?:pagos?|pagad[oa]s?|pagar|pagas?|pagan|pague|pagaste|pagamos|pagaron|comprobantes?|abonos?|abonad[oa]s?|abonar|abonaste|abonamos|abonaron|plata|dinero|depositos?|transferencias?|vouchers?)';
 const CM_ESTADO = '(?:recibid|acreditad|aprobad|confirmad|verificad|registrad|validad|exitos|llego|llegaron|entro|entraron|ingreso|ingresaron|se acredit|esta\\w* (?:en orden|ok|bien|list|acreditad|correct|completo|conforme|al dia)|en orden)';
 const CM_VERBO_RECEPCION = '(?:recib(?:i\\w*|ido|ida|idos|idas)|llego\\w*|llegaron|entro|entraron|ingreso|ingresaron|registramos|verificamos|validamos)';
 const CM_AFIRMA = new RegExp([
