@@ -12,14 +12,14 @@
 | **Depende de** | Pedidos o Agenda (quien cierra) |
 | **Límite por plan** | — |
 | **Configuración** | `config/cobros` (hoy repartido entre `config/venta` y `config/agendamiento`): `mediaIdQr`, `cobroReal`, montos de seña, … |
-| **Colecciones** | las de cobro dentro de `cierres` y `pedidos`; `fotosCatalogo` no. Almacenamiento: `comprobantes` (Storage, regla 2). Raíz: `topesDelVisor/{uid}` (el contador del tope del visor; las reglas lo niegan todo, solo lo escribe la callable) |
+| **Colecciones** | `comprobantesRecibidos/{nombreDeObjeto(idMeta)}` (todo comprobante recibido, con o sin cierre: lo escribe `cotejarComprobanteVenta` en la misma transacción del cotejo; sin teléfono ni lo leído de la imagen; `vence` = `en` + 90 días, TTL; la lee quien lee conversaciones; la purga de baja la borra); las de cobro dentro de `cierres` y `pedidos`; `fotosCatalogo` no. Almacenamiento: `comprobantes` (Storage, regla 2). Raíz: `topesDelVisor/{uid}` (el contador del tope del visor; las reglas lo niegan todo, solo lo escribe la callable) |
 | **Pestañas** | Cobros (`admin`), Cobro / QR (`admin`) |
 | **Prompt** | fragmento de cobro del prompt (QR, comprobante) |
 | **Herramientas** | las de la seña y del comprobante en los flujos de reservas y venta |
 | **Nodos (lo que queda en n8n)** | `preparar-sena`, `respuesta-de-la-sena`, `mensaje-de-la-sena`, `interpretar-lectura` (en `Flujos/src/modulos/cobros/` desde FL1), más los nodos de cobro del Demo B; dibujo del QR y cotejo del comprobante como servicios internos del módulo |
 | **Ganchos** | `despuesDelTurno` (cotejo), `alCierre` con Pedidos o Agenda |
 | **Mensajes por conversación** | 0 en la venta; la seña agrega los mensajes declarados en §4duodecies (abajo) |
-| **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts`; regla 2 (§4duodecies.6): `calificar.test.ts`, `cobro-v2.test.ts`, `cotejo-venta.test.ts`, `comprobantes.test.ts` (en `pruebas/modulos/cobros/`), «Comprobantes de pago» en `storage-reglas.test.ts` y, en la ingesta, `pruebas/cobro-v2-ingesta.test.ts`; el visor (§4duodecies.7): `ver-comprobante.test.ts` y `visor-reglas.test.ts` |
+| **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts`; regla 2 (§4duodecies.6): `calificar.test.ts`, `cobro-v2.test.ts`, `cotejo-venta.test.ts`, `comprobantes.test.ts` (en `pruebas/modulos/cobros/`), «Comprobantes de pago» en `storage-reglas.test.ts` y, en la ingesta, `pruebas/cobro-v2-ingesta.test.ts`; el visor (§4duodecies.7): `ver-comprobante.test.ts` y `visor-reglas.test.ts`; comprobantes recibidos (fase 2): `ver-comprobante-sin-cierre.test.ts`, `comprobantes-recibidos-fase2.test.ts`, `recibidos-reglas.test.ts`, `copiar-comprobantes-recibidos.test.ts` |
 
 **Observación:** declarado por dos verticales «y gana venta»; con módulo, es uno solo con su propio `config/cobros`. **Los rótulos del cobro simulado son de Plataforma** (§4sexies.3, abajo). **Nunca confundir con Pagar** (NovuChat cobra al comercio), que es de Central. La prohibición 3 de `CLAUDE.md` manda: cobro simulado con rótulo, cobro real sin «pago acreditado», y los dos modos son excluyentes
 

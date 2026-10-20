@@ -408,6 +408,13 @@ export interface TransicionDeCobro {
   avisarComercio: boolean;
   /** El resultado guardado de un comprobante repetido (mismo `idMeta`), si lo hubo. */
   previo?: ComprobanteAnotado;
+  /**
+   * El comprobante que esta transición anotó, SIEMPRE que anotó uno: también el
+   * séptimo y los siguientes, que el arreglo `solicitud.comprobantes` ya no
+   * guarda (tope `MAX_COMPROBANTES`). Lo escribe `cotejoVenta.ts` en
+   * `comprobantesRecibidos`, en la misma transacción.
+   */
+  anotado?: ComprobanteAnotado;
 }
 
 const sinCambios = (efecto: EfectoDeCobro, s: Record<string, unknown> | null): TransicionDeCobro => {
@@ -536,14 +543,16 @@ export function solicitudDeCobroTras(
   const repetido = lista.find((c) => c.idMeta === evento.idMeta);
   if (repetido) return { ...sinCambios('repetido', s), previo: repetido };
 
+  let anotado: ComprobanteAnotado | undefined;
   const anotar = (estado: EstadoDeComprobante, motivo: string, avisar: boolean,
-    intentosTras: number = numeroEntero(s['intentosInvalidos'])): ComprobanteAnotado[] =>
-    lista.length >= MAX_COMPROBANTES ? lista
-      : [...lista, {
-          idMeta: evento.idMeta, estado, motivo, en: ahora, ruta: evento.ruta, avisar,
-          importe: evento.importe ?? null, montoLeido: evento.montoLeido ?? null,
-          montoDistinto: evento.montoDistinto ?? false, intentos: intentosTras,
-        }];
+    intentosTras: number = numeroEntero(s['intentosInvalidos'])): ComprobanteAnotado[] => {
+    anotado = {
+      idMeta: evento.idMeta, estado, motivo, en: ahora, ruta: evento.ruta, avisar,
+      importe: evento.importe ?? null, montoLeido: evento.montoLeido ?? null,
+      montoDistinto: evento.montoDistinto ?? false, intentos: intentosTras,
+    };
+    return lista.length >= MAX_COMPROBANTES ? lista : [...lista, anotado];
+  };
   const cotejos = numeroEntero(s['cotejos']) + 1;
 
   if (etapa === 'cancelada') return sinCambios('cobro_cancelado', s);
@@ -551,7 +560,8 @@ export function solicitudDeCobroTras(
 
   if (etapa === 'en_revision') {
     // Ya está con una persona: el comprobante se anota y no se avisa de nuevo.
-    return { ...sinCambios('en_revision', s), cambios: { comprobantes: anotar('en_revision', 'en_revision', false), cotejos } };
+    const cambios = { comprobantes: anotar('en_revision', 'en_revision', false), cotejos };
+    return { ...sinCambios('en_revision', s), cambios, anotado };
   }
 
   // Vencida (guardada o por reloj): el comprobante llega tarde.
@@ -564,9 +574,10 @@ export function solicitudDeCobroTras(
         : sinCambios('sin_cobro', s);
     }
     const primero = !lista.some((c) => c.estado === 'tardio');
+    const cambiosTardio = { ...(vencidaPorReloj ? vencimiento() : {}), comprobantes: anotar('tardio', 'tardio', primero), cotejos };
     return {
       ...sinCambios('tardio', s),
-      cambios: { ...(vencidaPorReloj ? vencimiento() : {}), comprobantes: anotar('tardio', 'tardio', primero), cotejos },
+      cambios: cambiosTardio, anotado,
       metricas: { ...(vencidaPorReloj ? { cobrosVencidos: 1 } : {}), ...(primero ? { cobrosTardios: 1 } : {}) },
       avisarComercio: primero,
     };
@@ -579,12 +590,13 @@ export function solicitudDeCobroTras(
     ? s['prorrogaHasta'] : Timestamp.fromMillis(ahoraMs + MINUTOS_PRORROGA * 60_000);
 
   if (evento.estado === 'valido' || evento.estado === 'aproximado') {
+    const cambiosCierre = {
+      etapa: 'agendada', desde: ahora, cotejos, prorrogaHasta: prorroga,
+      comprobantes: anotar(evento.estado, evento.motivo, true),
+    };
     return {
       ...sinCambios('cerrado', s),
-      cambios: {
-        etapa: 'agendada', desde: ahora, cotejos, prorrogaHasta: prorroga,
-        comprobantes: anotar(evento.estado, evento.motivo, true),
-      },
+      cambios: cambiosCierre, anotado,
       metricas: {
         cobrosCotejados: 1, ...(evento.estado === 'valido' ? { cobrosValidos: 1 } : { cobrosAproximados: 1 }),
       },
@@ -601,6 +613,7 @@ export function solicitudDeCobroTras(
   };
   if (intentos >= MAX_INTENTOS_INVALIDOS) {
     return {
+      anotado,
       cambios: { ...base, etapa: 'en_revision', desde: ahora },
       efecto: 'en_revision',
       metricas: { cobrosCotejados: 1, cobrosInvalidos: 1, cobrosEnRevision: 1 },
@@ -608,6 +621,7 @@ export function solicitudDeCobroTras(
     };
   }
   return {
+    anotado,
     cambios: base, efecto: 'reintentar',
     metricas: { cobrosCotejados: 1, cobrosInvalidos: 1 },
     intentosInvalidos: intentos, intentosRestantes: MAX_INTENTOS_INVALIDOS - intentos, avisarComercio: false,
