@@ -37,6 +37,9 @@ const avisoDeConsulta = (clave, motivo) => ({ tipo: 'consulta', clave: clave, mo
 // Sin opciones de compra que mostrar (catálogo vacío o agotado, o el cliente ya pulsó todo): nunca «¿cuál prefieres?» sin opciones; se deriva a Rubén (aviso + botón).
 const sinOpciones = (boton) => ({ tipo: 'derivar', motivo: 'sin_opciones', aviso: avisoDeConsulta('qr_no_disponible', 'sin opciones de compra disponibles'), cat: cat, boton: boton });
 
+// El plan de «mostrar las opciones»: el menú de productos si queda algún botón; si no, el de complementos si queda alguno; si ninguno, Rubén (nunca «¿cuál prefieres?» sin opciones).
+const opcionesDe = (usados, boton) => (rrMenu(1, cat, usados).length ? { tipo: 'precios', cat: cat, boton: boton } : (rrMenu(2, cat, usados).length ? { tipo: 'menu2', cat: cat, boton: boton } : sinOpciones(boton)));
+
 // 1. Un comprobante (o la foto de la prueba simulada).
 if (t.esComprobante === true || t.comprobanteSimulado === true) {
   if (t.comprobanteSimulado === true) return salir({ tipo: 'comprobante', resultado: 'simulado', causa: '', diferencia: '', cat: cat, producto: producto, aviso: null });
@@ -75,18 +78,28 @@ if (t.tipo === 'interactive') {
   const k = rrProductoDeBoton(id);
   if (k) return salir(elegir(k, id));
   if (id === RR_BOTON_COMPLEMENTOS) return salir(rrMenu(2, cat, ficha.usados.concat([id])).length ? { tipo: 'menu2', cat: cat, boton: id } : sinOpciones(id));
-  // «Ver precios»: el menú de productos (con un QR abierto, el recordatorio del QR). «Hablar con Rubén»: aviso + botón, como «quiero hablar con Rubén» escrito.
-  if (id === RR_BOTON_PRECIOS) return salir(hayQrAbierto ? { tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: id } : (rrMenu(1, cat, ficha.usados.concat([id])).length ? { tipo: 'precios', cat: cat, boton: id } : sinOpciones(id)));
+  // «Ver precios»: el menú de productos (con un QR abierto, el recordatorio del QR). Sin productos que mostrar pero con complementos aún comprables, el menú de complementos; sin ninguno, Rubén.
+  // Si llegara como PRIMER mensaje (un botón de un chat viejo), no se muestran montos: el saludo corto. «Hablar con Rubén»: aviso + botón, como «quiero hablar con Rubén» escrito.
+  if (id === RR_BOTON_PRECIOS) {
+    if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: id });
+    if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat, boton: id });
+    return salir(opcionesDe(ficha.usados.concat([id]), id));
+  }
   if (id === RR_BOTON_HABLAR) return salir({ tipo: 'derivar', motivo: 'hablar_boton', clave: 'hablar_con_ruben', aviso: avisoDeConsulta('hablar_con_ruben', 'quiere hablar con Rubén'), cat: cat, boton: id });
-  // Un toque que no es de este flujo (un botón viejo, una lista de otro mensaje): nunca se toma por una conversación libre; se contesta con el saludo fijo
-  // si es la primera vez; si ya fue saludado, NO se repite el saludo: el menú de productos (o Rubén si no hay opciones).
-  if (ficha.saludado) return salir(rrMenu(1, cat, ficha.usados).length ? { tipo: 'precios', cat: cat, boton: '' } : sinOpciones(''));
+  // Un toque que no es de este flujo (un botón viejo, una lista de otro mensaje): nunca se toma por una conversación libre. Con un QR abierto, el recordatorio del QR (como «Ver precios»); se contesta con el
+  // saludo fijo si es la primera vez; si ya fue saludado, NO se repite el saludo: el menú de productos (o el de complementos, o Rubén si no hay opciones).
+  if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: id });
+  if (ficha.saludado) return salir(opcionesDe(ficha.usados, ''));
   return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
 }
 // 5. Texto: los prellenados de la landing, la derivación, los ingresos y la conversación.
 const pre = rrPrellenado(norm);
 if (pre === 'pack' || pre === 'libro') return salir(elegir(pre, ''));
-if (pre === 'closer' || pre === 'videos') return salir(hayQrAbierto ? elegir(pre, '') : { tipo: 'complemento', producto: pre, cat: cat, conPresentacion: !ficha.saludado });
+if (pre === 'closer' || pre === 'videos') {
+  if (hayQrAbierto) return salir(elegir(pre, ''));
+  // Sin el precio del complemento o sin botones que ofrecer, «¿con cuál prefieres avanzar?» no tendría opciones: se deriva a Rubén.
+  return salir(rrPrecio(cat, pre) === null || !rrMenuDeComplemento(pre, cat, ficha.usados).length ? sinOpciones('') : { tipo: 'complemento', producto: pre, cat: cat, conPresentacion: !ficha.saludado });
+}
 // Con un QR abierto, la consulta tampoco reabre el saludo: recibe el recordatorio del QR (un solo QR a la vez).
 if (pre === 'consulta') return salir(hayQrAbierto ? { tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat } : { tipo: 'saludo', pregunta: 'consulta', cat: cat });
 const derivacion = rrDerivacion(norm, { comprobante: ficha.comprobanteMs > 0 || cobro.enRevision === true, qrAbierto: hayQrAbierto });
