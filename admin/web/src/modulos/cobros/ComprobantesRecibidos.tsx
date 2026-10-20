@@ -1,0 +1,60 @@
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
+import { VisorComprobante } from './VisorComprobante';
+import { AVISO_COMPROBANTES, TEXTO_SIN_COMPROBANTES, type ComprobanteRecibido } from './comprobantesRecibidos';
+
+/**
+ * COMPROBANTES RECIBIDOS — lo que mandaron los clientes, también lo que no coincidió.
+ *
+ * Un comprobante inválido no crea cobro, así que sin esta lista el comercio vería
+ * solo un contador. Cada fila dice cuándo llegó, de quién, qué se pidió, qué se leyó
+ * y en palabras simples cómo salió el cotejo; con «Ver foto» abre la imagen por la
+ * callable auditada (`VisorComprobante`, forma por conversación).
+ *
+ * «Comprobado» NO aparece acá: es la marca de una persona y solo existe en un cobro
+ * (cierre). Y ningún texto sugiere que el dinero entró (prohibición 3): el aviso
+ * fijo lo dice. Recibe filas ya normalizadas; de dónde salen no le importa.
+ */
+export function ComprobantesRecibidos({ tenantId, filas, error }: {
+  tenantId: string;
+  /** `null` mientras carga. */
+  filas: ComprobanteRecibido[] | null;
+  error: boolean;
+}) {
+  return (
+    <article className="tarjeta" aria-label="Comprobantes recibidos">
+      <h3>Comprobantes recibidos</h3>
+      <p className="ayuda">{AVISO_COMPROBANTES}</p>
+      {error && <p role="alert">No se pudieron leer los comprobantes recibidos.</p>}
+      {!error && filas === null && <p>Cargando…</p>}
+      {!error && filas !== null && filas.length === 0 && <p className="vacio">{TEXTO_SIN_COMPROBANTES}</p>}
+      {!error && filas !== null && filas.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Fecha y hora</th><th>Cliente</th><th>Monto pedido</th><th>Monto leído</th><th>Estado</th><th />
+              </tr>
+            </thead>
+            <tbody>
+              {filas.map((f) => (
+                <tr key={`${f.conversacionId}:${f.idMeta}`}>
+                  <td>{f.fecha}</td>
+                  <td><TextoSeguro valor={f.cliente} maxLargo={60} /></td>
+                  <td>{f.montoPedido === null ? '—' : f.montoPedido}</td>
+                  <td>{f.montoLeido === null ? '—' : f.montoLeido}</td>
+                  <td>{f.estadoPalabras}</td>
+                  <td>
+                    {f.tieneFoto && (
+                      <VisorComprobante tenantId={tenantId} etiqueta="Ver foto"
+                                        origen={{ conversacionId: f.conversacionId, idMeta: f.idMeta }} />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </article>
+  );
+}

@@ -71,11 +71,11 @@ export function ContadoresDeCobro({ tenantId }: { tenantId: string }) {
         </table>
       </div>
       {lineas.some((l) => l.periodo === mesEnCurso && l.porConfirmar > 0) && (
-        <p><span className="tag tag-aviso">Este mes hubo comprobantes aproximados o en revisión</span></p>
+        <p><span className="tag tag-aviso">Este mes hubo comprobantes que coinciden en parte o en revisión</span></p>
       )}
       <p className="ayuda tarjeta-pie">
         Cifras del mes: cada comprobante rechazado se cuenta, y un cobro puede
-        tener hasta tres. Los comprobantes «aproximados» y «en revisión» los
+        tener hasta tres. Los comprobantes que «coinciden en parte» y los que están «en revisión» los
         confirma una persona del negocio mirando su cuenta. Que los datos
         coincidan no confirma que el dinero entró: eso lo dice su banco.
       </p>

@@ -75,12 +75,12 @@ export function mesLegible(periodo: string): string {
 export const COLUMNAS: { titulo: string; valor: (l: LineaDeCobros) => number }[] = [
   { titulo: 'QR enviados', valor: (l) => l.qrEnviados },
   { titulo: 'Datos coinciden', valor: (l) => l.validos },
-  { titulo: 'Aproximados', valor: (l) => l.aproximados },
-  { titulo: 'Pasaron a revisión', valor: (l) => l.enRevision },
+  { titulo: 'Coinciden en parte', valor: (l) => l.aproximados },
+  { titulo: 'En revisión', valor: (l) => l.enRevision },
   { titulo: 'Comprobantes que no coinciden', valor: (l) => l.invalidos },
   { titulo: 'Cancelados', valor: (l) => l.cancelados },
   { titulo: 'Vencidos', valor: (l) => l.vencidos },
-  { titulo: 'Tardíos', valor: (l) => l.tardios },
+  { titulo: 'Llegaron fuera de plazo', valor: (l) => l.tardios },
 ];
 
 /**

@@ -1,0 +1,154 @@
+/**
+ * COMPROBANTES RECIBIDOS — la parte pura (sin React, sin red).
+ *
+ * Un comprobante inválido nunca crea un cierre (decisión del 03/10), pero queda
+ * anotado en `tenants/{t}/conversaciones/{wa_<tel>}.solicitud.comprobantes[]`.
+ * Esta pantalla los junta de todas las conversaciones y los muestra uno por fila,
+ * del más nuevo al más viejo, para que el comercio vea qué mandó cada cliente.
+ *
+ * LA FILA ES UNA ENTRADA NORMALIZADA (`ComprobanteRecibido`): la pantalla solo
+ * conoce ese contrato. Una fase 2 (una colección `comprobantesRecibidos`) cambia
+ * únicamente quién llena las filas; la pantalla no se toca.
+ *
+ * Los estados hablan de DATOS, nunca de dinero (prohibición 3 de CLAUDE.md): el
+ * OCR de una imagen no es una acreditación bancaria. Ninguna palabra de esta
+ * tabla sugiere que el dinero entró; eso lo confirma el banco, y el negocio.
+ */
+
+/** Una fila de la lista. Contrato estable entre el origen de los datos y la pantalla. */
+export interface ComprobanteRecibido {
+  idMeta: string;
+  conversacionId: string;
+  /** Instante de llegada en milisegundos, o `null` si el registro no trae fecha. */
+  fechaMs: number | null;
+  /** «dd/mm/aaaa hh:mm» en hora de La Paz, o «—». */
+  fecha: string;
+  /** Nombre del contacto, o el teléfono enmascarado («****123»). */
+  cliente: string;
+  /** Lo que se pidió; `null` se pinta «—». */
+  montoPedido: number | null;
+  /** Lo que se leyó de la imagen; `null` se pinta «—». */
+  montoLeido: number | null;
+  estadoPalabras: string;
+  /** Hay una imagen guardada que la callable `verComprobante` pueda entregar. */
+  tieneFoto: boolean;
+}
+
+/** La conversación tal como llega de Firestore: todo desconocido hasta que se mire. */
+export interface ConversacionConComprobantes {
+  id: string;
+  telefono?: unknown;
+  nombreContacto?: unknown;
+  solicitud?: unknown;
+}
+
+/** El único id de conversación con el que la callable acepta pedir una foto. */
+export const ID_DE_CONVERSACION = /^wa_[0-9]{10,15}$/;
+
+/** Texto de un estado desconocido: ante la duda, una persona lo mira. */
+export const ESTADO_POR_DEFECTO = 'En revisión';
+
+/** Textos fijos de la pantalla. */
+export const AVISO_COMPROBANTES = 'NovuChat nunca confirma que el dinero entró: eso lo ve usted en su banco.';
+export const TEXTO_SIN_COMPROBANTES = 'Todavía no llegó ningún comprobante.';
+
+/**
+ * Tabla cerrada de estados, sobre los códigos de `cotejo.ts` y del cobro de venta.
+ * Los motivos `falta_*` son «no es comprobante» (no se pudo leer monto, fecha o
+ * destino): para el comercio, lo mismo que una imagen ilegible.
+ */
+export function estadoEnPalabras(estado: unknown, motivo: unknown): string {
+  switch (estado) {
+    case 'valido': return 'Datos coinciden';
+    case 'aproximado': return 'Coinciden en parte';
+    case 'en_revision': return 'En revisión';
+    case 'tardio': return 'Llegó fuera de plazo';
+    case 'no_es_comprobante': return 'Ilegible';
+    case 'invalido': {
+      const m = typeof motivo === 'string' ? motivo : '';
+      if (m === 'ilegible' || m === 'no_es_comprobante' || m.startsWith('falta_')) return 'Ilegible';
+      if (m.startsWith('monto_')) return 'No coincide el monto';
+      return 'No coinciden los datos';
+    }
+    default: return ESTADO_POR_DEFECTO;
+  }
+}
+
+const textoNoVacio = (v: unknown): string | null =>
+  typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
+
+/** «****123»: nunca el teléfono entero en una lista. */
+export function telefonoEnmascarado(telefono: unknown, conversacionId: string): string {
+  const crudo = typeof telefono === 'string' || typeof telefono === 'number'
+    ? String(telefono) : conversacionId.replace(/^wa_/, '');
+  const digitos = crudo.replace(/\D/g, '');
+  return digitos.length >= 3 ? `****${digitos.slice(-3)}` : '****';
+}
+
+const numero = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/** Milisegundos de un Timestamp de Firestore, un Date, un número o `{seconds}`. */
+export function milisegundosDe(v: unknown): number | null {
+  if (v instanceof Date) return Number.isFinite(v.getTime()) ? v.getTime() : null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v !== 'object' || v === null) return null;
+  const t = v as { toMillis?: unknown; toDate?: unknown; seconds?: unknown };
+  if (typeof t.toMillis === 'function') return milisegundosDe((t.toMillis as () => unknown).call(v));
+  if (typeof t.toDate === 'function') return milisegundosDe((t.toDate as () => unknown).call(v));
+  if (typeof t.seconds === 'number' && Number.isFinite(t.seconds)) return t.seconds * 1000;
+  return null;
+}
+
+const dos = (n: number) => String(n).padStart(2, '0');
+
+/** «dd/mm/aaaa hh:mm» en La Paz (UTC−4 fijo, como todo el proyecto). */
+export function fechaDeLaPaz(ms: number | null): string {
+  if (ms === null) return '—';
+  const d = new Date(ms - 4 * 3_600_000);
+  return `${dos(d.getUTCDate())}/${dos(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${dos(d.getUTCHours())}:${dos(d.getUTCMinutes())}`;
+}
+
+const esObjeto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * Aplana `solicitud.comprobantes[]` de varias conversaciones en filas, del más
+ * nuevo al más viejo (sin fecha, al final). Un elemento sin `idMeta` no se puede
+ * pedir ni identificar y se descarta; todo lo demás tiene un valor por defecto.
+ */
+export function aplanarComprobantes(conversaciones: readonly ConversacionConComprobantes[]): ComprobanteRecibido[] {
+  const filas: ComprobanteRecibido[] = [];
+  for (const conv of conversaciones) {
+    if (!esObjeto(conv.solicitud)) continue;
+    const lista = conv.solicitud['comprobantes'];
+    if (!Array.isArray(lista)) continue;
+    const cliente = textoNoVacio(conv.nombreContacto) ?? telefonoEnmascarado(conv.telefono, conv.id);
+    const pedidoGeneral = numero(conv.solicitud['monto']);
+    for (const c of lista) {
+      if (!esObjeto(c)) continue;
+      const idMeta = textoNoVacio(c['idMeta']);
+      if (idMeta === null) continue;
+      const fechaMs = milisegundosDe(c['en']);
+      filas.push({
+        idMeta,
+        conversacionId: conv.id,
+        fechaMs,
+        fecha: fechaDeLaPaz(fechaMs),
+        cliente,
+        montoPedido: numero(c['importe']) ?? pedidoGeneral,
+        montoLeido: numero(c['montoLeido']),
+        estadoPalabras: estadoEnPalabras(c['estado'], c['motivo']),
+        // La foto solo se puede pedir con un id de conversación que la callable acepte.
+        tieneFoto: textoNoVacio(c['ruta']) !== null && ID_DE_CONVERSACION.test(conv.id),
+      });
+    }
+  }
+  return filas
+    .map((fila, orden) => ({ fila, orden }))
+    .sort((a, b) => {
+      if (a.fila.fechaMs === b.fila.fechaMs) return a.orden - b.orden;
+      if (a.fila.fechaMs === null) return 1;
+      if (b.fila.fechaMs === null) return -1;
+      return b.fila.fechaMs - a.fila.fechaMs;
+    })
+    .map((x) => x.fila);
+}
