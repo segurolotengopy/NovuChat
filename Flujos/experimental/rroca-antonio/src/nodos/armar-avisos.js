@@ -72,14 +72,17 @@ const horaLimite = dosD(new Date(limiteMs).getUTCDate()) + '/' + dosD(new Date(l
 // Si la persona mencionó miedo o violencia en ese mismo turno: una línea FIJA, sin copiar lo que escribió.
 const LINEA_RIESGO = 'La persona mencionó miedo o violencia; contactarla solo para entregar el material.';
 const notaRiesgo = aviso.riesgo === true ? ' ' + LINEA_RIESGO : '';
+// En la PLANTILLA no hay lugar para una frase aparte (su texto es fijo): la nota va al final de la variable del producto, sin saltos de línea y sin copiar lo que escribió la persona.
+const notaRiesgoPlantilla = aviso.riesgo === true ? ', contactar solo para entregar el material (la persona mencionó miedo o violencia)' : '';
 const responderAntes = aviso.tipo === 'comprobante' ? 'responder antes de ' + horaLimite + ' hora de La Paz' : '';
 
-// La plantilla que corresponde: el comprobante que cuadra usa la de comprobante (4 variables); todo lo demás, la de consulta (3 variables).
+// La plantilla que corresponde: el comprobante que cuadra usa `aviso_comprobante_recibido` ({{1}} cliente, {{2}} producto, {{3}} monto indicado en Bs, {{4}} teléfono); todo lo demás, `aviso_consulta_para_antonio`
+// ({{1}} motivo, {{2}} teléfono, {{3}} resumen). Cada variable es una sola línea y de largo acotado (`avParametro`: sin saltos, a lo más 500). La hora límite NO va en la plantilla (solo en el texto libre).
 const cual = aviso.tipo === 'comprobante' && motivoComprobante === '' ? 'comprobante' : 'consulta';
 const parametros = cual === 'comprobante'
-  ? [nombre, prod + ', ' + responderAntes + notaRiesgo, montoNum || '—', '+' + from]
+  ? [nombre, prod + notaRiesgoPlantilla, montoNum || '—', '+' + from]
   : [aviso.tipo === 'comprobante' ? motivoComprobante : motivoConsulta, '+' + from,
-    aviso.tipo === 'comprobante' ? prod + ' por ' + monto + ', ' + responderAntes + notaRiesgo : (mensaje ? 'texto literal del cliente: «' + mensaje + '»' : 'sin mensaje del cliente')];
+    aviso.tipo === 'comprobante' ? prod + ' por ' + monto + notaRiesgoPlantilla : (mensaje ? 'texto literal del cliente: «' + mensaje + '»' : 'sin mensaje del cliente')];
 
 // 5. El texto libre (dentro de la ventana de Antonio).
 let texto = '';
