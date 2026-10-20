@@ -85,7 +85,7 @@ describe('seco por omisión', () => {
     expect(existsSync(respaldo())).toBe(false);
   });
   it('sin --proyecto o sin --operador (o con uno que no es correo) no corre', () => {
-    expect(correr('--operador', 'a@b.co').codigo).toBe(2);
+    expect(correr('--operador', 'operador@ejemplo.com').codigo).toBe(2);
     expect(correr('--proyecto', PROYECTO).codigo).toBe(2);
     expect(correr('--proyecto', PROYECTO, '--operador', 'no-es-correo').codigo).toBe(2);
   });

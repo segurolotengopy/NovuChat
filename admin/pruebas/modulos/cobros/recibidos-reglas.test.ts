@@ -25,7 +25,7 @@ const PROYECTO = 'demo-novuchat-pruebas';
 const A = 'recibidos-reglas-a';
 const B = 'recibidos-reglas-b';
 const BAJA = 'recibidos-reglas-baja';
-const OBJETO = 'ObjetoDeEjemplo-0123456789abcdefghijklmnopqrstuvw';
+const OBJETO = 'ObjetoDeEjemplo-abcdefghijklmnopqrstuvwxyz-ABC';
 
 let entorno: RulesTestEnvironment;
 
