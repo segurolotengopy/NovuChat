@@ -62,8 +62,8 @@ const CM_PROMESAS = /lo consulto|lo consultar[eé]|consultar[eé]|\b(te|le) avis
 // «abono» (también fertilizante) y «cobro» solo cuentan junto a un estado o verbo de recepción.
 const CM_PAGO = '(?:pagos?|pag|pagad[oa]s?|pagar|pagas?|pagan|pague|pagaste|pagamos|pagaron|comprobantes?|abonos?|abonad[oa]s?|abonar|abonaste|abonamos|abonaron|cobros?|cobrad[oa]s?|cobrar|cobramos|cobraron|plata|dinero|depositos?|transferencias?|qr|tigo ?money|tarjeta|efectivo|vouchers?|bs|bolivianos)';
 const CM_PAGO_HECHO = '(?:pagos?|pag|pagad[oa]s?|pagar|pagas?|pagan|pague|pagaste|pagamos|pagaron|comprobantes?|abonos?|abonad[oa]s?|abonar|abonaste|abonamos|abonaron|plata|dinero|depositos?|transferencias?|vouchers?)';
-const CM_ESTADO = '(?:recibid|acreditad|aprobad|aceptad|procesad|completad|confirmad|verificad|registrad|validad|saldad|exitos|llego|llegaron|entro|entraron|ingreso|ingresaron|cayo|cayeron|reflej|se (?:acredit|proces|complet)|esta\\w* (?:en orden|ok|bien|list|acreditad|correct|completo|conforme|al dia|en (?:la|mi|nuestra|su) cuenta)|(?:es|son|sea|seran) (?:valid|correct|ok\\b)|en orden)';
-const CM_VERBO_RECEPCION = '(?:recib(?:i\\w*|ido|ida|idos|idas)|llego\\w*|llegaron|entro|entraron|ingreso|ingresaron|registramos|verificamos|validamos|vi|vimos|veo|vemos|vio|revise|revisamos|cayo|cayeron|cae)';
+const CM_ESTADO = '(?:recibid|acreditad|aprobad|aceptad|procesad|completad|confirmad|verificad|registrad|validad|saldad|exitos|llego|llegaron|entro|entraron|ingreso|ingresaron|cayo|cayeron|reflej|se (?:acredit|proces|complet)|esta\\w* (?:en orden|ok|bien|list|acreditad|correct|completo|conforme|al dia|en (?:la|mi|nuestra|su) cuenta)|entra\\w* en (?:el|nuestro|mi) sistema|ya paso\\b(?! (?:a|al|con|tu|el|la|los|su)\\b)|(?:es|son|sea|seran) (?:valid|correct|ok\\b)|en orden)';
+const CM_VERBO_RECEPCION = '(?:recib(?:i\\w*|ido|ida|idos|idas)|llego\\w*|llegaron|entro|entraron|ingreso|ingresaron|registramos|verificamos|validamos|vi|vimos|veo|vemos|vio|revise|revisamos|cayo|cayeron|cae|reflej\\w*)';
 // Una PREGUNTA no afirma («¿Ya recibiste el QR?»): se exime solo si hay «¿» antes Y «?» después en la misma oración. Un «¿» suelto no exime.
 const CM_NO_PREGUNTA = '(?:(?<!¿[^?.!]*)|(?![^?.!¡¿]*\\?))';
 // Lo que SOLO puede afirmar el código se rechaza AUNQUE el cliente no lo haya pedido y aunque la frase diga algo cierto («Tu comprobante llegó y
@@ -82,12 +82,20 @@ const CM_AFIRMA_LISTA = [
   // (recibido, llegó, está en orden…): NO se bloquea toda mención del pago («puedes pagar con QR», «envíame el comprobante»).
   '(?=\\b' + CM_PAGO + '\\b)' + CM_NO_PREGUNTA + '\\b' + CM_PAGO + '\\b' + CM_SIN_NEGAR + '{0,25}\\b' + CM_ESTADO,
   '(?=\\b' + CM_VERBO_RECEPCION + '\\b)' + CM_NO_PREGUNTA + '\\b' + CM_VERBO_RECEPCION + '\\b[^.!?]{0,30}\\b' + CM_PAGO + '\\b',
-  '\\b(?:tenemos|tengo) (?:ya |aqui )?(?:tu|tus|su|sus|el|los|la|las|mi|mis) (?:\\w+ )?' + CM_PAGO_HECHO + '\\b',
+  '\\b(?:tenemos|tengo) (?:ya |aqui )?(?:tu|tus|su|sus|el|los|la|las|mi|mis) (?:\\w+ )?(?:' + CM_PAGO_HECHO + '|montos?)\\b',
+  // figura / aparece / ya pasó / «ya hiciste el pago» / saldo cero / dinero en símbolos / «¿Ya pagaste? Sí, ya está»
+  '\\b' + CM_PAGO_HECHO + '\\b' + CM_SIN_NEGAR + '{0,25}\\b(?:figur|aparec)',
+  '\\b(?:figur|aparec)\\w*\\b[^.!?]{0,25}\\b' + CM_PAGO_HECHO + '\\b',
+  '\\bya paso\\b[^.!?]{0,15}\\b' + CM_PAGO_HECHO + '\\b',
+  '\\b(?:ya )?(?:hiciste|hicimos|hizo) (?:el|tu|un|su|la) (?:\\w+ )?pago\\b',
+  '\\bsaldo (?:en |a )?cero\\b',
+  '(?=\\b' + CM_VERBO_RECEPCION + '\\b)' + CM_NO_PREGUNTA + '\\b' + CM_VERBO_RECEPCION + '\\b[^.!?]{0,30}(?:\\$|\\bdolares?\\b|\\busdt?\\b)',
+  '\\b(?:pag|cancel|abon|deposit|transferencia|comprobante|qr|plata|dinero)\\w*[^?]{0,30}\\?\\W*(?:(?:si|claro|ok|listo)\\W{1,3})?ya esta\\b',
   // el sustantivo del pago PEGADO a su visto bueno: «Pago OK», «Pago: listo», «Pago 👍», «Comprobante hecho»
   '\\b' + CM_PAGO_HECHO + '(?:[\\s:\\-]{1,3}(?:ok|okay|okey|listo|lista|hecho|hecha|completo|completa|correcto|correcta|valido|valida)\\b(?!\\?)|[\\s:\\-]{0,3}(?:👍|👌|🆗))',
   '\\b(?:listo|lista|hecho)\\W{0,3}(?:tu|tus|su|sus|el|los|la|las)\\s+(?:\\w+ )?' + CM_PAGO_HECHO + '\\b',
   '\\bya esta (?:tu|tus|su|sus|el|los|la|las)\\s+(?:\\w+ )?' + CM_PAGO_HECHO + '\\b',
-  '\\b(?:todo|esta|estan) (?:en orden|ok|bien)\\b[^.!?]{0,6}\\bcon (?:tu|tus|el|los|la|las|su|sus) (?:\\w+ )?' + CM_PAGO_HECHO + '\\b',
+  '\\b(?:todo|esta|estan) (?:en orden|ok|bien|correcto|perfecto)\\b[^.!?]{0,6}\\bcon (?:tu|tus|el|los|la|las|su|sus) (?:\\w+ )?(?:' + CM_PAGO_HECHO + '|qr)\\b',
   '\\bgracias por (?:haber |ya )?(?:(?:tu|tus|su|sus|el|los|la|las|mi) (?:\\w+ )?' + CM_PAGO_HECHO + '|pagar|pagado|cancelar|cancelado|abonar|abonado)\\b',
   '\\brecibid[oa]s?[,.!:\\s]+(?:muchas )?gracias\\b',
   '\\b(?:ok|okay|listo|perfecto|bien|vale|genial)[,.!:\\s]+recibid[oa]s?\\b',
@@ -143,6 +151,8 @@ const CM_PALABRA_DE_NUMERO = 'un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|n
 const CM_MONTO = new RegExp('\\b\\d[\\d.,]*\\s*(bs|bob|bolivianos?|usd|usdt|dolar(es)?|\\$us)\\b|\\b(?:bs|bob|usd)\\.?\\s*\\d|\\$\\s*\\d|\\b(?:' + CM_PALABRA_DE_NUMERO + ')\\s+(bolivianos?|dolar(es)?|bs|bob|usdt)\\b');
 // Un hueco de plantilla («a las )», «{{x}}», «undefined») nunca sale.
 const CM_HUECO = /\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/;
+// El cliente pregunta si habla con un bot / una IA / una persona: ahí una NEGACIÓN en la respuesta («Claro que no, soy Rubén») es negar ser una IA.
+const CM_PREGUNTA_DE_BOT = /\b(eres|es|sos|hablo con|hablas con|estoy hablando con|estas hablando con)\b[^.!?]{0,20}\b(bot|chatbot|robot|ia|inteligencia|maquina|programa|persona|humano|humana|real|automatic\w*|asistente virtual)\b|^\W*(ia|bot|robot|humano|humana)\W*$/;
 const CM_PREGUNTA_DE_IDENTIDAD = /\b(eres|es|sos) (el |la )?(doctor|doctora|dr|dra|persona|humano|humana|bot|robot)\b|\bquien (eres|es)\b/;
 
 // Los enlaces de un texto: con esquema, con `www.`, una IP, o CUALQUIER dominio suelto (algo.mx, algo.cloud…). Se rechaza de
@@ -162,8 +172,8 @@ function cmMotivoDeRechazo(texto, opciones) {
   const s = String(texto || '').trim();
   if (!s) return 'vacio';
   if (/^SIN_RESPUESTA/.test(s)) return 'sin_respuesta';
-  // Tope duro: ninguna opción lo sube por encima de 5000 (las reglas con búsqueda hacia atrás se vuelven cuadráticas).
-  if (s.length > Math.min(o.maximo || 900, 5000)) return 'largo';
+  // Tope duro: ninguna opción lo sube por encima de 2000 (las reglas con búsqueda hacia atrás se vuelven cuadráticas).
+  if (s.length > Math.min(o.maximo || 900, 2000)) return 'largo';
   const n = cmNorm(s);
   if (!o.permitirMontos && (CM_MONTO.test(n) || CM_MONTO.test(cmJunto(n)))) return 'monto';
   const nj = cmJunto(n);
@@ -178,6 +188,7 @@ function cmMotivoDeRechazo(texto, opciones) {
   if (CM_HUECO.test(n)) return 'hueco';
   const pregunta = cmNorm(o.textoDelCliente || '');
   if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
+  if (pregunta && CM_PREGUNTA_DE_BOT.test(pregunta) && /\b(no|nop|nel|para nada)\b/.test(n) && !/\b(asistente|virtual)\b/.test(n)) return 'identidad';
   for (const re of (o.prohibidos || [])) if (re.test(n)) return 'prohibido';
   // ENLACES: por defecto NINGUNO sale. `enlacesPermitidos` es la lista de enlaces COMPLETOS del negocio (mapa, redes,
   // wa.me). Se detectan `https?://…`, `www.…` y los dominios sueltos más comunes (wa.me/…, bit.ly/…, algo.com); un

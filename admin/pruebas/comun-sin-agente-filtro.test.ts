@@ -275,8 +275,8 @@ describe('revisión de seguridad del #568 (20/10): estados del pago, evasión de
     rechaza(['Tu comprobante llegó y los datos coinciden', '¿Hola? Recibimos tu pago', '¿Hola, recibimos tu pago', 'Recibimos tu pago ¿algo más?']);
   });
   it('LOW: el tope de largo no sube con las opciones y el filtro no se vuelve cuadrático', () => {
-    expect(motivo('a'.repeat(6000), { maximo: 1e9 })).toBe('largo');
-    for (const t of ['a'.repeat(50000), 'p.'.repeat(25000), '¿pagaste '.repeat(500), 'p a '.repeat(1200), '¿'.repeat(4900), 'a '.repeat(2400) + 'pagaste']) {
+    expect(motivo('a'.repeat(3000), { maximo: 1e9 })).toBe('largo');
+    for (const t of ['a'.repeat(50000), 'p.'.repeat(25000), '¿pagaste '.repeat(220), 'p a '.repeat(490), '¿'.repeat(1990), 'a '.repeat(990) + 'pagaste', '¿pagaste '.repeat(500)]) {
       const t0 = Date.now();
       motivo(t, { maximo: 1e9 });
       expect(Date.now() - t0, t.slice(0, 12)).toBeLessThan(200);
@@ -333,7 +333,7 @@ describe('pulir la redacción', () => {
 });
 
 // BANCO COMPARTIDO de frases (esquema en la cabecera `_leeme` del JSON). Lo no marcado `conocido` se AFIRMA; los huecos conocidos solo se informan.
-interface EntradaBanco { texto: string; grupo: string; nota: string; estado_hoy: 'bloquea' | 'pasa'; conocido?: true }
+interface EntradaBanco { texto: string; grupo: string; nota: string; estado_hoy: 'bloquea' | 'pasa'; conocido?: true; cliente?: string }
 const BANCO = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/redaccion-pago-banco.json'), 'utf8')) as { deben_bloquearse: EntradaBanco[]; deben_pasar: EntradaBanco[] };
 describe('banco compartido de frases de redacción (admin/pruebas/fixtures/redaccion-pago-banco.json)', () => {
   it('tiene las dos listas y cada entrada cumple el esquema', () => {
@@ -346,15 +346,35 @@ describe('banco compartido de frases de redacción (admin/pruebas/fixtures/redac
     expect(BANCO.deben_pasar.length).toBeGreaterThan(30);
   });
   it('todo `deben_bloquearse` no conocido se bloquea', () => {
-    for (const e of BANCO.deben_bloquearse.filter((x) => !x.conocido)) expect(motivo(e.texto), e.texto).not.toBe('');
+    for (const e of BANCO.deben_bloquearse.filter((x) => !x.conocido)) expect(motivo(e.texto, e.cliente ? { textoDelCliente: e.cliente } : undefined), e.texto).not.toBe('');
   });
   it('todo `deben_pasar` no conocido pasa', () => {
-    for (const e of BANCO.deben_pasar.filter((x) => !x.conocido)) expect(motivo(e.texto), e.texto).toBe('');
+    for (const e of BANCO.deben_pasar.filter((x) => !x.conocido)) expect(motivo(e.texto, e.cliente ? { textoDelCliente: e.cliente } : undefined), e.texto).toBe('');
   });
   it('los huecos conocidos se informan (no se afirman) y el estado_hoy declarado coincide con la realidad', () => {
     const huecos = [...BANCO.deben_bloquearse, ...BANCO.deben_pasar].filter((x) => x.conocido);
-    for (const e of huecos) expect(e.estado_hoy === 'bloquea', e.texto).toBe(motivo(e.texto) !== '');
+    for (const e of huecos) expect(e.estado_hoy === 'bloquea', e.texto).toBe(motivo(e.texto, e.cliente ? { textoDelCliente: e.cliente } : undefined) !== '');
     // eslint-disable-next-line no-console
     console.info(`huecos conocidos del filtro: ${huecos.length}\n` + huecos.map((e) => `  [${e.estado_hoy}] ${e.texto}`).join('\n'));
+  });
+});
+
+describe('re-revisión de seguridad del #568: negación ante «¿eres un bot?» y el techo de largo', () => {
+  const bot = { textoDelCliente: '¿eres un bot?' };
+  it('ante la pregunta de si es un bot / IA / persona, una negación en la respuesta bloquea', () => {
+    for (const t of ['Claro que no, soy Rubén', 'Jaja no, soy Rubén', 'Nop, soy Rubén', 'No, te escribe Rubén', 'Nel, soy Rubén', 'Para nada, soy Rubén']) expect(motivo(t, bot), t).toBe('identidad');
+    expect(motivo('¿IA? No, soy Rubén', { textoDelCliente: '¿eres IA?' })).toBe('identidad');
+    expect(motivo('No, te escribe Rubén', { textoDelCliente: '¿hablo con una persona?' })).toBe('identidad');
+  });
+  it('NIEGA: presentarse como asistente virtual, responder sin negación y la negación sola pasan', () => {
+    expect(motivo('Soy el asistente virtual de Rubén', bot)).toBe('');
+    expect(motivo('Sí, soy un asistente virtual', bot)).toBe('');
+    expect(motivo('Aquí te ayudo con lo que necesites', bot)).toBe('');
+    expect(motivo('No, no tenemos ese libro')).toBe('');
+    expect(motivo('No, no tenemos ese libro', { textoDelCliente: '¿tienen el libro de cuentos?' })).toBe('');
+  });
+  it('el techo de largo es 2000 aunque las opciones pidan más', () => {
+    expect(motivo('a'.repeat(2001), { maximo: 1e9 })).toBe('largo');
+    expect(motivo('a'.repeat(2000), { maximo: 1e9 })).toBe('');
   });
 });
