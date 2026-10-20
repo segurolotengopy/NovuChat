@@ -159,8 +159,11 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     for (const n of ['Transcribir audio', 'Describir documento', 'Describir imagen']) {
       const propio = sinLibres(de(plantilla, n));
       const origen = sinLibres(renombrado(de(chat, n)) as J);
-      expect({ ...propio, credentials: undefined, parameters: { ...propio.parameters, text: undefined } }, n)
-        .toEqual({ ...origen, credentials: undefined, parameters: { ...origen.parameters, text: undefined } });
+      // «Describir …» también sube `maxOutputTokens` (600): lee en la MISMA llamada los seis campos del comprobante (el cotejo lo hace el servidor).
+      const sinOpciones = n === 'Transcribir audio' ? {} : { options: undefined };
+      expect({ ...propio, credentials: undefined, parameters: { ...propio.parameters, text: undefined, ...sinOpciones } }, n)
+        .toEqual({ ...origen, credentials: undefined, parameters: { ...origen.parameters, text: undefined, ...sinOpciones } });
+      if (n !== 'Transcribir audio') expect((propio.parameters as J).options).toEqual({ maxOutputTokens: 600 });
       expect(propio.credentials).toEqual({ googlePalmApi: { id: '', name: '@@cred:gemini' } });
     }
   });

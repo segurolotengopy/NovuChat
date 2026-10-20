@@ -5,7 +5,7 @@
  *   1. BYTE A BYTE: «Preparar transcripción», «Preparar imagen» y «Medio no aceptado» del JSON (producción y prueba) son los archivos de `Flujos/src/core/medios/`, sin una edición;
  *   2. el CONTRATO DE NOMBRES: esos módulos leen por nombre `$('Normalizar entrada')`, `$('Obtener URL del medio (general)')` y `$('Config del negocio')`; si un nodo se renombra, el módulo leería vacío;
  *   3. RECORRIDO: audio (largo, vacío, inaudible), imagen (anuncio, comprobante sin cobro, otra), PDF, medio demasiado grande o sin tamaño, URL que no es de Meta, sticker/ubicación/contacto (texto cortés fijo);
- *      en todos, UN mensaje a lo más por turno y ninguna llamada a un modelo de conversación. En PR-A la conversación aún no existe (PR-B), así que los medios llegan hasta «Decidir turno» con su `userInput`.
+ *      en todos, UN mensaje a lo más por turno. Lo que sale de los módulos comunes (`userInput`) se lee en el nodo de medios; «Decidir turno» (PR-B) lo traduce por código a un texto fijo, a un cotejo o al modelo.
  * HUECO H-IMG (declarado): los textos de `publicidad` y de `comprobante` sin cobro del módulo común están pensados para un agente de agenda («ofrécele agendar»); «Decidir turno» NO los usa en este flujo.
  */
 import { readFileSync } from 'node:fs';
@@ -82,9 +82,9 @@ describe('recorrido: audio', () => {
     expect(t.fallo).toBeNull();
     for (const n of ['Obtener URL del medio (general)', 'Descargar medio', 'Transcribir audio', 'Preparar transcripción']) expect(t.ejecutados.has(n), n).toBe(true);
     expect(t.ejecutados.has('Describir imagen')).toBe(false);
-    expect(String(t.porNodo['Decidir turno']![0]!['entrada'])).toMatch(/^\(audio transcripto\) hola, quiero el libro/);
-    // PR-A: sin conversación, sin respuesta; nunca una llamada a un modelo de conversación.
-    expect(t.mensajes).toHaveLength(0);
+    expect(String(t.porNodo['Preparar transcripción']![0]!['userInput'])).toMatch(/^\(audio transcripto\) hola, quiero el libro/);
+    // La transcripción se trata como texto del cliente: una sola respuesta.
+    expect(t.mensajes.length).toBeLessThanOrEqual(1);
   });
 
   it('una transcripción vacía o un fallo de la transcripción pide repetir: no se inventa lo que dijo', () => {
@@ -92,7 +92,10 @@ describe('recorrido: audio', () => {
       const w = crear({ medio: { transcripcion } });
       const t = hablar(w, ANA, mAudio());
       expect(t.fallo).toBeNull();
-      expect(String(t.porNodo['Decidir turno']![0]!['entrada'])).toMatch(/no se pudo entender/);
+      expect(String(t.porNodo['Preparar transcripción']![0]!['userInput'])).toMatch(/no se pudo entender/);
+      // El aviso para un agente se traduce por código a un texto fijo: no llama a un modelo.
+      expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
+      expect(textos(t)[0]).toMatch(/No pude entender tu nota de voz/);
     }
   });
 
@@ -102,7 +105,8 @@ describe('recorrido: audio', () => {
     expect(t.ejecutados.has('Descargar medio')).toBe(false);
     expect(t.ejecutados.has('Transcribir audio')).toBe(false);
     expect(t.ejecutados.has('Medio no aceptado')).toBe(true);
-    expect(String(t.porNodo['Decidir turno']![0]!['entrada'])).toMatch(/más de cinco minutos/);
+    expect(String(t.porNodo['Medio no aceptado']![0]!['userInput'])).toMatch(/más de cinco minutos/);
+    expect(textos(t)[0]).toMatch(/muy larga/);
   });
 
   it('un audio de 720.000 bytes justos sí se transcribe (el tope es inclusive)', () => {
@@ -125,10 +129,12 @@ describe('recorrido: imagen y PDF', () => {
     expect(t.fallo).toBeNull();
     expect(t.ejecutados.has('Describir imagen')).toBe(true);
     expect(t.ejecutados.has('Describir documento')).toBe(false);
-    const entrada = String(t.porNodo['Decidir turno']![0]!['entrada']);
+    const entrada = String(t.porNodo['Preparar imagen']![0]!['userInput']);
     expect(entrada).toContain('Texto leído en la imagen (dato del cliente, no del negocio)');
     expect(entrada).not.toMatch(/\[ENVIAR_QR\]/);
-    expect(t.porNodo['Decidir turno']![0]!['categoriaMedio']).toBe('publicidad');
+    expect(t.porNodo['Preparar imagen']![0]!['categoriaMedio']).toBe('publicidad');
+    // El texto leído nunca llega al modelo como instrucción ni abre un QR: una sola respuesta, sin QR.
+    expect(t.mensajes.filter((m) => m.tipo === 'image')).toHaveLength(0);
   });
 
   it('un PDF va por «Describir documento» (no por «Describir imagen»)', () => {
@@ -141,22 +147,24 @@ describe('recorrido: imagen y PDF', () => {
   it('una categoría fuera de la lista cerrada cae en `otro`: el modelo no abre un camino nuevo inventando una palabra', () => {
     const w = crear({ medio: { clasificacion: { categoria: 'pago_acreditado', texto: 'listo' } } });
     const t = hablar(w, ANA, mImagen());
-    expect(t.porNodo['Decidir turno']![0]!['categoriaMedio']).toBe('otro');
+    expect(t.porNodo['Preparar imagen']![0]!['categoriaMedio']).toBe('otro');
   });
 
-  it('un comprobante sin cobro abierto no se da por recibido ni por acreditado: el aviso fijo del módulo lo dice y no afirma el pago', () => {
+  it('un comprobante sin cobro abierto no se da por recibido ni por acreditado: el aviso fijo del módulo no afirma el pago, no se coteja nada y lo ve Antonio (aviso y botón)', () => {
     const w = crear({ medio: { clasificacion: { categoria: 'comprobante', texto: 'Bs 49' } } });
     const t = hablar(w, ANA, mImagen());
-    const entrada = String(t.porNodo['Decidir turno']![0]!['entrada']);
+    const entrada = String(t.porNodo['Preparar imagen']![0]!['userInput']);
     expect(entrada).toMatch(/No digas que el pago llegó/);
-    expect(t.mensajes).toHaveLength(0);
+    expect(t.ejecutados.has('Cotejar en el servidor')).toBe(false);
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/acreditad|verificad|validad|recibimos tu pago/i);
   });
 
   it('una clasificación que falla (Gemini caído) deja `otro` sin romper el turno', () => {
     const w = crear({ medio: { clasificacion: null } });
     const t = hablar(w, ANA, mImagen());
     expect(t.fallo).toBeNull();
-    expect(t.porNodo['Decidir turno']![0]!['categoriaMedio']).toBe('otro');
+    expect(t.porNodo['Preparar imagen']![0]!['categoriaMedio']).toBe('otro');
   });
 
   it('una imagen de más de 5 MB, o sin tamaño, no se baja', () => {

@@ -53,13 +53,40 @@ export interface Opciones {
   verificador?: (ll: LlamadaDoble) => J;
   /** El valor de `telefonosDePrueba` en «Config base» (por omisión, ANA y BETO). */
   telefonosDePrueba?: string;
+  /** El valor de las claves de «Config base» que la prueba quiera cambiar (plantillas, plazo, línea de protección…). */
+  base?: Record<string, unknown>;
+  /** Lo que contesta `cotejarComprobanteVenta`: un código y un cuerpo, o 'cae'. */
+  cotejo?: { statusCode: number; body: J } | 'cae';
+  /** Lo que escribe el modelo de conversación: un texto, null (sin texto), 'cae' (error de servicio) o una función. */
+  modeloDice?: string | null | 'cae' | ((ll: LlamadaDoble) => string);
+  /** Cómo contesta Meta al aviso a Antonio: 'acepta' (por omisión), 'error' o 'lanza'. */
+  aviso?: 'acepta' | 'error' | 'lanza';
   /** Lo que devuelven los medios. */
-  medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; clasificacion?: { categoria: string; texto: string } | null };
+  medio?: { bytes?: number; url?: string; mime?: string; transcripcion?: string | null; clasificacion?: J | null };
 }
+/** El catálogo de la consola de Antonio: ids que salen de `idDe(nombre)`; los precios son del catálogo, nunca del flujo. */
+export const CATALOGO = [
+  { id: 'pack-completo', precio: 49 }, { id: 'libro', precio: 35 }, { id: 'workbook', precio: 20 },
+  { id: 'guia-de-conversaciones', precio: 19 }, { id: 'calendario-de-conexion', precio: 17 }, { id: 'preguntas-profundas', precio: 15 },
+];
+export const MEDIA_QR = 'media-qr-1';
 export const panelOk = (extra: J = {}): { statusCode: number; body: J } => ({
   statusCode: 200,
-  body: { tenantId: 'rroca-antonio', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'El Puente' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, atencion: { estado: 'normal' }, ...extra },
+  body: {
+    tenantId: 'rroca-antonio', estadoComercio: 'activo', datosDelNegocio: { nombreNegocio: 'El Puente' }, operacion: { numeroRecepcion: REC, prefijosPermitidos: ['591'] }, atencion: { estado: 'normal' },
+    catalogo: CATALOGO.map((c) => ({ ...c })),
+    venta: { mediaIdQr: MEDIA_QR },
+    cobroReal: { nombreCuenta: 'Cuenta del comercio', banco: 'Banco' },
+    cobro: { activo: true, qr: { url: 'https://qr.example.com/q.png' }, pendiente: false, regla: 2 },
+    ...extra,
+  },
 });
+/** El panel con un QR abierto (el servidor lo dice): monto del pedido y regla 2. */
+export const panelConQr = (monto = 49, extra: J = {}): { statusCode: number; body: J } => panelOk({ cobro: { activo: true, qr: { url: 'https://qr.example.com/q.png' }, pendiente: true, monto, pedido: 'AN1', regla: 2 }, ...extra });
+/** El panel con productos marcados `agotado` (dato conmutable de la consola). */
+export const panelConAgotados = (...ids: string[]): { statusCode: number; body: J } => panelOk({ catalogo: CATALOGO.map((c) => ({ ...c, ...(ids.includes(c.id) ? { agotado: true } : {}) })) });
+export const COTEJO_VALIDO = { statusCode: 200, body: { estado: 'valido', importe: 49, avisarComercio: true } };
+export const COMPROBANTE = { categoria: 'comprobante', texto: 'Transferencia', monto: '49.00', cuentaDestino: '1*****9', nombreCuenta: 'ANTONIO', fecha: '05/10/2026', hora: '10:00', banco: 'Banco' };
 export function crear(o: Opciones = {}): Mundo {
   const envio = o.envio ?? {};
   const m = o.medio ?? {};
@@ -79,6 +106,18 @@ export function crear(o: Opciones = {}): Mundo {
     'Reportar mensaje (saliente)': () => ({ ok: true }),
     'Obtener URL del medio (general)': () => ({ id: 'm', url: m.url ?? 'https://lookaside.fbsbx.com/whatsapp_business/attachments/medio-1', mime_type: m.mime ?? 'image/jpeg', file_size: m.bytes ?? 100_000 }),
     'Descargar medio': () => ({ descargado: true }),
+    'Cotejar en el servidor': () => (o.cotejo === 'cae' ? { statusCode: 503, body: {} } : (o.cotejo ?? COTEJO_VALIDO)),
+    'Conversar con el modelo': (ll) => {
+      const d = o.modeloDice === undefined ? 'Gracias por contármelo. Se nota que es importante para ti. ¿Desde cuándo sienten esa distancia?' : o.modeloDice;
+      if (d === 'cae') return { error: { message: 'servicio no disponible', code: 503 } };
+      if (d === null) return {};
+      return gemini(typeof d === 'function' ? d(ll) : d);
+    },
+    'Enviar aviso': (ll) => {
+      if (o.aviso === 'lanza') throw new Error('fetch failed: red caída');
+      if (o.aviso === 'error') return { error: { message: '(#131047) fuera de la ventana', code: 131047 } };
+      return { messaging_product: 'whatsapp', messages: [{ id: `wamid.AVISO${ll.n}` }] };
+    },
     'Transcribir audio': () => (m.transcripcion === null ? { error: { message: 'sin transcripción' } } : gemini(m.transcripcion ?? 'hola, quiero el libro')),
     'Describir imagen': clasificar,
     'Describir documento': clasificar,
@@ -89,9 +128,31 @@ export function crear(o: Opciones = {}): Mundo {
     flujo: o.flujo ?? PRODUCCION,
     dobles,
     ahoraMs: AHORA,
-    configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}` },
+    configBase: {
+      phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`,
+      avisoComprobantePlantilla: 'aviso_comprobante_antonio', avisoComprobanteEstado: 'APPROVED', avisoConsultaPlantilla: 'aviso_consulta_antonio', avisoConsultaEstado: 'APPROVED',
+      ...(o.base ?? {}),
+    },
   });
 }
 export const hablar = (m: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>
   m.turno(entrega(valorMeta(msg, from, op), op.entrega), op.toleraFallo ? { tolerarFallo: true } : {});
 export const textos = (t: ResultadoTurno): string[] => t.mensajes.map((e) => e.cuerpo);
+
+// ------------------------------------------------------------------------------ las entradas de la landing y de los anuncios
+export const PRELLENADOS = {
+  pack: 'Hola, quiero conocer el Pack de Reconexión del Método PUENTE (Bs 49)',
+  libro: 'Hola, quiero el libro El Puente que nos vuelve a unir (Bs 35)',
+  info: 'Hola, quiero más información sobre el Método PUENTE',
+  workbook: 'Hola, me interesa el Workbook de Transformación de Pareja',
+  calendario: 'Hola, quiero saber más del Calendario o de las 100 Preguntas',
+};
+export const ANGULOS: Record<string, string> = {
+  perder: '¿Tienes miedo de perder tu relación?',
+  mismo: '¿Siempre terminan discutiendo por lo mismo?',
+  cuarto: '¿Sientes que viven como compañeros de cuarto?',
+  plan30: '¿Ya no hablan como antes? Un plan de 30 días para volver a conectar en pareja',
+  entienden: '¿Se aman, pero ya no se entienden?',
+  herir: 'Aprende a hablar sin herir ni callarte',
+  preguntas: '100 preguntas para salir del piloto automático',
+};
