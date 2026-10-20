@@ -60,8 +60,11 @@ beforeAll(async () => {
   for (const t of TENANTS) await db.recursiveDelete(db.doc(`tenants/${t}`));
   await db.doc(`tenants/${A}`).set({ nombre: 'A', estado: 'activo' });
   await db.doc(`tenants/${B}`).set({ nombre: 'B', estado: 'activo' });
+  await db.doc(`tenants/${A}/config/negocio`).set({ moneda: 'USD' });
+  await db.doc(`tenants/${B}/config/negocio`).set({ moneda: 'dólares' });   // inválida: cae a BOB
   await db.doc(`tenants/${BAJA}`).set({ nombre: 'Baja', estado: 'dado_de_baja' });
-  await conv(A, 1, [entrada('wamid.a1'), entrada('wamid.a2', { estado: 'tardio', motivo: 'tardio', ruta: null }), { sin: 'idMeta' }, entrada('wamid.sinfecha', { en: 'ayer' })]);
+  await conv(A, 1, [entrada('wamid.a1'), entrada('wamid.a2', { estado: 'tardio', motivo: 'tardio', ruta: null }), { sin: 'idMeta' }, entrada('wamid.sinfecha', { en: 'ayer' }),
+    entrada('wamid.vencida', { en: Timestamp.fromMillis(Date.now() - 100 * DIA) })]);
   await db.doc(`tenants/${A}/conversaciones/wa_${tel(2)}`).set({
     solicitud: { reglaCobro: 2, etapa: 'agendada', comprobantes: [entrada('wamid.a3', { estado: 'valido', motivo: 'ok' })] },
   });
@@ -76,7 +79,7 @@ describe('seco por omisión', () => {
     const r = correr(...base);
     expect(r.codigo).toBe(0);
     expect(r.salida).toContain(`${A}: 2 conversación(es)`);
-    expect(r.salida).toMatch(new RegExp(`${A}.*3 comprobante\\(s\\).*ya copiados 0.*a crear 3.*omitidos sin idMeta o fecha 2`));
+    expect(r.salida).toMatch(new RegExp(`${A}.*3 comprobante\\(s\\).*ya copiados 0.*a crear 3.*omitidos sin idMeta o fecha 2 · 1 ya vencidas, no se copian`));
     expect(r.salida).toMatch(new RegExp(`${B}.*1 comprobante\\(s\\).*a crear 1`));
     expect(r.salida).toContain(`${BAJA}: dado de baja, no se toca`);
     expect(r.salida).toContain('Seco: no se escribió nada');
@@ -88,6 +91,14 @@ describe('seco por omisión', () => {
     expect(correr('--operador', 'operador@ejemplo.com').codigo).toBe(2);
     expect(correr('--proyecto', PROYECTO).codigo).toBe(2);
     expect(correr('--proyecto', PROYECTO, '--operador', 'no-es-correo').codigo).toBe(2);
+  });
+  it('--tenant sin valor (al final o seguido de otra bandera) sale con 2 y no recorre ni escribe nada', async () => {
+    for (const r of [correr(...base, '--tenant'), correr(...base, '--tenant', '--aplicar'), correr(...base, '--aplicar', '--tenant')]) {
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('--tenant exige un identificador');
+      expect(r.salida).not.toContain('Comercios:');
+    }
+    expect((await filas(A)).length).toBe(0);
   });
   it('--aplicar con el respaldo DENTRO del repositorio se rechaza y no escribe', async () => {
     const r = correr(...base, '--aplicar', '--respaldo', join(aqui, 'respaldo-prohibido.json'));
@@ -112,7 +123,7 @@ describe('--aplicar', () => {
     expect(a1?.['en'].toMillis()).toBe(EN.toMillis());
     expect(a1?.['vence'].toMillis()).toBe(EN.toMillis() + 90 * DIA);
     expect(Object.keys(a1 ?? {}).sort()).toEqual([
-      'conversacionId', 'en', 'estado', 'idMeta', 'importe', 'intentos', 'montoDistinto', 'montoLeido', 'motivo',
+      'conversacionId', 'en', 'estado', 'idMeta', 'importe', 'intentos', 'moneda', 'montoDistinto', 'montoLeido', 'motivo',
       'nombreContacto', 'ruta', 'vence',
     ]);
     expect(a1).not.toHaveProperty('avisar');
@@ -120,6 +131,11 @@ describe('--aplicar', () => {
     expect(a2?.['ruta']).toBeNull();
     const a3 = (await db.doc(`tenants/${A}/comprobantesRecibidos/${nombreDeObjeto('wamid.a3')}`).get()).data();
     expect(a3).not.toHaveProperty('nombreContacto');
+    // La moneda sale de config/negocio, validada como el servidor; una inválida cae a BOB.
+    expect(a1?.['moneda']).toBe('USD');
+    expect((await db.doc(`tenants/${B}/comprobantesRecibidos/${nombreDeObjeto('wamid.b1')}`).get()).get('moneda')).toBe('BOB');
+    // Una entrada de hace 100 días ya está vencida: no se copia.
+    expect((await db.doc(`tenants/${A}/comprobantesRecibidos/${nombreDeObjeto('wamid.vencida')}`).get()).exists).toBe(false);
 
     expect((await filas(A)).length).toBe(3);
     expect((await filas(B)).length).toBe(1);

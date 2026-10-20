@@ -1832,8 +1832,10 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
-      // /comprobantesRecibidos/{objeto} — todo comprobante que llegó a un cobro
-      // de venta con regla 2, con o sin cierre (lista de la pestaña Cobros).
+      // /comprobantesRecibidos/{objeto} — los comprobantes que el cotejo de un cobro
+      // de venta con regla 2 anotó, con o sin cierre (lista de la pestaña Cobros).
+      // NO se registran los `ya_resuelto` ni los rechazos 409 (sin cobro pendiente,
+      // cobro cancelado, regla 1, sin total): quedaron fuera de esta fase.
       // Lo escribe SOLO el servidor (`cotejarComprobanteVenta`, en la misma
       // transacción del cotejo). Lo lee quien puede leer conversaciones: el
       // documento nombra la conversación del cliente (`wa_<teléfono>`) y no

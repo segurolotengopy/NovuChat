@@ -9,7 +9,9 @@
  *
  * QUÉ HACE, comercio por comercio (los dados de baja no se tocan):
  *   - recorre las conversaciones con `solicitud.reglaCobro == 2` y toma cada entrada de
- *     `solicitud.comprobantes[]` que tenga `idMeta` y una fecha `en`;
+ *     `solicitud.comprobantes[]` que tenga `idMeta` y una fecha `en` (las de más de 90 días
+ *     se omiten y se cuentan: el TTL las borraría al instante);
+ *   - copia `moneda` de `config/negocio` validada como el servidor (3 mayúsculas, si no BOB);
  *   - calcula el id con la MISMA fórmula que el servidor (sha256 en base64url de
  *     `idMeta.trim().slice(0, 120)`), `vence = en + 90 días` y, si la conversación tiene
  *     `nombreContacto`, lo copia (≤ 120);
@@ -44,7 +46,8 @@ const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
 const APLICAR = args.includes('--aplicar');
 const PROYECTO = opcion('proyecto');
-const SOLO = (opcion('tenant') ?? '').toLowerCase();
+const TENANT_SIN_VALOR = args.includes('--tenant') && (opcion('tenant') === undefined || String(opcion('tenant')).startsWith('--'));
+const SOLO = (TENANT_SIN_VALOR ? '' : (opcion('tenant') ?? '')).toLowerCase();
 const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
 
 const DIA_MS = 86_400_000;
@@ -68,6 +71,7 @@ const RESPALDO = respaldoPedido
 
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');
+if (TENANT_SIN_VALOR) problemas.push('--tenant exige un identificador de comercio (sin valor no se recorren todos)');
 if (SOLO && !ID_TENANT.test(SOLO)) problemas.push('--tenant inválido (minúsculas, guiones, 3 a 60)');
 if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: es quien queda en la auditoría');
 if (APLICAR && !fueraDelRepo(RESPALDO)) problemas.push('--respaldo debe estar FUERA del repositorio');
@@ -86,19 +90,22 @@ const texto = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const numeroONulo = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /** Los documentos que saldrían de UNA conversación (puro sobre lo leído). */
-function documentosDe(conversacion) {
+function documentosDe(conversacion, moneda, ahoraMs) {
   const solicitud = conversacion.get('solicitud');
   const lista = solicitud && Array.isArray(solicitud.comprobantes) ? solicitud.comprobantes : [];
   const nombre = texto(conversacion.get('nombreContacto'), 120);
   const salida = [];
   let sinDatos = 0;
+  let vencidas = 0;
   for (const c of lista) {
     const idMeta = texto(c?.idMeta, 120);
     if (idMeta === '' || !(c.en instanceof Timestamp)) { sinDatos += 1; continue; }
+    // Una entrada cuyo vencimiento (en + 90 días) ya pasó la borraría el TTL de inmediato: no se copia.
+    if (c.en.toMillis() + DIAS_DE_RECIBIDOS * DIA_MS <= ahoraMs) { vencidas += 1; continue; }
     salida.push({
       id: nombreDeObjeto(idMeta),
       datos: {
-        idMeta, conversacionId: conversacion.id,
+        idMeta, conversacionId: conversacion.id, moneda,
         estado: texto(c.estado, 30), motivo: texto(c.motivo, 60),
         en: c.en, vence: Timestamp.fromMillis(c.en.toMillis() + DIAS_DE_RECIBIDOS * DIA_MS),
         importe: numeroONulo(c.importe), montoLeido: numeroONulo(c.montoLeido), montoDistinto: c.montoDistinto === true,
@@ -108,7 +115,7 @@ function documentosDe(conversacion) {
       },
     });
   }
-  return { documentos: salida, sinDatos };
+  return { documentos: salida, sinDatos, vencidas };
 }
 
 console.log(`\n  Copia de comprobantes recibidos · proyecto ${PROYECTO} · ${APLICAR ? 'APLICAR' : 'seco'} · operador ${OPERADOR}`);
@@ -121,11 +128,17 @@ const plan = [];
 for (const ficha of tenants) {
   if (ficha.get('estado') === 'dado_de_baja') { console.log(`  ${ficha.id}: dado de baja, no se toca`); continue; }
   const conversaciones = (await db.collection(`tenants/${ficha.id}/conversaciones`).where('solicitud.reglaCobro', '==', 2).get()).docs;
+  // La moneda del comercio, validada igual que el servidor (`cotejoVenta.ts`): tres letras mayúsculas, si no BOB.
+  const monedaLeida = String((await db.doc(`tenants/${ficha.id}/config/negocio`).get()).get('moneda') ?? 'BOB');
+  const moneda = /^[A-Z]{3}$/.test(monedaLeida) ? monedaLeida : 'BOB';
+  const ahoraMs = Date.now();
   const porId = new Map();
   let sinDatos = 0;
+  let vencidas = 0;
   for (const conv of conversaciones) {
-    const r = documentosDe(conv);
+    const r = documentosDe(conv, moneda, ahoraMs);
     sinDatos += r.sinDatos;
+    vencidas += r.vencidas;
     for (const d of r.documentos) if (!porId.has(d.id)) porId.set(d.id, d);
   }
   const existentes = [];
@@ -133,8 +146,8 @@ for (const ficha of tenants) {
     if ((await db.doc(`tenants/${ficha.id}/comprobantesRecibidos/${d.id}`).get()).exists) existentes.push(d.id);
   }
   const crear = [...porId.values()].filter((d) => !existentes.includes(d.id));
-  plan.push({ tenant: ficha.id, conversaciones: conversaciones.length, total: porId.size, existentes: existentes.length, sinDatos, crear });
-  console.log(`  ${ficha.id}: ${conversaciones.length} conversación(es) con cobro de regla 2 · ${porId.size} comprobante(s) · ya copiados ${existentes.length} · a crear ${crear.length}${sinDatos ? ` · omitidos sin idMeta o fecha ${sinDatos}` : ''}`);
+  plan.push({ tenant: ficha.id, conversaciones: conversaciones.length, total: porId.size, existentes: existentes.length, sinDatos, vencidas, crear });
+  console.log(`  ${ficha.id}: ${conversaciones.length} conversación(es) con cobro de regla 2 · ${porId.size} comprobante(s) · ya copiados ${existentes.length} · a crear ${crear.length}${sinDatos ? ` · omitidos sin idMeta o fecha ${sinDatos}` : ''}${vencidas ? ` · ${vencidas} ya vencidas, no se copian` : ''}`);
 }
 
 const aCrear = plan.reduce((n, p) => n + p.crear.length, 0);
