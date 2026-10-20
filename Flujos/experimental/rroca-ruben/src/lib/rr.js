@@ -326,7 +326,7 @@ function rrTextoDerivacion(motivo, salio, clave) {
   // F5 (19/10/2026): factura, garantía, devolución, otros medios de pago, reclamos y pagos que no aparecen se conversan DIRECTAMENTE con el autor: aviso + botón, y NUNCA una promesa de garantía,
   // devolución ni resultado. La queja de no entrega no afirma que se entregó. Solo para el motivo `consulta`; el resto de los motivos conserva su texto.
   if (motivo === 'consulta' && (clave === 'factura' || clave === 'garantia' || clave === 'otro_medio_pago' || clave === 'reclamo' || clave === 'no_entrega')) {
-    const intro = clave === 'no_entrega' ? 'Lamento la espera. Rubén revisa el pago y envía el material por este chat hasta en 24 horas; desde aquí no puedo confirmarte si ya salió.'
+    const intro = clave === 'no_entrega' ? 'Lamento la espera. Rubén revisa el pago y envía el material por este chat hasta en 6 horas; desde aquí no puedo confirmarte si ya salió.'
       : (clave === 'factura' || clave === 'garantia' ? 'Sobre factura, garantía o devolución puedes conversar directamente con el autor, Rubén; desde aquí no puedo prometerte nada de eso.'
         : 'Eso lo ve directamente el autor, Rubén, y puedes conversarlo con él.');
     return salio === true ? intro + ' Le avisé; también puedes escribirle directo con el botón.' : intro + ' No pude avisarle; escríbele directo con el botón.';
@@ -338,7 +338,7 @@ function rrTextoDerivacion(motivo, salio, clave) {
   return salio === true ? base + ' Le avisé; también puedes escribirle directo con el botón.' : base + ' No pude avisarle a Rubén; escríbele directo con el botón.';
 }
 // El texto al cliente según el cotejo. `resultado`: cuadra | aproximado | reintentar | ilegible | sin_cotejo | ya_cotejado | simulado (el vocabulario de `cbResultadoVenta`). Devuelve { cuerpo, boton }.
-// Nunca «acreditado», «verificado», «validado» ni «ya te lo enviamos»; el plazo es «hasta en 24 horas» (Andres, 19/10/2026): el comprobante llegó y los datos coinciden; quien confirma que entró la plata es el banco, y Rubén.
+// Nunca «acreditado», «verificado», «validado» ni «ya te lo enviamos»; el plazo es «hasta en 6 horas» (Andres, 19/10/2026): el comprobante llegó y los datos coinciden; quien confirma que entró la plata es el banco, y Rubén.
 function rrTextoComprobante(resultado, causa, salio, diferencia) {
   const sinAviso = 'Recibí tu comprobante pero no pude avisarle a Rubén. Escríbele directo con el botón.';
   if (resultado === 'aproximado') {
@@ -350,7 +350,7 @@ function rrTextoComprobante(resultado, causa, salio, diferencia) {
   }
   if (resultado === 'cuadra') {
     return salio === true
-      ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Rubén: él revisará el pago y te enviará los enlaces del material por este chat hasta en 24 horas.', boton: false }
+      ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Rubén: él revisará el pago y te enviará los enlaces del material por este chat hasta en 6 horas.', boton: false }
       : { cuerpo: sinAviso, boton: true };
   }
   if (resultado === 'reintentar') {

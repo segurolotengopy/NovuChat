@@ -202,11 +202,11 @@ const PROHIBIDAS = /acreditad|verificad|validad|recibimos tu pago|pago (recibido
 // Textos de derivación del 19/10/2026 (F5 y F): factura/garantía/devolución, otros medios de pago, reclamos y la queja de no entrega pasan con el autor.
 const D_FACTURA = 'Sobre factura, garantía o devolución puedes conversar directamente con el autor, Rubén; desde aquí no puedo prometerte nada de eso.';
 const D_OTRO = 'Eso lo ve directamente el autor, Rubén, y puedes conversarlo con él.';
-const D_NO_ENTREGA = 'Lamento la espera. Rubén revisa el pago y envía el material por este chat hasta en 24 horas; desde aquí no puedo confirmarte si ya salió.';
+const D_NO_ENTREGA = 'Lamento la espera. Rubén revisa el pago y envía el material por este chat hasta en 6 horas; desde aquí no puedo confirmarte si ya salió.';
 const CON_AVISO = ' Le avisé; también puedes escribirle directo con el botón.';
 const SIN_AVISO = ' No pude avisarle; escríbele directo con el botón.';
-// El texto de «comprobante recibido» (cuadra, aviso salido): decisión del 19/10/2026, «hasta en 24 horas».
-const IGUAL_QUE_ANTES = 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Rubén: él revisará el pago y te enviará los enlaces del material por este chat hasta en 24 horas.';
+// El texto de «comprobante recibido» (cuadra, aviso salido): decisión del 19/10/2026, «hasta en 6 horas».
+const IGUAL_QUE_ANTES = 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Rubén: él revisará el pago y te enviará los enlaces del material por este chat hasta en 6 horas.';
 const SIN_BANCO = /banco|ejemplo|titular|cuenta|\b59100000077\b/i;
 
 // El QR de un pedido: lo que se ve y lo que se reporta.
@@ -630,8 +630,8 @@ describe('el comprobante', () => {
     const m = unico(t);
     expect(m.cuerpo).toBe(IGUAL_QUE_ANTES);
     expect(m.cuerpo).not.toMatch(PROHIBIDAS);
-    // El único plazo que sale es «hasta en 24 horas» (decisión del 19/10/2026); ningún otro.
-    expect(m.cuerpo.replace('hasta en 24 horas', '')).not.toMatch(/minutos|horas|hoy|mañana|pronto/i);
+    // El único plazo que sale es «hasta en 6 horas» (decisión del 19/10/2026); ningún otro.
+    expect(m.cuerpo.replace('hasta en 6 horas', '')).not.toMatch(/minutos|horas|hoy|mañana|pronto/i);
     expect(avisosDe(t)).toHaveLength(1);
     expect(avisosDe(t)[0]).toContain('Estado: comprobante: datos coinciden');
     expect(avisosDe(t)[0]).toContain('Pack Completo');
@@ -1152,8 +1152,8 @@ describe('PR-3 · el aviso a Rubén: texto libre dentro de 23,5 h de su último 
     const e = t.avisos[0]!;
     expect(e.tipo).toBe('template');
     expect(e.payload['template']?.name).toBe('aviso_comprobante_recibido');
-    // La hora límite (último mensaje del cliente + 23 h, La Paz) viaja DENTRO de la variable del producto: ninguna variable ni mensaje de más.
-    expect(parametrosDe(e)).toEqual(['Ana', 'el Pack Completo, responder antes de 06/10 09:01 hora de La Paz', '60', '+' + ANA]);
+    // La hora límite (último mensaje del cliente + 6 h, La Paz) viaja DENTRO de la variable del producto: ninguna variable ni mensaje de más.
+    expect(parametrosDe(e)).toEqual(['Ana', 'el Pack Completo, responder antes de 05/10 16:01 hora de La Paz', '60', '+' + ANA]);
     expect(unico(t).cuerpo).toBe(IGUAL_QUE_ANTES);
     // Con el texto libre (ventana abierta) el aviso es el de siempre.
     const w2 = crear(cuandoRubenEscribio(30));
@@ -1358,7 +1358,7 @@ describe('PR-3 · la derivación completa: el aviso lleva el MOTIVO exacto', () 
     const e = t.avisos[0]!;
     expect(e.payload['template']?.name).toBe('aviso_consulta_para_ruben');
     expect(((e.payload['template']?.components?.[0]?.parameters ?? []) as J[]).map((p) => String(p['text']))).toEqual([
-      'comprobante tardío: llegó después de los 15 minutos del QR', '+' + ANA, 'el Pack Completo por 60 Bs, responder antes de 06/10 09:01 hora de La Paz']);
+      'comprobante tardío: llegó después de los 15 minutos del QR', '+' + ANA, 'el Pack Completo por 60 Bs, responder antes de 05/10 16:01 hora de La Paz']);
     expect(unico(t).cuerpo).toContain('Ya lo pasé a Rubén');
   });
 
@@ -1501,8 +1501,8 @@ describe('PR-3 · todo aviso pasa por `avLimpio`: sin enlaces, sin llaves, sin �
   });
 });
 
-describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas, hora límite del aviso y queja de no entrega', () => {
-  const HOY_LIMITE = 'responder antes de 06/10 09:01 hora de La Paz'; // el comprobante llega 1 minuto después de AHORA (el QR ocupó un turno): 05/10 10:01 La Paz + 23 h
+describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 6 horas, hora límite del aviso y queja de no entrega', () => {
+  const HOY_LIMITE = 'responder antes de 05/10 16:01 hora de La Paz'; // el comprobante llega 1 minuto después de AHORA (el QR ocupó un turno): 05/10 10:01 La Paz + 6 h
   const QUEJAS = [
     'no me llegó', 'No me llego el enlace', 'NO LLEGÓ EL MATERIAL', 'no llego el libro', 'sigo esperando', 'Sigo esperando el link', 'no recibí nada', 'no recibi el enlace',
     'todavía no me llegó', 'aun no me llego', 'sigo sin recibir el material', 'nunca me llegó', 'no me enviaron nada', 'no me mandaron el libro',
@@ -1596,18 +1596,32 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas
     }
   });
 
-  it('D: «comprobante recibido» dice que el autor revisará el pago y enviará los enlaces hasta en 24 horas; nunca acreditado, verificado ni «ya te lo enviamos»', () => {
+  it('D: «comprobante recibido» dice que el autor revisará el pago y enviará los enlaces hasta en 6 horas; nunca acreditado, verificado ni «ya te lo enviamos»', () => {
     const w = crear();
     pedirQr(w, 'libro');
     const m = unico(hablar(w, ANA, mImagen()));
     expect(m.cuerpo).toBe(IGUAL_QUE_ANTES);
     expect(m.cuerpo).toContain('revisará el pago');
-    expect(m.cuerpo).toContain('hasta en 24 horas');
+    expect(m.cuerpo).toContain('hasta en 6 horas');
     expect(m.cuerpo).not.toMatch(sinEnlaceNiPromesa);
     expect(m.cuerpo).not.toMatch(PROHIBIDAS);
   });
 
-  it('E: el aviso al autor por comprobante lleva «responder antes de» = último mensaje del cliente + 23 h en La Paz, en el MISMO aviso (0 mensajes agregados), en texto libre y en plantilla', () => {
+  it('D: «24 horas» no es una promesa de entrega en ningún texto al cliente (la ventana de servicio de 24 h no aparece); el plazo es de 6 horas', () => {
+    const w = crear();
+    const textos: string[] = [];
+    const nota = (t: ResultadoTurno): void => { for (const e of t.mensajes) textos.push(e.cuerpo); };
+    nota(hablar(w, ANA, mTexto('hola')));
+    nota(hablar(w, ANA, mTexto('¿en cuánto tiempo me llega?')));
+    pedirQr(w, 'pack');
+    nota(hablar(w, ANA, mImagen()));
+    nota(hablar(w, ANA, mTexto('no me llegó'), { avanzarMin: 5 }));
+    expect(textos.length).toBeGreaterThan(3);
+    for (const x of textos) expect(x).not.toMatch(/24\s*(horas|hrs?|h)\b|veinticuatro/i);
+    expect(textos.join('|')).toContain('hasta en 6 horas');
+  });
+
+  it('E: el aviso al autor por comprobante lleva «responder antes de» = último mensaje del cliente + 6 h en La Paz, en el MISMO aviso (0 mensajes agregados), en texto libre y en plantilla', () => {
     const libre = crear();
     pedirQr(libre, 'pack');
     const t = hablar(libre, ANA, mImagen());
@@ -1622,11 +1636,11 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas
     const params = ((tp.avisos[0]!.payload['template']?.components?.[0]?.parameters ?? []) as J[]).map((p) => String(p['text']));
     expect(params).toHaveLength(4);
     expect(params.join('|')).toContain(HOY_LIMITE);
-    // Se calcula del ÚLTIMO mensaje del cliente: con el comprobante 60 minutos después del QR, la hora límite corre con él (10:00 en vez de 09:01).
+    // Se calcula del ÚLTIMO mensaje del cliente: con el comprobante 60 minutos después del QR, la hora límite corre con él (17:00 en vez de 16:01).
     const w2 = crear();
     pedirQr(w2, 'pack');
     const t2 = hablar(w2, ANA, mImagen(), { avanzarMin: 60 });
-    expect(t2.avisos[0]!.cuerpo).toContain('responder antes de 06/10 10:00 hora de La Paz');
+    expect(t2.avisos[0]!.cuerpo).toContain('responder antes de 05/10 17:00 hora de La Paz');
     // Solo el aviso de comprobante: el de consulta no lo lleva.
     expect(hablar(crear(), BETO, mTexto('necesito factura')).avisos[0]!.cuerpo).not.toContain('responder antes de');
   });
@@ -1639,8 +1653,8 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas
       return hablar(w, ANA, msg).avisos[0]!.cuerpo;
     };
     const seg = (ms: number): number => Math.floor(ms / 1000);
-    // 2 h ANTES del reloj de proceso (AHORA): 05/10 08:00 La Paz + 23 h = 06/10 07:00.
-    expect(conTs(seg(AHORA - 2 * 3_600_000))).toContain('responder antes de 06/10 07:00 hora de La Paz');
+    // 2 h ANTES del reloj de proceso (AHORA): 05/10 08:00 La Paz + 6 h = 05/10 14:00.
+    expect(conTs(seg(AHORA - 2 * 3_600_000))).toContain('responder antes de 05/10 14:00 hora de La Paz');
     // Un timestamp posterior al reloj, absurdo o viejo (>24 h) NO se usa: vale el reloj del proceso.
     expect(conTs(seg(AHORA + 3 * 3_600_000))).toContain(HOY_LIMITE);
     expect(conTs('abc')).toContain(HOY_LIMITE);

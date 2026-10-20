@@ -63,9 +63,10 @@ const motivoConsulta = avLimpio(aviso.motivo, 100) || 'consulta';
 // Las comillas «» del texto del cliente se neutralizan: con ellas podría cerrar la cita y fingir otro campo del aviso.
 const mensaje = aviso.tipo === 'consulta' && aviso.mensaje ? avLimpio(String(aviso.mensaje).replace(/[«»]/g, ' '), 160) : '';
 
-// E (19/10/2026): «responder antes de <hora límite>» = el instante del ÚLTIMO mensaje del cliente (el `timestamp` de Meta del comprobante, `mensajeMs`; el reloj del proceso si no es válido) + 23 h, en America/La_Paz (UTC-4 fijo, sin horario de verano), «dd/mm HH:MM».
+// E (19/10/2026): «responder antes de <hora límite>» = el instante del ÚLTIMO mensaje del cliente (el `timestamp` de Meta del comprobante, `mensajeMs`; el reloj del proceso si no es válido) + 6 h (la PROMESA de entrega, nunca posterior al cierre de la ventana de servicio de 24 h del cliente: mínimo con último mensaje + 23 h), en America/La_Paz (UTC-4 fijo, sin horario de verano), «dd/mm HH:MM».
 // Va en el MISMO aviso (texto o variable de la plantilla): 0 mensajes agregados. Solo en el aviso de comprobante.
-const limiteMs = (Number(t.mensajeMs) > 0 && Number(t.mensajeMs) <= ahora ? Number(t.mensajeMs) : ahora) + 23 * 60 * 60 * 1000 - 4 * 60 * 60 * 1000;
+const baseMs = Number(t.mensajeMs) > 0 && Number(t.mensajeMs) <= ahora ? Number(t.mensajeMs) : ahora;
+const limiteMs = Math.min(baseMs + 6 * 60 * 60 * 1000, baseMs + 23 * 60 * 60 * 1000) - 4 * 60 * 60 * 1000;
 const dosD = (n) => (n < 10 ? '0' : '') + n;
 const horaLimite = dosD(new Date(limiteMs).getUTCDate()) + '/' + dosD(new Date(limiteMs).getUTCMonth() + 1) + ' ' + dosD(new Date(limiteMs).getUTCHours()) + ':' + dosD(new Date(limiteMs).getUTCMinutes());
 const responderAntes = aviso.tipo === 'comprobante' ? 'responder antes de ' + horaLimite + ' hora de La Paz' : '';

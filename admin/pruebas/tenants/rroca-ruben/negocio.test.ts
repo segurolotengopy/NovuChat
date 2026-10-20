@@ -85,7 +85,7 @@ describe('negocio-rroca-ruben.json: el catálogo es el que espera el flujo', () 
     expect(pol).not.toMatch(/REEMPLAZAR_/);
     expect(pol).toMatch(/no las promete/);
     // El negocio no promete que el bot entregue ni que ya se envió.
-    expect(String(D.negocio['instruccionesExtra'])).toMatch(/hasta en 24 horas/);
+    expect(String(D.negocio['instruccionesExtra'])).toMatch(/hasta en 6 horas/);
     expect(String(D.negocio['instruccionesExtra'])).toMatch(/nunca entrega ni envía enlaces/);
     expect(TEXTO).not.toMatch(/ya te lo enviamos/i);
   });

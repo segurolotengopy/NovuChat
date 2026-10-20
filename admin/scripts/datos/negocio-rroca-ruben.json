@@ -7,7 +7,7 @@
   },
   "negocio": {
     "nombreNegocio": "REEMPLAZAR_NOMBRE_VISIBLE_RUBEN",
-    "descripcion": "Venta digital de Rubén Roca: un libro con bonos, un prompt de cierre de ventas y videos para crear contenido con IA, solos o en un pack. Rubén (el autor) revisa el pago y envía los enlaces por este mismo WhatsApp hasta en 24 horas; el asistente no entrega enlaces.",
+    "descripcion": "Venta digital de Rubén Roca: un libro con bonos, un prompt de cierre de ventas y videos para crear contenido con IA, solos o en un pack. Rubén (el autor) revisa el pago y envía los enlaces por este mismo WhatsApp hasta en 6 horas; el asistente no entrega enlaces.",
     "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_RUBEN",
     "zonaHoraria": "America/La_Paz",
     "moneda": "BOB",
@@ -21,11 +21,11 @@
       "garantía y devolución",
       "factura",
       "otros medios de pago",
-      "otro plazo de entrega distinto de 24 horas"
+      "otro plazo de entrega distinto de 6 horas"
     ],
-    "instruccionesExtra": "ENTREGA: la hace Rubén (el autor) a mano por este chat, hasta en 24 horas, después de revisar el pago. El asistente nunca entrega ni envía enlaces, ni dice que algo ya se envió.\nPAGO: solo por el QR del comercio. No inventes otros medios de pago, factura, garantía ni devoluciones: Rubén lo conversa directamente con el cliente; ofrece pasar con él.\nNo prometas garantía, devolución ni resultados.\nNo digas que un pago está acreditado ni verificado: Rubén revisa el comprobante.",
+    "instruccionesExtra": "ENTREGA: la hace Rubén (el autor) a mano por este chat, hasta en 6 horas, después de revisar el pago. El asistente nunca entrega ni envía enlaces, ni dice que algo ya se envió.\nPAGO: solo por el QR del comercio. No inventes otros medios de pago, factura, garantía ni devoluciones: Rubén lo conversa directamente con el cliente; ofrece pasar con él.\nNo prometas garantía, devolución ni resultados.\nNo digas que un pago está acreditado ni verificado: Rubén revisa el comprobante.",
     "horarios": {
-      "_nota": "Abierto siempre (24/7), decisión de Andres del 19/10/2026. Con 24/7 el asistente no promete respuesta humana inmediata: el material se envía hasta en 24 horas.",
+      "_nota": "Abierto siempre (24/7), decisión de Andres del 19/10/2026. Con 24/7 el asistente no promete respuesta humana inmediata: el material se envía hasta en 6 horas.",
       "lun": "00:00-23:59",
       "mar": "00:00-23:59",
       "mie": "00:00-23:59",
