@@ -15,7 +15,7 @@
 #
 # USO (SECO por omisión: no escribe nada)
 #   ./scripts/marcador-desde-archivo.sh --marcador REEMPLAZAR_PHONE_NUMBER_ID_CLIENTE05 \
-#       --de CLIENTES/RUBEN_ROCA/Ruben/ids-meta.local.md --clave phone_number_id
+#       --de CLIENTES/RUBEN_ROCA/Ruben/ids-meta.local.md --clave phone_number_id --cliente RUBEN_ROCA
 #   ... --aplicar                 agrega la fila (nunca pisa una existente)
 #   ... --aplicar --reemplazar    cambia el valor de una fila que ya existe (respaldo 600)
 #
@@ -40,22 +40,34 @@ set +x
 umask 077
 
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RAIZ_CLIENTES="${CLIENTES_RAIZ:-$HOME/NovuChat/CLIENTES}"
-MARCADOR="" ; DE="" ; CLAVE="" ; APLICAR=0 ; REEMPLAZAR=0
+# Las rutas son FIJAS. Solo la suite de pruebas (NOVUCHAT_PRUEBAS=1) puede cambiarlas por
+# CLIENTES_RAIZ y CONFIG_LOCAL: si no, quien invoque podría ensanchar la raíz permitida y usar
+# este script como oráculo sobre archivos fuera de CLIENTES/.
+if [ "${NOVUCHAT_PRUEBAS:-}" = "1" ]; then
+  RAIZ_CLIENTES="${CLIENTES_RAIZ:-$HOME/NovuChat/CLIENTES}"
+  LOCAL="${CONFIG_LOCAL:-$HOME/NovuChat/CONFIGURACION.local.md}"
+else
+  RAIZ_CLIENTES="$HOME/NovuChat/CLIENTES"
+  LOCAL="$HOME/NovuChat/CONFIGURACION.local.md"
+fi
+MARCADOR="" ; DE="" ; CLAVE="" ; CLIENTE="" ; APLICAR=0 ; REEMPLAZAR=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --marcador)   MARCADOR="${2:-}"; shift 2 ;;
     --de)         DE="${2:-}";       shift 2 ;;
     --clave)      CLAVE="${2:-}";    shift 2 ;;
+    --cliente)    CLIENTE="${2:-}";  shift 2 ;;
     --aplicar)    APLICAR=1;         shift ;;
     --reemplazar) REEMPLAZAR=1;      shift ;;
     *) echo "✗ Argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
 
-[ -n "$MARCADOR" ] && [ -n "$DE" ] && [ -n "$CLAVE" ] \
-  || { echo "✗ Faltan --marcador, --de o --clave." >&2; exit 2; }
+[ -n "$MARCADOR" ] && [ -n "$DE" ] && [ -n "$CLAVE" ] && [ -n "$CLIENTE" ] \
+  || { echo "✗ Faltan --marcador, --de, --clave o --cliente." >&2; exit 2; }
+printf '%s' "$CLIENTE" | grep -Eq '^[A-Z0-9_]+$' \
+  || { echo "✗ --cliente es la carpeta de CLIENTES/ (mayúsculas, dígitos y guiones bajos)." >&2; exit 2; }
 printf '%s' "$MARCADOR" | grep -Eq '^REEMPLAZAR_[A-Z0-9_]+$' \
   || { echo "✗ Un marcador es REEMPLAZAR_ seguido de MAYÚSCULAS, dígitos y guiones bajos." >&2; exit 2; }
 
@@ -72,24 +84,32 @@ esac
 [ -f "$DE" ]   || { echo "✗ No existe el archivo de origen." >&2; exit 2; }
 REAL="$(readlink -f -- "$DE")"
 BASE="$(readlink -f -- "$RAIZ_CLIENTES")"
-case "$REAL" in "$BASE"/*) ;; *) echo "✗ El archivo de origen tiene que estar dentro de CLIENTES/." >&2; exit 2 ;; esac
+case "$REAL" in "$BASE/$CLIENTE"/*) ;; *) echo "✗ El archivo de origen tiene que estar dentro de CLIENTES/$CLIENTE/." >&2; exit 2 ;; esac
 case "$REAL" in *.local.md) ;; *) echo "✗ El archivo de origen tiene que llamarse *.local.md." >&2; exit 2 ;; esac
 [ "$(stat -c '%u' -- "$REAL")" = "$(id -u)" ] || { echo "✗ El archivo de origen no es del usuario." >&2; exit 2; }
-modo="$(stat -c '%a' -- "$REAL")"
-case "$modo" in *[2367]) echo "✗ El archivo de origen es escribible por otros (modo $modo)." >&2; exit 2 ;; esac
+modo="$(printf '%03d' "$(stat -c '%a' -- "$REAL")")"
+case "${modo: -1}" in [2367]) echo "✗ El archivo de origen es escribible por otros (modo $modo)." >&2; exit 2 ;; esac
 case "${modo: -2:1}" in [2367]) echo "✗ El archivo de origen es escribible por el grupo (modo $modo)." >&2; exit 2 ;; esac
 
-# UNA línea `- <clave>: <valor>` exacta. Nunca se imprime lo leído.
-n="$(grep -Ec "^- ${CLAVE}: *[^[:space:]]+ *\$" -- "$REAL" || true)"
+# UNA sola apertura: se abre el descriptor, se comprueba que sigue siendo el mismo archivo
+# (ruta real, dueño) y se lee UNA vez; el conteo y la extracción salen de ese mismo contenido
+# (sin carrera entre comprobar y leer). Nada de lo leído se imprime.
+exec 3< "$REAL"
+[ "$(readlink -f -- /proc/self/fd/3)" = "$REAL" ] && [ "$(stat -L -c '%u' -- /proc/self/fd/3)" = "$(id -u)" ] \
+  || { echo "✗ El archivo de origen cambió mientras se abría: no se escribe nada." >&2; exit 2; }
+CONTENIDO="$(cat <&3)"
+exec 3<&-
+n="$(printf '%s\n' "$CONTENIDO" | grep -Ec "^- ${CLAVE}: *[^[:space:]]+ *\$" || true)"
 [ "$n" = "1" ] || { echo "✗ Se esperaba UNA línea «- ${CLAVE}: …» y hay $n: no se escribe nada." >&2; exit 1; }
-VALOR="$(sed -n -E "s/^- ${CLAVE}: *([^[:space:]]+) *\$/\1/p" -- "$REAL")"
+VALOR="$(printf '%s\n' "$CONTENIDO" | sed -n -E "s/^- ${CLAVE}: *([^[:space:]]+) *\$/\1/p")"
+unset CONTENIDO
 printf '%s' "$VALOR" | grep -Eq '^[0-9]{10,20}$' \
   || { echo "✗ El valor de ${CLAVE} no tiene forma de identificador (solo dígitos, 10 a 20): no se escribe nada." >&2; exit 1; }
 
 if [ "$APLICAR" -eq 0 ]; then
   existe="no"
-  "$AQUI/marcador-local.sh" --verificar "$MARCADOR" >/dev/null 2>&1 && existe="sí"
-  echo "Seco: ${CLAVE} se leyó con forma válida (valor no mostrado)."
+  "$AQUI/marcador-local.sh" --archivo "$LOCAL" --verificar "$MARCADOR" >/dev/null 2>&1 && existe="sí"
+  echo "Seco: ${CLAVE} se leyó de CLIENTES/${CLIENTE}/ con forma válida (valor no mostrado)."
   echo "  Marcador ${MARCADOR}: ya está en la tabla: ${existe}."
   if [ "$existe" = "sí" ]; then echo "  Con --aplicar no se pisa; para cambiarlo, --aplicar --reemplazar."; else echo "  Con --aplicar se agrega la fila."; fi
   exit 0
@@ -98,7 +118,7 @@ fi
 # Aplicar: el valor viaja por el ENTORNO, no por argumentos; marcador-local.sh valida,
 # respalda y escribe sin mostrarlo.
 if [ "$REEMPLAZAR" -eq 1 ]; then
-  MARCADOR_VALOR="$VALOR" "$AQUI/marcador-local.sh" --marcador "$MARCADOR" --reemplazar
+  MARCADOR_VALOR="$VALOR" "$AQUI/marcador-local.sh" --archivo "$LOCAL" --marcador "$MARCADOR" --reemplazar
 else
-  MARCADOR_VALOR="$VALOR" "$AQUI/marcador-local.sh" --marcador "$MARCADOR" --nota "copiado de CLIENTES/ (ids-meta.local.md)"
+  MARCADOR_VALOR="$VALOR" "$AQUI/marcador-local.sh" --archivo "$LOCAL" --marcador "$MARCADOR" --nota "copiado de CLIENTES/ (ids-meta.local.md)"
 fi

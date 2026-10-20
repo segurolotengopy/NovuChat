@@ -32,10 +32,10 @@ let local: string;
 const correr = (args: string[], extra: Record<string, string> = {}) =>
   spawnSync('bash', [SCRIPT, ...args], {
     encoding: 'utf8',
-    env: entornoDelEmulador(undefined, { HOME: dir, CLIENTES_RAIZ: clientes, CONFIG_LOCAL: local, ...extra }),
+    env: entornoDelEmulador(undefined, { HOME: dir, NOVUCHAT_PRUEBAS: '1', CLIENTES_RAIZ: clientes, CONFIG_LOCAL: local, ...extra }),
   });
 const todo = (r: { stdout: string; stderr: string }) => r.stdout + r.stderr;
-const base = () => ['--marcador', MARCADOR, '--de', origen, '--clave', 'phone_number_id'];
+const base = () => ['--marcador', MARCADOR, '--de', origen, '--clave', 'phone_number_id', '--cliente', 'X'];
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'desde-archivo-'));
@@ -80,14 +80,14 @@ describe('marcador-desde-archivo.sh', () => {
   });
 
   it('NEGACIÓN: una clave que no corresponde al marcador (waba_id a un PHONE_NUMBER_ID) se rechaza', () => {
-    const r = correr(['--marcador', MARCADOR, '--de', origen, '--clave', 'waba_id', '--aplicar']);
+    const r = correr(['--marcador', MARCADOR, '--de', origen, '--clave', 'waba_id', '--cliente', 'X', '--aplicar']);
     expect(r.status).not.toBe(0);
     expect(readFileSync(local, 'utf8')).toBe(TABLA);
     expect(todo(r)).not.toContain(WABA);
   });
 
   it('NEGACIÓN: una clave fuera de la lista cerrada se rechaza', () => {
-    const r = correr(['--marcador', MARCADOR, '--de', origen, '--clave', 'token', '--aplicar']);
+    const r = correr(['--marcador', MARCADOR, '--de', origen, '--clave', 'token', '--cliente', 'X', '--aplicar']);
     expect(r.status).not.toBe(0);
     expect(todo(r)).toContain('Clave no permitida');
   });
@@ -95,7 +95,7 @@ describe('marcador-desde-archivo.sh', () => {
   it('NEGACIÓN: un archivo fuera de CLIENTES/ se rechaza sin leerlo', () => {
     const fuera = join(dir, 'ids-meta.local.md');
     writeFileSync(fuera, IDS, { mode: 0o600 });
-    const r = correr(['--marcador', MARCADOR, '--de', fuera, '--clave', 'phone_number_id', '--aplicar']);
+    const r = correr(['--marcador', MARCADOR, '--de', fuera, '--clave', 'phone_number_id', '--cliente', 'X', '--aplicar']);
     expect(r.status).not.toBe(0);
     expect(todo(r)).toContain('dentro de CLIENTES');
     expect(readFileSync(local, 'utf8')).toBe(TABLA);
@@ -104,7 +104,7 @@ describe('marcador-desde-archivo.sh', () => {
   it('NEGACIÓN: un enlace simbólico (aunque apunte dentro) se rechaza', () => {
     const enlace = join(clientes, 'X', 'cuenta', 'enlace.local.md');
     symlinkSync(origen, enlace);
-    const r = correr(['--marcador', MARCADOR, '--de', enlace, '--clave', 'phone_number_id', '--aplicar']);
+    const r = correr(['--marcador', MARCADOR, '--de', enlace, '--clave', 'phone_number_id', '--cliente', 'X', '--aplicar']);
     expect(r.status).not.toBe(0);
     expect(todo(r)).toContain('enlace simbólico');
   });
@@ -112,7 +112,7 @@ describe('marcador-desde-archivo.sh', () => {
   it('NEGACIÓN: un archivo que no se llama *.local.md o escribible por otros se rechaza', () => {
     const otro = join(clientes, 'X', 'cuenta', 'ids-meta.md');
     writeFileSync(otro, IDS, { mode: 0o600 });
-    const a = correr(['--marcador', MARCADOR, '--de', otro, '--clave', 'phone_number_id', '--aplicar']);
+    const a = correr(['--marcador', MARCADOR, '--de', otro, '--clave', 'phone_number_id', '--cliente', 'X', '--aplicar']);
     expect(a.status).not.toBe(0);
     chmodSync(origen, 0o666);
     const b = correr([...base(), '--aplicar']);
@@ -142,8 +142,31 @@ describe('marcador-desde-archivo.sh', () => {
   });
 
   it('NEGACIÓN: un marcador mal formado se rechaza', () => {
-    const r = correr(['--marcador', 'REEMPLAZAR_x|y', '--de', origen, '--clave', 'phone_number_id', '--aplicar']);
+    const r = correr(['--marcador', 'REEMPLAZAR_x|y', '--de', origen, '--clave', 'phone_number_id', '--cliente', 'X', '--aplicar']);
     expect(r.status).not.toBe(0);
     expect(readFileSync(local, 'utf8')).toBe(TABLA);
+  });
+
+  it('NEGACIÓN: sin NOVUCHAT_PRUEBAS el entorno no puede ensanchar la raíz ni cambiar la tabla (CLIENTES_RAIZ y CONFIG_LOCAL se ignoran)', () => {
+    // La raíz fija es $HOME/NovuChat/CLIENTES; HOME apunta al temporal, donde esa carpeta no existe: el origen cae fuera.
+    const r = correr([...base(), '--aplicar'], { NOVUCHAT_PRUEBAS: '0' });
+    expect(r.status).not.toBe(0);
+    expect(readFileSync(local, 'utf8')).toBe(TABLA);
+    expect(todo(r)).not.toContain(PHONE);
+  });
+
+  it('NEGACIÓN: un origen de OTRO cliente (--cliente no coincide con la carpeta) se rechaza', () => {
+    mkdirSync(join(clientes, 'Y'), { recursive: true });
+    const r = correr(['--marcador', MARCADOR, '--de', origen, '--clave', 'phone_number_id', '--cliente', 'Y', '--aplicar']);
+    expect(r.status).not.toBe(0);
+    expect(todo(r)).toContain('CLIENTES/Y/');
+    expect(readFileSync(local, 'utf8')).toBe(TABLA);
+  });
+
+  it('NEGACIÓN: sin --cliente se rechaza; con una carpeta mal escrita también', () => {
+    const sin = correr(['--marcador', MARCADOR, '--de', origen, '--clave', 'phone_number_id', '--aplicar']);
+    expect(sin.status).not.toBe(0);
+    const mal = correr(['--marcador', MARCADOR, '--de', origen, '--clave', 'phone_number_id', '--cliente', '../X', '--aplicar']);
+    expect(mal.status).not.toBe(0);
   });
 });
