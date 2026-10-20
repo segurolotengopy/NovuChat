@@ -457,8 +457,9 @@ niega si el `.env` no es del usuario o tiene permisos de más.
    Si ya existe una con ese nombre y tipo, **no se sobrescribe**: se REUTILIZA y no se marca como creada
    por el script; si hay duplicados o el nombre existe con otro tipo, se aborta sin escribir.
    **Salvaguardas** (revisión de seguridad del PR #532): (a) solo para alias de ensayo, `demoA` y `demoB`
-   (un alias de cliente real, p. ej. Bellido, tiene credenciales vivas con estos mismos nombres y estos modos
-   se niegan con 2 sin tocar n8n); (b) `--quitar-credenciales` borra únicamente las que **creó este script**
+   (un alias de cliente real, p. ej. Bellido, tiene credenciales vivas y estos modos
+   se niegan con 2 sin tocar n8n; un cliente real usa `--cred-ingesta/--cred-envio/--cred-rele` con los nombres
+   de sus credenciales existentes, atadas al número del alias antes de escribir (la ingesta y el envío deben citarlos un flujo activo cuyo número —el del nodo Set `phoneNumberId`— sea el del alias, y ningún flujo, activo o no, con otro número; un flujo que las cita y cuyo número no se puede leer bloquea; la atadura se repite al activar; sin las tres opciones un alias que no es de ensayo no se carga ni se activa): `docs/produccion/timbre-salida-de-persona-clientes-reales.md`); (b) `--quitar-credenciales` borra únicamente las que **creó este script**
    (sus ids quedan en `$XDG_RUNTIME_DIR/novuchat-credenciales-creadas-<alias>.json`, modo 600; si no hay
    registro, no borra nada y lo dice) y se niega si cualquier flujo vivo de n8n las cita por id o nombre;
    (c) antes de crear la de WhatsApp, el `WA_APP_ID` y el `WABA_ID` del `--env` se cotejan sin red contra las
