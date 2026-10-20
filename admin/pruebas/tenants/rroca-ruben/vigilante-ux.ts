@@ -6,6 +6,7 @@
  *   3. UNA SOLA PRESENTACIÓN por mensaje («asistente» a lo más una vez) Y UNA POR TELÉFONO: la presentación («asistente virtual de Rubén», el saludo largo) sale a lo más una vez en toda la conversación;
  *   4. PÁRRAFOS: cada párrafo (separado por una línea en blanco) tiene a lo más DOS oraciones y, con dos, a lo más 220 caracteres; sin saltos triples ni espacios sobrantes. La partición en oraciones es la
  *      de la LIBRERÍA (`rrOraciones` de `rr.js`): no puede haber desacuerdo entre quien reparte y quien vigila.
+ *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?», «¿qué opción…?» o «¿con cuál…?» sale con al menos un botón en ese mismo mensaje (solo se ofrece lo que se cumple).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -58,6 +59,7 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
     if (m.tipo === 'image' && !eligioProducto) v.push('se ofreció el QR (pagar) sin que el cliente eligiera un producto en este turno');
     if (m.tipo !== 'image' && /escanea el qr/i.test(m.cuerpo)) v.push('un texto de pago fuera del QR');
     if (m.tipo === 'interactive' && idsDeBotones(m).length && !eligioProducto && /(pagar|\bqr\b)/i.test(((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.title)).join(' '))) v.push('un botón de pago antes de elegir producto');
+    if (/opciones|¿cu[aá]l prefieres|¿qu[eé] opci[oó]n|¿con cu[aá]l/i.test(m.cuerpo) && m.tipo !== 'interactive') v.push('el texto pregunta por opciones pero el mensaje no trae ningún botón');
     v.push(...violacionesDeParrafos(m.cuerpo));
     if ((m.cuerpo.match(/asistente/gi) ?? []).length > 1) v.push('el mensaje se presenta más de una vez («asistente» repetido)');
     if (presentaciones && esPresentacion(m.cuerpo)) {
