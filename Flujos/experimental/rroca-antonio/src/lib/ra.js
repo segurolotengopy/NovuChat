@@ -260,14 +260,11 @@ function raDatoLleno(v) {
   const s = typeof v === 'string' ? v.trim() : '';
   return s !== '' && !/reemplazar_/i.test(s) ? s : '';
 }
-// El plazo de entrega en horas (P2): un entero de 1 a 23 (nunca más que la ventana de 24 h del cliente); 0 = sin plazo («te lo enviará por este chat»).
+// Decisión de Andres (20/10/2026): al cliente NO se le dice ningún plazo en horas («en cuanto lo revise»). `plazoEntregaHoras` es un dato INTERNO: solo fija la hora límite del aviso a Antonio
+// (un entero de 1 a 23, nunca más que la ventana de 24 h del cliente; 0 = el cierre de la ventana).
 function raPlazoHoras(base) {
   const n = Number(cbEsObjeto(base) ? base.plazoEntregaHoras : 0);
   return Number.isFinite(n) && n >= 1 && n <= 23 ? Math.floor(n) : 0;
-}
-function raTextoPlazo(base) {
-  const h = raPlazoHoras(base);
-  return h ? ' hasta en ' + h + (h === 1 ? ' hora' : ' horas') : '';
 }
 // El texto de garantía, devolución y factura (P3): una frase fija, dato de la consola del flujo; si falta, la frase prudente que no promete nada.
 const RA_TEXTO_GARANTIA_BASE = 'Sobre garantía, devolución o factura, eso lo responde Antonio directamente; desde aquí no puedo prometerte nada de eso.';
@@ -506,7 +503,7 @@ function raTextoDerivacion(motivo, salio, clave, base) {
   if (salio === 'repetido' && motivo === 'consulta') return 'Eso lo ve Antonio directamente. Antonio ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.';
   // Factura, garantía, devolución, otros medios de pago, reclamos y pagos que no aparecen se conversan DIRECTAMENTE con Antonio: aviso + botón, y NUNCA una promesa de garantía, devolución ni resultado.
   if (motivo === 'consulta' && (clave === 'factura' || clave === 'garantia' || clave === 'otro_medio_pago' || clave === 'reclamo' || clave === 'no_entrega')) {
-    const intro = clave === 'no_entrega' ? 'Lamento la espera. Antonio revisa el pago y envía el material por este chat' + raTextoPlazo(base) + '; desde aquí no puedo confirmarte si ya salió.'
+    const intro = clave === 'no_entrega' ? 'Lamento la espera. Antonio revisa los comprobantes y envía el material por este chat en cuanto los revisa; desde aquí no puedo confirmarte si ya salió.'
       : (clave === 'factura' || clave === 'garantia' ? raTextoGarantia(base)
         : (clave === 'otro_medio_pago' ? 'El pago de este material se hace con el QR que te muestro por este chat; cualquier otra forma de pago la ve Antonio directamente.' : 'Eso lo ve directamente Antonio y puedes conversarlo con él.'));
     return salio === true ? intro + ' Le avisé; también puedes escribirle directo con el botón.' : intro + ' No pude avisarle; escríbele directo con el botón.';
@@ -532,7 +529,7 @@ function raTextoComprobante(resultado, causa, salio, diferencia, base) {
   }
   if (resultado === 'cuadra') {
     return salio === true
-      ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Antonio: él revisará el pago y te enviará el material por este chat' + raTextoPlazo(base) + '.', boton: false }
+      ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Antonio: en cuanto lo revise, él te enviará el material por este chat.', boton: false }
       : { cuerpo: sinAviso, boton: true };
   }
   if (resultado === 'reintentar') {
