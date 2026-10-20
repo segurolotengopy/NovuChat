@@ -31,7 +31,7 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 // Estos comercios no se tocan desde acá (regla del proyecto).
 const EXCLUIDOS = ['bellido', 'platinum'];
-const esExcluido = (t) => EXCLUIDOS.some((e) => t === e || t.startsWith(`${e}-`) || t.startsWith(e));
+const esExcluido = (t) => EXCLUIDOS.some((e) => t.startsWith(e));
 
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');

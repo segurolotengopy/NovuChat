@@ -86,6 +86,7 @@ describe('fijar-flujos: el texto del script', () => {
     expect(s.indexOf('if (!APLICAR')).toBeGreaterThan(-1);
     expect(s.indexOf('tx.update')).toBeGreaterThan(s.indexOf('if (!APLICAR'));
     expect(s.indexOf('tx.create')).toBeGreaterThan(s.indexOf('if (!APLICAR'));
+    expect(s.indexOf('tx.set')).toBeGreaterThan(s.indexOf('if (!APLICAR'));
   });
   it('su única modificación de la ficha es `flujos` y `vertical`, y no borra nada', () => {
     expect(s).toMatch(/tx\.update\(refTenant, \{ flujos: plan\.despues, vertical: plan\.vertical \}\)/);
@@ -94,7 +95,7 @@ describe('fijar-flujos: el texto del script', () => {
   it('los comercios excluidos (y los de prefijo igual) salen con código 2 antes de abrir Firebase', () => {
     for (const tenant of ['bellido', 'Bellido', 'bellido-xyz', 'platinum2']) {
       const r = spawnSync('node', [join(aqui, '..', '..', 'scripts', 'plataforma', 'fijar-flujos.mjs'),
-        '--proyecto', 'p', '--operador', 'a@b.co', '--tenant', tenant, '--flujos', 'venta'], { encoding: 'utf8' });
+        '--proyecto', 'p', '--operador', ['operador', 'ejemplo.test'].join('@'), '--tenant', tenant, '--flujos', 'venta'], { encoding: 'utf8' });
       expect(r.status).toBe(2);
       expect(r.stderr).toContain('no se toca desde este script');
     }
