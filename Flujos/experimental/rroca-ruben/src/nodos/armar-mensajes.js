@@ -83,6 +83,9 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     usadoNuevo = RR_BOTON_INFO;
     const op = menu1();
     m = conBotones(rrTextoInfo(plan.tema, op.length > 0), op);
+  } else if (tipoDePlan === 'identidad') {
+    const op = menuAbierto();
+    m = conBotones(RR_TEXTO_IDENTIDAD, op);
   } else if (tipoDePlan === 'precios') {
     usadoNuevo = RR_BOTON_PRECIOS;
     m = conBotones(RR_TEXTO_PRECIOS, menu1());
@@ -111,7 +114,9 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       const op = menuAbierto();
       const cuerpo = bueno ? limpio : rrTextoModeloCaido(op.length > 0);
       if (bueno) ultimoModelo = cuerpo.slice(0, 300);
-      m = conBotones(cuerpo, op);
+      // PRESENTACIÓN GARANTIZADA EN EL PRIMER MENSAJE: el pulido común quita la presentación inicial del modelo; el cliente que llega por un anuncio debe leer «asistente virtual» al menos una vez.
+      const conPresentacion = fichaAntes.saludado || rrUnaPresentacion(cuerpo, 0) !== cuerpo ? cuerpo : RR_PRESENTACION + '\n\n' + cuerpo;
+      m = conBotones(conPresentacion, op);
       tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
     }
   } else if (tipoDePlan === 'qr') {

@@ -587,6 +587,7 @@ describe('la conversación: el modelo solo conversa', () => {
   it('un modelo que falla (error, caído, sin texto) NO deja al cliente sin respuesta: texto fijo con el menú', () => {
     for (const modelo of [{ error: { message: 'quota', code: 429 } }, {}, { candidates: [] }, () => { throw new Error('fetch failed'); }]) {
       const w = crear({ modelo: modelo as Doble });
+      hablar(w, ANA, mTexto('hola'));
       const m = unico(hablar(w, ANA, mTexto('cuéntame del libro')));
       expect(m.cuerpo).toMatch(/^Gracias por escribir\./);
     }
@@ -925,6 +926,7 @@ describe('la pausa por persona: CERO envío, CERO modelo, CERO descarga', () => 
     const w = crear();
     w.mundo.dobles['Reportar mensaje (entrante)'] = (ll) => (String(ll.cuerpo?.['telefono']) === ANA ? { ok: true, atencion: { estado: 'bloqueado', respuestasEnVentana: 30 } } : { ok: true });
     expect(hablar(w, ANA, mTexto('cuéntame del libro')).mensajes).toHaveLength(0);
+    hablar(w, BETO, mTexto('hola'));
     expect(unico(hablar(w, BETO, mTexto('cuéntame del libro'))).cuerpo).toBe(RESPUESTA_EN_PARRAFOS);
   });
 
@@ -1159,6 +1161,7 @@ describe('correcciones de la revisión de seguridad del PR-2', () => {
   it('LOW e: el modelo no afirma descuentos, regalos, garantías ni plazos: cae al texto fijo', () => {
     for (const texto of ['Tenemos un descuento especial hoy. ¿Lo quieres?', 'Es gratis por tiempo limitado. ¿Te interesa?', 'Hay una promoción para ti. ¿Te cuento?', 'Tiene garantía total. ¿Algo más?', 'Te devolvemos el dinero, hay devolución. ¿Seguimos?', 'Te lo envían en 5 minutos. ¿Lo quieres?']) {
       const w = crear({ modelo: geminiTexto(texto) });
+      hablar(w, ANA, mTexto('hola'));
       const m = unico(hablar(w, ANA, mTexto('cuéntame más del libro')));
       expect(m.cuerpo, texto).toMatch(/^Gracias por escribir\./);
     }
@@ -1968,6 +1971,7 @@ describe('INVARIANTES DE UX · vigilados en TODOS los turnos de la batería (un 
   it('de punta a punta: un texto del modelo que PASA el filtro sale repartido en párrafos, sin cambiar palabras, con «Sr. Pérez» entero', () => {
     const largo = 'El libro te enseña paso a paso a usar la IA. Lo recomienda el Sr. Pérez a quienes empiezan. Sirve para vender mejor. ¿A qué te dedicas?';
     const w = crear({ modelo: geminiTexto(largo) });
+    hablar(w, ANA, mTexto('hola'));
     const m = unico(hablar(w, ANA, mTexto('cuéntame cómo me ayuda con mi tienda de ropa')));
     expect(m.cuerpo, 'el filtro lo rechazó y cayó al texto fijo').not.toBe(L.RR_TEXTO_MODELO_CAIDO);
     expect(sinBlancos(m.cuerpo)).toBe(largo);
@@ -2294,7 +2298,8 @@ describe('OBSERVACIONES DE SILVANA (20/10/2026) · el saludo no ofrece a Rubén;
     const m = unico(hablar(w, ANA, mBoton('b_info')));
     expect(m.cuerpo).toMatch(/^¡Hola! Qué gusto saludarte/);
     expect(m.cuerpo).not.toMatch(/\bBs\b/);
-    expect(titulos(m)).toEqual(['Ver precios']);
+    // M3: «Más información» NO pasó a `usados` (el cliente aún no la ha visto): el saludo la ofrece.
+    expect(titulos(m)).toEqual(['Ver precios', 'Más información']);
     expect(llamadas()).toBe(0);
   });
 
@@ -2420,4 +2425,111 @@ describe('UNA SOLA PRESENTACIÓN (Silvana, 20/10/2026) · el saludo no dice dos 
     expect(presentaciones(unico(hablar(w, ANA, mBoton('b_info'))).cuerpo)).toBe(0);
     expect(presentaciones(unico(hablar(w, ANA, mTexto('¿cuáles son los bonos?'))).cuerpo)).toBe(0);
   });
+});
+
+describe('REVISIÓN DE CÓDIGO Y DE SEGURIDAD DE #565 · identidad por código (regla dura 4), capítulos literales, posventa y presentación garantizada', () => {
+  const BONOS0 = 'Biblioteca de 100 Prompts de IA';
+  // Un modelo simulado que cuenta las llamadas y contesta lo que se le diga.
+  const conModelo = (texto: string): { w: Mundial; llamadas: () => number } => {
+    let n = 0;
+    const w = crear({ modelo: () => { n += 1; return geminiTexto(texto); } });
+    return { w, llamadas: () => n };
+  };
+  const IDENTIDAD = [
+    '¿eres Rubén?', '¿quién eres?', '¿con quién hablo?', 'hablo con Rubén?', 'eres ruben o un bot?', '¿me responde una persona?', 'eres de verdad?', '¿hablo con alguien real?', 'estoy hablando con alguien?',
+    '¿me atiende una persona?', '¿me atiende alguien?', '¿eres un robot?', 'bot?', 'robot', '¿es un mensaje automático?', 'esto es automático?', 'contestador?', 'are you a bot?', 'are you human?', 'are you an AI?',
+    'real person?', '¿eres una IA?', '¿eres humano?', '¿eres una persona real?', '¿estoy hablando con una persona?',
+  ];
+  for (const pregunta of IDENTIDAD) {
+    it(`NEGADA (regla dura 4): «${pregunta}» se responde POR CÓDIGO reconociendo ser un asistente virtual con IA, sin modelo, con ficha saludada y sin saludar`, () => {
+      for (const saludar of [false, true]) {
+        const { w, llamadas } = conModelo('Gracias por escribir.');
+        if (saludar) hablar(w, ANA, mTexto('hola'));
+        const m = unico(hablar(w, ANA, mTexto(pregunta)));
+        expect(m.cuerpo, pregunta).toContain('asistente virtual');
+        expect(m.cuerpo).toContain('inteligencia artificial');
+        expect(m.cuerpo).not.toMatch(/Gracias por escribir/);
+        expect(m.cuerpo).not.toMatch(/\bBs\b/);
+        expect(m.cuerpo.trim()).not.toBe('');
+        expect(llamadas()).toBe(0);
+        expect(m.cuerpo.split('\n\n').length).toBeGreaterThanOrEqual(2);
+      }
+    });
+  }
+
+  it('la identidad también se responde con un QR abierto, y lo que no es identidad («es real este libro», «quiero crear un chatbot», «el pago es automático») sigue al modelo', () => {
+    const w = crear();
+    pedirQr(w, 'pack');
+    expect(unico(hablar(w, ANA, mTexto('¿eres un bot?'))).cuerpo).toContain('asistente virtual');
+    for (const q of ['¿es real este libro?', 'quiero crear un chatbot para mi tienda', '¿el pago es automático?', 'cómo me ayuda en mi taller de costura']) {
+      const { w: w2, llamadas } = conModelo('Qué buen punto. El libro te enseña paso a paso a usar la IA. ¿A qué te dedicas?');
+      hablar(w2, BETO, mTexto('hola'));
+      hablar(w2, BETO, mTexto(q));
+      expect(llamadas(), q).toBe(1);
+    }
+  });
+
+  it('PRESENTACIÓN GARANTIZADA: como primer mensaje (titular de anuncio) el código antepone «asistente virtual» si el modelo no se presentó, y si el modelo ya se presentó queda UNA', () => {
+    const { w } = conModelo('Te ayudo con eso. ¿Para qué usas la IA hoy?');
+    const m = unico(hablar(w, ANA, mTexto('¿Estás usando la IA mal?')));
+    expect(m.cuerpo).toMatch(/^Hola, soy el asistente virtual de Rubén\./);
+    expect(m.cuerpo).toContain('¿Para qué usas la IA hoy?');
+    expect(contarPresentaciones(m.cuerpo)).toBe(1);
+    for (const texto of ['Con gusto. Soy el asistente virtual de Rubén. ¿Para qué usas la IA hoy?', 'Hola, soy el asistente virtual de Rubén. Te ayudo con eso. ¿Para qué usas la IA hoy?']) {
+      const { w: w2 } = conModelo(texto);
+      const m2 = unico(hablar(w2, BETO, mTexto('¿No sabes qué publicar?')));
+      expect(m2.cuerpo).toContain('asistente virtual');
+      expect(contarPresentaciones(m2.cuerpo)).toBe(1);
+    }
+    // Ya saludado, el código NO antepone nada.
+    const { w: w3 } = conModelo('Te ayudo con eso. ¿Para qué usas la IA hoy?');
+    hablar(w3, ANA, mTexto('hola'));
+    expect(unico(hablar(w3, ANA, mTexto('¿Estás usando la IA mal?'))).cuerpo).not.toMatch(/asistente/);
+  });
+
+  it('I1 · los 12 capítulos son los títulos LITERALES del guion y el mensaje cabe en 1024 caracteres', () => {
+    const TITULOS = ['La mentalidad del emprendedor aumentado por IA', 'Cómo funciona la IA y cómo aprovecharla sin ser experto', 'Cómo descubrir nuevas oportunidades de ingresos con IA', 'Cómo crear productos digitales más rápido con IA',
+      'Cómo convertir la IA en un asistente para conseguir clientes', 'Cómo crear contenido que atraiga clientes utilizando IA', 'Cómo utilizar IA para vender más y cerrar mejores oportunidades', 'Cómo automatizar marketing y comunicación para un negocio más eficiente',
+      'Cómo crear tu asistente personal de IA', 'Cómo automatizar procesos del negocio y crear sistemas que trabajen por ti', 'Cómo crear tu equipo virtual de IA', 'El sistema operativo del emprendedor con IA'];
+    const { w } = conModelo('x');
+    hablar(w, ANA, mTexto('hola'));
+    const m = unico(hablar(w, ANA, mTexto('capítulos')));
+    TITULOS.forEach((t, i) => expect(m.cuerpo).toContain(`${i + 1}. ${t}`));
+    expect(m.cuerpo.length).toBeLessThanOrEqual(1024);
+  });
+
+  it('I2 · «qué contenido puedo publicar en instagram para mi negocio de ropa» NO es una pregunta por el contenido del libro: va al modelo', () => {
+    const { w, llamadas } = conModelo('Qué buen punto. El libro te enseña paso a paso. ¿A qué te dedicas?');
+    hablar(w, ANA, mTexto('hola'));
+    const m = unico(hablar(w, ANA, mTexto('qué contenido puedo publicar en instagram para mi negocio de ropa')));
+    expect(llamadas()).toBe(1);
+    expect(m.cuerpo).not.toMatch(/12 capítulos/);
+    for (const q of ['qué contenido tiene el libro', 'contenido del libro']) expect(unico(hablar(w, ANA, mTexto(q))).cuerpo, q).toMatch(/12 capítulos/);
+  });
+
+  it('I3 · la posventa («los bonos no abren», «dónde están los bonos», «cómo descargo los bonos», «no me llegaron los bonos») NO se responde con la lista de bonos ni con botones de compra; «no abren» deriva', () => {
+    const w = crear();
+    hablar(w, ANA, mTexto('hola'));
+    const t = hablar(w, ANA, mTexto('los bonos no abren'));
+    expect(t.avisos).toHaveLength(1);
+    expect(unico(t).payload['interactive']?.type).toBe('cta_url');
+    for (const q of ['dónde están los bonos', 'cómo descargo los bonos', 'no me llegaron los bonos', 'no encuentro los bonos']) {
+      const { w: w2, llamadas } = conModelo('Qué buen punto. ¿Me cuentas más?');
+      hablar(w2, BETO, mTexto('hola'));
+      const m = unico(hablar(w2, BETO, mTexto(q)));
+      expect(m.cuerpo, q).not.toContain(BONOS0);
+      expect(llamadas(), q).toBe(1);
+    }
+  });
+
+  it('I4 · «qué incluye el paquete completo / el combo / el de 60 / la opción de 60» NO se responde con la información del LIBRO', () => {
+    for (const q of ['qué incluye el paquete completo', 'qué incluye el combo', 'qué incluye el de 60', 'qué incluye la opción de 60', 'qué trae el completo']) {
+      const { w, llamadas } = conModelo('Qué buen punto. ¿Me cuentas más?');
+      hablar(w, ANA, mTexto('hola'));
+      const m = unico(hablar(w, ANA, mTexto(q)));
+      expect(m.cuerpo, q).not.toContain(BONOS0);
+      expect(llamadas(), q).toBe(1);
+    }
+  });
+
 });

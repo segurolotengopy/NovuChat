@@ -4,6 +4,7 @@
 //   saludo         el saludo fijo y CORTO con dos botones («Ver precios» y «Más información»; nunca «Hablar con Rubén») (hola, más información, precio, «cuánto cuesta» como PRIMER mensaje —sin precio—; o el prellenado 5, con su pregunta, sin presentación si ya fue saludado);
 //   complemento    prellenado 3 o 4: el precio del complemento, el ahorro del Pack calculado por el código y DOS botones;
 //   info           «Más información», «bonos», «capítulos», «qué incluye»: datos fijos del guion, POR CÓDIGO (sin modelo), con el menú de productos;
+//   identidad      «¿eres un bot / una persona / Rubén?»: frase fija por código (prohibición 4), sin modelo;
 //   menu2          «Ver complementos»;
 //   precio         «¿cuánto cuesta…?» YA SALUDADO: el precio exacto del catálogo, por código y sin modelo, con el menú de productos;
 //   precios        el botón «Ver precios» del saludo (o un botón desconocido ya saludado): el menú de productos con sus precios; sin opciones que mostrar, `derivar` con motivo `sin_opciones`;
@@ -90,7 +91,8 @@ if (t.tipo === 'interactive') {
   // «Más información»: la explicación del libro y sus bonos, por código. Como PRIMER mensaje (un chat viejo) no se muestran montos: el saludo corto.
   if (id === RR_BOTON_INFO) {
     if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: id });
-    if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat, boton: id });
+    // Sin `boton`: «Más información» NO pasa a `usados` si el cliente aún no la ha visto (el saludo la vuelve a ofrecer).
+    if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
     return salir({ tipo: 'info', tema: 'info', cat: cat, boton: id });
   }
   if (id === RR_BOTON_HABLAR) return salir({ tipo: 'derivar', motivo: 'hablar_boton', clave: 'hablar_con_ruben', aviso: avisoDeConsulta('hablar_con_ruben', 'quiere hablar con Rubén'), cat: cat, boton: id });
@@ -112,6 +114,8 @@ if (pre === 'closer' || pre === 'videos') {
 if (pre === 'consulta') return salir(hayQrAbierto ? { tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat } : { tipo: 'saludo', pregunta: 'consulta', cat: cat });
 const derivacion = rrDerivacion(norm, { comprobante: ficha.comprobanteMs > 0 || cobro.enRevision === true, qrAbierto: hayQrAbierto });
 if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: derivacion.clave, aviso: avisoDeConsulta(derivacion.clave, derivacion.motivo), cat: cat });
+// Identidad POR CÓDIGO (prohibición 4): «¿eres un bot?», «¿quién eres?», «¿hablo con Rubén?»… reciben una frase fija que reconoce ser un asistente virtual con IA; el modelo no interviene.
+if (rrPreguntaPorIA(norm)) return salir({ tipo: 'identidad', cat: cat });
 if (rrPreguntaPorIngresos(norm)) return salir({ tipo: 'ingresos', cat: cat });
 // Con un QR abierto, cualquier texto recibe el recordatorio (un solo QR a la vez); el modelo no interviene.
 if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
