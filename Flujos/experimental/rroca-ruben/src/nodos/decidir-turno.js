@@ -79,13 +79,14 @@ if (t.tipo === 'interactive') {
   const id = String(t.texto || '');
   const k = rrProductoDeBoton(id);
   if (k) return salir(elegir(k, id));
-  if (id === RR_BOTON_COMPLEMENTOS && !ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat, boton: id });
+  // (Sin `boton` si es el PRIMER mensaje: el cliente aún no ha visto lo que pidió, así que no pasa a `usados`.)
+  if (id === RR_BOTON_COMPLEMENTOS && !ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
   if (id === RR_BOTON_COMPLEMENTOS) return salir(rrMenu(2, cat, ficha.usados.concat([id])).length ? { tipo: 'menu2', cat: cat, boton: id } : sinOpciones(id));
   // «Ver precios»: el menú de productos (con un QR abierto, el recordatorio del QR). Sin productos que mostrar pero con complementos aún comprables, el menú de complementos; sin ninguno, Rubén.
   // Si llegara como PRIMER mensaje (un botón de un chat viejo), no se muestran montos: el saludo corto. «Hablar con Rubén»: aviso + botón, como «quiero hablar con Rubén» escrito.
   if (id === RR_BOTON_PRECIOS) {
     if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: id });
-    if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat, boton: id });
+    if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
     return salir(opcionesDe(ficha.usados.concat([id]), id));
   }
   // «Más información»: la explicación del libro y sus bonos, por código. Como PRIMER mensaje (un chat viejo) no se muestran montos: el saludo corto.
@@ -115,7 +116,7 @@ if (pre === 'consulta') return salir(hayQrAbierto ? { tipo: 'qr_pendiente', prod
 const derivacion = rrDerivacion(norm, { comprobante: ficha.comprobanteMs > 0 || cobro.enRevision === true, qrAbierto: hayQrAbierto });
 if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: derivacion.clave, aviso: avisoDeConsulta(derivacion.clave, derivacion.motivo), cat: cat });
 // Identidad POR CÓDIGO (prohibición 4): «¿eres un bot?», «¿quién eres?», «¿hablo con Rubén?»… reciben una frase fija que reconoce ser un asistente virtual con IA; el modelo no interviene.
-if (rrPreguntaPorIA(norm)) return salir({ tipo: 'identidad', cat: cat });
+if (rrPreguntaPorIA(norm)) return salir({ tipo: 'identidad', cat: cat, qrAbierto: hayQrAbierto });
 if (rrPreguntaPorIngresos(norm)) return salir({ tipo: 'ingresos', cat: cat });
 // Con un QR abierto, cualquier texto recibe el recordatorio (un solo QR a la vez); el modelo no interviene.
 if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });

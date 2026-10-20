@@ -216,6 +216,25 @@
       ]
     },
     {
+      "collectionGroup": "comprobantesRecibidos",
+      "fieldPath": "vence",
+      "ttl": true,
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        }
+      ]
+    },
+    {
       "collectionGroup": "sesionesDeTurno",
       "fieldPath": "vence",
       "ttl": true,

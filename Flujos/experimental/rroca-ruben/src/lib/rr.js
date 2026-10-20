@@ -32,37 +32,148 @@ function rrNorm(t) {
 // El texto que ve el cliente, con la barrera aplicada: si niega ser una IA (prohibición 4) o dice que un pago está acreditado, verificado o recibido (prohibición 3: el comprobante no
 // es una acreditación bancaria), sale el mínimo. `CB_PROHIBIDAS` y `cbCanon` son del hueco `cobro.js`.
 function rrSeguro(texto) {
-  if (RR_NIEGA_IA.test(rrNorm(texto))) return rrParrafos(RR_SALUDO_MINIMO);
+  // La expresión NIEGA_IA es copia idéntica de la del chat (una prueba lo comprueba) y toma por negación «no soy Rubén, soy su asistente virtual»: la aclaración honesta «no soy Rubén» se retira SOLO para esa comparación.
+  if (RR_NIEGA_IA.test(rrNorm(texto).replace(/\bno soy (el mismo |el propio )?ruben\b/g, ' '))) return rrParrafos(RR_SALUDO_MINIMO);
   if (CB_PROHIBIDAS.test(cbCanon(texto))) return rrParrafos(RR_SALUDO_MINIMO);
   // Observación de Silvana (20/10/2026): la presentación se dice UNA sola vez por mensaje, venga de donde venga (texto fijo, modelo, respaldo).
   return rrParrafos(rrUnaPresentacion(texto, true));
 }
 // ¿Esta oración es una PRESENTACIÓN del asistente («Soy el asistente de Rubén», «Hola, soy el asistente virtual de Rubén»)? Sobre texto normalizado.
 function rrEsPresentacion(oracion) {
-  return /\b(soy|somos) (el |la |un |una |tu )?(asistente|ayudante)s?\b|\basistente virtual de ruben\b/.test(rrNorm(oracion));
+  return /\b(soy|somos) (el |la |un |una |tu |su )?(asistente|ayudante)s?\b|\basistente (virtual )?de ruben\b|\baqui (el|tu) asistente\b/.test(rrNorm(oracion));
 }
 // Deja a lo más `cupo` oraciones de presentación en el texto (la primera) y QUITA las demás; los párrafos se conservan. `cupo` true = una; false = ninguna. Una lista (bloque con saltos) no se toca.
-function rrUnaPresentacion(texto, cupo) {
+function rrUnaPresentacion(texto, cupo, conservarIA) {
   let libre = cupo === true ? 1 : (Number(cupo) || 0);
+  const hayIA = rrTienePresentacionIA(texto);
   const bloques = rrTexto(texto).split('\n\n').map((bloque) => {
     if (bloque.indexOf('\n') >= 0) return bloque;
-    return rrOraciones(bloque).filter((o) => { if (!rrEsPresentacion(o)) return true; if (libre > 0) { libre -= 1; return true; } return false; }).join(' ');
+    // `conservarIA` (regla dura 4 sobre la de Silvana): una oración de presentación que dice qué ES el asistente (virtual, IA, programa, bot…) NUNCA se borra.
+    // Si hay una presentación que dice qué ES el asistente, el cupo se gasta en ELLA (la regla dura 4 antes que «la primera»).
+    return rrOraciones(bloque).filter((o) => {
+      if (!rrEsPresentacion(o)) return true;
+      const dice = rrDiceIA(o);
+      if (conservarIA === true && dice) return true;
+      if (hayIA && !dice) return false;
+      if (libre > 0) { libre -= 1; return true; }
+      return false;
+    }).join(' ');
   }).filter((b) => b.trim() !== '');
   return bloques.join('\n\n');
+}
+// SUPLANTACIÓN DE RUBÉN (prohibición 4). Se aplica SOLO a la salida del modelo (nunca a `puerta.texto` ni a los textos fijos). CRITERIO INVERTIDO (ronda 5): se sustituye todo el mensaje por `RR_TEXTO_IDENTIDAD`
+// salvo lo que encaje en una LISTA BLANCA. Toda oración que mencione a «Rubén» (o «Roca») se sustituye, salvo la tercera persona («Rubén escribió / explica / enseña…», «el autor del libro es Rubén», «el libro de Rubén»,
+// «en los videos habla Rubén»), «asistente … de Rubén», «no soy Rubén» seguido de autodescripción de máquina en la misma oración y la oferta del botón («si prefieres … te atiende Rubén con el botón»). Además se sustituye siempre
+// la autoría en primera persona («mi libro», «lo escribí»), la firma al final, «le/te/les escribe|habla|saluda|atiende + nombre», «soy + nombre propio» (sin depender de mayúsculas, con lista blanca de lo que no es nombre),
+// «de carne y hueso», «soy una persona de verdad», «estoy vivo/a»… Un falso positivo solo produce la identidad honesta: se prefiere equivocarse por exceso. Se compara tras NFKC, homoglifos, sin caracteres de formato ni tildes,
+// con los saltos de línea unidos y SIN lo que va entre comillas (una cita no es una autodescripción).
+const RR_NO_ES_NOMBRE = /^(el|la|lo|un|una|su|tu|mi|asistente|ayudante|ia|ai|inteligencia|programa|bot|chatbot|robot|maquina|virtual|digital|automatico|automatica|inteligente|artificial|emprendedor|emprendedora|parte|capaz|experto|experta|muy|bueno|buena|solo|solamente|nuevo|nueva|ideal|util|tu|nuestro|nuestra|o|um|uma|the|an|a|your|assistente|assistant)$/;
+function rrSuplantaTexto(crudo) {
+  const original = rrTexto(crudo).normalize('NFKC').replace(/\p{Cf}/gu, '');
+  const limpio = Array.from(original).map((ch) => RR_HOMOGLIFOS[ch] || ch).join('').normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const sinCitas = limpio.replace(/«[^»]*»|“[^”]*”|"[^"]*"/g, ' ');
+  const bajo = sinCitas.toLowerCase();
+  // La firma al final del mensaje (con o sin salto de línea): «Saludos,\nRubén Roca», «Un abrazo, Rubén».
+  if (/(?:^|[\s,;])ruben(?: roca)?\s*[.!]*\s*$/.test(bajo.trim()) && /(saludos|abrazo|atentamente|cordialmente|gracias|,)\s*\n?\s*ruben(?: roca)?\s*[.!]*\s*$/.test(bajo.trim())) return true;
+  if (/\n\s*ruben(?: roca)?\s*[.!]*\s*$/.test(bajo.trim())) return true;
+  const unido = sinCitas.replace(/\s*\n\s*/g, ' ');
+  return rrOraciones(unido).some((o) => rrSuplantaOracion(o));
+}
+function rrSuplantaOracion(oracion) {
+  const c = rrTexto(oracion).replace(/\s+/g, ' ').trim();
+  const n = c.toLowerCase();
+  // La negación se mira sobre el texto COMPLETO y con puntuación: «No, soy Rubén» no es «no soy Rubén»; «bueno soy…» tampoco.
+  const negado = (idx) => /(?<![\p{L}\p{N}])no\s+$/u.test(n.slice(0, idx));
+  const hay = (re) => { const g = new RegExp(re.source, re.flags.indexOf('g') >= 0 ? re.flags : re.flags + 'g'); let m; while ((m = g.exec(n)) !== null) { if (!negado(m.index)) return true; if (m[0] === '') g.lastIndex += 1; } return false; };
+  const maquina = /\b(asistente|ayudante|ia|ai|inteligencia artificial|programa|bot|chatbot|robot|maquina|virtual|automatic\w*|assistant|assistente)\b/.test(n);
+  const mencionaARuben = /\b(ruben|roca)\b/.test(n);
+  const oferta = /\b(si (prefieres|quieres|necesitas|deseas|gustas)|puedes|podes)\b/.test(n) && /\b(te atiende|escribirle|escribele|hablar con|habla con|contactar|escribir a)\b/.test(n) && /\b(boton|whatsapp|chat|directo|directamente)\b/.test(n);
+  // 1. Autoría en primera persona y firmas.
+  if (/\bmi libro\b|\b(lo )?escribi\b|\byo (lo )?(escribi|cree)\b|\b(este|el) libro lo (escribi|cree)\b/.test(n)) return true;
+  // 2. Identidad humana.
+  if (hay(/\bsoy (una |un )?(mujer|persona|humano|humana|chica|chico|hombre|ser humano|real)\b(?! virtual)/) || /\bde carne y hueso\b|\bmismisimo\b|\bpersonalmente\b|\bestoy viv[oa]\b|\bsoy (la |el )?persona detras\b|\bsoy yo,? (el|la) de los videos\b|\bsoy (una |un )?(\w+ )?de verdad\b/.test(n)) return true;
+  // 3. «soy + palabra»: solo pasa si la palabra no es un nombre (lista blanca); con artículo, el sustantivo no puede ser el autor/dueño/creador del libro.
+  const re = /(?<![\p{L}\p{N}])(soy|sou|eu sou)\s+([a-z]+)(?:\s+([a-z]+))?/gu;
+  let m;
+  while ((m = re.exec(n)) !== null) {
+    if (negado(m.index)) continue;
+    const w1 = m[2];
+    const w2 = m[3] || '';
+    if (w1 === 'yo') { if (!/\b(asistente|ia|inteligencia|virtual|bot)\b/.test(n)) return true; continue; }
+    if (/^(el|la|un|una|su|tu|o|a|um|uma)$/.test(w1)) {
+      if (/^(autor|autora|escritor|escritora|dueno|duena|fundador|fundadora|propietario|propietaria|creador|creadora|mismo|misma|propio|propia)$/.test(w2) && !/\bcreador(a)? de (contenido|videos|publicaciones|posts|ideas)\b/.test(n.slice(m.index))) return true;
+      continue;
+    }
+    if (!RR_NO_ES_NOMBRE.test(w1)) return true;
+  }
+  if (/\b(i am|i'?m|im|this is|it'?s|its|here is)\s+(?!(the|an|a|your|virtual|ai|digital)\b)[a-z]+/.test(n) && !/\b(assistant|ai|bot|chatbot)\b/.test(n)) return true;
+  if (/\b(aqui e|aqui eh)\b/.test(n) || /\b(ruben|roca)\b[^.]{0,12}\b(here|aqui e)\b/.test(n)) return true;
+  // 4. Presentación por nombre.
+  if (/\b(me llamo|mi nombre es)\b/.test(n)) return true;
+  if (!oferta && /(?<![\p{L}\p{N}])(te|le|les|os|usted|tu)\s+(escribe|escribo|habla|saluda|atiende|contesta)\b(\s+directamente|\s+personalmente)?\s+(?!(un|una|el|la|nuestro|nuestra|tu|su|mi)\b)\S+/u.test(n) && !(/\bsaluda el\b/.test(n))) return true;
+  if (!oferta && /\b(hablas|hablando|usted habla|habla usted|conversas|conversando)\s+(directamente |personalmente )?con\s+(?!(un|una|el|la|nuestro|nuestra|tu|su|mi)\b)\S+/.test(n)) return true;
+  if (/\bte escribo\b/.test(n) && /\b(yo|personalmente|ruben)\b/.test(n)) return true;
+  // 5. «a tus/sus órdenes» solo con nombre propio (Rubén, o una palabra con mayúscula que no sea una muletilla).
+  if (/\ba (tus|sus) ordenes\b|\ba la orden\b|\bpara servirte\b|\bal habla\b|\bal telefono\b/.test(n)) {
+    if (mencionaARuben) return true;
+    if (/\b(?!(Claro|Perfecto|Listo|Bueno|Entendido|Genial|Excelente|Quedo|Siempre|Ok|Estoy|Aqui|Sigo|Seguimos|Quedamos|Quedan|Y|Pues|Vale)\b)[A-Z][a-z]+,? (roca )?a (tus|sus) ordenes/.test(c)) return true;
+  }
+  // 6. Rubén (o Roca) mencionado: solo pasa la tercera persona, el asistente «de Rubén», «no soy Rubén» + máquina y la oferta del botón.
+  if (mencionaARuben) {
+    const tercera = /\bruben(?: roca)? (es|fue|escribio|creo|explica|explico|ensena|ensenio|muestra|recomienda|dice|cuenta|tiene|trabaja|publica|usa|comparte|desarrollo|diseno|preparo|recopila|incluye|propone|sugiere|revisa|ve|atiende personalmente los casos)\b|\bel autor(?: del libro)?(?:,)? (es )?ruben(?: roca)?\b|\bel libro (de|del) ruben\b|\ben (los|sus) videos(?: de ruben)?,? habla ruben\b|\b(escrito|creado) por ruben\b|\bautor del libro,? ruben\b/.test(n);
+    const delAsistente = /\basistente(?: virtual| automatico| digital| artificial| inteligente| de ia| con ia)? (de|del) ruben\b|\bequipo de ruben\b/.test(n) && !/\b(saluda|escribe|habla) \w+ (del|de el) equipo\b/.test(n);
+    const noSoy = /\bno soy (el mismo |el propio )?ruben\b/.test(n) && maquina;
+    if (!(tercera || delAsistente || noSoy || oferta)) return true;
+  }
+  return false;
+}
+function rrSuplantaARuben(texto) { return rrSuplantaTexto(texto); }
+// ¿Esta oración DICE QUÉ ES el asistente? CRITERIO ANCHO a propósito (la regla dura 4 prevalece sobre la de Silvana; el costo es, a veces, una presentación repetida): toda oración en PRIMERA persona
+// («soy/somos, me presento, respondo, funciono, trabajo, opero, estoy hecho, fui creado») que, en las palabras siguientes, nombre una cualidad de máquina («virtual, digital, inteligente, automático, artificial, IA, inteligencia
+// artificial, programa, bot, chatbot, robot, hecho con/por, impulsado por IA…»), más «asistente virtual … de Rubén», «(una IA)» y «no soy una persona / Rubén». El título «IA para Emprendedores» y «tienda virtual» se
+// retiran antes; «crear tu asistente virtual» o «la IA ayuda a tu negocio» no tienen sujeto de primera persona cerca y NO cuentan.
+function rrDiceIA(oracion) {
+  const n = rrTexto(oracion).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/ia para emprendedores( independientes)?/g, ' ').replace(/tienda virtual|reunion virtual|clase virtual/g, ' ');
+  const maquina = '(?:ia|ai|inteligencia artificial|artificial|automatic\\w*|programa|bot|chatbot|robot|maquina|virtual|digital|inteligente|hecho con|hecha con|hecho por|hecha por|impulsad[oa] por|basad[oa] en|potenciad[oa] por)';
+  const primera = new RegExp('(?<![\\p{L}\\p{N}])(?:soy|somos|me presento|respondo|funciono|trabajo|opero|estoy hecho|estoy hecha|fui creado|fui creada)(?:\\s+[^\\s.,;:!?]+){0,4}?[\\s,;:]+' + maquina + '(?![\\p{L}\\p{N}])', 'gu');
+  let dice = false;
+  let mm;
+  while (!dice && (mm = primera.exec(n)) !== null) { if (!/(?<![\p{L}\p{N}])no\s+$/u.test(n.slice(0, mm.index))) dice = true; }
+  return dice || /(?<![\p{L}\p{N}]no )\bsoy\b[^.!?]*[,;:] (un|una) (programa|ia|bot|chatbot|robot|maquina|inteligencia artificial)\b/u.test(n) || /\basistente (virtual|automatic\w*|digital|artificial|inteligente) (de|del) ruben\b/.test(n) || /\((una |un )(ia|inteligencia artificial)\)/.test(n) || /\bno soy (una |un |el mismo |el propio )?(persona|humano|humana|ruben)\b/.test(n) || /\bno (una|un) (persona|humano|humana)\b/.test(n);
+}
+// ¿Alguna oración del texto dice qué es el asistente? Se usa para no perder nunca esa respuesta (regla dura 4).
+function rrTienePresentacionIA(texto) {
+  return rrTexto(texto).split('\n').some((linea) => rrOraciones(linea).some((o) => rrDiceIA(o)));
 }
 // «¿Eres un robot?», «¿hablo con una IA?», «¿eres una persona?»: el cliente pregunta qué es el asistente (prohibición 4: se reconoce con naturalidad; nunca se quita esa respuesta).
 function rrPreguntaPorIA(n) {
   const palabras = n === '' ? 0 : n.split(' ').length;
-  const QUE = 'ruben|robot|bot|chatbot|ia|inteligencia|maquina|persona|humano|humana|real|de verdad|programa';
-  const quien = /\bquien (eres|sos|me (responde|atiende|contesta|escribe)|habla)\b|\bcon quien (hablo|estoy hablando|estoy conversando|me comunico|converso|chateo)\b|\bsi eres\b/.test(n);
-  const eres = new RegExp('\\b(eres|sos|seras) (usted |un |una |el |la |tu )?(' + QUE + '|automatic\\w*)\\b').test(n);
-  const hablo = /\b(hablo|hablando|conversando|chateando|escribo|escribiendo) con (usted |un |una |el |la )?(ruben|robot|bot|chatbot|ia|inteligencia|maquina|persona|humano|humana|alguien|programa)\b/.test(n);
-  const responde = /\b(me )?(responde|atiende|contesta|escribe|habla)n? (una |un |el )?(persona|alguien|humano|humana|ruben|robot|bot|ia)\b/.test(n);
-  const real = /\balguien (real|de verdad)\b|\bpersona (real|de verdad)\b|\breal person\b|\bhumano real\b|\b(esto|esta|este) (es |son )?(un |una )?(mensaje |respuesta |chat )?automatic\w*|\b(es|son) (un |una )?(mensaje|respuesta|chat)s? automatic\w*|\b(es|esto es|esta es|este es) (un |una )?(contestador|bot|robot|chatbot)\b|\b(mensajes?|respuestas?) automatic\w*/.test(n);
-  const ingles = /\bare you (a |an )?(bot|robot|human|real|ai|person|chatbot)\b|\bis this (a )?(bot|robot|ai|human)\b|\bam i (talking|speaking|chatting) (to|with)\b/.test(n);
-  // «bot?», «robot?», «contestador?»: una palabra suelta en un mensaje muy corto (no «quiero crear un chatbot»).
-  const suelta = palabras <= 4 && /\b(bot|chatbot|robot|contestador)\b/.test(n) && !/\b(quiero|crear|crear|hacer|armar|construir|necesito|como|tener)\b/.test(n);
-  return quien || eres || hablo || responde || real || ingles || suelta;
+  const junto = n.replace(/ /g, '');
+  const BOT = 'bot|bott|b0t|vot|r0bot|robot|robo|chatbot|chatgpt|gpt|gemini';
+  const BASE = BOT + '|ruben|ia|ai|inteligencia artificial|inteligencia|maquina|programa|persona|pessoa|humano|humana|human|ser humano|gente|de verdad|asistente';
+  const QUE = BASE + '|real|automatic\\w*|automatizad\\w*';
+  const defin = /\bque (es|son)\b|\bcomo (uso|usar|usa)\b/.test(n);
+  // Ante la duda NO se captura (la barrera estructural —no borrar la presentación con IA— es la protección real): solo preguntas en 2.ª persona o cortas.
+  const quien = /\bquien (eres|sos|me (responde|atiende|contesta|escribe))\b|\bcon quien (hablo|estoy hablando|estoy conversando|me comunico|converso|chateo)\b|\bruben eres\b|\bwho (are you|is this)\b/.test(n);
+  const eres = new RegExp('\\b(eres|sos|seras|eres usted|usted es|es usted) (usted |un |una |el |la |tu )?(' + QUE + ')\\b').test(n);
+  const es = palabras <= 4 && !defin && !/^quien es\b/.test(n) && new RegExp('\\bes (usted )?(un |una )?(' + BASE.replace('|ruben|', '|') + ')\\b').test(n);
+  const esReal = palabras <= 3 && !defin && /\bes real\b/.test(n);
+  // «¿hablo con una IA?»: solo al comienzo del mensaje y corto («yo ya escribo con IA», «estoy hablando con IA todos los días» no son preguntas por la identidad).
+  const hablo = palabras <= 6 && /^(estoy )?(hablo|hablando|conversando|chateando) con (usted |un |una |el |la )?(ruben|robot|bot|chatbot|ia|inteligencia|maquina|persona|humano|humana|alguien|programa)( ahi| real)?$/.test(n);
+  const responde = /\bme (responde|atiende|contesta|escribe)n? (una |un |el )?(persona|alguien|humano|humana|robot|bot|ia|maquina|programa|inteligencia artificial)\b/.test(n) || (palabras <= 4 && /^(responde|atiende|contesta) (una |un )?(persona|humano|maquina|robot|bot|ia)\b/.test(n));
+  // «¿quién me está respondiendo?», «¿quién contesta?», «¿esto lo responde una IA?», «¿las respuestas son automáticas?», «¿me está respondiendo un robot?», «¿estás respondiendo tú o una IA?».
+  const mas = /\bquien me (esta )?(respondiendo|atendiendo|contestando|escribiendo)\b/.test(n) || (palabras <= 4 && /\bquien (contesta|responde|atiende)\b/.test(n)) || (palabras <= 7 && /\b(lo )?responde(n)? (una |un )?(ia|robot|bot|persona|maquina|humano)\b/.test(n) && /\besto\b/.test(n))
+    || (palabras <= 5 && /^(las )?respuestas (son )?automatic\w*$|^son automatic\w*$/.test(n) && /\bson\b/.test(n)) || /\bme esta respondiendo (una |un )?(persona|robot|bot|ia|maquina|humano)\b/.test(n) || (palabras <= 8 && /\bestas (respondiendo|contestando|escribiendo)\b/.test(n) && /\b(tu|usted) o (una |un )?(ia|robot|bot|persona|maquina)\b/.test(n));
+  const hay = palabras <= 5 && /\bhay (alguien|una persona|algun humano|alguna persona)\b/.test(n);
+  // «Automático» solo con sujeto del chat («esto es automático», «tu respuesta es automática», «¿es un mensaje automático?»).
+  const real = palabras <= 8 && (/\balguien (real|de verdad)\b|\bpersona (real|de verdad)\b|\breal person\b|\bhumano real\b|\b(esto|esta|este|este chat|tu respuesta|la respuesta|tu mensaje) (es |son )?(un |una )?(mensaje |respuesta |chat )?automatic[a-z]*(?![a-z])(?! (al|despues|luego|cuando|si|para)\b)|\bes (un |una )?(mensaje|respuesta|chat) automatic\w*|\bes automatic\w* (este|ese|el|tu) (chat|mensaje|numero)\b|\b(es|esto es|esta es|este es) (un |una )?(contestador|bot|robot|chatbot)\b/.test(n));
+  const ingles = /\bare you (a |an )?(bot|robot|human|real|ai|person|chatbot)\b|\bis this (a |an )?(bot|robot|ai|human|real|automated|person)\b|\bam i (talking|speaking|chatting) (to|with)\b|\breal (human|person)\b/.test(n);
+  const portugues = /\bvoce e (um |uma )?(robo|bot|pessoa|humano|humana|ia|maquina|real|chatbot)\b|\bestou (falando|conversando) com (um |uma )?(robo|bot|pessoa|humano|humana|ia|maquina|alguem)\b|^e (um |uma )?(robo|pessoa|bot)\b/.test(n);
+  // «bot?», «robot», «b0t», «vot», «contestador?»: la palabra de máquina es CASI TODO el mensaje (no «chatbot para whatsapp», «ok gracias robot»).
+  const suelta = new RegExp('^((eres|es|sos|un|una|esto es|es un|eres un) )?(' + BOT + '|contestador)$').test(n);
+  // Letras separadas («b o t», «e r e s u n b o t»): se compara el texto «junto».
+  const pegado = junto.length <= 16 && n !== junto && /\b\w \w/.test(n) && new RegExp('^(eres|sos|es|esusted|usteres)?(un|una)?(' + BOT + '|maquina|persona|humano|humana)$').test(junto);
+  return mas || quien || eres || es || esReal || hablo || responde || hay || real || ingles || portugues || suelta || pegado;
 }
 // La respuesta FIJA a «¿eres un bot / una persona / Rubén?» (prohibición 4: nunca se niega ser una IA; lo decide el código, no el modelo).
 const RR_TEXTO_IDENTIDAD = 'Soy el asistente virtual de Rubén, un programa con inteligencia artificial; no soy Rubén ni una persona.\n\n¿Qué duda tienes sobre el libro?';
@@ -378,12 +489,17 @@ function rrTemaDeInfo(n) {
   const palabras = n === '' ? 0 : n.split(' ').length;
   if (/^(mas informacion|informacion|info|mas info)( ruben)?$/.test(n)) return 'info';
   if (/\b(pack|closer|prompt maestro|videos?|curso|tutoriales?|paquete|combo|completo|promo|oferta)\b|\b\d+\b(?! (capitulos|bonos|paginas))/.test(n)) return '';
-  // Posventa (abrir, descargar, recibir, «dónde están», «no encuentro»…): no es una pregunta por lo que incluye el libro; no se contesta con la lista ni con botones de compra.
-  if (/\b(abre|abren|abrir|abro|descarg\w*|llego|llegaron|llega|llegan|recib\w*|donde (estan|esta|queda|quedan)|no encuentro|encuentro|enlaces?|links?|acceso|acceder|entrega\w*|enviaron|mandaron|envian|comprobante|pague|pagado)\b/.test(n)) return '';
+  // Posventa (quejas y accesos: «no me llegaron», «no abren», «dónde están», «cómo descargo», «no encuentro», «pagué»): no es una pregunta por lo que incluye el libro; no se contesta con la lista ni con botones de compra.
+  // «¿Qué bonos recibo?», «¿qué me llega con el libro?» SÍ son preguntas por lo que incluye.
+  if (/\bno (me |nos )?(llega|llegan|llegaron|llego|abre|abren|aparece|aparecen|funciona|funcionan)\b|\bno (puedo|logro|consigo)\b|\bdonde (estan|esta|queda|quedan)\b|\bcomo (descargo|descargar|accedo|acceder|abro|abrir)\b|\bno encuentro\b|\b(cuando|como|donde|por donde)\b[^?]*\b(recib\w*|llega\w*)\b|\bllega(n)? (al|por|a mi) (correo|whatsapp|mail|email)\b|\b(pague|pagado|comprobante|ya compre)\b|\bdescarg\w*|\bacceso\b/.test(n)) return '';
   if (palabras <= 8 && /\b(capitulos?|temario)\b/.test(n)) return 'capitulos';
-  if (/^(el |su )?contenido( del libro)?$|\bcontenido del (libro|curso)\b|\bque contenido (tiene|trae|incluye|hay|contiene)\b/.test(n)) return 'capitulos';
+  // «Contenido» del LIBRO, no el contenido que el cliente publica («qué contenido hay que publicar», «qué contenido tiene que subir»).
+  if (!/\b(publicar|publico|subir|postear|crear|creo|hacer|grabar|compartir)\b/.test(n) && (/^(el |su )?contenido( del libro)?$|\bcontenido del (libro|curso)\b/.test(n) || (palabras <= 8 && (/\bque contenido (tiene|trae|incluye|contiene)\b(?! que)/.test(n) || /\bque contenido hay( en (el|este|su) (libro|curso))?$/.test(n))))) return 'capitulos';
+  // Plazos, medios de entrega y «¿y los bonos cuándo?» no piden la lista de bonos: van al modelo. La lista es para «qué bonos / cuáles son / qué recibo / me llegan / trae / incluye».
+  const sobreEntrega = /\b(cuando|cuanto tiempo|en cuanto|instante|tiro|ya mismo|correo|mail|email|whatsapp|envia\w*|envio|enviar|donde|como|a que|pdf|formato|archivo)\b/.test(n);
+  if (sobreEntrega && /\b(bonos?|recibo|llegan?)\b/.test(n)) return '';
   if (palabras <= 8 && /\bbonos?\b/.test(n)) return 'bonos';
-  if (palabras <= 8 && /\b(que (incluye|trae|contiene)|de que (trata|va|se trata))\b/.test(n)) return 'info';
+  if (palabras <= 8 && /\b(que (incluye|trae|contiene)|de que (trata|va|se trata)|que (bonos )?recibo|que (bonos )?me (llegan|llega|dan|da|entregan))\b/.test(n)) return 'info';
   return '';
 }
 function rrPreguntaPorIngresos(n) {
@@ -623,12 +739,32 @@ const RR_PROMPT = [
   'DUDAS: «¿necesito saber programar?»: no, es para quien no tiene conocimientos técnicos. «Soy principiante o aún no tengo negocio»: empieza por los caps. 1 y 2; el cap. 3 y el bono de 30 ideas de negocio ayudan a arrancar. «¿Debo pagar herramientas de IA?»: no, se empieza con las versiones gratuitas. «¿Me garantiza ganar dinero?»: no, depende de su ejecución, oferta y mercado. «Compro el libro hoy y después quiero el resto»: sin problema, puede sumar los complementos después por este mismo chat; con el Pack Completo ahorra frente a comprarlos por separado (no digas montos).',
   'Llevas la charla con suavidad hacia elegir una opción, pero sin presionar. Si el cliente habla de otro tema, respóndele en una o dos oraciones y conéctalo con cómo el libro le ayuda.',
 ].join('\n');
-// UN solo saneo para el texto del cliente (historial y turno actual): NFKC (pliega el ancho completo a ASCII), sin < >, sin controles C0, C1 ni U+2028/U+2029. Por defecto los [ ] pasan a ( ):
-// los corchetes los pone solo el código; el rótulo ANUNCIO_DETECTADO (que pone solo el sistema) tampoco pasa jamás desde el cliente. Con `conservarCorchetes` (lo ya guardado: rótulos del código y [enlace]…) se dejan.
+// Homoglifos para COMPARAR el rótulo del sistema: cirílicos y griegos que se ven latinos, versalitas y los números que imitan letras (1→i, 0→o).
+const RR_HOMOGLIFOS = {};
+('АAСCЕEОOРPТTНHКKМMІIЅSХXВBАAΑAΒBΕEΖZΗHΙIΚKΜMΝNΟOΡPΤTΥYΧXаaсcеeоoрpіiхxкkмmтtнhαaοoνvιiκkρpτtχxεeᴀaʙbᴄcᴅdᴇeɢgʜhɪiᴊjᴋkʟlᴍmɴnᴏoᴘpʀrꜱsᴛtᴜuᴠvᴡwʏyᴢz').replace(/(.)(.)/gu, (m, a, b) => { RR_HOMOGLIFOS[a] = b; return m; });
+// UN solo saneo del texto del cliente (historial y turno actual). Por defecto los [ ] pasan a ( ): los corchetes los pone solo el código; con `conservarCorchetes` (lo ya guardado: rótulos del código y [enlace]…) se dejan.
 function rrQuitarDelimitadores(t, conservarCorchetes) {
-  const x = rrTexto(t).normalize('NFKC');
-  return (conservarCorchetes === true ? x : x.replace(/\[/g, '(').replace(/\]/g, ')'))
-    .replace(/[<>]+/g, '').replace(/ANUNCIO[_ ]?DETECTADO/gi, ' ').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').trim();
+  // NFKC (ancho completo). Para COMPARAR el rótulo del sistema se arma una copia sin caracteres de formato (\p{Cf}), sin diacríticos combinantes, con homoglifos pasados a latín y 1→i, 0→o, recordando de qué posición
+  // del original viene cada letra. Si el marcador aparece (repetido o anidado, se repite hasta que no cambie), SOLO esas posiciones se quitan del ORIGINAL: el resto del texto del cliente queda tal cual (con sus tildes).
+  let x = Array.from(rrTexto(t).normalize('NFKC'));
+  for (let k = 0; k < 20; k += 1) {
+    let c = '';
+    const orig = [];
+    x.forEach((ch, i) => {
+      let d = ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (/^\p{Cf}$/u.test(ch) || d === '') return;
+      d = Array.from(d).map((e) => (RR_HOMOGLIFOS[e] || e)).join('').replace(/1/g, 'i').replace(/0/g, 'o');
+      for (let q = 0; q < d.length; q += 1) { c += d[q]; orig.push(i); }
+    });
+    const re = /ANUNCIO[\W_]*DETECTADO/gi;
+    const quitar = new Set();
+    let m;
+    while ((m = re.exec(c)) !== null) { const desde = orig[m.index]; const hasta = orig[m.index + m[0].length - 1]; for (let i = desde; i <= hasta; i += 1) quitar.add(i); }
+    if (!quitar.size) break;
+    x = x.filter((_, i) => !quitar.has(i));
+  }
+  const y = x.join('');
+  return (conservarCorchetes === true ? y : y.replace(/\[/g, '(').replace(/\]/g, ')')).replace(/[<>]+/g, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').trim();
 }
 function rrCuerpoModelo(textoCliente, historial) {
   // Si el texto es el de un anuncio, el modelo recibe el titular CANÓNICO como dato rotulado (nunca el texto libre). Va solo en el turno ACTUAL.
@@ -684,6 +820,12 @@ function rrExtraRedaccion(texto, norm) {
   if ((String(texto).match(/\?/g) || []).length > 1) return 'varias_preguntas';
   if (String(texto).split(/(?<=[.!?…])\s+/).filter((x) => x.trim()).length > 5) return 'largo_en_oraciones';
   if (/\b(qr|banco|titular|mercantil)\b/.test(norm)) return 'datos_de_cobro';
+  // Solo español: NIEGA_IA y CB_PROHIBIDAS (copias comunes con prueba de igualdad) no ven «I am a real person» ni «Seu pagamento foi creditado»; si dominan palabras de inglés o portugués, cae al texto fijo.
+  // (Seguimiento: extender el filtro común a EN/PT.) No cuenta lo que va entre comillas (una cita: «Thank you for your order»).
+  const sinCitas = rrNorm(String(texto).replace(/«[^»]*»|“[^”]*”|"[^"]*"/g, ' '));
+  // Un término de pago en inglés o portugués junto a recibido/acreditado/confirmado/aprobado se rechaza por sí solo (el cobro no se acredita: prohibición 3).
+  if (/\b(payment|pagamento|pay|paid|pagou)\b/.test(norm) && /\b(recebido|creditado|confirmado|received|credited|confirmed|verified|approved|aprovado|accepted|aceito)\b/.test(norm)) return 'pago_en_otro_idioma';
+  if ((sinCitas.match(/\b(the|you|your|are|am|have|has|been|with|from|this|that|not|payment|received|thank|thanks|please|person|obrigado|obrigada|voce|seu|sua|pagamento|creditado|nao|sou|uma|um|pessoa|eu|foi)\b/g) || []).length >= 2) return 'idioma_no_espanol';
   // El modelo no manda al cliente a una página ni inventa condiciones por país: los precios y las opciones los da el sistema con botones.
   // Solo REMISIONES: «puedes crear tu página web con IA», «en la página 45» o «los resultados varían según tu ejecución» son legítimos y pasan.
   if (RR_REMITE_A_WEB.test(norm)) return 'remite_a_web';

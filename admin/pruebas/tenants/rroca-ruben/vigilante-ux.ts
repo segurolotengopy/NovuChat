@@ -19,7 +19,7 @@ import type { Mundo } from '../../lib/n8n-de-mentira';
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-ruben/src/lib');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
 // nosemgrep: devsecops.js-eval-prohibido
-export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion, rrNorm, rrPreguntaPorIA };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean; rrNorm: (t: string) => string; rrPreguntaPorIA: (n: string) => boolean };
+export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion, rrNorm, rrTienePresentacionIA };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean; rrNorm: (t: string) => string; rrTienePresentacionIA: (t: string) => boolean };
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }
 interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number }
@@ -43,23 +43,71 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
   return v;
 }
 /** Cuántas veces se presenta el asistente en UN texto («Soy el asistente…», «asistente virtual de Rubén»), contadas por oración. Debe ser a lo más 1 por mensaje y por turno. */
-export const contarPresentaciones = (cuerpo: string): number =>
-  cuerpo.split('\n').reduce((n, linea) => n + LIB.rrOraciones(linea).filter((o) => LIB.rrEsPresentacion(o)).length, 0);
+export const contarPresentaciones = (cuerpo: string): number => {
+  // Detector PROPIO (no `rrEsPresentacion` del flujo): cuenta «Soy el asistente de Rubén, autor de…», «Te saluda el asistente virtual», «Aquí tu asistente», «Hola, soy el asistente virtual de Rubén».
+  const es = (o: string): boolean => /\b(soy|somos) (el |la |un |una |tu |su )?(asistente|ayudante)\b|\basistente (virtual |automatico |digital )?de ruben\b|\b(te saluda|te habla|aqui) (el |tu )?asistente\b/.test(LIB.rrNorm(o));
+  return cuerpo.split('\n').reduce((n, linea) => n + LIB.rrOraciones(linea).filter(es).length, 0);
+};
 /** ¿Este mensaje contiene la presentación del asistente (la frase de presentación o el saludo largo)? */
 export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de rub|qu[eé] gusto saludarte|te cuento: el libro digital/i.test(cuerpo);
 /**
  * Las violaciones de los invariantes para UN turno; `pulsados` se actualiza con el toque de este turno ANTES de mirar la respuesta. `presentaciones` (opcional) cuenta, por teléfono,
  * los mensajes con presentación ya enviados (se actualiza aquí). Función pura, probada también con casos negativos.
  */
-export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }): string[] {
+/**
+ * ¿El cliente pregunta qué ES el asistente? LISTA INDEPENDIENTE de la del flujo (no usa `rrPreguntaPorIA`, o la excepción sería tautológica) y deliberadamente ancha: solo exime la cuenta
+ * de «una presentación por teléfono» (regla dura 4 sobre la de Silvana), nunca la de «una por mensaje».
+ */
+export const preguntaPorIdentidad = (texto: string): boolean => {
+  const n = LIB.rrNorm(texto);
+  return /\b(eres|sos|es|usted|hablo|hablando|conversando|quien|hay|voce|estou|who|are you|is this|am i|me responde|me atiende|me contesta|respondiendo)\b.*\b(bot|b0t|vot|robot|robo|chatbot|chatgpt|gemini|ia|ai|inteligencia|maquina|programa|persona|pessoa|humano|humana|human|alguien|alguem|gente|automatic\w*|automated)\b|\b(eres|sos|usted es|es usted|hablo con|hablando con|conversando con|quien es|quien eres)\b.*\b(ruben|asistente|real|de verdad)\b|\bresponde\w* (una |un )?(ia|robot|bot|persona|maquina|humano)\b|\brespuestas son automatic\w*|\bde verdad\b|\b(real person|real human|persona real|alguien real|ser humano)\b|\bquien (eres|me|contesta|responde|atiende)\b|\bcon quien hablo\b|\bruben eres\b|^(bot|robot|chatbot|b0t|vot|contestador)$/.test(n);
+};
+/** El texto que devolvió el modelo en un turno (el doble de «Conversar con el modelo»), o ''. */
+export const textoDelModelo = (registro: { nodo: string; respuesta?: unknown }[]): string => {
+  const r = registro.find((x) => x.nodo === 'Conversar con el modelo')?.respuesta as J | undefined;
+  return String(r?.['candidates']?.[0]?.content?.parts?.[0]?.text ?? '');
+};
+/**
+ * ¿El texto del modelo SE DECLARA una IA / asistente virtual / no una persona? Detector PROPIO y estrecho del vigilante (no usa `rrDiceIA` ni `rrTienePresentacionIA` del flujo: sería tautológico).
+ * Mira el texto oración por oración, sin el título del libro («IA para Emprendedores»).
+ */
+export const seDeclaraIA = (texto: string): boolean => {
+  const t = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/ia para emprendedores( independientes)?/g, ' ');
+  // Primera persona + una cualidad de máquina en las palabras siguientes (ventana corta), o las formas fijas; no basta nombrar la IA («la inteligencia artificial te ayuda»).
+  const ventana = /(?<![\p{L}\p{N}]no )\b(soy|somos|me presento|respondo|funciono|trabajo|opero|estoy hech[oa]|fui cread[oa])\b(?:\s+[^\s.,;:!?]+){0,4}?[\s,;:]+(ia|ai|inteligencia artificial|artificial|automatic\w*|programa|bot|chatbot|robot|maquina|virtual|digital|inteligente|hech[oa] (con|por)|impulsad[oa] por|basad[oa] en)(?![\p{L}\p{N}])/u;
+  return ventana.test(t) || /\basistente virtual de ruben\b|\bno (soy )?(una |un )?(persona|humano|humana)\b|\bno soy ruben\b|\((una )ia\)/.test(t);
+};
+/** ¿El modelo se hizo pasar por Rubén o por una persona viva? (detector propio del vigilante). El flujo lo sustituye por la identidad, que es una presentación legítima. */
+export const suplantaARuben = (texto: string): boolean => {
+  const n = LIB.rrNorm(texto);
+  // Criterio propio e inverso: mencionar a Rubén sin que sea tercera persona o el asistente «de Rubén», o una autodescripción humana.
+  const menciona = /\b(ruben|roca)\b/.test(n);
+  const tercera = /\bruben (roca )?(es|fue|escribio|creo|explica|ensena|muestra|recomienda|dice|cuenta|tiene|trabaja)\b|\bautor( del libro)? es ruben\b|\bel libro (de|del) ruben\b|habla ruben\b.*videos|videos.*habla ruben|\basistente( \w+){0,2} (de|del) ruben\b|\bno soy ruben\b.*(asistente|ia|virtual)|\bsi (prefieres|quieres|necesitas)\b.*\bruben\b.*(boton|whatsapp|chat|directo)/.test(n);
+  return (menciona && !tercera) || /\b(soy|sou) (yo |el |la |un |una )?(autor|escritor|dueno|creador del libro|persona|humano|humana|ana|maria|mujer)\b|\bestoy viv[oa]\b|\bde carne y hueso\b|\bmi libro\b|\bescribi\b|\bmismisimo\b|\bme llamo\b|\bmi nombre es\b|\bsoy yo\b|\bte escribo\b|\bde los videos\b|\bpersona detras\b/.test(n);
+};
+/** Las oraciones del texto del modelo que (según el detector propio del vigilante) suplantan a Rubén. */
+export const frasesQueSuplantan = (textoModelo: string): string[] =>
+  // Solo oraciones de AUTODESCRIPCIÓN (primera persona, «te escribe/habla…», firma): «Eso lo ve Rubén directamente» (tercera persona, texto fijo del código) no es una suplantación.
+  textoModelo.replace(/«[^»]*»|"[^"]*"/g, ' ').replace(/\s*\n\s*/g, ' ').split(/(?<=[.!?…])\s+/).filter((o) => o.trim().length >= 6 && /\b(soy|sou|i m|i am|me llamo|nombre es|mi libro|escribi|estoy viv|hablas con|hablando con|habla ruben|aqui ruben|ruben aqui|ruben por aqui|ordenes|carne y hueso|mismisimo|personalmente|te escribe|te habla|le escribe|le habla|te saluda|te atiende)\b/.test(LIB.rrNorm(o)) && suplantaARuben(o));
+
+export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, textoModelo = ''): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
   const idToque = entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : '';
   // Excepción declarada (M3): «Más información» que llega como PRIMER mensaje de un teléfono recibe el saludo, que la ofrece: el cliente aún no la ha visto, así que no cuenta como pulsada.
-  const infoSinVer = idToque === 'b_info' && !!presentaciones && presentaciones.n === 0 && mensajes.some((m) => esPresentacion(m.cuerpo));
+  const infoSinVer = (idToque === 'b_info' || idToque === 'b_precios') && !!presentaciones && presentaciones.n === 0 && mensajes.some((m) => esPresentacion(m.cuerpo));
   if (idToque && !infoSinVer) pulsados.add(idToque);
   const textoEntrante = entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '';
-  const preguntaIA = LIB.rrPreguntaPorIA(LIB.rrNorm(textoEntrante));
+  const modeloDijoIA = seDeclaraIA(textoModelo);
+  const preguntaIA = preguntaPorIdentidad(textoEntrante) || modeloDijoIA || suplantaARuben(textoModelo);
+  // INVARIANTE (regla dura 4, ronda 5): si el texto del modelo suplanta a Rubén, NINGÚN mensaje saliente puede contener esa oración.
+  for (const f of frasesQueSuplantan(textoModelo)) {
+    const nf = LIB.rrNorm(f);
+    // «no soy Rubén ni una persona» (la identidad fija) contiene «soy Rubén» negado: no cuenta.
+    if (mensajes.some((m) => LIB.rrNorm(m.cuerpo).replace(/\bno (soy|es|somos) (el mismo |el propio )?ruben\b/g, ' ').includes(nf))) v.push(`salió una oración que suplanta a Rubén: «${f.slice(0, 40)}»`);
+  }
+  // INVARIANTE (regla dura 4): si el modelo dijo qué es el asistente (IA, virtual…), el mensaje que salió lo trae; jamás se pierde esa respuesta.
+  if (modeloDijoIA && mensajes.length && !mensajes.some((m) => seDeclaraIA(m.cuerpo))) v.push('el modelo reconoció ser un asistente virtual/IA y el mensaje que salió no lo trae (regla dura 4)');
   const eligioProducto = ['b_pack', 'b_libro', 'b_closer', 'b_videos'].includes(idToque) || /^Hola Rubén, quiero (el Pack Completo|el libro IA para Emprendedores)/.test(textoEntrante);
   const enElTurno = mensajes.reduce((n, m) => n + contarPresentaciones(m.cuerpo), 0);
   if (enElTurno > 1) v.push(`la presentación del asistente salió ${enElTurno} veces en el mismo turno`);
@@ -71,7 +119,8 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
     if (/opciones|¿cu[aá]l prefieres|¿qu[eé] opci[oó]n|¿con cu[aá]l/i.test(m.cuerpo) && m.tipo !== 'interactive') v.push('el texto pregunta por opciones pero el mensaje no trae ningún botón');
     v.push(...violacionesDeParrafos(m.cuerpo));
     // (La cuenta es de PRESENTACIONES, no de la palabra «asistente»: el capítulo 9 del libro dice «asistente personal de IA».) Ver `enElTurno` arriba.
-    if (presentaciones && esPresentacion(m.cuerpo)) {
+    // La cuenta por teléfono usa `contarPresentaciones` (ve también «Soy el asistente de Rubén, autor de…»), no solo la frase «asistente virtual de Rubén».
+    if (presentaciones && (esPresentacion(m.cuerpo) || contarPresentaciones(m.cuerpo) > 0)) {
       presentaciones.n += 1;
       // Quien PREGUNTA qué es el asistente («¿eres un bot?») recibe la presentación aunque ya la haya leído (prohibición 4).
       if (presentaciones.n > 1 && !preguntaIA) v.push('la presentación del asistente salió más de una vez en la conversación');
@@ -97,7 +146,7 @@ export function vigilarUx(mundo: Mundo): void {
     const pres = { n: estado.presentaciones.get(from) ?? 0 };
     // Los mensajes al cliente de este turno (sin los avisos a Rubén ni los respaldos de texto).
     const salida = t.mensajes.filter((e) => !e.respaldo).map((e) => ({ tipo: e.tipo, cuerpo: e.cuerpo, payload: e.payload }));
-    const v = violacionesDeUx(pulsados, msg, salida, pres);
+    const v = violacionesDeUx(pulsados, msg, salida, pres, textoDelModelo(t.registro));
     estado.presentaciones.set(from, pres.n);
     estado.turnos += 1; UX_CONTADOR.turnos += 1; UX_CONTADOR.mundos.add(mundo);
     expect(v, `invariante de UX violado: ${v.join('; ')}`).toEqual([]);

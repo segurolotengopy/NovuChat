@@ -1832,6 +1832,22 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /comprobantesRecibidos/{objeto} — los comprobantes que el cotejo de un cobro
+      // de venta con regla 2 anotó, con o sin cierre (lista de la pestaña Cobros).
+      // NO se registran los `ya_resuelto` ni los rechazos 409 (sin cobro pendiente,
+      // cobro cancelado, regla 1, sin total): quedaron fuera de esta fase.
+      // Lo escribe SOLO el servidor (`cotejarComprobanteVenta`, en la misma
+      // transacción del cotejo). Lo lee quien puede leer conversaciones: el
+      // documento nombra la conversación del cliente (`wa_<teléfono>`) y no
+      // lleva el teléfono ni nada de lo leído de la imagen. Lo borra el TTL
+      // (`vence`) o la purga de baja, ambos del servidor.
+      // -----------------------------------------------------------------------
+      match /comprobantesRecibidos/{objeto} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /conversaciones/{conversacionId} — visor de conversaciones.
       // Es el dato más sensible del sistema: mensajes de clientes finales.
       // -----------------------------------------------------------------------
