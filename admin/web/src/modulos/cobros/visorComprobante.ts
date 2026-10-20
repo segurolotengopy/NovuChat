@@ -78,13 +78,15 @@ export function claseDeRespuesta(mime: unknown): ClaseDeRespuesta {
 const TEXTO_GENERICO = 'No se pudo abrir el comprobante. Intente de nuevo en unos minutos.';
 
 /** Texto para el usuario según el `code` del error de la callable. */
-export function textoDeError(code: unknown): string {
+export function textoDeError(code: unknown, sinCierre = false): string {
   switch (code) {
     case 'functions/unauthenticated':
       return 'No se pudo comprobar su sesión. Recargue la página e inicie sesión de nuevo.';
     case 'functions/permission-denied':
       return 'No tiene permiso para ver este comprobante.';
     case 'functions/not-found':
+      // Sin cierre no hay «cobro» del que hablar: el servidor dice «No se encontró ese comprobante.».
+      if (sinCierre) return 'No se encontró ese comprobante.';
       return 'No hay un comprobante guardado para este cobro. Se conserva hasta 90 días desde que llegó.';
     case 'functions/failed-precondition':
     case 'functions/invalid-argument':
