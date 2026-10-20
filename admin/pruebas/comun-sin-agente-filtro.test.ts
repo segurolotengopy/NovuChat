@@ -247,6 +247,46 @@ describe('hallazgo de seguridad de Cartera (20/10): pago en plural y variantes, 
   });
 });
 
+describe('revisión de seguridad del #568 (20/10): estados del pago, evasión de forma, negar ser IA, preguntas, tope', () => {
+  const rechaza = (lista: string[]): void => { for (const t of lista) expect(motivo(t), t).toBe('afirma_un_hecho'); };
+  const pasa = (lista: string[], o?: object): void => { for (const t of lista) expect(motivo(t, o), t).toBe(''); };
+  it('HIGH: estados y formas de dar el pago por bueno (cada frase es una prueba negada)', () => {
+    rechaza(['Pago OK', 'Pago: OK', 'Pago 👍', 'Recibido, gracias', 'Ok, recibido', 'Gracias por tu pago', 'Pago aceptado', 'Comprobante aceptado', 'Comprobante OK',
+      'Pago procesado', 'Tu pago se procesó', 'Pago completado', 'Pago listo', 'Pago hecho', 'Listo tu pago', 'Ya está tu pago', 'Ya está tu plata',
+      'Tu comprobante es válido', 'El comprobante es correcto', 'Ya vi tu pago', 'Vimos tu transferencia', 'Ya vimos el depósito', 'El pago se reflejó',
+      'Tu transferencia se reflejó en la cuenta', 'Ya cayó la plata', 'Ya me cayó tu QR', 'La plata ya está en la cuenta', 'Transacción exitosa',
+      'La operación fue exitosa', 'Tu cuenta está saldada', 'Ya no debes nada', 'Todo en orden con tu pago', 'Payment ok', 'Paid', 'Got your payment']);
+  });
+  it('MEDIUM: evasión por forma (cifras por letras, letras repetidas, abreviatura, dinero, espacios dobles)', () => {
+    rechaza(['Pag0 recibido', 'P4go recibido', 'Paaago recibido', 'pagoo recibido', 'Recibimos tu pag', 'Recibimos tus Bs', '💰 recibido', 'P a g o   r e c i b i d o .',
+      'R3cibimos tu p4go', 'Pagooo aceptaaado']);
+  });
+  it('MEDIUM: negar ser una IA con sistema, automático, «en persona», «no hay bots», voseo y «No, soy Ana»', () => {
+    rechaza(['No soy automático', 'Soy Ana, de recepción, no un sistema', 'Acá no hay robots', 'Nada de bots aquí', 'No te contesta una máquina', 'Te atiende Ana en persona',
+      'Hablas conmigo, Ana, en persona', 'No sos un bot vos, ni yo', 'No, soy Ana', 'No soy un sistema']);
+  });
+  it('NIEGA: lo legítimo de siempre sigue saliendo', () => {
+    pasa(['Puedes pagar con QR', 'Envíame el comprobante de pago', 'La página está bien', 'Aceptamos QR, transferencia, Tigo Money, tarjeta y efectivo',
+      'Soy el asistente virtual de Rubén', 'No, soy el asistente virtual de Rubén', 'Puedes venir en persona al local', 'Puedes pagar en persona', 'Te paso el QR listo para pagar',
+      'Hay un sistema de reservas en línea', 'Gracias por tu mensaje', 'Mándame el comprobante, ok', 'Nos vemos a las 9 de la mañana']);
+  });
+  it('LOW: la negación cercana y la pregunta no afirman; lo que dice el código (llegó y coinciden) SIGUE bloqueado', () => {
+    pasa(['Tu comprobante todavía no llegó', '¿Tu pago fue con QR?', '¿Ya recibiste el QR?', '¿Ellos pagaron el envío? no sé', '¿Ya pagaste? Mándame la captura']);
+    rechaza(['Tu comprobante llegó y los datos coinciden', '¿Hola? Recibimos tu pago', '¿Hola, recibimos tu pago', 'Recibimos tu pago ¿algo más?']);
+  });
+  it('LOW: el tope de largo no sube con las opciones y el filtro no se vuelve cuadrático', () => {
+    expect(motivo('a'.repeat(6000), { maximo: 1e9 })).toBe('largo');
+    for (const t of ['a'.repeat(50000), 'p.'.repeat(25000), '¿pagaste '.repeat(500), 'p a '.repeat(1200), '¿'.repeat(4900), 'a '.repeat(2400) + 'pagaste']) {
+      const t0 = Date.now();
+      motivo(t, { maximo: 1e9 });
+      expect(Date.now() - t0, t.slice(0, 12)).toBeLessThan(200);
+    }
+  });
+  it('LOW (documentado): la unión de letras deforma «a las 9 a m o 10 a m» solo en la copia de comparación y no afirma nada', () => {
+    pasa(['Tenemos a las 9 a m o 10 a m', 'Abrimos a las 9 a. m. y cerramos a las 6 p. m.']);
+  });
+});
+
 describe('las reglas de NovuChat no se apagan con opciones', () => {
   it('ninguna opción vuelve válido «quedó agendada», una promesa o un hueco', () => {
     const apagar = { permitirMontos: true, enlacesPermitidos: null, prohibidos: [], extra: [], quienPromete: [], maximo: 100000, textoDelCliente: '' }; // enlacesPermitidos:null solo apaga la revisión de enlaces
