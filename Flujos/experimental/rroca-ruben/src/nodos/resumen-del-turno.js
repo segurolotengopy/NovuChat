@@ -25,7 +25,7 @@ try {
     const rrFH = cnFichaDe(rrFsH.mapa, String((items[0] || {}).from || ''));
     if (rrFH && typeof rrT === 'string' && rrT.trim() !== '') {
       const rrTope = Number(rrH.tope) > 0 ? Math.min(30, Math.floor(Number(rrH.tope))) : 15;
-      rrFH.historial = (Array.isArray(rrFH.historial) ? rrFH.historial : []).concat([{ r: 'a', t: rrT.slice(0, 300) }]).slice(-rrTope);
+      rrFH.historial = (Array.isArray(rrFH.historial) ? rrFH.historial : []).concat([{ r: 'a', t: rrT.length > 300 ? rrT.slice(0, 140) + ' … ' + rrT.slice(-150) : rrT }]).slice(-rrTope);
     }
   }
 } catch (e) { /* la memoria no es crítica: nunca tumba el turno */ }

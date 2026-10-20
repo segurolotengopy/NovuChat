@@ -127,10 +127,12 @@ function rrBarrer(mapa, ahoraMs) {
 }
 
 // MEMORIA POR TELÉFONO (fila 5 del guion). Solo { r: 'u'|'a', t } con texto; lo demás se descarta. 'u' lo escribe «Armar mensajes», 'a' «Resumen del turno» (solo lo que Meta aceptó).
+// Un texto largo conserva su cabeza Y su cola (la pregunta final de un saludo): 140 + ' … ' + 150 = 293 caracteres. Idempotente: lo que ya cabe no cambia.
+function rrAcotar(t) { const x = String(t); return x.length > RR_TOPE_TEXTO_HIST ? x.slice(0, 140) + ' … ' + x.slice(-150) : x; }
 function rrHistorialSaneado(h) {
   return (Array.isArray(h) ? h : [])
     .filter((x) => x && typeof x === 'object' && !Array.isArray(x) && (x.r === 'u' || x.r === 'a') && typeof x.t === 'string' && x.t.trim() !== '')
-    .map((x) => ({ r: x.r, t: x.t.slice(0, RR_TOPE_TEXTO_HIST) }))
+    .map((x) => ({ r: x.r, t: rrAcotar(x.t) }))
     .slice(-RR_TOPE_HISTORIAL);
 }
 // El historial que vale en `ahoraMs`: vacío si la ficha no tiene hora o pasaron más de 48 h (la ficha puede seguir en el mapa: el barrido corre al escribir).
@@ -142,16 +144,18 @@ function rrHistorialVigente(f, ahoraMs) {
 function rrAgregarHistorial(h, r, t) {
   const base = rrHistorialSaneado(h);
   const x = rrTexto(t).trim();
-  return (x !== '' && (r === 'u' || r === 'a') ? base.concat([{ r: r, t: x.slice(0, RR_TOPE_TEXTO_HIST) }]) : base).slice(-RR_TOPE_HISTORIAL);
+  return (x !== '' && (r === 'u' || r === 'a') ? base.concat([{ r: r, t: rrAcotar(x) }]) : base).slice(-RR_TOPE_HISTORIAL);
 }
 // Lo que se guarda de un texto: sin enlaces, correos, montos, códigos de pedido ni números largos (el modelo no los necesita; son datos personales o del cobro).
 function rrEnmascarar(t) {
-  return rrQuitarDelimitadores(t)
+  return rrQuitarDelimitadores(t, true).replace(/\s+/g, ' ')
     .replace(/https?:\/\/\S+|www\.\S+|\bwa\.me\/\S*/gi, '[enlace]')
-    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[correo]')
+    .replace(/[\w.+-]+\s*(?:@|\(at\)|arroba)\s*[\w-]+(?:\s*(?:\.|punto)\s*[\w-]+)+/gi, '[correo]')
+    .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|info|biz|bo|io|app|co|me|ly|site|online|store|shop|lat|es)\b(?:\/\S*)?/gi, '[enlace]')
     .replace(/\bpedido\s*#\s*[A-Za-z0-9]+/gi, 'pedido [código]')
     .replace(/\b\d[\d.,]*\s*(?:bs|bob|bolivianos?)\b\.?/gi, '[precio]')
-    .replace(/\+?\d(?:[\s.-]?\d){6,}/g, '[número]')
+    .replace(/\b(?:bs|bob)\.?\s*\d[\d.,]*/gi, '[precio]')
+    .replace(/\+?\d(?:(?:\s*[.\-]\s*|\s+)?\d){6,}/g, '[número]')
     .replace(/\s+/g, ' ').trim();
 }
 const RR_ETIQUETA_BOTON = { b_pack: 'Pack Completo', b_libro: 'Libro + Bonos', b_comp: 'Ver complementos', b_closer: 'Closer', b_videos: 'Videos', b_precios: 'Ver precios', b_ruben: 'Hablar con Rubén' };
@@ -162,9 +166,9 @@ function rrEntradaCliente(t) {
   if (x.tipo === 'interactive') { const id = rrTexto(x.texto); return '[Tocó el botón «' + (Object.prototype.hasOwnProperty.call(RR_ETIQUETA_BOTON, id) ? RR_ETIQUETA_BOTON[id] : 'otro botón') + '»]'; }
   if (x.categoria === 'medio') return x.tipo === 'audio' ? '[Envió un audio]' : '[Envió una imagen o un archivo]';
   if (x.categoria === 'otro') return '[Envió un mensaje que no es texto]';
-  return rrEnmascarar(rrTexto(x.texto).replace(/\[/g, '(').replace(/\]/g, ')')).slice(0, RR_TOPE_TEXTO_HIST);
+  return rrAcotar(rrEnmascarar(rrQuitarDelimitadores(x.texto)));
 }
-function rrEntradaAsistente(texto) { return rrEnmascarar(texto).slice(0, RR_TOPE_TEXTO_HIST); }
+function rrEntradaAsistente(texto) { return rrAcotar(rrEnmascarar(texto)); }
 
 // =============================================================================
 // El catálogo: 4 productos. El PRECIO sale del catálogo de la consola (documento `catalogo/<catId>`); aquí solo viven el id, el nombre y lo que incluye.
@@ -560,7 +564,12 @@ const RR_PROMPT = [
   'DUDAS: «¿necesito saber programar?»: no, es para quien no tiene conocimientos técnicos. «Soy principiante o aún no tengo negocio»: empieza por los caps. 1 y 2; el cap. 3 y el bono de 30 ideas de negocio ayudan a arrancar. «¿Debo pagar herramientas de IA?»: no, se empieza con las versiones gratuitas. «¿Me garantiza ganar dinero?»: no, depende de su ejecución, oferta y mercado. «Compro el libro hoy y después quiero el resto»: sin problema, puede sumar los complementos después por este mismo chat; con el Pack Completo ahorra frente a comprarlos por separado (no digas montos).',
   'Llevas la charla con suavidad hacia elegir una opción, pero sin presionar. Si el cliente habla de otro tema, respóndele en una o dos oraciones y conéctalo con cómo el libro le ayuda.',
 ].join('\n');
-function rrQuitarDelimitadores(t) { return rrTexto(t).replace(/[<>]+/g, '').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim(); }
+// UN solo saneo para el texto del cliente (historial y turno actual): NFKC (pliega el ancho completo a ASCII), sin < >, sin controles C0, C1 ni U+2028/U+2029. Por defecto los [ ] pasan a ( ):
+// los corchetes los pone solo el código. Con `conservarCorchetes` (lo ya guardado: rótulos del código y [enlace]…) se dejan.
+function rrQuitarDelimitadores(t, conservarCorchetes) {
+  const x = rrTexto(t).normalize('NFKC');
+  return (conservarCorchetes === true ? x : x.replace(/\[/g, '(').replace(/\]/g, ')')).replace(/[<>]+/g, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').trim();
+}
 function rrCuerpoModelo(textoCliente, historial) {
   // Si el texto es el de un anuncio, el modelo recibe el titular CANÓNICO como dato rotulado (nunca el texto libre). Va solo en el turno ACTUAL.
   const anuncio = rrAnuncioDe(textoCliente);
@@ -568,7 +577,7 @@ function rrCuerpoModelo(textoCliente, historial) {
   const contents = [];
   for (const h of rrHistorialSaneado(historial)) {
     const rol = h.r === 'a' ? 'model' : 'user';
-    const texto = h.r === 'a' ? rrQuitarDelimitadores(h.t) : '<<<' + rrQuitarDelimitadores(h.t) + '>>>';
+    const texto = h.r === 'a' ? rrQuitarDelimitadores(h.t, true) : '<<<' + rrQuitarDelimitadores(h.t, true) + '>>>';
     const ult = contents[contents.length - 1];
     if (ult && ult.role === rol) ult.parts.push({ text: texto }); else contents.push({ role: rol, parts: [{ text: texto }] });
   }
@@ -610,6 +619,8 @@ const RR_REMITE_A_WEB = new RegExp([
 ].join('|'));
 // Reglas propias del flujo para `cmRevisarRedaccion` (`opciones.extra`): a lo más 4 oraciones y UNA pregunta; nada de «Rubén te…» (promesa), ni la palabra «QR» ni el banco o el titular.
 function rrExtraRedaccion(texto, norm) {
+  // Una salida con un marcador del sistema ([precio], [enlace], [número], «pedido [código]») no llega al cliente.
+  if (/\[[^\]]{1,40}\]/.test(texto)) return 'marcador_interno';
   if ((String(texto).match(/\?/g) || []).length > 1) return 'varias_preguntas';
   if (String(texto).split(/(?<=[.!?…])\s+/).filter((x) => x.trim()).length > 5) return 'largo_en_oraciones';
   if (/\b(qr|banco|titular|mercantil)\b/.test(norm)) return 'datos_de_cobro';

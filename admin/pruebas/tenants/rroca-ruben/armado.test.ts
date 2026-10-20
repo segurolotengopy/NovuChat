@@ -347,6 +347,7 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
     expect(agregado).toContain("cnNodo('Enviar a WhatsApp')");
     expect(agregado).toContain("cnTodos('Enviar respaldo')");
     expect(agregado).toContain('rrHist');
+    expect(agregado).toMatch(/try \{[\s\S]*rrH[\s\S]*\} catch/);
   });
 
   it('`_comun.js`: el origen más SOLO las sustituciones declaradas (la clave de la ficha y sin el barrido de datos de otros flujos)', () => {
