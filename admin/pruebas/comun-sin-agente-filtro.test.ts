@@ -200,6 +200,48 @@ describe('segunda revisión de seguridad (02/10): lo que seguía pasando', () =>
   });
 });
 
+describe('hallazgo de seguridad de Cartera (20/10): pago en plural y variantes, forma, alfabeto e IA', () => {
+  const rechaza = (lista: string[]): void => { for (const t of lista) expect(motivo(t), t).toBe('afirma_un_hecho'); };
+  const pasa = (lista: string[], o?: object): void => { for (const t of lista) expect(motivo(t, o), t).toBe(''); };
+  const CIR_A = String.fromCharCode(0x0430); // «а» cirílica, escrita por código para que el archivo no la lleve
+  const CIR_O = String.fromCharCode(0x043e); // «о» cirílica
+  const GRI_O = String.fromCharCode(0x03bf); // «ο» griega
+  it('plurales y variantes de recepción: pagos, comprobantes, plata, dinero', () => {
+    rechaza(['Recibimos tus pagos', 'Ya nos llegaron tus comprobantes', 'Tus pagos están en orden', 'Ya tenemos tu plata', 'Ya tenemos tu dinero',
+      'Tenemos tu comprobante', 'Tus comprobantes ya llegaron', 'Tu depósito está acreditado', 'Tus transferencias están ok', 'Tu abono está bien',
+      'Ya recibí tu plata', 'Tu pago por QR llegó', 'El Tigo Money ya llegó', 'Tu tarjeta fue aprobada', 'El efectivo fue recibido', 'Tu cobro está completo']);
+  });
+  it('«cancelar» es pagar en Bolivia: cancelaste / cancelamos', () => {
+    rechaza(['Ya cancelaste el libro', 'Cancelaste tu pedido', 'Cancelamos el saldo', 'Ya pagaste el libro', 'Pagamos el saldo', 'Ya cancelaron todo']);
+  });
+  it('NIEGA: lo legítimo sobre el pago sigue saliendo', () => {
+    pasa(['Puedes pagar con QR', 'Envíame el comprobante de pago', '¿Ya pagaste? Mándame la captura', '¿Ya cancelaste? Mándame la captura', 'Si pagaste, mándame el comprobante',
+      'Aceptamos QR, transferencia, Tigo Money, tarjeta y efectivo', 'Para pagar toca el botón', 'Te paso el QR para pagar', 'Cuando pagues, envía el comprobante']);
+    pasa(['El pedido cuesta 60 Bs'], { permitirMontos: true });
+  });
+  it('evasión por forma: letras sueltas, guiones, puntos, ancho completo y caracteres invisibles', () => {
+    rechaza(['Recibimos tu p-a-g-o', 'Recibimos tu p.a.g.o', 'Recibimos tu p a g o', 'Recibimos tu p_a_g_o', 'Recibimos tu ｐａｇｏ', 'Recibimos tu pa​go', 'Tu pago está a c r e d i t a d o',
+      'Ya c a n c e l a s t e el libro', 'R E C I B I M O S tu pago']);
+  });
+  it('NIEGA: la normalización de forma no rompe montos, teléfonos ni horas', () => {
+    pasa(['Escríbenos al 7 1 2 3 4 5 6 7', 'Tenemos lugar a las 11:30 o a las 16.30', 'Llama al 2-234567'], { permitirMontos: true });
+    expect(motivo('Cuesta 250 Bs.')).toBe('monto');
+  });
+  it('alfabeto mezclado dentro de una palabra latina se rechaza (homoglifos)', () => {
+    rechaza([`p${CIR_A}go`, `c${CIR_O}nfirmado`, `Recibimos tu p${CIR_A}go`, `Pag${GRI_O} recibido`, `Tu cita qued${CIR_O}`]);
+  });
+  it('NIEGA: emojis, signos y texto en un solo alfabeto no se rechazan por el alfabeto', () => {
+    pasa(['Hola 😊 ¿En qué te ayudo? 👍', 'Tenemos lugar el viernes… ¿Te sirve? ✨', 'Привет, ¿en qué te ayudo?']);
+  });
+  it('negar ser una IA con «asistente» o «virtual»', () => {
+    rechaza(['Soy Rubén, no un asistente', 'No soy un asistente', 'No soy un asistente virtual', 'No soy el asistente virtual', 'Soy Ana, no el asistente virtual',
+      'Soy Ana, no un agente virtual', 'No, no soy virtual', 'Soy Ana, no la virtual', 'Soy Rubén y no una asistente']);
+  });
+  it('NIEGA: presentarse como el asistente virtual sí sale', () => {
+    pasa(['Soy el asistente virtual de Rubén', 'Soy la asistente virtual del consultorio', 'Hablas con el asistente virtual de Rubén']);
+  });
+});
+
 describe('las reglas de NovuChat no se apagan con opciones', () => {
   it('ninguna opción vuelve válido «quedó agendada», una promesa o un hueco', () => {
     const apagar = { permitirMontos: true, enlacesPermitidos: null, prohibidos: [], extra: [], quienPromete: [], maximo: 100000, textoDelCliente: '' }; // enlacesPermitidos:null solo apaga la revisión de enlaces
