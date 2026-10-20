@@ -573,7 +573,7 @@ describe('la conversación: el modelo solo conversa', () => {
   it('derivar: factura, otro medio de pago, garantía, reclamo y hablar con una persona pasan a Rubén con aviso y botón; el texto del cliente no se copia al mensaje', () => {
     const casos: Array<[string, string]> = [
       ['necesito factura por favor', D_FACTURA + CON_AVISO], ['puedo pagar en efectivo?', D_OTRO + CON_AVISO], ['tiene garantía o devolución?', D_FACTURA + CON_AVISO],
-      ['tengo un reclamo', D_OTRO + CON_AVISO], ['tengo un reclamo, no me llegó nada', D_NO_ENTREGA + CON_AVISO],
+      ['tengo un reclamo', D_OTRO + CON_AVISO], ['tengo un reclamo, no me llegó nada', D_OTRO + CON_AVISO], ['esto es una estafa', D_OTRO + CON_AVISO],
       ['quiero hablar con una persona', 'Eso lo ve Rubén directamente. Le avisé; también puedes escribirle directo con el botón.'],
     ];
     for (const [texto, esperado] of casos) {
@@ -1505,13 +1505,24 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas
   const QUEJAS = [
     'no me llegó', 'No me llego el enlace', 'NO LLEGÓ EL MATERIAL', 'no llego el libro', 'sigo esperando', 'Sigo esperando el link', 'no recibí nada', 'no recibi el enlace',
     'todavía no me llegó', 'aun no me llego', 'sigo sin recibir el material', 'nunca me llegó', 'no me enviaron nada', 'no me mandaron el libro',
+    // F2 de la revisión: presente, he/hemos/ha/han, segunda persona y aún/todavía.
+    'no he recibido el material', 'no hemos recibido nada', 'no me llega el link', 'aún no llega el enlace', 'todavía no llega el enlace', 'no recibo nada', 'no me enviaste el libro', 'no me mandaste el qr',
+    'aun no me llega nada', 'todavia no tengo el libro', 'no ha llegado nada', 'no han llegado los enlaces',
   ];
   const sinEnlaceNiPromesa = /https?:|www\.|\.com|wa\.me|ya te lo enviamos|ya te lo envi|ya te lo mand|acreditad|verificad|recibimos tu pago|ya (se )?(envi|mand|entreg)/i;
+  /** Un cliente que ya envió su comprobante: SOLO así hay algo que entregar y una queja de no entrega tiene sentido. */
+  const conComprobante = (o: Opciones = {}) => {
+    const w = crear(o);
+    pedirQr(w, 'pack');
+    hablar(w, ANA, mImagen());
+    return w;
+  };
+  const quejarse = (w: Mundial, q: string) => hablar(w, ANA, mTexto(q), { avanzarMin: 60 });
 
-  it('F: la queja de NO ENTREGA se detecta POR CÓDIGO (con y sin tildes, mayúsculas): aviso + botón, sin afirmar ni prometer que se entregó, y el modelo ni se llama', () => {
+  it('F: la queja de NO ENTREGA tras el comprobante se detecta POR CÓDIGO (con y sin tildes, mayúsculas): aviso + botón, sin afirmar ni prometer que se entregó, y el modelo ni se llama', () => {
     for (const q of QUEJAS) {
-      const w = crear({ modelo: geminiTexto('Ya te lo enviamos, revisa tu chat.') });
-      const t = hablar(w, ANA, mTexto(q));
+      const w = conComprobante({ modelo: geminiTexto('Ya te lo enviamos, revisa tu chat.') });
+      const t = quejarse(w, q);
       const m = unico(t);
       expect(m.cuerpo, q).toBe(D_NO_ENTREGA + CON_AVISO);
       expect(m.cuerpo, q).not.toMatch(sinEnlaceNiPromesa);
@@ -1522,9 +1533,38 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas
     }
   });
 
+  it('F negando (revisión): SIN comprobante previo, «no me llegó el QR», «no recibí tu mensaje» o «sigo esperando tu respuesta» NO son una no entrega: sin aviso de no entrega', () => {
+    for (const q of ['No me llegó el QR', 'no me llego el codigo qr', 'no me enviaron el QR para pagar', 'no recibí tu mensaje anterior', 'sigo esperando tu respuesta', 'no me llegó', 'no he recibido el material', 'aun no llega el enlace']) {
+      const t = hablar(crear(), ANA, mTexto(q));
+      expect(t.mensajes.map((e) => e.cuerpo).join('|'), q).not.toContain('Lamento la espera');
+      expect(t.avisos.map((a) => a.cuerpo).join('|'), q).not.toContain('queja de no entrega');
+    }
+  });
+
+  it('F negando (revisión): con un QR abierto y SIN pago, «no me llegó el QR» recibe el recordatorio del QR, nunca la derivación de no entrega', () => {
+    for (const q of ['No me llegó el QR', 'no me llego el codigo qr', 'no me enviaron el QR para pagar', 'no me llega nada']) {
+      const w = crear();
+      pedirQr(w, 'pack');
+      const t = hablar(w, ANA, mTexto(q));
+      const m = unico(t);
+      expect(m.cuerpo, q).toContain('Ya tienes un QR abierto');
+      expect(m.cuerpo, q).not.toContain('Lamento la espera');
+      expect(t.avisos, q).toHaveLength(0);
+    }
+  });
+
+  it('F negando (revisión): con un comprobante de un pedido anterior pero un QR NUEVO abierto, «no me llegó el QR» sigue siendo del QR (recordatorio), no una no entrega', () => {
+    const w = conComprobante();
+    const t0 = hablar(w, ANA, mTexto(PRELLENADOS['libro']), { avanzarMin: 60 });
+    expect(unico(t0).tipo).toBe('image');
+    const t = hablar(w, ANA, mTexto('no me llegó el QR'), { avanzarMin: 61 });
+    expect(unico(t).cuerpo).toContain('Ya tienes un QR abierto');
+    expect(t.avisos).toHaveLength(0);
+  });
+
   it('F negando: si el aviso NO salió, no dice «le avisé» ni «ya te lo enviamos»; sigue con el botón', () => {
     for (const aviso of ['error', 'sin-id', 'id-vacio', 'lanza'] as const) {
-      const t = hablar(crear({ aviso }), ANA, mTexto('no me llegó'));
+      const t = quejarse(conComprobante({ aviso }), 'no me llegó');
       const m = unico(t);
       expect(m.cuerpo, aviso).toBe(D_NO_ENTREGA + SIN_AVISO);
       expect(m.cuerpo).not.toMatch(/le avis[eé]|ya pas[eé]|ya te lo envi/i);
@@ -1533,14 +1573,19 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas
   });
 
   it('F negando: tras un comprobante recibido, «no me llegó» sigue derivando (no «ya te lo enviamos», ni acreditado ni verificado)', () => {
-    const w = crear();
-    pedirQr(w, 'pack');
-    hablar(w, ANA, mImagen());
-    const t = hablar(w, ANA, mTexto('sigo esperando, no me llegó'), { avanzarMin: 60 });
+    const t = quejarse(conComprobante(), 'sigo esperando, no me llegó');
     const m = unico(t);
     expect(m.cuerpo).toBe(D_NO_ENTREGA + CON_AVISO);
     expect(m.cuerpo).not.toMatch(sinEnlaceNiPromesa);
     expect(t.avisos).toHaveLength(1);
+  });
+
+  it('F: un comprobante «ilegible» no habilita la queja de no entrega (no hubo comprobante recibido)', () => {
+    const w = crear({ lectura: 'ilegible', cotejo: () => ({ statusCode: 200, body: { estado: 'reintentar', motivo: 'ilegible' } }) });
+    pedirQr(w, 'pack');
+    hablar(w, ANA, mImagen());
+    const t = hablar(w, ANA, mTexto('no me llegó'), { avanzarMin: 5 });
+    expect(t.mensajes.map((e) => e.cuerpo).join('|')).not.toContain('Lamento la espera');
   });
 
   it('F: lo que NO es una queja de entrega no se confunde (una pregunta de compra sigue su camino)', () => {
@@ -1585,6 +1630,23 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas
     expect(hablar(crear(), BETO, mTexto('necesito factura')).avisos[0]!.cuerpo).not.toContain('responder antes de');
   });
 
+  it('E: la hora límite parte del `timestamp` de Meta del mensaje (segundos) cuando es válido y no es posterior al reloj; si no, del reloj del proceso', () => {
+    const conTs = (ts: string | number | undefined): string => {
+      const w = crear();
+      pedirQr(w, 'pack');
+      const msg = { ...mImagen(), ...(ts === undefined ? {} : { timestamp: String(ts) }) };
+      return hablar(w, ANA, msg).avisos[0]!.cuerpo;
+    };
+    const seg = (ms: number): number => Math.floor(ms / 1000);
+    // 2 h ANTES del reloj de proceso (AHORA): 05/10 08:00 La Paz + 23 h = 06/10 07:00.
+    expect(conTs(seg(AHORA - 2 * 3_600_000))).toContain('responder antes de 06/10 07:00 hora de La Paz');
+    // Un timestamp posterior al reloj, absurdo o viejo (>24 h) NO se usa: vale el reloj del proceso.
+    expect(conTs(seg(AHORA + 3 * 3_600_000))).toContain(HOY_LIMITE);
+    expect(conTs('abc')).toContain(HOY_LIMITE);
+    expect(conTs(seg(AHORA - 48 * 3_600_000))).toContain(HOY_LIMITE);
+    expect(conTs(undefined)).toContain(HOY_LIMITE);
+  });
+
   it('F2 y F4: ningún texto del flujo promete ni envía un enlace de entrega, y el flujo no carga ningún marcador de enlaces', () => {
     for (const f of ['rroca-ruben.json', 'rroca-ruben.prueba.json']) {
       const txt = readFileSync(join(CARPETA, f), 'utf8');
@@ -1596,7 +1658,7 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas
   });
 
   it('F5: factura, garantía, devolución, otros medios de pago y reclamos pasan con el autor (aviso + botón) y NUNCA prometen garantía, devolución ni resultados', () => {
-    for (const q of ['necesito factura', 'quiero una devolución', 'tiene garantía', 'puedo pagar con paypal', 'tengo un reclamo']) {
+    for (const q of ['necesito factura', 'quiero una devolución', 'tiene garantía', 'puedo pagar con paypal', 'tengo un reclamo', 'esto es una estafa']) {
       const t = hablar(crear(), ANA, mTexto(q));
       const m = unico(t);
       expect(m.cuerpo, q).toMatch(/autor, Rubén/);
@@ -1604,5 +1666,15 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 24 horas
       expect(m.payload['interactive']?.type, q).toBe('cta_url');
       expect(t.avisos, q).toHaveLength(1);
     }
+  });
+
+  it('F5 (revisión): «estafa» es un reclamo: aviso + botón y NO habla de factura ni de garantía ni de devolución', () => {
+    const t = hablar(crear(), ANA, mTexto('esto es una estafa'));
+    const m = unico(t);
+    expect(m.cuerpo).toBe(D_OTRO + CON_AVISO);
+    expect(m.cuerpo).not.toMatch(/factura|garant|devoluci/i);
+    expect(m.payload['interactive']?.type).toBe('cta_url');
+    expect(t.avisos).toHaveLength(1);
+    expect(t.avisos[0]!.cuerpo).toContain('Motivo: reclamo');
   });
 });

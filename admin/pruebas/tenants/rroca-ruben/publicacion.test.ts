@@ -352,7 +352,7 @@ describe('publicar-flujo.sh: la guardia mira también el flujo VIVO (destino) y 
   const envRel = join(dir, 'env');
   writeFileSync(envRel, 'N8N_API_KEY=clave-de-juguete\nN8N_WORKFLOW_ID=1\nN8N_BASE_URL=http://n8n.invalido\n');
   const vivoRuben = join(dir, 'vivo-ruben.json');
-  writeFileSync(vivoRuben, JSON.stringify({ name: 'NovuChat — RROCA-Ruben producción', active: false, nodes: [] }));
+  writeFileSync(vivoRuben, JSON.stringify({ name: 'NovuChat — Venta digital de Rubén (rroca-ruben)', active: false, nodes: [] }));
   const vivoOtro = join(dir, 'vivo-otro.json');
   writeFileSync(vivoOtro, JSON.stringify({ name: 'Otro cliente', active: false, nodes: [] }));
   const otroArchivo = join(dir, 'cualquier-cosa.json');
@@ -388,16 +388,47 @@ describe('publicar-flujo.sh: la guardia mira también el flujo VIVO (destino) y 
     const r = correr(['--flujo', otroArchivo], vivoOtro);
     expect(r.stdout + r.stderr).not.toMatch(/Flujo de Rubén/);
   });
-  it('--encender --aplicar sobre el flujo vivo de Rubén sin confirmación se NIEGA y no activa', () => {
-    const r = correr(['--encender', '--aplicar'], vivoRuben);
+  it('--encender --aplicar --confirmo-ruben sobre el flujo vivo de Rubén NO activa si la guardia lo niega (marcadores o plantillas sin aprobar en el flujo VIVO)', () => {
+    const r = correr(['--encender', '--aplicar', '--confirmo-ruben'], vivoRuben);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/NEGADO/);
+    expect(r.stdout + r.stderr).toMatch(/encender el flujo vivo/);
+    expect(escribio()).toBe(false);
+  });
+  // Una copia del script con una guardia de juguete que aprueba: se llega al paso de activar sin depender de que el JSON real esté listo.
+  function raizConGuardia(codigoSalida: number): string {
+    const raiz = join(dir, `raiz-${codigoSalida}`);
+    mkdirSync(join(raiz, 'scripts'), { recursive: true });
+    mkdirSync(join(raiz, 'Flujos/experimental/rroca-ruben'), { recursive: true });
+    copyFileSync(SCRIPT, join(raiz, 'scripts/publicar-flujo.sh'));
+    writeFileSync(join(raiz, 'Flujos/experimental/rroca-ruben/construir.mjs'), `process.exit(${codigoSalida});\n`);
+    writeFileSync(join(raiz, 'Flujos/demo-a-agendamiento.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
+    chmodSync(join(raiz, 'scripts/publicar-flujo.sh'), 0o755);
+    return raiz;
+  }
+  const correrEn = (raiz: string, args: string[], vivo: string) => {
+    writeFileSync(log, '');
+    return spawnSync('bash', [join(raiz, 'scripts/publicar-flujo.sh'), ...args, '--env', relative(raiz, envRel)], {
+      cwd: raiz, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+      env: entornoDelEmulador(undefined, { PATH: `${bin}:${process.env['PATH'] ?? ''}`, VIVO_SIMULADO: vivo, LOG_CURL: log }),
+    });
+  };
+  it('--encender --aplicar sobre el flujo vivo de Rubén sin confirmación se NIEGA y no activa (con la guardia en verde)', () => {
+    const r = correrEn(raizConGuardia(0), ['--encender', '--aplicar'], vivoRuben);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/solo se publica con --confirmo-ruben/);
     expect(escribio()).toBe(false);
   });
-  it('--encender --aplicar --confirmo-ruben sobre el flujo vivo de Rubén sí activa', () => {
-    const r = correr(['--encender', '--aplicar', '--confirmo-ruben'], vivoRuben);
+  it('--encender --aplicar --confirmo-ruben sobre el flujo vivo de Rubén sí activa cuando la guardia aprueba el flujo vivo', () => {
+    const r = correrEn(raizConGuardia(0), ['--encender', '--aplicar', '--confirmo-ruben'], vivoRuben);
     expect(r.status, r.stderr).toBe(0);
     expect(escribio()).toBe(true);
+  });
+  it('--encender --aplicar sobre el flujo vivo de Rubén: con la guardia en rojo se niega aunque lleve --confirmo-ruben (y la guardia se corre sobre el VIVO)', () => {
+    const r = correrEn(raizConGuardia(1), ['--encender', '--aplicar', '--confirmo-ruben'], vivoRuben);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/NEGADO/);
+    expect(escribio()).toBe(false);
   });
   it('--encender en seco no pide confirmación ni escribe', () => {
     const r = correr(['--encender'], vivoRuben);
@@ -420,6 +451,37 @@ describe('publicar-flujo.sh: la guardia mira también el flujo VIVO (destino) y 
     const r = correr(['--flujo', mayus, '--aplicar'], vivoOtro);
     expect(r.status).toBe(1);
     expect(r.stderr + r.stdout).toMatch(/archivo de origen/);
+  });
+  // Otro flujo del tenant (p. ej. el de rescate del PR-4): no lleva «Config base» con plantillas, así que NO pasa por `--publicable`; solo exige la confirmación.
+  const rescate = join(dir, 'rroca-ruben-rescate.json');
+  writeFileSync(rescate, JSON.stringify({ name: 'NovuChat — Rescate de pagos (rroca-ruben)', nodes: [] }));
+  it('otro flujo del tenant exige SOLO la confirmación: sin ella se niega, con ella no corre la guardia estricta', () => {
+    const sin = correr(['--flujo', rescate, '--aplicar'], vivoOtro);
+    expect(sin.status).toBe(1);
+    expect(sin.stderr).toMatch(/solo se publica con --confirmo-ruben/);
+    expect(sin.stdout + sin.stderr).not.toMatch(/marcador sin sustituir|NO se puede publicar todavía|guardia de publicación/);
+    expect(escribio()).toBe(false);
+    const con = correr(['--flujo', rescate, '--aplicar', '--confirmo-ruben'], vivoOtro);
+    expect(con.stdout + con.stderr).not.toMatch(/NEGADO|NO se puede publicar todavía/);
+  });
+  it('el flujo CONVERSACIONAL sigue bloqueado por la guardia aunque lleve --confirmo-ruben', () => {
+    const r = correr(['--flujo', join(RROCA, 'rroca-ruben.json'), '--aplicar', '--confirmo-ruben'], vivoOtro);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/NEGADO: el flujo de Rubén no se publica/);
+  });
+  it('un flujo vivo de rescate (no conversacional) como destino exige la confirmación pero no la guardia estricta', () => {
+    const vivoRescate = join(dir, 'vivo-rescate.json');
+    writeFileSync(vivoRescate, JSON.stringify({ name: 'NovuChat — Rescate de pagos (rroca-ruben)', active: false, nodes: [] }));
+    const sin = correr(['--flujo', otroArchivo, '--forzar', '--aplicar'], vivoRescate);
+    expect(sin.status).toBe(1);
+    expect(sin.stderr).toMatch(/solo se publica con --confirmo-ruben/);
+    expect(sin.stdout + sin.stderr).not.toMatch(/NO se puede publicar todavía/);
+  });
+  it('con --crear el flujo vivo es la REFERENCIA de credenciales, no el destino: no se evalúa como destino (sin --crear sí)', () => {
+    const conCrear = correr(['--flujo', otroArchivo, '--crear', '--forzar'], vivoRuben);
+    expect(conCrear.stdout + conCrear.stderr).not.toMatch(/flujo vivo de destino|Flujo de Rubén/);
+    const sinCrear = correr(['--flujo', otroArchivo, '--forzar'], vivoRuben);
+    expect(sinCrear.stdout + sinCrear.stderr).toMatch(/flujo vivo de destino/);
   });
 });
 

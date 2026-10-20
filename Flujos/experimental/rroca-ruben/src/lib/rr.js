@@ -35,7 +35,8 @@ function rrSeguro(texto) {
   return texto;
 }
 // La ficha de un teléfono: nueva, o la guardada si es un objeto. Solo cuenta lo de ESE teléfono. PR-2 agrega: `saludado`, `usados` (los botones que ya pulsó: no reaparecen), `pedidos`
-// (contador para el id del pedido), `qrHastaMs` (hasta cuándo hay un QR abierto, por si la consola tarda en saberlo), `producto` (el último pedido) y `ultimoModelo` (lo último que dijo el modelo).
+// (contador para el id del pedido), `qrHastaMs` (hasta cuándo hay un QR abierto, por si la consola tarda en saberlo), `producto` (el último pedido), `ultimoModelo` (lo último que dijo el modelo)
+// y `comprobanteMs` (cuándo llegó el último comprobante que se recibió; sin él no hay «queja de no entrega»).
 function rrFichaVigente(f) {
   const ids = f && Array.isArray(f.ultimosIds) ? f.ultimosIds.filter((x) => typeof x === 'string') : [];
   const usados = f && Array.isArray(f.usados) ? f.usados.filter((x) => typeof x === 'string' && /^b_[a-z]{1,12}$/.test(x)).slice(-10) : [];
@@ -43,6 +44,7 @@ function rrFichaVigente(f) {
     ultimosIds: ids.slice(-RR_TOPE_IDS), turnos: f && Number.isFinite(f.turnos) ? f.turnos : 0, ultimoMs: f && Number.isFinite(f.ultimoMs) ? f.ultimoMs : 0,
     saludado: !!f && f.saludado === true, usados: usados, pedidos: f && Number.isFinite(f.pedidos) && f.pedidos >= 0 ? Math.floor(f.pedidos) : 0,
     qrHastaMs: f && Number.isFinite(f.qrHastaMs) ? f.qrHastaMs : 0,
+    comprobanteMs: f && Number.isFinite(f.comprobanteMs) && f.comprobanteMs > 0 ? f.comprobanteMs : 0,
     avisosConsulta: rrAvisosConsulta(f && f.avisosConsulta),
     producto: f && typeof f.producto === 'string' && Object.prototype.hasOwnProperty.call(RR_PRODUCTOS, f.producto) ? f.producto : '',
     ultimoModelo: f && typeof f.ultimoModelo === 'string' ? f.ultimoModelo.slice(0, 300) : '',
@@ -190,14 +192,21 @@ function rrIntencionDeCompra(n) {
 }
 // Lo que ve Rubén personalmente (o lo que ningún texto fijo sabe): factura, otro medio de pago, garantía, reclamo, hablar con una persona, el acceso al material y los descuentos.
 // Devuelve { clave, motivo } (la clave limita el aviso; el motivo es lo que lee Rubén) o null.
-function rrDerivacion(n) {
+// `ctx` = { comprobante: ya llegó un comprobante de este teléfono (ficha o cobro en revisión), qrAbierto: hay un QR abierto }. Sin ctx se asume que NO hay comprobante.
+function rrDerivacion(n, ctx) {
+  const conComprobante = !!ctx && ctx.comprobante === true;
+  const qrAbierto = !!ctx && ctx.qrAbierto === true;
   if (/\bfactura\b|\bnit\b/.test(n)) return { clave: 'factura', motivo: 'factura' };
   if (/\botro (medio|metodo|forma) de pago\b|\b(paypal|zelle|tigo money|contra entrega|en cuotas|numero de cuenta|datos de la cuenta)\b|\b(pagar|pago|pagarte|pagarle|cancelar) (con|en|por) (tarjeta|efectivo)\b/.test(n)) return { clave: 'otro_medio_pago', motivo: 'otro medio de pago' };
-  if (/\b(garantia|devolucion|devolver|reembolso|estafa)\b/.test(n)) return { clave: 'garantia', motivo: 'garantía o devolución' };
-  // F (19/10/2026): la queja de NO ENTREGA tras el comprobante se detecta AQUÍ, por código (nunca por el prompt), con y sin tildes (`n` ya viene normalizado): «no me llegó», «no llegó el enlace»,
-  // «no recibí», «sigo esperando», «todavía no me llegó», «sigo sin recibir». El texto que sale no afirma ni promete que se entregó (`rrTextoDerivacion`, clave `no_entrega`).
-  if (/\bno (me )?(ha |han )?(llego|llegaron|llegado|recibi|recibido|enviaron|mandaron|enviado|mandado)\b|\b(sigo|seguimos) esperando\b|\b(todavia|aun) no (me )?(ha |han )?(llego|llegaron|llegado|recibi|recibido|enviaron|mandaron)\b|\bsigo sin (recibir|tener)\b|\bnunca (me )?(llego|llegaron|recibi)\b/.test(n)) return { clave: 'no_entrega', motivo: 'queja de no entrega: el cliente dice que no recibió el material' };
-  if (/\b(reclamo|queja)\b/.test(n)) return { clave: 'reclamo', motivo: 'reclamo' };
+  if (/\b(garantia|devolucion|devolver|reembolso)\b/.test(n)) return { clave: 'garantia', motivo: 'garantía o devolución' };
+  // F (19/10/2026): la queja de NO ENTREGA se detecta AQUÍ, por código (nunca por el prompt), con y sin tildes (`n` ya viene normalizado), y SOLO si ya llegó un comprobante de este teléfono
+  // (ficha o cobro en revisión): antes de pagar, «no me llegó el QR» o «sigo esperando tu respuesta» NO son una entrega fallida y siguen su camino (recordatorio del QR o conversación).
+  // Con un QR abierto, un texto que nombra «qr» o «código» tampoco lo es (es del pedido nuevo). Cubre presente, he/hemos/ha/han, segunda persona (enviaste/mandaste) y aún/todavía.
+  // El texto que sale no afirma ni promete que se entregó (`rrTextoDerivacion`, clave `no_entrega`).
+  const quejaEntrega = /\bno (me |nos )?(ha |han |he |hemos )?(llego|llegaron|llegado|llega|llegan|recibi|recibido|recibo|recibimos|enviaron|mandaron|enviado|mandado|enviaste|mandaste|envio|mando)\b|\b(sigo|seguimos) esperando\b|\b(todavia|aun) no (me |nos )?(ha |han )?(llego|llegaron|llegado|llega|llegan|recibi|recibido|recibo|enviaron|mandaron|tengo|tenemos)\b|\bsigo sin (recibir|tener)\b|\bnunca (me )?(llego|llegaron|recibi)\b/.test(n);
+  if (quejaEntrega && conComprobante && !(qrAbierto && /\b(qr|codigo)\b/.test(n))) return { clave: 'no_entrega', motivo: 'queja de no entrega: el cliente dice que no recibió el material' };
+  // «estafa» no es una garantía: se atiende como reclamo (aviso + botón, sin hablar de factura ni de garantía).
+  if (/\b(reclamo|queja|estafa)\b/.test(n)) return { clave: 'reclamo', motivo: 'reclamo' };
   if (/\b(hablar con|comunicame con|pasame con|contactar a|numero de) (ruben|una persona|alguien|un humano|el dueno|el autor)\b|\bquiero hablar con (ruben|una persona|alguien|un humano|un asesor|asesor|el dueno|el autor)\b/.test(n)) return { clave: 'hablar_con_ruben', motivo: 'quiere hablar con Rubén' };
   if (/\bno (puedo|logro|me deja) (abrir|descargar|entrar|acceder)\b|\bno abre\b|\b(link|enlace) (roto|no (abre|funciona))\b/.test(n)) return { clave: 'acceso_material', motivo: 'problema para abrir o descargar el material' };
   if (/\b(descuento|rebaja|mas barato|precio especial|precio de mayorista|precio por mayor)\b/.test(n)) return { clave: 'descuento', motivo: 'pide descuento o precio especial' };

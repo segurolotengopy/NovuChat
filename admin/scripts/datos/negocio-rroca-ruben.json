@@ -1,7 +1,7 @@
 {
   "_fuente": "Datos del negocio de la «Venta digital de Rubén» (tenant rroca-ruben, flujo Flujos/experimental/rroca-ruben/). Se carga con admin/scripts/datos/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben. Los precios y los ids del catálogo son los que lee el flujo (rrCatalogo): el monto de un QR sale de aquí y de ningún otro lado.",
   "_pendiente": {
-    "_nota": "NO SE APLICA mientras quede algún marcador REEMPLAZAR_* en este archivo (la guardia de pruebas/tenants/rroca-ruben/negocio.test.ts y la de publicación lo niegan). Rubén todavía debe dar estos datos; al llegar, se reemplaza cada marcador por el dato real y se agrega al negocio donde corresponde (el resto en negocio.instruccionesExtra). El horario de atención ya no es un dato pendiente: es abierto siempre (24/7), decisión de Andres del 19/10/2026 (negocio.horarios). NovuChat no entrega enlaces: el autor los envía a mano (no hay dato de enlaces).",
+    "_nota": "NO SE APLICA mientras quede algún valor REEMPLAZAR_… en este archivo, notas incluidas, fuera de los campos *Marcador (`cargar-negocio.mjs --aplicar` lo NIEGA y lo prueban pruebas/tenants/rroca-ruben/negocio.test.ts y la guardia de publicación). Rubén todavía debe dar estos datos; al llegar, se reemplaza cada marcador por el dato real y se agrega al negocio donde corresponde (el resto en negocio.instruccionesExtra). El horario de atención ya no es un dato pendiente: es abierto siempre (24/7), decisión de Andres del 19/10/2026 (negocio.horarios). NovuChat no entrega enlaces: el autor los envía a mano (no hay dato de enlaces).",
     "horarioDeRecepcion": "Abierto siempre (24/7)",
     "nombreDeRecepcion": "REEMPLAZAR_NOMBRE_RECEPCION_RUBEN"
   },

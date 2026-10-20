@@ -5,10 +5,13 @@
  * id de un ítem (que `cargar-negocio.mjs` saca del nombre) deje de coincidir; que el archivo traiga un secreto, un teléfono real o una cuenta; y que sea APLICABLE mientras tenga marcadores
  * `REEMPLAZAR_*` (la misma guardia de publicación lo niega). No toca Firestore: la carga real es del script con «sí» de Andres.
  */
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 import type { Flujo } from '../../lib/flujo';
 // @ts-expect-error el armador es un .mjs sin tipos
 import { guardiaDePublicacion } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
@@ -127,5 +130,58 @@ describe('negocio-rroca-ruben.json: repositorio público y marcadores', () => {
   it('el número de recepción va como marcador de la tabla local (numeroRecepcionMarcador), nunca el número', () => {
     expect(D.negocio['numeroRecepcionMarcador']).toBe('REEMPLAZAR_NUMERO_RECEPCION_RUBEN');
     expect(D.negocio).not.toHaveProperty('numeroRecepcion');
+  });
+});
+
+describe('cargar-negocio.mjs --aplicar niega cualquier REEMPLAZAR_ fuera de los campos *Marcador (documento entero)', () => {
+  const SCRIPT = join(REPO, 'admin/scripts/datos/cargar-negocio.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'rroca-neg-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  // Una tabla local con el número de recepción resuelto (8 dígitos de juguete): así lo único que puede frenar la carga son los demás marcadores.
+  const local = join(dir, 'local.md');
+  writeFileSync(local, '| `REEMPLAZAR_NUMERO_RECEPCION_RUBEN` | 71234567 | prueba |\n');
+  const correr = (archivo: string, ...extra: string[]) => {
+    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', 'proyecto-de-prueba', '--tenant', 'rroca-ruben', '--archivo', archivo, '--local', local, ...extra], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+    return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
+  };
+  const copiaCon = (nombre: string, retoque: (d: Record<string, any>) => void): string => {
+    const d = JSON.parse(TEXTO) as Record<string, any>;
+    retoque(d);
+    const ruta = join(dir, nombre);
+    writeFileSync(ruta, JSON.stringify(d));
+    return ruta;
+  };
+  const SIN_MARCADORES = (d: Record<string, any>): void => {
+    d['_pendiente']['nombreDeRecepcion'] = 'dato real';
+    d['negocio']['nombreNegocio'] = 'Nombre real';
+  };
+
+  it('el archivo versionado de hoy (nombre visible y nombre de recepción pendientes) se NIEGA con --aplicar y nombra dónde está cada uno', () => {
+    const r = correr(NEGOCIO, '--aplicar');
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toMatch(/NEGADO.*fuera de los campos \*Marcador/);
+    expect(r.salida).toContain('negocio.nombreNegocio');
+    expect(r.salida).toContain('_pendiente.nombreDeRecepcion');
+    expect(r.salida).not.toContain('71234567');
+  });
+
+  for (const [nombre, retoque] of [
+    ['en una descripción del catálogo', (d: Record<string, any>) => { d['catalogo'][0]['descripcion'] = 'Incluye REEMPLAZAR_DATO_QUE_FALTA hoy'; }],
+    ['en una nota (clave que empieza con guion bajo)', (d: Record<string, any>) => { d['_fuente'] = 'nota con reemplazar_dato en minúsculas'; }],
+    ['en una lista de textos (de una nota)', (d: Record<string, any>) => { d['_pendiente']['lista'] = ['una', 'REEMPLAZAR_OTRA']; }],
+  ] as Array<[string, (d: Record<string, any>) => void]>) {
+    it(`se NIEGA un marcador ${nombre}, aunque lo demás esté sustituido`, () => {
+      const ruta = copiaCon(`otro-${nombre.length}.json`, (d) => { SIN_MARCADORES(d); retoque(d); });
+      const r = correr(ruta, '--aplicar');
+      expect(r.codigo, r.salida).toBe(2);
+      expect(r.salida).toMatch(/NEGADO.*fuera de los campos \*Marcador/);
+    });
+  }
+
+  it('los campos *Marcador NO cuentan como pendientes de esta barrera (los resuelve la tabla local)', () => {
+    const ruta = copiaCon('solo-marcador.json', SIN_MARCADORES);
+    const r = correr(ruta);   // en seco: la barrera no se dispara; lo que siga (Firestore) no importa aquí
+    expect(r.salida).not.toMatch(/marcador sin dato/);
+    expect(r.salida).not.toMatch(/fuera de los campos/);
   });
 });
