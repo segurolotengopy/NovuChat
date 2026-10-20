@@ -334,7 +334,7 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
     expect(propio('puerta-del-turno.js')).toBe(chat('puerta-del-turno.js'));
   });
 
-  it('«Resumen del turno»: el origen más SOLO la verificación de entrega (R3: sin `messages[0].id` del principal ni del respaldo, la ejecución falla)', () => {
+  it('«Resumen del turno»: el origen más SOLO la verificación de entrega (R3: sin `messages[0].id` del principal ni del respaldo, la ejecución falla) y la entrada del asistente en la memoria por teléfono', () => {
     const propia = propio('resumen-del-turno.js');
     const origen = chat('resumen-del-turno.js');
     const ancla = "const items = cnTodos('Armar mensajes');\n";
@@ -346,6 +346,8 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
     expect(agregado).toContain("throw new Error('Entrega fallida");
     expect(agregado).toContain("cnNodo('Enviar a WhatsApp')");
     expect(agregado).toContain("cnTodos('Enviar respaldo')");
+    expect(agregado).toContain('rrHist');
+    expect(agregado).toMatch(/try \{[\s\S]*rrH[\s\S]*\} catch/);
   });
 
   it('`_comun.js`: el origen más SOLO las sustituciones declaradas (la clave de la ficha y sin el barrido de datos de otros flujos)', () => {
