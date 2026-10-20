@@ -30,10 +30,13 @@
  * CANDADOS.
  *   - El marcador empieza por `REEMPLAZAR_MEDIA_ID_QR_` y NO es el de demo.
  *   - Valor: solo dígitos, 10 a 20. Fila repetida, vacía o «pendiente»: aborta.
- *   - El tenant debe EXISTIR y tener la venta habilitada: `flujosDeFicha`
- *     (la misma lectura de `flujos` que usan el registro y `activar-cobro-real`;
- *     `alta-comercio` guarda `flujos` y `vertical`) incluye `venta`, o ya existe
- *     el documento `config/venta`.
+ *   - `--tenant` con la forma de un id (`/^[a-z0-9][a-z0-9-]{2,59}$/`).
+ *   - El marcador lleva el id del tenant: `rroca-ruben` -> `..._RROCA_RUBEN`.
+ *   - El tenant debe EXISTIR y `flujosDeFicha` (la misma lectura de `flujos`
+ *     que usan el registro y `activar-cobro-real`) debe incluir `venta`.
+ *   - El cobro real debe estar ACTIVO (criterio de ingesta.ts: activo === true
+ *     con ficha y carga útil). Si no, ingesta copia mediaIdQr al cobro simulado.
+ *     Orden operativo: cobro real activo, luego mediaIdQr.
  *   - Un tenant demo (`creadoPor: 'sembrar-demos'` o id de demo de venta):
  *     NEGADO; para esos está `renovar-qr-demo.mjs`.
  *   - Con FIRESTORE_EMULATOR_HOST solo un proyecto `demo-*`.
@@ -60,12 +63,21 @@ const sha = (t) => createHash('sha256').update(t).digest('hex');
 const niega = (m) => { console.error(`\nNEGADO: ${m}\n`); process.exit(1); };
 
 if (!TENANT) niega('falta --tenant <id>.');
+// Antes de usarlo en cualquier ruta de Firestore.
+if (!/^[a-z0-9][a-z0-9-]{2,59}$/.test(TENANT)) {
+  niega('--tenant no tiene la forma de un id de tenant (minúsculas, dígitos y guion; 3 a 60).');
+}
 if (!MARCADOR) niega(`falta --marcador ${PREFIJO}<X>.`);
 if (!/^REEMPLAZAR_MEDIA_ID_QR_[A-Z0-9_]+$/.test(MARCADOR)) {
   niega(`el marcador debe tener la forma ${PREFIJO}<X> (mayúsculas, dígitos y guion bajo).`);
 }
 if (MARCADOR === MARCADOR_DEMO) {
   niega('ese es el marcador de los demos; para ellos está renovar-qr-demo.mjs.');
+}
+// El marcador queda ligado al tenant: sufijo = id en mayúsculas, con «_» por «-».
+const SUFIJO_ESPERADO = TENANT.toUpperCase().replace(/-/g, '_');
+if (MARCADOR !== `${PREFIJO}${SUFIJO_ESPERADO}`) {
+  niega(`el marcador no corresponde al tenant ${TENANT} (se esperaba ${PREFIJO}${SUFIJO_ESPERADO}).`);
 }
 if (!ARCHIVO) niega('falta --archivo <tabla local> (o CONFIG_LOCAL); no hay lectura por omisión.');
 if (APLICAR && !PROYECTO) niega('--aplicar exige --proyecto <id>.');
@@ -121,9 +133,23 @@ if (tenant.get('creadoPor') === 'sembrar-demos' || DEMOS_VENTA.includes(TENANT))
   niega(`el tenant ${TENANT} es un demo; para los demos está renovar-qr-demo.mjs.`);
 }
 const docVenta = await ref.get();
-if (!flujosDeFicha(tenant.data()).includes('venta') && !docVenta.exists) {
-  niega(`el tenant ${TENANT} no tiene la venta habilitada (ni el flujo venta ni config/venta).`);
+if (!flujosDeFicha(tenant.data()).includes('venta')) {
+  niega(`el tenant ${TENANT} no tiene la venta habilitada (su ficha no incluye el flujo venta).`);
 }
+// Mismo criterio que ingesta.ts (cobroRealActivo): encendido Y con ficha y carga útil.
+// Con el cobro real apagado, ingesta copia mediaIdQr a cobroSimulado.mediaIdQr y
+// el QR REAL saldría con los rótulos de simulado.
+const cobroReal = docVenta.get('cobroReal');
+const cobroRealActivo = cobroReal?.activo === true
+  && String(cobroReal?.ficha ?? '') !== ''
+  && String(cobroReal?.cargaUtil ?? '') !== '';
+if (!cobroRealActivo) {
+  niega(`el cobro real de ${TENANT} no está activo (config/venta.cobroReal ausente, apagado o incompleto): `
+    + 'con el cobro real apagado el QR real saldría como QR de demostración. Active primero el cobro real.');
+}
+const negocio = await db.doc(`tenants/${TENANT}/config/negocio`).get();
+const nombreNegocio = negocio.get('nombreNegocio');
+console.log(`Proyecto: ${PROYECTO}${EMULADOR ? ' (EMULADOR)' : ''}. Tenant: ${TENANT}. Negocio: ${typeof nombreNegocio === 'string' && nombreNegocio ? nombreNegocio : '(sin nombreNegocio)'}. Confirme que es el comercio correcto.`);
 
 function veredicto(doc) {
   const v = doc.get('mediaIdQr');
@@ -149,6 +175,7 @@ await ref.set({
 
 await db.collection(`tenants/${TENANT}/auditoria`).add({
   accion: 'escribir_qr_comercio', en: Timestamp.now(), documento: 'venta', porScript: true,
+  marcador: MARCADOR, antes,
 });
 
 if (veredicto(await ref.get()) !== 'COINCIDE') niega('la relectura no coincide con la fila local. Revíselo a mano.');
