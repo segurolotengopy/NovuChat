@@ -69,12 +69,14 @@ const menuAbierto = () => (fichaAntes.saludado ? raMenu(cat, usadosHoy()) : []);
 const presentacion = !fichaAntes.saludado;
 const conPresentacion = (cuerpo) => (presentacion ? RA_SALUDO_APERTURA + '\n\n' + cuerpo : cuerpo);
 
-if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
-  if (puerta.ruta === 'uso_extendido' && puerta.responder === true && String(puerta.texto || '').trim() !== '') {
+// La protección ante violencia o miedo se arma aunque la puerta no «siga» (comercio suspendido, estado «operador») o el número no sea boliviano.
+const rutaDelTurno = tipoDePlan === 'riesgo' ? 'sigue' : puerta.ruta;
+if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
+  if (rutaDelTurno === 'uso_extendido' && puerta.responder === true && String(puerta.texto || '').trim() !== '') {
     // Estado «operador»: el texto fijo promete que una persona continúa la conversación. Solo sale tal cual si el aviso a Antonio salió; si no, el texto dice la verdad. Siempre con el botón de Antonio.
     m = conAntonio(avisoSalio ? String(puerta.texto) : raTextoDerivacion('consulta', false, '', base));
   } else if (puerta.responder === true && String(puerta.texto || '').trim() !== '') m = texto(String(puerta.texto));
-} else if (puerta.ruta === 'sigue') {
+} else if (rutaDelTurno === 'sigue') {
   // El botón «usado» sale del PRODUCTO del QR (también si el producto se eligió por texto prellenado, sin botón) o, si no, del botón pulsado.
   if (tipoDePlan === 'qr' && RA_PRODUCTOS[plan.producto]) usadoNuevo = RA_PRODUCTOS[plan.producto].boton;
   else usadoNuevo = raProductoDeBoton(plan.boton) || plan.boton === RA_BOTON_BONOS ? String(plan.boton) : '';
@@ -187,9 +189,10 @@ if (claveOk) {
   if (pedidoNuevo) { qrPrevio = { pedidos: ficha.pedidos, producto: ficha.producto, qrHastaMs: ficha.qrHastaMs }; ficha.pedidos += 1; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RA_MINUTOS_QR * 60 * 1000; }
   // El comprobante resuelto (todo menos «reintentar» e «ilegible», que siguen con el cobro abierto) cierra el cobro o lo pasa a Antonio: la guarda de 15 minutos del QR ya no tiene sentido.
   // Se guarda el valor previo para restaurarlo si la respuesta no sale (`Resumen del turno`).
-  if (tipoDePlan === 'comprobante' && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible' && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
+  const huboComprobante = tipoDePlan === 'comprobante' || (tipoDePlan === 'riesgo' && !!plan.resultado);
+  if (huboComprobante && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible' && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   // Un comprobante recibido (todo menos «reintentar» e «ilegible») habilita la queja de no entrega: antes de pagar no hay nada que entregar.
-  if (tipoDePlan === 'comprobante' && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible') ficha.comprobanteMs = ahora;
+  if (huboComprobante && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible') ficha.comprobanteMs = ahora;
   fichas.mapa[from] = ficha;
   raBarrer(fichas.mapa, ahora);
 }

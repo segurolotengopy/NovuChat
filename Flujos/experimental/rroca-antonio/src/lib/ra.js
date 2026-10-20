@@ -643,6 +643,11 @@ function raExtraRedaccion(texto, norm) {
   if (/\b(testimonio|mariana|daniel)\b/.test(norm)) return 'testimonio';
   if (/\b(visita|visitar|visite|nuestra pagina|nuestro sitio|sitio web|pagina web|en la web|en internet)\b/.test(norm)) return 'remite_a_web';
   if (/\bderivar\b|\briesgo\b/.test(norm)) return 'palabra_interna';
-  if (/descuent|gratis|gratuito|promoci|oferta|garant|devoluc|reembols|en \d+ (min|hora|dia)/.test(norm)) return 'afirmacion_comercial';
+  if (/descuent|gratis|gratuito|promoci|oferta|garant|devoluc|reembols/.test(norm)) return 'afirmacion_comercial';
+  // El estado de un PAGO o de una ENTREGA lo dice solo el código (y Antonio): el modelo no habla de pagos, comprobantes ni compras, ni de si el material salió, llega, se procesa o va a un correo.
+  if (/\b(pago|pagos|pague|pagas|pagado|pagada|pagaste|pagamos|transferencia|transferencias|deposito|depositos|comprobante|comprobantes|abono|abonos|abonar|cobro|cobros|tu compra|su compra|tu pedido|su pedido|procesand\w*|procesad\w*|todo en orden|en orden)\b/.test(norm)) return 'estado_de_pago';
+  if (/\b(material|libro|pdf|pdfs|archivo|archivos|bonos?|guia|enlaces?|link)\b[^.?!]{0,40}\b(llega\w*|llego|enviad\w*|envia\w*|enviar\w*|mand\w*|salio|salieron|sali\w*|listo|lista|listos|recibir\w*|recibid\w*|entreg\w*|descarg\w*|correo|email|mail)\b|\b(llega\w*|enviad\w*|envia\w*|enviar\w*|mand\w*|recibir\w*|entreg\w*)\b[^.?!]{0,40}\b(material|libro|pdf|pdfs|archivo|archivos|bonos?|guia|enlaces?|link)\b|\b(correo|email|mail|gmail)\b/.test(norm)) return 'estado_de_entrega';
+  // Plazos: ningún «en unos minutos», «en pocas horas», «en un par de días», «pronto», «enseguida»… (con dígitos o sin ellos): el plazo es un dato del código.
+  if (/\ben (unos|unas|pocos|pocas|breve|un par de|algunos|algunas|\d+|una|un|dos|tres|cuatro|cinco|seis|diez|veinte|treinta)\b[^.?!]{0,12}\b(minutos?|horas?|dias?|segundos?|momentos?|instantes?|ratos?|semanas?)\b|\b(pronto|prontito|enseguida|en seguida|ahora mismo|de inmediato|inmediatamente|en breve|muy pronto|dentro de poco|cuanto antes)\b/.test(norm)) return 'plazo';
   return '';
 }

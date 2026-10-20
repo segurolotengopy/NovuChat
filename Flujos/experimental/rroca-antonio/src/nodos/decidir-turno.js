@@ -25,16 +25,22 @@ const from = String(t.from || '');
 const ahora = Number(t.ahoraMs) || Date.now();
 let textoDelTurno = '';   // lo que escribió (o dijo) el cliente en este turno: «Armar mensajes» lo guarda en la memoria de la charla
 const salir = (plan, extra) => [{ json: Object.assign({ plan: plan, from: from, textoCliente: textoDelTurno, llamarModelo: false, cuerpoModelo: null, modelo: raModeloValido(base.modelo) }, extra || {}) }];
-if (puerta.ruta !== 'sigue') return salir({ tipo: 'nada' });
-
 const panel = raPanelDe(cnPrimero('Traer configuración'));
 const cat = raCatalogo(panel.cuerpo);
 const agotados = raAgotados(panel.cuerpo);
 const cobro = raCobro(panel);
 const ficha = raFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora);
 
-// 0. Un número no boliviano: el texto fijo y el botón de Antonio. Nada de modelo, de medios ni de QR.
-if (t.fueraDePais === true) return salir({ tipo: 'fuera_pais', cat: cat });
+// 0. LA PROTECCIÓN ANTE VIOLENCIA O MIEDO VA PRIMERO, también con la puerta cerrada y fuera del país: si el comercio está suspendido, el estado es «operador» (el cliente sí recibe un mensaje) o el número no es
+//    boliviano, un texto de riesgo recibe el texto de protección y reporta `no_contactar`, nunca el texto neutro, el aviso de uso extendido ni el de «pago con QR boliviano». La pausa por persona («bloqueado»)
+//    sigue en silencio: ahí responde Antonio. Aquí solo se mira el texto y el pie (los medios no se bajan con la puerta cerrada ni fuera del país).
+const riesgoEscrito = ficha.riesgo || raEsRiesgo(raNorm([t.texto, t.pie].join(' ')));
+const puertaResponde = puerta.ruta === 'sigue' || puerta.ruta === 'suspendido' || (puerta.ruta === 'uso_extendido' && puerta.responder === true);
+if (puertaResponde && puerta.ruta !== 'sigue' && riesgoEscrito) return salir({ tipo: 'riesgo', primera: !ficha.riesgo, aviso: null, cat: cat });
+if (puerta.ruta !== 'sigue') return salir({ tipo: 'nada' });
+
+// 0b. Un número no boliviano: el texto fijo y el botón de Antonio. Nada de modelo, de medios ni de QR.
+if (t.fueraDePais === true) return salir(riesgoEscrito ? { tipo: 'riesgo', primera: !ficha.riesgo, aviso: null, cat: cat } : { tipo: 'fuera_pais', cat: cat });
 
 // El medio de este turno (solo uno de estos nodos corrió) y lo que se leyó en él.
 const prep = cnPrimero('Preparar imagen') || cnPrimero('Preparar transcripción') || cnPrimero('Medio no aceptado') || {};
@@ -80,11 +86,12 @@ const planComprobante = () => {
 };
 
 // 1. VIOLENCIA O MIEDO: antes que cualquier otra cosa (corta la venta). Se mira el texto, la transcripción, el texto leído de la imagen y el pie de foto. Una vez activada, sigue activa 48 horas.
-//    Si en ese mismo turno llegó un comprobante que SÍ cuadra, el aviso a Antonio se conserva (la plata es real y él entrega el material); al cliente solo se le habla de su seguridad.
+//    Si en ese mismo turno llegó un comprobante que CUADRA o CASI CUADRA (`cuadra` y `aproximado`), el aviso a Antonio se conserva (la plata es real y él entrega el material), con la línea fija
+//    «la persona mencionó miedo o violencia; contactarla solo para entregar el material» (sin copiar lo que escribió); al cliente solo se le habla de su seguridad. El comprobante igual se registra en la ficha.
 if (ficha.riesgo || raEsRiesgo(raNorm([textoCliente, leido, t.pie].join(' ')))) {
   const pc = esVisual && categoriaMedio === 'comprobante' ? planComprobante() : null;
   const conservaAviso = pc && pc.aviso && (pc.resultado === 'cuadra' || pc.resultado === 'aproximado');
-  return salir({ tipo: 'riesgo', primera: !ficha.riesgo, aviso: conservaAviso ? pc.aviso : null, cat: cat });
+  return salir({ tipo: 'riesgo', primera: !ficha.riesgo, aviso: conservaAviso ? Object.assign({}, pc.aviso, { riesgo: true }) : null, resultado: conservaAviso ? pc.resultado : '', cat: cat });
 }
 
 // 2. Una imagen o un documento.
@@ -154,6 +161,11 @@ if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: deriv
 if (raPreguntaPorResultado(norm)) return salir({ tipo: 'resultado', cat: cat });
 // Con un QR abierto, cualquier texto recibe el recordatorio (un solo QR a la vez); el modelo no interviene.
 if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
+// Después de un comprobante recibido, hablar de pago, libro, material o entrega NO es una charla libre: el modelo no habla del estado de un pago ni de una entrega. Va la derivación de no entrega
+// (texto fijo con el plazo del dato, aviso y botón).
+if (ficha.comprobanteMs > 0 && (/\b(pago|pague|pagado|pagaste|comprobante|transferencia|deposito|material|llega\w*|llego|enviar\w*|enviaron|mandar\w*|mandaron|recib\w*|entrega\w*)\b/.test(norm) || (/\blibro\b/.test(norm) && /\b(cuando|donde|llega\w*|llego|envi\w*|mand\w*|recib\w*)\b/.test(norm)))) {
+  return salir({ tipo: 'derivar', motivo: 'consulta', clave: 'no_entrega', aviso: avisoDeConsulta('no_entrega', 'queja de no entrega: el cliente pregunta por su pago o por el material'), cat: cat });
+}
 // El ángulo del anuncio: por el texto escrito o por el texto leído de una captura (publicidad). El modelo redacta la apertura con el ángulo como dato; si falla, sale el texto fijo del ángulo.
 const angulo = raAngulo(norm) || (esVisual ? raAngulo(raNorm(leido)) : '');
 if (angulo) {

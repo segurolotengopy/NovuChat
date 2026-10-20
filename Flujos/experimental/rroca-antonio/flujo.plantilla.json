@@ -1055,6 +1055,84 @@
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "notes": "El aviso a Antonio (texto libre dentro de su ventana, o plantilla), nunca al propio número de quien escribe. Sin reintentos: un aviso repetido llegaría dos veces. El resultado (un `wamid` real o un error) lo lee «Armar mensajes» para decirle al cliente la verdad."
+    },
+    {
+      "id": "proteccion-si",
+      "name": "¿Falló la protección?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6440,
+        560
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const m = $('Armar mensajes').first().json; if (m.evento !== 'no_contactar' || $('Config del negocio').first().json.modoPrueba === true) return false; const ok = (nombre) => { try { const x = $(nombre); return !!x.isExecuted && x.all().some((i) => ((((i.json || {}).messages) || [])[0] || {}).id); } catch (e) { return false; } }; return !(ok('Enviar a WhatsApp') || ok('Enviar respaldo')); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Protección ante violencia o miedo: si el mensaje de protección NO salió (ni el envío ni su respaldo devolvieron un id de Meta), el evento `no_contactar` se reporta igual por «Reportar protección». Si salió, ya lo reportó el reporte saliente."
+    },
+    {
+      "id": "reportar-proteccion",
+      "name": "Reportar protección",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6680,
+        460
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Normalizar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $('Normalizar entrada').first().json.from, direccion: 'entrante', tipo: 'text', texto: '(protección: el mensaje al cliente no salió)', idMeta: '', evento: 'no_contactar' }) }}",
+        "options": {
+          "timeout": 4000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "Reporta `no_contactar` cuando el mensaje de protección no pudo enviarse: la persona no debe recibir un rescate aunque Meta haya rechazado el envío y su respaldo. Es el único reporte de este turno (el saliente no corrió)."
     }
   ],
   "connections": {
@@ -1404,6 +1482,11 @@
             "node": "Resumen del turno",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "¿Falló la protección?",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -1527,6 +1610,18 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "¿Falló la protección?": {
+      "main": [
+        [
+          {
+            "node": "Reportar protección",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   }

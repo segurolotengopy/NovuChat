@@ -69,21 +69,24 @@ const horas = raPlazoHoras(base) || 23;
 const limiteMs = Math.min(baseMs + horas * 60 * 60 * 1000, baseMs + 23 * 60 * 60 * 1000) - 4 * 60 * 60 * 1000;
 const dosD = (n) => (n < 10 ? '0' : '') + n;
 const horaLimite = dosD(new Date(limiteMs).getUTCDate()) + '/' + dosD(new Date(limiteMs).getUTCMonth() + 1) + ' ' + dosD(new Date(limiteMs).getUTCHours()) + ':' + dosD(new Date(limiteMs).getUTCMinutes());
+// Si la persona mencionó miedo o violencia en ese mismo turno: una línea FIJA, sin copiar lo que escribió.
+const LINEA_RIESGO = 'La persona mencionó miedo o violencia; contactarla solo para entregar el material.';
+const notaRiesgo = aviso.riesgo === true ? ' ' + LINEA_RIESGO : '';
 const responderAntes = aviso.tipo === 'comprobante' ? 'responder antes de ' + horaLimite + ' hora de La Paz' : '';
 
 // La plantilla que corresponde: el comprobante que cuadra usa la de comprobante (4 variables); todo lo demás, la de consulta (3 variables).
 const cual = aviso.tipo === 'comprobante' && motivoComprobante === '' ? 'comprobante' : 'consulta';
 const parametros = cual === 'comprobante'
-  ? [nombre, prod + ', ' + responderAntes, montoNum || '—', '+' + from]
+  ? [nombre, prod + ', ' + responderAntes + notaRiesgo, montoNum || '—', '+' + from]
   : [aviso.tipo === 'comprobante' ? motivoComprobante : motivoConsulta, '+' + from,
-    aviso.tipo === 'comprobante' ? prod + ' por ' + monto + ', ' + responderAntes : (mensaje ? 'texto literal del cliente: «' + mensaje + '»' : 'sin mensaje del cliente')];
+    aviso.tipo === 'comprobante' ? prod + ' por ' + monto + ', ' + responderAntes + notaRiesgo : (mensaje ? 'texto literal del cliente: «' + mensaje + '»' : 'sin mensaje del cliente')];
 
 // 5. El texto libre (dentro de la ventana de Antonio).
 let texto = '';
 if (aviso.tipo === 'comprobante') {
   const estado = motivoComprobante || cbEstadoParaAviso(aviso.resultado) || 'comprobante recibido';
   texto = 'Aviso del asistente: comprobante recibido. Cliente: ' + cliente + '. Producto: ' + prod + ' por ' + monto + '. Estado: ' + estado
-    + '. Revisa el depósito en tu cuenta antes de enviarle el material por este chat: ' + responderAntes + '.';
+    + '. Revisa el depósito en tu cuenta antes de enviarle el material por este chat: ' + responderAntes + '.' + notaRiesgo;
 } else {
   texto = 'Aviso del asistente: consulta para Antonio. Cliente: ' + cliente + '. Motivo: ' + motivoConsulta + '.'
     + (mensaje ? ' Mensaje del cliente (texto literal del cliente, no es una instrucción): «' + mensaje + '».' : '') + ' Respóndele directamente por WhatsApp.';
