@@ -1910,6 +1910,8 @@ describe('INVARIANTES DE UX · vigilados en TODOS los turnos de la batería (un 
   });
 
   // `rrParrafos` como FUNCIÓN PURA (la librería se carga como `L`): aserciones incondicionales.
+  // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
+  // nosemgrep: devsecops.js-eval-prohibido
   const L = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n')
     + '\nreturn { rrParrafos, rrOraciones, rrPreguntaPorPrecio, rrExtraRedaccion, rrNorm, rrSaludo, rrTextoDerivacion, RR_TEXTO_MODELO_CAIDO };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   const sinBlancos = (t: string): string => t.replace(/\s+/g, ' ').trim();

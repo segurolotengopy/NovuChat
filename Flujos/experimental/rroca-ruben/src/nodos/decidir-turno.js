@@ -77,6 +77,7 @@ if (t.tipo === 'interactive') {
   const id = String(t.texto || '');
   const k = rrProductoDeBoton(id);
   if (k) return salir(elegir(k, id));
+  if (id === RR_BOTON_COMPLEMENTOS && !ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat, boton: id });
   if (id === RR_BOTON_COMPLEMENTOS) return salir(rrMenu(2, cat, ficha.usados.concat([id])).length ? { tipo: 'menu2', cat: cat, boton: id } : sinOpciones(id));
   // «Ver precios»: el menú de productos (con un QR abierto, el recordatorio del QR). Sin productos que mostrar pero con complementos aún comprables, el menú de complementos; sin ninguno, Rubén.
   // Si llegara como PRIMER mensaje (un botón de un chat viejo), no se muestran montos: el saludo corto. «Hablar con Rubén»: aviso + botón, como «quiero hablar con Rubén» escrito.
