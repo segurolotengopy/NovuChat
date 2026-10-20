@@ -109,5 +109,5 @@ if (anuncio && anuncio.clave === 'desde_32') {
   return salir(Object.keys(cat).length ? { tipo: 'precio', producto: '', cat: cat } : sinOpciones(''));
 }
 return salir({ tipo: 'modelo', cat: cat, textoCliente: String(t.texto || '').slice(0, 500) }, {
-  llamarModelo: true, cuerpoModelo: rrCuerpoModelo(t.texto, ficha.ultimoModelo),
+  llamarModelo: true, cuerpoModelo: rrCuerpoModelo(t.texto, rrHistorialVigente(ficha, ahora)),
 });

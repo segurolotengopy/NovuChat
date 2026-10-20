@@ -9,7 +9,7 @@
 //
 // «SOLO SE OFRECE LO QUE SE CUMPLE»: «ya pasé tu comprobante» / «le avisé» salen SOLO si «Enviar aviso» devolvió un `wamid` real (`avisoSalio`); si no, el texto dice que no se pudo avisar y trae el botón.
 // En modo prueba sin `enviarDeVerdad` el aviso no se envía y cuenta como salido (igual que los mensajes al cliente: la prueba no gasta mensajes).
-// Todo texto pasa por `rrSeguro` (NIEGA_IA y `CB_PROHIBIDAS`). La ficha del teléfono (`rroca[<messages[0].from>]`) se escribe AQUÍ, una sola vez por turno.
+// Todo texto pasa por `rrSeguro` (NIEGA_IA y `CB_PROHIBIDAS`). La ficha del teléfono (`rroca[<messages[0].from>]`) se escribe AQUÍ, una sola vez por turno (y la entrada `a` del historial, en «Resumen del turno»).
 const cfg = cnCfg();
 const t = cnPrimero('Interpretar entrada') || {};
 const puerta = cnPrimero('Puerta del turno') || {};
@@ -39,7 +39,6 @@ let m = null;               // el item del mensaje (cmMensaje) o null
 let tipoDePlan = String(plan.tipo || 'nada');
 let llamadasModelo = decision.llamarModelo === true ? 1 : 0;
 let usadoNuevo = '';        // el botón de este turno que no debe reaparecer
-let ultimoModelo = fichaAntes.ultimoModelo;
 let pedidoNuevo = null;
 let qrPrevio = null;        // la ficha antes de la marca provisional del QR
 let qrLiberado = null;      // la guarda de QR abierto que este turno de comprobante libera (se restaura si el aviso al cliente no sale)
@@ -97,7 +96,6 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       });
       const bueno = rev.motivo === '' && rev.texto.trim() !== '';
       const cuerpo = bueno ? rev.texto : RR_TEXTO_MODELO_CAIDO;
-      if (bueno) ultimoModelo = cuerpo.slice(0, 300);
       m = conBotones(cuerpo, menu1());
       tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
     }
@@ -142,6 +140,9 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 if (claveOk) {
   const fichas = cnMapaDeFichas(true);
   const ficha = rrFichaVigente(cnFichaDe(fichas.mapa, from));
+  // MEMORIA POR TELÉFONO (clave `messages[0].from`): vacía si pasaron más de 48 h. Aquí entra lo que dijo el cliente; lo del asistente lo agrega «Resumen del turno» SOLO si Meta lo aceptó.
+  const histPrevio = rrHistorialVigente(ficha, ahora);
+  ficha.historial = puerta.ruta === 'sigue' ? rrAgregarHistorial(histPrevio, 'u', rrEntradaCliente(t)) : histPrevio;
   rrRecordarId(ficha, t.mensajeId);
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
@@ -149,7 +150,6 @@ if (claveOk) {
   // El límite de 30 minutos por motivo: se fija solo si el aviso SALIÓ (no si se repitió ni si no se pudo enviar).
   if (avisoPlaneado && !avisoRepetido && avisoSalio && typeof av.clave === 'string' && RR_CLAVES_AVISO.indexOf(av.clave) >= 0) ficha.avisosConsulta[av.clave] = ahora;
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);
-  if (ultimoModelo !== undefined) ficha.ultimoModelo = ultimoModelo;
   // MARCA PROVISIONAL del QR: se fija aquí (el id del pedido y la guarda de 15 minutos necesitan existir ya) pero `Resumen del turno` la DESCARTA con `qrPrevio` si Meta no devolvió el `wamid` del QR
   // (sale el respaldo en texto): un QR que no salió no deja al cliente 15 minutos con «Ya tienes un QR abierto».
   if (pedidoNuevo) { qrPrevio = { pedidos: ficha.pedidos, producto: ficha.producto, qrHastaMs: ficha.qrHastaMs }; ficha.pedidos += 1; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RR_MINUTOS_QR * 60 * 1000; }
@@ -162,7 +162,10 @@ if (claveOk) {
   rrBarrer(fichas.mapa, ahora);
 }
 
-const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio || avisoRepetido ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno') };
+const resumen = { plan: tipoDePlan === 'nada' ? (puerta.ruta || 'nada') : tipoDePlan, mensajes: 0, categoria: t.categoria || '', llamadasModelo: llamadasModelo, tokensEntrada: 0, aviso: avisoPlaneado || avisoRepetido ? (avisoSalio || avisoRepetido ? 'salio' : 'no_salio') : (av.motivoFallo ? 'no_salio' : 'ninguno') };
+// Costo real del historial: los tokens de entrada que cobró el modelo en este turno (0 si no hubo llamada).
+const rrUso = decision.llamarModelo === true ? ((cnPrimero('Conversar con el modelo') || {}).usageMetadata || null) : null;
+if (rrUso && Number.isFinite(rrUso.promptTokenCount)) resumen.tokensEntrada = rrUso.promptTokenCount;
 let numero = from;
 if (prueba) numero = telPrueba;
 // `mensajes` se calcula DESPUÉS de decidir el número: en prueba con un teléfono no permitido (`telPrueba` vacío) no sale nada y el resumen lo dice.
@@ -182,6 +185,7 @@ const salida = {
 };
 if (qrPrevio) salida.qrPrevio = qrPrevio;
 if (qrLiberado) salida.qrLiberado = qrLiberado;
+if (claveOk && puerta.ruta === 'sigue') salida.rrHist = { a: rrEntradaAsistente(m.texto), b: rrEntradaAsistente(m.respaldo), tope: RR_TOPE_HISTORIAL };
 if (m.reglaCobro === 2) salida.reglaCobro = 2;
 if (m.referencia) salida.referencia = m.referencia;
 if (m.monto !== undefined) salida.monto = m.monto;

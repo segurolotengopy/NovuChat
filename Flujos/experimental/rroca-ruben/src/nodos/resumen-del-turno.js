@@ -13,6 +13,22 @@ const rrId = (j) => {
   const m = j && j.messages;
   return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== '';
 };
+// MEMORIA POR TELÉFONO: la entrada del asistente se guarda SOLO si Meta aceptó el envío (el principal o, si no, su respaldo en texto); en modo prueba sin envío cuenta el principal.
+// Los textos ya vienen saneados de «Armar mensajes» (`rrHist`). Si algo falla aquí no se interrumpe el turno.
+try {
+  const rrH = (items[0] || {}).rrHist;
+  if (rrH && typeof rrH === 'object' && (items[0] || {}).sinMensajes !== true) {
+    const rrOkP = cnNodo('Enviar a WhatsApp') ? cnTodos('Enviar a WhatsApp').some(rrId) : cnCfg().modoPrueba === true;
+    const rrOkR = !rrOkP && cnTodos('Enviar respaldo').some(rrId);
+    const rrT = rrOkP ? rrH.a : (rrOkR ? rrH.b : '');
+    const rrFsH = cnMapaDeFichas(true);
+    const rrFH = cnFichaDe(rrFsH.mapa, String((items[0] || {}).from || ''));
+    if (rrFH && typeof rrT === 'string' && rrT.trim() !== '') {
+      const rrTope = Number(rrH.tope) > 0 ? Math.min(30, Math.floor(Number(rrH.tope))) : 15;
+      rrFH.historial = (Array.isArray(rrFH.historial) ? rrFH.historial : []).concat([{ r: 'a', t: rrT.slice(0, 300) }]).slice(-rrTope);
+    }
+  }
+} catch (e) { /* la memoria no es crítica: nunca tumba el turno */ }
 if (cnNodo('Enviar a WhatsApp')) {
   // Si el QR no salió por el envío principal (sale el respaldo en texto o nada), se DESCARTA la marca provisional de «Armar mensajes»: ni pedido contado ni QR «abierto» por 15 minutos.
   const rrPrevio = (items[0] || {}).qrPrevio;
