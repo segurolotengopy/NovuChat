@@ -19,7 +19,7 @@ import type { Mundo } from '../../lib/n8n-de-mentira';
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-ruben/src/lib');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
 // nosemgrep: devsecops.js-eval-prohibido
-export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion, rrNorm, rrPreguntaPorIA };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean; rrNorm: (t: string) => string; rrPreguntaPorIA: (n: string) => boolean };
+export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion, rrNorm, rrTienePresentacionIA };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean; rrNorm: (t: string) => string; rrTienePresentacionIA: (t: string) => boolean };
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }
 interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number }
@@ -51,15 +51,31 @@ export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de
  * Las violaciones de los invariantes para UN turno; `pulsados` se actualiza con el toque de este turno ANTES de mirar la respuesta. `presentaciones` (opcional) cuenta, por teléfono,
  * los mensajes con presentación ya enviados (se actualiza aquí). Función pura, probada también con casos negativos.
  */
-export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }): string[] {
+/**
+ * ¿El cliente pregunta qué ES el asistente? LISTA INDEPENDIENTE de la del flujo (no usa `rrPreguntaPorIA`, o la excepción sería tautológica) y deliberadamente ancha: solo exime la cuenta
+ * de «una presentación por teléfono» (regla dura 4 sobre la de Silvana), nunca la de «una por mensaje».
+ */
+export const preguntaPorIdentidad = (texto: string): boolean => {
+  const n = LIB.rrNorm(texto);
+  return /\b(eres|sos|es|usted|hablo|hablando|conversando|quien|hay|voce|estou|who|are you|is this|am i|me responde|me atiende|me contesta)\b.*\b(bot|b0t|vot|robot|robo|chatbot|chatgpt|gemini|ia|ai|inteligencia|maquina|programa|persona|pessoa|humano|humana|human|real|alguien|alguem|gente|asistente|ruben|automatic\w*|automated)\b|\bde verdad\b|\b(real person|real human|persona real|alguien real|ser humano)\b|\bquien (eres|me)\b|\bcon quien hablo\b|\bruben eres\b|^(bot|robot|chatbot|b0t|vot|contestador)$/.test(n);
+};
+/** El texto que devolvió el modelo en un turno (el doble de «Conversar con el modelo»), o ''. */
+export const textoDelModelo = (registro: { nodo: string; respuesta?: unknown }[]): string => {
+  const r = registro.find((x) => x.nodo === 'Conversar con el modelo')?.respuesta as J | undefined;
+  return String(r?.['candidates']?.[0]?.content?.parts?.[0]?.text ?? '');
+};
+export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, textoModelo = ''): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
   const idToque = entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : '';
   // Excepción declarada (M3): «Más información» que llega como PRIMER mensaje de un teléfono recibe el saludo, que la ofrece: el cliente aún no la ha visto, así que no cuenta como pulsada.
-  const infoSinVer = idToque === 'b_info' && !!presentaciones && presentaciones.n === 0 && mensajes.some((m) => esPresentacion(m.cuerpo));
+  const infoSinVer = (idToque === 'b_info' || idToque === 'b_precios') && !!presentaciones && presentaciones.n === 0 && mensajes.some((m) => esPresentacion(m.cuerpo));
   if (idToque && !infoSinVer) pulsados.add(idToque);
   const textoEntrante = entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '';
-  const preguntaIA = LIB.rrPreguntaPorIA(LIB.rrNorm(textoEntrante));
+  const modeloDijoIA = LIB.rrTienePresentacionIA(textoModelo);
+  const preguntaIA = preguntaPorIdentidad(textoEntrante) || modeloDijoIA;
+  // INVARIANTE (regla dura 4): si el modelo dijo qué es el asistente (IA, virtual…), el mensaje que salió lo trae; jamás se pierde esa respuesta.
+  if (modeloDijoIA && mensajes.length && !mensajes.some((m) => LIB.rrTienePresentacionIA(m.cuerpo))) v.push('el modelo reconoció ser un asistente virtual/IA y el mensaje que salió no lo trae (regla dura 4)');
   const eligioProducto = ['b_pack', 'b_libro', 'b_closer', 'b_videos'].includes(idToque) || /^Hola Rubén, quiero (el Pack Completo|el libro IA para Emprendedores)/.test(textoEntrante);
   const enElTurno = mensajes.reduce((n, m) => n + contarPresentaciones(m.cuerpo), 0);
   if (enElTurno > 1) v.push(`la presentación del asistente salió ${enElTurno} veces en el mismo turno`);
@@ -97,7 +113,7 @@ export function vigilarUx(mundo: Mundo): void {
     const pres = { n: estado.presentaciones.get(from) ?? 0 };
     // Los mensajes al cliente de este turno (sin los avisos a Rubén ni los respaldos de texto).
     const salida = t.mensajes.filter((e) => !e.respaldo).map((e) => ({ tipo: e.tipo, cuerpo: e.cuerpo, payload: e.payload }));
-    const v = violacionesDeUx(pulsados, msg, salida, pres);
+    const v = violacionesDeUx(pulsados, msg, salida, pres, textoDelModelo(t.registro));
     estado.presentaciones.set(from, pres.n);
     estado.turnos += 1; UX_CONTADOR.turnos += 1; UX_CONTADOR.mundos.add(mundo);
     expect(v, `invariante de UX violado: ${v.join('; ')}`).toEqual([]);

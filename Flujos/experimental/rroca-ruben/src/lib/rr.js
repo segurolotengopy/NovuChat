@@ -37,30 +37,58 @@ function rrSeguro(texto) {
 }
 // ¿Esta oración es una PRESENTACIÓN del asistente («Soy el asistente de Rubén», «Hola, soy el asistente virtual de Rubén»)? Sobre texto normalizado.
 function rrEsPresentacion(oracion) {
-  return /\b(soy|somos) (el |la |un |una |tu )?(asistente|ayudante)s?\b|\basistente virtual de ruben\b/.test(rrNorm(oracion));
+  return /\b(soy|somos) (el |la |un |una |tu )?(asistente|ayudante)s?\b|\basistente (virtual )?de ruben\b|\baqui (el|tu) asistente\b/.test(rrNorm(oracion));
 }
 // Deja a lo más `cupo` oraciones de presentación en el texto (la primera) y QUITA las demás; los párrafos se conservan. `cupo` true = una; false = ninguna. Una lista (bloque con saltos) no se toca.
-function rrUnaPresentacion(texto, cupo) {
+function rrUnaPresentacion(texto, cupo, conservarIA) {
   let libre = cupo === true ? 1 : (Number(cupo) || 0);
+  const hayIA = rrTienePresentacionIA(texto);
   const bloques = rrTexto(texto).split('\n\n').map((bloque) => {
     if (bloque.indexOf('\n') >= 0) return bloque;
-    return rrOraciones(bloque).filter((o) => { if (!rrEsPresentacion(o)) return true; if (libre > 0) { libre -= 1; return true; } return false; }).join(' ');
+    // `conservarIA` (regla dura 4 sobre la de Silvana): una oración de presentación que dice qué ES el asistente (virtual, IA, programa, bot…) NUNCA se borra.
+    // Si hay una presentación que dice qué ES el asistente, el cupo se gasta en ELLA (la regla dura 4 antes que «la primera»).
+    return rrOraciones(bloque).filter((o) => {
+      if (!rrEsPresentacion(o)) return true;
+      const dice = RR_DICE_IA.test(rrNorm(o));
+      if (conservarIA === true && dice) return true;
+      if (hayIA && !dice) return false;
+      if (libre > 0) { libre -= 1; return true; }
+      return false;
+    }).join(' ');
   }).filter((b) => b.trim() !== '');
   return bloques.join('\n\n');
+}
+const RR_DICE_IA = /\b(ia|inteligencia artificial|virtual|programa|bot|chatbot|robot|maquina)\b/;
+// ¿Alguna oración del texto es una presentación que dice qué es el asistente (virtual, IA…)? Se usa para no perder nunca esa respuesta (regla dura 4).
+function rrTienePresentacionIA(texto) {
+  return rrTexto(texto).split('\n').some((linea) => rrOraciones(linea).some((o) => rrEsPresentacion(o) && RR_DICE_IA.test(rrNorm(o))));
 }
 // «¿Eres un robot?», «¿hablo con una IA?», «¿eres una persona?»: el cliente pregunta qué es el asistente (prohibición 4: se reconoce con naturalidad; nunca se quita esa respuesta).
 function rrPreguntaPorIA(n) {
   const palabras = n === '' ? 0 : n.split(' ').length;
-  const QUE = 'ruben|robot|bot|chatbot|ia|inteligencia|maquina|persona|humano|humana|real|de verdad|programa';
-  const quien = /\bquien (eres|sos|me (responde|atiende|contesta|escribe)|habla)\b|\bcon quien (hablo|estoy hablando|estoy conversando|me comunico|converso|chateo)\b|\bsi eres\b/.test(n);
-  const eres = new RegExp('\\b(eres|sos|seras) (usted |un |una |el |la |tu )?(' + QUE + '|automatic\\w*)\\b').test(n);
-  const hablo = /\b(hablo|hablando|conversando|chateando|escribo|escribiendo) con (usted |un |una |el |la )?(ruben|robot|bot|chatbot|ia|inteligencia|maquina|persona|humano|humana|alguien|programa)\b/.test(n);
-  const responde = /\b(me )?(responde|atiende|contesta|escribe|habla)n? (una |un |el )?(persona|alguien|humano|humana|ruben|robot|bot|ia)\b/.test(n);
-  const real = /\balguien (real|de verdad)\b|\bpersona (real|de verdad)\b|\breal person\b|\bhumano real\b|\b(esto|esta|este) (es |son )?(un |una )?(mensaje |respuesta |chat )?automatic\w*|\b(es|son) (un |una )?(mensaje|respuesta|chat)s? automatic\w*|\b(es|esto es|esta es|este es) (un |una )?(contestador|bot|robot|chatbot)\b|\b(mensajes?|respuestas?) automatic\w*/.test(n);
-  const ingles = /\bare you (a |an )?(bot|robot|human|real|ai|person|chatbot)\b|\bis this (a )?(bot|robot|ai|human)\b|\bam i (talking|speaking|chatting) (to|with)\b/.test(n);
-  // «bot?», «robot?», «contestador?»: una palabra suelta en un mensaje muy corto (no «quiero crear un chatbot»).
-  const suelta = palabras <= 4 && /\b(bot|chatbot|robot|contestador)\b/.test(n) && !/\b(quiero|crear|crear|hacer|armar|construir|necesito|como|tener)\b/.test(n);
-  return quien || eres || hablo || responde || real || ingles || suelta;
+  const junto = n.replace(/ /g, '');
+  const BOT = 'bot|bott|b0t|vot|r0bot|robot|robo|chatbot|chatgpt|gpt|gemini';
+  const BASE = BOT + '|ruben|ia|ai|inteligencia artificial|inteligencia|maquina|programa|persona|pessoa|humano|humana|human|ser humano|gente|de verdad|asistente';
+  const QUE = BASE + '|real|automatic\\w*|automatizad\\w*';
+  const defin = /\bque (es|son)\b|\bcomo (uso|usar|usa)\b/.test(n);
+  // Ante la duda NO se captura (la barrera estructural —no borrar la presentación con IA— es la protección real): solo preguntas en 2.ª persona o cortas.
+  const quien = /\bquien (eres|sos|me (responde|atiende|contesta|escribe))\b|\bcon quien (hablo|estoy hablando|estoy conversando|me comunico|converso|chateo)\b|\bruben eres\b|\bwho (are you|is this)\b/.test(n);
+  const eres = new RegExp('\\b(eres|sos|seras|eres usted|usted es|es usted) (usted |un |una |el |la |tu )?(' + QUE + ')\\b').test(n);
+  const es = palabras <= 4 && !defin && new RegExp('\\bes (usted )?(un |una )?(' + BASE + ')\\b').test(n);
+  const esReal = palabras <= 3 && !defin && /\bes real\b/.test(n);
+  // «¿hablo con una IA?»: solo al comienzo del mensaje y corto («yo ya escribo con IA», «estoy hablando con IA todos los días» no son preguntas por la identidad).
+  const hablo = palabras <= 6 && /^(estoy )?(hablo|hablando|conversando|chateando) con (usted |un |una |el |la )?(ruben|robot|bot|chatbot|ia|inteligencia|maquina|persona|humano|humano|humana|alguien|programa)\b/.test(n);
+  const responde = /\bme (responde|atiende|contesta|escribe)n? (una |un |el )?(persona|alguien|humano|humana|ruben|robot|bot|ia|maquina|programa|inteligencia artificial)\b/.test(n) || (palabras <= 4 && /^(responde|atiende|contesta) (una |un )?(persona|humano|maquina|robot|bot|ia)\b/.test(n));
+  const hay = palabras <= 5 && /\bhay (alguien|una persona|algun humano|alguna persona)\b/.test(n);
+  // «Automático» solo con sujeto del chat («esto es automático», «tu respuesta es automática», «¿es un mensaje automático?»).
+  const real = palabras <= 8 && (/\balguien (real|de verdad)\b|\bpersona (real|de verdad)\b|\breal person\b|\bhumano real\b|\b(esto|esta|este|este chat|tu respuesta|la respuesta|tu mensaje) (es |son )?(un |una )?(mensaje |respuesta |chat )?automatic\w*|\bes (un |una )?(mensaje|respuesta|chat) automatic\w*|\b(es|esto es|esta es|este es) (un |una )?(contestador|bot|robot|chatbot)\b/.test(n));
+  const ingles = /\bare you (a |an )?(bot|robot|human|real|ai|person|chatbot)\b|\bis this (a |an )?(bot|robot|ai|human|real|automated|person)\b|\bam i (talking|speaking|chatting) (to|with)\b|\breal (human|person)\b/.test(n);
+  const portugues = /\bvoce e (um |uma )?(robo|bot|pessoa|humano|humana|ia|maquina|real|chatbot)\b|\bestou (falando|conversando) com (um |uma )?(robo|bot|pessoa|humano|humana|ia|maquina|alguem)\b|^e (um |uma )?(robo|pessoa|bot)\b/.test(n);
+  // «bot?», «robot», «b0t», «vot», «contestador?»: la palabra de máquina es CASI TODO el mensaje (no «chatbot para whatsapp», «ok gracias robot»).
+  const suelta = new RegExp('^((eres|es|sos|un|una|esto es|es un|eres un) )?(' + BOT + '|contestador)$').test(n);
+  // Letras separadas («b o t», «e r e s u n b o t»): se compara el texto «junto».
+  const pegado = junto.length <= 16 && n !== junto && /\b\w \w/.test(n) && new RegExp('^(eres|sos|es|esusted|usteres)?(un|una)?(' + BOT + '|maquina|persona|humano|humana)$').test(junto);
+  return quien || eres || es || esReal || hablo || responde || hay || real || ingles || portugues || suelta || pegado;
 }
 // La respuesta FIJA a «¿eres un bot / una persona / Rubén?» (prohibición 4: nunca se niega ser una IA; lo decide el código, no el modelo).
 const RR_TEXTO_IDENTIDAD = 'Soy el asistente virtual de Rubén, un programa con inteligencia artificial; no soy Rubén ni una persona.\n\n¿Qué duda tienes sobre el libro?';
@@ -332,12 +360,14 @@ function rrTemaDeInfo(n) {
   const palabras = n === '' ? 0 : n.split(' ').length;
   if (/^(mas informacion|informacion|info|mas info)( ruben)?$/.test(n)) return 'info';
   if (/\b(pack|closer|prompt maestro|videos?|curso|tutoriales?|paquete|combo|completo|promo|oferta)\b|\b\d+\b(?! (capitulos|bonos|paginas))/.test(n)) return '';
-  // Posventa (abrir, descargar, recibir, «dónde están», «no encuentro»…): no es una pregunta por lo que incluye el libro; no se contesta con la lista ni con botones de compra.
-  if (/\b(abre|abren|abrir|abro|descarg\w*|llego|llegaron|llega|llegan|recib\w*|donde (estan|esta|queda|quedan)|no encuentro|encuentro|enlaces?|links?|acceso|acceder|entrega\w*|enviaron|mandaron|envian|comprobante|pague|pagado)\b/.test(n)) return '';
+  // Posventa (quejas y accesos: «no me llegaron», «no abren», «dónde están», «cómo descargo», «no encuentro», «pagué»): no es una pregunta por lo que incluye el libro; no se contesta con la lista ni con botones de compra.
+  // «¿Qué bonos recibo?», «¿qué me llega con el libro?» SÍ son preguntas por lo que incluye.
+  if (/\bno (me |nos )?(llega|llegan|llegaron|llego|abre|abren|aparece|aparecen|funciona|funcionan)\b|\bno (puedo|logro|consigo)\b|\bdonde (estan|esta|queda|quedan)\b|\bcomo (descargo|descargar|accedo|acceder|abro|abrir)\b|\bno encuentro\b|\b(pague|pagado|comprobante|ya compre)\b|\bdescarg\w*|\bacceso\b/.test(n)) return '';
   if (palabras <= 8 && /\b(capitulos?|temario)\b/.test(n)) return 'capitulos';
-  if (/^(el |su )?contenido( del libro)?$|\bcontenido del (libro|curso)\b|\bque contenido (tiene|trae|incluye|hay|contiene)\b/.test(n)) return 'capitulos';
+  // «Contenido» del LIBRO, no el contenido que el cliente publica («qué contenido hay que publicar», «qué contenido tiene que subir»).
+  if (!/\b(publicar|publico|subir|postear|crear|creo|hacer|grabar|compartir)\b/.test(n) && (/^(el |su )?contenido( del libro)?$|\bcontenido del (libro|curso)\b/.test(n) || (palabras <= 8 && /\bque contenido (tiene|trae|incluye|contiene)\b(?! que)/.test(n)))) return 'capitulos';
   if (palabras <= 8 && /\bbonos?\b/.test(n)) return 'bonos';
-  if (palabras <= 8 && /\b(que (incluye|trae|contiene)|de que (trata|va|se trata))\b/.test(n)) return 'info';
+  if (palabras <= 8 && /\b(que (incluye|trae|contiene)|de que (trata|va|se trata)|que (bonos )?recibo|que (bonos )?me (llegan|llega|dan|da|entregan))\b/.test(n)) return 'info';
   return '';
 }
 function rrPreguntaPorIngresos(n) {
@@ -577,7 +607,11 @@ const RR_PROMPT = [
   'DUDAS: «¿necesito saber programar?»: no, es para quien no tiene conocimientos técnicos. «Soy principiante o aún no tengo negocio»: empieza por los caps. 1 y 2; el cap. 3 y el bono de 30 ideas de negocio ayudan a arrancar. «¿Debo pagar herramientas de IA?»: no, se empieza con las versiones gratuitas. «¿Me garantiza ganar dinero?»: no, depende de su ejecución, oferta y mercado. «Compro el libro hoy y después quiero el resto»: sin problema, puede sumar los complementos después por este mismo chat; con el Pack Completo ahorra frente a comprarlos por separado (no digas montos).',
   'Llevas la charla con suavidad hacia elegir una opción, pero sin presionar. Si el cliente habla de otro tema, respóndele en una o dos oraciones y conéctalo con cómo el libro le ayuda.',
 ].join('\n');
-function rrQuitarDelimitadores(t) { return rrTexto(t).replace(/[<>]+/g, '').replace(/[\[\]]/g, ' ').replace(/ANUNCIO[_ ]?DETECTADO/gi, ' ').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim(); }
+function rrQuitarDelimitadores(t) {
+  // NFKC (letras de ancho completo) y quitar el marcador repetido hasta que no cambie («ANUNCIO_ANUNCIO_DETECTADODETECTADO»).
+  let x = rrTexto(t).normalize('NFKC');
+  for (let k = 0; k < 20; k += 1) { const y = x.replace(/ANUNCIO[\W_]*DETECTADO/gi, ''); if (y === x) break; x = y; }
+  return x.replace(/[<>]+/g, '').replace(/[\[\]]/g, ' ').replace(/[\u0000-\u001f\u007f]+/g, ' ').trim(); }
 function rrCuerpoModelo(textoCliente, ultimoModelo) {
   const previo = rrQuitarDelimitadores(ultimoModelo).slice(0, 300);
   // Si el texto es el de un anuncio, el modelo recibe el titular CANÓNICO como dato rotulado (nunca el texto libre).

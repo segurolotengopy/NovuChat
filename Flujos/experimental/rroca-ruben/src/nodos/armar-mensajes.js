@@ -84,8 +84,9 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     const op = menu1();
     m = conBotones(rrTextoInfo(plan.tema, op.length > 0), op);
   } else if (tipoDePlan === 'identidad') {
-    const op = menuAbierto();
-    m = conBotones(RR_TEXTO_IDENTIDAD, op);
+    // Con un QR abierto no se ofrecen botones de producto (solo el de Rubén); si no, los botones normales.
+    if (plan.qrAbierto === true) m = conRuben(RR_TEXTO_IDENTIDAD);
+    else m = conBotones(RR_TEXTO_IDENTIDAD, menuAbierto());
   } else if (tipoDePlan === 'precios') {
     usadoNuevo = RR_BOTON_PRECIOS;
     m = conBotones(RR_TEXTO_PRECIOS, menu1());
@@ -107,15 +108,18 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
         maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [rrExtraRedaccion],
       });
-      // UNA sola presentación (Silvana, 20/10/2026): ya saludado, el modelo no vuelve a presentarse (se quita de su salida), salvo que el cliente pregunte QUÉ es (prohibición 4: se reconoce con naturalidad); como
-      // primer mensaje cabe UNA, nunca dos. Si al quitarla no queda nada, cae al texto fijo.
-      const limpio = rev.motivo === '' ? rrUnaPresentacion(rev.texto, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(t.texto))) : '';
+      // UNA sola presentación (Silvana, 20/10/2026): ya saludado, el modelo no vuelve a presentarse (se quita de su salida)... PERO la regla dura 4 manda: una oración de presentación que dice qué ES el asistente
+      // (virtual, IA, programa, bot…) NUNCA se borra. Como primer mensaje cabe UNA, nunca dos. Si al quitar la presentación no queda nada, cae al texto fijo.
+      const limpio = rev.motivo === '' ? rrUnaPresentacion(rev.texto, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(t.texto)), true) : '';
       const bueno = rev.motivo === '' && limpio.trim() !== '';
       const op = menuAbierto();
       const cuerpo = bueno ? limpio : rrTextoModeloCaido(op.length > 0);
       if (bueno) ultimoModelo = cuerpo.slice(0, 300);
-      // PRESENTACIÓN GARANTIZADA EN EL PRIMER MENSAJE: el pulido común quita la presentación inicial del modelo; el cliente que llega por un anuncio debe leer «asistente virtual» al menos una vez.
-      const conPresentacion = fichaAntes.saludado || rrUnaPresentacion(cuerpo, 0) !== cuerpo ? cuerpo : RR_PRESENTACION + '\n\n' + cuerpo;
+      // PRESENTACIÓN GARANTIZADA: (a) el pulido común quita la presentación inicial del modelo: si el modelo dijo QUÉ ES (IA, virtual…) y eso no sobrevivió, se antepone la presentación fija (regla dura 4: jamás sale
+      // «Gracias por escribir…» en lugar de reconocerlo); (b) como primer mensaje, el cliente que llega por un anuncio siempre lee «asistente virtual» una vez.
+      const modeloDijoIA = rrTienePresentacionIA(crudo);
+      const falta = modeloDijoIA ? !rrTienePresentacionIA(cuerpo) : (!fichaAntes.saludado && rrUnaPresentacion(cuerpo, 0) === cuerpo);
+      const conPresentacion = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
       m = conBotones(conPresentacion, op);
       tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
     }
