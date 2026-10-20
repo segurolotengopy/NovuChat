@@ -1,0 +1,27 @@
+{
+  "nombreFlujo": "NovuChat — El Puente de Antonio (rroca-antonio)",
+  "nombreFlujoPrueba": "NovuChat — El Puente de Antonio (rroca-antonio, prueba)",
+  "credenciales": {
+    "ingesta": "NovuChat ingesta (Antonio)",
+    "graph": "Graph WhatsApp Antonio (Bearer)",
+    "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
+    "entradaPrueba": "Entrada de prueba Antonio",
+    "gemini": "Google Gemini(PaLM) Api account"
+  },
+  "receptor": {
+    "ruta": "REEMPLAZAR_RUTA_RECEPTOR_RROCA_ANTONIO",
+    "urlVerificador": "REEMPLAZAR_URL_VERIFICADOR_RECEPTOR",
+    "wabaIdEsperado": "REEMPLAZAR_WABA_ID_RROCA_ANTONIO"
+  },
+  "pruebaRuta": "REEMPLAZAR_RUTA_DE_PRUEBA",
+  "configBase": {
+    "waGraphVersion": "v26.0",
+    "phoneNumberIdEsperado": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_ANTONIO",
+    "numeroRecepcion": "REEMPLAZAR_NUMERO_RECEPCION_ANTONIO",
+    "nombreNegocio": "El Puente",
+    "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
+    "prefijosPermitidos": "591",
+    "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
+    "modelo": "gemini-3.5-flash-lite"
+  }
+}
