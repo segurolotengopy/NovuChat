@@ -9,6 +9,9 @@
  *   · se QUITA un flujo que usa una ruta de WhatsApp del comercio (el número dejaría de tener a dónde ir).
  * No se borra la configuración de un flujo quitado (`config/<doc>`): se informa y queda sin uso.
  */
+/** Cuántas rutas se leen como máximo; con más, se rechaza (no se puede asegurar que ninguna use el flujo quitado). */
+export const MAX_RUTAS = 50;
+
 export function planearFlujos({ ficha, pedidos, rutas = [], esFlujo }) {
   const problemas = [];
   if (!ficha) return { error: 'el comercio no existe' };
@@ -22,7 +25,10 @@ export function planearFlujos({ ficha, pedidos, rutas = [], esFlujo }) {
   const antes = Array.isArray(ficha.flujos) ? ficha.flujos.map(String) : [ficha.vertical].filter(Boolean).map(String);
   const quitados = antes.filter((f) => !lista.includes(f));
   const agregados = lista.filter((f) => !antes.includes(f));
+  if (rutas.length > MAX_RUTAS) problemas.push(`el comercio tiene más de ${MAX_RUTAS} rutas de WhatsApp: verificar a mano`);
   for (const r of rutas) {
+    // Una ruta sin flujo, o con uno que el registro no conoce, no se puede descartar como «no usa el quitado».
+    if (!esFlujo(r.flujo)) { problemas.push(`una ruta (…${String(r.numero ?? '').slice(-4)}) tiene un flujo ausente o desconocido: verificar a mano`); continue; }
     if (quitados.includes(String(r.flujo))) {
       problemas.push(`una ruta de WhatsApp (…${String(r.numero ?? '').slice(-4)}) usa el flujo ${r.flujo}: no se puede quitar`);
     }

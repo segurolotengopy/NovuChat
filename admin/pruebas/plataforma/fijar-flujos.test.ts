@@ -5,6 +5,7 @@
  * comprobar sus salvaguardas. Se prueba sobre todo NEGANDO: no quita un flujo que usa una ruta, no toca una
  * ficha con `modulos`, no acepta flujos desconocidos ni repetidos, no borra configuración y no escribe en seco.
  */
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,6 +63,18 @@ describe('fijar-flujos: lo que NO debe hacer', () => {
     expect(planear(ANTONIO, ['venta', 'venta']).error).toContain('repite');
     expect(planear(ANTONIO, []).error).toContain('falta --flujos');
   });
+  it('NEGACIÓN: una ruta sin flujo o con un flujo desconocido bloquea (no se puede descartar)', () => {
+    expect(planear(ANTONIO, ['venta'], [{ numero: '1234', flujo: undefined as unknown as string }]).error).toContain('verificar a mano');
+    expect(planear(ANTONIO, ['venta'], [{ numero: '1234', flujo: 'raro' }]).error).toContain('verificar a mano');
+  });
+  it('NEGACIÓN: con más de 50 rutas se rechaza', () => {
+    const rutas = Array.from({ length: 51 }, (_, i) => ({ numero: String(1000 + i), flujo: 'venta' }));
+    expect(planear(ANTONIO, ['venta'], rutas).error).toContain('más de 50');
+  });
+  it('un cambio de orden o de vertical NO es «sin cambios»', () => {
+    expect(planear({ flujos: ['venta', 'agendamiento'], vertical: 'venta' }, ['agendamiento', 'venta']).sinCambios).toBe(false);
+    expect(planear({ flujos: ['venta'], vertical: 'agendamiento' }, ['venta']).sinCambios).toBe(false);
+  });
   it('NEGACIÓN: un comercio inexistente se rechaza', () => {
     expect(planear(null, ['venta']).error).toContain('no existe');
   });
@@ -77,6 +90,14 @@ describe('fijar-flujos: el texto del script', () => {
   it('su única modificación de la ficha es `flujos` y `vertical`, y no borra nada', () => {
     expect(s).toMatch(/tx\.update\(refTenant, \{ flujos: plan\.despues, vertical: plan\.vertical \}\)/);
     expect(s).not.toMatch(/\.delete\(/);
+  });
+  it('los comercios excluidos (y los de prefijo igual) salen con código 2 antes de abrir Firebase', () => {
+    for (const tenant of ['bellido', 'Bellido', 'bellido-xyz', 'platinum2']) {
+      const r = spawnSync('node', [join(aqui, '..', '..', 'scripts', 'plataforma', 'fijar-flujos.mjs'),
+        '--proyecto', 'p', '--operador', 'a@b.co', '--tenant', tenant, '--flujos', 'venta'], { encoding: 'utf8' });
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain('no se toca desde este script');
+    }
   });
   it('exige operador, no toca a Bellido ni a Platinum y deja auditoría', () => {
     expect(s).toContain("'--operador <correo> es obligatorio");

@@ -18,7 +18,7 @@
  * Sin `--aplicar` no escribe nada. Salida: 0 hecho, o seco sin problemas; 1 rechazo o error; 2 llamada mal hecha.
  */
 import { documentoDeFlujo, esFlujo } from '../../functions/src/registro.ts';
-import { planearFlujos } from './fijar-flujos-logica.mjs';
+import { MAX_RUTAS, planearFlujos } from './fijar-flujos-logica.mjs';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -31,11 +31,12 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 // Estos comercios no se tocan desde acá (regla del proyecto).
 const EXCLUIDOS = ['bellido', 'platinum'];
+const esExcluido = (t) => EXCLUIDOS.some((e) => t === e || t.startsWith(`${e}-`) || t.startsWith(e));
 
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');
 if (!ID_TENANT.test(TENANT)) problemas.push('--tenant inválido');
-if (EXCLUIDOS.includes(TENANT)) problemas.push(`${TENANT} no se toca desde este script`);
+if (esExcluido(TENANT)) problemas.push(`${TENANT} no se toca desde este script`);
 if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: es quien queda en la auditoría');
 if (PEDIDOS.length === 0) problemas.push('falta --flujos');
 if (problemas.length) {
@@ -55,7 +56,7 @@ let resultado;
 try {
   resultado = await db.runTransaction(async (tx) => {
     const [fichaSnap, rutasSnap] = await Promise.all([
-      tx.get(refTenant), tx.get(db.collection('rutasWhatsApp').where('tenantId', '==', TENANT).limit(20)),
+      tx.get(refTenant), tx.get(db.collection('rutasWhatsApp').where('tenantId', '==', TENANT).limit(MAX_RUTAS + 1)),
     ]);
     const ficha = fichaSnap.exists ? fichaSnap.data() : null;
     const rutas = rutasSnap.docs.map((d) => ({ numero: d.id, flujo: d.get('flujo') }));
