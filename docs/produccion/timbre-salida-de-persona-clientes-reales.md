@@ -19,9 +19,18 @@ ejecuta nada: cada paso que escribe lo corre Claude con el «sí» de Andres.
   no (`^[A-Za-z][A-Za-z0-9]{1,29}$`).
 - Siguen en pie los cerrojos: los tres nombres distintos entre sí y distintos del
   timbre; ninguno de AAB1-WA-Prod ni de WhatsApp-Modular (se compara normalizado,
-  con la misma lista y la misma normalización en el shell y en el cerrojo de roles:
-  minúsculas y sin espacios —el NBSP incluido—, guiones ni guiones bajos, contra
-  `segurolotengo`, `aab1wa`, `waprod`, `whatsappmodular`, `receptor` y `otp`); el nodo
+  con la misma lista y la misma función de normalización en el shell y en el cerrojo
+  de roles: NFKC y minúsculas plegadas, sin los caracteres de formato Unicode
+  —ancho cero U+200B, U+2060, guion blando—, y conservando solo `a-z0-9` (así los
+  espacios, el NBSP, los guiones U+2011 y U+2013, los puntos y el punto medio no
+  esconden un nombre), contra `segurolotengo`, `aab1wa`, `waprod`,
+  `whatsappmodular`, `receptor` y `otp`). **Falla cerrado:** el chequeo del shell
+  distingue «limpio» (0), «ajeno» (3) y cualquier otro código; este último (un fallo
+  de Python) aborta con 2 con el mensaje «error al revisar los nombres», nunca pasa
+  por limpio. **Límite conocido:** una letra de otro alfabeto que NFKC no vuelve
+  ASCII (omicron griega, e cirílica) no coincide con la lista, y no se transliteran
+  homoglifos: lo cubre la revisión humana del nombre y, de fondo, la atadura al
+  número. El nodo
   que manda a Meta o al relé nunca lleva la de ingesta (por nombre ni por id). Además,
   un alias que **no** es de ensayo (`demoA`, `demoB`) no se carga ni se activa sin
   las tres opciones: sin ellas se buscarían credenciales por el alias, que nada ata a
@@ -41,8 +50,10 @@ ejecuta nada: cada paso que escribe lo corre Claude con el «sí» de Andres.
   n8n ya descargados (sin otra llamada) y, de cada uno que cita la credencial (por id,
   o por nombre **y tipo**), extrae su número: el valor de un nodo Set (`Config base`:
   `assignments.assignments[*]` o, en versiones viejas, `values.string[*]`) cuyo nombre
-  empieza por `phoneNumberId` o es `phone_number_id` (se quita un `=` inicial), más
-  una clave `phoneNumberId` literal o una URL de Graph. La credencial de ingesta y
+  empieza por `phoneNumberId` o es `phone_number_id` (sin distinguir mayúsculas en el
+  nombre del campo; solo esos nombres), y cuyo valor es texto de dígitos (se quitan
+  espacios y un `=` inicial) o un número entero de un Set de tipo `number`; más una
+  clave `phoneNumberId` literal o una URL de Graph. La credencial de ingesta y
   la de envío quedan **vinculadas** solo si (1) al menos un flujo **activo**, distinto
   del propio del alias, la cita y tiene el número de la fila
   `REEMPLAZAR_PHONE_NUMBER_ID_<ALIAS>`, y (2) **ningún** flujo que la cite, activo o
@@ -51,11 +62,27 @@ ejecuta nada: cada paso que escribe lo corre Claude con el «sí» de Andres.
   imprime un renglón por rol: `credencial de ingesta vinculada al alias: sí/no` (y de
   envío). El rol relé no se ata (no tiene flujo propio que lo cite). No se combina con
   `--tabla-demo-a`.
+  **Un número ilegible bloquea (indeterminado).** Un flujo —activo o no— que cita la
+  credencial y en el que no se encuentra NINGÚN número (por ejemplo, una agenda
+  mínima cuyo número sale de un Code o de una llamada HTTP, sin nodo Set) no se
+  cuenta ni como propio ni como ajeno: el script no adivina de quién es, aborta sin
+  escribir y dice, con mensaje fijo y sin nombres, «una credencial la cita un flujo
+  cuyo número no se puede leer». Para seguir hay que dejarle a ese flujo un nodo Set
+  `phoneNumberId` legible o dejar de citar la credencial.
   **Alcance de la garantía:** prueba que ningún flujo existente en n8n use esa
-  credencial con otro número literal; no prueba nada sobre flujos que aún no existen,
-  ni sobre un flujo cuyo número solo salga de una expresión o de otro lugar (no lo ve:
-  ni lo cuenta como propio ni como ajeno). Por eso el cliente tiene que tener ya un
-  flujo activo con su número escrito en el nodo Set; si no, el script se niega.
+  credencial con otro número literal ni con un número que no se pueda leer; no
+  prueba nada sobre flujos que aún no existen. Por eso el cliente tiene que tener ya
+  un flujo activo con su número escrito en el nodo Set; si no, el script se niega.
+  **Límites que persisten:** (a) credenciales compartidas fuera de n8n (otra
+  instancia, otro sistema que use el mismo token) no se ven; (b) el rol relé no tiene
+  atadura; (c) el script no trata aparte los flujos archivados: si n8n no los
+  devuelve en la lista de flujos, no se ven.
+- **La atadura también se revisa al activar.** Entre cargar y activar el estado
+  vivo pudo cambiar (por ejemplo, aparecer un flujo ajeno que cite la credencial):
+  `--activar` con el mapa vuelve a correr la misma atadura con los flujos y las
+  credenciales que acaba de descargar y la fila del teléfono de la tabla (la URL del
+  relé no hace falta), y si algún rol da «no», o un flujo es indeterminado, no
+  activa (sale con 2, sin escribir).
 - El mapa de nombres hay que repetirlo en `--activar`: el script verifica el flujo
   vivo contra los nombres que se le dan, y si no coinciden se niega. `--quitar` no
   necesita el mapa: borra solo el flujo y la credencial del timbre del alias.

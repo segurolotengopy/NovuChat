@@ -1372,7 +1372,7 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
 
   it.each([
     ['con apóstrofo', "Comercio'X"],
-    ['con espacio', 'Q Taco'],
+    ['con espacio', 'Mi Comercio'],
     ['con guion', 'cliente-04'],
     ['con punto y coma', 'a1;rm'],
     ['demasiado corto', 'a'],
@@ -1409,8 +1409,9 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
     expect(escrituras()).toEqual([]);
   });
 
+  const ajenoNum = '555000111';
   describe('atadura de las credenciales al número del alias', () => {
-    const ajeno = '555000111';
+    const ajeno = ajenoNum;
     const fallaSinEscribir = (r: { codigo: number | null; salida: string }) => {
       expect(r.codigo).toBe(2);
       expect(r.salida).toContain('no están atadas al número de este alias');
@@ -1419,6 +1420,20 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
       expect(escrituras()).toEqual([]);
       expect(existe(join(runtime, `novuchat-salida-persona-${REAL}.json`))).toBe(true);
     };
+
+    const MSG_INDETERMINADO = 'una credencial la cita un flujo cuyo número no se puede leer';
+    // Un flujo que cita la credencial y cuyo número no se puede leer es INDETERMINADO: aborta sin escribir, con un mensaje fijo sin nombres.
+    const indeterminado = (r: { codigo: number | null; salida: string }) => {
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain(MSG_INDETERMINADO);
+      expect(r.salida).not.toContain(NOM.ingesta);
+      expect(r.salida).not.toContain(NOM.envio);
+      expect(escrituras()).toEqual([]);
+      expect(existe(join(runtime, `novuchat-salida-persona-${REAL}.json`))).toBe(true);
+    };
+    const venta = (extra: Nodo[] = []) => flujoVivo('wv', 'Venta del cliente', [
+      nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta), nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio), ...extra,
+    ], PHONE);
 
     it('mapa vinculado: carga, y el seco dice «vinculada al alias: sí» por rol', () => {
       const seco = correr([...AR(), ...MAPA, ...INERTE]);
@@ -1504,22 +1519,69 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
       ]);
       f.nodes.push({ name: 'Nota', type: 'n8n-nodes-base.code', parameters: { jsCode: `// atiende ${PHONE}` } });
       writeFlujosVivos([f]);
-      fallaSinEscribir(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]));
+      indeterminado(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]));
     });
 
     it('la cita por nombre exige también el tipo: un flujo ajeno con ese nombre pero otro tipo no cuenta', () => {
       const raro = flujoVivo('wx', 'Otro con el mismo nombre', [nodoVivo('Otro', 'whatsAppApi', 'zz', NOM.ingesta)], ajeno);
       writeFlujosVivos([flujoVivo('wv', 'Venta del cliente', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta), nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio)], PHONE), raro]);
-      expect(correr([...AR(), ...MAPA, ...INERTE]).codigo).toBe(1);
+      const r = correr([...AR(), ...MAPA, ...INERTE]);
+      expect(r.codigo).toBe(1);
+      expect(r.salida).toContain('credencial de ingesta vinculada al alias: sí');
+      expect(r.salida).toContain('credencial de envío vinculada al alias: sí');
     });
 
     it.each([
       ['Set con values.string (versión vieja)', (p: string): Nodo => ({ name: 'Config base', type: 'n8n-nodes-base.set', parameters: { values: { string: [{ name: 'phoneNumberId', value: p }] } } })],
       ['Set con phoneNumberIdEsperado y «=» inicial', (p: string): Nodo => configBase(`=${p}`, 'phoneNumberIdEsperado')],
       ['Set con phone_number_id', (p: string): Nodo => configBase(p, 'phone_number_id')],
+      ['Set de tipo number (entero)', (p: string): Nodo => ({ name: 'Config base', type: 'n8n-nodes-base.set', parameters: { assignments: { assignments: [{ name: 'phoneNumberId', value: Number(p), type: 'number' }] } } })],
+      ['Set con espacio inicial', (p: string): Nodo => configBase(` ${p}`)],
+      ['Set con espacios alrededor del «=»', (p: string): Nodo => configBase(`= ${p} `)],
+      ['Set con el campo en otra capitalización (PhoneNumberID)', (p: string): Nodo => configBase(p, 'PhoneNumberID')],
+      ['Set con el campo PHONE_NUMBER_ID', (p: string): Nodo => configBase(p, 'PHONE_NUMBER_ID')],
     ])('reconoce el número en %s', (_n, config) => {
       writeFlujosVivos([{ ...flujoVivo('wv', 'Venta del cliente', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta), nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio)]), nodes: [config(PHONE), nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta), nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio)] }]);
+      const r = correr([...AR(), ...MAPA, ...INERTE]);
+      expect(r.codigo).toBe(1);
+      expect(r.salida).toContain('credencial de ingesta vinculada al alias: sí');
+      expect(r.salida).toContain('credencial de envío vinculada al alias: sí');
+    });
+
+    it('un número entero de OTRO comercio en un Set de tipo number cuenta como ajeno: aborta', () => {
+      const otro: Nodo = { name: 'Config base', type: 'n8n-nodes-base.set', parameters: { assignments: { assignments: [{ name: 'phoneNumberId', value: Number(ajeno), type: 'number' }] } } };
+      writeFlujosVivos([venta(), { ...flujoVivo('wa', 'Venta de otro comercio', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta)]), nodes: [otro, nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta)] }]);
+      fallaSinEscribir(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]));
+    });
+
+    it('un flujo ACTIVO sin ningún número legible (forma agenda mínima: el número sale de un Code/HTTP, sin Set) que cita la credencial: indeterminado, aborta', () => {
+      const agendaMinima = flujoVivo('wm', 'Agenda mínima', [
+        { name: 'Config', type: 'n8n-nodes-base.code', parameters: { jsCode: 'return [{ json: { n: $env.NUMERO } }];' } },
+        nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta),
+      ]);
+      writeFlujosVivos([venta(), agendaMinima]);
+      indeterminado(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]));
+      indeterminado(correr([...AR(), ...MAPA, ...INERTE]));
+    });
+
+    it('un flujo INACTIVO sin número legible que cita la credencial de envío: también indeterminado', () => {
+      writeFlujosVivos([venta(), flujoVivo('wm', 'Borrador sin número', [nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio)], undefined, false)]);
+      indeterminado(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]));
+    });
+
+    it('un flujo sin número que NO cita las credenciales del mapa no bloquea', () => {
+      writeFlujosVivos([venta(), flujoVivo('wz', 'Otro asunto', [nodoVivo('Otro', 'httpHeaderAuth', 'zz', 'Otra credencial')])]);
       expect(correr([...AR(), ...MAPA, ...INERTE]).codigo).toBe(1);
+    });
+
+    it.each([
+      ['un número de otro nombre de campo (numeroTelefonoId)', (p: string): Nodo => configBase(p, 'numeroTelefonoId')],
+      ['un phoneNumberId con letras', (): Nodo => configBase('no-es-un-numero')],
+      ['un phoneNumberId decimal no entero', (): Nodo => ({ name: 'Config base', type: 'n8n-nodes-base.set', parameters: { assignments: { assignments: [{ name: 'phoneNumberId', value: 98765.4321, type: 'number' }] } } })],
+      ['un valor booleano', (): Nodo => ({ name: 'Config base', type: 'n8n-nodes-base.set', parameters: { assignments: { assignments: [{ name: 'phoneNumberId', value: true, type: 'boolean' }] } } })],
+    ])('no se inventa un número: %s es indeterminado', (_n, config) => {
+      writeFlujosVivos([{ ...flujoVivo('wv', 'Venta del cliente', []), nodes: [config(PHONE), nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta), nodoVivo('Enviar', 'whatsAppApi', 'qg', NOM.envio)] }]);
+      indeterminado(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]));
     });
 
     it('sin la fila del teléfono del alias en la tabla, aborta sin escribir', () => {
@@ -1625,6 +1687,135 @@ describe('cargar-timbre-n8n.sh: clientes reales con credenciales EXISTENTES (--c
     expect(r.codigo).toBe(2);
     expect(r.salida).toContain('AAB1-WA-Prod');
     expect(llamadas()).toEqual([]);
+  });
+
+  it.each([
+    ['guion no separable U+2011', 'Seguro‑Lo‑Tengo ingesta'],
+    ['raya U+2013', 'Seguro–Lo–Tengo ingesta'],
+    ['punto', 'Seguro.Lo.Tengo ingesta'],
+    ['punto medio', 'Seguro·Lo·Tengo ingesta'],
+    ['ancho cero U+200B', 'Seguro​LoTengo ingesta'],
+    ['unión de palabras U+2060', 'Whats⁠App⁠Modular envío'],
+    ['espacio no separable', 'Whatsapp Modular envío'],
+    ['letras de ancho completo (NFKC)', 'ＳｅｇｕｒｏＬｏＴｅｎｇｏ ingesta'],
+    ['mayúsculas y signos', 'AAB1 WA/Prod (envío)'],
+  ])('lista negra de nombres, misma normalización en el shell: %s se rechaza (2, sin tocar n8n)', (_n, nombre) => {
+    for (const mapa of [
+      ['--cred-ingesta', nombre, '--cred-envio', NOM.envio, '--cred-rele', NOM.rele],
+      ['--cred-ingesta', NOM.ingesta, '--cred-envio', NOM.envio, '--cred-rele', nombre],
+    ]) {
+      const r = correr([...AR(), ...mapa, ...INERTE]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('AAB1-WA-Prod');
+    }
+    expect(llamadas()).toEqual([]);
+  });
+
+  describe('la normalización de la lista negra, en lib.py', () => {
+    const lib = () => {
+      const fuente = leerTxt(SCRIPT);
+      const ruta = join(dir, 'lib-norm.py');
+      writeFileSync(ruta, /<<'PY'\n([\s\S]*?)\nPY\n/.exec(fuente)![1]);
+      return { ruta, lista: /export TIMBRE_RE_AJENO='([^']+)'/.exec(fuente)![1] };
+    };
+    const ajeno = (nombre: string, conLista = true) => {
+      const { ruta, lista } = lib();
+      return spawnSync('python3', ['-I', ruta, 'ajeno', nombre], { encoding: 'utf8', env: conLista ? { TIMBRE_RE_AJENO: lista } : {} }).status;
+    };
+
+    it('0 = limpio, 3 = ajeno', () => {
+      expect(ajeno(NOM.ingesta)).toBe(0);
+      expect(ajeno('Seguro‑Lo Tengo')).toBe(3);
+    });
+
+    it('sin la lista (el shell no la fijó) no devuelve ni 0 ni 3: un fallo no puede pasar por «limpio»', () => {
+      const cod = ajeno(NOM.ingesta, false);
+      expect(cod).not.toBe(0);
+      expect(cod).not.toBe(3);
+    });
+
+    it('LÍMITE CONOCIDO: una letra de otro alfabeto que NFKC no vuelve ASCII (omicron griega, e cirílica) no coincide; no se transliteran', () => {
+      expect(ajeno('Seguro Lοtengo')).toBe(0);
+      expect(ajeno('Sеguro Lo Tengo')).toBe(0);
+    });
+
+    it('el cerrojo de roles del flujo usa la misma normalización', () => {
+      const { ruta, lista } = lib();
+      const codigo = `import importlib.util, sys
+e = importlib.util.spec_from_file_location("lib", sys.argv[1]); m = importlib.util.module_from_spec(e); e.loader.exec_module(m)
+errs = m.revisar_roles([{"name": "X", "type": "n8n-nodes-base.httpRequest", "parameters": {}, "credentials": {"httpHeaderAuth": {"id": "a", "name": "Seguro\\u2011Lo\\u200bTengo"}}}], "cliente04")
+print("\\n".join(errs))`;
+      const r = spawnSync('python3', ['-I', '-c', codigo, ruta], { encoding: 'utf8', env: { TIMBRE_RE_AJENO: lista } });
+      expect(r.stdout).toContain('X usa una credencial de AAB1-WA-Prod o de otro sistema: prohibido');
+    });
+  });
+
+  it('la revisión de la lista negra falla CERRADO: si Python falla al revisar los nombres, aborta con 2 sin tocar n8n', () => {
+    writeFileSync(join(bin, 'python3'), '#!/bin/bash\ncase " $* " in *" ajeno "*) exit 1 ;; esac\nexec /usr/bin/python3 "$@"\n');
+    chmodSync(join(bin, 'python3'), 0o755);
+    const r = correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]);
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toContain('Error al revisar los nombres');
+    expect(llamadas()).toEqual([]);
+    expect(existe(join(runtime, `novuchat-salida-persona-${REAL}.json`))).toBe(true);
+  });
+
+  describe('--activar con el mapa vuelve a comprobar la atadura al alias', () => {
+    const cargado = () => {
+      expect(correr([...AR(), ...MAPA, ...INERTE, ...APLICAR]).codigo).toBe(0);
+      expect(propio().active).toBe(false);
+    };
+    const citaAjena = (phone: string | undefined, active = true) => flujoVivo('wa', 'Venta de otro comercio', [nodoVivo('Ingesta', 'httpHeaderAuth', 'qi', NOM.ingesta)], phone, active);
+    const activaciones = () => llamadas().filter((l) => l.endsWith('/activate'));
+
+    it('atado: el seco lo confirma y --aplicar activa', () => {
+      cargado();
+      const seco = correr([...AR(), '--activar', ...MAPA]);
+      expect(seco.codigo).toBe(1);
+      expect(seco.salida).toContain('credencial de ingesta vinculada al alias: sí');
+      expect(seco.salida).toContain('credencial de envío vinculada al alias: sí');
+      expect(activaciones()).toEqual([]);
+      const r = correr([...AR(), '--activar', ...MAPA, ...APLICAR]);
+      expect(r.codigo).toBe(0);
+      expect(propio().active).toBe(true);
+      expect(activaciones()).toHaveLength(1);
+    });
+
+    it('entre cargar y activar apareció un flujo ajeno que cita la credencial: aborta sin activar', () => {
+      cargado();
+      writeFileSync(join(dir, 'wfs.json'), JSON.stringify([...flujos(), citaAjena(ajenoNum)]));
+      for (const extra of [[], APLICAR]) {
+        const r = correr([...AR(), '--activar', ...MAPA, ...extra]);
+        expect(r.codigo).toBe(2);
+        expect(r.salida).toContain('credencial de ingesta vinculada al alias: no');
+        expect(r.salida).not.toContain(NOM.ingesta);
+      }
+      expect(activaciones()).toEqual([]);
+      expect(propio().active).toBe(false);
+    });
+
+    it('entre cargar y activar apareció un flujo con número ilegible que cita la credencial: indeterminado, aborta sin activar', () => {
+      cargado();
+      writeFileSync(join(dir, 'wfs.json'), JSON.stringify([...flujos(), citaAjena(undefined, false)]));
+      const r = correr([...AR(), '--activar', ...MAPA, ...APLICAR]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('una credencial la cita un flujo cuyo número no se puede leer');
+      expect(activaciones()).toEqual([]);
+    });
+
+    it('sin la fila del teléfono del alias en la tabla, no activa', () => {
+      cargado();
+      tabla({});
+      expect(correr([...AR(), '--activar', ...MAPA, ...APLICAR]).codigo).toBe(2);
+      expect(activaciones()).toEqual([]);
+    });
+
+    it('un alias de ensayo sin mapa se activa como antes (sin tabla)', () => {
+      instancia(); entrega(); tabla();
+      expect(correr([...A(), ...APLICAR]).codigo).toBe(0);
+      tabla({});
+      expect(correr([...A(), '--activar', ...APLICAR]).codigo).toBe(0);
+    });
   });
 
   it('--help documenta las tres opciones y el relé inerte', () => {

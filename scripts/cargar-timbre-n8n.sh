@@ -70,12 +70,14 @@
 # si falta o está repetida se aborta sin escribir. No se crea ni se modifica ninguna de las tres (no hay
 # valores de por medio) y no se combinan con --crear-credenciales ni --quitar-credenciales. Los tres nombres
 # tienen que ser distintos entre sí y del timbre, sin caracteres de control, y ninguno puede ser de
-# AAB1-WA-Prod ni de WhatsApp-Modular (se compara normalizado: sin mayúsculas, espacios —NBSP incluido—, guiones ni guiones bajos).
+# AAB1-WA-Prod ni de WhatsApp-Modular (se compara normalizado: NFKC, minúsculas plegadas, sin caracteres de formato Unicode y solo a-z0-9;
+# si el chequeo falla por un error, se aborta: falla cerrado. Un homoglifo que NFKC no vuelve ASCII no coincide: límite conocido).
 # ATADURA AL ALIAS: antes de escribir, la credencial de ingesta y la de envío (citadas por id, o por nombre Y tipo)
 # tienen que ser usadas por al menos un flujo ACTIVO (distinto del propio del alias) cuyo número —el de sus nodos Set
 # `phoneNumberId*`/`phone_number_id`, o una URL de Graph— sea el de la tabla local (`REEMPLAZAR_PHONE_NUMBER_ID_<ALIAS>`),
-# y ningún flujo, activo o no, que las cite puede tener otro número, aunque también tenga el del alias; si no, se
-# aborta sin escribir. Un alias que no es de ensayo exige las tres opciones al cargar y al activar. El seco imprime
+# y ningún flujo, activo o no, que las cite puede tener otro número, aunque también tenga el del alias; un flujo que las
+# cita y del que no se lee NINGÚN número es indeterminado y también aborta; si no, se aborta sin escribir. --activar con
+# el mapa repite la misma atadura con el estado vivo de ese momento. Un alias que no es de ensayo exige las tres opciones al cargar y al activar. El seco imprime
 # «vinculada al alias: sí/no» por rol. No se combina con --tabla-demo-a.
 # Nombres con apóstrofo o espacios son válidos (el alias, no: ^[A-Za-z][A-Za-z0-9]{1,29}$).
 # VALOR INERTE DEL RELÉ ANTES DEL TRASLADO: use `--rele-inerte --canal-graph` (válido para cualquier alias):
@@ -196,12 +198,6 @@ if (( CRED_DADAS > 0 )); then
     if [[ ${#_nom} -gt 100 || "$_nom" =~ [[:cntrl:]] || "$_nom" =~ ^[[:space:]] || "$_nom" =~ [[:space:]]$ ]]; then
       echo "✗ Un nombre de credencial no es válido (hasta 100 caracteres, sin caracteres de control ni espacios en los extremos). No se tocó n8n." >&2; exit 2
     fi
-    # Se normaliza antes de comparar (minúsculas, sin espacios —incluido el NBSP—, guiones ni guiones bajos):
-    # «SeguroLo Tengo», «WhatsApp-Modular», «Receptor» y «OTP» son del otro sistema aunque cambien las mayúsculas o los
-    # separadores. Es la MISMA normalización y la MISMA lista que usa el cerrojo de roles de Python (lib.py).
-    if NOM_A_REVISAR="$_nom" python3 -I -c 'import os, re, sys; sys.exit(0 if re.search(os.environ["TIMBRE_RE_AJENO"], re.sub(r"[\s_-]", "", os.environ["NOM_A_REVISAR"].lower())) else 1)'; then
-      echo "✗ Un nombre de credencial parece de AAB1-WA-Prod o de otro sistema: NovuChat no la usa (CLAUDE.md, prohibiciones 5 y 7). No se tocó n8n." >&2; exit 2
-    fi
     if [[ "$_nom" == "Salida de persona (timbre ${ALIAS})" ]]; then
       echo "✗ Un rol no puede nombrar la credencial del timbre del alias. No se tocó n8n." >&2; exit 2
     fi
@@ -277,13 +273,23 @@ trap limpiar EXIT
 
 # --- La parte en python: todo lo que toca valores vive acá, y no los imprime ----------
 cat >"$WORK/lib.py" <<'PY'
-import hashlib, json, os, re, stat, sys
+import hashlib, json, os, re, stat, sys, unicodedata
 
 NOMBRE_BASE = "NovuChat — Salida de persona"
 RE_TOKEN = re.compile(r"REEMPLAZAR_[A-Z][A-Z0-9_]*")
 RE_CAP = re.compile(r"^[A-Za-z0-9_-]{16,100}$")
 RE_PHONE = re.compile(r"^[0-9]{8,20}$")
 RE_RELE = re.compile(r"^https?://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{2,5})?(/[A-Za-z0-9._~/-]*)?$")
+
+
+def normalizar(s):
+    """La MISMA normalización para toda comparación contra la lista negra: NFKC y casefold, sin caracteres de
+    formato Unicode (categoría Cf: ancho cero, U+2060, guion blando…) y solo [a-z0-9]. Así los espacios (NBSP incluido),
+    los guiones (U+2011, U+2013), los puntos y el punto medio no esconden un nombre ajeno. Una letra de otro alfabeto
+    que no se vuelve ASCII con NFKC (omicron griega, e cirílica) no coincide: es un límite conocido, no se transliteran."""
+    t = unicodedata.normalize("NFKC", s).casefold()
+    t = "".join(c for c in t if unicodedata.category(c) != "Cf")
+    return re.sub(r"[^a-z0-9]", "", t)
 
 
 def salir(cod, msg=""):
@@ -382,8 +388,13 @@ def cmd_entrega(archivo, alias, base, cuerpo_out, path_out):
 
 
 RELE_INERTE = "http://relay-inerte.invalid"
-# Nombres de credencial del otro sistema (WhatsApp-Modular), ya normalizados: minúsculas y sin espacios (NBSP incluido), guiones ni guiones bajos.
+# Nombres de credencial del otro sistema (WhatsApp-Modular), ya normalizados con normalizar(): solo [a-z0-9].
 RE_AJENO = re.compile(os.environ["TIMBRE_RE_AJENO"])  # la fija el shell: una sola lista
+
+
+def cmd_ajeno(nombre):
+    """Falla cerrado: 0 = limpio, 3 = nombre del otro sistema; cualquier otro código (un fallo de Python) lo trata el shell como error."""
+    sys.exit(3 if RE_AJENO.search(normalizar(nombre)) else 0)
 
 
 def cmd_tabla(local, alias, sinsufijo, salida, inerte="0"):
@@ -460,7 +471,7 @@ def revisar_roles(nodos, alias):
         manda = nodo.get("name") in ("Enviar por el relé", "Enviar por Graph") or "graph.facebook.com" in p or "releBaseUrl" in p
         for tp, ref in (nodo.get("credentials") or {}).items():
             nom = (ref or {}).get("name", "")
-            if RE_AJENO.search(re.sub(r"[\s_-]", "", nom.lower())):
+            if RE_AJENO.search(normalizar(nom)):
                 errores.append("%s usa una credencial de AAB1-WA-Prod o de otro sistema: prohibido" % nodo.get("name"))
             if manda and (nom == n["ingesta"] or (ref or {}).get("id") in ids_ingesta):
                 errores.append("%s manda a Meta o al relé y llevaría la credencial de ingesta" % nodo.get("name"))
@@ -540,14 +551,28 @@ RE_DIGITOS = re.compile(r"[0-9]{8,20}")
 
 
 def _es_campo_de_telefono(nombre):
-    return isinstance(nombre, str) and (nombre.startswith("phoneNumberId") or nombre == "phone_number_id")
+    if not isinstance(nombre, str):
+        return False
+    m = nombre.strip().lower()  # sin distinguir mayúsculas; solo los nombres ya aceptados
+    return m.startswith("phonenumberid") or m == "phone_number_id"
 
 
 def _digitos(valor):
-    """El valor literal de un número (quitando un `=` inicial de n8n), o None si no son solo dígitos."""
-    if not isinstance(valor, str):
+    """El valor literal de un número (quitando espacios y un `=` inicial de n8n), o None si no son solo dígitos.
+    Un Set de tipo number entrega un entero (o un decimal entero): se toma su texto."""
+    if isinstance(valor, bool):
         return None
-    v = valor[1:] if valor.startswith("=") else valor
+    if isinstance(valor, int):
+        v = str(valor)
+    elif isinstance(valor, float):
+        if not valor.is_integer():
+            return None
+        v = str(int(valor))
+    elif isinstance(valor, str):
+        v = valor.strip()
+        v = v[1:].strip() if v.startswith("=") else v
+    else:
+        return None
     return v if RE_DIGITOS.fullmatch(v) else None
 
 
@@ -589,11 +614,19 @@ def numeros_de_telefono(nodos):
     return hallados
 
 
+class Indeterminado(Exception):
+    """Un flujo cita la credencial y no se le puede leer ningún número: no se sabe de quién es."""
+
+
+MSG_INDETERMINADO = "una credencial la cita un flujo cuyo número no se puede leer"
+
+
 def vincular_al_alias(wfs, indice, n, phone):
     """Ata las credenciales de ingesta y de envío al número del alias, sin otra llamada a n8n.
     Cada una tiene que estar citada (por id, o por nombre Y tipo) por al menos un flujo ACTIVO, distinto del propio
     del alias, cuyo número (el que dicen sus nodos Set) sea el de la tabla local; y ningún flujo (activo o no) que
-    la cite puede tener un número distinto del alias, aunque también tenga el del alias.
+    la cite puede tener un número distinto del alias, aunque también tenga el del alias. Un flujo (activo o no) que
+    la cita y en el que no se encuentra NINGÚN número es INDETERMINADO (Indeterminado): no se adivina de quién es.
     Devuelve [(rol, vinculada)] sin nombres ni valores."""
     resultado = []
     for rol, tipo, etiqueta in (("ingesta", "httpHeaderAuth", "ingesta"), ("graph", "whatsAppApi", "envío")):
@@ -609,12 +642,37 @@ def vincular_al_alias(wfs, indice, n, phone):
             if not cita:
                 continue
             numeros = numeros_de_telefono(nodos)
+            if not numeros:
+                raise Indeterminado(MSG_INDETERMINADO)
             if numeros - {phone}:
                 ajenos += 1
             elif phone in numeros and w.get("active"):
                 propios += 1
         resultado.append((etiqueta, propios >= 1 and ajenos == 0))
     return resultado
+
+
+def exigir_atadura(wfs, indice, n, phone):
+    """vincular_al_alias que ABORTA (sin escribir) si algún rol da «no» o si un flujo es indeterminado."""
+    try:
+        vinculos = vincular_al_alias(wfs, indice, n, phone)
+    except Indeterminado as e:
+        salir(4, "    " + str(e) + ": no se escribe nada")
+    if any(not ok for _, ok in vinculos):
+        salir(4, "\n".join("    credencial de %s vinculada al alias: %s" % (r, "sí" if ok else "no") for r, ok in vinculos)
+              + "\n    las credenciales del mapa no están atadas al número de este alias (sin nombres ni valores): no se escribe nada")
+    return vinculos
+
+
+def cmd_atar(wfs_f, creds_f, tabla_f, alias):
+    """Al activar con el mapa de credenciales: la misma atadura que al cargar, sobre el estado vivo de AHORA."""
+    n = nombres(alias)
+    wfs, creds = cargar(wfs_f)["data"], cargar(creds_f)["data"]
+    indice = {}
+    for c in creds:
+        indice.setdefault((c.get("type"), c.get("name")), []).append(c)
+    for r, ok in exigir_atadura(wfs, indice, n, cargar(tabla_f)["phone"]):
+        print("    credencial de %s vinculada al alias: %s" % (r, "sí" if ok else "no"))
 
 
 def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_out, plan_out):
@@ -671,10 +729,7 @@ def cmd_plan(flujo_f, wfs_f, creds_f, tabla_f, path_f, alias, timbre_id, cuerpo_
             errores.append("el nodo Timbre no quedó con el path de la entrega")
     if errores:
         salir(4, "\n".join("    " + e for e in errores))
-    vinculos = vincular_al_alias(wfs, indice, n, t["phone"]) if credenciales_existentes() else []
-    if any(not ok for _, ok in vinculos):
-        salir(4, "\n".join("    credencial de %s vinculada al alias: %s" % (r, "sí" if ok else "no") for r, ok in vinculos)
-              + "\n    las credenciales del mapa no están atadas al número de este alias (sin nombres ni valores): no se escribe nada")
+    vinculos = exigir_atadura(wfs, indice, n, t["phone"]) if credenciales_existentes() else []
     w, c = buscar(wfs, creds, alias)
     if len(w) > 1 or len(c) > 1:
         salir(4, "hay duplicados del flujo o de la credencial del timbre: no se elige uno")
@@ -906,6 +961,18 @@ if __name__ == "__main__":
     globals()["cmd_" + sys.argv[1]](*sys.argv[2:])
 PY
 py() { python3 -I "$WORK/lib.py" "$@"; }
+# Lista negra de nombres de credencial (CLAUDE.md, prohibiciones 5 y 7), con la MISMA normalización y la MISMA lista que usa el cerrojo
+# de roles de Python (normalizar() de lib.py). FALLA CERRADO: 0 = limpio, 3 = ajeno; cualquier otro código (un fallo de Python) aborta.
+if (( CRED_DADAS > 0 )); then
+  for _nom in "$CRED_INGESTA" "$CRED_ENVIO" "$CRED_RELE"; do
+    _cod=0; py ajeno "$_nom" >/dev/null 2>&1 || _cod=$?
+    case "$_cod" in
+      0) ;;
+      3) echo "✗ Un nombre de credencial parece de AAB1-WA-Prod o de otro sistema: NovuChat no la usa (CLAUDE.md, prohibiciones 5 y 7). No se tocó n8n." >&2; exit 2 ;;
+      *) echo "✗ Error al revisar los nombres de las credenciales (no se pudo comprobar la lista negra): se aborta. No se tocó n8n." >&2; exit 2 ;;
+    esac
+  done
+fi
 
 # --- n8n por la API: la clave va por stdin (-H @-), nunca por argumentos ---------------
 CODIGO=000
@@ -1098,6 +1165,17 @@ if [[ "$MODO" == activar ]]; then
   api GET "/workflows/${WF_ID}"; exigir 200 "no pude leer el flujo" || exit 3
   cp "$WORK/rta.json" "$WORK/vivo.json"
   if ! SAL="$(py verificar "$WORK/vivo.json" - "$ALIAS" any "$WORK/credenciales.json")"; then falla "el flujo vivo no está completo; no se activa:"; echo "$SAL" >&2; exit 2; fi
+  if (( CRED_DADAS > 0 )); then
+    # La atadura al número del alias se vuelve a comprobar con el estado vivo de AHORA (entre cargar y activar pudo aparecer
+    # un flujo ajeno que cite la credencial). Solo hace falta el phoneNumberId de la tabla (la URL del relé no se usa).
+    LOCAL="${CONFIG_LOCAL_MD:-CONFIGURACION.local.md}"
+    if ! SAL="$(py tabla "$LOCAL" "$ALIAS" "$SINSUFIJO" "$WORK/tabla.json" 1)"; then falla "${SAL}"; exit 2; fi
+    if ! SAL="$(py atar "$WORK/flujos.json" "$WORK/credenciales.json" "$WORK/tabla.json" "$ALIAS")"; then
+      falla "las credenciales del mapa ya no están atadas al número de este alias; no se activa:"; echo "$SAL" >&2; exit 2
+    fi
+    echo "$SAL"
+    ok "atadura al número del alias comprobada de nuevo"
+  fi
   PUB="$(py publicada "$WORK/vivo.json")" || { falla "no puedo saber qué versión corre (n8n no mandó versionId/activeVersionId de un flujo activo)"; exit 3; }
   if [[ "$WF_ACTIVO" == true && "$PUB" == si ]]; then ok "ya está activo y la versión publicada es la última guardada: nada que hacer"; exit 0; fi
   if [[ "$WF_ACTIVO" == true ]]; then nota "está activo pero corre una versión ANTERIOR (borrador sin publicar): hay que publicar la última"; fi
