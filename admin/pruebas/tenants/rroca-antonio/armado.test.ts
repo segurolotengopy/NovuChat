@@ -218,7 +218,11 @@ describe('los datos: solo marcadores para identificadores y rutas', () => {
     expect(d.configBase['modelo']).toBe('gemini-3.5-flash-lite');
     // Los datos pendientes quedan como marcadores o como el texto recomendado: ninguna plantilla inventada ni aprobada, ninguna línea de protección sin verificar.
     expect(String(d.configBase['lineaProteccion'])).toMatch(/^REEMPLAZAR_/);
-    expect(String(d.configBase['avisoComprobantePlantilla'])).toMatch(/^REEMPLAZAR_/);
+    // Las plantillas YA existen en Meta (de Antonio) y están PENDING: sus nombres son dato; hasta que Meta las apruebe no sale ningún aviso fuera de la ventana.
+    expect(d.configBase['avisoComprobantePlantilla']).toBe('aviso_comprobante_recibido');
+    expect(d.configBase['avisoConsultaPlantilla']).toBe('aviso_consulta_para_antonio');
+    expect(d.configBase['avisoConsultaEstado']).toBe('PENDING');
+    expect(d.configBase['avisoPlantillaIdioma']).toBe('es');
     expect(d.configBase['avisoComprobanteEstado']).toBe('PENDING');
     expect(d.configBase['plazoEntregaHoras']).toBe(6);
     expect(d.configBase['temperatura']).toBe(0.4);

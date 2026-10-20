@@ -376,3 +376,45 @@ describe('LOW 1 y 2: el aviso del pago con riesgo, y `no_contactar` aunque el en
     expect(u.ejecutados.has('Reportar protección')).toBe(false);
   });
 });
+
+describe('plantillas de Antonio (ya existen en Meta, PENDING): el caso de riesgo fuera de la ventana va en la variable del producto', () => {
+  const nota = ', contactar solo para entregar el material (la persona mencionó miedo o violencia)';
+  it('comprobante que cuadra + riesgo, fuera de la ventana de Antonio: plantilla `aviso_comprobante_recibido`; la nota va al FINAL de {{2}}, en una línea, sin copiar lo que escribió la persona', () => {
+    const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } });
+    const t = hablar(w, ANA, mImagen({ caption: 'mi pareja me amenaza con matarme' }));
+    const pl = t.avisos[0]!.payload['template'];
+    expect(t.avisos[0]!.tipo).toBe('template');
+    expect(pl.name).toBe('aviso_comprobante_recibido');
+    const p = pl.components[0].parameters.map((x: J) => String(x['text']));
+    expect(p).toHaveLength(4);
+    expect(p[1].endsWith(nota)).toBe(true);
+    expect(p.join(' ')).not.toMatch(/amenaza|matarme|[\n\r]/);
+    expect(p[3]).toBe(`+${ANA}`);
+  });
+  it('comprobante que casi cuadra + riesgo: plantilla `aviso_consulta_para_antonio`; la nota va al final de {{3}} (resumen)', () => {
+    const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE }, cotejo: { statusCode: 200, body: { estado: 'aproximado', motivo: 'monto_distinto', avisarComercio: true } } });
+    const t = hablar(w, ANA, mImagen({ caption: 'me golpea' }));
+    const pl = t.avisos[0]!.payload['template'];
+    expect(pl.name).toBe('aviso_consulta_para_antonio');
+    const p = pl.components[0].parameters.map((x: J) => String(x['text']));
+    expect(p).toHaveLength(3);
+    expect(p[2].endsWith(nota)).toBe(true);
+    expect(p[1]).toBe(`+${ANA}`);
+  });
+  it('dentro de la ventana (texto libre) la línea fija sale como frase aparte; sin riesgo ninguna de las dos formas la lleva', () => {
+    const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } });
+    hablar(w, REC, mTexto('hola'));
+    const t = hablar(w, ANA, mImagen({ caption: 'mi pareja me controla y me da miedo' }));
+    expect(t.avisos[0]!.tipo).toBe('text');
+    expect(t.avisos[0]!.cuerpo).toMatch(/La persona mencionó miedo o violencia; contactarla solo para entregar el material\./);
+    const v = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } });
+    const u = hablar(v, ANA, mImagen());
+    expect(JSON.stringify(u.avisos[0]!.payload)).not.toMatch(/miedo o violencia/);
+  });
+  it('con las plantillas en PENDING (hoy en Meta) fuera de la ventana no sale ningún aviso y el cliente lee la verdad', () => {
+    const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE }, base: { avisoComprobanteEstado: 'PENDING', avisoConsultaEstado: 'PENDING' } });
+    const t = hablar(w, ANA, mImagen());
+    expect(t.avisos).toHaveLength(0);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/no pude avisarle a Antonio/);
+  });
+});

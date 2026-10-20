@@ -132,7 +132,7 @@ export function crear(o: Opciones = {}): Mundo {
     ahoraMs: AHORA,
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}`,
-      avisoComprobantePlantilla: 'aviso_comprobante_antonio', avisoComprobanteEstado: 'APPROVED', avisoConsultaPlantilla: 'aviso_consulta_antonio', avisoConsultaEstado: 'APPROVED',
+      avisoComprobantePlantilla: 'aviso_comprobante_recibido', avisoComprobanteEstado: 'APPROVED', avisoConsultaPlantilla: 'aviso_consulta_para_antonio', avisoConsultaEstado: 'APPROVED',
       ...(o.base ?? {}),
     },
   });

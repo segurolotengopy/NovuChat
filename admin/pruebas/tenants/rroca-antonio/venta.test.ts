@@ -502,13 +502,15 @@ describe('los avisos a Antonio: «ya le avisé» solo si salió', () => {
     const a = t.avisos[0]!;
     expect(a.tipo).toBe('template');
     const pl = a.payload['template'];
-    expect(pl.name).toBe('aviso_comprobante_antonio');
+    expect(pl.name).toBe('aviso_comprobante_recibido');
     expect(pl.language.code).toBe('es');
     const params = pl.components[0].parameters.map((p: J) => String(p['text']));
     expect(params).toHaveLength(4);
     expect(params[0]).toBe('Ana');
-    expect(params[1]).toMatch(/responder antes de \d{2}\/\d{2} \d{2}:\d{2} hora de La Paz/);
+    // {{1}} cliente, {{2}} producto, {{3}} monto indicado en Bs, {{4}} teléfono; una sola línea y de largo acotado, sin hora límite (solo va en el texto libre).
+    expect(params[1]).not.toMatch(/responder antes/);
     expect(params[2]).toBe('49');
+    for (const p of params) { expect(p).not.toMatch(/[\n\r]/); expect(p.length).toBeLessThanOrEqual(500); }
     expect(params[3]).toBe(`+${ANA}`);
     expect(params.join(' ')).not.toMatch(PROHIBIDAS);
   });
