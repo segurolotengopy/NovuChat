@@ -34,6 +34,17 @@ function cmNorm(t) {
 function cmJunto(n) {
   return n.replace(/(\p{L})[-.·_*]+(?=\p{L})/gu, '$1');
 }
+// Letras sueltas separadas por espacios, guiones o puntos («p a g o», «p. a. g. o», «p-a-g-o»): se juntan las rachas de 3 o más
+// letras sueltas. Se usa JUNTO con el texto sin tocar (nunca en lugar de él), así que no rompe montos ni teléfonos (no son letras).
+function cmJuntoLetras(n) {
+  return cmJunto(n.replace(/(?<![\p{L}\p{N}])\p{L}(?:[\s\-.·_*]+\p{L}(?![\p{L}\p{N}])){2,}/gu, (m) => m.replace(/[\s\-.·_*]+/g, '')));
+}
+// Homoglifos: una palabra que mezcla letras latinas con otro alfabeto (cirílico, griego…) esconde otra palabra («pаgo» con una
+// «а» cirílica). El español no los usa; se rechaza el texto entero. No toca emojis, signos ni números.
+function cmAlfabetoMixto(texto) {
+  const palabras = String(texto || '').normalize('NFKC').match(/[\p{L}\p{M}]+/gu) || [];
+  return palabras.some((w) => /\p{Script=Latin}/u.test(w) && /[^\p{Script=Latin}\p{M}\p{Script=Common}\p{Script=Inherited}]/u.test(w));
+}
 // «Política: el asistente solo ofrece lo que el flujo cumple»: ninguna promesa sin un mecanismo detrás.
 const CM_PROMESAS = /lo consulto|lo consultar[eé]|consultar[eé]|\b(te|le) avis(o|ar[eé]|amos)\b|\b(te|le) llam(amos|ar[eé]|aremos)\b|te vamos a (llamar|avisar|escribir|contactar)|te van a (llamar|contactar|escribir|avisar)|te escribir[aá]n|te escribiremos|\b(te|le) contactar[eé]|nos comunicaremos|\b(te|le) confirm(o|ar[eé]) (luego|despues|mas tarde|manana)|te confirmar[eé]/;
 // Lo que SOLO el código puede afirmar. Por defecto se rechaza todo lo que SUENA a confirmación: un falso rechazo
@@ -45,7 +56,20 @@ const CM_PROMESAS = /lo consulto|lo consultar[eé]|consultar[eé]|\b(te|le) avis
 //   - marcas de visto bueno que pone el código: ✅ ✔ ☑
 // Y negar ser una IA (prohibición 4: NUNCA): «no soy un bot / una máquina / un asistente», «soy una persona»,
 // «hablas con una persona», «persona real», «de carne y hueso».
-const CM_AFIRMA = new RegExp([
+// Medios y sustantivos del pago. Medios que existen en Bolivia: QR simple, transferencia, Tigo Money, tarjeta, efectivo y depósito.
+// (Yape, Nequi, PIX… no existen aquí y no se listan.)
+// Formas EXPLÍCITAS (nunca `pag\w*`: «página» no es un pago) y sin `cancel*` (cancelar una suscripción no es pagar; «cancelaste/cancelamos/cancelaron» tienen su regla).
+// «abono» (también fertilizante) y «cobro» solo cuentan junto a un estado o verbo de recepción.
+const CM_PAGO = '(?:pagos?|pag|pagad[oa]s?|pagar|pagas?|pagan|pague|pagaste|pagamos|pagaron|comprobantes?|abonos?|abonad[oa]s?|abonar|abonaste|abonamos|abonaron|cobros?|cobrad[oa]s?|cobrar|cobramos|cobraron|plata|dinero|depositos?|transferencias?|qr|tigo ?money|tarjeta|efectivo|vouchers?|bs|bolivianos)';
+const CM_PAGO_HECHO = '(?:pagos?|pag|pagad[oa]s?|pagar|pagas?|pagan|pague|pagaste|pagamos|pagaron|comprobantes?|abonos?|abonad[oa]s?|abonar|abonaste|abonamos|abonaron|plata|dinero|depositos?|transferencias?|vouchers?)';
+const CM_ESTADO = '(?:recibid|acreditad|aprobad|aceptad|procesad|completad|confirmad|verificad|registrad|validad|saldad|exitos|llego|llegaron|entro|entraron|ingreso|ingresaron|cayo|cayeron|reflej|se (?:acredit|proces|complet)|esta\\w* (?:en orden|ok|bien|list|acreditad|correct|completo|conforme|al dia|en (?:la|mi|nuestra|su) cuenta)|entra\\w* en (?:el|nuestro|mi) sistema|ya paso\\b(?! (?:a|al|con|tu|el|la|los|su)\\b)|(?:es|son|sea|seran) (?:valid|correct|ok\\b)|en orden)';
+const CM_VERBO_RECEPCION = '(?:recib(?:i\\w*|ido|ida|idos|idas)|llego\\w*|llegaron|entro|entraron|ingreso|ingresaron|registramos|verificamos|validamos|vi|vimos|veo|vemos|vio|revise|revisamos|cayo|cayeron|cae|reflej\\w*)';
+// Una PREGUNTA no afirma («¿Ya recibiste el QR?»): se exime solo si hay «¿» antes Y «?» después en la misma oración. Un «¿» suelto no exime.
+const CM_NO_PREGUNTA = '(?:(?<!¿[^?.!]*)|(?![^?.!¡¿]*\\?))';
+// Lo que SOLO puede afirmar el código se rechaza AUNQUE el cliente no lo haya pedido y aunque la frase diga algo cierto («Tu comprobante llegó y
+// los datos coinciden» es del código, no del modelo). Una negación cercana («todavía NO llegó») no es afirmar.
+const CM_SIN_NEGAR = '(?:(?!\\bno\\b)[^.!?])';
+const CM_AFIRMA_LISTA = [
   // participios de lo que el código hace o confirma, y la primera persona (singular y plural), en pasado y presente
   '\\b(agendad|reservad|registrad|confirmad|anotad|reprogramad|programad|cancelad|acreditad|aprobad|verificad|validad|pagad|separad)[oa]s?\\b',
   '\\b(agende|reserve|registre|confirme|anote|reprograme|programe|cancele|cambie|separe|valide|acredite)\\b',
@@ -54,30 +78,81 @@ const CM_AFIRMA = new RegExp([
   '\\bse (agendo|reservo|registro|confirmo|anoto|programo|separo|reprogramo|cancelo|valido|acredito|aprobo|cambio)\\b',
   '\\b(qued[oa]|esta|estan|fue|fueron|ha sido|han sido) (list|hech|fij|recib|ya)[oa]s?\\b',
   '\\bya (se|te|le) (agend|reserv|registr|confirm|anot|program|separ|acredit)',
-  // el pago: el comprobante no es una acreditación bancaria (prohibición 3)
-  '\\b(pago|abono|deposito|transferencia|comprobante|dinero|plata|qr)\\b[^.!?]{0,25}\\b(recibid|acreditad|aprobad|confirmad|verificad|registrad|validad|exitos|llego|llegaron|entro)',
-  '\\b(recib(i|imos|ido|ida)|llego|llegaron|entro|entraron)\\b[^.!?]{0,30}\\b(pago|abono|transferencia|deposito|comprobante|dinero|plata)\\b',
+  // el pago: el comprobante no es una acreditación bancaria (prohibición 3). Raíces y plurales, en el contexto de AFIRMAR un hecho
+  // (recibido, llegó, está en orden…): NO se bloquea toda mención del pago («puedes pagar con QR», «envíame el comprobante»).
+  '(?=\\b' + CM_PAGO + '\\b)' + CM_NO_PREGUNTA + '\\b' + CM_PAGO + '\\b' + CM_SIN_NEGAR + '{0,25}\\b' + CM_ESTADO,
+  '(?=\\b' + CM_VERBO_RECEPCION + '\\b)' + CM_NO_PREGUNTA + '\\b' + CM_VERBO_RECEPCION + '\\b[^.!?]{0,30}\\b' + CM_PAGO + '\\b',
+  '\\b(?:tenemos|tengo) (?:ya |aqui )?(?:tu|tus|su|sus|el|los|la|las|mi|mis) (?:\\w+ )?(?:' + CM_PAGO_HECHO + '|montos?)\\b',
+  // figura / aparece / ya pasó / «ya hiciste el pago» / saldo cero / dinero en símbolos / «¿Ya pagaste? Sí, ya está»
+  '\\b' + CM_PAGO_HECHO + '\\b' + CM_SIN_NEGAR + '{0,25}\\b(?:figur|aparec)',
+  '\\b(?:figur|aparec)\\w*\\b[^.!?]{0,25}\\b' + CM_PAGO_HECHO + '\\b',
+  '\\bya paso\\b[^.!?]{0,15}\\b' + CM_PAGO_HECHO + '\\b',
+  '\\b(?:ya )?(?:hiciste|hicimos|hizo) (?:el|tu|un|su|la) (?:\\w+ )?pago\\b',
+  '\\bsaldo (?:en |a )?cero\\b',
+  '(?=\\b' + CM_VERBO_RECEPCION + '\\b)' + CM_NO_PREGUNTA + '\\b' + CM_VERBO_RECEPCION + '\\b[^.!?]{0,30}(?:\\$|\\bdolares?\\b|\\busdt?\\b)',
+  '\\b(?:pag|cancel|abon|deposit|transferencia|comprobante|qr|plata|dinero)\\w*[^?]{0,30}\\?\\W*(?:(?:si|claro|ok|listo)\\W{1,3})?ya esta\\b',
+  // el sustantivo del pago PEGADO a su visto bueno: «Pago OK», «Pago: listo», «Pago 👍», «Comprobante hecho»
+  '\\b' + CM_PAGO_HECHO + '(?:[\\s:\\-]{1,3}(?:ok|okay|okey|listo|lista|hecho|hecha|completo|completa|correcto|correcta|valido|valida)\\b(?!\\?)|[\\s:\\-]{0,3}(?:👍|👌|🆗))',
+  '\\b(?:listo|lista|hecho)\\W{0,3}(?:tu|tus|su|sus|el|los|la|las)\\s+(?:\\w+ )?' + CM_PAGO_HECHO + '\\b',
+  '\\bya esta (?:tu|tus|su|sus|el|los|la|las)\\s+(?:\\w+ )?' + CM_PAGO_HECHO + '\\b',
+  '\\b(?:todo|esta|estan) (?:en orden|ok|bien|correcto|perfecto)\\b[^.!?]{0,6}\\bcon (?:tu|tus|el|los|la|las|su|sus) (?:\\w+ )?(?:' + CM_PAGO_HECHO + '|qr)\\b',
+  '\\bgracias por (?:haber |ya )?(?:(?:tu|tus|su|sus|el|los|la|las|mi) (?:\\w+ )?' + CM_PAGO_HECHO + '|pagar|pagado|cancelar|cancelado|abonar|abonado)\\b',
+  '\\brecibid[oa]s?[,.!:\\s]+(?:muchas )?gracias\\b',
+  '\\b(?:ok|okay|listo|perfecto|bien|vale|genial)[,.!:\\s]+recibid[oa]s?\\b',
+  '^\\W*recibid[oa]s?\\W*$',
+  '\\b(?:transaccion(?:es)?|operacion(?:es)?)\\b[^.!?]{0,25}\\b(?:exitos|aprobad|acreditad|completad|procesad|realizad|correct|ok\\b)',
+  '\\bsaldad[oa]s?\\b',
+  '\\bno (?:debes|debe|adeudas|adeuda) (?:nada|ningun)',
+  '(?:💰|💵|💸|🤑)[^.!?]{0,15}\\b(?:recibid|acreditad|llego|ok\\b|listo|confirmad)',
+  '\\b(?:recibid|acreditad|llego)\\w*[^.!?]{0,15}(?:💰|💵|💸)',
+  // «cancelar» es PAGAR en Bolivia; «pagaste/pagamos» afirma un pago salvo en pregunta («¿ya pagaste?» o «…el envío?») o condicional («si pagaste»)
+  '(?=\\b(?:cancelaste|cancelamos|cancelaron|pagaste|pagamos|pagaron)\\b)(?<!¿[^?.!]*)(?![^?.!¡¿]*\\?)(?<!\\b(?:si|cuando|apenas|despues de que) (?:ya )?)\\b(?:cancelaste|cancelamos|cancelaron|pagaste|pagamos|pagaron)\\b',
   '\\bpago (exitoso|validado|aprobado|confirmado|acreditado|recibido)\\b',
   '\\bconfirm(o|amos) (tu|la|su|el) (cita|reserva|pedido|pago)\\b',
-  '\\btu (cita|reserva|pedido|pago) (ya )?(esta|quedo|queda|fue|ha sido)\\b',
+  '(?=\\btu )' + CM_NO_PREGUNTA + '\\btu (cita|reserva|pedido|pago) (ya )?(esta|quedo|queda|fue|ha sido)\\b',
   // marcas de visto bueno: las pone el código
   '[✅✔✓☑]',
   // en inglés
   '\\b(booked|confirmed|scheduled|reserved|payment (received|confirmed))\\b',
+  '\\bpaid\\b',
+  '\\bpayment\\b[^.!?]{0,15}\\b(?:ok|okay|done|complete\\w*|approved|accepted|processed|verified|successful|settled)\\b',
+  '\\b(?:got|received|have|has) your (?:payment|transfer|deposit|money)\\b',
   // negar ser una IA (prohibición 4: NUNCA): «no soy un bot», «esto no es un bot», «soy real», «hablas con una persona»…
-  '\\bno (soy|es|eres|estas hablando con|hablas con|estoy)\\b[^.!?]{0,20}\\b(ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\\b',
-  '\\b(no|ni) (un|una) (bot|chatbot|ia|robot|maquina|programa)\\b',
-  '\\b(para nada|nunca|jamas|tampoco|ni de lejos|de ninguna manera)\\b[^.!?]{0,15}\\b(soy|es|eres|estoy)\\b[^.!?]{0,20}\\b(ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\\b',
+  '\\bno (soy|es|eres|sos|estas hablando con|hablas con|estoy)\\b[^.!?]{0,20}\\b(ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual|sistema|automatic\\w*)\\b',
+  '\\bno (soy |es |eres |sos )?automatic\\w*',
+  '\\b(no|ni) (un|una) (bot|chatbot|ia|robot|maquina|programa|sistema)\\b',
+  // «soy Rubén, no un asistente», «no el asistente virtual», «no un agente virtual», «no un sistema»
+  '\\b(no|ni) (un |una |el |la )?(asistente|agente|ayudante|sistema)( virtual)?\\b',
+  '\\b(no|ni) (un |una |el |la )virtual\\b',
+  '\\b(no hay|nada de) (bots?|robots?|chatbots?|maquinas?|ia)\\b',
+  '\\bno te (contesta|responde|atiende|escribe|habla) (un|una)\\b',
+  '\\b(atiende|atiendo|habla|hablas|contesta|responde|escribe|conmigo|soy)\\b[^.!?]{0,25}\\ben persona\\b',
+  '^\\W*no[,;]?\\W+soy\\b(?![^.!?]{0,30}\\b(?:asistente|virtual)\\b)',
+  '\\b(para nada|nunca|jamas|tampoco|ni de lejos|de ninguna manera)\\b[^.!?]{0,15}\\b(soy|es|eres|sos|estoy)\\b[^.!?]{0,20}\\b(ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual|sistema|automatic\\w*)\\b',
   '\\bsoy (una |un )?(persona|humana|humano|ser humano|real|de verdad)\\b',
   '\\b(hablas|estas hablando|conversas|chateas) con (una |un )?(persona|humano|humana)\\b',
   '\\b(te )?(responde|escribe|atiende|contesta|habla) (una |un )?(persona|humano|humana)\\b',
   '\\bpersona (real|de verdad)\\b',
   'carne y hueso',
-].join('|'));
+];
+const CM_AFIRMA = new RegExp(CM_AFIRMA_LISTA.join('|'));
+// Copia SOLO para comparar: el mismo patrón con las letras repetidas colapsadas («llego» → «lego»), para el texto colapsado («paaago» → «pago»).
+// Las barras de escape se respetan (`\\b` + «bot» no es «bb»).
+function cmColapsa(t) {
+  return String(t).replace(/\\.|(\p{L})\1+/gsu, (m, l) => (l ? l : m));
+}
+const CM_AFIRMA_C = new RegExp(cmColapsa(CM_AFIRMA_LISTA.join('|')));
+// Cifras dentro de una palabra con letras → su letra («pag0» → «pago», «p4go» → «pago»). Solo en la copia de comparar: montos, teléfonos y horas
+// (cifras sin letras pegadas) no cambian, y las reglas de monto no miran esta copia.
+function cmLeet(t) {
+  return t.replace(/(?<=\p{L})[0134]|[0134](?=\p{L})/gu, (d) => ({ 0: 'o', 1: 'i', 3: 'e', 4: 'a' }[d]));
+}
 const CM_PALABRA_DE_NUMERO = 'un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|quince|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|trescientos|quinientos|mil|medio';
 const CM_MONTO = new RegExp('\\b\\d[\\d.,]*\\s*(bs|bob|bolivianos?|usd|usdt|dolar(es)?|\\$us)\\b|\\b(?:bs|bob|usd)\\.?\\s*\\d|\\$\\s*\\d|\\b(?:' + CM_PALABRA_DE_NUMERO + ')\\s+(bolivianos?|dolar(es)?|bs|bob|usdt)\\b');
 // Un hueco de plantilla («a las )», «{{x}}», «undefined») nunca sale.
 const CM_HUECO = /\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/;
+// El cliente pregunta si habla con un bot / una IA / una persona: ahí una NEGACIÓN en la respuesta («Claro que no, soy Rubén») es negar ser una IA.
+const CM_PREGUNTA_DE_BOT = /\b(eres|es|sos|hablo con|hablas con|estoy hablando con|estas hablando con)\b[^.!?]{0,20}\b(bot|chatbot|robot|ia|inteligencia|maquina|programa|persona|humano|humana|real|automatic\w*|asistente virtual)\b|^\W*(ia|bot|robot|humano|humana)\W*$/;
 const CM_PREGUNTA_DE_IDENTIDAD = /\b(eres|es|sos) (el |la )?(doctor|doctora|dr|dra|persona|humano|humana|bot|robot)\b|\bquien (eres|es)\b/;
 
 // Los enlaces de un texto: con esquema, con `www.`, una IP, o CUALQUIER dominio suelto (algo.mx, algo.cloud…). Se rechaza de
@@ -97,17 +172,23 @@ function cmMotivoDeRechazo(texto, opciones) {
   const s = String(texto || '').trim();
   if (!s) return 'vacio';
   if (/^SIN_RESPUESTA/.test(s)) return 'sin_respuesta';
-  if (s.length > (o.maximo || 900)) return 'largo';
+  // Tope duro: ninguna opción lo sube por encima de 2000 (las reglas con búsqueda hacia atrás se vuelven cuadráticas).
+  if (s.length > Math.min(o.maximo || 900, 2000)) return 'largo';
   const n = cmNorm(s);
   if (!o.permitirMontos && (CM_MONTO.test(n) || CM_MONTO.test(cmJunto(n)))) return 'monto';
   const nj = cmJunto(n);
-  if (CM_PROMESAS.test(n) || CM_PROMESAS.test(nj)) return 'promesa';
+  if (CM_PROMESAS.test(n) || CM_PROMESAS.test(nj) || CM_PROMESAS.test(cmJuntoLetras(n))) return 'promesa';
   const sujetos = (o.quienPromete || []).map((x) => String(x).replace(/[.*+?^${}()[\]\\|]/g, '\\$&'));
   if (sujetos.length && new RegExp('\\b(?:' + sujetos.join('|') + ') te\\b').test(n)) return 'promesa';
-  if (CM_AFIRMA.test(n) || CM_AFIRMA.test(nj)) return 'afirma_un_hecho';
+  if (cmAlfabetoMixto(s)) return 'afirma_un_hecho';
+  // Dos o más espacios (o un salto) separan palabras aunque las letras vayan sueltas: «P a g o   r e c i b i d o».
+  const nl = cmJuntoLetras(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , ')));
+  if (CM_AFIRMA.test(n) || CM_AFIRMA.test(nj) || CM_AFIRMA.test(nl)) return 'afirma_un_hecho';
+  if (CM_AFIRMA_C.test(cmColapsa(cmJuntoLetras(cmLeet(cmNorm(s.replace(/[ \t\u00a0]{2,}|\n+/g, ' , ')))))) || CM_AFIRMA_C.test(cmColapsa(nl))) return 'afirma_un_hecho';
   if (CM_HUECO.test(n)) return 'hueco';
   const pregunta = cmNorm(o.textoDelCliente || '');
   if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
+  if (pregunta && CM_PREGUNTA_DE_BOT.test(pregunta) && /\b(no|nop|nel|para nada)\b/.test(n) && !/\b(asistente|virtual)\b/.test(n)) return 'identidad';
   for (const re of (o.prohibidos || [])) if (re.test(n)) return 'prohibido';
   // ENLACES: por defecto NINGUNO sale. `enlacesPermitidos` es la lista de enlaces COMPLETOS del negocio (mapa, redes,
   // wa.me). Se detectan `https?://…`, `www.…` y los dominios sueltos más comunes (wa.me/…, bit.ly/…, algo.com); un
