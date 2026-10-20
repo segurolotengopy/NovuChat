@@ -68,15 +68,20 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 } else if (puerta.ruta === 'sigue') {
   // El botón «usado» sale del PRODUCTO del QR (también si el producto se eligió por texto prellenado, sin botón) o, si no, del botón pulsado.
   if (tipoDePlan === 'qr' && RR_PRODUCTOS[plan.producto]) usadoNuevo = RR_PRODUCTOS[plan.producto].boton;
-  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS || plan.boton === RR_BOTON_PRECIOS || plan.boton === RR_BOTON_HABLAR ? String(plan.boton) : '';
+  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS || plan.boton === RR_BOTON_PRECIOS || plan.boton === RR_BOTON_INFO || plan.boton === RR_BOTON_HABLAR ? String(plan.boton) : '';
   if (tipoDePlan === 'saludo') {
-    // Saludo corto con UNA presentación por teléfono y, en el MISMO mensaje, «Ver precios» y «Hablar con Rubén» (sin los que ya pulsó). Ya saludado, el prellenado de consulta recibe SOLO su pregunta.
+    // Saludo corto con UNA presentación por teléfono y, en el MISMO mensaje, «Ver precios» y «Más información» (sin los que ya pulsó; el saludo NUNCA ofrece a Rubén). Ya saludado, el prellenado de consulta recibe SOLO su pregunta.
     const usadosYa = fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
     m = conBotones(rrSaludo(cat, plan.pregunta === 'consulta' ? RR_PREGUNTA_CONSULTA : '', !fichaAntes.saludado), rrMenuSaludo(cat, usadosYa));
   } else if (tipoDePlan === 'precio') {
     // El cliente VIO los precios: «Ver precios» no se reofrece. Sin botones de producto que ofrecer, el texto no cierra con una pregunta sin opciones.
     usadoNuevo = RR_BOTON_PRECIOS;
     m = conBotones(rrTextoPrecio(cat, plan.producto, menu1().length > 0), menu1());
+  } else if (tipoDePlan === 'info') {
+    // Datos fijos del guion, sin modelo. Quien vio la información no la ve reofrecida en el saludo; debajo, el menú de productos (ya saludado, es seguro).
+    usadoNuevo = RR_BOTON_INFO;
+    const op = menu1();
+    m = conBotones(rrTextoInfo(plan.tema, op.length > 0), op);
   } else if (tipoDePlan === 'precios') {
     usadoNuevo = RR_BOTON_PRECIOS;
     m = conBotones(RR_TEXTO_PRECIOS, menu1());
@@ -98,9 +103,12 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
         maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [rrExtraRedaccion],
       });
-      const bueno = rev.motivo === '' && rev.texto.trim() !== '';
+      // UNA sola presentación (Silvana, 20/10/2026): ya saludado, el modelo no vuelve a presentarse (se quita de su salida), salvo que el cliente pregunte QUÉ es (prohibición 4: se reconoce con naturalidad); como
+      // primer mensaje cabe UNA, nunca dos. Si al quitarla no queda nada, cae al texto fijo.
+      const limpio = rev.motivo === '' ? rrUnaPresentacion(rev.texto, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(t.texto))) : '';
+      const bueno = rev.motivo === '' && limpio.trim() !== '';
       const op = menuAbierto();
-      const cuerpo = bueno ? rev.texto : rrTextoModeloCaido(op.length > 0);
+      const cuerpo = bueno ? limpio : rrTextoModeloCaido(op.length > 0);
       m = conBotones(cuerpo, op);
       tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
     }
