@@ -45,8 +45,12 @@ Base: `origin/main` `d260cca8`. Sin teléfonos completos ni datos bancarios en e
 - **Medios: 12 nodos, no 9.** El plan contó 9; con la rama del PDF (`¿Es un documento?`, `Describir documento`) y `Medio no aceptado` salen 12. Producción tiene hoy 36 nodos; quedan 12 para PR-B (comprobante ~7, avisos 3 y lo que falte) bajo el tope de 48. Si no alcanza: fusionar `¿Es comprobante?` con `¿Bajar medio?` (el plan), no subir el tope.
 - **`Describir imagen` y `Describir documento`** llevan un prompt propio con la lista cerrada `publicidad | comprobante | otro`. Hueco H-IMG: los textos de `publicidad` y de `comprobante` sin cobro del módulo común dicen «ofrécele agendar» / «ofrécele pasarlo al negocio»; **«Decidir turno» no los usa** (PR-B decide por `categoriaMedio`), y la solución de fondo (parametrizar por tipo de negocio) toca Core y regenera todos los flujos: ticket aparte.
 - **Modo prueba que niega por defecto:** sin `telefonosDePrueba` (o con el marcador) ningún teléfono está permitido.
-- **Retención de ejecuciones:** `saveDataErrorExecution: all` guarda los textos y datos del turno fallido hasta ~14 días. Se acepta para Antonio igual que para Rubén; **hay que registrar esa aceptación** al publicar (PR-C).
+- **Retención de ejecuciones:** `saveDataErrorExecution: all` guarda los textos y datos del turno fallido hasta ~14 días. **ACEPTADO por Andres el 20/10/2026 (~14 días)**, igual que para Rubén (teléfono, texto, fotos y comprobantes de las ejecuciones fallidas); `saveDataErrorExecution` se queda en `all`.
 - **Mensajes por conversación: 0 agregados.** Un mensaje por turno, o ninguno. El rescate (+1 por conversación sin compra) y el aviso a Antonio (otro destinatario) llegan con PR-B y PR-C.
+
+## Decisiones de Andres para PR-B (20/10/2026, anotadas, sin construir en PR-A)
+
+- **Números no bolivianos:** texto fijo + botón de Antonio, sin QR, explicando que el pago es con QR boliviano. Es 1 mensaje por turno (≈0,0113 USD, `docs/base-comercial.md` §1). Hoy `prefijosPermitidos` (por defecto 591) descarta esos números sin responder; PR-B debe cambiar ese comportamiento para responder con el texto fijo.
 
 ## Límites de PR-A (declarados, no resueltos aquí)
 
