@@ -64,6 +64,7 @@ APAGAR=0
 ENV_NUEVO=""
 ENV_FILE=".env"
 CONFIRMO_RUBEN=0
+CONFIRMO_ANTONIO=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -79,6 +80,7 @@ while [[ $# -gt 0 ]]; do
     --env-nuevo=*) ENV_NUEVO="${1#*=}"; shift ;;
     --forzar)  FORZAR=1; shift ;;
     --confirmo-ruben) CONFIRMO_RUBEN=1; shift ;;
+    --confirmo-antonio) CONFIRMO_ANTONIO=1; shift ;;
     --env)     ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*)   ENV_FILE="${1#*=}"; shift ;;
     -h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -167,6 +169,73 @@ if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
   fi
 fi
 
+# --- LA GUARDIA DEL FLUJO DE ANTONIO (tenant rroca-antonio, PR-C) --------------
+# Mismo diseno que la de Ruben, y aparte: no cambia nada para los demas flujos. Se
+# reconoce por el nombre del archivo o del flujo de ORIGEN que contenga rroca-antonio
+# (sin distinguir mayusculas) y se REPITE sobre el flujo VIVO (destino). Con --aplicar,
+# --crear o --encender exige (1) que `construir.mjs --publicable` apruebe el flujo (sin
+# marcadores REEMPLAZAR_*, plantillas de aviso APPROVED, linea de proteccion y catalogo
+# cargados) y (2) la confirmacion explicita: escribir PUBLICAR ANTONIO, o --confirmo-antonio
+# sin terminal. --forzar NO salta nada de esto. `--apagar` nunca pide confirmacion.
+antonio_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto | confirmar
+  if [[ "$3" != "estricto" ]]; then
+    echo "Flujo del tenant rroca-antonio que no es el conversacional ($1): solo se pide la confirmacion."
+    if [[ $APLICAR -eq 1 ]]; then antonio_confirmar; fi
+    return 0
+  fi
+  echo "Flujo de Antonio (rroca-antonio): se revisa la guardia de publicación ($1)."
+  if node Flujos/experimental/rroca-antonio/construir.mjs --publicable --flujo "$2"; then
+    GUARDIA_ANTONIO_OK=1
+  else
+    GUARDIA_ANTONIO_OK=0
+  fi
+  if [[ $APLICAR -eq 1 ]]; then
+    if [[ $GUARDIA_ANTONIO_OK -ne 1 ]]; then
+      printf '\033[1;31m✗ NEGADO: el flujo de Antonio no se publica con marcadores sin sustituir, plantillas sin aprobar, sin línea de protección o con el catálogo sin cargar.\033[0m\n' >&2
+      exit 1
+    fi
+    antonio_confirmar
+  elif [[ $GUARDIA_ANTONIO_OK -ne 1 ]]; then
+    printf '\033[0;33m  (en seco se sigue; con --aplicar se niega)\033[0m\n\n'
+  fi
+}
+# vacio (no es de Antonio) | confirmar (cualquier flujo con rroca-antonio en el nombre del archivo o
+# del flujo) | estricto (el CONVERSACIONAL: «NovuChat — El Puente de Antonio (rroca-antonio…)» o sus
+# archivos rroca-antonio[.prueba][.local].json).
+antonio_clase() {  # $1 = archivo JSON ; $2 = nombre del archivo en minusculas
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import json, re, sys
+ruta, base = sys.argv[1], sys.argv[2]
+try:
+    nombre = str(json.load(open(ruta, encoding="utf-8")).get("name", "")).lower()
+except Exception:
+    nombre = ""
+if re.fullmatch(r"rroca-antonio(\.prueba)?(\.local)?\.json", base) or nombre.startswith("novuchat — el puente de antonio"):
+    print("estricto")
+elif "rroca-antonio" in base or "rroca-antonio" in nombre:
+    print("confirmar")
+PY
+}
+antonio_confirmar() {
+  if [[ $CONFIRMO_ANTONIO -ne 1 ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "Va a escribir el flujo de Antonio en n8n. Escriba PUBLICAR ANTONIO para confirmar: " RESPUESTA
+      [[ "$RESPUESTA" == "PUBLICAR ANTONIO" ]] || { echo "✗ Sin confirmación: no se publica." >&2; exit 1; }
+    else
+      echo "✗ NEGADO: sin terminal, el flujo de Antonio solo se publica con --confirmo-antonio." >&2
+      exit 1
+    fi
+  fi
+}
+ES_ANTONIO=0
+if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
+  CLASE_ANTONIO="$(antonio_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')")"
+  if [[ -n "$CLASE_ANTONIO" ]]; then
+    ES_ANTONIO=1
+    antonio_guardia "archivo de origen" "$FLUJO" "$CLASE_ANTONIO"
+  fi
+fi
+
 [[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
 set -a
 # shellcheck disable=SC1090  # ruta variable: la elige --env
@@ -209,6 +278,16 @@ if [[ -n "$CLASE_VIVO" ]]; then
     # Con --crear `vivo.json` es la REFERENCIA de credenciales, no el destino: no se evalua.
     ES_RUBEN=1
     ruben_guardia "flujo vivo de destino" "$FLUJO" "$CLASE_VIVO"
+  fi
+fi
+
+CLASE_VIVO_ANTONIO="$(antonio_clase "$TMP/vivo.json" "")"
+if [[ -n "$CLASE_VIVO_ANTONIO" ]]; then
+  if [[ $ENCENDER -eq 1 ]]; then
+    antonio_guardia "encender el flujo vivo" "$TMP/vivo.json" "$CLASE_VIVO_ANTONIO"
+  elif [[ $APAGAR -eq 0 && $ES_ANTONIO -eq 0 && $CREAR -eq 0 ]]; then
+    ES_ANTONIO=1
+    antonio_guardia "flujo vivo de destino" "$FLUJO" "$CLASE_VIVO_ANTONIO"
   fi
 fi
 

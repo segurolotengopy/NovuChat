@@ -11,9 +11,9 @@ Base: `origin/main` `d260cca8`. Sin teléfonos completos ni datos bancarios en e
 | Paso 0 | Verificaciones de lectura (abajo) | Hecho |
 | PR-A | Esqueleto: receptor (6 nodos), núcleo (8), medios comunes incluidos (12), decisión mínima, armado, cadena de envío común, resumen con verificación de entrega. Huecos declarados en `PROPIO.md`. Pruebas en `admin/pruebas/tenants/rroca-antonio/` | PR #574 |
 | PR-B | Conversación, catálogo, ángulos de anuncio y prellenados, QR, comprobante, avisos, derivación, violencia y números no bolivianos; contrato del rescate | Este PR |
-| PR-C | Datos del negocio, guardia de publicación, contrato del rescate, documentación | Pendiente |
+| PR-C | Datos del negocio (`negocio-rroca-antonio.json`), guardia de publicación (`--publicable` + `publicar-flujo.sh`), fila en `docs/versiones-por-cliente.md`, precondiciones de operación, corrección de la regex de «no me escribas» | Este PR |
 
-**NO SE PUBLICA hasta el PR-C.** El PR-B quitó `meta.noPublicable` (la conversación está completa) y la guardia de `--verificar` ahora EXIGE que la marca no vuelva. Pero quitar la marca NO hace publicable el flujo: hoy NADA frena una publicación salvo los marcadores `REEMPLAZAR_*` sin sustituir. **La guardia `--publicable` en `construir.mjs` y su confirmación en `publicar-flujo.sh` para `rroca-antonio` (como la de Rubén: marcadores sin sustituir y plantillas de aviso APPROVED) son del PR-C**; `publicar-flujo.sh` no se toca en el PR-B. Hasta entonces el flujo no se publica ni se activa en un número real.
+**NO SE PUBLICA hasta cumplir las precondiciones del PR-C (abajo) y el «sí» de Andres.** El PR-B quitó `meta.noPublicable` (la conversación está completa) y la guardia de `--verificar` ahora EXIGE que la marca no vuelva. Pero quitar la marca NO hace publicable el flujo: hoy NADA frena una publicación salvo los marcadores `REEMPLAZAR_*` sin sustituir. **La guardia `--publicable` en `construir.mjs` y su confirmación en `publicar-flujo.sh` para `rroca-antonio` (como la de Rubén: marcadores sin sustituir y plantillas de aviso APPROVED) son del PR-C** y se hicieron en este PR (abajo). Aun así el flujo no se publica ni se activa en un número real hasta cumplir las precondiciones y el «sí» de Andres.
 
 ## Paso 0: lo verificado en el código (20/10/2026)
 
@@ -103,4 +103,29 @@ Las plantillas YA existen en Meta, de Antonio, y están PENDING (sin rechazo); N
 - La derivación `no_entrega` por charla libre tras un comprobante va DESPUÉS de las preguntas de precio, la confirmación de un producto y «cómo pago»: «¿cómo pago el workbook?» es una compra nueva.
 - «Bonos sueltos» (y un producto) solo se marcan como usados si el plan realmente atendió el toque.
 - P7: un saludo sin producto no lleva montos; un prellenado con producto decidido (Workbook, Calendario/Preguntas) muestra precio y botones con montos y el Pack o el Libro van directo al QR (comentario de `armar-mensajes.js` corregido).
-- Estado de PR-C: sigue pendiente (guardia `--publicable`, `publicar-flujo.sh`, catálogo del negocio, aprobación de las plantillas, línea de protección, precondiciones de operación). Ya NO están pendientes ni el catálogo con Pack y Guía agotados ni el plazo en horas (decididos).
+- Estado de PR-C (histórico, hecho en el PR-C: ver abajo): estaba pendiente (guardia `--publicable`, `publicar-flujo.sh`, catálogo del negocio, aprobación de las plantillas, línea de protección, precondiciones de operación). Ya NO están pendientes ni el catálogo con Pack y Guía agotados ni el plazo en horas (decididos).
+
+## PR-C: guardia de publicación, datos del negocio y precondiciones (20/10/2026)
+
+- **Guardia:** ver `PROPIO.md` («Guardia de publicación (PR-C)»). `--publicable` sale 1 hoy; las pruebas están en `admin/pruebas/tenants/rroca-antonio/publicacion.test.ts`.
+- **Datos del negocio:** `admin/scripts/datos/rroca-antonio/negocio-rroca-antonio.json` (secciones `negocio` y `catalogo`, las únicas que `cargar-negocio.mjs` admite aquí). Catálogo de 6 productos con ids que salen del nombre (`idDe`): `pack-completo` 49, `libro` 35, `workbook` 20, `guia-de-conversaciones` 19, `calendario-de-conexion` 17, `preguntas-profundas` 15 Bs, todos activos. Marcadores pendientes: razón comercial y horario (`_pendiente`) y el número de recepción (`numeroRecepcionMarcador`, que resuelve la tabla local; el número real no va en el repositorio). `--aplicar` niega mientras quede alguno distinto de `numeroRecepcionMarcador`.
+- **Cómo se carga lo demás (solo documentado; no se ejecuta aquí):** el QR del cobro y `config/venta` (`mediaIdQr`, `cobroReal`) los escriben los scripts existentes `admin/scripts/datos/renovar-qr-demo.mjs` y `admin/scripts/datos/escribir-qr-comercio.mjs`, con el QR de monto abierto de Antonio y con el «sí» de Andres; el id de medio de WhatsApp del QR vence (volver a subirlo antes).
+- **Excepción declarada:** la falla abierta de la pausa, en `docs/versiones-por-cliente.md` (id `rroca-pausa-falla-abierta`, vence el 17/01/2027).
+
+### Precondiciones de operación (checklist para quien opere)
+
+El flujo NO se publica ni se enciende hasta que todas se cumplan Y Andres dé el «sí» por acción. La guardia automática cubre solo las marcadas con (G).
+
+- [ ] (G) Marcadores del flujo sustituidos (ruta del receptor, verificador, `wabaIdEsperado`, `phoneNumberIdEsperado`, número de recepción, teléfonos de prueba, línea de protección).
+- [ ] (G) Las dos plantillas de aviso a Antonio en `APPROVED` en Meta, con nombre e idioma en los datos.
+- [ ] (G) Línea de protección verificada por Silvana (la línea FELCV), cargada en `lineaProteccion`.
+- [ ] (G) Catálogo y datos del negocio cargados (`cargar-negocio.mjs`, razón comercial, horario y número de recepción reales).
+- [ ] `fijar-flujos --tenant rroca-antonio --flujos venta`: el tenant con el flujo `venta` (precondición del rescate, punto 5).
+- [ ] `config/venta` con `mediaIdQr` y `cobroReal` con el QR de monto abierto de Antonio.
+- [ ] Instancia de salida de persona (`Flujos/salida-de-persona.json`, una por número) para «Tomar».
+- [ ] Bandera `consolaConversaciones` encendida para el tenant.
+- [ ] Ensayo previo en la variante de prueba y publicación en la ventana de mantenimiento, con la confirmación `PUBLICAR ANTONIO`.
+
+### Corrección de seguridad (MEDIUM) en #576
+
+La regex de «no me escribas» del reporte entrante no detectaba el trato de usted ni otras peticiones reales. Ahora normaliza el texto y acepta tú, usted, ustedes y voseo, con las exclusiones de las quejas de no entrega y de usos corrientes (detalle en `PROPIO.md`; pruebas en `rescate-contrato.test.ts`).

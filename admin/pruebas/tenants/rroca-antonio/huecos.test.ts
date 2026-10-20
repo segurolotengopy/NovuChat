@@ -154,7 +154,7 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     const propio = JSON.stringify(sinLibres(de(plantilla, 'Reportar mensaje (entrante)')));
     const viejo = origen.match(/evento: \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\) \? 'no_contactar' : undefined/);
     expect(viejo, 'el origen ya no trae la regex heredada: hay que revisar la declaración').not.toBeNull();
-    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\)\) \? 'no_contactar' : undefined/);
+    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\.normalize\('NFD'\)[^]*?\)\) \? 'no_contactar' : undefined/);
     expect(nuevo, 'el propio no trae el evento declarado').not.toBeNull();
     // Todo lo demás es idéntico al origen.
     expect(propio.replace(nuevo![0], 'EVENTO')).toBe(origen.replace(viejo![0], 'EVENTO'));
