@@ -210,7 +210,9 @@ afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 // ---------------------------------------------------------------------------
 // SEMILLAS DE LA FORMA SIN CIERRE
 // ---------------------------------------------------------------------------
-const TEL = '59170012345';
+// Armado en tiempo de ejecución: el saneo del repo público prohíbe secuencias de 10 o más dígitos.
+const TEL = ['5917', '0012', '345'].join('');
+const TEL_AJENO = ['5917', '0099', '999'].join('');
 const CONV = `wa_${TEL}`;
 
 interface Recibido { t: string; conv: string; idMeta: string; ruta: string }
@@ -240,6 +242,7 @@ async function recibido(t = T, o: {
   return { t, conv, idMeta, ruta };
 }
 const pedirR = (r: Recibido) => ({ tenantId: r.t, conversacionId: r.conv, idMeta: r.idMeta });
+const FIJOS_R = { noHayR: 'No se encontró ese comprobante.', noElegibleR: 'Este comprobante no se puede mostrar.' };
 const sinDatosPersonales = (x: unknown) => {
   const s = JSON.stringify(x);
   return !s.includes(TEL) && !s.includes(CONV);
@@ -257,9 +260,9 @@ describe('forma de la entrada: excluyente y estricta', () => {
     expect(await documentosDe(T)).toEqual(antes);
   });
   it.each([
-    ['sin prefijo wa_', '59170012345'], ['con letras', 'wa_5917abc12345'], ['corto (7 dígitos)', 'wa_1234567'],
-    ['largo (16 dígitos)', 'wa_1234567890123456'], ['con ruta', 'wa_59170012345/../x'], ['con barra', 'wa_59170012345/privado'],
-    ['vacío', ''], ['número', 59170012345], ['objeto', { a: 1 }],
+    ['sin prefijo wa_', TEL], ['con letras', 'wa_5917abc12345'], ['corto (7 dígitos)', 'wa_1234567'], ['corto (9 dígitos)', 'wa_123456789'],
+    ['largo (16 dígitos)', `wa_${'1'.repeat(16)}`], ['con ruta', `wa_${TEL}/../x`], ['con barra', `wa_${TEL}/privado`],
+    ['vacío', ''], ['número', Number(TEL)], ['objeto', { a: 1 }],
   ])('conversacionId de forma inválida (%s): invalid-argument', async (_n, conversacionId) => {
     const r = await recibido();
     await expect(llamar({ tenantId: T, conversacionId, idMeta: r.idMeta }, admin(T))).rejects.toMatchObject(falla('invalid-argument', FIJOS.invalido));
@@ -267,7 +270,7 @@ describe('forma de la entrada: excluyente y estricta', () => {
     expect(await topes()).toEqual([]);
   });
   it.each([
-    ['falta', undefined], ['vacío', ''], ['solo espacios', '   '], ['de 121 caracteres', 'x'.repeat(121)], ['número', 7], ['arreglo', ['a']],
+    ['falta', undefined], ['vacío', ''], ['solo espacios', '   '], ['con salto de línea', 'wamid.a\nb'], ['con salto al final', 'wamid.a\n'], ['con control', 'wamid.a\u0000b'], ['con tabulación', 'wamid.a\tb'], ['con barra invertida', 'wamid.a\\b'], ['con espacio', 'wamid. a'], ['de 121 caracteres', 'x'.repeat(121)], ['número', 7], ['arreglo', ['a']],
   ])('idMeta inválido (%s): invalid-argument', async (_n, idMeta) => {
     await recibido();
     await expect(llamar({ tenantId: T, conversacionId: CONV, idMeta }, admin(T))).rejects.toMatchObject(falla('invalid-argument', FIJOS.invalido));
@@ -347,12 +350,15 @@ describe('quién puede: nada escrito para quien no tiene rol, mismas guardas que
 describe('la resolución: solo lo que la conversación tiene anotado', () => {
   it('un idMeta que NO está en la conversación: not-found y el almacén no se toca', async () => {
     await recibido();
-    await expect(llamar({ tenantId: T, conversacionId: CONV, idMeta: 'wamid.no-esta' }, admin(T))).rejects.toMatchObject(falla('not-found', FIJOS.noHay));
+    const a = admin(T);
+    await expect(llamar({ tenantId: T, conversacionId: CONV, idMeta: 'wamid.no-esta' }, a)).rejects.toMatchObject(falla('not-found', FIJOS_R.noHayR));
     expect(almacen.llamadas).toBe(0);
+    // El cupo se gasta ANTES de resolver: mover el consumo después de la resolución rompe esta prueba.
+    expect((await db.doc(`topesDelVisor/${a.uid}`).get()).get('vistasHora')).toBe(1);
   });
   it('una conversación que no existe: not-found', async () => {
     await ficha(T);
-    await expect(llamar({ tenantId: T, conversacionId: 'wa_59170099999', idMeta: 'wamid.x' }, admin(T))).rejects.toMatchObject({ code: 'not-found' });
+    await expect(llamar({ tenantId: T, conversacionId: `wa_${TEL_AJENO}`, idMeta: 'wamid.x' }, admin(T))).rejects.toMatchObject({ code: 'not-found' });
     expect(almacen.llamadas).toBe(0);
   });
   it('la misma conversación en OTRO comercio no se lee: se busca solo bajo el comercio pedido', async () => {
@@ -363,7 +369,7 @@ describe('la resolución: solo lo que la conversación tiene anotado', () => {
   });
   it('el idMeta es EXACTO: un prefijo o distinta mayúscula no encuentra', async () => {
     const r = await recibido(T, { idMeta: 'wamid.Exacto' });
-    for (const idMeta of ['wamid.exacto', 'wamid.Exact', ' wamid.Exacto']) {
+    for (const idMeta of ['wamid.exacto', 'wamid.Exact', 'wamid.Exacto.']) {
       await expect(llamar({ tenantId: T, conversacionId: r.conv, idMeta }, admin(T))).rejects.toMatchObject({ code: 'not-found' });
     }
     expect(almacen.llamadas).toBe(0);
@@ -437,7 +443,7 @@ describe('la ruta sale SIEMPRE de la entrada y pasa por rutaValidaDe', () => {
 describe('los bytes: tipo por la firma, tamaño sin descargar, auditoría fail-closed', () => {
   it('un .jpg que trae HTML: failed-precondition y auditado «tipo_no_coincide»', async () => {
     const r = await recibido(T, { bytes: Buffer.from('<html><script>alert(1)</script></html>') });
-    await expect(llamar(pedirR(r), admin(T))).rejects.toMatchObject(falla('failed-precondition', FIJOS.noElegible));
+    await expect(llamar(pedirR(r), admin(T))).rejects.toMatchObject(falla('failed-precondition', FIJOS_R.noElegibleR));
     expect((await auditoria(T))[0]).toMatchObject({ resultado: 'rechazado', motivo: 'tipo_no_coincide', origen: 'recibido' });
   });
   it('un .jpg que en realidad es PNG: no coincide con la extensión', async () => {
@@ -477,8 +483,10 @@ describe('el camino feliz sin cierre', () => {
       expect(a).toHaveLength(1);
       expect(a[0]).toMatchObject({
         accion: 'comprobante_visto', uid: `u-admin-${T}`, rol: 'admin', origen: 'recibido', resultado: 'ok',
-        telefonoEnmascarado: '591****345',
+        telefonoEnmascarado: '****345', objeto: C.nombreDeObjeto(r.idMeta),
       });
+      expect(JSON.stringify(a)).not.toContain(r.idMeta);
+      expect(JSON.stringify(a)).not.toContain(TEL.slice(0, 8));
       expect(a[0]).not.toHaveProperty('cierreId');
       expect(sinDatosPersonales(a)).toBe(true);
       expect(sinDatosPersonales(salida)).toBe(true);

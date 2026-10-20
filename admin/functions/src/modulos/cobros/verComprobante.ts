@@ -53,7 +53,7 @@
  * (ruta validada, tamaño, tipo por los bytes, auditoría fail-closed) también.
  * La ruta sale SIEMPRE de la entrada del registro, nunca del cliente. La
  * auditoría de esta forma lleva `{rol, origen:'recibido', telefonoEnmascarado}`:
- * jamás el `conversacionId` ni el teléfono en claro.
+ * jamás el `conversacionId` ni el teléfono en claro (solo `****` y 3 dígitos, más `objeto`).
  *
  * APP CHECK: se exige SOLO en esta callable, y solo donde el cliente lo manda
  * (`APP_CHECK_DEL_VISOR`). Exigirlo en el resto de las Functions o en Firestore
@@ -76,10 +76,9 @@ import { esAdminDe, esOperDe, esPropietario, exigirAutenticado } from '../../cor
 import { cuentaVigenteDe, soporteVigenteDe, type RolVerificado } from '../../core/seguridad/vigencia.js';
 import { ID_TENANT, auditar, db } from '../../central/comunes.js';
 import { tieneModulo, type FichaConCapacidades } from '../../registro.js';
-import { enmascarar } from '../../core/seguridad/firma.js';
 import { diaDeLaPaz } from './cotejo.js';
 import {
-  MAXIMO_IMAGEN, MAXIMO_PDF, almacenDeComprobantes, rutaDeComprobante, rutaValidaDe, tipoPorFirma,
+  MAXIMO_IMAGEN, MAXIMO_PDF, almacenDeComprobantes, nombreDeObjeto, rutaDeComprobante, rutaValidaDe, tipoPorFirma,
   type ExtensionDeComprobante,
 } from './comprobantes.js';
 
@@ -115,8 +114,9 @@ export const TOPE_POR_DIA = 100;
 export const MIMES_DEL_VISOR = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
 
 const ID_CIERRE = /^venta_[A-Za-z0-9_-]{1,120}$/;
-const ID_CONVERSACION = /^wa_[0-9]{8,15}$/;
-const ID_META = /^.{1,120}$/s;
+const ID_CONVERSACION = /^wa_[0-9]{10,15}$/;
+/** La forma de un wamid de Meta: sin saltos de línea ni caracteres de control. */
+const ID_META = /^[A-Za-z0-9._=:+/-]{1,120}$/;
 /** Un uid de Firebase Auth como id de documento. */
 const UID_SEGURO = /^[A-Za-z0-9_-]{1,128}$/;
 const EXTENSIONES: readonly ExtensionDeComprobante[] = ['jpg', 'png', 'webp', 'pdf'];
@@ -133,6 +133,9 @@ const MENSAJES = {
   noHay: 'No hay un comprobante guardado para este cobro.',
   tope: 'Alcanzó el tope de comprobantes por hora o por día.',
   noDisponible: 'No se pudo abrir el comprobante. Intente más tarde.',
+  // Propios de la forma sin cierre (fijos): aquí no hay «cobro».
+  noHayRecibido: 'No se encontró ese comprobante.',
+  noElegibleRecibido: 'Este comprobante no se puede mostrar.',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -263,20 +266,26 @@ async function atender(p: CallableRequest): Promise<{ mime: string; base64: stri
   const hayRecibido = conversacionId !== undefined || idMetaPedido !== undefined;
   const formaConCierre = typeof cierreId === 'string' && ID_CIERRE.test(cierreId);
   const formaRecibido = typeof conversacionId === 'string' && ID_CONVERSACION.test(conversacionId)
-    && typeof idMetaPedido === 'string' && ID_META.test(idMetaPedido) && idMetaPedido.trim() !== '';
+    && typeof idMetaPedido === 'string' && ID_META.test(idMetaPedido);
   if (typeof tenantId !== 'string' || !ID_TENANT.test(tenantId) || (hayCierre && hayRecibido)
     || (hayCierre ? !formaConCierre : !formaRecibido)) {
     registrarRechazo('invalid-argument', uid);
     throw new HttpsError('invalid-argument', MENSAJES.invalido);
   }
-  // DECISIÓN PENDIENTE seguridad: `firestore.rules` deja leer `/auditoria` al propietario de NovuChat
-  // SIN ventana de soporte (`esAdmin(tenantId) || esPropietario()`). El teléfono enmascarado de la forma
-  // sin cierre queda, entonces, legible por el propietario aunque no tenga ventana. Decidir si basta
-  // el enmascarado o si la lectura de la auditoría debe exigir la ventana. No se cambian las reglas acá.
+  // DECISIÓN PENDIENTE seguridad (c): `firestore.rules` deja leer `/auditoria` al propietario de NovuChat
+  // SIN ventana de soporte (`esAdmin(tenantId) || esPropietario()`). Aquí ya se reduce lo expuesto (solo 3
+  // dígitos y `objeto`), pero falta un PR aparte para que /auditoria exija la ventana al propietario.
+  // No se cambian las reglas acá.
   /** Qué identifica la vista en la auditoría: el cierre, o el teléfono ENMASCARADO (nunca el id de la conversación). */
   const referencia: Record<string, unknown> = formaConCierre
     ? { cierreId }
-    : { origen: 'recibido', telefonoEnmascarado: enmascarar(String(conversacionId).slice(3)) };
+    : {
+      origen: 'recibido',
+      // Solo los últimos 3 dígitos: el identificador real del comprobante es `objeto`.
+      telefonoEnmascarado: `****${String(conversacionId).slice(-3)}`,
+      // sha256 base64url del idMeta = nombre del archivo en Storage. Nunca el idMeta crudo, en el asiento ni en el log.
+      objeto: nombreDeObjeto(String(idMetaPedido)),
+    };
 
   // 3. Rol del token PARA ESTE comercio. Ninguna otra pertenencia sirve.
   const rol: RolVerificado | null = esAdminDe(p, tenantId) ? 'admin'
@@ -327,7 +336,10 @@ async function atender(p: CallableRequest): Promise<{ mime: string; base64: stri
       throw new HttpsError('unavailable', MENSAJES.noDisponible);
     }
     registrarRechazo(codigo, uid, motivo);
-    throw new HttpsError(codigo, mensaje);
+    const propio = formaConCierre ? mensaje
+      : mensaje === MENSAJES.noHay ? MENSAJES.noHayRecibido
+        : mensaje === MENSAJES.noElegible ? MENSAJES.noElegibleRecibido : mensaje;
+    throw new HttpsError(codigo, propio);
   };
 
   // 7. El módulo, DEL REGISTRO (la regla de Firestore `tieneModulo` da falso para cobros).
