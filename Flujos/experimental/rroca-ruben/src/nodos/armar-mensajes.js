@@ -57,6 +57,9 @@ const conRuben = (cuerpo) => {
   return x;
 };
 const menu1 = () => rrMenu(1, cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []));
+// REGLA DE ANDRES (20/10/2026): el PRIMER mensaje a un teléfono NO lleva botones con montos. Mientras no esté saludado, todo mensaje que ofrece opciones (ingresos, modelo, respaldos) usa los dos
+// botones del saludo (sin precios); ya saludado, el menú de productos.
+const menuAbierto = () => (fichaAntes.saludado ? menu1() : rrMenuSaludo(cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])));
 
 if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   if (puerta.ruta === 'uso_extendido' && puerta.responder === true && String(puerta.texto || '').trim() !== '') {
@@ -83,7 +86,8 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   } else if (tipoDePlan === 'menu2') {
     m = conBotones(rrTextoComplementos(cat), rrMenu(2, cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])));
   } else if (tipoDePlan === 'ingresos') {
-    m = conBotones(RR_TEXTO_INGRESOS, menu1());
+    const op = menuAbierto();
+    m = conBotones(rrTextoIngresos(op.length > 0), op);
   } else if (tipoDePlan === 'modelo') {
     // LO QUE REDACTA EL MODELO: se revisa y se pule; un rechazo (monto, promesa, enlace, negar ser IA, varias preguntas…), un error del servicio o un texto vacío caen al texto fijo.
     const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
@@ -96,9 +100,10 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
         maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [rrExtraRedaccion],
       });
       const bueno = rev.motivo === '' && rev.texto.trim() !== '';
-      const cuerpo = bueno ? rev.texto : RR_TEXTO_MODELO_CAIDO;
+      const op = menuAbierto();
+      const cuerpo = bueno ? rev.texto : rrTextoModeloCaido(op.length > 0);
       if (bueno) ultimoModelo = cuerpo.slice(0, 300);
-      m = conBotones(cuerpo, menu1());
+      m = conBotones(cuerpo, op);
       tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
     }
   } else if (tipoDePlan === 'qr') {
