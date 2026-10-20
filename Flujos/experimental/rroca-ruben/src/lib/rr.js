@@ -32,7 +32,25 @@ function rrNorm(t) {
 function rrSeguro(texto) {
   if (RR_NIEGA_IA.test(rrNorm(texto))) return rrParrafos(RR_SALUDO_MINIMO);
   if (CB_PROHIBIDAS.test(cbCanon(texto))) return rrParrafos(RR_SALUDO_MINIMO);
-  return rrParrafos(texto);
+  // Observación de Silvana (20/10/2026): la presentación se dice UNA sola vez por mensaje, venga de donde venga (texto fijo, modelo, respaldo).
+  return rrParrafos(rrUnaPresentacion(texto, true));
+}
+// ¿Esta oración es una PRESENTACIÓN del asistente («Soy el asistente de Rubén», «Hola, soy el asistente virtual de Rubén»)? Sobre texto normalizado.
+function rrEsPresentacion(oracion) {
+  return /\b(soy|somos) (el |la |un |una |tu )?(asistente|ayudante)s?\b|\basistente virtual de ruben\b/.test(rrNorm(oracion));
+}
+// Deja a lo más `cupo` oraciones de presentación en el texto (la primera) y QUITA las demás; los párrafos se conservan. `cupo` true = una; false = ninguna. Una lista (bloque con saltos) no se toca.
+function rrUnaPresentacion(texto, cupo) {
+  let libre = cupo === true ? 1 : (Number(cupo) || 0);
+  const bloques = rrTexto(texto).split('\n\n').map((bloque) => {
+    if (bloque.indexOf('\n') >= 0) return bloque;
+    return rrOraciones(bloque).filter((o) => { if (!rrEsPresentacion(o)) return true; if (libre > 0) { libre -= 1; return true; } return false; }).join(' ');
+  }).filter((b) => b.trim() !== '');
+  return bloques.join('\n\n');
+}
+// «¿Eres un robot?», «¿hablo con una IA?», «¿eres una persona?»: el cliente pregunta qué es el asistente (prohibición 4: se reconoce con naturalidad; nunca se quita esa respuesta).
+function rrPreguntaPorIA(n) {
+  return /\b(eres|sos|es|seras) (un |una |tu )?(robot|bot|chatbot|ia|inteligencia|maquina|persona|humano|humana|real)\b|\b(hablo|estoy hablando|hablando) con (un |una )?(robot|bot|chatbot|ia|inteligencia|maquina|persona|humano|humana)\b|\bsi eres\b/.test(n);
 }
 // PÁRRAFOS (regla de Andres, 20/10/2026): el texto al cliente nunca va en un bloque corrido. Cada párrafo lleva a lo más DOS oraciones y, con dos, a lo más RR_PARRAFO_MAX caracteres; la pregunta
 // final va en su propio párrafo; se separan con UNA línea en blanco. Es el MISMO mensaje (0 mensajes agregados) y NO cambia ni una palabra: solo reparte espacios en blanco. Lo que ya trae líneas sueltas
@@ -134,8 +152,10 @@ const RR_PRODUCTOS = {
   videos: { catId: 'videos-ia', nombre: 'los videos tutoriales para crear contenido con IA', incluye: '', boton: 'b_videos' },
 };
 const RR_BOTON_COMPLEMENTOS = 'b_comp';
-// Los dos botones del saludo: «Ver precios» abre el menú de productos; «Hablar con Rubén» deriva (aviso + botón al chat de Rubén).
+// Los dos botones del saludo: «Ver precios» abre el menú de productos; «Más información» explica por código qué incluye el libro (Silvana, 20/10/2026: Rubén es un recurso solo para casos críticos y NO se ofrece
+// en el saludo). `b_ruben` («Hablar con Rubén») sigue existiendo como toque de derivación fuera del saludo (un chat viejo, un botón antiguo).
 const RR_BOTON_PRECIOS = 'b_precios';
+const RR_BOTON_INFO = 'b_info';
 const RR_BOTON_HABLAR = 'b_ruben';
 const RR_PRODUCTO_DE_BOTON = { b_pack: 'pack', b_libro: 'libro', b_closer: 'closer', b_videos: 'videos' };
 const RR_VENTANA_AVISO_CONSULTA_MS = 30 * 60 * 1000;   // a lo más un aviso de consulta a Rubén por teléfono Y POR MOTIVO en esta ventana
@@ -294,6 +314,18 @@ function rrPreguntaPorPrecio(n) {
   if (/\b(libro|bonos?|ebook)\b/.test(n)) nombrados.push('libro');
   return { producto: nombrados.length === 1 ? nombrados[0] : '' };
 }
+// «¿Qué incluye?», «¿cuáles son los bonos?», «capítulos», «de qué trata»: se contestan POR CÓDIGO desde los datos fijos del guion, sin modelo. Devuelve 'bonos' | 'capitulos' | 'info' | ''.
+// Una pregunta por el Pack, el Closer o los videos NO entra aquí (sigue al modelo), ni una frase larga que solo nombra el contenido («quiero crear contenido»).
+function rrTemaDeInfo(n) {
+  const palabras = n === '' ? 0 : n.split(' ').length;
+  if (/^(mas informacion|informacion|info|mas info)( ruben)?$/.test(n)) return 'info';
+  if (/\b(pack|closer|prompt maestro|videos?|curso|tutoriales?)\b/.test(n)) return '';
+  if (palabras <= 8 && /\b(capitulos?|temario)\b/.test(n)) return 'capitulos';
+  if (/^(el |su )?contenido( del libro)?$|\bcontenido del (libro|curso)\b|\bque contenido\b/.test(n)) return 'capitulos';
+  if (palabras <= 8 && /\bbonos?\b/.test(n)) return 'bonos';
+  if (palabras <= 8 && /\b(que (incluye|trae|contiene)|de que (trata|va|se trata))\b/.test(n)) return 'info';
+  return '';
+}
 function rrPreguntaPorIngresos(n) {
   return /\bgarantiz\w*\b[^.?!]{0,40}\b(ganar|ingres|dinero|resultad)|\bganar dinero\b|\bcuanto (voy a |puedo )?(gano|ganar)\b|\bingresos\b/.test(n);
 }
@@ -346,7 +378,7 @@ function rrMenuSaludo(cat, usados) {
   const u = Array.isArray(usados) ? usados : [];
   const b = [];
   if (rrMenu(1, cat, []).length) b.push(rrBoton(RR_BOTON_PRECIOS, 'Ver precios'));
-  b.push(rrBoton(RR_BOTON_HABLAR, 'Hablar con Rubén'));
+  b.push(rrBoton(RR_BOTON_INFO, 'Más información'));
   return b.filter((x) => u.indexOf(x.id) < 0);
 }
 // El precio por código. Con producto reconocido y con precio en el catálogo, lo dice exacto; si no, lista los que SÍ tienen precio (nunca un precio inventado ni «según tu país»).
@@ -365,6 +397,19 @@ function rrTextoPrecio(cat, producto, conOpciones) {
   if (rrPrecio(cat, 'closer') !== null) partes.push('el Prompt Closer ' + rrMontoBs(rrPrecio(cat, 'closer')));
   if (rrPrecio(cat, 'videos') !== null) partes.push('los videos con IA ' + rrMontoBs(rrPrecio(cat, 'videos')));
   return partes.length ? 'Los precios son: ' + partes.join(', ') + '.' + cierre : RR_TEXTO_PRECIOS;
+}
+// Los datos fijos del guion (base_de_conocimiento_del_producto, puntos 1 y 2): nada inventado, sin precios.
+const RR_BONOS = ['Biblioteca de 100 Prompts de IA (marketing, ventas y contenido)', 'Mapa de Automatización de tu Negocio (qué automatizar primero)', '30 Ideas de Negocio con IA', 'Checklist «IA en tu negocio en 7 días» (plan paso a paso)'];
+const RR_CAPITULOS = ['La mentalidad del emprendedor aumentado por IA', 'Cómo funciona la IA y cómo aprovecharla sin ser experto', 'Cómo descubrir nuevas oportunidades de ingresos con IA', 'Cómo crear productos digitales más rápido con IA',
+  'Cómo conseguir clientes con ayuda de la IA', 'Cómo crear contenido que atraiga clientes', 'Cómo usar IA para vender más y cerrar mejores oportunidades', 'Cómo automatizar marketing y comunicación',
+  'Cómo crear tu asistente personal de IA', 'Cómo automatizar procesos del negocio', 'Cómo crear tu equipo virtual de IA', 'El sistema operativo del emprendedor con IA'];
+// `tema`: 'info' (el botón «Más información», o «qué incluye»), 'bonos' o 'capitulos'. `conOpciones === false`: no hay botones que ofrecer, y el texto no cierra con una pregunta por opciones.
+function rrTextoInfo(tema, conOpciones) {
+  const bonos = RR_BONOS.map((b, i) => (i + 1) + ') ' + b).join('\n');
+  const cierre = conOpciones === false ? '' : '\n\n¿Qué opción prefieres?';
+  if (tema === 'bonos') return 'Estos son los 4 bonos que trae el libro:\n\n' + bonos + cierre;
+  if (tema === 'capitulos') return 'El libro tiene 12 capítulos, paso a paso:\n\n' + RR_CAPITULOS.map((c, i) => (i + 1) + '. ' + c).join('\n') + cierre;
+  return 'El libro «IA para Emprendedores Independientes» tiene 12 capítulos y más de 230 páginas, es 100% digital y está pensado para quien no sabe de tecnología.\n\nAdemás trae 4 bonos:\n\n' + bonos + cierre;
 }
 const RR_PREGUNTA_CONSULTA = '¿Qué duda tienes sobre el libro?';
 // Los textos que preguntan por «las opciones» salen SOLO con botones (solo se ofrece lo que se cumple): `conOpciones === false` usa la variante SIN esa pregunta.

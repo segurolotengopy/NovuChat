@@ -6,6 +6,7 @@
  *   3. UNA SOLA PRESENTACIÓN por mensaje («asistente» a lo más una vez) Y UNA POR TELÉFONO: la presentación («asistente virtual de Rubén», el saludo largo) sale a lo más una vez en toda la conversación;
  *   4. PÁRRAFOS: cada párrafo (separado por una línea en blanco) tiene a lo más DOS oraciones y, con dos, a lo más 220 caracteres; sin saltos triples ni espacios sobrantes. La partición en oraciones es la
  *      de la LIBRERÍA (`rrOraciones` de `rr.js`): no puede haber desacuerdo entre quien reparte y quien vigila.
+ *   3b. (Silvana, 20/10/2026) LA PRESENTACIÓN SE DICE UNA SOLA VEZ: a lo más una oración de presentación por mensaje y, sumando todos los mensajes de un turno, a lo más una.
  *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?», «¿qué opción…?» o «¿con cuál…?» sale con al menos un botón en ese mismo mensaje (solo se ofrece lo que se cumple).
  */
 import { readFileSync } from 'node:fs';
@@ -18,7 +19,7 @@ import type { Mundo } from '../../lib/n8n-de-mentira';
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-ruben/src/lib');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
 // nosemgrep: devsecops.js-eval-prohibido
-export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones };')() as { rrOraciones: (b: string) => string[] };
+export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean };
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }
 interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number }
@@ -41,6 +42,9 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
   }
   return v;
 }
+/** Cuántas veces se presenta el asistente en UN texto («Soy el asistente…», «asistente virtual de Rubén»), contadas por oración. Debe ser a lo más 1 por mensaje y por turno. */
+export const contarPresentaciones = (cuerpo: string): number =>
+  cuerpo.split('\n').reduce((n, linea) => n + LIB.rrOraciones(linea).filter((o) => LIB.rrEsPresentacion(o)).length, 0);
 /** ¿Este mensaje contiene la presentación del asistente (la frase de presentación o el saludo largo)? */
 export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de rub|qu[eé] gusto saludarte|te cuento: el libro digital/i.test(cuerpo);
 /**
@@ -54,6 +58,8 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
   if (idToque) pulsados.add(idToque);
   const textoEntrante = entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '';
   const eligioProducto = ['b_pack', 'b_libro', 'b_closer', 'b_videos'].includes(idToque) || /^Hola Rubén, quiero (el Pack Completo|el libro IA para Emprendedores)/.test(textoEntrante);
+  const enElTurno = mensajes.reduce((n, m) => n + contarPresentaciones(m.cuerpo), 0);
+  if (enElTurno > 1) v.push(`la presentación del asistente salió ${enElTurno} veces en el mismo turno`);
   for (const m of mensajes) {
     for (const id of idsDeBotones(m)) if (pulsados.has(id)) v.push(`el botón pulsado «${id}» reapareció`);
     if (m.tipo === 'image' && !eligioProducto) v.push('se ofreció el QR (pagar) sin que el cliente eligiera un producto en este turno');

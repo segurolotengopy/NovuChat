@@ -1,8 +1,9 @@
 // DECIDIR TURNO: el CÓDIGO decide qué pasa en este turno; el modelo solo conversa. Devuelve un `plan` (nada de texto libre del modelo sale de aquí):
 //
 //   nada           la puerta cerró el turno (suspendido, uso extendido, pausa por persona): no se hace nada más;
-//   saludo         el saludo fijo y CORTO con dos botones (hola, más información, precio, «cuánto cuesta» como PRIMER mensaje —sin precio—; o el prellenado 5, con su pregunta, sin presentación si ya fue saludado);
+//   saludo         el saludo fijo y CORTO con dos botones («Ver precios» y «Más información»; nunca «Hablar con Rubén») (hola, más información, precio, «cuánto cuesta» como PRIMER mensaje —sin precio—; o el prellenado 5, con su pregunta, sin presentación si ya fue saludado);
 //   complemento    prellenado 3 o 4: el precio del complemento, el ahorro del Pack calculado por el código y DOS botones;
+//   info           «Más información», «bonos», «capítulos», «qué incluye»: datos fijos del guion, POR CÓDIGO (sin modelo), con el menú de productos;
 //   menu2          «Ver complementos»;
 //   precio         «¿cuánto cuesta…?» YA SALUDADO: el precio exacto del catálogo, por código y sin modelo, con el menú de productos;
 //   precios        el botón «Ver precios» del saludo (o un botón desconocido ya saludado): el menú de productos con sus precios; sin opciones que mostrar, `derivar` con motivo `sin_opciones`;
@@ -86,6 +87,12 @@ if (t.tipo === 'interactive') {
     if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat, boton: id });
     return salir(opcionesDe(ficha.usados.concat([id]), id));
   }
+  // «Más información»: la explicación del libro y sus bonos, por código. Como PRIMER mensaje (un chat viejo) no se muestran montos: el saludo corto.
+  if (id === RR_BOTON_INFO) {
+    if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: id });
+    if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat, boton: id });
+    return salir({ tipo: 'info', tema: 'info', cat: cat, boton: id });
+  }
   if (id === RR_BOTON_HABLAR) return salir({ tipo: 'derivar', motivo: 'hablar_boton', clave: 'hablar_con_ruben', aviso: avisoDeConsulta('hablar_con_ruben', 'quiere hablar con Rubén'), cat: cat, boton: id });
   // Un toque que no es de este flujo (un botón viejo, una lista de otro mensaje): nunca se toma por una conversación libre. Con un QR abierto, el recordatorio del QR (como «Ver precios»); se contesta con el
   // saludo fijo si es la primera vez; si ya fue saludado, NO se repite el saludo: el menú de productos (o el de complementos, o Rubén si no hay opciones).
@@ -108,13 +115,16 @@ if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: deriv
 if (rrPreguntaPorIngresos(norm)) return salir({ tipo: 'ingresos', cat: cat });
 // Con un QR abierto, cualquier texto recibe el recordatorio (un solo QR a la vez); el modelo no interviene.
 if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
-// Una pregunta de precio («cuánto cuesta…», «precio»…): el PRIMER mensaje recibe el saludo corto con «Ver precios» y «Hablar con Rubén», SIN precio (Andres, 20/10/2026); ya saludado, el precio exacto
+// Una pregunta de precio («cuánto cuesta…», «precio»…): el PRIMER mensaje recibe el saludo corto con «Ver precios» y «Más información», SIN precio (Andres, 20/10/2026); ya saludado, el precio exacto
 // sale POR CÓDIGO desde el catálogo, sin modelo, con el menú de productos. Sin ningún precio en el catálogo no hay nada que decir: se deriva a Rubén.
 const precioPedido = rrPreguntaPorPrecio(norm);
 if (precioPedido) {
   if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
   return salir(Object.keys(cat).length ? { tipo: 'precio', producto: precioPedido.producto, cat: cat } : sinOpciones(''));
 }
+// «¿Cuáles son los bonos?», «qué incluye el libro», «capítulos»: los datos fijos del guion, por código y sin modelo; como PRIMER mensaje, el saludo corto (ningún primer mensaje lleva montos).
+const tema = rrTemaDeInfo(norm);
+if (tema) return salir(ficha.saludado ? { tipo: 'info', tema: tema, cat: cat } : { tipo: 'saludo', pregunta: 'general', cat: cat });
 if (!ficha.saludado && rrEsSoloSaludo(norm)) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
 // «Desde solo 32 Bs» (la captura del anuncio general) sigue el camino fijo, sin modelo: primero el saludo corto; ya saludado, los precios por código.
 const anuncio = rrAnuncioDe(t.texto);
