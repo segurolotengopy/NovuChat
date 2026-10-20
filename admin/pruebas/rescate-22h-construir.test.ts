@@ -16,7 +16,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import type { Flujo, J } from './lib/flujo';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, RS_URL_INGESTA, RS_URL_RECLAMAR, TOPE_DE_NODOS, archivoDe, construir, guardiaDePublicacion, guardias, tenantsConRescate } from '../../Flujos/experimental/rescate-22h/construir.mjs';
+import { AQUI, RS_URL_INGESTA, RS_URL_RECLAMAR, TOPE_DE_NODOS, archivoDe, construir, estadoDelContrato, guardiaDePublicacion, guardias, tenantsConRescate } from '../../Flujos/experimental/rescate-22h/construir.mjs';
 import { nodosDeEnvio } from '../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
 
 const ESTA = dirname(fileURLToPath(import.meta.url));
@@ -194,21 +194,49 @@ describe('guardias: cada una con su caso negativo', () => {
     nodo(g, 'Reclamar rescates').retryOnFail = true;
     expect(hallazgos(g)).toMatch(/no se reintenta/);
   });
-  it('la puerta de la entrega: sin «¿Meta aceptó?», o con el reporte o el respaldo colgados de otro lado, se rechaza', () => {
+  it('la puerta de la entrega: sin «¿Meta aceptó?», o con el reporte colgado de otro lado, se rechaza', () => {
     const f = copia(RUBEN);
     f.nodes = f.nodes.filter((n) => n.name !== '¿Meta aceptó?');
     expect(hallazgos(f)).toMatch(/falta «¿Meta aceptó\?»/);
     const g = copia(RUBEN);
     g.connections['¿Falló el envío?'] = { main: [[{ node: 'Enviar respaldo', type: 'main', index: 0 }], [{ node: '¿Reportar? (saliente)', type: 'main', index: 0 }]] };
     expect(hallazgos(g)).toMatch(/«¿Falló el envío\?» tiene que enviar su salida/);
-    const h = copia(RUBEN);
-    h.connections['Enviar respaldo'] = { main: [[{ node: '¿Reportar? (saliente)', type: 'main', index: 0 }]] };
-    expect(hallazgos(h)).toMatch(/«Enviar respaldo» tiene que colgar SOLO/);
   });
-  it('el orden: Reclamar → Preparar → Redactar → Armar → ¿Enviar de verdad?', () => {
+  it('SIN respaldo (M-4): ni el nodo «Enviar respaldo» ni un destino en la salida «con fallo» de «¿Falló el envío?»', () => {
+    expect(RUBEN.nodes.some((n) => n.name === 'Enviar respaldo')).toBe(false);
+    expect((RUBEN.connections as J)['¿Falló el envío?'].main[0]).toEqual([]);
+    const f = copia(RUBEN);
+    f.nodes.push({ id: 'r', name: 'Enviar respaldo', type: 'n8n-nodes-base.httpRequest', parameters: { url: 'https://graph.facebook.com/v26.0/1/messages' } });
+    expect(hallazgos(f)).toMatch(/«Enviar respaldo» no puede existir/);
+    const g = copia(RUBEN);
+    (g.connections as J)['¿Falló el envío?'].main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
+    expect(hallazgos(g)).toMatch(/salida «con fallo»/);
+  });
+  it('«¿Hay historial?»: sin ella, o con sus salidas cruzadas, se rechaza (sin historial no hay llamada a Gemini)', () => {
+    const f = copia(RUBEN);
+    f.nodes = f.nodes.filter((n) => n.name !== '¿Hay historial?');
+    expect(hallazgos(f)).toMatch(/falta «¿Hay historial\?»/);
+    const g = copia(RUBEN);
+    g.connections['¿Hay historial?'] = { main: [[{ node: 'Redactar rescate', type: 'main', index: 0 }], [{ node: 'Redactar rescate', type: 'main', index: 0 }]] };
+    expect(hallazgos(g)).toMatch(/salida «no» SOLO a «Armar rescate»/);
+  });
+  it('lista BLANCA de tipos de nodo y de credencial, y nombre del flujo con su forma', () => {
+    for (const tipo of ['n8n-nodes-base.executeCommand', 'n8n-nodes-base.function', 'n8n-nodes-base.merge', 'n8n-nodes-base.wait']) {
+      const f = copia(RUBEN);
+      f.nodes.push({ id: 'x', name: 'Extra', type: tipo, parameters: {} });
+      expect(hallazgos(f), tipo).toMatch(/tipo no admitido/);
+    }
+    const g = copia(RUBEN);
+    (nodo(g, 'Reclamar rescates') as J)['credentials'] = { oAuth2Api: { id: '', name: 'x' } };
+    expect(hallazgos(g)).toMatch(/credencial de un tipo no admitido/);
+    const h = copia(RUBEN);
+    h.name = 'Otro flujo';
+    expect(hallazgos(h)).toMatch(/nombre del flujo/);
+  });
+  it('el orden: Reclamar → Preparar → ¿Hay historial? → Redactar → Armar → ¿Enviar de verdad?', () => {
     const f = copia(RUBEN);
     f.connections['Preparar rescates'] = { main: [[{ node: 'Armar rescate', type: 'main', index: 0 }]] };
-    expect(hallazgos(f)).toMatch(/Preparar rescates.*no está conectado a «Redactar rescate»/);
+    expect(hallazgos(f)).toMatch(/Preparar rescates.*no está conectado a «¿Hay historial\?»/);
     const g = copia(RUBEN);
     g.connections['Armar rescate'] = { main: [[]] };
     expect(hallazgos(g)).toMatch(/Armar rescate.*¿Enviar de verdad\?/);
@@ -241,8 +269,37 @@ describe('datos inválidos', () => {
     rechaza(datosTemporales((d) => { d['configBase'].telefonosDePrueba = '123'; }), 'rroca-ruben', /telefonosDePrueba/);
     rechaza(datosTemporales((d) => { d['configBase'].telefonosExcluidos = 'abc'; }), 'rroca-ruben', /telefonosExcluidos/);
   });
+  it('el nombre del flujo con otra forma, y una versión de Graph que el nodo no aceptaría al ejecutar', () => {
+    rechaza(datosTemporales((d) => { d['nombreFlujo'] = 'Otro nombre'; }), 'rroca-ruben', /nombreFlujo/);
+    rechaza(datosTemporales((d) => { d['configBase'].waGraphVersion = 'v26.10'; }), 'rroca-ruben', /waGraphVersion/);
+    rechaza(datosTemporales((d) => { d['configBase'].waGraphVersion = '26.0'; }), 'rroca-ruben', /waGraphVersion/);
+  });
   it('un tenant sin archivo de datos (Antonio todavía no tiene)', () => {
     expect(() => construir({ tenant: 'rroca-antonio', verificar: true })).toThrow(/no existe el archivo de datos/);
+  });
+});
+
+describe('contrato del consumidor: el tenant declara la prueba negativa de su batería', () => {
+  const rechaza = (ruta: string, patron: RegExp) => expect(() => construir({ tenant: 'rroca-ruben', datos: ruta, verificar: true })).toThrow(patron);
+  it('Rubén lo declara como pendiente del PR-B, explícito (no inventa una ruta)', () => {
+    const d = JSON.parse(leer(DATOS)) as J;
+    expect(d['contratoConsumidor']).toEqual({ estado: 'pendiente-pr-b' });
+    expect(estadoDelContrato(d['contratoConsumidor'])).toEqual({ pendiente: true, errores: [] });
+  });
+  it('un tenant que no declara nada falla con un mensaje claro', () => {
+    rechaza(datosTemporales((d) => { delete d['contratoConsumidor']; }), /contratoConsumidor: falta/);
+    rechaza(datosTemporales((d) => { d['contratoConsumidor'] = {}; }), /contratoConsumidor.prueba/);
+  });
+  it('una ruta que no existe, o que sale del repo, o un estado que no es el admitido, se rechazan', () => {
+    rechaza(datosTemporales((d) => { d['contratoConsumidor'] = { prueba: 'admin/pruebas/no-existe.test.ts' }; }), /no existe/);
+    rechaza(datosTemporales((d) => { d['contratoConsumidor'] = { prueba: '../fuera.test.ts' }; }), /ruta relativa/);
+    rechaza(datosTemporales((d) => { d['contratoConsumidor'] = { prueba: '/etc/passwd' }; }), /ruta relativa/);
+    rechaza(datosTemporales((d) => { d['contratoConsumidor'] = { estado: 'listo' }; }), /pendiente-pr-b/);
+  });
+  it('una prueba que existe pasa; con un `caso` que no contiene, no', () => {
+    const ok = datosTemporales((d) => { d['contratoConsumidor'] = { prueba: 'admin/pruebas/rescate-22h-construir.test.ts', caso: 'contrato del consumidor' }; });
+    expect((construir({ tenant: 'rroca-ruben', datos: ok, verificar: true }) as { nodos: number }).nodos).toBe(13);
+    rechaza(datosTemporales((d) => { d['contratoConsumidor'] = { prueba: 'admin/pruebas/rescate-22h-construir.test.ts', caso: `${'NO'}_${'ESTA'}_ZZ` }; }), /no contiene/);
   });
 });
 
@@ -252,6 +309,7 @@ describe('publicación: no sale con marcadores', () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('REEMPLAZAR_TELEFONOS_RESCATE_RROCA_RUBEN');
     expect(r.stderr).toContain('REEMPLAZAR_PHONE_NUMBER_ID_RROCA_RUBEN');
+    expect(r.stderr, 'mientras el contrato esté pendiente tampoco se publica').toContain('pendiente-pr-b');
   });
   it('con los marcadores sustituidos, la guardia lo deja pasar; basta uno sin sustituir para negarlo', () => {
     const lleno = copia(RUBEN);
@@ -270,7 +328,7 @@ describe('publicación: no sale con marcadores', () => {
 });
 
 describe('«no se copia»: dos tenants iguales salvo los datos', () => {
-  const rutaA = datosTemporales((d) => { d['tenant'] = 'prueba-a'; });
+  const rutaA = datosTemporales((d) => { d['tenant'] = 'prueba-a'; d['nombreFlujo'] = 'NovuChat — Rescate 22 h (prueba-a)'; });
   const rutaB = datosTemporales((d) => {
     d['tenant'] = 'prueba-b';
     d['nombreFlujo'] = 'NovuChat — Rescate 22 h (prueba-b)';
@@ -296,10 +354,10 @@ describe('«no se copia»: dos tenants iguales salvo los datos', () => {
     expect(JSON.stringify(sinDatos(A))).toBe(JSON.stringify(sinDatos(B)));
     expect(JSON.stringify(sinDatos(A))).toBe(JSON.stringify(sinDatos(copia(RUBEN))));
   });
-  it('la cadena de envío es la del módulo común (no una copia): idéntica a `nodosDeEnvio`', () => {
-    const comun = nodosDeEnvio({ credenciales: { graph: 'Graph B', ingesta: 'Ingesta B' }, ingestaUrl: RS_URL_INGESTA, armado: 'Armar rescate', config: 'Config base', entrada: 'Config base', desde: [1440, 300] }) as { nodes: unknown[] };
-    const propios = new Set(['Cada 10 minutos', 'Config base', 'Reclamar rescates', 'Preparar rescates', 'Redactar rescate', 'Armar rescate', '¿Meta aceptó?']);
-    expect(B.nodes.filter((n) => !propios.has(n.name))).toEqual(comun.nodes);
+  it('la cadena de envío es la del módulo común (no una copia): idéntica a `nodosDeEnvio`, salvo «Enviar respaldo» (que se quita a propósito)', () => {
+    const comun = nodosDeEnvio({ credenciales: { graph: 'Graph B', ingesta: 'Ingesta B' }, ingestaUrl: RS_URL_INGESTA, armado: 'Armar rescate', config: 'Config base', entrada: 'Config base', desde: [1680, 300] }) as { nodes: unknown[] };
+    const propios = new Set(['Cada 10 minutos', 'Config base', 'Reclamar rescates', 'Preparar rescates', '¿Hay historial?', 'Redactar rescate', 'Armar rescate', '¿Meta aceptó?']);
+    expect(B.nodes.filter((n) => !propios.has(n.name))).toEqual((comun.nodes as { name: string }[]).filter((n) => n.name !== 'Enviar respaldo'));
     expect(B.nodes.length).toBe(13);
   });
   it('los nodos Code INCLUYEN la librería y el filtro (byte a byte), no una copia retocada', () => {

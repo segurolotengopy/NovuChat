@@ -53,7 +53,7 @@
         }
       },
       "credentials": { "httpHeaderAuth": { "id": "", "name": "@@cred:ingesta" } },
-      "notes": "POST reclamarRescates: el SERVIDOR decide quién toca rescate (22 h a 23 h 30 min sin mensaje del cliente, sin compra, sin pasar a una persona) y lo MARCA antes de contestar. Sin onError y sin reintentos: si falla, la ejecución falla y se ve. Con la lista de prueba encendida manda soloTelefonos y el servidor no gasta el rescate de un cliente real."
+      "notes": "POST reclamarRescates: el SERVIDOR decide quién toca rescate (22 h a 23 h 30 min sin mensaje del cliente, sin compra, sin pasar a una persona) y lo MARCA antes de contestar. Sin onError y sin reintentos: si falla, la ejecución falla (con `saveDataErrorExecution: none` n8n NO la guarda; lo visible son los registros de la Function: 401, 409 o 500). Con la lista de prueba encendida manda soloTelefonos y el servidor no gasta el rescate de un cliente real."
     },
     {
       "id": "preparar",
@@ -65,11 +65,34 @@
       "notes": "Valida la respuesta (línea, teléfono, corte de 23 h 50 min, lista de prueba) y arma la llamada al modelo. Sin rescates no emite nada: no hay llamadas ni envíos."
     },
     {
+      "id": "hay-historial",
+      "name": "¿Hay historial?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [960, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.suficiente === true }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo los rescates con historial suficiente llegan a «Redactar rescate» (salida «sí»): sin historial NO hay llamada a Gemini ni salen los textos del cliente hacia el modelo. La salida «no» va directo a «Armar rescate», que les pone el texto fijo."
+    },
+    {
       "id": "redactar",
       "name": "Redactar rescate",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [960, 300],
+      "position": [1200, 160],
       "credentials": { "googlePalmApi": { "id": "", "name": "@@cred:gemini" } },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
@@ -90,7 +113,7 @@
       "name": "Armar rescate",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1200, 300],
+      "position": [1440, 300],
       "parameters": { "jsCode": "@@todo+filtro:nodos/armar-rescate.js" },
       "notes": "Verifica el cuerpo del modelo con el filtro de redacción y antepone el saludo fijo («asistente virtual»); ante cualquier falla, sale el texto fijo. Un ítem por mensaje para la cadena de envío común. Sin `evento`."
     },
@@ -99,7 +122,7 @@
       "name": "¿Meta aceptó?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [2160, 300],
+      "position": [2400, 300],
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
@@ -115,14 +138,15 @@
         },
         "options": {}
       },
-      "notes": "PUERTA de la entrega (regla I-ENTREGA 3): el reporte saliente solo corre si Meta devolvió `messages[0].id` y ningún `error`, sea del envío o de su respaldo. Lo conecta `construir.mjs` a la salida de «¿Falló el envío?» y de «Enviar respaldo», antes de «¿Reportar? (saliente)», sin tocar los nodos comunes."
+      "notes": "PUERTA de la entrega (regla I-ENTREGA 3): el reporte saliente solo corre si Meta devolvió `messages[0].id` y ningún `error`, Este flujo NO tiene respaldo: un envío fallido o con timeout no se reenvía (podría duplicar el rescate). Lo conecta `construir.mjs` a la salida «sin fallo» de «¿Falló el envío?», antes de «¿Reportar? (saliente)», y quita «Enviar respaldo» de la cadena común, sin tocar sus demás nodos."
     }
   ],
   "connections": {
     "Cada 10 minutos": { "main": [[{ "node": "Config base", "type": "main", "index": 0 }]] },
     "Config base": { "main": [[{ "node": "Reclamar rescates", "type": "main", "index": 0 }]] },
     "Reclamar rescates": { "main": [[{ "node": "Preparar rescates", "type": "main", "index": 0 }]] },
-    "Preparar rescates": { "main": [[{ "node": "Redactar rescate", "type": "main", "index": 0 }]] },
+    "Preparar rescates": { "main": [[{ "node": "¿Hay historial?", "type": "main", "index": 0 }]] },
+    "¿Hay historial?": { "main": [[{ "node": "Redactar rescate", "type": "main", "index": 0 }], [{ "node": "Armar rescate", "type": "main", "index": 0 }]] },
     "Redactar rescate": { "main": [[{ "node": "Armar rescate", "type": "main", "index": 0 }]] },
     "¿Meta aceptó?": { "main": [[{ "node": "¿Reportar? (saliente)", "type": "main", "index": 0 }], []] }
   },

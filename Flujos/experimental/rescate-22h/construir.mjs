@@ -30,6 +30,10 @@ export const CARPETA_DE_DATOS = join(AQUI, '../../../admin/scripts/datos');
 export const RS_URL_RECLAMAR = 'https://us-east1-novuchat-demo.cloudfunctions.net/reclamarRescates';
 export const RS_URL_INGESTA = 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta';
 export const TOPE_DE_NODOS = 16;
+export const RAIZ_DEL_REPO = join(AQUI, '../../..');
+/** Lo único que puede ser un nodo de este flujo (lista BLANCA) y las credenciales que puede llevar. */
+export const TIPOS_ADMITIDOS = new Set(['scheduleTrigger', 'set', 'httpRequest', 'code', 'if'].map((t) => `n8n-nodes-base.${t}`));
+export const CREDENCIALES_ADMITIDAS = new Set(['httpHeaderAuth', 'googlePalmApi', 'whatsAppApi']);
 const ANFITRIONES_LIBRES = ['graph.facebook.com', 'generativelanguage.googleapis.com'];
 
 /**
@@ -86,7 +90,7 @@ const TELEFONOS = '\\d{8,15}(,\\d{8,15})*';
 // Lista CERRADA de lo que «Config base» puede llevar: cualquier otra clave (p. ej. `modoPrueba`) se rechaza.
 const FORMAS_CONFIG = {
   phoneNumberId: /^(\d{6,25}|REEMPLAZAR_[A-Z0-9_]+)$/,
-  waGraphVersion: /^v\d{1,2}\.\d{1,2}$/,
+  waGraphVersion: /^v\d{1,2}\.\d$/, // la MISMA forma que usa el nodo «Armar rescate» al ejecutar
   modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/,
   telefonosDePrueba: new RegExp(`^(${TELEFONOS}|REEMPLAZAR_[A-Z0-9_]+)$`),
   telefonosExcluidos: new RegExp(`^(${TELEFONOS})?$`),
@@ -95,6 +99,27 @@ const FORMAS_CONFIG = {
 const TEXTOS = ['rescateQuien', 'rescateContexto', 'rescateSaludo', 'rescateTextoFijo'];
 const CLAVES_ADMITIDAS = new Set(['phoneNumberId', 'waGraphVersion', 'modelo', 'listaDePrueba', 'telefonosDePrueba', 'telefonosExcluidos', 'quienPromete', ...TEXTOS]);
 const OBLIGATORIAS = ['phoneNumberId', 'listaDePrueba', 'telefonosDePrueba', 'quienPromete', ...TEXTOS];
+
+/**
+ * El contrato del flujo consumidor (LEEME, «Contrato del flujo consumidor»): cada tenant declara en `contratoConsumidor` la ruta (desde la raíz del repo) de la
+ * prueba negativa de la batería de su consumidor, y debe EXISTIR. Mientras esa batería no esté, se declara `{ "estado": "pendiente-pr-b" }` de forma explícita:
+ * es válido para armar y verificar, pero `--publicable` lo rechaza. Un tenant que no declara nada falla aquí, con un mensaje claro.
+ */
+export function estadoDelContrato(contrato, raiz = RAIZ_DEL_REPO) {
+  const errores = [];
+  if (!contrato || typeof contrato !== 'object' || Array.isArray(contrato)) return { pendiente: false, errores: ['contratoConsumidor: falta (declare la ruta de la prueba negativa del consumidor, o { "estado": "pendiente-pr-b" } mientras no exista)'] };
+  if (contrato.estado !== undefined) {
+    if (contrato.estado !== 'pendiente-pr-b' || contrato.prueba !== undefined) return { pendiente: false, errores: ['contratoConsumidor.estado: el único valor admitido es "pendiente-pr-b" y no se combina con `prueba`'] };
+    return { pendiente: true, errores };
+  }
+  const ruta = contrato.prueba;
+  if (typeof ruta !== 'string' || !/^[A-Za-z0-9_./-]+\.test\.ts$/.test(ruta) || ruta.split('/').includes('..') || ruta.startsWith('/')) return { pendiente: false, errores: ['contratoConsumidor.prueba: tiene que ser una ruta relativa a la raíz del repo que termine en .test.ts'] };
+  let texto = null;
+  try { texto = leerSiExiste(join(raiz, ruta), 'contratoConsumidor.prueba'); } catch (e) { return { pendiente: false, errores: [`contratoConsumidor.prueba: ${e instanceof Error ? e.message : String(e)}`] }; }
+  if (texto === null) return { pendiente: false, errores: [`contratoConsumidor.prueba: la prueba ${ruta} no existe`] };
+  if (typeof contrato.caso === 'string' && contrato.caso.trim() !== '' && !texto.includes(contrato.caso)) errores.push(`contratoConsumidor.caso: la prueba ${ruta} no contiene «${contrato.caso}»`);
+  return { pendiente: false, errores };
+}
 
 /** Lee y valida el archivo de datos de un tenant. Cada error nombra el campo. */
 export function cargarDatos(tenant, ruta = join(CARPETA_DE_DATOS, String(tenant), 'rescate-22h.json')) {
@@ -108,6 +133,8 @@ export function cargarDatos(tenant, ruta = join(CARPETA_DE_DATOS, String(tenant)
   const cadena = (campo, v) => { if (typeof v !== 'string' || v.trim() === '') errores.push(`${campo}: falta`); };
   if (d.tenant !== tenant) errores.push('tenant: no coincide con el pedido');
   cadena('nombreFlujo', d.nombreFlujo);
+  if (typeof d.nombreFlujo === 'string' && d.nombreFlujo !== `NovuChat — Rescate 22 h (${tenant})`) errores.push('nombreFlujo: tiene que ser «NovuChat — Rescate 22 h (<tenant>)»');
+  errores.push(...estadoDelContrato(d.contratoConsumidor).errores);
   for (const c of ['ingesta', 'graph', 'gemini']) cadena(`credenciales.${c}`, (d.credenciales || {})[c]);
   const cb = d.configBase && typeof d.configBase === 'object' && !Array.isArray(d.configBase) ? d.configBase : null;
   if (!cb) errores.push('configBase: falta');
@@ -141,7 +168,7 @@ function anfitrionPermitido(url) {
   return ANFITRIONES_LIBRES.includes(m[1].toLowerCase());
 }
 
-const CADENA = ['Cada 10 minutos', 'Config base', 'Reclamar rescates', 'Preparar rescates', 'Redactar rescate', 'Armar rescate', '¿Enviar de verdad?'];
+const CADENA = ['Cada 10 minutos', 'Config base', 'Reclamar rescates', 'Preparar rescates', '¿Hay historial?', 'Redactar rescate', 'Armar rescate', '¿Enviar de verdad?'];
 
 /** Lo que un JSON de este flujo no puede tener. Devuelve la lista de hallazgos (vacía si está limpio). */
 export function guardias(flujo) {
@@ -155,7 +182,9 @@ export function guardias(flujo) {
   const cronOk = (n) => { const iv = (p(n).rule || {}).interval; return Array.isArray(iv) && iv.length === 1 && iv[0].field === 'cronExpression' && iv[0].expression === '*/10 * * * *'; };
   if (programados.length !== 1) h.push(`tiene ${programados.length} disparadores programados y tiene que tener exactamente uno`);
   else if (!cronOk(programados[0])) h.push('el disparador programado no es `*/10 * * * *`');
+  if (typeof (flujo && flujo.name) === 'string' && !/^NovuChat — Rescate 22 h \([a-z0-9][a-z0-9-]{1,40}\)$/.test(flujo.name)) h.push('el nombre del flujo tiene que ser «NovuChat — Rescate 22 h (<tenant>)»');
   for (const n of nodos) {
+    if (!TIPOS_ADMITIDOS.has(n.type)) h.push(`el nodo «${n.name}» es de un tipo no admitido (${n.type}); solo ${[...TIPOS_ADMITIDOS].map((t) => t.replace('n8n-nodes-base.', '')).join(', ')}`);
     if (n.type === 'n8n-nodes-base.webhook') h.push(`el nodo «${n.name}» es un webhook: este flujo no recibe nada de afuera`);
     else if (n.type === 'n8n-nodes-base.whatsAppTrigger') h.push(`el nodo «${n.name}» es un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)`);
     else if (/Trigger$/.test(n.type) && n.type !== 'n8n-nodes-base.scheduleTrigger') h.push(`el nodo «${n.name}» es un disparador (${n.type}) que no corresponde`);
@@ -165,6 +194,7 @@ export function guardias(flujo) {
     if (!anfitrionPermitido(String(p(n).url || ''))) h.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, reclamarRescates e ingesta de la consola)`);
   }
   for (const n of nodos) for (const [tipo, c] of Object.entries(n.credentials || {})) {
+    if (!CREDENCIALES_ADMITIDAS.has(tipo)) h.push(`el nodo «${n.name}» trae una credencial de un tipo no admitido (${tipo})`);
     if (!c || c.id !== '') h.push(`el nodo «${n.name}» trae la credencial ${tipo} con un id: van POR NOMBRE, con id vacío`);
   }
   // `REEMPLAZAR_` solo en «Config base».
@@ -185,7 +215,7 @@ export function guardias(flujo) {
   for (const n of nodos) {
     if (typeof p(n).jsCode === 'string' && p(n).jsCode.includes('$getWorkflowStaticData')) h.push(`el nodo «${n.name}» usa los datos estáticos de n8n: la marca única vive en el servidor`);
   }
-  // Un fallo del reclamo, de la preparación o del armado tiene que CORTAR la ejecución (se ve en las ejecuciones con error), y el reclamo no se reintenta.
+  // Un fallo del reclamo, de la preparación o del armado tiene que CORTAR la ejecución (con `saveDataErrorExecution: none` n8n no la guarda: lo visible son los registros de la Function), y el reclamo no se reintenta.
   for (const nombre of ['Reclamar rescates', 'Preparar rescates', 'Armar rescate']) {
     const n = por(nombre);
     if (n && (n.onError !== undefined || n.continueOnFail !== undefined)) h.push(`«${nombre}» no puede llevar «Continue on Fail» ni onError: su fallo tiene que cortar la ejecución`);
@@ -200,13 +230,20 @@ export function guardias(flujo) {
   if (st.saveDataErrorExecution !== 'none') h.push('saveDataErrorExecution tiene que ser exactamente «none» (sin retención de los textos del cliente en las ejecuciones fallidas)');
   if (st.saveManualExecutions !== false) h.push('saveManualExecutions tiene que ser false');
   if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
-  // La puerta de la entrega: nada llega al reporte sin pasar por «¿Meta aceptó?» (lee el id del mensaje).
+  // La puerta de la entrega: nada llega al reporte sin pasar por «¿Meta aceptó?» (lee el id del mensaje). SIN respaldo: un reenvío tras un timeout podría duplicar el rescate.
   const destinosDe = (nombre, salida) => (((((flujo && flujo.connections) || {})[nombre] || {}).main || [])[salida] || []).map((x) => x.node);
   if (!por('¿Meta aceptó?')) h.push('falta «¿Meta aceptó?»: sin ella se reportaría como enviado lo que Meta rechazó');
   else {
     if (destinosDe('¿Falló el envío?', 1).join() !== '¿Meta aceptó?') h.push('«¿Falló el envío?» tiene que enviar su salida «sin fallo» SOLO a «¿Meta aceptó?»');
-    if (destinosDe('Enviar respaldo', 0).join() !== '¿Meta aceptó?') h.push('«Enviar respaldo» tiene que colgar SOLO de «¿Meta aceptó?»');
     if (destinosDe('¿Meta aceptó?', 0).join() !== '¿Reportar? (saliente)') h.push('«¿Meta aceptó?» tiene que enviar su salida «sí» a «¿Reportar? (saliente)»');
+  }
+  if (por('Enviar respaldo')) h.push('«Enviar respaldo» no puede existir en este flujo: un reenvío tras un timeout duplicaría el rescate');
+  if (destinosDe('¿Falló el envío?', 0).length) h.push('la salida «con fallo» de «¿Falló el envío?» tiene que quedar sin destino (no hay respaldo)');
+  // Sin historial NO hay llamada al modelo: «¿Hay historial?» manda solo los suficientes a «Redactar rescate» y el resto directo a «Armar rescate».
+  if (!por('¿Hay historial?')) h.push('falta «¿Hay historial?»: sin ella se llamaría a Gemini con rescates de historial insuficiente');
+  else {
+    if (destinosDe('¿Hay historial?', 0).join() !== 'Redactar rescate') h.push('«¿Hay historial?» tiene que enviar su salida «sí» SOLO a «Redactar rescate»');
+    if (destinosDe('¿Hay historial?', 1).join() !== 'Armar rescate') h.push('«¿Hay historial?» tiene que enviar su salida «no» SOLO a «Armar rescate»');
   }
   // El orden topológico.
   const conex = (flujo && flujo.connections) || {};
@@ -254,16 +291,18 @@ export function armarRescate(proyecto, datos, v) {
     armado: 'Armar rescate',
     config: 'Config base',
     entrada: 'Config base',
-    desde: [1440, 300],
+    desde: [1680, 300],
   });
-  // Puerta de la entrega (propia): lo que sale de «¿Falló el envío?» sin fallo y del respaldo pasa por «¿Meta aceptó?» antes de «¿Reportar? (saliente)». Solo se reencaminan CONEXIONES
-  // de la cadena común; sus nodos quedan intactos.
+  // Puerta de la entrega (propia) y SIN respaldo: la salida «sin fallo» de «¿Falló el envío?» pasa por «¿Meta aceptó?» antes de «¿Reportar? (saliente)», y «Enviar respaldo» se quita
+  // de la cadena común (un reenvío tras un timeout de Meta podría duplicar el rescate). Solo se reencaminan CONEXIONES y se retira ese nodo; los demás quedan intactos.
   const falla = plantilla.connections['¿Falló el envío?'];
   const respaldo = plantilla.connections['Enviar respaldo'];
   const unico = (conex, salida, destino) => conex && conex.main && conex.main[salida] && conex.main[salida].length === 1 && conex.main[salida][0].node === destino;
-  if (!unico(falla, 1, '¿Reportar? (saliente)') || !unico(respaldo, 0, '¿Reportar? (saliente)')) throw new Error(`${donde}: la cadena común cambió: «¿Falló el envío?» o «Enviar respaldo» ya no cuelgan de «¿Reportar? (saliente)»`);
+  if (!unico(falla, 1, '¿Reportar? (saliente)') || !unico(respaldo, 0, '¿Reportar? (saliente)') || !unico(falla, 0, 'Enviar respaldo')) throw new Error(`${donde}: la cadena común cambió: «¿Falló el envío?» o «Enviar respaldo» ya no cuelgan como se espera`);
+  falla.main[0] = [];
   falla.main[1] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
-  respaldo.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
+  delete plantilla.connections['Enviar respaldo'];
+  plantilla.nodes = plantilla.nodes.filter((n) => n.name !== 'Enviar respaldo');
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: datos.nombreFlujo, quitar: [] });
   const flujo = JSON.parse(texto);
   if (texto.includes('"@@')) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
@@ -325,6 +364,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       let flujoJson;
       try { flujoJson = JSON.parse(textoFlujo); } catch { throw new Error(`JSON inválido en ${rutaFlujo}`); }
       const hallazgos = guardiaDePublicacion({ flujo: flujoJson });
+      if (tenant && estadoDelContrato(cargarDatos(tenant).contratoConsumidor).pendiente) hallazgos.push('el contrato del consumidor está pendiente (contratoConsumidor.estado = pendiente-pr-b): falta la prueba negativa de su batería');
       if (hallazgos.length) {
         console.error('✗ El flujo de rescate NO se puede publicar todavía:');
         for (const x of hallazgos) console.error(`  - ${x}`);

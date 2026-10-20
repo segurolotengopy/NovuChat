@@ -84,6 +84,66 @@ describe('rsRevisarCuerpo: el cuerpo del modelo no sale si falla CUALQUIER revis
   });
 });
 
+// Las frases que la revisión de seguridad citó como malas (plurales, formas verbales, sinónimos bolivianos, identidad, promesas, enlaces en palabras): todas
+// salen con el texto fijo. Cada una lleva una sola pregunta al final para llegar a la revisión del tema y no caer antes en «pregunta».
+const PREGUNTA = '¿Te quedó alguna duda sobre el libro?';
+describe('rsRevisarCuerpo: las formas que la lista de palabras exactas dejaba pasar', () => {
+  const frases = [
+    'Recibimos tus pagos.', 'Ya nos llegaron tus comprobantes.', 'Tus pagos están en orden.', 'Ya tenemos tu plata.', 'Ya cancelaste el libro.', 'Tu cobro quedó pendiente.',
+    'Puedes abonar en efectivo o con tarjeta.', 'Aceptamos pagos por Tigo Money o Yape.', 'Te cuento sobre los precios.', 'Mira los comprobantes y enlaces.', 'Mira las ofertas.',
+    'Hablemos de los bancos.', 'Puedes pagarlo cuando quieras.', 'Sigues pagando por partes.', 'Te mando los QRs.', 'Te paso los links.', 'Visita las paginas del libro.', 'Tus cuentas están listas.',
+    'Hay descuentos para ti.', 'Es gratuito para ti.', 'Hay una garantía de devolución.', 'Entra al sitio del libro.', 'Mira el depósito y la transferencia.',
+    // identidad (prohibición 4)
+    'Soy Rubén, no un asistente.', 'Soy Rubén en persona.', 'Quien te escribe es Rubén.', 'Aquí no responde ningún robot.', 'Te atiendo directamente.', 'Habla con Rubén sin intermediarios.', 'Te respondo yo mismo.',
+    // promesas, plazos, enlaces en palabras, plataformas
+    'Te regalo un bono.', 'Esta noche te cuento más.', 'Luego te cuento más.', 'Pronto tendrás novedades.', 'Búscame en Instagram.', 'Escríbeme por WhatsApp.', 'Entra a hotmart punto com.',
+    'Mi correo es ruben arroba gmail.', 'Tu clave está lista.', 'Te escribiré con más detalles.', 'Te contactaré en breve.', 'Un asesor te ayudará con el libro.', 'Te busco en un rato.', 'Seguro que te sirve.',
+    // el tema partido con separadores, y letras de otro alfabeto o invisibles
+    'Tu p-a-g-o sigue pendiente.', 'Tu p.a.g.o sigue pendiente.', 'Tu pаgo sigue pendiente.', 'Tu pa\u200bgo sigue pendiente.',
+    'Cuéntame de tu негocio.',
+  ];
+  for (const f of frases) {
+    it(`rechaza «${f}»`, () => {
+      const r = L.rsRevisarCuerpo(`${f} ${PREGUNTA}`, CFG);
+      expect(r.motivo, JSON.stringify(r)).not.toBe('');
+      expect(r.texto).toBe('');
+      const e = L.rsElegirTexto(CFG, { suficiente: true }, `${f} ${PREGUNTA}`);
+      expect(e.origen).toBe('fijo');
+      expect(e.texto).toBe(CFG.rescateTextoFijo);
+    });
+  }
+  it('el alfabeto: el cirílico y las letras de ancho cero se rechazan por el alfabeto, no por casualidad', () => {
+    expect(L.rsRevisarCuerpo('Vi que tu tienda de ropa necesita orden. ¿Te quedó alguna duda para emp\u0435zar?', CFG).motivo).toBe('alfabeto');
+    expect(L.rsRevisarCuerpo('Vi que tu tienda de ropa necesita orden. ¿Te quedó alguna duda para empezar?\u200b', CFG).motivo).not.toBe('');
+  });
+  it('más de dos oraciones se rechaza', () => {
+    expect(L.rsRevisarCuerpo('Vi que tienes una tienda. Quieres ordenar tus ventas. Y crecer con calma. ¿Te quedó alguna duda?', CFG).motivo).toBe('oraciones');
+  });
+  it('un saludo o una presentación repetida después del pulido se rechazan', () => {
+    expect(L.rsRevisarCuerpo('Como asistente virtual vi que tienes una tienda de ropa. ¿Te quedó alguna duda?', CFG).motivo).not.toBe('');
+  });
+  const legitimas = [
+    BUENO,
+    'Me contaste que vendes comida y te cuesta llevar el orden. ¿Te quedó alguna duda?',
+    'Mencionaste que tu peluquería tiene muchos clientes y poco tiempo. ¿Qué parte te gustaría resolver primero?',
+    'Vi que quieres aprender inteligencia artificial para tu negocio de ropa. ¿Te quedó alguna duda para empezar?',
+  ];
+  for (const t of legitimas) {
+    it(`sigue aceptando «${t.slice(0, 50)}…»`, () => expect(L.rsRevisarCuerpo(t, CFG)).toEqual({ texto: t, motivo: '' }));
+  }
+});
+
+describe('rsTextoFijoValido y rsSaludoValido: también con raíces, «junto» y alfabeto', () => {
+  const base = 'Hola, soy el asistente virtual de Rubén.';
+  for (const frase of ['Tus pagos están en orden.', 'Ya cancelaste el libro.', 'Mira las ofertas.', 'Tu p-a-g-o sigue pendiente.', 'Tu pаgo sigue pendiente.', 'Búscame en Instagram.', 'Te contactaré en breve.']) {
+    it(`el texto fijo con «${frase}» se rechaza`, () => expect(L.rsTextoFijoValido(`${base} ${frase} ¿Te quedó alguna duda?`)).toBe(false));
+  }
+  it('el texto fijo vigente de Rubén sigue siendo válido', () => {
+    expect(L.rsTextoFijoValido('Hola, soy el asistente virtual de Rubén. Quedó pendiente tu consulta sobre «IA para Emprendedores». ¿Te quedó alguna duda para empezar?')).toBe(true);
+  });
+  it('un saludo con letras de otro alfabeto se rechaza', () => expect(L.rsSaludoValido('Hola, soy el asistеnte virtual de Rubén.')).toBe(false));
+});
+
 describe('rsElegirTexto: el saludo fijo va delante, una sola vez, y todo cae en el texto fijo', () => {
   it('con un cuerpo válido, el texto final empieza con el saludo y lo contiene una sola vez', () => {
     const e = L.rsElegirTexto(CFG, { suficiente: true }, BUENO);
@@ -158,7 +218,7 @@ describe('lo que recibe el modelo', () => {
     expect(usuario).not.toContain('uno');
     expect(usuario).toContain('<<<ocho>>>');
     expect(L.rsCuerpoModelo(CFG, ['a <<<b>>>']).contents[0]!.parts[0]!.text).toContain('<<<a b>>>');
-    expect(c.generationConfig).toEqual({ maxOutputTokens: 120, temperature: 0.5 });
+    expect(c.generationConfig).toEqual({ maxOutputTokens: 300, temperature: 0.5 });
   });
 
   it('el prompt dice que lo de la persona son DATOS y prohíbe saludar, prometer y hablar de pagos', () => {

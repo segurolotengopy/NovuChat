@@ -11,6 +11,8 @@
 
 // El último instante en que n8n todavía envía: 23 h 50 min después del último mensaje del cliente (la ventana de Meta cierra a las 24 h).
 const RS_CORTE_MS = (23 * 60 + 50) * 60 * 1000;
+// La cota inferior: el servidor rescata a partir de las 22 h de silencio; un reclamo con menos (o con un instante futuro) no sale.
+const RS_MINIMO_MS = 22 * 60 * 60 * 1000;
 const RS_MODELO_POR_OMISION = 'gemini-3.5-flash-lite';
 
 function rsDigitos(v) {
@@ -50,7 +52,7 @@ function rsCuerpoModelo(cfg, textos) {
   return {
     systemInstruction: { parts: [{ text: rsPrompt(cfg) }] },
     contents: [{ role: 'user', parts: [{ text: 'Mensajes de la persona, del más antiguo al más reciente:\n' + lista.map((t) => '<<<' + rsLimpio(t) + '>>>').join('\n') }] }],
-    generationConfig: { maxOutputTokens: 120, temperature: 0.5 },
+    generationConfig: { maxOutputTokens: 300, temperature: 0.5 },
   };
 }
 // Copia declarada de `cnTextoDeGemini` de rroca-ruben: no hay fuente común todavía.
@@ -69,17 +71,42 @@ function rsTextoDeGemini(j) {
   }
   return '';
 }
-// Lo que el cuerpo del modelo no puede decir (sobre el texto normalizado: minúsculas y sin tildes).
-const RS_PROHIBIDAS = /acredit|verificad|validad|recibimos tu pago|pago (confirmado|recibido|validado)|\b(qr|banco|titular|cuenta|deposit\w*|transferen\w*|pago|pagar|comprobante|precio|cost\w*|descuent\w*|gratis|gratuit\w*|promoci\w*|oferta|garant\w*|devoluc\w*|reembols\w*|enlace|link|pagina|web|derivar|ayer|hoy|manana|anoche)\b/;
-const RS_TIEMPO = /\b(ayer|hoy|manana|anoche)\b/g;
+// Lo que el cuerpo del modelo no puede decir (sobre el texto normalizado: minúsculas y sin tildes). Son RAÍCES con sufijo (`pag\w*`, `cobr\w*`): una
+// lista de palabras exactas no cubre plurales ni formas verbales («tus pagos», «cancelaste», «abonar»). Acepta falsos positivos a propósito («costura»,
+// «tener en cuenta»): el costo es caer en el texto fijo, que es barato.
 // Las de cobro, que valen también para el texto final (saludo + cuerpo): ningún pago se presenta como un hecho (prohibición 3).
-const RS_COBRO = /acredit|verificad|validad|recibimos tu pago|pago (confirmado|recibido|validado)|\b(qr|banco|titular|cuenta|deposit\w*|transferen\w*|pago|pagar|comprobante)\b/;
+const RS_COBRO = /acredit|verificad|validad|\b(qrs?|bancos?|titular\w*|cuentas?|pag\w*|comprobantes?|cobr\w*|abon\w*|cancel\w*|efectivo|tarjetas?|yape|tigo ?money|plata|dinero|deposit\w*|transferen\w*)\b/;
+const RS_PROHIBIDAS = /acredit|verificad|validad|\b(qrs?|bancos?|titular\w*|cuentas?|pag\w*|comprobantes?|cobr\w*|abon\w*|cancel\w*|efectivo|tarjetas?|yape|tigo ?money|plata|dinero|precios?|cost\w*|descuent\w*|gratis|gratuit\w*|promoci\w*|ofertas?|garant\w*|devoluc\w*|reembols\w*|enlaces?|links?|paginas?|webs?|sitios?|deposit\w*|transferen\w*|derivar|ayer|hoy|manana|anoche)\b/;
+const RS_TIEMPO = /\b(ayer|hoy|manana|anoche)\b/g;
+// Regalos, plazos y promesas (también en singular), enlaces dichos en palabras, datos de acceso y plataformas. Se pasa a `cmRevisarRedaccion` como `prohibidos`.
+const RS_EXTRA = /\bregal\w*|\bbonos? gratis|esta noche|\bsemana|\bluego\b|\bpronto\b|\bdespues\b|mas tarde|en breve|punto com|\barroba\b|\bpin\b|\bclave\b|\bcontrasena\b|\bbloquead\w*|\bse comunicar\w*|\bte contact\w*|seguro que|\b(hotmart|instagram|facebook|tiktok|youtube|telegram|whatsapp)\b|\bte (escribire|escribira|llamare|llamara|busco|buscare|buscaremos)\b|\b(alguien|equipo|asesor\w*|especialista|colega)\b[^.?!]{0,40}\bte\b/;
+// Negar ser una IA (prohibición 4) con otras palabras: «Soy Rubén, no un asistente», «quien te escribe es Rubén», «aquí no responde ningún robot».
+const RS_IDENTIDAD = /\bsoy\b|\bte escribe\b|\b(en persona|directamente|yo mismo|personalmente)\b|\b(robots?|bots?|chatbots?|humanos?|humanas?|personas?|maquinas?)\b|\b(asistente|virtual)\b/;
+// Solo el alfabeto latino básico, el espacio y los signos del español: un homoglifo cirílico («pаgo») o una letra de ancho cero parten una palabra sin que se vea.
+const RS_FUERA_DE_ALFABETO = /[^\p{Script=Latin} \n¿?¡!.,;:«»“”‘’"'()\-–—…]/u;
+function rsAlfabetoOk(t) {
+  return !RS_FUERA_DE_ALFABETO.test(String(t === undefined || t === null ? '' : t).normalize('NFC'));
+}
+// Cada lista se prueba contra el texto normalizado Y contra el «junto» (sin guiones, puntos ni asteriscos entre letras: «p-a-g-o»).
+function rsCoincide(re, n) {
+  return re.test(n) || re.test(cmJunto(n));
+}
+function rsOraciones(t) {
+  return String(t).trim().split(/(?<=[.!?…])\s+/).filter(Boolean).length;
+}
 
-function rsCuerpoSinPreguntaOProhibido(t) {
+// Un cuerpo: una sola pregunta al final y ningún tema prohibido. Se llama antes y después del pulido.
+function rsCuerpoSinPreguntaOProhibido(t, cfg) {
   if ((t.match(/\?/g) || []).length !== 1 || !t.endsWith('?')) return 'pregunta';
-  if (RS_PROHIBIDAS.test(cmNorm(t))) return 'tema_prohibido';
+  if (!rsAlfabetoOk(t)) return 'alfabeto';
+  const n = cmNorm(t);
+  if (rsCoincide(RS_PROHIBIDAS, n) || rsCoincide(RS_EXTRA, n)) return 'tema_prohibido';
+  if (rsCoincide(RS_IDENTIDAD, n)) return 'identidad';
+  const nombre = cmNorm(String((cfg && cfg.rescateQuien) || '')).split(' ')[0];
+  if (nombre.length >= 3 && new RegExp('\\b' + nombre.replace(/[.*+?^${}()[\]\\|]/g, '\\$&') + '\\b').test(n)) return 'identidad';
   return '';
 }
+const RS_SALUDO = /^[¡!\s]*(hola|buen[oa]s|saludos|hey)\b/i;
 // Revisa el cuerpo que redactó el modelo. Devuelve { texto, motivo }: con `motivo` distinto de '', se descarta y sale el texto fijo.
 function rsRevisarCuerpo(crudo, cfg) {
   let t = String(crudo === undefined || crudo === null ? '' : crudo).trim();
@@ -87,14 +114,18 @@ function rsRevisarCuerpo(crudo, cfg) {
   if (/^fijo\.?$/i.test(t)) return { texto: '', motivo: 'fijo' };
   if (t.length < 20 || t.length > 240) return { texto: '', motivo: 'largo' };
   if (/\d/.test(t)) return { texto: '', motivo: 'digitos' };
-  const m1 = rsCuerpoSinPreguntaOProhibido(t);
+  const m1 = rsCuerpoSinPreguntaOProhibido(t, cfg);
   if (m1 === 'pregunta') return { texto: '', motivo: 'pregunta' };
-  if (/^[¡!\s]*(hola|buen[oa]s|saludos|hey)\b/i.test(t)) return { texto: '', motivo: 'saludo' };
+  if (RS_SALUDO.test(t)) return { texto: '', motivo: 'saludo' };
   if (m1) return { texto: '', motivo: m1 };
   const quien = String((cfg && cfg.quienPromete) || '').split(',').map((x) => cmNorm(x)).filter(Boolean);
-  const rev = cmRevisarRedaccion(t, { maximo: 240, enlacesPermitidos: [], quienPromete: quien, textoDelCliente: '' });
+  const rev = cmRevisarRedaccion(t, { maximo: 240, enlacesPermitidos: [], quienPromete: quien, textoDelCliente: '', prohibidos: [RS_EXTRA, RS_IDENTIDAD] });
   if (rev.motivo) return { texto: '', motivo: rev.motivo };
-  const m2 = rsCuerpoSinPreguntaOProhibido(rev.texto);
+  // Lo que sale es lo PULIDO: el largo, el saludo, la forma y los temas se revisan sobre `rev.texto`.
+  if (rev.texto.length < 20 || rev.texto.length > 240) return { texto: '', motivo: 'largo' };
+  if (RS_SALUDO.test(rev.texto)) return { texto: '', motivo: 'saludo' };
+  if (rsOraciones(rev.texto) > 2) return { texto: '', motivo: 'oraciones' };
+  const m2 = rsCuerpoSinPreguntaOProhibido(rev.texto, cfg);
   if (m2) return { texto: '', motivo: m2 };
   return { texto: rev.texto, motivo: '' };
 }
@@ -105,12 +136,14 @@ function rsTextoFijoValido(t) {
   if (t.indexOf('?') < 0 || n.indexOf('asistente virtual') < 0) return false;
   if (/\d/.test(t)) return false;
   if (cmEnlacesDe(t).length) return false;
-  if (RS_PROHIBIDAS.test(n.replace(RS_TIEMPO, ' '))) return false;
+  if (!rsAlfabetoOk(t)) return false;
+  const sinTiempo = n.replace(RS_TIEMPO, ' ');
+  if (rsCoincide(RS_PROHIBIDAS, sinTiempo) || rsCoincide(RS_EXTRA, sinTiempo)) return false;
   return true;
 }
 function rsSaludoValido(s) {
   if (typeof s !== 'string' || s.length < 10 || s.length > 80) return false;
-  return cmNorm(s).indexOf('asistente virtual') >= 0 && !/\d/.test(s);
+  return cmNorm(s).indexOf('asistente virtual') >= 0 && !/\d/.test(s) && rsAlfabetoOk(s);
 }
 // Elige el texto de UN rescate. `base.suficiente` dice si el historial alcanza para personalizar.
 // Devuelve { texto, origen: 'modelo' | 'fijo' | 'ninguno', motivo }. 'ninguno' (texto fijo inválido en ejecución) no se envía.
@@ -124,6 +157,7 @@ function rsElegirTexto(cfg, base, crudo) {
   if (r.motivo) return fijo(r.motivo);
   const final = cfg.rescateSaludo + ' ' + r.texto;
   if (final.length > 400) return fijo('largo_final');
-  if (RS_COBRO.test(cmNorm(final))) return fijo('cobro');
+  if (!rsAlfabetoOk(final)) return fijo('alfabeto');
+  if (rsCoincide(RS_COBRO, cmNorm(final))) return fijo('cobro');
   return { texto: final, origen: 'modelo', motivo: '' };
 }

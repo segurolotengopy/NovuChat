@@ -252,18 +252,80 @@ describe('las respuestas del servidor', () => {
 });
 
 describe('el envío y el reporte', () => {
-  it('si Meta rechaza el original y el respaldo, no se reporta nada como enviado', () => {
-    const c = correr({ meta: () => ({ error: { message: 'rechazado' } }), respaldo: () => ({ error: { message: 'rechazado' } }) });
-    expect(c.r.mensajes).toHaveLength(2);
+  it('si Meta rechaza el envío, no se reporta nada como enviado y NO hay respaldo (un reenvío tras un timeout duplicaría el rescate)', () => {
+    let respaldos = 0;
+    const c = correr({ meta: () => ({ error: { message: 'rechazado' } }), respaldo: () => { respaldos++; return enviado('wamid.RESPALDO'); } });
+    expect(c.r.mensajes).toHaveLength(1);
+    expect(respaldos).toBe(0);
     expect(c.reportes).toHaveLength(0);
   });
 
-  it('si Meta rechaza solo el original, sale el respaldo (el mismo texto) y se reporta una vez', () => {
-    const c = correr({ meta: () => ({ error: { message: 'rechazado' } }) });
-    expect(c.r.mensajes.map((m) => m.respaldo)).toEqual([false, true]);
-    expect(c.r.mensajes[1]!.cuerpo).toBe(c.r.mensajes[0]!.cuerpo);
+  it('una excepción del nodo de envío (timeout) tampoco reenvía ni reporta', () => {
+    const c = correr({ meta: () => { throw new Error('timeout'); } });
+    expect(c.r.mensajes).toHaveLength(1);
+    expect(c.reportes).toHaveLength(0);
+  });
+
+  it('Meta contesta 200 sin `messages[0].id` (cuerpo vacío): «¿Meta aceptó?» corta y no se reporta nada', () => {
+    for (const cuerpo of [{}, { messages: [] }, { messages: [{}] }]) {
+      const c = correr({ meta: () => cuerpo });
+      expect(c.r.fallo).toBeNull();
+      expect(c.r.mensajes).toHaveLength(1);
+      expect(c.reportes, JSON.stringify(cuerpo)).toHaveLength(0);
+    }
+  });
+});
+
+describe('sin historial no hay llamada al modelo, y el pareo sigue siendo por posición', () => {
+  const SEGUNDO = 'Vi que vendes comida y quieres crecer con orden. ¿Te quedó alguna duda para empezar?';
+  const TERCERO = 'Mencionaste que tu peluquería tiene muchos clientes y poco tiempo. ¿Te quedó alguna duda?';
+  it('historial insuficiente: 0 llamadas al modelo y sale el texto fijo', () => {
+    const c = correr({ rescates: [rescate(TEL, { textos: ['hola'] })] });
+    expect(c.modelos).toBe(0);
+    expect(c.r.mensajes.map((m) => m.cuerpo)).toEqual([FIJO]);
     expect(c.reportes).toHaveLength(1);
-    expect(c.reportes[0]).toMatchObject({ idMeta: 'wamid.RESPALDO' });
+  });
+
+  it('3 rescates donde el modelo falla solo en el segundo: primero y tercero con el texto del modelo, el segundo con el fijo', () => {
+    const c = correr({
+      rescates: [rescate(TEL), rescate(OTRO), rescate('70011144')],
+      config: { listaDePrueba: false },
+      modelo: (l) => { if (l.n === 2) throw new Error('timeout'); return gemini(l.n === 1 ? BUENO : TERCERO); },
+    });
+    expect(c.r.fallo).toBeNull();
+    expect(c.modelos).toBe(3);
+    expect(c.r.mensajesA(TEL)[0]!.cuerpo).toBe(`${SALUDO} ${BUENO}`);
+    expect(c.r.mensajesA(OTRO)[0]!.cuerpo).toBe(FIJO);
+    expect(c.r.mensajesA('70011144')[0]!.cuerpo).toBe(`${SALUDO} ${TERCERO}`);
     invariantes(c);
+  });
+
+  it('mezcla de suficientes e insuficientes: el modelo solo ve a los suficientes, y cada uno sale una vez con SU texto', () => {
+    const vistos: string[] = [];
+    const c = correr({
+      rescates: [rescate(TEL), rescate(OTRO, { textos: ['hola'] }), rescate('70011144')],
+      config: { listaDePrueba: false },
+      modelo: (l) => { vistos.push(JSON.stringify(l.cuerpo)); return gemini(l.n === 1 ? BUENO : SEGUNDO); },
+    });
+    expect(c.modelos).toBe(2);
+    expect(c.r.mensajes).toHaveLength(3);
+    expect(c.r.mensajesA(TEL)[0]!.cuerpo).toBe(`${SALUDO} ${BUENO}`);
+    expect(c.r.mensajesA(OTRO)[0]!.cuerpo).toBe(FIJO);
+    expect(c.r.mensajesA('70011144')[0]!.cuerpo).toBe(`${SALUDO} ${SEGUNDO}`);
+    expect(c.reportes).toHaveLength(3);
+    invariantes(c);
+  });
+});
+
+describe('cotas y exclusiones de «Preparar rescates» (defensa en profundidad)', () => {
+  it('un teléfono de `telefonosExcluidos` no recibe nada aunque el servidor lo devuelva', () => {
+    const c = correr({ rescates: [rescate(TEL), rescate(OTRO)], config: { telefonosExcluidos: TEL } });
+    expect(c.r.mensajes.map((m) => m.a)).toEqual([OTRO]);
+  });
+  it('un instante futuro, o con menos de 22 h de silencio, no se rescata; 22 h exactas sí', () => {
+    const c = correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA + HORA }), rescate(OTRO, { ultimoEntranteMs: AHORA - 21.9 * HORA })] });
+    expect(c.r.mensajes).toHaveLength(0);
+    expect(c.modelos).toBe(0);
+    expect(correr({ rescates: [rescate(TEL, { ultimoEntranteMs: AHORA - 22 * HORA })] }).r.mensajes).toHaveLength(1);
   });
 });

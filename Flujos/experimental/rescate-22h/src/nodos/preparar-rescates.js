@@ -16,26 +16,26 @@ if (codigo !== 200) throw new Error('RS-RECLAMO-' + (Number.isFinite(codigo) ? c
 if (!rsDigitos(cfg.phoneNumberId) || rsDigitos(cuerpo.phoneNumberId) !== rsDigitos(cfg.phoneNumberId)) throw new Error('RS-LINEA');
 const soloPrueba = cfg.listaDePrueba !== false;
 const lista = rsLista(cfg.telefonosDePrueba);
+const excluidos = rsLista(cfg.telefonosExcluidos);
+const ahora = Date.now();
 const vistos = new Set();
 const salida = [];
 for (const x of (Array.isArray(cuerpo.rescates) ? cuerpo.rescates.slice(0, 20) : [])) {
   if (!x || typeof x !== 'object') continue;
   const telefono = x.telefono;
   if (typeof telefono !== 'string' || !/^[0-9]{8,15}$/.test(telefono) || vistos.has(telefono)) continue;
-  if (typeof x.ultimoEntranteMs !== 'number' || !Number.isFinite(x.ultimoEntranteMs) || Date.now() >= x.ultimoEntranteMs + RS_CORTE_MS) continue;
+  // Cota superior (ventana de Meta por cerrar) e inferior (un instante futuro, o con menos de 22 h de silencio, no se rescata).
+  if (typeof x.ultimoEntranteMs !== 'number' || !Number.isFinite(x.ultimoEntranteMs) || ahora >= x.ultimoEntranteMs + RS_CORTE_MS || ahora < x.ultimoEntranteMs + RS_MINIMO_MS) continue;
+  // Defensa en profundidad: los excluidos de «Config base» no reciben nada aunque el servidor los devuelva.
+  if (excluidos.includes(telefono)) continue;
   // Defensa en profundidad: con la lista de prueba encendida, solo sale a un teléfono de la lista.
   if (soloPrueba && !lista.includes(telefono)) continue;
   vistos.add(telefono);
   const textos = (Array.isArray(x.textos) ? x.textos.filter((t) => typeof t === 'string') : []).slice(0, 6);
-  salida.push({
-    json: {
-      telefono,
-      ultimoEntranteMs: x.ultimoEntranteMs,
-      textos,
-      suficiente: rsHistorialSuficiente(textos),
-      modelo: rsModeloValido(cfg.modelo),
-      cuerpoModelo: rsCuerpoModelo(cfg, textos),
-    },
-  });
+  // Sin historial suficiente NO se arma la llamada al modelo (y «¿Hay historial?» no la deja pasar): los textos del cliente no salen hacia Gemini.
+  const suficiente = rsHistorialSuficiente(textos);
+  const json = { telefono, ultimoEntranteMs: x.ultimoEntranteMs, textos, suficiente, modelo: rsModeloValido(cfg.modelo) };
+  if (suficiente) json.cuerpoModelo = rsCuerpoModelo(cfg, textos);
+  salida.push({ json });
 }
 return salida;

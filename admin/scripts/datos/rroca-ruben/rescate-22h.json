@@ -6,6 +6,7 @@
     "graph": "Graph WhatsApp Ruben (Bearer)",
     "gemini": "Google Gemini(PaLM) Api account"
   },
+  "contratoConsumidor": { "estado": "pendiente-pr-b" },
   "configBase": {
     "phoneNumberId": "REEMPLAZAR_PHONE_NUMBER_ID_RROCA_RUBEN",
     "waGraphVersion": "v26.0",
