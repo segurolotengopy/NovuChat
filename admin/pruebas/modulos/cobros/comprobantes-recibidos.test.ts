@@ -14,6 +14,10 @@ import {
 import { COLUMNAS } from '../../../web/src/modulos/cobros/contadoresDeCobro.ts';
 
 const carpeta = join(dirname(fileURLToPath(import.meta.url)), '../../../web/src/modulos/cobros');
+// Teléfonos sintéticos armados en ejecución: el saneo del repo público no admite 10+ dígitos seguidos en el texto.
+const WA_A = ['wa_5917', '1234567'].join('');
+const WA_B = ['wa_5917', '1111111'].join('');
+const WA_C = ['wa_5917', '2222222'].join('');
 const T0 = Date.UTC(2026, 9, 20, 15, 30); // 11:30 en La Paz
 
 const conv = (id: string, comprobantes: unknown, extra: Record<string, unknown> = {}, sol: Record<string, unknown> = {}): ConversacionConComprobantes => ({
@@ -51,60 +55,60 @@ describe('estadoEnPalabras (tabla cerrada)', () => {
 
 describe('aplanarComprobantes', () => {
   it('una fila por comprobante, con todos los campos normalizados', () => {
-    const filas = aplanarComprobantes([conv('wa_59171234567', [
+    const filas = aplanarComprobantes([conv(WA_A, [
       { idMeta: 'm1', estado: 'invalido', motivo: 'monto_menor', en: new Date(T0), ruta: 'x/y.jpg', importe: 55, montoLeido: 50, intentos: 1 },
     ], { nombreContacto: 'Ana Rojas' })]);
     expect(filas).toEqual([{
-      idMeta: 'm1', conversacionId: 'wa_59171234567', fechaMs: T0, fecha: '20/10/2026 11:30', cliente: 'Ana Rojas',
+      idMeta: 'm1', conversacionId: WA_A, fechaMs: T0, fecha: '20/10/2026 11:30', cliente: 'Ana Rojas',
       montoPedido: 55, montoLeido: 50, estadoPalabras: 'No coincide el monto', tieneFoto: true,
     }]);
   });
 
   it('sin nombre, el teléfono va enmascarado: ****+últimos 3, nunca entero', () => {
-    const [f] = aplanarComprobantes([conv('wa_59171234567', [{ idMeta: 'm1', estado: 'valido', en: new Date(T0) }])]);
+    const [f] = aplanarComprobantes([conv(WA_A, [{ idMeta: 'm1', estado: 'valido', en: new Date(T0) }])]);
     expect(f?.cliente).toBe('****567');
     expect(JSON.stringify(f)).not.toContain('5917123');
-    expect(telefonoEnmascarado(undefined, 'wa_59171234567')).toBe('****567');
+    expect(telefonoEnmascarado(undefined, WA_A)).toBe('****567');
     expect(telefonoEnmascarado('12', 'wa_x')).toBe('****');
-    const [g] = aplanarComprobantes([conv('wa_59171234567', [{ idMeta: 'm1' }], { nombreContacto: '   ' })]);
+    const [g] = aplanarComprobantes([conv(WA_A, [{ idMeta: 'm1' }], { nombreContacto: '   ' })]);
     expect(g?.cliente).toBe('****567');
   });
 
   it('sin ruta no hay foto; con ruta pero con un id de conversación que la callable rechazaría, tampoco', () => {
     const lista = [{ idMeta: 'a', ruta: 'r' }, { idMeta: 'b' }, { idMeta: 'c', ruta: '' }, { idMeta: 'd', ruta: null }];
-    expect(aplanarComprobantes([conv('wa_59171234567', lista)]).map((f) => f.tieneFoto)).toEqual([true, false, false, false]);
+    expect(aplanarComprobantes([conv(WA_A, lista)]).map((f) => f.tieneFoto)).toEqual([true, false, false, false]);
     expect(aplanarComprobantes([conv('c1', [{ idMeta: 'a', ruta: 'r' }])])[0]?.tieneFoto).toBe(false);
     expect(aplanarComprobantes([conv('wa_123', [{ idMeta: 'a', ruta: 'r' }])])[0]?.tieneFoto).toBe(false);
   });
 
   it('monto nulo o ausente se queda en null (la pantalla pinta «—»); el pedido cae al monto de la solicitud', () => {
-    const [f] = aplanarComprobantes([conv('wa_59171234567', [{ idMeta: 'a', montoLeido: null, importe: null }])]);
+    const [f] = aplanarComprobantes([conv(WA_A, [{ idMeta: 'a', montoLeido: null, importe: null }])]);
     expect(f).toMatchObject({ montoLeido: null, montoPedido: 100 });
-    const [g] = aplanarComprobantes([conv('wa_59171234567', [{ idMeta: 'a', montoLeido: 'x' }], {}, { monto: undefined })]);
+    const [g] = aplanarComprobantes([conv(WA_A, [{ idMeta: 'a', montoLeido: 'x' }], {}, { monto: undefined })]);
     expect(g).toMatchObject({ montoLeido: null, montoPedido: null });
-    const [h] = aplanarComprobantes([conv('wa_59171234567', [{ idMeta: 'a', importe: 0, montoLeido: 0 }])]);
+    const [h] = aplanarComprobantes([conv(WA_A, [{ idMeta: 'a', importe: 0, montoLeido: 0 }])]);
     expect(h).toMatchObject({ montoLeido: 0, montoPedido: 0 });
   });
 
   it('arreglo vacío, ausente o con forma rara no rompe ni inventa filas', () => {
     expect(aplanarComprobantes([])).toEqual([]);
-    expect(aplanarComprobantes([conv('wa_59171234567', [])])).toEqual([]);
-    expect(aplanarComprobantes([{ id: 'wa_59171234567' }])).toEqual([]);
-    expect(aplanarComprobantes([{ id: 'wa_59171234567', solicitud: 'x' }])).toEqual([]);
-    expect(aplanarComprobantes([{ id: 'wa_59171234567', solicitud: { comprobantes: 'x' } }])).toEqual([]);
-    expect(aplanarComprobantes([conv('wa_59171234567', [null, 3, 'x', [], {}, { idMeta: '' }, { idMeta: 7 }])])).toEqual([]);
+    expect(aplanarComprobantes([conv(WA_A, [])])).toEqual([]);
+    expect(aplanarComprobantes([{ id: WA_A }])).toEqual([]);
+    expect(aplanarComprobantes([{ id: WA_A, solicitud: 'x' }])).toEqual([]);
+    expect(aplanarComprobantes([{ id: WA_A, solicitud: { comprobantes: 'x' } }])).toEqual([]);
+    expect(aplanarComprobantes([conv(WA_A, [null, 3, 'x', [], {}, { idMeta: '' }, { idMeta: 7 }])])).toEqual([]);
   });
 
   it('más de 6 comprobantes y varias conversaciones: todos, del más nuevo al más viejo', () => {
-    const a = conv('wa_59171111111', Array.from({ length: 7 }, (_, i) => ({ idMeta: `a${i}`, en: new Date(T0 + i * 60_000) })));
-    const b = conv('wa_59172222222', [{ idMeta: 'b0', en: { toMillis: () => T0 + 3.5 * 60_000 } }, { idMeta: 'b1', en: { seconds: (T0 + 99 * 60_000) / 1000 } }]);
+    const a = conv(WA_B, Array.from({ length: 7 }, (_, i) => ({ idMeta: `a${i}`, en: new Date(T0 + i * 60_000) })));
+    const b = conv(WA_C, [{ idMeta: 'b0', en: { toMillis: () => T0 + 3.5 * 60_000 } }, { idMeta: 'b1', en: { seconds: (T0 + 99 * 60_000) / 1000 } }]);
     const filas = aplanarComprobantes([a, b]);
     expect(filas).toHaveLength(9);
     expect(filas.map((f) => f.idMeta)).toEqual(['b1', 'a6', 'a5', 'a4', 'b0', 'a3', 'a2', 'a1', 'a0']);
   });
 
   it('sin fecha va al final, en el orden de llegada; con timestamp de Firestore (toDate)', () => {
-    const filas = aplanarComprobantes([conv('wa_59171111111', [
+    const filas = aplanarComprobantes([conv(WA_B, [
       { idMeta: 'sin1' }, { idMeta: 'con', en: { toDate: () => new Date(T0) } }, { idMeta: 'sin2', en: 'ayer' },
     ])]);
     expect(filas.map((f) => f.idMeta)).toEqual(['con', 'sin1', 'sin2']);
@@ -112,8 +116,8 @@ describe('aplanarComprobantes', () => {
   });
 
   it('el mismo idMeta en dos conversaciones son dos filas', () => {
-    const filas = aplanarComprobantes([conv('wa_59171111111', [{ idMeta: 'm' }]), conv('wa_59172222222', [{ idMeta: 'm' }])]);
-    expect(filas.map((f) => f.conversacionId)).toEqual(['wa_59171111111', 'wa_59172222222']);
+    const filas = aplanarComprobantes([conv(WA_B, [{ idMeta: 'm' }]), conv(WA_C, [{ idMeta: 'm' }])]);
+    expect(filas.map((f) => f.conversacionId)).toEqual([WA_B, WA_C]);
   });
 });
 

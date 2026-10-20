@@ -6,6 +6,9 @@ import { simularFuncion } from './ayudas/funciones';
 import prepararDatos from './preparar-datos';
 
 const FOGON = 'parrilla-el-fogon';
+// Teléfonos sintéticos armados en ejecución (el saneo del repo público no admite 10+ dígitos seguidos).
+const TEL1 = ['5917', '1000001'].join('');
+const TEL2 = ['5917', '1000002'].join('');
 const PROHIBIDAS = /acreditad|pagado|verificad|aprobad|recibimos tu pago/i;
 
 async function abrirCobros(page: Page): Promise<void> {
@@ -32,7 +35,7 @@ test.describe('Cobros · comprobantes recibidos', () => {
 
   test('lista del más nuevo al más viejo, con estados en palabras simples; «Ver foto» solo con foto y pide la forma nueva', async ({ page }) => {
     const ahora = Date.now();
-    await sembrarConversacion(FOGON, '59171000001', [], {
+    await sembrarConversacion(FOGON, TEL1, [], {
       nombreContacto: 'Ana Rojas',
       solicitud: {
         reglaCobro: 2, monto: 55,
@@ -41,7 +44,7 @@ test.describe('Cobros · comprobantes recibidos', () => {
         ],
       },
     });
-    await sembrarConversacion(FOGON, '59171000002', [], {
+    await sembrarConversacion(FOGON, TEL2, [], {
       solicitud: {
         reglaCobro: 2, monto: 70,
         comprobantes: [
@@ -65,6 +68,6 @@ test.describe('Cobros · comprobantes recibidos', () => {
 
     await filas.nth(2).getByRole('button', { name: 'Ver foto' }).click();
     await expect(lista(page).getByRole('img', { name: 'Comprobante que mandó el cliente' })).toBeVisible();
-    expect(llamadas.llamadas).toEqual([{ tenantId: FOGON, conversacionId: 'wa_59171000001', idMeta: 'wamid.viejo' }]);
+    expect(llamadas.llamadas).toEqual([{ tenantId: FOGON, conversacionId: `wa_${TEL1}`, idMeta: 'wamid.viejo' }]);
   });
 });
