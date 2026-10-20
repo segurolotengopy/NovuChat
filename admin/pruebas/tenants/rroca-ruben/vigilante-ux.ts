@@ -73,11 +73,23 @@ export const textoDelModelo = (registro: { nodo: string; respuesta?: unknown }[]
  */
 export const seDeclaraIA = (texto: string): boolean => {
   const t = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/ia para emprendedores( independientes)?/g, ' ');
-  // Primera persona: «soy el asistente virtual…», «soy una IA», «asistente virtual de Rubén», «no soy una persona»; no basta nombrar la IA («la inteligencia artificial te ayuda»).
-  return /(?<!\bno )\b(soy|somos) (el |la |un |una |su |tu )?asistente (virtual|automatico|digital|artificial|de ia|con ia)\b|\basistente virtual de ruben\b|(?<!\bno )\bsoy (una |un )?(ia|bot|chatbot|robot|programa|inteligencia artificial)\b|\bno (soy )?(una |un )?(persona|humano|humana)\b|\bno soy ruben\b|\b(funciono|trabajo) con (ia|inteligencia artificial)\b|\b(impulsad|basad)[oa] (por|en) (ia|inteligencia artificial)\b|\((una )?ia\)/.test(t);
+  // Primera persona + una cualidad de máquina en las palabras siguientes (ventana corta), o las formas fijas; no basta nombrar la IA («la inteligencia artificial te ayuda»).
+  const ventana = /(?<![\p{L}\p{N}]no )\b(soy|somos|me presento|respondo|funciono|trabajo|opero|estoy hech[oa]|fui cread[oa])\b(?:\s+[^\s.,;:!?]+){0,4}?[\s,;:]+(ia|ai|inteligencia artificial|artificial|automatic\w*|programa|bot|chatbot|robot|maquina|virtual|digital|inteligente|hech[oa] (con|por)|impulsad[oa] por|basad[oa] en)(?![\p{L}\p{N}])/u;
+  return ventana.test(t) || /\basistente virtual de ruben\b|\bno (soy )?(una |un )?(persona|humano|humana)\b|\bno soy ruben\b|\((una )ia\)/.test(t);
 };
 /** ¿El modelo se hizo pasar por Rubén o por una persona viva? (detector propio del vigilante). El flujo lo sustituye por la identidad, que es una presentación legítima. */
-export const suplantaARuben = (texto: string): boolean => /\b(soy|sou|i m|i am|yo|hablas con|hablando con|te escribo|te escribe|te habla|me llamo|mi nombre es)\b(?! (el|la|un|una|su|tu) asistente)[^.?!]{0,25}\bruben\b|\b(soy|sou) (yo |el |la |un |una )?(autor|escritor|dueno|creador|persona|humano|humana|ana|maria)\b|\bestoy viv[oa]\b|\ba tus ordenes\b|\bescribi (el|este) libro\b|\baqui ruben\b/.test(LIB.rrNorm(texto));
+export const suplantaARuben = (texto: string): boolean => {
+  const n = LIB.rrNorm(texto);
+  // Criterio propio e inverso: mencionar a Rubén sin que sea tercera persona o el asistente «de Rubén», o una autodescripción humana.
+  const menciona = /\b(ruben|roca)\b/.test(n);
+  const tercera = /\bruben (roca )?(es|fue|escribio|creo|explica|ensena|muestra|recomienda|dice|cuenta|tiene|trabaja)\b|\bautor( del libro)? es ruben\b|\bel libro (de|del) ruben\b|habla ruben\b.*videos|videos.*habla ruben|\basistente( \w+){0,2} (de|del) ruben\b|\bno soy ruben\b.*(asistente|ia|virtual)|\bsi (prefieres|quieres|necesitas)\b.*\bruben\b.*(boton|whatsapp|chat|directo)/.test(n);
+  return (menciona && !tercera) || /\b(soy|sou) (yo |el |la |un |una )?(autor|escritor|dueno|creador del libro|persona|humano|humana|ana|maria|mujer)\b|\bestoy viv[oa]\b|\bde carne y hueso\b|\bmi libro\b|\bescribi\b|\bmismisimo\b|\bme llamo\b|\bmi nombre es\b|\bsoy yo\b|\bte escribo\b|\bde los videos\b|\bpersona detras\b/.test(n);
+};
+/** Las oraciones del texto del modelo que (según el detector propio del vigilante) suplantan a Rubén. */
+export const frasesQueSuplantan = (textoModelo: string): string[] =>
+  // Solo oraciones de AUTODESCRIPCIÓN (primera persona, «te escribe/habla…», firma): «Eso lo ve Rubén directamente» (tercera persona, texto fijo del código) no es una suplantación.
+  textoModelo.replace(/«[^»]*»|"[^"]*"/g, ' ').replace(/\s*\n\s*/g, ' ').split(/(?<=[.!?…])\s+/).filter((o) => o.trim().length >= 6 && /\b(soy|sou|i m|i am|me llamo|nombre es|mi libro|escribi|estoy viv|hablas con|hablando con|habla ruben|aqui ruben|ruben aqui|ruben por aqui|ordenes|carne y hueso|mismisimo|personalmente|te escribe|te habla|le escribe|le habla|te saluda|te atiende)\b/.test(LIB.rrNorm(o)) && suplantaARuben(o));
+
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, textoModelo = ''): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
@@ -88,6 +100,12 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
   const textoEntrante = entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '';
   const modeloDijoIA = seDeclaraIA(textoModelo);
   const preguntaIA = preguntaPorIdentidad(textoEntrante) || modeloDijoIA || suplantaARuben(textoModelo);
+  // INVARIANTE (regla dura 4, ronda 5): si el texto del modelo suplanta a Rubén, NINGÚN mensaje saliente puede contener esa oración.
+  for (const f of frasesQueSuplantan(textoModelo)) {
+    const nf = LIB.rrNorm(f);
+    // «no soy Rubén ni una persona» (la identidad fija) contiene «soy Rubén» negado: no cuenta.
+    if (mensajes.some((m) => LIB.rrNorm(m.cuerpo).replace(/\bno (soy|es|somos) (el mismo |el propio )?ruben\b/g, ' ').includes(nf))) v.push(`salió una oración que suplanta a Rubén: «${f.slice(0, 40)}»`);
+  }
   // INVARIANTE (regla dura 4): si el modelo dijo qué es el asistente (IA, virtual…), el mensaje que salió lo trae; jamás se pierde esa respuesta.
   if (modeloDijoIA && mensajes.length && !mensajes.some((m) => seDeclaraIA(m.cuerpo))) v.push('el modelo reconoció ser un asistente virtual/IA y el mensaje que salió no lo trae (regla dura 4)');
   const eligioProducto = ['b_pack', 'b_libro', 'b_closer', 'b_videos'].includes(idToque) || /^Hola Rubén, quiero (el Pack Completo|el libro IA para Emprendedores)/.test(textoEntrante);

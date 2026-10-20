@@ -123,13 +123,8 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       // «Gracias por escribir…» en lugar de reconocerlo); (b) como primer mensaje el cliente SIEMPRE lee una presentación que diga qué es (no basta la palabra suelta: «la inteligencia artificial puede ayudarte» o «crear tu asistente virtual»).
       const modeloDijoIA = rrTienePresentacionIA(crudo);
       const falta = !fichaAntes.saludado ? !rrTienePresentacionIA(cuerpo) : (modeloDijoIA && !rrTienePresentacionIA(cuerpo));
-      // Se antepone la PROPIA frase del modelo que dice qué es (si es corta y pasa el filtro del flujo); si no, la presentación fija.
-      let antepuesta = RR_PRESENTACION;
-      if (falta && modeloDijoIA) {
-        const propia = crudo.split('\n').reduce((acc, linea) => acc.concat(rrOraciones(linea)), []).find((o) => rrTienePresentacionIA(o));
-        if (propia && propia.length <= 200 && rrExtraRedaccion(propia, rrNorm(propia)) === '' && !rrSuplantaARuben(propia)) antepuesta = propia.trim();
-      }
-      const conPresentacion = falta ? antepuesta + '\n\n' + cuerpo : cuerpo;
+      // Se antepone SIEMPRE la constante fija (nunca una oración cruda del modelo: no pasó por la revisión de enlaces, cuentas, montos ni promesas).
+      const conPresentacion = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
       m = conBotones(conPresentacion, op);
       // `ultimoModelo` se guarda DESPUÉS de la barrera: si `rrSeguro` sustituyó el texto (NIEGA_IA, cobro), no se recuerda lo que dijo el modelo.
       const sustituido = m.texto === rrParrafos(RR_SALUDO_MINIMO) || m.texto === rrParrafos(RR_TEXTO_IDENTIDAD);
