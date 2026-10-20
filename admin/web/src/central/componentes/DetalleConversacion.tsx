@@ -12,7 +12,7 @@ import {
   etiquetaDia, horaCorta, iniciales, mismoDia, necesitaHumanoDe, textoRestante, turnoDeFicha, ventanaDeFicha, type Ficha,
 } from '../lib/conversaciones';
 import {
-  accionesDeTurno, estadoDeMensaje, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar,
+  AVISO_PROPIETARIO, accionesDeTurno, estadoDeMensaje, mostrarAvisoPropietario, rotuloDeAutor, situacionDeTurno, textoEstadoMensaje, textoRechazoMeta, vencidoDeEnvio, ventanaAbiertaParaTomar,
   type CapaTurno, type EstadoMensajePersona,
 } from '../lib/turno';
 
@@ -215,6 +215,8 @@ export interface PropsDetalle {
   posicion: string;
   /** Quien mira puede cambiar «No contactar» (admin u oper del negocio); el propietario de NovuChat solo mira. */
   puedeGestionar: boolean;
+  /** Quien mira es el propietario de NovuChat (sesión de Google): se le explica por qué solo lee. */
+  esPropietario?: boolean;
   /** El comercio está `activo`: con otro estado las reglas niegan toda escritura y el control se deshabilita. */
   comercioActivo: boolean;
   /** H2: el uid de quien mira (para saber si la conversación la tiene «usted»); `null` sin sesión. */
@@ -357,6 +359,10 @@ export function DetalleConversacion(p: PropsDetalle) {
         )}
         {errorNoContactar && <span role="alert" className="cv-error">{errorNoContactar}</span>}
       </div>
+
+      {mostrarAvisoPropietario(p.esPropietario === true) && (
+        <p className="cv-aviso-linea" role="note">{AVISO_PROPIETARIO}</p>
+      )}
 
       <BarraTurno
         tenantId={tenantId} conversacionId={ficha.id} turno={turno} situacion={situacion}
