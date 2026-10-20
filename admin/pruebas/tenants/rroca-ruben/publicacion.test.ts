@@ -244,11 +244,11 @@ describe('construir.mjs --publicable: la línea de comandos', () => {
 
   it('un JSON inválido no filtra su contenido en el mensaje de error', () => {
     const ruta = join(dir, 'roto.json');
-    writeFileSync(ruta, '{"token": "CONTENIDO-SECRETO-123" ,,, }');
+    writeFileSync(ruta, '{"dato": "CONTENIDO-123" ,,, }');
     const r = correr('--flujo', ruta);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/JSON inválido/);
-    expect(r.stderr + r.stdout).not.toMatch(/SECRETO|token|position|Unexpected/);
+    expect(r.stderr + r.stdout).not.toMatch(/CONTENIDO|dato|position|Unexpected/);
   });
 
   it('un flujo que no existe o un argumento sobrante salen en error y no publican', () => {
@@ -357,7 +357,7 @@ describe('publicar-flujo.sh: la guardia mira también el flujo VIVO (destino) y 
   const envRel = join(dir, 'env');
   writeFileSync(envRel, 'N8N_API_KEY=clave-de-juguete\nN8N_WORKFLOW_ID=1\nN8N_BASE_URL=http://n8n.invalido\n');
   const vivoRuben = join(dir, 'vivo-ruben.json');
-  writeFileSync(vivoRuben, JSON.stringify({ name: 'NovuChat — Venta digital de Rubén (rroca-ruben)', active: false, nodes: [] }));
+  writeFileSync(vivoRuben, JSON.stringify({ name: 'NovuChat — Venta digital de Rubén (rroca-ruben)', active: false, nodes: [], connections: {}, settings: {} }));
   const vivoOtro = join(dir, 'vivo-otro.json');
   writeFileSync(vivoOtro, JSON.stringify({ name: 'Otro cliente', active: false, nodes: [] }));
   const otroArchivo = join(dir, 'cualquier-cosa.json');
@@ -487,6 +487,104 @@ describe('publicar-flujo.sh: la guardia mira también el flujo VIVO (destino) y 
     expect(conCrear.stdout + conCrear.stderr).not.toMatch(/flujo vivo de destino|Flujo de Rubén/);
     const sinCrear = correr(['--flujo', otroArchivo, '--forzar'], vivoRuben);
     expect(sinCrear.stdout + sinCrear.stderr).toMatch(/flujo vivo de destino/);
+  });
+  // --- Revisión de seguridad final de #555: clase más estricta entre origen y vivo, --crear y --reiniciar-estado ---
+  function raizConArchivos(codigoSalida: number, archivos: Record<string, unknown>): string {
+    const raiz = raizConGuardia(codigoSalida);
+    for (const [nombre, contenido] of Object.entries(archivos)) writeFileSync(join(raiz, nombre), JSON.stringify(contenido));
+    return raiz;
+  }
+  const NOMBRE_VIVO = 'NovuChat — Venta digital de Rubén (rroca-ruben)';
+  const renombrado = { name: 'Nombre cambiado', nodes: [] };
+
+  it('archivo renombrado (rroca-ruben-x.json, nombre del flujo cambiado) + --forzar + vivo conversacional: se exige --publicable (falla aunque lleve --confirmo-ruben) y no escribe', () => {
+    const raiz = raizConArchivos(1, { 'rroca-ruben-x.json': renombrado });
+    const r = correrEn(raiz, ['--flujo', 'rroca-ruben-x.json', '--forzar', '--aplicar', '--confirmo-ruben'], vivoRuben);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/NEGADO: el flujo de Rubén no se publica/);
+    expect(r.stdout + r.stderr).toMatch(/flujo vivo de destino/);
+    expect(escribio()).toBe(false);
+  });
+  it('lo mismo, con la guardia en verde y sin confirmación: se niega por la confirmación', () => {
+    const raiz = raizConArchivos(0, { 'rroca-ruben-x.json': renombrado });
+    const r = correrEn(raiz, ['--flujo', 'rroca-ruben-x.json', '--forzar', '--aplicar'], vivoRuben);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/solo se publica con --confirmo-ruben/);
+    expect(escribio()).toBe(false);
+  });
+  it('un nombre del flujo con espacio no rompible y guion unicode se normaliza (NFKC) y sigue siendo el conversacional', () => {
+    const raiz = raizConArchivos(1, { 'cualquiera.json': { name: 'NovuChat — Venta digital de Rubén (rroca-ruben)', nodes: [] } });
+    const r = correrEn(raiz, ['--flujo', 'cualquiera.json', '--aplicar', '--confirmo-ruben'], vivoOtro);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/NEGADO: el flujo de Rubén no se publica/);
+  });
+  it('positiva: el mismo flujo (mismo nombre, sin --forzar) con la guardia en verde y --confirmo-ruben se escribe', () => {
+    const raiz = raizConArchivos(0, { 'rroca-ruben.json': { name: NOMBRE_VIVO, nodes: [], connections: {}, settings: {} } });
+    const r = correrEn(raiz, ['--flujo', 'rroca-ruben.json', '--aplicar', '--confirmo-ruben'], vivoRuben);
+    expect(r.stderr).not.toMatch(/NEGADO/);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(escribio()).toBe(true);
+  });
+
+  const configBase = (f: Flujo): Flujo => f;
+  it('--crear con la referencia (vivo) de Rubén y un archivo renombrado sin plantillas: exige al menos la confirmación', () => {
+    const raiz = raizConArchivos(1, { 'cualquiera.json': renombrado });
+    const sin = correrEn(raiz, ['--flujo', 'cualquiera.json', '--crear', '--aplicar'], vivoRuben);
+    expect(sin.status).toBe(1);
+    expect(sin.stderr).toMatch(/solo se publica con --confirmo-ruben/);
+    expect(sin.stdout + sin.stderr).not.toMatch(/NO se puede publicar todavía/);
+    expect(escribio()).toBe(false);
+    const con = correrEn(raiz, ['--flujo', 'cualquiera.json', '--crear', '--aplicar', '--confirmo-ruben'], vivoRuben);
+    expect(con.stdout + con.stderr).not.toMatch(/NEGADO/);
+  });
+  it('--crear con contenido que trae «Config base» con claves de plantilla de aviso (archivo renombrado, referencia de otro cliente): exige --publicable aunque lleve --confirmo-ruben', () => {
+    const f = configBase(copia(PRODUCCION));
+    f.name = 'Nombre cambiado';
+    const raiz = raizConArchivos(1, { 'cualquiera.json': f });
+    const r = correrEn(raiz, ['--flujo', 'cualquiera.json', '--crear', '--aplicar', '--confirmo-ruben'], vivoOtro);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/NEGADO: el flujo de Rubén no se publica/);
+    expect(escribio()).toBe(false);
+  });
+  it('--crear con un flujo sin relación con Rubén (referencia y contenido de otro cliente) no cambia nada', () => {
+    const r = correr(['--flujo', otroArchivo, '--crear'], vivoOtro);
+    expect(r.stdout + r.stderr).not.toMatch(/Rubén|rroca-ruben|NEGADO/);
+  });
+  it('la publicación normal de la noche: --crear --confirmo-ruben, referencia de otro cliente (demo) y el archivo de Rubén PREPARADO (sustituido y aprobado): pasa la guardia y llega a crear', () => {
+    const prep = join(dir, 'rroca-ruben.local.json');
+    writeFileSync(prep, JSON.stringify(publicable(PRODUCCION)));
+    const r = correr(['--flujo', prep, '--crear', '--confirmo-ruben', '--aplicar'], vivoOtro);
+    expect(r.stdout + r.stderr).toMatch(/archivo de origen/);
+    expect(r.stdout + r.stderr).toMatch(/se puede publicar/);
+    expect(r.stderr).not.toMatch(/NEGADO/);
+    expect(leer(log)).toMatch(/workflows/);
+  });
+  it('lo mismo SIN --confirmo-ruben y sin terminal se niega, y con marcadores sin sustituir se niega aunque lleve la confirmación', () => {
+    const prep = join(dir, 'rroca-ruben.local.json');
+    writeFileSync(prep, JSON.stringify(publicable(PRODUCCION)));
+    const sin = correr(['--flujo', prep, '--crear', '--aplicar'], vivoOtro);
+    expect(sin.status).toBe(1);
+    expect(sin.stderr).toMatch(/solo se publica con --confirmo-ruben/);
+    const crudo = correr(['--flujo', join(RROCA, 'rroca-ruben.json'), '--crear', '--confirmo-ruben', '--aplicar'], vivoOtro);
+    expect(crudo.status).toBe(1);
+    expect(crudo.stderr).toMatch(/NEGADO: el flujo de Rubén no se publica/);
+  });
+
+  it('--reiniciar-estado --aplicar contra el flujo vivo de Rubén exige la confirmación explícita (negando) y no escribe', () => {
+    const sin = correr(['--reiniciar-estado', '--aplicar'], vivoRuben);
+    expect(sin.status).toBe(1);
+    expect(sin.stderr).toMatch(/solo se publica con --confirmo-ruben/);
+    expect(escribio()).toBe(false);
+  });
+  it('--reiniciar-estado con --confirmo-ruben sí sigue; en seco no pide nada; contra otro cliente nada cambia', () => {
+    const con = correrEn(raizConGuardia(0), ['--reiniciar-estado', '--aplicar', '--confirmo-ruben'], vivoRuben); // en una raíz de juguete: el respaldo del estado no ensucia el repositorio
+    expect(con.stderr).not.toMatch(/NEGADO/);
+    expect(escribio()).toBe(true); // el curl de juguete no sabe responder a la verificación final: solo importa que pasó la confirmación y llegó a escribir
+    const seco = correr(['--reiniciar-estado'], vivoRuben);
+    expect(seco.status, seco.stderr).toBe(0);
+    expect(escribio()).toBe(false);
+    const otro = correrEn(raizConGuardia(0), ['--reiniciar-estado', '--aplicar'], vivoOtro);
+    expect(otro.stderr).not.toMatch(/NEGADO/);
   });
 });
 
