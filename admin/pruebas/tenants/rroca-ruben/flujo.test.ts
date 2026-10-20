@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
+import { vigilarUx } from './vigilante-ux';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-ruben');
@@ -91,6 +92,8 @@ function crear(o: Opciones = {}) {
     ahoraMs: AHORA,
     configBase: { phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: o.telefonosDePrueba ?? `${ANA},${BETO}` },
   });
+  // Los invariantes de UX (botones que no reaparecen, una presentación por teléfono, párrafos) vigilan también los saludos de esta suite.
+  vigilarUx(mundo);
   return mundo;
 }
 const hablar = (m: Mundo, from: string, msg: J, op: { wamid?: string; entrega?: string; phoneId?: string; toleraFallo?: boolean } = {}): ResultadoTurno =>

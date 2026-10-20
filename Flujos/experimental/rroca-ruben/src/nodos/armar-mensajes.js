@@ -68,13 +68,15 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   if (tipoDePlan === 'qr' && RR_PRODUCTOS[plan.producto]) usadoNuevo = RR_PRODUCTOS[plan.producto].boton;
   else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS || plan.boton === RR_BOTON_PRECIOS || plan.boton === RR_BOTON_HABLAR ? String(plan.boton) : '';
   if (tipoDePlan === 'saludo') {
-    // Saludo corto con UNA presentación y, en el MISMO mensaje, «Ver precios» y «Hablar con Rubén» (sin los que ya pulsó). Si el cliente ya pidió precios, van directamente los botones de productos.
+    // Saludo corto con UNA presentación por teléfono y, en el MISMO mensaje, «Ver precios» y «Hablar con Rubén» (sin los que ya pulsó). Ya saludado, el prellenado de consulta recibe SOLO su pregunta.
     const usadosYa = fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
-    const botonesSaludo = plan.conMenu === true && menu1().length ? menu1() : rrMenuSaludo(cat, usadosYa);
-    m = conBotones(rrSaludo(cat, plan.pregunta === 'consulta' ? RR_PREGUNTA_CONSULTA : ''), botonesSaludo);
+    m = conBotones(rrSaludo(cat, plan.pregunta === 'consulta' ? RR_PREGUNTA_CONSULTA : '', !fichaAntes.saludado), rrMenuSaludo(cat, usadosYa));
   } else if (tipoDePlan === 'precio') {
-    m = conBotones(rrTextoPrecio(cat, plan.producto), menu1());
+    // El cliente VIO los precios: «Ver precios» no se reofrece. Sin botones de producto que ofrecer, el texto no cierra con una pregunta sin opciones.
+    usadoNuevo = RR_BOTON_PRECIOS;
+    m = conBotones(rrTextoPrecio(cat, plan.producto, menu1().length > 0), menu1());
   } else if (tipoDePlan === 'precios') {
+    usadoNuevo = RR_BOTON_PRECIOS;
     m = conBotones(RR_TEXTO_PRECIOS, menu1());
   } else if (tipoDePlan === 'complemento') {
     m = conBotones(rrTextoComplemento(plan.producto, cat, plan.conPresentacion === true), rrMenuDeComplemento(plan.producto, cat, fichaAntes.usados));
