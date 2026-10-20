@@ -95,6 +95,9 @@ const precioPedido = rrPreguntaPorPrecio(norm);
 if (precioPedido && (precioPedido.producto !== '' || !rrEsSoloSaludo(norm))) return salir({ tipo: 'precio', producto: precioPedido.producto, cat: cat });
 if (!ficha.saludado && rrEsSoloSaludo(norm)) return salir({ tipo: 'saludo', pregunta: 'general', conMenu: rrIntencionDeCompra(norm), cat: cat });
 if (rrEsSoloSaludo(norm) && rrIntencionDeCompra(norm)) return salir({ tipo: 'saludo', pregunta: 'general', conMenu: true, cat: cat });
+// «Desde solo 32 Bs» (la captura del anuncio general) sigue el saludo fijo con el menú, sin modelo.
+const anuncio = rrAnuncioDe(t.texto);
+if (anuncio && anuncio.clave === 'desde_32') return salir({ tipo: 'saludo', pregunta: 'general', conMenu: true, cat: cat });
 return salir({ tipo: 'modelo', cat: cat, textoCliente: String(t.texto || '').slice(0, 500) }, {
   llamarModelo: true, cuerpoModelo: rrCuerpoModelo(t.texto, ficha.ultimoModelo),
 });

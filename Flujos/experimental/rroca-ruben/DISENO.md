@@ -88,3 +88,10 @@ Una pregunta de precio («cuánto cuesta…», «precio», «costo»…) la resp
 Los invariantes de UX (botón pulsado no reaparece, QR solo tras elegir producto, una sola presentación) los vigila `venta.test.ts` en cada turno de toda la batería.
 
 PÁRRAFOS (20/10/2026): todo texto al cliente pasa por `rrSeguro` → `rrParrafos` (`src/lib/rr.js`; el módulo común `comun-sin-agente` es de otra zona y no se tocó): a lo más 2 oraciones por párrafo (con 2, ≤220 caracteres), la pregunta final sola, una línea en blanco entre párrafos; mismo mensaje, mismas palabras. El invariante vive en `venta.test.ts` (`violacionesDeParrafos`). Las plantillas de Meta no se tocan.
+
+## Los ángulos de los anuncios de Meta (bloque 2, 20/10/2026)
+
+- `RR_ANUNCIOS` (`src/lib/rr.js`) es la lista cerrada y ÚNICA de los 9 anuncios (clave, titular canónico, patrones sobre el texto normalizado con `rrNorm`); `rrAnuncioDe(texto)` es pura y devuelve el primero que coincida, o `null`. El bloque de visión reutilizará estas dos, sin copiarlas. `desde_32` va siempre última.
+- Si el texto coincide con un anuncio, el turno sigue al modelo y `rrCuerpoModelo` antepone UNA línea `[ANUNCIO_DETECTADO: <titular canónico>]` (nunca el texto libre). `desde_32` («Desde solo 32 Bs») no va al modelo: sigue el saludo fijo con el menú, como un saludo general.
+- `RR_PROMPT` lleva la guía de ángulos (sin montos, sin enlaces) y las respuestas a las dudas (programar, principiante, herramientas de pago, garantía de ingresos, comprar el libro hoy y los complementos después). Tamaño: 2.390 → 4.237 caracteres (unos +500 tokens por llamada al modelo, flash-lite sin cambios).
+- Costo: 0 mensajes agregados; 39/34 nodos. Pruebas: `admin/pruebas/tenants/rroca-ruben/angulos.test.ts`.
