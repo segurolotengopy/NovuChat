@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 import { esFlujo } from '../../functions/src/registro';
 import { planearFlujos } from '../../scripts/plataforma/fijar-flujos-logica.mjs';
 
@@ -95,7 +96,7 @@ describe('fijar-flujos: el texto del script', () => {
   it('los comercios excluidos (y los de prefijo igual) salen con código 2 antes de abrir Firebase', () => {
     for (const tenant of ['bellido', 'Bellido', 'bellido-xyz', 'platinum2']) {
       const r = spawnSync('node', [join(aqui, '..', '..', 'scripts', 'plataforma', 'fijar-flujos.mjs'),
-        '--proyecto', 'p', '--operador', ['operador', 'ejemplo.test'].join('@'), '--tenant', tenant, '--flujos', 'venta'], { encoding: 'utf8' });
+        '--proyecto', 'p', '--operador', ['operador', 'ejemplo.test'].join('@'), '--tenant', tenant, '--flujos', 'venta'], { encoding: 'utf8', env: entornoDelEmulador() });
       expect(r.status).toBe(2);
       expect(r.stderr).toContain('no se toca desde este script');
     }
