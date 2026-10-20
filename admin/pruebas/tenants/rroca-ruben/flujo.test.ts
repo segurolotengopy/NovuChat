@@ -108,7 +108,7 @@ describe('el saludo: uno solo, armado por código, del asistente virtual', () =>
     expect(t.fallo).toBeNull();
     expect(t.mensajes).toHaveLength(1);
     expect(t.mensajes[0]!.a).toBe(ANA);
-    // Saludo corto con botones en el MISMO mensaje; sin catálogo, solo «Hablar con Rubén» (no se ofrece «Ver precios» sin precios).
+    // Saludo corto con botones en el MISMO mensaje; sin catálogo, solo «Más información» (no se ofrece «Ver precios» sin precios).
     expect(t.mensajes[0]!.tipo).toBe('interactive');
     expect(t.mensajes[0]!.cuerpo).toMatch(SALUDO);
     expect((t.mensajes[0]!.cuerpo.match(/asistente/gi) ?? []).length).toBe(1);

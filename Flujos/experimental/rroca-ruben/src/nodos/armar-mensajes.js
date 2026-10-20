@@ -69,15 +69,24 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 } else if (puerta.ruta === 'sigue') {
   // El botón «usado» sale del PRODUCTO del QR (también si el producto se eligió por texto prellenado, sin botón) o, si no, del botón pulsado.
   if (tipoDePlan === 'qr' && RR_PRODUCTOS[plan.producto]) usadoNuevo = RR_PRODUCTOS[plan.producto].boton;
-  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS || plan.boton === RR_BOTON_PRECIOS || plan.boton === RR_BOTON_HABLAR ? String(plan.boton) : '';
+  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS || plan.boton === RR_BOTON_PRECIOS || plan.boton === RR_BOTON_INFO || plan.boton === RR_BOTON_HABLAR ? String(plan.boton) : '';
   if (tipoDePlan === 'saludo') {
-    // Saludo corto con UNA presentación por teléfono y, en el MISMO mensaje, «Ver precios» y «Hablar con Rubén» (sin los que ya pulsó). Ya saludado, el prellenado de consulta recibe SOLO su pregunta.
+    // Saludo corto con UNA presentación por teléfono y, en el MISMO mensaje, «Ver precios» y «Más información» (sin los que ya pulsó; el saludo NUNCA ofrece a Rubén). Ya saludado, el prellenado de consulta recibe SOLO su pregunta.
     const usadosYa = fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
     m = conBotones(rrSaludo(cat, plan.pregunta === 'consulta' ? RR_PREGUNTA_CONSULTA : '', !fichaAntes.saludado), rrMenuSaludo(cat, usadosYa));
   } else if (tipoDePlan === 'precio') {
     // El cliente VIO los precios: «Ver precios» no se reofrece. Sin botones de producto que ofrecer, el texto no cierra con una pregunta sin opciones.
     usadoNuevo = RR_BOTON_PRECIOS;
     m = conBotones(rrTextoPrecio(cat, plan.producto, menu1().length > 0), menu1());
+  } else if (tipoDePlan === 'info') {
+    // Datos fijos del guion, sin modelo. Quien vio la información no la ve reofrecida en el saludo; debajo, el menú de productos (ya saludado, es seguro).
+    usadoNuevo = RR_BOTON_INFO;
+    const op = menu1();
+    m = conBotones(rrTextoInfo(plan.tema, op.length > 0), op);
+  } else if (tipoDePlan === 'identidad') {
+    // Con un QR abierto no se ofrecen botones de producto (solo el de Rubén); si no, los botones normales.
+    if (plan.qrAbierto === true) m = conRuben(RR_TEXTO_IDENTIDAD);
+    else m = conBotones(RR_TEXTO_IDENTIDAD, menuAbierto());
   } else if (tipoDePlan === 'precios') {
     usadoNuevo = RR_BOTON_PRECIOS;
     m = conBotones(RR_TEXTO_PRECIOS, menu1());
@@ -95,15 +104,32 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       // DERIVAR: el modelo no supo responder. La palabra jamás llega al cliente: aviso a Rubén (lo armó «Armar avisos») y el botón.
       tipoDePlan = 'derivar';
       m = conRuben(rrTextoDerivacion('consulta', estadoAviso));
+    } else if (rrSuplantaARuben(crudo)) {
+      // SUPLANTACIÓN (prohibición 4): el modelo se dijo Rubén, el autor o una persona: el mensaje completo se sustituye por la identidad fija (con los botones normales). No se guarda como `ultimoModelo`.
+      tipoDePlan = 'identidad';
+      ultimoModelo = '';
+      m = conBotones(RR_TEXTO_IDENTIDAD, menuAbierto());
     } else {
       const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
         maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [rrExtraRedaccion],
       });
-      const bueno = rev.motivo === '' && rev.texto.trim() !== '';
+      // UNA sola presentación (Silvana, 20/10/2026): ya saludado, el modelo no vuelve a presentarse (se quita de su salida)... PERO la regla dura 4 manda: una oración de presentación que dice qué ES el asistente
+      // (virtual, IA, programa, bot…) NUNCA se borra. Como primer mensaje cabe UNA, nunca dos. Si al quitar la presentación no queda nada, cae al texto fijo.
+      const limpio = rev.motivo === '' ? rrUnaPresentacion(rev.texto, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(t.texto)), true) : '';
+      const bueno = rev.motivo === '' && limpio.trim() !== '';
       const op = menuAbierto();
-      const cuerpo = bueno ? rev.texto : rrTextoModeloCaido(op.length > 0);
-      if (bueno) ultimoModelo = cuerpo.slice(0, 300);
-      m = conBotones(cuerpo, op);
+      const cuerpo = bueno ? limpio : rrTextoModeloCaido(op.length > 0);
+      // PRESENTACIÓN GARANTIZADA: (a) el pulido común quita la presentación inicial del modelo: si el modelo dijo QUÉ ES (IA, virtual…) y eso no sobrevivió, se antepone la presentación fija (regla dura 4: jamás sale
+      // «Gracias por escribir…» en lugar de reconocerlo); (b) como primer mensaje el cliente SIEMPRE lee una presentación que diga qué es (no basta la palabra suelta: «la inteligencia artificial puede ayudarte» o «crear tu asistente virtual»).
+      const modeloDijoIA = rrTienePresentacionIA(crudo);
+      const falta = !fichaAntes.saludado ? !rrTienePresentacionIA(cuerpo) : (modeloDijoIA && !rrTienePresentacionIA(cuerpo));
+      // Se antepone SIEMPRE la constante fija (nunca una oración cruda del modelo: no pasó por la revisión de enlaces, cuentas, montos ni promesas).
+      const conPresentacion = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
+      m = conBotones(conPresentacion, op);
+      // `ultimoModelo` se guarda DESPUÉS de la barrera: si `rrSeguro` sustituyó el texto (NIEGA_IA, cobro), no se recuerda lo que dijo el modelo.
+      const sustituido = m.texto === rrParrafos(RR_SALUDO_MINIMO) || m.texto === rrParrafos(RR_TEXTO_IDENTIDAD);
+      if (bueno && !sustituido) ultimoModelo = cuerpo.slice(0, 300);
+      else if (sustituido) ultimoModelo = '';
       tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
     }
   } else if (tipoDePlan === 'qr') {
