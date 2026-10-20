@@ -732,7 +732,7 @@
       "credentials": {
         "googlePalmApi": {
           "id": "",
-          "name": "Gemini (Ruben)"
+          "name": "Google Gemini(PaLM) Api account"
         }
       },
       "onError": "continueRegularOutput",
@@ -767,7 +767,7 @@
       "credentials": {
         "googlePalmApi": {
           "id": "",
-          "name": "Gemini (Ruben)"
+          "name": "Google Gemini(PaLM) Api account"
         }
       },
       "onError": "continueRegularOutput",
@@ -898,7 +898,7 @@
       "credentials": {
         "googlePalmApi": {
           "id": "",
-          "name": "Gemini (Ruben)"
+          "name": "Google Gemini(PaLM) Api account"
         }
       },
       "onError": "continueRegularOutput",

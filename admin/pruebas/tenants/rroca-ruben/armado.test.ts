@@ -300,7 +300,7 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
     expect(cb.find((a) => a['name'] === 'modelo')!['value']).toBe('gemini-3.5-flash-lite');
     expect(cb.find((a) => a['name'] === 'cobroSimuladoActivo')!['value']).toBe(false);
     for (const n of ['Conversar con el modelo', 'Leer comprobante (PDF)', 'Leer comprobante (imagen)']) {
-      expect(String((nodo(PRODUCCION, n).credentials as J)['googlePalmApi'].name), n).toBe('Gemini (Ruben)');
+      expect(String((nodo(PRODUCCION, n).credentials as J)['googlePalmApi'].name), n).toBe('Google Gemini(PaLM) Api account');
     }
   });
 });
