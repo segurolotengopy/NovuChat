@@ -7,7 +7,7 @@
     "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
     "entradaPrueba": "Entrada de prueba Ruben",
     "medios": "WhatsApp Ruben (envío)",
-    "gemini": "Gemini (Ruben)"
+    "gemini": "Google Gemini(PaLM) Api account"
   },
   "receptor": {
     "ruta": "REEMPLAZAR_RUTA_RECEPTOR_RROCA_RUBEN",
