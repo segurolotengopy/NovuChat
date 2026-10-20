@@ -8,8 +8,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  AVISO_COMPROBANTES, ESTADO_POR_DEFECTO, TEXTO_SIN_COMPROBANTES, aplanarComprobantes, estadoEnPalabras, fechaDeLaPaz,
-  telefonoEnmascarado, type ConversacionConComprobantes,
+  AVISO_COMPROBANTES, ESTADO_POR_DEFECTO, TEXTO_SIN_COMPROBANTES, estadoEnPalabras, fechaDeLaPaz, filasDeRecibidos,
+  telefonoEnmascarado, type DocumentoRecibido,
 } from '../../../web/src/modulos/cobros/comprobantesRecibidos.ts';
 import { COLUMNAS } from '../../../web/src/modulos/cobros/contadoresDeCobro.ts';
 
@@ -20,8 +20,8 @@ const WA_B = ['wa_5917', '1111111'].join('');
 const WA_C = ['wa_5917', '2222222'].join('');
 const T0 = Date.UTC(2026, 9, 20, 15, 30); // 11:30 en La Paz
 
-const conv = (id: string, comprobantes: unknown, extra: Record<string, unknown> = {}, sol: Record<string, unknown> = {}): ConversacionConComprobantes => ({
-  id, telefono: id.replace('wa_', ''), solicitud: { reglaCobro: 2, monto: 100, comprobantes, ...sol }, ...extra,
+const recibido = (id: string, extra: Record<string, unknown> = {}): DocumentoRecibido => ({
+  id: `obj_${id}`, idMeta: `m_${id}`, conversacionId: WA_A, estado: 'invalido', motivo: 'monto_menor', en: new Date(T0), ...extra,
 });
 
 describe('estadoEnPalabras (tabla cerrada)', () => {
@@ -53,11 +53,11 @@ describe('estadoEnPalabras (tabla cerrada)', () => {
   });
 });
 
-describe('aplanarComprobantes', () => {
-  it('una fila por comprobante, con todos los campos normalizados', () => {
-    const filas = aplanarComprobantes([conv(WA_A, [
-      { idMeta: 'm1', estado: 'invalido', motivo: 'monto_menor', en: new Date(T0), ruta: 'x/y.jpg', importe: 55, montoLeido: 50, intentos: 1 },
-    ], { nombreContacto: 'Ana Rojas' })]);
+describe('filasDeRecibidos', () => {
+  it('una fila por documento, con todos los campos normalizados', () => {
+    const filas = filasDeRecibidos([recibido('1', {
+      idMeta: 'm1', ruta: 'x/y.jpg', importe: 55, montoLeido: 50, intentos: 1, nombreContacto: 'Ana Rojas',
+    })]);
     expect(filas).toEqual([{
       idMeta: 'm1', conversacionId: WA_A, fechaMs: T0, fecha: '20/10/2026 11:30', cliente: 'Ana Rojas',
       montoPedido: 55, montoLeido: 50, estadoPalabras: 'No coincide el monto', tieneFoto: true,
@@ -65,59 +65,54 @@ describe('aplanarComprobantes', () => {
   });
 
   it('sin nombre, el teléfono va enmascarado: ****+últimos 3, nunca entero', () => {
-    const [f] = aplanarComprobantes([conv(WA_A, [{ idMeta: 'm1', estado: 'valido', en: new Date(T0) }])]);
+    const [f] = filasDeRecibidos([recibido('1', { estado: 'valido' })]);
     expect(f?.cliente).toBe('****567');
-    expect(JSON.stringify(f)).not.toContain('5917123');
+    expect(JSON.stringify(f?.cliente)).not.toContain('5917123');
     expect(telefonoEnmascarado(undefined, WA_A)).toBe('****567');
     expect(telefonoEnmascarado('12', 'wa_x')).toBe('****');
-    const [g] = aplanarComprobantes([conv(WA_A, [{ idMeta: 'm1' }], { nombreContacto: '   ' })]);
+    const [g] = filasDeRecibidos([recibido('1', { nombreContacto: '   ' })]);
     expect(g?.cliente).toBe('****567');
   });
 
   it('sin ruta no hay foto; con ruta pero con un id de conversación que la callable rechazaría, tampoco', () => {
-    const lista = [{ idMeta: 'a', ruta: 'r' }, { idMeta: 'b' }, { idMeta: 'c', ruta: '' }, { idMeta: 'd', ruta: null }];
-    expect(aplanarComprobantes([conv(WA_A, lista)]).map((f) => f.tieneFoto)).toEqual([true, false, false, false]);
-    expect(aplanarComprobantes([conv('c1', [{ idMeta: 'a', ruta: 'r' }])])[0]?.tieneFoto).toBe(false);
-    expect(aplanarComprobantes([conv('wa_123', [{ idMeta: 'a', ruta: 'r' }])])[0]?.tieneFoto).toBe(false);
+    const docs = [recibido('a', { ruta: 'r' }), recibido('b'), recibido('c', { ruta: '' }), recibido('d', { ruta: null })];
+    expect(filasDeRecibidos(docs).map((f) => f.tieneFoto)).toEqual([true, false, false, false]);
+    expect(filasDeRecibidos([recibido('a', { ruta: 'r', conversacionId: 'c1' })])[0]?.tieneFoto).toBe(false);
+    expect(filasDeRecibidos([recibido('a', { ruta: 'r', conversacionId: 'wa_123' })])[0]?.tieneFoto).toBe(false);
   });
 
-  it('monto nulo o ausente se queda en null (la pantalla pinta «—»); el pedido cae al monto de la solicitud', () => {
-    const [f] = aplanarComprobantes([conv(WA_A, [{ idMeta: 'a', montoLeido: null, importe: null }])]);
-    expect(f).toMatchObject({ montoLeido: null, montoPedido: 100 });
-    const [g] = aplanarComprobantes([conv(WA_A, [{ idMeta: 'a', montoLeido: 'x' }], {}, { monto: undefined })]);
+  it('monto nulo o ausente se queda en null (la pantalla pinta «—»); el cero se conserva', () => {
+    const [f] = filasDeRecibidos([recibido('a', { montoLeido: null, importe: null })]);
+    expect(f).toMatchObject({ montoLeido: null, montoPedido: null });
+    const [g] = filasDeRecibidos([recibido('a', { montoLeido: 'x' })]);
     expect(g).toMatchObject({ montoLeido: null, montoPedido: null });
-    const [h] = aplanarComprobantes([conv(WA_A, [{ idMeta: 'a', importe: 0, montoLeido: 0 }])]);
+    const [h] = filasDeRecibidos([recibido('a', { importe: 0, montoLeido: 0 })]);
     expect(h).toMatchObject({ montoLeido: 0, montoPedido: 0 });
   });
 
-  it('arreglo vacío, ausente o con forma rara no rompe ni inventa filas', () => {
-    expect(aplanarComprobantes([])).toEqual([]);
-    expect(aplanarComprobantes([conv(WA_A, [])])).toEqual([]);
-    expect(aplanarComprobantes([{ id: WA_A }])).toEqual([]);
-    expect(aplanarComprobantes([{ id: WA_A, solicitud: 'x' }])).toEqual([]);
-    expect(aplanarComprobantes([{ id: WA_A, solicitud: { comprobantes: 'x' } }])).toEqual([]);
-    expect(aplanarComprobantes([conv(WA_A, [null, 3, 'x', [], {}, { idMeta: '' }, { idMeta: 7 }])])).toEqual([]);
+  it('sin documentos, o con forma rara, no rompe ni inventa filas', () => {
+    expect(filasDeRecibidos([])).toEqual([]);
+    expect(filasDeRecibidos([{ id: 'x' }])).toEqual([]);
+    expect(filasDeRecibidos([recibido('a', { idMeta: '' }), recibido('b', { idMeta: 7 }), recibido('c', { conversacionId: undefined })])).toEqual([]);
   });
 
-  it('más de 6 comprobantes y varias conversaciones: todos, del más nuevo al más viejo', () => {
-    const a = conv(WA_B, Array.from({ length: 7 }, (_, i) => ({ idMeta: `a${i}`, en: new Date(T0 + i * 60_000) })));
-    const b = conv(WA_C, [{ idMeta: 'b0', en: { toMillis: () => T0 + 3.5 * 60_000 } }, { idMeta: 'b1', en: { seconds: (T0 + 99 * 60_000) / 1000 } }]);
-    const filas = aplanarComprobantes([a, b]);
+  it('más de 6 comprobantes de una conversación: todos, del más nuevo al más viejo', () => {
+    const a = Array.from({ length: 7 }, (_, i) => recibido(`a${i}`, { conversacionId: WA_B, en: new Date(T0 + i * 60_000) }));
+    const b = [
+      recibido('b0', { conversacionId: WA_C, en: { toMillis: () => T0 + 3.5 * 60_000 } }),
+      recibido('b1', { conversacionId: WA_C, en: { seconds: (T0 + 99 * 60_000) / 1000 } }),
+    ];
+    const filas = filasDeRecibidos([...a, ...b]);
     expect(filas).toHaveLength(9);
-    expect(filas.map((f) => f.idMeta)).toEqual(['b1', 'a6', 'a5', 'a4', 'b0', 'a3', 'a2', 'a1', 'a0']);
+    expect(filas.map((f) => f.idMeta)).toEqual(['m_b1', 'm_a6', 'm_a5', 'm_a4', 'm_b0', 'm_a3', 'm_a2', 'm_a1', 'm_a0']);
   });
 
   it('sin fecha va al final, en el orden de llegada; con timestamp de Firestore (toDate)', () => {
-    const filas = aplanarComprobantes([conv(WA_B, [
-      { idMeta: 'sin1' }, { idMeta: 'con', en: { toDate: () => new Date(T0) } }, { idMeta: 'sin2', en: 'ayer' },
-    ])]);
-    expect(filas.map((f) => f.idMeta)).toEqual(['con', 'sin1', 'sin2']);
+    const filas = filasDeRecibidos([
+      recibido('sin1', { en: undefined }), recibido('con', { en: { toDate: () => new Date(T0) } }), recibido('sin2', { en: 'ayer' }),
+    ]);
+    expect(filas.map((f) => f.idMeta)).toEqual(['m_con', 'm_sin1', 'm_sin2']);
     expect(filas[1]).toMatchObject({ fechaMs: null, fecha: '—' });
-  });
-
-  it('el mismo idMeta en dos conversaciones son dos filas', () => {
-    const filas = aplanarComprobantes([conv(WA_B, [{ idMeta: 'm' }]), conv(WA_C, [{ idMeta: 'm' }])]);
-    expect(filas.map((f) => f.conversacionId)).toEqual([WA_B, WA_C]);
   });
 });
 
@@ -163,10 +158,11 @@ describe('textos de la pantalla (prohibición 3)', () => {
     expect(visor).toMatch(/\.\.\.origen/);
   });
 
-  it('Cobros lee las conversaciones con el filtro simple, en vivo y sin orderBy', () => {
+  it('Cobros lee la colección comprobantesRecibidos, en vivo, del más nuevo al más viejo y con tope de 100', () => {
     const c = quitarComentarios(readFileSync(join(carpeta, 'Cobros.tsx'), 'utf8'));
-    expect(c).toMatch(/collection\(db, 'tenants', tenantId, 'conversaciones'\), where\('solicitud\.reglaCobro', '==', 2\), limit\(100\)/);
-    expect(c).not.toMatch(/conversaciones'\)[^)]*orderBy/);
+    expect(c).toMatch(/collection\(db, 'tenants', tenantId, 'comprobantesRecibidos'\), orderBy\('en', 'desc'\), limit\(100\)/);
+    expect(c).not.toMatch(/where\('solicitud/);
+    expect(c).not.toMatch(/aplanarComprobantes/);
   });
 
   it('los títulos de columnas del contador no usan jerga', () => {

@@ -1,8 +1,8 @@
 /**
  * `verComprobante`, SEGUNDA FORMA SIN CIERRE: `{tenantId, conversacionId, idMeta}`, ESCRITO NEGANDO
  *
- * Abre un comprobante que NO tiene cierre (inválido, ilegible, tardío, en revisión) desde
- * `solicitud.comprobantes[]` de la conversación. Mismo arnés que `ver-comprobante.test.ts`:
+ * Abre un comprobante que NO tiene cierre (inválido, ilegible, tardío, en revisión) desde el documento
+ * `tenants/{t}/comprobantesRecibidos/{nombreDeObjeto(idMeta)}` (fase 2), sin respaldo en la conversación. Mismo arnés que `ver-comprobante.test.ts`:
  * emulador de Firestore, almacén doble que cuenta, Auth simulado y auditoría que puede fallar.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -216,10 +216,10 @@ const TEL_AJENO = ['5917', '0099', '999'].join('');
 const CONV = `wa_${TEL}`;
 
 interface Recibido { t: string; conv: string; idMeta: string; ruta: string }
-/** Una conversación con un comprobante anotado (cualquier estado) y su objeto en el almacén. NINGÚN cierre. */
+/** Un documento de `comprobantesRecibidos` (cualquier estado) y su objeto en el almacén. NINGÚN cierre y NINGUNA conversación. */
 async function recibido(t = T, o: {
   idMeta?: string; estado?: string; ext?: C.ExtensionDeComprobante; bytes?: Buffer; rutaEnEntrada?: unknown;
-  enMs?: number; conv?: string; extras?: Array<Record<string, unknown>>;
+  enMs?: number; conv?: string; extras?: Array<Record<string, unknown>>; idMetaGuardado?: string;
 } = {}): Promise<Recibido> {
   const idMeta = o.idMeta ?? `wamid.${t}.rec1`;
   const ext = o.ext ?? 'jpg';
@@ -227,16 +227,15 @@ async function recibido(t = T, o: {
   const conv = o.conv ?? CONV;
   await ficha(t);
   const ruta = C.rutaDeComprobante(t, diaDeLaPaz(enMs), idMeta, ext);
-  await db.doc(`tenants/${t}/conversaciones/${conv}`).set({
-    solicitud: {
-      comprobantes: [
-        ...(o.extras ?? []),
-        {
-          idMeta, estado: o.estado ?? 'invalido', motivo: 'no_cuadra', en: Timestamp.fromMillis(enMs),
-          ruta: o.rutaEnEntrada !== undefined ? o.rutaEnEntrada : ruta, importe: null, montoLeido: 50, montoDistinto: true, intentos: 1,
-        },
-      ],
-    },
+  const documento = (id: string, extra: Record<string, unknown>) => db.doc(`tenants/${t}/comprobantesRecibidos/${C.nombreDeObjeto(id)}`).set({
+    idMeta: id, conversacionId: conv, estado: 'invalido', motivo: 'no_cuadra', en: Timestamp.fromMillis(enMs),
+    vence: Timestamp.fromMillis(enMs + 90 * 86_400_000), ruta: null, importe: null, montoLeido: 50, montoDistinto: true, intentos: 1,
+    ...extra,
+  });
+  for (const e of o.extras ?? []) await documento(String(e['idMeta']), e);
+  await documento(idMeta, {
+    idMeta: o.idMetaGuardado ?? idMeta, estado: o.estado ?? 'invalido',
+    ruta: o.rutaEnEntrada !== undefined ? o.rutaEnEntrada : ruta,
   });
   almacen.objetos.set(ruta, { bytes: o.bytes ?? JPG(), contentType: 'image/jpeg' });
   return { t, conv, idMeta, ruta };
@@ -347,7 +346,7 @@ describe('quién puede: nada escrito para quien no tiene rol, mismas guardas que
 });
 
 // ===========================================================================
-describe('la resolución: solo lo que la conversación tiene anotado', () => {
+describe('la resolución: solo lo que el documento de comprobantesRecibidos tiene registrado', () => {
   it('un idMeta que NO está en la conversación: not-found y el almacén no se toca', async () => {
     await recibido();
     const a = admin(T);
@@ -365,6 +364,29 @@ describe('la resolución: solo lo que la conversación tiene anotado', () => {
     const r = await recibido(OTRO);
     await ficha(T);
     await expect(llamar({ tenantId: T, conversacionId: r.conv, idMeta: r.idMeta }, admin(T))).rejects.toMatchObject({ code: 'not-found' });
+    expect(almacen.llamadas).toBe(0);
+  });
+  it('el documento existe y coincide (idMeta y conversacionId): se entrega', async () => {
+    const r = await recibido();
+    expect(await llamar(pedirR(r), admin(T))).toMatchObject({ mime: 'image/jpeg' });
+  });
+  it('una conversación AJENA a la del documento: not-found fijo y el almacén no se toca', async () => {
+    const r = await recibido();
+    await expect(llamar({ ...pedirR(r), conversacionId: `wa_${TEL_AJENO}` }, admin(T))).rejects.toMatchObject(falla('not-found', FIJOS_R.noHayR));
+    expect(almacen.llamadas).toBe(0);
+  });
+  it('un documento cuyo idMeta guardado difiere del pedido (mismo id de documento): not-found', async () => {
+    const r = await recibido(T, { idMetaGuardado: 'wamid.otro-distinto' });
+    await expect(llamar(pedirR(r), admin(T))).rejects.toMatchObject(falla('not-found', FIJOS_R.noHayR));
+    expect(almacen.llamadas).toBe(0);
+  });
+  it('documento ausente: not-found, aunque la conversación SÍ lo tenga anotado en el arreglo (sin respaldo)', async () => {
+    const r = await recibido();
+    await db.doc(`tenants/${T}/comprobantesRecibidos/${C.nombreDeObjeto(r.idMeta)}`).delete();
+    await db.doc(`tenants/${T}/conversaciones/${CONV}`).set({
+      solicitud: { comprobantes: [{ idMeta: r.idMeta, estado: 'invalido', motivo: 'x', en: Timestamp.now(), ruta: r.ruta }] },
+    });
+    await expect(llamar(pedirR(r), admin(T))).rejects.toMatchObject(falla('not-found', FIJOS_R.noHayR));
     expect(almacen.llamadas).toBe(0);
   });
   it('el idMeta es EXACTO: un prefijo o distinta mayúscula no encuentra', async () => {
@@ -426,9 +448,7 @@ describe('la ruta sale SIEMPRE de la entrada y pasa por rutaValidaDe', () => {
     const ajena = C.rutaDeComprobante(OTRO, diaDeLaPaz(Date.now()), 'wamid.sinen', 'jpg');
     sembrarRuta(ajena);
     const r = await recibido(T, { idMeta: 'wamid.sinen', rutaEnEntrada: ajena });
-    await db.doc(`tenants/${T}/conversaciones/${CONV}`).update({
-      'solicitud.comprobantes': [{ idMeta: 'wamid.sinen', estado: 'invalido', motivo: 'x', en: 'ayer', ruta: ajena }],
-    });
+    await db.doc(`tenants/${T}/comprobantesRecibidos/${C.nombreDeObjeto('wamid.sinen')}`).update({ en: 'ayer' });
     await expect(llamar(pedirR(r), admin(T))).rejects.toMatchObject({ code: 'not-found' });
     expect(almacen.llamadas).toBe(0);
   });

@@ -420,6 +420,15 @@ describe('la purga diaria', () => {
     expect([...almacen.objetos.keys()].some((k) => k.startsWith(`tenants/${T_BAJA}/`))).toBe(false);
     expect(almacen.objetos.has(`tenants/${T}/comprobantes/${diaHace(1)}/a.jpg`)).toBe(true);
   });
+  it('la baja también borra la colección comprobantesRecibidos de ESE comercio, y no la de los vecinos', async () => {
+    const fila = (t: string, id: string) => db.doc(`tenants/${t}/comprobantesRecibidos/${id}`).set({
+      idMeta: id, conversacionId: 'wa_x', estado: 'invalido', en: new Date(hoy), vence: new Date(hoy + 90 * DIA_MS),
+    });
+    await fila(T_BAJA, 'a'); await fila(T_BAJA, 'b'); await fila(T, 'c');
+    await m.purgarComprobantesDe({ almacen, ahoraMs: hoy });
+    expect((await db.collection(`tenants/${T_BAJA}/comprobantesRecibidos`).get()).size).toBe(0);
+    expect((await db.collection(`tenants/${T}/comprobantesRecibidos`).get()).size).toBe(1);
+  });
   it('ignora carpetas que no son un día (nada de borrar por un nombre raro)', async () => {
     poner(T, 'cualquier-cosa');
     await m.purgarComprobantesDe({ almacen, ahoraMs: hoy });

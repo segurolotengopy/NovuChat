@@ -11,7 +11,7 @@ import {
   MAX_INTENTOS_INVALIDOS, detalleDeLaVentaCalificada, esperadoDeLaVenta, esReglaDos, idDeCierreDeVenta,
   solicitudDeCobroTras, totalUtilizable, type ComprobanteAnotado, type EfectoDeCobro, type TransicionDeCobro,
 } from './cobroVenta.js';
-import { rutaValidaDe } from './comprobantes.js';
+import { nombreDeObjeto, rutaValidaDe } from './comprobantes.js';
 
 /**
  * =============================================================================
@@ -129,6 +129,8 @@ export const cotejarComprobanteVenta = onRequest(
     const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
     const refMetricas = db.doc(`tenants/${tenantId}/metricas/${periodoDe()}`);
     const ahoraMs = Date.now();
+    // El registro de TODO comprobante recibido (fase 2): su id es el nombre del objeto de Storage.
+    const refRecibido = db.doc(`tenants/${tenantId}/comprobantesRecibidos/${nombreDeObjeto(idMeta)}`);
 
     const [venta, negocio] = await Promise.all([
       db.doc(`tenants/${tenantId}/config/venta`).get(),
@@ -212,6 +214,9 @@ export const cotejarComprobanteVenta = onRequest(
           : { estado: 'no_es_comprobante', motivo: 'ilegible', motivos: ['ilegible'], montoLeido: null, montoDistinto: false };
       }
 
+      // Lectura del registro de recibidos: junto con las demás, antes de toda escritura.
+      const recibidoPrevio = await tx.get(refRecibido);
+
       const transicion = solicitudDeCobroTras(solicitud, {
         tipo: 'comprobante',
         // Para la máquina de estados, «no es comprobante» es un inválido más.
@@ -235,6 +240,15 @@ export const cotejarComprobanteVenta = onRequest(
         : estado === 'ya_resuelto' && pedidoId ? idDeCierreDeVenta(pedidoId) : null;
 
       if (transicion.cambios) tx.set(refConversacion, { solicitud: transicion.cambios }, { merge: true });
+
+      // EL REGISTRO DE RECIBIDOS, en ESTA transacción: si esta escritura falla, el cotejo entero
+      // se aborta y no queda la conversación, el cierre ni las métricas a medias.
+      if (transicion.anotado) {
+        const nombre = texto(conversacion.get('nombreContacto'), 120);
+        tx.set(refRecibido, documentoDeRecibido(
+          transicion.anotado, idConversacion, nombre, recibidoPrevio.exists ? recibidoPrevio.data() : undefined,
+        ));
+      }
 
       if (cerrado && refCierre && cal && (cal.estado === 'valido' || cal.estado === 'aproximado')) {
         const registroCotejo = {
@@ -298,6 +312,32 @@ export const cotejarComprobanteVenta = onRequest(
     respuesta.status(salida.codigo).json(salida.cuerpo);
   },
 );
+
+/** Días que vive un registro de recibidos antes de que el TTL de Firestore lo borre. */
+export const DIAS_DE_RECIBIDOS = 90;
+
+/**
+ * El documento de `comprobantesRecibidos/{nombreDeObjeto(idMeta)}`. NO lleva el
+ * teléfono (sale de `conversacionId`), ni lo leído de la imagen, ni `avisar`.
+ * Si ya existía (el mismo comprobante contado otra vez, por ejemplo el séptimo
+ * que el arreglo de la conversación ya no guarda), conserva `en` y `vence`.
+ */
+export function documentoDeRecibido(
+  a: ComprobanteAnotado, conversacionId: string, nombreContacto: string,
+  previo?: FirebaseFirestore.DocumentData,
+): Record<string, unknown> {
+  const enPrevio = previo?.['en'] instanceof Timestamp ? (previo['en'] as Timestamp) : null;
+  const vencePrevio = previo?.['vence'] instanceof Timestamp ? (previo['vence'] as Timestamp) : null;
+  const en = enPrevio ?? a.en;
+  return {
+    idMeta: a.idMeta.slice(0, 120), conversacionId, estado: a.estado, motivo: a.motivo,
+    en, vence: vencePrevio ?? Timestamp.fromMillis(en.toMillis() + DIAS_DE_RECIBIDOS * 86_400_000),
+    importe: a.importe ?? null, montoLeido: a.montoLeido ?? null, montoDistinto: a.montoDistinto ?? false,
+    intentos: typeof a.intentos === 'number' ? a.intentos : 0,
+    ruta: a.ruta ?? (typeof previo?.['ruta'] === 'string' ? (previo['ruta'] as string) : null),
+    ...(nombreContacto ? { nombreContacto } : {}),
+  };
+}
 
 function escribirMetricas(
   tx: FirebaseFirestore.Transaction, ref: FirebaseFirestore.DocumentReference,

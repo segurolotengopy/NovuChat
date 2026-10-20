@@ -201,7 +201,7 @@ export const REGISTRO = [
       { documento: 'config/agendamiento', campos: [], camposDelServidor: ['cobroReal'], compartidoCon: ['agenda'] },
     ],
     camposEnNegocio: [],
-    colecciones: [],
+    colecciones: ['comprobantesRecibidos'],
     coleccionesRaiz: ['topesDelVisor'],  // contador por uid del visor de comprobantes (solo el servidor)
     // Las imágenes de comprobantes de venta (regla 2); las reglas niegan todo acceso.
     almacenamiento: ['comprobantes'],

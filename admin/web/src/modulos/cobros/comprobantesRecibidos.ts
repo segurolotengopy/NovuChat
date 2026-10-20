@@ -2,13 +2,13 @@
  * COMPROBANTES RECIBIDOS — la parte pura (sin React, sin red).
  *
  * Un comprobante inválido nunca crea un cierre (decisión del 03/10), pero queda
- * anotado en `tenants/{t}/conversaciones/{wa_<tel>}.solicitud.comprobantes[]`.
- * Esta pantalla los junta de todas las conversaciones y los muestra uno por fila,
- * del más nuevo al más viejo, para que el comercio vea qué mandó cada cliente.
+ * registrado en `tenants/{t}/comprobantesRecibidos/{nombreDeObjeto(idMeta)}`,
+ * que escribe `cotejarComprobanteVenta` en la misma transacción del cotejo.
+ * Esta pantalla muestra esos documentos, uno por fila, del más nuevo al más
+ * viejo, para que el comercio vea qué mandó cada cliente.
  *
  * LA FILA ES UNA ENTRADA NORMALIZADA (`ComprobanteRecibido`): la pantalla solo
- * conoce ese contrato. Una fase 2 (una colección `comprobantesRecibidos`) cambia
- * únicamente quién llena las filas; la pantalla no se toca.
+ * conoce ese contrato.
  *
  * Los estados hablan de DATOS, nunca de dinero (prohibición 3 de CLAUDE.md): el
  * OCR de una imagen no es una acreditación bancaria. Ninguna palabra de esta
@@ -34,12 +34,10 @@ export interface ComprobanteRecibido {
   tieneFoto: boolean;
 }
 
-/** La conversación tal como llega de Firestore: todo desconocido hasta que se mire. */
-export interface ConversacionConComprobantes {
+/** Un documento de `comprobantesRecibidos` tal como llega de Firestore: todo desconocido hasta que se mire. */
+export interface DocumentoRecibido {
   id: string;
-  telefono?: unknown;
-  nombreContacto?: unknown;
-  solicitud?: unknown;
+  [campo: string]: unknown;
 }
 
 /** El único id de conversación con el que la callable acepta pedir una foto. */
@@ -108,39 +106,32 @@ export function fechaDeLaPaz(ms: number | null): string {
   return `${dos(d.getUTCDate())}/${dos(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${dos(d.getUTCHours())}:${dos(d.getUTCMinutes())}`;
 }
 
-const esObjeto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-
 /**
- * Aplana `solicitud.comprobantes[]` de varias conversaciones en filas, del más
- * nuevo al más viejo (sin fecha, al final). Un elemento sin `idMeta` no se puede
- * pedir ni identificar y se descarta; todo lo demás tiene un valor por defecto.
+ * Convierte los documentos de `comprobantesRecibidos` en filas, del más nuevo al
+ * más viejo (sin fecha, al final). Sin `idMeta` ni `conversacionId` no se puede
+ * pedir ni identificar la fila y se descarta; todo lo demás tiene un valor por
+ * defecto. El cliente es el nombre del contacto o `****` + los 3 últimos
+ * dígitos de la conversación: el teléfono entero no se muestra.
  */
-export function aplanarComprobantes(conversaciones: readonly ConversacionConComprobantes[]): ComprobanteRecibido[] {
+export function filasDeRecibidos(docs: readonly DocumentoRecibido[]): ComprobanteRecibido[] {
   const filas: ComprobanteRecibido[] = [];
-  for (const conv of conversaciones) {
-    if (!esObjeto(conv.solicitud)) continue;
-    const lista = conv.solicitud['comprobantes'];
-    if (!Array.isArray(lista)) continue;
-    const cliente = textoNoVacio(conv.nombreContacto) ?? telefonoEnmascarado(conv.telefono, conv.id);
-    const pedidoGeneral = numero(conv.solicitud['monto']);
-    for (const c of lista) {
-      if (!esObjeto(c)) continue;
-      const idMeta = textoNoVacio(c['idMeta']);
-      if (idMeta === null) continue;
-      const fechaMs = milisegundosDe(c['en']);
-      filas.push({
-        idMeta,
-        conversacionId: conv.id,
-        fechaMs,
-        fecha: fechaDeLaPaz(fechaMs),
-        cliente,
-        montoPedido: numero(c['importe']) ?? pedidoGeneral,
-        montoLeido: numero(c['montoLeido']),
-        estadoPalabras: estadoEnPalabras(c['estado'], c['motivo']),
-        // La foto solo se puede pedir con un id de conversación que la callable acepte.
-        tieneFoto: textoNoVacio(c['ruta']) !== null && ID_DE_CONVERSACION.test(conv.id),
-      });
-    }
+  for (const d of docs) {
+    const idMeta = textoNoVacio(d['idMeta']);
+    const conversacionId = textoNoVacio(d['conversacionId']);
+    if (idMeta === null || conversacionId === null) continue;
+    const fechaMs = milisegundosDe(d['en']);
+    filas.push({
+      idMeta,
+      conversacionId,
+      fechaMs,
+      fecha: fechaDeLaPaz(fechaMs),
+      cliente: textoNoVacio(d['nombreContacto']) ?? telefonoEnmascarado(undefined, conversacionId),
+      montoPedido: numero(d['importe']),
+      montoLeido: numero(d['montoLeido']),
+      estadoPalabras: estadoEnPalabras(d['estado'], d['motivo']),
+      // La foto solo se puede pedir con un id de conversación que la callable acepte.
+      tieneFoto: textoNoVacio(d['ruta']) !== null && ID_DE_CONVERSACION.test(conversacionId),
+    });
   }
   return filas
     .map((fila, orden) => ({ fila, orden }))

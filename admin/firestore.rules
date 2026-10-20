@@ -1832,6 +1832,20 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /comprobantesRecibidos/{objeto} — todo comprobante que llegó a un cobro
+      // de venta con regla 2, con o sin cierre (lista de la pestaña Cobros).
+      // Lo escribe SOLO el servidor (`cotejarComprobanteVenta`, en la misma
+      // transacción del cotejo). Lo lee quien puede leer conversaciones: el
+      // documento nombra la conversación del cliente (`wa_<teléfono>`) y no
+      // lleva el teléfono ni nada de lo leído de la imagen. Lo borra el TTL
+      // (`vence`) o la purga de baja, ambos del servidor.
+      // -----------------------------------------------------------------------
+      match /comprobantesRecibidos/{objeto} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /conversaciones/{conversacionId} — visor de conversaciones.
       // Es el dato más sensible del sistema: mensajes de clientes finales.
       // -----------------------------------------------------------------------

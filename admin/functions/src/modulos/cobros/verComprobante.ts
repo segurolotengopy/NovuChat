@@ -225,30 +225,27 @@ export interface ComprobanteRecibido {
 
 /**
  * RESOLUCIÓN DEL COMPROBANTE SIN CIERRE: de `(comercio, conversación, idMeta)` a
- * los datos del comprobante, o `null` si no existe. Hoy lee la entrada con ESE
- * `idMeta` exacto en `tenants/{t}/conversaciones/{conversacionId}.solicitud.comprobantes[]`
- * (cualquier estado). NO valida la ruta ni toca el almacén: eso lo hace el visor.
- *
- * FASE 2: cuando `cotejarComprobanteVenta` escriba la colección
- * `tenants/{t}/comprobantesRecibidos/{nombreDeObjeto(idMeta)}`, SOLO cambia el
- * cuerpo de esta función; la firma y todo lo demás del visor quedan igual.
+ * los datos del comprobante, o `null`. Lee UN documento,
+ * `tenants/{t}/comprobantesRecibidos/{nombreDeObjeto(idMeta)}`, que escribe
+ * `cotejarComprobanteVenta` en la misma transacción del cotejo. Devuelve `null`
+ * (el mismo not-found, sin revelar cuál falló) si el documento no existe, si su
+ * `idMeta` difiere del pedido o si su `conversacionId` difiere del pedido. SIN
+ * respaldo en la conversación. NO valida la ruta ni toca el almacén: eso lo hace el visor.
  */
 export async function resolverComprobanteRecibido(
   firestore: FirebaseFirestore.Firestore, tenantId: string, conversacionId: string, idMeta: string,
 ): Promise<ComprobanteRecibido | null> {
-  const doc = await firestore.doc(`tenants/${tenantId}/conversaciones/${conversacionId}`).get();
+  const doc = await firestore.doc(`tenants/${tenantId}/comprobantesRecibidos/${nombreDeObjeto(idMeta)}`).get();
   if (!doc.exists) return null;
-  const solicitud: unknown = doc.get('solicitud');
-  const lista = esObjeto(solicitud) && Array.isArray(solicitud['comprobantes']) ? (solicitud['comprobantes'] as unknown[]) : [];
-  const entrada = lista.find((c) => esObjeto(c) && c['idMeta'] === idMeta);
-  if (!esObjeto(entrada)) return null;
+  if (doc.get('idMeta') !== idMeta || doc.get('conversacionId') !== conversacionId) return null;
+  const texto = (v: unknown): string => (typeof v === 'string' ? v : '');
   return {
     idMeta,
-    estado: typeof entrada['estado'] === 'string' ? entrada['estado'] : '',
-    motivo: typeof entrada['motivo'] === 'string' ? entrada['motivo'] : '',
-    en: entrada['en'], ruta: entrada['ruta'],
-    importe: entrada['importe'], montoLeido: entrada['montoLeido'],
-    montoDistinto: entrada['montoDistinto'], intentos: entrada['intentos'],
+    estado: texto(doc.get('estado')),
+    motivo: texto(doc.get('motivo')),
+    en: doc.get('en'), ruta: doc.get('ruta'),
+    importe: doc.get('importe'), montoLeido: doc.get('montoLeido'),
+    montoDistinto: doc.get('montoDistinto'), intentos: doc.get('intentos'),
   };
 }
 
