@@ -104,6 +104,11 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       // DERIVAR: el modelo no supo responder. La palabra jamás llega al cliente: aviso a Rubén (lo armó «Armar avisos») y el botón.
       tipoDePlan = 'derivar';
       m = conRuben(rrTextoDerivacion('consulta', estadoAviso));
+    } else if (rrSuplantaARuben(crudo)) {
+      // SUPLANTACIÓN (prohibición 4): el modelo se dijo Rubén, el autor o una persona: el mensaje completo se sustituye por la identidad fija (con los botones normales). No se guarda como `ultimoModelo`.
+      tipoDePlan = 'identidad';
+      ultimoModelo = '';
+      m = conBotones(RR_TEXTO_IDENTIDAD, menuAbierto());
     } else {
       const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
         maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [rrExtraRedaccion],
@@ -114,15 +119,22 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       const bueno = rev.motivo === '' && limpio.trim() !== '';
       const op = menuAbierto();
       const cuerpo = bueno ? limpio : rrTextoModeloCaido(op.length > 0);
-      if (bueno) ultimoModelo = cuerpo.slice(0, 300);
       // PRESENTACIÓN GARANTIZADA: (a) el pulido común quita la presentación inicial del modelo: si el modelo dijo QUÉ ES (IA, virtual…) y eso no sobrevivió, se antepone la presentación fija (regla dura 4: jamás sale
-      // «Gracias por escribir…» en lugar de reconocerlo); (b) como primer mensaje, el cliente que llega por un anuncio siempre lee «asistente virtual» una vez.
+      // «Gracias por escribir…» en lugar de reconocerlo); (b) como primer mensaje el cliente SIEMPRE lee una presentación que diga qué es (no basta la palabra suelta: «la inteligencia artificial puede ayudarte» o «crear tu asistente virtual»).
       const modeloDijoIA = rrTienePresentacionIA(crudo);
-      const diceAsistenteVirtual = /asistente virtual|inteligencia artificial/.test(rrNorm(cuerpo));
-      // Primer mensaje: el cliente SIEMPRE lee «asistente virtual» (o «inteligencia artificial»); si el modelo dijo qué es y eso se perdió, también.
-      const falta = modeloDijoIA ? !rrTienePresentacionIA(cuerpo) : (!fichaAntes.saludado && !diceAsistenteVirtual);
-      const conPresentacion = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
+      const falta = !fichaAntes.saludado ? !rrTienePresentacionIA(cuerpo) : (modeloDijoIA && !rrTienePresentacionIA(cuerpo));
+      // Se antepone la PROPIA frase del modelo que dice qué es (si es corta y pasa el filtro del flujo); si no, la presentación fija.
+      let antepuesta = RR_PRESENTACION;
+      if (falta && modeloDijoIA) {
+        const propia = crudo.split('\n').reduce((acc, linea) => acc.concat(rrOraciones(linea)), []).find((o) => rrTienePresentacionIA(o));
+        if (propia && propia.length <= 200 && rrExtraRedaccion(propia, rrNorm(propia)) === '' && !rrSuplantaARuben(propia)) antepuesta = propia.trim();
+      }
+      const conPresentacion = falta ? antepuesta + '\n\n' + cuerpo : cuerpo;
       m = conBotones(conPresentacion, op);
+      // `ultimoModelo` se guarda DESPUÉS de la barrera: si `rrSeguro` sustituyó el texto (NIEGA_IA, cobro), no se recuerda lo que dijo el modelo.
+      const sustituido = m.texto === rrParrafos(RR_SALUDO_MINIMO) || m.texto === rrParrafos(RR_TEXTO_IDENTIDAD);
+      if (bueno && !sustituido) ultimoModelo = cuerpo.slice(0, 300);
+      else if (sustituido) ultimoModelo = '';
       tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
     }
   } else if (tipoDePlan === 'qr') {

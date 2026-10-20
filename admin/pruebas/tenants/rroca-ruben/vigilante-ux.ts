@@ -43,8 +43,11 @@ export function violacionesDeParrafos(cuerpo: string): string[] {
   return v;
 }
 /** Cuántas veces se presenta el asistente en UN texto («Soy el asistente…», «asistente virtual de Rubén»), contadas por oración. Debe ser a lo más 1 por mensaje y por turno. */
-export const contarPresentaciones = (cuerpo: string): number =>
-  cuerpo.split('\n').reduce((n, linea) => n + LIB.rrOraciones(linea).filter((o) => LIB.rrEsPresentacion(o)).length, 0);
+export const contarPresentaciones = (cuerpo: string): number => {
+  // Detector PROPIO (no `rrEsPresentacion` del flujo): cuenta «Soy el asistente de Rubén, autor de…», «Te saluda el asistente virtual», «Aquí tu asistente», «Hola, soy el asistente virtual de Rubén».
+  const es = (o: string): boolean => /\b(soy|somos) (el |la |un |una |tu |su )?(asistente|ayudante)\b|\basistente (virtual |automatico |digital )?de ruben\b|\b(te saluda|te habla|aqui) (el |tu )?asistente\b/.test(LIB.rrNorm(o));
+  return cuerpo.split('\n').reduce((n, linea) => n + LIB.rrOraciones(linea).filter(es).length, 0);
+};
 /** ¿Este mensaje contiene la presentación del asistente (la frase de presentación o el saludo largo)? */
 export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de rub|qu[eé] gusto saludarte|te cuento: el libro digital/i.test(cuerpo);
 /**
@@ -57,7 +60,7 @@ export const esPresentacion = (cuerpo: string): boolean => /asistente virtual de
  */
 export const preguntaPorIdentidad = (texto: string): boolean => {
   const n = LIB.rrNorm(texto);
-  return /\b(eres|sos|es|son|usted|hablo|hablando|conversando|quien|hay|voce|estou|who|are you|is this|am i|responde\w*|contesta\w*|atiend\w*|escrib\w*|respondiendo|estas)\b.*\b(bot|b0t|vot|robot|robo|chatbot|chatgpt|gemini|ia|ai|inteligencia|maquina|programa|persona|pessoa|humano|humana|human|real|alguien|alguem|gente|asistente|ruben|automatic\w*|automated)\b|\bde verdad\b|\b(real person|real human|persona real|alguien real|ser humano)\b|\bquien (eres|me|contesta|responde|atiende|escribe)\b|\bcon quien hablo\b|\bruben eres\b|^(bot|robot|chatbot|b0t|vot|contestador)$/.test(n);
+  return /\b(eres|sos|es|usted|hablo|hablando|conversando|quien|hay|voce|estou|who|are you|is this|am i|me responde|me atiende|me contesta|respondiendo)\b.*\b(bot|b0t|vot|robot|robo|chatbot|chatgpt|gemini|ia|ai|inteligencia|maquina|programa|persona|pessoa|humano|humana|human|alguien|alguem|gente|automatic\w*|automated)\b|\b(eres|sos|usted es|es usted|hablo con|hablando con|conversando con|quien es|quien eres)\b.*\b(ruben|asistente|real|de verdad)\b|\bresponde\w* (una |un )?(ia|robot|bot|persona|maquina|humano)\b|\brespuestas son automatic\w*|\bde verdad\b|\b(real person|real human|persona real|alguien real|ser humano)\b|\bquien (eres|me|contesta|responde|atiende)\b|\bcon quien hablo\b|\bruben eres\b|^(bot|robot|chatbot|b0t|vot|contestador)$/.test(n);
 };
 /** El texto que devolvió el modelo en un turno (el doble de «Conversar con el modelo»), o ''. */
 export const textoDelModelo = (registro: { nodo: string; respuesta?: unknown }[]): string => {
@@ -70,10 +73,11 @@ export const textoDelModelo = (registro: { nodo: string; respuesta?: unknown }[]
  */
 export const seDeclaraIA = (texto: string): boolean => {
   const t = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/ia para emprendedores( independientes)?/g, ' ');
-  return /asistente virtual|asistente (automatico|digital|artificial)|inteligencia artificial|(?<!\bno )\bsoy (una |un )?(ia|bot|chatbot|robot|programa)\b|\bno (soy )?(una |un )?(persona|humano|humana)\b|\bno soy ruben\b/.test(t);
+  // Primera persona: «soy el asistente virtual…», «soy una IA», «asistente virtual de Rubén», «no soy una persona»; no basta nombrar la IA («la inteligencia artificial te ayuda»).
+  return /(?<!\bno )\b(soy|somos) (el |la |un |una |su |tu )?asistente (virtual|automatico|digital|artificial|de ia|con ia)\b|\basistente virtual de ruben\b|(?<!\bno )\bsoy (una |un )?(ia|bot|chatbot|robot|programa|inteligencia artificial)\b|\bno (soy )?(una |un )?(persona|humano|humana)\b|\bno soy ruben\b|\b(funciono|trabajo) con (ia|inteligencia artificial)\b|\b(impulsad|basad)[oa] (por|en) (ia|inteligencia artificial)\b|\((una )?ia\)/.test(t);
 };
 /** ¿El modelo se hizo pasar por Rubén o por una persona viva? (detector propio del vigilante). El flujo lo sustituye por la identidad, que es una presentación legítima. */
-export const suplantaARuben = (texto: string): boolean => /(?<!\bno )\b(soy|te escribe|te atiende|aqui) (yo )?(el mismo |el propio )?ruben\b|\bsoy (el )?autor\b|\bestoy vivo\b/.test(LIB.rrNorm(texto));
+export const suplantaARuben = (texto: string): boolean => /\b(soy|sou|i m|i am|yo|hablas con|hablando con|te escribo|te escribe|te habla|me llamo|mi nombre es)\b(?! (el|la|un|una|su|tu) asistente)[^.?!]{0,25}\bruben\b|\b(soy|sou) (yo |el |la |un |una )?(autor|escritor|dueno|creador|persona|humano|humana|ana|maria)\b|\bestoy viv[oa]\b|\ba tus ordenes\b|\bescribi (el|este) libro\b|\baqui ruben\b/.test(LIB.rrNorm(texto));
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, textoModelo = ''): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
