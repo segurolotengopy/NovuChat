@@ -44,11 +44,15 @@ let base = '';
 let creds: Cred[] = [];
 let llamadas: Llamada[] = [];
 let envRel = '';
+let paginar = false;
+let postFalla = false;
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'rotar-crear-'));
   creds = [];
   llamadas = [];
+  paginar = false;
+  postFalla = false;
   servidor = createServer((req, res) => {
     const partes: Buffer[] = [];
     req.on('data', (c: Buffer) => partes.push(c));
@@ -59,8 +63,15 @@ beforeEach(async () => {
       llamadas.push({ metodo: req.method ?? '', ruta, llave, cuerpo });
       const responder = (codigo: number, o: unknown) => { res.statusCode = codigo; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(o)); };
       if (llave !== API_KEY) return responder(401, { message: 'unauthorized' });
-      if (ruta === '/api/v1/credentials' && req.method === 'GET') return responder(200, { data: creds.map(({ id, name, type }) => ({ id, name, type })) });
+      if (ruta === '/api/v1/credentials' && req.method === 'GET') {
+        const todas = creds.map(({ id, name, type }) => ({ id, name, type }));
+        if (!paginar) return responder(200, { data: todas });
+        // Páginas de una sola credencial: el cursor es el índice de la siguiente.
+        const desde = Number(new URL(req.url ?? '', 'http://x').searchParams.get('cursor') ?? '0');
+        return responder(200, { data: todas.slice(desde, desde + 1), nextCursor: desde + 1 < todas.length ? String(desde + 1) : null });
+      }
       if (ruta === '/api/v1/credentials' && req.method === 'POST') {
+        if (postFalla) return responder(500, {});
         const c = JSON.parse(cuerpo) as { name: string; type: string; data: unknown };
         const nueva = { id: `cred${creds.length + 1}abcd`, name: c.name, type: c.type, data: c.data };
         creds.push(nueva);
@@ -100,7 +111,8 @@ function correr(args: string[], extra: Record<string, string> = {}): Promise<{ c
   });
 }
 
-const buenos = (...mas: string[]) => ['crear', '--secreto', SECRETO, '--version', '1', '--credencial', NOMBRE, '--proyecto', PROYECTO, '--env', envRel, ...mas];
+const buenos = (...mas: string[]) => ['crear', '--secreto', SECRETO, '--version', '1', '--credencial', NOMBRE, '--proyecto', PROYECTO, '--env', envRel, ...mas,
+  ...(mas.includes('--aplicar') ? ['--confirmo-par', `${SECRETO}=Ruben`] : [])];
 const escrituras = () => llamadas.filter((l) => l.metodo !== 'GET');
 const argsGcloud = () => (existsSync(join(dir, 'gcloud-args')) ? readFileSync(join(dir, 'gcloud-args'), 'utf8') : '');
 function sinSecretos(salida: string) {
@@ -240,5 +252,74 @@ describe('rotar-ingesta.sh crear --aplicar', () => {
     expect(r.codigo).toBe(1);
     expect(escrituras()).toHaveLength(1);
     expect(creds).toHaveLength(1);
+  });
+});
+
+describe('rotar-ingesta.sh crear: el par secreto=alias se confirma', () => {
+  const base = () => ['crear', '--secreto', SECRETO, '--version', '1', '--credencial', NOMBRE, '--proyecto', PROYECTO, '--env', envRel, '--aplicar'];
+  it('el seco imprime el par', async () => {
+    const r = await correr(buenos());
+    expect(r.salida).toContain(`${SECRETO} → ${NOMBRE}`);
+  });
+  it('--aplicar sin --confirmo-par: sale 2 sin escribir', async () => {
+    const r = await correr(base());
+    expect(r.codigo).toBe(2);
+    expect(llamadas).toHaveLength(0);
+    expect(argsGcloud()).toBe('');
+  });
+  for (const mal of ['INGESTA_CLIENTE04=Ruben', 'INGESTA_CLIENTE05=Otro', 'Ruben', 'INGESTA_CLIENTE05=ruben', '']) {
+    it(`--confirmo-par «${mal}» no coincide: sale 2 sin escribir`, async () => {
+      const r = await correr([...base(), '--confirmo-par', mal]);
+      expect(r.codigo).toBe(2);
+      expect(llamadas).toHaveLength(0);
+    });
+  }
+});
+
+describe('rotar-ingesta.sh crear: --proyecto con forma cerrada', () => {
+  for (const mal of ['--impersonate-service-account=x', 'Proyecto', 'abc', 'a'.repeat(31), 'proy ecto', 'proyecto-', '$(id)', 'proyecto;ls']) {
+    it(`rechaza «${mal}»`, async () => {
+      const r = await correr(['crear', '--secreto', SECRETO, '--version', '1', '--credencial', NOMBRE, '--proyecto', mal, '--env', envRel]);
+      expect(r.codigo).toBe(2);
+      expect(llamadas).toHaveLength(0);
+      expect(argsGcloud()).toBe('');
+    });
+  }
+});
+
+describe('rotar-ingesta.sh: paginación de la lista de credenciales', () => {
+  it('crear: un duplicado en la segunda página se detecta y no escribe', async () => {
+    paginar = true;
+    creds.push({ id: 'c1', name: 'NovuChat ingesta (Otro)', type: 'httpHeaderAuth' }, { id: 'c2', name: NOMBRE, type: 'httpHeaderAuth' });
+    const r = await correr(buenos('--aplicar'));
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('ya hay 1');
+    expect(escrituras()).toHaveLength(0);
+    expect(llamadas.filter((l) => l.metodo === 'GET').length).toBe(2);
+  });
+  it('crear: sin duplicado crea y relee todas las páginas', async () => {
+    paginar = true;
+    creds.push({ id: 'c1', name: 'NovuChat ingesta (Otro)', type: 'httpHeaderAuth' });
+    const r = await correr(buenos('--aplicar'));
+    expect(r.codigo).toBe(0);
+    expect(creds).toHaveLength(2);
+  });
+  it('modo n8n: la duplicada en la segunda página se ve (se niega sin escribir)', async () => {
+    paginar = true;
+    creds.push({ id: 'c1', name: NOMBRE, type: 'httpHeaderAuth' }, { id: 'c2', name: NOMBRE, type: 'httpHeaderAuth' });
+    const r = await correr(['n8n', '--secreto', SECRETO, '--version', '1', '--credencial', NOMBRE, '--env', envRel, '--aplicar']);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toContain('2 encontradas');
+    expect(escrituras()).toHaveLength(0);
+  });
+});
+
+describe('rotar-ingesta.sh crear: el POST falla', () => {
+  it('sale 3 y manda a verificar en n8n antes de reintentar', async () => {
+    postFalla = true;
+    const r = await correr(buenos('--aplicar'));
+    expect(r.codigo).toBe(3);
+    expect(r.salida).toContain('verificar en n8n antes de reintentar');
+    sinSecretos(r.salida);
   });
 });
