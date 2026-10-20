@@ -1,8 +1,8 @@
 # El Puente de Antonio (tenant `rroca-antonio`): qué es común y qué es propio
 
 Regla (Andres, 09/10/2026): **flujo propio = composición propia + núcleo común obligatorio**. Lo común se incluye desde su fuente, nunca se copia; lo propio vive aquí.
-Zona: `Flujos/experimental/rroca-antonio/` (precedente `chat-novuchat`); se muda después a `Flujos/clientes/`. Este es el **PR-A (el esqueleto)**; PR-B (conversación, catálogo, QR, comprobante, avisos) y PR-C (datos, guardia de publicación, rescate) siguen.
-Pruebas: `admin/pruebas/tenants/rroca-antonio/` — `armado.test.ts` (armado, guardias, datos, zona, `ra.js`), `huecos.test.ts` (los huecos contra su origen), `medios.test.ts` (los medios comunes incluidos y su contrato) y `flujo.test.ts` (el esqueleto, punta a punta con el n8n de mentira).
+Zona: `Flujos/experimental/rroca-antonio/` (precedente `chat-novuchat`); se muda después a `Flujos/clientes/`. Este es el **PR-B** sobre el esqueleto del PR-A: conversación, catálogo, ángulos de anuncio, QR, comprobante, avisos, derivación, protección ante violencia o miedo y números no bolivianos. El PR-C (datos del negocio, guardia de publicación `--publicable` y su confirmación en `publicar-flujo.sh`) sigue; **hasta entonces no se publica**.
+Pruebas: `admin/pruebas/tenants/rroca-antonio/` — `armado.test.ts` (armado, guardias, datos, zona, `ra.js`), `huecos.test.ts` y `huecos-cobro.test.ts` (los huecos contra su origen, con hash fijado), `medios.test.ts` (los medios comunes incluidos y su contrato), `flujo.test.ts` (el esqueleto), `venta.test.ts` (la conversación y el cobro), `negadas.test.ts` (las pruebas negadas del plan §5 sobre una batería amplia), `rescate-contrato.test.ts` (el contrato con el rescate de 22 h) y `vigilante-ux.ts` (los invariantes de UX aplicados a TODA la batería), todas punta a punta con el n8n de mentira.
 Armado: `node Flujos/experimental/rroca-antonio/construir.mjs` escribe `rroca-antonio.json` y `rroca-antonio.prueba.json`; con `--verificar` no escribe y sale 1 si difieren o violan una guardia.
 
 ## Común, INCLUIDO desde su fuente (sin copia)
@@ -36,21 +36,35 @@ Origen: `chat-novuchat` o `venta-minima`, **no `rroca-ruben`**. Cada hueco tiene
 
 Pendientes de declarar en PR-B (aún sin código en PR-A): H-COBRO (declaraciones de `venta-minima/src/lib/cobro.js`, sin los textos de restaurante) y H-AVISOS (`avisos.js`), ambos de `venta-minima`, copiados byte a byte con hash fijado.
 
+
+### Huecos del cobro y de los avisos (PR-B): copiados de `venta-minima` (rama #519) y declarados
+
+Origen = `venta-minima`, **no `rroca-ruben`**. Cada declaración se compara BYTE A BYTE con su origen en `huecos-cobro.test.ts` (hash fijado, el árbol de trabajo si ya trae #519 y la rama `origin/cartera/qtaco-visor-comprobantes`); si el origen cambia, la prueba falla y obliga a decidir (volver a copiar o resolver el módulo común). Ninguna declaración de más.
+
+| Pieza | Origen | Qué se copia |
+|---|---|---|
+| `src/lib/cobro.js` | `venta-minima/src/lib/cobro.js` | `CB_PROHIBIDAS`, `cbCanon` (+ confusables), `cbLinea`, `cbEsObjeto`, `cbTotalValido`, `cbMonto`, `cbMoneda`, `cbCodigo`, `cbUrlSegura`, `cbCobroReal`, la lectura del comprobante (`cbTextoDeGemini`, `cbObjetoUnico`, `cbCampoLeido`, `cbLectura`), `cbCuerpoDe`, `cbRutaGuardada`, `cbResultadoVenta` (+ sus listas cerradas), `cbEstadoParaAviso`, `cbImporteDelServidor`, `cbDiferencia`, `CB_ROTULO_SIMULADO`. **No** se copian los textos de un restaurante (`cbTextoAlCliente`) ni el QR por dirección (`cbMensajeQr`): aquí el QR sale por `id` de medio. `CB_ROTULO_SIMULADO` y `cbRutaGuardada` no se usan (no hay cobro simulado ni se guarda la imagen) pero se copian para que la declaración siga siendo la del origen |
+| `src/lib/avisos.js` | `venta-minima/src/lib/avisos.js` | `avLimpio` (con `avSinProhibidas`, `avCanon`, `avNorm`…), `avTexto`, `avPlantilla`, `avDestinatarios` (+ `avUnificar`, `avPrefijos`, `avDigitos`), `avPrimerNombre`, `avParametro` |
+| `RA_NIEGA_IA` en `src/lib/ra.js` | `chat-novuchat/src/lib/chat.js` (`CH_NIEGA_IA`) | La expresión, idéntica salvo el nombre (la prueba la compara) |
+
+Los 8 nodos nuevos de `flujo.plantilla.json` (`Interpretar lectura`, `¿Cotejar?`, `Cotejar en el servidor`, `¿Conversar con el modelo?`, `Conversar con el modelo`, `Armar avisos`, `¿Hay avisos?`, `Enviar aviso`) son propios de este flujo.
+
 ## Propio de Antonio
 
-- `src/lib/ra.js`: la ficha por teléfono (olvido a las 48 h, últimos 40 ids de mensaje, tope de 5.000 fichas) y el texto cortés fijo (`RA_TEXTO_CORTES`). Crece en PR-B (catálogo, ángulos, textos, prompt, detector de violencia).
+- `src/lib/ra.js`: la ficha por teléfono (olvido a las 48 h, últimos 40 ids de mensaje, memoria de 15 mensajes, tope de 1.000 fichas), el catálogo de 6 productos (el precio vive solo en la consola), los 5 prellenados, los 7 ángulos de anuncio, los menús, los textos fijos, el prompt del modelo y sus reglas de redacción, la derivación, el detector de violencia o miedo, y la barrera `raSeguro` (NIEGA_IA, palabras prohibidas del cobro y párrafos).
 - `src/nodos/normalizar-entrada.js` (H-NORM): la normalización de la entrada. No hay fuente común utilizable (`core/normalizar-entrada.js` es del contrato del agente). Cubre text, interactive, button, audio/voice, image, document y cualquier otro tipo; emite `categoria` (`conversacion`, `medio`, `otro`) y los campos del contrato con los medios comunes.
 - `src/nodos/decidir-turno.js`: el código decide el turno. En PR-A solo cierra la puerta o responde el texto cortés; el resto queda `pendiente` (sin respuesta).
-- `src/nodos/armar-mensajes.js`: un ítem por mensaje, o ninguno; escribe la ficha con la clave `messages[0].from`.
+- `src/nodos/armar-mensajes.js`: un ítem por mensaje, o ninguno; arma el QR, los menús, la lista, la protección y los textos fijos; revisa lo que redacta el modelo; escribe la ficha con la clave `messages[0].from`.
 - `flujo.plantilla.json`, `construir.mjs` (guardias, datos, «¿Meta aceptó?») y los datos `admin/scripts/datos/rroca-antonio/rroca-antonio.json` (solo marcadores `REEMPLAZAR_*`).
 
-## Condiciones declaradas de PR-A (no se resuelven aquí)
+## Condiciones declaradas (no se resuelven en el PR-B)
 
-- **`meta.noPublicable`**: hoy solo `construir.mjs --verificar` la lee y la exige; `publicar-flujo.sh` no la lee y `meta` no llega a n8n. Lo único que frena publicar son los marcadores `REEMPLAZAR_*`. El flujo no debe publicarse ni activarse en un número real hasta PR-B. Requisito de PR-C: guardia `--publicable` y confirmación en `publicar-flujo.sh` para `rroca-antonio`, como la de Rubén.
+- **No se publica hasta el PR-C.** El PR-B quitó `meta.noPublicable` (la conversación está completa) y la guardia lo prohíbe, pero hoy NADA frena una publicación salvo los marcadores `REEMPLAZAR_*`. La guardia `--publicable` y la confirmación en `publicar-flujo.sh` para `rroca-antonio` son del PR-C.
+- **Datos que siguen pendientes** (marcadores o valores recomendados en `admin/scripts/datos/rroca-antonio/rroca-antonio.json`): `lineaProteccion` (la verifica Silvana, P9), los nombres y el estado de las dos plantillas de aviso (hoy `PENDING`; WAM las crea, P10), `plazoEntregaHoras` = 6 y `garantiaTexto` (P2 y P3, confirmar con Antonio), el catálogo de la consola con el Pack y la Guía agotados (P1, PR-C).
 - **Falla abierta de la pausa**: heredada de `chat-novuchat` con la puerta idéntica; ver `DISENO.md`.
 - **Cruce «suspendido antes que bloqueado»**: la puerta evalúa primero el comercio no operativo.
 - **Modo prueba**: niega por defecto.
 
 ## Mensajes por conversación
 
-**0 agregados al cliente.** Un mensaje por turno del cliente, o ninguno; la prueba lo niega recorriendo todos los tipos de entrada. Llamadas al modelo de conversación: 0 (la conversación llega en PR-B); las de Gemini en los medios son 1 por audio, imagen o PDF.
+**0 agregados al cliente.** Un mensaje por turno del cliente, o ninguno; la prueba lo niega recorriendo todos los tipos de entrada (y una batería de más de 60 turnos). Excepción decidida por Andres: un número no boliviano ahora recibe 1 mensaje (texto fijo + botón de Antonio) a lo más cada 24 h; antes se descartaba. Llamadas al modelo: 0 o 1 por turno de conversación libre (la violencia, los botones, los precios, la derivación y los medios fallidos no llaman al modelo); las de Gemini en los medios son 1 por audio, imagen o PDF (la lectura del comprobante va en esa misma llamada).

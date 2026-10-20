@@ -2,7 +2,7 @@
 // los mensajes del turno y un resumen, para que un corredor externo evalúe cada turno sin depender de WhatsApp.
 //
 // Lee TODO por nombre de «Armar mensajes» y no de lo que devolvieron los nodos de envío ni de reporte (un nodo desactivado deja pasar su entrada). Cuelga de «Armar mensajes» por debajo
-// de todo el lienzo, así que con `executionOrder: v1` corre después de los envíos.
+// de todo el lienzo, así que con `executionOrder: v1` corre después de los envíos y del cierre.
 const items = cnTodos('Armar mensajes');
 
 // ENTREGA (regla I-ENTREGA, «se entrega lo que se promete»): este nodo corre DESPUÉS de los envíos (está abajo en el lienzo y `executionOrder` es v1). Un mensaje al cliente cuenta como
@@ -14,6 +14,21 @@ const raId = (j) => {
   return Array.isArray(m) && !!m[0] && typeof m[0].id === 'string' && m[0].id !== '';
 };
 if (cnNodo('Enviar a WhatsApp')) {
+  // Si el QR no salió por el envío principal (sale el respaldo en texto o nada), se DESCARTA la marca provisional de «Armar mensajes»: ni pedido contado ni QR «abierto» por 15 minutos.
+  const raPrevio = (items[0] || {}).qrPrevio;
+  if (raPrevio && typeof raPrevio === 'object' && !cnTodos('Enviar a WhatsApp').some(raId)) {
+    const raDesde = String((items[0] || {}).from || '');
+    const raFichas = cnMapaDeFichas(true);
+    const raF = cnFichaDe(raFichas.mapa, raDesde);
+    if (raF) { raF.pedidos = Number(raPrevio.pedidos) || 0; raF.producto = String(raPrevio.producto || ''); raF.qrHastaMs = Number(raPrevio.qrHastaMs) || 0; }
+  }
+  // La guarda liberada por un comprobante resuelto vuelve si no salió nada al cliente (ni el envío ni su respaldo).
+  const raLib = (items[0] || {}).qrLiberado;
+  if (raLib && typeof raLib === 'object' && !cnTodos('Enviar a WhatsApp').some(raId) && !cnTodos('Enviar respaldo').some(raId)) {
+    const raFichas2 = cnMapaDeFichas(true);
+    const raF2 = cnFichaDe(raFichas2.mapa, String((items[0] || {}).from || ''));
+    if (raF2) raF2.qrHastaMs = Number(raLib.qrHastaMs) || 0;
+  }
   const raEsperados = items.filter((i) => i && i.sinMensajes !== true).length;
   const raEntregados = cnTodos('Enviar a WhatsApp').filter(raId).length + cnTodos('Enviar respaldo').filter(raId).length;
   if (raEntregados < raEsperados) {

@@ -6,7 +6,8 @@
     "graph": "Graph WhatsApp Antonio (Bearer)",
     "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
     "entradaPrueba": "Entrada de prueba Antonio",
-    "gemini": "Google Gemini(PaLM) Api account"
+    "gemini": "Google Gemini(PaLM) Api account",
+    "geminiPrueba": "Gemini — pruebas (no producción)"
   },
   "receptor": {
     "ruta": "REEMPLAZAR_RUTA_RECEPTOR_RROCA_ANTONIO",
@@ -22,6 +23,15 @@
     "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Gracias por escribirnos.",
     "prefijosPermitidos": "591",
     "telefonosDePrueba": "REEMPLAZAR_TELEFONOS_DE_PRUEBA",
-    "modelo": "gemini-3.5-flash-lite"
+    "modelo": "gemini-3.5-flash-lite",
+    "temperatura": 0.4,
+    "plazoEntregaHoras": 6,
+    "garantiaTexto": "Sobre garantía, devolución o factura, eso lo responde Antonio directamente; desde aquí no puedo prometerte nada de eso.",
+    "lineaProteccion": "REEMPLAZAR_LINEA_PROTECCION_VERIFICADA",
+    "avisoComprobantePlantilla": "REEMPLAZAR_PLANTILLA_AVISO_COMPROBANTE",
+    "avisoComprobanteEstado": "PENDING",
+    "avisoConsultaPlantilla": "REEMPLAZAR_PLANTILLA_AVISO_CONSULTA",
+    "avisoConsultaEstado": "PENDING",
+    "avisoPlantillaIdioma": "es"
   }
 }
