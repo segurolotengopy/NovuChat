@@ -439,9 +439,9 @@ describe('Aislamiento entre tenants', () => {
     )));
   });
 
-  it('Cobros: la consulta de comprobantes recibidos (solicitud.reglaCobro == 2, límite 100) la lee el admin de ese comercio y no la de otro', async () => {
+  it('Cobros: la consulta de comprobantes recibidos (comprobantesRecibidos, orderBy en desc, límite 100) la lee el admin de ese comercio y no la de otro', async () => {
     const consulta = (db: ReturnType<typeof adminA>, t: string) => getDocs(query(
-      collection(db, `tenants/${t}/conversaciones`), where('solicitud.reglaCobro', '==', 2), limit(100),
+      collection(db, `tenants/${t}/comprobantesRecibidos`), orderBy('en', 'desc'), limit(100),
     ));
     await assertSucceeds(consulta(adminA(), A));
     await assertFails(consulta(adminA(), B));

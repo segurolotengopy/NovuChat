@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { Navigate, useParams } from 'react-router-dom';
 import { auth, db } from '../../core/lib/firebase';
 import { useSesion } from '../../core/lib/contexto';
@@ -8,7 +8,7 @@ import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { descargarCsv } from '../../central/lib/exportar';
 import { capacidadesDeConsola, useModulos } from '../../central/lib/flujos';
 import { ComprobantesRecibidos } from './ComprobantesRecibidos';
-import { aplanarComprobantes, type ComprobanteRecibido } from './comprobantesRecibidos';
+import { filasDeRecibidos, type ComprobanteRecibido } from './comprobantesRecibidos';
 import { ContadoresDeCobro } from './ContadoresDeCobro';
 import { VisorComprobante } from './VisorComprobante';
 import { puedeVerComprobante, textosDelVisor } from './visorComprobante';
@@ -150,14 +150,12 @@ function CobrosDelNegocio() {
     if (!tenantId) return;
     setRecibidos(null);
     setErrorRecibidos(false);
-    // Los comprobantes que no coincidieron no crean cobro: viven en la conversación
-    // (`solicitud.comprobantes`). Filtro simple, sin `orderBy` (no pide índice
-    // compuesto): se ordenan del más nuevo al más viejo en memoria.
-    // FASE 2: una colección propia (`comprobantesRecibidos`) reemplazará esta fuente; la pantalla
-    // solo conoce filas normalizadas (`ComprobanteRecibido`), así que solo cambia este efecto.
+    // Todo comprobante que llegó (también los que no coincidieron y no crean cobro) queda en
+    // `comprobantesRecibidos`, que escribe el servidor. `orderBy('en')` usa el índice simple
+    // automático: no pide índice compuesto.
     return onSnapshot(
-      query(collection(db, 'tenants', tenantId, 'conversaciones'), where('solicitud.reglaCobro', '==', 2), limit(100)),
-      (s) => setRecibidos(aplanarComprobantes(s.docs.map((d) => ({ id: d.id, ...d.data() })))),
+      query(collection(db, 'tenants', tenantId, 'comprobantesRecibidos'), orderBy('en', 'desc'), limit(100)),
+      (s) => setRecibidos(filasDeRecibidos(s.docs.map((d) => ({ ...d.data(), id: d.id })))),
       () => setErrorRecibidos(true));
   }, [tenantId]);
 
