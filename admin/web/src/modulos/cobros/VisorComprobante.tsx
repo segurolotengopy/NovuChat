@@ -104,7 +104,7 @@ export function VisorComprobante({ tenantId, origen, etiqueta = 'Ver comprobante
     } catch (e) {
       if (mia !== vuelta.current) return;
       // Solo el code: el mensaje de una librería puede traer rutas o datos.
-      setEstado({ tipo: 'error', texto: textoDeError((e as { code?: unknown } | null)?.code) });
+      setEstado({ tipo: 'error', texto: textoDeError((e as { code?: unknown } | null)?.code, !('cierreId' in origen)) });
     }
   };
 

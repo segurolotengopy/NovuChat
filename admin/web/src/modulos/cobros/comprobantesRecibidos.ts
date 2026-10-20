@@ -29,9 +29,13 @@ export interface ComprobanteRecibido {
   montoPedido: number | null;
   /** Lo que se leyó de la imagen; `null` se pinta «—». */
   montoLeido: number | null;
+  /** Moneda del pedido («BOB» si la solicitud no la trae). */
+  moneda: string;
   estadoPalabras: string;
   /** Hay una imagen guardada que la callable `verComprobante` pueda entregar. */
   tieneFoto: boolean;
+  /** Tuvo foto pero ya pasaron los 90 días de custodia: se avisa en vez de ofrecer un botón que falla. */
+  fotoVencida: boolean;
 }
 
 /** Un documento de `comprobantesRecibidos` tal como llega de Firestore: todo desconocido hasta que se mire. */
@@ -48,22 +52,32 @@ export const ESTADO_POR_DEFECTO = 'En revisión';
 
 /** Textos fijos de la pantalla. */
 export const AVISO_COMPROBANTES = 'NovuChat nunca confirma que el dinero entró: eso lo ve usted en su banco.';
+export const TEXTO_FOTO_VENCIDA = 'La foto ya no está disponible';
+
+/** Días que se conserva la imagen de un comprobante. */
+export const DIAS_DE_CUSTODIA = 90;
+
+/** Forma de un `idMeta` que se puede pedir a la callable. */
+export const ID_META_PEDIBLE = /^[A-Za-z0-9._=:+/-]{1,120}$/;
+
 export const TEXTO_SIN_COMPROBANTES = 'Todavía no llegó ningún comprobante.';
 
 /**
  * Tabla cerrada de estados, sobre los códigos de `cotejo.ts` y del cobro de venta.
- * Los motivos `falta_*` son «no es comprobante» (no se pudo leer monto, fecha o
- * destino): para el comercio, lo mismo que una imagen ilegible.
+ * Los motivos `falta_*` son «no es comprobante»: sin monto leído, para el comercio es
+ * una imagen ilegible; con el monto leído y sin fecha o destino, «Faltan datos».
  */
-export function estadoEnPalabras(estado: unknown, motivo: unknown): string {
+export function estadoEnPalabras(estado: unknown, motivo: unknown, montoLeido: unknown = null): string {
+  const m = typeof motivo === 'string' ? motivo : '';
   switch (estado) {
     case 'valido': return 'Datos coinciden';
     case 'aproximado': return 'Coinciden en parte';
-    case 'en_revision': return 'En revisión';
+    case 'en_revision': return m.startsWith('monto_') ? 'En revisión (no coincide el monto)' : 'En revisión';
     case 'tardio': return 'Llegó fuera de plazo';
     case 'no_es_comprobante': return 'Ilegible';
     case 'invalido': {
-      const m = typeof motivo === 'string' ? motivo : '';
+      // Con el monto ya leído, lo que falta es la fecha o el destino: no es una imagen ilegible.
+      if ((m === 'falta_fecha' || m === 'falta_destino') && numero(montoLeido) !== null) return 'Faltan datos';
       if (m === 'ilegible' || m === 'no_es_comprobante' || m.startsWith('falta_')) return 'Ilegible';
       if (m.startsWith('monto_')) return 'No coincide el monto';
       return 'No coinciden los datos';
@@ -113,13 +127,16 @@ export function fechaDeLaPaz(ms: number | null): string {
  * defecto. El cliente es el nombre del contacto o `****` + los 3 últimos
  * dígitos de la conversación: el teléfono entero no se muestra.
  */
-export function filasDeRecibidos(docs: readonly DocumentoRecibido[]): ComprobanteRecibido[] {
+export function filasDeRecibidos(docs: readonly DocumentoRecibido[], ahora: number = Date.now()): ComprobanteRecibido[] {
   const filas: ComprobanteRecibido[] = [];
   for (const d of docs) {
     const idMeta = textoNoVacio(d['idMeta']);
     const conversacionId = textoNoVacio(d['conversacionId']);
     if (idMeta === null || conversacionId === null) continue;
     const fechaMs = milisegundosDe(d['en']);
+    const moneda = typeof d['moneda'] === 'string' && /^[A-Z]{3}$/.test(d['moneda']) ? d['moneda'] : 'BOB';
+    const conRuta = textoNoVacio(d['ruta']) !== null && ID_DE_CONVERSACION.test(conversacionId) && ID_META_PEDIBLE.test(idMeta);
+    const vencida = conRuta && fechaMs !== null && ahora - fechaMs > DIAS_DE_CUSTODIA * 86_400_000;
     filas.push({
       idMeta,
       conversacionId,
@@ -128,9 +145,11 @@ export function filasDeRecibidos(docs: readonly DocumentoRecibido[]): Comprobant
       cliente: textoNoVacio(d['nombreContacto']) ?? telefonoEnmascarado(undefined, conversacionId),
       montoPedido: numero(d['importe']),
       montoLeido: numero(d['montoLeido']),
-      estadoPalabras: estadoEnPalabras(d['estado'], d['motivo']),
-      // La foto solo se puede pedir con un id de conversación que la callable acepte.
-      tieneFoto: textoNoVacio(d['ruta']) !== null && ID_DE_CONVERSACION.test(conversacionId),
+      moneda,
+      estadoPalabras: estadoEnPalabras(d['estado'], d['motivo'], d['montoLeido']),
+      // La foto solo se pide con ids que la callable acepte y dentro de los 90 días de custodia.
+      tieneFoto: conRuta && !vencida,
+      fotoVencida: vencida,
     });
   }
   return filas

@@ -246,7 +246,7 @@ export const cotejarComprobanteVenta = onRequest(
       if (transicion.anotado) {
         const nombre = texto(conversacion.get('nombreContacto'), 120);
         tx.set(refRecibido, documentoDeRecibido(
-          transicion.anotado, idConversacion, nombre, recibidoPrevio.exists ? recibidoPrevio.data() : undefined,
+          transicion.anotado, idConversacion, nombre, moneda, recibidoPrevio.exists ? recibidoPrevio.data() : undefined,
         ));
       }
 
@@ -323,7 +323,7 @@ export const DIAS_DE_RECIBIDOS = 90;
  * que el arreglo de la conversación ya no guarda), conserva `en` y `vence`.
  */
 export function documentoDeRecibido(
-  a: ComprobanteAnotado, conversacionId: string, nombreContacto: string,
+  a: ComprobanteAnotado, conversacionId: string, nombreContacto: string, moneda: string,
   previo?: FirebaseFirestore.DocumentData,
 ): Record<string, unknown> {
   const enPrevio = previo?.['en'] instanceof Timestamp ? (previo['en'] as Timestamp) : null;
@@ -332,6 +332,7 @@ export function documentoDeRecibido(
   return {
     idMeta: a.idMeta.slice(0, 120), conversacionId, estado: a.estado, motivo: a.motivo,
     en, vence: vencePrevio ?? Timestamp.fromMillis(en.toMillis() + DIAS_DE_RECIBIDOS * 86_400_000),
+    moneda: /^[A-Z]{3}$/.test(moneda) ? moneda : 'BOB',
     importe: a.importe ?? null, montoLeido: a.montoLeido ?? null, montoDistinto: a.montoDistinto ?? false,
     intentos: typeof a.intentos === 'number' ? a.intentos : 0,
     ruta: a.ruta ?? (typeof previo?.['ruta'] === 'string' ? (previo['ruta'] as string) : null),

@@ -105,7 +105,7 @@ describe('cada comprobante anotado queda en comprobantesRecibidos, con el id del
     const d = await recibido('wamid.f2-valido');
     expect(d).toMatchObject({
       idMeta: 'wamid.f2-valido', conversacionId: `wa_${t}`, estado: 'valido', motivo: 'ok', importe: 100,
-      montoLeido: 100, montoDistinto: false, intentos: 0, nombreContacto: 'Cliente de prueba',
+      montoLeido: 100, montoDistinto: false, intentos: 0, nombreContacto: 'Cliente de prueba', moneda: 'BOB',
     });
     expect(d?.['en'].toMillis() + 90 * DIA).toBe(d?.['vence'].toMillis());
     expect((await cierres()).length).toBeGreaterThan(0);
@@ -156,7 +156,7 @@ describe('cada comprobante anotado queda en comprobantesRecibidos, con el id del
       expect(d).not.toHaveProperty(campo);
     }
     expect(Object.keys(d).sort()).toEqual([
-      'conversacionId', 'en', 'estado', 'idMeta', 'importe', 'intentos', 'montoDistinto', 'montoLeido', 'motivo',
+      'conversacionId', 'en', 'estado', 'idMeta', 'importe', 'intentos', 'moneda', 'montoDistinto', 'montoLeido', 'motivo',
       'nombreContacto', 'ruta', 'vence',
     ]);
   });
@@ -334,7 +334,7 @@ describe('la máquina de estados pura: `anotado`', () => {
   });
   it('documentoDeRecibido sin previo: vence = en + 90 días y no copia nada de más', () => {
     const t = solicitudDeCobroTras(base(0), ev('n'), ahora);
-    const d = documentoDeRecibido(t.anotado!, 'wa_x', '');
+    const d = documentoDeRecibido(t.anotado!, 'wa_x', '', 'BOB');
     expect((d['vence'] as { toMillis(): number }).toMillis() - (d['en'] as { toMillis(): number }).toMillis()).toBe(90 * DIA);
     expect(d).not.toHaveProperty('nombreContacto');
   });
