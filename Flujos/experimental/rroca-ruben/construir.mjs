@@ -7,8 +7,8 @@
  *   node Flujos/experimental/rroca-ruben/construir.mjs               escribe rroca-ruben.json y rroca-ruben.prueba.json
  *   node Flujos/experimental/rroca-ruben/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
  *   node Flujos/experimental/rroca-ruben/construir.mjs --publicable [--flujo <json>] [--datos <json>]
- *                                                                    GUARDIA DE PUBLICACIÓN (PR-5): no escribe; sale 1 si el flujo trae un `REEMPLAZAR_*` sin sustituir o si las plantillas
- *                                                                    de aviso no están APPROVED (con nombre e idioma). Sin `--flujo`, revisa `rroca-ruben.json`; `publicar-flujo.sh` la corre sobre lo que va a escribir
+ *                                                                    GUARDIA DE PUBLICACIÓN (PR-5): no escribe; sale 1 si el flujo trae un `REEMPLAZAR_*` sin sustituir, si las plantillas
+ *                                                                    de aviso no están APPROVED (con nombre e idioma) o si se abre al PÚBLICO sin los tres medios (audio, imagen, documento). Sin `--flujo`, revisa `rroca-ruben.json`; `publicar-flujo.sh` la corre sobre lo que va a escribir
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos. El código de los nodos lo arma el armador genérico
@@ -105,6 +105,9 @@ const FORMAS_CONFIG = {
   avisoComprobanteEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoConsultaEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
+  // La guardia de apertura: los medios que el flujo ya atiende (lista separada por comas) y si se publica en prueba o al público.
+  mediosHabilitados: /^[a-z_]{1,40}(,[a-z_]{1,40})*$/,
+  modoApertura: /^(prueba|publico)$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
 
@@ -272,6 +275,34 @@ function hallazgosDePlantillas(cb, donde) {
   return h;
 }
 
+/**
+ * LA GUARDIA DE APERTURA (20/10/2026). Abrir el flujo al PÚBLICO exige los tres medios que un cliente real manda (audio, imagen/visión y documento) habilitados en `mediosHabilitados` de «Config base»
+ * (hoy solo `imagen_comprobante` y `pdf_comprobante`: los comprobantes del cobro; no son los tres medios). Una PUBLICACIÓN DE PRUEBA con lista restringida sí se permite y se declara:
+ *   prueba   `telefonosDePrueba` no vacío Y `modoApertura` ausente o «prueba»;
+ *   público  `telefonosDePrueba` vacío o ausente, o `modoApertura` distinto de «prueba» (ante la duda, público: la guardia se equivoca hacia el lado que rechaza).
+ * Los medios no se implementan aquí (otro bloque): esta guardia solo impide abrir sin ellos.
+ */
+export const MEDIOS_PARA_ABRIR = ['audio', 'imagen', 'documento'];
+export function modoDeApertura(cb) {
+  const c = cb && typeof cb === 'object' ? cb : {};
+  const tel = typeof c.telefonosDePrueba === 'string' ? c.telefonosDePrueba.trim() : '';
+  const modo = c.modoApertura === undefined || c.modoApertura === null || c.modoApertura === '' ? 'prueba' : String(c.modoApertura);
+  return tel !== '' && modo === 'prueba' ? 'prueba' : 'publico';
+}
+function hallazgosDeApertura(cb, donde) {
+  if (!cb || typeof cb !== 'object' || modoDeApertura(cb) !== 'publico') return [];
+  const medios = new Set(String(cb.mediosHabilitados === undefined || cb.mediosHabilitados === null ? '' : cb.mediosHabilitados).split(',').map((x) => x.trim()).filter(Boolean));
+  const faltan = MEDIOS_PARA_ABRIR.filter((m) => !medios.has(m));
+  return faltan.length ? [`${donde}: abrir al PÚBLICO exige los tres medios habilitados (mediosHabilitados) y faltan: ${faltan.join(', ')}; una publicación de prueba lleva telefonosDePrueba y no pone modoApertura en «publico»`] : [];
+}
+/** El modo con que se publicaría este flujo y estos datos: 'prueba' si los dos son de prueba, 'publico' si alguno abre al público. */
+export function modoDePublicacion({ flujo, datos }) {
+  const base = ((flujo && flujo.nodes) || []).find((n) => n.name === 'Config base');
+  const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
+  const cbFlujo = Array.isArray(lista) ? Object.fromEntries(lista.map((a) => [a.name, a.value])) : {};
+  return modoDeApertura(cbFlujo) === 'publico' || modoDeApertura(datos && datos.configBase) === 'publico' ? 'publico' : 'prueba';
+}
+
 export function guardiaDePublicacion({ flujo, datos }) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
@@ -289,9 +320,14 @@ export function guardiaDePublicacion({ flujo, datos }) {
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
   if (!Array.isArray(lista)) h.push('el flujo no trae «Config base»: no se puede comprobar el estado de las plantillas');
-  else h.push(...hallazgosDePlantillas(Object.fromEntries(lista.map((a) => [a.name, a.value])), 'Config base'));
+  else {
+    const cbFlujo = Object.fromEntries(lista.map((a) => [a.name, a.value]));
+    h.push(...hallazgosDePlantillas(cbFlujo, 'Config base'));
+    h.push(...hallazgosDeApertura(cbFlujo, 'Config base'));
+  }
   // 3. …y en los datos.
   h.push(...hallazgosDePlantillas(datos && datos.configBase, 'datos'));
+  h.push(...hallazgosDeApertura(datos && datos.configBase, 'datos'));
   return h;
 }
 
@@ -329,12 +365,12 @@ export function armarRroca(proyecto, datos, v) {
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);
   reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
-  // El reporte saliente de ESTE flujo (propio): igual al común, más el EVENTO del QR. `qr_enviado` lleva `reglaCobro: 2` (solo el QR REAL: abre el cobro de 15 minutos, 3 intentos),
+  // El reporte saliente de ESTE flujo (propio): igual al común, más el EVENTO del QR y el campo opcional `aviso` ('salio' | 'no_salio' | 'ninguno': lo que pasó con el aviso a Rubén en este turno; cualquier otro valor NO se envía). `qr_enviado` lleva `reglaCobro: 2` (solo el QR REAL: abre el cobro de 15 minutos, 3 intentos),
   // `referencia` (el pedido) y `monto` (el del catálogo): contra ese número coteja el servidor. El evento viaja SOLO si el envío principal (la imagen) fue aceptado: si cayó el respaldo
   // en texto, el cliente no tiene QR y el cobro no se abre.
   const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
   if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes("evento: m.evento")) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
-  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}";
+  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } const av = (m.resumen || {}).aviso; if (av === 'salio' || av === 'no_salio' || av === 'ninguno') r.aviso = av; return JSON.stringify(r); })() }}";
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);
@@ -388,7 +424,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         for (const x of hallazgos) console.error(`  - ${x}`);
         process.exit(1);
       }
+      const datosCli = cargarDatos(opcion('--datos') || ARCHIVO_DE_DATOS);
       console.log('✓ Sin marcadores REEMPLAZAR_* y con las plantillas de aviso APPROVED: se puede publicar (con la confirmación de publicar-flujo.sh).');
+      console.log(modoDePublicacion({ flujo: flujoJson, datos: datosCli }) === 'prueba'
+        ? '  Publicación de PRUEBA con lista restringida (telefonosDePrueba): NO se abre al público; abrirlo exige mediosHabilitados con audio, imagen y documento.'
+        : '  Apertura al PÚBLICO: los tres medios (audio, imagen, documento) están habilitados.');
       process.exit(0);
     } catch (e) {
       // Un SyntaxError puede traer un fragmento del archivo: mensaje fijo, sin contenido.

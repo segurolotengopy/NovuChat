@@ -43,7 +43,8 @@ let pedidoNuevo = null;
 let qrPrevio = null;        // la ficha antes de la marca provisional del QR
 let qrLiberado = null;      // la guarda de QR abierto que este turno de comprobante libera (se restaura si el aviso al cliente no sale)
 
-const texto = (cuerpo, extra) => { const c = rrSeguro(cuerpo); return cmMensaje('cliente', cmTexto(c), c, c, Object.assign({ tipoReporte: 'text' }, extra || {})); };
+// `fijo` = true SOLO para un texto fijo del código (la constante de «comprobante leído»): habilita la exención exacta de `rrSeguro`. Nada de lo que redacta el modelo lo pasa.
+const texto = (cuerpo, extra, fijo) => { const c = rrSeguro(cuerpo, fijo === true); return cmMensaje('cliente', cmTexto(c), c, c, Object.assign({ tipoReporte: 'text' }, extra || {})); };
 const conBotones = (cuerpo, botones, extra) => {
   const c = rrSeguro(cuerpo);
   if (!botones.length) return texto(c, extra);
@@ -149,7 +150,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     m = conRuben(rrTextoQrPendiente(plan.producto, plan.monto));
   } else if (tipoDePlan === 'comprobante') {
     const r = rrTextoComprobante(plan.resultado, plan.causa, estadoAviso, plan.diferencia);
-    m = r.boton === true ? conRuben(r.cuerpo) : texto(r.cuerpo);
+    m = r.boton === true ? conRuben(r.cuerpo) : texto(r.cuerpo, undefined, r.fijo === true);
   } else if (tipoDePlan === 'derivar') {
     m = conRuben(rrTextoDerivacion(plan.motivo, estadoAviso, plan.clave));
   } else if (tipoDePlan === 'imagen_otra') {
