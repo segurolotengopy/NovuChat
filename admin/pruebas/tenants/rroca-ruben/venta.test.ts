@@ -89,7 +89,7 @@ interface Opciones {
   envio?: 'acepta' | 'error';
   /** Minutos desde el último mensaje de Rubén al bot (la ventana de servicio de Meta). Por omisión 5 (ventana ABIERTA: el aviso va como texto libre). `null` = Rubén nunca escribió. */
   rubenEscribioHaceMin?: number | null;
-  /** 'aprobadas': las dos plantillas de aviso en estado APPROVED en «Config base». Por omisión, lo que traen los datos (PENDING). */
+  /** 'aprobadas': las dos plantillas de aviso en estado APPROVED en «Config base». Por omisión, lo que traen los datos (APPROVED desde el 19/10/2026); 'pendientes' fabrica PENDING. */
   plantillas?: 'aprobadas' | 'pendientes' | 'sin-nombre' | 'rechazada-consulta';
 }
 const PLANTILLAS_APROBADAS = { avisoComprobanteEstado: 'APPROVED', avisoConsultaEstado: 'APPROVED' };
@@ -167,6 +167,7 @@ function crear(o: Opciones = {}) {
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: ANA, ...(o.cobroSimuladoActivo !== undefined ? { cobroSimuladoActivo: o.cobroSimuladoActivo } : {}),
       ...(o.plantillas === 'aprobadas' ? PLANTILLAS_APROBADAS : {}),
+      ...(o.plantillas === 'pendientes' ? { avisoComprobanteEstado: 'PENDING', avisoConsultaEstado: 'PENDING' } : {}),
       ...(o.plantillas === 'sin-nombre' ? { ...PLANTILLAS_APROBADAS, avisoComprobantePlantilla: '', avisoConsultaPlantilla: '' } : {}),
       ...(o.plantillas === 'rechazada-consulta' ? { avisoComprobanteEstado: 'APPROVED', avisoConsultaEstado: 'REJECTED' } : {}),
     },
@@ -1175,9 +1176,9 @@ describe('PR-3 · el aviso a Rubén: texto libre dentro de 23,5 h de su último 
   });
 
   it('PLANTILLA NO CONFIGURADA fuera de la ventana: no sale NINGÚN aviso y el cliente lee la versión honesta con el botón; NUNCA «ya pasé» ni «le avisé»', () => {
-    // Los datos de fábrica traen las plantillas en PENDING: hasta que Meta las apruebe no hay aviso fuera de la ventana.
+    // Mientras una plantilla no esté APPROVED (aquí fabricada en PENDING) no hay aviso fuera de la ventana.
     const casos: Array<[string, Opciones, string]> = [
-      ['PENDING (los datos de fábrica)', { rubenEscribioHaceMin: null }, 'necesito factura'],
+      ['PENDING (fabricado)', { rubenEscribioHaceMin: null, plantillas: 'pendientes' }, 'necesito factura'],
       ['sin nombre', { rubenEscribioHaceMin: null, plantillas: 'sin-nombre' }, 'necesito factura'],
       ['consulta RECHAZADA', { rubenEscribioHaceMin: null, plantillas: 'rechazada-consulta' }, 'necesito factura'],
     ];
@@ -1195,7 +1196,7 @@ describe('PR-3 · el aviso a Rubén: texto libre dentro de 23,5 h de su último 
       expect(hablar(w, ANA, mTexto(texto), { avanzarMin: 1 }).ejecutados.has('Armar avisos')).toBe(true);
     }
     // El comprobante que cuadra con su plantilla sin configurar: «no pude avisarle», con el botón.
-    const w = crear({ rubenEscribioHaceMin: null });
+    const w = crear({ rubenEscribioHaceMin: null, plantillas: 'pendientes' });
     pedirQr(w, 'pack');
     const t = hablar(w, ANA, mImagen());
     expect(t.avisos).toHaveLength(0);
@@ -1418,7 +1419,7 @@ describe('PR-3 · el estado «operador» avisa, y la pausa por persona sigue cal
     const t = hablar(crear({ atencion: operador(), rubenEscribioHaceMin: null, plantillas: 'aprobadas' }), ANA, mTexto('hola'));
     expect(t.avisos[0]!.tipo).toBe('template');
     expect(t.avisos[0]!.payload['template']?.name).toBe('aviso_consulta_para_ruben');
-    for (const o of [{ rubenEscribioHaceMin: null }, { aviso: 'error' as const }, { aviso: 'sin-id' as const }]) {
+    for (const o of [{ rubenEscribioHaceMin: null, plantillas: 'pendientes' as const }, { aviso: 'error' as const }, { aviso: 'sin-id' as const }] as Opciones[]) {
       const t2 = hablar(crear({ atencion: operador(), ...o }), ANA, mTexto('hola'));
       const m = unico(t2);
       expect(m.cuerpo).toBe('Eso lo ve Rubén directamente. No pude avisarle a Rubén; escríbele directo con el botón.');

@@ -51,15 +51,15 @@ describe('guardia de publicación: la ruta feliz y el JSON versionado de hoy', (
     expect(hallazgos(publicable(PRUEBA))).toEqual([]);
   });
 
-  it('el JSON versionado de hoy NO es publicable: marcadores y plantillas PENDING', () => {
+  it('el JSON versionado de hoy NO es publicable: solo por los marcadores que faltan (las plantillas ya están aprobadas)', () => {
     const h = guardiaDePublicacion({ flujo: PRODUCCION, datos: DATOS_VERSIONADOS }) as string[];
     expect(h.filter((x) => /marcador sin sustituir/.test(x)).length).toBeGreaterThan(0);
-    expect(h.join('|')).toMatch(/Config base: avisoComprobanteEstado es \(distinto de APPROVED\)/);
-    expect(h.join('|')).toMatch(/datos: avisoConsultaEstado es \(distinto de APPROVED\)/);
+    expect(h.join('|')).not.toMatch(/APPROVED|plantilla/i);
   });
 
-  it('los datos versionados siguen en PENDING (hasta que Meta apruebe): la prueba de "datos" es real', () => {
-    expect(DATOS_VERSIONADOS.configBase['avisoComprobanteEstado']).not.toBe('APPROVED');
+  it('los datos versionados traen las dos plantillas en APPROVED (Meta las aprobó el 19/10/2026)', () => {
+    expect(DATOS_VERSIONADOS.configBase['avisoComprobanteEstado']).toBe('APPROVED');
+    expect(DATOS_VERSIONADOS.configBase['avisoConsultaEstado']).toBe('APPROVED');
   });
 });
 
@@ -210,18 +210,23 @@ describe('construir.mjs --publicable: la línea de comandos', () => {
   const dir = mkdtempSync(join(tmpdir(), 'rroca-pub-'));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('sobre el JSON versionado sale en 1 y nombra los marcadores y las plantillas', () => {
+  it('sobre el JSON versionado sale en 1 y nombra los marcadores, ya no las plantillas', () => {
     const r = correr();
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/NO se puede publicar todavía/);
     expect(r.stderr).toMatch(/marcador sin sustituir: REEMPLAZAR_/);
-    expect(r.stderr).toMatch(/distinto de APPROVED/);
+    expect(r.stderr).not.toMatch(/APPROVED|plantilla/i);
   });
 
-  it('con un flujo sustituido pero los datos versionados en PENDING sigue negado (los datos cuentan)', () => {
+  it('con un flujo sustituido pero unos datos en PENDING (fabricados) sigue negado (los datos cuentan)', () => {
     const ruta = join(dir, 'sustituido.json');
     writeFileSync(ruta, JSON.stringify(publicable(PRODUCCION)));
-    const r = correr('--flujo', ruta);
+    const rutaPend = join(dir, 'datos-pendientes.json');
+    const pend = copia(DATOS_VERSIONADOS);
+    pend.configBase['avisoComprobanteEstado'] = 'PENDING';
+    pend.configBase['avisoConsultaEstado'] = 'PENDING';
+    writeFileSync(rutaPend, JSON.stringify({ ...JSON.parse(leer(ARCHIVO_DE_DATOS)), configBase: pend.configBase }));
+    const r = correr('--flujo', ruta, '--datos', rutaPend);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/datos: avisoComprobanteEstado es \(distinto de APPROVED\)/);
     expect(r.stderr).not.toMatch(/marcador sin sustituir/);
@@ -267,7 +272,7 @@ describe('publicar-flujo.sh: la guardia y la confirmación del flujo de Rubén',
     spawnSync('bash', [script, ...args, '--env', join(dir, 'no-hay-env')], { cwd, encoding: 'utf8', env: entornoDelEmulador(undefined), stdio: ['ignore', 'pipe', 'pipe'] });
   const RUBEN = join(RROCA, 'rroca-ruben.json');
 
-  it('con --aplicar y el JSON versionado (marcadores, PENDING) se NIEGA antes de leer el .env o hablar con n8n', () => {
+  it('con --aplicar y el JSON versionado (marcadores) se NIEGA antes de leer el .env o hablar con n8n', () => {
     const r = correr(['--flujo', RUBEN, '--aplicar']);
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/NEGADO/);

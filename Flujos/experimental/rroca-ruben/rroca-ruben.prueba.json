@@ -111,7 +111,7 @@
               "id": "cb_avisoComprobanteEstado",
               "name": "avisoComprobanteEstado",
               "type": "string",
-              "value": "PENDING"
+              "value": "APPROVED"
             },
             {
               "id": "cb_avisoConsultaPlantilla",
@@ -123,7 +123,7 @@
               "id": "cb_avisoConsultaEstado",
               "name": "avisoConsultaEstado",
               "type": "string",
-              "value": "PENDING"
+              "value": "APPROVED"
             },
             {
               "id": "cb_avisoPlantillaIdioma",
