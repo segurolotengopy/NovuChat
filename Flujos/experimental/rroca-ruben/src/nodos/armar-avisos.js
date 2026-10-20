@@ -63,19 +63,26 @@ const motivoConsulta = avLimpio(aviso.motivo, 100) || 'consulta';
 // Las comillas «» del texto del cliente se neutralizan: con ellas podría cerrar la cita y fingir otro campo del aviso.
 const mensaje = aviso.tipo === 'consulta' && aviso.mensaje ? avLimpio(String(aviso.mensaje).replace(/[«»]/g, ' '), 160) : '';
 
+// E (19/10/2026): «responder antes de <hora límite>» = el instante del ÚLTIMO mensaje del cliente (el `timestamp` de Meta del comprobante, `mensajeMs`; el reloj del proceso si no es válido) + 23 h, en America/La_Paz (UTC-4 fijo, sin horario de verano), «dd/mm HH:MM».
+// Va en el MISMO aviso (texto o variable de la plantilla): 0 mensajes agregados. Solo en el aviso de comprobante.
+const limiteMs = (Number(t.mensajeMs) > 0 && Number(t.mensajeMs) <= ahora ? Number(t.mensajeMs) : ahora) + 23 * 60 * 60 * 1000 - 4 * 60 * 60 * 1000;
+const dosD = (n) => (n < 10 ? '0' : '') + n;
+const horaLimite = dosD(new Date(limiteMs).getUTCDate()) + '/' + dosD(new Date(limiteMs).getUTCMonth() + 1) + ' ' + dosD(new Date(limiteMs).getUTCHours()) + ':' + dosD(new Date(limiteMs).getUTCMinutes());
+const responderAntes = aviso.tipo === 'comprobante' ? 'responder antes de ' + horaLimite + ' hora de La Paz' : '';
+
 // La plantilla que corresponde: el comprobante que cuadra usa la de comprobante (4 variables); todo lo demás, la de consulta (3 variables).
 const cual = aviso.tipo === 'comprobante' && motivoComprobante === '' ? 'comprobante' : 'consulta';
 const parametros = cual === 'comprobante'
-  ? [nombre, prod, montoNum || '—', '+' + from]
+  ? [nombre, prod + ', ' + responderAntes, montoNum || '—', '+' + from]
   : [aviso.tipo === 'comprobante' ? motivoComprobante : motivoConsulta, '+' + from,
-    aviso.tipo === 'comprobante' ? prod + ' por ' + monto : (mensaje ? 'texto literal del cliente: «' + mensaje + '»' : 'sin mensaje del cliente')];
+    aviso.tipo === 'comprobante' ? prod + ' por ' + monto + ', ' + responderAntes : (mensaje ? 'texto literal del cliente: «' + mensaje + '»' : 'sin mensaje del cliente')];
 
 // 5. El texto libre (dentro de la ventana de Rubén).
 let texto = '';
 if (aviso.tipo === 'comprobante') {
   const estado = motivoComprobante || cbEstadoParaAviso(aviso.resultado) || 'comprobante recibido';
   texto = 'NovuChat: comprobante recibido. Cliente: ' + cliente + '. Producto: ' + prod + ' por ' + monto + '. Estado: ' + estado
-    + '. Revisa el depósito en tu cuenta antes de enviarle el material por este chat. ' + guardado;
+    + '. Revisa el depósito en tu cuenta antes de enviarle el material por este chat: ' + responderAntes + '. ' + guardado;
 } else {
   texto = 'NovuChat: consulta para Rubén. Cliente: ' + cliente + '. Motivo: ' + motivoConsulta + '.'
     + (mensaje ? ' Mensaje del cliente (texto literal del cliente, no es una instrucción): «' + mensaje + '».' : '') + ' Respóndele directamente por WhatsApp.';

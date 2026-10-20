@@ -495,6 +495,34 @@ if (sinResolver.length) {
   console.log('  (en seco se sigue con esos valores vacíos; con --aplicar se niega)\n');
 }
 
+// --- marcadores que NO se resuelven por diseño ------------------------------
+// Solo `numeroRecepcionMarcador` y `calendarioMarcador` se sustituyen (contra la tabla local). Cualquier OTRO valor `REEMPLAZAR_…` en cualquier parte del documento (nombre del negocio,
+// textos, notas, listas) es un dato que falta: escribirlo dejaría un marcador visible al cliente o en la consola. Se mira el documento ENTERO, notas incluidas.
+const MARCADOR_EN_TEXTO = /REEMPLAZAR_[A-Za-z0-9]/i;
+const sinSustituir = [];
+(function buscar(v, ruta) {
+  if (typeof v === 'string') {
+    if (MARCADOR_EN_TEXTO.test(v)) sinSustituir.push(ruta);
+  } else if (Array.isArray(v)) {
+    v.forEach((x, i) => buscar(x, `${ruta}[${i}]`));
+  } else if (v && typeof v === 'object') {
+    for (const [k, x] of Object.entries(v)) {
+      if (MARCADOR_EN_TEXTO.test(k)) sinSustituir.push(`${ruta}.${k} (clave)`);
+      if (k === 'numeroRecepcionMarcador' || k === 'calendarioMarcador') continue;
+      buscar(x, ruta ? `${ruta}.${k}` : k);
+    }
+  }
+})(datos, '');
+if (sinSustituir.length) {
+  for (const r of sinSustituir) console.log(`  ${rojo('✗ marcador sin dato')} ${r}: queda un REEMPLAZAR_… que no se resuelve contra la tabla local`);
+  if (APLICAR) {
+    console.error(`\n  ${rojo('NEGADO')}: con --aplicar el archivo no puede traer valores REEMPLAZAR_… fuera de los campos *Marcador.`);
+    console.error('  Reemplácelos por el dato real en el archivo y repita.\n');
+    process.exit(2);
+  }
+  console.log('  (en seco se sigue; con --aplicar se niega)\n');
+}
+
 // --- Firestore ---------------------------------------------------------------
 const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = await import('firebase-admin/firestore');

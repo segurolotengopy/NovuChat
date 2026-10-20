@@ -29,6 +29,16 @@
 #       escribe un .env igual al de --env con el id nuevo, sin mostrar valores.
 #       Se niega si ya hay un flujo con ese nombre (--forzar lo permite).
 #
+# EL FLUJO DE RUBEN (tenant rroca-ruben) TIENE UNA GUARDIA PROPIA (PR-5): con --aplicar
+# se NIEGA si el archivo trae un marcador REEMPLAZAR_* o si una plantilla de aviso no
+# esta APPROVED (Flujos/experimental/rroca-ruben/construir.mjs --publicable), y despues
+# pide confirmacion explicita (escribir PUBLICAR RUBEN; sin terminal, solo con
+# --confirmo-ruben). En seco informa lo que falta, sin abortar. La guardia estricta es del
+# flujo CONVERSACIONAL («NovuChat — Venta digital de Rubén…» o rroca-ruben[.prueba][.local].json);
+# cualquier otro flujo con rroca-ruben en el nombre exige solo la confirmacion. Con --crear el
+# flujo vivo es la referencia de credenciales y no se evalua como destino; --encender revisa el
+# flujo VIVO con la guardia. Los demas flujos no cambian.
+#
 # EL ARCHIVO Y EL FLUJO VIVO TIENEN QUE SER EL MISMO FLUJO, y el script lo
 # comprueba por el nombre antes de escribir: el id sale de `--env` y el archivo
 # de `--flujo`, que son dos fuentes distintas. Cada demo tiene su propio env:
@@ -53,6 +63,7 @@ ENCENDER=0
 APAGAR=0
 ENV_NUEVO=""
 ENV_FILE=".env"
+CONFIRMO_RUBEN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -67,9 +78,10 @@ while [[ $# -gt 0 ]]; do
     --env-nuevo) ENV_NUEVO="${2:?--env-nuevo necesita una ruta}"; shift 2 ;;
     --env-nuevo=*) ENV_NUEVO="${1#*=}"; shift ;;
     --forzar)  FORZAR=1; shift ;;
+    --confirmo-ruben) CONFIRMO_RUBEN=1; shift ;;
     --env)     ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*)   ENV_FILE="${1#*=}"; shift ;;
-    -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
 done
@@ -83,6 +95,76 @@ if [[ "$FLUJO" != *.local.json && -f "$PREPARADO" ]]; then
   echo "  $PREPARADO"
   echo
   FLUJO="$PREPARADO"
+fi
+
+# --- LA GUARDIA DEL FLUJO DE RUBEN (tenant rroca-ruben, PR-5) ------------------
+# Se reconoce por el nombre del archivo o por el nombre del flujo de ORIGEN, sin
+# distinguir mayusculas, antes de leer el .env y de hablar con n8n; y se REPITE
+# despues de leer el flujo VIVO (destino): si el vivo es el de Ruben, la guardia
+# y la confirmacion valen aunque el archivo se llame de otra forma, con --forzar
+# o con --env. El JSON versionado lleva marcadores REEMPLAZAR_* y las plantillas
+# de aviso en PENDING: publicarlo asi deja el aviso a Rubén sin salir fuera de su
+# ventana, o la entrada del receptor con una ruta falsa.
+# `--apagar` no escribe contenido y es seguro: nunca pide confirmacion.
+ruben_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto | confirmar
+  if [[ "$3" != "estricto" ]]; then
+    # Otro flujo del tenant (p. ej. el de rescate): no lleva la Config base con las plantillas,
+    # asi que `--publicable` no aplica; solo se exige la confirmacion.
+    echo "Flujo del tenant rroca-ruben que no es el conversacional ($1): solo se pide la confirmacion."
+    if [[ $APLICAR -eq 1 ]]; then ruben_confirmar; fi
+    return 0
+  fi
+  echo "Flujo de Rubén (rroca-ruben): se revisa la guardia de publicación ($1)."
+  if node Flujos/experimental/rroca-ruben/construir.mjs --publicable --flujo "$2"; then
+    GUARDIA_OK=1
+  else
+    GUARDIA_OK=0
+  fi
+  if [[ $APLICAR -eq 1 ]]; then
+    if [[ $GUARDIA_OK -ne 1 ]]; then
+      printf '\033[1;31m✗ NEGADO: el flujo de Rubén no se publica con marcadores sin sustituir ni con plantillas sin aprobar.\033[0m\n' >&2
+      exit 1
+    fi
+    ruben_confirmar
+  elif [[ $GUARDIA_OK -ne 1 ]]; then
+    printf '\033[0;33m  (en seco se sigue; con --aplicar se niega)\033[0m\n\n'
+  fi
+}
+# Clasifica un flujo del tenant: vacio (no es de Ruben) | confirmar (cualquier flujo con rroca-ruben
+# en el nombre del archivo o del flujo) | estricto (el CONVERSACIONAL: el que genera construir.mjs,
+# «NovuChat — Venta digital de Rubén (rroca-ruben…)», o sus archivos rroca-ruben[.prueba][.local].json).
+ruben_clase() {  # $1 = archivo JSON ; $2 = nombre del archivo en minusculas
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import json, re, sys
+ruta, base = sys.argv[1], sys.argv[2]
+try:
+    nombre = str(json.load(open(ruta, encoding="utf-8")).get("name", "")).lower()
+except Exception:
+    nombre = ""
+if re.fullmatch(r"rroca-ruben(\.prueba)?(\.local)?\.json", base) or nombre.startswith("novuchat — venta digital de rub"):
+    print("estricto")
+elif base.startswith("rroca-ruben") or "rroca-ruben" in nombre:
+    print("confirmar")
+PY
+}
+ruben_confirmar() {
+  if [[ $CONFIRMO_RUBEN -ne 1 ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "Va a escribir el flujo de Rubén en n8n. Escriba PUBLICAR RUBEN para confirmar: " RESPUESTA
+      [[ "$RESPUESTA" == "PUBLICAR RUBEN" ]] || { echo "✗ Sin confirmación: no se publica." >&2; exit 1; }
+    else
+      echo "✗ NEGADO: sin terminal, el flujo de Rubén solo se publica con --confirmo-ruben." >&2
+      exit 1
+    fi
+  fi
+}
+ES_RUBEN=0
+if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
+  CLASE_RUBEN="$(ruben_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')")"
+  if [[ -n "$CLASE_RUBEN" ]]; then
+    ES_RUBEN=1
+    ruben_guardia "archivo de origen" "$FLUJO" "$CLASE_RUBEN"
+  fi
 fi
 
 [[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
@@ -112,6 +194,22 @@ if [[ "$COD" != "200" ]]; then
   esac
   head -c 300 "$TMP/vivo.json" 2>/dev/null || true
   exit 1
+fi
+
+# --- la guardia, repetida sobre el flujo VIVO (destino) ------------------------
+# El nombre del archivo de origen no prueba nada sobre el destino: el id sale de
+# N8N_WORKFLOW_ID. Si el flujo vivo es el de Rubén, se exige lo mismo que arriba.
+CLASE_VIVO="$(ruben_clase "$TMP/vivo.json" "")"
+if [[ -n "$CLASE_VIVO" ]]; then
+  if [[ $ENCENDER -eq 1 ]]; then
+    # Activar = publicar: se revisa el flujo VIVO con la guardia (si es el conversacional) y despues
+    # pide la confirmacion (no hay contenido nuevo que revisar).
+    ruben_guardia "encender el flujo vivo" "$TMP/vivo.json" "$CLASE_VIVO"
+  elif [[ $APAGAR -eq 0 && $ES_RUBEN -eq 0 && $CREAR -eq 0 ]]; then
+    # Con --crear `vivo.json` es la REFERENCIA de credenciales, no el destino: no se evalua.
+    ES_RUBEN=1
+    ruben_guardia "flujo vivo de destino" "$FLUJO" "$CLASE_VIVO"
+  fi
 fi
 
 # --- ENCENDER O APAGAR UN FLUJO QUE YA EXISTE ---------------------------------

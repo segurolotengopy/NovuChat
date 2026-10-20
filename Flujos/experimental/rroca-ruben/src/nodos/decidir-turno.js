@@ -80,8 +80,8 @@ if (pre === 'pack' || pre === 'libro') return salir(elegir(pre, ''));
 if (pre === 'closer' || pre === 'videos') return salir(hayQrAbierto ? elegir(pre, '') : { tipo: 'complemento', producto: pre, cat: cat, conPresentacion: !ficha.saludado });
 // Con un QR abierto, la consulta tampoco reabre el saludo: recibe el recordatorio del QR (un solo QR a la vez).
 if (pre === 'consulta') return salir(hayQrAbierto ? { tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat } : { tipo: 'saludo', pregunta: 'consulta', cat: cat });
-const derivacion = rrDerivacion(norm);
-if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', aviso: avisoDeConsulta(derivacion.clave, derivacion.motivo), cat: cat });
+const derivacion = rrDerivacion(norm, { comprobante: ficha.comprobanteMs > 0 || cobro.enRevision === true, qrAbierto: hayQrAbierto });
+if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: derivacion.clave, aviso: avisoDeConsulta(derivacion.clave, derivacion.motivo), cat: cat });
 if (rrPreguntaPorIngresos(norm)) return salir({ tipo: 'ingresos', cat: cat });
 // Con un QR abierto, cualquier texto recibe el recordatorio (un solo QR a la vez); el modelo no interviene.
 if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });

@@ -35,7 +35,8 @@ function rrSeguro(texto) {
   return texto;
 }
 // La ficha de un teléfono: nueva, o la guardada si es un objeto. Solo cuenta lo de ESE teléfono. PR-2 agrega: `saludado`, `usados` (los botones que ya pulsó: no reaparecen), `pedidos`
-// (contador para el id del pedido), `qrHastaMs` (hasta cuándo hay un QR abierto, por si la consola tarda en saberlo), `producto` (el último pedido) y `ultimoModelo` (lo último que dijo el modelo).
+// (contador para el id del pedido), `qrHastaMs` (hasta cuándo hay un QR abierto, por si la consola tarda en saberlo), `producto` (el último pedido), `ultimoModelo` (lo último que dijo el modelo)
+// y `comprobanteMs` (cuándo llegó el último comprobante que se recibió; sin él no hay «queja de no entrega»).
 function rrFichaVigente(f) {
   const ids = f && Array.isArray(f.ultimosIds) ? f.ultimosIds.filter((x) => typeof x === 'string') : [];
   const usados = f && Array.isArray(f.usados) ? f.usados.filter((x) => typeof x === 'string' && /^b_[a-z]{1,12}$/.test(x)).slice(-10) : [];
@@ -43,6 +44,7 @@ function rrFichaVigente(f) {
     ultimosIds: ids.slice(-RR_TOPE_IDS), turnos: f && Number.isFinite(f.turnos) ? f.turnos : 0, ultimoMs: f && Number.isFinite(f.ultimoMs) ? f.ultimoMs : 0,
     saludado: !!f && f.saludado === true, usados: usados, pedidos: f && Number.isFinite(f.pedidos) && f.pedidos >= 0 ? Math.floor(f.pedidos) : 0,
     qrHastaMs: f && Number.isFinite(f.qrHastaMs) ? f.qrHastaMs : 0,
+    comprobanteMs: f && Number.isFinite(f.comprobanteMs) && f.comprobanteMs > 0 ? f.comprobanteMs : 0,
     avisosConsulta: rrAvisosConsulta(f && f.avisosConsulta),
     producto: f && typeof f.producto === 'string' && Object.prototype.hasOwnProperty.call(RR_PRODUCTOS, f.producto) ? f.producto : '',
     ultimoModelo: f && typeof f.ultimoModelo === 'string' ? f.ultimoModelo.slice(0, 300) : '',
@@ -96,7 +98,7 @@ const RR_VENTANA_AVISO_CONSULTA_MS = 30 * 60 * 1000;   // a lo más un aviso de 
 // La ventana de servicio de Meta es de 24 h desde el último mensaje de Rubén al número; se deja un margen de media hora: dentro va texto libre, fuera va plantilla.
 const RR_VENTANA_RUBEN_MS = 23.5 * 60 * 60 * 1000;
 // Los motivos de los avisos de consulta (la clave limita el aviso: uno cada 30 minutos por teléfono y clave).
-const RR_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_ruben', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo'];
+const RR_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_ruben', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_entrega', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo'];
 const RR_MINUTOS_QR = 15;   // el plazo de la regla 2 del cobro: lo manda el servidor; aquí solo es una guarda para no abrir dos QR seguidos
 
 function rrProductoDeBoton(id) {
@@ -190,11 +192,21 @@ function rrIntencionDeCompra(n) {
 }
 // Lo que ve Rubén personalmente (o lo que ningún texto fijo sabe): factura, otro medio de pago, garantía, reclamo, hablar con una persona, el acceso al material y los descuentos.
 // Devuelve { clave, motivo } (la clave limita el aviso; el motivo es lo que lee Rubén) o null.
-function rrDerivacion(n) {
+// `ctx` = { comprobante: ya llegó un comprobante de este teléfono (ficha o cobro en revisión), qrAbierto: hay un QR abierto }. Sin ctx se asume que NO hay comprobante.
+function rrDerivacion(n, ctx) {
+  const conComprobante = !!ctx && ctx.comprobante === true;
+  const qrAbierto = !!ctx && ctx.qrAbierto === true;
   if (/\bfactura\b|\bnit\b/.test(n)) return { clave: 'factura', motivo: 'factura' };
   if (/\botro (medio|metodo|forma) de pago\b|\b(paypal|zelle|tigo money|contra entrega|en cuotas|numero de cuenta|datos de la cuenta)\b|\b(pagar|pago|pagarte|pagarle|cancelar) (con|en|por) (tarjeta|efectivo)\b/.test(n)) return { clave: 'otro_medio_pago', motivo: 'otro medio de pago' };
-  if (/\b(garantia|devolucion|devolver|reembolso|estafa)\b/.test(n)) return { clave: 'garantia', motivo: 'garantía o devolución' };
-  if (/\b(reclamo|queja|no me llego|no me ha llegado|no recibi)\b/.test(n)) return { clave: 'reclamo', motivo: 'reclamo' };
+  if (/\b(garantia|devolucion|devolver|reembolso)\b/.test(n)) return { clave: 'garantia', motivo: 'garantía o devolución' };
+  // F (19/10/2026): la queja de NO ENTREGA se detecta AQUÍ, por código (nunca por el prompt), con y sin tildes (`n` ya viene normalizado), y SOLO si ya llegó un comprobante de este teléfono
+  // (ficha o cobro en revisión): antes de pagar, «no me llegó el QR» o «sigo esperando tu respuesta» NO son una entrega fallida y siguen su camino (recordatorio del QR o conversación).
+  // Con un QR abierto, un texto que nombra «qr» o «código» tampoco lo es (es del pedido nuevo). Cubre presente, he/hemos/ha/han, segunda persona (enviaste/mandaste) y aún/todavía.
+  // El texto que sale no afirma ni promete que se entregó (`rrTextoDerivacion`, clave `no_entrega`).
+  const quejaEntrega = /\bno (me |nos )?(ha |han |he |hemos )?(llego|llegaron|llegado|llega|llegan|recibi|recibido|recibo|recibimos|enviaron|mandaron|enviado|mandado|enviaste|mandaste|envio|mando)\b|\b(sigo|seguimos) esperando\b|\b(todavia|aun) no (me |nos )?(ha |han )?(llego|llegaron|llegado|llega|llegan|recibi|recibido|recibo|enviaron|mandaron|tengo|tenemos)\b|\bsigo sin (recibir|tener)\b|\bnunca (me )?(llego|llegaron|recibi)\b/.test(n);
+  if (quejaEntrega && conComprobante && !(qrAbierto && /\b(qr|codigo)\b/.test(n))) return { clave: 'no_entrega', motivo: 'queja de no entrega: el cliente dice que no recibió el material' };
+  // «estafa» no es una garantía: se atiende como reclamo (aviso + botón, sin hablar de factura ni de garantía).
+  if (/\b(reclamo|queja|estafa)\b/.test(n)) return { clave: 'reclamo', motivo: 'reclamo' };
   if (/\b(hablar con|comunicame con|pasame con|contactar a|numero de) (ruben|una persona|alguien|un humano|el dueno|el autor)\b|\bquiero hablar con (ruben|una persona|alguien|un humano|un asesor|asesor|el dueno|el autor)\b/.test(n)) return { clave: 'hablar_con_ruben', motivo: 'quiere hablar con Rubén' };
   if (/\bno (puedo|logro|me deja) (abrir|descargar|entrar|acceder)\b|\bno abre\b|\b(link|enlace) (roto|no (abre|funciona))\b/.test(n)) return { clave: 'acceso_material', motivo: 'problema para abrir o descargar el material' };
   if (/\b(descuento|rebaja|mas barato|precio especial|precio de mayorista|precio por mayor)\b/.test(n)) return { clave: 'descuento', motivo: 'pide descuento o precio especial' };
@@ -308,9 +320,17 @@ function rrTextoQrPendiente(producto, monto) {
   return 'Ya tienes un QR abierto con ' + p + '.' + m + ' mándame aquí la captura del comprobante. Si algo falla, escríbele a Rubén con el botón.';
 }
 // Derivación a Rubén. `salio` = el aviso devolvió un `wamid` real: SOLO entonces se dice «le avisé».
-function rrTextoDerivacion(motivo, salio) {
+function rrTextoDerivacion(motivo, salio, clave) {
   // `salio` = 'repetido': el aviso quedó suprimido por el límite de 30 minutos y lo que Rubén recibió trató OTRO contenido; no se dice «le avisé» de ESTA consulta.
   if (salio === 'repetido' && motivo === 'consulta') return 'Eso lo ve Rubén directamente. Rubén ya recibió el aviso de tu consulta anterior; si quieres, escríbele directo con el botón.';
+  // F5 (19/10/2026): factura, garantía, devolución, otros medios de pago, reclamos y pagos que no aparecen se conversan DIRECTAMENTE con el autor: aviso + botón, y NUNCA una promesa de garantía,
+  // devolución ni resultado. La queja de no entrega no afirma que se entregó. Solo para el motivo `consulta`; el resto de los motivos conserva su texto.
+  if (motivo === 'consulta' && (clave === 'factura' || clave === 'garantia' || clave === 'otro_medio_pago' || clave === 'reclamo' || clave === 'no_entrega')) {
+    const intro = clave === 'no_entrega' ? 'Lamento la espera. Rubén revisa el pago y envía el material por este chat hasta en 24 horas; desde aquí no puedo confirmarte si ya salió.'
+      : (clave === 'factura' || clave === 'garantia' ? 'Sobre factura, garantía o devolución puedes conversar directamente con el autor, Rubén; desde aquí no puedo prometerte nada de eso.'
+        : 'Eso lo ve directamente el autor, Rubén, y puedes conversarlo con él.');
+    return salio === true ? intro + ' Le avisé; también puedes escribirle directo con el botón.' : intro + ' No pude avisarle; escríbele directo con el botón.';
+  }
   if (motivo === 'qr_sin_aviso') return 'Por ahora no puedo mostrarte el QR de pago. Escríbele directo a Rubén con el botón.';
   const base = motivo === 'sin_cobro' || motivo === 'sin_medio' || motivo === 'sin_precio' ? 'Por ahora no puedo mostrarte el QR de pago.'
     : (motivo === 'en_revision' ? 'Tu comprobante anterior está en revisión con Rubén.' : 'Eso lo ve Rubén directamente.');
@@ -318,7 +338,7 @@ function rrTextoDerivacion(motivo, salio) {
   return salio === true ? base + ' Le avisé; también puedes escribirle directo con el botón.' : base + ' No pude avisarle a Rubén; escríbele directo con el botón.';
 }
 // El texto al cliente según el cotejo. `resultado`: cuadra | aproximado | reintentar | ilegible | sin_cotejo | ya_cotejado | simulado (el vocabulario de `cbResultadoVenta`). Devuelve { cuerpo, boton }.
-// Nunca «acreditado», «verificado», «validado» ni un plazo de entrega: el comprobante llegó y los datos coinciden; quien confirma que entró la plata es el banco, y Rubén.
+// Nunca «acreditado», «verificado», «validado» ni «ya te lo enviamos»; el plazo es «hasta en 24 horas» (Andres, 19/10/2026): el comprobante llegó y los datos coinciden; quien confirma que entró la plata es el banco, y Rubén.
 function rrTextoComprobante(resultado, causa, salio, diferencia) {
   const sinAviso = 'Recibí tu comprobante pero no pude avisarle a Rubén. Escríbele directo con el botón.';
   if (resultado === 'aproximado') {
@@ -330,7 +350,7 @@ function rrTextoComprobante(resultado, causa, salio, diferencia) {
   }
   if (resultado === 'cuadra') {
     return salio === true
-      ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Rubén: él lo revisa y te envía el material por este chat.', boton: false }
+      ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Rubén: él revisará el pago y te enviará los enlaces del material por este chat hasta en 24 horas.', boton: false }
       : { cuerpo: sinAviso, boton: true };
   }
   if (resultado === 'reintentar') {

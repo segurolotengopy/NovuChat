@@ -6,6 +6,9 @@
  *
  *   node Flujos/experimental/rroca-ruben/construir.mjs               escribe rroca-ruben.json y rroca-ruben.prueba.json
  *   node Flujos/experimental/rroca-ruben/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
+ *   node Flujos/experimental/rroca-ruben/construir.mjs --publicable [--flujo <json>] [--datos <json>]
+ *                                                                    GUARDIA DE PUBLICACIÓN (PR-5): no escribe; sale 1 si el flujo trae un `REEMPLAZAR_*` sin sustituir o si las plantillas
+ *                                                                    de aviso no están APPROVED (con nombre e idioma). Sin `--flujo`, revisa `rroca-ruben.json`; `publicar-flujo.sh` la corre sobre lo que va a escribir
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos. El código de los nodos lo arma el armador genérico
@@ -236,6 +239,62 @@ export function guardias(variante, flujo) {
   return h;
 }
 
+
+// ----------------------------------------------------------------- la guardia de publicación (PR-5)
+/**
+ * El JSON versionado es técnicamente publicable (PR-3) pero NO debe llegar a n8n con marcadores `REEMPLAZAR_*` ni con plantillas de aviso que Meta no aprobó: con una plantilla
+ * sin aprobar, fuera de la ventana de Rubén no sale ningún aviso («plantilla_no_configurada»), y un marcador en una ruta o en un identificador rompe la entrada del receptor.
+ * Esto NO es una guardia del armado (el JSON versionado lleva marcadores a propósito: el repositorio es público): es la de PUBLICAR, y se corre sobre lo que se va a escribir.
+ *
+ *   flujo  el JSON a publicar (el versionado, o el `.local.json` que deja `preparar-import.sh`);
+ *   datos  los datos (`configBase`): las plantillas se exigen APPROVED aquí también, porque de ahí sale «Config base» en el próximo armado.
+ * Devuelve la lista de hallazgos (vacía si se puede publicar). Los marcadores se nombran, nunca se muestran sus valores.
+ */
+export const CLAVES_DE_PLANTILLA = [
+  { estado: 'avisoComprobanteEstado', nombre: 'avisoComprobantePlantilla' },
+  { estado: 'avisoConsultaEstado', nombre: 'avisoConsultaPlantilla' },
+];
+// Un marcador es CUALQUIER `REEMPLAZAR_` (sin distinguir mayúsculas, tras normalizar a NFKC); `REEMPLAZAR_*` y `REEMPLAZAR_…` son texto de comentarios y se quitan antes de mirar.
+const MARCADOR_CRUDO = /reemplazar_/i;
+// Tampoco lo es el literal de expresión regular `^REEMPLAZAR_/` que usa el código de los nodos para descartar marcadores sin llenar.
+const sinComentarios = (t) => t.normalize('NFKC').replace(/\^REEMPLAZAR_\//gi, '').replace(/REEMPLAZAR_(?:\*|…|\.\.\.)/gi, '');
+const hayMarcador = (t) => MARCADOR_CRUDO.test(sinComentarios(String(t)));
+const VALOR_LLENO = (v) => typeof v === 'string' && v.trim() !== '' && !hayMarcador(v);
+
+function hallazgosDePlantillas(cb, donde) {
+  const h = [];
+  if (!cb || typeof cb !== 'object') return [`${donde}: no trae los datos de las plantillas de aviso`];
+  for (const { estado, nombre } of CLAVES_DE_PLANTILLA) {
+    if (cb[estado] !== 'APPROVED') h.push(`${donde}: ${estado} es ${cb[estado] === undefined ? '«ausente»' : '(distinto de APPROVED)'} y tiene que ser APPROVED (Meta aún no aprobó la plantilla)`);
+    if (!VALOR_LLENO(cb[nombre])) h.push(`${donde}: falta el nombre de la plantilla (${nombre})`);
+  }
+  if (!VALOR_LLENO(cb.avisoPlantillaIdioma)) h.push(`${donde}: falta el idioma de las plantillas (avisoPlantillaIdioma)`);
+  return h;
+}
+
+export function guardiaDePublicacion({ flujo, datos }) {
+  const h = [];
+  const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
+  // 1. Marcadores sin sustituir, en cualquier parte del flujo (parámetros, credenciales, rutas). `REEMPLAZAR_…` con puntos suspensivos o `REEMPLAZAR_*` es texto de un comentario, no un marcador.
+  // Se mira TODO el flujo (settings, pinData, staticData, connections, nivel superior), no solo `nodes`; si se puede, se atribuye al nodo.
+  const marcadores = new Set();
+  const marcasEn = (v) => (sinComentarios(JSON.stringify(v) || '').match(/reemplazar_[a-z0-9_\-]*/gi) || []);
+  const enNodos = new Set();
+  for (const n of nodos) for (const m of marcasEn(n)) { marcadores.add(`${m} (nodo «${n.name}»)`); enNodos.add(m); }
+  const { nodes: _nodos, ...resto } = flujo || {};
+  for (const [campo, valor] of Object.entries(resto)) for (const m of marcasEn(valor)) if (!enNodos.has(m) || campo === 'pinData' || campo === 'staticData') marcadores.add(`${m} (${campo === 'pinData' || campo === 'staticData' ? campo : `campo «${campo}»`})`);
+  if (!nodos.length) h.push('el flujo no trae nodos');
+  for (const m of marcadores) h.push(`marcador sin sustituir: ${m}`);
+  // 2. Las plantillas, en lo que se publica («Config base»)…
+  const base = nodos.find((n) => n.name === 'Config base');
+  const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
+  if (!Array.isArray(lista)) h.push('el flujo no trae «Config base»: no se puede comprobar el estado de las plantillas');
+  else h.push(...hallazgosDePlantillas(Object.fromEntries(lista.map((a) => [a.name, a.value])), 'Config base'));
+  // 3. …y en los datos.
+  h.push(...hallazgosDePlantillas(datos && datos.configBase, 'datos'));
+  return h;
+}
+
 // ----------------------------------------------------------------- armar
 const sinMarcas = (v, esCodigo) => {
   if (typeof v === 'string') return esCodigo ? !v.startsWith('@@') : !v.includes('@@');
@@ -310,8 +369,35 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
 // ----------------------------------------------------------------- línea de comandos
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
+  if (args.includes('--publicable')) {
+    // --publicable [--flujo <json>] [--datos <json>]: solo lee. Sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal.
+    const opcion = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+    const resto = args.filter((a, i) => a !== '--publicable' && a !== '--flujo' && a !== '--datos' && args[i - 1] !== '--flujo' && args[i - 1] !== '--datos');
+    if (resto.length || args.includes('--verificar') || ['--flujo', '--datos'].some((n) => args.includes(n) && !opcion(n))) {
+      console.error('✗ uso: construir.mjs --publicable [--flujo <json>] [--datos <json>]'); process.exit(2);
+    }
+    try {
+      const rutaFlujo = opcion('--flujo') || join(AQUI, 'rroca-ruben.json');
+      const textoFlujo = leerSiExiste(rutaFlujo, 'el flujo');
+      if (textoFlujo === null) throw new Error(`no existe el flujo ${rutaFlujo}`);
+      let flujoJson;
+      try { flujoJson = JSON.parse(textoFlujo); } catch { throw new Error(`JSON inválido en ${rutaFlujo}`); }
+      const hallazgos = guardiaDePublicacion({ flujo: flujoJson, datos: cargarDatos(opcion('--datos') || ARCHIVO_DE_DATOS) });
+      if (hallazgos.length) {
+        console.error('✗ El flujo de Rubén NO se puede publicar todavía:');
+        for (const x of hallazgos) console.error(`  - ${x}`);
+        process.exit(1);
+      }
+      console.log('✓ Sin marcadores REEMPLAZAR_* y con las plantillas de aviso APPROVED: se puede publicar (con la confirmación de publicar-flujo.sh).');
+      process.exit(0);
+    } catch (e) {
+      // Un SyntaxError puede traer un fragmento del archivo: mensaje fijo, sin contenido.
+      console.error(e instanceof SyntaxError ? '✗ JSON inválido' : `✗ ${e instanceof Error ? e.message : String(e)}`);
+      process.exit(1);
+    }
+  }
   const desconocidos = args.filter((a) => a !== '--verificar');
-  if (desconocidos.length) { console.error(`✗ argumento desconocido: ${desconocidos.join(' ').slice(0, 60)}. Solo existe --verificar; sin argumentos escribe los JSON.`); process.exit(2); }
+  if (desconocidos.length) { console.error(`✗ argumento desconocido: ${desconocidos.join(' ').slice(0, 60)}. Solo existen --verificar y --publicable; sin argumentos escribe los JSON.`); process.exit(2); }
   const verificar = args.includes('--verificar');
   try {
     let difiere = false;

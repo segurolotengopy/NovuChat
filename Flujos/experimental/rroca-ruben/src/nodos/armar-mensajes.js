@@ -116,7 +116,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     const r = rrTextoComprobante(plan.resultado, plan.causa, estadoAviso, plan.diferencia);
     m = r.boton === true ? conRuben(r.cuerpo) : texto(r.cuerpo);
   } else if (tipoDePlan === 'derivar') {
-    m = conRuben(rrTextoDerivacion(plan.motivo, estadoAviso));
+    m = conRuben(rrTextoDerivacion(plan.motivo, estadoAviso, plan.clave));
   } else if (tipoDePlan === 'imagen_otra') {
     m = texto(RR_TEXTO_IMAGEN);
   } else if (tipoDePlan === 'audio') {
@@ -147,6 +147,8 @@ if (claveOk) {
   // El comprobante resuelto (todo menos «reintentar» e «ilegible», que siguen con el cobro abierto) cierra el cobro o lo pasa a Rubén: la guarda de 15 minutos del QR ya no tiene sentido
   // y su tiempo restante daría un falso «Ya tienes un QR abierto». Se guarda el valor previo para restaurarlo si la respuesta no sale (`Resumen del turno`).
   if (tipoDePlan === 'comprobante' && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible' && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
+  // Un comprobante recibido (todo menos «reintentar» e «ilegible») habilita la queja de no entrega: antes de pagar no hay nada que entregar.
+  if (tipoDePlan === 'comprobante' && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible') ficha.comprobanteMs = ahora;
   fichas.mapa[from] = ficha;
   rrBarrer(fichas.mapa, ahora);
 }

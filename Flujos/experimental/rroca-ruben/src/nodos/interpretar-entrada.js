@@ -9,6 +9,11 @@
 const carga = cnPrimero('Carga de entrada') || {};
 const cfg = cnCfg();
 const msg = Array.isArray(carga.messages) ? carga.messages[0] : undefined;
+// El instante en que el CLIENTE escribió (Meta manda `timestamp` en segundos): de ahí parte la hora límite del aviso. Solo vale si es un número finito, no posterior al reloj del proceso y
+// de las últimas 24 h; si no, `mensajeMs` es el reloj del proceso. `ahoraMs` (el reloj del proceso) sigue siendo el de las ventanas y las fichas.
+const ahoraTurno = Number(carga.ahoraMs) || Date.now();
+const tsMeta = msg && /^\d{1,12}$/.test(String(msg.timestamp)) ? Number(msg.timestamp) * 1000 : NaN;
+const mensajeMs = Number.isFinite(tsMeta) && tsMeta <= ahoraTurno && ahoraTurno - tsMeta <= 24 * 60 * 60 * 1000 ? tsMeta : ahoraTurno;
 if (!msg || typeof msg !== 'object') return [];
 if (['reaction', 'request_welcome', 'system', 'ephemeral'].indexOf(String(msg.type || '')) >= 0) return [];
 
@@ -92,6 +97,7 @@ return [{ json: {
   esVisual: esVisual,
   esDocumento: tipo === 'document',
   mediaId: mediaId,
-  ahoraMs: Number(carga.ahoraMs) || Date.now(),
+  ahoraMs: ahoraTurno,
+  mensajeMs: mensajeMs,
   prueba: carga.prueba || null,
 } }];
