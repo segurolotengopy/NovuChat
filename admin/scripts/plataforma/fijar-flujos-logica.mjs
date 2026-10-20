@@ -1,0 +1,33 @@
+/**
+ * LA DECISIÓN DE `fijar-flujos.mjs`, SIN NUBE: dado el estado de un comercio y la lista de flujos que se pide,
+ * qué se haría o por qué se rechaza. Pura (sin Firebase ni disco) para poder probarla negando.
+ *
+ * REGLAS. Se rechaza, sin escribir, cuando:
+ *   · no se pide ningún flujo, se repite uno o no es un flujo del registro;
+ *   · la ficha no existe;
+ *   · la ficha ya tiene `modulos` (la lista nueva derivada del registro: cambiar `flujos` sola la dejaría incoherente);
+ *   · se QUITA un flujo que usa una ruta de WhatsApp del comercio (el número dejaría de tener a dónde ir).
+ * No se borra la configuración de un flujo quitado (`config/<doc>`): se informa y queda sin uso.
+ */
+export function planearFlujos({ ficha, pedidos, rutas = [], esFlujo }) {
+  const problemas = [];
+  if (!ficha) return { error: 'el comercio no existe' };
+  if (!Array.isArray(pedidos) || pedidos.length === 0) problemas.push('falta --flujos (al menos uno)');
+  const lista = Array.isArray(pedidos) ? pedidos.map((f) => String(f).trim()) : [];
+  if (new Set(lista).size !== lista.length) problemas.push('--flujos repite un flujo');
+  for (const f of lista) if (!esFlujo(f)) problemas.push(`flujo desconocido: ${f || '(vacío)'}`);
+  if (ficha.modulos !== undefined && ficha.modulos !== null) {
+    problemas.push('la ficha ya tiene `modulos`: no se cambia `flujos` sola (usar aplicar-modulos-tenant)');
+  }
+  const antes = Array.isArray(ficha.flujos) ? ficha.flujos.map(String) : [ficha.vertical].filter(Boolean).map(String);
+  const quitados = antes.filter((f) => !lista.includes(f));
+  const agregados = lista.filter((f) => !antes.includes(f));
+  for (const r of rutas) {
+    if (quitados.includes(String(r.flujo))) {
+      problemas.push(`una ruta de WhatsApp (…${String(r.numero ?? '').slice(-4)}) usa el flujo ${r.flujo}: no se puede quitar`);
+    }
+  }
+  if (problemas.length) return { error: problemas.join('; ') };
+  const igual = antes.length === lista.length && antes.every((f, i) => f === lista[i]) && ficha.vertical === lista[0];
+  return { antes, despues: lista, quitados, agregados, vertical: lista[0], sinCambios: igual };
+}
