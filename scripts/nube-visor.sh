@@ -331,7 +331,11 @@ INTENTOS="${NUBE_VISOR_INTENTOS:-9}"; ESPERA="${NUBE_VISOR_ESPERA:-10}"
 if [[ "$TIPO" == http ]]; then
   SIN="credencial"; MSG_ESPERADO="texto 401 «no autorizado»"
   MSG_PROPIO="sin credencial contesta NUESTRO código (401 «no autorizado»), no el 403 de Google"
-  QUE_DEJA="El flujo n8n «Salida de persona» ya no puede llamar a"; BARRERA="la credencial de ingesta del número"
+  case "$SERVICIO" in
+    "$SERVICIO_RESCATES") QUE_DEJA="El flujo n8n de rescate de 22 h ya no puede llamar a" ;;
+    *)                    QUE_DEJA="El flujo n8n «Salida de persona» ya no puede llamar a" ;;
+  esac
+  BARRERA="la credencial de ingesta del número"
 else
   SIN="sesión"; MSG_ESPERADO="JSON de Firebase"
   MSG_PROPIO="sin sesión contesta NUESTRO código (JSON de Firebase), no el 403 de Google"

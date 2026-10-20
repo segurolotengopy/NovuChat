@@ -4106,6 +4106,31 @@ describe('H2-R: intervención de una persona, cerrada al navegador', () => {
       await assertFails(updateDoc(doc(propietario(), c1()), { turno: turnoOk }));
     });
 
+    it('rescate: ni la ingesta ni una persona del negocio lo crean, cambian ni borran', async () => {
+      const rescate = { enviadoEn: Timestamp.now(), phoneNumberId: '100000000000102', anclaMs: 1 };
+      const base = { telefono: '59170000009', ultimoMensaje: 'Hola', canal: 'whatsapp', ultimoEn: Timestamp.now(), mensajesTotal: 1 };
+      // Crear con la marca: negado; control positivo sin ella.
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c-rescate`), { ...base, rescate }));
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c-rescate`), base));
+      // Agregarla a una conversación que no la tiene: negado.
+      await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c-rescate`), { rescate }));
+      await assertFails(updateDoc(doc(operA(), c1()), { rescate }));
+      await assertFails(updateDoc(doc(adminA(), c1()), { rescate }));
+      // Con la marca ya escrita por el servidor: no se cambia, no se borra, ni por campo anidado.
+      await entorno.withSecurityRulesDisabled(async (ctx) => { await updateDoc(doc(ctx.firestore(), c1()), { rescate }); });
+      for (const fs of [ingestaA(), operA(), adminA()]) {
+        await assertFails(updateDoc(doc(fs, c1()), { rescate: deleteField() }));
+        await assertFails(updateDoc(doc(fs, c1()), { 'rescate.anclaMs': 2 }));
+        await assertFails(updateDoc(doc(fs, c1()), { rescate: { ...rescate, anclaMs: 2 } }));
+      }
+      await assertFails(deleteDoc(doc(ingestaA(), c1())));
+      // Otro comercio tampoco.
+      await assertFails(updateDoc(doc(ingestaA(), c1(B)), { rescate }));
+      await assertFails(updateDoc(doc(adminB(), c1()), { rescate }));
+      // Control positivo: la ingesta sigue actualizando el resumen de una conversación con la marca.
+      await assertSucceeds(updateDoc(doc(ingestaA(), c1()), { ultimoMensaje: 'Otro', mensajesTotal: 3 }));
+    });
+
     it('otro comercio no escribe el turno de A', async () => {
       await assertFails(updateDoc(doc(adminB(), c1()), { turno: turnoOk }));
       await assertFails(updateDoc(doc(ingestaA(), c1(B)), { turno: turnoOk }));

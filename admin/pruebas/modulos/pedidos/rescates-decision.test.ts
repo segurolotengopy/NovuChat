@@ -90,6 +90,17 @@ describe('motivoParaNoRescatar: quién entra, y sobre todo quién no', () => {
         }),
       }))).toBe('');
     });
+    it('borde: tomado hace 30 h desde AHORA (8 h antes del último mensaje) y devuelto: tomada', () => {
+      expect(motivo(conv(undefined, {
+        turno: turno(30 * HORA, { responde: 'asistente', devueltoEn: ts(29 * HORA), motivoDevolucion: 'manual' }),
+      }))).toBe('tomada');
+    });
+    it('borde: tomadoEn === último mensaje − 24 h: tomada; un milisegundo antes: vale rescatar', () => {
+      const ultimo = 22 * HORA + 5 * MIN;   // `conv()` fija el último entrante a esa distancia de AHORA
+      const devuelto = { responde: 'asistente', devueltoEn: ts(ultimo), motivoDevolucion: 'manual' };
+      expect(motivo(conv(undefined, { turno: turno(ultimo + 24 * HORA, devuelto) }))).toBe('tomada');
+      expect(motivo(conv(undefined, { turno: turno(ultimo + 24 * HORA + 1, devuelto) }))).toBe('');
+    });
     it('ilegible: tomada', () => {
       expect(motivo(conv(undefined, { turno: 'basura' }))).toBe('tomada');
       expect(motivo(conv(undefined, { turno: null }))).toBe('tomada');
@@ -102,6 +113,11 @@ describe('motivoParaNoRescatar: quién entra, y sobre todo quién no', () => {
       for (const etapa of ['agendada', 'en_revision', 'a_favor']) {
         expect(motivo(conv(undefined, { solicitud: { etapa, cotejos: 0 } })), etapa).toBe('compro');
       }
+    });
+    it('ya salió un seguimiento de Agenda (`seguimientos` > 0 o `seguimientoEn`): no se duplica', () => {
+      expect(motivo(conv(undefined, { solicitud: { etapa: 'qr_enviado', cotejos: 0, seguimientos: 1 } }))).toBe('seguimiento');
+      expect(motivo(conv(undefined, { solicitud: { etapa: 'qr_enviado', cotejos: 0, seguimientos: 0, seguimientoEn: ts(HORA) } }))).toBe('seguimiento');
+      expect(motivo(conv(undefined, { solicitud: { etapa: 'qr_enviado', cotejos: 0, seguimientos: 0 } }))).toBe('');
     });
     it('un cotejo: compró', () => {
       expect(motivo(conv(undefined, { solicitud: { etapa: 'qr_enviado', cotejos: 1 } }))).toBe('compro');
@@ -166,6 +182,11 @@ describe('leerMensajesParaRescate', () => {
       expect(r.motivo, t).toBe('rechazo');
       expect(r.textos, t).toEqual([]);
     }
+  });
+  it('la respuesta de un botón o lista (`interactive`) que rechaza también cuenta, pero no entra en los textos', () => {
+    const r = leerMensajesParaRescate([msj('entrante', 'interactive', 'No, gracias', 23 * HORA)], ULTIMO);
+    expect(r.motivo).toBe('rechazo');
+    expect(leerMensajesParaRescate([msj('entrante', 'interactive', 'Ver precios', 23 * HORA)], ULTIMO).motivo).toBe('');
   });
   it('«lo voy a pensar» y «no sé si me sirve» no son rechazo', () => {
     for (const t of ['lo voy a pensar', 'no sé si me sirve']) {

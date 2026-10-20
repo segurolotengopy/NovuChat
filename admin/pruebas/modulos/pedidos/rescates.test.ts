@@ -123,6 +123,11 @@ afterAll(async () => {
   await borrarTodo(Y);
   await db.doc('plataforma/prepago').delete();
   await db.doc(`tenants/${X}/cuenta/estado`).delete();
+  for (const n of [NUM_X, NUM_X2, NUM_Y]) await db.doc(`rutasWhatsApp/${n}`).delete();
+  for (const t of [X, Y]) {
+    await db.doc(`tenants/${t}/config/negocio`).delete();
+    await db.doc(`tenants/${t}`).delete();
+  }
 });
 
 describe('acceso', () => {
@@ -133,6 +138,18 @@ describe('acceso', () => {
     expect(sin.cuerpo).toBe('no autorizado');
     expect((await llamar({ token: 'otro-valor' })).codigo).toBe(401);
     expect(await marca(X, tel(11))).toBeUndefined();
+  });
+
+  it('credencial del comercio Y con el número de X: 401 y ninguna marca en X ni en Y', async () => {
+    await sembrar(X, tel(11));
+    await sembrar(Y, tel(11));
+    const r = await llamar({ numero: NUM_X, token: TOKEN_Y });
+    expect(r.codigo).toBe(401);
+    expect(r.cuerpo).toBe('no autorizado');
+    const r2 = await llamar({ numero: NUM_Y, token: TOKEN_X });
+    expect(r2.codigo).toBe(401);
+    expect(await marca(X, tel(11))).toBeUndefined();
+    expect(await marca(Y, tel(11))).toBeUndefined();
   });
 
   it('GET: 405', async () => {
@@ -172,7 +189,10 @@ describe('quién se rescata', () => {
       [tel(23)]: { noContactar: true },
       [tel(24)]: { atencionEstado: 'operador' },
       [tel(25)]: { atencionEstado: 'bloqueado' },
-      [tel(26)]: { solicitud: { etapa: 'agendada', cotejos: 1 } },
+      [tel(26)]: { solicitud: { etapa: 'agendada', cotejos: 0 } },
+      [tel(35)]: { solicitud: { etapa: 'qr_enviado', cotejos: 1 } },
+      [tel(36)]: { solicitud: { etapa: 'qr_enviado', cotejos: 0, seguimientos: 1 } },
+      [tel(37)]: { solicitud: { etapa: 'qr_enviado', cotejos: 0, seguimientoEn: en(HORA) } },
       [tel(27)]: { solicitud: { etapa: 'en_revision', cotejos: 0 } },
       [tel(28)]: { rescate: { enviadoEn: en(HORA) } },
       [tel(29)]: { phoneNumberId: NUM_X2 },
@@ -183,6 +203,7 @@ describe('quién se rescata', () => {
     for (const [t, extra] of Object.entries(descartes)) await sembrar(X, t, extra);
     await sembrar(X, tel(33), {}, [{ direccion: 'entrante', tipo: 'image', texto: '', hace: SILENCIO_OK + MIN }]);
     await sembrar(X, tel(34), {}, [{ direccion: 'entrante', tipo: 'text', texto: 'No me interesa', hace: SILENCIO_OK + MIN }]);
+    await sembrar(X, tel(38), {}, [{ direccion: 'entrante', tipo: 'interactive', texto: 'No, gracias', hace: SILENCIO_OK + MIN }]);
     await sembrar(X, '59100000099');   // el número de recepción del comercio
 
     const r = await llamar();
@@ -192,7 +213,7 @@ describe('quién se rescata', () => {
     for (const t of validas) expect(await marca(X, t)).toBeDefined();
     // La ya rescatada conserva su marca original (sin `phoneNumberId`): no se reescribió.
     expect(await marca(X, tel(28))).not.toHaveProperty('phoneNumberId');
-    for (const t of [...Object.keys(descartes).filter((k) => k !== tel(28)), tel(33), tel(34), '59100000099']) {
+    for (const t of [...Object.keys(descartes).filter((k) => k !== tel(28)), tel(33), tel(34), tel(38), '59100000099']) {
       expect(await marca(X, t), t).toBeUndefined();
     }
   });
@@ -214,6 +235,14 @@ describe('quién se rescata', () => {
     expect((await llamar()).cuerpo.rescates).toEqual([]);
   });
 
+  it('el número de recepción en formato local (8 dígitos) también se excluye con el código de país', async () => {
+    await db.doc(`tenants/${X}/config/negocio`).set({ nombreNegocio: X, moneda: 'BOB', numeroRecepcion: '00000088' });
+    await sembrar(X, '59100000088');
+    expect((await llamar()).cuerpo.rescates).toEqual([]);
+    expect(await marca(X, '59100000088')).toBeUndefined();
+    await db.doc(`tenants/${X}/config/negocio`).set({ nombreNegocio: X, moneda: 'BOB', numeroRecepcion: '+591 000 00099' });
+  });
+
   it('un teléfono de `excluir` no sale', async () => {
     await sembrar(X, tel(11));
     expect((await llamar({ cuerpo: { v: 1, excluir: [tel(11)] } })).cuerpo.rescates).toEqual([]);
@@ -232,10 +261,12 @@ describe('uno solo, siempre', () => {
     for (let i = 0; i < 6; i++) await sembrar(X, tel(40 + i));
     const [a, b] = await Promise.all([llamar(), llamar()]);
     const salidas = [...a.cuerpo.rescates, ...b.cuerpo.rescates].map((x: { telefono: string }) => x.telefono);
-    expect(new Set(salidas).size).toBe(salidas.length);
-    expect(salidas.length).toBeLessThanOrEqual(6);
+    const esperadas = Array.from({ length: 6 }, (_, i) => tel(40 + i));
+    // Exactamente las 6, cada una una sola vez entre las dos llamadas.
+    expect([...salidas].sort()).toEqual(esperadas);
+    for (const t of esperadas) expect(await marca(X, t), t).toBeDefined();
     const bitacora = await db.collection(`tenants/${X}/bitacora`).where('codigo', '==', 'rescate').get();
-    expect(bitacora.size).toBe(salidas.length);
+    expect(bitacora.size).toBe(6);
   });
 
   it('la marca se escribe con merge: no borra el resto de la conversación', async () => {
@@ -352,6 +383,57 @@ describe('topes', () => {
   });
 });
 
+describe('lectura de candidatas y de mensajes', () => {
+  it('100 conversaciones ya rescatadas que ocupan el inicio de la franja no dejan sin leer a la nueva', async () => {
+    for (let i = 0; i < 4; i++) {
+      const lote = db.batch();
+      for (let j = 0; j < 25; j++) {
+        const n = 80000 + i * 25 + j;
+        lote.set(db.doc(`tenants/${X}/conversaciones/wa_591000${n}`), {
+          telefono: `591000${n}`, phoneNumberId: NUM_X, ultimoEntranteEn: en(23 * HORA),
+          rescate: { enviadoEn: en(30 * HORA), phoneNumberId: NUM_X, anclaMs: 0 },
+        });
+      }
+      await lote.commit();
+    }
+    await sembrar(X, tel(11));
+    expect((await llamar()).cuerpo.rescates.map((x: { telefono: string }) => x.telefono)).toEqual([tel(11)]);
+  });
+
+  const relleno = (n: number) => Array.from({ length: n }, (_, i) => (
+    { direccion: 'saliente', tipo: 'text', texto: `relleno ${i}`, hace: SILENCIO_OK + (i + 1) * MIN }));
+
+  it('una imagen entrante que es el mensaje 60 de la ventana excluye (límite MENSAJES_A_LEER)', async () => {
+    await sembrar(X, tel(11), {}, [
+      ...relleno(59), { direccion: 'entrante', tipo: 'image', texto: '', hace: SILENCIO_OK + 20 * HORA },
+    ]);
+    expect((await llamar()).cuerpo.rescates).toEqual([]);
+    expect(await marca(X, tel(11))).toBeUndefined();
+  });
+
+  it('LÍMITE CONOCIDO: una imagen que es el mensaje 61 de la ventana ya no se lee', async () => {
+    await sembrar(X, tel(11), {}, [
+      ...relleno(60), { direccion: 'entrante', tipo: 'image', texto: '', hace: SILENCIO_OK + 20 * HORA },
+    ]);
+    expect((await llamar()).cuerpo.rescates).toHaveLength(1);
+  });
+
+  it('una imagen de hace más de 24 h antes del último mensaje del cliente no excluye', async () => {
+    await sembrar(X, tel(11), {}, [
+      { direccion: 'entrante', tipo: 'image', texto: '', hace: SILENCIO_OK + 25 * HORA },
+      { direccion: 'entrante', tipo: 'text', texto: 'Hola, quiero ordenar mis ventas', hace: SILENCIO_OK + MIN },
+    ]);
+    expect((await llamar()).cuerpo.rescates).toHaveLength(1);
+  });
+
+  it('un «no me interesa» antiguo (mensaje 40 de la ventana) excluye', async () => {
+    await sembrar(X, tel(11), {}, [
+      ...relleno(39), { direccion: 'entrante', tipo: 'text', texto: 'No me interesa', hace: SILENCIO_OK + 10 * HORA },
+    ]);
+    expect((await llamar()).cuerpo.rescates).toEqual([]);
+  });
+});
+
 describe('cuenta cortada', () => {
   it('con corte aplicable y sin cobertura: servicio_no_operativo y nada marcado', async () => {
     await sembrar(X, tel(11));
@@ -378,7 +460,15 @@ describe('bitácora', () => {
     expect(b).toHaveLength(2);
     for (const e of b) {
       expect(e['codigo']).toBe('rescate');
-      expect(JSON.stringify(e)).not.toContain('pastelería');
+      // El teléfono completo solo aparece en `conversacionId` (el id del documento, como en
+      // `seguimientos.ts` y la ingesta); el destino va enmascarado y no hay texto.
+      const { conversacionId, ...resto } = e;
+      expect(conversacionId).toMatch(/^wa_/);
+      const crudo = JSON.stringify(resto);
+      expect(crudo).not.toContain('pastelería');
+      expect(crudo).not.toContain(tel(11));
+      expect(crudo).not.toContain(tel(12));
+      expect(e['destinoEnmascarado']).toMatch(/\*/);
     }
   });
 });

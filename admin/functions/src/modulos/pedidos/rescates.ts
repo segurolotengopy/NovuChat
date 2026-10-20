@@ -65,10 +65,22 @@ export const MS_HASTA = 23.5 * HORA;
 export const TOPE_POR_CORRIDA = 20;
 /** Lo máximo que se marca por comercio en 24 h (gasto máximo acotado). */
 export const TOPE_DIARIO_POR_COMERCIO = 150;
-/** Documentos de conversación que se leen por corrida. */
+/** Documentos de conversación que se leen por página de la consulta de candidatas. */
 export const TOPE_DE_LECTURA = 100;
-/** Cuántos mensajes recientes se leen de cada candidata. */
-export const MENSAJES_A_LEER = 12;
+/**
+ * Páginas que se recorren por corrida (500 lecturas como máximo). Sin esto, las
+ * conversaciones que NO se pueden rescatar (ya rescatadas, compradas, tomadas…)
+ * ocuparían para siempre los primeros lugares de la franja y las nuevas nunca se
+ * leerían.
+ */
+export const MAX_PAGINAS = 5;
+/**
+ * Cuántos mensajes se leen de cada candidata, de los últimos 24 h previos a su
+ * último entrante y del más nuevo al más viejo. LÍMITE CONOCIDO: si en esa
+ * ventana hay más de 60 mensajes (entrantes y salientes), los más antiguos no
+ * se leen y una imagen o un rechazo anterior a ellos no se vería.
+ */
+export const MENSAJES_A_LEER = 60;
 export const TEXTOS_MAX = 6;
 export const LARGO_TEXTO = 300;
 
@@ -79,7 +91,7 @@ export const RECHAZO =
 export type MotivoDescarte =
   | 'telefono_invalido' | 'excluido' | 'fuera_de_lista' | 'otra_linea' | 'ya_rescatado'
   | 'no_contactar' | 'atencion' | 'sin_ventana' | 'tomada' | 'compro' | 'temprano'
-  | 'tarde' | 'medio' | 'rechazo';
+  | 'tarde' | 'medio' | 'rechazo' | 'seguimiento';
 
 export interface ContextoRescate {
   phoneNumberId: string;
@@ -112,6 +124,12 @@ export function motivoParaNoRescatar(
   const ultimoMs = milisegundosDe(c['ultimoEntranteEn']);
   if (ultimoMs === null) return 'sin_ventana';
 
+  // REGLA DEL TURNO. Una persona «estuvo en la conversación» si tomó el turno dentro
+  // de las 24 h previas al último mensaje del cliente (`tomadoEn >= ultimoMs - 24 h`,
+  // borde inclusive), aunque ya lo haya devuelto; o si la pausa sigue vigente (abajo).
+  // Un turno tomado ANTES de esa ventana (p. ej. 30 h antes del último mensaje) y ya
+  // devuelto NO bloquea: es de otra conversación. Un turno ilegible bloquea (ante la
+  // duda, no se escribe).
   const lectura = leerTurno(c['turno']);
   if (lectura.estado === 'ilegible') return 'tomada';
   if (lectura.estado === 'ok' && lectura.turno.tomadoEn >= ultimoMs - 24 * HORA) return 'tomada';
@@ -122,6 +140,10 @@ export function motivoParaNoRescatar(
     const sol = s as Record<string, unknown>;
     if (typeof sol['etapa'] === 'string' && ETAPAS_DE_COMPRA.has(sol['etapa'])) return 'compro';
     if (typeof sol['cotejos'] === 'number' && sol['cotejos'] > 0) return 'compro';
+    // Ya salió un seguimiento de la solicitud (`seguimientosPendientes` de Agenda):
+    // no se le escribe una segunda vez por otro camino.
+    if ((typeof sol['seguimientos'] === 'number' && sol['seguimientos'] > 0)
+      || sol['seguimientoEn'] !== undefined) return 'seguimiento';
   }
 
   const silencio = ahoraMs - ultimoMs;
@@ -134,10 +156,11 @@ const normalizar = (t: string): string =>
   t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 /**
- * De los mensajes recientes de la conversación: ¿hay un posible comprobante
- * (imagen o documento entrante) o un rechazo explícito?, y los textos del
- * cliente para redactar. Solo mira la ventana de 24 h anterior al último
- * entrante. PURA.
+ * De los mensajes recibidos (los últimos `MENSAJES_A_LEER` de las 24 h previas al
+ * último entrante, ya filtrados por la consulta): ¿hay un posible comprobante
+ * (imagen o documento entrante) o un rechazo explícito (en un texto o en la
+ * respuesta de un botón/lista, `interactive`)?, y los textos del cliente para
+ * redactar (solo `text`). También filtra por fecha, por si la consulta trae más. PURA.
  */
 export function leerMensajesParaRescate(
   mensajes: readonly Record<string, unknown>[],
@@ -156,7 +179,12 @@ export function leerMensajesParaRescate(
   const delTexto = entrantes
     .filter((x) => x.m['tipo'] === 'text' && typeof x.m['texto'] === 'string')
     .map((x) => x.m['texto'] as string);
-  if (delTexto.some((t) => RECHAZO.test(normalizar(t)))) return { motivo: 'rechazo', textos: [] };
+  const deBotones = entrantes
+    .filter((x) => x.m['tipo'] === 'interactive' && typeof x.m['texto'] === 'string')
+    .map((x) => x.m['texto'] as string);
+  if ([...delTexto, ...deBotones].some((t) => RECHAZO.test(normalizar(t)))) {
+    return { motivo: 'rechazo', textos: [] };
+  }
   return { motivo: '', textos: delTexto.slice(-TEXTOS_MAX).map((t) => t.slice(0, LARGO_TEXTO)) };
 }
 
@@ -249,7 +277,11 @@ export const reclamarRescates = onRequest(
     const recepcion = negocio.get('numeroRecepcion');
     if (typeof recepcion === 'string') {
       const d = recepcion.replace(/\D/g, '');
-      if (TELEFONO.test(d)) excluidos.add(d);
+      if (TELEFONO.test(d)) {
+        excluidos.add(d);
+        // En formato local (8 dígitos) también se excluye con el código de país.
+        if (d.length === 8) excluidos.add(`591${d}`);
+      }
     }
     const ctx: ContextoRescate = { phoneNumberId, excluidos, soloTelefonos: cuerpo.soloTelefonos };
 
@@ -264,55 +296,63 @@ export const reclamarRescates = onRequest(
       return;
     }
 
-    // Un solo campo con dos extremos y su orden: índice de campo simple.
-    const candidatas = await colConversaciones
+    // Un solo campo con dos extremos y su orden: índice de campo simple. Se recorre por
+    // páginas (cursor) hasta llenar el cupo, agotar la franja o llegar a MAX_PAGINAS.
+    const consulta = colConversaciones
       .where('ultimoEntranteEn', '>=', Timestamp.fromMillis(ahoraMs - MS_HASTA))
       .where('ultimoEntranteEn', '<=', Timestamp.fromMillis(ahoraMs - MS_DESDE))
-      .orderBy('ultimoEntranteEn', 'asc')
-      .limit(TOPE_DE_LECTURA)
-      .get();
+      .orderBy('ultimoEntranteEn', 'asc');
 
     const rescates: { telefono: string; ultimoEntranteMs: number; textos: string[] }[] = [];
     let fallidas = 0;
-    for (const doc of candidatas.docs) {
-      if (rescates.length >= cupo) break;
-      try {
-        const datos = doc.data();
-        if (motivoParaNoRescatar(datos, ctx, ahoraMs) !== '') continue;
-        const ultimoMs = milisegundosDe(datos['ultimoEntranteEn']);
-        if (ultimoMs === null) continue;
-        const telefono = datos['telefono'] as string;
+    let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+    for (let pagina = 0; pagina < MAX_PAGINAS && rescates.length < cupo; pagina += 1) {
+      const candidatas: FirebaseFirestore.QuerySnapshot = await (cursor
+        ? consulta.startAfter(cursor) : consulta).limit(TOPE_DE_LECTURA).get();
+      if (candidatas.empty) break;
+      cursor = candidatas.docs[candidatas.docs.length - 1]!;
+      for (const doc of candidatas.docs) {
+        if (rescates.length >= cupo) break;
+        try {
+          const datos = doc.data();
+          if (motivoParaNoRescatar(datos, ctx, ahoraMs) !== '') continue;
+          const ultimoMs = milisegundosDe(datos['ultimoEntranteEn']);
+          if (ultimoMs === null) continue;
+          const telefono = datos['telefono'] as string;
 
-        const recientes = await doc.ref.collection('mensajes')
-          .orderBy('ts', 'desc').limit(MENSAJES_A_LEER).get();
-        const lectura = leerMensajesParaRescate(recientes.docs.map((m) => m.data()), ultimoMs);
-        if (lectura.motivo !== '') continue;
+          const recientes = await doc.ref.collection('mensajes')
+            .where('ts', '>=', Timestamp.fromMillis(ultimoMs - 24 * HORA))
+            .orderBy('ts', 'desc').limit(MENSAJES_A_LEER).get();
+          const lectura = leerMensajesParaRescate(recientes.docs.map((m) => m.data()), ultimoMs);
+          if (lectura.motivo !== '') continue;
 
-        // LA MARCA, ANTES DE ENVIAR: se relee y se vuelve a decidir dentro de la
-        // transacción; dos corridas simultáneas no pueden marcar la misma.
-        const marcada = await db.runTransaction(async (tx) => {
-          const fresco = await tx.get(doc.ref);
-          if (!fresco.exists || motivoParaNoRescatar(fresco.data(), ctx, ahoraMs) !== '') return false;
-          tx.set(doc.ref, {
-            rescate: {
-              enviadoEn: Timestamp.fromMillis(ahoraMs),
-              phoneNumberId,
-              anclaMs: ultimoMs,
-            },
-          }, { merge: true });
-          return true;
-        });
-        if (!marcada) continue;
+          // LA MARCA, ANTES DE ENVIAR: se relee y se vuelve a decidir dentro de la
+          // transacción; dos corridas simultáneas no pueden marcar la misma.
+          const marcada = await db.runTransaction(async (tx) => {
+            const fresco = await tx.get(doc.ref);
+            if (!fresco.exists || motivoParaNoRescatar(fresco.data(), ctx, ahoraMs) !== '') return false;
+            tx.set(doc.ref, {
+              rescate: {
+                enviadoEn: Timestamp.fromMillis(ahoraMs),
+                phoneNumberId,
+                anclaMs: ultimoMs,
+              },
+            }, { merge: true });
+            return true;
+          });
+          if (!marcada) continue;
 
-        await registrar(tenantId, {
-          tipo: 'seguimiento_enviado', resultado: 'ok', telefono,
-          conversacionId: `wa_${telefono}`, codigo: 'rescate',
-        });
-        rescates.push({ telefono, ultimoEntranteMs: ultimoMs, textos: lectura.textos });
-      } catch {
-        // Ante la duda, no se rescata. Sin teléfono ni texto en el log.
-        fallidas += 1;
+          await registrar(tenantId, {
+            tipo: 'seguimiento_enviado', resultado: 'ok', telefono,
+            conversacionId: `wa_${telefono}`, codigo: 'rescate',
+          });
+          rescates.push({ telefono, ultimoEntranteMs: ultimoMs, textos: lectura.textos });
+        } catch {
+          // Ante la duda, no se rescata. Sin teléfono ni texto en el log.
+          fallidas += 1;
+        }
       }
+      if (candidatas.size < TOPE_DE_LECTURA) break;
     }
     if (fallidas > 0) logger.warn('reclamarRescates: candidatas con error', { tenantId, fallidas });
 

@@ -1854,7 +1854,8 @@ service cloud.firestore {
                       && tenantOperativo(tenantId)
                       && conversacionValida()
                       && !request.resource.data.keys().hasAny(['turno', 'envioPersona',
-                                                               'ultimoSalientePersonaEn', 'phoneNumberId']);
+                                                               'ultimoSalientePersonaEn', 'phoneNumberId',
+                                                               'rescate']);
         allow delete: if false;
 
         // Dos ramas de actualización disjuntas:
@@ -1870,7 +1871,8 @@ service cloud.firestore {
         allow update: if (esIngesta(tenantId) && tenantOperativo(tenantId)
                           && conversacionValida()
                           && !request.resource.data.diff(resource.data).affectedKeys()
-                                .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId']))
+                                .hasAny(['turno', 'envioPersona', 'ultimoSalientePersonaEn', 'phoneNumberId',
+                                         'rescate']))
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
                           // `noContactar` es la lista de no molestar (bloque 4): una
@@ -1961,7 +1963,14 @@ service cloud.firestore {
                  // ramas create/update le PROHÍBEN al token de ingesta crearlo o cambiarlo por SDK cliente. Lo suma SOLO la ingesta (SDK Admin) en un entrante, desde la ruta autenticada, nunca
                  // desde el cuerpo; la persona del negocio no lo escribe (no está en su
                  // `soloCampos`). `enviarComoPersona` lo usa para elegir por qué línea sale.
-                 , 'phoneNumberId'])
+                 , 'phoneNumberId'
+                 // Rescate de 22 h (20/10/2026): `rescate` es la marca de «a este contacto ya se
+                 // le escribió UNA vez» y no se borra nunca. La escribe SOLO `reclamarRescates`
+                 // (SDK Admin, que no pasa por estas reglas). Se tolera aquí como `phoneNumberId`
+                 // (para actualizar una conversación que ya la tiene) y las ramas create/update
+                 // le PROHÍBEN al token de ingesta crearla, cambiarla o borrarla. La persona del
+                 // negocio no la escribe: no está en su `soloCampos`.
+                 , 'rescate'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
                     // `horarios` es la etapa del bloque 4: el asistente ofreció
