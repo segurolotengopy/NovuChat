@@ -4,7 +4,7 @@
 // Cubre text, interactive (list_reply ANTES que button_reply), button, audio/voice, image, document, location, sticker, contacts, order y cualquier otro tipo. Nunca se lee `.text.body` sin pasar por aquí.
 // LA CLAVE DE LA CONVERSACIÓN ES EL NÚMERO DE ORIGEN (`messages[0].from`): dos clientes jamás comparten ficha. Si no son solo dígitos (6 a 20), el mensaje se descarta. Solo se lee `messages[0]` (límite declarado).
 //
-// NADA se descarta salvo: no hay mensaje, el número no es válido, el prefijo de país no está permitido, Meta reenvió un mensaje que ya se procesó (los últimos ids de la ficha) y lo que no es una
+// NADA se descarta salvo: no hay mensaje, el número no es válido, el prefijo de país no está permitido y ya se le respondió en las últimas 24 horas, Meta reenvió un mensaje que ya se procesó (los últimos ids de la ficha) y lo que no es una
 // conversación (reacciones, bienvenida, sistema, efímeros). Este nodo SOLO LEE la ficha. `categoria`: `conversacion` (texto o toque), `medio` (audio, imagen o PDF con id de medio) u `otro` (lo que este canal
 // no lee: texto cortés fijo, sin modelo). Un audio, una imagen o un documento salen SIN texto: lo arman los nodos de medios.
 const carga = cnPrimero('Carga de entrada') || {};
@@ -15,11 +15,16 @@ if (['reaction', 'request_welcome', 'system', 'ephemeral'].indexOf(String(msg.ty
 
 const from = String(msg.from || '');
 if (!cnClaveValida(from)) return [];
+const ahoraTurno = Number(carga.ahoraMs) || Date.now();
+// UN PREFIJO NO PERMITIDO (número no boliviano) YA NO SE DESCARTA EN SILENCIO (decisión de Andres, 20/10/2026): recibe UNA vez en 24 horas el texto fijo con el botón de Antonio, sin QR, sin modelo y sin
+// descargar ningún medio; los mensajes siguientes de ese número dentro de las 24 horas se descartan sin responder. Este nodo solo LEE la ficha: la marca la escribe «Armar mensajes».
 const prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.trim()).filter(Boolean);
-if (prefijos.length && !prefijos.some((p) => from.startsWith(p))) return [];
+const fueraDePais = prefijos.length > 0 && !prefijos.some((p) => from.startsWith(p));
+const fichaAntes = raFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahoraTurno);
+if (fueraDePais && fichaAntes.fueraDePaisMs > 0 && ahoraTurno - fichaAntes.fueraDePaisMs >= 0 && ahoraTurno - fichaAntes.fueraDePaisMs < RA_VENTANA_FUERA_DE_PAIS_MS) return [];
 
 const mensajeId = String(msg.id || '').slice(0, 200);
-if (mensajeId && raYaVisto(cnFichaDe(cnMapaDeFichas(false).mapa, from), mensajeId)) return [];
+if (mensajeId && raYaVisto(fichaAntes, mensajeId)) return [];
 
 const tipo = msg.type === 'voice' ? 'audio' : String(msg.type || 'desconocido');
 const sel = msg.interactive ? (msg.interactive.list_reply || msg.interactive.button_reply) : null;
@@ -66,6 +71,11 @@ if (tipo === 'text') {
 }
 // Un texto vacío (solo espacios) no es una conversación.
 if (categoria === '') return [];
+// Fuera del país: nada de modelo ni de medios; la respuesta es el texto fijo.
+if (fueraDePais) categoria = 'otro';
+// La hora del mensaje (la `timestamp` de Meta, en segundos) para el plazo del aviso a Antonio: solo si es de las últimas 24 horas; si no, el reloj del proceso.
+const tsMeta = Number(msg.timestamp) * 1000;
+const mensajeMs = Number.isFinite(tsMeta) && tsMeta <= ahoraTurno && ahoraTurno - tsMeta <= 24 * 60 * 60 * 1000 ? tsMeta : ahoraTurno;
 
 const contacto = Array.isArray(carga.contacts) ? carga.contacts[0] : undefined;
 const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;
@@ -87,11 +97,15 @@ return [{ json: {
   anuncio: !!ref,
   origen: ref ? 'anuncio' : 'directo',
   // El contrato con los módulos comunes de medios.
-  esMedioAudio: tipo === 'audio' && mediaId !== '',
-  esMedioVisual: (tipo === 'image' || tipo === 'document') && mediaId !== '',
+  esMedioAudio: !fueraDePais && tipo === 'audio' && mediaId !== '',
+  esMedioVisual: !fueraDePais && (tipo === 'image' || tipo === 'document') && mediaId !== '',
   esDocumento: tipo === 'document',
-  mediaId: mediaId,
+  mediaId: fueraDePais ? '' : mediaId,
+  fueraDePais: fueraDePais,
+  // Violencia o miedo en el texto o en el pie de foto: el reporte del entrante lleva `no_contactar` (así no hace falta un reporte aparte que cree un mensaje de más).
+  riesgoEscrito: raEsRiesgo(raNorm([texto, pie].join(' '))),
+  mensajeMs: mensajeMs,
   mimeType: mimeType,
-  ahoraMs: Number(carga.ahoraMs) || Date.now(),
+  ahoraMs: ahoraTurno,
   prueba: carga.prueba || null,
 } }];

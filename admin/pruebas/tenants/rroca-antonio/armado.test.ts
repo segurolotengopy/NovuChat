@@ -25,7 +25,6 @@ const mod = (await import(pathToFileURL(join(CARPETA, 'construir.mjs')).href)) a
   cargarDatos: (r?: string) => J;
   anfitrionPermitido: (u: string, n?: string) => boolean;
   TOPE_DE_NODOS: number;
-  MARCA_NO_PUBLICABLE: string;
 };
 const leerJson = (a: string): J => JSON.parse(readFileSync(join(CARPETA, a), 'utf8')) as J;
 const PRODUCCION = leerJson('rroca-antonio.json');
@@ -44,9 +43,9 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
     }
   });
 
-  it('nodos: producción 36 y prueba 31 (≤ 48); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
-    expect((PRODUCCION['nodes'] as J[]).length).toBe(36);
-    expect((PRUEBA['nodes'] as J[]).length).toBe(31);
+  it('nodos: producción 46 y prueba 41 (≤ 48); la prueba cambia el receptor (6) por la «Entrada de prueba» (1)', () => {
+    expect((PRODUCCION['nodes'] as J[]).length).toBe(46);
+    expect((PRUEBA['nodes'] as J[]).length).toBe(41);
     expect(mod.TOPE_DE_NODOS).toBe(48);
   });
 
@@ -57,10 +56,10 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
     }
   });
 
-  it('ajustes: orden v1, zona America/La_Paz, sin guardar ejecuciones exitosas ni el progreso, y la marca de no publicable (PR-A)', () => {
+  it('ajustes: orden v1, zona America/La_Paz, sin guardar ejecuciones exitosas ni el progreso, y SIN la marca de no publicable (PR-B: la conversación está completa)', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
       expect(f['settings']).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all', saveExecutionProgress: false });
-      expect(f['meta']).toEqual({ noPublicable: mod.MARCA_NO_PUBLICABLE });
+      expect(f['meta']).toBeUndefined();
     }
   });
 
@@ -109,14 +108,36 @@ describe('las guardias: cada una rechaza su violación', () => {
   });
   it('más de 48 nodos', () => {
     const f = clon(PRODUCCION);
-    for (let i = 0; i < 13; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
+    for (let i = (f['nodes'] as J[]).length; i < 49; i++) (f['nodes'] as J[]).push({ name: `Relleno ${i}`, type: 'n8n-nodes-base.noOp', parameters: {}, position: [0, 0] });
     expect(hallazgos('produccion', f)).toMatch(/49 nodos y el tope es 48/);
     (f['nodes'] as J[]).pop();
     expect(hallazgos('produccion', f)).not.toMatch(/el tope es 48/);
   });
-  it('sin la marca `meta.noPublicable` en PR-A', () => {
-    const f = clon(PRODUCCION); delete f['meta'];
+  it('la marca `meta.noPublicable` de PR-A ya no va (la conversación está completa); la guardia de publicación es del PR-C', () => {
+    const f = clon(PRODUCCION); f['meta'] = { noPublicable: 'x' };
     expect(hallazgos('produccion', f)).toMatch(/noPublicable/);
+  });
+  it('falta un nodo de la conversación completa o del aviso a Antonio (sin el aviso, los textos que prometen revisión no tendrían respaldo)', () => {
+    for (const n of ['Cotejar en el servidor', 'Conversar con el modelo', 'Armar avisos', '¿Hay avisos?', 'Enviar aviso']) {
+      const f = clon(PRODUCCION); f['nodes'] = (f['nodes'] as J[]).filter((x) => x['name'] !== n);
+      expect(hallazgos('produccion', f), n).toMatch(/conversación completa/);
+    }
+  });
+  it('«Enviar aviso» sin `onError: continueRegularOutput` (un rechazo de Meta cortaría el turno) o sin colgar de «Armar mensajes»', () => {
+    const f = clon(PRODUCCION); delete nodo(f, 'Enviar aviso')['onError'];
+    expect(hallazgos('produccion', f)).toMatch(/onError/);
+    const g = clon(PRODUCCION); (g['connections'] as J)['Enviar aviso'] = { main: [[]] };
+    expect(hallazgos('produccion', g)).toMatch(/no cuelga de «Armar mensajes»/);
+  });
+  it('el reporte saliente sin el evento `no_contactar` (condición dura del contrato del rescate)', () => {
+    const f = clon(PRODUCCION); const r = nodo(f, 'Reportar mensaje (saliente)'); r['parameters'].jsonBody = String(r['parameters'].jsonBody).replace(/no_contactar/g, 'otro');
+    expect(hallazgos('produccion', f)).toMatch(/no_contactar/);
+  });
+  it('la PRUEBA con una credencial de producción de Gemini o de Graph (los nodos de medios, el aviso y el modelo van con las de prueba)', () => {
+    const g = clon(PRUEBA); nodo(g, 'Conversar con el modelo')['credentials'] = { googlePalmApi: { id: '', name: 'Google Gemini(PaLM) Api account' } };
+    expect(hallazgos('prueba', g)).toMatch(/credencial de producción en «Conversar con el modelo»/);
+    const h = clon(PRUEBA); nodo(h, 'Descargar medio')['credentials'] = { httpHeaderAuth: { id: '', name: 'Graph WhatsApp Antonio (Bearer)' } };
+    expect(hallazgos('prueba', h)).toMatch(/credencial de producción en «Descargar medio»/);
   });
   it('la «Entrada de prueba» en producción, y el receptor en la prueba', () => {
     const f = clon(PRODUCCION); (f['nodes'] as J[]).push(clon(nodo(PRUEBA, 'Entrada de prueba')));
@@ -195,6 +216,16 @@ describe('los datos: solo marcadores para identificadores y rutas', () => {
     const d = datos as { receptor: J; pruebaRuta: string; configBase: J };
     for (const v of [...Object.values(d.receptor), d.pruebaRuta, d.configBase['phoneNumberIdEsperado'], d.configBase['numeroRecepcion'], d.configBase['telefonosDePrueba']]) expect(String(v)).toMatch(/^REEMPLAZAR_[A-Z0-9_]+$/);
     expect(d.configBase['modelo']).toBe('gemini-3.5-flash-lite');
+    // Los datos pendientes quedan como marcadores o como el texto recomendado: ninguna plantilla inventada ni aprobada, ninguna línea de protección sin verificar.
+    expect(String(d.configBase['lineaProteccion'])).toMatch(/^REEMPLAZAR_/);
+    // Las plantillas YA existen en Meta (de Antonio) y están PENDING: sus nombres son dato; hasta que Meta las apruebe no sale ningún aviso fuera de la ventana.
+    expect(d.configBase['avisoComprobantePlantilla']).toBe('aviso_comprobante_recibido');
+    expect(d.configBase['avisoConsultaPlantilla']).toBe('aviso_consulta_para_antonio');
+    expect(d.configBase['avisoConsultaEstado']).toBe('PENDING');
+    expect(d.configBase['avisoPlantillaIdioma']).toBe('es');
+    expect(d.configBase['avisoComprobanteEstado']).toBe('PENDING');
+    expect(d.configBase['plazoEntregaHoras']).toBe(6);
+    expect(d.configBase['temperatura']).toBe(0.4);
     expect(d.configBase['prefijosPermitidos']).toBe('591');
   });
   it('el JSON armado lleva los marcadores solo en «Config base», el receptor y la ruta de prueba, y ningún teléfono completo', () => {
@@ -209,6 +240,12 @@ describe('los datos: solo marcadores para identificadores y rutas', () => {
       (d) => { d['configBase'].waGraphVersion = 'latest'; },
       (d) => { d['configBase'].prefijosPermitidos = '+591'; },
       (d) => { d['configBase'].modelo = 'gpt-4'; },
+      (d) => { d['configBase'].modelo = 'gemini-2.5-pro'; },
+      (d) => { d['configBase'].plazoEntregaHoras = 24; },
+      (d) => { d['configBase'].temperatura = 1.5; },
+      (d) => { d['configBase'].avisoComprobanteEstado = 'APROBADA'; },
+      (d) => { d['configBase'].garantiaTexto = 'corto'; },
+      (d) => { d['configBase'].lineaProteccion = 'con "comillas"'; },
       (d) => { d['configBase'].telefonosDePrueba = '123'; },
       (d) => { d['pruebaRuta'] = 'ruta-real'; },
       (d) => { delete d['configBase'].nombreNegocio; },
@@ -273,7 +310,7 @@ describe('ra.js: la ficha por teléfono', () => {
     expect(ra.raYaVisto(f, 'id0')).toBe(false);
     expect(ra.raYaVisto(f, '')).toBe(false);
   });
-  it('el barrido saca las fichas viejas o sin hora y no deja pasar de 5.000', () => {
+  it('el barrido saca las fichas viejas o sin hora y no deja pasar de 1.000 (cada ficha guarda hasta 15 mensajes de memoria)', () => {
     const ahora = 10 ** 12;
     const mapa: J = { a: { ultimoMs: ahora - ra.RA_OLVIDO_MS - 1 }, b: { ultimoMs: 0 }, c: { ultimoMs: ahora } };
     ra.raBarrer(mapa, ahora);

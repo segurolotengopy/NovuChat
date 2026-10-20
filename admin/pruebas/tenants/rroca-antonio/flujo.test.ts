@@ -122,9 +122,32 @@ describe('la sesión es el número de origen', () => {
     for (const raro of ['abc', '59100000011; drop', '5910']) expect(hablar(w, raro, { type: 'sticker', sticker: { id: 's' } }).mensajes, raro).toHaveLength(0);
   });
 
-  it('un prefijo de país no permitido no recibe respuesta (responder a un número extranjero cuesta su tarifa)', () => {
+  it('un número NO boliviano recibe UNA vez en 24 h el texto fijo con el botón de Antonio (sin QR, sin modelo, sin medios); sus mensajes siguientes en la ventana se descartan sin responder', () => {
     const w = crear();
-    expect(hablar(w, '54100000011', { type: 'sticker', sticker: { id: 's' } }).mensajes).toHaveLength(0);
+    const EXT = '54100000011';
+    const t = hablar(w, EXT, mTexto('hola, quiero el libro'));
+    expect(t.mensajes).toHaveLength(1);
+    expect(t.mensajes[0]!.a).toBe(EXT);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/QR de un banco boliviano/);
+    expect(t.mensajes[0]!.tipo).toBe('interactive');
+    expect(JSON.stringify(t.mensajes[0]!.payload)).toContain('cta_url');
+    expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
+    expect(t.mensajes.some((m) => m.tipo === 'image')).toBe(false);
+    // Un audio o una imagen de un número extranjero no se descargan ni se leen.
+    const w2 = crear();
+    const m = hablar(w2, EXT, { type: 'audio', audio: { id: 'media-aud', mime_type: 'audio/ogg' } });
+    for (const n of ['Obtener URL del medio (general)', 'Descargar medio', 'Transcribir audio']) expect(m.ejecutados.has(n), n).toBe(false);
+    // Los siguientes mensajes de ese número dentro de las 24 horas: ninguna respuesta (y ningún modelo).
+    for (const msg of [mTexto('hola otra vez'), mTexto('¿me responden?'), { type: 'sticker', sticker: { id: 's' } }]) {
+      const s2 = hablar(w, EXT, msg);
+      expect(s2.mensajes, JSON.stringify(msg)).toHaveLength(0);
+      expect(s2.ejecutados.has('Conversar con el modelo')).toBe(false);
+    }
+    // Pasadas las 24 horas, vuelve a recibir el texto una vez.
+    w.avanzar(24 * 60 + 5);
+    expect(hablar(w, EXT, mTexto('hola')).mensajes).toHaveLength(1);
+    // No afecta a un cliente boliviano.
+    expect(hablar(w, ANA, mTexto('hola')).mensajes[0]!.cuerpo).not.toMatch(/banco boliviano/);
   });
 });
 
@@ -160,14 +183,13 @@ describe('la puerta del turno', () => {
   });
 });
 
-describe('PR-A: sin conversación todavía, y sin prometer nada', () => {
-  it('un texto o un toque de lista no recibe respuesta (la conversación llega en PR-B): ningún mensaje, ninguna llamada a un modelo', () => {
+describe('el esqueleto: lo que el canal no lee, y sin prometer nada', () => {
+  it('un texto o un toque de lista SÍ recibe respuesta (la conversación llegó con PR-B): un solo mensaje', () => {
     const w = crear();
     for (const msg of [mTexto('hola'), mTexto('quiero el pack'), mLista('x')]) {
       const t = hablar(w, ANA, msg);
       expect(t.fallo).toBeNull();
-      expect(t.mensajes).toHaveLength(0);
-      expect(t.porNodo['Decidir turno']![0]!['ruta']).toBe('pendiente');
+      expect(t.mensajes.length).toBe(1);
     }
   });
 
@@ -205,11 +227,13 @@ describe('PR-A: sin conversación todavía, y sin prometer nada', () => {
     }
   });
 
-  it('el aviso a recepción NO existe en PR-A: la puerta en «operador» con aviso pedido no inventa un mensaje a nadie más', () => {
+  it('el aviso a recepción existe: la puerta en «operador» avisa a Antonio (plantilla, porque su ventana está cerrada) y solo entonces el texto fijo promete que una persona continúa', () => {
     const w = crear({ ingesta: { ok: true, atencion: { estado: 'operador', respuestasEnVentana: 55, avisarRecepcion: 'operador' } }, panel: panelOk() });
     const t = hablar(w, ANA, mTexto('hola'));
     expect(t.mensajes.map((m) => m.a)).toEqual([ANA]);
-    expect(t.avisos).toHaveLength(0);
+    expect(t.avisos.map((a) => a.a)).toEqual([REC]);
+    expect(t.avisos[0]!.tipo).toBe('template');
+    expect(t.mensajes[0]!.cuerpo).toMatch(/una persona del equipo va a continuar/);
   });
 });
 

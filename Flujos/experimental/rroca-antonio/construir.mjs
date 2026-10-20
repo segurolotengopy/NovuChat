@@ -28,7 +28,8 @@
  *   - la verificación del receptor: `wabaIdEsperado` FIJO (nunca una expresión), sin «Continue on Fail» ni `onError`, y «Descartar repetidos» entre ejecuciones;
  *   - un nodo HTTP solo habla con Meta, Gemini y las Functions de la consola; `REEMPLAZAR_*` solo donde se declara; ajustes de retención, orden y zona;
  *   - «Reportar mensaje (entrante)» va ARRIBA de la rama que responde (el reporte del entrante corre antes que el de la respuesta);
- *   - PR-A: el JSON lleva `meta.noPublicable` (aún no hay conversación) y la guardia lo EXIGE; PR-B lo quita y la guardia pasa a exigir lo contrario.
+ *   - PR-B: la conversación está completa (cotejo, modelo, avisos a Antonio), así que el JSON ya NO lleva `meta.noPublicable` y la guardia EXIGE que no vuelva. OJO: que ya no lleve la marca NO significa que
+ *     se pueda publicar: la guardia `--publicable` y la confirmación en `publicar-flujo.sh` son del PR-C, y hasta entonces este flujo no se publica ni se activa en un número real.
  */
 import { closeSync, constants, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -39,7 +40,9 @@ import { injertar } from '../comun-sin-agente/src/envio.mjs';
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/rroca-antonio.json');
 export const TOPE_DE_NODOS = 48;
-export const MARCA_NO_PUBLICABLE = 'PR-A: esqueleto sin conversación (PR-B la agrega); no se publica ni se activa en un número real';
+/** Los nodos de la conversación completa (PR-B): el cotejo del comprobante, el modelo y el aviso a Antonio. La guardia los exige. */
+export const NODOS_DEL_AVISO = ['Armar avisos', '¿Hay avisos?', 'Enviar aviso'];
+export const NODOS_DE_LA_CONVERSACION = ['Interpretar lectura', '¿Cotejar?', 'Cotejar en el servidor', '¿Conversar con el modelo?', 'Conversar con el modelo', '¿Falló la protección?', 'Reportar protección'];
 
 /**
  * El config del armador genérico. Vive aquí y no en un `construir.config.json`: el saneo del repo público trata todo JSON bajo `Flujos/` como un export de n8n.
@@ -48,7 +51,7 @@ export const MARCA_NO_PUBLICABLE = 'PR-A: esqueleto sin conversación (PR-B la a
 export const CONFIG = {
   plantilla: 'flujo.plantilla.json',
   raiz: '../..',
-  librerias: ['src/lib/ra.js'],
+  librerias: ['src/lib/cobro.js', 'src/lib/avisos.js', 'src/lib/ra.js'],
   comun: ['src/nodos/_comun.js'],
   paquetes: {
     mensajes: ['../comun-sin-agente/src/mensajes.js'],
@@ -101,7 +104,20 @@ const FORMAS_CONFIG = {
   numeroRecepcion: /^(\d{6,20}|REEMPLAZAR_[A-Z0-9_]+)$/,
   prefijosPermitidos: /^\d{1,4}(,\d{1,4})*$/,
   telefonosDePrueba: /^(\d{6,20}(,\d{6,20})*|REEMPLAZAR_[A-Z0-9_]+)$/,
-  modelo: /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/,
+  // El ÚNICO modelo de este flujo (decisión de Andres): gemini-3.5-flash-lite.
+  modelo: /^gemini-3\.5-flash-lite$/,
+  temperatura: /^(0|1|0\.\d{1,2})$/,
+  // El plazo de entrega que se dice al cliente (P2): horas enteras de 0 (sin plazo) a 23 (nunca más que la ventana de 24 h).
+  plazoEntregaHoras: /^([0-9]|1[0-9]|2[0-3])$/,
+  // Las plantillas de aviso a Antonio. El estado es el de Meta: solo APPROVED habilita el aviso fuera de la ventana de Antonio; el nombre puede ser un marcador mientras no exista.
+  avisoComprobantePlantilla: /^([a-z0-9_]{1,100}|REEMPLAZAR_[A-Z0-9_]+)$/,
+  avisoConsultaPlantilla: /^([a-z0-9_]{1,100}|REEMPLAZAR_[A-Z0-9_]+)$/,
+  avisoComprobanteEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
+  avisoConsultaEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
+  avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
+  // Textos que ve el cliente: una frase, sin comillas dobles ni llaves ni saltos; la línea de protección es un marcador hasta que Silvana la verifique.
+  garantiaTexto: /^[^"{}\r\n<>]{10,300}$/,
+  lineaProteccion: /^(REEMPLAZAR_[A-Z0-9_]+|[^"{}\r\n<>]{3,100})$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
 
@@ -116,7 +132,7 @@ export function cargarDatos(ruta = ARCHIVO_DE_DATOS) {
   const cadena = (ruta2, v) => { if (typeof v !== 'string' || v.trim() === '') errores.push(`${ruta2}: falta`); };
   cadena('nombreFlujo', d.nombreFlujo);
   cadena('nombreFlujoPrueba', d.nombreFlujoPrueba);
-  for (const c of ['ingesta', 'graph', 'graphPrueba', 'entradaPrueba', 'gemini']) cadena(`credenciales.${c}`, (d.credenciales || {})[c]);
+  for (const c of ['ingesta', 'graph', 'graphPrueba', 'entradaPrueba', 'gemini', 'geminiPrueba']) cadena(`credenciales.${c}`, (d.credenciales || {})[c]);
   for (const c of ['ruta', 'urlVerificador', 'wabaIdEsperado']) {
     const v = (d.receptor || {})[c];
     cadena(`receptor.${c}`, v);
@@ -173,8 +189,29 @@ export function guardias(variante, flujo) {
   if (nodos.some((n) => n.type === 'n8n-nodes-base.whatsAppTrigger')) h.push('contiene un WhatsApp Trigger (prohibición 7: reescribe el webhook de toda la app)');
   if (/subscriptions|subscribed_apps/i.test(JSON.stringify(flujo))) h.push('menciona «subscriptions» o «subscribed_apps» (prohibición 7)');
   if (/langchain\.(agent|memory\w*|lmChat\w*|chain\w*)$/i.test(nodos.map((n) => n.type).join('\n'))) h.push('lleva un agente, memoria o modelo de chat de n8n: este flujo no los lleva');
-  // PR-A: sin conversación, el flujo no se publica. La marca tiene que estar.
-  if (!flujo || !flujo.meta || flujo.meta.noPublicable !== MARCA_NO_PUBLICABLE) h.push('falta `meta.noPublicable` (PR-A: el esqueleto aún no tiene conversación y no se publica)');
+  // PR-B: la conversación está completa y la marca de PR-A sobra. (Que no la lleve NO autoriza a publicar: la guardia de publicación es del PR-C.)
+  if (flujo && flujo.meta && flujo.meta.noPublicable !== undefined) h.push('trae `meta.noPublicable`: la conversación ya está completa (PR-B) y la marca sobra');
+  // La conversación completa: el cotejo del comprobante, el modelo y el aviso a Antonio. Sin el aviso, los textos que prometen que Antonio revisa no tendrían respaldo («solo se ofrece lo que se cumple»).
+  for (const n of [...NODOS_DE_LA_CONVERSACION, ...NODOS_DEL_AVISO]) if (!nombres.has(n)) h.push(`falta el nodo «${n}» de la conversación completa (PR-B)`);
+  const conex = (flujo && flujo.connections) || {};
+  const destinosDe = (nombre, salida) => (((conex[nombre] || {}).main || [])[salida] || []).map((x) => x.node);
+  if (nombres.has('Armar avisos') && !destinosDe('Armar avisos', 0).includes('¿Hay avisos?')) h.push('«Armar avisos» no está conectado a «¿Hay avisos?»');
+  if (nombres.has('¿Hay avisos?') && !destinosDe('¿Hay avisos?', 0).includes('Enviar aviso')) h.push('«¿Hay avisos?» no envía por «Enviar aviso»');
+  if (nombres.has('Enviar aviso') && !destinosDe('Enviar aviso', 0).includes('Armar mensajes')) h.push('«Enviar aviso» no cuelga de «Armar mensajes»: el aviso tiene que correr ANTES de armar el mensaje que dice si salió');
+  if (nombres.has('¿Hay avisos?') && !destinosDe('¿Hay avisos?', 1).includes('Armar mensajes')) h.push('«¿Hay avisos?» no envía la rama sin aviso (salida 1) a «Armar mensajes»');
+  const enviarAviso = por('Enviar aviso');
+  if (enviarAviso && !((enviarAviso.credentials || {}).httpHeaderAuth || {}).name) h.push('«Enviar aviso» no lleva credencial (httpHeaderAuth)');
+  if (enviarAviso && enviarAviso.onError !== 'continueRegularOutput') h.push('«Enviar aviso» no lleva `onError: continueRegularOutput`: si Meta lo rechaza, el turno se cortaría y el cliente quedaría sin respuesta');
+  const codigoAvisos = String(p(por('Armar avisos')).jsCode || '');
+  if (nombres.has('Armar avisos') && !(/raPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos) && /RA_VENTANA_ANTONIO_MS/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la plantilla ni la ventana de Antonio: el aviso fuera de las 24 h no saldría');
+  // Un comprobante solo se coteja si hay un cobro real, y el modelo es el único permitido.
+  const cotejar = por('Cotejar en el servidor');
+  if (cotejar && !/cotejarComprobanteVenta$/.test(String(p(cotejar).url || ''))) h.push('«Cotejar en el servidor» no llama a cotejarComprobanteVenta');
+  const modelo = por('Conversar con el modelo');
+  if (modelo && !/^=?https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\//.test(String(p(modelo).url || ''))) h.push('«Conversar con el modelo» no llama a Gemini');
+  // El reporte saliente lleva el evento de protección (`no_contactar`) siempre, aunque salga el respaldo.
+  const repSal = por('Reportar mensaje (saliente)');
+  if (repSal && !/no_contactar/.test(String(p(repSal).jsonBody || ''))) h.push('«Reportar mensaje (saliente)» no reporta el evento `no_contactar` (condición dura del contrato del rescate)');
   // Los nodos de medios comunes tienen que estar, con los nombres que esos módulos leen por contrato.
   for (const n of ['Normalizar entrada', 'Config del negocio', 'Obtener URL del medio (general)', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado']) if (!nombres.has(n)) h.push(`falta el nodo «${n}» (contrato con los módulos comunes de medios)`);
   // El reporte del entrante corre ANTES que la rama que responde: «Reportar mensaje (entrante)» arriba de la «Puerta del turno» y de toda la rama de medios y de decisión.
@@ -182,6 +219,17 @@ export function guardias(variante, flujo) {
   if (rep) {
     for (const n of nodos) {
       if (['Puerta del turno', '¿Bajar medio?', 'Obtener URL del medio (general)', 'Decidir turno', 'Armar mensajes'].includes(n.name) && !(rep.position[1] < n.position[1])) h.push(`«Reportar mensaje (entrante)» tiene que ir arriba de «${n.name}» en el lienzo`);
+    }
+  }
+  // La variante de PRUEBA nunca usa credenciales de producción: ni la de Graph ni la de Gemini (los nodos de medios, el aviso, el envío y el modelo).
+  if (variante === 'prueba') {
+    for (const n of nodos) {
+      for (const [tipo, c] of Object.entries(n.credentials || {})) {
+        const nombreCred = String((c || {}).name || '');
+        if ((tipo === 'googlePalmApi' && !/pruebas/i.test(nombreCred)) || (n.name !== NODO_PRUEBA && n.name !== 'Traer configuración' && n.name !== 'Reportar mensaje (entrante)' && n.name !== 'Reportar mensaje (saliente)' && n.name !== 'Cotejar en el servidor' && n.name !== 'Reportar protección' && tipo === 'httpHeaderAuth' && !/pruebas/i.test(nombreCred))) {
+          h.push(`la prueba usa una credencial de producción en «${n.name}» (${tipo})`);
+        }
+      }
     }
   }
   if (variante === 'produccion') {
@@ -251,7 +299,9 @@ export function armarAntonio(proyecto, datos, v) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
     for (const c of Object.values(n.credentials || {})) {
       const m = /^@@cred:(ingesta|graph|entradaPrueba|gemini)$/.exec(String(c.name));
-      if (m) c.name = dato(datos, `credenciales.${m[1]}`, `${donde} · ${n.name}`);
+      // La variante de PRUEBA nunca usa las credenciales de producción de Meta ni de Gemini: los nodos de medios, el aviso y el modelo van con las de prueba (como el envío).
+      const clave = prueba && m && m[1] === 'graph' ? 'graphPrueba' : (prueba && m && m[1] === 'gemini' ? 'geminiPrueba' : (m ? m[1] : ''));
+      if (m) c.name = dato(datos, `credenciales.${clave}`, `${donde} · ${n.name}`);
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});
     // Los módulos comunes de medios se INCLUYEN desde su fuente (ya leída por el armador genérico, dentro de la raíz): el código queda tal cual, sin una sola edición.
@@ -268,14 +318,18 @@ export function armarAntonio(proyecto, datos, v) {
     credenciales: { graph: dato(datos, prueba ? 'credenciales.graphPrueba' : 'credenciales.graph', donde), ingesta: dato(datos, 'credenciales.ingesta', donde) },
     ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`,
     entrada: 'Normalizar entrada',
-    desde: [4280, 300],
+    desde: [6200, 300],
   });
   // Puerta de la entrega (propia): el reporte saliente cuelga de «¿Meta aceptó?». Solo se reencamina la CONEXIÓN de la cadena común; sus nodos quedan intactos.
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);
   reporta.main[0] = [{ node: '¿Meta aceptó?', type: 'main', index: 0 }];
-  // PR-A: el esqueleto no se publica. La marca viaja en el JSON y la guardia la exige.
-  plantilla.meta = { noPublicable: MARCA_NO_PUBLICABLE };
+  // El reporte saliente de ESTE flujo (propio): igual al común, más el EVENTO. `qr_enviado` lleva `reglaCobro: 2` (QR REAL: abre el cobro de 15 minutos, 3 intentos), `referencia` (el pedido) y `monto` (el
+  // del catálogo): contra ese número coteja el servidor, y solo viaja si el envío principal (la imagen) fue aceptado (si cayó el respaldo en texto, el cliente no tiene QR y el cobro no se abre).
+  // `no_contactar` (violencia o miedo) viaja SIEMPRE, aunque salga el respaldo: es la condición dura del contrato del rescate (ninguna protección puede quedar sin reportar).
+  const rep = plantilla.nodes.find((n) => n.name === 'Reportar mensaje (saliente)');
+  if (!rep || typeof rep.parameters.jsonBody !== 'string' || !rep.parameters.jsonBody.includes('evento: m.evento')) throw new Error(`${donde}: la cadena común cambió: «Reportar mensaje (saliente)» ya no arma el cuerpo esperado`);
+  rep.parameters.jsonBody = "={{ (() => { const m = $('Armar mensajes').item.json; let principal = true; try { principal = !($('Enviar a WhatsApp').item.json || {}).error; } catch (e) { principal = true; } const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal) { r.evento = m.evento; if (m.reglaCobro === 2) r.reglaCobro = 2; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}";
   const texto = armarVariante({ ...proyecto, plantilla }, { archivo: v.archivo, nombre: dato(datos, prueba ? 'nombreFlujoPrueba' : 'nombreFlujo', donde), quitar: [] });
   const flujo = JSON.parse(texto);
   if (!sinMarcas(flujo, false)) throw new Error(`${donde}: quedó una marca @@ sin reemplazar`);

@@ -145,10 +145,19 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     }
   });
 
-  it('¿Reportar? (entrante) y Reportar mensaje (entrante) son los de chat-novuchat; solo cambia el nombre del nodo de entrada que leen', () => {
-    for (const n of ['¿Reportar? (entrante)', 'Reportar mensaje (entrante)']) {
-      expect(sinLibres(de(plantilla, n)), n).toEqual(sinLibres(renombrado(de(chat, n)) as J));
-    }
+  it('¿Reportar? (entrante) es el de chat-novuchat (solo cambia el nombre del nodo de entrada que lee)', () => {
+    expect(sinLibres(de(plantilla, '¿Reportar? (entrante)'))).toEqual(sinLibres(renombrado(de(chat, '¿Reportar? (entrante)')) as J));
+  });
+
+  it('Reportar mensaje (entrante) es el de chat-novuchat con UN cambio PROPIO declarado: el `evento` ya no sale de la regex heredada («no me mandaron el material» la disparaba) sino de una regex acotada a PETICIONES más `riesgoEscrito`', () => {
+    const origen = JSON.stringify(sinLibres(renombrado(de(chat, 'Reportar mensaje (entrante)')) as J));
+    const propio = JSON.stringify(sinLibres(de(plantilla, 'Reportar mensaje (entrante)')));
+    const viejo = origen.match(/evento: \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\) \? 'no_contactar' : undefined/);
+    expect(viejo, 'el origen ya no trae la regex heredada: hay que revisar la declaración').not.toBeNull();
+    const nuevo = propio.match(/evento: \(t\.riesgoEscrito === true \|\| \/[^]*?\/i\.test\(String\(t\.texto \|\| ''\)\)\) \? 'no_contactar' : undefined/);
+    expect(nuevo, 'el propio no trae el evento declarado').not.toBeNull();
+    // Todo lo demás es idéntico al origen.
+    expect(propio.replace(nuevo![0], 'EVENTO')).toBe(origen.replace(viejo![0], 'EVENTO'));
   });
 
   it('los nodos de medios (bajar, tamaño, descarga, audio, documento) son los de chat-novuchat con los campos del contrato común (`esMedioAudio`, `esMedioVisual`) y las credenciales por nombre', () => {
@@ -159,8 +168,11 @@ describe('HUECOS de los nodos JSON de la plantilla: iguales a su origen en todo 
     for (const n of ['Transcribir audio', 'Describir documento', 'Describir imagen']) {
       const propio = sinLibres(de(plantilla, n));
       const origen = sinLibres(renombrado(de(chat, n)) as J);
-      expect({ ...propio, credentials: undefined, parameters: { ...propio.parameters, text: undefined } }, n)
-        .toEqual({ ...origen, credentials: undefined, parameters: { ...origen.parameters, text: undefined } });
+      // «Describir …» también sube `maxOutputTokens` (600): lee en la MISMA llamada los seis campos del comprobante (el cotejo lo hace el servidor).
+      const sinOpciones = n === 'Transcribir audio' ? {} : { options: undefined };
+      expect({ ...propio, credentials: undefined, parameters: { ...propio.parameters, text: undefined, ...sinOpciones } }, n)
+        .toEqual({ ...origen, credentials: undefined, parameters: { ...origen.parameters, text: undefined, ...sinOpciones } });
+      if (n !== 'Transcribir audio') expect((propio.parameters as J).options).toEqual({ maxOutputTokens: 600 });
       expect(propio.credentials).toEqual({ googlePalmApi: { id: '', name: '@@cred:gemini' } });
     }
   });
