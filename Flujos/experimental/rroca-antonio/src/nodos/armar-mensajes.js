@@ -64,7 +64,8 @@ const conAntonio = (cuerpo, extra) => {
   return cmContactoConBoton(Object.assign({ numero: cnDigitos(cfg.numeroRecepcion), desde: from, cuerpo: c, botonTexto: RA_BOTON_ANTONIO, saludo: 'Hola Antonio, vengo del asistente virtual.', textoDelRespaldo: 'Escríbele aquí:', sinNumero: 'Eso lo ve Antonio directamente.' }, extra || {}));
 };
 const usadosHoy = () => fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
-// REGLA (P7): el PRIMER mensaje a un teléfono NO lleva botones con montos. Mientras no esté saludado no hay menú; ya saludado, el menú principal sin los botones que ya pulsó.
+// REGLA (P7): un saludo SIN producto decidido no lleva botones con montos. Mientras no esté saludado no hay menú en las respuestas libres; ya saludado, el menú principal sin los botones que ya pulsó.
+// Un prellenado con producto ya decidido (Workbook, Calendario/Preguntas) SÍ muestra el precio y los botones con montos desde el primer mensaje, y el Pack o el Libro van directo al QR con su monto.
 const menuAbierto = () => (fichaAntes.saludado ? raMenu(cat, usadosHoy()) : []);
 const presentacion = !fichaAntes.saludado;
 const conPresentacion = (cuerpo) => (presentacion ? RA_SALUDO_APERTURA + '\n\n' + cuerpo : cuerpo);
@@ -77,9 +78,10 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
     m = conAntonio(avisoSalio ? String(puerta.texto) : raTextoDerivacion('consulta', false, '', base));
   } else if (puerta.responder === true && String(puerta.texto || '').trim() !== '') m = texto(String(puerta.texto));
 } else if (rutaDelTurno === 'sigue') {
-  // El botón «usado» sale del PRODUCTO del QR (también si el producto se eligió por texto prellenado, sin botón) o, si no, del botón pulsado.
+  // El botón «usado» sale del PRODUCTO del QR (también si el producto se eligió por texto prellenado, sin botón) o de «Bonos» SOLO si el plan realmente atiende el toque (la lista). Un toque que no se
+  // atendió (un QR ya abierto, el saludo, una derivación) no se marca: el botón sigue disponible.
   if (tipoDePlan === 'qr' && RA_PRODUCTOS[plan.producto]) usadoNuevo = RA_PRODUCTOS[plan.producto].boton;
-  else usadoNuevo = raProductoDeBoton(plan.boton) || plan.boton === RA_BOTON_BONOS ? String(plan.boton) : '';
+  else if (tipoDePlan === 'bonos' && plan.boton === RA_BOTON_BONOS) usadoNuevo = RA_BOTON_BONOS;
 
   // LO QUE REDACTA EL MODELO: se revisa y se pule; un rechazo (monto, promesa, enlace, negar ser IA, varias preguntas…), un error del servicio o un texto vacío caen al texto fijo.
   // La marca RIESGO del modelo activa la protección; la palabra DERIVAR pasa a Antonio. Ninguna de las dos llega jamás al cliente.

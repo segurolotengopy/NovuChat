@@ -403,13 +403,24 @@ function raQuiereOpciones(n) {
 // Los menús. Máximo 3 botones (título de hasta 20 caracteres) y la lista de bonos (fila de hasta 24). Un botón que el cliente ya pulsó NO reaparece; un producto sin precio o agotado no se ofrece.
 // -----------------------------------------------------------------------------
 function raBoton(id, titulo) { return { id: id, title: cbLinea(titulo, 20) }; }
+// Un botón con precio: el sufijo « <monto> Bs» se conserva SIEMPRE (≤ 20 caracteres en total); lo que se recorta es el nombre, por palabras completas y sin dejar una preposición colgando.
+function raBotonConPrecio(id, nombre, monto) {
+  const sufijo = ' ' + raMontoBs(monto);
+  const max = 20 - sufijo.length;
+  const palabras = cbLinea(nombre, 60).split(' ').filter(Boolean);
+  let t = '';
+  for (const p of palabras) { const x = t ? t + ' ' + p : p; if (x.length > max) break; t = x; }
+  t = t.replace(/(?:\s+(?:de|del|el|la|los|las|y|o|a|en|un|una))+$/i, '');
+  if (!t) t = cbLinea(nombre, Math.max(1, max)).trimEnd();
+  return { id: id, title: t + sufijo };
+}
 function raHayBonos(cat) { return RA_BONOS.some((k) => typeof raPrecio(cat, k) === 'number'); }
 // El menú principal: Pack, Libro y Bonos, con el precio del catálogo en el título (ajustado a 20 caracteres).
 function raMenu(cat, usados) {
   const u = Array.isArray(usados) ? usados : [];
   const b = [];
-  if (typeof raPrecio(cat, 'pack') === 'number') b.push(raBoton('b_pack', RA_PRODUCTOS.pack.titulo + ' ' + raMontoBs(raPrecio(cat, 'pack'))));
-  if (typeof raPrecio(cat, 'libro') === 'number') b.push(raBoton('b_libro', RA_PRODUCTOS.libro.titulo + ' ' + raMontoBs(raPrecio(cat, 'libro'))));
+  if (typeof raPrecio(cat, 'pack') === 'number') b.push(raBotonConPrecio('b_pack', RA_PRODUCTOS.pack.titulo, raPrecio(cat, 'pack')));
+  if (typeof raPrecio(cat, 'libro') === 'number') b.push(raBotonConPrecio('b_libro', RA_PRODUCTOS.libro.titulo, raPrecio(cat, 'libro')));
   if (raHayBonos(cat)) b.push(raBoton(RA_BOTON_BONOS, 'Bonos sueltos'));
   return b.filter((x) => u.indexOf(x.id) < 0).slice(0, 3);
 }
@@ -423,8 +434,8 @@ function raFilasBonos(cat, usados) {
 function raMenuDeBonos(productos, cat, usados) {
   const u = Array.isArray(usados) ? usados : [];
   const b = [];
-  for (const k of productos) if (typeof raPrecio(cat, k) === 'number') b.push(raBoton(RA_PRODUCTOS[k].boton, RA_PRODUCTOS[k].titulo + ' ' + raMontoBs(raPrecio(cat, k))));
-  if (typeof raPrecio(cat, 'pack') === 'number') b.push(raBoton('b_pack', 'Mejor el Pack ' + raMontoBs(raPrecio(cat, 'pack'))));
+  for (const k of productos) if (typeof raPrecio(cat, k) === 'number') b.push(raBotonConPrecio(RA_PRODUCTOS[k].boton, RA_PRODUCTOS[k].titulo, raPrecio(cat, k)));
+  if (typeof raPrecio(cat, 'pack') === 'number') b.push(raBotonConPrecio('b_pack', 'Mejor el Pack', raPrecio(cat, 'pack')));
   return b.filter((x) => u.indexOf(x.id) < 0).slice(0, 3);
 }
 

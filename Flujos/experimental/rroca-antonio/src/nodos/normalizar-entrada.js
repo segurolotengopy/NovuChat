@@ -102,6 +102,8 @@ return [{ json: {
   esDocumento: tipo === 'document',
   mediaId: fueraDePais ? '' : mediaId,
   fueraDePais: fueraDePais,
+  // Violencia o miedo en el texto o en el pie de foto: el reporte del entrante lleva `no_contactar` (así no hace falta un reporte aparte que cree un mensaje de más).
+  riesgoEscrito: raEsRiesgo(raNorm([texto, pie].join(' '))),
   mensajeMs: mensajeMs,
   mimeType: mimeType,
   ahoraMs: ahoraTurno,

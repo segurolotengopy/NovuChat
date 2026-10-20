@@ -161,11 +161,6 @@ if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: deriv
 if (raPreguntaPorResultado(norm)) return salir({ tipo: 'resultado', cat: cat });
 // Con un QR abierto, cualquier texto recibe el recordatorio (un solo QR a la vez); el modelo no interviene.
 if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
-// Después de un comprobante recibido, hablar de pago, libro, material o entrega NO es una charla libre: el modelo no habla del estado de un pago ni de una entrega. Va la derivación de no entrega
-// (texto fijo con el plazo del dato, aviso y botón).
-if (ficha.comprobanteMs > 0 && (/\b(pago|pague|pagado|pagaste|comprobante|transferencia|deposito|material|llega\w*|llego|enviar\w*|enviaron|mandar\w*|mandaron|recib\w*|entrega\w*)\b/.test(norm) || (/\blibro\b/.test(norm) && /\b(cuando|donde|llega\w*|llego|envi\w*|mand\w*|recib\w*)\b/.test(norm)))) {
-  return salir({ tipo: 'derivar', motivo: 'consulta', clave: 'no_entrega', aviso: avisoDeConsulta('no_entrega', 'queja de no entrega: el cliente pregunta por su pago o por el material'), cat: cat });
-}
 // El ángulo del anuncio: por el texto escrito o por el texto leído de una captura (publicidad). El modelo redacta la apertura con el ángulo como dato; si falla, sale el texto fijo del ángulo.
 const angulo = raAngulo(norm) || (esVisual ? raAngulo(raNorm(leido)) : '');
 if (angulo) {
@@ -184,6 +179,11 @@ const confirmado = raProductoConfirmado(norm);
 if (confirmado) return salir(elegir(confirmado, ''));
 if (raQuiereOpciones(norm)) return salir(ficha.saludado ? opcionesDe(ficha.usados, '') : saludo());
 if (!ficha.saludado && (raEsSoloSaludo(norm) || esVisual)) return salir(saludo());
+// Después de un comprobante recibido, hablar de pago, libro, material o entrega NO es una charla libre (y esto va DESPUÉS de las preguntas de precio, la confirmación de un producto y «cómo pago», que son una compra nueva): el modelo no habla del estado de un pago ni de una entrega. Va la derivación de no entrega
+// (texto fijo con el plazo del dato, aviso y botón).
+if (ficha.comprobanteMs > 0 && (/\b(pago|pague|pagado|pagaste|comprobante|transferencia|deposito|material|llega\w*|llego|enviar\w*|enviaron|mandar\w*|mandaron|recib\w*|entrega\w*)\b/.test(norm) || (/\blibro\b/.test(norm) && /\b(cuando|donde|llega\w*|llego|envi\w*|mand\w*|recib\w*)\b/.test(norm)))) {
+  return salir({ tipo: 'derivar', motivo: 'consulta', clave: 'no_entrega', aviso: avisoDeConsulta('no_entrega', 'queja de no entrega: el cliente pregunta por su pago o por el material'), cat: cat });
+}
 const paraElModelo = esVisual ? 'El cliente envió la captura de un anuncio. Texto leído: ' + leido : textoCliente;
 return salir({ tipo: 'modelo', cat: cat, textoCliente: String(paraElModelo).slice(0, 500) }, {
   llamarModelo: true, cuerpoModelo: raCuerpoModelo(paraElModelo, ficha.hist, '', base.temperatura),

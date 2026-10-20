@@ -328,7 +328,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const t = $('Normalizar entrada').first().json; return JSON.stringify({ telefono: t.from, direccion: 'entrante', tipo: t.tipo || 'text', texto: t.textoReporte || '', idMeta: t.mensajeId || '', nombreContacto: t.nombrePerfil || '', origen: t.origen || 'directo', evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String(t.texto || '')) ? 'no_contactar' : undefined }); })() }}",
+        "jsonBody": "={{ (() => { const t = $('Normalizar entrada').first().json; return JSON.stringify({ telefono: t.from, direccion: 'entrante', tipo: t.tipo || 'text', texto: t.textoReporte || '', idMeta: t.mensajeId || '', nombreContacto: t.nombrePerfil || '', origen: t.origen || 'directo', evento: (t.riesgoEscrito === true || /\\bno (me )?(escrib(as|an|ais)|mand(es|en)|contact(es|en)|llam(es|en)|moleste[sn]?)\\b|\\bno (me )?vuelv(as|an) a (escribir|llamar|contactar)\\b|\\bd[eé]j(a|á|e|en|ame|enme)\\s+de\\s+(escribir|mandar|molestar|llamar|contactar)|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^\\W*stop\\W*$/i.test(String(t.texto || ''))) ? 'no_contactar' : undefined }); })() }}",
         "options": {
           "timeout": 4000
         }
@@ -1076,7 +1076,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ (() => { const m = $('Armar mensajes').first().json; if (m.evento !== 'no_contactar' || $('Config del negocio').first().json.modoPrueba === true) return false; const ok = (nombre) => { try { const x = $(nombre); return !!x.isExecuted && x.all().some((i) => ((((i.json || {}).messages) || [])[0] || {}).id); } catch (e) { return false; } }; return !(ok('Enviar a WhatsApp') || ok('Enviar respaldo')); })() }}",
+              "leftValue": "={{ (() => { const m = $('Armar mensajes').first().json; if (m.evento !== 'no_contactar' || $('Normalizar entrada').first().json.riesgoEscrito === true || $('Config del negocio').first().json.modoPrueba === true) return false; const ok = (nombre) => { try { const x = $(nombre); return !!x.isExecuted && x.all().some((i) => ((((i.json || {}).messages) || [])[0] || {}).id); } catch (e) { return false; } }; return !(ok('Enviar a WhatsApp') || ok('Enviar respaldo')); })() }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -1129,10 +1129,7 @@
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 2,
-      "waitBetweenTries": 1000,
-      "notes": "Reporta `no_contactar` cuando el mensaje de protección no pudo enviarse: la persona no debe recibir un rescate aunque Meta haya rechazado el envío y su respaldo. Es el único reporte de este turno (el saliente no corrió)."
+      "notes": "Reporta `no_contactar` SOLO cuando el mensaje de protección no pudo enviarse y el riesgo no estaba ya en el texto del entrante (que lleva el evento en su propio reporte). SIN reintentos: no es idempotente. Efecto declarado (DISENO.md): la ingesta escribe un documento de mensaje por cada reporte, así que este caso raro (riesgo hallado en un audio, una imagen o por la marca del modelo, y falla el envío Y su respaldo) suma un entrante a la conversación."
     }
   ],
   "connections": {
