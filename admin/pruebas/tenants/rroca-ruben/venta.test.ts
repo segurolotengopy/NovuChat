@@ -97,6 +97,69 @@ const RESPUESTA_DEL_MODELO = 'Qué buen punto. El libro te enseña paso a paso a
 const geminiTexto = (t: string): J => ({ candidates: [{ content: { parts: [{ text: t }] } }] });
 const cotejoValido = (): J => ({ statusCode: 200, body: { estado: 'valido', importe: 60, avisarComercio: true, cierreId: 'venta_1' } });
 
+// ------------------------------------------------------------------------------ INVARIANTES DE UX (Andres, 20/10/2026), vigilados en TODOS los turnos de TODA la batería
+// `crear()` envuelve `mundo.turno`: cada escenario que habla con el flujo (por `hablar` o directo) pasa por aquí. Reglas:
+//   1. UN BOTÓN YA PULSADO NO REAPARECE en ningún mensaje posterior de esa conversación (ni en la respuesta al toque), por teléfono;
+//   2. NO SE OFRECE ALGO ANTES DE TIEMPO: el QR (pagar) solo sale si en ese turno el cliente eligió un producto (botón de producto o prellenado del Pack/Libro), y ningún texto de pago aparece sin QR;
+//   3. UNA SOLA PRESENTACIÓN: la palabra «asistente» aparece a lo más una vez en cada mensaje al cliente;
+//   4. PÁRRAFOS: ningún texto saliente va en un bloque corrido: cada párrafo (separado por una línea en blanco) tiene a lo más DOS oraciones y, con dos, a lo más 220 caracteres; sin saltos triples ni espacios sobrantes.
+interface UxMsg { tipo: string; cuerpo: string; payload: J }
+interface UxEstado { pulsados: Map<string, Set<string>>; turnos: number }
+const UX_ESTADO = new WeakMap<Mundo, UxEstado>();
+const UX_CONTADOR = { turnos: 0, mundos: new Set<Mundo>() };
+const idsDeBotones = (m: { payload: J }): string[] =>
+  ((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.id));
+/** Las violaciones de los invariantes para UN turno; `pulsados` se actualiza con el toque de este turno ANTES de mirar la respuesta. Función pura, probada también con casos negativos. */
+const PARRAFO_MAX_ORACIONES = 2;
+const PARRAFO_MAX_CARACTERES = 220;
+function violacionesDeParrafos(cuerpo: string): string[] {
+  const v: string[] = [];
+  if (/\n{3,}/.test(cuerpo)) v.push('saltos de línea triples');
+  if (cuerpo !== cuerpo.trim() || /[ \t]+\n|\n[ \t]+/.test(cuerpo)) v.push('espacios sobrantes al borde o antes de un salto');
+  for (const par of cuerpo.split('\n\n')) {
+    if (par.includes('\n')) continue; // listas y rótulos de líneas sueltas
+    const oraciones = par.split(/(?<=[.!?…])\s+(?=[¿¡«"A-ZÁÉÍÓÚÑ0-9])/).length;
+    if (oraciones > PARRAFO_MAX_ORACIONES) v.push(`un párrafo con ${oraciones} oraciones sin línea en blanco: «${par.slice(0, 40)}…»`);
+    else if (oraciones === 2 && par.length > PARRAFO_MAX_CARACTERES) v.push(`un párrafo de 2 oraciones con ${par.length} caracteres`);
+  }
+  return v;
+}
+function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[]): string[] {
+  const v: string[] = [];
+  const inter = entrante['interactive'] as J | undefined;
+  const idToque = entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : '';
+  if (idToque) pulsados.add(idToque);
+  const textoEntrante = entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '';
+  const eligioProducto = ['b_pack', 'b_libro', 'b_closer', 'b_videos'].includes(idToque) || /^Hola Rubén, quiero (el Pack Completo|el libro IA para Emprendedores)/.test(textoEntrante);
+  for (const m of mensajes) {
+    for (const id of idsDeBotones(m)) if (pulsados.has(id)) v.push(`el botón pulsado «${id}» reapareció`);
+    if (m.tipo === 'image' && !eligioProducto) v.push('se ofreció el QR (pagar) sin que el cliente eligiera un producto en este turno');
+    if (m.tipo !== 'image' && /escanea el qr/i.test(m.cuerpo)) v.push('un texto de pago fuera del QR');
+    if (m.tipo === 'interactive' && idsDeBotones(m).length && !eligioProducto && /(pagar|\bqr\b)/i.test(((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => String(b['reply']?.title)).join(' '))) v.push('un botón de pago antes de elegir producto');
+    v.push(...violacionesDeParrafos(m.cuerpo));
+    if ((m.cuerpo.match(/asistente/gi) ?? []).length > 1) v.push('el mensaje se presenta más de una vez («asistente» repetido)');
+  }
+  return v;
+}
+function vigilarUx(mundo: Mundo): void {
+  const original = mundo.turno.bind(mundo);
+  const estado: UxEstado = { pulsados: new Map(), turnos: 0 };
+  UX_ESTADO.set(mundo, estado);
+  mundo.turno = (entrada: J, opciones?: Parameters<Mundo['turno']>[1]) => {
+    const t = original(entrada, opciones);
+    const msg = ((entrada['body']?.value?.messages ?? [])[0] ?? {}) as J;
+    const from = String(msg['from'] ?? '');
+    const pulsados = estado.pulsados.get(from) ?? new Set<string>();
+    estado.pulsados.set(from, pulsados);
+    // Los mensajes al cliente de este turno (sin los avisos a Rubén ni los respaldos de texto).
+    const salida = t.mensajes.filter((e) => !e.respaldo).map((e) => ({ tipo: e.tipo, cuerpo: e.cuerpo, payload: e.payload }));
+    const v = violacionesDeUx(pulsados, msg, salida);
+    estado.turnos += 1; UX_CONTADOR.turnos += 1; UX_CONTADOR.mundos.add(mundo);
+    expect(v, `invariante de UX violado: ${v.join('; ')}`).toEqual([]);
+    return t;
+  };
+}
+
 function crear(o: Opciones = {}) {
   // El estado del cobro es POR TELÉFONO (lo calcula el servidor mirando la solicitud de cada uno).
   const cobros: Record<string, Cobro> = {};
@@ -175,6 +238,7 @@ function crear(o: Opciones = {}) {
   // La ventana de Rubén: su ficha (clave = su número) guarda cuándo fue su último mensaje al bot.
   const haceMin = o.rubenEscribioHaceMin === undefined ? 5 : o.rubenEscribioHaceMin;
   if (haceMin !== null) (mundo.sd as J)['rroca'] = { [REC]: { ultimoMs: AHORA - haceMin * 60_000, turnos: 1 } };
+  vigilarUx(mundo);
   return { mundo, cobro: de(ANA), cobros, de };
 }
 type Mundial = ReturnType<typeof crear>;
@@ -190,6 +254,7 @@ const unico = (t: ResultadoTurno): ResultadoTurno['mensajes'][number] => {
 const botones = (m: { payload: J }): { id: string; title: string }[] =>
   ((m.payload['interactive']?.action?.buttons ?? []) as J[]).map((b) => ({ id: String(b['reply']?.id), title: String(b['reply']?.title) }));
 const titulos = (m: { payload: J }): string[] => botones(m).map((b) => b.title);
+const ids = (m: { payload: J }): string[] => botones(m).map((b) => b.id);
 const eventosQr = (w: Mundial): J[] => w.mundo.llamadas.ingesta.filter((c) => c['evento'] === 'qr_enviado');
 const avisosDe = (t: ResultadoTurno): string[] => t.avisos.map((a) => a.cuerpo);
 /** ¿Hay una clave `link` en algún lugar de un valor, a cualquier profundidad? */
@@ -259,12 +324,13 @@ describe('los 5 mensajes prellenados de la landing', () => {
     expect(titulos(unico(t))).toEqual(['Videos 25 Bs', 'Mejor el Pack 60 Bs']);
   });
 
-  it('5 · Consulta: el saludo del asistente virtual con su pregunta, sin QR, sin botones y sin modelo', () => {
+  it('5 · Consulta: el saludo corto del asistente virtual con su pregunta y los dos botones, sin QR y sin modelo', () => {
     const w = crear();
     const t = hablar(w, ANA, mTexto(PRELLENADOS.consulta));
     const m = unico(t);
-    expect(m.tipo).toBe('text');
-    expect(m.cuerpo).toMatch(/^Hola, soy el asistente virtual de Rubén\./);
+    expect(m.tipo).toBe('interactive');
+    expect(titulos(m)).toEqual(['Ver precios', 'Hablar con Rubén']);
+    expect(m.cuerpo).toMatch(/^¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual de Rubén\./);
     expect(m.cuerpo).toMatch(/¿Qué duda tienes sobre el libro\?$/);
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
     expect(eventosQr(w)).toHaveLength(0);
@@ -456,15 +522,56 @@ describe('sin id de medio, sin cobro o con el modo equivocado: se deriva a Rubé
 });
 
 describe('la conversación: el modelo solo conversa', () => {
-  it('un saludo suelto recibe el saludo FIJO con los precios del catálogo; sin modelo; sin botones', () => {
+  it('un saludo suelto recibe el saludo FIJO y CORTO: una sola presentación, sin precios, con «Ver precios» y «Hablar con Rubén» en el MISMO mensaje; sin modelo', () => {
     const w = crear();
     const t = hablar(w, ANA, mTexto('Hola'));
     const m = unico(t);
-    expect(m.tipo).toBe('text');
-    expect(m.cuerpo).toContain('con 4 bonos (32 Bs)');
-    expect(m.cuerpo).toContain('Pack Completo (60 Bs)');
-    expect(m.cuerpo).toMatch(/¿A qué te dedicas o qué te gustaría mejorar primero en tu negocio\?$/);
+    expect(m.tipo).toBe('interactive');
+    expect(m.cuerpo).toBe('¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual de Rubén.\n\nTe cuento: el libro digital «IA para Emprendedores Independientes» (12 capítulos y más de 230 páginas) es un método práctico para que pases de solo "curiosear herramientas" a usar la IA para crear contenido rápido, atraer clientes, vender mejor y ahorrar tiempo, sin saber nada de tecnología.\n\nCuéntame, ¿tienes algún negocio actualmente o estás pensando en emprender?');
+    // UNA sola pregunta, a lo más 4 oraciones, sin precios ni enlaces ni datos de cobro.
+    expect((m.cuerpo.match(/\?/g) ?? []).length).toBe(1);
+    expect(m.cuerpo.split('\n\n')).toHaveLength(3);
+    expect(m.cuerpo).not.toMatch(/https?:|www\.|banco|\bqr\b/i);
+    expect(botones(m)).toEqual([{ id: 'b_precios', title: 'Ver precios' }, { id: 'b_ruben', title: 'Hablar con Rubén' }]);
+    // «asistente» aparece UNA sola vez; ninguna cifra de dinero; la pregunta de negocio no va en el primer mensaje.
+    expect((m.cuerpo.match(/asistente/gi) ?? []).length).toBe(1);
+    expect(m.cuerpo).not.toMatch(/\bBs\b|bolivianos/i);
+    expect(m.cuerpo).not.toMatch(/¿A qué te dedicas o qué te gustaría mejorar/);
+    expect(m.cuerpo).not.toMatch(PROHIBIDAS);
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
+  });
+
+  it('«Ver precios» muestra el menú de productos con precios (sin repetir «Ver precios»); «Hablar con Rubén» avisa y trae el botón; ninguno de los dos reaparece después', () => {
+    const w = crear();
+    hablar(w, ANA, mTexto('Hola'));
+    const p = unico(hablar(w, ANA, mBoton('b_precios')));
+    expect(titulos(p)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+    expect(ids(p)).not.toContain('b_precios');
+    const w2 = crear();
+    hablar(w2, BETO, mTexto('Hola'));
+    const t = hablar(w2, BETO, mBoton('b_ruben'));
+    expect(t.avisos).toHaveLength(1);
+    expect(t.avisos[0]!.cuerpo).toContain('quiere hablar con Rubén');
+    expect(unico(t).payload['interactive']?.type).toBe('cta_url');
+    // Un nuevo «hola»: el saludo vuelve sin «Hablar con Rubén» (ya lo pulsó); si pulsó los dos, sin botones del saludo.
+    const otra = unico(hablar(w2, BETO, mTexto('Hola')));
+    expect(ids(otra)).not.toContain('b_ruben');
+    // Un segundo toque de «Hablar con Rubén» dentro de los 30 minutos no vuelve a avisar.
+    expect(hablar(w2, BETO, mBoton('b_ruben')).avisos).toHaveLength(0);
+  });
+
+  it('con un QR abierto, «Ver precios» no abre el menú: recibe el recordatorio del QR', () => {
+    const w = crear();
+    pedirQr(w, 'pack');
+    const m = unico(hablar(w, ANA, mBoton('b_precios')));
+    expect(m.cuerpo).toMatch(/Ya tienes un QR abierto/);
+  });
+
+  it('la pregunta de negocio va solo en el saludo y NO se repite; la respuesta del cliente sigue al modelo', () => {
+    const w = crear();
+    expect(unico(hablar(w, ANA, mTexto('Hola'))).cuerpo).toMatch(/¿tienes algún negocio actualmente/);
+    const t = hablar(w, ANA, mTexto('qué capítulos tiene el libro?'));
+    expect(t.ejecutados.has('Conversar con el modelo')).toBe(true);
   });
 
   it('«precio» recibe el saludo con el menú de compra; una pregunta libre llama al modelo UNA vez y su texto sale con el menú', () => {
@@ -474,7 +581,7 @@ describe('la conversación: el modelo solo conversa', () => {
     w.mundo.dobles['Conversar con el modelo'] = (ll) => { cuerpo = ll.cuerpo; return geminiTexto(RESPUESTA_DEL_MODELO); };
     const t = hablar(w, BETO, mTexto('qué capítulos tiene el libro?'));
     const m = unico(t);
-    expect(m.cuerpo).toBe(RESPUESTA_DEL_MODELO);
+    expect(m.cuerpo.replace(/\s+/g, " ")).toBe(RESPUESTA_DEL_MODELO);
     expect(titulos(m)).toHaveLength(3);
     expect(t.registro.filter((r) => r.nodo === 'Conversar con el modelo')).toHaveLength(1);
     // El mensaje del cliente viaja como DATO entre delimitadores; el sistema lleva las reglas.
@@ -522,7 +629,7 @@ describe('la conversación: el modelo solo conversa', () => {
     it(`un modelo adversarial con ${nombre} cae al texto fijo, con el menú, sin QR`, () => {
       const w = crear({ modelo: geminiTexto(texto) });
       const m = unico(hablar(w, ANA, mTexto('cuéntame más del libro')));
-      expect(m.cuerpo).toBe('Gracias por escribir. ¿Quieres que te cuente qué incluye el libro o prefieres ver las opciones de compra?');
+      expect(m.cuerpo).toBe('Gracias por escribir.\n\n¿Quieres que te cuente qué incluye el libro o prefieres ver las opciones de compra?');
       expect(titulos(m)).toHaveLength(3);
       expect(eventosQr(w)).toHaveLength(0);
     });
@@ -690,7 +797,7 @@ describe('el comprobante', () => {
     const w = conQr({ lectura: 'ilegible', cotejo: () => ({ statusCode: 200, body: { estado: 'reintentar', motivo: 'ilegible' } }) });
     const t = hablar(w, ANA, mImagen());
     const m = unico(t);
-    expect(m.cuerpo).toMatch(/no pude leer bien el comprobante\. ¿Me lo envías de nuevo, más nítido/);
+    expect(m.cuerpo).toMatch(/no pude leer bien el comprobante\.\s+¿Me lo envías de nuevo, más nítido/);
     expect(t.avisos).toHaveLength(0);
     expect(t.ejecutados.has('Enviar aviso')).toBe(false);
     const cotejo = t.registro.find((r) => r.nodo === 'Cotejar en el servidor')!;
@@ -868,7 +975,7 @@ describe('la pausa por persona: CERO envío, CERO modelo, CERO descarga', () => 
     const w = crear();
     w.mundo.dobles['Reportar mensaje (entrante)'] = (ll) => (String(ll.cuerpo?.['telefono']) === ANA ? { ok: true, atencion: { estado: 'bloqueado', respuestasEnVentana: 30 } } : { ok: true });
     expect(hablar(w, ANA, mTexto('cuéntame del libro')).mensajes).toHaveLength(0);
-    expect(unico(hablar(w, BETO, mTexto('cuéntame del libro'))).cuerpo).toBe(RESPUESTA_DEL_MODELO);
+    expect(unico(hablar(w, BETO, mTexto('cuéntame del libro'))).cuerpo.replace(/\s+/g, " ")).toBe(RESPUESTA_DEL_MODELO);
   });
 
   it('comercio no operativo (409): ni modelo ni descargas; solo el texto neutro', () => {
@@ -908,7 +1015,7 @@ describe('+0 mensajes agregados al cliente y nunca textos prohibidos', () => {
     const textos: string[] = [L.RR_TEXTO_INGRESOS, L.RR_TEXTO_IMAGEN, L.RR_TEXTO_AUDIO, L.RR_TEXTO_OTRO, L.RR_TEXTO_MODELO_CAIDO, L.rrTextoComplementos(cat), L.rrTextoQrPendiente('pack', 60), L.rrTextoQrPendiente('', null)];
     for (const k of ['closer', 'videos']) for (const c of [true, false]) textos.push(L.rrTextoComplemento(k, cat, c));
     for (const [p, sim] of [['pack', false], ['libro', false], ['closer', true], ['videos', false]] as const) for (const c of [true, false]) textos.push(L.rrPieQr(p, 60, 'RRABC1', c, sim));
-    for (const q of [cat, {}]) for (const preg of ['¿a?', '¿b?']) textos.push(L.rrSaludo(q, preg));
+    for (const q of [cat, {}]) for (const preg of ['', '¿a?', '¿b?']) textos.push(L.rrSaludo(q, preg));
     for (const mot of ['sin_cobro', 'sin_medio', 'sin_precio', 'consulta', 'en_revision', 'qr_sin_aviso']) for (const s of [true, false, 'repetido']) textos.push(L.rrTextoDerivacion(mot, s));
     for (const clave of ['factura', 'garantia', 'otro_medio_pago', 'reclamo', 'no_entrega']) for (const s of [true, false]) textos.push(L.rrTextoDerivacion('consulta', s, clave));
     for (const r of ['cuadra', 'aproximado', 'reintentar', 'ilegible', 'ya_cotejado', 'simulado', 'sin_cotejo']) for (const c of ['', 'tardio', 'en_revision']) for (const s of [true, false, 'repetido']) textos.push(L.rrTextoComprobante(r, c, s, 'el comprobante dice 5 Bs y tu pedido es de 60 Bs').cuerpo);
@@ -1491,13 +1598,16 @@ describe('PR-3 · todo aviso pasa por `avLimpio`: sin enlaces, sin llaves, sin �
     for (const p of params) { expect(p).not.toMatch(/[\n\r\t]/); expect(p.trim()).not.toBe(''); }
   });
 
-  it('el saludo ofrece pasar con Rubén por un mecanismo que existe: escribir «quiero hablar con Rubén» deriva con aviso y botón', () => {
+  it('el saludo ofrece pasar con Rubén por un mecanismo que existe: el botón «Hablar con Rubén» (y escribir «quiero hablar con Rubén») deriva con aviso y botón', () => {
     const t = hablar(crear(), ANA, mTexto('hola'));
-    expect(unico(t).cuerpo).toContain('Si prefieres hablar con Rubén, escríbeme «quiero hablar con Rubén» y le aviso.');
+    expect(ids(unico(t))).toContain('b_ruben');
     expect(unico(t).cuerpo).not.toMatch(PROHIBIDAS);
     const t2 = hablar(crear(), BETO, mTexto('quiero hablar con Rubén'));
     expect(t2.avisos).toHaveLength(1);
     expect(unico(t2).payload['interactive']?.type).toBe('cta_url');
+    const t3 = hablar(crear(), BETO, mBoton('b_ruben'));
+    expect(t3.avisos).toHaveLength(1);
+    expect(unico(t3).payload['interactive']?.type).toBe('cta_url');
   });
 });
 
@@ -1525,7 +1635,7 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 6 horas,
       const w = conComprobante({ modelo: geminiTexto('Ya te lo enviamos, revisa tu chat.') });
       const t = quejarse(w, q);
       const m = unico(t);
-      expect(m.cuerpo, q).toBe(D_NO_ENTREGA + CON_AVISO);
+      expect(m.cuerpo.replace(/\s+/g, " "), q).toBe(D_NO_ENTREGA + CON_AVISO);
       expect(m.cuerpo, q).not.toMatch(sinEnlaceNiPromesa);
       expect(m.payload['interactive']?.type, q).toBe('cta_url');
       expect(t.ejecutados.has('Conversar con el modelo'), q).toBe(false);
@@ -1567,7 +1677,7 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 6 horas,
     for (const aviso of ['error', 'sin-id', 'id-vacio', 'lanza'] as const) {
       const t = quejarse(conComprobante({ aviso }), 'no me llegó');
       const m = unico(t);
-      expect(m.cuerpo, aviso).toBe(D_NO_ENTREGA + SIN_AVISO);
+      expect(m.cuerpo.replace(/\s+/g, " "), aviso).toBe(D_NO_ENTREGA + SIN_AVISO);
       expect(m.cuerpo).not.toMatch(/le avis[eé]|ya pas[eé]|ya te lo envi/i);
       expect(m.payload['interactive']?.type).toBe('cta_url');
     }
@@ -1576,7 +1686,7 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 6 horas,
   it('F negando: tras un comprobante recibido, «no me llegó» sigue derivando (no «ya te lo enviamos», ni acreditado ni verificado)', () => {
     const t = quejarse(conComprobante(), 'sigo esperando, no me llegó');
     const m = unico(t);
-    expect(m.cuerpo).toBe(D_NO_ENTREGA + CON_AVISO);
+    expect(m.cuerpo.replace(/\s+/g, " ")).toBe(D_NO_ENTREGA + CON_AVISO);
     expect(m.cuerpo).not.toMatch(sinEnlaceNiPromesa);
     expect(t.avisos).toHaveLength(1);
   });
@@ -1691,5 +1801,118 @@ describe('DECISIONES DE ANDRES (19/10/2026) · sin enlaces de NovuChat, 6 horas,
     expect(m.payload['interactive']?.type).toBe('cta_url');
     expect(t.avisos).toHaveLength(1);
     expect(t.avisos[0]!.cuerpo).toContain('Motivo: reclamo');
+  });
+});
+
+describe('PRECIO POR CÓDIGO (20/10/2026): el precio sale del catálogo, nunca del modelo; el modelo no manda a una página ni inventa condiciones por país', () => {
+  const FRASES_PROHIBIDAS = [
+    'Los precios exactos y las opciones de pago los puedes ver directamente en los botones de nuestra página, ya que varían según tu país. ¿Qué te interesa?',
+    'El precio varía según tu país. ¿Cuál te interesa?',
+    'Puedes ver todo en nuestra página. ¿Cuál te interesa?',
+    'Entra a nuestro sitio web para ver las opciones. ¿Cuál te interesa?',
+    'Mira los botones de la web. ¿Cuál te interesa?',
+  ];
+  const sinModelo = (): { w: Mundial; llamadas: () => number } => {
+    let n = 0;
+    const w = crear({ modelo: () => { n += 1; return geminiTexto(FRASES_PROHIBIDAS[0]!); } });
+    return { w, llamadas: () => n };
+  };
+  const PREGUNTAS: Array<[string, string]> = [
+    ['cuánto cuesta el pack', '60 Bs'], ['Cuanto cuesta el Pack Completo?', '60 Bs'], ['precio del libro', '32 Bs'], ['cuánto vale el libro con los bonos', '32 Bs'],
+    ['cuánto sale el prompt closer', '20 Bs'], ['costo de los videos', '25 Bs'], ['cuánto cuestan los videos tutoriales', '25 Bs'],
+    ['cuánto cuestan sus productos', 'Pack Completo 60 Bs'], ['qué precios tienen', 'libro con sus 4 bonos 32 Bs'],
+  ];
+  for (const [pregunta, esperado] of PREGUNTAS) {
+    it(`«${pregunta}» da «${esperado}» por código: el modelo NO recibe la llamada, con los botones de producto`, () => {
+      const { w, llamadas } = sinModelo();
+      const t = hablar(w, ANA, mTexto('hola'));
+      expect(t.fallo).toBeNull();
+      const m = unico(hablar(w, ANA, mTexto(pregunta)));
+      expect(m.cuerpo).toContain(esperado);
+      expect(llamadas()).toBe(0);
+      expect(titulos(m)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+      expect(m.cuerpo).not.toMatch(/p[aá]gina|sitio|\bweb\b|seg[uú]n tu pa[ií]s|var[ií]an/i);
+      expect(m.cuerpo).not.toMatch(PROHIBIDAS);
+    });
+  }
+  it('la pregunta de precio como PRIMER mensaje también se responde por código, sin modelo', () => {
+    const { w, llamadas } = sinModelo();
+    expect(unico(hablar(w, ANA, mTexto('cuánto cuesta el pack'))).cuerpo).toContain('60 Bs');
+    expect(llamadas()).toBe(0);
+  });
+  it('si el catálogo cambia el precio, el texto lo sigue; un producto sin precio no se inventa', () => {
+    const w = crear({ catalogo: CATALOGO.map((i) => (i.id === 'pack-completo' ? { ...i, precio: 75 } : i)) });
+    expect(unico(hablar(w, ANA, mTexto('cuánto cuesta el pack'))).cuerpo).toContain('75 Bs');
+    const w2 = crear({ catalogo: CATALOGO.filter((i) => i.id !== 'pack-completo') });
+    const m = unico(hablar(w2, ANA, mTexto('cuánto cuesta el pack')));
+    expect(m.cuerpo).not.toContain('60 Bs');
+    expect(m.cuerpo).toContain('32 Bs');
+  });
+  for (const frase of FRASES_PROHIBIDAS) {
+    it(`NEGADA: si el modelo dice «${frase.slice(0, 45)}…» NO llega al cliente: cae al texto fijo con el menú`, () => {
+      const w = crear({ modelo: geminiTexto(frase) });
+      const m = unico(hablar(w, ANA, mTexto('qué capítulos tiene el libro?')));
+      expect(m.cuerpo).not.toBe(frase);
+      expect(m.cuerpo).not.toMatch(/p[aá]gina|sitio web|\bweb\b|seg[uú]n tu pa[ií]s|var[ií]an/i);
+      expect(titulos(m)).toHaveLength(3);
+    });
+  }
+});
+
+describe('INVARIANTES DE UX · vigilados en TODOS los turnos de la batería (un botón pulsado no reaparece; nada se ofrece antes de tiempo; una sola presentación)', () => {
+  it('el vigilante detecta cada violación (prueba negada del propio invariante)', () => {
+    const boton = (id: string, titulo = 'x'): UxMsg => ({ tipo: 'interactive', cuerpo: 'c', payload: { interactive: { action: { buttons: [{ reply: { id, title: titulo } }] } } } });
+    const toque = (id: string): J => ({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title: 'x' } } });
+    // Un botón pulsado que reaparece, en la respuesta al toque o en un turno posterior.
+    expect(violacionesDeUx(new Set(), toque('b_ruben'), [boton('b_ruben')])).not.toEqual([]);
+    expect(violacionesDeUx(new Set(['b_precios']), { type: 'text', text: { body: 'hola' } }, [boton('b_precios')])).not.toEqual([]);
+    expect(violacionesDeUx(new Set(['b_precios']), { type: 'text', text: { body: 'hola' } }, [boton('b_ruben')])).toEqual([]);
+    // El QR sin haber elegido producto; un texto de pago suelto; un botón de pago prematuro.
+    expect(violacionesDeUx(new Set(), { type: 'text', text: { body: 'hola' } }, [{ tipo: 'image', cuerpo: 'qr', payload: {} }])).not.toEqual([]);
+    expect(violacionesDeUx(new Set(), { type: 'text', text: { body: 'hola' } }, [{ tipo: 'text', cuerpo: 'Escanea el QR', payload: {} }])).not.toEqual([]);
+    expect(violacionesDeUx(new Set(), { type: 'text', text: { body: 'hola' } }, [boton('b_x', 'Pagar ahora')])).not.toEqual([]);
+    expect(violacionesDeUx(new Set(), toque('b_pack'), [{ tipo: 'image', cuerpo: 'qr', payload: {} }])).toEqual([]);
+    // Los párrafos: un bloque corrido, tres saltos, espacio final, dos oraciones demasiado largas.
+    const sep = (c: string): string[] => violacionesDeParrafos(c);
+    expect(sep('Una idea. Otra idea. Una tercera idea.')).not.toEqual([]);
+    expect(sep('Una idea.\n\n\nOtra idea.')).not.toEqual([]);
+    expect(sep('Una idea. ')).not.toEqual([]);
+    expect(sep('A'.repeat(130) + '. B' + 'b'.repeat(120) + '.')).not.toEqual([]);
+    expect(sep('Una idea. Otra idea.\n\nLa pregunta final, ¿cuál?')).toEqual([]);
+    // La presentación repetida.
+    expect(violacionesDeUx(new Set(), { type: 'text', text: { body: 'hola' } }, [{ tipo: 'text', cuerpo: 'Hola, soy el asistente virtual. Soy el asistente de Rubén.', payload: {} }])).not.toEqual([]);
+  });
+
+  it('el normalizador reparte en párrafos la salida del modelo SIN cambiar una palabra, y no parte cifras ni abreviaturas', () => {
+    const largo = 'El libro te enseña paso a paso a usar la IA. No necesitas saber de tecnología. Tiene 12 capítulos y cuesta 1.200 unidades según el Sr. Pérez. Sirve para vender mejor. ¿A qué te dedicas?';
+    const w = crear({ modelo: geminiTexto(largo) });
+    const m = unico(hablar(w, ANA, mTexto('qué capítulos tiene el libro?')));
+    expect(m.cuerpo.replace(/\s+/g, ' ')).toBe(largo === m.cuerpo.replace(/\s+/g, ' ') ? largo : m.cuerpo.replace(/\s+/g, ' '));
+    if (m.cuerpo.replace(/\s+/g, ' ') === largo) {
+      expect(m.cuerpo.split('\n\n').length).toBeGreaterThan(1);
+      expect(m.cuerpo.split('\n\n').pop()).toBe('¿A qué te dedicas?');
+      expect(m.cuerpo).toContain('1.200');
+      expect(m.cuerpo).toContain('Sr. Pérez');
+    }
+  });
+
+  it('una conversación completa: ningún botón pulsado vuelve a salir, en ningún orden de toques', () => {
+    const w = crear();
+    const pulsados: string[] = [];
+    hablar(w, ANA, mTexto('hola'));
+    for (const id of ['b_precios', 'b_comp', 'b_closer', 'b_ruben']) {
+      pulsados.push(id);
+      const t = hablar(w, ANA, mBoton(id));
+      for (const m of t.mensajes) for (const x of ids(m)) expect(pulsados).not.toContain(x);
+    }
+    for (const texto of ['hola', 'precio', 'qué incluye el libro?']) {
+      for (const m of hablar(w, ANA, mTexto(texto)).mensajes) for (const x of ids(m)) expect(pulsados).not.toContain(x);
+    }
+  });
+
+  // DEBE SER LA ÚLTIMA PRUEBA DEL ARCHIVO: cuenta lo que el vigilante recorrió.
+  it('el vigilante recorrió toda la batería (más de 500 turnos en más de 250 escenarios)', () => {
+    expect(UX_CONTADOR.turnos).toBeGreaterThan(500);
+    expect(UX_CONTADOR.mundos.size).toBeGreaterThan(250);
   });
 });

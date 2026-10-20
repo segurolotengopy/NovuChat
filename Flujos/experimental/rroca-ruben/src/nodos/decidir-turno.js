@@ -1,9 +1,11 @@
 // DECIDIR TURNO: el CÓDIGO decide qué pasa en este turno; el modelo solo conversa. Devuelve un `plan` (nada de texto libre del modelo sale de aquí):
 //
 //   nada           la puerta cerró el turno (suspendido, uso extendido, pausa por persona): no se hace nada más;
-//   saludo         el saludo fijo (hola, más información, precio; o el prellenado 5, con su pregunta);
+//   saludo         el saludo fijo y CORTO con dos botones (hola, más información, precio; o el prellenado 5, con su pregunta);
 //   complemento    prellenado 3 o 4: el precio del complemento, el ahorro del Pack calculado por el código y DOS botones;
 //   menu2          «Ver complementos»;
+//   precio         «¿cuánto cuesta…?»: el precio exacto del catálogo, por código y sin modelo, con el menú de productos;
+//   precios        el botón «Ver precios» del saludo: el menú de productos con sus precios;
 //   qr             el QR con el monto del CATÁLOGO (prellenados 1 y 2, o un botón de producto);
 //   qr_pendiente   ya hay un QR abierto: un solo QR a la vez, un pedido = un producto;
 //   comprobante    el resultado del cotejo (o el de la prueba simulada) traducido por `cbResultadoVenta`;
@@ -71,6 +73,9 @@ if (t.tipo === 'interactive') {
   const k = rrProductoDeBoton(id);
   if (k) return salir(elegir(k, id));
   if (id === RR_BOTON_COMPLEMENTOS) return salir({ tipo: 'menu2', cat: cat, boton: id });
+  // «Ver precios»: el menú de productos (con un QR abierto, el recordatorio del QR). «Hablar con Rubén»: aviso + botón, como «quiero hablar con Rubén» escrito.
+  if (id === RR_BOTON_PRECIOS) return salir(hayQrAbierto ? { tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: id } : { tipo: 'precios', cat: cat, boton: id });
+  if (id === RR_BOTON_HABLAR) return salir({ tipo: 'derivar', motivo: 'consulta', clave: 'hablar_con_ruben', aviso: avisoDeConsulta('hablar_con_ruben', 'quiere hablar con Rubén'), cat: cat, boton: id });
   // Un toque que no es de este flujo (un botón viejo, una lista de otro mensaje): nunca se toma por una conversación libre; se contesta con el saludo fijo y el menú.
   return salir({ tipo: 'saludo', pregunta: 'general', conMenu: true, cat: cat });
 }
@@ -85,6 +90,9 @@ if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: deriv
 if (rrPreguntaPorIngresos(norm)) return salir({ tipo: 'ingresos', cat: cat });
 // Con un QR abierto, cualquier texto recibe el recordatorio (un solo QR a la vez); el modelo no interviene.
 if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
+// Una pregunta de precio (por producto o en general) se responde POR CÓDIGO desde el catálogo, sin modelo. El «precio» a secas sigue siendo un saludo con el menú.
+const precioPedido = rrPreguntaPorPrecio(norm);
+if (precioPedido && (precioPedido.producto !== '' || !rrEsSoloSaludo(norm))) return salir({ tipo: 'precio', producto: precioPedido.producto, cat: cat });
 if (!ficha.saludado && rrEsSoloSaludo(norm)) return salir({ tipo: 'saludo', pregunta: 'general', conMenu: rrIntencionDeCompra(norm), cat: cat });
 if (rrEsSoloSaludo(norm) && rrIntencionDeCompra(norm)) return salir({ tipo: 'saludo', pregunta: 'general', conMenu: true, cat: cat });
 return salir({ tipo: 'modelo', cat: cat, textoCliente: String(t.texto || '').slice(0, 500) }, {

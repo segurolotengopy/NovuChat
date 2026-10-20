@@ -66,9 +66,16 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 } else if (puerta.ruta === 'sigue') {
   // El botón «usado» sale del PRODUCTO del QR (también si el producto se eligió por texto prellenado, sin botón) o, si no, del botón pulsado.
   if (tipoDePlan === 'qr' && RR_PRODUCTOS[plan.producto]) usadoNuevo = RR_PRODUCTOS[plan.producto].boton;
-  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS ? String(plan.boton) : '';
+  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS || plan.boton === RR_BOTON_PRECIOS || plan.boton === RR_BOTON_HABLAR ? String(plan.boton) : '';
   if (tipoDePlan === 'saludo') {
-    m = conBotones(rrSaludo(cat, plan.pregunta === 'consulta' ? RR_PREGUNTA_CONSULTA : RR_PREGUNTA_GENERAL), plan.conMenu === true ? menu1() : []);
+    // Saludo corto con UNA presentación y, en el MISMO mensaje, «Ver precios» y «Hablar con Rubén» (sin los que ya pulsó). Si el cliente ya pidió precios, van directamente los botones de productos.
+    const usadosYa = fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
+    const botonesSaludo = plan.conMenu === true && menu1().length ? menu1() : rrMenuSaludo(cat, usadosYa);
+    m = conBotones(rrSaludo(cat, plan.pregunta === 'consulta' ? RR_PREGUNTA_CONSULTA : ''), botonesSaludo);
+  } else if (tipoDePlan === 'precio') {
+    m = conBotones(rrTextoPrecio(cat, plan.producto), menu1());
+  } else if (tipoDePlan === 'precios') {
+    m = conBotones(RR_TEXTO_PRECIOS, menu1());
   } else if (tipoDePlan === 'complemento') {
     m = conBotones(rrTextoComplemento(plan.producto, cat, plan.conPresentacion === true), rrMenuDeComplemento(plan.producto, cat, fichaAntes.usados));
   } else if (tipoDePlan === 'menu2') {
