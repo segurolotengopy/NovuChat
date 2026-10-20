@@ -675,7 +675,7 @@ function ConversacionesDe({ tenantId }: { tenantId: string }) {
             hrefLista={hrefLista} hrefUltimo={hrefUltimo}
             onAnterior={vecina(claves, claveActiva, -1) ? () => irA(-1) : null}
             onSiguiente={vecina(claves, claveActiva, 1) ? () => irA(1) : null}
-            posicion={posicion} puedeGestionar={puedeGestionar} comercioActivo={estadoComercio === 'activo'}
+            posicion={posicion} puedeGestionar={puedeGestionar} esPropietario={permisos.propietario} comercioActivo={estadoComercio === 'activo'}
             miUid={miUid} esAdmin={rol === 'admin' && !permisos.propietario} capa={capa}
           />
         ) : (

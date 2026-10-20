@@ -46,8 +46,11 @@ export async function leerPermisos(usuario: User | null, forzarRefresco = false)
     if (rol === 'admin' || rol === 'oper' || rol === 'ingesta') tenants[id] = rol;
   }
 
+  // El claim `p` solo vale con sesión de Google: las reglas de Firestore (`esPropietario`) lo exigen, y con
+  // contraseña el claim es inerte. La consola decide igual que el servidor; si no, una cuenta propietaria Y
+  // administradora que entra con contraseña quedaría tratada como propietaria (solo lectura) sin serlo.
   return {
-    propietario: bruto['p'] === true,
+    propietario: bruto['p'] === true && resultado.signInProvider === 'google.com',
     tenants,
     version: typeof bruto['v'] === 'number' ? bruto['v'] : 0,
   };

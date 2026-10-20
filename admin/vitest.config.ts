@@ -41,6 +41,7 @@ export const SUITES_PURAS = [
   'pruebas/core/claims-asignar-rol.test.ts',
   'pruebas/core/varias-cuentas-autorizacion.test.ts',
   'pruebas/central/cuenta-activa-personas.test.ts',
+  'pruebas/central/sesion-propietario-google.test.ts',
   'pruebas/agenda-minima-flujo.test.ts',
   'pruebas/agenda-minima-lib.test.ts',
   'pruebas/agenda-minima-herramienta-actualizar.test.ts',

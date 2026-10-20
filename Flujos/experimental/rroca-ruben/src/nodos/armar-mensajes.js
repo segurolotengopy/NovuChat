@@ -57,6 +57,9 @@ const conRuben = (cuerpo) => {
   return x;
 };
 const menu1 = () => rrMenu(1, cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []));
+// REGLA DE ANDRES (20/10/2026): el PRIMER mensaje a un teléfono NO lleva botones con montos. Mientras no esté saludado, todo mensaje que ofrece opciones (ingresos, modelo, respaldos) usa los dos
+// botones del saludo (sin precios); ya saludado, el menú de productos.
+const menuAbierto = () => (fichaAntes.saludado ? menu1() : rrMenuSaludo(cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])));
 
 if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   if (puerta.ruta === 'uso_extendido' && puerta.responder === true && String(puerta.texto || '').trim() !== '') {
@@ -66,15 +69,25 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 } else if (puerta.ruta === 'sigue') {
   // El botón «usado» sale del PRODUCTO del QR (también si el producto se eligió por texto prellenado, sin botón) o, si no, del botón pulsado.
   if (tipoDePlan === 'qr' && RR_PRODUCTOS[plan.producto]) usadoNuevo = RR_PRODUCTOS[plan.producto].boton;
-  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS ? String(plan.boton) : '';
+  else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS || plan.boton === RR_BOTON_PRECIOS || plan.boton === RR_BOTON_HABLAR ? String(plan.boton) : '';
   if (tipoDePlan === 'saludo') {
-    m = conBotones(rrSaludo(cat, plan.pregunta === 'consulta' ? RR_PREGUNTA_CONSULTA : RR_PREGUNTA_GENERAL), plan.conMenu === true ? menu1() : []);
+    // Saludo corto con UNA presentación por teléfono y, en el MISMO mensaje, «Ver precios» y «Hablar con Rubén» (sin los que ya pulsó). Ya saludado, el prellenado de consulta recibe SOLO su pregunta.
+    const usadosYa = fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
+    m = conBotones(rrSaludo(cat, plan.pregunta === 'consulta' ? RR_PREGUNTA_CONSULTA : '', !fichaAntes.saludado), rrMenuSaludo(cat, usadosYa));
+  } else if (tipoDePlan === 'precio') {
+    // El cliente VIO los precios: «Ver precios» no se reofrece. Sin botones de producto que ofrecer, el texto no cierra con una pregunta sin opciones.
+    usadoNuevo = RR_BOTON_PRECIOS;
+    m = conBotones(rrTextoPrecio(cat, plan.producto, menu1().length > 0), menu1());
+  } else if (tipoDePlan === 'precios') {
+    usadoNuevo = RR_BOTON_PRECIOS;
+    m = conBotones(RR_TEXTO_PRECIOS, menu1());
   } else if (tipoDePlan === 'complemento') {
     m = conBotones(rrTextoComplemento(plan.producto, cat, plan.conPresentacion === true), rrMenuDeComplemento(plan.producto, cat, fichaAntes.usados));
   } else if (tipoDePlan === 'menu2') {
     m = conBotones(rrTextoComplementos(cat), rrMenu(2, cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])));
   } else if (tipoDePlan === 'ingresos') {
-    m = conBotones(RR_TEXTO_INGRESOS, menu1());
+    const op = menuAbierto();
+    m = conBotones(rrTextoIngresos(op.length > 0), op);
   } else if (tipoDePlan === 'modelo') {
     // LO QUE REDACTA EL MODELO: se revisa y se pule; un rechazo (monto, promesa, enlace, negar ser IA, varias preguntas…), un error del servicio o un texto vacío caen al texto fijo.
     const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
@@ -87,9 +100,10 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
         maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [rrExtraRedaccion],
       });
       const bueno = rev.motivo === '' && rev.texto.trim() !== '';
-      const cuerpo = bueno ? rev.texto : RR_TEXTO_MODELO_CAIDO;
+      const op = menuAbierto();
+      const cuerpo = bueno ? rev.texto : rrTextoModeloCaido(op.length > 0);
       if (bueno) ultimoModelo = cuerpo.slice(0, 300);
-      m = conBotones(cuerpo, menu1());
+      m = conBotones(cuerpo, op);
       tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
     }
   } else if (tipoDePlan === 'qr') {

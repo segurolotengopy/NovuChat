@@ -30,9 +30,50 @@ function rrNorm(t) {
 // El texto que ve el cliente, con la barrera aplicada: si niega ser una IA (prohibición 4) o dice que un pago está acreditado, verificado o recibido (prohibición 3: el comprobante no
 // es una acreditación bancaria), sale el mínimo. `CB_PROHIBIDAS` y `cbCanon` son del hueco `cobro.js`.
 function rrSeguro(texto) {
-  if (RR_NIEGA_IA.test(rrNorm(texto))) return RR_SALUDO_MINIMO;
-  if (CB_PROHIBIDAS.test(cbCanon(texto))) return RR_SALUDO_MINIMO;
-  return texto;
+  if (RR_NIEGA_IA.test(rrNorm(texto))) return rrParrafos(RR_SALUDO_MINIMO);
+  if (CB_PROHIBIDAS.test(cbCanon(texto))) return rrParrafos(RR_SALUDO_MINIMO);
+  return rrParrafos(texto);
+}
+// PÁRRAFOS (regla de Andres, 20/10/2026): el texto al cliente nunca va en un bloque corrido. Cada párrafo lleva a lo más DOS oraciones y, con dos, a lo más RR_PARRAFO_MAX caracteres; la pregunta
+// final va en su propio párrafo; se separan con UNA línea en blanco. Es el MISMO mensaje (0 mensajes agregados) y NO cambia ni una palabra: solo reparte espacios en blanco. Lo que ya trae líneas sueltas
+// (listas, el rótulo del cobro simulado) se respeta. No parte tras abreviaturas ni dentro de cifras («1.200», «Bs.» seguido de minúscula).
+const RR_PARRAFO_MAX = 220;
+// UNA SOLA función de partición: la usan `rrParrafos` y el vigilante de las pruebas (no puede haber desacuerdo entre quien reparte y quien vigila).
+// Parte tras . ! ? … cuando sigue una mayúscula, una cifra o una apertura, y vuelve a unir: abreviaturas («Sr.», «Dr.», «etc.»), «Bs.» seguido de una cifra, y el número corto de una lista en línea («1. Pack 2. Libro»); un año o una cifra final («en 2026. Tiene…», «Cuesta 150. Incluye…») NO unen.
+// «No» NO es abreviatura: «No. El libro no trae videos.» son dos oraciones.
+function rrOraciones(bloque) {
+  const partes = bloque.split(/(?<=[.!?…])\s+(?=[¿¡«"A-ZÁÉÍÓÚÑ0-9])/);
+  const out = [];
+  for (const p of partes) {
+    const previa = out.length ? out[out.length - 1] : '';
+    const une = out.length && (/(^|\s)(Sr|Sra|Srta|Dr|Dra|Lic|Ing|etc|Nº|N°)\.$/.test(previa)
+      || (/(^|\s)Bs\.$/.test(previa) && /^\d/.test(p))
+      // El número de una lista en línea es CORTO (1 o 2 cifras) y el elemento siguiente termina en otro número («1. Pack 2. Libro») o ya estamos dentro de una lista; un año («en 2026. Tiene…») o una cifra
+      // final («Cuesta 150. Incluye…», «Son 12. Incluye…») NO unen.
+      || (/(^|\s)\d{1,2}\.$/.test(previa) && /^[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(p) && (/\s\d{1,2}\.$/.test(p) || /(^|\s)\d{1,2}\.\s/.test(previa))));
+    if (une) out[out.length - 1] += ' ' + p; else out.push(p);
+  }
+  return out;
+}
+// ¿Esta oración es la pregunta final? Cuenta aunque tras el «?» venga un emoji o espacios.
+function rrEsPregunta(oracion) { return /\?[^\p{L}\p{N}]*$/u.test(oracion); }
+function rrParrafos(texto) {
+  const t = String(texto === undefined || texto === null ? '' : texto).replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (t === '') return t;
+  return t.split('\n\n').map((bloque) => {
+    if (bloque.indexOf('\n') >= 0) return bloque;
+    const ors = rrOraciones(bloque);
+    if (ors.length < 2) return bloque;
+    const pars = [];
+    let i = 0;
+    while (i < ors.length) {
+      const esUltima = i === ors.length - 1;
+      // La pregunta final va sola; dos oraciones juntas solo si caben y la segunda no es la pregunta final.
+      const sigueFinal = i + 1 === ors.length - 1 && rrEsPregunta(ors[ors.length - 1]);
+      if (!esUltima && !sigueFinal && (ors[i] + ' ' + ors[i + 1]).length <= RR_PARRAFO_MAX) { pars.push(ors[i] + ' ' + ors[i + 1]); i += 2; } else { pars.push(ors[i]); i += 1; }
+    }
+    return pars.join('\n\n');
+  }).join('\n\n');
 }
 // La ficha de un teléfono: nueva, o la guardada si es un objeto. Solo cuenta lo de ESE teléfono. PR-2 agrega: `saludado`, `usados` (los botones que ya pulsó: no reaparecen), `pedidos`
 // (contador para el id del pedido), `qrHastaMs` (hasta cuándo hay un QR abierto, por si la consola tarda en saberlo), `producto` (el último pedido), `ultimoModelo` (lo último que dijo el modelo)
@@ -93,6 +134,9 @@ const RR_PRODUCTOS = {
   videos: { catId: 'videos-ia', nombre: 'los videos tutoriales para crear contenido con IA', incluye: '', boton: 'b_videos' },
 };
 const RR_BOTON_COMPLEMENTOS = 'b_comp';
+// Los dos botones del saludo: «Ver precios» abre el menú de productos; «Hablar con Rubén» deriva (aviso + botón al chat de Rubén).
+const RR_BOTON_PRECIOS = 'b_precios';
+const RR_BOTON_HABLAR = 'b_ruben';
 const RR_PRODUCTO_DE_BOTON = { b_pack: 'pack', b_libro: 'libro', b_closer: 'closer', b_videos: 'videos' };
 const RR_VENTANA_AVISO_CONSULTA_MS = 30 * 60 * 1000;   // a lo más un aviso de consulta a Rubén por teléfono Y POR MOTIVO en esta ventana
 // La ventana de servicio de Meta es de 24 h desde el último mensaje de Rubén al número; se deja un margen de media hora: dentro va texto libre, fuera va plantilla.
@@ -187,9 +231,6 @@ function rrPrellenado(n) {
 function rrEsSoloSaludo(n) {
   return /^(hola|holi|holas|buenas|buen dia|buenos dias|buenas tardes|buenas noches|hey|ola|mas informacion|informacion|info|mas info|precio|precios|cuanto cuesta|cuanto cuesta el libro|cuanto vale|el libro)( ruben)?$/.test(n);
 }
-function rrIntencionDeCompra(n) {
-  return /\b(precio|precios|cuanto cuesta|cuanto vale|cuanto sale|comprar|compro|quiero pagar|como pago|opciones)\b/.test(n);
-}
 // Lo que ve Rubén personalmente (o lo que ningún texto fijo sabe): factura, otro medio de pago, garantía, reclamo, hablar con una persona, el acceso al material y los descuentos.
 // Devuelve { clave, motivo } (la clave limita el aviso; el motivo es lo que lee Rubén) o null.
 // `ctx` = { comprobante: ya llegó un comprobante de este teléfono (ficha o cobro en revisión), qrAbierto: hay un QR abierto }. Sin ctx se asume que NO hay comprobante.
@@ -234,6 +275,25 @@ function rrMotivoComprobante(estado, motivoSrv) {
   return 'comprobante sin cotejar: el cotejo no respondió o el archivo no se pudo leer';
 }
 // «¿Me garantiza ganar dinero?»: la respuesta es una frase fija (no se promete ningún ingreso).
+// «¿Cuánto cuesta…?»: el precio lo dice el CÓDIGO desde el catálogo, sin pasar por el modelo. Devuelve { producto } ('' si no nombra uno) o null si no es una pregunta de precio.
+function rrPreguntaPorPrecio(n) {
+  const nombraProducto = /\b(pack|closer|prompt|cierre|videos?|curso|tutoriales?|libro|bonos?|ebook)\b/.test(n);
+  // Las formas sueltas («cuánto es», «a cuánto», «cuánto está», «cuánto?», «valor del libro», «cuánto me costaría», «cuánto lo dejas») cuentan solo si el mensaje es CORTO (a lo más 5 palabras) o nombra
+  // un producto, y nunca si habla de otra cosa que se mide («cuánto es el plazo de entrega», «cuánto es el envío», «cuánto tarda»).
+  const otraMedida = /\b(plazo|plazos|entrega|entregan|envio|envios|tiempo|tarda|tardan|demora|demoran|dura|duran|duracion|horas|dias|minutos|capitulos|paginas|pesa|descarga|ganar|gano|ganan|ingresos|veces|personas|clientes)\b/.test(n);
+  const palabras = n === '' ? 0 : n.split(' ').length;
+  const suelta = /\b(cuanto|valor)\b/.test(n) && !otraMedida && (palabras <= 5 || nombraProducto);
+  const pideMonto = /\b(cuanto (me |te |nos )?(cuesta|cuestan|vale|valen|sale|salen|cobran|cobras|cobra)|en cuanto (esta|estan|sale|salen|queda|quedan)|que (valor|precio|costo) (tiene|tienen)|precio|precios|costo|costos|tarifa|tarifas)\b/.test(n)
+    || suelta;
+  if (!pideMonto) return null;
+  // Cada producto nombrado cuenta una vez; «completo» solo vale junto a «pack». Con DOS productos nombrados no se elige uno: va la lista general.
+  const nombrados = [];
+  if (/\bpack\b/.test(n)) nombrados.push('pack');
+  if (/\b(closer|prompt|cierre)\b/.test(n)) nombrados.push('closer');
+  if (/\b(videos?|curso|tutoriales?)\b/.test(n)) nombrados.push('videos');
+  if (/\b(libro|bonos?|ebook)\b/.test(n)) nombrados.push('libro');
+  return { producto: nombrados.length === 1 ? nombrados[0] : '' };
+}
 function rrPreguntaPorIngresos(n) {
   return /\bgarantiz\w*\b[^.?!]{0,40}\b(ganar|ingres|dinero|resultad)|\bganar dinero\b|\bcuanto (voy a |puedo )?(gano|ganar)\b|\bingresos\b/.test(n);
 }
@@ -271,15 +331,49 @@ function rrMenuDeComplemento(producto, cat, usados) {
 // Los textos fijos (todos los arma el código; ninguno promete lo que no cumple)
 // -----------------------------------------------------------------------------
 const RR_PRESENTACION = 'Hola, soy el asistente virtual de Rubén.';
+const RR_TEXTO_PRECIOS = 'Estas son las opciones. ¿Cuál prefieres?';
 function rrPrecioEntre(cat, k) { const p = rrPrecio(cat, k); return p === null ? '' : ' (' + rrMontoBs(p) + ')'; }
-function rrSaludo(cat, pregunta) {
-  return RR_PRESENTACION + ' Soy el asistente de Rubén, autor de «IA para Emprendedores Independientes», un libro digital de 12 capítulos con 4 bonos' + rrPrecioEntre(cat, 'libro')
-    + '. También hay un Pack Completo' + rrPrecioEntre(cat, 'pack') + ' que suma un prompt para cerrar ventas y un curso de videos con IA. Si prefieres hablar con Rubén, escríbeme «quiero hablar con Rubén» y le aviso. ' + pregunta;
+// El saludo copia el patrón del guion de Rubén: UNA sola presentación, sin precios, sin banco ni enlaces, máximo 4 oraciones y UNA pregunta. El prellenado de consulta usa la misma presentación y pregunta por su duda.
+const RR_SALUDO_APERTURA = '¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual de Rubén.';
+// `conPresentacion === false` (el cliente ya fue saludado): el prellenado de consulta recibe SOLO la pregunta, sin presentarse otra vez.
+function rrSaludo(cat, pregunta, conPresentacion) {
+  if (pregunta && conPresentacion === false) return pregunta;
+  if (pregunta) return RR_SALUDO_APERTURA + '\n\n' + pregunta;
+  return RR_SALUDO_APERTURA + '\n\nTe cuento: el libro digital «IA para Emprendedores Independientes» (12 capítulos y más de 230 páginas) es un método práctico para que pases de solo "curiosear herramientas" a usar la IA para crear contenido rápido, atraer clientes, vender mejor y ahorrar tiempo, sin saber nada de tecnología.\n\nCuéntame, ¿tienes algún negocio actualmente o estás pensando en emprender?';
 }
-const RR_PREGUNTA_GENERAL = '¿A qué te dedicas o qué te gustaría mejorar primero en tu negocio?';
+// Los dos botones del saludo, sin los que el cliente ya pulsó. «Ver precios» solo si hay algún producto con precio en el catálogo (solo se ofrece lo que se cumple).
+function rrMenuSaludo(cat, usados) {
+  const u = Array.isArray(usados) ? usados : [];
+  const b = [];
+  if (rrMenu(1, cat, []).length) b.push(rrBoton(RR_BOTON_PRECIOS, 'Ver precios'));
+  b.push(rrBoton(RR_BOTON_HABLAR, 'Hablar con Rubén'));
+  return b.filter((x) => u.indexOf(x.id) < 0);
+}
+// El precio por código. Con producto reconocido y con precio en el catálogo, lo dice exacto; si no, lista los que SÍ tienen precio (nunca un precio inventado ni «según tu país»).
+// `conOpciones === false`: no hay botones que ofrecer (todos pulsados): el texto no termina con una pregunta sin opciones.
+function rrTextoPrecio(cat, producto, conOpciones) {
+  const cierre = conOpciones === false ? '' : ' ¿Qué opción prefieres?';
+  const p = producto ? rrPrecio(cat, producto) : null;
+  if (p !== null) {
+    const nombre = { pack: 'El Pack Completo', libro: 'El libro con sus 4 bonos', closer: 'El Prompt Closer', videos: 'Los videos tutoriales con IA' }[producto];
+    const verbo = producto === 'videos' ? 'cuestan ' : 'cuesta ';
+    return nombre + ' ' + verbo + rrMontoBs(p) + '.' + (producto === 'pack' ? ' Incluye el libro, los 4 bonos, el Closer y el curso de videos.' : '') + cierre;
+  }
+  const partes = [];
+  if (rrPrecio(cat, 'pack') !== null) partes.push('el Pack Completo ' + rrMontoBs(rrPrecio(cat, 'pack')));
+  if (rrPrecio(cat, 'libro') !== null) partes.push('el libro con sus 4 bonos ' + rrMontoBs(rrPrecio(cat, 'libro')));
+  if (rrPrecio(cat, 'closer') !== null) partes.push('el Prompt Closer ' + rrMontoBs(rrPrecio(cat, 'closer')));
+  if (rrPrecio(cat, 'videos') !== null) partes.push('los videos con IA ' + rrMontoBs(rrPrecio(cat, 'videos')));
+  return partes.length ? 'Los precios son: ' + partes.join(', ') + '.' + cierre : RR_TEXTO_PRECIOS;
+}
 const RR_PREGUNTA_CONSULTA = '¿Qué duda tienes sobre el libro?';
-const RR_TEXTO_MODELO_CAIDO = 'Gracias por escribir. ¿Quieres que te cuente qué incluye el libro o prefieres ver las opciones de compra?';
-const RR_TEXTO_INGRESOS = 'No puedo prometerte ingresos: la IA es una herramienta y el resultado depende de tu ejecución, tu oferta y tu mercado. El libro te da el método práctico, paso a paso. ¿Quieres ver las opciones?';
+// Los textos que preguntan por «las opciones» salen SOLO con botones (solo se ofrece lo que se cumple): `conOpciones === false` usa la variante SIN esa pregunta.
+function rrTextoModeloCaido(conOpciones) { return conOpciones === false ? 'Gracias por escribir. ¿Quieres que te cuente qué incluye el libro?' : 'Gracias por escribir. ¿Quieres que te cuente qué incluye el libro o prefieres ver las opciones de compra?'; }
+function rrTextoIngresos(conOpciones) {
+  return 'No puedo prometerte ingresos: la IA es una herramienta y el resultado depende de tu ejecución, tu oferta y tu mercado. El libro te da el método práctico, paso a paso.' + (conOpciones === false ? '' : ' ¿Quieres ver las opciones?');
+}
+const RR_TEXTO_MODELO_CAIDO = rrTextoModeloCaido(true);
+const RR_TEXTO_INGRESOS = rrTextoIngresos(true);
 const RR_TEXTO_IMAGEN = 'Recibí tu imagen, pero por aquí solo puedo leer texto y los comprobantes de un pedido abierto. Cuéntame qué buscas y te ayudo.';
 const RR_TEXTO_AUDIO = 'Por ahora no puedo escuchar audios. ¿Me cuentas por escrito en qué te puedo ayudar?';
 const RR_TEXTO_OTRO = 'Por aquí solo puedo leer mensajes de texto. ¿Me cuentas por escrito en qué te puedo ayudar?';
@@ -331,7 +425,13 @@ function rrTextoDerivacion(motivo, salio, clave) {
         : 'Eso lo ve directamente el autor, Rubén, y puedes conversarlo con él.');
     return salio === true ? intro + ' Le avisé; también puedes escribirle directo con el botón.' : intro + ' No pude avisarle; escríbele directo con el botón.';
   }
+  // «Hablar con Rubén» (el botón del saludo): una frase propia del toque; no abre con «Eso lo ve Rubén directamente», que no tiene referente.
+  if (motivo === 'hablar_boton') {
+    if (salio === 'repetido') return 'Claro. Rubén ya recibió tu aviso anterior; escríbele directo con el botón.';
+    return salio === true ? 'Claro. Le avisé a Rubén; también puedes escribirle directo con el botón.' : 'Claro. No pude avisarle a Rubén; escríbele directo con el botón.';
+  }
   if (motivo === 'qr_sin_aviso') return 'Por ahora no puedo mostrarte el QR de pago. Escríbele directo a Rubén con el botón.';
+  if (motivo === 'sin_opciones') return salio === true ? 'Por ahora no puedo mostrarte las opciones de compra. Le avisé a Rubén; también puedes escribirle directo con el botón.' : 'Por ahora no puedo mostrarte las opciones de compra. No pude avisarle a Rubén; escríbele directo con el botón.';
   const base = motivo === 'sin_cobro' || motivo === 'sin_medio' || motivo === 'sin_precio' ? 'Por ahora no puedo mostrarte el QR de pago.'
     : (motivo === 'en_revision' ? 'Tu comprobante anterior está en revisión con Rubén.' : 'Eso lo ve Rubén directamente.');
   if (motivo === 'en_revision') return base + ' Si quieres escribirle, toca el botón.';
@@ -418,11 +518,33 @@ function rrPlantilla(base, cual) {
   return { nombre: nombre, idioma: idioma };
 }
 function rrModeloValido(v) { return /^gemini-[a-z0-9][a-z0-9.-]{1,38}$/.test(String(v || '')) ? String(v) : 'gemini-3.5-flash-lite'; }
+const RR_REMITE_A_WEB = new RegExp([
+  'segun (?:tu|su|el|la) (?:pais|region|moneda|ubicacion|zona|ciudad)', 'dependiendo de (?:tu|su|el|la) (?:pais|region|moneda|ubicacion|zona|ciudad)', 'varia(?:n)? (?:por|segun) (?:el )?(?:pais|region|moneda)',
+  // Condiciones por país o región («depende de tu país», «cambia de acuerdo a tu país»).
+  '\\b(?:depende|dependiendo|de acuerdo (?:a|con)|cambia(?:n)? (?:segun|por))\\b (?:de )?(?:tu|su|el|del) (?:pais|region|moneda|ubicacion)',
+  'nuestr[oa]s? (?:pagina|sitio|web|tienda|portal)', 'tienda virtual', '\\bwebsite\\b', '\\b(?:visita|visitar|visite|visitanos)\\b',
+  '\\b(?:entra|entrar|ingresa|ingresar|accede|acceder) (?:a|en|al) (?:nuestr\\w+|la (?:web|pagina|tienda)|el (?:sitio|portal)|esta (?:web|pagina)|este sitio)',
+  '\\ben (?:la|esta|nuestra) (?:web|pagina|sitio)(?: web| oficial| principal)? (?:de|del)\\b', '\\ben (?:la|esta) web\\b',
+  '\\b(?:botones|opciones|precios|enlace|link|catalogo) (?:de|en) (?:la|nuestra|esta) (?:web|pagina|sitio)',
+  '\\b(?:ver|ve|mira|miras|consulta|revisa|encuentras?|compr\\w+|disponibles?|publicad\\w+)\\b[^.?!]{0,30}\\b(?:online|en linea|en internet)\\b',
+  // Un verbo de remisión + «a/en/por/desde/de» + la web, la página, el sitio, el portal o la tienda («ve a la página de Rubén», «pasa por la web», «escríbenos por la web»). Una cifra detrás («la página 45»)
+  // o «web con IA / web simple» (el tema del libro) no cuentan.
+  '\\b(?:ve|ir|anda|dirigete|pasa|pasate|echale un ojo|consulta|revisa|busca|mira|escribenos|contactanos|accede|ingresa|entra|compra|pide)\\b[^.?!]{0,25}\\b(?:a|al|en|por|desde|de)(?: (?:la|el|nuestra|nuestro|esta|este|su))? (?:web|pagina|sitio|portal|tienda)\\b(?! (?:\\d|web con|simple))',
+  // «Revisa la página oficial de Rubén», «mira el sitio»: verbo + artículo + la web (sin cifra detrás).
+  '\\b(?:revisa|consulta|mira|ve|busca|entra|ingresa|accede)\\b (?:la|el|su|nuestra|nuestro) (?:pagina|sitio|web|portal)\\b(?! (?:\\d|web con|simple))',
+  // «Están en la página web», «en el sitio encontrarás todo», «en su web»: remisión sin cifra detrás ni «de ventas / de aterrizaje» (esas son del tema del libro).
+  '\\ben (?:la|el|su|esta) (?:pagina|sitio|web)(?: web| oficial)?\\b(?! (?:\\d|de (?:ventas|aterrizaje|destino|producto|inicio)))', '\\ben el sitio\\b', '\\b(?:en|desde|por|a) su web\\b',
+  // Ofuscada con separadores («w e b»).
+  '\\bw(?:\\W+e\\W*b|\\W*e\\W+b)\\b',
+].join('|'));
 // Reglas propias del flujo para `cmRevisarRedaccion` (`opciones.extra`): a lo más 4 oraciones y UNA pregunta; nada de «Rubén te…» (promesa), ni la palabra «QR» ni el banco o el titular.
 function rrExtraRedaccion(texto, norm) {
   if ((String(texto).match(/\?/g) || []).length > 1) return 'varias_preguntas';
   if (String(texto).split(/(?<=[.!?…])\s+/).filter((x) => x.trim()).length > 5) return 'largo_en_oraciones';
   if (/\b(qr|banco|titular|mercantil)\b/.test(norm)) return 'datos_de_cobro';
+  // El modelo no manda al cliente a una página ni inventa condiciones por país: los precios y las opciones los da el sistema con botones.
+  // Solo REMISIONES: «puedes crear tu página web con IA», «en la página 45» o «los resultados varían según tu ejecución» son legítimos y pasan.
+  if (RR_REMITE_A_WEB.test(norm)) return 'remite_a_web';
   // La palabra DERIVAR es una orden interna: si el modelo la mezcla con otro texto, jamás llega al cliente.
   if (/\bderivar\b/.test(norm)) return 'palabra_interna';
   // Afirmaciones comerciales que el flujo no puede cumplir (descuentos, regalos, garantías, devoluciones, plazos): el modelo no las inventa; caen al texto fijo.

@@ -90,6 +90,20 @@ export const AVISO_TOMAR =
   + `Si pasan ${INACTIVIDAD_DEVOLUCION_MIN} minutos sin que usted escriba, o se cierra la ventana de 24 h, `
   + 'el asistente retoma con el siguiente mensaje del cliente.';
 
+/**
+ * Lo que se le dice a quien mira como propietario de NovuChat (sesión de Google con el claim `p`): en vez de callar,
+ * se explica por qué no ve «Tomar» ni el cuadro para escribir.
+ */
+export const AVISO_PROPIETARIO =
+  'Estás viendo este negocio como propietario de NovuChat (solo lectura). '
+  + 'Para tomar o responder conversaciones, sal y entra con tu cuenta de administrador del negocio (correo y contraseña).';
+
+/**
+ * ¿Se muestra el aviso? Solo al propietario efectivo (`Permisos.propietario` ya exige sesión de Google). Un admin u oper
+ * que entra por contraseña, o una persona sin rol, no lo ven: a ellos no les falta nada que explicar.
+ */
+export const mostrarAvisoPropietario = (propietario: boolean): boolean => propietario === true;
+
 // ── Quién ve qué ─────────────────────────────────────────────────────────────
 
 export interface EntradaAcciones {
