@@ -187,6 +187,9 @@ describe('armado: lo común se INCLUYE desde su fuente, no se copia', () => {
     for (const campo of ['r.evento = m.evento', 'r.reglaCobro = 2', 'r.referencia = m.referencia', 'r.monto = m.monto']) expect(cuerpo).toContain(campo);
     // El evento viaja SOLO si el envío principal (la imagen) fue aceptado: si cayó el respaldo en texto, el cobro no se abre.
     expect(cuerpo).toContain("$('Enviar a WhatsApp').item.json");
+    // Excepción declarada (S5): la derivación a Rubén (`no_contactar`) se reporta aunque haya salido el respaldo en texto; los demás eventos siguen atados al envío principal.
+    expect(cuerpo).toContain("if (m.evento === 'no_contactar') { r.evento = 'no_contactar'; } else if (typeof m.evento === 'string' && m.evento && principal)");
+    expect(codigo(PRODUCCION, 'Armar mensajes')).toContain("if (m && tipoDePlan === 'derivar') m.evento = 'no_contactar';");
     expect(PRODUCCION.connections['¿Reportar? (saliente)']!['main']![0]!.map((c) => c.node)).toEqual(['¿Meta aceptó?']);
     expect(PRODUCCION.connections['¿Meta aceptó?']!['main']![0]!.map((c) => c.node)).toEqual(['Reportar mensaje (saliente)']);
   });

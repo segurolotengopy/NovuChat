@@ -143,6 +143,9 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   }
 }
 
+// La conversación pasó a Rubén (plan «derivar»: aviso + botón, también cuando salió el respaldo en texto): el servidor no la rescata. El reporte saliente lo lleva aunque el botón no se haya aceptado.
+if (m && tipoDePlan === 'derivar') m.evento = 'no_contactar';
+
 // La ficha: un solo lugar, al final del turno. Hasta en un turno sin mensaje (bloqueado) se recuerda el id de Meta (una entrega repetida no se cuenta dos veces).
 if (claveOk) {
   const fichas = cnMapaDeFichas(true);

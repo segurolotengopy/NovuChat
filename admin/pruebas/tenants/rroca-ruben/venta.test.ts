@@ -2245,3 +2245,77 @@ describe('RONDA FINAL (20/10/2026) · el primer mensaje nunca lleva montos; nunc
     expect(r.avisos).toHaveLength(1);
   });
 });
+
+// ------------------------------------------------------------------------------ S5 (plan de rescate, paso 2): la derivación se reporta como `no_contactar`
+// El módulo común `rescate-22h` (PR #567) espera ESTA prueba en su clave `contratoConsumidor`: «S5 · rescate-22h · la derivación reporta no_contactar».
+describe('S5 · rescate-22h · la derivación reporta no_contactar', () => {
+  const salientes = (w: Mundial): J[] => w.mundo.llamadas.ingesta.filter((c) => c['direccion'] === 'saliente');
+  const eventos = (w: Mundial): unknown[] => salientes(w).map((c) => c['evento']);
+  /** Cada tipo de derivación a Rubén del flujo: [nombre, cómo se llega a ella, opciones del mundo]. */
+  const DERIVACIONES: Array<[string, (w: Mundial, rompe?: () => void) => ResultadoTurno, Opciones]> = [
+    ['factura', (w) => hablar(w, ANA, mTexto('necesito factura por favor')), {}],
+    ['garantía o devolución', (w) => hablar(w, ANA, mTexto('tiene garantía o devolución?')), {}],
+    ['otro medio de pago', (w) => hablar(w, ANA, mTexto('puedo pagar en efectivo?')), {}],
+    ['reclamo', (w) => hablar(w, ANA, mTexto('tengo un reclamo')), {}],
+    ['hablar con Rubén (botón)', (w) => { hablar(w, ANA, mTexto('Hola')); return hablar(w, ANA, mBoton('b_ruben')); }, {}],
+    ['no entrega', (w, rompe) => { pedirQr(w, 'pack'); hablar(w, ANA, mImagen()); if (rompe) rompe(); return hablar(w, ANA, mTexto('no me llegó nada'), { avanzarMin: 60 }); }, {}],
+    ['el modelo no supo (DERIVAR)', (w) => hablar(w, ANA, mTexto('¿el libro sirve para enfermeras?')), { modelo: geminiTexto('DERIVAR') }],
+    ['QR no disponible (sin medio)', (w) => hablar(w, ANA, mTexto(PRELLENADOS.pack)), { mediaIdQr: null }],
+    ['sin opciones de compra (catálogo vacío)', (w) => { hablar(w, ANA, mTexto('Hola')); return hablar(w, ANA, mBoton('b_precios')); }, { catalogo: [] }],
+  ];
+
+  for (const [nombre, llegar, opciones] of DERIVACIONES) {
+    it(`derivación «${nombre}»: el reporte saliente lleva evento no_contactar, también cuando Meta rechaza el botón y sale el respaldo en texto`, () => {
+      const w = crear(opciones);
+      const t = llegar(w);
+      expect(t.fallo).toBeNull();
+      const ultimo = salientes(w).at(-1)!;
+      expect(ultimo['evento'], nombre).toBe('no_contactar');
+      // La derivación NO abre cobro: sin reglaCobro, referencia ni monto.
+      expect(ultimo['reglaCobro']).toBeUndefined();
+      expect(ultimo['referencia']).toBeUndefined();
+      expect(ultimo['monto']).toBeUndefined();
+      // Con el botón rechazado por Meta: sale el respaldo y se reporta igual como no_contactar.
+      // (el QR previo de «no entrega» debe salir bien: el envío principal se rompe justo antes de la queja)
+      const w2 = crear(opciones);
+      const rompe = () => { w2.mundo.dobles['Enviar a WhatsApp'] = () => ({ error: { message: '(#131053) Media upload error', code: 131053 } }); };
+      if (nombre !== 'no entrega') rompe();
+      const t2 = llegar(w2, rompe);
+      expect(t2.fallo).toBeNull();
+      expect(t2.mensajes.some((m) => m.respaldo)).toBe(true);
+      expect(salientes(w2).at(-1)!['evento'], `${nombre} (respaldo)`).toBe('no_contactar');
+    });
+  }
+
+  it('el QR sigue con `qr_enviado` y NUNCA lleva `no_contactar`, ni cuando cae el respaldo (ahí no lleva evento)', () => {
+    const w = crear();
+    pedirQr(w, 'pack');
+    expect(eventos(w)).toEqual(['qr_enviado']);
+    const w2 = crear({ envio: 'error' });
+    hablar(w2, ANA, mTexto(PRELLENADOS.pack));
+    expect(eventos(w2)).not.toContain('no_contactar');
+    expect(eventos(w2)).not.toContain('qr_enviado');
+  });
+
+  it('saludo, precios, respuesta del modelo y botones de producto van SIN evento', () => {
+    const w = crear();
+    hablar(w, ANA, mTexto('Hola'));
+    hablar(w, ANA, mBoton('b_precios'));
+    hablar(w, ANA, mTexto('cuéntame del libro'));
+    hablar(w, ANA, mBoton('b_comp'));
+    expect(salientes(w).length).toBeGreaterThanOrEqual(3);
+    expect(eventos(w).every((e) => e === undefined)).toBe(true);
+    const w2 = crear({ modelo: geminiTexto('Respuesta rota http://malo.example') });
+    hablar(w2, BETO, mTexto('cuéntame del libro'));
+    expect(eventos(w2).every((e) => e === undefined)).toBe(true);
+  });
+
+  it('en modo prueba no hay reporte, tampoco el de una derivación', () => {
+    const w = crear({ flujo: PRUEBA });
+    const e: J = { headers: {}, body: { modoPrueba: true, telefonoDePrueba: ANA, enviarDeVerdad: false, ...valorMeta(mTexto('necesito factura por favor'), ANA) } };
+    const t = w.mundo.turno(e);
+    expect(t.fallo).toBeNull();
+    expect(w.mundo.llamadas.ingesta).toHaveLength(0);
+    expect((t.resumen as J)['mensajes']).toHaveLength(1);
+  });
+});
