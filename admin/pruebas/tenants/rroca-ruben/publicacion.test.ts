@@ -15,7 +15,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { Flujo } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, ARCHIVO_DE_DATOS, CLAVES_DE_PLANTILLA, cargarDatos, guardiaDePublicacion } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
+import { AQUI, ARCHIVO_DE_DATOS, CLAVES_DE_PLANTILLA, MEDIOS_PARA_ABRIR, cargarDatos, guardiaDePublicacion, modoDePublicacion } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 
 const RROCA: string = AQUI;
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -516,5 +516,92 @@ describe('límites conocidos, declarados y NO implementados (PR-5)', () => {
 
   it('la puerta del turno sigue idéntica al origen (la excepción existe PORQUE no se toca): la falla abierta sigue fijada por su prueba', () => {
     expect(leer(join(REPO, 'admin/pruebas/tenants/rroca-ruben/flujo.test.ts'))).toMatch(/falla abierta, declarada/);
+  });
+});
+
+describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, imagen y documento; la publicación de PRUEBA con lista restringida sí se permite', () => {
+  const TRES = 'audio,imagen,documento';
+  const conBase = (cambios: Record<string, unknown>, quitar: string[] = []): Flujo => {
+    const f = publicable(PRODUCCION);
+    for (const q of quitar) { const lista = asignaciones(f); lista.splice(lista.findIndex((a) => a.name === q), 1); }
+    for (const [k, v] of Object.entries(cambios)) {
+      const a = asignaciones(f).find((x) => x.name === k);
+      if (a) a.value = v; else asignaciones(f).push({ name: k, value: v } as Asignacion);
+    }
+    return f;
+  };
+  const datosCon = (cambios: Record<string, unknown>): { configBase: Record<string, unknown> } => { const d = datosAprobados(); Object.assign(d.configBase, cambios); return d; };
+  const apertura = (h: string[]): string[] => h.filter((x) => /abrir al PÚBLICO/.test(x));
+
+  it('los medios que se exigen son exactamente audio, imagen y documento; los datos de hoy declaran solo los dos comprobantes', () => {
+    expect(MEDIOS_PARA_ABRIR).toEqual(['audio', 'imagen', 'documento']);
+    expect(DATOS_VERSIONADOS.configBase['mediosHabilitados']).toBe('imagen_comprobante,pdf_comprobante');
+    expect(asignaciones(PRODUCCION).find((a) => a.name === 'mediosHabilitados')!.value).toBe('imagen_comprobante,pdf_comprobante');
+  });
+
+  it('el flujo vivo (publicado en prueba, con lista de teléfonos) SIGUE siendo publicable en prueba y la salida lo declara', () => {
+    const f = publicable(PRODUCCION);
+    expect(hallazgos(f)).toEqual([]);
+    expect(modoDePublicacion({ flujo: f, datos: datosAprobados() })).toBe('prueba');
+    const ruta = join(mkdtempSync(join(tmpdir(), 'rroca-apertura-')), 'vivo.json');
+    writeFileSync(ruta, JSON.stringify(f));
+    const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--publicable', '--flujo', ruta], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/Publicación de PRUEBA con lista restringida/);
+    expect(r.stdout).toMatch(/NO se abre al público/);
+    rmSync(dirname(ruta), { recursive: true, force: true });
+  });
+
+  it('NEGANDO: lista de teléfonos vacía o ausente = abrir al público: se rechaza (sale 1) mientras no estén los tres medios', () => {
+    for (const f of [conBase({ telefonosDePrueba: '' }), conBase({ telefonosDePrueba: '   ' }), conBase({}, ['telefonosDePrueba'])]) {
+      expect(apertura(hallazgos(f)).length).toBe(1);
+      expect(apertura(hallazgos(f))[0]).toMatch(/faltan: audio, imagen, documento/);
+      expect(modoDePublicacion({ flujo: f, datos: datosAprobados() })).toBe('publico');
+    }
+    const ruta = join(mkdtempSync(join(tmpdir(), 'rroca-apertura-')), 'abierto.json');
+    writeFileSync(ruta, JSON.stringify(conBase({ telefonosDePrueba: '' })));
+    const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--publicable', '--flujo', ruta], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/abrir al PÚBLICO exige los tres medios/);
+    rmSync(dirname(ruta), { recursive: true, force: true });
+  });
+
+  it('NEGANDO: `modoApertura` distinto de «prueba» (público, abierto, cualquier otro valor) se trata como apertura al público aunque haya lista', () => {
+    for (const modo of ['publico', 'abierto', 'PUBLICO', 'x']) expect(apertura(hallazgos(conBase({ modoApertura: modo }))).length, modo).toBe(1);
+    expect(apertura(hallazgos(conBase({ modoApertura: 'prueba' })))).toEqual([]);
+  });
+
+  it('NEGANDO: abrir con CADA medio faltante se rechaza y nombra el que falta; los comprobantes (imagen_comprobante, pdf_comprobante) no cuentan como medios', () => {
+    for (const medio of MEDIOS_PARA_ABRIR as string[]) {
+      const otros = (MEDIOS_PARA_ABRIR as string[]).filter((x) => x !== medio).join(',');
+      const h = apertura(hallazgos(conBase({ telefonosDePrueba: '', mediosHabilitados: otros })));
+      expect(h.length, medio).toBe(1);
+      expect(h[0]).toContain(`faltan: ${medio}`);
+    }
+    expect(apertura(hallazgos(conBase({ telefonosDePrueba: '', mediosHabilitados: 'imagen_comprobante,pdf_comprobante' }))).length).toBe(1);
+    expect(apertura(hallazgos(conBase({ telefonosDePrueba: '' }, ['mediosHabilitados']))).length).toBe(1);
+  });
+
+  it('con los tres medios habilitados la apertura al público no la frena esta guardia (y la salida lo declara)', () => {
+    const f = conBase({ telefonosDePrueba: '', mediosHabilitados: TRES });
+    expect(apertura(hallazgos(f, datosCon({ mediosHabilitados: TRES, modoApertura: 'publico' })))).toEqual([]);
+    expect(hallazgos(f, datosCon({ mediosHabilitados: TRES, modoApertura: 'publico' }))).toEqual([]);
+  });
+
+  it('los datos también cuentan: datos que abren al público sin los tres medios niegan aunque el flujo tenga lista', () => {
+    const h = apertura(hallazgos(publicable(PRODUCCION), datosCon({ modoApertura: 'publico' })));
+    expect(h).toHaveLength(1);
+    expect(h[0]).toMatch(/^datos:/);
+  });
+
+  it('`mediosHabilitados` y `modoApertura` tienen forma validada en los datos', () => {
+    const ruta = join(mkdtempSync(join(tmpdir(), 'rroca-apertura-')), 'datos.json');
+    for (const [campo, valor] of [['mediosHabilitados', 'Audio, Imagen'], ['modoApertura', 'abierto']] as const) {
+      const d = JSON.parse(leer(ARCHIVO_DE_DATOS)) as { configBase: Record<string, unknown> };
+      d.configBase[campo] = valor;
+      writeFileSync(ruta, JSON.stringify(d));
+      expect(() => cargarDatos(ruta), campo).toThrow(new RegExp(`configBase\\.${campo}: forma no válida`));
+    }
+    rmSync(dirname(ruta), { recursive: true, force: true });
   });
 });

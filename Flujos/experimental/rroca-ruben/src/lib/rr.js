@@ -9,7 +9,8 @@
 //   - el monto de un QR es el precio del catálogo del producto elegido: ni el cliente ni el modelo lo mueven (`rrPrecio`, `rrCatalogo`);
 //   - ningún texto del cliente fabrica un producto: solo hay 4 (`RR_PRODUCTOS`);
 //   - un texto de cobro nunca dice «acreditado», «verificado» ni «recibimos tu pago» (`rrSeguro` aplica `CB_PROHIBIDAS` y `RR_NIEGA_IA` a TODO lo que sale);
-//   - «ya pasé tu comprobante» solo sale si el aviso a Rubén devolvió un `wamid` real (`rrTextoComprobante`, `rrTextoDerivacion`: lo decide el llamador con `avisoSalio`).
+//   - «ya pasé tu comprobante» / el texto de «comprobante leído» solo salen si el aviso a Rubén devolvió un `wamid` real (`rrTextoComprobante`, `rrTextoDerivacion`: lo decide el llamador con `avisoSalio`);
+//   - la ÚNICA excepción a `CB_PROHIBIDAS` es la constante `RR_TEXTO_COMPROBANTE_LEIDO`, por coincidencia exacta y solo si la pasa el código (`rrSeguro(texto, true)`), nunca el modelo.
 
 // NIEGA_IA (prohibición 4 de CLAUDE.md): ningún texto que ve el cliente puede negar que es una IA. COPIA DECLARADA de `CH_NIEGA_IA` de
 // `Flujos/experimental/chat-novuchat/src/lib/chat.js` (HUECO en PROPIO.md): la expresión es idéntica y una prueba la compara. Se aplica al texto NORMALIZADO (`rrNorm`).
@@ -31,7 +32,19 @@ function rrNorm(t) {
 }
 // El texto que ve el cliente, con la barrera aplicada: si niega ser una IA (prohibición 4) o dice que un pago está acreditado, verificado o recibido (prohibición 3: el comprobante no
 // es una acreditación bancaria), sale el mínimo. `CB_PROHIBIDAS` y `cbCanon` son del hueco `cobro.js`.
-function rrSeguro(texto) {
+// EL TEXTO FIJO DE «COMPROBANTE LEÍDO» (decisión de Andres, 20/10/2026). Dice «confirmamos» y «validado» en FUTURO, como lo que Rubén hará después de mirar su banco: no afirma que el pago esté confirmado,
+// y por eso es la ÚNICA constante del código que se exime de `CB_PROHIBIDAS`. Sale SOLO cuando el cotejo cuadra Y el aviso a Rubén salió (`rrTextoComprobante`), y SIN modelo.
+const RR_TEXTO_COMPROBANTE_LEIDO = '¡Gracias! 🙌 Ya recibí tu comprobante, dame un momento mientras confirmamos tu pago. En cuanto esté validado, te mando tus enlaces de descarga aquí mismo.';
+// LISTA BLANCA POR COINCIDENCIA EXACTA (nunca por patrón): el texto, con los espacios colapsados, tiene que ser IGUAL, carácter por carácter, a la constante. Una palabra cambiada, un homoglifo, un carácter
+// invisible o una frase agregada la deja fuera. Lo que se devuelve es la CONSTANTE, nunca el texto recibido.
+function rrEsTextoFijoExento(texto) {
+  return rrTexto(texto).replace(/\s+/g, ' ').trim() === RR_TEXTO_COMPROBANTE_LEIDO;
+}
+// `fijoDelCodigo === true` lo pasa SOLO el llamador que arma un texto fijo del código (la rama `comprobante` de «Armar mensajes»): lo que redacta el modelo jamás lleva ese segundo argumento, así que nunca
+// usa la exención aunque repita la constante palabra por palabra. La exención no toca `RR_NIEGA_IA`: la constante también la cumple.
+function rrSeguro(texto, fijoDelCodigo) {
+  const exento = fijoDelCodigo === true && rrEsTextoFijoExento(texto);
+  if (exento && !RR_NIEGA_IA.test(rrNorm(RR_TEXTO_COMPROBANTE_LEIDO))) return RR_TEXTO_COMPROBANTE_LEIDO;
   // La expresión NIEGA_IA es copia idéntica de la del chat (una prueba lo comprueba) y toma por negación «no soy Rubén, soy su asistente virtual»: la aclaración honesta «no soy Rubén» se retira SOLO para esa comparación.
   if (RR_NIEGA_IA.test(rrNorm(texto).replace(/\bno soy (el mismo |el propio )?ruben\b/g, ' '))) return rrParrafos(RR_SALUDO_MINIMO);
   if (CB_PROHIBIDAS.test(cbCanon(texto))) return rrParrafos(RR_SALUDO_MINIMO);
@@ -641,7 +654,7 @@ function rrTextoDerivacion(motivo, salio, clave) {
   // F5 (19/10/2026): factura, garantía, devolución, otros medios de pago, reclamos y pagos que no aparecen se conversan DIRECTAMENTE con el autor: aviso + botón, y NUNCA una promesa de garantía,
   // devolución ni resultado. La queja de no entrega no afirma que se entregó. Solo para el motivo `consulta`; el resto de los motivos conserva su texto.
   if (motivo === 'consulta' && (clave === 'factura' || clave === 'garantia' || clave === 'otro_medio_pago' || clave === 'reclamo' || clave === 'no_entrega')) {
-    const intro = clave === 'no_entrega' ? 'Lamento la espera. Rubén revisa el pago y envía el material por este chat hasta en 6 horas; desde aquí no puedo confirmarte si ya salió.'
+    const intro = clave === 'no_entrega' ? 'Lamento la espera. Rubén revisa el pago y te envía el material por este chat en cuanto lo termine de revisar; desde aquí no puedo confirmarte si ya salió.'
       : (clave === 'factura' || clave === 'garantia' ? 'Sobre factura, garantía o devolución puedes conversar directamente con el autor, Rubén; desde aquí no puedo prometerte nada de eso.'
         : 'Eso lo ve directamente el autor, Rubén, y puedes conversarlo con él.');
     return salio === true ? intro + ' Le avisé; también puedes escribirle directo con el botón.' : intro + ' No pude avisarle; escríbele directo con el botón.';
@@ -659,7 +672,8 @@ function rrTextoDerivacion(motivo, salio, clave) {
   return salio === true ? base + ' Le avisé; también puedes escribirle directo con el botón.' : base + ' No pude avisarle a Rubén; escríbele directo con el botón.';
 }
 // El texto al cliente según el cotejo. `resultado`: cuadra | aproximado | reintentar | ilegible | sin_cotejo | ya_cotejado | simulado (el vocabulario de `cbResultadoVenta`). Devuelve { cuerpo, boton }.
-// Nunca «acreditado», «verificado», «validado» ni «ya te lo enviamos»; el plazo es «hasta en 6 horas» (Andres, 19/10/2026): el comprobante llegó y los datos coinciden; quien confirma que entró la plata es el banco, y Rubén.
+// Nunca «acreditado», «verificado» ni «ya te lo enviamos» con voz propia; SIN plazo exacto («en cuanto Rubén lo revise»; Andres, 20/10/2026): el comprobante llegó; quien confirma que entró la plata es el banco, y Rubén.
+// La excepción es `RR_TEXTO_COMPROBANTE_LEIDO` (resultado 'cuadra' con el aviso a Rubén salido), una constante exenta por coincidencia exacta en `rrSeguro`.
 function rrTextoComprobante(resultado, causa, salio, diferencia) {
   const sinAviso = 'Recibí tu comprobante pero no pude avisarle a Rubén. Escríbele directo con el botón.';
   if (resultado === 'aproximado') {
@@ -671,7 +685,7 @@ function rrTextoComprobante(resultado, causa, salio, diferencia) {
   }
   if (resultado === 'cuadra') {
     return salio === true
-      ? { cuerpo: 'Recibí tu comprobante y los datos coinciden con tu compra. Ya pasé tu comprobante a Rubén: él revisará el pago y te enviará los enlaces del material por este chat hasta en 6 horas.', boton: false }
+      ? { cuerpo: RR_TEXTO_COMPROBANTE_LEIDO, boton: false, fijo: true }
       : { cuerpo: sinAviso, boton: true };
   }
   if (resultado === 'reintentar') {
@@ -831,6 +845,14 @@ function rrExtraRedaccion(texto, norm) {
   if (RR_REMITE_A_WEB.test(norm)) return 'remite_a_web';
   // La palabra DERIVAR es una orden interna: si el modelo la mezcla con otro texto, jamás llega al cliente.
   if (/\bderivar\b/.test(norm)) return 'palabra_interna';
+  // PAGOS EN SUS PROPIAS PALABRAS (remediación del 20/10/2026 contra `admin/pruebas/fixtures/redaccion-pago-banco.json`): lo que el filtro común deja pasar y en este flujo el modelo NO puede decir. El comprobante no es una
+  // acreditación bancaria: ni «el dinero llegó / está en la cuenta / liquidado» (ES, EN, PT), ni «ya te lo envié», ni las frases cortas de «ya está / llegó todo bien / todo listo» que el cliente leería como pago o entrega.
+  if (/\b(dinero|plata|fondos|saldo|deposito|transferencia|money|funds|deposit|transfer|payment|dinheiro)\b[^.?!]{0,25}\b(llego|llegaron|entro|ingreso|ingresaron|arrived|landed|cleared|received|chegou|entrou)\b|\ben (nuestra|la|mi|su) cuenta\b|\b(liquidad|saldad)[oa]s?\b/.test(norm)) return 'afirma_pago_en_cuenta';
+  if (/\bya (te|se|les|le) (lo |la |los |las )?(envi\w*|mand\w*|entreg\w*)\b/.test(norm)) return 'afirma_entrega';
+  for (const oracion of String(texto).split(/(?<=[.!?…])\s+|\n+/)) {
+    const n = rrNorm(oracion);
+    if (n !== '' && n.split(' ').length <= 6 && /^(ya )?(llego|esta|quedo)( todo)?( bien| listo)?$|^(ya )?(llego|quedo) todo\b|^todo (listo|bien|en orden)\b|^ya esta todo\b/.test(n)) return 'afirma_hecho_corto';
+  }
   // Afirmaciones comerciales que el flujo no puede cumplir (descuentos, regalos, garantías, devoluciones, plazos): el modelo no las inventa; caen al texto fijo.
   if (/descuent|gratis|gratuito|promoci|oferta|garant|devoluc|reembols|en \d+ (min|hora|dia)/.test(norm)) return 'afirmacion_comercial';
   return '';

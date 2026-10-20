@@ -68,7 +68,7 @@ describe('negocio-rroca-ruben.json: el catálogo es el que espera el flujo', () 
     expect(TEXTO).not.toMatch(/\b(vos|tenés|querés|podés|sos)\b/i);
   });
 
-  it('declara lo que NO se sabe (garantía y devolución, factura, otros medios de pago, otro plazo de entrega)', () => {
+  it('declara lo que NO se sabe (garantía y devolución, factura, otros medios de pago, plazo de entrega exacto)', () => {
     const no = (D.negocio['datosQueNoTenemos'] as string[]).join('|');
     for (const x of [/garant/, /factura/, /medios de pago/, /plazo de entrega/]) expect(no).toMatch(x);
   });
@@ -85,7 +85,9 @@ describe('negocio-rroca-ruben.json: el catálogo es el que espera el flujo', () 
     expect(pol).not.toMatch(/REEMPLAZAR_/);
     expect(pol).toMatch(/no las promete/);
     // El negocio no promete que el bot entregue ni que ya se envió.
-    expect(String(D.negocio['instruccionesExtra'])).toMatch(/hasta en 6 horas/);
+    // Sin plazo exacto (Andres, 20/10/2026): «en cuanto revisa el pago», nunca una cifra de horas.
+    expect(String(D.negocio['instruccionesExtra'])).toMatch(/en cuanto revisa el pago/);
+    expect(TEXTO).not.toMatch(/\b6 horas\b|\bseis horas\b/i);
     expect(String(D.negocio['instruccionesExtra'])).toMatch(/nunca entrega ni envía enlaces/);
     expect(TEXTO).not.toMatch(/ya te lo enviamos/i);
   });
@@ -116,11 +118,13 @@ describe('negocio-rroca-ruben.json: repositorio público y marcadores', () => {
         { name: 'Config base', parameters: { assignments: { assignments: [
           { name: 'avisoComprobanteEstado', value: 'APPROVED' }, { name: 'avisoComprobantePlantilla', value: 'aviso_comprobante_recibido' },
           { name: 'avisoConsultaEstado', value: 'APPROVED' }, { name: 'avisoConsultaPlantilla', value: 'aviso_consulta_para_ruben' }, { name: 'avisoPlantillaIdioma', value: 'es' },
+          // Publicación de PRUEBA con lista restringida (la guardia de apertura exige declararla: sin lista sería abrir al público).
+          { name: 'telefonosDePrueba', value: 'lista-de-prueba' },
         ] } } },
         { name: 'Negocio', parameters: { archivo: texto } },
       ],
     } as unknown as Flujo);
-    const datos = { configBase: { avisoComprobanteEstado: 'APPROVED', avisoComprobantePlantilla: 'a', avisoConsultaEstado: 'APPROVED', avisoConsultaPlantilla: 'b', avisoPlantillaIdioma: 'es' } };
+    const datos = { configBase: { avisoComprobanteEstado: 'APPROVED', avisoComprobantePlantilla: 'a', avisoConsultaEstado: 'APPROVED', avisoConsultaPlantilla: 'b', avisoPlantillaIdioma: 'es', telefonosDePrueba: 'lista-de-prueba' } };
     const h = guardiaDePublicacion({ flujo: envolver(TEXTO), datos }) as string[];
     expect(h).toHaveLength(PENDIENTES.length);
     for (const m of PENDIENTES) expect(h.join('|')).toContain(m);
