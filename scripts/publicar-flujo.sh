@@ -174,7 +174,7 @@ fi
 # reconoce por el nombre del archivo o del flujo de ORIGEN que contenga rroca-antonio
 # (sin distinguir mayusculas) y se REPITE sobre el flujo VIVO (destino). Con --aplicar,
 # --crear o --encender exige (1) que `construir.mjs --publicable` apruebe el flujo (sin
-# marcadores REEMPLAZAR_*, plantillas de aviso APPROVED, linea de proteccion y catalogo
+# marcadores REEMPLAZAR_*, plantillas de aviso APPROVED y catalogo
 # cargados) y (2) la confirmacion explicita: escribir PUBLICAR ANTONIO, o --confirmo-antonio
 # sin terminal. --forzar NO salta nada de esto. `--apagar` nunca pide confirmacion.
 antonio_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto | confirmar
@@ -191,7 +191,7 @@ antonio_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = estricto |
   fi
   if [[ $APLICAR -eq 1 ]]; then
     if [[ $GUARDIA_ANTONIO_OK -ne 1 ]]; then
-      printf '\033[1;31m✗ NEGADO: el flujo de Antonio no se publica con marcadores sin sustituir, plantillas sin aprobar, sin línea de protección o con el catálogo sin cargar.\033[0m\n' >&2
+      printf '\033[1;31m✗ NEGADO: el flujo de Antonio no se publica con marcadores sin sustituir, plantillas sin aprobar o con el catálogo sin cargar.\033[0m\n' >&2
       exit 1
     fi
     antonio_confirmar
@@ -285,7 +285,8 @@ CLASE_VIVO_ANTONIO="$(antonio_clase "$TMP/vivo.json" "")"
 if [[ -n "$CLASE_VIVO_ANTONIO" ]]; then
   if [[ $ENCENDER -eq 1 ]]; then
     antonio_guardia "encender el flujo vivo" "$TMP/vivo.json" "$CLASE_VIVO_ANTONIO"
-  elif [[ $APAGAR -eq 0 && $ES_ANTONIO -eq 0 && $CREAR -eq 0 ]]; then
+  # Si el destino vivo es el estricto y el origen no lo era (p. ej. un archivo «confirmar» con --forzar), la guardia estricta se vuelve a correr.
+  elif [[ $APAGAR -eq 0 && $CREAR -eq 0 && ( $ES_ANTONIO -eq 0 || ( "$CLASE_VIVO_ANTONIO" == estricto && "${CLASE_ANTONIO:-}" != estricto ) ) ]]; then
     ES_ANTONIO=1
     antonio_guardia "flujo vivo de destino" "$FLUJO" "$CLASE_VIVO_ANTONIO"
   fi

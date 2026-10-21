@@ -251,6 +251,15 @@ describe('publicar-flujo.sh: la guardia y la confirmación del flujo de Antonio'
     expect(v.stdout + v.stderr).toMatch(/flujo vivo de destino/);
     expect(escribio()).toBe(false);
   });
+  it('NEGANDO: --forzar con un archivo de clase «confirmar» (rroca-antonio-rescate.json) contra el flujo VIVO de Antonio vuelve a correr la guardia estricta: sale 1 y no escribe', () => {
+    const raiz = raizConGuardia(1);
+    writeFileSync(join(raiz, 'Flujos/experimental/rroca-antonio/rroca-antonio-rescate.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
+    const r = correrEn(raiz, ['--flujo', 'Flujos/experimental/rroca-antonio/rroca-antonio-rescate.json', '--forzar', '--aplicar', '--confirmo-antonio'], vivoAntonio);
+    expect(r.status).toBe(1);
+    expect(r.stdout + r.stderr).toMatch(/flujo vivo de destino/);
+    expect(r.stderr).toMatch(/NEGADO/);
+    expect(escribio()).toBe(false);
+  });
   it('con la guardia en verde y sin terminal, --aplicar SIN --confirmo-antonio se NIEGA; con él sigue al .env', () => {
     const raiz = raizConGuardia(0);
     const sin = correrEn(raiz, ['--flujo', REL, '--aplicar'], vivoOtro);
