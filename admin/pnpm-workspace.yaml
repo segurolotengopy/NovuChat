@@ -72,6 +72,12 @@ overrides:
   # dentro de su propio rango, así que se arregla en vez de pedir excepción.
   # Tilde: se queda en la rama 1.32.x, la más baja que cierra los avisos.
   '@modelcontextprotocol/sdk': ~1.32.0
+  # vite — GHSA-587h-7wmj-h5pm (HIGH, 21/10/2026): la comprobación de existencia
+  # de launch-editor (fs.existsSync) se puede eludir en Windows; corregido en
+  # >=7.3.7. Es herramienta de desarrollo (servidor de vite y vitest), no entra
+  # en el artefacto de producción. El salto 7.3.6 -> 7.3.7 es de PARCHE y queda
+  # dentro del rango ^7.0.0 de la consola; tilde para no salir de 7.3.x.
+  vite: ~7.3.7
 
 packages:
   - web
