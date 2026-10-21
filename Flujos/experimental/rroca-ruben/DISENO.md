@@ -2,7 +2,7 @@
 
 Plan completo: `RUBENROCA_plan-del-flujo-de-venta-digital_2026-10-18.md` (Cartera). PR-1 es el esqueleto; PR-2 agrega la conversación y el cobro; PR-3 (avisos por plantilla, derivación completa), PR-4 (rescate de las 22 h) y PR-5 (datos, ensayo, documentación) siguen.
 
-## Topología (44 nodos en producción, 39 en la prueba; tope duro 48; los medios entrantes agregaron 5)
+## Topología (45 nodos en producción, 40 en la prueba; tope duro 48; los medios entrantes agregaron 5 y el lector clasificador 1)
 
 ```
 Entrega del receptor ─► Verificar firma ─► ¿Firma válida? ─sí─► Aceptar (200) ─► Descartar repetidos ─┐        (producción)
@@ -168,3 +168,19 @@ REGLA DURA de Andres: audio, documentos e imágenes en TODOS los flujos; ninguno
 - **Reversión rápida:** `topeAudiosDia: 0` y/o `topeImagenesDia: 0` en los datos, rearmar y republicar con «sí»: vuelve el comportamiento de antes sin descargas. Reversión total: revertir el PR y publicar el JSON anterior.
 
 **Referencias a nodos y el task runner de n8n (21/10/2026).** El núcleo de la transcripción se traduce de forma TEXTUAL al armar el nodo (nada de `$` redefinido). `referencias-a-nodos.test.ts` recorre TODOS los nodos (código y expresiones `={{ … }}`, producción y prueba) y exige que cada `$('…')`, `$node['…']` o `$items('…')` literal nombre un nodo que exista y sea ANTECESOR; también niega que un Code mezcle literales con referencias dinámicas. Las dinámicas de Rubén están en los helpers `cn*` de `_comun.js` y en 9 nodos sin ningún literal. **NO verificable fuera de n8n real:** que el escaneo del runner trate lo dinámico como "cargar todo" (se supone por cómo corren los demás nodos hoy), y el modo estricto del simulador ("hasn't been executed" si el literal no aparece en el código) no se agregó: `admin/pruebas/lib/` es de otra zona; la prueba estática de literales cubre el mismo defecto.
+
+## Imagen o PDF con un cobro abierto, vencido o en revisión: el lector clasifica (21/10/2026)
+
+**Defecto visto en producción.** Con un cobro vencido (o en revisión) en la ficha, la foto de un anuncio se tomaba por comprobante: «Tu comprobante llegó después de los 15 minutos…» y un aviso real a Rubén. `esComprobante` es verdadero para CUALQUIER imagen o PDF en esos estados.
+
+**Arreglo.** Una imagen o un PDF que sigue el camino del comprobante pasa por el lector de siempre («Leer comprobante (imagen)» o «(PDF)»), cuyo prompt ahora también pide `tipo` (`comprobante`, `anuncio`, `otra`, con `titular` o `descripcion`, igual que «Ver imagen»). «Interpretar lectura» lo traduce con `rrClasificaLector` (rr.js) y el nodo nuevo **«¿Lo leído es comprobante?»** desvía a «Decidir turno», SIN cotejar, SOLO si `tipo` es `anuncio` u `otra` (con descripción) **y** el lector no leyó una cuenta de destino. En «Decidir turno» (`noEsComprobante`):
+
+- **Cobro vencido o en revisión**: anuncio → caso 1 (el modelo recibe el titular canónico); otra → caso 3; cero avisos a Rubén. Solo lo que parece comprobante sigue el camino de comprobante tardío o en revisión, con su aviso.
+- **QR abierto**: no es un comprobante, así que el servidor no cuenta un intento inválido ni pasa a revisión; la respuesta es el recordatorio del QR (como todo texto con un QR abierto; sin modelo), sin aviso.
+- **PDF** (el mismo prompt en el lector de PDF): un PDF clasificado como no-comprobante recibe el texto fijo de los archivos (`documento` o `archivo_no_aceptado` con QR abierto), sin aviso ni cotejo. Un PDF sin clasificar o comprobante sigue el camino de siempre.
+- **Ante la duda se coteja** (comportamiento seguro, con aviso, nunca silencio): Gemini caído o respuesta rota, `tipo` ausente, `otra` sin descripción, o un «anuncio» con una cuenta de destino leída.
+- **Tope diario de fotos**: la foto no-comprobante cuenta (`vioImagen`); con el tope lleno o apagado (`topeImagenesDia: 0`) recibe el texto fijo del tope o el de la visión apagada, sin modelo ni aviso.
+
+**Desvío de la decisión original.** No se reutilizó «Ver imagen» en estos estados: tras la llamada a Gemini el ítem pierde el binario de la imagen y habría que descargarla de nuevo para poder leerla como comprobante. Por eso el lector clasifica en la MISMA llamada que ya hacía: **cero llamadas a Gemini adicionales** (costo extra 0 USD; el tope global por hora tampoco cambia, porque el lector nunca estuvo sujeto a él). Mensajes por conversación: 0 agregados. Nodos: +1 («¿Lo leído es comprobante?»).
+
+**Sin cubrir en n8n real.** (1) Que Gemini devuelva `tipo` con el prompt nuevo (el arnés lo simula); si no lo devuelve, se coteja como hoy. (2) «Guardar comprobante» sigue corriendo antes de leer: el anuncio queda guardado en la carpeta de comprobantes del comercio (sin registro de recibido, sin cotejo). (3) Un comprobante real que el lector tome por «otra» sin cuenta legible recibe la respuesta de una imagen cualquiera y puede reenviar o escribir a Rubén con el botón.

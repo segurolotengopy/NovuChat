@@ -62,9 +62,36 @@ const sinOpciones = (boton) => ({ tipo: 'derivar', motivo: 'sin_opciones', aviso
 // El plan de «mostrar las opciones»: el menú de productos si queda algún botón; si no, el de complementos si queda alguno; si ninguno, Rubén (nunca «¿cuál prefieres?» sin opciones).
 const opcionesDe = (usados, boton) => (rrMenu(1, cat, usados).length ? { tipo: 'precios', cat: cat, boton: boton } : (rrMenu(2, cat, usados).length ? { tipo: 'menu2', cat: cat, boton: boton } : sinOpciones(boton)));
 
+// Lo que se mira de una imagen (la clasificación de «Ver imagen» o la del lector del comprobante, que es la misma forma): anuncio / otra llegan al modelo como DATO rotulado, un comprobante sin pedido pasa con Rubén sin aviso.
+const pieImagen = String(t.pie || '');
+const planDeImagenVista = (lec) => {
+  const h = (v) => ({ entradaHistorial: rrHistorialImagen(lec, v, pieImagen) });
+  if (lec.tipo === 'comprobante') return salir({ tipo: 'imagen_comprobante', cat: cat }, h(''));
+  if (lec.tipo === 'anuncio' && lec.anuncio && lec.anuncio.clave === 'desde_32' && !ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat }, h(''));
+  if (lec.tipo === 'anuncio' || (lec.tipo === 'otra' && lec.descripcion !== '')) {
+    return salir({ tipo: 'modelo', origen: 'imagen', caso: lec.tipo, cat: cat, textoCliente: pieImagen.slice(0, 500) },
+      Object.assign(h(''), { llamarModelo: true, cuerpoModelo: rrCuerpoModelo(rrEtiquetaImagen(lec, pieImagen), rrHistorialVigente(ficha, ahora), { rotulado: true }) }));
+  }
+  return salir({ tipo: 'imagen_otra', variante: 'no_vista', cat: cat }, h('no_vista'));
+};
+
 // 1. Un comprobante (o la foto de la prueba simulada).
 if (t.esComprobante === true || t.comprobanteSimulado === true) {
   if (t.comprobanteSimulado === true) return salir({ tipo: 'comprobante', resultado: 'simulado', causa: '', diferencia: '', cat: cat, producto: producto, aviso: null });
+  // LO QUE LLEGÓ NO ERA UN COMPROBANTE (imagen o PDF con un cobro abierto, vencido o en revisión): el lector lo clasificó como anuncio u otra cosa y no leyó una cuenta, «¿Lo leído es comprobante?» lo desvió sin cotejar:
+  // el servidor no cambió nada (ni intento ni revisión) y NO hay aviso a Rubén. El lector es una llamada que ya existía (no hay una más); la foto sí cuenta para el tope diario de fotos. Con un QR abierto, el recordatorio del QR (como
+  // todo texto); sin él, se responde como a una imagen vista (anuncio → conectar con el libro; otra → caso 3). Un PDF recibe el texto fijo de los documentos.
+  const delLector = cnNodo('Interpretar lectura') ? cnPrimero('Interpretar lectura') : null;
+  if (delLector && delLector.noEsComprobante === true) {
+    medioExtra.vioImagen = t.tipo !== 'document';
+    const lecL = delLector.lec && typeof delLector.lec === 'object' ? delLector.lec : { tipo: '', titular: '', descripcion: '', anuncio: null };
+    if (t.tipo === 'document') return salir({ tipo: 'imagen_otra', variante: hayQrAbierto ? 'archivo_no_aceptado' : 'documento', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'documento', pieImagen) });
+    if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
+    const topeFotos = rrTopeMedio(base.topeImagenesDia, RR_TOPE_IMAGENES_DIA, 20);
+    if (topeFotos === 0) return salir({ tipo: 'imagen_otra', variante: '', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
+    if (rrConteoVigente(ficha.imagenes, ahora) >= topeFotos) return salir({ tipo: 'imagen_otra', variante: 'tope', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
+    return planDeImagenVista(lecL);
+  }
   // El cotejo corrió solo si hubo medio utilizable; si no (tamaño, descarga, servidor caído), `cbResultadoVenta` lo deja en «sin cotejar» con aviso y botón: nunca «cuadra».
   const r = cbResultadoVenta(cnNodo('Cotejar en el servidor') ? cnPrimero('Cotejar en el servidor') : null);
   const guardada = cbRutaGuardada(cnNodo('Guardar comprobante') ? cnPrimero('Guardar comprobante') : null) !== null;
@@ -81,7 +108,7 @@ if (t.esComprobante === true || t.comprobanteSimulado === true) {
 // se mira con Gemini (anuncio, parece comprobante, otra) y lo que se ve es un DATO rotulado para el modelo.
 if (t.categoria === 'medio' && !deAudio) {
   if (t.tipo === 'audio') return salir({ tipo: 'audio', variante: au ? au.estado : 'no_abierto', cat: cat });
-  const pie = String(t.pie || '');
+  const pie = pieImagen;
   const h = (lec, v) => ({ entradaHistorial: rrHistorialImagen(lec, v, pie) });
   if (t.tipo === 'document') return salir({ tipo: 'imagen_otra', variante: hayQrAbierto ? 'archivo_no_aceptado' : 'documento', cat: cat }, h(null, 'documento'));
   if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
@@ -89,14 +116,7 @@ if (t.categoria === 'medio' && !deAudio) {
   if (t.visionApagada === true) return salir({ tipo: 'imagen_otra', variante: '', cat: cat }, h(null, 'no_vista'));
   if (t.imagenTope === true) return salir({ tipo: 'imagen_otra', variante: 'tope', cat: cat }, h(null, 'no_vista'));
   if (t.verImagen !== true || !cnNodo('Ver imagen')) return salir({ tipo: 'imagen_otra', variante: t.verImagen === true ? 'no_vista' : '', cat: cat }, h(null, 'no_vista'));
-  const lec = rrLecturaImagen(cnPrimero('Ver imagen'));
-  if (lec.tipo === 'comprobante') return salir({ tipo: 'imagen_comprobante', cat: cat }, h(lec, ''));
-  if (lec.tipo === 'anuncio' && lec.anuncio && lec.anuncio.clave === 'desde_32' && !ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat }, h(lec, ''));
-  if (lec.tipo === 'anuncio' || (lec.tipo === 'otra' && lec.descripcion !== '')) {
-    return salir({ tipo: 'modelo', origen: 'imagen', caso: lec.tipo, cat: cat, textoCliente: pie.slice(0, 500) },
-      Object.assign(h(lec, ''), { llamarModelo: true, cuerpoModelo: rrCuerpoModelo(rrEtiquetaImagen(lec, pie), rrHistorialVigente(ficha, ahora), { rotulado: true }) }));
-  }
-  return salir({ tipo: 'imagen_otra', variante: 'no_vista', cat: cat }, h(lec, 'no_vista'));
+  return planDeImagenVista(rrLecturaImagen(cnPrimero('Ver imagen')));
 }
 if (t.categoria === 'otro') return salir({ tipo: 'otro', cat: cat });
 
