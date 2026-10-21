@@ -59,8 +59,8 @@ describe('negocio-rroca-antonio.json: repositorio público y marcadores', () => 
     expect(TEXTO).not.toMatch(/https?:\/\//i);
     expect(TEXTO).not.toMatch(/\+\d{6,}/);
   });
-  const PENDIENTES = ['REEMPLAZAR_HORARIO_RECEPCION_ANTONIO', 'REEMPLAZAR_NUMERO_RECEPCION_ANTONIO', 'REEMPLAZAR_RAZON_COMERCIAL_ANTONIO'];
-  it('lleva un marcador por cada dato que Antonio todavía no dio', () => {
+  const PENDIENTES = ['REEMPLAZAR_NUMERO_RECEPCION_ANTONIO'];
+  it('solo queda el marcador del número de recepción (razón comercial y horario 24/7 ya resueltos)', () => {
     expect([...new Set(TEXTO.match(/REEMPLAZAR_[A-Z0-9_]+/g))].sort()).toEqual(PENDIENTES);
     expect(D['negocio'].numeroRecepcionMarcador).toBe('REEMPLAZAR_NUMERO_RECEPCION_ANTONIO');
     expect(D['negocio']).not.toHaveProperty('numeroRecepcion');
@@ -77,8 +77,13 @@ describe('cargar-negocio.mjs --aplicar niega cualquier REEMPLAZAR_ fuera de los 
     const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', 'proyecto-de-prueba', '--tenant', 'rroca-antonio', '--archivo', archivo, '--local', local, ...extra], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
   };
-  it('el archivo versionado de hoy se NIEGA con --aplicar, nombra dónde falta cada dato y no imprime el número', () => {
-    const r = correr(NEGOCIO, '--aplicar');
+  it('un archivo con marcadores fuera de los campos *Marcador se NIEGA con --aplicar, nombra dónde falta cada dato y no imprime el número', () => {
+    const conMarcadores = join(dir, 'con-marcadores.json');
+    const copia = JSON.parse(readFileSync(NEGOCIO, 'utf8'));
+    copia._pendiente.razonComercial = 'REEMPLAZAR_RAZON_COMERCIAL_ANTONIO';
+    copia._pendiente.horarioDeRecepcion = 'REEMPLAZAR_HORARIO_RECEPCION_ANTONIO';
+    writeFileSync(conMarcadores, JSON.stringify(copia));
+    const r = correr(conMarcadores, '--aplicar');
     expect(r.codigo).toBe(2);
     expect(r.salida).toMatch(/NEGADO.*fuera de los campos \*Marcador/);
     expect(r.salida).toContain('_pendiente.razonComercial');
