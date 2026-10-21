@@ -4326,6 +4326,11 @@ describe('CIERRE · «afirma_hecho_corto» y «afirma_entrega» ancladas: lo leg
     }
   });
   it('las entregas afirmadas siguen bloqueadas: «ya te lo envié», el material, los enlaces, el comprobante, el pago', () => {
-    for (const t of ['Ya te lo envié.', 'Ya se lo mandamos.', 'Ya te envié el material.', 'Ya te mandé los enlaces.', 'Ya te envié el libro y los bonos.', 'Ya te envié.', 'Ya les entregamos todo.', 'Ya te envié el pago.', 'Ya te mandé eso.']) expect(bloqueo(t), t).not.toBe('');
+    for (const t of ['Ya te lo envié.', 'Ya se lo mandamos.', 'Ya te envié el material.', 'Ya te mandé los enlaces.', 'Ya te envié el libro y los bonos.', 'Ya te envié.', 'Ya les entregamos todo.', 'Ya te envié el pago.', 'Ya te mandé eso.',
+      'Ya te envié lo que compraste.', 'Ya te mandé lo comprado.', 'Ya te envié lo que pediste.', 'Ya te envié lo acordado.', 'Ya te mandé lo solicitado.', 'Ya te envié la información.', 'Ya te mandé la guía.', 'Ya te envié las instrucciones.',
+      'Ya les envié el catálogo, ya pueden descargar.', 'Ya te pasé el material.', 'Ya te compartí los enlaces.', 'Ya te hice llegar el libro.', 'Ya te dejé el acceso.', 'Ya te remití el comprobante.', 'Ya te despaché el pedido.', 'Ya te lo pasé.',
+      'Ya recibí todo.', 'Todo listo con tu pago.', 'Todo listo con el pago.', 'Los datos coinciden, todo listo.']) expect(bloqueo(t), t).not.toBe('');
+    for (const cliente of ['ya pagué, mi comprobante', 'hice la transferencia']) for (const t of ['Los datos coinciden, todo listo.', 'Ya recibí todo.', 'Ya te envié lo que compraste.']) expect(bloqueo(t, cliente), t).not.toBe('');
+    for (const ok of ['Ya te pasé el catálogo.', 'Todo listo para pagar.', 'Ya te envié el catálogo.', 'Ya te compartí las opciones.']) expect(bloqueo(ok), ok).toBe('');
   });
 });

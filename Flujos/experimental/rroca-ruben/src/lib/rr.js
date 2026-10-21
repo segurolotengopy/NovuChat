@@ -921,12 +921,15 @@ function rrExtraRedaccion(texto, norm) {
   // PAGOS EN SUS PROPIAS PALABRAS (remediación del 20/10/2026 contra `admin/pruebas/fixtures/redaccion-pago-banco.json`): lo que el filtro común deja pasar y en este flujo el modelo NO puede decir. El comprobante no es una
   // acreditación bancaria: ni «el dinero llegó / está en la cuenta / liquidado» (ES, EN, PT), ni «ya te lo envié», ni las frases cortas de «ya está / llegó todo bien / todo listo» que el cliente leería como pago o entrega.
   if (/\b(dinero|plata|fondos|saldo|deposito|transferencia|money|funds|deposit|transfer|payment|dinheiro)\b[^.?!]{0,25}\b(llego|llegaron|entro|ingreso|ingresaron|arrived|landed|cleared|received|chegou|entrou)\b|\ben (nuestra|la|mi|su) cuenta\b|\b(liquidad|saldad)[oa]s?\b/.test(norm)) return 'afirma_pago_en_cuenta';
-  // «Ya te lo envié» y «ya te envié el material / los enlaces / el pago» afirman una entrega; «ya te envié el catálogo» no (el catálogo no es el material comprado). Ante la duda, se bloquea (prohibición 3).
-  const reEntrega = /\bya (te|se|les|le) (lo |la |los |las )?(envi\w*|mand\w*|entreg\w*)\b([^.?!]*)/g;
-  for (let e = reEntrega.exec(norm); e; e = reEntrega.exec(norm)) {
-    const resto = e[4].trim();
-    if (e[2] || resto === '' || /\b(material|materiales|enlace|enlaces|link|links|libro|bono|bonos|pack|closer|video|videos|curso|pdf|descarga|descargas|comprobante|pago|acceso|archivo|archivos|producto|pedido|compra|entrega|todo|paquete|contenido|qr|recibo|eso|esto|aquello|ello)\b/.test(resto)) return 'afirma_entrega';
+  // «Ya te lo envié», «ya te envié lo que compraste / la información / el material / los enlaces» afirman una entrega. Por ORACIÓN, solo pasa si el ÚNICO objeto es el catálogo, los precios, las opciones o la lista
+  // («ya te envié el catálogo»); cualquier otro objeto, un pronombre solo, nada, o algo más en la misma oración («…el catálogo, ya pueden descargar») se bloquea. Ante la duda, se bloquea (prohibición 3).
+  const reEntrega = /\bya (te|se|les|le) (lo |la |los |las )?(envi\w*|mand\w*|entreg\w*|pas\w+|compart\w+|hice llegar|dej\w+|remit\w+|despach\w+)\b(.*)$/;
+  for (const oEnt of String(texto).split(/(?<=[.!?…])\s+|\n+/)) {
+    const e = reEntrega.exec(rrNorm(oEnt));
+    if (e && (e[2] || !/^(?:el |la |los |las )?(?:catalogo|precios|opciones|lista)(?: de (?:precios|productos|opciones))?$/.test(e[4].trim()))) return 'afirma_entrega';
   }
+  // Cierres de pago con otras palabras: «ya recibí todo», «todo listo con tu pago», «los datos coinciden, todo listo».
+  if (/\bya recib\w* todo\b|\btodo listo con (?:tu|el) pago\b|\bcoinciden\b[^.?!]{0,40}\btodo (?:listo|bien|en orden)\b/.test(norm)) return 'afirma_hecho_corto';
   for (const oracion of String(texto).split(/(?<=[.!?…])\s+|\n+/)) {
     const n = rrNorm(oracion);
     // Frases LEGÍTIMAS (ancladas a la venta, no al pago ni a la entrega): «todo listo para pagar», «todo bien, ¿cuál eliges?», «todo en orden con el pack». Las seis frases del banco ('Llegó todo bien', 'Ya llegó',
