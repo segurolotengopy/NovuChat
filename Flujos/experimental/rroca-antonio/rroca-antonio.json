@@ -1154,7 +1154,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ (() => { const m = $('Armar mensajes').first().json; if (m.evento !== 'no_contactar' || $('Normalizar entrada').first().json.riesgoEscrito === true || $('Config del negocio').first().json.modoPrueba === true) return false; const ok = (nombre) => { try { const x = $(nombre); return !!x.isExecuted && x.all().some((i) => ((((i.json || {}).messages) || [])[0] || {}).id); } catch (e) { return false; } }; return !(ok('Enviar a WhatsApp') || ok('Enviar respaldo')); })() }}",
+              "leftValue": "={{ (() => { const m = $('Armar mensajes').first().json; if (m.evento !== 'no_contactar' || $('Normalizar entrada').first().json.riesgoEscrito === true || $('Config del negocio').first().json.modoPrueba === true) return false; const ok = (obtener) => { try { const x = obtener(); return !!x.isExecuted && x.all().some((i) => ((((i.json || {}).messages) || [])[0] || {}).id); } catch (e) { return false; } }; return !(ok(() => $('Enviar a WhatsApp')) || ok(() => $('Enviar respaldo'))); })() }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
