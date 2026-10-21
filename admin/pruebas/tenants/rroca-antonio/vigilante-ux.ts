@@ -19,9 +19,9 @@ import type { Mundo } from '../../lib/n8n-de-mentira';
 const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../Flujos/experimental/rroca-antonio/src/lib');
 // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
 // nosemgrep: devsecops.js-eval-prohibido
-export const LIB = new Function(['cobro.js', 'avisos.js', 'ra.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { raOraciones, raParrafos, raNorm, raSeguro, raTextoRiesgo, RA_PRODUCTOS, RA_ANGULOS, RA_NIEGA_IA };')() as {
+export const LIB = new Function(['cobro.js', 'avisos.js', 'ra.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { raOraciones, raParrafos, raNorm, raSeguro, RA_TEXTO_RIESGO, RA_PRODUCTOS, RA_ANGULOS, RA_NIEGA_IA };')() as {
   raOraciones: (b: string) => string[]; raParrafos: (t: string) => string; raNorm: (t: string) => string; raSeguro: (t: string) => string;
-  raTextoRiesgo: (b: J) => string; RA_PRODUCTOS: Record<string, { boton: string }>; RA_ANGULOS: Record<string, { fijo: string; pregunta: string }>; RA_NIEGA_IA: RegExp;
+  RA_TEXTO_RIESGO: string; RA_PRODUCTOS: Record<string, { boton: string }>; RA_ANGULOS: Record<string, { fijo: string; pregunta: string }>; RA_NIEGA_IA: RegExp;
 };
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }

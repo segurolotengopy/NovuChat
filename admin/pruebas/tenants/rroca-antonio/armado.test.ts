@@ -216,14 +216,14 @@ describe('los datos: solo marcadores para identificadores y rutas', () => {
     const d = datos as { receptor: J; pruebaRuta: string; configBase: J };
     for (const v of [...Object.values(d.receptor), d.pruebaRuta, d.configBase['phoneNumberIdEsperado'], d.configBase['numeroRecepcion'], d.configBase['telefonosDePrueba']]) expect(String(v)).toMatch(/^REEMPLAZAR_[A-Z0-9_]+$/);
     expect(d.configBase['modelo']).toBe('gemini-3.5-flash-lite');
-    // Los datos pendientes quedan como marcadores o como el texto recomendado: ninguna plantilla inventada ni aprobada, ninguna línea de protección sin verificar.
-    expect(String(d.configBase['lineaProteccion'])).toMatch(/^REEMPLAZAR_/);
-    // Las plantillas YA existen en Meta (de Antonio) y están PENDING: sus nombres son dato; hasta que Meta las apruebe no sale ningún aviso fuera de la ventana.
+    // Ya no hay línea de protección: el asistente no atiende denuncias y no cita recursos.
+    expect(d.configBase).not.toHaveProperty('lineaProteccion');
+    // Las plantillas YA existen en Meta (de Antonio) y están APPROVED (Meta las aprobó): sus nombres son dato; un estado distinto de APPROVED deja sin aviso fuera de la ventana (lo niegan venta.test.ts y negadas.test.ts).
     expect(d.configBase['avisoComprobantePlantilla']).toBe('aviso_comprobante_recibido');
     expect(d.configBase['avisoConsultaPlantilla']).toBe('aviso_consulta_para_antonio');
-    expect(d.configBase['avisoConsultaEstado']).toBe('PENDING');
+    expect(d.configBase['avisoConsultaEstado']).toBe('APPROVED');
     expect(d.configBase['avisoPlantillaIdioma']).toBe('es');
-    expect(d.configBase['avisoComprobanteEstado']).toBe('PENDING');
+    expect(d.configBase['avisoComprobanteEstado']).toBe('APPROVED');
     expect(d.configBase['plazoEntregaHoras']).toBe(6);
     expect(d.configBase['temperatura']).toBe(0.4);
     expect(d.configBase['prefijosPermitidos']).toBe('591');
@@ -245,7 +245,6 @@ describe('los datos: solo marcadores para identificadores y rutas', () => {
       (d) => { d['configBase'].temperatura = 1.5; },
       (d) => { d['configBase'].avisoComprobanteEstado = 'APROBADA'; },
       (d) => { d['configBase'].garantiaTexto = 'corto'; },
-      (d) => { d['configBase'].lineaProteccion = 'con "comillas"'; },
       (d) => { d['configBase'].telefonosDePrueba = '123'; },
       (d) => { d['pruebaRuta'] = 'ruta-real'; },
       (d) => { delete d['configBase'].nombreNegocio; },

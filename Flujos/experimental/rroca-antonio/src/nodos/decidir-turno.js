@@ -36,11 +36,11 @@ const ficha = raFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from), ahora)
 //    sigue en silencio: ahí responde Antonio. Aquí solo se mira el texto y el pie (los medios no se bajan con la puerta cerrada ni fuera del país).
 const riesgoEscrito = ficha.riesgo || raEsRiesgo(raNorm([t.texto, t.pie].join(' ')));
 const puertaResponde = puerta.ruta === 'sigue' || puerta.ruta === 'suspendido' || (puerta.ruta === 'uso_extendido' && puerta.responder === true);
-if (puertaResponde && puerta.ruta !== 'sigue' && riesgoEscrito) return salir({ tipo: 'riesgo', primera: !ficha.riesgo, aviso: null, cat: cat });
+if (puertaResponde && puerta.ruta !== 'sigue' && riesgoEscrito) return salir({ tipo: 'riesgo', aviso: null, cat: cat });
 if (puerta.ruta !== 'sigue') return salir({ tipo: 'nada' });
 
 // 0b. Un número no boliviano: el texto fijo y el botón de Antonio. Nada de modelo, de medios ni de QR.
-if (t.fueraDePais === true) return salir(riesgoEscrito ? { tipo: 'riesgo', primera: !ficha.riesgo, aviso: null, cat: cat } : { tipo: 'fuera_pais', cat: cat });
+if (t.fueraDePais === true) return salir(riesgoEscrito ? { tipo: 'riesgo', aviso: null, cat: cat } : { tipo: 'fuera_pais', cat: cat });
 
 // El medio de este turno (solo uno de estos nodos corrió) y lo que se leyó en él.
 const prep = cnPrimero('Preparar imagen') || cnPrimero('Preparar transcripción') || cnPrimero('Medio no aceptado') || {};
@@ -85,13 +85,10 @@ const planComprobante = () => {
   };
 };
 
-// 1. VIOLENCIA O MIEDO: antes que cualquier otra cosa (corta la venta). Se mira el texto, la transcripción, el texto leído de la imagen y el pie de foto. Una vez activada, sigue activa 48 horas.
-//    Si en ese mismo turno llegó un comprobante que CUADRA o CASI CUADRA (`cuadra` y `aproximado`), el aviso a Antonio se conserva (la plata es real y él entrega el material), con la línea fija
-//    «la persona mencionó miedo o violencia; contactarla solo para entregar el material» (sin copiar lo que escribió); al cliente solo se le habla de su seguridad. El comprobante igual se registra en la ficha.
-if (ficha.riesgo || raEsRiesgo(raNorm([textoCliente, leido, t.pie].join(' ')))) {
-  const pc = esVisual && categoriaMedio === 'comprobante' ? planComprobante() : null;
-  const conservaAviso = pc && pc.aviso && (pc.resultado === 'cuadra' || pc.resultado === 'aproximado');
-  return salir({ tipo: 'riesgo', primera: !ficha.riesgo, aviso: conservaAviso ? Object.assign({}, pc.aviso, { riesgo: true }) : null, resultado: conservaAviso ? pc.resultado : '', cat: cat });
+// 1. VIOLENCIA O MIEDO: antes que cualquier otra cosa (corta la venta). Se mira el texto, la transcripción, el texto leído de la imagen y el pie de foto; una vez activada, sigue activa 48 horas. El turno que trae
+//    un COMPROBANTE (imagen o PDF) sigue su camino normal del cobro (cotejo y aviso a Antonio): el riesgo se detecta solo en turnos sin comprobante pendiente de cotejar. Sin aviso a Antonio, sin consejos.
+if (!(esVisual && categoriaMedio === 'comprobante') && (ficha.riesgo || raEsRiesgo(raNorm([textoCliente, leido, t.pie].join(' '))))) {
+  return salir({ tipo: 'riesgo', aviso: null, cat: cat });
 }
 
 // 2. Una imagen o un documento.
@@ -181,7 +178,7 @@ if (raQuiereOpciones(norm)) return salir(ficha.saludado ? opcionesDe(ficha.usado
 if (!ficha.saludado && (raEsSoloSaludo(norm) || esVisual)) return salir(saludo());
 // Después de un comprobante recibido, hablar de pago, libro, material o entrega NO es una charla libre (y esto va DESPUÉS de las preguntas de precio, la confirmación de un producto y «cómo pago», que son una compra nueva): el modelo no habla del estado de un pago ni de una entrega. Va la derivación de no entrega
 // (texto fijo con el plazo del dato, aviso y botón).
-if (ficha.comprobanteMs > 0 && (/\b(pago|pague|pagado|pagaste|comprobante|transferencia|deposito|material|llega\w*|llego|enviar\w*|enviaron|mandar\w*|mandaron|recib\w*|entrega\w*)\b/.test(norm) || (/\blibro\b/.test(norm) && /\b(cuando|donde|llega\w*|llego|envi\w*|mand\w*|recib\w*)\b/.test(norm)))) {
+if (ficha.comprobanteMs > 0 && (raHablaDePagar(norm) || /\b(pago|pague|pagado|pagaste|comprobante|transferencia|deposito|material|llega\w*|llego|enviar\w*|enviaron|mandar\w*|mandaron|recib\w*|entrega\w*)\b/.test(norm) || (/\blibro\b/.test(norm) && /\b(cuando|donde|llega\w*|llego|envi\w*|mand\w*|recib\w*)\b/.test(norm)))) {
   return salir({ tipo: 'derivar', motivo: 'consulta', clave: 'no_entrega', aviso: avisoDeConsulta('no_entrega', 'queja de no entrega: el cliente pregunta por su pago o por el material'), cat: cat });
 }
 const paraElModelo = esVisual ? 'El cliente envió la captura de un anuncio. Texto leído: ' + leido : textoCliente;

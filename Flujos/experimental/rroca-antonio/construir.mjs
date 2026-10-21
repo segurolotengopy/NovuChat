@@ -120,9 +120,8 @@ const FORMAS_CONFIG = {
   avisoComprobanteEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoConsultaEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
-  // Textos que ve el cliente: una frase, sin comillas dobles ni llaves ni saltos; la línea de protección es un marcador hasta que Silvana la verifique.
+  // Textos que ve el cliente: una frase, sin comillas dobles ni llaves ni saltos.
   garantiaTexto: /^[^"{}\r\n<>]{10,300}$/,
-  lineaProteccion: /^(REEMPLAZAR_[A-Z0-9_]+|[^"{}\r\n<>]{3,100})$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
 
@@ -286,7 +285,7 @@ export function guardias(variante, flujo) {
 
 // ----------------------------------------------------------------- la guardia de publicación (PR-C)
 /**
- * El JSON versionado es técnicamente armable pero NO debe llegar a n8n con marcadores `REEMPLAZAR_*`, con plantillas de aviso que Meta no aprobó, sin la línea de protección verificada ni sin el
+ * El JSON versionado es técnicamente armable pero NO debe llegar a n8n con marcadores `REEMPLAZAR_*`, con plantillas de aviso que Meta no aprobó, ni sin el
  * catálogo del negocio listo para cargar. Esto NO es una guardia del armado (el JSON versionado lleva marcadores a propósito: el repositorio es público): es la de PUBLICAR, y se corre sobre lo que se
  * va a escribir (el versionado, el `.local.json` o el flujo VIVO). Los mensajes nombran claves, marcadores y productos; NUNCA imprimen valores de los datos ni fragmentos del flujo.
  *   flujo    el JSON a publicar;   datos  `rroca-antonio.json` (`configBase`);   negocio  `negocio-rroca-antonio.json` (catálogo y marcadores del negocio).
@@ -315,7 +314,6 @@ function hallazgosDeConfig(cb, donde) {
     if (!VALOR_LLENO(cb[nombre])) h.push(`${donde}: falta el nombre de la plantilla (${nombre})`);
   }
   if (!VALOR_LLENO(cb.avisoPlantillaIdioma)) h.push(`${donde}: falta el idioma de las plantillas (avisoPlantillaIdioma)`);
-  if (!VALOR_LLENO(cb.lineaProteccion)) h.push(`${donde}: falta la línea de protección verificada (lineaProteccion)`);
   return h;
 }
 
@@ -373,7 +371,7 @@ export function guardiaDePublicacion({ flujo, datos, negocio }) {
   if (!nodos.length) h.push('el flujo no trae nodos');
   // 1. Marcadores sin sustituir en CUALQUIER parte del JSON completo (nodos, conexiones, ajustes, pinData, staticData, nivel superior).
   for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
-  // 2. Las plantillas y la línea de protección, en lo que se publica («Config base»)…
+  // 2. Las plantillas, en lo que se publica («Config base»)…
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
   if (!Array.isArray(lista)) h.push('el flujo no trae «Config base»: no se puede comprobar el estado de las plantillas');
@@ -495,7 +493,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         for (const x of hallazgos) console.error(`  - ${x}`);
         process.exit(1);
       }
-      console.log('✓ Sin marcadores REEMPLAZAR_*, con las plantillas de aviso APPROVED, la línea de protección y el catálogo listos: se puede publicar (con la confirmación de publicar-flujo.sh).');
+      console.log('✓ Sin marcadores REEMPLAZAR_*, con las plantillas de aviso APPROVED y el catálogo listos: se puede publicar (con la confirmación de publicar-flujo.sh).');
       process.exit(0);
     } catch (e) {
       console.error(e instanceof SyntaxError ? '✗ JSON inválido' : `✗ ${e instanceof Error ? e.message : String(e)}`);

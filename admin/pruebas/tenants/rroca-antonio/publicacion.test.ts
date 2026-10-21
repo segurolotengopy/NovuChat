@@ -1,7 +1,7 @@
 /**
  * «EL PUENTE DE ANTONIO» (tenant rroca-antonio) — PR-C, LA GUARDIA DE PUBLICACIÓN.
  *
- * El flujo NO se publica ni se importa a n8n con marcadores `REEMPLAZAR_*`, con plantillas de aviso que Meta no aprobó, sin la línea de protección verificada ni con el catálogo del negocio
+ * El flujo NO se publica ni se importa a n8n con marcadores `REEMPLAZAR_*`, con plantillas de aviso que Meta no aprobó, ni con el catálogo del negocio
  * sin cargar. Esta suite NIEGA: hoy `--publicable` sale 1 sobre lo versionado. También prueba `publicar-flujo.sh`: se niega con --aplicar/--crear/--encender si la guardia falla, pide la
  * confirmación explícita (PUBLICAR ANTONIO, o --confirmo-antonio sin terminal), `--forzar` no la salta, `--apagar` no la pide y nada cambia para los demás flujos (ni para el de Rubén).
  */
@@ -41,22 +41,21 @@ function datosListos(): Datos {
   const d = copia(DATOS);
   d.configBase['avisoComprobanteEstado'] = 'APPROVED';
   d.configBase['avisoConsultaEstado'] = 'APPROVED';
-  d.configBase['lineaProteccion'] = 'Línea de ayuda verificada';
   return d;
 }
 function negocioListo(): Record<string, unknown> { return JSON.parse(JSON.stringify(NEGOCIO).replace(MARCADORES, 'dato-real')) as Record<string, unknown>; }
 const hallazgos = (flujo: Flujo, datos: Datos = datosListos(), negocio: Record<string, unknown> = negocioListo()): string[] => guardiaDePublicacion({ flujo, datos, negocio }) as string[];
 
 describe('guardia de publicación de Antonio: la ruta feliz y lo versionado de hoy', () => {
-  it('con todo sustituido, las plantillas APPROVED, la línea de protección y el catálogo, no hay hallazgos (producción y prueba)', () => {
+  it('con todo sustituido, las plantillas APPROVED y el catálogo, no hay hallazgos (producción y prueba)', () => {
     expect(hallazgos(publicable(PRODUCCION))).toEqual([]);
     expect(hallazgos(publicable(PRUEBA))).toEqual([]);
   });
-  it('lo versionado de hoy NO es publicable: marcadores, plantillas PENDING y línea de protección sin dato', () => {
+  it('lo versionado de hoy NO es publicable: marcadores y negocio sin datos (las plantillas ya están APPROVED y no hay línea de protección)', () => {
     const h = guardiaDePublicacion({ flujo: PRODUCCION, datos: DATOS, negocio: NEGOCIO }) as string[];
     expect(h.some((x) => /marcador sin sustituir/.test(x))).toBe(true);
-    expect(h.join('|')).toMatch(/avisoComprobanteEstado/);
-    expect(h.join('|')).toMatch(/lineaProteccion/);
+    expect(h.join('|')).not.toMatch(/avisoComprobanteEstado|avisoConsultaEstado|lineaProteccion/);
+    expect(h.join('|')).toMatch(/negocio: marcador sin sustituir/);
   });
   it('los literales de comentario y de expresión regular de los módulos copiados NO cuentan como marcador (pero un marcador real, sí)', () => {
     const f = publicable(PRODUCCION);
@@ -101,14 +100,6 @@ describe('guardia de publicación de Antonio: cada defecto se niega', () => {
     const d = datosListos(); delete d.configBase['avisoPlantillaIdioma'];
     expect(hallazgos(publicable(PRODUCCION), d).join('|')).toContain('avisoPlantillaIdioma');
   });
-  it('la línea de protección sin dato (vacía, ausente o con marcador) se niega, en «Config base» y en los datos', () => {
-    for (const v of ['', ' ', 'REEMPLAZAR_LINEA_PROTECCION_VERIFICADA']) {
-      const f = publicable(PRODUCCION); fijar(f, 'lineaProteccion', v);
-      expect(hallazgos(f).join('|'), v).toContain('Config base: falta la línea de protección');
-      const d = datosListos(); d.configBase['lineaProteccion'] = v;
-      expect(hallazgos(publicable(PRODUCCION), d).join('|'), v).toContain('datos: falta la línea de protección');
-    }
-  });
   it('un flujo sin nodos o sin «Config base» se niega', () => {
     expect(hallazgos({ nodes: [] } as unknown as Flujo).join('|')).toMatch(/no trae nodos/);
     const f = publicable(PRODUCCION); f.nodes = f.nodes.filter((n) => n.name !== 'Config base');
@@ -143,13 +134,12 @@ describe('construir.mjs --publicable: la línea de comandos', () => {
   const dir = mkdtempSync(join(tmpdir(), 'rroca-ant-pub-'));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('HOY sobre lo versionado sale en 1 y nombra marcadores, plantillas y línea de protección, sin imprimir valores', () => {
+  it('HOY sobre lo versionado sale en 1 y nombra marcadores y el negocio sin datos, sin imprimir valores', () => {
     const r = correr();
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/NO se puede publicar todavía/);
     expect(r.stderr).toMatch(/marcador sin sustituir: REEMPLAZAR_/);
-    expect(r.stderr).toMatch(/avisoComprobanteEstado/);
-    expect(r.stderr).toMatch(/lineaProteccion/);
+    expect(r.stderr).not.toMatch(/lineaProteccion/);
     expect(r.stderr).not.toMatch(/\d{9,}/);
   });
   it('ruta feliz: flujo, datos y negocio listos salen en 0', () => {

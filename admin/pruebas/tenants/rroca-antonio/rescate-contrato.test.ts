@@ -115,7 +115,6 @@ describe('punto 6 (CONDICIÓN DURA): todo camino de protección por violencia o 
     ['amenazas', {}, mTexto('me amenaza todos los días'), () => undefined],
     ['nota de voz transcrita', { medio: { transcripcion: 'mi marido me pega' } }, mAudio(), () => undefined],
     ['texto leído en una captura', { medio: { clasificacion: { categoria: 'publicidad', texto: 'me maltrata mi pareja' } } }, mImagen(), () => undefined],
-    ['pie de foto de un comprobante', { panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } }, mImagen({ caption: 'me controla y tengo miedo' }), () => undefined],
     ['la marca RIESGO del modelo', { modeloDice: 'RIESGO' }, mTexto('no aguanto más esta situación en mi casa'), (w) => { hablar(w, ANA, mTexto('hola')); }],
     ['el respaldo en texto (el envío principal cae)', { envio: { 'Enviar a WhatsApp': 'error' as const } }, mTexto('mi pareja me agrede'), () => undefined],
   ];
@@ -128,6 +127,10 @@ describe('punto 6 (CONDICIÓN DURA): todo camino de protección por violencia o 
       expect(noContactar(t).filter((c) => c['direccion'] === 'saliente'), rotulo).toHaveLength(1);
     });
   }
+  it('pie de foto de un comprobante: el turno sigue el cobro normal (sin texto de riesgo), pero el reporte del ENTRANTE lleva `no_contactar`: esa persona tampoco recibe rescate', () => {
+    const t = hablar(mundo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } }), ANA, mImagen({ caption: 'me controla y tengo miedo' }));
+    expect(noContactar(t).filter((c) => c['direccion'] === 'entrante')).toHaveLength(1);
+  });
   it('desde ese momento TODA respuesta del flujo a ese teléfono vuelve a reportar `no_contactar` (comprar, pedir el QR, preguntar el precio): nunca queda una respuesta de venta sin el evento', () => {
     const w = mundo();
     hablar(w, ANA, mTexto('mi pareja me golpea'));
