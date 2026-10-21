@@ -8,6 +8,9 @@
  *      de la LIBRERÍA (`rrOraciones` de `rr.js`): no puede haber desacuerdo entre quien reparte y quien vigila.
  *   3b. (Silvana, 20/10/2026) LA PRESENTACIÓN SE DICE UNA SOLA VEZ: a lo más una oración de presentación por mensaje y, sumando todos los mensajes de un turno, a lo más una.
  *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?», «¿qué opción…?» o «¿con cuál…?» sale con al menos un botón en ese mismo mensaje (solo se ofrece lo que se cumple).
+ *   6. MEDIOS ENTRANTES (audio, imagen, documento; 20/10/2026): la respuesta a un medio SIEMPRE trae texto (nunca vacía ni solo una marca), es UN solo mensaje, nunca un QR, y jamás dice «acreditado», «verificado»,
+ *      «recibimos tu pago» (el único texto con «confirmamos / validado» es el fijo de comprobante leído, que exige un pedido abierto). Un medio sin respuesta solo es válido si el plan fue callar a propósito (pausa por persona,
+ *      comercio suspendido, número extranjero ya atendido hoy); lo demás es un cliente que mandó un audio y no recibió nada.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -90,6 +93,25 @@ export const frasesQueSuplantan = (textoModelo: string): string[] =>
   // Solo oraciones de AUTODESCRIPCIÓN (primera persona, «te escribe/habla…», firma): «Eso lo ve Rubén directamente» (tercera persona, texto fijo del código) no es una suplantación.
   textoModelo.replace(/«[^»]*»|"[^"]*"/g, ' ').replace(/\s*\n\s*/g, ' ').split(/(?<=[.!?…])\s+/).filter((o) => o.trim().length >= 6 && /\b(soy|sou|i m|i am|me llamo|nombre es|mi libro|escribi|estoy viv|hablas con|hablando con|habla ruben|aqui ruben|ruben aqui|ruben por aqui|ordenes|carne y hueso|mismisimo|personalmente|te escribe|te habla|le escribe|le habla|te saluda|te atiende)\b/.test(LIB.rrNorm(o)) && suplantaARuben(o));
 
+/** Los planes que callan a propósito: la pausa por persona, el comercio suspendido y el número de otro país al que ya se le respondió hoy. */
+export const PLANES_QUE_CALLAN = ['nada', 'bloqueado', 'suspendido', 'uso_extendido', 'extranjero_repetido'];
+const TEXTO_DE_COMPROBANTE_LEIDO = /Ya recibí tu comprobante, dame un momento mientras confirmamos tu pago/;
+const ACREDITACION = /acreditad|verificad|recibimos tu pago|pago (recibido|confirmado|aprobado)|tu pago (lleg|ingres)/i;
+/** Las violaciones del invariante 6 para UN turno. `entrante` = el mensaje de Meta; `plan` = el plan del resumen del turno. Función pura, probada también con casos negativos. */
+export function violacionesDeMedio(entrante: J, mensajes: UxMsg[], plan: string): string[] {
+  const v: string[] = [];
+  if (!['audio', 'voice', 'image', 'document'].includes(String(entrante['type'] ?? ''))) return v;
+  if (mensajes.length === 0 && !PLANES_QUE_CALLAN.includes(plan)) v.push(`un medio (${String(entrante['type'])}) se quedó sin respuesta (plan «${plan}»)`);
+  if (mensajes.length > 1) v.push(`un medio recibió ${mensajes.length} mensajes en el mismo turno`);
+  for (const m of mensajes) {
+    if (m.cuerpo.trim() === '') v.push('la respuesta a un medio no trae texto');
+    if (m.tipo === 'image') v.push('la respuesta a un medio es un QR');
+    const sinFijo = m.cuerpo.replace(TEXTO_DE_COMPROBANTE_LEIDO, ' ');
+    if (ACREDITACION.test(sinFijo)) v.push('la respuesta a un medio dice que un pago está acreditado, verificado o recibido (prohibición 3)');
+  }
+  return v;
+}
+
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, textoModelo = ''): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
@@ -147,6 +169,8 @@ export function vigilarUx(mundo: Mundo): void {
     // Los mensajes al cliente de este turno (sin los avisos a Rubén ni los respaldos de texto).
     const salida = t.mensajes.filter((e) => !e.respaldo).map((e) => ({ tipo: e.tipo, cuerpo: e.cuerpo, payload: e.payload }));
     const v = violacionesDeUx(pulsados, msg, salida, pres, textoDelModelo(t.registro));
+    // Invariante 6: los medios. Un QR abierto + comprobante es el único caso en que la respuesta a una imagen es el texto de «comprobante leído» (permitido arriba por su frase exacta).
+    v.push(...violacionesDeMedio(msg, salida, String((t.resumen ?? {})['plan'] ?? 'nada')));
     estado.presentaciones.set(from, pres.n);
     estado.turnos += 1; UX_CONTADOR.turnos += 1; UX_CONTADOR.mundos.add(mundo);
     expect(v, `invariante de UX violado: ${v.join('; ')}`).toEqual([]);

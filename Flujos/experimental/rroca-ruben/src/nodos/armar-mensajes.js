@@ -101,23 +101,24 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     // LO QUE REDACTA EL MODELO: se revisa y se pule; un rechazo (monto, promesa, enlace, negar ser IA, varias preguntas…), un error del servicio o un texto vacío caen al texto fijo.
     const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
     if (rrEsDerivar(crudo)) {
-      // DERIVAR: el modelo no supo responder. La palabra jamás llega al cliente: aviso a Rubén (lo armó «Armar avisos») y el botón.
-      tipoDePlan = 'derivar';
-      m = conRuben(rrTextoDerivacion('consulta', estadoAviso));
+      // DERIVAR: el modelo no supo responder. La palabra jamás llega al cliente: aviso a Rubén (lo armó «Armar avisos», salvo en una imagen) y el botón.
+      if (plan.origen === 'imagen') { tipoDePlan = 'imagen_derivar'; m = conRuben(RR_TEXTO_IMAGEN_DERIVAR); } else { tipoDePlan = 'derivar'; m = conRuben(rrTextoDerivacion('consulta', estadoAviso)); }
     } else if (rrSuplantaARuben(crudo)) {
       // SUPLANTACIÓN (prohibición 4): el modelo se dijo Rubén, el autor o una persona: el mensaje completo se sustituye por la identidad fija (con los botones normales). No se guarda en la memoria.
       tipoDePlan = 'identidad';
       m = conBotones(RR_TEXTO_IDENTIDAD, menuAbierto());
     } else {
       const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
-        maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: t.texto, extra: [rrExtraRedaccion],
+        maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: plan.textoRevision || t.texto, extra: [rrExtraRedaccion],
       });
       // UNA sola presentación (Silvana, 20/10/2026): ya saludado, el modelo no vuelve a presentarse (se quita de su salida)... PERO la regla dura 4 manda: una oración de presentación que dice qué ES el asistente
       // (virtual, IA, programa, bot…) NUNCA se borra. Como primer mensaje cabe UNA, nunca dos. Si al quitar la presentación no queda nada, cae al texto fijo.
-      const limpio = rev.motivo === '' ? rrUnaPresentacion(rev.texto, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(t.texto)), true) : '';
+      const limpio = rev.motivo === '' ? rrUnaPresentacion(rev.texto, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(plan.textoRevision || t.texto)), true) : '';
       const bueno = rev.motivo === '' && limpio.trim() !== '';
       const op = menuAbierto();
-      const cuerpo = bueno ? limpio : rrTextoModeloCaido(op.length > 0);
+      let cuerpo = bueno ? limpio : (plan.origen === 'imagen' ? RR_TEXTO_IMAGEN_CAIDO : rrTextoModeloCaido(op.length > 0));
+      // Una imagen o un audio puede ser el PRIMER mensaje del teléfono: si el texto no se presenta, se antepone la presentación fija (regla dura 4, nunca una oración cruda del modelo).
+      if ((plan.origen === 'imagen' || plan.origen === 'audio') && !fichaAntes.saludado && !/asistente virtual/i.test(cuerpo)) cuerpo = RR_PRESENTACION + ' ' + cuerpo;
       // PRESENTACIÓN GARANTIZADA: (a) el pulido común quita la presentación inicial del modelo: si el modelo dijo QUÉ ES (IA, virtual…) y eso no sobrevivió, se antepone la presentación fija (regla dura 4: jamás sale
       // «Gracias por escribir…» en lugar de reconocerlo); (b) como primer mensaje el cliente SIEMPRE lee una presentación que diga qué es (no basta la palabra suelta: «la inteligencia artificial puede ayudarte» o «crear tu asistente virtual»).
       const modeloDijoIA = rrTienePresentacionIA(crudo);
@@ -126,7 +127,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       const conPresentacion = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
       m = conBotones(conPresentacion, op);
       // La memoria (`rrHist`) guarda `m.texto`, el texto DESPUÉS de las barreras (`rrSeguro`, identidad): si se sustituyó lo que dijo el modelo, eso no se recuerda.
-      tipoDePlan = bueno ? 'modelo' : 'modelo_caido';
+      tipoDePlan = (plan.origen ? plan.origen + '_' : '') + (bueno ? 'modelo' : 'modelo_caido');
     }
   } else if (tipoDePlan === 'qr') {
     const monto = rrPrecio(cat, plan.producto);
@@ -154,9 +155,22 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   } else if (tipoDePlan === 'derivar') {
     m = conRuben(rrTextoDerivacion(plan.motivo, estadoAviso, plan.clave));
   } else if (tipoDePlan === 'imagen_otra') {
-    m = texto(RR_TEXTO_IMAGEN);
+    // El documento y el archivo no aceptado salen con el botón de Rubén; la imagen no mirada, sin él.
+    if (plan.variante === 'documento') m = conRuben(RR_TEXTO_DOCUMENTO);
+    else if (plan.variante === 'archivo_no_aceptado') m = conRuben(RR_TEXTO_ARCHIVO_NO_ACEPTADO);
+    else m = texto(plan.variante === 'tope' ? RR_TEXTO_IMAGEN_TOPE : (plan.variante === 'no_vista' ? RR_TEXTO_IMAGEN_NO_VISTA : RR_TEXTO_IMAGEN));
+  } else if (tipoDePlan === 'imagen_comprobante') {
+    // Una foto que parece un comprobante SIN pedido abierto: no se coteja ni se avisa; el cliente puede escribirle a Rubén.
+    m = conRuben(RR_TEXTO_IMAGEN_COMPROBANTE);
   } else if (tipoDePlan === 'audio') {
-    m = texto(RR_TEXTO_AUDIO);
+    m = texto(plan.variante === 'largo' ? RR_TEXTO_AUDIO_LARGO : plan.variante === 'no_entendido' ? RR_TEXTO_AUDIO_NO_ENTENDIDO : plan.variante === 'no_abierto' ? RR_TEXTO_AUDIO_NO_ABIERTO : plan.variante === 'tope' ? RR_TEXTO_AUDIO_TOPE : RR_TEXTO_AUDIO);
+  } else if (tipoDePlan === 'audio_pago') {
+    m = conRuben(RR_TEXTO_AUDIO_PAGO);
+  } else if (tipoDePlan === 'extranjero') {
+    m = conRuben(plan.conPresentacion === false ? RR_TEXTO_EXTRANJERO_DE_NUEVO : RR_TEXTO_EXTRANJERO);
+  } else if (tipoDePlan === 'extranjero_repetido') {
+    // Ya se le respondió hoy: dentro del día no se le responde otra vez (acota el costo de un barrido de números).
+    m = null;
   } else if (tipoDePlan === 'otro') {
     m = texto(RR_TEXTO_OTRO);
   } else {
@@ -171,11 +185,17 @@ if (claveOk) {
   const ficha = rrFichaVigente(cnFichaDe(fichas.mapa, from));
   // MEMORIA POR TELÉFONO (clave `messages[0].from`): vacía si pasaron más de 48 h. Aquí entra lo que dijo el cliente; lo del asistente lo agrega «Resumen del turno» SOLO si Meta lo aceptó.
   const histPrevio = rrHistorialVigente(ficha, ahora);
-  ficha.historial = puerta.ruta === 'sigue' ? rrAgregarHistorial(histPrevio, 'u', rrEntradaCliente(t)) : histPrevio;
+  // Un número de otro país no deja memoria (el modelo nunca lo ve). La entrada de un audio transcrito, de una imagen o de un documento la arma «Decidir turno» (`entradaHistorial`, ya enmascarada).
+  const esExtranjero = t.extranjero === true;
+  ficha.historial = puerta.ruta === 'sigue' && !esExtranjero ? rrAgregarHistorial(histPrevio, 'u', typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '' ? decision.entradaHistorial : rrEntradaCliente(t)) : histPrevio;
   rrRecordarId(ficha, t.mensajeId);
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
-  if (m) ficha.saludado = true;
+  if (m && !esExtranjero) ficha.saludado = true;
+  // Los topes diarios de medios cuentan cada llamada a Gemini que corrió, aunque haya fallado (un cliente no gasta sin límite con audios ilegibles).
+  if (decision.oyoAudio === true) ficha.audios = rrContarMedio(ficha.audios, ahora);
+  if (decision.vioImagen === true) ficha.imagenes = rrContarMedio(ficha.imagenes, ahora);
+  if (esExtranjero && m) ficha.extranjeroMs = ahora;
   // El límite de 30 minutos por motivo: se fija solo si el aviso SALIÓ (no si se repitió ni si no se pudo enviar).
   if (avisoPlaneado && !avisoRepetido && avisoSalio && typeof av.clave === 'string' && RR_CLAVES_AVISO.indexOf(av.clave) >= 0) ficha.avisosConsulta[av.clave] = ahora;
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);
@@ -214,7 +234,7 @@ const salida = {
 };
 if (qrPrevio) salida.qrPrevio = qrPrevio;
 if (qrLiberado) salida.qrLiberado = qrLiberado;
-if (claveOk && puerta.ruta === 'sigue') salida.rrHist = { a: rrEntradaAsistente(m.texto), b: rrEntradaAsistente(m.respaldo), tope: RR_TOPE_HISTORIAL };
+if (claveOk && puerta.ruta === 'sigue' && t.extranjero !== true) salida.rrHist = { a: rrEntradaAsistente(m.texto), b: rrEntradaAsistente(m.respaldo), tope: RR_TOPE_HISTORIAL };
 if (m.reglaCobro === 2) salida.reglaCobro = 2;
 if (m.referencia) salida.referencia = m.referencia;
 if (m.monto !== undefined) salida.monto = m.monto;

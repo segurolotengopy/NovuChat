@@ -90,6 +90,31 @@ function escribirSinSeguirEnlaces(ruta, texto, nombre) {
   try { writeFileSync(fd, texto); } finally { closeSync(fd); }
 }
 
+// ----------------------------------------------------------------- el núcleo común de la transcripción (INCLUIDO tal cual, nunca copiado)
+/**
+ * «Preparar transcripción» es la pieza común `Flujos/src/core/medios/preparar-transcripcion.js` (tope de cinco minutos, recorte a 4.400 caracteres, «muy largo» y «no se entendió»): se INCLUYE byte a byte dentro de una
+ * función que recibe el `$` de n8n y le traduce solo dos nombres de nodo (los de este flujo son «Interpretar entrada» y «Obtener URL del medio»). Detrás va el adaptador propio, que convierte su `userInput`
+ * (pensado para un agente) en un dato cerrado. Si el core cambia, `--verificar` falla hasta rearmar: es intencional.
+ */
+export const NUCLEO_TRANSCRIPCION = join(AQUI, '../../src/core/medios/preparar-transcripcion.js');
+export const ADAPTADOR_TRANSCRIPCION = join(AQUI, 'src/nodos/adaptar-transcripcion.js');
+export const NOMBRES_DEL_NUCLEO = { 'Normalizar entrada': 'Interpretar entrada', 'Obtener URL del medio (general)': 'Obtener URL del medio' };
+export const MARCA_NUCLEO = '@@nucleo:preparar-transcripcion';
+export function fuenteDelNucleo() {
+  const f = leerSiExiste(NUCLEO_TRANSCRIPCION, 'preparar-transcripcion.js');
+  return f === null ? null : f.trimEnd();
+}
+export function codigoConNucleo() {
+  const fuente = fuenteDelNucleo();
+  const adaptador = leerSiExiste(ADAPTADOR_TRANSCRIPCION, 'adaptar-transcripcion.js');
+  if (fuente === null || adaptador === null) throw new Error('falta el núcleo común de la transcripción o su adaptador');
+  return ['// NÚCLEO COMÚN INCLUIDO TAL CUAL: Flujos/src/core/medios/preparar-transcripcion.js (el mismo archivo que el ensamblador pone en los flujos con agente). Solo se le traducen dos nombres de nodo; su salida la traduce el adaptador propio.',
+    'const rrNucleo = ((rrN8n) => {',
+    `  const rrNombres = ${JSON.stringify(NOMBRES_DEL_NUCLEO)};`,
+    '  const $ = (nombre) => rrN8n(Object.prototype.hasOwnProperty.call(rrNombres, nombre) ? rrNombres[nombre] : nombre);',
+    fuente, '})($);', adaptador.trimEnd()].join('\n') + '\n';
+}
+
 // ----------------------------------------------------------------- los datos
 const MARCADOR = /^REEMPLAZAR_[A-Z0-9_]+$/;
 const FORMAS_CONFIG = {
@@ -107,6 +132,9 @@ const FORMAS_CONFIG = {
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
   // La guardia de apertura: los medios que el flujo ya atiende (lista separada por comas) y si se publica en prueba o al público.
   mediosHabilitados: /^[a-z_]{1,40}(,[a-z_]{1,40})*$/,
+  // Los topes diarios por teléfono de los medios que Gemini mira o escucha (0 apaga el medio; sin valor, el del código).
+  topeImagenesDia: /^([0-9]|1[0-9]|20)$/,
+  topeAudiosDia: /^([0-9]|[12][0-9]|30)$/,
   modoApertura: /^(prueba|publico)$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
@@ -187,6 +215,21 @@ export function guardias(variante, flujo) {
   if (armarAvisos && !(/rrPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos) && /RR_VENTANA_RUBEN_MS/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la plantilla ni la ventana de Rubén: el aviso fuera de las 24 h no saldría');
   const conex = (flujo && flujo.connections) || {};
   const destinosDe = (nombre, salida) => (((conex[nombre] || {}).main || [])[salida] || []).map((x) => x.node);
+  // MEDIOS ENTRANTES: «Preparar transcripción» incluye el núcleo común TAL CUAL; el audio y la imagen pasan por sus nodos de Gemini, que no cortan el turno si fallan.
+  const preparar = por('Preparar transcripción');
+  if (preparar) {
+    const fuente = fuenteDelNucleo();
+    if (fuente === null || !String(p(preparar).jsCode || '').includes(fuente)) h.push('«Preparar transcripción» no incluye TAL CUAL el núcleo común (Flujos/src/core/medios/preparar-transcripcion.js): rearme con «node construir.mjs»');
+    if (destinosDe('Preparar transcripción', 0).join('|') !== 'Decidir turno') h.push('«Preparar transcripción» tiene que conectarse solo a «Decidir turno»');
+  }
+  if (nombres.has('Transcribir audio') && destinosDe('Transcribir audio', 0).join('|') !== 'Preparar transcripción') h.push('«Transcribir audio» tiene que conectarse solo a «Preparar transcripción»');
+  if (nombres.has('Ver imagen') && destinosDe('Ver imagen', 0).join('|') !== 'Decidir turno') h.push('«Ver imagen» tiene que conectarse solo a «Decidir turno»');
+  for (const nombre of ['Transcribir audio', 'Ver imagen']) {
+    const g = por(nombre);
+    if (!g) continue;
+    if (!((g.credentials || {}).googlePalmApi || {}).name) h.push(`«${nombre}» no lleva credencial (googlePalmApi)`);
+    if (g.onError !== 'continueRegularOutput' || g.alwaysOutputData !== true) h.push(`«${nombre}» tiene que llevar onError continueRegularOutput y alwaysOutputData: si Gemini falla, el turno sigue y el cliente recibe su texto`);
+  }
   if (nombres.has('Armar avisos') && !destinosDe('Armar avisos', 0).includes('¿Hay avisos?')) h.push('«Armar avisos» no está conectado a «¿Hay avisos?»');
   if (nombres.has('¿Hay avisos?') && !destinosDe('¿Hay avisos?', 0).includes('Enviar aviso')) h.push('«¿Hay avisos?» no envía por «Enviar aviso»');
   if (nombres.has('Enviar aviso') && !destinosDe('Enviar aviso', 0).includes('Armar mensajes')) h.push('«Enviar aviso» no cuelga de «Armar mensajes»: el aviso tiene que correr ANTES de armar el mensaje que dice si salió');
@@ -280,12 +323,13 @@ function hallazgosDePlantillas(cb, donde) {
  * (hoy solo `imagen_comprobante` y `pdf_comprobante`: los comprobantes del cobro; no son los tres medios). Una PUBLICACIÓN DE PRUEBA con lista restringida sí se permite y se declara:
  *   prueba   `telefonosDePrueba` no vacío Y `modoApertura` ausente o «prueba»;
  *   público  `telefonosDePrueba` vacío o ausente, o `modoApertura` distinto de «prueba» (ante la duda, público: la guardia se equivoca hacia el lado que rechaza).
- * Los medios no se implementan aquí (otro bloque): esta guardia solo impide abrir sin ellos.
+ * Los medios los implementa el flujo (nodos «Transcribir audio», «Ver imagen» y el documento de «Decidir turno»): esta guardia exige que los datos lo DECLAREN.
  */
 export const MEDIOS_PARA_ABRIR = ['audio', 'imagen', 'documento'];
 export function modoDeApertura(cb) {
   const c = cb && typeof cb === 'object' ? cb : {};
-  const tel = typeof c.telefonosDePrueba === 'string' ? c.telefonosDePrueba.trim() : '';
+  // Una lista de prueba tiene al menos un DÍGITO (o es el marcador `REEMPLAZAR_*` que otra guardia obliga a sustituir): «,» o «   » no es una lista y deja el flujo abierto al público (hueco que declaró seguridad).
+  const tel = typeof c.telefonosDePrueba === 'string' && (/\d/.test(c.telefonosDePrueba) || MARCADOR.test(c.telefonosDePrueba.trim())) ? c.telefonosDePrueba.trim() : '';
   const modo = c.modoApertura === undefined || c.modoApertura === null || c.modoApertura === '' ? 'prueba' : String(c.modoApertura);
   return tel !== '' && modo === 'prueba' ? 'prueba' : 'publico';
 }
@@ -349,6 +393,8 @@ export function armarRroca(proyecto, datos, v) {
   plantilla.nodes = plantilla.nodes.filter((n) => !quitar.has(n.name));
   for (const n of plantilla.nodes) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${donde} · ${n.name}`);
+    // Antes de `armarVariante`, que rechaza una marca `@@` que no conoce.
+    if (n.parameters && n.parameters.jsCode === MARCA_NUCLEO) n.parameters.jsCode = codigoConNucleo();
     for (const c of Object.values(n.credentials || {})) {
       const m = /^@@cred:(ingesta|graph|entradaPrueba|medios|gemini)$/.exec(String(c.name));
       if (m) c.name = dato(datos, `credenciales.${m[1]}`, `${donde} · ${n.name}`);

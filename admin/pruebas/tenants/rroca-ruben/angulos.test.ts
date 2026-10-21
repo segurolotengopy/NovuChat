@@ -80,7 +80,10 @@ describe('el prompt y el cuerpo del modelo', () => {
     const p: string = L.RR_PROMPT;
     for (const n of ['Cap', 'caps. 8 y 10', 'caps. 9', 'cap. 7', 'Mapa de Automatización', 'checklist de 7 días', 'Closer de Ventas en Tiempo Real', 'Crea videos con IA', 'programar', 'versiones gratuitas', 'este mismo chat', 'ahorra']) expect(p, n).toContain(n === 'Cap' ? 'cap. 6' : n);
     expect(p).not.toMatch(/\d+\s*Bs|https?:|www\.|banco\s+\w+\s+cuenta/i);
-    expect(p.length).toBeLessThan(5000);
+    // Medios entrantes (20/10/2026): +~1.000 caracteres (las líneas IMÁGENES y AUDIOS), unos +270 tokens por llamada al modelo (~0,00008 USD).
+    expect(p.length).toBeLessThan(6000);
+    expect(p).toContain('[AUDIO_TRANSCRITO: «…»]');
+    expect(p).toContain('[IMAGEN_RECIBIDA: …]');
   });
   it('un anuncio pasa al modelo como línea rotulada con el titular CANÓNICO; el texto libre no se copia fuera del dato; «Desde solo 32» y los textos comunes no la llevan', () => {
     const lib = 'vi tu anuncio: ¡¡NO SABES QUE PUBLICAR!! porfa ayuda xyzzy';

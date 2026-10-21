@@ -30,6 +30,6 @@
     "avisoConsultaPlantilla": "aviso_consulta_para_ruben",
     "avisoConsultaEstado": "APPROVED",
     "avisoPlantillaIdioma": "es",
-    "mediosHabilitados": "imagen_comprobante,pdf_comprobante"
+    "mediosHabilitados": "imagen_comprobante,pdf_comprobante,audio,imagen,documento"
   }
 }

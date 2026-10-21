@@ -32,7 +32,8 @@ const fijar = (f: Flujo, nombre: string, valor: unknown): void => { asignaciones
 
 /** El flujo tal como quedaría tras `preparar-import.sh` (todos los marcadores sustituidos) y con las plantillas aprobadas en «Config base». */
 function publicable(base: Flujo = PRODUCCION): Flujo {
-  const f = JSON.parse(JSON.stringify(base).replace(MARCADORES, 'valorsustituido')) as Flujo;
+  // La lista de prueba sustituida lleva dígitos (una lista sin ningún dígito NO cuenta como lista y abriría al público).
+  const f = JSON.parse(JSON.stringify(base).replace(/REEMPLAZAR_TELEFONOS_DE_PRUEBA/g, '59100000042').replace(MARCADORES, 'valorsustituido')) as Flujo;
   for (const { estado } of CLAVES_DE_PLANTILLA as Array<{ estado: string }>) fijar(f, estado, 'APPROVED');
   return f;
 }
@@ -41,6 +42,7 @@ function datosAprobados(): { configBase: Record<string, unknown> } {
   const d = copia(DATOS_VERSIONADOS);
   d.configBase['avisoComprobanteEstado'] = 'APPROVED';
   d.configBase['avisoConsultaEstado'] = 'APPROVED';
+  if (typeof d.configBase['telefonosDePrueba'] === 'string' && !/\d/.test(d.configBase['telefonosDePrueba'])) d.configBase['telefonosDePrueba'] = '59100000042';
   return d;
 }
 const hallazgos = (flujo: Flujo, datos = datosAprobados()): string[] => guardiaDePublicacion({ flujo, datos }) as string[];
@@ -73,7 +75,7 @@ describe('guardia de publicación: cada marcador REEMPLAZAR_* residual se niega'
   for (const marcador of marcadoresDelFlujo) {
     it(`deja pasar todo salvo ${marcador}: se niega y lo nombra, sin mostrar valores`, () => {
       // Todos los marcadores sustituidos salvo ESTE, y las plantillas aprobadas.
-      const ya = JSON.parse(JSON.stringify(PRODUCCION).replace(MARCADORES, (m) => (m === marcador ? m : 'valorsustituido'))) as Flujo;
+      const ya = JSON.parse(JSON.stringify(PRODUCCION).replace(MARCADORES, (m) => (m === marcador ? m : (m === 'REEMPLAZAR_TELEFONOS_DE_PRUEBA' ? '59100000042' : 'valorsustituido')))) as Flujo;
       for (const { estado } of CLAVES_DE_PLANTILLA as Array<{ estado: string }>) fijar(ya, estado, 'APPROVED');
       const h = hallazgos(ya);
       expect(h.length).toBeGreaterThan(0);
@@ -533,10 +535,30 @@ describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, image
   const datosCon = (cambios: Record<string, unknown>): { configBase: Record<string, unknown> } => { const d = datosAprobados(); Object.assign(d.configBase, cambios); return d; };
   const apertura = (h: string[]): string[] => h.filter((x) => /abrir al PÚBLICO/.test(x));
 
-  it('los medios que se exigen son exactamente audio, imagen y documento; los datos de hoy declaran solo los dos comprobantes', () => {
+  const SOLO_COMPROBANTES = 'imagen_comprobante,pdf_comprobante';
+  it('los medios que se exigen son exactamente audio, imagen y documento; los datos y el flujo los declaran (más los dos comprobantes)', () => {
     expect(MEDIOS_PARA_ABRIR).toEqual(['audio', 'imagen', 'documento']);
-    expect(DATOS_VERSIONADOS.configBase['mediosHabilitados']).toBe('imagen_comprobante,pdf_comprobante');
-    expect(asignaciones(PRODUCCION).find((a) => a.name === 'mediosHabilitados')!.value).toBe('imagen_comprobante,pdf_comprobante');
+    for (const declarados of [String(DATOS_VERSIONADOS.configBase['mediosHabilitados']), String(asignaciones(PRODUCCION).find((a) => a.name === 'mediosHabilitados')!.value), String(asignaciones(PRUEBA).find((a) => a.name === 'mediosHabilitados')!.value)]) {
+      const lista = declarados.split(',');
+      for (const m of [...MEDIOS_PARA_ABRIR, 'imagen_comprobante', 'pdf_comprobante']) expect(lista, m).toContain(m);
+    }
+  });
+
+  // EQUIVALENTE DE `capacidades-comunes` PARA RUBÉN: declarar los tres medios no basta; el flujo tiene que TENERLOS (nodos conectados, tope en los datos, textos fijos y documento).
+  it('el flujo TIENE los tres medios: audio (transcribe y prepara), imagen (la mira) y documento (texto fijo sin descargar), en producción y en la prueba', () => {
+    for (const f of [PRODUCCION, PRUEBA]) {
+      const nombres = f.nodes.map((n) => n.name);
+      for (const n of ['¿Es audio?', 'Transcribir audio', 'Preparar transcripción', '¿Es comprobante?', 'Ver imagen']) expect(nombres, n).toContain(n);
+      const destinos = (de: string, i = 0): string[] => (((f.connections as unknown as Record<string, { main: Array<Array<{ node: string }>> }>)[de]?.main ?? [])[i] ?? []).map((x) => x.node);
+      expect(destinos('¿Es audio?', 0)).toEqual(['Transcribir audio']);
+      expect(destinos('Transcribir audio')).toEqual(['Preparar transcripción']);
+      expect(destinos('Preparar transcripción')).toEqual(['Decidir turno']);
+      expect(destinos('¿Es comprobante?', 1)).toEqual(['Ver imagen']);
+      const decidir = String((f.nodes.find((n) => n.name === 'Decidir turno')!.parameters as { jsCode: string }).jsCode);
+      expect(decidir).toMatch(/t\.tipo === 'document'/);
+      expect(decidir).toMatch(/rrAudioDelTurno/);
+      expect(decidir).toMatch(/rrLecturaImagen/);
+    }
   });
 
   it('el flujo vivo (publicado en prueba, con lista de teléfonos) SIGUE siendo publicable en prueba y la salida lo declara', () => {
@@ -552,14 +574,15 @@ describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, image
     rmSync(dirname(ruta), { recursive: true, force: true });
   });
 
-  it('NEGANDO: lista de teléfonos vacía o ausente = abrir al público: se rechaza (sale 1) mientras no estén los tres medios', () => {
-    for (const f of [conBase({ telefonosDePrueba: '' }), conBase({ telefonosDePrueba: '   ' }), conBase({}, ['telefonosDePrueba'])]) {
+  it('NEGANDO: lista de teléfonos vacía, ausente o SIN NINGÚN DÍGITO («,», « , ; ») = abrir al público: se rechaza mientras no estén los tres medios', () => {
+    for (const f of [conBase({ telefonosDePrueba: '', mediosHabilitados: SOLO_COMPROBANTES }), conBase({ telefonosDePrueba: '   ', mediosHabilitados: SOLO_COMPROBANTES }), conBase({ mediosHabilitados: SOLO_COMPROBANTES }, ['telefonosDePrueba']),
+      conBase({ telefonosDePrueba: ',', mediosHabilitados: SOLO_COMPROBANTES }), conBase({ telefonosDePrueba: ' , ; ', mediosHabilitados: SOLO_COMPROBANTES })]) {
       expect(apertura(hallazgos(f)).length).toBe(1);
       expect(apertura(hallazgos(f))[0]).toMatch(/faltan: audio, imagen, documento/);
       expect(modoDePublicacion({ flujo: f, datos: datosAprobados() })).toBe('publico');
     }
     const ruta = join(mkdtempSync(join(tmpdir(), 'rroca-apertura-')), 'abierto.json');
-    writeFileSync(ruta, JSON.stringify(conBase({ telefonosDePrueba: '' })));
+    writeFileSync(ruta, JSON.stringify(conBase({ telefonosDePrueba: ',', mediosHabilitados: SOLO_COMPROBANTES })));
     const r = spawnSync(process.execPath, [join(RROCA, 'construir.mjs'), '--publicable', '--flujo', ruta], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     expect(r.status).toBe(1);
     expect(r.stderr).toMatch(/abrir al PÚBLICO exige los tres medios/);
@@ -567,8 +590,8 @@ describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, image
   });
 
   it('NEGANDO: `modoApertura` distinto de «prueba» (público, abierto, cualquier otro valor) se trata como apertura al público aunque haya lista', () => {
-    for (const modo of ['publico', 'abierto', 'PUBLICO', 'x']) expect(apertura(hallazgos(conBase({ modoApertura: modo }))).length, modo).toBe(1);
-    expect(apertura(hallazgos(conBase({ modoApertura: 'prueba' })))).toEqual([]);
+    for (const modo of ['publico', 'abierto', 'PUBLICO', 'x']) expect(apertura(hallazgos(conBase({ modoApertura: modo, mediosHabilitados: SOLO_COMPROBANTES }))).length, modo).toBe(1);
+    expect(apertura(hallazgos(conBase({ modoApertura: 'prueba', mediosHabilitados: SOLO_COMPROBANTES })))).toEqual([]);
   });
 
   it('NEGANDO: abrir con CADA medio faltante se rechaza y nombra el que falta; los comprobantes (imagen_comprobante, pdf_comprobante) no cuentan como medios', () => {
@@ -582,6 +605,12 @@ describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, image
     expect(apertura(hallazgos(conBase({ telefonosDePrueba: '' }, ['mediosHabilitados']))).length).toBe(1);
   });
 
+  it('con solo DOS de los tres medios (cualquier par) abrir al público se rechaza, aunque el tercero sea un comprobante', () => {
+    for (const par of ['audio,imagen', 'audio,documento', 'imagen,documento', 'audio,imagen_comprobante,documento_comprobante']) {
+      expect(apertura(hallazgos(conBase({ telefonosDePrueba: ',', mediosHabilitados: par }))).length, par).toBe(1);
+    }
+  });
+
   it('con los tres medios habilitados la apertura al público no la frena esta guardia (y la salida lo declara)', () => {
     const f = conBase({ telefonosDePrueba: '', mediosHabilitados: TRES });
     expect(apertura(hallazgos(f, datosCon({ mediosHabilitados: TRES, modoApertura: 'publico' })))).toEqual([]);
@@ -589,7 +618,7 @@ describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, image
   });
 
   it('los datos también cuentan: datos que abren al público sin los tres medios niegan aunque el flujo tenga lista', () => {
-    const h = apertura(hallazgos(publicable(PRODUCCION), datosCon({ modoApertura: 'publico' })));
+    const h = apertura(hallazgos(publicable(PRODUCCION), datosCon({ modoApertura: 'publico', mediosHabilitados: SOLO_COMPROBANTES })));
     expect(h).toHaveLength(1);
     expect(h[0]).toMatch(/^datos:/);
   });
