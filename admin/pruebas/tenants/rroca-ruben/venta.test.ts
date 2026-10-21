@@ -3892,6 +3892,127 @@ describe('MEDIOS · IMAGEN sin cobro pendiente: se CLASIFICA (anuncio, comproban
   });
 });
 
+describe('MEDIOS · IMAGEN o PDF con un cobro VENCIDO, EN REVISIÓN o ABIERTO: el lector del comprobante clasifica; lo que no es un comprobante ni se coteja ni se avisa a Rubén (defecto del 21/10: el flyer de un anuncio)', () => {
+  const ANUNCIO = { tipo: 'anuncio', titular: '¿No sabes qué publicar?' };
+  const OTRA = { tipo: 'otra', descripcion: 'Una vitrina con ropa' };
+  const TARDIO = (): J => ({ statusCode: 200, body: { estado: 'tardio', avisarComercio: true, importe: 60 } });
+  const TEXTO_TARDIO = /Tu comprobante llegó después de los 15 minutos del QR/;
+  const NODOS_DEL_COBRO = ['Cotejar en el servidor', 'Enviar aviso'];
+  const vencido = (o: Opciones = {}): Mundial => { const w = crear({ cotejo: TARDIO, ...o }); pedirQr(w, 'pack'); w.cobro.pendiente = false; w.cobro.vencidoHaceMin = 4; return w; };
+  const enRevision = (o: Opciones = {}): Mundial => { const w = crear({ cotejo: () => ({ statusCode: 200, body: { estado: 'en_revision', avisarComercio: true } }), ...o }); pedirQr(w, 'pack'); w.cobro.pendiente = false; w.cobro.enRevision = true; return w; };
+
+  it('vencido + la foto de un ANUNCIO: caso 1 (el modelo recibe el titular canónico), cero avisos, no se coteja y NUNCA «tu comprobante llegó…»; un solo mensaje', () => {
+    const w = vencido({ lectura: ANUNCIO });
+    const cuerpos = cuerposDelModelo(w);
+    const t = hablar(w, ANA, mImagen(), { avanzarMin: 19 });
+    const m = unico(t);
+    expect(cuerpos).toHaveLength(1);
+    expect(cuerpos[0]).toContain('[IMAGEN_RECIBIDA: Captura del anuncio con titular «¿No sabes qué publicar?»]');
+    expect(m.cuerpo).not.toMatch(TEXTO_TARDIO);
+    expect(m.cuerpo.trim()).not.toBe('');
+    for (const n of NODOS_DEL_COBRO) expect(t.ejecutados.has(n), n).toBe(false);
+    for (const n of ['Guardar comprobante', 'Leer comprobante (imagen)', 'Interpretar lectura', '¿Lo leído es comprobante?']) expect(t.ejecutados.has(n), n).toBe(true);
+    expect(t.ejecutados.has('Ver imagen')).toBe(false);
+    expect(t.avisos).toHaveLength(0);
+    expect(fichaDeMedios(w)['imagenes']).toMatchObject({ n: 1 });
+  });
+
+  it('vencido + una imagen cualquiera: caso 3 (descripción neutra al modelo), cero avisos, sin cotejo', () => {
+    const w = vencido({ lectura: OTRA });
+    const cuerpos = cuerposDelModelo(w);
+    const t = hablar(w, ANA, mImagen(), { avanzarMin: 19 });
+    expect(cuerpos).toHaveLength(1);
+    expect(cuerpos[0]).toContain('Una vitrina con ropa');
+    expect(unico(t).cuerpo).not.toMatch(TEXTO_TARDIO);
+    for (const n of NODOS_DEL_COBRO) expect(t.ejecutados.has(n), n).toBe(false);
+    expect(t.avisos).toHaveLength(0);
+  });
+
+  it('vencido + lo que SÍ parece un comprobante (el lector lo clasifica así o no clasifica): comprobante tardío con su aviso y su botón, como hoy', () => {
+    for (const lectura of [undefined, { tipo: 'comprobante', monto: '60.00', cuentaDestino: '59100000077' }] as Array<J | undefined>) {
+      const w = vencido(lectura ? { lectura } : {});
+      const t = hablar(w, ANA, mImagen(), { avanzarMin: 19 });
+      const m = unico(t);
+      expect(m.cuerpo).toMatch(TEXTO_TARDIO);
+      expect(m.payload['interactive']?.type).toBe('cta_url');
+      expect(avisosDe(t)).toHaveLength(1);
+      expect(t.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    }
+  });
+
+  it('lo mismo EN REVISIÓN: un anuncio no avisa ni se coteja; un comprobante sigue su camino de siempre (cotejo y aviso)', () => {
+    const a = enRevision({ lectura: ANUNCIO });
+    const ta = hablar(a, ANA, mImagen(), { avanzarMin: 19 });
+    for (const n of NODOS_DEL_COBRO) expect(ta.ejecutados.has(n), n).toBe(false);
+    expect(ta.avisos).toHaveLength(0);
+    expect(unico(ta).cuerpo.trim()).not.toBe('');
+    const c = enRevision();
+    const tc = hablar(c, ANA, mImagen(), { avanzarMin: 19 });
+    expect(tc.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    expect(avisosDe(tc)).toHaveLength(1);
+  });
+
+  it('el lector caído o dudoso conserva el camino SEGURO de hoy (se coteja y pasa a Rubén CON aviso, nunca en silencio): sin respuesta, «otra» sin descripción, o un anuncio con una cuenta de destino leída', () => {
+    const casos: Array<J | 'ilegible'> = ['ilegible', { tipo: 'otra', descripcion: '' }, { tipo: 'anuncio', titular: 'x', cuentaDestino: '59100000077', monto: '60' }];
+    for (const lectura of casos) {
+      const w = vencido({ lectura });
+      const cuerpos = cuerposDelModelo(w);
+      const t = hablar(w, ANA, mImagen(), { avanzarMin: 19 });
+      expect(t.ejecutados.has('Cotejar en el servidor'), JSON.stringify(lectura)).toBe(true);
+      expect(unico(t).cuerpo).toMatch(TEXTO_TARDIO);
+      expect(avisosDe(t)).toHaveLength(1);
+      expect(cuerpos).toHaveLength(0);
+    }
+  });
+
+  it('QR ABIERTO + la foto de un anuncio: no es un comprobante (el servidor no cuenta un intento ni pasa a revisión), cero avisos, el recordatorio del QR; con un comprobante bueno el camino de siempre queda intacto (texto aprobado y aviso)', () => {
+    const w = crear({ lectura: ANUNCIO });
+    pedirQr(w, 'pack');
+    const cuerpos = cuerposDelModelo(w);
+    const t = hablar(w, ANA, mImagen());
+    expect(unico(t).cuerpo).toMatch(/QR/);
+    expect(unico(t).cuerpo).not.toMatch(/ilegible|no pude leer|llegó después/i);
+    for (const n of NODOS_DEL_COBRO) expect(t.ejecutados.has(n), n).toBe(false);
+    expect(t.avisos).toHaveLength(0);
+    expect(cuerpos).toHaveLength(0);
+    const ok = crear();
+    pedirQr(ok, 'pack');
+    const tok = hablar(ok, ANA, mImagen());
+    expect(unico(tok).cuerpo).toBe(IGUAL_QUE_ANTES);
+    expect(avisosDe(tok)).toHaveLength(1);
+  });
+
+  it('un PDF que el lector clasifica como no-comprobante (cobro vencido): el texto fijo de los archivos, sin aviso ni cotejo; un PDF comprobante (o sin clasificar) sigue el camino de siempre', () => {
+    const w = vencido();
+    w.mundo.dobles['Obtener URL del medio'] = () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'application/pdf', file_size: 1_000_000 });
+    w.mundo.dobles['Leer comprobante (PDF)'] = () => geminiTexto(JSON.stringify({ tipo: 'otra', descripcion: 'Un currículum' }));
+    const t = hablar(w, ANA, mPdf(), { avanzarMin: 19 });
+    expect(unico(t).cuerpo).not.toMatch(TEXTO_TARDIO);
+    expect(unico(t).cuerpo).toMatch(/archivo/);
+    for (const n of NODOS_DEL_COBRO) expect(t.ejecutados.has(n), n).toBe(false);
+    expect(t.avisos).toHaveLength(0);
+    const w2 = vencido();
+    w2.mundo.dobles['Obtener URL del medio'] = () => ({ url: 'https://lookaside.fbsbx.com/m', mime_type: 'application/pdf', file_size: 1_000_000 });
+    const t2 = hablar(w2, ANA, mPdf(), { avanzarMin: 19 });
+    expect(unico(t2).cuerpo).toMatch(TEXTO_TARDIO);
+    expect(avisosDe(t2)).toHaveLength(1);
+  });
+
+  it('el tope diario de fotos cuenta estas fotos: con tope 1, la segunda foto-no-comprobante recibe el texto fijo del tope (sin modelo, sin aviso); con tope 0 (visión apagada) el texto de siempre', () => {
+    const w = vencido({ lectura: ANUNCIO, topeImagenes: 1 });
+    const cuerpos = cuerposDelModelo(w);
+    hablar(w, ANA, mImagen(), { avanzarMin: 19 });
+    const t = hablar(w, ANA, mImagen(), { avanzarMin: 1 });
+    expect(plano(unico(t).cuerpo)).toContain(plano(T_IMG_TOPE));
+    expect(cuerpos).toHaveLength(1);
+    expect(t.avisos).toHaveLength(0);
+    const a = vencido({ lectura: ANUNCIO, topeImagenes: 0 });
+    const ta = hablar(a, ANA, mImagen(), { avanzarMin: 19 });
+    expect(plano(unico(ta).cuerpo)).toContain(plano(T_IMG_APAGADA));
+    expect(ta.avisos).toHaveLength(0);
+  });
+});
+
 describe('MEDIOS · DOCUMENTO: sin cobro no se baja; con un pedido abierto, el PDF (hasta 10 MB) y la imagen siguen el camino del comprobante; lo demás es «archivo no aceptado»', () => {
   const T_DOC = 'Recibí tu archivo, pero por aquí solo puedo leer texto, audios, fotos y los comprobantes de un pedido abierto. Cuéntame qué buscas, o escríbele a Rubén con el botón.';
   const T_NO_ACEPTADO = 'Recibí tu archivo, pero no pude leerlo. Si es tu comprobante, envíalo como foto o como PDF, o escríbele a Rubén con el botón.';

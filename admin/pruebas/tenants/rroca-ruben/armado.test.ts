@@ -210,8 +210,9 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
     expect(PRUEBA.nodes.length).toBeLessThanOrEqual(46);
     expect(PRODUCCION.nodes.length).toBe(PRUEBA.nodes.length + 5);
     // MEDIOS ENTRANTES: 39 → 44 en producción y 34 → 39 en la prueba (5 nodos: ¿Es audio?, Transcribir audio, Preparar transcripción, ¿Es comprobante? y Ver imagen).
-    expect(PRODUCCION.nodes.length).toBe(44);
-    expect(PRUEBA.nodes.length).toBe(39);
+    // Y +1 (21/10/2026): «¿Lo leído es comprobante?» (el lector del comprobante clasifica; lo que no es un comprobante no se coteja) → 45 y 40.
+    expect(PRODUCCION.nodes.length).toBe(45);
+    expect(PRUEBA.nodes.length).toBe(40);
   });
 
   it('«Reportar mensaje (entrante)» sigue ARRIBA de toda la rama que responde (medios, decisión, modelo, avisos y mensajes)', () => {
@@ -253,7 +254,9 @@ describe('armado: la topología de PR-2 (orden del lienzo, comprobante y cobro)'
     expect(destinos(f, '¿Es PDF?', 1)).toEqual(['Leer comprobante (imagen)']);
     expect(destinos(f, 'Leer comprobante (PDF)')).toEqual(['Interpretar lectura']);
     expect(destinos(f, 'Leer comprobante (imagen)')).toEqual(['Interpretar lectura']);
-    expect(destinos(f, 'Interpretar lectura')).toEqual(['Cotejar en el servidor']);
+    expect(destinos(f, 'Interpretar lectura')).toEqual(['¿Lo leído es comprobante?']);
+    expect(destinos(f, '¿Lo leído es comprobante?', 0)).toEqual(['Cotejar en el servidor']);
+    expect(destinos(f, '¿Lo leído es comprobante?', 1)).toEqual(['Decidir turno']);
     expect(destinos(f, 'Cotejar en el servidor')).toEqual(['Decidir turno']);
     expect(destinos(f, 'Decidir turno')).toEqual(['¿Conversar con el modelo?']);
     expect(destinos(f, '¿Conversar con el modelo?', 0)).toEqual(['Conversar con el modelo']);

@@ -1062,6 +1062,16 @@ function rrLecturaImagen(resp) {
   const descripcion = tipo === 'otra' ? rrDatoDeImagen(o.descripcion, 160) : '';
   return { tipo: tipo, titular: titular, descripcion: descripcion, anuncio: tipo === 'anuncio' ? rrAnuncioDe(titular) : null };
 }
+// El LECTOR DEL COMPROBANTE también clasifica lo que mira (`tipo`, como «Ver imagen»): con un cobro abierto, vencido o en revisión, una imagen o un PDF que NO es un comprobante (un anuncio, una foto cualquiera) no se coteja
+// ni se avisa a Rubén. `noEsComprobante` es verdadero SOLO si el lector dijo «anuncio» u «otra» Y no leyó una cuenta de destino. Sin clasificación (Gemini caído, JSON roto, objeto doble) o con «comprobante»: falso, es decir
+// el camino de siempre (se coteja). `lectura` = la salida de `cbLectura`. Devuelve también `lec` (la forma de `rrLecturaImagen`) para que «Decidir turno» responda como a una imagen vista.
+function rrClasificaLector(resp, lectura) {
+  const lec = rrLecturaImagen(resp);
+  const l = lectura && typeof lectura === 'object' ? lectura : {};
+  const cuenta = l.leido && typeof l.leido === 'object' ? String(l.leido.cuentaDestino || '').trim() : '';
+  // «otra» sin descripción es «no estoy seguro» (como en «Ver imagen»): ante la duda se coteja, nunca se descarta.
+  return { noEsComprobante: (lec.tipo === 'anuncio' || (lec.tipo === 'otra' && lec.descripcion !== '')) && cuenta === '', lec: lec };
+}
 // El rótulo que ve el modelo. El titular libre NUNCA llega: solo el canónico de la lista cerrada.
 function rrEtiquetaImagen(lec, pie) {
   const l = lec && typeof lec === 'object' ? lec : {};
