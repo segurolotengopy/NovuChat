@@ -100,19 +100,86 @@ export const NUCLEO_TRANSCRIPCION = join(AQUI, '../../src/core/medios/preparar-t
 export const ADAPTADOR_TRANSCRIPCION = join(AQUI, 'src/nodos/adaptar-transcripcion.js');
 export const NOMBRES_DEL_NUCLEO = { 'Normalizar entrada': 'Interpretar entrada', 'Obtener URL del medio (general)': 'Obtener URL del medio' };
 export const MARCA_NUCLEO = '@@nucleo:preparar-transcripcion';
+/**
+ * La ÚNICA traducción: los nombres de nodo del núcleo se reemplazan de forma TEXTUAL (comillas simples o dobles) por los de este flujo. El task runner de n8n precarga los datos de los nodos que el código
+ * nombra con `$('Nombre')` LITERAL: un `$` redefinido que traduce el nombre en tiempo de ejecución deja a «Interpretar entrada» sin cargar («hasn't been executed»). El JSON final solo contiene nombres de nodos REALES.
+ */
+export function traducirNucleo(fuente) {
+  let t = fuente;
+  for (const [de, a] of Object.entries(NOMBRES_DEL_NUCLEO)) t = t.split(`$('${de}')`).join(`$('${a}')`).split(`$("${de}")`).join(`$("${a}")`);
+  return t;
+}
 export function fuenteDelNucleo() {
   const f = leerSiExiste(NUCLEO_TRANSCRIPCION, 'preparar-transcripcion.js');
-  return f === null ? null : f.trimEnd();
+  return f === null ? null : traducirNucleo(f.trimEnd());
 }
 export function codigoConNucleo() {
   const fuente = fuenteDelNucleo();
   const adaptador = leerSiExiste(ADAPTADOR_TRANSCRIPCION, 'adaptar-transcripcion.js');
   if (fuente === null || adaptador === null) throw new Error('falta el núcleo común de la transcripción o su adaptador');
-  return ['// NÚCLEO COMÚN INCLUIDO TAL CUAL: Flujos/src/core/medios/preparar-transcripcion.js (el mismo archivo que el ensamblador pone en los flujos con agente). Solo se le traducen dos nombres de nodo; su salida la traduce el adaptador propio.',
-    'const rrNucleo = ((rrN8n) => {',
-    `  const rrNombres = ${JSON.stringify(NOMBRES_DEL_NUCLEO)};`,
-    '  const $ = (nombre) => rrN8n(Object.prototype.hasOwnProperty.call(rrNombres, nombre) ? rrNombres[nombre] : nombre);',
-    fuente, '})($);', adaptador.trimEnd()].join('\n') + '\n';
+  return ['// NÚCLEO COMÚN INCLUIDO: Flujos/src/core/medios/preparar-transcripcion.js (el mismo archivo que el ensamblador pone en los flujos con agente), con UNA sola traducción textual: los dos nombres de nodo por los de este flujo. Su salida la traduce el adaptador propio.',
+    'const rrNucleo = (() => {',
+    fuente, '})();', adaptador.trimEnd()].join('\n') + '\n';
+}
+
+// ----------------------------------------------------------------- las referencias a otros nodos (reutilizable: recibe un flujo, no depende de este)
+/**
+ * El task runner de n8n decide qué nodos precarga ESCANEANDO el código: un nodo con SOLO referencias dinámicas (`cnNodo(nombre)`, `$(variable)`) recibe todos; uno con algún literal `$('X')` recibe SOLO los nombrados
+ * literalmente. Por eso: (1) todo literal `$('X')`, `$("X")`, `$node['X']`, `$items('X')` nombra un nodo que EXISTE y es ANTECESOR; (2) un nodo con al menos un literal NO puede alcanzar a otro nodo de forma dinámica o por
+ * `cnNodo('Y')`/`cnPrimero('Y')`/`cnTodos('Y')` sin nombrar también `$('Y')` en un literal (un nodo MIXTO falla en n8n real). Los comentarios no cuentan. Se recorre el código (`jsCode`) y las expresiones `={{ … }}`.
+ */
+const REF_LITERAL = [/\$\(\s*(['"])((?:(?!\1).)+)\1\s*\)/g, /\$node\[\s*(['"])((?:(?!\1).)+)\1\s*\]/g, /\$items\(\s*(['"])((?:(?!\1).)+)\1/g];
+const REF_AYUDA = /(?<!function\s)\bcn(?:Nodo|Primero|Todos)\(\s*(['"])((?:(?!\1).)+)\1/g;
+const REF_DINAMICA = [/\$\(\s*(?!['"\s])/, /\$node\[\s*(?!['"\s])/, /\$items\(\s*(?!['"\s])/, /(?<!function\s)\bcn(?:Nodo|Primero|Todos)\(\s*(?!['"\s])/];
+const sinComentariosDeCodigo = (codigo) => codigo.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:\w'"`])\/\/[^\n]*/g, '$1 ');
+function cadenasDe(v, campo = '') {
+  if (typeof v === 'string') return [{ campo, texto: v }];
+  if (Array.isArray(v)) return v.flatMap((x) => cadenasDe(x, campo));
+  if (v && typeof v === 'object') return Object.entries(v).flatMap(([k, x]) => cadenasDe(x, k));
+  return [];
+}
+/** Por nodo: los nombres literales (`literales`), los alcanzados por las funciones `cn*` con literal (`ayuda`) y si hay alguna referencia dinámica (`dinamica`). */
+export function referenciasDeNodos(nodos) {
+  return (Array.isArray(nodos) ? nodos : []).map((n) => {
+    const literales = []; const ayuda = []; let dinamica = false;
+    for (const { campo, texto } of cadenasDe(n.parameters || {})) {
+      const t = campo === 'jsCode' ? sinComentariosDeCodigo(texto) : texto;
+      if (campo !== 'jsCode' && !t.startsWith('=')) continue;
+      for (const re of REF_LITERAL) for (const m of t.matchAll(new RegExp(re.source, 'g'))) literales.push(m[2]);
+      for (const m of t.matchAll(new RegExp(REF_AYUDA.source, 'g'))) ayuda.push(m[2]);
+      if (REF_DINAMICA.some((re) => re.test(t))) dinamica = true;
+    }
+    return { nodo: n.name, literales, ayuda, dinamica };
+  });
+}
+/** Los antecesores de cada nodo en el grafo de conexiones: Map nombre → Set de nombres. */
+export function antecesoresDe(flujo) {
+  const padres = new Map((flujo.nodes || []).map((n) => [n.name, new Set()]));
+  for (const [de, salidas] of Object.entries(flujo.connections || {})) for (const salida of (salidas.main || [])) for (const c of (salida || [])) if (padres.has(c.node)) padres.get(c.node).add(de);
+  const todos = new Map();
+  for (const n of flujo.nodes || []) {
+    const vistos = new Set(); const pila = [...padres.get(n.name)];
+    while (pila.length) { const x = pila.pop(); if (vistos.has(x)) continue; vistos.add(x); pila.push(...(padres.get(x) || [])); }
+    todos.set(n.name, vistos);
+  }
+  return todos;
+}
+/** Los problemas de referencias de un flujo (lista vacía si está limpio). Reutilizable: sirve para cualquier JSON de flujo. */
+export function problemasDeReferencias(flujo) {
+  const existen = new Set((flujo.nodes || []).map((n) => n.name));
+  const antes = antecesoresDe(flujo);
+  const p = [];
+  for (const r of referenciasDeNodos(flujo.nodes)) {
+    for (const nombre of r.literales) {
+      if (!existen.has(nombre)) p.push(`«${r.nodo}» nombra «${nombre}», que NO existe en este flujo`);
+      else if (!antes.get(r.nodo).has(nombre)) p.push(`«${r.nodo}» nombra «${nombre}», que existe pero NO es su antecesor en el grafo`);
+    }
+    if (r.literales.length) {
+      if (r.dinamica) p.push(`«${r.nodo}» mezcla referencias literales con referencias dinámicas a otros nodos: n8n solo precarga los nombrados con literal`);
+      for (const y of new Set(r.ayuda)) if (!r.literales.includes(y)) p.push(`«${r.nodo}» alcanza «${y}» por cn*() sin nombrarlo también con $('${y}') literal: n8n no lo precargaría`);
+    }
+  }
+  return p;
 }
 
 // ----------------------------------------------------------------- los datos
@@ -135,6 +202,9 @@ const FORMAS_CONFIG = {
   // Los topes diarios por teléfono de los medios que Gemini mira o escucha (0 apaga el medio; sin valor, el del código).
   topeImagenesDia: /^([0-9]|1[0-9]|20)$/,
   topeAudiosDia: /^([0-9]|[12][0-9]|30)$/,
+  // Los topes GLOBALES por hora (todo el flujo, no por teléfono): respuestas a números de otro país (hasta 200) y llamadas a Gemini de audio y visión (hasta 600). Sin valor, 30 y 120.
+  topeExtranjerosHora: /^([0-9]|[1-9][0-9]|1[0-9]{2}|200)$/,
+  topeGeminiHora: /^([0-9]|[1-9][0-9]|[1-5][0-9]{2}|600)$/,
   modoApertura: /^(prueba|publico)$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
@@ -215,11 +285,12 @@ export function guardias(variante, flujo) {
   if (armarAvisos && !(/rrPlantilla\(/.test(codigoAvisos) && /avPlantilla\(/.test(codigoAvisos) && /RR_VENTANA_RUBEN_MS/.test(codigoAvisos))) h.push('«Armar avisos» no lleva la plantilla ni la ventana de Rubén: el aviso fuera de las 24 h no saldría');
   const conex = (flujo && flujo.connections) || {};
   const destinosDe = (nombre, salida) => (((conex[nombre] || {}).main || [])[salida] || []).map((x) => x.node);
+  h.push(...problemasDeReferencias(flujo || {}));
   // MEDIOS ENTRANTES: «Preparar transcripción» incluye el núcleo común TAL CUAL; el audio y la imagen pasan por sus nodos de Gemini, que no cortan el turno si fallan.
   const preparar = por('Preparar transcripción');
   if (preparar) {
     const fuente = fuenteDelNucleo();
-    if (fuente === null || !String(p(preparar).jsCode || '').includes(fuente)) h.push('«Preparar transcripción» no incluye TAL CUAL el núcleo común (Flujos/src/core/medios/preparar-transcripcion.js): rearme con «node construir.mjs»');
+    if (fuente === null || !String(p(preparar).jsCode || '').includes(fuente)) h.push('«Preparar transcripción» no incluye el núcleo común (tal cual, salvo la traducción declarada de dos nombres de nodo) (Flujos/src/core/medios/preparar-transcripcion.js): rearme con «node construir.mjs»');
     if (destinosDe('Preparar transcripción', 0).join('|') !== 'Decidir turno') h.push('«Preparar transcripción» tiene que conectarse solo a «Decidir turno»');
   }
   if (nombres.has('Transcribir audio') && destinosDe('Transcribir audio', 0).join('|') !== 'Preparar transcripción') h.push('«Transcribir audio» tiene que conectarse solo a «Preparar transcripción»');
@@ -328,8 +399,8 @@ function hallazgosDePlantillas(cb, donde) {
 export const MEDIOS_PARA_ABRIR = ['audio', 'imagen', 'documento'];
 export function modoDeApertura(cb) {
   const c = cb && typeof cb === 'object' ? cb : {};
-  // Una lista de prueba tiene al menos un DÍGITO (o es el marcador `REEMPLAZAR_*` que otra guardia obliga a sustituir): «,» o «   » no es una lista y deja el flujo abierto al público (hueco que declaró seguridad).
-  const tel = typeof c.telefonosDePrueba === 'string' && (/\d/.test(c.telefonosDePrueba) || MARCADOR.test(c.telefonosDePrueba.trim())) ? c.telefonosDePrueba.trim() : '';
+  // Una lista de prueba tiene al menos un teléfono de 6 o más dígitos seguidos (o es el marcador `REEMPLAZAR_*` que otra guardia obliga a sustituir): «,», «1» o «   » no es una lista y deja el flujo abierto al público (hueco que declaró seguridad).
+  const tel = typeof c.telefonosDePrueba === 'string' && (/\d{6,}/.test(c.telefonosDePrueba) || MARCADOR.test(c.telefonosDePrueba.trim())) ? c.telefonosDePrueba.trim() : '';
   const modo = c.modoApertura === undefined || c.modoApertura === null || c.modoApertura === '' ? 'prueba' : String(c.modoApertura);
   return tel !== '' && modo === 'prueba' ? 'prueba' : 'publico';
 }
@@ -407,6 +478,13 @@ export function armarRroca(proyecto, datos, v) {
     ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`,
     desde: [5480, 160],
   });
+  // Un número de otro país NO se reporta a la ingesta (decisión de Core: los extranjeros cuentan contra el plan si se reportan y el conteo es regla del servidor; no existe un campo para excluirlos). El entrante lo corta
+  // la condición de «¿Reportar? (entrante)» (propia, sobre la común); el saliente, `reportar` de «Armar mensajes». Sin nodos nuevos.
+  const repEntrante = plantilla.nodes.find((n) => n.name === '¿Reportar? (entrante)');
+  const condEntrante = repEntrante && repEntrante.parameters && repEntrante.parameters.conditions && repEntrante.parameters.conditions.conditions && repEntrante.parameters.conditions.conditions[0];
+  const izqEntrante = "={{ $('Config del negocio').first().json.modoPrueba !== true }}";
+  if (!condEntrante || condEntrante.leftValue !== izqEntrante) throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (entrante)» ya no tiene la condición esperada`);
+  condEntrante.leftValue = "={{ $('Config del negocio').first().json.modoPrueba !== true && $('Interpretar entrada').first().json.extranjero !== true }}";
   // Puerta de la entrega (propia): el reporte saliente cuelga de «¿Meta aceptó?». Solo se reencamina la CONEXIÓN de la cadena común; sus nodos quedan intactos.
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);

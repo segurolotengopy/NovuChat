@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { ejecutar, type Flujo, type J } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { ADAPTADOR_TRANSCRIPCION, AQUI, ARCHIVO_DE_DATOS, CONFIG, NODOS_DEL_AVISO, NOMBRES_DEL_NUCLEO, NUCLEO_TRANSCRIPCION, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
+import { ADAPTADOR_TRANSCRIPCION, AQUI, ARCHIVO_DE_DATOS, CONFIG, NODOS_DEL_AVISO, NOMBRES_DEL_NUCLEO, NUCLEO_TRANSCRIPCION, traducirNucleo, TOPE_DE_NODOS, anfitrionPermitido, cargarDatos, guardias } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 import { nodosDeEnvio } from '../../../../Flujos/experimental/comun-sin-agente/src/envio.mjs';
 
 const ESTA = dirname(fileURLToPath(import.meta.url));
@@ -409,7 +409,8 @@ describe('HUECOS: copias del núcleo de chat-novuchat, comparadas con su origen'
         + "const rrMedios = rrMediosDelTurno({ tipo: tipo, mediaId: mediaId, mimeType: mimeType, esComprobante: esComprobante, comprobanteSimulado: comprobanteSimulado, extranjero: extranjero, ficha: rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from)), ahoraMs: ahoraTurno, base: cnPrimero('Config base') || {} });\n"],
       ['const msg = Array.isArray(carga.messages) ? carga.messages[0] : undefined;\n', 'const msg = Array.isArray(carga.messages) ? carga.messages[0] : undefined;\n'+"// El instante en que el CLIENTE escribió (Meta manda `timestamp` en segundos): de ahí parte la hora límite del aviso. Solo vale si es un número finito, no posterior al reloj del proceso y\n// de las últimas 24 h; si no, `mensajeMs` es el reloj del proceso. `ahoraMs` (el reloj del proceso) sigue siendo el de las ventanas y las fichas.\nconst ahoraTurno = Number(carga.ahoraMs) || Date.now();\nconst tsMeta = msg && /^\\d{1,12}$/.test(String(msg.timestamp)) ? Number(msg.timestamp) * 1000 : NaN;\nconst mensajeMs = Number.isFinite(tsMeta) && tsMeta <= ahoraTurno && ahoraTurno - tsMeta <= 24 * 60 * 60 * 1000 ? tsMeta : ahoraTurno;\n"],
       ['  ahoraMs: Number(carga.ahoraMs) || Date.now(),\n', '  ahoraMs: ahoraTurno,\n  mensajeMs: mensajeMs,\n'],
-      ['  evento: evento,\n', '  categoria: categoria,\n  esComprobante: esComprobante && !extranjero && !docIlegible,\n  comprobanteSimulado: comprobanteSimulado && !extranjero,\n  mimeType: mimeType,\n  extranjero: extranjero,\n  verImagen: rrMedios.verImagen,\n  imagenTope: rrMedios.imagenTope,\n  visionApagada: rrMedios.visionApagada,\n  oirAudio: rrMedios.oirAudio,\n  audioTope: rrMedios.audioTope,\n  audioApagado: rrMedios.audioApagado,\n'],
+      ['return [{ json: {\n  from: from,', '// TOPE GLOBAL de llamadas a Gemini por hora (audio y visión; ni el modelo conversacional ni el cotejo del comprobante entran): lleno, el audio o la foto no se descargan ni se mandan a Gemini.\nconst rrBaseG = cnPrimero(\'Config base\') || {};\nconst geminiTope = (rrMedios.oirAudio || rrMedios.verImagen) && rrHoraN(cnObjetoGlobal(\'rrTopes\', false).mapa.gemini, ahoraTurno) >= rrTopeHora(rrBaseG.topeGeminiHora, RR_GEMINI_HORA, RR_GEMINI_HORA_MAX);\n\nreturn [{ json: {\n  from: from,'],
+      ['  evento: evento,\n', '  categoria: categoria,\n  esComprobante: esComprobante && !extranjero && !docIlegible,\n  comprobanteSimulado: comprobanteSimulado && !extranjero,\n  mimeType: mimeType,\n  extranjero: extranjero,\n  verImagen: rrMedios.verImagen && !geminiTope,\n  imagenTope: rrMedios.imagenTope,\n  visionApagada: rrMedios.visionApagada,\n  oirAudio: rrMedios.oirAudio && !geminiTope,\n  geminiTope: geminiTope,\n  audioTope: rrMedios.audioTope,\n  audioApagado: rrMedios.audioApagado,\n'],
     ]);
     expect(propio('interpretar-entrada.js')).toBe(esperado);
   });
@@ -569,7 +570,9 @@ describe('saneo del repo público: lo armado no lleva identificadores', () => {
 // ------------------------------------------------------------------------------------------------------------------------------------
 describe('NÚCLEO INCLUIDO: «Preparar transcripción» es el archivo común de core, byte a byte, con dos nombres de nodo traducidos', () => {
   const codigo = (f: Flujo, n: string): string => String(nodo(f, n).parameters['jsCode']);
-  const NUCLEO = leer(NUCLEO_TRANSCRIPCION).trimEnd();
+  const CORE = leer(NUCLEO_TRANSCRIPCION).trimEnd();
+  // El núcleo tal cual tras aplicar SOLO la traducción declarada (dos nombres de nodo, textual).
+  const NUCLEO = traducirNucleo(CORE);
   const CODIGO = codigo(PRODUCCION, 'Preparar transcripción');
   const correrPrep = (transcripcion: string, tam = 100_000): J => {
     const salida = ejecutar(CODIGO, [{ content: { parts: [{ text: transcripcion }] } }], { 'Interpretar entrada': { from: '59100000011', tipo: 'audio' }, 'Obtener URL del medio': { file_size: tam } });
@@ -577,8 +580,12 @@ describe('NÚCLEO INCLUIDO: «Preparar transcripción» es el archivo común de 
     return salida[0]!;
   };
 
-  it('el código armado CONTIENE el archivo del core, sin cambiar un byte, y la traducción tiene exactamente esos dos nombres', () => {
+  it('el código armado CONTIENE el archivo del core tal cual tras aplicar SOLO la traducción textual declarada de dos nombres de nodo (y ningún nombre que no exista en el flujo)', () => {
     expect(CODIGO).toContain(NUCLEO);
+    // La traducción es lo único que cambia: deshacerla devuelve el core exacto, y el flujo no conserva ningún nombre del core ni redefine `$`.
+    expect(NUCLEO.split("$('Interpretar entrada')").join("$('Normalizar entrada')").split("$('Obtener URL del medio')").join("$('Obtener URL del medio (general)')")).toBe(CORE);
+    for (const viejo of Object.keys(NOMBRES_DEL_NUCLEO)) expect(CODIGO, viejo).not.toContain(`$('${viejo}')`);
+    expect(CODIGO).not.toMatch(/const \$ =|rrN8n/);
     expect(codigo(PRUEBA, 'Preparar transcripción')).toContain(NUCLEO);
     expect(Object.keys(NOMBRES_DEL_NUCLEO)).toEqual(['Normalizar entrada', 'Obtener URL del medio (general)']);
     expect(NOMBRES_DEL_NUCLEO).toEqual({ 'Normalizar entrada': 'Interpretar entrada', 'Obtener URL del medio (general)': 'Obtener URL del medio' });
@@ -586,7 +593,7 @@ describe('NÚCLEO INCLUIDO: «Preparar transcripción» es el archivo común de 
   });
 
   it('CONTRATO con el core: las cadenas que el adaptador entiende siguen literalmente en él (si el core cambia, esta prueba falla y el flujo se rearma)', () => {
-    for (const c of ["'(audio transcripto) '", 'nota de voz de más de cinco minutos', 'la nota de voz seguía', "$('Normalizar entrada')", "$('Obtener URL del medio (general)')", 'return out;']) expect(NUCLEO, c).toContain(c);
+    for (const c of ["'(audio transcripto) '", 'nota de voz de más de cinco minutos', 'la nota de voz seguía', "$('Normalizar entrada')", "$('Obtener URL del medio (general)')", 'return out;']) expect(CORE, c).toContain(c);
   });
 
   it('la ejecución: una transcripción es «ok»; vacía es «no_entendido»; más de 720 kB es «largo»; 5.000 caracteres se recortan y lo dicen', () => {
@@ -630,7 +637,7 @@ describe('NÚCLEO INCLUIDO: «Preparar transcripción» es el archivo común de 
   it('NEGANDO (guardias): un núcleo alterado, un Gemini sin `alwaysOutputData` o conectado a otro nodo dan hallazgo', () => {
     const alterado = copia(PRODUCCION);
     nodo(alterado, 'Preparar transcripción').parameters['jsCode'] = String(nodo(alterado, 'Preparar transcripción').parameters['jsCode']).replace('const SEGUNDOS_MAX = 300;', 'const SEGUNDOS_MAX = 3000;');
-    expect(guardias('produccion', alterado).join('|')).toMatch(/no incluye TAL CUAL el núcleo común/);
+    expect(guardias('produccion', alterado).join('|')).toMatch(/no incluye el núcleo común/);
     const sinSalida = copia(PRODUCCION);
     delete (nodo(sinSalida, 'Transcribir audio') as J)['alwaysOutputData'];
     expect(guardias('produccion', sinSalida).join('|')).toMatch(/«Transcribir audio» tiene que llevar onError/);

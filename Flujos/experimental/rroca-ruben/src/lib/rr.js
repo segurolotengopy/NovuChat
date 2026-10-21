@@ -19,6 +19,12 @@ const RR_NIEGA_IA = /\bno (?:soy|es|eres|estas hablando con|hablas con)\b[^.!?]{
 // Lo mínimo si, por un cambio mal hecho, el saludo cayera en NIEGA_IA: nunca sale un texto que niegue ser una IA.
 const RR_SALUDO_MINIMO = 'Hola, soy el asistente virtual de Rubén.';
 
+const RR_TOPE_EXTRANJEROS = 500;   // números de otro país recordados a lo más (solo { número: hora }, aparte de las fichas)
+const RR_VENTANA_HORA_MS = 60 * 60 * 1000;
+const RR_EXTRANJEROS_HORA = 30;    // respuestas a números de otro país por hora, en TODO el flujo (por omisión)
+const RR_EXTRANJEROS_HORA_MAX = 200;
+const RR_GEMINI_HORA = 120;        // llamadas de audio y visión (no el modelo conversacional ni el cotejo del comprobante) por hora, en TODO el flujo (por omisión)
+const RR_GEMINI_HORA_MAX = 600;
 const RR_TOPE_FICHAS = 300;   // fichas guardadas a lo más (n8n graba TODAS en cada ejecución)
 const RR_TOPE_IDS = 5;        // ids de Meta que se recuerdan por ficha (entregas repetidas)
 const RR_OLVIDO_MS = 48 * 60 * 60 * 1000;
@@ -281,6 +287,47 @@ function rrBarrer(mapa, ahoraMs) {
     for (const k of claves.slice(0, claves.length - RR_TOPE_FICHAS)) delete mapa[k];
   }
   return mapa;
+}
+
+// NÚMEROS DE OTRO PAÍS: NO tienen ficha. Solo { número: hora de la última respuesta } en un mapa aparte (`rrExtranjeros`), con su propio tope: un barrido de números extranjeros jamás desplaza la ficha de un cliente real.
+function rrBarrerExtranjeros(mapa, ahoraMs) {
+  if (!mapa || typeof mapa !== 'object') return mapa;
+  for (const k of Object.keys(mapa)) {
+    const u = mapa[k];
+    if (!(Number.isFinite(u) && u > 0) || ahoraMs - u > RR_OLVIDO_MS) delete mapa[k];
+  }
+  const claves = Object.keys(mapa);
+  if (claves.length > RR_TOPE_EXTRANJEROS) {
+    claves.sort((a, b) => mapa[a] - mapa[b]);
+    for (const k of claves.slice(0, claves.length - RR_TOPE_EXTRANJEROS)) delete mapa[k];
+  }
+  return mapa;
+}
+// Los números de otro país (`staticData.global.rrExtranjeros`: { número: hora }) y los contadores globales por hora (`staticData.global.rrTopes`: { extranjeros, gemini }). Mismas reglas que las fichas: solo lee si `escribir` no es true.
+function cnObjetoGlobal(clave, escribir) {
+  let sd = null;
+  try { sd = $getWorkflowStaticData('global'); } catch (e) { sd = null; }
+  if (!sd) return { sd: null, mapa: {} };
+  const valido = sd[clave] && typeof sd[clave] === 'object' && !Array.isArray(sd[clave]);
+  if (!valido) {
+    if (escribir !== true) return { sd: sd, mapa: {} };
+    sd[clave] = {};
+  }
+  return { sd: sd, mapa: sd[clave] };
+}
+// Contadores GLOBALES por hora (ventana móvil desde el primer conteo): { n, desdeMs }. Lo que no cumple, vuelve a cero.
+function rrHoraN(c, ahoraMs) {
+  const ok = c && typeof c === 'object' && !Array.isArray(c) && Number.isInteger(c.n) && c.n >= 0 && c.n <= 100000 && Number.isFinite(c.desdeMs) && c.desdeMs > 0;
+  return ok && Number.isFinite(ahoraMs) && ahoraMs >= c.desdeMs && ahoraMs - c.desdeMs < RR_VENTANA_HORA_MS ? c.n : 0;
+}
+function rrHoraContar(c, ahoraMs) {
+  const n = rrHoraN(c, ahoraMs);
+  return n > 0 ? { n: Math.min(n + 1, 100000), desdeMs: c.desdeMs } : { n: 1, desdeMs: ahoraMs };
+}
+// El tope por hora configurado en «Config base»: entero de 0 a `max` (un valor mayor se recorta al máximo duro); lo que no es un número, el valor por omisión. 0 corta todo.
+function rrTopeHora(v, defecto, max) {
+  const t = (typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) ? Number(v) : NaN;
+  return Number.isInteger(t) && t >= 0 ? Math.min(t, max) : defecto;
 }
 
 // MEMORIA POR TELÉFONO (fila 5 del guion). Solo { r: 'u'|'a', t } con texto; lo demás se descarta. 'u' lo escribe «Armar mensajes», 'a' «Resumen del turno» (solo lo que Meta aceptó).
@@ -874,9 +921,20 @@ function rrExtraRedaccion(texto, norm) {
   // PAGOS EN SUS PROPIAS PALABRAS (remediación del 20/10/2026 contra `admin/pruebas/fixtures/redaccion-pago-banco.json`): lo que el filtro común deja pasar y en este flujo el modelo NO puede decir. El comprobante no es una
   // acreditación bancaria: ni «el dinero llegó / está en la cuenta / liquidado» (ES, EN, PT), ni «ya te lo envié», ni las frases cortas de «ya está / llegó todo bien / todo listo» que el cliente leería como pago o entrega.
   if (/\b(dinero|plata|fondos|saldo|deposito|transferencia|money|funds|deposit|transfer|payment|dinheiro)\b[^.?!]{0,25}\b(llego|llegaron|entro|ingreso|ingresaron|arrived|landed|cleared|received|chegou|entrou)\b|\ben (nuestra|la|mi|su) cuenta\b|\b(liquidad|saldad)[oa]s?\b/.test(norm)) return 'afirma_pago_en_cuenta';
-  if (/\bya (te|se|les|le) (lo |la |los |las )?(envi\w*|mand\w*|entreg\w*)\b/.test(norm)) return 'afirma_entrega';
+  // «Ya te lo envié», «ya te envié lo que compraste / la información / el material / los enlaces» afirman una entrega. Por ORACIÓN, solo pasa si el ÚNICO objeto es el catálogo, los precios, las opciones o la lista
+  // («ya te envié el catálogo»); cualquier otro objeto, un pronombre solo, nada, o algo más en la misma oración («…el catálogo, ya pueden descargar») se bloquea. Ante la duda, se bloquea (prohibición 3).
+  const reEntrega = /\bya (te|se|les|le) (lo |la |los |las )?(envi\w*|mand\w*|entreg\w*|pas\w+|compart\w+|hice llegar|dej\w+|remit\w+|despach\w+)\b(.*)$/;
+  for (const oEnt of String(texto).split(/(?<=[.!?…])\s+|\n+/)) {
+    const e = reEntrega.exec(rrNorm(oEnt));
+    if (e && (e[2] || !/^(?:el |la |los |las )?(?:catalogo|precios|opciones|lista)(?: de (?:precios|productos|opciones))?$/.test(e[4].trim()))) return 'afirma_entrega';
+  }
+  // Cierres de pago con otras palabras: «ya recibí todo», «todo listo con tu pago», «los datos coinciden, todo listo».
+  if (/\bya recib\w* todo\b|\btodo listo con (?:tu|el) pago\b|\bcoinciden\b[^.?!]{0,40}\btodo (?:listo|bien|en orden)\b/.test(norm)) return 'afirma_hecho_corto';
   for (const oracion of String(texto).split(/(?<=[.!?…])\s+|\n+/)) {
     const n = rrNorm(oracion);
+    // Frases LEGÍTIMAS (ancladas a la venta, no al pago ni a la entrega): «todo listo para pagar», «todo bien, ¿cuál eliges?», «todo en orden con el pack». Las seis frases del banco ('Llegó todo bien', 'Ya llegó',
+    // 'Ya está', 'Ya está todo', 'Todo listo, nos vemos', 'Ya quedó todo') NO caben en ninguna: siguen bloqueadas.
+    if (/^todo (?:listo|bien|en orden) para (?:pagar|comprar|elegir|empezar|avanzar|continuar|decidir)\b/.test(n) || /^todo (?:listo|bien|en orden) con (?:el|la|los|las|tu|tus|su|sus) (?:pack|libro|bonos?|closer|videos?|curso|precios?|opciones|productos?)\b/.test(n) || /^\s*todo\s+(?:listo|bien|en orden)\s*,\s*¿[^?]*\?\s*$/i.test(oracion)) continue;
     if (n !== '' && n.split(' ').length <= 6 && /^(ya )?(llego|esta|quedo)( todo)?( bien| listo)?$|^(ya )?(llego|quedo) todo\b|^todo (listo|bien|en orden)\b|^ya esta todo\b/.test(n)) return 'afirma_hecho_corto';
   }
   // Afirmaciones comerciales que el flujo no puede cumplir (descuentos, regalos, garantías, devoluciones, plazos): el modelo no las inventa; caen al texto fijo.
@@ -950,6 +1008,8 @@ function rrAudioDelTurno(o) {
   const fin = (estado, texto, recortado) => ({ estado: estado, texto: texto || '', recortado: recortado === true });
   if (t.audioApagado === true) return fin('apagado');
   if (t.audioTope === true) return fin('tope');
+  // El tope GLOBAL por hora de llamadas a Gemini (audio y visión): se llena antes de bajar nada.
+  if (t.geminiTope === true) return fin('saturado');
   if (x.prep && typeof x.prep === 'object') {
     const estado = ['ok', 'largo', 'no_entendido'].indexOf(x.prep.audioEstado) >= 0 ? x.prep.audioEstado : 'no_entendido';
     const texto = typeof x.prep.audioTexto === 'string' ? x.prep.audioTexto : '';

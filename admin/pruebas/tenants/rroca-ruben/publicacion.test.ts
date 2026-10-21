@@ -15,7 +15,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { Flujo } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, ARCHIVO_DE_DATOS, CLAVES_DE_PLANTILLA, MEDIOS_PARA_ABRIR, cargarDatos, guardiaDePublicacion, modoDePublicacion } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
+import { AQUI, ARCHIVO_DE_DATOS, CLAVES_DE_PLANTILLA, MEDIOS_PARA_ABRIR, cargarDatos, guardiaDePublicacion, modoDeApertura, modoDePublicacion } from '../../../../Flujos/experimental/rroca-ruben/construir.mjs';
 
 const RROCA: string = AQUI;
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -632,5 +632,24 @@ describe('guardia de apertura (20/10/2026): abrir al PÚBLICO exige audio, image
       expect(() => cargarDatos(ruta), campo).toThrow(new RegExp(`configBase\\.${campo}: forma no válida`));
     }
     rmSync(dirname(ruta), { recursive: true, force: true });
+  });
+});
+
+describe('CIERRE · la lista de prueba de la guardia de apertura exige al menos un teléfono de 6 o más dígitos', () => {
+  it('«1», «,», «   », «12345» y «1,2,3» NO son una lista de prueba: abren al público; un teléfono construido en la prueba, o el marcador, sí lo es', () => {
+    for (const malo of ['1', ',', '   ', '12345', '1,2,3', ', ,', 'a1b2c3', '']) expect(modoDeApertura({ telefonosDePrueba: malo }), JSON.stringify(malo)).toBe('publico');
+    const tel = ['5', '9', '1', '7', '0', '1', '2', '3', '4', '5'].join('');
+    expect(modoDeApertura({ telefonosDePrueba: tel })).toBe('prueba');
+    expect(modoDeApertura({ telefonosDePrueba: '1,' + tel })).toBe('prueba');
+    expect(modoDeApertura({ telefonosDePrueba: 'REEMPLAZAR_TELEFONOS_DE_PRUEBA' })).toBe('prueba');
+    expect(modoDeApertura({ telefonosDePrueba: tel, modoApertura: 'publico' })).toBe('publico');
+    expect(modoDeApertura({})).toBe('publico');
+  });
+  it('un flujo con telefonosDePrueba «1» y sin los tres medios no se puede publicar', () => {
+    const datos = copia(DATOS_VERSIONADOS) as { configBase: Record<string, unknown> };
+    datos.configBase['telefonosDePrueba'] = '1';
+    datos.configBase['mediosHabilitados'] = 'imagen_comprobante,pdf_comprobante';
+    const h = guardiaDePublicacion({ flujo: copia(PRODUCCION), datos }) as string[];
+    expect(h.some((x) => /abrir al PÚBLICO exige los tres medios/.test(x))).toBe(true);
   });
 });

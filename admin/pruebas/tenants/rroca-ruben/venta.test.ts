@@ -96,6 +96,8 @@ interface Opciones {
   topeAudios?: string | number;
   topeImagenes?: string | number;
   guardar?: J;
+  /** Valores extra de «Config base» (p. ej. los topes por hora). */
+  base?: J;
   envio?: 'acepta' | 'error';
   /** Minutos desde el último mensaje de Rubén al bot (la ventana de servicio de Meta). Por omisión 5 (ventana ABIERTA: el aviso va como texto libre). `null` = Rubén nunca escribió. */
   rubenEscribioHaceMin?: number | null;
@@ -184,6 +186,7 @@ function crear(o: Opciones = {}) {
     configBase: {
       phoneNumberIdEsperado: PID, numeroRecepcion: REC, telefonosDePrueba: ANA, ...(o.cobroSimuladoActivo !== undefined ? { cobroSimuladoActivo: o.cobroSimuladoActivo } : {}),
       ...(o.topeAudios !== undefined ? { topeAudiosDia: o.topeAudios } : {}), ...(o.topeImagenes !== undefined ? { topeImagenesDia: o.topeImagenes } : {}),
+      ...(o.base ?? {}),
       ...(o.plantillas === 'aprobadas' ? PLANTILLAS_APROBADAS : {}),
       ...(o.plantillas === 'pendientes' ? { avisoComprobanteEstado: 'PENDING', avisoConsultaEstado: 'PENDING' } : {}),
       ...(o.plantillas === 'sin-nombre' ? { ...PLANTILLAS_APROBADAS, avisoComprobantePlantilla: '', avisoConsultaPlantilla: '' } : {}),
@@ -3967,8 +3970,9 @@ describe('MEDIOS · NÚMEROS DE OTRO PAÍS: una respuesta fija por número y por
     expect(tieneBotonRuben(m)).toBe(true);
     for (const n of [...MEDIOS_DE_RED, 'Conversar con el modelo', 'Enviar aviso']) expect(t.ejecutados.has(n), n).toBe(false);
     expect(eventosQr(w)).toHaveLength(0);
-    expect(fichaDeMedios(w, EXTRANJERO)['historial']).toEqual([]);
-    expect(fichaDeMedios(w, EXTRANJERO)['saludado']).toBe(false);
+    // Sin FICHA: solo { número: hora } en el mapa aparte.
+    expect((w.mundo.sd['rroca'] ?? {})[EXTRANJERO]).toBeUndefined();
+    expect(Object.keys(w.mundo.sd['rrExtranjeros'] ?? {})).toEqual([EXTRANJERO]);
   });
 
   it('los medios de un número extranjero (audio, imagen, PDF) no se descargan ni se transcriben: reciben el mismo texto fijo', () => {
@@ -4147,5 +4151,186 @@ describe('MEDIOS · el vigilante de UX (invariante 6) detecta lo que niega, con 
     expect(violacionesDeMedio({ type: 'image' }, [m(LEIDO)], 'comprobante')).toEqual([]);
     expect(violacionesDeMedio({ type: 'text' }, [], 'modelo')).toEqual([]);
     expect(violacionesDeMedio({ type: 'voice' }, [m('Hola')], 'audio')).toEqual([]);
+  });
+});
+
+
+// =====================================================================================================================================
+// PR DE CIERRE DE SEGURIDAD (20/10/2026): números extranjeros sin ficha y con tope global, sin reporte a la ingesta, aviso enmascarado, tope global de Gemini y afinado del filtro de hechos cortos.
+// =====================================================================================================================================
+describe('CIERRE · números de otro país: sin ficha, mapa aparte con su tope, tope global por hora y sin reporte a la ingesta', () => {
+  const ext = (i: number): string => '54' + String(100000000 + i).padStart(9, '0');
+  const libs = ['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA, 'src/lib', a), 'utf8')).join('\n');
+  // El código evaluado es el de los archivos del propio repositorio (src/lib), no una entrada externa: solo prueba.
+  // nosemgrep: devsecops.js-eval-prohibido
+  const L = new Function(libs + '\nreturn { rrBarrerExtranjeros, rrHoraN, rrHoraContar, rrTopeHora };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const sdMapa = (w: Mundial, clave: string): Record<string, unknown> => ((w.mundo.sd as J)[clave] ?? {}) as Record<string, unknown>;
+
+  it('más de 300 números extranjeros NO desplazan la ficha de un cliente boliviano (memoria, QR abierto, contadores intactos); el mapa aparte nunca pasa de su tope', () => {
+    const w = crear({ base: { topeExtranjerosHora: 200 } });
+    pedirQr(w, 'pack');
+    const antes = JSON.stringify(sdMapa(w, 'rroca')[ANA]);
+    expect(antes).toContain('qrHastaMs');
+    for (let i = 0; i < 330; i += 1) hablar(w, ext(i), mTexto('hola'), { avanzarMin: i > 0 && i % 150 === 0 ? 61 : 0 });
+    expect(JSON.stringify(sdMapa(w, 'rroca')[ANA])).toBe(antes);
+    expect(Object.keys(sdMapa(w, 'rroca')).filter((k) => k.startsWith('54'))).toEqual([]);
+    expect(Object.keys(sdMapa(w, 'rrExtranjeros')).length).toBeGreaterThan(300);
+    // El cliente boliviano sigue con su QR abierto.
+    expect(unico(hablar(w, ANA, mTexto('hola'))).cuerpo).toMatch(/QR|pedido/i);
+  });
+
+  it('rrBarrerExtranjeros: pasa de 500 -> quedan los 500 más recientes; fuera los de más de 48 h y los valores raros', () => {
+    const ahora = 10 * 24 * 3600_000;
+    const mapa: Record<string, unknown> = {};
+    for (let i = 0; i < 650; i += 1) mapa['n' + i] = ahora - 1000 - i;
+    mapa['viejo'] = ahora - 49 * 3600_000; mapa['raro'] = 'x'; mapa['neg'] = -5; mapa['cero'] = 0;
+    L.rrBarrerExtranjeros(mapa, ahora);
+    const claves = Object.keys(mapa);
+    expect(claves).toHaveLength(500);
+    expect(claves).toContain('n0'); expect(claves).not.toContain('n649');
+    for (const k of ['viejo', 'raro', 'neg', 'cero']) expect(claves, k).not.toContain(k);
+  });
+
+  it('el máximo GLOBAL por hora corta (30 por omisión): del 31.º en adelante, silencio sin costo; a la hora siguiente vuelve; el que quedó mudo recibe su respuesta entonces', () => {
+    const w = crear();
+    const respondidos: string[] = [];
+    for (let i = 0; i < 40; i += 1) { const t = hablar(w, ext(i), mTexto('hola'), { avanzarMin: 0 }); if (t.mensajes.length) respondidos.push(ext(i)); }
+    expect(respondidos).toHaveLength(30);
+    expect(respondidos).toEqual(Array.from({ length: 30 }, (_, i) => ext(i)));
+    expect(Object.keys(sdMapa(w, 'rrExtranjeros'))).toHaveLength(30);
+    // Los mudos no gastaron ni un envío ni un mensaje.
+    const mudo = hablar(w, ext(45), mTexto('hola'), { avanzarMin: 0 });
+    expect(mudo.mensajes).toHaveLength(0);
+    expect(mudo.ejecutados.has('Enviar a WhatsApp')).toBe(false);
+    // Un cliente boliviano no se ve afectado por el tope.
+    expect(unico(hablar(w, ANA, mTexto('hola'), { avanzarMin: 0 })).cuerpo).toMatch(/Qué gusto saludarte/);
+    // A la hora siguiente se reinicia.
+    expect(hablar(w, ext(45), mTexto('hola'), { avanzarMin: 61 }).mensajes).toHaveLength(1);
+    expect(hablar(w, ext(46), mTexto('hola'), { avanzarMin: 0 }).mensajes).toHaveLength(1);
+  });
+
+  it('el máximo es configurable en «Config base» hasta un máximo duro: 2 corta al tercero; 0 calla a todos; 5000 se recorta a 200; un valor que no es número vuelve a 30', () => {
+    const w = crear({ base: { topeExtranjerosHora: 2 } });
+    const n = [0, 1, 2].map((i) => hablar(w, ext(i), mTexto('hola'), { avanzarMin: 0 }).mensajes.length);
+    expect(n).toEqual([1, 1, 0]);
+    const w0 = crear({ base: { topeExtranjerosHora: 0 } });
+    expect(hablar(w0, ext(0), mTexto('hola'), { avanzarMin: 0 }).mensajes).toHaveLength(0);
+    expect(L.rrTopeHora('5000', 30, 200)).toBe(200);
+    expect(L.rrTopeHora(undefined, 30, 200)).toBe(30);
+    for (const malo of ['x', '-1', '1.5', '', null, true, {}]) expect(L.rrTopeHora(malo, 30, 200), JSON.stringify(malo)).toBe(30);
+  });
+
+  it('aislamiento: cada número tiene su propia hora; el de uno no silencia ni repite al otro; lo que sigue siendo UNA respuesta con botón por número y por día', () => {
+    const w = crear();
+    expect(hablar(w, ext(1), mTexto('hola')).mensajes).toHaveLength(1);
+    expect(hablar(w, ext(1), mTexto('otra vez'), { avanzarMin: 10 }).mensajes).toHaveLength(0);
+    const t2 = hablar(w, ext(2), mTexto('hola'));
+    expect(tieneBotonRuben(unico(t2))).toBe(true);
+    expect(Object.keys(sdMapa(w, 'rrExtranjeros')).sort()).toEqual([ext(1), ext(2)].sort());
+  });
+
+  it('un extranjero NO genera ninguna llamada a la ingesta (ni entrante ni saliente) pero recibe su texto fijo con el botón; un boliviano sigue reportando entrante y saliente', () => {
+    const w = crear();
+    const t = hablar(w, ext(1), mTexto('hola'));
+    expect(tieneBotonRuben(unico(t))).toBe(true);
+    expect(w.mundo.llamadas.ingesta).toHaveLength(0);
+    expect(t.ejecutados.has('Reportar mensaje (entrante)')).toBe(false);
+    expect(t.ejecutados.has('Reportar mensaje (saliente)')).toBe(false);
+    // Con medios y el repetido, tampoco.
+    hablar(w, ext(2), mAudio()); hablar(w, ext(1), mTexto('hola otra vez'));
+    expect(w.mundo.llamadas.ingesta).toHaveLength(0);
+    const b = hablar(w, ANA, mTexto('hola'));
+    expect(b.ejecutados.has('Reportar mensaje (entrante)')).toBe(true);
+    expect(b.ejecutados.has('Reportar mensaje (saliente)')).toBe(true);
+    expect(w.mundo.llamadas.ingesta.map((c) => c['direccion']).sort()).toEqual(['entrante', 'saliente']);
+    for (const c of w.mundo.llamadas.ingesta) expect(c['telefono']).toBe(ANA);
+  });
+});
+
+describe('CIERRE · el aviso a Rubén por un audio no lleva teléfonos, cuentas ni correos de la transcripción', () => {
+  it('un audio que dice un teléfono de 8 dígitos, una cuenta de 10 y un correo: el aviso (derivación) sale enmascarado', () => {
+    const tel = [7, 0, 1, 2, 3, 4, 5, 6].join('');
+    const cuenta = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0].join('');
+    const correo = ['alguien', 'ejemplo.test'].join('@');
+    const w = crear({ transcripcion: `Necesito una factura, mi teléfono es ${tel}, mi cuenta es ${cuenta} y mi correo es ${correo}` });
+    const t = hablar(w, ANA, mAudio());
+    expect(t.avisos.length).toBeGreaterThan(0);
+    const aviso = avisosDe(t).join('\n');
+    expect(aviso).toMatch(/factura/i);
+    expect(aviso).not.toContain(tel);
+    expect(aviso).not.toContain(cuenta);
+    expect(aviso).not.toContain(correo);
+    expect(aviso).toMatch(/\[número\]/);
+  });
+});
+
+describe('CIERRE · tope GLOBAL por hora de llamadas a Gemini (audio y visión), sin tocar el modelo de conversación ni el cotejo del comprobante', () => {
+  const T_IMAGEN_NO_VISTA = 'Recibí tu imagen, pero no pude verla bien. ¿Me cuentas por escrito qué buscas?';
+  const gastados = (w: Mundial): unknown => ((w.mundo.sd as J)['rrTopes'] ?? {}).gemini;
+
+  it('lleno el tope (2 en la prueba): el audio y la foto reciben el texto fijo con el botón de Rubén, sin descargar ni llamar a Gemini; se reinicia a la hora siguiente', () => {
+    const w = crear({ transcripcion: TEXTO_AUDIO, vision: { tipo: 'otra', descripcion: 'Una vitrina' }, base: { topeGeminiHora: 2 } });
+    expect(hablar(w, ANA, mAudio(), { avanzarMin: 0 }).ejecutados.has('Transcribir audio')).toBe(true);
+    expect(hablar(w, BETO, mImagen(), { avanzarMin: 0 }).ejecutados.has('Ver imagen')).toBe(true);
+    expect((gastados(w) as J)['n']).toBe(2);
+    const a = hablar(w, ANA, mAudio(), { avanzarMin: 0 });
+    expect(plano(unico(a).cuerpo)).toBe(T_AUDIO_NO_ABIERTO);
+    expect(tieneBotonRuben(unico(a))).toBe(true);
+    const i = hablar(w, BETO, mImagen(), { avanzarMin: 0 });
+    expect(plano(unico(i).cuerpo)).toBe(T_IMAGEN_NO_VISTA);
+    expect(tieneBotonRuben(unico(i))).toBe(true);
+    for (const t of [a, i]) for (const n of ['Obtener URL del medio', 'Descargar medio', 'Transcribir audio', 'Ver imagen']) expect(t.ejecutados.has(n), n).toBe(false);
+    expect((gastados(w) as J)['n']).toBe(2);
+    // A la hora siguiente vuelve.
+    const de_nuevo = hablar(w, ANA, mAudio(), { avanzarMin: 61 });
+    expect(de_nuevo.ejecutados.has('Transcribir audio')).toBe(true);
+    expect((gastados(w) as J)['n']).toBe(1);
+  });
+
+  it('con el tope agotado el COBRO y la conversación siguen: el comprobante se lee y se coteja, y el modelo de texto responde', () => {
+    const w = crear({ transcripcion: TEXTO_AUDIO, base: { topeGeminiHora: 0 } });
+    expect(plano(unico(hablar(w, BETO, mAudio(), { avanzarMin: 0 })).cuerpo)).toBe(T_AUDIO_NO_ABIERTO);
+    pedirQr(w, 'pack');
+    const t = hablar(w, ANA, mImagen());
+    expect(t.ejecutados.has('Leer comprobante (imagen)')).toBe(true);
+    expect(t.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    expect(unico(t).cuerpo).toBe(IGUAL_QUE_ANTES);
+    const c = hablar(w, BETO, mTexto('Cuéntame cómo funciona el curso de videos'));
+    expect(c.ejecutados.has('Conversar con el modelo')).toBe(true);
+  });
+
+  it('el tope por hora: 120 por omisión y 600 como máximo duro; lo que no es número vuelve al valor por omisión', () => {
+    const L = new Function(readFileSync(join(CARPETA, 'src/lib/rr.js'), 'utf8') + '\nreturn { rrTopeHora, RR_GEMINI_HORA, RR_GEMINI_HORA_MAX };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call -- nosemgrep: devsecops.js-eval-prohibido
+    expect(L.RR_GEMINI_HORA).toBe(120);
+    expect(L.rrTopeHora(undefined, L.RR_GEMINI_HORA, L.RR_GEMINI_HORA_MAX)).toBe(120);
+    expect(L.rrTopeHora('99999', L.RR_GEMINI_HORA, L.RR_GEMINI_HORA_MAX)).toBe(600);
+    expect(L.rrTopeHora('abc', L.RR_GEMINI_HORA, L.RR_GEMINI_HORA_MAX)).toBe(120);
+  });
+});
+
+describe('CIERRE · «afirma_hecho_corto» y «afirma_entrega» ancladas: lo legítimo pasa y las frases de pago/entrega siguen bloqueadas', () => {
+  const libs = ['filtro', 'cobro.js', 'avisos.js', 'rr.js'].map((a) => (a === 'filtro' ? readFileSync(join(CARPETA, '../comun-sin-agente/src/filtro-redaccion.js'), 'utf8') : readFileSync(join(CARPETA, 'src/lib', a), 'utf8'))).join('\n');
+  // nosemgrep: devsecops.js-eval-prohibido
+  const L = new Function(libs + '\nreturn { rrSeguro, rrExtraRedaccion, cmRevisarRedaccion, RR_SALUDO_MINIMO };')() as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const bloqueo = (texto: string, cliente = ''): string => {
+    const rev = L.cmRevisarRedaccion(texto, { maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: 'Rubén Roca', textoDelCliente: cliente, extra: [L.rrExtraRedaccion] });
+    if (rev.motivo) return rev.motivo;
+    return L.rrSeguro(rev.texto) === L.RR_SALUDO_MINIMO ? 'rrSeguro' : '';
+  };
+  it('lo legítimo pasa (y no cae al saludo mínimo)', () => {
+    for (const ok of ['Todo listo para pagar.', 'Todo bien, ¿cuál eliges?', 'Todo en orden con el pack.', 'Ya te envié el catálogo.']) expect(bloqueo(ok), ok).toBe('');
+  });
+  it('las seis frases del banco siguen bloqueadas, también cuando el cliente habló de un pago o un comprobante', () => {
+    for (const t of ['Llegó todo bien', 'Ya llegó', 'Ya está', 'Ya está todo', 'Todo listo, nos vemos', 'Ya quedó todo']) {
+      for (const cliente of ['', 'ya pagué, te mando el comprobante', 'hice la transferencia']) expect(bloqueo(t, cliente), `${t} / ${cliente}`).not.toBe('');
+    }
+  });
+  it('las entregas afirmadas siguen bloqueadas: «ya te lo envié», el material, los enlaces, el comprobante, el pago', () => {
+    for (const t of ['Ya te lo envié.', 'Ya se lo mandamos.', 'Ya te envié el material.', 'Ya te mandé los enlaces.', 'Ya te envié el libro y los bonos.', 'Ya te envié.', 'Ya les entregamos todo.', 'Ya te envié el pago.', 'Ya te mandé eso.',
+      'Ya te envié lo que compraste.', 'Ya te mandé lo comprado.', 'Ya te envié lo que pediste.', 'Ya te envié lo acordado.', 'Ya te mandé lo solicitado.', 'Ya te envié la información.', 'Ya te mandé la guía.', 'Ya te envié las instrucciones.',
+      'Ya les envié el catálogo, ya pueden descargar.', 'Ya te pasé el material.', 'Ya te compartí los enlaces.', 'Ya te hice llegar el libro.', 'Ya te dejé el acceso.', 'Ya te remití el comprobante.', 'Ya te despaché el pedido.', 'Ya te lo pasé.',
+      'Ya recibí todo.', 'Todo listo con tu pago.', 'Todo listo con el pago.', 'Los datos coinciden, todo listo.']) expect(bloqueo(t), t).not.toBe('');
+    for (const cliente of ['ya pagué, mi comprobante', 'hice la transferencia']) for (const t of ['Los datos coinciden, todo listo.', 'Ya recibí todo.', 'Ya te envié lo que compraste.']) expect(bloqueo(t, cliente), t).not.toBe('');
+    for (const ok of ['Ya te pasé el catálogo.', 'Todo listo para pagar.', 'Ya te envié el catálogo.', 'Ya te compartí las opciones.']) expect(bloqueo(ok), ok).toBe('');
   });
 });

@@ -158,12 +158,13 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     // El documento y el archivo no aceptado salen con el botón de Rubén; la imagen no mirada, sin él.
     if (plan.variante === 'documento') m = conRuben(RR_TEXTO_DOCUMENTO);
     else if (plan.variante === 'archivo_no_aceptado') m = conRuben(RR_TEXTO_ARCHIVO_NO_ACEPTADO);
-    else m = texto(plan.variante === 'tope' ? RR_TEXTO_IMAGEN_TOPE : (plan.variante === 'no_vista' ? RR_TEXTO_IMAGEN_NO_VISTA : RR_TEXTO_IMAGEN));
+    else m = plan.variante === 'saturado' ? conRuben(RR_TEXTO_IMAGEN_NO_VISTA) : texto(plan.variante === 'tope' ? RR_TEXTO_IMAGEN_TOPE : (plan.variante === 'no_vista' ? RR_TEXTO_IMAGEN_NO_VISTA : RR_TEXTO_IMAGEN));
   } else if (tipoDePlan === 'imagen_comprobante') {
     // Una foto que parece un comprobante SIN pedido abierto: no se coteja ni se avisa; el cliente puede escribirle a Rubén.
     m = conRuben(RR_TEXTO_IMAGEN_COMPROBANTE);
   } else if (tipoDePlan === 'audio') {
-    m = texto(plan.variante === 'largo' ? RR_TEXTO_AUDIO_LARGO : plan.variante === 'no_entendido' ? RR_TEXTO_AUDIO_NO_ENTENDIDO : plan.variante === 'no_abierto' ? RR_TEXTO_AUDIO_NO_ABIERTO : plan.variante === 'tope' ? RR_TEXTO_AUDIO_TOPE : RR_TEXTO_AUDIO);
+    // `saturado`: el tope global por hora de llamadas a Gemini está lleno; el texto fijo de «no pude abrirlo» con el botón de Rubén, sin llamar a nadie.
+    m = plan.variante === 'saturado' ? conRuben(RR_TEXTO_AUDIO_NO_ABIERTO) : texto(plan.variante === 'largo' ? RR_TEXTO_AUDIO_LARGO : plan.variante === 'no_entendido' ? RR_TEXTO_AUDIO_NO_ENTENDIDO : plan.variante === 'no_abierto' ? RR_TEXTO_AUDIO_NO_ABIERTO : plan.variante === 'tope' ? RR_TEXTO_AUDIO_TOPE : RR_TEXTO_AUDIO);
   } else if (tipoDePlan === 'audio_pago') {
     m = conRuben(RR_TEXTO_AUDIO_PAGO);
   } else if (tipoDePlan === 'extranjero') {
@@ -180,22 +181,30 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
 }
 
 // La ficha: un solo lugar, al final del turno. Hasta en un turno sin mensaje (bloqueado) se recuerda el id de Meta (una entrega repetida no se cuenta dos veces).
-if (claveOk) {
+if (claveOk && t.extranjero === true) {
+  // UN NÚMERO DE OTRO PAÍS NO TIENE FICHA: solo { número: hora } en `rrExtranjeros` (tope y barrido propios) y el contador GLOBAL de respuestas por hora. Así un barrido de números nunca desplaza la ficha de un cliente real.
+  if (m) {
+    const rrEx = cnObjetoGlobal('rrExtranjeros', true);
+    const rrTp = cnObjetoGlobal('rrTopes', true);
+    if (rrEx.sd) { rrEx.mapa[from] = ahora; rrBarrerExtranjeros(rrEx.mapa, ahora); }
+    if (rrTp.sd) rrTp.mapa.extranjeros = rrHoraContar(rrTp.mapa.extranjeros, ahora);
+  }
+} else if (claveOk) {
   const fichas = cnMapaDeFichas(true);
   const ficha = rrFichaVigente(cnFichaDe(fichas.mapa, from));
   // MEMORIA POR TELÉFONO (clave `messages[0].from`): vacía si pasaron más de 48 h. Aquí entra lo que dijo el cliente; lo del asistente lo agrega «Resumen del turno» SOLO si Meta lo aceptó.
   const histPrevio = rrHistorialVigente(ficha, ahora);
-  // Un número de otro país no deja memoria (el modelo nunca lo ve). La entrada de un audio transcrito, de una imagen o de un documento la arma «Decidir turno» (`entradaHistorial`, ya enmascarada).
-  const esExtranjero = t.extranjero === true;
-  ficha.historial = puerta.ruta === 'sigue' && !esExtranjero ? rrAgregarHistorial(histPrevio, 'u', typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '' ? decision.entradaHistorial : rrEntradaCliente(t)) : histPrevio;
+  // La entrada de un audio transcrito, de una imagen o de un documento la arma «Decidir turno» (`entradaHistorial`, ya enmascarada).
+  ficha.historial = puerta.ruta === 'sigue' ? rrAgregarHistorial(histPrevio, 'u', typeof decision.entradaHistorial === 'string' && decision.entradaHistorial.trim() !== '' ? decision.entradaHistorial : rrEntradaCliente(t)) : histPrevio;
   rrRecordarId(ficha, t.mensajeId);
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
-  if (m && !esExtranjero) ficha.saludado = true;
+  if (m) ficha.saludado = true;
   // Los topes diarios de medios cuentan cada llamada a Gemini que corrió, aunque haya fallado (un cliente no gasta sin límite con audios ilegibles).
   if (decision.oyoAudio === true) ficha.audios = rrContarMedio(ficha.audios, ahora);
   if (decision.vioImagen === true) ficha.imagenes = rrContarMedio(ficha.imagenes, ahora);
-  if (esExtranjero && m) ficha.extranjeroMs = ahora;
+  // El contador GLOBAL por hora de llamadas a Gemini (audio y visión) cuenta lo mismo.
+  if (decision.oyoAudio === true || decision.vioImagen === true) { const rrTg = cnObjetoGlobal('rrTopes', true); if (rrTg.sd) rrTg.mapa.gemini = rrHoraContar(rrTg.mapa.gemini, ahora); }
   // El límite de 30 minutos por motivo: se fija solo si el aviso SALIÓ (no si se repitió ni si no se pudo enviar).
   if (avisoPlaneado && !avisoRepetido && avisoSalio && typeof av.clave === 'string' && RR_CLAVES_AVISO.indexOf(av.clave) >= 0) ficha.avisosConsulta[av.clave] = ahora;
   if (usadoNuevo && ficha.usados.indexOf(usadoNuevo) < 0) ficha.usados = ficha.usados.concat([usadoNuevo]).slice(-10);
@@ -227,8 +236,8 @@ m.payload.to = numero;
 const salida = {
   para: numero, destino: m.para, payload: m.payload, texto: m.texto, respaldo: m.respaldo,
   tipoReporte: m.tipoReporte, evento: m.evento || '', esInteractivo: m.tipoReporte === 'interactive', esAviso: false, marcaAvisado: false, empresaAviso: '',
-  // Solo lo que sale al cliente se reporta; en modo prueba, nada.
-  reportar: !prueba,
+  // Solo lo que sale al cliente se reporta; en modo prueba, nada. Un número de otro país no se reporta a la ingesta (el conteo es del servidor y no existe un campo para excluirlo).
+  reportar: !prueba && t.extranjero !== true,
   phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion || 'v26.0', from: from, sinMensajes: false,
   plan: resumen.plan, resumen: resumen,
 };
