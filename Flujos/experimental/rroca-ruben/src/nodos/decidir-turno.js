@@ -1,17 +1,20 @@
 // DECIDIR TURNO: el CÓDIGO decide qué pasa en este turno; el modelo solo conversa. Devuelve un `plan` (nada de texto libre del modelo sale de aquí):
 //
 //   nada           la puerta cerró el turno (suspendido, uso extendido, pausa por persona): no se hace nada más;
-//   saludo         el saludo fijo y CORTO con dos botones («Ver precios» y «Más información»; nunca «Hablar con Rubén») (hola, más información, precio, «cuánto cuesta» como PRIMER mensaje —sin precio—; o el prellenado 5, con su pregunta, sin presentación si ya fue saludado);
+//   saludo         el saludo fijo y CORTO con UN botón («Más información»; sin «Ver precios» desde el 21/10/2026; nunca «Hablar con Rubén») (hola, más información, precio, «cuánto cuesta» como PRIMER mensaje —sin precio—; o el prellenado 5, con su pregunta, sin presentación si ya fue saludado);
 //   complemento    prellenado 3 o 4: el precio del complemento, el ahorro del Pack calculado por el código y DOS botones;
 //   info           «Más información», «bonos», «capítulos», «qué incluye»: datos fijos del guion, POR CÓDIGO (sin modelo), con el menú de productos;
 //   identidad      «¿eres un bot / una persona / Rubén?»: frase fija por código (prohibición 4), sin modelo;
 //   menu2          «Ver complementos»;
 //   precio         «¿cuánto cuesta…?» YA SALUDADO: el precio exacto del catálogo, por código y sin modelo, con el menú de productos;
+//   catalogo       «dame tu catálogo», «qué vendes», «qué productos tienes», «lista», «opciones»…: los productos con precio leídos del catálogo de la consola, por código; con un QR abierto también (`qrAbierto`, sin abrir otro QR);
+//   imagenes       «¿tienes imágenes / fotos / capturas?»: respuesta fija (no se envían imágenes del libro; solo existe el QR);
 //   precios        el botón «Ver precios» del saludo (o un botón desconocido ya saludado): el menú de productos con sus precios; sin opciones que mostrar, `derivar` con motivo `sin_opciones`;
 //   qr             el QR con el monto del CATÁLOGO (prellenados 1 y 2, o un botón de producto);
-//   qr_pendiente   ya hay un QR abierto: un solo QR a la vez, un pedido = un producto;
+//   qr_pendiente   ya hay un QR abierto Y el cliente habla de pagar o pide un producto: el recordatorio (un solo QR a la vez). Si ya fue lo último que se le dijo, se escala a Rubén (`derivar`, `qr_insistente`) en vez de repetirlo;
+//                  cualquier otra pregunta con un QR abierto se responde (info, bonos, capítulos, precio, catálogo, identidad, derivación, o el modelo) SIN abrir otro QR (`qrAbierto: true`);
 //   comprobante    el resultado del cotejo (o el de la prueba simulada) traducido por `cbResultadoVenta`;
-//   derivar        pasa a Rubén (factura, otro medio de pago, garantía, reclamo, una persona; o no hay QR utilizable): aviso + botón;
+//   derivar        pasa a Rubén («cancela mi pedido» / «no quiero comprar» con un QR abierto: `cancelacion`, y libera la guarda LOCAL del QR; el flujo no puede cerrar la solicitud del servidor; factura, otro medio de pago, garantía, reclamo, una persona; o no hay QR utilizable): aviso + botón;
 //   ingresos       «¿me garantiza ganar dinero?»: frase fija;
 //   modelo         una conversación libre: llama al modelo y le pone el menú;
 //   audio          una nota de voz que no se pudo usar (`variante`: largo, no_entendido, no_abierto, tope, apagado): texto fijo; una que SÍ se transcribió sigue la cadena del TEXTO (con `origen: 'audio'` si llega al modelo);
@@ -56,6 +59,10 @@ const hayQrAbierto = cobro.pendiente === true || ficha.qrHastaMs > ahora;
 const producto = ficha.producto || '';
 // El aviso de consulta a Rubén lleva el MOTIVO exacto (`clave` + `motivo`). El límite (a lo más UN aviso cada 30 minutos por teléfono Y por motivo) lo aplica «Armar avisos», que ve la ficha.
 const avisoDeConsulta = (clave, motivo) => ({ tipo: 'consulta', clave: clave, motivo: motivo, mensaje: t.tipo === 'interactive' ? '' : (deAudio ? '(audio) ' + rrEnmascarar(textoTurno) : textoTurno).slice(0, 200) });
+// EL RECORDATORIO DEL QR ABIERTO (solo si el cliente habla de pagar o pide un producto). Nunca el mismo recordatorio dos veces seguidas: si ya fue lo último que se le dijo (`ficha.ultimaFirma`), se escala a Rubén.
+const recordatorio = (boton) => (ficha.ultimaFirma === 'qr_pendiente'
+  ? { tipo: 'derivar', motivo: 'qr_insistente', clave: 'qr_insistente', aviso: avisoDeConsulta('qr_insistente', 'insiste con un QR abierto: ya se le recordó el pago'), cat: cat, boton: boton || '' }
+  : { tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: boton || '' });
 // Sin opciones de compra que mostrar (catálogo vacío o agotado, o el cliente ya pulsó todo): nunca «¿cuál prefieres?» sin opciones; se deriva a Rubén (aviso + botón).
 const sinOpciones = (boton) => ({ tipo: 'derivar', motivo: 'sin_opciones', aviso: avisoDeConsulta('qr_no_disponible', 'sin opciones de compra disponibles'), cat: cat, boton: boton });
 
@@ -82,19 +89,23 @@ if (t.esComprobante === true || t.comprobanteSimulado === true) {
   // el servidor no cambió nada (ni intento ni revisión) y NO hay aviso a Rubén. El lector es una llamada que ya existía (no hay una más); la foto sí cuenta para el tope diario de fotos. Con un QR abierto, el recordatorio del QR (como
   // todo texto); sin él, se responde como a una imagen vista (anuncio → conectar con el libro; otra → caso 3). Un PDF recibe el texto fijo de los documentos.
   const delLector = cnNodo('Interpretar lectura') ? cnPrimero('Interpretar lectura') : null;
-  if (delLector && delLector.noEsComprobante === true) {
+  // Lo que NO está registrado no se avisa: se responde como a una imagen vista (o el texto fijo de un documento), sin aviso.
+  const comoImagenVista = () => {
     medioExtra.vioImagen = t.tipo !== 'document';
-    const lecL = delLector.lec && typeof delLector.lec === 'object' ? delLector.lec : { tipo: '', titular: '', descripcion: '', anuncio: null };
+    const lecL = delLector && delLector.lec && typeof delLector.lec === 'object' ? delLector.lec : { tipo: '', titular: '', descripcion: '', anuncio: null };
     if (t.tipo === 'document') return salir({ tipo: 'imagen_otra', variante: hayQrAbierto ? 'archivo_no_aceptado' : 'documento', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'documento', pieImagen) });
-    if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
+    if (hayQrAbierto) return salir(recordatorio(''));
     const topeFotos = rrTopeMedio(base.topeImagenesDia, RR_TOPE_IMAGENES_DIA, 20);
     if (topeFotos === 0) return salir({ tipo: 'imagen_otra', variante: '', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
     if (rrConteoVigente(ficha.imagenes, ahora) >= topeFotos) return salir({ tipo: 'imagen_otra', variante: 'tope', cat: cat }, { entradaHistorial: rrHistorialImagen(null, 'no_vista', pieImagen) });
     return planDeImagenVista(lecL);
-  }
-  // El cotejo corrió solo si hubo medio utilizable; si no (tamaño, descarga, servidor caído), `cbResultadoVenta` lo deja en «sin cotejar» con aviso y botón: nunca «cuadra».
+  };
+  if (delLector && delLector.noEsComprobante === true) return comoImagenVista();  // El cotejo corrió solo si hubo medio utilizable; si no (tamaño, descarga, servidor caído), `cbResultadoVenta` lo deja en «sin cotejar» con aviso y botón: nunca «cuadra».
   const r = cbResultadoVenta(cnNodo('Cotejar en el servidor') ? cnPrimero('Cotejar en el servidor') : null);
   const guardada = cbRutaGuardada(cnNodo('Guardar comprobante') ? cnPrimero('Guardar comprobante') : null) !== null;
+  // ENTREGA 1 · [C]: NINGÚN aviso «tardío» (ni el texto «ya lo pasé a Rubén») sin un comprobante REGISTRADO: si «Guardar comprobante» no devolvió la ruta del archivo guardado, no hay nada que mostrarle a Rubén
+  // (el 21/10 salió un aviso real por la foto de un anuncio sin que nada se registrara). La respuesta es la de una imagen vista (o la de visión), sin aviso.
+  if (r.resultado === 'sin_cotejo' && r.causa === 'tardio' && !guardada) return comoImagenVista();
   const avisa = r.resultado === 'cuadra' || r.resultado === 'aproximado' || r.resultado === 'sin_cotejo';
   // El `motivo` del servidor (lista cerrada, nunca texto leído del comprobante) deja a Rubén saber QUÉ mirar: «cuadra» usa el aviso de siempre; lo demás lleva el motivo exacto.
   const motivoSrv = cbCuerpoDe(cnNodo('Cotejar en el servidor') ? cnPrimero('Cotejar en el servidor') : null).cuerpo.motivo;
@@ -111,7 +122,7 @@ if (t.categoria === 'medio' && !deAudio) {
   const pie = pieImagen;
   const h = (lec, v) => ({ entradaHistorial: rrHistorialImagen(lec, v, pie) });
   if (t.tipo === 'document') return salir({ tipo: 'imagen_otra', variante: hayQrAbierto ? 'archivo_no_aceptado' : 'documento', cat: cat }, h(null, 'documento'));
-  if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
+  if (hayQrAbierto) return salir(recordatorio(''));
   if (t.geminiTope === true) return salir({ tipo: 'imagen_otra', variante: 'saturado', cat: cat }, h(null, 'no_vista'));
   if (t.visionApagada === true) return salir({ tipo: 'imagen_otra', variante: '', cat: cat }, h(null, 'no_vista'));
   if (t.imagenTope === true) return salir({ tipo: 'imagen_otra', variante: 'tope', cat: cat }, h(null, 'no_vista'));
@@ -122,7 +133,7 @@ if (t.categoria === 'otro') return salir({ tipo: 'otro', cat: cat });
 
 // 3. Elegir un producto: el QR con el monto del catálogo. Devuelve el plan.
 const elegir = (k, boton) => {
-  if (hayQrAbierto) return { tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: boton };
+  if (hayQrAbierto) return recordatorio(boton);
   if (cobro.enRevision === true) return { tipo: 'derivar', motivo: 'en_revision', aviso: null, cat: cat, boton: boton };
   const precio = rrPrecio(cat, k);
   const sinQr = cobro.modo === 'ninguno' ? 'sin_cobro' : (cobro.mediaId === '' ? 'sin_medio' : (precio === null ? 'sin_precio' : ''));
@@ -138,16 +149,16 @@ if (t.tipo === 'interactive') {
   // (Sin `boton` si es el PRIMER mensaje: el cliente aún no ha visto lo que pidió, así que no pasa a `usados`.)
   if (id === RR_BOTON_COMPLEMENTOS && !ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
   if (id === RR_BOTON_COMPLEMENTOS) return salir(rrMenu(2, cat, ficha.usados.concat([id])).length ? { tipo: 'menu2', cat: cat, boton: id } : sinOpciones(id));
-  // «Ver precios»: el menú de productos (con un QR abierto, el recordatorio del QR). Sin productos que mostrar pero con complementos aún comprables, el menú de complementos; sin ninguno, Rubén.
+  // «Ver precios» (un botón de un chat viejo: el saludo ya no lo ofrece): el menú de productos; con un QR abierto, el catálogo con precios SIN abrir otro QR (`qrAbierto`). Sin productos que mostrar pero con complementos aún comprables, el menú de complementos; sin ninguno, Rubén.
   // Si llegara como PRIMER mensaje (un botón de un chat viejo), no se muestran montos: el saludo corto. «Hablar con Rubén»: aviso + botón, como «quiero hablar con Rubén» escrito.
   if (id === RR_BOTON_PRECIOS) {
-    if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: id });
+    if (hayQrAbierto) return salir(Object.keys(cat).length ? { tipo: 'catalogo', cat: cat, qrAbierto: true, boton: id } : sinOpciones(id));
     if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
     return salir(opcionesDe(ficha.usados.concat([id]), id));
   }
   // «Más información»: la explicación del libro y sus bonos, por código. Como PRIMER mensaje (un chat viejo) no se muestran montos: el saludo corto.
   if (id === RR_BOTON_INFO) {
-    if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: id });
+    if (hayQrAbierto) return salir({ tipo: 'info', tema: 'info', cat: cat, boton: id, qrAbierto: true });
     // Sin `boton`: «Más información» NO pasa a `usados` si el cliente aún no la ha visto (el saludo la vuelve a ofrecer).
     if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
     return salir({ tipo: 'info', tema: 'info', cat: cat, boton: id });
@@ -155,7 +166,7 @@ if (t.tipo === 'interactive') {
   if (id === RR_BOTON_HABLAR) return salir({ tipo: 'derivar', motivo: 'hablar_boton', clave: 'hablar_con_ruben', aviso: avisoDeConsulta('hablar_con_ruben', 'quiere hablar con Rubén'), cat: cat, boton: id });
   // Un toque que no es de este flujo (un botón viejo, una lista de otro mensaje): nunca se toma por una conversación libre. Con un QR abierto, el recordatorio del QR (como «Ver precios»); se contesta con el
   // saludo fijo si es la primera vez; si ya fue saludado, NO se repite el saludo: el menú de productos (o el de complementos, o Rubén si no hay opciones).
-  if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat, boton: id });
+  if (hayQrAbierto) return salir(recordatorio(id));
   if (ficha.saludado) return salir(opcionesDe(ficha.usados, ''));
   return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
 }
@@ -167,32 +178,53 @@ if (pre === 'closer' || pre === 'videos') {
   // Sin el precio del complemento o sin botones que ofrecer, «¿con cuál prefieres avanzar?» no tendría opciones: se deriva a Rubén.
   return salir(rrPrecio(cat, pre) === null || !rrMenuDeComplemento(pre, cat, ficha.usados).length ? sinOpciones('') : { tipo: 'complemento', producto: pre, cat: cat, conPresentacion: !ficha.saludado });
 }
-// Con un QR abierto, la consulta tampoco reabre el saludo: recibe el recordatorio del QR (un solo QR a la vez).
-if (pre === 'consulta') return salir(hayQrAbierto ? { tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat } : { tipo: 'saludo', pregunta: 'consulta', cat: cat });
+// La consulta prellenada recibe SOLO su pregunta (ya saludado, sin presentarse otra vez), también con un QR abierto: nunca abre un QR ni recibe el recordatorio.
+if (pre === 'consulta') return salir({ tipo: 'saludo', pregunta: 'consulta', cat: cat });
 const derivacion = rrDerivacion(norm, { comprobante: ficha.comprobanteMs > 0 || cobro.enRevision === true, qrAbierto: hayQrAbierto });
 if (derivacion) return salir({ tipo: 'derivar', motivo: 'consulta', clave: derivacion.clave, aviso: avisoDeConsulta(derivacion.clave, derivacion.motivo), cat: cat });
+// «Cancela mi pedido», «no quiero comprar», «ya no lo quiero» (con un QR abierto o un pedido hecho): pasa a Rubén con aviso y botón y libera la guarda LOCAL del QR. El flujo NO puede cerrar la solicitud de cobro del
+// servidor, así que el texto nunca dice que el pedido quedó cancelado. «Solo quiero saber…» no cancela nada: es un cliente que mira (se le responde el contenido más abajo).
+const cancelacion = rrCancelaPedido(norm);
+if (cancelacion === 'cancela' && (hayQrAbierto || ficha.pedidos > 0)) return salir({ tipo: 'derivar', motivo: 'cancelacion', clave: 'cancelacion', aviso: avisoDeConsulta('cancelacion', 'quiere cancelar su pedido o ya no quiere comprar (el flujo no puede cerrar la solicitud del cobro)'), cat: cat, liberaGuarda: hayQrAbierto });
 // Identidad POR CÓDIGO (prohibición 4): «¿eres un bot?», «¿quién eres?», «¿hablo con Rubén?»… reciben una frase fija que reconoce ser un asistente virtual con IA; el modelo no interviene.
 if (rrPreguntaPorIA(norm)) return salir({ tipo: 'identidad', cat: cat, qrAbierto: hayQrAbierto });
-if (rrPreguntaPorIngresos(norm)) return salir({ tipo: 'ingresos', cat: cat });
-// Con un QR abierto, cualquier texto recibe el recordatorio (un solo QR a la vez); el modelo no interviene.
-if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
-// Una pregunta de precio («cuánto cuesta…», «precio»…): el PRIMER mensaje recibe el saludo corto con «Ver precios» y «Más información», SIN precio (Andres, 20/10/2026); ya saludado, el precio exacto
-// sale POR CÓDIGO desde el catálogo, sin modelo, con el menú de productos. Sin ningún precio en el catálogo no hay nada que decir: se deriva a Rubén.
+if (rrPreguntaPorIngresos(norm)) return salir({ tipo: 'ingresos', cat: cat, qrAbierto: hayQrAbierto });
+// CON UN QR ABIERTO (21/10/2026): el recordatorio SOLO sale si el cliente habla de pagar («ya pagué», «cómo pago», «comprobante», «QR», «monto») o pide un producto (más abajo). Todo lo demás se responde: la identidad
+// y los ingresos ya arriba; aquí las imágenes, el catálogo, el precio y la información, por código; y una pregunta que el código no sabe, el modelo. Nada de esto abre otro QR (`qrAbierto: true`).
+if (hayQrAbierto && rrHablaDePagar(norm)) return salir(recordatorio(''));
+// «¿Tienes imágenes?»: respuesta fija, el flujo no envía imágenes del libro. Como PRIMER mensaje, el saludo corto.
+if (rrPideImagenes(norm)) return salir(!ficha.saludado ? { tipo: 'saludo', pregunta: 'general', cat: cat } : { tipo: 'imagenes', cat: cat, qrAbierto: hayQrAbierto });
+// El catálogo completo con precio, por código (texto y audio transcrito). Como PRIMER mensaje, el saludo corto (ningún primer mensaje lleva montos). Sin ningún precio en el catálogo, Rubén.
+if (rrPideCatalogo(norm)) {
+  if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
+  return salir(Object.keys(cat).length ? { tipo: 'catalogo', cat: cat, qrAbierto: hayQrAbierto } : sinOpciones(''));
+}
+// Una pregunta de precio («cuánto cuesta…», «precio»…): el PRIMER mensaje recibe el saludo corto con «Más información», SIN precio (Andres, 20/10/2026); ya saludado, el precio exacto
+// sale POR CÓDIGO desde el catálogo, sin modelo, con el menú de productos (con un QR abierto, sin botones de producto y sin abrir otro QR). Sin ningún precio en el catálogo no hay nada que decir: se deriva a Rubén.
 const precioPedido = rrPreguntaPorPrecio(norm);
 if (precioPedido) {
   if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
-  return salir(Object.keys(cat).length ? { tipo: 'precio', producto: precioPedido.producto, cat: cat } : sinOpciones(''));
+  return salir(Object.keys(cat).length ? { tipo: 'precio', producto: precioPedido.producto, cat: cat, qrAbierto: hayQrAbierto } : sinOpciones(''));
 }
 // PAGOS POR AUDIO, por código y sin modelo: «ya pagué / transferí / te mando el comprobante» (sin QR abierto, que ya recibió el recordatorio arriba) pasa con Rubén sin aviso; cualquier otra mención de pagar, QR, banco o
 // comprar recibe las opciones (ya saludado) o el saludo corto sin montos (primer mensaje). Antes van la derivación ("pagar con tarjeta"), el precio y los ingresos.
-if (deAudio) {
+if (deAudio && !hayQrAbierto) {
   const pago = rrAudioDePago(norm);
   if (pago === 'hecho') return salir({ tipo: 'audio_pago', cat: cat });
   if (pago === 'compra') return salir(!ficha.saludado ? { tipo: 'saludo', pregunta: 'general', cat: cat } : opcionesDe(ficha.usados, ''));
 }
 // «¿Cuáles son los bonos?», «qué incluye el libro», «capítulos»: los datos fijos del guion, por código y sin modelo; como PRIMER mensaje, el saludo corto (ningún primer mensaje lleva montos).
-const tema = rrTemaDeInfo(norm);
-if (tema) return salir(ficha.saludado ? { tipo: 'info', tema: tema, cat: cat } : { tipo: 'saludo', pregunta: 'general', cat: cat });
+// «No quiero comprar, solo quiero saber más de los capítulos»: un cliente que mira recibe el contenido (capítulos, bonos o la información general), no una cancelación.
+const tema = rrTemaDeInfo(norm) || (cancelacion === 'curioso' ? (/\bcapitulos?\b/.test(norm) ? 'capitulos' : (/\bbonos?\b/.test(norm) ? 'bonos' : 'info')) : '');
+if (tema) return salir(ficha.saludado ? { tipo: 'info', tema: tema, cat: cat, qrAbierto: hayQrAbierto } : { tipo: 'saludo', pregunta: 'general', cat: cat });
+// Con un QR abierto, lo que queda: pedir un producto (recordatorio), una pregunta (el modelo, sin QR) o cualquier otra cosa (recordatorio).
+if (hayQrAbierto) {
+  if (rrPideProducto(norm) || !rrEsPreguntaLibre(textoTurno, norm)) return salir(recordatorio(''));
+  return salir({ tipo: 'modelo', origen: deAudio ? 'audio' : '', cat: cat, qrAbierto: true, textoCliente: (deAudio ? '(audio) ' + rrEnmascarar(textoTurno) : textoTurno).slice(0, 500), textoRevision: textoTurno.slice(0, 500) }, {
+    llamarModelo: true,
+    cuerpoModelo: deAudio ? rrCuerpoModelo(rrEtiquetaAudio(au), rrHistorialVigente(ficha, ahora), { rotulado: true, tope: RR_TOPE_AUDIO_MODELO + 100 }) : rrCuerpoModelo(t.texto, rrHistorialVigente(ficha, ahora)),
+  });
+}
 if (!ficha.saludado && rrEsSoloSaludo(norm)) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
 // «Desde solo 32 Bs» (la captura del anuncio general) sigue el camino fijo, sin modelo: primero el saludo corto; ya saludado, los precios por código.
 const anuncio = rrAnuncioDe(textoTurno);
