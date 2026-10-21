@@ -69,6 +69,8 @@ export const CONFIG = {
   ],
 };
 
+/** Los nodos que los módulos comunes de medios leen por contrato (los exige `--verificar` y `--publicable`). */
+export const NODOS_CONTRATO_MEDIOS = ['Normalizar entrada', 'Config del negocio', 'Obtener URL del medio (general)', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado'];
 const NODO_PRUEBA = 'Entrada de prueba';
 const NODO_RECEPTOR = 'Entrega del receptor';
 const NODOS_DEL_RECEPTOR = [NODO_RECEPTOR, 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'];
@@ -216,7 +218,7 @@ export function guardias(variante, flujo) {
   const repSal = por('Reportar mensaje (saliente)');
   if (repSal && !/no_contactar/.test(String(p(repSal).jsonBody || ''))) h.push('«Reportar mensaje (saliente)» no reporta el evento `no_contactar` (condición dura del contrato del rescate)');
   // Los nodos de medios comunes tienen que estar, con los nombres que esos módulos leen por contrato.
-  for (const n of ['Normalizar entrada', 'Config del negocio', 'Obtener URL del medio (general)', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado']) if (!nombres.has(n)) h.push(`falta el nodo «${n}» (contrato con los módulos comunes de medios)`);
+  for (const n of NODOS_CONTRATO_MEDIOS) if (!nombres.has(n)) h.push(`falta el nodo «${n}» (contrato con los módulos comunes de medios)`);
   // El reporte del entrante corre ANTES que la rama que responde: «Reportar mensaje (entrante)» arriba de la «Puerta del turno» y de toda la rama de medios y de decisión.
   const rep = por('Reportar mensaje (entrante)');
   if (rep) {
@@ -336,6 +338,35 @@ function hallazgosDelNegocio(negocio) {
   return h;
 }
 
+/** Los nodos, las aristas y los módulos comunes de la rama de medios (audio, documento, imagen). Se exigen al PUBLICAR: sin ellos el flujo atendería medios a medias. */
+export const NODOS_DE_MEDIOS = [...NODOS_CONTRATO_MEDIOS, '¿Bajar medio?', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', '¿Es un documento?', 'Transcribir audio', 'Describir documento', 'Describir imagen'];
+export const ARISTAS_DE_MEDIOS = [
+  ['¿Bajar medio?', 'Obtener URL del medio (general)'], ['¿Bajar medio?', 'Decidir turno'], ['Obtener URL del medio (general)', '¿Tamaño aceptable?'],
+  ['¿Tamaño aceptable?', 'Descargar medio'], ['¿Tamaño aceptable?', 'Medio no aceptado'], ['Descargar medio', '¿Es audio?'],
+  ['¿Es audio?', 'Transcribir audio'], ['¿Es audio?', '¿Es un documento?'], ['¿Es un documento?', 'Describir documento'], ['¿Es un documento?', 'Describir imagen'],
+  ['Transcribir audio', 'Preparar transcripción'], ['Preparar transcripción', 'Decidir turno'], ['Describir documento', 'Preparar imagen'], ['Describir imagen', 'Preparar imagen'],
+  ['Preparar imagen', 'Interpretar lectura'], ['Medio no aceptado', 'Decidir turno'],
+];
+const MODULOS_DE_MEDIOS = { 'Preparar transcripción': 'preparar-transcripcion.js', 'Preparar imagen': 'preparar-imagen.js', 'Medio no aceptado': 'medio-no-aceptado.js' };
+export function hallazgosDeMedios(flujo) {
+  const h = [];
+  const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
+  const por = (n) => nodos.find((x) => x.name === n);
+  for (const n of NODOS_DE_MEDIOS) if (!por(n)) h.push(`medios: falta el nodo «${n}»`);
+  const conex = (flujo && flujo.connections) || {};
+  for (const [de, a] of ARISTAS_DE_MEDIOS) {
+    if (por(de) && por(a) && !(conex[de] && (conex[de].main || []).some((s) => (s || []).some((x) => x.node === a)))) h.push(`medios: «${de}» no está conectado a «${a}»`);
+  }
+  for (const [nombre, archivo] of Object.entries(MODULOS_DE_MEDIOS)) {
+    const fuente = readFileSync(join(AQUI, '../../src/core/medios', archivo), 'utf8');
+    if (por(nombre) && !String((por(nombre).parameters || {}).jsCode || '').includes(fuente)) h.push(`medios: el código de «${nombre}» no es el del módulo común ${archivo}`);
+  }
+  for (const n of ['Transcribir audio', 'Describir documento', 'Describir imagen']) {
+    if (por(n) && !(((por(n).credentials || {}).googlePalmApi || {}).name)) h.push(`medios: «${n}» no lleva credencial de Gemini`);
+  }
+  return h;
+}
+
 export function guardiaDePublicacion({ flujo, datos, negocio }) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
@@ -351,6 +382,8 @@ export function guardiaDePublicacion({ flujo, datos, negocio }) {
   h.push(...hallazgosDeConfig(datos && datos.configBase, 'datos'));
   // 4. …y el catálogo y los ids del negocio.
   h.push(...hallazgosDelNegocio(negocio));
+  // 5. …y la rama de medios completa.
+  h.push(...hallazgosDeMedios(flujo));
   return h;
 }
 

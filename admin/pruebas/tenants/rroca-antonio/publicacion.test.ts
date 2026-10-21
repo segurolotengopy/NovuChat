@@ -14,7 +14,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { Flujo } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
-import { AQUI, ARCHIVO_DE_DATOS, ARCHIVO_DE_NEGOCIO, CLAVES_DE_PLANTILLA, IDS_DEL_CATALOGO, cargarDatos, guardiaDePublicacion } from '../../../../Flujos/experimental/rroca-antonio/construir.mjs';
+import { AQUI, ARCHIVO_DE_DATOS, ARCHIVO_DE_NEGOCIO, CLAVES_DE_PLANTILLA, IDS_DEL_CATALOGO, ARISTAS_DE_MEDIOS, NODOS_DE_MEDIOS, cargarDatos, guardiaDePublicacion } from '../../../../Flujos/experimental/rroca-antonio/construir.mjs';
 
 const RA: string = AQUI;
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -327,5 +327,50 @@ describe('publicar-flujo.sh: la guardia y la confirmación del flujo de Antonio'
     const raiz = raizConGuardia(0);
     const o = correrEn(raiz, ['--flujo', REL, '--aplicar', '--confirmo-ruben'], vivoOtro);
     expect(o.stderr).toMatch(/solo se publica con --confirmo-antonio/);
+  });
+});
+
+describe('guardia de publicación: la rama de medios (nodos, aristas, módulos comunes y credenciales)', () => {
+  const dirM = mkdtempSync(join(tmpdir(), 'rroca-ant-med-'));
+  afterAll(() => rmSync(dirM, { recursive: true, force: true }));
+  /** Corre `--publicable` con el flujo dado y datos y negocio listos: solo la rama de medios puede dar hallazgo. */
+  const salida = (f: Flujo) => {
+    const a = join(dirM, 'f.json'); const d = join(dirM, 'd.json'); const n = join(dirM, 'n.json');
+    writeFileSync(a, JSON.stringify(f));
+    writeFileSync(d, JSON.stringify({ ...JSON.parse(leer(ARCHIVO_DE_DATOS)), configBase: datosListos().configBase }));
+    writeFileSync(n, JSON.stringify(negocioListo()));
+    return spawnSync(process.execPath, [join(RA, 'construir.mjs'), '--publicable', '--flujo', a, '--datos', d, '--negocio', n], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+  };
+  it('el flujo completo no da hallazgos de medios', () => {
+    expect((hallazgos(publicable(PRODUCCION)) as string[]).filter((x) => x.startsWith('medios:'))).toEqual([]);
+    expect(salida(publicable(PRODUCCION)).status).toBe(0);
+  });
+  it('NEGANDO: quitar cada nodo de medios da un hallazgo que lo nombra y --publicable sale 1', () => {
+    for (const nombre of NODOS_DE_MEDIOS as string[]) {
+      const f = publicable(PRODUCCION); f.nodes = f.nodes.filter((n) => n.name !== nombre);
+      expect(hallazgos(f).join('|'), nombre).toContain(`medios: falta el nodo «${nombre}»`);
+      const r = salida(f); expect(r.status, nombre).toBe(1); expect(r.stderr).toContain(nombre);
+    }
+  });
+  it('NEGANDO: cortar cada arista da un hallazgo que nombra el nodo y --publicable sale 1', () => {
+    for (const [de, a] of ARISTAS_DE_MEDIOS as Array<[string, string]>) {
+      const f = publicable(PRODUCCION) as unknown as { connections: Record<string, { main: Array<Array<{ node: string }>> }> };
+      f.connections[de]!.main = f.connections[de]!.main.map((s) => s.filter((x) => x.node !== a));
+      expect(hallazgos(f as unknown as Flujo).join('|'), `${de}→${a}`).toContain(`medios: «${de}» no está conectado a «${a}»`);
+      const r = salida(f as unknown as Flujo); expect(r.status, `${de}→${a}`).toBe(1); expect(r.stderr).toContain(de);
+    }
+  });
+  it('NEGANDO: alterar un byte de un módulo común o quitar la credencial de Gemini da hallazgo y --publicable sale 1', () => {
+    for (const nombre of ['Preparar transcripción', 'Preparar imagen', 'Medio no aceptado']) {
+      const f = publicable(PRODUCCION); const n = f.nodes.find((x) => x.name === nombre)!;
+      n.parameters['jsCode'] = String(n.parameters['jsCode']).replace('const', 'cons7');
+      expect(hallazgos(f).join('|'), nombre).toContain(`medios: el código de «${nombre}» no es el del módulo común`);
+      expect(salida(f).status, nombre).toBe(1);
+    }
+    for (const nombre of ['Transcribir audio', 'Describir documento', 'Describir imagen']) {
+      const f = publicable(PRODUCCION); delete (f.nodes.find((x) => x.name === nombre) as unknown as { credentials?: unknown }).credentials;
+      expect(hallazgos(f).join('|'), nombre).toContain(`medios: «${nombre}» no lleva credencial de Gemini`);
+      expect(salida(f).status, nombre).toBe(1);
+    }
   });
 });
