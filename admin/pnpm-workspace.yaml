@@ -61,16 +61,23 @@ overrides:
   # compression — CVE-2026-87776, HIGH (DoS por fuga de memoria). Solo por
   # superstatic <- firebase-tools (servidor local de Hosting del CLI).
   compression: ^1.8.2
-  # @modelcontextprotocol/sdk — CVE-2026-104850, HIGH (07/10/2026): el cliente
-  # OAuth del SDK podía enviar credenciales a un servidor de autorización
-  # elegido por el servidor MCP. Corregido en 1.31.0 («Fixed Version» de
-  # Trivy). Solo lo trae firebase-tools 15 (devDependency: el CLI de despliegue
-  # y emuladores, no código de producción), que declara ^1.24.0: el salto
-  # 1.30.0 -> 1.31.0 es MENOR, dentro de su propio rango y con las mismas
-  # dependencias declaradas, así que se arregla en vez de pedir excepción. Tilde
-  # y no ^: con ^ se resolvería 1.32.1, publicada hace dos días; 1.31.0 ya
-  # cumple la ventana de 7 días que pedirá minimumReleaseAge.
-  '@modelcontextprotocol/sdk': ~1.31.0
+  # @modelcontextprotocol/sdk — CVE-2026-104850 (HIGH, 07/10/2026: el cliente
+  # OAuth podía enviar credenciales a un servidor de autorización elegido por
+  # el servidor MCP) y, desde el 21/10/2026, GHSA-22jm-h49p-29qw (tareas
+  # experimentales no ligadas a su sesión), GHSA-46jr-4wx8-v453 (una petición
+  # HTTP dentro del límite agota la memoria) y un tercer aviso ALTO, todos
+  # corregidos en >=1.32.0 («Patched versions» de pnpm audit). Solo lo trae
+  # firebase-tools 15 (devDependency: CLI de despliegue y emuladores, no código
+  # de producción), que declara ^1.24.0: el salto 1.31 -> 1.32 es MENOR y queda
+  # dentro de su propio rango, así que se arregla en vez de pedir excepción.
+  # Tilde: se queda en la rama 1.32.x, la más baja que cierra los avisos.
+  '@modelcontextprotocol/sdk': ~1.32.0
+  # vite — GHSA-587h-7wmj-h5pm (HIGH, 21/10/2026): la comprobación de existencia
+  # de launch-editor (fs.existsSync) se puede eludir en Windows; corregido en
+  # >=7.3.7. Es herramienta de desarrollo (servidor de vite y vitest), no entra
+  # en el artefacto de producción. El salto 7.3.6 -> 7.3.7 es de PARCHE y queda
+  # dentro del rango ^7.0.0 de la consola; tilde para no salir de 7.3.x.
+  vite: ~7.3.7
 
 packages:
   - web

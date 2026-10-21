@@ -29,6 +29,7 @@
     "avisoComprobanteEstado": "APPROVED",
     "avisoConsultaPlantilla": "aviso_consulta_para_ruben",
     "avisoConsultaEstado": "APPROVED",
-    "avisoPlantillaIdioma": "es"
+    "avisoPlantillaIdioma": "es",
+    "mediosHabilitados": "imagen_comprobante,pdf_comprobante,audio,imagen,documento"
   }
 }

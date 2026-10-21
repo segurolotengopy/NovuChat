@@ -3,8 +3,9 @@
 // Cubre text, interactive (list_reply ANTES que button_reply), button, audio/voice, image, document, location, sticker, contacts y cualquier otro tipo. Nunca se lee `.text.body` sin
 // pasar por aquí. LA CLAVE DE LA CONVERSACIÓN ES EL NÚMERO DE ORIGEN (`messages[0].from`): dos clientes jamás comparten ficha. Si no son solo dígitos (6 a 20), el mensaje se descarta.
 //
-// NADA se descarta antes del modelo salvo: no hay mensaje, el número no es válido, el prefijo de país no está permitido (responder a un número extranjero cuesta su tarifa), Meta
+// NADA se descarta antes del modelo salvo: no hay mensaje, el número no es válido, Meta
 // reenvió un mensaje que ya se procesó (los últimos ids de la ficha y los de la cola), y lo que no es una conversación (reacciones, bienvenida, sistema, efímeros).
+// UN NÚMERO DE OTRO PAÍS (prefijo fuera de `prefijosPermitidos`) YA NO SE DESCARTA EN SILENCIO: sale marcado `extranjero` (sin descargar nada, sin QR, sin aviso) y «Decidir turno» le responde una vez al día.
 // Este nodo SOLO LEE la ficha. Un audio, una imagen o un documento salen con `categoria: medio` y su `mediaId`; todo lo demás conversable, con `categoria: conversacion`; cualquier otro tipo, con `categoria: otro` (el flujo igual contesta cortésmente).
 const carga = cnPrimero('Carga de entrada') || {};
 const cfg = cnCfg();
@@ -19,8 +20,7 @@ if (['reaction', 'request_welcome', 'system', 'ephemeral'].indexOf(String(msg.ty
 
 const from = String(msg.from || '');
 if (!cnClaveValida(from)) return [];
-const prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.trim()).filter(Boolean);
-if (prefijos.length && !prefijos.some((p) => from.startsWith(p))) return [];
+const extranjero = rrEsExtranjero(from, cfg.prefijosPermitidos);
 
 const mensajeId = String(msg.id || '').slice(0, 200);
 if (mensajeId && rrYaVisto(cnFichaDe(cnMapaDeFichas(false).mapa, from), mensajeId)) return [];
@@ -76,6 +76,14 @@ const rrEsVisual = (tipo === 'image' || tipo === 'document');
 const esComprobante = rrEsVisual && mediaId !== '' && rrCobroDelTurno.modo === 'real' && (rrCobroDelTurno.pendiente || rrCobroDelTurno.enRevision || rrCobroDelTurno.vencidoHaceMin !== null);
 const comprobanteSimulado = rrEsVisual && rrCobroDelTurno.modo === 'simulado' && rrCobroDelTurno.pendiente;
 const mimeType = visual && typeof visual.mime_type === 'string' ? visual.mime_type.slice(0, 100) : '';
+// MEDIOS ENTRANTES: un documento solo es comprobante si es un PDF o una imagen (lo demás no lo lee Gemini: un archivo no soportado nunca se baja). ¿Se mira esta foto o se escucha este audio? Lo decide el código ANTES de bajar nada (tipo y formato, sin cobro pendiente ni QR en la guarda para la foto, y el tope diario por teléfono: `rrMediosDelTurno`, rr.js).
+const mimeBase = mimeType.split(';')[0].trim().toLowerCase();
+const docIlegible = tipo === 'document' && mimeBase !== 'application/pdf' && RR_MIME_VISION.indexOf(mimeBase) < 0;
+const rrMedios = rrMediosDelTurno({ tipo: tipo, mediaId: mediaId, mimeType: mimeType, esComprobante: esComprobante, comprobanteSimulado: comprobanteSimulado, extranjero: extranjero, ficha: rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from)), ahoraMs: ahoraTurno, base: cnPrimero('Config base') || {} });
+
+// TOPE GLOBAL de llamadas a Gemini por hora (audio y visión; ni el modelo conversacional ni el cotejo del comprobante entran): lleno, el audio o la foto no se descargan ni se mandan a Gemini.
+const rrBaseG = cnPrimero('Config base') || {};
+const geminiTope = (rrMedios.oirAudio || rrMedios.verImagen) && rrHoraN(cnObjetoGlobal('rrTopes', false).mapa.gemini, ahoraTurno) >= rrTopeHora(rrBaseG.topeGeminiHora, RR_GEMINI_HORA, RR_GEMINI_HORA_MAX);
 
 return [{ json: {
   from: from,
@@ -88,9 +96,17 @@ return [{ json: {
   textoReporte: textoReporte,
   pie: pie,
   categoria: categoria,
-  esComprobante: esComprobante,
-  comprobanteSimulado: comprobanteSimulado,
+  esComprobante: esComprobante && !extranjero && !docIlegible,
+  comprobanteSimulado: comprobanteSimulado && !extranjero,
   mimeType: mimeType,
+  extranjero: extranjero,
+  verImagen: rrMedios.verImagen && !geminiTope,
+  imagenTope: rrMedios.imagenTope,
+  visionApagada: rrMedios.visionApagada,
+  oirAudio: rrMedios.oirAudio && !geminiTope,
+  geminiTope: geminiTope,
+  audioTope: rrMedios.audioTope,
+  audioApagado: rrMedios.audioApagado,
   anuncio: !!ref,
   origen: ref ? 'anuncio' : 'directo',
   esAudio: esAudio,

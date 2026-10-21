@@ -153,3 +153,26 @@ seguridad:
       aprobado_por: Andres Alberdi
       creado: "2026-10-03"
       vence: "2026-12-31"
+  # ---------------------------------------------------------------------------
+  # ACTIVA (21/10/2026): Trivy fs (SCA, bloqueante en HIGH/CRITICAL) tambien
+  # informa braces@3.0.3 por su GHSA (la entrada vecina de arriba cubre a
+  # osv-scanner por su CVE; cada escaner identifica el hallazgo con su propio
+  # id). Sin version corregida publicada, un override no la cierra. Camino unico:
+  # firebase-tools@15.29.0 -> chokidar@3.6.0 -> braces (devDependency de admin/).
+  # Alcance: lockfile de admin/ (raiz, web y functions comparten el hallazgo).
+  # Vencimiento corto (25 dias); al vencer: firebase-tools con chokidar@4 o
+  # braces corregido; no se prorroga en silencio.
+  # ---------------------------------------------------------------------------
+    - id: GHSA-vfj7-8cjw-p6xm
+      herramienta: trivy
+      justificacion: >-
+        braces@3.0.3: DoS por agotamiento de pila con patrones anidados; sin
+        version corregida publicada. Solo entra por firebase-tools@15.29.0 ->
+        chokidar@3.6.0, devDependency de admin/ (herramienta de despliegue en
+        CI); no se empaqueta ni corre en las Functions ni en la consola, y el
+        CLI no expande patrones de una entrada no confiable. Alcance: lockfile
+        de admin/. Condicion de cierre: firebase-tools con chokidar@4 (sin
+        braces) o una version corregida de braces.
+      aprobado_por: Andres Alberdi
+      creado: "2026-10-21"
+      vence: "2026-11-15"

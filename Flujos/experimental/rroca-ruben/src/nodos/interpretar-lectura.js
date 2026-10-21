@@ -14,6 +14,8 @@ for (let i = 0; i < items.length; i++) {
   // Sin el mensaje de origen no hay a quién atribuirle el comprobante: no se coteja nada.
   if (!t || !t.from) continue;
   const lectura = cbLectura(items[i].json);
-  salida.push({ json: { telefono: String(t.from), legible: lectura.legible, leido: lectura.leido, idMeta: String(t.mensajeId || ''), ruta: ruta }, pairedItem: { item: i } });
+  // El lector también clasificó la imagen o el PDF: si dijo «anuncio» u «otra» y no leyó una cuenta, `noEsComprobante` desvía el turno SIN cotejar (`¿Lo leído es comprobante?`). `lec` viaja a «Decidir turno».
+  const clasif = rrClasificaLector(items[i].json, lectura);
+  salida.push({ json: { telefono: String(t.from), legible: lectura.legible, leido: lectura.leido, idMeta: String(t.mensajeId || ''), ruta: ruta, noEsComprobante: clasif.noEsComprobante, lec: clasif.lec }, pairedItem: { item: i } });
 }
 return salida;
