@@ -130,7 +130,7 @@ export function violacionesDeRepeticion(anterior: string, mensajes: UxMsg[], pla
   return v;
 }
 /** Invariante 8. Detector PROPIO de «habla de pagar» (no usa `rrHablaDePagar` del flujo). */
-export const hablaDePagar = (texto: string): boolean => /\b(pague|pagado|pagando|transferi|transferencia|transfiero|deposite|deposito|comprobante|qr|monto|como (te |lo )?(pago|pagar)|donde (pago|pagar)|quiero (el|la|los|las)|dame|comprar|compro)\b/.test(LIB.rrNorm(texto));
+export const hablaDePagar = (texto: string): boolean => /\b(pague|pagado|pagando|transferi|transferencia|transfiero|deposite|deposito|comprobante|voucher|recibo|cancele|cancelado|qr|monto|como (te |lo )?(pago|pagar)|donde (pago|pagar)|quiero (el|la|los|las)|dame|comprar|compro)\b/.test(LIB.rrNorm(texto));
 export function violacionesDeQrAbierto(entrante: J, mensajes: UxMsg[]): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;

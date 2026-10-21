@@ -4566,6 +4566,20 @@ describe('ENTREGA 1 · [B] con un QR abierto, la conversación sigue y el record
     }
   });
 
+  it('NEGADA: en Bolivia «cancelé» es «ya pagué»: «ya cancelé», «cancelé el pack», «ya cancelé el libro, te mando el comprobante» van por el camino de pago y NUNCA reciben «no puedo cancelar un pedido»; sin aviso', () => {
+    for (const q of ['ya cancelé', 'cancelé el pack', 'ya cancelé el libro, te mando el comprobante', 'cancelado', 'te envío mi voucher']) {
+      const { w } = conQrAbierto();
+      const t = hablar(w, ANA, mTexto(q));
+      const m = unico(t);
+      expect(m.cuerpo, q).toMatch(RECORDATORIO);
+      expect(m.cuerpo, q).not.toMatch(/no puedo cancelar/);
+      expect(avisosDe(t), q).toHaveLength(0);
+      expect(eventosQr(w), q).toHaveLength(1);
+    }
+    const { w } = conQrAbierto();
+    expect(avisosDe(hablar(w, ANA, mTexto('anula mi pedido')))).toHaveLength(1);
+  });
+
   it('«no quiero comprar» SIN un QR abierto ni pedido no escala a Rubén (sigue al modelo como siempre)', () => {
     const { w } = conQrAbierto();
     const solo = crear();

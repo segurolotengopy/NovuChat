@@ -585,7 +585,7 @@ function rrPreguntaPorIngresos(n) {
 // -----------------------------------------------------------------------------
 // «Ya pagué», «transferí», «comprobante», «cómo pago», «QR», «monto», «depósito»: el cliente habla de PAGAR. Es lo único (con pedir un producto) que justifica el recordatorio del QR abierto.
 function rrHablaDePagar(n) {
-  return /\b(pague|pagado|pagando|pagamos|transferi|transferido|transferencia|transfiero|transferire|deposite|depositado|deposito|comprobante|qr|monto|ya hice el pago|hice el pago|hice la transferencia|como (te |lo |le )?(pago|pagar|pagas)|donde (pago|pagar|deposito))\b/.test(n);
+  return /\b(pague|pagado|pagando|pagamos|transferi|transferido|transferencia|transfiero|transferire|deposite|depositado|deposito|comprobante|voucher|recibo|mi pago|abono|abone|cancele|cancelado|qr|monto|ya hice el pago|hice el pago|hice la transferencia|como (te |lo |le )?(pago|pagar|pagas)|donde (pago|pagar|deposito))\b/.test(n);
 }
 // Pide un producto («quiero el pack», «dame el libro», «lo compro», «me lo llevo»): con un QR abierto recibe el recordatorio (un solo QR a la vez; un pedido = un producto).
 function rrPideProducto(n) {
@@ -602,6 +602,8 @@ function rrCancelaPedido(n) {
     || /\bno (lo |la |los |las )?(quiero|quisiera|necesito|voy a|pienso|deseo) (ya |mas )?(comprar|pagar|seguir|el pedido|nada|el libro|el pack|el producto|continuar)\b/.test(n)
     || /\bya no (lo |la |los |las )?(quiero|necesito|voy a|me interesa|deseo)\b/.test(n) || /\bno me interesa\b|\bdesisto\b|\bme arrepenti\b/.test(n);
   if (!cancela) return '';
+  // En Bolivia «cancelé», «ya cancelé», «cancelado», «cancelamos» significan «ya pagué»: es intención de pago, nunca una cancelación (salvo «cancelo/cancelé mi pedido» sin «ya» ni palabras de pago).
+  if (/\b(cancele|cancelado|cancelada|cancelamos|cancelo|cancelando)\b/.test(n) && (/\b(ya|pago|transferencia|deposito|compra|qr|monto|libro|pack)\b/.test(n) || !/\bmi pedido\b/.test(n)) && !/\bno (lo |la )?(quiero|voy a)\b/.test(n)) return '';
   return /\b(solo|solamente|nomas|nada mas)\b[^.?!]{0,20}\b(saber|ver|conocer|informacion|info|preguntar|consultar|mirar|curiosear)\b/.test(n) ? 'curioso' : 'cancela';
 }
 // «¿Tienes imágenes?», «¿me mandas una foto del libro?», «¿tienes capturas?»: el flujo NO envía imágenes del libro (solo existe el QR como imagen saliente).
