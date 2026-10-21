@@ -3721,7 +3721,7 @@ describe('MEDIOS · AUDIO: se transcribe, es un DATO rotulado y sigue la cadena 
     unico(hablar(w, ANA, mAudio()));
     const u = historialDe(w).filter((x) => x.r === 'u').map((x) => x.t);
     expect(u).toEqual(['[Audio] Mi número es [número] y mi correo [correo], mira [enlace] y pagué [precio]']);
-    expect(JSON.stringify(historialDe(w))).not.toMatch(/70012345|a.b\.com|ejemplo\.com/);
+    expect(JSON.stringify(historialDe(w))).not.toMatch(/70012345|a[@]b\.com|ejemplo\.com/);
     const cuerpos = cuerposDelModelo(w);
     unico(hablar(w, ANA, mTexto('¿y qué incluye el Pack?'), { avanzarMin: 1 }));
     expect(cuerpos[0]).toContain('[Audio] Mi número es [número]');

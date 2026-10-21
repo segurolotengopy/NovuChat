@@ -7,7 +7,7 @@
  * `PROPIO.md`; y que el JSON traiga lo que el saneo del repo público rechaza (rutas de webhook, UUID, tokens, secuencias de 10 o más dígitos sin seis ceros).
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -647,9 +647,10 @@ describe('NÚCLEO INCLUIDO: «Preparar transcripción» es el archivo común de 
     const probar = (campo: string, valor: unknown): string => {
       const d = copia(base);
       d.configBase[campo] = valor;
-      const ruta = join(tmpdir(), `rroca-tope-${campo}-${String(valor)}.json`);
+      const dir = mkdtempSync(join(tmpdir(), 'rroca-'));
+      const ruta = join(dir, 'datos.json');
       writeFileSync(ruta, JSON.stringify(d));
-      try { cargarDatos(ruta); return 'ok'; } catch (e) { return (e as Error).message; } finally { rmSync(ruta, { force: true }); }
+      try { cargarDatos(ruta); return 'ok'; } catch (e) { return (e as Error).message; } finally { rmSync(dir, { recursive: true, force: true }); }
     };
     expect(probar('topeAudiosDia', '31')).toMatch(/topeAudiosDia: forma no válida/);
     expect(probar('topeImagenesDia', '21')).toMatch(/topeImagenesDia: forma no válida/);
