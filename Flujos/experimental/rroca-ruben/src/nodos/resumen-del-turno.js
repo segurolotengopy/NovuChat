@@ -45,6 +45,13 @@ if (cnNodo('Enviar a WhatsApp')) {
     const rrF2 = cnFichaDe(rrFichas2.mapa, String((items[0] || {}).from || ''));
     if (rrF2) rrF2.qrHastaMs = Number(rrLib.qrHastaMs) || 0;
   }
+  // Lo último dicho al teléfono (hash y plan) vuelve a su valor anterior si no salió nada al cliente.
+  const rrHp = (items[0] || {}).hashPrevio;
+  if (rrHp && typeof rrHp === 'object' && !cnTodos('Enviar a WhatsApp').some(rrId) && !cnTodos('Enviar respaldo').some(rrId)) {
+    const rrFichas3 = cnMapaDeFichas(true);
+    const rrF3 = cnFichaDe(rrFichas3.mapa, String((items[0] || {}).from || ''));
+    if (rrF3) { rrF3.ultimoHash = String(rrHp.h || ''); rrF3.ultimaFirma = String(rrHp.f || ''); }
+  }
   const rrEsperados = items.filter((i) => i && i.sinMensajes !== true).length;
   const rrEntregados = cnTodos('Enviar a WhatsApp').filter(rrId).length + cnTodos('Enviar respaldo').filter(rrId).length;
   if (rrEntregados < rrEsperados) {

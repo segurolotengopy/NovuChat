@@ -8,6 +8,11 @@
  *      de la LIBRERÍA (`rrOraciones` de `rr.js`): no puede haber desacuerdo entre quien reparte y quien vigila.
  *   3b. (Silvana, 20/10/2026) LA PRESENTACIÓN SE DICE UNA SOLA VEZ: a lo más una oración de presentación por mensaje y, sumando todos los mensajes de un turno, a lo más una.
  *   5. NINGUNA PREGUNTA POR OPCIONES SIN BOTONES: un texto que pregunta por «las opciones», «¿cuál prefieres?», «¿qué opción…?» o «¿con cuál…?» sale con al menos un botón en ese mismo mensaje (solo se ofrece lo que se cumple).
+ *   7. (21/10/2026) NUNCA LA MISMA RESPUESTA DE TEXTO DOS VECES SEGUIDAS al mismo teléfono. Excepciones DECLARADAS (`TEXTOS_FIJOS_DE_ESPERA`): el resultado de un comprobante (cada comprobante es un hecho distinto), el texto fijo del estado «operador» y el de comercio suspendido
+ *      (los configura el comercio en la consola), y lo que dice qué ES el asistente (regla dura 4: esa respuesta nunca se sustituye). El QR (imagen) no entra: su pie lleva el pedido.
+ *   8. (21/10/2026) CON UN QR ABIERTO, toda pregunta que no habla de pagar recibe una respuesta de contenido: el recordatorio («Ya tienes un QR abierto…») solo sale si el cliente habló de pagar o pidió un producto.
+ *   9. (21/10/2026) NINGÚN TEXTO SALIENTE PROMETE ENVIAR imágenes, fotos, capturas, pantallazos o la portada (solo existe el QR como imagen saliente): una oración que dice «no envío imágenes» no cuenta.
+ *  10. (21/10/2026) NINGÚN AVISO «TARDÍO» sin un comprobante REGISTRADO: «Guardar comprobante» tiene que haber devuelto la ruta del archivo guardado.
  *   6. MEDIOS ENTRANTES (audio, imagen, documento; 20/10/2026): la respuesta a un medio SIEMPRE trae texto (nunca vacía ni solo una marca), es UN solo mensaje, nunca un QR, y jamás dice «acreditado», «verificado»,
  *      «recibimos tu pago» (el único texto con «confirmamos / validado» es el fijo de comprobante leído, que exige un pedido abierto). Un medio sin respuesta solo es válido si el plan fue callar a propósito (pausa por persona,
  *      comercio suspendido, número extranjero ya atendido hoy); lo demás es un cliente que mandó un audio y no recibió nada.
@@ -25,7 +30,7 @@ const CARPETA_LIB = join(dirname(fileURLToPath(import.meta.url)), '../../../../F
 export const LIB = new Function(['cobro.js', 'avisos.js', 'rr.js'].map((a) => readFileSync(join(CARPETA_LIB, a), 'utf8')).join('\n') + '\nreturn { rrOraciones, rrEsPresentacion, rrNorm, rrTienePresentacionIA };')() as { rrOraciones: (b: string) => string[]; rrEsPresentacion: (o: string) => boolean; rrNorm: (t: string) => string; rrTienePresentacionIA: (t: string) => boolean };
 
 export interface UxMsg { tipo: string; cuerpo: string; payload: J }
-interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number }
+interface UxEstado { pulsados: Map<string, Set<string>>; presentaciones: Map<string, number>; turnos: number; ultimoTexto: Map<string, string> }
 export const UX_ESTADO = new WeakMap<Mundo, UxEstado>();
 export const UX_CONTADOR = { turnos: 0, mundos: new Set<Mundo>() };
 export const idsDeBotones = (m: { payload: J }): string[] =>
@@ -112,6 +117,52 @@ export function violacionesDeMedio(entrante: J, mensajes: UxMsg[], plan: string)
   return v;
 }
 
+/** Los planes cuyo texto se repite A PROPÓSITO (declarados): el resultado de un comprobante y el texto fijo que el comercio configura en la consola para el estado «operador» (uso extendido) o la suspensión. */
+export const TEXTOS_FIJOS_DE_ESPERA = ['comprobante', 'uso_extendido', 'suspendido'];
+/** Invariante 7. `anterior` = el último texto (normalizado) que se le envió a ese teléfono, o ''. Función pura, probada también con casos negativos. */
+export function violacionesDeRepeticion(anterior: string, mensajes: UxMsg[], plan: string): string[] {
+  const v: string[] = [];
+  if (TEXTOS_FIJOS_DE_ESPERA.includes(plan)) return v;
+  for (const m of mensajes) {
+    if (m.tipo === 'image' || m.cuerpo.trim() === '' || seDeclaraIA(m.cuerpo)) continue;
+    if (anterior !== '' && LIB.rrNorm(m.cuerpo) === anterior) v.push(`la misma respuesta dos veces seguidas: «${m.cuerpo.slice(0, 40)}…»`);
+  }
+  return v;
+}
+/** Invariante 8. Detector PROPIO de «habla de pagar» (no usa `rrHablaDePagar` del flujo). */
+export const hablaDePagar = (texto: string): boolean => /\b(pague|pagado|pagando|transferi|transferencia|transfiero|deposite|deposito|comprobante|qr|monto|como (te |lo )?(pago|pagar)|donde (pago|pagar)|quiero (el|la|los|las)|dame|comprar|compro)\b/.test(LIB.rrNorm(texto));
+export function violacionesDeQrAbierto(entrante: J, mensajes: UxMsg[]): string[] {
+  const v: string[] = [];
+  const inter = entrante['interactive'] as J | undefined;
+  const id = entrante['type'] === 'interactive' && inter ? String((inter['button_reply'] ?? inter['list_reply'])?.id ?? '') : '';
+  const texto = entrante['type'] === 'text' ? String((entrante['text'] as J | undefined)?.['body'] ?? '') : '';
+  const preguntaDeContenido = (texto.includes('?') && !hablaDePagar(texto)) || id === 'b_info' || id === 'b_precios';
+  if (preguntaDeContenido && mensajes.some((m) => /Ya tienes un QR abierto/.test(m.cuerpo))) v.push('con un QR abierto, una pregunta que no habla de pagar recibió el recordatorio en vez de una respuesta de contenido');
+  return v;
+}
+/** Invariante 9. */
+export function violacionesDePromesaDeImagen(mensajes: UxMsg[]): string[] {
+  const v: string[] = [];
+  const OBJETO = /\b(imagen|imagenes|foto|fotos|fotografia|fotografias|captura|capturas|pantallazo|pantallazos|screenshot|screenshots|portada)\b/;
+  const PROMETE = /\b(te (muestro|envio|mando|comparto|paso|adjunto|enviare|mandare|mostrare)|(puedo|podria|podemos|voy a) (mostrar|enviar|mandar|compartir|pasar|adjuntar)(te)?|aqui (tienes|te dejo)|te dejo|adjunto)\b/;
+  for (const m of mensajes) {
+    if (m.tipo === 'image') continue;
+    for (const o of m.cuerpo.split(/(?<=[.!?…])\s+|\n+/)) {
+      const n = LIB.rrNorm(o);
+      if (/\bno\b/.test(n)) continue; // «no tengo imágenes para mostrarte», «no envío imágenes»
+      if (PROMETE.test(n) && OBJETO.test(n)) v.push(`un texto promete enviar imágenes: «${o.slice(0, 50)}»`);
+    }
+  }
+  return v;
+}
+/** Invariante 10: `guardada` = «Guardar comprobante» devolvió la ruta del archivo; `avisos`/`mensajes` = lo que salió en el turno. */
+export function violacionesDeAvisoTardio(avisos: string[], mensajes: UxMsg[], guardada: boolean): string[] {
+  const v: string[] = [];
+  if (guardada) return v;
+  if (avisos.some((a) => /comprobante tard[ií]o/i.test(a))) v.push('salió un aviso «tardío» a Rubén sin un comprobante guardado');
+  if (mensajes.some((m) => /despu[eé]s de los 15 minutos del QR[^]*(Ya lo pas[eé]|Le avis[eé])/i.test(m.cuerpo))) v.push('el texto «tardío» dice que se pasó a Rubén sin un comprobante guardado');
+  return v;
+}
 export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: UxMsg[], presentaciones?: { n: number }, textoModelo = ''): string[] {
   const v: string[] = [];
   const inter = entrante['interactive'] as J | undefined;
@@ -157,7 +208,7 @@ export function violacionesDeUx(pulsados: Set<string>, entrante: J, mensajes: Ux
 }
 export function vigilarUx(mundo: Mundo): void {
   const original = mundo.turno.bind(mundo);
-  const estado: UxEstado = { pulsados: new Map(), presentaciones: new Map(), turnos: 0 };
+  const estado: UxEstado = { pulsados: new Map(), presentaciones: new Map(), turnos: 0, ultimoTexto: new Map() };
   UX_ESTADO.set(mundo, estado);
   mundo.turno = (entrada: J, opciones?: Parameters<Mundo['turno']>[1]) => {
     const t = original(entrada, opciones);
@@ -171,6 +222,16 @@ export function vigilarUx(mundo: Mundo): void {
     const v = violacionesDeUx(pulsados, msg, salida, pres, textoDelModelo(t.registro));
     // Invariante 6: los medios. Un QR abierto + comprobante es el único caso en que la respuesta a una imagen es el texto de «comprobante leído» (permitido arriba por su frase exacta).
     v.push(...violacionesDeMedio(msg, salida, String((t.resumen ?? {})['plan'] ?? 'nada')));
+    // Invariantes 7 a 10 (21/10/2026). El plan está en `resumen.resumen.plan` del nodo «Resumen del turno».
+    const plan = String(((t.resumen ?? {})['resumen'] as J | undefined)?.['plan'] ?? 'nada');
+    v.push(...violacionesDeRepeticion(estado.ultimoTexto.get(from) ?? '', salida, plan));
+    const ultimo = [...salida].reverse().find((m) => m.tipo !== 'image' && m.cuerpo.trim() !== '');
+    if (salida.some((m) => m.tipo === 'image')) estado.ultimoTexto.set(from, '');
+    else if (ultimo) estado.ultimoTexto.set(from, LIB.rrNorm(ultimo.cuerpo));
+    v.push(...violacionesDeQrAbierto(msg, salida));
+    v.push(...violacionesDePromesaDeImagen(salida));
+    const guardado = t.registro.find((x) => x.nodo === 'Guardar comprobante')?.respuesta as J | undefined;
+    v.push(...violacionesDeAvisoTardio(t.avisos.map((a) => a.cuerpo), salida, typeof guardado?.['body']?.['ruta'] === 'string'));
     estado.presentaciones.set(from, pres.n);
     estado.turnos += 1; UX_CONTADOR.turnos += 1; UX_CONTADOR.mundos.add(mundo);
     expect(v, `invariante de UX violado: ${v.join('; ')}`).toEqual([]);

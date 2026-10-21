@@ -254,7 +254,18 @@ function rrFichaVigente(f) {
     // MEDIOS ENTRANTES: cuántos audios y cuántas imágenes se gastaron en la ventana de 24 h del teléfono (los topes diarios) y cuándo se le respondió por última vez como número extranjero.
     imagenes: rrConteoDeFicha(f && f.imagenes), audios: rrConteoDeFicha(f && f.audios),
     extranjeroMs: f && Number.isFinite(f.extranjeroMs) && f.extranjeroMs > 0 ? f.extranjeroMs : 0,
+    // ANTI-REPETICIÓN (21/10/2026): el hash corto del ÚLTIMO texto que se le envió y el tipo de plan de ese turno: «Armar mensajes» no manda dos veces seguidas el mismo texto y «Decidir turno» escala el
+    // recordatorio del QR si ya fue lo último que se dijo.
+    ultimoHash: f && typeof f.ultimoHash === 'string' && /^[0-9a-f]{8}$/.test(f.ultimoHash) ? f.ultimoHash : '',
+    ultimaFirma: f && typeof f.ultimaFirma === 'string' && /^[a-z_]{1,30}$/.test(f.ultimaFirma) ? f.ultimaFirma : '',
   };
+}
+// Hash corto (djb2 sobre el texto normalizado) para comparar textos enviados; no es criptográfico ni se usa para nada de seguridad.
+function rrHashTexto(t) {
+  const s = rrNorm(t);
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return ('00000000' + h.toString(16)).slice(-8);
 }
 // Cuándo salió el último aviso de consulta a Rubén, POR MOTIVO (clave de `RR_CLAVES_AVISO`): { <clave>: ms }. Solo claves conocidas y números finitos; lo demás se descarta.
 function rrAvisosConsulta(m) {
@@ -394,7 +405,7 @@ const RR_VENTANA_AVISO_CONSULTA_MS = 30 * 60 * 1000;   // a lo más un aviso de 
 // La ventana de servicio de Meta es de 24 h desde el último mensaje de Rubén al número; se deja un margen de media hora: dentro va texto libre, fuera va plantilla.
 const RR_VENTANA_RUBEN_MS = 23.5 * 60 * 60 * 1000;
 // Los motivos de los avisos de consulta (la clave limita el aviso: uno cada 30 minutos por teléfono y clave).
-const RR_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_ruben', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_entrega', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo'];
+const RR_CLAVES_AVISO = ['factura', 'otro_medio_pago', 'garantia', 'reclamo', 'hablar_con_ruben', 'acceso_material', 'descuento', 'qr_no_disponible', 'no_entrega', 'no_supo', 'atencion_humana', 'comprobante_sin_cotejo', 'cancelacion', 'qr_insistente'];
 const RR_MINUTOS_QR = 15;   // el plazo de la regla 2 del cobro: lo manda el servidor; aquí solo es una guarda para no abrir dos QR seguidos
 
 function rrProductoDeBoton(id) {
@@ -570,6 +581,55 @@ function rrPreguntaPorIngresos(n) {
 }
 
 // -----------------------------------------------------------------------------
+// ENTREGA 1 (21/10/2026): lo que se detecta por código para que un QR abierto no tape la conversación. `n` es el texto normalizado (`rrNorm`).
+// -----------------------------------------------------------------------------
+// «Ya pagué», «transferí», «comprobante», «cómo pago», «QR», «monto», «depósito»: el cliente habla de PAGAR. Es lo único (con pedir un producto) que justifica el recordatorio del QR abierto.
+function rrHablaDePagar(n) {
+  return /\b(pague|pagado|pagando|pagamos|transferi|transferido|transferencia|transfiero|transferire|deposite|depositado|deposito|comprobante|qr|monto|ya hice el pago|hice el pago|hice la transferencia|como (te |lo |le )?(pago|pagar|pagas)|donde (pago|pagar|deposito))\b/.test(n);
+}
+// Pide un producto («quiero el pack», «dame el libro», «lo compro», «me lo llevo»): con un QR abierto recibe el recordatorio (un solo QR a la vez; un pedido = un producto).
+function rrPideProducto(n) {
+  if (/\b(saber|conocer|informacion|entender|preguntar|consultar|curiosear)\b/.test(n)) return false;
+  const nombra = /\b(pack|libro|closer|videos?|completo|bonos?)\b/.test(n);
+  const verbo = /\b(quiero|quisiera|dame|damelo|deme|me das|me llevo|llevo|llevar|comprar|compro|comprarlo|adquirir|pedir|pido|ordenar|elijo|prefiero|vamos con)\b/.test(n);
+  return /\b(comprar|compro|comprarlo|me lo llevo|lo llevo)\b/.test(n) || (nombra && verbo);
+}
+// «Cancela mi pedido», «no quiero comprar», «ya no lo quiero»: devuelve 'cancela'; con «solo quiero saber / ver / conocer» el cliente solo está mirando y devuelve 'curioso' (se le responde el contenido); si no, ''.
+// El flujo NO puede cerrar la solicitud de cobro del servidor: un 'cancela' pasa a Rubén (aviso + botón) y el texto no dice jamás que el pedido quedó cancelado.
+function rrCancelaPedido(n) {
+  const palabras = n === '' ? 0 : n.split(' ').length;
+  const cancela = (/\b(cancel\w*|anul\w*)\b/.test(n) && (/\b(pedido|compra|orden|qr|pago)\b/.test(n) || palabras <= 3))
+    || /\bno (lo |la |los |las )?(quiero|quisiera|necesito|voy a|pienso|deseo) (ya |mas )?(comprar|pagar|seguir|el pedido|nada|el libro|el pack|el producto|continuar)\b/.test(n)
+    || /\bya no (lo |la |los |las )?(quiero|necesito|voy a|me interesa|deseo)\b/.test(n) || /\bno me interesa\b|\bdesisto\b|\bme arrepenti\b/.test(n);
+  if (!cancela) return '';
+  return /\b(solo|solamente|nomas|nada mas)\b[^.?!]{0,20}\b(saber|ver|conocer|informacion|info|preguntar|consultar|mirar|curiosear)\b/.test(n) ? 'curioso' : 'cancela';
+}
+// «¿Tienes imágenes?», «¿me mandas una foto del libro?», «¿tienes capturas?»: el flujo NO envía imágenes del libro (solo existe el QR como imagen saliente).
+function rrPideImagenes(n) {
+  const palabras = n === '' ? 0 : n.split(' ').length;
+  if (palabras > 12) return false;
+  const objeto = /\b(imagen|imagenes|foto|fotos|fotografia|fotografias|captura|capturas|pantallazo|pantallazos|screenshot|screenshots|portada)\b/.test(n);
+  const pide = /\b(tienes|tiene|tienen|hay|manda|mandas|mandame|mandarme|envia|envias|enviame|enviarme|pasa|pasas|pasame|pasarme|muestra|muestras|muestrame|mostrarme|compartes|compartirme|puedo ver|quiero ver|dejas ver|puedes ver)\b/.test(n);
+  return objeto && pide;
+}
+// La intención «catálogo»: «dame tu catálogo», «qué vendes», «qué productos tienes», «lista», «opciones», «qué ofreces», «qué tienes», «con qué cuentas». Corta (a lo más 8 palabras).
+function rrPideCatalogo(n) {
+  const palabras = n === '' ? 0 : n.split(' ').length;
+  if (palabras > 8) return false;
+  return /\bcatalogo\b/.test(n)
+    || /\bque (vendes|vende|venden|ofreces|ofrece|ofrecen|manejas|manejan)\b/.test(n)
+    || /\bque (productos|cosas|servicios|opciones|libros|cursos) (tienes|tiene|tienen|hay|vendes|venden|ofreces|ofrecen|manejas|manejan)\b/.test(n)
+    || /\bque (mas )?(tienes|tiene|tienen)$/.test(n)
+    || /\bcon que cuentas\b/.test(n)
+    || /\blista de (productos|precios|opciones)\b/.test(n)
+    || /^((me )?(das|pasas|mandas|muestras|dame|pasame|mandame|muestrame|quiero ver|ver) )?(la |tu |su |el |las |los )?(lista|opciones|productos)$/.test(n);
+}
+// ¿Es una pregunta? (con un QR abierto, una pregunta que el código no sabe responde el modelo; lo que no es pregunta recibe el recordatorio.)
+function rrEsPreguntaLibre(texto, n) {
+  return /\?/.test(rrTexto(texto)) || /^(que|como|cual|cuales|cuanto|cuantos|cuantas|donde|cuando|por que|porque|quien|puedo|puedes|tiene|tienes|hay|es|son|sirve|sirven|se puede|necesito|incluye|trae|viene|a quien|para quien|de que|en que)\b/.test(n);
+}
+
+// -----------------------------------------------------------------------------
 // Los menús de botones (máximo 3, título de hasta 20 caracteres). Un botón que el cliente ya pulsó NO reaparece; un producto sin precio en el catálogo no se ofrece.
 // -----------------------------------------------------------------------------
 function rrBoton(id, titulo) { return { id: id, title: cbLinea(titulo, 20) }; }
@@ -612,12 +672,11 @@ function rrSaludo(cat, pregunta, conPresentacion) {
   if (pregunta) return RR_SALUDO_APERTURA + '\n\n' + pregunta;
   return RR_SALUDO_APERTURA + '\n\nTe cuento: el libro digital «IA para Emprendedores Independientes» (12 capítulos y más de 230 páginas) es un método práctico para que pases de solo "curiosear herramientas" a usar la IA para crear contenido rápido, atraer clientes, vender mejor y ahorrar tiempo, sin saber nada de tecnología.\n\nCuéntame, ¿tienes algún negocio actualmente o estás pensando en emprender?';
 }
-// Los dos botones del saludo, sin los que el cliente ya pulsó. «Ver precios» solo si hay algún producto con precio en el catálogo (solo se ofrece lo que se cumple).
+// El botón del saludo, sin el que el cliente ya pulsó (21/10/2026: el saludo YA NO lleva «Ver precios»; los precios se piden con «catálogo» o «precio», o salen en el menú que sigue a «Más información»).
+// «Más información» siempre se puede ofrecer: es un texto fijo del código.
 function rrMenuSaludo(cat, usados) {
   const u = Array.isArray(usados) ? usados : [];
-  const b = [];
-  if (rrMenu(1, cat, []).length) b.push(rrBoton(RR_BOTON_PRECIOS, 'Ver precios'));
-  b.push(rrBoton(RR_BOTON_INFO, 'Más información'));
+  const b = [rrBoton(RR_BOTON_INFO, 'Más información')];
   return b.filter((x) => u.indexOf(x.id) < 0);
 }
 // El precio por código. Con producto reconocido y con precio en el catálogo, lo dice exacto; si no, lista los que SÍ tienen precio (nunca un precio inventado ni «según tu país»).
@@ -656,6 +715,37 @@ function rrTextoModeloCaido(conOpciones) { return conOpciones === false ? 'Graci
 function rrTextoIngresos(conOpciones) {
   return 'No puedo prometerte ingresos: la IA es una herramienta y el resultado depende de tu ejecución, tu oferta y tu mercado. El libro te da el método práctico, paso a paso.' + (conOpciones === false ? '' : ' ¿Quieres ver las opciones?');
 }
+// ENTREGA 1 (21/10/2026). El catálogo completo con precio, por código, desde el catálogo de la consola (nunca un precio escrito aquí). `conOpciones === false`: sin botones, sin pregunta de cierre.
+function rrTextoCatalogo(cat, conOpciones) {
+  const l = [];
+  if (rrPrecio(cat, 'pack') !== null) l.push('• Pack Completo: ' + rrMontoBs(rrPrecio(cat, 'pack')) + ' (libro, 4 bonos, Closer de Ventas y curso de videos con IA)');
+  if (rrPrecio(cat, 'libro') !== null) l.push('• Libro + Bonos: ' + rrMontoBs(rrPrecio(cat, 'libro')) + ' (el libro y sus 4 bonos)');
+  if (rrPrecio(cat, 'closer') !== null) l.push('• Closer de Ventas: ' + rrMontoBs(rrPrecio(cat, 'closer')));
+  if (rrPrecio(cat, 'videos') !== null) l.push('• Videos con IA: ' + rrMontoBs(rrPrecio(cat, 'videos')));
+  return 'Esto es lo que tengo disponible:\n\n' + l.join('\n') + (conOpciones === false ? '' : '\n\n¿Cuál te interesa?');
+}
+// «¿Tienes imágenes?»: no se envían imágenes del libro por aquí (solo el QR de pago); se ofrece lo que SÍ hay. Nunca promete una imagen (el filtro de `rrExtraRedaccion` lo hace cumplir en el modelo).
+function rrTextoImagenes(qrAbierto) {
+  if (qrAbierto === true) return 'Por aquí no tengo imágenes del libro para mostrarte; lo único que se envía por este chat es el QR de pago, que ya tienes abierto.\n\nSí puedo contarte qué incluye el libro, sus capítulos y sus bonos: escríbeme «capítulos», «bonos» o «qué incluye».';
+  return 'Por aquí no tengo imágenes del libro para mostrarte; lo único que se envía por este chat es el QR de pago cuando eliges un producto.\n\nSí puedo contarte qué incluye el libro, sus capítulos y sus bonos: escríbeme «capítulos», «bonos» o «qué incluye», o toca una de las opciones.';
+}
+// Las alternativas cuando el texto que sigue sería IDÉNTICO al último que se envió al teléfono (nunca el mismo texto dos veces seguidas). Con dos o más alternativas, una siempre difiere del último enviado.
+const RR_ALTERNAS_CONTENIDO = [
+  'Eso ya te lo conté en mi mensaje anterior. Si te quedó alguna duda, cuéntame cuál; y si prefieres hablar con Rubén, escríbele con el botón.',
+  'Prefiero no repetirte lo mismo. Dime con otras palabras qué necesitas saber, o escríbele directo a Rubén con el botón.',
+  'Esa información ya está más arriba en este chat. Si algo no quedó claro, pregúntamelo de otra forma o escríbele a Rubén con el botón.',
+];
+const RR_ALTERNAS_MEDIO = [
+  'Sigo sin poder usar ese archivo por aquí. Cuéntame por escrito qué necesitas, o escríbele a Rubén con el botón.',
+  'Ese archivo tampoco lo pude revisar. Escríbeme lo que necesitas en un mensaje, o escríbele directo a Rubén con el botón.',
+  'Por aquí no puedo trabajar con ese archivo. Dime con palabras qué buscas, o escríbele a Rubén con el botón.',
+];
+// El texto alternativo que no repite el último enviado (`hashUltimo`); `medio` = la respuesta era a un audio, imagen o documento.
+function rrAlternaDeRepetido(medio, hashUltimo) {
+  const lista = medio === true ? RR_ALTERNAS_MEDIO : RR_ALTERNAS_CONTENIDO;
+  return lista.find((x) => rrHashTexto(x) !== hashUltimo) || lista[0];
+}
+
 const RR_TEXTO_MODELO_CAIDO = rrTextoModeloCaido(true);
 const RR_TEXTO_INGRESOS = rrTextoIngresos(true);
 const RR_TEXTO_IMAGEN = 'Recibí tu imagen, pero por aquí solo puedo leer texto y los comprobantes de un pedido abierto. Cuéntame qué buscas y te ayudo.';
@@ -730,6 +820,18 @@ function rrTextoDerivacion(motivo, salio, clave) {
   if (motivo === 'hablar_boton') {
     if (salio === 'repetido') return 'Claro. Rubén ya recibió tu aviso anterior; escríbele directo con el botón.';
     return salio === true ? 'Claro. Le avisé a Rubén; también puedes escribirle directo con el botón.' : 'Claro. No pude avisarle a Rubén; escríbele directo con el botón.';
+  }
+  // ENTREGA 1: «cancela mi pedido» / «no quiero comprar» con un QR abierto. El flujo NO puede cerrar la solicitud de cobro del servidor, así que NUNCA dice que el pedido quedó cancelado: dice que Rubén lo atiende.
+  if (motivo === 'cancelacion') {
+    const c = 'Entiendo. Por aquí no puedo cancelar un pedido: eso lo atiende Rubén directamente.';
+    if (salio === 'repetido') return c + ' Rubén ya recibió tu aviso anterior; si quieres, escríbele directo con el botón.';
+    return salio === true ? c + ' Le avisé; también puedes escribirle directo con el botón.' : c + ' No pude avisarle; escríbele directo con el botón.';
+  }
+  // El cliente insiste con el QR abierto y ya se le recordó: se pasa con Rubén en vez de repetir el recordatorio.
+  if (motivo === 'qr_insistente') {
+    const c = 'Sigo viendo tu QR abierto y por aquí no puedo hacer más con él. Eso lo ve Rubén directamente.';
+    if (salio === 'repetido') return c + ' Rubén ya recibió tu aviso anterior; si quieres, escríbele directo con el botón.';
+    return salio === true ? c + ' Le avisé; también puedes escribirle directo con el botón.' : c + ' No pude avisarle; escríbele directo con el botón.';
   }
   if (motivo === 'qr_sin_aviso') return 'Por ahora no puedo mostrarte el QR de pago. Escríbele directo a Rubén con el botón.';
   if (motivo === 'sin_opciones') return salio === true ? 'Por ahora no puedo mostrarte las opciones de compra. Le avisé a Rubén; también puedes escribirle directo con el botón.' : 'Por ahora no puedo mostrarte las opciones de compra. No pude avisarle a Rubén; escríbele directo con el botón.';
@@ -916,6 +1018,8 @@ function rrExtraRedaccion(texto, norm) {
   // El modelo no manda al cliente a una página ni inventa condiciones por país: los precios y las opciones los da el sistema con botones.
   // Solo REMISIONES: «puedes crear tu página web con IA», «en la página 45» o «los resultados varían según tu ejecución» son legítimos y pasan.
   if (RR_REMITE_A_WEB.test(norm)) return 'remite_a_web';
+  // ENTREGA 1 · [D]: el flujo NO envía imágenes (solo existe el QR como imagen saliente): «te muestro / envío / comparto fotos, imágenes, capturas, la portada, detalles visuales» es una promesa sin respaldo.
+  if (/\b(te (muestro|envio|mando|comparto|paso|adjunto|enviare|mandare|mostrare|compartire)|(puedo|podria|podemos|voy a|vamos a) (mostrar|enviar|mandar|compartir|pasar|adjuntar)(te|les|le)?|aqui (tienes|te dejo)|te dejo|adjunto|enviare|mandare|mostrare|compartire)\b[^.?!]{0,40}\b(imagen|imagenes|foto|fotos|fotografia|fotografias|captura|capturas|pantallazo|pantallazos|screenshot|screenshots|portada|detalles visuales|ejemplos visuales|vista previa)\b/.test(norm)) return 'promete_imagenes';
   // La palabra DERIVAR es una orden interna: si el modelo la mezcla con otro texto, jamás llega al cliente.
   if (/\bderivar\b/.test(norm)) return 'palabra_interna';
   // PAGOS EN SUS PROPIAS PALABRAS (remediación del 20/10/2026 contra `admin/pruebas/fixtures/redaccion-pago-banco.json`): lo que el filtro común deja pasar y en este flujo el modelo NO puede decir. El comprobante no es una

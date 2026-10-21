@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Flujo, J } from '../../lib/flujo';
 import { crearMundo, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from '../../lib/n8n-de-mentira';
-import { UX_CONTADOR, UX_ESTADO, contarPresentaciones, esPresentacion, preguntaPorIdentidad, seDeclaraIA, vigilarUx, violacionesDeMedio, violacionesDeParrafos, violacionesDeUx, type UxMsg } from './vigilante-ux';
+import { UX_CONTADOR, UX_ESTADO, contarPresentaciones, esPresentacion, preguntaPorIdentidad, seDeclaraIA, vigilarUx, violacionesDeAvisoTardio, violacionesDeMedio, violacionesDeParrafos, violacionesDePromesaDeImagen, violacionesDeQrAbierto, violacionesDeRepeticion, violacionesDeUx, type UxMsg } from './vigilante-ux';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA = join(AQUI, '../../../../Flujos/experimental/rroca-ruben');
@@ -293,7 +293,7 @@ describe('los 5 mensajes prellenados de la landing', () => {
     const t = hablar(w, ANA, mTexto(PRELLENADOS.consulta));
     const m = unico(t);
     expect(m.tipo).toBe('interactive');
-    expect(titulos(m)).toEqual(['Ver precios', 'Más información']);
+    expect(titulos(m)).toEqual(['Más información']);
     expect(m.cuerpo).toMatch(/^¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual de Rubén\./);
     expect(m.cuerpo).toMatch(/¿Qué duda tienes sobre el libro\?$/);
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
@@ -385,16 +385,17 @@ describe('el QR: el monto es el del catálogo, y solo hay 4 productos', () => {
   });
 
   it('un solo QR abierto a la vez y un pedido = un producto: con el QR abierto, otro producto (por botón o prellenado) recibe el recordatorio, sin imagen ni evento nuevo', () => {
-    const w = crear();
-    pedirQr(w, 'pack');
     for (const m of [mBoton('b_libro'), mTexto(PRELLENADOS.libro), mTexto(PRELLENADOS.closer), mTexto('mejor quiero el de 32'), mBoton('b_pack')]) {
+      // Un mundo por mensaje: dos recordatorios SEGUIDOS ya no se repiten (el segundo escala a Rubén, ver «ENTREGA 1»).
+      const w = crear();
+      pedirQr(w, 'pack');
       const t = hablar(w, ANA, m);
       const r = unico(t);
       expect(r.tipo, JSON.stringify(m)).toBe('interactive');
       expect(r.cuerpo).toMatch(/Ya tienes un QR abierto con el Pack Completo/);
       expect(r.cuerpo).toMatch(/exactamente 60 Bs/);
+      expect(eventosQr(w)).toHaveLength(1);
     }
-    expect(eventosQr(w)).toHaveLength(1);
   });
 
   it('el QR vence (15 minutos): un producto nuevo abre un QR NUEVO con otro pedido', () => {
@@ -488,7 +489,7 @@ describe('sin id de medio, sin cobro o con el modo equivocado: se deriva a Rubé
 });
 
 describe('la conversación: el modelo solo conversa', () => {
-  it('un saludo suelto recibe el saludo FIJO y CORTO: una sola presentación, sin precios, con «Ver precios» y «Más información» (NUNCA «Hablar con Rubén») en el MISMO mensaje; sin modelo', () => {
+  it('un saludo suelto recibe el saludo FIJO y CORTO: una sola presentación, sin precios, con «Más información» (sin «Ver precios»; NUNCA «Hablar con Rubén») en el MISMO mensaje; sin modelo', () => {
     const w = crear();
     const t = hablar(w, ANA, mTexto('Hola'));
     const m = unico(t);
@@ -498,7 +499,8 @@ describe('la conversación: el modelo solo conversa', () => {
     expect((m.cuerpo.match(/\?/g) ?? []).length).toBe(1);
     expect(m.cuerpo.split('\n\n')).toHaveLength(3);
     expect(m.cuerpo).not.toMatch(/https?:|www\.|banco|\bqr\b/i);
-    expect(botones(m)).toEqual([{ id: 'b_precios', title: 'Ver precios' }, { id: 'b_info', title: 'Más información' }]);
+    // 21/10/2026: el saludo ya no lleva «Ver precios»; el catálogo con precios se pide («catálogo», «precio») o sale en el menú que sigue a «Más información».
+    expect(botones(m)).toEqual([{ id: 'b_info', title: 'Más información' }]);
     // «asistente» aparece UNA sola vez; ninguna cifra de dinero; la pregunta de negocio no va en el primer mensaje.
     expect((m.cuerpo.match(/asistente/gi) ?? []).length).toBe(1);
     expect(m.cuerpo).not.toMatch(/\bBs\b|bolivianos/i);
@@ -526,11 +528,14 @@ describe('la conversación: el modelo solo conversa', () => {
     expect(hablar(w2, BETO, mBoton('b_ruben')).avisos).toHaveLength(0);
   });
 
-  it('con un QR abierto, «Ver precios» no abre el menú: recibe el recordatorio del QR', () => {
+  it('con un QR abierto, «Ver precios» (un botón de un chat viejo) responde el catálogo con precios SIN abrir otro QR y sin el recordatorio (21/10/2026)', () => {
     const w = crear();
     pedirQr(w, 'pack');
     const m = unico(hablar(w, ANA, mBoton('b_precios')));
-    expect(m.cuerpo).toMatch(/Ya tienes un QR abierto/);
+    expect(m.cuerpo).not.toMatch(/Ya tienes un QR abierto/);
+    expect(m.cuerpo).toContain('Pack Completo: 60 Bs');
+    expect(ids(m)).toEqual([]);
+    expect(eventosQr(w)).toHaveLength(1);
   });
 
   it('la pregunta de negocio va solo en el saludo y NO se repite; la respuesta del cliente sigue al modelo', () => {
@@ -543,7 +548,7 @@ describe('la conversación: el modelo solo conversa', () => {
   it('«precio» como PRIMER mensaje recibe el saludo corto SIN precio (Ver precios / Más información); una pregunta libre llama al modelo UNA vez y su texto sale con el menú', () => {
     const w = crear();
     const saludo = unico(hablar(w, ANA, mTexto('Precio')));
-    expect(titulos(saludo)).toEqual(['Ver precios', 'Más información']);
+    expect(titulos(saludo)).toEqual(['Más información']);
     expect(saludo.cuerpo).not.toMatch(/\bBs\b/);
     let cuerpo: J | undefined;
     w.mundo.dobles['Conversar con el modelo'] = (ll) => { cuerpo = ll.cuerpo; return geminiTexto(RESPUESTA_DEL_MODELO); };
@@ -1076,10 +1081,10 @@ describe('revisión del PR-2: la guarda del QR se libera al resolverse el compro
     }
   });
 
-  it('prellenado 5 (consulta) con un QR abierto recibe el recordatorio del QR, no reabre el saludo; sin QR abierto, el saludo', () => {
+  it('prellenado 5 (consulta) con un QR abierto recibe SOLO su pregunta (ni el recordatorio ni el saludo ni otro QR); sin QR abierto, el saludo', () => {
     const w = conQr3();
     const t = hablar(w, ANA, mTexto(PRELLENADOS.consulta));
-    expect(unico(t).cuerpo).toMatch(qrAbierto);
+    expect(unico(t).cuerpo).toBe('¿Qué duda tienes sobre el libro?');
     expect(eventosQr(w)).toHaveLength(1);
     const w2 = crear();
     expect(unico(hablar(w2, ANA, mTexto(PRELLENADOS.consulta))).cuerpo).toMatch(/¿Qué duda tienes sobre el libro\?$/);
@@ -1474,8 +1479,10 @@ describe('PR-3 · la derivación completa: el aviso lleva el MOTIVO exacto', () 
     // Pasados 30 minutos del PRIMERO, ese motivo vuelve a avisar.
     expect(hablar(w, ANA, mTexto('necesito factura de nuevo'), { avanzarMin: 30 }).avisos).toHaveLength(1);
     // El cliente sigue recibiendo su respuesta con el botón aunque el aviso se repita.
+    // (21/10/2026: el mismo texto no sale dos veces seguidas; el cliente sigue recibiendo su respuesta, con el botón de Rubén.)
     const t = hablar(w, ANA, mTexto('necesito factura de nuevo'), { avanzarMin: 1 });
-    expect(unico(t).cuerpo).toBe(D_FACTURA + CON_AVISO);
+    expect(unico(t).cuerpo).not.toBe(D_FACTURA + CON_AVISO);
+    expect(unico(t).payload['interactive']?.type).toBe('cta_url');
   });
 
   it('los avisos de comprobante no se limitan por motivo (el servidor ya avisa una vez por comprobante)', () => {
@@ -1829,7 +1836,7 @@ describe('PRECIO POR CÓDIGO (20/10/2026): el precio sale del catálogo, nunca d
       expect((m.cuerpo.match(/asistente virtual/gi) ?? []).length).toBe(1);
       expect(m.cuerpo).toMatch(/^¡Hola! Qué gusto saludarte 😊 Soy el asistente virtual de Rubén\./);
       expect(m.cuerpo).toContain('¿tienes algún negocio actualmente');
-      expect(titulos(m)).toEqual(['Ver precios', 'Más información']);
+      expect(titulos(m)).toEqual(['Más información']);
       expect(m.cuerpo).not.toMatch(/\bBs\b|\$|USD/);
       expect(JSON.stringify(m.payload)).not.toMatch(/\bBs\b/);
       expect(llamadas()).toBe(0);
@@ -1842,9 +1849,10 @@ describe('PRECIO POR CÓDIGO (20/10/2026): el precio sale del catálogo, nunca d
     const precios = unico(hablar(w, ANA, mBoton('b_precios')));
     expect(titulos(precios)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
     expect(precios.cuerpo).not.toMatch(/asistente/i);
-    const w2 = sinModelo().w;
-    hablar(w2, ANA, mTexto('hola'));
     for (const [pregunta, esperado] of [['precio', 'Pack Completo 60 Bs'], ['precios', 'Pack Completo 60 Bs'], ['cuánto cuesta', 'Pack Completo 60 Bs'], ['cuánto cuesta el libro', '32 Bs']] as const) {
+      // Un mundo por pregunta: el mismo texto no sale dos veces seguidas.
+      const w2 = sinModelo().w;
+      hablar(w2, ANA, mTexto('hola'));
       const m = unico(hablar(w2, ANA, mTexto(pregunta)));
       expect(m.cuerpo, pregunta).toContain(esperado);
       expect(m.cuerpo, pregunta).not.toMatch(/asistente|Qué gusto|negocio actualmente/i);
@@ -2555,7 +2563,7 @@ describe('RONDA FINAL (20/10/2026) · el primer mensaje nunca lleva montos; nunc
   it('«cuánto es?» y las demás formas sueltas, como primer mensaje, reciben el saludo corto (sin modelo); ya saludado, el precio exacto por código', () => {
     const w = crear();
     const t = hablar(w, ANA, mTexto('cuánto lo dejas'));
-    expect(titulos(unico(t))).toEqual(['Ver precios', 'Más información']);
+    expect(titulos(unico(t))).toEqual(['Más información']);
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(false);
     const t2 = hablar(w, ANA, mTexto('a cuánto está el libro?'));
     expect(unico(t2).cuerpo).toContain('32 Bs');
@@ -2566,7 +2574,7 @@ describe('RONDA FINAL (20/10/2026) · el primer mensaje nunca lleva montos; nunc
     const w = crear();
     const m = unico(hablar(w, ANA, mTexto('¿me garantizas ganar dinero?')));
     expect(m.cuerpo).toMatch(/^No puedo prometerte ingresos/);
-    expect(titulos(m)).toEqual(['Ver precios', 'Más información']);
+    expect(titulos(m)).toEqual(['Más información']);
     const w2 = crear();
     hablar(w2, ANA, mTexto('hola'));
     expect(titulos(unico(hablar(w2, ANA, mTexto('¿me garantizas ganar dinero?'))))).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
@@ -2576,7 +2584,7 @@ describe('RONDA FINAL (20/10/2026) · el primer mensaje nunca lleva montos; nunc
     const m = unico(hablar(crear(), ANA, mBoton('b_precios')));
     // El botón pulsado no reaparece (invariante 1): queda «Más información».
     // M-4: «Ver precios» pulsado como primer mensaje NO pasa a `usados` (el cliente nunca vio los precios): el saludo lo ofrece.
-    expect(titulos(m)).toEqual(['Ver precios', 'Más información']);
+    expect(titulos(m)).toEqual(['Más información']);
     expect(m.cuerpo).not.toMatch(/\bBs\b/);
   });
 
@@ -2619,13 +2627,14 @@ describe('RONDA FINAL (20/10/2026) · el primer mensaje nunca lleva montos; nunc
     expect(ids(unico(hablar(w3, ANA, mTexto(PRELLENADOS.closer))))).toEqual(['b_pack']);
   });
 
-  it('M-3 · un botón desconocido con un QR abierto recibe el recordatorio del QR, como «Ver precios»', () => {
+  it('M-3 · un botón desconocido con un QR abierto recibe el recordatorio del QR; «Ver precios» recibe el catálogo (21/10/2026), y ninguno abre otro QR', () => {
     const w = crear();
     pedirQr(w, 'pack');
     const a = unico(hablar(w, ANA, mBoton('b_viejo')));
     expect(a.cuerpo).toMatch(/Ya tienes un QR abierto/);
     const b = unico(hablar(w, ANA, mBoton('b_precios')));
-    expect(b.cuerpo).toMatch(/Ya tienes un QR abierto/);
+    expect(b.cuerpo).not.toMatch(/Ya tienes un QR abierto/);
+    expect(b.cuerpo).toContain('Pack Completo: 60 Bs');
     expect(eventosQr(w)).toHaveLength(1);
   });
 
@@ -2683,7 +2692,7 @@ describe('OBSERVACIONES DE SILVANA (20/10/2026) · el saludo no ofrece a Rubén;
     expect(ids(m)).not.toContain('b_info');
     expect(t.avisos).toHaveLength(0);
     // Un nuevo saludo ya no ofrece «Más información» (la vio).
-    expect(titulos(unico(hablar(w, ANA, mTexto('Hola Rubén, tengo una consulta sobre el libro'))))).toEqual(['Ver precios']);
+    expect(titulos(unico(hablar(w, ANA, mTexto('Hola Rubén, tengo una consulta sobre el libro'))))).toEqual([]);
   });
 
   it('«Más información» como PRIMER mensaje (un chat viejo) recibe el saludo corto sin montos', () => {
@@ -2692,7 +2701,7 @@ describe('OBSERVACIONES DE SILVANA (20/10/2026) · el saludo no ofrece a Rubén;
     expect(m.cuerpo).toMatch(/^¡Hola! Qué gusto saludarte/);
     expect(m.cuerpo).not.toMatch(/\bBs\b/);
     // M3: «Más información» NO pasó a `usados` (el cliente aún no la ha visto): el saludo la ofrece.
-    expect(titulos(m)).toEqual(['Ver precios', 'Más información']);
+    expect(titulos(m)).toEqual(['Más información']);
     expect(llamadas()).toBe(0);
   });
 
@@ -2714,7 +2723,10 @@ describe('OBSERVACIONES DE SILVANA (20/10/2026) · el saludo no ofrece a Rubén;
     const { w, llamadas } = sinModelo();
     hablar(w, ANA, mTexto('hola'));
     for (const q of ['capítulos', 'contenido', 'qué capítulos tiene el libro?']) {
-      const m = unico(hablar(w, ANA, mTexto(q)));
+      // Un teléfono por pregunta: el mismo texto no sale dos veces seguidas al mismo teléfono.
+      const tel = `5910000007${['capítulos', 'contenido', 'qué capítulos tiene el libro?'].indexOf(q)}`;
+      hablar(w, tel, mTexto('hola'));
+      const m = unico(hablar(w, tel, mTexto(q)));
       expect(m.cuerpo, q).toMatch(/12 capítulos/);
       expect(m.cuerpo, q).toContain('1. La mentalidad del emprendedor aumentado por IA');
       expect(m.cuerpo, q).toContain('12. El sistema operativo del emprendedor con IA');
@@ -2725,17 +2737,21 @@ describe('OBSERVACIONES DE SILVANA (20/10/2026) · el saludo no ofrece a Rubén;
     expect(llamadas()).toBe(1);
   });
 
-  it('como PRIMER mensaje, «cuáles son los bonos» saluda con el saludo corto (sin montos, sin bonos) y no llama al modelo; con un QR abierto recibe el recordatorio', () => {
+  it('como PRIMER mensaje, «cuáles son los bonos» saluda con el saludo corto (sin montos, sin bonos) y no llama al modelo; con un QR abierto recibe los bonos, no el recordatorio', () => {
     const { w, llamadas } = sinModelo();
     const m = unico(hablar(w, ANA, mTexto('¿cuáles son los bonos?')));
     expect(m.cuerpo).toMatch(/^¡Hola! Qué gusto saludarte/);
     expect(m.cuerpo).not.toMatch(/\bBs\b/);
-    expect(titulos(m)).toEqual(['Ver precios', 'Más información']);
+    expect(titulos(m)).toEqual(['Más información']);
     expect(llamadas()).toBe(0);
     const w2 = crear();
     pedirQr(w2, 'pack');
-    expect(unico(hablar(w2, ANA, mTexto('qué bonos trae'))).cuerpo).toMatch(/Ya tienes un QR abierto/);
-    expect(unico(hablar(w2, ANA, mBoton('b_info'))).cuerpo).toMatch(/Ya tienes un QR abierto/);
+    // 21/10/2026: con un QR abierto, los bonos y «Más información» se responden (sin abrir otro QR y sin el recordatorio).
+    const b = unico(hablar(w2, ANA, mTexto('qué bonos trae'))).cuerpo;
+    expect(b).toContain('Estos son los 4 bonos');
+    expect(b).not.toMatch(/Ya tienes un QR abierto/);
+    expect(unico(hablar(w2, ANA, mBoton('b_info'))).cuerpo).not.toMatch(/Ya tienes un QR abierto/);
+    expect(eventosQr(w2)).toHaveLength(1);
   });
 
   it('el toque viejo «Hablar con Rubén» y los casos críticos (factura, garantía, devolución, otro pago, reclamo) siguen derivando con aviso y botón', () => {
@@ -2920,7 +2936,11 @@ describe('REVISIÓN DE CÓDIGO Y DE SEGURIDAD DE #565 · identidad por código (
     const m = unico(hablar(w, ANA, mTexto('qué contenido puedo publicar en instagram para mi negocio de ropa')));
     expect(llamadas()).toBe(1);
     expect(m.cuerpo).not.toMatch(/12 capítulos/);
-    for (const q of ['qué contenido tiene el libro', 'contenido del libro']) expect(unico(hablar(w, ANA, mTexto(q))).cuerpo, q).toMatch(/12 capítulos/);
+    for (const q of ['qué contenido tiene el libro', 'contenido del libro']) {
+      const w2 = crear();
+      hablar(w2, ANA, mTexto('hola'));
+      expect(unico(hablar(w2, ANA, mTexto(q))).cuerpo, q).toMatch(/12 capítulos/);
+    }
   });
 
   it('I3 · la posventa («los bonos no abren», «dónde están los bonos», «cómo descargo los bonos», «no me llegaron los bonos») NO se responde con la lista de bonos ni con botones de compra; «no abren» deriva', () => {
@@ -3046,7 +3066,7 @@ describe('REGLA DURA 4, BARRERA ESTRUCTURAL · la lista de identidad es una mejo
   it('M-4 · «Ver precios» pulsado como primer mensaje no pasa a `usados`: el cliente puede pulsarlo después y ve los precios', () => {
     const w = crear();
     const a = unico(hablar(w, ANA, mBoton('b_precios')));
-    expect(titulos(a)).toEqual(['Ver precios', 'Más información']);
+    expect(titulos(a)).toEqual(['Más información']);
     expect(titulos(unico(hablar(w, ANA, mBoton('b_precios'))))).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
   });
   it('el vigilante: su lista de identidad es independiente de la del flujo, y detecta que se pierda la respuesta con IA del modelo (prueba negada)', () => {
@@ -4453,5 +4473,288 @@ describe('CIERRE · «afirma_hecho_corto» y «afirma_entrega» ancladas: lo leg
       'Ya recibí todo.', 'Todo listo con tu pago.', 'Todo listo con el pago.', 'Los datos coinciden, todo listo.']) expect(bloqueo(t), t).not.toBe('');
     for (const cliente of ['ya pagué, mi comprobante', 'hice la transferencia']) for (const t of ['Los datos coinciden, todo listo.', 'Ya recibí todo.', 'Ya te envié lo que compraste.']) expect(bloqueo(t, cliente), t).not.toBe('');
     for (const ok of ['Ya te pasé el catálogo.', 'Todo listo para pagar.', 'Ya te envié el catálogo.', 'Ya te compartí las opciones.']) expect(bloqueo(ok), ok).toBe('');
+  });
+});
+
+// =====================================================================================================================================================================================
+// ENTREGA 1 (21/10/2026) · defectos de la prueba real de Andres: un QR abierto no tapa la conversación; nunca la misma respuesta dos veces seguidas; ningún aviso «tardío» sin comprobante guardado;
+// «¿tienes imágenes?»; el catálogo completo por código; el saludo sin «Ver precios». Esta suite escribe NEGANDO.
+// =====================================================================================================================================================================================
+describe('ENTREGA 1 · [B] con un QR abierto, la conversación sigue y el recordatorio solo sale si el cliente habla de pagar o pide un producto', () => {
+  const RECORDATORIO = /Ya tienes un QR abierto/;
+  /** Un mundo con el QR del Pack abierto y un modelo que, si se le llama, cuenta la llamada y responde lo que se le diga. */
+  const conQrAbierto = (respuesta = 'Sí, el libro te sirve para cualquier negocio, sin saber de tecnología. ¿Qué vendes?'): { w: Mundial; llamadas: () => number } => {
+    let n = 0;
+    const w = crear({ modelo: () => { n += 1; return geminiTexto(respuesta); } });
+    pedirQr(w, 'pack');
+    return { w, llamadas: () => n };
+  };
+
+  const CONTENIDO: Array<[string, RegExp]> = [
+    ['¿Qué incluye el libro?', /12 capítulos/], ['solo quiero saber de los capítulos', /12 capítulos/], ['¿hay bonos?', /4 bonos/], ['¿eres una IA?', /asistente virtual de Rubén, un programa con inteligencia artificial/],
+    ['¿cuánto cuesta el Pack?', /Pack Completo cuesta 60 Bs/], ['No quiero comprar, solo quiero saber más de los capítulos', /12 capítulos/], ['qué capítulos tiene el libro', /12 capítulos/], ['necesito factura', /Sobre factura, garantía o devolución/],
+  ];
+  for (const [pregunta, esperado] of CONTENIDO) {
+    it(`NEGADA: con un QR abierto, «${pregunta}» se responde (sin recordatorio, sin otro QR, sin modelo)`, () => {
+      const { w, llamadas } = conQrAbierto();
+      const t = hablar(w, ANA, mTexto(pregunta));
+      const m = unico(t);
+      expect(m.cuerpo).not.toMatch(RECORDATORIO);
+      expect(m.cuerpo).toMatch(esperado);
+      expect(m.tipo).not.toBe('image');
+      expect(eventosQr(w)).toHaveLength(1);
+      expect(llamadas()).toBe(0);
+      // Con un QR abierto no se ofrecen botones de producto: solo el de Rubén (o ninguno).
+      expect(ids(m).filter((i) => i.startsWith('b_'))).toEqual([]);
+      expect(t.mensajes.filter((e) => !e.respaldo)).toHaveLength(1);
+    });
+  }
+
+  it('NEGADA: «ya pagué», «cómo te pago», «transferí», «mándame el QR», «dame el pack», «quiero comprar» SÍ reciben el recordatorio (hablan de pagar o piden un producto), y no abren otro QR', () => {
+    for (const q of ['ya pagué', 'cómo te pago', 'transferí', 'cuál es el monto', 'dame el pack', 'quiero comprar', 'quiero el libro']) {
+      const { w } = conQrAbierto();
+      const m = unico(hablar(w, ANA, mTexto(q)));
+      expect(m.cuerpo, q).toMatch(RECORDATORIO);
+      expect(m.cuerpo, q).toMatch(/exactamente 60 Bs/);
+      expect(eventosQr(w), q).toHaveLength(1);
+    }
+  });
+
+  it('una pregunta que el código no sabe responde el MODELO (sin QR, sin recordatorio, con el botón de Rubén); lo que no es pregunta recibe el recordatorio', () => {
+    const { w, llamadas } = conQrAbierto();
+    const m = unico(hablar(w, ANA, mTexto('¿y esto sirve para una peluquería?')));
+    expect(llamadas()).toBe(1);
+    expect(m.cuerpo).toContain('sin saber de tecnología');
+    expect(m.cuerpo).not.toMatch(RECORDATORIO);
+    expect(m.payload['interactive']?.type).toBe('cta_url');
+    expect(eventosQr(w)).toHaveLength(1);
+    const otro = unico(hablar(w, ANA, mTexto('ok gracias')));
+    expect(otro.cuerpo).toMatch(RECORDATORIO);
+    expect(llamadas()).toBe(1);
+  });
+
+  it('NEGADA: un modelo simulado que emite [ENVIAR_QR pack] con un QR abierto NO abre otro: se ignora y sale el texto fijo, sin QR', () => {
+    for (const salida of ['Claro. [ENVIAR_QR pack] ¿Algo más?', '[ENVIAR_QR libro]', 'Perfecto, aquí va. [ENVIAR_QR:pack:60]']) {
+      const { w, llamadas } = conQrAbierto(salida);
+      const t = hablar(w, ANA, mTexto('¿y esto sirve para una peluquería?'));
+      const m = unico(t);
+      expect(llamadas(), salida).toBe(1);
+      expect(m.tipo, salida).not.toBe('image');
+      expect(m.cuerpo, salida).not.toMatch(/ENVIAR_QR/);
+      expect(m.cuerpo, salida).toMatch(/^Gracias por escribir/);
+      expect(eventosQr(w), salida).toHaveLength(1);
+    }
+  });
+
+  it('NEGADA: «cancela mi pedido», «no quiero comprar», «ya no lo quiero» ESCALAN (aviso + botón), el texto NO dice que quedó cancelado, y liberan la guarda local del QR', () => {
+    for (const q of ['cancela mi pedido', 'no quiero comprar', 'ya no lo quiero', 'quiero cancelar mi compra']) {
+      const { w, llamadas } = conQrAbierto();
+      const t = hablar(w, ANA, mTexto(q));
+      const m = unico(t);
+      expect(avisosDe(t), q).toHaveLength(1);
+      expect(avisosDe(t)[0], q).toContain('cancelar su pedido');
+      expect(m.payload['interactive']?.type, q).toBe('cta_url');
+      expect(m.cuerpo, q).toMatch(/Por aquí no puedo cancelar un pedido: eso lo atiende Rubén directamente/);
+      expect(m.cuerpo, q).not.toMatch(/quedó cancelad|se canceló|cancelamos|cancelado|anulad/i);
+      expect(m.cuerpo, q).not.toMatch(RECORDATORIO);
+      expect(llamadas(), q).toBe(0);
+      expect(Number(((w.mundo.sd['rroca'] ?? {}) as J)[ANA]['qrHastaMs']), q).toBe(0);
+      expect(eventosQr(w), q).toHaveLength(1);
+      // El servidor es quien cierra su solicitud (el flujo no puede): cuando la consola la cierra, un producto nuevo abre un QR nuevo.
+      w.cobro.pendiente = false;
+      expect(unico(hablar(w, ANA, mBoton('b_libro'))).tipo, q).toBe('image');
+    }
+  });
+
+  it('«no quiero comprar» SIN un QR abierto ni pedido no escala a Rubén (sigue al modelo como siempre)', () => {
+    const { w } = conQrAbierto();
+    const solo = crear();
+    hablar(solo, BETO, mTexto('hola'));
+    const t = hablar(solo, BETO, mTexto('no quiero comprar'));
+    expect(avisosDe(t)).toHaveLength(0);
+    expect(t.ejecutados.has('Conversar con el modelo')).toBe(true);
+    expect(w).toBeTruthy();
+  });
+
+  it('NEGADA: la misma pregunta dos veces seguidas NO recibe el mismo texto (otra redacción fija con el botón de Rubén), y el tercer turno tampoco repite al segundo', () => {
+    const { w } = conQrAbierto();
+    const a = unico(hablar(w, ANA, mTexto('¿qué incluye el libro?'))).cuerpo;
+    const b = unico(hablar(w, ANA, mTexto('¿qué incluye el libro?')));
+    const c = unico(hablar(w, ANA, mTexto('¿qué incluye el libro?')));
+    expect(b.cuerpo).not.toBe(a);
+    expect(b.payload['interactive']?.type).toBe('cta_url');
+    expect(c.cuerpo).not.toBe(b.cuerpo);
+    for (const x of [b.cuerpo, c.cuerpo]) expect(x).not.toMatch(/acreditad|verificad|recibimos tu pago/i);
+  });
+
+  it('NEGADA: el recordatorio del QR no se repite dos veces seguidas: el segundo ESCALA a Rubén (aviso + botón) con otro texto; el límite de 30 minutos por motivo sigue valiendo', () => {
+    const { w } = conQrAbierto();
+    const a = unico(hablar(w, ANA, mTexto('ya pagué')));
+    expect(a.cuerpo).toMatch(RECORDATORIO);
+    const t2 = hablar(w, ANA, mTexto('ya pagué'));
+    const b = unico(t2);
+    expect(b.cuerpo).toMatch(/Sigo viendo tu QR abierto/);
+    expect(b.cuerpo).not.toBe(a.cuerpo);
+    expect(avisosDe(t2)).toHaveLength(1);
+    expect(avisosDe(t2)[0]).toContain('insiste con un QR abierto');
+    expect(b.payload['interactive']?.type).toBe('cta_url');
+    const t3 = hablar(w, ANA, mTexto('ya pagué'));
+    expect(unico(t3).cuerpo).not.toBe(b.cuerpo);
+    expect(avisosDe(t3)).toHaveLength(0);
+    expect(eventosQr(w)).toHaveLength(1);
+  });
+
+  it('el vigilante (invariantes 7 y 8) detecta lo que niega: la misma respuesta dos veces, y el recordatorio como respuesta a una pregunta de contenido', () => {
+    const txt = (cuerpo: string): UxMsg => ({ tipo: 'interactive', cuerpo, payload: {} });
+    expect(violacionesDeRepeticion('el libro tiene 12 capitulos', [txt('El libro tiene 12 capítulos')], 'info')).not.toEqual([]);
+    expect(violacionesDeRepeticion('el libro tiene 12 capitulos', [txt('Otra cosa')], 'info')).toEqual([]);
+    expect(violacionesDeRepeticion('x', [{ tipo: 'image', cuerpo: 'x', payload: {} }], 'qr')).toEqual([]);
+    expect(violacionesDeRepeticion('gracias por tu paciencia', [txt('Gracias por tu paciencia')], 'uso_extendido')).toEqual([]);
+    expect(violacionesDeRepeticion('soy el asistente virtual de ruben un programa con inteligencia artificial', [txt('Soy el asistente virtual de Rubén, un programa con inteligencia artificial')], 'identidad')).toEqual([]);
+    expect(violacionesDeQrAbierto(mTexto('¿qué incluye el libro?'), [txt('Ya tienes un QR abierto con el Pack.')])).not.toEqual([]);
+    expect(violacionesDeQrAbierto(mTexto('ya pagué, ¿te llegó?'), [txt('Ya tienes un QR abierto con el Pack.')])).toEqual([]);
+    expect(violacionesDeQrAbierto(mBoton('b_info'), [txt('Ya tienes un QR abierto con el Pack.')])).not.toEqual([]);
+  });
+});
+
+describe('ENTREGA 1 · [C] ningún aviso «tardío» sin un comprobante REGISTRADO', () => {
+  const TARDIO = (): J => ({ statusCode: 200, body: { estado: 'tardio', avisarComercio: true, importe: 60 } });
+  const vencido = (o: Opciones = {}): Mundial => { const w = crear({ cotejo: TARDIO, ...o }); pedirQr(w, 'pack'); w.cobro.pendiente = false; w.cobro.vencidoHaceMin = 4; return w; };
+
+  it('NEGADA: si «Guardar comprobante» no devolvió la ruta (error, sin ruta, ruta fuera de la carpeta del negocio), NO hay aviso a Rubén ni el texto «ya lo pasé a Rubén»; responde como a una imagen vista', () => {
+    const SIN_REGISTRO: J[] = [{ statusCode: 500, body: {} }, { statusCode: 200, body: {} }, { statusCode: 200, body: { ruta: '../../otro/archivo.jpg' } }];
+    for (const guardar of SIN_REGISTRO) {
+      const w = vencido({ guardar });
+      const t = hablar(w, ANA, mImagen(), { avanzarMin: 19 });
+      const m = unico(t);
+      expect(t.avisos, JSON.stringify(guardar)).toHaveLength(0);
+      expect(m.cuerpo, JSON.stringify(guardar)).not.toMatch(/Ya lo pasé|Le avisé|después de los 15 minutos/);
+      expect(m.cuerpo.trim()).not.toBe('');
+      expect(t.ejecutados.has('Enviar aviso')).toBe(false);
+    }
+  });
+
+  it('con el comprobante REGISTRADO (la ruta del archivo guardado), el aviso tardío sigue saliendo como siempre (con su texto y su botón)', () => {
+    const w = vencido();
+    const t = hablar(w, ANA, mImagen(), { avanzarMin: 19 });
+    expect(avisosDe(t)).toHaveLength(1);
+    expect(unico(t).cuerpo).toMatch(/Tu comprobante llegó después de los 15 minutos del QR/);
+  });
+
+  it('el vigilante (invariante 10) detecta el aviso tardío sin comprobante guardado, en el aviso y en el texto, y calla si está guardado', () => {
+    const txt = (cuerpo: string): UxMsg => ({ tipo: 'interactive', cuerpo, payload: {} });
+    expect(violacionesDeAvisoTardio(['Estado: comprobante tardío: llegó después de los 15 minutos del QR'], [], false)).not.toEqual([]);
+    expect(violacionesDeAvisoTardio([], [txt('Tu comprobante llegó después de los 15 minutos del QR. Ya lo pasé a Rubén.')], false)).not.toEqual([]);
+    expect(violacionesDeAvisoTardio(['Estado: comprobante tardío: llegó después de los 15 minutos del QR'], [], true)).toEqual([]);
+  });
+});
+
+describe('ENTREGA 1 · [D] «¿tienes imágenes?» y la promesa de imágenes', () => {
+  const FRASES = ['¿Tienes imágenes?', '¿me mandas una foto del libro?', '¿tienes capturas?', '¿puedes mostrarme la portada?', 'quiero ver fotos del libro'];
+  const SIN_PROMESA = /no tengo imágenes del libro para mostrarte/;
+  for (const frase of FRASES) {
+    it(`NEGADA: «${frase}» recibe la respuesta FIJA (no se envían imágenes del libro; solo el QR de pago) con el menú vigente, sin modelo`, () => {
+      let llamadas = 0;
+      const w = crear({ modelo: () => { llamadas += 1; return geminiTexto('Claro, te muestro unas fotos del libro.'); } });
+      hablar(w, ANA, mTexto('hola'));
+      const m = unico(hablar(w, ANA, mTexto(frase)));
+      expect(m.cuerpo).toMatch(SIN_PROMESA);
+      expect(m.cuerpo).toMatch(/capítulos/);
+      expect(m.tipo).toBe('interactive');
+      expect(titulos(m)).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+      expect(llamadas).toBe(0);
+    });
+  }
+  it('como PRIMER mensaje recibe el saludo (una presentación por teléfono); con un QR abierto, la respuesta fija con el botón de Rubén y sin otro QR', () => {
+    const w1 = crear();
+    expect(unico(hablar(w1, ANA, mTexto('¿tienes imágenes?'))).cuerpo).toMatch(/^¡Hola! Qué gusto saludarte/);
+    const w = crear();
+    pedirQr(w, 'pack');
+    const m = unico(hablar(w, ANA, mTexto('¿tienes imágenes?')));
+    expect(m.cuerpo).toMatch(SIN_PROMESA);
+    expect(m.cuerpo).not.toMatch(/Ya tienes un QR abierto\./);
+    expect(m.payload['interactive']?.type).toBe('cta_url');
+    expect(eventosQr(w)).toHaveLength(1);
+  });
+  it('NEGADA (filtro): si el modelo promete mostrar, enviar o compartir imágenes, fotos, capturas, la portada o detalles visuales, NO llega: cae al texto fijo; lo legítimo pasa', () => {
+    const PROMESAS = ['Claro, te muestro algunas imágenes del libro. ¿Qué negocio tienes?', 'Te envío capturas del libro para que lo veas.', 'Puedo mostrarte la portada y los detalles visuales.', 'Aquí tienes una foto del libro.', 'Te comparto unos pantallazos. ¿Qué te interesa?', 'Te mando fotos del contenido.', 'Voy a enviarte una imagen del índice.'];
+    for (const p of PROMESAS) {
+      const w = crear({ modelo: () => geminiTexto(p) });
+      hablar(w, ANA, mTexto('hola'));
+      const m = unico(hablar(w, ANA, mTexto('cuéntame algo del libro por favor')));
+      expect(m.cuerpo, p).toMatch(/^Gracias por escribir/);
+    }
+    const w = crear({ modelo: () => geminiTexto('Con el libro aprendes a crear fotos y videos para tu pastelería con IA. ¿A qué te dedicas?') });
+    hablar(w, ANA, mTexto('hola'));
+    expect(unico(hablar(w, ANA, mTexto('cuéntame algo del libro por favor'))).cuerpo).toContain('crear fotos y videos para tu pastelería');
+  });
+  it('el vigilante (invariante 9) detecta una promesa de imágenes y no confunde «no tengo imágenes para mostrarte»', () => {
+    const txt = (cuerpo: string): UxMsg => ({ tipo: 'text', cuerpo, payload: {} });
+    expect(violacionesDePromesaDeImagen([txt('Te envío fotos del libro.')])).not.toEqual([]);
+    expect(violacionesDePromesaDeImagen([txt('Puedo mostrarte la portada.')])).not.toEqual([]);
+    expect(violacionesDePromesaDeImagen([txt('Por aquí no tengo imágenes del libro para mostrarte.')])).toEqual([]);
+    expect(violacionesDePromesaDeImagen([txt('Mándame aquí la captura del comprobante.')])).toEqual([]);
+  });
+});
+
+describe('ENTREGA 1 · [CATÁLOGO] «dame tu catálogo» responde por código los productos con su precio, leídos del catálogo de la consola', () => {
+  const FRASES = ['dame tu catálogo', 'qué vendes', 'qué productos tienes', 'lista', 'opciones', 'qué ofreces', 'qué tienes', 'con qué cuentas'];
+  const verCatalogo = (cuerpo: string, precios = { pack: '60', libro: '32', closer: '20', videos: '25' }): void => {
+    expect(cuerpo).toContain(`Pack Completo: ${precios.pack} Bs`);
+    expect(cuerpo).toContain(`Libro + Bonos: ${precios.libro} Bs`);
+    expect(cuerpo).toContain(`Closer de Ventas: ${precios.closer} Bs`);
+    expect(cuerpo).toContain(`Videos con IA: ${precios.videos} Bs`);
+  };
+  for (const frase of FRASES) {
+    it(`NEGADA: «${frase}», por texto y por audio transcrito, con y sin QR abierto: los 4 ítems con precio, sin modelo ni QR nuevo`, () => {
+      for (const via of ['texto', 'audio'] as const) {
+        for (const conQr of [false, true]) {
+          let llamadas = 0;
+          const w = crear({ transcripcion: frase, modelo: () => { llamadas += 1; return geminiTexto('x'); } });
+          hablar(w, ANA, mTexto('hola'));
+          if (conQr) pedirQr(w, 'pack');
+          const t = hablar(w, ANA, via === 'texto' ? mTexto(frase) : mAudio());
+          const m = unico(t);
+          const donde = `${frase} / ${via} / ${conQr ? 'con QR' : 'sin QR'}`;
+          verCatalogo(m.cuerpo);
+          expect(m.cuerpo, donde).not.toMatch(/Ya tienes un QR abierto/);
+          expect(m.tipo, donde).not.toBe('image');
+          expect(llamadas, donde).toBe(0);
+          expect(eventosQr(w), donde).toHaveLength(conQr ? 1 : 0);
+          if (conQr) expect(ids(m).filter((i) => i.startsWith('b_')), donde).toEqual([]);
+          else expect(titulos(m), donde).toEqual(['Pack Completo 60 Bs', 'Libro + Bonos 32 Bs', 'Ver complementos']);
+        }
+      }
+    });
+  }
+  it('NEGADA: los precios salen del catálogo de la consola: si trae otro precio, sale ese; un producto sin precio o agotado no aparece, y sin ningún precio se deriva a Rubén', () => {
+    const w = crear({ catalogo: CATALOGO.map((i) => ({ ...i, precio: i.id === 'pack-completo' ? 75 : i.id === 'videos-ia' ? 30 : i.precio })) });
+    hablar(w, ANA, mTexto('hola'));
+    verCatalogo(unico(hablar(w, ANA, mTexto('dame tu catálogo'))).cuerpo, { pack: '75', libro: '32', closer: '20', videos: '30' });
+    const w2 = crear({ catalogo: CATALOGO.map((i) => (i.id === 'closer-ventas' ? { ...i, agotado: true } : i)) });
+    hablar(w2, ANA, mTexto('hola'));
+    const c = unico(hablar(w2, ANA, mTexto('qué vendes'))).cuerpo;
+    expect(c).not.toContain('Closer de Ventas:');
+    expect(c).toContain('Videos con IA: 25 Bs');
+    const w3 = crear({ catalogo: [] });
+    hablar(w3, ANA, mTexto('hola'));
+    const t = hablar(w3, ANA, mTexto('dame tu catálogo'));
+    expect(avisosDe(t)).toHaveLength(1);
+    expect(unico(t).cuerpo).not.toMatch(/\bBs\b/);
+  });
+  it('como PRIMER mensaje sigue siendo el saludo (sin montos); un texto largo que solo nombra «productos» NO es el catálogo', () => {
+    for (const frase of FRASES) {
+      const m = unico(hablar(crear(), ANA, mTexto(frase)));
+      expect(m.cuerpo, frase).toMatch(/^¡Hola! Qué gusto saludarte/);
+      expect(m.cuerpo, frase).not.toMatch(/\bBs\b/);
+    }
+    const t = hablar(crear(), ANA, mTexto('hola, qué productos tienes para una pastelería artesanal que vende tortas por pedido'));
+    expect(t.ejecutados.has('Conversar con el modelo')).toBe(true);
+  });
+  it('un botón pulsado no reaparece: el catálogo cuenta «Ver precios» como visto, y el saludo ya no lo ofrece nunca', () => {
+    const w = crear();
+    expect(titulos(unico(hablar(w, ANA, mTexto('hola'))))).toEqual(['Más información']);
+    hablar(w, ANA, mTexto('dame tu catálogo'));
+    expect(((w.mundo.sd['rroca'] ?? {}) as J)[ANA]['usados']).toContain('b_precios');
   });
 });

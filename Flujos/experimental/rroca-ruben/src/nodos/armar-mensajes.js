@@ -41,6 +41,7 @@ let llamadasModelo = decision.llamarModelo === true ? 1 : 0;
 let usadoNuevo = '';        // el botón de este turno que no debe reaparecer
 let pedidoNuevo = null;
 let qrPrevio = null;        // la ficha antes de la marca provisional del QR
+let hashPrevio = null;      // lo último dicho a este teléfono antes de este turno (se restaura si el mensaje no salió)
 let qrLiberado = null;      // la guarda de QR abierto que este turno de comprobante libera (se restaura si el aviso al cliente no sale)
 
 // `fijo` = true SOLO para un texto fijo del código (la constante de «comprobante leído»): habilita la exención exacta de `rrSeguro`. Nada de lo que redacta el modelo lo pasa.
@@ -71,18 +72,26 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   if (tipoDePlan === 'qr' && RR_PRODUCTOS[plan.producto]) usadoNuevo = RR_PRODUCTOS[plan.producto].boton;
   else usadoNuevo = rrProductoDeBoton(plan.boton) || plan.boton === RR_BOTON_COMPLEMENTOS || plan.boton === RR_BOTON_PRECIOS || plan.boton === RR_BOTON_INFO || plan.boton === RR_BOTON_HABLAR ? String(plan.boton) : '';
   if (tipoDePlan === 'saludo') {
-    // Saludo corto con UNA presentación por teléfono y, en el MISMO mensaje, «Ver precios» y «Más información» (sin los que ya pulsó; el saludo NUNCA ofrece a Rubén). Ya saludado, el prellenado de consulta recibe SOLO su pregunta.
+    // Saludo corto con UNA presentación por teléfono y, en el MISMO mensaje, «Más información» (sin «Ver precios» desde el 21/10/2026; sin el que ya pulsó; el saludo NUNCA ofrece a Rubén). Ya saludado, el prellenado de consulta recibe SOLO su pregunta.
     const usadosYa = fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : []);
     m = conBotones(rrSaludo(cat, plan.pregunta === 'consulta' ? RR_PREGUNTA_CONSULTA : '', !fichaAntes.saludado), rrMenuSaludo(cat, usadosYa));
   } else if (tipoDePlan === 'precio') {
     // El cliente VIO los precios: «Ver precios» no se reofrece. Sin botones de producto que ofrecer, el texto no cierra con una pregunta sin opciones.
     usadoNuevo = RR_BOTON_PRECIOS;
-    m = conBotones(rrTextoPrecio(cat, plan.producto, menu1().length > 0), menu1());
+    // Con un QR abierto no se ofrecen botones de producto (otro QR no se abre): solo el de Rubén.
+    m = plan.qrAbierto === true ? conRuben(rrTextoPrecio(cat, plan.producto, false)) : conBotones(rrTextoPrecio(cat, plan.producto, menu1().length > 0), menu1());
+  } else if (tipoDePlan === 'catalogo') {
+    // El catálogo completo con precio, por código (los precios son los del catálogo de la consola). Con un QR abierto, sin botones de producto: solo el de Rubén.
+    usadoNuevo = RR_BOTON_PRECIOS;
+    m = plan.qrAbierto === true ? conRuben(rrTextoCatalogo(cat, false)) : conBotones(rrTextoCatalogo(cat, menu1().length > 0), menu1());
+  } else if (tipoDePlan === 'imagenes') {
+    // «¿Tienes imágenes?»: respuesta fija (no se envían imágenes del libro) y lo que sí hay, con los botones del menú vigente (con un QR abierto, solo el de Rubén).
+    m = plan.qrAbierto === true ? conRuben(rrTextoImagenes(true)) : conBotones(rrTextoImagenes(false), menuAbierto());
   } else if (tipoDePlan === 'info') {
     // Datos fijos del guion, sin modelo. Quien vio la información no la ve reofrecida en el saludo; debajo, el menú de productos (ya saludado, es seguro).
     usadoNuevo = RR_BOTON_INFO;
     const op = menu1();
-    m = conBotones(rrTextoInfo(plan.tema, op.length > 0), op);
+    m = plan.qrAbierto === true ? conRuben(rrTextoInfo(plan.tema, false)) : conBotones(rrTextoInfo(plan.tema, op.length > 0), op);
   } else if (tipoDePlan === 'identidad') {
     // Con un QR abierto no se ofrecen botones de producto (solo el de Rubén); si no, los botones normales.
     if (plan.qrAbierto === true) m = conRuben(RR_TEXTO_IDENTIDAD);
@@ -96,7 +105,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     m = conBotones(rrTextoComplementos(cat), rrMenu(2, cat, fichaAntes.usados.concat(usadoNuevo ? [usadoNuevo] : [])));
   } else if (tipoDePlan === 'ingresos') {
     const op = menuAbierto();
-    m = conBotones(rrTextoIngresos(op.length > 0), op);
+    m = plan.qrAbierto === true ? conRuben(rrTextoIngresos(false)) : conBotones(rrTextoIngresos(op.length > 0), op);
   } else if (tipoDePlan === 'modelo') {
     // LO QUE REDACTA EL MODELO: se revisa y se pule; un rechazo (monto, promesa, enlace, negar ser IA, varias preguntas…), un error del servicio o un texto vacío caen al texto fijo.
     const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
@@ -106,7 +115,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
     } else if (rrSuplantaARuben(crudo)) {
       // SUPLANTACIÓN (prohibición 4): el modelo se dijo Rubén, el autor o una persona: el mensaje completo se sustituye por la identidad fija (con los botones normales). No se guarda en la memoria.
       tipoDePlan = 'identidad';
-      m = conBotones(RR_TEXTO_IDENTIDAD, menuAbierto());
+      m = plan.qrAbierto === true ? conRuben(RR_TEXTO_IDENTIDAD) : conBotones(RR_TEXTO_IDENTIDAD, menuAbierto());
     } else {
       const rev = crudo.trim() === '' ? { texto: '', motivo: 'vacio' } : cmRevisarRedaccion(crudo, {
         maximo: 700, enlacesPermitidos: [], quienPromete: ['ruben', 'el equipo'], nombreNegocio: cfg.nombreNegocio, textoDelCliente: plan.textoRevision || t.texto, extra: [rrExtraRedaccion],
@@ -115,7 +124,8 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       // (virtual, IA, programa, bot…) NUNCA se borra. Como primer mensaje cabe UNA, nunca dos. Si al quitar la presentación no queda nada, cae al texto fijo.
       const limpio = rev.motivo === '' ? rrUnaPresentacion(rev.texto, !fichaAntes.saludado || rrPreguntaPorIA(rrNorm(plan.textoRevision || t.texto)), true) : '';
       const bueno = rev.motivo === '' && limpio.trim() !== '';
-      const op = menuAbierto();
+      // Con un QR abierto el modelo NO abre otro (un `[ENVIAR_QR…]` o cualquier marcador es un rechazo del filtro y cae al texto fijo) y no se ofrecen botones de producto: solo el de Rubén.
+      const op = plan.qrAbierto === true ? [] : menuAbierto();
       let cuerpo = bueno ? limpio : (plan.origen === 'imagen' ? RR_TEXTO_IMAGEN_CAIDO : rrTextoModeloCaido(op.length > 0));
       // Una imagen o un audio puede ser el PRIMER mensaje del teléfono: si el texto no se presenta, se antepone la presentación fija (regla dura 4, nunca una oración cruda del modelo).
       if ((plan.origen === 'imagen' || plan.origen === 'audio') && !fichaAntes.saludado && !/asistente virtual/i.test(cuerpo)) cuerpo = RR_PRESENTACION + ' ' + cuerpo;
@@ -125,7 +135,7 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
       const falta = !fichaAntes.saludado ? !rrTienePresentacionIA(cuerpo) : (modeloDijoIA && !rrTienePresentacionIA(cuerpo));
       // Se antepone SIEMPRE la constante fija (nunca una oración cruda del modelo: no pasó por la revisión de enlaces, cuentas, montos ni promesas).
       const conPresentacion = falta ? RR_PRESENTACION + '\n\n' + cuerpo : cuerpo;
-      m = conBotones(conPresentacion, op);
+      m = plan.qrAbierto === true ? conRuben(conPresentacion) : conBotones(conPresentacion, op);
       // La memoria (`rrHist`) guarda `m.texto`, el texto DESPUÉS de las barreras (`rrSeguro`, identidad): si se sustituyó lo que dijo el modelo, eso no se recuerda.
       tipoDePlan = (plan.origen ? plan.origen + '_' : '') + (bueno ? 'modelo' : 'modelo_caido');
     }
@@ -180,6 +190,14 @@ if (puerta.ruta === 'suspendido' || puerta.ruta === 'uso_extendido') {
   }
 }
 
+// NUNCA EL MISMO TEXTO DOS VECES SEGUIDAS (21/10/2026): si lo que sale es idéntico (por hash) a lo último que se le envió a este teléfono, sale una alternativa fija (con el botón de Rubén). Ni el QR (su pie lleva el
+// pedido) ni el resultado de un comprobante (cada comprobante es un hecho distinto) ni el silencio de un número extranjero entran, ni lo que dice qué ES el asistente (regla dura 4: esa respuesta nunca se sustituye). Es el MISMO mensaje: no agrega ni quita ninguno.
+if (m && puerta.ruta === 'sigue' && t.extranjero !== true && m.tipoReporte !== 'image' && tipoDePlan !== 'comprobante' && tipoDePlan !== 'identidad' && !rrTienePresentacionIA(m.texto) && fichaAntes.ultimoHash !== '' && rrHashTexto(m.texto) === fichaAntes.ultimoHash) {
+  const medio = /^(audio|imagen|otro)/.test(tipoDePlan);
+  tipoDePlan = 'repetido';
+  m = conRuben(rrAlternaDeRepetido(medio, fichaAntes.ultimoHash));
+}
+
 // La ficha: un solo lugar, al final del turno. Hasta en un turno sin mensaje (bloqueado) se recuerda el id de Meta (una entrega repetida no se cuenta dos veces).
 if (claveOk && t.extranjero === true) {
   // UN NÚMERO DE OTRO PAÍS NO TIENE FICHA: solo { número: hora } en `rrExtranjeros` (tope y barrido propios) y el contador GLOBAL de respuestas por hora. Así un barrido de números nunca desplaza la ficha de un cliente real.
@@ -200,6 +218,9 @@ if (claveOk && t.extranjero === true) {
   ficha.turnos += 1;
   ficha.ultimoMs = ahora;
   if (m) ficha.saludado = true;
+  // Lo último que se le dijo (hash del texto y tipo de plan): el recordatorio del QR no se repite dos veces seguidas y ningún texto sale idéntico dos veces seguidas. Solo cuenta el turno que contesta de verdad.
+  hashPrevio = { h: ficha.ultimoHash, f: ficha.ultimaFirma };
+  if (m && puerta.ruta === 'sigue') { ficha.ultimoHash = m.tipoReporte === 'image' ? '' : rrHashTexto(m.texto); ficha.ultimaFirma = /^[a-z_]{1,30}$/.test(tipoDePlan) ? tipoDePlan : ''; }
   // Los topes diarios de medios cuentan cada llamada a Gemini que corrió, aunque haya fallado (un cliente no gasta sin límite con audios ilegibles).
   if (decision.oyoAudio === true) ficha.audios = rrContarMedio(ficha.audios, ahora);
   if (decision.vioImagen === true) ficha.imagenes = rrContarMedio(ficha.imagenes, ahora);
@@ -213,6 +234,8 @@ if (claveOk && t.extranjero === true) {
   if (pedidoNuevo) { qrPrevio = { pedidos: ficha.pedidos, producto: ficha.producto, qrHastaMs: ficha.qrHastaMs }; ficha.pedidos += 1; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RR_MINUTOS_QR * 60 * 1000; }
   // El comprobante resuelto (todo menos «reintentar» e «ilegible», que siguen con el cobro abierto) cierra el cobro o lo pasa a Rubén: la guarda de 15 minutos del QR ya no tiene sentido
   // y su tiempo restante daría un falso «Ya tienes un QR abierto». Se guarda el valor previo para restaurarlo si la respuesta no sale (`Resumen del turno`).
+  // «Cancela mi pedido» (con un QR abierto): libera igual la guarda LOCAL (el servidor sigue con su solicitud: lo cierra Rubén, el flujo no puede).
+  if (tipoDePlan === 'derivar' && plan.liberaGuarda === true && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   if (tipoDePlan === 'comprobante' && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible' && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   // Un comprobante recibido (todo menos «reintentar» e «ilegible») habilita la queja de no entrega: antes de pagar no hay nada que entregar.
   if (tipoDePlan === 'comprobante' && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible') ficha.comprobanteMs = ahora;
@@ -243,6 +266,7 @@ const salida = {
 };
 if (qrPrevio) salida.qrPrevio = qrPrevio;
 if (qrLiberado) salida.qrLiberado = qrLiberado;
+if (hashPrevio) salida.hashPrevio = hashPrevio;
 if (claveOk && puerta.ruta === 'sigue' && t.extranjero !== true) salida.rrHist = { a: rrEntradaAsistente(m.texto), b: rrEntradaAsistente(m.respaldo), tope: RR_TOPE_HISTORIAL };
 if (m.reglaCobro === 2) salida.reglaCobro = 2;
 if (m.referencia) salida.referencia = m.referencia;
