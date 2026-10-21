@@ -6,6 +6,8 @@
  *
  *   node Flujos/experimental/rroca-antonio/construir.mjs               escribe rroca-antonio.json y rroca-antonio.prueba.json
  *   node Flujos/experimental/rroca-antonio/construir.mjs --verificar   no escribe: sale 1 si un JSON versionado difiere de lo que se arma o viola una guardia
+ *   node Flujos/experimental/rroca-antonio/construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>]
+ *                                                       no escribe: sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal (PR-C; lo llama publicar-flujo.sh)
  *   (cualquier otro argumento se rechaza: la ayuda no existe como opción, para que nada escriba por error)
  *
  * QUÉ HACE. `flujo.plantilla.json` es el flujo sin el código y sin los datos. El código de los nodos lo arma el armador genérico
@@ -39,6 +41,7 @@ import { injertar } from '../comun-sin-agente/src/envio.mjs';
 
 export const AQUI = dirname(fileURLToPath(import.meta.url));
 export const ARCHIVO_DE_DATOS = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/rroca-antonio.json');
+export const ARCHIVO_DE_NEGOCIO = join(AQUI, '../../../admin/scripts/datos/rroca-antonio/negocio-rroca-antonio.json');
 export const TOPE_DE_NODOS = 48;
 /** Los nodos de la conversación completa (PR-B): el cotejo del comprobante, el modelo y el aviso a Antonio. La guardia los exige. */
 export const NODOS_DEL_AVISO = ['Armar avisos', '¿Hay avisos?', 'Enviar aviso'];
@@ -66,6 +69,8 @@ export const CONFIG = {
   ],
 };
 
+/** Los nodos que los módulos comunes de medios leen por contrato (los exige `--verificar` y `--publicable`). */
+export const NODOS_CONTRATO_MEDIOS = ['Normalizar entrada', 'Config del negocio', 'Obtener URL del medio (general)', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado'];
 const NODO_PRUEBA = 'Entrada de prueba';
 const NODO_RECEPTOR = 'Entrega del receptor';
 const NODOS_DEL_RECEPTOR = [NODO_RECEPTOR, 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'];
@@ -115,9 +120,8 @@ const FORMAS_CONFIG = {
   avisoComprobanteEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoConsultaEstado: /^(APPROVED|PENDING|REJECTED|PAUSED|DISABLED|IN_APPEAL)$/,
   avisoPlantillaIdioma: /^[a-z]{2,3}(_[A-Z]{2})?$/,
-  // Textos que ve el cliente: una frase, sin comillas dobles ni llaves ni saltos; la línea de protección es un marcador hasta que Silvana la verifique.
+  // Textos que ve el cliente: una frase, sin comillas dobles ni llaves ni saltos.
   garantiaTexto: /^[^"{}\r\n<>]{10,300}$/,
-  lineaProteccion: /^(REEMPLAZAR_[A-Z0-9_]+|[^"{}\r\n<>]{3,100})$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
 
@@ -213,7 +217,7 @@ export function guardias(variante, flujo) {
   const repSal = por('Reportar mensaje (saliente)');
   if (repSal && !/no_contactar/.test(String(p(repSal).jsonBody || ''))) h.push('«Reportar mensaje (saliente)» no reporta el evento `no_contactar` (condición dura del contrato del rescate)');
   // Los nodos de medios comunes tienen que estar, con los nombres que esos módulos leen por contrato.
-  for (const n of ['Normalizar entrada', 'Config del negocio', 'Obtener URL del medio (general)', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado']) if (!nombres.has(n)) h.push(`falta el nodo «${n}» (contrato con los módulos comunes de medios)`);
+  for (const n of NODOS_CONTRATO_MEDIOS) if (!nombres.has(n)) h.push(`falta el nodo «${n}» (contrato con los módulos comunes de medios)`);
   // El reporte del entrante corre ANTES que la rama que responde: «Reportar mensaje (entrante)» arriba de la «Puerta del turno» y de toda la rama de medios y de decisión.
   const rep = por('Reportar mensaje (entrante)');
   if (rep) {
@@ -276,6 +280,108 @@ export function guardias(variante, flujo) {
     if (conMarcador.has(n.name)) continue;
     if (/REEMPLAZAR_[A-Z0-9]/.test(JSON.stringify(n))) h.push(`el nodo «${n.name}» trae un marcador REEMPLAZAR_: solo va en «Config base», el receptor y la ruta de prueba`);
   }
+  return h;
+}
+
+// ----------------------------------------------------------------- la guardia de publicación (PR-C)
+/**
+ * El JSON versionado es técnicamente armable pero NO debe llegar a n8n con marcadores `REEMPLAZAR_*`, con plantillas de aviso que Meta no aprobó, ni sin el
+ * catálogo del negocio listo para cargar. Esto NO es una guardia del armado (el JSON versionado lleva marcadores a propósito: el repositorio es público): es la de PUBLICAR, y se corre sobre lo que se
+ * va a escribir (el versionado, el `.local.json` o el flujo VIVO). Los mensajes nombran claves, marcadores y productos; NUNCA imprimen valores de los datos ni fragmentos del flujo.
+ *   flujo    el JSON a publicar;   datos  `rroca-antonio.json` (`configBase`);   negocio  `negocio-rroca-antonio.json` (catálogo y marcadores del negocio).
+ * Devuelve la lista de hallazgos (vacía si se puede publicar).
+ */
+export const CLAVES_DE_PLANTILLA = [
+  { estado: 'avisoComprobanteEstado', nombre: 'avisoComprobantePlantilla' },
+  { estado: 'avisoConsultaEstado', nombre: 'avisoConsultaPlantilla' },
+];
+/** Los 6 productos que lee el flujo (`RA_PRODUCTOS.catId`): el id sale de `idDe(nombre)` al cargar el negocio. */
+export const IDS_DEL_CATALOGO = ['pack-completo', 'libro', 'workbook', 'guia-de-conversaciones', 'calendario-de-conexion', 'preguntas-profundas'];
+const idDe = (nombre) => String(nombre).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+// Un marcador es CUALQUIER `REEMPLAZAR_` (sin distinguir mayúsculas, tras normalizar a NFKC). Se quitan antes de mirar SOLO las formas que son texto de comentario de los módulos copiados
+// (`REEMPLAZAR_*`, `REEMPLAZAR_…`, `REEMPLAZAR_...`, `REEMPLAZAR_` entre comillas invertidas) y los literales de expresión regular `/^REEMPLAZAR_/` y `/reemplazar_/i` con los que el código descarta marcadores.
+const MARCADOR_CRUDO = /reemplazar_/i;
+const sinComentarios = (t) => String(t).normalize('NFKC').replace(/\/\^?REEMPLAZAR_\/i?/gi, '').replace(/REEMPLAZAR_(?:\*|…|\.\.\.)/gi, '').replace(/`REEMPLAZAR_`/gi, '');
+const hayMarcador = (t) => MARCADOR_CRUDO.test(sinComentarios(t));
+const VALOR_LLENO = (v) => typeof v === 'string' && v.trim() !== '' && !hayMarcador(v);
+const marcasEn = (v) => (sinComentarios(JSON.stringify(v) || '').match(/reemplazar_[a-z0-9_-]*/gi) || []);
+
+function hallazgosDeConfig(cb, donde) {
+  const h = [];
+  if (!cb || typeof cb !== 'object') return [`${donde}: no trae la configuración base`];
+  for (const { estado, nombre } of CLAVES_DE_PLANTILLA) {
+    if (cb[estado] !== 'APPROVED') h.push(`${donde}: ${estado} es ${cb[estado] === undefined ? '«ausente»' : '(distinto de APPROVED)'} y tiene que ser APPROVED (Meta aún no aprobó la plantilla)`);
+    if (!VALOR_LLENO(cb[nombre])) h.push(`${donde}: falta el nombre de la plantilla (${nombre})`);
+  }
+  if (!VALOR_LLENO(cb.avisoPlantillaIdioma)) h.push(`${donde}: falta el idioma de las plantillas (avisoPlantillaIdioma)`);
+  return h;
+}
+
+function hallazgosDelNegocio(negocio) {
+  const h = [];
+  if (!negocio || typeof negocio !== 'object' || Array.isArray(negocio)) return ['negocio: no se pudo leer el archivo de datos del negocio'];
+  // El número de recepción va como `numeroRecepcionMarcador` (lo resuelve la tabla local al cargar): es el único campo donde un REEMPLAZAR_ se tolera; cualquier otro es un dato sin cargar.
+  const { negocio: n, ...resto } = negocio;
+  const { numeroRecepcionMarcador: _n, ...restoNegocio } = n && typeof n === 'object' ? n : {};
+  for (const m of new Set(marcasEn({ ...resto, negocio: restoNegocio }).map((x) => x.toUpperCase()))) h.push(`negocio: marcador sin sustituir: ${m}`);
+  const cat = Array.isArray(negocio.catalogo) ? negocio.catalogo : [];
+  if (!cat.length) h.push('negocio: el catálogo no está cargado');
+  const porId = new Map(cat.filter((x) => x && typeof x === 'object').map((x) => [idDe(x.nombre), x]));
+  for (const id of IDS_DEL_CATALOGO) {
+    const it = porId.get(id);
+    if (!it) { h.push(`negocio: falta el producto con id «${id}» en el catálogo`); continue; }
+    if (it.activo !== true) h.push(`negocio: el producto «${id}» no está activo`);
+    if (!(typeof it.precio === 'number' && Number.isFinite(it.precio) && it.precio > 0)) h.push(`negocio: el producto «${id}» no tiene un precio válido`);
+  }
+  return h;
+}
+
+/** Los nodos, las aristas y los módulos comunes de la rama de medios (audio, documento, imagen). Se exigen al PUBLICAR: sin ellos el flujo atendería medios a medias. */
+export const NODOS_DE_MEDIOS = [...NODOS_CONTRATO_MEDIOS, '¿Bajar medio?', '¿Tamaño aceptable?', 'Descargar medio', '¿Es audio?', '¿Es un documento?', 'Transcribir audio', 'Describir documento', 'Describir imagen'];
+export const ARISTAS_DE_MEDIOS = [
+  ['¿Bajar medio?', 'Obtener URL del medio (general)'], ['¿Bajar medio?', 'Decidir turno'], ['Obtener URL del medio (general)', '¿Tamaño aceptable?'],
+  ['¿Tamaño aceptable?', 'Descargar medio'], ['¿Tamaño aceptable?', 'Medio no aceptado'], ['Descargar medio', '¿Es audio?'],
+  ['¿Es audio?', 'Transcribir audio'], ['¿Es audio?', '¿Es un documento?'], ['¿Es un documento?', 'Describir documento'], ['¿Es un documento?', 'Describir imagen'],
+  ['Transcribir audio', 'Preparar transcripción'], ['Preparar transcripción', 'Decidir turno'], ['Describir documento', 'Preparar imagen'], ['Describir imagen', 'Preparar imagen'],
+  ['Preparar imagen', 'Interpretar lectura'], ['Medio no aceptado', 'Decidir turno'],
+];
+const MODULOS_DE_MEDIOS = { 'Preparar transcripción': 'preparar-transcripcion.js', 'Preparar imagen': 'preparar-imagen.js', 'Medio no aceptado': 'medio-no-aceptado.js' };
+export function hallazgosDeMedios(flujo) {
+  const h = [];
+  const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
+  const por = (n) => nodos.find((x) => x.name === n);
+  for (const n of NODOS_DE_MEDIOS) if (!por(n)) h.push(`medios: falta el nodo «${n}»`);
+  const conex = (flujo && flujo.connections) || {};
+  for (const [de, a] of ARISTAS_DE_MEDIOS) {
+    if (por(de) && por(a) && !(conex[de] && (conex[de].main || []).some((s) => (s || []).some((x) => x.node === a)))) h.push(`medios: «${de}» no está conectado a «${a}»`);
+  }
+  for (const [nombre, archivo] of Object.entries(MODULOS_DE_MEDIOS)) {
+    const fuente = readFileSync(join(AQUI, '../../src/core/medios', archivo), 'utf8');
+    if (por(nombre) && !String((por(nombre).parameters || {}).jsCode || '').includes(fuente)) h.push(`medios: el código de «${nombre}» no es el del módulo común ${archivo}`);
+  }
+  for (const n of ['Transcribir audio', 'Describir documento', 'Describir imagen']) {
+    if (por(n) && !(((por(n).credentials || {}).googlePalmApi || {}).name)) h.push(`medios: «${n}» no lleva credencial de Gemini`);
+  }
+  return h;
+}
+
+export function guardiaDePublicacion({ flujo, datos, negocio }) {
+  const h = [];
+  const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
+  if (!nodos.length) h.push('el flujo no trae nodos');
+  // 1. Marcadores sin sustituir en CUALQUIER parte del JSON completo (nodos, conexiones, ajustes, pinData, staticData, nivel superior).
+  for (const m of new Set(marcasEn(flujo).map((x) => x.toUpperCase()))) h.push(`marcador sin sustituir: ${m}`);
+  // 2. Las plantillas, en lo que se publica («Config base»)…
+  const base = nodos.find((n) => n.name === 'Config base');
+  const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
+  if (!Array.isArray(lista)) h.push('el flujo no trae «Config base»: no se puede comprobar el estado de las plantillas');
+  else h.push(...hallazgosDeConfig(Object.fromEntries(lista.map((a) => [a.name, a.value])), 'Config base'));
+  // 3. …en los datos…
+  h.push(...hallazgosDeConfig(datos && datos.configBase, 'datos'));
+  // 4. …y el catálogo y los ids del negocio.
+  h.push(...hallazgosDelNegocio(negocio));
+  // 5. …y la rama de medios completa.
+  h.push(...hallazgosDeMedios(flujo));
   return h;
 }
 
@@ -364,8 +470,38 @@ export function construir({ carpeta = AQUI, datos: rutaDatos = ARCHIVO_DE_DATOS,
 // ----------------------------------------------------------------- línea de comandos
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
+  if (args.includes('--publicable')) {
+    // --publicable [--flujo <json>] [--datos <json>] [--negocio <json>]: solo lee. Sale 0 si se puede publicar, 1 si no, 2 si los argumentos están mal.
+    const OPCIONES = ['--flujo', '--datos', '--negocio'];
+    const opcion = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
+    const resto = args.filter((a, i) => a !== '--publicable' && !OPCIONES.includes(a) && !OPCIONES.includes(args[i - 1]));
+    if (resto.length || args.includes('--verificar') || OPCIONES.some((n) => args.includes(n) && !opcion(n))) {
+      console.error('✗ uso: construir.mjs --publicable [--flujo <json>] [--datos <json>] [--negocio <json>]'); process.exit(2);
+    }
+    // Un SyntaxError puede traer un fragmento del archivo: mensaje fijo, sin contenido.
+    const leerJson = (ruta, que) => {
+      const t = leerSiExiste(ruta, que);
+      if (t === null) throw new Error(`no existe ${que}`);
+      try { return JSON.parse(t); } catch { throw new Error(`JSON inválido en ${que}`); }
+    };
+    try {
+      const flujoJson = leerJson(opcion('--flujo') || join(AQUI, 'rroca-antonio.json'), 'el flujo');
+      const negocio = leerJson(opcion('--negocio') || ARCHIVO_DE_NEGOCIO, 'el archivo de datos del negocio');
+      const hallazgos = guardiaDePublicacion({ flujo: flujoJson, datos: cargarDatos(opcion('--datos') || ARCHIVO_DE_DATOS), negocio });
+      if (hallazgos.length) {
+        console.error('✗ El flujo de Antonio NO se puede publicar todavía:');
+        for (const x of hallazgos) console.error(`  - ${x}`);
+        process.exit(1);
+      }
+      console.log('✓ Sin marcadores REEMPLAZAR_*, con las plantillas de aviso APPROVED y el catálogo listos: se puede publicar (con la confirmación de publicar-flujo.sh).');
+      process.exit(0);
+    } catch (e) {
+      console.error(e instanceof SyntaxError ? '✗ JSON inválido' : `✗ ${e instanceof Error ? e.message : String(e)}`);
+      process.exit(1);
+    }
+  }
   const desconocidos = args.filter((a) => a !== '--verificar');
-  if (desconocidos.length) { console.error(`✗ argumento desconocido: ${desconocidos.join(' ').slice(0, 60)}. Solo existe --verificar; sin argumentos escribe los JSON.`); process.exit(2); }
+  if (desconocidos.length) { console.error(`✗ argumento desconocido: ${desconocidos.join(' ').slice(0, 60)}. Solo existen --verificar y --publicable; sin argumentos escribe los JSON.`); process.exit(2); }
   const verificar = args.includes('--verificar');
   try {
     let difiere = false;

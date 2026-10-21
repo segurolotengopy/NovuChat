@@ -55,14 +55,28 @@ describe('punto 1: cada entrante se reporta con `tipo` y el `texto` real', () =>
 });
 
 describe('punto 3: la petición de «no me escribas» del reporte entrante (regex PROPIA acotada a peticiones)', () => {
-  it('«no me escribas más», «no me manden mensajes», «no me llamen», «no me molesten», «déjenme de escribir», «bórrame», «stop» salen con `evento: no_contactar`', () => {
-    for (const texto of ['no me escribas más', 'no me manden más mensajes', 'por favor no me llamen', 'no me molesten', 'dejen de escribir por favor', 'bórrame de la lista', 'stop', 'no quiero más mensajes', 'no me contacten']) {
+  it('tú, usted, ustedes y voseo: las peticiones reales salen con `evento: no_contactar` (una sola vez en el entrante)', () => {
+    const SI = [
+      'no me escribas más', 'No me escriba más', 'no me manden más mensajes', 'no me mande mensajes', 'por favor no me llamen', 'no me molesten', 'dejen de escribir por favor',
+      'bórrame de la lista', 'Bórrenme', 'quítenme de la lista', 'quítame de aquí', 'bórreme de sus contactos', 'stop', 'no quiero más mensajes', 'no me contacten', 'no me contacte',
+      'no me llame', 'no me vuelva a escribir', 'no me envíes más mensajes', 'no quiero que me escriban', 'ya no quiero recibir mensajes', 'no me sigan escribiendo',
+      'quiero darme de baja', 'dame de baja', 'no me escribás', 'no me escribís', 'no  me   escribas', 'NO ME ESCRIBAS', 'dejame de escribir', 'no me vuelvas a llamar',
+      'no vuelvas a escribirme', 'no quiero que me escribas', 'no quiero que me escriba más', 'ya no quiero que me contactes', 'no nos escriban', 'no le escriba más a este número',
+      'sáquenme de la lista', 'elimíname de la lista', 'bórrenme por favor', 'stop por favor',
+    ];
+    for (const texto of SI) {
       const t = hablar(mundo(), ANA, mTexto(texto));
       expect(noContactar(t).filter((c) => c['direccion'] === 'entrante').length, texto).toBe(1);
     }
   });
-  it('las QUEJAS no son una petición: «no me mandaron el material», «no me contactan», «pagué y no me contactan», «no me llegó», «no me escribieron» NO marcan `no_contactar`', () => {
-    for (const texto of ['no me mandaron el material', 'no me contactan', 'pagué y no me contactan', 'no me llegó nada', 'no me escribieron todavía', 'no me llamaron', 'quiero escribirte una duda']) {
+  it('las QUEJAS y los usos corrientes NO son una petición: no entrega, «quítame el libro», «bórrame el pedido», «dame de baja el bono 2», «no me llamen la atención»', () => {
+    const NO = [
+      'no me mandaron el material', 'no me contactan', 'pagué y no me contactan', 'no me llegó nada', 'no me escribieron todavía', 'no me llamaron', 'quiero escribirte una duda',
+      'quítame el libro', 'bórrame el pedido', 'dame de baja el bono 2', 'no me llamen la atención jaja', 'no me mande el material', 'no me han escrito', 'quiero el libro',
+      'bórrame el workbook de la compra', 'dar de baja el calendario',
+      'mi ex no deja de escribirme', 'mi esposo no deja de molestarme', 'le dije que no me escriba más', 'deja de mandar indirectas dice mi esposa',
+    ];
+    for (const texto of NO) {
       const t = hablar(mundo(), ANA, mTexto(texto));
       expect(noContactar(t), texto).toHaveLength(0);
     }
@@ -104,7 +118,6 @@ describe('punto 6 (CONDICIÓN DURA): todo camino de protección por violencia o 
     ['amenazas', {}, mTexto('me amenaza todos los días'), () => undefined],
     ['nota de voz transcrita', { medio: { transcripcion: 'mi marido me pega' } }, mAudio(), () => undefined],
     ['texto leído en una captura', { medio: { clasificacion: { categoria: 'publicidad', texto: 'me maltrata mi pareja' } } }, mImagen(), () => undefined],
-    ['pie de foto de un comprobante', { panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } }, mImagen({ caption: 'me controla y tengo miedo' }), () => undefined],
     ['la marca RIESGO del modelo', { modeloDice: 'RIESGO' }, mTexto('no aguanto más esta situación en mi casa'), (w) => { hablar(w, ANA, mTexto('hola')); }],
     ['el respaldo en texto (el envío principal cae)', { envio: { 'Enviar a WhatsApp': 'error' as const } }, mTexto('mi pareja me agrede'), () => undefined],
   ];
@@ -117,6 +130,10 @@ describe('punto 6 (CONDICIÓN DURA): todo camino de protección por violencia o 
       expect(noContactar(t).filter((c) => c['direccion'] === 'saliente'), rotulo).toHaveLength(1);
     });
   }
+  it('pie de foto de un comprobante: el turno sigue el cobro normal (sin texto de riesgo), pero el reporte del ENTRANTE lleva `no_contactar`: esa persona tampoco recibe rescate', () => {
+    const t = hablar(mundo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } }), ANA, mImagen({ caption: 'me controla y tengo miedo' }));
+    expect(noContactar(t).filter((c) => c['direccion'] === 'entrante')).toHaveLength(1);
+  });
   it('desde ese momento TODA respuesta del flujo a ese teléfono vuelve a reportar `no_contactar` (comprar, pedir el QR, preguntar el precio): nunca queda una respuesta de venta sin el evento', () => {
     const w = mundo();
     hablar(w, ANA, mTexto('mi pareja me golpea'));

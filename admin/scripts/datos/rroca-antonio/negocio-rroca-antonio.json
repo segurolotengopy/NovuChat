@@ -1,0 +1,70 @@
+{
+  "_fuente": "Datos del negocio de «El Puente» de Antonio (tenant rroca-antonio, flujo Flujos/experimental/rroca-antonio/). Se carga con admin/scripts/datos/cargar-negocio.mjs, que solo admite las secciones negocio, agendamiento, catalogo y funcionarios: aquí van negocio y catalogo. Las claves que empiezan con `_` son notas y no se escriben. Los ids del catálogo salen del nombre (idDe) y son los que lee el flujo (raCatalogo): el monto de un QR sale de aquí y de ningún otro lado.",
+  "_pendiente": {
+    "_nota": "NO SE APLICA mientras quede algún valor REEMPLAZAR_… en este archivo, notas incluidas, fuera de numeroRecepcionMarcador (`cargar-negocio.mjs --aplicar` lo NIEGA y la guardia de publicación `construir.mjs --publicable` también). Antonio todavía debe dar estos datos; al llegar, se reemplaza cada marcador por el dato real. El número de recepción nunca va aquí: se resuelve contra la tabla local.",
+    "razonComercial": "REEMPLAZAR_RAZON_COMERCIAL_ANTONIO",
+    "horarioDeRecepcion": "REEMPLAZAR_HORARIO_RECEPCION_ANTONIO"
+  },
+  "negocio": {
+    "nombreNegocio": "El Puente",
+    "descripcion": "Libros y material digital para parejas: un libro, un pack con bonos y cuatro bonos sueltos. Antonio revisa el comprobante de pago y envía el material por este mismo chat.",
+    "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_ANTONIO",
+    "zonaHoraria": "America/La_Paz",
+    "moneda": "BOB",
+    "tratamiento": "tu",
+    "estiloEmojis": "pocos",
+    "prefijosPermitidos": [
+      "591"
+    ],
+    "datosQueNoTenemos": [
+      "garantía y devolución",
+      "factura",
+      "otros medios de pago",
+      "plazo exacto de entrega"
+    ]
+  },
+  "catalogo": [
+    {
+      "nombre": "Pack completo",
+      "descripcion": "Pack Completo de Reconexión: el libro y 4 bonos prácticos",
+      "precio": 49,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Libro",
+      "descripcion": "Libro «El Puente que nos vuelve a unir»",
+      "precio": 35,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Workbook",
+      "descripcion": "Bono: Workbook de Transformación de Pareja",
+      "precio": 20,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Guía de conversaciones",
+      "descripcion": "Bono 4: Guía Práctica para Conversaciones Difíciles",
+      "precio": 19,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Calendario de conexión",
+      "descripcion": "Bono: Calendario de Conexión de 30 Días",
+      "precio": 17,
+      "moneda": "BOB",
+      "activo": true
+    },
+    {
+      "nombre": "Preguntas profundas",
+      "descripcion": "Bono: Banco de 100 Preguntas Profundas",
+      "precio": 15,
+      "moneda": "BOB",
+      "activo": true
+    }
+  ]
+}

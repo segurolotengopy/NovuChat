@@ -38,6 +38,7 @@ Una excepción necesita las tres cosas, o no es una excepción:
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |
 | Platinum (seguimientos) | `.env.platinum-seguimientos` | `Flujos/agendamiento-seguimientos.json` | — |
 | Platinum (señas vencidas) | `.env.platinum-senas` | `Flujos/agendamiento-senas-vencidas.json` | — |
+| Antonio («El Puente», aún sin publicar) | `.env.rroca-antonio` | `Flujos/experimental/rroca-antonio/rroca-antonio.json` | EXCEPCIÓN FORMAL de la falla abierta de la pausa. Id rroca-pausa-falla-abierta; declarada el 19/10/2026, vence en 90 días (17/01/2027). Si vence sin cerrarse (tocar la puerta común o agregar un nodo que lea la pausa por otra vía) o sin renovarse con una decisión escrita de Cartera, es un defecto, no una excepción. Alcance: si la ingesta y la consola caen en el MISMO turno no hay estado de atención y la puerta devuelve «normal», así que una persona en pausa recibiría el saludo; puerta-del-turno.js es idéntica al origen común y no se toca. Ampliada a rroca-antonio por Principal el 20/10/2026; el cierre es el PR común de Core (a cargo de Rearquitectura). No reinicia el vencimiento. |
 
 > El guion `—` significa **sin excepción**: ese flujo tiene que estar al día con
 > su JSON versionado, y el script falla si no lo está.

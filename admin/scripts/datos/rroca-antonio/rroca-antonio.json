@@ -27,11 +27,10 @@
     "temperatura": 0.4,
     "plazoEntregaHoras": 6,
     "garantiaTexto": "Sobre garantía, devolución o factura, eso lo responde Antonio directamente; desde aquí no puedo prometerte nada de eso.",
-    "lineaProteccion": "REEMPLAZAR_LINEA_PROTECCION_VERIFICADA",
     "avisoComprobantePlantilla": "aviso_comprobante_recibido",
-    "avisoComprobanteEstado": "PENDING",
+    "avisoComprobanteEstado": "APPROVED",
     "avisoConsultaPlantilla": "aviso_consulta_para_antonio",
-    "avisoConsultaEstado": "PENDING",
+    "avisoConsultaEstado": "APPROVED",
     "avisoPlantillaIdioma": "es"
   }
 }

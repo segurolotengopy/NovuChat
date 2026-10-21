@@ -273,8 +273,8 @@ function raTextoGarantia(base) {
 }
 
 // -----------------------------------------------------------------------------
-// Protección ante violencia o miedo (decisión del guion, regla 7): se DETECTA por código (raíces sobre texto, transcripción o texto leído de una imagen) Y por la marca `RIESGO` del modelo.
-// Corta la venta: sin botones, sin QR, sin precios, sin rescate, y se reporta `no_contactar`. El texto lo pone el CÓDIGO; la línea de protección es un DATO (`lineaProteccion`).
+// Violencia o miedo (orden de Andres, 21/10/2026: este asistente NO atiende denuncias): se DETECTA por código (raíces sobre texto, transcripción o texto leído de una imagen) Y por la marca `RIESGO` del modelo.
+// Corta la venta: un texto fijo y breve (sin consejos, números, instituciones, promesas ni libro), sin botones, sin QR, sin precios, SIN aviso a Antonio, y se reporta `no_contactar` (sin rescate). El texto lo pone el CÓDIGO.
 // «Miedo» solo cuenta dirigido a la pareja o a lo que podría hacer («miedo a perder mi relación» NO es riesgo: es el tema del anuncio).
 // -----------------------------------------------------------------------------
 const RA_RIESGO = new RegExp([
@@ -294,13 +294,7 @@ function raEsRiesgo(norm) {
 function raEsMarcaRiesgo(crudo) {
   return /^riesgo\b/.test(raNorm(crudo));
 }
-const RA_TEXTO_RIESGO_SEGUIMIENTO = 'Gracias por contármelo. Tu seguridad es lo primero: si estás en peligro, busca a una persona de confianza o a la línea de protección más cercana.';
-// El texto de protección del guion. La línea de protección es un dato verificado (P9: Silvana la confirma contra la fuente oficial): sin dato lleno NO se inventa ninguna.
-function raTextoRiesgo(base) {
-  const linea = raDatoLleno(cbEsObjeto(base) ? base.lineaProteccion : '');
-  return 'Lamento mucho lo que estás pasando.\n\nQuiero ser muy sincero y responsable contigo: este libro es únicamente para problemas cotidianos de comunicación, y cuando hay miedo, amenazas o violencia, ningún libro es la solución.\n\n'
-    + 'Tu bienestar y tu seguridad están primero: por favor acude a apoyo profesional, a tu red de confianza o a las líneas de protección locales' + (linea ? ' (' + linea + ')' : '') + ' para que estés a salvo.';
-}
+const RA_TEXTO_RIESGO = 'Este asistente no atiende ese tipo de consultas.';
 
 // -----------------------------------------------------------------------------
 // Las entradas: los 5 mensajes prellenados de la landing y los 7 ángulos de anuncio (sobre el texto NORMALIZADO con `raNorm`)
@@ -635,6 +629,14 @@ function raPlantilla(base, cual) {
   if (!/^[a-z0-9_]{1,100}$/.test(nombre) || estado !== 'APPROVED' || !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(idioma)) return null;
   return { nombre: nombre, idioma: idioma };
 }
+// ENTREGA 1 / PR-C (port propio de `rrHablaDePagar` de Rubén, solo la parte de pago): el cliente habla de PAGAR. En Bolivia «cancelé», «ya cancelé», «cancelado» y «cancelamos» significan «ya pagué»: es intención de pago,
+// nunca la cancelación de un pedido (aquí NO se porta ninguna cancelación de pedido). `n` es el texto normalizado (`raNorm`). Falso positivo a evitar: «cancelo mi pedido» (presente, sin «ya») no es pago.
+function raHablaDePagar(n) {
+  const t = String(n || '');
+  if (/\b(pague|pagado|pagando|pagamos|transferi|transferido|transferencia|transfiero|deposite|depositado|deposito|comprobante|voucher|recibo|mi pago|abono|abone|ya hice el pago|hice el pago|hice la transferencia)\b/.test(t)) return true;
+  if (/\b(cancele|cancelado|cancelada|cancelamos)\b/.test(t)) return /\b(ya|pago|transferencia|deposito|qr|monto|libro|pack)\b/.test(t) || !/\bmi pedido\b/.test(t);
+  return false;
+}
 // Reglas propias del flujo para `cmRevisarRedaccion` (`opciones.extra`): a lo más 4 oraciones y UNA pregunta; sin banco, titular ni QR; sin remitir a una página; sin presentarse otra vez;
 // sin «agendar» ni «cita»; sin ofrecer opciones, paquetes ni bonos (eso lo hacen los botones); nada de psicólogo o terapeuta.
 function raExtraRedaccion(texto, norm) {
@@ -653,6 +655,8 @@ function raExtraRedaccion(texto, norm) {
   if (/\bderivar\b|\briesgo\b/.test(norm)) return 'palabra_interna';
   if (/descuent|gratis|gratuito|promoci|oferta|garant|devoluc|reembols/.test(norm)) return 'afirmacion_comercial';
   // El estado de un PAGO o de una ENTREGA lo dice solo el código (y Antonio): el modelo no habla de pagos, comprobantes ni compras, ni de si el material salió, llega, se procesa o va a un correo.
+  // Cierres de pago con otras palabras («ya recibí todo», «todo listo con tu pago», «coinciden… todo listo»): también son el estado de un pago, y lo dice solo el código.
+  if (/\bya recibi todo\b|\btodo listo\b|\bcoinciden?\b[^.?!]{0,60}\btodo (listo|bien|ok)\b/.test(norm)) return 'estado_de_pago';
   if (/\b(pago|pagos|pague|pagas|pagado|pagada|pagaste|pagamos|transferencia|transferencias|deposito|depositos|comprobante|comprobantes|abono|abonos|abonar|cobro|cobros|tu compra|su compra|tu pedido|su pedido|procesand\w*|procesad\w*|todo en orden|en orden)\b/.test(norm)) return 'estado_de_pago';
   if (/\b(material|libro|pdf|pdfs|archivo|archivos|bonos?|guia|enlaces?|link)\b[^.?!]{0,40}\b(llega\w*|llego|enviad\w*|envia\w*|enviar\w*|mand\w*|salio|salieron|sali\w*|listo|lista|listos|recibir\w*|recibid\w*|entreg\w*|descarg\w*|correo|email|mail)\b|\b(llega\w*|enviad\w*|envia\w*|enviar\w*|mand\w*|recibir\w*|entreg\w*)\b[^.?!]{0,40}\b(material|libro|pdf|pdfs|archivo|archivos|bonos?|guia|enlaces?|link)\b|\b(correo|email|mail|gmail)\b/.test(norm)) return 'estado_de_entrega';
   // Plazos: ningún «en unos minutos», «en pocas horas», «en un par de días», «pronto», «enseguida»… (con dígitos o sin ellos): el plazo es un dato del código.

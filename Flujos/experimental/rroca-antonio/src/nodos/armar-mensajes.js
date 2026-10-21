@@ -10,7 +10,7 @@
 // «SOLO SE OFRECE LO QUE SE CUMPLE»: «ya pasé tu comprobante» / «le avisé» salen SOLO si «Enviar aviso» devolvió un `wamid` real (`avisoSalio`); si no, el texto dice que no se pudo avisar y trae el botón.
 // En modo prueba sin `enviarDeVerdad` el aviso no se envía y cuenta como salido (igual que los mensajes al cliente: la prueba no gasta mensajes).
 // Todo texto pasa por `raSeguro` (NIEGA_IA, `CB_PROHIBIDAS` y párrafos). La ficha del teléfono (`antonio[<messages[0].from>]`) se escribe AQUÍ, una sola vez por turno.
-// VIOLENCIA O MIEDO: si «Decidir turno» la detectó, o el modelo contestó la marca RIESGO, sale SOLO el texto de protección (sin botones, sin QR, sin precios) y el mensaje se reporta con el evento `no_contactar`.
+// VIOLENCIA O MIEDO: si «Decidir turno» la detectó, o el modelo contestó la marca RIESGO, sale SOLO el texto fijo («Este asistente no atiende ese tipo de consultas.»: sin botones, sin QR, sin precios, sin aviso a Antonio) y el mensaje se reporta con el evento `no_contactar`.
 const cfg = cnCfg();
 const base = cnPrimero('Config base') || {};
 const t = cnPrimero('Normalizar entrada') || {};
@@ -87,13 +87,13 @@ if (rutaDelTurno === 'suspendido' || rutaDelTurno === 'uso_extendido') {
   // La marca RIESGO del modelo activa la protección; la palabra DERIVAR pasa a Antonio. Ninguna de las dos llega jamás al cliente.
   if (tipoDePlan === 'modelo' || tipoDePlan === 'angulo') {
     const crudo = cnTextoDeGemini(cnPrimero('Conversar con el modelo'));
-    if (raEsMarcaRiesgo(crudo)) { tipoDePlan = 'riesgo'; plan.primera = !fichaAntes.riesgo; }
+    if (raEsMarcaRiesgo(crudo)) tipoDePlan = 'riesgo';
     else if (raEsDerivar(crudo)) { tipoDePlan = 'derivar'; plan.motivo = 'consulta'; plan.clave = 'no_supo'; }
   }
 
   if (tipoDePlan === 'riesgo') {
     riesgoNuevo = true;
-    m = texto(plan.primera === false ? RA_TEXTO_RIESGO_SEGUIMIENTO : raTextoRiesgo(base), { evento: 'no_contactar' });
+    m = texto(RA_TEXTO_RIESGO, { evento: 'no_contactar' });
   } else if (tipoDePlan === 'fuera_pais') {
     m = conAntonio(RA_TEXTO_FUERA_DE_PAIS);
   } else if (tipoDePlan === 'saludo') {
@@ -191,7 +191,7 @@ if (claveOk) {
   if (pedidoNuevo) { qrPrevio = { pedidos: ficha.pedidos, producto: ficha.producto, qrHastaMs: ficha.qrHastaMs }; ficha.pedidos += 1; ficha.producto = pedidoNuevo.producto; ficha.qrHastaMs = ahora + RA_MINUTOS_QR * 60 * 1000; }
   // El comprobante resuelto (todo menos «reintentar» e «ilegible», que siguen con el cobro abierto) cierra el cobro o lo pasa a Antonio: la guarda de 15 minutos del QR ya no tiene sentido.
   // Se guarda el valor previo para restaurarlo si la respuesta no sale (`Resumen del turno`).
-  const huboComprobante = tipoDePlan === 'comprobante' || (tipoDePlan === 'riesgo' && !!plan.resultado);
+  const huboComprobante = tipoDePlan === 'comprobante';
   if (huboComprobante && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible' && ficha.qrHastaMs > 0) { qrLiberado = { qrHastaMs: ficha.qrHastaMs }; ficha.qrHastaMs = 0; }
   // Un comprobante recibido (todo menos «reintentar» e «ilegible») habilita la queja de no entrega: antes de pagar no hay nada que entregar.
   if (huboComprobante && plan.resultado !== 'reintentar' && plan.resultado !== 'ilegible') ficha.comprobanteMs = ahora;

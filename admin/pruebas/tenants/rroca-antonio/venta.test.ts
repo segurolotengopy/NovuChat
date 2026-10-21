@@ -665,23 +665,25 @@ describe('violencia o miedo: se corta la venta y SIEMPRE se reporta `no_contacta
   };
   const noContactar = (t: ResultadoTurno): boolean => t.llamadas.ingesta.some((c) => c['direccion'] === 'saliente' && c['evento'] === 'no_contactar');
 
-  it('por código, en texto: el texto de protección (la línea es un DATO verificado; sin dato lleno no se inventa ninguna), sin botones, sin QR, sin precios, y `no_contactar` reportado', () => {
+  const FIJO = /^Este asistente no atiende ese tipo de consultas\.$/;
+  const nada = (cuerpo: string): void => {
+    expect(cuerpo).toMatch(FIJO);
+    expect(cuerpo).not.toMatch(/\d|línea|linea|policía|policia|FELCV|defensoría|denunci|ayuda|libro|inteligencia artificial|persona real/i);
+  };
+  it('por código, en texto: un texto fijo y breve (sin números, instituciones, consejos ni libro), sin botones, sin QR, sin precios, sin aviso a Antonio, y `no_contactar` reportado', () => {
     const w = nuevo();
     saludar(w);
     const t = hablar(w, ANA, mTexto('mi pareja me golpea y me amenaza'));
     sinOferta(t);
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Lamento mucho lo que estás pasando/);
-    expect(t.mensajes[0]!.cuerpo).toMatch(/ningún libro es la solución/);
-    expect(t.mensajes[0]!.cuerpo).not.toMatch(/\(.*\)/);
-    expect(t.mensajes[0]!.cuerpo).not.toMatch(/\d{3} \d{2}/);
+    nada(t.mensajes[0]!.cuerpo);
     expect(noContactar(t)).toBe(true);
     expect(fichaDe(w, ANA)['riesgo']).toBe(true);
-    // Con la línea cargada como dato, sale en el texto.
-    const v = nuevo({ base: { lineaProteccion: 'línea de protección local' } });
-    expect(hablar(v, ANA, mTexto('le tengo miedo a mi esposo')).mensajes[0]!.cuerpo).toMatch(/\(línea de protección local\)/);
+    // Aunque la configuración traiga una «línea» (ya no existe como dato), el texto no cambia.
+    const v = nuevo({ base: { lineaProteccion: '800 00 0000' } });
+    nada(hablar(v, ANA, mTexto('le tengo miedo a mi esposo')).mensajes[0]!.cuerpo);
   });
 
-  it('también en una nota de voz transcrita, en el texto leído de una captura y en el pie de un comprobante', () => {
+  it('también en una nota de voz transcrita y en el texto leído de una captura', () => {
     const a = nuevo({ medio: { transcripcion: 'mi marido me pega y tengo miedo' } });
     const ta = hablar(a, ANA, mAudio());
     sinOferta(ta);
@@ -690,12 +692,7 @@ describe('violencia o miedo: se corta la venta y SIEMPRE se reporta `no_contacta
     const tb = hablar(b, ANA, mImagen());
     sinOferta(tb);
     expect(noContactar(tb)).toBe(true);
-    const c = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } });
-    const tc = hablar(c, ANA, mImagen({ caption: 'mi pareja me controla y me da miedo' }));
-    expect(tc.mensajes).toHaveLength(1);
-    expect(tc.mensajes[0]!.cuerpo).toMatch(/Lamento mucho/);
-    expect(tc.mensajes[0]!.tipo).toBe('text');
-    expect(noContactar(tc)).toBe(true);
+    nada(ta.mensajes[0]!.cuerpo); nada(tb.mensajes[0]!.cuerpo);
   });
 
   it('por la MARCA del modelo (RIESGO) cuando las raíces no vieron nada: el texto de protección, nunca la palabra, y `no_contactar`', () => {
@@ -704,7 +701,7 @@ describe('violencia o miedo: se corta la venta y SIEMPRE se reporta `no_contacta
     const t = hablar(w, ANA, mTexto('ya no puedo más, siento que me falta el aire cuando llega'));
     expect(t.ejecutados.has('Conversar con el modelo')).toBe(true);
     expect(t.mensajes).toHaveLength(1);
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Lamento mucho/);
+    nada(t.mensajes[0]!.cuerpo);
     expect(t.mensajes[0]!.cuerpo).not.toMatch(/riesgo/i);
     expect(noContactar(t)).toBe(true);
     expect(t.avisos).toHaveLength(0);
@@ -730,11 +727,22 @@ describe('violencia o miedo: se corta la venta y SIEMPRE se reporta `no_contacta
     expect(noContactar(t)).toBe(true);
   });
 
-  it('un comprobante que cuadra o casi cuadra (aproximado) junto a un mensaje de riesgo (ver negadas.test.ts): al cliente solo se le habla de su seguridad, pero Antonio igual recibe el aviso del pago real', () => {
+  it('un turno con COMPROBANTE sigue el cobro normal aunque el pie de foto hable de miedo: cotejo y aviso normal a Antonio, sin texto de riesgo; el entrante igual reporta `no_contactar`', () => {
     const w = nuevo({ panel: panelConQr(49), medio: { clasificacion: COMPROBANTE } });
     const t = hablar(w, ANA, mImagen({ caption: 'mi pareja me amenaza' }));
-    expect(t.mensajes[0]!.cuerpo).toMatch(/Lamento mucho/);
+    expect(t.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    expect(t.mensajes[0]!.cuerpo).toMatch(/Recibí tu comprobante/);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(FIJO);
     expect(t.avisos).toHaveLength(1);
+    expect(t.avisos[0]!.cuerpo).not.toMatch(/miedo|violencia|contactar/i);
+    expect(t.llamadas.ingesta.some((c) => c['evento'] === 'no_contactar')).toBe(true);
+  });
+  it('NEGANDO: el riesgo no avisa a Antonio, no ofrece el libro y no niega ser una IA, ni con un cobro abierto', () => {
+    const w = nuevo({ panel: panelConQr(49) });
+    const t = hablar(w, ANA, mTexto('mi pareja me pega, quiero el libro'));
+    nada(t.mensajes[0]!.cuerpo);
+    expect(t.avisos).toHaveLength(0);
+    expect(t.mensajes[0]!.cuerpo).not.toMatch(/soy (una )?persona|no soy (un|una) (bot|asistente|ia)/i);
     expect(noContactar(t)).toBe(true);
   });
 });
