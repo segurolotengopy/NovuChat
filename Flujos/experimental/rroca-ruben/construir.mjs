@@ -135,6 +135,9 @@ const FORMAS_CONFIG = {
   // Los topes diarios por teléfono de los medios que Gemini mira o escucha (0 apaga el medio; sin valor, el del código).
   topeImagenesDia: /^([0-9]|1[0-9]|20)$/,
   topeAudiosDia: /^([0-9]|[12][0-9]|30)$/,
+  // Los topes GLOBALES por hora (todo el flujo, no por teléfono): respuestas a números de otro país (hasta 200) y llamadas a Gemini de audio y visión (hasta 600). Sin valor, 30 y 120.
+  topeExtranjerosHora: /^([0-9]|[1-9][0-9]|1[0-9]{2}|200)$/,
+  topeGeminiHora: /^([0-9]|[1-9][0-9]|[1-5][0-9]{2}|600)$/,
   modoApertura: /^(prueba|publico)$/,
 };
 const CARACTERES_PELIGROSOS = /["'\\{}\r\n]/;
@@ -328,8 +331,8 @@ function hallazgosDePlantillas(cb, donde) {
 export const MEDIOS_PARA_ABRIR = ['audio', 'imagen', 'documento'];
 export function modoDeApertura(cb) {
   const c = cb && typeof cb === 'object' ? cb : {};
-  // Una lista de prueba tiene al menos un DÍGITO (o es el marcador `REEMPLAZAR_*` que otra guardia obliga a sustituir): «,» o «   » no es una lista y deja el flujo abierto al público (hueco que declaró seguridad).
-  const tel = typeof c.telefonosDePrueba === 'string' && (/\d/.test(c.telefonosDePrueba) || MARCADOR.test(c.telefonosDePrueba.trim())) ? c.telefonosDePrueba.trim() : '';
+  // Una lista de prueba tiene al menos un teléfono de 6 o más dígitos seguidos (o es el marcador `REEMPLAZAR_*` que otra guardia obliga a sustituir): «,», «1» o «   » no es una lista y deja el flujo abierto al público (hueco que declaró seguridad).
+  const tel = typeof c.telefonosDePrueba === 'string' && (/\d{6,}/.test(c.telefonosDePrueba) || MARCADOR.test(c.telefonosDePrueba.trim())) ? c.telefonosDePrueba.trim() : '';
   const modo = c.modoApertura === undefined || c.modoApertura === null || c.modoApertura === '' ? 'prueba' : String(c.modoApertura);
   return tel !== '' && modo === 'prueba' ? 'prueba' : 'publico';
 }
@@ -407,6 +410,13 @@ export function armarRroca(proyecto, datos, v) {
     ingestaUrl: `https://${ANFITRION_CONSOLA}/ingesta`,
     desde: [5480, 160],
   });
+  // Un número de otro país NO se reporta a la ingesta (decisión de Core: los extranjeros cuentan contra el plan si se reportan y el conteo es regla del servidor; no existe un campo para excluirlos). El entrante lo corta
+  // la condición de «¿Reportar? (entrante)» (propia, sobre la común); el saliente, `reportar` de «Armar mensajes». Sin nodos nuevos.
+  const repEntrante = plantilla.nodes.find((n) => n.name === '¿Reportar? (entrante)');
+  const condEntrante = repEntrante && repEntrante.parameters && repEntrante.parameters.conditions && repEntrante.parameters.conditions.conditions && repEntrante.parameters.conditions.conditions[0];
+  const izqEntrante = "={{ $('Config del negocio').first().json.modoPrueba !== true }}";
+  if (!condEntrante || condEntrante.leftValue !== izqEntrante) throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (entrante)» ya no tiene la condición esperada`);
+  condEntrante.leftValue = "={{ $('Config del negocio').first().json.modoPrueba !== true && $('Interpretar entrada').first().json.extranjero !== true }}";
   // Puerta de la entrega (propia): el reporte saliente cuelga de «¿Meta aceptó?». Solo se reencamina la CONEXIÓN de la cadena común; sus nodos quedan intactos.
   const reporta = plantilla.connections['¿Reportar? (saliente)'];
   if (!reporta || !reporta.main[0] || reporta.main[0].length !== 1 || reporta.main[0][0].node !== 'Reportar mensaje (saliente)') throw new Error(`${donde}: la cadena común cambió: «¿Reportar? (saliente)» ya no cuelga de «Reportar mensaje (saliente)»`);

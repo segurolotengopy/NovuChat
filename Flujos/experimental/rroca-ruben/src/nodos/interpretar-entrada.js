@@ -81,6 +81,10 @@ const mimeBase = mimeType.split(';')[0].trim().toLowerCase();
 const docIlegible = tipo === 'document' && mimeBase !== 'application/pdf' && RR_MIME_VISION.indexOf(mimeBase) < 0;
 const rrMedios = rrMediosDelTurno({ tipo: tipo, mediaId: mediaId, mimeType: mimeType, esComprobante: esComprobante, comprobanteSimulado: comprobanteSimulado, extranjero: extranjero, ficha: rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from)), ahoraMs: ahoraTurno, base: cnPrimero('Config base') || {} });
 
+// TOPE GLOBAL de llamadas a Gemini por hora (audio y visión; ni el modelo conversacional ni el cotejo del comprobante entran): lleno, el audio o la foto no se descargan ni se mandan a Gemini.
+const rrBaseG = cnPrimero('Config base') || {};
+const geminiTope = (rrMedios.oirAudio || rrMedios.verImagen) && rrHoraN(cnObjetoGlobal('rrTopes', false).mapa.gemini, ahoraTurno) >= rrTopeHora(rrBaseG.topeGeminiHora, RR_GEMINI_HORA, RR_GEMINI_HORA_MAX);
+
 return [{ json: {
   from: from,
   // El nombre de perfil llega a avisos y planillas: sin <, >, &, saltos ni controles; 60 caracteres.
@@ -96,10 +100,11 @@ return [{ json: {
   comprobanteSimulado: comprobanteSimulado && !extranjero,
   mimeType: mimeType,
   extranjero: extranjero,
-  verImagen: rrMedios.verImagen,
+  verImagen: rrMedios.verImagen && !geminiTope,
   imagenTope: rrMedios.imagenTope,
   visionApagada: rrMedios.visionApagada,
-  oirAudio: rrMedios.oirAudio,
+  oirAudio: rrMedios.oirAudio && !geminiTope,
+  geminiTope: geminiTope,
   audioTope: rrMedios.audioTope,
   audioApagado: rrMedios.audioApagado,
   anuncio: !!ref,

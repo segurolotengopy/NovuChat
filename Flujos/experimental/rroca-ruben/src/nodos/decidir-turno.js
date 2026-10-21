@@ -39,7 +39,13 @@ const cat = rrCatalogo(panel.cuerpo);
 const cobro = rrCobro(panel, base);
 const ficha = rrFichaVigente(cnFichaDe(cnMapaDeFichas(false).mapa, from));
 // UN NÚMERO DE OTRO PAÍS: se le responde UNA vez al día (el texto fijo con el botón de Rubén) y dentro del día no se le responde. Ni QR, ni descarga de medios, ni aviso, ni modelo.
-if (t.extranjero === true) return salir(rrExtranjeroRespondido(ficha, ahora) ? { tipo: 'extranjero_repetido', cat: cat } : { tipo: 'extranjero', conPresentacion: !(ficha.extranjeroMs > 0), cat: cat });
+// No tienen ficha: solo `{ número: hora }` en `rrExtranjeros`, y un contador GLOBAL por hora (`rrTopes.extranjeros`, configurable en «Config base»: `topeExtranjerosHora`); lleno, silencio y sin costo.
+if (t.extranjero === true) {
+  const rrEx = cnObjetoGlobal('rrExtranjeros', false).mapa;
+  const rrExMs = Object.prototype.hasOwnProperty.call(rrEx, from) && Number.isFinite(rrEx[from]) ? rrEx[from] : 0;
+  const rrExLleno = rrHoraN(cnObjetoGlobal('rrTopes', false).mapa.extranjeros, ahora) >= rrTopeHora(base.topeExtranjerosHora, RR_EXTRANJEROS_HORA, RR_EXTRANJEROS_HORA_MAX);
+  return salir(rrExtranjeroRespondido({ extranjeroMs: rrExMs }, ahora) || rrExLleno ? { tipo: 'extranjero_repetido', cat: cat } : { tipo: 'extranjero', conPresentacion: !(rrExMs > 0), cat: cat });
+}
 // MEDIOS ENTRANTES. AUDIO: lo que dijo «Preparar transcripción» (la pieza común, incluida tal cual) o, si no corrió, por qué (muy largo, no se pudo abrir, tope, apagado). Un audio transcrito ES el texto del turno.
 const au = t.categoria === 'medio' && t.tipo === 'audio' ? rrAudioDelTurno({ t: t, prep: cnNodo('Preparar transcripción') ? cnPrimero('Preparar transcripción') : null, url: cnNodo('Obtener URL del medio') ? cnPrimero('Obtener URL del medio') : null }) : null;
 const deAudio = !!au && au.estado === 'ok';
@@ -49,7 +55,7 @@ const norm = rrNorm(textoTurno);
 const hayQrAbierto = cobro.pendiente === true || ficha.qrHastaMs > ahora;
 const producto = ficha.producto || '';
 // El aviso de consulta a Rubén lleva el MOTIVO exacto (`clave` + `motivo`). El límite (a lo más UN aviso cada 30 minutos por teléfono Y por motivo) lo aplica «Armar avisos», que ve la ficha.
-const avisoDeConsulta = (clave, motivo) => ({ tipo: 'consulta', clave: clave, motivo: motivo, mensaje: t.tipo === 'interactive' ? '' : ((deAudio ? '(audio) ' : '') + textoTurno).slice(0, 200) });
+const avisoDeConsulta = (clave, motivo) => ({ tipo: 'consulta', clave: clave, motivo: motivo, mensaje: t.tipo === 'interactive' ? '' : (deAudio ? '(audio) ' + rrEnmascarar(textoTurno) : textoTurno).slice(0, 200) });
 // Sin opciones de compra que mostrar (catálogo vacío o agotado, o el cliente ya pulsó todo): nunca «¿cuál prefieres?» sin opciones; se deriva a Rubén (aviso + botón).
 const sinOpciones = (boton) => ({ tipo: 'derivar', motivo: 'sin_opciones', aviso: avisoDeConsulta('qr_no_disponible', 'sin opciones de compra disponibles'), cat: cat, boton: boton });
 
@@ -79,6 +85,7 @@ if (t.categoria === 'medio' && !deAudio) {
   const h = (lec, v) => ({ entradaHistorial: rrHistorialImagen(lec, v, pie) });
   if (t.tipo === 'document') return salir({ tipo: 'imagen_otra', variante: hayQrAbierto ? 'archivo_no_aceptado' : 'documento', cat: cat }, h(null, 'documento'));
   if (hayQrAbierto) return salir({ tipo: 'qr_pendiente', producto: producto, monto: cobro.monto, cat: cat });
+  if (t.geminiTope === true) return salir({ tipo: 'imagen_otra', variante: 'saturado', cat: cat }, h(null, 'no_vista'));
   if (t.visionApagada === true) return salir({ tipo: 'imagen_otra', variante: '', cat: cat }, h(null, 'no_vista'));
   if (t.imagenTope === true) return salir({ tipo: 'imagen_otra', variante: 'tope', cat: cat }, h(null, 'no_vista'));
   if (t.verImagen !== true || !cnNodo('Ver imagen')) return salir({ tipo: 'imagen_otra', variante: t.verImagen === true ? 'no_vista' : '', cat: cat }, h(null, 'no_vista'));
@@ -173,7 +180,7 @@ if (anuncio && anuncio.clave === 'desde_32') {
   if (!ficha.saludado) return salir({ tipo: 'saludo', pregunta: 'general', cat: cat });
   return salir(Object.keys(cat).length ? { tipo: 'precio', producto: '', cat: cat } : sinOpciones(''));
 }
-return salir({ tipo: 'modelo', origen: deAudio ? 'audio' : '', cat: cat, textoCliente: ((deAudio ? '(audio) ' : '') + textoTurno).slice(0, 500), textoRevision: textoTurno.slice(0, 500) }, {
+return salir({ tipo: 'modelo', origen: deAudio ? 'audio' : '', cat: cat, textoCliente: (deAudio ? '(audio) ' + rrEnmascarar(textoTurno) : textoTurno).slice(0, 500), textoRevision: textoTurno.slice(0, 500) }, {
   llamarModelo: true,
   cuerpoModelo: deAudio ? rrCuerpoModelo(rrEtiquetaAudio(au), rrHistorialVigente(ficha, ahora), { rotulado: true, tope: RR_TOPE_AUDIO_MODELO + 100 })
     : rrCuerpoModelo(t.texto, rrHistorialVigente(ficha, ahora)),
