@@ -156,3 +156,9 @@ Procedimiento exacto (nada se ejecuta aquí; cada paso que escribe lo corre Clau
 3. En seco, desde `admin/`: `node scripts/datos/cargar-negocio.mjs --proyecto <proyecto de la consola> --tenant rroca-antonio --archivo <el .local.json> --local <CONFIGURACION.local.md>`; debe listar el catálogo, resolver `numeroRecepcionMarcador` y no dejar marcadores.
 4. `node Flujos/experimental/rroca-antonio/construir.mjs --publicable --negocio <el .local.json>` (más `--flujo` y `--datos` locales con los marcadores sustituidos) debe salir 0 antes de pedir el «sí» de publicar.
 5. `--aplicar` solo con la autorización de Andres, en la ventana de mantenimiento y con la confirmación `PUBLICAR ANTONIO`.
+
+## Revisión de seguridad de #584 (21/10/2026)
+
+- **MEDIUM-1 corregido:** `publicar-flujo.sh` vuelve a correr la guardia estricta cuando el flujo vivo es el estricto de Antonio y el origen no lo era (por ejemplo, `--forzar` con `rroca-antonio-rescate.json`). Prueba negada en `publicacion.test.ts`: sale 1 y ningún PUT.
+- **Hallazgo para Cartera 1 (no se tocó):** el bloque equivalente de Rubén en `publicar-flujo.sh` tiene el mismo defecto (`--forzar` con un origen de clase «confirmar» contra su flujo vivo estricto salta la guardia estricta).
+- **MEDIUM-2 corregido:** la regex de «no me escribas» del reporte entrante acepta ahora el pronombre pegado («no vuelvas a escribirme»), «no quiero que me/nos escriba…», «no nos/le escriba», «sáquenme / elimíname / bórrenme (de la lista | por favor)» y «stop por favor»; y no marca el relato de un tercero («mi ex no deja de escribirme», «le dije que no me escriba más», «deja de mandar indirectas dice mi esposa»). Cada frase está en `rescate-contrato.test.ts`. Límite aceptado: «deja de escribirme» de un tercero sin «no», «que» ni «dice» se sigue marcando (se prefiere marcar a perder una baja real).

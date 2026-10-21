@@ -61,6 +61,8 @@ describe('punto 3: la petición de «no me escribas» del reporte entrante (rege
       'bórrame de la lista', 'Bórrenme', 'quítenme de la lista', 'quítame de aquí', 'bórreme de sus contactos', 'stop', 'no quiero más mensajes', 'no me contacten', 'no me contacte',
       'no me llame', 'no me vuelva a escribir', 'no me envíes más mensajes', 'no quiero que me escriban', 'ya no quiero recibir mensajes', 'no me sigan escribiendo',
       'quiero darme de baja', 'dame de baja', 'no me escribás', 'no me escribís', 'no  me   escribas', 'NO ME ESCRIBAS', 'dejame de escribir', 'no me vuelvas a llamar',
+      'no vuelvas a escribirme', 'no quiero que me escribas', 'no quiero que me escriba más', 'ya no quiero que me contactes', 'no nos escriban', 'no le escriba más a este número',
+      'sáquenme de la lista', 'elimíname de la lista', 'bórrenme por favor', 'stop por favor',
     ];
     for (const texto of SI) {
       const t = hablar(mundo(), ANA, mTexto(texto));
@@ -72,6 +74,7 @@ describe('punto 3: la petición de «no me escribas» del reporte entrante (rege
       'no me mandaron el material', 'no me contactan', 'pagué y no me contactan', 'no me llegó nada', 'no me escribieron todavía', 'no me llamaron', 'quiero escribirte una duda',
       'quítame el libro', 'bórrame el pedido', 'dame de baja el bono 2', 'no me llamen la atención jaja', 'no me mande el material', 'no me han escrito', 'quiero el libro',
       'bórrame el workbook de la compra', 'dar de baja el calendario',
+      'mi ex no deja de escribirme', 'mi esposo no deja de molestarme', 'le dije que no me escriba más', 'deja de mandar indirectas dice mi esposa',
     ];
     for (const texto of NO) {
       const t = hablar(mundo(), ANA, mTexto(texto));
