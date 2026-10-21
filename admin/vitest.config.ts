@@ -160,6 +160,7 @@ export const SUITES_PURAS = [
   'pruebas/plataforma/enlace-privado.test.ts',
   'pruebas/plataforma/fijar-flujos.test.ts',
   'pruebas/plataforma/generar-enlace-restablecer.test.ts',
+  'pruebas/plataforma/cambiar-correo.test.ts',
   'pruebas/plataforma/plataforma.test.ts',
   'pruebas/platinum-flujo.test.ts',
   'pruebas/prefijo-cacheable.test.ts',
