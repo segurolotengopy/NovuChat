@@ -17,6 +17,7 @@
 | `modulos.md` | La zona de módulos y el esquema del manifiesto |
 | `modulos/<m>.md` | Un manifiesto en prosa por módulo: productos, agenda, pedidos, cobros, inventario, campanas, catalogo-web, captacion, menu-interactivo |
 | `tenants.md` | Datos de un cliente, nunca código; y la regla del flujo propio de cada cliente (`Flujos/clientes/<tenant>/` más el núcleo común obligatorio) |
+| `submodulos.md` | Lo general sube a core o a un módulo común, lo específico es dato del tenant, y el sub-módulo del anfitrión: declaración, manifiesto, consumo y seguridad (la prueba `submodulos.test.ts` aún no existe) |
 | `coordinador.md` | El coordinador de turno: las dos llamadas y los ganchos |
 | `registro.md` | El registro de módulos, la frontera de zonas, cómo se mueven archivos entre zonas y la política de capas que reemplaza |
 | `limites.md` | La tabla de límites comerciales y dónde se hace cumplir cada uno (copia del §7 de la base comercial) |
