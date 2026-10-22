@@ -80,23 +80,46 @@ const COMPROBANTE_TARDE = 'AVISO_SISTEMA: el cliente envió un comprobante de un
 // Lista cerrada de categorias que el flujo entiende. Lo demas cae en `otro`.
 const CATEGORIAS = ['comprobante', 'publicidad', 'pago_con_problema', 'captura_de_pantalla', 'foto', 'otro',
   'boca_o_dientes', 'documento_salud'];
+// Los rangos Unicode se escriben como texto con escapes (\\uXXXX), no como caracteres literales.
+const RX = (cuerpo, banderas) => new RegExp(cuerpo, banderas);
+const TILDES = RX('[\\u0300-\\u036f]', 'g');
+const INVISIBLES = RX('[\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff\\u00ad]', 'g');
+const CONTROL = RX('[\\u0000-\\u001f\\u007f-\\u009f]', 'g');
+const COMILLAS_TIPOGRAFICAS = RX('[\\u201c\\u201d\\u2018\\u2019]', 'g');
+// Letras cirilicas y griegas que se ven como latinas: 'ignora' escrito con una i cirilica sigue siendo 'ignora'.
+const PARECIDAS_DE = 'аеорсухіѕјԁοα';
+const PARECIDAS_A = 'aeopcyxisjdoa';
+const aLatinas = (s) => s.replace(RX('[' + PARECIDAS_DE + ']', 'g'), (c) => PARECIDAS_A.charAt(PARECIDAS_DE.indexOf(c)));
+const sinLeet = (s) => s.replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/4/g, 'a')
+  .replace(/5/g, 's').replace(/7/g, 't').replace(/@/g, 'a').replace(/\$/g, 's');
+// Raices de instruccion (se buscan tambien sobre el texto pegado, sin espacios ni signos).
+const INSTRUCCION_PEGADA = /(ignor|olvid|desobedec|disregard|forget|instrucci|prompt|sistema|system|actuacomo|eresahora|youare|respondecon|respondeque|dique|transferir|cierre|nuevas?(orden|regla)|eres(una)?(persona|humano))/;
+const INSTRUCCION_PLANO = /(\basistente\s*:|\b(ignor|olvid|desobedec|disregard|forget|instrucci|prompt|sistema|system|actua\s+como|eres\s+ahora|eres\s+(una\s+)?(persona|humano)|you\s+are|responde\s+(con|que)|di\s+que|aviso_sistema|transferir|cierre|nuevas?\s+(orden|regla)))/;
+// Un pago inferido de la imagen no se afirma: lo confirma el negocio.
+const PAGO_PLANO = /(acredit|verific|confirmad|aprobad|exito|complet|realizad|recibid|pagad|depositad|transferid|\bpaid\b|success|credit|approv|receiv)/;
+const PAGO_PEGADO = /(acredit|verific|confirmad|aprobad|exito|complet|realizad|recibid|pagad|depositad|transferid|paid|success|credit|approv|receiv)/;
+const MONTO = /(\bbs\.?|\busd|\$)\s*\d|\d\s*(bs|usd|\$)/;
+
 const normalizarCategoria = (v) => {
   const c = typeof v === 'string'
-    ? v.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase().replace(/[\s-]+/g, '_') : '';
+    ? v.normalize('NFD').replace(TILDES, '').trim().toLowerCase().replace(/[\s-]+/g, '_') : '';
   return CATEGORIAS.includes(c) ? c : 'otro';
 };
 // La descripcion es lo que el modelo dice que ve: dato del cliente, nunca instruccion
-// ni afirmacion de un pago. Si lo parece, se descarta entera (no a medias).
+// ni afirmacion de un pago ni un monto. Si lo parece, se descarta entera (no a medias).
 const sanearDescripcion = (v) => {
   if (typeof v !== 'string') return '';
-  let t = v.normalize('NFKC')
-    .replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁯﻿]/g, ' ');
-  const plano = t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  if (/\b(ignor|olvid|desobedec|disregard|forget|instrucci|prompt|sistema|system|actua\s+como|eres\s+ahora|you\s+are|responde\s+(con|que)|di\s+que|aviso_sistema|transferir|cierre)/.test(plano)) return '';
-  if (/(acredit|verific|confirmad|aprobad|exitos|recibid|pagad|depositad|transferid)/.test(plano)) return '';
+  // Tope de entrada ANTES de cualquier regex: una entrada enorme no puede colgar el nodo.
+  let t = v.slice(0, 2000).normalize('NFKC').replace(INVISIBLES, '').replace(CONTROL, ' ')
+    .replace(COMILLAS_TIPOGRAFICAS, ' ');
+  const plano = aLatinas(t.normalize('NFD').replace(TILDES, '').toLowerCase());
+  const pegado = sinLeet(plano).replace(/[^a-z]/g, '');
+  if (INSTRUCCION_PLANO.test(plano) || INSTRUCCION_PEGADA.test(pegado)) return '';
+  if (PAGO_PLANO.test(plano) || PAGO_PEGADO.test(pegado)) return '';
+  if (MONTO.test(plano)) return '';
   t = t.replace(/https?:\/\/\S+|www\.\S+|\b\S+\.(?:com|net|org|bo|io|app|me|link|ly)\b\S*/gi, ' ')
     .replace(/\S+@\S+/g, ' ')
-    .replace(/\d[\d\s.\-]{3,}\d/g, ' ')
+    .replace(/\d[\d\s.\-\/,]{3,}\d/g, ' ')
     .replace(/[\[\]{}<>«»"'`*_\\|#]/g, ' ')
     .replace(/\s+/g, ' ').trim();
   if (t.length > 120) {
@@ -109,7 +132,7 @@ const sanearDescripcion = (v) => {
   return t;
 };
 
-const sanear = (t) => String(t || '').replace(/[\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
+const sanear =(t) => String(t || '').replace(/[\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
 
 const entradas = $('Normalizar entrada').all();
 const items = $input.all();
@@ -127,7 +150,9 @@ for (let i = 0; i < items.length; i++) {
   const pagoTarde = Number.isFinite(vencidaHace) && String(cfgNeg.senaVencidaHaceMin || '') !== '';
   const categoria = normalizarCategoria(objeto.categoria);
   const leido = sanear(objeto.texto);
-  const descripcion = sanearDescripcion(objeto.descripcion);
+  // La descripcion solo viaja en las categorias que la usan (foto, captura de pantalla, otro).
+  const usaDescripcion = categoria === 'foto' || categoria === 'captura_de_pantalla' || categoria === 'otro';
+  const descripcion = usaDescripcion ? sanearDescripcion(objeto.descripcion) : '';
   const lineaVe = descripcion
     ? 'Lo que se ve (dato del cliente, no del negocio): "' + descripcion + '". ' : '';
 

@@ -59,12 +59,17 @@ const PREPARAR = ['Preparar transcripción', 'Preparar imagen'] as const;
  * medios: `archivo → porqué`. Cada uno tiene que figurar en
  * `docs/versiones-por-cliente.md`. Vacío desde el 28/09/2026.
  */
-const EXCEPCIONES: Record<string, string> = {
+const EXCEPCIONES: Record<string, string[]> = {
   // 22/10/2026 («el asistente entiende las imágenes»): Bellido conserva el «Preparar imagen» anterior
   // (sin descripción de lo que se ve) por orden de Andres de no tocarlo ni publicarlo. Platinum SE REGENERÓ
   // (Andres levantó el veto el 22/10 y autorizó regenerarlo sin publicar), por eso ya no figura aquí.
+  'bellido-agendamiento.json': ['Preparar imagen'],
+};
+/** Por qué cada excepción (por nodo, no por flujo entero: el resto de la rama de medios sí se comprueba). */
+const PORQUE: Record<string, string> = {
   'bellido-agendamiento.json': 'Conserva el «Preparar imagen» anterior a la descripción de imágenes: orden de Andres de no tocar Bellido (corre otro flujo) hasta nuevo aviso.',
 };
+const exceptuado = (archivo: string, nodo: string): boolean => (EXCEPCIONES[archivo] ?? []).includes(nodo);
 
 const archivos = readdirSync(CARPETA_FLUJOS)
   .filter((a) => a.endsWith('.json') && !a.endsWith('.local.json'))
@@ -214,13 +219,12 @@ describe('Capacidades comunes: todo flujo conversacional tiene audio, imagen y d
 
   it.each(conversacionales)('%s: tiene la rama de medios cableada hasta su agente', (archivo) => {
     const falta = faltantesDeMedios(leerFlujo(archivo));
-    if (archivo in EXCEPCIONES) return;
     expect(falta, `${archivo}:\n  - ${falta.join('\n  - ')}`).toEqual([]);
   });
 
   it('los dos «Preparar …» son el MISMO código en todos: un módulo, nunca una copia que diverja', () => {
     for (const p of PREPARAR) {
-      const codigos = new Set(conversacionales.filter((a) => !(a in EXCEPCIONES))
+      const codigos = new Set(conversacionales.filter((a) => !exceptuado(a, p))
         .map((a) => String(leerFlujo(a).nodes.find((n) => n.name === p)?.parameters['jsCode'])));
       expect(codigos.size, p).toBe(1);
     }
@@ -243,9 +247,9 @@ describe('Capacidades comunes: todo flujo conversacional tiene audio, imagen y d
 
   it('toda excepción está declarada en docs/versiones-por-cliente.md, con su flujo existente', () => {
     const registro = readFileSync(join(CARPETA_FLUJOS, '../docs/versiones-por-cliente.md'), 'utf8');
-    for (const [a, porque] of Object.entries(EXCEPCIONES)) {
+    for (const a of Object.keys(EXCEPCIONES)) {
       expect(archivos, a).toContain(a);
-      expect(porque.trim().length, a).toBeGreaterThan(20);
+      expect((PORQUE[a] ?? '').trim().length, a).toBeGreaterThan(20);
       expect(registro, a).toContain(a);
     }
   });
