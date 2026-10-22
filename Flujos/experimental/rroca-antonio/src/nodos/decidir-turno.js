@@ -124,7 +124,7 @@ if (esVisual) {
     // Un comprobante sin cobro abierto: no se coteja nada; lo ve Antonio.
     return salir({ tipo: 'derivar', motivo: 'comprobante_sin_cobro', clave: 'comprobante_sin_cobro', aviso: avisoDeConsulta('comprobante_sin_cobro', 'recibió una imagen que parece un comprobante, pero no hay un QR abierto'), cat: cat });
   }
-  if (categoriaMedio !== 'publicidad') return salir({ tipo: 'imagen_otra', cat: cat });
+  if (categoriaMedio !== 'publicidad') return salir({ tipo: 'imagen_otra', documento: t.esDocumento === true, cat: cat });
   // Una captura de anuncio: se reconoce el ángulo por el texto leído; sin ángulo, se sigue como una charla.
 }
 
