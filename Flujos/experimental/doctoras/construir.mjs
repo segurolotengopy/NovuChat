@@ -139,8 +139,9 @@ export function erroresDeDoctora(d) {
     else if (PALABRAS_PROHIBIDAS.test(v.normalize('NFD').replace(/[̀-ͯ]/g, ''))) e.push(`${ruta}: lleva una palabra que ningún texto de la doctora puede decir (promesa de resultado, «ideal para», precio, enlace)`);
   };
   for (const c of ['nombreCorto', 'nombreCompleto', 'clinica', 'especialidad', 'direccion']) cadena(`doctora.${c}`, d[c], { max: 200 });
-  // El horario puede estar vacío o ser un marcador: la doctora aún no lo dio y el flujo no dice ninguno.
+  // El horario puede estar vacío o ser un marcador: la doctora aún no lo dio y el flujo no dice ninguno. `horarioPorConfirmar: true` = hay un horario cargado pero la doctora no lo confirmó: el flujo se arma, la guardia --publicable NO deja publicar.
   cadena('doctora.horario', d.horario, { max: 200, vacio: true });
+  if ('horarioPorConfirmar' in d && typeof d.horarioPorConfirmar !== 'boolean') e.push('doctora.horarioPorConfirmar: tiene que ser true o false');
   const ids = new Set();
   if (!Array.isArray(d.tratamientos) || d.tratamientos.length < 1 || d.tratamientos.length > 6) e.push('doctora.tratamientos: de 1 a 6');
   else {
@@ -163,6 +164,7 @@ export function erroresDeDoctora(d) {
       if (!/^[a-z0-9]{1,16}$/.test(String(a.id))) e.push(`${r}.id: de 1 a 16 minúsculas o dígitos`);
       if (!Array.isArray(a.claves) || !a.claves.length || !a.claves.every((c) => typeof c === 'string' && /^[a-z0-9 ]{3,60}$/.test(c))) e.push(`${r}.claves: lista de frases en minúsculas sin acentos ni signos`);
       // Ningún arte se envía por el asistente (decisión por defecto, P3): el arte comparativo trae «efecto lifting inmediato».
+      if ('soloImagen' in a && typeof a.soloImagen !== 'boolean') e.push(`${r}.soloImagen: tiene que ser true o false`);
       if (lista === 'artes' && a.enviable !== false) e.push(`${r}.enviable: tiene que ser false (el asistente no envía artes; lo decide la doctora por escrito)`);
       cadena(`${r}.apertura`, a.apertura, { max: 300, vacio: true });
     });
@@ -331,7 +333,7 @@ export function guardias(variante, flujo) {
   }
   // Retención de ejecuciones, orden y zona horaria.
   const st = (flujo && flujo.settings) || {};
-  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'all' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «all» y saveExecutionProgress false');
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) h.push('los ajustes de retención deben ser saveDataSuccessExecution «none», saveDataErrorExecution «none» (datos de salud: no se guardan ni los turnos fallidos) y saveExecutionProgress false');
   if (st.errorWorkflow !== undefined) h.push('no lleva `errorWorkflow`');
   if (st.executionOrder !== 'v1') h.push('executionOrder tiene que ser «v1» (el orden de las ramas es el del lienzo)');
   if (st.timezone !== 'America/La_Paz') h.push('timezone tiene que ser «America/La_Paz»');
@@ -375,6 +377,8 @@ function hallazgosDeLaDoctora(datos) {
   const d = datos && datos.doctora;
   if (!d || typeof d !== 'object') return ['datos: no trae el bloque `doctora`'];
   for (const c of ['nombreCorto', 'nombreCompleto', 'clinica', 'direccion', 'horario']) if (!VALOR_LLENO(d[c])) h.push(`datos: doctora.${c} está vacío o es un marcador`);
+  // Las doctoras atienden público: el horario lo confirma la doctora. Mientras el indicador esté en true (se pone en false cuando lo confirma), no se publica.
+  if (d.horarioPorConfirmar === true) h.push('datos: doctora.horarioPorConfirmar es true: el horario aún no lo confirmó la doctora');
   if (!Array.isArray(d.tratamientos) || !d.tratamientos.length) h.push('datos: doctora.tratamientos está vacío');
   return h;
 }
@@ -419,6 +423,31 @@ export function hallazgosDeMedios(flujo) {
   return h;
 }
 
+/**
+ * El flujo a publicar tiene que ser el de ESTA doctora: su `name` es el de los datos (producción o prueba), la asignación `doctora` de «Config base» es el bloque `doctora` de los datos y cada valor de `configBase`
+ * que no sea un marcador es el mismo en el flujo. Sin esto, el flujo de Emma con los datos de Evy (o al revés) pasaría la guardia. Los mensajes nombran claves, nunca valores.
+ */
+const coincide = (dato, vivo) => {
+  if (typeof dato === 'string' && hayMarcador(dato)) return true;   // el dato aún es un marcador: el valor real lo pone quien publica
+  if (Array.isArray(dato)) return Array.isArray(vivo) && dato.length === vivo.length && dato.every((x, i) => coincide(x, vivo[i]));
+  if (dato && typeof dato === 'object') return !!vivo && typeof vivo === 'object' && !Array.isArray(vivo) && Object.keys(dato).length === Object.keys(vivo).length && Object.keys(dato).every((k) => k in vivo && coincide(dato[k], vivo[k]));
+  return dato === vivo;
+};
+function hallazgosDeIdentidad(flujo, enFlujo, datos) {
+  const h = [];
+  if (!datos || typeof datos !== 'object') return ['datos: no se pudieron leer'];
+  const nombres = [datos.nombreFlujo, datos.nombreFlujoPrueba].filter((x) => typeof x === 'string' && x !== '');
+  if (!nombres.length || !nombres.includes(flujo && flujo.name)) h.push('el nombre del flujo no es el de esta doctora (nombreFlujo ni nombreFlujoPrueba de los datos)');
+  let doctora = enFlujo.doctora;
+  if (typeof doctora === 'string') { try { doctora = JSON.parse(doctora); } catch { doctora = undefined; } }
+  if (!doctora || typeof doctora !== 'object' || !coincide(datos.doctora, doctora)) h.push('Config base: la asignación `doctora` no coincide con el bloque `doctora` de los datos de esta doctora');
+  for (const [c, v] of Object.entries(datos.configBase || {})) {
+    if (typeof v === 'string' && hayMarcador(v)) continue;
+    if (enFlujo[c] !== v) h.push(`Config base: ${c} no coincide con los datos de esta doctora`);
+  }
+  return h;
+}
+
 export function guardiaDePublicacion({ flujo, datos, negocio }) {
   const h = [];
   const nodos = Array.isArray(flujo && flujo.nodes) ? flujo.nodes : [];
@@ -429,7 +458,11 @@ export function guardiaDePublicacion({ flujo, datos, negocio }) {
   const base = nodos.find((n) => n.name === 'Config base');
   const lista = base && base.parameters && base.parameters.assignments && base.parameters.assignments.assignments;
   if (!Array.isArray(lista)) h.push('el flujo no trae «Config base»: no se puede comprobar el estado de la plantilla');
-  else h.push(...hallazgosDeConfig(Object.fromEntries(lista.map((a) => [a.name, a.value])), 'Config base'));
+  else {
+    const enFlujo = Object.fromEntries(lista.map((a) => [a.name, a.value]));
+    h.push(...hallazgosDeConfig(enFlujo, 'Config base'));
+    h.push(...hallazgosDeIdentidad(flujo, enFlujo, datos));
+  }
   // 3. …en los datos, con lo que cada doctora tiene que traer lleno…
   h.push(...hallazgosDeConfig(datos && datos.configBase, 'datos'));
   h.push(...hallazgosDeLaDoctora(datos));

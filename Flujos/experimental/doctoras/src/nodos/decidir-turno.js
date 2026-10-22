@@ -65,7 +65,7 @@ let entrada = null;   // el arte o el mensaje prellenado que la persona trae
 if (esVisual) {
   if (cnNodo('Medio no aceptado')) return salir({ tipo: 'archivo', pesado: /demasiado pesado/.test(entradaMedio) });
   if (categoriaMedio === 'documento_salud') return salir({ tipo: 'recepcion', clave: 'medica_documento', motivo: 'envió un documento de salud', aviso: true, claveAviso: 'documento_salud' });
-  entrada = categoriaMedio === 'publicidad' ? drEntrada(drNorm(leido), datos) : null;
+  entrada = categoriaMedio === 'publicidad' ? drEntrada(drNorm(leido), datos, true) : null;
   if (!entrada) return salir({ tipo: 'imagen_otra' });
 }
 // 5. Una nota de voz que no se pudo usar.
@@ -131,6 +131,8 @@ if (ficha.etapa === 'contacto_otro') {
 }
 if (ficha.etapa === 'horario') {
   if (norm === '') return salir({ tipo: 'pedir_horario', repite: true });
+  // Una pregunta («¿cuánto cuesta?», «¿es gratis?», «¿dónde queda?») NO es el horario: se repite la pregunta del horario, sin derivar.
+  if (['precio', 'gratis', 'sin_compromiso', 'donde', 'diferencia', 'cual_mejor', 'dolor', 'resultados', 'antes_despues', 'recuperacion', 'artificial', 'probe_otros', 'quien', 'que_es', 'ia', 'lista'].indexOf(drIntencion(norm)) >= 0) return salir({ tipo: 'pedir_horario', repite: true });
   return salir(solicitud(textoCliente));
 }
 

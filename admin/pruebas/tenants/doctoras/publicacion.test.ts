@@ -3,13 +3,14 @@
  *
  * El flujo NO se publica ni se importa a n8n con marcadores `REEMPLAZAR_*`, con la plantilla de aviso sin `APPROVED`, sin la dirección o el horario de la doctora, con la rama de medios incompleta ni sin el aviso a
  * recepción. Esta suite NIEGA: hoy `--publicable` sale 1 sobre lo versionado de las dos doctoras, y cada defecto de la ruta feliz se niega por separado. Los mensajes nombran claves y marcadores, nunca valores.
- * (El bloque de `scripts/publicar-flujo.sh` y su confirmación son de Core/DevOps y van en un PR aparte con revisión de `seguridad`: no se tocan aquí.)
+ * También prueba `scripts/publicar-flujo.sh`: se niega con --aplicar/--crear/--encender si la guardia falla, pide `PUBLICAR DOCTORAS` (o --confirmo-doctoras sin terminal), `--forzar` no la salta y `--apagar` no la pide.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import type { Flujo } from '../../lib/flujo';
 import { entornoDelEmulador } from '../../core/entorno-del-hijo.ts';
 // @ts-expect-error el armador es un .mjs sin tipos
@@ -27,12 +28,19 @@ const negocioDe = (t: Tenant): Record<string, unknown> => JSON.parse(leer(archiv
 type Asignacion = { name: string; value: unknown };
 const asignaciones = (f: Flujo): Asignacion[] => (f.nodes.find((n) => n.name === 'Config base')!.parameters as { assignments: { assignments: Asignacion[] } }).assignments.assignments;
 
+/** El mismo cambio en la asignación `doctora` de «Config base» (lo que arma el construir.mjs al cambiar el dato). */
+function confirmarEnFlujo(flujo: Flujo): void {
+  const a = asignaciones(flujo).find((x) => x.name === 'doctora')!;
+  const d = JSON.parse(String(a.value)) as Record<string, unknown>; d['horarioPorConfirmar'] = false; a.value = JSON.stringify(d);
+}
 /** El flujo, los datos y el negocio tal como quedarían con todos los marcadores sustituidos y la plantilla aprobada. */
 function listo(t: Tenant): { flujo: Flujo; datos: Datos; negocio: Record<string, unknown> } {
   const flujo = JSON.parse(JSON.stringify(flujoDe(t)).replace(MARCADORES, 'valorsustituido')) as Flujo;
   asignaciones(flujo).find((a) => a.name === 'avisoSolicitudEstado')!.value = 'APPROVED';
   const datos = JSON.parse(JSON.stringify(datosDe(t)).replace(MARCADORES, 'valorsustituido')) as Datos;
   datos.configBase['avisoSolicitudEstado'] = 'APPROVED';
+  // Emma: la doctora ya confirmó su horario (el indicador pasa a false en los datos Y en lo que se arma).
+  if (datos.doctora['horarioPorConfirmar'] === true) { datos.doctora['horarioPorConfirmar'] = false; confirmarEnFlujo(flujo); }
   const negocio = JSON.parse(JSON.stringify(negocioDe(t)).replace(MARCADORES, 'dato-real')) as Record<string, unknown>;
   return { flujo, datos, negocio };
 }
@@ -48,6 +56,7 @@ describe('la guardia de publicación: la ruta feliz y lo versionado de hoy', () 
       expect(hallazgos(listo(t))).toEqual([]);
       const p = listo(t); p.flujo = JSON.parse(JSON.stringify(flujoDe(t, true)).replace(MARCADORES, 'valorsustituido')) as Flujo;
       asignaciones(p.flujo).find((a) => a.name === 'avisoSolicitudEstado')!.value = 'APPROVED';
+      if (datosDe(t).doctora['horarioPorConfirmar'] === true) confirmarEnFlujo(p.flujo);
       expect(hallazgos(p)).toEqual([]);
     });
     it(`${t}: lo versionado de hoy NO es publicable: marcadores y plantilla PENDING`, () => {
@@ -60,11 +69,42 @@ describe('la guardia de publicación: la ruta feliz y lo versionado de hoy', () 
     expect(JSON.stringify(flujoDe('rroca-evy'))).toMatch(/\^REEMPLAZAR_|reemplazar_\/i|`REEMPLAZAR_`/);
     expect(hallazgos(listo('rroca-evy'))).toEqual([]);
   });
-  it('el horario vacío de Evy (aún no lo dio) bloquea la publicación, con su campo nombrado', () => {
+  it('el horario de Evy (pendiente, marcador) bloquea la publicación, con su campo nombrado; Evy se arma con el marcador', () => {
     const h = hallazgos({ flujo: flujoDe('rroca-evy'), datos: datosDe('rroca-evy'), negocio: negocioDe('rroca-evy') });
     expect(h).toContain('datos: doctora.horario está vacío o es un marcador');
     expect(h).toContain('marcador sin sustituir: REEMPLAZAR_HORARIO_RROCA_EVY');
-    expect(hallazgos({ flujo: flujoDe('rroca-emma'), datos: datosDe('rroca-emma'), negocio: negocioDe('rroca-emma') }).join('|')).not.toMatch(/horario/);
+    // Solo el horario pendiente: con todo lo demás listo, Evy sigue sin poder publicarse.
+    const x = listo('rroca-evy'); x.datos.doctora['horario'] = 'REEMPLAZAR_HORARIO_RROCA_EVY';
+    expect(hallazgos(x)).toContain('datos: doctora.horario está vacío o es un marcador');
+  });
+  it('el horario de Emma es el de su Excel pero «por confirmar»: con horarioPorConfirmar en true la guardia FALLA; en false, pasa', () => {
+    expect(datosDe('rroca-emma').doctora['horarioPorConfirmar']).toBe(true);
+    expect(datosDe('rroca-emma').doctora['horario']).toMatch(/lunes a viernes de 09:00 a 12:00 y de 14:00 a 18:00.*sábados de 09:00 a 12:00/);
+    const h = hallazgos({ flujo: flujoDe('rroca-emma'), datos: datosDe('rroca-emma'), negocio: negocioDe('rroca-emma') });
+    expect(h).toContain('datos: doctora.horarioPorConfirmar es true: el horario aún no lo confirmó la doctora');
+    const x = listo('rroca-emma'); x.datos.doctora['horarioPorConfirmar'] = true; confirmarEnFlujo(x.flujo);
+    const a = x.flujo.nodes.find((n) => n.name === 'Config base')!; const lista = (a.parameters as { assignments: { assignments: Asignacion[] } }).assignments.assignments.find((q) => q.name === 'doctora')!;
+    lista.value = JSON.stringify({ ...(JSON.parse(String(lista.value)) as object), horarioPorConfirmar: true });
+    expect(hallazgos(x)).toEqual(['datos: doctora.horarioPorConfirmar es true: el horario aún no lo confirmó la doctora']);
+    expect(hallazgos(listo('rroca-emma'))).toEqual([]);
+  });
+  it('M1: el flujo de una doctora con los datos de la otra NO pasa (nombre, bloque `doctora` y configBase)', () => {
+    const a = listo('rroca-emma'); const e = listo('rroca-evy');
+    const mezcla = hallazgos({ flujo: a.flujo, datos: e.datos, negocio: e.negocio });
+    expect(mezcla).toContain('el nombre del flujo no es el de esta doctora (nombreFlujo ni nombreFlujoPrueba de los datos)');
+    expect(mezcla).toContain('Config base: la asignación `doctora` no coincide con el bloque `doctora` de los datos de esta doctora');
+    expect(mezcla.join('|')).toMatch(/Config base: (nombreNegocio|phoneNumberIdEsperado|numeroRecepcion|telefonosDePrueba) no coincide/);
+    // Solo el nombre: el flujo de Emma con el nombre de un flujo ajeno.
+    const n = listo('rroca-emma'); n.flujo.name = 'Otro flujo';
+    expect(hallazgos(n)).toEqual(['el nombre del flujo no es el de esta doctora (nombreFlujo ni nombreFlujoPrueba de los datos)']);
+    // Solo la asignación `doctora`: un texto distinto en el bloque.
+    const d = listo('rroca-emma'); const as = asignaciones(d.flujo).find((q) => q.name === 'doctora')!;
+    as.value = JSON.stringify({ ...(JSON.parse(String(as.value)) as object), direccion: 'otra dirección' });
+    expect(hallazgos(d)).toEqual(['Config base: la asignación `doctora` no coincide con el bloque `doctora` de los datos de esta doctora']);
+    // Solo un valor de configBase (no marcador).
+    const c = listo('rroca-emma'); asignaciones(c.flujo).find((q) => q.name === 'nombreNegocio')!.value = 'Otro negocio';
+    expect(hallazgos(c)).toEqual(['Config base: nombreNegocio no coincide con los datos de esta doctora']);
+    expect(hallazgos(c).join('')).not.toContain('Otro negocio');
   });
 });
 
@@ -160,5 +200,139 @@ describe('la línea de comandos: `--publicable` sale 1 hoy, nunca imprime valore
     expect(r.status).toBe(1);
     expect(r.out).toContain('JSON inválido en el flujo de rroca-emma');
     expect(r.out).not.toContain('crearMundo');
+  });
+});
+
+describe('publicar-flujo.sh: la guardia y la confirmación de los flujos de las doctoras', () => {
+  const SCRIPT = join(REPO, 'scripts/publicar-flujo.sh');
+  const dir = mkdtempSync(join(tmpdir(), 'doctoras-sh-'));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const EVY = join(REPO, 'Flujos/experimental/doctoras/doctoras.rroca-evy.json');
+  const bin = join(dir, 'bin'); mkdirSync(bin);
+  writeFileSync(join(bin, 'curl'), '#!/usr/bin/env bash\necho "$*" >> "$LOG_CURL"\nwhile [[ $# -gt 0 ]]; do case "$1" in -o) O="$2"; shift 2;; -X) M="$2"; shift 2;; *) shift;; esac; done\n[[ -n "$O" ]] && cp "$VIVO_SIMULADO" "$O"\nprintf 200\n');
+  chmodSync(join(bin, 'curl'), 0o755);
+  const envRel = join(dir, 'env');
+  writeFileSync(envRel, 'N8N_API_KEY=clave-de-juguete\nN8N_WORKFLOW_ID=1\nN8N_BASE_URL=http://n8n.invalido\n');
+  const vivoEvy = join(dir, 'vivo-evy.json');
+  writeFileSync(vivoEvy, JSON.stringify({ name: 'NovuChat — Dra. Evy Karina (rroca-evy)', active: false, nodes: [] }));
+  const vivoOtro = join(dir, 'vivo-otro.json');
+  writeFileSync(vivoOtro, JSON.stringify({ name: 'Otro cliente', active: false, nodes: [] }));
+  const otroArchivo = join(dir, 'cualquier-cosa.json');
+  writeFileSync(otroArchivo, JSON.stringify({ name: 'Otro cliente', nodes: [{ name: 'X', type: 'n8n-nodes-base.set', parameters: {} }] }));
+  const log = join(dir, 'curl.log');
+  const correrEn = (raiz: string, args: string[], vivo: string) => {
+    writeFileSync(log, '');
+    return spawnSync('bash', [join(raiz, 'scripts/publicar-flujo.sh'), ...args, '--env', relative(raiz, envRel)], {
+      cwd: raiz, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+      env: entornoDelEmulador(undefined, { PATH: `${bin}:${process.env['PATH'] ?? ''}`, VIVO_SIMULADO: vivo, LOG_CURL: log }),
+    });
+  };
+  const correr = (args: string[], vivo = vivoOtro) => correrEn(REPO, args, vivo);
+  const escribio = (): boolean => /POST|PUT|PATCH|activate/.test(leer(log));
+  // Una copia del script con un construir.mjs de juguete (sale con el código dado): se llega a la confirmación sin depender de que el JSON real esté listo.
+  function raizConGuardia(codigoSalida: number): string {
+    const raiz = join(dir, `raiz-${codigoSalida}`);
+    mkdirSync(join(raiz, 'scripts'), { recursive: true });
+    mkdirSync(join(raiz, 'Flujos/experimental/doctoras'), { recursive: true });
+    copyFileSync(SCRIPT, join(raiz, 'scripts/publicar-flujo.sh'));
+    writeFileSync(join(raiz, 'Flujos/experimental/doctoras/construir.mjs'), `process.exit(${codigoSalida});\n`);
+    writeFileSync(join(raiz, 'Flujos/experimental/doctoras/doctoras.rroca-evy.json'), JSON.stringify({ name: 'doctoras', nodes: [] }));
+    writeFileSync(join(raiz, 'Flujos/demo-a-agendamiento.json'), JSON.stringify({ name: 'Otro cliente', nodes: [] }));
+    chmodSync(join(raiz, 'scripts/publicar-flujo.sh'), 0o755);
+    return raiz;
+  }
+  const REL = 'Flujos/experimental/doctoras/doctoras.rroca-evy.json';
+
+  it('con --aplicar y el JSON versionado (marcadores) se NIEGA antes de leer el .env o hablar con n8n; --forzar y la confirmación no lo salvan', () => {
+    for (const extra of [[], ['--forzar', '--confirmo-doctoras']]) {
+      const r = correr(['--flujo', EVY, '--aplicar', ...extra]);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toMatch(/NEGADO: el flujo de las doctoras no se publica/);
+      expect(r.stderr).not.toMatch(/Falta /);
+    }
+    expect(escribio()).toBe(false);
+  });
+  it('otro nombre de archivo (copia .local, nombre cualquiera con el nombre del flujo, mayúsculas) también se NIEGA', () => {
+    const otro = join(dir, 'x.json');
+    writeFileSync(otro, JSON.stringify({ name: 'NovuChat — Dra. Emma (rroca-emma)', nodes: [] }));
+    const r = correr(['--flujo', otro, '--aplicar', '--confirmo-doctoras']);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toMatch(/rroca-emma/);
+    expect(r.stderr).toMatch(/NEGADO/);
+    const mayus = join(dir, 'DOCTORAS.RROCA-EVY-x.json');
+    writeFileSync(mayus, JSON.stringify({ name: 'Otro cliente', nodes: [] }));
+    expect(correr(['--flujo', mayus, '--aplicar', '--confirmo-doctoras']).stdout).toMatch(/archivo de origen/);
+    const ambos = join(dir, 'ambos.json');
+    writeFileSync(ambos, JSON.stringify({ name: 'rroca-evy rroca-emma', nodes: [] }));
+    expect(correr(['--flujo', ambos, '--aplicar', '--confirmo-doctoras']).status).toBe(1);
+  });
+  it('en seco informa lo que falta y SIGUE', () => {
+    const r = correr(['--flujo', EVY]);
+    expect(r.stdout + r.stderr).toMatch(/NO se puede publicar todavía/);
+    expect(r.stdout).toMatch(/en seco se sigue/);
+    expect(r.stdout + r.stderr).not.toMatch(/NEGADO/);
+  });
+  it('un flujo de otro cliente NO pasa por la guardia de las doctoras', () => {
+    const r = correr(['--flujo', join(REPO, 'Flujos/demo-a-agendamiento.json'), '--aplicar']);
+    expect(r.stdout + r.stderr).not.toMatch(/Flujo de las doctoras|NEGADO/);
+  });
+  it('--forzar contra el flujo VIVO de una doctora con un archivo de otro nombre vuelve a correr la guardia: sale 1 y no escribe', () => {
+    const v = correr(['--flujo', otroArchivo, '--forzar', '--aplicar', '--confirmo-doctoras'], vivoEvy);
+    expect(v.status).toBe(1);
+    expect(v.stdout + v.stderr).toMatch(/flujo vivo de destino/);
+    expect(escribio()).toBe(false);
+  });
+  it('con la guardia en verde y sin terminal, --aplicar SIN --confirmo-doctoras se NIEGA; con él sigue al .env', () => {
+    const raiz = raizConGuardia(0);
+    const sin = correrEn(raiz, ['--flujo', REL, '--aplicar'], vivoOtro);
+    expect(sin.status).toBe(1);
+    expect(sin.stderr).toMatch(/solo se publican con --confirmo-doctoras/);
+    expect(correrEn(raiz, ['--flujo', REL, '--aplicar', '--confirmo-doctoras'], vivoOtro).stderr).not.toMatch(/NEGADO/);
+  });
+  it('--crear: la guardia del archivo de origen rige (sin confirmación y con la guardia en rojo se niega)', () => {
+    const sin = correrEn(raizConGuardia(0), ['--flujo', REL, '--crear', '--aplicar'], vivoOtro);
+    expect(sin.status).toBe(1);
+    expect(sin.stderr).toMatch(/solo se publican con --confirmo-doctoras/);
+    const r = correrEn(raizConGuardia(1), ['--flujo', REL, '--crear', '--aplicar', '--confirmo-doctoras'], vivoOtro);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/NEGADO: el flujo de las doctoras no se publica/);
+    expect(escribio()).toBe(false);
+  });
+  it('--encender --aplicar sobre el flujo vivo de una doctora: sin confirmación se niega; con la guardia en rojo se niega aunque lleve --confirmo-doctoras; con todo en verde activa', () => {
+    const sin = correrEn(raizConGuardia(0), ['--encender', '--aplicar'], vivoEvy);
+    expect(sin.status).toBe(1);
+    expect(sin.stderr).toMatch(/solo se publican con --confirmo-doctoras/);
+    expect(escribio()).toBe(false);
+    const rojo = correrEn(raizConGuardia(1), ['--encender', '--aplicar', '--confirmo-doctoras'], vivoEvy);
+    expect(rojo.status).toBe(1);
+    expect(rojo.stdout + rojo.stderr).toMatch(/encender el flujo vivo/);
+    expect(escribio()).toBe(false);
+    const verde = correrEn(raizConGuardia(0), ['--encender', '--aplicar', '--confirmo-doctoras'], vivoEvy);
+    expect(verde.status, verde.stderr).toBe(0);
+    expect(escribio()).toBe(true);
+  });
+  it('--encender con el construir.mjs REAL sobre el vivo (sin datos ni nombre válidos) se NIEGA aunque lleve --confirmo-doctoras', () => {
+    const r = correr(['--encender', '--aplicar', '--confirmo-doctoras'], vivoEvy);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/NEGADO/);
+    expect(escribio()).toBe(false);
+  });
+  it('--encender en seco no pide confirmación; --apagar --aplicar tampoco', () => {
+    expect(correr(['--encender'], vivoEvy).status).toBe(0);
+    expect(escribio()).toBe(false);
+    const r = correr(['--apagar', '--aplicar'], vivoEvy);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stderr).not.toMatch(/NEGADO/);
+    expect(leer(log)).toMatch(/deactivate/);
+  });
+  it('un flujo vivo de otro cliente no activa nada de las doctoras', () => {
+    const r = correr(['--encender', '--aplicar'], vivoOtro);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout + r.stderr).not.toMatch(/Flujo de las doctoras|NEGADO/);
+  });
+  it('la confirmación de Antonio o de Rubén no vale para las doctoras', () => {
+    const o = correrEn(raizConGuardia(0), ['--flujo', REL, '--aplicar', '--confirmo-antonio', '--confirmo-ruben'], vivoOtro);
+    expect(o.status).toBe(1);
+    expect(o.stderr).toMatch(/solo se publican con --confirmo-doctoras/);
   });
 });

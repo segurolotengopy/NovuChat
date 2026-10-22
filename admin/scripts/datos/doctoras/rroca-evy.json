@@ -4,7 +4,7 @@
   "nombreFlujo": "NovuChat — Dra. Evy Karina (rroca-evy)",
   "nombreFlujoPrueba": "NovuChat — Dra. Evy Karina (rroca-evy, prueba)",
   "credenciales": {
-    "ingesta": "NovuChat ingesta (Dra. Evy)",
+    "ingesta": "NovuChat ingesta (Evy)",
     "graph": "Graph WhatsApp Dra. Evy (Bearer)",
     "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
     "entradaPrueba": "Entrada de prueba Dra. Evy",
@@ -46,7 +46,7 @@
       { "id": "comp", "claves": ["radiesse o harmonyca", "dos bioestimuladores un mismo objetivo"], "enviable": false, "apertura": "Veo que te llamó la atención la comparativa de nuestros bioestimuladores." },
       { "id": "aut", "claves": ["armonia que se nota", "aplicadora certificada"], "enviable": false, "apertura": "Qué gusto que nos escribas desde el anuncio «Armonía que se nota»." },
       { "id": "joven", "claves": ["te sientes joven por dentro"], "enviable": false, "apertura": "Qué lindo mensaje el de la imagen que compartes." },
-      { "id": "real", "claves": ["resultado real", "firmeza y contorno recuperados"], "enviable": false, "apertura": "La imagen que compartes es el caso de una paciente de la Dra. Evy. Cada rostro responde distinto, por eso no se promete un resultado igual." }
+      { "id": "real", "claves": ["resultado real", "firmeza y contorno recuperados"], "enviable": false, "soloImagen": true, "apertura": "La imagen que compartes es el caso de una paciente de la Dra. Evy. Cada rostro responde distinto, por eso no se promete un resultado igual." }
     ],
     "prellenados": [
       { "id": "p1", "claves": ["vi su anuncio de armonizacion facial"], "apertura": "" },
@@ -71,7 +71,7 @@
       "artificial": "Entiendo esa preocupación.\n\nEn la valoración la {doctora} te explica cómo trabaja y puedes preguntarle todo lo que quieras.",
       "probe_otros": "Gracias por contármelo, es comprensible.\n\nLa {doctora} define el tratamiento según el análisis de tu caso; con la valoración gratuita puedes conocer su opinión sin compromiso.",
       "pensar": "Claro, tómate tu tiempo.\n\nLa valoración es gratuita y sin compromiso, así que no arriesgas nada por conocer tu caso.",
-      "especifico": "De todas formas, la {doctora} define en la valoración cuál es el más adecuado para ti: puede ser ese u otro tratamiento que corresponda.\n\nEso lo definen juntas en la cita gratuita."
+      "especifico": "De todas formas, la {doctora} define en la valoración cuál es el más adecuado para ti: puede ser ese u otro tratamiento que corresponda.\n\nEso lo define la doctora en la valoración gratuita."
     }
   }
 }

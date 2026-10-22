@@ -4,7 +4,7 @@
   "nombreFlujo": "NovuChat — Dra. Emma (rroca-emma)",
   "nombreFlujoPrueba": "NovuChat — Dra. Emma (rroca-emma, prueba)",
   "credenciales": {
-    "ingesta": "NovuChat ingesta (Dra. Emma)",
+    "ingesta": "NovuChat ingesta (Emma)",
     "graph": "Graph WhatsApp Dra. Emma (Bearer)",
     "graphPrueba": "Graph WhatsApp — pruebas (no producción)",
     "entradaPrueba": "Entrada de prueba Dra. Emma",
@@ -38,6 +38,7 @@
     "especialidad": "especialista en armonización facial; aplica personalmente Sculptra® y Radiesse®",
     "direccion": "Canal Cotoca entre 2do y 3er anillo, Av. Pauserna # 2055 (Santa Cruz)",
     "horario": "de lunes a viernes de 09:00 a 12:00 y de 14:00 a 18:00, y los sábados de 09:00 a 12:00",
+    "horarioPorConfirmar": true,
     "tratamientos": [
       {
         "id": "scu",
@@ -80,6 +81,7 @@
           "resultados reales sigues siendo tu"
         ],
         "enviable": false,
+        "soloImagen": true,
         "apertura": "La imagen que compartes es el caso de una paciente de la Dra. Emma. Cada piel responde distinto, por eso no se promete un resultado igual."
       },
       {
@@ -126,7 +128,7 @@
       "artificial": "Entiendo esa preocupación.\n\nEn la valoración la {doctora} te explica cómo trabaja y puedes preguntarle todo lo que quieras.",
       "probe_otros": "Gracias por contármelo, es comprensible.\n\nLa {doctora} define el tratamiento según el análisis de tu caso; con la valoración gratuita puedes conocer su opinión sin compromiso.",
       "pensar": "Claro, tómate tu tiempo.\n\nLa valoración es gratuita y sin compromiso, así que no arriesgas nada por conocer tu caso.",
-      "especifico": "De todas formas, la {doctora} define en la valoración cuál es el más adecuado para ti: puede ser ese u otro tratamiento que corresponda.\n\nEso lo definen juntas en la cita gratuita."
+      "especifico": "De todas formas, la {doctora} define en la valoración cuál es el más adecuado para ti: puede ser ese u otro tratamiento que corresponda.\n\nEso lo define la doctora en la valoración gratuita."
     }
   }
 }

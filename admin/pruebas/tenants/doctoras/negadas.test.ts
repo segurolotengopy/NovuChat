@@ -9,8 +9,8 @@
 import { describe, expect, it } from 'vitest';
 import type { J } from '../../lib/flujo';
 import type { Mundo, ResultadoTurno } from '../../lib/n8n-de-mentira';
-import { ANA, BETO, REC, crear, datosDe, hablar, mAudio, mBoton, mTexto, textos, type Opciones } from './mundo';
-import { LIB, PROHIBIDO_EN_SALIDA, UX_CONTADOR, violacionesDeParrafos, violacionesDeUx, vigilarUx } from './vigilante-ux';
+import { ANA, BETO, REC, crear, datosDe, hablar, mAudio, mBoton, mImagen, mTexto, textos, type Opciones } from './mundo';
+import { LIB, PROHIBIDO_EN_SALIDA, idsDeBotones, UX_CONTADOR, violacionesDeParrafos, violacionesDeUx, vigilarUx } from './vigilante-ux';
 
 const AP = { avisoSolicitudEstado: 'APPROVED' };
 const mundo = (o: Opciones = {}): Mundo => { const w = crear({ ...o, base: { ...AP, ...(o.base ?? {}) } }); vigilarUx(w); return w; };
@@ -93,7 +93,7 @@ describe('1. nunca monto ni rango del tratamiento (tampoco en letra)', () => {
       const w = saludada({ base: { doctora: JSON.stringify({ ...DOC, textos: { ...(DOC['textos'] as J), gratis: malo } }) } });
       hablar(w, ANA, mTexto('hola'));
       const t = hablar(w, ANA, mTexto('¿es gratis?'));
-      expect(t.mensajes[0]!.cuerpo, malo).toContain('Para esa consulta, escríbele a la recepción con el botón.');
+      expect(t.mensajes[0]!.cuerpo, malo).toContain('Esa consulta la responde mejor la recepción.');
       expect(t.mensajes[0]!.cuerpo, malo).not.toContain(malo.slice(0, 15));
     }
   });
@@ -120,7 +120,7 @@ describe('3. no niega ser una IA (tampoco con homoglifos)', () => {
     for (const malo of ['No soy un bot, soy una persona real.', 'Aquí te atiende una persona de carne y hueso.', 'Soy humano y te respondo yo.', 'Aquí te atiende una pеrsona real.', 'sоy una persоna']) {
       const w = saludada({ base: { doctora: JSON.stringify({ ...DOC, textos: { ...(DOC['textos'] as J), pensar: malo } }) } });
       const t = hablar(w, ANA, mTexto('lo voy a pensar'));
-      expect(t.mensajes[0]!.cuerpo, malo).toContain('Para esa consulta, escríbele a la recepción');
+      expect(t.mensajes[0]!.cuerpo, malo).toContain('Esa consulta la responde mejor la recepción.');
     }
   });
 });
@@ -331,5 +331,62 @@ describe('cobertura: el vigilante corrió sobre cientos de turnos', () => {
   it('más de 300 turnos vigilados en más de 100 mundos', () => {
     expect(UX_CONTADOR.turnos).toBeGreaterThan(300);
     expect(UX_CONTADOR.mundos.size).toBeGreaterThan(100);
+  });
+});
+
+describe('revisión del PR #589: consentimiento ambiguo, falsos positivos de violencia y detalles de texto', () => {
+  const PEDIR_NOMBRE = LIB.drParrafos(LIB.drTextoDe(DOC, 'pedir_nombre'));
+  it('M2: un «sí» dentro de una frase que no lo es NO es consentimiento: se repite la pregunta con los botones y no hay aviso', () => {
+    for (const q of ['si no me hago nada que pasa', 'si, pero ahora no', 'si no', 'si quiero saber el precio primero']) {
+      const w = saludada(); hablar(w, ANA, mBoton('a_agendar'));
+      const t = hablar(w, ANA, mTexto(q));
+      expect(idsDeBotones(t.mensajes[0]!), q).toEqual(['c_si1', 'c_no1']);
+      expect(t.mensajes[0]!.cuerpo, q).not.toBe(PEDIR_NOMBRE);
+      expect(t.avisos, q).toHaveLength(0);
+    }
+  });
+  it('M2: el «sí» completo y corto sí vale', () => {
+    for (const q of ['sí', 'Sí, gracias', 'claro', 'acepto', 'de acuerdo', 'si que me escriban', 'ok', 'sí, acepto']) {
+      const w = saludada(); hablar(w, ANA, mBoton('a_agendar'));
+      expect(textos(hablar(w, ANA, mTexto(q)))[0], q).toBe(PEDIR_NOMBRE);
+    }
+  });
+  it('M3: el miedo a las agujas, «agresivo», «abusar de tu tiempo» y «me di un golpe» NO son riesgo; la violencia real sigue cortando', () => {
+    for (const q of ['le tengo miedo a las agujas', 'me da miedo el pinchazo', '¿es un tratamiento agresivo?', 'no quiero abusar de tu tiempo', 'me di un golpe en la cara']) {
+      expect(LIB.drEsRiesgo(LIB.drNorm(q)), q).toBe(false);
+      const w = saludada();
+      expect(textos(hablar(w, ANA, mTexto(q))), q).not.toEqual([LIB.DR_TEXTO_RIESGO]);
+    }
+    for (const q of ['mi esposo me pega', 'mi pareja me dio un golpe en la cara', 'le tengo miedo a mi pareja', 'me da miedo mi esposo', 'sufro violencia', 'mi ex me amenaza']) {
+      expect(LIB.drEsRiesgo(LIB.drNorm(q)), q).toBe(true);
+      expect(textos(hablar(saludada(), ANA, mTexto(q))), q).toEqual([LIB.DR_TEXTO_RIESGO]);
+    }
+  });
+  it('el texto mínimo de respaldo no nombra el «botón» (puede salir sin él)', () => {
+    expect(LIB.drSeguro('La valoración vale 250 Bs.')).not.toMatch(/bot[oó]n/i);
+  });
+  it('en la etapa del horario, una pregunta repite la pregunta del horario: no deriva ni avisa; un horario sí deriva', () => {
+    for (const q of ['¿cuánto cuesta?', '¿es gratis?', '¿dónde queda?']) {
+      const w = saludada(); consintio(w); hablar(w, ANA, mTexto('Ana')); hablar(w, ANA, mBoton('n_este'));
+      const t = hablar(w, ANA, mTexto(q));
+      expect(t.avisos, q).toHaveLength(0);
+      expect(t.mensajes[0]!.cuerpo, q).toMatch(/qué día y horario/i);
+    }
+    const w = saludada(); consintio(w); hablar(w, ANA, mTexto('Ana')); hablar(w, ANA, mBoton('n_este'));
+    expect(hablar(w, ANA, mTexto('el martes en la tarde')).avisos).toHaveLength(1);
+  });
+  it('el arte «real» solo se reconoce con una imagen real; escrito en texto, no abre con «la imagen que compartes»', () => {
+    const w = mundo(); const t = hablar(w, ANA, mTexto('quiero ver un resultado real'));
+    expect(textos(t).join(' ')).not.toMatch(/La imagen que compartes/);
+    const i = mundo({ medio: { clasificacion: { categoria: 'publicidad', texto: 'RESULTADO REAL Firmeza y contorno recuperados' } } });
+    expect(textos(hablar(i, ANA, mImagen()))[0]).toMatch(/La imagen que compartes/);
+  });
+  it('«¿hay garantía?» no abre el texto del antes y después', () => {
+    expect(LIB.drIntencion(LIB.drNorm('¿hay garantía?'))).not.toBe('antes_despues');
+    const w = saludada(); hablar(w, ANA, mTexto('hola'));
+    expect(textos(hablar(w, ANA, mTexto('¿hay garantía?'))).join(' ')).not.toMatch(/caso de una paciente/);
+  });
+  it('ningún texto de las doctoras dice «lo definen juntas»', () => {
+    for (const t of ['rroca-evy', 'rroca-emma'] as const) expect(JSON.stringify(datosDe(t)).toLowerCase()).not.toMatch(/definen juntas|las dos|ambas/);
   });
 });

@@ -20,7 +20,7 @@ const PERMITIDOS = [
 const hallazgos = (f: Flujo): string[] => (problemasDeReferencias(f) as string[]);
 
 describe('doctoras: referencias a nodos', () => {
-  for (const archivo of ['doctoras.rroca-evy.json', 'doctoras.rroca-evy.prueba.json']) {
+  for (const archivo of ['doctoras.rroca-evy.json', 'doctoras.rroca-evy.prueba.json', 'doctoras.rroca-emma.json', 'doctoras.rroca-emma.prueba.json']) {
     it(`${archivo}: solo la lista permitida exacta`, () => {
       expect([...hallazgos(leer(archivo))].sort()).toEqual([...PERMITIDOS].sort());
       expect((referenciasDeNodos(leer(archivo).nodes) as Array<{ literales: string[] }>).reduce((n, r) => n + r.literales.length, 0)).toBeGreaterThan(5);

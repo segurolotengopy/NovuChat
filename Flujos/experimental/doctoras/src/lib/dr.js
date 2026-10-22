@@ -33,7 +33,12 @@ const DR_RIESGO = new RegExp([
 // El miedo al dolor, a las agujas o al procedimiento es una objeción COMERCIAL de la valoración, no violencia: «me da miedo el dolor» no activa la protección. La expresión DR_RIESGO es la de Antonio sin tocar;
 // aquí solo se quita esa frase antes de probarla (si el mismo mensaje trae violencia real, las otras expresiones la detectan).
 function drEsRiesgo(norm) {
-  const n = String(norm || '').replace(/\bme (?:da|dan) (?:miedo|terror) (?:el|la|los|las) (?:dolor|aguja\w*|inyec\w*|cirugia|procedimiento|tratamiento|resultado\w*)\b/g, ' ');
+  const n = String(norm || '')
+    .replace(/\bme (?:da|dan) (?:miedo|terror) (?:el|la|los|las) (?:dolor|aguja\w*|pinchazo\w*|inyec\w*|cirugia|procedimiento|tratamiento|resultado\w*)\b/g, ' ')
+    .replace(/\b(?:le|lo|la) (?:tengo|temo|tenemos) (?:miedo|terror) (?:a|de) (?:las? |los |el |la )?(?:aguja\w*|pinchazo\w*|inyec\w*|dolor|cirugia|procedimiento|tratamiento|resultado\w*)\b/g, ' ')
+    .replace(/\b(?:es|seria|sera|son) (?:un |una )?(?:tratamiento|procedimiento|producto|relleno)s? (?:muy |bien |tan )?(?:agresiv\w*|invasiv\w*|abusiv\w*)\b/g, ' ')
+    .replace(/\bno quiero abusar de (?:tu|su) (?:tiempo|paciencia|amabilidad)\b/g, ' ')
+    .replace(/\bme di (?:un |otro )?golpe (?:en|con|contra) (?:la |el |las |los |una |un |mi |me )?(?:cara|rostro|mejilla|frente|nariz|boca|labio|labios|ojo|cabeza|puerta|mueble|mesa|piso|suelo|pared|auto|carro|moto|bici)\b/g, ' ');
   return DR_RIESGO.test(n);
 }
 const DR_TEXTO_RIESGO = 'Este asistente no atiende ese tipo de consultas.';
@@ -182,7 +187,7 @@ function drParrafos(texto) {
 // Lo que NINGÚN texto que ve la persona puede decir (salvedades 1, 2, 6 y 15 del plan): promesa de resultado, «ideal para», monto, enlaces. Misma expresión que `PALABRAS_PROHIBIDAS` de `construir.mjs`
 // (una prueba las compara); se aplica al texto SIN acentos.
 const DR_PROHIBIDAS = /inmediat|primera sesi|firmeza|ideal para|garantiz|como la foto|lifting|\b250\b|\bbs\b|bolivianos|\$|https?:|www\.|wa\.me|maps|google|(?:^|[^\p{L}])\d+\s*(?:usd|dolares)/iu;
-const DR_TEXTO_MINIMO = 'Gracias por escribir. Para esa consulta, escríbele a la recepción con el botón.';
+const DR_TEXTO_MINIMO = 'Gracias por escribir. Esa consulta la responde mejor la recepción.';
 function drSinAcentos(t) { return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, ''); }
 // El texto que ve la persona, con la barrera aplicada: si niega ser una IA (prohibición 4) o dice algo que ningún texto de la doctora puede decir, sale el mínimo. Después, párrafos.
 // Una palabra que mezcla letras latinas con otro alfabeto (cirílico, griego…) esconde otra palabra («pеrsona» con una «е» cirílica): el español no los usa y se rechaza el texto entero.
@@ -255,7 +260,7 @@ const DR_REGLAS = [
   ['donde', /\b(donde (queda|quedan|estan|atienden|es|se ubica|esta|los encuentro)|direccion|ubicacion|como llego|mapa)\b/],
   ['horario', /\b(horario|horarios|a que hora|que dias|dias de atencion|hasta que hora|a que horas)\b/],
   ['diferencia', /\b(diferencia|diferencias|acido hialuronico|hialuronico|relleno|rellenos)\b/],
-  ['antes_despues', /\b(garantiz\w*|garantia|como la (foto|del anuncio|paciente)|igual que (la|el)|antes y despues|paciente (real|del anuncio)|resultado real)\b/],
+  ['antes_despues', /\b(como la (foto|del anuncio|paciente)|igual que (la|el)|antes y despues|paciente (real|del anuncio)|resultado real)\b/],
   ['cual_mejor', /\b(cual (es )?(mejor|me conviene|me recomiendas|elijo)|mejor (opcion|producto)|me conviene|es para mi|para mi)\b/],
   ['artificial', /\b(artificial|operad[ao]|se note|que no se note)\b/],
   ['dolor', /\b(duele|dolor|agujas?|inyeccion|inyecciones|anestesia|cirugia|miedo|dolorosa?)\b/],
@@ -286,9 +291,11 @@ function drTratamientoPorId(datos, id) {
   return lista.find((t) => t && String(t.id) === String(id)) || null;
 }
 // La entrada que el texto reconoce (un arte o un mensaje prellenado de la campaña): { id, apertura } o null. Las claves son DATO.
-function drEntrada(n, datos) {
+// `esImagen`: el mensaje trae una imagen real. Un arte marcado `soloImagen` (su apertura dice «la imagen que compartes») NO se reconoce por texto escrito.
+function drEntrada(n, datos, esImagen) {
   for (const lista of ['artes', 'prellenados']) {
     for (const a of (datos && Array.isArray(datos[lista]) ? datos[lista] : [])) {
+      if (a && a.soloImagen === true && esImagen !== true) continue;
       if (a && Array.isArray(a.claves) && a.claves.some((c) => typeof c === 'string' && c !== '' && (' ' + n + ' ').indexOf(' ' + c + ' ') >= 0)) return { id: String(a.id), apertura: drDatoLleno(a.apertura), tipo: lista };
     }
   }
@@ -297,7 +304,8 @@ function drEntrada(n, datos) {
 // El permiso para que la recepción contacte: sí / no escritos (el toque de botón se resuelve por su id).
 function drRespuestaConsentimiento(n) {
   if (/^(no|ahora no|no gracias|nop|mejor no|no acepto|no quiero)\b/.test(n)) return 'no';
-  if (/^(si|claro|ok|okay|dale|acepto|esta bien|de acuerdo|por supuesto|que me escriban|si que me escriban)\b/.test(n)) return 'si';
+  // El «sí» escrito vale solo como respuesta COMPLETA y corta: «si no me hago nada, ¿qué pasa?», «si, pero ahora no» o «si quiero saber el precio primero» NO son consentimiento (ante la duda, se repite la pregunta con los botones).
+  if (/^(si|claro|ok|okay|dale|acepto|esta bien|de acuerdo|por supuesto|que me escriban|si que me escriban|si acepto|si claro|si dale|claro que si)( gracias| por favor)?$/.test(n)) return 'si';
   return '';
 }
 // El nombre que la persona escribe: sin «me llamo», solo letras, de 1 a 5 palabras. '' si no parece un nombre.

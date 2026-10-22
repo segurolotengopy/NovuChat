@@ -39,6 +39,12 @@
 # flujo vivo es la referencia de credenciales y no se evalua como destino; --encender revisa el
 # flujo VIVO con la guardia. Los demas flujos no cambian.
 #
+# LOS FLUJOS DE LAS DOCTORAS (tenants rroca-evy y rroca-emma) TIENEN SU GUARDIA: con --aplicar
+# (y con ello --crear o --encender) se NIEGAN si `Flujos/experimental/doctoras/construir.mjs
+# --publicable --tenant <t>` no aprueba el archivo Y el flujo VIVO de destino, y piden
+# confirmacion explicita (escribir PUBLICAR DOCTORAS; sin terminal, solo con --confirmo-doctoras).
+# --forzar no salta nada de esto; --apagar nunca pide confirmacion.
+#
 # EL ARCHIVO Y EL FLUJO VIVO TIENEN QUE SER EL MISMO FLUJO, y el script lo
 # comprueba por el nombre antes de escribir: el id sale de `--env` y el archivo
 # de `--flujo`, que son dos fuentes distintas. Cada demo tiene su propio env:
@@ -65,6 +71,7 @@ ENV_NUEVO=""
 ENV_FILE=".env"
 CONFIRMO_RUBEN=0
 CONFIRMO_ANTONIO=0
+CONFIRMO_DOCTORAS=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -81,6 +88,7 @@ while [[ $# -gt 0 ]]; do
     --forzar)  FORZAR=1; shift ;;
     --confirmo-ruben) CONFIRMO_RUBEN=1; shift ;;
     --confirmo-antonio) CONFIRMO_ANTONIO=1; shift ;;
+    --confirmo-doctoras) CONFIRMO_DOCTORAS=1; shift ;;
     --env)     ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*)   ENV_FILE="${1#*=}"; shift ;;
     -h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -236,6 +244,69 @@ if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
   fi
 fi
 
+# --- LA GUARDIA DE LOS FLUJOS DE LAS DOCTORAS (tenants rroca-evy y rroca-emma) -----
+# Mismo diseno que la de Antonio, y aparte: no cambia nada para los demas flujos. Se
+# reconoce por el nombre del archivo o del flujo de ORIGEN que contenga rroca-evy o
+# rroca-emma (sin distinguir mayusculas) y se REPITE sobre el flujo VIVO (destino). Con
+# --aplicar (y con ello --crear o --encender) exige (1) que
+# `Flujos/experimental/doctoras/construir.mjs --publicable --tenant <t> --flujo <json>`
+# apruebe el flujo (sin marcadores REEMPLAZAR_*, plantilla de aviso APPROVED, horario
+# confirmado, y que el flujo sea el de ESA doctora) y (2) la confirmacion explicita: escribir
+# PUBLICAR DOCTORAS, o --confirmo-doctoras sin terminal. --forzar NO salta nada de esto.
+# `--apagar` nunca pide confirmacion. Si el nombre menciona a las dos doctoras, se NIEGA.
+doctoras_guardia() {  # $1 = motivo (texto), $2 = JSON a revisar, $3 = tenant (rroca-evy | rroca-emma | ambos)
+  echo "Flujo de las doctoras ($3): se revisa la guardia de publicación ($1)."
+  if [[ "$3" == "rroca-evy" || "$3" == "rroca-emma" ]] \
+     && node Flujos/experimental/doctoras/construir.mjs --publicable --tenant "$3" --flujo "$2"; then
+    GUARDIA_DOCTORAS_OK=1
+  else
+    GUARDIA_DOCTORAS_OK=0
+  fi
+  if [[ $APLICAR -eq 1 ]]; then
+    if [[ $GUARDIA_DOCTORAS_OK -ne 1 ]]; then
+      printf '\033[1;31m✗ NEGADO: el flujo de las doctoras no se publica con marcadores sin sustituir, plantillas sin aprobar, horario sin confirmar o con los datos de otra doctora.\033[0m\n' >&2
+      exit 1
+    fi
+    doctoras_confirmar
+  elif [[ $GUARDIA_DOCTORAS_OK -ne 1 ]]; then
+    printf '\033[0;33m  (en seco se sigue; con --aplicar se niega)\033[0m\n\n'
+  fi
+}
+# Imprime el tenant (rroca-evy | rroca-emma), "ambos" o nada (no es de las doctoras).
+doctoras_clase() {  # $1 = archivo JSON ; $2 = nombre del archivo en minusculas
+  python3 - "$1" "$2" <<'PY' 2>/dev/null || true
+import json, sys
+ruta, base = sys.argv[1], sys.argv[2]
+try:
+    nombre = str(json.load(open(ruta, encoding="utf-8")).get("name", "")).lower()
+except Exception:
+    nombre = ""
+t = [x for x in ("rroca-evy", "rroca-emma") if x in base or x in nombre]
+if len(t) == 1:
+    print(t[0])
+elif len(t) == 2:
+    print("ambos")
+PY
+}
+doctoras_confirmar() {
+  if [[ $CONFIRMO_DOCTORAS -ne 1 ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "Va a escribir un flujo de las doctoras en n8n. Escriba PUBLICAR DOCTORAS para confirmar: " RESPUESTA
+      [[ "$RESPUESTA" == "PUBLICAR DOCTORAS" ]] || { echo "✗ Sin confirmación: no se publica." >&2; exit 1; }
+    else
+      echo "✗ NEGADO: sin terminal, los flujos de las doctoras solo se publican con --confirmo-doctoras." >&2
+      exit 1
+    fi
+  fi
+}
+TENANT_DOCTORAS=""
+if [[ $ENCENDER -eq 0 && $APAGAR -eq 0 && -f "$FLUJO" ]]; then
+  TENANT_DOCTORAS="$(doctoras_clase "$FLUJO" "$(basename "$FLUJO" | tr '[:upper:]' '[:lower:]')")"
+  if [[ -n "$TENANT_DOCTORAS" ]]; then
+    doctoras_guardia "archivo de origen" "$FLUJO" "$TENANT_DOCTORAS"
+  fi
+fi
+
 [[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
 set -a
 # shellcheck disable=SC1090  # ruta variable: la elige --env
@@ -289,6 +360,16 @@ if [[ -n "$CLASE_VIVO_ANTONIO" ]]; then
   elif [[ $APAGAR -eq 0 && $CREAR -eq 0 && ( $ES_ANTONIO -eq 0 || ( "$CLASE_VIVO_ANTONIO" == estricto && "${CLASE_ANTONIO:-}" != estricto ) ) ]]; then
     ES_ANTONIO=1
     antonio_guardia "flujo vivo de destino" "$FLUJO" "$CLASE_VIVO_ANTONIO"
+  fi
+fi
+
+TENANT_VIVO_DOCTORAS="$(doctoras_clase "$TMP/vivo.json" "")"
+if [[ -n "$TENANT_VIVO_DOCTORAS" ]]; then
+  if [[ $ENCENDER -eq 1 ]]; then
+    doctoras_guardia "encender el flujo vivo" "$TMP/vivo.json" "$TENANT_VIVO_DOCTORAS"
+  # Con --crear `vivo.json` es la REFERENCIA de credenciales, no el destino. Si el destino vivo es de una doctora y el origen no lo era (o era la otra), la guardia se corre con el tenant del VIVO.
+  elif [[ $APAGAR -eq 0 && $CREAR -eq 0 && "$TENANT_VIVO_DOCTORAS" != "$TENANT_DOCTORAS" ]]; then
+    doctoras_guardia "flujo vivo de destino" "$FLUJO" "$TENANT_VIVO_DOCTORAS"
   fi
 fi
 

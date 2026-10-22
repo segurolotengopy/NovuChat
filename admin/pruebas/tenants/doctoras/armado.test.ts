@@ -70,9 +70,9 @@ describe('el armado: lo versionado es lo que arma la plantilla', () => {
     }
   });
 
-  it('ajustes: orden v1, zona America/La_Paz, sin guardar ejecuciones exitosas ni el progreso (la retención de las fallidas es una decisión pendiente, ver DISENO.md)', () => {
+  it('ajustes: orden v1, zona America/La_Paz, sin guardar ejecuciones exitosas ni el progreso ni las fallidas: datos de salud, opción B de DISENO.md', () => {
     for (const f of [PRODUCCION, PRUEBA]) {
-      expect(f['settings']).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'all', saveExecutionProgress: false });
+      expect(f['settings']).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz', saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false });
     }
   });
 
@@ -176,6 +176,8 @@ describe('las guardias: cada una rechaza su violación', () => {
   it('retención, orden de ramas y zona horaria', () => {
     const a = clon(PRODUCCION); (a['settings'] as J)['saveDataSuccessExecution'] = 'all';
     expect(hallazgos('produccion', a)).toMatch(/retención/);
+    const e = clon(PRODUCCION); (e['settings'] as J)['saveDataErrorExecution'] = 'all';
+    expect(hallazgos('produccion', e)).toMatch(/retención/);
     const b = clon(PRODUCCION); (b['settings'] as J)['executionOrder'] = 'v0';
     expect(hallazgos('produccion', b)).toMatch(/executionOrder/);
     const c = clon(PRODUCCION); (c['settings'] as J)['timezone'] = 'UTC';
